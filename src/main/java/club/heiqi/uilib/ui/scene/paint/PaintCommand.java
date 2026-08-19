@@ -70,6 +70,10 @@ public final class PaintCommand {
     /** 文本样式，非 TEXT 命令时默认为 {@code null} */
     private final TextStyle textStyle;
 
+    /** 链接 URL；仅 LINK_REGION 命令有意义（字段单一语义：TEXT 的 {@link #text} 不再复用承载 URL），
+     *  非 LINK_REGION 命令默认为 {@code ""}。 */
+    private final String linkUrl;
+
     /** 图片源；仅 IMAGE 命令有意义，按身份固化。 */
     private final SceneImageSource imageSource;
 
@@ -112,7 +116,8 @@ public final class PaintCommand {
     // ========== 私有构造器 ==========
 
     private PaintCommand(PaintCommandType type, int left, int top, int right, int bottom,
-                          int color, String text, TextStyle textStyle, SceneImageSource imageSource, float opacity,
+                          int color, String text, TextStyle textStyle, String linkUrl,
+                          SceneImageSource imageSource, float opacity,
                          int cornerRadius, int borderWidth,
                          float translateX, float translateY, float rotateDegrees,
                          float scaleX, float scaleY,
@@ -125,6 +130,7 @@ public final class PaintCommand {
         this.color = color;
         this.text = text == null ? "" : text;
         this.textStyle = textStyle;
+        this.linkUrl = linkUrl == null ? "" : linkUrl;
         this.imageSource = imageSource;
         this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
         this.cornerRadius = Math.max(0, cornerRadius);
@@ -152,7 +158,7 @@ public final class PaintCommand {
      */
     public static PaintCommand background(int left, int top, int right, int bottom, int color) {
         return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
-                color, null, null, null, 1.0f, 0, 0,
+                color, null, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -170,7 +176,7 @@ public final class PaintCommand {
     public static PaintCommand background(int left, int top, int right, int bottom, int color,
                                           int cornerRadius) {
         return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
-                color, null, null, null, 1.0f, cornerRadius, 0,
+                color, null, null, null, null, 1.0f, cornerRadius, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -192,7 +198,7 @@ public final class PaintCommand {
     public static PaintCommand border(int left, int top, int right, int bottom, int color,
                                       int borderWidth, int cornerRadius) {
         return new PaintCommand(PaintCommandType.BORDER, left, top, right, bottom,
-                color, null, null, null, 1.0f, cornerRadius, borderWidth,
+                color, null, null, null, null, 1.0f, cornerRadius, borderWidth,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -209,7 +215,7 @@ public final class PaintCommand {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(style, "style");
         return new PaintCommand(PaintCommandType.TEXT, left, top, left, top,
-                0, text, style, null, 1.0f, 0, 0,
+                0, text, style, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -225,12 +231,13 @@ public final class PaintCommand {
      */
     public static PaintCommand image(SceneImageSource source, int left, int top, int right, int bottom) {
         return new PaintCommand(PaintCommandType.IMAGE, left, top, right, bottom,
-                0, null, null, Objects.requireNonNull(source, "source"), 1.0f, 0, 0,
+                0, null, null, null, Objects.requireNonNull(source, "source"), 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
     /**
-     * 创建链接命中区域命令（纯数据，无渲染效果；URL 存于 text 字段）。
+     * 创建链接命中区域命令（纯数据，无渲染效果；URL 存于独立 {@code linkUrl} 字段，
+     * 不复用 {@link #text}，保证字段单一语义）。
      *
      * @param left   左边界（节点局部像素）
      * @param top    上边界（节点局部像素）
@@ -241,7 +248,7 @@ public final class PaintCommand {
      */
     public static PaintCommand linkRegion(int left, int top, int right, int bottom, String url) {
         return new PaintCommand(PaintCommandType.LINK_REGION, left, top, right, bottom,
-                0, Objects.requireNonNull(url, "url"), null, null, 1.0f, 0, 0,
+                0, null, null, Objects.requireNonNull(url, "url"), null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -262,7 +269,7 @@ public final class PaintCommand {
      */
     public static PaintCommand pushOpacity(int left, int top, int right, int bottom, float opacity) {
         return new PaintCommand(PaintCommandType.PUSH_OPACITY, left, top, right, bottom,
-                0, null, null, null, opacity, 0, 0,
+                0, null, null, null, null, opacity, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -276,7 +283,7 @@ public final class PaintCommand {
      */
     public static PaintCommand popOpacity() {
         return new PaintCommand(PaintCommandType.POP_OPACITY, 0, 0, 0, 0,
-                0, null, null, null, 1.0f, 0, 0,
+                0, null, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -296,7 +303,7 @@ public final class PaintCommand {
      */
     public static PaintCommand clipPush(int left, int top, int right, int bottom, int cornerRadius) {
         return new PaintCommand(PaintCommandType.CLIP_PUSH, left, top, right, bottom,
-                0, null, null, null, 1.0f, cornerRadius, 0,
+                0, null, null, null, null, 1.0f, cornerRadius, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -310,7 +317,7 @@ public final class PaintCommand {
      */
     public static PaintCommand clipPop() {
         return new PaintCommand(PaintCommandType.CLIP_POP, 0, 0, 0, 0,
-                0, null, null, null, 1.0f, 0, 0,
+                0, null, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -343,7 +350,7 @@ public final class PaintCommand {
                                              float scaleX, float scaleY,
                                              float originXRatio, float originYRatio) {
         return new PaintCommand(PaintCommandType.PUSH_TRANSFORM, left, top, right, bottom,
-                0, null, null, null, 1.0f, 0, 0,
+                0, null, null, null, null, 1.0f, 0, 0,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -357,7 +364,7 @@ public final class PaintCommand {
      */
     public static PaintCommand popTransform() {
         return new PaintCommand(PaintCommandType.POP_TRANSFORM, 0, 0, 0, 0,
-                0, null, null, null, 1.0f, 0, 0,
+                0, null, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -392,7 +399,7 @@ public final class PaintCommand {
                                                   float scaleX, float scaleY,
                                                   float originXRatio, float originYRatio) {
         return new PaintCommand(PaintCommandType.PUSH_TRANSFORM_LAYER, left, top, right, bottom,
-                0, null, null, null, 1.0f, 0, 0,
+                0, null, null, null, null, 1.0f, 0, 0,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -406,7 +413,7 @@ public final class PaintCommand {
      */
     public static PaintCommand popTransformLayer() {
         return new PaintCommand(PaintCommandType.POP_TRANSFORM_LAYER, 0, 0, 0, 0,
-                0, null, null, null, 1.0f, 0, 0,
+                0, null, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
     }
 
@@ -442,14 +449,14 @@ public final class PaintCommand {
         return color;
     }
 
-    /** @return 文本内容（非文本命令返回空字符串） */
+    /** @return 文本内容（仅 TEXT 命令有意义；其余命令返回空字符串，LINK_REGION 不再复用本字段） */
     public String getText() {
         return text;
     }
 
-    /** @return 链接 URL（仅 LINK_REGION 命令有意义） */
+    /** @return 链接 URL（仅 LINK_REGION 命令有意义；其余命令返回空字符串） */
     public String getLinkUrl() {
-        return text;
+        return linkUrl;
     }
 
     /** @return 文本样式（非文本命令返回 null） */
@@ -536,7 +543,7 @@ public final class PaintCommand {
             return this;
         }
         return new PaintCommand(type, left + dx, top + dy, right + dx, bottom + dy,
-                color, text, textStyle, imageSource, opacity, cornerRadius, borderWidth,
+                color, text, textStyle, linkUrl, imageSource, opacity, cornerRadius, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -559,6 +566,7 @@ public final class PaintCommand {
                 && color == other.color
                 && Objects.equals(text, other.text)
                 && Objects.equals(textStyle, other.textStyle)
+                && Objects.equals(linkUrl, other.linkUrl)
                 && imageSource == other.imageSource
                 && Float.compare(opacity, other.opacity) == 0
                 && cornerRadius == other.cornerRadius
@@ -574,7 +582,7 @@ public final class PaintCommand {
 
     @Override
     public int hashCode() {
-        return Objects.hash(type, left, top, right, bottom, color, text, textStyle,
+        return Objects.hash(type, left, top, right, bottom, color, text, textStyle, linkUrl,
                 Integer.valueOf(System.identityHashCode(imageSource)), opacity,
                 cornerRadius, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
@@ -597,6 +605,12 @@ public final class PaintCommand {
               .append(", top=").append(top)
               .append(", text='").append(text).append('\'')
               .append(", textStyle=").append(textStyle);
+        } else if (type == PaintCommandType.LINK_REGION) {
+            sb.append(", left=").append(left)
+              .append(", top=").append(top)
+              .append(", right=").append(right)
+              .append(", bottom=").append(bottom)
+              .append(", linkUrl='").append(linkUrl).append('\'');
         } else if (type == PaintCommandType.IMAGE) {
             sb.append(", left=").append(left)
               .append(", top=").append(top)

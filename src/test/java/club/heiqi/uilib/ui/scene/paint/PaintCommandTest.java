@@ -198,6 +198,49 @@ public class PaintCommandTest {
         Assert.assertEquals("类型 CLIP_POP", PaintCommandType.CLIP_POP, clip.getType());
     }
 
+    // ============================================================
+    // LINK_REGION：linkUrl 独立字段，text 恢复单一语义（审查报告 §8 B1-3）
+    // ============================================================
+
+    @Test
+    public void linkRegionShouldKeepUrlInDedicatedField() {
+        PaintCommand link = PaintCommand.linkRegion(5, 10, 55, 24, "https://example.com");
+
+        Assert.assertEquals("类型 LINK_REGION", PaintCommandType.LINK_REGION, link.getType());
+        Assert.assertEquals("URL 存于独立 linkUrl 字段", "https://example.com", link.getLinkUrl());
+        Assert.assertEquals("LINK_REGION 不得复用 text 字段", "", link.getText());
+    }
+
+    @Test
+    public void nonLinkCommandsShouldExposeEmptyLinkUrl() {
+        PaintCommand txt = PaintCommand.text(0, 0, "Hello", new TextStyle(0xFFFFFFFF, 14));
+        PaintCommand bg = PaintCommand.background(0, 0, 10, 10, 0xFF000000);
+
+        Assert.assertEquals("TEXT 命令 getLinkUrl 应为空串", "", txt.getLinkUrl());
+        Assert.assertEquals("BACKGROUND 命令 getLinkUrl 应为空串", "", bg.getLinkUrl());
+    }
+
+    @Test
+    public void translatedByShouldPreserveLinkUrl() {
+        PaintCommand link = PaintCommand.linkRegion(5, 10, 55, 24, "https://example.com");
+        PaintCommand moved = link.translatedBy(3, 4);
+
+        Assert.assertEquals("linkUrl 不随平移变化", "https://example.com", moved.getLinkUrl());
+        Assert.assertEquals("left 平移 +3", 8, moved.getLeft());
+        Assert.assertEquals("top 平移 +4", 14, moved.getTop());
+    }
+
+    @Test
+    public void equalsShouldDistinguishLinkUrl() {
+        PaintCommand link1 = PaintCommand.linkRegion(0, 0, 10, 10, "https://a.b");
+        PaintCommand link2 = PaintCommand.linkRegion(0, 0, 10, 10, "https://a.b");
+        PaintCommand link3 = PaintCommand.linkRegion(0, 0, 10, 10, "https://c.d");
+
+        Assert.assertEquals("相同 URL 应 equals", link1, link2);
+        Assert.assertEquals("相同 URL hashCode 相等", link1.hashCode(), link2.hashCode());
+        Assert.assertNotEquals("不同 URL 不应 equals", link1, link3);
+    }
+
     // ===== equals/hashCode 含 cornerRadius/borderWidth =====
 
     @Test
