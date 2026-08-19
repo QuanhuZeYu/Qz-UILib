@@ -131,6 +131,69 @@ public final class SceneAnchorResolver {
     }
 
     /**
+     * 解析屏幕四角视口锚定的窗口放置盒（屏幕级虚拟窗口，如 HUD）。
+     *
+     * <p>box 先按安全区与 margin 收敛到视口内，再按锚点方向贴边；
+     * {@code stackOffset} 是同一锚点方向上的堆叠位移（自上而下/自下而上累积），
+     * 供调用方维护同锚点稳定堆叠。</p>
+     *
+     * @param right        锚在右侧（右边缘对齐），否则左侧
+     * @param bottom       锚在底部（下边缘对齐），否则顶部
+     * @param hostWidth    视口宽
+     * @param hostHeight   视口高
+     * @param boxWidth     内容盒宽
+     * @param boxHeight    内容盒高
+     * @param margin       窗口边距
+     * @param safeLeft     安全区左
+     * @param safeTop      安全区上
+     * @param safeRight    安全区右
+     * @param safeBottom   安全区下
+     * @param stackOffset  同锚点堆叠位移
+     * @return 放置盒（x/y/width/height 已 clamp 进视口）
+     */
+    public static ResolvedViewport resolveViewport(boolean right, boolean bottom,
+            int hostWidth, int hostHeight, int boxWidth, int boxHeight, int margin,
+            int safeLeft, int safeTop, int safeRight, int safeBottom, int stackOffset) {
+        int width = Math.max(1, hostWidth);
+        int height = Math.max(1, hostHeight);
+        int resolvedWidth = Math.min(boxWidth, Math.max(1, width - safeLeft - safeRight - margin * 2));
+        int resolvedHeight = Math.min(boxHeight, Math.max(1, height - safeTop - safeBottom - margin * 2));
+        int x = right ? width - safeRight - margin - resolvedWidth : safeLeft + margin;
+        int y = bottom
+                ? height - safeBottom - margin - stackOffset - resolvedHeight
+                : safeTop + margin + stackOffset;
+        x = clamp(x, 0, Math.max(0, width - resolvedWidth));
+        y = clamp(y, 0, Math.max(0, height - resolvedHeight));
+        return new ResolvedViewport(x, y, resolvedWidth, resolvedHeight);
+    }
+
+    private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
+
+    /** 屏幕四角视口锚定的窗口放置盒。 */
+    public static final class ResolvedViewport {
+        private final int x;
+        private final int y;
+        private final int width;
+        private final int height;
+
+        private ResolvedViewport(int x, int y, int width, int height) {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+        }
+
+        /** @return 窗口左上角 X */
+        public int getX() { return x; }
+        /** @return 窗口左上角 Y */
+        public int getY() { return y; }
+        /** @return 窗口宽度 */
+        public int getWidth() { return width; }
+        /** @return 窗口高度 */
+        public int getHeight() { return height; }
+    }
+
+    /**
      * 已解析的浮层位置与尺寸约束。
      */
     public static final class ResolvedAnchor {

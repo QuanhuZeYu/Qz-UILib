@@ -167,4 +167,57 @@ public class SceneAnchorResolverTest {
         Assert.assertEquals(290, resolved.getX());
         Assert.assertEquals(120, resolved.getWidth());
     }
+
+    // ==================== 视口四角锚定（HUD 虚拟窗口语义，自 HudLayoutEngine 迁移） ====================
+
+    /** 四角各锚定方向：贴边 + margin + 安全区偏移。 */
+    @Test
+    public void viewportShouldPlaceAllFourCornersWithInsetsAndMargin() {
+        assertViewport(false, false, 20, 10, 8, 0, 3, 5, 7, 9, 100, 80, 11, 13, 20, 10);
+        assertViewport(true, false, 20, 10, 8, 0, 3, 5, 7, 9, 100, 80, 65, 13, 20, 10);
+        assertViewport(false, true, 20, 10, 8, 0, 3, 5, 7, 9, 100, 80, 11, 53, 20, 10);
+        assertViewport(true, true, 20, 10, 8, 0, 3, 5, 7, 9, 100, 80, 65, 53, 20, 10);
+    }
+
+    /** 内容盒超出视口时按安全区与 margin 收敛并 clamp 进视口。 */
+    @Test
+    public void viewportShouldClampOversizedBoxIntoViewport() {
+        assertViewport(false, false, 200, 100, 8, 0, 0, 0, 0, 0, 40, 30, 8, 8, 24, 14);
+    }
+
+    /** 锚点方向相反时堆叠 offset 反向位移（同锚点稳定堆叠）。 */
+    @Test
+    public void viewportShouldApplyStackOffsetAgainstAnchorDirection() {
+        assertViewport(false, false, 20, 10, 8, 26, 0, 0, 0, 0, 100, 80, 8, 34, 20, 10);
+        assertViewport(false, true, 20, 10, 8, 26, 0, 0, 0, 0, 100, 80, 8, 36, 20, 10);
+    }
+
+    /** 宽度变化时左右锚点的边距保持稳定。 */
+    @Test
+    public void viewportShouldKeepAnchorMarginsStableAcrossWidthChanges() {
+        SceneAnchorResolver.ResolvedViewport leftShort = SceneAnchorResolver.resolveViewport(
+                false, false, 200, 100, 30, 20, 8, 0, 0, 0, 0, 0);
+        SceneAnchorResolver.ResolvedViewport leftLong = SceneAnchorResolver.resolveViewport(
+                false, false, 200, 100, 90, 20, 8, 0, 0, 0, 0, 0);
+        SceneAnchorResolver.ResolvedViewport rightShort = SceneAnchorResolver.resolveViewport(
+                true, false, 200, 100, 30, 20, 8, 0, 0, 0, 0, 0);
+        SceneAnchorResolver.ResolvedViewport rightLong = SceneAnchorResolver.resolveViewport(
+                true, false, 200, 100, 90, 20, 8, 0, 0, 0, 0, 0);
+        Assert.assertEquals(leftShort.getX(), leftLong.getX());
+        Assert.assertEquals(200 - rightShort.getX() - rightShort.getWidth(),
+                200 - rightLong.getX() - rightLong.getWidth());
+    }
+
+    private static void assertViewport(boolean right, boolean bottom, int boxWidth, int boxHeight, int margin,
+            int stackOffset, int safeLeft, int safeTop, int safeRight, int safeBottom,
+            int hostWidth, int hostHeight, int expectedX, int expectedY, int expectedWidth, int expectedHeight) {
+        SceneAnchorResolver.ResolvedViewport resolved = SceneAnchorResolver.resolveViewport(
+                right, bottom, hostWidth, hostHeight, boxWidth, boxHeight, margin,
+                safeLeft, safeTop, safeRight, safeBottom, stackOffset);
+        Assert.assertEquals(expectedX, resolved.getX());
+        Assert.assertEquals(expectedY, resolved.getY());
+        Assert.assertEquals(expectedWidth, resolved.getWidth());
+        Assert.assertEquals(expectedHeight, resolved.getHeight());
+    }
 }
+

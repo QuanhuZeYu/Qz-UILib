@@ -1,11 +1,13 @@
 package club.heiqi.uilib.client.hud;
 
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -18,6 +20,8 @@ import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -28,12 +32,11 @@ import java.util.Set;
  * 用与 UI 页面完全相同的 scene 代码构建（控件 + signal），帧循环复用 {@link SceneFramePipeline}
  * （无输入源退化模式），layout/paint/replay/settle 与 UI 页面同源。
  *
- * <p>无输入、无 Widget/GuiScreen 生命周期；四角锚定与堆叠由 {@link HudLayoutEngine} 负责，
- * 宿主只做「挂载 → 测量 → 锚定 → 帧循环」。</p>
+ * <p>无输入、无 Widget/GuiScreen 生命周期；四角锚定数学在 {@link SceneAnchorResolver}（视口模式），
+ * 宿主只做「挂载 → 测量 → 锚定/堆叠 → 帧循环」。</p>
  */
 public final class SceneHudHost {
     private final HudRegistry registry;
-    private final HudLayoutEngine hudLayout = new HudLayoutEngine();
     private final SceneTextMeasurer measurer;
     private final Map<String, RetainedWindow> retained = new HashMap<String, RetainedWindow>();
     private final HudScaleSetting scaleSetting;
@@ -66,7 +69,7 @@ public final class SceneHudHost {
         height = Math.max(1, (int) Math.floor(height / scale));
         backend = scale == 1F ? backend : new ScaledHudBackend(backend, scale);
         HudInsets safeInsets = registry.avoidanceInsets(this::reportProviderFailure);
-        ArrayList<HudLayoutEngine.MeasuredHud> measured = new ArrayList<HudLayoutEngine.MeasuredHud>();
+        ArrayList<MeasuredHud> measured = new ArrayList<MeasuredHud>();
         Set<String> registered = new HashSet<String>();
         Set<String> visible = new HashSet<String>();
         long frameTimeNanos = System.nanoTime();
@@ -96,11 +99,52 @@ public final class SceneHudHost {
             int minimum = entry.spec.getMinWidth() == 0
                     ? Math.min(HudTokens.NORMAL.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
             int measuredWidth = Math.max(minimum, Math.min(entry.spec.getMaxWidth(), box.getWidth()));
-            measured.add(new HudLayoutEngine.MeasuredHud(entry, measuredWidth, box.getHeight()));
+            measured.add(new MeasuredHud(entry, measuredWidth, box.getHeight()));
         }
-        for (HudLayoutEngine.PlacedHud placed : hudLayout.layout(measured, width, height, safeInsets)) {
-            RetainedWindow window = retained.get(placed.entry.spec.getId());
-            window.frame(backend, placed, frameTimeNanos);
+        placeAndFrame(backend, measured, width, height, safeInsets, frameTimeNanos);
+    }
+
+    /**
+     * 四角锚定 + 同锚点稳定堆叠（视口锚定数学在 {@link SceneAnchorResolver}，
+     * 这里只做排序、offset 累积与帧派发）。
+     */
+    private void placeAndFrame(UiRenderBackend backend, ArrayList<MeasuredHud> measured,
+            int width, int height, HudInsets safeInsets, long frameTimeNanos) {
+        ArrayList<MeasuredHud> sorted = new ArrayList<MeasuredHud>(measured);
+        sorted.sort(Comparator.comparing((MeasuredHud item) -> item.entry.spec.getAnchor())
+                .thenComparingInt(item -> item.entry.spec.getStackOrder())
+                .thenComparingLong(item -> item.entry.registrationOrder));
+        EnumMap<HudAnchor, Integer> offsets = new EnumMap<HudAnchor, Integer>(HudAnchor.class);
+        for (MeasuredHud item : sorted) {
+            HudSpec spec = item.entry.spec;
+            int offset = offsets.containsKey(spec.getAnchor()) ? offsets.get(spec.getAnchor()) : 0;
+            SceneAnchorResolver.ResolvedViewport placed = SceneAnchorResolver.resolveViewport(
+                    isRight(spec.getAnchor()), isBottom(spec.getAnchor()),
+                    width, height, item.width, item.height, spec.getMargin(),
+                    safeInsets.getLeft(), safeInsets.getTop(), safeInsets.getRight(), safeInsets.getBottom(),
+                    offset);
+            RetainedWindow window = retained.get(spec.getId());
+            window.frame(backend, placed.getX(), placed.getY(), placed.getWidth(), placed.getHeight(),
+                    frameTimeNanos);
+            offsets.put(spec.getAnchor(), offset + placed.getHeight() + HudTokens.STACK_GAP);
+        }
+    }
+
+    private static boolean isRight(HudAnchor anchor) {
+        return anchor == HudAnchor.TOP_RIGHT || anchor == HudAnchor.BOTTOM_RIGHT;
+    }
+
+    private static boolean isBottom(HudAnchor anchor) {
+        return anchor == HudAnchor.BOTTOM_LEFT || anchor == HudAnchor.BOTTOM_RIGHT;
+    }
+
+    /** 预先测得的窗口内容尺寸（含外壳）。 */
+    private static final class MeasuredHud {
+        final HudRegistry.Entry entry;
+        final int width;
+        final int height;
+        MeasuredHud(HudRegistry.Entry entry, int width, int height) {
+            this.entry = entry; this.width = Math.max(1, width); this.height = Math.max(1, height);
         }
     }
 
@@ -176,10 +220,10 @@ public final class SceneHudHost {
         }
 
         /** 窗口帧循环：与 UI 页面同源的 11 阶段帧管线，并以放置盒硬裁剪（内容超长不溢出窗口）。 */
-        void frame(UiRenderBackend backend, HudLayoutEngine.PlacedHud placed, long frameTimeNanos) {
+        void frame(UiRenderBackend backend, int x, int y, int width, int height, long frameTimeNanos) {
             runtime.__tickFrame(frameTimeNanos);
-            pipeline.run(root, placed.width, placed.height, backend, placed.x, placed.y, frameTimeNanos,
-                    new club.heiqi.uilib.ui.scene.layout.AnchorRect(0, 0, placed.width, placed.height));
+            pipeline.run(root, width, height, backend, x, y, frameTimeNanos,
+                    new club.heiqi.uilib.ui.scene.layout.AnchorRect(0, 0, width, height));
         }
 
         void dispose() { runtime.dispose(); }
