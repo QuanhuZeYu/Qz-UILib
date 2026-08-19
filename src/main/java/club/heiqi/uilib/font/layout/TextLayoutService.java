@@ -385,32 +385,8 @@ public class TextLayoutService {
                         createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle),
                         (int) currentSettings().getCharSize());
             }
-
-            StringBuilder builder = new StringBuilder();
-            TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
-            double width = 0.0D;
-
-            for (int i = 0; i < text.length(); ) {
-                int codepoint = text.codePointAt(i);
-                if (codepoint == '§' && i < text.length() - 1) {
-                    builder.appendCodePoint(codepoint);
-                    i += Character.charCount(codepoint);
-                    char formatCode = text.charAt(i);
-                    builder.append(formatCode);
-                    currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                    i++;
-                    continue;
-                }
-
-                double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
-                if (width + charWidth > targetWidth) {
-                    break;
-                }
-                width += charWidth;
-                builder.appendCodePoint(codepoint);
-                i += Character.charCount(codepoint);
-            }
-            return builder.toString();
+            return trimMinecraftStringToWidth(text, targetWidth,
+                    createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle));
         } finally {
             unlockGeneration();
         }
@@ -440,34 +416,8 @@ public class TextLayoutService {
                 return trimRichStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
                         resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
             }
-
-            StringBuilder builder = new StringBuilder();
-            TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
-                    resolvedStyle.getFontStyle());
-            double width = 0.0D;
-
-            for (int i = 0; i < text.length(); ) {
-                int codepoint = text.codePointAt(i);
-                if (codepoint == '§' && i < text.length() - 1) {
-                    builder.appendCodePoint(codepoint);
-                    i += Character.charCount(codepoint);
-                    char formatCode = text.charAt(i);
-                    builder.append(formatCode);
-                    currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                    i++;
-                    continue;
-                }
-
-                double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType(),
-                        resolvedStyle.getFontSizePx());
-                if (width + charWidth > targetWidth) {
-                    break;
-                }
-                width += charWidth;
-                builder.appendCodePoint(codepoint);
-                i += Character.charCount(codepoint);
-            }
-            return builder.toString();
+            return trimMinecraftStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
+                    resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
         } finally {
             unlockGeneration();
         }
@@ -582,52 +532,8 @@ public class TextLayoutService {
                 return wrapRichStringToWidth(text, wrapWidth,
                         createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL));
             }
-
-            StringBuilder builder = new StringBuilder();
-            TextStyle currentStyle = new TextStyle();
-            currentStyle.resetAll(0xFFFFFFFF);
-            double width = 0.0D;
-            boolean lineHasVisibleContent = false;
-
-            for (int i = 0; i < text.length(); ) {
-                int codepoint = text.codePointAt(i);
-                if (codepoint == '§' && i < text.length() - 1) {
-                    builder.appendCodePoint(codepoint);
-                    i += Character.charCount(codepoint);
-                    char formatCode = text.charAt(i);
-                    builder.append(formatCode);
-                    currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                    i++;
-                    continue;
-                }
-
-                if (codepoint == '\r' || codepoint == '\n') {
-                    i += Character.charCount(codepoint);
-                    if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
-                        i++;
-                    }
-                    builder.append('\n');
-                    if (i < text.length()) {
-                        builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
-                    }
-                    width = 0.0D;
-                    lineHasVisibleContent = false;
-                    continue;
-                }
-
-                double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
-                if (width + charWidth > wrapWidth && lineHasVisibleContent) {
-                    builder.append('\n');
-                    builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
-                    width = 0.0D;
-                    lineHasVisibleContent = false;
-                }
-                builder.appendCodePoint(codepoint);
-                width += charWidth;
-                lineHasVisibleContent = true;
-                i += Character.charCount(codepoint);
-            }
-            return builder.toString();
+            return wrapMinecraftStringToWidth(text, wrapWidth,
+                    createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL));
         } finally {
             unlockGeneration();
         }
@@ -1162,6 +1068,121 @@ public class TextLayoutService {
         return new TextMeasureStyle(resolvedStyle.getFontSizePx(),
                 resolveTextContentMode(resolvedStyle.getTextContentMode()), resolvedStyle.getFontWeight(),
                 resolvedStyle.getFontStyle());
+    }
+
+    /**
+     * MINECRAFT_FORMATTED 模式裁剪（基准字号）：§ 格式码原样保留并推进样式，
+     * 宽度按基准字号测量；调用方持 generation 锁。
+     */
+    private String trimMinecraftStringToWidth(String text, int targetWidth, TextStyle baseStyle) {
+        StringBuilder builder = new StringBuilder();
+        TextStyle currentStyle = baseStyle.copy();
+        double width = 0.0D;
+
+        for (int i = 0; i < text.length(); ) {
+            int codepoint = text.codePointAt(i);
+            if (codepoint == '§' && i < text.length() - 1) {
+                builder.appendCodePoint(codepoint);
+                i += Character.charCount(codepoint);
+                char formatCode = text.charAt(i);
+                builder.append(formatCode);
+                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
+                i++;
+                continue;
+            }
+
+            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
+            if (width + charWidth > targetWidth) {
+                break;
+            }
+            width += charWidth;
+            builder.appendCodePoint(codepoint);
+            i += Character.charCount(codepoint);
+        }
+        return builder.toString();
+    }
+
+    /**
+     * MINECRAFT_FORMATTED 模式裁剪（指定 UI 像素字号）：与基准字号版同构，
+     * 仅测量按 {@code fontSizePx} 缩放；调用方持 generation 锁。
+     */
+    private String trimMinecraftStringToWidth(String text, int targetWidth, TextStyle baseStyle, int fontSizePx) {
+        StringBuilder builder = new StringBuilder();
+        TextStyle currentStyle = baseStyle.copy();
+        double width = 0.0D;
+
+        for (int i = 0; i < text.length(); ) {
+            int codepoint = text.codePointAt(i);
+            if (codepoint == '§' && i < text.length() - 1) {
+                builder.appendCodePoint(codepoint);
+                i += Character.charCount(codepoint);
+                char formatCode = text.charAt(i);
+                builder.append(formatCode);
+                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
+                i++;
+                continue;
+            }
+
+            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType(), fontSizePx);
+            if (width + charWidth > targetWidth) {
+                break;
+            }
+            width += charWidth;
+            builder.appendCodePoint(codepoint);
+            i += Character.charCount(codepoint);
+        }
+        return builder.toString();
+    }
+
+    /**
+     * MINECRAFT_FORMATTED 模式换行（基准字号）：§ 格式码原样保留并跨行续传，
+     * 硬换行与软换行语义与旧内联实现逐位一致；调用方持 generation 锁。
+     */
+    private String wrapMinecraftStringToWidth(String text, int wrapWidth, TextStyle baseStyle) {
+        StringBuilder builder = new StringBuilder();
+        TextStyle currentStyle = baseStyle.copy();
+        double width = 0.0D;
+        boolean lineHasVisibleContent = false;
+
+        for (int i = 0; i < text.length(); ) {
+            int codepoint = text.codePointAt(i);
+            if (codepoint == '§' && i < text.length() - 1) {
+                builder.appendCodePoint(codepoint);
+                i += Character.charCount(codepoint);
+                char formatCode = text.charAt(i);
+                builder.append(formatCode);
+                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
+                i++;
+                continue;
+            }
+
+            if (codepoint == '\r' || codepoint == '\n') {
+                i += Character.charCount(codepoint);
+                if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
+                    i++;
+                }
+                builder.append('\n');
+                if (i < text.length()) {
+                    builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
+                }
+                width = 0.0D;
+                lineHasVisibleContent = false;
+                continue;
+            }
+
+            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
+            if (width + charWidth > wrapWidth && lineHasVisibleContent) {
+                builder.append('\n');
+                builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
+                width = 0.0D;
+                lineHasVisibleContent = false;
+            }
+            builder.appendCodePoint(codepoint);
+            width += charWidth;
+            lineHasVisibleContent = true;
+            i += Character.charCount(codepoint);
+        }
+        return builder.toString();
     }
 
     private String trimRawStringToWidth(String text, int targetWidth, TextStyle style) {
