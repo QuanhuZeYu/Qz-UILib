@@ -11,9 +11,10 @@ import club.heiqi.uilib.ui.scene.image.SceneImageRect;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
-import club.heiqi.uilib.ui.scene.text.SceneLineClamp;
+import club.heiqi.uilib.ui.scene.text.LinkHitRegion;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.SceneTextMode;
+import club.heiqi.uilib.ui.scene.text.TextLinePlan;
 import club.heiqi.uilib.ui.scene.text.TextLinkRegion;
 
 /**
@@ -299,32 +300,27 @@ public class ScenePaintEngine {
         // 有文本 → TEXT 命令（相对坐标，文字色读 node.getTextColor()，默认白零回归）
         // fontSize 直接读 node.getFontSize()（不再用 height 做 hack 回退）：
         // 字号是节点自有属性，与布局盒高度解耦，fill 文本节点不再炸 fontSize。
-        // 拆行统一走 measurer.splitLines：maxTextWidth>0 软换行，<=0 仍按硬换行（<br>/\n）
-        // 拆行（富文本感知：标签不占宽、样式跨行续传），每行一条 TEXT 命令。
+        // 拆行/clamp/行高/链接区域一次性行计划（审查报告 §8 B2-4）：布局缓存则复用，
+        // 防御（paint 先于 layout）时本地构建（不缓存）；每行一条 TEXT 命令。
         String text = node.getText();
         if (text != null && !text.isEmpty()) {
             int fontSize = node.getFontSize();
             SceneTextMode textMode = node.getTextMode();
             int wrapWidth = node.getMaxTextWidth();
-            List<String> lines = measurer.splitLines(text, fontSize, wrapWidth, textMode);
-            // maxLines 截断 + 可选省略号（与布局测量共用 SceneLineClamp，口径一致）
-            List<String> displayedLines = SceneLineClamp.clamp(lines, node.getMaxLines(), node.isEllipsis(),
-                    measurer, fontSize, wrapWidth, textMode);
-            int lineCount = displayedLines.size();
-            int[] lineHeights = new int[lineCount];
-            int totalHeight = 0;
-            for (int index = 0; index < lineCount; index++) {
-                int lineHeight = node.resolveLineHeight(
-                        measurer.lineHeight(displayedLines.get(index), fontSize, textMode));
-                lineHeights[index] = lineHeight;
-                totalHeight += lineHeight;
+            TextLinePlan plan = node.getCachedTextPlan();
+            if (plan == null) {
+                plan = TextLinePlan.build(measurer, text, fontSize, wrapWidth, textMode,
+                        node.getMaxLines(), node.isEllipsis(), node::resolveLineHeight);
             }
+            List<String> displayedLines = plan.getLines();
+            int[] lineHeights = plan.getLineHeights();
+            List<List<TextLinkRegion>> linkRegionsPerLine = plan.getLinkRegionsPerLine();
             // 行块总高恒为逐行行高累计（与布局 SizingCalculator.leafTextHeight 完全同口径，
             // 消灭历史「单行 em-box=fontSize / 多行行块累计」双口径切换导致的 1px 级漂移）。
-            int emHeight = totalHeight;
-            int textTop = calculateTextTop(node, box, emHeight);
+            int textTop = calculateTextTop(node, box, plan.getTotalHeight());
             int cursorY = textTop;
             int lineIndex = 0;
+            java.util.List<LinkHitRegion> hitRegions = new java.util.ArrayList<LinkHitRegion>();
             for (String line : displayedLines) {
                 TextStyle style = new TextStyle(node.getTextColor(), fontSize, textMode);
                 int textLeft = calculateTextLeft(node, box, fontSize, line);
@@ -332,8 +328,9 @@ public class ScenePaintEngine {
                 int lineBottom = cursorY + lineHeights[lineIndex];
                 // 链接命中区域：与 TEXT 同批产出（相对节点局部坐标），供控件层 CLICK 命中测试；
                 // 悬停命中的链接画半透明高亮背景（BACKGROUND 先于 TEXT 输出，垫在字形之下）。
+                // 同时投影强类型 LinkHitRegion 缓存于节点（命中数据正式化，B2-5）。
                 String activeLinkUrl = node.getActiveLinkUrl();
-                for (TextLinkRegion region : measurer.linkRegions(line, fontSize, textMode)) {
+                for (TextLinkRegion region : linkRegionsPerLine.get(lineIndex)) {
                     int regionLeft = textLeft + region.getStartX();
                     int regionRight = regionLeft + region.getWidth();
                     if (region.getUrl().equals(activeLinkUrl)) {
@@ -342,10 +339,13 @@ public class ScenePaintEngine {
                     }
                     out.add(PaintCommand.linkRegion(regionLeft, cursorY, regionRight, lineBottom,
                             region.getUrl()));
+                    hitRegions.add(new LinkHitRegion(regionLeft, cursorY, regionRight, lineBottom,
+                            region.getUrl()));
                 }
                 cursorY = lineBottom;
                 lineIndex++;
             }
+            node.setCachedLinkHitRegions(hitRegions);
         }
     }
 

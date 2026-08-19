@@ -1241,6 +1241,41 @@ public class ScenePaintEngineTest {
         Assert.assertEquals("AA...", texts.get(0).getText());
     }
 
+    /**
+     * 命中数据正式化（审查报告 §8 B2-5）：paint 后节点缓存强类型 LinkHitRegion，
+     * 与 LINK_REGION 命令逐位一致（坐标 + URL）。
+     */
+    @Test
+    public void paintShouldProjectLinkHitRegionCache() {
+        SplitMeasurer measurer = new SplitMeasurer();
+        measurer.nextLinkRegions.add(new club.heiqi.uilib.ui.scene.text.TextLinkRegion(8, 16, "https://a.b"));
+        ScenePaintEngine engine = new ScenePaintEngine(measurer);
+
+        SceneNode node = new SceneNode();
+        node.setText("AAAABBBB");
+        node.setMaxTextWidth(40);
+        node.setCachedLayout(new LayoutBox(0, 0, 100, 40));
+
+        PaintPlan plan = engine.paint(node).getPlan();
+        java.util.List<club.heiqi.uilib.ui.scene.text.LinkHitRegion> cached = node.getCachedLinkHitRegions();
+        Assert.assertNotNull("paint 后应有命中区域缓存", cached);
+
+        java.util.List<PaintCommand> linkCommands = new java.util.ArrayList<PaintCommand>();
+        for (PaintCommand cmd : plan.getCommands()) {
+            if (cmd.getType() == PaintCommandType.LINK_REGION) {
+                linkCommands.add(cmd);
+            }
+        }
+        Assert.assertEquals("命中缓存与 LINK_REGION 命令同数", linkCommands.size(), cached.size());
+        for (int i = 0; i < linkCommands.size(); i++) {
+            Assert.assertEquals(linkCommands.get(i).getLeft(), cached.get(i).getLeft());
+            Assert.assertEquals(linkCommands.get(i).getTop(), cached.get(i).getTop());
+            Assert.assertEquals(linkCommands.get(i).getRight(), cached.get(i).getRight());
+            Assert.assertEquals(linkCommands.get(i).getBottom(), cached.get(i).getBottom());
+            Assert.assertEquals(linkCommands.get(i).getLinkUrl(), cached.get(i).getUrl());
+        }
+    }
+
     @Test
     public void shouldEmitLinkRegionCommands() {
         SplitMeasurer measurer = new SplitMeasurer();

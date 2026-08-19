@@ -82,8 +82,9 @@ public class ScenePaintRichModeTest {
             }
         }
         Assert.assertEquals(1, textCommandCount);
-        // 非 wrap 也委托 splitLines（wrapWidth=0）：布局测量与绘制各一次，硬换行拆行、无换行保持单行
-        Assert.assertEquals(2, measurer.callCount);
+        // 非 wrap 也委托 splitLines（wrapWidth=0）：硬换行拆行、无换行保持单行。
+        // 一次性行计划（审查报告 §8 B2-4）后拆行只在布局阶段执行一次，绘制消费缓存。
+        Assert.assertEquals(1, measurer.callCount);
         Assert.assertEquals(0, measurer.lastWrapWidth);
     }
 

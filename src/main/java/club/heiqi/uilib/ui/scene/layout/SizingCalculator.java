@@ -4,9 +4,8 @@ import java.util.List;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.text.SceneLineClamp;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.SceneTextMode;
+import club.heiqi.uilib.ui.scene.text.TextLinePlan;
 
 /**
  * 尺寸计算器 —— scene 布局算法的纯读函数集（阶段 4.1 从 SceneLayoutEngine 拆出）。
@@ -507,19 +506,12 @@ class SizingCalculator {
         if (text == null || text.isEmpty()) {
             return 0;
         }
-        int fontSizePx = node.getFontSize();
-        int wrapWidth = node.getMaxTextWidth();
-        SceneTextMode textMode = node.getTextMode();
-        // 拆行（wrap 软换行 / 非 wrap 硬换行）后经 SceneLineClamp 截断（maxLines + 省略号），
-        // 与绘制同口径；逐行行高求和（RAW/MINECRAFT 每行同高，富文本每行按行内最大显式字号）。
-        List<String> lines = measurer.splitLines(text, fontSizePx, wrapWidth > 0 ? wrapWidth : 0, textMode);
-        List<String> clamped = SceneLineClamp.clamp(lines, node.getMaxLines(), node.isEllipsis(),
-                measurer, fontSizePx, wrapWidth, textMode);
-        int total = 0;
-        for (String line : clamped) {
-            total += node.resolveLineHeight(measurer.lineHeight(line, fontSizePx, textMode));
-        }
-        return total;
+        // 一次性行计划（审查报告 §8 B2-4）：拆行 + clamp + 逐行行高 + 链接区域在布局阶段
+        // 一次产出并缓存于节点，绘制阶段消费；本方法只取行块总高。
+        TextLinePlan plan = TextLinePlan.build(measurer, text, node.getFontSize(), node.getMaxTextWidth(),
+                node.getTextMode(), node.getMaxLines(), node.isEllipsis(), node::resolveLineHeight);
+        node.setCachedTextPlan(plan);
+        return plan.getTotalHeight();
     }
 
     int countLines(String text) {

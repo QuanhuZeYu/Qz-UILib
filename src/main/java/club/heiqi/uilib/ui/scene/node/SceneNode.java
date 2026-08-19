@@ -123,6 +123,14 @@ public class SceneNode {
     /** 绘制结果缓存，无效时为 null */
     Object cachedPaint;
 
+    /** 文本行计划缓存（布局引擎写入、绘制引擎消费，同 cachedLayout 生命周期；
+     *  <b>强类型</b>：拆行/clamp/行高/链接区域一次性产物的权威副本，审查报告 §8 B2-4）。 */
+    private club.heiqi.uilib.ui.scene.text.TextLinePlan cachedTextPlan;
+
+    /** 链接命中区域缓存（绘制引擎投影写入、控件层命中测试读取，同 cachedPaint 生命周期；
+     *  <b>强类型</b>：命中数据正式化载体，审查报告 §8 B2-5）。 */
+    private java.util.List<club.heiqi.uilib.ui.scene.text.LinkHitRegion> cachedLinkHitRegions;
+
     /** 上一次 layoutInternal 传入本节点的约束快照。null=从未布局过。
      *  仅布局引擎读写,作为「约束变更」这一自身布局输入的订阅缓存。
      *  语义类比引擎的 lastRootConstraints,但下放到每个节点,使深层节点
@@ -444,6 +452,27 @@ public class SceneNode {
     /** @param cachedPaint 绘制缓存值 */
     public SceneNode setCachedPaint(Object cachedPaint) {
         this.cachedPaint = cachedPaint;
+        return this;
+    }
+
+    /** @return 文本行计划缓存，可能为 null（布局后写入） */
+    public club.heiqi.uilib.ui.scene.text.TextLinePlan getCachedTextPlan() { return cachedTextPlan; }
+
+    /** @param cachedTextPlan 文本行计划缓存值（布局引擎写入） */
+    public SceneNode setCachedTextPlan(club.heiqi.uilib.ui.scene.text.TextLinePlan cachedTextPlan) {
+        this.cachedTextPlan = cachedTextPlan;
+        return this;
+    }
+
+    /** @return 链接命中区域缓存，可能为 null（绘制后写入） */
+    public java.util.List<club.heiqi.uilib.ui.scene.text.LinkHitRegion> getCachedLinkHitRegions() {
+        return cachedLinkHitRegions;
+    }
+
+    /** @param cachedLinkHitRegions 链接命中区域缓存值（绘制引擎写入） */
+    public SceneNode setCachedLinkHitRegions(
+            java.util.List<club.heiqi.uilib.ui.scene.text.LinkHitRegion> cachedLinkHitRegions) {
+        this.cachedLinkHitRegions = cachedLinkHitRegions;
         return this;
     }
 

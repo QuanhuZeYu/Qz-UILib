@@ -11,12 +11,10 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
-import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
-import club.heiqi.uilib.ui.scene.paint.PaintFragment;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.TextStyle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.text.LinkHitRegion;
 import club.heiqi.uilib.ui.scene.text.SceneTextMode;
 
 /**
@@ -375,8 +373,8 @@ public final class SceneLabel {
             if (props.onLinkClick() != null) {
                 root.setHitTestable(true);
                 root.setCursor(SceneCursor.DEFAULT);
-                // 链接命中（点击/悬停共用）：读当前 fragment 的 LINK_REGION 命令（相对节点局部坐标，
-                // 与 ctx 的 localPointer 同坐标系），矩形包含判定。
+                // 链接命中（点击/悬停共用）：读绘制引擎投影的强类型 LinkHitRegion 缓存
+                // （相对节点局部坐标，与 ctx 的 localPointer 同坐标系），矩形包含判定。
                 rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
                     String url = hitLinkUrl(root, ctx.getLocalPointerX(), ctx.getLocalPointerY());
                     if (url != null) {
@@ -404,23 +402,24 @@ public final class SceneLabel {
     }
 
     /**
-     * 命中测试：返回包含 (localX, localY) 的链接区域 URL。
+     * 命中测试：返回包含 (localX, localY) 的链接区域 URL（命中数据正式化，审查报告 §8 B2-5）。
      *
-     * @param root   标签根节点（其 fragment 含 LINK_REGION 命令）
+     * <p>数据源为绘制引擎投影缓存的强类型 {@link LinkHitRegion} 列表，
+     * 不再强转 PaintFragment 遍历绘制命令流。</p>
+     *
+     * @param root   标签根节点（绘制后持有 link 命中区域缓存）
      * @param localX 指针相对节点局部的 X
      * @param localY 指针相对节点局部的 Y
      * @return 命中链接 URL；未命中返回 null
      */
     private static String hitLinkUrl(SceneNode root, int localX, int localY) {
-        Object cached = root.getCachedPaint();
-        if (!(cached instanceof PaintFragment)) {
+        java.util.List<LinkHitRegion> regions = root.getCachedLinkHitRegions();
+        if (regions == null) {
             return null;
         }
-        for (PaintCommand cmd : ((PaintFragment) cached).getCommands()) {
-            if (cmd.getType() == PaintCommandType.LINK_REGION
-                    && localX >= cmd.getLeft() && localX < cmd.getRight()
-                    && localY >= cmd.getTop() && localY < cmd.getBottom()) {
-                return cmd.getLinkUrl();
+        for (LinkHitRegion region : regions) {
+            if (region.contains(localX, localY)) {
+                return region.getUrl();
             }
         }
         return null;
