@@ -308,15 +308,16 @@ public class ScenePaintEngine {
             int[] lineHeights = new int[lineCount];
             int totalHeight = 0;
             boolean hasOversizedLine = false;
+            boolean hasExplicitLineHeight = node.getLineHeightMultiplier() > 0.0D || node.getLineHeightPx() > 0;
             for (int index = 0; index < lineCount; index++) {
-                int lineHeight = measurer.lineHeight(lines.get(index), fontSize, textMode);
+                int lineHeight = node.resolveLineHeight(measurer.lineHeight(lines.get(index), fontSize, textMode));
                 lineHeights[index] = lineHeight;
                 totalHeight += lineHeight;
                 hasOversizedLine |= lineHeight > baseLineHeight;
             }
-            // 单行且无显式大字段：保持 em-box=fontSize 的旧对齐（零回归）；
-            // 多行或混排行：块高按逐行行高累计，混排行距与大字行高生效（大字不再侵入下行）。
-            int emHeight = (lineCount <= 1 && !hasOversizedLine) ? fontSize : totalHeight;
+            // 单行且无显式大字段且无显式行距：保持 em-box=fontSize 的旧对齐（零回归）；
+            // 多行、混排行或显式行距：块高按逐行行高累计（行距放大/压缩与大字行高生效）。
+            int emHeight = (lineCount <= 1 && !hasOversizedLine && !hasExplicitLineHeight) ? fontSize : totalHeight;
             int textTop = calculateTextTop(node, box, emHeight);
             int cursorY = textTop;
             int lineIndex = 0;

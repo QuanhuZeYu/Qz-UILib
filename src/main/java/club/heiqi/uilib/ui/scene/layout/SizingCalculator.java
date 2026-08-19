@@ -511,16 +511,16 @@ class SizingCalculator {
         if (wrapWidth > 0) {
             int total = 0;
             for (String line : measurer.splitLines(text, fontSizePx, wrapWidth, textMode)) {
-                total += measurer.lineHeight(line, fontSizePx, textMode);
+                total += node.resolveLineHeight(measurer.lineHeight(line, fontSizePx, textMode));
             }
             return total;
         }
         if (textMode == 2) {
             // 2 = TextStyle.TEXT_MODE_RICH_TAGS（layout 不反向依赖 paint，见 SceneNode javadoc）：
             // 非 wrap 富文本按行内最大显式字号的行高（大字 span 撑高所在行）。
-            return measurer.lineHeight(text, fontSizePx, textMode);
+            return node.resolveLineHeight(measurer.lineHeight(text, fontSizePx, textMode));
         }
-        return countLines(text) * measurer.lineHeight(fontSizePx);
+        return countLines(text) * node.resolveLineHeight(measurer.lineHeight(fontSizePx));
     }
 
     int countLines(String text) {

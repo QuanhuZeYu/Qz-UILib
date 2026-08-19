@@ -58,6 +58,65 @@ public class SceneLayoutWrapTextTest {
     }
 
     @Test
+    public void shouldApplyLineHeightMultiplierToWrapLines() {
+        WrapMeasurer measurer = new WrapMeasurer();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("AAAABBBBB");
+        textNode.setMaxTextWidth(40);
+        textNode.setLineHeightMultiplier(2.0D);
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(200, 200));
+
+        LayoutBox box = (LayoutBox) textNode.getCachedLayout();
+        Assert.assertNotNull(box);
+        // 每行自动行高 ×2 后求和：16×2 + 24×2 = 80
+        Assert.assertEquals(80, box.getHeight());
+    }
+
+    @Test
+    public void shouldApplyLineHeightPxToNonWrapLines() {
+        WrapMeasurer measurer = new WrapMeasurer();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("a\nb");
+        textNode.setLineHeightPx(20);
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(200, 200));
+
+        LayoutBox box = (LayoutBox) textNode.getCachedLayout();
+        Assert.assertNotNull(box);
+        // 非 wrap：逻辑行数 2 × 绝对行高 20 = 40
+        Assert.assertEquals(40, box.getHeight());
+    }
+
+    @Test
+    public void shouldApplyMultiplierToNonWrapRichText() {
+        WrapMeasurer measurer = new WrapMeasurer();
+        SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
+
+        SceneNode root = new SceneNode();
+        SceneNode textNode = new SceneNode();
+        textNode.setText("A<size=32>x</size>");
+        textNode.setTextContentMode(2);
+        textNode.setLineHeightMultiplier(1.5D);
+        root.appendChild(textNode);
+
+        layoutEngine.layout(root, new Constraints(200, 200));
+
+        LayoutBox box = (LayoutBox) textNode.getCachedLayout();
+        Assert.assertNotNull(box);
+        // 非 wrap 富文本：最大字号行高 30 × 1.5 = 45
+        Assert.assertEquals(45, box.getHeight());
+    }
+
+    @Test
     public void shouldSizeNonWrapRichTextByMaxSpanLineHeight() {
         WrapMeasurer measurer = new WrapMeasurer();
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);

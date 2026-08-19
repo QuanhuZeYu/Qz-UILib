@@ -48,6 +48,57 @@ public class SceneNodeTest {
         // 每个测试前无需特殊初始化
     }
 
+    // ==================== 测试：行距属性解析 ====================
+
+    @Test
+    public void shouldResolveExplicitLineHeight() {
+        SceneNode node = new SceneNode();
+
+        // 未设置：自动行高直通
+        Assert.assertEquals(16, node.resolveLineHeight(16));
+
+        // 倍数：ceil(16 × 1.5) = 24
+        node.setLineHeightMultiplier(1.5D);
+        Assert.assertEquals(24, node.resolveLineHeight(16));
+
+        // 绝对行高（倍数清 0 后生效），可压缩
+        node.setLineHeightMultiplier(0.0D);
+        node.setLineHeightPx(12);
+        Assert.assertEquals(12, node.resolveLineHeight(16));
+
+        // 倍数优先于绝对行高
+        node.setLineHeightMultiplier(2.0D);
+        Assert.assertEquals(32, node.resolveLineHeight(16));
+    }
+
+    @Test
+    public void shouldNormalizeNegativeLineHeightInputs() {
+        SceneNode node = new SceneNode();
+
+        node.setLineHeightPx(-5);
+        node.setLineHeightMultiplier(-1.5D);
+
+        Assert.assertEquals(0, node.getLineHeightPx());
+        Assert.assertEquals(0.0D, node.getLineHeightMultiplier(), 0.001D);
+        Assert.assertEquals(16, node.resolveLineHeight(16));
+    }
+
+    @Test
+    public void shouldMarkLayoutAndPaintOnLineHeightChange() {
+        SceneNode root = new SceneNode();
+        SceneNode child = new SceneNode();
+        root.appendChild(child);
+        flushAll(root);
+
+        child.setLineHeightMultiplier(1.5D);
+
+        Assert.assertTrue("child selfLayout", child.__isSelfLayoutDirty());
+        Assert.assertTrue("child selfPaint", child.__isSelfPaintDirty());
+        Assert.assertTrue("root descendantLayout", root.__isDescendantLayoutDirty());
+        Assert.assertTrue("root descendantPaint", root.__isDescendantPaintDirty());
+        Assert.assertFalse("root selfLayout", root.__isSelfLayoutDirty());
+    }
+
     // ==================== 测试 1：属性变化只标自身和祖先路径（I7 根除铁证之一） ====================
 
     /**

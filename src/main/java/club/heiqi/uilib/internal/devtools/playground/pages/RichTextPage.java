@@ -76,7 +76,7 @@ public final class RichTextPage implements PlaygroundPage {
                             + "<b>加粗片段</b>横跨换行边界，样式在换行前后保持一致。</color>"
                             + "换行宽度 320 像素，标签本身不占任何测量宽度。"),
                     PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320)).get();
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0)).get();
             sizeCard.appendChild(wrapDemo);
             root.appendChild(sizeCard);
 
@@ -108,7 +108,7 @@ public final class RichTextPage implements PlaygroundPage {
             liveCard.appendChild(ops);
             liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
                     demoText, PlaygroundKit.TEXT, 15, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320)).get());
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0)).get());
             root.appendChild(liveCard);
             return root;
         };

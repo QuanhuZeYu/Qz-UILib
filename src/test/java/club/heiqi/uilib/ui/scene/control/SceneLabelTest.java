@@ -102,7 +102,7 @@ public class SceneLabelTest {
     public void shouldAssembleRichTextNodeWithWrap() {
         textSignal = Signal.create("<color=red>富<b>文本</b></color>");
         mountLabel(new SceneLabel.Props(textSignal, 0xFFFFFFFF, 18, TextStyle.TEXT_MODE_RICH_TAGS,
-                TextHorizontalAlign.CENTER, TextVerticalAlign.CENTER, 80));
+                TextHorizontalAlign.CENTER, TextVerticalAlign.CENTER, 80, 0.0D, 0));
 
         Assert.assertEquals(0xFFFFFFFF, labelRoot.getTextColor());
         Assert.assertEquals(18, labelRoot.getFontSize());
@@ -141,5 +141,17 @@ public class SceneLabelTest {
 
         // 组件只建单节点树（无子节点），样式全部落在根节点
         Assert.assertEquals(0, children.size());
+    }
+
+    @Test
+    public void shouldApplyLineHeightPropsToNode() {
+        textSignal = Signal.create("x");
+        SceneLabel.Props props = new SceneLabel.Props(textSignal, 0xFFFFFFFF, 16,
+                TextStyle.TEXT_MODE_UILIB_RAW, TextHorizontalAlign.LEFT, TextVerticalAlign.TOP,
+                0, 1.5D, 24);
+        mountLabel(props);
+
+        Assert.assertEquals(1.5D, labelRoot.getLineHeightMultiplier(), 0.001D);
+        Assert.assertEquals(24, labelRoot.getLineHeightPx());
     }
 }

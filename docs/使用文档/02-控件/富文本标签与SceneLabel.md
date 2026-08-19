@@ -21,6 +21,15 @@ parent.appendChild(label);
 组件形态与 scene 栈其它控件一致：纯静态工厂 + record Props + 组件函数（契约 R1/R2/I3），
 文本经 signal 驱动；节点不可命中（`hitTestable=false`），不拦截任何输入。
 
+显式行距（可选，默认自动行高 = 行内最大字号对应行高）：
+
+```java
+// lineHeightMultiplier：行高 = 自动行高 × 倍数（向上取整，优先于绝对行高）
+new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 1.5D, 0);
+// lineHeightPx：绝对行高（UI 像素），倍数未设置（0）时生效，可压缩行距
+new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 0.0D, 24);
+```
+
 ## 标签语法
 
 | 标签 | 语义 | 示例 |
@@ -62,6 +71,8 @@ parent.appendChild(label);
 - **混排行高**：行高按行内最大显式字号计算（`<size>` 大字段撑高所在行），多行逐行累计；
   wrap 场景布局高度与绘制行距同口径（大字不再侵入相邻行）。
 - **`<br>` 与裸换行符**：富文本模式下统一折叠为换行标记（零宽，不产生字形）。
+- **显式行距**：Props 可选 `lineHeightMultiplier`（倍数，优先）与 `lineHeightPx`（绝对像素，可压缩）；
+  作用于每一行（含单行 em-box），布局高度与绘制行距同口径（均经 `SceneNode.resolveLineHeight`）。
 
 ## 限制（首版）
 

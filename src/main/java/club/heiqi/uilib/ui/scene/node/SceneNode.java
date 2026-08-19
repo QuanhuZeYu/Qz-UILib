@@ -150,6 +150,12 @@ public class SceneNode {
     /** 最大换行宽度（UI 像素），<=0 表示不换行 */
     private int maxTextWidth = 0;
 
+    /** 行距倍数（0=未设置，自动行高；>0 时行高 = 自动行高 × 倍数），优先于 {@link #lineHeightPx} */
+    private double lineHeightMultiplier = 0.0D;
+
+    /** 绝对行高（UI 像素，0=未设置，自动行高），仅在 {@link #lineHeightMultiplier} 未设置时生效 */
+    private int lineHeightPx = 0;
+
     /** 绘制/合成属性值容器。去重与脏标记仍由 SceneNode setter 负责。 */
     private final ScenePaintProps paintProps = new ScenePaintProps();
 
@@ -497,6 +503,68 @@ public class SceneNode {
 
     /** @return 最大换行宽度（UI 像素），{@code <=0} 表示不换行 */
     public int getMaxTextWidth() { return maxTextWidth; }
+
+    /**
+     * 设置行距倍数（0=自动行高）；变化时标 LAYOUT + PAINT。
+     *
+     * <p>行高 = 自动行高（行内最大字号对应行高）× 倍数，向上取整到像素；
+     * 设置后优先于 {@link #setLineHeightPx}。</p>
+     *
+     * @param lineHeightMultiplier 行距倍数，负值归 0
+     */
+    public SceneNode setLineHeightMultiplier(double lineHeightMultiplier) {
+        double normalized = lineHeightMultiplier < 0.0D ? 0.0D : lineHeightMultiplier;
+        if (this.lineHeightMultiplier == normalized) {
+            return this;
+        }
+        this.lineHeightMultiplier = normalized;
+        markSelfLayout();
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 行距倍数（0=自动行高） */
+    public double getLineHeightMultiplier() { return lineHeightMultiplier; }
+
+    /**
+     * 设置绝对行高（UI 像素，0=自动行高）；变化时标 LAYOUT + PAINT。
+     *
+     * <p>仅当行距倍数未设置时生效；小于自动行高时压缩行距。</p>
+     *
+     * @param lineHeightPx 绝对行高，负值归 0
+     */
+    public SceneNode setLineHeightPx(int lineHeightPx) {
+        int normalized = Math.max(0, lineHeightPx);
+        if (this.lineHeightPx == normalized) {
+            return this;
+        }
+        this.lineHeightPx = normalized;
+        markSelfLayout();
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 绝对行高（UI 像素，0=自动行高） */
+    public int getLineHeightPx() { return lineHeightPx; }
+
+    /**
+     * 按节点显式行距设置解析最终行高（UI 像素，至少 1）。
+     *
+     * <p>优先级：行距倍数 &gt; 0 时按 {@code ceil(base × 倍数)}；否则绝对行高 &gt; 0 时取绝对行高；
+     * 均未设置返回 base（自动行高）。绘制与布局共用本方法，保证同口径。</p>
+     *
+     * @param baseLineHeight 自动行高（行内最大字号对应行高，UI 像素）
+     * @return 最终行高（UI 像素）
+     */
+    public int resolveLineHeight(int baseLineHeight) {
+        if (lineHeightMultiplier > 0.0D) {
+            return Math.max(1, (int) Math.ceil(baseLineHeight * lineHeightMultiplier));
+        }
+        if (lineHeightPx > 0) {
+            return Math.max(1, lineHeightPx);
+        }
+        return baseLineHeight;
+    }
 
     /** 设置字号；变化时标 LAYOUT + PAINT。 */
     public SceneNode setFontSize(int fontSizePx) {

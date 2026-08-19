@@ -53,6 +53,8 @@ public final class SceneLabel {
      * @param horizontalAlign 水平对齐
      * @param verticalAlign   垂直对齐
      * @param wrapWidth       最大换行宽度（UI 像素），{@code <=0} 不换行
+     * @param lineHeightMultiplier 行距倍数（0=自动行高，&gt;0 时行高 = 自动行高 × 倍数，优先于绝对行高）
+     * @param lineHeightPx    绝对行高（UI 像素，0=自动行高，倍数未设置时生效）
      */
     @Desugar
     public record Props(
@@ -62,30 +64,32 @@ public final class SceneLabel {
         int contentMode,
         TextHorizontalAlign horizontalAlign,
         TextVerticalAlign verticalAlign,
-        int wrapWidth
+        int wrapWidth,
+        double lineHeightMultiplier,
+        int lineHeightPx
     ) {
         /** 默认样式：主文本色 + 默认字号 + 原始文本模式 + 左上对齐 + 不换行。 */
         public Props(ReadableSignal<String> text) {
             this(text, SceneChromeTokens.TEXT_PRIMARY, DEFAULT_FONT_SIZE_PX, TextStyle.TEXT_MODE_UILIB_RAW,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0);
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0);
         }
 
         /** 指定颜色与字号的原始文本标签。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx) {
             this(text, color, fontSizePx, TextStyle.TEXT_MODE_UILIB_RAW,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0);
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0);
         }
 
         /** 指定颜色、字号与内容模式的标签。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx, int contentMode) {
             this(text, color, fontSizePx, contentMode,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0);
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0);
         }
 
         /** 指定颜色、字号、内容模式与换行宽度的标签。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx, int contentMode, int wrapWidth) {
             this(text, color, fontSizePx, contentMode,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth);
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth, 0.0D, 0);
         }
     }
 
@@ -109,6 +113,8 @@ public final class SceneLabel {
             root.setTextHorizontalAlign(props.horizontalAlign());
             root.setTextVerticalAlign(props.verticalAlign());
             root.setMaxTextWidth(props.wrapWidth());
+            root.setLineHeightMultiplier(props.lineHeightMultiplier());
+            root.setLineHeightPx(props.lineHeightPx());
             rt.bindText(root, props.text());
             return root;
         };

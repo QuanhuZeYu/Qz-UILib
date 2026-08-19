@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.paint;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.Test;
@@ -17,6 +18,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.testkit.ScenePaintCapture;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * ScenePaintEngine + ScenePaintReplayer 单元测试。
@@ -1162,6 +1164,78 @@ public class ScenePaintEngineTest {
         PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
         return textCmd;
+    }
+
+    @Test
+    public void shouldStepMultiLineTextByResolvedLineHeights() {
+        SplitMeasurer measurer = new SplitMeasurer();
+        ScenePaintEngine engine = new ScenePaintEngine(measurer);
+
+        SceneNode node = new SceneNode();
+        node.setText("AAAABBBB");
+        node.setMaxTextWidth(40);
+        node.setLineHeightMultiplier(2.0D);
+        node.setCachedLayout(new LayoutBox(0, 0, 100, 80));
+
+        PaintPlan plan = engine.paint(node).getPlan();
+        List<PaintCommand> texts = new ArrayList<PaintCommand>();
+        for (PaintCommand cmd : plan.getCommands()) {
+            if (cmd.getType() == PaintCommandType.TEXT) {
+                texts.add(cmd);
+            }
+        }
+
+        // 两行各一条 TEXT：行高 16×2=32、24×2=48，emHeight=80，TOP 对齐 textTop=0
+        Assert.assertEquals(2, texts.size());
+        Assert.assertEquals(0, texts.get(0).getTop());
+        Assert.assertEquals(32, texts.get(1).getTop());
+    }
+
+    @Test
+    public void shouldCenterSingleLineWithExplicitLineHeight() {
+        SceneNode node = new SceneNode();
+        node.setText("Hi");
+        node.setLineHeightPx(20);
+        node.setTextVerticalAlign(TextVerticalAlign.CENTER);
+        node.setCachedLayout(new LayoutBox(0, 0, 100, 40));
+
+        PaintPlan plan = paintEngine.paint(node).getPlan();
+        PaintCommand textCmd = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("应有 TEXT 命令", textCmd);
+
+        // 显式行高 20 → emHeight=20 → CENTER textTop = (40-20)/2 = 10
+        Assert.assertEquals(10, textCmd.getTop());
+    }
+
+    /** wrap + 行高可编程测量替身：splitLines 固定拆两行，行高按行文本定制。 */
+    private static final class SplitMeasurer implements SceneTextMeasurer {
+
+        private final FixedTextMeasurer delegate = new FixedTextMeasurer();
+
+        @Override
+        public int measureWidth(String text, int fontSizePx) {
+            return delegate.measureWidth(text, fontSizePx);
+        }
+
+        @Override
+        public int lineHeight(int fontSizePx) {
+            return delegate.lineHeight(fontSizePx);
+        }
+
+        @Override
+        public int epoch() {
+            return delegate.epoch();
+        }
+
+        @Override
+        public List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
+            return Arrays.asList("AAAA", "BBBB");
+        }
+
+        @Override
+        public int lineHeight(String text, int fontSizePx, int textMode) {
+            return "BBBB".equals(text) ? 24 : 16;
+        }
     }
 
     private static int indexOfType(List<PaintCommand> cmds, PaintCommandType type) {
