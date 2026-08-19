@@ -196,6 +196,13 @@ public class SceneInputRouter {
 
             // 指针主体：隐式聚焦/失焦 + effectiveTarget 判定 + 派发 + 按压捕获 + CLICK 合成
             dispatchPointerMain(pe, type, canvasX, canvasY, hitResult, rootAbsX, rootAbsY);
+
+            // MOVE 派发后重解析光标：事件 handler 可能在 MOVE 中动态改写 cursor 声明
+            // （如链接命中切手型），而上方的 hover 更新只在节点切换时写 cursorSignal；
+            // 静止悬停时不再有 MOVE 事件，必须同帧补写才能生效（值不变时信号去重零开销）。
+            if (type == SceneEventType.POINTER_MOVE) {
+                cursorSignal.set(SceneCursorResolver.resolve(hoveredNode));
+            }
         }
 
         // === I4a 键盘/文本分发（指针循环结束之后，先 text 后 key，用户拍板 D4-A） ===

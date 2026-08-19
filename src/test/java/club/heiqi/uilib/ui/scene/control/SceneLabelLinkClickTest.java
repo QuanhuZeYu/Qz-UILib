@@ -68,14 +68,17 @@ public class SceneLabelLinkClickTest {
         new ScenePaintEngine(measurer).paint(sceneRoot);
 
         // 悬停命中链接区域 → activeLinkUrl 写入（绘制层据此画高亮背景）+ 光标切手型
+        // （全局 cursorSignal 同帧生效：router 在 MOVE 派发后重解析光标声明）
         harness.moveAt(16, 8);
         Assert.assertEquals("https://a.b", labelRoot.getActiveLinkUrl());
         Assert.assertEquals(SceneCursor.POINTER, labelRoot.getCursor());
+        Assert.assertEquals(SceneCursor.POINTER, rt.cursorSignal().get());
 
         // 移出链接区域（仍在节点内）→ 清空并恢复默认光标
         harness.moveAt(60, 8);
         Assert.assertNull(labelRoot.getActiveLinkUrl());
         Assert.assertEquals(SceneCursor.DEFAULT, labelRoot.getCursor());
+        Assert.assertEquals(SceneCursor.DEFAULT, rt.cursorSignal().get());
     }
 
     @Test
