@@ -79,6 +79,15 @@ public final class FixedTextMeasurer implements SceneTextMeasurer {
         return epoch;
     }
 
+    @Override
+    public java.util.List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
+        if (wrapWidth > 0) {
+            return java.util.Collections.singletonList(text == null ? "" : text);
+        }
+        // 非 wrap：按硬换行拆行（对齐真实 adapter 语义），供多行高度/绘制断言
+        return java.util.Arrays.asList((text == null ? "" : text).split("\n"));
+    }
+
     /**
      * 设置当前纪元（直接覆盖）。
      *

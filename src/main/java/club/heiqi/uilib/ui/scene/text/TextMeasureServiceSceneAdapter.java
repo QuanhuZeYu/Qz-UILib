@@ -67,10 +67,10 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     @Override
     public java.util.List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
         String safeText = text == null ? "" : text;
-        if (wrapWidth <= 0) {
-            return java.util.Collections.singletonList(safeText);
-        }
-        return textMeasureService.listFormattedStringToWidth(safeText, wrapWidth, mapTextMode(textMode));
+        // 非 wrap（wrapWidth<=0）同样按硬换行拆行：无限宽下软换行不触发，
+        // 硬换行经 wrap 重建保证样式跨行续传（<br>/\n 不再被渲染层吞掉）。
+        int effectiveWrapWidth = wrapWidth <= 0 ? Integer.MAX_VALUE : wrapWidth;
+        return textMeasureService.listFormattedStringToWidth(safeText, effectiveWrapWidth, mapTextMode(textMode));
     }
 
     @Override

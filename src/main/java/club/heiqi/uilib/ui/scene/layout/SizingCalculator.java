@@ -515,12 +515,13 @@ class SizingCalculator {
             }
             return total;
         }
-        if (textMode == 2) {
-            // 2 = TextStyle.TEXT_MODE_RICH_TAGS（layout 不反向依赖 paint，见 SceneNode javadoc）：
-            // 非 wrap 富文本按行内最大显式字号的行高（大字 span 撑高所在行）。
-            return node.resolveLineHeight(measurer.lineHeight(text, fontSizePx, textMode));
+        // 非 wrap：仍按硬换行拆行、逐行行高求和（与绘制同口径）。RAW/MINECRAFT 每行同高，
+        // 等价旧 countLines 口径；富文本每行按行内最大显式字号（大字 span 撑高所在行）。
+        int total = 0;
+        for (String line : measurer.splitLines(text, fontSizePx, 0, textMode)) {
+            total += node.resolveLineHeight(measurer.lineHeight(line, fontSizePx, textMode));
         }
-        return countLines(text) * node.resolveLineHeight(measurer.lineHeight(fontSizePx));
+        return total;
     }
 
     int countLines(String text) {

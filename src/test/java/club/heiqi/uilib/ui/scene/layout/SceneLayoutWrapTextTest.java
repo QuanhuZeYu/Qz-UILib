@@ -183,7 +183,11 @@ public class SceneLayoutWrapTextTest {
 
         @Override
         public List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
-            return Arrays.asList("AAAA", "BB");
+            if (wrapWidth > 0) {
+                return Arrays.asList("AAAA", "BB");
+            }
+            // 非 wrap：按硬换行拆行（对齐真实 adapter 语义）
+            return Arrays.asList((text == null ? "" : text).split("\n"));
         }
 
         @Override

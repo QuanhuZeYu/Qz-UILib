@@ -1192,6 +1192,29 @@ public class ScenePaintEngineTest {
     }
 
     @Test
+    public void shouldSplitHardLineBreaksWithoutWrap() {
+        SplitMeasurer measurer = new SplitMeasurer();
+        ScenePaintEngine engine = new ScenePaintEngine(measurer);
+
+        SceneNode node = new SceneNode();
+        node.setText("A\nB");
+        node.setCachedLayout(new LayoutBox(0, 0, 100, 40));
+
+        PaintPlan plan = engine.paint(node).getPlan();
+        List<PaintCommand> texts = new ArrayList<PaintCommand>();
+        for (PaintCommand cmd : plan.getCommands()) {
+            if (cmd.getType() == PaintCommandType.TEXT) {
+                texts.add(cmd);
+            }
+        }
+
+        // 非 wrap 仍按硬换行拆两条 TEXT 命令，逐行步进（16、24）
+        Assert.assertEquals(2, texts.size());
+        Assert.assertEquals(0, texts.get(0).getTop());
+        Assert.assertEquals(16, texts.get(1).getTop());
+    }
+
+    @Test
     public void shouldCenterSingleLineWithExplicitLineHeight() {
         SceneNode node = new SceneNode();
         node.setText("Hi");

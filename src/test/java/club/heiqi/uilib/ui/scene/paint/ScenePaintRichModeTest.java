@@ -82,7 +82,9 @@ public class ScenePaintRichModeTest {
             }
         }
         Assert.assertEquals(1, textCommandCount);
-        Assert.assertEquals(0, measurer.callCount);
+        // 非 wrap 也委托 splitLines（wrapWidth=0）：布局测量与绘制各一次，硬换行拆行、无换行保持单行
+        Assert.assertEquals(2, measurer.callCount);
+        Assert.assertEquals(0, measurer.lastWrapWidth);
     }
 
     @Test
@@ -243,7 +245,14 @@ public class ScenePaintRichModeTest {
             lastWrapWidth = wrapWidth;
             lastTextMode = textMode;
             callCount++;
-            return new ArrayList<String>(nextLines);
+            if (!nextLines.isEmpty()) {
+                return new ArrayList<String>(nextLines);
+            }
+            // 非预置：非 wrap 按硬换行拆行（对齐真实 adapter 语义），wrap 保持单行
+            if (wrapWidth <= 0) {
+                return java.util.Arrays.asList((text == null ? "" : text).split("\n"));
+            }
+            return java.util.Collections.singletonList(text == null ? "" : text);
         }
 
         @Override

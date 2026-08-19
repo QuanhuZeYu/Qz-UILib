@@ -31,14 +31,18 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
     }
 
     @Test
-    public void shouldReturnSingleLineWithoutWrap() {
+    public void shouldDelegateHardLineBreakSplitWithoutWrap() {
         RecordingTextMeasureService delegate = new RecordingTextMeasureService();
+        delegate.nextLines = java.util.Arrays.asList("<b>a</b>", "<b>b</b>");
         TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);
 
-        List<String> lines = adapter.splitLines("ab", 16, 0, 2);
+        List<String> lines = adapter.splitLines("<b>a<br>b</b>", 16, 0, 2);
 
-        Assert.assertEquals(Collections.singletonList("ab"), lines);
-        Assert.assertEquals(0, delegate.threeArgCallCount);
+        Assert.assertEquals(java.util.Arrays.asList("<b>a</b>", "<b>b</b>"), lines);
+        Assert.assertEquals("<b>a<br>b</b>", delegate.lastText);
+        // 非 wrap 以无限宽委托：软换行不触发、硬换行仍拆行
+        Assert.assertEquals(Integer.MAX_VALUE, delegate.lastWrapWidth);
+        Assert.assertEquals(TextContentMode.RICH_TAGS, delegate.lastMode);
     }
 
     @Test

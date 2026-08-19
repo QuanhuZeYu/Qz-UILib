@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.scene.paint;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -294,15 +293,14 @@ public class ScenePaintEngine {
         // 有文本 → TEXT 命令（相对坐标，文字色读 node.getTextColor()，默认白零回归）
         // fontSize 直接读 node.getFontSize()（不再用 height 做 hack 回退）：
         // 字号是节点自有属性，与布局盒高度解耦，fill 文本节点不再炸 fontSize。
-        // maxTextWidth>0 时构建期拆行（富文本感知：标签不占宽），每行一条 TEXT 命令。
+        // 拆行统一走 measurer.splitLines：maxTextWidth>0 软换行，<=0 仍按硬换行（<br>/\n）
+        // 拆行（富文本感知：标签不占宽、样式跨行续传），每行一条 TEXT 命令。
         String text = node.getText();
         if (text != null && !text.isEmpty()) {
             int fontSize = node.getFontSize();
             int textMode = node.getTextContentMode();
             int wrapWidth = node.getMaxTextWidth();
-            List<String> lines = wrapWidth > 0
-                    ? measurer.splitLines(text, fontSize, wrapWidth, textMode)
-                    : Collections.singletonList(text);
+            List<String> lines = measurer.splitLines(text, fontSize, wrapWidth, textMode);
             int baseLineHeight = measurer.lineHeight(fontSize);
             int lineCount = lines.size();
             int[] lineHeights = new int[lineCount];
