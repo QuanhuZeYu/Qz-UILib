@@ -8,9 +8,6 @@ import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
-import club.heiqi.uilib.ui.base.layout.UiConstraints;
-import club.heiqi.uilib.ui.base.layout.UiLayoutSpec;
-import club.heiqi.uilib.ui.base.layout.UiMeasureResult;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 
 /**
@@ -95,7 +92,6 @@ public class Widget {
     private boolean enabled = true;
     private boolean clipChildren;
     private boolean clipHitTest;
-    private UiLayoutSpec layoutSpec;
     private int layoutVersion;
 
     /**
@@ -434,79 +430,15 @@ public class Widget {
         return clipHitTest;
     }
 
-    public UiLayoutSpec getLayoutSpec() {
-        return layoutSpec;
-    }
-
     public int getLayoutVersion() {
         return layoutVersion;
     }
 
     /**
-     * 获取组件期望宽度。
-     *
-     * @return 期望宽度
-     */
-    public int getPreferredWidth() {
-        return width;
-    }
-
-    /**
-     * 获取组件期望高度。
-     *
-     * @return 期望高度
-     */
-    public int getPreferredHeight() {
-        return height;
-    }
-
-    /**
-     * 在给定宽度约束下获取期望高度。
-     *
-     * @param width 可用宽度
-     * @return 期望高度
-     */
-    public int getPreferredHeightForWidth(int width) {
-        return getPreferredHeight();
-    }
-
-    /**
-     * 获取组件在 Div 容器中可压缩到的最小内容宽度。
-     *
-     * @return 最小内容宽度
-     */
-    public int getMinContentWidth() {
-        return 0;
-    }
-
-    /**
-     * 获取组件在 Div 容器中可压缩到的最小内容高度。
-     *
-     * @param width 当前宽度
-     * @return 最小内容高度
-     */
-    public int getMinContentHeightForWidth(int width) {
-        return getPreferredHeightForWidth(width);
-    }
-
-    /**
-     * 在给定约束下测量组件尺寸。
-     *
-     * @param constraints 父容器传入的约束
-     * @return 测量结果
-     */
-    public UiMeasureResult measure(UiConstraints constraints) {
-        UiConstraints effectiveConstraints = constraints == null ? UiConstraints.unbounded() : constraints;
-        int measuredWidth = effectiveConstraints.constrainWidth(getPreferredWidth());
-        int measuredHeight = effectiveConstraints.constrainHeight(getPreferredHeightForWidth(measuredWidth));
-        return new UiMeasureResult(measuredWidth, measuredHeight);
-    }
-
-    /**
      * 应用布局引擎解析后的最终边界。
      *
-     * <p>该方法仅供布局容器与屏幕宿主在内部写入最终布局结果，
-     * 页面作者应通过 `UiLayoutSpec`、容器流式布局和文档壳组合声明尺寸与位置。</p>
+     * <p>该方法仅供屏幕宿主在内部写入最终布局结果，
+     * 页面作者应通过文档壳组合声明尺寸与位置。</p>
      *
      * @param x 左上角 X
      * @param y 左上角 Y
@@ -548,12 +480,6 @@ public class Widget {
         this.clipHitTest = clipHitTest;
     }
 
-    public Widget setLayoutSpec(UiLayoutSpec layoutSpec) {
-        this.layoutSpec = layoutSpec;
-        requestLayout();
-        return this;
-    }
-
     /**
      * 标记当前节点及其全部子树的布局缓存失效。
      *
@@ -570,8 +496,7 @@ public class Widget {
     /**
      * 标记当前节点的测量与布局结果失效，并向父链传播。
      *
-     * <p>自定义控件只要有任何内部状态会影响 `getPreferredWidth()`、`getPreferredHeight()`、
-     * `measure(...)` 或实际子节点布局结果，就必须在状态变化后调用本方法。</p>
+     * <p>自定义控件只要有任何内部状态会影响实际布局结果，就必须在状态变化后调用本方法。</p>
      */
     protected void requestLayout() {
         layoutVersion++;
