@@ -34,6 +34,87 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  */
 public class TextLayoutService {
 
+    /** CCC（canonical combining class）反射入口：JDK8 sun.text.Normalizer；不可用时为 null（全部按上方标记处理）。 */
+    private static final java.lang.reflect.Method CCC_METHOD = resolveCccMethod();
+
+    private static java.lang.reflect.Method resolveCccMethod() {
+        try {
+            java.lang.reflect.Method method = Class.forName("sun.text.Normalizer")
+                    .getMethod("getCombiningClass", int.class);
+            method.setAccessible(true);
+            return method;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * 取码点 CCC（canonical combining class）；反射不可用时返回 0（视作上方标记）。
+     *
+     * <p>CCC 决定组合标记的附着方向：Below 系（220/202/200/218/222/233/240）向下堆叠，
+     * 其余（230/216/232/234/0 等）向上堆叠。</p>
+     *
+     * @param codepoint Unicode 码点
+     * @return canonical combining class（0..255）
+     */
+    private static int combiningClass(int codepoint) {
+        if (CCC_METHOD == null) {
+            return 0;
+        }
+        try {
+            return ((Integer) CCC_METHOD.invoke(null, Integer.valueOf(codepoint))).intValue();
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    /**
+     * 是否下方附着标记：优先 CCC（Below 系：220 Below / 202 Below Attached / 200 Below Left /
+     * 218 Below Right / 222 Below Left / 233 Double Below / 240 Iota Subscript）；
+     * CCC 不可用（JDK9+ 无 sun.text.Normalizer）或为 0（泰语等无 CCC 脚本）时
+     * 回落常用下方标记码点白名单（泰语下方元音/阿拉伯下方系/拉丁下方系常用区间）。
+     *
+     * @param codepoint Unicode 码点
+     * @return true 表示向下堆叠
+     */
+    private static boolean isBelowMark(int codepoint) {
+        int ccc = combiningClass(codepoint);
+        if (ccc != 0) {
+            return ccc == 220 || ccc == 202 || ccc == 200 || ccc == 218 || ccc == 222 || ccc == 233 || ccc == 240;
+        }
+        // 泰语下方元音（SARA U/UU 等）
+        if (codepoint >= 0x0E36 && codepoint <= 0x0E39) {
+            return true;
+        }
+        // 阿拉伯下方系常用码点
+        if (codepoint == 0x0650 || (codepoint >= 0x0653 && codepoint <= 0x0655)
+                || codepoint == 0x065B || codepoint == 0x065F
+                || (codepoint >= 0x06E3 && codepoint <= 0x06E4) || codepoint == 0x06EA || codepoint == 0x06ED
+                || (codepoint >= 0x08F0 && codepoint <= 0x08F2)) {
+            return true;
+        }
+        // 拉丁/通用下方系常用区间（DOT BELOW..TILDE BELOW、CEDILLA/OGONEK 系等）
+        if (codepoint >= 0x0323 && codepoint <= 0x0334) {
+            return true;
+        }
+        if (codepoint >= 0x0339 && codepoint <= 0x033E) {
+            return true;
+        }
+        if (codepoint == 0x0345 || codepoint == 0x0347 || codepoint == 0x034C || codepoint == 0x034E) {
+            return true;
+        }
+        if (codepoint >= 0x0353 && codepoint <= 0x0356) {
+            return true;
+        }
+        if (codepoint >= 0x0358 && codepoint <= 0x035B) {
+            return true;
+        }
+        if (codepoint >= 0x035D && codepoint <= 0x035F) {
+            return true;
+        }
+        return codepoint == 0x0362;
+    }
+
     private static final FontRenderContext FONT_RENDER_CONTEXT = new FontRenderContext(new AffineTransform(), true, true);
     private static final long WIDTH_MISS_BUDGET_WINDOW_NANOS = 16L * 1000L * 1000L;
 
@@ -870,9 +951,9 @@ public class TextLayoutService {
      * 组合标记段落的位置计划（组合附加符堆叠挡 2，渲染层专用）。
      *
      * <p>对含簇延续字符（变体选择符/组合标记）的文本，生成逐码点位置：
-     * 常规字符按测量 advance 顺序排布（y=0，基线），组合标记吸附最近基字中心并
-     * <b>逐层向上堆叠</b>（第一层在基线上方半 ascent，之后每层再抬半 ascent），
-     * 使多层组合标记像金字塔一样往上摞。</p>
+     * 常规字符按测量 advance 顺序排布（y=0，基线），组合标记吸附最近基字中心并按
+     * CCC 方向逐层堆叠——<b>上方标记向上摞、下方标记向下摞</b>（每层半 ascent），
+     * 使多层组合标记像金字塔一样上下成支。</p>
      *
      * <p>说明：Java AWT 的 {@code createGlyphVector} 不执行 OpenType shaping（无 GPOS
      * mark-to-base 数据源，实测 mark 位置 y=0），故采用按字形几何的<b>近似堆叠</b>——
@@ -906,8 +987,12 @@ public class TextLayoutService {
                 }
                 i += Character.charCount(codepoint);
             }
-            if (!hasCluster || anchorCodepoint < 0) {
+            if (!hasCluster) {
                 return null;
+            }
+            if (anchorCodepoint < 0) {
+                // 全标记行（无常规字符锚点）：以空格为字体锚，堆叠从行首开始
+                anchorCodepoint = ' ';
             }
 
             FontRuntimeSettings settings = currentSettings();
@@ -929,23 +1014,31 @@ public class TextLayoutService {
             float[] result = new float[codePointCount * 2];
             float runningX = 0.0F;
             float baseCenterX = 0.0F;
-            int layer = 0;
+            int upLayer = 0;
+            int downLayer = 0;
             int codePointIndex = 0;
             for (int i = 0; i < text.length() && codePointIndex < codePointCount; ) {
                 int codepoint = text.codePointAt(i);
                 int charCount = Character.charCount(codepoint);
                 if (UnicodeTextClassifier.isClusterContinuation(codepoint)) {
-                    // 组合标记：吸附最近基字中心，逐层上摞（金字塔）
+                    // 组合标记：吸附最近基字中心，按 CCC 方向逐层堆叠——
+                    // 上方标记（Above 系）向上摞、下方标记（Below 系）向下摞（金字塔上下两支）。
                     result[codePointIndex * 2] = baseCenterX;
-                    result[codePointIndex * 2 + 1] = -(layerStep * (layer + 1));
-                    layer++;
+                    if (isBelowMark(codepoint)) {
+                        downLayer++;
+                        result[codePointIndex * 2 + 1] = layerStep * downLayer;
+                    } else {
+                        upLayer++;
+                        result[codePointIndex * 2 + 1] = -(layerStep * upLayer);
+                    }
                 } else {
                     double advance = measureCodepointWidth(codepoint, style.getFontType(), segmentFontSizePx);
                     result[codePointIndex * 2] = runningX;
                     result[codePointIndex * 2 + 1] = 0.0F;
                     baseCenterX = runningX + (float) advance / 2.0F;
                     runningX += advance;
-                    layer = 0;
+                    upLayer = 0;
+                    downLayer = 0;
                 }
                 codePointIndex++;
                 i += charCount;

@@ -121,6 +121,24 @@ public final class ControlCharPage implements PlaygroundPage {
                     + "字符保留在文本流中，文本域前缀宽度与 caret 几何不受影响。"));
             root.appendChild(stripCard);
 
+            // ===== 卡片6b：网页灌水文本（真机对照网页渲染） =====
+            SceneNode waterCard = PlaygroundKit.card();
+            waterCard.appendChild(PlaygroundKit.title("网页灌水文本（贴吧水帖圣经，对照网页渲染效果）"));
+            waterCard.appendChild(bigText(rt,
+                    "\u0E34\u06D6\u0E34\u06E3 \u06E3\u06E3\u06D6\u06D6\u06D6\u06D6\u0E34\u06D6\u0E34\u0E34\u06E3\u06E3\u06D6\u06D6\u0E34 "
+                    + "\u06D6\u0E34\u0E34\u06E3\u06E3\u06D6\u06D6\u0E34\u06E3 \u06E3\u06E3\u06D6\u06D6\u06D6\u0E34\u06D6\u0E34\u0E34 "
+                    + "\u06E3\u06E3\u06D6\u06D6 \u06D6 \u06E3\u06E3\u06D6\u06D6\u0E34 "
+                    + "\u06D6\u0E34\u0E34\u06E3\u06E3\u06D6\u06D6\u0E34\u06E3 \u06D6\n"
+                    + "\u06E3\u06E3\u06D6\u06D6\u06D6\u0E34\u06D6\u0E34\u0E34 \u06E3\u06E3\u06D6\u06D6 \u06D6 "
+                    + "\u06E3\u06E3\u06D6\u06D6\u0E34 \u4E0A\u8FB9\u7684\u5B57\u8D85\u8FC7700\u54E6", 0));
+            waterCard.appendChild(PlaygroundKit.hint(
+                    "泰语元音符号与阿拉伯高位/低位组合标记堆叠在空格上：UILIB 按 CCC 方向堆叠——"
+                    + "高位标记（U+06D6）向上摞、低位标记（U+06E3）向下摞、泰语符号（U+0E34）向上；"
+                    + "与网页的差异主要来自字体 glyph 覆盖：字体链缺少这些组合标记时静默跳过（不豆腐块），"
+                    + "补装含泰语/阿拉伯组合标记的字体后观感接近网页。"
+                    + "整段可粘贴进「多行文本」页观察（编辑保真、显示组合）。"));
+            root.appendChild(waterCard);
+
             // ===== 卡片7：三种内容模式一致性 =====
             SceneNode modeCard = PlaygroundKit.card();
             modeCard.appendChild(PlaygroundKit.title("三种内容模式同口径（RAW / MINECRAFT / RICH）"));

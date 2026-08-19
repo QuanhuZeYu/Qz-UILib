@@ -210,6 +210,49 @@ public class TextLayoutServiceControlCharTest {
     }
 
     @Test
+    public void shouldStackAboveAndBelowMarksInOppositeDirections() {
+        // U+06D6 阿拉伯高位标记（CCC 230）向上；U+06E3 阿拉伯低位标记（CCC 220）向下
+        TextLayoutService service = createService();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        float[] positions = service.resolveMarkPositions("a\u06D6\u06E3", style, 16);
+        Assert.assertNotNull(positions);
+        Assert.assertEquals(6, positions.length);
+        Assert.assertTrue("高位标记应向上（y<0）: " + positions[3], positions[3] < 0.0F);
+        Assert.assertTrue("低位标记应向下（y>0）: " + positions[5], positions[5] > 0.0F);
+    }
+
+    @Test
+    public void shouldResolvePositionsForAllMarksLine() {
+        // 全标记行（无常规字符锚）：以空格为字体锚，堆叠仍可用
+        TextLayoutService service = createService();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        float[] positions = service.resolveMarkPositions("\u06D6\u06E3\u0E34", style, 16);
+        Assert.assertNotNull(positions);
+        Assert.assertEquals(6, positions.length);
+    }
+
+    @Test
+    public void shouldPreserveWaterFloodTextThroughWrap() {
+        // 贴吧灌水文本（泰语/阿拉伯组合标记堆叠在空格上）：wrap 不丢码点、行结构正确
+        String water = "\u0E34\u06D6\u0E34\u06E3 \u06E3\u06E3\u06D6\u06D6\u06D6\u06D6\u0E34\u06D6\u0E34\u0E34\u06E3\u06E3\u06D6\u06D6\u0E34 "
+                + "\u06D6\u0E34\u0E34\u06E3\u06E3\u06D6\u06D6\u0E34\u06E3 \u06E3\u06E3\u06D6\u06D6\u06D6\u0E34\u06D6\u0E34\u0E34 "
+                + "\u06E3\u06E3\u06D6\u06D6 \u06D6 \u06E3\u06E3\u06D6\u06D6\u0E34 \u06D6\u0E34\u0E34\u06E3\u06E3\u06D6\u06D6\u0E34\u06E3 \u06D6\n"
+                + "\u06E3\u06E3\u06D6\u06D6\u06D6\u0E34\u06D6\u0E34\u0E34 \u06E3\u06E3\u06D6\u06D6 \u06D6 \u06E3\u06E3\u06D6\u06D6\u0E34 "
+                + "\u6C34\u5427\u3002";
+        TextLayoutService service = createService();
+        List<String> lines = service.listFormattedStringToWidth(water, 1000, TextContentMode.UILIB_RAW);
+        Assert.assertEquals(2, lines.size());
+        int total = 0;
+        for (String line : lines) {
+            total += line.codePointCount(0, line.length());
+        }
+        // 1 个换行码点被折叠（\n 不占行内容），其余码点全保留
+        Assert.assertEquals(water.codePointCount(0, water.length()) - 1, total);
+    }
+
+    @Test
     public void shouldResolveNullForTextWithoutClusterChars() {
         TextLayoutService service = createService();
         TextStyle style = new TextStyle();
