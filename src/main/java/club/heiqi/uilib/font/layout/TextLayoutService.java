@@ -46,6 +46,9 @@ public class TextLayoutService {
     private volatile int runtimeVersion;
     private long widthMissBudgetWindowStartNanos;
     private int widthMissBudgetRemaining;
+    private final TextContentModeStrategy rawStrategy;
+    private final TextContentModeStrategy minecraftStrategy;
+    private final TextContentModeStrategy richStrategy;
 
     /**
      * 创建文本布局服务。
@@ -87,6 +90,21 @@ public class TextLayoutService {
         this.generationReadLock = generationReadLock;
         this.ownerToken = ownerToken;
         this.runtimeTables = glyphPageManager.getRuntimeTables();
+        this.rawStrategy = new RawTextContentStrategy(this);
+        this.minecraftStrategy = new MinecraftTextContentStrategy(this);
+        this.richStrategy = new RichTextContentStrategy(this);
+    }
+
+    /** 返回指定内容模式的 trim/wrap 策略。 */
+    private TextContentModeStrategy strategyFor(TextContentMode mode) {
+        TextContentMode resolved = resolveTextContentMode(mode);
+        if (resolved == TextContentMode.UILIB_RAW) {
+            return rawStrategy;
+        }
+        if (resolved == TextContentMode.RICH_TAGS) {
+            return richStrategy;
+        }
+        return minecraftStrategy;
     }
 
     /**
@@ -376,17 +394,9 @@ public class TextLayoutService {
                 return "";
             }
 
-            TextContentMode resolvedMode = resolveTextContentMode(textContentMode);
-            if (resolvedMode == TextContentMode.UILIB_RAW) {
-                return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle));
-            }
-            if (resolvedMode == TextContentMode.RICH_TAGS) {
-                return trimRichStringToWidth(text, targetWidth,
-                        createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle),
-                        (int) currentSettings().getCharSize());
-            }
-            return trimMinecraftStringToWidth(text, targetWidth,
-                    createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle));
+            return strategyFor(resolveTextContentMode(textContentMode)).trim(text, targetWidth,
+                    createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle),
+                    (int) currentSettings().getCharSize());
         } finally {
             unlockGeneration();
         }
@@ -408,16 +418,9 @@ public class TextLayoutService {
                 return "";
             }
 
-            if (resolveTextContentMode(resolvedStyle.getTextContentMode()) == TextContentMode.UILIB_RAW) {
-                return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
-                        resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
-            }
-            if (resolveTextContentMode(resolvedStyle.getTextContentMode()) == TextContentMode.RICH_TAGS) {
-                return trimRichStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
-                        resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
-            }
-            return trimMinecraftStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
-                    resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
+            return strategyFor(resolvedStyle.getTextContentMode()).trim(text, targetWidth,
+                    createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()),
+                    resolvedStyle.getFontSizePx());
         } finally {
             unlockGeneration();
         }
@@ -525,15 +528,9 @@ public class TextLayoutService {
                 return "";
             }
 
-            if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
-                return wrapRawStringToWidth(text, wrapWidth);
-            }
-            if (resolveTextContentMode(textContentMode) == TextContentMode.RICH_TAGS) {
-                return wrapRichStringToWidth(text, wrapWidth,
-                        createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL));
-            }
-            return wrapMinecraftStringToWidth(text, wrapWidth,
-                    createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL));
+            return strategyFor(resolveTextContentMode(textContentMode)).wrap(text, wrapWidth,
+                    createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL),
+                    (int) currentSettings().getCharSize());
         } finally {
             unlockGeneration();
         }
@@ -744,7 +741,7 @@ public class TextLayoutService {
         }
     }
 
-    private double measureCodepointWidth(int codepoint, FontType fontType) {
+    double measureCodepointWidth(int codepoint, FontType fontType) {
         if (codepoint == ' ') {
             return currentSettings().getSpaceWidth();
         }
@@ -796,7 +793,7 @@ public class TextLayoutService {
         return true;
     }
 
-    private double measureCodepointWidth(int codepoint, FontType fontType, int fontSizePx) {
+    double measureCodepointWidth(int codepoint, FontType fontType, int fontSizePx) {
         double defaultWidth = measureCodepointWidth(codepoint, fontType);
         return defaultWidth * Math.max(1, fontSizePx) / Math.max(1.0D, currentSettings().getCharSize());
     }
@@ -840,7 +837,7 @@ public class TextLayoutService {
         }
     }
 
-    private double resolveCodepointAdvance(int codepoint, TextStyle style, int effectiveSize) {
+    double resolveCodepointAdvance(int codepoint, TextStyle style, int effectiveSize) {
         double charWidth = effectiveSize > 0
                 ? measureCodepointWidth(codepoint, style.getFontType(), effectiveSize)
                 : measureCodepointWidth(codepoint, style.getFontType());
@@ -1070,141 +1067,6 @@ public class TextLayoutService {
                 resolvedStyle.getFontStyle());
     }
 
-    /**
-     * MINECRAFT_FORMATTED 模式裁剪（基准字号）：§ 格式码原样保留并推进样式，
-     * 宽度按基准字号测量；调用方持 generation 锁。
-     */
-    private String trimMinecraftStringToWidth(String text, int targetWidth, TextStyle baseStyle) {
-        StringBuilder builder = new StringBuilder();
-        TextStyle currentStyle = baseStyle.copy();
-        double width = 0.0D;
-
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            if (codepoint == '§' && i < text.length() - 1) {
-                builder.appendCodePoint(codepoint);
-                i += Character.charCount(codepoint);
-                char formatCode = text.charAt(i);
-                builder.append(formatCode);
-                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                i++;
-                continue;
-            }
-
-            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
-            if (width + charWidth > targetWidth) {
-                break;
-            }
-            width += charWidth;
-            builder.appendCodePoint(codepoint);
-            i += Character.charCount(codepoint);
-        }
-        return builder.toString();
-    }
-
-    /**
-     * MINECRAFT_FORMATTED 模式裁剪（指定 UI 像素字号）：与基准字号版同构，
-     * 仅测量按 {@code fontSizePx} 缩放；调用方持 generation 锁。
-     */
-    private String trimMinecraftStringToWidth(String text, int targetWidth, TextStyle baseStyle, int fontSizePx) {
-        StringBuilder builder = new StringBuilder();
-        TextStyle currentStyle = baseStyle.copy();
-        double width = 0.0D;
-
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            if (codepoint == '§' && i < text.length() - 1) {
-                builder.appendCodePoint(codepoint);
-                i += Character.charCount(codepoint);
-                char formatCode = text.charAt(i);
-                builder.append(formatCode);
-                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                i++;
-                continue;
-            }
-
-            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType(), fontSizePx);
-            if (width + charWidth > targetWidth) {
-                break;
-            }
-            width += charWidth;
-            builder.appendCodePoint(codepoint);
-            i += Character.charCount(codepoint);
-        }
-        return builder.toString();
-    }
-
-    /**
-     * MINECRAFT_FORMATTED 模式换行（基准字号）：§ 格式码原样保留并跨行续传，
-     * 硬换行与软换行语义与旧内联实现逐位一致；调用方持 generation 锁。
-     */
-    private String wrapMinecraftStringToWidth(String text, int wrapWidth, TextStyle baseStyle) {
-        StringBuilder builder = new StringBuilder();
-        TextStyle currentStyle = baseStyle.copy();
-        double width = 0.0D;
-        boolean lineHasVisibleContent = false;
-
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            if (codepoint == '§' && i < text.length() - 1) {
-                builder.appendCodePoint(codepoint);
-                i += Character.charCount(codepoint);
-                char formatCode = text.charAt(i);
-                builder.append(formatCode);
-                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
-                i++;
-                continue;
-            }
-
-            if (codepoint == '\r' || codepoint == '\n') {
-                i += Character.charCount(codepoint);
-                if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
-                    i++;
-                }
-                builder.append('\n');
-                if (i < text.length()) {
-                    builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
-                }
-                width = 0.0D;
-                lineHasVisibleContent = false;
-                continue;
-            }
-
-            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
-            if (width + charWidth > wrapWidth && lineHasVisibleContent) {
-                builder.append('\n');
-                builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
-                width = 0.0D;
-                lineHasVisibleContent = false;
-            }
-            builder.appendCodePoint(codepoint);
-            width += charWidth;
-            lineHasVisibleContent = true;
-            i += Character.charCount(codepoint);
-        }
-        return builder.toString();
-    }
-
-    private String trimRawStringToWidth(String text, int targetWidth, TextStyle style) {
-        return trimRawStringToWidth(text, targetWidth, style, (int) currentSettings().getCharSize());
-    }
-
-    private String trimRawStringToWidth(String text, int targetWidth, TextStyle style, int fontSizePx) {
-        StringBuilder builder = new StringBuilder();
-        double width = 0.0D;
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            double charWidth = getCodepointWidth(codepoint, style, fontSizePx);
-            if (width + charWidth > targetWidth) {
-                break;
-            }
-            width += charWidth;
-            builder.appendCodePoint(codepoint);
-            i += Character.charCount(codepoint);
-        }
-        return builder.toString();
-    }
-
     private String trimRawStringToWidthFromTail(String text, int targetWidth) {
         TextStyle style = new TextStyle();
         style.resetAll(0xFFFFFFFF);
@@ -1223,45 +1085,6 @@ public class TextLayoutService {
             index = codepointStart;
         }
         return builder.toString();
-    }
-
-    /**
-     * 按宽度裁剪富文本（正向保留前缀），结果以标签文本重建（被裁部分样式不泄漏）。
-     *
-     * @param text           富文本
-     * @param targetWidth    目标宽度
-     * @param baseStyle      基准样式
-     * @param baseFontSizePx 未显式指定字号段落的基准字号
-     * @return 裁剪后的标签文本
-     */
-    private String trimRichStringToWidth(String text, int targetWidth, TextStyle baseStyle, int baseFontSizePx) {
-        List<TextSegment> segments = RichTextTagParser.parse(text, baseStyle);
-        List<TextSegment> kept = new ArrayList<TextSegment>();
-        double width = 0.0D;
-        int safeBaseSize = Math.max(1, baseFontSizePx);
-        for (TextSegment segment : segments) {
-            TextStyle style = segment.getStyle();
-            String segmentText = segment.getText();
-            int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
-            StringBuilder keptText = new StringBuilder();
-            for (int i = 0; i < segmentText.length(); ) {
-                int codepoint = segmentText.codePointAt(i);
-                double charWidth = resolveCodepointAdvance(codepoint, style, effectiveSize);
-                if (width + charWidth > targetWidth) {
-                    break;
-                }
-                width += charWidth;
-                keptText.appendCodePoint(codepoint);
-                i += Character.charCount(codepoint);
-            }
-            if (keptText.length() > 0) {
-                kept.add(new TextSegment(keptText.toString(), style));
-            }
-            if (keptText.length() < segmentText.length()) {
-                break;
-            }
-        }
-        return RichTextTagParser.serialize(kept, baseStyle);
     }
 
     /**
@@ -1303,306 +1126,6 @@ public class TextLayoutService {
             }
         }
         return RichTextTagParser.serialize(kept, baseStyle);
-    }
-
-    /**
-     * 按宽度对富文本插入换行（硬换行符优先，软换行按 token 宽度累计）。
-     *
-     * <p>软换行采用现代 word-break 语义：CJK 单字为独立 token，任意字间可断；
-     * 其余字符聚成不可拆词 token，优先整词折行；词宽超过行宽时按字符硬断。
-     * 行尾空白折叠移除、行首空白丢弃。切点落在样式片段中间时，行文本经
-     * {@link RichTextTagParser#serialize} 重建：行尾显式闭合、行首按样式差异自动重开，
-     * 跨行样式续传零特判。</p>
-     *
-     * @param text      富文本
-     * @param wrapWidth 最大宽度
-     * @param baseStyle 基准样式
-     * @return 含换行符的标签文本
-     */
-    private String wrapRichStringToWidth(String text, int wrapWidth, TextStyle baseStyle) {
-        int safeBaseSize = Math.max(1, (int) currentSettings().getCharSize());
-        List<TextSegment> segments = RichTextTagParser.parse(text, baseStyle);
-        List<String> lines = new ArrayList<String>();
-        List<TextSegment> currentLine = new ArrayList<TextSegment>();
-        double width = 0.0D;
-        boolean lineHasVisibleContent = false;
-        for (TextSegment segment : segments) {
-            TextStyle style = segment.getStyle();
-            String remaining = segment.getText();
-            while (!remaining.isEmpty()) {
-                int codepoint = remaining.codePointAt(0);
-                int codepointLength = Character.charCount(codepoint);
-                if (codepoint == '\n' || codepoint == '\r') {
-                    flushRichLine(lines, currentLine, baseStyle, true);
-                    width = 0.0D;
-                    lineHasVisibleContent = false;
-                    if (codepoint == '\r' && remaining.length() > codepointLength
-                            && remaining.charAt(codepointLength) == '\n') {
-                        remaining = remaining.substring(codepointLength + 1);
-                    } else {
-                        remaining = remaining.substring(codepointLength);
-                    }
-                    continue;
-                }
-                int tokenEnd = findRichTokenEnd(remaining);
-                String token = remaining.substring(0, tokenEnd);
-                boolean tokenIsSpace = isBreakSpace(codepoint);
-                double tokenWidth = measureTokenWidth(token, style, safeBaseSize);
-                if (width + tokenWidth > wrapWidth && lineHasVisibleContent) {
-                    flushRichLine(lines, currentLine, baseStyle, false);
-                    width = 0.0D;
-                    lineHasVisibleContent = false;
-                }
-                if (tokenIsSpace) {
-                    if (lineHasVisibleContent) {
-                        appendTokenToRichLine(currentLine, token, style);
-                        width += tokenWidth;
-                    }
-                    remaining = remaining.substring(tokenEnd);
-                    continue;
-                }
-                if (width + tokenWidth > wrapWidth && !lineHasVisibleContent) {
-                    // 空行放不下整词：按字符硬断，填满一行折一行
-                    int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
-                    for (int i = 0; i < token.length(); ) {
-                        int tokenCodepoint = token.codePointAt(i);
-                        double charWidth = resolveCodepointAdvance(tokenCodepoint, style, effectiveSize);
-                        if (width + charWidth > wrapWidth && lineHasVisibleContent) {
-                            flushRichLine(lines, currentLine, baseStyle, false);
-                            width = 0.0D;
-                            lineHasVisibleContent = false;
-                        }
-                        appendToRichLine(currentLine, tokenCodepoint, style);
-                        width += charWidth;
-                        lineHasVisibleContent = true;
-                        i += Character.charCount(tokenCodepoint);
-                    }
-                    remaining = remaining.substring(tokenEnd);
-                    continue;
-                }
-                appendTokenToRichLine(currentLine, token, style);
-                width += tokenWidth;
-                lineHasVisibleContent = true;
-                remaining = remaining.substring(tokenEnd);
-            }
-        }
-        flushRichLine(lines, currentLine, baseStyle, false);
-        StringBuilder builder = new StringBuilder();
-        for (String line : lines) {
-            if (builder.length() > 0) {
-                builder.append('\n');
-            }
-            builder.append(line);
-        }
-        return builder.toString();
-    }
-
-    /**
-     * 把一个码点追加到行片段列表尾部（样式一致时合并入末段）。
-     *
-     * @param line      行片段列表
-     * @param codepoint 码点
-     * @param style     码点样式
-     */
-    private void appendToRichLine(List<TextSegment> line, int codepoint, TextStyle style) {
-        String glyphText = new String(Character.toChars(codepoint));
-        if (!line.isEmpty()) {
-            TextSegment last = line.get(line.size() - 1);
-            if (sameRichStyle(last.getStyle(), style)) {
-                line.set(line.size() - 1, new TextSegment(last.getText() + glyphText, style));
-                return;
-            }
-        }
-        line.add(new TextSegment(glyphText, style));
-    }
-
-    /**
-     * 把一个完整 token 追加到行片段列表尾部（逐码点合并，样式一致时并入末段）。
-     *
-     * @param line  行片段列表
-     * @param token token 文本
-     * @param style token 样式
-     */
-    private void appendTokenToRichLine(List<TextSegment> line, String token, TextStyle style) {
-        for (int i = 0; i < token.length(); ) {
-            int codepoint = token.codePointAt(i);
-            appendToRichLine(line, codepoint, style);
-            i += Character.charCount(codepoint);
-        }
-    }
-
-    /**
-     * 折叠行尾空白并落行：移除行片段末尾的空格/tab/全角空格后序列化入行列表。
-     *
-     * @param lines        行结果列表
-     * @param line         当前行片段
-     * @param baseStyle    基准样式
-     * @param keepEmptyLine 折叠后为空时是否仍落一个空行（硬换行场景保留空行语义）
-     */
-    private void flushRichLine(List<String> lines, List<TextSegment> line, TextStyle baseStyle,
-            boolean keepEmptyLine) {
-        removeTrailingSpaces(line);
-        if (line.isEmpty()) {
-            if (keepEmptyLine) {
-                lines.add("");
-            }
-            return;
-        }
-        lines.add(RichTextTagParser.serialize(line, baseStyle));
-        line.clear();
-    }
-
-    /**
-     * 移除行片段列表末段的尾部空白字符（空格/tab/全角空格），跨段回溯直至无空白。
-     *
-     * @param line 行片段列表
-     */
-    private void removeTrailingSpaces(List<TextSegment> line) {
-        while (!line.isEmpty()) {
-            TextSegment last = line.get(line.size() - 1);
-            String text = last.getText();
-            int end = text.length();
-            while (end > 0 && isBreakSpace(text.charAt(end - 1))) {
-                end--;
-            }
-            if (end == text.length()) {
-                return;
-            }
-            if (end == 0) {
-                line.remove(line.size() - 1);
-            } else {
-                line.set(line.size() - 1, new TextSegment(text.substring(0, end), last.getStyle()));
-                return;
-            }
-        }
-    }
-
-    /**
-     * 从文本首字符起提取一个 word-break token：连续空白、单个 CJK 字符或连续非空白非 CJK 字符。
-     * token 不跨换行符。
-     *
-     * @param text 文本（首字符非换行符）
-     * @return token 结束下标（按 UTF-16 单元）
-     */
-    private int findRichTokenEnd(String text) {
-        int first = text.codePointAt(0);
-        int end = Character.charCount(first);
-        if (isBreakSpace(first)) {
-            while (end < text.length() && isBreakSpace(text.codePointAt(end))) {
-                end += Character.charCount(text.codePointAt(end));
-            }
-            return end;
-        }
-        if (isCjk(first)) {
-            return end;
-        }
-        while (end < text.length()) {
-            int codepoint = text.codePointAt(end);
-            if (codepoint == '\n' || codepoint == '\r' || isBreakSpace(codepoint) || isCjk(codepoint)) {
-                break;
-            }
-            end += Character.charCount(codepoint);
-        }
-        return end;
-    }
-
-    /**
-     * 计算 token 宽度（逐码点按段字号测量后累加）。
-     *
-     * @param token        token 文本
-     * @param style        token 样式
-     * @param safeBaseSize 基准字号
-     * @return token 宽度
-     */
-    private double measureTokenWidth(String token, TextStyle style, int safeBaseSize) {
-        double total = 0.0D;
-        int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
-        for (int i = 0; i < token.length(); ) {
-            int codepoint = token.codePointAt(i);
-            total += resolveCodepointAdvance(codepoint, style, effectiveSize);
-            i += Character.charCount(codepoint);
-        }
-        return total;
-    }
-
-    /**
-     * 判断码点是否为可折叠断行空白（ASCII 空格、tab、全角空格）。
-     *
-     * @param codepoint 码点
-     * @return 空白标记
-     */
-    private static boolean isBreakSpace(int codepoint) {
-        return codepoint == ' ' || codepoint == '\t' || codepoint == 0x3000;
-    }
-
-    /**
-     * 判断码点是否属于 CJK 书写体系（字间任意位置可断行）。
-     *
-     * @param codepoint 码点
-     * @return CJK 标记
-     */
-    private static boolean isCjk(int codepoint) {
-        Character.UnicodeScript script = Character.UnicodeScript.of(codepoint);
-        return script == Character.UnicodeScript.HAN
-                || script == Character.UnicodeScript.HIRAGANA
-                || script == Character.UnicodeScript.KATAKANA
-                || script == Character.UnicodeScript.HANGUL
-                || script == Character.UnicodeScript.BOPOMOFO;
-    }
-
-    /**
-     * 比较两个富文本片段样式是否一致（不含随机样式标记）。
-     *
-     * @param left  左样式
-     * @param right 右样式
-     * @return 一致标记
-     */
-    private boolean sameRichStyle(TextStyle left, TextStyle right) {
-        return left.getColor() == right.getColor()
-                && left.isColorExplicit() == right.isColorExplicit()
-                && left.getFontType() == right.getFontType()
-                && left.isItalic() == right.isItalic()
-                && left.isUnderline() == right.isUnderline()
-                && left.isStrikethrough() == right.isStrikethrough()
-                && left.getFontSizePx() == right.getFontSizePx()
-                && left.getMarkColor() == right.getMarkColor()
-                && left.isSuperscript() == right.isSuperscript()
-                && left.isSubscript() == right.isSubscript()
-                && left.getLetterSpacing() == right.getLetterSpacing()
-                && java.util.Objects.equals(left.getLink(), right.getLink());
-    }
-
-    private String wrapRawStringToWidth(String text, int wrapWidth) {
-        StringBuilder builder = new StringBuilder();
-        TextStyle style = new TextStyle();
-        style.resetAll(0xFFFFFFFF);
-        double width = 0.0D;
-        boolean lineHasVisibleContent = false;
-        for (int i = 0; i < text.length(); ) {
-            int codepoint = text.codePointAt(i);
-            if (codepoint == '\r' || codepoint == '\n') {
-                i += Character.charCount(codepoint);
-                if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
-                    i++;
-                }
-                builder.append('\n');
-                width = 0.0D;
-                lineHasVisibleContent = false;
-                continue;
-            }
-
-            double charWidth = getCodepointWidth(codepoint, style);
-            if (width + charWidth > wrapWidth && lineHasVisibleContent) {
-                builder.append('\n');
-                width = 0.0D;
-                lineHasVisibleContent = false;
-            }
-            builder.appendCodePoint(codepoint);
-            width += charWidth;
-            lineHasVisibleContent = true;
-            i += Character.charCount(codepoint);
-        }
-        return builder.toString();
     }
 
     private TextStyle createBaseStyle(int baseColor, UiFontWeight fontWeight, UiFontStyle fontStyle) {
