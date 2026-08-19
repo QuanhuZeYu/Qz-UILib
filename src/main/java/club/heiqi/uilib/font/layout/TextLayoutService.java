@@ -159,6 +159,9 @@ public class TextLayoutService {
             segments.add(new TextSegment(text, style));
             return segments;
         }
+        if (resolvedMode == TextContentMode.RICH_TAGS) {
+            return RichTextTagParser.parse(text, createBaseStyle(baseColor, baseStyle));
+        }
 
         TextStyle currentStyle = createBaseStyle(baseColor, baseStyle);
         StringBuilder builder = new StringBuilder();
@@ -345,8 +348,14 @@ public class TextLayoutService {
                 return "";
             }
 
-            if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
+            TextContentMode resolvedMode = resolveTextContentMode(textContentMode);
+            if (resolvedMode == TextContentMode.UILIB_RAW) {
                 return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle));
+            }
+            if (resolvedMode == TextContentMode.RICH_TAGS) {
+                return trimRichStringToWidth(text, targetWidth,
+                        createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle),
+                        (int) currentSettings().getCharSize());
             }
 
             StringBuilder builder = new StringBuilder();
@@ -397,6 +406,10 @@ public class TextLayoutService {
 
             if (resolveTextContentMode(resolvedStyle.getTextContentMode()) == TextContentMode.UILIB_RAW) {
                 return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
+                        resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
+            }
+            if (resolveTextContentMode(resolvedStyle.getTextContentMode()) == TextContentMode.RICH_TAGS) {
+                return trimRichStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
                         resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
             }
 
@@ -466,6 +479,11 @@ public class TextLayoutService {
             if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
                 return trimRawStringToWidthFromTail(text, targetWidth);
             }
+            if (resolveTextContentMode(textContentMode) == TextContentMode.RICH_TAGS) {
+                return trimRichStringToWidthFromTail(text, targetWidth,
+                        createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL),
+                        (int) currentSettings().getCharSize());
+            }
 
             StringBuilder visibleBuilder = new StringBuilder();
             double width = 0.0D;
@@ -531,6 +549,10 @@ public class TextLayoutService {
 
             if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
                 return wrapRawStringToWidth(text, wrapWidth);
+            }
+            if (resolveTextContentMode(textContentMode) == TextContentMode.RICH_TAGS) {
+                return wrapRichStringToWidth(text, wrapWidth,
+                        createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL));
             }
 
             StringBuilder builder = new StringBuilder();
@@ -716,9 +738,13 @@ public class TextLayoutService {
         try {
             double width = 0.0D;
             String text = segment.getText();
+            TextStyle style = segment.getStyle();
+            int fontSizePx = style == null ? 0 : style.getFontSizePx();
             for (int i = 0; i < text.length(); ) {
                 int codepoint = text.codePointAt(i);
-                width += getCodepointWidth(codepoint, segment.getStyle());
+                width += fontSizePx > 0
+                        ? getCodepointWidth(codepoint, style, fontSizePx)
+                        : getCodepointWidth(codepoint, style);
                 i += Character.charCount(codepoint);
             }
             return width;
@@ -786,6 +812,9 @@ public class TextLayoutService {
     private double measureCodepointWidth(int codepoint, FontType fontType) {
         if (codepoint == ' ') {
             return currentSettings().getSpaceWidth();
+        }
+        if (codepoint == '\n' || codepoint == '\r') {
+            return 0.0D;
         }
 
         GlyphRuntimeTables tables = currentRuntimeTables();
@@ -1068,6 +1097,193 @@ public class TextLayoutService {
             index = codepointStart;
         }
         return builder.toString();
+    }
+
+    /**
+     * 按宽度裁剪富文本（正向保留前缀），结果以标签文本重建（被裁部分样式不泄漏）。
+     *
+     * @param text           富文本
+     * @param targetWidth    目标宽度
+     * @param baseStyle      基准样式
+     * @param baseFontSizePx 未显式指定字号段落的基准字号
+     * @return 裁剪后的标签文本
+     */
+    private String trimRichStringToWidth(String text, int targetWidth, TextStyle baseStyle, int baseFontSizePx) {
+        List<TextSegment> segments = RichTextTagParser.parse(text, baseStyle);
+        List<TextSegment> kept = new ArrayList<TextSegment>();
+        double width = 0.0D;
+        int safeBaseSize = Math.max(1, baseFontSizePx);
+        for (TextSegment segment : segments) {
+            TextStyle style = segment.getStyle();
+            String segmentText = segment.getText();
+            int fontSizePx = style.getFontSizePx();
+            StringBuilder keptText = new StringBuilder();
+            for (int i = 0; i < segmentText.length(); ) {
+                int codepoint = segmentText.codePointAt(i);
+                double charWidth = fontSizePx > 0
+                        ? measureCodepointWidth(codepoint, style.getFontType(), fontSizePx)
+                        : measureCodepointWidth(codepoint, style.getFontType(), safeBaseSize);
+                if (width + charWidth > targetWidth) {
+                    break;
+                }
+                width += charWidth;
+                keptText.appendCodePoint(codepoint);
+                i += Character.charCount(codepoint);
+            }
+            if (keptText.length() > 0) {
+                kept.add(new TextSegment(keptText.toString(), style));
+            }
+            if (keptText.length() < segmentText.length()) {
+                break;
+            }
+        }
+        return RichTextTagParser.serialize(kept, baseStyle);
+    }
+
+    /**
+     * 按宽度裁剪富文本（反向保留尾部）。
+     *
+     * @param text           富文本
+     * @param targetWidth    目标宽度
+     * @param baseStyle      基准样式
+     * @param baseFontSizePx 未显式指定字号段落的基准字号
+     * @return 裁剪后的标签文本
+     */
+    private String trimRichStringToWidthFromTail(String text, int targetWidth, TextStyle baseStyle,
+            int baseFontSizePx) {
+        List<TextSegment> segments = RichTextTagParser.parse(text, baseStyle);
+        List<TextSegment> kept = new ArrayList<TextSegment>();
+        double width = 0.0D;
+        boolean truncated = false;
+        int safeBaseSize = Math.max(1, baseFontSizePx);
+        for (int segmentIndex = segments.size() - 1; segmentIndex >= 0 && !truncated; segmentIndex--) {
+            TextSegment segment = segments.get(segmentIndex);
+            TextStyle style = segment.getStyle();
+            String segmentText = segment.getText();
+            int fontSizePx = style.getFontSizePx();
+            int end = segmentText.length();
+            int start = end;
+            while (start > 0) {
+                int codepoint = segmentText.codePointBefore(start);
+                double charWidth = fontSizePx > 0
+                        ? measureCodepointWidth(codepoint, style.getFontType(), fontSizePx)
+                        : measureCodepointWidth(codepoint, style.getFontType(), safeBaseSize);
+                if (width + charWidth > targetWidth) {
+                    truncated = true;
+                    break;
+                }
+                width += charWidth;
+                start -= Character.charCount(codepoint);
+            }
+            String keptText = segmentText.substring(start, end);
+            if (!keptText.isEmpty()) {
+                kept.add(0, new TextSegment(keptText, style));
+            }
+        }
+        return RichTextTagParser.serialize(kept, baseStyle);
+    }
+
+    /**
+     * 按宽度对富文本插入换行（硬换行符优先，软换行按段内字号宽度累计）。
+     *
+     * <p>切点落在样式片段中间时，行文本经 {@link RichTextTagParser#serialize} 重建：
+     * 行尾显式闭合、行首按样式差异自动重开，跨行样式续传零特判。</p>
+     *
+     * @param text      富文本
+     * @param wrapWidth 最大宽度
+     * @param baseStyle 基准样式
+     * @return 含换行符的标签文本
+     */
+    private String wrapRichStringToWidth(String text, int wrapWidth, TextStyle baseStyle) {
+        int safeBaseSize = Math.max(1, (int) currentSettings().getCharSize());
+        List<TextSegment> segments = RichTextTagParser.parse(text, baseStyle);
+        List<String> lines = new ArrayList<String>();
+        List<TextSegment> currentLine = new ArrayList<TextSegment>();
+        double width = 0.0D;
+        boolean lineHasVisibleContent = false;
+        for (TextSegment segment : segments) {
+            TextStyle style = segment.getStyle();
+            int fontSizePx = style.getFontSizePx();
+            String remaining = segment.getText();
+            while (!remaining.isEmpty()) {
+                int codepoint = remaining.codePointAt(0);
+                int codepointLength = Character.charCount(codepoint);
+                if (codepoint == '\n' || codepoint == '\r') {
+                    lines.add(RichTextTagParser.serialize(currentLine, baseStyle));
+                    currentLine.clear();
+                    width = 0.0D;
+                    lineHasVisibleContent = false;
+                    if (codepoint == '\r' && remaining.length() > codepointLength
+                            && remaining.charAt(codepointLength) == '\n') {
+                        remaining = remaining.substring(codepointLength + 1);
+                    } else {
+                        remaining = remaining.substring(codepointLength);
+                    }
+                    continue;
+                }
+                double charWidth = fontSizePx > 0
+                        ? measureCodepointWidth(codepoint, style.getFontType(), fontSizePx)
+                        : measureCodepointWidth(codepoint, style.getFontType(), safeBaseSize);
+                if (width + charWidth > wrapWidth && lineHasVisibleContent) {
+                    lines.add(RichTextTagParser.serialize(currentLine, baseStyle));
+                    currentLine.clear();
+                    width = 0.0D;
+                    lineHasVisibleContent = false;
+                    continue;
+                }
+                appendToRichLine(currentLine, codepoint, style);
+                width += charWidth;
+                lineHasVisibleContent = true;
+                remaining = remaining.substring(codepointLength);
+            }
+        }
+        if (!currentLine.isEmpty()) {
+            lines.add(RichTextTagParser.serialize(currentLine, baseStyle));
+        }
+        StringBuilder builder = new StringBuilder();
+        for (String line : lines) {
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(line);
+        }
+        return builder.toString();
+    }
+
+    /**
+     * 把一个码点追加到行片段列表尾部（样式一致时合并入末段）。
+     *
+     * @param line      行片段列表
+     * @param codepoint 码点
+     * @param style     码点样式
+     */
+    private void appendToRichLine(List<TextSegment> line, int codepoint, TextStyle style) {
+        String glyphText = new String(Character.toChars(codepoint));
+        if (!line.isEmpty()) {
+            TextSegment last = line.get(line.size() - 1);
+            if (sameRichStyle(last.getStyle(), style)) {
+                line.set(line.size() - 1, new TextSegment(last.getText() + glyphText, style));
+                return;
+            }
+        }
+        line.add(new TextSegment(glyphText, style));
+    }
+
+    /**
+     * 比较两个富文本片段样式是否一致（不含随机样式标记）。
+     *
+     * @param left  左样式
+     * @param right 右样式
+     * @return 一致标记
+     */
+    private boolean sameRichStyle(TextStyle left, TextStyle right) {
+        return left.getColor() == right.getColor()
+                && left.isColorExplicit() == right.isColorExplicit()
+                && left.getFontType() == right.getFontType()
+                && left.isItalic() == right.isItalic()
+                && left.isUnderline() == right.isUnderline()
+                && left.isStrikethrough() == right.isStrikethrough()
+                && left.getFontSizePx() == right.getFontSizePx();
     }
 
     private String wrapRawStringToWidth(String text, int wrapWidth) {

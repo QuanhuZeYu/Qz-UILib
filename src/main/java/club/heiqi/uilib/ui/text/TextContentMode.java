@@ -13,5 +13,12 @@ public enum TextContentMode {
     /**
      * 按 Minecraft 文本格式处理，解析 `§` 颜色与样式码。
      */
-    MINECRAFT_FORMATTED
+    MINECRAFT_FORMATTED,
+
+    /**
+     * 按 UILib 现代富文本标签语法处理（{@code <color=...>}、{@code <b>}、{@code <i>}、
+     * {@code <u>}、{@code <s>}、{@code <size=N>}、{@code <br>}），解析器见
+     * {@code club.heiqi.uilib.font.layout.RichTextTagParser}。
+     */
+    RICH_TAGS
 }

@@ -695,6 +695,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int pageCount = tables.getPageCount(fontType);
             int renderCodepoint = preparedText.renderCodepoints[glyphIndex];
             float measuredWidth = preparedText.measuredWidths[glyphIndex];
+            float glyphCharSize = resolveGlyphCharSize(charSize, preparedText.fontSizePx[glyphIndex], settings);
             int pageIndex = -1;
             int textureId = 0;
             int textureSize = 0;
@@ -752,13 +753,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         inkWidth, inkHeight, bearingX, bearingY,
                         currentX + (float) FontConfig.shadowOffsetX * renderScale,
                         drawY + (float) FontConfig.shadowOffsetY * renderScale,
-                        measuredWidth, charSize, (float) settings.getCharSize(), renderScale, style,
+                        measuredWidth, glyphCharSize, (float) settings.getCharSize(), renderScale, style,
                         darkenShadow(style.getColor()));
             }
             collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
-                    currentX, drawY, measuredWidth, charSize, (float) settings.getCharSize(), renderScale, style,
+                    currentX, drawY, measuredWidth, glyphCharSize, (float) settings.getCharSize(), renderScale, style,
                     style.getColor());
             currentX += measuredWidth;
         }
@@ -770,22 +771,38 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     private PreparedText prepareGlyphs(FontRuntimeSettings settings, List<TextSegment> segments,
             TextLayoutService textLayoutService, float renderScale) {
+        int baseFontSizePx = Math.max(1, (int) settings.getCharSize());
         int glyphCount = 0;
         for (TextSegment segment : segments) {
             String segmentText = segment.getText();
-            glyphCount += segmentText.codePointCount(0, segmentText.length());
+            for (int index = 0; index < segmentText.length(); ) {
+                int codepoint = segmentText.codePointAt(index);
+                index += Character.charCount(codepoint);
+                if (codepoint == '\n' || codepoint == '\r') {
+                    continue;
+                }
+                glyphCount++;
+            }
         }
         int[] renderCodepoints = new int[glyphCount];
         FontType[] fontTypes = new FontType[glyphCount];
         float[] measuredWidths = new float[glyphCount];
         TextStyle[] styles = new TextStyle[glyphCount];
+        int[] fontSizePx = new int[glyphCount];
         int glyphIndex = 0;
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
             String segmentText = segment.getText();
-            for (int index = 0; index < segmentText.length();) {
+            int segmentFontSizePx = style.getFontSizePx() > 0 ? style.getFontSizePx() : baseFontSizePx;
+            for (int index = 0; index < segmentText.length(); ) {
                 int codepoint = segmentText.codePointAt(index);
-                double codepointWidth = textLayoutService.getCodepointWidth(codepoint, style);
+                index += Character.charCount(codepoint);
+                if (codepoint == '\n' || codepoint == '\r') {
+                    continue;
+                }
+                double codepointWidth = segmentFontSizePx != baseFontSizePx
+                        ? textLayoutService.getCodepointWidth(codepoint, style, segmentFontSizePx)
+                        : textLayoutService.getCodepointWidth(codepoint, style);
                 int renderCodepoint = style.isRandomStyle()
                         ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
                         : codepoint;
@@ -793,11 +810,31 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 fontTypes[glyphIndex] = style.getFontType();
                 measuredWidths[glyphIndex] = (float) codepointWidth * renderScale;
                 styles[glyphIndex] = style;
+                fontSizePx[glyphIndex] = segmentFontSizePx;
                 glyphIndex++;
-                index += Character.charCount(codepoint);
             }
         }
-        return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles);
+        return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx);
+    }
+
+    /**
+     * 解析单个 glyph 的渲染字号：段落显式字号按基准字号比例缩放调用方传入的渲染尺寸，
+     * 未指定时原样返回。
+     *
+     * @param charSize        整段渲染尺寸（调用方传入）
+     * @param glyphFontSizePx glyph 所在段落的有效字号
+     * @param settings        字体运行时设置
+     * @return glyph 渲染尺寸
+     */
+    private float resolveGlyphCharSize(float charSize, int glyphFontSizePx, FontRuntimeSettings settings) {
+        if (glyphFontSizePx <= 0) {
+            return charSize;
+        }
+        float baseCharSize = Math.max(1.0F, (float) settings.getCharSize());
+        if (glyphFontSizePx == (int) baseCharSize) {
+            return charSize;
+        }
+        return charSize * glyphFontSizePx / baseCharSize;
     }
 
     private void submitVisibleDemandIfNeeded(FontService fontService, GlyphRuntimeTablesView tables,
@@ -968,14 +1005,16 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private final FontType[] fontTypes;
         private final float[] measuredWidths;
         private final TextStyle[] styles;
+        private final int[] fontSizePx;
 
         private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
-                float[] measuredWidths, TextStyle[] styles) {
+                float[] measuredWidths, TextStyle[] styles, int[] fontSizePx) {
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
             this.fontTypes = fontTypes;
             this.measuredWidths = measuredWidths;
             this.styles = styles;
+            this.fontSizePx = fontSizePx;
         }
 
         private boolean isEmpty() {
@@ -987,7 +1026,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
 
         private static PreparedText empty(FontRuntimeSettings settings) {
-            return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0]);
+            return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
+                    new int[0]);
         }
     }
 

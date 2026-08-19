@@ -1,0 +1,205 @@
+package club.heiqi.uilib.font.layout;
+
+import java.util.List;
+
+import org.junit.Assert;
+import org.junit.Test;
+
+import club.heiqi.uilib.font.FontType;
+
+/**
+ * {@link RichTextTagParser} 现代富文本标签解析器测试。
+ */
+public class RichTextTagParserTest {
+
+    private static final int RED = 0xFFFF0000;
+
+    @Test
+    public void shouldParseColorHexAndName() {
+        List<TextSegment> segments = RichTextTagParser.parse("<color=#FF0000>a</color>b", baseStyle());
+
+        Assert.assertEquals(2, segments.size());
+        Assert.assertEquals("a", segments.get(0).getText());
+        Assert.assertEquals(RED, segments.get(0).getStyle().getColor());
+        Assert.assertTrue(segments.get(0).getStyle().isColorExplicit());
+        Assert.assertEquals("b", segments.get(1).getText());
+        Assert.assertFalse(segments.get(1).getStyle().isColorExplicit());
+
+        List<TextSegment> named = RichTextTagParser.parse("<color=red>x</color>", baseStyle());
+        Assert.assertEquals(1, named.size());
+        Assert.assertEquals(RED, named.get(0).getStyle().getColor());
+    }
+
+    @Test
+    public void shouldParseArgbColor() {
+        List<TextSegment> segments = RichTextTagParser.parse("<color=#80FF0000>x</color>", baseStyle());
+        Assert.assertEquals(0x80FF0000, segments.get(0).getStyle().getColor());
+    }
+
+    @Test
+    public void shouldParseNestedStylesAndRestoreOnClose() {
+        List<TextSegment> segments = RichTextTagParser.parse("<color=red>a<b>b</b>c</color>d", baseStyle());
+
+        Assert.assertEquals(4, segments.size());
+        Assert.assertEquals("a", segments.get(0).getText());
+        Assert.assertEquals(RED, segments.get(0).getStyle().getColor());
+        Assert.assertEquals("b", segments.get(1).getText());
+        Assert.assertEquals(RED, segments.get(1).getStyle().getColor());
+        Assert.assertEquals(FontType.BOLD, segments.get(1).getStyle().getFontType());
+        Assert.assertEquals("c", segments.get(2).getText());
+        Assert.assertEquals(RED, segments.get(2).getStyle().getColor());
+        Assert.assertEquals(FontType.NORMAL, segments.get(2).getStyle().getFontType());
+        Assert.assertEquals("d", segments.get(3).getText());
+        Assert.assertFalse(segments.get(3).getStyle().isColorExplicit());
+    }
+
+    @Test
+    public void shouldSupportGenericCloseTag() {
+        List<TextSegment> segments = RichTextTagParser.parse("<b><i>x</>y</b>", baseStyle());
+
+        Assert.assertEquals(2, segments.size());
+        Assert.assertEquals("x", segments.get(0).getText());
+        Assert.assertEquals(FontType.BOLD, segments.get(0).getStyle().getFontType());
+        Assert.assertTrue(segments.get(0).getStyle().isItalic());
+        Assert.assertEquals("y", segments.get(1).getText());
+        Assert.assertEquals(FontType.BOLD, segments.get(1).getStyle().getFontType());
+        Assert.assertFalse(segments.get(1).getStyle().isItalic());
+    }
+
+    @Test
+    public void shouldConvertLineBreakToNewline() {
+        List<TextSegment> segments = RichTextTagParser.parse("<b>a<br>b</b>", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("a\nb", segments.get(0).getText());
+        Assert.assertEquals(FontType.BOLD, segments.get(0).getStyle().getFontType());
+    }
+
+    @Test
+    public void shouldDecodeEntities() {
+        List<TextSegment> segments = RichTextTagParser.parse("a&lt;b&gt;c&amp;d", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("a<b>c&d", segments.get(0).getText());
+    }
+
+    @Test
+    public void shouldKeepUnknownTagsAsLiteralText() {
+        List<TextSegment> segments = RichTextTagParser.parse("a<foo>x</foo>b", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("a<foo>x</foo>b", segments.get(0).getText());
+    }
+
+    @Test
+    public void shouldAutoCloseUnclosedTags() {
+        List<TextSegment> segments = RichTextTagParser.parse("<b>abc", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("abc", segments.get(0).getText());
+        Assert.assertEquals(FontType.BOLD, segments.get(0).getStyle().getFontType());
+    }
+
+    @Test
+    public void shouldIgnoreExtraClosingTags() {
+        List<TextSegment> segments = RichTextTagParser.parse("abc</b>", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("abc", segments.get(0).getText());
+        Assert.assertEquals(FontType.NORMAL, segments.get(0).getStyle().getFontType());
+    }
+
+    @Test
+    public void shouldIgnoreBadColorAttribute() {
+        List<TextSegment> segments = RichTextTagParser.parse("<color=zzz>x</color>", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("x", segments.get(0).getText());
+        Assert.assertFalse(segments.get(0).getStyle().isColorExplicit());
+    }
+
+    @Test
+    public void shouldParseAndClampSize() {
+        Assert.assertEquals(32, RichTextTagParser.parse("<size=32>x</size>", baseStyle())
+                .get(0).getStyle().getFontSizePx());
+        Assert.assertEquals(RichTextTagParser.MAX_FONT_SIZE_PX,
+                RichTextTagParser.parse("<size=9999>x</size>", baseStyle()).get(0).getStyle().getFontSizePx());
+        Assert.assertEquals(RichTextTagParser.MIN_FONT_SIZE_PX,
+                RichTextTagParser.parse("<size=-5>x</size>", baseStyle()).get(0).getStyle().getFontSizePx());
+        Assert.assertEquals(0, RichTextTagParser.parse("<size=abc>x</size>", baseStyle())
+                .get(0).getStyle().getFontSizePx());
+    }
+
+    @Test
+    public void shouldSupportSpaceSeparatedValue() {
+        List<TextSegment> segments = RichTextTagParser.parse("<color red>x</color>", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals(RED, segments.get(0).getStyle().getColor());
+    }
+
+    @Test
+    public void shouldReturnEmptyListForEmptyText() {
+        Assert.assertTrue(RichTextTagParser.parse("", baseStyle()).isEmpty());
+        Assert.assertTrue(RichTextTagParser.parse(null, baseStyle()).isEmpty());
+        Assert.assertEquals("", RichTextTagParser.serialize(null, baseStyle()));
+    }
+
+    @Test
+    public void shouldSerializeRoundTrip() {
+        String text = "前<color=#FF5533>红<b>粗<i>粗斜</i></b>红</color><size=24>大字</size><unknown>尾";
+        List<TextSegment> parsed = RichTextTagParser.parse(text, baseStyle());
+        String serialized = RichTextTagParser.serialize(parsed, baseStyle());
+        List<TextSegment> reParsed = RichTextTagParser.parse(serialized, baseStyle());
+
+        assertSegmentsEqual(parsed, reParsed);
+    }
+
+    @Test
+    public void shouldCloseAllStylesAtSerializeEnd() {
+        TextStyle style = baseStyle();
+        style.setColor(RED);
+        style.setFontType(FontType.BOLD);
+        List<TextSegment> segments = java.util.Collections.singletonList(new TextSegment("x", style));
+
+        String serialized = RichTextTagParser.serialize(segments, baseStyle());
+
+        Assert.assertTrue(serialized.endsWith("</b></color>"));
+    }
+
+    @Test
+    public void shouldEscapeAngleBracketsInSerialize() {
+        List<TextSegment> segments = java.util.Collections.singletonList(
+                new TextSegment("a<b", baseStyle()));
+
+        String serialized = RichTextTagParser.serialize(segments, baseStyle());
+
+        Assert.assertEquals("a&lt;b", serialized);
+    }
+
+    private static TextStyle baseStyle() {
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        return style;
+    }
+
+    private static void assertSegmentsEqual(List<TextSegment> expected, List<TextSegment> actual) {
+        Assert.assertEquals(expected.size(), actual.size());
+        for (int index = 0; index < expected.size(); index++) {
+            TextSegment expectedSegment = expected.get(index);
+            TextSegment actualSegment = actual.get(index);
+            Assert.assertEquals(expectedSegment.getText(), actualSegment.getText());
+            assertStyleEqual(expectedSegment.getStyle(), actualSegment.getStyle());
+        }
+    }
+
+    private static void assertStyleEqual(TextStyle expected, TextStyle actual) {
+        Assert.assertEquals(expected.getColor(), actual.getColor());
+        Assert.assertEquals(expected.isColorExplicit(), actual.isColorExplicit());
+        Assert.assertEquals(expected.getFontType(), actual.getFontType());
+        Assert.assertEquals(expected.isItalic(), actual.isItalic());
+        Assert.assertEquals(expected.isUnderline(), actual.isUnderline());
+        Assert.assertEquals(expected.isStrikethrough(), actual.isStrikethrough());
+        Assert.assertEquals(expected.getFontSizePx(), actual.getFontSizePx());
+    }
+}
