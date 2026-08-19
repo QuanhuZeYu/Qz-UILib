@@ -920,11 +920,15 @@ public class TextLayoutService {
     /**
      * 码点推进宽度（含字距）公共入口：render 侧与测量侧同源取推进宽度，
      * 保证 rendered measuredWidths 累加与 getStringWidth/trim/wrap 口径一致。
+     *
+     * <p>{@code fontSizePx} 为基准字号；本方法按样式（sup/sub）解析有效字号后测量，
+     * 与 {@link #getSegmentWidth(TextSegment, int)} 同口径。</p>
      */
     public double resolveAdvance(int codepoint, TextStyle style, int fontSizePx) {
         lockGeneration();
         try {
-            return resolveCodepointAdvance(codepoint, style, fontSizePx);
+            int effectiveSize = style == null ? fontSizePx : style.resolveEffectiveFontSizePx(fontSizePx);
+            return resolveCodepointAdvance(codepoint, style, effectiveSize);
         } finally {
             unlockGeneration();
         }

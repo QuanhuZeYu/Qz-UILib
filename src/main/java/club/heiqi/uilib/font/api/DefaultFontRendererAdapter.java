@@ -819,10 +819,10 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         : codepoint;
                 renderCodepoints[glyphIndex] = renderCodepoint;
                 fontTypes[glyphIndex] = style.getFontType();
-                // 推进宽度经 TextLayoutService.resolveAdvance 同源（测量/trim/wrap 共用口径），
-                // 装饰线/高亮矩形随 advance 覆盖间隙；整体同乘 renderScale。
+                // 推进宽度经 TextLayoutService.resolveAdvance 同源（测量/trim/wrap 共用口径，
+                // 内部按 sup/sub 解析有效字号）；装饰线/高亮矩形随 advance 覆盖间隙，整体同乘 renderScale。
                 measuredWidths[glyphIndex] = (float) textLayoutService.resolveAdvance(
-                        codepoint, style, segmentFontSizePx) * renderScale;
+                        codepoint, style, resolvedBaseFontSizePx) * renderScale;
                 styles[glyphIndex] = style;
                 fontSizePx[glyphIndex] = segmentFontSizePx;
                 if (segmentFontSizePx > maxFontSizePx) {
