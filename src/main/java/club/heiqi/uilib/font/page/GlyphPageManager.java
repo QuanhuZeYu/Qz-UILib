@@ -46,10 +46,7 @@ public class GlyphPageManager {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Object mailboxLock = new Object();
     private final GlyphDemandRegistry demands = new GlyphDemandRegistry();
-    private final List<GlyphPage> retiredPageRetries = new ArrayList<GlyphPage>();
-    private final Set<GlyphPage> retainedAtlasOwnerships = new HashSet<GlyphPage>();
-    private final BitSet normalAtlasPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
-    private final BitSet boldAtlasPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
+    private final AtlasOwnershipBookkeeping atlasBookkeeping = new AtlasOwnershipBookkeeping();
     private final AtomicLong requestIdSequence = new AtomicLong(0L);
     private final LongSupplier nanoTime;
     private final int maxResidentAtlasPages;
@@ -57,10 +54,6 @@ public class GlyphPageManager {
     private final long uploadDrainTimeBudgetNanos;
     private final long uploadDrainBitmapByteBudget;
     private int blockedPublisherCount;
-    private int residentAtlasPageCount;
-    private int retainedAtlasPageCount;
-    private boolean normalAtlasPressure;
-    private boolean boldAtlasPressure;
     private final GlyphStats stats = new GlyphStats();
     private final GlyphMailbox mailbox;
 
@@ -223,7 +216,7 @@ public class GlyphPageManager {
 
     private void reset(int nextRuntimeVersion, FontRuntimeSettings nextSettings, FontRuntimeMetrics metrics) {
         retryRetiredPages();
-        if (!retiredPageRetries.isEmpty()) {
+        if (atlasBookkeeping.hasRetiredRetries()) {
             throw new IllegalStateException("上一 retiring generation 仍持有 atlas page，拒绝退休当前 active generation");
         }
         if (initialized.get()) {
@@ -239,11 +232,7 @@ public class GlyphPageManager {
         configurePageGeometry(nextSettings);
         runtimeTables.configureSlotCoordinates(columnCount, rowCount, glyphSize);
         readyGlyphCount = 0;
-        residentAtlasPageCount = 0;
-        normalAtlasPressure = false;
-        boldAtlasPressure = false;
-        normalAtlasPressureGlyphs.clear();
-        boldAtlasPressureGlyphs.clear();
+        atlasBookkeeping.resetResidency();
         if (initialized.get()) {
             ensureCapacity(FontType.NORMAL);
             ensureCapacity(FontType.BOLD);
@@ -576,7 +565,7 @@ public class GlyphPageManager {
         assertRuntimeAccess();
         if (maxCount <= 0 && ownerToken != null) {
             retryRetiredPages();
-            if (!retiredPageRetries.isEmpty()) {
+            if (atlasBookkeeping.hasRetiredRetries()) {
                 throw new RejectedExecutionException("retiring generation 仍持有 atlas page");
             }
             return;
@@ -692,15 +681,16 @@ public class GlyphPageManager {
     public synchronized long[] snapshotRecoverableRequests() {
         int requestCount = countRecoverableRequests(runtimeTables.stateNormal)
                 + countRecoverableRequests(runtimeTables.stateBold)
-                + normalAtlasPressureGlyphs.cardinality() + boldAtlasPressureGlyphs.cardinality();
+                + atlasBookkeeping.pressureGlyphCount();
         if (requestCount <= 0) {
             return new long[0];
         }
         long[] requests = new long[requestCount];
         int offset = collectRecoverableRequests(requests, 0, runtimeTables.stateNormal, FontType.NORMAL);
         offset = collectRecoverableRequests(requests, offset, runtimeTables.stateBold, FontType.BOLD);
-        offset = collectPressureRequests(requests, offset, normalAtlasPressureGlyphs, FontType.NORMAL);
-        collectPressureRequests(requests, offset, boldAtlasPressureGlyphs, FontType.BOLD);
+        offset = collectPressureRequests(requests, offset, atlasBookkeeping.pressureGlyphs(FontType.NORMAL),
+                FontType.NORMAL);
+        collectPressureRequests(requests, offset, atlasBookkeeping.pressureGlyphs(FontType.BOLD), FontType.BOLD);
         return requests;
     }
 
@@ -882,7 +872,7 @@ public class GlyphPageManager {
     }
 
     synchronized int getResidentAtlasPageCount() {
-        return residentAtlasPageCount + retainedAtlasPageCount;
+        return atlasBookkeeping.ownedPageCount();
     }
 
     /**
@@ -910,7 +900,7 @@ public class GlyphPageManager {
     }
 
     synchronized boolean isAtlasPressure(FontType fontType) {
-        return fontType == FontType.BOLD ? boldAtlasPressure : normalAtlasPressure;
+        return atlasBookkeeping.isPressure(fontType);
     }
 
     private void configurePageGeometry() {
@@ -1079,9 +1069,9 @@ public class GlyphPageManager {
     private void markAtlasPressure(GlyphRequestToken token, UploadAttemptContext context, String reason) {
         FontType fontType = token.getFontType();
         if (fontType == FontType.BOLD) {
-            boldAtlasPressure = true;
+            atlasBookkeeping.setPressure(FontType.BOLD, true);
         } else {
-            normalAtlasPressure = true;
+            atlasBookkeeping.setPressure(FontType.NORMAL, true);
         }
         stats.recordAtlasPressure();
         context.pressure = reason;
@@ -1102,7 +1092,7 @@ public class GlyphPageManager {
     }
 
     private BitSet pressureGlyphs(FontType fontType) {
-        return fontType == FontType.BOLD ? boldAtlasPressureGlyphs : normalAtlasPressureGlyphs;
+        return atlasBookkeeping.pressureGlyphs(fontType);
     }
 
     private void rollbackUpload(AtlasReservation reservation, FontType fontType, int codepoint,
@@ -1151,9 +1141,7 @@ public class GlyphPageManager {
             }
         }
         page.close();
-        if (residentAtlasPageCount > 0) {
-            residentAtlasPageCount--;
-        }
+        atlasBookkeeping.decrementResident();
         releaseAtlasPressureIfCapacityAvailable();
     }
 
@@ -1161,10 +1149,9 @@ public class GlyphPageManager {
         if (atlasActivationPressureReason() != null) {
             return;
         }
-        normalAtlasPressureGlyphs.clear();
-        boldAtlasPressureGlyphs.clear();
-        normalAtlasPressure = false;
-        boldAtlasPressure = false;
+        atlasBookkeeping.clearPressureGlyphs();
+        atlasBookkeeping.setPressure(FontType.NORMAL, false);
+        atlasBookkeeping.setPressure(FontType.BOLD, false);
     }
 
     private String uploadRollbackReason(Throwable throwable) {
@@ -1176,20 +1163,20 @@ public class GlyphPageManager {
     }
 
     private String atlasPressureName() {
-        if (normalAtlasPressure && boldAtlasPressure) {
+        if (atlasBookkeeping.bothPressures()) {
             return "NORMAL+BOLD";
         }
-        if (normalAtlasPressure) {
+        if (atlasBookkeeping.normalPressure()) {
             return "NORMAL";
         }
-        if (boldAtlasPressure) {
+        if (atlasBookkeeping.boldPressure()) {
             return "BOLD";
         }
         return "NONE";
     }
 
     private int atlasOwnedPageCount() {
-        return residentAtlasPageCount + retainedAtlasPageCount;
+        return atlasBookkeeping.ownedPageCount();
     }
 
     private String atlasActivationPressureReason() {
@@ -1209,7 +1196,7 @@ public class GlyphPageManager {
         long ownedBytes = collectAtlasBytes(runtimeTables.normalPages, runtimeTables.normalPageCount, countedPages);
         ownedBytes = saturatedAdd(ownedBytes,
                 collectAtlasBytes(runtimeTables.boldPages, runtimeTables.boldPageCount, countedPages));
-        for (GlyphPage page : retainedAtlasOwnerships) {
+        for (GlyphPage page : atlasBookkeeping.retainedOwnershipsSnapshot()) {
             if (countedPages.add(page)) {
                 ownedBytes = saturatedAdd(ownedBytes, atlasPageBytes(page.getTextureSize()));
             }
@@ -1571,14 +1558,13 @@ public class GlyphPageManager {
 
     private void retryRetiredPages() {
         boolean releasedOwnership = false;
-        Iterator<GlyphPage> iterator = retiredPageRetries.iterator();
+        Iterator<GlyphPage> iterator = atlasBookkeeping.retiredRetriesIterator();
         while (iterator.hasNext()) {
             GlyphPage page = iterator.next();
             try {
                 page.close();
                 iterator.remove();
-                if (retainedAtlasOwnerships.remove(page)) {
-                    retainedAtlasPageCount--;
+                if (atlasBookkeeping.removeRetained(page)) {
                     releasedOwnership = true;
                 }
             } catch (RuntimeException exception) {
@@ -1599,18 +1585,17 @@ public class GlyphPageManager {
     }
 
     private void retainPageForRetry(GlyphPage page) {
-        if (page == null || retiredPageRetries.contains(page)) {
+        if (page == null || atlasBookkeeping.containsRetired(page)) {
             return;
         }
-        retiredPageRetries.add(page);
-        if (page.hasTextureOwnership() && retainedAtlasOwnerships.add(page)) {
-            retainedAtlasPageCount++;
+        atlasBookkeeping.addRetired(page);
+        if (page.hasTextureOwnership()) {
+            atlasBookkeeping.addRetained(page);
         }
     }
 
     private boolean releaseRetainedCountIfOwnershipGone(GlyphPage page) {
-        if (!page.hasTextureOwnership() && retainedAtlasOwnerships.remove(page)) {
-            retainedAtlasPageCount--;
+        if (!page.hasTextureOwnership() && atlasBookkeeping.removeRetained(page)) {
             return true;
         }
         return false;
@@ -1648,7 +1633,7 @@ public class GlyphPageManager {
                     pagePublished = true;
                 }
                 if (activatesResidentPage) {
-                    residentAtlasPageCount++;
+                    atlasBookkeeping.incrementResident();
                     residentCountCommitted = true;
                 }
             } catch (RuntimeException exception) {
@@ -1677,7 +1662,7 @@ public class GlyphPageManager {
             }
             Throwable failure = null;
             if (residentCountCommitted) {
-                residentAtlasPageCount--;
+                atlasBookkeeping.decrementResident();
                 residentCountCommitted = false;
             }
             if (pagePublished) {
@@ -1735,7 +1720,7 @@ public class GlyphPageManager {
             if (newPage && !pagePublished) {
                 retainPageForRetry(page);
             } else if (activatesResidentPage && !residentCountCommitted) {
-                residentAtlasPageCount++;
+                atlasBookkeeping.incrementResident();
                 residentCountCommitted = true;
             }
         }
