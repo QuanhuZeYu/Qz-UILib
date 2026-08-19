@@ -2,22 +2,14 @@ package club.heiqi.uilib.client.hud;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
-import club.heiqi.uilib.ui.hud.api.HudLine;
-import club.heiqi.uilib.ui.hud.api.HudSnapshot;
-import club.heiqi.uilib.ui.hud.api.HudSpan;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
-import club.heiqi.uilib.ui.hud.api.HudTone;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
-import club.heiqi.uilib.ui.reactive.Computed;
-import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
-import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
+import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.PaintPlan;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -28,18 +20,22 @@ import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 无输入、无 Widget/GuiScreen 生命周期的保留式 scene HUD 宿主。 */
+/**
+ * 保留式 scene HUD 宿主：每个注册项一个「虚拟窗口」，内容由 {@code HudWindowFactory}
+ * 用与 UI 页面完全相同的 scene 代码构建（控件 + signal），帧循环复用 {@link SceneFramePipeline}
+ * （无输入源退化模式），layout/paint/replay/settle 与 UI 页面同源。
+ *
+ * <p>无输入、无 Widget/GuiScreen 生命周期；四角锚定与堆叠由 {@link HudLayoutEngine} 负责，
+ * 宿主只做「挂载 → 测量 → 锚定 → 帧循环」。</p>
+ */
 public final class SceneHudHost {
     private final HudRegistry registry;
     private final HudLayoutEngine hudLayout = new HudLayoutEngine();
     private final SceneTextMeasurer measurer;
-    private final ScenePaintEngine paintEngine;
-    private final ScenePaintReplayer replayer = new ScenePaintReplayer();
-    private final Map<String, RetainedHud> retained = new HashMap<String, RetainedHud>();
+    private final Map<String, RetainedWindow> retained = new HashMap<String, RetainedWindow>();
     private final HudScaleSetting scaleSetting;
 
     /** 创建消费指定服务注册表的 HUD host。 */
@@ -56,83 +52,61 @@ public final class SceneHudHost {
         this.registry = registry;
         this.measurer = measurer;
         this.scaleSetting = scaleSetting;
-        this.paintEngine = new ScenePaintEngine(measurer);
     }
 
-    /** 在 render 主线程读取 provider，并经单一响应式事务完成本帧 scene 更新。 */
+    /** 在 render 主线程执行一帧：挂载缺失窗口 → 测量 → 四角锚定 → 逐窗口帧循环。 */
     public void render(UiRenderBackend backend, HudViewportMetrics viewport, boolean inWorld, boolean screenOpen) {
         render(backend, viewport.getWidth(), viewport.getHeight(), inWorld, screenOpen);
     }
 
-    /** 在 render 主线程读取 provider，并经单一响应式事务完成本帧 scene 更新。 */
+    /** 在 render 主线程执行一帧：挂载缺失窗口 → 测量 → 四角锚定 → 逐窗口帧循环。 */
     public void render(UiRenderBackend backend, int width, int height, boolean inWorld, boolean screenOpen) {
         float scale = scaleSetting.get();
         width = Math.max(1, (int) Math.floor(width / scale));
         height = Math.max(1, (int) Math.floor(height / scale));
         backend = scale == 1F ? backend : new ScaledHudBackend(backend, scale);
-        List<HudRegistry.FrameEntry> frame = registry.snapshot(this::reportProviderFailure);
         HudInsets safeInsets = registry.avoidanceInsets(this::reportProviderFailure);
         ArrayList<HudLayoutEngine.MeasuredHud> measured = new ArrayList<HudLayoutEngine.MeasuredHud>();
         Set<String> registered = new HashSet<String>();
         Set<String> visible = new HashSet<String>();
-        for (HudRegistry.FrameEntry entry : frame) {
+        long frameTimeNanos = System.nanoTime();
+        for (HudRegistry.Entry entry : registry.frameEntries()) {
             registered.add(entry.spec.getId());
-            RetainedHud hud = retained.get(entry.spec.getId());
-            if (hud == null) {
-                hud = new RetainedHud(entry.spec, measurer);
-                retained.put(entry.spec.getId(), hud);
+            RetainedWindow window = retained.get(entry.spec.getId());
+            if (window == null) {
+                try {
+                    window = new RetainedWindow(entry, measurer);
+                    retained.put(entry.spec.getId(), window);
+                } catch (RuntimeException exception) {
+                    // 单个窗口工厂失败仅跳过该 HUD，不影响其它窗口（对齐旧 provider 异常隔离语义）
+                    reportWindowFailure(exception);
+                    continue;
+                }
             }
-            hud.accept(entry.snapshot);
-            if (!entry.snapshot.isEmpty() && visible(entry.spec.getVisibility(), inWorld, screenOpen)) {
+            if (visible(entry.spec.getVisibility(), inWorld, screenOpen)) {
                 visible.add(entry.spec.getId());
             }
         }
-        ReactiveScheduler.get().labelNextTransaction("hud.frame");
-        ReactiveScheduler.get().flush();
         disposeInactive(registered);
-        for (HudRegistry.FrameEntry entry : frame) {
-            RetainedHud hud = retained.get(entry.spec.getId());
-            if (hud == null || !visible.contains(entry.spec.getId())) continue;
-            LayoutBox box = hud.layout(HudSceneConstraints.measurement(width, height));
-            HudTokens tokens = HudTokens.forSpec(entry.spec);
+        for (HudRegistry.Entry entry : registry.frameEntries()) {
+            RetainedWindow window = retained.get(entry.spec.getId());
+            if (window == null || !visible.contains(entry.spec.getId())) continue;
+            LayoutBox box = window.measure(width, height);
+            if (window.isEmptyContent()) continue;
             int minimum = entry.spec.getMinWidth() == 0
-                    ? Math.min(tokens.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
+                    ? Math.min(HudTokens.NORMAL.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
             int measuredWidth = Math.max(minimum, Math.min(entry.spec.getMaxWidth(), box.getWidth()));
             measured.add(new HudLayoutEngine.MeasuredHud(entry, measuredWidth, box.getHeight()));
         }
         for (HudLayoutEngine.PlacedHud placed : hudLayout.layout(measured, width, height, safeInsets)) {
-            RetainedHud hud = retained.get(placed.entry.spec.getId());
-            hud.layout(HudSceneConstraints.placement(placed));
-            PaintPlan content = paintEngine.paint(hud.root).getPlan();
-            PaintPlan plan = new PaintPlan().addClipPush(0, 0, placed.width, placed.height, 0);
-            for (PaintCommand command : content.getCommands()) plan.addCommand(command);
-            plan.addClipPop();
-            replayer.replay(plan, backend, placed.x, placed.y);
+            RetainedWindow window = retained.get(placed.entry.spec.getId());
+            window.frame(backend, placed, frameTimeNanos);
         }
     }
 
-    /** HUD scene 布局的宿主约束，不把 viewport 或放置结果写回保留节点。 */
-    static final class HudSceneConstraints {
-        private final Constraints constraints;
-
-        HudSceneConstraints(int width, int height) {
-            constraints = new Constraints(Math.max(1, width), Math.max(1, height));
-        }
-
-        /** 创建视口测量约束。 */
-        static HudSceneConstraints measurement(int width, int height) {
-            return new HudSceneConstraints(width, height);
-        }
-
-        /** 创建最终放置约束。 */
-        static HudSceneConstraints placement(HudLayoutEngine.PlacedHud placed) {
-            return new HudSceneConstraints(placed.width, placed.height);
-        }
-    }
-
-    /** 释放世界级保留 scene，registration/provider 仍归 mod 持有。 */
+    /** 释放世界级保留窗口；registration 仍归 mod 持有，重连后自动重建。 */
     public void clearWorld() {
-        for (RetainedHud hud : retained.values()) hud.dispose();
+        for (RetainedWindow window : retained.values()) window.dispose();
         retained.clear();
     }
 
@@ -149,107 +123,67 @@ public final class SceneHudHost {
     }
 
     private void reportProviderFailure(RuntimeException exception) {
-        MyMod.LOG.warn("HUD provider 本帧读取失败，已隔离", exception);
+        MyMod.LOG.warn("HUD avoidance provider 本帧读取失败，已隔离", exception);
     }
 
-    /** 每个注册项只挂载一次，snapshot 变化经 signal/effect 更新属性和 keyed 行列表。 */
-    static final class RetainedHud {
-        private final SceneNode root = SceneNode.column().setHitTestable(false).setClipChildren(true);
+    private void reportWindowFailure(RuntimeException exception) {
+        MyMod.LOG.warn("HUD 窗口工厂挂载失败，已跳过该 HUD", exception);
+    }
+
+    /**
+     * 单个注册项的保留虚拟窗口：外壳（host 默认皮肤）+ 工厂内容树 + 独立 scene 帧管线。
+     *
+     * <p>外壳统一提供背景、padding、子树裁剪与收缩宽度；内容树完全由 mod 的 scene 代码决定，
+     * 内容空尺寸（signal 卸载或空文本）时整窗（含外壳）隐藏。</p>
+     */
+    static final class RetainedWindow {
+        private final SceneNode root;
+        private final SceneNode content;
         private final SceneRuntime runtime;
         private final SceneLayoutEngine layoutEngine;
-        private final SceneTextMeasurer measurer;
-        private final Signal<HudSnapshot> snapshot = Signal.create(HudSnapshot.EMPTY);
+        private final SceneFramePipeline pipeline;
 
-        RetainedHud(HudSpec spec, SceneTextMeasurer measurer) {
-            HudTokens tokens = HudTokens.forSpec(spec);
-            this.measurer = measurer;
+        RetainedWindow(HudRegistry.Entry entry, SceneTextMeasurer measurer) {
+            HudTokens tokens = HudTokens.NORMAL;
             runtime = new SceneRuntime(measurer);
             layoutEngine = new SceneLayoutEngine(measurer);
-            root.setPadding(tokens.paddingY, tokens.paddingX, tokens.paddingY, tokens.paddingX)
+            pipeline = new SceneFramePipeline(runtime, layoutEngine, new ScenePaintEngine(measurer),
+                    new ScenePaintReplayer(), measurer, null);
+            root = SceneNode.column().setHitTestable(false).setClipChildren(true)
+                    .setPadding(tokens.paddingY, tokens.paddingX, tokens.paddingY, tokens.paddingX)
                     .setBackgroundColor(0xA0000000)
                     .setWidthSizing(SceneNode.WidthSizing.SHRINK);
-            runtime.forEach(root, Computed.create(() -> snapshot.get().getLines()), HudLine::getId,
-                    line -> createLine(spec, line));
+            SceneNode contentRoot = entry.factory.build(runtime);
+            if (contentRoot == null) {
+                throw new IllegalStateException("HUD window factory must return a content root: "
+                        + entry.spec.getId());
+            }
+            root.appendChild(contentRoot);
+            content = contentRoot;
             runtime.flush();
         }
 
-        private SceneNode createLine(HudSpec spec, HudLine initial) {
-            SceneNode row = SceneNode.column().setHitTestable(false).setWidthSizing(SceneNode.WidthSizing.SHRINK);
-            HudTokens tokens = HudTokens.forSpec(spec);
-            SceneNode label = SceneNode.row(0).setHitTestable(false).setWidthSizing(SceneNode.WidthSizing.SHRINK)
-                    .setFontSize(tokens.fontSize).setPreferredHeight(tokens.lineBox);
-            SceneNode track = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight)
-                    .setClipChildren(true);
-            SceneNode fill = new SceneNode().setHitTestable(false).setPreferredHeight(tokens.progressHeight)
-                    .setWidthSizing(SceneNode.WidthSizing.SHRINK);
-            row.appendChild(label);
-            row.appendChild(track);
-            runtime.forEach(label, Computed.create(() -> lineById(initial.getId()).getSpans()), HudSpan::getId,
-                    span -> createSpan(initial.getId(), span.getId(), tokens));
-            runtime.show(track, Computed.create(() -> lineById(initial.getId()).getProgress() > 0F), () -> fill);
-            runtime.bindComputed(() -> contentWidth(lineById(initial.getId()), tokens), value -> {
-                int contentMaximum = Math.max(0, spec.getMaxWidth() - tokens.paddingX * 2);
-                track.setPreferredWidth(Math.min(value, contentMaximum));
-            });
-            runtime.bindComputed(() -> lineById(initial.getId()).hasProgress(), value -> {
-                track.setPreferredHeight(Boolean.TRUE.equals(value) ? tokens.progressHeight : 0);
-                track.setBackgroundColor(Boolean.TRUE.equals(value) ? 0x60000000 : 0x00000000);
-            });
-            runtime.bindComputed(() -> Math.round(lineById(initial.getId()).getProgress() * 100F), value ->
-                    fill.setPercentWidth(Math.max(0, value.intValue())));
-            runtime.bindComputed(() -> color(lineById(initial.getId()).getTone()), fill::setBackgroundColor);
-            runtime.bindComputed(() -> lineById(initial.getId()).hasProgress(), value -> row.setPreferredHeight(
-                     tokens.lineHeight + (Boolean.TRUE.equals(value) ? tokens.progressHeight : 0)));
-            return row;
-        }
-
-        private SceneNode createSpan(String lineId, String spanId, HudTokens tokens) {
-            SceneNode node = new SceneNode().setHitTestable(false).setFontSize(tokens.fontSize)
-                    .setPreferredHeight(tokens.lineBox);
-            runtime.bindComputed(() -> displayText(spanById(lineId, spanId).getText()), node::setText);
-            runtime.bindComputed(() -> color(spanById(lineId, spanId).getTone()), node::setTextColor);
-            return node;
-        }
-
-        private int contentWidth(HudLine line, HudTokens tokens) {
-            int width = 0;
-            for (HudSpan span : line.getSpans()) width += measurer.measureWidth(displayText(span.getText()), tokens.fontSize);
-            return width;
-        }
-
-        private HudSpan spanById(String lineId, String spanId) {
-            for (HudSpan span : lineById(lineId).getSpans()) if (spanId.equals(span.getId())) return span;
-            return new HudSpan(spanId, null, HudTone.NORMAL);
-        }
-
-        private static String displayText(String text) { return text == null ? "" : text; }
-
-        private HudLine lineById(String id) {
-            for (HudLine line : snapshot.get().getLines()) if (id.equals(line.getId())) return line;
-            return HudLine.text(id, "");
-        }
-
-        void accept(HudSnapshot value) { snapshot.set(value); }
-
-        LayoutBox layout(HudSceneConstraints constraints) {
-            layoutEngine.layout(root, constraints.constraints);
+        /** 测量（含外壳）：layout 后返回外壳盒。 */
+        LayoutBox measure(int width, int height) {
+            layoutEngine.layout(root, new Constraints(Math.max(1, width), Math.max(1, height)));
             return (LayoutBox) root.getCachedLayout();
         }
 
-        private void dispose() { runtime.dispose(); }
+        /** 内容子树无可见尺寸（signal 卸载/空文本）→ 整窗隐藏，对齐旧「空快照不显示」语义。 */
+        boolean isEmptyContent() {
+            Object box = content.getCachedLayout();
+            return box == null || ((LayoutBox) box).getWidth() <= 0 || ((LayoutBox) box).getHeight() <= 0;
+        }
+
+        /** 窗口帧循环：与 UI 页面同源的 11 阶段帧管线，并以放置盒硬裁剪（内容超长不溢出窗口）。 */
+        void frame(UiRenderBackend backend, HudLayoutEngine.PlacedHud placed, long frameTimeNanos) {
+            runtime.__tickFrame(frameTimeNanos);
+            pipeline.run(root, placed.width, placed.height, backend, placed.x, placed.y, frameTimeNanos,
+                    new club.heiqi.uilib.ui.scene.layout.AnchorRect(0, 0, placed.width, placed.height));
+        }
+
+        void dispose() { runtime.dispose(); }
 
         SceneNode root() { return root; }
-
-        private static int color(HudTone tone) {
-            switch (tone) {
-                case MUTED: return 0xFFAAAAAA;
-                case INFO: return 0xFF55FFFF;
-                case SUCCESS: return 0xFF55FF55;
-                case WARNING: return 0xFFFFFF55;
-                case DANGER: return 0xFFFF5555;
-                default: return 0xFFFFFFFF;
-            }
-        }
     }
-
 }

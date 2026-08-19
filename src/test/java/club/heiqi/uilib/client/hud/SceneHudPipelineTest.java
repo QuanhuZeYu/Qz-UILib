@@ -1,165 +1,115 @@
 package club.heiqi.uilib.client.hud;
 
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
-import club.heiqi.uilib.ui.hud.api.HudLine;
-import club.heiqi.uilib.ui.hud.api.HudSnapshot;
-import club.heiqi.uilib.ui.hud.api.HudSpan;
+import club.heiqi.uilib.ui.hud.api.HudRegistration;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
-import club.heiqi.uilib.ui.hud.api.HudTone;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
-import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.RecordingRenderBackend;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.testkit.ScenePaintCapture;
+import club.heiqi.uilib.ui.scene.paint.TextStyle;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.lang.reflect.Field;
 import java.util.List;
-import java.util.Arrays;
 import java.util.Map;
 
 import static org.junit.Assert.*;
 
-/** HUD scene 内容通过 layout→paint→replay 出口的 headless 捕获测试。 */
+/** HUD 虚拟窗口（窗口工厂 + scene 代码）经 layout→paint→replay 出口的 headless 契约测试。 */
 public class SceneHudPipelineTest {
+    private static final FixedTextMeasurer MEASURER = new FixedTextMeasurer(8, 16);
+
     @Before public void setUp() { ReactiveScheduler.get().reset(); }
     @After public void tearDown() { ReactiveScheduler.get().reset(); }
 
-    @Test public void textHudPaintsThroughDisplayListWithoutGuiScreen() {
-        SceneNode root = SceneNode.column().setPadding(2).setBackgroundColor(0xA0000000)
-                .setWidthSizing(SceneNode.WidthSizing.SHRINK).setHitTestable(false);
-        root.appendChild(new SceneNode().setText("HUD").setTextColor(0xFFFFFFFF).setHitTestable(false));
-        RecordingRenderBackend backend = ScenePaintCapture.paintAndCapture(root, 100, 40);
-        assertNotNull(ScenePaintCapture.firstFill(backend));
-        assertTrue(backend.getCalls().stream().anyMatch(call -> "drawText".equals(call.methodName())));
+    private static void registerText(HudRegistry registry, String id, String text) {
+        registry.register(HudSpec.builder(id).build(), rt -> SceneNode.row()
+                .setHitTestable(false).setText(text).setTextColor(0xFFFFFFFF).setFontSize(14));
     }
 
-    @Test public void snapshotSignalFlushInvalidatesLayoutAndChangesPaintPlan() {
-        FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(HudSpec.builder("signal").build(), measurer);
-        hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80));
-        hud.accept(HudSnapshot.of(HudLine.text("line", "A")));
-        assertFalse(hud.root().__isSelfLayoutDirty());
+    @Test public void windowContentPaintsThroughPipelineWithoutGuiScreen() {
+        HudRegistry registry = new HudRegistry();
+        registerText(registry, "hello", "HUD");
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        new SceneHudHost(registry, MEASURER).render(backend, 100, 40, true, false);
+        assertTrue(backend.getCalls().stream().anyMatch(call -> "drawText".equals(call.methodName())
+                && "HUD".equals(call.getString(0))));
+    }
+
+    @Test public void sceneRichTextWorksInsideHudWindow() {
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("rich").build(), rt -> {
+            SceneNode root = SceneNode.row().setHitTestable(false);
+            rt.mount(root, SceneLabel.create(rt, new SceneLabel.Props(
+                    Signal.create("<color=#FF5533>HUD</color>"), 0xFFFFFFFF, 14,
+                    TextStyle.TEXT_MODE_RICH_TAGS)));
+            return root;
+        });
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        new SceneHudHost(registry, MEASURER).render(backend, 100, 40, true, false);
+        // RICH 模式 drawText 原文含标签（渲染层按 mode 解析着色），断言内容子串即可
+        assertTrue(backend.getCalls().stream().anyMatch(call -> "drawText".equals(call.methodName())
+                && call.getString(0).contains("HUD")));
+    }
+
+    @Test public void signalDrivenContentInvalidatesLayoutAndChangesPaintPlan() {
+        Signal<String> text = Signal.create("A");
+        SceneHudHost.RetainedWindow window = new SceneHudHost.RetainedWindow(
+                new HudRegistry.Entry(HudSpec.builder("signal").build(), rt -> {
+                    SceneNode root = SceneNode.row().setHitTestable(false).setFontSize(14);
+                    rt.bindText(root, text);
+                    return root;
+                }, 0L), MEASURER);
+        window.measure(200, 80);
         ReactiveScheduler.get().flush();
-        assertTrue(hud.root().__isSelfLayoutDirty() || hud.root().__isDescendantLayoutDirty());
-        hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80));
-        PaintPlan first = new ScenePaintEngine(measurer).paint(hud.root()).getPlan();
-        hud.accept(HudSnapshot.of(HudLine.progress("line", "Changed", HudTone.WARNING, 0.5F)));
+        PaintPlan first = new ScenePaintEngine(MEASURER).paint(window.root()).getPlan();
+        text.set("Changed");
         ReactiveScheduler.get().flush();
-        assertTrue(hud.root().__isDescendantLayoutDirty());
-        hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80));
-        PaintPlan second = new ScenePaintEngine(measurer).paint(hud.root()).getPlan();
+        window.measure(200, 80);
+        PaintPlan second = new ScenePaintEngine(MEASURER).paint(window.root()).getPlan();
         assertNotEquals(first.getCommands().toString(), second.getCommands().toString());
     }
 
-    @Test public void richSpansAreKeyedAndProgressUsesTheirCombinedWidth() {
-        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(
-                HudSpec.builder("rich").minWidth(1).build(), new FixedTextMeasurer(8, 16));
-        hud.accept(HudSnapshot.of(HudLine.richProgress("line", Arrays.asList(
-                new HudSpan("left", "AB", HudTone.NORMAL), new HudSpan("right", "C", HudTone.WARNING)), 0.5F)));
-        ReactiveScheduler.get().flush();
-        hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80));
-        SceneNode label = hud.root().__getChildren().get(0).__getChildren().get(0);
-        SceneNode left = label.__getChildren().get(0);
-        assertEquals(2, label.__getChildren().size());
-        assertEquals(3 * 8 + HudTokens.NORMAL.paddingX * 2,
-                ((club.heiqi.uilib.ui.scene.layout.LayoutBox) hud.root().getCachedLayout()).getWidth());
-
-        hud.accept(HudSnapshot.of(HudLine.richProgress("line", 0.5F,
-                new HudSpan("left", "Long", HudTone.INFO), new HudSpan("right", null, HudTone.DANGER))));
-        ReactiveScheduler.get().flush();
-        assertSame(left, label.__getChildren().get(0));
-        assertEquals("Long", left.getText());
-        assertEquals(0xFF55FFFF, left.getTextColor());
-        assertTrue(left.__isSelfLayoutDirty());
-    }
-
-    @Test public void consecutiveRichSpansEmitOrderedTextCommandsWithIndependentColorsAndX() {
-        SceneHudHost.RetainedHud hud = richHud("AB", HudTone.WARNING, "C", HudTone.INFO);
-        PaintPlan plan = layoutAndPaint(hud, 200);
-        List<PaintCommand> text = textCommands(plan);
-
-        assertEquals(2, text.size());
-        assertEquals("AB", text.get(0).getText());
-        assertEquals(0xFFFFFF55, text.get(0).getTextStyle().getColor());
-        assertEquals("C", text.get(1).getText());
-        assertEquals(0xFF55FFFF, text.get(1).getTextStyle().getColor());
-        assertEquals(text.get(0).getLeft() + 16, text.get(1).getLeft());
-    }
-
-    @Test public void richSpanToneOnlyInvalidatesPaintWhileTextInvalidatesLayoutAndPaint() {
-        SceneHudHost.RetainedHud hud = richHud("A", HudTone.NORMAL, "B", HudTone.INFO);
-        layoutAndPaint(hud, 200);
-        SceneNode label = hud.root().__getChildren().get(0).__getChildren().get(0);
-        SceneNode first = label.__getChildren().get(0);
-
-        hud.accept(HudSnapshot.of(HudLine.rich("line",
-                new HudSpan("left", "A", HudTone.DANGER), new HudSpan("right", "B", HudTone.INFO))));
-        ReactiveScheduler.get().flush();
-        assertFalse(first.__isSelfLayoutDirty());
-        assertTrue(first.__isSelfPaintDirty());
-        layoutAndPaint(hud, 200);
-
-        hud.accept(HudSnapshot.of(HudLine.rich("line",
-                new HudSpan("left", "Long", HudTone.DANGER), new HudSpan("right", "B", HudTone.INFO))));
-        ReactiveScheduler.get().flush();
-        assertTrue(first.__isSelfLayoutDirty());
-        assertTrue(first.__isSelfPaintDirty());
-    }
-
-    @Test public void richSpanKeyedNodesSurviveReorderAndContentUpdates() {
-        SceneHudHost.RetainedHud hud = richHud("A", HudTone.NORMAL, "B", HudTone.INFO);
-        ReactiveScheduler.get().flush();
-        SceneNode label = hud.root().__getChildren().get(0).__getChildren().get(0);
-        SceneNode left = label.__getChildren().get(0);
-        SceneNode right = label.__getChildren().get(1);
-
-        hud.accept(HudSnapshot.of(HudLine.rich("line",
-                new HudSpan("right", "Bee", HudTone.WARNING), new HudSpan("left", "A", HudTone.NORMAL))));
-        ReactiveScheduler.get().flush();
-        assertSame(right, label.__getChildren().get(0));
-        assertSame(left, label.__getChildren().get(1));
-        assertEquals("Bee", right.getText());
-    }
-
-    @Test public void richIntrinsicWidthGrowsShrinksAndMaxWidthClips() {
-        SceneHudHost.RetainedHud hud = richHud("A", HudTone.NORMAL, "B", HudTone.INFO);
-        int shortWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
-        hud.accept(HudSnapshot.of(HudLine.rich("line",
-                new HudSpan("left", "Long", HudTone.NORMAL), new HudSpan("right", "Value", HudTone.INFO))));
-        ReactiveScheduler.get().flush();
-        int longWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
-        assertTrue(longWidth > shortWidth);
-        hud.accept(HudSnapshot.of(HudLine.rich("line", new HudSpan("left", "X", HudTone.NORMAL))));
-        ReactiveScheduler.get().flush();
-        assertTrue(hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth() < longWidth);
-
+    @Test public void emptyContentHidesWholeWindowIncludingShell() {
         HudRegistry registry = new HudRegistry();
-        registry.register(HudSpec.builder("clipped-rich").margin(0).minWidth(1).maxWidth(24).build(),
-                () -> HudSnapshot.of(HudLine.rich("line", new HudSpan("value", "Very long rich value", HudTone.INFO))));
+        registry.register(HudSpec.builder("hidden").build(), rt -> {
+            Signal<Boolean> show = Signal.create(false);
+            SceneNode root = SceneNode.row().setHitTestable(false);
+            rt.show(root, show, () -> SceneNode.row().setHitTestable(false).setText("X").setFontSize(14));
+            return root;
+        });
         RecordingRenderBackend backend = new RecordingRenderBackend();
-        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(backend, 200, 80, true, false);
-        RecordingRenderBackend.RenderCall clip = firstCall(backend, "pushClip");
-        assertNotNull(clip);
-        assertEquals(24, clip.getInt(2) - clip.getInt(0));
+        new SceneHudHost(registry, MEASURER).render(backend, 100, 40, true, false);
+        assertTrue(backend.getCalls().stream().noneMatch(call ->
+                "drawText".equals(call.methodName()) || "fillRect".equals(call.methodName())));
+    }
+
+    @Test public void windowFactoryFailureIsIsolated() {
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("broken").build(),
+                rt -> { throw new IllegalStateException("boom"); });
+        registerText(registry, "healthy", "OK");
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        new SceneHudHost(registry, MEASURER).render(backend, 100, 40, true, false);
+        assertTrue(backend.getCalls().stream().anyMatch(call -> "drawText".equals(call.methodName())
+                && "OK".equals(call.getString(0))));
     }
 
     @Test public void constrainedHostEmitsClipInsideViewport() {
         HudRegistry registry = new HudRegistry();
-        registry.register(HudSpec.builder("large").build(), () -> HudSnapshot.of(
-                HudLine.text("one", "content wider than viewport"),
-                HudLine.text("two", "second line"), HudLine.text("three", "third line")));
+        registerText(registry, "large", "content wider than viewport");
         RecordingRenderBackend backend = new RecordingRenderBackend();
-        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(backend, 40, 24, true, false);
+        new SceneHudHost(registry, MEASURER).render(backend, 40, 24, true, false);
         RecordingRenderBackend.RenderCall clip = backend.getCalls().stream()
                 .filter(call -> "pushClip".equals(call.methodName())).findFirst().orElse(null);
         assertNotNull(clip);
@@ -167,40 +117,22 @@ public class SceneHudPipelineTest {
         assertTrue(clip.getInt(2) <= 40 && clip.getInt(3) <= 24);
     }
 
-    @Test public void intrinsicWidthTracksShortestLongestAndDynamicText() {
-        FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(
-                HudSpec.builder("intrinsic").minWidth(1).build(), measurer);
-        hud.accept(HudSnapshot.of(HudLine.text("one", "A"), HudLine.text("two", "Longest")));
-        ReactiveScheduler.get().flush();
-        int multiLineWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
-        assertEquals(7 * 8 + HudTokens.NORMAL.paddingX * 2, multiLineWidth);
-
-        hud.accept(HudSnapshot.of(HudLine.text("one", "AB")));
-        ReactiveScheduler.get().flush();
-        int shortWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
-        hud.accept(HudSnapshot.of(HudLine.text("one", "A much longer value")));
-        ReactiveScheduler.get().flush();
-        int longWidth = hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 80)).getWidth();
-        assertTrue(shortWidth < longWidth);
-    }
-
-    @Test public void shortBackgroundIsIntrinsicAndLongContentClampsToViewport() {
+    @Test public void shortContentIsIntrinsicAndLongContentClampsToViewport() {
         HudRegistry registry = new HudRegistry();
-        registry.register(HudSpec.builder("short").margin(2).minWidth(1).build(),
-                () -> HudSnapshot.of(HudLine.text("line", "A")));
+        registry.register(HudSpec.builder("short").margin(2).minWidth(1).build(), rt -> SceneNode.row()
+                .setHitTestable(false).setText("A").setFontSize(14));
         RecordingRenderBackend shortBackend = new RecordingRenderBackend();
-        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(shortBackend, 200, 80, true, false);
+        new SceneHudHost(registry, MEASURER).render(shortBackend, 200, 80, true, false);
         RecordingRenderBackend.RenderCall shortClip = firstCall(shortBackend, "pushClip");
         assertNotNull(shortClip);
         assertEquals(8 + HudTokens.NORMAL.paddingX * 2, shortClip.getInt(2) - shortClip.getInt(0));
         assertTrue(shortClip.getInt(2) - shortClip.getInt(0) < 200);
 
         HudRegistry longRegistry = new HudRegistry();
-        longRegistry.register(HudSpec.builder("long").margin(3).minWidth(1).build(),
-                () -> HudSnapshot.of(HudLine.text("line", "content much wider than viewport")));
+        longRegistry.register(HudSpec.builder("long").margin(3).build(), rt -> SceneNode.row()
+                .setHitTestable(false).setText("content much wider than viewport").setFontSize(14));
         RecordingRenderBackend longBackend = new RecordingRenderBackend();
-        new SceneHudHost(longRegistry, new FixedTextMeasurer(8, 16)).render(longBackend, 50, 80, true, false);
+        new SceneHudHost(longRegistry, MEASURER).render(longBackend, 50, 80, true, false);
         RecordingRenderBackend.RenderCall longClip = firstCall(longBackend, "pushClip");
         assertEquals(44, longClip.getInt(2) - longClip.getInt(0));
     }
@@ -208,9 +140,10 @@ public class SceneHudPipelineTest {
     @Test public void explicitMaxWidthIsHardLimitAgainstDefaultMinimumAndIntrinsicWidth() {
         HudRegistry registry = new HudRegistry();
         registry.register(HudSpec.builder("max-only").margin(0).maxWidth(20).build(),
-                () -> HudSnapshot.of(HudLine.text("line", "content wider than max")));
+                rt -> SceneNode.row().setHitTestable(false)
+                        .setText("content wider than max").setFontSize(14));
         RecordingRenderBackend backend = new RecordingRenderBackend();
-        new SceneHudHost(registry, new FixedTextMeasurer(8, 16)).render(backend, 200, 80, true, false);
+        new SceneHudHost(registry, MEASURER).render(backend, 200, 80, true, false);
 
         RecordingRenderBackend.RenderCall clip = firstCall(backend, "pushClip");
         assertNotNull(clip);
@@ -219,68 +152,24 @@ public class SceneHudPipelineTest {
                 () -> HudSpec.builder("inverted-explicit").minWidth(21).maxWidth(20).build());
     }
 
-    @Test public void progressFillUsesActualTrackWidthAcrossProgressLabelsAndClamp() {
-        assertProgressGeometry("short-zero", "A", 0F, 200, 1);
-        assertProgressGeometry("short-half", "A", 0.5F, 200, 1);
-        assertProgressGeometry("short-full", "A", 1F, 200, 1);
-        assertProgressGeometry("long-half", "Longest label", 0.5F, 200, 1);
-        assertProgressGeometry("clamped-half", "content wider than clamp", 0.5F, 200, 44);
-    }
-
-    private static void assertProgressGeometry(String id, String label, float progress,
-                                               int viewportWidth, int maxWidth) {
-        HudRegistry registry = new HudRegistry();
-        HudSpec.Builder builder = HudSpec.builder(id).margin(0).minWidth(1);
-        if (maxWidth > 1) builder.maxWidth(maxWidth);
-        registry.register(builder.build(), () -> HudSnapshot.of(HudLine.progress("line", label, HudTone.INFO, progress)));
-        SceneHudHost host = new SceneHudHost(registry, new FixedTextMeasurer(8, 16));
-        RecordingRenderBackend backend = new RecordingRenderBackend();
-        host.render(backend, viewportWidth, 80, true, false);
-
-        RecordingRenderBackend.RenderCall track = null;
-        RecordingRenderBackend.RenderCall fill = null;
-        for (RecordingRenderBackend.RenderCall call : backend.getCalls()) {
-            if (!"fillRect".equals(call.methodName())) continue;
-            if (call.getInt(4) == 0x60000000) track = call;
-            if (call.getInt(4) == 0xFF55FFFF) fill = call;
-        }
-        assertNotNull("progress track 应进入实际 PaintPlan", track);
-        int trackWidth = track.getInt(2) - track.getInt(0);
-        int fillWidth = fill == null ? 0 : fill.getInt(2) - fill.getInt(0);
-        assertEquals(Math.round(trackWidth * progress), fillWidth);
-        if (maxWidth > 1) assertEquals(maxWidth - HudTokens.NORMAL.paddingX * 2, trackWidth);
-    }
-
-    @Test public void renderPathDoesNotMutateRetainedNodeSizing() throws Exception {
-        String source = new String(Files.readAllBytes(Paths.get("src/main/java/club/heiqi/uilib/client/hud/SceneHudHost.java")),
-                StandardCharsets.UTF_8);
-        String renderPath = source.substring(source.indexOf("public void render("), source.indexOf("public void clearWorld()"));
-        assertFalse(renderPath.contains("root.setPreferredWidth"));
-        assertFalse(renderPath.contains("root.setPreferredHeight"));
-        assertFalse(renderPath.contains("root.setWidthSizing"));
-    }
-
-    @Test public void placementRelayoutKeepsRetainedRootDeclarationAndClipsToNewViewport() {
-        SceneHudHost.RetainedHud retained = new SceneHudHost.RetainedHud(
-                HudSpec.builder("declaration").build(), new FixedTextMeasurer(8, 16));
-        retained.accept(HudSnapshot.of(HudLine.text("line", "content wider than both viewports")));
-        ReactiveScheduler.get().flush();
-        retained.layout(SceneHudHost.HudSceneConstraints.measurement(100, 40));
-        retained.layout(new SceneHudHost.HudSceneConstraints(28, 18));
-        assertEquals(0, retained.root().getPreferredWidth());
-        assertEquals(0, retained.root().getPreferredHeight());
-        assertEquals(SceneNode.WidthSizing.SHRINK, retained.root().getWidthSizing());
+    @Test public void placementRelayoutKeepsShellDeclarationAndClipsToNewViewport() {
+        SceneHudHost.RetainedWindow window = new SceneHudHost.RetainedWindow(
+                new HudRegistry.Entry(HudSpec.builder("declaration").build(),
+                        rt -> SceneNode.row().setHitTestable(false)
+                                .setText("content wider than both viewports").setFontSize(14), 0L), MEASURER);
+        window.measure(100, 40);
+        window.measure(28, 18);
+        assertEquals(0, window.root().getPreferredWidth());
+        assertEquals(0, window.root().getPreferredHeight());
+        assertEquals(SceneNode.WidthSizing.SHRINK, window.root().getWidthSizing());
 
         HudRegistry registry = new HudRegistry();
-        registry.register(HudSpec.builder("placed").margin(1).build(), () -> HudSnapshot.of(
-                HudLine.text("line", "content wider than both viewports")));
-        SceneHudHost host = new SceneHudHost(registry, new FixedTextMeasurer(8, 16));
-
-        RecordingRenderBackend wide = new RecordingRenderBackend();
-        host.render(wide, 100, 40, true, false);
+        registry.register(HudSpec.builder("placed").margin(1).build(),
+                rt -> SceneNode.row().setHitTestable(false)
+                        .setText("content wider than both viewports").setFontSize(14));
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
         RecordingRenderBackend narrow = new RecordingRenderBackend();
         host.render(narrow, 30, 20, true, false);
-
         RecordingRenderBackend.RenderCall clip = narrow.getCalls().stream()
                 .filter(call -> "pushClip".equals(call.methodName())).findFirst().orElse(null);
         assertNotNull(clip);
@@ -290,9 +179,9 @@ public class SceneHudPipelineTest {
 
     @Test public void sessionResetKeepsRegistrationAndReconnectRebuildsScene() {
         HudRegistry registry = new HudRegistry();
-        club.heiqi.uilib.ui.hud.api.HudRegistration registration = registry.register(
-                HudSpec.builder("persistent").build(), () -> HudSnapshot.of(HudLine.text("line", "reconnected")));
-        SceneHudHost host = new SceneHudHost(registry, new FixedTextMeasurer(8, 16));
+        HudRegistration registration = registry.register(HudSpec.builder("persistent").build(),
+                rt -> SceneNode.row().setHitTestable(false).setText("reconnected").setFontSize(14));
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
         host.render(new RecordingRenderBackend(), 100, 40, true, false);
         host.clearWorld();
         assertFalse(registration.isClosed());
@@ -300,6 +189,15 @@ public class SceneHudPipelineTest {
         host.render(backend, 100, 40, true, false);
         assertTrue(backend.getCalls().stream().anyMatch(call ->
                 "drawText".equals(call.methodName()) && "reconnected".equals(call.getString(0))));
+    }
+
+    @Test public void renderPathDoesNotMutateShellSizingDeclaration() throws Exception {
+        String source = new String(Files.readAllBytes(Paths.get("src/main/java/club/heiqi/uilib/client/hud/SceneHudHost.java")),
+                StandardCharsets.UTF_8);
+        String renderPath = source.substring(source.indexOf("public void render("), source.indexOf("public void clearWorld()"));
+        assertFalse(renderPath.contains("root.setPreferredWidth"));
+        assertFalse(renderPath.contains("root.setPreferredHeight"));
+        assertFalse(renderPath.contains("root.setWidthSizing"));
     }
 
     @Test public void hudSourcesRejectMinecraftScaledCoordinates() throws Exception {
@@ -326,21 +224,21 @@ public class SceneHudPipelineTest {
     private static HudFrame captureHudFrame(float scale) throws Exception {
         HudScaleSetting setting = new HudScaleSetting();
         setting.set(scale);
-        SceneHudHost host = new SceneHudHost(compactRegistry(), new FixedTextMeasurer(8, 16), setting);
+        SceneHudHost host = new SceneHudHost(scaledRegistry(), MEASURER, setting);
         RecordingRenderBackend backend = new RecordingRenderBackend();
         host.render(backend, Math.round(400 * scale), Math.round(200 * scale), true, false);
 
         Field retainedField = SceneHudHost.class.getDeclaredField("retained");
         retainedField.setAccessible(true);
         @SuppressWarnings("unchecked")
-        Map<String, SceneHudHost.RetainedHud> retained =
-                (Map<String, SceneHudHost.RetainedHud>) retainedField.get(host);
-        SceneHudHost.RetainedHud hud = retained.get("scaled");
+        Map<String, SceneHudHost.RetainedWindow> retained =
+                (Map<String, SceneHudHost.RetainedWindow>) retainedField.get(host);
+        SceneHudHost.RetainedWindow window = retained.get("scaled");
         club.heiqi.uilib.ui.scene.layout.LayoutBox box =
-                (club.heiqi.uilib.ui.scene.layout.LayoutBox) hud.root().getCachedLayout();
-        PaintPlan content = new ScenePaintEngine(new FixedTextMeasurer(8, 16)).paint(hud.root()).getPlan();
+                (club.heiqi.uilib.ui.scene.layout.LayoutBox) window.root().getCachedLayout();
+        PaintPlan content = new ScenePaintEngine(MEASURER).paint(window.root()).getPlan();
         PaintPlan complete = new PaintPlan().addClipPush(0, 0, box.getWidth(), box.getHeight(), 0);
-        for (PaintCommand command : content.getCommands()) complete.addCommand(command);
+        for (club.heiqi.uilib.ui.scene.paint.PaintCommand command : content.getCommands()) complete.addCommand(command);
         complete.addClipPop();
         return new HudFrame(complete, backend.getCalls());
     }
@@ -406,74 +304,10 @@ public class SceneHudPipelineTest {
         }
     }
 
-    @Test public void tokenLineBoxesDoNotOverlapProgress() {
-        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(HudSpec.builder("tokens").build(),
-                new FixedTextMeasurer(8, 16));
-        hud.accept(HudSnapshot.of(HudLine.progress("a", "A", HudTone.INFO, 0.5F),
-                HudLine.text("b", "B")));
-        ReactiveScheduler.get().flush();
-        hud.layout(SceneHudHost.HudSceneConstraints.measurement(200, 100));
-        SceneNode first = hud.root().__getChildren().get(0);
-        SceneNode second = hud.root().__getChildren().get(1);
-        club.heiqi.uilib.ui.scene.layout.LayoutBox a =
-                (club.heiqi.uilib.ui.scene.layout.LayoutBox) first.getCachedLayout();
-        club.heiqi.uilib.ui.scene.layout.LayoutBox b =
-                (club.heiqi.uilib.ui.scene.layout.LayoutBox) second.getCachedLayout();
-        assertTrue(a.getY() + a.getHeight() <= b.getY());
-        assertEquals(HudTokens.NORMAL.fontSize, first.__getChildren().get(0).getFontSize());
-    }
-
-    @Test public void compactTextOnlyAndProgressExitPreserveTokenGeometry() {
-        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(
-                HudSpec.builder("compact-exit").compact(true).build(), new FixedTextMeasurer(8, 10));
-        hud.accept(HudSnapshot.of(HudLine.text("a", "A"),
-                HudLine.progress("b", "B", HudTone.INFO, 0.5F), HudLine.text("c", "C")));
-        ReactiveScheduler.get().flush();
-        LayoutAssertions.assertCompactRows(hud);
-
+    private static HudRegistry scaledRegistry() {
         HudRegistry registry = new HudRegistry();
-        registry.register(HudSpec.builder("compact-exit").compact(true).build(), () -> HudSnapshot.of(
-                HudLine.text("a", "A"), HudLine.progress("b", "B", HudTone.INFO, 0.5F), HudLine.text("c", "C")));
-        RecordingRenderBackend backend = new RecordingRenderBackend();
-        new SceneHudHost(registry, new FixedTextMeasurer(8, 10))
-                .render(backend, FramebufferViewportFactory.create(160, 80), true, false);
-        assertTrue(backend.getCalls().stream().filter(call -> "drawText".equals(call.methodName()))
-                .allMatch(call -> call.getInt(5) == 12));
-        RecordingRenderBackend.RenderCall clip = backend.getCalls().stream()
-                .filter(call -> "pushClip".equals(call.methodName())).findFirst().orElse(null);
-        assertNotNull(clip);
-        for (RecordingRenderBackend.RenderCall call : backend.getCalls()) if ("drawText".equals(call.methodName())) {
-            assertTrue(call.getInt(1) >= clip.getInt(0) && call.getInt(1) < clip.getInt(2));
-            assertTrue(call.getInt(2) >= clip.getInt(1) && call.getInt(2) < clip.getInt(3));
-        }
-    }
-
-    private static final class LayoutAssertions {
-        private static void assertCompactRows(SceneHudHost.RetainedHud hud) {
-            club.heiqi.uilib.ui.scene.layout.LayoutBox root = hud.layout(
-                    SceneHudHost.HudSceneConstraints.measurement(160, 80));
-            int previousBottom = HudTokens.COMPACT.paddingY;
-            for (int i = 0; i < hud.root().__getChildren().size(); i++) {
-                SceneNode row = hud.root().__getChildren().get(i);
-                club.heiqi.uilib.ui.scene.layout.LayoutBox box =
-                        (club.heiqi.uilib.ui.scene.layout.LayoutBox) row.getCachedLayout();
-                assertTrue(box.getY() >= previousBottom);
-                assertEquals(i == 1 ? HudTokens.COMPACT.lineHeight + HudTokens.COMPACT.progressHeight
-                        : HudTokens.COMPACT.lineHeight, row.getPreferredHeight());
-                assertEquals(HudTokens.COMPACT.lineBox, row.__getChildren().get(0).getPreferredHeight());
-                assertEquals(HudTokens.COMPACT.fontSize, row.__getChildren().get(0).getFontSize());
-                assertEquals(i == 1 ? HudTokens.COMPACT.progressHeight : 0,
-                        row.__getChildren().get(1).getPreferredHeight());
-                previousBottom = box.getY() + box.getHeight();
-            }
-            assertEquals(previousBottom + HudTokens.COMPACT.paddingY, root.getHeight());
-        }
-    }
-
-    private static HudRegistry compactRegistry() {
-        HudRegistry registry = new HudRegistry();
-        registry.register(HudSpec.builder("scaled").compact(true).build(),
-                () -> HudSnapshot.of(HudLine.progress("line", "HUD", HudTone.INFO, 0.5F)));
+        registry.register(HudSpec.builder("scaled").build(),
+                rt -> SceneNode.row().setHitTestable(false).setText("HUD").setFontSize(14));
         return registry;
     }
 
@@ -483,28 +317,5 @@ public class SceneHudPipelineTest {
 
     private static RecordingRenderBackend.RenderCall firstCall(RecordingRenderBackend backend, String method) {
         return backend.getCalls().stream().filter(call -> method.equals(call.methodName())).findFirst().orElse(null);
-    }
-
-    private static SceneHudHost.RetainedHud richHud(String leftText, HudTone leftTone,
-                                                     String rightText, HudTone rightTone) {
-        SceneHudHost.RetainedHud hud = new SceneHudHost.RetainedHud(
-                HudSpec.builder("rich-test").minWidth(1).build(), new FixedTextMeasurer(8, 16));
-        hud.accept(HudSnapshot.of(HudLine.rich("line",
-                new HudSpan("left", leftText, leftTone), new HudSpan("right", rightText, rightTone))));
-        ReactiveScheduler.get().flush();
-        return hud;
-    }
-
-    private static PaintPlan layoutAndPaint(SceneHudHost.RetainedHud hud, int width) {
-        hud.layout(SceneHudHost.HudSceneConstraints.measurement(width, 80));
-        return new ScenePaintEngine(new FixedTextMeasurer(8, 16)).paint(hud.root()).getPlan();
-    }
-
-    private static List<PaintCommand> textCommands(PaintPlan plan) {
-        java.util.ArrayList<PaintCommand> result = new java.util.ArrayList<PaintCommand>();
-        for (PaintCommand command : plan.getCommands()) {
-            if (command.getType() == PaintCommandType.TEXT) result.add(command);
-        }
-        return result;
     }
 }

@@ -2,10 +2,8 @@ package club.heiqi.uilib.client.hud;
 
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
-import club.heiqi.uilib.ui.hud.api.HudLine;
-import club.heiqi.uilib.ui.hud.api.HudSnapshot;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
-import club.heiqi.uilib.ui.hud.api.HudTone;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -42,21 +40,12 @@ public class HudLayoutEngineTest {
         assertTrue(result.get(2).x >= 0 && result.get(2).y >= 0);
     }
 
-    @Test public void compactPresetUsesSmallerTokensAndToneProgressArePreserved() {
-        HudSpec normal = HudSpec.builder("normal").build();
-        HudSpec compact = HudSpec.builder("compact").compact(true).build();
-        assertTrue(HudLayoutEngine.lineHeight(compact) < HudLayoutEngine.lineHeight(normal));
-        assertEquals(12, HudTokens.COMPACT.fontSize);
+    @Test public void normalTokensStayWithinEmphasisCeiling() {
         assertEquals(14, HudTokens.NORMAL.fontSize);
         assertEquals(18, HudTokens.MAX_EMPHASIS_FONT_SIZE);
-        assertTrue(HudTokens.COMPACT.paddingX < HudTokens.NORMAL.paddingX);
-        assertTrue(HudTokens.COMPACT.fontSize <= HudTokens.COMPACT.lineBox);
         assertTrue(HudTokens.NORMAL.fontSize <= HudTokens.NORMAL.lineBox);
-        assertTrue(HudTokens.COMPACT.lineBox < HudTokens.COMPACT.lineHeight);
         assertTrue(HudTokens.NORMAL.lineBox < HudTokens.NORMAL.lineHeight);
-        HudLine line = HudLine.progress("p", "Load", HudTone.WARNING, 0.5F);
-        assertEquals(HudTone.WARNING, line.getTone());
-        assertEquals(0.5F, line.getProgress(), 0F);
+        assertEquals(HudTokens.NORMAL.lineHeight, HudLayoutEngine.lineHeight(HudSpec.builder("n").build()));
     }
 
     @Test public void widthChangesKeepLeftAndRightAnchorMarginsStable() {
@@ -85,8 +74,7 @@ public class HudLayoutEngineTest {
     private static HudLayoutEngine.MeasuredHud measured(String id, HudAnchor anchor, int order,
             int width, int height, long registration) {
         HudSpec spec = HudSpec.builder(id).anchor(anchor).stackOrder(order).build();
-        HudRegistry.FrameEntry entry = new HudRegistry.FrameEntry(spec,
-                HudSnapshot.of(HudLine.text("line", id)), registration);
+        HudRegistry.Entry entry = new HudRegistry.Entry(spec, rt -> SceneNode.row(), registration);
         return new HudLayoutEngine.MeasuredHud(entry, width, height);
     }
     private static void assertBox(HudLayoutEngine.PlacedHud actual, int x, int y, int w, int h) {

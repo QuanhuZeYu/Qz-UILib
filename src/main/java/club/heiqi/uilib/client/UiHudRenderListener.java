@@ -8,12 +8,10 @@ import club.heiqi.uilib.client.hud.LiveMinecraftHudEnvironment;
 import club.heiqi.uilib.client.hud.MinecraftHudEnvironment;
 import club.heiqi.uilib.client.hud.SceneHudHost;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
-import club.heiqi.uilib.ui.hud.api.HudLine;
-import club.heiqi.uilib.ui.hud.api.HudSnapshot;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
-import club.heiqi.uilib.ui.hud.api.HudTone;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -31,6 +29,8 @@ public final class UiHudRenderListener {
     private final PaintContextCompositor compositor = new PaintContextCompositor();
     private final UiMainLayerSnapshotService snapshots = new UiMainLayerSnapshotService();
     private final MinecraftHudEnvironment environment;
+    /** debug HUD 显示的当前界面名（每帧在 renderHudFrame 更新）。 */
+    private final Signal<String> debugScreenName = Signal.create("null");
 
     /** 创建 bridge，并把 UILib debug 文本注册为普通统一 HUD。 */
     public UiHudRenderListener() {
@@ -53,12 +53,26 @@ public final class UiHudRenderListener {
         return FramebufferViewportFactory.create(environment.displayWidth(), environment.displayHeight());
     }
 
-    /** 注册 UILib 内部 debug HUD。 */
+    /** 注册 UILib 内部 debug HUD：与业务方同款的窗口工厂 + scene 代码。 */
     private void registerDebugHud() {
         service.register(HudSpec.builder("qzuilib:debug").anchor(HudAnchor.TOP_RIGHT)
                 .visibility(HudVisibility.IN_WORLD).stackOrder(Integer.MIN_VALUE).build(),
-                () -> Config.uiDebug ? HudSnapshot.of(HudLine.text("screen", currentScreenName(), HudTone.MUTED))
-                        : HudSnapshot.EMPTY);
+                rt -> {
+                    club.heiqi.uilib.ui.scene.node.SceneNode root = club.heiqi.uilib.ui.scene.node.SceneNode.row()
+                            .setHitTestable(false);
+                    // uiDebug 关闭时卸载内容树 → 空内容整窗隐藏（对齐旧 EMPTY 快照语义）
+                    rt.show(root, club.heiqi.uilib.ui.reactive.Computed.create(() -> Config.uiDebug),
+                            () -> {
+                                club.heiqi.uilib.ui.scene.node.SceneNode line =
+                                        club.heiqi.uilib.ui.scene.node.SceneNode.row()
+                                                .setHitTestable(false)
+                                                .setTextColor(0xFFAAAAAA)
+                                                .setFontSize(14);
+                                rt.bindText(line, debugScreenName);
+                                return line;
+                            });
+                    return root;
+                });
     }
 
     /** 在 Post(ALL) 中以 framebuffer 尺寸执行 scene layout→paint→replay。 */
@@ -76,6 +90,7 @@ public final class UiHudRenderListener {
     /** 在已捕获入口状态的围栏内完成一整帧 HUD 业务与清理。 */
     private void renderHudFrame(RenderGameOverlayEvent.Post event, Minecraft minecraft,
             HudViewportMetrics viewport, int width, int height) {
+        debugScreenName.set(currentScreenName());
         GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glLoadIdentity();
         GL11.glOrtho(0, width, height, 0, -1000, 1000);
         GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glLoadIdentity();

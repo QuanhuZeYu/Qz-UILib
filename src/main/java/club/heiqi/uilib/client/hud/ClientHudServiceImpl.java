@@ -3,8 +3,8 @@ package club.heiqi.uilib.client.hud;
 import club.heiqi.uilib.ui.hud.api.ClientHudService;
 import club.heiqi.uilib.ui.hud.api.HudAvoidanceProvider;
 import club.heiqi.uilib.ui.hud.api.HudRegistration;
-import club.heiqi.uilib.ui.hud.api.HudSnapshotProvider;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
+import club.heiqi.uilib.ui.hud.api.HudWindowFactory;
 import net.minecraft.client.Minecraft;
 
 /** Minecraft 客户端 HUD 服务实现。 */
@@ -15,8 +15,8 @@ public final class ClientHudServiceImpl extends ClientHudService {
     /** 返回客户端实现单例。 */
     public static ClientHudServiceImpl getInstance() { return INSTANCE; }
 
-    @Override public HudRegistration register(HudSpec spec, HudSnapshotProvider provider) {
-        assertClientThread(); return threadChecked(registry.register(spec, provider));
+    @Override public HudRegistration register(HudSpec spec, HudWindowFactory factory) {
+        assertClientThread(); return threadChecked(registry.register(spec, factory));
     }
     @Override public HudRegistration registerAvoidance(String id, HudAvoidanceProvider provider) {
         assertClientThread(); return threadChecked(registry.registerAvoidance(id, provider));

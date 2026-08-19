@@ -18,6 +18,8 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintResult;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
@@ -173,7 +175,18 @@ public final class SceneFramePipeline {
      */
     public LayoutResult run(SceneNode root, int w, int h, UiRenderBackend ctx,
                             int absX, int absY, long frameTimeNanos) {
-        state.reset(root, w, h, ctx, absX, absY, frameTimeNanos);
+        return run(root, w, h, ctx, absX, absY, frameTimeNanos, null);
+    }
+
+    /**
+     * 驱动完整 scene pipeline，并可选地把整帧回放包进「窗口裁剪盒」（windowClip 为窗口局部坐标）。
+     *
+     * <p>屏幕级虚拟窗口（如 HUD）经锚定放置后，内容树布局盒可能宽于放置盒（内容超长时不收缩），
+     * 由本参数在 REPLAY 前以放置盒硬裁剪，保证超界内容不画到窗口外。普通 UI 宿主传 null。</p>
+     */
+    public LayoutResult run(SceneNode root, int w, int h, UiRenderBackend ctx,
+                            int absX, int absY, long frameTimeNanos, AnchorRect windowClip) {
+        state.reset(root, w, h, ctx, absX, absY, frameTimeNanos, windowClip);
         frameFlushCount = 0;
         if (traceEnabled) {
             lastTrace.clear();
@@ -311,7 +324,7 @@ public final class SceneFramePipeline {
     /** REPLAY：主树 + overlay bottom-first 各自独立 replay。 */
     private void phaseReplay() {
         trace(FramePhase.REPLAY);
-        replayer.replay(state.paintResult.getPlan(), state.ctx, state.absX, state.absY);
+        replayer.replay(replayPlan(state.paintResult.getPlan()), state.ctx, state.absX, state.absY);
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
             PaintResult overlayResult = paintEngine.paint(entry.getRoot());
             replayer.replay(overlayResult.getPlan(), state.ctx,
@@ -341,6 +354,19 @@ public final class SceneFramePipeline {
         // 循环超限退出：显式记录「下帧必跑」——现状靠脏标记存活隐式延续，
         // 本标志使协议可观测，为后续 SETTLE 短路/策略化（阶段 3）铺路。
         settleState.deferredToNextFrame = true;
+    }
+
+    /** 屏幕级虚拟窗口：整帧回放前以放置盒硬裁剪（窗口局部坐标），普通宿主原样返回。 */
+    private PaintPlan replayPlan(PaintPlan plan) {
+        if (state.windowClip == null) {
+            return plan;
+        }
+        PaintPlan wrapped = new PaintPlan().addClipPush(state.windowClip.getX(), state.windowClip.getY(),
+                state.windowClip.getX() + state.windowClip.getWidth(),
+                state.windowClip.getY() + state.windowClip.getHeight(), 0);
+        for (PaintCommand command : plan.getCommands()) wrapped.addCommand(command);
+        wrapped.addClipPop();
+        return wrapped;
     }
 
     /** 主树或 active overlay 是否仍有尚未布局的新节点/布局失效。 */
@@ -629,9 +655,10 @@ public final class SceneFramePipeline {
         long frameTimeNanos;
         SceneInputFrame frame = SceneInputFrame.EMPTY;
         PaintResult paintResult;
+        AnchorRect windowClip;
 
         void reset(SceneNode root, int w, int h, UiRenderBackend ctx,
-                   int absX, int absY, long frameTimeNanos) {
+                   int absX, int absY, long frameTimeNanos, AnchorRect windowClip) {
             this.root = root;
             this.w = w;
             this.h = h;
@@ -641,6 +668,7 @@ public final class SceneFramePipeline {
             this.frameTimeNanos = frameTimeNanos;
             this.frame = SceneInputFrame.EMPTY;
             this.paintResult = null;
+            this.windowClip = windowClip;
         }
 
         Constraints constraints() {

@@ -41,18 +41,18 @@ final class HudLayoutEngine {
         return Collections.unmodifiableList(result);
     }
 
-    static int lineHeight(HudSpec spec) { return HudTokens.forSpec(spec).lineHeight; }
+    static int lineHeight(HudSpec spec) { return HudTokens.NORMAL.lineHeight; }
     private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
 
     static final class MeasuredHud {
-        final HudRegistry.FrameEntry entry; final int width; final int height;
-        MeasuredHud(HudRegistry.FrameEntry entry, int width, int height) {
+        final HudRegistry.Entry entry; final int width; final int height;
+        MeasuredHud(HudRegistry.Entry entry, int width, int height) {
             this.entry = entry; this.width = Math.max(1, width); this.height = Math.max(1, height);
         }
     }
     static final class PlacedHud {
-        final HudRegistry.FrameEntry entry; final int x; final int y; final int width; final int height;
-        PlacedHud(HudRegistry.FrameEntry entry, int x, int y, int width, int height) {
+        final HudRegistry.Entry entry; final int x; final int y; final int width; final int height;
+        PlacedHud(HudRegistry.Entry entry, int x, int y, int width, int height) {
             this.entry = entry; this.x = x; this.y = y; this.width = width; this.height = height;
         }
     }

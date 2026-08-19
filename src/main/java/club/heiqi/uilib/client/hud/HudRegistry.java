@@ -3,9 +3,8 @@ package club.heiqi.uilib.client.hud;
 import club.heiqi.uilib.ui.hud.api.HudAvoidanceProvider;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.hud.api.HudRegistration;
-import club.heiqi.uilib.ui.hud.api.HudSnapshot;
-import club.heiqi.uilib.ui.hud.api.HudSnapshotProvider;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
+import club.heiqi.uilib.ui.hud.api.HudWindowFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,12 +21,12 @@ final class HudRegistry {
     private final List<Registration> registrations = new ArrayList<Registration>();
     private long nextOrder;
 
-    /** 注册 HUD，重复 id 立即失败。 */
-    HudRegistration register(HudSpec spec, HudSnapshotProvider provider) {
+    /** 注册 HUD 虚拟窗口，重复 id 立即失败。 */
+    HudRegistration register(HudSpec spec, HudWindowFactory factory) {
         Objects.requireNonNull(spec, "spec");
-        Objects.requireNonNull(provider, "provider");
+        Objects.requireNonNull(factory, "factory");
         if (entries.containsKey(spec.getId())) throw new IllegalArgumentException("duplicate HUD id: " + spec.getId());
-        Entry entry = new Entry(spec, provider, nextOrder++);
+        Entry entry = new Entry(spec, factory, nextOrder++);
         entries.put(spec.getId(), entry);
         return registration(() -> entries.remove(spec.getId(), entry));
     }
@@ -41,19 +40,9 @@ final class HudRegistry {
         return registration(() -> avoidance.remove(id, provider));
     }
 
-    /** 对注册表封板后读取 provider，单个 provider 异常不影响其它 HUD。 */
-    List<FrameEntry> snapshot(Consumer<RuntimeException> errorSink) {
-        ArrayList<Entry> copy = new ArrayList<Entry>(entries.values());
-        ArrayList<FrameEntry> result = new ArrayList<FrameEntry>();
-        for (Entry entry : copy) {
-            try {
-                HudSnapshot value = entry.provider.snapshot();
-                if (value != null) result.add(new FrameEntry(entry.spec, value, entry.registrationOrder));
-            } catch (RuntimeException exception) {
-                if (errorSink != null) errorSink.accept(exception);
-            }
-        }
-        return Collections.unmodifiableList(result);
+    /** 对注册表封板的不可变活动注册列表（按注册顺序）。 */
+    List<Entry> frameEntries() {
+        return Collections.unmodifiableList(new ArrayList<Entry>(entries.values()));
     }
 
     /** 汇总封板后的已知占位；异常 provider 当帧忽略。 */
@@ -102,22 +91,13 @@ final class HudRegistry {
         private void invalidate() { closed.set(true); }
     }
 
-    private static final class Entry {
-        private final HudSpec spec;
-        private final HudSnapshotProvider provider;
-        private final long registrationOrder;
-        private Entry(HudSpec spec, HudSnapshotProvider provider, long registrationOrder) {
-            this.spec = spec; this.provider = provider; this.registrationOrder = registrationOrder;
-        }
-    }
-
-    /** 单帧不可变注册内容。 */
-    static final class FrameEntry {
+    /** 单个注册项：规格 + 内容工厂 + 注册顺序。 */
+    static final class Entry {
         final HudSpec spec;
-        final HudSnapshot snapshot;
+        final HudWindowFactory factory;
         final long registrationOrder;
-        FrameEntry(HudSpec spec, HudSnapshot snapshot, long registrationOrder) {
-            this.spec = spec; this.snapshot = snapshot; this.registrationOrder = registrationOrder;
+        Entry(HudSpec spec, HudWindowFactory factory, long registrationOrder) {
+            this.spec = spec; this.factory = factory; this.registrationOrder = registrationOrder;
         }
     }
 }
