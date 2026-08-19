@@ -472,19 +472,9 @@ public class UiRenderContext implements UiRenderBackend {
 
     @Override
     public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx, int textMode) {
-        drawText(text, x, y, color, shadow, new TextMeasureStyle(fontSizePx, mapTextMode(textMode),
+        drawText(text, x, y, color, shadow, new TextMeasureStyle(fontSizePx,
+                club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter.toTextContentMode(textMode),
                 UiFontWeight.NORMAL, UiFontStyle.NORMAL));
-    }
-
-    private static TextContentMode mapTextMode(int textMode) {
-        switch (textMode) {
-            case 1:
-                return TextContentMode.MINECRAFT_FORMATTED;
-            case 2:
-                return TextContentMode.RICH_TAGS;
-            default:
-                return TextContentMode.UILIB_RAW;
-        }
     }
 
     /**

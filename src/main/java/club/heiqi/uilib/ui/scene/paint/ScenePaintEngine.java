@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.text.SceneLineClamp;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.text.SceneTextMode;
 import club.heiqi.uilib.ui.scene.text.TextLinkRegion;
 
 /**
@@ -303,7 +304,7 @@ public class ScenePaintEngine {
         String text = node.getText();
         if (text != null && !text.isEmpty()) {
             int fontSize = node.getFontSize();
-            int textMode = node.getTextContentMode();
+            SceneTextMode textMode = node.getTextMode();
             int wrapWidth = node.getMaxTextWidth();
             List<String> lines = measurer.splitLines(text, fontSize, wrapWidth, textMode);
             // maxLines 截断 + 可选省略号（与布局测量共用 SceneLineClamp，口径一致）

@@ -37,6 +37,24 @@ public final class SceneLineClamp {
      */
     public static List<String> clamp(List<String> lines, int maxLines, boolean ellipsis,
             SceneTextMeasurer measurer, int fontSizePx, int wrapWidth, int textMode) {
+        return clamp(lines, maxLines, ellipsis, measurer, fontSizePx, wrapWidth,
+                SceneTextMode.fromCode(textMode));
+    }
+
+    /**
+     * 按 maxLines 截断拆行结果（枚举语义锚重载）；ellipsis 时对末行追加省略号。
+     *
+     * @param lines      拆行结果
+     * @param maxLines   最大行数（&lt;=0 不限）
+     * @param ellipsis   是否在末行追加省略号（仅 wrap 宽度有效时生效）
+     * @param measurer   文本度量（省略号宽度与富文本感知裁剪）
+     * @param fontSizePx UI 像素字号
+     * @param wrapWidth  换行宽度（UI 像素；&lt;=0 视为不换行，省略号不生效）
+     * @param textMode   内容模式（非 null）
+     * @return 截断后的行列表（不改写输入）
+     */
+    public static List<String> clamp(List<String> lines, int maxLines, boolean ellipsis,
+            SceneTextMeasurer measurer, int fontSizePx, int wrapWidth, SceneTextMode textMode) {
         if (maxLines <= 0 || lines.size() <= maxLines) {
             return lines;
         }
@@ -59,7 +77,7 @@ public final class SceneLineClamp {
      * @return 带省略号的末行文本
      */
     private static String ellipsizeLast(String last, SceneTextMeasurer measurer, int fontSizePx,
-            int wrapWidth, int textMode) {
+            int wrapWidth, SceneTextMode textMode) {
         int ellipsisWidth = measurer.measureWidth(ELLIPSIS, fontSizePx);
         int available = wrapWidth - ellipsisWidth;
         if (available <= 0) {

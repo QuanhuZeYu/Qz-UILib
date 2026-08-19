@@ -75,11 +75,27 @@ public interface SceneTextMeasurer {
      * @param text       文本内容（可为 null，由实现按空串处理）
      * @param fontSizePx UI 像素字号
      * @param wrapWidth  最大换行宽度（UI 像素）；{@code <=0} 视为不换行
-     * @param textMode   内容模式编码（0=原始文本 / 1=Minecraft § / 2=富文本标签，与 paint.TextStyle 常量一致）
+     * @param textMode   内容模式编码（0=原始文本 / 1=MINECRAFT_FORMATTED / 2=RICH_TAGS，
+     *                   常量锚定 {@link SceneTextMode}）
      * @return 行列表（至少一行）
      */
     default java.util.List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
         return java.util.Collections.singletonList(text == null ? "" : text);
+    }
+
+    /**
+     * 按换行宽度拆分文本行（枚举语义锚重载）。
+     *
+     * <p>默认实现委托遗留 int 编码版；装配层/测试替身可覆写任一侧。</p>
+     *
+     * @param text       文本内容（可为 null，由实现按空串处理）
+     * @param fontSizePx UI 像素字号
+     * @param wrapWidth  最大换行宽度（UI 像素）；{@code <=0} 视为不换行
+     * @param textMode   内容模式（非 null）
+     * @return 行列表（至少一行）
+     */
+    default java.util.List<String> splitLines(String text, int fontSizePx, int wrapWidth, SceneTextMode textMode) {
+        return splitLines(text, fontSizePx, wrapWidth, textMode.getCode());
     }
 
     /**
@@ -94,6 +110,18 @@ public interface SceneTextMeasurer {
      */
     default int lineHeight(String text, int fontSizePx, int textMode) {
         return lineHeight(fontSizePx);
+    }
+
+    /**
+     * 获取指定文本行在指定字号下的 UI 像素行高（枚举语义锚重载；富文本感知：显式字号段按最大字号计）。
+     *
+     * @param text       单行文本内容（可为 null）
+     * @param fontSizePx UI 像素基准字号
+     * @param textMode   内容模式（非 null）
+     * @return UI 像素行高
+     */
+    default int lineHeight(String text, int fontSizePx, SceneTextMode textMode) {
+        return lineHeight(text, fontSizePx, textMode.getCode());
     }
 
     /**
@@ -122,6 +150,18 @@ public interface SceneTextMeasurer {
         return java.util.Collections.emptyList();
     }
 
+    /**
+     * 提取单行文本内的链接区域（枚举语义锚重载）。
+     *
+     * @param line       单行文本内容（可为 null，由实现按空串处理）
+     * @param fontSizePx UI 像素字号
+     * @param textMode   内容模式（非 null）
+     * @return 链接区域列表（按行内顺序）
+     */
+    default java.util.List<TextLinkRegion> linkRegions(String line, int fontSizePx, SceneTextMode textMode) {
+        return linkRegions(line, fontSizePx, textMode.getCode());
+    }
+
     default String trimToWidth(String text, int fontSizePx, int width, int textMode) {
         String safe = text == null ? "" : text;
         if (width <= 0) {
@@ -132,5 +172,18 @@ public interface SceneTextMeasurer {
             kept = kept.substring(0, kept.length() - 1);
         }
         return kept;
+    }
+
+    /**
+     * 按宽度裁剪单行文本（枚举语义锚重载）。
+     *
+     * @param text       单行文本内容（可为 null，由实现按空串处理）
+     * @param fontSizePx UI 像素字号
+     * @param width      目标宽度（UI 像素，&lt;=0 返回原文本）
+     * @param textMode   内容模式（非 null）
+     * @return 裁剪后的文本
+     */
+    default String trimToWidth(String text, int fontSizePx, int width, SceneTextMode textMode) {
+        return trimToWidth(text, fontSizePx, width, textMode.getCode());
     }
 }

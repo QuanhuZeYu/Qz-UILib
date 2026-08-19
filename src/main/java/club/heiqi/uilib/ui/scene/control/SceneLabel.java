@@ -55,7 +55,8 @@ public final class SceneLabel {
      * @param text            文本内容（响应式只读；富文本模式可含标签）
      * @param color           ARGB 文字颜色
      * @param fontSizePx      UI 像素字号
-     * @param contentMode     内容模式（0=原始文本 / 1=原版格式码 / 2=富文本标签，见 {@link TextStyle} 常量）
+     * @param contentMode     内容模式编码（0=UILIB_RAW / 1=MINECRAFT_FORMATTED / 2=RICH_TAGS，
+     *                         锚定 {@link club.heiqi.uilib.ui.scene.text.SceneTextMode}）
      * @param horizontalAlign 水平对齐
      * @param verticalAlign   垂直对齐
      * @param wrapWidth       最大换行宽度（UI 像素），{@code <=0} 不换行
@@ -121,7 +122,7 @@ public final class SceneLabel {
             root.setHitTestable(false);
             root.setTextColor(props.color());
             root.setFontSize(props.fontSizePx());
-            root.setTextContentMode(props.contentMode());
+            root.setTextMode(club.heiqi.uilib.ui.scene.text.SceneTextMode.fromCode(props.contentMode()));
             root.setTextHorizontalAlign(props.horizontalAlign());
             root.setTextVerticalAlign(props.verticalAlign());
             root.setMaxTextWidth(props.wrapWidth());

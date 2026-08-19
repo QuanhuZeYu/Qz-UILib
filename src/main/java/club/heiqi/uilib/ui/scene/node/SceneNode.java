@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.layout.AlignSelf;
+import club.heiqi.uilib.ui.scene.text.SceneTextMode;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
@@ -144,8 +145,8 @@ public class SceneNode {
     /** 文本内容，默认 null */
     private String text;
 
-    /** 文本内容模式（paint.TextStyle TEXT_MODE_* 编码），默认 0=原始文本 */
-    private int textContentMode = 0;
+    /** 文本内容模式（唯一语义锚），默认原始文本 */
+    private SceneTextMode textContentMode = SceneTextMode.UILIB_RAW;
 
     /** 最大换行宽度（UI 像素），<=0 表示不换行 */
     private int maxTextWidth = 0;
@@ -479,21 +480,38 @@ public class SceneNode {
     /**
      * 设置文本内容模式；变化时标 LAYOUT + PAINT。
      *
-     * @param textContentMode 模式编码（0=原始文本 / 1=Minecraft § / 2=富文本标签），越界回落到 0
+     * <p>遗留 int 编码入口（0=原始文本 / 1=MINECRAFT_FORMATTED / 2=RICH_TAGS，见
+     * {@link SceneTextMode}），越界回落原始文本；新代码优先 {@link #setTextMode(SceneTextMode)}。</p>
+     *
+     * @param textContentMode 模式编码（0/1/2），越界回落到 0
      */
     public SceneNode setTextContentMode(int textContentMode) {
-        int normalized = textContentMode < 0 || textContentMode > 2 ? 0 : textContentMode;
-        if (this.textContentMode == normalized) {
+        return setTextMode(SceneTextMode.fromCode(textContentMode));
+    }
+
+    /** @return 文本内容模式编码（0=原始文本 / 1=MINECRAFT_FORMATTED / 2=RICH_TAGS） */
+    public int getTextContentMode() { return textContentMode.getCode(); }
+
+    /**
+     * 设置文本内容模式（枚举语义锚）；变化时标 LAYOUT + PAINT。
+     *
+     * @param textContentMode 内容模式（非 null）
+     */
+    public SceneNode setTextMode(SceneTextMode textContentMode) {
+        if (textContentMode == null) {
+            throw new IllegalArgumentException("textContentMode 不可为 null");
+        }
+        if (this.textContentMode == textContentMode) {
             return this;
         }
-        this.textContentMode = normalized;
+        this.textContentMode = textContentMode;
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
-    /** @return 文本内容模式（0=原始文本 / 1=Minecraft § / 2=富文本标签） */
-    public int getTextContentMode() { return textContentMode; }
+    /** @return 文本内容模式（枚举语义锚） */
+    public SceneTextMode getTextMode() { return textContentMode; }
 
     /**
      * 设置最大换行宽度（UI 像素）；{@code <=0} 表示不换行。变化时标 LAYOUT + PAINT。

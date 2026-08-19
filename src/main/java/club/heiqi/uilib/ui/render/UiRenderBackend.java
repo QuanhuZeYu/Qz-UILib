@@ -158,6 +158,24 @@ public interface UiRenderBackend {
     }
 
     /**
+     * 按指定 UI 像素字号与内容模式（枚举语义锚）绘制文本。
+     *
+     * <p>默认实现委托遗留 int 编码重载；渲染层实现按需映射到自己的内容模式类型。</p>
+     *
+     * @param text 文本
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param fontSizePx UI 像素字号
+     * @param textMode 内容模式（非 null）
+     */
+    default void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx,
+            club.heiqi.uilib.ui.scene.text.SceneTextMode textMode) {
+        drawText(text, x, y, color, shadow, fontSizePx, textMode.getCode());
+    }
+
+    /**
      * 进入 group opacity 合成作用域。
      *
      * @param left 左侧坐标

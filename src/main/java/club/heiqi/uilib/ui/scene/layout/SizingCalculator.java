@@ -6,6 +6,7 @@ import java.util.Set;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.text.SceneLineClamp;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.text.SceneTextMode;
 
 /**
  * 尺寸计算器 —— scene 布局算法的纯读函数集（阶段 4.1 从 SceneLayoutEngine 拆出）。
@@ -508,7 +509,7 @@ class SizingCalculator {
         }
         int fontSizePx = node.getFontSize();
         int wrapWidth = node.getMaxTextWidth();
-        int textMode = node.getTextContentMode();
+        SceneTextMode textMode = node.getTextMode();
         // 拆行（wrap 软换行 / 非 wrap 硬换行）后经 SceneLineClamp 截断（maxLines + 省略号），
         // 与绘制同口径；逐行行高求和（RAW/MINECRAFT 每行同高，富文本每行按行内最大显式字号）。
         List<String> lines = measurer.splitLines(text, fontSizePx, wrapWidth > 0 ? wrapWidth : 0, textMode);

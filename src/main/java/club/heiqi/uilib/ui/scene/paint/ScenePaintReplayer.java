@@ -152,7 +152,7 @@ public class ScenePaintReplayer {
                 TextStyle style = cmd.getTextStyle();
                 if (style != null) {
                     ctx.drawText(cmd.getText(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
-                            style.getColor(), false, style.getFontSize(), style.getTextMode());
+                            style.getColor(), false, style.getFontSize(), style.getMode());
                 }
                 break;
 

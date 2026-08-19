@@ -8,9 +8,9 @@ import java.util.Objects;
  * <p>每条 {@link PaintCommandType#TEXT 文本绘制命令} 携带一个 {@code TextStyle}，
  * 包含渲染所需的最小样式字段。所有字段 final，构造后不可变。</p>
  *
- * <p>{@link #textMode} 以原始 int 编码内容解析模式（scene 核心不 import {@code ui.text.*}，守 I10）：
- * {@link #TEXT_MODE_UILIB_RAW} 原始文本、{@link #TEXT_MODE_MINECRAFT_FORMATTED} Minecraft § 格式码、
- * {@link #TEXT_MODE_RICH_TAGS} 现代富文本标签；渲染层自行映射到 {@code ui.text.TextContentMode}。</p>
+ * <p>内容解析模式以 {@link club.heiqi.uilib.ui.scene.text.SceneTextMode} 枚举承载（scene 核心不
+ * import {@code ui.text.*}，守 I10）；历史 int 编码构造器/取值器保留兼容，{@code TEXT_MODE_*}
+ * 常量与 {@code SceneTextMode.getCode()} 逐位对齐（编译期守卫见 SceneTextModeTest）。</p>
  *
  * <p>后续预留扩展：字重（fontWeight）、字体族（fontFamily）、行高（lineHeight）、阴影（textShadow）等。</p>
  */
@@ -31,8 +31,8 @@ public final class TextStyle {
     /** 字号大小（像素整数） */
     private final int fontSize;
 
-    /** 文本内容解析模式（TEXT_MODE_* 编码） */
-    private final int textMode;
+    /** 文本内容解析模式（唯一语义锚） */
+    private final club.heiqi.uilib.ui.scene.text.SceneTextMode textMode;
 
     /**
      * 创建原始文本模式样式。
@@ -52,9 +52,20 @@ public final class TextStyle {
      * @param textMode 内容模式（TEXT_MODE_* 编码，越界回落到原始文本模式）
      */
     public TextStyle(int color, int fontSize, int textMode) {
+        this(color, fontSize, club.heiqi.uilib.ui.scene.text.SceneTextMode.fromCode(textMode));
+    }
+
+    /**
+     * 创建指定内容模式的文本样式。
+     *
+     * @param color    ARGB 文字颜色
+     * @param fontSize 字号（像素）
+     * @param textMode 内容模式（非 null）
+     */
+    public TextStyle(int color, int fontSize, club.heiqi.uilib.ui.scene.text.SceneTextMode textMode) {
         this.color = color;
         this.fontSize = fontSize;
-        this.textMode = normalizeTextMode(textMode);
+        this.textMode = java.util.Objects.requireNonNull(textMode, "textMode");
     }
 
     /** @return ARGB 文字颜色 */
@@ -67,15 +78,13 @@ public final class TextStyle {
         return fontSize;
     }
 
-    /** @return 文本内容解析模式（TEXT_MODE_* 编码） */
+    /** @return 文本内容解析模式编码（TEXT_MODE_* 常量，与 SceneTextMode.getCode() 对齐） */
     public int getTextMode() {
-        return textMode;
+        return textMode.getCode();
     }
 
-    private static int normalizeTextMode(int textMode) {
-        if (textMode < TEXT_MODE_UILIB_RAW || textMode > TEXT_MODE_RICH_TAGS) {
-            return TEXT_MODE_UILIB_RAW;
-        }
+    /** @return 文本内容解析模式（枚举语义锚） */
+    public club.heiqi.uilib.ui.scene.text.SceneTextMode getMode() {
         return textMode;
     }
 
@@ -93,7 +102,7 @@ public final class TextStyle {
 
     @Override
     public int hashCode() {
-        return Objects.hash(Integer.valueOf(color), Integer.valueOf(fontSize), Integer.valueOf(textMode));
+        return Objects.hash(Integer.valueOf(color), Integer.valueOf(fontSize), textMode);
     }
 
     @Override
