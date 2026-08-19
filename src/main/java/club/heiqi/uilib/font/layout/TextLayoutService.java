@@ -1476,7 +1476,8 @@ public class TextLayoutService {
                 && left.isItalic() == right.isItalic()
                 && left.isUnderline() == right.isUnderline()
                 && left.isStrikethrough() == right.isStrikethrough()
-                && left.getFontSizePx() == right.getFontSizePx();
+                && left.getFontSizePx() == right.getFontSizePx()
+                && left.getMarkColor() == right.getMarkColor();
     }
 
     private String wrapRawStringToWidth(String text, int wrapWidth) {

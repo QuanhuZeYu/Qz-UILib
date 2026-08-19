@@ -88,6 +88,7 @@ public class FontBatchRendererTailStateTest {
         setField(renderer, "activeNormalPages", new boolean[4]);
         setField(renderer, "activeBoldPages", new boolean[4]);
         setField(renderer, "decorationBatch", new GlyphRenderBatch());
+        setField(renderer, "markBackgroundBatch", new GlyphRenderBatch());
         setField(renderer, "initialized", new AtomicBoolean(true));
         setField(renderer, "lastCollectedGlyphColor", Integer.valueOf(FontBatchRenderer.NO_GLYPH_COLOR));
         setField(renderer, "lastFlushGlyphColor", Integer.valueOf(FontBatchRenderer.NO_GLYPH_COLOR));

@@ -41,6 +41,8 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
 | `<i>` | 斜体 | `<i>斜</i>` |
 | `<u>` | 下划线 | `<u>线</u>` |
 | `<s>` | 删除线 | `<s>删</s>` |
+| `<mark>` | 行内高亮（默认黄底 `#FFEB3B`） | `<mark>重点</mark>` |
+| `<mark=#RRGGBB>` | 自定义高亮背景色 | `<mark=#80FFEB3B>半透明黄底</mark>` |
 | `<size=N>` | 绝对像素字号（1..256，越界截断） | `<size=24>大</size>` |
 | `<br>` / `<br/>` | 硬换行 | `第一行<br>第二行` |
 

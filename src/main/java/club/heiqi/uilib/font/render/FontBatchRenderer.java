@@ -46,6 +46,8 @@ public class FontBatchRenderer {
     private boolean[] activeBoldPages = new boolean[4];
     private int activePageCount;
     private final GlyphRenderBatch decorationBatch = new GlyphRenderBatch();
+    /** 行内高亮背景层：flush 时先于字形页批次渲染，保证高亮矩形垫在字形之下。 */
+    private final GlyphRenderBatch markBackgroundBatch = new GlyphRenderBatch();
     private final FontRenderTool renderTool = new FontRenderTool();
     private final FontRenderStateGuard stateGuard = new FontRenderStateGuard();
     private FloatBuffer vertexBuffer = BufferUtils.createFloatBuffer(1024 * 64 * GlyphRenderBatch.VERTEX_STRIDE_FLOATS);
@@ -415,6 +417,32 @@ public class FontBatchRenderer {
     }
 
     /**
+     * 收集行内高亮背景矩形（{@code <mark>}）。
+     *
+     * <p>高亮矩形进入独立的背景批次，flush 时<b>先于</b>字形页批次渲染（与装饰线的
+     * “字形先绘制、装饰线后覆盖”语义相反），保证高亮色垫在字形之下、不遮挡文字。</p>
+     *
+     * @param x      起始 X
+     * @param y      起始 Y
+     * @param width  矩形宽度
+     * @param height 矩形高度
+     * @param color  高亮背景色（ARGB）
+     */
+    public void collectMarkBackground(float x, float y, float width, float height, int color) {
+        initialize();
+
+        float alpha = (float) (color >> 24 & 255) / 255.0F;
+        float red = (float) (color >> 16 & 255) / 255.0F;
+        float green = (float) (color >> 8 & 255) / 255.0F;
+        float blue = (float) (color & 255) / 255.0F;
+        float z = (float) FontConfig.renderOffset;
+
+        markBackgroundBatch.addRectangleQuad(x, y, z, width, height, red, green, blue, alpha,
+                GlyphRenderBatch.RENDER_TYPE_DECORATION);
+        quadCount++;
+    }
+
+    /**
      * 在自带状态保护边界中提交当前帧批次。
      *
      * @param shaderProgram 字体 shader
@@ -445,7 +473,7 @@ public class FontBatchRenderer {
             recordLastFlushStats(0, 0, 0);
             return 0;
         }
-        if (activePageCount <= 0 && decorationBatch.isEmpty()) {
+        if (activePageCount <= 0 && decorationBatch.isEmpty() && markBackgroundBatch.isEmpty()) {
             resetLastFlushTailState();
             recordLastFlushStats(0, 0, 0);
             clearFrame();
@@ -463,6 +491,11 @@ public class FontBatchRenderer {
             setupUniforms(shaderProgram);
             shaderProgram.setUniformI("mainTex", 0);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
+
+            if (!markBackgroundBatch.isEmpty()) {
+                renderBatch(shaderProgram, markBackgroundBatch);
+                drawCallCount++;
+            }
 
             for (int index = 0; index < activePageCount; index++) {
                 GlyphRenderBatch batch = getActiveBatch(index);
@@ -512,6 +545,7 @@ public class FontBatchRenderer {
         }
         activePageCount = 0;
         decorationBatch.clear();
+        markBackgroundBatch.clear();
         quadCount = 0;
         lastCollectedGlyphColor = NO_GLYPH_COLOR;
     }

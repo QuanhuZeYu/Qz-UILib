@@ -764,13 +764,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         currentX + (float) FontConfig.shadowOffsetX * renderScale,
                         drawY + (float) FontConfig.shadowOffsetY * renderScale,
                         measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
-                        darkenShadow(style.getColor()));
+                        darkenShadow(style.getColor()), false);
             }
             collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
                     currentX, drawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
-                    style.getColor());
+                    style.getColor(), true);
             currentX += measuredWidth;
         }
         if (!isDeferredFlushScopeActive()) {
@@ -931,10 +931,10 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int textureId, int textureSize, int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX,
             int atlasBaselineY, int lineBaselineY, int glyphSize, byte glyphFlags, int inkWidth, int inkHeight,
             int bearingX, int bearingY, float currentX, float drawY, float measuredWidth, float charSize,
-            float baseCharSize, float renderScale, TextStyle style, int renderColor) {
+            float baseCharSize, float renderScale, TextStyle style, int renderColor, boolean withMarkBackground) {
         boolean hasGlyphQuad = glyphReady && textureId > 0 && slotWidth > 0 && slotHeight > 0
                 && inkWidth > 0 && inkHeight > 0;
-        if (hasGlyphQuad || style.isUnderline() || style.isStrikethrough()) {
+        if (hasGlyphQuad || style.isUnderline() || style.isStrikethrough() || style.getMarkColor() != 0) {
             markDeferredFlushDirtyIfNeeded();
         }
         if (hasGlyphQuad) {
@@ -943,11 +943,18 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     inkWidth, inkHeight, bearingX, bearingY, currentX, drawY, charSize, renderColor, style.isItalic(),
                     glyphFlags, baseCharSize);
         }
-        collectDecorations(fontService, currentX, drawY, measuredWidth, charSize, renderScale, style, renderColor);
+        collectDecorations(fontService, currentX, drawY, measuredWidth, charSize, baseCharSize, renderScale,
+                style, renderColor, withMarkBackground);
     }
 
     private void collectDecorations(FontService fontService, float currentX, float drawY, float width, float charSize,
-            float renderScale, TextStyle style, int color) {
+            float baseCharSize, float renderScale, TextStyle style, int color, boolean withMarkBackground) {
+        if (withMarkBackground && style.getMarkColor() != 0) {
+            // 行内高亮矩形覆盖整行 em-box，垫在字形之下（独立背景批次先渲染）；
+            // 阴影 pass 不收集，避免偏移后的第二层矩形叠影。
+            fontService.getBatchRenderer().collectMarkBackground(currentX, drawY, width, baseCharSize,
+                    style.getMarkColor());
+        }
         if (style.isUnderline()) {
             fontService.getBatchRenderer().collectDecoration(currentX, drawY + charSize - renderScale, width,
                     renderScale, color);

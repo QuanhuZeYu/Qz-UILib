@@ -16,6 +16,7 @@ import club.heiqi.uilib.font.FontType;
  * <ul>
  *   <li>{@code <color=#RRGGBB>} / {@code <color=#AARRGGBB>} / {@code <color=red>}（CSS 16 基础色名）</li>
  *   <li>{@code <b>} 粗体、{@code <i>} 斜体、{@code <u>} 下划线、{@code <s>} 删除线</li>
+ *   <li>{@code <mark>} 行内高亮（默认 {@code #FFEB3B}，可 {@code <mark=#RRGGBB>} 自定义背景色）</li>
  *   <li>{@code <size=N>} 绝对像素字号（{@value #MIN_FONT_SIZE_PX}..{@value #MAX_FONT_SIZE_PX}，越界截断）</li>
  *   <li>{@code <br>} / {@code <br/>} 硬换行；闭合标签 {@code </name>} 或通用闭合 {@code </>}</li>
  * </ul>
@@ -41,6 +42,8 @@ public final class RichTextTagParser {
     public static final int MAX_FONT_SIZE_PX = 256;
     /** 解析器接受的最小像素字号。 */
     public static final int MIN_FONT_SIZE_PX = 1;
+    /** {@code <mark>} 无值时的默认高亮背景色（Material Yellow 500）。 */
+    public static final int DEFAULT_MARK_COLOR = 0xFFFFEB3B;
 
     private static final Map<String, Integer> NAMED_COLORS = createNamedColors();
 
@@ -199,7 +202,7 @@ public final class RichTextTagParser {
 
     private static boolean isKnownTagName(String name) {
         return "color".equals(name) || "b".equals(name) || "i".equals(name) || "u".equals(name)
-                || "s".equals(name) || "br".equals(name) || "size".equals(name);
+                || "s".equals(name) || "br".equals(name) || "size".equals(name) || "mark".equals(name);
     }
 
     private static String decodeEntity(String name) {
@@ -266,6 +269,22 @@ public final class RichTextTagParser {
             }
             TextStyle next = current.copy();
             next.setFontSizePx(size.intValue());
+            return next;
+        }
+        if ("mark".equals(match.name)) {
+            int markColor = DEFAULT_MARK_COLOR;
+            if (match.value != null && !match.value.trim().isEmpty()) {
+                Integer parsed = parseColor(match.value);
+                if (parsed == null) {
+                    return current;
+                }
+                markColor = parsed.intValue();
+            }
+            if (current.getMarkColor() == markColor) {
+                return current;
+            }
+            TextStyle next = current.copy();
+            next.setMarkColor(markColor);
             return next;
         }
         return current;
@@ -335,6 +354,9 @@ public final class RichTextTagParser {
         // 阶段一：先关闭全部退出的样式（逆序，最内层先关）。
         // 阶段二：再打开全部新样式。先关后开保证诸如 </color><size=N> 的序列在容错解析下
         // 不会让外层闭合误弹刚压栈的内层帧。
+        if (current.getMarkColor() != 0 && current.getMarkColor() != next.getMarkColor()) {
+            out.append("</mark>");
+        }
         if (current.getFontSizePx() > 0 && current.getFontSizePx() != next.getFontSizePx()) {
             out.append("</size>");
         }
@@ -374,9 +396,20 @@ public final class RichTextTagParser {
         if (next.getFontSizePx() > 0 && next.getFontSizePx() != current.getFontSizePx()) {
             out.append("<size=").append(next.getFontSizePx()).append('>');
         }
+        if (next.getMarkColor() != 0 && next.getMarkColor() != current.getMarkColor()) {
+            if (next.getMarkColor() == DEFAULT_MARK_COLOR) {
+                out.append("<mark>");
+            } else {
+                out.append("<mark=#").append(String.format("%08X", Integer.valueOf(next.getMarkColor())))
+                        .append('>');
+            }
+        }
     }
 
     private static void appendClosings(StringBuilder out, TextStyle style) {
+        if (style.getMarkColor() != 0) {
+            out.append("</mark>");
+        }
         if (style.getFontSizePx() > 0) {
             out.append("</size>");
         }

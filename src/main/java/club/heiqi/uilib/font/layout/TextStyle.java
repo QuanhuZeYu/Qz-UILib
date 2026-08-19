@@ -20,6 +20,9 @@ public class TextStyle {
     /** 绝对像素字号；0 表示未指定，渲染/测量时继承运行时基准字号。 */
     private int fontSizePx;
 
+    /** 行内高亮背景色（ARGB）；0 表示无高亮。 */
+    private int markColor;
+
     /**
      * 复制当前样式。
      *
@@ -37,6 +40,7 @@ public class TextStyle {
         style.baseFontType = baseFontType;
         style.baseItalic = baseItalic;
         style.fontSizePx = fontSizePx;
+        style.markColor = markColor;
         return style;
     }
 
@@ -89,6 +93,7 @@ public class TextStyle {
         underline = false;
         strikethrough = false;
         italic = baseItalic;
+        markColor = 0;
     }
 
     private void resetFlags(int baseColor) {
@@ -99,6 +104,7 @@ public class TextStyle {
         underline = false;
         strikethrough = false;
         italic = baseItalic;
+        markColor = 0;
     }
 
     public int getColor() {
@@ -179,6 +185,24 @@ public class TextStyle {
      */
     public void setFontSizePx(int fontSizePx) {
         this.fontSizePx = Math.max(0, fontSizePx);
+    }
+
+    /**
+     * 获取行内高亮背景色；0 表示无高亮。
+     *
+     * @return ARGB 高亮色
+     */
+    public int getMarkColor() {
+        return markColor;
+    }
+
+    /**
+     * 设置行内高亮背景色。
+     *
+     * @param markColor ARGB 高亮色，0 表示关闭高亮
+     */
+    public void setMarkColor(int markColor) {
+        this.markColor = markColor;
     }
 
     /**

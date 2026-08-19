@@ -889,6 +889,7 @@ public class FontServiceLayoutRuntimeSmokeTest {
             setField(service, "renderThread", Thread.currentThread());
             setField(service, "batchRenderer", batchRenderer);
             setDeclaredField(batchRenderer, FontBatchRenderer.class, "decorationBatch", new GlyphRenderBatch());
+            setDeclaredField(batchRenderer, FontBatchRenderer.class, "markBackgroundBatch", new GlyphRenderBatch());
             setDeclaredField(batchRenderer, FontBatchRenderer.class, "quadCount", Integer.valueOf(1));
             service.tickMainThread(0);
             ActiveFontGeneration original = service.getActiveGeneration();

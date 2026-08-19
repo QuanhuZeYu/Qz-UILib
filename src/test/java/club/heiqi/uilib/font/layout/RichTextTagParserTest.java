@@ -131,6 +131,49 @@ public class RichTextTagParserTest {
     }
 
     @Test
+    public void shouldParseMarkWithDefaultColor() {
+        List<TextSegment> segments = RichTextTagParser.parse("<mark>高亮</mark>尾", baseStyle());
+
+        Assert.assertEquals(2, segments.size());
+        Assert.assertEquals("高亮", segments.get(0).getText());
+        Assert.assertEquals(RichTextTagParser.DEFAULT_MARK_COLOR, segments.get(0).getStyle().getMarkColor());
+        Assert.assertEquals("尾", segments.get(1).getText());
+        Assert.assertEquals(0, segments.get(1).getStyle().getMarkColor());
+    }
+
+    @Test
+    public void shouldParseMarkWithCustomColorAndNesting() {
+        List<TextSegment> segments = RichTextTagParser.parse("<mark=#FF0000>a<b>b</b></mark>c", baseStyle());
+
+        Assert.assertEquals(3, segments.size());
+        Assert.assertEquals(0xFFFF0000, segments.get(0).getStyle().getMarkColor());
+        Assert.assertEquals(0xFFFF0000, segments.get(1).getStyle().getMarkColor());
+        Assert.assertEquals(FontType.BOLD, segments.get(1).getStyle().getFontType());
+        Assert.assertEquals(0, segments.get(2).getStyle().getMarkColor());
+    }
+
+    @Test
+    public void shouldIgnoreBadMarkColorAttribute() {
+        List<TextSegment> segments = RichTextTagParser.parse("<mark=zzz>x</mark>", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals(0, segments.get(0).getStyle().getMarkColor());
+    }
+
+    @Test
+    public void shouldSerializeMarkRoundTrip() {
+        String text = "前<mark>黄底</mark><mark=#8000FF00>绿底</mark><b>粗<mark>嵌套</mark></b>尾";
+        List<TextSegment> parsed = RichTextTagParser.parse(text, baseStyle());
+        String serialized = RichTextTagParser.serialize(parsed, baseStyle());
+        List<TextSegment> reParsed = RichTextTagParser.parse(serialized, baseStyle());
+
+        assertSegmentsEqual(parsed, reParsed);
+        // 默认色序列化为无值 <mark>，自定义色带 8 位 ARGB 值
+        Assert.assertTrue(serialized.contains("<mark>"));
+        Assert.assertTrue(serialized.contains("<mark=#8000FF00>"));
+    }
+
+    @Test
     public void shouldSupportSpaceSeparatedValue() {
         List<TextSegment> segments = RichTextTagParser.parse("<color red>x</color>", baseStyle());
 
@@ -201,5 +244,6 @@ public class RichTextTagParserTest {
         Assert.assertEquals(expected.isUnderline(), actual.isUnderline());
         Assert.assertEquals(expected.isStrikethrough(), actual.isStrikethrough());
         Assert.assertEquals(expected.getFontSizePx(), actual.getFontSizePx());
+        Assert.assertEquals(expected.getMarkColor(), actual.getMarkColor());
     }
 }

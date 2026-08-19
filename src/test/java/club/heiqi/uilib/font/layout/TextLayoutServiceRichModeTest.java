@@ -36,6 +36,27 @@ public class TextLayoutServiceRichModeTest {
     }
 
     @Test
+    public void shouldIgnoreMarkTagWidth() {
+        TextLayoutService service = createService('A');
+
+        int richWidth = service.getStringWidth("<mark>AA</mark>", TextContentMode.RICH_TAGS);
+        int rawWidth = service.getStringWidth("AA", TextContentMode.UILIB_RAW);
+
+        Assert.assertEquals(rawWidth, richWidth);
+    }
+
+    @Test
+    public void shouldWrapMarkedTextWithStyleContinuation() {
+        TextLayoutService service = createService('A', 'B');
+
+        List<String> lines = service.listFormattedStringToWidth("<mark>AB</mark>", 1, TextContentMode.RICH_TAGS);
+
+        Assert.assertEquals(2, lines.size());
+        Assert.assertEquals("<mark>A</mark>", lines.get(0));
+        Assert.assertEquals("<mark>B</mark>", lines.get(1));
+    }
+
+    @Test
     public void shouldScaleWidthByExplicitSize() {
         TextLayoutService service = createService('A');
         int baseSize = (int) FontRuntimeSettings.capture().getCharSize();

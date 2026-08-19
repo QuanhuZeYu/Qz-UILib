@@ -57,6 +57,9 @@ public final class RichTextPage implements PlaygroundPage {
                     "任意嵌套：<color=#4FC3F7><b>蓝粗<i>蓝粗斜</i></b>回蓝粗</color>　关闭标签后回退父样式", 15));
             styleCard.appendChild(richText(
                     "8 位 ARGB：<color=#80FF5533>半透明红</color>（底层背景透出）", 15));
+            styleCard.appendChild(richText(
+                    "行内高亮：<mark>默认黄底</mark>　<mark=#80FF5533>半透明红底</mark>　"
+                    + "<mark=#4FC3F7><b>蓝底加粗</b></mark>", 15));
             styleCard.appendChild(PlaygroundKit.hint(
                     "标签不占测量宽度；§ 原版格式码在富文本模式下不参与解析。"));
             root.appendChild(styleCard);
