@@ -86,12 +86,12 @@ HudRegistration hud = ClientHudService.getInstance().register(
 
 ## 5. 分阶段里程碑
 
-| 阶段 | 内容 | 验收 |
-|---|---|---|
-| H1 窗口内核 | `VirtualWindow`（或 `HudWindow`）类型 + `SceneHudHost` 改挂窗口工厂；`UiHudRenderListener` 不变 | 用 scene 代码（SceneLabel 富文本 + 信号）构建 HUD，行为与旧管线对拍；build 全绿 + 真机 |
-| H2 锚定统一 | `SceneAnchorResolver` 增加视口锚点模式；`HudLayoutEngine` 数学迁移并删除；堆叠 offset 语义对拍 | `HudLayoutEngineTest` 全量迁移到 resolver 测试 |
-| H3 旧协议下线 | 按路线 A/B 删除或弃用 `HudSnapshot` 系 API；`HudTone` 迁 scene token；`ScaledHudBackend` 一般化 | 旧 API 编译错误清零；LTS 清单更新 |
-| H4（可选）交互 | HUD 虚拟窗口支持输入：host 注入 `PlatformInputSource`（tick 轮询 + GuiIngame 旁路，1.7.10 无现成 HUD 事件） | SceneButton/链接点击在 HUD 窗口可用，hover/光标正常 |
+| 阶段 | 内容 | 验收 | 状态 |
+|---|---|---|---|
+| H1 窗口内核 | `HudWindowFactory` 注册协议 + `SceneHudHost` 每窗口 `SceneFramePipeline` 帧循环；快照翻译层删除 | scene 代码构建 HUD，空内容整窗隐藏、工厂异常隔离；build 全绿 | ✅ 完成（`f22edc59`） |
+| H2 锚定统一 | `SceneAnchorResolver.resolveViewport` 视口锚点模式；`HudLayoutEngine` 删除；堆叠 offset 语义对拍 | 锚定契约测试全量迁移 `SceneAnchorResolverTest` | ✅ 完成（`dcd1fe93`） |
+| H3 旧协议下线 | `HudSnapshot` 系删除；HudTone 语义迁 `SceneChromeTokens.HUD_*` token；`ScaledHudBackend` 一般化为 `UiRenderBackend.scaled(float)` | 旧 API 编译错误清零；LTS 清单更新 | ✅ 完成（本轮提交） |
+| H4（可选）交互 | HUD 虚拟窗口支持输入：host 注入 `PlatformInputSource`（tick 轮询 + GuiIngame 旁路，1.7.10 无现成 HUD 事件） | SceneButton/链接点击在 HUD 窗口可用，hover/光标正常 | 待评估 |
 
 H4 单独列为可选：HUD 交互需要自建输入注入路径（`RenderGameOverlayEvent` 之外没有按键/鼠标回调，
 要 mixin `GuiIngame` 或每 tick 轮询），且会引入「HUD 与普通 GUI 同时抢输入」的仲裁问题，

@@ -25,6 +25,19 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 public interface UiRenderBackend {
 
     /**
+     * 返回把本后端坐标按 {@code scale} 放大的装饰器（屏幕级宿主边界恰好换算一次）。
+     *
+     * <p>{@code scale == 1} 时返回自身（零开销）；实现统一由 {@link ScaledRenderBackend} 承载，
+     * 宿主不应再手写坐标缩放转发样板。</p>
+     *
+     * @param scale 缩放倍率
+     * @return 缩放后的后端
+     */
+    default UiRenderBackend scaled(float scale) {
+        return Float.compare(scale, 1F) == 0 ? this : new ScaledRenderBackend(this, scale);
+    }
+
+    /**
      * 在实际 replay 前批量发布本 plan 的 visible text demand。旧 backend 默认忽略该调度提示。
      *
      * @param texts 当前 plan 中的 raw 文本

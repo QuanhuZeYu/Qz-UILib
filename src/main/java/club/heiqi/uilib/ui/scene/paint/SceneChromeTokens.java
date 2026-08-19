@@ -258,6 +258,33 @@ public final class SceneChromeTokens {
      */
     public static final int DATA_TABLE_ITEM_BG_HIGHLIGHTED = 0xFF4F378B;
 
+    // ==================== HUD 虚拟窗口（屏幕级宿主外壳） ====================
+
+    /**
+     * HUD 窗口外壳背景（半透明黑，弱化对游戏画面的遮挡）。
+     */
+    public static final int HUD_SHELL_BG = 0xA0000000;
+    /**
+     * HUD 弱强调文本（旧 HudTone.MUTED 语义：次要信息灰）。
+     */
+    public static final int HUD_TEXT_MUTED = 0xFFAAAAAA;
+    /**
+     * HUD 信息文本（旧 HudTone.INFO 语义：青）。
+     */
+    public static final int HUD_TEXT_INFO = 0xFF55FFFF;
+    /**
+     * HUD 成功文本（旧 HudTone.SUCCESS 语义：绿）。
+     */
+    public static final int HUD_TEXT_SUCCESS = 0xFF55FF55;
+    /**
+     * HUD 警告文本（旧 HudTone.WARNING 语义：黄）。
+     */
+    public static final int HUD_TEXT_WARNING = 0xFFFFFF55;
+    /**
+     * HUD 危险文本（旧 HudTone.DANGER 语义：红）。
+     */
+    public static final int HUD_TEXT_DANGER = 0xFFFF5555;
+
     /**
      * 纯静态 token 类，禁止实例化。
      */

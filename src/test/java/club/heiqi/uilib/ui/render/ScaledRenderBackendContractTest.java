@@ -1,4 +1,4 @@
-package club.heiqi.uilib.client.hud;
+package club.heiqi.uilib.ui.render;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
@@ -12,8 +12,8 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 
-/** 独立 HUD scale 在 backend 边界只执行一次的完整出口契约测试。 */
-public class ScaledHudBackendContractTest {
+/** 通用缩放装饰器在 backend 边界只执行一次的完整出口契约测试（自 ScaledHudBackend 迁移）。 */
+public class ScaledRenderBackendContractTest {
     private static final float[] SCALES = {1F, 1.25F, 1.5F, 1.75F, 2F};
 
     /** 验证全部后端出口的调用顺序、参数缩放、舍入和非几何参数透传。 */
@@ -22,7 +22,7 @@ public class ScaledHudBackendContractTest {
         ImageFixture image = new ImageFixture("test:textures/hud.png", 0.125F, 0.25F, 0.75F, 0.875F);
         for (float scale : SCALES) {
             RecordingRenderBackend recording = new RecordingRenderBackend();
-            invokeEveryExit(new ScaledHudBackend(recording, scale), image);
+            invokeEveryExit(new ScaledRenderBackend(recording, scale), image);
             assertCompleteCalls(recording.getCalls(), expectedCalls(scale, image), scale);
         }
     }
@@ -32,7 +32,7 @@ public class ScaledHudBackendContractTest {
         DemandCapturingBackend recording = new DemandCapturingBackend();
         List<String> texts = Arrays.asList("HUD", "Status");
 
-        new ScaledHudBackend(recording, 1.75F).publishTextDemand(texts);
+        new ScaledRenderBackend(recording, 1.75F).publishTextDemand(texts);
 
         assertSame(texts, recording.texts);
     }

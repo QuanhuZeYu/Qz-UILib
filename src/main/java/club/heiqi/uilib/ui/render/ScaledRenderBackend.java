@@ -1,16 +1,16 @@
-package club.heiqi.uilib.client.hud;
+package club.heiqi.uilib.ui.render;
 
 import java.util.List;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
-/** 在 HUD host 边界恰好一次把 logical px 映射为 framebuffer px。 */
-final class ScaledHudBackend implements UiRenderBackend {
+/** 通用缩放装饰器：把 logical px 恰好一次映射为 framebuffer px（屏幕级宿主边界，如 HUD）。 */
+final class ScaledRenderBackend implements UiRenderBackend {
     private final UiRenderBackend delegate;
     private final float scale;
 
-    ScaledHudBackend(UiRenderBackend delegate, float scale) { this.delegate = delegate; this.scale = scale; }
+    ScaledRenderBackend(UiRenderBackend delegate, float scale) { this.delegate = delegate; this.scale = scale; }
     private int p(int value) { return Math.round(value * scale); }
     public void publishTextDemand(List<String> texts){delegate.publishTextDemand(texts);}
     public void fillRect(int l,int t,int r,int b,int c){delegate.fillRect(p(l),p(t),p(r),p(b),c);}

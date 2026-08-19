@@ -67,7 +67,7 @@ public final class SceneHudHost {
         float scale = scaleSetting.get();
         width = Math.max(1, (int) Math.floor(width / scale));
         height = Math.max(1, (int) Math.floor(height / scale));
-        backend = scale == 1F ? backend : new ScaledHudBackend(backend, scale);
+        backend = backend.scaled(scale);
         HudInsets safeInsets = registry.avoidanceInsets(this::reportProviderFailure);
         ArrayList<MeasuredHud> measured = new ArrayList<MeasuredHud>();
         Set<String> registered = new HashSet<String>();
@@ -195,7 +195,7 @@ public final class SceneHudHost {
                     new ScenePaintReplayer(), measurer, null);
             root = SceneNode.column().setHitTestable(false).setClipChildren(true)
                     .setPadding(tokens.paddingY, tokens.paddingX, tokens.paddingY, tokens.paddingX)
-                    .setBackgroundColor(0xA0000000)
+                    .setBackgroundColor(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.HUD_SHELL_BG)
                     .setWidthSizing(SceneNode.WidthSizing.SHRINK);
             SceneNode contentRoot = entry.factory.build(runtime);
             if (contentRoot == null) {

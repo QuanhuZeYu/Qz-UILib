@@ -66,7 +66,7 @@ public final class UiHudRenderListener {
                                 club.heiqi.uilib.ui.scene.node.SceneNode line =
                                         club.heiqi.uilib.ui.scene.node.SceneNode.row()
                                                 .setHitTestable(false)
-                                                .setTextColor(0xFFAAAAAA)
+                                                .setTextColor(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.HUD_TEXT_MUTED)
                                                 .setFontSize(14);
                                 rt.bindText(line, debugScreenName);
                                 return line;
