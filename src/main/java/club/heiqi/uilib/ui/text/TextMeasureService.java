@@ -185,6 +185,19 @@ public interface TextMeasureService {
      * @param style       文本样式快照
      * @return 裁剪后的字符串
      */
+    /**
+     * 提取单行文本内的链接区域（富文本感知：标签不占宽，字号/上下标/字距均计入偏移）。
+     *
+     * <p>默认实现返回空列表（无链接），供测试替身和旧实现渐进升级。</p>
+     *
+     * @param line  单行文本（可含富文本标签）
+     * @param style 文本样式快照
+     * @return 链接区域列表（按行内顺序）
+     */
+    default java.util.List<TextLinkRegion> getLinkRegions(String line, TextMeasureStyle style) {
+        return java.util.Collections.emptyList();
+    }
+
     default String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style) {
         TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
         int rawTargetWidth = Math.max(1, Math.round(targetWidth * Math.max(1, getLineHeight())

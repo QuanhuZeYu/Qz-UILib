@@ -83,7 +83,7 @@ public final class RichTextPage implements PlaygroundPage {
                             + "<b>加粗片段</b>横跨换行边界，样式在换行前后保持一致。</color>"
                             + "换行宽度 320 像素，标签本身不占任何测量宽度。"),
                     PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 0, false)).get();
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 0, false, null)).get();
             sizeCard.appendChild(wrapDemo);
             root.appendChild(sizeCard);
 
@@ -115,7 +115,7 @@ public final class RichTextPage implements PlaygroundPage {
             liveCard.appendChild(ops);
             liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
                     demoText, PlaygroundKit.TEXT, 15, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 0, false)).get());
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 0, false, null)).get());
             liveCard.appendChild(PlaygroundKit.hint(
                     "限行演示（maxLines=2 + ellipsis）：长文最多两行，末行追加省略号"));
             liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
@@ -123,7 +123,16 @@ public final class RichTextPage implements PlaygroundPage {
                             + "<b>加粗内容</b>会被截掉一部分，超出两行的部分全部丢弃，"
                             + "末行以省略号收尾，布局高度只按两行计算。</color>"),
                     PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 2, true)).get());
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 2, true, null)).get());
+            final Signal<String> linkFeedback = Signal.create("（点击下方链接，回调写入这里）");
+            liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
+                    Signal.create("链接演示：访问 <a=https://github.com>GitHub</a> 或 "
+                            + "<a=https://example.com>示例站</a>（自动下划线，可点击）"),
+                    PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false,
+                    url -> linkFeedback.set("点击了链接：" + url))).get());
+            liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
+                    linkFeedback, PlaygroundKit.TEXT, 13, TextStyle.TEXT_MODE_UILIB_RAW)).get());
             root.appendChild(liveCard);
             return root;
         };

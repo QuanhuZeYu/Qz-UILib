@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.text.SceneLineClamp;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.text.TextLinkRegion;
 
 /**
  * 场景树绘制引擎 —— 将节点树 + 布局结果转换为纯数据 Display List。
@@ -328,7 +329,13 @@ public class ScenePaintEngine {
                 TextStyle style = new TextStyle(node.getTextColor(), fontSize, textMode);
                 int textLeft = calculateTextLeft(node, box, fontSize, line);
                 out.add(PaintCommand.text(textLeft, cursorY, line, style));
-                cursorY += lineHeights[lineIndex];
+                int lineBottom = cursorY + lineHeights[lineIndex];
+                // 链接命中区域：与 TEXT 同批产出（相对节点局部坐标），供控件层 CLICK 命中测试
+                for (TextLinkRegion region : measurer.linkRegions(line, fontSize, textMode)) {
+                    out.add(PaintCommand.linkRegion(textLeft + region.getStartX(), cursorY,
+                            textLeft + region.getStartX() + region.getWidth(), lineBottom, region.getUrl()));
+                }
+                cursorY = lineBottom;
                 lineIndex++;
             }
         }

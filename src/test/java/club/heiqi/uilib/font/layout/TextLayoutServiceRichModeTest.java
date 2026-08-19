@@ -156,6 +156,23 @@ public class TextLayoutServiceRichModeTest {
     }
 
     @Test
+    public void shouldExtractLinkRegionsWithOffsets() {
+        TextLayoutService service = createService('A', 'B', 'C', 'D');
+        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        TextMeasureStyle style = TextMeasureStyle.fontSizePx(baseSize)
+                .withTextContentMode(TextContentMode.RICH_TAGS);
+
+        java.util.List<club.heiqi.uilib.ui.text.TextLinkRegion> regions =
+                service.getLinkRegions("A<a=u1>BC</a>D", style);
+
+        Assert.assertEquals(1, regions.size());
+        // A 宽 1 → startX=1；BC 宽 2；尾段 D 无链接
+        Assert.assertEquals(1, regions.get(0).getStartX());
+        Assert.assertEquals(2, regions.get(0).getWidth());
+        Assert.assertEquals("u1", regions.get(0).getUrl());
+    }
+
+    @Test
     public void shouldScaleWidthByExplicitSize() {
         TextLayoutService service = createService('A');
         int baseSize = (int) FontRuntimeSettings.capture().getCharSize();

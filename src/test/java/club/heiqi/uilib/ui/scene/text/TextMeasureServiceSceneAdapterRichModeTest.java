@@ -59,6 +59,21 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
     }
 
     @Test
+    public void shouldMapLinkRegionsToSceneTypes() {
+        RecordingTextMeasureService delegate = new RecordingTextMeasureService();
+        delegate.nextLinkRegions = java.util.Arrays.asList(
+                new club.heiqi.uilib.ui.text.TextLinkRegion(8, 16, "https://a.b"));
+        TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);
+
+        List<TextLinkRegion> regions = adapter.linkRegions("<a=https://a.b>x</a>", 16, 2);
+
+        Assert.assertEquals(1, regions.size());
+        Assert.assertEquals(8, regions.get(0).getStartX());
+        Assert.assertEquals(16, regions.get(0).getWidth());
+        Assert.assertEquals("https://a.b", regions.get(0).getUrl());
+    }
+
+    @Test
     public void shouldMapTextModeCodes() {
         RecordingTextMeasureService delegate = new RecordingTextMeasureService();
         TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);
@@ -82,6 +97,8 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         private String lastTrimText;
         private int lastTrimWidth;
         private TextContentMode lastTrimMode;
+        private java.util.List<club.heiqi.uilib.ui.text.TextLinkRegion> nextLinkRegions =
+                new java.util.ArrayList<club.heiqi.uilib.ui.text.TextLinkRegion>();
 
         @Override
         public int getEpoch() {
@@ -123,6 +140,12 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
             lastTrimWidth = targetWidth;
             lastTrimMode = textContentMode;
             return "trimmed";
+        }
+
+        @Override
+        public java.util.List<club.heiqi.uilib.ui.text.TextLinkRegion> getLinkRegions(String line,
+                club.heiqi.uilib.ui.text.TextMeasureStyle style) {
+            return new java.util.ArrayList<club.heiqi.uilib.ui.text.TextLinkRegion>(nextLinkRegions);
         }
     }
 }

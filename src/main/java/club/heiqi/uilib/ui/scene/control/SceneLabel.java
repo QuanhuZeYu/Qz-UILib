@@ -1,13 +1,18 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintFragment;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.TextStyle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -57,6 +62,7 @@ public final class SceneLabel {
      * @param lineHeightPx    绝对行高（UI 像素，0=自动行高，倍数未设置时生效）
      * @param maxLines        最大显示行数（0=不限行；超出部分丢弃）
      * @param ellipsis        是否在截断末行追加省略号（仅换行宽度有效时生效）
+     * @param onLinkClick     链接点击回调（URL 入参）；null 表示无交互（节点不可命中，零开销）
      */
     @Desugar
     public record Props(
@@ -70,30 +76,31 @@ public final class SceneLabel {
         double lineHeightMultiplier,
         int lineHeightPx,
         int maxLines,
-        boolean ellipsis
+        boolean ellipsis,
+        Consumer<String> onLinkClick
     ) {
         /** 默认样式：主文本色 + 默认字号 + 原始文本模式 + 左上对齐 + 不换行。 */
         public Props(ReadableSignal<String> text) {
             this(text, SceneChromeTokens.TEXT_PRIMARY, DEFAULT_FONT_SIZE_PX, TextStyle.TEXT_MODE_UILIB_RAW,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false);
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false, null);
         }
 
         /** 指定颜色与字号的原始文本标签。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx) {
             this(text, color, fontSizePx, TextStyle.TEXT_MODE_UILIB_RAW,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false);
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false, null);
         }
 
         /** 指定颜色、字号与内容模式的标签。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx, int contentMode) {
             this(text, color, fontSizePx, contentMode,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false);
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false, null);
         }
 
         /** 指定颜色、字号、内容模式与换行宽度的标签。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx, int contentMode, int wrapWidth) {
             this(text, color, fontSizePx, contentMode,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth, 0.0D, 0, 0, false);
+                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth, 0.0D, 0, 0, false, null);
         }
     }
 
@@ -121,6 +128,27 @@ public final class SceneLabel {
             root.setLineHeightPx(props.lineHeightPx());
             root.setMaxLines(props.maxLines());
             root.setEllipsis(props.ellipsis());
+            if (props.onLinkClick() != null) {
+                root.setHitTestable(true);
+                // 链接命中：读当前 fragment 的 LINK_REGION 命令（相对节点局部坐标，
+                // 与 ctx 的 localPointer 同坐标系），矩形包含判定后回调 URL。
+                rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
+                    Object cached = root.getCachedPaint();
+                    if (!(cached instanceof PaintFragment)) {
+                        return;
+                    }
+                    int localX = ctx.getLocalPointerX();
+                    int localY = ctx.getLocalPointerY();
+                    for (PaintCommand cmd : ((PaintFragment) cached).getCommands()) {
+                        if (cmd.getType() == PaintCommandType.LINK_REGION
+                                && localX >= cmd.getLeft() && localX < cmd.getRight()
+                                && localY >= cmd.getTop() && localY < cmd.getBottom()) {
+                            props.onLinkClick().accept(cmd.getLinkUrl());
+                            return;
+                        }
+                    }
+                });
+            }
             rt.bindText(root, props.text());
             return root;
         };

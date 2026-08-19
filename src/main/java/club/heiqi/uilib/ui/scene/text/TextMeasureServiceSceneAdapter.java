@@ -90,6 +90,21 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
         return textMeasureService.trimStringToWidth(safeText, width, mapTextMode(textMode));
     }
 
+    @Override
+    public java.util.List<TextLinkRegion> linkRegions(String line, int fontSizePx, int textMode) {
+        String safeLine = line == null ? "" : line;
+        java.util.List<club.heiqi.uilib.ui.text.TextLinkRegion> regions =
+                textMeasureService.getLinkRegions(safeLine,
+                        new TextMeasureStyle(fontSizePx, mapTextMode(textMode),
+                                club.heiqi.uilib.ui.base.props.UiFontWeight.NORMAL,
+                                club.heiqi.uilib.ui.base.props.UiFontStyle.NORMAL));
+        java.util.List<TextLinkRegion> mapped = new java.util.ArrayList<TextLinkRegion>();
+        for (club.heiqi.uilib.ui.text.TextLinkRegion region : regions) {
+            mapped.add(new TextLinkRegion(region.getStartX(), region.getWidth(), region.getUrl()));
+        }
+        return mapped;
+    }
+
     private static TextContentMode mapTextMode(int textMode) {
         switch (textMode) {
             case 1:

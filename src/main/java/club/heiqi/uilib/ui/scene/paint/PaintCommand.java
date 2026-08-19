@@ -230,6 +230,22 @@ public final class PaintCommand {
     }
 
     /**
+     * 创建链接命中区域命令（纯数据，无渲染效果；URL 存于 text 字段）。
+     *
+     * @param left   左边界（节点局部像素）
+     * @param top    上边界（节点局部像素）
+     * @param right  右边界（节点局部像素）
+     * @param bottom 下边界（节点局部像素）
+     * @param url    链接 URL
+     * @return 链接区域命令
+     */
+    public static PaintCommand linkRegion(int left, int top, int right, int bottom, String url) {
+        return new PaintCommand(PaintCommandType.LINK_REGION, left, top, right, bottom,
+                0, Objects.requireNonNull(url, "url"), null, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+    }
+
+    /**
      * 创建「进入 group opacity 合成作用域」边界命令（Phase 3B）。
      *
      * <p>携带绝对屏幕区域 + 该层局部 opacity。回放器遇此命令调用
@@ -428,6 +444,11 @@ public final class PaintCommand {
 
     /** @return 文本内容（非文本命令返回空字符串） */
     public String getText() {
+        return text;
+    }
+
+    /** @return 链接 URL（仅 LINK_REGION 命令有意义） */
+    public String getLinkUrl() {
         return text;
     }
 

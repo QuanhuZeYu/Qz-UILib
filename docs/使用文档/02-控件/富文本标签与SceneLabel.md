@@ -48,6 +48,7 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
 | `<sup>` | 上标（字号 0.75×，基线抬升 0.4em） | `x<sup>2</sup>` |
 | `<sub>` | 下标（字号 0.75×，基线下沉 0.25em） | `y<sub>n</sub>` |
 | `<spacing=N>` | 字符间距（UI 像素，可为负，截断到 -64..64） | `<spacing=2>宽字距</spacing>` |
+| `<a=URL>` | 链接（自动下划线；`<a href=URL>` / `<a href="URL">` 亦可） | `<a=https://example.com>示例</a>` |
 | `<size=N>` | 绝对像素字号（1..256，越界截断） | `<size=24>大</size>` |
 | `<br>` / `<br/>` | 硬换行 | `第一行<br>第二行` |
 
@@ -83,6 +84,9 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
 - **限行与省略号**：Props 可选 `maxLines`（0=不限行）与 `ellipsis`（截断末行追加 `…`）；
   行数恰好等于 maxLines 时不改写；省略号仅在 wrap 宽度有效时生效，末行经富文本感知裁剪，
   布局高度与绘制截断共用 `SceneLineClamp`（同口径）。
+- **链接与点击**：`<a=URL>` 段自动下划线；Props 传 `onLinkClick`（Consumer&lt;String&gt;）后节点可命中，
+  点击命中链接区域回调 URL（命中区域随 fragment 复用/失效，与视觉同生命周期）。
+  未传回调时节点保持不可命中、零交互开销。
 
 ## 限制（首版）
 

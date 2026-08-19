@@ -23,6 +23,7 @@ import club.heiqi.uilib.font.util.FontMatcher;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextLinkRegion;
 import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
@@ -302,6 +303,33 @@ public class TextLayoutService {
                 width += getSegmentWidth(segment, resolvedStyle.getFontSizePx());
             }
             return (int) Math.ceil(width);
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    public java.util.List<TextLinkRegion> getLinkRegions(String line, TextMeasureStyle style) {
+        lockGeneration();
+        try {
+            TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+            if (line == null || line.isEmpty()
+                    || resolveTextContentMode(resolvedStyle.getTextContentMode()) != TextContentMode.RICH_TAGS) {
+                return java.util.Collections.emptyList();
+            }
+            TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
+                    resolvedStyle.getFontStyle());
+            java.util.List<TextLinkRegion> regions = new ArrayList<TextLinkRegion>();
+            double running = 0.0D;
+            for (TextSegment segment : RichTextTagParser.parse(line, baseStyle)) {
+                double segmentWidth = getSegmentWidth(segment, resolvedStyle.getFontSizePx());
+                String url = segment.getStyle().getLink();
+                if (url != null && segmentWidth > 0.0D) {
+                    regions.add(new TextLinkRegion((int) Math.round(running),
+                            (int) Math.round(segmentWidth), url));
+                }
+                running += segmentWidth;
+            }
+            return regions;
         } finally {
             unlockGeneration();
         }

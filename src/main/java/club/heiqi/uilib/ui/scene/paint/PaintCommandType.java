@@ -126,7 +126,16 @@ public enum PaintCommandType {
      * 重建父 clip + 压 T 矩阵 + composite 回贴 + 弹 T 矩阵。
      * push/pop 由绘制引擎 paintNode 递归骨架保证严格配对、正确嵌套。</p>
      */
-    POP_TRANSFORM_LAYER
+    POP_TRANSFORM_LAYER,
+
+    /**
+     * 链接命中区域（纯数据命令，无渲染效果）。
+     *
+     * <p>携带节点局部坐标系下的矩形区域 + 链接 URL（存于 text 字段）。回放器跳过本命令；
+     * 命中测试由控件层（如 SceneLabel 的 CLICK handler）读 fragment 内本命令完成。
+     * 与 TEXT 命令同批产出、同生命周期（随 fragment 复用/失效），保证命中区域与视觉一致。</p>
+     */
+    LINK_REGION
 
     // 预留扩展（本切片不实现，仅作占位注释）：
     // skew    - 倾斜变换（方案甲不实现）

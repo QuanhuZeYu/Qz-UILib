@@ -108,6 +108,20 @@ public interface SceneTextMeasurer {
      * @param textMode   内容模式编码（与 {@link #splitLines} 一致）
      * @return 裁剪后的文本
      */
+    /**
+     * 提取单行文本内的链接区域（富文本感知：标签不占宽，字号/上下标/字距均计入偏移）。
+     *
+     * <p>默认实现返回空列表（无链接），供测试替身使用；真实装配层应覆盖为渲染侧实现。</p>
+     *
+     * @param line       单行文本内容（可为 null，由实现按空串处理）
+     * @param fontSizePx UI 像素字号
+     * @param textMode   内容模式编码（与 {@link #splitLines} 一致）
+     * @return 链接区域列表（按行内顺序）
+     */
+    default java.util.List<TextLinkRegion> linkRegions(String line, int fontSizePx, int textMode) {
+        return java.util.Collections.emptyList();
+    }
+
     default String trimToWidth(String text, int fontSizePx, int width, int textMode) {
         String safe = text == null ? "" : text;
         if (width <= 0) {

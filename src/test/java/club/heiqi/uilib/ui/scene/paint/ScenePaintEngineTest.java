@@ -1240,6 +1240,36 @@ public class ScenePaintEngineTest {
     }
 
     @Test
+    public void shouldEmitLinkRegionCommands() {
+        SplitMeasurer measurer = new SplitMeasurer();
+        measurer.nextLinkRegions.add(new club.heiqi.uilib.ui.scene.text.TextLinkRegion(8, 16, "https://a.b"));
+        ScenePaintEngine engine = new ScenePaintEngine(measurer);
+
+        SceneNode node = new SceneNode();
+        node.setText("AAAABBBB");
+        node.setMaxTextWidth(40);
+        node.setCachedLayout(new LayoutBox(0, 0, 100, 40));
+
+        PaintPlan plan = engine.paint(node).getPlan();
+        List<PaintCommand> regions = new ArrayList<PaintCommand>();
+        for (PaintCommand cmd : plan.getCommands()) {
+            if (cmd.getType() == PaintCommandType.LINK_REGION) {
+                regions.add(cmd);
+            }
+        }
+
+        // 每行一条（fake 对两行各产同 region）：行 1 顶部 0..16，行 2 顶部 16..40
+        Assert.assertEquals(2, regions.size());
+        Assert.assertEquals(8, regions.get(0).getLeft());
+        Assert.assertEquals(0, regions.get(0).getTop());
+        Assert.assertEquals(24, regions.get(0).getRight());
+        Assert.assertEquals(16, regions.get(0).getBottom());
+        Assert.assertEquals("https://a.b", regions.get(0).getLinkUrl());
+        Assert.assertEquals(16, regions.get(1).getTop());
+        Assert.assertEquals(40, regions.get(1).getBottom());
+    }
+
+    @Test
     public void shouldCenterSingleLineWithExplicitLineHeight() {
         SceneNode node = new SceneNode();
         node.setText("Hi");
@@ -1259,6 +1289,9 @@ public class ScenePaintEngineTest {
     private static final class SplitMeasurer implements SceneTextMeasurer {
 
         private final FixedTextMeasurer delegate = new FixedTextMeasurer();
+
+        private java.util.List<club.heiqi.uilib.ui.scene.text.TextLinkRegion> nextLinkRegions =
+                new java.util.ArrayList<club.heiqi.uilib.ui.scene.text.TextLinkRegion>();
 
         @Override
         public int measureWidth(String text, int fontSizePx) {
@@ -1283,6 +1316,12 @@ public class ScenePaintEngineTest {
         @Override
         public int lineHeight(String text, int fontSizePx, int textMode) {
             return "BBBB".equals(text) ? 24 : 16;
+        }
+
+        @Override
+        public java.util.List<club.heiqi.uilib.ui.scene.text.TextLinkRegion> linkRegions(String line,
+                int fontSizePx, int textMode) {
+            return new java.util.ArrayList<club.heiqi.uilib.ui.scene.text.TextLinkRegion>(nextLinkRegions);
         }
     }
 

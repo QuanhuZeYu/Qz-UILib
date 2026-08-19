@@ -87,6 +87,11 @@ public final class DefaultTextMeasureService implements TextMeasureService {
     }
 
     @Override
+    public List<TextLinkRegion> getLinkRegions(String line, TextMeasureStyle style) {
+        return getTextLayoutService().getLinkRegions(line, resolveTextMeasureStyle(style));
+    }
+
+    @Override
     public int getAscent(int fontSizePx) {
         return getTextLayoutService().getAscent(fontSizePx);
     }
