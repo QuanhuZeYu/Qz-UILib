@@ -310,22 +310,18 @@ public class ScenePaintEngine {
             // maxLines 截断 + 可选省略号（与布局测量共用 SceneLineClamp，口径一致）
             List<String> displayedLines = SceneLineClamp.clamp(lines, node.getMaxLines(), node.isEllipsis(),
                     measurer, fontSize, wrapWidth, textMode);
-            int baseLineHeight = measurer.lineHeight(fontSize);
             int lineCount = displayedLines.size();
             int[] lineHeights = new int[lineCount];
             int totalHeight = 0;
-            boolean hasOversizedLine = false;
-            boolean hasExplicitLineHeight = node.getLineHeightMultiplier() > 0.0D || node.getLineHeightPx() > 0;
             for (int index = 0; index < lineCount; index++) {
                 int lineHeight = node.resolveLineHeight(
                         measurer.lineHeight(displayedLines.get(index), fontSize, textMode));
                 lineHeights[index] = lineHeight;
                 totalHeight += lineHeight;
-                hasOversizedLine |= lineHeight > baseLineHeight;
             }
-            // 单行且无显式大字段且无显式行距：保持 em-box=fontSize 的旧对齐（零回归）；
-            // 多行、混排行或显式行距：块高按逐行行高累计（行距放大/压缩与大字行高生效）。
-            int emHeight = (lineCount <= 1 && !hasOversizedLine && !hasExplicitLineHeight) ? fontSize : totalHeight;
+            // 行块总高恒为逐行行高累计（与布局 SizingCalculator.leafTextHeight 完全同口径，
+            // 消灭历史「单行 em-box=fontSize / 多行行块累计」双口径切换导致的 1px 级漂移）。
+            int emHeight = totalHeight;
             int textTop = calculateTextTop(node, box, emHeight);
             int cursorY = textTop;
             int lineIndex = 0;
@@ -396,8 +392,9 @@ public class ScenePaintEngine {
      * <p>em-box 显示高 == 字号：烘焙 em=64、{@code glyphScale=fontSize/64}，故 {@code 64*glyphScale=fontSize}。
      * 字号到渲染器 charSize 全链路 1:1 透传（scene 文本不经 UI_TEXT_SCALE），该等式严格成立。</p>
      *
-     * <p>多行/混排模型：调用方传入已累计的行块总高（逐行行高求和，混排行取该行最大字号行高）；
-     * 单行无混排时传入字号保持原 em-box 对齐行为（零回归）。</p>
+     * <p>行块总高恒为逐行行高累计（逐行 resolveLineHeight 求和，混排行取该行最大字号行高），
+     * 与布局侧 {@code SizingCalculator.leafTextHeight} 完全同口径——单行/多行一律行块对齐，
+     * 不再存在单行 em-box=fontSize 特判（审查报告 §8 resolveLineHeight 双口径统一）。</p>
      *
      * @param node     当前节点
      * @param box      当前节点布局盒

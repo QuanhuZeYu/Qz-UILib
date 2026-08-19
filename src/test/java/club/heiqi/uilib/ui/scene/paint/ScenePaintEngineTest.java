@@ -986,9 +986,10 @@ public class ScenePaintEngineTest {
     // ============================================================
 
     /**
-     * 文本垂直对齐 TOP：em-box 顶贴 paddingTop（不留 leading）。
-     * <p>fontSize=20 显式 ≠ measurer.lineHeight(16)，使 em-box 模型（用 fontSize）
-     * 与旧 half-leading 模型（用 lineHeight）期望值分叉，避免坐标系基准差被测试桩掩盖。</p>
+     * 文本垂直对齐 TOP：行块顶贴 paddingTop（行块顶即 em-box 顶，gap 归行底）。
+     * <p>fontSize=20 显式 ≠ measurer.lineHeight(16)：行块口径下 emHeight=16（布局同口径），
+     * 与旧 em-box 口径（emHeight=20）在 TOP 分支期望值相同（均贴 paddingTop），
+     * 分叉由 CENTER/BOTTOM 用例区分。</p>
      */
     @Test
     public void textVerticalAlignTopShouldUsePaddingTop() {
@@ -998,44 +999,45 @@ public class ScenePaintEngineTest {
     }
 
     /**
-     * 文本垂直对齐 CENTER：em-box（高=fontSize）在内高内居中。
-     * <p>inner=30、emHeight=20 → 4+(30-20)/2=9。旧 half-leading 模型在 emHeight≠lineHeight
-     * 时会得 11，本用例据此区分新旧模型。</p>
+     * 文本垂直对齐 CENTER：行块（高=逐行行高累计，与布局同口径）在内高内居中。
+     * <p>inner=30、emHeight=lineHeight=16 → 4+(30-16)/2=11。旧 em-box 口径（emHeight=fontSize=20）
+     * 得 9，本用例据此区分旧单行特判与新统一口径。</p>
      */
     @Test
     public void textVerticalAlignCenterShouldCenterInInnerHeight() {
         PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.CENTER, 20, 40, 4, 6);
 
-        Assert.assertEquals("CENTER textTop=paddingTop+(innerHeight-emHeight)/2", 9, textCmd.getTop());
+        Assert.assertEquals("CENTER textTop=paddingTop+(innerHeight-emHeight)/2", 11, textCmd.getTop());
     }
 
     /**
-     * 文本垂直对齐 BOTTOM：em-box 底贴内高底部。
-     * <p>inner=30、emHeight=20 → 4+(30-20)=14。旧模型得 18，本用例据此区分新旧模型。</p>
+     * 文本垂直对齐 BOTTOM：行块底贴内高底部。
+     * <p>inner=30、emHeight=lineHeight=16 → 4+(30-16)=18。旧 em-box 口径（emHeight=20）得 14，
+     * 本用例据此区分旧单行特判与新统一口径。</p>
      */
     @Test
     public void textVerticalAlignBottomShouldUseInnerBottom() {
         PaintCommand textCmd = paintTextWithAlign(TextVerticalAlign.BOTTOM, 20, 40, 4, 6);
 
-        Assert.assertEquals("BOTTOM textTop=paddingTop+(innerHeight-emHeight)", 14, textCmd.getTop());
+        Assert.assertEquals("BOTTOM textTop=paddingTop+(innerHeight-emHeight)", 18, textCmd.getTop());
     }
 
     /**
-     * 盒高小于 em-box 高时，em-box 居中模型允许向上溢出（CSS overflow:visible 合法行为），
+     * 盒高小于行块高时，行块居中模型允许向上溢出（CSS overflow:visible 合法行为），
      * 不做下边界钳制：CENTER/BOTTOM 可得负偏移，TOP 仍贴 paddingTop。
      */
     @Test
     public void textVerticalAlignShouldAllowOverflowWhenEmBoxOverflows() {
         Assert.assertEquals("TOP 仍贴 paddingTop", 5,
                 paintTextWithAlign(TextVerticalAlign.TOP, 20, 20, 5, 3).getTop());
-        Assert.assertEquals("CENTER 向上溢出", 1,
+        Assert.assertEquals("CENTER 向上溢出", 3,
                 paintTextWithAlign(TextVerticalAlign.CENTER, 20, 20, 5, 3).getTop());
-        Assert.assertEquals("BOTTOM 向上溢出", -3,
+        Assert.assertEquals("BOTTOM 向上溢出", 1,
                 paintTextWithAlign(TextVerticalAlign.BOTTOM, 20, 20, 5, 3).getTop());
     }
 
     /**
-     * 默认文本垂直对齐为 CENTER，不显式设置 align 时按 em-box 自动居中。
+     * 默认文本垂直对齐为 CENTER，不显式设置 align 时按行块自动居中。
      */
     @Test
     public void textVerticalAlignShouldDefaultToCenter() {
@@ -1050,7 +1052,7 @@ public class ScenePaintEngineTest {
 
         Assert.assertNotNull("应有 TEXT 命令", textCmd);
         Assert.assertEquals("默认 CENTER", TextVerticalAlign.CENTER, node.getTextVerticalAlign());
-        Assert.assertEquals("默认 CENTER textTop", 9, textCmd.getTop());
+        Assert.assertEquals("默认 CENTER textTop", 11, textCmd.getTop());
     }
 
     // ============================================================
@@ -1269,6 +1271,67 @@ public class ScenePaintEngineTest {
         Assert.assertEquals(40, regions.get(1).getBottom());
     }
 
+    /**
+     * resolveLineHeight 双口径统一契约：绘制行块总高必须与布局自然高逐像素一致。
+     *
+     * <p>审查报告 §8 指出绘制/布局曾各算各的 base（单行 em-box=fontSize 特判 vs 行块累计），
+     * 混排行/显式行距下存在 1px 级漂移。本测试借 LINK_REGION 命令的 bottom（绘制侧逐行
+     * cursorY+行高的几何产物）与布局盒高做端到端几何断言，不重述任何行高公式。</p>
+     */
+    @Test
+    public void paintLineBlockHeightShouldMatchLayoutNaturalHeight() {
+        // 场景 1：两行混排（16/24）+ 行距倍数 2 → 布局与绘制行块 32+48=80
+        assertLineBlockMatchesLayout(20, 40, 2.0D, 0);
+        // 场景 2：单行 + 绝对行高 22 → 强平 22
+        assertLineBlockMatchesLayout(20, 0, 0.0D, 22);
+        // 场景 3：单行 + 默认行距（fontSize=20 但行高 16，历史特判曾使绘制 em 基准=20）
+        assertLineBlockMatchesLayout(20, 0, 0.0D, 0);
+    }
+
+    /**
+     * 建单文本节点（TOP 对齐、无 padding、带一个链接区域）layout + paint 后，
+     * 断言绘制行块底（LINK_REGION.bottom 最大值）与布局盒高逐像素一致。
+     */
+    private void assertLineBlockMatchesLayout(int fontSize, int wrapWidth, double multiplier, int lineHeightPx) {
+        SplitMeasurer measurer = new SplitMeasurer();
+        if (wrapWidth > 0) {
+            measurer.nextLines = Arrays.asList("AAAA", "BBBB");
+        } else {
+            measurer.nextLines = java.util.Collections.singletonList("S");
+        }
+        measurer.nextLinkRegions.add(new club.heiqi.uilib.ui.scene.text.TextLinkRegion(0, 8, "https://a"));
+        SceneLayoutEngine layout = new SceneLayoutEngine(measurer);
+        ScenePaintEngine engine = new ScenePaintEngine(measurer);
+
+        SceneNode node = new SceneNode();
+        node.setText("AAAABBBB");
+        node.setFontSize(fontSize);
+        if (wrapWidth > 0) {
+            node.setMaxTextWidth(wrapWidth);
+        }
+        if (multiplier > 0.0D) {
+            node.setLineHeightMultiplier(multiplier);
+        }
+        if (lineHeightPx > 0) {
+            node.setLineHeightPx(lineHeightPx);
+        }
+        node.setTextVerticalAlign(TextVerticalAlign.TOP);
+
+        layout.layout(node, new Constraints(200));
+        LayoutBox box = (LayoutBox) node.getCachedLayout();
+        Assert.assertNotNull("layout 后应有布局盒", box);
+
+        PaintPlan plan = engine.paint(node).getPlan();
+        int blockBottom = -1;
+        for (PaintCommand cmd : plan.getCommands()) {
+            if (cmd.getType() == PaintCommandType.LINK_REGION) {
+                blockBottom = Math.max(blockBottom, cmd.getBottom());
+            }
+        }
+        Assert.assertTrue("应有 LINK_REGION 几何锚点", blockBottom >= 0);
+        Assert.assertEquals("布局自然高须与绘制行块总高逐像素一致", box.getHeight(), blockBottom);
+    }
+
     @Test
     public void shouldCenterSingleLineWithExplicitLineHeight() {
         SceneNode node = new SceneNode();
@@ -1290,6 +1353,8 @@ public class ScenePaintEngineTest {
 
         private final FixedTextMeasurer delegate = new FixedTextMeasurer();
 
+        private java.util.List<String> nextLines = Arrays.asList("AAAA", "BBBB");
+
         private java.util.List<club.heiqi.uilib.ui.scene.text.TextLinkRegion> nextLinkRegions =
                 new java.util.ArrayList<club.heiqi.uilib.ui.scene.text.TextLinkRegion>();
 
@@ -1310,7 +1375,7 @@ public class ScenePaintEngineTest {
 
         @Override
         public List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
-            return Arrays.asList("AAAA", "BBBB");
+            return nextLines;
         }
 
         @Override
