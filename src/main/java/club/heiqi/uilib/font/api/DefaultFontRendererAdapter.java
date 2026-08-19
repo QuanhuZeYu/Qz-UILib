@@ -692,13 +692,20 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         float drawY = y;
         // 基线按行内最大字号换算（整段一致，循环外只算一次）
         float baselineCharSize = resolveBaselineCharSize(renderScale, preparedText.maxFontSizePx);
+        // 全段同字号（无 span 缩放的默认文本）走 uniform 快路径：循环内直接复用常量，
+        // per-glyph 零 Math.max/乘法（与逐 glyph 解析结果恒等，非基准相等类快路径）。
+        boolean uniformSize = preparedText.maxFontSizePx <= preparedText.baseFontSizePx;
+        float uniformGlyphCharSize = uniformSize
+                ? resolveGlyphCharSize(renderScale, preparedText.baseFontSizePx) : 0.0F;
         for (int glyphIndex = 0; glyphIndex < preparedText.size(); glyphIndex++) {
             TextStyle style = preparedText.styles[glyphIndex];
             FontType fontType = preparedText.fontTypes[glyphIndex];
             int pageCount = tables.getPageCount(fontType);
             int renderCodepoint = preparedText.renderCodepoints[glyphIndex];
             float measuredWidth = preparedText.measuredWidths[glyphIndex];
-            float glyphCharSize = resolveGlyphCharSize(renderScale, preparedText.fontSizePx[glyphIndex]);
+            float glyphCharSize = uniformSize
+                    ? uniformGlyphCharSize
+                    : resolveGlyphCharSize(renderScale, preparedText.fontSizePx[glyphIndex]);
             int pageIndex = -1;
             int textureId = 0;
             int textureSize = 0;
@@ -822,7 +829,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             }
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
-                maxFontSizePx);
+                maxFontSizePx, resolvedBaseFontSizePx);
     }
 
     /**
@@ -1036,9 +1043,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private final TextStyle[] styles;
         private final int[] fontSizePx;
         private final int maxFontSizePx;
+        private final int baseFontSizePx;
 
         private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
-                float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx) {
+                float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx,
+                int baseFontSizePx) {
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
             this.fontTypes = fontTypes;
@@ -1046,6 +1055,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             this.styles = styles;
             this.fontSizePx = fontSizePx;
             this.maxFontSizePx = maxFontSizePx;
+            this.baseFontSizePx = baseFontSizePx;
         }
 
         private boolean isEmpty() {
@@ -1058,7 +1068,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         private static PreparedText empty(FontRuntimeSettings settings) {
             return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
-                    new int[0], (int) settings.getCharSize());
+                    new int[0], (int) settings.getCharSize(), (int) settings.getCharSize());
         }
     }
 
