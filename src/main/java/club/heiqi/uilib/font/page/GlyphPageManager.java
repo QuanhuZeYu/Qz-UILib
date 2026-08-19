@@ -66,21 +66,13 @@ public class GlyphPageManager {
     private volatile long mailboxEpoch;
     private int reservedUploadCount;
     private long reservedBitmapBytes;
-    private int pendingUploadHighWaterMark;
-    private long pendingBitmapBytesHighWaterMark;
     private int blockedPublisherCount;
-    private long mailboxBackpressureCount;
-    private long mailboxRejectedCount;
     private long mailboxSequence;
     private int residentAtlasPageCount;
     private int retainedAtlasPageCount;
     private boolean normalAtlasPressure;
     private boolean boldAtlasPressure;
-    private long atlasPressureCount;
-    private long uploadRollbackCount;
-    private long uploadAttemptBudgetExhaustedCount;
-    private long uploadByteBudgetExhaustedCount;
-    private long uploadTimeBudgetExhaustedCount;
+    private final GlyphStats stats = new GlyphStats();
 
     /**
      * 唯一运行时字形表存储。
@@ -457,7 +449,7 @@ public class GlyphPageManager {
         }
         if (rejectionReason != null) {
             synchronized (mailboxLock) {
-                mailboxRejectedCount++;
+                stats.recordMailboxRejection();
             }
             FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "result_admission",
                     priorityName(admissionPriority), getPendingUploadCount(), maxPendingUploads, bitmapBytes,
@@ -482,14 +474,13 @@ public class GlyphPageManager {
                 if (hasMailboxCapacity(currentPriority, bitmapBytes)) {
                     reservedUploadCount++;
                     reservedBitmapBytes += bitmapBytes;
-                    pendingUploadHighWaterMark = Math.max(pendingUploadHighWaterMark, reservedUploadCount);
-                    pendingBitmapBytesHighWaterMark = Math.max(pendingBitmapBytesHighWaterMark, reservedBitmapBytes);
+                    stats.recordHighWaterMarks(reservedUploadCount, reservedBitmapBytes);
                     break;
                 }
                 if (currentPriority != PRIORITY_VISIBLE) {
                     rejectNonVisible = true;
                 } else {
-                    mailboxBackpressureCount++;
+                    stats.recordMailboxBackpressure();
                     blockedPublisherCount++;
                     if (!waitLogged) {
                         waitLogged = true;
@@ -523,7 +514,7 @@ public class GlyphPageManager {
                     }
                 }
                 synchronized (mailboxLock) {
-                    mailboxRejectedCount++;
+                    stats.recordMailboxRejection();
                 }
                 FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "result_admission",
                         priorityName(rejectedPriority), getPendingUploadCount(), maxPendingUploads, bitmapBytes,
@@ -615,19 +606,19 @@ public class GlyphPageManager {
             while (true) {
                 if (attempts >= Math.max(0, maxCount)) {
                     stopReason = "ATTEMPT_BUDGET";
-                    uploadAttemptBudgetExhaustedCount++;
+                    stats.recordUploadAttemptBudgetExhausted();
                     break;
                 }
                 if (attempts > 0 && elapsedNanos(startedNanos, nanoTime.getAsLong()) >= uploadDrainTimeBudgetNanos) {
                     stopReason = "TIME_BUDGET";
-                    uploadTimeBudgetExhaustedCount++;
+                    stats.recordUploadTimeBudgetExhausted();
                     break;
                 }
                 UploadPoll poll = pollNextUpload(attemptedBitmapBytes, attempts == 0);
                 if (poll.stopReason != null) {
                     stopReason = poll.stopReason;
                     if ("BYTE_BUDGET".equals(stopReason)) {
-                        uploadByteBudgetExhaustedCount++;
+                        stats.recordUploadByteBudgetExhausted();
                     }
                     break;
                 }
@@ -673,9 +664,9 @@ public class GlyphPageManager {
             long elapsedNanos = elapsedNanos(startedNanos, nanoTime.getAsLong());
             FontRuntimeDiagnostics.logGlyphUploadDrain(lastToken, attempts, attemptedBitmapBytes, maxCount,
                     uploadDrainBitmapByteBudget, elapsedNanos, uploadDrainTimeBudgetNanos, atlasOwnedPageCount(),
-                    maxResidentAtlasPages, atlasPressureName(), stopReason, uploadRollbackCount, atlasPressureCount,
-                    uploadAttemptBudgetExhaustedCount, uploadByteBudgetExhaustedCount,
-                    uploadTimeBudgetExhaustedCount);
+                    maxResidentAtlasPages, atlasPressureName(), stopReason, stats.getUploadRollbackCount(),
+                    stats.getAtlasPressureCount(), stats.getUploadAttemptBudgetExhaustedCount(),
+                    stats.getUploadByteBudgetExhaustedCount(), stats.getUploadTimeBudgetExhaustedCount());
         }
     }
 
@@ -849,13 +840,13 @@ public class GlyphPageManager {
 
     public int getPendingUploadHighWaterMark() {
         synchronized (mailboxLock) {
-            return pendingUploadHighWaterMark;
+            return (int) stats.getPendingUploadHighWaterMark();
         }
     }
 
     public long getPendingBitmapBytesHighWaterMark() {
         synchronized (mailboxLock) {
-            return pendingBitmapBytesHighWaterMark;
+            return stats.getPendingBitmapBytesHighWaterMark();
         }
     }
 
@@ -867,14 +858,14 @@ public class GlyphPageManager {
 
     public long getMailboxBackpressureCount() {
         synchronized (mailboxLock) {
-            return mailboxBackpressureCount;
+            return stats.getMailboxBackpressureCount();
         }
 
     }
 
     public long getMailboxRejectedCount() {
         synchronized (mailboxLock) {
-            return mailboxRejectedCount;
+            return stats.getMailboxRejectedCount();
         }
     }
 
@@ -1107,7 +1098,7 @@ public class GlyphPageManager {
         } else {
             normalAtlasPressure = true;
         }
-        atlasPressureCount++;
+        stats.recordAtlasPressure();
         context.pressure = reason;
         context.rollbackReason = "ATLAS_PRESSURE_RETRY";
         FontRuntimeDiagnostics.logGlyphUploadTransaction(token, "atlas_reservation", -1, -1,
@@ -1151,7 +1142,7 @@ public class GlyphPageManager {
             }
         }
         if (firstRollback) {
-            uploadRollbackCount++;
+            stats.recordUploadRollback();
         }
         if (rollbackFailure != null) {
             if (originalFailure != null) {

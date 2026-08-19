@@ -102,16 +102,17 @@ public class GlyphRuntimeTableOwnershipTest {
         FailingOnceCloseGlyphPage failingPage = new FailingOnceCloseGlyphPage();
         manager.getRuntimeTables().normalPages[0] = failingPage;
         manager.setGeneration(2, settings(64.0D, 10.0D));
-        Field exhaustedCount = GlyphPageManager.class.getDeclaredField("uploadAttemptBudgetExhaustedCount");
-        exhaustedCount.setAccessible(true);
-        long attemptsBeforeFlush = exhaustedCount.getLong(manager);
+        Field statsField = GlyphPageManager.class.getDeclaredField("stats");
+        statsField.setAccessible(true);
+        GlyphStats stats = (GlyphStats) statsField.get(manager);
+        long attemptsBeforeFlush = stats.getUploadAttemptBudgetExhaustedCount();
 
         manager.flushPendingUploads(0);
 
         Assert.assertEquals("独立公开 manager 的零预算 flush 不执行额外 housekeeping", 1,
                 failingPage.closeCount);
         Assert.assertEquals("独立公开 manager 必须保留既有零预算诊断计数", attemptsBeforeFlush + 1L,
-                exhaustedCount.getLong(manager));
+                stats.getUploadAttemptBudgetExhaustedCount());
     }
 
     private FontRuntimeSettings settings(double awtCharSize, double charSize) {
