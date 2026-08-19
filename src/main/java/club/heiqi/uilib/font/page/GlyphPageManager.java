@@ -30,7 +30,7 @@ import club.heiqi.uilib.font.glyph.GlyphRequestToken;
  */
 public class GlyphPageManager {
 
-    private static final int PRIORITY_VISIBLE = 3;
+    static final int PRIORITY_VISIBLE = 3;
     private static final int DEFAULT_DEMAND_PRIORITY = 2;
     private static final int DEFAULT_MAX_PENDING_UPLOADS = 256;
     private static final int DEFAULT_VISIBLE_RECORD_RESERVE = 32;
@@ -45,34 +45,24 @@ public class GlyphPageManager {
     private final Object ownerToken;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Object mailboxLock = new Object();
-    private final List<PendingGlyphUpload> pendingUploads = new ArrayList<PendingGlyphUpload>();
-    private final List<PendingGlyphUpload> inFlightUploads = new ArrayList<PendingGlyphUpload>();
     private final GlyphDemandRegistry demands = new GlyphDemandRegistry();
     private final List<GlyphPage> retiredPageRetries = new ArrayList<GlyphPage>();
     private final Set<GlyphPage> retainedAtlasOwnerships = new HashSet<GlyphPage>();
     private final BitSet normalAtlasPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
     private final BitSet boldAtlasPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
     private final AtomicLong requestIdSequence = new AtomicLong(0L);
-    private final int maxPendingUploads;
-    private final int visibleRecordReserve;
-    private final long maxPendingBitmapBytes;
-    private final long visibleBitmapReserve;
-    private final long mailboxAgingStepNanos;
     private final LongSupplier nanoTime;
     private final int maxResidentAtlasPages;
     private final long maxResidentAtlasBytes;
     private final long uploadDrainTimeBudgetNanos;
     private final long uploadDrainBitmapByteBudget;
-    private volatile long mailboxEpoch;
-    private int reservedUploadCount;
-    private long reservedBitmapBytes;
     private int blockedPublisherCount;
-    private long mailboxSequence;
     private int residentAtlasPageCount;
     private int retainedAtlasPageCount;
     private boolean normalAtlasPressure;
     private boolean boldAtlasPressure;
     private final GlyphStats stats = new GlyphStats();
+    private final GlyphMailbox mailbox;
 
     /**
      * 唯一运行时字形表存储。
@@ -145,11 +135,8 @@ public class GlyphPageManager {
             throw new IllegalArgumentException("mailbox capacity/reserve/clock 配置无效");
         }
         this.ownerToken = ownerToken;
-        this.maxPendingUploads = maxPendingUploads;
-        this.maxPendingBitmapBytes = maxPendingBitmapBytes;
-        this.visibleRecordReserve = visibleRecordReserve;
-        this.visibleBitmapReserve = visibleBitmapReserve;
-        this.mailboxAgingStepNanos = mailboxAgingStepNanos;
+        this.mailbox = new GlyphMailbox(stats, maxPendingUploads, visibleRecordReserve, maxPendingBitmapBytes,
+                visibleBitmapReserve, mailboxAgingStepNanos);
         this.maxResidentAtlasPages = maxResidentAtlasPages;
         this.maxResidentAtlasBytes = maxResidentAtlasBytes;
         this.uploadDrainTimeBudgetNanos = uploadDrainTimeBudgetNanos;
@@ -271,13 +258,10 @@ public class GlyphPageManager {
         List<PendingGlyphUpload> discardedQueued;
         List<PendingGlyphUpload> discardedInFlight;
         synchronized (mailboxLock) {
-            mailboxEpoch++;
-            discardedQueued = new ArrayList<PendingGlyphUpload>(pendingUploads);
-            discardedInFlight = new ArrayList<PendingGlyphUpload>(inFlightUploads);
-            pendingUploads.clear();
-            inFlightUploads.clear();
-            reservedUploadCount = 0;
-            reservedBitmapBytes = 0L;
+            mailbox.advanceEpoch();
+            discardedQueued = mailbox.snapshotPending();
+            discardedInFlight = mailbox.snapshotInFlight();
+            mailbox.clearAll();
             mailboxLock.notifyAll();
         }
         for (PendingGlyphUpload upload : discardedQueued) {
@@ -438,7 +422,8 @@ public class GlyphPageManager {
             }
             admissionPriority = demand.priority.get();
             long priorityByteLimit = admissionPriority == PRIORITY_VISIBLE
-                    ? maxPendingBitmapBytes : maxPendingBitmapBytes - visibleBitmapReserve;
+                    ? mailbox.getMaxPendingBitmapBytes()
+                    : mailbox.getMaxPendingBitmapBytes() - mailbox.getVisibleBitmapReserve();
             if (bitmapBytes > priorityByteLimit) {
                 rejectionReason = admissionPriority == PRIORITY_VISIBLE
                         ? "BITMAP_OVERSIZED_REJECTED" : "BITMAP_EXCEEDS_NON_VISIBLE_PARTITION";
@@ -450,29 +435,30 @@ public class GlyphPageManager {
                 stats.recordMailboxRejection();
             }
             FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "result_admission",
-                    priorityName(admissionPriority), getPendingUploadCount(), maxPendingUploads, bitmapBytes,
-                    maxPendingBitmapBytes, rejectionReason);
+                    priorityName(admissionPriority), getPendingUploadCount(), mailbox.getMaxPendingUploads(),
+                    bitmapBytes, mailbox.getMaxPendingBitmapBytes(), rejectionReason);
             return false;
         }
 
-        long enqueueSequence = nextMailboxSequence();
+        long enqueueSequence;
+        synchronized (mailboxLock) {
+            enqueueSequence = mailbox.nextSequence();
+        }
         long enqueuedNanos = nanoTime.getAsLong();
         long reservedEpoch;
         boolean waitLogged = false;
         synchronized (mailboxLock) {
-            reservedEpoch = mailboxEpoch;
+            reservedEpoch = mailbox.getEpoch();
         }
         while (true) {
             boolean rejectNonVisible = false;
             synchronized (mailboxLock) {
-                if (reservedEpoch != mailboxEpoch || !demand.active.get()) {
+                if (reservedEpoch != mailbox.getEpoch() || !demand.active.get()) {
                     return false;
                 }
                 int currentPriority = demand.priority.get();
-                if (hasMailboxCapacity(currentPriority, bitmapBytes)) {
-                    reservedUploadCount++;
-                    reservedBitmapBytes += bitmapBytes;
-                    stats.recordHighWaterMarks(reservedUploadCount, reservedBitmapBytes);
+                if (mailbox.hasCapacity(currentPriority, bitmapBytes)) {
+                    mailbox.reserve(bitmapBytes);
                     break;
                 }
                 if (currentPriority != PRIORITY_VISIBLE) {
@@ -483,8 +469,9 @@ public class GlyphPageManager {
                     if (!waitLogged) {
                         waitLogged = true;
                         FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "result_backpressure",
-                                priorityName(currentPriority), reservedUploadCount, maxPendingUploads,
-                                reservedBitmapBytes, maxPendingBitmapBytes, "MAILBOX_WAIT");
+                                priorityName(currentPriority), mailbox.getReservedUploadCount(),
+                                mailbox.getMaxPendingUploads(), mailbox.getReservedBytes(),
+                                mailbox.getMaxPendingBitmapBytes(), "MAILBOX_WAIT");
                     }
                     try {
                         mailboxLock.wait();
@@ -499,7 +486,7 @@ public class GlyphPageManager {
             if (rejectNonVisible) {
                 int rejectedPriority;
                 synchronized (this) {
-                    if (reservedEpoch != mailboxEpoch || !matches(token, GlyphState.RASTERIZING)
+                    if (reservedEpoch != mailbox.getEpoch() || !matches(token, GlyphState.RASTERIZING)
                             || !matchesActiveDemand(demand)) {
                         return false;
                     }
@@ -515,8 +502,8 @@ public class GlyphPageManager {
                     stats.recordMailboxRejection();
                 }
                 FontRuntimeDiagnostics.logGlyphCapacityEvent(token, null, "result_admission",
-                        priorityName(rejectedPriority), getPendingUploadCount(), maxPendingUploads, bitmapBytes,
-                        maxPendingBitmapBytes, "NON_VISIBLE_CAPACITY_REJECTED");
+                        priorityName(rejectedPriority), getPendingUploadCount(), mailbox.getMaxPendingUploads(),
+                        bitmapBytes, mailbox.getMaxPendingBitmapBytes(), "NON_VISIBLE_CAPACITY_REJECTED");
                 return false;
             }
         }
@@ -540,7 +527,7 @@ public class GlyphPageManager {
 
         boolean transitioned;
         synchronized (this) {
-            transitioned = reservedEpoch == mailboxEpoch
+            transitioned = reservedEpoch == mailbox.getEpoch()
                     && transition(token, GlyphState.RASTERIZING, GlyphState.UPLOAD_QUEUED);
         }
         if (!transitioned) {
@@ -550,10 +537,10 @@ public class GlyphPageManager {
 
         try {
             synchronized (mailboxLock) {
-                if (reservedEpoch != mailboxEpoch) {
+                if (reservedEpoch != mailbox.getEpoch()) {
                     // discard 已按 epoch 原子清零旧 reservation，不能再扣减新 epoch 的计数。
                 } else {
-                    pendingUploads.add(upload);
+                    mailbox.enqueue(upload);
                     mailboxLock.notifyAll();
                     return true;
                 }
@@ -612,7 +599,7 @@ public class GlyphPageManager {
                     stats.recordUploadTimeBudgetExhausted();
                     break;
                 }
-                UploadPoll poll = pollNextUpload(attemptedBitmapBytes, attempts == 0);
+                GlyphMailbox.Poll poll = pollNextUpload(attemptedBitmapBytes, attempts == 0);
                 if (poll.stopReason != null) {
                     stopReason = poll.stopReason;
                     if ("BYTE_BUDGET".equals(stopReason)) {
@@ -812,28 +799,28 @@ public class GlyphPageManager {
      */
     public int getPendingUploadCount() {
         synchronized (mailboxLock) {
-            return pendingUploads.size();
+            return mailbox.pendingCount();
         }
     }
 
     int getInFlightUploadCount() {
         synchronized (mailboxLock) {
-            return inFlightUploads.size();
+            return mailbox.inFlightCount();
         }
     }
 
     public long getPendingBitmapBytes() {
         synchronized (mailboxLock) {
-            return reservedBitmapBytes;
+            return mailbox.getReservedBytes();
         }
     }
 
     public int getMaxPendingUploadCount() {
-        return maxPendingUploads;
+        return mailbox.getMaxPendingUploads();
     }
 
     public long getMaxPendingBitmapBytes() {
-        return maxPendingBitmapBytes;
+        return mailbox.getMaxPendingBitmapBytes();
     }
 
     public int getPendingUploadHighWaterMark() {
@@ -1307,75 +1294,32 @@ public class GlyphPageManager {
         return true;
     }
 
-    private boolean hasMailboxCapacity(int demandPriority, long bitmapBytes) {
-        int recordLimit = demandPriority == PRIORITY_VISIBLE
-                ? maxPendingUploads : maxPendingUploads - visibleRecordReserve;
-        long byteLimit = demandPriority == PRIORITY_VISIBLE
-                ? maxPendingBitmapBytes : maxPendingBitmapBytes - visibleBitmapReserve;
-        return reservedUploadCount < recordLimit && reservedBitmapBytes <= byteLimit - bitmapBytes;
-    }
-
     private void releaseMailboxReservation(long reservedEpoch, long bitmapBytes) {
         synchronized (mailboxLock) {
-            if (reservedEpoch != mailboxEpoch) {
-                return;
+            if (mailbox.releaseReservation(reservedEpoch, bitmapBytes)) {
+                mailboxLock.notifyAll();
             }
-            reservedUploadCount--;
-            reservedBitmapBytes -= bitmapBytes;
-            mailboxLock.notifyAll();
         }
     }
 
-    private UploadPoll pollNextUpload(long attemptedBitmapBytes, boolean allowOversizedFirst) {
+    private GlyphMailbox.Poll pollNextUpload(long attemptedBitmapBytes, boolean allowOversizedFirst) {
         synchronized (mailboxLock) {
-            if (pendingUploads.isEmpty()) {
-                return UploadPoll.stop("EMPTY");
-            }
-            long now = nanoTime.getAsLong();
-            int bestIndex = 0;
-            PendingGlyphUpload best = pendingUploads.get(0);
-            int bestPriority = best.getEffectivePriority(now, mailboxAgingStepNanos);
-            for (int index = 1; index < pendingUploads.size(); index++) {
-                PendingGlyphUpload candidate = pendingUploads.get(index);
-                int candidatePriority = candidate.getEffectivePriority(now, mailboxAgingStepNanos);
-                if (candidatePriority > bestPriority
-                        || candidatePriority == bestPriority
-                                && candidate.getEnqueueSequence() < best.getEnqueueSequence()) {
-                    bestIndex = index;
-                    best = candidate;
-                    bestPriority = candidatePriority;
-                }
-            }
-            if (!allowOversizedFirst
-                    && best.getBitmapBytes() > uploadDrainBitmapByteBudget - attemptedBitmapBytes) {
-                return UploadPoll.stop("BYTE_BUDGET");
-            }
-            pendingUploads.remove(bestIndex);
-            inFlightUploads.add(best);
-            return UploadPoll.upload(best);
+            return mailbox.pollBest(nanoTime.getAsLong(), attemptedBitmapBytes, uploadDrainBitmapByteBudget,
+                    allowOversizedFirst);
         }
     }
 
     private void completeUploadLease(PendingGlyphUpload upload) {
         synchronized (mailboxLock) {
-            if (upload == null || upload.getMailboxEpoch() != mailboxEpoch || !inFlightUploads.remove(upload)) {
-                return;
+            if (mailbox.completeLease(upload)) {
+                mailboxLock.notifyAll();
             }
-            reservedUploadCount--;
-            reservedBitmapBytes -= upload.getBitmapBytes();
-            mailboxLock.notifyAll();
         }
     }
 
     /** 调用方必须持有 mailboxLock。 */
     private boolean isUploadLeaseCurrentLocked(PendingGlyphUpload upload) {
-        return upload != null && upload.getMailboxEpoch() == mailboxEpoch && inFlightUploads.contains(upload);
-    }
-
-    private long nextMailboxSequence() {
-        synchronized (mailboxLock) {
-            return ++mailboxSequence;
-        }
+        return mailbox.isLeaseCurrentLocked(upload);
     }
 
     private long estimateUploadPlanBytes(GlyphGenerationResult result) {
@@ -1801,25 +1745,6 @@ public class GlyphPageManager {
         COMMITTED,
         STALE,
         ATLAS_PRESSURE
-    }
-
-    private static final class UploadPoll {
-
-        private final PendingGlyphUpload upload;
-        private final String stopReason;
-
-        private UploadPoll(PendingGlyphUpload upload, String stopReason) {
-            this.upload = upload;
-            this.stopReason = stopReason;
-        }
-
-        private static UploadPoll upload(PendingGlyphUpload upload) {
-            return new UploadPoll(upload, null);
-        }
-
-        private static UploadPoll stop(String stopReason) {
-            return new UploadPoll(null, stopReason);
-        }
     }
 
     private static final class UploadAttemptContext {
