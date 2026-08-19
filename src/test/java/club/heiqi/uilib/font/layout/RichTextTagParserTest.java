@@ -215,6 +215,33 @@ public class RichTextTagParserTest {
     }
 
     @Test
+    public void shouldParseLetterSpacing() {
+        List<TextSegment> segments = RichTextTagParser.parse("<spacing=2.5>ab</spacing>尾", baseStyle());
+
+        Assert.assertEquals(2, segments.size());
+        Assert.assertEquals(2.5F, segments.get(0).getStyle().getLetterSpacing(), 0.001F);
+        Assert.assertEquals(0.0F, segments.get(1).getStyle().getLetterSpacing(), 0.001F);
+    }
+
+    @Test
+    public void shouldIgnoreBadSpacingAttribute() {
+        List<TextSegment> segments = RichTextTagParser.parse("<spacing=abc>x</spacing>", baseStyle());
+
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals(0.0F, segments.get(0).getStyle().getLetterSpacing(), 0.001F);
+    }
+
+    @Test
+    public void shouldSerializeSpacingRoundTrip() {
+        String text = "前<spacing=2>宽字距</spacing><spacing=-1>紧凑</spacing>尾";
+        List<TextSegment> parsed = RichTextTagParser.parse(text, baseStyle());
+        String serialized = RichTextTagParser.serialize(parsed, baseStyle());
+        List<TextSegment> reParsed = RichTextTagParser.parse(serialized, baseStyle());
+
+        assertSegmentsEqual(parsed, reParsed);
+    }
+
+    @Test
     public void shouldSupportSpaceSeparatedValue() {
         List<TextSegment> segments = RichTextTagParser.parse("<color red>x</color>", baseStyle());
 
@@ -288,5 +315,6 @@ public class RichTextTagParserTest {
         Assert.assertEquals(expected.getMarkColor(), actual.getMarkColor());
         Assert.assertEquals(expected.isSuperscript(), actual.isSuperscript());
         Assert.assertEquals(expected.isSubscript(), actual.isSubscript());
+        Assert.assertEquals(expected.getLetterSpacing(), actual.getLetterSpacing(), 0.001F);
     }
 }

@@ -19,6 +19,7 @@ import club.heiqi.uilib.font.FontType;
  *   <li>{@code <mark>} 行内高亮（默认 {@code #FFEB3B}，可 {@code <mark=#RRGGBB>} 自定义背景色）</li>
  *   <li>{@code <sup>} 上标、{@code <sub>} 下标（字号缩至 0.75×，基线抬升/下沉，互斥）</li>
  *   <li>{@code <size=N>} 绝对像素字号（{@value #MIN_FONT_SIZE_PX}..{@value #MAX_FONT_SIZE_PX}，越界截断）</li>
+ *   <li>{@code <spacing=N>} 字符间距（UI 像素，可为负，越界截断到 -64..64）</li>
  *   <li>{@code <br>} / {@code <br/>} 硬换行；闭合标签 {@code </name>} 或通用闭合 {@code </>}</li>
  * </ul>
  *
@@ -204,7 +205,7 @@ public final class RichTextTagParser {
     private static boolean isKnownTagName(String name) {
         return "color".equals(name) || "b".equals(name) || "i".equals(name) || "u".equals(name)
                 || "s".equals(name) || "br".equals(name) || "size".equals(name) || "mark".equals(name)
-                || "sup".equals(name) || "sub".equals(name);
+                || "sup".equals(name) || "sub".equals(name) || "spacing".equals(name);
     }
 
     private static String decodeEntity(String name) {
@@ -305,7 +306,34 @@ public final class RichTextTagParser {
             next.setSubscript(true);
             return next;
         }
+        if ("spacing".equals(match.name)) {
+            Float spacing = parseSpacing(match.value);
+            if (spacing == null) {
+                return current;
+            }
+            if (current.getLetterSpacing() == spacing.floatValue()) {
+                return current;
+            }
+            TextStyle next = current.copy();
+            next.setLetterSpacing(spacing.floatValue());
+            return next;
+        }
         return current;
+    }
+
+    private static Float parseSpacing(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            float spacing = Float.parseFloat(value.trim());
+            if (Float.isNaN(spacing) || Float.isInfinite(spacing)) {
+                return null;
+            }
+            return Float.valueOf(Math.max(-64.0F, Math.min(64.0F, spacing)));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static Integer parseColor(String value) {
@@ -378,6 +406,9 @@ public final class RichTextTagParser {
         if (current.isSuperscript() && !next.isSuperscript()) {
             out.append("</sup>");
         }
+        if (current.getLetterSpacing() != 0.0F && current.getLetterSpacing() != next.getLetterSpacing()) {
+            out.append("</spacing>");
+        }
         if (current.getMarkColor() != 0 && current.getMarkColor() != next.getMarkColor()) {
             out.append("</mark>");
         }
@@ -434,9 +465,15 @@ public final class RichTextTagParser {
         if (next.isSubscript() && !current.isSubscript()) {
             out.append("<sub>");
         }
+        if (next.getLetterSpacing() != 0.0F && next.getLetterSpacing() != current.getLetterSpacing()) {
+            out.append("<spacing=").append(formatSpacing(next.getLetterSpacing())).append('>');
+        }
     }
 
     private static void appendClosings(StringBuilder out, TextStyle style) {
+        if (style.getLetterSpacing() != 0.0F) {
+            out.append("</spacing>");
+        }
         if (style.isSubscript()) {
             out.append("</sub>");
         }
@@ -464,6 +501,13 @@ public final class RichTextTagParser {
         if (style.isColorExplicit()) {
             out.append("</color>");
         }
+    }
+
+    private static String formatSpacing(float spacing) {
+        if (spacing == (float) (int) spacing) {
+            return Integer.toString((int) spacing);
+        }
+        return Float.toString(spacing);
     }
 
     private static String escapeText(String text) {

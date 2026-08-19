@@ -95,6 +95,44 @@ public class TextLayoutServiceRichModeTest {
     }
 
     @Test
+    public void shouldAddLetterSpacingToSegmentWidth() {
+        TextLayoutService service = createService('A', 'B');
+        TextStyle style = plainStyle();
+        style.setLetterSpacing(2.0F);
+
+        double width = service.getSegmentWidth(new TextSegment("AB", style));
+
+        // 每字符后追加 2px 字距：1+2 + 1+2 = 6
+        Assert.assertEquals(6.0D, width, 0.001D);
+    }
+
+    @Test
+    public void shouldNotAddSpacingToNewline() {
+        TextLayoutService service = createService('A');
+        TextStyle style = plainStyle();
+        style.setLetterSpacing(2.0F);
+
+        double withNewline = service.getSegmentWidth(new TextSegment("A\nA", style));
+        double withoutNewline = service.getSegmentWidth(new TextSegment("AA", style));
+
+        // 换行符零宽且不吞字距：两行各 1+2，与同行两字符同宽
+        Assert.assertEquals(withoutNewline, withNewline, 0.001D);
+    }
+
+    @Test
+    public void shouldWrapWithLetterSpacingAware() {
+        TextLayoutService service = createService('A', 'B');
+
+        List<String> lines = service.listFormattedStringToWidth("<spacing=5>AB</spacing>", 4,
+                TextContentMode.RICH_TAGS);
+
+        // 每字符 1+5=6 已超行宽 → 逐字断行，spacing 样式跨行续传
+        Assert.assertEquals(2, lines.size());
+        Assert.assertEquals("<spacing=5>A</spacing>", lines.get(0));
+        Assert.assertEquals("<spacing=5>B</spacing>", lines.get(1));
+    }
+
+    @Test
     public void shouldScaleWidthByExplicitSize() {
         TextLayoutService service = createService('A');
         int baseSize = (int) FontRuntimeSettings.capture().getCharSize();

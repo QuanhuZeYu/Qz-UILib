@@ -743,9 +743,10 @@ public class TextLayoutService {
                     : style.resolveEffectiveFontSizePx((int) currentSettings().getCharSize());
             for (int i = 0; i < text.length(); ) {
                 int codepoint = text.codePointAt(i);
-                width += effectiveSize > 0
+                double charWidth = effectiveSize > 0
                         ? getCodepointWidth(codepoint, style, effectiveSize)
                         : getCodepointWidth(codepoint, style);
+                width += advanceWithSpacing(charWidth, codepoint, style);
                 i += Character.charCount(codepoint);
             }
             return width;
@@ -766,11 +767,11 @@ public class TextLayoutService {
         try {
             double width = 0.0D;
             String text = segment.getText();
-            int effectiveSize = segment.getStyle() == null ? fontSizePx
-                    : segment.getStyle().resolveEffectiveFontSizePx(fontSizePx);
+            TextStyle style = segment.getStyle();
+            int effectiveSize = style == null ? fontSizePx : style.resolveEffectiveFontSizePx(fontSizePx);
             for (int i = 0; i < text.length(); ) {
                 int codepoint = text.codePointAt(i);
-                width += getCodepointWidth(codepoint, segment.getStyle(), effectiveSize);
+                width += advanceWithSpacing(getCodepointWidth(codepoint, style, effectiveSize), codepoint, style);
                 i += Character.charCount(codepoint);
             }
             return width;
@@ -867,6 +868,21 @@ public class TextLayoutService {
     private double measureCodepointWidth(int codepoint, FontType fontType, int fontSizePx) {
         double defaultWidth = measureCodepointWidth(codepoint, fontType);
         return defaultWidth * Math.max(1, fontSizePx) / Math.max(1.0D, currentSettings().getCharSize());
+    }
+
+    /**
+     * 码点推进宽度追加字符间距：每个非换行码点之后追加段样式 letterSpacing（可为负）。
+     *
+     * @param charWidth 码点推进宽度
+     * @param codepoint 码点
+     * @param style     段样式
+     * @return 含字距的推进宽度
+     */
+    private double advanceWithSpacing(double charWidth, int codepoint, TextStyle style) {
+        if (style == null || codepoint == '\n' || codepoint == '\r') {
+            return charWidth;
+        }
+        return charWidth + style.getLetterSpacing();
     }
 
     /**
@@ -1153,7 +1169,8 @@ public class TextLayoutService {
             StringBuilder keptText = new StringBuilder();
             for (int i = 0; i < segmentText.length(); ) {
                 int codepoint = segmentText.codePointAt(i);
-                double charWidth = measureCodepointWidth(codepoint, style.getFontType(), effectiveSize);
+                double charWidth = advanceWithSpacing(
+                        measureCodepointWidth(codepoint, style.getFontType(), effectiveSize), codepoint, style);
                 if (width + charWidth > targetWidth) {
                     break;
                 }
@@ -1196,7 +1213,8 @@ public class TextLayoutService {
             int start = end;
             while (start > 0) {
                 int codepoint = segmentText.codePointBefore(start);
-                double charWidth = measureCodepointWidth(codepoint, style.getFontType(), effectiveSize);
+                double charWidth = advanceWithSpacing(
+                        measureCodepointWidth(codepoint, style.getFontType(), effectiveSize), codepoint, style);
                 if (width + charWidth > targetWidth) {
                     truncated = true;
                     break;
@@ -1273,7 +1291,9 @@ public class TextLayoutService {
                     int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
                     for (int i = 0; i < token.length(); ) {
                         int tokenCodepoint = token.codePointAt(i);
-                        double charWidth = measureCodepointWidth(tokenCodepoint, style.getFontType(), effectiveSize);
+                        double charWidth = advanceWithSpacing(
+                                measureCodepointWidth(tokenCodepoint, style.getFontType(), effectiveSize),
+                                tokenCodepoint, style);
                         if (width + charWidth > wrapWidth && lineHasVisibleContent) {
                             flushRichLine(lines, currentLine, baseStyle, false);
                             width = 0.0D;
@@ -1426,7 +1446,8 @@ public class TextLayoutService {
         int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
         for (int i = 0; i < token.length(); ) {
             int codepoint = token.codePointAt(i);
-            total += measureCodepointWidth(codepoint, style.getFontType(), effectiveSize);
+            total += advanceWithSpacing(measureCodepointWidth(codepoint, style.getFontType(), effectiveSize),
+                    codepoint, style);
             i += Character.charCount(codepoint);
         }
         return total;
@@ -1474,7 +1495,8 @@ public class TextLayoutService {
                 && left.getFontSizePx() == right.getFontSizePx()
                 && left.getMarkColor() == right.getMarkColor()
                 && left.isSuperscript() == right.isSuperscript()
-                && left.isSubscript() == right.isSubscript();
+                && left.isSubscript() == right.isSubscript()
+                && left.getLetterSpacing() == right.getLetterSpacing();
     }
 
     private String wrapRawStringToWidth(String text, int wrapWidth) {

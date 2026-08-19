@@ -62,6 +62,8 @@ public final class RichTextPage implements PlaygroundPage {
                     + "<mark=#4FC3F7><b>蓝底加粗</b></mark>", 15));
             styleCard.appendChild(richText(
                     "上下标：x<sup>2</sup> + y<sub>n</sub>　<size=20>大<sup>号上标</sup></size>（字号缩至 0.75×，基线偏移）", 15));
+            styleCard.appendChild(richText(
+                    "字距：<spacing=4>宽松字距</spacing>　<spacing=-1>紧凑字距</spacing>（advance 追加，换行/裁剪同步感知）", 15));
             styleCard.appendChild(PlaygroundKit.hint(
                     "标签不占测量宽度；§ 原版格式码在富文本模式下不参与解析。"));
             root.appendChild(styleCard);

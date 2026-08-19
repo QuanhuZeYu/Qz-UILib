@@ -38,6 +38,9 @@ public class TextStyle {
     /** 下标标记（与 {@link #superscript} 互斥，后设置者生效）。 */
     private boolean subscript;
 
+    /** 字符间距（UI 像素，可为负）；追加到每个字符的推进宽度之后（换行符除外）。 */
+    private float letterSpacing;
+
     /**
      * 复制当前样式。
      *
@@ -58,6 +61,7 @@ public class TextStyle {
         style.markColor = markColor;
         style.superscript = superscript;
         style.subscript = subscript;
+        style.letterSpacing = letterSpacing;
         return style;
     }
 
@@ -113,6 +117,7 @@ public class TextStyle {
         markColor = 0;
         superscript = false;
         subscript = false;
+        letterSpacing = 0.0F;
     }
 
     private void resetFlags(int baseColor) {
@@ -126,6 +131,7 @@ public class TextStyle {
         markColor = 0;
         superscript = false;
         subscript = false;
+        letterSpacing = 0.0F;
     }
 
     public int getColor() {
@@ -265,6 +271,25 @@ public class TextStyle {
             return Math.max(1, (int) Math.round(base * SUP_SUB_SCALE));
         }
         return Math.max(1, base);
+    }
+
+    /**
+     * 获取字符间距（UI 像素）；追加到每个字符的推进宽度之后（换行符除外），可为负。
+     *
+     * @return 字符间距
+     */
+    public float getLetterSpacing() {
+        return letterSpacing;
+    }
+
+    /**
+     * 设置字符间距（UI 像素），越界截断到 [-64, 64]，NaN 归 0。
+     *
+     * @param letterSpacing 字符间距
+     */
+    public void setLetterSpacing(float letterSpacing) {
+        float normalized = Float.isNaN(letterSpacing) ? 0.0F : letterSpacing;
+        this.letterSpacing = Math.max(-64.0F, Math.min(64.0F, normalized));
     }
 
     /**
