@@ -249,6 +249,7 @@ public final class LatexSymbols {
             map.put("int", Boolean.TRUE);
             map.put("iint", Boolean.TRUE);
             map.put("oint", Boolean.TRUE);
+            map.put("lim", Boolean.TRUE);
         return map;
     }
 

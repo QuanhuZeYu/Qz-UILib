@@ -33,14 +33,26 @@ public final class LatexAtom extends LatexNode {
 
     private final String text;
     private final AtomClass atomClass;
+    private final boolean limitsOperator;
 
     /**
-     * 创建数学原子。
+     * 创建数学原子（非 limits 算子）。
      *
      * @param text      显示文本（一个或多个码点；可含中文）
      * @param atomClass 原子类别
      */
     public LatexAtom(String text, AtomClass atomClass) {
+        this(text, atomClass, false);
+    }
+
+    /**
+     * 创建数学原子。
+     *
+     * @param text           显示文本（一个或多个码点；可含中文）
+     * @param atomClass      原子类别
+     * @param limitsOperator 是否 limits 算子（\\sum \\int \\lim 等：上下限上下堆叠）
+     */
+    public LatexAtom(String text, AtomClass atomClass, boolean limitsOperator) {
         super(Kind.ATOM);
         if (text == null || text.isEmpty()) {
             throw new IllegalArgumentException("text 不能为空");
@@ -50,6 +62,7 @@ public final class LatexAtom extends LatexNode {
         }
         this.text = text;
         this.atomClass = atomClass;
+        this.limitsOperator = limitsOperator;
     }
 
     /** @return 显示文本 */
@@ -60,6 +73,11 @@ public final class LatexAtom extends LatexNode {
     /** @return 原子类别 */
     public AtomClass getAtomClass() {
         return atomClass;
+    }
+
+    /** @return 是否 limits 算子（上下限上下堆叠） */
+    public boolean isLimitsOperator() {
+        return limitsOperator;
     }
 
     @Override
