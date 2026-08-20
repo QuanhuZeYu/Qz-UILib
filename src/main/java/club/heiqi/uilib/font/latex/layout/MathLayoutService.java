@@ -349,23 +349,30 @@ public final class MathLayoutService {
     private MathBox layoutLimits(MathBox base, MathBox sup, MathBox sub, float size, MathMetrics m) {
         Builder builder = new Builder();
         float axis = MathConstants.AXIS_HEIGHT_EM * size;
-        // ink 锚定（向上为正）：中心在 inkCenterUp，总高 inkH；盒度量回退保持旧行为
+        // ink 锚定（向上为正，与 layoutFence 同源）：中心在 inkCenterUp，总高 inkH；
+        // 盒度量回退保持旧行为。
         String baseText = base.getGlyphs().isEmpty() ? null : base.getGlyphs().get(0).getText();
         float inkCenterUp = baseText == null ? (base.getHeight() - base.getDepth()) / 2.0F
                 : m.inkCenterOffsetY(baseText, size);
         float inkH = baseText == null ? base.getTotalHeight() : m.inkHeight(baseText, size);
-        float baseShift = inkCenterUp - axis;
-        // 轴居中后相对新基线的有效度量：顶 = inkH/2 + axis、底 = inkH/2 − axis
-        float refHeight = inkH / 2.0F + axis;
-        float refDepth = inkH / 2.0F - axis;
-        float contentWidth = base.getWidth();
+        // 无阶梯变体（TeX 会选 cmex 行内小变体，本仓资源受限）：整字缩放到目标视觉高
+        //（TeX 口径：∑∏ ≈ 1.0em、∫ 族 ≈ 1.11em），上下限随之贴合缩放后符号。
+        float targetH = bigOperatorTargetHeightEm(baseText) * size;
+        float opScale = inkH > 0.0F ? targetH / inkH : 1.0F;
+        // 轴居中：字形中心（基线相对 −centerUp）移到轴（−axis）的基线位移 = centerUp×scale − axis
+        float baseShift = inkCenterUp * opScale - axis;
+        // 轴居中后相对新基线的有效度量：顶 = targetH/2 + axis、底 = targetH/2 − axis
+        float refHeight = targetH / 2.0F + axis;
+        float refDepth = targetH / 2.0F - axis;
+        float baseWidth = base.getWidth() * opScale;
+        float contentWidth = baseWidth;
         if (sup != null) {
             contentWidth = Math.max(contentWidth, sup.getWidth());
         }
         if (sub != null) {
             contentWidth = Math.max(contentWidth, sub.getWidth());
         }
-        builder.addBox(base, (contentWidth - base.getWidth()) / 2.0F, -baseShift, 1.0F);
+        builder.addBox(base, (contentWidth - baseWidth) / 2.0F, baseShift, opScale);
         float height = refHeight;
         float depth = refDepth;
         if (sup != null) {
@@ -386,6 +393,24 @@ public final class MathLayoutService {
         builder.depth = depth;
         builder.width = contentWidth + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * size;
         return builder.toBox();
+    }
+
+    /** 积分族（TeX cmex 行内变体高 ≈1.11em）与求和族（≈1.0em）的目标视觉高。 */
+    private static float bigOperatorTargetHeightEm(String symbol) {
+        if (symbol != null && symbol.codePointCount(0, symbol.length()) == 1) {
+            switch (symbol.codePointAt(0)) {
+                case 0x222B: // ∫
+                case 0x222C: // ∬
+                case 0x222D: // ∭
+                case 0x222E: // ∮
+                case 0x222F: // ∯
+                case 0x2230: // ∰
+                    return 1.11F;
+                default:
+                    return 1.0F;
+            }
+        }
+        return 1.0F;
     }
 
     // ==================== 分数 ====================

@@ -1000,6 +1000,10 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             if (glyphSizePx > maxFontSizeHolder[0]) {
                 maxFontSizeHolder[0] = glyphSizePx; // 放大型字形（伸缩括号）参与整行基线基准
             }
+            // 推进口径与布局侧 MathMetrics.advance 完全同源：有效字号按 (int) 截断
+            //（MathMetrics 逐码点 resolveCodepointAdvance(cp, style, (int)sizePx)），
+            // 否则渲染 advance 与布局盒宽差 ~2%/码点，多字形脚本 xOffsets 漂移。
+            int measureSizePx = Math.max(1, (int) (segmentFontSizePx * elem.getSizeScale()));
             float elemInnerAdvance = 0.0F;
             String elemText = elem.getText();
             for (int i = 0; i < elemText.length(); ) {
@@ -1012,8 +1016,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 renderCodepoints[glyphIndex] = resolveDisplayCodepoint(codepoint, style.getFontType(), tables);
                 fontTypes[glyphIndex] = style.getFontType();
                 italicFlags[glyphIndex] = elem.isItalic();
-                double advance = textLayoutService.resolveAdvance(codepoint, style, resolvedBaseFontSizePx)
-                        * elem.getSizeScale();
+                double advance = textLayoutService.resolveAdvance(codepoint, style, measureSizePx);
                 measuredWidths[glyphIndex] = (float) advance * renderScale;
                 styles[glyphIndex] = style;
                 fontSizePx[glyphIndex] = glyphSizePx;

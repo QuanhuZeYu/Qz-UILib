@@ -202,7 +202,7 @@ public class MathLayoutServiceTest {
                 foundSub = true;
             }
             if ("\u2211".equals(glyph.getText())) {
-                Assert.assertEquals(-baseShift, glyph.getY(), EPS);
+                Assert.assertEquals(baseShift, glyph.getY(), EPS);
                 Assert.assertEquals((contentWidth - 0.5F * S) / 2.0F, glyph.getX(), EPS);
                 foundBase = true;
             }

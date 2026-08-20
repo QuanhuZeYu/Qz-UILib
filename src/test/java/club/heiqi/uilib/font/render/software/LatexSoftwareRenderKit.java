@@ -297,6 +297,27 @@ public final class LatexSoftwareRenderKit {
                 collectText(leftRight.getRightDelimiter(), out);
                 return;
             case MATRIX:
+                // 矩阵外围定界符是布局常量（不在 AST 文本里），必须显式纳入装配码点集合——
+                // 否则 pmatrix 圆括号 / cases 花括号在一次性 headless 装配里缺失（真机按需生成不受影响）
+                switch (((LatexMatrix) node).getFence()) {
+                    case PAREN:
+                        collectText("(", out);
+                        collectText(")", out);
+                        break;
+                    case BRACKET:
+                        collectText("[", out);
+                        collectText("]", out);
+                        break;
+                    case BAR:
+                        collectText("|", out);
+                        collectText("|", out);
+                        break;
+                    case CASES:
+                        collectText("{", out);
+                        break;
+                    default:
+                        break;
+                }
                 for (List<List<LatexNode>> row : ((LatexMatrix) node).getRows()) {
                     for (List<LatexNode> cell : row) {
                         for (LatexNode cellNode : cell) {
@@ -306,6 +327,9 @@ public final class LatexSoftwareRenderKit {
                 }
                 return;
             case BINOM:
+                // \binom 的圆括号同样由布局常量生成（TeX \left( … \right) 语义）
+                collectText("(", out);
+                collectText(")", out);
                 collectNode(((LatexBinom) node).getUpper(), out);
                 collectNode(((LatexBinom) node).getLower(), out);
                 return;
