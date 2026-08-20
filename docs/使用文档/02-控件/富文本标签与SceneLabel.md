@@ -51,6 +51,7 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
 | `<a=URL>` | 链接（自动下划线；`<a href=URL>` / `<a href="URL">` 亦可） | `<a=https://example.com>示例</a>` |
 | `<size=N>` | 绝对像素字号（1..256，越界截断） | `<size=24>大</size>` |
 | `<br>` / `<br/>` | 硬换行 | `第一行<br>第二行` |
+| `<latex>...</latex>` | 行内 LaTeX 数学公式（内容为 TeX 子集源码，见下节） | `<latex>\frac{-b\pm\sqrt{b^2-4ac}}{2a}</latex>` |
 
 **通用规则**
 
@@ -66,6 +67,45 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
 | 未闭合标签 | 自动闭合到文本末尾 |
 | 多余/错配闭合标签 | 忽略（错配时吞掉中间已开样式） |
 | 坏属性（`<color=不是颜色>`、`<size=abc>`） | 忽略该属性，文本继承父样式 |
+
+## LaTeX 行内公式（`<latex>`）
+
+SceneLabel 的 RICH_TAGS 模式支持行内 LaTeX 数学子集，公式与普通文本混排、共享基线：
+
+```java
+props = new SceneLabel.Props(
+        Signal.create("二次求根：<latex>\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}</latex>"),
+        0xFFE6E1E5, 16, TextStyle.TEXT_MODE_RICH_TAGS, 0);
+```
+
+**支持的命令子集（L1+L2）**
+
+| 类别 | 命令/语法 |
+|---|---|
+| 结构 | `\frac{}{}`、`\sqrt{}`、`\sqrt[]{}`、`^`/`_` 上下标、`{}` 分组 |
+| 大运算符 | `\sum \int \prod \lim`（含 `_{}^{}` 上下限，上下堆叠居中） |
+| 伸缩括号 | `\left( \right)`、`\left[ \right]`、`\left\{ \right\}`、`\left| \right|`、`\left. \right.` |
+| 矩阵/分段 | `\begin{matrix/pmatrix/bmatrix/vmatrix}...\end{...}`（`&` 分列、`\\` 换行）、`\begin{cases}` |
+| 希腊字母 | 小写全表（含 `\epsilon/\varepsilon`、`\phi/\varphi`、`\theta/\vartheta` 变体对）+ 常见大写 |
+| 运算符/关系符 | `\pm \times \div \cdot \leq \geq \neq \approx \equiv \in \subset \cup \cap \to \infty \partial \nabla \forall \exists \neg \wedge \vee \oplus \otimes` 等 |
+| 组合数/重音 | `\binom{n}{k}`、`\hat \bar \vec \dot \ddot \tilde \overline \underline` |
+| 函数名 | `\sin \cos \tan \log \ln \min \max \det \gcd \mod \exp`（正体文本算子） |
+| 文本/间距 | `\text{...}`（可含中文）、`\, \: \; \! \quad \qquad` |
+
+**语义**
+
+- **样式继承**：公式整体继承外层 `<color>`/`<size>`；公式内字号按 TeX 规则缩放（上/下标与分数
+  分子分母 0.7×）；公式内不支持 HTML 标签与颜色命令。
+- **原子不可断行**：公式是换行/裁剪的原子盒——放得下整体保留，放不下整体移动（超宽公式独占
+  一行，不切分公式内部）。
+- **行高**：行高按 max(字号行高, 公式盒总高) 计算（分数/根号等二维公式撑高所在行）。
+- **二维布局**：分数 bar、根号横线、overline/underline 为规则线；定界符随内容高度整字缩放；
+  矩阵按数学轴居中、列宽取该列最宽格。
+- **宽容失败**：未知命令原样保留为字面文本、缺失参数以空组填充、未闭合 `{` 视作到表达式末尾。
+- **字体口径**：公式内一切字符（含 `\text` 中文）走现有字体 fallback 链；缺字形显示 U+FFFD
+  替换符；布局参数用比例常量（不读字体 MATH 表），换更全的字体即改观感。
+- **边界**：暂不做 `$...$` 定界符、`align` 等对齐环境、`\mathbb/\mathcal` 字体族、
+  `\overbrace/\underbrace`（功能稳定后的增强包范围）。
 
 ## 能力与语义
 
