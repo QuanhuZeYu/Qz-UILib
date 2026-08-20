@@ -81,6 +81,30 @@ public class LatexSoftwareRenderTest {
         Assert.assertTrue("规则线右端应覆盖分子分母最宽范围（-2 容差）", barRight >= Math.max(numRight, denRight) - 2);
     }
 
+    /** 混排行规则线锚定公式段起点：文本在前时横线不得左飞回行首（「只有第一个卡片正常」回归）。 */
+    @Test
+    public void fracBarAnchoredToLatexSegmentInMixedLine() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "分数：<latex>\\frac{1}{2}</latex> 尾部文本", BASE_SIZE);
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertTrue("混排分数应有规则线", !rules.isEmpty());
+        Quad rule = rules.get(0);
+        // 分子 = 规则线上方且紧邻的 0.7× 字形
+        Quad numerator = null;
+        for (Quad glyph : glyphs) {
+            if (glyph.bottom <= rule.top + 1) {
+                numerator = glyph;
+                break;
+            }
+        }
+        Assert.assertNotNull("应有分子字形", numerator);
+        // 布局中横线左端与分子左端同 x（sideSpace 对齐）；渲染侧段起点偏移后两者应保持重合
+        int delta = rule.left - numerator.left;
+        Assert.assertTrue("横线左端应锚定公式段（与分子同 x），实测偏移=" + delta + "px",
+                Math.abs(delta) <= 2);
+    }
+
     /** 根号：规则线位于被开方内容上方。 */
     @Test
     public void sqrtRendersRuleAboveRadicand() {

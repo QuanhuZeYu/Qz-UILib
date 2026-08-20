@@ -904,6 +904,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         int[] maxFontSizeHolder = new int[] { maxFontSizePx };
         boolean hasMixedSize = false;
         int glyphIndex = 0;
+        // 规则线必须按段起点定位：多段混排（文本+公式）时第二段以后的公式横线
+        // 若用行首 x 会整体左飞到行首（此前「只有第一个卡片正常」的根因）。
+        float segmentStartX = 0.0F;
         for (int s = 0; s < segments.size(); s++) {
             TextSegment segment = segments.get(s);
             TextStyle style = segment.getStyle();
@@ -916,7 +919,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 glyphIndex = fillLatexSegment(segment, latexBoxes[s], style, segmentFontSizePx,
                         resolvedBaseFontSizePx, textLayoutService, tables, renderScale, renderCodepoints,
                         fontTypes, measuredWidths, styles, fontSizePx, xOffsets, yOffsets, italicFlags,
-                        glyphIndex, latexRules, latexRuleColors, maxFontSizeHolder);
+                        glyphIndex, segmentStartX, latexRules, latexRuleColors, maxFontSizeHolder);
+                segmentStartX += latexBoxes[s].getWidth();
                 // 公式内部存在字号缩放（script 0.7×/定界符放大）同样禁用 uniform 快路径，
                 // 否则缩放字形按正文全尺寸绘制且与 0.7× 布局偏移错配（符号乱飞根因）。
                 if (segmentFontSizePx != resolvedBaseFontSizePx || latexBoxHasScaledGlyphs(latexBoxes[s])) {
@@ -970,6 +974,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 codePointIndex++;
                 index += charCount;
             }
+            // 普通段推进（UI px 口径，与渲染 currentX 的 measuredWidths 同源）
+            segmentStartX += segmentRunningAdvance / Math.max(0.01F, renderScale);
         }
         float[][] ruleArray = latexRules.toArray(new float[latexRules.size()][]);
         int[] ruleColors = new int[latexRuleColors.size()];
@@ -991,7 +997,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int resolvedBaseFontSizePx, TextLayoutService textLayoutService, GlyphRuntimeTablesView tables,
             float renderScale, int[] renderCodepoints, FontType[] fontTypes, float[] measuredWidths,
             TextStyle[] styles, int[] fontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags,
-            int startGlyphIndex, List<float[]> latexRules, List<Integer> latexRuleColors,
+            int startGlyphIndex, float segmentStartX, List<float[]> latexRules, List<Integer> latexRuleColors,
             int[] maxFontSizeHolder) {
         int glyphIndex = startGlyphIndex;
         float segmentAdvanceSum = 0.0F;
@@ -1037,7 +1043,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             measuredWidths[glyphIndex - 1] += tail;
         }
         for (RuleElem rule : box.getRules()) {
-            latexRules.add(new float[] { rule.getX() * renderScale, rule.getY() * renderScale,
+            // x 为行内绝对坐标（段起点 + 盒内 x）：多段混排时规则线对齐公式段而非行首
+            latexRules.add(new float[] { (segmentStartX + rule.getX()) * renderScale, rule.getY() * renderScale,
                     rule.getWidth() * renderScale, rule.getThickness() * renderScale });
             latexRuleColors.add(Integer.valueOf(style.getColor()));
         }
