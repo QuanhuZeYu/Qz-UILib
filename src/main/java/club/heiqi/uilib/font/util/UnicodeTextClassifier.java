@@ -35,8 +35,8 @@ package club.heiqi.uilib.font.util;
  */
 public final class UnicodeTextClassifier {
 
-    /** {@code \t} 的固定列宽（空格数，4 空格业界默认口径；CSS tab-size 默认 8，此处为项目决策）。 */
-    public static final int TAB_WIDTH_SPACES = 4;
+    /** {@code \t} 的固定列宽（空格数，CSS tab-size 默认口径 8）。 */
+    public static final int TAB_WIDTH_SPACES = 8;
 
     private UnicodeTextClassifier() {
     }
@@ -63,6 +63,8 @@ public final class UnicodeTextClassifier {
         VARIATION_SELECTOR,
         /** 组合标记（Mn/Mc/Me，与前一字符合并成簇）。 */
         COMBINING_MARK,
+        /** Cc 类控制字符（CSS3+ 口径：渲染为可见 glyph，Control Pictures 映射）。 */
+        CONTROL,
         /** bidi 方向控制（当前无 bidi 布局，按不可见处理；单列备升级）。 */
         BIDI_CONTROL,
         /** 无语义不可见控制/格式字符（Default_Ignorable 全集 + 非字符 + 孤立代理项）。 */
@@ -147,8 +149,13 @@ public final class UnicodeTextClassifier {
                 || (codepoint >= 0xE0100 && codepoint <= 0xE01EF)) {
             return CharClass.VARIATION_SELECTOR;
         }
-        if (codepoint <= 0x1F || (codepoint >= 0x7F && codepoint <= 0x9F)) {
-            return CharClass.INVISIBLE;
+        if (codepoint <= 0x1F) {
+            // C0 剩余（换行类/tab 已被前面 case 截走）：CSS3+ 渲染可见 glyph
+            return CharClass.CONTROL;
+        }
+        if (codepoint >= 0x7F && codepoint <= 0x9F) {
+            // 0x85 NEL 已被换行类截走；其余 C1 可见控制字符
+            return CharClass.CONTROL;
         }
         // ===== 其余 Unicode 格式字符（Cf 全集）+ Default_Ignorable 补全 + 非字符防御 =====
         // （静默不可见：阿拉伯数字/经文格式、废弃交互注释锚点、音乐符号格式、埃及圣书体格式、
@@ -185,6 +192,28 @@ public final class UnicodeTextClassifier {
     /** @return 是否为换行类控制字符（{@code \n \r \v \f NEL LS PS}） */
     public static boolean isLineBreak(int codepoint) {
         return classify(codepoint) == CharClass.NEWLINE;
+    }
+
+    /** @return 是否为 Cc 类可见控制字符（CSS3+ 渲染可见 glyph） */
+    public static boolean isControl(int codepoint) {
+        return classify(codepoint) == CharClass.CONTROL;
+    }
+
+    /**
+     * Cc 控制字符的可见显示映射（CSS Text 3/4：字体无可见字形时 UA 须合成）：
+     * C0(0x00..0x1F) → Control Pictures 块 U+2400+code；DEL(0x7F) → U+2421；C1 → U+FFFD。
+     *
+     * @param codepoint 原始控制字符码点
+     * @return 显示用码点
+     */
+    public static int controlPictureCodepoint(int codepoint) {
+        if (codepoint >= 0x00 && codepoint <= 0x1F) {
+            return 0x2400 + codepoint;
+        }
+        if (codepoint == 0x7F) {
+            return 0x2421;
+        }
+        return 0xFFFD;
     }
 
     /** @return 是否为制表符 {@code \t} */

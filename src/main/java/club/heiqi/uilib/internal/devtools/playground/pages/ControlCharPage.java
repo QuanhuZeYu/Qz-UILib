@@ -58,12 +58,12 @@ public final class ControlCharPage implements PlaygroundPage {
 
             // ===== 卡片2：Tab 列宽 =====
             SceneNode tabCard = PlaygroundKit.card();
-            tabCard.appendChild(PlaygroundKit.title("制表符（固定 4 空格列宽）"));
+            tabCard.appendChild(PlaygroundKit.title("制表符（CSS 默认 8 空格列宽）"));
             tabCard.appendChild(rawText("tab：a\tb", 14));
-            tabCard.appendChild(rawText("空格：a    b", 14));
+            tabCard.appendChild(rawText("空格：a        b", 14));
             tabCard.appendChild(rawText("混合：一\t二\t三", 14));
             tabCard.appendChild(PlaygroundKit.hint(
-                    "\\t 按 4 个空格宽度推进（渲染为空格字形，下划线/高亮按列宽覆盖），与 4 个空格精确对齐。"));
+                    "\\t 按 8 个空格宽度推进（CSS tab-size 默认口径；渲染为空格字形，下划线/高亮按列宽覆盖）。"));
             root.appendChild(tabCard);
 
             // ===== 卡片3：空白家族 =====
@@ -112,14 +112,24 @@ public final class ControlCharPage implements PlaygroundPage {
                     + "粘贴进文本输入框（Ctrl+V/右键菜单）的组合序列同样按此口径显示（编辑保真、显示组合）。"));
             root.appendChild(clusterCard);
 
-            // ===== 卡片6：剥离类 =====
+            // ===== 卡片6：Cc 可见控制字符（CSS3+ 口径） =====
+            SceneNode controlCard = PlaygroundKit.card();
+            controlCard.appendChild(PlaygroundKit.title("Cc 控制字符（可见 glyph：Control Pictures 映射）"));
+            controlCard.appendChild(rawText("C0 控制：a\u0007b\u0001c（渲染为 ␇␁ 可见符号）", 14));
+            controlCard.appendChild(rawText("DEL(\u007F) 渲染为 ␡；C1(\u0080..\u009F) 渲染为 � 替换符", 14));
+            controlCard.appendChild(PlaygroundKit.hint(
+                    "CSS Text 3/4 口径：Cc 类（除换行族）必须渲染为可见 glyph——C0 映射 Control Pictures 块、"
+                    + "DEL 映射 U+2421、C1 映射 U+FFFD；输入过滤仍拦 Cc（编辑语义不变）。"));
+            root.appendChild(controlCard);
+
+            // ===== 卡片6b：剥离类（Default_Ignorable） =====
             SceneNode stripCard = PlaygroundKit.card();
-            stripCard.appendChild(PlaygroundKit.title("剥离类（静默不可见：零宽、无豆腐块）"));
-            stripCard.appendChild(rawText("BOM\uFEFF前缀 + bidi 控制\u202E混入\u202C + C0\u0007控制\u001F残留：全部零宽", 14));
-            stripCard.appendChild(rawText("WORD JOINER\u2060 / INVISIBLE SEPARATOR\u2063 / NUL\u0000 同样静默", 14));
-            stripCard.appendChild(rawText("纯剥离：\u0000\u0001\u0008\u007F\u009F（本行除标题外无任何可见内容）", 14));
+            stripCard.appendChild(PlaygroundKit.title("剥离类（Default_Ignorable：静默不可见、零宽）"));
+            stripCard.appendChild(rawText("BOM\uFEFF前缀 + bidi 控制\u202E混入\u202C + WORD JOINER\u2060：全部零宽", 14));
+            stripCard.appendChild(rawText("INVISIBLE SEPARATOR\u2063 / CGJ\u034F / 非字符\uFDD0 同样静默", 14));
+            stripCard.appendChild(rawText("纯剥离：\u2060\u2061\u2062\u2063\u2064\uFEFF（本行除标题外无任何可见内容）", 14));
             stripCard.appendChild(PlaygroundKit.hint(
-                    "其余 C0/C1、bidi 方向控制、BOM、WORD JOINER 等：测量零宽、渲染跳过（不是 U+FFFD、不是豆腐块）；"
+                    "Cf 格式字符全集、bidi 方向控制、BOM、WORD JOINER、非字符等：测量零宽、渲染跳过；"
                     + "字符保留在文本流中，文本域前缀宽度与 caret 几何不受影响。"));
             root.appendChild(stripCard);
 
@@ -136,8 +146,8 @@ public final class ControlCharPage implements PlaygroundPage {
             waterCard.appendChild(PlaygroundKit.hint(
                     "泰语元音符号与阿拉伯高位/低位组合标记堆叠在空格上：UILIB 按 CCC 方向紧实堆叠——"
                     + "高位标记（U+06D6）向上摞、低位标记（U+06E3）向下摞、泰语符号（U+0E34）向上，层距贴字形；"
-                    + "与网页的差异主要来自字体 glyph 覆盖：字体链缺少这些组合标记时静默跳过（不豆腐块），"
-                    + "补装含泰语/阿拉伯组合标记的字体后观感接近网页。"
+                    + "与网页的差异主要来自字体 glyph 覆盖：字体链缺少这些组合标记时渲染 U+FFFD 替换符"
+                    + "（标准 .notdef 降级），补装含泰语/阿拉伯组合标记的字体后观感接近网页。"
                     + "整段可粘贴进「多行文本」页观察（编辑保真、显示组合）。"));
             root.appendChild(waterCard);
 

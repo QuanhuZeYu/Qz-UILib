@@ -97,8 +97,8 @@ public class TextLayoutService {
             case 220:
             case 202:
             case 200:
-            case 218:
-            case 222:
+            case 218: // Below Left Attached
+            case 222: // Below Right Attached
             case 233:
             case 240:
                 return -1; // Below 系：下方
@@ -973,6 +973,10 @@ public class TextLayoutService {
         }
         if (cls == UnicodeTextClassifier.CharClass.TAB) {
             return currentSettings().getSpaceWidth() * UnicodeTextClassifier.TAB_WIDTH_SPACES;
+        }
+        if (cls == UnicodeTextClassifier.CharClass.CONTROL) {
+            // Cc 控制字符按可见映射（Control Pictures/U+FFFD）测量（CSS3+ 口径）
+            return measureCodepointWidth(UnicodeTextClassifier.controlPictureCodepoint(codepoint), fontType);
         }
         if (codepoint == ' ') {
             return currentSettings().getSpaceWidth();

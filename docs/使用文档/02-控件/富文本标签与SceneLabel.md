@@ -98,7 +98,7 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
 | 类别 | 码点 | 行为 |
 |---|---|---|
 | 换行类 | `\n \r \v \f NEL(U+0085) LS(U+2028) PS(U+2029)` | 统一折叠为换行；`\r\n` 折叠为一个 |
-| 制表符 | `\t` | 固定 4 个空格列宽（渲染为空格字形，advance 按 4×空格宽推进） |
+| 制表符 | `\t` | 固定 8 个空格列宽（CSS tab-size 默认；渲染为空格字形，advance 按 8×空格宽推进） |
 | 文档空白 | U+0020 | 可断行、行尾折叠（CSS white-space 唯一折叠对象） |
 | 可断空格（BA） | U+1680 / U+2000..2006 / U+2008..200A / U+205F / U+3000 | 可断行、**不折叠**（行尾保留宽度） |
 | 禁断胶水（GL） | NBSP(U+00A0) / U+2007 / U+2011 / U+202F / U+180E | **禁止断行**（数字+单位等不可分组合）；紧急硬断时保持前侧禁断 |
@@ -107,7 +107,8 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
 | 连字控制 | ZWNJ/ZWJ(U+200C/U+200D) | 零宽、跳过渲染（无连字布局引擎） |
 | 变体选择符 | U+FE00..FE0F / U+E0100..E01EF | 零宽、附着前一字形、不落行首 |
 | 组合标记 | Mn/Mc/Me | 与前字符合并成簇、不单独断行；按 CCC 方向堆叠：上方/下方逐层紧实摞、Overlay 与包围标记原位覆盖、Nukta/Virama 下方、假名浊点右上 |
-| 剥离类 | 其余 C0/C1、bidi 控制（LRE/RLE/PDF/LRM/RLM/ALM/隔离符等）、BOM(U+FEFF)、WORD JOINER、INVISIBLE SEPARATOR/TIMES/PLUS | 测量零宽、渲染跳过（静默不可见，无豆腐块）；bidi 控制单独留位备将来升级 |
+| Cc 控制字符 | 其余 C0（除换行/tab）/DEL/C1（除 NEL） | **可见 glyph**（CSS3+ 口径）：C0→Control Pictures(U+2400+code)、DEL→U+2421、C1→U+FFFD |
+| 剥离类 | Cf 格式字符全集、bidi 控制（LRE/RLE/PDF/LRM/RLM/ALM/隔离符等）、BOM(U+FEFF)、WORD JOINER、INVISIBLE SEPARATOR/TIMES/PLUS、非字符 | 测量零宽、渲染跳过（静默不可见）；bidi 控制单独留位备将来升级 |
 
 口径对齐现代文本引擎：有语义的解析执行、无语义的渲染为不可见（不是 U+FFFD、不是字体豆腐块）。
 剥离类保留在文本流中（零宽），不重写下标——文本域前缀宽度与 caret 几何不受影响。
@@ -118,8 +119,9 @@ new SceneLabel.Props(textSignal, color, 16, TextStyle.TEXT_MODE_RICH_TAGS, 320, 
   （`e`+U+0301 → `é`），常见重音字符在字体链上立即正确显示；文本域 caret 几何（prefixWidthsRaw）
   保持码点下标保真、宽度口径不变（NFC 等价序列 advance 一致）。
 - **多层堆叠（挡 2）**：NFC 无法合并的残余组合序列（zalgo 式多层附加符）按近似逐层堆叠渲染——
-  组合标记吸附基字中心、每层上抬半 ascent，叠加越多堆得越高；组合 glyph 的可见性与堆叠高度
-  取决于字体覆盖（1.7.10 字体链对 U+0300 系列覆盖有限，浏览器级效果受此天花板限制）。
+  组合标记吸附基字中心、层距贴字形 ink，按 CCC 方向（上/下/原位覆盖/右上）；组合 glyph 缺失时
+  渲染 U+FFFD 替换符（标准 .notdef 降级，不再静默跳过）；可用组合 glyph 的覆盖取决于字体链
+  （1.7.10 字体链对 U+0300 系列覆盖有限，浏览器级效果受此天花板限制）。
 
 ## 限制（首版）
 

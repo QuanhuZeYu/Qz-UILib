@@ -667,8 +667,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             return PreparedText.empty(settings);
         }
 
-        PreparedText preparedText = prepareGlyphs(settings, segments, textLayoutService, renderScale, baseFontSizePx);
         GlyphRuntimeTablesView demandTables = fontService.getGlyphRuntimeTablesView();
+        PreparedText preparedText = prepareGlyphs(settings, segments, textLayoutService, renderScale, baseFontSizePx,
+                demandTables);
         int runtimeVersion = demandTables.getRuntimeVersion();
         int glyphSize = settings.getGlyphSize();
         Set<Long> submittedDemands = new HashSet<Long>();
@@ -785,7 +786,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     private PreparedText prepareGlyphs(FontRuntimeSettings settings, List<TextSegment> segments,
-            TextLayoutService textLayoutService, float renderScale, float baseFontSizePx) {
+            TextLayoutService textLayoutService, float renderScale, float baseFontSizePx,
+            GlyphRuntimeTablesView tables) {
         int resolvedBaseFontSizePx = Math.max(1, (int) baseFontSizePx);
         int glyphCount = 0;
         for (TextSegment segment : segments) {
@@ -830,7 +832,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         segmentFontSizePx);
                 int renderCodepoint = style.isRandomStyle()
                         ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
-                        : (codepoint == '\t' ? ' ' : codepoint);
+                        : resolveDisplayCodepoint(codepoint, style.getFontType(), tables);
                 renderCodepoints[glyphIndex] = renderCodepoint;
                 fontTypes[glyphIndex] = style.getFontType();
                 // 推进宽度经 TextLayoutService.resolveAdvance 同源（测量/trim/wrap 共用口径，
@@ -857,6 +859,60 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
                 maxFontSizePx, resolvedBaseFontSizePx, xOffsets, yOffsets);
+    }
+
+    /**
+     * 解析码点的显示用码点：
+     * <ul>
+     *   <li>tab → 空格字形（列宽由测量层给 8×space）；</li>
+     *   <li>Cc 控制字符 → Control Pictures/U+FFFD 可见映射（CSS3+ 口径）；</li>
+     *   <li>组合标记缺 glyph → U+FFFD 替换符（标准 .notdef 降级，不再静默跳过）。</li>
+     * </ul>
+     *
+     * @param codepoint 原始码点
+     * @param fontType  字重
+     * @param tables    glyph 运行时表视图
+     * @return 显示用码点
+     */
+    private static int resolveDisplayCodepoint(int codepoint, FontType fontType, GlyphRuntimeTablesView tables) {
+        UnicodeTextClassifier.CharClass cls = UnicodeTextClassifier.classify(codepoint);
+        if (cls == UnicodeTextClassifier.CharClass.CONTROL) {
+            return UnicodeTextClassifier.controlPictureCodepoint(codepoint);
+        }
+        if (codepoint == '\t') {
+            return ' ';
+        }
+        if (cls == UnicodeTextClassifier.CharClass.COMBINING_MARK && isGlyphMissing(tables, codepoint, fontType)) {
+            return 0xFFFD;
+        }
+        return codepoint;
+    }
+
+    /**
+     * 判断码点在运行时表中是否缺位图（NO_BITMAP 或 slot/页无效）；生成中（NOT_READY）不算缺失。
+     *
+     * @param tables    glyph 运行时表视图
+     * @param codepoint 码点
+     * @param fontType  字重
+     * @return true 表示无可用位图
+     */
+    private static boolean isGlyphMissing(GlyphRuntimeTablesView tables, int codepoint, FontType fontType) {
+        if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return true;
+        }
+        int packedLocation = tables.getPackedLocation(codepoint, fontType);
+        if (packedLocation == GlyphRuntimeTables.LOCATION_NOT_READY) {
+            return false;
+        }
+        if (packedLocation == GlyphRuntimeTables.LOCATION_NO_BITMAP) {
+            return true;
+        }
+        int pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
+        int slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
+        return pageIndex < 0 || pageIndex >= tables.getPageCount(fontType) || slotIndex < 0
+                || tables.getPageTextureIdSnapshot(fontType, pageIndex) <= 0
+                || tables.getSlotWidth(codepoint, fontType) <= 0
+                || tables.getSlotHeight(codepoint, fontType) <= 0;
     }
 
     /**

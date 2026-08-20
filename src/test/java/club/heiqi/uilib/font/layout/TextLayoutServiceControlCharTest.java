@@ -25,25 +25,37 @@ import club.heiqi.uilib.ui.text.TextContentMode;
 public class TextLayoutServiceControlCharTest {
 
     @Test
-    public void shouldMeasureTabAsFourSpacesInRawMode() {
+    public void shouldMeasureTabAsEightSpacesInRawMode() {
+        // CSS tab-size 默认 8 口径
         TextLayoutService service = createService();
         int tabWidth = service.getStringWidth("\t", TextContentMode.UILIB_RAW);
-        int fourSpaces = service.getStringWidth("    ", TextContentMode.UILIB_RAW);
+        int eightSpaces = service.getStringWidth("        ", TextContentMode.UILIB_RAW);
         Assert.assertTrue(tabWidth > 0);
-        Assert.assertEquals(fourSpaces, tabWidth);
+        Assert.assertEquals(eightSpaces, tabWidth);
     }
 
     @Test
     public void shouldMeasureZeroWidthControlsAsZeroEvenWhenCached() {
-        // 宽度表预置 1.0 后分类拦截仍返回 0（拦截优先于 cache）
-        int[] zeroWidth = { 0x0000, 0x0007, 0x001F, 0x007F, 0x0080, 0x009F, 0x00AD, 0x061C,
-                0x200B, 0x200C, 0x200D, 0x200E, 0x202A, 0x2060, 0x2066, 0x2069, 0xFEFF, 0xFE0F };
+        // 宽度表预置 1.0 后分类拦截仍返回 0（拦截优先于 cache）；
+        // Cc 类不在零宽清单（CSS3+ 渲染可见 glyph，单独断言）
+        int[] zeroWidth = { 0x00AD, 0x061C, 0x200B, 0x200C, 0x200D, 0x200E, 0x202A, 0x2060,
+                0x2066, 0x2069, 0xFEFF, 0xFE0F };
         TextLayoutService service = createService(zeroWidth);
         for (int codepoint : zeroWidth) {
             Assert.assertEquals("U+" + Integer.toHexString(codepoint) + " 应为 0 宽", 0,
                     service.getStringWidth(new String(Character.toChars(codepoint)),
                             TextContentMode.UILIB_RAW));
         }
+    }
+
+    @Test
+    public void shouldMeasureControlCharsViaControlPictures() {
+        // Cc 可见映射：测量走 Control Pictures 对应 glyph
+        TextLayoutService service = createService(0x2407);
+        int bell = service.getStringWidth("\u0007", TextContentMode.UILIB_RAW);
+        int bellPicture = service.getStringWidth("\u2407", TextContentMode.UILIB_RAW);
+        Assert.assertTrue(bell > 0);
+        Assert.assertEquals(bellPicture, bell);
     }
 
     @Test

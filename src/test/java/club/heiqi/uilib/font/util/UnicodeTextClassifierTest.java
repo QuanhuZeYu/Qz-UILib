@@ -120,9 +120,8 @@ public class UnicodeTextClassifierTest {
     }
 
     @Test
-    public void shouldClassifyInvisibleControls() {
-        int[] invisible = { 0x0000, 0x0001, 0x0008, 0x000E, 0x001F, 0x007F, 0x0080, 0x009F,
-                0xFEFF, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064 };
+    public void shouldClassifyInvisibleFormatControls() {
+        int[] invisible = { 0xFEFF, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x2065 };
         for (int cp : invisible) {
             Assert.assertEquals("U+" + Integer.toHexString(cp), CharClass.INVISIBLE,
                     UnicodeTextClassifier.classify(cp));
@@ -131,6 +130,24 @@ public class UnicodeTextClassifierTest {
         }
         // NEL(U+0085) 属换行类而非不可见剥离类
         Assert.assertFalse(UnicodeTextClassifier.isStripped(0x0085));
+    }
+
+    @Test
+    public void shouldClassifyControlCharsAsVisible() {
+        // CSS3+ 口径：Cc 类渲染可见 glyph（Control Pictures 映射），不再静默不可见
+        int[] controls = { 0x0000, 0x0001, 0x0007, 0x0008, 0x000E, 0x001F, 0x007F, 0x0080, 0x009F };
+        for (int cp : controls) {
+            Assert.assertEquals("U+" + Integer.toHexString(cp), CharClass.CONTROL,
+                    UnicodeTextClassifier.classify(cp));
+            Assert.assertTrue(UnicodeTextClassifier.isControl(cp));
+            Assert.assertFalse(UnicodeTextClassifier.isZeroWidth(cp));
+            Assert.assertFalse(UnicodeTextClassifier.isStripped(cp));
+        }
+        // 映射：C0 → U+2400+code；DEL → U+2421；C1 → U+FFFD
+        Assert.assertEquals(0x2407, UnicodeTextClassifier.controlPictureCodepoint(0x0007));
+        Assert.assertEquals(0x2400, UnicodeTextClassifier.controlPictureCodepoint(0x0000));
+        Assert.assertEquals(0x2421, UnicodeTextClassifier.controlPictureCodepoint(0x007F));
+        Assert.assertEquals(0xFFFD, UnicodeTextClassifier.controlPictureCodepoint(0x0080));
     }
 
     @Test
