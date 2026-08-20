@@ -15,6 +15,11 @@ import java.util.concurrent.locks.Lock;
 
 import club.heiqi.uilib.font.ActiveFontGeneration;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.LatexParser;
+import club.heiqi.uilib.font.latex.layout.MathBox;
+import club.heiqi.uilib.font.latex.layout.MathLayoutService;
+import club.heiqi.uilib.font.latex.layout.MathMetrics;
 import club.heiqi.uilib.font.FontRuntimeAccess;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
@@ -34,6 +39,9 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  * 文本布局与测量服务。
  */
 public class TextLayoutService {
+
+    /** 数学布局引擎（无状态，公式宽度度量与渲染共用）。 */
+    private static final MathLayoutService MATH_LAYOUT = new MathLayoutService();
 
     /** CCC（canonical combining class）反射入口：JDK8 sun.text.Normalizer；不可用时为 null（全部按上方标记处理）。 */
     private static final java.lang.reflect.Method CCC_METHOD = resolveCccMethod();
@@ -885,6 +893,12 @@ public class TextLayoutService {
     public double getSegmentWidth(TextSegment segment) {
         lockGeneration();
         try {
+            if (segment.isLatex()) {
+                TextStyle style = segment.getStyle();
+                int effectiveSize = style == null ? 0
+                        : style.resolveEffectiveFontSizePx((int) currentSettings().getCharSize());
+                return measureLatexWidth(segment.getLatexSource(), style, Math.max(1, effectiveSize));
+            }
             double width = 0.0D;
             String text = segment.getText();
             TextStyle style = segment.getStyle();
@@ -911,6 +925,11 @@ public class TextLayoutService {
     public double getSegmentWidth(TextSegment segment, int fontSizePx) {
         lockGeneration();
         try {
+            if (segment.isLatex()) {
+                TextStyle style = segment.getStyle();
+                int effectiveSize = style == null ? fontSizePx : style.resolveEffectiveFontSizePx(fontSizePx);
+                return measureLatexWidth(segment.getLatexSource(), style, Math.max(1, effectiveSize));
+            }
             double width = 0.0D;
             String text = segment.getText();
             TextStyle style = segment.getStyle();
@@ -924,6 +943,47 @@ public class TextLayoutService {
         } finally {
             unlockGeneration();
         }
+    }
+
+    /**
+     * 度量 LaTeX 公式宽度（解析 + 布局；渲染侧 {@code DefaultFontRendererAdapter} 同口径）。
+     */
+    private double measureLatexWidth(String latexSource, TextStyle style, int fontSizePx) {
+        List<LatexNode> nodes = LatexParser.parse(latexSource);
+        MathBox box = MATH_LAYOUT.layout(nodes, fontSizePx, createMathMetrics(style, fontSizePx));
+        return box.getWidth();
+    }
+
+    /**
+     * 构建数学布局度量注入（公式内文本与普通文本同口径：advance/ascent/descent 复用本服务）。
+     *
+     * @param style      段落样式（颜色/字体类别继承）
+     * @param baseSizePx 公式正文字号
+     * @return 度量实现
+     */
+    public MathMetrics createMathMetrics(final TextStyle style, final int baseSizePx) {
+        return new MathMetrics() {
+            @Override
+            public float advance(String text, float sizePx) {
+                double total = 0.0D;
+                for (int i = 0; i < text.length(); ) {
+                    int codepoint = text.codePointAt(i);
+                    total += resolveCodepointAdvance(codepoint, style, Math.max(1, (int) sizePx));
+                    i += Character.charCount(codepoint);
+                }
+                return (float) total;
+            }
+
+            @Override
+            public float ascent(float sizePx) {
+                return getAscent(Math.max(1, (int) sizePx));
+            }
+
+            @Override
+            public float descent(float sizePx) {
+                return getDescent(Math.max(1, (int) sizePx));
+            }
+        };
     }
 
     /**

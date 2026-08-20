@@ -86,6 +86,37 @@ public final class RichTextTagParser {
                     builder.append('\n');
                     continue;
                 }
+                if (!match.closing && "latex".equals(match.name)) {
+                    // 内容捕获型标签：flush 当前文本，捕获至 </latex>（内部不解析标签、
+                    // 只做实体解码、不折叠换行；未闭合宽容捕获到末尾）
+                    flush(builder, current, segments);
+                    StringBuilder latexBuilder = new StringBuilder();
+                    while (index < length) {
+                        char latexChar = text.charAt(index);
+                        if (latexChar == '<') {
+                            TagMatch inner = matchTag(text, index);
+                            if (inner != null && inner.closing && "latex".equals(inner.name)) {
+                                index = inner.endIndex;
+                                break;
+                            }
+                        }
+                        if (latexChar == '&') {
+                            int semicolon = text.indexOf(';', index + 1);
+                            if (semicolon > index + 1 && semicolon - index <= 8) {
+                                String decoded = decodeEntity(text.substring(index + 1, semicolon));
+                                if (decoded != null) {
+                                    latexBuilder.append(decoded);
+                                    index = semicolon + 1;
+                                    continue;
+                                }
+                            }
+                        }
+                        latexBuilder.append(latexChar);
+                        index++;
+                    }
+                    segments.add(TextSegment.forLatex(latexBuilder.toString(), current.copy()));
+                    continue;
+                }
                 if (match.closing) {
                     TextStyle after = popMatching(stack, match.name);
                     if (after != null) {
@@ -148,7 +179,11 @@ public final class RichTextTagParser {
         for (TextSegment segment : segments) {
             TextStyle next = segment.getStyle() == null ? current : segment.getStyle();
             appendStyleDiff(out, current, next);
-            out.append(escapeText(segment.getText()));
+            if (segment.isLatex()) {
+                out.append("<latex>").append(escapeText(segment.getLatexSource())).append("</latex>");
+            } else {
+                out.append(escapeText(segment.getText()));
+            }
             current = next.copy();
         }
         appendClosings(out, current);
@@ -217,7 +252,8 @@ public final class RichTextTagParser {
     private static boolean isKnownTagName(String name) {
         return "color".equals(name) || "b".equals(name) || "i".equals(name) || "u".equals(name)
                 || "s".equals(name) || "br".equals(name) || "size".equals(name) || "mark".equals(name)
-                || "sup".equals(name) || "sub".equals(name) || "spacing".equals(name) || "a".equals(name);
+                || "sup".equals(name) || "sub".equals(name) || "spacing".equals(name) || "a".equals(name)
+                || "latex".equals(name);
     }
 
     private static String decodeEntity(String name) {

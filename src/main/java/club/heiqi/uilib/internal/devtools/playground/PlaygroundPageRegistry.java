@@ -8,6 +8,7 @@ import club.heiqi.uilib.internal.devtools.playground.pages.HomePage;
 import club.heiqi.uilib.internal.devtools.playground.pages.OverlayPage;
 import club.heiqi.uilib.internal.devtools.playground.pages.ReactivePage;
 import club.heiqi.uilib.internal.devtools.playground.pages.ControlCharPage;
+import club.heiqi.uilib.internal.devtools.playground.pages.LatexPage;
 import club.heiqi.uilib.internal.devtools.playground.pages.RichTextPage;
 import club.heiqi.uilib.internal.devtools.playground.pages.TextAreaPage;
 import club.heiqi.uilib.internal.devtools.playground.pages.TextInputPage;
@@ -76,6 +77,7 @@ public final class PlaygroundPageRegistry {
         pages.add(new ReactivePage());
         pages.add(new RichTextPage());
         pages.add(new ControlCharPage());
+        pages.add(new LatexPage());
         return Collections.unmodifiableList(pages);
     }
 }
