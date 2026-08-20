@@ -237,14 +237,14 @@ public final class MathLayoutService {
             return base;
         }
 
-        // limits 算子（\lim \max \min …）：上下限恒上下堆叠（BigOperatorAtom limits 路径）
-        if (baseNode.getKind() == LatexNode.Kind.ATOM
-                && ((LatexAtom) baseNode).getOperatorMode() == LatexAtom.OperatorMode.LIMITS_OPERATOR) {
-            return layoutLimits(base, sup, sub, size);
-        }
-
+        // 大运算符（\sum \int \prod …）：TeX SCRIPT_LIMITS 口径，行内也上下堆叠（limits），
+        // 符号轴居中 + bigop kerns + 尾部 MEDMUSKIP（BigOperatorAtom limits 路径）。
+        // 函数名（\lim \max \min …）为 SCRIPT_NORMAL：行内走普通脚本（下标右下），不再堆叠。
         boolean bigOperator = baseNode.getKind() == LatexNode.Kind.ATOM
                 && ((LatexAtom) baseNode).getOperatorMode() == LatexAtom.OperatorMode.BIG_OPERATOR;
+        if (bigOperator) {
+            return layoutLimits(base, sup, sub, size, m);
+        }
         boolean singleChar = baseNode.getKind() == LatexNode.Kind.ATOM
                 && ((LatexAtom) baseNode).getText()
                         .codePointCount(0, ((LatexAtom) baseNode).getText().length()) == 1;
@@ -255,17 +255,11 @@ public final class MathLayoutService {
         float supDrop = MathConstants.SCRIPT_SUP_DROP_EM * size;
         float subDrop = MathConstants.SCRIPT_SUB_DROP_EM * size;
 
-        // 脚本放置参照盒 + 基底字形相对原基线的上移量（大运算符符号按数学轴居中）
+        // 脚本放置参照盒（大运算符已走 limits 路径，此处不再轴居中）
         float baseShift = 0.0F;
         float refHeight = base.getHeight();
         float refDepth = base.getDepth();
-        if (bigOperator) {
-            float centerUp = (base.getHeight() - base.getDepth()) / 2.0F;
-            float axis = MathConstants.AXIS_HEIGHT_EM * size;
-            baseShift = centerUp - axis;
-            refHeight = base.getHeight() + baseShift;
-            refDepth = base.getDepth() - baseShift;
-        } else if (baseNode.getKind() == LatexNode.Kind.ACCENT) {
+        if (baseNode.getKind() == LatexNode.Kind.ACCENT) {
             // TeX ScriptsAtom 特殊分支：重音基底按裸基底（cramped）度量
             MathBox bare = layoutNode(((LatexAccent) baseNode).getBase(), size, m, true);
             refHeight = bare.getHeight();
@@ -312,7 +306,6 @@ public final class MathLayoutService {
             subY = shiftDown;
         }
 
-        float scriptSpace = MathConstants.SCRIPT_SPACE_EM * size;
         float supWidth = sup == null ? 0.0F : sup.getWidth();
         float subWidth = sub == null ? 0.0F : sub.getWidth();
         float scriptWidth = Math.max(supWidth, subWidth);
@@ -325,15 +318,17 @@ public final class MathLayoutService {
             }
         }
 
+        // 脚本水平位置（TeX ScriptsAtom）：上/下标左缘紧贴基底右缘（+斜体校正），
+        // scriptspace 加在脚本盒内部而非与基底之间，故此处不额外加
         Builder builder = new Builder();
         builder.addBox(base, 0.0F, -baseShift, 1.0F);
         if (sup != null) {
-            builder.addBox(sup, base.getWidth() + scriptSpace + supShift, supY, MathConstants.SCRIPT_SCALE);
+            builder.addBox(sup, base.getWidth() + supShift, supY, MathConstants.SCRIPT_SCALE);
         }
         if (sub != null) {
-            builder.addBox(sub, base.getWidth() + scriptSpace, subY, MathConstants.SCRIPT_SCALE);
+            builder.addBox(sub, base.getWidth(), subY, MathConstants.SCRIPT_SCALE);
         }
-        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptSpace + scriptWidth : 0.0F) + supShift;
+        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptWidth : 0.0F) + supShift;
         builder.height = Math.max(builder.height, refHeight);
         builder.depth = Math.max(builder.depth, refDepth);
         if (sup != null) {
@@ -346,11 +341,23 @@ public final class MathLayoutService {
     }
 
     /**
-     * limits 算子（\lim \max \min …）上下限堆叠：TeX BigOperatorAtom limits 路径——
-     * 上隙 max(bigop1, bigop3 − sup.depth)、下隙 max(bigop2, bigop4 − sub.height)，外沿 bigop5 留白。
+     * 大运算符 limits 上下堆叠：TeX BigOperatorAtom limits 路径——
+     * 符号视觉中心按 ink 锚定数学轴（ScriptsAtom big-op 分支 setShift 语义），
+     * 上隙 max(bigop1, bigop3 − sup.depth)、下隙 max(bigop2, bigop4 − sub.height)，
+     * 外沿 bigop5 留白、上下限水平居中、盒尾补 MEDMUSKIP（deltaSymbol）。
      */
-    private MathBox layoutLimits(MathBox base, MathBox sup, MathBox sub, float size) {
+    private MathBox layoutLimits(MathBox base, MathBox sup, MathBox sub, float size, MathMetrics m) {
         Builder builder = new Builder();
+        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        // ink 锚定（向上为正）：中心在 inkCenterUp，总高 inkH；盒度量回退保持旧行为
+        String baseText = base.getGlyphs().isEmpty() ? null : base.getGlyphs().get(0).getText();
+        float inkCenterUp = baseText == null ? (base.getHeight() - base.getDepth()) / 2.0F
+                : m.inkCenterOffsetY(baseText, size);
+        float inkH = baseText == null ? base.getTotalHeight() : m.inkHeight(baseText, size);
+        float baseShift = inkCenterUp - axis;
+        // 轴居中后相对新基线的有效度量：顶 = inkH/2 + axis、底 = inkH/2 − axis
+        float refHeight = inkH / 2.0F + axis;
+        float refDepth = inkH / 2.0F - axis;
         float contentWidth = base.getWidth();
         if (sup != null) {
             contentWidth = Math.max(contentWidth, sup.getWidth());
@@ -358,25 +365,26 @@ public final class MathLayoutService {
         if (sub != null) {
             contentWidth = Math.max(contentWidth, sub.getWidth());
         }
-        builder.addBox(base, (contentWidth - base.getWidth()) / 2.0F, 0.0F, 1.0F);
-        float height = base.getHeight();
-        float depth = base.getDepth();
+        builder.addBox(base, (contentWidth - base.getWidth()) / 2.0F, -baseShift, 1.0F);
+        float height = refHeight;
+        float depth = refDepth;
         if (sup != null) {
             float overKern = Math.max(MathConstants.BIGOP1_EM * size,
                     MathConstants.BIGOP3_EM * size - sup.getDepth());
-            float supY = -(base.getHeight() + overKern + sup.getDepth());
+            float supY = -(refHeight + overKern + sup.getDepth());
             builder.addBox(sup, (contentWidth - sup.getWidth()) / 2.0F, supY, MathConstants.SCRIPT_SCALE);
-            height = MathConstants.BIGOP5_EM * size + sup.getTotalHeight() + overKern + base.getHeight();
+            height = MathConstants.BIGOP5_EM * size + sup.getTotalHeight() + overKern + refHeight;
         }
         if (sub != null) {
             float underKern = Math.max(MathConstants.BIGOP2_EM * size,
                     MathConstants.BIGOP4_EM * size - sub.getHeight());
-            float subY = base.getDepth() + underKern + sub.getHeight();
+            float subY = refDepth + underKern + sub.getHeight();
             builder.addBox(sub, (contentWidth - sub.getWidth()) / 2.0F, subY, MathConstants.SCRIPT_SCALE);
-            depth = sub.getTotalHeight() + underKern + base.getDepth() + MathConstants.BIGOP5_EM * size;
+            depth = sub.getTotalHeight() + underKern + refDepth + MathConstants.BIGOP5_EM * size;
         }
         builder.height = height;
         builder.depth = depth;
+        builder.width = contentWidth + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * size;
         return builder.toBox();
     }
 
@@ -436,28 +444,39 @@ public final class MathLayoutService {
         // 被开方内容用 cramped style（TeX NthRoot）
         MathBox radicand = layoutNode(node.getRadicand(), size, m, true);
         float drt = MathConstants.RULE_THICKNESS_EM * size;
-        // TeX rule 11（text 口径）：clr = θ + θ/4（显示样式才用 xHeight/4）
+        // TeX NthRoot（text 口径）：clr = θ + θ/4，再经根号变体阶梯余量对半补偿——
+        // DelimiterFactory 选最小 ≥ totalH+clr 的 radical 变体，depth 超出部分的一半补入 clr
+        // （JLaTeXMath NthRoot delta/2；小根号 clr 由 0.05em 提升到 ≈0.29em，横线不再贴内容）。
         float clr = drt + Math.abs(drt) / 4.0F;
-        float totalH = radicand.getHeight() + radicand.getDepth() + clr + drt;
-
-        // 横线位置约束（关键）：clr 钉死 1.25θ，横线中心 = 内容顶 + clr + θ/2，
-        // 只依赖内容几何与 TeX 常数——不做 delta/2 补偿（那会把根号字形盒度量混进横线位置，
-        // 且分母 ascent/分子 total 口径不一致使横线随内容斜率漂移）。
+        float totalH = radicand.getHeight() + radicand.getDepth();
+        float target = totalH + clr;
+        float variantDepth = MathConstants.SQRT_VARIANT_DEPTH_EM[MathConstants.SQRT_VARIANT_DEPTH_EM.length - 1]
+                * size;
+        for (float depthEm : MathConstants.SQRT_VARIANT_DEPTH_EM) {
+            variantDepth = depthEm * size;
+            if (variantDepth >= target) {
+                break;
+            }
+        }
+        clr += (variantDepth - target) / 2.0F;
+        // 横线：顶 = 内容顶 + clr + θ，只依赖内容几何与 TeX 常数
         float barTopAbove = radicand.getHeight() + clr + drt;
         float mu = size / 18.0F;
 
-        // 根号字形无阶梯变体：整字缩放覆盖目标高（TeX 取足够大变体的近似），至少自然尺寸；
-        // 字形盒顶与横线顶对齐，缩放只影响字形本身，不影响横线位置。
+        // 根号字形：整字缩放覆盖（内容 + clr + θ）总高（TeX 阶梯变体的连续近似），至少自然
+        // 尺寸；字形顶与横线顶对齐（√ 勾顶部接横线），缩放只影响字形本身，不影响横线位置。
         float nativeTotal = m.ascent(size) + m.descent(size);
-        float radicalScale = nativeTotal <= 0.0F ? 1.0F : Math.max(1.0F, totalH / nativeTotal);
+        float targetTotal = totalH + clr + drt;
+        float radicalScale = nativeTotal <= 0.0F ? 1.0F : Math.max(1.0F, targetTotal / nativeTotal);
         float radicalSize = size * radicalScale;
         float radicalWidth = m.advance(RADICAL, radicalSize);
         float radicalAscent = m.ascent(radicalSize);
         float radicalDescent = m.descent(radicalSize);
 
-        // 根指数（可选）：水平 −10mu 负 kern 与垂直 0.55×总高抬升（TeX NthRoot）
+        // 根指数（可选）：scriptscript 字号（TeX env.rootStyle()），水平 −10mu 负 kern 与
+        // 垂直 0.55×总高抬升（TeX NthRoot）
         MathBox index = node.getIndex() == null ? null
-                : layoutNode(node.getIndex(), size * MathConstants.SCRIPT_SCALE, m);
+                : layoutNode(node.getIndex(), size * MathConstants.SCRIPT_SCRIPT_SCALE, m);
         float indexLeft = 0.0F;
         float radicalLeft = 0.0F;
         if (index != null) {
@@ -471,8 +490,8 @@ public final class MathLayoutService {
         }
 
         Builder builder = new Builder();
-        // 根号字形：盒顶对齐横线顶（radicalY = 横线顶 − 字形 ascent）
-        float radicalY = barTopAbove - radicalAscent;
+        // 根号字形：字形顶对齐横线顶（字形顶 = 基线 − ascent = bar 顶）
+        float radicalY = radicalAscent - barTopAbove;
         builder.addGlyph(RADICAL, radicalLeft, radicalY, radicalScale);
         // 横线：中心 = 内容顶 + clr + drt/2；左端对齐根号字形 ink 右缘（勾的视觉终点，
         // 而非 advance——ink 窄于 advance 时横线左端悬空），右端覆盖被开方内容视觉右缘 + 1mu
@@ -487,7 +506,7 @@ public final class MathLayoutService {
             // TeX NthRoot 精确语义：r.shift = sqrtBox.depth − r.depth − 0.55×(sqrtBox 总高)
             float indexY = depth - index.getDepth()
                     - MathConstants.SQRT_INDEX_FACTOR * (height + depth);
-            builder.addBox(index, indexLeft, indexY, MathConstants.SCRIPT_SCALE);
+            builder.addBox(index, indexLeft, indexY, MathConstants.SCRIPT_SCRIPT_SCALE);
             height = Math.max(height, -(indexY - index.getHeight()));
             depth = Math.max(depth, indexY + index.getDepth());
         }
@@ -718,15 +737,13 @@ public final class MathLayoutService {
             return builder.toBox();
         }
         String accentText = node.getAccentText();
-        float scriptSize = size * MathConstants.SCRIPT_SCALE;
-        // TeX AccentedAtom（acc=false 路径）：重音按 script 字号；
-        // delta = min(base.h, xHeight)，重音基线 = delta − base.h（负 kern 语义）
-        float delta = Math.min(base.getHeight(), m.xHeight(size));
-        float accentY = delta - base.getHeight();
-        float accentWidth = m.advance(accentText, scriptSize);
-        builder.addGlyph(accentText, (base.getWidth() - accentWidth) / 2.0F, accentY,
-                MathConstants.SCRIPT_SCALE);
-        builder.height = m.ascent(scriptSize) - delta + base.getHeight();
+        // TeX AccentedAtom（acc=false 路径，hat/bar/vec/dot/tilde）：重音按正文字号，
+        // vBox [accent][strut(−base.h)][base] 堆叠 → 重音字形底与基底基线重合，
+        // 字形自身带上方偏移（CM accent 字形设计，JLaTeXMath ref-boxes 取证）。
+        // 盒高 = 重音字形盒高（base 顶低于重音顶时由重音决定），深 = 基底深。
+        float accentWidth = m.advance(accentText, size);
+        builder.addGlyph(accentText, (base.getWidth() - accentWidth) / 2.0F, 0.0F, 1.0F);
+        builder.height = m.ascent(size);
         builder.depth = base.getDepth();
         return builder.toBox();
     }

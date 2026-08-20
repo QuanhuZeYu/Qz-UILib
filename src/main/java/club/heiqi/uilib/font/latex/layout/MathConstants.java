@@ -55,8 +55,11 @@ public final class MathConstants {
     public static final float SUP_DROP_EM = 0.386108F;
     /** 下标基准下沉 = base 深 + subdrop（em）。 */
     public static final float SUB_DROP_EM = 0.05F;
-    /** scriptspace（em）：上/下标与主体的水平空隙（TeX 0.5pt = 0.05em）。 */
+    /** scriptspace（em）：TeX 0.5pt = 0.05em（加在上标盒内部，不改变上标与主体间隙）。 */
     public static final float SCRIPT_SPACE_EM = 0.05F;
+
+    /** 大运算符 limits 尾部间距（em）= TeX MEDMUSKIP（ScriptsAtom big-op 分支 deltaSymbol）。 */
+    public static final float BIG_OPERATOR_TAIL_SPACE_EM = 0.2222F;
 
     // ==================== 大运算符 limits 参数（BigOperatorAtom limits 路径） ====================
 
@@ -83,6 +86,12 @@ public final class MathConstants {
 
     /** 根指数相对根号总高的抬升因子（TeX NthRoot FACTOR）。 */
     public static final float SQRT_INDEX_FACTOR = 0.55F;
+
+    /**
+     * 根号字形变体阶梯（em，cmex radical 变体深度：最小变体 0.96 → 更大 1.16/1.76/2.36）。
+     * TeX DelimiterFactory 选最小 ≥ 目标高度的档位，多余一半补入 clr（NthRoot delta/2）。
+     */
+    public static final float[] SQRT_VARIANT_DEPTH_EM = {0.96F, 1.16F, 1.76F, 2.36F};
 
     /** 根指数与根号的负 kern（mu，TeX NthRoot -10mu）。 */
     public static final float SQRT_INDEX_NEG_KERN_MU = 10.0F;

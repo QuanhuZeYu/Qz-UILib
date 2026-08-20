@@ -992,9 +992,10 @@ public class TextLayoutService {
 
             @Override
             public float italicCorrection(String text, float sizePx) {
-                // 数学变量斜体走几何斜切（斜角 tan ≈ 0.25）：视觉右倾 = 斜切角 × x-height，
-                // 上标右移此量避开斜体笔画（TeX Char.italic 的斜切近似）。
-                return 0.25F * getXHeight(Math.max(1, (int) sizePx));
+                // TeX 上标斜体校正 = 字体表 Char.italic（cmmi 数学变量几乎全 0：x^2/e^{iπ}
+                // 的脚本紧贴 advance，JLaTeXMath ref-boxes 取证）；我们无 italic 表，按 0 跟随
+                // 标准。斜体笔画覆盖由 italicOverhang 承担（规则线端点），不位移脚本。
+                return 0.0F;
             }
 
             @Override
@@ -1015,6 +1016,32 @@ public class TextLayoutService {
                     short ink = inks[codepoint];
                     if (ink <= 0) {
                         return advance(text, sizePx);
+                    }
+                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
+                    return (float) ink * size / (float) awt;
+                } finally {
+                    unlockGeneration();
+                }
+            }
+
+            @Override
+            public float inkHeight(String text, float sizePx) {
+                // 单字符 ink 高（表数据）：大运算符 limits 上下限锚定符号 ink 顶/底而非行盒
+                if (text.codePointCount(0, text.length()) != 1) {
+                    return ascent(sizePx) + descent(sizePx);
+                }
+                int codepoint = text.codePointAt(0);
+                int size = Math.max(1, (int) sizePx);
+                lockGeneration();
+                try {
+                    GlyphRuntimeTables tables = currentRuntimeTables();
+                    if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+                        return ascent(sizePx) + descent(sizePx);
+                    }
+                    short[] inks = tables.inkHeightArray(style.getFontType());
+                    short ink = inks[codepoint];
+                    if (ink <= 0) {
+                        return ascent(sizePx) + descent(sizePx);
                     }
                     int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
                     return (float) ink * size / (float) awt;

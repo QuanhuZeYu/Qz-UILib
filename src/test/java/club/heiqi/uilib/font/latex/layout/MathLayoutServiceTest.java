@@ -124,10 +124,11 @@ public class MathLayoutServiceTest {
         Assert.assertEquals("2", supGlyph.getText());
         Assert.assertEquals(expectedSupY, supGlyph.getY(), EPS);
         Assert.assertEquals(0.7F, supGlyph.getSizeScale(), EPS);
-        // 斜体校正：单字符变量基底时上标右移 italicCorrection（0.25×xHeight = 0.1125S）
+        // 斜体校正：单字符变量基底时上标右移 italicCorrection（0.25×xHeight = 0.1125S）；
+        // TeX ScriptsAtom：scriptspace 加在上标盒内部，上标左缘紧贴基底右缘（无 scriptspace 间隙）
         float italicCorrection = 0.25F * 0.45F * S;
-        Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S + italicCorrection, supGlyph.getX(), EPS);
-        Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S + 0.35F * S + italicCorrection,
+        Assert.assertEquals(0.5F * S + italicCorrection, supGlyph.getX(), EPS);
+        Assert.assertEquals(0.5F * S + 0.35F * S + italicCorrection,
                 box.getWidth(), EPS);
         Assert.assertEquals(0.56F * S - expectedSupY, box.getHeight(), EPS);
     }
@@ -162,80 +163,80 @@ public class MathLayoutServiceTest {
         Assert.assertEquals("i", subGlyph.getText());
         Assert.assertEquals(shiftDown, subGlyph.getY(), EPS);
         Assert.assertEquals(0.7F, subGlyph.getSizeScale(), EPS);
-        Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S + 0.35F * S, box.getWidth(), EPS);
+        Assert.assertEquals(0.5F * S + 0.35F * S, box.getWidth(), EPS);
         Assert.assertEquals(shiftDown + 0.14F * S, box.getDepth(), EPS);
     }
 
     @Test
-    public void shouldPlaceBigOperatorScriptsBeside() {
-        // \sum 在 text 口径：符号轴居中 + 上下标侧挂（SCRIPT_NORMAL），不再是上下堆叠
+    public void shouldStackBigOperatorLimits() {
+        // \sum 行内也是 limits 上下堆叠（TeX SCRIPT_LIMITS）：符号 ink 中心锚定数学轴，
+        // 上隙 max(bigop1, bigop3 − sup.d)、下隙 max(bigop2, bigop4 − sub.h)，
+        // 外沿 bigop5、上下限水平居中、盒尾补 MEDMUSKIP（BigOperatorAtom limits 路径）
         MathBox box = layout("\\sum_{i=1}^{n}");
         // sub = i=1：3 码点 × 0.35S + 2 个 thick 间距（5/18 × 0.7S）；sup = n：0.35S；base = ∑：0.5S
         float subWidth = 3.0F * 0.35F * S + 2.0F * (MathConstants.THICK_MU / 18.0F) * 0.7F * S;
-        // 轴居中：centerUp=(0.8S−0.2S)/2=0.3S，axis=0.25S → baseShift=0.05S；refH=0.85S refD=0.15S
+        // 轴居中（fake 回退盒度量）：inkCenter=(0.8S−0.2S)/2=0.3S，inkH=1.0S →
+        // baseShift=0.05S；refH=inkH/2+axis=0.75S，refD=inkH/2−axis=0.25S
         float baseShift = 0.3F * S - MathConstants.AXIS_HEIGHT_EM * S;
-        float refHeight = 0.8F * S + baseShift;
-        float refDepth = 0.2F * S - baseShift;
-        // supDrop/subDrop 按 script 缩放
-        float supDrop = MathConstants.SUP_DROP_EM * MathConstants.SCRIPT_SCALE * S;
-        float subDrop = MathConstants.SUB_DROP_EM * MathConstants.SCRIPT_SCALE * S;
-        float drt = MathConstants.RULE_THICKNESS_EM * S;
-        float xHeight = 0.45F * S;
-        float shiftUp = Math.max(Math.max(refHeight - supDrop, MathConstants.SUP2_EM * S),
-                0.14F * S + xHeight / 4.0F);
-        float shiftDown = Math.max(refDepth + subDrop, MathConstants.SUB2_EM * S);
-        float interSpace = shiftUp - 0.14F * S + shiftDown - 0.56F * S;
-        if (interSpace < 4.0F * drt) {
-            shiftUp += 4.0F * drt - interSpace;
-        }
-        float supY = -shiftUp;
-        float subY = shiftDown;
+        float refHeight = 0.5F * S + MathConstants.AXIS_HEIGHT_EM * S;
+        float refDepth = 0.5F * S - MathConstants.AXIS_HEIGHT_EM * S;
+        float overKern = Math.max(MathConstants.BIGOP1_EM * S,
+                MathConstants.BIGOP3_EM * S - 0.14F * S);
+        float underKern = Math.max(MathConstants.BIGOP2_EM * S,
+                MathConstants.BIGOP4_EM * S - 0.56F * S);
+        float supY = -(refHeight + overKern + 0.14F * S);
+        float subY = refDepth + underKern + 0.56F * S;
+        float contentWidth = Math.max(Math.max(0.5F * S, 0.35F * S), subWidth);
         boolean foundSup = false;
         boolean foundSub = false;
         boolean foundBase = false;
         for (GlyphElem glyph : box.getGlyphs()) {
             if ("n".equals(glyph.getText())) {
                 Assert.assertEquals(supY, glyph.getY(), EPS);
-                Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S, glyph.getX(), EPS);
+                Assert.assertEquals((contentWidth - 0.35F * S) / 2.0F, glyph.getX(), EPS);
                 foundSup = true;
             }
             if ("i".equals(glyph.getText())) {
                 Assert.assertEquals(subY, glyph.getY(), EPS);
-                Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S, glyph.getX(), EPS);
+                Assert.assertEquals((contentWidth - subWidth) / 2.0F, glyph.getX(), EPS);
                 foundSub = true;
             }
             if ("\u2211".equals(glyph.getText())) {
                 Assert.assertEquals(-baseShift, glyph.getY(), EPS);
-                Assert.assertEquals(0.0F, glyph.getX(), EPS);
+                Assert.assertEquals((contentWidth - 0.5F * S) / 2.0F, glyph.getX(), EPS);
                 foundBase = true;
             }
         }
         Assert.assertTrue("应包含上标 n", foundSup);
         Assert.assertTrue("应包含下标 i", foundSub);
         Assert.assertTrue("应包含轴居中的 ∑", foundBase);
-        Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S + subWidth, box.getWidth(), EPS);
+        Assert.assertEquals(contentWidth + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * S, box.getWidth(), EPS);
+        Assert.assertEquals(MathConstants.BIGOP5_EM * S + 0.7F * S + overKern + refHeight, box.getHeight(), EPS);
+        Assert.assertEquals(0.7F * S + underKern + refDepth + MathConstants.BIGOP5_EM * S, box.getDepth(), EPS);
     }
 
     @Test
-    public void shouldStackLimitsForLimOperator() {
+    public void shouldPlaceFunctionNameScriptAsSubscript() {
         MathBox box = layout("\\lim_{x}");
-        // \lim = limits 算子：恒上下堆叠（BigOperatorAtom limits 路径，下隙 max(bigop2, bigop4 − sub.h)）
+        // \lim 等函数名是 SCRIPT_NORMAL（非 SCRIPT_LIMITS）：行内走普通 ScriptsAtom，
+        // 下标右下（非单字符基底：shiftDown = depth + subdrop，下限 max(sub1, sub.h − 4·xh/5)）
+        float subDrop = MathConstants.SUB_DROP_EM * MathConstants.SCRIPT_SCALE * S;
         float subHeight = 0.56F * S;
-        float underKern = Math.max(MathConstants.BIGOP2_EM * S,
-                MathConstants.BIGOP4_EM * S - subHeight);
-        float subY = 0.2F * S + underKern + subHeight;
-        float expectedDepth = 0.7F * S + underKern + 0.2F * S + MathConstants.BIGOP5_EM * S;
+        float xHeight = 0.45F * S;
+        float subY = Math.max(Math.max(0.2F * S + subDrop, MathConstants.SUB1_EM * S),
+                subHeight - 4.0F * xHeight / 5.0F);
         boolean foundSub = false;
         for (GlyphElem glyph : box.getGlyphs()) {
             if ("x".equals(glyph.getText())) {
                 Assert.assertEquals(subY, glyph.getY(), EPS);
-                Assert.assertEquals((1.5F * S - 0.35F * S) / 2.0F, glyph.getX(), EPS);
+                // TeX ScriptsAtom：下标左缘紧贴基底右缘（无 scriptspace）
+                Assert.assertEquals(1.5F * S, glyph.getX(), EPS);
                 foundSub = true;
             }
         }
-        Assert.assertTrue("\\lim 应包含下方 x", foundSub);
+        Assert.assertTrue("\\lim 应包含右下 x", foundSub);
         Assert.assertEquals(0.8F * S, box.getHeight(), EPS);
-        Assert.assertEquals(expectedDepth, box.getDepth(), EPS);
+        Assert.assertEquals(subY + 0.14F * S, box.getDepth(), EPS);
     }
 
     // ==================== 分数 ====================
@@ -333,16 +334,19 @@ public class MathLayoutServiceTest {
     @Test
     public void shouldLayoutSqrt() {
         MathBox box = layout("\\sqrt{x}");
-        // TeX NthRoot（text 口径）：clr = θ + θ/4 恒定；横线中心 = 内容顶 + clr + θ/2——
-        // 只依赖内容几何与 TeX 常数，不做 delta/2 补偿（横线位置约束锚定）
+        // TeX NthRoot（text 口径）：clr = θ + θ/4，再经变体阶梯 delta/2 补偿——
+        // 变体选最小 ≥ totalH+clr 档位（cmex 最小变体深度 0.96em），多余一半补入 clr
         float drt = MathConstants.RULE_THICKNESS_EM * S;
-        float clr = drt + drt / 4.0F;
+        float clr0 = drt + drt / 4.0F;
+        float totalH = 1.0F * S;
+        float variantDepth = MathConstants.SQRT_VARIANT_DEPTH_EM[1] * S;
+        float clr = clr0 + (variantDepth - (totalH + clr0)) / 2.0F;
         float barTop = 0.8F * S + clr + drt;
-        float totalH = 1.0F * S + clr + drt;
-        float radicalScale = Math.max(1.0F, totalH / (1.0F * S));
+        float radicalScale = Math.max(1.0F, (totalH + clr + drt) / (1.0F * S));
         float radicalAscent = 0.8F * radicalScale * S;
         float radicalDescent = 0.2F * radicalScale * S;
-        float radicalY = barTop - radicalAscent;
+        // 字形顶对齐横线顶：radicalY = ascent − barTop
+        float radicalY = radicalAscent - barTop;
         float radicalWidth = 0.5F * radicalScale * S;
         float mu = S / 18.0F;
         Assert.assertEquals(1, box.getRules().size());
@@ -369,22 +373,26 @@ public class MathLayoutServiceTest {
     public void shouldLayoutSqrtWithIndex() {
         MathBox box = layout("\\sqrt[3]{x}");
         float drt = MathConstants.RULE_THICKNESS_EM * S;
-        float clr = drt + drt / 4.0F;
-        float totalH = 1.0F * S + clr + drt;
-        float radicalScale = Math.max(1.0F, totalH / (1.0F * S));
+        float clr0 = drt + drt / 4.0F;
+        float totalH = 1.0F * S;
+        float variantDepth = MathConstants.SQRT_VARIANT_DEPTH_EM[1] * S;
+        float clr = clr0 + (variantDepth - (totalH + clr0)) / 2.0F;
+        float radicalScale = Math.max(1.0F, (totalH + clr + drt) / (1.0F * S));
         float radicalDescent = 0.2F * radicalScale * S;
         float barTop = 0.8F * S + clr + drt;
-        float radicalY = barTop - 0.8F * radicalScale * S;
+        float radicalY = 0.8F * radicalScale * S - barTop;
         float height = barTop;
         float depth = Math.max(0.2F * S, radicalY + radicalDescent);
         // TeX NthRoot：指数基线 = sqrtBox.depth − index.depth − 0.55×(sqrtBox 总高)
-        float indexY = depth - 0.14F * S - MathConstants.SQRT_INDEX_FACTOR * (height + depth);
-        // 水平：10mu 负 kern，index 左缘 = max(0, 10mu − index 宽)
-        float indexLeft = Math.max(0.0F, MathConstants.SQRT_INDEX_NEG_KERN_MU * S / 18.0F - 0.35F * S);
+        float indexY = depth - 0.1F * S - MathConstants.SQRT_INDEX_FACTOR * (height + depth);
+        // 水平：10mu 负 kern（scriptscript 字号下 index 宽 = 0.5×0.5S），
+        // index 左缘 = max(0, 10mu − index 宽)
+        float indexLeft = Math.max(0.0F, MathConstants.SQRT_INDEX_NEG_KERN_MU * S / 18.0F - 0.25F * S);
         boolean foundIndex = false;
         for (GlyphElem glyph : box.getGlyphs()) {
             if ("3".equals(glyph.getText())) {
-                Assert.assertEquals(0.7F, glyph.getSizeScale(), EPS);
+                // TeX env.rootStyle()：根指数按 scriptscript（0.5）字号
+                Assert.assertEquals(0.5F, glyph.getSizeScale(), EPS);
                 Assert.assertEquals(indexY, glyph.getY(), EPS);
                 Assert.assertEquals(indexLeft, glyph.getX(), EPS);
                 foundIndex = true;
@@ -518,22 +526,21 @@ public class MathLayoutServiceTest {
     @Test
     public void shouldLayoutAccentOverlay() {
         MathBox box = layout("\\hat x");
-        // TeX AccentedAtom（acc=false 路径）：重音按 script 字号，delta = min(base.h, xHeight)，
-        // 重音基线 = delta − base.h（负 kern 语义）
-        float delta = Math.min(0.8F * S, 0.45F * S);
-        float accentY = delta - 0.8F * S;
+        // TeX AccentedAtom（acc=false 路径）：重音按正文字号，vBox [accent][strut(−base.h)][base]
+        // 堆叠 → 重音字形底与基底基线重合（同基线），字形自身带上方偏移（CM accent 字形设计）
         boolean foundAccent = false;
         for (GlyphElem glyph : box.getGlyphs()) {
             if ("\u0302".equals(glyph.getText())) {
-                Assert.assertEquals(accentY, glyph.getY(), EPS);
-                Assert.assertEquals(0.7F, glyph.getSizeScale(), EPS);
-                // fake 度量下重音宽 = 0.35S → x = (base.w − accent.w)/2 = 0.075S
-                Assert.assertEquals((0.5F * S - 0.35F * S) / 2.0F, glyph.getX(), EPS);
+                Assert.assertEquals(0.0F, glyph.getY(), EPS);
+                Assert.assertEquals(1.0F, glyph.getSizeScale(), EPS);
+                // fake 度量下重音宽 = 0.5S → x = (base.w − accent.w)/2 = 0
+                Assert.assertEquals((0.5F * S - 0.5F * S) / 2.0F, glyph.getX(), EPS);
                 foundAccent = true;
             }
         }
         Assert.assertTrue(foundAccent);
-        Assert.assertEquals(0.7F * 0.8F * S - delta + 0.8F * S, box.getHeight(), EPS);
+        Assert.assertEquals(0.8F * S, box.getHeight(), EPS);
+        Assert.assertEquals(0.2F * S, box.getDepth(), EPS);
     }
 
     @Test

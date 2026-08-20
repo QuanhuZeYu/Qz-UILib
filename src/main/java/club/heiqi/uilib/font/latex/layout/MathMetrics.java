@@ -92,4 +92,19 @@ public interface MathMetrics {
     default float inkCenterOffsetY(String text, float sizePx) {
         return (ascent(sizePx) - descent(sizePx)) / 2.0F;
     }
+
+    /**
+     * 字形 ink 高度（px）：单字符字形的可见墨水总高（顶部到墨水底）。
+     *
+     * <p>大运算符（\sum \int 等）limits 上下标以符号 ink 顶/底为锚：ink 高与字体盒
+     * ascent 差异显著（如 cmex 大运算符字形全在基线以下），按盒度量会让上下限位置
+     * 随行高漂移。默认实现回退字体盒总高（mock 与无 ink 数据场景，旧行为不变）。</p>
+     *
+     * @param text   单字符文本（布局侧仅对大运算符符号调用）
+     * @param sizePx 字号
+     * @return ink 总高（px）
+     */
+    default float inkHeight(String text, float sizePx) {
+        return ascent(sizePx) + descent(sizePx);
+    }
 }
