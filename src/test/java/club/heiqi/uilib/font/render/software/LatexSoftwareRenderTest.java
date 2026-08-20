@@ -97,6 +97,35 @@ public class LatexSoftwareRenderTest {
         }
     }
 
+    /** 横线位置约束：规则线 quad 顶点 y 落在整像素行、厚度 ≥1px（光栅取整漂移防护）。 */
+    @Test
+    public void rulesArePinnedToIntegerPixelRows() {
+        String[] formulas = { "\\frac{1}{2}", "\\sqrt{x}", "\\sqrt{x^2+y^2}", "\\frac{a}{b}+\\frac{c}{d}",
+                "\\overline{AB}", "\\underline{x}" };
+        for (String formula : formulas) {
+            LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                    "<latex>" + formula + "</latex>", BASE_SIZE);
+            GlyphRenderBatch batch = result.collector.getDecorationBatch();
+            if (batch == null || batch.isEmpty()) {
+                continue;
+            }
+            float[] vertices = batch.copyVertexData();
+            int stride = GlyphRenderBatch.VERTEX_STRIDE_FLOATS;
+            for (int quad = 0; quad < batch.getQuadCount(); quad++) {
+                float top = Float.MAX_VALUE;
+                float bottom = -Float.MAX_VALUE;
+                for (int vertex = 0; vertex < GlyphRenderBatch.VERTICES_PER_QUAD; vertex++) {
+                    int offset = (quad * GlyphRenderBatch.VERTICES_PER_QUAD + vertex) * stride;
+                    float y = vertices[offset + GlyphRenderBatch.POSITION_OFFSET_FLOATS + 1];
+                    top = Math.min(top, y);
+                    bottom = Math.max(bottom, y);
+                }
+                Assert.assertEquals("规则线顶应落在整像素行: " + formula, Math.round(top), top, 0.001F);
+                Assert.assertTrue("规则线厚度应 ≥1px: " + formula, bottom - top >= 1.0F);
+            }
+        }
+    }
+
     /** 上标：字形缩小且位于基底右上方。 */
     @Test
     public void superscriptIsShrunkAndRaised() {

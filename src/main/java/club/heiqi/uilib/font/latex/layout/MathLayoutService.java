@@ -431,20 +431,20 @@ public final class MathLayoutService {
         float clr = drt + Math.abs(drt) / 4.0F;
         float totalH = radicand.getHeight() + radicand.getDepth() + clr + drt;
 
-        // 根号字形无阶梯变体：整字缩放覆盖目标高（TeX 取足够大变体的近似），至少自然尺寸
-        float baseAscent = m.ascent(size);
-        float radicalScale = baseAscent <= 0.0F ? 1.0F : Math.max(1.0F, totalH / baseAscent);
+        // 横线位置约束（关键）：clr 钉死 1.25θ，横线中心 = 内容顶 + clr + θ/2，
+        // 只依赖内容几何与 TeX 常数——不做 delta/2 补偿（那会把根号字形盒度量混进横线位置，
+        // 且分母 ascent/分子 total 口径不一致使横线随内容斜率漂移）。
+        float barTopAbove = radicand.getHeight() + clr + drt;
+        float mu = size / 18.0F;
+
+        // 根号字形无阶梯变体：整字缩放覆盖目标高（TeX 取足够大变体的近似），至少自然尺寸；
+        // 字形盒顶与横线顶对齐，缩放只影响字形本身，不影响横线位置。
+        float nativeTotal = m.ascent(size) + m.descent(size);
+        float radicalScale = nativeTotal <= 0.0F ? 1.0F : Math.max(1.0F, totalH / nativeTotal);
         float radicalSize = size * radicalScale;
         float radicalWidth = m.advance(RADICAL, radicalSize);
         float radicalAscent = m.ascent(radicalSize);
         float radicalDescent = m.descent(radicalSize);
-        // 根号实际总高与目标的差的一半回补给 clr（TeX NthRoot：clr += delta/2）
-        float delta = (radicalAscent + radicalDescent) - totalH;
-        if (delta > 0.0F) {
-            clr += delta / 2.0F;
-        }
-        float barTopAbove = radicand.getHeight() + clr + drt;
-        float mu = size / 18.0F;
 
         // 根指数（可选）：水平 −10mu 负 kern 与垂直 0.55×总高抬升（TeX NthRoot）
         MathBox index = node.getIndex() == null ? null
@@ -462,8 +462,8 @@ public final class MathLayoutService {
         }
 
         Builder builder = new Builder();
-        // 根号字形：底对齐内容底 + 线粗
-        float radicalY = radicand.getDepth() + drt;
+        // 根号字形：盒顶对齐横线顶（radicalY = 横线顶 − 字形 ascent）
+        float radicalY = barTopAbove - radicalAscent;
         builder.addGlyph(RADICAL, radicalLeft, radicalY, radicalScale);
         // 横线：中心 = 内容顶 + clr + drt/2，右端 = 内容宽 + 1mu（TeX NthRoot 尾隙）
         float ruleCenterY = -(barTopAbove - drt / 2.0F);

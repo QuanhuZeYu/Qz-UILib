@@ -851,8 +851,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
         for (int ruleIndex = 0; ruleIndex < preparedText.latexRules.length; ruleIndex++) {
             float[] rule = preparedText.latexRules[ruleIndex];
-            collector.collectDecoration(x + rule[0],
-                    drawY + ruleBaselineOffset + rule[1], rule[2], rule[3],
+            // 横线位置约束：RuleElem.y 是中心、decoration quad 的 y 是顶，先换算中心→顶；
+            // 厚度与中心量化到整像素行，消除 0.64px 浮点厚度在光栅取整下的时粗时细/时隐时现漂移。
+            float ruleCenterY = drawY + ruleBaselineOffset + rule[1];
+            float ruleThickness = Math.max(1.0F, Math.round(rule[3]));
+            float ruleTopY = Math.round(ruleCenterY - ruleThickness / 2.0F);
+            collector.collectDecoration(x + rule[0], ruleTopY, rule[2], ruleThickness,
                     preparedText.latexRuleColors[ruleIndex]);
         }
         return (int) Math.ceil(currentX);

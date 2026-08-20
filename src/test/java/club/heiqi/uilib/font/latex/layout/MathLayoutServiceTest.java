@@ -289,34 +289,32 @@ public class MathLayoutServiceTest {
     @Test
     public void shouldLayoutSqrt() {
         MathBox box = layout("\\sqrt{x}");
-        // TeX NthRoot（text 口径）：clr = θ + θ/4；根号字形差量 delta/2 回补 clr
+        // TeX NthRoot（text 口径）：clr = θ + θ/4 恒定；横线中心 = 内容顶 + clr + θ/2——
+        // 只依赖内容几何与 TeX 常数，不做 delta/2 补偿（横线位置约束锚定）
         float drt = MathConstants.RULE_THICKNESS_EM * S;
         float clr = drt + drt / 4.0F;
+        float barTop = 0.8F * S + clr + drt;
         float totalH = 1.0F * S + clr + drt;
-        float radicalScale = totalH / (0.8F * S);
+        float radicalScale = Math.max(1.0F, totalH / (1.0F * S));
         float radicalAscent = 0.8F * radicalScale * S;
         float radicalDescent = 0.2F * radicalScale * S;
-        float delta = (radicalAscent + radicalDescent) - totalH;
-        if (delta > 0.0F) {
-            clr += delta / 2.0F;
-        }
-        float barTop = 0.8F * S + clr + drt;
+        float radicalY = barTop - radicalAscent;
         float radicalWidth = 0.5F * radicalScale * S;
         float mu = S / 18.0F;
         Assert.assertEquals(1, box.getRules().size());
         RuleElem rule = box.getRules().get(0);
-        // 横线中心 = 内容顶 + clr + drt/2
         Assert.assertEquals(-(barTop - drt / 2.0F), rule.getY(), EPS);
         Assert.assertEquals(radicalWidth, rule.getX(), EPS);
         // 横线右端 = 内容宽 + 1mu
         Assert.assertEquals(0.5F * S + mu, rule.getWidth(), EPS);
         Assert.assertEquals(radicalWidth + 0.5F * S, box.getWidth(), EPS);
         Assert.assertEquals(barTop, box.getHeight(), EPS);
-        Assert.assertEquals(0.2F * S + drt + radicalDescent, box.getDepth(), EPS);
+        Assert.assertEquals(Math.max(0.2F * S, radicalY + radicalDescent), box.getDepth(), EPS);
         boolean foundRadical = false;
         for (GlyphElem glyph : box.getGlyphs()) {
             if ("\u221A".equals(glyph.getText())) {
                 Assert.assertEquals(radicalScale, glyph.getSizeScale(), EPS);
+                Assert.assertEquals(radicalY, glyph.getY(), EPS);
                 foundRadical = true;
             }
         }
@@ -329,14 +327,12 @@ public class MathLayoutServiceTest {
         float drt = MathConstants.RULE_THICKNESS_EM * S;
         float clr = drt + drt / 4.0F;
         float totalH = 1.0F * S + clr + drt;
-        float radicalScale = totalH / (0.8F * S);
+        float radicalScale = Math.max(1.0F, totalH / (1.0F * S));
         float radicalDescent = 0.2F * radicalScale * S;
-        float delta = (0.8F * radicalScale * S + radicalDescent) - totalH;
-        if (delta > 0.0F) {
-            clr += delta / 2.0F;
-        }
-        float height = 0.8F * S + clr + drt;
-        float depth = Math.max(0.0F, 0.2F * S + drt + radicalDescent);
+        float barTop = 0.8F * S + clr + drt;
+        float radicalY = barTop - 0.8F * radicalScale * S;
+        float height = barTop;
+        float depth = Math.max(0.2F * S, radicalY + radicalDescent);
         // TeX NthRoot：指数基线 = sqrtBox.depth − index.depth − 0.55×(sqrtBox 总高)
         float indexY = depth - 0.14F * S - MathConstants.SQRT_INDEX_FACTOR * (height + depth);
         // 水平：10mu 负 kern，index 左缘 = max(0, 10mu − index 宽)
