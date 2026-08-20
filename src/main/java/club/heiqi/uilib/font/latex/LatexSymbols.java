@@ -23,8 +23,11 @@ public final class LatexSymbols {
     /** 符号命令 → 原子类别（未列出的符号命令为 ORD）。 */
     private static final Map<String, AtomClass> COMMAND_CLASSES = createCommandClasses();
 
-    /** 大运算符（\sum \int 等，排版时上下限上下堆叠）。 */
+    /** 大运算符符号（\sum \int 等，text 口径上下标侧挂 + 符号轴居中）。 */
     private static final Map<String, Boolean> BIG_OPERATORS = createBigOperators();
+
+    /** limits 函数名（\lim \max \min 等：上下限恒上下堆叠，正体）。 */
+    private static final Map<String, Boolean> LIMITS_FUNCTION_NAMES = createLimitsFunctionNames();
 
     /** 函数名（正体文本算子，如 \sin \log）。 */
     private static final Map<String, Boolean> FUNCTION_NAMES = createFunctionNames();
@@ -60,9 +63,14 @@ public final class LatexSymbols {
         return cls == null ? AtomClass.ORD : cls;
     }
 
-    /** @return 是否大运算符（上下限堆叠） */
+    /** @return 是否大运算符符号（上下标侧挂 + 轴居中） */
     public static boolean isBigOperator(String name) {
         return Boolean.TRUE.equals(BIG_OPERATORS.get(name));
+    }
+
+    /** @return 是否 limits 函数名（上下限恒上下堆叠） */
+    public static boolean isLimitsFunctionName(String name) {
+        return Boolean.TRUE.equals(LIMITS_FUNCTION_NAMES.get(name));
     }
 
     /** @return 是否函数名（正体文本算子） */
@@ -249,7 +257,19 @@ public final class LatexSymbols {
             map.put("int", Boolean.TRUE);
             map.put("iint", Boolean.TRUE);
             map.put("oint", Boolean.TRUE);
+        return map;
+    }
+
+    private static Map<String, Boolean> createLimitsFunctionNames() {
+        Map<String, Boolean> map = new HashMap<String, Boolean>();
             map.put("lim", Boolean.TRUE);
+            map.put("max", Boolean.TRUE);
+            map.put("min", Boolean.TRUE);
+            map.put("det", Boolean.TRUE);
+            map.put("gcd", Boolean.TRUE);
+            map.put("sup", Boolean.TRUE);
+            map.put("inf", Boolean.TRUE);
+            map.put("Pr", Boolean.TRUE);
         return map;
     }
 

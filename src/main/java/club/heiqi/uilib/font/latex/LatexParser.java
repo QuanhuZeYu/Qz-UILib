@@ -270,12 +270,15 @@ public final class LatexParser {
         if (em18 != null) {
             return new LatexSpace(em18.intValue() / 18.0D);
         }
-        // ---- 大运算符（limits：\\sum \\int \\lim 等） ----
+        // ---- 大运算符符号（\sum \int \prod …：text 口径侧挂 + 轴居中） ----
         if (LatexSymbols.isBigOperator(name)) {
             String symbol = LatexSymbols.symbolText(name);
-            return symbol != null
-                    ? new LatexAtom(symbol, AtomClass.OP, true)
-                    : new LatexAtom(name, AtomClass.OP, true); // \lim 为文本算子
+            return new LatexAtom(symbol != null ? symbol : name, AtomClass.OP,
+                    LatexAtom.OperatorMode.BIG_OPERATOR);
+        }
+        // ---- limits 算子（\lim \max \min …：上下限恒上下堆叠，正体） ----
+        if (LatexSymbols.isLimitsFunctionName(name)) {
+            return new LatexAtom(name, AtomClass.OP, LatexAtom.OperatorMode.LIMITS_OPERATOR);
         }
         // ---- 符号命令 ----
         if (LatexSymbols.isSymbolCommand(name)) {

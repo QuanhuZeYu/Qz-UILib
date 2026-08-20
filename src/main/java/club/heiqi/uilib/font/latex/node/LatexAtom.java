@@ -31,28 +31,41 @@ public final class LatexAtom extends LatexNode {
         TEXT,
     }
 
+    /**
+     * 算子排版模式：决定上下标是侧挂还是上下堆叠、大运算符符号是否按数学轴居中。
+     * （TeX SCRIPT_NORMAL/SCRIPT_LIMITS 的 text 口径三分。）
+     */
+    public enum OperatorMode {
+        /** 普通原子与函数名（\sin \log 等）：上下标侧挂。 */
+        NONE,
+        /** 大运算符符号（\sum \int \prod 等）：text 口径上下标侧挂 + 符号轴居中。 */
+        BIG_OPERATOR,
+        /** limits 算子（\lim \max \min 等）：上下限恒上下堆叠。 */
+        LIMITS_OPERATOR,
+    }
+
     private final String text;
     private final AtomClass atomClass;
-    private final boolean limitsOperator;
+    private final OperatorMode operatorMode;
 
     /**
-     * 创建数学原子（非 limits 算子）。
+     * 创建数学原子（普通原子/函数名）。
      *
      * @param text      显示文本（一个或多个码点；可含中文）
      * @param atomClass 原子类别
      */
     public LatexAtom(String text, AtomClass atomClass) {
-        this(text, atomClass, false);
+        this(text, atomClass, OperatorMode.NONE);
     }
 
     /**
      * 创建数学原子。
      *
-     * @param text           显示文本（一个或多个码点；可含中文）
-     * @param atomClass      原子类别
-     * @param limitsOperator 是否 limits 算子（\\sum \\int \\lim 等：上下限上下堆叠）
+     * @param text         显示文本（一个或多个码点；可含中文）
+     * @param atomClass    原子类别
+     * @param operatorMode 算子排版模式（BIG_OPERATOR / LIMITS_OPERATOR / NONE）
      */
-    public LatexAtom(String text, AtomClass atomClass, boolean limitsOperator) {
+    public LatexAtom(String text, AtomClass atomClass, OperatorMode operatorMode) {
         super(Kind.ATOM);
         if (text == null || text.isEmpty()) {
             throw new IllegalArgumentException("text 不能为空");
@@ -62,7 +75,7 @@ public final class LatexAtom extends LatexNode {
         }
         this.text = text;
         this.atomClass = atomClass;
-        this.limitsOperator = limitsOperator;
+        this.operatorMode = operatorMode == null ? OperatorMode.NONE : operatorMode;
     }
 
     /** @return 显示文本 */
@@ -75,9 +88,9 @@ public final class LatexAtom extends LatexNode {
         return atomClass;
     }
 
-    /** @return 是否 limits 算子（上下限上下堆叠） */
-    public boolean isLimitsOperator() {
-        return limitsOperator;
+    /** @return 算子排版模式 */
+    public OperatorMode getOperatorMode() {
+        return operatorMode;
     }
 
     @Override

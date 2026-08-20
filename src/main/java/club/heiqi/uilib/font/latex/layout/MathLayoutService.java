@@ -226,44 +226,77 @@ public final class MathLayoutService {
     // ==================== 上下标 ====================
 
     private MathBox layoutSupSub(LatexSupSub node, float size, MathMetrics m, boolean cramped) {
-        MathBox base = layoutNode(node.getBase(), size, m);
+        LatexNode baseNode = node.getBase();
+        MathBox base = layoutNode(baseNode, size, m);
         float scriptSize = size * MathConstants.SCRIPT_SCALE;
         MathBox sup = node.getSup() == null ? null : layoutNode(node.getSup(), scriptSize, m);
         MathBox sub = node.getSub() == null ? null : layoutNode(node.getSub(), scriptSize, m);
-
-        boolean limits = node.getBase().getKind() == LatexNode.Kind.ATOM
-                && ((LatexAtom) node.getBase()).isLimitsOperator()
-                && (sup != null || sub != null);
-        if (limits) {
-            return layoutLimits(base, sup, sub, size);
-        }
         if (sup == null && sub == null) {
             return base;
         }
 
+        // limits 算子（\lim \max \min …）：上下限恒上下堆叠（BigOperatorAtom limits 路径）
+        if (baseNode.getKind() == LatexNode.Kind.ATOM
+                && ((LatexAtom) baseNode).getOperatorMode() == LatexAtom.OperatorMode.LIMITS_OPERATOR) {
+            return layoutLimits(base, sup, sub, size);
+        }
+
+        boolean bigOperator = baseNode.getKind() == LatexNode.Kind.ATOM
+                && ((LatexAtom) baseNode).getOperatorMode() == LatexAtom.OperatorMode.BIG_OPERATOR;
+        boolean singleChar = baseNode.getKind() == LatexNode.Kind.ATOM
+                && ((LatexAtom) baseNode).getText()
+                        .codePointCount(0, ((LatexAtom) baseNode).getText().length()) == 1;
+
+        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float xHeight = m.xHeight(size);
+        // TeX 口径：supdrop/subdrop 按 script 字号缩放（JLaTeXMath getSupDrop(subStyle)）
+        float supDrop = MathConstants.SCRIPT_SUP_DROP_EM * size;
+        float subDrop = MathConstants.SCRIPT_SUB_DROP_EM * size;
+
+        // 脚本放置参照盒 + 基底字形相对原基线的上移量（大运算符符号按数学轴居中）
+        float baseShift = 0.0F;
+        float refHeight = base.getHeight();
+        float refDepth = base.getDepth();
+        if (bigOperator) {
+            float centerUp = (base.getHeight() - base.getDepth()) / 2.0F;
+            float axis = MathConstants.AXIS_HEIGHT_EM * size;
+            baseShift = centerUp - axis;
+            refHeight = base.getHeight() + baseShift;
+            refDepth = base.getDepth() - baseShift;
+        } else if (baseNode.getKind() == LatexNode.Kind.ACCENT) {
+            // TeX ScriptsAtom 特殊分支：重音基底按裸基底（cramped）度量
+            MathBox bare = layoutNode(((LatexAccent) baseNode).getBase(), size, m, true);
+            refHeight = bare.getHeight();
+            refDepth = bare.getDepth();
+        } else if (singleChar) {
+            // 单字符基底（CharSymbol 路径）：shift 起点 0，由 sup2/sup3、sub1/sub2 下限决定
+            refHeight = 0.0F;
+            refDepth = 0.0F;
+        }
+        float shiftUp0 = refHeight - supDrop;
+        float shiftDown0 = refDepth + subDrop;
+
         // TeX ScriptsAtom 约束链（行内=text 样式口径）：
-        // shiftUp = base.height − supdrop；shiftDown = base.depth + subdrop；
-        // 上标下限 max(sup2/sup3 按 cramped, sup.depth + xHeight/4)；下标下限 max(sub1, sub.height − 4·xHeight/5)；
+        // 上标下限 max(sup2/sup3 按 cramped, sup.depth + xHeight/4)；
+        // 下标下限 max(sub1, sub.height − 4·xHeight/5)；
         // 双脚本再经 sub2 与 4×规则线粗最小间距、4/5 xHeight 二次分配（psi）。
         float supMinimum = (cramped ? MathConstants.SUP3_EM : MathConstants.SUP2_EM) * size;
-        float xHeight = m.xHeight(size);
-        float drt = MathConstants.RULE_THICKNESS_EM * size;
-        float shiftUp = base.getHeight() - MathConstants.SUP_DROP_EM * size;
-        float shiftDown = base.getDepth() + MathConstants.SUB_DROP_EM * size;
+        float shiftUp = 0.0F;
+        float shiftDown = 0.0F;
         float supY = 0.0F;
         float subY = 0.0F;
         if (sup != null && sub == null) {
-            shiftUp = Math.max(Math.max(shiftUp, supMinimum),
+            shiftUp = Math.max(Math.max(shiftUp0, supMinimum),
                     sup.getDepth() + xHeight / 4.0F);
             supY = -shiftUp;
         } else if (sub != null && sup == null) {
-            shiftDown = Math.max(Math.max(shiftDown, MathConstants.SUB1_EM * size),
+            shiftDown = Math.max(Math.max(shiftDown0, MathConstants.SUB1_EM * size),
                     sub.getHeight() - 4.0F * xHeight / 5.0F);
             subY = shiftDown;
         } else {
-            shiftUp = Math.max(Math.max(shiftUp, supMinimum),
+            shiftUp = Math.max(Math.max(shiftUp0, supMinimum),
                     sup.getDepth() + xHeight / 4.0F);
-            shiftDown = Math.max(shiftDown, MathConstants.SUB2_EM * size);
+            shiftDown = Math.max(shiftDown0, MathConstants.SUB2_EM * size);
             float interSpace = shiftUp - sup.getDepth() + shiftDown - sub.getHeight();
             if (interSpace < 4.0F * drt) {
                 shiftUp += 4.0F * drt - interSpace;
@@ -283,18 +316,15 @@ public final class MathLayoutService {
         float scriptWidth = Math.max(supWidth, subWidth);
         // 斜体校正（TeX Char.italic）：单字符数学变量基底时，上标右移校正量避开斜体笔画
         float supShift = 0.0F;
-        if (sup != null) {
-            LatexNode baseNode = node.getBase();
-            if (baseNode.getKind() == LatexNode.Kind.ATOM) {
-                String baseText = ((LatexAtom) baseNode).getText();
-                if (baseText.codePointCount(0, baseText.length()) == 1 && isMathVariable(baseText)) {
-                    supShift = m.italicCorrection(baseText, size);
-                }
+        if (sup != null && baseNode.getKind() == LatexNode.Kind.ATOM) {
+            String baseText = ((LatexAtom) baseNode).getText();
+            if (baseText.codePointCount(0, baseText.length()) == 1 && isMathVariable(baseText)) {
+                supShift = m.italicCorrection(baseText, size);
             }
         }
 
         Builder builder = new Builder();
-        builder.addBox(base, 0.0F, 0.0F, 1.0F);
+        builder.addBox(base, 0.0F, -baseShift, 1.0F);
         if (sup != null) {
             builder.addBox(sup, base.getWidth() + scriptSpace + supShift, supY, MathConstants.SCRIPT_SCALE);
         }
@@ -302,12 +332,21 @@ public final class MathLayoutService {
             builder.addBox(sub, base.getWidth() + scriptSpace, subY, MathConstants.SCRIPT_SCALE);
         }
         builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptSpace + scriptWidth : 0.0F) + supShift;
-        builder.height = Math.max(base.getHeight(), sup != null ? -supY + sup.getHeight() : 0.0F);
-        builder.depth = Math.max(base.getDepth(), sub != null ? subY + sub.getDepth() : 0.0F);
+        builder.height = Math.max(builder.height, refHeight);
+        builder.depth = Math.max(builder.depth, refDepth);
+        if (sup != null) {
+            builder.height = Math.max(builder.height, -supY + sup.getHeight());
+        }
+        if (sub != null) {
+            builder.depth = Math.max(builder.depth, subY + sub.getDepth());
+        }
         return builder.toBox();
     }
 
-    /** 大运算符上下限：上下堆叠居中（TeX ScriptsAtom limits 路径：over 间隙 3pt、under 间隙 0.3pt）。 */
+    /**
+     * limits 算子（\lim \max \min …）上下限堆叠：TeX BigOperatorAtom limits 路径——
+     * 上隙 max(bigop1, bigop3 − sup.depth)、下隙 max(bigop2, bigop4 − sub.height)，外沿 bigop5 留白。
+     */
     private MathBox layoutLimits(MathBox base, MathBox sup, MathBox sub, float size) {
         Builder builder = new Builder();
         float contentWidth = base.getWidth();
@@ -321,18 +360,18 @@ public final class MathLayoutService {
         float height = base.getHeight();
         float depth = base.getDepth();
         if (sup != null) {
-            float overGap = MathConstants.LIMITS_OVER_GAP_EM * size;
-            // 上标按底对齐：底 = base 顶上方 overGap（用 depth 参与，与 TeX UnderOverAtom 一致）
-            float supY = -(base.getHeight() + overGap + sup.getDepth());
+            float overKern = Math.max(MathConstants.BIGOP1_EM * size,
+                    MathConstants.BIGOP3_EM * size - sup.getDepth());
+            float supY = -(base.getHeight() + overKern + sup.getDepth());
             builder.addBox(sup, (contentWidth - sup.getWidth()) / 2.0F, supY, MathConstants.SCRIPT_SCALE);
-            height = base.getHeight() + overGap + sup.getTotalHeight();
+            height = MathConstants.BIGOP5_EM * size + sup.getTotalHeight() + overKern + base.getHeight();
         }
         if (sub != null) {
-            float underGap = MathConstants.LIMITS_UNDER_GAP_EM * size;
-            // 下标按顶对齐：顶 = base 底下方 underGap（用 height 参与）
-            float subY = base.getDepth() + underGap + sub.getHeight();
+            float underKern = Math.max(MathConstants.BIGOP2_EM * size,
+                    MathConstants.BIGOP4_EM * size - sub.getHeight());
+            float subY = base.getDepth() + underKern + sub.getHeight();
             builder.addBox(sub, (contentWidth - sub.getWidth()) / 2.0F, subY, MathConstants.SCRIPT_SCALE);
-            depth = base.getDepth() + underGap + sub.getTotalHeight();
+            depth = sub.getTotalHeight() + underKern + base.getDepth() + MathConstants.BIGOP5_EM * size;
         }
         builder.height = height;
         builder.depth = depth;
@@ -388,50 +427,61 @@ public final class MathLayoutService {
         // 被开方内容用 cramped style（TeX NthRoot）
         MathBox radicand = layoutNode(node.getRadicand(), size, m, true);
         float drt = MathConstants.RULE_THICKNESS_EM * size;
-        float xHeight = m.xHeight(size);
-        // TeX NthRoot（行内=text 口径）：clr = drt + |xHeight|/4
-        float clr = drt + Math.abs(xHeight) / 4.0F;
+        // TeX rule 11（text 口径）：clr = θ + θ/4（显示样式才用 xHeight/4）
+        float clr = drt + Math.abs(drt) / 4.0F;
         float totalH = radicand.getHeight() + radicand.getDepth() + clr + drt;
 
-        // 根号字形无阶梯变体：整字缩放覆盖目标高（TeX 取足够大变体的近似）
+        // 根号字形无阶梯变体：整字缩放覆盖目标高（TeX 取足够大变体的近似），至少自然尺寸
         float baseAscent = m.ascent(size);
         float radicalScale = baseAscent <= 0.0F ? 1.0F : Math.max(1.0F, totalH / baseAscent);
         float radicalSize = size * radicalScale;
         float radicalWidth = m.advance(RADICAL, radicalSize);
         float radicalAscent = m.ascent(radicalSize);
         float radicalDescent = m.descent(radicalSize);
-        float radicalTotal = radicalAscent + radicalDescent;
-        // 根号实际总高与目标的差的一半回补给 clr（TeX：clr += delta/2）
-        float delta = radicalTotal - totalH;
+        // 根号实际总高与目标的差的一半回补给 clr（TeX NthRoot：clr += delta/2）
+        float delta = (radicalAscent + radicalDescent) - totalH;
         if (delta > 0.0F) {
             clr += delta / 2.0F;
+        }
+        float barTopAbove = radicand.getHeight() + clr + drt;
+        float mu = size / 18.0F;
+
+        // 根指数（可选）：水平 −10mu 负 kern 与垂直 0.55×总高抬升（TeX NthRoot）
+        MathBox index = node.getIndex() == null ? null
+                : layoutNode(node.getIndex(), size * MathConstants.SCRIPT_SCALE, m);
+        float indexLeft = 0.0F;
+        float radicalLeft = 0.0F;
+        if (index != null) {
+            float negKern = MathConstants.SQRT_INDEX_NEG_KERN_MU * mu;
+            float pos = index.getWidth() - negKern;
+            if (pos < 0.0F) {
+                indexLeft = -pos;
+            } else {
+                radicalLeft = pos;
+            }
         }
 
         Builder builder = new Builder();
         // 根号字形：底对齐内容底 + 线粗
         float radicalY = radicand.getDepth() + drt;
-        builder.addGlyph(RADICAL, 0.0F, radicalY, radicalScale);
-        // 横线：顶边 = 内容顶上方 clr + drt
-        float ruleTopY = -(radicand.getHeight() + clr + drt);
-        builder.addRule(radicalWidth, ruleTopY, radicand.getWidth(), drt);
-        builder.addBox(radicand, radicalWidth, 0.0F, 1.0F);
-        float height = radicand.getHeight() + clr + drt;
-        if (node.getIndex() != null) {
-            // 根指数：TeX NthRoot 精确语义——r.shift = sqrtBox.depth − r.depth − 0.55×(sqrtBox 总高)。
-            // 指数基线落在根号盒深度侧内移，视觉位于根号内侧中上部（基线≈横线顶高度、x 在根号左上），
-            // 而不是根号顶之外（顶之外是此前分离瑕疵的镜像错误）。
-            MathBox index = layoutNode(node.getIndex(), size * MathConstants.SCRIPT_SCALE, m);
-            float sqrtHeight = radicand.getHeight() + clr + radicalAscent;
-            float sqrtDepth = radicand.getDepth();
-            float indexY = sqrtDepth - index.getDepth()
-                    - MathConstants.SQRT_INDEX_FACTOR * (sqrtHeight + sqrtDepth);
-            float indexTop = indexY - index.getHeight();
-            builder.addBox(index, radicalWidth * 0.6F, indexY, MathConstants.SCRIPT_SCALE);
-            height = Math.max(height, -indexTop);
+        builder.addGlyph(RADICAL, radicalLeft, radicalY, radicalScale);
+        // 横线：中心 = 内容顶 + clr + drt/2，右端 = 内容宽 + 1mu（TeX NthRoot 尾隙）
+        float ruleCenterY = -(barTopAbove - drt / 2.0F);
+        builder.addRule(radicalLeft + radicalWidth, ruleCenterY, radicand.getWidth() + mu, drt);
+        builder.addBox(radicand, radicalLeft + radicalWidth, 0.0F, 1.0F);
+        float height = barTopAbove;
+        float depth = Math.max(0.0F, radicalY + radicalDescent);
+        if (index != null) {
+            // TeX NthRoot 精确语义：r.shift = sqrtBox.depth − r.depth − 0.55×(sqrtBox 总高)
+            float indexY = depth - index.getDepth()
+                    - MathConstants.SQRT_INDEX_FACTOR * (height + depth);
+            builder.addBox(index, indexLeft, indexY, MathConstants.SCRIPT_SCALE);
+            height = Math.max(height, -(indexY - index.getHeight()));
+            depth = Math.max(depth, indexY + index.getDepth());
         }
-        builder.width = radicalWidth + radicand.getWidth();
+        builder.width = Math.max(builder.width, radicalLeft + radicalWidth + radicand.getWidth());
         builder.height = height;
-        builder.depth = Math.max(0.0F, radicand.getDepth());
+        builder.depth = depth;
         return builder.toBox();
     }
 
@@ -439,34 +489,43 @@ public final class MathLayoutService {
 
     private MathBox layoutLeftRight(LatexLeftRight node, float size, MathMetrics m) {
         MathBox content = layoutNode(node.getContent(), size, m);
-        float gap = MathConstants.DELIM_GAP_EM * size;
-        float targetHeight = content.getTotalHeight() + 2.0F * gap;
+        // TeX FencedAtom：δ = max(h − axis, d + axis)；minHeight = max(δ×901/500, 2δ − 5pt)
+        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        float delta = Math.max(content.getHeight() - axis, content.getDepth() + axis);
+        float minHeight = Math.max(delta * MathConstants.DELIMITER_FACTOR,
+                2.0F * delta - MathConstants.DELIMITER_SHORTFALL_EM * size);
+        // 定界符与内容之间用标准原子间距（OPEN→leftType / rightType→CLOSE），非固定 gap
+        AtomClass contentClass = atomClassOf(node.getContent());
+        float leftGlue = spacingMu(AtomClass.OPEN, contentClass) / 18.0F * size;
+        float rightGlue = spacingMu(contentClass, AtomClass.CLOSE) / 18.0F * size;
 
         Builder builder = new Builder();
         builder.addBox(content, 0.0F, 0.0F, 1.0F);
         float leftShift = 0.0F;
         if (node.getLeftDelimiter() != null) {
-            DelimBox left = layoutDelimiter(node.getLeftDelimiter(), targetHeight, content, size, m);
-            builder.addBox(left.box, -(left.box.getWidth() + gap), left.baselineY, 1.0F);
-            leftShift = left.box.getWidth() + gap;
+            DelimBox left = layoutFence(node.getLeftDelimiter(), minHeight, size, m);
+            builder.addBox(left.box, -(left.box.getWidth() + leftGlue), left.baselineY, 1.0F);
+            leftShift = left.box.getWidth() + leftGlue;
         }
         if (node.getRightDelimiter() != null) {
-            DelimBox right = layoutDelimiter(node.getRightDelimiter(), targetHeight, content, size, m);
-            builder.addBox(right.box, content.getWidth() + gap, right.baselineY, 1.0F);
+            DelimBox right = layoutFence(node.getRightDelimiter(), minHeight, size, m);
+            builder.addBox(right.box, content.getWidth() + rightGlue, right.baselineY, 1.0F);
         }
         return shiftBox(builder.toBox(), leftShift, 0.0F);
     }
 
-    /** 定界符盒：按目标高度整字缩放，垂直居中于内容。 */
-    private DelimBox layoutDelimiter(String delimiter, float targetHeight, MathBox content, float size,
-            MathMetrics m) {
-        float nativeHeight = m.ascent(size) + m.descent(size);
-        float scale = nativeHeight <= 0.0F ? 1.0F : Math.max(1.0F, targetHeight / nativeHeight);
+    /**
+     * 定界符盒：整字缩放覆盖 minHeight（TeX 阶梯变体的连续近似，阶梯字形资源受限），
+     * 垂直居中于数学轴（TeX FencedAtom center）。
+     */
+    private DelimBox layoutFence(String delimiter, float minHeight, float size, MathMetrics m) {
+        float nativeTotal = m.ascent(size) + m.descent(size);
+        float scale = nativeTotal <= 0.0F ? 1.0F : Math.max(1.0F, minHeight / nativeTotal);
         float delimSize = size * scale;
         float width = m.advance(delimiter, delimSize);
-        float contentCenterUp = content.getTotalHeight() / 2.0F - content.getDepth();
+        float axis = MathConstants.AXIS_HEIGHT_EM * size;
         float delimCenterUp = (m.ascent(delimSize) - m.descent(delimSize)) / 2.0F;
-        float baselineY = delimCenterUp - contentCenterUp;
+        float baselineY = axis - delimCenterUp;
         List<GlyphElem> glyphs = new ArrayList<GlyphElem>(1);
         glyphs.add(new GlyphElem(delimiter, 0.0F, 0.0F, scale));
         float height = Math.max(0.0F, -baselineY + m.ascent(delimSize));
@@ -495,151 +554,163 @@ public final class MathLayoutService {
         }
         MathBox[][] cells = new MathBox[rowCount][colCount];
         float[] colWidth = new float[colCount];
-        float[] rowHeight = new float[rowCount];
         float[] rowMaxHeight = new float[rowCount];
+        float[] rowMaxDepth = new float[rowCount];
         for (int i = 0; i < rowCount; i++) {
             for (int j = 0; j < rows.get(i).size(); j++) {
                 MathBox cell = layoutList(rows.get(i).get(j), size, m, false);
                 cells[i][j] = cell;
                 colWidth[j] = Math.max(colWidth[j], cell.getWidth());
-                rowHeight[i] = Math.max(rowHeight[i], cell.getTotalHeight());
                 rowMaxHeight[i] = Math.max(rowMaxHeight[i], cell.getHeight());
+                rowMaxDepth[i] = Math.max(rowMaxDepth[i], cell.getDepth());
             }
         }
-        float colGap = MathConstants.MATRIX_COL_GAP_EM * size;
-        float rowGap = MathConstants.MATRIX_ROW_GAP_EM * size;
+        // TeX MatrixAtom（MATRIX 口径）：列间 1em（无外沿半隙）、行间 1ex、外沿 0.4ex
+        float colSep = MathConstants.MATRIX_COL_GAP_EM * size;
+        float rowSep = MathConstants.MATRIX_ROW_SEP_EX * m.xHeight(size);
+        float outerPad = MathConstants.MATRIX_OUTER_PAD_EX * m.xHeight(size);
         float[] colX = new float[colCount];
-        float contentWidth = 0.0F;
+        float cursorX = 0.0F;
         for (int j = 0; j < colCount; j++) {
-            colX[j] = contentWidth + colGap / 2.0F;
-            contentWidth += colWidth[j] + colGap;
+            colX[j] = cursorX;
+            cursorX += colWidth[j] + colSep;
         }
-        float[] rowTop = new float[rowCount];
-        float cursor = 0.0F;
+        float contentWidth = cursorX - colSep;
+        float[] rowBaseline = new float[rowCount];
+        float cursorY = outerPad;
         for (int i = 0; i < rowCount; i++) {
-            rowTop[i] = cursor;
-            cursor += rowHeight[i] + rowGap;
+            rowBaseline[i] = cursorY + rowMaxHeight[i];
+            cursorY = rowBaseline[i] + rowMaxDepth[i] + rowSep;
         }
-        float totalHeight = cursor - rowGap;
+        float totalHeight = cursorY - rowSep + outerPad;
         float axis = MathConstants.AXIS_HEIGHT_EM * size;
         float height = totalHeight / 2.0F + axis;
         float depth = totalHeight / 2.0F - axis;
 
-        Builder builder = new Builder();
-        for (int i = 0; i < rowCount; i++) {
-            for (int j = 0; j < rows.get(i).size(); j++) {
-                MathBox cell = cells[i][j];
-                float x = colX[j] + (colWidth[j] - cell.getWidth()) / 2.0F;
-                float y = -height + rowTop[i] + rowMaxHeight[i];
-                builder.addBox(cell, x, y, 1.0F);
-            }
-        }
-        float fenceOverhang = MathConstants.MATRIX_FENCE_OVERHANG_EM * size;
+        // 定界符：TeX FencedAtom minHeight（内容轴居中 → δ = totalHeight/2）
+        float fenceMin = Math.max(totalHeight / 2.0F * MathConstants.DELIMITER_FACTOR,
+                totalHeight - MathConstants.DELIMITER_SHORTFALL_EM * size);
+        DelimBox leftFence = null;
+        DelimBox rightFence = null;
         switch (node.getFence()) {
             case PAREN:
-                addFencePair(builder, "(", ")", contentWidth, totalHeight, fenceOverhang, size, m);
+                leftFence = layoutFence("(", fenceMin, size, m);
+                rightFence = layoutFence(")", fenceMin, size, m);
                 break;
             case BRACKET:
-                addFencePair(builder, "[", "]", contentWidth, totalHeight, fenceOverhang, size, m);
+                leftFence = layoutFence("[", fenceMin, size, m);
+                rightFence = layoutFence("]", fenceMin, size, m);
                 break;
             case BAR:
-                addFencePair(builder, "|", "|", contentWidth, totalHeight, fenceOverhang, size, m);
+                leftFence = layoutFence("|", fenceMin, size, m);
+                rightFence = layoutFence("|", fenceMin, size, m);
                 break;
             case CASES:
-                addLeftFence(builder, "{", contentWidth, totalHeight, fenceOverhang, size, m);
+                leftFence = layoutFence("{", fenceMin, size, m);
                 break;
             case NONE:
             default:
                 break;
         }
-        builder.width = Math.max(builder.width, contentWidth);
+        float leftW = leftFence == null ? 0.0F : leftFence.box.getWidth();
+        float rightW = rightFence == null ? 0.0F : rightFence.box.getWidth();
+
+        Builder builder = new Builder();
+        for (int i = 0; i < rowCount; i++) {
+            for (int j = 0; j < rows.get(i).size(); j++) {
+                MathBox cell = cells[i][j];
+                builder.addBox(cell, leftW + colX[j] + (colWidth[j] - cell.getWidth()) / 2.0F,
+                        -height + rowBaseline[i], 1.0F);
+            }
+        }
+        if (leftFence != null) {
+            builder.addBox(leftFence.box, 0.0F, leftFence.baselineY, 1.0F);
+        }
+        if (rightFence != null) {
+            builder.addBox(rightFence.box, leftW + contentWidth, rightFence.baselineY, 1.0F);
+        }
+        builder.width = Math.max(builder.width, leftW + contentWidth + rightW);
         builder.height = Math.max(builder.height, height);
         builder.depth = Math.max(builder.depth, depth);
         return builder.toBox();
-    }
-
-    private void addFencePair(Builder builder, String left, String right, float contentWidth, float totalHeight,
-            float overhang, float size, MathMetrics m) {
-        float targetHeight = totalHeight + 2.0F * overhang;
-        float nativeHeight = m.ascent(size) + m.descent(size);
-        float scale = nativeHeight <= 0.0F ? 1.0F : Math.max(1.0F, targetHeight / nativeHeight);
-        float delimSize = size * scale;
-        float gap = MathConstants.DELIM_GAP_EM * size;
-        float leftWidth = m.advance(left, delimSize);
-        float rightWidth = m.advance(right, delimSize);
-        float centerY = -MathConstants.AXIS_HEIGHT_EM * size;
-        float baseline = centerY + (m.ascent(delimSize) - m.descent(delimSize)) / 2.0F;
-        List<GlyphElem> lg = new ArrayList<GlyphElem>(1);
-        lg.add(new GlyphElem(left, 0.0F, 0.0F, scale));
-        builder.addBox(new MathBox(leftWidth, m.ascent(delimSize), m.descent(delimSize), lg, null),
-                -(leftWidth + gap), baseline, 1.0F);
-        List<GlyphElem> rg = new ArrayList<GlyphElem>(1);
-        rg.add(new GlyphElem(right, 0.0F, 0.0F, scale));
-        builder.addBox(new MathBox(rightWidth, m.ascent(delimSize), m.descent(delimSize), rg, null),
-                contentWidth + gap, baseline, 1.0F);
-    }
-
-    private void addLeftFence(Builder builder, String fence, float contentWidth, float totalHeight,
-            float overhang, float size, MathMetrics m) {
-        float targetHeight = totalHeight + 2.0F * overhang;
-        float nativeHeight = m.ascent(size) + m.descent(size);
-        float scale = nativeHeight <= 0.0F ? 1.0F : Math.max(1.0F, targetHeight / nativeHeight);
-        float delimSize = size * scale;
-        float gap = MathConstants.DELIM_GAP_EM * size;
-        float fenceWidth = m.advance(fence, delimSize);
-        float centerY = -MathConstants.AXIS_HEIGHT_EM * size;
-        float baseline = centerY + (m.ascent(delimSize) - m.descent(delimSize)) / 2.0F;
-        List<GlyphElem> glyphs = new ArrayList<GlyphElem>(1);
-        glyphs.add(new GlyphElem(fence, 0.0F, 0.0F, scale));
-        builder.addBox(new MathBox(fenceWidth, m.ascent(delimSize), m.descent(delimSize), glyphs, null),
-                -(fenceWidth + gap), baseline, 1.0F);
     }
 
     // ==================== 组合数与重音 ====================
 
     private MathBox layoutBinom(LatexBinom node, float size, MathMetrics m) {
         float scriptSize = size * MathConstants.SCRIPT_SCALE;
-        // \binom = 无分数线分数：上下元素用 cramped scriptstyle（TeX \genfrac 语义）
+        // \binom = 无分数线分数（TeX FractionAtom no-rule 路径）：cramped scriptstyle，
+        // shiftUp = num3、shiftDown = denom2，间隙不足 3θ 时上下均分 delta
         MathBox upper = layoutNode(node.getUpper(), scriptSize, m, true);
         MathBox lower = layoutNode(node.getLower(), scriptSize, m, true);
-        float gap = MathConstants.BINOM_GAP_EM * size;
-        float totalHeight = upper.getTotalHeight() + gap + lower.getTotalHeight();
+        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float clr = MathConstants.NO_RULE_CLR_FACTOR * drt;
+        float shiftUp = MathConstants.NUM3_EM * size;
+        float shiftDown = MathConstants.DENOM2_EM * size;
+        float kern = shiftUp - upper.getDepth() - (lower.getHeight() - shiftDown);
+        float delta = (clr - kern) / 2.0F;
+        if (delta > 0.0F) {
+            shiftUp += delta;
+            shiftDown += delta;
+        }
         float contentWidth = Math.max(upper.getWidth(), lower.getWidth());
+        float sideSpace = MathConstants.NULL_DELIMITER_SPACE_EM * size;
         float axis = MathConstants.AXIS_HEIGHT_EM * size;
-        float height = totalHeight / 2.0F + axis;
+        float height = shiftUp + upper.getHeight();
+        float depth = shiftDown + lower.getDepth();
+        // 圆括号：TeX FencedAtom minHeight + 轴居中（\binom = \left( … \right) 语义）
+        float fenceDelta = Math.max(height - axis, depth + axis);
+        float fenceMin = Math.max(fenceDelta * MathConstants.DELIMITER_FACTOR,
+                2.0F * fenceDelta - MathConstants.DELIMITER_SHORTFALL_EM * size);
+        DelimBox leftFence = layoutFence("(", fenceMin, size, m);
+        DelimBox rightFence = layoutFence(")", fenceMin, size, m);
+        float leftW = leftFence.box.getWidth();
+        float innerW = contentWidth + 2.0F * sideSpace;
 
         Builder builder = new Builder();
-        builder.addBox(upper, (contentWidth - upper.getWidth()) / 2.0F,
-                -height + upper.getHeight(), MathConstants.SCRIPT_SCALE);
-        builder.addBox(lower, (contentWidth - lower.getWidth()) / 2.0F,
-                -height + upper.getTotalHeight() + gap + lower.getHeight(), MathConstants.SCRIPT_SCALE);
-        float overhang = MathConstants.MATRIX_FENCE_OVERHANG_EM * size;
-        addFencePair(builder, "(", ")", contentWidth, totalHeight, overhang, size, m);
-        builder.width = Math.max(builder.width, contentWidth);
+        builder.addBox(upper, leftW + sideSpace + (contentWidth - upper.getWidth()) / 2.0F, -shiftUp,
+                MathConstants.SCRIPT_SCALE);
+        builder.addBox(lower, leftW + sideSpace + (contentWidth - lower.getWidth()) / 2.0F, shiftDown,
+                MathConstants.SCRIPT_SCALE);
+        builder.addBox(leftFence.box, 0.0F, leftFence.baselineY, 1.0F);
+        builder.addBox(rightFence.box, leftW + innerW, rightFence.baselineY, 1.0F);
+        builder.width = leftW + innerW + rightFence.box.getWidth();
         builder.height = Math.max(builder.height, height);
+        builder.depth = Math.max(builder.depth, depth);
         return builder.toBox();
     }
 
     private MathBox layoutAccent(LatexAccent node, float size, MathMetrics m) {
-        // 重音基底用 cramped style（TeX AccentedAtom）
-        MathBox base = layoutNode(node.getBase(), size, m, true);
+        // 重音基底用 cramped style（TeX AccentedAtom）；\\underline 基底不 cramp（TeX UnderlinedAtom）
+        MathBox base = layoutNode(node.getBase(), size, m, !node.isBelow());
         Builder builder = new Builder();
         builder.addBox(base, 0.0F, 0.0F, 1.0F);
-        float gap = MathConstants.ACCENT_GAP_EM * size;
+        float drt = MathConstants.RULE_THICKNESS_EM * size;
         if (node.isStretchable()) {
+            // \overline：kern 3θ + 线 θ，盒高 h+5θ；\\underline：kern 3θ + 线 θ，盒深 d+5θ
+            float ruleCenter = MathConstants.OVERBAR_KERN_FACTOR * drt + drt / 2.0F;
             if (node.isBelow()) {
-                builder.addRule(0.0F, base.getDepth() + gap, base.getWidth(),
-                        MathConstants.RULE_THICKNESS_EM * size);
+                builder.addRule(0.0F, base.getDepth() + ruleCenter, base.getWidth(), drt);
+                builder.depth = base.getDepth() + MathConstants.OVERBAR_BOX_FACTOR * drt;
+                builder.height = base.getHeight();
             } else {
-                builder.addRule(0.0F, -(base.getHeight() + gap + MathConstants.RULE_THICKNESS_EM * size),
-                        base.getWidth(), MathConstants.RULE_THICKNESS_EM * size);
+                builder.addRule(0.0F, -(base.getHeight() + ruleCenter), base.getWidth(), drt);
+                builder.height = base.getHeight() + MathConstants.OVERBAR_BOX_FACTOR * drt;
+                builder.depth = base.getDepth();
             }
             return builder.toBox();
         }
         String accentText = node.getAccentText();
-        float accentWidth = m.advance(accentText, size);
-        float accentY = -(base.getHeight() + gap + m.descent(size));
-        builder.addGlyph(accentText, (base.getWidth() - accentWidth) / 2.0F, accentY, 1.0F);
+        float scriptSize = size * MathConstants.SCRIPT_SCALE;
+        // TeX AccentedAtom（acc=false 路径）：重音按 script 字号；
+        // delta = min(base.h, xHeight)，重音基线 = delta − base.h（负 kern 语义）
+        float delta = Math.min(base.getHeight(), m.xHeight(size));
+        float accentY = delta - base.getHeight();
+        float accentWidth = m.advance(accentText, scriptSize);
+        builder.addGlyph(accentText, (base.getWidth() - accentWidth) / 2.0F, accentY,
+                MathConstants.SCRIPT_SCALE);
+        builder.height = m.ascent(scriptSize) - delta + base.getHeight();
+        builder.depth = base.getDepth();
         return builder.toBox();
     }
 

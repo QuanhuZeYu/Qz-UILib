@@ -58,37 +58,63 @@ public final class MathConstants {
     /** scriptspace（em）：上/下标与主体的水平空隙（TeX 0.5pt = 0.05em）。 */
     public static final float SCRIPT_SPACE_EM = 0.05F;
 
-    // ==================== 大运算符 limits 参数 ====================
+    // ==================== 大运算符 limits 参数（BigOperatorAtom limits 路径） ====================
 
-    /** limits 上标与运算符间隙（em，ScriptsAtom limits 路径 3pt）。 */
-    public static final float LIMITS_OVER_GAP_EM = 0.3F;
-    /** limits 下标与运算符间隙（em，ScriptsAtom limits 路径 0.3pt）。 */
-    public static final float LIMITS_UNDER_GAP_EM = 0.03F;
+    /** bigopspacing1（em）：limits 上标最小间隙。 */
+    public static final float BIGOP1_EM = 0.111112F;
+    /** bigopspacing2（em）：limits 下标最小间隙。 */
+    public static final float BIGOP2_EM = 0.166667F;
+    /** bigopspacing3（em）：limits 上标间隙上限参照。 */
+    public static final float BIGOP3_EM = 0.2F;
+    /** bigopspacing4（em）：limits 下标间隙上限参照。 */
+    public static final float BIGOP4_EM = 0.6F;
+    /** bigopspacing5（em）：limits 外沿留白。 */
+    public static final float BIGOP5_EM = 0.1F;
+
+    // ==================== script 口径 drop 参数 ====================
+
+    /** script 口径上标基准抬升（em）= supdrop × scriptfactor（JLaTeXMath getSupDrop(subStyle) 语义）。 */
+    public static final float SCRIPT_SUP_DROP_EM = SUP_DROP_EM * SCRIPT_SCALE;
+
+    /** script 口径下标基准下沉（em）= subdrop × scriptfactor。 */
+    public static final float SCRIPT_SUB_DROP_EM = SUB_DROP_EM * SCRIPT_SCALE;
 
     // ==================== 根号参数 ====================
 
     /** 根指数相对根号总高的抬升因子（TeX NthRoot FACTOR）。 */
     public static final float SQRT_INDEX_FACTOR = 0.55F;
 
+    /** 根指数与根号的负 kern（mu，TeX NthRoot -10mu）。 */
+    public static final float SQRT_INDEX_NEG_KERN_MU = 10.0F;
+
     // ==================== 其他 ====================
 
-    /** 伸缩定界符与内容的最小间隙（em，每侧）。 */
-    public static final float DELIM_GAP_EM = 0.05F;
+    /** 数学单位 mu（em）= 1/18 em。 */
+    public static final float MU_EM = 1.0F / 18.0F;
 
-    /** 矩阵列间隙（em，每列两侧合计）。 */
-    public static final float MATRIX_COL_GAP_EM = 0.4F;
+    /** 伸缩定界符最小高度系数（TeX FencedAtom DELIMITER_FACTOR = 901/500）。 */
+    public static final float DELIMITER_FACTOR = 901.0F / 500.0F;
 
-    /** 矩阵行间隙（em，每行上下合计）。 */
-    public static final float MATRIX_ROW_GAP_EM = 0.3F;
+    /** 伸缩定界符短欠量（em，TeX DELIMITER_SHORTFALL = 5pt = 0.5em@10pt）。 */
+    public static final float DELIMITER_SHORTFALL_EM = 0.5F;
 
-    /** 矩阵定界符超出内容高度（em）。 */
-    public static final float MATRIX_FENCE_OVERHANG_EM = 0.15F;
+    /** 矩阵列间隙（em，MatrixAtom hsep：列间全额 1em）。 */
+    public static final float MATRIX_COL_GAP_EM = 1.0F;
 
-    /** binom 上下元素间隙（em）。 */
-    public static final float BINOM_GAP_EM = 0.05F;
+    /** 矩阵行间隙（ex，MatrixAtom vsep_in：行间 1ex）。 */
+    public static final float MATRIX_ROW_SEP_EX = 1.0F;
 
-    /** 重音与基底的间隙（em）。 */
-    public static final float ACCENT_GAP_EM = 0.05F;
+    /** 矩阵外沿 padding（ex，MatrixAtom vsep_ext_top/bot 0.4ex）。 */
+    public static final float MATRIX_OUTER_PAD_EX = 0.4F;
+
+    /** 无分数线分数（\binom）最小间隙 = 3 × 规则线粗（TeX FractionAtom no-rule clr）。 */
+    public static final float NO_RULE_CLR_FACTOR = 3.0F;
+
+    /** 上/下横线（\overline/\\underline）与内容间隙 = 3 × 规则线粗。 */
+    public static final float OVERBAR_KERN_FACTOR = 3.0F;
+
+    /** 上/下横线盒外沿余量 = 5 × 规则线粗（TeX OverlinedAtom/UnderlinedAtom）。 */
+    public static final float OVERBAR_BOX_FACTOR = 5.0F;
 
     /** 数学间距：thin/medium/thick（mu，1mu = 1/18 em）。TeXBook p181。 */
     public static final float THIN_MU = 3.0F;
