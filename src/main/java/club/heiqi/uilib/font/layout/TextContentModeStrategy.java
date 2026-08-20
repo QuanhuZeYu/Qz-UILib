@@ -345,7 +345,8 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
                         int tokenCodepoint = token.codePointAt(i);
                         double charWidth = service.resolveCodepointAdvance(tokenCodepoint, style, effectiveSize);
                         if (width + charWidth > wrapWidth && lineHasVisibleContent
-                                && !UnicodeTextClassifier.isClusterContinuation(tokenCodepoint)) {
+                                && !UnicodeTextClassifier.isClusterContinuation(tokenCodepoint)
+                                && !UnicodeTextClassifier.isGlue(tokenCodepoint)) {
                             flushRichLine(lines, currentLine, baseStyle, false);
                             width = 0.0D;
                             lineHasVisibleContent = false;
@@ -412,8 +413,9 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
     }
 
     /**
-     * 行尾抛光：剥除尾部断词空白与 ZWSP（跨段回溯）；行尾软连字符替换为可见连字符
-     * （断行补字，仅一次），替换后停止（连字符是可见行尾字符）。
+     * 行尾抛光：剥除尾部可折叠空白（CSS 口径：仅 U+0020/tab）与 ZWSP（跨段回溯）；
+     * 行尾软连字符替换为可见连字符（断行补字，仅一次），替换后停止（连字符是可见行尾字符）。
+     * BA 类空格（U+3000 等）与 GL 胶水（NBSP 等）行尾保留（标准不折叠）。
      */
     private void polishLineTail(List<TextSegment> line) {
         boolean hyphenEmitted = false;
@@ -425,7 +427,7 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
             while (end > 0) {
                 int codepoint = text.codePointBefore(end);
                 int codepointLength = Character.charCount(codepoint);
-                if (UnicodeTextClassifier.isWordBoundary(codepoint) || codepoint == 0x200B) {
+                if (UnicodeTextClassifier.isTrailingFoldable(codepoint) || codepoint == 0x200B) {
                     end -= codepointLength;
                     stripped = true;
                     continue;

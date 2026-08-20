@@ -33,15 +33,36 @@ public class UnicodeTextClassifierTest {
     }
 
     @Test
-    public void shouldClassifyFoldableSpaceFamily() {
-        int[] spaces = { ' ', 0x00A0, 0x1680, 0x2000, 0x2001, 0x2007, 0x200A, 0x202F, 0x205F, 0x3000 };
+    public void shouldClassifyDocumentSpace() {
+        Assert.assertEquals(CharClass.SPACE, UnicodeTextClassifier.classify(' '));
+        Assert.assertTrue(UnicodeTextClassifier.isFoldableSpace(' '));
+        Assert.assertTrue(UnicodeTextClassifier.isWordBoundary(' '));
+        Assert.assertTrue(UnicodeTextClassifier.isTrailingFoldable(' '));
+    }
+
+    @Test
+    public void shouldClassifyBreakableSpaceFamily() {
+        int[] spaces = { 0x1680, 0x2000, 0x2001, 0x2006, 0x2008, 0x200A, 0x205F, 0x3000 };
         for (int cp : spaces) {
-            Assert.assertEquals("U+" + Integer.toHexString(cp), CharClass.FOLDABLE_SPACE,
+            Assert.assertEquals("U+" + Integer.toHexString(cp), CharClass.BREAKABLE_SPACE,
                     UnicodeTextClassifier.classify(cp));
             Assert.assertTrue(UnicodeTextClassifier.isFoldableSpace(cp));
             Assert.assertTrue(UnicodeTextClassifier.isWordBoundary(cp));
-            Assert.assertFalse(UnicodeTextClassifier.isZeroWidth(cp));
-            Assert.assertFalse(UnicodeTextClassifier.isLineBreak(cp));
+            Assert.assertFalse(UnicodeTextClassifier.isTrailingFoldable(cp));
+            Assert.assertFalse(UnicodeTextClassifier.isGlue(cp));
+        }
+    }
+
+    @Test
+    public void shouldClassifyGlueAsNonBreaking() {
+        int[] glue = { 0x00A0, 0x2007, 0x2011, 0x202F, 0x180E };
+        for (int cp : glue) {
+            Assert.assertEquals("U+" + Integer.toHexString(cp), CharClass.GLUE,
+                    UnicodeTextClassifier.classify(cp));
+            Assert.assertTrue(UnicodeTextClassifier.isGlue(cp));
+            Assert.assertFalse("GL 胶水不是断词分隔", UnicodeTextClassifier.isWordBoundary(cp));
+            Assert.assertFalse(UnicodeTextClassifier.isFoldableSpace(cp));
+            Assert.assertFalse(UnicodeTextClassifier.isTrailingFoldable(cp));
         }
     }
 
@@ -133,9 +154,21 @@ public class UnicodeTextClassifierTest {
             Assert.assertTrue(UnicodeTextClassifier.isClusterContinuation(cp));
             Assert.assertTrue(UnicodeTextClassifier.isZeroWidth(cp));
         }
-        // MONGOLIAN VOWEL SEPARATOR：历史上 Zs，窄空白语义
-        Assert.assertEquals(CharClass.FOLDABLE_SPACE, UnicodeTextClassifier.classify(0x180E));
-        Assert.assertTrue(UnicodeTextClassifier.isWordBoundary(0x180E));
+        // MONGOLIAN VOWEL SEPARATOR：GL 禁断胶水（历史上 Zs，现 Cf）
+        Assert.assertEquals(CharClass.GLUE, UnicodeTextClassifier.classify(0x180E));
+        Assert.assertTrue(UnicodeTextClassifier.isGlue(0x180E));
+    }
+
+    @Test
+    public void shouldClassifyRemainingDefaultIgnorable() {
+        // DerivedCoreProperties.txt Default_Ignorable 补全（审计批次2）
+        int[] ignorable = { 0x034F, 0x17B4, 0x17B5, 0x206A, 0x206B, 0x206E, 0x206F,
+                0xFFA0, 0xFFF0, 0xFFF8, 0xE0000, 0xE0002, 0xE0080, 0xE01F0, 0x13439, 0x16FE4 };
+        for (int cp : ignorable) {
+            Assert.assertEquals("U+" + Integer.toHexString(cp), CharClass.INVISIBLE,
+                    UnicodeTextClassifier.classify(cp));
+            Assert.assertTrue(UnicodeTextClassifier.isZeroWidth(cp));
+        }
     }
 
     @Test

@@ -74,8 +74,9 @@ public final class ControlCharPage implements PlaygroundPage {
                     + "行尾\u00A0空白\u2007会被剥掉，"
                     + "换行后行首空白自动丢弃，与普通空格语义完全一致。", 320));
             spaceCard.appendChild(PlaygroundKit.hint(
-                    "NBSP(U+00A0) / OGHAM(U+1680) / U+2000..200A / U+202F / U+205F / 全角空格(U+3000) "
-                    + "——断词分隔、行尾折叠、行首丢弃统一口径。"));
+                    "UAX#14/CSS 口径：普通空格(U+0020)可断且行尾折叠；BA 类空格(U+1680/U+2000 系/U+205F/U+3000)"
+                    + "可断但不折叠（行尾保留）；GL 胶水(NBSP/U+2007/U+2011/U+202F/U+180E)禁断——"
+                    + "数字+单位等不可分组合不会在 NBSP 处断行。"));
             root.appendChild(spaceCard);
 
             // ===== 卡片4：软断行 =====
@@ -105,7 +106,8 @@ public final class ControlCharPage implements PlaygroundPage {
             clusterCard.appendChild(PlaygroundKit.hint(
                     "上方 32px 大字号：四层组合附加符逐层往上摞（层距贴每个标记自身字形高度，紧实堆叠）；"
                     + "下方 e+U+0301 在显示路径被 NFC 合并为预组合 é（字更完整，caret 仍按原始码点走）。"
-                    + "变体选择符(U+FE00..FE0F / U+E0100..E01EF) 零宽跳过渲染；"
+                    + "方向按 CCC 完整语义：上方/下方逐层摞、Overlay 与包围标记原位覆盖、Nukta/Virama 下方、"
+                    + "假名浊点右上。变体选择符(U+FE00..FE0F / U+E0100..E01EF) 零宽跳过渲染；"
                     + "组合 glyph 的可见性与堆叠高度取决于字体覆盖。"
                     + "粘贴进文本输入框（Ctrl+V/右键菜单）的组合序列同样按此口径显示（编辑保真、显示组合）。"));
             root.appendChild(clusterCard);

@@ -112,10 +112,27 @@ public class TextLayoutServiceControlCharTest {
     }
 
     @Test
-    public void shouldFoldTrailingFoldableSpacesInRichMode() {
+    public void shouldFoldTrailingDocumentSpacesOnlyInRichMode() {
+        // CSS 口径：仅 U+0020/tab 行尾折叠；GL 胶水（NBSP）与 BA 空格（U+3000）行尾保留
         TextLayoutService service = createService('a');
-        List<String> lines = service.listFormattedStringToWidth("a\u00A0", 1000, TextContentMode.RICH_TAGS);
-        Assert.assertEquals(Arrays.asList("a"), lines);
+        Assert.assertEquals(Arrays.asList("a"),
+                service.listFormattedStringToWidth("a ", 1000, TextContentMode.RICH_TAGS));
+        Assert.assertEquals(Arrays.asList("a\u00A0"),
+                service.listFormattedStringToWidth("a\u00A0", 1000, TextContentMode.RICH_TAGS));
+        Assert.assertEquals(Arrays.asList("a\u3000"),
+                service.listFormattedStringToWidth("a\u3000", 1000, TextContentMode.RICH_TAGS));
+    }
+
+    @Test
+    public void shouldNotBreakAtNbspGlueInRichMode() {
+        // NBSP 是 GL 禁断胶水：不作为断词 token 边界（对比普通空格可断）
+        TextLayoutService service = createService('1', '2');
+        List<String> glue = service.listFormattedStringToWidth("1\u00A02", 1, TextContentMode.RICH_TAGS);
+        List<String> space = service.listFormattedStringToWidth("1 2", 1, TextContentMode.RICH_TAGS);
+        Assert.assertEquals(Arrays.asList("1", "2"), space);
+        // NBSP 不分词：整个 "1<NBSP>2" 是一个 token；超宽走紧急硬断时 NBSP 保持前侧禁断
+        // （不落行首、随前行），后侧在紧急断行中可断（UAX#14 GL 规则 tailorable）。
+        Assert.assertEquals(Arrays.asList("1\u00A0", "2"), glue);
     }
 
     @Test
@@ -250,6 +267,46 @@ public class TextLayoutServiceControlCharTest {
         }
         // 1 个换行码点被折叠（\n 不占行内容），其余码点全保留
         Assert.assertEquals(water.codePointCount(0, water.length()) - 1, total);
+    }
+
+    @Test
+    public void shouldCoverEnclosingAndOverlayMarksInPlace() {
+        // 包围标记（Me，U+20DD 组合圈）与 Overlay（U+0335 短横覆盖线）：原位覆盖 y=0
+        TextLayoutService service = createService();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        float[] enclosing = service.resolveMarkPositions("a\u20DD", style, 16);
+        Assert.assertNotNull(enclosing);
+        Assert.assertEquals(0.0F, enclosing[3], 0.001F);
+        float[] overlay = service.resolveMarkPositions("a\u0335", style, 16);
+        Assert.assertNotNull(overlay);
+        Assert.assertEquals(0.0F, overlay[3], 0.001F);
+    }
+
+    @Test
+    public void shouldStackNuktaAndViramaBelow() {
+        // Nukta（CCC 7，U+093C）与 Virama（CCC 9，U+094D）：下方
+        TextLayoutService service = createService();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        float[] nukta = service.resolveMarkPositions("a\u093C", style, 16);
+        Assert.assertNotNull(nukta);
+        Assert.assertTrue("Nukta 应在下方（y>0）: " + nukta[3], nukta[3] > 0.0F);
+        float[] virama = service.resolveMarkPositions("a\u094D", style, 16);
+        Assert.assertNotNull(virama);
+        Assert.assertTrue("Virama 应在下方（y>0）: " + virama[3], virama[3] > 0.0F);
+    }
+
+    @Test
+    public void shouldPlaceKanaVoicingUpperRight() {
+        // 假名浊点（CCC 8，U+3099）：上方且右移
+        TextLayoutService service = createService();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        float[] voicing = service.resolveMarkPositions("a\u3099", style, 16);
+        Assert.assertNotNull(voicing);
+        Assert.assertTrue("浊点应在上方（y<0）: " + voicing[3], voicing[3] < 0.0F);
+        Assert.assertTrue("浊点应右移（x>基字中心）: " + voicing[2], voicing[2] > 0.0F);
     }
 
     @Test

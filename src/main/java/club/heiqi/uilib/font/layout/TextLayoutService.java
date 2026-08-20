@@ -70,18 +70,91 @@ public class TextLayoutService {
     }
 
     /**
-     * 是否下方附着标记：优先 CCC（Below 系：220 Below / 202 Below Attached / 200 Below Left /
-     * 218 Below Right / 222 Below Left / 233 Double Below / 240 Iota Subscript）；
-     * CCC 不可用（JDK9+ 无 sun.text.Normalizer）或为 0（泰语等无 CCC 脚本）时
-     * 回落常用下方标记码点白名单（泰语下方元音/阿拉伯下方系/拉丁下方系常用区间）。
+     * 组合标记堆叠方向（对齐 CCC 完整语义与 GPOS 近似）：
+     * <ul>
+     *   <li>{@code -1}：下方（Below 系 220/202/200/218/222/233/240、Nukta 7、Virama 9）；</li>
+     *   <li>{@code 0}：原位覆盖（Overlay 1、包围标记 Me——居中覆盖基字不偏移）；</li>
+     *   <li>{@code 1}：上方（Above 系 230/216/232/234 与无 CCC 默认）；</li>
+     *   <li>{@code 2}：右上（Kana Voicing 8，假名浊点）。</li>
+     * </ul>
      *
      * @param codepoint Unicode 码点
-     * @return true 表示向下堆叠
+     * @return 堆叠方向编码
      */
-    private static boolean isBelowMark(int codepoint) {
+    private static int markStackDirection(int codepoint) {
+        if (Character.getType(codepoint) == Character.ENCLOSING_MARK) {
+            return 0; // 包围标记：居中覆盖
+        }
+        int ccc = combiningClass(codepoint);
+        switch (ccc) {
+            case 1:
+                return 0; // Overlay：原位覆盖
+            case 7:
+            case 9:
+                return -1; // Nukta / Virama：下方
+            case 8:
+                return 2; // Kana Voicing：右上
+            case 220:
+            case 202:
+            case 200:
+            case 218:
+            case 222:
+            case 233:
+            case 240:
+                return -1; // Below 系：下方
+            default:
+                break;
+        }
+        if (ccc != 0) {
+            return 1; // Above 系（230/216/232/234 等）：上方
+        }
+        // CCC 不可用（JDK9+ 无 sun.text.Normalizer）或为 0（泰语等无 CCC 脚本）：
+        // 回落码点白名单（Overlay/假名浊点/Nukta/Virama/下方系常用区间）。
+        return markDirectionFallback(codepoint);
+    }
+
+    /**
+     * CCC 缺失/为 0 环境下的方向白名单：Overlay 原位、假名浊点右上、
+     * Nukta/Virama 与下方系向下，其余向上。
+     *
+     * @param codepoint Unicode 码点
+     * @return 堆叠方向编码（-1/0/1/2）
+     */
+    private static int markDirectionFallback(int codepoint) {
+        if (codepoint >= 0x0334 && codepoint <= 0x0338) {
+            return 0; // Overlay 系（组合短横/斜线等覆盖线）
+        }
+        if (codepoint == 0x3099 || codepoint == 0x309A) {
+            return 2; // 假名浊点/半浊点（右上）
+        }
+        if (isNuktaOrViramaCodepoint(codepoint) || isBelowMarkCodepoint(codepoint)) {
+            return -1;
+        }
+        return 1;
+    }
+
+    /** 常用印度文字 Nukta/Virama 码点（CCC 7/9，CCC 缺失环境的方向白名单）。 */
+    private static boolean isNuktaOrViramaCodepoint(int codepoint) {
+        switch (codepoint) {
+            case 0x093C: case 0x09BC: case 0x0A3C: case 0x0ABC: case 0x0B3C: case 0x0CBC:
+            case 0x094D: case 0x09CD: case 0x0A4D: case 0x0ACD: case 0x0B4D: case 0x0BCD:
+            case 0x0C4D: case 0x0D4D: case 0x0E3A:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * 常用下方附着标记码点白名单（CCC 缺失/为 0 环境下的方向回落）。
+     *
+     * @param codepoint Unicode 码点
+     * @return true 表示下方附着
+     */
+    private static boolean isBelowMarkCodepoint(int codepoint) {
         int ccc = combiningClass(codepoint);
         if (ccc != 0) {
-            return ccc == 220 || ccc == 202 || ccc == 200 || ccc == 218 || ccc == 222 || ccc == 233 || ccc == 240;
+            return false;
         }
         // 泰语下方元音（SARA U/UU 等）
         if (codepoint >= 0x0E36 && codepoint <= 0x0E39) {
@@ -1067,6 +1140,7 @@ public class TextLayoutService {
             float[] result = new float[codePointCount * 2];
             float runningX = 0.0F;
             float baseCenterX = 0.0F;
+            float baseAdvance = 0.0F;
             // 紧实堆叠游标：上方堆叠顶（负 y）与下方堆叠底（正 y），
             // 层距取每个标记自身 ink 高度（贴字形摞，不按固定行高比例摊开）。
             float upCursorY = -(ascent * 0.8F) * scale;
@@ -1080,11 +1154,14 @@ public class TextLayoutService {
                 int codepoint = text.codePointAt(i);
                 int charCount = Character.charCount(codepoint);
                 if (UnicodeTextClassifier.isClusterContinuation(codepoint)) {
-                    // 组合标记：吸附最近基字中心，按 CCC 方向紧实堆叠——
-                    // 上方标记向上摞、下方标记向下摞；层距 = 本标记 ink 高度（贴字形）。
-                    result[codePointIndex * 2] = baseCenterX;
+                    // 组合标记：按 CCC 完整语义定位——上方向上摞、下方向下摞（层距=本标记
+                    // ink 高度贴字形）；Overlay/包围标记原位覆盖基字（y=0）；假名浊点右上。
+                    int direction = markStackDirection(codepoint);
                     float inkHeight = resolveMarkInkHeight(glyphVector, codePointIndex, ascent, scale);
-                    if (isBelowMark(codepoint)) {
+                    if (direction == 0) {
+                        result[codePointIndex * 2] = baseCenterX;
+                        result[codePointIndex * 2 + 1] = 0.0F;
+                    } else if (direction < 0) {
                         if (downLayer == 0) {
                             downCursorY = resolveBelowInkTop(glyphVector, codePointIndex, scale);
                         } else {
@@ -1092,6 +1169,7 @@ public class TextLayoutService {
                         }
                         downLayer++;
                         prevDownInk = inkHeight;
+                        result[codePointIndex * 2] = baseCenterX;
                         result[codePointIndex * 2 + 1] = downCursorY;
                     } else {
                         if (upLayer == 0) {
@@ -1101,6 +1179,9 @@ public class TextLayoutService {
                         }
                         upLayer++;
                         prevUpInk = inkHeight;
+                        result[codePointIndex * 2] = direction == 2
+                                ? baseCenterX + baseAdvance * 0.25F
+                                : baseCenterX;
                         result[codePointIndex * 2 + 1] = upCursorY;
                     }
                 } else {
@@ -1108,6 +1189,7 @@ public class TextLayoutService {
                     result[codePointIndex * 2] = runningX;
                     result[codePointIndex * 2 + 1] = 0.0F;
                     baseCenterX = runningX + (float) advance / 2.0F;
+                    baseAdvance = (float) advance;
                     runningX += advance;
                     upLayer = 0;
                     downLayer = 0;
@@ -1412,8 +1494,10 @@ public class TextLayoutService {
      * 使常见重音字符在无 mark 定位渲染的字体链上也能正确显示。
      *
      * <p>已规范化文本走 {@link Normalizer#isNormalized} 零分配快路径原样返回；
-     * {@link #prefixWidthsRaw}（文本域 caret 几何）刻意不规范化——保持码点下标保真，
-     * NFC 等价序列的 advance 不变，宽度口径仍然一致。</p>
+     * {@link #prefixWidthsRaw}（文本域 caret 几何）刻意不规范化——保持码点下标保真。
+     * 宽度口径的一致性依据是「组合标记测量零宽 + 预组合字形与基字同 advance 的字体惯例」
+     * （注意：这不是 Unicode 不变式——NFC 本身改变码点数，UAX#15 不保证字符级
+     * advance 之和相等）。</p>
      *
      * @param text 原始文本（可为 null）
      * @return NFC 规范化后的文本

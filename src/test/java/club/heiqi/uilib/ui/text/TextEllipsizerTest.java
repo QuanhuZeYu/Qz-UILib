@@ -215,11 +215,20 @@ public class TextEllipsizerTest {
 
     @Test
     public void unicodeWhitespaceFamilySplitsWords() {
-        // NBSP 参与分词；段首尾 Unicode 空白剥除
-        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "a\u00A0b", px(1), 0);
+        // BA 类空格（U+3000）参与分词；段首尾可断空白剥除
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "a\u3000b", px(1), 0);
         Assert.assertEquals(Arrays.asList("a", "b"), lines);
-        List<String> trimmed = TextEllipsizer.wrapLines(s -> px(s.length()), "\u00A0a\u00A0", px(100), 0);
+        List<String> trimmed = TextEllipsizer.wrapLines(s -> px(s.length()), "\u3000a\u3000", px(100), 0);
         Assert.assertEquals(Arrays.asList("a"), trimmed);
+    }
+
+    @Test
+    public void nbspGlueIsNotAWordSeparator() {
+        // NBSP 是 GL 禁断胶水：词内不拆开（与普通空格分词行为对照）
+        List<String> glue = TextEllipsizer.wrapLines(s -> px(s.length()), "a\u00A0b", px(100), 0);
+        Assert.assertEquals(Arrays.asList("a\u00A0b"), glue);
+        List<String> space = TextEllipsizer.wrapLines(s -> px(s.length()), "a b", px(1), 0);
+        Assert.assertEquals(Arrays.asList("a", "b"), space);
     }
 
     @Test

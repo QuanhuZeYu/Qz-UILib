@@ -205,7 +205,7 @@ public final class TextEllipsizer {
             return;
         }
         StringBuilder line = new StringBuilder();
-        for (String rawWord : trimmed.split("(?U)\\s+")) {
+        for (String rawWord : splitWords(trimmed)) {
             if (rawWord.isEmpty()) {
                 continue;
             }
@@ -242,6 +242,29 @@ public final class TextEllipsizer {
         }
     }
 
+    /** 按断词分隔（可断空格 + tab）切词；GL 胶水（NBSP 等）保留在词内不拆开。 */
+    private static List<String> splitWords(String text) {
+        List<String> words = new ArrayList<>();
+        int start = -1;
+        for (int i = 0; i < text.length(); ) {
+            int codepoint = text.codePointAt(i);
+            int charCount = Character.charCount(codepoint);
+            if (UnicodeTextClassifier.isWordBoundary(codepoint)) {
+                if (start >= 0) {
+                    words.add(text.substring(start, i));
+                    start = -1;
+                }
+            } else if (start < 0) {
+                start = i;
+            }
+            i += charCount;
+        }
+        if (start >= 0) {
+            words.add(text.substring(start));
+        }
+        return words;
+    }
+
     /** 按 ZWSP/软连字符拆词；断行机会保留为子词尾软连字符标记（词尾软连字符丢弃，不显示）。 */
     private static List<String> splitSoftBreaks(String word) {
         List<String> parts = new ArrayList<>();
@@ -269,12 +292,12 @@ public final class TextEllipsizer {
         return parts;
     }
 
-    /** 行尾抛光：剥尾部断词空白与 ZWSP；软连字符替换为可见连字符（断行补字）。 */
+    /** 行尾抛光：剥尾部可折叠空白（CSS 口径：仅 U+0020/tab）与 ZWSP；软连字符替换为可见连字符（断行补字）。 */
     private static String polishLineTail(StringBuilder line) {
         while (line.length() > 0) {
             int codepoint = line.codePointBefore(line.length());
             int codepointLength = Character.charCount(codepoint);
-            if (UnicodeTextClassifier.isWordBoundary(codepoint) || codepoint == 0x200B) {
+            if (UnicodeTextClassifier.isTrailingFoldable(codepoint) || codepoint == 0x200B) {
                 line.setLength(line.length() - codepointLength);
                 continue;
             }
