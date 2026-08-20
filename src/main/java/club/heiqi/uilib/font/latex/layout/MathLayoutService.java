@@ -42,21 +42,29 @@ public final class MathLayoutService {
         if (nodes == null || nodes.isEmpty()) {
             return MathBox.empty();
         }
-        return layoutList(nodes, baseSizePx, metrics);
+        return layoutList(nodes, baseSizePx, metrics, false);
     }
 
     // ==================== 节点分派 ====================
 
     private MathBox layoutNode(LatexNode node, float size, MathMetrics m) {
+        return layoutNode(node, size, m, false);
+    }
+
+    /**
+     * 布局节点（TeX cramped style：根式/分数分子分母/重音基底内，上标抬升用 cramped 参数 sup3，
+     * 其余不变）。
+     */
+    private MathBox layoutNode(LatexNode node, float size, MathMetrics m, boolean cramped) {
         switch (node.getKind()) {
             case ATOM:
                 return layoutAtom((LatexAtom) node, size, m);
             case GROUP:
-                return layoutList(((LatexGroup) node).getChildren(), size, m);
+                return layoutList(((LatexGroup) node).getChildren(), size, m, cramped);
             case SPACE:
                 return spaceBox((float) ((LatexSpace) node).getEmWidth() * size);
             case SUP_SUB:
-                return layoutSupSub((LatexSupSub) node, size, m);
+                return layoutSupSub((LatexSupSub) node, size, m, cramped);
             case FRAC:
                 return layoutFrac((LatexFrac) node, size, m);
             case SQRT:
@@ -80,8 +88,26 @@ public final class MathLayoutService {
         String text = atom.getText();
         float width = m.advance(text, size);
         List<GlyphElem> glyphs = new ArrayList<GlyphElem>(1);
-        glyphs.add(new GlyphElem(text, 0.0F, 0.0F, 1.0F));
+        // TeX mathnormal：ORD 类 ASCII 字母为数学变量（斜体）；数字/符号/函数名（OP）/
+        // \text 内容（TEXT）保持直体。
+        boolean italic = atom.getAtomClass() == LatexAtom.AtomClass.ORD && isMathVariable(text);
+        glyphs.add(new GlyphElem(text, 0.0F, 0.0F, 1.0F, italic));
         return new MathBox(width, m.ascent(size), m.descent(size), glyphs, null);
+    }
+
+    /** 是否数学变量文本（全 ASCII 字母：TeX mathnormal 的 capitals/small 映射）。 */
+    private static boolean isMathVariable(String text) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        for (int index = 0; index < text.length(); ) {
+            int codepoint = text.codePointAt(index);
+            index += Character.charCount(codepoint);
+            if (codepoint < 'A' || codepoint > 'z' || (codepoint > 'Z' && codepoint < 'a')) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static MathBox spaceBox(float width) {
@@ -89,7 +115,7 @@ public final class MathLayoutService {
     }
 
     /** 水平拼接（含数学原子间距）。 */
-    private MathBox layoutList(List<LatexNode> nodes, float size, MathMetrics m) {
+    private MathBox layoutList(List<LatexNode> nodes, float size, MathMetrics m, boolean cramped) {
         if (nodes.isEmpty()) {
             return MathBox.empty();
         }
@@ -105,7 +131,7 @@ public final class MathLayoutService {
                 float gap = spacingMu(effective[index - 1], effective[index]) / 18.0F * size;
                 builder.advance(gap);
             }
-            MathBox child = layoutNode(node, size, m);
+            MathBox child = layoutNode(node, size, m, cramped);
             builder.addBox(child, builder.width, 0.0F, 1.0F);
         }
         return builder.toBox();
@@ -199,7 +225,7 @@ public final class MathLayoutService {
 
     // ==================== 上下标 ====================
 
-    private MathBox layoutSupSub(LatexSupSub node, float size, MathMetrics m) {
+    private MathBox layoutSupSub(LatexSupSub node, float size, MathMetrics m, boolean cramped) {
         MathBox base = layoutNode(node.getBase(), size, m);
         float scriptSize = size * MathConstants.SCRIPT_SCALE;
         MathBox sup = node.getSup() == null ? null : layoutNode(node.getSup(), scriptSize, m);
@@ -217,8 +243,9 @@ public final class MathLayoutService {
 
         // TeX ScriptsAtom 约束链（行内=text 样式口径）：
         // shiftUp = base.height − supdrop；shiftDown = base.depth + subdrop；
-        // 上标下限 max(sup2, sup.depth + xHeight/4)；下标下限 max(sub1, sub.height − 4·xHeight/5)；
+        // 上标下限 max(sup2/sup3 按 cramped, sup.depth + xHeight/4)；下标下限 max(sub1, sub.height − 4·xHeight/5)；
         // 双脚本再经 sub2 与 4×规则线粗最小间距、4/5 xHeight 二次分配（psi）。
+        float supMinimum = (cramped ? MathConstants.SUP3_EM : MathConstants.SUP2_EM) * size;
         float xHeight = m.xHeight(size);
         float drt = MathConstants.RULE_THICKNESS_EM * size;
         float shiftUp = base.getHeight() - MathConstants.SUP_DROP_EM * size;
@@ -226,7 +253,7 @@ public final class MathLayoutService {
         float supY = 0.0F;
         float subY = 0.0F;
         if (sup != null && sub == null) {
-            shiftUp = Math.max(Math.max(shiftUp, MathConstants.SUP2_EM * size),
+            shiftUp = Math.max(Math.max(shiftUp, supMinimum),
                     sup.getDepth() + xHeight / 4.0F);
             supY = -shiftUp;
         } else if (sub != null && sup == null) {
@@ -234,7 +261,7 @@ public final class MathLayoutService {
                     sub.getHeight() - 4.0F * xHeight / 5.0F);
             subY = shiftDown;
         } else {
-            shiftUp = Math.max(Math.max(shiftUp, MathConstants.SUP2_EM * size),
+            shiftUp = Math.max(Math.max(shiftUp, supMinimum),
                     sup.getDepth() + xHeight / 4.0F);
             shiftDown = Math.max(shiftDown, MathConstants.SUB2_EM * size);
             float interSpace = shiftUp - sup.getDepth() + shiftDown - sub.getHeight();
@@ -254,16 +281,27 @@ public final class MathLayoutService {
         float supWidth = sup == null ? 0.0F : sup.getWidth();
         float subWidth = sub == null ? 0.0F : sub.getWidth();
         float scriptWidth = Math.max(supWidth, subWidth);
+        // 斜体校正（TeX Char.italic）：单字符数学变量基底时，上标右移校正量避开斜体笔画
+        float supShift = 0.0F;
+        if (sup != null) {
+            LatexNode baseNode = node.getBase();
+            if (baseNode.getKind() == LatexNode.Kind.ATOM) {
+                String baseText = ((LatexAtom) baseNode).getText();
+                if (baseText.codePointCount(0, baseText.length()) == 1 && isMathVariable(baseText)) {
+                    supShift = m.italicCorrection(baseText, size);
+                }
+            }
+        }
 
         Builder builder = new Builder();
         builder.addBox(base, 0.0F, 0.0F, 1.0F);
         if (sup != null) {
-            builder.addBox(sup, base.getWidth() + scriptSpace, supY, MathConstants.SCRIPT_SCALE);
+            builder.addBox(sup, base.getWidth() + scriptSpace + supShift, supY, MathConstants.SCRIPT_SCALE);
         }
         if (sub != null) {
             builder.addBox(sub, base.getWidth() + scriptSpace, subY, MathConstants.SCRIPT_SCALE);
         }
-        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptSpace + scriptWidth : 0.0F);
+        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptSpace + scriptWidth : 0.0F) + supShift;
         builder.height = Math.max(base.getHeight(), sup != null ? -supY + sup.getHeight() : 0.0F);
         builder.depth = Math.max(base.getDepth(), sub != null ? subY + sub.getDepth() : 0.0F);
         return builder.toBox();
@@ -305,8 +343,9 @@ public final class MathLayoutService {
 
     private MathBox layoutFrac(LatexFrac node, float size, MathMetrics m) {
         float scriptSize = size * MathConstants.SCRIPT_SCALE;
-        MathBox num = layoutNode(node.getNumerator(), scriptSize, m);
-        MathBox den = layoutNode(node.getDenominator(), scriptSize, m);
+        // 分子分母用 cramped scriptstyle（TeX numStyle/denomStyle）
+        MathBox num = layoutNode(node.getNumerator(), scriptSize, m, true);
+        MathBox den = layoutNode(node.getDenominator(), scriptSize, m, true);
         // TeX FractionAtom（行内=text 样式口径）：轴高对齐 + num2/denom2 + clr 补足链
         float drt = MathConstants.RULE_THICKNESS_EM * size;
         float axis = MathConstants.AXIS_HEIGHT_EM * size;
@@ -346,7 +385,8 @@ public final class MathLayoutService {
     // ==================== 根号 ====================
 
     private MathBox layoutSqrt(LatexSqrt node, float size, MathMetrics m) {
-        MathBox radicand = layoutNode(node.getRadicand(), size, m);
+        // 被开方内容用 cramped style（TeX NthRoot）
+        MathBox radicand = layoutNode(node.getRadicand(), size, m, true);
         float drt = MathConstants.RULE_THICKNESS_EM * size;
         float xHeight = m.xHeight(size);
         // TeX NthRoot（行内=text 口径）：clr = drt + |xHeight|/4
@@ -459,7 +499,7 @@ public final class MathLayoutService {
         float[] rowMaxHeight = new float[rowCount];
         for (int i = 0; i < rowCount; i++) {
             for (int j = 0; j < rows.get(i).size(); j++) {
-                MathBox cell = layoutList(rows.get(i).get(j), size, m);
+                MathBox cell = layoutList(rows.get(i).get(j), size, m, false);
                 cells[i][j] = cell;
                 colWidth[j] = Math.max(colWidth[j], cell.getWidth());
                 rowHeight[i] = Math.max(rowHeight[i], cell.getTotalHeight());
@@ -559,8 +599,9 @@ public final class MathLayoutService {
 
     private MathBox layoutBinom(LatexBinom node, float size, MathMetrics m) {
         float scriptSize = size * MathConstants.SCRIPT_SCALE;
-        MathBox upper = layoutNode(node.getUpper(), scriptSize, m);
-        MathBox lower = layoutNode(node.getLower(), scriptSize, m);
+        // \binom = 无分数线分数：上下元素用 cramped scriptstyle（TeX \genfrac 语义）
+        MathBox upper = layoutNode(node.getUpper(), scriptSize, m, true);
+        MathBox lower = layoutNode(node.getLower(), scriptSize, m, true);
         float gap = MathConstants.BINOM_GAP_EM * size;
         float totalHeight = upper.getTotalHeight() + gap + lower.getTotalHeight();
         float contentWidth = Math.max(upper.getWidth(), lower.getWidth());
@@ -580,7 +621,8 @@ public final class MathLayoutService {
     }
 
     private MathBox layoutAccent(LatexAccent node, float size, MathMetrics m) {
-        MathBox base = layoutNode(node.getBase(), size, m);
+        // 重音基底用 cramped style（TeX AccentedAtom）
+        MathBox base = layoutNode(node.getBase(), size, m, true);
         Builder builder = new Builder();
         builder.addBox(base, 0.0F, 0.0F, 1.0F);
         float gap = MathConstants.ACCENT_GAP_EM * size;
@@ -610,7 +652,8 @@ public final class MathLayoutService {
         }
         Builder builder = new Builder();
         for (GlyphElem glyph : box.getGlyphs()) {
-            builder.addGlyph(glyph.getText(), glyph.getX() + dx, glyph.getY() + dy, glyph.getSizeScale());
+            builder.addGlyph(glyph.getText(), glyph.getX() + dx, glyph.getY() + dy, glyph.getSizeScale(),
+                    glyph.isItalic());
         }
         for (RuleElem rule : box.getRules()) {
             builder.addRule(rule.getX() + dx, rule.getY() + dy, rule.getWidth(), rule.getThickness());
@@ -634,7 +677,11 @@ public final class MathLayoutService {
         }
 
         void addGlyph(String text, float x, float y, float sizeScale) {
-            glyphs.add(new GlyphElem(text, x, y, sizeScale));
+            addGlyph(text, x, y, sizeScale, false);
+        }
+
+        void addGlyph(String text, float x, float y, float sizeScale, boolean italic) {
+            glyphs.add(new GlyphElem(text, x, y, sizeScale, italic));
         }
 
         void addRule(float x, float y, float ruleWidth, float thickness) {
@@ -644,7 +691,7 @@ public final class MathLayoutService {
         void addBox(MathBox child, float dx, float dy, float glyphScale) {
             for (GlyphElem glyph : child.getGlyphs()) {
                 glyphs.add(new GlyphElem(glyph.getText(), glyph.getX() + dx, glyph.getY() + dy,
-                        glyph.getSizeScale() * glyphScale));
+                        glyph.getSizeScale() * glyphScale, glyph.isItalic()));
             }
             for (RuleElem rule : child.getRules()) {
                 rules.add(new RuleElem(rule.getX() + dx, rule.getY() + dy, rule.getWidth(), rule.getThickness()));

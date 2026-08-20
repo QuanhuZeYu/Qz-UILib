@@ -32,4 +32,19 @@ public interface MathMetrics {
      * 上下标约束、重音基准）。
      */
     float xHeight(float sizePx);
+
+    /**
+     * 斜体校正量（em）：数学变量斜体字形视觉右倾，上标需右移此量避开斜体笔画
+     * （TeX Char.italic 的几何斜切近似 = 斜切角 × x-height）。
+     *
+     * <p>默认实现返回 0（mock 度量与直体场景）；真机度量由 {@code TextLayoutService}
+     * 按斜切几何给出。</p>
+     *
+     * @param text   文本（布局侧仅对单字符数学变量调用）
+     * @param sizePx 字号
+     * @return 斜体校正量（px）
+     */
+    default float italicCorrection(String text, float sizePx) {
+        return 0.0F;
+    }
 }

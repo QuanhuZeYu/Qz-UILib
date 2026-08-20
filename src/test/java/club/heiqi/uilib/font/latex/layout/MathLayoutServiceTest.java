@@ -37,6 +37,11 @@ public class MathLayoutServiceTest {
         public float xHeight(float sizePx) {
             return 0.45F * sizePx;
         }
+
+        @Override
+        public float italicCorrection(String text, float sizePx) {
+            return 0.25F * xHeight(sizePx);
+        }
     };
 
     private static final MathLayoutService SERVICE = new MathLayoutService();
@@ -61,6 +66,26 @@ public class MathLayoutServiceTest {
         Assert.assertEquals("x", box.getGlyphs().get(0).getText());
         Assert.assertEquals(0.0F, box.getGlyphs().get(0).getY(), EPS);
         Assert.assertEquals(1.0F, box.getGlyphs().get(0).getSizeScale(), EPS);
+        // TeX mathnormal：ORD 类 ASCII 字母为数学变量（斜体）
+        Assert.assertTrue("数学变量应斜体", box.getGlyphs().get(0).isItalic());
+    }
+
+    @Test
+    public void shouldKeepDigitsAndOperatorsUpright() {
+        // 数字（ORD）与函数名（OP）不斜体，变量斜体
+        MathBox digits = layout("12");
+        for (GlyphElem glyph : digits.getGlyphs()) {
+            Assert.assertFalse("数字应直体", glyph.isItalic());
+        }
+        MathBox func = layout("\\sin x");
+        for (GlyphElem glyph : func.getGlyphs()) {
+            if ("sin".equals(glyph.getText())) {
+                Assert.assertFalse("函数名应直体", glyph.isItalic());
+            }
+            if ("x".equals(glyph.getText())) {
+                Assert.assertTrue("函数后变量应斜体", glyph.isItalic());
+            }
+        }
     }
 
     @Test
@@ -100,8 +125,30 @@ public class MathLayoutServiceTest {
         Assert.assertEquals("2", supGlyph.getText());
         Assert.assertEquals(expectedSupY, supGlyph.getY(), EPS);
         Assert.assertEquals(0.7F, supGlyph.getSizeScale(), EPS);
-        Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S + 0.35F * S, box.getWidth(), EPS);
+        // 斜体校正：单字符变量基底时上标右移 italicCorrection（0.25×xHeight = 0.1125S）
+        float italicCorrection = 0.25F * 0.45F * S;
+        Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S + italicCorrection, supGlyph.getX(), EPS);
+        Assert.assertEquals(0.5F * S + MathConstants.SCRIPT_SPACE_EM * S + 0.35F * S + italicCorrection,
+                box.getWidth(), EPS);
         Assert.assertEquals(0.56F * S - expectedSupY, box.getHeight(), EPS);
+    }
+
+    @Test
+    public void shouldUseCrampedSupInsideSqrt() {
+        // 根式内是 cramped style：上标抬升用 sup3（路径覆盖 + 值锚定）
+        MathBox box = layout("\\sqrt{x^2}");
+        float supDepth = 0.14F * S;
+        float xHeight = 0.45F * S;
+        float expectedSupY = -Math.max(Math.max(0.8F * S - MathConstants.SUP_DROP_EM * S,
+                MathConstants.SUP3_EM * S), supDepth + xHeight / 4.0F);
+        boolean found = false;
+        for (GlyphElem glyph : box.getGlyphs()) {
+            if ("2".equals(glyph.getText())) {
+                Assert.assertEquals(expectedSupY, glyph.getY(), EPS);
+                found = true;
+            }
+        }
+        Assert.assertTrue("根式内应包含上标 2", found);
     }
 
     @Test

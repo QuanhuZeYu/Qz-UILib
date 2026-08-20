@@ -99,18 +99,18 @@ public final class GlyphRenderBatch {
         int vertexFloatBase = vertexBase * VERTEX_STRIDE_FLOATS;
         int indexBase = quadCount * INDICES_PER_QUAD;
 
-        float italicOffset = italic ? resolveItalicOffset(height, baseCharSize) : 0.0F;
-        float leftX = x + italicOffset;
-        float rightX = x + width + italicOffset;
+        // 斜体 = 几何斜切（对齐 TeX cmmi 斜角 ≈ 14°，tan ≈ 0.25）：顶部顶点右移、底部不动，
+        // 取代旧平移近似；<i> 标签与数学变量斜体共用同一语义（视觉更接近真斜体字形）。
+        float topShift = italic ? resolveItalicTopShift(height) : 0.0F;
 
-        writeVertex(vertexFloatBase, leftX, y, z, u0, v0, red, green, blue, alpha, clipU0, clipV0, clipU1, clipV1,
-                renderType);
+        writeVertex(vertexFloatBase, x + topShift, y, z, u0, v0, red, green, blue, alpha, clipU0, clipV0, clipU1,
+                clipV1, renderType);
         writeVertex(vertexFloatBase + VERTEX_STRIDE_FLOATS, x, y + height, z, u0, v1, red, green, blue, alpha,
                 clipU0, clipV0, clipU1, clipV1, renderType);
         writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 2), x + width, y + height, z, u1, v1, red,
                 green, blue, alpha, clipU0, clipV0, clipU1, clipV1, renderType);
-        writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 3), rightX, y, z, u1, v0, red, green, blue, alpha,
-                clipU0, clipV0, clipU1, clipV1, renderType);
+        writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 3), x + width + topShift, y, z, u1, v0, red,
+                green, blue, alpha, clipU0, clipV0, clipU1, clipV1, renderType);
 
         indexData[indexBase] = vertexBase;
         indexData[indexBase + 1] = vertexBase + 1;
@@ -226,8 +226,9 @@ public final class GlyphRenderBatch {
         indexData = grow(indexData, nextCapacity * INDICES_PER_QUAD);
     }
 
-    private float resolveItalicOffset(float charSize, float baseCharSize) {
-        return 2.0F * charSize / Math.max(1.0F, baseCharSize);
+    /** 斜体顶部右移量（斜切角与字号无关，取 cmmi 斜角 tan ≈ 0.25）。 */
+    private float resolveItalicTopShift(float height) {
+        return 0.25F * height;
     }
 
     private static float[] grow(float[] original, int newLength) {

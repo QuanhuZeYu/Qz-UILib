@@ -989,6 +989,13 @@ public class TextLayoutService {
             public float xHeight(float sizePx) {
                 return getXHeight(Math.max(1, (int) sizePx));
             }
+
+            @Override
+            public float italicCorrection(String text, float sizePx) {
+                // 数学变量斜体走几何斜切（斜角 tan ≈ 0.25）：视觉右倾 = 斜切角 × x-height，
+                // 上标右移此量避开斜体笔画（TeX Char.italic 的斜切近似）。
+                return 0.25F * getXHeight(Math.max(1, (int) sizePx));
+            }
         };
     }
 

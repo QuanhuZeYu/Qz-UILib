@@ -827,13 +827,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         glyphX + (float) FontConfig.shadowOffsetX * renderScale,
                         glyphDrawY + (float) FontConfig.shadowOffsetY * renderScale,
                         measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
-                        darkenShadow(style.getColor()), false);
+                        darkenShadow(style.getColor()), false,
+                        style.isItalic() || preparedText.italicFlags[glyphIndex]);
             }
             collectGlyph(collector, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
                     glyphX, glyphDrawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
-                    style.getColor(), true);
+                    style.getColor(), true, style.isItalic() || preparedText.italicFlags[glyphIndex]);
             currentX += measuredWidth;
         }
         // LaTeX 规则线（分数线/根号横线等）：随字形同帧收集，装饰线批次在字形页之后 flush。
@@ -892,6 +893,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         int[] fontSizePx = new int[glyphCount];
         float[] xOffsets = new float[glyphCount];
         float[] yOffsets = new float[glyphCount];
+        boolean[] italicFlags = new boolean[glyphCount];
         List<float[]> latexRules = new ArrayList<float[]>();
         List<Integer> latexRuleColors = new ArrayList<Integer>();
         int maxFontSizePx = resolvedBaseFontSizePx;
@@ -909,8 +911,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
                 glyphIndex = fillLatexSegment(segment, latexBoxes[s], style, segmentFontSizePx,
                         resolvedBaseFontSizePx, textLayoutService, tables, renderScale, renderCodepoints,
-                        fontTypes, measuredWidths, styles, fontSizePx, xOffsets, yOffsets, glyphIndex,
-                        latexRules, latexRuleColors, maxFontSizeHolder);
+                        fontTypes, measuredWidths, styles, fontSizePx, xOffsets, yOffsets, italicFlags,
+                        glyphIndex, latexRules, latexRuleColors, maxFontSizeHolder);
                 // 公式内部存在字号缩放（script 0.7×/定界符放大）同样禁用 uniform 快路径，
                 // 否则缩放字形按正文全尺寸绘制且与 0.7× 布局偏移错配（符号乱飞根因）。
                 if (segmentFontSizePx != resolvedBaseFontSizePx || latexBoxHasScaledGlyphs(latexBoxes[s])) {
@@ -939,6 +941,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         : resolveDisplayCodepoint(codepoint, style.getFontType(), tables);
                 renderCodepoints[glyphIndex] = renderCodepoint;
                 fontTypes[glyphIndex] = style.getFontType();
+                italicFlags[glyphIndex] = false;
                 // 推进宽度经 TextLayoutService.resolveAdvance 同源（测量/trim/wrap 共用口径，
                 // 内部按 sup/sub 解析有效字号）；装饰线/高亮矩形随 advance 覆盖间隙，整体同乘 renderScale。
                 measuredWidths[glyphIndex] = (float) textLayoutService.resolveAdvance(
@@ -970,8 +973,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             ruleColors[r] = latexRuleColors.get(r).intValue();
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
-                maxFontSizeHolder[0], resolvedBaseFontSizePx, xOffsets, yOffsets, hasMixedSize, ruleArray,
-                ruleColors);
+                maxFontSizeHolder[0], resolvedBaseFontSizePx, xOffsets, yOffsets, italicFlags, hasMixedSize,
+                ruleArray, ruleColors);
     }
 
     /**
@@ -983,8 +986,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     private int fillLatexSegment(TextSegment segment, MathBox box, TextStyle style, int segmentFontSizePx,
             int resolvedBaseFontSizePx, TextLayoutService textLayoutService, GlyphRuntimeTablesView tables,
             float renderScale, int[] renderCodepoints, FontType[] fontTypes, float[] measuredWidths,
-            TextStyle[] styles, int[] fontSizePx, float[] xOffsets, float[] yOffsets, int startGlyphIndex,
-            List<float[]> latexRules, List<Integer> latexRuleColors, int[] maxFontSizeHolder) {
+            TextStyle[] styles, int[] fontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags,
+            int startGlyphIndex, List<float[]> latexRules, List<Integer> latexRuleColors,
+            int[] maxFontSizeHolder) {
         int glyphIndex = startGlyphIndex;
         float segmentAdvanceSum = 0.0F;
         for (GlyphElem elem : box.getGlyphs()) {
@@ -1003,6 +1007,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
                 renderCodepoints[glyphIndex] = resolveDisplayCodepoint(codepoint, style.getFontType(), tables);
                 fontTypes[glyphIndex] = style.getFontType();
+                italicFlags[glyphIndex] = elem.isItalic();
                 double advance = textLayoutService.resolveAdvance(codepoint, style, resolvedBaseFontSizePx)
                         * elem.getSizeScale();
                 measuredWidths[glyphIndex] = (float) advance * renderScale;
@@ -1233,7 +1238,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int textureId, int textureSize, int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX,
             int atlasBaselineY, int lineBaselineY, int glyphSize, byte glyphFlags, int inkWidth, int inkHeight,
             int bearingX, int bearingY, float currentX, float drawY, float measuredWidth, float charSize,
-            float baseCharSize, float renderScale, TextStyle style, int renderColor, boolean withMarkBackground) {
+            float baseCharSize, float renderScale, TextStyle style, int renderColor, boolean withMarkBackground,
+            boolean italic) {
         boolean hasGlyphQuad = glyphReady && textureId > 0 && slotWidth > 0 && slotHeight > 0
                 && inkWidth > 0 && inkHeight > 0;
         if (hasGlyphQuad || style.isUnderline() || style.isStrikethrough() || style.getMarkColor() != 0) {
@@ -1242,7 +1248,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         if (hasGlyphQuad) {
             collector.collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize,
                     slotX, slotY, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize,
-                    inkWidth, inkHeight, bearingX, bearingY, currentX, drawY, charSize, renderColor, style.isItalic(),
+                    inkWidth, inkHeight, bearingX, bearingY, currentX, drawY, charSize, renderColor, italic,
                     glyphFlags, baseCharSize);
         }
         collectDecorations(collector, currentX, drawY, measuredWidth, charSize, baseCharSize, renderScale,
@@ -1358,6 +1364,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private final float[] xOffsets;
         /** GPOS mark 定位纵向偏移（相对 drawY，向上为负；无 mark 段落恒 0）。 */
         private final float[] yOffsets;
+        /** 数学变量斜体标志（LaTeX 段 ORD 类 ASCII 字母；普通段恒 false）。 */
+        private final boolean[] italicFlags;
         /** 是否存在与基准字号不同的 glyph（\<size\> 段或 LaTeX 缩放字形）——禁用 uniform 快路径。 */
         private final boolean hasMixedSize;
         /** LaTeX 规则线（分数线/根号线等），每条 {x, y, w, t} 已乘 renderScale（x 相对绘制起点、y 相对 drawY）。 */
@@ -1367,8 +1375,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
                 float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx,
-                int baseFontSizePx, float[] xOffsets, float[] yOffsets, boolean hasMixedSize,
-                float[][] latexRules, int[] latexRuleColors) {
+                int baseFontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags,
+                boolean hasMixedSize, float[][] latexRules, int[] latexRuleColors) {
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
             this.fontTypes = fontTypes;
@@ -1379,6 +1387,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             this.baseFontSizePx = baseFontSizePx;
             this.xOffsets = xOffsets;
             this.yOffsets = yOffsets;
+            this.italicFlags = italicFlags;
             this.hasMixedSize = hasMixedSize;
             this.latexRules = latexRules;
             this.latexRuleColors = latexRuleColors;
@@ -1395,7 +1404,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private static PreparedText empty(FontRuntimeSettings settings) {
             return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
                     new int[0], (int) settings.getCharSize(), (int) settings.getCharSize(),
-                    new float[0], new float[0], false, new float[0][0], new int[0]);
+                    new float[0], new float[0], new boolean[0], false, new float[0][0], new int[0]);
         }
     }
 
