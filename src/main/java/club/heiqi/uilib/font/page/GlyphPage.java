@@ -5,7 +5,6 @@ import java.nio.ByteBuffer;
 
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 import club.heiqi.uilib.font.FontRuntimeSettings;
@@ -1106,116 +1105,6 @@ public class GlyphPage {
         private SkylineNode(int x, int y) {
             this.x = x;
             this.y = y;
-        }
-    }
-
-    interface GlApi {
-
-        void pushAttrib(int mask);
-
-        void pushClientAttrib(int mask);
-
-        void popClientAttrib();
-
-        void popAttrib();
-
-        int genTexture();
-
-        void bindTexture(int target, int texture);
-
-        void pixelStore(int parameter, int value);
-
-        void texImage2D(int target, int level, int internalFormat, int width, int height, int border, int format,
-                int type, ByteBuffer pixels);
-
-        void texParameter(int target, int parameter, int value);
-
-        void texSubImage2D(int target, int level, int x, int y, int width, int height, int format, int type,
-                ByteBuffer pixels);
-
-        void generateMipmap(int target);
-
-        boolean isTexture(int texture);
-
-        void deleteTexture(int texture);
-
-        int getError();
-    }
-
-    private static final class LwjglGlApi implements GlApi {
-
-        private static final LwjglGlApi INSTANCE = new LwjglGlApi();
-
-        @Override
-        public void pushAttrib(int mask) {
-            GL11.glPushAttrib(mask);
-        }
-
-        @Override
-        public void pushClientAttrib(int mask) {
-            GL11.glPushClientAttrib(mask);
-        }
-
-        @Override
-        public void popClientAttrib() {
-            GL11.glPopClientAttrib();
-        }
-
-        @Override
-        public void popAttrib() {
-            GL11.glPopAttrib();
-        }
-
-        @Override
-        public int genTexture() {
-            return GL11.glGenTextures();
-        }
-
-        @Override
-        public void bindTexture(int target, int texture) {
-            GL11.glBindTexture(target, texture);
-        }
-
-        @Override
-        public void pixelStore(int parameter, int value) {
-            GL11.glPixelStorei(parameter, value);
-        }
-
-        @Override
-        public void texImage2D(int target, int level, int internalFormat, int width, int height, int border,
-                int format, int type, ByteBuffer pixels) {
-            GL11.glTexImage2D(target, level, internalFormat, width, height, border, format, type, pixels);
-        }
-
-        @Override
-        public void texParameter(int target, int parameter, int value) {
-            GL11.glTexParameteri(target, parameter, value);
-        }
-
-        @Override
-        public void texSubImage2D(int target, int level, int x, int y, int width, int height, int format, int type,
-                ByteBuffer pixels) {
-            GL11.glTexSubImage2D(target, level, x, y, width, height, format, type, pixels);
-        }
-
-        @Override
-        public void generateMipmap(int target) {
-            GL30.glGenerateMipmap(target);
-        }
-
-        @Override
-        public boolean isTexture(int texture) {
-            return GL11.glIsTexture(texture);
-        }
-
-        @Override
-        public void deleteTexture(int texture) {
-            GL11.glDeleteTextures(texture);
-        }
-
-        @Override
-        public int getError() {
-            return GL11.glGetError();
         }
     }
 

@@ -242,7 +242,7 @@ public class GlyphPageVariableSlotPackingTest {
         return image;
     }
 
-    static final class FakeGlApi implements GlyphPage.GlApi {
+    static final class FakeGlApi implements GlApi {
 
         private int nextTextureId = 1;
         private int pendingError;

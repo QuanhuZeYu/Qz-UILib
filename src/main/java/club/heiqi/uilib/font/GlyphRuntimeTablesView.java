@@ -38,6 +38,23 @@ public final class GlyphRuntimeTablesView {
         this.textureSizeBold = snapshotTextureSizes(FontType.BOLD);
     }
 
+    /**
+     * 创建无 owner 的只读快照（headless 软件渲染验收场地）。
+     *
+     * <p>与真机快照同构（构造时刻冻结页纹理 ID/尺寸）；无 owner 场景下
+     * {@link #getPageTextureId}/{@link #getPageTextureSize}/{@link #isCurrentPage}
+     * 走直接执行路径，渲染热路径只依赖快照 getter。</p>
+     *
+     * @param tables         字形运行时表（页已装配）
+     * @param pageManager    页管理器（供动态页查询；不可为 null）
+     * @param runtimeVersion 运行时版本
+     * @return 只读快照
+     */
+    public static GlyphRuntimeTablesView snapshot(GlyphRuntimeTables tables, GlyphPageManager pageManager,
+            int runtimeVersion) {
+        return new GlyphRuntimeTablesView(tables, pageManager, null, runtimeVersion);
+    }
+
     public int getRuntimeVersion() {
         return runtimeVersion;
     }

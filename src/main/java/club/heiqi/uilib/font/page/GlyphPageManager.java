@@ -49,6 +49,7 @@ public class GlyphPageManager {
     private final AtlasOwnershipBookkeeping atlasBookkeeping = new AtlasOwnershipBookkeeping();
     private final AtomicLong requestIdSequence = new AtomicLong(0L);
     private final LongSupplier nanoTime;
+    private final GlApi glApi;
     private final int maxResidentAtlasPages;
     private final long maxResidentAtlasBytes;
     private final long uploadDrainTimeBudgetNanos;
@@ -75,7 +76,23 @@ public class GlyphPageManager {
 
     /** 创建未绑定 owner 的独立字符页管理器。 */
     public GlyphPageManager() {
-        this(null);
+        this((Object) null);
+    }
+
+    /**
+     * 创建绑定自定义 GL 门面的独立字符页管理器（headless 软件渲染验收场地）。
+     *
+     * <p>注入的 {@link GlApi} 决定字符页纹理的落点：软件实现把页像素保留在 CPU 侧，
+     * 供软件光栅化器按 UV 采样；其余分页/槽位/上传/度量逻辑与真机完全同源。</p>
+     *
+     * @param glApi 字符页 GL 操作门面（不可为 null）
+     */
+    public GlyphPageManager(GlApi glApi) {
+        this(null, DEFAULT_MAX_PENDING_UPLOADS, DEFAULT_MAX_PENDING_BITMAP_BYTES,
+                DEFAULT_VISIBLE_RECORD_RESERVE, DEFAULT_VISIBLE_BITMAP_RESERVE,
+                DEFAULT_MAILBOX_AGING_STEP_NANOS, DEFAULT_MAX_RESIDENT_ATLAS_PAGES,
+                DEFAULT_MAX_RESIDENT_ATLAS_BYTES, DEFAULT_UPLOAD_DRAIN_TIME_NANOS,
+                DEFAULT_UPLOAD_DRAIN_BITMAP_BYTES, System::nanoTime, glApi);
     }
 
     /**
@@ -88,14 +105,14 @@ public class GlyphPageManager {
                 DEFAULT_VISIBLE_RECORD_RESERVE, DEFAULT_VISIBLE_BITMAP_RESERVE,
                 DEFAULT_MAILBOX_AGING_STEP_NANOS, DEFAULT_MAX_RESIDENT_ATLAS_PAGES,
                 DEFAULT_MAX_RESIDENT_ATLAS_BYTES, DEFAULT_UPLOAD_DRAIN_TIME_NANOS,
-                DEFAULT_UPLOAD_DRAIN_BITMAP_BYTES, System::nanoTime);
+                DEFAULT_UPLOAD_DRAIN_BITMAP_BYTES, System::nanoTime, LwjglGlApi.INSTANCE);
     }
 
     GlyphPageManager(int maxPendingUploads, long maxPendingBitmapBytes, int visibleRecordReserve,
             long visibleBitmapReserve, long mailboxAgingStepNanos, LongSupplier nanoTime) {
         this(null, maxPendingUploads, maxPendingBitmapBytes, visibleRecordReserve, visibleBitmapReserve,
                 mailboxAgingStepNanos, DEFAULT_MAX_RESIDENT_ATLAS_PAGES, DEFAULT_MAX_RESIDENT_ATLAS_BYTES,
-                DEFAULT_UPLOAD_DRAIN_TIME_NANOS, DEFAULT_UPLOAD_DRAIN_BITMAP_BYTES, nanoTime);
+                DEFAULT_UPLOAD_DRAIN_TIME_NANOS, DEFAULT_UPLOAD_DRAIN_BITMAP_BYTES, nanoTime, LwjglGlApi.INSTANCE);
     }
 
     GlyphPageManager(int maxPendingUploads, long maxPendingBitmapBytes, int visibleRecordReserve,
@@ -104,7 +121,7 @@ public class GlyphPageManager {
         this(null, maxPendingUploads, maxPendingBitmapBytes, visibleRecordReserve, visibleBitmapReserve,
                 mailboxAgingStepNanos, maxResidentAtlasPages, DEFAULT_MAX_RESIDENT_ATLAS_BYTES,
                 uploadDrainTimeBudgetNanos,
-                uploadDrainBitmapByteBudget, nanoTime);
+                uploadDrainBitmapByteBudget, nanoTime, LwjglGlApi.INSTANCE);
     }
 
     GlyphPageManager(int maxPendingUploads, long maxPendingBitmapBytes, int visibleRecordReserve,
@@ -113,18 +130,18 @@ public class GlyphPageManager {
             LongSupplier nanoTime) {
         this(null, maxPendingUploads, maxPendingBitmapBytes, visibleRecordReserve, visibleBitmapReserve,
                 mailboxAgingStepNanos, maxResidentAtlasPages, maxResidentAtlasBytes, uploadDrainTimeBudgetNanos,
-                uploadDrainBitmapByteBudget, nanoTime);
+                uploadDrainBitmapByteBudget, nanoTime, LwjglGlApi.INSTANCE);
     }
 
     private GlyphPageManager(Object ownerToken, int maxPendingUploads, long maxPendingBitmapBytes,
             int visibleRecordReserve, long visibleBitmapReserve, long mailboxAgingStepNanos,
             int maxResidentAtlasPages, long maxResidentAtlasBytes, long uploadDrainTimeBudgetNanos,
-            long uploadDrainBitmapByteBudget, LongSupplier nanoTime) {
+            long uploadDrainBitmapByteBudget, LongSupplier nanoTime, GlApi glApi) {
         if (maxPendingUploads <= 0 || visibleRecordReserve < 0 || visibleRecordReserve >= maxPendingUploads
                 || maxPendingBitmapBytes <= 0L || visibleBitmapReserve < 0L
                 || visibleBitmapReserve >= maxPendingBitmapBytes || mailboxAgingStepNanos <= 0L
                 || maxResidentAtlasPages <= 0 || maxResidentAtlasBytes <= 0L || uploadDrainTimeBudgetNanos <= 0L
-                || uploadDrainBitmapByteBudget <= 0L || nanoTime == null) {
+                || uploadDrainBitmapByteBudget <= 0L || nanoTime == null || glApi == null) {
             throw new IllegalArgumentException("mailbox capacity/reserve/clock 配置无效");
         }
         this.ownerToken = ownerToken;
@@ -135,6 +152,7 @@ public class GlyphPageManager {
         this.uploadDrainTimeBudgetNanos = uploadDrainTimeBudgetNanos;
         this.uploadDrainBitmapByteBudget = uploadDrainBitmapByteBudget;
         this.nanoTime = nanoTime;
+        this.glApi = glApi;
     }
 
     /**
@@ -928,7 +946,7 @@ public class GlyphPageManager {
         while (availableCount < maintainPageCount) {
             int nextPageIndex = runtimeTables.pageCount(fontType);
             GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
-                    runtimeSettings.getLerpMode());
+                    runtimeSettings.getLerpMode(), glApi);
             runtimeTables.setPage(fontType, nextPageIndex, page);
             availableCount++;
         }
@@ -972,7 +990,7 @@ public class GlyphPageManager {
 
         int nextPageIndex = pageCount;
         GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
-                runtimeSettings.getLerpMode());
+                runtimeSettings.getLerpMode(), glApi);
         return new AtlasReservation(fontType, page, page.reserveSlot(slotWidth, slotHeight), true, true);
     }
 

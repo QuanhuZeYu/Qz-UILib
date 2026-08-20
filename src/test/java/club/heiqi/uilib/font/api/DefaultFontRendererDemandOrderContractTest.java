@@ -38,6 +38,7 @@ public class DefaultFontRendererDemandOrderContractTest {
         String preparation = methodBody(source, "private PreparedText prepareTextDemand(");
         String publication = methodBody(source, "private void submitVisibleDemandIfNeeded(");
         String draw = methodBody(source, "private int drawPreparedText(");
+        String drawHot = methodBody(source, "private int drawPreparedTextIntoCollector(");
         String initialization = methodBody(source, "private void initializeForRender(");
         String readiness = methodBody(source, "private boolean requiresGlyphDemand(");
 
@@ -52,7 +53,9 @@ public class DefaultFontRendererDemandOrderContractTest {
         assertFalse(draw.contains("flushPendingUploads"));
         assertTrue(draw.contains("pumpWorldLoadUploads"));
         assertTrue(draw.contains("isRenderThreadCaptured"));
-        assertTrue(draw.contains("getPageTextureIdSnapshot"));
+        // draw 热路径（glyph 收集循环）与 headless 软件渲染入口共享 drawPreparedTextIntoCollector
+        assertTrue(draw.contains("drawPreparedTextIntoCollector"));
+        assertTrue(drawHot.contains("getPageTextureIdSnapshot"));
         assertFalse("draw 热路径不得残留逐 glyph 的 FontRuntimeAccess call 入口", draw.contains("isCurrentPage"));
         assertTrue(initialization.contains("renderStateGuard.run"));
         assertTrue(initialization.contains("fontService.initialize"));

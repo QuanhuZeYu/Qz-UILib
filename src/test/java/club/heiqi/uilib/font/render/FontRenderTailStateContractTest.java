@@ -25,6 +25,8 @@ public class FontRenderTailStateContractTest {
             "src/main/java/club/heiqi/uilib/font/FontRendererFallbackInvoker.java");
     private static final Path BATCH_RENDERER = Paths.get(
             "src/main/java/club/heiqi/uilib/font/render/FontBatchRenderer.java");
+    private static final Path BATCH_COLLECTOR = Paths.get(
+            "src/main/java/club/heiqi/uilib/font/render/GlyphBatchCollector.java");
     private static final Path STATE_SUPPORT = Paths.get(
             "src/main/java/club/heiqi/uilib/font/render/FontRenderStateSupport.java");
     private static final Path REPLAY_COORDINATOR = Paths.get(
@@ -56,9 +58,14 @@ public class FontRenderTailStateContractTest {
         String flushBody = methodBody(source, "public int flushWithinActiveState(");
         String clearBody = methodBody(source, "public void clearFrame()");
 
+        String collectorSource = source(BATCH_COLLECTOR);
+        String collectorClearBody = methodBody(collectorSource, "public void clearFrame()");
+
         assertTrue("flush 主路径必须记录尾状态", flushBody.contains("recordLastFlushTailState(boundTextureId)"));
         assertTrue("空帧 flush 必须清空尾状态记录", flushBody.contains("resetLastFlushTailState()"));
-        assertTrue("clearFrame 必须清空收集侧末字形色", clearBody.contains("lastCollectedGlyphColor = NO_GLYPH_COLOR"));
+        assertTrue("clearFrame 必须委托共享收集侧", clearBody.contains("collector.clearFrame()"));
+        assertTrue("收集侧 clearFrame 必须清空末字形色",
+                collectorClearBody.contains("lastCollectedGlyphColor = NO_GLYPH_COLOR"));
         assertTrue("必须暴露末字形色 getter", source.contains("getLastFlushGlyphColor()"));
         assertTrue("必须暴露最后页纹理 getter", source.contains("getLastFlushBoundTextureId()"));
         assertTrue("必须暴露 flush 序号 getter", source.contains("getLastFlushSequence()"));

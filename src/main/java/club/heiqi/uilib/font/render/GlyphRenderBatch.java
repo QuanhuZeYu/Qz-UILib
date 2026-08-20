@@ -10,22 +10,22 @@ import club.heiqi.uilib.font.FontRuntimeSettings;
 public final class GlyphRenderBatch {
 
     private static final int DEFAULT_QUAD_CAPACITY = 64;
-    static final int VERTICES_PER_QUAD = 4;
-    static final int POSITION_COMPONENT_COUNT = 3;
-    static final int UV_COMPONENT_COUNT = 2;
-    static final int COLOR_COMPONENT_COUNT = 4;
-    static final int UV_BOUNDS_COMPONENT_COUNT = 4;
-    static final int GLYPH_FLAGS_COMPONENT_COUNT = 1;
-    static final float RENDER_TYPE_MONOCHROME_GLYPH = 0.0F;
-    static final float RENDER_TYPE_COLORED_GLYPH = 1.0F;
-    static final float RENDER_TYPE_DECORATION = 2.0F;
-    static final int INDICES_PER_QUAD = 6;
-    static final int POSITION_OFFSET_FLOATS = 0;
-    static final int UV_OFFSET_FLOATS = POSITION_OFFSET_FLOATS + POSITION_COMPONENT_COUNT;
-    static final int COLOR_OFFSET_FLOATS = UV_OFFSET_FLOATS + UV_COMPONENT_COUNT;
-    static final int UV_BOUNDS_OFFSET_FLOATS = COLOR_OFFSET_FLOATS + COLOR_COMPONENT_COUNT;
-    static final int GLYPH_FLAGS_OFFSET_FLOATS = UV_BOUNDS_OFFSET_FLOATS + UV_BOUNDS_COMPONENT_COUNT;
-    static final int VERTEX_STRIDE_FLOATS = GLYPH_FLAGS_OFFSET_FLOATS + GLYPH_FLAGS_COMPONENT_COUNT;
+    public static final int VERTICES_PER_QUAD = 4;
+    public static final int POSITION_COMPONENT_COUNT = 3;
+    public static final int UV_COMPONENT_COUNT = 2;
+    public static final int COLOR_COMPONENT_COUNT = 4;
+    public static final int UV_BOUNDS_COMPONENT_COUNT = 4;
+    public static final int GLYPH_FLAGS_COMPONENT_COUNT = 1;
+    public static final float RENDER_TYPE_MONOCHROME_GLYPH = 0.0F;
+    public static final float RENDER_TYPE_COLORED_GLYPH = 1.0F;
+    public static final float RENDER_TYPE_DECORATION = 2.0F;
+    public static final int INDICES_PER_QUAD = 6;
+    public static final int POSITION_OFFSET_FLOATS = 0;
+    public static final int UV_OFFSET_FLOATS = POSITION_OFFSET_FLOATS + POSITION_COMPONENT_COUNT;
+    public static final int COLOR_OFFSET_FLOATS = UV_OFFSET_FLOATS + UV_COMPONENT_COUNT;
+    public static final int UV_BOUNDS_OFFSET_FLOATS = COLOR_OFFSET_FLOATS + COLOR_COMPONENT_COUNT;
+    public static final int GLYPH_FLAGS_OFFSET_FLOATS = UV_BOUNDS_OFFSET_FLOATS + UV_BOUNDS_COMPONENT_COUNT;
+    public static final int VERTEX_STRIDE_FLOATS = GLYPH_FLAGS_OFFSET_FLOATS + GLYPH_FLAGS_COMPONENT_COUNT;
     static final int POSITION_OFFSET_BYTES = POSITION_OFFSET_FLOATS * Float.BYTES;
     static final int UV_OFFSET_BYTES = UV_OFFSET_FLOATS * Float.BYTES;
     static final int COLOR_OFFSET_BYTES = COLOR_OFFSET_FLOATS * Float.BYTES;
@@ -183,6 +183,22 @@ public final class GlyphRenderBatch {
 
     public int getVertexFloatCount() {
         return quadCount * VERTICES_PER_QUAD * VERTEX_STRIDE_FLOATS;
+    }
+
+    /**
+     * 导出顶点数据只读副本（长度 = {@link #getVertexFloatCount()}）。
+     *
+     * <p>供 headless 软件光栅化器消费收集侧指令流；调用方不共享内部数组。</p>
+     *
+     * @return 顶点数据副本（无 quad 时长度 0）
+     */
+    public float[] copyVertexData() {
+        int count = getVertexFloatCount();
+        float[] copy = new float[count];
+        if (count > 0) {
+            System.arraycopy(vertexData, 0, copy, 0, count);
+        }
+        return copy;
     }
 
     public void writeToBuffers(FloatBuffer vertexBuffer, IntBuffer indexBuffer) {

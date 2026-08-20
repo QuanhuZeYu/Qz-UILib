@@ -888,9 +888,10 @@ public class FontServiceLayoutRuntimeSmokeTest {
             service.initialize();
             setField(service, "renderThread", Thread.currentThread());
             setField(service, "batchRenderer", batchRenderer);
-            setDeclaredField(batchRenderer, FontBatchRenderer.class, "decorationBatch", new GlyphRenderBatch());
-            setDeclaredField(batchRenderer, FontBatchRenderer.class, "markBackgroundBatch", new GlyphRenderBatch());
-            setDeclaredField(batchRenderer, FontBatchRenderer.class, "quadCount", Integer.valueOf(1));
+            club.heiqi.uilib.font.render.GlyphBatchCollector collector =
+                    new club.heiqi.uilib.font.render.GlyphBatchCollector();
+            collector.collectDecoration(0.0F, 0.0F, 1.0F, 1.0F, 0xFFFFFFFF);
+            setDeclaredField(batchRenderer, FontBatchRenderer.class, "collector", collector);
             service.tickMainThread(0);
             ActiveFontGeneration original = service.getActiveGeneration();
             int prepareCountBeforeReload = prepareCount.get();

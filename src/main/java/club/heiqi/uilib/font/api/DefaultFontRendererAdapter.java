@@ -25,6 +25,7 @@ import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
+import club.heiqi.uilib.font.render.GlyphCollector;
 import club.heiqi.uilib.font.render.FontRenderStateGuard;
 import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
@@ -693,13 +694,57 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     private int drawPreparedText(FontService fontService, PreparedText preparedText, float x, float y,
             boolean dropShadow, float charSize, float renderScale) {
-        FontRuntimeSettings settings = preparedText.settings;
         if (!fontService.isRenderThreadCaptured()) {
             // 主渲染上下文建立前（如 Forge Splash 阶段）：在调用线程的 GL 上下文内同步泵送上传，
             // 使字符页纹理在当帧可用；主渲染线程捕获后由 FontService 检测上下文切换并全量重建。
             fontService.pumpWorldLoadUploads();
         }
         GlyphRuntimeTablesView tables = fontService.getGlyphRuntimeTablesView();
+        int advanced = drawPreparedTextIntoCollector(preparedText, x, y, dropShadow, renderScale, tables,
+                fontService.getBatchRenderer());
+        if (!isDeferredFlushScopeActive()) {
+            flushCollectedBatches(fontService);
+        }
+        return advanced;
+    }
+
+    /**
+     * 平台中立渲染入口（headless 软件渲染验收场地）：把已布局段落按真机同一展平/几何/收集
+     * 逻辑写入 {@link GlyphCollector}，不触碰 FontService/GL。
+     *
+     * <p>与真机 {@code drawPreparedText} 共享同一循环体（基线换算、GPOS 偏移、LaTeX 规则线），
+     * 只跳过主线程上传泵送与 flush——调用方从收集器取批次快照后自行光栅化或断言。</p>
+     *
+     * @param segments       已布局文本段（{@code TextLayoutService.layoutSegments} 产物）
+     * @param settings       字体运行时设置
+     * @param textLayoutService 文本布局服务（度量同源注入）
+     * @param tables         字形运行时表快照（页纹理 ID/尺寸与槽位几何）
+     * @param x              绘制起点 X
+     * @param y              绘制起点 Y
+     * @param dropShadow     是否先收集阴影 pass
+     * @param renderScale    调用方缩放
+     * @param baseFontSizePx 基准字号（px）
+     * @param collector      收集出口（headless 用 {@code GlyphBatchCollector}）
+     * @return 推进后的 X（取整）
+     */
+    public int renderSegmentsToCollector(List<TextSegment> segments, FontRuntimeSettings settings,
+            TextLayoutService textLayoutService, GlyphRuntimeTablesView tables, float x, float y,
+            boolean dropShadow, float renderScale, float baseFontSizePx, GlyphCollector collector) {
+        if (segments == null || segments.isEmpty() || settings == null || textLayoutService == null
+                || tables == null || collector == null) {
+            return (int) Math.ceil(x);
+        }
+        PreparedText preparedText = prepareGlyphs(settings, segments, textLayoutService, renderScale,
+                baseFontSizePx, tables);
+        if (preparedText.isEmpty()) {
+            return (int) Math.ceil(x);
+        }
+        return drawPreparedTextIntoCollector(preparedText, x, y, dropShadow, renderScale, tables, collector);
+    }
+
+    private int drawPreparedTextIntoCollector(PreparedText preparedText, float x, float y, boolean dropShadow,
+            float renderScale, GlyphRuntimeTablesView tables, GlyphCollector collector) {
+        FontRuntimeSettings settings = preparedText.settings;
         int glyphSize = settings.getGlyphSize();
         float currentX = x;
         float drawY = y;
@@ -776,7 +821,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             float glyphDrawY = drawY + resolveBaselineOffsetY(style, glyphCharSize)
                     + preparedText.yOffsets[glyphIndex];
             if (dropShadow) {
-                collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
+                collectGlyph(collector, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                         slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                         inkWidth, inkHeight, bearingX, bearingY,
                         glyphX + (float) FontConfig.shadowOffsetX * renderScale,
@@ -784,7 +829,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
                         darkenShadow(style.getColor()), false);
             }
-            collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
+            collectGlyph(collector, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
                     glyphX, glyphDrawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
@@ -805,12 +850,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
         for (int ruleIndex = 0; ruleIndex < preparedText.latexRules.length; ruleIndex++) {
             float[] rule = preparedText.latexRules[ruleIndex];
-            fontService.getBatchRenderer().collectDecoration(x + rule[0],
+            collector.collectDecoration(x + rule[0],
                     drawY + ruleBaselineOffset + rule[1], rule[2], rule[3],
                     preparedText.latexRuleColors[ruleIndex]);
-        }
-        if (!isDeferredFlushScopeActive()) {
-            flushCollectedBatches(fontService);
         }
         return (int) Math.ceil(currentX);
     }
@@ -1187,7 +1229,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return fallbackCodepoint;
     }
 
-    private void collectGlyph(FontService fontService, FontType fontType, boolean glyphReady, int pageIndex,
+    private void collectGlyph(GlyphCollector collector, FontType fontType, boolean glyphReady, int pageIndex,
             int textureId, int textureSize, int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX,
             int atlasBaselineY, int lineBaselineY, int glyphSize, byte glyphFlags, int inkWidth, int inkHeight,
             int bearingX, int bearingY, float currentX, float drawY, float measuredWidth, float charSize,
@@ -1198,29 +1240,30 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             markDeferredFlushDirtyIfNeeded();
         }
         if (hasGlyphQuad) {
-            fontService.getBatchRenderer().collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize,
+            collector.collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize,
                     slotX, slotY, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize,
                     inkWidth, inkHeight, bearingX, bearingY, currentX, drawY, charSize, renderColor, style.isItalic(),
                     glyphFlags, baseCharSize);
         }
-        collectDecorations(fontService, currentX, drawY, measuredWidth, charSize, baseCharSize, renderScale,
+        collectDecorations(collector, currentX, drawY, measuredWidth, charSize, baseCharSize, renderScale,
                 style, renderColor, withMarkBackground);
     }
 
-    private void collectDecorations(FontService fontService, float currentX, float drawY, float width, float charSize,
-            float baseCharSize, float renderScale, TextStyle style, int color, boolean withMarkBackground) {
+    private void collectDecorations(GlyphCollector collector, float currentX, float drawY, float width,
+            float charSize, float baseCharSize, float renderScale, TextStyle style, int color,
+            boolean withMarkBackground) {
         if (withMarkBackground && style.getMarkColor() != 0) {
             // 行内高亮矩形覆盖整行 em-box，垫在字形之下（独立背景批次先渲染）；
             // 阴影 pass 不收集，避免偏移后的第二层矩形叠影。
-            fontService.getBatchRenderer().collectMarkBackground(currentX, drawY, width, baseCharSize,
+            collector.collectMarkBackground(currentX, drawY, width, baseCharSize,
                     style.getMarkColor());
         }
         if (style.isUnderline()) {
-            fontService.getBatchRenderer().collectDecoration(currentX, drawY + charSize - renderScale, width,
+            collector.collectDecoration(currentX, drawY + charSize - renderScale, width,
                     renderScale, color);
         }
         if (style.isStrikethrough()) {
-            fontService.getBatchRenderer().collectDecoration(currentX, drawY + (charSize / 2.0F) - (0.5F * renderScale),
+            collector.collectDecoration(currentX, drawY + (charSize / 2.0F) - (0.5F * renderScale),
                     width, renderScale, color);
         }
     }

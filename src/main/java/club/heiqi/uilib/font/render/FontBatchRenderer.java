@@ -2,7 +2,6 @@ package club.heiqi.uilib.font.render;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.lwjgl.BufferUtils;
@@ -13,19 +12,14 @@ import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
-import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
-import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
 
 /**
  * 字体批渲染器。
  */
-public class FontBatchRenderer {
-
-    private static final byte ACTIVE_TYPE_NORMAL = 0;
-    private static final byte ACTIVE_TYPE_BOLD = 1;
+public class FontBatchRenderer implements GlyphCollector {
 
     /** 表示本次 flush 没有记录到任何字形颜色的哨兵值。 */
     public static final int NO_GLYPH_COLOR = -1;
@@ -39,16 +33,8 @@ public class FontBatchRenderer {
     private static final float INK_BLEED = 1.0F;
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
-    private GlyphRenderBatch[] normalPageBatches = new GlyphRenderBatch[4];
-    private GlyphRenderBatch[] boldPageBatches = new GlyphRenderBatch[4];
-    private int[] activePageIndices = new int[8];
-    private byte[] activePageTypes = new byte[8];
-    private boolean[] activeNormalPages = new boolean[4];
-    private boolean[] activeBoldPages = new boolean[4];
-    private int activePageCount;
-    private final GlyphRenderBatch decorationBatch = new GlyphRenderBatch();
-    /** 行内高亮背景层：flush 时先于字形页批次渲染，保证高亮矩形垫在字形之下。 */
-    private final GlyphRenderBatch markBackgroundBatch = new GlyphRenderBatch();
+    /** 平台中立收集侧：字形/装饰线/高亮批次结构与真机共享，headless 场地可独立驱动。 */
+    private final GlyphBatchCollector collector = new GlyphBatchCollector();
     private final FontRenderTool renderTool = new FontRenderTool();
     private final FontRenderStateGuard stateGuard = new FontRenderStateGuard();
     private FloatBuffer vertexBuffer = BufferUtils.createFloatBuffer(1024 * 64 * GlyphRenderBatch.VERTEX_STRIDE_FLOATS);
@@ -57,7 +43,6 @@ public class FontBatchRenderer {
     private final FloatBuffer projectionBuffer = BufferUtils.createFloatBuffer(16);
     private final FloatBuffer identityModelViewBuffer = createIdentityMatrixBuffer();
     private final FloatBuffer internalUiProjectionBuffer = createIdentityMatrixBuffer();
-    private int quadCount = 0;
     private int lastFlushPageSubmitCount = 0;
     private int lastFlushDrawCallCount = 0;
     private int lastFlushTextureBindCount = 0;
@@ -69,13 +54,6 @@ public class FontBatchRenderer {
      * <p>空帧 flush 同样递增；尾状态补丁据此区分「本次调用未 flush（如空文本）」与「本次调用 flush 过」。</p>
      */
     private long lastFlushSequence;
-    /**
-     * 当前帧收集侧最后一个字形 quad 的 ARGB 颜色；{@link #NO_GLYPH_COLOR} 表示本帧尚无字形。
-     *
-     * <p>收集侧按字形顺序更新（阴影先于主字形），因此该值在字符串内精确解析 § 颜色码后的末字形色，
-     * 比 drawString 入口颜色更贴近原版 renderString 逐字形 setColor 的尾状态。装饰线不参与更新。</p>
-     */
-    private int lastCollectedGlyphColor = NO_GLYPH_COLOR;
     /** 上次 flush 提交时的末字形色；{@link #NO_GLYPH_COLOR} 表示该次 flush 无字形。 */
     private int lastFlushGlyphColor = NO_GLYPH_COLOR;
     /** 上次 flush 最后绑定的字符页纹理 ID；{@link #NO_TEXTURE} 表示该次 flush 未绑定任何字符页。 */
@@ -187,9 +165,10 @@ public class FontBatchRenderer {
             int color,
             boolean italic,
             byte glyphFlags) {
-        collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
-                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, slotWidth, slotHeight,
-                -atlasBaselineX, -atlasBaselineY, x, y, charSize, color, italic, glyphFlags);
+        initialize();
+        collector.collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth,
+                slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, slotWidth, slotHeight,
+                -atlasBaselineX, -atlasBaselineY, x, y, charSize, color, italic, glyphFlags, charSize);
     }
 
     /**
@@ -241,9 +220,10 @@ public class FontBatchRenderer {
             int color,
             boolean italic,
             byte glyphFlags) {
-        collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
-                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX,
-                bearingY, x, y, charSize, color, italic, glyphFlags, charSize);
+        initialize();
+        collector.collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth,
+                slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight,
+                bearingX, bearingY, x, y, charSize, color, italic, glyphFlags, charSize);
     }
 
     /**
@@ -278,26 +258,9 @@ public class FontBatchRenderer {
             return;
         }
         initialize();
-
-        GlyphQuadMetrics metrics = resolveGlyphQuadMetrics(textureSize, slotX, slotY, slotWidth, slotHeight,
-                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX,
-                bearingY, x, y, charSize, baseCharSize);
-
-        float alpha = (float) (color >> 24 & 255) / 255.0F;
-        float red = (float) (color >> 16 & 255) / 255.0F;
-        float green = (float) (color >> 8 & 255) / 255.0F;
-        float blue = (float) (color & 255) / 255.0F;
-        float z = (float) FontConfig.renderOffset;
-
-        float renderType = (glyphFlags & GlyphRuntimeTables.GLYPH_FLAG_COLORED) != 0
-                ? GlyphRenderBatch.RENDER_TYPE_COLORED_GLYPH
-                : GlyphRenderBatch.RENDER_TYPE_MONOCHROME_GLYPH;
-        GlyphRenderBatch batch = obtainPageBatch(fontType, pageIndex, textureId);
-        batch.addQuad(metrics.quadX, metrics.quadY, z, metrics.renderWidth, metrics.renderHeight, italic, metrics.u0,
-                metrics.u1, metrics.v0, metrics.v1, metrics.clipU0, metrics.clipU1, metrics.clipV0, metrics.clipV1,
-                red, green, blue, alpha, renderType, baseCharSize);
-        quadCount++;
-        lastCollectedGlyphColor = color;
+        collector.collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth,
+                slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight,
+                bearingX, bearingY, x, y, charSize, color, italic, glyphFlags, baseCharSize);
     }
 
     /**
@@ -405,16 +368,7 @@ public class FontBatchRenderer {
      */
     public void collectDecoration(float x, float y, float width, float height, int color) {
         initialize();
-
-        float alpha = (float) (color >> 24 & 255) / 255.0F;
-        float red = (float) (color >> 16 & 255) / 255.0F;
-        float green = (float) (color >> 8 & 255) / 255.0F;
-        float blue = (float) (color & 255) / 255.0F;
-        float z = (float) FontConfig.renderOffset;
-
-        decorationBatch.addRectangleQuad(x, y, z, width, height, red, green, blue, alpha,
-                GlyphRenderBatch.RENDER_TYPE_DECORATION);
-        quadCount++;
+        collector.collectDecoration(x, y, width, height, color);
     }
 
     /**
@@ -431,16 +385,7 @@ public class FontBatchRenderer {
      */
     public void collectMarkBackground(float x, float y, float width, float height, int color) {
         initialize();
-
-        float alpha = (float) (color >> 24 & 255) / 255.0F;
-        float red = (float) (color >> 16 & 255) / 255.0F;
-        float green = (float) (color >> 8 & 255) / 255.0F;
-        float blue = (float) (color & 255) / 255.0F;
-        float z = (float) FontConfig.renderOffset;
-
-        markBackgroundBatch.addRectangleQuad(x, y, z, width, height, red, green, blue, alpha,
-                GlyphRenderBatch.RENDER_TYPE_DECORATION);
-        quadCount++;
+        collector.collectMarkBackground(x, y, width, height, color);
     }
 
     /**
@@ -468,13 +413,14 @@ public class FontBatchRenderer {
         initialize();
         shaderProgram.initialize();
 
-        int flushedQuadCount = quadCount;
+        int flushedQuadCount = collector.getQuadCount();
         if (flushedQuadCount <= 0) {
             resetLastFlushTailState();
             recordLastFlushStats(0, 0, 0);
             return 0;
         }
-        if (activePageCount <= 0 && decorationBatch.isEmpty() && markBackgroundBatch.isEmpty()) {
+        if (collector.getActivePageCount() <= 0 && collector.getDecorationBatch().isEmpty()
+                && collector.getMarkBackgroundBatch().isEmpty()) {
             resetLastFlushTailState();
             recordLastFlushStats(0, 0, 0);
             clearFrame();
@@ -493,13 +439,13 @@ public class FontBatchRenderer {
             shaderProgram.setUniformI("mainTex", 0);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
 
-            if (!markBackgroundBatch.isEmpty()) {
-                renderBatch(shaderProgram, markBackgroundBatch);
+            if (!collector.getMarkBackgroundBatch().isEmpty()) {
+                renderBatch(shaderProgram, collector.getMarkBackgroundBatch());
                 drawCallCount++;
             }
 
-            for (int index = 0; index < activePageCount; index++) {
-                GlyphRenderBatch batch = getActiveBatch(index);
+            for (int index = 0; index < collector.getActivePageCount(); index++) {
+                GlyphRenderBatch batch = collector.getActiveBatch(index);
                 if (batch == null || batch.isEmpty() || batch.getTextureId() <= 0) {
                     continue;
                 }
@@ -513,8 +459,8 @@ public class FontBatchRenderer {
                 drawCallCount++;
             }
 
-            if (!decorationBatch.isEmpty()) {
-                renderBatch(shaderProgram, decorationBatch);
+            if (!collector.getDecorationBatch().isEmpty()) {
+                renderBatch(shaderProgram, collector.getDecorationBatch());
                 drawCallCount++;
             }
         } finally {
@@ -537,18 +483,7 @@ public class FontBatchRenderer {
      * 清空当前帧缓存。
      */
     public void clearFrame() {
-        for (int index = 0; index < activePageCount; index++) {
-            GlyphRenderBatch batch = getActiveBatch(index);
-            if (batch != null) {
-                batch.clear();
-            }
-            clearActiveMarker(index);
-        }
-        activePageCount = 0;
-        decorationBatch.clear();
-        markBackgroundBatch.clear();
-        quadCount = 0;
-        lastCollectedGlyphColor = NO_GLYPH_COLOR;
+        collector.clearFrame();
     }
 
     /**
@@ -566,7 +501,7 @@ public class FontBatchRenderer {
      * @return 四边形数量
      */
     public int getQuadCount() {
-        return quadCount;
+        return collector.getQuadCount();
     }
 
     /**
@@ -621,76 +556,6 @@ public class FontBatchRenderer {
      */
     public int getLastFlushBoundTextureId() {
         return lastFlushBoundTextureId;
-    }
-
-    private GlyphRenderBatch obtainPageBatch(FontType fontType, int pageIndex, int textureId) {
-        GlyphRenderBatch[] batches = ensurePageBatchCapacity(fontType, pageIndex + 1);
-        GlyphRenderBatch batch = batches[pageIndex];
-        if (batch == null) {
-            batch = new GlyphRenderBatch();
-            batches[pageIndex] = batch;
-        }
-        if (markPageActive(fontType, pageIndex)) {
-            appendActivePage(fontType, pageIndex);
-        }
-        batch.setTextureId(textureId);
-        return batch;
-    }
-
-    private GlyphRenderBatch[] ensurePageBatchCapacity(FontType fontType, int minCapacity) {
-        if (fontType == FontType.BOLD) {
-            if (boldPageBatches.length < minCapacity) {
-                boldPageBatches = grow(boldPageBatches, minCapacity);
-                activeBoldPages = grow(activeBoldPages, minCapacity);
-            }
-            return boldPageBatches;
-        }
-        if (normalPageBatches.length < minCapacity) {
-            normalPageBatches = grow(normalPageBatches, minCapacity);
-            activeNormalPages = grow(activeNormalPages, minCapacity);
-        }
-        return normalPageBatches;
-    }
-
-    private boolean markPageActive(FontType fontType, int pageIndex) {
-        boolean[] activePages = fontType == FontType.BOLD ? activeBoldPages : activeNormalPages;
-        if (activePages[pageIndex]) {
-            return false;
-        }
-        activePages[pageIndex] = true;
-        return true;
-    }
-
-    private void appendActivePage(FontType fontType, int pageIndex) {
-        if (activePageCount >= activePageIndices.length) {
-            activePageIndices = grow(activePageIndices, activePageCount + 1);
-            activePageTypes = grow(activePageTypes, activePageCount + 1);
-        }
-        activePageIndices[activePageCount] = pageIndex;
-        activePageTypes[activePageCount] = fontType == FontType.BOLD ? ACTIVE_TYPE_BOLD : ACTIVE_TYPE_NORMAL;
-        activePageCount++;
-    }
-
-    private GlyphRenderBatch getActiveBatch(int activeIndex) {
-        if (activeIndex < 0 || activeIndex >= activePageCount) {
-            return null;
-        }
-        int pageIndex = activePageIndices[activeIndex];
-        GlyphRenderBatch[] batches = activePageTypes[activeIndex] == ACTIVE_TYPE_BOLD ? boldPageBatches
-                : normalPageBatches;
-        if (pageIndex < 0 || pageIndex >= batches.length) {
-            return null;
-        }
-        return batches[pageIndex];
-    }
-
-    private void clearActiveMarker(int activeIndex) {
-        int pageIndex = activePageIndices[activeIndex];
-        boolean[] activePages = activePageTypes[activeIndex] == ACTIVE_TYPE_BOLD ? activeBoldPages
-                : activeNormalPages;
-        if (pageIndex >= 0 && pageIndex < activePages.length) {
-            activePages[pageIndex] = false;
-        }
     }
 
     private int bindTextureIfNeeded(int textureId, int boundTextureId) {
@@ -756,7 +621,7 @@ public class FontBatchRenderer {
      * @param boundTextureId flush 期间最后绑定的字符页纹理 ID，未绑定任何字符页时为 {@link #NO_TEXTURE}
      */
     private void recordLastFlushTailState(int boundTextureId) {
-        lastFlushGlyphColor = lastCollectedGlyphColor;
+        lastFlushGlyphColor = collector.getLastCollectedGlyphColor();
         lastFlushBoundTextureId = boundTextureId;
     }
 
@@ -797,37 +662,6 @@ public class FontBatchRenderer {
             nextCapacity *= 2;
         }
         return BufferUtils.createIntBuffer(nextCapacity);
-    }
-
-    /**
-     * 容量翻倍策略单点：返回不小于 minCapacity 的最小 2 的幂容量（审查报告附录 grow 收敛）。
-     *
-     * @param current     当前容量
-     * @param minCapacity 所需最小容量
-     * @return 不小于 minCapacity 的 2 的幂容量
-     */
-    private static int grownCapacity(int current, int minCapacity) {
-        int nextCapacity = current;
-        while (nextCapacity < minCapacity) {
-            nextCapacity *= 2;
-        }
-        return nextCapacity;
-    }
-
-    private static GlyphRenderBatch[] grow(GlyphRenderBatch[] original, int minCapacity) {
-        return Arrays.copyOf(original, grownCapacity(original.length, minCapacity));
-    }
-
-    private static int[] grow(int[] original, int minCapacity) {
-        return Arrays.copyOf(original, grownCapacity(original.length, minCapacity));
-    }
-
-    private static byte[] grow(byte[] original, int minCapacity) {
-        return Arrays.copyOf(original, grownCapacity(original.length, minCapacity));
-    }
-
-    private static boolean[] grow(boolean[] original, int minCapacity) {
-        return Arrays.copyOf(original, grownCapacity(original.length, minCapacity));
     }
 
     private static FloatBuffer createIdentityMatrixBuffer() {

@@ -81,16 +81,8 @@ public class FontBatchRendererTailStateTest {
         unsafeField.setAccessible(true);
         FontBatchRenderer renderer = FontBatchRenderer.class
                 .cast(((Unsafe) unsafeField.get(null)).allocateInstance(FontBatchRenderer.class));
-        setField(renderer, "normalPageBatches", new GlyphRenderBatch[4]);
-        setField(renderer, "boldPageBatches", new GlyphRenderBatch[4]);
-        setField(renderer, "activePageIndices", new int[8]);
-        setField(renderer, "activePageTypes", new byte[8]);
-        setField(renderer, "activeNormalPages", new boolean[4]);
-        setField(renderer, "activeBoldPages", new boolean[4]);
-        setField(renderer, "decorationBatch", new GlyphRenderBatch());
-        setField(renderer, "markBackgroundBatch", new GlyphRenderBatch());
+        setField(renderer, "collector", new GlyphBatchCollector());
         setField(renderer, "initialized", new AtomicBoolean(true));
-        setField(renderer, "lastCollectedGlyphColor", Integer.valueOf(FontBatchRenderer.NO_GLYPH_COLOR));
         setField(renderer, "lastFlushGlyphColor", Integer.valueOf(FontBatchRenderer.NO_GLYPH_COLOR));
         setField(renderer, "lastFlushBoundTextureId", Integer.valueOf(FontBatchRenderer.NO_TEXTURE));
         return renderer;
