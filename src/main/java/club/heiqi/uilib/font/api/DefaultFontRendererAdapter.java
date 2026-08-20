@@ -791,10 +791,22 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     style.getColor(), true);
             currentX += measuredWidth;
         }
-        // LaTeX 规则线（分数线/根号横线等）：随字形同帧收集，装饰线批次在字形页之后 flush
+        // LaTeX 规则线（分数线/根号横线等）：随字形同帧收集，装饰线批次在字形页之后 flush。
+        // glyph quad 内部按 lineBaselineY×baselineScale 把字格顶换算到基线，decoration 通道
+        // 无此换算——必须手动补基线偏移，否则规则线整体上移约一个 ascent 与字形分离。
+        float ruleBaselineOffset = 0.0F;
+        if (preparedText.size() > 0) {
+            int refCodepoint = GlyphRuntimeTables.isValidCodepoint(preparedText.renderCodepoints[0])
+                    ? preparedText.renderCodepoints[0] : 'A';
+            FontType refFontType = preparedText.fontTypes[0];
+            int refLineBaselineY = tables.getLineBaselineY(refCodepoint, refFontType);
+            float baselineScale = baselineCharSize / Math.max(1.0F, (float) glyphSize);
+            ruleBaselineOffset = refLineBaselineY * baselineScale;
+        }
         for (int ruleIndex = 0; ruleIndex < preparedText.latexRules.length; ruleIndex++) {
             float[] rule = preparedText.latexRules[ruleIndex];
-            fontService.getBatchRenderer().collectDecoration(x + rule[0], drawY + rule[1], rule[2], rule[3],
+            fontService.getBatchRenderer().collectDecoration(x + rule[0],
+                    drawY + ruleBaselineOffset + rule[1], rule[2], rule[3],
                     preparedText.latexRuleColors[ruleIndex]);
         }
         if (!isDeferredFlushScopeActive()) {
@@ -841,6 +853,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         List<float[]> latexRules = new ArrayList<float[]>();
         List<Integer> latexRuleColors = new ArrayList<Integer>();
         int maxFontSizePx = resolvedBaseFontSizePx;
+        int[] maxFontSizeHolder = new int[] { maxFontSizePx };
         boolean hasMixedSize = false;
         int glyphIndex = 0;
         for (int s = 0; s < segments.size(); s++) {
@@ -849,12 +862,17 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             String segmentText = segment.getText();
             int segmentFontSizePx = style.resolveEffectiveFontSizePx(resolvedBaseFontSizePx);
             if (segment.isLatex()) {
+                if (segmentFontSizePx > maxFontSizeHolder[0]) {
+                    maxFontSizeHolder[0] = segmentFontSizePx; // <size> 内公式的段字号
+                }
                 glyphIndex = fillLatexSegment(segment, latexBoxes[s], style, segmentFontSizePx,
                         resolvedBaseFontSizePx, textLayoutService, tables, renderScale, renderCodepoints,
                         fontTypes, measuredWidths, styles, fontSizePx, xOffsets, yOffsets, glyphIndex,
-                        latexRules, latexRuleColors);
-                if (segmentFontSizePx != resolvedBaseFontSizePx) {
-                    hasMixedSize = true; // <size> 内公式
+                        latexRules, latexRuleColors, maxFontSizeHolder);
+                // 公式内部存在字号缩放（script 0.7×/定界符放大）同样禁用 uniform 快路径，
+                // 否则缩放字形按正文全尺寸绘制且与 0.7× 布局偏移错配（符号乱飞根因）。
+                if (segmentFontSizePx != resolvedBaseFontSizePx || latexBoxHasScaledGlyphs(latexBoxes[s])) {
+                    hasMixedSize = true;
                 }
                 continue;
             }
@@ -896,8 +914,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     yOffsets[glyphIndex] = markPositions[codePointIndex * 2 + 1] * renderScale;
                 }
                 segmentRunningAdvance += measuredWidths[glyphIndex];
-                if (segmentFontSizePx > maxFontSizePx) {
-                    maxFontSizePx = segmentFontSizePx;
+                if (segmentFontSizePx > maxFontSizeHolder[0]) {
+                    maxFontSizeHolder[0] = segmentFontSizePx;
                 }
                 glyphIndex++;
                 codePointIndex++;
@@ -910,7 +928,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             ruleColors[r] = latexRuleColors.get(r).intValue();
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
-                maxFontSizePx, resolvedBaseFontSizePx, xOffsets, yOffsets, hasMixedSize, ruleArray, ruleColors);
+                maxFontSizeHolder[0], resolvedBaseFontSizePx, xOffsets, yOffsets, hasMixedSize, ruleArray,
+                ruleColors);
     }
 
     /**
@@ -923,11 +942,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int resolvedBaseFontSizePx, TextLayoutService textLayoutService, GlyphRuntimeTablesView tables,
             float renderScale, int[] renderCodepoints, FontType[] fontTypes, float[] measuredWidths,
             TextStyle[] styles, int[] fontSizePx, float[] xOffsets, float[] yOffsets, int startGlyphIndex,
-            List<float[]> latexRules, List<Integer> latexRuleColors) {
+            List<float[]> latexRules, List<Integer> latexRuleColors, int[] maxFontSizeHolder) {
         int glyphIndex = startGlyphIndex;
         float segmentAdvanceSum = 0.0F;
         for (GlyphElem elem : box.getGlyphs()) {
             int glyphSizePx = Math.max(1, Math.round(segmentFontSizePx * elem.getSizeScale()));
+            if (glyphSizePx > maxFontSizeHolder[0]) {
+                maxFontSizeHolder[0] = glyphSizePx; // 放大型字形（伸缩括号）参与整行基线基准
+            }
             float elemInnerAdvance = 0.0F;
             String elemText = elem.getText();
             for (int i = 0; i < elemText.length(); ) {
@@ -974,6 +996,16 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return LatexCache.getInstance().getOrLayout(segment.getLatexSource(), baseFontSizePx, runtimeVersion,
                 segment.getStyle().getFontType(), MATH_LAYOUT,
                 textLayoutService.createMathMetrics(segment.getStyle(), baseFontSizePx));
+    }
+
+    /** 布局盒内是否存在字号缩放字形（sizeScale != 1.0）。 */
+    private static boolean latexBoxHasScaledGlyphs(MathBox box) {
+        for (GlyphElem elem : box.getGlyphs()) {
+            if (elem.getSizeScale() != 1.0F) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 文本内可渲染码点计数（跳过零宽/剥离类，与 glyph 收集同口径）。 */
