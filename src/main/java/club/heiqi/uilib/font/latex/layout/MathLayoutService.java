@@ -536,8 +536,10 @@ public final class MathLayoutService {
         float delimSize = size * scale;
         float width = m.advance(delimiter, delimSize);
         float axis = MathConstants.AXIS_HEIGHT_EM * size;
-        float delimCenterUp = (m.ascent(delimSize) - m.descent(delimSize)) / 2.0F;
-        float baselineY = axis - delimCenterUp;
+        // 轴居中锚定 ink 中心（ink 在字格内不对称，按盒度量会偏轴 0.3em+）；mock 回退盒度量。
+        // 数学轴在基线上方 −axis（y 向下坐标），ink 中心 = 盒基线 + inkCenterOffsetY → 基线 = −axis − offset
+        float delimCenterUp = m.inkCenterOffsetY(delimiter, delimSize);
+        float baselineY = -axis - delimCenterUp;
         List<GlyphElem> glyphs = new ArrayList<GlyphElem>(1);
         glyphs.add(new GlyphElem(delimiter, 0.0F, 0.0F, scale));
         float height = Math.max(0.0F, -baselineY + m.ascent(delimSize));

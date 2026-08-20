@@ -77,4 +77,19 @@ public interface MathMetrics {
     default float italicOverhang(String text, float sizePx) {
         return 0.0F;
     }
+
+    /**
+     * 字形 ink 中心相对盒基线的偏移（px，正值 = 基线上方）。
+     *
+     * <p>伸缩定界符按数学轴居中时必须以 ink 中心为锚：ink 在字格内的分布并不对称，
+     * 按字体盒度量（ascent/descent）居中会让大缩放括号视觉中心偏离轴（实测 0.3em+）。
+     * 默认实现回退盒度量中心 (ascent − descent)/2（mock 与无 ink 数据场景，旧行为不变）。</p>
+     *
+     * @param text   单字符文本（布局侧仅对定界符等基元字形调用）
+     * @param sizePx 字号
+     * @return ink 中心相对基线的偏移（px，正值向上）
+     */
+    default float inkCenterOffsetY(String text, float sizePx) {
+        return (ascent(sizePx) - descent(sizePx)) / 2.0F;
+    }
 }

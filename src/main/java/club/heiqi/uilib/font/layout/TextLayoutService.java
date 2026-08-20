@@ -1044,6 +1044,34 @@ public class TextLayoutService {
                     unlockGeneration();
                 }
             }
+
+            @Override
+            public float inkCenterOffsetY(String text, float sizePx) {
+                // ink 中心相对盒基线 = (ink 顶 + ink 高/2) − 字格基线（atlas 单位，正=上方）
+                if (text.codePointCount(0, text.length()) != 1) {
+                    return (ascent(sizePx) - descent(sizePx)) / 2.0F;
+                }
+                int codepoint = text.codePointAt(0);
+                int size = Math.max(1, (int) sizePx);
+                lockGeneration();
+                try {
+                    GlyphRuntimeTables tables = currentRuntimeTables();
+                    if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+                        return (ascent(sizePx) - descent(sizePx)) / 2.0F;
+                    }
+                    int inkHeight = tables.inkHeightArray(style.getFontType())[codepoint];
+                    if (inkHeight <= 0) {
+                        return (ascent(sizePx) - descent(sizePx)) / 2.0F;
+                    }
+                    // ink 中心相对字体基线 = bearingY + inkHeight/2（quad 顶 = 基线 + bearingY）
+                    float centerAtlas = (float) tables.bearingYArray(style.getFontType())[codepoint]
+                            + inkHeight / 2.0F;
+                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
+                    return centerAtlas * size / (float) awt;
+                } finally {
+                    unlockGeneration();
+                }
+            }
         };
     }
 

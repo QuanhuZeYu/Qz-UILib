@@ -126,6 +126,51 @@ public class LatexSoftwareRenderTest {
         }
     }
 
+    /** 伸缩括号按 ink 中心对齐数学轴：括号视觉中心应落在分数横线（= 轴）上。 */
+    @Test
+    public void fencesAreAxisCenteredByInk() throws Exception {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\left( \\frac{a}{b} \\right)</latex>", BASE_SIZE);
+        club.heiqi.uilib.font.latex.layout.MathBox box = LatexSoftwareRenderKit.layout(
+                "\\left( \\frac{a}{b} \\right)", BASE_SIZE);
+        StringBuilder report = new StringBuilder();
+        for (club.heiqi.uilib.font.latex.layout.GlyphElem g : box.getGlyphs()) {
+            report.append("box glyph ").append(g.getText()).append(" x=").append(g.getX())
+                    .append(" y=").append(g.getY()).append(" s=").append(g.getSizeScale())
+                    .append(System.lineSeparator());
+        }
+        for (club.heiqi.uilib.font.latex.layout.RuleElem rule : box.getRules()) {
+            report.append("box rule x=").append(rule.getX()).append(" y=").append(rule.getY())
+                    .append(" w=").append(rule.getWidth()).append(System.lineSeparator());
+        }
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        List<Quad> glyphs = collectGlyphQuads(result);
+        report.append("render quads:").append(System.lineSeparator());
+        for (Quad quad : glyphs) {
+            report.append("  quad y=").append(quad.top).append("..").append(quad.bottom)
+                    .append(" h=").append(quad.height()).append(System.lineSeparator());
+        }
+        for (Quad rule : rules) {
+            report.append("  rule y=").append(rule.top).append("..").append(rule.bottom)
+                    .append(System.lineSeparator());
+        }
+        java.nio.file.Files.write(new java.io.File("build/reports/latex-render/fence-dump.txt").toPath(),
+                report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        Assert.assertTrue("应有分数横线", !rules.isEmpty());
+        Quad bar = rules.get(0);
+        int axisY = bar.centerY();
+        int fenceCount = 0;
+        for (Quad quad : glyphs) {
+            if (quad.height() > 12) {
+                fenceCount++;
+                Assert.assertTrue("伸缩括号中心应落在数学轴（±2 容差）: fenceCenter=" + quad.centerY()
+                        + " axis=" + axisY, Math.abs(quad.centerY() - axisY) <= 2);
+            }
+        }
+        Assert.assertEquals("应有 2 个伸缩括号", 2, fenceCount);
+    }
+
     /** 横线端点对齐视觉 ink：分数横线右端覆盖斜体字形的 ink 右缘（左右不精准修复）。 */
     @Test
     public void fracBarCoversItalicInkEdge() {
@@ -389,5 +434,41 @@ public class LatexSoftwareRenderTest {
             value = Math.max(value, quad.right);
         }
         return value;
+    }
+
+    /** 混排行几何诊断：14px 卡片行（文本 + 行内公式）逐 quad dump y 范围，
+     * 供核对文本基线/公式基线/行高是否对齐（场地卡片「下面有问题」定位用）。 */
+    @Test
+    public void dumpsMixedLineGeometry() throws Exception {
+        String[] lines = {
+                "分数：<latex>\\frac{1}{2} + \\frac{a}{b}</latex>",
+                "平方根：<latex>\\sqrt{x} + \\sqrt{x^2+y^2}</latex>",
+                "矩阵：<latex>\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}</latex>",
+                "分段：<latex>f(x) = \\begin{cases} x & x > 0 \\\\ -x & x \\leq 0 \\end{cases}</latex>",
+                "伸缩括号：<latex>\\left( \\frac{a}{b} \\right) \\left[ x \\right]</latex>",
+                "组合数：<latex>\\binom{n}{k} = \\frac{n!}{k!(n-k)!}</latex>",
+                "重音：<latex>\\hat{x} + \\bar{y} + \\vec{v} + \\dot{z} + \\tilde{w}</latex>",
+                "上划线：<latex>\\overline{AB} + \\underline{x}</latex>",
+                "中文：<latex>\\text{速度} = \\frac{\\Delta s}{\\Delta t}</latex>",
+        };
+        java.io.File out = new java.io.File("build/reports/latex-render/mixed-line.txt");
+        StringBuilder report = new StringBuilder();
+        for (String line : lines) {
+            LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(line, 14);
+            report.append("== ").append(line).append(" (").append(result.width).append("x")
+                    .append(result.height).append(") ==\n");
+            List<Quad> glyphs = collectGlyphQuads(result);
+            for (Quad quad : glyphs) {
+                report.append(String.format(java.util.Locale.ROOT, "  glyph y=%d..%d x=%d..%d%n",
+                        Integer.valueOf(quad.top), Integer.valueOf(quad.bottom), Integer.valueOf(quad.left),
+                        Integer.valueOf(quad.right)));
+            }
+            for (Quad quad : collectQuads(result.collector.getDecorationBatch())) {
+                report.append(String.format(java.util.Locale.ROOT, "  rule  y=%d..%d x=%d..%d%n",
+                        Integer.valueOf(quad.top), Integer.valueOf(quad.bottom), Integer.valueOf(quad.left),
+                        Integer.valueOf(quad.right)));
+            }
+        }
+        java.nio.file.Files.write(out.toPath(), report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }
