@@ -16,6 +16,7 @@ import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.util.FontMatcher;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * LaTeX 片段在 {@link TextLayoutService} 的解析与测量集成测试（M3）。
@@ -99,6 +100,37 @@ public class TextLayoutServiceLatexTest {
             }
         }
         Assert.assertEquals("\\sum_{i=1}^{n} i", latexSource);
+    }
+
+    @Test
+    public void shouldKeepLatexAtomicInWrap() {
+        TextLayoutService service = createService();
+        String wrapped = service.wrapFormattedStringToWidth("a<latex>x^2</latex>b", 16,
+                TextContentMode.RICH_TAGS);
+        List<String> lines = Arrays.asList(wrapped.split("\\n", -1));
+        Assert.assertEquals(3, lines.size());
+        Assert.assertEquals("a", lines.get(0));
+        Assert.assertEquals("<latex>x^2</latex>", lines.get(1));
+        Assert.assertEquals("b", lines.get(2));
+    }
+
+    @Test
+    public void shouldKeepLatexAtomicInTrim() {
+        TextLayoutService service = createService();
+        String trimmed = service.trimStringToWidth("a<latex>x^2</latex>b", 10,
+                TextContentMode.RICH_TAGS);
+        Assert.assertEquals("a", trimmed);
+    }
+
+    @Test
+    public void shouldIncludeLatexBoxInRichLineHeight() {
+        TextLayoutService service = createService();
+        int baseSize = (int) club.heiqi.uilib.font.FontRuntimeSettings.capture().getCharSize();
+        TextMeasureStyle richStyle = club.heiqi.uilib.ui.text.TextMeasureStyle.fontSizePx(baseSize)
+                .withTextContentMode(TextContentMode.RICH_TAGS);
+        int withLatex = service.getLineHeight("A<latex>\\frac{a}{b}</latex>", richStyle);
+        int withoutLatex = service.getLineHeight("A", richStyle);
+        Assert.assertTrue("含公式行高不应低于纯文本行高", withLatex >= withoutLatex);
     }
 
     private static TextLayoutService createService() {

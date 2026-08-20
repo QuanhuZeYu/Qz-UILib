@@ -272,6 +272,16 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
         int safeBaseSize = Math.max(1, baseFontSizePx);
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
+            if (segment.isLatex()) {
+                // LaTeX 段为原子盒：放得下整体保留，放不下整体裁掉（不裁公式内部）
+                double latexWidth = service.getSegmentWidth(segment, safeBaseSize);
+                if (width + latexWidth > targetWidth) {
+                    break;
+                }
+                width += latexWidth;
+                kept.add(TextSegment.forLatex(segment.getLatexSource(), style));
+                continue;
+            }
             String segmentText = segment.getText();
             int effectiveSize = style.resolveEffectiveFontSizePx(safeBaseSize);
             StringBuilder keptText = new StringBuilder();
@@ -305,6 +315,19 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
         boolean lineHasVisibleContent = false;
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
+            if (segment.isLatex()) {
+                // LaTeX 段为不可断行原子盒：放不下先落行，再整段放行（超宽公式独占一行）
+                double latexWidth = service.getSegmentWidth(segment, safeBaseSize);
+                if (width + latexWidth > wrapWidth && lineHasVisibleContent) {
+                    flushRichLine(lines, currentLine, baseStyle, false);
+                    width = 0.0D;
+                    lineHasVisibleContent = false;
+                }
+                currentLine.add(TextSegment.forLatex(segment.getLatexSource(), style));
+                width += latexWidth;
+                lineHasVisibleContent = true;
+                continue;
+            }
             String remaining = segment.getText();
             while (!remaining.isEmpty()) {
                 int codepoint = remaining.codePointAt(0);

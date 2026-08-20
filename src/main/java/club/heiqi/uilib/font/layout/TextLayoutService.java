@@ -17,6 +17,7 @@ import club.heiqi.uilib.font.ActiveFontGeneration;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.LatexParser;
+import club.heiqi.uilib.font.latex.layout.LatexCache;
 import club.heiqi.uilib.font.latex.layout.MathBox;
 import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.latex.layout.MathMetrics;
@@ -946,11 +947,11 @@ public class TextLayoutService {
     }
 
     /**
-     * 度量 LaTeX 公式宽度（解析 + 布局；渲染侧 {@code DefaultFontRendererAdapter} 同口径）。
+     * 度量 LaTeX 公式宽度（经 {@link LatexCache} 缓存；渲染侧 DefaultFontRendererAdapter 同口径）。
      */
     private double measureLatexWidth(String latexSource, TextStyle style, int fontSizePx) {
-        List<LatexNode> nodes = LatexParser.parse(latexSource);
-        MathBox box = MATH_LAYOUT.layout(nodes, fontSizePx, createMathMetrics(style, fontSizePx));
+        MathBox box = LatexCache.getInstance().getOrLayout(latexSource, fontSizePx, runtimeVersion,
+                style.getFontType(), MATH_LAYOUT, createMathMetrics(style, fontSizePx));
         return box.getWidth();
     }
 
@@ -1328,13 +1329,22 @@ public class TextLayoutService {
             TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
                     resolvedStyle.getFontStyle());
             int maxFontSizePx = resolvedStyle.getFontSizePx();
+            int maxLineHeightPx = 0;
             for (TextSegment segment : RichTextTagParser.parse(text, baseStyle)) {
                 int fontSizePx = segment.getStyle().resolveEffectiveFontSizePx(resolvedStyle.getFontSizePx());
                 if (fontSizePx > maxFontSizePx) {
                     maxFontSizePx = fontSizePx;
                 }
+                if (segment.isLatex()) {
+                    // LaTeX 段为二维公式盒：行高取 max(字号行高, 公式盒总高)
+                    int safeLatexSize = Math.max(1, fontSizePx);
+                    MathBox box = LatexCache.getInstance().getOrLayout(segment.getLatexSource(),
+                            safeLatexSize, runtimeVersion, segment.getStyle().getFontType(), MATH_LAYOUT,
+                            createMathMetrics(segment.getStyle(), safeLatexSize));
+                    maxLineHeightPx = Math.max(maxLineHeightPx, (int) Math.ceil(box.getTotalHeight()));
+                }
             }
-            return getLineHeight(maxFontSizePx);
+            return Math.max(getLineHeight(maxFontSizePx), maxLineHeightPx);
         } finally {
             unlockGeneration();
         }

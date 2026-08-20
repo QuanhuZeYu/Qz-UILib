@@ -10,6 +10,7 @@ import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.LatexParser;
 import club.heiqi.uilib.font.latex.layout.GlyphElem;
+import club.heiqi.uilib.font.latex.layout.LatexCache;
 import club.heiqi.uilib.font.latex.layout.MathBox;
 import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.latex.layout.MathMetrics;
@@ -811,7 +812,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         for (int s = 0; s < segments.size(); s++) {
             TextSegment segment = segments.get(s);
             if (segment.isLatex()) {
-                MathBox box = layoutLatexSegment(segment, textLayoutService, resolvedBaseFontSizePx);
+                MathBox box = layoutLatexSegment(segment, textLayoutService, resolvedBaseFontSizePx,
+                        tables.getRuntimeVersion());
                 latexBoxes[s] = box;
                 for (GlyphElem elem : box.getGlyphs()) {
                     glyphCount += countRenderableCodepoints(elem.getText());
@@ -951,12 +953,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
     }
 
-    /** 布局 LaTeX 段（解析 + 布局；与测量侧 TextLayoutService.measureLatexWidth 同口径）。 */
+    /** 布局 LaTeX 段（经 LatexCache 缓存；与测量侧 TextLayoutService.measureLatexWidth 同口径）。 */
     private MathBox layoutLatexSegment(TextSegment segment, TextLayoutService textLayoutService,
-            int baseFontSizePx) {
-        List<LatexNode> nodes = LatexParser.parse(segment.getLatexSource());
-        MathMetrics metrics = textLayoutService.createMathMetrics(segment.getStyle(), baseFontSizePx);
-        return MATH_LAYOUT.layout(nodes, baseFontSizePx, metrics);
+            int baseFontSizePx, int runtimeVersion) {
+        return LatexCache.getInstance().getOrLayout(segment.getLatexSource(), baseFontSizePx, runtimeVersion,
+                segment.getStyle().getFontType(), MATH_LAYOUT,
+                textLayoutService.createMathMetrics(segment.getStyle(), baseFontSizePx));
     }
 
     /** 文本内可渲染码点计数（跳过零宽/剥离类，与 glyph 收集同口径）。 */
