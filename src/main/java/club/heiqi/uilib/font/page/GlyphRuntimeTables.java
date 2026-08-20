@@ -89,6 +89,14 @@ public final class GlyphRuntimeTables {
      * 字体行间隙（粗体），量纲=atlas 像素（awtCharSize 坐标系）。
      */
     public float leadingBold;
+    /**
+     * x-height（小写 x ink 高），量纲=atlas 像素（awtCharSize 坐标系）；TeX 布局关键参数。
+     */
+    public float xHeightNormal;
+    /**
+     * x-height（粗体），量纲=atlas 像素（awtCharSize 坐标系）。
+     */
+    public float xHeightBold;
     public final short[] inkWidthNormal = new short[CODEPOINT_COUNT];
     public final short[] inkWidthBold = new short[CODEPOINT_COUNT];
     public final short[] inkHeightNormal = new short[CODEPOINT_COUNT];
@@ -191,6 +199,10 @@ public final class GlyphRuntimeTables {
         return fontType == FontType.BOLD ? lineBaselineYBold : lineBaselineYNormal;
     }
 
+    public float xHeight(FontType fontType) {
+        return fontType == FontType.BOLD ? xHeightBold : xHeightNormal;
+    }
+
     public float ascent(FontType fontType) {
         return fontType == FontType.BOLD ? ascentBold : ascentNormal;
     }
@@ -261,6 +273,8 @@ public final class GlyphRuntimeTables {
         descentBold = 0.0F;
         leadingNormal = 0.0F;
         leadingBold = 0.0F;
+        xHeightNormal = 0.0F;
+        xHeightBold = 0.0F;
         clearGlyphGeometry();
         clearPageReferences();
     }
@@ -295,6 +309,8 @@ public final class GlyphRuntimeTables {
         descentBold = 0.0F;
         leadingNormal = 0.0F;
         leadingBold = 0.0F;
+        xHeightNormal = 0.0F;
+        xHeightBold = 0.0F;
         clearPageReferences();
     }
 
@@ -323,6 +339,8 @@ public final class GlyphRuntimeTables {
         ascentBold = metrics.getAscent(FontType.BOLD);
         descentBold = metrics.getDescent(FontType.BOLD);
         leadingBold = metrics.getLeading(FontType.BOLD);
+        xHeightNormal = metrics.getXHeight(FontType.NORMAL);
+        xHeightBold = metrics.getXHeight(FontType.BOLD);
     }
 
     /**

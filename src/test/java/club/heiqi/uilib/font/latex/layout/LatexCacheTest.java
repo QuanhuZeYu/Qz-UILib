@@ -25,6 +25,11 @@ public class LatexCacheTest {
         public float descent(float sizePx) {
             return 0.2F * sizePx;
         }
+
+        @Override
+        public float xHeight(float sizePx) {
+            return 0.45F * sizePx;
+        }
     };
 
     @Test

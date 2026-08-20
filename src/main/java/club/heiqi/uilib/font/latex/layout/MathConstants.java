@@ -1,53 +1,79 @@
 package club.heiqi.uilib.font.latex.layout;
 
 /**
- * 数学布局常量（规划 §7.1 决议：不读字体 MATH 表，用现有度量的比例近似）。
+ * 数学布局常量。
  *
- * <p>em 基准 = 当前公式正文字号（px）。</p>
+ * <p>数值对齐 TeX（Computer Modern fontdimen，JLaTeXMath 1.0.7 DefaultTeXFont.xml 取证，
+ * 调研文档《调研-TeX排版算法借鉴-JLaTeXMath.md》）：em 基准 = 当前公式正文字号（px），
+ * mu = 1/18em。原拍脑袋比例常量已由 TeX 参数表取代。</p>
  */
 public final class MathConstants {
 
     private MathConstants() {
     }
 
-    /** script 字号缩放（上/下标、分数分子分母）。 */
+    /** script 字号缩放（上/下标、分数分子分母）。TeX scriptfactor。 */
     public static final float SCRIPT_SCALE = 0.7F;
 
-    /** scriptscript 字号缩放（上标的上标等二级缩放，预留）。 */
-    public static final float SCRIPT_SCRIPT_SCALE = 0.49F;
+    /** scriptscript 字号缩放（二级缩放，预留）。TeX scriptscriptfactor。 */
+    public static final float SCRIPT_SCRIPT_SCALE = 0.5F;
 
-    /** 数学轴高（em，相对 ascent 的比例）：关系符垂直中心与分数 bar 定位参考。 */
-    public static final float AXIS_HEIGHT_ASCENT_RATIO = 0.25F;
+    /** 数学轴高（em）：分数线/大运算符的垂直中心。 */
+    public static final float AXIS_HEIGHT_EM = 0.25F;
 
-    /** 分数线/根号横线粗细（em）。 */
-    public static final float RULE_THICKNESS_EM = 0.06F;
+    /** 默认规则线粗（em）。TeX defaultrulethickness。 */
+    public static final float RULE_THICKNESS_EM = 0.04F;
 
-    /** 上标基线抬升（em），与 TextStyle.SUP_RAISE_EM 一致。 */
-    public static final float SUP_RAISE_EM = 0.4F;
+    // ==================== 分数参数（TeX num1..3/denom1..2） ====================
 
-    /** 下标基线下沉（em），与 TextStyle.SUB_DROP_EM 一致。 */
-    public static final float SUB_DROP_EM = 0.25F;
+    /** 显示样式分子最小间隙（em）。 */
+    public static final float NUM1_EM = 0.676508F;
+    /** 文本样式分子最小间隙（em）。 */
+    public static final float NUM2_EM = 0.393732F;
+    /** 无分数线分子最小间隙（em）。 */
+    public static final float NUM3_EM = 0.443731F;
+    /** 显示样式分母最小间隙（em）。 */
+    public static final float DENOM1_EM = 0.685951F;
+    /** 文本样式分母最小间隙（em）。 */
+    public static final float DENOM2_EM = 0.344841F;
+    /** 分数两侧 nulldelimiterspace（em，每侧）。 */
+    public static final float NULL_DELIMITER_SPACE_EM = 0.12F;
 
-    /** 上/下标最小空隙（em）：与主体盒的最小间距保护。 */
-    public static final float SUP_SUB_MIN_GAP_EM = 0.08F;
+    // ==================== 上下标参数（TeX sup1..3/sub1..2/supdrop/subdrop） ====================
 
-    /** 分数条上下空隙（em）：分子底/分母顶与 bar 的距离。 */
-    public static final float FRAC_GAP_EM = 0.08F;
+    /** 显示样式上标最小抬升（em）。 */
+    public static final float SUP1_EM = 0.412892F;
+    /** 文本样式上标最小抬升（em）。 */
+    public static final float SUP2_EM = 0.362892F;
+    /** cramped 样式上标最小抬升（em）。 */
+    public static final float SUP3_EM = 0.288889F;
+    /** 无上标时下标最小下沉（em）。 */
+    public static final float SUB1_EM = 0.15F;
+    /** 有上标时下标最小下沉（em）。 */
+    public static final float SUB2_EM = 0.247217F;
+    /** 上标基准抬升 = base 高 − supdrop（em）。 */
+    public static final float SUP_DROP_EM = 0.386108F;
+    /** 下标基准下沉 = base 深 + subdrop（em）。 */
+    public static final float SUB_DROP_EM = 0.05F;
+    /** scriptspace（em）：上/下标与主体的水平空隙（TeX 0.5pt = 0.05em）。 */
+    public static final float SCRIPT_SPACE_EM = 0.05F;
 
-    /** 分数条两端超出内容宽度（em，每侧）。 */
-    public static final float FRAC_OVERHANG_EM = 0.06F;
+    // ==================== 大运算符 limits 参数 ====================
 
-    /** 根号横线距被开方内容顶的额外高度（em）。 */
-    public static final float SQRT_CLEARANCE_EM = 0.1F;
+    /** limits 上标与运算符间隙（em，ScriptsAtom limits 路径 3pt）。 */
+    public static final float LIMITS_OVER_GAP_EM = 0.3F;
+    /** limits 下标与运算符间隙（em，ScriptsAtom limits 路径 0.3pt）。 */
+    public static final float LIMITS_UNDER_GAP_EM = 0.03F;
 
-    /** 根指数在根号左上方的抬升（em）。 */
-    public static final float SQRT_INDEX_RAISE_EM = 0.35F;
+    // ==================== 根号参数 ====================
+
+    /** 根指数相对根号总高的抬升因子（TeX NthRoot FACTOR）。 */
+    public static final float SQRT_INDEX_FACTOR = 0.55F;
+
+    // ==================== 其他 ====================
 
     /** 伸缩定界符与内容的最小间隙（em，每侧）。 */
     public static final float DELIM_GAP_EM = 0.05F;
-
-    /** 大运算符上下限与符号的间隙（em）。 */
-    public static final float LIMITS_GAP_EM = 0.05F;
 
     /** 矩阵列间隙（em，每列两侧合计）。 */
     public static final float MATRIX_COL_GAP_EM = 0.4F;
@@ -64,7 +90,7 @@ public final class MathConstants {
     /** 重音与基底的间隙（em）。 */
     public static final float ACCENT_GAP_EM = 0.05F;
 
-    /** 数学间距：thin/medium/thick（mu，1mu = 1/18 em）。 */
+    /** 数学间距：thin/medium/thick（mu，1mu = 1/18 em）。TeXBook p181。 */
     public static final float THIN_MU = 3.0F;
     public static final float MED_MU = 4.0F;
     public static final float THICK_MU = 5.0F;

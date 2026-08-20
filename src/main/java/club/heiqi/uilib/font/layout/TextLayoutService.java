@@ -984,6 +984,11 @@ public class TextLayoutService {
             public float descent(float sizePx) {
                 return getDescent(Math.max(1, (int) sizePx));
             }
+
+            @Override
+            public float xHeight(float sizePx) {
+                return getXHeight(Math.max(1, (int) sizePx));
+            }
         };
     }
 
@@ -1380,6 +1385,28 @@ public class TextLayoutService {
             GlyphRuntimeTables tables = currentRuntimeTables();
             float atlasDescent = tables == null ? 0.0F : tables.descent(FontType.NORMAL);
             return Math.round(atlasDescent * Math.max(1, fontSizePx)
+                    / (float) currentSettings().getAwtCharSize());
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    /**
+     * 获取指定 UI 像素字号下的 x-height（小写 x ink 高，TeX 布局关键参数）。
+     *
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素 x-height
+     */
+    public int getXHeight(int fontSizePx) {
+        lockGeneration();
+        try {
+            GlyphRuntimeTables tables = currentRuntimeTables();
+            float atlasXHeight = tables == null ? 0.0F : tables.xHeight(FontType.NORMAL);
+            if (atlasXHeight <= 0.0F) {
+                // 度量未发布时回退 CM 比例（x-height ≈ 0.431em）
+                atlasXHeight = (float) (0.431D * currentSettings().getAwtCharSize());
+            }
+            return Math.round(atlasXHeight * Math.max(1, fontSizePx)
                     / (float) currentSettings().getAwtCharSize());
         } finally {
             unlockGeneration();

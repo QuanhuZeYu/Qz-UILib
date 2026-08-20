@@ -26,4 +26,10 @@ public interface MathMetrics {
      * 指定字号的字体 descent（基线下方深度）。
      */
     float descent(float sizePx);
+
+    /**
+     * 指定字号的 x-height（小写 x 高度，TeX 布局算法关键参数：根号间隙、
+     * 上下标约束、重音基准）。
+     */
+    float xHeight(float sizePx);
 }

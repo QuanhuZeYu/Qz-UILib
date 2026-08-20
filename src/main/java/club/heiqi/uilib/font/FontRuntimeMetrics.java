@@ -2,8 +2,10 @@ package club.heiqi.uilib.font;
 
 import java.awt.Font;
 import java.awt.font.FontRenderContext;
+import java.awt.font.GlyphVector;
 import java.awt.font.LineMetrics;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Rectangle2D;
 
 import club.heiqi.uilib.font.util.FontCatalog;
 
@@ -17,18 +19,22 @@ public final class FontRuntimeMetrics {
     private final float ascentNormal;
     private final float descentNormal;
     private final float leadingNormal;
+    private final float xHeightNormal;
     private final float ascentBold;
     private final float descentBold;
     private final float leadingBold;
+    private final float xHeightBold;
 
-    private FontRuntimeMetrics(float ascentNormal, float descentNormal, float leadingNormal, float ascentBold,
-            float descentBold, float leadingBold) {
+    private FontRuntimeMetrics(float ascentNormal, float descentNormal, float leadingNormal, float xHeightNormal,
+            float ascentBold, float descentBold, float leadingBold, float xHeightBold) {
         this.ascentNormal = ascentNormal;
         this.descentNormal = descentNormal;
         this.leadingNormal = leadingNormal;
+        this.xHeightNormal = xHeightNormal;
         this.ascentBold = ascentBold;
         this.descentBold = descentBold;
         this.leadingBold = leadingBold;
+        this.xHeightBold = xHeightBold;
     }
 
     /**
@@ -53,8 +59,24 @@ public final class FontRuntimeMetrics {
                 FONT_RENDER_CONTEXT);
         float[] normalizedNormal = normalize(normal, (float) settings.getAwtCharSize());
         float[] normalizedBold = normalize(bold, (float) settings.getAwtCharSize());
+        float xHeightNormal = measureXHeight(baseFont, Font.PLAIN, settings);
+        float xHeightBold = measureXHeight(baseFont, Font.BOLD, settings);
         return new FontRuntimeMetrics(normalizedNormal[0], normalizedNormal[1], normalizedNormal[2],
-                normalizedBold[0], normalizedBold[1], normalizedBold[2]);
+                xHeightNormal, normalizedBold[0], normalizedBold[1], normalizedBold[2], xHeightBold);
+    }
+
+    /** 测量小写 x 的 ink 高度并归一化到 awtCharSize 坐标系（TeX x-height 参数）。 */
+    private static float measureXHeight(Font baseFont, int style, FontRuntimeSettings settings) {
+        float glyphSize = (float) settings.getGlyphSize();
+        Font sized = baseFont.deriveFont(style, glyphSize);
+        GlyphVector glyphVector = sized.createGlyphVector(FONT_RENDER_CONTEXT, "x");
+        Rectangle2D bounds = glyphVector.getVisualBounds();
+        double rawHeight = bounds.getHeight();
+        if (rawHeight <= 0.0D) {
+            // 字体无法给出 x 字形几何时回退 CM 比例（x-height ≈ 0.431em）
+            return (float) (0.431D * settings.getAwtCharSize());
+        }
+        return (float) (rawHeight / glyphSize * settings.getAwtCharSize());
     }
 
     public float getAscent(FontType fontType) {
@@ -67,6 +89,10 @@ public final class FontRuntimeMetrics {
 
     public float getLeading(FontType fontType) {
         return fontType == FontType.BOLD ? leadingBold : leadingNormal;
+    }
+
+    public float getXHeight(FontType fontType) {
+        return fontType == FontType.BOLD ? xHeightBold : xHeightNormal;
     }
 
     private static float[] normalize(LineMetrics metrics, float targetHeight) {

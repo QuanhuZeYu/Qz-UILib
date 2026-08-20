@@ -94,50 +94,100 @@ public final class MathLayoutService {
             return MathBox.empty();
         }
         Builder builder = new Builder();
-        LatexNode previous = null;
-        for (LatexNode node : nodes) {
-            if (previous != null) {
-                float gap = spacingMu(previous, node) / 18.0F * size;
+        AtomClass[] effective = effectiveAtomClasses(nodes);
+        for (int index = 0; index < nodes.size(); index++) {
+            LatexNode node = nodes.get(index);
+            // 显式间距（\, \quad 等）是 kern：不参与 glue（TeX RowAtom「kerns do not interfere
+            // with the normal glue-rules」），前后均不插数学间距。
+            boolean leftIsKern = index > 0 && nodes.get(index - 1).getKind() == LatexNode.Kind.SPACE;
+            boolean rightIsKern = node.getKind() == LatexNode.Kind.SPACE;
+            if (index > 0 && !leftIsKern && !rightIsKern) {
+                float gap = spacingMu(effective[index - 1], effective[index]) / 18.0F * size;
                 builder.advance(gap);
             }
             MathBox child = layoutNode(node, size, m);
             builder.addBox(child, builder.width, 0.0F, 1.0F);
-            previous = node;
         }
         return builder.toBox();
     }
 
-    /** 相邻原子间距（mu，简化 TeX 表）。 */
-    private static float spacingMu(LatexNode left, LatexNode right) {
-        AtomClass l = atomClassOf(left);
-        AtomClass r = atomClassOf(right);
-        if (l == AtomClass.BIN) {
-            return isOrdish(r) ? MathConstants.MED_MU : 0.0F;
+    /**
+     * 有效原子类型序列（含 TeX bin→ord 上下文降级，TeXBook p170）：
+     * BIN 在行首/行尾、前一原子为 bin/op/rel/open/punct、或后一原子为 rel/close/punct 时降级为 ORD
+     * （两侧不再加 medium 间距）。
+     */
+    private static AtomClass[] effectiveAtomClasses(List<LatexNode> nodes) {
+        AtomClass[] classes = new AtomClass[nodes.size()];
+        for (int index = 0; index < nodes.size(); index++) {
+            classes[index] = atomClassOf(nodes.get(index));
         }
-        if (r == AtomClass.BIN) {
-            return isOrdish(l) ? MathConstants.MED_MU : 0.0F;
+        for (int index = 0; index < nodes.size(); index++) {
+            if (classes[index] != AtomClass.BIN) {
+                continue;
+            }
+            // 显式间距节点（kern）对上下文透明：取最近的非 SPACE 邻居
+            int previousIndex = index - 1;
+            while (previousIndex >= 0 && nodes.get(previousIndex).getKind() == LatexNode.Kind.SPACE) {
+                previousIndex--;
+            }
+            int nextIndex = index + 1;
+            while (nextIndex < nodes.size() && nodes.get(nextIndex).getKind() == LatexNode.Kind.SPACE) {
+                nextIndex++;
+            }
+            AtomClass previous = previousIndex >= 0 ? classes[previousIndex] : null;
+            AtomClass next = nextIndex < nodes.size() ? classes[nextIndex] : null;
+            boolean degraded = previousIndex < 0 || nextIndex >= nodes.size()
+                    || previous == AtomClass.BIN || previous == AtomClass.OP
+                    || previous == AtomClass.REL || previous == AtomClass.OPEN
+                    || previous == AtomClass.PUNCT
+                    || next == AtomClass.REL || next == AtomClass.CLOSE || next == AtomClass.PUNCT;
+            if (degraded) {
+                classes[index] = AtomClass.ORD;
+            }
         }
-        if (l == AtomClass.REL) {
-            return isOrdish(r) ? MathConstants.THICK_MU : 0.0F;
-        }
-        if (r == AtomClass.REL) {
-            return isOrdish(l) ? MathConstants.THICK_MU : 0.0F;
-        }
-        if (l == AtomClass.OP) {
-            return (r == AtomClass.ORD || r == AtomClass.OPEN) ? MathConstants.THIN_MU : 0.0F;
-        }
-        if (r == AtomClass.OP) {
-            return (l == AtomClass.ORD || l == AtomClass.CLOSE) ? MathConstants.THIN_MU : 0.0F;
-        }
-        if (l == AtomClass.PUNCT && isOrdish(r)) {
-            return MathConstants.THIN_MU;
-        }
-        return 0.0F;
+        return classes;
     }
 
-    private static boolean isOrdish(AtomClass cls) {
-        return cls == AtomClass.ORD || cls == AtomClass.OP || cls == AtomClass.CLOSE
-                || cls == AtomClass.PUNCT || cls == AtomClass.INNER;
+    /**
+     * 相邻原子间距（mu）：TeX 原子间距全表（TeXBook p181，GlueSettings.xml 取证）——
+     * thin=3mu、med=4mu、thick=5mu；display/text 口径（行内公式统一按 text）。
+     */
+    private static float spacingMu(AtomClass left, AtomClass right) {
+        switch (left) {
+            case ORD:
+                return right == AtomClass.OP || right == AtomClass.INNER ? MathConstants.THIN_MU
+                        : right == AtomClass.BIN ? MathConstants.MED_MU
+                        : right == AtomClass.REL ? MathConstants.THICK_MU : 0.0F;
+            case OP:
+                return right == AtomClass.ORD || right == AtomClass.OP || right == AtomClass.INNER
+                        ? MathConstants.THIN_MU
+                        : right == AtomClass.REL ? MathConstants.THICK_MU : 0.0F;
+            case BIN:
+                return right == AtomClass.ORD || right == AtomClass.OP || right == AtomClass.OPEN
+                        || right == AtomClass.INNER ? MathConstants.MED_MU : 0.0F;
+            case REL:
+                return right == AtomClass.ORD || right == AtomClass.OP || right == AtomClass.OPEN
+                        || right == AtomClass.INNER ? MathConstants.THICK_MU : 0.0F;
+            case OPEN:
+                return 0.0F;
+            case CLOSE:
+                return right == AtomClass.OP || right == AtomClass.INNER ? MathConstants.THIN_MU
+                        : right == AtomClass.BIN ? MathConstants.MED_MU
+                        : right == AtomClass.REL ? MathConstants.THICK_MU : 0.0F;
+            case PUNCT:
+                return right == AtomClass.ORD || right == AtomClass.OPEN || right == AtomClass.CLOSE
+                        ? MathConstants.THIN_MU
+                        : right == AtomClass.OP ? MathConstants.MED_MU
+                        : right == AtomClass.REL || right == AtomClass.INNER ? MathConstants.THICK_MU
+                        : right == AtomClass.PUNCT ? MathConstants.MED_MU : 0.0F;
+            case INNER:
+                return right == AtomClass.ORD || right == AtomClass.OP || right == AtomClass.OPEN
+                        || right == AtomClass.PUNCT || right == AtomClass.INNER ? MathConstants.THIN_MU
+                        : right == AtomClass.BIN ? MathConstants.MED_MU
+                        : right == AtomClass.REL ? MathConstants.THICK_MU : 0.0F;
+            default:
+                return 0.0F;
+        }
     }
 
     private static AtomClass atomClassOf(LatexNode node) {
@@ -161,33 +211,65 @@ public final class MathLayoutService {
         if (limits) {
             return layoutLimits(base, sup, sub, size);
         }
+        if (sup == null && sub == null) {
+            return base;
+        }
+
+        // TeX ScriptsAtom 约束链（行内=text 样式口径）：
+        // shiftUp = base.height − supdrop；shiftDown = base.depth + subdrop；
+        // 上标下限 max(sup2, sup.depth + xHeight/4)；下标下限 max(sub1, sub.height − 4·xHeight/5)；
+        // 双脚本再经 sub2 与 4×规则线粗最小间距、4/5 xHeight 二次分配（psi）。
+        float xHeight = m.xHeight(size);
+        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float shiftUp = base.getHeight() - MathConstants.SUP_DROP_EM * size;
+        float shiftDown = base.getDepth() + MathConstants.SUB_DROP_EM * size;
+        float supY = 0.0F;
+        float subY = 0.0F;
+        if (sup != null && sub == null) {
+            shiftUp = Math.max(Math.max(shiftUp, MathConstants.SUP2_EM * size),
+                    sup.getDepth() + xHeight / 4.0F);
+            supY = -shiftUp;
+        } else if (sub != null && sup == null) {
+            shiftDown = Math.max(Math.max(shiftDown, MathConstants.SUB1_EM * size),
+                    sub.getHeight() - 4.0F * xHeight / 5.0F);
+            subY = shiftDown;
+        } else {
+            shiftUp = Math.max(Math.max(shiftUp, MathConstants.SUP2_EM * size),
+                    sup.getDepth() + xHeight / 4.0F);
+            shiftDown = Math.max(shiftDown, MathConstants.SUB2_EM * size);
+            float interSpace = shiftUp - sup.getDepth() + shiftDown - sub.getHeight();
+            if (interSpace < 4.0F * drt) {
+                shiftUp += 4.0F * drt - interSpace;
+                float psi = 4.0F * xHeight / 5.0F - (shiftUp - sup.getDepth());
+                if (psi > 0.0F) {
+                    shiftUp += psi;
+                    shiftDown -= psi;
+                }
+            }
+            supY = -shiftUp;
+            subY = shiftDown;
+        }
+
+        float scriptSpace = MathConstants.SCRIPT_SPACE_EM * size;
+        float supWidth = sup == null ? 0.0F : sup.getWidth();
+        float subWidth = sub == null ? 0.0F : sub.getWidth();
+        float scriptWidth = Math.max(supWidth, subWidth);
 
         Builder builder = new Builder();
         builder.addBox(base, 0.0F, 0.0F, 1.0F);
-        float supX = base.getWidth();
-        float subX = base.getWidth();
-        float supY = -(MathConstants.SUP_RAISE_EM * size);
         if (sup != null) {
-            float maxY = -(base.getHeight() + sup.getDepth() - MathConstants.SUP_SUB_MIN_GAP_EM * size);
-            supY = Math.min(supY, maxY);
+            builder.addBox(sup, base.getWidth() + scriptSpace, supY, MathConstants.SCRIPT_SCALE);
         }
         if (sub != null) {
-            float subY = MathConstants.SUB_DROP_EM * size;
-            float minY = base.getDepth() + sub.getHeight() - MathConstants.SUP_SUB_MIN_GAP_EM * size;
-            subY = Math.max(subY, minY);
-            // 下标比主体宽时，上标与下标水平居中
-            if (sup != null && sub.getWidth() > base.getWidth()) {
-                float shift = (sub.getWidth() - sup.getWidth()) / 2.0F;
-                builder.addBox(sup, subX + shift, supY, MathConstants.SCRIPT_SCALE);
-            }
-            builder.addBox(sub, subX, subY, MathConstants.SCRIPT_SCALE);
-        } else if (sup != null) {
-            builder.addBox(sup, supX, supY, MathConstants.SCRIPT_SCALE);
+            builder.addBox(sub, base.getWidth() + scriptSpace, subY, MathConstants.SCRIPT_SCALE);
         }
+        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptSpace + scriptWidth : 0.0F);
+        builder.height = Math.max(base.getHeight(), sup != null ? -supY + sup.getHeight() : 0.0F);
+        builder.depth = Math.max(base.getDepth(), sub != null ? subY + sub.getDepth() : 0.0F);
         return builder.toBox();
     }
 
-    /** 大运算符上下限：上下堆叠居中。 */
+    /** 大运算符上下限：上下堆叠居中（TeX ScriptsAtom limits 路径：over 间隙 3pt、under 间隙 0.3pt）。 */
     private MathBox layoutLimits(MathBox base, MathBox sup, MathBox sub, float size) {
         Builder builder = new Builder();
         float contentWidth = base.getWidth();
@@ -198,15 +280,24 @@ public final class MathLayoutService {
             contentWidth = Math.max(contentWidth, sub.getWidth());
         }
         builder.addBox(base, (contentWidth - base.getWidth()) / 2.0F, 0.0F, 1.0F);
-        float gap = MathConstants.LIMITS_GAP_EM * size;
+        float height = base.getHeight();
+        float depth = base.getDepth();
         if (sup != null) {
-            float supY = -(base.getHeight() + gap + sup.getHeight());
+            float overGap = MathConstants.LIMITS_OVER_GAP_EM * size;
+            // 上标按底对齐：底 = base 顶上方 overGap（用 depth 参与，与 TeX UnderOverAtom 一致）
+            float supY = -(base.getHeight() + overGap + sup.getDepth());
             builder.addBox(sup, (contentWidth - sup.getWidth()) / 2.0F, supY, MathConstants.SCRIPT_SCALE);
+            height = base.getHeight() + overGap + sup.getTotalHeight();
         }
         if (sub != null) {
-            float subY = base.getDepth() + gap + sub.getHeight();
+            float underGap = MathConstants.LIMITS_UNDER_GAP_EM * size;
+            // 下标按顶对齐：顶 = base 底下方 underGap（用 height 参与）
+            float subY = base.getDepth() + underGap + sub.getHeight();
             builder.addBox(sub, (contentWidth - sub.getWidth()) / 2.0F, subY, MathConstants.SCRIPT_SCALE);
+            depth = base.getDepth() + underGap + sub.getTotalHeight();
         }
+        builder.height = height;
+        builder.depth = depth;
         return builder.toBox();
     }
 
@@ -216,21 +307,39 @@ public final class MathLayoutService {
         float scriptSize = size * MathConstants.SCRIPT_SCALE;
         MathBox num = layoutNode(node.getNumerator(), scriptSize, m);
         MathBox den = layoutNode(node.getDenominator(), scriptSize, m);
-        float thickness = MathConstants.RULE_THICKNESS_EM * size;
-        float gap = MathConstants.FRAC_GAP_EM * size;
-        float width = Math.max(num.getWidth(), den.getWidth()) + 2.0F * MathConstants.FRAC_OVERHANG_EM * size;
+        // TeX FractionAtom（行内=text 样式口径）：轴高对齐 + num2/denom2 + clr 补足链
+        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        float delta = drt / 2.0F;
+        float contentWidth = Math.max(num.getWidth(), den.getWidth());
+        float sideSpace = MathConstants.NULL_DELIMITER_SPACE_EM * size;
+        float width = contentWidth + 2.0F * sideSpace;
+
+        float shiftUp = MathConstants.NUM2_EM * size;
+        float shiftDown = MathConstants.DENOM2_EM * size;
+        float clr = drt;
+        // 轴高对齐：kern1 = shiftUp − num.depth − (axis + drt/2)，kern2 = axis − drt/2 − (den.height − shiftDown)
+        float kern1 = shiftUp - num.getDepth() - (axis + delta);
+        float kern2 = axis - delta - (den.getHeight() - shiftDown);
+        if (clr > kern1) {
+            kern1 = clr;
+        }
+        if (clr > kern2) {
+            kern2 = clr;
+        }
 
         Builder builder = new Builder();
-        // 分子：基线使分子底 = -(gap + t/2)
-        float numY = -(gap + thickness / 2.0F + num.getDepth());
-        builder.addBox(num, (width - num.getWidth()) / 2.0F, numY, MathConstants.SCRIPT_SCALE);
-        // 分母：基线使分母顶 = bar 底 + gap
-        float denY = gap + thickness / 2.0F + den.getHeight();
-        builder.addBox(den, (width - den.getWidth()) / 2.0F, denY, MathConstants.SCRIPT_SCALE);
-        // 分数线：顶边 = 分子底 - gap
-        float barTopY = -(2.0F * gap + thickness / 2.0F);
-        builder.addRule(0.0F, barTopY, width, thickness);
+        float numY = -(axis + delta + kern1 + num.getDepth());
+        float denY = -axis + delta + kern2 + den.getHeight();
+        builder.addBox(num, sideSpace + (contentWidth - num.getWidth()) / 2.0F, numY,
+                MathConstants.SCRIPT_SCALE);
+        builder.addBox(den, sideSpace + (contentWidth - den.getWidth()) / 2.0F, denY,
+                MathConstants.SCRIPT_SCALE);
+        // 分数线中心落在数学轴上
+        builder.addRule(sideSpace, -(axis + delta), contentWidth, drt);
         builder.width = width;
+        builder.height = axis + delta + kern1 + num.getDepth() + num.getHeight();
+        builder.depth = -axis + delta + kern2 + den.getHeight() + den.getDepth();
         return builder.toBox();
     }
 
@@ -238,35 +347,50 @@ public final class MathLayoutService {
 
     private MathBox layoutSqrt(LatexSqrt node, float size, MathMetrics m) {
         MathBox radicand = layoutNode(node.getRadicand(), size, m);
-        float thickness = MathConstants.RULE_THICKNESS_EM * size;
-        float clearance = MathConstants.SQRT_CLEARANCE_EM * size;
-        float totalHeight = radicand.getHeight() + radicand.getDepth() + clearance + thickness;
+        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float xHeight = m.xHeight(size);
+        // TeX NthRoot（行内=text 口径）：clr = drt + |xHeight|/4
+        float clr = drt + Math.abs(xHeight) / 4.0F;
+        float totalH = radicand.getHeight() + radicand.getDepth() + clr + drt;
 
+        // 根号字形无阶梯变体：整字缩放覆盖目标高（TeX 取足够大变体的近似）
         float baseAscent = m.ascent(size);
-        float radicalScale = baseAscent <= 0.0F ? 1.0F : totalHeight / baseAscent;
-        radicalScale = Math.max(1.0F, radicalScale);
+        float radicalScale = baseAscent <= 0.0F ? 1.0F : Math.max(1.0F, totalH / baseAscent);
         float radicalSize = size * radicalScale;
         float radicalWidth = m.advance(RADICAL, radicalSize);
         float radicalAscent = m.ascent(radicalSize);
+        float radicalDescent = m.descent(radicalSize);
+        float radicalTotal = radicalAscent + radicalDescent;
+        // 根号实际总高与目标的差的一半回补给 clr（TeX：clr += delta/2）
+        float delta = radicalTotal - totalH;
+        if (delta > 0.0F) {
+            clr += delta / 2.0F;
+        }
 
         Builder builder = new Builder();
-        // 根号字形：底部贴齐内容底，顶覆盖 -totalHeight
-        float radicalY = radicand.getDepth() + thickness - (radicalAscent - totalHeight);
+        // 根号字形：底对齐内容底 + 线粗
+        float radicalY = radicand.getDepth() + drt;
         builder.addGlyph(RADICAL, 0.0F, radicalY, radicalScale);
-        // 横线：顶边 = 内容顶上方 clearance + thickness
-        float ruleTopY = -(radicand.getHeight() + clearance + thickness);
-        builder.addRule(radicalWidth, ruleTopY, radicand.getWidth(), thickness);
+        // 横线：顶边 = 内容顶上方 clr + drt
+        float ruleTopY = -(radicand.getHeight() + clr + drt);
+        builder.addRule(radicalWidth, ruleTopY, radicand.getWidth(), drt);
         builder.addBox(radicand, radicalWidth, 0.0F, 1.0F);
+        float height = radicand.getHeight() + clr + drt;
         if (node.getIndex() != null) {
+            // 根指数：TeX NthRoot 精确语义——r.shift = sqrtBox.depth − r.depth − 0.55×(sqrtBox 总高)。
+            // 指数基线落在根号盒深度侧内移，视觉位于根号内侧中上部（基线≈横线顶高度、x 在根号左上），
+            // 而不是根号顶之外（顶之外是此前分离瑕疵的镜像错误）。
             MathBox index = layoutNode(node.getIndex(), size * MathConstants.SCRIPT_SCALE, m);
-            // 根指数基线 = 根号横线顶上方 ACCENT_GAP（指数底部距横线一个 gap，不叠加自身高度——
-            // 叠加 index.getHeight() 会把指数推高一个字号，与横线分离，真机/headless 渲染均可见）。
-            float indexY = -(radicand.getHeight() + clearance + thickness
-                    + MathConstants.ACCENT_GAP_EM * size);
+            float sqrtHeight = radicand.getHeight() + clr + radicalAscent;
+            float sqrtDepth = radicand.getDepth();
+            float indexY = sqrtDepth - index.getDepth()
+                    - MathConstants.SQRT_INDEX_FACTOR * (sqrtHeight + sqrtDepth);
+            float indexTop = indexY - index.getHeight();
             builder.addBox(index, radicalWidth * 0.6F, indexY, MathConstants.SCRIPT_SCALE);
+            height = Math.max(height, -indexTop);
         }
         builder.width = radicalWidth + radicand.getWidth();
-        builder.height = radicand.getHeight() + clearance + thickness;
+        builder.height = height;
         builder.depth = Math.max(0.0F, radicand.getDepth());
         return builder.toBox();
     }
@@ -357,7 +481,7 @@ public final class MathLayoutService {
             cursor += rowHeight[i] + rowGap;
         }
         float totalHeight = cursor - rowGap;
-        float axis = MathConstants.AXIS_HEIGHT_ASCENT_RATIO * m.ascent(size);
+        float axis = MathConstants.AXIS_HEIGHT_EM * size;
         float height = totalHeight / 2.0F + axis;
         float depth = totalHeight / 2.0F - axis;
 
@@ -403,7 +527,7 @@ public final class MathLayoutService {
         float gap = MathConstants.DELIM_GAP_EM * size;
         float leftWidth = m.advance(left, delimSize);
         float rightWidth = m.advance(right, delimSize);
-        float centerY = -MathConstants.AXIS_HEIGHT_ASCENT_RATIO * m.ascent(size);
+        float centerY = -MathConstants.AXIS_HEIGHT_EM * size;
         float baseline = centerY + (m.ascent(delimSize) - m.descent(delimSize)) / 2.0F;
         List<GlyphElem> lg = new ArrayList<GlyphElem>(1);
         lg.add(new GlyphElem(left, 0.0F, 0.0F, scale));
@@ -423,7 +547,7 @@ public final class MathLayoutService {
         float delimSize = size * scale;
         float gap = MathConstants.DELIM_GAP_EM * size;
         float fenceWidth = m.advance(fence, delimSize);
-        float centerY = -MathConstants.AXIS_HEIGHT_ASCENT_RATIO * m.ascent(size);
+        float centerY = -MathConstants.AXIS_HEIGHT_EM * size;
         float baseline = centerY + (m.ascent(delimSize) - m.descent(delimSize)) / 2.0F;
         List<GlyphElem> glyphs = new ArrayList<GlyphElem>(1);
         glyphs.add(new GlyphElem(fence, 0.0F, 0.0F, scale));
@@ -440,7 +564,7 @@ public final class MathLayoutService {
         float gap = MathConstants.BINOM_GAP_EM * size;
         float totalHeight = upper.getTotalHeight() + gap + lower.getTotalHeight();
         float contentWidth = Math.max(upper.getWidth(), lower.getWidth());
-        float axis = MathConstants.AXIS_HEIGHT_ASCENT_RATIO * m.ascent(size);
+        float axis = MathConstants.AXIS_HEIGHT_EM * size;
         float height = totalHeight / 2.0F + axis;
 
         Builder builder = new Builder();
