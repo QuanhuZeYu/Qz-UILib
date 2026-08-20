@@ -259,7 +259,9 @@ public final class MathLayoutService {
         builder.addBox(radicand, radicalWidth, 0.0F, 1.0F);
         if (node.getIndex() != null) {
             MathBox index = layoutNode(node.getIndex(), size * MathConstants.SCRIPT_SCALE, m);
-            float indexY = -(radicand.getHeight() + clearance + thickness + index.getHeight()
+            // 根指数基线 = 根号横线顶上方 ACCENT_GAP（指数底部距横线一个 gap，不叠加自身高度——
+            // 叠加 index.getHeight() 会把指数推高一个字号，与横线分离，真机/headless 渲染均可见）。
+            float indexY = -(radicand.getHeight() + clearance + thickness
                     + MathConstants.ACCENT_GAP_EM * size);
             builder.addBox(index, radicalWidth * 0.6F, indexY, MathConstants.SCRIPT_SCALE);
         }

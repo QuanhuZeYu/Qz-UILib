@@ -216,11 +216,15 @@ public class MathLayoutServiceTest {
     public void shouldLayoutSqrtWithIndex() {
         MathBox box = layout("\\sqrt[3]{x}");
         boolean foundIndex = false;
+        RuleElem rule = box.getRules().get(0);
         for (GlyphElem glyph : box.getGlyphs()) {
             if ("3".equals(glyph.getText())) {
                 Assert.assertEquals(0.7F, glyph.getSizeScale(), EPS);
                 // index 在根号上方（负 y）
                 Assert.assertTrue(glyph.getY() < 0.0F);
+                // 精确锚定：index 基线 = 根号横线顶上方 ACCENT_GAP（不叠加自身高度，
+                // 否则指数与横线垂直分离——headless 渲染验收抓到的分离瑕疵）。
+                Assert.assertEquals(rule.getY() - MathConstants.ACCENT_GAP_EM * S, glyph.getY(), EPS);
                 foundIndex = true;
             }
         }
