@@ -27,6 +27,13 @@ import club.heiqi.uilib.font.latex.node.LatexSupSub;
  */
 public final class MathLayoutService {
 
+    /**
+     * 布局算法版本：任何改变布局几何（坐标/间距/字号/横线位置）的算法迭代都必须 +1，
+     * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
+     * 不管布局算法）。
+     */
+    public static final int LAYOUT_VERSION = 8;
+
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
 

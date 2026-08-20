@@ -21,6 +21,12 @@ public final class LatexCache {
     private static final LatexCache INSTANCE = new LatexCache();
     private static final int MAX_ENTRIES = 256;
 
+    /**
+     * 布局算法版本：{@link MathLayoutService#LAYOUT_VERSION} 迭代时旧缓存条目必须失效，
+     * 否则渲染/测量侧命中旧盒（如横线端点/符号位置按旧算法），与最新布局口径错位。
+     */
+    private static final int LAYOUT_VERSION = MathLayoutService.LAYOUT_VERSION;
+
     private final Map<Key, MathBox> cache =
             Collections.synchronizedMap(new LinkedHashMap<Key, MathBox>(64, 0.75F, true) {
                 private static final long serialVersionUID = 1L;
@@ -51,7 +57,7 @@ public final class LatexCache {
      */
     public MathBox getOrLayout(String latexSource, int baseSizePx, int runtimeVersion, FontType fontType,
             MathLayoutService layoutService, MathMetrics metrics) {
-        Key key = new Key(latexSource, baseSizePx, runtimeVersion, fontType.ordinal());
+        Key key = new Key(latexSource, baseSizePx, runtimeVersion, LAYOUT_VERSION, fontType.ordinal());
         MathBox box = cache.get(key);
         if (box != null) {
             return box;
@@ -77,12 +83,14 @@ public final class LatexCache {
         private final String source;
         private final int size;
         private final int version;
+        private final int layoutVersion;
         private final int fontTypeOrdinal;
 
-        Key(String source, int size, int version, int fontTypeOrdinal) {
+        Key(String source, int size, int version, int layoutVersion, int fontTypeOrdinal) {
             this.source = source;
             this.size = size;
             this.version = version;
+            this.layoutVersion = layoutVersion;
             this.fontTypeOrdinal = fontTypeOrdinal;
         }
 
@@ -95,8 +103,8 @@ public final class LatexCache {
                 return false;
             }
             Key key = (Key) other;
-            return size == key.size && version == key.version && fontTypeOrdinal == key.fontTypeOrdinal
-                    && source.equals(key.source);
+            return size == key.size && version == key.version && layoutVersion == key.layoutVersion
+                    && fontTypeOrdinal == key.fontTypeOrdinal && source.equals(key.source);
         }
 
         @Override
@@ -104,6 +112,7 @@ public final class LatexCache {
             int result = source.hashCode();
             result = 31 * result + size;
             result = 31 * result + version;
+            result = 31 * result + layoutVersion;
             result = 31 * result + fontTypeOrdinal;
             return result;
         }

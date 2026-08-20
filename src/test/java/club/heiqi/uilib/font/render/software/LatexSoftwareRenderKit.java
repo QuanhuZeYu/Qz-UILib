@@ -181,14 +181,26 @@ public final class LatexSoftwareRenderKit {
         return new RenderResult(pixels, width, height, advanced, collector, tables);
     }
 
-    /** 以共享服务（真度量）布局 latex 源码（盒级验收/诊断）。 */
+    /**
+     * 以共享服务（真度量）布局 latex 源码（盒级验收/诊断）。
+     *
+     * <p>先装配公式涉及的字形（与 render 同口径：ink 表就绪后再布局），否则 inkWidth/
+     * inkCenterOffsetY 走回退值，headless 布局与真机（字形已生成）布局错位（如根号横线
+     * 左端按 advance 而非勾 ink 右缘）。</p>
+     */
     public static club.heiqi.uilib.font.latex.layout.MathBox layout(String latexSource, int baseFontSizePx) {
         Shared shared = shared();
         club.heiqi.uilib.font.layout.TextStyle style = new club.heiqi.uilib.font.layout.TextStyle();
         style.resetAll(0xFFFFFFFF);
+        List<club.heiqi.uilib.font.latex.LatexNode> nodes = club.heiqi.uilib.font.latex.LatexParser
+                .parse(latexSource);
+        Set<Integer> codepoints = new LinkedHashSet<Integer>();
+        for (club.heiqi.uilib.font.latex.LatexNode node : nodes) {
+            collectNode(node, codepoints);
+        }
+        assembleCodepoints(shared, codepoints);
         return new club.heiqi.uilib.font.latex.layout.MathLayoutService().layout(
-                club.heiqi.uilib.font.latex.LatexParser.parse(latexSource), baseFontSizePx,
-                shared.service.createMathMetrics(style, baseFontSizePx));
+                nodes, baseFontSizePx, shared.service.createMathMetrics(style, baseFontSizePx));
     }
 
     /** 渲染并写 PNG。 */
@@ -199,7 +211,11 @@ public final class LatexSoftwareRenderKit {
 
     /** 为渲染所需码点生成字形并装配到软件字符页（真 skyline + 真上传路径；已常驻码点跳过）。 */
     private static void assembleGlyphs(Shared shared, List<TextSegment> segments) {
-        Set<Integer> codepoints = collectCodepoints(segments);
+        assembleCodepoints(shared, collectCodepoints(segments));
+    }
+
+    /** 生成并装配给定码点集合（layout 与 render 共用的同源入口）。 */
+    private static void assembleCodepoints(Shared shared, Set<Integer> codepoints) {
         GlyphGenerator generator = new GlyphGenerator(shared.fontMatcher, shared.derivedFontCache);
         if (shared.pages.isEmpty()) {
             shared.pages.add(SoftwareGlyphPageAssembler.createPage(1, 0, shared.settings.getTextureSize(),
