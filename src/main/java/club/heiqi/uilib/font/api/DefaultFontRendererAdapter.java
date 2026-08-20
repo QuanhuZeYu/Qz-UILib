@@ -705,9 +705,10 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         float drawY = y;
         // 基线按行内最大字号换算（整段一致，循环外只算一次）
         float baselineCharSize = resolveBaselineCharSize(renderScale, preparedText.maxFontSizePx);
-        // 全段同字号（无 span 缩放的默认文本）走 uniform 快路径：循环内直接复用常量，
+        // 全段同字号（无 <size> span、无 LaTeX 缩放字形）走 uniform 快路径：循环内直接复用常量，
         // per-glyph 零 Math.max/乘法（与逐 glyph 解析结果恒等，非基准相等类快路径）。
-        boolean uniformSize = preparedText.maxFontSizePx <= preparedText.baseFontSizePx;
+        // 注意：LaTeX 字形可能小于基准字号（0.7×），max<=base 判不出混合字号，须用显式标记。
+        boolean uniformSize = !preparedText.hasMixedSize;
         float uniformGlyphCharSize = uniformSize
                 ? resolveGlyphCharSize(renderScale, preparedText.baseFontSizePx) : 0.0F;
         for (int glyphIndex = 0; glyphIndex < preparedText.size(); glyphIndex++) {
@@ -840,6 +841,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         List<float[]> latexRules = new ArrayList<float[]>();
         List<Integer> latexRuleColors = new ArrayList<Integer>();
         int maxFontSizePx = resolvedBaseFontSizePx;
+        boolean hasMixedSize = false;
         int glyphIndex = 0;
         for (int s = 0; s < segments.size(); s++) {
             TextSegment segment = segments.get(s);
@@ -847,9 +849,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             String segmentText = segment.getText();
             int segmentFontSizePx = style.resolveEffectiveFontSizePx(resolvedBaseFontSizePx);
             if (segment.isLatex()) {
-                fillLatexSegment(segment, latexBoxes[s], style, segmentFontSizePx, resolvedBaseFontSizePx,
-                        textLayoutService, tables, renderScale, renderCodepoints, fontTypes, measuredWidths,
-                        styles, fontSizePx, xOffsets, yOffsets, glyphIndex, latexRules, latexRuleColors);
+                glyphIndex = fillLatexSegment(segment, latexBoxes[s], style, segmentFontSizePx,
+                        resolvedBaseFontSizePx, textLayoutService, tables, renderScale, renderCodepoints,
+                        fontTypes, measuredWidths, styles, fontSizePx, xOffsets, yOffsets, glyphIndex,
+                        latexRules, latexRuleColors);
+                if (segmentFontSizePx != resolvedBaseFontSizePx) {
+                    hasMixedSize = true; // <size> 内公式
+                }
                 continue;
             }
             // 含组合标记/变体选择符的段落：AWT GPOS 定位（组合附加符逐层堆叠），
@@ -879,6 +885,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         codepoint, style, resolvedBaseFontSizePx) * renderScale;
                 styles[glyphIndex] = style;
                 fontSizePx[glyphIndex] = segmentFontSizePx;
+                if (segmentFontSizePx != resolvedBaseFontSizePx) {
+                    hasMixedSize = true; // <size> 段
+                }
                 if (markPositions != null && codePointIndex * 2 + 1 < markPositions.length) {
                     // GPOS 位置换算到渲染坐标：xOffset = 锚点位置 - 段内 advance 累加位置；
                     // yOffset 为相对基线的纵向偏移（mark 上浮为负）。
@@ -901,14 +910,16 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             ruleColors[r] = latexRuleColors.get(r).intValue();
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
-                maxFontSizePx, resolvedBaseFontSizePx, xOffsets, yOffsets, ruleArray, ruleColors);
+                maxFontSizePx, resolvedBaseFontSizePx, xOffsets, yOffsets, hasMixedSize, ruleArray, ruleColors);
     }
 
     /**
      * 填充 LaTeX 段的字形与规则线：MathBox 元素按码点展开，x/y 偏移进 xOffsets/yOffsets，
      * 字号按 sizeScale 缩放；段尾推进差补偿到段内末字形，保证整体推进 = 盒宽。
+     *
+     * @return 填充后的下一可用 glyph 下标（调用方必须回写，否则后续段条目错乱）
      */
-    private void fillLatexSegment(TextSegment segment, MathBox box, TextStyle style, int segmentFontSizePx,
+    private int fillLatexSegment(TextSegment segment, MathBox box, TextStyle style, int segmentFontSizePx,
             int resolvedBaseFontSizePx, TextLayoutService textLayoutService, GlyphRuntimeTablesView tables,
             float renderScale, int[] renderCodepoints, FontType[] fontTypes, float[] measuredWidths,
             TextStyle[] styles, int[] fontSizePx, float[] xOffsets, float[] yOffsets, int startGlyphIndex,
@@ -951,6 +962,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     rule.getWidth() * renderScale, rule.getThickness() * renderScale });
             latexRuleColors.add(Integer.valueOf(style.getColor()));
         }
+        return glyphIndex;
     }
 
     /** 布局 LaTeX 段（经 LatexCache 缓存；与测量侧 TextLayoutService.measureLatexWidth 同口径）。 */
@@ -1268,6 +1280,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private final float[] xOffsets;
         /** GPOS mark 定位纵向偏移（相对 drawY，向上为负；无 mark 段落恒 0）。 */
         private final float[] yOffsets;
+        /** 是否存在与基准字号不同的 glyph（\<size\> 段或 LaTeX 缩放字形）——禁用 uniform 快路径。 */
+        private final boolean hasMixedSize;
         /** LaTeX 规则线（分数线/根号线等），每条 {x, y, w, t} 已乘 renderScale（x 相对绘制起点、y 相对 drawY）。 */
         private final float[][] latexRules;
         /** 每条规则的颜色（ARGB，继承所在公式段样式）。 */
@@ -1275,8 +1289,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
                 float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx,
-                int baseFontSizePx, float[] xOffsets, float[] yOffsets, float[][] latexRules,
-                int[] latexRuleColors) {
+                int baseFontSizePx, float[] xOffsets, float[] yOffsets, boolean hasMixedSize,
+                float[][] latexRules, int[] latexRuleColors) {
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
             this.fontTypes = fontTypes;
@@ -1287,6 +1301,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             this.baseFontSizePx = baseFontSizePx;
             this.xOffsets = xOffsets;
             this.yOffsets = yOffsets;
+            this.hasMixedSize = hasMixedSize;
             this.latexRules = latexRules;
             this.latexRuleColors = latexRuleColors;
         }
@@ -1302,7 +1317,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private static PreparedText empty(FontRuntimeSettings settings) {
             return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
                     new int[0], (int) settings.getCharSize(), (int) settings.getCharSize(),
-                    new float[0], new float[0], new float[0][0], new int[0]);
+                    new float[0], new float[0], false, new float[0][0], new int[0]);
         }
     }
 
