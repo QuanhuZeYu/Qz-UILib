@@ -47,4 +47,34 @@ public interface MathMetrics {
     default float italicCorrection(String text, float sizePx) {
         return 0.0F;
     }
+
+    /**
+     * 字形 ink 宽度（px）：单字符字形的可见墨水宽度（左右留白剥离后的宽度）。
+     *
+     * <p>排版推进（advance）与可见墨水（ink）是两套口径：斜体剪切后 ink 右缘超出
+     * advance、根号字形 ink 右缘则小于 advance。规则线端点必须对齐 ink 边界才视觉精准。
+     * 默认实现回退 advance（mock 度量与无 ink 数据的场景）。</p>
+     *
+     * @param text   单字符文本（布局侧仅对根号/定界符等基元字形调用）
+     * @param sizePx 字号
+     * @return ink 宽度（px）
+     */
+    default float inkWidth(String text, float sizePx) {
+        return advance(text, sizePx);
+    }
+
+    /**
+     * 斜体视觉右越量（px）：几何斜切后字形 ink 右缘超出排版推进的量
+     * （≈ tan(斜角) × ink 高）。规则线右端需外扩此量覆盖斜体笔画。
+     *
+     * <p>默认实现返回 0（mock 度量与直体场景）；真机度量由 {@code TextLayoutService}
+     * 按斜切几何给出。</p>
+     *
+     * @param text   文本（布局侧仅对单字符数学变量调用）
+     * @param sizePx 字号
+     * @return 视觉右越量（px）
+     */
+    default float italicOverhang(String text, float sizePx) {
+        return 0.0F;
+    }
 }

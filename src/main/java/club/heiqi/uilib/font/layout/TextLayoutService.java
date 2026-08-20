@@ -996,6 +996,54 @@ public class TextLayoutService {
                 // 上标右移此量避开斜体笔画（TeX Char.italic 的斜切近似）。
                 return 0.25F * getXHeight(Math.max(1, (int) sizePx));
             }
+
+            @Override
+            public float inkWidth(String text, float sizePx) {
+                // 单字符 ink 宽（表数据，剥离左右留白）：规则线端点对齐勾/笔画的视觉边界
+                if (text.codePointCount(0, text.length()) != 1) {
+                    return advance(text, sizePx);
+                }
+                int codepoint = text.codePointAt(0);
+                int size = Math.max(1, (int) sizePx);
+                lockGeneration();
+                try {
+                    GlyphRuntimeTables tables = currentRuntimeTables();
+                    if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+                        return advance(text, sizePx);
+                    }
+                    short[] inks = tables.inkWidthArray(style.getFontType());
+                    short ink = inks[codepoint];
+                    if (ink <= 0) {
+                        return advance(text, sizePx);
+                    }
+                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
+                    return (float) ink * size / (float) awt;
+                } finally {
+                    unlockGeneration();
+                }
+            }
+
+            @Override
+            public float italicOverhang(String text, float sizePx) {
+                // 几何斜切右越量 = tan(斜角 0.25) × ink 高（有表数据按 ink 高，缺表回退 x-height）
+                int size = Math.max(1, (int) sizePx);
+                lockGeneration();
+                try {
+                    GlyphRuntimeTables tables = currentRuntimeTables();
+                    if (text.codePointCount(0, text.length()) == 1 && tables != null
+                            && GlyphRuntimeTables.isValidCodepoint(text.codePointAt(0))) {
+                        short[] inks = tables.inkHeightArray(style.getFontType());
+                        short ink = inks[text.codePointAt(0)];
+                        if (ink > 0) {
+                            int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
+                            return 0.25F * (float) ink * size / (float) awt;
+                        }
+                    }
+                    return 0.25F * getXHeight(size);
+                } finally {
+                    unlockGeneration();
+                }
+            }
         };
     }
 

@@ -15,11 +15,15 @@ public final class MathBox {
     private final float width;
     private final float height;
     private final float depth;
+    /** 视觉 ink 左越量（盒左边界外溢出的墨水宽度，≥0）。 */
+    private final float leftInkOverhang;
+    /** 视觉 ink 右越量（盒右边界外溢出的墨水宽度，≥0，斜体剪切/ink 超 advance）。 */
+    private final float rightInkOverhang;
     private final List<GlyphElem> glyphs;
     private final List<RuleElem> rules;
 
     /**
-     * 创建布局盒。
+     * 创建布局盒（无 ink 越量）。
      *
      * @param width  盒宽
      * @param height 基线上方高度
@@ -28,9 +32,28 @@ public final class MathBox {
      * @param rules  矩形规则线（可为空）
      */
     public MathBox(float width, float height, float depth, List<GlyphElem> glyphs, List<RuleElem> rules) {
+        this(width, height, depth, glyphs, rules, 0.0F, 0.0F);
+    }
+
+    /**
+     * 创建布局盒（含 ink 越量：TeX box 抽象在排版 advance 之外补充视觉墨水边界，
+     * 规则线端点与嵌套合并按此对齐——"换元"时上层只吃盒边界）。
+     *
+     * @param width           盒宽（排版推进口径）
+     * @param height          基线上方高度
+     * @param depth           基线下方深度
+     * @param glyphs          字形单元（可为空）
+     * @param rules           矩形规则线（可为空）
+     * @param leftInkOverhang 视觉 ink 左越量（≥0）
+     * @param rightInkOverhang 视觉 ink 右越量（≥0）
+     */
+    public MathBox(float width, float height, float depth, List<GlyphElem> glyphs, List<RuleElem> rules,
+            float leftInkOverhang, float rightInkOverhang) {
         this.width = width;
         this.height = height;
         this.depth = depth;
+        this.leftInkOverhang = Math.max(0.0F, leftInkOverhang);
+        this.rightInkOverhang = Math.max(0.0F, rightInkOverhang);
         this.glyphs = glyphs == null || glyphs.isEmpty()
                 ? Collections.<GlyphElem>emptyList()
                 : Collections.unmodifiableList(new ArrayList<GlyphElem>(glyphs));
@@ -59,6 +82,16 @@ public final class MathBox {
     /** @return 总高（height + depth） */
     public float getTotalHeight() {
         return height + depth;
+    }
+
+    /** @return 视觉 ink 左越量（盒左边界外溢出的墨水宽度，≥0） */
+    public float getLeftInkOverhang() {
+        return leftInkOverhang;
+    }
+
+    /** @return 视觉 ink 右越量（盒右边界外溢出的墨水宽度，≥0） */
+    public float getRightInkOverhang() {
+        return rightInkOverhang;
     }
 
     /** @return 字形单元（不可变，相对基线坐标） */

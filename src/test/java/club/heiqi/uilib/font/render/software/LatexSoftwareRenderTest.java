@@ -126,6 +126,23 @@ public class LatexSoftwareRenderTest {
         }
     }
 
+    /** 横线端点对齐视觉 ink：分数横线右端覆盖斜体字形的 ink 右缘（左右不精准修复）。 */
+    @Test
+    public void fracBarCoversItalicInkEdge() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\frac{a}{b}</latex>", BASE_SIZE);
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertTrue("分数应有规则线", !rules.isEmpty());
+        Assert.assertTrue("分数应有分子分母字形", glyphs.size() >= 2);
+        Quad bar = rules.get(0);
+        int inkRight = maxRight(glyphs);
+        Assert.assertTrue("横线右端应覆盖斜体 ink 右缘（+1 容差）: barRight=" + bar.right + " inkRight="
+                + inkRight, bar.right >= inkRight - 1);
+        int inkLeft = minLeft(glyphs);
+        Assert.assertTrue("横线左端应不超出内容左缘（+1 容差）", bar.left <= inkLeft + 1);
+    }
+
     /** 上标：字形缩小且位于基底右上方。 */
     @Test
     public void superscriptIsShrunkAndRaised() {

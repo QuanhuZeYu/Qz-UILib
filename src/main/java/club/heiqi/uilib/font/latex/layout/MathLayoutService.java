@@ -92,7 +92,9 @@ public final class MathLayoutService {
         // \text 内容（TEXT）保持直体。
         boolean italic = atom.getAtomClass() == LatexAtom.AtomClass.ORD && isMathVariable(text);
         glyphs.add(new GlyphElem(text, 0.0F, 0.0F, 1.0F, italic));
-        return new MathBox(width, m.ascent(size), m.descent(size), glyphs, null);
+        // 斜体视觉右越量（ink 超出 advance 的量）：随盒向上嵌套传播（TeX box 的 ink 边界抽象）
+        float rightOverhang = italic ? m.italicOverhang(text, size) : 0.0F;
+        return new MathBox(width, m.ascent(size), m.descent(size), glyphs, null, 0.0F, rightOverhang);
     }
 
     /** 是否数学变量文本（全 ASCII 字母：TeX mathnormal 的 capitals/small 映射）。 */
@@ -413,8 +415,15 @@ public final class MathLayoutService {
                 MathConstants.SCRIPT_SCALE);
         builder.addBox(den, sideSpace + (contentWidth - den.getWidth()) / 2.0F, denY,
                 MathConstants.SCRIPT_SCALE);
-        // 分数线中心落在数学轴上
-        builder.addRule(sideSpace, -(axis + delta), contentWidth, drt);
+        // 分数线中心落在数学轴上；左右端点覆盖视觉 ink 边界（斜体剪切越量），
+        // 而非仅排版盒宽——否则横线右端比斜体分子短、位置随内容字形"左右飘"
+        float numLeft = (contentWidth - num.getWidth()) / 2.0F - num.getLeftInkOverhang();
+        float numRight = (contentWidth + num.getWidth()) / 2.0F + num.getRightInkOverhang();
+        float denLeft = (contentWidth - den.getWidth()) / 2.0F - den.getLeftInkOverhang();
+        float denRight = (contentWidth + den.getWidth()) / 2.0F + den.getRightInkOverhang();
+        float barLeft = Math.min(numLeft, denLeft);
+        float barRight = Math.max(numRight, denRight);
+        builder.addRule(sideSpace + barLeft, -(axis + delta), barRight - barLeft, drt);
         builder.width = width;
         builder.height = axis + delta + kern1 + num.getDepth() + num.getHeight();
         builder.depth = -axis + delta + kern2 + den.getHeight() + den.getDepth();
@@ -465,9 +474,12 @@ public final class MathLayoutService {
         // 根号字形：盒顶对齐横线顶（radicalY = 横线顶 − 字形 ascent）
         float radicalY = barTopAbove - radicalAscent;
         builder.addGlyph(RADICAL, radicalLeft, radicalY, radicalScale);
-        // 横线：中心 = 内容顶 + clr + drt/2，右端 = 内容宽 + 1mu（TeX NthRoot 尾隙）
+        // 横线：中心 = 内容顶 + clr + drt/2；左端对齐根号字形 ink 右缘（勾的视觉终点，
+        // 而非 advance——ink 窄于 advance 时横线左端悬空），右端覆盖被开方内容视觉右缘 + 1mu
         float ruleCenterY = -(barTopAbove - drt / 2.0F);
-        builder.addRule(radicalLeft + radicalWidth, ruleCenterY, radicand.getWidth() + mu, drt);
+        float barLeft = radicalLeft + m.inkWidth(RADICAL, radicalSize);
+        float barRight = barLeft + radicand.getWidth() + radicand.getRightInkOverhang() + mu;
+        builder.addRule(barLeft, ruleCenterY, barRight - barLeft, drt);
         builder.addBox(radicand, radicalLeft + radicalWidth, 0.0F, 1.0F);
         float height = barTopAbove;
         float depth = Math.max(0.0F, radicalY + radicalDescent);
@@ -687,14 +699,17 @@ public final class MathLayoutService {
         builder.addBox(base, 0.0F, 0.0F, 1.0F);
         float drt = MathConstants.RULE_THICKNESS_EM * size;
         if (node.isStretchable()) {
-            // \overline：kern 3θ + 线 θ，盒高 h+5θ；\\underline：kern 3θ + 线 θ，盒深 d+5θ
+            // \overline：kern 3θ + 线 θ，盒高 h+5θ；\\underline：kern 3θ + 线 θ，盒深 d+5θ；
+            // 横线覆盖基底视觉 ink 边界（斜体剪切越量）
             float ruleCenter = MathConstants.OVERBAR_KERN_FACTOR * drt + drt / 2.0F;
+            float barLeft = -base.getLeftInkOverhang();
+            float barWidth = base.getWidth() + base.getLeftInkOverhang() + base.getRightInkOverhang();
             if (node.isBelow()) {
-                builder.addRule(0.0F, base.getDepth() + ruleCenter, base.getWidth(), drt);
+                builder.addRule(barLeft, base.getDepth() + ruleCenter, barWidth, drt);
                 builder.depth = base.getDepth() + MathConstants.OVERBAR_BOX_FACTOR * drt;
                 builder.height = base.getHeight();
             } else {
-                builder.addRule(0.0F, -(base.getHeight() + ruleCenter), base.getWidth(), drt);
+                builder.addRule(barLeft, -(base.getHeight() + ruleCenter), barWidth, drt);
                 builder.height = base.getHeight() + MathConstants.OVERBAR_BOX_FACTOR * drt;
                 builder.depth = base.getDepth();
             }
@@ -735,11 +750,14 @@ public final class MathLayoutService {
         return builder.toBox();
     }
 
-    /** 布局累加器：拼接子盒并维护包围盒。 */
+    /** 布局累加器：拼接子盒并维护包围盒与视觉 ink 边界（换元：上层只吃盒边界）。 */
     private static final class Builder {
         float width;
         float height;
         float depth;
+        /** 视觉 ink 边界累计（相对盒原点，可为负/超宽）。 */
+        float minVisualX = Float.MAX_VALUE;
+        float maxVisualX = -Float.MAX_VALUE;
         final List<GlyphElem> glyphs = new ArrayList<GlyphElem>();
         final List<RuleElem> rules = new ArrayList<RuleElem>();
 
@@ -753,10 +771,15 @@ public final class MathLayoutService {
 
         void addGlyph(String text, float x, float y, float sizeScale, boolean italic) {
             glyphs.add(new GlyphElem(text, x, y, sizeScale, italic));
+            // 非变量基元字形（根号/重音/定界符）ink 不超出 advance：只记占位边界
+            minVisualX = Math.min(minVisualX, x);
+            maxVisualX = Math.max(maxVisualX, x);
         }
 
         void addRule(float x, float y, float ruleWidth, float thickness) {
             rules.add(new RuleElem(x, y, ruleWidth, thickness));
+            minVisualX = Math.min(minVisualX, x);
+            maxVisualX = Math.max(maxVisualX, x + ruleWidth);
         }
 
         void addBox(MathBox child, float dx, float dy, float glyphScale) {
@@ -770,10 +793,15 @@ public final class MathLayoutService {
             height = Math.max(height, child.getHeight() - dy);
             depth = Math.max(depth, child.getDepth() + dy);
             width = Math.max(width, dx + child.getWidth());
+            // ink 越量随嵌套传播：子盒视觉左/右边界 = dx − leftOv .. dx + w + rightOv
+            minVisualX = Math.min(minVisualX, dx - child.getLeftInkOverhang());
+            maxVisualX = Math.max(maxVisualX, dx + child.getWidth() + child.getRightInkOverhang());
         }
 
         MathBox toBox() {
-            return new MathBox(width, height, depth, glyphs, rules);
+            float leftOverhang = minVisualX == Float.MAX_VALUE ? 0.0F : Math.max(0.0F, -minVisualX);
+            float rightOverhang = maxVisualX == -Float.MAX_VALUE ? 0.0F : Math.max(0.0F, maxVisualX - width);
+            return new MathBox(width, height, depth, glyphs, rules, leftOverhang, rightOverhang);
         }
     }
 }

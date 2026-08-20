@@ -284,6 +284,50 @@ public class MathLayoutServiceTest {
         Assert.assertEquals(denY + 0.14F * S, box.getDepth(), EPS);
     }
 
+    /** 斜体越量度量：变量字形 ink 右超 0.1S（几何斜切抽象）。 */
+    private static final MathMetrics ITALIC_METRICS = new MathMetrics() {
+        @Override
+        public float advance(String text, float sizePx) {
+            return METRICS.advance(text, sizePx);
+        }
+
+        @Override
+        public float ascent(float sizePx) {
+            return METRICS.ascent(sizePx);
+        }
+
+        @Override
+        public float descent(float sizePx) {
+            return METRICS.descent(sizePx);
+        }
+
+        @Override
+        public float xHeight(float sizePx) {
+            return METRICS.xHeight(sizePx);
+        }
+
+        @Override
+        public float italicOverhang(String text, float sizePx) {
+            return 0.1F * sizePx;
+        }
+    };
+
+    @Test
+    public void shouldExtendFracBarOverItalicInk() {
+        // 换元抽象：盒携带 ink 越量（右超 0.1S）向上嵌套，横线右端外扩覆盖视觉墨水
+        MathBox box = SERVICE.layout(LatexParser.parse("\\frac{a}{b}"), S, ITALIC_METRICS);
+        Assert.assertEquals(1, box.getRules().size());
+        RuleElem bar = box.getRules().get(0);
+        float sideSpace = MathConstants.NULL_DELIMITER_SPACE_EM * S;
+        Assert.assertEquals(sideSpace, bar.getX(), EPS);
+        // 越量按字形自身字号（script 0.7S）计算：0.1 × 0.7S
+        Assert.assertEquals(0.35F * S + 0.1F * 0.7F * S, bar.getWidth(), EPS);
+        // 盒宽保持排版口径（0.35S + 2×sideSpace），越量只外扩横线不撑盒
+        Assert.assertEquals(0.35F * S + 2.0F * sideSpace, box.getWidth(), EPS);
+        // 横线已把斜体 ink 覆盖进盒内（bar 右端 ≤ 盒右界），分数盒自身无右越量
+        Assert.assertEquals(0.0F, box.getRightInkOverhang(), EPS);
+    }
+
     // ==================== 根号 ====================
 
     @Test
