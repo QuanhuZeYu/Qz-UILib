@@ -944,7 +944,10 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 measuredWidths[glyphIndex] = (float) advance * renderScale;
                 styles[glyphIndex] = style;
                 fontSizePx[glyphIndex] = glyphSizePx;
-                xOffsets[glyphIndex] = (elem.getX() + elemInnerAdvance) * renderScale;
+                // xOffset 必须相对段起点（渲染循环 currentX 已累加 advance）：
+                // 盒内绝对位置 - 段内已累加推进，与 GPOS mark 段「锚点 - runningAdvance」同语义，
+                // 否则公式内后续字形双重累加越飘越远。
+                xOffsets[glyphIndex] = (elem.getX() + elemInnerAdvance - segmentAdvanceSum) * renderScale;
                 yOffsets[glyphIndex] = elem.getY() * renderScale;
                 segmentAdvanceSum += (float) advance;
                 glyphIndex++;
