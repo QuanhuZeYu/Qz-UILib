@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 8;
+    public static final int LAYOUT_VERSION = 9;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -98,10 +98,34 @@ public final class MathLayoutService {
         // TeX mathnormal：ORD 类 ASCII 字母为数学变量（斜体）；数字/符号/函数名（OP）/
         // \text 内容（TEXT）保持直体。
         boolean italic = atom.getAtomClass() == LatexAtom.AtomClass.ORD && isMathVariable(text);
-        glyphs.add(new GlyphElem(text, 0.0F, 0.0F, 1.0F, italic));
+        // 定界符 ink 中心钉数学轴（与 layoutFence 同口径）：普通小括号/竖线不再按基线裸放——
+        // 字库括号 ink 在字格内的分布不对称（真机括号 ink 中心可高于轴 0.1em+），基线对齐会
+        // 整体偏上；锚定后括号视觉居中于公式行，与伸缩 fence（矩阵等）行为一致。
+        float glyphY = 0.0F;
+        if (isDelimiterAtom(atom)) {
+            float axis = MathConstants.AXIS_HEIGHT_EM * size;
+            glyphY = -axis - m.inkCenterOffsetY(text, size);
+        }
+        glyphs.add(new GlyphElem(text, 0.0F, glyphY, 1.0F, italic));
         // 斜体视觉右越量（ink 超出 advance 的量）：随盒向上嵌套传播（TeX box 的 ink 边界抽象）
         float rightOverhang = italic ? m.italicOverhang(text, size) : 0.0F;
-        return new MathBox(width, m.ascent(size), m.descent(size), glyphs, null, 0.0F, rightOverhang);
+        float height = glyphY == 0.0F ? m.ascent(size) : Math.max(0.0F, m.ascent(size) - glyphY);
+        float depth = glyphY == 0.0F ? m.descent(size) : Math.max(0.0F, m.descent(size) + glyphY);
+        return new MathBox(width, height, depth, glyphs, null, 0.0F, rightOverhang);
+    }
+
+    /** 是否为定界符原子（OPEN/CLOSE 类，或 ORD 类定界符字符 |、‖）。 */
+    private static boolean isDelimiterAtom(LatexAtom atom) {
+        LatexAtom.AtomClass atomClass = atom.getAtomClass();
+        if (atomClass == LatexAtom.AtomClass.OPEN || atomClass == LatexAtom.AtomClass.CLOSE) {
+            return true;
+        }
+        String text = atom.getText();
+        if (text == null || text.codePointCount(0, text.length()) != 1) {
+            return false;
+        }
+        int codepoint = text.codePointAt(0);
+        return codepoint == 0x007C || codepoint == 0x2016; // | ‖（TeX 定界符族，ORD 类）
     }
 
     /** 是否数学变量文本（全 ASCII 字母：TeX mathnormal 的 capitals/small 映射）。 */
@@ -528,7 +552,8 @@ public final class MathLayoutService {
         // 横线：中心 = 内容顶 + clr + drt/2；左端对齐根号字形 ink 右缘（勾的视觉终点，
         // 而非 advance——ink 窄于 advance 时横线左端悬空），右端覆盖被开方内容视觉右缘 + 1mu
         float ruleCenterY = -(barTopAbove - drt / 2.0F);
-        float barLeft = radicalLeft + m.inkWidth(RADICAL, radicalSize);
+        // 左端 = 勾的 ink 右缘（ink 左偏移 + ink 宽）：仅按 ink 宽会左移 bearingX 吃进勾内
+        float barLeft = radicalLeft + m.inkLeftBearing(RADICAL, radicalSize) + m.inkWidth(RADICAL, radicalSize);
         float barRight = barLeft + radicand.getWidth() + radicand.getRightInkOverhang() + mu;
         builder.addRule(barLeft, ruleCenterY, barRight - barLeft, drt);
         builder.addBox(radicand, radicalLeft + radicalWidth, 0.0F, 1.0F);

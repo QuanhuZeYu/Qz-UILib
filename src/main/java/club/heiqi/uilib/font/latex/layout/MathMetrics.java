@@ -64,6 +64,21 @@ public interface MathMetrics {
     }
 
     /**
+     * 字形 ink 左缘相对推进原点的偏移（px，正值 = ink 起点在推进原点右侧）。
+     *
+     * <p>规则线端点须锚定 ink 边界：根号横线左端应从根号字形勾的 ink 右缘
+     * （= ink 左偏移 + ink 宽）起，仅按 ink 宽会把横线左端吃进勾内（实测约 0.1em）。
+     * 默认实现返回 0（mock 度量与无 ink 数据场景）。</p>
+     *
+     * @param text   单字符文本（布局侧仅对根号等基元字形调用）
+     * @param sizePx 字号
+     * @return ink 左偏移（px）
+     */
+    default float inkLeftBearing(String text, float sizePx) {
+        return 0.0F;
+    }
+
+    /**
      * 斜体视觉右越量（px）：几何斜切后字形 ink 右缘超出排版推进的量
      * （≈ tan(斜角) × ink 高）。规则线右端需外扩此量覆盖斜体笔画。
      *

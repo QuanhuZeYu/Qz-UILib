@@ -134,6 +134,11 @@ public final class LatexSoftwareRenderKit {
         shared = null;
     }
 
+    /** 诊断用：当前共享装配的 awt 基准字号（ink 表值换算到渲染像素的同源口径）。 */
+    public static double currentAwtCharSize() {
+        return shared().settings.getAwtCharSize();
+    }
+
     private LatexSoftwareRenderKit() {}
 
     /** 以真字形 ink 渲染 rich 文本（软件光栅化）。 */

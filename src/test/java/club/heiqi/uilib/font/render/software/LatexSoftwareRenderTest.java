@@ -9,7 +9,9 @@ import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.latex.LatexShowcaseFormulas;
+import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.GlyphRenderBatch;
 
 /**
@@ -103,6 +105,35 @@ public class LatexSoftwareRenderTest {
         int delta = rule.left - numerator.left;
         Assert.assertTrue("横线左端应锚定公式段（与分子同 x），实测偏移=" + delta + "px",
                 Math.abs(delta) <= 2);
+    }
+
+    /** 根号横线左端锚定 √ 勾的 ink 右缘（回归：此前漏 bearingX，横线吃进勾内约 2px）。 */
+    @Test
+    public void sqrtBarAnchoredToRadicalInkRightEdge() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\sqrt{x}</latex>", BASE_SIZE);
+        List<Quad> glyphs = collectGlyphQuads(result);
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        Assert.assertTrue("根号应有规则线与字形", !rules.isEmpty() && !glyphs.isEmpty());
+        Quad radical = glyphs.get(0); // 布局顺序：根号字形最先
+        Quad rule = rules.get(0);
+        int delta = rule.left - radical.right;
+        Assert.assertTrue("横线左端应与 √ ink 右缘重合（实测差=" + delta + "px）",
+                Math.abs(delta) <= 1);
+    }
+
+    /** 普通定界符 ink 中心钉数学轴（回归：基线裸放导致真机括号偏上）。 */
+    @Test
+    public void plainDelimitersCenteredOnMathAxis() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>(x)</latex>", BASE_SIZE);
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertTrue("应有括号与变量字形", glyphs.size() >= 3);
+        Quad open = glyphs.get(0);
+        Quad x = glyphs.get(1);
+        int delta = open.centerY() - x.centerY();
+        Assert.assertTrue("括号 ink 中心应与 x ink 中心重合于数学轴（实测差=" + delta + "px）",
+                Math.abs(delta) <= 1);
     }
 
     /** 根号：规则线位于被开方内容上方。 */
@@ -494,5 +525,75 @@ public class LatexSoftwareRenderTest {
             }
         }
         java.nio.file.Files.write(out.toPath(), report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** 诊断：根号横线左端 vs radical ink 右缘、定界符 ink 表与各类括号 quad 几何（真机目检辅助）。 */
+    @Test
+    public void dumpsSqrtBarAndDelimiterDiagnostics() throws Exception {
+        StringBuilder report = new StringBuilder();
+        double awt = LatexSoftwareRenderKit.currentAwtCharSize();
+        float scale = (float) (BASE_SIZE / awt);
+        report.append("awtCharSize=").append(awt).append(" renderScale=").append(scale)
+                .append(System.lineSeparator());
+
+        String[] sqrtForms = { "\\sqrt{x}", "\\sqrt{x^2+y^2}" };
+        for (String formula : sqrtForms) {
+            LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                    "<latex>" + formula + "</latex>", BASE_SIZE);
+            report.append("== ").append(formula).append(" ==").append(System.lineSeparator());
+            for (Quad quad : collectGlyphQuads(result)) {
+                report.append(String.format(java.util.Locale.ROOT, "  glyph x=%d..%d y=%d..%d%n",
+                        Integer.valueOf(quad.left), Integer.valueOf(quad.right),
+                        Integer.valueOf(quad.top), Integer.valueOf(quad.bottom)));
+            }
+            for (Quad quad : collectQuads(result.collector.getDecorationBatch())) {
+                report.append(String.format(java.util.Locale.ROOT, "  rule  x=%d..%d y=%d..%d%n",
+                        Integer.valueOf(quad.left), Integer.valueOf(quad.right),
+                        Integer.valueOf(quad.top), Integer.valueOf(quad.bottom)));
+            }
+        }
+
+        LatexSoftwareRenderKit.RenderResult sample = LatexSoftwareRenderKit.render(
+                "<latex>(x)</latex>", BASE_SIZE);
+        GlyphRuntimeTables tables = sample.tables;
+        short[] bearingX = tables.bearingXArray(FontType.NORMAL);
+        short[] bearingY = tables.bearingYArray(FontType.NORMAL);
+        short[] inkW = tables.inkWidthArray(FontType.NORMAL);
+        short[] inkH = tables.inkHeightArray(FontType.NORMAL);
+        int[] delimiters = { '(', ')', '[', ']', '{', '}', '|', 0x221A, 0x27E8, 0x27E9,
+                0x2308, 0x2309, 0x230A, 0x230B };
+        report.append("== ink tables (awt 口径) ==").append(System.lineSeparator());
+        for (int cp : delimiters) {
+            String glyph = new String(Character.toChars(cp));
+            report.append(String.format(java.util.Locale.ROOT,
+                    "  U+%04X %s bearingX=%d bearingY=%d inkW=%d inkH=%d inkCenterUp=%d%n",
+                    Integer.valueOf(cp), glyph,
+                    Integer.valueOf(bearingX[cp]), Integer.valueOf(bearingY[cp]),
+                    Integer.valueOf(inkW[cp]), Integer.valueOf(inkH[cp]),
+                    Integer.valueOf(bearingY[cp] + inkH[cp] / 2)));
+        }
+
+        String[] fenceForms = { "(x+1)", "\\left(\\frac{1}{2}\\right)", "\\left[x\\right]",
+                "\\binom{n}{k}", "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}",
+                "\\begin{cases} x & x > 0 \\\\ -x & x \\leq 0 \\end{cases}",
+                "|x|", "\\langle x \\rangle" };
+        for (String formula : fenceForms) {
+            report.append("== ").append(formula).append(" ==").append(System.lineSeparator());
+            LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                    "<latex>" + formula + "</latex>", BASE_SIZE);
+            for (Quad quad : collectGlyphQuads(result)) {
+                report.append(String.format(java.util.Locale.ROOT, "  glyph x=%d..%d y=%d..%d%n",
+                        Integer.valueOf(quad.left), Integer.valueOf(quad.right),
+                        Integer.valueOf(quad.top), Integer.valueOf(quad.bottom)));
+            }
+            for (Quad quad : collectQuads(result.collector.getDecorationBatch())) {
+                report.append(String.format(java.util.Locale.ROOT, "  rule  x=%d..%d y=%d..%d%n",
+                        Integer.valueOf(quad.left), Integer.valueOf(quad.right),
+                        Integer.valueOf(quad.top), Integer.valueOf(quad.bottom)));
+            }
+        }
+        java.io.File out = new java.io.File("build/reports/latex-render/diag-sqrt-delimiter.txt");
+        java.nio.file.Files.write(out.toPath(),
+                report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }

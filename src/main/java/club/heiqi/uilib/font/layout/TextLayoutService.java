@@ -1025,6 +1025,32 @@ public class TextLayoutService {
             }
 
             @Override
+            public float inkLeftBearing(String text, float sizePx) {
+                // 单字符 ink 左偏移（表数据）：根号横线左端锚定勾的 ink 右缘（ink 左 + ink 宽）
+                if (text.codePointCount(0, text.length()) != 1) {
+                    return 0.0F;
+                }
+                int codepoint = text.codePointAt(0);
+                int size = Math.max(1, (int) sizePx);
+                lockGeneration();
+                try {
+                    GlyphRuntimeTables tables = currentRuntimeTables();
+                    if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+                        return 0.0F;
+                    }
+                    short[] bearings = tables.bearingXArray(style.getFontType());
+                    short bearing = bearings[codepoint];
+                    if (bearing <= 0) {
+                        return 0.0F;
+                    }
+                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
+                    return (float) bearing * size / (float) awt;
+                } finally {
+                    unlockGeneration();
+                }
+            }
+
+            @Override
             public float inkHeight(String text, float sizePx) {
                 // 单字符 ink 高（表数据）：大运算符 limits 上下限锚定符号 ink 顶/底而非行盒
                 if (text.codePointCount(0, text.length()) != 1) {
