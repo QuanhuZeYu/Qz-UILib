@@ -1467,6 +1467,8 @@ public class GlyphPageManager {
         runtimeTables.inkHeightArray(fontType)[codepoint] = (short) glyphInfo.getGlyphHeight();
         runtimeTables.bearingXArray(fontType)[codepoint] = (short) glyphInfo.getBearingX();
         runtimeTables.bearingYArray(fontType)[codepoint] = (short) glyphInfo.getBearingY();
+        // ink 数据就绪 → 递增就绪代，使依赖 ink 表的 LatexCache 布局条目失效重布局
+        runtimeTables.bumpInkEpoch();
     }
 
     private byte buildGlyphFlags(GlyphInfo glyphInfo) {

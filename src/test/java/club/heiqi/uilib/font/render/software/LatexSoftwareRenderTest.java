@@ -596,4 +596,147 @@ public class LatexSoftwareRenderTest {
         java.nio.file.Files.write(out.toPath(),
                 report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
+
+    /** 诊断：cases 花括号 ink 几何（真机「分段花括号偏上」定位）。 */
+    @Test
+    public void dumpsCasesBraceGeometry() throws Exception {
+        StringBuilder report = new StringBuilder();
+        String formula = "\\begin{cases} x & x > 0 \\\\ -x & x \\leq 0 \\end{cases}";
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>" + formula + "</latex>", BASE_SIZE);
+        GlyphRuntimeTables tables = result.tables;
+        double awt = LatexSoftwareRenderKit.currentAwtCharSize();
+        report.append("awtCharSize=").append(awt).append(System.lineSeparator());
+        short[] bearingX = tables.bearingXArray(FontType.NORMAL);
+        short[] bearingY = tables.bearingYArray(FontType.NORMAL);
+        short[] inkW = tables.inkWidthArray(FontType.NORMAL);
+        short[] inkH = tables.inkHeightArray(FontType.NORMAL);
+        for (int cp : new int[] { '{', '(', 'x', '-' }) {
+            String glyph = new String(Character.toChars(cp));
+            report.append(String.format(java.util.Locale.ROOT,
+                    "  U+%04X %s bearingX=%d bearingY=%d inkW=%d inkH=%d inkCenterUp=%d%n",
+                    Integer.valueOf(cp), glyph,
+                    Integer.valueOf(bearingX[cp]), Integer.valueOf(bearingY[cp]),
+                    Integer.valueOf(inkW[cp]), Integer.valueOf(inkH[cp]),
+                    Integer.valueOf(bearingY[cp] + inkH[cp] / 2)));
+        }
+        report.append("== glyph quads ==").append(System.lineSeparator());
+        for (Quad quad : collectGlyphQuads(result)) {
+            report.append(String.format(java.util.Locale.ROOT, "  glyph x=%d..%d y=%d..%d%n",
+                    Integer.valueOf(quad.left), Integer.valueOf(quad.right),
+                    Integer.valueOf(quad.top), Integer.valueOf(quad.bottom)));
+        }
+        for (Quad quad : collectQuads(result.collector.getDecorationBatch())) {
+            report.append(String.format(java.util.Locale.ROOT, "  rule  x=%d..%d y=%d..%d%n",
+                    Integer.valueOf(quad.left), Integer.valueOf(quad.right),
+                    Integer.valueOf(quad.top), Integer.valueOf(quad.bottom)));
+        }
+        // 布局盒 dump：花括号 glyph 的 scale 与 y
+        club.heiqi.uilib.font.latex.layout.MathBox box = LatexSoftwareRenderKit.layout(formula, BASE_SIZE);
+        report.append("== layout box ==").append(System.lineSeparator());
+        report.append("box w=").append(box.getWidth()).append(" h=").append(box.getHeight())
+                .append(" d=").append(box.getDepth()).append(System.lineSeparator());
+        for (club.heiqi.uilib.font.latex.layout.GlyphElem elem : box.getGlyphs()) {
+            report.append(String.format(java.util.Locale.ROOT, "  glyph %s x=%s y=%s scale=%s%n",
+                    elem.getText(), Float.valueOf(elem.getX()), Float.valueOf(elem.getY()),
+                    Float.valueOf(elem.getSizeScale())));
+        }
+        java.io.File out = new java.io.File("build/reports/latex-render/diag-cases-brace.txt");
+        java.nio.file.Files.write(out.toPath(),
+                report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** 诊断：渲染 cases/pmatrix/left-right 对照 PNG（视觉验收）。 */
+    @Test
+    public void rendersCasesBraceComparisonPngs() throws Exception {
+        java.io.File dir = new java.io.File("build/reports/latex-render");
+        dir.mkdirs();
+        String[][] forms = {
+                { "cases", "\\begin{cases} x & x > 0 \\\\ -x & x \\leq 0 \\end{cases}" },
+                { "pmatrix", "\\begin{pmatrix} x & y \\\\ -x & z \\end{pmatrix}" },
+                { "leftright", "\\left\\{ \\frac{a}{b} \\right\\}" },
+                { "binombrace", "\\left\\{ x \\right\\} \\quad (x) \\quad \\left( x \\right)" },
+        };
+        for (String[] pair : forms) {
+            LatexSoftwareRenderKit.renderToPng("<latex>" + pair[1] + "</latex>", 16,
+                    new java.io.File(dir, "brace-" + pair[0] + ".png"));
+        }
+    }
+
+    /** 诊断：cases 像素级花括号/内容 ink 中心对比。 */
+    @Test
+    public void analyzesCasesBracePixelCenters() throws Exception {
+        StringBuilder report = new StringBuilder();
+        Object[][] forms = {
+                { "cases", "\\begin{cases} x & x > 0 \\\\ -x & x \\leq 0 \\end{cases}", Integer.valueOf(19) },
+                { "pmatrix", "\\begin{pmatrix} x & y \\\\ -x & z \\end{pmatrix}", Integer.valueOf(18) },
+                { "leftright", "\\left\\{ \\frac{a}{b} \\right\\}", Integer.valueOf(12) },
+        };
+        for (Object[] spec : forms) {
+            LatexSoftwareRenderKit.RenderResult r = LatexSoftwareRenderKit.render(
+                    "<latex>" + spec[1] + "</latex>", BASE_SIZE);
+            int split = ((Integer) spec[2]).intValue();
+            int braceTop = Integer.MAX_VALUE, braceBottom = Integer.MIN_VALUE;
+            int contentTop = Integer.MAX_VALUE, contentBottom = Integer.MIN_VALUE;
+            for (int y = 0; y < r.height; y++) {
+                for (int x = 0; x < r.width; x++) {
+                    if (r.pixels[y * r.width + x] == 0xFF202020) {
+                        continue;
+                    }
+                    if (x <= split) {
+                        braceTop = Math.min(braceTop, y);
+                        braceBottom = Math.max(braceBottom, y);
+                    } else {
+                        contentTop = Math.min(contentTop, y);
+                        contentBottom = Math.max(contentBottom, y);
+                    }
+                }
+            }
+            report.append(String.valueOf(spec[0]))
+                    .append(": brace y=").append(braceTop).append("..").append(braceBottom)
+                    .append(" center=").append((braceTop + braceBottom) / 2)
+                    .append(" | content y=").append(contentTop).append("..").append(contentBottom)
+                    .append(" center=").append((contentTop + contentBottom) / 2)
+                    .append(" | diff=").append((braceTop + braceBottom - contentTop - contentBottom) / 2)
+                    .append(System.lineSeparator());
+        }
+        java.io.File out = new java.io.File("build/reports/latex-render/diag-cases-pixels.txt");
+        java.nio.file.Files.write(out.toPath(),
+                report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** 诊断：AWT 字形视觉边界 vs 生成器 ink 表口径对比（回退锚定修复前提验证）。 */
+    @Test
+    public void comparesAwtVisualBoundsWithInkTables() throws Exception {
+        StringBuilder report = new StringBuilder();
+        java.awt.Font base = new java.awt.Font("Dialog", java.awt.Font.PLAIN, 14);
+        float awt = (float) LatexSoftwareRenderKit.currentAwtCharSize();
+        java.awt.Font font64 = base.deriveFont(awt);
+        java.awt.font.FontRenderContext frc = new java.awt.font.FontRenderContext(
+                font64.getTransform(), true, false);
+        int[] cps = { '(', ')', '{', '|', 0x221A };
+        LatexSoftwareRenderKit.RenderResult r = LatexSoftwareRenderKit.render(
+                "<latex>(x)\\{y\\}\\sqrt{x}|z|</latex>", BASE_SIZE);
+        short[] bearingX = r.tables.bearingXArray(FontType.NORMAL);
+        short[] bearingY = r.tables.bearingYArray(FontType.NORMAL);
+        short[] inkW = r.tables.inkWidthArray(FontType.NORMAL);
+        short[] inkH = r.tables.inkHeightArray(FontType.NORMAL);
+        for (int cp : cps) {
+            String glyph = new String(Character.toChars(cp));
+            java.awt.font.GlyphVector gv = font64.createGlyphVector(frc, new int[] { cp });
+            java.awt.geom.Rectangle2D b = gv.getVisualBounds();
+            report.append(String.format(java.util.Locale.ROOT,
+                    "%s table: bx=%d by=%d w=%d h=%d centerUp=%d | awt: x=%.2f y=%.2f w=%.2f h=%.2f centerUp=%.2f%n",
+                    glyph,
+                    Integer.valueOf(bearingX[cp]), Integer.valueOf(bearingY[cp]),
+                    Integer.valueOf(inkW[cp]), Integer.valueOf(inkH[cp]),
+                    Integer.valueOf(bearingY[cp] + inkH[cp] / 2),
+                    Double.valueOf(b.getX()), Double.valueOf(b.getY()),
+                    Double.valueOf(b.getWidth()), Double.valueOf(b.getHeight()),
+                    Double.valueOf(b.getCenterY())));
+        }
+        java.io.File out = new java.io.File("build/reports/latex-render/diag-awt-vs-table.txt");
+        java.nio.file.Files.write(out.toPath(),
+                report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
 }

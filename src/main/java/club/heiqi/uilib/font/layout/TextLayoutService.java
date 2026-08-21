@@ -951,7 +951,7 @@ public class TextLayoutService {
      */
     private double measureLatexWidth(String latexSource, TextStyle style, int fontSizePx) {
         MathBox box = LatexCache.getInstance().getOrLayout(latexSource, fontSizePx, runtimeVersion,
-                style.getFontType(), MATH_LAYOUT, createMathMetrics(style, fontSizePx));
+                style.getFontType(), MATH_LAYOUT, createMathMetrics(style, fontSizePx), currentInkEpoch());
         return box.getWidth();
     }
 
@@ -1109,23 +1109,65 @@ public class TextLayoutService {
                 lockGeneration();
                 try {
                     GlyphRuntimeTables tables = currentRuntimeTables();
-                    if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
-                        return (ascent(sizePx) - descent(sizePx)) / 2.0F;
+                    int inkHeight = tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint) ? 0
+                            : tables.inkHeightArray(style.getFontType())[codepoint];
+                    if (inkHeight > 0) {
+                        // ink 中心相对字体基线 = bearingY + inkHeight/2（quad 顶 = 基线 + bearingY）
+                        float centerAtlas = (float) tables.bearingYArray(style.getFontType())[codepoint]
+                                + inkHeight / 2.0F;
+                        int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
+                        return centerAtlas * size / (float) awt;
                     }
-                    int inkHeight = tables.inkHeightArray(style.getFontType())[codepoint];
-                    if (inkHeight <= 0) {
-                        return (ascent(sizePx) - descent(sizePx)) / 2.0F;
-                    }
-                    // ink 中心相对字体基线 = bearingY + inkHeight/2（quad 顶 = 基线 + bearingY）
-                    float centerAtlas = (float) tables.bearingYArray(style.getFontType())[codepoint]
-                            + inkHeight / 2.0F;
-                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
-                    return centerAtlas * size / (float) awt;
                 } finally {
                     unlockGeneration();
                 }
+                // 字形未就绪（ink 表为 0）：用 AWT 字形视觉边界中心同步锚定，不回退盒中心——
+                // 字形 ink 在字格内不对称的字体（真机 fallback 字形 ink 中心可偏盒中心 0.3em+），
+                // 盒中心回退会让定界符锚定整体偏上 5px+，且被 LatexCache 按旧 key 永久缓存。
+                float awtCenter = awtInkCenterOffsetY(codepoint, style.getFontType(), size);
+                if (!Float.isNaN(awtCenter)) {
+                    return awtCenter;
+                }
+                return (ascent(sizePx) - descent(sizePx)) / 2.0F;
             }
         };
+    }
+
+    /**
+     * AWT 字形视觉边界中心（y 向下口径：负 = 基线上方，与 ink 表 bearingY 同向）。
+     *
+     * <p>字形页 ink 表异步生成完成前为 0，定界符轴锚定等布局不能用表数据；
+     * 直接量 AWT 字形轮廓边界得到同步且接近真实 ink 的锚定值（headless 实测与表中心
+     * 差 ≈0.09em），避免回退盒中心（字形 ink 不对称字体偏 0.3em+）。</p>
+     *
+     * @param codepoint 码点
+     * @param fontType  字重
+     * @param sizePx    字号（返回口径同字号）
+     * @return ink 中心偏移（y 向下，负 = 基线上方）；字体不可得时 NaN
+     */
+    private float awtInkCenterOffsetY(int codepoint, FontType fontType, int sizePx) {
+        java.awt.Font font = fontMatcher.match(runtimeVersion, codepoint, fontType);
+        if (font == null) {
+            return Float.NaN;
+        }
+        java.awt.Font sized = font.deriveFont(fontType == FontType.BOLD ? java.awt.Font.BOLD
+                : java.awt.Font.PLAIN, (float) Math.max(1, sizePx));
+        java.awt.font.FontRenderContext frc = new java.awt.font.FontRenderContext(
+                sized.getTransform(), true, false);
+        java.awt.geom.Rectangle2D bounds = sized.createGlyphVector(frc, new int[] { codepoint })
+                .getVisualBounds();
+        return (float) (bounds.getY() + bounds.getHeight() / 2.0D);
+    }
+
+    /** 当前字形几何就绪代（LatexCache 键组成部分；tables 未就绪回退 0）。 */
+    public int currentInkEpoch() {
+        lockGeneration();
+        try {
+            GlyphRuntimeTables tables = currentRuntimeTables();
+            return tables == null ? 0 : tables.getInkEpoch();
+        } finally {
+            unlockGeneration();
+        }
     }
 
     /**
@@ -1481,7 +1523,7 @@ public class TextLayoutService {
                     int safeLatexSize = Math.max(1, fontSizePx);
                     MathBox box = LatexCache.getInstance().getOrLayout(segment.getLatexSource(),
                             safeLatexSize, runtimeVersion, segment.getStyle().getFontType(), MATH_LAYOUT,
-                            createMathMetrics(segment.getStyle(), safeLatexSize));
+                            createMathMetrics(segment.getStyle(), safeLatexSize), currentInkEpoch());
                     maxLineHeightPx = Math.max(maxLineHeightPx, (int) Math.ceil(box.getTotalHeight()));
                 }
             }

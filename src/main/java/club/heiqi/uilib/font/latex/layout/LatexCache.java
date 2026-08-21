@@ -10,11 +10,13 @@ import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.LatexParser;
 
 /**
- * LaTeX 布局结果缓存（M4）：key = (源码, 字号, 运行时版本, 字体类别)。
+ * LaTeX 布局结果缓存（M4）：key = (源码, 字号, 运行时版本, 字体类别, 字形就绪代)。
  *
  * <p>测量侧（TextLayoutService）与渲染侧（DefaultFontRendererAdapter）共享同一实例，
  * 热点公式（HUD 每帧渲染）零重解析零重布局；字体 reload 使 runtimeVersion 变化时
- * 旧条目自然 miss（不主动清扫，LRU 上限淘汰）。</p>
+ * 旧条目自然 miss（不主动清扫，LRU 上限淘汰）。字形就绪代（inkEpoch）覆盖异步字形
+ * 生成场景：布局依赖 ink 表（定界符轴锚定），字形未就绪时布局走回退值，就绪后必须
+ * 失效重布局，否则回退盒被永久缓存（真机首帧「花括号对齐第一行」类错位）。</p>
  */
 public final class LatexCache {
 
@@ -56,8 +58,9 @@ public final class LatexCache {
      * @return 布局盒
      */
     public MathBox getOrLayout(String latexSource, int baseSizePx, int runtimeVersion, FontType fontType,
-            MathLayoutService layoutService, MathMetrics metrics) {
-        Key key = new Key(latexSource, baseSizePx, runtimeVersion, LAYOUT_VERSION, fontType.ordinal());
+            MathLayoutService layoutService, MathMetrics metrics, int inkEpoch) {
+        Key key = new Key(latexSource, baseSizePx, runtimeVersion, LAYOUT_VERSION, fontType.ordinal(),
+                inkEpoch);
         MathBox box = cache.get(key);
         if (box != null) {
             return box;
@@ -85,13 +88,15 @@ public final class LatexCache {
         private final int version;
         private final int layoutVersion;
         private final int fontTypeOrdinal;
+        private final int inkEpoch;
 
-        Key(String source, int size, int version, int layoutVersion, int fontTypeOrdinal) {
+        Key(String source, int size, int version, int layoutVersion, int fontTypeOrdinal, int inkEpoch) {
             this.source = source;
             this.size = size;
             this.version = version;
             this.layoutVersion = layoutVersion;
             this.fontTypeOrdinal = fontTypeOrdinal;
+            this.inkEpoch = inkEpoch;
         }
 
         @Override
@@ -104,7 +109,8 @@ public final class LatexCache {
             }
             Key key = (Key) other;
             return size == key.size && version == key.version && layoutVersion == key.layoutVersion
-                    && fontTypeOrdinal == key.fontTypeOrdinal && source.equals(key.source);
+                    && fontTypeOrdinal == key.fontTypeOrdinal && inkEpoch == key.inkEpoch
+                    && source.equals(key.source);
         }
 
         @Override
@@ -114,6 +120,7 @@ public final class LatexCache {
             result = 31 * result + version;
             result = 31 * result + layoutVersion;
             result = 31 * result + fontTypeOrdinal;
+            result = 31 * result + inkEpoch;
             return result;
         }
     }

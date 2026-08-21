@@ -58,6 +58,8 @@ public final class SoftwareGlyphPageAssembler {
         tables.inkHeightArray(fontType)[codepoint] = (short) Math.max(0, Math.round(info.getGlyphHeight()));
         tables.bearingXArray(fontType)[codepoint] = (short) info.getBearingX();
         tables.bearingYArray(fontType)[codepoint] = (short) info.getBearingY();
+        // ink 数据就绪 → 递增就绪代（真机 cacheGlyphGeometry 同口径）
+        tables.bumpInkEpoch();
         return slot;
     }
 }

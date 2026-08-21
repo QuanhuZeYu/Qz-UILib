@@ -1056,7 +1056,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int baseFontSizePx, int runtimeVersion) {
         return LatexCache.getInstance().getOrLayout(segment.getLatexSource(), baseFontSizePx, runtimeVersion,
                 segment.getStyle().getFontType(), MATH_LAYOUT,
-                textLayoutService.createMathMetrics(segment.getStyle(), baseFontSizePx));
+                textLayoutService.createMathMetrics(segment.getStyle(), baseFontSizePx),
+                textLayoutService.currentInkEpoch());
     }
 
     /** 布局盒内是否存在字号缩放字形（sizeScale != 1.0）。 */

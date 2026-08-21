@@ -33,6 +33,26 @@ public final class GlyphRuntimeTables {
     public static final byte GLYPH_FLAG_COLORED = 1;
     public static final byte GLYPH_FLAG_HAS_BITMAP = 2;
 
+    /**
+     * 字形几何就绪代：每写入一组字形 ink/槽位几何 +1。
+     *
+     * <p>LaTeX 布局对定界符等基元字形依赖 ink 表（bearingY/inkHeight）做数学轴锚定；
+     * 字形异步生成完成前 ink 表为 0、布局走回退值，若 LatexCache 永久缓存该回退盒，
+     * 真机首帧「花括号对齐第一行」类错位不随字形就绪自愈。本代进缓存键：字形就绪
+     * 即失效重布局。</p>
+     */
+    private volatile int inkEpoch;
+
+    /** @return 当前字形几何就绪代（字形 ink 数据写入次数累计）。 */
+    public int getInkEpoch() {
+        return inkEpoch;
+    }
+
+    /** 字形几何写入完成时递增就绪代（使依赖 ink 表数据的布局缓存失效）。 */
+    public void bumpInkEpoch() {
+        inkEpoch++;
+    }
+
     public final float[] widthNormal = createWidthArray();
     public final float[] widthBold = createWidthArray();
     public final int[] matchedFontNormal = createMatchedFontArray();
