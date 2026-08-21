@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 9;
+    public static final int LAYOUT_VERSION = 10;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -380,18 +380,20 @@ public final class MathLayoutService {
     private MathBox layoutLimits(MathBox base, MathBox sup, MathBox sub, float size, MathMetrics m) {
         Builder builder = new Builder();
         float axis = MathConstants.AXIS_HEIGHT_EM * size;
-        // ink 锚定（向上为正，与 layoutFence 同源）：中心在 inkCenterUp，总高 inkH；
+        // ink 锚定（y 向下口径，与 layoutFence/layoutAtom 同源）：中心偏移 inkCenterY，总高 inkH；
         // 盒度量回退保持旧行为。
         String baseText = base.getGlyphs().isEmpty() ? null : base.getGlyphs().get(0).getText();
-        float inkCenterUp = baseText == null ? (base.getHeight() - base.getDepth()) / 2.0F
+        float inkCenterY = baseText == null ? (base.getDepth() - base.getHeight()) / 2.0F
                 : m.inkCenterOffsetY(baseText, size);
         float inkH = baseText == null ? base.getTotalHeight() : m.inkHeight(baseText, size);
         // 无阶梯变体（TeX 会选 cmex 行内小变体，本仓资源受限）：整字缩放到目标视觉高
         //（TeX 口径：∑∏ ≈ 1.0em、∫ 族 ≈ 1.11em），上下限随之贴合缩放后符号。
         float targetH = bigOperatorTargetHeightEm(baseText) * size;
         float opScale = inkH > 0.0F ? targetH / inkH : 1.0F;
-        // 轴居中：字形中心（基线相对 −centerUp）移到轴（−axis）的基线位移 = centerUp×scale − axis
-        float baseShift = inkCenterUp * opScale - axis;
+        // 轴居中：渲染 ink 中心 = baseShift + inkCenterY×scale，须落在轴（y 向下 −axis）
+        // → baseShift = −axis − inkCenterY×scale（与 layoutFence 同式；符号必须与
+        // inkCenterOffsetY 的 y 向下口径一致，否则大运算符整体偏移 2×inkCenterY）
+        float baseShift = -axis - inkCenterY * opScale;
         // 轴居中后相对新基线的有效度量：顶 = targetH/2 + axis、底 = targetH/2 − axis
         float refHeight = targetH / 2.0F + axis;
         float refDepth = targetH / 2.0F - axis;

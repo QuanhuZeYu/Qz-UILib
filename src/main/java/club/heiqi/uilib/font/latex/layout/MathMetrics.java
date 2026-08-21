@@ -94,18 +94,20 @@ public interface MathMetrics {
     }
 
     /**
-     * 字形 ink 中心相对盒基线的偏移（px，正值 = 基线上方；实现口径与 layoutFence 一致）。
+     * 字形 ink 中心相对盒基线的偏移（px，y 向下口径：负值 = 基线上方）。
      *
-     * <p>伸缩定界符/大运算符按数学轴居中时必须以 ink 中心为锚：ink 在字格内的分布并不
-     * 对称，按字体盒度量（ascent/descent）居中会让缩放字形视觉中心偏离轴（实测 0.3em+）。
-     * 默认实现回退盒度量中心 (ascent − descent)/2（mock 与无 ink 数据场景，旧行为不变）。</p>
+     * <p>口径与渲染侧 glyph quad 的 bearingY 一致（quad 顶 = 基线 + bearingY，y 向下），
+     * 也与真实实现（表 bearingY + inkHeight/2、AWT 视觉边界中心）天然同向。伸缩定界符/
+     * 大运算符按数学轴居中时必须以 ink 中心为锚：ink 在字格内的分布并不对称，按字体盒
+     * 度量居中会让缩放字形视觉中心偏离轴（实测 0.3em+）。默认实现回退盒度量中心
+     * (descent − ascent)/2（mock 与无 ink 数据场景）。</p>
      *
      * @param text   单字符文本（布局侧仅对定界符/大运算符等基元字形调用）
      * @param sizePx 字号
-     * @return ink 中心相对基线的偏移（px，正值向上）
+     * @return ink 中心相对基线的偏移（px，y 向下：负 = 基线上方）
      */
     default float inkCenterOffsetY(String text, float sizePx) {
-        return (ascent(sizePx) - descent(sizePx)) / 2.0F;
+        return (descent(sizePx) - ascent(sizePx)) / 2.0F;
     }
 
     /**

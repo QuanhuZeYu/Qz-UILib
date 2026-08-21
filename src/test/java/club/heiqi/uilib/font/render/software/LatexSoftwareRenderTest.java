@@ -11,6 +11,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.latex.LatexShowcaseFormulas;
+import club.heiqi.uilib.font.latex.layout.MathMetrics;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.GlyphRenderBatch;
 
@@ -134,6 +135,55 @@ public class LatexSoftwareRenderTest {
         int delta = open.centerY() - x.centerY();
         Assert.assertTrue("括号 ink 中心应与 x ink 中心重合于数学轴（实测差=" + delta + "px）",
                 Math.abs(delta) <= 1);
+    }
+
+    /** 大运算符（∑∫）ink 中心锚定数学轴（回归：inkCenterOffsetY 符号口径漂移导致 ±8px 偏移）。 */
+    @Test
+    public void bigOperatorAxisCenteredByInk() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\frac{1}{2} + \\sum_{i=1}^{n} i</latex>", BASE_SIZE);
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertTrue("应有分数规则线", !rules.isEmpty());
+        Quad bar = rules.get(0);
+        int axis = bar.centerY();
+        Quad big = null;
+        for (Quad glyph : glyphs) {
+            if (glyph.height() >= 12 && glyph.left >= bar.right) {
+                big = glyph;
+                break;
+            }
+        }
+        Assert.assertNotNull("应找到 ∑ 字形 quad", big);
+        int delta = big.centerY() - axis;
+        Assert.assertTrue("∑ ink 中心应落在数学轴（分数线上）±2px，实测差=" + delta,
+                Math.abs(delta) <= 2);
+    }
+
+    /** 契约回归：inkCenterOffsetY 实现口径必须与渲染 quad bearingY 一致（y 向下）。 */
+    @Test
+    public void inkCenterOffsetYMatchesQuadBearingContract() {
+        LatexSoftwareRenderKit.RenderResult r = LatexSoftwareRenderKit.render(
+                "<latex>(x)|y|\\sum_{i=1}^{n}\\int_0^1\\sqrt{x}\\{z\\}</latex>", BASE_SIZE);
+        club.heiqi.uilib.font.layout.TextStyle style = new club.heiqi.uilib.font.layout.TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        MathMetrics m = LatexSoftwareRenderKit.currentService().createMathMetrics(style, BASE_SIZE);
+        short[] bearingY = r.tables.bearingYArray(FontType.NORMAL);
+        short[] inkH = r.tables.inkHeightArray(FontType.NORMAL);
+        int awt = (int) LatexSoftwareRenderKit.currentAwtCharSize();
+        int checked = 0;
+        for (int cp : new int[] { '(', ')', '{', '|', 0x2211, 0x222B, 0x221A }) {
+            if (inkH[cp] <= 0) {
+                continue; // 字形未装配（无 ink 数据）不参与契约
+            }
+            String text = new String(Character.toChars(cp));
+            float expected = (bearingY[cp] + inkH[cp] / 2.0F) * BASE_SIZE / (float) awt;
+            float actual = m.inkCenterOffsetY(text, BASE_SIZE);
+            Assert.assertEquals("inkCenterOffsetY 应与 quad bearingY 同口径（y 向下）: " + text,
+                    expected, actual, 0.5F);
+            checked++;
+        }
+        Assert.assertTrue("至少应契约校验 3 个字形", checked >= 3);
     }
 
     /** 根号：规则线位于被开方内容上方。 */

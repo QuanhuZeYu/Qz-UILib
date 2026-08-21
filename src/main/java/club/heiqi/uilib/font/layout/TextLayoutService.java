@@ -1100,9 +1100,9 @@ public class TextLayoutService {
 
             @Override
             public float inkCenterOffsetY(String text, float sizePx) {
-                // ink 中心相对盒基线 = (ink 顶 + ink 高/2) − 字格基线（atlas 单位，正=上方）
+                // ink 中心相对盒基线（y 向下口径：负 = 基线上方，与 quad bearingY 同向）
                 if (text.codePointCount(0, text.length()) != 1) {
-                    return (ascent(sizePx) - descent(sizePx)) / 2.0F;
+                    return (descent(sizePx) - ascent(sizePx)) / 2.0F;
                 }
                 int codepoint = text.codePointAt(0);
                 int size = Math.max(1, (int) sizePx);
@@ -1128,7 +1128,7 @@ public class TextLayoutService {
                 if (!Float.isNaN(awtCenter)) {
                     return awtCenter;
                 }
-                return (ascent(sizePx) - descent(sizePx)) / 2.0F;
+                return (descent(sizePx) - ascent(sizePx)) / 2.0F;
             }
         };
     }

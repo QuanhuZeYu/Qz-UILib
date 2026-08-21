@@ -175,8 +175,8 @@ public class MathLayoutServiceTest {
         MathBox box = layout("\\sum_{i=1}^{n}");
         // sub = i=1：3 码点 × 0.35S + 2 个 thick 间距（5/18 × 0.7S）；sup = n：0.35S；base = ∑：0.5S
         float subWidth = 3.0F * 0.35F * S + 2.0F * (MathConstants.THICK_MU / 18.0F) * 0.7F * S;
-        // 轴居中（fake 回退盒度量）：inkCenter=(0.8S−0.2S)/2=0.3S，inkH=1.0S →
-        // baseShift=0.05S；refH=inkH/2+axis=0.75S，refD=inkH/2−axis=0.25S
+        // 轴居中（fake 回退盒度量）：inkCenterOffsetY=(0.2S−0.8S)/2=−0.3S（y 向下），inkH=1.0S →
+        // baseShift = −axis − inkCenter×scale = 0.3S−axis；refH=inkH/2+axis=0.75S，refD=inkH/2−axis=0.25S
         float baseShift = 0.3F * S - MathConstants.AXIS_HEIGHT_EM * S;
         float refHeight = 0.5F * S + MathConstants.AXIS_HEIGHT_EM * S;
         float refDepth = 0.5F * S - MathConstants.AXIS_HEIGHT_EM * S;

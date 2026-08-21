@@ -139,6 +139,11 @@ public final class LatexSoftwareRenderKit {
         return shared().settings.getAwtCharSize();
     }
 
+    /** 契约测试用：共享 TextLayoutService（真机同源度量实现）。 */
+    public static club.heiqi.uilib.font.layout.TextLayoutService currentService() {
+        return shared().service;
+    }
+
     private LatexSoftwareRenderKit() {}
 
     /** 以真字形 ink 渲染 rich 文本（软件光栅化）。 */
