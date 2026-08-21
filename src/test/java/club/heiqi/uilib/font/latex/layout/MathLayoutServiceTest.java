@@ -603,6 +603,19 @@ public class MathLayoutServiceTest {
         Assert.assertTrue(foundLeft);
     }
 
+    /** 原子盒度量按 ink 边界（TeX 字符级 fontdimen 语义：盒不再虚高到字体 ascent）。 */
+    @Test
+    public void shouldUseInkAnchoredAtomMetrics() {
+        // INK_METRICS：括号 ink 高 0.6S、ink 中心基线上方 0.4S（y 向下 −0.4S）
+        MathBox paren = SERVICE.layout(LatexParser.parse("("), S, INK_METRICS);
+        // 定界符原子轴锚定：glyphY = −axis − inkCenter = −0.25S + 0.4S = 0.15S
+        Assert.assertEquals(0.15F * S, paren.getGlyphs().get(0).getY(), EPS);
+        // 盒度量按 ink：height = inkHalf − inkCenter − glyphY = 0.3S+0.4S−0.15S = 0.55S
+        Assert.assertEquals(0.55F * S, paren.getHeight(), EPS);
+        // depth = max(0, glyphY + inkCenter + inkHalf) = 0.15S−0.4S+0.3S = 0.05S
+        Assert.assertEquals(0.05F * S, paren.getDepth(), EPS);
+    }
+
     /** fence 缩放基准改 ink 高（INK_METRICS：括号 ink 高 0.6em < 盒 1.0em → scale 放大）。 */
     @Test
     public void shouldScaleFenceByInkHeight() {

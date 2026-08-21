@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 12;
+    public static final int LAYOUT_VERSION = 13;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -113,16 +113,39 @@ public final class MathLayoutService {
         // 定界符 ink 中心钉数学轴（与 layoutFence 同口径）：普通小括号/竖线不再按基线裸放——
         // 字库括号 ink 在字格内的分布不对称（真机括号 ink 中心可高于轴 0.1em+），基线对齐会
         // 整体偏上；锚定后括号视觉居中于公式行，与伸缩 fence（矩阵等）行为一致。
+        // 盒度量按 ink 边界（TeX 字符级 fontdimen 语义的近似）：统一字体盒 ascent/descent 会
+        // 把每个字符盒虚高到 0.8em（真实 ink 顶如 a/x 仅 ~0.53em），分数分子间隙、根号横线、
+        // 行高随之虚胖，嵌套公式累积放大——用户反馈「包围盒问题、嵌套偏差更明显」的根因。
+        // 无 ink 数据回退与旧行为代数等价（inkHeight 回退盒总高、inkCenter 回退盒中心时
+        // inkHalf − inkCenter ≡ ascent、inkCenter + inkHalf ≡ descent）。
         float glyphY = 0.0F;
+        float height;
+        float depth;
         if (isDelimiterAtom(atom)) {
             float axis = MathConstants.AXIS_HEIGHT_EM * size;
-            glyphY = -axis - m.inkCenterOffsetY(text, size);
+            float inkCenter = m.inkCenterOffsetY(text, size);
+            float inkHalf = m.inkHeight(text, size) / 2.0F;
+            glyphY = -axis - inkCenter;
+            height = Math.max(0.0F, inkHalf - inkCenter - glyphY);
+            depth = Math.max(0.0F, glyphY + inkCenter + inkHalf);
+        } else {
+            float inkTop = 0.0F;
+            float inkBottom = 0.0F;
+            for (int index = 0; index < text.length(); ) {
+                int codepoint = text.codePointAt(index);
+                index += Character.charCount(codepoint);
+                String glyphText = new String(Character.toChars(codepoint));
+                float inkCenter = m.inkCenterOffsetY(glyphText, size);
+                float inkHalf = m.inkHeight(glyphText, size) / 2.0F;
+                inkTop = Math.max(inkTop, inkHalf - inkCenter);
+                inkBottom = Math.max(inkBottom, inkCenter + inkHalf);
+            }
+            height = Math.max(0.0F, inkTop);
+            depth = Math.max(0.0F, inkBottom);
         }
         glyphs.add(new GlyphElem(text, 0.0F, glyphY, 1.0F, italic));
         // 斜体视觉右越量（ink 超出 advance 的量）：随盒向上嵌套传播（TeX box 的 ink 边界抽象）
         float rightOverhang = italic ? m.italicOverhang(text, size) : 0.0F;
-        float height = glyphY == 0.0F ? m.ascent(size) : Math.max(0.0F, m.ascent(size) - glyphY);
-        float depth = glyphY == 0.0F ? m.descent(size) : Math.max(0.0F, m.descent(size) + glyphY);
         return new MathBox(width, height, depth, glyphs, null, 0.0F, rightOverhang);
     }
 
@@ -946,7 +969,10 @@ public final class MathLayoutService {
         builder.width = Math.max(base.getWidth(), accentX + accentWidth);
         // 盒高 = max(重音字形高（字体 ascent 近似）, 基底高)：复合基底（\hat{AB} 等）时
         // 不得低于基底，否则盒高低估、嵌套几何错位（JLaTeXMath 取 accent 高 + 1mu + base 高）
-        builder.height = Math.max(m.ascent(size), base.getHeight());
+        float accentInkCenter = m.inkCenterOffsetY(accentText, size);
+        float accentInkHalf = m.inkHeight(accentText, size) / 2.0F;
+        // 盒高 = max(重音字形 ink 顶, 基底高)；无 ink 数据回退字体 ascent（代数等价）
+        builder.height = Math.max(Math.max(0.0F, accentInkHalf - accentInkCenter), base.getHeight());
         builder.depth = base.getDepth();
         return builder.toBox();
     }

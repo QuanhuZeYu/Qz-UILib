@@ -852,6 +852,44 @@ public class LatexSoftwareRenderTest {
         Assert.assertTrue("array 应有收集 quad", result.collector.getQuadCount() > 0);
     }
 
+    /** 布局盒度量贴合真实 ink 边界（字符级 fontdimen 语义回归：盒 h/d 与渲染 ink ±2.5px）。 */
+    @Test
+    public void latexBoxMetricsTrackInkBounds() {
+        String[] formulas = { "\\frac{a}{b}", "\\sqrt{x}", "\\sqrt{\\frac{a}{b}}", "\\sum_{i=1}^{n}",
+                "\\left(\\frac{a}{b}\\right)", "\\frac{a}{\\left(\\frac{b}{c}\\right)}" };
+        for (String formula : formulas) {
+            LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                    "<latex>" + formula + "</latex>", BASE_SIZE);
+            club.heiqi.uilib.font.latex.layout.MathBox box = LatexSoftwareRenderKit.layout(formula, BASE_SIZE);
+            List<Quad> quads = collectGlyphQuads(result);
+            Assert.assertTrue("应有字形: " + formula, !quads.isEmpty() && !box.getGlyphs().isEmpty());
+            // 参照：盒内第一个 glyph 与渲染第一个 quad（收集顺序一致）反推渲染基线
+            club.heiqi.uilib.font.latex.layout.GlyphElem ref = box.getGlyphs().get(0);
+            Quad first = quads.get(0);
+            int cp = ref.getText().codePointAt(0);
+            short[] bearingY = result.tables.bearingYArray(FontType.NORMAL);
+            int awt = (int) LatexSoftwareRenderKit.currentAwtCharSize();
+            double glyphSize = Math.max(1.0, Math.round(BASE_SIZE * ref.getSizeScale()));
+            double baseline = first.top - ref.getY() - (double) bearingY[cp] * glyphSize / awt;
+            int minTop = Integer.MAX_VALUE;
+            int maxBottom = Integer.MIN_VALUE;
+            for (Quad quad : quads) {
+                minTop = Math.min(minTop, quad.top);
+                maxBottom = Math.max(maxBottom, quad.bottom);
+            }
+            double inkTop = baseline - minTop;
+            double inkBot = maxBottom - baseline;
+            Assert.assertTrue("盒高应贴合 ink 顶（±2.5px）: " + formula + " box.h="
+                    + String.format(java.util.Locale.ROOT, "%.1f", box.getHeight()) + " inkTop="
+                    + String.format(java.util.Locale.ROOT, "%.1f", inkTop),
+                    Math.abs(box.getHeight() - inkTop) <= 2.5);
+            Assert.assertTrue("盒深应贴合 ink 底（±2.5px）: " + formula + " box.d="
+                    + String.format(java.util.Locale.ROOT, "%.1f", box.getDepth()) + " inkBot="
+                    + String.format(java.util.Locale.ROOT, "%.1f", inkBot),
+                    Math.abs(box.getDepth() - inkBot) <= 2.5);
+        }
+    }
+
     /** 诊断：AWT 字形视觉边界 vs 生成器 ink 表口径对比（回退锚定修复前提验证）。 */
     @Test
     public void comparesAwtVisualBoundsWithInkTables() throws Exception {
