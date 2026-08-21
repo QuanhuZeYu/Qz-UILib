@@ -167,6 +167,30 @@ public class MathLayoutServiceTest {
         Assert.assertEquals(shiftDown + 0.14F * S, box.getDepth(), EPS);
     }
 
+    /** 重音 skew：斜体单字符基底上重音右移 skew（TeX \accent skewchar，JLaTeXMath getSkew 同语义）。 */
+    @Test
+    public void shouldSkewAccentOverItalicBase() {
+        MathBox box = layout("\\hat{x}");
+        // advance 均 0.5S → diff=0 → 重音 x = skew = 0.125 × 0.45S（tan14°/2 × xHeight 几何近似）
+        float skew = MathConstants.ACCENT_SKEW_FACTOR * 0.45F * S;
+        boolean foundBase = false;
+        boolean foundAccent = false;
+        for (GlyphElem glyph : box.getGlyphs()) {
+            if ("x".equals(glyph.getText())) {
+                Assert.assertEquals(0.0F, glyph.getX(), EPS);
+                Assert.assertTrue("基底应为斜体", glyph.isItalic());
+                foundBase = true;
+            }
+            if ("\u0302".equals(glyph.getText())) {
+                Assert.assertEquals(skew, glyph.getX(), EPS);
+                foundAccent = true;
+            }
+        }
+        Assert.assertTrue("应包含基底 x", foundBase);
+        Assert.assertTrue("应包含重音（U+0302）", foundAccent);
+        Assert.assertEquals(0.5F * S + skew, box.getWidth(), EPS);
+    }
+
     @Test
     public void shouldStackBigOperatorLimits() {
         // \sum 行内也是 limits 上下堆叠（TeX SCRIPT_LIMITS）：符号 ink 中心锚定数学轴，
@@ -533,8 +557,9 @@ public class MathLayoutServiceTest {
             if ("\u0302".equals(glyph.getText())) {
                 Assert.assertEquals(0.0F, glyph.getY(), EPS);
                 Assert.assertEquals(1.0F, glyph.getSizeScale(), EPS);
-                // fake 度量下重音宽 = 0.5S → x = (base.w − accent.w)/2 = 0
-                Assert.assertEquals((0.5F * S - 0.5F * S) / 2.0F, glyph.getX(), EPS);
+                // fake 度量下重音宽 = 0.5S → diff = 0；斜体基底 skew = 0.125×0.45S
+                // → 重音 x = skew（TeX \accent skewchar 语义）
+                Assert.assertEquals(MathConstants.ACCENT_SKEW_FACTOR * 0.45F * S, glyph.getX(), EPS);
                 foundAccent = true;
             }
         }

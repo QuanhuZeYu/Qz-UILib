@@ -186,6 +186,20 @@ public class LatexSoftwareRenderTest {
         Assert.assertTrue("至少应契约校验 3 个字形", checked >= 3);
     }
 
+    /** 重音 skew 视觉对齐：^ 的 ink 中心落在斜体 x 的 ink 中心上方（±2px）。 */
+    @Test
+    public void hatSkewAlignsWithItalicBaseCenter() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\hat{x}</latex>", BASE_SIZE);
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertTrue("应有基底与重音字形", glyphs.size() >= 2);
+        Quad base = glyphs.get(0); // 布局顺序：基底 x 在前、重音 ^ 在后
+        Quad accent = glyphs.get(1);
+        int delta = accent.centerX() - base.centerX();
+        Assert.assertTrue("重音 ink 中心应落在斜体基底 ink 中心上方（实测差=" + delta + "px）",
+                Math.abs(delta) <= 2);
+    }
+
     /** 根号：规则线位于被开方内容上方。 */
     @Test
     public void sqrtRendersRuleAboveRadicand() {

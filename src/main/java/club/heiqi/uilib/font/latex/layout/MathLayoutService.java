@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 10;
+    public static final int LAYOUT_VERSION = 11;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -776,9 +776,9 @@ public final class MathLayoutService {
         // 重音基底用 cramped style（TeX AccentedAtom）；\\underline 基底不 cramp（TeX UnderlinedAtom）
         MathBox base = layoutNode(node.getBase(), size, m, !node.isBelow());
         Builder builder = new Builder();
-        builder.addBox(base, 0.0F, 0.0F, 1.0F);
         float drt = MathConstants.RULE_THICKNESS_EM * size;
         if (node.isStretchable()) {
+            builder.addBox(base, 0.0F, 0.0F, 1.0F);
             // \overline：kern 3θ + 线 θ，盒高 h+5θ；\\underline：kern 3θ + 线 θ，盒深 d+5θ；
             // 横线覆盖基底视觉 ink 边界（斜体剪切越量）
             float ruleCenter = MathConstants.OVERBAR_KERN_FACTOR * drt + drt / 2.0F;
@@ -800,8 +800,26 @@ public final class MathLayoutService {
         // vBox [accent][strut(−base.h)][base] 堆叠 → 重音字形底与基底基线重合，
         // 字形自身带上方偏移（CM accent 字形设计，JLaTeXMath ref-boxes 取证）。
         // 盒高 = 重音字形盒高（base 顶低于重音顶时由重音决定），深 = 基底深。
+        // 水平 = 盒宽居中 + 斜体 skew（TeX \accent skewchar：斜体单字符基底视觉重心
+        // 随几何斜切右移，重音右移 skew 对齐；JLaTeXMath AccentedAtom.getSkew 同语义，
+        // ref-abs 取证 \hat{x} 的 ^ 右移 0.064em）。
         float accentWidth = m.advance(accentText, size);
-        builder.addGlyph(accentText, (base.getWidth() - accentWidth) / 2.0F, 0.0F, 1.0F);
+        float diff = (base.getWidth() - accentWidth) / 2.0F;
+        float skew = 0.0F;
+        if (!base.getGlyphs().isEmpty() && base.getGlyphs().size() == 1
+                && base.getGlyphs().get(0).isItalic()) {
+            skew = MathConstants.ACCENT_SKEW_FACTOR * m.xHeight(size);
+        }
+        float baseX = 0.0F;
+        float accentX = skew;
+        if (diff > 0.0F) {
+            accentX = skew + diff; // 重音窄于基底：重音盒居中 + skew
+        } else if (diff < 0.0F) {
+            baseX = -diff; // 重音宽于基底：基底居中于重音（JLaTeXMath ALIGN_CENTER 语义）
+        }
+        builder.addBox(base, baseX, 0.0F, 1.0F);
+        builder.addGlyph(accentText, accentX, 0.0F, 1.0F);
+        builder.width = Math.max(base.getWidth(), accentX + accentWidth);
         builder.height = m.ascent(size);
         builder.depth = base.getDepth();
         return builder.toBox();

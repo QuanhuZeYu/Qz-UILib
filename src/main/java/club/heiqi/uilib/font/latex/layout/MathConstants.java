@@ -21,6 +21,16 @@ public final class MathConstants {
     /** 数学轴高（em）：分数线/大运算符的垂直中心。 */
     public static final float AXIS_HEIGHT_EM = 0.25F;
 
+    /**
+     * 重音 skew 因子（em）：斜体单字符基底的重音右移量 = 本因子 × xHeight。
+     *
+     * <p>TeX \accent skewchar 语义：斜体字母 ink 随几何斜切右移，重音在盒居中基础上
+     * 右移 skew 对齐字符视觉重心。几何近似 = tan(斜角 14°) × xHeight/2（字符重心高度
+     * ≈ xHeight/2）≈ 0.125；对 x/y 与 CM skewchar（0.058/0.05em）接近，JLaTeXMath
+     * AccentedAtom.getSkew 同语义。</p>
+     */
+    public static final float ACCENT_SKEW_FACTOR = 0.125F;
+
     /** 默认规则线粗（em）。TeX defaultrulethickness。 */
     public static final float RULE_THICKNESS_EM = 0.04F;
 
