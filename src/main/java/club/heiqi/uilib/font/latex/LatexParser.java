@@ -66,6 +66,8 @@ public final class LatexParser {
     private final String source;
     private final int length;
     private int index;
+    /** 最近创建的大运算符符号原子（\limits/\nolimits 修饰目标，TeX \mathop 修饰的宽容近似）。 */
+    private LatexAtom lastBigOperator;
 
     private LatexParser(String source) {
         this.source = source;
@@ -162,6 +164,12 @@ public final class LatexParser {
                 sub = parseSupSubArgument();
                 continue;
             }
+            if (ch == '\\' && (peekCommand("limits") || peekCommand("nolimits"))) {
+                // TeX \mathop 修饰插在运算符与脚本之间（\sum\nolimits_{i}）：消费修饰并继续
+                // 绑定上下标；修饰目标（lastBigOperator）由 parseCommand 内处理
+                parseCommand(); // 内部消费反斜杠与命令名
+                continue;
+            }
             break;
         }
         if (sup == null && sub == null) {
@@ -255,6 +263,15 @@ public final class LatexParser {
         if ("text".equals(name)) {
             return parseText();
         }
+        if ("limits".equals(name) || "nolimits".equals(name)) {
+            // TeX \mathop 修饰：作用于最近创建的大运算符（\sum\limits / \sum\nolimits）；
+            // 目标缺失时宽容忽略（不产生节点）
+            if (lastBigOperator != null) {
+                lastBigOperator.setLimitsFlag("limits".equals(name)
+                        ? LatexAtom.LIMITS_LIMITS : LatexAtom.LIMITS_NOLIMITS);
+            }
+            return null;
+        }
         if ("overline".equals(name) || "underline".equals(name)) {
             return parseStretchableAccent("underline".equals(name));
         }
@@ -270,11 +287,13 @@ public final class LatexParser {
         if (em18 != null) {
             return new LatexSpace(em18.intValue() / 18.0D);
         }
-        // ---- 大运算符符号（\sum \int \prod …：text 口径侧挂 + 轴居中） ----
+        // ---- 大运算符符号（\sum \int \prod …：行内 limits 堆叠 + 轴居中，可 \nolimits 降级） ----
         if (LatexSymbols.isBigOperator(name)) {
             String symbol = LatexSymbols.symbolText(name);
-            return new LatexAtom(symbol != null ? symbol : name, AtomClass.OP,
+            LatexAtom atom = new LatexAtom(symbol != null ? symbol : name, AtomClass.OP,
                     LatexAtom.OperatorMode.BIG_OPERATOR);
+            lastBigOperator = atom;
+            return atom;
         }
         // ---- limits 算子（\lim \max \min …：上下限恒上下堆叠，正体） ----
         if (LatexSymbols.isLimitsFunctionName(name)) {
@@ -378,14 +397,60 @@ public final class LatexParser {
 
     private LatexNode parseLeftRight() {
         String left = parseDelimiter();
-        List<LatexNode> content = parseList(STOP_RIGHT);
+        // 内容支持 \middle 分段（TeX \left...\middle...\right）：每段一个节点列表，
+        // 段间记录中间定界符（"." 为 null 无形）。LatexGroup 为防御拷贝，先积累裸列表、
+        // 收尾统一包装。
+        List<List<LatexNode>> rawParts = new ArrayList<List<LatexNode>>();
+        List<String> middles = new ArrayList<String>();
+        List<LatexNode> current = new ArrayList<LatexNode>();
+        rawParts.add(current);
+        while (index < length) {
+            skipMathSpaces();
+            if (index >= length) {
+                break;
+            }
+            char ch = source.charAt(index);
+            if (ch == '\\') {
+                if (peekCommand("right")) {
+                    break;
+                }
+                if (peekCommand("middle")) {
+                    index++; // 消费反斜杠
+                    readCommandName(); // 消费 "middle"
+                    middles.add(parseDelimiter());
+                    current = new ArrayList<LatexNode>();
+                    rawParts.add(current);
+                    continue;
+                }
+                if (peekRowBreak() || peekCommand("end")) {
+                    break; // 未闭合 \left 的宽容终止
+                }
+                LatexNode node = parseCommand();
+                if (node != null) {
+                    current.add(node);
+                }
+                continue;
+            }
+            if (ch == '}') {
+                index++; // 多余闭括号宽容忽略（与 parseList 同语义）
+                continue;
+            }
+            LatexNode node = parseFactor();
+            if (node != null) {
+                current.add(node);
+            }
+        }
+        List<LatexNode> parts = new ArrayList<LatexNode>(rawParts.size());
+        for (List<LatexNode> rawPart : rawParts) {
+            parts.add(new LatexGroup(rawPart));
+        }
         String right = null;
         if (index < length && source.charAt(index) == '\\' && peekCommand("right")) {
             index++; // 消费反斜杠
             readCommandName(); // 消费 "right"
             right = parseDelimiter();
         }
-        return new LatexLeftRight(left, new LatexGroup(content), right);
+        return new LatexLeftRight(left, parts, middles, right);
     }
 
     /** 定界符：单字符（"." 为无形 null）或定界符命令。 */
@@ -425,6 +490,8 @@ public final class LatexParser {
         if (fence == null) {
             fence = LatexMatrix.Fence.NONE; // 未知环境宽容按无括号矩阵
         }
+        // array 环境支持列说明（\begin{array}{ll}）；缺失/其他环境按 fence 默认对齐
+        List<Character> columnAligns = "array".equals(environment) ? parseColumnAligns() : null;
         List<List<List<LatexNode>>> rows = new ArrayList<List<List<LatexNode>>>();
         while (index < length) {
             skipMathSpaces();
@@ -455,7 +522,32 @@ public final class LatexParser {
         if (rows.isEmpty()) {
             rows.add(new ArrayList<List<LatexNode>>()); // 空环境容错
         }
-        return new LatexMatrix(fence, rows);
+        return new LatexMatrix(fence, rows, columnAligns);
+    }
+
+    /**
+     * array 列说明 {@code {lcr}}：只取 l/c/r 对齐符，其他字符（竖线等）宽容跳过；
+     * 无花括号/无有效对齐符返回 null（按 fence 默认）。
+     */
+    private List<Character> parseColumnAligns() {
+        skipMathSpaces();
+        if (index >= length || source.charAt(index) != '{') {
+            return null;
+        }
+        int start = ++index;
+        int close = source.indexOf('}', start);
+        if (close < 0) {
+            return null;
+        }
+        List<Character> aligns = new ArrayList<Character>();
+        for (int i = start; i < close; i++) {
+            char c = source.charAt(i);
+            if (c == 'l' || c == 'c' || c == 'r') {
+                aligns.add(Character.valueOf(c));
+            }
+        }
+        index = close + 1;
+        return aligns.isEmpty() ? null : aligns;
     }
 
     private String readEnvironmentName() {

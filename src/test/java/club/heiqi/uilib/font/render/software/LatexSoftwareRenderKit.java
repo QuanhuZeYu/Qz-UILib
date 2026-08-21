@@ -319,7 +319,14 @@ public final class LatexSoftwareRenderKit {
             case LEFT_RIGHT:
                 LatexLeftRight leftRight = (LatexLeftRight) node;
                 collectText(leftRight.getLeftDelimiter(), out);
-                collectNode(leftRight.getContent(), out);
+                // \middle 分段：全部内容段与段间定界符都要装配（此前只收首段，
+                // \frac{c}{d} 与 \middle| 字形缺装配 → 渲染无 quad）
+                for (LatexNode part : leftRight.getParts()) {
+                    collectNode(part, out);
+                }
+                for (String middle : leftRight.getMiddleDelimiters()) {
+                    collectText(middle, out);
+                }
                 collectText(leftRight.getRightDelimiter(), out);
                 return;
             case MATRIX:

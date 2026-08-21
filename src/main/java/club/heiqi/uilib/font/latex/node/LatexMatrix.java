@@ -31,14 +31,27 @@ public final class LatexMatrix extends LatexNode {
     private final Fence fence;
     /** 行 → 列 → 格内节点列表（深防御拷贝，不可变）。 */
     private final List<List<List<LatexNode>>> rows;
+    /** array 列说明（'l'/'c'/'r'，可为 null = 按 fence 默认：cases 左对齐、其余居中）。 */
+    private final List<Character> columnAligns;
 
     /**
-     * 创建矩阵节点（深防御拷贝）。
+     * 创建矩阵节点（深防御拷贝，无显式列说明）。
      *
      * @param fence 外围定界
      * @param rows  行 → 列 → 格内节点
      */
     public LatexMatrix(Fence fence, List<List<List<LatexNode>>> rows) {
+        this(fence, rows, null);
+    }
+
+    /**
+     * 创建矩阵节点（深防御拷贝）。
+     *
+     * @param fence        外围定界
+     * @param rows         行 → 列 → 格内节点
+     * @param columnAligns array 列说明（\{ll\} 等，仅取 l/c/r；null 按 fence 默认）
+     */
+    public LatexMatrix(Fence fence, List<List<List<LatexNode>>> rows, List<Character> columnAligns) {
         super(Kind.MATRIX);
         if (fence == null) {
             throw new IllegalArgumentException("fence 不能为空");
@@ -56,10 +69,26 @@ public final class LatexMatrix extends LatexNode {
             copy.add(Collections.unmodifiableList(rowCopy));
         }
         this.rows = Collections.unmodifiableList(copy);
+        this.columnAligns = columnAligns == null ? null
+                : Collections.unmodifiableList(new ArrayList<Character>(columnAligns));
     }
 
     public Fence getFence() {
         return fence;
+    }
+
+    /**
+     * 指定列的对齐方式：array 列说明（l/c/r）；缺省按 fence 默认——cases 左对齐
+     * （TeX array{ll}）、其余环境居中（TeX array c）。
+     */
+    public char columnAlignOf(int column) {
+        if (columnAligns != null && column >= 0 && column < columnAligns.size()) {
+            char align = columnAligns.get(column).charValue();
+            if (align == 'l' || align == 'r' || align == 'c') {
+                return align;
+            }
+        }
+        return fence == Fence.CASES ? 'l' : 'c';
     }
 
     /** @return 行 → 列 → 格内节点（不可变） */

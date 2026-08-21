@@ -23,7 +23,7 @@ public final class LatexSymbols {
     /** 符号命令 → 原子类别（未列出的符号命令为 ORD）。 */
     private static final Map<String, AtomClass> COMMAND_CLASSES = createCommandClasses();
 
-    /** 大运算符符号（\sum \int 等，text 口径上下标侧挂 + 符号轴居中）。 */
+    /** 大运算符符号（\sum \int 等：行内 limits 堆叠 + 轴居中，\nolimits 降级侧挂）。 */
     private static final Map<String, Boolean> BIG_OPERATORS = createBigOperators();
 
     /** limits 函数名（\lim \max \min 等：上下限恒上下堆叠，正体）。 */

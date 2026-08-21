@@ -992,10 +992,34 @@ public class TextLayoutService {
 
             @Override
             public float italicCorrection(String text, float sizePx) {
-                // TeX 上标斜体校正 = 字体表 Char.italic（cmmi 数学变量几乎全 0：x^2/e^{iπ}
-                // 的脚本紧贴 advance，JLaTeXMath ref-boxes 取证）；我们无 italic 表，按 0 跟随
-                // 标准。斜体笔画覆盖由 italicOverhang 承担（规则线端点），不位移脚本。
-                return 0.0F;
+                // 字形自然 ink 右越量（TeX Char.italic 语义）：ink 右缘 − advance（>0 表示字形
+                // 自带倾斜越出排版推进，cmmi/cmex italic 表同语义；正体字形无越出回退 0）。
+                // 渲染斜切（数学变量 italic flag，tan≈0.25）的附加避让由布局侧按 xHeight 折算，
+                // 不进本度量。
+                if (text.codePointCount(0, text.length()) != 1) {
+                    return 0.0F;
+                }
+                int codepoint = text.codePointAt(0);
+                int size = Math.max(1, (int) sizePx);
+                lockGeneration();
+                try {
+                    GlyphRuntimeTables tables = currentRuntimeTables();
+                    if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+                        return 0.0F;
+                    }
+                    short[] inks = tables.inkWidthArray(style.getFontType());
+                    short ink = inks[codepoint];
+                    if (ink <= 0) {
+                        return 0.0F; // 字形未就绪：无越出
+                    }
+                    short[] bearings = tables.bearingXArray(style.getFontType());
+                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
+                    float inkRight = (float) (bearings[codepoint] + ink) * size / (float) awt;
+                    float overhang = inkRight - advance(text, sizePx);
+                    return overhang > 0.0F ? overhang : 0.0F;
+                } finally {
+                    unlockGeneration();
+                }
             }
 
             @Override
@@ -1039,10 +1063,13 @@ public class TextLayoutService {
                         return 0.0F;
                     }
                     short[] bearings = tables.bearingXArray(style.getFontType());
-                    short bearing = bearings[codepoint];
-                    if (bearing <= 0) {
+                    // 字形未装配（ink 宽为 0）时 bearing 不可信回退 0；装配后 bearingX 可为负
+                    //（ink 左缘越过推进原点，如根号勾向左探出），负值必须保留——此前 <=0 一律
+                    // 回退 0 会低估左偏移、横线左端吃进勾内
+                    if (tables.inkWidthArray(style.getFontType())[codepoint] <= 0) {
                         return 0.0F;
                     }
+                    short bearing = bearings[codepoint];
                     int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
                     return (float) bearing * size / (float) awt;
                 } finally {

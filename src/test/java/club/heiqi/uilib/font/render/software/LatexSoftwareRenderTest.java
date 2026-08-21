@@ -769,6 +769,89 @@ public class LatexSoftwareRenderTest {
                 report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
+    /** 裸大运算符（无上下标）也轴居中（回归：此前只在 limits 路径轴居中，裸 \sum 按基线裸放）。 */
+    @Test
+    public void bareSumCentersOnAxis() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\frac{1}{2}+\\sum</latex>", BASE_SIZE);
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertTrue("应有分数规则线", !rules.isEmpty());
+        Quad bar = rules.get(0);
+        Quad big = null;
+        for (Quad glyph : glyphs) {
+            if (glyph.height() >= 12 && (big == null || glyph.height() > big.height())) {
+                big = glyph;
+            }
+        }
+        Assert.assertNotNull("应找到裸 ∑ 字形 quad", big);
+        int delta = big.centerY() - bar.centerY();
+        Assert.assertTrue("裸 ∑ ink 中心应落在数学轴（分数线上）±2px，实测差=" + delta,
+                Math.abs(delta) <= 2);
+    }
+
+    /** \nolimits 侧挂：符号仍轴居中（脚本右下），回归符号轴位置。 */
+    @Test
+    public void nolimitsSumKeepsAxisCenter() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\frac{1}{2}+\\sum\\nolimits_{i=1}^n</latex>", BASE_SIZE);
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertTrue("应有规则线与字形", !rules.isEmpty() && glyphs.size() >= 3);
+        Quad bar = rules.get(0);
+        Quad big = null;
+        for (Quad glyph : glyphs) {
+            if (glyph.height() >= 10 && glyph.left >= bar.right
+                    && (big == null || glyph.height() > big.height())) {
+                big = glyph;
+            }
+        }
+        Assert.assertNotNull("应找到 ∑ 字形 quad", big);
+        int delta = big.centerY() - bar.centerY();
+        Assert.assertTrue("\nolimits 的 ∑ ink 中心仍应在数学轴 ±2px，实测差=" + delta,
+                Math.abs(delta) <= 2);
+    }
+
+    /** \middle 中间定界符与两侧同 minHeight 且轴居中。 */
+    @Test
+    public void middleDelimiterCentersOnAxis() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\left\\{\\frac{a}{b}\\middle|\\frac{c}{d}\\right\\}</latex>",
+                BASE_SIZE);
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertTrue("应有规则线与字形", !rules.isEmpty() && !glyphs.isEmpty());
+        Quad bar = rules.get(0);
+        int fenceCount = 0;
+        for (Quad glyph : glyphs) {
+            if (glyph.height() > 12) {
+                fenceCount++;
+                Assert.assertTrue("伸缩定界符（含 \\middle）中心应落在数学轴 ±2px: center="
+                        + glyph.centerY() + " axis=" + bar.centerY(),
+                        Math.abs(glyph.centerY() - bar.centerY()) <= 2);
+            }
+        }
+        Assert.assertEquals("应有 3 个伸缩定界符（左右 + 中间）", 3, fenceCount);
+    }
+
+    /** cases 两列左对齐渲染 smoke（布局级精确断言见 MathLayoutServiceTest）。 */
+    @Test
+    public void casesColumnsRenderLeftAligned() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\begin{cases}x&x>0\\\\-x&x\\leq0\\end{cases}</latex>", BASE_SIZE);
+        Assert.assertTrue("cases 应有墨水像素", result.inkPixelCount(0xFF202020) > 0);
+        Assert.assertTrue("cases 应有收集 quad", result.collector.getQuadCount() > 0);
+    }
+
+    /** array 列说明渲染 smoke。 */
+    @Test
+    public void arrayColumnAlignsRender() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\begin{array}{lr}a&bb\\\\cc&d\\end{array}</latex>", BASE_SIZE);
+        Assert.assertTrue("array 应有墨水像素", result.inkPixelCount(0xFF202020) > 0);
+        Assert.assertTrue("array 应有收集 quad", result.collector.getQuadCount() > 0);
+    }
+
     /** 诊断：AWT 字形视觉边界 vs 生成器 ink 表口径对比（回退锚定修复前提验证）。 */
     @Test
     public void comparesAwtVisualBoundsWithInkTables() throws Exception {

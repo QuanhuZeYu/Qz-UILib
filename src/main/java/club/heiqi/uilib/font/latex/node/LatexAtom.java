@@ -38,15 +38,25 @@ public final class LatexAtom extends LatexNode {
     public enum OperatorMode {
         /** 普通原子与函数名（\sin \log 等）：上下标侧挂。 */
         NONE,
-        /** 大运算符符号（\sum \int \prod 等）：text 口径上下标侧挂 + 符号轴居中。 */
+        /** 大运算符符号（\sum \int \prod 等）：行内 limits 上下堆叠 + 符号轴居中；
+         *  \nolimits 显式降级为侧挂脚本（符号仍轴居中）。 */
         BIG_OPERATOR,
         /** limits 算子（\lim \max \min 等）：上下限恒上下堆叠。 */
         LIMITS_OPERATOR,
     }
 
+    /** \limits/\nolimits 修饰默认值。 */
+    public static final int LIMITS_DEFAULT = 0;
+    /** \limits 修饰：上下限强制上下堆叠（大运算符默认行为，显式标注）。 */
+    public static final int LIMITS_LIMITS = 1;
+    /** \nolimits 修饰：大运算符降级为侧挂脚本（符号仍轴居中）。 */
+    public static final int LIMITS_NOLIMITS = 2;
+
     private final String text;
     private final AtomClass atomClass;
     private final OperatorMode operatorMode;
+    /** \limits/\nolimits 显式修饰（解析期写入；0/1/2，见 LIMITS_* 常量）。 */
+    private int limitsFlag = LIMITS_DEFAULT;
 
     /**
      * 创建数学原子（普通原子/函数名）。
@@ -91,6 +101,16 @@ public final class LatexAtom extends LatexNode {
     /** @return 算子排版模式 */
     public OperatorMode getOperatorMode() {
         return operatorMode;
+    }
+
+    /** @return \limits/\nolimits 显式修饰（LIMITS_DEFAULT/LIMITS_LIMITS/LIMITS_NOLIMITS） */
+    public int getLimitsFlag() {
+        return limitsFlag;
+    }
+
+    /** 解析期写入 \limits/\nolimits 修饰。 */
+    public void setLimitsFlag(int limitsFlag) {
+        this.limitsFlag = limitsFlag;
     }
 
     @Override

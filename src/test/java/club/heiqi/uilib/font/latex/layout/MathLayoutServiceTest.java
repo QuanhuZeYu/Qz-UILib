@@ -40,7 +40,8 @@ public class MathLayoutServiceTest {
 
         @Override
         public float italicCorrection(String text, float sizePx) {
-            return 0.25F * xHeight(sizePx);
+            // 新语义：字形自然 ink 右越量（正体字形无越出回退 0）；渲染斜切避让由布局侧折算
+            return 0.0F;
         }
     };
 
@@ -124,11 +125,12 @@ public class MathLayoutServiceTest {
         Assert.assertEquals("2", supGlyph.getText());
         Assert.assertEquals(expectedSupY, supGlyph.getY(), EPS);
         Assert.assertEquals(0.7F, supGlyph.getSizeScale(), EPS);
-        // 斜体校正：单字符变量基底时上标右移 italicCorrection（0.25×xHeight = 0.1125S）；
-        // TeX ScriptsAtom：scriptspace 加在上标盒内部，上标左缘紧贴基底右缘（无 scriptspace 间隙）
-        float italicCorrection = 0.25F * 0.45F * S;
-        Assert.assertEquals(0.5F * S + italicCorrection, supGlyph.getX(), EPS);
-        Assert.assertEquals(0.5F * S + 0.35F * S + italicCorrection,
+        // 斜体校正：单字符变量基底时上标右移 = 自然 ink 越量（mock 0）+ 渲染斜切避让
+        //（ACCENT_SKEW_FACTOR×xHeight = 0.125×0.45S）；TeX ScriptsAtom：scriptspace 加在上标盒内部，
+        // 上标左缘紧贴基底右缘（无 scriptspace 间隙）
+        float supShift = MathConstants.ACCENT_SKEW_FACTOR * 0.45F * S;
+        Assert.assertEquals(0.5F * S + supShift, supGlyph.getX(), EPS);
+        Assert.assertEquals(0.5F * S + 0.35F * S + supShift,
                 box.getWidth(), EPS);
         Assert.assertEquals(0.56F * S - expectedSupY, box.getHeight(), EPS);
     }
@@ -239,6 +241,88 @@ public class MathLayoutServiceTest {
         Assert.assertEquals(0.7F * S + underKern + refDepth + MathConstants.BIGOP5_EM * S, box.getDepth(), EPS);
     }
 
+    /** 裸大运算符（无上下标）：TeX ScriptsAtom big-op 分支仍轴居中 + 尾部 MEDMUSKIP。 */
+    @Test
+    public void shouldCenterBareBigOperatorOnAxis() {
+        MathBox box = layout("\\sum");
+        float axis = MathConstants.AXIS_HEIGHT_EM * S;
+        // fake 回退盒度量：inkCenter = −0.3S、inkH = 1.0S → opScale = 1.0（∑ 目标 1.0em）
+        float baseShift = -axis - (-0.3F * S);
+        Assert.assertEquals(1, box.getGlyphs().size());
+        Assert.assertEquals(baseShift, box.getGlyphs().get(0).getY(), EPS);
+        Assert.assertEquals(0.5F * S + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * S,
+                box.getWidth(), EPS);
+        Assert.assertEquals(0.5F * S + axis, box.getHeight(), EPS);
+        Assert.assertEquals(0.5F * S - axis, box.getDepth(), EPS);
+    }
+
+    /** \nolimits：大运算符符号仍轴居中，脚本降级侧挂，尾部 MEDMUSKIP。 */
+    @Test
+    public void shouldSideHangNolimitsBigOperatorScripts() {
+        MathBox box = layout("\\sum\\nolimits_{i=1}^{n}");
+        // 轴居中盒（自然尺寸）：inkCenter = −0.3S、inkHalf = 0.5S → baseShift = 0.3S − axis
+        float axis = MathConstants.AXIS_HEIGHT_EM * S;
+        float baseShift = 0.3F * S - axis;
+        // 脚本参照轴居中盒度量：refH = 0.8S、refD = 0.2S（不走单字符归零）
+        float subWidth = 3.0F * 0.35F * S + 2.0F * (MathConstants.THICK_MU / 18.0F) * 0.7F * S;
+        float subDrop = MathConstants.SCRIPT_SUB_DROP_EM * S;
+        float subY = Math.max(Math.max(0.2F * S + subDrop, MathConstants.SUB2_EM * S),
+                0.56F * S - 4.0F * 0.45F * S / 5.0F);
+        boolean foundBase = false;
+        boolean foundSub = false;
+        for (GlyphElem glyph : box.getGlyphs()) {
+            if ("\u2211".equals(glyph.getText())) {
+                Assert.assertEquals(baseShift, glyph.getY(), EPS);
+                foundBase = true;
+            }
+            if ("i".equals(glyph.getText())) {
+                Assert.assertEquals(subY, glyph.getY(), EPS);
+                Assert.assertEquals(0.5F * S, glyph.getX(), EPS); // 下标左缘贴符号右缘
+                foundSub = true;
+            }
+        }
+        Assert.assertTrue(foundBase);
+        Assert.assertTrue(foundSub);
+        Assert.assertEquals(0.5F * S + subWidth + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * S,
+                box.getWidth(), EPS);
+    }
+
+    /** limits 双脚本的符号 italic delta（cmex ∫ 0.194em 语义）：上/下限 ±delta/2。 */
+    @Test
+    public void shouldApplyItalicDeltaToBigOperatorLimits() {
+        MathBox box = SERVICE.layout(LatexParser.parse("\\int_a^b"), S, INK_METRICS);
+        // ∫ 目标视觉高 1.11em；INK_METRICS：inkH 回退 1.0S → opScale = 1.11；
+        // inkCenter 回退 −0.3S → baseShift = 0.3×1.11S − axis；opItalic = 0.2S（mock ∫ 自然越出）
+        float contentWidth = 0.5F * 1.11F * S; // 符号宽 0.5S×opScale 最大
+        boolean foundSup = false;
+        boolean foundSub = false;
+        for (GlyphElem glyph : box.getGlyphs()) {
+            if ("b".equals(glyph.getText())) {
+                Assert.assertEquals((contentWidth - 0.35F * S) / 2.0F + 0.1F * S, glyph.getX(), EPS);
+                foundSup = true;
+            }
+            if ("a".equals(glyph.getText())) {
+                Assert.assertEquals((contentWidth - 0.35F * S) / 2.0F - 0.1F * S, glyph.getX(), EPS);
+                foundSub = true;
+            }
+        }
+        Assert.assertTrue(foundSup);
+        Assert.assertTrue(foundSub);
+        // 双脚本尾部不含 delta（TeX deltaSymbol 之后无 StrutBox）
+        Assert.assertEquals(contentWidth + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * S,
+                box.getWidth(), EPS);
+    }
+
+    /** 单脚本 limits 的符号 italic delta 补进尾部（StrutBox(delta) 语义）。 */
+    @Test
+    public void shouldAppendItalicDeltaToSingleScriptLimits() {
+        MathBox box = SERVICE.layout(LatexParser.parse("\\int_0"), S, INK_METRICS);
+        // 单下标 0（0.35S）：contentWidth = max(符号 0.555S, 0.35S) = 0.555S
+        // 尾部 = MEDMUSKIP + 0.2S
+        Assert.assertEquals(0.555F * S + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * S + 0.2F * S,
+                box.getWidth(), EPS);
+    }
+
     @Test
     public void shouldPlaceFunctionNameScriptAsSubscript() {
         MathBox box = layout("\\lim_{x}");
@@ -308,6 +392,76 @@ public class MathLayoutServiceTest {
         Assert.assertEquals(-(numY - 0.56F * S), box.getHeight(), EPS);
         Assert.assertEquals(denY + 0.14F * S, box.getDepth(), EPS);
     }
+
+    /**
+     * ink 表度量 mock：括号类 ink 高 0.6em（小于字体盒 1.0em）、ink 中心在基线上方 0.4em、
+     * ink 左偏移 0.05em、ink 宽 0.4em；∫ 自然右越量 0.2em（cmex 0.194em 量级）。
+     * 模拟真机「ink 与字体盒不对称」的字形分布（headless 真机表数据口径）。
+     */
+    private static final MathMetrics INK_METRICS = new MathMetrics() {
+        @Override
+        public float advance(String text, float sizePx) {
+            return METRICS.advance(text, sizePx);
+        }
+
+        @Override
+        public float ascent(float sizePx) {
+            return METRICS.ascent(sizePx);
+        }
+
+        @Override
+        public float descent(float sizePx) {
+            return METRICS.descent(sizePx);
+        }
+
+        @Override
+        public float xHeight(float sizePx) {
+            return METRICS.xHeight(sizePx);
+        }
+
+        @Override
+        public float inkWidth(String text, float sizePx) {
+            if ("(".equals(text) || ")".equals(text) || "{".equals(text) || "}".equals(text)
+                    || "|".equals(text)) {
+                return 0.4F * sizePx;
+            }
+            return advance(text, sizePx);
+        }
+
+        @Override
+        public float inkLeftBearing(String text, float sizePx) {
+            if ("(".equals(text) || ")".equals(text) || "{".equals(text) || "}".equals(text)) {
+                return 0.05F * sizePx;
+            }
+            return 0.0F;
+        }
+
+        @Override
+        public float inkHeight(String text, float sizePx) {
+            if ("(".equals(text) || ")".equals(text) || "{".equals(text) || "}".equals(text)
+                    || "|".equals(text)) {
+                return 0.6F * sizePx;
+            }
+            return ascent(sizePx) + descent(sizePx);
+        }
+
+        @Override
+        public float inkCenterOffsetY(String text, float sizePx) {
+            if ("(".equals(text) || ")".equals(text) || "{".equals(text) || "}".equals(text)
+                    || "|".equals(text)) {
+                return -0.4F * sizePx; // 基线上方 0.4em（y 向下口径）
+            }
+            return (descent(sizePx) - ascent(sizePx)) / 2.0F;
+        }
+
+        @Override
+        public float italicCorrection(String text, float sizePx) {
+            if ("\u222B".equals(text)) {
+                return 0.2F * sizePx; // ∫ 自然右越量
+            }
+            return 0.0F;
+        }
+    };
 
     /** 斜体越量度量：变量字形 ink 右超 0.1S（几何斜切抽象）。 */
     private static final MathMetrics ITALIC_METRICS = new MathMetrics() {
@@ -449,6 +603,101 @@ public class MathLayoutServiceTest {
         Assert.assertTrue(foundLeft);
     }
 
+    /** fence 缩放基准改 ink 高（INK_METRICS：括号 ink 高 0.6em < 盒 1.0em → scale 放大）。 */
+    @Test
+    public void shouldScaleFenceByInkHeight() {
+        MathBox box = SERVICE.layout(LatexParser.parse("\\left(x\\right)"), S, INK_METRICS);
+        float axis = MathConstants.AXIS_HEIGHT_EM * S;
+        float delta = Math.max(0.8F * S - axis, 0.2F * S + axis);
+        float minHeight = Math.max(delta * MathConstants.DELIMITER_FACTOR,
+                2.0F * delta - MathConstants.DELIMITER_SHORTFALL_EM * S);
+        // scale 基准 = ink 高 0.6S（盒总高口径会小 1.667×）
+        float scale = Math.max(1.0F, minHeight / (0.6F * S));
+        float delimWidth = 0.5F * scale * S;
+        Assert.assertEquals(delimWidth + 0.5F * S + delimWidth, box.getWidth(), EPS);
+    }
+
+    /** fence 盒度量不再 double-count baselineY：盒高/深 = ink 边界（INK_METRICS 数值锚定）。 */
+    @Test
+    public void shouldUseInkAnchoredFenceMetrics() {
+        MathBox box = SERVICE.layout(LatexParser.parse("\\left(\\right)"), S, INK_METRICS);
+        // 空内容：δ = max(0 − axis, 0 + axis) = axis → minHeight = max(0.4505S, −0)S → scale = 1.0
+        // baselineY = −axis − (−0.4S) = 0.15S；fence 盒高 = inkHalf − inkCenter = 0.3S + 0.4S = 0.7S
+        // addBox 平移后：盒高 = 0.7S − 0.15S = 0.55S（旧实现 0.65S−0.15S=0.5S 少算）、深 = 0.15S
+        Assert.assertEquals(0.55F * S, box.getHeight(), EPS);
+        Assert.assertEquals(0.15F * S, box.getDepth(), EPS);
+        Assert.assertEquals(1.0F * S, box.getWidth(), EPS); // 两侧自然尺寸括号各 0.5S
+    }
+
+    /** \middle：段间中间定界符与两侧同 minHeight、轴居中，前后按 REL 间距。 */
+    @Test
+    public void shouldLayoutMiddleDelimiter() {
+        MathBox box = layout("\\left\\{x\\middle|y\\right\\}");
+        float delta = Math.max(0.8F * S - MathConstants.AXIS_HEIGHT_EM * S,
+                0.2F * S + MathConstants.AXIS_HEIGHT_EM * S);
+        float minHeight = Math.max(delta * MathConstants.DELIMITER_FACTOR,
+                2.0F * delta - MathConstants.DELIMITER_SHORTFALL_EM * S);
+        float scale = Math.max(1.0F, minHeight / (1.0F * S));
+        float fenceWidth = 0.5F * scale * S;
+        float relGlue = (MathConstants.THICK_MU / 18.0F) * S;
+        boolean foundX = false;
+        boolean foundMiddle = false;
+        boolean foundY = false;
+        GlyphElem brace = null;
+        GlyphElem middle = null;
+        GlyphElem xGlyph = null;
+        GlyphElem yGlyph = null;
+        for (GlyphElem glyph : box.getGlyphs()) {
+            if ("{".equals(glyph.getText())) {
+                brace = glyph;
+            }
+            if ("|".equals(glyph.getText())) {
+                middle = glyph;
+                foundMiddle = true;
+            }
+            if ("x".equals(glyph.getText())) {
+                xGlyph = glyph;
+                foundX = true;
+            }
+            if ("y".equals(glyph.getText())) {
+                yGlyph = glyph;
+                foundY = true;
+            }
+        }
+        Assert.assertTrue(foundX);
+        Assert.assertTrue(foundMiddle);
+        Assert.assertTrue(foundY);
+        Assert.assertNotNull(brace);
+        // 中间定界符与两侧同基线（同 ink 锚定公式）、位于两段之间
+        Assert.assertEquals(brace.getY(), middle.getY(), EPS);
+        Assert.assertTrue(middle.getX() > xGlyph.getX());
+        Assert.assertTrue(middle.getX() < yGlyph.getX());
+        // 总宽 = 左括号 + x + glue + 中括号 + glue + y + 右括号
+        Assert.assertEquals(2.0F * fenceWidth + 1.0F * S + fenceWidth + 2.0F * relGlue,
+                box.getWidth(), EPS);
+    }
+
+    /** shiftBox 平移必须保留原盒 ink 越量（\frac{\left(x\right)}{2} 分数横线依赖）。 */
+    @Test
+    public void shouldKeepInkOverhangThroughShiftBox() {
+        MathBox box = SERVICE.layout(LatexParser.parse("\\left(xy\\right."), S, ITALIC_METRICS);
+        Assert.assertEquals("左括号 shift 后应保留内容斜体右越量", 0.1F * S, box.getRightInkOverhang(), EPS);
+        Assert.assertEquals(0.0F, box.getLeftInkOverhang(), EPS);
+    }
+
+    /** accent 盒高不得低于复合基底（\hat{\frac{a}{b}} 盒高 = 基底高，不再被 ascent 压低）。 */
+    @Test
+    public void shouldNotUnderestimateAccentHeightOverCompoundBase() {
+        MathBox box = layout("\\hat{\\frac{a}{b}}");
+        // \frac{a}{b} 基底盒高 ≈ 1.01S > 字体 ascent 0.8S
+        float drt = MathConstants.RULE_THICKNESS_EM * S;
+        float axis = MathConstants.AXIS_HEIGHT_EM * S;
+        float kern1 = Math.max(drt, MathConstants.NUM2_EM * S - 0.14F * S - (axis + drt / 2.0F));
+        float numY = -(axis + drt / 2.0F + kern1 + 0.14F * S);
+        float baseHeight = -(numY - 0.56F * S);
+        Assert.assertEquals(baseHeight, box.getHeight(), EPS);
+    }
+
     // ==================== 矩阵 ====================
 
     @Test
@@ -501,16 +750,58 @@ public class MathLayoutServiceTest {
 
     @Test
     public void shouldLayoutCasesWithLeftBrace() {
-        MathBox box = layout("\\begin{cases}x&x>0\\\\-x&x\\\\leq0\\\\end{cases}");
+        MathBox box = layout("\\begin{cases}x&x>0\\\\-x&x\\\\leq0\\end{cases}");
         boolean foundBrace = false;
+        GlyphElem xGlyph = null;
+        GlyphElem minusGlyph = null;
         for (GlyphElem glyph : box.getGlyphs()) {
             if ("{".equals(glyph.getText())) {
                 foundBrace = true;
                 // 花括号位于盒内左缘 x=0（内容整体右移左括号宽）
                 Assert.assertEquals(0.0F, glyph.getX(), EPS);
             }
+            if ("x".equals(glyph.getText()) && xGlyph == null) {
+                xGlyph = glyph;
+            }
+            if ("-".equals(glyph.getText())) {
+                minusGlyph = glyph;
+            }
         }
         Assert.assertTrue("cases 应包含左花括号", foundBrace);
+        Assert.assertNotNull(xGlyph);
+        Assert.assertNotNull(minusGlyph);
+        // TeX cases = array{ll}：第一列左对齐——x 与 -x 左缘同 x（居中口径会错位半列宽）
+        Assert.assertEquals(xGlyph.getX(), minusGlyph.getX(), EPS);
+    }
+
+    /** array 列说明 {lr}：第一列左对齐、第二列右对齐（对齐符驱动列内位置）。 */
+    @Test
+    public void shouldApplyArrayColumnAligns() {
+        MathBox box = layout("\\begin{array}{lr}a&bb\\\\cc&d\\end{array}");
+        float colSep = MathConstants.MATRIX_COL_GAP_EM * S;
+        float colW0 = 1.0F * S; // max(a=0.5S, cc=1.0S)
+        float colW1 = 1.0F * S; // max(bb=1.0S, d=0.5S)
+        GlyphElem aGlyph = null;
+        GlyphElem cGlyph = null;
+        GlyphElem dGlyph = null;
+        for (GlyphElem glyph : box.getGlyphs()) {
+            if ("a".equals(glyph.getText())) {
+                aGlyph = glyph;
+            }
+            if ("c".equals(glyph.getText()) && cGlyph == null) {
+                cGlyph = glyph;
+            }
+            if ("d".equals(glyph.getText())) {
+                dGlyph = glyph;
+            }
+        }
+        Assert.assertNotNull(aGlyph);
+        Assert.assertNotNull(cGlyph);
+        Assert.assertNotNull(dGlyph);
+        Assert.assertEquals("第一列 l：a 与 cc 左缘同 x（0）", aGlyph.getX(), cGlyph.getX(), EPS);
+        Assert.assertEquals(0.0F, aGlyph.getX(), EPS);
+        // 第二列 r：d（0.5S）右对齐列右缘 = colW0 + colSep + colW1
+        Assert.assertEquals(colW0 + colSep + (colW1 - 0.5F * S), dGlyph.getX(), EPS);
     }
 
     // ==================== 组合数与重音 ====================
