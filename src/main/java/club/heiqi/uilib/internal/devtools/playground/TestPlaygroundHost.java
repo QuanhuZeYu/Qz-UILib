@@ -107,11 +107,17 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         header.appendChild(PlaygroundKit.text("Qz UILib 测试场地", PlaygroundKit.TEXT, 22));
         header.appendChild(PlaygroundKit.text("内部开发调试入口 · 输入命令 /qzuilib test 打开", PlaygroundKit.MUTED,
                 SUBTITLE_FONT_SIZE));
+        // 固定兄弟高度先验：root（COLUMN）的 grow 求解器要求固定兄弟可先验，容器型兄弟
+        // 不设 preferredHeight 会 UNCONSTRAINED 早退 → viewport 高度解耦失败、maxScrollY 恒 0
+        // （真机「只能看到样式继承、无法滚动」根因）。header = 标题行高 + gap + 副标题行高。
+        header.setPreferredHeight(measurer.lineHeight(22) + header.getGap() + measurer.lineHeight(SUBTITLE_FONT_SIZE));
         root.appendChild(header);
 
         navBar = SceneNode.row();
         navBar.setFillParentWidth(true);
         navBar.setMaxWidth(CONTENT_MAX_WIDTH);
+        // 高度先验口径与 SceneSegmented 内部一致：标签行高 lineHeight(16) + 2×PAD_LG。
+        navBar.setPreferredHeight(measurer.lineHeight(16) + 2 * SceneChromeTokens.PAD_LG);
         List<String> titles = new ArrayList<String>(pages.size());
         for (PlaygroundPage page : pages) {
             titles.add(page.title());

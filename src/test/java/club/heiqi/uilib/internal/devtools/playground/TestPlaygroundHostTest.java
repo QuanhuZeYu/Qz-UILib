@@ -156,6 +156,34 @@ public class TestPlaygroundHostTest {
         Assert.assertSame("页面根实例不变（未重建）", homeRoot, host.__getDisplayedPageRoot());
     }
 
+    /** 滚动几何回归：root 高度受画布约束、viewport 高度解耦于内容、maxScrollY &gt; 0。
+     *  （真机「只能看到样式继承、无法滚动」根因：固定兄弟不可先验 → grow 求解器早退） */
+    @Test
+    public void latexPageScrollsWithinConstrainedViewport() {
+        List<PlaygroundPage> pages = PlaygroundPageRegistry.defaultPages();
+        int latexIndex = -1;
+        for (int i = 0; i < pages.size(); i++) {
+            if ("latex".equals(pages.get(i).id())) {
+                latexIndex = i;
+                break;
+            }
+        }
+        org.junit.Assume.assumeTrue("注册表含 latex 页", latexIndex >= 0);
+        clickNode(navSegment(latexIndex));
+        doLayout();
+        SceneNode viewport = host.__getViewport();
+        SceneNode content = host.__getContent();
+        AnchorRect vb = SceneGeometry.absoluteBox(viewport, 0, 0);
+        AnchorRect cb = SceneGeometry.absoluteBox(content, 0, 0);
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+        AnchorRect rb = SceneGeometry.absoluteBox(host.__getRoot(), 0, 0);
+        Assert.assertEquals("root 高度应受画布高度约束", CANVAS_HEIGHT, rb.getHeight());
+        Assert.assertTrue("viewport 高度应小于内容高（视口被约束而非随内容撑开）: v="
+                + vb.getHeight() + " c=" + cb.getHeight(), vb.getHeight() < cb.getHeight());
+        Assert.assertTrue("视口应有纵向滚动区间（maxScrollY>0），实测=" + maxScroll,
+                maxScroll > 0);
+    }
+
     @Test
     public void everyRegistryPageMountsInHost() {
         List<PlaygroundPage> pages = PlaygroundPageRegistry.defaultPages();
