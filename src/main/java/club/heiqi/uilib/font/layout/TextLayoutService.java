@@ -44,6 +44,9 @@ public class TextLayoutService {
     /** 数学布局引擎（无状态，公式宽度度量与渲染共用）。 */
     private static final MathLayoutService MATH_LAYOUT = new MathLayoutService();
 
+    /** LaTeX 公式行上下行距余量（em/每侧）：盒度量 ink 化后公式行与相邻行需要视觉间距。 */
+    private static final float LATEX_LINE_PAD_EM = 0.1F;
+
     /** CCC（canonical combining class）反射入口：JDK8 sun.text.Normalizer；不可用时为 null（全部按上方标记处理）。 */
     private static final java.lang.reflect.Method CCC_METHOD = resolveCccMethod();
 
@@ -1546,12 +1549,16 @@ public class TextLayoutService {
                     maxFontSizePx = fontSizePx;
                 }
                 if (segment.isLatex()) {
-                    // LaTeX 段为二维公式盒：行高取 max(字号行高, 公式盒总高)
+                    // LaTeX 段为二维公式盒：行高取 max(字号行高, 公式盒总高 + 行距余量)。
+                    // 盒度量 ink 化后总高=内容墨水高，若不加余量则公式行与相邻行零间距
+                    //（24px 压力卡多行分数视觉重叠）；上下各 0.1em 余量对齐 UI 行距观感。
                     int safeLatexSize = Math.max(1, fontSizePx);
                     MathBox box = LatexCache.getInstance().getOrLayout(segment.getLatexSource(),
                             safeLatexSize, runtimeVersion, segment.getStyle().getFontType(), MATH_LAYOUT,
                             createMathMetrics(segment.getStyle(), safeLatexSize), currentInkEpoch());
-                    maxLineHeightPx = Math.max(maxLineHeightPx, (int) Math.ceil(box.getTotalHeight()));
+                    float linePad = 2.0F * LATEX_LINE_PAD_EM * safeLatexSize;
+                    maxLineHeightPx = Math.max(maxLineHeightPx,
+                            (int) Math.ceil(box.getTotalHeight() + linePad));
                 }
             }
             return Math.max(getLineHeight(maxFontSizePx), maxLineHeightPx);

@@ -838,7 +838,7 @@ public class LatexSoftwareRenderTest {
     @Test
     public void casesColumnsRenderLeftAligned() {
         LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
-                "<latex>\\begin{cases}x&x>0\\\\-x&x\\leq0\\end{cases}</latex>", BASE_SIZE);
+                "<latex>\\begin{cases}x&x>0\\\\-x&x\\\\leq0\\\\end{cases}</latex>", BASE_SIZE);
         Assert.assertTrue("cases 应有墨水像素", result.inkPixelCount(0xFF202020) > 0);
         Assert.assertTrue("cases 应有收集 quad", result.collector.getQuadCount() > 0);
     }
@@ -887,6 +887,44 @@ public class LatexSoftwareRenderTest {
                     + String.format(java.util.Locale.ROOT, "%.1f", box.getDepth()) + " inkBot="
                     + String.format(java.util.Locale.ROOT, "%.1f", inkBot),
                     Math.abs(box.getDepth() - inkBot) <= 2.5);
+        }
+    }
+
+    /** 矩阵外沿 padding（TeX MatrixAtom vsep_ext 0.4ex）：盒比 ink 多 outerPad 属预期。 */
+    @Test
+    public void matrixKeepsOuterPadAroundInk() {
+        String[] formulas = { "\\begin{pmatrix}a&b\\\\c&\\frac{d}{e}\\\\end{pmatrix}",
+                "\\begin{cases}x&x>0\\\\-x&x\\\\leq0\\\\end{cases}" };
+        for (String formula : formulas) {
+            LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                    "<latex>" + formula + "</latex>", BASE_SIZE);
+            club.heiqi.uilib.font.latex.layout.MathBox box = LatexSoftwareRenderKit.layout(formula, BASE_SIZE);
+            List<Quad> quads = collectGlyphQuads(result);
+            Assert.assertTrue(!quads.isEmpty() && !box.getGlyphs().isEmpty());
+            club.heiqi.uilib.font.latex.layout.GlyphElem ref = box.getGlyphs().get(0);
+            Quad first = quads.get(0);
+            int cp = ref.getText().codePointAt(0);
+            short[] bearingY = result.tables.bearingYArray(FontType.NORMAL);
+            int awt = (int) LatexSoftwareRenderKit.currentAwtCharSize();
+            double glyphSize = Math.max(1.0, Math.round(BASE_SIZE * ref.getSizeScale()));
+            double baseline = first.top - ref.getY() - (double) bearingY[cp] * glyphSize / awt;
+            int minTop = Integer.MAX_VALUE;
+            int maxBottom = Integer.MIN_VALUE;
+            for (Quad quad : quads) {
+                minTop = Math.min(minTop, quad.top);
+                maxBottom = Math.max(maxBottom, quad.bottom);
+            }
+            double inkTop = baseline - minTop;
+            double inkBot = maxBottom - baseline;
+            // 外沿 pad = 0.4ex（xHeight 由 ink 表换算）
+            double xHeightPx = (double) result.tables.xHeight(FontType.NORMAL) * BASE_SIZE / awt;
+            double outerPad = 0.4 * xHeightPx;
+            Assert.assertTrue("矩阵盒顶应比 ink 顶高 outerPad（±2.5px）: " + formula
+                    + " pad=" + String.format(java.util.Locale.ROOT, "%.1f", outerPad)
+                    + " actual=" + String.format(java.util.Locale.ROOT, "%.1f", box.getHeight() - inkTop),
+                    Math.abs((box.getHeight() - inkTop) - outerPad) <= 2.5);
+            Assert.assertTrue("矩阵盒底应比 ink 底低 outerPad（±2.5px）: " + formula,
+                    Math.abs((box.getDepth() - inkBot) - outerPad) <= 2.5);
         }
     }
 

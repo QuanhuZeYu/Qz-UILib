@@ -133,6 +133,24 @@ public class TextLayoutServiceLatexTest {
         Assert.assertTrue("含公式行高不应低于纯文本行高", withLatex >= withoutLatex);
     }
 
+    @Test
+    public void shouldAddLinePadToLatexLineHeight() {
+        // 盒度量 ink 化后公式盒总高=内容墨水高，行高必须附加行距余量（上下各 0.1em），
+        // 否则多行公式零间距（24px 压力卡多行分数视觉重叠）
+        TextLayoutService service = createService();
+        int baseSize = (int) club.heiqi.uilib.font.FontRuntimeSettings.capture().getCharSize();
+        TextMeasureStyle richStyle = club.heiqi.uilib.ui.text.TextMeasureStyle.fontSizePx(baseSize)
+                .withTextContentMode(TextContentMode.RICH_TAGS);
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        MathBox box = new MathLayoutService().layout(LatexParser.parse("\\frac{a}{b}"), baseSize,
+                service.createMathMetrics(style, baseSize));
+        int withLatex = service.getLineHeight("<latex>\\frac{a}{b}</latex>", richStyle);
+        int expectedMin = (int) Math.ceil(box.getTotalHeight() + 0.2F * baseSize);
+        Assert.assertTrue("公式行高应 ≥ 盒总高 + 0.2em 行距余量: withLatex=" + withLatex
+                + " expectedMin=" + expectedMin, withLatex >= expectedMin - 0.5);
+    }
+
     private static TextLayoutService createService() {
         FontCatalog fontCatalog = new FontCatalog();
         fontCatalog.replaceAll(Arrays.asList(new Font("Dialog", Font.PLAIN, 14)));
