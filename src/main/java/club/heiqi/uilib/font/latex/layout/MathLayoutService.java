@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 15;
+    public static final int LAYOUT_VERSION = 16;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -591,19 +591,27 @@ public final class MathLayoutService {
         float shiftUp = MathConstants.NUM2_EM * size;
         float shiftDown = MathConstants.DENOM2_EM * size;
         float clr = drt;
+        // 分母侧 clearance 加大：嵌套分数时 den 盒高（内层 frac 盒）含内层分子间隙+线厚，
+        // 1θ 托底后渲染 ink 间隙仅 ~0.2px（JLM 同场景 1.92px）；3θ 托底使外层 ink 间隙 ≈1.9px、
+        // 内层 ≈1px，恢复嵌套分数层级呼吸感（分子侧保持 JLM 同款 1θ）。
+        float clr2 = 3.0F * drt;
         // 轴高对齐：kern1 = shiftUp − num.depth − (axis + drt/2)，kern2 = axis − drt/2 − (den.height − shiftDown)
         float kern1 = shiftUp - num.getDepth() - (axis + delta);
         float kern2 = axis - delta - (den.getHeight() - shiftDown);
         if (clr > kern1) {
             kern1 = clr;
         }
-        if (clr > kern2) {
-            kern2 = clr;
+        if (clr2 > kern2) {
+            kern2 = clr2;
         }
 
         Builder builder = new Builder();
-        float numY = -(axis + delta + kern1 + num.getDepth());
-        float denY = -axis + delta + kern2 + den.getHeight();
+        // JLaTeXMath VerticalBox strut 语义：kern1 = 分子盒底到线<b>顶</b>、kern2 = 线<b>底</b>到
+        // 分母盒顶（strut 直接是间隙）。旧实现把分子底锚到线中心（间隙少半个线厚）、分母顶
+        // 锚到线中心下（间隙多半线厚），嵌套分数分子与主线仅 0.48px（JLM 口径 0.96px）。
+        // 线中心 = −(axis+delta)、线顶 = −(axis+drt)、线底 = −axis。
+        float numY = -(axis + drt + kern1 + num.getDepth());
+        float denY = -axis + kern2 + den.getHeight();
         builder.addBox(num, sideSpace + (contentWidth - num.getWidth()) / 2.0F, numY,
                 MathConstants.SCRIPT_SCALE);
         builder.addBox(den, sideSpace + (contentWidth - den.getWidth()) / 2.0F, denY,
@@ -618,8 +626,8 @@ public final class MathLayoutService {
         float barRight = Math.max(numRight, denRight);
         builder.addRule(sideSpace + barLeft, -(axis + delta), barRight - barLeft, drt);
         builder.width = width;
-        builder.height = axis + delta + kern1 + num.getDepth() + num.getHeight();
-        builder.depth = -axis + delta + kern2 + den.getHeight() + den.getDepth();
+        builder.height = axis + drt + kern1 + num.getDepth() + num.getHeight();
+        builder.depth = -axis + kern2 + den.getHeight() + den.getDepth();
         return builder.toBox();
     }
 

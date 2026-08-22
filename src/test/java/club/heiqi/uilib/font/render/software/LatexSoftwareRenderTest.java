@@ -51,6 +51,43 @@ public class LatexSoftwareRenderTest {
         }
     }
 
+    /**
+     * 嵌套分数层级呼吸感：主分数线与内层分数之间保持可见间隙，不再贴死
+     * （回归：嵌套分数「难以辨认」——分子/分母与主分数线 ink 间隙曾仅 0.2-0.5px）。
+     */
+    @Test
+    public void nestedFracKeepsBreathingRoomAroundMainBar() {
+        // 24px 口径（压力卡场景）：16px 下 0.6px 间隙会被光栅取整吞掉，断言失真
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\frac{\\frac{a}{b}}{\\frac{c}{d}}</latex>", 24);
+        List<Quad> rules = collectQuads(result.collector.getDecorationBatch());
+        List<Quad> glyphs = collectGlyphQuads(result);
+        Assert.assertEquals("嵌套分数应有 3 条规则线", 3, rules.size());
+        // 主线 = 最宽的一条
+        Quad main = rules.get(0);
+        for (Quad rule : rules) {
+            if (rule.width() > main.width()) {
+                main = rule;
+            }
+        }
+        // 分子内层分数 = 主线以上的字形组，分母内层分数 = 主线以下
+        int numBottom = Integer.MIN_VALUE;
+        int denTop = Integer.MAX_VALUE;
+        for (Quad glyph : glyphs) {
+            if (glyph.bottom <= main.top + 2) {
+                numBottom = Math.max(numBottom, glyph.bottom);
+            } else if (glyph.top >= main.bottom - 2) {
+                denTop = Math.min(denTop, glyph.top);
+            }
+        }
+        Assert.assertTrue("分子内层分数应在主线上方", numBottom > Integer.MIN_VALUE);
+        Assert.assertTrue("分母内层分数应在主线下方", denTop < Integer.MAX_VALUE);
+        int topGap = main.top - numBottom;
+        int bottomGap = denTop - main.bottom;
+        Assert.assertTrue("分子与主线间隙应 ≥ 0.5px（实测 " + topGap + "px）", topGap >= 0.5);
+        Assert.assertTrue("主线与分母间隙应 ≥ 1.5px（实测 " + bottomGap + "px）", bottomGap >= 1.5);
+    }
+
     /** 分数：规则线水平、位于分子与分母之间、横跨两者。 */
     @Test
     public void fracRendersHorizontalRuleBetweenNumeratorAndDenominator() {

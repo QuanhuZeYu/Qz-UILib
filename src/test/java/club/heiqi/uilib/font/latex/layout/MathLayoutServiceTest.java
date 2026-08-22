@@ -365,12 +365,14 @@ public class MathLayoutServiceTest {
         Assert.assertEquals(scriptW, bar.getWidth(), EPS);
         Assert.assertEquals(drt, bar.getThickness(), EPS);
         Assert.assertEquals(sideSpace, bar.getX(), EPS);
-        // kern1/kern2 补足到 clr：numY = -(axis + delta + kern1 + num.depth)
+        // kern1/kern2 补足到 clr（JLM strut 语义：kern1 = 分子底到线顶、kern2 = 线底到分母顶；
+        // 分母侧 clr 加大到 2.5θ，嵌套分数层级呼吸感）：numY = -(axis + drt + kern1 + num.depth)
         float clr = drt;
+        float clr2 = 3.0F * drt;
         float kern1 = Math.max(clr, MathConstants.NUM2_EM * S - 0.14F * S - (axis + delta));
-        float kern2 = Math.max(clr, axis - delta - (0.56F * S - MathConstants.DENOM2_EM * S));
-        float numY = -(axis + delta + kern1 + 0.14F * S);
-        float denY = -axis + delta + kern2 + 0.56F * S;
+        float kern2 = Math.max(clr2, axis - delta - (0.56F * S - MathConstants.DENOM2_EM * S));
+        float numY = -(axis + drt + kern1 + 0.14F * S);
+        float denY = -axis + kern2 + 0.56F * S;
         boolean foundNum = false;
         boolean foundDen = false;
         for (GlyphElem glyph : box.getGlyphs()) {
@@ -705,7 +707,7 @@ public class MathLayoutServiceTest {
         float drt = MathConstants.RULE_THICKNESS_EM * S;
         float axis = MathConstants.AXIS_HEIGHT_EM * S;
         float kern1 = Math.max(drt, MathConstants.NUM2_EM * S - 0.14F * S - (axis + drt / 2.0F));
-        float numY = -(axis + drt / 2.0F + kern1 + 0.14F * S);
+        float numY = -(axis + drt + kern1 + 0.14F * S);
         float baseHeight = -(numY - 0.56F * S);
         Assert.assertEquals(baseHeight + 1.0F * S, box.getHeight(), EPS);
     }
