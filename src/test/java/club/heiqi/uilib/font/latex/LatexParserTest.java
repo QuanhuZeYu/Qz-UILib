@@ -247,7 +247,7 @@ public class LatexParserTest {
     public void shouldParseAccents() {
         List<LatexNode> nodes = LatexParser.parse("\\hat x");
         LatexAccent accent = asKind(nodes.get(0), LatexAccent.class);
-        Assert.assertEquals("\u0302", accent.getAccentText());
+        Assert.assertEquals("^", accent.getAccentText());
         Assert.assertFalse(accent.isStretchable());
         assertAtom(accent.getBase(), "x", AtomClass.ORD);
 

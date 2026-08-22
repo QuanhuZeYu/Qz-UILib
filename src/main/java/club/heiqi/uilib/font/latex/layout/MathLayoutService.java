@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 14;
+    public static final int LAYOUT_VERSION = 15;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -966,14 +966,17 @@ public final class MathLayoutService {
             return builder.toBox();
         }
         String accentText = node.getAccentText();
-        // TeX AccentedAtom（acc=false 路径，hat/bar/vec/dot/tilde）：重音按正文字号，
-        // vBox [accent][strut(−base.h)][base] 堆叠 → 重音字形底与基底基线重合，
-        // 字形自身带上方偏移（CM accent 字形设计，JLaTeXMath ref-boxes 取证）。
-        // 盒高 = 重音字形盒高（base 顶低于重音顶时由重音决定），深 = 基底深。
+        // TeX AccentedAtom（acc=false 路径，hat/bar/vec/dot/tilde）：重音字符为 spacing
+        // 字形（^ U+005E / ¯ U+00AF / → U+2192 / · U+00B7 / ¨ U+00A8 / ~ U+007E），
+        // ink 尺寸与 CM 重音字形比例接近；垂直定位按 ink 底贴基底 ink 顶（组合符时代
+        // 靠字形自身高偏移叠放，14px 下 ink 高仅 1-3px 且零宽，真机不可辨）。
         // 水平 = 盒宽居中 + 斜体 skew（TeX \accent skewchar：斜体单字符基底视觉重心
         // 随几何斜切右移，重音右移 skew 对齐；JLaTeXMath AccentedAtom.getSkew 同语义，
         // ref-abs 取证 \hat{x} 的 ^ 右移 0.064em）。
-        float accentWidth = m.advance(accentText, size);
+        // ~ 的字形 ink 偏细（14px 下仅 2.4px，与 bar 观感混淆），放大 1.4× 提升辨识度；
+        // 其余重音保持 1.0（^/→/·/¨ 的 ink 尺寸与 TeX CM 重音比例相当）
+        float accentScale = "~".equals(accentText) ? 1.4F : 1.0F;
+        float accentWidth = m.advance(accentText, size) * accentScale;
         float diff = (base.getWidth() - accentWidth) / 2.0F;
         float skew = 0.0F;
         if (!base.getGlyphs().isEmpty() && base.getGlyphs().size() == 1
@@ -988,14 +991,18 @@ public final class MathLayoutService {
             baseX = -diff; // 重音宽于基底：基底居中于重音（JLaTeXMath ALIGN_CENTER 语义）
         }
         builder.addBox(base, baseX, 0.0F, 1.0F);
-        builder.addGlyph(accentText, accentX, 0.0F, 1.0F);
-        builder.width = Math.max(base.getWidth(), accentX + accentWidth);
-        // 盒高 = max(重音字形高（字体 ascent 近似）, 基底高)：复合基底（\hat{AB} 等）时
-        // 不得低于基底，否则盒高低估、嵌套几何错位（JLaTeXMath 取 accent 高 + 1mu + base 高）
+        // 垂直 = ink 锚定：重音 ink 底贴基底 ink 顶（盒高即基底 ink 顶）。
+        // inkCenterOffsetY 为 y-down（负 = 基线上方），ink 底偏移 = (inkCenter + inkHalf)×scale。
         float accentInkCenter = m.inkCenterOffsetY(accentText, size);
         float accentInkHalf = m.inkHeight(accentText, size) / 2.0F;
-        // 盒高 = max(重音字形 ink 顶, 基底高)；无 ink 数据回退字体 ascent（代数等价）
-        builder.height = Math.max(Math.max(0.0F, accentInkHalf - accentInkCenter), base.getHeight());
+        float accentInkBottom = (accentInkCenter + accentInkHalf) * accentScale;
+        float accentY = -base.getHeight() - accentInkBottom;
+        builder.addGlyph(accentText, accentX, accentY, accentScale);
+        builder.width = Math.max(base.getWidth(), accentX + accentWidth);
+        // 盒高 = 重音 ink 顶 = base.height + 2×inkHalf×scale（ink 底贴基底顶推导）；
+        // 复合基底 \hat{AB} 时不得低于基底，嵌套几何防错位
+        builder.height = Math.max(base.getHeight() + 2.0F * accentInkHalf * accentScale,
+                base.getHeight());
         builder.depth = base.getDepth();
         return builder.toBox();
     }

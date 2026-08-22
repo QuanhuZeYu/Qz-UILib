@@ -179,13 +179,15 @@ public class MathLayoutServiceTest {
                 Assert.assertTrue("基底应为斜体", glyph.isItalic());
                 foundBase = true;
             }
-            if ("\u0302".equals(glyph.getText())) {
+            if ("^".equals(glyph.getText())) {
                 Assert.assertEquals(skew, glyph.getX(), EPS);
+                // 重音 ink 底贴基底顶：mock ink 底偏移 = inkC+inkHalf = 0.2S → y = −0.8S−0.2S
+                Assert.assertEquals(-1.0F * S, glyph.getY(), EPS);
                 foundAccent = true;
             }
         }
         Assert.assertTrue("应包含基底 x", foundBase);
-        Assert.assertTrue("应包含重音（U+0302）", foundAccent);
+        Assert.assertTrue("应包含重音（^）", foundAccent);
         Assert.assertEquals(0.5F * S + skew, box.getWidth(), EPS);
     }
 
@@ -694,7 +696,8 @@ public class MathLayoutServiceTest {
         Assert.assertEquals(0.0F, box.getLeftInkOverhang(), EPS);
     }
 
-    /** accent 盒高不得低于复合基底（\hat{\frac{a}{b}} 盒高 = 基底高，不再被 ascent 压低）。 */
+    /** accent 盒高 = 基底高 + 重音 ink 高（\hat{\frac{a}{b}} 盒高不再被 ascent 压低；
+     *  重音 ink 底贴基底顶，盒高 = 基底高 + 2×inkHalf = 基底高 + 1.0S）。 */
     @Test
     public void shouldNotUnderestimateAccentHeightOverCompoundBase() {
         MathBox box = layout("\\hat{\\frac{a}{b}}");
@@ -704,7 +707,7 @@ public class MathLayoutServiceTest {
         float kern1 = Math.max(drt, MathConstants.NUM2_EM * S - 0.14F * S - (axis + drt / 2.0F));
         float numY = -(axis + drt / 2.0F + kern1 + 0.14F * S);
         float baseHeight = -(numY - 0.56F * S);
-        Assert.assertEquals(baseHeight, box.getHeight(), EPS);
+        Assert.assertEquals(baseHeight + 1.0F * S, box.getHeight(), EPS);
     }
 
     // ==================== 矩阵 ====================
@@ -850,12 +853,12 @@ public class MathLayoutServiceTest {
     @Test
     public void shouldLayoutAccentOverlay() {
         MathBox box = layout("\\hat x");
-        // TeX AccentedAtom（acc=false 路径）：重音按正文字号，vBox [accent][strut(−base.h)][base]
-        // 堆叠 → 重音字形底与基底基线重合（同基线），字形自身带上方偏移（CM accent 字形设计）
+        // TeX AccentedAtom（acc=false 路径）：重音为 spacing 字形（^），垂直按 ink 锚定——
+        // 重音 ink 底贴基底 ink 顶；mock ink 底偏移 = inkC+inkHalf = +0.2S → y = −0.8S−0.2S
         boolean foundAccent = false;
         for (GlyphElem glyph : box.getGlyphs()) {
-            if ("\u0302".equals(glyph.getText())) {
-                Assert.assertEquals(0.0F, glyph.getY(), EPS);
+            if ("^".equals(glyph.getText())) {
+                Assert.assertEquals(-1.0F * S, glyph.getY(), EPS);
                 Assert.assertEquals(1.0F, glyph.getSizeScale(), EPS);
                 // fake 度量下重音宽 = 0.5S → diff = 0；斜体基底 skew = 0.125×0.45S
                 // → 重音 x = skew（TeX \accent skewchar 语义）
@@ -864,8 +867,27 @@ public class MathLayoutServiceTest {
             }
         }
         Assert.assertTrue(foundAccent);
-        Assert.assertEquals(0.8F * S, box.getHeight(), EPS);
+        // 盒高 = 基底高 + 重音 ink 高 = 0.8S + 2×0.5S
+        Assert.assertEquals(1.8F * S, box.getHeight(), EPS);
         Assert.assertEquals(0.2F * S, box.getDepth(), EPS);
+    }
+
+    /** ~ 字形 ink 偏细，放大 1.4× 提升辨识度（ink 锚定随 scale 换算）。 */
+    @Test
+    public void shouldScaleTildeAccent() {
+        MathBox box = layout("\\tilde{u}");
+        boolean found = false;
+        for (GlyphElem glyph : box.getGlyphs()) {
+            if ("~".equals(glyph.getText())) {
+                Assert.assertEquals(1.4F, glyph.getSizeScale(), EPS);
+                // ink 底偏移 = (−0.3S+0.5S)×1.4 = 0.28S → y = −0.8S−0.28S
+                Assert.assertEquals(-1.08F * S, glyph.getY(), EPS);
+                found = true;
+            }
+        }
+        Assert.assertTrue("应包含重音 ~", found);
+        // 盒高 = 0.8S + 2×0.5S×1.4
+        Assert.assertEquals(2.2F * S, box.getHeight(), EPS);
     }
 
     @Test

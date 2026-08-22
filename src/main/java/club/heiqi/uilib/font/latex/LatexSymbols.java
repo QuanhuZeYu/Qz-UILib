@@ -305,12 +305,16 @@ public final class LatexSymbols {
 
     private static Map<String, Integer> createAccentCommands() {
         Map<String, Integer> map = new HashMap<String, Integer>();
-            map.put("hat", 770);
-            map.put("bar", 772);
-            map.put("vec", 8407);
-            map.put("dot", 775);
-            map.put("ddot", 776);
-            map.put("tilde", 771);
+            // 重音用 spacing 字符而非组合变音符：组合符（U+0302 系）零宽且 ink 设计为
+            // 叠加在基字上（14px 下 ink 高仅 1-3px，真机几乎不可辨）；spacing 字符 ink
+            // 尺寸与 TeX CM 重音字形比例接近（^ ≈ 0.76×x 高），且 advance 非零让水平
+            // 居中/偏斜逻辑按真实字形宽计算。垂直定位由 layoutAccent 按 ink 底贴基底顶。
+            map.put("hat", 94);
+            map.put("bar", 175);
+            map.put("vec", 8594);
+            map.put("dot", 183);
+            map.put("ddot", 168);
+            map.put("tilde", 126);
         return map;
     }
 
