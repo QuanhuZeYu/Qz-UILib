@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 13;
+    public static final int LAYOUT_VERSION = 14;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -183,12 +183,14 @@ public final class MathLayoutService {
     }
 
     /** 水平拼接（含数学原子间距）。 */
+    /** 水平拼接（含数学原子间距与渲染斜切视觉补偿）。 */
     private MathBox layoutList(List<LatexNode> nodes, float size, MathMetrics m, boolean cramped) {
         if (nodes.isEmpty()) {
             return MathBox.empty();
         }
         Builder builder = new Builder();
         AtomClass[] effective = effectiveAtomClasses(nodes);
+        MathBox previousChild = null;
         for (int index = 0; index < nodes.size(); index++) {
             LatexNode node = nodes.get(index);
             // 显式间距（\, \quad 等）是 kern：不参与 glue（TeX RowAtom「kerns do not interfere
@@ -197,10 +199,17 @@ public final class MathLayoutService {
             boolean rightIsKern = node.getKind() == LatexNode.Kind.SPACE;
             if (index > 0 && !leftIsKern && !rightIsKern) {
                 float gap = spacingMu(effective[index - 1], effective[index]) / 18.0F * size;
+                // 渲染斜切视觉补偿：数学变量正体字形经 0.25 斜切渲染后 ink 右越出 advance
+                //（cmmi 的 advance 自带倾斜量、我们渲染层剪切无此量），左邻盒的 ink 右越量
+                // 补进间距——否则 xy 相邻变量零间距时 ink 重叠 3px（真机截图视觉模型发现）。
+                if (previousChild != null) {
+                    gap += previousChild.getRightInkOverhang();
+                }
                 builder.advance(gap);
             }
             MathBox child = layoutNode(node, size, m, cramped);
             builder.addBox(child, builder.width, 0.0F, 1.0F);
+            previousChild = child;
         }
         return builder.toBox();
     }
@@ -393,14 +402,20 @@ public final class MathLayoutService {
         //   右越量（italicCorrection）+ 渲染斜切避让（斜切角 × xHeight/2 折半，
         //   与 GlyphBatchRenderer 斜切角同源、与 accent skew 同一几何近似）；
         // - nolimits 大运算符（渲染不斜切）：只取自然 ink 右越量（cmex ∫ 0.194em、∑ 0）。
-        float supShift = 0.0F;
-        if (sup != null && baseNode.getKind() == LatexNode.Kind.ATOM) {
+        // 脚本水平避让（TeX Char.italic + 渲染斜切视觉补偿）：
+        // - 数学变量基底渲染会做 tan≈0.25 几何斜切，base ink 右越出 advance
+        //   = italicOverhang（0.25×inkH），上/下标起点必须右移该量，否则 x^2 的 2
+        //   与斜体 x 笔画重叠（headless 实测 −2px）；TeX 等价语义 = cmmi 的 advance
+        //   自带倾斜（ScriptsAtom 单上标分支 delta=strut 与此同向）；
+        // - 自然 ink 右越量（italicCorrection，正体字形 0）；
+        // - nolimits 大运算符（渲染不斜切）只取自然越量。
+        float scriptShift = 0.0F;
+        if (baseNode.getKind() == LatexNode.Kind.ATOM) {
             String atomText = ((LatexAtom) baseNode).getText();
             if (nolimitsBigOp) {
-                supShift = m.italicCorrection(atomText, size);
+                scriptShift = m.italicCorrection(atomText, size);
             } else if (isSingleCharAtom(baseNode) && isMathVariable(atomText)) {
-                supShift = m.italicCorrection(atomText, size)
-                        + MathConstants.ACCENT_SKEW_FACTOR * xHeight;
+                scriptShift = m.italicCorrection(atomText, size) + m.italicOverhang(atomText, size);
             }
         }
 
@@ -409,12 +424,12 @@ public final class MathLayoutService {
         Builder builder = new Builder();
         builder.addBox(base, 0.0F, 0.0F, 1.0F);
         if (sup != null) {
-            builder.addBox(sup, base.getWidth() + supShift, supY, MathConstants.SCRIPT_SCALE);
+            builder.addBox(sup, base.getWidth() + scriptShift, supY, MathConstants.SCRIPT_SCALE);
         }
         if (sub != null) {
-            builder.addBox(sub, base.getWidth(), subY, MathConstants.SCRIPT_SCALE);
+            builder.addBox(sub, base.getWidth() + scriptShift, subY, MathConstants.SCRIPT_SCALE);
         }
-        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptWidth : 0.0F) + supShift;
+        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptWidth : 0.0F) + scriptShift;
         builder.height = Math.max(builder.height, refHeight);
         builder.depth = Math.max(builder.depth, refDepth);
         if (sup != null) {
@@ -476,15 +491,23 @@ public final class MathLayoutService {
         }
         // 符号自然 italic（TeX BigOperatorAtom delta = Char.italic；cmex ∫ 0.194em、∑/∏ 0）：
         // 双脚本时上/下限相对符号 ±delta/2，单脚本/无脚本时补进尾部（StrutBox(delta)）
+        // 水平居中按符号 ink 中心而非盒中心：真机大运算符字形 ink 在 advance 内不对称
+        //（如 ∑ ink 偏左，盒居中会令上下限相对符号视觉偏右 1.5px+）。ink 中心相对盒
+        // 中心的偏移 = (inkLeft + inkW/2 − advance/2)，位置量按 opScale 缩放。
+        float baseInkShiftX = 0.0F;
+        if (baseText != null) {
+            baseInkShiftX = (m.inkLeftBearing(baseText, size) + m.inkWidth(baseText, size) / 2.0F
+                    - base.getWidth() / 2.0F) * opScale;
+        }
         float opItalic = baseText == null ? 0.0F : m.italicCorrection(baseText, size);
-        builder.addBox(base, (contentWidth - baseWidth) / 2.0F, baseShift, opScale);
+        builder.addBox(base, (contentWidth - baseWidth) / 2.0F - baseInkShiftX, baseShift, opScale);
         float height = refHeight;
         float depth = refDepth;
         if (sup != null) {
             float overKern = Math.max(MathConstants.BIGOP1_EM * size,
                     MathConstants.BIGOP3_EM * size - sup.getDepth());
             float supY = -(refHeight + overKern + sup.getDepth());
-            float supX = (contentWidth - sup.getWidth()) / 2.0F + (sub != null ? opItalic / 2.0F : 0.0F);
+            float supX = (contentWidth - sup.getWidth()) / 2.0F - baseInkShiftX + (sub != null ? opItalic / 2.0F : 0.0F);
             builder.addBox(sup, supX, supY, MathConstants.SCRIPT_SCALE);
             height = MathConstants.BIGOP5_EM * size + sup.getTotalHeight() + overKern + refHeight;
         }
@@ -492,7 +515,7 @@ public final class MathLayoutService {
             float underKern = Math.max(MathConstants.BIGOP2_EM * size,
                     MathConstants.BIGOP4_EM * size - sub.getHeight());
             float subY = refDepth + underKern + sub.getHeight();
-            float subX = (contentWidth - sub.getWidth()) / 2.0F - (sup != null ? opItalic / 2.0F : 0.0F);
+            float subX = (contentWidth - sub.getWidth()) / 2.0F - baseInkShiftX - (sup != null ? opItalic / 2.0F : 0.0F);
             builder.addBox(sub, subX, subY, MathConstants.SCRIPT_SCALE);
             depth = sub.getTotalHeight() + underKern + refDepth + MathConstants.BIGOP5_EM * size;
         }

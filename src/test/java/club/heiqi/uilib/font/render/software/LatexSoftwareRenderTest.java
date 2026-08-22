@@ -852,6 +852,70 @@ public class LatexSoftwareRenderTest {
         Assert.assertTrue("array 应有收集 quad", result.collector.getQuadCount() > 0);
     }
 
+    /** 相邻数学变量与上标不重叠（渲染斜切视觉补偿回归：xy/x^2 曾重叠 2-3px）。 */
+    @Test
+    public void adjacentVariablesAndScriptsDoNotOverlap() {
+        String[] formulas = { "xy", "x+y", "x^2", "x^y" };
+        for (String formula : formulas) {
+            LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                    "<latex>" + formula + "</latex>", BASE_SIZE);
+            List<Quad> quads = collectGlyphQuads(result);
+            Assert.assertTrue("应有 ≥2 字形: " + formula, quads.size() >= 2);
+            for (int i = 0; i < quads.size(); i++) {
+                for (int j = i + 1; j < quads.size(); j++) {
+                    Quad a = quads.get(i);
+                    Quad b = quads.get(j);
+                    boolean yOverlap = Math.max(a.top, b.top) < Math.min(a.bottom, b.bottom);
+                    if (yOverlap) {
+                        Assert.assertTrue("相邻墨水不应重叠（y 交叠时）: " + formula
+                                + " gap=" + (b.left - a.right),
+                                b.left >= a.right - 1);
+                    }
+                }
+            }
+        }
+    }
+
+    /** limits 上下限以符号 ink 中心水平对齐（∑ ink 在盒内不对称，盒居中会视觉偏右）。 */
+    @Test
+    public void bigOperatorScriptsCenterOnSymbolInk() {
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                "<latex>\\sum_{i=1}^{n}</latex>", BASE_SIZE);
+        List<Quad> quads = collectGlyphQuads(result);
+        Quad big = null;
+        for (Quad quad : quads) {
+            if (quad.height() >= 12) {
+                big = quad;
+                break;
+            }
+        }
+        Assert.assertNotNull("应找到 ∑ 字形 quad", big);
+        int supLeft = Integer.MAX_VALUE;
+        int supRight = Integer.MIN_VALUE;
+        int subLeft = Integer.MAX_VALUE;
+        int subRight = Integer.MIN_VALUE;
+        for (Quad quad : quads) {
+            if (quad == big) {
+                continue;
+            }
+            if (quad.bottom <= big.top) {
+                supLeft = Math.min(supLeft, quad.left);
+                supRight = Math.max(supRight, quad.right);
+            } else if (quad.top >= big.bottom) {
+                subLeft = Math.min(subLeft, quad.left);
+                subRight = Math.max(subRight, quad.right);
+            }
+        }
+        Assert.assertTrue("应有上标", supLeft < Integer.MAX_VALUE);
+        Assert.assertTrue("应有下标", subLeft < Integer.MAX_VALUE);
+        int supCenter = (supLeft + supRight) / 2;
+        int subCenter = (subLeft + subRight) / 2;
+        Assert.assertTrue("上标 ink 中心应与 ∑ ink 中心对齐（±2px）: sup=" + supCenter
+                + " big=" + big.centerX(), Math.abs(supCenter - big.centerX()) <= 2);
+        Assert.assertTrue("下标 ink 中心应与 ∑ ink 中心对齐（±2px）: sub=" + subCenter
+                + " big=" + big.centerX(), Math.abs(subCenter - big.centerX()) <= 2);
+    }
+
     /** 布局盒度量贴合真实 ink 边界（字符级 fontdimen 语义回归：盒 h/d 与渲染 ink ±2.5px）。 */
     @Test
     public void latexBoxMetricsTrackInkBounds() {

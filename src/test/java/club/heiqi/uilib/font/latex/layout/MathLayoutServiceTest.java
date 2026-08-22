@@ -125,13 +125,9 @@ public class MathLayoutServiceTest {
         Assert.assertEquals("2", supGlyph.getText());
         Assert.assertEquals(expectedSupY, supGlyph.getY(), EPS);
         Assert.assertEquals(0.7F, supGlyph.getSizeScale(), EPS);
-        // 斜体校正：单字符变量基底时上标右移 = 自然 ink 越量（mock 0）+ 渲染斜切避让
-        //（ACCENT_SKEW_FACTOR×xHeight = 0.125×0.45S）；TeX ScriptsAtom：scriptspace 加在上标盒内部，
-        // 上标左缘紧贴基底右缘（无 scriptspace 间隙）
-        float supShift = MathConstants.ACCENT_SKEW_FACTOR * 0.45F * S;
-        Assert.assertEquals(0.5F * S + supShift, supGlyph.getX(), EPS);
-        Assert.assertEquals(0.5F * S + 0.35F * S + supShift,
-                box.getWidth(), EPS);
+        // 脚本避让 = 自然 ink 越量（mock 0）+ italicOverhang（mock 0）→ 0：上标左缘贴基底右缘
+        Assert.assertEquals(0.5F * S, supGlyph.getX(), EPS);
+        Assert.assertEquals(0.5F * S + 0.35F * S, box.getWidth(), EPS);
         Assert.assertEquals(0.56F * S - expectedSupY, box.getHeight(), EPS);
     }
 
