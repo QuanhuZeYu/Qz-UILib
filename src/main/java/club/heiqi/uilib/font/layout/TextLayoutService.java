@@ -45,7 +45,8 @@ public class TextLayoutService {
     private static final MathLayoutService MATH_LAYOUT = new MathLayoutService();
 
     /** LaTeX 公式行上下行距余量（em/每侧）：盒度量 ink 化后公式行与相邻行需要视觉间距。 */
-    private static final float LATEX_LINE_PAD_EM = 0.1F;
+    /** LaTeX 行高余量（em）：公式盒总高上下各 0.1em，渲染侧行内垂直居中同口径引用。 */
+    public static final float LATEX_LINE_PAD_EM = 0.1F;
 
     /** CCC（canonical combining class）反射入口：JDK8 sun.text.Normalizer；不可用时为 null（全部按上方标记处理）。 */
     private static final java.lang.reflect.Method CCC_METHOD = resolveCccMethod();

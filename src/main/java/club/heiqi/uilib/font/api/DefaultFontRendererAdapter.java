@@ -748,8 +748,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         int glyphSize = settings.getGlyphSize();
         float currentX = x;
         float drawY = y;
-        // 基线按行内最大字号换算（整段一致，循环外只算一次）
-        float baselineCharSize = resolveBaselineCharSize(renderScale, preparedText.maxFontSizePx);
+        // 基线按行内最大<b>文本</b>字号换算（整段一致，循环外只算一次）；LaTeX 段的
+        // 基线口径走 per-glyph latexBaseSizePx（段字号与文本最大字号取大，见 prepareGlyphs），
+        // 不再被公式内放大型字形（伸缩括号等）拉高。
+        float baselineCharSize = resolveBaselineCharSize(renderScale,
+                preparedText.maxTextFontSizePx > 0 ? preparedText.maxTextFontSizePx
+                        : preparedText.maxFontSizePx);
         // 全段同字号（无 <size> span、无 LaTeX 缩放字形）走 uniform 快路径：循环内直接复用常量，
         // per-glyph 零 Math.max/乘法（与逐 glyph 解析结果恒等，非基准相等类快路径）。
         // 注意：LaTeX 字形可能小于基准字号（0.7×），max<=base 判不出混合字号，须用显式标记。
@@ -820,39 +824,47 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             float glyphX = currentX + preparedText.xOffsets[glyphIndex];
             float glyphDrawY = drawY + resolveBaselineOffsetY(style, glyphCharSize)
                     + preparedText.yOffsets[glyphIndex];
+            // LaTeX glyph 用自身段基线口径（quad 内 baselineScale 与盒布局 px 坐标同源），
+            // 普通文本 glyph 沿用整行文本口径。
+            float glyphBaseCharSize = preparedText.latexBaseSizePx[glyphIndex] > 0
+                    ? resolveBaselineCharSize(renderScale, preparedText.latexBaseSizePx[glyphIndex])
+                    : baselineCharSize;
             if (dropShadow) {
                 collectGlyph(collector, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                         slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                         inkWidth, inkHeight, bearingX, bearingY,
                         glyphX + (float) FontConfig.shadowOffsetX * renderScale,
                         glyphDrawY + (float) FontConfig.shadowOffsetY * renderScale,
-                        measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
+                        measuredWidth, glyphCharSize, glyphBaseCharSize, renderScale, style,
                         darkenShadow(style.getColor()), false,
                         style.isItalic() || preparedText.italicFlags[glyphIndex]);
             }
             collectGlyph(collector, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, glyphFlags,
                     inkWidth, inkHeight, bearingX, bearingY,
-                    glyphX, glyphDrawY, measuredWidth, glyphCharSize, baselineCharSize, renderScale, style,
+                    glyphX, glyphDrawY, measuredWidth, glyphCharSize, glyphBaseCharSize, renderScale, style,
                     style.getColor(), true, style.isItalic() || preparedText.italicFlags[glyphIndex]);
             currentX += measuredWidth;
         }
         // LaTeX 规则线（分数线/根号横线等）：随字形同帧收集，装饰线批次在字形页之后 flush。
         // glyph quad 内部按 lineBaselineY×baselineScale 把字格顶换算到基线，decoration 通道
         // 无此换算——必须手动补基线偏移，否则规则线整体上移约一个 ascent 与字形分离。
-        float ruleBaselineOffset = 0.0F;
+        // 基线口径与公式 glyph 一致（per-rule latexRuleBaseSize），行内居中偏移已在
+        // fillLatexSegment 时并入 rule[1]。
+        int refLineBaselineY = glyphSize;
         if (preparedText.size() > 0) {
             int refCodepoint = GlyphRuntimeTables.isValidCodepoint(preparedText.renderCodepoints[0])
                     ? preparedText.renderCodepoints[0] : 'A';
             FontType refFontType = preparedText.fontTypes[0];
-            int refLineBaselineY = tables.getLineBaselineY(refCodepoint, refFontType);
-            float baselineScale = baselineCharSize / Math.max(1.0F, (float) glyphSize);
-            ruleBaselineOffset = refLineBaselineY * baselineScale;
+            refLineBaselineY = tables.getLineBaselineY(refCodepoint, refFontType);
         }
         for (int ruleIndex = 0; ruleIndex < preparedText.latexRules.length; ruleIndex++) {
             float[] rule = preparedText.latexRules[ruleIndex];
             // 横线位置约束：RuleElem.y 是中心、decoration quad 的 y 是顶，先换算中心→顶；
             // 厚度与中心量化到整像素行，消除 0.64px 浮点厚度在光栅取整下的时粗时细/时隐时现漂移。
+            float ruleBaselineScale = preparedText.latexRuleBaseSize[ruleIndex]
+                    / Math.max(1.0F, (float) glyphSize);
+            float ruleBaselineOffset = refLineBaselineY * ruleBaselineScale;
             float ruleCenterY = drawY + ruleBaselineOffset + rule[1];
             float ruleThickness = Math.max(1.0F, Math.round(rule[3]));
             float ruleTopY = Math.round(ruleCenterY - ruleThickness / 2.0F);
@@ -869,9 +881,16 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         // 第一遍：计数 + 预布局 LaTeX 段（避免第二遍重复布局；缓存见 M4 LatexCache）
         int glyphCount = 0;
         MathBox[] latexBoxes = new MathBox[segments.size()];
+        int maxTextFontSizePx = 0;
+        int maxLatexSegSize = 0;
+        int latexSegmentCount = 0;
         for (int s = 0; s < segments.size(); s++) {
             TextSegment segment = segments.get(s);
+            int segmentFontSizePx = segment.getStyle()
+                    .resolveEffectiveFontSizePx(resolvedBaseFontSizePx);
             if (segment.isLatex()) {
+                latexSegmentCount++;
+                maxLatexSegSize = Math.max(maxLatexSegSize, segmentFontSizePx);
                 MathBox box = layoutLatexSegment(segment, textLayoutService, resolvedBaseFontSizePx,
                         tables.getRuntimeVersion());
                 latexBoxes[s] = box;
@@ -880,6 +899,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
                 continue;
             }
+            maxTextFontSizePx = Math.max(maxTextFontSizePx, segmentFontSizePx);
             String segmentText = segment.getText();
             for (int index = 0; index < segmentText.length(); ) {
                 int codepoint = segmentText.codePointAt(index);
@@ -900,6 +920,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         boolean[] italicFlags = new boolean[glyphCount];
         List<float[]> latexRules = new ArrayList<float[]>();
         List<Integer> latexRuleColors = new ArrayList<Integer>();
+        List<Integer> latexRuleBaseSize = new ArrayList<Integer>();
+        int[] latexBaseSizePx = new int[glyphCount];
         int maxFontSizePx = resolvedBaseFontSizePx;
         int[] maxFontSizeHolder = new int[] { maxFontSizePx };
         boolean hasMixedSize = false;
@@ -907,6 +929,29 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         // 规则线必须按段起点定位：多段混排（文本+公式）时第二段以后的公式横线
         // 若用行首 x 会整体左飞到行首（此前「只有第一个卡片正常」的根因）。
         float segmentStartX = 0.0F;
+        // 纯 LaTeX 行垂直居中偏移：公式盒顶/底与行框各留 0.1em 余量（与测量侧
+        // getLineHeight 的 LATEX_LINE_PAD_EM 同口径）。旧行为把公式按字体基线裸放——
+        // height 大的公式顶部溢出 label（ascent < box.height），相邻行视觉间距随公式
+        // height/depth 组合漂移（真机压力卡 0px~55px 乱距根因）。
+        float lineLatexShift = 0.0F;
+        if (latexSegmentCount == segments.size() && !segments.isEmpty()) {
+            double tMax = 0.0;
+            double hOfTMax = 0.0;
+            for (int s = 0; s < segments.size(); s++) {
+                MathBox box = latexBoxes[s];
+                if (box != null && box.getTotalHeight() > tMax) {
+                    tMax = box.getTotalHeight();
+                    hOfTMax = box.getHeight();
+                }
+            }
+            int segMaxSize = Math.max(1, maxLatexSegSize);
+            int latexAscent = textLayoutService.getAscent(segMaxSize);
+            double fontLineHeight = latexAscent + textLayoutService.getDescent(segMaxSize)
+                    + textLayoutService.getLineGap(segMaxSize);
+            double linePad = 2.0 * TextLayoutService.LATEX_LINE_PAD_EM * segMaxSize;
+            double lineHeight = Math.max(fontLineHeight, Math.ceil(tMax + linePad));
+            lineLatexShift = (float) ((lineHeight - tMax) / 2.0 + hOfTMax - latexAscent);
+        }
         for (int s = 0; s < segments.size(); s++) {
             TextSegment segment = segments.get(s);
             TextStyle style = segment.getStyle();
@@ -919,7 +964,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 glyphIndex = fillLatexSegment(segment, latexBoxes[s], style, segmentFontSizePx,
                         resolvedBaseFontSizePx, textLayoutService, tables, renderScale, renderCodepoints,
                         fontTypes, measuredWidths, styles, fontSizePx, xOffsets, yOffsets, italicFlags,
-                        glyphIndex, segmentStartX, latexRules, latexRuleColors, maxFontSizeHolder);
+                        glyphIndex, segmentStartX, latexRules, latexRuleColors, latexRuleBaseSize,
+                        latexBaseSizePx, maxTextFontSizePx, lineLatexShift, maxFontSizeHolder);
                 segmentStartX += latexBoxes[s].getWidth();
                 // 公式内部存在字号缩放（script 0.7×/定界符放大）同样禁用 uniform 快路径，
                 // 否则缩放字形按正文全尺寸绘制且与 0.7× 布局偏移错配（符号乱飞根因）。
@@ -979,12 +1025,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
         float[][] ruleArray = latexRules.toArray(new float[latexRules.size()][]);
         int[] ruleColors = new int[latexRuleColors.size()];
+        int[] ruleBaseSizes = new int[latexRuleBaseSize.size()];
         for (int r = 0; r < ruleColors.length; r++) {
             ruleColors[r] = latexRuleColors.get(r).intValue();
+            ruleBaseSizes[r] = latexRuleBaseSize.get(r).intValue();
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
                 maxFontSizeHolder[0], resolvedBaseFontSizePx, xOffsets, yOffsets, italicFlags, hasMixedSize,
-                ruleArray, ruleColors);
+                ruleArray, ruleColors, ruleBaseSizes, latexBaseSizePx, maxTextFontSizePx, lineLatexShift);
     }
 
     /**
@@ -998,9 +1046,15 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             float renderScale, int[] renderCodepoints, FontType[] fontTypes, float[] measuredWidths,
             TextStyle[] styles, int[] fontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags,
             int startGlyphIndex, float segmentStartX, List<float[]> latexRules, List<Integer> latexRuleColors,
-            int[] maxFontSizeHolder) {
+            List<Integer> latexRuleBaseSize, int[] latexBaseSizePx, int maxTextFontSizePx,
+            float lineLatexShift, int[] maxFontSizeHolder) {
         int glyphIndex = startGlyphIndex;
         float segmentAdvanceSum = 0.0F;
+        // 公式基线口径 = max(段字号, 行内最大文本段字号)：纯 LaTeX 行用段字号；
+        // 混排行与文本共享同一基线。公式内放大型字形（伸缩括号）不参与基线口径——
+        // 否则 baseCharSize 被推到 2-4×，盒内 y（布局 px 坐标）与放大基线错配，
+        // 整盒内容被整体下推一个字号级（真机矩阵/积分压力卡偏下、行距乱距根因之一）。
+        int latexBaseSize = Math.max(Math.max(1, segmentFontSizePx), maxTextFontSizePx);
         for (GlyphElem elem : box.getGlyphs()) {
             int glyphSizePx = Math.max(1, Math.round(segmentFontSizePx * elem.getSizeScale()));
             if (glyphSizePx > maxFontSizeHolder[0]) {
@@ -1026,11 +1080,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 measuredWidths[glyphIndex] = (float) advance * renderScale;
                 styles[glyphIndex] = style;
                 fontSizePx[glyphIndex] = glyphSizePx;
+                latexBaseSizePx[glyphIndex] = latexBaseSize;
                 // xOffset 必须相对段起点（渲染循环 currentX 已累加 advance）：
                 // 盒内绝对位置 - 段内已累加推进，与 GPOS mark 段「锚点 - runningAdvance」同语义，
                 // 否则公式内后续字形双重累加越飘越远。
                 xOffsets[glyphIndex] = (elem.getX() + elemInnerAdvance - segmentAdvanceSum) * renderScale;
-                yOffsets[glyphIndex] = elem.getY() * renderScale;
+                yOffsets[glyphIndex] = (elem.getY() + lineLatexShift) * renderScale;
                 segmentAdvanceSum += (float) advance;
                 glyphIndex++;
                 elemInnerAdvance += (float) advance;
@@ -1044,9 +1099,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
         for (RuleElem rule : box.getRules()) {
             // x 为行内绝对坐标（段起点 + 盒内 x）：多段混排时规则线对齐公式段而非行首
-            latexRules.add(new float[] { (segmentStartX + rule.getX()) * renderScale, rule.getY() * renderScale,
+            latexRules.add(new float[] { (segmentStartX + rule.getX()) * renderScale,
+                    (rule.getY() + lineLatexShift) * renderScale,
                     rule.getWidth() * renderScale, rule.getThickness() * renderScale });
             latexRuleColors.add(Integer.valueOf(style.getColor()));
+            latexRuleBaseSize.add(Integer.valueOf(latexBaseSize));
         }
         return glyphIndex;
     }
@@ -1387,11 +1444,20 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private final float[][] latexRules;
         /** 每条规则的颜色（ARGB，继承所在公式段样式）。 */
         private final int[] latexRuleColors;
+        /** 每条规则线的基线口径字号（px）：= max(段字号, 行内最大文本段字号)，公式基线不与放大字形共享口径。 */
+        private final int[] latexRuleBaseSize;
+        /** LaTeX glyph 的基线口径字号（px）：非 LaTeX glyph 恒 0。 */
+        private final int[] latexBaseSizePx;
+        /** 行内最大<b>文本</b>段字号（px，无文本段为 0）：普通 glyph 与公式基线锚的统一口径。 */
+        private final int maxTextFontSizePx;
+        /** 纯 LaTeX 行的统一垂直偏移（px）：把公式盒在行框内上下居中（上下各 0.1em 余量），混排行恒 0。 */
+        private final float lineLatexShift;
 
         private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
                 float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx,
                 int baseFontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags,
-                boolean hasMixedSize, float[][] latexRules, int[] latexRuleColors) {
+                boolean hasMixedSize, float[][] latexRules, int[] latexRuleColors, int[] latexRuleBaseSize,
+                int[] latexBaseSizePx, int maxTextFontSizePx, float lineLatexShift) {
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
             this.fontTypes = fontTypes;
@@ -1406,6 +1472,10 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             this.hasMixedSize = hasMixedSize;
             this.latexRules = latexRules;
             this.latexRuleColors = latexRuleColors;
+            this.latexRuleBaseSize = latexRuleBaseSize;
+            this.latexBaseSizePx = latexBaseSizePx;
+            this.maxTextFontSizePx = maxTextFontSizePx;
+            this.lineLatexShift = lineLatexShift;
         }
 
         private boolean isEmpty() {
@@ -1419,7 +1489,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private static PreparedText empty(FontRuntimeSettings settings) {
             return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
                     new int[0], (int) settings.getCharSize(), (int) settings.getCharSize(),
-                    new float[0], new float[0], new boolean[0], false, new float[0][0], new int[0]);
+                    new float[0], new float[0], new boolean[0], false, new float[0][0], new int[0],
+                    new int[0], new int[0], 0, 0.0F);
         }
     }
 

@@ -14,6 +14,10 @@ import club.heiqi.uilib.font.latex.LatexShowcaseFormulas;
 import club.heiqi.uilib.font.latex.layout.MathMetrics;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.GlyphRenderBatch;
+import club.heiqi.uilib.ui.base.props.UiFontStyle;
+import club.heiqi.uilib.ui.base.props.UiFontWeight;
+import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * LaTeX headless 软件渲染验收测试（LatexPage 演示公式全集）。
@@ -989,6 +993,57 @@ public class LatexSoftwareRenderTest {
                     Math.abs((box.getHeight() - inkTop) - outerPad) <= 2.5);
             Assert.assertTrue("矩阵盒底应比 ink 底低 outerPad（±2.5px）: " + formula,
                     Math.abs((box.getDepth() - inkBot) - outerPad) <= 2.5);
+        }
+    }
+
+    /**
+     * 纯 LaTeX 行内垂直居中（绝对行框断言）：公式盒顶/底与行框各留 0.1em 余量，
+     * 且公式基线不被盒内放大型字形（伸缩括号）拉高。
+     *
+     * <p>回归：压力卡相邻公式视觉间距 0~55px 乱距——旧行为把公式按字体基线裸放
+     * （ascent < box.height 时盒顶溢出行框）+ 放大字形把整行基线推高 2-4×，
+     * 行距随相邻公式 height/depth 组合漂移。</p>
+     */
+    @Test
+    public void latexInlinePlacementCentersFormulaInLineBox() {
+        String[] formulas = { "\\frac{\\frac{a}{b}}{\\frac{c}{d}}", "\\sqrt{\\sqrt{x} + 1}",
+                "x^{y^z} + a_{b_c} + x_{i}^{2}", "\\int_0^1 \\int_0^1 x^2\\,dx\\,dy",
+                "\\begin{pmatrix} a & b & c \\\\ d & e & f \\\\ g & h & i \\end{pmatrix}",
+                "\\overline{x + \\overline{y}} + \\underline{a + b}",
+                "\\left\\{ \\frac{a}{b} \\right\\} \\left| \\frac{c}{d} \\right|",
+                "\\sum_{i=1}^{n} \\frac{1}{i^2}" };
+        club.heiqi.uilib.font.layout.TextLayoutService service = LatexSoftwareRenderKit.currentService();
+        for (String formula : formulas) {
+            LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(
+                    "<latex>" + formula + "</latex>", BASE_SIZE);
+            club.heiqi.uilib.font.latex.layout.MathBox box = LatexSoftwareRenderKit.layout(formula, BASE_SIZE);
+            int lineHeight = service.getLineHeight("<latex>" + formula + "</latex>",
+                    new TextMeasureStyle(BASE_SIZE, TextContentMode.RICH_TAGS, UiFontWeight.NORMAL,
+                            UiFontStyle.NORMAL));
+            List<Quad> quads = collectGlyphQuads(result);
+            Assert.assertTrue("应有字形: " + formula, !quads.isEmpty());
+            int minTop = Integer.MAX_VALUE;
+            int maxBottom = Integer.MIN_VALUE;
+            for (Quad quad : quads) {
+                minTop = Math.min(minTop, quad.top);
+                maxBottom = Math.max(maxBottom, quad.bottom);
+            }
+            // 渲染起点 ORIGIN_Y=4 即行 em-box 顶（绝对断言，不经 baseline 反推——
+            // 反推在整体偏移 bug 下自洽，抓不住行内放置错误）。
+            double inkTopRel = minTop - 4.0;
+            double inkBotRel = maxBottom - 4.0;
+            double expectedPad = (lineHeight - box.getTotalHeight()) / 2.0;
+            double topErr = inkTopRel - expectedPad;
+            double bottomErr = (lineHeight - inkBotRel) - expectedPad;
+            Assert.assertTrue("公式 ink 顶应落在行框中心盒顶（±3.5px）: " + formula
+                    + " inkTopRel=" + String.format(java.util.Locale.ROOT, "%.1f", inkTopRel)
+                    + " expectedPad=" + String.format(java.util.Locale.ROOT, "%.1f", expectedPad)
+                    + " LH=" + lineHeight + " T=" + String.format(java.util.Locale.ROOT, "%.1f",
+                            box.getTotalHeight()),
+                    topErr >= -3.5 && topErr <= 3.5);
+            Assert.assertTrue("公式 ink 底应落在行框中心盒底（±3.5px）: " + formula
+                    + " inkBotRel=" + String.format(java.util.Locale.ROOT, "%.1f", inkBotRel),
+                    bottomErr >= -3.5 && bottomErr <= 3.5);
         }
     }
 
