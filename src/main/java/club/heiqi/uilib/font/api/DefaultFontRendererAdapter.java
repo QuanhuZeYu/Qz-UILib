@@ -891,7 +891,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             if (segment.isLatex()) {
                 latexSegmentCount++;
                 maxLatexSegSize = Math.max(maxLatexSegSize, segmentFontSizePx);
-                MathBox box = layoutLatexSegment(segment, textLayoutService, resolvedBaseFontSizePx,
+                // 布局字号必须用段有效字号（segmentFontSizePx）而非行基准：与测量侧
+                // TextLayoutService.measureLatexWidth / getLineHeight 同口径（缓存键同源），
+                // 否则 <size>/<sup> 包裹的公式段渲染盒与测量盒不同字号、缓存键分裂、
+                // 字形按段字号放大但坐标按小盒布局（整行错位，headless 复现 measured 14.8px
+                // vs rendered 11.0px）。
+                MathBox box = layoutLatexSegment(segment, textLayoutService, segmentFontSizePx,
                         tables.getRuntimeVersion());
                 latexBoxes[s] = box;
                 for (GlyphElem elem : box.getGlyphs()) {

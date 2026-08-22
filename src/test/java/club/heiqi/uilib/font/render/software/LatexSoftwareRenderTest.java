@@ -12,6 +12,7 @@ import org.junit.Test;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.latex.LatexShowcaseFormulas;
 import club.heiqi.uilib.font.latex.layout.MathMetrics;
+import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.GlyphRenderBatch;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
@@ -1082,6 +1083,29 @@ public class LatexSoftwareRenderTest {
                     + " inkBotRel=" + String.format(java.util.Locale.ROOT, "%.1f", inkBotRel),
                     bottomErr >= -3.5 && bottomErr <= 3.5);
         }
+    }
+
+    /**
+     * 显式字号段内公式：渲染侧布局与测量侧同用段有效字号。
+     *
+     * <p>回归：渲染侧 layoutLatexSegment 曾用行基准字号（resolvedBaseFontSizePx）做
+     * 缓存键与布局字号，而测量侧/行高侧用段有效字号（resolveEffectiveFontSizePx），
+     * {@code <size>}/{@code <sup>} 包裹公式时缓存键分裂、渲染盒与测量盒不同字号，
+     * 字形按段字号放大但坐标按小盒布局 → 整行错位。</p>
+     */
+    @Test
+    public void latexSegmentWithExplicitSizeUsesSegmentSizeForLayout() {
+        String rich = "<size=24><latex>\\frac{1}{2}</latex></size>";
+        LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(rich, 16);
+        List<TextSegment> segments = LatexSoftwareRenderKit.currentService().layoutSegments(rich,
+                0xFFFFFFFF, TextContentMode.RICH_TAGS, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+        Assert.assertEquals("显式字号 latex 段应只有一段", 1, segments.size());
+        Assert.assertTrue("段应为 latex", segments.get(0).isLatex());
+        double measured = LatexSoftwareRenderKit.currentService().getSegmentWidth(segments.get(0));
+        // renderSegmentsToCollector 的推进 = 起点 ORIGIN_X(4) + 盒宽（ceil）；与测量盒宽同源
+        double rendered = result.advanceWidth - 4.0;
+        Assert.assertEquals("渲染推进应与测量宽度同源（同布局字号）: measured=" + measured
+                        + " rendered=" + rendered, measured, rendered, 1.0);
     }
 
     /** 诊断：AWT 字形视觉边界 vs 生成器 ink 表口径对比（回退锚定修复前提验证）。 */
