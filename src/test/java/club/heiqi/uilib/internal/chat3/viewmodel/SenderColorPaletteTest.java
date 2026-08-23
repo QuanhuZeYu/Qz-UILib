@@ -30,6 +30,6 @@ public class SenderColorPaletteTest {
 
     @Test
     public void shouldExposeSelfGray() {
-        Assert.assertEquals(0xFF9AA0A6, SenderColorPalette.SELF_NAME_ARGB);
+        Assert.assertEquals(0xFFC9CFD6, SenderColorPalette.SELF_NAME_ARGB);
     }
 }

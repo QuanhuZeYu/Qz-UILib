@@ -43,20 +43,20 @@ public final class ChatMarkdownSettings {
     private static volatile double containerHeightRatio = 0.5;
     /** 容器最小高(px)。 */
     private static volatile int minContainerHeightPx = 160;
-    /** 容器背景(ARGB)。 */
-    private static volatile int containerBgArgb = 0xD91B1B1F;
+    /** 容器背景(ARGB,深黑,让气泡浮起)。 */
+    private static volatile int containerBgArgb = 0xE6212226;
     /** 容器描边(ARGB)。 */
     private static volatile int containerBorderArgb = 0x12FFFFFF;
     /** 容器圆角半径(px)。 */
     private static volatile int containerCornerRadius = 12;
-    /** 自己的消息气泡(ARGB,主题蓝)。 */
-    private static volatile int bubbleSelfArgb = 0xE63390EC;
-    /** 他人消息气泡(ARGB,中灰蓝,明显亮于容器背景避免"看不见")。 */
-    private static volatile int bubbleOtherArgb = 0xE6253444;
-    /** 系统消息文字(ARGB,居中灰白)。 */
-    private static volatile int systemTextArgb = 0x8AFFFFFF;
-    /** 时间戳文字(ARGB,深灰小字,原 0x8A 半透明太淡看不见)。 */
-    private static volatile int timeTextArgb = 0xFF80868B;
+    /** 自己的消息气泡(ARGB,雾蓝——低饱和不刺眼,白字对比良好)。 */
+    private static volatile int bubbleSelfArgb = 0xE64A7DB3;
+    /** 他人消息气泡(ARGB,冷灰蓝,明显亮于容器背景)。 */
+    private static volatile int bubbleOtherArgb = 0xE62F3D4E;
+    /** 系统消息文字(ARGB,居中灰白,加实避免太淡)。 */
+    private static volatile int systemTextArgb = 0xB3FFFFFF;
+    /** 时间戳文字(ARGB,亮灰小字,比名字暗一档)。 */
+    private static volatile int timeTextArgb = 0xFF9BA1A8;
     /** 收起动画时长(ms,HUD 气泡收起)。 */
     private static volatile long collapseAnimMillis = 150L;
     /** 弹出动画时长(ms,容器弹出)。 */
