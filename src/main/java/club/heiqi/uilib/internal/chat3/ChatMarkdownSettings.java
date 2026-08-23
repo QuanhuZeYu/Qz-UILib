@@ -19,8 +19,8 @@ public final class ChatMarkdownSettings {
     private static volatile int chatLineSpacingPx = 5;
     /** 聊天窗口宽 = 视口宽 × 比例(用户定:约 1/4,随窗口缩放动态)。 */
     private static volatile double chatWidthRatio = 0.25;
-    /** 聊天窗口最小宽(px)。 */
-    private static volatile int minChatWidthPx = 320;
+    /** 聊天窗口最小宽(逻辑 px;仅极小窗口兜底,不干扰比例——guiScale 下 min 过大曾把 1/4 顶成 1/3)。 */
+    private static volatile int minChatWidthPx = 160;
     /** 聊天窗口距屏幕边缘边距(px)。 */
     private static volatile int chatMarginPx = 10;
     /** 气泡水平内边距(px)。 */
