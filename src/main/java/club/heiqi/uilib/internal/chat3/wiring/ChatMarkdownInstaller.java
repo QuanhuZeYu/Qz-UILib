@@ -10,6 +10,7 @@ import net.minecraft.client.gui.GuiNewChat;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import club.heiqi.uilib.api.chat.ChatAccess;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
@@ -106,9 +107,11 @@ public final class ChatMarkdownInstaller {
         Object verified = CHAT_FIELD.get(mc.ingameGUI);
         if (verified instanceof ChatFacade) {
             installed = true;
-            LOG.info("聊天系统 3.0 接管已安装(架空原版;S0 骨架:行为与原版一致)");
+            ChatAccess.getInstance().setTakeoverActive(true);
+            LOG.info("聊天系统 3.0 接管已安装(架空原版)");
         } else {
             installed = false;
+            ChatAccess.getInstance().setTakeoverActive(false);
             LOG.warn("聊天 3.0 读回验证失败(字段仍被占用): {}", verified);
         }
     }
@@ -128,6 +131,7 @@ public final class ChatMarkdownInstaller {
         Object verified = CHAT_FIELD.get(mc.ingameGUI);
         if (!(verified instanceof ChatFacade)) {
             installed = false;
+            ChatAccess.getInstance().setTakeoverActive(false);
             ChatHudWindow.close();
             LOG.info("聊天 3.0 已回退原版对话框(逃生舱)");
         }

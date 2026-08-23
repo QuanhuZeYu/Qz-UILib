@@ -2,6 +2,7 @@ package club.heiqi.uilib.internal.chat3.wiring;
 
 import net.minecraft.util.IChatComponent;
 
+import club.heiqi.uilib.api.chat.ChatAccess;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 
@@ -28,9 +29,16 @@ public final class ChatCore {
         return controller;
     }
 
-    /** 消息进入(网络线程安全:历史加锁 + 脏标记主线程冲刷)。 */
+    /**
+     * 消息进入(网络线程安全:历史加锁 + 脏标记主线程冲刷)。
+     * 装饰器链按注册序应用,返回 null 表示丢弃(旧式 API 兼容承诺)。
+     */
     public void appendMessage(IChatComponent component, int messageId) {
-        controller.history().append(component, messageId);
+        IChatComponent decorated = ChatAccess.getInstance().decorate(component);
+        if (decorated == null) {
+            return; // 装饰器丢弃语义
+        }
+        controller.history().append(decorated, messageId);
         controller.markDataDirty();
     }
 
