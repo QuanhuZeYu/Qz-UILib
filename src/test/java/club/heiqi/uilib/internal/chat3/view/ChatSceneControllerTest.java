@@ -57,8 +57,8 @@ public class ChatSceneControllerTest {
         }
     };
 
-    private static final ChatSceneController.SegmentParser PARSER =
-            new ChatSceneController.SegmentParser() {
+    private static final ChatMessageList.SegmentParser PARSER =
+            new ChatMessageList.SegmentParser() {
         @Override
         public List<TextSegment> parse(String text, int baseColor) {
             TextStyle style = new TextStyle();
@@ -144,29 +144,31 @@ public class ChatSceneControllerTest {
     }
 
     @Test
-    public void containerContentScrollBindsHistoryOffset() {
+    public void containerListMountsToExternalRegistry() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
         SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
-        SceneNode root = build(controller, rt);
 
-        // 模拟输入屏幕:外部容器节点 + 列表 + 注册表
-        SceneNode container = SceneNode.column().setClipChildren(true);
-        SceneNode list = SceneNode.column();
-        container.appendChild(list);
-        root.appendChild(container);
+        // 外部容器列表:复用 ChatMessageList(容器形态)挂到调用方节点
+        SceneNode list = SceneNode.column().setHitTestable(false);
         Map<SceneNode, ChatLineRecord> registry = new IdentityHashMap<SceneNode, ChatLineRecord>();
-        SceneListHandle handle = controller.buildContainerContent(rt, container, list, registry);
+        ChatMessageList renderer = new ChatMessageList(PARSER);
+        SceneListHandle handle = renderer.mount(rt, list, controller.groupsSignal(),
+                ChatMessageList.Style.container(), registry, controller.frameMillisSignal());
         rt.flush();
 
-        controller.history().scrollBy(3);
-        controller.notifyDataChanged();
-        rt.flush();
-
-        Assert.assertEquals(3 * ChatMarkdownSettings.getChatLineHeightPx(), container.getScrollOffsetY());
         Assert.assertEquals("外部注册表应登记消息节点", 1, registry.size());
         handle.dispose();
+    }
+
+    @Test
+    public void scrollOffsetFollowsHistoryScroll() {
+        ChatSceneController controller = controller();
+        controller.history().scrollBy(3);
+        controller.notifyDataChanged();
+        Assert.assertEquals(3 * ChatMarkdownSettings.getChatLineHeightPx(),
+                controller.scrollOffsetPx().intValue());
     }
 
     @Test

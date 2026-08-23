@@ -10,19 +10,19 @@ public class ChatAutocompleteTest {
 
     @Test
     public void shouldFindCommonPrefix() {
-        Assert.assertEquals("com", ChatInputSurface.commonPrefix(
+        Assert.assertEquals("com", ChatInputBar.commonPrefix(
                 new String[] { "command", "compare", "compact" }));
-        Assert.assertEquals("hel", ChatInputSurface.commonPrefix(
+        Assert.assertEquals("hel", ChatInputBar.commonPrefix(
                 new String[] { "hello", "help" }));
-        Assert.assertEquals("abc", ChatInputSurface.commonPrefix(
+        Assert.assertEquals("abc", ChatInputBar.commonPrefix(
                 new String[] { "abc" }));
     }
 
     @Test
     public void shouldHandleEdgeCases() {
-        Assert.assertNull(ChatInputSurface.commonPrefix(null));
-        Assert.assertNull(ChatInputSurface.commonPrefix(new String[0]));
-        Assert.assertEquals("", ChatInputSurface.commonPrefix(
+        Assert.assertNull(ChatInputBar.commonPrefix(null));
+        Assert.assertNull(ChatInputBar.commonPrefix(new String[0]));
+        Assert.assertEquals("", ChatInputBar.commonPrefix(
                 new String[] { "abc", "xyz" }));
     }
 }

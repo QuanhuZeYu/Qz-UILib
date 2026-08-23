@@ -2,7 +2,6 @@ package club.heiqi.uilib.internal.chat3.view;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -16,20 +15,16 @@ import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatHistory;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
-import club.heiqi.uilib.internal.chat3.viewmodel.ChatClock;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGroupModel;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGrouper;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.node.Transform;
-import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -53,15 +48,6 @@ public final class ChatSceneController {
         /** @return 本地玩家名;null = 无本地玩家(全部按他人处理) */
         String selfName();
     }
-
-    /** 段解析器(生产 = TextLayoutService.parseSegments 解析 § 样式码;测试注入)。 */
-    public interface SegmentParser {
-        /** @return 文本 → 样式段流 */
-        List<TextSegment> parse(String text, int baseColor);
-    }
-
-    /** 段解析缓存上限(历史 100 行 × 每行数行 + 组头)。 */
-    private static final int SEGMENT_CACHE_MAX = 400;
 
     /** 生产度量注入:UILib TextLayoutService 同源(段解析 + 段宽求和,与渲染推进同口径)。 */
     public static ChatLineLayouter.Measure uiLibMeasure() {
@@ -99,9 +85,9 @@ public final class ChatSceneController {
     }
 
     /** 生产段解析:TextLayoutService 解析 § 样式码。 */
-    public static SegmentParser uiLibSegmentParser() {
+    public static ChatMessageList.SegmentParser uiLibSegmentParser() {
         final TextLayoutService service = FontService.getInstance().getTextLayoutService();
-        return new SegmentParser() {
+        return new ChatMessageList.SegmentParser() {
             @Override
             public List<TextSegment> parse(String text, int baseColor) {
                 return service.parseSegments(text, baseColor);
@@ -109,21 +95,14 @@ public final class ChatSceneController {
         };
     }
 
-    /** 树形态(结构级)。 */
-    enum ContentShape {
-        /** HUD 堆叠气泡树(聊天关闭)。 */
-        HUD,
-        /** 空树(聊天打开后:HUD 窗口隐藏,容器由输入屏幕绘制,避免双容器)。 */
-        EMPTY
-    }
-
     private final ChatHistory history = new ChatHistory();
     private final MessageGrouper grouper = new MessageGrouper();
     private final ChatLineLayouter.Measure measure;
     private final SelfNameProvider selfNameProvider;
-    private final SegmentParser segmentParser;
+    private final ChatMessageList.SegmentParser segmentParser;
     private ChatLineLayouter layouter;
     private ChatCardComposer composer;
+    private ChatMessageList messageList;
 
     /** 结构版本(消息/滚动/设置变化 +1,驱动组列表与树重建)。 */
     private final Signal<Integer> contentVersion = Signal.create(Integer.valueOf(0));
@@ -146,14 +125,11 @@ public final class ChatSceneController {
     private SceneRuntime runtime;
     private SceneNode root;
     private SceneNode mount;
-    private ContentShape builtShape;
+    /** 当前树是否 HUD 气泡流(阶段切换时驱动树重建)。 */
+    private boolean hudTreeBuilt;
 
     /** HUD 形态树的组列表句柄(树重建时释放,防句柄累积)。 */
     private SceneListHandle listHandle;
-
-    /** 容器形态树的组列表句柄与滚动绑定(HUD 树重建时释放)。 */
-    private SceneListHandle containerHandle;
-    private Binding scrollBinding;
 
     /** 消息节点 → 记录(命中检测查询;树重建时清空,离树节点惰性清理)。 */
     private final Map<SceneNode, ChatLineRecord> messageNodes =
@@ -162,17 +138,6 @@ public final class ChatSceneController {
     /** 宿主视口(逻辑 px,渲染帧由接线层写入;命中检测窗口原点推导用)。 */
     private int hostViewportWidth;
     private int hostViewportHeight;
-
-    /** 段解析缓存(text@baseColor → segments;epoch 失效由 controller 重建时清空)。 */
-    private final Map<String, List<TextSegment>> segmentCache =
-            new LinkedHashMap<String, List<TextSegment>>(64, 0.75F, true) {
-        private static final long serialVersionUID = 1L;
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, List<TextSegment>> eldest) {
-            return size() > SEGMENT_CACHE_MAX;
-        }
-    };
 
     /** 以生产 UILib 度量创建(真机路径)。 */
     public ChatSceneController() {
@@ -183,7 +148,7 @@ public final class ChatSceneController {
      * 以指定依赖创建(headless 测试注入确定性度量/玩家名/段解析)。
      */
     public ChatSceneController(ChatLineLayouter.Measure measure, SelfNameProvider selfNameProvider,
-            SegmentParser segmentParser) {
+            ChatMessageList.SegmentParser segmentParser) {
         if (measure == null || selfNameProvider == null || segmentParser == null) {
             throw new IllegalArgumentException("依赖不能为空");
         }
@@ -319,7 +284,8 @@ public final class ChatSceneController {
             phaseSignal.set(phase);
         }
         frameMillis.set(Long.valueOf(nowMillis));
-        if (runtime != null && root != null && currentShape() != builtShape) {
+        boolean hudNow = isHudPhase();
+        if (runtime != null && root != null && hudNow != hudTreeBuilt) {
             rebuildTree();
         }
         removeExpiredHudGroups(nowMillis);
@@ -346,7 +312,7 @@ public final class ChatSceneController {
         synchronized (this) {
             layouter = null;
             composer = null;
-            segmentCache.clear();
+            messageList = null;
         }
         notifyDataChanged();
     }
@@ -366,7 +332,6 @@ public final class ChatSceneController {
                 .setPreferredWidth(Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)));
         this.root = newRoot;
         this.mount = null;
-        this.builtShape = null;
         rt.bind(Computed.create(this::animTransform), transform -> root.setTransform(transform));
         rebuildTree();
         return newRoot;
@@ -378,15 +343,14 @@ public final class ChatSceneController {
     }
 
     /**
-     * 当前形态(结构级):HUD/收起中 → HUD 气泡树;弹出/稳定/收回 → 空树
-     * (HUD 窗口隐藏,容器由输入屏幕绘制——避免 HUD 窗口与屏幕双容器重复渲染)。
+     * 是否 HUD 气泡流阶段(聊天关闭稳定态 + 收起动画中)。弹出/稳定/收回阶段 HUD 树清空,
+     * 容器由输入屏幕绘制(避免 HUD 窗口与屏幕双容器重复渲染)。
      *
      * <p>读状态机即时态(信号经帧末批处理提交,tick 内判断不能用信号值)。</p>
      */
-    private ContentShape currentShape() {
+    private boolean isHudPhase() {
         DisplayStateMachine.Phase phase = machine.getPhase();
-        return phase == DisplayStateMachine.Phase.HUD || phase == DisplayStateMachine.Phase.COLLAPSING
-                ? ContentShape.HUD : ContentShape.EMPTY;
+        return phase == DisplayStateMachine.Phase.HUD || phase == DisplayStateMachine.Phase.COLLAPSING;
     }
 
     /** 树根重建(形态切换;旧挂载点整体移除,新树上重新 forEach 组列表)。 */
@@ -398,66 +362,31 @@ public final class ChatSceneController {
             listHandle.dispose();
             listHandle = null;
         }
-        if (containerHandle != null) {
-            containerHandle.dispose();
-            containerHandle = null;
-        }
-        if (scrollBinding != null) {
-            scrollBinding.dispose();
-            scrollBinding = null;
-        }
         messageNodes.clear();
         if (mount != null) {
             root.removeChild(mount);
         }
         mount = SceneNode.column().setHitTestable(false);
         root.appendChild(mount);
-        ContentShape shape = currentShape();
-        if (shape == ContentShape.HUD) {
-            SceneNode list = SceneNode.column()
-                    .setHitTestable(false)
-                    .setGap(Math.max(0, ChatMarkdownSettings.getGroupGapHudPx()));
+        boolean hud = isHudPhase();
+        if (hud) {
+            SceneNode list = SceneNode.column().setHitTestable(false);
             mount.appendChild(list);
-            listHandle = runtime.forEach(list, groupsSignal(), this::groupKey,
-                    group -> buildGroupNode(runtime, group, true, messageNodes));
-        } else if (shape == ContentShape.EMPTY) {
-            // 空树:HUD 窗口整窗隐藏(容器由输入屏幕绘制,避免双容器)
-        } else {
-            SceneNode container = SceneNode.column()
-                    .setHitTestable(false)
-                    .setBackgroundColor(ChatMarkdownSettings.getContainerBgArgb())
-                    .setBorderColor(ChatMarkdownSettings.getContainerBorderArgb())
-                    .setBorderWidth(1)
-                    .setCornerRadius(ChatMarkdownSettings.getContainerCornerRadius())
-                    .setPadding(ChatMarkdownSettings.getBubblePaddingY(),
-                            ChatMarkdownSettings.getBubblePaddingX(),
-                            ChatMarkdownSettings.getBubblePaddingY(),
-                            ChatMarkdownSettings.getBubblePaddingX())
-                    .setPreferredWidth(Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)))
-                    .setPreferredHeight(Math.max(1, ChatMarkdownSettings.containerHeightFor(hostViewportHeight)))
-                    .setClipChildren(true);
-            SceneNode list = SceneNode.column()
-                    .setHitTestable(false)
-                    .setGap(Math.max(0, ChatMarkdownSettings.getGroupGapContainerPx()));
-            container.appendChild(list);
-            mount.appendChild(container);
-            containerHandle = runtime.forEach(list, groupsSignal(), this::groupKey,
-                    group -> buildGroupNode(runtime, group, false, messageNodes));
-            // 容器滚动:历史滚动偏移 → 容器滚动属性(结构版本驱动重算)
-            scrollBinding = runtime.bind(Computed.create(this::scrollOffsetPx),
-                    offset -> container.setScrollOffsetY(offset.intValue()));
+            listHandle = messageList().mount(runtime, list, groupsSignal(),
+                    ChatMessageList.Style.hud(), messageNodes, frameMillis);
         }
-        builtShape = shape;
+        // 非 HUD 阶段:HUD 树清空(整窗隐藏,容器由输入屏幕绘制)
+        hudTreeBuilt = hud;
     }
 
-    /** 组列表(结构级 Computed:数据版本 → 合成组)。 */
-    private ReadableSignal<List<ChatCardComposer.ComposedGroup>> groupsSignal() {
+    /** 组列表(结构级 Computed:数据版本 → 合成组;供 ChatContainer 复用)。 */
+    ReadableSignal<List<ChatCardComposer.ComposedGroup>> groupsSignal() {
         return Computed.create(this::composeAll);
     }
 
     private List<ChatCardComposer.ComposedGroup> composeAll() {
         contentVersion.get().intValue(); // 结构依赖
-        boolean applyTtl = currentShape() == ContentShape.HUD;
+        boolean applyTtl = isHudPhase();
         List<MessageGroupModel> groups = grouper.group(history.snapshot(), selfNameProvider.selfName());
         int maxLine = Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)
                 - 2 * ChatMarkdownSettings.getBubblePaddingX());
@@ -472,164 +401,10 @@ public final class ChatSceneController {
         return composed;
     }
 
-    /**
-     * 组 key = 首条消息序列号(进程内唯一,稳定)+ 组内行数(内容版本)。
-     * 加行/切断/换发送者 → key 变化 → 重建组节点;真机 messageId 恒 0,不可用作身份。
-     */
-    private Long groupKey(ChatCardComposer.ComposedGroup group) {
-        long firstSequence = group.getMessages().isEmpty() ? 0L
-                : group.getMessages().get(0).getRecord().getSequenceId();
-        long lineCount = 0L;
-        for (ChatCardComposer.MessageLines message : group.getMessages()) {
-            lineCount += message.getDisplayLines().size();
-        }
-        return Long.valueOf(firstSequence * 10000L + lineCount);
-    }
-
-    /**
-     * 外部容器树构建(输入屏复用):把容器形态的组列表 forEach 与滚动绑定挂到调用方节点。
-     *
-     * @param rt            宿主运行时
-     * @param containerNode 滚动容器节点(滚动绑定目标)
-     * @param list          组列表挂载节点
-     * @param registry      消息节点 → 记录登记表(命中检测用,调用方持有)
-     * @return 生命周期句柄(关闭时 dispose)
-     */
-    public SceneListHandle buildContainerContent(SceneRuntime rt, SceneNode containerNode, SceneNode list,
-            Map<SceneNode, ChatLineRecord> registry) {
-        SceneListHandle handle = rt.forEach(list, groupsSignal(), this::groupKey,
-                group -> buildGroupNode(rt, group, false, registry));
-        // 滚动绑定(目标 = 调用方容器节点)
-        rt.bind(Computed.create(this::scrollOffsetPx),
-                offset -> containerNode.setScrollOffsetY(offset.intValue()));
-        return handle;
-    }
-
-    /** 滚动偏移(px)= 历史行偏移 × 行高(结构版本驱动重算)。 */
-    private Integer scrollOffsetPx() {
+    /** 滚动偏移(px)= 历史行偏移 × 行高(结构版本驱动重算;供 ChatContainer 滚动绑定)。 */
+    Integer scrollOffsetPx() {
         contentVersion.get().intValue(); // 依赖:滚动变化经 notifyDataChanged 驱动
         return Integer.valueOf(history.getScroll() * ChatMarkdownSettings.getChatLineHeightPx());
-    }
-
-    /** 构建单组子树:组头(名字+时间) + 消息气泡(背景/圆角/行段);HUD 形态挂淡出绑定。 */
-    private SceneNode buildGroupNode(SceneRuntime rt, ChatCardComposer.ComposedGroup group, boolean hud,
-            Map<SceneNode, ChatLineRecord> registry) {
-        int fontSize = ChatMarkdownSettings.getChatFontSizePx();
-        int lineHeight = ChatMarkdownSettings.getChatLineHeightPx();
-        int headerFont = ChatMarkdownSettings.getChatHeaderFontSizePx();
-        int paddingX = ChatMarkdownSettings.getBubblePaddingX();
-        int paddingY = ChatMarkdownSettings.getBubblePaddingY();
-        boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER;
-        AlignSelf align;
-        switch (group.getAlignment()) {
-            case SELF_RIGHT:
-                align = AlignSelf.END;
-                break;
-            case SYSTEM_CENTER:
-                align = AlignSelf.CENTER;
-                break;
-            default:
-                align = AlignSelf.START;
-                break;
-        }
-        SceneNode groupNode = SceneNode.column()
-                .setHitTestable(false)
-                .setWidthSizing(SceneNode.WidthSizing.SHRINK)
-                .setAlignSelf(align)
-                .setGap(Math.max(0, ChatMarkdownSettings.getGroupInnerGapPx()));
-        SceneNode headerNode = null;
-        List<TextSegment> headerBase = null;
-        if (!group.getHeaderText().isEmpty()) {
-            headerBase = new ArrayList<TextSegment>();
-            headerBase.addAll(segmentParser.parse(group.getSender(), group.getNameColor()));
-            headerBase.addAll(segmentParser.parse(" " + ChatClock.formatTime(group.getLatestMillis()),
-                    ChatMarkdownSettings.getTimeTextArgb()));
-            headerNode = new SceneNode()
-                    .setHitTestable(false)
-                    .setFontSize(headerFont)
-                    .setSegments(headerBase)
-                    .setTextVerticalAlign(TextVerticalAlign.TOP);
-            groupNode.appendChild(headerNode);
-        }
-        int baseTextColor = system ? ChatMarkdownSettings.getSystemTextArgb() : 0xFFFFFFFF;
-        int bubbleColor = group.getAlignment() == MessageGroupModel.Alignment.SELF_RIGHT
-                ? ChatMarkdownSettings.getBubbleSelfArgb() : ChatMarkdownSettings.getBubbleOtherArgb();
-        List<SceneNode> messageNodes = new ArrayList<SceneNode>();
-        List<SceneNode> lineNodes = new ArrayList<SceneNode>();
-        List<List<TextSegment>> lineBases = new ArrayList<List<TextSegment>>();
-        for (ChatCardComposer.MessageLines message : group.getMessages()) {
-            SceneNode messageNode = SceneNode.column()
-                    .setHitTestable(true)
-                    .setWidthSizing(SceneNode.WidthSizing.SHRINK);
-            if (!system) {
-                messageNode.setBackgroundColor(bubbleColor)
-                        .setCornerRadius(ChatMarkdownSettings.getBubbleCornerRadius())
-                        .setPadding(paddingY, paddingX, paddingY, paddingX);
-            }
-            for (String line : message.getDisplayLines()) {
-                List<TextSegment> segments = parseCached(line, baseTextColor);
-                SceneNode lineNode = new SceneNode()
-                        .setHitTestable(false)
-                        .setFontSize(fontSize)
-                        .setSegments(segments)
-                        .setTextVerticalAlign(TextVerticalAlign.TOP)
-                        .setPreferredHeight(Math.max(1, lineHeight));
-                messageNode.appendChild(lineNode);
-                lineNodes.add(lineNode);
-                lineBases.add(segments);
-            }
-            groupNode.appendChild(messageNode);
-            messageNodes.add(messageNode);
-            registry.put(messageNode, message.getRecord());
-        }
-        if (hud) {
-            final SceneNode header = headerNode;
-            final List<TextSegment> headerSegments = headerBase;
-            final int bubble = bubbleColor;
-            final int[] lastAlpha = new int[] { 255 };
-            rt.bind(Computed.create(() -> Integer.valueOf(ChatCardComposer.fadeAlpha(
-                            group.getLatestMillis(), frameMillis.get().longValue(),
-                            ChatMarkdownSettings.getHudTtlMillis(),
-                            ChatMarkdownSettings.getHudFadeMillis(), 255))),
-                    alpha -> {
-                        int a = alpha.intValue();
-                        if (a != lastAlpha[0]) {
-                            lastAlpha[0] = a;
-                            applyAlpha(messageNodes, lineNodes, lineBases, header, headerSegments,
-                                    bubble, system, a);
-                        }
-                    });
-        }
-        return groupNode;
-    }
-
-    /** alpha 烘焙到气泡背景与段流(PAINT 级;alpha = 255 复用基础数据零分配)。 */
-    private void applyAlpha(List<SceneNode> messageNodes, List<SceneNode> lineNodes,
-            List<List<TextSegment>> lineBases, SceneNode headerNode, List<TextSegment> headerSegments,
-            int bubbleColor, boolean system, int alpha) {
-        for (int i = 0; i < messageNodes.size(); i++) {
-            if (!system) {
-                messageNodes.get(i).setBackgroundColor(ChatCardComposer.fadeColor(bubbleColor, alpha));
-            }
-        }
-        for (int i = 0; i < lineNodes.size(); i++) {
-            lineNodes.get(i).setSegments(ChatCardComposer.fadeSegments(lineBases.get(i), alpha));
-        }
-        if (headerNode != null && headerSegments != null) {
-            headerNode.setSegments(ChatCardComposer.fadeSegments(headerSegments, alpha));
-        }
-    }
-
-    /** 段解析缓存(text@baseColor)。 */
-    private List<TextSegment> parseCached(String text, int baseColor) {
-        String key = text + '@' + baseColor;
-        List<TextSegment> hit = segmentCache.get(key);
-        if (hit != null) {
-            return hit;
-        }
-        List<TextSegment> segments = segmentParser.parse(text, baseColor);
-        segmentCache.put(key, segments);
-        return segments;
     }
 
     /** 根节点动画 transform(收起滑出/弹出滑入/收回滑出;复合级,不触发重排)。 */
@@ -657,7 +432,7 @@ public final class ChatSceneController {
 
     /** HUD 形态:存在完全过期(存活+淡出结束)的组时推进移除阈值(阈值只进不退),触发结构重算。 */
     private void removeExpiredHudGroups(long nowMillis) {
-        if (currentShape() != ContentShape.HUD) {
+        if (!isHudPhase()) {
             return;
         }
         long window = ChatMarkdownSettings.getHudTtlMillis() + ChatMarkdownSettings.getHudFadeMillis();
@@ -672,6 +447,26 @@ public final class ChatSceneController {
                 return;
             }
         }
+    }
+
+    /** 帧时钟信号(渲染组件淡出/动画驱动)。 */
+    ReadableSignal<Long> frameMillisSignal() {
+        return frameMillis;
+    }
+
+    /** 懒取消息列表渲染器(依赖段解析器;供 ChatContainer 复用)。 */
+    ChatMessageList messageList() {
+        ChatMessageList current = messageList;
+        if (current == null) {
+            synchronized (this) {
+                current = messageList;
+                if (current == null) {
+                    current = new ChatMessageList(segmentParser);
+                    messageList = current;
+                }
+            }
+        }
+        return current;
     }
 
     /** 懒取合成器(依赖布局器)。 */

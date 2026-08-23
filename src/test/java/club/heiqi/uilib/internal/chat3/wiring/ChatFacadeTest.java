@@ -13,6 +13,7 @@ import net.minecraft.util.ChatComponentText;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
+import club.heiqi.uilib.internal.chat3.view.ChatMessageList;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
 
@@ -38,7 +39,7 @@ public class ChatFacadeTest {
             public String selfName() {
                 return "Alex";
             }
-        }, new ChatSceneController.SegmentParser() {
+        }, new ChatMessageList.SegmentParser() {
             @Override
             public List<TextSegment> parse(String text, int baseColor) {
                 TextStyle style = new TextStyle();
