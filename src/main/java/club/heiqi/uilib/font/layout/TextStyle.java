@@ -7,6 +7,13 @@ import club.heiqi.uilib.font.FontType;
  */
 public class TextStyle {
 
+    /**
+     * 公开默认构造:默认样式(白色 + NORMAL 字体),供外部按需造段
+     * (聊天段解析/测试注入等;copy() 保留既有语义)。
+     */
+    public TextStyle() {
+    }
+
     /** 上/下标相对正文字号的缩放比（与 CSS 默认 smaller 语义对齐）。 */
     public static final double SUP_SUB_SCALE = 0.75D;
 

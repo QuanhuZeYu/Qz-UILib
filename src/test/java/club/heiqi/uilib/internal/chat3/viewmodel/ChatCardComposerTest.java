@@ -24,7 +24,7 @@ public class ChatCardComposerTest {
         ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> hello world"), 1, arrived);
         MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
 
-        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000);
+        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, true);
 
         Assert.assertEquals(MessageGroupModel.Alignment.OTHER_LEFT, composed.getAlignment());
         Assert.assertEquals("Steve", composed.getSender());
@@ -41,7 +41,7 @@ public class ChatCardComposerTest {
         ChatLineRecord record = new ChatLineRecord(new ChatComponentText("[公告] 维护通知"), 1, NOW - 5000L);
         MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
 
-        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000);
+        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, true);
 
         Assert.assertEquals(MessageGroupModel.Alignment.SYSTEM_CENTER, composed.getAlignment());
         Assert.assertEquals("", composed.getHeaderText());
@@ -54,10 +54,29 @@ public class ChatCardComposerTest {
         ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> me"), 1, NOW - 5000L);
         MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Steve").get(0);
 
-        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000);
+        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, true);
 
         Assert.assertEquals(MessageGroupModel.Alignment.SELF_RIGHT, composed.getAlignment());
         Assert.assertEquals(SenderColorPalette.SELF_NAME_ARGB, composed.getNameColor());
+    }
+
+    @Test
+    public void shouldKeepFullAlphaWhenTtlDisabled() {
+        long arrived = NOW - 60_000L; // 早已过期
+        ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> old"), 1, arrived);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+
+        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, false);
+
+        Assert.assertEquals("容器形态 alpha 恒满", 255, composed.getAlpha());
+        Assert.assertTrue(composed.isVisible());
+    }
+
+    @Test
+    public void fadeColorCombinesBaseAlpha() {
+        Assert.assertEquals(0xE61C2733, ChatCardComposer.fadeColor(0xE61C2733, 255));
+        Assert.assertEquals(0x731C2733, ChatCardComposer.fadeColor(0xE61C2733, 128));
+        Assert.assertEquals(0x001C2733, ChatCardComposer.fadeColor(0xE61C2733, 0));
     }
 
     @Test

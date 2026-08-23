@@ -137,7 +137,7 @@ public class ChatGeometryTest {
         List<ChatCardComposer.ComposedGroup> composed = new ArrayList<ChatCardComposer.ComposedGroup>();
         int maxLine = WINDOW_W - 2 * MARGIN - 2 * PAD_X;
         for (MessageGroupModel group : groups) {
-            composed.add(composer.compose(group, NOW, maxLine));
+            composed.add(composer.compose(group, NOW, maxLine, true));
         }
         return composed;
     }

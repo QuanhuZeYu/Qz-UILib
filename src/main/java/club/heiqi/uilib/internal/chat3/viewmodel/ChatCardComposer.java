@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.font.layout.TextSegment;
+import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 
@@ -120,12 +122,13 @@ public final class ChatCardComposer {
      * @param group         消息组
      * @param nowMillis     当前时刻
      * @param maxLineWidthPx 单行最大宽度(窗口宽 - 2×边距 - 2×内边距)
-     * @return 合成组;HUD 形态过期(alpha = 0)仍返回(容器形态不裁剪)
+     * @param applyTtl       true = HUD 形态(10s 存活 + 淡出);false = 容器形态(alpha 恒 255)
+     * @return 合成组
      */
-    public ComposedGroup compose(MessageGroupModel group, long nowMillis, int maxLineWidthPx) {
+    public ComposedGroup compose(MessageGroupModel group, long nowMillis, int maxLineWidthPx, boolean applyTtl) {
         long latestMillis = group.getLatestMillis();
-        int alpha = fadeAlpha(latestMillis, nowMillis,
-                ChatMarkdownSettings.getHudTtlMillis(), ChatMarkdownSettings.getHudFadeMillis(), 255);
+        int alpha = applyTtl ? fadeAlpha(latestMillis, nowMillis,
+                ChatMarkdownSettings.getHudTtlMillis(), ChatMarkdownSettings.getHudFadeMillis(), 255) : 255;
         MessageGroupModel.Alignment alignment = group.getAlignment();
         String headerText = "";
         int nameColor = 0xFFFFFFFF;
@@ -160,6 +163,42 @@ public final class ChatCardComposer {
             return line.getRecord().getFormattedText();
         }
         return FormatPrefixStripper.strip(line.getRecord().getFormattedText(), plain.length() - rest.length());
+    }
+
+    /**
+     * 颜色 alpha 烘焙(纯函数):基础 alpha × 淡出因子(整数截断),保留 RGB。
+     *
+     * <p>半透明基础色(如气泡 E6)与淡出因子组合:alpha = 255 时结果 = 基础色本身。</p>
+     *
+     * @param baseArgb 基础色(ARGB)
+     * @param alpha    淡出因子(0..255)
+     * @return 烘焙后的 ARGB
+     */
+    public static int fadeColor(int baseArgb, int alpha) {
+        int factor = Math.max(0, Math.min(255, alpha));
+        int baseAlpha = (baseArgb >>> 24) & 0xFF;
+        int combined = (baseAlpha * factor) / 255;
+        return (baseArgb & 0x00FFFFFF) | (combined << 24);
+    }
+
+    /**
+     * 段流 alpha 烘焙(纯函数):alpha ≥ 255 零分配复用原列表。
+     *
+     * @param base  基础段流(不可变)
+     * @param alpha 目标 alpha(0..255)
+     * @return 烘焙后的段流(alpha ≥ 255 时同引用)
+     */
+    public static List<TextSegment> fadeSegments(List<TextSegment> base, int alpha) {
+        if (alpha >= 255) {
+            return base;
+        }
+        List<TextSegment> faded = new ArrayList<TextSegment>(base.size());
+        for (TextSegment segment : base) {
+            TextStyle style = segment.getStyle().copy();
+            style.setColor(fadeColor(style.getColor(), alpha));
+            faded.add(new TextSegment(segment.getText(), style));
+        }
+        return faded;
     }
 
     /**
