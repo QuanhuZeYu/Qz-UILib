@@ -58,6 +58,8 @@ public class ChatCardComposerTest {
 
         Assert.assertEquals(MessageGroupModel.Alignment.SELF_RIGHT, composed.getAlignment());
         Assert.assertEquals(SenderColorPalette.SELF_NAME_ARGB, composed.getNameColor());
+        // 自己的消息:组头只显示时间(名字与气泡同为主题蓝,不显示名字避免撞色)
+        Assert.assertEquals(ChatClock.formatTime(NOW - 5000L), composed.getHeaderText());
     }
 
     @Test

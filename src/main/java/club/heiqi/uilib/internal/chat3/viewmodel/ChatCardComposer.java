@@ -132,12 +132,16 @@ public final class ChatCardComposer {
         MessageGroupModel.Alignment alignment = group.getAlignment();
         String headerText = "";
         int nameColor = 0xFFFFFFFF;
-        if (alignment != MessageGroupModel.Alignment.SYSTEM_CENTER) {
+        if (alignment == MessageGroupModel.Alignment.SELF_RIGHT) {
+            // 自己的消息:组头只显示时间(名字与气泡同为主题蓝,不显示名字避免撞色)
+            nameColor = SenderColorPalette.SELF_NAME_ARGB;
+            headerText = ChatClock.formatTime(latestMillis);
+        } else if (alignment == MessageGroupModel.Alignment.OTHER_LEFT) {
             String sender = group.getSender();
-            nameColor = alignment == MessageGroupModel.Alignment.SELF_RIGHT
-                    ? SenderColorPalette.SELF_NAME_ARGB : SenderColorPalette.colorFor(sender);
+            nameColor = SenderColorPalette.colorFor(sender);
             headerText = sender + " " + ChatClock.formatTime(latestMillis);
         }
+        // SYSTEM_CENTER:无组头(headerText 空,nameColor 白)
         List<MessageLines> messages = new ArrayList<MessageLines>();
         for (MessageGroupModel.GroupLine line : group.getLines()) {
             ChatLineRecord record = line.getRecord();

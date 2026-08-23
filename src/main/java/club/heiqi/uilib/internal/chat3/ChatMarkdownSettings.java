@@ -17,10 +17,10 @@ public final class ChatMarkdownSettings {
     private static volatile int chatFontSizePx = 13;
     /** 行距附加(px;行高 = 字号 + 行距)。 */
     private static volatile int chatLineSpacingPx = 5;
-    /** 聊天窗口宽 = 视口宽 × 比例(用户定:约 1/8,随窗口缩放动态)。 */
-    private static volatile double chatWidthRatio = 0.125;
+    /** 聊天窗口宽 = 视口宽 × 比例(用户定:约 1/5,随窗口缩放动态)。 */
+    private static volatile double chatWidthRatio = 0.2;
     /** 聊天窗口最小宽(px)。 */
-    private static volatile int minChatWidthPx = 200;
+    private static volatile int minChatWidthPx = 280;
     /** 聊天窗口距屏幕边缘边距(px)。 */
     private static volatile int chatMarginPx = 10;
     /** 气泡水平内边距(px)。 */
