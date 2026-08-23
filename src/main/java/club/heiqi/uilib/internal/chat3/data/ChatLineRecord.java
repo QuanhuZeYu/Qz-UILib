@@ -18,6 +18,9 @@ public final class ChatLineRecord {
     /** 纯文本惰性缓存(volatile:任意线程读取,值不可变)。 */
     private volatile String plainText;
 
+    /** 格式化文本惰性缓存(含 § 样式码,渲染切分/样式解析输入)。 */
+    private volatile String formattedText;
+
     /**
      * @param component 消息组件(非空,样式/事件链随引用保留)
      * @param messageId 原版消息 ID(deleteChatLine 精确删除用)
@@ -55,6 +58,18 @@ public final class ChatLineRecord {
         if (cached == null) {
             cached = component.getUnformattedText();
             plainText = cached;
+        }
+        return cached;
+    }
+
+    /**
+     * @return 格式化文本(含 § 样式码;惰性缓存;渲染切分与样式解析输入)
+     */
+    public String getFormattedText() {
+        String cached = formattedText;
+        if (cached == null) {
+            cached = component.getFormattedText();
+            formattedText = cached;
         }
         return cached;
     }
