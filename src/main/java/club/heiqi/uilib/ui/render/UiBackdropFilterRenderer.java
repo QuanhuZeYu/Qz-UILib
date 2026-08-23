@@ -211,13 +211,17 @@ final class UiBackdropFilterRenderer {
                 0.0F, 1.0F);
         float bottomV = clampFloat(1.0F - ((float) bottom + sampleOffsetY - (float) sampleTop) / (float) sampleHeight,
                 0.0F, 1.0F);
-        net.minecraft.client.renderer.Tessellator tessellator = net.minecraft.client.renderer.Tessellator.instance;
-        tessellator.startDrawingQuads();
-        tessellator.addVertexWithUV(left, bottom, 0.0D, leftU, bottomV);
-        tessellator.addVertexWithUV(right, bottom, 0.0D, rightU, bottomV);
-        tessellator.addVertexWithUV(right, top, 0.0D, rightU, topV);
-        tessellator.addVertexWithUV(left, top, 0.0D, leftU, topV);
-        tessellator.draw();
+        // 架构禁令:不使用原版包装类(Tessellator),直接 GL 立即模式
+        GL11.glBegin(GL11.GL_QUADS);
+        GL11.glTexCoord2f(leftU, bottomV);
+        GL11.glVertex2f((float) left, (float) bottom);
+        GL11.glTexCoord2f(rightU, bottomV);
+        GL11.glVertex2f((float) right, (float) bottom);
+        GL11.glTexCoord2f(rightU, topV);
+        GL11.glVertex2f((float) right, (float) top);
+        GL11.glTexCoord2f(leftU, topV);
+        GL11.glVertex2f((float) left, (float) top);
+        GL11.glEnd();
     }
 
     private static void drawTintFallback(UiRenderContext context, int left, int top, int right, int bottom,

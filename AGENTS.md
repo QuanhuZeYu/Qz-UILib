@@ -13,6 +13,7 @@
 - layout、paint、replay、裁剪和输入共享同一 logical px 坐标事实；Minecraft GUI Scale 不得混入内部闭环，缩放只在 host 边界成对转换。
 - UI 变化以 state/signal 驱动；输入 handler 不直接改节点属性或树结构。焦点、capture 等命令只通过路由器受控入口改变权威交互状态。
 - paint/replay 之间传递自包含、不可变的绘制计划；replay/backend 必须恢复其触碰的 GL 状态，不能污染 Minecraft 或其他 mod 的后续渲染。
+- **绘制禁令（用户硬性要求，2026-08-23 定）：UILib 严禁使用原版包装类（Tessellator 等）。** 绘制一律走直接 GL（GL11/GL14 立即模式与状态调用）或 UILib 自有渲染管线；原版包装类在 Angelica/lwjgl3ify 下行为不可控（真机实证：全局 Tessellator 的 TRIANGLE_FAN 不可见、聊天卡片背景整块丢失）。
 - 公共 API、配置持久数据、网络协议、版本兼容承诺或上述边界需要改变时，先说明明确后果并取得用户确认。
 
 ## 工作方式与验证

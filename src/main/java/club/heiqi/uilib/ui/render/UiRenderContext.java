@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.render;
 import java.util.List;
 import java.util.Objects;
 
-import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 
@@ -320,13 +319,13 @@ public class UiRenderContext implements UiRenderBackend {
         GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        Tessellator tessellator = Tessellator.instance;
-        tessellator.startDrawingQuads();
-        tessellator.addVertex(right, bottom, 0.0D);
-        tessellator.addVertex(right, top, 0.0D);
-        tessellator.addVertex(left, top, 0.0D);
-        tessellator.addVertex(left, bottom, 0.0D);
-        tessellator.draw();
+        // 架构禁令:不使用原版包装类(Tessellator 等),直接 GL 立即模式
+        GL11.glBegin(GL11.GL_QUADS);
+        GL11.glVertex2i(right, bottom);
+        GL11.glVertex2i(right, top);
+        GL11.glVertex2i(left, top);
+        GL11.glVertex2i(left, bottom);
+        GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         notifyMainLayerContentChanged();

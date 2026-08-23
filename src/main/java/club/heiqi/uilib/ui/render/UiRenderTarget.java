@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.render;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 
-import net.minecraft.client.renderer.Tessellator;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -140,13 +139,17 @@ public class UiRenderTarget {
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
 
-            Tessellator tessellator = Tessellator.instance;
-            tessellator.startDrawingQuads();
-            tessellator.addVertexWithUV(0.0D, guiHeight, 0.0D, 0.0D, 0.0D);
-            tessellator.addVertexWithUV(guiWidth, guiHeight, 0.0D, 1.0D, 0.0D);
-            tessellator.addVertexWithUV(guiWidth, 0.0D, 0.0D, 1.0D, 1.0D);
-            tessellator.addVertexWithUV(0.0D, 0.0D, 0.0D, 0.0D, 1.0D);
-            tessellator.draw();
+            // 架构禁令:不使用原版包装类(Tessellator),直接 GL 立即模式
+            GL11.glBegin(GL11.GL_QUADS);
+            GL11.glTexCoord2f(0.0F, 0.0F);
+            GL11.glVertex2f(0.0F, guiHeight);
+            GL11.glTexCoord2f(1.0F, 0.0F);
+            GL11.glVertex2f(guiWidth, guiHeight);
+            GL11.glTexCoord2f(1.0F, 1.0F);
+            GL11.glVertex2f(guiWidth, 0.0F);
+            GL11.glTexCoord2f(0.0F, 1.0F);
+            GL11.glVertex2f(0.0F, 0.0F);
+            GL11.glEnd();
 
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         } finally {
@@ -173,13 +176,17 @@ public class UiRenderTarget {
             GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_ONE);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
 
-            Tessellator tessellator = Tessellator.instance;
-            tessellator.startDrawingQuads();
-            tessellator.addVertexWithUV(0.0D, height, 0.0D, 0.0D, 0.0D);
-            tessellator.addVertexWithUV(width, height, 0.0D, 1.0D, 0.0D);
-            tessellator.addVertexWithUV(width, 0.0D, 0.0D, 1.0D, 1.0D);
-            tessellator.addVertexWithUV(0.0D, 0.0D, 0.0D, 0.0D, 1.0D);
-            tessellator.draw();
+            // 架构禁令:不使用原版包装类(Tessellator),直接 GL 立即模式
+            GL11.glBegin(GL11.GL_QUADS);
+            GL11.glTexCoord2f(0.0F, 0.0F);
+            GL11.glVertex2f(0.0F, height);
+            GL11.glTexCoord2f(1.0F, 0.0F);
+            GL11.glVertex2f(width, height);
+            GL11.glTexCoord2f(1.0F, 1.0F);
+            GL11.glVertex2f(width, 0.0F);
+            GL11.glTexCoord2f(0.0F, 1.0F);
+            GL11.glVertex2f(0.0F, 0.0F);
+            GL11.glEnd();
 
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         } finally {
@@ -225,13 +232,17 @@ public class UiRenderTarget {
             float topV = 1.0F - (float) clippedTop / (float) height;
             float bottomV = 1.0F - (float) clippedBottom / (float) height;
 
-            Tessellator tessellator = Tessellator.instance;
-            tessellator.startDrawingQuads();
-            tessellator.addVertexWithUV(clippedLeft, clippedBottom, 0.0D, leftU, bottomV);
-            tessellator.addVertexWithUV(clippedRight, clippedBottom, 0.0D, rightU, bottomV);
-            tessellator.addVertexWithUV(clippedRight, clippedTop, 0.0D, rightU, topV);
-            tessellator.addVertexWithUV(clippedLeft, clippedTop, 0.0D, leftU, topV);
-            tessellator.draw();
+            // 架构禁令:不使用原版包装类(Tessellator),直接 GL 立即模式
+            GL11.glBegin(GL11.GL_QUADS);
+            GL11.glTexCoord2f(leftU, bottomV);
+            GL11.glVertex2f(clippedLeft, clippedBottom);
+            GL11.glTexCoord2f(rightU, bottomV);
+            GL11.glVertex2f(clippedRight, clippedBottom);
+            GL11.glTexCoord2f(rightU, topV);
+            GL11.glVertex2f(clippedRight, clippedTop);
+            GL11.glTexCoord2f(leftU, topV);
+            GL11.glVertex2f(clippedLeft, clippedTop);
+            GL11.glEnd();
 
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);

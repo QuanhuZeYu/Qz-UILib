@@ -4,8 +4,9 @@ package club.heiqi.uilib.ui.image;
  * 普通宿主图片渲染委托。
  *
  * <p>该轻量路径只处理 texture 与 bitmap；ItemStack 图标由 {@link ItemIconRenderer} 当帧直绘。
- * 自定义实现属于受信任的窄委托：返回前必须结束 Tessellator，并不得遗留 program、VAO/VBO、
- * client array、matrix stack 或其它无 GL error 的宿主状态漂移。</p>
+ * 自定义实现属于受信任的窄委托：架构禁令禁用原版包装类（Tessellator 等），绘制走直接 GL
+ * 或 UILib 自有管线；返回前不得遗留 program、VAO/VBO、client array、matrix stack
+ * 或其它无 GL error 的宿主状态漂移。</p>
  */
 public interface HostImageRenderer extends AutoCloseable {
 

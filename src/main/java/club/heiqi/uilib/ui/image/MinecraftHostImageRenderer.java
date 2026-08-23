@@ -9,7 +9,6 @@ import java.util.Map;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.resources.IResource;
 import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.util.ResourceLocation;
@@ -172,14 +171,17 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         minecraft.getTextureManager().bindTexture(texture);
         preparePlainTextureQuadState();
         applyImageBlendState();
-        Tessellator tessellator = Tessellator.instance;
-        tessellator.startDrawingQuads();
-        tessellator.setColorRGBA_F(1.0F, 1.0F, 1.0F, 1.0F);
-        tessellator.addVertexWithUV(left, bottom, 0.0D, u0, v1);
-        tessellator.addVertexWithUV(right, bottom, 0.0D, u1, v1);
-        tessellator.addVertexWithUV(right, top, 0.0D, u1, v0);
-        tessellator.addVertexWithUV(left, top, 0.0D, u0, v0);
-        tessellator.draw();
+        // 架构禁令:不使用原版包装类(Tessellator),直接 GL 立即模式
+        GL11.glBegin(GL11.GL_QUADS);
+        GL11.glTexCoord2f(u0, v1);
+        GL11.glVertex2f((float) left, (float) bottom);
+        GL11.glTexCoord2f(u1, v1);
+        GL11.glVertex2f((float) right, (float) bottom);
+        GL11.glTexCoord2f(u1, v0);
+        GL11.glVertex2f((float) right, (float) top);
+        GL11.glTexCoord2f(u0, v0);
+        GL11.glVertex2f((float) left, (float) top);
+        GL11.glEnd();
     }
 
     private static void preparePlainTextureQuadState() {

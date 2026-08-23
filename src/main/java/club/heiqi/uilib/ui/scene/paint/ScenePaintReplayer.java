@@ -13,7 +13,7 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
  *
  * <p>回放器只通过 scene 渲染出口接口 {@link UiRenderBackend} 认识渲染层，不持有任何
  * 具体后端类（守宪章信条六，scene 核心可脱 MC 移植）。Minecraft 平台下，该接口的
- * 实现是 {@code club.heiqi.uilib.ui.render.UiRenderContext}（焊 Tessellator + LWJGL GL）。</p>
+ * 实现是 {@code club.heiqi.uilib.ui.render.UiRenderContext}（直接 LWJGL GL，架构禁令禁用原版包装类）。</p>
  *
  * <h3>回放期零节点反查（宪章信条六/I6）</h3>
  * <p>每条 {@link PaintCommand} 已经是自包含的绘制操作描述（坐标、颜色、文本、样式

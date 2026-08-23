@@ -16,8 +16,9 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  * <p>本接口的方法全部是平台无关的纯数值绘制指令（坐标、颜色、文本、不透明度、
  * transform 分量、圆角等），不出现任何 GL / Minecraft 类型，也不出现 signal /
  * 组件 / DOM 概念（守不变量 I6）。实现方负责把这些指令翻译成具体平台的绘制调用：
- * Minecraft 平台的实现是 {@link UiRenderContext}，它把每条指令焊到 Tessellator +
- * LWJGL GL 调用上；移植到其它平台只需另写一份实现，无需触碰 scene 核心。</p>
+ * Minecraft 平台的实现是 {@link UiRenderContext}，它把每条指令焊到直接 LWJGL GL 调用上
+ * （架构禁令：禁用原版包装类 Tessellator 等）；移植到其它平台只需另写一份实现，
+ * 无需触碰 scene 核心。</p>
  *
  * <p>方法集 = scene 回放器当前实际回放命令所需的全部能力。本接口只收录 scene
  * 出口契约真正消费的方法，不收录 {@link UiRenderContext} 面向旧栈的其它重载。</p>
