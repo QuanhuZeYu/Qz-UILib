@@ -14,6 +14,7 @@ import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.input.ChatInputScreen;
 import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
+import club.heiqi.uilib.ui.host.NativeDisplaySize;
 
 /**
  * 聊天系统 3.0 安装器:把 GuiIngame.persistantChatGUI 替换为 {@link ChatFacade}(架空原版),
@@ -88,7 +89,7 @@ public final class ChatMarkdownInstaller {
             lastChatOpen = open;
             controller.setChatOpen(open);
         }
-        controller.setHostViewport(mc.displayWidth, mc.displayHeight);
+        controller.setHostViewport(NativeDisplaySize.width(), NativeDisplaySize.height());
         controller.tick(System.currentTimeMillis());
     }
 

@@ -11,6 +11,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.opengl.GL11;
 
+import club.heiqi.uilib.ui.host.NativeDisplaySize;
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -137,8 +138,13 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
         int frameBaseDepth = club.heiqi.uilib.util.GlAttribDepth.current();
         drawDefaultBackground();
         Minecraft minecraft = Minecraft.getMinecraft();
-        int nativeWidth = Math.max(1, minecraft.displayWidth);
-        int nativeHeight = Math.max(1, minecraft.displayHeight);
+        // 原生窗口分辨率(物理像素):不依赖 MC 的 scaled displayWidth(用户要求)
+        int nativeWidth = Math.max(1, NativeDisplaySize.width());
+        int nativeHeight = Math.max(1, NativeDisplaySize.height());
+        // MC 传入的 mouse 是 scaled 逻辑像素,换算到原生物理坐标系
+        int scaleFactor = Math.max(1, new ScaledResolution(minecraft, nativeWidth, nativeHeight).getScaleFactor());
+        int pointerX = mouseX * scaleFactor;
+        int pointerY = mouseY * scaleFactor;
 
         if (DEBUG && !firstFrameLogged) {
             logFirstFrameDiagnostics(minecraft, mouseX, mouseY, nativeWidth, nativeHeight);
@@ -163,7 +169,7 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
                 paintContextCompositor.beginFrame();
                 mainLayerSnapshotService.beginFrame();
                 try {
-                    UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, mouseX, mouseY,
+                    UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, pointerX, pointerY,
                             partialTicks, paintContextCompositor, mainLayerSnapshotService,
                             runtimeAdapters);
                     surface.render(nativeWidth, nativeHeight, context, 0, 0);
@@ -464,4 +470,5 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
             }
         }
     }
+
 }
