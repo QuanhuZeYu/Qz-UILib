@@ -17,8 +17,10 @@ public final class ChatMarkdownSettings {
     private static volatile int chatFontSizePx = 13;
     /** 行距附加(px;行高 = 字号 + 行距)。 */
     private static volatile int chatLineSpacingPx = 5;
-    /** 聊天窗口宽(px)。 */
-    private static volatile int chatWidthPx = 400;
+    /** 聊天窗口宽 = 视口宽 × 比例(用户定:约 1/8,随窗口缩放动态)。 */
+    private static volatile double chatWidthRatio = 0.125;
+    /** 聊天窗口最小宽(px)。 */
+    private static volatile int minChatWidthPx = 200;
     /** 聊天窗口距屏幕边缘边距(px)。 */
     private static volatile int chatMarginPx = 10;
     /** 气泡水平内边距(px)。 */
@@ -37,10 +39,10 @@ public final class ChatMarkdownSettings {
     private static volatile long hudTtlMillis = 10000L;
     /** HUD 形态淡出时长(ms)。 */
     private static volatile long hudFadeMillis = 500L;
-    /** 容器宽(px,固定)。 */
-    private static volatile int containerWidthPx = 400;
-    /** 容器高(px,固定)。 */
-    private static volatile int containerHeightPx = 280;
+    /** 容器高 = 视口高 × 比例(用户定:约 1/2,随窗口缩放动态)。 */
+    private static volatile double containerHeightRatio = 0.5;
+    /** 容器最小高(px)。 */
+    private static volatile int minContainerHeightPx = 160;
     /** 容器背景(ARGB)。 */
     private static volatile int containerBgArgb = 0xD91B1B1F;
     /** 容器描边(ARGB)。 */
@@ -88,9 +90,12 @@ public final class ChatMarkdownSettings {
         return chatFontSizePx + chatLineSpacingPx;
     }
 
-    /** @return 聊天窗口宽(px) */
-    public static int getChatWidthPx() {
-        return chatWidthPx;
+    /**
+     * @param viewportWidth 视口宽(逻辑 px)
+     * @return 聊天窗口宽(px)= max(最小宽, 视口宽 × 比例)
+     */
+    public static int chatWidthFor(int viewportWidth) {
+        return Math.max(minChatWidthPx, (int) Math.round(viewportWidth * chatWidthRatio));
     }
 
     /** @return 聊天窗口距屏幕边缘边距(px) */
@@ -138,14 +143,12 @@ public final class ChatMarkdownSettings {
         return hudFadeMillis;
     }
 
-    /** @return 容器宽(px) */
-    public static int getContainerWidthPx() {
-        return containerWidthPx;
-    }
-
-    /** @return 容器高(px) */
-    public static int getContainerHeightPx() {
-        return containerHeightPx;
+    /**
+     * @param viewportHeight 视口高(逻辑 px)
+     * @return 容器高(px)= max(最小高, 视口高 × 比例)
+     */
+    public static int containerHeightFor(int viewportHeight) {
+        return Math.max(minContainerHeightPx, (int) Math.round(viewportHeight * containerHeightRatio));
     }
 
     /** @return 容器背景(ARGB) */

@@ -101,7 +101,7 @@ public class ChatCoreTest {
     public void shouldExposeGeometryAndState() {
         ChatCore core = new ChatCore(controller());
         Assert.assertFalse(core.getChatOpen());
-        Assert.assertEquals(club.heiqi.uilib.internal.chat3.ChatMarkdownSettings.getContainerHeightPx(),
+        Assert.assertEquals(club.heiqi.uilib.internal.chat3.ChatMarkdownSettings.containerHeightFor(0),
                 core.chatHeight());
         Assert.assertEquals((float) club.heiqi.uilib.internal.chat3.ChatMarkdownSettings.getChatLineHeightPx(),
                 core.chatLineHeight(), 0.001F);

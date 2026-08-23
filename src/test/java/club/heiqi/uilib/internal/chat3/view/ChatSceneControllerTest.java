@@ -183,6 +183,29 @@ public class ChatSceneControllerTest {
     }
 
     @Test
+    public void containerUsesDynamicViewportSize() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        controller.setHostViewport(1600, 900);
+        SceneNode root = build(controller, rt);
+
+        Assert.assertEquals("窗口宽 = 视口宽 × 1/8",
+                ChatMarkdownSettings.chatWidthFor(1600), root.getPreferredWidth());
+
+        controller.setChatOpen(true);
+        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+        rt.flush();
+
+        SceneNode container = root.__getChildren().get(0).__getChildren().get(0);
+        Assert.assertEquals("容器宽随视口", ChatMarkdownSettings.chatWidthFor(1600),
+                container.getPreferredWidth());
+        Assert.assertEquals("容器高 = 视口高 × 1/2", ChatMarkdownSettings.containerHeightFor(900),
+                container.getPreferredHeight());
+    }
+
+    @Test
     public void hitTestReturnsComponentInContainerForm() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
@@ -193,8 +216,9 @@ public class ChatSceneControllerTest {
         controller.setChatOpen(true);
         controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
         rt.flush();
-        LAYOUT.layout(root, new Constraints(400));
         controller.setHostViewport(400, 300);
+        rt.flush(); // 视口变化触发的重建需 flush 后挂载
+        LAYOUT.layout(root, new Constraints(400));
 
         // 树:root → mount → container → list → group → (组头, 消息节点)
         SceneNode container = root.__getChildren().get(0).__getChildren().get(0);

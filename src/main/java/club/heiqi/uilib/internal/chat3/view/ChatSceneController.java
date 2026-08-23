@@ -203,13 +203,13 @@ public final class ChatSceneController {
 
     /** @return 容器可视行数(func_146232_i 用,近似 = 容器高/行高) */
     public int visibleLineCount() {
-        return Math.max(1, ChatMarkdownSettings.getContainerHeightPx()
+        return Math.max(1, ChatMarkdownSettings.containerHeightFor(hostViewportHeight)
                 / ChatMarkdownSettings.getChatLineHeightPx());
     }
 
-    /** @return 聊天高度(func_146246_g 用,容器高) */
+    /** @return 聊天高度(func_146246_g 用,容器高,随视口动态) */
     public int chatHeight() {
-        return ChatMarkdownSettings.getContainerHeightPx();
+        return ChatMarkdownSettings.containerHeightFor(hostViewportHeight);
     }
 
     /**
@@ -219,8 +219,16 @@ public final class ChatSceneController {
      * @param height 视口高
      */
     public void setHostViewport(int width, int height) {
-        hostViewportWidth = Math.max(1, width);
-        hostViewportHeight = Math.max(1, height);
+        int newWidth = Math.max(1, width);
+        int newHeight = Math.max(1, height);
+        if (newWidth != hostViewportWidth || newHeight != hostViewportHeight) {
+            hostViewportWidth = newWidth;
+            hostViewportHeight = newHeight;
+            // 视口变化(窗口缩放/分辨率切换):动态尺寸变化,重建形态树
+            if (runtime != null && root != null) {
+                rebuildTree();
+            }
+        }
     }
 
     /**
@@ -328,7 +336,7 @@ public final class ChatSceneController {
         this.runtime = rt;
         SceneNode newRoot = SceneNode.column()
                 .setHitTestable(false)
-                .setPreferredWidth(Math.max(1, ChatMarkdownSettings.getChatWidthPx()));
+                .setPreferredWidth(Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)));
         this.root = newRoot;
         this.mount = null;
         this.builtShape = null;
@@ -391,8 +399,8 @@ public final class ChatSceneController {
                             ChatMarkdownSettings.getBubblePaddingX(),
                             ChatMarkdownSettings.getBubblePaddingY(),
                             ChatMarkdownSettings.getBubblePaddingX())
-                    .setPreferredWidth(Math.max(1, ChatMarkdownSettings.getContainerWidthPx()))
-                    .setPreferredHeight(Math.max(1, ChatMarkdownSettings.getContainerHeightPx()))
+                    .setPreferredWidth(Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)))
+                    .setPreferredHeight(Math.max(1, ChatMarkdownSettings.containerHeightFor(hostViewportHeight)))
                     .setClipChildren(true);
             SceneNode list = SceneNode.column()
                     .setHitTestable(false)
@@ -420,7 +428,7 @@ public final class ChatSceneController {
         contentVersion.get().intValue(); // 结构依赖
         boolean applyTtl = currentShape() == ContentShape.HUD;
         List<MessageGroupModel> groups = grouper.group(history.snapshot(), selfNameProvider.selfName());
-        int maxLine = Math.max(1, ChatMarkdownSettings.getChatWidthPx()
+        int maxLine = Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)
                 - 2 * ChatMarkdownSettings.getBubblePaddingX());
         List<ChatCardComposer.ComposedGroup> composed =
                 new ArrayList<ChatCardComposer.ComposedGroup>();
@@ -571,7 +579,7 @@ public final class ChatSceneController {
     private Transform animTransform() {
         DisplayStateMachine.Phase phase = phaseSignal.get();
         long now = frameMillis.get().longValue();
-        float width = (float) ChatMarkdownSettings.getContainerWidthPx();
+        float width = (float) ChatMarkdownSettings.chatWidthFor(hostViewportWidth);
         switch (phase) {
             case COLLAPSING:
                 return Transform.translate(

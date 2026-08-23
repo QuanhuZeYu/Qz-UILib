@@ -41,8 +41,7 @@ public final class ChatHudWindow {
                     .visibility(HudVisibility.IN_WORLD)
                     .stackOrder(STACK_ORDER)
                     .margin(ChatMarkdownSettings.getChatMarginPx())
-                    .maxWidth(ChatMarkdownSettings.getChatWidthPx()
-                            + 2 * ChatMarkdownSettings.getBubblePaddingX())
+                    .maxWidth(4096) // 内容根宽度随视口动态(chatWidthFor),此处只给硬上限
                     .chrome(false)
                     .build();
             registration = ClientHudService.getInstance().register(spec, rt -> instance.buildContent(rt));

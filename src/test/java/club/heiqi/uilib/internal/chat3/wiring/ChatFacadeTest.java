@@ -102,10 +102,10 @@ public class ChatFacadeTest {
         ChatFacade facade = new ChatFacade(null, testController());
 
         Assert.assertFalse("初始未打开聊天", facade.getChatOpen());
-        Assert.assertEquals(ChatMarkdownSettings.getContainerHeightPx(), facade.func_146228_f());
-        Assert.assertEquals(ChatMarkdownSettings.getContainerHeightPx(), facade.func_146246_g());
+        Assert.assertEquals(ChatMarkdownSettings.containerHeightFor(0), facade.func_146228_f());
+        Assert.assertEquals(ChatMarkdownSettings.containerHeightFor(0), facade.func_146246_g());
         Assert.assertEquals(ChatMarkdownSettings.getChatLineHeightPx(), facade.func_146244_h(), 0.001F);
-        Assert.assertEquals(ChatMarkdownSettings.getContainerHeightPx()
+        Assert.assertEquals(ChatMarkdownSettings.containerHeightFor(0)
                 / ChatMarkdownSettings.getChatLineHeightPx(), facade.func_146232_i());
         Assert.assertNull("未布局/无消息时命中为空", facade.func_146236_a(0, 0));
     }
