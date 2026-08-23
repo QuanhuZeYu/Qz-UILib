@@ -1,17 +1,20 @@
 package club.heiqi.uilib.internal.chat3.view;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.util.IChatComponent;
 
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatHistory;
+import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatClock;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
@@ -21,6 +24,8 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.layout.AlignSelf;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.node.Transform;
@@ -147,6 +152,14 @@ public final class ChatSceneController {
     private SceneListHandle listHandle;
     private Binding scrollBinding;
 
+    /** 消息节点 → 记录(命中检测查询;树重建时清空,离树节点惰性清理)。 */
+    private final Map<SceneNode, ChatLineRecord> messageNodes =
+            new IdentityHashMap<SceneNode, ChatLineRecord>();
+
+    /** 宿主视口(逻辑 px,渲染帧由接线层写入;命中检测窗口原点推导用)。 */
+    private int hostViewportWidth;
+    private int hostViewportHeight;
+
     /** 段解析缓存(text@baseColor → segments;epoch 失效由 controller 重建时清空)。 */
     private final Map<String, List<TextSegment>> segmentCache =
             new LinkedHashMap<String, List<TextSegment>>(64, 0.75F, true) {
@@ -197,6 +210,59 @@ public final class ChatSceneController {
     /** @return 聊天高度(func_146246_g 用,容器高) */
     public int chatHeight() {
         return ChatMarkdownSettings.getContainerHeightPx();
+    }
+
+    /**
+     * 宿主视口尺寸(逻辑 px;渲染帧由接线层写入)。
+     *
+     * @param width  视口宽
+     * @param height 视口高
+     */
+    public void setHostViewport(int width, int height) {
+        hostViewportWidth = Math.max(1, width);
+        hostViewportHeight = Math.max(1, height);
+    }
+
+    /**
+     * 命中检测(func_146236_a 转发):点 → 消息组件(事件链经原版组件回投)。
+     *
+     * <p>窗口原点推导:BOTTOM_LEFT 锚点 + 边距,底边 = 视口高 - 边距 - 根高(chrome=false
+     * 无外壳;聊天窗口 stackOrder 最底无堆叠偏移——S6 真机校准)。</p>
+     *
+     * @param x 命中点 x(逻辑 px,scaled resolution 口径)
+     * @param y 命中点 y
+     * @return 命中的消息组件;未命中返回 null
+     */
+    public IChatComponent hitTest(int x, int y) {
+        if (root == null || hostViewportWidth <= 0 || hostViewportHeight <= 0) {
+            return null;
+        }
+        AnchorRect rootBox = SceneGeometry.absoluteBox(root, 0, 0);
+        int margin = ChatMarkdownSettings.getChatMarginPx();
+        int rootAbsX = margin;
+        int rootAbsY = hostViewportHeight - margin - rootBox.getHeight();
+        List<SceneNode> stale = null;
+        for (Map.Entry<SceneNode, ChatLineRecord> entry : messageNodes.entrySet()) {
+            SceneNode node = entry.getKey();
+            if (node.__getParent() == null) {
+                if (stale == null) {
+                    stale = new ArrayList<SceneNode>();
+                }
+                stale.add(node);
+                continue;
+            }
+            AnchorRect box = SceneGeometry.absoluteBox(node, rootAbsX, rootAbsY);
+            if (x >= box.getX() && x < box.getX() + box.getWidth()
+                    && y >= box.getY() && y < box.getY() + box.getHeight()) {
+                return entry.getValue().getComponent();
+            }
+        }
+        if (stale != null) {
+            for (SceneNode node : stale) {
+                messageNodes.remove(node);
+            }
+        }
+        return null;
     }
 
     // ==================== 信号驱动 ====================
@@ -300,6 +366,7 @@ public final class ChatSceneController {
             scrollBinding.dispose();
             scrollBinding = null;
         }
+        messageNodes.clear();
         if (mount != null) {
             root.removeChild(mount);
         }
@@ -446,6 +513,7 @@ public final class ChatSceneController {
             }
             groupNode.appendChild(messageNode);
             messageNodes.add(messageNode);
+            this.messageNodes.put(messageNode, message.getRecord());
         }
         if (hud) {
             final SceneNode header = headerNode;

@@ -13,8 +13,14 @@ import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
+import net.minecraft.util.IChatComponent;
+
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.AlignSelf;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -24,6 +30,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 public class ChatSceneControllerTest {
 
     private static final long T0 = 1_700_000_000_000L;
+
+    private static final SceneLayoutEngine LAYOUT = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
 
     /** 每字符 2px 的确定性度量(§ 格式码对零宽)。 */
     private static final ChatLineLayouter.Measure FIXED = new ChatLineLayouter.Measure() {
@@ -172,6 +180,37 @@ public class ChatSceneControllerTest {
         rt.flush();
         // 组合语义:基础 alpha E6(230) × 淡出因子 128 → 115(0x73,整数截断)
         Assert.assertEquals("淡出中段 alpha 组合截断", 0x73, (bubble.getBackgroundColor() >>> 24) & 0xFF);
+    }
+
+    @Test
+    public void hitTestReturnsComponentInContainerForm() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = build(controller, rt);
+
+        controller.setChatOpen(true);
+        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+        rt.flush();
+        LAYOUT.layout(root, new Constraints(400));
+        controller.setHostViewport(400, 300);
+
+        // 树:root → mount → container → list → group → (组头, 消息节点)
+        SceneNode container = root.__getChildren().get(0).__getChildren().get(0);
+        SceneNode messageNode = container.__getChildren().get(0).__getChildren().get(0).__getChildren().get(1);
+
+        AnchorRect rootBox = SceneGeometry.absoluteBox(root, 0, 0);
+        int margin = ChatMarkdownSettings.getChatMarginPx();
+        int rootAbsX = margin;
+        int rootAbsY = 300 - margin - rootBox.getHeight();
+        AnchorRect box = SceneGeometry.absoluteBox(messageNode, rootAbsX, rootAbsY);
+
+        IChatComponent hit = controller.hitTest(box.getX() + 2, box.getY() + 2);
+        Assert.assertNotNull("消息矩形内应命中", hit);
+        Assert.assertEquals("<Bob> hello", hit.getUnformattedText());
+
+        Assert.assertNull("矩形外不应命中", controller.hitTest(0, 0));
     }
 
     @Test

@@ -4,12 +4,15 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiChat;
 import net.minecraft.client.gui.GuiIngame;
 import net.minecraft.client.gui.GuiNewChat;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
+import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
+import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 
 /**
  * 聊天系统 3.0 安装器:把 GuiIngame.persistantChatGUI 替换为 {@link ChatFacade}(架空原版),
@@ -35,6 +38,9 @@ public final class ChatMarkdownInstaller {
 
     /** 当前接管状态(status 命令用;installIfNeeded 内维护)。 */
     private static volatile boolean installed = false;
+
+    /** 聊天打开感知(输入屏开关;每渲染帧由 tickController 同步)。 */
+    private static boolean lastChatOpen = false;
 
     private static boolean finalRemoved = false;
 
@@ -63,6 +69,28 @@ public final class ChatMarkdownInstaller {
         }
     }
 
+    /**
+     * 每渲染帧推进(接线层在渲染 tick 调用):聊天打开感知 + 淡出/动画时钟 + 宿主视口写入。
+     * GuiChat 打开时 GuiIngame 不再调 drawChat,容器动画由本入口持续驱动。
+     */
+    public static synchronized void tickController() {
+        ChatSceneController controller = ChatHudWindow.controller();
+        if (controller == null) {
+            return;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null) {
+            return;
+        }
+        boolean open = mc.currentScreen instanceof GuiChat;
+        if (open != lastChatOpen) {
+            lastChatOpen = open;
+            controller.setChatOpen(open);
+        }
+        controller.setHostViewport(mc.displayWidth, mc.displayHeight);
+        controller.tick(System.currentTimeMillis());
+    }
+
     /** 启用:确保字段为 ChatFacade 实例;首次替换留存原版实例。 */
     private static void ensureInstalled(Minecraft mc) throws ReflectiveOperationException {
         Object current = CHAT_FIELD.get(mc.ingameGUI);
@@ -74,7 +102,7 @@ public final class ChatMarkdownInstaller {
             originalChat = (GuiNewChat) current;
         }
         tryRemoveFinal();
-        CHAT_FIELD.set(mc.ingameGUI, new ChatFacade(mc));
+        CHAT_FIELD.set(mc.ingameGUI, new ChatFacade(mc, ChatHudWindow.ensureRegistered()));
         Object verified = CHAT_FIELD.get(mc.ingameGUI);
         if (verified instanceof ChatFacade) {
             installed = true;
@@ -100,6 +128,7 @@ public final class ChatMarkdownInstaller {
         Object verified = CHAT_FIELD.get(mc.ingameGUI);
         if (!(verified instanceof ChatFacade)) {
             installed = false;
+            ChatHudWindow.close();
             LOG.info("聊天 3.0 已回退原版对话框(逃生舱)");
         }
     }

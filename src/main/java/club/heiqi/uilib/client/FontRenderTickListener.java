@@ -25,5 +25,6 @@ public class FontRenderTickListener {
         }
         FontService.getInstance().tickMainThread(64);
         ChatMarkdownInstaller.installIfNeeded();
+        ChatMarkdownInstaller.tickController();
     }
 }
