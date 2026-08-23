@@ -1,6 +1,7 @@
 package club.heiqi.uilib.client;
 
 import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.internal.chat3.wiring.ChatMarkdownInstaller;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
@@ -23,5 +24,6 @@ public class FontRenderTickListener {
             return;
         }
         FontService.getInstance().tickMainThread(64);
+        ChatMarkdownInstaller.installIfNeeded();
     }
 }
