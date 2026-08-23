@@ -4,6 +4,7 @@ import club.heiqi.uilib.client.FontRenderTickListener;
 import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
 import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.internal.chat3.input.ChatInputOpenListener;
 import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.client.NetStoreUiBridge;
@@ -23,6 +24,7 @@ public class ClientProxy extends CommonProxy {
     private final FontRenderTickListener fontRenderTickListener = new FontRenderTickListener();
     private final UiHudRenderListener uiHudRenderListener = new UiHudRenderListener();
     private final UiInputTickListener uiInputTickListener = new UiInputTickListener();
+    private final ChatInputOpenListener chatInputOpenListener = new ChatInputOpenListener();
 
     /**
      * 客户端预初始化时注册字体渲染 Tick 监听。
@@ -37,6 +39,7 @@ public class ClientProxy extends CommonProxy {
         DevToolsClientBootstrap.registerClientDevTools();
         MinecraftForge.EVENT_BUS.register(fontRenderTickListener);
         MinecraftForge.EVENT_BUS.register(uiHudRenderListener);
+        MinecraftForge.EVENT_BUS.register(chatInputOpenListener);
         FMLCommonHandler.instance().bus().register(fontRenderTickListener);
         FMLCommonHandler.instance().bus().register(uiInputTickListener);
         FMLCommonHandler.instance().bus().register(this);

@@ -148,8 +148,11 @@ public final class ChatSceneController {
     private SceneNode mount;
     private ContentShape builtShape;
 
-    /** 当前形态树的组列表句柄与滚动绑定(树重建时释放,防句柄累积)。 */
+    /** HUD 形态树的组列表句柄(树重建时释放,防句柄累积)。 */
     private SceneListHandle listHandle;
+
+    /** 容器形态树的组列表句柄与滚动绑定(HUD 树重建时释放)。 */
+    private SceneListHandle containerHandle;
     private Binding scrollBinding;
 
     /** 消息节点 → 记录(命中检测查询;树重建时清空,离树节点惰性清理)。 */
@@ -370,6 +373,10 @@ public final class ChatSceneController {
             listHandle.dispose();
             listHandle = null;
         }
+        if (containerHandle != null) {
+            containerHandle.dispose();
+            containerHandle = null;
+        }
         if (scrollBinding != null) {
             scrollBinding.dispose();
             scrollBinding = null;
@@ -387,7 +394,7 @@ public final class ChatSceneController {
                     .setGap(Math.max(0, ChatMarkdownSettings.getGroupGapHudPx()));
             mount.appendChild(list);
             listHandle = runtime.forEach(list, groupsSignal(), this::groupKey,
-                    group -> buildGroupNode(runtime, group, true));
+                    group -> buildGroupNode(runtime, group, true, messageNodes));
         } else {
             SceneNode container = SceneNode.column()
                     .setHitTestable(false)
@@ -407,14 +414,11 @@ public final class ChatSceneController {
                     .setGap(Math.max(0, ChatMarkdownSettings.getGroupGapContainerPx()));
             container.appendChild(list);
             mount.appendChild(container);
-            listHandle = runtime.forEach(list, groupsSignal(), this::groupKey,
-                    group -> buildGroupNode(runtime, group, false));
+            containerHandle = runtime.forEach(list, groupsSignal(), this::groupKey,
+                    group -> buildGroupNode(runtime, group, false, messageNodes));
             // 容器滚动:历史滚动偏移 → 容器滚动属性(结构版本驱动重算)
-            scrollBinding = runtime.bind(Computed.create(() -> {
-                contentVersion.get().intValue(); // 依赖:滚动变化经 notifyDataChanged 驱动
-                return Integer.valueOf(history.getScroll()
-                        * ChatMarkdownSettings.getChatLineHeightPx());
-            }), offset -> container.setScrollOffsetY(offset.intValue()));
+            scrollBinding = runtime.bind(Computed.create(this::scrollOffsetPx),
+                    offset -> container.setScrollOffsetY(offset.intValue()));
         }
         builtShape = shape;
     }
@@ -455,8 +459,34 @@ public final class ChatSceneController {
         return Long.valueOf(firstSequence * 10000L + lineCount);
     }
 
+    /**
+     * 外部容器树构建(输入屏复用):把容器形态的组列表 forEach 与滚动绑定挂到调用方节点。
+     *
+     * @param rt            宿主运行时
+     * @param containerNode 滚动容器节点(滚动绑定目标)
+     * @param list          组列表挂载节点
+     * @param registry      消息节点 → 记录登记表(命中检测用,调用方持有)
+     * @return 生命周期句柄(关闭时 dispose)
+     */
+    public SceneListHandle buildContainerContent(SceneRuntime rt, SceneNode containerNode, SceneNode list,
+            Map<SceneNode, ChatLineRecord> registry) {
+        SceneListHandle handle = rt.forEach(list, groupsSignal(), this::groupKey,
+                group -> buildGroupNode(rt, group, false, registry));
+        // 滚动绑定(目标 = 调用方容器节点)
+        rt.bind(Computed.create(this::scrollOffsetPx),
+                offset -> containerNode.setScrollOffsetY(offset.intValue()));
+        return handle;
+    }
+
+    /** 滚动偏移(px)= 历史行偏移 × 行高(结构版本驱动重算)。 */
+    private Integer scrollOffsetPx() {
+        contentVersion.get().intValue(); // 依赖:滚动变化经 notifyDataChanged 驱动
+        return Integer.valueOf(history.getScroll() * ChatMarkdownSettings.getChatLineHeightPx());
+    }
+
     /** 构建单组子树:组头(名字+时间) + 消息气泡(背景/圆角/行段);HUD 形态挂淡出绑定。 */
-    private SceneNode buildGroupNode(SceneRuntime rt, ChatCardComposer.ComposedGroup group, boolean hud) {
+    private SceneNode buildGroupNode(SceneRuntime rt, ChatCardComposer.ComposedGroup group, boolean hud,
+            Map<SceneNode, ChatLineRecord> registry) {
         int fontSize = ChatMarkdownSettings.getChatFontSizePx();
         int lineHeight = ChatMarkdownSettings.getChatLineHeightPx();
         int headerFont = ChatMarkdownSettings.getChatHeaderFontSizePx();
@@ -523,7 +553,7 @@ public final class ChatSceneController {
             }
             groupNode.appendChild(messageNode);
             messageNodes.add(messageNode);
-            this.messageNodes.put(messageNode, message.getRecord());
+            registry.put(messageNode, message.getRecord());
         }
         if (hud) {
             final SceneNode header = headerNode;

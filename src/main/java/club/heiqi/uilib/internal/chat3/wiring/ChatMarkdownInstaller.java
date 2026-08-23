@@ -4,7 +4,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiChat;
 import net.minecraft.client.gui.GuiIngame;
 import net.minecraft.client.gui.GuiNewChat;
 import org.apache.logging.log4j.LogManager;
@@ -12,6 +11,7 @@ import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.api.chat.ChatAccess;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
+import club.heiqi.uilib.internal.chat3.input.ChatInputScreen;
 import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 
@@ -83,7 +83,7 @@ public final class ChatMarkdownInstaller {
         if (mc == null) {
             return;
         }
-        boolean open = mc.currentScreen instanceof GuiChat;
+        boolean open = mc.currentScreen instanceof ChatInputScreen;
         if (open != lastChatOpen) {
             lastChatOpen = open;
             controller.setChatOpen(open);
