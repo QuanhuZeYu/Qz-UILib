@@ -1,7 +1,9 @@
 package club.heiqi.uilib.internal.chat3.view;
 
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -22,6 +24,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
@@ -135,32 +138,35 @@ public class ChatSceneControllerTest {
         controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
         rt.flush();
 
-        // POPPING 阶段:树已切为容器(mount 子 = 容器节点)
+        // POPPING 起:HUD 树清空(整窗隐藏,容器由输入屏幕绘制——避免双容器)
         SceneNode mount = root.__getChildren().get(0);
-        Assert.assertEquals(1, mount.__getChildren().size());
-        SceneNode container = mount.__getChildren().get(0);
-        Assert.assertEquals(ChatMarkdownSettings.getContainerBgArgb(), container.getBackgroundColor());
-        Assert.assertTrue("容器应裁剪内容", container.isClipChildren());
+        Assert.assertEquals("打开后 HUD 树应为空", 0, mount.__getChildren().size());
     }
 
     @Test
-    public void containerScrollBindsHistoryOffset() {
+    public void containerContentScrollBindsHistoryOffset() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
         SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
         SceneNode root = build(controller, rt);
 
-        controller.setChatOpen(true);
-        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+        // 模拟输入屏幕:外部容器节点 + 列表 + 注册表
+        SceneNode container = SceneNode.column().setClipChildren(true);
+        SceneNode list = SceneNode.column();
+        container.appendChild(list);
+        root.appendChild(container);
+        Map<SceneNode, ChatLineRecord> registry = new IdentityHashMap<SceneNode, ChatLineRecord>();
+        SceneListHandle handle = controller.buildContainerContent(rt, container, list, registry);
         rt.flush();
 
         controller.history().scrollBy(3);
         controller.notifyDataChanged();
         rt.flush();
 
-        SceneNode container = root.__getChildren().get(0).__getChildren().get(0);
         Assert.assertEquals(3 * ChatMarkdownSettings.getChatLineHeightPx(), container.getScrollOffsetY());
+        Assert.assertEquals("外部注册表应登记消息节点", 1, registry.size());
+        handle.dispose();
     }
 
     @Test
@@ -183,7 +189,7 @@ public class ChatSceneControllerTest {
     }
 
     @Test
-    public void containerUsesDynamicViewportSize() {
+    public void hudRootUsesDynamicViewportWidth() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
@@ -193,36 +199,22 @@ public class ChatSceneControllerTest {
 
         Assert.assertEquals("窗口宽 = 视口宽 × 1/8",
                 ChatMarkdownSettings.chatWidthFor(1600), root.getPreferredWidth());
-
-        controller.setChatOpen(true);
-        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
-        rt.flush();
-
-        SceneNode container = root.__getChildren().get(0).__getChildren().get(0);
-        Assert.assertEquals("容器宽随视口", ChatMarkdownSettings.chatWidthFor(1600),
-                container.getPreferredWidth());
-        Assert.assertEquals("容器高 = 视口高 × 1/2", ChatMarkdownSettings.containerHeightFor(900),
-                container.getPreferredHeight());
     }
 
     @Test
-    public void hitTestReturnsComponentInContainerForm() {
+    public void hitTestReturnsComponentInHudTree() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
         SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
         SceneNode root = build(controller, rt);
 
-        controller.setChatOpen(true);
-        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
-        rt.flush();
         controller.setHostViewport(400, 300);
-        rt.flush(); // 视口变化触发的重建需 flush 后挂载
+        rt.flush();
         LAYOUT.layout(root, new Constraints(400));
 
-        // 树:root → mount → container → list → group → (组头, 消息节点)
-        SceneNode container = root.__getChildren().get(0).__getChildren().get(0);
-        SceneNode messageNode = container.__getChildren().get(0).__getChildren().get(0).__getChildren().get(1);
+        // HUD 树:root → mount → list → group → (组头, 消息节点)
+        SceneNode messageNode = hudGroups(root).get(0).__getChildren().get(1);
 
         AnchorRect rootBox = SceneGeometry.absoluteBox(root, 0, 0);
         int margin = ChatMarkdownSettings.getChatMarginPx();

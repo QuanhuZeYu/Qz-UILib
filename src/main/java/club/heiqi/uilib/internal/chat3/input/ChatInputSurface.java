@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiNewChat;
@@ -24,17 +23,14 @@ import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.control.SceneInputType;
-import club.heiqi.uilib.ui.scene.control.SceneTextInputPrimitive;
+import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglStateReader;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
@@ -50,15 +46,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
 
     private static final Logger LOG = LogManager.getLogger("QzUILib Chat3Input");
 
-    /** 输入条样式(容器内圆角条)。 */
+    /** 输入条四周衬垫(容器内间距)。 */
     private static final int BAR_PADDING = 8;
-    private static final int BAR_RADIUS = 10;
-    private static final int BAR_BACKGROUND = 0xE61B1B1F;
-    private static final int BAR_BORDER = 0x1FFFFFFF;
-    private static final int INPUT_TEXT_COLOR = 0xFFFFFFFF;
-    private static final int INPUT_PLACEHOLDER_COLOR = 0xFF9A9A9A;
-    private static final int CARET_COLOR = 0xFFFFFFFF;
-    private static final int HIGHLIGHT_BACKGROUND = 0x554FC3F7;
+    /** 输入字号。 */
     private static final int INPUT_FONT_SIZE = 14;
 
     private final ChatSceneController controller;
@@ -66,7 +56,6 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     private final SceneNode root;
     private final SceneNode containerNode;
     private final Signal<String> inputText;
-    private final Consumer<String> moveCaretToEndOf;
     private final SceneNode inputRoot;
     /** 屏幕树消息节点 → 记录(命中检测)。 */
     private final Map<SceneNode, ChatLineRecord> screenMessageNodes =
@@ -91,7 +80,7 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
                 .setCrossAxisAlign(CrossAxisAlign.START)
                 .setPadding(0, margin, margin, margin);
 
-        // 容器:动态宽高(视口 1/8 × 1/2),左下贴边,输入框纳入容器底部
+        // 容器:动态宽高(视口 1/8 × 1/2,render 帧钩子每帧同步),左下贴边,输入框纳入容器底部
         containerNode = SceneNode.column()
                 .setHitTestable(false)
                 .setBackgroundColor(ChatMarkdownSettings.getContainerBgArgb())
@@ -112,40 +101,21 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         containerNode.appendChild(list);
         listHandle = controller.buildContainerContent(runtime, containerNode, list, screenMessageNodes);
 
-        // 输入条(容器内底部)
-        SceneNode bar = SceneNode.column()
-                .setHitTestable(false)
-                .setCornerRadius(BAR_RADIUS)
-                .setBackgroundColor(BAR_BACKGROUND)
-                .setBorderColor(BAR_BORDER)
-                .setBorderWidth(1)
-                .setPadding(BAR_PADDING);
+        // 输入条(容器内底部):复用 UILib 现成 SceneTextInput 组件(受控输入,标准样式)
         SceneNode barRow = SceneNode.row()
                 .setHitTestable(false)
-                .setCrossAxisAlign(CrossAxisAlign.CENTER);
-        bar.appendChild(barRow);
-        containerNode.appendChild(bar);
+                .setCrossAxisAlign(CrossAxisAlign.CENTER)
+                .setPadding(BAR_PADDING);
+        containerNode.appendChild(barRow);
 
-        SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(runtime,
-                new SceneTextInputPrimitive.Props(inputText, Signal.create(Boolean.TRUE),
-                        Signal.create(Boolean.FALSE), "消息…", Integer.MAX_VALUE,
-                        SceneInputType.TEXT, inputText::set));
-        inputRoot = result.root();
+        SceneTextInput.Props props = SceneTextInput.Props.builder(inputText)
+                .placeholder("消息…")
+                .onChange(inputText::set)
+                .build();
+        inputRoot = SceneTextInput.create(runtime, props).get();
         inputRoot.setFontSize(INPUT_FONT_SIZE);
         inputRoot.setFillParentWidth(true);
         barRow.appendChild(inputRoot);
-        moveCaretToEndOf = result.moveCaretToEndOf();
-
-        // 输入条样式绑定(与 SceneTextInput 包装同机制)
-        runtime.bindComputed(() -> resolveInputTextColor(result.isPlaceholder().get()),
-                result.prefixText()::setTextColor);
-        runtime.bindComputed(() -> resolveInputTextColor(result.isPlaceholder().get()),
-                result.suffixText()::setTextColor);
-        runtime.bindComputed(() -> result.selection().get().isActive()
-                ? Integer.valueOf(HIGHLIGHT_BACKGROUND) : Integer.valueOf(0),
-                result.highlightText()::setBackgroundColor);
-        runtime.bindComputed(() -> Integer.valueOf(INPUT_TEXT_COLOR),
-                result.highlightText()::setTextColor);
 
         // 滚轮滚动聊天历史(vanilla ±7/Shift±1 语义)
         runtime.on(root, SceneEventType.SCROLL,
@@ -173,15 +143,18 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         return root;
     }
 
-    /** 每帧推进弹出动画(容器自左侧滑入,wall-clock ease-out);随后走标准帧管线。 */
+    /** 每帧同步动态尺寸(视口 1/8 × 1/2)并推进弹出动画(容器自左侧滑入);随后走标准帧管线。 */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        float width = (float) ChatMarkdownSettings.chatWidthFor(Math.max(1, w));
+        int width = ChatMarkdownSettings.chatWidthFor(Math.max(1, w));
+        int height = ChatMarkdownSettings.containerHeightFor(Math.max(1, h));
+        containerNode.setPreferredWidth(width);
+        containerNode.setPreferredHeight(height);
         long popMillis = ChatMarkdownSettings.getPopAnimMillis();
         long elapsed = System.currentTimeMillis() - openAtMillis;
         float progress = popMillis <= 0 ? 1.0F : (float) elapsed / (float) popMillis;
         containerNode.setTransform(Transform.translate(
-                -width * (1.0F - Animator.easeOut(progress)), 0.0F));
+                -(float) width * (1.0F - Animator.easeOut(progress)), 0.0F));
         super.render(w, h, ctx, absX, absY);
     }
 
@@ -212,9 +185,7 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
 
     /** 历史回显(vanilla getSentHistory 语义:-1 上一条 / +1 下一条)。 */
     public void recallHistory(int direction) {
-        String recalled = sentHistory.recall(direction);
-        inputText.set(recalled);
-        moveCaretToEndOf.accept(recalled);
+        inputText.set(sentHistory.recall(direction));
     }
 
     /** Tab 补全:斜杠开头走服务端命令补全;否则本地玩家名补全。 */
@@ -230,11 +201,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     /** 服务端补全响应(mixin 转交):最长公共前缀入输入框。 */
     public void applyAutocompleteResponse(String[] options) {
         String prefix = commonPrefix(options);
-        if (prefix == null) {
-            return;
+        if (prefix != null) {
+            inputText.set(prefix);
         }
-        inputText.set(prefix);
-        moveCaretToEndOf.accept(prefix);
     }
 
     /** 行点击事件回投:原版 ChatStyle click 事件链。 */
@@ -256,7 +225,6 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
                 break;
             case SUGGEST_COMMAND:
                 inputText.set(click.getValue());
-                moveCaretToEndOf.accept(click.getValue());
                 break;
             case OPEN_URL:
                 openUrl(click.getValue());
@@ -266,30 +234,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         }
     }
 
-    /** 屏幕树命中:节点绝对盒(屏幕全屏,rootAbs = 0,0)包含点 → 组件。 */
+    /** 屏幕树命中:注册表节点绝对盒(屏幕全屏,rootAbs = 0,0)包含点 → 组件。 */
     private IChatComponent hitTest(int x, int y) {
-        List<SceneNode> stale = null;
-        for (Map.Entry<SceneNode, ChatLineRecord> entry : screenMessageNodes.entrySet()) {
-            SceneNode node = entry.getKey();
-            if (node.__getParent() == null) {
-                if (stale == null) {
-                    stale = new ArrayList<SceneNode>();
-                }
-                stale.add(node);
-                continue;
-            }
-            AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
-            if (x >= box.getX() && x < box.getX() + box.getWidth()
-                    && y >= box.getY() && y < box.getY() + box.getHeight()) {
-                return entry.getValue().getComponent();
-            }
-        }
-        if (stale != null) {
-            for (SceneNode node : stale) {
-                screenMessageNodes.remove(node);
-            }
-        }
-        return null;
+        return ChatSceneController.hitTestInRegistry(screenMessageNodes, x, y);
     }
 
     /** 原版发送列表快照(继承自 Facade)。 */
@@ -345,7 +292,6 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         }
         String result = (lastSpace >= 0 ? text.substring(0, lastSpace + 1) : "") + completed;
         inputText.set(result);
-        moveCaretToEndOf.accept(result);
     }
 
     /** 最长公共前缀(纯函数,可测)。 */
@@ -379,7 +325,4 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         }
     }
 
-    private static int resolveInputTextColor(boolean placeholder) {
-        return placeholder ? INPUT_PLACEHOLDER_COLOR : INPUT_TEXT_COLOR;
-    }
 }

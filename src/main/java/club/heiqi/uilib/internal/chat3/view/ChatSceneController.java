@@ -113,8 +113,8 @@ public final class ChatSceneController {
     enum ContentShape {
         /** HUD 堆叠气泡树(聊天关闭)。 */
         HUD,
-        /** 容器树(聊天打开)。 */
-        CONTAINER
+        /** 空树(聊天打开后:HUD 窗口隐藏,容器由输入屏幕绘制,避免双容器)。 */
+        EMPTY
     }
 
     private final ChatHistory history = new ChatHistory();
@@ -235,6 +235,39 @@ public final class ChatSceneController {
     }
 
     /**
+     * 注册表命中(纯函数,输入屏幕复用):节点绝对盒(全屏原点 0,0)包含点 → 组件。
+     *
+     * @param registry 消息节点 → 记录(离树节点惰性清理)
+     * @param x        命中点 x(逻辑 px)
+     * @param y        命中点 y
+     * @return 命中的消息组件;未命中返回 null
+     */
+    public static IChatComponent hitTestInRegistry(Map<SceneNode, ChatLineRecord> registry, int x, int y) {
+        List<SceneNode> stale = null;
+        for (Map.Entry<SceneNode, ChatLineRecord> entry : registry.entrySet()) {
+            SceneNode node = entry.getKey();
+            if (node.__getParent() == null) {
+                if (stale == null) {
+                    stale = new ArrayList<SceneNode>();
+                }
+                stale.add(node);
+                continue;
+            }
+            AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+            if (x >= box.getX() && x < box.getX() + box.getWidth()
+                    && y >= box.getY() && y < box.getY() + box.getHeight()) {
+                return entry.getValue().getComponent();
+            }
+        }
+        if (stale != null) {
+            for (SceneNode node : stale) {
+                registry.remove(node);
+            }
+        }
+        return null;
+    }
+
+    /**
      * 命中检测(func_146236_a 转发):点 → 消息组件(事件链经原版组件回投)。
      *
      * <p>窗口原点推导:BOTTOM_LEFT 锚点 + 边距,底边 = 视口高 - 边距 - 根高(chrome=false
@@ -248,29 +281,20 @@ public final class ChatSceneController {
         if (root == null || hostViewportWidth <= 0 || hostViewportHeight <= 0) {
             return null;
         }
+        // 注册表命中(节点相对窗口根)+ 窗口原点平移:BOTTOM_LEFT 锚点 + 边距
         AnchorRect rootBox = SceneGeometry.absoluteBox(root, 0, 0);
         int margin = ChatMarkdownSettings.getChatMarginPx();
         int rootAbsX = margin;
         int rootAbsY = hostViewportHeight - margin - rootBox.getHeight();
-        List<SceneNode> stale = null;
         for (Map.Entry<SceneNode, ChatLineRecord> entry : messageNodes.entrySet()) {
             SceneNode node = entry.getKey();
             if (node.__getParent() == null) {
-                if (stale == null) {
-                    stale = new ArrayList<SceneNode>();
-                }
-                stale.add(node);
                 continue;
             }
             AnchorRect box = SceneGeometry.absoluteBox(node, rootAbsX, rootAbsY);
             if (x >= box.getX() && x < box.getX() + box.getWidth()
                     && y >= box.getY() && y < box.getY() + box.getHeight()) {
                 return entry.getValue().getComponent();
-            }
-        }
-        if (stale != null) {
-            for (SceneNode node : stale) {
-                messageNodes.remove(node);
             }
         }
         return null;
@@ -354,14 +378,15 @@ public final class ChatSceneController {
     }
 
     /**
-     * 当前形态(结构级):HUD/收起中 → HUD 树;弹出/稳定/收回 → 容器树。
+     * 当前形态(结构级):HUD/收起中 → HUD 气泡树;弹出/稳定/收回 → 空树
+     * (HUD 窗口隐藏,容器由输入屏幕绘制——避免 HUD 窗口与屏幕双容器重复渲染)。
      *
      * <p>读状态机即时态(信号经帧末批处理提交,tick 内判断不能用信号值)。</p>
      */
     private ContentShape currentShape() {
         DisplayStateMachine.Phase phase = machine.getPhase();
         return phase == DisplayStateMachine.Phase.HUD || phase == DisplayStateMachine.Phase.COLLAPSING
-                ? ContentShape.HUD : ContentShape.CONTAINER;
+                ? ContentShape.HUD : ContentShape.EMPTY;
     }
 
     /** 树根重建(形态切换;旧挂载点整体移除,新树上重新 forEach 组列表)。 */
@@ -395,6 +420,8 @@ public final class ChatSceneController {
             mount.appendChild(list);
             listHandle = runtime.forEach(list, groupsSignal(), this::groupKey,
                     group -> buildGroupNode(runtime, group, true, messageNodes));
+        } else if (shape == ContentShape.EMPTY) {
+            // 空树:HUD 窗口整窗隐藏(容器由输入屏幕绘制,避免双容器)
         } else {
             SceneNode container = SceneNode.column()
                     .setHitTestable(false)
