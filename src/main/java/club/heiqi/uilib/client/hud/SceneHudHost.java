@@ -193,10 +193,14 @@ public final class SceneHudHost {
             layoutEngine = new SceneLayoutEngine(measurer);
             pipeline = new SceneFramePipeline(runtime, layoutEngine, new ScenePaintEngine(measurer),
                     new ScenePaintReplayer(), measurer, null);
-            root = SceneNode.column().setHitTestable(false).setClipChildren(true)
-                    .setPadding(tokens.paddingY, tokens.paddingX, tokens.paddingY, tokens.paddingX)
-                    .setBackgroundColor(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.HUD_SHELL_BG)
+            SceneNode shell = SceneNode.column().setHitTestable(false).setClipChildren(true)
                     .setWidthSizing(SceneNode.WidthSizing.SHRINK);
+            if (entry.spec.isChrome()) {
+                // 默认外壳:半透明背景 + 内边距;chrome(false) 时内容直接浮在画面上(现代悬浮风格)
+                shell.setPadding(tokens.paddingY, tokens.paddingX, tokens.paddingY, tokens.paddingX)
+                        .setBackgroundColor(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.HUD_SHELL_BG);
+            }
+            root = shell;
             SceneNode contentRoot = entry.factory.build(runtime);
             if (contentRoot == null) {
                 throw new IllegalStateException("HUD window factory must return a content root: "

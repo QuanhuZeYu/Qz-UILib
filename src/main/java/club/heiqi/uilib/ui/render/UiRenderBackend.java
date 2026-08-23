@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.render;
 
 import java.util.List;
 
+import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 /**
@@ -174,6 +175,22 @@ public interface UiRenderBackend {
     default void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx,
             club.heiqi.uilib.ui.scene.text.SceneTextMode textMode) {
         drawText(text, x, y, color, shadow, fontSizePx, textMode.getCode());
+    }
+
+    /**
+     * 绘制富文本段流（SEGMENTS 命令）。
+     *
+     * <p>{@code y} 语义与 TEXT 命令一致（em-box 顶）；{@code fontSizePx} 为段内
+     * 未显式指定字号的段采用的基准字号。默认实现无副作用（不支持富文本的
+     * 后端静默跳过，守换后端零改动承诺）。</p>
+     *
+     * @param segments 富文本段流（不可变，非 null 非空）
+     * @param x 绘制 X
+     * @param y 绘制 Y（em-box 顶）
+     * @param fontSizePx 基准字号（UI 像素）
+     */
+    default void drawSegments(List<TextSegment> segments, int x, int y, int fontSizePx) {
+        // 旧 backend 不支持富文本时保持无副作用。
     }
 
     /**

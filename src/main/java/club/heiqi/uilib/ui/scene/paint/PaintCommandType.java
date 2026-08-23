@@ -26,6 +26,16 @@ public enum PaintCommandType {
      */
     TEXT,
 
+    /**
+     * 绘制富文本段流（聊天 markdown 等场景）。
+     *
+     * <p>渲染层操作：在指定坐标按命令携带的 {@code List<TextSegment>} 段样式
+     * （颜色/字重/斜体/下划线/删除线/§k 混淆/链接）绘制整行，基准字号取命令
+     * {@code textStyle.getFontSize()}。段流是 font 层不可变数据（守 I6：
+     * 零节点反查，与 TEXT 同构）。与 TEXT 互斥：节点同时设文本与段流时段流优先。</p>
+     */
+    SEGMENTS,
+
     /** 绘制平台中立图片源；命令固化 source 身份与目标矩形。 */
     IMAGE,
 

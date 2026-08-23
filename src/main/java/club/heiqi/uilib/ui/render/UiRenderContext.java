@@ -6,8 +6,10 @@ import java.util.Objects;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 
+import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
+import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.image.ItemIconRenderer;
@@ -592,6 +594,36 @@ public class UiRenderContext implements UiRenderBackend {
         fontRenderer.drawBaselineAlignedString(text, 0, 0, color, shadow);
         GL11.glPopMatrix();
         notifyMainLayerContentChanged();
+    }
+
+    /**
+     * 绘制富文本段流：走 UILib 字形批（DefaultFontRendererAdapter.drawSegments，
+     * 真机验证路径）。y 为 em-box 顶（与 TEXT 命令同语义），内部换算基线：
+     * {@code baseline = y + ascent(fontSizePx)}。
+     *
+     * <p>段样式（颜色/字重/斜体/下划线/删除线/§k/链接）由命令段流自带；非 UILib
+     * 字体后端降级为拼接纯文本（保可见、丢样式），生产环境恒走 UILib 路径。</p>
+     */
+    @Override
+    public void drawSegments(List<TextSegment> segments, int x, int y, int fontSizePx) {
+        if (segments == null || segments.isEmpty()) {
+            return;
+        }
+        int safeSize = Math.max(1, fontSizePx);
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            int baselineY = y + FontService.getInstance().getTextLayoutService().getAscent(safeSize);
+            ((DefaultFontRendererAdapter) fontRenderer).drawSegments(segments, x, baselineY, true, 1.0F, safeSize);
+            notifyMainLayerContentChanged();
+            return;
+        }
+        // 非 UILib 字体后端:拼接纯文本保可见(样式丢失属降级预期)
+        StringBuilder plain = new StringBuilder();
+        for (TextSegment segment : segments) {
+            if (!segment.isLatex()) {
+                plain.append(segment.getText());
+            }
+        }
+        drawText(plain.toString(), x, y, 0xFFFFFFFF, true, safeSize);
     }
 
     /**

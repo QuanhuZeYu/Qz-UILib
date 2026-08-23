@@ -11,6 +11,7 @@ public final class HudSpec {
     private final int stackOrder;
     private final int minWidth;
     private final int maxWidth;
+    private final boolean chrome;
 
     private HudSpec(Builder builder) {
         if (builder.id == null || builder.id.trim().isEmpty()) throw new IllegalArgumentException("id must not be blank");
@@ -25,6 +26,7 @@ public final class HudSpec {
         if (builder.minWidth > builder.maxWidth) throw new IllegalArgumentException("minWidth must be <= maxWidth");
         this.minWidth = builder.minWidth;
         this.maxWidth = builder.maxWidth;
+        this.chrome = builder.chrome;
     }
 
     /** 以稳定且全局唯一的 id 创建 builder。 */
@@ -39,6 +41,14 @@ public final class HudSpec {
     /** 返回调用方允许的最大外宽；默认不额外限制视口 clamp。 */
     public int getMaxWidth() { return maxWidth; }
 
+    /**
+     * 返回是否启用宿主默认外壳（背景/内边距）。
+     *
+     * <p>{@code false} 时窗口内容直接浮在画面上（无外壳背景与内边距）——现代风格
+     * 悬浮式 HUD（如聊天卡片流）使用；默认 true 保持既有窗口观感。</p>
+     */
+    public boolean isChrome() { return chrome; }
+
     /** HUD 规格 builder。 */
     public static final class Builder {
         private final String id;
@@ -48,6 +58,7 @@ public final class HudSpec {
         private int stackOrder;
         private int minWidth;
         private int maxWidth = Integer.MAX_VALUE;
+        private boolean chrome = true;
         private Builder(String id) { this.id = id; }
         public Builder anchor(HudAnchor value) { this.anchor = value; return this; }
         public Builder visibility(HudVisibility value) { this.visibility = value; return this; }
@@ -57,6 +68,8 @@ public final class HudSpec {
         public Builder minWidth(int value) { this.minWidth = value; return this; }
         /** 设置 HUD 外框硬最大宽度（logical px）；默认最小宽度与其冲突时向下收敛。 */
         public Builder maxWidth(int value) { this.maxWidth = value; return this; }
+        /** 设置宿主默认外壳开关（false = 无背景无内边距的悬浮内容）。 */
+        public Builder chrome(boolean value) { this.chrome = value; return this; }
         public HudSpec build() { return new HudSpec(this); }
     }
 }

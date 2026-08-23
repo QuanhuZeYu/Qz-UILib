@@ -436,6 +436,55 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     /**
+     * 直接渲染已解析的富文本片段序列（聊天 markdown 接管路径）。
+     *
+     * <p>片段样式（颜色/字重/斜体/链接/LaTeX）已由调用方（组件桥 + markdown 解析器）决定，
+     * 本方法只负责 prepareGlyphs 展平 + 字形需求提交 + 批渲染 flush，与
+     * {@link #drawBaselineAlignedString} 同构（共享同一状态保护与收集链路）。</p>
+     *
+     * @param segments       富文本片段（不可为 null/空，返回起始 X）
+     * @param x              起始 X
+     * @param y              基线 Y（atlas 基线对齐契约，与 drawBaselineAlignedString 同口径）
+     * @param dropShadow     是否绘制阴影 pass
+     * @param renderScale    整体渲染缩放（聊天接管对齐原版 chatScale 矩阵，内部坐标用缩放前值）
+     * @param baseFontSizePx 正文字号（px，≥1）
+     * @return 绘制结束后的光标位置
+     */
+    public int drawSegments(List<TextSegment> segments, float x, float y, boolean dropShadow,
+            float renderScale, int baseFontSizePx) {
+        if (segments == null || segments.isEmpty()) {
+            return (int) Math.ceil(x);
+        }
+        FontService fontService = FontService.getInstance();
+        synchronized (fontService) {
+            initializeForRender(fontService);
+            FontRuntimeSettings settings = fontService.getRuntimeSettings();
+            TextLayoutService textLayoutService = fontService.getTextLayoutService();
+            GlyphRuntimeTablesView demandTables = fontService.getGlyphRuntimeTablesView();
+            int safeBaseSize = Math.max(1, baseFontSizePx);
+            PreparedText preparedText = prepareGlyphs(settings, segments, textLayoutService, renderScale,
+                    safeBaseSize, demandTables);
+            if (preparedText.isEmpty()) {
+                return (int) Math.ceil(x);
+            }
+            int runtimeVersion = demandTables.getRuntimeVersion();
+            int glyphSize = settings.getGlyphSize();
+            Set<Long> submittedDemands = new HashSet<Long>();
+            for (int index = 0; index < preparedText.size(); index++) {
+                submitVisibleDemandIfNeeded(fontService, demandTables, runtimeVersion, glyphSize,
+                        preparedText.renderCodepoints[index], preparedText.fontTypes[index], submittedDemands);
+            }
+            final float baseSize = safeBaseSize;
+            return drawWithRenderStateGuardIfNeeded(fontService, new DrawStringTask() {
+                @Override
+                public int run() {
+                    return drawPreparedText(fontService, preparedText, x, y, dropShadow, baseSize, renderScale);
+                }
+            });
+        }
+    }
+
+    /**
      * 使用语义化文本样式测量字符串 UI 像素宽度。
      *
      * @param text 文本

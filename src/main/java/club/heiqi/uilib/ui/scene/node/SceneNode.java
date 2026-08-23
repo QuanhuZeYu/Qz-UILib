@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import club.heiqi.uilib.font.layout.TextSegment;
+import club.heiqi.uilib.ui.scene.control.SceneListOps;
 import club.heiqi.uilib.ui.scene.image.SceneImageRect;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
@@ -172,6 +174,11 @@ public class SceneNode {
      * 故 {@link #setFontSize} 与 {@link #setText} 同级，标 LAYOUT+PAINT。</p>
      */
     private int fontSizePx = 16;
+
+    /** 富文本段流（SEGMENTS 绘制命令载体）；null=未设置。
+     *  与 textProps.text 互斥（绘制引擎段流优先）。仅标 PAINT：布局几何由
+     *  preferredWidth/Height 显式提供（宽度度量走 font 层，业务布局缓存承担）。 */
+    private List<TextSegment> segments;
 
     /** 光标样式声明，纯交互投影，setter 不标脏。 */
     private SceneCursor cursor;
@@ -489,6 +496,31 @@ public class SceneNode {
 
     /** @return 当前文本内容 */
     public String getText() { return textProps.text; }
+
+    /**
+     * 设置富文本段流（SEGMENTS 绘制命令载体）；与 {@link #setText} 互斥（绘制引擎
+     * 段流优先）。变化时仅标 PAINT——段流节点布局几何由调用方用
+     * {@code setPreferredWidth/setPreferredHeight} 显式钉死（宽度度量走 font 层
+     * TextLayoutService，由业务布局缓存承担，不侵入 layout 核心）。
+     *
+     * @param segments 富文本段流（防御性拷贝；null 清除）
+     */
+    public SceneNode setSegments(List<TextSegment> segments) {
+        if (this.segments == segments) {
+            return this;
+        }
+        // 元素身份等价(布局缓存返回同一批 TextSegment 实例的等价列表)→ 去重不标脏;
+        // 淡出重建的段样式是新 TextStyle 实例 → 元素不等 → 正确标脏
+        if (this.segments != null && segments != null && this.segments.equals(segments)) {
+            return this;
+        }
+        this.segments = segments == null ? null : SceneListOps.immutableCopy(segments);
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 富文本段流（不可变视图）；未设置时 null */
+    public List<TextSegment> getSegments() { return segments; }
 
     /**
      * 设置文本内容模式；变化时标 LAYOUT + PAINT。

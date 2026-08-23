@@ -1,7 +1,9 @@
 package club.heiqi.uilib.ui.scene.paint;
 
+import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 /**
@@ -77,6 +79,11 @@ public final class PaintCommand {
     /** 图片源；仅 IMAGE 命令有意义，按身份固化。 */
     private final SceneImageSource imageSource;
 
+    /** 富文本段流；仅 SEGMENTS 命令有意义，其余命令默认 null。
+     *  按引用保存（不拷贝，契约：调用方传入不可变列表）；equals/hashCode 按
+     *  引用身份（布局缓存保证同布局同实例，translatedBy 平移保持身份复用）。 */
+    private final List<TextSegment> segments;
+
     // === 效果 ===
 
     /** 整体透明度，范围 [0.0, 1.0]，默认 1.0f（不透明） */
@@ -122,6 +129,18 @@ public final class PaintCommand {
                          float translateX, float translateY, float rotateDegrees,
                          float scaleX, float scaleY,
                          float originXRatio, float originYRatio) {
+        this(type, left, top, right, bottom, color, text, textStyle, linkUrl, imageSource, opacity,
+                cornerRadius, borderWidth, translateX, translateY, rotateDegrees, scaleX, scaleY,
+                originXRatio, originYRatio, null);
+    }
+
+    private PaintCommand(PaintCommandType type, int left, int top, int right, int bottom,
+                          int color, String text, TextStyle textStyle, String linkUrl,
+                          SceneImageSource imageSource, float opacity,
+                         int cornerRadius, int borderWidth,
+                         float translateX, float translateY, float rotateDegrees,
+                         float scaleX, float scaleY,
+                         float originXRatio, float originYRatio, List<TextSegment> segments) {
         this.type = Objects.requireNonNull(type, "type");
         this.left = left;
         this.top = top;
@@ -132,6 +151,7 @@ public final class PaintCommand {
         this.textStyle = textStyle;
         this.linkUrl = linkUrl == null ? "" : linkUrl;
         this.imageSource = imageSource;
+        this.segments = segments;
         this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
         this.cornerRadius = Math.max(0, cornerRadius);
         this.borderWidth = Math.max(0, borderWidth);
@@ -217,6 +237,26 @@ public final class PaintCommand {
         return new PaintCommand(PaintCommandType.TEXT, left, top, left, top,
                 0, text, style, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+    }
+
+    /**
+     * 创建富文本段流命令（SEGMENTS）。
+     *
+     * @param segments   富文本段流（不可为 null/空；按引用固化——调用方必须
+     *                    传入不可变列表，绘制引擎传入的是节点侧不可变视图）
+     * @param left       文本行框左上角 x（像素，em-box 顶语义与 TEXT 一致）
+     * @param top        文本行框左上角 y（像素）
+     * @param fontSizePx 基准字号（段内未显式指定字号的段采用）
+     * @return 段流绘制命令
+     */
+    public static PaintCommand segments(List<TextSegment> segments, int left, int top, int fontSizePx) {
+        Objects.requireNonNull(segments, "segments");
+        if (segments.isEmpty()) {
+            throw new IllegalArgumentException("segments must not be empty");
+        }
+        return new PaintCommand(PaintCommandType.SEGMENTS, left, top, left, top,
+                0, null, new TextStyle(0xFFFFFFFF, fontSizePx), null, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f, segments);
     }
 
     /**
@@ -499,6 +539,9 @@ public final class PaintCommand {
     /** @return 图片源；非 IMAGE 命令返回 null */
     public SceneImageSource getImageSource() { return imageSource; }
 
+    /** @return 富文本段流（不可变视图）；非 SEGMENTS 命令返回 null */
+    public List<TextSegment> getSegments() { return segments; }
+
     /** @return 整体透明度 [0, 1] */
     public float getOpacity() {
         return opacity;
@@ -576,7 +619,8 @@ public final class PaintCommand {
         }
         return new PaintCommand(type, left + dx, top + dy, right + dx, bottom + dy,
                 color, text, textStyle, linkUrl, imageSource, opacity, cornerRadius, borderWidth,
-                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
+                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
+                segments);
     }
 
     // ========== equals / hashCode / toString ==========
@@ -600,6 +644,7 @@ public final class PaintCommand {
                 && Objects.equals(textStyle, other.textStyle)
                 && Objects.equals(linkUrl, other.linkUrl)
                 && imageSource == other.imageSource
+                && segments == other.segments
                 && Float.compare(opacity, other.opacity) == 0
                 && cornerRadius == other.cornerRadius
                 && borderWidth == other.borderWidth
@@ -615,7 +660,8 @@ public final class PaintCommand {
     @Override
     public int hashCode() {
         return Objects.hash(type, left, top, right, bottom, color, text, textStyle, linkUrl,
-                Integer.valueOf(System.identityHashCode(imageSource)), opacity,
+                Integer.valueOf(System.identityHashCode(imageSource)),
+                Integer.valueOf(System.identityHashCode(segments)), opacity,
                 cornerRadius, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
@@ -637,6 +683,11 @@ public final class PaintCommand {
               .append(", top=").append(top)
               .append(", text='").append(text).append('\'')
               .append(", textStyle=").append(textStyle);
+        } else if (type == PaintCommandType.SEGMENTS) {
+            sb.append(", left=").append(left)
+              .append(", top=").append(top)
+              .append(", segments=").append(segments == null ? 0 : segments.size())
+              .append(", fontSize=").append(textStyle == null ? 0 : textStyle.getFontSize());
         } else if (type == PaintCommandType.LINK_REGION) {
             sb.append(", left=").append(left)
               .append(", top=").append(top)

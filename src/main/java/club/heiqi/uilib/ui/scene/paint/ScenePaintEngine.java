@@ -297,6 +297,16 @@ public class ScenePaintEngine {
             out.add(PaintCommand.image(imageSource, left, top, right, bottom));
         }
 
+        // 富文本段流 → SEGMENTS 命令（与 TEXT 互斥、段流优先；基准字号取 node.getFontSize()，
+        // 顶部对齐语义与 TEXT 完全同口径 calculateTextTop，水平恒 paddingLeft 贴左）。
+        java.util.List<club.heiqi.uilib.font.layout.TextSegment> segments = node.getSegments();
+        if (segments != null && !segments.isEmpty()) {
+            int segmentsFontSize = node.getFontSize();
+            int segmentsTop = calculateTextTop(node, box, segmentsFontSize);
+            out.add(PaintCommand.segments(segments, node.getPaddingLeft(), segmentsTop, segmentsFontSize));
+            return;
+        }
+
         // 有文本 → TEXT 命令（相对坐标，文字色读 node.getTextColor()，默认白零回归）
         // fontSize 直接读 node.getFontSize()（不再用 height 做 hack 回退）：
         // 字号是节点自有属性，与布局盒高度解耦，fill 文本节点不再炸 fontSize。

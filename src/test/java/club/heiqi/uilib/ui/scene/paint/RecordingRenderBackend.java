@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
@@ -79,6 +80,11 @@ public class RecordingRenderBackend implements UiRenderBackend {
     @Override
     public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx, int textMode) {
         record("drawText", text, x, y, color, shadow, fontSizePx, textMode);
+    }
+
+    @Override
+    public void drawSegments(List<TextSegment> segments, int x, int y, int fontSizePx) {
+        record("drawSegments", segments, x, y, fontSizePx);
     }
 
     @Override

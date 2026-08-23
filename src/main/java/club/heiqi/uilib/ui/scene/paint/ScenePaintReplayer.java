@@ -156,6 +156,14 @@ public class ScenePaintReplayer {
                 }
                 break;
 
+            case SEGMENTS:
+                TextStyle segmentsStyle = cmd.getTextStyle();
+                if (cmd.getSegments() != null && segmentsStyle != null) {
+                    ctx.drawSegments(cmd.getSegments(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                            segmentsStyle.getFontSize());
+                }
+                break;
+
             case IMAGE:
                 try {
                     ctx.drawImage(cmd.getImageSource(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
