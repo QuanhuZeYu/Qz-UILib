@@ -15,7 +15,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 /**
  * 聊天容器组件(L3 组件层):外框(背景/描边/圆角/clip)+ 滚动消息列表 + 底部输入条。
  *
- * <p>容器动态尺寸 = 视口宽 × 1/8 × 视口高 × 1/2,由 {@link Result#setViewport(int,int)} 每帧
+ * <p>容器动态尺寸 = 视口宽 × 1/4 × 视口高 × 1/2,由 {@link Result#setViewport(int,int)} 每帧
  * 同步(窗口缩放即时跟随)。消息列表复用 {@link ChatMessageList}(容器形态),输入条复用
  * {@link ChatInputBar}(SceneTextInput)。</p>
  */

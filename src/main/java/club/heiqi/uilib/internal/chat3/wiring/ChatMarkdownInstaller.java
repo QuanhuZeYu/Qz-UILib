@@ -89,7 +89,10 @@ public final class ChatMarkdownInstaller {
             lastChatOpen = open;
             controller.setChatOpen(open);
         }
-        controller.setHostViewport(NativeDisplaySize.width(), NativeDisplaySize.height());
+        // 与 McScreenBridge 同源:MC 权威物理窗口宽优先,Display 反射兜底(窗口模式不可靠)
+        controller.setHostViewport(
+                mc.displayWidth > 0 ? mc.displayWidth : NativeDisplaySize.width(),
+                mc.displayHeight > 0 ? mc.displayHeight : NativeDisplaySize.height());
         controller.tick(System.currentTimeMillis());
     }
 

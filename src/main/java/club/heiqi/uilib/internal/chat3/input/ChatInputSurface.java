@@ -44,6 +44,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
             new IdentityHashMap<SceneNode, ChatLineRecord>();
     /** 打开时刻(弹出动画基准)。 */
     private final long openAtMillis = System.currentTimeMillis();
+    /** 周期诊断帧计数(每 120 帧打印一次渲染视口,真机定位坐标系问题)。 */
+    private int renderLogCounter;
 
     public ChatInputSurface(String initialText) {
         super(new LwjglInputSource(new LwjglStateReader()));
@@ -90,6 +92,12 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         container.setViewport(w, h);
+        if ((renderLogCounter++ % 120) == 0) {
+            LOG.info("聊天输入屏渲染视口: w={}, h={}, chatWidthFor={}, containerHeightFor={}",
+                    Integer.valueOf(w), Integer.valueOf(h),
+                    Integer.valueOf(ChatMarkdownSettings.chatWidthFor(Math.max(1, w))),
+                    Integer.valueOf(ChatMarkdownSettings.containerHeightFor(Math.max(1, h))));
+        }
         int width = ChatMarkdownSettings.chatWidthFor(Math.max(1, w));
         long popMillis = ChatMarkdownSettings.getPopAnimMillis();
         long elapsed = System.currentTimeMillis() - openAtMillis;

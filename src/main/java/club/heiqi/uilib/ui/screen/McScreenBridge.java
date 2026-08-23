@@ -138,15 +138,21 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
         int frameBaseDepth = club.heiqi.uilib.util.GlAttribDepth.current();
         drawDefaultBackground();
         Minecraft minecraft = Minecraft.getMinecraft();
-        // 原生窗口分辨率(物理像素):不依赖 MC 的 scaled displayWidth(用户要求)
-        int nativeWidth = Math.max(1, NativeDisplaySize.width());
-        int nativeHeight = Math.max(1, NativeDisplaySize.height());
+        // 原生窗口分辨率(物理像素):MC resize 回调维护的 displayWidth/Height 即窗口物理像素
+        // (非 scaled;scaled = displayWidth / scaleFactor 受 guiScale 影响)。真机上
+        // lwjgl3ify 的 Display 反射在窗口模式不可靠(曾返回桌面宽导致容器 4 倍宽),
+        // 故以 MC 权威值为准,Display 反射仅兜底。
+        int mcWidth = minecraft == null ? 0 : minecraft.displayWidth;
+        int mcHeight = minecraft == null ? 0 : minecraft.displayHeight;
+        int nativeWidth = Math.max(1, mcWidth > 0 ? mcWidth : NativeDisplaySize.width());
+        int nativeHeight = Math.max(1, mcHeight > 0 ? mcHeight : NativeDisplaySize.height());
         // MC 传入的 mouse 是 scaled 逻辑像素,换算到原生物理坐标系
         int scaleFactor = Math.max(1, new ScaledResolution(minecraft, nativeWidth, nativeHeight).getScaleFactor());
         int pointerX = mouseX * scaleFactor;
         int pointerY = mouseY * scaleFactor;
 
-        if (DEBUG && !firstFrameLogged) {
+        // 常开首帧诊断:一次采集四种分辨率来源,真机一次定位坐标系问题(非 DEBUG 也打印)
+        if (!firstFrameLogged) {
             logFirstFrameDiagnostics(minecraft, mouseX, mouseY, nativeWidth, nativeHeight);
             firstFrameLogged = true;
         }
@@ -400,14 +406,15 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
             int scaledWidth = scaledResolution.getScaledWidth();
             int scaledHeight = scaledResolution.getScaledHeight();
             int scaleFactor = scaledResolution.getScaleFactor();
-            LOG.info("[{}] 首帧诊断: native={}x{}, scaled={}x{}, scaleFactor={}; surface.render 用 native 坐标系布局",
+            LOG.info("[{}] 首帧诊断: native={}x{}, scaled={}x{}, scaleFactor={}; 四来源对照: "
+                            + "mc.display=({},{}), Display反射=({},{}), mouseScaled=({},{}), pointerNative=({},{})",
                     screenLabel, Integer.valueOf(nativeWidth), Integer.valueOf(nativeHeight),
-                    Integer.valueOf(scaledWidth), Integer.valueOf(scaledHeight), Integer.valueOf(scaleFactor));
-            LOG.info("[{}] GUI Scale 命中诊断: mouse(MC 逻辑像素)=({},{}), 预期对应 native=({},{}); "
-                            + "context 用 native({}x{}) 但 mouse 是逻辑像素, scaleFactor!=1 时命中可能偏移, 真机重点验 hover/click 落点",
-                    screenLabel, Integer.valueOf(mouseX), Integer.valueOf(mouseY),
-                    Integer.valueOf(mouseX * scaleFactor), Integer.valueOf(mouseY * scaleFactor),
-                    Integer.valueOf(nativeWidth), Integer.valueOf(nativeHeight));
+                    Integer.valueOf(scaledWidth), Integer.valueOf(scaledHeight), Integer.valueOf(scaleFactor),
+                    Integer.valueOf(minecraft != null ? minecraft.displayWidth : -1),
+                    Integer.valueOf(minecraft != null ? minecraft.displayHeight : -1),
+                    Integer.valueOf(NativeDisplaySize.width()), Integer.valueOf(NativeDisplaySize.height()),
+                    Integer.valueOf(mouseX), Integer.valueOf(mouseY),
+                    Integer.valueOf(mouseX * scaleFactor), Integer.valueOf(mouseY * scaleFactor));
         } catch (Throwable diagError) {
             LOG.warn("[{}] 首帧 GUI Scale 诊断失败（不影响渲染）: {}", screenLabel, diagError.toString());
         }
