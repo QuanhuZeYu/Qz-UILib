@@ -29,7 +29,7 @@ public class SenderColorPaletteTest {
     }
 
     @Test
-    public void shouldExposeSelfThemeBlue() {
-        Assert.assertEquals(0xFF3390EC, SenderColorPalette.SELF_NAME_ARGB);
+    public void shouldExposeSelfGray() {
+        Assert.assertEquals(0xFF9AA0A6, SenderColorPalette.SELF_NAME_ARGB);
     }
 }

@@ -154,15 +154,9 @@ public final class ChatMessageList {
         List<TextSegment> headerBase = null;
         if (!group.getHeaderText().isEmpty()) {
             headerBase = new ArrayList<TextSegment>();
-            if (group.getAlignment() == MessageGroupModel.Alignment.SELF_RIGHT) {
-                // 自己的消息:只显示时间(名字与气泡同为主题蓝,不显示名字避免撞色)
-                headerBase.addAll(segmentParser.parse(ChatClock.formatTime(group.getLatestMillis()),
-                        ChatMarkdownSettings.getTimeTextArgb()));
-            } else {
-                headerBase.addAll(segmentParser.parse(group.getSender(), group.getNameColor()));
-                headerBase.addAll(segmentParser.parse(" " + ChatClock.formatTime(group.getLatestMillis()),
-                        ChatMarkdownSettings.getTimeTextArgb()));
-            }
+            headerBase.addAll(segmentParser.parse(group.getSender(), group.getNameColor()));
+            headerBase.addAll(segmentParser.parse(" " + ChatClock.formatTime(group.getLatestMillis()),
+                    ChatMarkdownSettings.getTimeTextArgb()));
             headerNode = new SceneNode()
                     .setHitTestable(false)
                     .setFontSize(headerFont)

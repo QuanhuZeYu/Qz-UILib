@@ -50,7 +50,7 @@ public class ChatCardComposerTest {
     }
 
     @Test
-    public void shouldComposeSelfGroupWithThemeBlue() {
+    public void shouldComposeSelfGroupWithGrayName() {
         ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> me"), 1, NOW - 5000L);
         MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Steve").get(0);
 
@@ -58,8 +58,8 @@ public class ChatCardComposerTest {
 
         Assert.assertEquals(MessageGroupModel.Alignment.SELF_RIGHT, composed.getAlignment());
         Assert.assertEquals(SenderColorPalette.SELF_NAME_ARGB, composed.getNameColor());
-        // 自己的消息:组头只显示时间(名字与气泡同为主题蓝,不显示名字避免撞色)
-        Assert.assertEquals(ChatClock.formatTime(NOW - 5000L), composed.getHeaderText());
+        // 自己的消息:名字用灰色(与蓝色气泡区分),组头仍为「名字 时间」
+        Assert.assertEquals("Steve " + ChatClock.formatTime(NOW - 5000L), composed.getHeaderText());
     }
 
     @Test

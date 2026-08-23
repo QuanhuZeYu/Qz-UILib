@@ -55,8 +55,8 @@ public final class ChatMarkdownSettings {
     private static volatile int bubbleOtherArgb = 0xE6253444;
     /** 系统消息文字(ARGB,居中灰白)。 */
     private static volatile int systemTextArgb = 0x8AFFFFFF;
-    /** 时间戳文字(ARGB,灰白小字)。 */
-    private static volatile int timeTextArgb = 0x8AFFFFFF;
+    /** 时间戳文字(ARGB,深灰小字,原 0x8A 半透明太淡看不见)。 */
+    private static volatile int timeTextArgb = 0xFF80868B;
     /** 收起动画时长(ms,HUD 气泡收起)。 */
     private static volatile long collapseAnimMillis = 150L;
     /** 弹出动画时长(ms,容器弹出)。 */
