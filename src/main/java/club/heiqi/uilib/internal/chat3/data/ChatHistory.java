@@ -29,6 +29,9 @@ public final class ChatHistory {
     /** 自底部向上偏移的行数(0 = 未滚动)。 */
     private int scrollOffset = 0;
 
+    /** 序列号分配器(进程内单调递增,每条入史记录唯一)。 */
+    private long nextSequence = 1L;
+
     public ChatHistory() {
         this(DEFAULT_CAPACITY);
     }
@@ -50,11 +53,12 @@ public final class ChatHistory {
      * @param messageId 原版消息 ID
      */
     public synchronized void append(IChatComponent component, int messageId) {
-        append(new ChatLineRecord(component, messageId, System.currentTimeMillis()));
+        lines.add(0, new ChatLineRecord(component, messageId, System.currentTimeMillis(), nextSequence++));
+        trimToCapacity();
     }
 
     /**
-     * 追加行记录(测试/自定义时钟入口)。
+     * 追加行记录(测试/自定义时钟入口);入史时分配唯一递增序列号。
      *
      * @param record 行记录(非空)
      */
@@ -62,7 +66,11 @@ public final class ChatHistory {
         if (record == null) {
             throw new IllegalArgumentException("record 不能为空");
         }
-        lines.add(0, record);
+        lines.add(0, record.withSequence(nextSequence++));
+        trimToCapacity();
+    }
+
+    private void trimToCapacity() {
         while (lines.size() > capacity) {
             lines.remove(lines.size() - 1);
         }

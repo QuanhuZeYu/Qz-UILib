@@ -433,16 +433,18 @@ public final class ChatSceneController {
         return composed;
     }
 
-    /** 组 key = 首条消息 ID + 行数 + 发送者(加行/切断/换发送者 → 重建组节点)。 */
+    /**
+     * 组 key = 首条消息序列号(进程内唯一,稳定)+ 组内行数(内容版本)。
+     * 加行/切断/换发送者 → key 变化 → 重建组节点;真机 messageId 恒 0,不可用作身份。
+     */
     private Long groupKey(ChatCardComposer.ComposedGroup group) {
-        long firstId = group.getMessages().isEmpty() ? 0L
-                : group.getMessages().get(0).getRecord().getMessageId();
+        long firstSequence = group.getMessages().isEmpty() ? 0L
+                : group.getMessages().get(0).getRecord().getSequenceId();
         long lineCount = 0L;
         for (ChatCardComposer.MessageLines message : group.getMessages()) {
             lineCount += message.getDisplayLines().size();
         }
-        return Long.valueOf(firstId * 1000000L + lineCount * 1000L
-                + (group.getSender() == null ? 0 : group.getSender().hashCode() & 0x3FF));
+        return Long.valueOf(firstSequence * 10000L + lineCount);
     }
 
     /** 构建单组子树:组头(名字+时间) + 消息气泡(背景/圆角/行段);HUD 形态挂淡出绑定。 */

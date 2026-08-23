@@ -44,6 +44,19 @@ public class ChatHistoryTest {
     }
 
     @Test
+    public void shouldAssignUniqueSequenceIds() {
+        ChatHistory history = new ChatHistory(10);
+        history.append(component("a"), 1);
+        history.append(component("b"), 2);
+        history.append(component("c"), 3);
+
+        List<ChatLineRecord> lines = history.snapshot();
+        Assert.assertNotEquals("序列号应唯一", lines.get(0).getSequenceId(), lines.get(1).getSequenceId());
+        Assert.assertNotEquals(lines.get(1).getSequenceId(), lines.get(2).getSequenceId());
+        Assert.assertTrue("入史后序列号非 0", lines.get(0).getSequenceId() > 0);
+    }
+
+    @Test
     public void shouldRejectInvalidCapacity() {
         try {
             new ChatHistory(0);

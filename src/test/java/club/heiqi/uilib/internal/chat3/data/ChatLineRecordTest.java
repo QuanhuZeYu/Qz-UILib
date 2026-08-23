@@ -24,6 +24,17 @@ public class ChatLineRecordTest {
         Assert.assertSame(component, record.getComponent());
         Assert.assertEquals(42, record.getMessageId());
         Assert.assertEquals(123456789L, record.getArrivedWallMillis());
+        Assert.assertEquals("三参构造默认序列号 0", 0L, record.getSequenceId());
+    }
+
+    @Test
+    public void shouldCarrySequenceId() {
+        ChatComponentText component = new ChatComponentText("hello");
+        ChatLineRecord record = new ChatLineRecord(component, 1, 0L, 777L);
+        Assert.assertEquals(777L, record.getSequenceId());
+        ChatLineRecord resequenced = record.withSequence(888L);
+        Assert.assertEquals(888L, resequenced.getSequenceId());
+        Assert.assertEquals("其余字段保持", 0L, resequenced.getArrivedWallMillis());
     }
 
     @Test

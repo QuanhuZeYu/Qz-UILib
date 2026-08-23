@@ -14,6 +14,8 @@ public final class ChatLineRecord {
     private final IChatComponent component;
     private final int messageId;
     private final long arrivedWallMillis;
+    /** 进程内唯一递增序列号(入史时由 ChatHistory 分配;组 key 稳定身份)。 */
+    private final long sequenceId;
 
     /** 纯文本惰性缓存(volatile:任意线程读取,值不可变)。 */
     private volatile String plainText;
@@ -22,17 +24,36 @@ public final class ChatLineRecord {
     private volatile String formattedText;
 
     /**
+     * 便捷构造(sequenceId = 0;入史时由 ChatHistory 重新分配)。
+     *
      * @param component 消息组件(非空,样式/事件链随引用保留)
      * @param messageId 原版消息 ID(deleteChatLine 精确删除用)
      * @param arrivedWallMillis 到达时刻(System.currentTimeMillis 口径)
      */
     public ChatLineRecord(IChatComponent component, int messageId, long arrivedWallMillis) {
+        this(component, messageId, arrivedWallMillis, 0L);
+    }
+
+    /**
+     * @param component 消息组件(非空)
+     * @param messageId 原版消息 ID
+     * @param arrivedWallMillis 到达时刻
+     * @param sequenceId 进程内唯一递增序列号
+     */
+    public ChatLineRecord(IChatComponent component, int messageId, long arrivedWallMillis,
+            long sequenceId) {
         if (component == null) {
             throw new IllegalArgumentException("component 不能为空");
         }
         this.component = component;
         this.messageId = messageId;
         this.arrivedWallMillis = arrivedWallMillis;
+        this.sequenceId = sequenceId;
+    }
+
+    /** @return 携带新序列号的等价记录(ChatHistory 入史分配用) */
+    ChatLineRecord withSequence(long newSequenceId) {
+        return new ChatLineRecord(component, messageId, arrivedWallMillis, newSequenceId);
     }
 
     /** @return 消息组件(样式/事件链原样保留) */
@@ -48,6 +69,11 @@ public final class ChatLineRecord {
     /** @return 到达时刻(System.currentTimeMillis 口径,10s 存活窗口基准) */
     public long getArrivedWallMillis() {
         return arrivedWallMillis;
+    }
+
+    /** @return 进程内唯一递增序列号(入史后非 0;组 key 稳定身份) */
+    public long getSequenceId() {
+        return sequenceId;
     }
 
     /**
