@@ -17,10 +17,10 @@ public final class ChatMarkdownSettings {
     private static volatile int chatFontSizePx = 13;
     /** 行距附加(px;行高 = 字号 + 行距)。 */
     private static volatile int chatLineSpacingPx = 5;
-    /** 聊天窗口宽 = 视口宽 × 比例(用户定:约 1/5,随窗口缩放动态)。 */
-    private static volatile double chatWidthRatio = 0.2;
+    /** 聊天窗口宽 = 视口宽 × 比例(用户定:约 1/4,随窗口缩放动态)。 */
+    private static volatile double chatWidthRatio = 0.25;
     /** 聊天窗口最小宽(px)。 */
-    private static volatile int minChatWidthPx = 280;
+    private static volatile int minChatWidthPx = 320;
     /** 聊天窗口距屏幕边缘边距(px)。 */
     private static volatile int chatMarginPx = 10;
     /** 气泡水平内边距(px)。 */
@@ -51,8 +51,8 @@ public final class ChatMarkdownSettings {
     private static volatile int containerCornerRadius = 12;
     /** 自己的消息气泡(ARGB,主题蓝)。 */
     private static volatile int bubbleSelfArgb = 0xE63390EC;
-    /** 他人消息气泡(ARGB,深灰)。 */
-    private static volatile int bubbleOtherArgb = 0xE61C2733;
+    /** 他人消息气泡(ARGB,中灰蓝,明显亮于容器背景避免"看不见")。 */
+    private static volatile int bubbleOtherArgb = 0xE6253444;
     /** 系统消息文字(ARGB,居中灰白)。 */
     private static volatile int systemTextArgb = 0x8AFFFFFF;
     /** 时间戳文字(ARGB,灰白小字)。 */
