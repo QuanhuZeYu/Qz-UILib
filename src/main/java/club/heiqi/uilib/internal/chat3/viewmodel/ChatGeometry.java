@@ -195,9 +195,17 @@ public final class ChatGeometry {
         List<PositionedGroup> positioned = new ArrayList<PositionedGroup>();
         for (ChatCardComposer.ComposedGroup group : groupsTimeAsc) {
             boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER;
-            String headerText = group.getHeaderText();
-            int headerWidth = headerText.isEmpty() ? 0
-                    : (int) Math.ceil(measure.advance(headerText, headerFontSize));
+            String headerName = group.getHeaderName();
+            String headerTime = group.getHeaderTime();
+            int headerWidth = 0;
+            if (!headerName.isEmpty() || !headerTime.isEmpty()) {
+                // 组头 row 双节点(名字 + gap 4 + 时间;名字可为空——自己组默认 showSelfName=false)
+                int nameWidth = headerName.isEmpty() ? 0
+                        : (int) Math.ceil(measure.advance(headerName, headerFontSize));
+                int timeWidth = headerTime.isEmpty() ? 0
+                        : (int) Math.ceil(measure.advance(headerTime, headerFontSize));
+                headerWidth = nameWidth + (nameWidth > 0 && timeWidth > 0 ? 4 : 0) + timeWidth;
+            }
             int contentWidth = 0;
             int linesCount = 0;
             for (ChatCardComposer.MessageLines message : group.getMessages()) {

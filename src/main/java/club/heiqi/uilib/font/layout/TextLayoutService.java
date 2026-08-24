@@ -960,6 +960,79 @@ public class TextLayoutService {
     }
 
     /**
+     * 行内 LaTeX 行高约束（设计稿 §3.5）：公式盒渲染总高 &gt; 行高×系数 的公式段按缩放系数
+     * 重排——落点 = 段有效字号 × 系数：布局（LatexCache 键含字号）、测量（getSegmentWidth /
+     * advance）与渲染（DefaultFontRendererAdapter glyphSizePx = 段字号 × sizeScale，盒坐标
+     * 同源布局字号）全链路等比缩放，混排行基线 latexBaseSize = max(缩放字号, 行内文本字号)
+     * 保持共享基线不变，无需逐元素变换。
+     *
+     * <p><b>截断+省略号降级</b>：缩放后仍超限的公式保持缩放结果——重复缩放只会继续降低
+     * 可读性；渲染管线是整盒排版树（SEGMENTS 命令）而非逐字文本模型，无「公式盒内部
+     * 裁剪 + 省略号」通道，截断语义按行高上限 clamp 降级（chat3 行高恒 18px，极端公式
+     * 缩放后仅视觉小幅超行）。</p>
+     *
+     * @param segments       段流（非 latex 段原样透传）
+     * @param baseFontSizePx 段落基准字号（无显式字号的 latex 段回落）
+     * @param lineHeightPx   行高（阈值基，UI px）
+     * @param maxHeightFactor 阈值系数（设计稿 §3.5 默认 1.6）
+     * @param shrinkFactor   缩放系数（设计稿 §3.5 默认 0.85）
+     * @return 约束后段流；无 latex 段或均未超限 → 原列表（零拷贝）
+     */
+    public List<TextSegment> applyLatexLineHeightConstraint(List<TextSegment> segments,
+            int baseFontSizePx, int lineHeightPx, float maxHeightFactor, float shrinkFactor) {
+        if (segments == null || segments.isEmpty()) {
+            return segments;
+        }
+        lockGeneration();
+        try {
+            double threshold = (double) Math.max(0, lineHeightPx) * (double) maxHeightFactor;
+            List<TextSegment> out = null;
+            for (int i = 0; i < segments.size(); i++) {
+                TextSegment segment = segments.get(i);
+                if (!segment.isLatex()) {
+                    if (out != null) {
+                        out.add(segment);
+                    }
+                    continue;
+                }
+                TextStyle style = segment.getStyle();
+                if (style == null) {
+                    if (out != null) {
+                        out.add(segment);
+                    }
+                    continue;
+                }
+                int sizePx = Math.max(1, style.resolveEffectiveFontSizePx(baseFontSizePx));
+                MathBox box = LatexCache.getInstance().getOrLayout(segment.getLatexSource(), sizePx,
+                        runtimeVersion, style.getFontType(), MATH_LAYOUT,
+                        createMathMetrics(style, sizePx), currentInkEpoch());
+                if (box.getTotalHeight() <= threshold) {
+                    if (out != null) {
+                        out.add(segment);
+                    }
+                    continue;
+                }
+                int shrunk = Math.max(1, Math.round(sizePx * shrinkFactor));
+                if (shrunk == sizePx) {
+                    if (out != null) {
+                        out.add(segment);
+                    }
+                    continue;
+                }
+                if (out == null) {
+                    out = new ArrayList<TextSegment>(segments);
+                }
+                TextStyle scaled = style.copy();
+                scaled.setFontSizePx(shrunk);
+                out.set(i, TextSegment.forLatex(segment.getLatexSource(), scaled));
+            }
+            return out == null ? segments : out;
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    /**
      * 构建数学布局度量注入（公式内文本与普通文本同口径：advance/ascent/descent 复用本服务）。
      *
      * @param style      段落样式（颜色/字体类别继承）

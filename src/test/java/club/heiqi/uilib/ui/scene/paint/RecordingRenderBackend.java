@@ -53,6 +53,15 @@ public class RecordingRenderBackend implements UiRenderBackend {
     }
 
     @Override
+    public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
+            int cornerRadiusTopLeft, int cornerRadiusTopRight,
+            int cornerRadiusBottomRight, int cornerRadiusBottomLeft) {
+        record("drawSurface", left, top, right, bottom, fillColor, borderColor,
+                cornerRadiusTopLeft, cornerRadiusTopRight,
+                cornerRadiusBottomRight, cornerRadiusBottomLeft);
+    }
+
+    @Override
     public void drawBorder(int left, int top, int right, int bottom, int color) {
         record("drawBorder", left, top, right, bottom, color);
     }

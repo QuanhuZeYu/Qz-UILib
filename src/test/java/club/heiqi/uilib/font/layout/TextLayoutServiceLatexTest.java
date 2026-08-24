@@ -151,6 +151,68 @@ public class TextLayoutServiceLatexTest {
                 + " expectedMin=" + expectedMin, withLatex >= expectedMin - 0.5);
     }
 
+    // ==================== T8:行内公式行高约束(设计稿 §3.5:>1.6×行高按 0.85 缩放重排) ====================
+
+    @Test
+    public void shouldShrinkLatexSegmentWhenBoxExceedsLineHeightFactor() {
+        TextLayoutService service = createService();
+        int baseSize = 16;
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        List<TextSegment> segments = service.parseSegments("<latex>\\frac{a}{b}</latex>",
+                0xFFFFFFFF, TextContentMode.RICH_TAGS);
+        TextSegment latex = segments.get(0);
+        Assert.assertTrue(latex.isLatex());
+        MathBox original = new MathLayoutService().layout(LatexParser.parse(latex.getLatexSource()),
+                baseSize, service.createMathMetrics(style, baseSize));
+
+        // 阈值设得比盒高低(行高 1 × 系数 1.0) → 必触发缩放:段字号 16 → round(16×0.85)=14
+        List<TextSegment> constrained = service.applyLatexLineHeightConstraint(
+                segments, baseSize, 1, 1.0F, 0.85F);
+        TextSegment shrunk = constrained.get(0);
+        Assert.assertTrue(shrunk.isLatex());
+        Assert.assertEquals("超限公式段字号按 0.85 缩放", 14,
+                shrunk.getStyle().resolveEffectiveFontSizePx(baseSize));
+
+        // 缩放后盒高/宽度等比收敛(布局字号锚定,LatexCache 按键分号)
+        MathBox shrunkBox = new MathLayoutService().layout(LatexParser.parse(shrunk.getLatexSource()),
+                14, service.createMathMetrics(style, 14));
+        Assert.assertTrue("缩放后盒高应小于原盒高", shrunkBox.getTotalHeight() < original.getTotalHeight());
+        double originalWidth = service.getSegmentWidth(latex, baseSize);
+        double shrunkWidth = service.getSegmentWidth(shrunk, baseSize);
+        Assert.assertTrue("缩放后宽度应小于原宽度(测量与渲染同源)", shrunkWidth < originalWidth);
+    }
+
+    @Test
+    public void shouldKeepSegmentsUnchangedWhenWithinLineHeightThreshold() {
+        TextLayoutService service = createService();
+        int baseSize = 16;
+        List<TextSegment> segments = service.parseSegments("a<latex>x^2</latex>b",
+                0xFFFFFFFF, TextContentMode.RICH_TAGS);
+        // 阈值极大 → 不触发 → 必须零拷贝返回原列表
+        List<TextSegment> constrained = service.applyLatexLineHeightConstraint(
+                segments, baseSize, 10_000, 1.6F, 0.85F);
+        Assert.assertSame("未超限必须零拷贝(原列表身份)", segments, constrained);
+        // 无 latex 段流同样零拷贝
+        List<TextSegment> plain = service.parseSegments("hello",
+                0xFFFFFFFF, TextContentMode.UILIB_RAW);
+        Assert.assertSame(plain, service.applyLatexLineHeightConstraint(
+                plain, baseSize, 10_000, 1.6F, 0.85F));
+    }
+
+    @Test
+    public void shouldShrinkAtMostOnceWhenStillOverThreshold() {
+        // 缩放后仍超限:保持缩放结果不再递归(截断+省略号按行高上限 clamp 降级)
+        TextLayoutService service = createService();
+        int baseSize = 16;
+        List<TextSegment> segments = service.parseSegments("<latex>\\frac{a}{b}</latex>",
+                0xFFFFFFFF, TextContentMode.RICH_TAGS);
+        List<TextSegment> constrained = service.applyLatexLineHeightConstraint(
+                segments, baseSize, 1, 1.0F, 0.85F);
+        Assert.assertEquals("只缩放一次(0.85),不递归", 14,
+                constrained.get(0).getStyle().resolveEffectiveFontSizePx(baseSize));
+    }
+
     private static TextLayoutService createService() {
         FontCatalog fontCatalog = new FontCatalog();
         fontCatalog.replaceAll(Arrays.asList(new Font("Dialog", Font.PLAIN, 14)));

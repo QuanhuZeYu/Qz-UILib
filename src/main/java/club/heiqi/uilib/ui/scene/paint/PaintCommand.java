@@ -94,6 +94,16 @@ public final class PaintCommand {
     /** 圆角半径（像素，0=直角）。BACKGROUND/BORDER/CLIP_PUSH 共用，其余命令默认 0 */
     private final int cornerRadius;
 
+    /**
+     * 四角独立圆角（像素）。默认 -1 = 未分角，回退 {@link #cornerRadius}；
+     * 任一 >=0 表示显式四角（BACKGROUND/BORDER 有效）。纯 POD 承载，
+     * 由回放器转 {@code ResolvedCornerRadii} 喂渲染层四角重载。
+     */
+    private final int cornerRadiusTopLeft;
+    private final int cornerRadiusTopRight;
+    private final int cornerRadiusBottomRight;
+    private final int cornerRadiusBottomLeft;
+
     /** 边框宽度（像素）。仅 BORDER 命令有意义，其余命令默认 0 */
     private final int borderWidth;
 
@@ -141,6 +151,20 @@ public final class PaintCommand {
                          float translateX, float translateY, float rotateDegrees,
                          float scaleX, float scaleY,
                          float originXRatio, float originYRatio, List<TextSegment> segments) {
+        this(type, left, top, right, bottom, color, text, textStyle, linkUrl, imageSource, opacity,
+                cornerRadius, borderWidth, translateX, translateY, rotateDegrees, scaleX, scaleY,
+                originXRatio, originYRatio, segments, -1, -1, -1, -1);
+    }
+
+    private PaintCommand(PaintCommandType type, int left, int top, int right, int bottom,
+                          int color, String text, TextStyle textStyle, String linkUrl,
+                          SceneImageSource imageSource, float opacity,
+                         int cornerRadius, int borderWidth,
+                         float translateX, float translateY, float rotateDegrees,
+                         float scaleX, float scaleY,
+                         float originXRatio, float originYRatio, List<TextSegment> segments,
+                         int cornerRadiusTopLeft, int cornerRadiusTopRight,
+                         int cornerRadiusBottomRight, int cornerRadiusBottomLeft) {
         this.type = Objects.requireNonNull(type, "type");
         this.left = left;
         this.top = top;
@@ -154,6 +178,11 @@ public final class PaintCommand {
         this.segments = segments;
         this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
         this.cornerRadius = Math.max(0, cornerRadius);
+        // 四角为 -1 哨兵（未分角）；显式值原样保存，不做 clamp（负值非法，由工厂/节点层契约保证）
+        this.cornerRadiusTopLeft = cornerRadiusTopLeft;
+        this.cornerRadiusTopRight = cornerRadiusTopRight;
+        this.cornerRadiusBottomRight = cornerRadiusBottomRight;
+        this.cornerRadiusBottomLeft = cornerRadiusBottomLeft;
         this.borderWidth = Math.max(0, borderWidth);
         this.translateX = translateX;
         this.translateY = translateY;
@@ -201,6 +230,32 @@ public final class PaintCommand {
     }
 
     /**
+     * 创建带四角独立圆角的背景填充命令（T4a）。
+     *
+     * @param left         左边界（像素）
+     * @param top          上边界（像素）
+     * @param right        右边界（像素）
+     * @param bottom       下边界（像素）
+     * @param color        背景色（ARGB 格式，如 0xAARRGGBB）
+     * @param cornerRadiusTopLeft     左上圆角（像素，>=0）
+     * @param cornerRadiusTopRight    右上圆角（像素，>=0）
+     * @param cornerRadiusBottomRight 右下圆角（像素，>=0）
+     * @param cornerRadiusBottomLeft  左下圆角（像素，>=0）
+     * @return 带四角圆角的背景绘制命令
+     */
+    public static PaintCommand background(int left, int top, int right, int bottom, int color,
+                                          int cornerRadiusTopLeft, int cornerRadiusTopRight,
+                                          int cornerRadiusBottomRight, int cornerRadiusBottomLeft) {
+        requireNonNegativeCorners(cornerRadiusTopLeft, cornerRadiusTopRight,
+                cornerRadiusBottomRight, cornerRadiusBottomLeft);
+        return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
+                color, null, null, null, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f, null,
+                cornerRadiusTopLeft, cornerRadiusTopRight,
+                cornerRadiusBottomRight, cornerRadiusBottomLeft);
+    }
+
+    /**
      * 创建边框绘制命令（Phase 4，任务 B）。
      *
      * <p>第 0 段裁决：边框不占布局空间（box-sizing: border-box 简化），
@@ -220,6 +275,46 @@ public final class PaintCommand {
         return new PaintCommand(PaintCommandType.BORDER, left, top, right, bottom,
                 color, null, null, null, null, 1.0f, cornerRadius, borderWidth,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f);
+    }
+
+    /**
+     * 创建带四角独立圆角的边框绘制命令（T4a）。
+     *
+     * @param left         左边界（像素）
+     * @param top          上边界（像素）
+     * @param right        右边界（像素）
+     * @param bottom       下边界（像素）
+     * @param color        边框色（ARGB 格式）
+     * @param borderWidth  边框宽度（像素）
+     * @param cornerRadiusTopLeft     左上圆角（像素，>=0）
+     * @param cornerRadiusTopRight    右上圆角（像素，>=0）
+     * @param cornerRadiusBottomRight 右下圆角（像素，>=0）
+     * @param cornerRadiusBottomLeft  左下圆角（像素，>=0）
+     * @return 带四角圆角的边框绘制命令
+     */
+    public static PaintCommand border(int left, int top, int right, int bottom, int color,
+                                      int borderWidth,
+                                      int cornerRadiusTopLeft, int cornerRadiusTopRight,
+                                      int cornerRadiusBottomRight, int cornerRadiusBottomLeft) {
+        requireNonNegativeCorners(cornerRadiusTopLeft, cornerRadiusTopRight,
+                cornerRadiusBottomRight, cornerRadiusBottomLeft);
+        return new PaintCommand(PaintCommandType.BORDER, left, top, right, bottom,
+                color, null, null, null, null, 1.0f, 0, borderWidth,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f, null,
+                cornerRadiusTopLeft, cornerRadiusTopRight,
+                cornerRadiusBottomRight, cornerRadiusBottomLeft);
+    }
+
+    /**
+     * 四角工厂共享校验：四角显式值必须 &gt;=0（-1 是「未分角」哨兵，禁止混入显式设置）。
+     *
+     * @throws IllegalArgumentException 任一四角 &lt;0 时抛出
+     */
+    private static void requireNonNegativeCorners(int tl, int tr, int br, int bl) {
+        if (tl < 0 || tr < 0 || br < 0 || bl < 0) {
+            throw new IllegalArgumentException(
+                    "四角圆角必须 >=0（tl=" + tl + ", tr=" + tr + ", br=" + br + ", bl=" + bl + "）");
+        }
     }
 
     /**
@@ -552,6 +647,24 @@ public final class PaintCommand {
         return cornerRadius;
     }
 
+    /** @return 是否有显式四角圆角（任一 >=0）；false 时回退 uniform {@link #getCornerRadius()} */
+    public boolean hasPerCornerRadii() {
+        return cornerRadiusTopLeft >= 0 || cornerRadiusTopRight >= 0
+                || cornerRadiusBottomRight >= 0 || cornerRadiusBottomLeft >= 0;
+    }
+
+    /** @return 左上圆角（像素）；-1 = 未分角，回退 {@link #getCornerRadius()} */
+    public int getCornerRadiusTopLeft() { return cornerRadiusTopLeft; }
+
+    /** @return 右上圆角（像素）；-1 = 未分角，回退 {@link #getCornerRadius()} */
+    public int getCornerRadiusTopRight() { return cornerRadiusTopRight; }
+
+    /** @return 右下圆角（像素）；-1 = 未分角，回退 {@link #getCornerRadius()} */
+    public int getCornerRadiusBottomRight() { return cornerRadiusBottomRight; }
+
+    /** @return 左下圆角（像素）；-1 = 未分角，回退 {@link #getCornerRadius()} */
+    public int getCornerRadiusBottomLeft() { return cornerRadiusBottomLeft; }
+
     /** @return 边框宽度（像素）。仅 BORDER 命令有意义 */
     public int getBorderWidth() {
         return borderWidth;
@@ -620,7 +733,9 @@ public final class PaintCommand {
         return new PaintCommand(type, left + dx, top + dy, right + dx, bottom + dy,
                 color, text, textStyle, linkUrl, imageSource, opacity, cornerRadius, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
-                segments);
+                segments,
+                cornerRadiusTopLeft, cornerRadiusTopRight,
+                cornerRadiusBottomRight, cornerRadiusBottomLeft);
     }
 
     // ========== equals / hashCode / toString ==========
@@ -647,6 +762,10 @@ public final class PaintCommand {
                 && segments == other.segments
                 && Float.compare(opacity, other.opacity) == 0
                 && cornerRadius == other.cornerRadius
+                && cornerRadiusTopLeft == other.cornerRadiusTopLeft
+                && cornerRadiusTopRight == other.cornerRadiusTopRight
+                && cornerRadiusBottomRight == other.cornerRadiusBottomRight
+                && cornerRadiusBottomLeft == other.cornerRadiusBottomLeft
                 && borderWidth == other.borderWidth
                 && Float.compare(translateX, other.translateX) == 0
                 && Float.compare(translateY, other.translateY) == 0
@@ -662,7 +781,8 @@ public final class PaintCommand {
         return Objects.hash(type, left, top, right, bottom, color, text, textStyle, linkUrl,
                 Integer.valueOf(System.identityHashCode(imageSource)),
                 Integer.valueOf(System.identityHashCode(segments)), opacity,
-                cornerRadius, borderWidth,
+                cornerRadius, cornerRadiusTopLeft, cornerRadiusTopRight,
+                cornerRadiusBottomRight, cornerRadiusBottomLeft, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
     }
 
@@ -677,6 +797,9 @@ public final class PaintCommand {
               .append(", color=").append(Integer.toHexString(color));
             if (cornerRadius != 0) {
                 sb.append(", cornerRadius=").append(cornerRadius);
+            }
+            if (hasPerCornerRadii()) {
+                appendCornerRadii(sb);
             }
         } else if (type == PaintCommandType.TEXT) {
             sb.append(", left=").append(left)
@@ -708,6 +831,9 @@ public final class PaintCommand {
               .append(", color=").append(Integer.toHexString(color))
               .append(", borderWidth=").append(borderWidth)
               .append(", cornerRadius=").append(cornerRadius);
+            if (hasPerCornerRadii()) {
+                appendCornerRadii(sb);
+            }
         } else if (type == PaintCommandType.CLIP_PUSH) {
             sb.append(", left=").append(left)
               .append(", top=").append(top)
@@ -731,5 +857,13 @@ public final class PaintCommand {
             sb.append(", opacity=").append(opacity);
         }
         return sb.append('}').toString();
+    }
+
+    /** toString 辅助：追加四角圆角（仅 per-corner 设置时调用）。 */
+    private void appendCornerRadii(StringBuilder sb) {
+        sb.append(", cornerRadii[tl=").append(cornerRadiusTopLeft)
+          .append(",tr=").append(cornerRadiusTopRight)
+          .append(",br=").append(cornerRadiusBottomRight)
+          .append(",bl=").append(cornerRadiusBottomLeft).append(']');
     }
 }

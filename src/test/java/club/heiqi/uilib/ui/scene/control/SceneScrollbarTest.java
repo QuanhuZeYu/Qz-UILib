@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -98,6 +99,39 @@ public class SceneScrollbarTest {
                 viewport, scrollSignal, scrollSignal::set,
                 SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
                 BAR_WIDTH, MIN_THUMB, onDragStart);
+        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
+        sceneRoot.appendChild(sb.column());
+        return new ScrollSetup(viewport, scrollSignal, sb);
+    }
+
+    /**
+     * T3 扩展构造：指定视口高和内容高 + 自定义三态色/命中带/可视宽的滚动树。
+     *
+     * @param viewportHeight 视口高度
+     * @param contentHeight 内容高度
+     * @param hoverColor 自定义悬停色（null=沿用 SceneChromeTokens）
+     * @param dragColor 自定义拖拽色（null=沿用 SceneChromeTokens）
+     * @param hitBandWidth 命中带宽（0=缺省用 barWidth）
+     * @param thumbVisualWidth 滑块可视宽（0=缺省用 barWidth）
+     * @return 滚动树构建产物
+     */
+    private ScrollSetup build(int viewportHeight, int contentHeight,
+            Integer hoverColor, Integer dragColor, int hitBandWidth, int thumbVisualWidth) {
+        SceneNode viewport = new SceneNode();
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(viewportHeight);
+        sceneRoot.appendChild(viewport);
+
+        SceneNode content = new SceneNode();
+        content.setPreferredHeight(contentHeight);
+        viewport.appendChild(content);
+
+        Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
+        SceneScrollbar.Props props = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                SceneScrollbar.DEFAULT_TRACK_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR,
+                BAR_WIDTH, MIN_THUMB, null,
+                hoverColor, dragColor, hitBandWidth, thumbVisualWidth);
         SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
         sceneRoot.appendChild(sb.column());
         return new ScrollSetup(viewport, scrollSignal, sb);
@@ -981,5 +1015,71 @@ public class SceneScrollbarTest {
         Assert.assertTrue("content 高度变化后 thumb 高应变小（同帧 flush 内更新，无手传 signal）",
                 thumbHAfter < thumbHBefore);
         Assert.assertTrue("改 content 高后 thumb 高仍 > 0", thumbHAfter > 0);
+    }
+
+    // ==================== T3：命中带/可视宽分离 + 自定义三态色 + 旧构造冒烟 ====================
+
+    /**
+     * T3 验收 a：命中带/可视宽分离。hitBandWidth=12、thumbVisualWidth=4 时，
+     * column（命中带）宽 = 12，thumb（可视条）宽 = 4，且 thumb AlignSelf=END 贴右缘。
+     */
+    @Test
+    public void hitBandAndVisualWidthShouldBeSeparated() {
+        ScrollSetup setup = build(200, 600, null, null, 12, 4);
+        Assert.assertEquals("column 宽 = hitBandWidth=12（命中带扩宽）", 12,
+                setup.scrollbar.column().getPreferredWidth());
+        Assert.assertEquals("thumb 宽 = thumbVisualWidth=4（可视条宽）", 4,
+                setup.scrollbar.thumb().getPreferredWidth());
+        Assert.assertEquals("thumb AlignSelf = END（贴右缘）", AlignSelf.END,
+                setup.scrollbar.thumb().getAlignSelf());
+    }
+
+    /**
+     * T3 验收 b-1：自定义 hover 色。hoverColor=0x66FFFFFF 时，
+     * MOVE 进入 thumb 命中区 → 动画色 bind 输出自定义悬停色（不再走 SceneChromeTokens）。
+     */
+    @Test
+    public void customHoverColorShouldApplyOnHover() {
+        ScrollSetup setup = build(200, 600, 0x66FFFFFF, 0x80FFFFFF, 12, 4);
+        doFrame();
+        // MOVE 到 thumb 可视中心（AlignSelf.END 后仍命中 thumb 自身）→ hover=true
+        int x = centerX(setup.scrollbar.thumb());
+        int y = centerY(setup.scrollbar.thumb());
+        routePointer(ScenePointerAction.MOVE, x, y);
+        runtime.flush();
+        Assert.assertEquals("hover 态 thumb 色 = 自定义 0x66FFFFFF", 0x66FFFFFF,
+                setup.scrollbar.thumb().getBackgroundColor());
+    }
+
+    /**
+     * T3 验收 b-2：自定义 drag 色。dragColor=0x80FFFFFF 时，
+     * DOWN 按下 thumb → 动画色 bind 输出自定义拖拽色（pressed 优先于 hover）。
+     */
+    @Test
+    public void customDragColorShouldApplyOnPressed() {
+        ScrollSetup setup = build(200, 600, 0x66FFFFFF, 0x80FFFFFF, 12, 4);
+        doFrame();
+        int x = centerX(setup.scrollbar.thumb());
+        int y = centerY(setup.scrollbar.thumb());
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
+        runtime.flush();
+        Assert.assertEquals("pressed 态 thumb 色 = 自定义 0x80FFFFFF", 0x80FFFFFF,
+                setup.scrollbar.thumb().getBackgroundColor());
+    }
+
+    /**
+     * T3 验收 c：旧默认构造形态冒烟。12 参完整构造传 hover/drag=null、hitBand/visual=0，
+     * create 不抛且回退 barWidth 缺省（column/thumb 宽 = barWidth），行为同旧 7 参构造。
+     * （null 色走 SceneChromeTokens 的旧断言已由 hover/pressed 既有测试覆盖。）
+     */
+    @Test
+    public void fullConstructorWithNullsShouldDefaultToBarWidth() {
+        ScrollSetup setup = build(200, 600, null, null, 0, 0);
+        Assert.assertEquals("hitBandWidth=0 缺省 column 宽 = barWidth", BAR_WIDTH,
+                setup.scrollbar.column().getPreferredWidth());
+        Assert.assertEquals("thumbVisualWidth=0 缺省 thumb 宽 = barWidth", BAR_WIDTH,
+                setup.scrollbar.thumb().getPreferredWidth());
+        Assert.assertEquals("thumb AlignSelf 仍为 END（不影响旧视觉）", AlignSelf.END,
+                setup.scrollbar.thumb().getAlignSelf());
     }
 }

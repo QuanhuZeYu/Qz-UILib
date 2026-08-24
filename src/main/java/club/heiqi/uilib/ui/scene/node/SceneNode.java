@@ -1069,14 +1069,68 @@ public class SceneNode {
 
     /** @see ScenePaintProps#cornerRadius */
     public SceneNode setCornerRadius(int cornerRadius) {
-        if (paintProps.cornerRadius == cornerRadius) return this;
+        if (paintProps.cornerRadius == cornerRadius && !paintProps.isPerCorner()) return this;
+        // uniform 语义：后设置者生效，清除先前可能的 per-corner 设置
         paintProps.cornerRadius = cornerRadius;
+        paintProps.cornerRadiusTopLeft = -1;
+        paintProps.cornerRadiusTopRight = -1;
+        paintProps.cornerRadiusBottomRight = -1;
+        paintProps.cornerRadiusBottomLeft = -1;
         markSelfPaint();
         return this;
     }
 
     /** @see ScenePaintProps#cornerRadius */
     public int getCornerRadius() { return paintProps.cornerRadius; }
+
+    /**
+     * 设置四角独立圆角（聊天气泡首/中/尾 12/4 分级等场景）。
+     *
+     * <p>四个值必须全部 &gt;=0；调用后本节点进入 per-corner 模式（覆盖 uniform
+     * {@link #setCornerRadius(int)} 语义，渲染取四角）。后设置者生效：之后再调
+     * {@link #setCornerRadius(int)} 会清除四角、回退 uniform。</p>
+     *
+     * @param topLeft     左上圆角（像素），&gt;=0
+     * @param topRight    右上圆角（像素），&gt;=0
+     * @param bottomRight 右下圆角（像素），&gt;=0
+     * @param bottomLeft  左下圆角（像素），&gt;=0
+     * @return this（链式）
+     */
+    public SceneNode setCornerRadius(int topLeft, int topRight, int bottomRight, int bottomLeft) {
+        if (topLeft < 0 || topRight < 0 || bottomRight < 0 || bottomLeft < 0) {
+            throw new IllegalArgumentException(
+                    "四角圆角必须 >=0（topLeft=" + topLeft + ", topRight=" + topRight
+                            + ", bottomRight=" + bottomRight + ", bottomLeft=" + bottomLeft + "）");
+        }
+        if (paintProps.cornerRadiusTopLeft == topLeft
+                && paintProps.cornerRadiusTopRight == topRight
+                && paintProps.cornerRadiusBottomRight == bottomRight
+                && paintProps.cornerRadiusBottomLeft == bottomLeft
+                && paintProps.isPerCorner()) {
+            return this;
+        }
+        paintProps.cornerRadiusTopLeft = topLeft;
+        paintProps.cornerRadiusTopRight = topRight;
+        paintProps.cornerRadiusBottomRight = bottomRight;
+        paintProps.cornerRadiusBottomLeft = bottomLeft;
+        markSelfPaint();
+        return this;
+    }
+
+    /** @see ScenePaintProps#isPerCorner */
+    public boolean isPerCornerRadius() { return paintProps.isPerCorner(); }
+
+    /** @return 左上圆角（像素）；-1 = 未分角设置，回退 uniform {@link #getCornerRadius()} */
+    public int getCornerRadiusTopLeft() { return paintProps.cornerRadiusTopLeft; }
+
+    /** @return 右上圆角（像素）；-1 = 未分角设置，回退 uniform {@link #getCornerRadius()} */
+    public int getCornerRadiusTopRight() { return paintProps.cornerRadiusTopRight; }
+
+    /** @return 右下圆角（像素）；-1 = 未分角设置，回退 uniform {@link #getCornerRadius()} */
+    public int getCornerRadiusBottomRight() { return paintProps.cornerRadiusBottomRight; }
+
+    /** @return 左下圆角（像素）；-1 = 未分角设置，回退 uniform {@link #getCornerRadius()} */
+    public int getCornerRadiusBottomLeft() { return paintProps.cornerRadiusBottomLeft; }
 
     /** @see ScenePaintProps#clipChildren */
     public SceneNode setClipChildren(boolean clipChildren) {

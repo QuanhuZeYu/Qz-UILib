@@ -327,6 +327,106 @@ public class SceneBackendContractTest {
     }
 
     // ============================================================
+    // 场景 9（T4a）：四角独立圆角背景 → drawSurface 带四角
+    // ============================================================
+
+    /**
+     * 树：root → child（背景色 + setCornerRadius(12,4,4,12)）。
+     * 断言：calls 含一条 drawSurface 四角调用（10 参：left,top,right,bottom,fill,border,tl,tr,br,bl），
+     * 四角 = (12,4,4,12)，fillColor=背景色，borderColor=0；不产生 fillRect（四角路径不退化直角）。
+     */
+    @Test
+    public void perCornerBackgroundShouldEmitDrawSurfaceWithFourCorners() {
+        SceneNode root = newNode(100, 50);
+        SceneNode child = newNode(100, 50);
+        child.setBackgroundColor(0xFF336699);
+        child.setCornerRadius(12, 4, 4, 12);
+        root.appendChild(child);
+
+        RecordingRenderBackend backend = paintAndReplay(root);
+
+        // 找到带四角的 drawSurface 调用（10 参版本：args 长度为 10）
+        RecordingRenderBackend.RenderCall fourCorner = null;
+        for (RecordingRenderBackend.RenderCall c : backend.getCalls()) {
+            if ("drawSurface".equals(c.methodName()) && c.args().length == 10) {
+                fourCorner = c;
+                break;
+            }
+        }
+        Assert.assertNotNull("应产出四角 drawSurface 调用", fourCorner);
+        Assert.assertEquals("fillColor=背景色", 0xFF336699, fourCorner.getInt(4));
+        Assert.assertEquals("borderColor=0（仅填充）", 0, fourCorner.getInt(5));
+        Assert.assertEquals("左上圆角", 12, fourCorner.getInt(6));
+        Assert.assertEquals("右上圆角", 4, fourCorner.getInt(7));
+        Assert.assertEquals("右下圆角", 4, fourCorner.getInt(8));
+        Assert.assertEquals("左下圆角", 12, fourCorner.getInt(9));
+
+        // 四角路径不得退化直角走 fillRect
+        Assert.assertEquals("四角背景不应走 fillRect", 0, countCalls(backend, "fillRect"));
+    }
+
+    /**
+     * 树：root → child（背景色 + 边框 + setCornerRadius(12,4,4,12)）。
+     * 断言：BORDER 四角命令 → drawSurface 四角调用（fillColor=0 只描边，borderColor=边框色）。
+     */
+    @Test
+    public void perCornerBorderShouldEmitDrawSurfaceWithFourCorners() {
+        SceneNode root = newNode(100, 50);
+        SceneNode child = newNode(100, 50);
+        child.setBorderColor(0xFF00FF00);
+        child.setBorderWidth(2);
+        child.setCornerRadius(12, 4, 4, 12);
+        root.appendChild(child);
+
+        RecordingRenderBackend backend = paintAndReplay(root);
+
+        RecordingRenderBackend.RenderCall fourCorner = null;
+        for (RecordingRenderBackend.RenderCall c : backend.getCalls()) {
+            if ("drawSurface".equals(c.methodName()) && c.args().length == 10) {
+                fourCorner = c;
+                break;
+            }
+        }
+        Assert.assertNotNull("应产出四角 drawSurface 调用", fourCorner);
+        Assert.assertEquals("fillColor=0（只描边）", 0, fourCorner.getInt(4));
+        Assert.assertEquals("borderColor=边框色", 0xFF00FF00, fourCorner.getInt(5));
+        Assert.assertEquals("左上圆角", 12, fourCorner.getInt(6));
+        Assert.assertEquals("右上圆角", 4, fourCorner.getInt(7));
+        Assert.assertEquals("右下圆角", 4, fourCorner.getInt(8));
+        Assert.assertEquals("左下圆角", 12, fourCorner.getInt(9));
+    }
+
+    /**
+     * 回归：uniform setCornerRadius(8) 旧路径零变化——圆角背景仍走 7 参 drawSurface（uniform 语义），
+     * 且不产生 10 参四角调用。
+     */
+    @Test
+    public void uniformCornerRadiusShouldKeepOldSevenArgDrawSurface() {
+        SceneNode root = newNode(100, 50);
+        SceneNode child = newNode(100, 50);
+        child.setBackgroundColor(0xFF336699);
+        child.setCornerRadius(8);
+        root.appendChild(child);
+
+        RecordingRenderBackend backend = paintAndReplay(root);
+
+        RecordingRenderBackend.RenderCall uniform = null;
+        boolean hasFourCorner = false;
+        for (RecordingRenderBackend.RenderCall c : backend.getCalls()) {
+            if ("drawSurface".equals(c.methodName())) {
+                if (c.args().length == 7) {
+                    uniform = c;
+                } else if (c.args().length == 10) {
+                    hasFourCorner = true;
+                }
+            }
+        }
+        Assert.assertNotNull("uniform 圆角应走 7 参 drawSurface", uniform);
+        Assert.assertEquals("第 7 参 = uniform 圆角 8", 8, uniform.getInt(6));
+        Assert.assertFalse("uniform 模式不应产生四角调用", hasFourCorner);
+    }
+
+    // ============================================================
     // 场景 8：replayer 纯靠接口工作（核心契约断言）
     // ============================================================
 

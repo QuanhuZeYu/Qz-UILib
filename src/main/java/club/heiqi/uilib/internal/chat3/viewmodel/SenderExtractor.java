@@ -11,8 +11,10 @@ import java.util.regex.Pattern;
  */
 public final class SenderExtractor {
 
-    /** 默认:&lt;名字&gt; 消息(原版聊天行格式,名字 1-16 位,不含尖括号)。 */
-    public static final Pattern DEFAULT_ANGLE = Pattern.compile("^<([^<>]{1,16})> ?(.*)$");
+    /** 默认:&lt;名字&gt; 消息(原版聊天行格式,名字 1-16 位,不含尖括号)。
+     *  (?s)DOTALL:多行消息(如连续引用行 "> a\nb")的 rest 含换行,默认 . 不跨行会整条
+     *  误判为系统消息(T6b 连续引用行回归)。 */
+    public static final Pattern DEFAULT_ANGLE = Pattern.compile("(?s)^<([^<>]{1,16})> ?(.*)$");
 
     /** 默认:名字: 消息(名字限 [A-Za-z0-9_],与 1.7.10 玩家名规则一致)。 */
     public static final Pattern DEFAULT_COLON = Pattern.compile("^([A-Za-z0-9_]{1,16}): ?(.*)$");

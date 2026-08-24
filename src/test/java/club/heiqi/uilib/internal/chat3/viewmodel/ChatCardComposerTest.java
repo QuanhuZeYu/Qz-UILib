@@ -1,12 +1,14 @@
 package club.heiqi.uilib.internal.chat3.viewmodel;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
 
 import net.minecraft.util.ChatComponentText;
 
+import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 
 /**
@@ -28,6 +30,8 @@ public class ChatCardComposerTest {
 
         Assert.assertEquals(MessageGroupModel.Alignment.OTHER_LEFT, composed.getAlignment());
         Assert.assertEquals("Steve", composed.getSender());
+        Assert.assertEquals("Steve", composed.getHeaderName());
+        Assert.assertEquals(ChatClock.formatTime(arrived), composed.getHeaderTime());
         Assert.assertEquals("Steve " + ChatClock.formatTime(arrived), composed.getHeaderText());
         Assert.assertEquals(SenderColorPalette.colorFor("Steve"), composed.getNameColor());
         Assert.assertEquals(1, composed.getMessages().size());
@@ -44,6 +48,8 @@ public class ChatCardComposerTest {
         ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, true);
 
         Assert.assertEquals(MessageGroupModel.Alignment.SYSTEM_CENTER, composed.getAlignment());
+        Assert.assertEquals("", composed.getHeaderName());
+        Assert.assertEquals("", composed.getHeaderTime());
         Assert.assertEquals("", composed.getHeaderText());
         Assert.assertEquals(0xFFFFFFFF, composed.getNameColor());
         Assert.assertEquals(Arrays.asList("[公告] 维护通知\u00a7r"), composed.getMessages().get(0).getDisplayLines());
@@ -58,8 +64,30 @@ public class ChatCardComposerTest {
 
         Assert.assertEquals(MessageGroupModel.Alignment.SELF_RIGHT, composed.getAlignment());
         Assert.assertEquals(SenderColorPalette.SELF_NAME_ARGB, composed.getNameColor());
-        // 自己的消息:名字用灰色(与蓝色气泡区分),组头仍为「名字 时间」
-        Assert.assertEquals("Steve " + ChatClock.formatTime(NOW - 5000L), composed.getHeaderText());
+        // 自己的消息:名字用灰色(与蓝色气泡区分);showSelfName 默认 false → 组头仅时间戳
+        Assert.assertEquals("", composed.getHeaderName());
+        Assert.assertEquals(ChatClock.formatTime(NOW - 5000L), composed.getHeaderTime());
+        Assert.assertEquals(ChatClock.formatTime(NOW - 5000L), composed.getHeaderText());
+    }
+
+    @Test
+    public void selfGroupHeaderShowsNameWhenShowSelfNameEnabled() throws Exception {
+        // 临时注入 showSelfName=true(静态配置,反射改 + try/finally 恢复默认),断言名字段出现
+        java.lang.reflect.Field field = ChatMarkdownSettings.class.getDeclaredField("showSelfName");
+        field.setAccessible(true);
+        boolean previous = field.getBoolean(null);
+        try {
+            field.setBoolean(null, true);
+            long arrived = NOW - 5000L;
+            ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> me"), 1, arrived);
+            MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Steve").get(0);
+            ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, true);
+
+            Assert.assertEquals("Steve", composed.getHeaderName());
+            Assert.assertEquals("Steve " + ChatClock.formatTime(arrived), composed.getHeaderText());
+        } finally {
+            field.setBoolean(null, previous);
+        }
     }
 
     @Test
@@ -87,17 +115,145 @@ public class ChatCardComposerTest {
         long fade = 500L;
         Assert.assertEquals(255, ChatCardComposer.fadeAlpha(NOW - 5_000L, NOW, ttl, fade, 255));
         Assert.assertEquals(255, ChatCardComposer.fadeAlpha(NOW - 9_999L, NOW, ttl, fade, 255));
-        // 淡出中点:255 - 255*250/500 = 128(整数截断)
-        Assert.assertEquals(128, ChatCardComposer.fadeAlpha(NOW - 10_250L, NOW, ttl, fade, 255));
+        // 淡出中点:easeInQuad p=0.5 → floor(255×(1-0.25)) = 191
+        Assert.assertEquals(191, ChatCardComposer.fadeAlpha(NOW - 10_250L, NOW, ttl, fade, 255));
         // 淡出结束即归零
         Assert.assertEquals(0, ChatCardComposer.fadeAlpha(NOW - 10_500L, NOW, ttl, fade, 255));
         Assert.assertEquals(0, ChatCardComposer.fadeAlpha(NOW - 20_000L, NOW, ttl, fade, 255));
     }
 
     @Test
+    public void fadeAlphaFollowsEaseInQuadLadder() {
+        // 设计稿 §5.3 淡出 alpha 阶梯:floor(255×(1-p²)) 整数截断;TTL 窗内恒 255
+        long ttl = 10_000L;
+        long fade = 1_000L;
+        Assert.assertEquals("p=0(刚过期)恒满", 255, ChatCardComposer.fadeAlpha(NOW - ttl, NOW, ttl, fade, 255));
+        Assert.assertEquals("p=0.25 → 239", 239, ChatCardComposer.fadeAlpha(NOW - (ttl + 250L), NOW, ttl, fade, 255));
+        Assert.assertEquals("p=0.5 → 191", 191, ChatCardComposer.fadeAlpha(NOW - (ttl + 500L), NOW, ttl, fade, 255));
+        // §5.3 表 p=0.75 写 112,但 §4.3 floor 语义为 floor(111.5625)=111——按 floor 实现
+        Assert.assertEquals("p=0.75 → 111(floor(111.5625))", 111, ChatCardComposer.fadeAlpha(NOW - (ttl + 750L), NOW, ttl, fade, 255));
+        Assert.assertEquals("p=0.9 → 48", 48, ChatCardComposer.fadeAlpha(NOW - (ttl + 900L), NOW, ttl, fade, 255));
+        Assert.assertEquals("p=1 → 0", 0, ChatCardComposer.fadeAlpha(NOW - (ttl + 1_000L), NOW, ttl, fade, 255));
+        // 慢启动:前 25% 只降 16/255,后 25% 降 111/255——easeInQuad 阶梯形态
+        Assert.assertTrue("前半段降幅 < 后半段(慢启动)",
+                ChatCardComposer.fadeAlpha(NOW - (ttl + 250L), NOW, ttl, fade, 255)
+                        - ChatCardComposer.fadeAlpha(NOW - ttl, NOW, ttl, fade, 255)
+                        > ChatCardComposer.fadeAlpha(NOW - (ttl + 1_000L), NOW, ttl, fade, 255)
+                        - ChatCardComposer.fadeAlpha(NOW - (ttl + 750L), NOW, ttl, fade, 255));
+    }
+
+    @Test
     public void fadeAlphaHandlesZeroFadeWindow() {
         Assert.assertEquals(255, ChatCardComposer.fadeAlpha(NOW - 5_000L, NOW, 10_000L, 0L, 255));
         Assert.assertEquals(0, ChatCardComposer.fadeAlpha(NOW - 10_001L, NOW, 10_000L, 0L, 255));
+    }
+
+    // ==================== T6a:气泡 hover 3% 白叠加(设计稿 §2.1 overlay-hover) ====================
+
+    @Test
+    public void mixWithWhiteKeepsBaseColorAtZeroBlend() {
+        Assert.assertEquals("t=0 恒等", 0xF2242B33, ChatCardComposer.mixWithWhite(0xF2242B33, 0.0F));
+        Assert.assertEquals("alpha 通道保持", 0xF2, (ChatCardComposer.mixWithWhite(0xF2242B33, 0.03F) >>> 24) & 0xFF);
+    }
+
+    @Test
+    public void mixWithWhiteBlendsThreePercentWhite() {
+        // 他人气泡 0xF2242B33 + 3% 白:R 36→43(0x2B) G 43→49(0x31) B 51→57(0x39),alpha F2 不变
+        Assert.assertEquals(0xF22B3139, ChatCardComposer.mixWithWhite(0xF2242B33, 0.03F));
+        // 自己气泡 0xF2272F3A + 3% 白:R 39→45(0x2D) G 47→53(0x35) B 58→64(0x40)
+        Assert.assertEquals(0xF22D3540, ChatCardComposer.mixWithWhite(0xF2272F3A, 0.03F));
+    }
+
+    @Test
+    public void mixWithWhiteClampsBlendAndSaturates() {
+        Assert.assertEquals("t 越界夹取", 0xF2242B33, ChatCardComposer.mixWithWhite(0xF2242B33, -1.0F));
+        Assert.assertEquals("t=1 全白(RGB 255)", 0xFFFFFFFF,
+                ChatCardComposer.mixWithWhite(0xFF123456, 1.0F));
+        Assert.assertEquals("t 超 1 夹取后同样饱和为白", 0xFFFFFFFF,
+                ChatCardComposer.mixWithWhite(0xFF000000, 2.0F));
+    }
+
+    @Test
+    public void hoveredBubbleColorPrecomputesThreePercentWhite() {
+        Assert.assertEquals("他人气泡 hover 底色", 0xF22B3139,
+                ChatCardComposer.hoveredBubbleColor(ChatMarkdownSettings.getBubbleOtherArgb()));
+        Assert.assertEquals("自己气泡 hover 底色", 0xF22D3540,
+                ChatCardComposer.hoveredBubbleColor(ChatMarkdownSettings.getBubbleSelfArgb()));
+    }
+
+    // ==================== T8:单条消息 8 行截断 + 省略号(设计稿 §5.4,验收 22) ====================
+
+    /** 组装 45 字符无空格文本(约定 maxLine=20:5 字符/行 → 9 行)。 */
+    private static String longText() {
+        StringBuilder sb = new StringBuilder(45);
+        for (int i = 0; i < 45; i++) {
+            sb.append('x');
+        }
+        return sb.toString();
+    }
+
+    private ChatCardComposer.ComposedGroup composeText(String text, boolean applyTtl) {
+        ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> " + text), 1, NOW - 5000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+        return composer.compose(group, NOW, 20, applyTtl);
+    }
+
+    @Test
+    public void hudClampsLongMessageToEightLinesWithEllipsis() {
+        ChatCardComposer.ComposedGroup composed = composeText(longText(), true);
+
+        ChatCardComposer.MessageLines message = composed.getMessages().get(0);
+        List<String> lines = message.getDisplayLines();
+        Assert.assertEquals("HUD 单条消息 9 行截断到 8 行", 8, lines.size());
+        // 行1-7 保持切分原样(每行 5 字符)
+        Assert.assertEquals("xxxxx", lines.get(0));
+        // 第 8 行 = 裁剪(5 字符宽 20 > 可用 20-12=8 → 保留 2 字符)+ 省略号,宽度不超过行宽上限
+        Assert.assertEquals("xx...", lines.get(7));
+        Assert.assertTrue("省略号末行宽度不超行宽上限",
+                4 * lines.get(7).length() <= 20);
+    }
+
+    @Test
+    public void hudKeepsEightLinesWithoutEllipsisWhenExactlyEight() {
+        // 40 字符 = 恰好 8 行(每行 5 字符):行数不超上限,不加省略号(CSS line-clamp 语义)
+        StringBuilder sb = new StringBuilder(40);
+        for (int i = 0; i < 40; i++) {
+            sb.append('y');
+        }
+        ChatCardComposer.ComposedGroup composed = composeText(sb.toString(), true);
+
+        List<String> lines = composed.getMessages().get(0).getDisplayLines();
+        Assert.assertEquals(8, lines.size());
+        Assert.assertEquals("yyyyy\u00a7r", lines.get(7)); // ChatComponentText 尾部 §r 重置码(真实口径)
+    }
+
+    @Test
+    public void containerKeepsAllLinesUnclamped() {
+        ChatCardComposer.ComposedGroup composed = composeText(longText(), false);
+
+        List<String> lines = composed.getMessages().get(0).getDisplayLines();
+        Assert.assertEquals("容器形态同一消息完整显示(验收 22)", 9, lines.size());
+        Assert.assertEquals("yyyyy".replace('y', 'x'), lines.get(7));
+        Assert.assertFalse("容器形态末行无省略号", lines.get(8).endsWith(ChatCardComposer.ELLIPSIS));
+    }
+
+    @Test
+    public void ellipsisLineKeepsFormatCodePairsIntact() {
+        // 7 个 \n 硬断出行 1-7(每行 5 字符),§b(零宽)落在第 8 行首:
+        // 行 8 = §b + 5 字符宽 20 > 可用 8 → 裁剪保留 §b + 2 字符 + 省略号
+        StringBuilder sb = new StringBuilder(47);
+        for (int i = 0; i < 7; i++) {
+            sb.append("xxxxx\n");
+        }
+        sb.append("\u00a7b");
+        for (int i = 0; i < 13; i++) {
+            sb.append('x');
+        }
+        ChatCardComposer.ComposedGroup composed = composeText(sb.toString(), true);
+
+        List<String> lines = composed.getMessages().get(0).getDisplayLines();
+        Assert.assertEquals(8, lines.size());
+        Assert.assertEquals("格式码对不可拆且保留在裁剪行首", "\u00a7bxx...", lines.get(7));
     }
 
     private static ChatLineLayouter.Measure fixedMeasure() {

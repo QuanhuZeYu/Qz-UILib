@@ -725,6 +725,75 @@ public class ScenePaintEngineTest {
     }
 
     /**
+     * T4a：节点四角设置时，BACKGROUND 命令携带四角（hasPerCornerRadii），uniform 通道不参与。
+     */
+    @Test
+    public void backgroundShouldCarryPerCornerRadii() {
+        SceneNode root = new SceneNode();
+        SceneNode node = new SceneNode();
+        node.setBackgroundColor(0xFF112233);
+        node.setCornerRadius(12, 4, 4, 12);
+        root.appendChild(node);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        PaintCommand bg = firstOfType(plan.getCommands(), PaintCommandType.BACKGROUND);
+        Assert.assertNotNull("应有 BACKGROUND 命令", bg);
+        Assert.assertTrue("BACKGROUND 应 hasPerCornerRadii", bg.hasPerCornerRadii());
+        Assert.assertEquals("左上圆角", 12, bg.getCornerRadiusTopLeft());
+        Assert.assertEquals("右上圆角", 4, bg.getCornerRadiusTopRight());
+        Assert.assertEquals("右下圆角", 4, bg.getCornerRadiusBottomRight());
+        Assert.assertEquals("左下圆角", 12, bg.getCornerRadiusBottomLeft());
+    }
+
+    /**
+     * T4a：节点四角设置时，BORDER 命令携带四角；uniform 节点仍走 uniform 命令（零回归）。
+     */
+    @Test
+    public void borderShouldCarryPerCornerRadii() {
+        SceneNode root = new SceneNode();
+        SceneNode node = new SceneNode();
+        node.setBorderColor(0xFF00FF00);
+        node.setBorderWidth(2);
+        node.setCornerRadius(12, 4, 4, 12);
+        root.appendChild(node);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        PaintCommand border = firstOfType(plan.getCommands(), PaintCommandType.BORDER);
+        Assert.assertNotNull("应有 BORDER 命令", border);
+        Assert.assertTrue("BORDER 应 hasPerCornerRadii", border.hasPerCornerRadii());
+        Assert.assertEquals("左上圆角", 12, border.getCornerRadiusTopLeft());
+        Assert.assertEquals("右上圆角", 4, border.getCornerRadiusTopRight());
+        Assert.assertEquals("右下圆角", 4, border.getCornerRadiusBottomRight());
+        Assert.assertEquals("左下圆角", 12, border.getCornerRadiusBottomLeft());
+    }
+
+    /**
+     * T4a 回归：uniform setCornerRadius 节点产出的命令四角全 -1（旧路径零变化）。
+     */
+    @Test
+    public void uniformCornerRadiusShouldEmitMinusOneFourCorners() {
+        SceneNode root = new SceneNode();
+        SceneNode node = new SceneNode();
+        node.setBackgroundColor(0xFF112233);
+        node.setCornerRadius(8);
+        root.appendChild(node);
+
+        layoutEngine.layout(root, new Constraints(100));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        PaintCommand bg = firstOfType(plan.getCommands(), PaintCommandType.BACKGROUND);
+        Assert.assertNotNull("应有 BACKGROUND 命令", bg);
+        Assert.assertEquals("uniform 命令 cornerRadius 不变", 8, bg.getCornerRadius());
+        Assert.assertFalse("uniform 命令不应 hasPerCornerRadii", bg.hasPerCornerRadii());
+        Assert.assertEquals("四角应为 -1", -1, bg.getCornerRadiusTopLeft());
+        Assert.assertEquals("四角应为 -1", -1, bg.getCornerRadiusBottomRight());
+    }
+
+    /**
      * 任务 B：clipChildren=true 时 paint plan 含 CLIP_PUSH/CLIP_POP 包裹子树，
      * 且严格嵌套——CLIP_PUSH 在子命令之前、CLIP_POP 在子命令之后。
      */
@@ -1528,6 +1597,17 @@ public class ScenePaintEngineTest {
             calls.add("drawSurface(" + left + "," + top + "," + right + "," + bottom
                     + ",fill=#" + Integer.toHexString(fillColor)
                     + ",border=#" + Integer.toHexString(borderColor) + ")");
+        }
+
+        @Override
+        public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
+                int cornerRadiusTopLeft, int cornerRadiusTopRight,
+                int cornerRadiusBottomRight, int cornerRadiusBottomLeft) {
+            calls.add("drawSurface(" + left + "," + top + "," + right + "," + bottom
+                    + ",fill=#" + Integer.toHexString(fillColor)
+                    + ",border=#" + Integer.toHexString(borderColor)
+                    + ",corners=" + cornerRadiusTopLeft + "/" + cornerRadiusTopRight
+                    + "/" + cornerRadiusBottomRight + "/" + cornerRadiusBottomLeft + ")");
         }
 
         @Override

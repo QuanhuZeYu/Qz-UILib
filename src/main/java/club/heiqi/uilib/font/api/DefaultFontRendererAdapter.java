@@ -45,6 +45,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             + "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
             + "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀"
             + "αβΓπΣσμτΦΘΩδ∞∅∈∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■";
+    /** 行内 code 衬底水平 padding（px，设计稿 §3.5：向两侧各外扩 3）。 */
+    private static final float CODE_BACKGROUND_PAD_PX = 3.0F;
     private final FontRenderStateGuard renderStateGuard = new FontRenderStateGuard();
     private final ThreadLocal<Integer> deferredFlushScopeDepth = new ThreadLocal<Integer>() {
         @Override
@@ -1389,6 +1391,17 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             // 阴影 pass 不收集，避免偏移后的第二层矩形叠影。
             collector.collectMarkBackground(currentX, drawY, width, baseCharSize,
                     style.getMarkColor());
+        }
+        if (withMarkBackground && style.isCodeSpan() && style.getCodeBackgroundColor() != 0) {
+            // 行内 code 衬底（设计稿 §3.5，T6b）：code 段字形收集后补一个实心矩形，
+            // 水平向两侧各外扩 CODE_BACKGROUND_PAD_PX（同段相邻字形矩形无缝相接，
+            // 段首/段尾自然形成外扩 padding）；高度 = 整行共享 em-box（baseCharSize），
+            // chat 行高 18px 时衬底 13px，上下不超出行高。颜色由 chat3 段解析注入
+            // （ChatMarkdownSettings.getCodeBackgroundArgb()，font 层不反向依赖 chat3）。
+            // 阴影 pass 不收集（与 <mark> 同语义，避免偏移叠影）。
+            collector.collectDecoration(currentX - CODE_BACKGROUND_PAD_PX, drawY,
+                    width + 2.0F * CODE_BACKGROUND_PAD_PX, baseCharSize,
+                    style.getCodeBackgroundColor());
         }
         if (style.isUnderline()) {
             collector.collectDecoration(currentX, drawY + charSize - renderScale, width,

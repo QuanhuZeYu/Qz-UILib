@@ -6,6 +6,11 @@ import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.input.ChatInputBar;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.scene.input.InputBinding;
+import club.heiqi.uilib.ui.scene.input.SceneEvent;
+import club.heiqi.uilib.ui.scene.input.SceneEventContext;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.Binding;
@@ -30,12 +35,20 @@ public final class ChatContainer {
         private final SceneNode root;
         private final SceneListHandle listHandle;
         private final Binding scrollBinding;
+        private final Binding hintBinding;
+        private final InputBinding hintInputBinding;
+        private final ChatScrollbar.Result scrollbar;
         private final ChatInputBar bar;
 
-        private Result(SceneNode root, SceneListHandle listHandle, Binding scrollBinding, ChatInputBar bar) {
+        private Result(SceneNode root, SceneListHandle listHandle, Binding scrollBinding,
+                Binding hintBinding, InputBinding hintInputBinding,
+                ChatScrollbar.Result scrollbar, ChatInputBar bar) {
             this.root = root;
             this.listHandle = listHandle;
             this.scrollBinding = scrollBinding;
+            this.hintBinding = hintBinding;
+            this.hintInputBinding = hintInputBinding;
+            this.scrollbar = scrollbar;
             this.bar = bar;
         }
 
@@ -46,6 +59,15 @@ public final class ChatContainer {
             }
             if (scrollBinding != null) {
                 scrollBinding.dispose();
+            }
+            if (hintBinding != null) {
+                hintBinding.dispose();
+            }
+            if (hintInputBinding != null) {
+                hintInputBinding.dispose();
+            }
+            if (scrollbar != null) {
+                scrollbar.dispose();
             }
         }
 
@@ -92,16 +114,48 @@ public final class ChatContainer {
                         ChatMarkdownSettings.getBubblePaddingX())
                 .setClipChildren(true);
 
-        // 消息列表(controller 容器形态内容,滚动绑定指向容器节点)
-        SceneNode list = SceneNode.column().setHitTestable(false);
-        containerNode.appendChild(list);
-        SceneListHandle listHandle = controller.messageList().mount(rt, list,
+        // ★ 滚动区行(与消息视口同级):[消息视口 flexGrow=1, 滚动条 column 右对齐]
+        // 滚动条必须与视口并列(不进 scrollable 视口),否则随内容平移错位。
+        SceneNode listRow = SceneNode.row().setHitTestable(false).setFillParentHeight(true);
+        containerNode.appendChild(listRow);
+
+        // 消息视口(scrollable,滚动偏移受体;内容列由控制器挂组)
+        SceneNode listViewport = SceneNode.column()
+                .setHitTestable(false)
+                .setFlexGrow(1)
+                .setScrollable(true)
+                .setClipChildren(true);
+        listRow.appendChild(listViewport);
+        SceneListHandle listHandle = controller.messageList().mount(rt, listViewport,
                 controller.groupsSignal(), ChatMessageList.Style.container(), registry,
                 controller.frameMillisSignal());
 
-        // 容器滚动:历史滚动偏移 → 容器滚动属性(结构版本驱动重算)
-        Binding scrollBinding = rt.bind(Computed.create(controller::scrollOffsetPx),
-                offset -> containerNode.setScrollOffsetY(offset.intValue()));
+        // 滚动唯一汇点:历史滚动偏移(px) → 视口滚动属性(结构版本驱动重算)。
+        // 滚动条显示源与容器绑定共享同一 Computed(同源同值)。
+        Computed<Integer> scrollPx = Computed.create(controller::scrollOffsetPx);
+        Binding scrollBinding = rt.bind(scrollPx,
+                offset -> listViewport.setScrollOffsetY(offset.intValue()));
+
+        // 滚动条:与视口同级 ROW 内右对齐,右内边距 2(贴容器右缘)。
+        // setScrollOffset 回调与滚轮路径同源(history.scrollBy + notifyDataChanged)。
+        // onDragStart:拖动接管时机 → 平滑器 snapTo 当前显示行(取消平滑、进入直通,拖动手感即时;
+        // 拖动中每次 setScrollOffset 目标变化经平滑器直通直接到位,display 恒等于目标)。
+        final int lineHeight = Math.max(1, ChatMarkdownSettings.getChatLineHeightPx());
+        ChatScrollbar.Result scrollbar = ChatScrollbar.create(rt, listViewport, scrollPx,
+                offset -> {
+                    int targetLines = (int) Math.round(offset.doubleValue() / (double) lineHeight);
+                    int current = controller.history().getScroll();
+                    if (targetLines != current) {
+                        // scrollBy 下限 0 clamp 与滚轮路径一致(上限=可滚行数,由 maxScrollY 折算保证)
+                        controller.history().scrollBy(targetLines - current);
+                        controller.notifyDataChanged();
+                    }
+                },
+                controller.frameMillisSignal(),
+                offsetPx -> controller.smoothScroll().snapTo(
+                        (int) Math.round(offsetPx.doubleValue() / (double) lineHeight)));
+        scrollbar.column().setMargin(0, 2, 0, 0);
+        listRow.appendChild(scrollbar.column());
 
         // 输入条(容器内底部)
         ChatInputBar bar = new ChatInputBar(rt, initialText);
@@ -112,6 +166,31 @@ public final class ChatContainer {
         barRow.appendChild(bar.root());
         containerNode.appendChild(barRow);
 
-        return new Result(containerNode, listHandle, scrollBinding, bar);
+        // 输入条上方「↓ N 条新消息」提示(设计稿 §5.1 P1):unreadSignal > 0 时显示,点击回底。
+        // 挂摘式显隐:文本节点空文本也占一行(拆分契约「至少一行」),故 unread=0 时移出树(零占位、
+        // 不消费命中);显示时插到输入条行之前(「Divider 上方」由后续批次落地后置于提示下方)。
+        SceneNode hintNode = new SceneNode()
+                .setHitTestable(false)
+                .setFontSize(ChatMarkdownSettings.getNameFontSizePx())
+                .setTextColor(ChatMarkdownSettings.getNewMessageHintArgb())
+                .setAlignSelf(AlignSelf.CENTER);
+        Binding hintBinding = rt.bind(controller.unreadSignal(), count -> {
+            int n = count.intValue();
+            if (n > 0) {
+                if (hintNode.__getParent() == null) {
+                    containerNode.insertBefore(hintNode, barRow);
+                }
+                hintNode.setText("↓ " + n + " 条新消息");
+                hintNode.setHitTestable(true);
+            } else if (hintNode.__getParent() != null) {
+                containerNode.removeChild(hintNode);
+                hintNode.setHitTestable(false);
+            }
+        });
+        InputBinding hintInputBinding = rt.on(hintNode, SceneEventType.POINTER_DOWN,
+                (SceneEvent event, SceneEventContext ctx) -> controller.scrollToBottom());
+
+        return new Result(containerNode, listHandle, scrollBinding, hintBinding, hintInputBinding,
+                scrollbar, bar);
     }
 }

@@ -6,12 +6,12 @@ package club.heiqi.uilib.internal.chat3.viewmodel;
  */
 public final class SenderColorPalette {
 
-    /** 自己的发送者名颜色(亮灰,深底上清晰可读,与雾蓝气泡区分)。 */
-    public static final int SELF_NAME_ARGB = 0xFFC9CFD6;
+    /** 自己的发送者名颜色(设计稿 §2.1 text-name-self,比正文暗 20% 不抢眼)。 */
+    public static final int SELF_NAME_ARGB = 0xFFAAB3BC;
 
-    /** 7 色板(红/橙/紫/绿/青/蓝/粉,Telegram 同款思路)。 */
+    /** 7 色板(设计稿 §2.1 name-1..7:柔红/橙/紫/绿/青/蓝/粉,暗底调优整体提亮降饱和)。 */
     private static final int[] PALETTE = {
-        0xFFE53935, 0xFFF4511E, 0xFF8E24AA, 0xFF43A047, 0xFF00ACC1, 0xFF1E88E5, 0xFFD81B60
+        0xFFFF6B64, 0xFFFF9E57, 0xFFC07BF8, 0xFF6BCB77, 0xFF4DD0E1, 0xFF6FA8FF, 0xFFF06292
     };
 
     private SenderColorPalette() {

@@ -371,6 +371,33 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
+     * 绘制带四角独立圆角的表面（UiRenderBackend 接口实现，T4a 四角纯数值重载）。
+     *
+     * <p>四角数值转 {@link UiBorderRadiusResolver.ResolvedCornerRadii#of} 后交给
+     * 既有分角重载统一消费（resolveCornerRadii 会按盒尺寸收敛）。</p>
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param fillColor 填充颜色
+     * @param borderColor 边框颜色
+     * @param cornerRadiusTopLeft 左上圆角
+     * @param cornerRadiusTopRight 右上圆角
+     * @param cornerRadiusBottomRight 右下圆角
+     * @param cornerRadiusBottomLeft 左下圆角
+     */
+    @Override
+    public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
+            int cornerRadiusTopLeft, int cornerRadiusTopRight,
+            int cornerRadiusBottomRight, int cornerRadiusBottomLeft) {
+        drawSurface(left, top, right, bottom, fillColor, borderColor,
+                UiBorderRadiusResolver.ResolvedCornerRadii.of(
+                        cornerRadiusTopLeft, cornerRadiusTopRight,
+                        cornerRadiusBottomRight, cornerRadiusBottomLeft));
+    }
+
+    /**
      * 绘制带分角圆角的表面（render 层内部重载，供 backdrop-filter 等需要分角圆角的调用方使用）。
      *
      * @param left 左侧坐标

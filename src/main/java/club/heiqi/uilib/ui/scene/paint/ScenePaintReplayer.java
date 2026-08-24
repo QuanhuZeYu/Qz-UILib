@@ -23,8 +23,10 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
  * <h3>命令 → Render API 映射</h3>
  * <table>
  *   <tr><th>命令类型</th><th>Render API</th><th>映射说明</th></tr>
- *   <tr><td>BACKGROUND</td><td>{@code ctx.fillRect(left, top, right, bottom, color)}</td>
- *        <td>坐标和颜色直接从命令字段取</td></tr>
+ *   <tr><td>BACKGROUND</td><td>{@code ctx.fillRect(left, top, right, bottom, color)} /
+ *        {@code ctx.drawSurface(..., fillColor, 0, cornerRadius)} /
+ *        {@code ctx.drawSurface(..., fillColor, 0, tl, tr, br, bl)}</td>
+ *        <td>直角走 fillRect 快速路径；uniform 圆角走 7 参 drawSurface；四角独立（T4a）走 10 参 drawSurface</td></tr>
  *   <tr><td>TEXT</td><td>{@code ctx.drawText(text, left, top, color, false, fontSizePx)}</td>
  *        <td>shadow=false，字号从 TextStyle 取纯数值传递</td></tr>
  *   <tr><td>PUSH_OPACITY</td><td>{@code ctx.pushGroupOpacity(left, top, right, bottom, opacity)}</td>
@@ -32,6 +34,10 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
  *   <tr><td>POP_OPACITY</td><td>{@code ctx.popGroupOpacity()}</td>
  *        <td>Phase 3B：退出 group opacity 作用域，与 PUSH_OPACITY 严格配对</td></tr>
  * </table>
+ *
+ * <p>T4a：BACKGROUND/BORDER 命令携带四角独立圆角时，回放器把四角以 4 个 {@code int}
+ * 纯数值传给 {@link UiRenderBackend} 的四角 drawSurface 重载（后端内部转
+ * {@code ResolvedCornerRadii}），scene 层零分角类型依赖（守 I6）。CLIP 本轮仍 uniform。</p>
  *
  * <p>Phase 4C 方案甲：transform 走 PUSH_TRANSFORM/POP_TRANSFORM 边界命令，回放器从命令 getter
  * 取 7 个浮点分量喂给 {@link UiRenderBackend} 的纯数值 pushTransform 重载（全 primitive，守 I6）。
@@ -110,7 +116,14 @@ public class ScenePaintReplayer {
             Deque<Scope> openScopes) {
         switch (cmd.getType()) {
             case BACKGROUND:
-                if (cmd.getCornerRadius() <= 0) {
+                if (cmd.hasPerCornerRadii()) {
+                    // 四角独立圆角背景（T4a）：四角数值直接喂后端四角重载（后端内部转 ResolvedCornerRadii）
+                    ctx.drawSurface(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                            cmd.getRight() + offsetX, cmd.getBottom() + offsetY,
+                            cmd.getColor(), 0,
+                            cmd.getCornerRadiusTopLeft(), cmd.getCornerRadiusTopRight(),
+                            cmd.getCornerRadiusBottomRight(), cmd.getCornerRadiusBottomLeft());
+                } else if (cmd.getCornerRadius() <= 0) {
                     // 直角背景：走现有 fillRect 快速路径（零回归）
                     ctx.fillRect(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getColor());
@@ -123,7 +136,14 @@ public class ScenePaintReplayer {
                 break;
 
             case BORDER:
-                if (cmd.getCornerRadius() <= 0) {
+                if (cmd.hasPerCornerRadii()) {
+                    // 四角独立圆角边框（T4a）：fillColor=0 只描边（drawSurface 内部 fillColor!=0 才填充）
+                    ctx.drawSurface(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                            cmd.getRight() + offsetX, cmd.getBottom() + offsetY,
+                            0, cmd.getColor(),
+                            cmd.getCornerRadiusTopLeft(), cmd.getCornerRadiusTopRight(),
+                            cmd.getCornerRadiusBottomRight(), cmd.getCornerRadiusBottomLeft());
+                } else if (cmd.getCornerRadius() <= 0) {
                     // 直角边框：走现有 drawBorder（fillColor 无关，只画边框）
                     ctx.drawBorder(cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             cmd.getRight() + offsetX, cmd.getBottom() + offsetY, cmd.getColor());

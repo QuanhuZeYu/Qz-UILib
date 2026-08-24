@@ -16,6 +16,8 @@ final class ScaledRenderBackend implements UiRenderBackend {
     public void fillRect(int l,int t,int r,int b,int c){delegate.fillRect(p(l),p(t),p(r),p(b),c);}
     public void drawImage(SceneImageSource s,int l,int t,int r,int b){delegate.drawImage(s,p(l),p(t),p(r),p(b));}
     public void drawSurface(int l,int t,int r,int b,int f,int o,int radius){delegate.drawSurface(p(l),p(t),p(r),p(b),f,o,p(radius));}
+    public void drawSurface(int l,int t,int r,int b,int f,int o,
+            int tL,int tR,int bR,int bL){delegate.drawSurface(p(l),p(t),p(r),p(b),f,o,p(tL),p(tR),p(bR),p(bL));}
     public void drawBorder(int l,int t,int r,int b,int c){delegate.drawBorder(p(l),p(t),p(r),p(b),c);}
     public void pushClip(int l,int t,int r,int b,int radius){delegate.pushClip(p(l),p(t),p(r),p(b),p(radius));}
     public void popClip(){delegate.popClip();}

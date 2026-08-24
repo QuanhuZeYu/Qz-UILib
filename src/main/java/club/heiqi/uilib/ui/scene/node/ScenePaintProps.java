@@ -39,6 +39,16 @@ final class ScenePaintProps {
     /** 圆角半径（像素），默认 0（直角）。只影响绘制输出，标 PAINT */
     int cornerRadius;
 
+    /**
+     * 四角独立圆角半径（像素）。默认 -1 = 未做分角设置，回退 {@link #cornerRadius}；
+     * 任一 >=0 表示已显式设置四角（per-corner 生效，忽略 uniform 值）。
+     * 只影响绘制输出，标 PAINT。
+     */
+    int cornerRadiusTopLeft = -1;
+    int cornerRadiusTopRight = -1;
+    int cornerRadiusBottomRight = -1;
+    int cornerRadiusBottomLeft = -1;
+
     /** 是否裁剪超出本节点边界的子节点绘制，默认 false。只影响绘制裁剪，标 PAINT */
     boolean clipChildren;
 
@@ -55,4 +65,28 @@ final class ScenePaintProps {
 
     /** 文本在布局盒内的垂直对齐方式，默认居中。PAINT 级属性，不影响盒尺寸。 */
     TextVerticalAlign textVerticalAlign = TextVerticalAlign.CENTER;
+
+    // ==================== 分角圆角访问（T4a） ====================
+
+    /**
+     * 是否已做四角独立圆角设置。
+     *
+     * @return 四个分角值任一 >=0 即 true（-1 为「未分角、回退 uniform」哨兵）
+     */
+    boolean isPerCorner() {
+        return cornerRadiusTopLeft >= 0 || cornerRadiusTopRight >= 0
+                || cornerRadiusBottomRight >= 0 || cornerRadiusBottomLeft >= 0;
+    }
+
+    /** @return 左上圆角（像素）；-1 = 未分角设置，回退 {@link #cornerRadius} */
+    int getCornerRadiusTopLeft() { return cornerRadiusTopLeft; }
+
+    /** @return 右上圆角（像素）；-1 = 未分角设置，回退 {@link #cornerRadius} */
+    int getCornerRadiusTopRight() { return cornerRadiusTopRight; }
+
+    /** @return 右下圆角（像素）；-1 = 未分角设置，回退 {@link #cornerRadius} */
+    int getCornerRadiusBottomRight() { return cornerRadiusBottomRight; }
+
+    /** @return 左下圆角（像素）；-1 = 未分角设置，回退 {@link #cornerRadius} */
+    int getCornerRadiusBottomLeft() { return cornerRadiusBottomLeft; }
 }

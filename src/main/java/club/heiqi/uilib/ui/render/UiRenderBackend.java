@@ -91,6 +91,41 @@ public interface UiRenderBackend {
             int cornerRadius);
 
     /**
+     * 绘制带四角独立圆角的表面（T4a，聊天气泡首/中/尾 12/4 分级）。
+     *
+     * <p>四角以 4 个 {@code int} 纯数值传递，避免 scene 回放器反向依赖
+     * {@code ResolvedCornerRadii} 类型（守不变量 I6，与 uniform 重载同构）。
+     * render 层实现方负责把四角数值转成内部所需的分角圆角结构。</p>
+     *
+     * <p><b>默认实现（未 override 的旧 backend）：</b>四角一致时退化为 uniform
+     * 单值重载（无损）；四角不一致时保守降级为直角（cornerRadius=0），
+     * 保证旧 backend 源码兼容且不产生形状错误——支持四角的后端应 override 本方法。</p>
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param fillColor 填充颜色
+     * @param borderColor 边框颜色
+     * @param cornerRadiusTopLeft 左上圆角（像素，>=0）
+     * @param cornerRadiusTopRight 右上圆角（像素，>=0）
+     * @param cornerRadiusBottomRight 右下圆角（像素，>=0）
+     * @param cornerRadiusBottomLeft 左下圆角（像素，>=0）
+     */
+    default void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
+            int cornerRadiusTopLeft, int cornerRadiusTopRight,
+            int cornerRadiusBottomRight, int cornerRadiusBottomLeft) {
+        if (cornerRadiusTopLeft == cornerRadiusTopRight
+                && cornerRadiusTopRight == cornerRadiusBottomRight
+                && cornerRadiusBottomRight == cornerRadiusBottomLeft) {
+            drawSurface(left, top, right, bottom, fillColor, borderColor, cornerRadiusTopLeft);
+        } else {
+            // 旧 backend 无分角能力：保守降级为直角，避免形状错误。
+            drawSurface(left, top, right, bottom, fillColor, borderColor, 0);
+        }
+    }
+
+    /**
      * 绘制矩形边框。
      *
      * @param left 左侧坐标

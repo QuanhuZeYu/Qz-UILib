@@ -51,6 +51,12 @@ public class TextStyle {
     /** 链接 URL；null 表示非链接。 */
     private String link;
 
+    /** 行内 code 标记：code 段渲染衬底（设计稿 §3.5，T6b）。 */
+    private boolean codeSpan;
+
+    /** 行内 code 衬底背景色（ARGB）；0 = 无衬底（未注入色值的调用方语义）。 */
+    private int codeBackgroundColor;
+
     /**
      * 复制当前样式。
      *
@@ -73,6 +79,8 @@ public class TextStyle {
         style.subscript = subscript;
         style.letterSpacing = letterSpacing;
         style.link = link;
+        style.codeSpan = codeSpan;
+        style.codeBackgroundColor = codeBackgroundColor;
         return style;
     }
 
@@ -130,6 +138,8 @@ public class TextStyle {
         subscript = false;
         letterSpacing = 0.0F;
         link = null;
+        codeSpan = false;
+        codeBackgroundColor = 0;
     }
 
     private void resetFlags(int baseColor) {
@@ -145,6 +155,8 @@ public class TextStyle {
         subscript = false;
         letterSpacing = 0.0F;
         link = null;
+        codeSpan = false;
+        codeBackgroundColor = 0;
     }
 
     public int getColor() {
@@ -321,6 +333,34 @@ public class TextStyle {
      */
     public void setLink(String link) {
         this.link = link;
+    }
+
+    /** @return 是否行内 code 段（渲染 0x26FFFFFF 系衬底，设计稿 §3.5） */
+    public boolean isCodeSpan() {
+        return codeSpan;
+    }
+
+    /**
+     * 设置行内 code 段标记。
+     *
+     * @param codeSpan code 段标记（false 恢复普通文本语义）
+     */
+    public void setCodeSpan(boolean codeSpan) {
+        this.codeSpan = codeSpan;
+    }
+
+    /** @return 行内 code 衬底背景色（ARGB）；0 = 无衬底 */
+    public int getCodeBackgroundColor() {
+        return codeBackgroundColor;
+    }
+
+    /**
+     * 设置行内 code 衬底背景色。
+     *
+     * @param codeBackgroundColor ARGB 衬底色；0 = 关闭衬底（仅影响 code 段）
+     */
+    public void setCodeBackgroundColor(int codeBackgroundColor) {
+        this.codeBackgroundColor = codeBackgroundColor;
     }
 
     /**

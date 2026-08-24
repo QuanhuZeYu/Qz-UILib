@@ -293,4 +293,91 @@ public class PaintCommandTest {
         Assert.assertSame("CLIP_PUSH translatedBy 应返回自身", clipPush, clipPush.translatedBy(100, 200));
         Assert.assertSame("CLIP_POP translatedBy 应返回自身", clipPop, clipPop.translatedBy(100, 200));
     }
+
+    // ============================================================
+    // T4a：四角独立圆角命令（BACKGROUND/BORDER 四角工厂 + 三件套）
+    // ============================================================
+
+    @Test
+    public void backgroundPerCornerFactoryShouldCarryFourCorners() {
+        PaintCommand bg = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 12, 4, 4, 12);
+
+        Assert.assertEquals("类型 BACKGROUND", PaintCommandType.BACKGROUND, bg.getType());
+        Assert.assertEquals("颜色", 0xFF336699, bg.getColor());
+        Assert.assertEquals("左上圆角", 12, bg.getCornerRadiusTopLeft());
+        Assert.assertEquals("右上圆角", 4, bg.getCornerRadiusTopRight());
+        Assert.assertEquals("右下圆角", 4, bg.getCornerRadiusBottomRight());
+        Assert.assertEquals("左下圆角", 12, bg.getCornerRadiusBottomLeft());
+        Assert.assertTrue("四角工厂应 hasPerCornerRadii", bg.hasPerCornerRadii());
+    }
+
+    @Test
+    public void borderPerCornerFactoryShouldCarryFourCorners() {
+        PaintCommand border = PaintCommand.border(10, 20, 110, 70, 0xFF00FF00, 2, 12, 4, 4, 12);
+
+        Assert.assertEquals("类型 BORDER", PaintCommandType.BORDER, border.getType());
+        Assert.assertEquals("边框宽度", 2, border.getBorderWidth());
+        Assert.assertEquals("左上圆角", 12, border.getCornerRadiusTopLeft());
+        Assert.assertEquals("右上圆角", 4, border.getCornerRadiusTopRight());
+        Assert.assertEquals("右下圆角", 4, border.getCornerRadiusBottomRight());
+        Assert.assertEquals("左下圆角", 12, border.getCornerRadiusBottomLeft());
+        Assert.assertTrue("四角工厂应 hasPerCornerRadii", border.hasPerCornerRadii());
+    }
+
+    @Test
+    public void uniformFactoriesShouldDefaultFourCornersToMinusOne() {
+        PaintCommand bg = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 8);
+        PaintCommand border = PaintCommand.border(0, 0, 100, 50, 0xFF00FF00, 2, 4);
+
+        Assert.assertFalse("uniform 工厂不应 hasPerCornerRadii", bg.hasPerCornerRadii());
+        Assert.assertEquals("uniform 背景四角应为 -1", -1, bg.getCornerRadiusTopLeft());
+        Assert.assertEquals("uniform 背景四角应为 -1", -1, bg.getCornerRadiusBottomLeft());
+        Assert.assertFalse("uniform 边框工厂不应 hasPerCornerRadii", border.hasPerCornerRadii());
+        Assert.assertEquals("uniform 边框四角应为 -1", -1, border.getCornerRadiusTopRight());
+        // uniform 语义零变化
+        Assert.assertEquals("uniform 背景 cornerRadius 不变", 8, bg.getCornerRadius());
+        Assert.assertEquals("uniform 边框 cornerRadius 不变", 4, border.getCornerRadius());
+    }
+
+    @Test
+    public void equalsHashCodeShouldDistinguishFourCorners() {
+        PaintCommand bg1 = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 12, 4, 4, 12);
+        PaintCommand bg2 = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 12, 4, 4, 12);
+        PaintCommand bg3 = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 12, 4, 4, 8);
+
+        Assert.assertEquals("相同四角应 equals", bg1, bg2);
+        Assert.assertEquals("相同四角 hashCode 相等", bg1.hashCode(), bg2.hashCode());
+        Assert.assertNotEquals("不同四角不应 equals", bg1, bg3);
+        Assert.assertNotEquals("不同四角 hashCode 不应相等", bg1.hashCode(), bg3.hashCode());
+    }
+
+    @Test
+    public void equalsShouldDistinguishPerCornerFromUniform() {
+        // 同一矩形：四角 (12,4,4,12) vs uniform 0 —— 语义不同，不得 equals
+        PaintCommand per = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 12, 4, 4, 12);
+        PaintCommand uni = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 0);
+        Assert.assertNotEquals("per-corner 与 uniform(0) 不应 equals", per, uni);
+    }
+
+    @Test
+    public void toStringShouldIncludeFourCorners() {
+        PaintCommand bg = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 12, 4, 4, 12);
+        String s = bg.toString();
+        Assert.assertTrue("toString 应含 cornerRadii[tl=12...]", s.contains("cornerRadii[tl=12,tr=4,br=4,bl=12]"));
+
+        PaintCommand uni = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 8);
+        Assert.assertFalse("uniform 命令 toString 不应含四角", uni.toString().contains("cornerRadii"));
+    }
+
+    @Test
+    public void translatedByShouldCarryFourCorners() {
+        PaintCommand bg = PaintCommand.background(0, 0, 100, 50, 0xFF336699, 12, 4, 4, 12);
+        PaintCommand moved = bg.translatedBy(5, 7);
+
+        Assert.assertEquals("平移后四角不变", 12, moved.getCornerRadiusTopLeft());
+        Assert.assertEquals("平移后四角不变", 4, moved.getCornerRadiusTopRight());
+        Assert.assertEquals("平移后四角不变", 4, moved.getCornerRadiusBottomRight());
+        Assert.assertEquals("平移后四角不变", 12, moved.getCornerRadiusBottomLeft());
+        Assert.assertTrue("平移后仍 hasPerCornerRadii", moved.hasPerCornerRadii());
+    }
 }

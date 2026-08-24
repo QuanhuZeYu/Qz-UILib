@@ -36,7 +36,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>组列表 = Computed(contentVersion) → forEach 构建组节点(声明式 diff);</li>
  *   <li>淡出 = 组节点内 Computed(frameMillis) 绑定,PAINT 级颜色烘焙(零结构协调);</li>
  *   <li>形态切换 = 状态机阶段驱动树根重建(HUD 气泡树 ↔ 容器树),动画 = root transform 平移;</li>
- *   <li>HUD 形态过期组(10s+淡出结束)在 tick 中移除(结构级),新消息始终堆在底部。</li>
+ *   <li>HUD 形态过期组(12s+淡出结束)在 tick 中移除(结构级),新消息始终堆在底部。</li>
  * </ul>
  *
  * <p>渲染驱动点 = 接线层每帧调 {@link #tick(long)}(S4 接 drawChat);不依赖 HUD 服务异步帧循环。</p>
@@ -95,11 +95,27 @@ public final class ChatSceneController {
         };
     }
 
+    /**
+     * 生产段宽度度量:TextLayoutService.getSegmentWidth 与渲染推进同源
+     * (链接命中区域行内定位用,T6a)。
+     */
+    public static ChatMessageList.SegmentMeasurer uiLibSegmentMeasurer() {
+        final TextLayoutService service = FontService.getInstance().getTextLayoutService();
+        return new ChatMessageList.SegmentMeasurer() {
+            @Override
+            public float widthOf(TextSegment segment, int fontSizePx) {
+                return (float) service.getSegmentWidth(segment, fontSizePx);
+            }
+        };
+    }
+
     private final ChatHistory history = new ChatHistory();
     private final MessageGrouper grouper = new MessageGrouper();
     private final ChatLineLayouter.Measure measure;
     private final SelfNameProvider selfNameProvider;
     private final ChatMessageList.SegmentParser segmentParser;
+    /** 段宽度度量(null = 关闭 URL 链接化;生产恒注入,T6a)。 */
+    private final ChatMessageList.SegmentMeasurer segmentMeasurer;
     private ChatLineLayouter layouter;
     private ChatCardComposer composer;
     private ChatMessageList messageList;
@@ -115,11 +131,28 @@ public final class ChatSceneController {
             Signal.create(DisplayStateMachine.Phase.HUD);
     private final DisplayStateMachine machine = new DisplayStateMachine();
 
+    /** 显示行平滑器(T5b):history 目标行 → 120ms easeOutQuad 插值显示行(滚动唯一显示源)。 */
+    private final SmoothScroller smooth = new SmoothScroller();
+    /** 未读新消息计数(设计稿 §5.1「↓ N 条新消息」;HUD 形态不参与,容器滚动重算驱动)。 */
+    private final Signal<Integer> unreadSignal = Signal.create(Integer.valueOf(0));
+    /** 未读计数镜像(信号写入去重:仅变化时 set)。 */
+    private int unreadCount = 0;
+    /** 上次滚动重算所见历史行数(新消息增量判定 = history.size() 增量;删除/清空为负不计)。
+     *  -1 = 首次物化前:历史基线未校准(首次重算只记录不计数,历史消息不误计为未读)。 */
+    private int lastSeenSize = -1;
+
     /** 网络线程数据脏标记(主线程 tick 冲刷为版本号)。 */
     private volatile boolean dataDirty;
 
     /** HUD 形态过期移除阈值(latestMillis 低于此值的组不再进树;主线程 tick 推进)。 */
     private long expiredThreshold = 0L;
+
+    /** HUD 高度裁剪阈值(设计稿 §3.1):堆叠超限时 latestMillis 低于此值的组立即剔除,
+     *  不等 TTL(结构级、只进不退——被裁组不复活)。 */
+    private long heightTrimThreshold = 0L;
+    /** 高度裁剪评估去重(内容版本 + 视口高;无变化跳过,常规帧零开销)。 */
+    private long lastTrimContentVersion = -1L;
+    private int lastTrimViewportHeight = -1;
 
     /** buildContent 后持有:树根/挂载点/运行时与当前形态(树重建与动画绑定用)。 */
     private SceneRuntime runtime;
@@ -141,20 +174,29 @@ public final class ChatSceneController {
 
     /** 以生产 UILib 度量创建(真机路径)。 */
     public ChatSceneController() {
-        this(uiLibMeasure(), mcSelfName(), uiLibSegmentParser());
+        this(uiLibMeasure(), mcSelfName(), uiLibSegmentParser(), uiLibSegmentMeasurer());
     }
 
     /**
-     * 以指定依赖创建(headless 测试注入确定性度量/玩家名/段解析)。
+     * 以指定依赖创建(headless 测试注入确定性度量/玩家名/段解析;链接化关闭)。
      */
     public ChatSceneController(ChatLineLayouter.Measure measure, SelfNameProvider selfNameProvider,
             ChatMessageList.SegmentParser segmentParser) {
+        this(measure, selfNameProvider, segmentParser, null);
+    }
+
+    /**
+     * 以指定依赖创建(headless 测试注入确定性度量/玩家名/段解析/段宽度度量;度量注入后启用 URL 链接化)。
+     */
+    public ChatSceneController(ChatLineLayouter.Measure measure, SelfNameProvider selfNameProvider,
+            ChatMessageList.SegmentParser segmentParser, ChatMessageList.SegmentMeasurer segmentMeasurer) {
         if (measure == null || selfNameProvider == null || segmentParser == null) {
             throw new IllegalArgumentException("依赖不能为空");
         }
         this.measure = measure;
         this.selfNameProvider = selfNameProvider;
         this.segmentParser = segmentParser;
+        this.segmentMeasurer = segmentMeasurer;
     }
 
     // ==================== 数据访问 ====================
@@ -269,7 +311,7 @@ public final class ChatSceneController {
 
     /**
      * 每渲染帧推进(接线层 drawChat 单行委托,主线程):
-     * 冲刷脏标记、推进状态机、检查过期组移除、必要时重建形态树。
+     * 冲刷脏标记、推进状态机、检查过期/高度超限组移除、必要时重建形态树。
      *
      * @param nowMillis 当前 wall millis
      */
@@ -279,7 +321,8 @@ public final class ChatSceneController {
             contentVersion.set(Integer.valueOf(contentVersion.get().intValue() + 1));
         }
         DisplayStateMachine.Phase phase = machine.tick(nowMillis,
-                ChatMarkdownSettings.getCollapseAnimMillis(), ChatMarkdownSettings.getPopAnimMillis());
+                ChatMarkdownSettings.getCollapseAnimMillis(), ChatMarkdownSettings.getPopAnimMillis(),
+                ChatMarkdownSettings.getClosingAnimMillis());
         if (phase != phaseSignal.get()) {
             phaseSignal.set(phase);
         }
@@ -289,6 +332,7 @@ public final class ChatSceneController {
             rebuildTree();
         }
         removeExpiredHudGroups(nowMillis);
+        trimHudGroupsByHeight();
     }
 
     /** 数据结构变化(消息到达/删除/清空/滚动/设置)后调用,驱动重协调(主线程)。 */
@@ -333,6 +377,7 @@ public final class ChatSceneController {
         this.root = newRoot;
         this.mount = null;
         rt.bind(Computed.create(this::animTransform), transform -> root.setTransform(transform));
+        rt.bind(Computed.create(this::animOpacity), opacity -> root.setOpacity(opacity.floatValue()));
         rebuildTree();
         return newRoot;
     }
@@ -392,41 +437,143 @@ public final class ChatSceneController {
                 - 2 * ChatMarkdownSettings.getBubblePaddingX());
         List<ChatCardComposer.ComposedGroup> composed =
                 new ArrayList<ChatCardComposer.ComposedGroup>();
+        // HUD 形态剔除语义:TTL 完全过期(expiredThreshold)与堆叠高度超限(heightTrimThreshold,
+        // 设计稿 §3.1 不等 TTL 的结构级移除)双阈值合并,取较新者
+        long cutoff = Math.max(expiredThreshold, heightTrimThreshold);
         for (MessageGroupModel group : groups) {
-            if (applyTtl && group.getLatestMillis() < expiredThreshold) {
-                continue; // HUD 形态:已完全过期的组移除(不占位)
+            if (applyTtl && group.getLatestMillis() < cutoff) {
+                continue; // HUD 形态:过期/超限裁剪的组移除(不占位)
             }
             composed.add(composer().compose(group, frameMillis.get().longValue(), maxLine, applyTtl));
         }
         return composed;
     }
 
-    /** 滚动偏移(px)= 历史行偏移 × 行高(结构版本驱动重算;供 ChatContainer 滚动绑定)。 */
+    /**
+     * 滚动偏移(px)= 平滑显示行 × 行高(内容版本 + 帧时钟驱动重算;供 ChatContainer 滚动绑定)。
+     *
+     * <p>每次重算(幂等)顺序:① 贴底跟随/未读判定(内联)——距底 ≤ {@link #nearBottomLineThreshold()}
+     * 行 → 未读清零、目标归底(新消息自动贴底);否则若本次有历史增量(新消息) → 未读累加;
+     * ② 目标喂 {@link SmoothScroller#setTarget}:目标变化 → 以当前显示为起点重启 120ms 动画;
+     * 目标未变 → 插值前进(平滑收敛);③ 输出插值显示 × 行高。</p>
+     *
+     * <p>动画期间读帧时钟 → 每帧重算推进插值;静止后输出同值,Computed 记忆化去重,下游零重跑。</p>
+     */
     Integer scrollOffsetPx() {
-        contentVersion.get().intValue(); // 依赖:滚动变化经 notifyDataChanged 驱动
-        return Integer.valueOf(history.getScroll() * ChatMarkdownSettings.getChatLineHeightPx());
+        contentVersion.get().intValue(); // 依赖:滚动/内容变化经 notifyDataChanged 驱动
+        long nowMillis = frameMillis.get().longValue(); // 依赖:平滑插值每帧推进
+        int scroll = history.getScroll();
+        int size = history.size();
+        int appended = 0;
+        if (lastSeenSize >= 0) {
+            appended = size - lastSeenSize; // 新消息增量(controller 侧对比,不改 ChatHistory 公共面)
+        }
+        lastSeenSize = size; // 首次物化:仅校准基线(历史消息不误计为未读)
+        boolean nearBottom = scroll <= nearBottomLineThreshold();
+        int target = scroll;
+        if (nearBottom) {
+            // 贴底跟随(距底 ≤2 行):未读清零 + 目标归底(新消息自动贴底,120ms 平滑到位)
+            if (unreadCount != 0) {
+                unreadCount = 0;
+                unreadSignal.set(Integer.valueOf(0));
+            }
+            target = 0;
+        } else if (appended > 0) {
+            // 离开底部的新消息:未读累加(批到达按增量计),不打断阅读
+            unreadCount += appended;
+            unreadSignal.set(Integer.valueOf(unreadCount));
+        }
+        smooth.setTarget(target, nowMillis);
+        float display = smooth.displayLines(nowMillis);
+        return Integer.valueOf(Math.round(display * ChatMarkdownSettings.getChatLineHeightPx()));
     }
 
-    /** 根节点动画 transform(收起滑出/弹出滑入/收回滑出;复合级,不触发重排)。 */
+    /**
+     * @return 贴底跟随阈值(行):36px 阈值按行粒度换算 = ceil(36 / 行高);行高 18 → 2 行。
+     */
+    private static int nearBottomLineThreshold() {
+        int lineHeight = Math.max(1, ChatMarkdownSettings.getChatLineHeightPx());
+        return (int) Math.ceil(36.0D / lineHeight);
+    }
+
+    /** @return 显示行平滑器(拖动接管/回底接线用) */
+    public SmoothScroller smoothScroll() {
+        return smooth;
+    }
+
+    /** @return 未读新消息计数信号(容器提示节点 visible/文本驱动)。 */
+    ReadableSignal<Integer> unreadSignal() {
+        return unreadSignal;
+    }
+
+    /**
+     * 滚动回底(提示节点「↓ N 条新消息」点击路径):退出拖动接管直通 → 历史复位到底 →
+     * 内容版本重算(距底判定 → 未读清零,目标 = 0 → 120ms 平滑回底)。
+     */
+    public void scrollToBottom() {
+        smooth.releaseDrag();
+        history.resetScroll();
+        notifyDataChanged();
+    }
+
+    /**
+     * 根节点动画 transform(设计稿 §4.1 三段式;复合级,不触发重排):
+     * POPPING = easeOutBack(c=1.4) translateY(+24→0) + scale(0.96→1),origin 容器左下角(0,1);
+     * COLLAPSING = 与 POPPING 完全对称反向(easeOutQuad translateY 0→+24、scale 1→0.96);
+     * CLOSING = easeOutQuad opacity 1→0 + translateY 0→+12(scale 不参与)。
+     * transform 通道保留 easeOutBack overshoot(eased&gt;1 时轻微回弹过头再回正)。
+     */
     private Transform animTransform() {
         DisplayStateMachine.Phase phase = phaseSignal.get();
         long now = frameMillis.get().longValue();
-        float width = (float) ChatMarkdownSettings.chatWidthFor(hostViewportWidth);
         switch (phase) {
-            case COLLAPSING:
-                return Transform.translate(
-                        -width * Animator.easeOut(machine.progress(now,
-                                ChatMarkdownSettings.getCollapseAnimMillis())), 0.0F);
-            case POPPING:
-                return Transform.translate(
-                        -width * (1.0F - Animator.easeOut(machine.progress(now,
-                                ChatMarkdownSettings.getPopAnimMillis()))), 0.0F);
-            case CLOSING:
-                return Transform.translate(
-                        -width * Animator.easeOut(machine.progress(now,
-                                ChatMarkdownSettings.getPopAnimMillis())), 0.0F);
+            case COLLAPSING: {
+                float eased = Animator.easeOut(machine.progress(now,
+                        ChatMarkdownSettings.getCollapseAnimMillis()));
+                // 反向:translateY 0→+24、scale 1→0.96(与 POPPING 对称)
+                return new Transform(0.0F, 24.0F * eased, 0.0F,
+                        1.0F - 0.04F * eased, 1.0F - 0.04F * eased, 0.0F, 1.0F);
+            }
+            case POPPING: {
+                float eased = Animator.easeOutBack(machine.progress(now,
+                        ChatMarkdownSettings.getPopAnimMillis()), 1.4F);
+                // 弹出:translateY +24→0、scale 0.96→1,origin 左下角
+                return new Transform(0.0F, 24.0F * (1.0F - eased), 0.0F,
+                        0.96F + 0.04F * eased, 0.96F + 0.04F * eased, 0.0F, 1.0F);
+            }
+            case CLOSING: {
+                float eased = Animator.easeOut(machine.progress(now,
+                        ChatMarkdownSettings.getClosingAnimMillis()));
+                // 关闭:translateY 0→+12(下滑消失),scale 不参与
+                return new Transform(0.0F, 12.0F * eased, 0.0F,
+                        1.0F, 1.0F, 0.0F, 1.0F);
+            }
             default:
                 return Transform.translate(0.0F, 0.0F);
+        }
+    }
+
+    /**
+     * 根节点动画 opacity(设计稿 §4.3 opacity 通道补齐):与 {@link #animTransform()} 同 phase /
+     * 同 progress / 同曲线,同步输出双通道。COLLAPSING/CLOSING 淡出 1→0(easeOut),POPPING
+     * 淡入 0→1(easeOutBack 输出 clamp01——opacity 不能 &gt;1,transform 通道才保留 overshoot);
+     * 稳定态恒 1(渲染快速路径,零边界命令)。
+     */
+    private float animOpacity() {
+        DisplayStateMachine.Phase phase = phaseSignal.get();
+        long now = frameMillis.get().longValue();
+        switch (phase) {
+            case COLLAPSING:
+                return 1.0F - Animator.easeOut(machine.progress(now,
+                        ChatMarkdownSettings.getCollapseAnimMillis()));
+            case POPPING:
+                return Animator.clamp01(Animator.easeOutBack(machine.progress(now,
+                        ChatMarkdownSettings.getPopAnimMillis()), 1.4F));
+            case CLOSING:
+                return 1.0F - Animator.easeOut(machine.progress(now,
+                        ChatMarkdownSettings.getClosingAnimMillis()));
+            default:
+                return 1.0F;
         }
     }
 
@@ -449,9 +596,135 @@ public final class ChatSceneController {
         }
     }
 
+    /**
+     * HUD 形态堆叠高度上限(设计稿 §3.1):树中未过期组总高 &gt; 视口高 ×
+     * {@code hudMaxHeightRatio} 时,从最旧组起立即剔除(结构级、不等 TTL 淡出),
+     * 直到满足上限,刷屏不侵占半屏以上;最新单组自身超限时至少保留该组(不空屏);
+     * 未超限仍走 TTL 淡出语义。
+     *
+     * <p>高度估算 = ChatGeometry 同式粗粒度(组头 + 行数×行高 + 内边距/组内间距,
+     * 系统组 = 纯行高;行数按注入度量整段宽 ÷ 单行最大宽估算),不依赖布局后几何。
+     * 阈值只进不退(被裁组不再复活);容器形态不参与(与 TTL 同路,applicTtl=false 不过滤)。</p>
+     */
+    private void trimHudGroupsByHeight() {
+        if (!isHudPhase() || hostViewportHeight <= 0 || hostViewportWidth <= 0) {
+            return;
+        }
+        int version = contentVersion.get().intValue();
+        if (version == lastTrimContentVersion && hostViewportHeight == lastTrimViewportHeight) {
+            return; // 内容与视口无变化:评估幂等,跳过(常规帧零开销)
+        }
+        lastTrimContentVersion = version;
+        lastTrimViewportHeight = hostViewportHeight;
+        List<MessageGroupModel> groups = grouper.group(history.snapshot(), selfNameProvider.selfName());
+        if (groups.isEmpty()) {
+            return;
+        }
+        int maxHeight = (int) Math.round(hostViewportHeight
+                * ChatMarkdownSettings.getHudMaxHeightRatio());
+        if (maxHeight <= 0) {
+            return;
+        }
+        long cutoff = Math.max(expiredThreshold, heightTrimThreshold);
+        int groupGap = Math.max(0, ChatMarkdownSettings.getGroupGapHudPx());
+        // 树中(未过期/未裁剪)组,时间正序(最旧在前);并行记录组高与最新时刻
+        int keptCount = 0;
+        int[] heights = new int[groups.size()];
+        long[] keptLatest = new long[groups.size()];
+        int total = 0;
+        for (int i = 0; i < groups.size(); i++) {
+            MessageGroupModel group = groups.get(i);
+            if (group.getLatestMillis() < cutoff) {
+                continue;
+            }
+            int height = estimateHudGroupHeight(group);
+            heights[keptCount] = height;
+            keptLatest[keptCount] = group.getLatestMillis();
+            total += keptCount == 0 ? height : groupGap + height;
+            keptCount++;
+        }
+        if (total <= maxHeight) {
+            return; // 未超限:保持 TTL 淡出语义
+        }
+        // 超限:从最新(尾部)反向累计,首个使总高超限的组及其全部更旧组一次剔除(一帧收敛)
+        int sum = 0;
+        for (int i = keptCount - 1; i >= 0; i--) {
+            sum += heights[i];
+            if (i < keptCount - 1) {
+                sum += groupGap;
+            }
+            if (sum > maxHeight) {
+                if (i == keptCount - 1) {
+                    return; // 最新单组已超限:至少保留最新一组(不空屏),不再向前累计
+                }
+                // 剔除 kept[0..i](时间正序下全部更旧);阈值取被裁最新组时刻 +1,只进不退
+                long newTrim = keptLatest[i] + 1;
+                if (newTrim > heightTrimThreshold) {
+                    heightTrimThreshold = newTrim;
+                    notifyDataChanged();
+                }
+                return;
+            }
+        }
+    }
+
+    /**
+     * HUD 组高粗粒度估算(与 ChatGeometry.measureGroups 同式):非系统组 =
+     * 组头字号 + 2×纵向内边距 + 行数×行高 + 组内消息间距;系统组 = 行数×行高(无壳)。
+     * 行数按整段文本宽 ÷ 单行最大宽估算(与 layouter 同源注入度量,粗粒度、零布局)。
+     */
+    private int estimateHudGroupHeight(MessageGroupModel group) {
+        int fontSize = ChatMarkdownSettings.getChatFontSizePx();
+        int lineHeight = ChatMarkdownSettings.getChatLineHeightPx();
+        int paddingY = ChatMarkdownSettings.getBubblePaddingY();
+        int headerFontSize = ChatMarkdownSettings.getChatHeaderFontSizePx();
+        int innerGap = ChatMarkdownSettings.getGroupInnerGapPx();
+        int maxLineWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)
+                - 2 * ChatMarkdownSettings.getBubblePaddingX());
+        int lines = 0;
+        int messageCount = 0;
+        for (MessageGroupModel.GroupLine line : group.getLines()) {
+            messageCount++;
+            lines += estimatedLines(line.getRest(), maxLineWidth, fontSize);
+        }
+        if (group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER) {
+            return lines * lineHeight;
+        }
+        return headerFontSize + 2 * paddingY + lines * lineHeight
+                + Math.max(0, messageCount - 1) * innerGap;
+    }
+
+    /** 行数估算(粗粒度):整段文本宽 ÷ 单行最大宽,向上取整,至少 1 行。 */
+    private int estimatedLines(String text, int maxLineWidth, int fontSize) {
+        if (text == null || text.isEmpty()) {
+            return 1;
+        }
+        int lines = (int) Math.ceil(measure.advance(text, fontSize) / (double) maxLineWidth);
+        return Math.max(1, lines);
+    }
+
     /** 帧时钟信号(渲染组件淡出/动画驱动)。 */
     ReadableSignal<Long> frameMillisSignal() {
         return frameMillis;
+    }
+
+    /**
+     * T8 生产 LaTeX 行高约束(设计稿 §3.5)：段流经
+     * {@link TextLayoutService#applyLatexLineHeightConstraint} 约束——公式盒总高
+     * &gt; 行高×1.6 时按 0.85 缩放重排(段字号落点,布局/测量/渲染全链路同源);
+     * 缩放后仍超限保持缩放结果(截断+省略号按行高上限 clamp 降级,渲染层无公式盒裁剪通道)。
+     */
+    private static ChatMessageList.SegmentPostProcessor latexLineHeightConstraint() {
+        final TextLayoutService service = FontService.getInstance().getTextLayoutService();
+        return new ChatMessageList.SegmentPostProcessor() {
+            @Override
+            public List<TextSegment> postProcess(List<TextSegment> segments, int baseFontSizePx) {
+                return service.applyLatexLineHeightConstraint(segments, baseFontSizePx,
+                        ChatMarkdownSettings.getChatLineHeightPx(),
+                        ChatMarkdownSettings.getLatexMaxLineHeightFactor(),
+                        ChatMarkdownSettings.getLatexShrinkFactor());
+            }
+        };
     }
 
     /** 懒取消息列表渲染器(依赖段解析器;供 ChatContainer 复用)。 */
@@ -461,7 +734,8 @@ public final class ChatSceneController {
             synchronized (this) {
                 current = messageList;
                 if (current == null) {
-                    current = new ChatMessageList(segmentParser);
+                    current = new ChatMessageList(segmentParser, segmentMeasurer,
+                            latexLineHeightConstraint());
                     messageList = current;
                 }
             }

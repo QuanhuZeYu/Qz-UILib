@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventHandler;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
+import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -34,9 +35,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *
  * <h3>结构</h3>
  * <pre>
- * column (COLUMN, preferredWidth=barWidth, fillParentHeight, bg=派生透明/trackColor, clipChildren=true, cornerRadius, hitTestable=true)
- *   └─ thumb (preferredWidth=barWidth, preferredHeight=派生, bg=派生三态色, cornerRadius,
- *             transform.translateY=派生, hitTestable=true)   ← COMPOSITE 级平移，零重排
+ * column (COLUMN, preferredWidth=hitBandWidth（缺省 barWidth）, fillParentHeight, bg=派生透明/trackColor, clipChildren=true, cornerRadius, hitTestable=true)
+ *   └─ thumb (preferredWidth=thumbVisualWidth（缺省 barWidth）, AlignSelf=END 贴右缘, preferredHeight=派生,
+ *             bg=派生自定义/默认三态色, cornerRadius, transform.translateY=派生, hitTestable=true)   ← COMPOSITE 级平移，零重排
  * </pre>
  *
  * <h3>派生几何算法</h3>
@@ -44,7 +45,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *   <li><b>content 总高</b> = viewport 可见高 + maxScrollY（{@link SceneGeometry#maxScrollY} 闭式）。</li>
  *   <li><b>thumb 高</b> = max(viewHeight² / contentHeight, minThumbHeight)；无溢出时返回 0（thumb 不可见）。</li>
  *   <li><b>thumb Y</b> = (trackHeight - thumbHeight) * (scrollOffset / maxScroll)，浮点中间量防截断，无溢出时为 0。</li>
- *   <li><b>column 宽</b>恒为 barWidth；无溢出时 track/thumb 透明，避免跨帧宽度变化扰动父级 ROW 求解。</li>
+ *   <li><b>column 宽</b>恒为 hitBandWidth（0 缺省=barWidth）；无溢出时 track/thumb 透明，避免跨帧宽度变化扰动父级 ROW 求解。</li>
  * </ul>
  *
  * <h3>失效级别（守 I7 / I4 双轨核对）</h3>
@@ -107,6 +108,10 @@ public final class SceneScrollbar {
      * @param barWidth      滚动条宽度（像素，建议 6-8）
      * @param minThumbHeight 滑块最小高度（像素，避免内容过多时滑块消失）
      * @param onDragStart 拖动开始回调；接收当前显示 offset，可用于取消尚未完成的平滑滚动，可为 null
+     * @param hoverColor  滑块悬停态背景色（ARGB）；null=沿用 {@link SceneChromeTokens#SCROLLBAR_THUMB_HOVER}
+     * @param dragColor   滑块拖动态背景色（ARGB）；null=沿用 {@link SceneChromeTokens#SCROLLBAR_THUMB_DRAG}
+     * @param hitBandWidth 命中带宽（像素）；0=缺省用 barWidth（column 加宽为隐性命中带，可视滑块贴右缘）
+     * @param thumbVisualWidth 滑块可视宽度（像素）；0=缺省用 barWidth
      */
     @Desugar
     public record Props(
@@ -117,7 +122,11 @@ public final class SceneScrollbar {
         int thumbColor,
         int barWidth,
         int minThumbHeight,
-        Consumer<Integer> onDragStart
+        Consumer<Integer> onDragStart,
+        Integer hoverColor,
+        Integer dragColor,
+        int hitBandWidth,
+        int thumbVisualWidth
     ) {
         /** 保留无需拖动接管回调的常用构造形态。 */
         public Props(SceneNode viewport,
@@ -128,7 +137,20 @@ public final class SceneScrollbar {
                      int barWidth,
                      int minThumbHeight) {
             this(viewport, scrollOffsetSignal, setScrollOffset, trackColor, thumbColor,
-                    barWidth, minThumbHeight, null);
+                    barWidth, minThumbHeight, null, null, null, 0, 0);
+        }
+
+        /** 保留 8 参形态（含 onDragStart，无自定义三态色/命中带/可视宽）。 */
+        public Props(SceneNode viewport,
+                     ReadableSignal<Integer> scrollOffsetSignal,
+                     Consumer<Integer> setScrollOffset,
+                     int trackColor,
+                     int thumbColor,
+                     int barWidth,
+                     int minThumbHeight,
+                     Consumer<Integer> onDragStart) {
+            this(viewport, scrollOffsetSignal, setScrollOffset, trackColor, thumbColor,
+                    barWidth, minThumbHeight, onDragStart, null, null, 0, 0);
         }
     }
 
@@ -183,11 +205,16 @@ public final class SceneScrollbar {
      */
     public static Result create(SceneRuntime rt, Props props) {
         int barWidth = props.barWidth();
+        // 命中带宽：0 = 缺省用 barWidth（旧行为）；非 0 时 column 加宽为隐性命中带，
+        // 可视滑块贴右缘（thumb AlignSelf.END），命中带向左扩出。
+        int hitBandWidth = props.hitBandWidth() > 0 ? props.hitBandWidth() : barWidth;
+        // 可视滑块宽：0 = 缺省用 barWidth（旧行为）。
+        int thumbVisualWidth = props.thumbVisualWidth() > 0 ? props.thumbVisualWidth() : barWidth;
         int radius = Math.max(1, barWidth / 2);
 
-        // 滚动条列固定占位宽度，overflow 只控制透明度，避免父级 ROW 跨帧重新分类。
+        // 滚动条列固定占位宽度（命中带宽），overflow 只控制透明度，避免父级 ROW 跨帧重新分类。
         SceneNode column = SceneNode.column();
-        column.setPreferredWidth(barWidth);
+        column.setPreferredWidth(hitBandWidth);
         column.setFillParentHeight(true);
         column.setClipChildren(true);
         if (props.trackColor() != 0) {
@@ -196,12 +223,15 @@ public final class SceneScrollbar {
         column.setCornerRadius(radius);
         column.setHitTestable(true); // M2：column 可命中，注册 SCROLL handler 转发滚轮
 
-        // 滑块：固定宽，高度/Y/颜色由 bind 派生
+        // 滑块：固定可视宽，高度/Y/颜色由 bind 派生。
+        // AlignSelf.END：COLUMN 交叉轴（水平）末端对齐 → 可视滑块贴右缘，
+        // column 左扩部分（hitBandWidth - thumbVisualWidth）为隐形命中带。
         SceneNode thumb = new SceneNode();
-        thumb.setPreferredWidth(barWidth);
+        thumb.setPreferredWidth(thumbVisualWidth);
         thumb.setPreferredHeight(0); // C5：首帧初始 0，避免首帧闪烁（effect 物化后覆盖）
         thumb.setBackgroundColor(props.thumbColor());
         thumb.setCornerRadius(radius);
+        thumb.setAlignSelf(AlignSelf.END);
         thumb.setHitTestable(true); // B2：thumb 可命中，注册拖动 handler
         column.appendChild(thumb);
 
@@ -288,10 +318,12 @@ public final class SceneScrollbar {
                 boolean pressed = Boolean.TRUE.equals(pressedSignal.get());
                 boolean hovered = Boolean.TRUE.equals(hoveredSignal.get());
                 if (pressed) {
-                    return SceneChromeTokens.SCROLLBAR_THUMB_DRAG;
+                    return props.dragColor() != null ? props.dragColor().intValue()
+                            : SceneChromeTokens.SCROLLBAR_THUMB_DRAG;
                 }
                 if (hovered) {
-                    return SceneChromeTokens.SCROLLBAR_THUMB_HOVER;
+                    return props.hoverColor() != null ? props.hoverColor().intValue()
+                            : SceneChromeTokens.SCROLLBAR_THUMB_HOVER;
                 }
                 return SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
             },

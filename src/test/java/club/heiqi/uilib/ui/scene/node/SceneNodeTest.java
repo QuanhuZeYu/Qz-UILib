@@ -797,6 +797,104 @@ public class SceneNodeTest {
         Assert.assertFalse("同值 setCornerRadius 不应标 selfPaint", node.__isSelfPaintDirty());
     }
 
+    // ==================== T4a：四角独立圆角 ====================
+
+    /**
+     * 验证：setCornerRadius(四角) 设置后四角 getter 正确、per-corner 生效、只标 PAINT。
+     */
+    @Test
+    public void setPerCornerRadiusShouldStoreFourCornersMarkOnlyPaint() {
+        SceneNode node = new SceneNode();
+        flushAll(node);
+
+        node.setCornerRadius(12, 4, 4, 12);
+
+        Assert.assertEquals("左上圆角", 12, node.getCornerRadiusTopLeft());
+        Assert.assertEquals("右上圆角", 4, node.getCornerRadiusTopRight());
+        Assert.assertEquals("右下圆角", 4, node.getCornerRadiusBottomRight());
+        Assert.assertEquals("左下圆角", 12, node.getCornerRadiusBottomLeft());
+        Assert.assertTrue("per-corner 应生效", node.isPerCornerRadius());
+        Assert.assertTrue("setCornerRadius(四角) 后应标 selfPaint", node.__isSelfPaintDirty());
+        Assert.assertFalse("setCornerRadius(四角) 绝不应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setCornerRadius(四角) 不应标 composite", node.__isCompositeDirty());
+    }
+
+    /**
+     * 验证：未做四角设置时 getter 返回 -1（回退 uniform 哨兵），isPerCorner 为 false。
+     */
+    @Test
+    public void perCornerGettersDefaultToMinusOne() {
+        SceneNode node = new SceneNode();
+        Assert.assertFalse("默认非 per-corner", node.isPerCornerRadius());
+        Assert.assertEquals("默认左上圆角 -1", -1, node.getCornerRadiusTopLeft());
+        Assert.assertEquals("默认右上圆角 -1", -1, node.getCornerRadiusTopRight());
+        Assert.assertEquals("默认右下圆角 -1", -1, node.getCornerRadiusBottomRight());
+        Assert.assertEquals("默认左下圆角 -1", -1, node.getCornerRadiusBottomLeft());
+    }
+
+    /**
+     * 验证：四角 setter 拒绝负值（-1 是「未分角」哨兵，禁止混入显式设置）。
+     */
+    @Test
+    public void setPerCornerRadiusShouldRejectNegativeValues() {
+        SceneNode node = new SceneNode();
+        try {
+            node.setCornerRadius(12, -1, 4, 4);
+            Assert.fail("负值四角应抛 IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            // 预期异常
+        }
+        Assert.assertFalse("负值设置后不应生效 per-corner", node.isPerCornerRadius());
+    }
+
+    /**
+     * 验证：后设置者生效——setCornerRadius(四角) 之后再 setCornerRadius(int) 清空四角回退 uniform；
+     * 反向亦然：uniform 之后四角设置生效。
+     */
+    @Test
+    public void perCornerAndUniformSettersShouldBeLastWriterWins() {
+        SceneNode node = new SceneNode();
+        node.setCornerRadius(12, 4, 4, 12);
+        node.setCornerRadius(8);
+        Assert.assertFalse("uniform 后置应清空 per-corner", node.isPerCornerRadius());
+        Assert.assertEquals("uniform 值生效", 8, node.getCornerRadius());
+        Assert.assertEquals("四角应回退 -1", -1, node.getCornerRadiusTopLeft());
+
+        node.setCornerRadius(4, 12, 12, 4);
+        Assert.assertTrue("四角后置应生效 per-corner", node.isPerCornerRadius());
+        Assert.assertEquals("四角覆盖 uniform", 12, node.getCornerRadiusTopRight());
+    }
+
+    /**
+     * 验证：同值四角 setter 去重不标脏；per-corner 同值去重不影响 uniform 通道。
+     */
+    @Test
+    public void setPerCornerRadiusSameValueShouldNotMarkDirty() {
+        SceneNode node = new SceneNode();
+        node.setCornerRadius(12, 4, 4, 12);
+        flushAll(node);
+
+        node.setCornerRadius(12, 4, 4, 12);
+        Assert.assertFalse("同值四角不应标 selfPaint", node.__isSelfPaintDirty());
+    }
+
+    /**
+     * 验证：uniform 与 per-corner 设置互相切换去重——uniform 值相同但当前是 per-corner 时，
+     * setCornerRadius(int) 必须清四角标脏（后设置者生效）。
+     */
+    @Test
+    public void uniformSetterShouldClearPerCornerEvenWhenValueUnchanged() {
+        SceneNode node = new SceneNode();
+        node.setCornerRadius(12, 4, 4, 12);
+        node.setCornerRadius(0); // uniform 默认 0，切换通道后应清四角
+        Assert.assertFalse("uniform 应清空 per-corner", node.isPerCornerRadius());
+        Assert.assertEquals("四角应回退 -1", -1, node.getCornerRadiusTopLeft());
+
+        flushAll(node);
+        node.setCornerRadius(0); // 非 per-corner 同值：去重不标脏
+        Assert.assertFalse("非 per-corner 同值 uniform 不应标脏", node.__isSelfPaintDirty());
+    }
+
     /**
      * 验证：setBorderWidth 只标 PAINT（第 0 段裁决：边框不占布局空间）。
      */

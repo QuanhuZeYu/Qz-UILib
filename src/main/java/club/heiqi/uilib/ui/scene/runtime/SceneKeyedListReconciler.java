@@ -155,8 +155,15 @@ final class SceneKeyedListReconciler<T> {
             }
         }
 
-        // 6. 一次性原子提交目标顺序（结构变更的单一出口）
-        container.applyChildReconcile(finalOrder, insertedOrMoved);
+        // 6. 一次性原子提交目标顺序（结构变更的单一出口）。
+        //    全等序列短路：新旧逐位同引用（同 key 复用、顺序未变）时零结构变化，
+        //    跳过提交——applyChildReconcile 无条件 markSelfLayout 会清容器 cachedLayout，
+        //    无变化帧（如信号驱动重算后同列表回灌）清缓存会让 hit-test 在容器层断链
+        //    （SceneInputRouter 对 cachedLayout 缺失节点整棵子树跳过），指针 hover 失效。
+        List<SceneNode> currentChildren = container.__getChildren();
+        if (!Objects.equals(currentChildren, finalOrder)) {
+            container.applyChildReconcile(finalOrder, insertedOrMoved);
+        }
 
         // 7. 切换当前快照
         current = next;

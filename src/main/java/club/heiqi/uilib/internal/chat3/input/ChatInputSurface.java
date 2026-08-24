@@ -76,8 +76,10 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
                         wheel = -1;
                     }
                     if (!event.isShiftDown()) {
-                        wheel *= 7;
+                        wheel *= ChatMarkdownSettings.getScrollWheelLines();
                     }
+                    // 滚轮 = 非拖动来源:退出拖动接管直通,恢复 120ms 平滑(拖动结束后的首滚轮不平滑回归)
+                    controller.smoothScroll().releaseDrag();
                     controller.history().scrollBy(wheel);
                     controller.notifyDataChanged();
                 });
@@ -88,7 +90,7 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         return root;
     }
 
-    /** 每帧同步动态尺寸(视口 1/8 × 1/2)并推进弹出动画(容器自左侧滑入);随后走标准帧管线。 */
+    /** 每帧同步动态尺寸(视口 1/8 × 1/2)并推进弹出动画(设计稿 §4.1 三段式);随后走标准帧管线。 */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         container.setViewport(w, h);
@@ -98,12 +100,15 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
                     Integer.valueOf(ChatMarkdownSettings.chatWidthFor(Math.max(1, w))),
                     Integer.valueOf(ChatMarkdownSettings.containerHeightFor(Math.max(1, h))));
         }
-        int width = ChatMarkdownSettings.chatWidthFor(Math.max(1, w));
         long popMillis = ChatMarkdownSettings.getPopAnimMillis();
         long elapsed = System.currentTimeMillis() - openAtMillis;
         float progress = popMillis <= 0 ? 1.0F : (float) elapsed / (float) popMillis;
-        container.root().setTransform(Transform.translate(
-                -(float) width * (1.0F - Animator.easeOut(progress)), 0.0F));
+        // pop 三段式(设计稿 §4.1,与 ChatSceneController.POPPING 同源):easeOutBack(c=1.4)
+        // translateY(+24→0) + scale(0.96→1,origin 容器左下角) + opacity 0→1(clamp01,不超 1)
+        float eased = Animator.easeOutBack(progress, 1.4F);
+        container.root().setTransform(new Transform(0.0F, 24.0F * (1.0F - eased), 0.0F,
+                0.96F + 0.04F * eased, 0.96F + 0.04F * eased, 0.0F, 1.0F));
+        container.root().setOpacity(Animator.clamp01(eased));
         super.render(w, h, ctx, absX, absY);
     }
 

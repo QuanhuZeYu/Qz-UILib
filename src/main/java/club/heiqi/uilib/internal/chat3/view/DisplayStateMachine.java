@@ -57,10 +57,12 @@ public final class DisplayStateMachine {
      *
      * @param nowMillis     当前时刻
      * @param collapseMillis 收起动画时长
-     * @param popMillis      弹出/收回动画时长
+     * @param popMillis      弹出动画时长
+     * @param closingMillis  关闭动画时长(设计稿 §4.1:closing 140,独立于 pop)
      * @return 当前阶段
      */
-    public synchronized Phase tick(long nowMillis, long collapseMillis, long popMillis) {
+    public synchronized Phase tick(long nowMillis, long collapseMillis, long popMillis,
+                                   long closingMillis) {
         switch (phase) {
             case COLLAPSING:
                 if (nowMillis - phaseStartMillis >= collapseMillis) {
@@ -74,7 +76,7 @@ public final class DisplayStateMachine {
                 }
                 break;
             case CLOSING:
-                if (nowMillis - phaseStartMillis >= popMillis) {
+                if (nowMillis - phaseStartMillis >= closingMillis) {
                     phase = Phase.HUD;
                 }
                 break;

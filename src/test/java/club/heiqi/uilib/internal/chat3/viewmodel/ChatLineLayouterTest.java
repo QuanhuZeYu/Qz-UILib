@@ -60,6 +60,14 @@ public class ChatLineLayouterTest {
     }
 
     @Test
+    public void shouldHardBreakUrlWithoutSpaces() {
+        // 无空格 URL/哈希长串(设计稿 §5.4:word-break:anywhere 语义)——字符级断行,
+        // 整串不允许横向溢出气泡(与超宽词硬断同分支,URL 专用锚定)
+        Assert.assertEquals(list("https", "://ab", "cdefg", "hijk"), split("https://abcdefghijk"));
+        Assert.assertEquals(list("0A1B2", "C3D4E"), split("0A1B2C3D4E"));
+    }
+
+    @Test
     public void shouldCachePerEpochAndKey() {
         EpochMeasure measure = new EpochMeasure();
         ChatLineLayouter layouter = new ChatLineLayouter(measure, 13);
