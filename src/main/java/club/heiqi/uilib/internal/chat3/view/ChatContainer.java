@@ -26,6 +26,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  */
 public final class ChatContainer {
 
+    /** 输入条区四周内边距(px,设计稿 §2.3 sp-4/§6.2:输入条区四周 8)。 */
+    private static final int INPUT_AREA_PADDING_PX = 8;
+
     /** 容器装配结果:外框节点 + 生命周期句柄 + 输入条。 */
     public static final class Result {
 
@@ -169,9 +172,12 @@ public final class ChatContainer {
         //   grow 分配会因"固定兄弟高度无法先验"而对 listRow 回退 shrink-to-fit,
         //   消息区不撑满、输入条悬在内容高度之后(重心塌陷,B12 真机）。
         ChatInputBar bar = new ChatInputBar(rt, initialText);
+        // K3 缺陷 F6②:输入条区四周 8px 内边距(设计稿 §2.3/§6.2)——修复前 divider 到输入框
+        // 顶仅 5px、输入框贴边;8 + 输入框高 24 + 8 = 40 恰好占满输入条区高
         SceneNode barRow = SceneNode.row()
                 .setHitTestable(false)
                 .setCrossAxisAlign(CrossAxisAlign.CENTER)
+                .setPadding(INPUT_AREA_PADDING_PX)
                 .setPreferredHeight(ChatMarkdownSettings.getInputBarHeightPx());
         barRow.appendChild(bar.root());
         containerNode.appendChild(barRow);

@@ -29,8 +29,10 @@ import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -229,6 +231,35 @@ public class ChatMessageListTest {
     }
 
     @Test
+    public void groupHeaderNodesCarry16PxHeightAndLayOutInColumn() {
+        // K3 缺陷 1:组头文本节点缺 preferredHeight → 行高塌 0,文本被气泡背景覆盖("幽影")
+        ChatSceneController controller = controller();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+
+        SceneNode group = hudGroups(root).get(0);
+        SceneNode headerRow = group.__getChildren().get(0);
+        SceneNode nameNode = headerRow.__getChildren().get(0);
+        SceneNode timeNode = headerRow.__getChildren().get(1);
+        Assert.assertEquals("名字节点钉组头行高(设计稿 §3.3 组头 16)", 16, nameNode.getPreferredHeight());
+        Assert.assertEquals("时间节点钉组头行高", 16, timeNode.getPreferredHeight());
+
+        LayoutBox headerBox = (LayoutBox) headerRow.getCachedLayout();
+        Assert.assertEquals("组头行布局高 16(不再塌陷为 0)", 16, headerBox.getHeight());
+
+        // headerRow 参与列布局:组高 = 组头 16 + 组内间距 2 + 气泡(行高 18 + 上下 padding 5×2 = 28)
+        LayoutBox groupBox = (LayoutBox) group.getCachedLayout();
+        Assert.assertEquals("组头参与列布局,组高含组头行", 16 + 2 + 28, groupBox.getHeight());
+        LayoutBox bubbleBox = (LayoutBox) group.__getChildren().get(1).getCachedLayout();
+        Assert.assertTrue("气泡 y 在组头之下(组头不再被气泡覆盖)", bubbleBox.getY() >= 16);
+    }
+
+    @Test
     public void selfGroupHeaderHasTimeOnlyByDefault() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
@@ -358,6 +389,88 @@ public class ChatMessageListTest {
         } finally {
             field.set(null, previous);
         }
+    }
+
+    // ==================== K3 缺陷 2:自己气泡右对齐 + 按内容收缩 + accent 贴右内缘 ====================
+
+    @Test
+    public void selfGroupAlignsEndAndBubbleShrinksToContent() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300); // chatWidthFor(400) = 160
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+
+        SceneNode group = hudGroups(root).get(0);
+        Assert.assertEquals("自己组交叉轴 END", AlignSelf.END, group.getAlignSelf());
+        Assert.assertEquals("组节点 SHRINK 不被交叉轴拉伸吞掉",
+                SceneNode.WidthSizing.SHRINK, group.getWidthSizing());
+
+        SceneNode bubble = group.__getChildren().get(1);
+        LayoutBox bubbleBox = (LayoutBox) bubble.getCachedLayout();
+        // "hi" 2 码点 × 4px + padding 20 + accent 2 = 30 ≪ 视口宽 160(恒占 maxWidth 回归点)
+        Assert.assertEquals("气泡按内容收缩(不再恒占 0.85 上限宽)", 30, bubbleBox.getWidth());
+
+        LayoutBox groupBox = (LayoutBox) group.getCachedLayout();
+        Assert.assertEquals("自己组右对齐:组右缘贴视口内容右缘", 160,
+                groupBox.getX() + groupBox.getWidth());
+
+        // accent 贴气泡右内缘:x + 宽 == 气泡宽(不再落右缘外侧 2px)
+        SceneNode accentBar = bubble.__getChildren().get(1);
+        LayoutBox accentBox = (LayoutBox) accentBar.getCachedLayout();
+        Assert.assertEquals("强调条右缘 == 气泡右缘(贴右内缘)", bubbleBox.getWidth(),
+                accentBox.getX() + accentBox.getWidth());
+        Assert.assertEquals("强调条宽 2px", 2, accentBox.getWidth());
+    }
+
+    @Test
+    public void otherGroupAlignsStartAndBubbleShrinksToContent() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+
+        SceneNode group = hudGroups(root).get(0);
+        Assert.assertEquals("他人组交叉轴 START", AlignSelf.START, group.getAlignSelf());
+        SceneNode bubble = group.__getChildren().get(1);
+        LayoutBox bubbleBox = (LayoutBox) bubble.getCachedLayout();
+        // "hello" 5 码点 × 4px + padding 20 = 40
+        Assert.assertEquals("他人气泡同样按内容收缩", 40, bubbleBox.getWidth());
+        LayoutBox groupBox = (LayoutBox) group.getCachedLayout();
+        Assert.assertEquals("他人组左对齐", 0, groupBox.getX());
+    }
+
+    @Test
+    public void longSelfMessageClampsBubbleToMaxWidthAndKeepsAccentInside() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        // maxBubble = round((160 - 2×10) × 0.85) = 119;行切分宽 = 160-20 = 140(35 字符/行)
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Alex> " + longMessageBody()), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+
+        SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
+        LayoutBox bubbleBox = (LayoutBox) bubble.getCachedLayout();
+        Assert.assertEquals("长消息气泡钳到 0.85 上限宽", 119, bubbleBox.getWidth());
+        // accent 仍在气泡右内缘;行节点宽 ≤ 气泡内可用宽(119-20-2=97),不溢出气泡
+        SceneNode accentBar = bubble.__getChildren().get(1);
+        LayoutBox accentBox = (LayoutBox) accentBar.getCachedLayout();
+        Assert.assertEquals("长消息强调条右缘 == 气泡右缘", 119,
+                accentBox.getX() + accentBox.getWidth());
+        SceneNode firstLine = bubble.__getChildren().get(0).__getChildren().get(0);
+        Assert.assertEquals("行节点钳到气泡内可用宽", 97,
+                ((LayoutBox) firstLine.getCachedLayout()).getWidth());
     }
 
     @Test
@@ -648,18 +761,57 @@ public class ChatMessageListTest {
     }
 
     @Test
-    public void systemMessageAssemblesNoLinkHoverDriver() {
+    public void systemMessageWithoutUrlStillAssemblesNoLinkHoverDriver() {
         ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300); // T7 回归:未设视口 = 0 → 1px 根宽逐字符折行
         controller.history().append(new ChatLineRecord(
-                new ChatComponentText("[公告] see http://a.co"), 1, T0));
+                new ChatComponentText("[公告] 服务器将于 23:00 维护"), 1, T0));
         controller.notifyDataChanged();
         SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
         SceneNode bubble = hudGroups(root).get(0).__getChildren().get(0);
-        Assert.assertNull("系统消息不装配链接 hover(设计稿 §5.2 不可点不 hover)",
+        Assert.assertNull("无 URL 的系统消息仍不装配链接 hover",
                 controller.messageList().__linkHoverDriverOf(bubble));
+    }
+
+    @Test
+    public void systemMessageUrlIsLinkifiedWithOriginalColorAndHoverable() {
+        // F5 用户拍板:系统消息裸 URL 也链接化(命中区 + hover/tooltip/cursor + 点击回投),
+        // 颜色保留 URL 原 § 格式色(此处 = systemTextArgb),不强制 0xFF7AB8F5;气泡仍统一链接色。
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300); // T7 回归:未设视口 = 0 → 1px 根宽逐字符折行
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("[公告] see http://a.co ok"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+        SceneNode bubble = hudGroups(root).get(0).__getChildren().get(0);
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("前缀 + URL + 后缀三段", 3, segments.size());
+        Assert.assertEquals("http://a.co", segments.get(1).getStyle().getLink());
+        Assert.assertEquals("URL 保留系统消息原色(非统一链接色)",
+                ChatMarkdownSettings.getSystemTextArgb(), segments.get(1).getStyle().getColor());
+        Assert.assertNotEquals("不强制 0xFF7AB8F5", ChatMarkdownSettings.getLinkArgb(),
+                segments.get(1).getStyle().getColor());
+        Assert.assertFalse("默认无下划线", segments.get(1).getStyle().isUnderline());
+
+        // 命中区装配:系统消息含链接行同样建 hover 驱动器,命中 → 提亮 + 下划线 + 手型。
+        // URL 行内起点 = "[公告] see " 9 码点 × 4px = 36,中心 x = 36 + 22 = 58。
+        ChatMessageList.LinkHoverDriver driver = controller.messageList().__linkHoverDriverOf(bubble);
+        Assert.assertNotNull("含 URL 的系统消息装配链接 hover 驱动器", driver);
+        driver.onPointerMove(58, 9);
+        Assert.assertEquals("hover 提亮 + 下划线(命中反馈,与气泡一致)",
+                ChatMarkdownSettings.getLinkHoverArgb(), lineNode.getSegments().get(1).getStyle().getColor());
+        Assert.assertTrue(lineNode.getSegments().get(1).getStyle().isUnderline());
+        Assert.assertEquals("手型光标", SceneCursor.POINTER, bubble.getCursor());
+        driver.onPointerMove(2, 9);
+        Assert.assertEquals("移出恢复系统消息原色", ChatMarkdownSettings.getSystemTextArgb(),
+                lineNode.getSegments().get(1).getStyle().getColor());
     }
 
     // ==================== T6a:气泡 hover 3% 白叠加(设计稿 §2.1/§4.3,经真实输入链路) ====================

@@ -70,6 +70,27 @@ public final class ChatUrlLinkifier {
      * @return 链接化后的段流（无 URL 时同引用）
      */
     public static List<TextSegment> linkify(List<TextSegment> base, int linkColor) {
+        return linkifyInternal(base, Integer.valueOf(linkColor));
+    }
+
+    /**
+     * 链接化但<b>保留各段原有颜色</b>(系统消息用,K3/用户拍板):URL 切片只挂
+     * {@code TextStyle.link}(命中区 + 点击回投语义),不强制统一 link 色——URL 落在
+     * § 彩色段内时各切片保留各自 § 格式色,与"系统消息 § 颜色照常解析"语义一致。
+     *
+     * @param base 基础段流(不可变语义,本函数不改写输入段)
+     * @return 链接化后的段流(无 URL 时同引用;link 切片颜色 = 原段颜色)
+     */
+    public static List<TextSegment> linkifyPreserveColor(List<TextSegment> base) {
+        return linkifyInternal(base, null);
+    }
+
+    /**
+     * 链接化统一实现:{@code linkColor} 非 null = 链接切片强制该色(气泡消息,设计稿
+     * §3.5 链接恒 text-link);null = 保留原段色(系统消息,用户拍板)。其余语义与
+     * {@link #linkify} Javadoc 一致。
+     */
+    private static List<TextSegment> linkifyInternal(List<TextSegment> base, Integer linkColor) {
         if (base == null || base.isEmpty()) {
             return base;
         }
@@ -274,9 +295,10 @@ public final class ChatUrlLinkifier {
     }
 
     /** 按段内区间切分单段(跨段 URL 的局部切片)：非 link 文本保留原 style，
-     *  link 切片强制 link 色 + setLink(跨段时两段各自成 link 段,同 url 视觉连续)。 */
+     *  link 切片 setLink(跨段时两段各自成 link 段,同 url 视觉连续);{@code linkColor}
+     *  非 null 时 link 切片强制该色(气泡消息),null 时保留原段色(系统消息,用户拍板)。 */
     private static void appendLocalSplits(List<TextSegment> out, TextSegment segment,
-            List<Match> matches, int segStart, int segEnd, int linkColor) {
+            List<Match> matches, int segStart, int segEnd, Integer linkColor) {
         String text = segment.getText();
         TextStyle baseStyle = segment.getStyle();
         int cursor = 0;
@@ -287,7 +309,9 @@ public final class ChatUrlLinkifier {
                 out.add(new TextSegment(text.substring(cursor, from), baseStyle));
             }
             TextStyle linkStyle = baseStyle.copy();
-            linkStyle.setColor(linkColor);
+            if (linkColor != null) {
+                linkStyle.setColor(linkColor.intValue());
+            }
             linkStyle.setLink(match.url);
             out.add(new TextSegment(text.substring(from, to), linkStyle));
             cursor = to;

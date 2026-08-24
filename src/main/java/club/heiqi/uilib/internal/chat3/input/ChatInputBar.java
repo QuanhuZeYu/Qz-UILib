@@ -25,6 +25,12 @@ public final class ChatInputBar {
 
     /** 输入字号。 */
     private static final int INPUT_FONT_SIZE = 14;
+    /** 输入框高(px,设计稿 §6.2:输入条区 40 - 四周 8×2 内边距 = 24)。 */
+    private static final int INPUT_HEIGHT_PX = 24;
+    /** 输入框内水平 padding(px,设计稿 §2.3 内边距定值 paddingX=10)。 */
+    private static final int INPUT_PADDING_X_PX = 10;
+    /** 输入框内垂直 padding(px,24 盒高 - font-input 14 行高 20 = 上下各 2)。 */
+    private static final int INPUT_PADDING_Y_PX = 2;
 
     private final SceneRuntime runtime;
     private final Signal<String> inputText;
@@ -34,6 +40,9 @@ public final class ChatInputBar {
     private final List<String> lastFoundNames = new ArrayList<String>();
     /** 聊天输入条描边覆盖绑定(设计稿 §2.1:非 focus 无描边,focus 1px 淡蓝 25%)。 */
     private final Binding borderBinding;
+    /** 输入底色覆盖绑定(K3 缺陷:F6① SceneTextInput 内部 SceneStateColors.inputBackground
+     *  = 0xFF211F26(实测 33,31,38)覆盖了设计令牌,此处按 bg-input 0xFF1E232A 恒值覆盖)。 */
+    private final Binding backgroundBinding;
 
     /**
      * @param runtime     宿主场景运行时(SceneTextInput 挂载 + 焦点)
@@ -51,6 +60,18 @@ public final class ChatInputBar {
         this.inputRoot.setFillParentWidth(true);
         // 设计稿 §3.2:输入框圆角 r-md = 8(覆盖 SceneTextInput 通用 RADIUS_MD 12)
         this.inputRoot.setCornerRadius(ChatMarkdownSettings.getInputCornerRadiusPx());
+        // K3 缺陷 F6②:输入框高钉 24px(40 - 四周 8×2),内 padding 覆盖通用 PAD_MD=8
+        // 为 (2,10,2,10)——24 盒高下 font-input 14px 行高 20 恰好撑满(设计稿 §6.2/§2.3)
+        this.inputRoot.setPreferredHeight(INPUT_HEIGHT_PX);
+        this.inputRoot.setPadding(INPUT_PADDING_Y_PX, INPUT_PADDING_X_PX, INPUT_PADDING_Y_PX,
+                INPUT_PADDING_X_PX);
+        // K3 缺陷 F6①:输入底色 = 设计令牌 bg-input 0xFF1E232A。SceneTextInput 内部
+        // __bindAnimatedColor(SceneStateColors.inputBackground = BG_PRESSED 0xFF211F26,
+        // 实测 (33,31,38))每帧覆盖背景,此处恒值覆盖绑定(注册晚于控件内部绑定,
+        // 帧末批量提交时覆盖值恒生效,与 borderBinding 同技巧)。
+        this.backgroundBinding = runtime.bind(Computed.create(() -> Integer.valueOf(
+                ChatMarkdownSettings.getInputBackgroundArgb())),
+                inputRoot::setBackgroundColor);
         // 设计稿 §2.1:非 focus 无描边(透明),focus 1px 0x406B9BD8(25% 淡蓝)。
         // SceneTextInput 通用描边(=0xFF938F99 常驻灰紫)不符合聊天设计,此处按交互态覆盖;
         // 绑定注册晚于控件内部绑定,帧末批量提交时覆盖值恒生效。
@@ -60,10 +81,13 @@ public final class ChatInputBar {
                 inputRoot::setBorderColor);
     }
 
-    /** 释放描边覆盖绑定(屏幕关闭时由容器统一回收)。 */
+    /** 释放描边/底色覆盖绑定(屏幕关闭时由容器统一回收)。 */
     public void dispose() {
         if (borderBinding != null) {
             borderBinding.dispose();
+        }
+        if (backgroundBinding != null) {
+            backgroundBinding.dispose();
         }
     }
 

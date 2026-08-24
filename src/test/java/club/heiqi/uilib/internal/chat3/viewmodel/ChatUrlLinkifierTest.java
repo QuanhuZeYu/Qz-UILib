@@ -178,6 +178,48 @@ public class ChatUrlLinkifierTest {
         Assert.assertSame("无链接段流原引用返回", base, ChatUrlLinkifier.hoverLinkify(base, HOVER));
     }
 
+    // ==================== F5:系统消息链接化保留原色(用户拍板) ====================
+
+    @Test
+    public void linkifyPreserveColorKeepsOriginalSegmentColor() {
+        TextStyle sys = plainStyle();
+        sys.setColor(ChatMarkdownSettings.getSystemTextArgb());
+        List<TextSegment> out = ChatUrlLinkifier.linkifyPreserveColor(
+                Collections.singletonList(new TextSegment("see http://a.co x", sys)));
+        Assert.assertEquals(3, out.size());
+        Assert.assertEquals("http://a.co", out.get(1).getStyle().getLink());
+        Assert.assertEquals("URL 切片保留系统消息 § 原色(不强制 text-link)",
+                ChatMarkdownSettings.getSystemTextArgb(), out.get(1).getStyle().getColor());
+        Assert.assertNotEquals("与统一链接色不同", ChatMarkdownSettings.getLinkArgb(),
+                out.get(1).getStyle().getColor());
+        Assert.assertFalse("链接默认无下划线", out.get(1).getStyle().isUnderline());
+    }
+
+    @Test
+    public void linkifyPreserveColorKeepsEachColorAcrossAdjacentSections() {
+        // URL 被 § 彩色段拆开:各切片保留各自 § 色(不合并为统一 link 色)
+        TextStyle green = plainStyle();
+        green.setColor(0xFF55FF55);
+        TextStyle blue = plainStyle();
+        blue.setColor(0xFF5555FF);
+        List<TextSegment> base = Arrays.asList(
+                new TextSegment("go https://a.b", green),
+                new TextSegment("/c x", blue));
+        List<TextSegment> out = ChatUrlLinkifier.linkifyPreserveColor(base);
+        Assert.assertEquals(4, out.size());
+        Assert.assertEquals("https://a.b/c", out.get(1).getStyle().getLink());
+        Assert.assertEquals("前切片保留段 1 绿色", 0xFF55FF55, out.get(1).getStyle().getColor());
+        Assert.assertEquals("后切片保留段 2 蓝色", 0xFF5555FF, out.get(2).getStyle().getColor());
+        Assert.assertEquals("https://a.b/c", out.get(2).getStyle().getLink());
+    }
+
+    @Test
+    public void linkifyPreserveColorReturnsSameReferenceWithoutUrls() {
+        List<TextSegment> base = single("plain text");
+        Assert.assertSame("无 URL 段流原引用返回(零分配)", base,
+                ChatUrlLinkifier.linkifyPreserveColor(base));
+    }
+
     // ==================== 命中扩展(设计稿 §5.2) ====================
 
     @Test

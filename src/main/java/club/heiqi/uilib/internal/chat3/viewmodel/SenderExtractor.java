@@ -16,8 +16,20 @@ public final class SenderExtractor {
      *  误判为系统消息(T6b 连续引用行回归)。 */
     public static final Pattern DEFAULT_ANGLE = Pattern.compile("(?s)^<([^<>]{1,16})> ?(.*)$");
 
-    /** 默认:名字: 消息(名字限 [A-Za-z0-9_],与 1.7.10 玩家名规则一致)。 */
-    public static final Pattern DEFAULT_COLON = Pattern.compile("^([A-Za-z0-9_]{1,16}): ?(.*)$");
+    /**
+     * 默认:名字: 消息(名字限 [A-Za-z0-9_],与 1.7.10 玩家名规则一致)。
+     *
+     * <p>K3 真机修复:冒号模式负向排除两种 URL 前缀,防 "https://..." 整条误判为
+     * sender="https"、rest="//..."(真机实锤):
+     * <ul>
+     *   <li>消息开头是已知 scheme 词 + 冒号(可选空格)——https?/ftps?/sftp/file,
+     *       大小写不敏感,后随 "//" 或任何内容都按 URL/非发送者处理;</li>
+     *   <li>名字候选 + 冒号(可选空格)后紧跟 "//"(未知 scheme 的 scheme:// 形态)。</li>
+     * </ul>
+     * "名字: 内容"(含无空格 "名字:内容")与正文中含 URL 的消息("steve: 看 https://a.co")
+     * 不受影响:负向排除只作用于消息开头与冒号后紧跟 "//" 的位置。</p> */
+    public static final Pattern DEFAULT_COLON = Pattern.compile(
+            "^(?!(?i:https?|ftps?|sftp|file): ?)([A-Za-z0-9_]{1,16}): ?+(?!//)(.*)$");
 
     /** 默认提取器。 */
     public static final SenderExtractor DEFAULT = new SenderExtractor(DEFAULT_ANGLE, DEFAULT_COLON);

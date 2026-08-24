@@ -56,6 +56,12 @@ public final class ChatMessageList {
     /** 链接 tooltip 最大行数。 */
     private static final int LINK_TOOLTIP_MAX_LINES = 4;
 
+    /** 组头行高(px,设计稿 §3.3/§2.2:font-name 12/16 与 font-meta 10/16 同行,组头高 16)。 */
+    private static final int HEADER_ROW_HEIGHT_PX = 16;
+
+    /** 方案A 强调条宽(px,设计稿 §3.3/§2.1:自己气泡右内缘 2px 竖条)。 */
+    private static final int ACCENT_BAR_WIDTH_PX = 2;
+
     /** 引用行竖条宽(px,设计稿 §3.5:行首 2px 竖条)。 */
     private static final int QUOTE_BAR_WIDTH_PX = 2;
     /** 引用行竖条圆角(px,设计稿 §3.5:圆角 1)。 */
@@ -348,6 +354,16 @@ public final class ChatMessageList {
         }
     };
 
+    /** 链接化模式(parseCached/缓存 key 用):关闭 / 统一 link 色(气泡) / 保留 § 原色(系统消息)。 */
+    private enum LinkifyMode {
+        /** 不链接化(旧行为;系统消息无链接度量注入时)。 */
+        NONE,
+        /** 链接化 + 强制统一 link 色(气泡消息,设计稿 §3.5 链接恒 text-link)。 */
+        COLORED,
+        /** 链接化但保留 URL 原 § 格式色(系统消息,K3/用户拍板 F5:命中 + 点击回投、不强制 0xFF7AB8F5)。 */
+        PRESERVE
+    }
+
     /** 当前 hover 链接 URL(空串 = 无;设计稿 §6.3 hoverLinkSignal)。 */
     private final Signal<String> hoverLink = Signal.create("");
 
@@ -476,6 +492,9 @@ public final class ChatMessageList {
         if (!group.getHeaderName().isEmpty() || !group.getHeaderTime().isEmpty()) {
             headerRow = SceneNode.row(4)
                     .setHitTestable(false)
+                    // K3 缺陷 2:row 默认 FILL 撑满父宽,把 SHRINK 的 groupNode 顶成全宽 →
+                    // AlignSelf.END 交叉轴偏移恒 0,自己组永远左对齐;收缩到组头内容宽
+                    .setWidthSizing(SceneNode.WidthSizing.SHRINK)
                     .setAlignSelf(align);
             if (selfRight) {
                 headerRow.setPadding(0, 2, 0, 0);
@@ -488,7 +507,18 @@ public final class ChatMessageList {
                         .setHitTestable(false)
                         .setFontSize(ChatMarkdownSettings.getNameFontSizePx())
                         .setSegments(headerNameBase)
-                        .setTextVerticalAlign(TextVerticalAlign.TOP);
+                        .setTextVerticalAlign(TextVerticalAlign.TOP)
+                        // K3 真机修复:组头文本节点缺 preferredHeight → 行高塌为 0(文本被气泡
+                        // 背景覆盖的"幽影");段流节点不走文本度量,布局几何必须显式钉高
+                        // (设计稿 §3.3:组头一行高 16)
+                        .setPreferredHeight(HEADER_ROW_HEIGHT_PX);
+                // K3 缺陷 2:段流节点无文本 → 布局宽 = fill 全宽,把 SHRINK 组头/组顶回全宽;
+                // 注入度量时钉段流实宽(度量未注入的纯文本形态保持旧行为)
+                float nameWidth = segmentsWidth(headerNameBase, segmentMeasurer,
+                        ChatMarkdownSettings.getNameFontSizePx());
+                if (nameWidth >= 0.0F) {
+                    nameNode.setPreferredWidth(Math.max(1, (int) Math.ceil(nameWidth)));
+                }
                 headerRow.appendChild(nameNode);
             }
             if (!group.getHeaderTime().isEmpty()) {
@@ -498,7 +528,14 @@ public final class ChatMessageList {
                         .setHitTestable(false)
                         .setFontSize(ChatMarkdownSettings.getTimestampFontSizePx())
                         .setSegments(headerTimeBase)
-                        .setTextVerticalAlign(TextVerticalAlign.TOP);
+                        .setTextVerticalAlign(TextVerticalAlign.TOP)
+                        // 与名字节点同因(段流节点无文本度量):钉 16px 保组头行不塌(K3 缺陷 1)
+                        .setPreferredHeight(HEADER_ROW_HEIGHT_PX);
+                float timeWidth = segmentsWidth(headerTimeBase, segmentMeasurer,
+                        ChatMarkdownSettings.getTimestampFontSizePx());
+                if (timeWidth >= 0.0F) {
+                    timeNode.setPreferredWidth(Math.max(1, (int) Math.ceil(timeWidth)));
+                }
                 headerRow.appendChild(timeNode);
             }
             groupNode.appendChild(headerRow);
@@ -538,11 +575,15 @@ public final class ChatMessageList {
                         .setBackgroundColor(bubbleColor)
                         .setMaxWidth(maxBubbleWidthPx);
                 setGradedCorners(messageNode, cornersFor(messageCount, i, selfRight, rLg, rInner));
-                contentNode = SceneNode.column().setPadding(paddingY, paddingX, paddingY, paddingX);
+                // K3 缺陷 2:内容列收缩到文本宽,强调条才能贴气泡右内缘——否则列默认 FILL
+                // 占满行内宽,强调条被挤出气泡右缘 2px(真机"accent 在外侧")
+                contentNode = SceneNode.column()
+                        .setWidthSizing(SceneNode.WidthSizing.SHRINK)
+                        .setPadding(paddingY, paddingX, paddingY, paddingX);
                 messageNode.appendChild(contentNode);
                 SceneNode accentBar = new SceneNode()
                         .setHitTestable(false)
-                        .setPreferredWidth(2)
+                        .setPreferredWidth(ACCENT_BAR_WIDTH_PX)
                         .setFillParentHeight(true)
                         .setMargin(4, 0, 4, 0)
                         .setBackgroundColor(ChatMarkdownSettings.getAccentBarSelfArgb())
@@ -564,7 +605,7 @@ public final class ChatMessageList {
             for (String line : message.getDisplayLines()) {
                 // 引用行(T6b 设计稿 §3.5):行文本以 "> " 或 ">" 开头 → 剥前缀 + 文字降
                 // text-secondary + 行首 2px 竖条(0x40FFFFFF);剥前缀后的文本照常参与
-                // linkify/code 切分(系统消息保持"不链接化"语义,引用也只作用于气泡行)。
+                // linkify(系统消息按 F5 保留原色链接化)/code 切分;引用只作用于气泡行。
                 boolean quoteLine = line.startsWith("> ");
                 String renderLine = quoteLine ? line.substring(2) : line;
                 if (!quoteLine && line.startsWith(">")) {
@@ -573,15 +614,18 @@ public final class ChatMessageList {
                 }
                 int lineBaseColor = quoteLine ? ChatMarkdownSettings.getTextSecondaryArgb()
                         : baseTextColor;
-                // 系统消息不链接化/不 code 切分(设计稿 §5.2:系统消息不可点不 hover;
-                // §3.5 排版规则仅作用于气泡内)
-                List<TextSegment> segments = parseCached(renderLine, lineBaseColor, !system);
+                // F5 用户拍板:系统消息中的裸 URL 也链接化(命中区 + 点击回投原版事件链),
+                // 但保留 URL 原 § 格式色(LinkifyMode.PRESERVE)、不强制 0xFF7AB8F5;
+                // 气泡消息维持统一链接色(COLORED)。系统消息仍不 code 切分(§3.5 排版规则
+                // 仅作用于气泡内;链接度量为 null 时 PRESERVE 内部不生效 = 旧行为)。
+                LinkifyMode linkifyMode = system ? LinkifyMode.PRESERVE : LinkifyMode.COLORED;
+                List<TextSegment> segments = parseCached(renderLine, lineBaseColor, linkifyMode);
                 List<TextSegment> hover = null;
                 List<LinkSpan> spans = Collections.<LinkSpan>emptyList();
                 if (segmentMeasurer != null) {
                     spans = linkSpansOf(segments, segmentMeasurer, fontSize);
                     if (!spans.isEmpty()) {
-                        hover = hoverCached(renderLine, lineBaseColor);
+                        hover = hoverCached(renderLine, lineBaseColor, linkifyMode);
                     }
                 }
                 messageLineSpans.add(spans);
@@ -591,6 +635,22 @@ public final class ChatMessageList {
                         .setSegments(segments)
                         .setTextVerticalAlign(TextVerticalAlign.TOP)
                         .setPreferredHeight(Math.max(1, lineHeight));
+                // K3 缺陷 2 根因:段流节点不参与文本度量(SceneNode.setSegments 契约),布局宽
+                // = fill 全宽 → messageNode SHRINK 被全宽行顶满 → clamp 到 maxWidth 恒占
+                // 289px 且组节点被 headerRow 顶成全宽后 AlignSelf.END 偏移恒 0(左对齐)。
+                // 注入度量时钉行段实宽(上限 = 气泡内可用宽),气泡按内容收缩;
+                // 度量未注入的纯文本形态保持旧行为。
+                if (segmentMeasurer != null) {
+                    int lineWidth = Math.max(1,
+                            (int) Math.ceil(segmentsWidth(segments, segmentMeasurer, fontSize)));
+                    if (maxBubbleWidthPx > 0) {
+                        int reserve = (accent ? ACCENT_BAR_WIDTH_PX : 0)
+                                + (quoteLine ? QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX : 0);
+                        lineWidth = Math.min(lineWidth,
+                                Math.max(1, maxBubbleWidthPx - 2 * paddingX - reserve));
+                    }
+                    lineNode.setPreferredWidth(lineWidth);
+                }
                 // T8 设计稿 §5.4(验收 22):HUD 形态行节点携带 maxLines=8 + 省略号语义;
                 // 实际行数截断在 L2 ChatCardComposer(displayLines 上限),此处为节点级
                 // 语义一致 + 防御(行文本含换行符时 SceneLineClamp 生效);容器形态不设。
@@ -603,7 +663,10 @@ public final class ChatMessageList {
                     // + gap 6 + 文本节点];相邻行各自 18px 竖条行高无缝衔接即视觉连续
                     // (同一消息内行间无 gap;跨消息 2px 组内间距处竖条留 2px 缺口,属可接受)。
                     SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
-                            .setHitTestable(false);
+                            .setHitTestable(false)
+                            // K3 缺陷 2:引用行同样收缩(竖条 2 + gap 6 + 文本),否则引用行
+                            // FILL 全宽会把 messageNode 顶回全宽、气泡无法按内容收缩
+                            .setWidthSizing(SceneNode.WidthSizing.SHRINK);
                     SceneNode quoteBar = new SceneNode()
                             .setHitTestable(false)
                             .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
@@ -681,8 +744,9 @@ public final class ChatMessageList {
                 });
             }
         }
-        // 链接 hover + tooltip(仅非系统消息,设计稿 §5.2:系统消息不可点不 hover;含链接行才装配)
-        if (segmentMeasurer != null && !system) {
+        // 链接 hover + tooltip(含链接行才装配;F5 用户拍板:系统消息裸 URL 同样装配命中区
+        // 与 hover/tooltip/cursor,点击经 registry 回投原版事件链——仅系统消息无气泡 hover)
+        if (segmentMeasurer != null) {
             for (int i = 0; i < messageCount; i++) {
                 final SceneNode messageNode = messageNodes.get(i);
                 int lineStart = messageLineStart[i];
@@ -763,8 +827,10 @@ public final class ChatMessageList {
     }
 
     /**
-     * 段解析缓存(text@baseColor;启用链接化且非系统消息时缓存产物 = code 切分 + 链接化后的段流;
-     * 系统消息与未注入度量的纯文本形态走原样 § 解析)。
+     * 段解析缓存(text@baseColor@mode):NONE = 原样 § 解析(旧行为);COLORED = code 切分 +
+     * 统一 link 色链接化(气泡);PRESERVE = 保留 § 原色的链接化(系统消息,F5 用户拍板),
+     * 不 code 切分(§3.5 排版规则仅作用于气泡内)。链接度量为 null 时 COLORED/PRESERVE
+     * 的链接化步骤内部跳过(旧行为)。
      *
      * <p>T6b 解析顺序：先 {@link ChatCodeSpanSplitter#split code 切分} 再
      * {@link ChatUrlLinkifier#linkify linkify}——code 段是文本语义边界（不嵌套解析），
@@ -772,8 +838,9 @@ public final class ChatMessageList {
      * （反引号不在 URL 分隔符/尾随标点集），code 配对被破坏（headless 实测
      * "``http://a.co``" 链接化后闭引号进入 link 段）。</p>
      */
-    private List<TextSegment> parseCached(String text, int baseColor, boolean linkify) {
-        String key = text + '@' + baseColor + (linkify ? '@' : '!');
+    private List<TextSegment> parseCached(String text, int baseColor, LinkifyMode mode) {
+        String key = text + '@' + baseColor + (mode == LinkifyMode.COLORED ? '@'
+                : mode == LinkifyMode.PRESERVE ? '~' : '!');
         List<TextSegment> hit = segmentCache.get(key);
         if (hit != null) {
             return hit;
@@ -785,27 +852,46 @@ public final class ChatMessageList {
         if (segmentPostProcessor != null) {
             segments = segmentPostProcessor.postProcess(segments, ChatMarkdownSettings.getChatFontSizePx());
         }
-        if (linkify) {
+        if (mode == LinkifyMode.COLORED) {
             segments = ChatCodeSpanSplitter.split(segments, ChatMarkdownSettings.getCodeBackgroundArgb());
         }
-        if (segmentMeasurer != null && linkify) {
-            segments = ChatUrlLinkifier.linkify(segments, ChatMarkdownSettings.getLinkArgb());
+        if (segmentMeasurer != null && mode != LinkifyMode.NONE) {
+            segments = mode == LinkifyMode.PRESERVE
+                    ? ChatUrlLinkifier.linkifyPreserveColor(segments)
+                    : ChatUrlLinkifier.linkify(segments, ChatMarkdownSettings.getLinkArgb());
         }
         segmentCache.put(key, segments);
         return segments;
     }
 
-    /** hover 段流缓存(text@baseColor → 链接段换 hover 色 + 下划线)。 */
-    private List<TextSegment> hoverCached(String text, int baseColor) {
-        String key = text + '@' + baseColor;
+    /** hover 段流缓存(text@baseColor@mode → 链接段换 hover 色 + 下划线;PRESERVE 模式下
+     *  常态保留 § 原色,hover 提亮 + 下划线是命中反馈,与气泡一致)。 */
+    private List<TextSegment> hoverCached(String text, int baseColor, LinkifyMode mode) {
+        String key = text + '@' + baseColor + (mode == LinkifyMode.PRESERVE ? '~' : '@');
         List<TextSegment> hit = hoverSegmentCache.get(key);
         if (hit != null) {
             return hit;
         }
         List<TextSegment> hover = ChatUrlLinkifier.hoverLinkify(
-                parseCached(text, baseColor, true), ChatMarkdownSettings.getLinkHoverArgb());
+                parseCached(text, baseColor, mode), ChatMarkdownSettings.getLinkHoverArgb());
         hoverSegmentCache.put(key, hover);
         return hover;
+    }
+
+    /**
+     * 段流总宽(注入度量逐段求和,与渲染推进同源);度量为 null → 返回 -1(不钉宽,
+     * 保持引擎"无文本叶 fill 全宽"的旧行为,K3 缺陷 2 修复的纯文本降级路径)。
+     */
+    private static float segmentsWidth(List<TextSegment> segments, SegmentMeasurer measurer,
+            int fontSizePx) {
+        if (measurer == null || segments == null) {
+            return -1.0F;
+        }
+        float total = 0.0F;
+        for (TextSegment segment : segments) {
+            total += Math.max(0.0F, measurer.widthOf(segment, fontSizePx));
+        }
+        return total;
     }
 
     /** 行内链接跨度:逐段累计 x,link 段登记(段宽 = 注入度量,与渲染同源)。 */

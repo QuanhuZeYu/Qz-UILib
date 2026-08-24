@@ -40,8 +40,122 @@ public class ChatLineLayouterTest {
     public void shouldKeepFormatCodePairsIntact() {
         // §a 零宽:5 个有效字符恰好满行,格式码对留在行内
         Assert.assertEquals(list("\u00a7ahello"), split("\u00a7ahello"));
-        // 10 个有效字符:断在格式码对之后,格式码对不被拆开
-        Assert.assertEquals(list("\u00a7aabcde", "fghij"), split("\u00a7aabcdefghij"));
+        // 10 个有效字符:断在格式码对之后,格式码对不被拆开;K3 修复②:断行续行行首
+        // 重发当前生效格式码(§a),续行颜色不丢
+        Assert.assertEquals(list("\u00a7aabcde", "\u00a7afghij"), split("\u00a7aabcdefghij"));
+    }
+
+    // ==================== K3 修复①:普通散文词边界回退 ====================
+
+    @Test
+    public void shouldBreakAtWordBoundaryInsteadOfInsideWord() {
+        // "ab cd e":若在超宽处字符硬断,末行只剩孤字 "e"("cd" 被拆开,疑似丢字);
+        // 词边界回退应把 "cd" 整词移入续行 → ["ab", "cd e"]
+        Assert.assertEquals(list("ab", "cd e"), split("ab cd e"));
+        // 多词散文:每行都以词边界收尾,不在词中间断
+        Assert.assertEquals(list("hello", "world", "again"), split("hello world again"));
+    }
+
+    @Test
+    public void shouldStillHardBreakLongUnbrokenTokenByCharacters() {
+        // 无空格长串(URL/哈希,设计稿 §5.4):行内无空白 → 保持字符级硬断
+        Assert.assertEquals(list("abcde", "fg"), split("abcdefg"));
+        // 长词紧邻短词:短词先行,长词字符断,词边界优先但不阻塞字符断
+        Assert.assertEquals(list("ab", "cdefg", "hij"), split("ab cdefghij"));
+    }
+
+    // ==================== K3 修复②:续行格式码重发 ====================
+
+    @Test
+    public void shouldReissueColorCodeOnContinuationLine() {
+        Assert.assertEquals(list("\u00a7chello", "\u00a7cworld"), split("\u00a7chello world"));
+    }
+
+    @Test
+    public void shouldReissueColorAndStyleCodesOnContinuationLine() {
+        // 颜色 + 样式位同时生效:续行行首重发 "§c§l"
+        Assert.assertEquals(list("\u00a7c\u00a7lhello", "\u00a7c\u00a7lworld"),
+                split("\u00a7c\u00a7lhello world"));
+    }
+
+    @Test
+    public void shouldNotReissueFormatsClearedByResetCode() {
+        // §r 清空全部格式:断行续行不再重发任何格式码(§r 对留在原行内,渲染无效果)
+        Assert.assertEquals(list("\u00a7chello\u00a7r", "world"), split("\u00a7chello\u00a7r world"));
+    }
+
+    @Test
+    public void shouldReissueOnlyLatestColor() {
+        // 颜色码后到覆盖:断行前最后颜色 §e 生效,续行重发 §e(非更早的 §c)
+        Assert.assertEquals(list("\u00a7cabc\u00a7ede", "\u00a7efgh"), split("\u00a7cabc\u00a7ede fgh"));
+    }
+
+    @Test
+    public void continuationReissueIsZeroWidthAndStaysWithinMaxWidth() {
+        // 重发前缀(§ 对)零宽:续行有效字符数仍受行宽约束(5 字符)
+        Assert.assertEquals(list("\u00a7aabcde", "\u00a7afghij", "\u00a7aklmn"), split("\u00a7aabcdefghijklmn"));
+    }
+
+    // ==================== K3 缺陷③:丢字符穷举不变量(实际未复现独立丢字符,修复①后防回归) ====================
+
+    @Test
+    public void noVisibleCharacterIsEverLostAcrossBreaks() {
+        // 穷举短文本 × 多种行宽:每行超宽断行/词边界回退/格式码重发后,
+        // 所有可见字符(剥 § 对与空白)必须完整保序出现——修复前逐字符硬断把词拆开
+        // (如 "cd" → "c" / 孤行 "d")造成"疑似丢 1 字符"的观感,此不变量杜绝该回归。
+        String[] atoms = { "a", "b", " ", "\u00a7c", "\u00a7l", "\u00a7r", "\n" };
+        int checked = 0;
+        for (int len = 0; len <= 6; len++) {
+            int[] idx = new int[len];
+            while (true) {
+                StringBuilder text = new StringBuilder();
+                for (int i = 0; i < len; i++) {
+                    text.append(atoms[idx[i]]);
+                }
+                for (int width : new int[] { 4, 8, 12, 16, 20 }) {
+                    List<String> lines = ChatLineLayouter.splitLines(
+                            text.toString(), width, fixedMeasure(), 13);
+                    Assert.assertEquals("文本 " + text + " 宽度 " + width + " 丢可见字符",
+                            compact(text.toString()), compact(join(lines)));
+                    checked++;
+                }
+                // 进位到下一个组合
+                int p = len - 1;
+                while (p >= 0) {
+                    idx[p]++;
+                    if (idx[p] < atoms.length) break;
+                    idx[p] = 0;
+                    p--;
+                }
+                if (p < 0) break;
+            }
+        }
+        Assert.assertTrue("穷举覆盖量不足", checked > 10000);
+    }
+
+    /** 剥 § 格式码对与全部空白,仅留可见字符序列(丢字符判定口径)。 */
+    private static String compact(String text) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\u00a7' && i + 1 < text.length()) {
+                i++;
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                continue;
+            }
+            out.append(c);
+        }
+        return out.toString();
+    }
+
+    private static String join(List<String> lines) {
+        StringBuilder out = new StringBuilder();
+        for (String line : lines) {
+            out.append(line);
+        }
+        return out.toString();
     }
 
     @Test
