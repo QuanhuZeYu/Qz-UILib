@@ -25,8 +25,10 @@ import club.heiqi.uilib.font.layout.TextStyle;
  *       （设计稿 §3.5：链接默认无下划线）；</li>
  *   <li>LaTeX 段与不含 URL 的段原样透传（零拷贝）；T6b 起 code 段（{@code codeSpan}
  *       标记）同 LaTeX 段处理——code 是文本语义边界，不嵌套链接化；</li>
- *   <li>URL 不跨段识别（样式边界内）：聊天消息中 URL 中间出现 § 码极其罕见，跨段会引入
- *       段落拼接复杂度，当前不处理。</li>
+ *   <li>URL 支持跨相邻普通段识别（B12 验收）：§ 彩色段把 URL 拆成多段时，先拼接普通段
+ *       文本统一扫描，再把匹配映射回各段切分——链接段一律强制 link 色（设计稿 §3.5
+ *       链接恒 text-link），避免 URL 落在 § 彩色段内时颜色被段样式覆盖；
+ *       LaTeX/code 段是硬边界，跨段拼接在边界处断开，URL 不得吞并边界段。</li>
  * </ul>
  */
 public final class ChatUrlLinkifier {
@@ -71,41 +73,54 @@ public final class ChatUrlLinkifier {
         if (base == null || base.isEmpty()) {
             return base;
         }
-        List<TextSegment> out = null;
-        for (TextSegment segment : base) {
-            if (segment.isLatex()) {
-                if (out != null) {
-                    out.add(segment);
-                }
-                continue;
+        // 先把普通段文本拼接后统一扫描(LaTeX/code 段是硬边界,不参与拼接):
+        // § 彩色段可能把 URL 拆成多段,单段内 findUrls 会漏识别、URL 颜色被 § 段
+        // 样式覆盖(B12 验收偏差 5:链接恒 text-link)。
+        StringBuilder concat = new StringBuilder();
+        int[] starts = new int[base.size()];
+        for (int i = 0; i < base.size(); i++) {
+            TextSegment segment = base.get(i);
+            starts[i] = concat.length();
+            if (!segment.isLatex() && !segment.getStyle().isCodeSpan()) {
+                concat.append(segment.getText());
             }
+        }
+        List<Match> matches = findUrls(concat.toString());
+        if (matches.isEmpty()) {
+            return base; // 无 URL:原引用返回(零分配)
+        }
+        List<TextSegment> out = new ArrayList<TextSegment>(base.size() + matches.size());
+        for (int i = 0; i < base.size(); i++) {
+            TextSegment segment = base.get(i);
             // T6b:code 段是文本语义边界,不嵌套链接化(与 LaTeX 段同级处理;
             // 解析序 = 先 code 切分后 linkify,URL 扫描不得吞掉反引号标记)。
-            if (segment.getStyle().isCodeSpan()) {
-                if (out != null) {
-                    out.add(segment);
-                }
+            if (segment.isLatex() || segment.getStyle().isCodeSpan()) {
+                out.add(segment); // 原文透传(同引用)
                 continue;
             }
-            List<Match> matches = findUrls(segment.getText());
-            if (matches.isEmpty()) {
-                if (out != null) {
-                    out.add(segment);
+            int segStart = starts[i];
+            int segEnd = segStart + segment.getText().length();
+            // 本段相交匹配(匹配按出现顺序、两两不重叠;段序递增 → 相交子序列有序)
+            List<Match> local = null;
+            for (Match match : matches) {
+                if (match.end <= segStart) {
+                    continue;
                 }
+                if (match.start >= segEnd) {
+                    break;
+                }
+                if (local == null) {
+                    local = new ArrayList<Match>(2);
+                }
+                local.add(match);
+            }
+            if (local == null) {
+                out.add(segment);
                 continue;
             }
-            if (out == null) {
-                out = new ArrayList<TextSegment>(base.size() + matches.size());
-                for (TextSegment pre : base) {
-                    if (pre == segment) {
-                        break;
-                    }
-                    out.add(pre);
-                }
-            }
-            appendUrlSplit(out, segment, matches, linkColor);
+            appendLocalSplits(out, segment, local, segStart, segEnd, linkColor);
         }
-        return out == null ? base : out;
+        return out;
     }
 
     /**
@@ -258,21 +273,24 @@ public final class ChatUrlLinkifier {
         return end;
     }
 
-    /** 按匹配切分单段：非 link 文本原 style，link 文本换 link 色 + setLink。 */
-    private static void appendUrlSplit(List<TextSegment> out, TextSegment segment,
-            List<Match> matches, int linkColor) {
+    /** 按段内区间切分单段(跨段 URL 的局部切片)：非 link 文本保留原 style，
+     *  link 切片强制 link 色 + setLink(跨段时两段各自成 link 段,同 url 视觉连续)。 */
+    private static void appendLocalSplits(List<TextSegment> out, TextSegment segment,
+            List<Match> matches, int segStart, int segEnd, int linkColor) {
         String text = segment.getText();
         TextStyle baseStyle = segment.getStyle();
         int cursor = 0;
         for (Match match : matches) {
-            if (match.start > cursor) {
-                out.add(new TextSegment(text.substring(cursor, match.start), baseStyle));
+            int from = Math.max(match.start, segStart) - segStart;
+            int to = Math.min(match.end, segEnd) - segStart;
+            if (from > cursor) {
+                out.add(new TextSegment(text.substring(cursor, from), baseStyle));
             }
             TextStyle linkStyle = baseStyle.copy();
             linkStyle.setColor(linkColor);
             linkStyle.setLink(match.url);
-            out.add(new TextSegment(text.substring(match.start, match.end), linkStyle));
-            cursor = match.end;
+            out.add(new TextSegment(text.substring(from, to), linkStyle));
+            cursor = to;
         }
         if (cursor < text.length()) {
             out.add(new TextSegment(text.substring(cursor), baseStyle));

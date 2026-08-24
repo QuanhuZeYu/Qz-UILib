@@ -26,9 +26,6 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  */
 public final class ChatContainer {
 
-    /** 输入条四周衬垫(容器内间距)。 */
-    private static final int BAR_PADDING = 8;
-
     /** 容器装配结果:外框节点 + 生命周期句柄 + 输入条。 */
     public static final class Result {
 
@@ -39,10 +36,12 @@ public final class ChatContainer {
         private final InputBinding hintInputBinding;
         private final ChatScrollbar.Result scrollbar;
         private final ChatInputBar bar;
+        private final ChatSceneController controller;
 
         private Result(SceneNode root, SceneListHandle listHandle, Binding scrollBinding,
                 Binding hintBinding, InputBinding hintInputBinding,
-                ChatScrollbar.Result scrollbar, ChatInputBar bar) {
+                ChatScrollbar.Result scrollbar, ChatInputBar bar,
+                ChatSceneController controller) {
             this.root = root;
             this.listHandle = listHandle;
             this.scrollBinding = scrollBinding;
@@ -50,6 +49,7 @@ public final class ChatContainer {
             this.hintInputBinding = hintInputBinding;
             this.scrollbar = scrollbar;
             this.bar = bar;
+            this.controller = controller;
         }
 
         /** 释放列表与滚动绑定(屏幕关闭时)。 */
@@ -69,6 +69,9 @@ public final class ChatContainer {
             if (scrollbar != null) {
                 scrollbar.dispose();
             }
+            if (bar != null) {
+                bar.dispose();
+            }
         }
 
         /** @return 容器外框节点(动画 transform / 挂载目标) */
@@ -81,10 +84,14 @@ public final class ChatContainer {
             return bar;
         }
 
-        /** 每帧同步动态尺寸(视口 1/8 × 1/2)。 */
+        /** 每帧同步动态尺寸(视口 1/8 × 1/2)与气泡最大宽(设计稿 §3.x:气泡 ≤ 0.85 组内容宽)。 */
         public void setViewport(int width, int height) {
             root.setPreferredWidth(ChatMarkdownSettings.chatWidthFor(Math.max(1, width)));
             root.setPreferredHeight(ChatMarkdownSettings.containerHeightFor(Math.max(1, height)));
+            int contentWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(Math.max(1, width))
+                    - 2 * ChatMarkdownSettings.getBubblePaddingX());
+            controller.messageList().setBubbleMaxWidthPx((int) Math.round(
+                    contentWidth * ChatMarkdownSettings.getBubbleMaxWidthRatio()));
         }
     }
 
@@ -157,18 +164,28 @@ public final class ChatContainer {
         scrollbar.column().setMargin(0, 2, 0, 0);
         listRow.appendChild(scrollbar.column());
 
-        // 输入条(容器内底部)
+        // 输入条(容器内底部,设计稿 §6.2:输入条区高 40 贴容器底)。
+        // ★ 固定高(40)是 COLUMN 容器的"先验固定兄弟":缺了它,ConstraintResolver 的
+        //   grow 分配会因"固定兄弟高度无法先验"而对 listRow 回退 shrink-to-fit,
+        //   消息区不撑满、输入条悬在内容高度之后(重心塌陷,B12 真机）。
         ChatInputBar bar = new ChatInputBar(rt, initialText);
         SceneNode barRow = SceneNode.row()
                 .setHitTestable(false)
                 .setCrossAxisAlign(CrossAxisAlign.CENTER)
-                .setPadding(BAR_PADDING);
+                .setPreferredHeight(ChatMarkdownSettings.getInputBarHeightPx());
         barRow.appendChild(bar.root());
         containerNode.appendChild(barRow);
 
+        // 输入条顶部分隔线(设计稿 §6.2:滚动消息区 → 1px 分隔线 → 输入条区;divider-input 8% 白)
+        SceneNode divider = new SceneNode()
+                .setHitTestable(false)
+                .setPreferredHeight(1)
+                .setBackgroundColor(ChatMarkdownSettings.getDividerInputArgb());
+        containerNode.insertBefore(divider, barRow);
+
         // 输入条上方「↓ N 条新消息」提示(设计稿 §5.1 P1):unreadSignal > 0 时显示,点击回底。
         // 挂摘式显隐:文本节点空文本也占一行(拆分契约「至少一行」),故 unread=0 时移出树(零占位、
-        // 不消费命中);显示时插到输入条行之前(「Divider 上方」由后续批次落地后置于提示下方)。
+        // 不消费命中);显示时插到分隔线上方(设计稿 §6.2:提示位于 Divider 上方)。
         SceneNode hintNode = new SceneNode()
                 .setHitTestable(false)
                 .setFontSize(ChatMarkdownSettings.getNameFontSizePx())
@@ -178,7 +195,7 @@ public final class ChatContainer {
             int n = count.intValue();
             if (n > 0) {
                 if (hintNode.__getParent() == null) {
-                    containerNode.insertBefore(hintNode, barRow);
+                    containerNode.insertBefore(hintNode, divider);
                 }
                 hintNode.setText("↓ " + n + " 条新消息");
                 hintNode.setHitTestable(true);
@@ -191,6 +208,6 @@ public final class ChatContainer {
                 (SceneEvent event, SceneEventContext ctx) -> controller.scrollToBottom());
 
         return new Result(containerNode, listHandle, scrollBinding, hintBinding, hintInputBinding,
-                scrollbar, bar);
+                scrollbar, bar, controller);
     }
 }

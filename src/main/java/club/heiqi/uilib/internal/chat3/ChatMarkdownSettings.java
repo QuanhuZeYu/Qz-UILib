@@ -75,6 +75,10 @@ public final class ChatMarkdownSettings {
     private static volatile double containerHeightRatio = 0.5;
     /** 容器最小高(px)。 */
     private static volatile int minContainerHeightPx = 160;
+    /** 输入条区高(px;设计稿 §6.2:输入条区高 40 贴容器底)。 */
+    private static volatile int inputBarHeightPx = 40;
+    /** 输入条圆角(px;设计稿 §2.1/§3.2:r-md 8)。 */
+    private static volatile int inputCornerRadiusPx = 8;
 
     /** 自己气泡视觉风格(§10 已拍板:方案A accent)。 */
     public enum SelfBubbleStyle {
@@ -424,6 +428,16 @@ public final class ChatMarkdownSettings {
     /** @return 输入条顶部分隔线色(ARGB) */
     public static int getDividerInputArgb() {
         return dividerInputArgb;
+    }
+
+    /** @return 输入条区高(px) */
+    public static int getInputBarHeightPx() {
+        return inputBarHeightPx;
+    }
+
+    /** @return 输入条圆角半径(px,r-md 8) */
+    public static int getInputCornerRadiusPx() {
+        return inputCornerRadiusPx;
     }
 
     /** @return 新消息提示文字色(ARGB) */

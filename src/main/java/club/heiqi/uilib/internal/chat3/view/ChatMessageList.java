@@ -355,6 +355,9 @@ public final class ChatMessageList {
     private final Map<SceneNode, LinkHoverDriver> linkDrivers =
             new java.util.IdentityHashMap<SceneNode, LinkHoverDriver>();
 
+    /** 气泡最大宽上限(px,设计稿 §3.x:气泡 ≤ 0.85 组内容宽;0 = 不限制,headless 默认)。 */
+    private volatile int maxBubbleWidthPx;
+
     /**
      * 纯文本形态(无链接度量):不启用 URL 链接化(旧行为)。
      *
@@ -394,6 +397,14 @@ public final class ChatMessageList {
     /** @return 链接化是否启用(度量注入后才计算命中区域)。 */
     boolean isLinkifyEnabled() {
         return segmentMeasurer != null;
+    }
+
+    /**
+     * 设置气泡最大宽上限(px;0 = 不限制)。只在非系统消息气泡上生效
+     * (系统消息无气泡底,设计稿 §6.2);视口变化由容器/控制器同步后由组树重建生效。
+     */
+    public void setBubbleMaxWidthPx(int px) {
+        this.maxBubbleWidthPx = Math.max(0, px);
     }
 
     /**
@@ -524,7 +535,8 @@ public final class ChatMessageList {
                 messageNode = SceneNode.row()
                         .setHitTestable(true)
                         .setWidthSizing(SceneNode.WidthSizing.SHRINK)
-                        .setBackgroundColor(bubbleColor);
+                        .setBackgroundColor(bubbleColor)
+                        .setMaxWidth(maxBubbleWidthPx);
                 setGradedCorners(messageNode, cornersFor(messageCount, i, selfRight, rLg, rInner));
                 contentNode = SceneNode.column().setPadding(paddingY, paddingX, paddingY, paddingX);
                 messageNode.appendChild(contentNode);
@@ -543,7 +555,8 @@ public final class ChatMessageList {
                         .setWidthSizing(SceneNode.WidthSizing.SHRINK);
                 if (!system) {
                     messageNode.setBackgroundColor(bubbleColor)
-                            .setPadding(paddingY, paddingX, paddingY, paddingX);
+                            .setPadding(paddingY, paddingX, paddingY, paddingX)
+                            .setMaxWidth(maxBubbleWidthPx);
                     setGradedCorners(messageNode, cornersFor(messageCount, i, selfRight, rLg, rInner));
                 }
                 contentNode = messageNode;

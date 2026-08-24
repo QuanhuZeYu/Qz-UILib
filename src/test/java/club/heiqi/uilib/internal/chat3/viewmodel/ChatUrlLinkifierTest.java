@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.viewmodel;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -111,6 +112,41 @@ public class ChatUrlLinkifierTest {
     public void linkifyReturnsSameReferenceWithoutUrls() {
         List<TextSegment> base = single("plain text");
         Assert.assertSame("无 URL 段流原引用返回(零分配)", base, ChatUrlLinkifier.linkify(base, LINK));
+    }
+
+    @Test
+    public void linkifyRecognizesUrlAcrossAdjacentSections() {
+        // 模拟 § 彩色段把 URL 拆开(B12 验收偏差 5):段1 = "go https://a.b"(绿),
+        // 段2 = "/c x"(蓝紫)——URL 字符跨两段连续,拼接后统一识别。
+        TextStyle green = plainStyle();
+        green.setColor(0xFF55FF55);
+        TextStyle blue = plainStyle();
+        blue.setColor(0xFF5555FF);
+        List<TextSegment> base = Arrays.asList(
+                new TextSegment("go https://a.b", green),
+                new TextSegment("/c x", blue));
+        List<TextSegment> out = ChatUrlLinkifier.linkify(base, LINK);
+        Assert.assertEquals("2 段 + 1 个跨段 URL → 4 段", 4, out.size());
+        Assert.assertEquals("go ", out.get(0).getText());
+        Assert.assertEquals("URL 前切片(段1 内)强制 link 色", LINK, out.get(1).getStyle().getColor());
+        Assert.assertEquals("https://a.b/c", out.get(1).getStyle().getLink());
+        Assert.assertEquals("https://a.b", out.get(1).getText());
+        Assert.assertEquals("URL 后切片(段2 内)强制 link 色", LINK, out.get(2).getStyle().getColor());
+        Assert.assertEquals("https://a.b/c", out.get(2).getStyle().getLink());
+        Assert.assertEquals("/c", out.get(2).getText());
+        Assert.assertEquals("URL 之外的 § 颜色保留", 0xFF5555FF, out.get(3).getStyle().getColor());
+    }
+
+    @Test
+    public void linkifyKeepsCodeSegmentAsHardBoundary() {
+        // code 段是硬边界:B12 跨段只作用于普通段,code 段仍原样透传、不链接化。
+        TextStyle codeStyle = plainStyle();
+        codeStyle.setCodeSpan(true);
+        List<TextSegment> base = Arrays.asList(seg("x "), new TextSegment("http://a.co", codeStyle));
+        List<TextSegment> out = ChatUrlLinkifier.linkify(base, LINK);
+        Assert.assertEquals(2, out.size());
+        Assert.assertNull("code 段不挂 link", out.get(1).getStyle().getLink());
+        Assert.assertSame("code 段原引用透传", base.get(1), out.get(1));
     }
 
     @Test

@@ -413,6 +413,15 @@ public final class ChatSceneController {
         }
         mount = SceneNode.column().setHitTestable(false);
         root.appendChild(mount);
+        // 气泡最大宽同步(设计稿 §3.x:气泡 ≤ 0.85 组内容宽;视口变化重建树时生效,
+        // 容器路径由 ChatContainer.setViewport 每帧同值幂等同步;未知视口(0)时
+        // 保持不限制,避免把气泡错误 clamp 到 1px)
+        if (hostViewportWidth > 0) {
+            int bubbleContentWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(
+                    hostViewportWidth) - 2 * ChatMarkdownSettings.getBubblePaddingX());
+            messageList().setBubbleMaxWidthPx((int) Math.round(
+                    bubbleContentWidth * ChatMarkdownSettings.getBubbleMaxWidthRatio()));
+        }
         boolean hud = isHudPhase();
         if (hud) {
             SceneNode list = SceneNode.column().setHitTestable(false);

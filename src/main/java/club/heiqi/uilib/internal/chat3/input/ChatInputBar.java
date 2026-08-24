@@ -9,9 +9,12 @@ import net.minecraft.client.gui.GuiNewChat;
 import net.minecraft.client.gui.GuiPlayerInfo;
 import net.minecraft.network.play.client.C14PacketTabComplete;
 
+import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
@@ -29,6 +32,8 @@ public final class ChatInputBar {
     private final SceneNode inputRoot;
     /** 玩家名补全上次命中缓存(连续 Tab 循环)。 */
     private final List<String> lastFoundNames = new ArrayList<String>();
+    /** 聊天输入条描边覆盖绑定(设计稿 §2.1:非 focus 无描边,focus 1px 淡蓝 25%)。 */
+    private final Binding borderBinding;
 
     /**
      * @param runtime     宿主场景运行时(SceneTextInput 挂载 + 焦点)
@@ -44,6 +49,22 @@ public final class ChatInputBar {
         this.inputRoot = SceneTextInput.create(runtime, props).get();
         this.inputRoot.setFontSize(INPUT_FONT_SIZE);
         this.inputRoot.setFillParentWidth(true);
+        // 设计稿 §3.2:输入框圆角 r-md = 8(覆盖 SceneTextInput 通用 RADIUS_MD 12)
+        this.inputRoot.setCornerRadius(ChatMarkdownSettings.getInputCornerRadiusPx());
+        // 设计稿 §2.1:非 focus 无描边(透明),focus 1px 0x406B9BD8(25% 淡蓝)。
+        // SceneTextInput 通用描边(=0xFF938F99 常驻灰紫)不符合聊天设计,此处按交互态覆盖;
+        // 绑定注册晚于控件内部绑定,帧末批量提交时覆盖值恒生效。
+        this.borderBinding = runtime.bind(Computed.create(() -> Integer.valueOf(
+                Boolean.TRUE.equals(runtime.interactionState(inputRoot).focused().get())
+                        ? ChatMarkdownSettings.getInputFocusBorderArgb() : 0x00000000)),
+                inputRoot::setBorderColor);
+    }
+
+    /** 释放描边覆盖绑定(屏幕关闭时由容器统一回收)。 */
+    public void dispose() {
+        if (borderBinding != null) {
+            borderBinding.dispose();
+        }
     }
 
     /** @return 输入框根节点(挂到容器输入行) */
