@@ -64,4 +64,37 @@ public class ChatSentHistoryTest {
         Assert.assertEquals("同步后光标复位空槽", "", history.recall(1));
         Assert.assertEquals("v3", history.recall(-1));
     }
+
+    @Test
+    public void shouldRestoreDraftWhenReturningToBottom() {
+        ChatSentHistory history = new ChatSentHistory();
+        history.add("first");
+        history.add("second");
+
+        // 首次从空槽翻入历史:暂存当前输入(原版 historyBuffer)
+        Assert.assertEquals("second", history.recall(-1, "草稿文本"));
+        Assert.assertEquals("first", history.recall(-1, "草稿文本"));
+        Assert.assertEquals("翻回一格仍是历史", "second", history.recall(1, "草稿文本"));
+        Assert.assertEquals("翻回最底恢复暂存草稿而非清空", "草稿文本", history.recall(1, "草稿文本"));
+        // 恢复后暂存清空:再翻回最底无草稿时返回空串
+        Assert.assertEquals("", history.recall(1, ""));
+        // 再次进入历史:重新暂存当前输入
+        Assert.assertEquals("second", history.recall(-1, "新草稿"));
+        Assert.assertEquals("新草稿", history.recall(1, "新草稿"));
+    }
+
+    @Test
+    public void shouldKeepFirstStashAndClearOnReset() {
+        ChatSentHistory history = new ChatSentHistory();
+        history.add("only");
+        // 翻入历史后中途再翻不覆盖首份暂存(原版 historyBuffer 语义)
+        Assert.assertEquals("only", history.recall(-1, "首份"));
+        Assert.assertEquals("only", history.recall(-1, "覆盖无效"));
+        Assert.assertEquals("首份", history.recall(1, "覆盖无效"));
+
+        // 打开输入屏复位:草稿清空
+        history.recall(-1, "第二份");
+        history.resetCursor();
+        Assert.assertEquals("复位后无草稿", "", history.recall(1, ""));
+    }
 }

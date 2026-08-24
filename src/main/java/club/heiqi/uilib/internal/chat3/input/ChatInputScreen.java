@@ -10,7 +10,8 @@ import club.heiqi.uilib.ui.screen.McScreenBridge;
  * 聊天输入屏幕(L4 交互层):替换原版 GuiChat 的自研屏幕——容器(消息列表 + 输入条)取代
  * 原版输入框,输入条纳入容器底部。
  *
- * <p>键盘节流在 GuiScreen.keyTyped 层完成(Enter 发送/上下键历史/Tab 补全),其余按键经
+ * <p>键盘节流在 GuiScreen.keyTyped 层完成(Enter 发送/上下键历史/Tab 补全(Shift+Tab 反向)/
+ * PageUp/PageDown 聊天翻页),其余按键经
  * {@link McScreenBridge} 转进 scene 输入管线。发送走 {@link ChatBridge} 原版发送链
  * (已发送历史/命令分发/发包全原版语义)。聊天打开感知由安装器每渲染帧按
  * currentScreen instanceof ChatInputScreen 同步。</p>
@@ -22,6 +23,8 @@ public final class ChatInputScreen extends McScreenBridge {
     private static final int KEY_UP = 200;
     private static final int KEY_DOWN = 208;
     private static final int KEY_TAB = 15;
+    private static final int KEY_PRIOR = 201; // Page Up
+    private static final int KEY_NEXT = 209; // Page Down
 
     private final ChatInputSurface surface;
 
@@ -69,7 +72,15 @@ public final class ChatInputScreen extends McScreenBridge {
             return;
         }
         if (keyCode == KEY_TAB) {
-            surface.autocomplete();
+            surface.autocomplete(GuiScreen.isShiftKeyDown() ? -1 : 1);
+            return;
+        }
+        if (keyCode == KEY_PRIOR) {
+            surface.pageScroll(1);
+            return;
+        }
+        if (keyCode == KEY_NEXT) {
+            surface.pageScroll(-1);
             return;
         }
         super.keyTyped(typedChar, keyCode);

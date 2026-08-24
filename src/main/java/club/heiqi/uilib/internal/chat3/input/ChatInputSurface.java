@@ -137,9 +137,18 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         container.bar().recallHistory(direction);
     }
 
-    /** Tab 补全(委托输入条)。 */
-    public void autocomplete() {
-        container.bar().autocomplete();
+    /** Tab 补全(委托输入条;direction +1 正向 Tab,-1 Shift+Tab 反向)。 */
+    public void autocomplete(int direction) {
+        container.bar().autocomplete(direction);
+    }
+
+    /** PageUp/PageDown 聊天区翻页(可见行数 - 1;+1 向旧消息,-1 向新消息)。 */
+    public void pageScroll(int direction) {
+        int page = Math.max(1, controller.visibleLineCount() - 1);
+        // 与滚轮路径同源:退出拖动接管直通后按行滚动,再通知数据变更
+        controller.smoothScroll().releaseDrag();
+        controller.history().scrollBy(direction > 0 ? page : -page);
+        controller.notifyDataChanged();
     }
 
     /** 服务端补全响应(委托输入条)。 */

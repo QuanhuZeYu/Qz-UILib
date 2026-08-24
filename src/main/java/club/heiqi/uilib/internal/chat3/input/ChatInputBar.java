@@ -8,6 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiNewChat;
 import net.minecraft.client.gui.GuiPlayerInfo;
 import net.minecraft.network.play.client.C14PacketTabComplete;
+import net.minecraft.util.ChatComponentText;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -19,9 +20,11 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
  * 聊天输入条组件(L3 组件层):复用 UILib {@link SceneTextInput} 的受控输入框,
- * 内聚文本真值、发送历史、历史回显与 Tab 补全。键盘节流(Enter/Up/Down/Tab)仍由屏幕壳完成。
+ * 内聚文本真值、发送历史、历史回显与 Tab 补全。键盘节流(Enter/Up/Down/Tab/PageUp/PageDown)
+ * 仍由屏幕壳完成。Tab 补全状态机下沉 {@link ChatCompletionEngine}(idle → awaiting → cycling),
+ * 本类只做宿主窄端口适配(网络发包/本地玩家表/候选打印)。
  */
-public final class ChatInputBar {
+public final class ChatInputBar implements ChatCompletionEngine.Host {
 
     /** 输入字号。 */
     private static final int INPUT_FONT_SIZE = 14;
@@ -31,13 +34,17 @@ public final class ChatInputBar {
     private static final int INPUT_PADDING_X_PX = 10;
     /** 输入框内垂直 padding(px,24 盒高 - font-input 14 行高 20 = 上下各 2)。 */
     private static final int INPUT_PADDING_Y_PX = 2;
+    /** 输入上限(原版 GuiTextField.maxStringLength 口径,100 码点;T5)。 */
+    static final int MAX_INPUT_LENGTH = 100;
 
     private final SceneRuntime runtime;
     private final Signal<String> inputText;
     private final ChatSentHistory sentHistory = new ChatSentHistory();
     private final SceneNode inputRoot;
-    /** 玩家名补全上次命中缓存(连续 Tab 循环)。 */
-    private final List<String> lastFoundNames = new ArrayList<String>();
+    /** SceneTextInput 句柄(autocomplete commit 的 caret 对齐窄操作)。 */
+    private final SceneTextInput.Handle inputHandle;
+    /** Tab 补全状态机(idle → awaiting → cycling)。 */
+    private final ChatCompletionEngine completion;
     /** 聊天输入条描边覆盖绑定(设计稿 §2.1:非 focus 无描边,focus 1px 淡蓝 25%)。 */
     private final Binding borderBinding;
     /** 输入底色覆盖绑定(K3 缺陷:F6① SceneTextInput 内部 SceneStateColors.inputBackground
@@ -51,11 +58,17 @@ public final class ChatInputBar {
     public ChatInputBar(SceneRuntime runtime, String initialText) {
         this.runtime = runtime;
         this.inputText = Signal.create(initialText == null ? "" : initialText);
+        this.completion = new ChatCompletionEngine(this);
         SceneTextInput.Props props = SceneTextInput.Props.builder(inputText)
                 .placeholder("消息…")
-                .onChange(inputText::set)
+                .maxLength(MAX_INPUT_LENGTH)
+                .onChange(next -> {
+                    inputText.set(next);
+                    completion.onTextEdited();
+                })
                 .build();
-        this.inputRoot = SceneTextInput.create(runtime, props).get();
+        this.inputHandle = SceneTextInput.createHandle(runtime, props);
+        this.inputRoot = inputHandle.component().get();
         this.inputRoot.setFontSize(INPUT_FONT_SIZE);
         this.inputRoot.setFillParentWidth(true);
         // 设计稿 §3.2:输入框圆角 r-md = 8(覆盖 SceneTextInput 通用 RADIUS_MD 12)
@@ -101,11 +114,12 @@ public final class ChatInputBar {
         return inputText;
     }
 
-    /** 屏幕打开:聚焦输入框 + 同步发送历史(覆盖第三方直调)。 */
+    /** 屏幕打开:聚焦输入框 + 同步发送历史(覆盖第三方直调)+ 清补全残留态。 */
     public void onOpened() {
         runtime.requestFocus(inputRoot);
         sentHistory.syncFrom(currentSentMessages());
         sentHistory.resetCursor();
+        completion.onTextEdited();
     }
 
     /** 提交文本(trim 后);空串返回空。 */
@@ -118,86 +132,92 @@ public final class ChatInputBar {
         sentHistory.add(message);
     }
 
-    /** 历史回显(vanilla getSentHistory 语义:-1 上一条 / +1 下一条)。 */
+    /** 历史回显(vanilla getSentHistory 语义:-1 上一条 / +1 下一条;回到底恢复暂存草稿)。 */
     public void recallHistory(int direction) {
-        inputText.set(sentHistory.recall(direction));
+        String recalled = sentHistory.recall(direction, inputText.get());
+        inputText.set(recalled);
+        completion.onTextEdited();
     }
 
-    /** 直接回填文本(SUGGEST_COMMAND 点击等外部写入)。 */
+    /** 直接回填文本(SUGGEST_COMMAND 点击等外部写入;caret 对齐词尾,清补全态)。 */
     public void setText(String text) {
-        inputText.set(text);
+        String next = text == null ? "" : text;
+        inputHandle.moveCaretToEndOf().accept(next);
+        inputText.set(next);
+        completion.onTextEdited();
     }
 
-    /** Tab 补全:斜杠开头走服务端命令补全;否则本地玩家名补全。 */
-    public void autocomplete() {
-        String text = inputText.get();
-        if (text.startsWith("/")) {
-            requestCommandAutocomplete(text);
-        } else {
-            autocompletePlayerNames(text);
-        }
+    /** Tab 补全(委托状态机;direction +1 正向 Tab,-1 Shift+Tab 反向)。 */
+    public void autocomplete(int direction) {
+        completion.onTab(direction);
     }
 
-    /** 服务端补全响应(mixin 转交):最长公共前缀入输入框。 */
+    /** 服务端补全响应(mixin 转交;快照守卫与两段式在状态机内)。 */
     public void applyAutocompleteResponse(String[] options) {
-        String prefix = commonPrefix(options);
-        if (prefix != null) {
-            inputText.set(prefix);
-        }
+        completion.onResponse(options);
     }
 
-    /** 本地玩家名补全(vanilla autocompletePlayerNames 简化语义)。 */
-    private void autocompletePlayerNames(String text) {
-        int lastSpace = text.lastIndexOf(' ');
-        String prefix = lastSpace >= 0 ? text.substring(lastSpace + 1) : text;
-        if (prefix.isEmpty()) {
-            return;
-        }
-        List<String> candidates = new ArrayList<String>();
+    // ==================== ChatCompletionEngine.Host ====================
+
+    @Override
+    public String currentText() {
+        return inputText.get();
+    }
+
+    @Override
+    public void commit(String nextText) {
+        // 先写 value 再对齐 caret 到词尾(primitive moveCaretToEndOf 语义:
+        // autocomplete commit 在外部 value signal flush 前同步对齐 caret)
+        inputText.set(nextText);
+        inputHandle.moveCaretToEndOf().accept(nextText);
+    }
+
+    @Override
+    public boolean networkAvailable() {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc != null && mc.thePlayer != null && mc.thePlayer.sendQueue != null) {
-            for (Object info : mc.thePlayer.sendQueue.playerInfoList) {
-                if (info instanceof GuiPlayerInfo && ((GuiPlayerInfo) info).name != null) {
-                    candidates.add(((GuiPlayerInfo) info).name);
-                }
-            }
-        }
-        candidates.addAll(lastFoundNames);
-        List<String> matches = new ArrayList<String>();
-        for (String name : candidates) {
-            if (name.startsWith(prefix) && !matches.contains(name)) {
-                matches.add(name);
-            }
-        }
-        if (matches.isEmpty()) {
-            return;
-        }
-        lastFoundNames.clear();
-        lastFoundNames.addAll(matches);
-        String completed = commonPrefix(matches.toArray(new String[0]));
-        if (completed == null || completed.length() < prefix.length()) {
-            completed = prefix;
-        }
-        String result = (lastSpace >= 0 ? text.substring(0, lastSpace + 1) : "") + completed;
-        inputText.set(result);
+        return mc != null && mc.thePlayer != null && mc.thePlayer.sendQueue != null;
     }
 
-    /** 最长公共前缀(纯函数,可测)。 */
-    static String commonPrefix(String[] options) {
-        if (options == null || options.length == 0) {
-            return null;
+    @Override
+    public void sendRequest(String text) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.thePlayer == null || mc.thePlayer.sendQueue == null) {
+            return;
         }
-        String prefix = options[0];
-        for (int index = 1; index < options.length && !prefix.isEmpty(); index++) {
-            String other = options[index];
-            int count = 0;
-            while (count < prefix.length() && count < other.length()
-                    && prefix.charAt(count) == other.charAt(count)) {
-                count++;
+        mc.thePlayer.sendQueue.addToSendQueue(new C14PacketTabComplete(text));
+    }
+
+    @Override
+    public List<String> localPlayerNames() {
+        List<String> names = new ArrayList<String>();
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.thePlayer == null || mc.thePlayer.sendQueue == null) {
+            return names;
+        }
+        for (Object info : mc.thePlayer.sendQueue.playerInfoList) {
+            if (info instanceof GuiPlayerInfo && ((GuiPlayerInfo) info).name != null) {
+                names.add(((GuiPlayerInfo) info).name);
             }
-            prefix = prefix.substring(0, count);
         }
-        return prefix;
+        return names;
+    }
+
+    @Override
+    public void printCandidates(List<String> candidates) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.ingameGUI == null || mc.ingameGUI.getChatGUI() == null) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < candidates.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(candidates.get(i));
+        }
+        // 原版同款:messageId=1 同 id 覆盖打印(ChatHistory 对非 0 id 是替换语义,不刷屏)
+        mc.ingameGUI.getChatGUI().printChatMessageWithOptionalDeletion(
+                new ChatComponentText(sb.toString()), 1);
     }
 
     /** 原版发送列表快照(继承自 Facade)。 */
@@ -208,14 +228,5 @@ public final class ChatInputBar {
         }
         GuiNewChat gui = mc.ingameGUI.getChatGUI();
         return gui.getSentMessages();
-    }
-
-    /** 发送补全请求(原版 C14PacketTabComplete)。 */
-    private static void requestCommandAutocomplete(String text) {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.thePlayer == null || mc.thePlayer.sendQueue == null) {
-            return;
-        }
-        mc.thePlayer.sendQueue.addToSendQueue(new C14PacketTabComplete(text));
     }
 }

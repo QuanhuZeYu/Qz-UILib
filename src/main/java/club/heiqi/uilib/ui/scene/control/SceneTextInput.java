@@ -194,6 +194,16 @@ public final class SceneTextInput {
     }
 
     /**
+     * TextInput 组件句柄：根节点组件函数 + autocomplete commit 的 caret 对齐窄操作。
+     *
+     * <p>向后兼容新增（2026-08 Tab 补全）：{@link #create} 行为不变，需要 autocomplete
+     * commit 后 caret 对齐到词尾的调用方改用 {@link #createHandle}。</p>
+     */
+    @Desugar
+    public record Handle(Supplier<SceneNode> component, Consumer<String> moveCaretToEndOf) {
+    }
+
+    /**
      * 工厂：构建 TextInput 组件函数。
      *
      * @param rt    场景运行时
@@ -206,41 +216,67 @@ public final class SceneTextInput {
                     props.value(), props.enabled(), props.readOnly(), props.placeholder(), props.maxLength(),
                     props.inputType(), props.onChange());
             SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, primitiveProps);
-            SceneNode root = result.root();
-            root.setPadding(PADDING);
-            root.setBorderWidth(BORDER_WIDTH);
-            root.setCornerRadius(CORNER_RADIUS);
-            SceneInteractionState interaction = rt.interactionState(root);
-
-            rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
-                    result.prefixText()::setTextColor);
-            rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
-                    result.suffixText()::setTextColor);
-
-            rt.__bindAnimatedColor(() -> SceneStateColors.inputBackground(
-                            Boolean.TRUE.equals(props.enabled().get())),
-                    root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
-            SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
-            // caret 双槽位：focus 在选区哪一端，哪端着色（B2 选区结构）
-            rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get(),
-                            result.selection().get().focusCp() == result.selection().get().startCp()),
-                    result.caret()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
-            rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get(),
-                            result.selection().get().isActive()
-                                    && result.selection().get().focusCp() == result.selection().get().endCp()),
-                    result.caretAfter()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
-            // 选区高亮：激活即显示（失焦保留选区可见），文本色反白
-            rt.bindComputed(() -> resolveHighlightBackground(result.selection().get().isActive()),
-                    result.highlightText()::setBackgroundColor);
-            rt.bindComputed(() -> resolveHighlightTextColor(result.selection().get().isActive(),
-                            result.isPlaceholder().get(), props.enabled().get()),
-                    result.highlightText()::setTextColor);
-            SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
-            rt.bind(props.enabled(),
-                    e -> root.setHitTestable(Boolean.TRUE.equals(e)));
-
-            return root;
+            applyChrome(rt, props, result);
+            return result.root();
         };
+    }
+
+    /**
+     * 工厂：构建 TextInput 组件函数并透出 caret 对齐句柄（向后兼容新增）。
+     *
+     * <p>与 {@link #create} 同实现，额外透出 primitive 的 {@code moveCaretToEndOf}
+     * （autocomplete commit 在外部 value signal flush 前同步对齐 caret 的窄操作）。</p>
+     *
+     * @param rt    场景运行时
+     * @param props TextInput 输入契约
+     * @return 组件句柄
+     */
+    public static Handle createHandle(SceneRuntime rt, Props props) {
+        SceneTextInputPrimitive.Props primitiveProps = new SceneTextInputPrimitive.Props(
+                props.value(), props.enabled(), props.readOnly(), props.placeholder(), props.maxLength(),
+                props.inputType(), props.onChange());
+        SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, primitiveProps);
+        applyChrome(rt, props, result);
+        return new Handle(() -> result.root(), result.moveCaretToEndOf());
+    }
+
+    /**
+     * 挂载通用 chrome（padding/border/圆角、文本色、背景、描边、caret 色、选区高亮、
+     * cursor 与 hitTestable 绑定）——{@link #create} 与 {@link #createHandle} 共享。
+     */
+    private static void applyChrome(SceneRuntime rt, Props props, SceneTextInputPrimitive.Result result) {
+        SceneNode root = result.root();
+        root.setPadding(PADDING);
+        root.setBorderWidth(BORDER_WIDTH);
+        root.setCornerRadius(CORNER_RADIUS);
+        SceneInteractionState interaction = rt.interactionState(root);
+
+        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
+                result.prefixText()::setTextColor);
+        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
+                result.suffixText()::setTextColor);
+
+        rt.__bindAnimatedColor(() -> SceneStateColors.inputBackground(
+                        Boolean.TRUE.equals(props.enabled().get())),
+                root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+        SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
+        // caret 双槽位：focus 在选区哪一端，哪端着色（B2 选区结构）
+        rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get(),
+                        result.selection().get().focusCp() == result.selection().get().startCp()),
+                result.caret()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+        rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get(),
+                        result.selection().get().isActive()
+                                && result.selection().get().focusCp() == result.selection().get().endCp()),
+                result.caretAfter()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+        // 选区高亮：激活即显示（失焦保留选区可见），文本色反白
+        rt.bindComputed(() -> resolveHighlightBackground(result.selection().get().isActive()),
+                result.highlightText()::setBackgroundColor);
+        rt.bindComputed(() -> resolveHighlightTextColor(result.selection().get().isActive(),
+                        result.isPlaceholder().get(), props.enabled().get()),
+                result.highlightText()::setTextColor);
+        SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
+        rt.bind(props.enabled(),
+                e -> root.setHitTestable(Boolean.TRUE.equals(e)));
     }
 
     /**

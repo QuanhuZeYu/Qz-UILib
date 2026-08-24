@@ -7,6 +7,7 @@ import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * ChatInputBar 契约测试(K3 缺陷 F6):输入框高 24px(输入条区 40 - 四周 8×2)、
@@ -32,6 +33,28 @@ public class ChatInputBarTest {
         Assert.assertTrue("填满父宽(§6.2 fillParentWidth)", root.isFillParentWidth());
         Assert.assertEquals("圆角 r-md 8", ChatMarkdownSettings.getInputCornerRadiusPx(),
                 root.getCornerRadius());
+    }
+
+    @Test
+    public void inputTextTruncatesBeyond100CodePoints() {
+        // T5:ChatInputBar 传 SceneTextInput maxLength=100(原版 maxStringLength 口径),
+        // 一帧注入 120 字符只进 100(primitive 截断语义)
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = harness.getRuntime();
+        ChatInputBar bar = new ChatInputBar(rt, "");
+        SceneNode root = new SceneNode();
+        root.appendChild(bar.root());
+        harness.mountRoot(root, 400, 100);
+        rt.requestFocus(bar.root());
+        rt.flush();
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 120; i++) {
+            sb.append('x');
+        }
+        harness.typeText(sb.toString());
+        Assert.assertEquals("输入被截断到 100 码点", 100, bar.inputText().get().length());
+        harness.dispose();
     }
 
     @Test

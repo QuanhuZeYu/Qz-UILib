@@ -67,6 +67,25 @@ public class ChatHistoryTest {
     }
 
     @Test
+    public void shouldReplaceSameNonZeroMessageId() {
+        ChatHistory history = new ChatHistory(10);
+        history.append(component("a"), 1);
+        history.append(component("b"), 1);
+        Assert.assertEquals("非 0 id 同 id 替换(候选打印覆盖语义)", 1, history.size());
+        Assert.assertEquals("b", history.snapshot().get(0).getPlainText());
+        Assert.assertEquals(1, history.snapshot().get(0).getMessageId());
+    }
+
+    @Test
+    public void shouldKeepAppendingZeroMessageId() {
+        ChatHistory history = new ChatHistory(10);
+        history.append(component("a"), 0);
+        history.append(component("b"), 0);
+        Assert.assertEquals("普通消息 id 恒 0:追加而非互相替换", 2, history.size());
+        Assert.assertEquals("b", history.snapshot().get(0).getPlainText());
+    }
+
+    @Test
     public void shouldDeleteById() {
         ChatHistory history = new ChatHistory(10);
         history.append(component("a"), 1);

@@ -49,10 +49,21 @@ public final class ChatHistory {
     /**
      * 追加消息(新行在前,超容量裁最旧)。
      *
+     * <p>messageId 替换语义(原版 setChatLine 口径,2026-08 Tab 补全 R3 落地):
+     * 非 0 id 先删同 id 旧行再插入(同 id 覆盖打印不刷屏,原版候选列表 id=1 同款);
+     * id=0 恒追加——普通聊天消息真机 id 恒 0,不可互相替换。</p>
+     *
      * @param component 消息组件(非空)
      * @param messageId 原版消息 ID
      */
     public synchronized void append(IChatComponent component, int messageId) {
+        if (messageId != 0) {
+            for (int i = lines.size() - 1; i >= 0; i--) {
+                if (lines.get(i).getMessageId() == messageId) {
+                    lines.remove(i);
+                }
+            }
+        }
         lines.add(0, new ChatLineRecord(component, messageId, System.currentTimeMillis(), nextSequence++));
         trimToCapacity();
     }
