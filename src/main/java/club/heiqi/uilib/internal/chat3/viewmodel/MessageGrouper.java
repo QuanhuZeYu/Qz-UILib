@@ -10,13 +10,17 @@ import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
  *
  * <p>语义(B11 合并边界):</p>
  * <ul>
- *   <li>相邻且发送者相同 → 合并为一组(气泡连排);</li>
+ *   <li>相邻且发送者相同<b>且时间间隔 ≤ {@link #MERGE_WINDOW_MILLIS}</b> → 合并为一组
+ *       (气泡连排;设计稿 §3.3「同发送者且时间间隔 ≤120s 才并组」);</li>
  *   <li>发送者提取失败(null = 系统/广播)→ 每条独立成组,并切断前后合并;</li>
  *   <li>「自己」判定:发送者 == 本地玩家名(调用方传入,视图模型不依赖 Minecraft);</li>
  *   <li>输出组序 = 时间正序(旧 → 新)。</li>
  * </ul>
  */
 public final class MessageGrouper {
+
+    /** 并组时间窗(ms,设计稿 §3.3):相邻同发送者消息间隔 &gt; 此值即断开开新组。 */
+    public static final long MERGE_WINDOW_MILLIS = 120_000L;
 
     private final SenderExtractor extractor;
 
@@ -40,6 +44,8 @@ public final class MessageGrouper {
         List<MessageGroupModel> groups = new ArrayList<MessageGroupModel>();
         MessageGroupModel current = null;
         String currentSender = null;
+        // 当前组内最新一条消息的到达时刻(时间窗断开判定基准;新组首条时重置)
+        long lastArrivedMillis = 0L;
         // 从最旧到最新遍历,保证「相邻」判断与组内时间正序
         for (int i = recordsNewestFirst.size() - 1; i >= 0; i--) {
             ChatLineRecord record = recordsNewestFirst.get(i);
@@ -51,7 +57,10 @@ public final class MessageGrouper {
                 currentSender = null;
                 continue;
             }
-            if (current != null && sender.equals(currentSender)) {
+            // 时间窗(设计稿 §3.3):相邻同发送者消息间隔 > 120s 断开开新组
+            boolean withinWindow = current != null && sender.equals(currentSender)
+                    && record.getArrivedWallMillis() - lastArrivedMillis <= MERGE_WINDOW_MILLIS;
+            if (withinWindow) {
                 current.addLine(record, match.getRest());
             } else {
                 boolean isSelf = selfName != null && sender.equals(selfName);
@@ -59,6 +68,7 @@ public final class MessageGrouper {
                 currentSender = sender;
                 groups.add(current);
             }
+            lastArrivedMillis = record.getArrivedWallMillis();
         }
         return groups;
     }

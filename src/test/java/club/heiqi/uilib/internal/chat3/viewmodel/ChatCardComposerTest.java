@@ -8,6 +8,8 @@ import org.junit.Test;
 
 import net.minecraft.util.ChatComponentText;
 
+import club.heiqi.uilib.font.layout.TextSegment;
+import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 
@@ -179,6 +181,49 @@ public class ChatCardComposerTest {
                 ChatCardComposer.hoveredBubbleColor(ChatMarkdownSettings.getBubbleOtherArgb()));
         Assert.assertEquals("自己气泡 hover 底色", 0xF22D3540,
                 ChatCardComposer.hoveredBubbleColor(ChatMarkdownSettings.getBubbleSelfArgb()));
+    }
+
+    // ==================== P2-4:hover 颜色插值纯函数 ====================
+
+    @Test
+    public void interpolateArgbInterpolatesChannelsWithEndpoints() {
+        Assert.assertEquals("t≤0 恒 from", 0xF2242B33,
+                ChatCardComposer.interpolateArgb(0xF2242B33, 0xF22B3139, -0.5F));
+        Assert.assertEquals("t≥1 恒 to", 0xF22B3139,
+                ChatCardComposer.interpolateArgb(0xF2242B33, 0xF22B3139, 1.5F));
+        // 链接色 0xFF7AB8F5 → hover 0xFF9CCBF8 @ t=0.5:
+        // R 122→156=139(0x8B),G 184→203=194(0xC2),B 245→248=247(0xF7)
+        Assert.assertEquals(0xFF8BC2F7,
+                ChatCardComposer.interpolateArgb(0xFF7AB8F5, 0xFF9CCBF8, 0.5F));
+    }
+
+    @Test
+    public void interpolateSegmentsLerpsOnlyLinkSegments() {
+        TextStyle plain = new TextStyle();
+        plain.setColor(0xFFFFFFFF);
+        TextStyle linkBase = plain.copy();
+        linkBase.setColor(0xFF7AB8F5);
+        linkBase.setLink("http://a.co");
+        TextStyle linkHover = plain.copy();
+        linkHover.setColor(0xFF9CCBF8);
+        linkHover.setLink("http://a.co");
+        linkHover.setUnderline(true);
+        List<TextSegment> base = Arrays.asList(
+                new TextSegment("a ", plain), new TextSegment("http://a.co", linkBase));
+        List<TextSegment> hover = Arrays.asList(
+                new TextSegment("a ", plain), new TextSegment("http://a.co", linkHover));
+        List<TextSegment> mid = ChatCardComposer.interpolateSegments(base, hover, 0.5F);
+        Assert.assertEquals("中间态段数同构", 2, mid.size());
+        Assert.assertSame("非 link 段原引用透传", hover.get(0), mid.get(0));
+        Assert.assertEquals("link 段中间色 = 0.5 通道插值", 0xFF8BC2F7,
+                mid.get(1).getStyle().getColor());
+        Assert.assertTrue("下划线随目标态", mid.get(1).getStyle().isUnderline());
+        Assert.assertEquals("link 字段保留", "http://a.co", mid.get(1).getStyle().getLink());
+        // 端态零分配复用
+        Assert.assertSame("t=0 复用 base", base,
+                ChatCardComposer.interpolateSegments(base, hover, 0.0F));
+        Assert.assertSame("t=1 复用 hover", hover,
+                ChatCardComposer.interpolateSegments(base, hover, 1.0F));
     }
 
     // ==================== T8:单条消息 8 行截断 + 省略号(设计稿 §5.4,验收 22) ====================

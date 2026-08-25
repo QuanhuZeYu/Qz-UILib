@@ -90,7 +90,7 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         return root;
     }
 
-    /** 每帧同步动态尺寸(视口 1/8 × 1/2)并推进弹出动画(设计稿 §4.1 三段式);随后走标准帧管线。 */
+    /** 每帧同步动态尺寸(视口 1/4 × 1/2)并推进弹出动画(设计稿 §4.1 三段式);随后走标准帧管线。 */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         container.setViewport(w, h);
@@ -103,9 +103,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         long popMillis = ChatMarkdownSettings.getPopAnimMillis();
         long elapsed = System.currentTimeMillis() - openAtMillis;
         float progress = popMillis <= 0 ? 1.0F : (float) elapsed / (float) popMillis;
-        // pop 三段式(设计稿 §4.1,与 ChatSceneController.POPPING 同源):easeOutBack(c=1.4)
+        // pop 三段式(设计稿 §4.1,与 ChatSceneController.POPPING 同源):easeOutBack(c=1.04 默认)
         // translateY(+24→0) + scale(0.96→1,origin 容器左下角) + opacity 0→1(clamp01,不超 1)
-        float eased = Animator.easeOutBack(progress, 1.4F);
+        float eased = Animator.easeOutBack(progress);
         container.root().setTransform(new Transform(0.0F, 24.0F * (1.0F - eased), 0.0F,
                 0.96F + 0.04F * eased, 0.96F + 0.04F * eased, 0.0F, 1.0F));
         container.root().setOpacity(Animator.clamp01(eased));

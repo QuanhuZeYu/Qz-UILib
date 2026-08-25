@@ -350,7 +350,10 @@ public final class ChatSceneController {
     /** 聊天打开状态变化(输入屏开关,接线层调用)。 */
     public void setChatOpen(boolean open) {
         chatOpen.set(Boolean.valueOf(open));
-        machine.setTarget(open, frameMillis.get().longValue());
+        machine.setTarget(open, frameMillis.get().longValue(),
+                ChatMarkdownSettings.getCollapseAnimMillis(),
+                ChatMarkdownSettings.getPopAnimMillis(),
+                ChatMarkdownSettings.getClosingAnimMillis());
     }
 
     /** 设置变化(字号/气泡参数):重建布局器与段缓存 + 全量重建。 */
@@ -530,7 +533,7 @@ public final class ChatSceneController {
 
     /**
      * 根节点动画 transform(设计稿 §4.1 三段式;复合级,不触发重排):
-     * POPPING = easeOutBack(c=1.4) translateY(+24→0) + scale(0.96→1),origin 容器左下角(0,1);
+     * POPPING = easeOutBack(c=1.04 默认) translateY(+24→0) + scale(0.96→1),origin 容器左下角(0,1);
      * COLLAPSING = 与 POPPING 完全对称反向(easeOutQuad translateY 0→+24、scale 1→0.96);
      * CLOSING = easeOutQuad opacity 1→0 + translateY 0→+12(scale 不参与)。
      * transform 通道保留 easeOutBack overshoot(eased&gt;1 时轻微回弹过头再回正)。
@@ -548,7 +551,7 @@ public final class ChatSceneController {
             }
             case POPPING: {
                 float eased = Animator.easeOutBack(machine.progress(now,
-                        ChatMarkdownSettings.getPopAnimMillis()), 1.4F);
+                        ChatMarkdownSettings.getPopAnimMillis()));
                 // 弹出:translateY +24→0、scale 0.96→1,origin 左下角
                 return new Transform(0.0F, 24.0F * (1.0F - eased), 0.0F,
                         0.96F + 0.04F * eased, 0.96F + 0.04F * eased, 0.0F, 1.0F);
@@ -580,7 +583,7 @@ public final class ChatSceneController {
                         ChatMarkdownSettings.getCollapseAnimMillis()));
             case POPPING:
                 return Animator.clamp01(Animator.easeOutBack(machine.progress(now,
-                        ChatMarkdownSettings.getPopAnimMillis()), 1.4F));
+                        ChatMarkdownSettings.getPopAnimMillis())));
             case CLOSING:
                 return 1.0F - Animator.easeOut(machine.progress(now,
                         ChatMarkdownSettings.getClosingAnimMillis()));
@@ -614,7 +617,7 @@ public final class ChatSceneController {
      * 直到满足上限,刷屏不侵占半屏以上;最新单组自身超限时至少保留该组(不空屏);
      * 未超限仍走 TTL 淡出语义。
      *
-     * <p>高度估算 = ChatGeometry 同式粗粒度(组头 + 行数×行高 + 内边距/组内间距,
+     * <p>高度估算 = 渲染同式粗粒度(组头行高 + 行数×行高 + 内边距/组内间距,
      * 系统组 = 纯行高;行数按注入度量整段宽 ÷ 单行最大宽估算),不依赖布局后几何。
      * 阈值只进不退(被裁组不再复活);容器形态不参与(与 TTL 同路,applicTtl=false 不过滤)。</p>
      */
@@ -681,8 +684,10 @@ public final class ChatSceneController {
     }
 
     /**
-     * HUD 组高粗粒度估算(与 ChatGeometry.measureGroups 同式):非系统组 =
-     * 组头字号 + 2×纵向内边距 + 行数×行高 + 组内消息间距;系统组 = 行数×行高(无壳)。
+     * HUD 组高粗粒度估算(与渲染同式):非系统组 =
+     * 组头行高(16,渲染 HEADER_ROW_HEIGHT 同口径) + 2×纵向内边距 + 行数×行高 + 组内消息间距;
+     * 系统组 = 行数×行高(无壳)。K3 四轮:此前按组头字号 12 计、实际渲染行高 16,每组低估 4px,
+     * 堆叠上限估算偏松——改为 16 与渲染对齐。
      * 行数按整段文本宽 ÷ 单行最大宽估算(与 layouter 同源注入度量,粗粒度、零布局)。
      */
     private int estimateHudGroupHeight(MessageGroupModel group) {
@@ -693,7 +698,8 @@ public final class ChatSceneController {
         int lineHeight = system ? ChatMarkdownSettings.getSystemLineHeightPx()
                 : ChatMarkdownSettings.getChatLineHeightPx();
         int paddingY = ChatMarkdownSettings.getBubblePaddingY();
-        int headerFontSize = ChatMarkdownSettings.getChatHeaderFontSizePx();
+        // K3 四轮:组头按实际渲染行高 16 计(原按字号 12 计每组低估 4px)
+        int headerRowHeight = ChatMarkdownSettings.getChatHeaderRowHeightPx();
         int innerGap = ChatMarkdownSettings.getGroupInnerGapPx();
         int maxLineWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)
                 - 2 * ChatMarkdownSettings.getBubblePaddingX());
@@ -706,7 +712,7 @@ public final class ChatSceneController {
         if (system) {
             return lines * lineHeight;
         }
-        return headerFontSize + 2 * paddingY + lines * lineHeight
+        return headerRowHeight + 2 * paddingY + lines * lineHeight
                 + Math.max(0, messageCount - 1) * innerGap;
     }
 

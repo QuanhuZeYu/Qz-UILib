@@ -3,9 +3,20 @@ package club.heiqi.uilib.internal.chat3.view;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
+import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+
 /**
  * ChatScrollbar 单元测试 —— {@link ChatScrollbar#computeOpacity} 纯函数全分支覆盖
- * （T3 自动隐藏状态机核心：拖拽不隐藏 / 活跃帧满显 / 淡入 / 保显期 / 淡出 / 边界）。
+ * （T3 自动隐藏状态机核心：拖拽不隐藏 / 活跃帧满显 / 淡入 / 保显期 / 淡出 / 边界）
+ * 与 P1-1 chat3 配置下 idle 态 thumb 色 = 设计令牌 0x40FFFFFF 的装配集成断言。
  *
  * <p>固定时长常量（FADE_IN=150ms、hide=1200ms、FADE_OUT=300ms）驱动；数值依据：
  * {@code easeOut(0.5)=1-(0.5)²=0.75}、{@code easeInQuad(0.5)=0.5²=0.25 →
@@ -89,5 +100,45 @@ public class ChatScrollbarTest {
         // since==hide → sinceHide=0 → 1-easeInQuad(0)=1.0（保显期结束、淡出尚未推进）
         Assert.assertEquals("since==hide opacity=1.0", 1.0f,
                 ChatScrollbar.computeOpacity(HIDE_MS, 0L, false, FADE_IN_MS, HIDE_MS, FADE_OUT_MS), 0.0001f);
+    }
+
+    // ==================== P1-1:chat3 配置 idle 态 thumb 色 = 设计令牌 ====================
+
+    @Test
+    public void chat3IdleThumbColorUsesDesignToken() {
+        // SceneScrollbar PAINT bind 的 idle 分支曾恒返回 SCROLLBAR_THUMB_IDLE(0x99938F99),
+        // 丢弃 ChatScrollbar 注入的 design 令牌;修复后回读 props.thumbColor()。
+        ReactiveScheduler.get().reset();
+        try {
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode sceneRoot = new SceneNode();
+            sceneRoot.setFillParentHeight(true);
+            SceneNode viewport = new SceneNode();
+            viewport.setScrollable(true);
+            viewport.setPreferredHeight(200);
+            sceneRoot.appendChild(viewport);
+            SceneNode content = new SceneNode();
+            content.setPreferredHeight(600);
+            viewport.appendChild(content);
+            Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
+            Signal<Long> frameMillis = Signal.create(Long.valueOf(0L));
+            ChatScrollbar.Result bar = ChatScrollbar.create(rt, viewport, scrollSignal,
+                    v -> { }, frameMillis);
+            sceneRoot.appendChild(bar.column());
+            SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+            layoutEngine.layout(sceneRoot, new Constraints(400, 300));
+            rt.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+            rt.flush();
+            layoutEngine.layout(sceneRoot, new Constraints(400, 300));
+
+            Assert.assertEquals("设计令牌定值 0x40FFFFFF", 0x40FFFFFF,
+                    ChatMarkdownSettings.getScrollbarThumbArgb());
+            Assert.assertEquals("chat3 配置 idle 态色 = 设计令牌 0x40FFFFFF",
+                    ChatMarkdownSettings.getScrollbarThumbArgb(), bar.thumb().getBackgroundColor());
+            bar.dispose();
+            rt.dispose();
+        } finally {
+            ReactiveScheduler.get().reset();
+        }
     }
 }

@@ -9,10 +9,12 @@ import java.util.Map;
 import java.util.Objects;
 
 import club.heiqi.uilib.font.layout.TextSegment;
+import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCodeSpanSplitter;
+import club.heiqi.uilib.internal.chat3.viewmodel.ChatMarkdownLineRule;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatUrlLinkifier;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGroupModel;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -56,12 +58,17 @@ public final class ChatMessageList {
     /** 链接 tooltip 最大行数。 */
     private static final int LINK_TOOLTIP_MAX_LINES = 4;
 
-    /** 组头行高(px,设计稿 §3.3/§2.2:font-name 12/16 与 font-meta 10/16 同行,组头高 16)。 */
-    private static final int HEADER_ROW_HEIGHT_PX = 16;
+    /** 组头行高(px,设计稿 §3.3/§2.2:font-name 12/16 与 font-meta 10/16 同行,组头高 16;
+     * 单一事实源 = ChatMarkdownSettings.getChatHeaderRowHeightPx(),HUD 高度估算同口径)。 */
+    private static final int HEADER_ROW_HEIGHT_PX = ChatMarkdownSettings.getChatHeaderRowHeightPx();
 
     /** 方案A 强调条宽(px,设计稿 §3.3/§2.1:自己气泡右内缘 2px 竖条)。 */
     private static final int ACCENT_BAR_WIDTH_PX = 2;
 
+    /** 组头与首个气泡间距(px,设计稿 §2.3 sp-2=3;组内相邻消息仍为 sp-1=2 两级 gap)。 */
+    private static final int HEADER_TO_BUBBLE_GAP_PX = 3;
+    /** 块级公式独占行上下间距(px,设计稿 §3.5/§10.1:上下各 4px,左对齐不居中)。 */
+    private static final int BLOCK_MATH_GAP_PX = 4;
     /** 引用行竖条宽(px,设计稿 §3.5:行首 2px 竖条)。 */
     private static final int QUOTE_BAR_WIDTH_PX = 2;
     /** 引用行竖条圆角(px,设计稿 §3.5:圆角 1)。 */
@@ -166,6 +173,21 @@ public final class ChatMessageList {
         private final int hoverBubbleColor;
         private final boolean system;
 
+        /** 气泡 hover 叠加插值时长(ms,设计稿 §4.1:100 easeOutQuad)。 */
+        private static final long BUBBLE_HOVER_MS = 100L;
+        /** 链接 hover 提亮插值时长(ms,设计稿 §4.1:80 easeOutQuad)。 */
+        private static final long LINK_HOVER_MS = 80L;
+
+        /** 气泡/行 hover 插值进度(0..1,与目标态布尔数组同构;每帧由 advanceHover 推进)。 */
+        private final float[] bubbleProgress;
+        private final float[] lineProgress;
+        private final int[] lastBubbleTarget;
+        private final int[] lastLineTarget;
+        private final long[] bubbleAnchorMillis;
+        private final long[] lineAnchorMillis;
+        private final float[] bubbleAnchorProgress;
+        private final float[] lineAnchorProgress;
+
         MessageBake(List<SceneNode> messageNodes, List<SceneNode> lineNodes,
                 List<List<TextSegment>> lineBases, List<List<TextSegment>> hoverBases,
                 SceneNode headerNameNode, List<TextSegment> headerNameSegments,
@@ -190,11 +212,20 @@ public final class ChatMessageList {
             this.bubbleColor = bubbleColor;
             this.hoverBubbleColor = hoverBubbleColor;
             this.system = system;
+            this.bubbleProgress = new float[messageNodes.size()];
+            this.lineProgress = new float[lineNodes.size()];
+            this.lastBubbleTarget = new int[messageNodes.size()];
+            this.lastLineTarget = new int[lineNodes.size()];
+            this.bubbleAnchorMillis = new long[messageNodes.size()];
+            this.lineAnchorMillis = new long[lineNodes.size()];
+            this.bubbleAnchorProgress = new float[messageNodes.size()];
+            this.lineAnchorProgress = new float[lineNodes.size()];
         }
 
         /**
-         * PAINT 级重烘焙:气泡底色与行段流按 hover 态选择基础数据后乘淡出 alpha;
-         * alpha ≥ 255 时零分配复用基础列表/颜色(淡出期间才发生复制)。
+         * PAINT 级重烘焙:气泡底色与行段流按 hover 插值进度选择/混合后乘淡出 alpha
+         * (P2-4:进度 0..1 中间态逐通道 lerp,替代原布尔硬切;alpha ≥ 255 且端态时
+         * 零分配复用基础列表/颜色)。
          */
         void bake(int alpha) {
             int a = Math.max(0, Math.min(255, alpha));
@@ -202,7 +233,9 @@ public final class ChatMessageList {
                 if (system) {
                     break; // 系统消息无气泡背景(现状语义)
                 }
-                int base = bubbleHovered[i] ? hoverBubbleColor : bubbleColor;
+                float t = bubbleProgress[i];
+                int base = t <= 0.0F ? bubbleColor : t >= 1.0F ? hoverBubbleColor
+                        : ChatCardComposer.interpolateArgb(bubbleColor, hoverBubbleColor, t);
                 messageNodes.get(i).setBackgroundColor(
                         a >= 255 ? base : ChatCardComposer.fadeColor(base, a));
             }
@@ -215,8 +248,16 @@ public final class ChatMessageList {
                         a >= 255 ? quoteBarColor : ChatCardComposer.fadeColor(quoteBarColor, a));
             }
             for (int i = 0; i < lineNodes.size(); i++) {
-                List<TextSegment> selected = lineHovered[i] && hoverBases.get(i) != null
-                        ? hoverBases.get(i) : lineBases.get(i);
+                float t = lineProgress[i];
+                List<TextSegment> selected;
+                if (hoverBases.get(i) == null || t <= 0.0F) {
+                    selected = lineBases.get(i);
+                } else if (t >= 1.0F) {
+                    selected = hoverBases.get(i);
+                } else {
+                    selected = ChatCardComposer.interpolateSegments(
+                            lineBases.get(i), hoverBases.get(i), t);
+                }
                 lineNodes.get(i).setSegments(
                         a >= 255 ? selected : ChatCardComposer.fadeSegments(selected, a));
             }
@@ -228,6 +269,62 @@ public final class ChatMessageList {
                 headerTimeNode.setSegments(a >= 255 ? headerTimeSegments
                         : ChatCardComposer.fadeSegments(headerTimeSegments, a));
             }
+        }
+
+        /**
+         * 推进 hover 插值(每帧由 frameMillis 绑定驱动,P2-4):目标态变化时从当前进度锚定,
+         * 按 easeOutQuad 向目标(1=hover/0=常态)推进;反向同样从当前进度续播(双向可逆)。
+         *
+         * @param nowMillis 当前 wall millis
+         * @return 任一进度变化 → true(调用方重烘)
+         */
+        boolean advanceHover(long nowMillis) {
+            boolean changed = false;
+            for (int i = 0; i < bubbleHovered.length; i++) {
+                int target = bubbleHovered[i] ? 1 : 0;
+                if (target != lastBubbleTarget[i]) {
+                    lastBubbleTarget[i] = target;
+                    bubbleAnchorMillis[i] = nowMillis;
+                    bubbleAnchorProgress[i] = bubbleProgress[i];
+                }
+                if (bubbleProgress[i] != target) {
+                    float next = step(bubbleAnchorProgress[i], target,
+                            nowMillis - bubbleAnchorMillis[i], BUBBLE_HOVER_MS);
+                    if (next != bubbleProgress[i]) {
+                        bubbleProgress[i] = next;
+                        changed = true;
+                    }
+                }
+            }
+            for (int i = 0; i < lineHovered.length; i++) {
+                int target = lineHovered[i] ? 1 : 0;
+                if (target != lastLineTarget[i]) {
+                    lastLineTarget[i] = target;
+                    lineAnchorMillis[i] = nowMillis;
+                    lineAnchorProgress[i] = lineProgress[i];
+                }
+                if (lineProgress[i] != target) {
+                    float next = step(lineAnchorProgress[i], target,
+                            nowMillis - lineAnchorMillis[i], LINK_HOVER_MS);
+                    if (next != lineProgress[i]) {
+                        lineProgress[i] = next;
+                        changed = true;
+                    }
+                }
+            }
+            return changed;
+        }
+
+        /** 锚点步进:easeOutQuad 曲线,t=0 → anchor、t≥1 → target。 */
+        private static float step(float anchor, int target, long elapsedMillis, long durationMillis) {
+            if (durationMillis <= 0L || elapsedMillis <= 0L) {
+                return anchor;
+            }
+            if (elapsedMillis >= durationMillis) {
+                return target;
+            }
+            float eased = Animator.easeOut((float) elapsedMillis / (float) durationMillis);
+            return anchor + (target - anchor) * eased;
         }
     }
 
@@ -481,11 +578,13 @@ public final class ChatMessageList {
                 align = AlignSelf.START;
                 break;
         }
+        // P3-3 两级 gap(设计稿 §2.3):组头与气泡列 3px(sp-2)、组内相邻消息 2px(sp-1)。
+        // 不再对 groupNode 统一 setGap(原统一 2 把组头→首气泡也算 2),改为显式 margin:
+        // headerRow 下 margin 3 + 非首条消息上 margin 2。
         SceneNode groupNode = SceneNode.column()
                 .setHitTestable(false)
                 .setWidthSizing(SceneNode.WidthSizing.SHRINK)
-                .setAlignSelf(align)
-                .setGap(Math.max(0, ChatMarkdownSettings.getGroupInnerGapPx()));
+                .setAlignSelf(align);
         // 组头 row 双节点(设计稿 §3.3/§6.1):名字 12px 加粗(名字色)+ 时间 10px(时间戳色),gap 4;
         // 他人组左对齐 + padding 左 2,自己组右对齐 + padding 右 2;名字为空(自己组默认)只建时间节点。
         SceneNode headerRow = null;
@@ -499,7 +598,9 @@ public final class ChatMessageList {
                     // K3 缺陷 2:row 默认 FILL 撑满父宽,把 SHRINK 的 groupNode 顶成全宽 →
                     // AlignSelf.END 交叉轴偏移恒 0,自己组永远左对齐;收缩到组头内容宽
                     .setWidthSizing(SceneNode.WidthSizing.SHRINK)
-                    .setAlignSelf(align);
+                    .setAlignSelf(align)
+                    // P3-3:组头与首个气泡间距 sp-2 = 3(两级 gap)
+                    .setMargin(0, 0, HEADER_TO_BUBBLE_GAP_PX, 0);
             if (selfRight) {
                 headerRow.setPadding(0, 2, 0, 0);
             } else {
@@ -606,6 +707,10 @@ public final class ChatMessageList {
                 }
                 contentNode = messageNode;
             }
+            if (i > 0) {
+                // P3-3:组内相邻消息间距 sp-1 = 2(组头→首气泡 3px 由 headerRow margin 承载)
+                messageNode.setMargin(Math.max(0, ChatMarkdownSettings.getGroupInnerGapPx()), 0, 0, 0);
+            }
             for (String line : message.getDisplayLines()) {
                 // 引用行(T6b 设计稿 §3.5):行文本以 "> " 或 ">" 开头 → 剥前缀 + 文字降
                 // text-secondary + 行首 2px 竖条(0x40FFFFFF);剥前缀后的文本照常参与
@@ -623,13 +728,81 @@ public final class ChatMessageList {
                 // 气泡消息维持统一链接色(COLORED)。系统消息仍不 code 切分(§3.5 排版规则
                 // 仅作用于气泡内;链接度量为 null 时 PRESERVE 内部不生效 = 旧行为)。
                 LinkifyMode linkifyMode = system ? LinkifyMode.PRESERVE : LinkifyMode.COLORED;
-                List<TextSegment> segments = parseCached(renderLine, lineBaseColor, linkifyMode);
+                // C 拍板(§10.1):行级 markdown 轻量规则——列表「• 」前缀行与块级公式独占行。
+                // 与 code 切分同边界(仅气泡行,系统消息不套用;引用行保持既有语义)。
+                ChatMarkdownLineRule.Match markdown = (!system && !quoteLine)
+                        ? ChatMarkdownLineRule.classify(renderLine) : ChatMarkdownLineRule.NONE;
+                if (markdown.getKind() == ChatMarkdownLineRule.Kind.BLOCK_MATH) {
+                    // 块级公式独占行:TeX 源走既有 LaTeX 渲染链,上下各 4px 间距,左对齐(不居中)
+                    TextStyle mathStyle = new TextStyle();
+                    mathStyle.setColor(lineBaseColor);
+                    List<TextSegment> mathSegments = Collections.singletonList(
+                            TextSegment.forLatex(markdown.getLatexSource(), mathStyle));
+                    SceneNode mathNode = new SceneNode()
+                            .setHitTestable(false)
+                            .setFontSize(fontSize)
+                            .setSegments(mathSegments)
+                            .setTextVerticalAlign(TextVerticalAlign.TOP)
+                            .setPreferredHeight(Math.max(1, lineHeight))
+                            .setMargin(BLOCK_MATH_GAP_PX, 0, BLOCK_MATH_GAP_PX, 0);
+                    if (style.isTtlFade()) {
+                        mathNode.setMaxLines(ChatCardComposer.HUD_MAX_LINES).setEllipsis(true);
+                    }
+                    if (segmentMeasurer != null) {
+                        int mathWidth = Math.max(1, (int) Math.ceil(
+                                segmentsWidth(mathSegments, segmentMeasurer, fontSize)));
+                        if (maxBubbleWidthPx > 0) {
+                            mathWidth = Math.min(mathWidth, Math.max(1, maxBubbleWidthPx
+                                    - 2 * paddingX - (accent ? ACCENT_BAR_WIDTH_PX : 0)));
+                        }
+                        mathNode.setPreferredWidth(mathWidth);
+                    }
+                    contentNode.appendChild(mathNode);
+                    lineNodes.add(mathNode);
+                    lineBases.add(mathSegments);
+                    hoverBases.add(null);
+                    messageLineSpans.add(Collections.<LinkSpan>emptyList());
+                    globalLineIndex++;
+                    continue;
+                }
+                List<TextSegment> segments;
                 List<TextSegment> hover = null;
                 List<LinkSpan> spans = Collections.<LinkSpan>emptyList();
-                if (segmentMeasurer != null) {
-                    spans = linkSpansOf(segments, segmentMeasurer, fontSize);
-                    if (!spans.isEmpty()) {
-                        hover = hoverCached(renderLine, lineBaseColor, linkifyMode);
+                if (markdown.getKind() == ChatMarkdownLineRule.Kind.UNORDERED_LIST) {
+                    // 「• 」前缀段(正文色)+ 内容段;层级缩进 = 前导空格数/2,每级 2 个空格
+                    // (2 空格=1 级的简单映射,缩进随文本宽度度量,不依赖布局语义)
+                    StringBuilder bulletBuilder = new StringBuilder();
+                    for (int l = 0; l < markdown.getLevel(); l++) {
+                        bulletBuilder.append("  ");
+                    }
+                    bulletBuilder.append("• ");
+                    TextStyle bulletStyle = new TextStyle();
+                    bulletStyle.setColor(lineBaseColor);
+                    TextSegment bulletSegment = new TextSegment(bulletBuilder.toString(), bulletStyle);
+                    String listContent = markdown.getContent() == null ? "" : markdown.getContent();
+                    List<TextSegment> contentSegments = parseCached(listContent, lineBaseColor, linkifyMode);
+                    List<TextSegment> combined = new ArrayList<TextSegment>(contentSegments.size() + 1);
+                    combined.add(bulletSegment);
+                    combined.addAll(contentSegments);
+                    segments = combined;
+                    if (segmentMeasurer != null) {
+                        spans = linkSpansOf(segments, segmentMeasurer, fontSize);
+                        if (!spans.isEmpty()) {
+                            List<TextSegment> hoverContent = hoverCached(listContent, lineBaseColor, linkifyMode);
+                            List<TextSegment> combinedHover =
+                                    new ArrayList<TextSegment>(hoverContent.size() + 1);
+                            combinedHover.add(bulletSegment);
+                            combinedHover.addAll(hoverContent);
+                            hover = combinedHover;
+                        }
+                    }
+                } else {
+                    segments = parseCached(renderLine, lineBaseColor, linkifyMode);
+                    if (segmentMeasurer != null) {
+                        spans = linkSpansOf(segments, segmentMeasurer, fontSize);
+                        if (!spans.isEmpty()) {
+                            hover = hoverCached(renderLine, lineBaseColor, linkifyMode);
+                        }
                     }
                 }
                 messageLineSpans.add(spans);
@@ -705,6 +878,14 @@ public final class ChatMessageList {
                 ChatMarkdownSettings.getAccentBarSelfArgb(), quoteBars,
                 ChatMarkdownSettings.getQuoteBarArgb(), lineHovered, bubbleHovered,
                 bubbleColor, hoverBubbleColor, system);
+        // P2-4:hover 颜色插值每帧推进(气泡 100ms / 链接 80ms,easeOutQuad;目标态由
+        // hovered 绑定与 LinkHoverDriver 写入,本绑定只推进进度并按需重烘)。
+        // 与 HUD 淡出烘焙共享 currentAlpha,两路重烘幂等。
+        rt.bind(frameMillis, now -> {
+            if (bake.advanceHover(now.longValue())) {
+                bake.bake(currentAlpha[0]);
+            }
+        });
         if (style.isTtlFade()) {
             // HUD 形态:组出生 enter 动画(设计稿 §4.1 行1)——translateY +8→0 + opacity 0→1,
             // 180ms easeOutCubic,基准 = 组内最新消息到达时刻(wall-clock;组树重建后老组按进度

@@ -5,6 +5,7 @@ import java.util.List;
 
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
+import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 
 /**
  * 行内 code 切分（设计稿 §3.5，T6b：反引号对 → 衬底 code 段；纯 JVM，无 MC/GL 依赖）。
@@ -106,6 +107,9 @@ public final class ChatCodeSpanSplitter {
             TextStyle codeStyle = style.copy();
             codeStyle.setCodeSpan(true);
             codeStyle.setCodeBackgroundColor(codeBackgroundColor);
+            // 设计稿 §2.2 font-code 12px:code 段段级字号(正文 13 下行高保持 18 不撑行;
+            // 渲染/度量链路按段 resolveEffectiveFontSizePx 生效)
+            codeStyle.setFontSizePx(ChatMarkdownSettings.getCodeFontSizePx());
             // code 段内不嵌套解析：URL 链接语义交由 linkify 先行，这里必须清掉，
             // 否则 linkify 产出的 link 段被切半后 code 子段残留 link → 可 hover 的 code。
             codeStyle.setLink(null);

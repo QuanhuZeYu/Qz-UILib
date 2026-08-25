@@ -86,6 +86,59 @@ public class MessageGrouperTest {
         Assert.assertEquals("A", groups.get(2).getSender());
     }
 
+    // ==================== P1-3:120s 并组时间窗(设计稿 §3.3) ====================
+
+    @Test
+    public void shouldMergeSameSenderWithinTimeWindow() {
+        // 间隔 119_999ms ≤ 120s → 并组
+        List<ChatLineRecord> records = newestFirst(
+                record("<Steve> b", 2, 2000L + MessageGrouper.MERGE_WINDOW_MILLIS - 1L),
+                record("<Steve> a", 1, 2000L));
+        List<MessageGroupModel> groups = grouper.group(records, "Alex");
+        Assert.assertEquals("同发送者 120s 内并组", 1, groups.size());
+        Assert.assertEquals(2, groups.get(0).getLines().size());
+    }
+
+    @Test
+    public void shouldSplitSameSenderBeyondTimeWindow() {
+        // 间隔 120_001ms > 120s → 断开开新组
+        List<ChatLineRecord> records = newestFirst(
+                record("<Steve> b", 2, 2000L + MessageGrouper.MERGE_WINDOW_MILLIS + 1L),
+                record("<Steve> a", 1, 2000L));
+        List<MessageGroupModel> groups = grouper.group(records, "Alex");
+        Assert.assertEquals("同发送者 >120s 断开开新组", 2, groups.size());
+        Assert.assertEquals("Steve", groups.get(0).getSender());
+        Assert.assertEquals(1, groups.get(0).getLines().size());
+        Assert.assertEquals("Steve", groups.get(1).getSender());
+        Assert.assertEquals(1, groups.get(1).getLines().size());
+    }
+
+    @Test
+    public void shouldMergeSameSenderAtExactWindowBoundary() {
+        // 边界:间隔恰 120_000ms → 并组(≤ 判定)
+        List<ChatLineRecord> records = newestFirst(
+                record("<Steve> b", 2, 2000L + MessageGrouper.MERGE_WINDOW_MILLIS),
+                record("<Steve> a", 1, 2000L));
+        List<MessageGroupModel> groups = grouper.group(records, "Alex");
+        Assert.assertEquals("边界值 120s 仍并组", 1, groups.size());
+        Assert.assertEquals(2, groups.get(0).getLines().size());
+    }
+
+    @Test
+    public void shouldSplitMixedSenderRunWithWindowBetweenAdjacentMessages() {
+        // 时间窗只看相邻消息:A(0s) → A(200s) 断开;中间夹 B(100s) 则 B 单独一组
+        List<ChatLineRecord> records = newestFirst(
+                record("<Steve> a3", 3, 200_000L),
+                record("<Bob> b1", 2, 100_000L),
+                record("<Steve> a1", 1, 0L));
+        List<MessageGroupModel> groups = grouper.group(records, "Alex");
+        Assert.assertEquals(3, groups.size());
+        Assert.assertEquals("Steve", groups.get(0).getSender());
+        Assert.assertEquals(1, groups.get(0).getLines().size());
+        Assert.assertEquals("Bob", groups.get(1).getSender());
+        Assert.assertEquals("Steve", groups.get(2).getSender());
+    }
+
     private static ChatLineRecord record(String text, int id, long millis) {
         return new ChatLineRecord(new ChatComponentText(text), id, millis);
     }

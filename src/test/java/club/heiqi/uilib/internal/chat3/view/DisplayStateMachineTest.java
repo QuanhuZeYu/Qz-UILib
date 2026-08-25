@@ -4,7 +4,9 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * DisplayStateMachine 契约测试:开/关动画序列、时长推进、幂等与快速开关可重入。
+ * DisplayStateMachine 契约测试:开/关动画序列、时长推进、幂等与 §4.2 重入规则
+ * (COLLAPSING 反悔反向播放 / 反向中再展开正向续播 / CLOSING 不可打断 + pendingOpen /
+ * POPPING 中关闭从半途折算反向起点)。
  */
 public class DisplayStateMachineTest {
 
@@ -13,12 +15,16 @@ public class DisplayStateMachineTest {
     /** 容器关闭动画时长(独立于 pop;设计稿 §4.1 closing 140)。 */
     private static final long CLOSE = 120L;
 
+    private static void setTarget(DisplayStateMachine machine, boolean open, long nowMillis) {
+        machine.setTarget(open, nowMillis, COLLAPSE, POP, CLOSE);
+    }
+
     @Test
     public void shouldTransitionThroughOpenSequence() {
         DisplayStateMachine machine = new DisplayStateMachine();
         Assert.assertEquals(DisplayStateMachine.Phase.HUD, machine.getPhase());
 
-        machine.setTarget(true, 1000L);
+        setTarget(machine, true, 1000L);
         Assert.assertEquals(DisplayStateMachine.Phase.COLLAPSING, machine.getPhase());
 
         // 收起未结束
@@ -40,12 +46,12 @@ public class DisplayStateMachineTest {
     @Test
     public void shouldTransitionThroughCloseSequence() {
         DisplayStateMachine machine = new DisplayStateMachine();
-        machine.setTarget(true, 1000L);
+        setTarget(machine, true, 1000L);
         machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING
         machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
         Assert.assertEquals(DisplayStateMachine.Phase.CONTAINER, machine.getPhase());
 
-        machine.setTarget(false, 5000L);
+        setTarget(machine, false, 5000L);
         Assert.assertEquals(DisplayStateMachine.Phase.CLOSING, machine.getPhase());
 
         // CLOSING 用独立 closing 时长推进(未到时长仍 CLOSING)
@@ -58,21 +64,121 @@ public class DisplayStateMachineTest {
     @Test
     public void shouldBeIdempotentForSameTarget() {
         DisplayStateMachine machine = new DisplayStateMachine();
-        machine.setTarget(true, 1000L);
+        setTarget(machine, true, 1000L);
         machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING
         machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
 
-        machine.setTarget(true, 9999L); // 同目标:稳定态幂等,不重启动画
+        setTarget(machine, true, 9999L); // 同目标:稳定态幂等,不重启动画
         Assert.assertEquals(DisplayStateMachine.Phase.CONTAINER, machine.getPhase());
     }
 
+    // ==================== §4.2 重入:COLLAPSING 反悔反向播放 ====================
+
     @Test
-    public void shouldRestartOnRapidToggle() {
+    public void shouldReverseCollapseWhenRepentingMidCollapse() {
         DisplayStateMachine machine = new DisplayStateMachine();
-        machine.setTarget(true, 1000L);
-        machine.setTarget(false, 1100L); // 收起中反悔:以最新目标为准
-        Assert.assertEquals(DisplayStateMachine.Phase.CLOSING, machine.getPhase());
-        machine.tick(1100L + CLOSE, COLLAPSE, POP, CLOSE);
+        setTarget(machine, true, 1000L);
+        // 收起 100ms(总 150)处反悔:p = 100/150 = 0.6667
+        setTarget(machine, false, 1100L);
+        Assert.assertEquals("反悔后仍在 COLLAPSING(反向播放,不硬切 CLOSING)",
+                DisplayStateMachine.Phase.COLLAPSING, machine.getPhase());
+        // 进度连续:反悔时刻 p 保持 0.6667,随后递减(不跳变)
+        Assert.assertEquals(0.6667F, machine.progress(1100L, COLLAPSE), 0.001F);
+        machine.tick(1150L, COLLAPSE, POP, CLOSE); // 反向 50ms → p = 0.6667 − 1/3
+        Assert.assertEquals(0.3333F, machine.progress(1150L, COLLAPSE), 0.001F);
+        // 反向播完(p 归零)→ HUD
+        machine.tick(1200L, COLLAPSE, POP, CLOSE);
         Assert.assertEquals(DisplayStateMachine.Phase.HUD, machine.getPhase());
+    }
+
+    @Test
+    public void shouldResumeForwardFromCurrentProgressAfterUnReverse() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1060L, COLLAPSE, POP, CLOSE); // p = 60/150 = 0.4
+        setTarget(machine, false, 1060L); // 反悔:反向锚定 p=0.4
+        machine.tick(1090L, COLLAPSE, POP, CLOSE); // 反向 30ms → p = 0.4 − 0.2 = 0.2
+        Assert.assertEquals(0.2F, machine.progress(1090L, COLLAPSE), 0.001F);
+        // 再展开:从当前 p=0.2 正向续播(不硬切到 0)
+        setTarget(machine, true, 1090L);
+        Assert.assertEquals("再展开仍 COLLAPSING", DisplayStateMachine.Phase.COLLAPSING,
+                machine.getPhase());
+        machine.tick(1135L, COLLAPSE, POP, CLOSE); // 正向 45ms → p = 0.2 + 0.3 = 0.5
+        Assert.assertEquals(0.5F, machine.progress(1135L, COLLAPSE), 0.001F);
+    }
+
+    // ==================== §4.2 重入:CLOSING 不可打断 + pendingOpen ====================
+
+    @Test
+    public void closingIsNotInterruptibleAndPendingOpenFiresAfterCompletion() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING
+        machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
+        setTarget(machine, false, 5000L); // CLOSING
+
+        setTarget(machine, true, 5030L); // CLOSING 中请求打开 → 不可打断,挂起
+        Assert.assertEquals("CLOSING 中不可被打断为 COLLAPSING/POPPING",
+                DisplayStateMachine.Phase.CLOSING, machine.getPhase());
+        machine.tick(5000L + CLOSE - 1L, COLLAPSE, POP, CLOSE);
+        Assert.assertEquals("未完成仍 CLOSING", DisplayStateMachine.Phase.CLOSING,
+                machine.getPhase());
+
+        // 关闭动画完成 → 兑现挂起的打开,自动进入 COLLAPSING(从头)
+        machine.tick(5000L + CLOSE, COLLAPSE, POP, CLOSE);
+        Assert.assertEquals("完成后兑现 pendingOpen 进 COLLAPSING",
+                DisplayStateMachine.Phase.COLLAPSING, machine.getPhase());
+        Assert.assertEquals(0.0F, machine.progress(5000L + CLOSE, COLLAPSE), 0.001F);
+        // 随后正常走完打开序列
+        machine.tick(5000L + CLOSE + COLLAPSE, COLLAPSE, POP, CLOSE);
+        Assert.assertEquals(DisplayStateMachine.Phase.POPPING, machine.getPhase());
+    }
+
+    @Test
+    public void pendingOpenIsCancelledByClosingAgain() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE);
+        machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE);
+        setTarget(machine, false, 5000L);
+        setTarget(machine, true, 5030L); // pendingOpen
+        setTarget(machine, false, 5050L); // 关闭中再关闭:取消挂起
+        machine.tick(5000L + CLOSE, COLLAPSE, POP, CLOSE);
+        Assert.assertEquals("挂起已取消:完成后回 HUD 而非 COLLAPSING",
+                DisplayStateMachine.Phase.HUD, machine.getPhase());
+    }
+
+    // ==================== §4.2 重入:POPPING 中关闭折算反向起点 ====================
+
+    @Test
+    public void closingMidPopStartsFromConvertedReverseProgress() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING,now=1150
+        // pop p = 62/250 = 0.248 → closing 折算起点 = 1 − p = 0.752
+        setTarget(machine, false, 1150L + 62L);
+        Assert.assertEquals(DisplayStateMachine.Phase.CLOSING, machine.getPhase());
+        Assert.assertEquals("closing 从 1−p 折算起点开始", 0.752F,
+                machine.progress(1150L + 62L, CLOSE), 0.001F);
+        // 折算后按 closing 时长继续推进(未完成仍在 CLOSING)
+        machine.tick(1150L + 62L + 10L, COLLAPSE, POP, CLOSE);
+        Assert.assertEquals(DisplayStateMachine.Phase.CLOSING, machine.getPhase());
+        Assert.assertEquals("折算起点 + 10/120", 0.752F + 0.08333F,
+                machine.progress(1150L + 62L + 10L, CLOSE), 0.001F);
+        // 剩余推进走完(closing 起点非 0,总时长按剩余进度缩短)
+        machine.tick(1150L + 62L + 30L, COLLAPSE, POP, CLOSE);
+        Assert.assertEquals("折算后 30ms 完成关闭回 HUD", DisplayStateMachine.Phase.HUD,
+                machine.getPhase());
+    }
+
+    @Test
+    public void closingMidPopNearEndStartsClosingFromBeginning() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING
+        // pop 接近完成(p→1)→ closing 从起点 0 开始(几乎满显,关闭动画完整播放)
+        setTarget(machine, false, 1150L + POP);
+        Assert.assertEquals(DisplayStateMachine.Phase.CLOSING, machine.getPhase());
+        Assert.assertEquals(0.0F, machine.progress(1150L + POP, CLOSE), 0.001F);
     }
 }

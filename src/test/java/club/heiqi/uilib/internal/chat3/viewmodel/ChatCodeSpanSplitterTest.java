@@ -86,6 +86,23 @@ public class ChatCodeSpanSplitterTest {
         Assert.assertEquals("code 段保留段色", 0xFFFFFFFF, out.get(0).getStyle().getColor());
     }
 
+    @Test
+    public void codeSegmentsCarryFontCodeTwelvePx() {
+        // P3-6:code 段 font-code 12px(正文 13 下行高保持 18 不撑行),普通段不注入字号
+        List<TextSegment> out = ChatCodeSpanSplitter.split(single("a " + "`" + "code" + "`" + " b"), CODE_BG);
+        Assert.assertEquals(3, out.size());
+        Assert.assertEquals("code 段字号 = font-code 12",
+                ChatMarkdownSettings.getCodeFontSizePx(),
+                out.get(1).getStyle().resolveEffectiveFontSizePx(
+                        ChatMarkdownSettings.getChatFontSizePx()));
+        Assert.assertEquals("普通段无显式字号(回落行节点正文 13)",
+                ChatMarkdownSettings.getChatFontSizePx(),
+                out.get(0).getStyle().resolveEffectiveFontSizePx(
+                        ChatMarkdownSettings.getChatFontSizePx()));
+        Assert.assertEquals("code 段继承基础样式位与色", 0xFFFFFFFF,
+                out.get(1).getStyle().getColor());
+    }
+
     // ==================== 单反引号/未闭合/空配对 ====================
 
     @Test

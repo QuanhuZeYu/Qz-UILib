@@ -60,7 +60,10 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         this.inputText = Signal.create(initialText == null ? "" : initialText);
         this.completion = new ChatCompletionEngine(this);
         SceneTextInput.Props props = SceneTextInput.Props.builder(inputText)
-                .placeholder("消息…")
+                // 设计稿 §3.2:placeholder「输入消息…」色 text-input-placeholder 0xFF6E757E
+                // (chat3 层窄口覆盖,SceneTextInput 通用 secondaryText 默认值不动)
+                .placeholder("输入消息…")
+                .placeholderColor(Integer.valueOf(ChatMarkdownSettings.getInputPlaceholderArgb()))
                 .maxLength(MAX_INPUT_LENGTH)
                 .onChange(next -> {
                     inputText.set(next);

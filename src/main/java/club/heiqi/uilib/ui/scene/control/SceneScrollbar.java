@@ -325,7 +325,9 @@ public final class SceneScrollbar {
                     return props.hoverColor() != null ? props.hoverColor().intValue()
                             : SceneChromeTokens.SCROLLBAR_THUMB_HOVER;
                 }
-                return SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
+                // idle 态回读 Props 注入的默认色(chat3 传入设计令牌 0x40FFFFFF;
+                // createDefault/create 其余调用方传 SCROLLBAR_THUMB_IDLE 本身,零回归)
+                return props.thumbColor();
             },
             thumb::setBackgroundColor,
             SceneChromeTokens.MOTION_FAST_MS);

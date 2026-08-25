@@ -43,6 +43,10 @@ public final class ChatMarkdownSettings {
     private static volatile int timestampFontSizePx = 10;
     /** 系统消息字号(px;font-system 12)。 */
     private static volatile int systemFontSizePx = 12;
+    /** 行内 code 字号(px;font-code 12,行高保持 18 不撑行)。 */
+    private static volatile int codeFontSizePx = 12;
+    /** 组头行高(px,设计稿 §3.3:组头一行高 16)。 */
+    private static volatile int chatHeaderRowHeightPx = 16;
     /** 气泡内小圆角(px;r-inner 4,P1 圆角分级用)。 */
     private static volatile int bubbleInnerCornerRadiusPx = 4;
     /** 气泡最大宽 = 组内容宽 × 比例(P1 maxWidth 用)。 */
@@ -473,6 +477,16 @@ public final class ChatMarkdownSettings {
     /** @return 组头字号(px)= max(10, 名字字号);now 12px 半粗(设计 font-name) */
     public static int getChatHeaderFontSizePx() {
         return Math.max(10, nameFontSizePx);
+    }
+
+    /** @return 行内 code 字号(px;font-code 12) */
+    public static int getCodeFontSizePx() {
+        return codeFontSizePx;
+    }
+
+    /** @return 组头行高(px;设计稿 §3.3 组头一行高 16) */
+    public static int getChatHeaderRowHeightPx() {
+        return chatHeaderRowHeightPx;
     }
 
     /** @return 收起动画时长(ms) */

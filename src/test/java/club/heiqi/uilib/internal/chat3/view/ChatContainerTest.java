@@ -85,4 +85,24 @@ public class ChatContainerTest {
         Assert.assertEquals("输入框底色 = 设计令牌 bg-input", ChatMarkdownSettings.getInputBackgroundArgb(),
                 input.getBackgroundColor());
     }
+
+    @Test
+    public void containerContentPaddingIsTenTenFourTen() {
+        ChatSceneController controller = controller();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, 0L));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        Map<SceneNode, ChatLineRecord> registry = new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
+        ChatContainer.Result result = ChatContainer.mount(rt, controller, registry, "");
+        rt.flush();
+
+        SceneNode container = result.root();
+        // 设计稿 §2.3/§6.2:容器内容区上 10/左右 10/下 4(下留给滚动条视觉余量);
+        // 不再复用 bubblePadding(5,10,5,10)
+        Assert.assertEquals("容器内容区上 10", 10, container.getPaddingTop());
+        Assert.assertEquals("容器内容区右 10", 10, container.getPaddingRight());
+        Assert.assertEquals("容器内容区下 4(滚动条视觉余量)", 4, container.getPaddingBottom());
+        Assert.assertEquals("容器内容区左 10", 10, container.getPaddingLeft());
+    }
 }

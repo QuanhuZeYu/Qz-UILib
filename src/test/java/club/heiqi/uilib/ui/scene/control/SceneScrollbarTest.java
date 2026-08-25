@@ -397,6 +397,31 @@ public class SceneScrollbarTest {
                 setup.scrollbar.thumb().getBackgroundColor());
     }
 
+    @Test
+    public void customIdleThumbColorAppliesWhenNotHovered() {
+        // P1-1 回归:idle 分支必须回读 Props.thumbColor(chat3 注入设计令牌 0x40FFFFFF),
+        // 而非恒返回 SceneChromeTokens.SCROLLBAR_THUMB_IDLE(0x99938F99)
+        SceneNode viewport = new SceneNode();
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(200);
+        sceneRoot.appendChild(viewport);
+        SceneNode content = new SceneNode();
+        content.setPreferredHeight(600);
+        viewport.appendChild(content);
+        Signal<Integer> scrollSignal = SceneScrolls.attach(runtime, viewport);
+        SceneScrollbar.Props props = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                SceneScrollbar.DEFAULT_TRACK_COLOR, 0x40FFFFFF,
+                BAR_WIDTH, MIN_THUMB, null, null, null, 12, 4);
+        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
+        sceneRoot.appendChild(sb.column());
+        doFrame();
+        Assert.assertEquals("自定义 idle 色生效(非 hover/pressed 态回读 props)",
+                0x40FFFFFF, sb.thumb().getBackgroundColor());
+        Assert.assertNotEquals("不再恒为 SCROLLBAR_THUMB_IDLE", SceneChromeTokens.SCROLLBAR_THUMB_IDLE,
+                sb.thumb().getBackgroundColor());
+    }
+
     // ==================== B1：thumb 颜色三态（hover/pressed） ====================
 
     @Test

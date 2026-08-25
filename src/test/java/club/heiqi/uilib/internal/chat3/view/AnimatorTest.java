@@ -65,4 +65,16 @@ public class AnimatorTest {
         Assert.assertEquals("overshoot 峰值 1.0406", 1.0406F, Animator.easeOutBack(pPeak, 1.04F), 0.001F);
         Assert.assertTrue("overshoot 峰值 >1", Animator.easeOutBack(pPeak, 1.04F) > 1.0F);
     }
+
+    @Test
+    public void easeOutBackDefaultCOvershootStaysBelowFourPointOnePercent() {
+        // P1-2:默认 c=1.04 落地后,峰值 overshoot = f_max − 1 ≤ 4.1%
+        // (解析峰值 ≈1.0406;采样口径按 0.001 步长对 p∈(0,1) 全区间验证)
+        for (int step = 1; step < 1000; step++) {
+            float p = step / 1000.0F;
+            float overshoot = Animator.easeOutBack(p) - 1.0F;
+            Assert.assertTrue("p=" + p + " 处 overshoot(相对 1) " + overshoot + " 超 4.1%",
+                    overshoot <= 0.041F + 1e-4F);
+        }
+    }
 }

@@ -13,7 +13,7 @@ import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
  * 聊天 3.0 气泡合成器(L2 视图模型,纯函数):消息组 → 可渲染组(组头 + 切分行 + 存活 alpha)。
  *
  * <p>职责:组头文本(发送者名 + HH:mm)、名字配色、每行「去前缀 + 切分」、存活/淡出 alpha。
- * 几何(宽高/坐标/命中)由 {@link ChatGeometry} 完成。</p>
+ * 几何(宽高/坐标/命中)由渲染层 scene 树完成(旧 ChatGeometry 已删除,生产路径无引用)。</p>
  */
 public final class ChatCardComposer {
 
@@ -301,6 +301,70 @@ public final class ChatCardComposer {
      */
     public static int hoveredBubbleColor(int baseArgb) {
         return mixWithWhite(baseArgb, 0.03F);
+    }
+
+    /**
+     * ARGB 逐通道线性插值(纯函数,P2-4 hover 颜色插值用;设计稿 §4.1:气泡叠加 100ms /
+     * 链接提亮 80ms 的 easeOutQuad 中间态按通道 lerp)。
+     *
+     * @param from 起点色(ARGB)
+     * @param to   终点色(ARGB)
+     * @param t    进度(越界夹取 [0,1];t=0 恒返回 from、t=1 恒返回 to)
+     * @return 插值色(ARGB,每通道四舍五入)
+     */
+    public static int interpolateArgb(int from, int to, float t) {
+        if (t <= 0.0F) {
+            return from;
+        }
+        if (t >= 1.0F) {
+            return to;
+        }
+        int a = interpolateChannel((from >>> 24) & 0xFF, (to >>> 24) & 0xFF, t);
+        int r = interpolateChannel((from >>> 16) & 0xFF, (to >>> 16) & 0xFF, t);
+        int g = interpolateChannel((from >>> 8) & 0xFF, (to >>> 8) & 0xFF, t);
+        int b = interpolateChannel(from & 0xFF, to & 0xFF, t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    private static int interpolateChannel(int from, int to, float t) {
+        return from + Math.round((to - from) * t);
+    }
+
+    /**
+     * 段流颜色插值(纯函数,P2-4 链接 hover 提亮中间态):以 hover 为模板(同段数,由
+     * {@link ChatUrlLinkifier#hoverLinkify} 保证),仅 link 段颜色在 base↔hover 间插值;
+     * 非 link 段(含 LaTeX/code 段)原引用透传——下划线等样式位随目标态(hover 模板),
+     * 设计稿 §4.1 只要求颜色插值。
+     *
+     * @param base  基础段流(不可变)
+     * @param hover hover 段流(同结构)
+     * @param t     进度(越界夹取;t≤0 恒返回 base、t≥1 恒返回 hover)
+     * @return 插值段流(中间态新列表,端态零分配复用)
+     */
+    public static List<TextSegment> interpolateSegments(List<TextSegment> base, List<TextSegment> hover, float t) {
+        if (t <= 0.0F) {
+            return base;
+        }
+        if (t >= 1.0F) {
+            return hover;
+        }
+        int size = Math.min(base.size(), hover.size());
+        List<TextSegment> out = new ArrayList<TextSegment>(hover.size());
+        for (int i = 0; i < size; i++) {
+            TextSegment hoverSegment = hover.get(i);
+            if (hoverSegment.isLatex() || hoverSegment.getStyle().getLink() == null) {
+                out.add(hoverSegment); // 非 link 段(含 LaTeX/code)原引用透传
+                continue;
+            }
+            TextStyle style = hoverSegment.getStyle().copy();
+            style.setColor(interpolateArgb(base.get(i).getStyle().getColor(),
+                    hoverSegment.getStyle().getColor(), t));
+            out.add(new TextSegment(hoverSegment.getText(), style));
+        }
+        for (int i = size; i < hover.size(); i++) {
+            out.add(hover.get(i)); // 防御兜底:结构恒等时不可达
+        }
+        return out;
     }
 
     /**

@@ -252,9 +252,9 @@ public class ChatMessageListTest {
         LayoutBox headerBox = (LayoutBox) headerRow.getCachedLayout();
         Assert.assertEquals("组头行布局高 16(不再塌陷为 0)", 16, headerBox.getHeight());
 
-        // headerRow 参与列布局:组高 = 组头 16 + 组内间距 2 + 气泡(行高 18 + 上下 padding 5×2 = 28)
+        // headerRow 参与列布局:组高 = 组头 16 + 组头→首气泡 3(P3-3 两级 gap)+ 气泡(行高 18 + 上下 padding 5×2 = 28)
         LayoutBox groupBox = (LayoutBox) group.getCachedLayout();
-        Assert.assertEquals("组头参与列布局,组高含组头行", 16 + 2 + 28, groupBox.getHeight());
+        Assert.assertEquals("组头参与列布局,组高含组头行", 16 + 3 + 28, groupBox.getHeight());
         LayoutBox bubbleBox = (LayoutBox) group.__getChildren().get(1).getCachedLayout();
         Assert.assertTrue("气泡 y 在组头之下(组头不再被气泡覆盖)", bubbleBox.getY() >= 16);
     }
@@ -664,30 +664,54 @@ public class ChatMessageListTest {
         SceneNode bubble = (SceneNode) parts[0];
         SceneNode lineNode = (SceneNode) parts[1];
         ChatSceneController controller = (ChatSceneController) parts[2];
+        SceneRuntime rt = (SceneRuntime) parts[3];
 
         ChatMessageList.LinkHoverDriver driver =
                 controller.messageList().__linkHoverDriverOf(bubble);
         Assert.assertNotNull("含链接消息必须装配 hover 驱动器", driver);
 
-        // 命中 URL 段中心(行内 x=10+16+24,y=行顶+9)
+        // 命中 URL 段中心(行内 x=10+16+24,y=行顶+9)→ 行 hover 目标置位 + 手型即时生效
         driver.onPointerMove(10 + 16 + 24, 5 + 9);
-        List<TextSegment> hover = lineNode.getSegments();
-        Assert.assertEquals(3, hover.size());
-        Assert.assertEquals("hover 提亮色 text-link-hover", ChatMarkdownSettings.getLinkHoverArgb(),
-                hover.get(1).getStyle().getColor());
-        Assert.assertTrue("hover 加下划线", hover.get(1).getStyle().isUnderline());
-        Assert.assertEquals("link 字段保留", "http://a.co", hover.get(1).getStyle().getLink());
         Assert.assertEquals("手型光标", SceneCursor.POINTER, bubble.getCursor());
         Assert.assertTrue("仅该行 hover 置位", driver.lineHoveredForTest()[0]);
 
-        // 移到非链接区 → 恢复默认段流与光标(仅影响该行,零残留)
+        // P2-4:80ms easeOutQuad 颜色插值——首帧锚定,elapsed=40 → easeOut(0.5)=0.75 中间态
+        controller.tick(T0 + 80L);
+        rt.flush();
+        controller.tick(T0 + 120L);
+        rt.flush();
+        List<TextSegment> mid = lineNode.getSegments();
+        Assert.assertEquals(3, mid.size());
+        Assert.assertEquals("中间态 = 0.75 通道插值(≠两端色)", ChatCardComposer.interpolateArgb(
+                ChatMarkdownSettings.getLinkArgb(), ChatMarkdownSettings.getLinkHoverArgb(), 0.75F),
+                mid.get(1).getStyle().getColor());
+        Assert.assertNotEquals("中间态不是默认色", ChatMarkdownSettings.getLinkArgb(),
+                mid.get(1).getStyle().getColor());
+        Assert.assertNotEquals("中间态不是终点色", ChatMarkdownSettings.getLinkHoverArgb(),
+                mid.get(1).getStyle().getColor());
+        Assert.assertTrue("hover 加下划线(样式位随目标态)", mid.get(1).getStyle().isUnderline());
+        Assert.assertEquals("link 字段保留", "http://a.co", mid.get(1).getStyle().getLink());
+
+        // 插值完成(elapsed=80)→ 终点 hover 色
+        controller.tick(T0 + 160L);
+        rt.flush();
+        List<TextSegment> hover = lineNode.getSegments();
+        Assert.assertEquals("hover 提亮色 text-link-hover", ChatMarkdownSettings.getLinkHoverArgb(),
+                hover.get(1).getStyle().getColor());
+        Assert.assertTrue("hover 加下划线", hover.get(1).getStyle().isUnderline());
+
+        // 移到非链接区 → 目标复位;反向插值归零后恢复默认段流与光标(仅影响该行,零残留)
         driver.onPointerMove(10 + 2, 5 + 9);
+        Assert.assertEquals(SceneCursor.DEFAULT, bubble.getCursor());
+        Assert.assertFalse(driver.lineHoveredForTest()[0]);
+        controller.tick(T0 + 240L);
+        rt.flush();
+        controller.tick(T0 + 320L);
+        rt.flush();
         List<TextSegment> restored = lineNode.getSegments();
         Assert.assertEquals("link 段恢复默认色", ChatMarkdownSettings.getLinkArgb(),
                 restored.get(1).getStyle().getColor());
         Assert.assertFalse("下划线移除", restored.get(1).getStyle().isUnderline());
-        Assert.assertEquals(SceneCursor.DEFAULT, bubble.getCursor());
-        Assert.assertFalse(driver.lineHoveredForTest()[0]);
     }
 
     @Test
@@ -698,17 +722,27 @@ public class ChatMessageListTest {
         SceneNode bubble = (SceneNode) parts[0];
         SceneNode lineNode = (SceneNode) parts[1];
         ChatSceneController controller = (ChatSceneController) parts[2];
+        SceneRuntime rt = (SceneRuntime) parts[3];
         ChatMessageList.LinkHoverDriver driver =
                 controller.messageList().__linkHoverDriverOf(bubble);
 
-        // 命中 URL 段中心(行内 x=10+16+24,y=行顶+9)→ 行 hover + 手型
+        // 命中 URL 段中心(行内 x=10+16+24,y=行顶+9)→ 行 hover + 手型;插值 80ms 完成
         driver.onPointerMove(10 + 16 + 24, 5 + 9);
+        Assert.assertTrue("行 hover 置位", driver.lineHoveredForTest()[0]);
+        controller.tick(T0 + 80L);
+        rt.flush();
+        controller.tick(T0 + 160L);
+        rt.flush();
         Assert.assertEquals("hover 提亮色生效", ChatMarkdownSettings.getLinkHoverArgb(),
                 lineNode.getSegments().get(1).getStyle().getColor());
-        Assert.assertTrue("行 hover 置位", driver.lineHoveredForTest()[0]);
 
-        // 指针直接移出气泡 → 行段流恢复默认色 + 光标复位 + hover 位清空
+        // 指针直接移出气泡 → 目标清空;反向插值归零后行段流恢复默认色 + 光标复位 + hover 位清空
         driver.onPointerLeave();
+        Assert.assertFalse("行 hover 清空", driver.lineHoveredForTest()[0]);
+        controller.tick(T0 + 240L);
+        rt.flush();
+        controller.tick(T0 + 320L);
+        rt.flush();
         List<TextSegment> restored = lineNode.getSegments();
         Assert.assertEquals("link 段恢复默认色", ChatMarkdownSettings.getLinkArgb(),
                 restored.get(1).getStyle().getColor());
@@ -716,7 +750,6 @@ public class ChatMessageListTest {
         Assert.assertEquals("link 字段保留(默认段流)", "http://a.co",
                 restored.get(1).getStyle().getLink());
         Assert.assertEquals("气泡光标复位", SceneCursor.DEFAULT, bubble.getCursor());
-        Assert.assertFalse("行 hover 清空", driver.lineHoveredForTest()[0]);
     }
 
     @Test
@@ -725,39 +758,29 @@ public class ChatMessageListTest {
         SceneNode bubble = (SceneNode) parts[0];
         SceneNode lineNode = (SceneNode) parts[1];
         ChatSceneController controller = (ChatSceneController) parts[2];
+        SceneRuntime rt = (SceneRuntime) parts[3];
         ChatMessageList.LinkHoverDriver driver =
                 controller.messageList().__linkHoverDriverOf(bubble);
 
         // URL 段 = 行内 x[16, 16+44)("http://a.co" 11 码点 × 4px), 行盒相对气泡 = (10, 5)
         // 命中区 = [16-1, 16+44+1)
+        // 命中判定探针改用 resolveUrl(P2-4 起颜色走插值,不再即时切换,几何语义同源)
         // 左扩 1px 命中;左扩 1px 之外不命中
-        driver.onPointerMove(10 + 16 - 1, 5 + 9);
-        Assert.assertEquals("左扩 1px 命中", "http://a.co", lineNode.getSegments().get(1)
-                .getStyle().getLink());
-        driver.onPointerMove(10 + 16 - 2, 5 + 9);
-        Assert.assertEquals("左扩 1px 之外不命中(默认色)", ChatMarkdownSettings.getLinkArgb(),
-                lineNode.getSegments().get(1).getStyle().getColor());
+        Assert.assertEquals("左扩 1px 命中", "http://a.co",
+                driver.resolveUrl(10 + 16 - 1, 5 + 9));
+        Assert.assertNull("左扩 1px 之外不命中", driver.resolveUrl(10 + 16 - 2, 5 + 9));
         // 右边界:右缘(不含)命中;右缘 +1 不命中
-        driver.onPointerMove(10 + 16 + 44, 5 + 9);
-        Assert.assertEquals("右缘(不含)命中", ChatMarkdownSettings.getLinkHoverArgb(),
-                lineNode.getSegments().get(1).getStyle().getColor());
-        driver.onPointerMove(10 + 16 + 44 + 1, 5 + 9);
-        Assert.assertEquals("右缘外 1px 不命中", ChatMarkdownSettings.getLinkArgb(),
-                lineNode.getSegments().get(1).getStyle().getColor());
+        Assert.assertEquals("右缘(不含)命中", "http://a.co",
+                driver.resolveUrl(10 + 16 + 44, 5 + 9));
+        Assert.assertNull("右缘外 1px 不命中", driver.resolveUrl(10 + 16 + 44 + 1, 5 + 9));
         // 上扩 2px:行顶 -2 命中; -3 不命中
-        driver.onPointerMove(10 + 40, 5 - 2);
-        Assert.assertEquals("上扩 2px 命中", ChatMarkdownSettings.getLinkHoverArgb(),
-                lineNode.getSegments().get(1).getStyle().getColor());
-        driver.onPointerMove(10 + 40, 5 - 3);
-        Assert.assertEquals("上扩之外不命中", ChatMarkdownSettings.getLinkArgb(),
-                lineNode.getSegments().get(1).getStyle().getColor());
+        Assert.assertEquals("上扩 2px 命中", "http://a.co",
+                driver.resolveUrl(10 + 40, 5 - 2));
+        Assert.assertNull("上扩之外不命中", driver.resolveUrl(10 + 40, 5 - 3));
         // 下扩 2px:行底 +1 命中(行高 18,底 23); +2 不命中
-        driver.onPointerMove(10 + 40, 5 + 18 + 1);
-        Assert.assertEquals("下扩 2px 命中", ChatMarkdownSettings.getLinkHoverArgb(),
-                lineNode.getSegments().get(1).getStyle().getColor());
-        driver.onPointerMove(10 + 40, 5 + 18 + 2);
-        Assert.assertEquals("下扩之外不命中", ChatMarkdownSettings.getLinkArgb(),
-                lineNode.getSegments().get(1).getStyle().getColor());
+        Assert.assertEquals("下扩 2px 命中", "http://a.co",
+                driver.resolveUrl(10 + 40, 5 + 18 + 1));
+        Assert.assertNull("下扩之外不命中", driver.resolveUrl(10 + 40, 5 + 18 + 2));
     }
 
     // ==================== K3 三轮:C 系统消息 font-system 12/16 + A2 系统行不钳宽 + B 系统链接 hover 清理 ====================
@@ -841,18 +864,27 @@ public class ChatMessageListTest {
         // 经输入路由命中链接(消息盒居中 x=(160-92)/2=34;链接行内 x=36..80)
         AnchorRect box = SceneGeometry.absoluteBox(systemMessage, 0, 0);
         movePointer(rt, root, box.getX() + 36 + 22, box.getY() + 9);
+        Assert.assertEquals("手型光标", SceneCursor.POINTER, systemMessage.getCursor());
+        // P2-4:链接提亮 80ms 插值完成后再断言终点色
+        controller.tick(T0 + 80L);
+        rt.flush();
+        controller.tick(T0 + 160L);
+        rt.flush();
         Assert.assertEquals("命中后 hover 提亮", ChatMarkdownSettings.getLinkHoverArgb(),
                 lineNode.getSegments().get(1).getStyle().getColor());
         Assert.assertTrue("命中后加下划线", lineNode.getSegments().get(1).getStyle().isUnderline());
-        Assert.assertEquals("手型光标", SceneCursor.POINTER, systemMessage.getCursor());
 
-        // 指针移出消息节点(空白区)→ hovered=false → 驱动清理
+        // 指针移出消息节点(空白区)→ hovered=false → 驱动清理;反向插值归零后断言
         movePointer(rt, root, 200, 280);
+        Assert.assertEquals("光标复位", SceneCursor.DEFAULT, systemMessage.getCursor());
+        controller.tick(T0 + 240L);
+        rt.flush();
+        controller.tick(T0 + 320L);
+        rt.flush();
         Assert.assertEquals("离开后恢复系统原色", ChatMarkdownSettings.getSystemTextArgb(),
                 lineNode.getSegments().get(1).getStyle().getColor());
         Assert.assertFalse("离开后下划线移除",
                 lineNode.getSegments().get(1).getStyle().isUnderline());
-        Assert.assertEquals("光标复位", SceneCursor.DEFAULT, systemMessage.getCursor());
         Assert.assertFalse("行 hover 位清空(无 stuck)", driver.lineHoveredForTest()[0]);
     }
 
@@ -901,11 +933,20 @@ public class ChatMessageListTest {
         ChatMessageList.LinkHoverDriver driver = controller.messageList().__linkHoverDriverOf(bubble);
         Assert.assertNotNull("含 URL 的系统消息装配链接 hover 驱动器", driver);
         driver.onPointerMove(58, 9);
+        Assert.assertEquals("手型光标", SceneCursor.POINTER, bubble.getCursor());
+        // P2-4:80ms 插值完成后再断言终点色
+        controller.tick(T0 + 80L);
+        rt.flush();
+        controller.tick(T0 + 160L);
+        rt.flush();
         Assert.assertEquals("hover 提亮 + 下划线(命中反馈,与气泡一致)",
                 ChatMarkdownSettings.getLinkHoverArgb(), lineNode.getSegments().get(1).getStyle().getColor());
         Assert.assertTrue(lineNode.getSegments().get(1).getStyle().isUnderline());
-        Assert.assertEquals("手型光标", SceneCursor.POINTER, bubble.getCursor());
         driver.onPointerMove(2, 9);
+        controller.tick(T0 + 240L);
+        rt.flush();
+        controller.tick(T0 + 320L);
+        rt.flush();
         Assert.assertEquals("移出恢复系统消息原色", ChatMarkdownSettings.getSystemTextArgb(),
                 lineNode.getSegments().get(1).getStyle().getColor());
     }
@@ -924,6 +965,7 @@ public class ChatMessageListTest {
     public void bubbleHoverMixesWhiteBackgroundThroughInputRouter() {
         Object[] parts = layoutSingleOtherGroup(linkController());
         SceneNode bubble = (SceneNode) parts[0];
+        ChatSceneController controller = (ChatSceneController) parts[2];
         SceneRuntime rt = (SceneRuntime) parts[3];
         SceneNode root = (SceneNode) parts[4];
 
@@ -931,40 +973,83 @@ public class ChatMessageListTest {
         Assert.assertEquals("初始气泡底", ChatMarkdownSettings.getBubbleOtherArgb(),
                 bubble.getBackgroundColor());
 
-        // 移到气泡内左下角(链接区外):hover → 背景 = 底色 + 3% 白(纯函数预计算常量)
+        // 移到气泡内左下角(链接区外)→ hover 目标置位;P2-4:100ms easeOutQuad 插值
         AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
         movePointer(rt, root, box.getX() + 5, box.getY() + box.getHeight() - 5);
+        // 首帧锚定 → elapsed=50 → easeOut(0.5)=0.75 中间态
+        controller.tick(T0 + 100L);
+        rt.flush();
+        controller.tick(T0 + 150L);
+        rt.flush();
+        int mid = bubble.getBackgroundColor();
+        Assert.assertEquals("中间态 = 0.75 通道插值", ChatCardComposer.interpolateArgb(
+                ChatMarkdownSettings.getBubbleOtherArgb(),
+                ChatCardComposer.hoveredBubbleColor(ChatMarkdownSettings.getBubbleOtherArgb()),
+                0.75F), mid);
+        Assert.assertNotEquals("中间态 ≠ 常态色", ChatMarkdownSettings.getBubbleOtherArgb(), mid);
+        // 插值完成(elapsed=100)→ hover 底色(3% 白叠加,纯函数预计算常量)
+        controller.tick(T0 + 200L);
+        rt.flush();
         Assert.assertEquals("气泡 hover 底色(3% 白叠加)", 0xF22B3139, bubble.getBackgroundColor());
 
-        // 移出气泡 → 恢复
+        // 移出气泡 → 反向插值归零后恢复
         movePointer(rt, root, 200, 280);
+        controller.tick(T0 + 300L);
+        rt.flush();
+        controller.tick(T0 + 400L);
+        rt.flush();
         Assert.assertEquals("移出后恢复", ChatMarkdownSettings.getBubbleOtherArgb(),
                 bubble.getBackgroundColor());
     }
 
     @Test
-    public void bubbleHoverColorAlsoFadesWithGroupAlpha() {
+    public void bubbleHoverColorAlsoFadesWithGroupAlpha() throws Exception {
         Object[] parts = layoutSingleOtherGroup(linkController());
         SceneNode bubble = (SceneNode) parts[0];
         ChatSceneController controller = (ChatSceneController) parts[2];
         SceneRuntime rt = (SceneRuntime) parts[3];
         SceneNode root = (SceneNode) parts[4];
 
-        // HUD 淡出中段:alpha = floor(255×(1-p²)) p=0.5 → 191
-        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
-                + ChatMarkdownSettings.getHudFadeMillis() / 2);
-        rt.flush();
+        // 放大淡出窗口(反射改 + finally 恢复):P2-4 hover 插值需要帧推进,而 fade alpha
+        // 随帧连续变化——fade=10000 下各 tick 时刻 alpha 精确可算(整数 floor 语义)
+        Field fadeField = ChatMarkdownSettings.class.getDeclaredField("hudFadeMillis");
+        fadeField.setAccessible(true);
+        Object previousFade = fadeField.get(null);
+        try {
+            fadeField.set(null, Long.valueOf(10_000L));
+            long ttl = ChatMarkdownSettings.getHudTtlMillis();
+            // HUD 淡出中段:alpha = floor(255×(1-p²)) p=0.5 → 191
+            controller.tick(T0 + ttl + 5000L);
+            rt.flush();
 
-        // 气泡 hover 基础色(0xF22B3139)必须乘淡出 alpha:fadeColor 只换代 alpha → 0xB52B3139
-        AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
-        movePointer(rt, root, box.getX() + 5, box.getY() + box.getHeight() - 5);
-        Assert.assertEquals("hover 色 × 淡出 alpha 组合", 0xB52B3139, bubble.getBackgroundColor());
-        Assert.assertEquals("RGB 保留 hover 提亮分量", 0x2B3139,
-                bubble.getBackgroundColor() & 0xFFFFFF);
+            // 气泡 hover 目标置位:alpha=191 时 bake(progress 0)= fadeColor(基础色,191)= 0xB5242B33
+            AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
+            movePointer(rt, root, box.getX() + 5, box.getY() + box.getHeight() - 5);
+            Assert.assertEquals("hover 目标置位但 progress 0:正常色 × alpha191", 0xB5242B33,
+                    bubble.getBackgroundColor());
 
-        // 移出 → 恢复淡出后的正常色(0xB5242B33)
-        movePointer(rt, root, 200, 280);
-        Assert.assertEquals("淡出中移出恢复正常 bake", 0xB5242B33, bubble.getBackgroundColor());
+            // 首帧锚定(alpha=188)
+            controller.tick(T0 + ttl + 5100L);
+            rt.flush();
+            // 插值完成 elapsed=100(alpha=186):hover 色 × 淡出 alpha 组合
+            controller.tick(T0 + ttl + 5200L);
+            rt.flush();
+            Assert.assertEquals("hover 色 × 淡出 alpha186 组合", 0xB02B3139,
+                    bubble.getBackgroundColor());
+            Assert.assertEquals("RGB 保留 hover 提亮分量", 0x2B3139,
+                    bubble.getBackgroundColor() & 0xFFFFFF);
+
+            // 移出 → 反向插值归零(alpha=180)后恢复淡出后的正常色
+            movePointer(rt, root, 200, 280);
+            controller.tick(T0 + ttl + 5300L);
+            rt.flush();
+            controller.tick(T0 + ttl + 5400L);
+            rt.flush();
+            Assert.assertEquals("淡出中移出恢复正常 bake(基础色 × alpha180)", 0xAA242B33,
+                    bubble.getBackgroundColor());
+        } finally {
+            fadeField.set(null, previousFade);
+        }
     }
 
     // ==================== T6b:行内 code + 引用行(设计稿 §3.5) ====================
@@ -1091,5 +1176,187 @@ public class ChatMessageListTest {
         Assert.assertEquals("引用结构 = 竖条 + 文本", 2, quoteRow.__getChildren().size());
         Assert.assertEquals("竖条色 bar-quote", ChatMarkdownSettings.getQuoteBarArgb(),
                 quoteRow.__getChildren().get(0).getBackgroundColor());
+    }
+
+    // ==================== P3-3:两级 gap(组头→首气泡 3 / 组内相邻 2) ====================
+
+    @Test
+    public void groupHeaderToBubbleGapIsThreeAndInnerGapIsTwo() {
+        ChatSceneController controller = controller();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> one"), 1, T0));
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> two"), 2, T0 + 1000));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+
+        SceneNode group = hudGroups(root).get(0);
+        SceneNode headerRow = group.__getChildren().get(0);
+        SceneNode firstBubble = group.__getChildren().get(1);
+        SceneNode secondBubble = group.__getChildren().get(2);
+        // margin 探针:组头下 margin 3、非首条消息上 margin 2(不再统一 setGap 2)
+        Assert.assertEquals("组头与首气泡间距 sp-2=3(headerRow marginBottom)", 3,
+                headerRow.getMarginBottom());
+        Assert.assertEquals("首条消息无上 margin", 0, firstBubble.getMarginTop());
+        Assert.assertEquals("组内相邻消息间距 sp-1=2(消息 marginTop)", 2, secondBubble.getMarginTop());
+
+        // 布局几何:首气泡顶 = 组头底 + 3;次气泡顶 = 首气泡底 + 2
+        LayoutBox headerBox = (LayoutBox) headerRow.getCachedLayout();
+        LayoutBox firstBox = (LayoutBox) firstBubble.getCachedLayout();
+        LayoutBox secondBox = (LayoutBox) secondBubble.getCachedLayout();
+        Assert.assertEquals("首气泡顶 = 组头底 + 3", headerBox.getY() + headerBox.getHeight() + 3,
+                firstBox.getY());
+        Assert.assertEquals("次气泡顶 = 首气泡底 + 2", firstBox.getY() + firstBox.getHeight() + 2,
+                secondBox.getY());
+    }
+
+    // ==================== P3-6:code 段 font-code 12px ====================
+
+    @Test
+    public void codeSegmentsCarryFontCodeTwelvePx() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob> run `gradle build` now"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("前缀 + code + 后缀三段", 3, segments.size());
+        Assert.assertEquals("code 段字号 = font-code 12",
+                ChatMarkdownSettings.getCodeFontSizePx(),
+                segments.get(1).getStyle().resolveEffectiveFontSizePx(
+                        ChatMarkdownSettings.getChatFontSizePx()));
+        Assert.assertEquals("普通段回落正文 13", ChatMarkdownSettings.getChatFontSizePx(),
+                segments.get(0).getStyle().resolveEffectiveFontSizePx(
+                        ChatMarkdownSettings.getChatFontSizePx()));
+        Assert.assertEquals("行节点字号保持正文 13", ChatMarkdownSettings.getChatFontSizePx(),
+                lineNode.getFontSize());
+    }
+
+    // ==================== C 拍板:行级 markdown 规则(§3.5/§10.1) ====================
+
+    @Test
+    public void unorderedListLineRendersBulletPrefixWithBodyColor() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> - item"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("bullet + 内容两段", 2, segments.size());
+        Assert.assertEquals("前缀渲染为「• 」", "• ", segments.get(0).getText());
+        Assert.assertEquals("前缀用正文色", 0xFFFFFFFF, segments.get(0).getStyle().getColor());
+        Assert.assertEquals("内容去标记", "item", segments.get(1).getText());
+    }
+
+    @Test
+    public void unorderedListIndentMapsLeadingSpacesPerLevel() {
+        ChatSceneController controller = controller();
+        // 4 前导空格 = 2 级 → bullet 段前缀含 4 个空格(2 空格=1 级的简单映射)
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob>     - deep"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals(2, segments.size());
+        Assert.assertEquals("4 前导空格 = 2 级缩进(每级 2 空格)", "    • ", segments.get(0).getText());
+        Assert.assertEquals("deep", segments.get(1).getText());
+    }
+
+    @Test
+    public void orderedListLineKeepsNumberAndIsUnchanged() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> 1. first"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("有序列表保留序号原样", 1, segments.size());
+        Assert.assertEquals("1. first", segments.get(0).getText());
+    }
+
+    @Test
+    public void blockMathLineRendersOwnLatexSegmentWithFourPxMargins() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> $$x^2$$"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("块级公式 = 单个 latex 段", 1, segments.size());
+        Assert.assertTrue("latex 段", segments.get(0).isLatex());
+        Assert.assertEquals("TeX 源剥 $$ 边界", "x^2", segments.get(0).getLatexSource());
+        Assert.assertEquals("上下各 4px 间距(上 margin)", 4, lineNode.getMarginTop());
+        Assert.assertEquals("上下各 4px 间距(下 margin)", 4, lineNode.getMarginBottom());
+        Assert.assertEquals("左右无 margin(左对齐不居中)", 0, lineNode.getMarginLeft());
+    }
+
+    @Test
+    public void inlineMathOnlyLineAlsoRendersAsBlockMath() {
+        // "$...$" 独占行(整行恰好一对 $ 包裹)→ 同样按块级公式渲染
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> $x^2$"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        Assert.assertTrue("latex 段", lineNode.getSegments().get(0).isLatex());
+        Assert.assertEquals("x^2", lineNode.getSegments().get(0).getLatexSource());
+        Assert.assertEquals(4, lineNode.getMarginTop());
+        Assert.assertEquals(4, lineNode.getMarginBottom());
+    }
+
+    @Test
+    public void normalLinesAreUnaffectedByMarkdownRules() {
+        ChatSceneController controller = controller();
+        // 行首连字符但无空格 / 行内 $ 不独占 → 全部原样
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob> -not-list\nfoo $x$ bar"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        List<SceneNode> lineNodes = bubble.__getChildren();
+        Assert.assertEquals("两行", 2, lineNodes.size());
+        List<TextSegment> first = lineNodes.get(0).getSegments();
+        Assert.assertEquals(1, first.size());
+        Assert.assertEquals("-not-list", first.get(0).getText());
+        List<TextSegment> second = lineNodes.get(1).getSegments();
+        Assert.assertEquals(1, second.size());
+        Assert.assertEquals("foo $x$ bar", second.get(0).getText());
+    }
+
+    @Test
+    public void listRuleDoesNotApplyInsideCodeSpans() {
+        // 行首反引号 → 不命中列表规则;code 段内文本不被行级规则触碰
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob> `- a` plain"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("code + 普通两段(无 bullet 前缀)", 2, segments.size());
+        Assert.assertTrue("code 段", segments.get(0).getStyle().isCodeSpan());
+        Assert.assertEquals("- a", segments.get(0).getText());
+        Assert.assertEquals(" plain", segments.get(1).getText());
+    }
+
+    @Test
+    public void listContentWithLinkStillLinkifies() {
+        // 列表内容照常走 code 切分 + 链接化链路(bullet 段在前,链接命中区含 bullet 偏移)
+        ChatSceneController linkController = linkController();
+        linkController.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob> - see http://a.co"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(linkController);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("bullet + 前缀 + URL 三段", 3, segments.size());
+        Assert.assertEquals("• ", segments.get(0).getText());
+        Assert.assertEquals("see ", segments.get(1).getText());
+        Assert.assertEquals("http://a.co", segments.get(2).getStyle().getLink());
+        Assert.assertEquals("链接默认色 text-link", ChatMarkdownSettings.getLinkArgb(),
+                segments.get(2).getStyle().getColor());
     }
 }

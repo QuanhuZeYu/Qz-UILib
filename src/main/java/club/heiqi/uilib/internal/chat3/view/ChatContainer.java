@@ -28,6 +28,12 @@ public final class ChatContainer {
 
     /** 输入条区四周内边距(px,设计稿 §2.3 sp-4/§6.2:输入条区四周 8)。 */
     private static final int INPUT_AREA_PADDING_PX = 8;
+    /** 容器内容区上内边距(px,设计稿 §2.3/§6.2:上 10)。 */
+    private static final int CONTENT_PADDING_TOP_PX = 10;
+    /** 容器内容区左右内边距(px,设计稿 §2.3/§6.2:左右 10)。 */
+    private static final int CONTENT_PADDING_SIDE_PX = 10;
+    /** 容器内容区下内边距(px,设计稿 §2.3/§6.2:下 4,留给滚动条视觉余量)。 */
+    private static final int CONTENT_PADDING_BOTTOM_PX = 4;
 
     /** 容器装配结果:外框节点 + 生命周期句柄 + 输入条。 */
     public static final class Result {
@@ -87,7 +93,7 @@ public final class ChatContainer {
             return bar;
         }
 
-        /** 每帧同步动态尺寸(视口 1/8 × 1/2)与气泡最大宽(设计稿 §3.x:气泡 ≤ 0.85 组内容宽)。 */
+        /** 每帧同步动态尺寸(视口 1/4 × 1/2)与气泡最大宽(设计稿 §3.x:气泡 ≤ 0.85 组内容宽)。 */
         public void setViewport(int width, int height) {
             root.setPreferredWidth(ChatMarkdownSettings.chatWidthFor(Math.max(1, width)));
             root.setPreferredHeight(ChatMarkdownSettings.containerHeightFor(Math.max(1, height)));
@@ -118,10 +124,12 @@ public final class ChatContainer {
                 .setBorderColor(ChatMarkdownSettings.getContainerBorderArgb())
                 .setBorderWidth(1)
                 .setCornerRadius(ChatMarkdownSettings.getContainerCornerRadius())
-                .setPadding(ChatMarkdownSettings.getBubblePaddingY(),
-                        ChatMarkdownSettings.getBubblePaddingX(),
-                        ChatMarkdownSettings.getBubblePaddingY(),
-                        ChatMarkdownSettings.getBubblePaddingX())
+                // 设计稿 §2.3/§6.2:容器内容区上 10/左右 10/下 4(下留给滚动条视觉余量);
+                // 不再复用 bubblePadding(5,10,5,10)——气泡区自身 padding 不受影响
+                .setPadding(CONTENT_PADDING_TOP_PX,
+                        CONTENT_PADDING_SIDE_PX,
+                        CONTENT_PADDING_BOTTOM_PX,
+                        CONTENT_PADDING_SIDE_PX)
                 .setClipChildren(true);
 
         // ★ 滚动区行(与消息视口同级):[消息视口 flexGrow=1, 滚动条 column 右对齐]

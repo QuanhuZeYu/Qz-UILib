@@ -64,6 +64,8 @@ public final class SceneTextInput {
      * @param maxLength   最大长度（按码点数），填满后拒绝新增
      * @param inputType   输入类型，控制字符过滤与密码掩码显示
      * @param onChange    文本变更回调，以期望新值真实 String 调用
+     * @param placeholderColor 占位文本色（ARGB）；null = 沿用 {@link SceneStateColors#secondaryText}
+     *                    （向后兼容可选，默认不改变既有行为）
      */
     @Desugar
     public record Props(
@@ -73,8 +75,20 @@ public final class SceneTextInput {
             String placeholder,
             int maxLength,
             SceneInputType inputType,
-            Consumer<String> onChange
+            Consumer<String> onChange,
+            Integer placeholderColor
     ) {
+
+        /** 向后兼容 7 参构造：placeholderColor = null（沿用默认 secondaryText，行为与旧版一致）。 */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     SceneInputType inputType,
+                     Consumer<String> onChange) {
+            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange, null);
+        }
 
         /**
          * 创建 Props builder。
@@ -102,6 +116,8 @@ public final class SceneTextInput {
             private SceneInputType inputType = SceneInputType.TEXT;
             /** 文本变更回调，以期望新值真实 String 调用。 */
             private Consumer<String> onChange;
+            /** 占位文本色（ARGB）；null = 沿用 SceneStateColors.secondaryText。 */
+            private Integer placeholderColor;
 
             /**
              * 创建构建器。
@@ -179,6 +195,17 @@ public final class SceneTextInput {
             }
 
             /**
+             * 设置占位文本色（可选；null = 沿用 SceneStateColors.secondaryText）。
+             *
+             * @param placeholderColor 占位文本色（ARGB）
+             * @return 当前 builder
+             */
+            public Builder placeholderColor(Integer placeholderColor) {
+                this.placeholderColor = placeholderColor;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props 实例
@@ -188,7 +215,8 @@ public final class SceneTextInput {
                 if (onChange == null) {
                     throw new IllegalArgumentException("onChange must not be null");
                 }
-                return new Props(value, enabled, readOnly, placeholder, maxLength, inputType, onChange);
+                return new Props(value, enabled, readOnly, placeholder, maxLength, inputType,
+                        onChange, placeholderColor);
             }
         }
     }
@@ -251,10 +279,10 @@ public final class SceneTextInput {
         root.setCornerRadius(CORNER_RADIUS);
         SceneInteractionState interaction = rt.interactionState(root);
 
-        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
-                result.prefixText()::setTextColor);
-        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get()),
-                result.suffixText()::setTextColor);
+        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
+                props.placeholderColor()), result.prefixText()::setTextColor);
+        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
+                props.placeholderColor()), result.suffixText()::setTextColor);
 
         rt.__bindAnimatedColor(() -> SceneStateColors.inputBackground(
                         Boolean.TRUE.equals(props.enabled().get())),
@@ -272,7 +300,7 @@ public final class SceneTextInput {
         rt.bindComputed(() -> resolveHighlightBackground(result.selection().get().isActive()),
                 result.highlightText()::setBackgroundColor);
         rt.bindComputed(() -> resolveHighlightTextColor(result.selection().get().isActive(),
-                        result.isPlaceholder().get(), props.enabled().get()),
+                        result.isPlaceholder().get(), props.enabled().get(), props.placeholderColor()),
                 result.highlightText()::setTextColor);
         SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
         rt.bind(props.enabled(),
@@ -282,13 +310,15 @@ public final class SceneTextInput {
     /**
      * 解析文本色。
      *
-     * @param placeholder 是否处于 placeholder 状态
-     * @param enabled     是否启用
+     * @param placeholder     是否处于 placeholder 状态
+     * @param enabled         是否启用
+     * @param placeholderColor 占位文本色（ARGB）；null = 沿用 SceneStateColors.secondaryText
      * @return 文本色 ARGB
      */
-    private static int resolveTextColor(Boolean placeholder, Boolean enabled) {
+    private static int resolveTextColor(Boolean placeholder, Boolean enabled, Integer placeholderColor) {
         if (Boolean.TRUE.equals(placeholder)) {
-            return SceneStateColors.secondaryText(Boolean.TRUE.equals(enabled));
+            return placeholderColor != null ? placeholderColor.intValue()
+                    : SceneStateColors.secondaryText(Boolean.TRUE.equals(enabled));
         }
         return SceneStateColors.standardText(Boolean.TRUE.equals(enabled), false);
     }
@@ -326,13 +356,14 @@ public final class SceneTextInput {
      * @param selectionActive 选区是否激活
      * @param placeholder     是否 placeholder 态
      * @param enabled         是否启用
+     * @param placeholderColor 占位文本色（ARGB）；null = 沿用 SceneStateColors.secondaryText
      * @return 高亮文本色 ARGB
      */
     private static int resolveHighlightTextColor(Boolean selectionActive, Boolean placeholder,
-                                                 Boolean enabled) {
+                                                 Boolean enabled, Integer placeholderColor) {
         if (Boolean.TRUE.equals(selectionActive)) {
             return SceneChromeTokens.SELECTION_TEXT;
         }
-        return resolveTextColor(placeholder, enabled);
+        return resolveTextColor(placeholder, enabled, placeholderColor);
     }
 }

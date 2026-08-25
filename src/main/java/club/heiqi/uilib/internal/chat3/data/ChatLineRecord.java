@@ -6,7 +6,7 @@ import net.minecraft.util.IChatComponent;
  * 聊天 3.0 行记录(不可变)。
  *
  * <p>持有原版 {@link IChatComponent} 引用(样式/事件链原样保留,命中检测经原版组件回投),
- * 纯文本惰性缓存(行切分/发送者提取的输入)。10s 存活窗口与 HH:mm 时间戳以
+ * 纯文本惰性缓存(行切分/发送者提取的输入)。12s 存活窗口与 HH:mm 时间戳以
  * {@link #getArrivedWallMillis()} 为时钟基准。</p>
  */
 public final class ChatLineRecord {
@@ -66,7 +66,7 @@ public final class ChatLineRecord {
         return messageId;
     }
 
-    /** @return 到达时刻(System.currentTimeMillis 口径,10s 存活窗口基准) */
+    /** @return 到达时刻(System.currentTimeMillis 口径,12s 存活窗口基准) */
     public long getArrivedWallMillis() {
         return arrivedWallMillis;
     }

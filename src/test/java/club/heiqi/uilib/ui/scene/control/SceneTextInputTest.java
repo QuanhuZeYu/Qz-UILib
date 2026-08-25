@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
@@ -645,6 +646,33 @@ public class SceneTextInputTest {
         routeKey(SceneKey.DELETE);
         runtime.flush();
         Assert.assertEquals("disabled handler 兜底阻断所有写入", before, changeCount.get());
+    }
+
+    @Test
+    public void customPlaceholderColorOverridesDefaultWhenProvided() {
+        valueSignal = Signal.create("");
+        enabledSignal = Signal.create(Boolean.TRUE);
+        readOnlySignal = Signal.create(Boolean.FALSE);
+        SceneTextInput.Props props = SceneTextInput.Props.builder(valueSignal)
+                .placeholder("输入消息…")
+                .placeholderColor(Integer.valueOf(0xFF6E757E))
+                .onChange(next -> {
+                    // 无操作
+                })
+                .build();
+        handle = runtime.mount(sceneRoot, SceneTextInput.create(runtime, props));
+        inputRoot = handle.getRoot();
+        runtime.flush();
+        Assert.assertEquals("未聚焦空值显示 placeholder", "输入消息…", prefixNode().getText());
+        Assert.assertEquals("自定义 placeholder 色生效", 0xFF6E757E, prefixNode().getTextColor());
+    }
+
+    @Test
+    public void placeholderColorDefaultsToSecondaryTextWhenAbsent() {
+        // 向后兼容:7 参构造(placeholderColor=null)沿用 SceneStateColors.secondaryText
+        mountTextInput();
+        Assert.assertEquals("缺省沿用 secondaryText", SceneStateColors.secondaryText(true),
+                prefixNode().getTextColor());
     }
 
     @Test

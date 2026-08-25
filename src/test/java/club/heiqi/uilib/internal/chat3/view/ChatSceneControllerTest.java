@@ -341,7 +341,7 @@ public class ChatSceneControllerTest {
         controller.setHostViewport(1600, 900);
         SceneNode root = build(controller, rt);
 
-        Assert.assertEquals("窗口宽 = 视口宽 × 1/8",
+        Assert.assertEquals("窗口宽 = 视口宽 × 1/4(360 封顶)",
                 ChatMarkdownSettings.chatWidthFor(1600), root.getPreferredWidth());
     }
 
@@ -424,11 +424,11 @@ public class ChatSceneControllerTest {
         // 边界 tick:COLLAPSING 时长耗尽,状态机切到 POPPING 并锚定 start(本帧 progress=0,不断言)
         controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis());
 
-        // POPPING(容器弹出):opacity 0→1,p=0.5 → easeOutBack(0.5)=1.05 但 opacity 通道 clamp01 → 1.0
+        // POPPING(容器弹出):opacity 0→1,p=0.5 → easeOutBack(0.5)=1.005 但 opacity 通道 clamp01 → 1.0
         controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis()
                 + ChatMarkdownSettings.getPopAnimMillis() / 2);
         rt.flush();
-        Assert.assertEquals("POPPING 中段 opacity=clamp01(1.05)=1.0", 1.0F, root.getOpacity(), 0.001F);
+        Assert.assertEquals("POPPING 中段 opacity=clamp01(1.005)=1.0", 1.0F, root.getOpacity(), 0.001F);
 
         // CONTAINER 稳定:opacity=1
         controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis()
@@ -489,8 +489,8 @@ public class ChatSceneControllerTest {
      * 树中组数收敛到上限约束;再 tick 幂等不漂移。
      *
      * <p>口径:视口 320×400 → chatWidth = 0.5×320 = 160(§5.5 极窄分支),maxLine = 140;
-     * FIXED 度量 2px/字符 → 70 字符/行 → 160 字符 = 3 行 → 组高 = 12+2×5+3×18 = 76;
-     * 0.5×400 = 200px → 2 组 = 156 ≤ 200,3 组 = 236 &gt; 200。</p>
+     * FIXED 度量 2px/字符 → 70 字符/行 → 160 字符 = 3 行 → 组高 = 16(组头行高)+2×5+3×18 = 80;
+     * 0.5×400 = 200px → 2 组 = 164 ≤ 200,3 组 = 248 &gt; 200。</p>
      */
     @Test
     public void hudStackHeightTrimsOldestGroups() {
@@ -502,8 +502,8 @@ public class ChatSceneControllerTest {
         controller.tick(T0);
         rt.flush();
 
-        // 上限约束(同口径):2 组 ≤ 0.5H,3 组超限
-        int groupHeight = ChatMarkdownSettings.getChatHeaderFontSizePx()
+        // 上限约束(同口径):2 组 ≤ 0.5H,3 组超限(组头按实际渲染行高 16 计,P3-9)
+        int groupHeight = ChatMarkdownSettings.getChatHeaderRowHeightPx()
                 + 2 * ChatMarkdownSettings.getBubblePaddingY()
                 + 3 * ChatMarkdownSettings.getChatLineHeightPx();
         int gap = ChatMarkdownSettings.getGroupGapHudPx();
@@ -526,12 +526,12 @@ public class ChatSceneControllerTest {
         Assert.assertEquals("再 tick 树组数不变", 2, hudGroups(root).size());
     }
 
-    /** 最新单组自身超限(超长消息,10 行 202px > 0.5×400=200):至少保留最新一组,不空屏。 */
+    /** 最新单组自身超限(超长消息,10 行 206px > 0.5×400=200):至少保留最新一组,不空屏。 */
     @Test
     public void hudHeightTrimKeepsNewestGroupWhenSingleGroupOverflows() {
         ChatSceneController controller = controller();
         controller.setHostViewport(320, 400);
-        // 640 字符 → 1280px ÷ 140px/行 → 10 行 → 组高 = 12+2×5+10×18 = 202 > 200(0.5H)
+        // 640 字符 → 1280px ÷ 140px/行 → 10 行 → 组高 = 16(组头行高)+2×5+10×18 = 206 > 200(0.5H)
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Bob> " + repeat('x', 640)), 1, T0));
         controller.notifyDataChanged();
@@ -596,19 +596,19 @@ public class ChatSceneControllerTest {
         // 边界 tick:COLLAPSING 时长耗尽切 POPPING(本帧 progress=0,不断言)
         controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis());
 
-        // POPPING 中段:easeOutBack(0.5,c=1.4)=1.05(overshoot,允许 >1)
-        // translateY=24×(1−1.05)=−1.2(轻微超调负向再回弹)、scale=0.96+0.04×1.05=1.002、
-        // opacity=clamp01(1.05)=1.0(opacity 通道不允许超 1)
+        // POPPING 中段:easeOutBack(0.5,c=1.04 默认)=1.005(overshoot,允许 >1)
+        // translateY=24×(1−1.005)=−0.12(轻微超调负向再回弹)、scale=0.96+0.04×1.005=1.0002、
+        // opacity=clamp01(1.005)=1.0(opacity 通道不允许超 1)
         controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis()
                 + ChatMarkdownSettings.getPopAnimMillis() / 2);
         rt.flush();
         t = root.getTransform();
-        Assert.assertEquals("POPPING translateY=24×(1−1.05)", -1.2F, t.translateY, 0.001F);
-        Assert.assertEquals("POPPING scaleX=0.96+0.04×1.05", 1.002F, t.scaleX, 0.001F);
-        Assert.assertEquals("POPPING scaleY=0.96+0.04×1.05", 1.002F, t.scaleY, 0.001F);
+        Assert.assertEquals("POPPING translateY=24×(1−1.005)", -0.12F, t.translateY, 0.001F);
+        Assert.assertEquals("POPPING scaleX=0.96+0.04×1.005", 1.0002F, t.scaleX, 0.001F);
+        Assert.assertEquals("POPPING scaleY=0.96+0.04×1.005", 1.0002F, t.scaleY, 0.001F);
         Assert.assertEquals("POPPING origin 左", 0.0F, t.originXRatio, 0.001F);
         Assert.assertEquals("POPPING origin 下", 1.0F, t.originYRatio, 0.001F);
-        Assert.assertEquals("POPPING opacity=clamp01(1.05)=1.0", 1.0F, root.getOpacity(), 0.001F);
+        Assert.assertEquals("POPPING opacity=clamp01(1.005)=1.0", 1.0F, root.getOpacity(), 0.001F);
 
         // CONTAINER 稳定:恒等 + opacity=1
         controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis()

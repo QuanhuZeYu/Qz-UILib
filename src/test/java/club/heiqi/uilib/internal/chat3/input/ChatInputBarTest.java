@@ -58,6 +58,20 @@ public class ChatInputBarTest {
     }
 
     @Test
+    public void placeholderTextAndColorFollowChat3Design() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(rt, "");
+        rt.flush();
+        SceneNode root = bar.root();
+        // SceneTextInputPrimitive 结构:第一个子节点 = prefixText(空值未聚焦时显示 placeholder)
+        SceneNode prefix = root.__getChildren().get(0);
+        Assert.assertEquals("placeholder 文案「输入消息…」(设计稿 §3.2)", "输入消息…", prefix.getText());
+        Assert.assertEquals("placeholder 色 = text-input-placeholder 0xFF6E757E",
+                ChatMarkdownSettings.getInputPlaceholderArgb(), prefix.getTextColor());
+        Assert.assertEquals("设计令牌定值 0xFF6E757E", 0xFF6E757E, prefix.getTextColor());
+    }
+
+    @Test
     public void inputBackgroundIsDesignTokenAfterFlush() {
         // K3 实测 (33,31,38) = SceneTextInput 通用 BG_PRESSED 0xFF211F26;覆盖绑定
         // (注册晚于控件内部绑定,帧末批量提交)必须把底色钉回设计令牌 (30,35,42)
