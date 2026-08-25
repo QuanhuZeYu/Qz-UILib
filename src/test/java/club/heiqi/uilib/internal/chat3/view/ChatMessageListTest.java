@@ -760,6 +760,102 @@ public class ChatMessageListTest {
                 lineNode.getSegments().get(1).getStyle().getColor());
     }
 
+    // ==================== K3 三轮:C 系统消息 font-system 12/16 + A2 系统行不钳宽 + B 系统链接 hover 清理 ====================
+
+    @Test
+    public void systemMessageLineNodesCarrySystemFontSizeAndLineHeight() {
+        // 设计稿 §2.2/§3.4:font-system 12/16(真机实测系统消息误用 body 13/18);
+        // 修复后系统行节点 fontSize=12、preferredHeight=16,气泡行节点保持 13/18
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("[公告] see http://a.co ok"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        SceneNode systemMessage = hudGroups(root).get(0).__getChildren().get(0);
+        SceneNode lineNode = systemMessage.__getChildren().get(0);
+        Assert.assertEquals("系统消息字号 font-system 12",
+                ChatMarkdownSettings.getSystemFontSizePx(), lineNode.getFontSize());
+        Assert.assertEquals("系统消息行高 16",
+                ChatMarkdownSettings.getSystemLineHeightPx(), lineNode.getPreferredHeight());
+
+        // 对照:他人气泡行节点保持 body 13/18
+        ChatSceneController other = linkController();
+        other.setHostViewport(400, 300);
+        other.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, T0));
+        other.notifyDataChanged();
+        SceneRuntime rt2 = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode otherRoot = other.buildContent(rt2);
+        rt2.flush();
+        SceneNode bubbleLine = hudGroups(otherRoot).get(0).__getChildren().get(1)
+                .__getChildren().get(0);
+        Assert.assertEquals("气泡行字号保持 body 13", ChatMarkdownSettings.getChatFontSizePx(),
+                bubbleLine.getFontSize());
+        Assert.assertEquals("气泡行高保持 18", ChatMarkdownSettings.getChatLineHeightPx(),
+                bubbleLine.getPreferredHeight());
+    }
+
+    @Test
+    public void systemMessageLineWidthIsNotClampedToBubbleContentWidth() {
+        // K3 摘要第 4 条:系统消息行 pinned width 被钳到 maxBubble−2×paddingX(=99@视口400),
+        // 行实宽 140 却被钉 99 → 居中几何错位;修复后系统行钉实宽(气泡行钳宽语义不变)
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        // 无空格长串:字符级断行,首行 35 字符 × 4px = 140(不会被词边界回退打断)
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "[公告]" + longMessageBody()), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+        SceneNode systemMessage = hudGroups(root).get(0).__getChildren().get(0);
+        SceneNode lineNode = systemMessage.__getChildren().get(0);
+        Assert.assertEquals("系统行钉实宽(不钳 99)", 140,
+                ((LayoutBox) lineNode.getCachedLayout()).getWidth());
+        Assert.assertEquals("系统组按实宽收缩居中", 140,
+                ((LayoutBox) systemMessage.getCachedLayout()).getWidth());
+    }
+
+    @Test
+    public void systemMessageLinkHoverClearsWhenPointerLeavesViaRouter() {
+        // K3 三轮 B:系统消息无气泡 hover 绑定 → 指针离开后 lineHovered 残留,
+        // URL 行 stuck hover(真机 L1 恒 hover 色 + 下划线);修复后 hovered=false 清驱动
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("[公告] see http://a.co ok"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+        SceneNode systemMessage = hudGroups(root).get(0).__getChildren().get(0);
+        SceneNode lineNode = systemMessage.__getChildren().get(0);
+        ChatMessageList.LinkHoverDriver driver =
+                controller.messageList().__linkHoverDriverOf(systemMessage);
+        Assert.assertNotNull("含 URL 系统消息装配 hover 驱动器", driver);
+
+        // 经输入路由命中链接(消息盒居中 x=(160-92)/2=34;链接行内 x=36..80)
+        AnchorRect box = SceneGeometry.absoluteBox(systemMessage, 0, 0);
+        movePointer(rt, root, box.getX() + 36 + 22, box.getY() + 9);
+        Assert.assertEquals("命中后 hover 提亮", ChatMarkdownSettings.getLinkHoverArgb(),
+                lineNode.getSegments().get(1).getStyle().getColor());
+        Assert.assertTrue("命中后加下划线", lineNode.getSegments().get(1).getStyle().isUnderline());
+        Assert.assertEquals("手型光标", SceneCursor.POINTER, systemMessage.getCursor());
+
+        // 指针移出消息节点(空白区)→ hovered=false → 驱动清理
+        movePointer(rt, root, 200, 280);
+        Assert.assertEquals("离开后恢复系统原色", ChatMarkdownSettings.getSystemTextArgb(),
+                lineNode.getSegments().get(1).getStyle().getColor());
+        Assert.assertFalse("离开后下划线移除",
+                lineNode.getSegments().get(1).getStyle().isUnderline());
+        Assert.assertEquals("光标复位", SceneCursor.DEFAULT, systemMessage.getCursor());
+        Assert.assertFalse("行 hover 位清空(无 stuck)", driver.lineHoveredForTest()[0]);
+    }
+
     @Test
     public void systemMessageWithoutUrlStillAssemblesNoLinkHoverDriver() {
         ChatSceneController controller = linkController();

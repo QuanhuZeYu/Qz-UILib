@@ -181,6 +181,41 @@ public class ChatLineLayouterTest {
         Assert.assertEquals(list("0A1B2", "C3D4E"), split("0A1B2C3D4E"));
     }
 
+    // ==================== K3 三轮修复:词边界回退不得产出可见内容为空的行 ====================
+
+    @Test
+    public void shouldNotEmitVisibleEmptyLineWhenIndentPrecedesOverflow() {
+        // 真机 URL 缩进行复现:前导缩进(无可见字符)+ §6 时词边界回退把缩进单独断成
+        // "§6" 零内容行(渲染为空行占 18px);修复后缩进并入首行,续行正常字符断。
+        String url = "\u00a76     https://abcdefghijklmnop";
+        // 4px/字符、宽 40(10 单位):5 空格 + §6 + "https" 恰好满行,
+        // 超宽发生在 ':' 处——修复前缩进被单独断成 "§6" 零内容行
+        List<String> lines = ChatLineLayouter.splitLines(url, 40, fixedMeasure(), 13);
+        for (String line : lines) {
+            Assert.assertFalse("任何行都不得可见内容为空(仅空白/§ 码):" + line,
+                    visibleEmpty(line));
+        }
+        Assert.assertTrue("缩进保留在首行", lines.get(0).startsWith("\u00a76     https"));
+        // 零可见字符丢失不变量仍成立
+        Assert.assertEquals(compact(url), compact(join(lines)));
+    }
+
+    @Test
+    public void shouldNotEmitVisibleEmptyLineAtNarrowWidths() {
+        // 窄行硬断路径同样守卫:行内只有缩进 + § 码时不得断出空行
+        String text = "\u00a7c     ab";
+        List<String> lines = ChatLineLayouter.splitLines(text, 4, fixedMeasure(), 13);
+        for (String line : lines) {
+            Assert.assertFalse("窄行下同样无零内容行:" + line, visibleEmpty(line));
+        }
+        Assert.assertEquals(compact(text), compact(join(lines)));
+    }
+
+    /** 剥 § 格式码对与空白后是否为空(零内容行判定)。 */
+    private static boolean visibleEmpty(String line) {
+        return compact(line).isEmpty();
+    }
+
     @Test
     public void shouldCachePerEpochAndKey() {
         EpochMeasure measure = new EpochMeasure();

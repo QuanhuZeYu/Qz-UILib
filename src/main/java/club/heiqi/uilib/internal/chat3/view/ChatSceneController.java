@@ -117,6 +117,8 @@ public final class ChatSceneController {
     /** 段宽度度量(null = 关闭 URL 链接化;生产恒注入,T6a)。 */
     private final ChatMessageList.SegmentMeasurer segmentMeasurer;
     private ChatLineLayouter layouter;
+    /** 系统消息行切分器(font-system 12px 口径,K3 三轮)。 */
+    private ChatLineLayouter systemLayouter;
     private ChatCardComposer composer;
     private ChatMessageList messageList;
 
@@ -355,6 +357,7 @@ public final class ChatSceneController {
     public void invalidateLayout() {
         synchronized (this) {
             layouter = null;
+            systemLayouter = null;
             composer = null;
             messageList = null;
         }
@@ -683,8 +686,12 @@ public final class ChatSceneController {
      * 行数按整段文本宽 ÷ 单行最大宽估算(与 layouter 同源注入度量,粗粒度、零布局)。
      */
     private int estimateHudGroupHeight(MessageGroupModel group) {
-        int fontSize = ChatMarkdownSettings.getChatFontSizePx();
-        int lineHeight = ChatMarkdownSettings.getChatLineHeightPx();
+        // K3 三轮:系统消息按 font-system 12/16 估算(与渲染/切分同源),非系统组沿用 body
+        boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER;
+        int fontSize = system ? ChatMarkdownSettings.getSystemFontSizePx()
+                : ChatMarkdownSettings.getChatFontSizePx();
+        int lineHeight = system ? ChatMarkdownSettings.getSystemLineHeightPx()
+                : ChatMarkdownSettings.getChatLineHeightPx();
         int paddingY = ChatMarkdownSettings.getBubblePaddingY();
         int headerFontSize = ChatMarkdownSettings.getChatHeaderFontSizePx();
         int innerGap = ChatMarkdownSettings.getGroupInnerGapPx();
@@ -696,7 +703,7 @@ public final class ChatSceneController {
             messageCount++;
             lines += estimatedLines(line.getRest(), maxLineWidth, fontSize);
         }
-        if (group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER) {
+        if (system) {
             return lines * lineHeight;
         }
         return headerFontSize + 2 * paddingY + lines * lineHeight
@@ -761,8 +768,10 @@ public final class ChatSceneController {
                 if (current == null) {
                     if (layouter == null) {
                         layouter = new ChatLineLayouter(measure, ChatMarkdownSettings.getChatFontSizePx());
+                        systemLayouter = new ChatLineLayouter(measure,
+                                ChatMarkdownSettings.getSystemFontSizePx());
                     }
-                    current = new ChatCardComposer(layouter);
+                    current = new ChatCardComposer(layouter, systemLayouter);
                     composer = current;
                 }
             }

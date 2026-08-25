@@ -128,12 +128,23 @@ public final class ChatCardComposer {
     }
 
     private final ChatLineLayouter layouter;
+    /** 系统消息行切分器(font-system 12px 口径;null = 回退 body 切分器,旧行为)。 */
+    private final ChatLineLayouter systemLayouter;
 
     /**
      * @param layouter 行切分器(与渲染同源度量)
      */
     public ChatCardComposer(ChatLineLayouter layouter) {
+        this(layouter, null);
+    }
+
+    /**
+     * @param layouter       气泡消息行切分器(body 字号口径)
+     * @param systemLayouter 系统消息行切分器(system 字号口径;null = 回退 layouter)
+     */
+    public ChatCardComposer(ChatLineLayouter layouter, ChatLineLayouter systemLayouter) {
         this.layouter = layouter;
+        this.systemLayouter = systemLayouter;
     }
 
     /**
@@ -161,17 +172,21 @@ public final class ChatCardComposer {
                     && !ChatMarkdownSettings.isShowSelfName() ? "" : sender;
         }
         // SYSTEM_CENTER:无组头(headerName/headerTime 空,nameColor 白)
+        // K3 三轮:系统消息按 font-system 12px 口径切分(切分与渲染同源),
+        // 系统行切分器未注入时回退 body 切分器(旧行为)
+        ChatLineLayouter active = alignment == MessageGroupModel.Alignment.SYSTEM_CENTER
+                && systemLayouter != null ? systemLayouter : layouter;
         List<MessageLines> messages = new ArrayList<MessageLines>();
         for (MessageGroupModel.GroupLine line : group.getLines()) {
             ChatLineRecord record = line.getRecord();
             String display = displayText(line);
-            List<String> lines = layouter.layout(display, maxLineWidthPx);
+            List<String> lines = active.layout(display, maxLineWidthPx);
             if (applyTtl) {
                 lines = clampHudLines(lines, maxLineWidthPx);
             }
             float maxLineWidth = 0.0F;
             for (String textLine : lines) {
-                maxLineWidth = Math.max(maxLineWidth, layouter.measureWidth(textLine));
+                maxLineWidth = Math.max(maxLineWidth, active.measureWidth(textLine));
             }
             messages.add(new MessageLines(record, lines, maxLineWidth));
         }

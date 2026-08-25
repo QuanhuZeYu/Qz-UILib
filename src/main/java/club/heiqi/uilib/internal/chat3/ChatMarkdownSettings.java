@@ -176,6 +176,11 @@ public final class ChatMarkdownSettings {
         return chatFontSizePx + chatLineSpacingPx;
     }
 
+    /** @return 系统消息行高(px,设计稿 §2.2 font-system 12/16)= 系统字号 + 4 */
+    public static int getSystemLineHeightPx() {
+        return systemFontSizePx + 4;
+    }
+
     /**
      * @param viewportWidth 视口宽(逻辑 px)
      * @return 聊天窗口宽(px),设计稿 §5.5 分段:

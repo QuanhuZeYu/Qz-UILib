@@ -459,12 +459,16 @@ public final class ChatMessageList {
     /** 构建单组子树:组头 row(名字+时间)+ 消息气泡(背景/四角圆角/行段);HUD 形态挂淡出绑定。 */
     private SceneNode buildGroupNode(SceneRuntime rt, ChatCardComposer.ComposedGroup group, Style style,
             Map<SceneNode, ChatLineRecord> registry, ReadableSignal<Long> frameMillis) {
-        int fontSize = ChatMarkdownSettings.getChatFontSizePx();
-        int lineHeight = ChatMarkdownSettings.getChatLineHeightPx();
-        int paddingX = ChatMarkdownSettings.getBubblePaddingX();
-        int paddingY = ChatMarkdownSettings.getBubblePaddingY();
         boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER;
         boolean selfRight = group.getAlignment() == MessageGroupModel.Alignment.SELF_RIGHT;
+        // K3 三轮:系统消息独立字号/行高(font-system 12/16,设计稿 §2.2/§3.4),
+        // 不再沿用 body 13/18;行段宽与链接命中区度量随之同源(12px 口径)
+        int fontSize = system ? ChatMarkdownSettings.getSystemFontSizePx()
+                : ChatMarkdownSettings.getChatFontSizePx();
+        int lineHeight = system ? ChatMarkdownSettings.getSystemLineHeightPx()
+                : ChatMarkdownSettings.getChatLineHeightPx();
+        int paddingX = ChatMarkdownSettings.getBubblePaddingX();
+        int paddingY = ChatMarkdownSettings.getBubblePaddingY();
         AlignSelf align;
         switch (group.getAlignment()) {
             case SELF_RIGHT:
@@ -643,7 +647,10 @@ public final class ChatMessageList {
                 if (segmentMeasurer != null) {
                     int lineWidth = Math.max(1,
                             (int) Math.ceil(segmentsWidth(segments, segmentMeasurer, fontSize)));
-                    if (maxBubbleWidthPx > 0) {
+                    // K3 三轮:钳宽仅作用于气泡行(气泡 ≤ 0.85 组内容宽);系统消息无气泡,
+                    // 行宽 = 实宽(钳到 269 会把居中的系统行节点收缩到 269,行文本 340 溢出
+                    // 节点且居中几何错位——K3 摘要第 4 条)
+                    if (maxBubbleWidthPx > 0 && !system) {
                         int reserve = (accent ? ACCENT_BAR_WIDTH_PX : 0)
                                 + (quoteLine ? QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX : 0);
                         lineWidth = Math.min(lineWidth,
@@ -721,28 +728,31 @@ public final class ChatMessageList {
                         }
                     });
         }
-        // 气泡 hover 底色(仅非系统消息;3% 白叠加,PAINT 级与淡出共同烘焙)
-        if (!system) {
-            for (int i = 0; i < messageCount; i++) {
-                final SceneNode messageNode = messageNodes.get(i);
-                final int idx = i;
-                final boolean[] ownBubble = new boolean[] { bubbleHovered[idx] };
-                rt.bind(rt.interactionState(messageNode).hovered(), hovered -> {
-                    boolean now = Boolean.TRUE.equals(hovered);
-                    boolean changed = now != ownBubble[0];
-                    ownBubble[0] = now;
+        // 气泡 hover 底色(仅非系统消息;3% 白叠加,PAINT 级与淡出共同烘焙)+
+        // 链接 hover 离开清理(K3 三轮:系统消息同样装配——此前 hovered 绑定仅限非系统消息,
+        // 指针离开系统消息链接行后 lineHovered 残留 → URL 行 stuck hover,
+        // 真机 URL L1 恒 hover 色 + 下划线实锤)
+        for (int i = 0; i < messageCount; i++) {
+            final SceneNode messageNode = messageNodes.get(i);
+            final int idx = i;
+            final boolean[] ownBubble = new boolean[] { bubbleHovered[idx] };
+            rt.bind(rt.interactionState(messageNode).hovered(), hovered -> {
+                boolean now = Boolean.TRUE.equals(hovered);
+                boolean changed = now != ownBubble[0];
+                ownBubble[0] = now;
+                if (!system) {
                     bubbleHovered[idx] = now;
-                    if (!now) {
-                        LinkHoverDriver driver = linkDrivers.get(messageNode);
-                        if (driver != null) {
-                            driver.onPointerLeave();
-                        }
+                }
+                if (!now) {
+                    LinkHoverDriver driver = linkDrivers.get(messageNode);
+                    if (driver != null) {
+                        driver.onPointerLeave();
                     }
-                    if (changed) {
-                        bake.bake(currentAlpha[0]);
-                    }
-                });
-            }
+                }
+                if (!system && changed) {
+                    bake.bake(currentAlpha[0]);
+                }
+            });
         }
         // 链接 hover + tooltip(含链接行才装配;F5 用户拍板:系统消息裸 URL 同样装配命中区
         // 与 hover/tooltip/cursor,点击经 registry 回投原版事件链——仅系统消息无气泡 hover)

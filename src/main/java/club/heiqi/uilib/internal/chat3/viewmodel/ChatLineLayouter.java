@@ -139,8 +139,10 @@ public final class ChatLineLayouter {
             // 超宽:K3 修复——先词边界回退(行内有空白 → 最后空白处断行,空白后的词整词
             // 移入续行,不在英文词中间硬断);无空格长串才字符硬断(设计稿 §5.4)。
             // 两种断行产生的续行行首都重发当前生效格式码,续行颜色/样式不丢。
+            // K3 三轮修复:空白之前无可见字符(纯前导缩进 + § 格式码)时不走词边界回退——
+            // 否则会把缩进单独断成一行可见内容为空的"§6"行(真机 URL 缩进行复现)。
             int lastWs = lastWhitespace(current);
-            if (lastWs >= 0) {
+            if (lastWs >= 0 && hasVisibleChar(current, 0, lastWs)) {
                 // 词边界回退:行 = 最后空白之前(去尾空白),续行 = 空白后的整词 + 重发格式码;
                 // 断行点之后的待定空白(词间分隔空格)属于续行内容,一并移入而非丢弃
                 String rest = current.substring(lastWs + 1);
@@ -153,13 +155,15 @@ public final class ChatLineLayouter {
                 continue; // 不推进 i,重试该字符
             }
             String trimmed = trimTrailing(current);
-            if (!trimmed.isEmpty()) {
+            if (hasVisibleChar(trimmed, 0, trimmed.length())) {
                 lines.add(trimmed);
                 current.setLength(0);
                 current.append(format.prefix());
                 pendingSpaces.setLength(0);
                 continue; // 不推进 i,重试该字符
             }
+            // 行内无可见字符(仅前导空白 + § 格式码):不断出空行,硬放该字符并入缩进
+            // (窄行下缩进 + 首词作为整体成行,不产生零内容行)
             current.append(c);
             i++;
         }
@@ -237,5 +241,20 @@ public final class ChatLineLayouter {
             }
         }
         return -1;
+    }
+
+    /** @return [from, to) 区间内是否存在可见字符(§ 格式码对与空白不计)。 */
+    private static boolean hasVisibleChar(CharSequence cs, int from, int to) {
+        for (int i = from; i < to; i++) {
+            char c = cs.charAt(i);
+            if (c == '\u00a7' && i + 1 < cs.length()) {
+                i++;
+                continue;
+            }
+            if (!Character.isWhitespace(c)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
