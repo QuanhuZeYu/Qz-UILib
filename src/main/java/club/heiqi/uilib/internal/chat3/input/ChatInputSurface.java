@@ -62,27 +62,39 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         container = ChatContainer.mount(runtime, controller, screenMessageNodes, initialText);
         root.appendChild(container.root());
 
-        // 滚轮滚动聊天历史(vanilla ±7/Shift±1 语义)
+        // 滚轮滚动聊天历史(vanilla ±7/Shift±1 语义)。
+        // 方向语义:wheelDelta > 0(滚轮向上)→ 正行数 → history.scrollBy(+) = 向旧消息
+        // (scrollOffset 自底部向上,与原版 GuiNewChat.func_146229_b 正号同语义);
+        // wheelDelta < 0(滚轮向下)→ 负行数 → 回最新底部。
         runtime.on(root, SceneEventType.SCROLL,
                 (SceneEvent event, club.heiqi.uilib.ui.scene.input.SceneEventContext ctx) -> {
-                    int wheel = event.getWheelDelta();
+                    int wheel = wheelScrollLines(event.getWheelDelta(), event.isShiftDown());
                     if (wheel == 0) {
                         return;
-                    }
-                    if (wheel > 1) {
-                        wheel = 1;
-                    }
-                    if (wheel < -1) {
-                        wheel = -1;
-                    }
-                    if (!event.isShiftDown()) {
-                        wheel *= ChatMarkdownSettings.getScrollWheelLines();
                     }
                     // 滚轮 = 非拖动来源:退出拖动接管直通,恢复 120ms 平滑(拖动结束后的首滚轮不平滑回归)
                     controller.smoothScroll().releaseDrag();
                     controller.history().scrollBy(wheel);
                     controller.notifyDataChanged();
                 });
+    }
+
+    /**
+     * 滚轮增量 → 聊天滚动行数(原版 ±7/Shift±1 语义,包级供 headless 单测锁定符号)。
+     *
+     * <p>wheelDelta 符号遵循 {@link LwjglInputSource}(正 = 滚轮向上);返回正行数 = 向旧消息
+     * (自底部向上偏移,原版 GuiNewChat.func_146229_b 正号同语义),负行数 = 向新消息回底。
+     * 幅度 clamp 到 ±1 后:非 Shift × {@code scrollWheelLines}(默认 7),Shift ×1。</p>
+     */
+    static int wheelScrollLines(int wheelDelta, boolean shiftDown) {
+        if (wheelDelta == 0) {
+            return 0;
+        }
+        int wheel = Math.max(-1, Math.min(1, wheelDelta));
+        if (!shiftDown) {
+            wheel *= ChatMarkdownSettings.getScrollWheelLines();
+        }
+        return wheel;
     }
 
     @Override

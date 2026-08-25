@@ -12,6 +12,8 @@ import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
@@ -149,29 +151,55 @@ public final class ChatContainer {
                 controller.frameMillisSignal());
 
         // 滚动唯一汇点:历史滚动偏移(px) → 视口滚动属性(结构版本驱动重算)。
-        // 滚动条显示源与容器绑定共享同一 Computed(同源同值)。
-        Computed<Integer> scrollPx = Computed.create(controller::scrollOffsetPx);
-        Binding scrollBinding = rt.bind(scrollPx,
+        //
+        // ★ 聊天↔scene 语义转换(真机「滚轮方向反」修复):chat3 滚动 = 自底部向上偏移
+        // (0 = 贴底最新,越大越旧),scene scrollOffsetY = 自顶部向下偏移
+        // (0 = 顶部,SceneGeometry.maxScrollY = 底部)。两者方向相反,故
+        // 视口偏移 = maxScrollY - 聊天偏移(聊天偏移 clamp 到 [0, maxScrollY],向上最多滚到最旧)。
+        // 由此滚轮向上(wheelDelta > 0 → history.scrollBy(+7))→ 聊天偏移↑ → 视口偏移↓ →
+        // 内容下移 = 看上方旧消息,与原版 GuiNewChat.func_146229_b(scroll>0 查看更早消息)一致。
+        // maxScrollY 是布局后几何:依赖 layoutDoneSignal 在内容变化帧布局完成后重算(与
+        // SceneScrollbar 同模式,layout 未跑时兜底 0)。
+        Computed<Integer> chatScrollPx = Computed.create(controller::scrollOffsetPx);
+        Computed<Integer> viewportScrollPx = Computed.create(() -> {
+            int chatPx = chatScrollPx.get().intValue();
+            rt.layoutDoneSignal().get();
+            Object cached = listViewport.getCachedLayout();
+            if (!(cached instanceof LayoutBox)) {
+                return Integer.valueOf(0); // flush 前 layout 未跑:兜底 0(下帧 layoutDone 校准)
+            }
+            int maxScroll = SceneGeometry.maxScrollY(listViewport);
+            return Integer.valueOf(maxScroll - Math.max(0, Math.min(chatPx, maxScroll)));
+        });
+        Binding scrollBinding = rt.bind(viewportScrollPx,
                 offset -> listViewport.setScrollOffsetY(offset.intValue()));
 
         // 滚动条:与视口同级 ROW 内右对齐,右内边距 2(贴容器右缘)。
-        // setScrollOffset 回调与滚轮路径同源(history.scrollBy + notifyDataChanged)。
+        // 显示源 = viewportScrollPx(scene px,与视口绑定同源同值):thumb 底部 = 贴底最新、
+        // 顶部 = 最旧(滚动条方向与聊天语义对齐)。
+        // setScrollOffset 回调(scene px → 聊天行反向换算)与滚轮路径同源(history.scrollBy + notifyDataChanged)。
         // onDragStart:拖动接管时机 → 平滑器 snapTo 当前显示行(取消平滑、进入直通,拖动手感即时;
         // 拖动中每次 setScrollOffset 目标变化经平滑器直通直接到位,display 恒等于目标)。
         final int lineHeight = Math.max(1, ChatMarkdownSettings.getChatLineHeightPx());
-        ChatScrollbar.Result scrollbar = ChatScrollbar.create(rt, listViewport, scrollPx,
+        ChatScrollbar.Result scrollbar = ChatScrollbar.create(rt, listViewport, viewportScrollPx,
                 offset -> {
-                    int targetLines = (int) Math.round(offset.doubleValue() / (double) lineHeight);
+                    // scene px(已由 SceneScrollbar clamp 到 [0, maxScrollY])→ 聊天行(自底部向上)
+                    int maxScroll = SceneGeometry.maxScrollY(listViewport);
+                    int chatPx = Math.max(0, maxScroll - offset.intValue());
+                    int targetLines = (int) Math.round(chatPx / (double) lineHeight);
                     int current = controller.history().getScroll();
                     if (targetLines != current) {
-                        // scrollBy 下限 0 clamp 与滚轮路径一致(上限=可滚行数,由 maxScrollY 折算保证)
+                        // scrollBy 下限 0 clamp 与滚轮路径一致(上限由视口偏移 clamp 折算保证)
                         controller.history().scrollBy(targetLines - current);
                         controller.notifyDataChanged();
                     }
                 },
                 controller.frameMillisSignal(),
-                offsetPx -> controller.smoothScroll().snapTo(
-                        (int) Math.round(offsetPx.doubleValue() / (double) lineHeight)));
+                offsetPx -> {
+                    int maxScroll = SceneGeometry.maxScrollY(listViewport);
+                    int chatPx = Math.max(0, maxScroll - offsetPx.intValue());
+                    controller.smoothScroll().snapTo((int) Math.round(chatPx / (double) lineHeight));
+                });
         scrollbar.column().setMargin(0, 2, 0, 0);
         listRow.appendChild(scrollbar.column());
 
