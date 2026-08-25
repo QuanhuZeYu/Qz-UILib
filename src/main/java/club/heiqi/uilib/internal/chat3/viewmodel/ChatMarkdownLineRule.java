@@ -93,6 +93,12 @@ public final class ChatMarkdownLineRule {
         if (line == null || line.isEmpty()) {
             return NONE;
         }
+        // 剥离行首 § 格式码对(真机玩家消息去发送者前缀后行首恒残留颜色码,如 "§f- item";
+        // 行级标记的「行首」检测必须无视零宽格式码,否则列表/块级公式规则对玩家消息全部失效)
+        line = stripLeadingFormatCodes(line);
+        if (line.isEmpty()) {
+            return NONE;
+        }
         int leading = 0;
         while (leading < line.length() && line.charAt(leading) == ' ') {
             leading++;
@@ -141,6 +147,15 @@ public final class ChatMarkdownLineRule {
             }
         }
         return count;
+    }
+
+    /** 剥离行首连续 §x 格式码对(零宽、无视觉语义,与 {@link #stripTrailingFormatCodes} 对称)。 */
+    private static String stripLeadingFormatCodes(String text) {
+        int start = 0;
+        while (start + 1 < text.length() && text.charAt(start) == '\u00a7') {
+            start += 2;
+        }
+        return start == 0 ? text : text.substring(start);
     }
 
     /** 剥离行尾连续 §x 格式码对(零宽、无视觉语义)。 */

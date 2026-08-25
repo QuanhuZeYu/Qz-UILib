@@ -1,7 +1,9 @@
 package club.heiqi.uilib.internal.chat3.view;
 
 import java.lang.reflect.Field;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.List;
 import java.util.Set;
@@ -10,6 +12,8 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.ChatStyle;
+import net.minecraft.util.IChatComponent;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.layout.TextSegment;
@@ -1358,5 +1362,144 @@ public class ChatMessageListTest {
         Assert.assertEquals("http://a.co", segments.get(2).getStyle().getLink());
         Assert.assertEquals("链接默认色 text-link", ChatMarkdownSettings.getLinkArgb(),
                 segments.get(2).getStyle().getColor());
+    }
+
+    // ==================== C 拍板回归:真机同款行首颜色码(vision-exp 五轮截图) ====================
+
+    /** 真机同款消息组件:原版 chat.type.text translation 形态,发送者与消息本体各带独立
+     *  颜色码(§f&lt;Bob&gt; §f- item),去前缀后行首恒残留 §f。 */
+    private static final class SiblingStyledComponent implements IChatComponent {
+
+        private final String plain;
+        private final String formatted;
+
+        SiblingStyledComponent(String plain, String formatted) {
+            this.plain = plain;
+            this.formatted = formatted;
+        }
+
+        @Override
+        public IChatComponent setChatStyle(ChatStyle style) {
+            return this;
+        }
+
+        @Override
+        public ChatStyle getChatStyle() {
+            return null;
+        }
+
+        @Override
+        public IChatComponent appendText(String text) {
+            return this;
+        }
+
+        @Override
+        public IChatComponent appendSibling(IChatComponent component) {
+            return this;
+        }
+
+        @Override
+        public String getUnformattedTextForChat() {
+            return plain;
+        }
+
+        @Override
+        public String getUnformattedText() {
+            return plain;
+        }
+
+        @Override
+        public String getFormattedText() {
+            return formatted;
+        }
+
+        @Override
+        public List<IChatComponent> getSiblings() {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public IChatComponent createCopy() {
+            return new SiblingStyledComponent(plain, formatted);
+        }
+
+        @Override
+        public Iterator<IChatComponent> iterator() {
+            return Collections.<IChatComponent>emptyList().iterator();
+        }
+    }
+
+    @Test
+    public void singleLineListMessageWithLeadingColorCodeRendersBullet() {
+        // 真机同款:玩家消息(chat.type.text translation)去 "<名字> " 前缀后行首残留 §f,
+        // classify 未剥行首格式码时行级规则全部失效,渲染字面 "- item"(vision-exp 截图回归)
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new SiblingStyledComponent(
+                "<Bob> - item", "§f<Bob> §f- item"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("bullet + 内容两段", 2, segments.size());
+        Assert.assertEquals("前缀渲染为「• 」", "• ", segments.get(0).getText());
+        Assert.assertEquals("内容去标记", "item", segments.get(1).getText());
+    }
+
+    @Test
+    public void singleLineBlockMathWithLeadingColorCodeRendersLatex() {
+        // 真机同款:$$ 独占行行首残留 §f → 块级公式应照常走 LaTeX 渲染链
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new SiblingStyledComponent(
+                "<Bob> $$x^2$$", "§f<Bob> §f$$x^2$$"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("块级公式 = 单个 latex 段", 1, segments.size());
+        Assert.assertTrue("latex 段", segments.get(0).isLatex());
+        Assert.assertEquals("TeX 源剥 $$ 边界", "x^2", segments.get(0).getLatexSource());
+        Assert.assertEquals("上下各 4px 间距", 4, lineNode.getMarginTop());
+        Assert.assertEquals("上下各 4px 间距", 4, lineNode.getMarginBottom());
+    }
+
+    @Test
+    public void singleLineCodeWithLeadingColorCodeCarriesCodeSpan() {
+        // 真机同款:单行 "`System.out.println(42)`" 行首残留 §f → 行内 code 切分照常,
+        // code 段带衬底标记与 font-code 字号(§f 是零宽格式码,不进段文本)
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new SiblingStyledComponent(
+                "<Bob> `System.out.println(42)`",
+                "§f<Bob> §f`System.out.println(42)`"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode lineNode = bubble.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("单段 code", 1, segments.size());
+        Assert.assertTrue("code 段标记", segments.get(0).getStyle().isCodeSpan());
+        Assert.assertEquals("code 内容", "System.out.println(42)", segments.get(0).getText());
+        Assert.assertEquals("code 衬底色", ChatMarkdownSettings.getCodeBackgroundArgb(),
+                segments.get(0).getStyle().getCodeBackgroundColor());
+        Assert.assertEquals("code 段字号 font-code 12", ChatMarkdownSettings.getCodeFontSizePx(),
+                segments.get(0).getStyle().resolveEffectiveFontSizePx(
+                        ChatMarkdownSettings.getChatFontSizePx()));
+    }
+
+    @Test
+    public void systemMessageLineRulesAreExcludedEvenWithLeadingColorCode() {
+        // 系统消息不套行级规则(§3.5 排版规则仅作用于气泡内):文本行首为 "- " 也保持字面;
+        // 系统组无组头,groupNode 子节点 = [messageNode](他人组为 [headerRow, messageNode])
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("- 系统公告"), 1, T0));
+        controller.setHostViewport(400, 300);
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        SceneNode systemMessage = hudGroups(root).get(0).__getChildren().get(0);
+        SceneNode lineNode = systemMessage.__getChildren().get(0);
+        List<TextSegment> segments = lineNode.getSegments();
+        Assert.assertEquals("系统消息无 bullet 前缀", 1, segments.size());
+        Assert.assertEquals("- 系统公告", segments.get(0).getText());
     }
 }

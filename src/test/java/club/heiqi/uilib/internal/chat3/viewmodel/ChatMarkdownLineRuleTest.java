@@ -71,6 +71,44 @@ public class ChatMarkdownLineRuleTest {
     }
 
     @Test
+    public void leadingFormatCodesAreIgnoredForLineStartDetection() {
+        // 真机玩家消息去发送者前缀后行首恒残留 § 颜色码("§f- item"):行级标记的
+        // 「行首」检测必须无视零宽格式码,否则单行列表/公式对玩家消息全部失效
+        // (vision-exp 五轮截图回归:字面 "-/*/1."、$$ 未独占行)
+        ChatMarkdownLineRule.Match bullet = ChatMarkdownLineRule.classify("§f- item");
+        Assert.assertEquals(ChatMarkdownLineRule.Kind.UNORDERED_LIST, bullet.getKind());
+        Assert.assertEquals("内容去标记", "item", bullet.getContent());
+        Assert.assertEquals("无前导空格层级 0", 0, bullet.getLevel());
+
+        // 格式码在前、空格缩进在后 → 层级映射不受影响
+        Assert.assertEquals("§f + 2 空格 = 1 级", 1,
+                ChatMarkdownLineRule.classify("§f  - item").getLevel());
+
+        // 块级公式 $$ 行首带格式码
+        ChatMarkdownLineRule.Match math = ChatMarkdownLineRule.classify("§f$$x^2$$");
+        Assert.assertEquals(ChatMarkdownLineRule.Kind.BLOCK_MATH, math.getKind());
+        Assert.assertEquals("x^2", math.getLatexSource());
+
+        // $...$ 独占行同样无视行首格式码
+        Assert.assertEquals(ChatMarkdownLineRule.Kind.BLOCK_MATH,
+                ChatMarkdownLineRule.classify("§f$x^2$").getKind());
+
+        // 有序列表行首带格式码
+        Assert.assertEquals(ChatMarkdownLineRule.Kind.ORDERED_LIST,
+                ChatMarkdownLineRule.classify("§f1. first").getKind());
+
+        // 非行级标记不受影响(连字符后无空格)
+        Assert.assertEquals(ChatMarkdownLineRule.Kind.NONE,
+                ChatMarkdownLineRule.classify("§f-not-list").getKind());
+
+        // 连续多对格式码与纯格式码行
+        Assert.assertEquals(ChatMarkdownLineRule.Kind.UNORDERED_LIST,
+                ChatMarkdownLineRule.classify("§f§l- item").getKind());
+        Assert.assertEquals(ChatMarkdownLineRule.Kind.NONE,
+                ChatMarkdownLineRule.classify("§f§r").getKind());
+    }
+
+    @Test
     public void plainLinesAreUnaffected() {
         Assert.assertEquals(ChatMarkdownLineRule.Kind.NONE,
                 ChatMarkdownLineRule.classify("-not-list").getKind());
