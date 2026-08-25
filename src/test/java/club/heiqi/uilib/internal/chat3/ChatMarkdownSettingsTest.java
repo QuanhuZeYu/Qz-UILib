@@ -22,7 +22,8 @@ public class ChatMarkdownSettingsTest {
         Assert.assertEquals(360, ChatMarkdownSettings.getChatWidthMaxPx());
         // 新增参数(P1 用,本轮落常量)
         Assert.assertEquals(0.5, ChatMarkdownSettings.getHudMaxHeightRatio(), 0.0001);
-        Assert.assertEquals(3, ChatMarkdownSettings.getScrollWheelLines());
+        // 滚轮默认 7(设计稿 §10.1 拍板改回原版 ×7;Shift 一格 1 行)
+        Assert.assertEquals(7, ChatMarkdownSettings.getScrollWheelLines());
         Assert.assertEquals(1200L, ChatMarkdownSettings.getScrollbarAutoHideMillis());
         Assert.assertEquals(ChatMarkdownSettings.SelfBubbleStyle.ACCENT, ChatMarkdownSettings.getSelfBubbleStyle());
         Assert.assertFalse(ChatMarkdownSettings.isShowSelfName());

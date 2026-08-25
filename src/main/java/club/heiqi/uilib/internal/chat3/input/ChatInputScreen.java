@@ -18,14 +18,6 @@ import club.heiqi.uilib.ui.screen.McScreenBridge;
  */
 public final class ChatInputScreen extends McScreenBridge {
 
-    /** LWJGL 键码(原版 GuiChat 同表)。 */
-    private static final int KEY_RETURN = 28;
-    private static final int KEY_UP = 200;
-    private static final int KEY_DOWN = 208;
-    private static final int KEY_TAB = 15;
-    private static final int KEY_PRIOR = 201; // Page Up
-    private static final int KEY_NEXT = 209; // Page Down
-
     private final ChatInputSurface surface;
 
     /**
@@ -59,31 +51,34 @@ public final class ChatInputScreen extends McScreenBridge {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
-        if (keyCode == KEY_RETURN) {
-            submit();
-            return;
+        ChatInputKeyAction.Action action = ChatInputKeyAction.of(keyCode);
+        if (action != ChatInputKeyAction.Action.TAB) {
+            // 原版 GuiChat:91:任何非 Tab 键清补全循环态(方向键/Home/End 移动光标不改变文本,
+            // 不触发 onChange 清态,必须显式清,否则旧循环态残留)
+            surface.clearCompletionCycle();
         }
-        if (keyCode == KEY_UP) {
-            surface.recallHistory(-1);
-            return;
+        switch (action) {
+            case SUBMIT:
+                submit();
+                return;
+            case HISTORY_UP:
+                surface.recallHistory(-1);
+                return;
+            case HISTORY_DOWN:
+                surface.recallHistory(1);
+                return;
+            case TAB:
+                surface.autocomplete(GuiScreen.isShiftKeyDown() ? -1 : 1);
+                return;
+            case PAGE_UP:
+                surface.pageScroll(1);
+                return;
+            case PAGE_DOWN:
+                surface.pageScroll(-1);
+                return;
+            default:
+                super.keyTyped(typedChar, keyCode);
         }
-        if (keyCode == KEY_DOWN) {
-            surface.recallHistory(1);
-            return;
-        }
-        if (keyCode == KEY_TAB) {
-            surface.autocomplete(GuiScreen.isShiftKeyDown() ? -1 : 1);
-            return;
-        }
-        if (keyCode == KEY_PRIOR) {
-            surface.pageScroll(1);
-            return;
-        }
-        if (keyCode == KEY_NEXT) {
-            surface.pageScroll(-1);
-            return;
-        }
-        super.keyTyped(typedChar, keyCode);
     }
 
     @Override
@@ -101,12 +96,12 @@ public final class ChatInputScreen extends McScreenBridge {
 
     /**
      * 提交并关闭(原版 func_146403_a 语义:trim 后非空才发;空输入仅关屏)。
-     * 发送路径经 {@link ChatBridge} 原版链(入发送历史 → 命令探测 → 发包)。
+     * 判空后再入发送历史(空 Enter 不污染 Up/Down 历史),发送路径经 {@link ChatBridge}
+     * 原版链(入发送历史 → 命令探测 → 发包)。
      */
     private void submit() {
-        String message = surface.takeText();
-        surface.recordSent(message);
-        if (!message.isEmpty()) {
+        String message = surface.submitText();
+        if (message != null) {
             ChatBridge.send(message);
         }
         Minecraft mc = Minecraft.getMinecraft();

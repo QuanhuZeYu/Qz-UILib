@@ -122,6 +122,28 @@ public class SceneTextInputTest {
         mountInput("", SceneInputType.TEXT, MAX_LENGTH, PLACEHOLDER);
     }
 
+    /** 挂载 UTF-16 口径输入框(T8:maxLengthUnit 可选 prop 的测试入口)。 */
+    private void mountInputUtf16(String initialValue, int maxLength) {
+        valueSignal = Signal.create(initialValue);
+        enabledSignal = Signal.create(Boolean.TRUE);
+        readOnlySignal = Signal.create(Boolean.FALSE);
+        changeCount = new AtomicInteger(0);
+        lastChangeValue = null;
+        SceneTextInput.Props props = SceneTextInput.Props.builder(valueSignal)
+                .enabled(enabledSignal).readOnly(readOnlySignal)
+                .placeholder("").maxLength(maxLength)
+                .maxLengthUnit(MaxLengthUnit.UTF16)
+                .inputType(SceneInputType.TEXT)
+                .onChange(next -> {
+                    changeCount.incrementAndGet();
+                    lastChangeValue = next;
+                })
+                .build();
+        handle = runtime.mount(sceneRoot, SceneTextInput.create(runtime, props));
+        inputRoot = handle.getRoot();
+        runtime.flush();
+    }
+
     private void doLayout() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
@@ -435,6 +457,43 @@ public class SceneTextInputTest {
         routeKeyAndFlush(SceneKey.END);
         harness.typeText("8");
         Assert.assertEquals("未满时允许插入", "12345678", lastChangeValue);
+    }
+
+    @Test
+    public void utf16UnitLimitsByUtf16CodeUnits() {
+        // T8:UTF-16 口径截断按 char 单元,emoji 占 2 单元,截断不切代理对
+        String emoji = new String(Character.toChars(0x1F600));
+        mountInputUtf16("", 4);
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        harness.typeText(emoji + emoji + emoji); // 6 单元,只进 4 单元 = 2 个完整 emoji
+        Assert.assertEquals("UTF-16 口径截断到 4 单元", emoji + emoji, lastChangeValue);
+        Assert.assertEquals("截断不切代理对(无孤立 surrogate)",
+                -1, lastChangeValue.indexOf(Character.MIN_SURROGATE));
+
+        valueSignal.set(lastChangeValue);
+        runtime.flush();
+        routeKeyAndFlush(SceneKey.END);
+        harness.typeText(emoji); // 已满 4 单元:emoji(2 单元) 拒绝
+        Assert.assertEquals("满额后 emoji 拒绝(不切代理对)", emoji + emoji, lastChangeValue);
+
+        int before = changeCount.get();
+        harness.typeText("a"); // 1 单元 > 0 可用:拒绝
+        Assert.assertEquals("满额后 1 单元字符同样拒绝", before, changeCount.get());
+    }
+
+    @Test
+    public void defaultMaxLengthUnitRemainsCodepoint() {
+        // T8 向后兼容:默认口径 CODEPOINT 不变,emoji 按 1 码点计数
+        String emoji = new String(Character.toChars(0x1F600));
+        mountInput("", SceneInputType.TEXT, 2, "");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        harness.typeText(emoji + emoji); // 2 码点 = 4 UTF-16 单元,码点口径全部放行
+        Assert.assertEquals("默认码点口径:2 个 emoji 全放行", emoji + emoji, lastChangeValue);
+        Assert.assertEquals("值长度按 char 单元为 4", 4, lastChangeValue.length());
     }
 
     @Test
@@ -809,7 +868,19 @@ public class SceneTextInputTest {
         Assert.assertEquals("maxLength 一致", fromCanonical.maxLength(), fromBuilder.maxLength());
         Assert.assertEquals("inputType 一致", fromCanonical.inputType(), fromBuilder.inputType());
         Assert.assertSame("onChange 引用一致", onChange, fromBuilder.onChange());
+        Assert.assertEquals("默认口径 CODEPOINT(向后兼容不破坏 record equals)",
+                MaxLengthUnit.CODEPOINT, fromBuilder.maxLengthUnit());
         Assert.assertEquals("Builder 与 canonical Props 应 record equals 等价", fromCanonical, fromBuilder);
+
+        SceneTextInput.Props fromBuilderUtf16 = SceneTextInput.Props.builder(value)
+                .enabled(enabled).readOnly(readOnly).placeholder("p").maxLength(8)
+                .inputType(SceneInputType.TEXT).onChange(onChange)
+                .maxLengthUnit(MaxLengthUnit.UTF16)
+                .build();
+        Assert.assertEquals("显式 UTF16 口径透传", MaxLengthUnit.UTF16,
+                fromBuilderUtf16.maxLengthUnit());
+        Assert.assertEquals("7 参兼容构造默认 CODEPOINT", MaxLengthUnit.CODEPOINT,
+                fromCanonical.maxLengthUnit());
     }
 
     /**

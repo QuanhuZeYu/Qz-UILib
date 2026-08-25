@@ -69,8 +69,8 @@ public final class ChatMarkdownSettings {
     private static volatile long popAnimMillis = 240L;
     /** 容器关闭动画时长(ms;设计稿 §4.1 closing 140,easeOutQuad 淡出+下滑)。 */
     private static volatile long closingAnimMillis = 140L;
-    /** 滚轮一格滚动行数(设计:3 行;Shift 一格 1 行)。 */
-    private static volatile int scrollWheelLines = 3;
+    /** 滚轮一格滚动行数(设计稿 §10.1 拍板改回原版 ×7;Shift 一格 1 行)。 */
+    private static volatile int scrollWheelLines = 7;
     /** 平滑滚动时长(ms;行单位滚动的 120ms easeOutQuad,T5b;0 或负 = 瞬移语义)。 */
     private static volatile long smoothScrollMillis = 120L;
     /** 滚动条自动隐藏静止时长(ms;设计:静止 1200 后 300ms 淡出,P1 滚动条用)。 */

@@ -61,11 +61,13 @@ public final class SceneTextInput {
      * @param enabled     是否启用，false 时不可输入且 handler 兜底早退
      * @param readOnly    是否只读，true 时可聚焦/移动 caret，但阻断文本写入
      * @param placeholder 占位文本，value 空串且未聚焦时显示
-     * @param maxLength   最大长度（按码点数），填满后拒绝新增
+     * @param maxLength   最大长度，填满后拒绝新增
      * @param inputType   输入类型，控制字符过滤与密码掩码显示
      * @param onChange    文本变更回调，以期望新值真实 String 调用
      * @param placeholderColor 占位文本色（ARGB）；null = 沿用 {@link SceneStateColors#secondaryText}
      *                    （向后兼容可选，默认不改变既有行为）
+     * @param maxLengthUnit 长度口径（{@link MaxLengthUnit#CODEPOINT} 默认；UTF16 按 char 单元，
+     *                    与原版 maxStringLength 同口径；向后兼容可选）
      */
     @Desugar
     public record Props(
@@ -76,10 +78,11 @@ public final class SceneTextInput {
             int maxLength,
             SceneInputType inputType,
             Consumer<String> onChange,
-            Integer placeholderColor
+            Integer placeholderColor,
+            MaxLengthUnit maxLengthUnit
     ) {
 
-        /** 向后兼容 7 参构造：placeholderColor = null（沿用默认 secondaryText，行为与旧版一致）。 */
+        /** 向后兼容 7 参构造：placeholderColor = null、maxLengthUnit = CODEPOINT（行为与旧版一致）。 */
         public Props(ReadableSignal<String> value,
                      ReadableSignal<Boolean> enabled,
                      ReadableSignal<Boolean> readOnly,
@@ -87,7 +90,21 @@ public final class SceneTextInput {
                      int maxLength,
                      SceneInputType inputType,
                      Consumer<String> onChange) {
-            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange, null);
+            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange, null,
+                    MaxLengthUnit.CODEPOINT);
+        }
+
+        /** 向后兼容 8 参构造：maxLengthUnit = CODEPOINT（行为与旧版一致）。 */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     SceneInputType inputType,
+                     Consumer<String> onChange,
+                     Integer placeholderColor) {
+            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange,
+                    placeholderColor, MaxLengthUnit.CODEPOINT);
         }
 
         /**
@@ -110,7 +127,7 @@ public final class SceneTextInput {
             private ReadableSignal<Boolean> readOnly = Signal.create(Boolean.FALSE);
             /** 占位文本，value 空串且未聚焦时显示。 */
             private String placeholder = "";
-            /** 最大长度（按码点数），填满后拒绝新增；默认 {@code Integer.MAX_VALUE} 表示无限制。 */
+            /** 最大长度，填满后拒绝新增；默认 {@code Integer.MAX_VALUE} 表示无限制。 */
             private int maxLength = Integer.MAX_VALUE;
             /** 输入类型，控制字符过滤与密码掩码显示。 */
             private SceneInputType inputType = SceneInputType.TEXT;
@@ -118,6 +135,8 @@ public final class SceneTextInput {
             private Consumer<String> onChange;
             /** 占位文本色（ARGB）；null = 沿用 SceneStateColors.secondaryText。 */
             private Integer placeholderColor;
+            /** 长度上限口径（CODEPOINT 默认 / UTF16 按 char 单元）；向后兼容新增。 */
+            private MaxLengthUnit maxLengthUnit = MaxLengthUnit.CODEPOINT;
 
             /**
              * 创建构建器。
@@ -164,7 +183,7 @@ public final class SceneTextInput {
             /**
              * 设置最大长度。
              *
-             * @param maxLength 最大长度（按码点数），填满后拒绝新增
+             * @param maxLength 最大长度（按 maxLengthUnit 口径），填满后拒绝新增
              * @return 当前 builder
              */
             public Builder maxLength(int maxLength) {
@@ -206,6 +225,18 @@ public final class SceneTextInput {
             }
 
             /**
+             * 设置长度上限口径（可选；默认 {@link MaxLengthUnit#CODEPOINT} 保持旧行为）。
+             *
+             * @param maxLengthUnit 长度口径
+             * @return 当前 builder
+             */
+            public Builder maxLengthUnit(MaxLengthUnit maxLengthUnit) {
+                this.maxLengthUnit = maxLengthUnit == null
+                        ? MaxLengthUnit.CODEPOINT : maxLengthUnit;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props 实例
@@ -216,7 +247,7 @@ public final class SceneTextInput {
                     throw new IllegalArgumentException("onChange must not be null");
                 }
                 return new Props(value, enabled, readOnly, placeholder, maxLength, inputType,
-                        onChange, placeholderColor);
+                        onChange, placeholderColor, maxLengthUnit);
             }
         }
     }
@@ -242,7 +273,7 @@ public final class SceneTextInput {
         return () -> {
             SceneTextInputPrimitive.Props primitiveProps = new SceneTextInputPrimitive.Props(
                     props.value(), props.enabled(), props.readOnly(), props.placeholder(), props.maxLength(),
-                    props.inputType(), props.onChange());
+                    props.inputType(), props.onChange(), props.maxLengthUnit());
             SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, primitiveProps);
             applyChrome(rt, props, result);
             return result.root();
@@ -262,7 +293,7 @@ public final class SceneTextInput {
     public static Handle createHandle(SceneRuntime rt, Props props) {
         SceneTextInputPrimitive.Props primitiveProps = new SceneTextInputPrimitive.Props(
                 props.value(), props.enabled(), props.readOnly(), props.placeholder(), props.maxLength(),
-                props.inputType(), props.onChange());
+                props.inputType(), props.onChange(), props.maxLengthUnit());
         SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, primitiveProps);
         applyChrome(rt, props, result);
         return new Handle(() -> result.root(), result.moveCaretToEndOf());

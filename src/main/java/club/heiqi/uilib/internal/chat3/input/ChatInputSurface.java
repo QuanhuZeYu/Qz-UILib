@@ -127,6 +127,11 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         return container.bar().takeText();
     }
 
+    /** 提交文本(trim 后);空串返回 null 且不入发送历史,非空记录历史并返回消息文本。 */
+    public String submitText() {
+        return container.bar().submitText();
+    }
+
     /** 记录已发送(发送路径增量同步)。 */
     public void recordSent(String message) {
         container.bar().recordSent(message);
@@ -140,6 +145,11 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     /** Tab 补全(委托输入条;direction +1 正向 Tab,-1 Shift+Tab 反向)。 */
     public void autocomplete(int direction) {
         container.bar().autocomplete(direction);
+    }
+
+    /** 非 Tab 键清补全循环态(原版 GuiChat:91;委托输入条)。 */
+    public void clearCompletionCycle() {
+        container.bar().clearCompletionCycle();
     }
 
     /** PageUp/PageDown 聊天区翻页(可见行数 - 1;+1 向旧消息,-1 向新消息)。 */

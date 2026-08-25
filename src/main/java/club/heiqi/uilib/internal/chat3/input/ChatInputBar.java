@@ -7,12 +7,15 @@ import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiNewChat;
 import net.minecraft.client.gui.GuiPlayerInfo;
+import net.minecraft.command.ICommandSender;
 import net.minecraft.network.play.client.C14PacketTabComplete;
 import net.minecraft.util.ChatComponentText;
+import net.minecraftforge.client.ClientCommandHandler;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.MaxLengthUnit;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.Binding;
@@ -34,7 +37,7 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     private static final int INPUT_PADDING_X_PX = 10;
     /** 输入框内垂直 padding(px,24 盒高 - font-input 14 行高 20 = 上下各 2)。 */
     private static final int INPUT_PADDING_Y_PX = 2;
-    /** 输入上限(原版 GuiTextField.maxStringLength 口径,100 码点;T5)。 */
+    /** 输入上限(原版 GuiTextField.maxStringLength 口径:100 UTF-16 单元,emoji 占 2 单元)。 */
     static final int MAX_INPUT_LENGTH = 100;
 
     private final SceneRuntime runtime;
@@ -65,6 +68,8 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
                 .placeholder("输入消息…")
                 .placeholderColor(Integer.valueOf(ChatMarkdownSettings.getInputPlaceholderArgb()))
                 .maxLength(MAX_INPUT_LENGTH)
+                // 与原版 maxStringLength=100 同口径:UTF-16 单元(emoji 占 2 单元);公共默认 CODEPOINT 不动
+                .maxLengthUnit(MaxLengthUnit.UTF16)
                 .onChange(next -> {
                     inputText.set(next);
                     completion.onTextEdited();
@@ -117,17 +122,42 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         return inputText;
     }
 
-    /** 屏幕打开:聚焦输入框 + 同步发送历史(覆盖第三方直调)+ 清补全残留态。 */
+    /** 屏幕打开:同步发送历史(覆盖第三方直调)+ 清补全残留态 + 聚焦与 caret 对齐。 */
     public void onOpened() {
-        runtime.requestFocus(inputRoot);
         sentHistory.syncFrom(currentSentMessages());
         sentHistory.resetCursor();
         completion.onTextEdited();
+        focusAndAlignCaret();
+    }
+
+    /**
+     * 聚焦输入框 + 预填 caret 归行尾(原版 GuiChat setText 后光标在末尾;primitive caret 从 0 起,
+     * 斜杠预填时不对齐会插成 "t/…")。独立方法便于 headless 单测(vanilla 历史同步触 Minecraft,
+     * 测试无法走 onOpened 全路径)。
+     */
+    void focusAndAlignCaret() {
+        runtime.requestFocus(inputRoot);
+        inputHandle.moveCaretToEndOf().accept(inputText.get());
     }
 
     /** 提交文本(trim 后);空串返回空。 */
     public String takeText() {
         return inputText.get().trim();
+    }
+
+    /**
+     * 提交文本(trim 后):空串不入发送历史(原版空 Enter 仅关屏,不污染 Up/Down 历史),
+     * 非空记录发送历史并返回消息文本。
+     *
+     * @return 消息文本;空串返回 null
+     */
+    public String submitText() {
+        String message = inputText.get().trim();
+        if (message.isEmpty()) {
+            return null;
+        }
+        sentHistory.add(message);
+        return message;
     }
 
     /** 记录已发送(发送路径增量同步)。 */
@@ -138,6 +168,8 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     /** 历史回显(vanilla getSentHistory 语义:-1 上一条 / +1 下一条;回到底恢复暂存草稿)。 */
     public void recallHistory(int direction) {
         String recalled = sentHistory.recall(direction, inputText.get());
+        // caret 归行尾(与 setText 同款:原版回显后光标在末尾,继续输入追加而非插到行首)
+        inputHandle.moveCaretToEndOf().accept(recalled);
         inputText.set(recalled);
         completion.onTextEdited();
     }
@@ -153,6 +185,11 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     /** Tab 补全(委托状态机;direction +1 正向 Tab,-1 Shift+Tab 反向)。 */
     public void autocomplete(int direction) {
         completion.onTab(direction);
+    }
+
+    /** 非 Tab 键清补全循环态(原版 GuiChat:91:任何非 Tab 键清循环;方向键等不改变文本不触发 onChange)。 */
+    public void clearCompletionCycle() {
+        completion.onTextEdited();
     }
 
     /** 服务端补全响应(mixin 转交;快照守卫与两段式在状态机内)。 */
@@ -203,6 +240,42 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
             }
         }
         return names;
+    }
+
+    @Override
+    public List<String> localCommandCompletions(String text) {
+        Minecraft mc = Minecraft.getMinecraft();
+        return localCommandCompletions(mc == null ? null : mc.thePlayer, text);
+    }
+
+    /**
+     * 本地客户端命令候选(Forge ClientCommandHandler 注册表,同步纯函数,headless 可测)。
+     *
+     * <p>与 forge autoComplete 同语义:候选不含 "/",正在补命令名(无空格)时逐候选补 "/" 前缀,
+     * 有空格(补子命令/参数)时不补;颜色前缀(§7…§r)一期不加。</p>
+     *
+     * @param player 命令发送者(客户端玩家;null 返回空)
+     * @param text   输入全文(非 "/" 开头返回空)
+     * @return 可直接入框的候选(保序;无候选/无效输入返回空列表)
+     */
+    static List<String> localCommandCompletions(ICommandSender player, String text) {
+        List<String> result = new ArrayList<String>();
+        if (player == null || text == null || !text.startsWith("/")) {
+            return result;
+        }
+        String commandPart = text.substring(1);
+        List<String> options = ClientCommandHandler.instance.getPossibleCommands(player, commandPart);
+        if (options == null) {
+            return result;
+        }
+        boolean completingCommandName = commandPart.indexOf(' ') < 0;
+        for (String option : options) {
+            if (option == null || option.isEmpty()) {
+                continue;
+            }
+            result.add(completingCommandName ? "/" + option : option);
+        }
+        return result;
     }
 
     @Override

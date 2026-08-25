@@ -82,13 +82,14 @@ public final class SceneTextInputPrimitive {
     /**
      * TextInput primitive 输入契约 —— 只包含行为所需数据，不包含样式开关。
      *
-     * @param value       当前文本（响应式只读，受控源）
-     * @param enabled     是否启用
-     * @param readOnly    是否只读
-     * @param placeholder 占位文本
-     * @param maxLength   最大长度（按码点数）
-     * @param inputType   输入类型
-     * @param onChange    文本变更回调
+     * @param value        当前文本（响应式只读，受控源）
+     * @param enabled      是否启用
+     * @param readOnly     是否只读
+     * @param placeholder  占位文本
+     * @param maxLength    最大长度
+     * @param inputType    输入类型
+     * @param onChange     文本变更回调
+     * @param maxLengthUnit 长度上限口径（{@link MaxLengthUnit#CODEPOINT} 默认；向后兼容新增）
      */
     @Desugar
     public record Props(
@@ -98,8 +99,21 @@ public final class SceneTextInputPrimitive {
             String placeholder,
             int maxLength,
             SceneInputType inputType,
-            Consumer<String> onChange
+            Consumer<String> onChange,
+            MaxLengthUnit maxLengthUnit
     ) {
+
+        /** 向后兼容 7 参构造：maxLengthUnit = CODEPOINT（行为与旧版一致）。 */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     SceneInputType inputType,
+                     Consumer<String> onChange) {
+            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange,
+                    MaxLengthUnit.CODEPOINT);
+        }
     }
 
     /**
@@ -145,6 +159,7 @@ public final class SceneTextInputPrimitive {
         final String placeholder = props.placeholder();
         final int maxLength = props.maxLength();
         final SceneInputType inputType = props.inputType();
+        final MaxLengthUnit maxLengthUnit = props.maxLengthUnit();
         final Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
         // 输入 handler 读取同步真值；signal 只保留帧末响应式投影语义。
         final int[] caretAuthority = {0};
@@ -204,8 +219,9 @@ public final class SceneTextInputPrimitive {
                 if (text != null && !text.isEmpty()) {
                     String v = SceneTextUtils.nullSafe(props.value().get());
                     int caret = SceneTextGeometry.clampCaretIndex(v, Integer.valueOf(caretAuthority[0]));
-                    applyTextInsert(v, caret, selectionAuthority[0], text, maxLength, inputType,
-                            props.onChange(), setSelection, editHistory, false, System.nanoTime());
+                    applyTextInsert(v, caret, selectionAuthority[0], text, maxLength, maxLengthUnit,
+                            inputType, props.onChange(), setSelection, editHistory, false,
+                            System.nanoTime());
                 }
             }));
             items.add(SceneContextMenu.MenuItem.of("全选", () -> {
@@ -443,8 +459,8 @@ public final class SceneTextInputPrimitive {
             }
             String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
-            applyTextInsert(cur, caretPos, selectionAuthority[0], raw, maxLength, inputType,
-                    props.onChange(), setSelection, editHistory, true, ev.getTimeNanos());
+            applyTextInsert(cur, caretPos, selectionAuthority[0], raw, maxLength, maxLengthUnit,
+                    inputType, props.onChange(), setSelection, editHistory, true, ev.getTimeNanos());
         });
 
         rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
@@ -535,8 +551,9 @@ public final class SceneTextInputPrimitive {
                     if (key == SceneKey.KEY_V && !Boolean.TRUE.equals(props.readOnly().get())) {
                         String text = clipboard.getClipboardText();
                         if (text != null && !text.isEmpty()) {
-                            applyTextInsert(cur, caretPos, selectionAuthority[0], text, maxLength, inputType,
-                                    props.onChange(), setSelection, editHistory, false, ev.getTimeNanos());
+                            applyTextInsert(cur, caretPos, selectionAuthority[0], text, maxLength,
+                                    maxLengthUnit, inputType, props.onChange(), setSelection,
+                                    editHistory, false, ev.getTimeNanos());
                         }
                         return;
                     }
@@ -633,25 +650,31 @@ public final class SceneTextInputPrimitive {
      * 在 caret/选区处插入文本（TEXT_INPUT 与 Ctrl+V 共用）：
      * 有选区替换整段，可用空间按"删除选区后剩余"计；过滤后无有效文本时无副作用。
      *
-     * @param cur          当前文本
-     * @param caretPos     当前 caret 码点索引
-     * @param sel          当前选区
-     * @param raw          原始输入文本
-     * @param maxLength    最大长度（码点）
-     * @param inputType    输入类型（过滤规则）
-     * @param onChange     变更回调
-     * @param setSelection 选区写入口（三态同步）
+     * @param cur           当前文本
+     * @param caretPos      当前 caret 码点索引
+     * @param sel           当前选区
+     * @param raw           原始输入文本
+     * @param maxLength     最大长度（按 maxLengthUnit 口径）
+     * @param maxLengthUnit 长度口径（CODEPOINT 默认 / UTF16 按 char 单元）
+     * @param inputType     输入类型（过滤规则）
+     * @param onChange      变更回调
+     * @param setSelection  选区写入口（三态同步）
      */
     private static void applyTextInsert(String cur, int caretPos, TextSelection sel, String raw,
-                                        int maxLength, SceneInputType inputType,
+                                        int maxLength, MaxLengthUnit maxLengthUnit,
+                                        SceneInputType inputType,
                                         Consumer<String> onChange,
                                         BiConsumer<Integer, Integer> setSelection,
                                         TextEditHistory editHistory, boolean mergeable, long timeNanos) {
         int selStart = sel.isActive() ? sel.startCp() : caretPos;
         int selEnd = sel.isActive() ? sel.endCp() : caretPos;
-        int removed = selEnd - selStart;
+        int occupied = maxLengthUnit == MaxLengthUnit.UTF16
+                ? SceneTextUtils.nullSafe(cur).length() - (SceneTextGeometry
+                        .charOffsetForCodePointIndex(cur, selEnd)
+                        - SceneTextGeometry.charOffsetForCodePointIndex(cur, selStart))
+                : SceneTextGeometry.codePointCount(cur) - (selEnd - selStart);
         FilteredInsert filtered = filterForInsert(raw,
-                Math.max(0, maxLength - (SceneTextGeometry.codePointCount(cur) - removed)), inputType);
+                Math.max(0, maxLength - occupied), maxLengthUnit, inputType);
         if (filtered.text.isEmpty()) {
             return;
         }
@@ -763,25 +786,36 @@ public final class SceneTextInputPrimitive {
     }
 
     /**
-     * 过滤输入并限制本次可插入码点数。
+     * 过滤输入并限制本次可插入长度（按 maxLengthUnit 口径；UTF16 不切断代理对，整 emoji 或进或出）。
      *
-     * @param input     原始输入
-     * @param available 剩余可插入码点数
-     * @param inputType 输入类型
+     * @param input         原始输入
+     * @param available     剩余可插入单元数（码点或 UTF-16 char）
+     * @param maxLengthUnit 长度口径
+     * @param inputType     输入类型
      * @return 过滤结果
      */
-    private static FilteredInsert filterForInsert(String input, int available, SceneInputType inputType) {
+    private static FilteredInsert filterForInsert(String input, int available,
+                                                  MaxLengthUnit maxLengthUnit,
+                                                  SceneInputType inputType) {
         StringBuilder sb = new StringBuilder();
         int accepted = 0;
+        int acceptedUnits = 0;
+        String raw = SceneTextUtils.nullSafe(input);
         int i = 0;
-        while (i < input.length() && accepted < available) {
-            int cp = input.codePointAt(i);
-            i += Character.charCount(cp);
+        while (i < raw.length()) {
+            int cp = raw.codePointAt(i);
+            int width = Character.charCount(cp);
+            int cost = maxLengthUnit == MaxLengthUnit.UTF16 ? width : 1;
+            if (acceptedUnits + cost > available) {
+                break;
+            }
+            i += width;
             if (!isAccepted(cp, inputType)) {
                 continue;
             }
             sb.appendCodePoint(cp);
             accepted++;
+            acceptedUnits += cost;
         }
         return new FilteredInsert(sb.toString(), accepted);
     }

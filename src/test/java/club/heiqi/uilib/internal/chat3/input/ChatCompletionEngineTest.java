@@ -9,7 +9,9 @@ import org.junit.Test;
 
 /**
  * Tab 补全状态机测试(T2):idle → awaiting → cycling 三态、两段式响应、
- * 循环正反、候选打印、stale 快照守卫、本地无网络兜底(R1 不本地先行)。
+ * 循环正反、候选打印、stale 快照守卫、本地无网络兜底(R1 不本地先行)、
+ * 客户端命令本地候选(方案 A:请求缓存 → 本地在前合并去重 → 无网络兜底)、
+ * 单候选不打印(原版 GuiChat:244)、非 Tab 键清循环态(原版 GuiChat:91)。
  */
 public class ChatCompletionEngineTest {
 
@@ -19,7 +21,9 @@ public class ChatCompletionEngineTest {
         boolean network = true;
         final List<String> sentRequests = new ArrayList<String>();
         final List<String> localNames = new ArrayList<String>();
+        final List<String> localCommands = new ArrayList<String>();
         final List<List<String>> printed = new ArrayList<List<String>>();
+        int localCommandCalls;
 
         @Override
         public String currentText() {
@@ -44,6 +48,12 @@ public class ChatCompletionEngineTest {
         @Override
         public List<String> localPlayerNames() {
             return localNames;
+        }
+
+        @Override
+        public List<String> localCommandCompletions(String text) {
+            localCommandCalls++;
+            return new ArrayList<String>(localCommands);
         }
 
         @Override
@@ -179,6 +189,22 @@ public class ChatCompletionEngineTest {
     }
 
     @Test
+    public void nonTabKeyClearsCyclingEvenWithoutTextChange() {
+        FakeHost host = new FakeHost();
+        host.text = "st";
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+        engine.onResponse(new String[] { "steve", "stone" });
+        Assert.assertEquals("steve", host.text);
+
+        // 方向键/Home/End 只移动光标、不改变文本(不触发 onChange)→ 原版 GuiChat:91 任何非 Tab 键清循环
+        engine.onTextEdited();
+        engine.onTab(1);
+        Assert.assertEquals("文本未变但循环态已清:Tab 重新走请求路径(C14 #2)", 2, host.sentRequests.size());
+        Assert.assertEquals("等待态不修改文本", "steve", host.text);
+    }
+
+    @Test
     public void localFallbackMatchesCaseInsensitiveWithoutNetwork() {
         FakeHost host = new FakeHost();
         host.network = false;
@@ -202,25 +228,151 @@ public class ChatCompletionEngineTest {
     }
 
     @Test
-    public void localFallbackSkipsCommandWhenNoNetwork() {
-        FakeHost host = new FakeHost();
-        host.network = false;
-        host.localNames.add("Steve");
-        host.text = "/tp st";
-        ChatCompletionEngine engine = engine(host);
-
-        engine.onTab(1);
-        Assert.assertTrue("无网络命令补全无本地来源:不发不补", host.sentRequests.isEmpty());
-        Assert.assertEquals("/tp st", host.text);
-        Assert.assertTrue(host.printed.isEmpty());
-    }
-
-    @Test
     public void emptyTextDoesNothing() {
         FakeHost host = new FakeHost();
         ChatCompletionEngine engine = engine(host);
         engine.onTab(1);
         Assert.assertTrue(host.sentRequests.isEmpty());
         Assert.assertEquals("", host.text);
+    }
+
+    // ==================== 客户端命令本地候选(方案 A) ====================
+
+    @Test
+    public void commandNameCompletionMergesLocalOnResponse() {
+        FakeHost host = new FakeHost();
+        host.text = "/qzu";
+        host.localCommands.add("/qzuilib");
+        ChatCompletionEngine engine = engine(host);
+
+        engine.onTab(1);
+        Assert.assertEquals("网络可用仍发 C14(保持 RTT 体感)", Arrays.asList("/qzu"), host.sentRequests);
+        Assert.assertEquals("本地候选绝不先行:等待态文本不变", "/qzu", host.text);
+        Assert.assertEquals("请求时同步算本地候选", 1, host.localCommandCalls);
+
+        engine.onResponse(new String[0]); // 服务端空应答 → 合并本地候选
+        Assert.assertEquals("补命令名直达 /qzuilib(第一段公共前缀,不打印)", "/qzuilib", host.text);
+        Assert.assertTrue(host.printed.isEmpty());
+    }
+
+    @Test
+    public void subcommandCompletionMergesLocalOnResponse() {
+        FakeHost host = new FakeHost();
+        host.text = "/qzuilib te";
+        host.localCommands.add("test");
+        ChatCompletionEngine engine = engine(host);
+
+        engine.onTab(1);
+        engine.onResponse(new String[0]);
+        Assert.assertEquals("补子命令(候选不含 /)", "/qzuilib test", host.text);
+        Assert.assertTrue("公共前缀直达不打印", host.printed.isEmpty());
+    }
+
+    @Test
+    public void noNetworkSlashFallsBackToLocalCommands() {
+        FakeHost host = new FakeHost();
+        host.network = false;
+        host.text = "/qzu";
+        host.localCommands.add("/qzuilib");
+        ChatCompletionEngine engine = engine(host);
+
+        engine.onTab(1);
+        Assert.assertTrue("无网络不发 C14", host.sentRequests.isEmpty());
+        Assert.assertEquals("/ 开头无网络兜底:本地命令候选直达", "/qzuilib", host.text);
+        Assert.assertTrue("直达段不打印", host.printed.isEmpty());
+
+        // 子命令多候选:无网络兜底同样走两段式 + 循环打印
+        host.localCommands.clear();
+        host.localCommands.add("test");
+        host.localCommands.add("modernconfig");
+        host.text = "/qzuilib te";
+        engine.onTab(1);
+        Assert.assertEquals("循环首候选入框", "/qzuilib test", host.text);
+        Assert.assertEquals(Arrays.asList("test", "modernconfig"), host.printed.get(0));
+        engine.onTab(1);
+        Assert.assertEquals("循环替换", "/qzuilib modernconfig", host.text);
+    }
+
+    @Test
+    public void mergedCandidatesLocalFirstAndDeduped() {
+        FakeHost host = new FakeHost();
+        host.text = "/tp ste";
+        host.localCommands.add("steve");
+        host.localCommands.add("stella");
+        ChatCompletionEngine engine = engine(host);
+
+        engine.onTab(1);
+        engine.onResponse(new String[] { "stella", "stone" });
+        // 合并 = dedupe(concat(local, server)),本地在前:["steve","stella","stone"](stella 去重)
+        Assert.assertEquals("循环首候选 = 本地第一个", "/tp steve", host.text);
+        Assert.assertEquals("打印顺序本地在前且去重",
+                Arrays.asList("steve", "stella", "stone"), host.printed.get(0));
+    }
+
+    @Test
+    public void staleResponseDropsOldLocalOptions() {
+        FakeHost host = new FakeHost();
+        host.text = "/qzu";
+        host.localCommands.add("/qzuilib");
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+        Assert.assertEquals(1, host.localCommandCalls);
+
+        engine.onTextEdited(); // 用户继续输入 → 本地候选与请求快照同步清
+        host.text = "/qzuilib tes";
+        engine.onResponse(new String[] { "qzuilib" });
+        Assert.assertEquals("编辑后旧响应丢弃", "/qzuilib tes", host.text);
+        Assert.assertTrue(host.printed.isEmpty());
+        Assert.assertEquals("编辑本身不触发本地候选重算", 1, host.localCommandCalls);
+
+        engine.onTab(1);
+        Assert.assertEquals("重新请求按新文本重算本地候选", 2, host.localCommandCalls);
+    }
+
+    @Test
+    public void nonSlashTextDoesNotQueryLocalCommands() {
+        FakeHost host = new FakeHost();
+        host.text = "ste";
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+        Assert.assertEquals("非 / 文本照常发 C14", Arrays.asList("ste"), host.sentRequests);
+        Assert.assertEquals("非 / 文本不触发本地命令候选", 0, host.localCommandCalls);
+
+        FakeHost offline = new FakeHost();
+        offline.network = false;
+        offline.localNames.add("Steve");
+        offline.text = "ste";
+        ChatCompletionEngine offlineEngine = engine(offline);
+        offlineEngine.onTab(1);
+        Assert.assertEquals("无网络非 / 文本走玩家名兜底,不查本地命令", 0, offline.localCommandCalls);
+    }
+
+    // ==================== 单候选不打印(原版 GuiChat:244) ====================
+
+    @Test
+    public void singleCandidateCompletesWithoutPrinting() {
+        FakeHost host = new FakeHost();
+        host.text = "/tp steve";
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+        engine.onResponse(new String[] { "steve" });
+        Assert.assertEquals("单候选仍替换入框", "/tp steve", host.text);
+        Assert.assertTrue("单候选不打印(原版 size>1 才打印)", host.printed.isEmpty());
+
+        engine.onTab(1);
+        Assert.assertEquals("单候选循环态 Tab 不变", "/tp steve", host.text);
+        Assert.assertTrue("单候选循环态不打印", host.printed.isEmpty());
+    }
+
+    @Test
+    public void singleCandidateLocalCompletionDoesNotPrint() {
+        FakeHost host = new FakeHost();
+        host.text = "/qzu";
+        host.localCommands.add("/qzuilib");
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+        engine.onResponse(new String[0]);
+        Assert.assertEquals("本地单候选直达", "/qzuilib", host.text);
+        Assert.assertTrue("本地单候选不打印", host.printed.isEmpty());
     }
 }

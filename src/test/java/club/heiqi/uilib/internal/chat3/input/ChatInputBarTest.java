@@ -36,9 +36,9 @@ public class ChatInputBarTest {
     }
 
     @Test
-    public void inputTextTruncatesBeyond100CodePoints() {
-        // T5:ChatInputBar 传 SceneTextInput maxLength=100(原版 maxStringLength 口径),
-        // 一帧注入 120 字符只进 100(primitive 截断语义)
+    public void inputTextTruncatesBeyond100Utf16Units() {
+        // T8:ChatInputBar 传 SceneTextInput maxLength=100 + maxLengthUnit=UTF16(原版
+        // maxStringLength 口径),一帧注入 120 字符只进 100(primitive 截断语义)
         SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
         SceneRuntime rt = harness.getRuntime();
         ChatInputBar bar = new ChatInputBar(rt, "");
@@ -53,8 +53,99 @@ public class ChatInputBarTest {
             sb.append('x');
         }
         harness.typeText(sb.toString());
-        Assert.assertEquals("输入被截断到 100 码点", 100, bar.inputText().get().length());
+        Assert.assertEquals("输入被截断到 100 UTF-16 单元", 100, bar.inputText().get().length());
         harness.dispose();
+    }
+
+    @Test
+    public void inputTextEmojiCountsTwoUtf16Units() {
+        // T8:UTF-16 口径下 emoji 占 2 单元,100 单元 = 50 个 emoji(不切代理对)
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = harness.getRuntime();
+        ChatInputBar bar = new ChatInputBar(rt, "");
+        SceneNode root = new SceneNode();
+        root.appendChild(bar.root());
+        harness.mountRoot(root, 400, 100);
+        rt.requestFocus(bar.root());
+        rt.flush();
+
+        String emoji = new String(Character.toChars(0x1F600));
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 60; i++) {
+            sb.append(emoji);
+        }
+        harness.typeText(sb.toString());
+        Assert.assertEquals("60 个 emoji 截断为 100 UTF-16 单元(50 个)", 100,
+                bar.inputText().get().length());
+        Assert.assertEquals("截断不切代理对", 50,
+                bar.inputText().get().codePointCount(0, bar.inputText().get().length()));
+        harness.dispose();
+    }
+
+    @Test
+    public void slashPrefillMovesCaretToEndOnOpened() {
+        // T2:斜杠开屏预填 "/" 后 caret 归行尾(原版 setText 后光标在末尾),输入落在 / 之后。
+        // headless 不走 onOpened 全路径(vanilla 历史同步触 Minecraft 类初始化),直测拆出的对齐单元
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = harness.getRuntime();
+        ChatInputBar bar = new ChatInputBar(rt, "/");
+        SceneNode root = new SceneNode();
+        root.appendChild(bar.root());
+        harness.mountRoot(root, 400, 100);
+        bar.focusAndAlignCaret();
+        rt.flush();
+
+        harness.typeText("t");
+        Assert.assertEquals("斜杠开屏后输入字符落在 / 之后", "/t", bar.inputText().get());
+        harness.dispose();
+    }
+
+    @Test
+    public void recalledHistoryMovesCaretToEnd() {
+        // T3:历史回显只 set 文本不移动 caret → 继续输入会插到行首;回显后 caret 应归行尾
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = harness.getRuntime();
+        ChatInputBar bar = new ChatInputBar(rt, "");
+        bar.recordSent("long history message");
+        SceneNode root = new SceneNode();
+        root.appendChild(bar.root());
+        harness.mountRoot(root, 400, 100);
+        rt.requestFocus(bar.root());
+        rt.flush();
+
+        bar.recallHistory(-1);
+        rt.flush();
+        Assert.assertEquals("Up 回显长历史", "long history message", bar.inputText().get());
+        harness.typeText("X");
+        Assert.assertEquals("回显后 caret 在行尾,继续输入追加", "long history messageX",
+                bar.inputText().get());
+        harness.dispose();
+    }
+
+    @Test
+    public void emptySubmitDoesNotPolluteUpDownHistory() {
+        // T4:空 Enter 只关屏不入发送历史(原版语义),不污染 Up/Down 回显
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(rt, "   ");
+        Assert.assertNull("仅空白提交不入历史", bar.submitText());
+        bar.recallHistory(-1);
+        rt.flush();
+        Assert.assertEquals("空提交后 Up 无历史可回显", "", bar.inputText().get());
+    }
+
+    @Test
+    public void nonEmptySubmitRecordsHistoryForUpDownRecall() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(rt, " hello ");
+        Assert.assertEquals("trim 后返回提交文本", "hello", bar.submitText());
+        bar.inputText().set("");
+        rt.flush();
+        bar.recallHistory(-1);
+        rt.flush();
+        Assert.assertEquals("Up 回显最近发送", "hello", bar.inputText().get());
+        bar.recallHistory(1);
+        rt.flush();
+        Assert.assertEquals("Down 回到底恢复暂存草稿", "", bar.inputText().get());
     }
 
     @Test
