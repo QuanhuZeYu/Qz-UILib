@@ -16,6 +16,14 @@
 - **绘制禁令（用户硬性要求，2026-08-23 定）：UILib 严禁使用原版包装类（Tessellator 等）。** 绘制一律走直接 GL（GL11/GL14 立即模式与状态调用）或 UILib 自有渲染管线；原版包装类在 Angelica/lwjgl3ify 下行为不可控（真机实证：全局 Tessellator 的 TRIANGLE_FAN 不可见、聊天卡片背景整块丢失）。
 - 公共 API、配置持久数据、网络协议、版本兼容承诺或上述边界需要改变时，先说明明确后果并取得用户确认。
 
+## 优先复用 UILib 能力（最高优先级）
+
+- 实现任何功能前，**必须优先评估并复用 UILib 既有能力**：scene 树与布局引擎（SceneNode/布局/SHRINK/AlignSelf）、Signal/Computed/rt.forEach 状态驱动、PaintCommand 管线与 SEGMENTS 文本渲染、通用控件（SceneTextInput/SceneScrollbar/SceneSlider/SceneAutocomplete 等）、字体度量（TextLayoutService）、动画（Animator/DisplayStateMachine）等。
+- **「与原版对齐/还原原版」指使用体感对齐，不是实现方式对齐**：原版（GuiNewChat/GuiChat/GuiTextField 等）行为只作为行为规格参照；禁止复制、移植或直连调用原版 GUI 类内部逻辑来完成功能；实现必须落在 UILib 自有抽象内。
+- 调研原版行为（含 Forge 补丁、反编译源码）只为提取「体感规格」；规格提取后的实现必须回到 UILib 能力上，不得顺手引入原版调用路径。
+- 仅当 UILib 确实缺失某能力且无法低成本扩展时，才允许在业务层做最小补充（附缺失理由与取舍说明），不得绕过 UILib 直连原版实现。
+- 验收时自查：交付中若出现对原版 GUI/渲染类的直接依赖或调用，视为违规，须重构回 UILib 能力。
+
 ## 工作方式与验证
 
 - 保留并避开用户或协作者的既有改动，只做目标所需的最小修改。
