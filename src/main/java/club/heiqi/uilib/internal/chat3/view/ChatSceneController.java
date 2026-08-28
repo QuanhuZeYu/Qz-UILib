@@ -169,6 +169,11 @@ public final class ChatSceneController {
     /** 曾经以 HUD 形态合成过的组首条序列号(enter 入场动画门控:首合成为 true,
      *  重挂载/组增长重建为 false,动画不重播)。 */
     private final Set<Long> hudEverFirstSeqs = new HashSet<Long>();
+    /** 关闭衔接抑制(2026-08-29 真机「关闭聊天框时闪烁」根因之一):上次树非 HUD → 本次
+     *  HUD 重建时整批组稳态直接出现。实现 = rebuildTree 挂载前把整批组 firstSeq 预登记进
+     *  {@link #hudEverFirstSeqs}(集合幂等,任意次 compose 求值结果一致——一次性标志在
+     *  Computed 多次求值时会漏,后续求值把组算回 enter=true)。 */
+    // (实现见 rebuildTree,无独立字段)
     /** 可见时钟信号(HUD 淡出渲染驱动;仅值变化时 set,防每帧唤醒下游)。 */
     private final Signal<Long> hudVisibleSignal = Signal.create(Long.valueOf(0L));
 
@@ -484,8 +489,9 @@ public final class ChatSceneController {
             listHandle = null;
         }
         messageNodes.clear();
-        if (mount != null) {
-            root.removeChild(mount);
+        SceneNode previousMount = mount;
+        if (previousMount != null) {
+            root.removeChild(previousMount);
         }
         mount = SceneNode.column().setHitTestable(false);
         root.appendChild(mount);
@@ -499,6 +505,25 @@ public final class ChatSceneController {
                     bubbleContentWidth * ChatMarkdownSettings.getBubbleMaxWidthRatio()));
         }
         boolean hud = isHudPhase();
+        // 关闭衔接(上次树非 HUD → 本次 HUD 重建):整批组预登记进 hudEverFirstSeqs,
+        // enterOnMount 恒 false → 稳态直接出现,不播 180ms 入场动画
+        // (真机「关闭聊天框时闪烁」根因之一——打开期间到达/自发送回显的消息组首合成为
+        // HUD 形态时重播入场动画,opacity 0→1 + translateY 8→0 在关屏瞬间闪现);
+        // 之后 HUD 形态实时新消息照常入场。
+        // previousMount != null 排除首次构建(旧树从未挂过,不抑制);
+        // !hudTreeBuilt 代表上次树形态为容器/空(视口变更的 HUD→HUD 重建不抑制)。
+        if (hud && !hudTreeBuilt && previousMount != null) {
+            List<ChatCardComposer.ComposedGroup> existing = groupsSignal().get();
+            if (existing != null) {
+                for (ChatCardComposer.ComposedGroup group0 : existing) {
+                    List<ChatCardComposer.MessageLines> msgs = group0.getMessages();
+                    if (!msgs.isEmpty()) {
+                        hudEverFirstSeqs.add(Long.valueOf(
+                                msgs.get(0).getRecord().getSequenceId()));
+                    }
+                }
+            }
+        }
         if (hud) {
             SceneNode list = SceneNode.column().setHitTestable(false);
             mount.appendChild(list);
@@ -577,11 +602,13 @@ public final class ChatSceneController {
                 // enterOnMount 仍按集合计算
                 composed.add(composer().compose(group, 0L, maxLine, true));
             }
-            // enterOnMount 门控:仅组首次以 HUD 形态合成(true),此后(重挂载/组增长重建)false
+            // enterOnMount 门控:仅组首次以 HUD 形态合成(true),此后(重挂载/组增长重建)false;
+            // 关闭衔接抑制由 rebuildTree 预登记 firstSeq 承担(集合幂等,任意次求值一致)
             ChatCardComposer.ComposedGroup composedGroup =
                     composed.get(composed.size() - 1);
             long firstSeq = group.getLines().get(0).getRecord().getSequenceId();
-            composedGroup.setEnterOnMount(!hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
+            composedGroup.setEnterOnMount(
+                    !hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
             hudEverFirstSeqs.add(Long.valueOf(firstSeq));
         }
         return composed;

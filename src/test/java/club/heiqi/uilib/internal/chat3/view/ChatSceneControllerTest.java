@@ -951,6 +951,60 @@ public class ChatSceneControllerTest {
     }
 
     /**
+     * 关闭衔接抑制(2026-08-29 真机「关闭聊天框时闪烁」根因之一):容器形态期间到达
+     * 的新消息组,关闭聊天框 HUD 树衔接重建时整批稳态直接出现(enterOnMount=false,
+     * 不重播 180ms 入场动画——opacity 0→1 + translateY 8→0 在关屏瞬间的闪现源);
+     * 之后 HUD 形态实时到达的新组照常播放入场(true)。
+     */
+    @Test
+    public void closeTransitionSuppressesEnterForGroupsSeenInContainer() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> old"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+            Assert.assertEquals("首合成 = 1 组", 1, groups.get().size());
+
+            // 打开聊天框(容器形态),期间 Bob 新消息到达(用户打字时别人说话)
+            controller.setChatOpen(true);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
+                    + ChatMarkdownSettings.getPopAnimMillis());
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Cara> during"), 2, T0 + 1000L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 2000L);
+            rt.flush();
+            // 容器形态全量合成两批(容器路径不登记 enterOnMount 门控)
+            Assert.assertEquals("容器形态 = 2 组", 2, groups.get().size());
+
+            // 关闭聊天框 → HUD 衔接重建(真机路径 = 输入屏动画完成回调 forceHud 直接切
+            // HUD,不经机器 CLOSING 空窗):容器期到达的组稳态出现(不播入场动画)
+            controller.closeToHudImmediately();
+            controller.tick(T0 + 3000L);
+            rt.flush();
+            Assert.assertEquals("关闭衔接 = 2 组", 2, groups.get().size());
+            Assert.assertEquals("关闭衔接:容器期到达组 enterOnMount=false(稳态,防闪烁)", false,
+                    groups.get().get(1).isEnterOnMount());
+
+            // HUD 稳定后实时新消息照常入场
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Alex> live"), 3, T0 + 3000L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 4000L);
+            rt.flush();
+            Assert.assertEquals("实时新消息仍入场(true)", true,
+                    groups.get().get(2).isEnterOnMount());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
      * 自锁回归(2026-08-28 真机定位):宿主对空 HUD 窗口(measure 0)跳过 frame,若无 tick
      * 内置 flush,消息到达后组永远无法物化进树(「关框看不到消息」)。本用例不手动 flush——
      * 仅靠 tick 内置 flush 完成物化,锁定解锁点。
