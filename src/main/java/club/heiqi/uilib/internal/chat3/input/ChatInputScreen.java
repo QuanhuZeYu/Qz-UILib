@@ -15,8 +15,16 @@ import club.heiqi.uilib.ui.screen.McScreenBridge;
  * {@link McScreenBridge} 转进 scene 输入管线。发送走 {@link ChatBridge} 原版发送链
  * (已发送历史/命令分发/发包全原版语义)。聊天打开感知由安装器每渲染帧按
  * currentScreen instanceof ChatInputScreen 同步。</p>
+ *
+ * <p>关闭路径(Esc/提交 Enter)延迟:先请求容器 CLOSING 动画({@link ChatInputSurface#requestClose},
+ * 140ms 淡出+下滑,设计稿 §4.1)→ 动画完成回调才真正 {@code displayGuiScreen(null)}
+ * (此后 onGuiClosed → surface.onClosed → 容器销毁)。延迟期间屏幕仍是 ChatInputScreen,
+ * 控制器保持打开态,时序无改动需求(打开衔接 COLLAPSING/POPPING 已存在)。</p>
  */
 public final class ChatInputScreen extends McScreenBridge {
+
+    /** ESC 键码(原版 GuiScreen:1)。 */
+    private static final int KEY_ESCAPE = 1;
 
     private final ChatInputSurface surface;
 
@@ -32,6 +40,17 @@ public final class ChatInputScreen extends McScreenBridge {
     public void initGui() {
         super.initGui();
         surface.onOpened();
+    }
+
+    /**
+     * 每游戏 tick(渲染栈外)推进关闭动画兜底:动画完成后取走回调在此真正关屏——
+     * 不能在 render 栈内触发(displayGuiScreen → onGuiClosed 会销毁 surface,打断本帧渲染);
+     * 渲染停滞时 500ms 超时也在此强制完成,不放任屏幕卡死。
+     */
+    @Override
+    public void updateScreen() {
+        super.updateScreen();
+        surface.tickCloseState();
     }
 
     @Override
@@ -51,6 +70,12 @@ public final class ChatInputScreen extends McScreenBridge {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
+        if (keyCode == KEY_ESCAPE) {
+            // 关闭路径:先播容器 CLOSING 动画再关屏(不交父壳——McScreenBridge/原版会立即
+            // displayGuiScreen(null),动画不可见;动画期间重复 Esc 由 requestClose 幂等)
+            requestClose();
+            return;
+        }
         ChatInputKeyAction.Action action = ChatInputKeyAction.of(keyCode);
         if (action != ChatInputKeyAction.Action.TAB) {
             // 原版 GuiChat:91:任何非 Tab 键清补全循环态(方向键/Home/End 移动光标不改变文本,
@@ -98,14 +123,31 @@ public final class ChatInputScreen extends McScreenBridge {
      * 提交并关闭(原版 func_146403_a 语义:trim 后非空才发;空输入仅关屏)。
      * 判空后再入发送历史(空 Enter 不污染 Up/Down 历史),发送路径经 {@link ChatBridge}
      * 原版链(入发送历史 → 命令探测 → 发包)。
+     *
+     * <p>关闭延迟 140ms(先播容器 CLOSING 动画再关屏,无体感问题):动画期间重复 Enter
+     * 幂等跳过(不重发不重关,防按键重复 double-send)。</p>
      */
     private void submit() {
+        if (surface.isClosePending()) {
+            return; // 关闭动画期间重复 Enter:幂等(首次发送已入历史/已发包)
+        }
         String message = surface.submitText();
         if (message != null) {
             ChatBridge.send(message);
         }
+        requestClose(); // 发送后:先播关闭动画再关屏
+    }
+
+    /** 请求关闭:委托 surface 播放 CLOSING 动画,完成回调 = 真正关屏。 */
+    private void requestClose() {
+        surface.requestClose(this::closeScreenAfterAnimation);
+    }
+
+    /** 关闭动画完成回调:真正关屏(此后 onGuiClosed → surface.onClosed → 容器正常销毁)。 */
+    private void closeScreenAfterAnimation() {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc != null) {
+        // 只关自己:动画期间若被其他屏幕顶替(异路径打开),不误关新屏幕
+        if (mc != null && mc.currentScreen == this) {
             mc.displayGuiScreen((GuiScreen) null);
         }
     }

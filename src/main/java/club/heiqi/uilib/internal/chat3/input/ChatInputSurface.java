@@ -13,10 +13,10 @@ import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
-import club.heiqi.uilib.internal.chat3.view.Animator;
 import club.heiqi.uilib.internal.chat3.view.ChatContainer;
 import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
+import club.heiqi.uilib.internal.chat3.view.ChatSurfaceAnimator;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
@@ -26,11 +26,15 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.node.Transform;
 
 /**
  * 聊天输入屏的 scene 渲染面(L4 宿主层,薄壳):装配 {@link ChatContainer}(消息列表 + 输入条),
- * 只保留事件路由(滚轮/行点击)与弹出动画。输入条/列表/容器的组装全部下沉到组件层。
+ * 只保留事件路由(滚轮/行点击)与开合动画。输入条/列表/容器的组装全部下沉到组件层。
+ *
+ * <p>开合动画由 {@link ChatSurfaceAnimator} 状态机驱动(设计稿 §4.1:弹入 = easeOutBack pop,
+ * 关闭 = 140ms easeOutQuad 淡出+下滑,与 ChatSceneController.CLOSING 同参数同曲线);
+ * 关闭完成回调不在渲染栈内触发,由屏幕 updateScreen 每 tick 经 {@link #tickCloseState()} 取走
+ * (关屏 displayGuiScreen 会销毁本 surface,不能在 render 栈内执行)。</p>
  */
 public final class ChatInputSurface extends AbstractSceneHostWidget {
 
@@ -42,14 +46,22 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     /** 屏幕树消息节点 → 记录(命中检测)。 */
     private final Map<SceneNode, ChatLineRecord> screenMessageNodes =
             new IdentityHashMap<SceneNode, ChatLineRecord>();
-    /** 打开时刻(弹出动画基准)。 */
-    private final long openAtMillis = System.currentTimeMillis();
+    /** 容器开合动画状态机(纯逻辑,时间由渲染帧/updateScreen 注入)。 */
+    private final ChatSurfaceAnimator animator;
     /** 周期诊断帧计数(每 120 帧打印一次渲染视口,真机定位坐标系问题)。 */
     private int renderLogCounter;
 
     public ChatInputSurface(String initialText) {
         super(new LwjglInputSource(new LwjglStateReader()));
         this.controller = ChatHudWindow.ensureRegistered();
+
+        // 开合动画状态机:生产参数取自设计稿 §4.1 同源配置(pop 240 / closing 140),
+        // 挂起兜底 500ms(不能卡死屏幕);构造即开始弹出动画(与旧 openAtMillis 同语义)
+        this.animator = new ChatSurfaceAnimator(
+                ChatMarkdownSettings.getPopAnimMillis(),
+                ChatMarkdownSettings.getClosingAnimMillis(),
+                ChatSurfaceAnimator.DEFAULT_CLOSE_TIMEOUT_MILLIS);
+        this.animator.startOpen(System.currentTimeMillis());
 
         int margin = ChatMarkdownSettings.getChatMarginPx();
         root = SceneNode.column()
@@ -102,7 +114,7 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         return root;
     }
 
-    /** 每帧同步动态尺寸(视口 1/4 × 1/2)并推进弹出动画(设计稿 §4.1 三段式);随后走标准帧管线。 */
+    /** 每帧同步动态尺寸(视口 1/4 × 1/2)并推进开合动画(设计稿 §4.1);随后走标准帧管线。 */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         container.setViewport(w, h);
@@ -112,15 +124,13 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
                     Integer.valueOf(ChatMarkdownSettings.chatWidthFor(Math.max(1, w))),
                     Integer.valueOf(ChatMarkdownSettings.containerHeightFor(Math.max(1, h))));
         }
-        long popMillis = ChatMarkdownSettings.getPopAnimMillis();
-        long elapsed = System.currentTimeMillis() - openAtMillis;
-        float progress = popMillis <= 0 ? 1.0F : (float) elapsed / (float) popMillis;
-        // pop 三段式(设计稿 §4.1,与 ChatSceneController.POPPING 同源):easeOutBack(c=1.04 默认)
-        // translateY(+24→0) + scale(0.96→1,origin 容器左下角) + opacity 0→1(clamp01,不超 1)
-        float eased = Animator.easeOutBack(progress);
-        container.root().setTransform(new Transform(0.0F, 24.0F * (1.0F - eased), 0.0F,
-                0.96F + 0.04F * eased, 0.96F + 0.04F * eased, 0.0F, 1.0F));
-        container.root().setOpacity(Animator.clamp01(eased));
+        // 开合动画统一由状态机驱动(设计稿 §4.1,与 ChatSceneController 同参数同曲线):
+        // 弹入 = easeOutBack pop,关闭 = easeOutQuad 淡出+下滑;此处只推进状态与取输出,
+        // 完成回调由屏幕 updateScreen 经 tickCloseState 在渲染栈外取走(关屏会销毁本 surface)
+        long nowMillis = System.currentTimeMillis();
+        animator.tick(nowMillis);
+        container.root().setTransform(animator.transform(nowMillis));
+        container.root().setOpacity(animator.opacity(nowMillis));
         super.render(w, h, ctx, absX, absY);
     }
 
@@ -132,6 +142,36 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     /** 屏幕关闭:释放容器句柄(列表 + 滚动绑定)。 */
     public void onClosed() {
         container.dispose();
+    }
+
+    /**
+     * 请求关闭(播放容器 CLOSING 动画):首次请求进入 CLOSING 并注册完成回调;
+     * 动画期间重复请求幂等返回同一请求(不重置动画、不重复注册)。
+     *
+     * @param onCloseComplete 关闭动画完成回调(为 null 则只播动画不回调)
+     * @return 本次关闭请求令牌(重入时 = 旧令牌)
+     */
+    public ChatSurfaceAnimator.CloseRequest requestClose(Runnable onCloseComplete) {
+        return animator.requestClose(onCloseComplete, System.currentTimeMillis());
+    }
+
+    /** @return 关闭动画是否已请求/已完成(提交路径防重入用:动画期间重复 Enter 不重发)。 */
+    public boolean isClosePending() {
+        return animator.isClosing() || animator.isClosed();
+    }
+
+    /**
+     * 屏幕级推进(updateScreen 每 tick 调用,渲染栈外):推进关闭动画状态,并在完成后取走
+     * 完成回调触发(关屏 displayGuiScreen → onGuiClosed → 容器销毁,不能在 render 栈内执行);
+     * 渲染停滞时超时兜底(500ms)也在此强制完成,不放任屏幕卡死。
+     */
+    public void tickCloseState() {
+        long nowMillis = System.currentTimeMillis();
+        animator.tick(nowMillis);
+        Runnable closeCallback = animator.takeCloseCallback();
+        if (closeCallback != null) {
+            closeCallback.run();
+        }
     }
 
     /** 提交文本(trim 后);空串返回空。 */
