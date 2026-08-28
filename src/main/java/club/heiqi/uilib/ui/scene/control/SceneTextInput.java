@@ -68,6 +68,9 @@ public final class SceneTextInput {
      *                    （向后兼容可选，默认不改变既有行为）
      * @param maxLengthUnit 长度口径（{@link MaxLengthUnit#CODEPOINT} 默认；UTF16 按 char 单元，
      *                    与原版 maxStringLength 同口径；向后兼容可选）
+     * @param blockChars   块字符集合（每个字符为一项被禁字符；null/空 = 不过滤，向后兼容默认）；
+     *                    键入/TEXT_INPUT/粘贴统一逐字符剔除，语义与原版 ChatAllowedCharacters
+     *                    拒绝表一致（默认空集 = 既有行为零变化）
      */
     @Desugar
     public record Props(
@@ -79,10 +82,11 @@ public final class SceneTextInput {
             SceneInputType inputType,
             Consumer<String> onChange,
             Integer placeholderColor,
-            MaxLengthUnit maxLengthUnit
+            MaxLengthUnit maxLengthUnit,
+            String blockChars
     ) {
 
-        /** 向后兼容 7 参构造：placeholderColor = null、maxLengthUnit = CODEPOINT（行为与旧版一致）。 */
+        /** 向后兼容 7 参构造：placeholderColor = null、maxLengthUnit = CODEPOINT、blockChars = null（行为与旧版一致）。 */
         public Props(ReadableSignal<String> value,
                      ReadableSignal<Boolean> enabled,
                      ReadableSignal<Boolean> readOnly,
@@ -91,10 +95,10 @@ public final class SceneTextInput {
                      SceneInputType inputType,
                      Consumer<String> onChange) {
             this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange, null,
-                    MaxLengthUnit.CODEPOINT);
+                    MaxLengthUnit.CODEPOINT, null);
         }
 
-        /** 向后兼容 8 参构造：maxLengthUnit = CODEPOINT（行为与旧版一致）。 */
+        /** 向后兼容 8 参构造：maxLengthUnit = CODEPOINT、blockChars = null（行为与旧版一致）。 */
         public Props(ReadableSignal<String> value,
                      ReadableSignal<Boolean> enabled,
                      ReadableSignal<Boolean> readOnly,
@@ -104,7 +108,21 @@ public final class SceneTextInput {
                      Consumer<String> onChange,
                      Integer placeholderColor) {
             this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange,
-                    placeholderColor, MaxLengthUnit.CODEPOINT);
+                    placeholderColor, MaxLengthUnit.CODEPOINT, null);
+        }
+
+        /** 向后兼容 9 参构造：blockChars = null（行为与旧版一致）。 */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     SceneInputType inputType,
+                     Consumer<String> onChange,
+                     Integer placeholderColor,
+                     MaxLengthUnit maxLengthUnit) {
+            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange,
+                    placeholderColor, maxLengthUnit, null);
         }
 
         /**
@@ -137,6 +155,8 @@ public final class SceneTextInput {
             private Integer placeholderColor;
             /** 长度上限口径（CODEPOINT 默认 / UTF16 按 char 单元）；向后兼容新增。 */
             private MaxLengthUnit maxLengthUnit = MaxLengthUnit.CODEPOINT;
+            /** 块字符集合（null/空 = 不过滤）；向后兼容新增。 */
+            private String blockChars;
 
             /**
              * 创建构建器。
@@ -237,6 +257,20 @@ public final class SceneTextInput {
             }
 
             /**
+             * 设置块字符集合（可选；null/空 = 不过滤，保持旧行为）。
+             *
+             * <p>输入/粘贴路径中的这些字符会被逐字符剔除（语义与原版 ChatAllowedCharacters
+             * 拒绝表一致），例如聊天输入框禁用 §(U+00A7) 以防服务器踢「illegal character in chat」。</p>
+             *
+             * @param blockChars 被禁字符集合（每个字符为一项）
+             * @return 当前 builder
+             */
+            public Builder blockChars(String blockChars) {
+                this.blockChars = blockChars;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props 实例
@@ -247,7 +281,7 @@ public final class SceneTextInput {
                     throw new IllegalArgumentException("onChange must not be null");
                 }
                 return new Props(value, enabled, readOnly, placeholder, maxLength, inputType,
-                        onChange, placeholderColor, maxLengthUnit);
+                        onChange, placeholderColor, maxLengthUnit, blockChars);
             }
         }
     }
@@ -273,7 +307,7 @@ public final class SceneTextInput {
         return () -> {
             SceneTextInputPrimitive.Props primitiveProps = new SceneTextInputPrimitive.Props(
                     props.value(), props.enabled(), props.readOnly(), props.placeholder(), props.maxLength(),
-                    props.inputType(), props.onChange(), props.maxLengthUnit());
+                    props.inputType(), props.onChange(), props.maxLengthUnit(), props.blockChars());
             SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, primitiveProps);
             applyChrome(rt, props, result);
             return result.root();
@@ -293,7 +327,7 @@ public final class SceneTextInput {
     public static Handle createHandle(SceneRuntime rt, Props props) {
         SceneTextInputPrimitive.Props primitiveProps = new SceneTextInputPrimitive.Props(
                 props.value(), props.enabled(), props.readOnly(), props.placeholder(), props.maxLength(),
-                props.inputType(), props.onChange(), props.maxLengthUnit());
+                props.inputType(), props.onChange(), props.maxLengthUnit(), props.blockChars());
         SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, primitiveProps);
         applyChrome(rt, props, result);
         return new Handle(() -> result.root(), result.moveCaretToEndOf());

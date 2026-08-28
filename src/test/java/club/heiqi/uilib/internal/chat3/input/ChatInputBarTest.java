@@ -162,6 +162,77 @@ public class ChatInputBarTest {
         Assert.assertEquals("设计令牌定值 0xFF6E757E", 0xFF6E757E, prefix.getTextColor());
     }
 
+    // ==================== TA:§(U+00A7) 输入过滤(服务器踢非法字符防御) ====================
+
+    /**
+     * 键入路径:primitive filterForInsert 剔除 §(经 SceneTextInput blockChars 配置透传)。
+     */
+    @Test
+    public void sectionSignFilteredFromTyping() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = harness.getRuntime();
+        ChatInputBar bar = new ChatInputBar(rt, "");
+        SceneNode root = new SceneNode();
+        root.appendChild(bar.root());
+        harness.mountRoot(root, 400, 100);
+        rt.requestFocus(bar.root());
+        rt.flush();
+
+        harness.typeText("a\u00A7b\u00A7");
+        Assert.assertEquals("键入剔除全部 §", "ab", bar.inputText().get());
+        harness.dispose();
+    }
+
+    /**
+     * 外部直写路径:构造预填与 setText(SUGGEST_COMMAND 等)均剔除 §,caret 仍对齐词尾。
+     */
+    @Test
+    public void setTextAndPrefillStripSectionSign() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = harness.getRuntime();
+        ChatInputBar bar = new ChatInputBar(rt, "\u00A7/");
+        SceneNode root = new SceneNode();
+        root.appendChild(bar.root());
+        harness.mountRoot(root, 400, 100);
+        Assert.assertEquals("构造预填剔除 §", "/", bar.inputText().get());
+
+        bar.setText("a\u00A7\u00A7b");
+        rt.flush();
+        Assert.assertEquals("setText 剔除全部 §", "ab", bar.inputText().get());
+
+        bar.focusAndAlignCaret();
+        rt.flush();
+        harness.typeText("X");
+        Assert.assertEquals("setText 过滤后 caret 仍归行尾,继续输入追加", "abX", bar.inputText().get());
+        harness.dispose();
+    }
+
+    /**
+     * 历史回显路径:记录与回显均剔除 §(防御 recordSent 外部直传)。
+     */
+    @Test
+    public void recalledHistoryStripsSectionSign() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(rt, "");
+        bar.recordSent("a\u00A7b");
+        rt.flush();
+        bar.recallHistory(-1);
+        rt.flush();
+        Assert.assertEquals("历史记录与回显均剔 §", "ab", bar.inputText().get());
+    }
+
+    /**
+     * 补全 commit 路径(候选来源含客户端命令表/玩家表/服务端响应)剔除 §。
+     */
+    @Test
+    public void completionCommitStripsSectionSign() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(rt, "");
+        bar.commit("a\u00A7b");
+        rt.flush();
+        Assert.assertEquals("补全 commit 剔 §", "ab", bar.inputText().get());
+    }
+
     @Test
     public void inputBackgroundIsDesignTokenAfterFlush() {
         // K3 实测 (33,31,38) = SceneTextInput 通用 BG_PRESSED 0xFF211F26;覆盖绑定

@@ -148,6 +148,30 @@ public class SceneTextInputTest {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
+    /** 挂载带块字符过滤的输入框(TA:§ 过滤测试入口,复用 Builder 全字段链路)。 */
+    private void mountInputBlocked(String initialValue, int maxLength, MaxLengthUnit unit,
+                                   String blockChars) {
+        valueSignal = Signal.create(initialValue);
+        enabledSignal = Signal.create(Boolean.TRUE);
+        readOnlySignal = Signal.create(Boolean.FALSE);
+        changeCount = new AtomicInteger(0);
+        lastChangeValue = null;
+        SceneTextInput.Props props = SceneTextInput.Props.builder(valueSignal)
+                .enabled(enabledSignal).readOnly(readOnlySignal)
+                .placeholder("").maxLength(maxLength)
+                .maxLengthUnit(unit)
+                .inputType(SceneInputType.TEXT)
+                .blockChars(blockChars)
+                .onChange(next -> {
+                    changeCount.incrementAndGet();
+                    lastChangeValue = next;
+                })
+                .build();
+        handle = runtime.mount(sceneRoot, SceneTextInput.create(runtime, props));
+        inputRoot = handle.getRoot();
+        runtime.flush();
+    }
+
     private SceneNode prefixNode() {
         return inputRoot.__getChildren().get(0);
     }
@@ -494,6 +518,106 @@ public class SceneTextInputTest {
         harness.typeText(emoji + emoji); // 2 码点 = 4 UTF-16 单元,码点口径全部放行
         Assert.assertEquals("默认码点口径:2 个 emoji 全放行", emoji + emoji, lastChangeValue);
         Assert.assertEquals("值长度按 char 单元为 4", 4, lastChangeValue.length());
+    }
+
+    // ==================== TA:§(U+00A7) 块字符过滤 ====================
+
+    /**
+     * 键入 § 不插入:TEXT_INPUT 全 § 被整段剔除,filterForInsert 空结果短路,不触发 onChange。
+     */
+    @Test
+    public void blockedSectionSignTypingInsertsNothing() {
+        mountInputBlocked("", MAX_LENGTH, MaxLengthUnit.CODEPOINT, "\u00A7");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        int before = changeCount.get();
+        harness.typeText("\u00A7");
+        Assert.assertEquals("键入 § 不触发 onChange", before, changeCount.get());
+        Assert.assertEquals("value 保持空", "", valueSignal.get());
+
+        harness.typeText("a\u00A7b");
+        Assert.assertEquals("混合串剔除 § 后放行其余", "ab", lastChangeValue);
+    }
+
+    /**
+     * TEXIT_INPUT 混合文本逐字符剔除 §("a§b§" → "ab"),其余字符不受影响。
+     */
+    @Test
+    public void blockedSectionSignStrippedFromTextInput() {
+        mountInputBlocked("", MAX_LENGTH, MaxLengthUnit.CODEPOINT, "\u00A7");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        harness.typeText("a\u00A7b\u00A7c");
+        Assert.assertEquals("§ 逐字符剔除", "abc", lastChangeValue);
+    }
+
+    /**
+     * Ctrl+V 粘贴含 § 文本:剔除后插入;UTF-16 口径下粘贴不切断代理对(整 emoji 或进或出)。
+     */
+    @Test
+    public void blockedSectionSignStrippedFromPasteKeepingSurrogates() {
+        String emoji = new String(Character.toChars(0x1F600));
+        mountInputBlocked("", 20, MaxLengthUnit.UTF16, "\u00A7");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+        FakeClipboard cb = new FakeClipboard();
+        cb.setClipboardText("a" + emoji + "\u00A7b" + emoji);
+        runtime.bindClipboard(cb);
+
+        routeKey(SceneKey.KEY_V, true, false);
+        runtime.flush();
+        Assert.assertEquals("粘贴剔除 § 保留其余", "a" + emoji + "b" + emoji, lastChangeValue);
+        Assert.assertEquals("无孤立 surrogate(代理对完整)",
+                -1, lastChangeValue.indexOf(Character.MIN_SURROGATE));
+    }
+
+    /**
+     * 块字符不消耗长度预算:UTF16 上限 4 下 "§😀§😀x" → 剔除 § 后 2 个完整 emoji 恰好占满 4 单元;
+     * 若 § 计费则会只剩 1 个 emoji。同时验证 § 不挤占尾随字符。
+     */
+    @Test
+    public void blockedCharsComposeWithUtf16MaxLength() {
+        String emoji = new String(Character.toChars(0x1F600));
+        mountInputBlocked("", 4, MaxLengthUnit.UTF16, "\u00A7");
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        harness.typeText("\u00A7" + emoji + "\u00A7" + emoji + "x");
+        Assert.assertEquals("§ 剔除后 UTF16 截断到 4 单元", emoji + emoji, lastChangeValue);
+        Assert.assertEquals("截断不切代理对", -1, lastChangeValue.indexOf(Character.MIN_SURROGATE));
+    }
+
+    /**
+     * stripBlockedChars 直测:null/空边界、无命中零拷贝、代理对不被切断。
+     */
+    @Test
+    public void stripBlockedCharsUtilityHandlesNullAndSurrogates() {
+        Assert.assertEquals("null 文本按空串", "",
+                SceneTextInputPrimitive.stripBlockedChars(null, "\u00A7"));
+        Assert.assertEquals("null 块字符原样返回", "abc",
+                SceneTextInputPrimitive.stripBlockedChars("abc", null));
+        Assert.assertEquals("空块字符原样返回", "abc",
+                SceneTextInputPrimitive.stripBlockedChars("abc", ""));
+        String clean = "abcdef";
+        Assert.assertSame("无命中返回原引用(零拷贝)", clean,
+                SceneTextInputPrimitive.stripBlockedChars(clean, "\u00A7"));
+        String emoji = new String(Character.toChars(0x1F600));
+        Assert.assertEquals("代理对旁剔除 § 不切代理对", "a" + emoji + "b",
+                SceneTextInputPrimitive.stripBlockedChars("a" + emoji + "\u00A7b", "\u00A7"));
+    }
+
+    /**
+     * 默认 blockChars = null(零配置)行为不变:§ 原样放行(其他控件使用方不受影响)。
+     */
+    @Test
+    public void defaultBlockCharsKeepsSectionSignAllowed() {
+        mountTextInput();
+        doLayout();
+        runtime.requestFocus(inputRoot);
+
+        harness.typeText("\u00A7x");
+        Assert.assertEquals("未配置块字符时 § 照常输入", "\u00A7x", lastChangeValue);
     }
 
     @Test

@@ -90,6 +90,9 @@ public final class SceneTextInputPrimitive {
      * @param inputType    输入类型
      * @param onChange     文本变更回调
      * @param maxLengthUnit 长度上限口径（{@link MaxLengthUnit#CODEPOINT} 默认；向后兼容新增）
+     * @param blockChars   块字符集合（每个字符为一项被禁字符；null/空 = 不过滤，向后兼容默认）；
+     *                    键入/TEXT_INPUT/粘贴（含右键菜单）/外部直写入口统一逐字符剔除，
+     *                    语义与原版 ChatAllowedCharacters 拒绝表一致（默认空集 = 既有行为零变化）
      */
     @Desugar
     public record Props(
@@ -100,10 +103,11 @@ public final class SceneTextInputPrimitive {
             int maxLength,
             SceneInputType inputType,
             Consumer<String> onChange,
-            MaxLengthUnit maxLengthUnit
+            MaxLengthUnit maxLengthUnit,
+            String blockChars
     ) {
 
-        /** 向后兼容 7 参构造：maxLengthUnit = CODEPOINT（行为与旧版一致）。 */
+        /** 向后兼容 7 参构造：maxLengthUnit = CODEPOINT、blockChars = null（行为与旧版一致）。 */
         public Props(ReadableSignal<String> value,
                      ReadableSignal<Boolean> enabled,
                      ReadableSignal<Boolean> readOnly,
@@ -112,7 +116,20 @@ public final class SceneTextInputPrimitive {
                      SceneInputType inputType,
                      Consumer<String> onChange) {
             this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange,
-                    MaxLengthUnit.CODEPOINT);
+                    MaxLengthUnit.CODEPOINT, null);
+        }
+
+        /** 向后兼容 8 参构造：blockChars = null（行为与旧版一致）。 */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     SceneInputType inputType,
+                     Consumer<String> onChange,
+                     MaxLengthUnit maxLengthUnit) {
+            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange,
+                    maxLengthUnit, null);
         }
     }
 
@@ -160,6 +177,8 @@ public final class SceneTextInputPrimitive {
         final int maxLength = props.maxLength();
         final SceneInputType inputType = props.inputType();
         final MaxLengthUnit maxLengthUnit = props.maxLengthUnit();
+        // TA：块字符过滤集合（null/空 = 不过滤），同步注入所有文本写入汇点
+        final String blockChars = props.blockChars();
         final Signal<Integer> caretIndex = Signal.create(Integer.valueOf(0));
         // 输入 handler 读取同步真值；signal 只保留帧末响应式投影语义。
         final int[] caretAuthority = {0};
@@ -220,7 +239,7 @@ public final class SceneTextInputPrimitive {
                     String v = SceneTextUtils.nullSafe(props.value().get());
                     int caret = SceneTextGeometry.clampCaretIndex(v, Integer.valueOf(caretAuthority[0]));
                     applyTextInsert(v, caret, selectionAuthority[0], text, maxLength, maxLengthUnit,
-                            inputType, props.onChange(), setSelection, editHistory, false,
+                            inputType, blockChars, props.onChange(), setSelection, editHistory, false,
                             System.nanoTime());
                 }
             }));
@@ -460,7 +479,8 @@ public final class SceneTextInputPrimitive {
             String cur = SceneTextUtils.nullSafe(props.value().get());
             int caretPos = SceneTextGeometry.clampCaretIndex(cur, Integer.valueOf(caretAuthority[0]));
             applyTextInsert(cur, caretPos, selectionAuthority[0], raw, maxLength, maxLengthUnit,
-                    inputType, props.onChange(), setSelection, editHistory, true, ev.getTimeNanos());
+                    inputType, blockChars, props.onChange(), setSelection, editHistory, true,
+                    ev.getTimeNanos());
         });
 
         rt.on(root, SceneEventType.KEY_DOWN, (ev, ctx) -> {
@@ -552,7 +572,7 @@ public final class SceneTextInputPrimitive {
                         String text = clipboard.getClipboardText();
                         if (text != null && !text.isEmpty()) {
                             applyTextInsert(cur, caretPos, selectionAuthority[0], text, maxLength,
-                                    maxLengthUnit, inputType, props.onChange(), setSelection,
+                                    maxLengthUnit, inputType, blockChars, props.onChange(), setSelection,
                                     editHistory, false, ev.getTimeNanos());
                         }
                         return;
@@ -657,12 +677,13 @@ public final class SceneTextInputPrimitive {
      * @param maxLength     最大长度（按 maxLengthUnit 口径）
      * @param maxLengthUnit 长度口径（CODEPOINT 默认 / UTF16 按 char 单元）
      * @param inputType     输入类型（过滤规则）
+     * @param blockChars    块字符集合（逐字符剔除，不消耗长度预算）
      * @param onChange      变更回调
      * @param setSelection  选区写入口（三态同步）
      */
     private static void applyTextInsert(String cur, int caretPos, TextSelection sel, String raw,
                                         int maxLength, MaxLengthUnit maxLengthUnit,
-                                        SceneInputType inputType,
+                                        SceneInputType inputType, String blockChars,
                                         Consumer<String> onChange,
                                         BiConsumer<Integer, Integer> setSelection,
                                         TextEditHistory editHistory, boolean mergeable, long timeNanos) {
@@ -674,7 +695,7 @@ public final class SceneTextInputPrimitive {
                         - SceneTextGeometry.charOffsetForCodePointIndex(cur, selStart))
                 : SceneTextGeometry.codePointCount(cur) - (selEnd - selStart);
         FilteredInsert filtered = filterForInsert(raw,
-                Math.max(0, maxLength - occupied), maxLengthUnit, inputType);
+                Math.max(0, maxLength - occupied), maxLengthUnit, inputType, blockChars);
         if (filtered.text.isEmpty()) {
             return;
         }
@@ -786,17 +807,51 @@ public final class SceneTextInputPrimitive {
     }
 
     /**
+     * 剔除文本中所有配置的块字符（逐字符剔除，语义与原版 ChatAllowedCharacters 拒绝表一致）。
+     *
+     * <p>供外部 setText 类直写入口（聊天历史回显/补全 commit/预填等）统一过滤，
+     * 与输入路径（{@link #filterForInsert}）行为保持一致；剔除不涉及任何长度预算。
+     * 块字符均为 BMP 字符，按 UTF-16 char 逐单元比较，不会切断裂开代理对；
+     * 无命中时返回原引用（零拷贝）。</p>
+     *
+     * @param text       待过滤文本（null 按空串）
+     * @param blockChars 块字符集合；null/空 = 原样返回
+     * @return 剔除块字符后的文本
+     */
+    public static String stripBlockedChars(String text, String blockChars) {
+        String raw = SceneTextUtils.nullSafe(text);
+        if (blockChars == null || blockChars.isEmpty() || raw.isEmpty()) {
+            return raw;
+        }
+        StringBuilder sb = null;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (blockChars.indexOf(c) >= 0) {
+                // 首个命中点惰性建 builder，命中前内容一次拷贝
+                if (sb == null) {
+                    sb = new StringBuilder(raw.length());
+                    sb.append(raw, 0, i);
+                }
+            } else if (sb != null) {
+                sb.append(c);
+            }
+        }
+        return sb == null ? raw : sb.toString();
+    }
+
+    /**
      * 过滤输入并限制本次可插入长度（按 maxLengthUnit 口径；UTF16 不切断代理对，整 emoji 或进或出）。
      *
      * @param input         原始输入
      * @param available     剩余可插入单元数（码点或 UTF-16 char）
      * @param maxLengthUnit 长度口径
      * @param inputType     输入类型
+     * @param blockChars    块字符集合（每个字符为一项；null/空 = 不过滤）
      * @return 过滤结果
      */
     private static FilteredInsert filterForInsert(String input, int available,
                                                   MaxLengthUnit maxLengthUnit,
-                                                  SceneInputType inputType) {
+                                                  SceneInputType inputType, String blockChars) {
         StringBuilder sb = new StringBuilder();
         int accepted = 0;
         int acceptedUnits = 0;
@@ -810,7 +865,7 @@ public final class SceneTextInputPrimitive {
                 break;
             }
             i += width;
-            if (!isAccepted(cp, inputType)) {
+            if (!isAccepted(cp, inputType, blockChars)) {
                 continue;
             }
             sb.appendCodePoint(cp);
@@ -825,10 +880,16 @@ public final class SceneTextInputPrimitive {
      *
      * @param cp        码点
      * @param inputType 输入类型
+     * @param blockChars 块字符集合（null/空 = 不过滤）
      * @return true 表示放行
      */
-    private static boolean isAccepted(int cp, SceneInputType inputType) {
+    private static boolean isAccepted(int cp, SceneInputType inputType, String blockChars) {
         if (Character.isISOControl(cp) || UnicodeTextClassifier.isLineBreak(cp)) {
+            return false;
+        }
+        // TA：配置的块字符（如聊天禁用的 § U+00A7）逐码点剔除，不消耗长度预算；
+        // indexOf(int) 按码点查找，代理对整体不会被半截命中
+        if (blockChars != null && blockChars.indexOf(cp) >= 0) {
             return false;
         }
         if (inputType == SceneInputType.NUMBER) {

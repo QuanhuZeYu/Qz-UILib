@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.MaxLengthUnit;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
+import club.heiqi.uilib.ui.scene.control.SceneTextInputPrimitive;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -39,6 +40,11 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     private static final int INPUT_PADDING_Y_PX = 2;
     /** 输入上限(原版 GuiTextField.maxStringLength 口径:100 UTF-16 单元,emoji 占 2 单元)。 */
     static final int MAX_INPUT_LENGTH = 100;
+    /** 块字符:§(U+00A7)。原版 ChatAllowedCharacters 拒绝 §,服务器对含 § 消息踢
+     *  「illegal character in chat」(真机实证);键入/粘贴/TEXT_INPUT 由 primitive
+     *  filterForInsert 剔除,外部直写入口(setText/历史回显/补全 commit/记录)走
+     *  sanitize 同源剔除,保证任何路径都不放行 §。 */
+    private static final String BLOCKED_CHARS = "\u00A7";
 
     private final SceneRuntime runtime;
     private final Signal<String> inputText;
@@ -60,7 +66,8 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
      */
     public ChatInputBar(SceneRuntime runtime, String initialText) {
         this.runtime = runtime;
-        this.inputText = Signal.create(initialText == null ? "" : initialText);
+        // TA:预填(斜杠开屏等)也过块字符过滤,与外置写入入口同源防御
+        this.inputText = Signal.create(sanitize(initialText));
         this.completion = new ChatCompletionEngine(this);
         SceneTextInput.Props props = SceneTextInput.Props.builder(inputText)
                 // 设计稿 §3.2:placeholder「输入消息…」色 text-input-placeholder 0xFF6E757E
@@ -70,6 +77,8 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
                 .maxLength(MAX_INPUT_LENGTH)
                 // 与原版 maxStringLength=100 同口径:UTF-16 单元(emoji 占 2 单元);公共默认 CODEPOINT 不动
                 .maxLengthUnit(MaxLengthUnit.UTF16)
+                // TA:禁 §(U+00A7)——primitive 输入路径逐字符剔除,与 ChatAllowedCharacters 拒绝表对齐
+                .blockChars(BLOCKED_CHARS)
                 .onChange(next -> {
                     inputText.set(next);
                     completion.onTextEdited();
@@ -160,14 +169,15 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         return message;
     }
 
-    /** 记录已发送(发送路径增量同步)。 */
+    /** 记录已发送(发送路径增量同步;TA:入库前剔除块字符,保证历史回显恒干净)。 */
     public void recordSent(String message) {
-        sentHistory.add(message);
+        sentHistory.add(sanitize(message));
     }
 
     /** 历史回显(vanilla getSentHistory 语义:-1 上一条 / +1 下一条;回到底恢复暂存草稿)。 */
     public void recallHistory(int direction) {
-        String recalled = sentHistory.recall(direction, inputText.get());
+        // TA:历史串过块字符过滤(防御:recordSent 外部直传也可能带 §)
+        String recalled = sanitize(sentHistory.recall(direction, inputText.get()));
         // caret 归行尾(与 setText 同款:原版回显后光标在末尾,继续输入追加而非插到行首)
         inputHandle.moveCaretToEndOf().accept(recalled);
         inputText.set(recalled);
@@ -176,7 +186,8 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
 
     /** 直接回填文本(SUGGEST_COMMAND 点击等外部写入;caret 对齐词尾,清补全态)。 */
     public void setText(String text) {
-        String next = text == null ? "" : text;
+        // TA:外部直写入口统一过滤 §(语义与输入路径一致)
+        String next = sanitize(text == null ? "" : text);
         inputHandle.moveCaretToEndOf().accept(next);
         inputText.set(next);
         completion.onTextEdited();
@@ -185,6 +196,11 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     /** Tab 补全(委托状态机;direction +1 正向 Tab,-1 Shift+Tab 反向)。 */
     public void autocomplete(int direction) {
         completion.onTab(direction);
+    }
+
+    /** 剔除块字符(直接写入口与 primitive 输入路径同源:stripBlockedChars;命中才分配)。 */
+    private static String sanitize(String text) {
+        return SceneTextInputPrimitive.stripBlockedChars(text, BLOCKED_CHARS);
     }
 
     /** 非 Tab 键清补全循环态(原版 GuiChat:91:任何非 Tab 键清循环;方向键等不改变文本不触发 onChange)。 */
@@ -206,10 +222,12 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
 
     @Override
     public void commit(String nextText) {
+        // TA:补全 commit 过块字符过滤(候选来源含客户端命令表/玩家表/服务端响应)
+        String next = sanitize(nextText);
         // 先写 value 再对齐 caret 到词尾(primitive moveCaretToEndOf 语义:
         // autocomplete commit 在外部 value signal flush 前同步对齐 caret)
-        inputText.set(nextText);
-        inputHandle.moveCaretToEndOf().accept(nextText);
+        inputText.set(next);
+        inputHandle.moveCaretToEndOf().accept(next);
     }
 
     @Override
