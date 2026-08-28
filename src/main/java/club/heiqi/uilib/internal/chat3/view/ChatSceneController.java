@@ -374,7 +374,11 @@ public final class ChatSceneController {
     /** 临时诊断:每 300 帧打印 HUD 状态快照(真机定位用;交付后删除)。 */
     private void logHudSnapshot() {
         long hud = hudVisibleClock.visibleMillis();
+        // 首次 tick 前 Computed 未物化,get() 返回 null(真机崩溃根因,2026-08-28 修复)
         List<ChatCardComposer.ComposedGroup> composed = groupsSignal().get();
+        if (composed == null) {
+            composed = java.util.Collections.emptyList();
+        }
         int treeGroups = 0;
         if (mount != null && !mount.__getChildren().isEmpty()) {
             treeGroups = ((SceneNode) mount.__getChildren().get(0)).__getChildren().size();
