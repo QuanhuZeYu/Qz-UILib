@@ -511,6 +511,59 @@ public class ChatSceneControllerTest {
         }
     }
 
+    /**
+     * HUD 渐入期间的组级 enter 抑制(2026-08-29 闪烁源之二):渐入(根级 opacity 0→1)
+     * 进行中到达的新消息组,enterOnMount=false——出现动画统一由根级渐入承担;
+     * 渐入完成后到达的新组照常 enter=true。
+     */
+    @Test
+    public void fadeInPeriodSuppressesGroupEnterUntilComplete() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> old"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            // 打开 → 容器
+            controller.setChatOpen(true);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
+                    + ChatMarkdownSettings.getPopAnimMillis());
+            // 关闭衔接 → 渐入开始
+            controller.closeToHudImmediately();
+            long frame = T0 + 3000L;
+            controller.tick(frame);
+            rt.flush();
+            Assert.assertEquals("渐入起点 0", 0.0F, root.getOpacity(), 0.001F);
+
+            // 渐入中段(200ms < 400ms):新消息组 enter 被抑制(根级统一承担出现)
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Cara> mid"), 2, T0 + 3100L));
+            controller.notifyDataChanged();
+            controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() / 2);
+            rt.flush();
+            Assert.assertEquals("渐入中段仍进行(<1)", 0.875F, root.getOpacity(), 0.001F);
+            Assert.assertEquals("渐入期间新组 enter=false(不叠加入场动画)", false,
+                    groups.get().get(1).isEnterOnMount());
+
+            // 渐入完成 → 实时新消息照常入场
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Alex> live"), 3, T0 + 4000L));
+            controller.notifyDataChanged();
+            controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() + 100L);
+            rt.flush();
+            Assert.assertEquals("渐入完成 opacity=1", 1.0F, root.getOpacity(), 0.001F);
+            Assert.assertEquals("渐入完成后新组 enter=true", true,
+                    groups.get().get(2).isEnterOnMount());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
     @Test
     public void expiredHudGroupsAreRemovedFromTree() {
         // 新时钟驱动:可见时钟帧间 delta 夹取 1s,预算+淡出窗(默认 12s+0.8s)需逐帧

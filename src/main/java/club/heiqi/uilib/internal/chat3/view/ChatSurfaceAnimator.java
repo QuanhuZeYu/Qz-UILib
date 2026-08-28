@@ -25,8 +25,21 @@ import club.heiqi.uilib.ui.scene.node.Transform;
  */
 public final class ChatSurfaceAnimator {
 
-    /** 生产关闭动画挂起兜底阈值(ms):设计定 500,远大于 closing 140 的播放时长。 */
+    /** 生产关闭动画挂起兜底阈值下界(ms):设计定 500;实际装配按 closing 时长联动
+     *  (见 {@link #closeTimeoutFor(long)}——动画必须完整播放,超时只兜底渲染挂起)。 */
     public static final long DEFAULT_CLOSE_TIMEOUT_MILLIS = 500L;
+
+    /**
+     * 生产装配关闭超时(ms) = max(500, closing + 500):保证关闭动画在任何配置时长下
+     * 完整播放(closing 可配至秒级,2026-08-29 用户高层语义「关闭动画必须完整,
+     * 超时只防渲染挂起卡死」),并保留 500ms 挂起检测缓冲。
+     *
+     * @param closingMillis 配置的关闭动画时长(ms;≤0 = 瞬完语义)
+     * @return 装配用超时阈值
+     */
+    public static long closeTimeoutFor(long closingMillis) {
+        return Math.max(DEFAULT_CLOSE_TIMEOUT_MILLIS, closingMillis + DEFAULT_CLOSE_TIMEOUT_MILLIS);
+    }
 
     /** 开合阶段。 */
     public enum Phase {

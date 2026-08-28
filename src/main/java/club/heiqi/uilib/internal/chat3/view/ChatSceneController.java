@@ -613,12 +613,19 @@ public final class ChatSceneController {
                 composed.add(composer().compose(group, 0L, maxLine, true));
             }
             // enterOnMount 门控:仅组首次以 HUD 形态合成(true),此后(重挂载/组增长重建)false;
-            // 关闭衔接抑制由 rebuildTree 预登记 firstSeq 承担(集合幂等,任意次求值一致)
+            // 关闭衔接抑制由 rebuildTree 预登记 firstSeq 承担(集合幂等,任意次求值一致);
+            // HUD 渐入进行中(hudFadeInStartMillis ≥ 0)新合成组也抑制组级 enter——
+            // 出现动画统一由根级渐入承担,避免「根渐入 + 组入场」双重动画叠加突跳(闪烁源)
+            // 时间判断(不依赖复位时机——start 复位发生在 rootOpacity 求值,与本 Computed
+            // 求值顺序不定;用「now − start < 时长」判定渐入活跃,任意求值顺序结果一致)
+            boolean fadeInActive = hudFadeInStartMillis >= 0L
+                    && frameMillis.get().longValue() - hudFadeInStartMillis
+                            < ChatMarkdownSettings.getHudFadeInAnimMillis();
             ChatCardComposer.ComposedGroup composedGroup =
                     composed.get(composed.size() - 1);
             long firstSeq = group.getLines().get(0).getRecord().getSequenceId();
-            composedGroup.setEnterOnMount(
-                    !hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
+            composedGroup.setEnterOnMount(!fadeInActive
+                    && !hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
             hudEverFirstSeqs.add(Long.valueOf(firstSeq));
         }
         return composed;

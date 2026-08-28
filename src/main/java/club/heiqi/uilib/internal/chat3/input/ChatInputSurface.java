@@ -55,12 +55,14 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         super(new LwjglInputSource(new LwjglStateReader()));
         this.controller = ChatHudWindow.ensureRegistered();
 
-        // 开合动画状态机:生产参数取自设计稿 §4.1 同源配置(pop 240 / closing 140),
-        // 挂起兜底 500ms(不能卡死屏幕);构造即开始弹出动画(与旧 openAtMillis 同语义)
+        // 开合动画状态机:生产参数取自设计稿 §4.1 同源配置(pop 240 / closing 140 可配);
+        // 挂起兜底 = closeTimeoutFor(closing):超时永远 ≥ closing+500,任何配置时长下
+        // 关闭动画都完整播放(用户高层语义:关闭动画开始→渐入结束整体可配 500ms~5s,
+        // 超时只能兜底渲染挂起,不得截断动画);构造即开始弹出动画(与旧 openAtMillis 同语义)
         this.animator = new ChatSurfaceAnimator(
                 ChatMarkdownSettings.getPopAnimMillis(),
                 ChatMarkdownSettings.getClosingAnimMillis(),
-                ChatSurfaceAnimator.DEFAULT_CLOSE_TIMEOUT_MILLIS);
+                ChatSurfaceAnimator.closeTimeoutFor(ChatMarkdownSettings.getClosingAnimMillis()));
         this.animator.startOpen(System.currentTimeMillis());
 
         int margin = ChatMarkdownSettings.getChatMarginPx();

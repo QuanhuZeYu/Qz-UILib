@@ -186,6 +186,33 @@ public class ChatSurfaceAnimatorTest {
         Assert.assertEquals(1, fired.get());
     }
 
+    /**
+     * 超时联动(2026-08-29 用户高层语义「关闭动画必须完整,时长可配置至秒级」):
+     * 装配超时 ≥ closing + 500 —— 任何配置时长下动画完整播放,超时只兜底渲染挂起;
+     * 缩短 closing(瞬完 0)仍保底 500。
+     */
+    @Test
+    public void closeTimeoutFollowsClosingMillis() {
+        Assert.assertEquals("closing=140 → 640(完整播放 + 500 缓冲)", 640L,
+                ChatSurfaceAnimator.closeTimeoutFor(140L));
+        Assert.assertEquals("closing=5000 → 5500(5s 动画不被截断)", 5500L,
+                ChatSurfaceAnimator.closeTimeoutFor(5000L));
+        Assert.assertEquals("closing=0(瞬完)保底 500", 500L,
+                ChatSurfaceAnimator.closeTimeoutFor(0L));
+        Assert.assertEquals("负 closing 保底 500", 500L,
+                ChatSurfaceAnimator.closeTimeoutFor(-100L));
+
+        // 配 5s 关闭动画:超时(5500)后动画才完成,期间不被截断
+        ChatSurfaceAnimator animator = new ChatSurfaceAnimator(POP, 5000L,
+                ChatSurfaceAnimator.closeTimeoutFor(5000L));
+        animator.startOpen(0L);
+        animator.requestClose(null, 1000L);
+        animator.tick(4000L); // 动画 3s 处:仍 CLOSING(未被 500 截断)
+        Assert.assertEquals("5s 动画 3s 处仍播放", ChatSurfaceAnimator.Phase.CLOSING, animator.phase());
+        animator.tick(6000L); // 动画完成(5s)
+        Assert.assertEquals("5s 动画完整播放后完成", ChatSurfaceAnimator.Phase.CLOSED, animator.phase());
+    }
+
     @Test
     public void requestBeforeOpenIsTreatedAsClosedIdempotent() {
         // 构造后未 startOpen(初始 CLOSED):请求关闭幂等返回非空令牌,不进入 CLOSING
