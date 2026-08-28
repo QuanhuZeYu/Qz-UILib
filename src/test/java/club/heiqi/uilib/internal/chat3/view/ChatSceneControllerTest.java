@@ -949,4 +949,26 @@ public class ChatSceneControllerTest {
             ChatMarkdownSettings.setHudPersistMessages(persisted);
         }
     }
+
+    /**
+     * 自锁回归(2026-08-28 真机定位):宿主对空 HUD 窗口(measure 0)跳过 frame,若无 tick
+     * 内置 flush,消息到达后组永远无法物化进树(「关框看不到消息」)。本用例不手动 flush——
+     * 仅靠 tick 内置 flush 完成物化,锁定解锁点。
+     */
+    @Test
+    public void hudTreeMaterializesWithoutManualFlush() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = controller.buildContent(rt); // 空树挂载(等价宿主跳过 frame 的窗口)
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            controller.tick(T0); // 唯一驱动:无手动 flush
+            Assert.assertEquals("tick 内置 flush 物化组节点", 1, hudGroups(root).size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
 }

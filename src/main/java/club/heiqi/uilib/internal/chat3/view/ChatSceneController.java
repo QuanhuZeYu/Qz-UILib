@@ -365,6 +365,13 @@ public final class ChatSceneController {
         }
         expireHudGroupsByHead();
         trimHudGroupsByHeight();
+        // 自锁解锁(2026-08-28 真机定位):宿主对空窗口(measure 0)跳过 frame → 本运行时
+        // 的 flush/派发永不发生 → 树永远空(「关闭聊天框看不到消息」根因)。每帧强制 flush:
+        // 消息到达使合成列表失效后,本帧立即把组物化进树,窗口测高 > 0 恢复 frame;
+        // 非空窗口本帧宿主帧循环已 flush 过一次,此处为幂等重跑,常规帧零脏零开销。
+        if (runtime != null) {
+            runtime.flush();
+        }
         if (++diagFrames >= 300) {
             diagFrames = 0;
             logHudSnapshot();
