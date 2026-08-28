@@ -461,6 +461,56 @@ public class ChatSceneControllerTest {
         Assert.assertEquals("CLOSING 中段 opacity=0.25", 0.25F, root.getOpacity(), 0.001F);
     }
 
+    /**
+     * HUD 渐入衔接(2026-08-29 用户设计语义「关闭 - 关闭动画 - 关闭完成 - HUD渐入动画 -
+     * 动画完成」):关闭聊天框(HUD 衔接重建)后根级 opacity 从 0 开始 easeOutCubic
+     * 渐入(替代关屏瞬间气泡跳现=闪烁观感),完成即复位(后续 HUD 帧恒 1 快速路径);
+     * 非衔接路径(HUD 稳定)恒 1,零参与。
+     */
+    @Test
+    public void hudFadeInPlaysAfterCloseTransition() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            Assert.assertEquals("HUD 稳定(非衔接)恒 1", 1.0F, root.getOpacity(), 0.001F);
+
+            // 打开聊天框(容器形态)
+            controller.setChatOpen(true);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
+                    + ChatMarkdownSettings.getPopAnimMillis());
+            rt.flush();
+            Assert.assertEquals("容器稳定 opacity=1", 1.0F, root.getOpacity(), 0.001F);
+
+            // 关闭完成(forceHud 真机路径)→ 衔接重建帧:渐入起点 opacity=0
+            controller.closeToHudImmediately();
+            long frame = T0 + 3000L;
+            controller.tick(frame);
+            rt.flush();
+            Assert.assertEquals("关闭完成首帧 = 渐入起点 0", 0.0F, root.getOpacity(), 0.001F);
+
+            // 渐入中段:easeOutCubic(0.5) = 0.875
+            controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() / 2);
+            rt.flush();
+            Assert.assertEquals("渐入中段 = easeOutCubic(0.5)", 0.875F, root.getOpacity(), 0.001F);
+
+            // 完成:恒 1,且复位(后续帧仍 1)
+            controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() + 1);
+            rt.flush();
+            Assert.assertEquals("渐入完成 opacity=1", 1.0F, root.getOpacity(), 0.001F);
+            controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() + 1000L);
+            rt.flush();
+            Assert.assertEquals("完成复位后恒 1(快速路径)", 1.0F, root.getOpacity(), 0.001F);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
     @Test
     public void expiredHudGroupsAreRemovedFromTree() {
         // 新时钟驱动:可见时钟帧间 delta 夹取 1s,预算+淡出窗(默认 12s+0.8s)需逐帧
@@ -793,7 +843,8 @@ public class ChatSceneControllerTest {
                 + ChatMarkdownSettings.getClosingAnimMillis());
         rt.flush();
         Assert.assertTrue("CLOSING 结束回 HUD transform 恒等", root.getTransform().isIdentity());
-        Assert.assertEquals("CLOSING 结束回 HUD opacity=1", 1.0F, root.getOpacity(), 0.001F);
+        // 容器→HUD 衔接 → 渐入起点(2026-08-29 HUD 渐入动画语义:关闭完成不跳现)
+        Assert.assertEquals("CLOSING 结束回 HUD = 渐入起点 0", 0.0F, root.getOpacity(), 0.001F);
     }
 
     // ==================== HUD 显示预算机制(L3) ====================

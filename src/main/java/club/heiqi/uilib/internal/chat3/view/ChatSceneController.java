@@ -169,6 +169,9 @@ public final class ChatSceneController {
     /** 曾经以 HUD 形态合成过的组首条序列号(enter 入场动画门控:首合成为 true,
      *  重挂载/组增长重建为 false,动画不重播)。 */
     private final Set<Long> hudEverFirstSeqs = new HashSet<Long>();
+    /** HUD 渐入衔接动画起点(wall millis;关闭衔接重建时设置,根级 opacity 0→1
+     *  easeOutCubic 一次性播放,完成复位 -1 快速路径;非衔接恒 -1 不参与)。 */
+    private long hudFadeInStartMillis = -1L;
     /** 关闭衔接抑制(2026-08-29 真机「关闭聊天框时闪烁」根因之一):上次树非 HUD → 本次
      *  HUD 重建时整批组稳态直接出现。实现 = rebuildTree 挂载前把整批组 firstSeq 预登记进
      *  {@link #hudEverFirstSeqs}(集合幂等,任意次 compose 求值结果一致——一次性标志在
@@ -266,7 +269,7 @@ public final class ChatSceneController {
             hostViewportHeight = newHeight;
             // 视口变化(窗口缩放/分辨率切换):动态尺寸变化,重建形态树
             if (runtime != null && root != null) {
-                rebuildTree();
+                rebuildTree(frameMillis.get().longValue());
             }
         }
     }
@@ -366,7 +369,7 @@ public final class ChatSceneController {
             hudVisibleSignal.set(Long.valueOf(hudVisible)); // 仅值变化时 set,防每帧唤醒
         }
         if (runtime != null && root != null && hudNow != hudTreeBuilt) {
-            rebuildTree();
+            rebuildTree(nowMillis);
         }
         expireHudGroupsByHead();
         trimHudGroupsByHeight();
@@ -458,8 +461,8 @@ public final class ChatSceneController {
         this.root = newRoot;
         this.mount = null;
         rt.bind(Computed.create(this::animTransform), transform -> root.setTransform(transform));
-        rt.bind(Computed.create(this::animOpacity), opacity -> root.setOpacity(opacity.floatValue()));
-        rebuildTree();
+        rt.bind(Computed.create(this::rootOpacity), opacity -> root.setOpacity(opacity.floatValue()));
+        rebuildTree(frameMillis.get().longValue());
         return newRoot;
     }
 
@@ -479,8 +482,9 @@ public final class ChatSceneController {
         return phase == DisplayStateMachine.Phase.HUD || phase == DisplayStateMachine.Phase.COLLAPSING;
     }
 
-    /** 树根重建(形态切换;旧挂载点整体移除,新树上重新 forEach 组列表)。 */
-    private void rebuildTree() {
+    /** 树根重建(形态切换;旧挂载点整体移除,新树上重新 forEach 组列表)。
+     *  @param nowMillis 当前帧 wall millis(帧信号未提交也可用;tick 驱动传精确帧时刻) */
+    private void rebuildTree(long nowMillis) {
         if (root == null) {
             return;
         }
@@ -523,6 +527,12 @@ public final class ChatSceneController {
                     }
                 }
             }
+            // 关闭衔接 → HUD 渐入动画:根级 opacity 从本帧起 0→1 easeOutCubic,
+            // 与容器关闭动画(淡出+下滑)视觉衔接,替代关屏瞬间气泡跳现(「仍闪烁」观感源);
+            // 一次性,完成即复位(非衔接的 HUD 帧/后续新消息不受影响)。
+            // 注意:frameMillis 是帧末批量提交 Signal,同帧 get() 仍是上一帧值——
+            // 渐入起点必须用调用方传入的当前帧 nowMillis(见 rebuildTree 参数)。
+            hudFadeInStartMillis = nowMillis;
         }
         if (hud) {
             SceneNode list = SceneNode.column().setHitTestable(false);
@@ -716,6 +726,37 @@ public final class ChatSceneController {
             default:
                 return Transform.translate(0.0F, 0.0F);
         }
+    }
+
+    /**
+     * 根 opacity = 形态动画 opacity 通道 × HUD 渐入衔接通道:形态动画(COLLAPSING/CLOSING
+     * 淡出、POPPING 淡入、稳定恒 1)与关闭衔接渐入(仅关闭聊天框后短暂存在)相乘组合,
+     * 两通道正交。
+     */
+    private float rootOpacity() {
+        return animOpacity() * hudFadeInOpacity();
+    }
+
+    /**
+     * HUD 渐入衔接通道(关闭完成→HUD 平滑出现):根级 opacity 0→1 easeOutCubic
+     * ({@link ChatMarkdownSettings#getHudFadeInAnimMillis()} ms),一次性——
+     * 播放完成即复位起点标记(-1),此后恒 1 快速路径。非衔接(HUD 稳定/首次进游戏)
+     * 恒 1,零参与。
+     */
+    private float hudFadeInOpacity() {
+        long start = hudFadeInStartMillis;
+        if (start < 0L) {
+            return 1.0F;
+        }
+        long now = frameMillis.get().longValue();
+        long duration = ChatMarkdownSettings.getHudFadeInAnimMillis();
+        float progress = duration <= 0L ? 1.0F
+                : Math.min(1.0F, (float) (now - start) / (float) duration);
+        if (progress >= 1.0F) {
+            hudFadeInStartMillis = -1L; // 一次性:完成即复位(快速路径)
+            return 1.0F;
+        }
+        return Animator.easeOutCubic(progress);
     }
 
     /**

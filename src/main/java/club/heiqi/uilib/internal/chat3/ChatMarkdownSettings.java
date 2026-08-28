@@ -72,6 +72,9 @@ public final class ChatMarkdownSettings {
     private static volatile long popAnimMillis = 240L;
     /** 容器关闭动画时长(ms;设计稿 §4.1 closing 140,easeOutQuad 淡出+下滑)。 */
     private static volatile long closingAnimMillis = 140L;
+    /** HUD 渐入衔接动画时长(ms;关闭完成→HUD 气泡平滑出现,设计 160,easeOutCubic
+     *  0→1——与关闭动画衔接,替代关屏瞬间气泡跳现/闪烁观感)。 */
+    private static volatile long hudFadeInAnimMillis = 160L;
     /** 滚轮一格滚动行数(设计稿 §10.1 拍板改回原版 ×7;Shift 一格 1 行)。 */
     private static volatile int scrollWheelLines = 7;
     /** 平滑滚动时长(ms;行单位滚动的 120ms easeOutQuad,T5b;0 或负 = 瞬移语义)。 */
@@ -521,5 +524,10 @@ public final class ChatMarkdownSettings {
     /** @return 容器关闭动画时长(ms) */
     public static long getClosingAnimMillis() {
         return closingAnimMillis;
+    }
+
+    /** @return HUD 渐入衔接动画时长(ms;关闭完成→HUD 气泡平滑出现) */
+    public static long getHudFadeInAnimMillis() {
+        return hudFadeInAnimMillis;
     }
 }
