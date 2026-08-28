@@ -94,9 +94,12 @@ public class ChatCardComposerTest {
 
     // ==================== TB1:HUD 常驻消息(默认开启,TTL 淡出关闭) ====================
 
-    /** 常驻模式(默认 true):HUD 形态(applyTtl=true)下消息早已越过 TTL 仍 alpha 恒满。 */
+    /** 常驻模式(hudPersistMessages=true):HUD 形态(applyTtl=true)下消息早已越过 TTL 仍 alpha 恒满。 */
     @Test
     public void persistModeKeepsFullAlphaEvenWhenTtlElapsed() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(true);
+        try {
         ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> old"), 1, NOW - 60_000L);
         MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
 
@@ -104,6 +107,9 @@ public class ChatCardComposerTest {
 
         Assert.assertEquals("常驻模式 TTL 不生效:alpha 恒满", 255, composed.getAlpha());
         Assert.assertTrue(composed.isVisible());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
     }
 
     /** persist=false 还原旧行为:HUD 形态越过 TTL 淡出结束 alpha 归零(与 shouldComposeHeaderAndStrippedLines 对照)。 */

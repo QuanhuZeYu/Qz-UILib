@@ -36,8 +36,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>组列表 = Computed(contentVersion) → forEach 构建组节点(声明式 diff);</li>
  *   <li>淡出 = 组节点内 Computed(frameMillis) 绑定,PAINT 级颜色烘焙(零结构协调);</li>
  *   <li>形态切换 = 状态机阶段驱动树根重建(HUD 气泡树 ↔ 容器树),动画 = root transform 平移;</li>
- *   <li>HUD 形态过期组(12s+淡出结束)在 tick 中移除(结构级,新消息始终堆在底部);
- *   TB1 常驻模式默认开启(chat3.ChatMarkdownSettings.hudPersistMessages):TTL 过期移除与淡出
+ *   <li>HUD 形态过期组(12s+淡出结束,默认 TTL 原版体感)在 tick 中移除(结构级,新消息始终堆在底部);
+ *   可选常驻模式(ChatMarkdownSettings.hudPersistMessages=true):TTL 过期移除与淡出
  *   均不生效,仅 50% 视口高裁剪(trimHudGroupsByHeight)与历史容量 100 天然裁剪。</li>
  * </ul>
  *
@@ -149,7 +149,7 @@ public final class ChatSceneController {
     private volatile boolean dataDirty;
 
     /** HUD 形态过期移除阈值(latestMillis 低于此值的组不再进树;主线程 tick 推进;
-     *  TB1 常驻模式不推进,恒 0 语义)。 */
+     *  可选常驻模式(hudPersistMessages=true)不推进,恒 0 语义)。 */
     private long expiredThreshold = 0L;
 
     /** HUD 高度裁剪阈值(设计稿 §3.1):堆叠超限时 latestMillis 低于此值的组立即剔除,

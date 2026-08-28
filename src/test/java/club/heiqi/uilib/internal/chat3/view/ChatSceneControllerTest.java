@@ -480,6 +480,9 @@ public class ChatSceneControllerTest {
     /** 常驻模式:消息不因 TTL 过期移除(多次 tick 越过存活+淡出窗口仍常驻)。 */
     @Test
     public void persistedHudMessagesSurviveTtl() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(true);
+        try {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
@@ -495,11 +498,17 @@ public class ChatSceneControllerTest {
         controller.tick(T0 + 10 * ChatMarkdownSettings.getHudTtlMillis());
         rt.flush();
         Assert.assertEquals("常驻模式:更长时间后仍不移除", 1, hudGroups(root).size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
     }
 
     /** 常驻模式:越过 TTL 淡出窗口气泡 alpha 仍满(不淡出);enter 出生动画保留。 */
     @Test
     public void persistedHudMessagesKeepFullAlphaAcrossTtl() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(true);
+        try {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
@@ -518,11 +527,17 @@ public class ChatSceneControllerTest {
         rt.flush();
         Assert.assertEquals("常驻模式:淡出结束 alpha 仍满", 0xF2,
                 (bubble.getBackgroundColor() >>> 24) & 0xFF);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
     }
 
     /** 常驻模式:50% 视口高裁剪仍生效(与 hudStackHeightTrimsOldestGroups 同口径,刷屏 20 组 → 2 组)。 */
     @Test
     public void persistedHudMessagesStillTrimByHeight() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(true);
+        try {
         ChatSceneController controller = controller();
         controller.setHostViewport(320, 400);
         seedFloodHistory(controller, 20);
@@ -539,11 +554,17 @@ public class ChatSceneControllerTest {
                 + ChatMarkdownSettings.getHudFadeMillis() + 1);
         rt.flush();
         Assert.assertEquals("常驻模式:树中仍为高度裁剪结果", 2, hudGroups(root).size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
     }
 
     /** 常驻语义:打开聊天 → 关闭后消息完整回归 HUD 树(不做任何移除,wall clock 越过 TTL 亦然)。 */
     @Test
     public void persistedHudMessagesReturnAfterChatOpenCloseLoop() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(true);
+        try {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
@@ -571,6 +592,9 @@ public class ChatSceneControllerTest {
         controller.tick(closedAt);
         rt.flush();
         Assert.assertEquals("关闭后消息完整回归 HUD 树", 1, hudGroups(root).size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
     }
 
     /** 重复字符串(count 个 c;Java 8 无 String.repeat)。 */

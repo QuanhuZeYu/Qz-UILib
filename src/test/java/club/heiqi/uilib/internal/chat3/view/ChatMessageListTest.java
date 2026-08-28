@@ -509,6 +509,9 @@ public class ChatMessageListTest {
 
     @Test
     public void persistedModeSkipsTtlFadeButKeepsEnterAnim() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(true);
+        try {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
         controller.notifyDataChanged();
@@ -536,6 +539,9 @@ public class ChatMessageListTest {
                 (accentBar.getBackgroundColor() >>> 24) & 0xFF);
         // enter 动画完成归 1
         Assert.assertEquals("常驻模式 enter 动画完成 opacity=1", 1.0F, group.getOpacity(), 0.001F);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
     }
 
     // ==================== T6a:URL 链接化 + 链接 hover(设计稿 §3.5/§5.2) ====================

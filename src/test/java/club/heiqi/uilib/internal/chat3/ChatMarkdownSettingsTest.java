@@ -12,10 +12,11 @@ public class ChatMarkdownSettingsTest {
 
     @Test
     public void defaultsMatchDesignParameterTable() {
-        // 存活/淡出:TTL 10000→12000、fade 500→800;TB1 消息常驻默认开启(false 还原旧 TTL)
+        // 存活/淡出:TTL 10000→12000、fade 500→800;默认 TTL 淡出(用户裁决:原版体感显示一段时间再消失),
+        // 常驻为可选开关(true)
         Assert.assertEquals(12000L, ChatMarkdownSettings.getHudTtlMillis());
         Assert.assertEquals(800L, ChatMarkdownSettings.getHudFadeMillis());
-        Assert.assertTrue(ChatMarkdownSettings.isHudPersistMessages());
+        Assert.assertFalse(ChatMarkdownSettings.isHudPersistMessages());
         // 内边距:气泡纵向 6→5,横向不变
         Assert.assertEquals(5, ChatMarkdownSettings.getBubblePaddingY());
         Assert.assertEquals(10, ChatMarkdownSettings.getBubblePaddingX());
