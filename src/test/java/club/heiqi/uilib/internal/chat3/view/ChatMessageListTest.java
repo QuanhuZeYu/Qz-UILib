@@ -479,23 +479,63 @@ public class ChatMessageListTest {
 
     @Test
     public void accentBarFadesWithGroupAlpha() {
+        // TB1:常驻模式默认开启(无淡出);本测试验证旧 TTL 淡出行为 → 临时关闭常驻
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = controller.buildContent(rt);
+            rt.flush();
+            SceneNode accentBar = hudGroups(root).get(0).__getChildren().get(1).__getChildren().get(1);
+
+            // 初始不透明(基础 alpha FF)
+            Assert.assertEquals("强调条初始满 alpha", 0xFF, (accentBar.getBackgroundColor() >>> 24) & 0xFF);
+
+            // HUD 淡出中段:easeInQuad p=0.5 → 淡出因子 191 → 强调条 alpha = floor(255×191/255) = 191
+            controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
+                    + ChatMarkdownSettings.getHudFadeMillis() / 2);
+            rt.flush();
+            Assert.assertEquals("强调条随组淡出同步降 alpha", 0xBF,
+                    (accentBar.getBackgroundColor() >>> 24) & 0xFF);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    // ==================== TB1:常驻模式(默认开启)关闭 TTL 淡出但保留 enter 动画 ====================
+
+    @Test
+    public void persistedModeSkipsTtlFadeButKeepsEnterAnim() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
         controller.notifyDataChanged();
         SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
-        SceneNode accentBar = hudGroups(root).get(0).__getChildren().get(1).__getChildren().get(1);
+        SceneNode group = hudGroups(root).get(0);
+        SceneNode accentBar = group.__getChildren().get(1).__getChildren().get(1);
 
-        // 初始不透明(基础 alpha FF)
-        Assert.assertEquals("强调条初始满 alpha", 0xFF, (accentBar.getBackgroundColor() >>> 24) & 0xFF);
+        // 出生 enter 动画保留(与 hudGroupEnterAnimatesOpacityAndTranslateY 同源):起点 opacity=0
+        controller.tick(T0);
+        rt.flush();
+        Assert.assertEquals("常驻模式 enter 动画保留(起点 opacity=0)", 0.0F, group.getOpacity(), 0.001F);
 
-        // HUD 淡出中段:easeInQuad p=0.5 → 淡出因子 191 → 强调条 alpha = floor(255×191/255) = 191
+        // 越过 TTL 淡出中段/结束:PAINT 级 fade 烘焙关闭,强调条 alpha 恒满(基础 FF,不随组淡出)
         controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
                 + ChatMarkdownSettings.getHudFadeMillis() / 2);
         rt.flush();
-        Assert.assertEquals("强调条随组淡出同步降 alpha", 0xBF,
+        Assert.assertEquals("常驻模式:淡出中段强调条仍满 alpha", 0xFF,
                 (accentBar.getBackgroundColor() >>> 24) & 0xFF);
+        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
+                + ChatMarkdownSettings.getHudFadeMillis());
+        rt.flush();
+        Assert.assertEquals("常驻模式:淡出结束强调条仍满 alpha", 0xFF,
+                (accentBar.getBackgroundColor() >>> 24) & 0xFF);
+        // enter 动画完成归 1
+        Assert.assertEquals("常驻模式 enter 动画完成 opacity=1", 1.0F, group.getOpacity(), 0.001F);
     }
 
     // ==================== T6a:URL 链接化 + 链接 hover(设计稿 §3.5/§5.2) ====================
@@ -1008,51 +1048,59 @@ public class ChatMessageListTest {
 
     @Test
     public void bubbleHoverColorAlsoFadesWithGroupAlpha() throws Exception {
-        Object[] parts = layoutSingleOtherGroup(linkController());
-        SceneNode bubble = (SceneNode) parts[0];
-        ChatSceneController controller = (ChatSceneController) parts[2];
-        SceneRuntime rt = (SceneRuntime) parts[3];
-        SceneNode root = (SceneNode) parts[4];
-
-        // 放大淡出窗口(反射改 + finally 恢复):P2-4 hover 插值需要帧推进,而 fade alpha
-        // 随帧连续变化——fade=10000 下各 tick 时刻 alpha 精确可算(整数 floor 语义)
-        Field fadeField = ChatMarkdownSettings.class.getDeclaredField("hudFadeMillis");
-        fadeField.setAccessible(true);
-        Object previousFade = fadeField.get(null);
+        // TB1:常驻模式默认开启(无淡出);本测试验证旧 TTL 淡出 × hover 组合 → 临时关闭常驻
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
         try {
-            fadeField.set(null, Long.valueOf(10_000L));
-            long ttl = ChatMarkdownSettings.getHudTtlMillis();
-            // HUD 淡出中段:alpha = floor(255×(1-p²)) p=0.5 → 191
-            controller.tick(T0 + ttl + 5000L);
-            rt.flush();
+            Object[] parts = layoutSingleOtherGroup(linkController());
+            SceneNode bubble = (SceneNode) parts[0];
+            ChatSceneController controller = (ChatSceneController) parts[2];
+            SceneRuntime rt = (SceneRuntime) parts[3];
+            SceneNode root = (SceneNode) parts[4];
 
-            // 气泡 hover 目标置位:alpha=191 时 bake(progress 0)= fadeColor(基础色,191)= 0xB5242B33
-            AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
-            movePointer(rt, root, box.getX() + 5, box.getY() + box.getHeight() - 5);
-            Assert.assertEquals("hover 目标置位但 progress 0:正常色 × alpha191", 0xB5242B33,
-                    bubble.getBackgroundColor());
+            // 放大淡出窗口(反射改 + finally 恢复):P2-4 hover 插值需要帧推进,而 fade alpha
+            // 随帧连续变化——fade=10000 下各 tick 时刻 alpha 精确可算(整数 floor 语义)
+            Field fadeField = ChatMarkdownSettings.class.getDeclaredField("hudFadeMillis");
+            fadeField.setAccessible(true);
+            Object previousFade = fadeField.get(null);
+            try {
+                fadeField.set(null, Long.valueOf(10_000L));
+                long ttl = ChatMarkdownSettings.getHudTtlMillis();
+                // HUD 淡出中段:alpha = floor(255×(1-p²)) p=0.5 → 191
+                controller.tick(T0 + ttl + 5000L);
+                rt.flush();
 
-            // 首帧锚定(alpha=188)
-            controller.tick(T0 + ttl + 5100L);
-            rt.flush();
-            // 插值完成 elapsed=100(alpha=186):hover 色 × 淡出 alpha 组合
-            controller.tick(T0 + ttl + 5200L);
-            rt.flush();
-            Assert.assertEquals("hover 色 × 淡出 alpha186 组合", 0xB02B3139,
-                    bubble.getBackgroundColor());
-            Assert.assertEquals("RGB 保留 hover 提亮分量", 0x2B3139,
-                    bubble.getBackgroundColor() & 0xFFFFFF);
+                // 气泡 hover 目标置位:alpha=191 时 bake(progress 0)= fadeColor(基础色,191)= 0xB5242B33
+                AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
+                movePointer(rt, root, box.getX() + 5, box.getY() + box.getHeight() - 5);
+                Assert.assertEquals("hover 目标置位但 progress 0:正常色 × alpha191", 0xB5242B33,
+                        bubble.getBackgroundColor());
 
-            // 移出 → 反向插值归零(alpha=180)后恢复淡出后的正常色
-            movePointer(rt, root, 200, 280);
-            controller.tick(T0 + ttl + 5300L);
-            rt.flush();
-            controller.tick(T0 + ttl + 5400L);
-            rt.flush();
-            Assert.assertEquals("淡出中移出恢复正常 bake(基础色 × alpha180)", 0xAA242B33,
-                    bubble.getBackgroundColor());
+                // 首帧锚定(alpha=188)
+                controller.tick(T0 + ttl + 5100L);
+                rt.flush();
+                // 插值完成 elapsed=100(alpha=186):hover 色 × 淡出 alpha 组合
+                controller.tick(T0 + ttl + 5200L);
+                rt.flush();
+                Assert.assertEquals("hover 色 × 淡出 alpha186 组合", 0xB02B3139,
+                        bubble.getBackgroundColor());
+                Assert.assertEquals("RGB 保留 hover 提亮分量", 0x2B3139,
+                        bubble.getBackgroundColor() & 0xFFFFFF);
+
+                // 移出 → 反向插值归零(alpha=180)后恢复淡出后的正常色
+                movePointer(rt, root, 200, 280);
+                controller.tick(T0 + ttl + 5300L);
+                rt.flush();
+                controller.tick(T0 + ttl + 5400L);
+                rt.flush();
+                Assert.assertEquals("淡出中移出恢复正常 bake(基础色 × alpha180)", 0xAA242B33,
+                        bubble.getBackgroundColor());
+            } finally {
+                fadeField.set(null, previousFade);
+            }
         } finally {
-            fadeField.set(null, previousFade);
+            // 恢复测试前的常驻配置(与 fade 反射恢复分离,各自独立 finally)
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
         }
     }
 

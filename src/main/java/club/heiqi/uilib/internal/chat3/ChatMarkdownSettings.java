@@ -59,6 +59,9 @@ public final class ChatMarkdownSettings {
     private static volatile long hudTtlMillis = 12000L;
     /** HUD 形态淡出时长(ms;fade 500→800 配合 easeInQuad)。 */
     private static volatile long hudFadeMillis = 800L;
+    /** HUD 形态消息常驻开关(TB1:默认 true = 不开聊天框消息也常驻显示,TTL 过期移除与淡出均不生效;
+     *  false = 还原旧 12s TTL + 800ms 淡出行为)。 */
+    private static volatile boolean hudPersistMessages = true;
     /** HUD 堆叠高度上限 = 视口高 × 比例(P1 刷屏让位用)。 */
     private static volatile double hudMaxHeightRatio = 0.5;
     /** HUD 组出生 enter 动画时长(ms;P1 opacity 通道用)。 */
@@ -247,6 +250,22 @@ public final class ChatMarkdownSettings {
     /** @return HUD 形态淡出时长(ms) */
     public static long getHudFadeMillis() {
         return hudFadeMillis;
+    }
+
+    /**
+     * @return HUD 形态消息是否常驻(TB1:true = 关闭 TTL 过期移除与淡出,消息常驻;
+     *         false = 还原旧 TTL 行为;默认 true)
+     */
+    public static boolean isHudPersistMessages() {
+        return hudPersistMessages;
+    }
+
+    /**
+     * 设置 HUD 形态消息常驻开关(按既有进程级配置语义,下一渲染帧生效;
+     * false = 还原旧 12s TTL + 800ms 淡出行为)。
+     */
+    public static void setHudPersistMessages(boolean value) {
+        hudPersistMessages = value;
     }
 
     /** @return 聊天窗口最大宽(逻辑 px,360 封顶) */

@@ -151,12 +151,16 @@ public final class ChatCardComposer {
      * @param group         消息组
      * @param nowMillis     当前时刻
      * @param maxLineWidthPx 单行最大宽度(窗口宽 - 2×边距 - 2×内边距)
-     * @param applyTtl       true = HUD 形态(12s 存活 + easeInQuad 淡出);false = 容器形态(alpha 恒 255)
+     * @param applyTtl       true = HUD 形态(默认 12s 存活 + easeInQuad 淡出;hudPersistMessages=true
+     *                       时常驻,alpha 恒 255);false = 容器形态(alpha 恒 255)
      * @return 合成组
      */
     public ComposedGroup compose(MessageGroupModel group, long nowMillis, int maxLineWidthPx, boolean applyTtl) {
         long latestMillis = group.getLatestMillis();
-        int alpha = applyTtl ? fadeAlpha(latestMillis, nowMillis,
+        // TB1 常驻模式:TTL 淡出关闭,alpha 恒满(设置内读;applyTtl 仍表示 HUD 形态——
+        // 下方 HUD 行数截断 clampHudLines 不受常驻影响,保持 §5.4 语义)
+        int alpha = applyTtl && !ChatMarkdownSettings.isHudPersistMessages() ? fadeAlpha(
+                latestMillis, nowMillis,
                 ChatMarkdownSettings.getHudTtlMillis(), ChatMarkdownSettings.getHudFadeMillis(), 255) : 255;
         MessageGroupModel.Alignment alignment = group.getAlignment();
         String headerName = "";

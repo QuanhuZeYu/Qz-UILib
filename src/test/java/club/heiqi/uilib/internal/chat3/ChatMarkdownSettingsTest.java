@@ -12,9 +12,10 @@ public class ChatMarkdownSettingsTest {
 
     @Test
     public void defaultsMatchDesignParameterTable() {
-        // 存活/淡出:TTL 10000→12000、fade 500→800
+        // 存活/淡出:TTL 10000→12000、fade 500→800;TB1 消息常驻默认开启(false 还原旧 TTL)
         Assert.assertEquals(12000L, ChatMarkdownSettings.getHudTtlMillis());
         Assert.assertEquals(800L, ChatMarkdownSettings.getHudFadeMillis());
+        Assert.assertTrue(ChatMarkdownSettings.isHudPersistMessages());
         // 内边距:气泡纵向 6→5,横向不变
         Assert.assertEquals(5, ChatMarkdownSettings.getBubblePaddingY());
         Assert.assertEquals(10, ChatMarkdownSettings.getBubblePaddingX());
@@ -50,6 +51,20 @@ public class ChatMarkdownSettingsTest {
         Assert.assertEquals(12, ChatMarkdownSettings.getContainerCornerRadius());
         Assert.assertEquals(450, ChatMarkdownSettings.containerHeightFor(900));
         Assert.assertEquals(160, ChatMarkdownSettings.containerHeightFor(100));
+    }
+
+    /** TB1:常驻开关 setter 往返(进程级配置切换后恢复,与 enabled 同款 setter 语义)。 */
+    @Test
+    public void hudPersistMessagesSetterRoundTrips() {
+        boolean previous = ChatMarkdownSettings.isHudPersistMessages();
+        try {
+            ChatMarkdownSettings.setHudPersistMessages(false);
+            Assert.assertFalse("关闭常驻 = 还原旧 TTL 行为", ChatMarkdownSettings.isHudPersistMessages());
+            ChatMarkdownSettings.setHudPersistMessages(true);
+            Assert.assertTrue("重新开启常驻", ChatMarkdownSettings.isHudPersistMessages());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(previous);
+        }
     }
 
     /**

@@ -36,7 +36,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>组列表 = Computed(contentVersion) → forEach 构建组节点(声明式 diff);</li>
  *   <li>淡出 = 组节点内 Computed(frameMillis) 绑定,PAINT 级颜色烘焙(零结构协调);</li>
  *   <li>形态切换 = 状态机阶段驱动树根重建(HUD 气泡树 ↔ 容器树),动画 = root transform 平移;</li>
- *   <li>HUD 形态过期组(12s+淡出结束)在 tick 中移除(结构级),新消息始终堆在底部。</li>
+ *   <li>HUD 形态过期组(12s+淡出结束)在 tick 中移除(结构级,新消息始终堆在底部);
+ *   TB1 常驻模式默认开启(chat3.ChatMarkdownSettings.hudPersistMessages):TTL 过期移除与淡出
+ *   均不生效,仅 50% 视口高裁剪(trimHudGroupsByHeight)与历史容量 100 天然裁剪。</li>
  * </ul>
  *
  * <p>渲染驱动点 = 接线层每帧调 {@link #tick(long)}(S4 接 drawChat);不依赖 HUD 服务异步帧循环。</p>
@@ -146,7 +148,8 @@ public final class ChatSceneController {
     /** 网络线程数据脏标记(主线程 tick 冲刷为版本号)。 */
     private volatile boolean dataDirty;
 
-    /** HUD 形态过期移除阈值(latestMillis 低于此值的组不再进树;主线程 tick 推进)。 */
+    /** HUD 形态过期移除阈值(latestMillis 低于此值的组不再进树;主线程 tick 推进;
+     *  TB1 常驻模式不推进,恒 0 语义)。 */
     private long expiredThreshold = 0L;
 
     /** HUD 高度裁剪阈值(设计稿 §3.1):堆叠超限时 latestMillis 低于此值的组立即剔除,
@@ -453,8 +456,10 @@ public final class ChatSceneController {
         List<ChatCardComposer.ComposedGroup> composed =
                 new ArrayList<ChatCardComposer.ComposedGroup>();
         // HUD 形态剔除语义:TTL 完全过期(expiredThreshold)与堆叠高度超限(heightTrimThreshold,
-        // 设计稿 §3.1 不等 TTL 的结构级移除)双阈值合并,取较新者
-        long cutoff = Math.max(expiredThreshold, heightTrimThreshold);
+        // 设计稿 §3.1 不等 TTL 的结构级移除)双阈值合并,取较新者;
+        // TB1 常驻模式:TTL 不生效 → cutoff 只由高度裁剪阈值决定(expiredThreshold 恒 0 语义)
+        long cutoff = ChatMarkdownSettings.isHudPersistMessages()
+                ? heightTrimThreshold : Math.max(expiredThreshold, heightTrimThreshold);
         for (MessageGroupModel group : groups) {
             if (applyTtl && group.getLatestMillis() < cutoff) {
                 continue; // HUD 形态:过期/超限裁剪的组移除(不占位)
@@ -592,9 +597,18 @@ public final class ChatSceneController {
         }
     }
 
-    /** HUD 形态:存在完全过期(存活+淡出结束)的组时推进移除阈值(阈值只进不退),触发结构重算。 */
+    /**
+     * HUD 形态:存在完全过期(存活+淡出结束)的组时推进移除阈值(阈值只进不退),触发结构重算。
+     *
+     * <p>TB1 常驻模式:TTL 不生效,直接返回不推进阈值(消息常驻;高度裁剪
+     * trimHudGroupsByHeight 仍保留)。</p>
+     */
     private void removeExpiredHudGroups(long nowMillis) {
         if (!isHudPhase()) {
+            return;
+        }
+        // TB1 常驻模式:消息常驻,TTL 过期移除不生效(阈值保持,仅高度裁剪参与)
+        if (ChatMarkdownSettings.isHudPersistMessages()) {
             return;
         }
         long window = ChatMarkdownSettings.getHudTtlMillis() + ChatMarkdownSettings.getHudFadeMillis();
@@ -640,7 +654,10 @@ public final class ChatSceneController {
         if (maxHeight <= 0) {
             return;
         }
-        long cutoff = Math.max(expiredThreshold, heightTrimThreshold);
+        // TB1 常驻模式:cutoff 同样只由高度裁剪阈值决定(与 composeAll 同口径,避免残留的
+        // 过期阈值把常驻组误判为不在树中)
+        long cutoff = ChatMarkdownSettings.isHudPersistMessages()
+                ? heightTrimThreshold : Math.max(expiredThreshold, heightTrimThreshold);
         int groupGap = Math.max(0, ChatMarkdownSettings.getGroupGapHudPx());
         // 树中(未过期/未裁剪)组,时间正序(最旧在前);并行记录组高与最新时刻
         int keptCount = 0;

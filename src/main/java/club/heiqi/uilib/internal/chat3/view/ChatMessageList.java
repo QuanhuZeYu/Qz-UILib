@@ -130,7 +130,8 @@ public final class ChatMessageList {
             this.ttlFade = ttlFade;
         }
 
-        /** HUD 形态:组间紧密堆叠 + 12s 存活淡出(默认 TTL 12000/easeInQuad 800ms)。 */
+        /** HUD 形态:组间紧密堆叠 + 12s 存活淡出(默认 TTL 12000/easeInQuad 800ms);
+         *  TB1 常驻模式(hudPersistMessages=true,默认):淡出在烘焙处关闭,enter 动画保留。 */
         public static Style hud() {
             return new Style(Math.max(0, ChatMarkdownSettings.getGroupGapHudPx()), true);
         }
@@ -896,11 +897,14 @@ public final class ChatMessageList {
                     opacity -> groupNode.setOpacity(opacity.floatValue()));
             rt.bind(Computed.create(() -> enterTransform(bornMillis, frameMillis.get().longValue())),
                     transform -> groupNode.setTransform(transform));
-            // 淡出烘焙:fadeAlpha → currentAlpha → bake(正常/hover 两态同源)
-            rt.bind(Computed.create(() -> Integer.valueOf(ChatCardComposer.fadeAlpha(
-                            group.getLatestMillis(), frameMillis.get().longValue(),
-                            ChatMarkdownSettings.getHudTtlMillis(),
-                            ChatMarkdownSettings.getHudFadeMillis(), 255))),
+            // 淡出烘焙:fadeAlpha → currentAlpha → bake(正常/hover 两态同源);
+            // TB1 常驻模式:TTL 淡出关闭,alpha 恒满 255(设置内读,运行时切换即时生效)
+            rt.bind(Computed.create(() -> Integer.valueOf(
+                            ChatMarkdownSettings.isHudPersistMessages() ? 255
+                                    : ChatCardComposer.fadeAlpha(
+                                            group.getLatestMillis(), frameMillis.get().longValue(),
+                                            ChatMarkdownSettings.getHudTtlMillis(),
+                                            ChatMarkdownSettings.getHudFadeMillis(), 255))),
                     alpha -> {
                         int a = alpha.intValue();
                         if (a != currentAlpha[0]) {

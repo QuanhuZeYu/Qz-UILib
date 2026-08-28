@@ -315,21 +315,28 @@ public class ChatSceneControllerTest {
 
     @Test
     public void hudFadeBakesAlphaIntoBubbleBackground() {
-        ChatSceneController controller = controller();
-        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
-        controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
-        SceneNode root = build(controller, rt);
+        // TB1:常驻模式默认开启(无淡出);本测试验证旧 TTL 淡出行为 → 临时关闭常驻
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
 
-        SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
-        Assert.assertEquals("初始全量 alpha", 0xF2, (bubble.getBackgroundColor() >>> 24) & 0xFF);
+            SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
+            Assert.assertEquals("初始全量 alpha", 0xF2, (bubble.getBackgroundColor() >>> 24) & 0xFF);
 
-        // 淡出中段:easeInQuad p=0.5 → 淡出因子 191(floor(255×0.75))
-        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
-                + ChatMarkdownSettings.getHudFadeMillis() / 2);
-        rt.flush();
-        // 组合语义:基础 alpha F2(242) × 淡出因子 191 → 181(0xB5,整数截断)
-        Assert.assertEquals("淡出中段 alpha 组合截断", 0xB5, (bubble.getBackgroundColor() >>> 24) & 0xFF);
+            // 淡出中段:easeInQuad p=0.5 → 淡出因子 191(floor(255×0.75))
+            controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
+                    + ChatMarkdownSettings.getHudFadeMillis() / 2);
+            rt.flush();
+            // 组合语义:基础 alpha F2(242) × 淡出因子 191 → 181(0xB5,整数截断)
+            Assert.assertEquals("淡出中段 alpha 组合截断", 0xB5, (bubble.getBackgroundColor() >>> 24) & 0xFF);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
     }
 
     @Test
@@ -447,6 +454,32 @@ public class ChatSceneControllerTest {
 
     @Test
     public void expiredHudGroupsAreRemovedFromTree() {
+        // TB1:常驻模式(TTL 移除关闭);本测试验证旧 TTL 移除行为 → 临时关闭常驻
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            Assert.assertEquals(1, hudGroups(root).size());
+
+            // 完全过期(存活 + 淡出结束)
+            controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
+                    + ChatMarkdownSettings.getHudFadeMillis() + 1);
+            rt.flush();
+            Assert.assertEquals("过期组应从树中移除", 0, hudGroups(root).size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    // ==================== TB1:HUD 常驻消息(默认开启) ====================
+
+    /** 常驻模式:消息不因 TTL 过期移除(多次 tick 越过存活+淡出窗口仍常驻)。 */
+    @Test
+    public void persistedHudMessagesSurviveTtl() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
@@ -454,11 +487,90 @@ public class ChatSceneControllerTest {
         SceneNode root = build(controller, rt);
         Assert.assertEquals(1, hudGroups(root).size());
 
-        // 完全过期(存活 + 淡出结束)
+        // 完全过期(存活 + 淡出结束)+ 更长窗口:常驻模式不触发过期移除
         controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
                 + ChatMarkdownSettings.getHudFadeMillis() + 1);
         rt.flush();
-        Assert.assertEquals("过期组应从树中移除", 0, hudGroups(root).size());
+        Assert.assertEquals("常驻模式:TTL 过期不移除", 1, hudGroups(root).size());
+        controller.tick(T0 + 10 * ChatMarkdownSettings.getHudTtlMillis());
+        rt.flush();
+        Assert.assertEquals("常驻模式:更长时间后仍不移除", 1, hudGroups(root).size());
+    }
+
+    /** 常驻模式:越过 TTL 淡出窗口气泡 alpha 仍满(不淡出);enter 出生动画保留。 */
+    @Test
+    public void persistedHudMessagesKeepFullAlphaAcrossTtl() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = build(controller, rt);
+        SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
+
+        // 淡出中段/结束:常驻模式无淡出烘焙,alpha 恒为气泡基础 alpha F2
+        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
+                + ChatMarkdownSettings.getHudFadeMillis() / 2);
+        rt.flush();
+        Assert.assertEquals("常驻模式:淡出中段 alpha 仍满", 0xF2,
+                (bubble.getBackgroundColor() >>> 24) & 0xFF);
+        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
+                + ChatMarkdownSettings.getHudFadeMillis());
+        rt.flush();
+        Assert.assertEquals("常驻模式:淡出结束 alpha 仍满", 0xF2,
+                (bubble.getBackgroundColor() >>> 24) & 0xFF);
+    }
+
+    /** 常驻模式:50% 视口高裁剪仍生效(与 hudStackHeightTrimsOldestGroups 同口径,刷屏 20 组 → 2 组)。 */
+    @Test
+    public void persistedHudMessagesStillTrimByHeight() {
+        ChatSceneController controller = controller();
+        controller.setHostViewport(320, 400);
+        seedFloodHistory(controller, 20);
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = build(controller, rt);
+        controller.tick(T0);
+        rt.flush();
+
+        // 常驻模式下高度裁剪照常收敛到上限约束(2 组)
+        Assert.assertEquals("常驻模式高度裁剪仍生效", 2, hudGroups(root).size());
+
+        // 越过 TTL 后仍只受高度裁剪约束(无 TTL 清空;被裁组不复活)
+        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
+                + ChatMarkdownSettings.getHudFadeMillis() + 1);
+        rt.flush();
+        Assert.assertEquals("常驻模式:树中仍为高度裁剪结果", 2, hudGroups(root).size());
+    }
+
+    /** 常驻语义:打开聊天 → 关闭后消息完整回归 HUD 树(不做任何移除,wall clock 越过 TTL 亦然)。 */
+    @Test
+    public void persistedHudMessagesReturnAfterChatOpenCloseLoop() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = build(controller, rt);
+        Assert.assertEquals("初始 HUD 树 1 组", 1, hudGroups(root).size());
+
+        // 打开:COLLAPSING → POPPING 起容器阶段,HUD 树清空(容器由输入屏幕绘制)
+        controller.setChatOpen(true);
+        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+        rt.flush();
+        SceneNode mount = root.__getChildren().get(0);
+        Assert.assertEquals("打开后 HUD 树清空", 0, mount.__getChildren().size());
+
+        // 容器稳定
+        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
+                + ChatMarkdownSettings.getPopAnimMillis());
+        rt.flush();
+
+        // 关闭:CLOSING → HUD 树重建;期间 wall clock 越过 TTL+淡出窗口,常驻模式不移除
+        long closedAt = T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
+                + ChatMarkdownSettings.getPopAnimMillis()
+                + ChatMarkdownSettings.getClosingAnimMillis() + 1;
+        controller.setChatOpen(false);
+        controller.tick(closedAt);
+        rt.flush();
+        Assert.assertEquals("关闭后消息完整回归 HUD 树", 1, hudGroups(root).size());
     }
 
     /** 重复字符串(count 个 c;Java 8 无 String.repeat)。 */

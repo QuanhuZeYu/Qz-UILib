@@ -92,6 +92,38 @@ public class ChatCardComposerTest {
         }
     }
 
+    // ==================== TB1:HUD 常驻消息(默认开启,TTL 淡出关闭) ====================
+
+    /** 常驻模式(默认 true):HUD 形态(applyTtl=true)下消息早已越过 TTL 仍 alpha 恒满。 */
+    @Test
+    public void persistModeKeepsFullAlphaEvenWhenTtlElapsed() {
+        ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> old"), 1, NOW - 60_000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+
+        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, true);
+
+        Assert.assertEquals("常驻模式 TTL 不生效:alpha 恒满", 255, composed.getAlpha());
+        Assert.assertTrue(composed.isVisible());
+    }
+
+    /** persist=false 还原旧行为:HUD 形态越过 TTL 淡出结束 alpha 归零(与 shouldComposeHeaderAndStrippedLines 对照)。 */
+    @Test
+    public void ttlFadeAppliesWhenPersistDisabled() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> old"), 1, NOW - 60_000L);
+            MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+
+            ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, true);
+
+            Assert.assertEquals("persist=false:过 TTL 淡出结束 alpha=0", 0, composed.getAlpha());
+            Assert.assertFalse("persist=false:过期组不可见", composed.isVisible());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
     @Test
     public void shouldKeepFullAlphaWhenTtlDisabled() {
         long arrived = NOW - 60_000L; // 早已过期
