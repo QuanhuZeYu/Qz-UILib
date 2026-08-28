@@ -696,6 +696,11 @@ public final class ChatMessageList {
                 messageNode = SceneNode.row()
                         .setHitTestable(true)
                         .setWidthSizing(SceneNode.WidthSizing.SHRINK)
+                        // 右对齐根因(2026-08-29 真机取证):组节点的 crossAxisAlign 默认
+                        // STRETCH, SHRINK 子被豁免拉伸后 crossPos=0 左贴 → 组内气泡
+                        // 右缘参差(accent 条 x=315/338/344)。显式 AlignSelf 让每条气泡
+                        // 贴组右缘:自己组 END 右对齐/他人组 START/系统组 CENTER。
+                        .setAlignSelf(align)
                         .setBackgroundColor(bubbleColor)
                         .setMaxWidth(maxBubbleWidthPx);
                 setGradedCorners(messageNode, cornersFor(messageCount, i, selfRight, rLg, rInner));
@@ -717,7 +722,9 @@ public final class ChatMessageList {
             } else {
                 messageNode = SceneNode.column()
                         .setHitTestable(true)
-                        .setWidthSizing(SceneNode.WidthSizing.SHRINK);
+                        .setWidthSizing(SceneNode.WidthSizing.SHRINK)
+                        // 同右对齐修复(见 accent 分支注释):非 accent 形态气泡同样贴组右缘
+                        .setAlignSelf(align);
                 if (!system) {
                     messageNode.setBackgroundColor(bubbleColor)
                             .setPadding(paddingY, paddingX, paddingY, paddingX)

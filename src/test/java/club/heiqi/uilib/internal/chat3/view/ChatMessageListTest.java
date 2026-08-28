@@ -432,6 +432,45 @@ public class ChatMessageListTest {
     }
 
     @Test
+    public void selfGroupBubblesAlignRightEdgesRegardlessOfWidth() {
+        // 2026-08-29 真机取证:组内气泡按内容收缩(SHRINK)+ 父 crossAxisAlign 默认
+        // STRETCH 且 SHRINK 豁免后 crossPos=0 左贴 → 同组多气泡右缘参差
+        // (截图 accent 条 x=315/338/344)。修复:messageNode 显式 AlignSelf(align)。
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Alex> a much longer message"), 1, T0 + 1000));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+
+        SceneNode group = hudGroups(root).get(0);
+        SceneNode shortBubble = group.__getChildren().get(1);
+        SceneNode longBubble = group.__getChildren().get(2);
+        LayoutBox shortBox = (LayoutBox) shortBubble.getCachedLayout();
+        LayoutBox longBox = (LayoutBox) longBubble.getCachedLayout();
+        Assert.assertTrue("短气泡与长气泡宽度不同(收缩语义保留)",
+                shortBox.getWidth() < longBox.getWidth());
+        Assert.assertEquals("两条气泡右缘对齐(贴组右缘)",
+                longBox.getX() + longBox.getWidth(),
+                shortBox.getX() + shortBox.getWidth());
+        LayoutBox groupBox = (LayoutBox) group.getCachedLayout();
+        // 气泡 getX 是组内坐标;组右缘 = 组 x(容器坐标) + 组宽 → 等效断言 = 气泡右缘贴组宽
+        Assert.assertEquals("对齐基准 = 组宽(组右缘)", groupBox.getWidth(),
+                shortBox.getX() + shortBox.getWidth());
+        Assert.assertEquals("组贴视图内容右缘(160)", 160,
+                groupBox.getX() + groupBox.getWidth());
+        // accent 条(子 1)随气泡右移,仍贴气泡右内缘
+        SceneNode shortAccent = shortBubble.__getChildren().get(1);
+        LayoutBox shortAccentBox = (LayoutBox) shortAccent.getCachedLayout();
+        Assert.assertEquals("短气泡强调条右缘 == 短气泡右缘", shortBox.getWidth(),
+                shortAccentBox.getX() + shortAccentBox.getWidth());
+    }
+
+    @Test
     public void otherGroupAlignsStartAndBubbleShrinksToContent() {
         ChatSceneController controller = linkController();
         controller.setHostViewport(400, 300);
