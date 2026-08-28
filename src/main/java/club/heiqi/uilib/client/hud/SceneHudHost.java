@@ -57,6 +57,9 @@ public final class SceneHudHost {
         this.scaleSetting = scaleSetting;
     }
 
+    /** 临时诊断:每 300 帧打印各保留窗口状态(真机定位 HUD 不渲染用)。 */
+    private int hostDiagFrames;
+
     /** 在 render 主线程执行一帧：挂载缺失窗口 → 测量 → 四角锚定 → 逐窗口帧循环。 */
     public void render(UiRenderBackend backend, HudViewportMetrics viewport, boolean inWorld, boolean screenOpen) {
         render(backend, viewport.getWidth(), viewport.getHeight(), inWorld, screenOpen);
@@ -100,6 +103,21 @@ public final class SceneHudHost {
                     ? Math.min(HudTokens.NORMAL.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
             int measuredWidth = Math.max(minimum, Math.min(entry.spec.getMaxWidth(), box.getWidth()));
             measured.add(new MeasuredHud(entry, measuredWidth, box.getHeight()));
+        }
+        if (++hostDiagFrames >= 300) {
+            hostDiagFrames = 0;
+            for (HudRegistry.Entry entry : registry.frameEntries()) {
+                RetainedWindow window = retained.get(entry.spec.getId());
+                if (window == null) {
+                    continue;
+                }
+                LayoutBox box = (LayoutBox) window.root().getCachedLayout();
+                MyMod.LOG.info("[HudHostDiag] id={} visible={} empty={} box={}",
+                        entry.spec.getId(),
+                        Boolean.valueOf(visible.contains(entry.spec.getId())),
+                        Boolean.valueOf(window.isEmptyContent()),
+                        box == null ? "null" : box.getWidth() + "x" + box.getHeight());
+            }
         }
         placeAndFrame(backend, measured, width, height, safeInsets, frameTimeNanos);
     }

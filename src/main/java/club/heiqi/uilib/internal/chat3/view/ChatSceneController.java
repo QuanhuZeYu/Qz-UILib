@@ -32,6 +32,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * 聊天 3.0 场景控制器(L3 渲染层状态中枢):数据 + 信号 + 双形态 scene 树。
@@ -136,6 +138,9 @@ public final class ChatSceneController {
     private final Signal<Integer> contentVersion = Signal.create(Integer.valueOf(0));
     /** 帧时钟(wall millis,每渲染帧由接线层推进,驱动淡出/动画)。 */
     private final Signal<Long> frameMillis = Signal.create(Long.valueOf(0L));
+    /** 真机诊断日志器(临时,定位「关闭聊天框看不到消息」;每 300 帧一行快照)。 */
+    private static final Logger DIAG_LOG = LogManager.getLogger("QzUILib Chat3Diag");
+    private int diagFrames = 0;
     /** 聊天打开目标(接线层写入)。 */
     private final Signal<Boolean> chatOpen = Signal.create(Boolean.FALSE);
     /** 形态阶段(状态机输出,信号化供绑定追踪)。 */
@@ -360,6 +365,35 @@ public final class ChatSceneController {
         }
         expireHudGroupsByHead();
         trimHudGroupsByHeight();
+        if (++diagFrames >= 300) {
+            diagFrames = 0;
+            logHudSnapshot();
+        }
+    }
+
+    /** 临时诊断:每 300 帧打印 HUD 状态快照(真机定位用;交付后删除)。 */
+    private void logHudSnapshot() {
+        long hud = hudVisibleClock.visibleMillis();
+        List<ChatCardComposer.ComposedGroup> composed = groupsSignal().get();
+        int treeGroups = 0;
+        if (mount != null && !mount.__getChildren().isEmpty()) {
+            treeGroups = ((SceneNode) mount.__getChildren().get(0)).__getChildren().size();
+        }
+        String newest = "none";
+        if (!composed.isEmpty()) {
+            ChatCardComposer.ComposedGroup last = composed.get(composed.size() - 1);
+            int alpha = ChatCardComposer.hudAlpha(last.getHudVisibleStartMillis(),
+                    last.getBudgetMillis(), ChatMarkdownSettings.getHudFadeMillis(), hud);
+            newest = "start=" + last.getHudVisibleStartMillis() + " budget="
+                    + last.getBudgetMillis() + " alpha=" + alpha + " enter="
+                    + last.isEnterOnMount();
+        }
+        DIAG_LOG.info("[Chat3Diag] phase={} hudVisible={}ms treeGroups={} composed={} history={} persist={} newest[{}] ttl={} fade={}",
+                machine.getPhase(), Long.valueOf(hud), Integer.valueOf(treeGroups),
+                Integer.valueOf(composed.size()), Integer.valueOf(history.size()),
+                Boolean.valueOf(ChatMarkdownSettings.isHudPersistMessages()), newest,
+                Long.valueOf(ChatMarkdownSettings.getHudTtlMillis()),
+                Long.valueOf(ChatMarkdownSettings.getHudFadeMillis()));
     }
 
     /** 数据结构变化(消息到达/删除/清空/滚动/设置)后调用,驱动重协调(主线程)。 */

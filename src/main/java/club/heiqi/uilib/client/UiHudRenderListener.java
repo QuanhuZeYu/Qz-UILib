@@ -18,11 +18,14 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.event.world.WorldEvent;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.lwjgl.opengl.GL11;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /** 唯一 Forge HUD render bridge；不取消事件，不承载业务布局。 */
 public final class UiHudRenderListener {
+    private static final Logger LOG = LogManager.getLogger("QzUILib HudFrame");
     private static final HudGlStateGuard HUD_GL_STATE_GUARD = new HudGlStateGuard();
     private final ClientHudServiceImpl service = ClientHudServiceImpl.getInstance();
     private final SceneHudHost host = new SceneHudHost(service);
@@ -75,12 +78,19 @@ public final class UiHudRenderListener {
                 });
     }
 
+    /** 临时诊断:每 300 帧确认 HUD 事件被触发。 */
+    private int hudFrameDiag;
+
     /** 在 Post(ALL) 中以 framebuffer 尺寸执行 scene layout→paint→replay。 */
     @SubscribeEvent
     public void onRenderGameOverlay(RenderGameOverlayEvent.Post event) {
         if (event == null || event.type != RenderGameOverlayEvent.ElementType.ALL) return;
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) return;
+        if (++hudFrameDiag >= 300) {
+            hudFrameDiag = 0;
+            LOG.info("[HudFrameDiag] Post(ALL) 触发");
+        }
         HudViewportMetrics viewport = viewport();
         int width = viewport.getWidth();
         int height = viewport.getHeight();
