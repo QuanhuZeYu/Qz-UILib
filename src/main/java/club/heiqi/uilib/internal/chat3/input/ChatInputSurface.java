@@ -145,6 +145,15 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     }
 
     /**
+     * 容器收回动画完成、真正关屏后调用:委托控制器直接切 HUD(forceHud,跳过机器
+     * CLOSING 空窗,气泡立即挂回);CLOSING 期间收到打开请求(pendingOpen)的折算由
+     * 控制器状态机按设计稿 §4.2 处理。
+     */
+    public void notifyScreenClosed() {
+        controller.closeToHudImmediately();
+    }
+
+    /**
      * 请求关闭(播放容器 CLOSING 动画):首次请求进入 CLOSING 并注册完成回调;
      * 动画期间重复请求幂等返回同一请求(不重置动画、不重复注册)。
      *

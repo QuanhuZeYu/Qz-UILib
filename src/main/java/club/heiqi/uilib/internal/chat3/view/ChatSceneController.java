@@ -1,9 +1,11 @@
 package club.heiqi.uilib.internal.chat3.view;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.IChatComponent;
@@ -16,8 +18,11 @@ import club.heiqi.uilib.internal.chat3.data.ChatHistory;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
+import club.heiqi.uilib.internal.chat3.viewmodel.HudVisibleClock;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGroupModel;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGrouper;
+import club.heiqi.uilib.internal.chat3.viewmodel.MessageLifecycle;
+import club.heiqi.uilib.internal.chat3.viewmodel.MessageLifecycleRegistry;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -36,9 +41,12 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>组列表 = Computed(contentVersion) → forEach 构建组节点(声明式 diff);</li>
  *   <li>淡出 = 组节点内 Computed(frameMillis) 绑定,PAINT 级颜色烘焙(零结构协调);</li>
  *   <li>形态切换 = 状态机阶段驱动树根重建(HUD 气泡树 ↔ 容器树),动画 = root transform 平移;</li>
- *   <li>HUD 形态过期组(12s+淡出结束,默认 TTL 原版体感)在 tick 中移除(结构级,新消息始终堆在底部);
- *   可选常驻模式(ChatMarkdownSettings.hudPersistMessages=true):TTL 过期移除与淡出
- *   均不生效,仅 50% 视口高裁剪(trimHudGroupsByHeight)与历史容量 100 天然裁剪。</li>
+ *   <li>HUD 形态过期组按「显示预算」消费(每条消息附带需要显示的时间,预算只在 HUD
+ *   真正可见时按可见时钟消耗;聊天框打开期间冻结,关闭后用尽剩余预算继续显示);
+ *   过期移除 = 合成列表队首弹出(预算同源 → 过期序 = 到达序,最旧在最前),不再全量重扫;
+ *   组首次以 HUD 形态合成才播 enter 入场动画(重挂载/组增长重建不重播);
+ *   可选常驻模式(ChatMarkdownSettings.hudPersistMessages=true):预算过期移除不生效,
+ *   仅 50% 视口高裁剪(trimHudGroupsByHeight)与历史容量 100 天然裁剪;</li>
  * </ul>
  *
  * <p>渲染驱动点 = 接线层每帧调 {@link #tick(long)}(S4 接 drawChat);不依赖 HUD 服务异步帧循环。</p>
@@ -148,9 +156,16 @@ public final class ChatSceneController {
     /** 网络线程数据脏标记(主线程 tick 冲刷为版本号)。 */
     private volatile boolean dataDirty;
 
-    /** HUD 形态过期移除阈值(latestMillis 低于此值的组不再进树;主线程 tick 推进;
-     *  可选常驻模式(hudPersistMessages=true)不推进,恒 0 语义)。 */
-    private long expiredThreshold = 0L;
+    /** HUD 可见时钟(仅 HUD 形态帧推进累计,帧间 delta 夹取 1s;聊天框打开/容器阶段
+     *  冻结——消息预算只在 HUD 真正可见时消耗)。 */
+    private final HudVisibleClock hudVisibleClock = new HudVisibleClock();
+    /** 消息生命周期注册表(sequenceId → 生命周期;预算/done 脏标记,与历史容量裁剪联动)。 */
+    private final MessageLifecycleRegistry lifecycles = new MessageLifecycleRegistry();
+    /** 曾经以 HUD 形态合成过的组首条序列号(enter 入场动画门控:首合成为 true,
+     *  重挂载/组增长重建为 false,动画不重播)。 */
+    private final Set<Long> hudEverFirstSeqs = new HashSet<Long>();
+    /** 可见时钟信号(HUD 淡出渲染驱动;仅值变化时 set,防每帧唤醒下游)。 */
+    private final Signal<Long> hudVisibleSignal = Signal.create(Long.valueOf(0L));
 
     /** HUD 高度裁剪阈值(设计稿 §3.1):堆叠超限时 latestMillis 低于此值的组立即剔除,
      *  不等 TTL(结构级、只进不退——被裁组不复活)。 */
@@ -316,7 +331,10 @@ public final class ChatSceneController {
 
     /**
      * 每渲染帧推进(接线层 drawChat 单行委托,主线程):
-     * 冲刷脏标记、推进状态机、检查过期/高度超限组移除、必要时重建形态树。
+     * 冲刷脏标记、推进状态机与 HUD 可见时钟、检查队首过期/高度超限组移除、必要时重建形态树。
+     *
+     * <p>可见时钟只在 HUD 形态(isHudPhase)帧推进时累计——聊天框打开(容器阶段)期间
+     * 消息预算冻结,关闭后用尽剩余预算继续显示。</p>
      *
      * @param nowMillis 当前 wall millis
      */
@@ -333,10 +351,14 @@ public final class ChatSceneController {
         }
         frameMillis.set(Long.valueOf(nowMillis));
         boolean hudNow = isHudPhase();
+        long hudVisible = hudVisibleClock.tickFrame(nowMillis, hudNow);
+        if (hudVisible != hudVisibleSignal.get().longValue()) {
+            hudVisibleSignal.set(Long.valueOf(hudVisible)); // 仅值变化时 set,防每帧唤醒
+        }
         if (runtime != null && root != null && hudNow != hudTreeBuilt) {
             rebuildTree();
         }
-        removeExpiredHudGroups(nowMillis);
+        expireHudGroupsByHead();
         trimHudGroupsByHeight();
     }
 
@@ -435,36 +457,87 @@ public final class ChatSceneController {
         if (hud) {
             SceneNode list = SceneNode.column().setHitTestable(false);
             mount.appendChild(list);
+            // HUD 形态注入可见时钟信号:渲染层淡出按可见时钟驱动,预算只在 HUD 真正
+            // 可见时消耗(聊天框打开期间冻结,关闭后用尽剩余预算继续显示)
             listHandle = messageList().mount(runtime, list, groupsSignal(),
-                    ChatMessageList.Style.hud(), messageNodes, frameMillis);
+                    ChatMessageList.Style.hud(), messageNodes, frameMillis, hudVisibleSignal);
         }
         // 非 HUD 阶段:HUD 树清空(整窗隐藏,容器由输入屏幕绘制)
         hudTreeBuilt = hud;
     }
 
-    /** 组列表(结构级 Computed:数据版本 → 合成组;供 ChatContainer 复用)。 */
+    /** 组列表(结构级 Computed 缓存单例:数据版本 → 合成组;供 ChatContainer/队首过期/
+     *  高度裁剪共用——Computed 记忆化,常规帧(结构无变化)零重算)。 */
     ReadableSignal<List<ChatCardComposer.ComposedGroup>> groupsSignal() {
-        return Computed.create(this::composeAll);
+        return groupsSignalValue;
     }
 
+    /** 组列表派生(缓存单例;见 {@link #groupsSignal()})。 */
+    private final ReadableSignal<List<ChatCardComposer.ComposedGroup>> groupsSignalValue =
+            Computed.create(this::composeAll);
+
+    /**
+     * 合成组列表(HUD 生命周期过滤路径):HUD 形态按每条消息的显示预算(可见时钟驱动)
+     * 过滤——预算耗尽 + 淡出窗结束(done/淡出脏标记)的组不再合成(结构移除,节点卸载);
+     * 容器形态全量合成(applyTtl=false,不碰生命周期)。
+     *
+     * <p>生命周期按组内最新消息(时间正序末条)记账:组增长重建后组预算以新消息为准重新
+     * 起算(连发消息不丢);enterOnMount 按组首条序列号门控——首次以 HUD 形态合成播放
+     * 入场动画,重挂载/组增长重建不重播。预算路径(applyTtl 且非常驻)compose 注入
+     * HudBudget,alpha 恒 255(淡出由渲染层按可见时钟每帧驱动,不出现在合成期)。</p>
+     */
     private List<ChatCardComposer.ComposedGroup> composeAll() {
         contentVersion.get().intValue(); // 结构依赖
+        phaseSignal.get(); // 形态依赖:打开/关闭切换(HUD ↔ 容器)触发重算(容器全量、HUD 过滤);常规帧不变零重算
         boolean applyTtl = isHudPhase();
-        List<MessageGroupModel> groups = grouper.group(history.snapshot(), selfNameProvider.selfName());
+        List<ChatLineRecord> snapshot = history.snapshot();
+        lifecycles.purge(snapshot); // 历史容量裁剪联动,防注册表泄漏
+        List<MessageGroupModel> groups = grouper.group(snapshot, selfNameProvider.selfName());
         int maxLine = Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)
                 - 2 * ChatMarkdownSettings.getBubblePaddingX());
+        boolean persist = ChatMarkdownSettings.isHudPersistMessages();
+        // 预算路径下 compose 的 nowMillis 无实际用途(alpha 恒 255,淡出由渲染层按
+        // 可见时钟驱动,组头时间戳按组内最新到达时刻);不读帧时钟 → 组列表 Computed
+        // 只依赖 contentVersion,常规帧(结构无变化)零重算
+        long hudVisible = hudVisibleClock.visibleMillis();
+        long fadeMillis = ChatMarkdownSettings.getHudFadeMillis();
         List<ChatCardComposer.ComposedGroup> composed =
                 new ArrayList<ChatCardComposer.ComposedGroup>();
-        // HUD 形态剔除语义:TTL 完全过期(expiredThreshold)与堆叠高度超限(heightTrimThreshold,
-        // 设计稿 §3.1 不等 TTL 的结构级移除)双阈值合并,取较新者;
-        // TB1 常驻模式:TTL 不生效 → cutoff 只由高度裁剪阈值决定(expiredThreshold 恒 0 语义)
-        long cutoff = ChatMarkdownSettings.isHudPersistMessages()
-                ? heightTrimThreshold : Math.max(expiredThreshold, heightTrimThreshold);
         for (MessageGroupModel group : groups) {
-            if (applyTtl && group.getLatestMillis() < cutoff) {
-                continue; // HUD 形态:过期/超限裁剪的组移除(不占位)
+            if (!applyTtl) {
+                // 容器路径:旧重载(budget=null),不碰生命周期
+                composed.add(composer().compose(group, 0L, maxLine, false));
+                continue;
             }
-            composed.add(composer().compose(group, frameMillis.get().longValue(), maxLine, applyTtl));
+            // HUD 形态:高度裁剪阈值(设计稿 §3.1,只进不退——被裁组不复活)先过滤
+            if (group.getLatestMillis() < heightTrimThreshold) {
+                continue; // 结构级移除(不占位)
+            }
+            if (!persist) {
+                // 组内最新消息(时间正序末条)的生命周期;预算只在 HUD 可见时消耗
+                List<MessageGroupModel.GroupLine> lines = group.getLines();
+                MessageLifecycle lifecycle = lifecycles.ensure(
+                        lines.get(lines.size() - 1).getRecord().getSequenceId(),
+                        ChatMarkdownSettings.getHudTtlMillis());
+                if (lifecycle.isFadeElapsed(hudVisible, fadeMillis) || lifecycle.isDone()) {
+                    lifecycle.markDone(); // 脏标记:一次性标记,后续 compose/裁剪/扫描 O(1) 跳过
+                    continue; // 不再合成(结构移除,节点卸载)
+                }
+                lifecycle.markEntered(hudVisible); // 幂等,重挂载不重置预算
+                composed.add(composer().compose(group, 0L, maxLine, true,
+                        new ChatCardComposer.HudBudget(lifecycle.getBudgetMillis(),
+                                lifecycle.getHudVisibleStartMillis())));
+            } else {
+                // 常驻模式:完全跳过生命周期(alpha 255 由 compose 旧路径保证),
+                // enterOnMount 仍按集合计算
+                composed.add(composer().compose(group, 0L, maxLine, true));
+            }
+            // enterOnMount 门控:仅组首次以 HUD 形态合成(true),此后(重挂载/组增长重建)false
+            ChatCardComposer.ComposedGroup composedGroup =
+                    composed.get(composed.size() - 1);
+            long firstSeq = group.getLines().get(0).getRecord().getSequenceId();
+            composedGroup.setEnterOnMount(!hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
+            hudEverFirstSeqs.add(Long.valueOf(firstSeq));
         }
         return composed;
     }
@@ -598,30 +671,38 @@ public final class ChatSceneController {
     }
 
     /**
-     * HUD 形态:存在完全过期(存活+淡出结束)的组时推进移除阈值(阈值只进不退),触发结构重算。
+     * HUD 形态过期组队首弹出(结构级移除):预算同源(默认预算一致)→ 过期序 = 到达序,
+     * 合成列表最旧在前,队首即最早过期——只检查队首一组,不再全量重扫;队首过期
+     * (预算耗尽 + 淡出窗结束)→ {@link #notifyDataChanged()}(一帧收敛:被下一帧
+     * compose 排除 = 结构移除,节点卸载);极端差异预算兜底下每帧至多弹出队首一帧,
+     * 下帧续弹(有界)。
      *
-     * <p>TB1 常驻模式:TTL 不生效,直接返回不推进阈值(消息常驻;高度裁剪
+     * <p>TB1 常驻模式:预算过期移除不生效,直接返回(消息常驻;高度裁剪
      * trimHudGroupsByHeight 仍保留)。</p>
      */
-    private void removeExpiredHudGroups(long nowMillis) {
+    private void expireHudGroupsByHead() {
         if (!isHudPhase()) {
             return;
         }
-        // TB1 常驻模式:消息常驻,TTL 过期移除不生效(阈值保持,仅高度裁剪参与)
+        // TB1 常驻模式:消息常驻,预算过期移除不生效(仅高度裁剪参与)
         if (ChatMarkdownSettings.isHudPersistMessages()) {
             return;
         }
-        long window = ChatMarkdownSettings.getHudTtlMillis() + ChatMarkdownSettings.getHudFadeMillis();
-        long newThreshold = nowMillis - window;
-        if (newThreshold <= expiredThreshold) {
+        List<ChatCardComposer.ComposedGroup> groups = groupsSignal().get();
+        if (groups == null || groups.isEmpty()) {
             return;
         }
-        for (MessageGroupModel group : grouper.group(history.snapshot(), selfNameProvider.selfName())) {
-            if (group.getLatestMillis() < newThreshold) {
-                expiredThreshold = newThreshold;
-                notifyDataChanged();
-                return;
-            }
+        // 队首 = grouper 输出的最旧组(合成列表保持时间正序);生命周期按组内最新消息记账
+        ChatCardComposer.ComposedGroup oldest = groups.get(0);
+        List<ChatCardComposer.MessageLines> messages = oldest.getMessages();
+        if (messages.isEmpty()) {
+            return;
+        }
+        MessageLifecycle lifecycle = lifecycles.get(
+                messages.get(messages.size() - 1).getRecord().getSequenceId());
+        if (lifecycle != null && lifecycle.isFadeElapsed(hudVisibleClock.visibleMillis(),
+                ChatMarkdownSettings.getHudFadeMillis())) {
+            notifyDataChanged(); // 队首过期:触发结构重算,下一帧 compose 排除该组
         }
     }
 
@@ -629,11 +710,12 @@ public final class ChatSceneController {
      * HUD 形态堆叠高度上限(设计稿 §3.1):树中未过期组总高 &gt; 视口高 ×
      * {@code hudMaxHeightRatio} 时,从最旧组起立即剔除(结构级、不等 TTL 淡出),
      * 直到满足上限,刷屏不侵占半屏以上;最新单组自身超限时至少保留该组(不空屏);
-     * 未超限仍走 TTL 淡出语义。
+     * 未超限仍走预算淡出语义。
      *
-     * <p>高度估算 = 渲染同式粗粒度(组头行高 + 行数×行高 + 内边距/组内间距,
-     * 系统组 = 纯行高;行数按注入度量整段宽 ÷ 单行最大宽估算),不依赖布局后几何。
-     * 阈值只进不退(被裁组不再复活);容器形态不参与(与 TTL 同路,applicTtl=false 不过滤)。</p>
+     * <p>高度估算对象 = 生命周期过滤后的合成列表(groupsSignal 缓存单例,Computed
+     * 记忆化常规帧零重算),行数直接取合成后的切分行数(与渲染一致);cutoff 只由
+     * 高度裁剪阈值决定(旧 expiredThreshold 半边已删除)。阈值只进不退(被裁组不复活);
+     * 容器形态不参与(与生命周期同路,applyTtl=false 不过滤)。</p>
      */
     private void trimHudGroupsByHeight() {
         if (!isHudPhase() || hostViewportHeight <= 0 || hostViewportWidth <= 0) {
@@ -645,8 +727,8 @@ public final class ChatSceneController {
         }
         lastTrimContentVersion = version;
         lastTrimViewportHeight = hostViewportHeight;
-        List<MessageGroupModel> groups = grouper.group(history.snapshot(), selfNameProvider.selfName());
-        if (groups.isEmpty()) {
+        List<ChatCardComposer.ComposedGroup> groups = groupsSignal().get();
+        if (groups == null || groups.isEmpty()) {
             return;
         }
         int maxHeight = (int) Math.round(hostViewportHeight
@@ -654,10 +736,7 @@ public final class ChatSceneController {
         if (maxHeight <= 0) {
             return;
         }
-        // TB1 常驻模式:cutoff 同样只由高度裁剪阈值决定(与 composeAll 同口径,避免残留的
-        // 过期阈值把常驻组误判为不在树中)
-        long cutoff = ChatMarkdownSettings.isHudPersistMessages()
-                ? heightTrimThreshold : Math.max(expiredThreshold, heightTrimThreshold);
+        long cutoff = heightTrimThreshold; // 只进不退的高度裁剪阈值(常驻模式同口径)
         int groupGap = Math.max(0, ChatMarkdownSettings.getGroupGapHudPx());
         // 树中(未过期/未裁剪)组,时间正序(最旧在前);并行记录组高与最新时刻
         int keptCount = 0;
@@ -665,7 +744,7 @@ public final class ChatSceneController {
         long[] keptLatest = new long[groups.size()];
         int total = 0;
         for (int i = 0; i < groups.size(); i++) {
-            MessageGroupModel group = groups.get(i);
+            ChatCardComposer.ComposedGroup group = groups.get(i);
             if (group.getLatestMillis() < cutoff) {
                 continue;
             }
@@ -676,7 +755,7 @@ public final class ChatSceneController {
             keptCount++;
         }
         if (total <= maxHeight) {
-            return; // 未超限:保持 TTL 淡出语义
+            return; // 未超限:保持预算淡出语义
         }
         // 超限:从最新(尾部)反向累计,首个使总高超限的组及其全部更旧组一次剔除(一帧收敛)
         int sum = 0;
@@ -701,30 +780,26 @@ public final class ChatSceneController {
     }
 
     /**
-     * HUD 组高粗粒度估算(与渲染同式):非系统组 =
+     * HUD 组高粗粒度估算(与渲染同式,合成列表中直接数切分行数):非系统组 =
      * 组头行高(16,渲染 HEADER_ROW_HEIGHT 同口径) + 2×纵向内边距 + 行数×行高 + 组内消息间距;
      * 系统组 = 行数×行高(无壳)。K3 四轮:此前按组头字号 12 计、实际渲染行高 16,每组低估 4px,
      * 堆叠上限估算偏松——改为 16 与渲染对齐。
-     * 行数按整段文本宽 ÷ 单行最大宽估算(与 layouter 同源注入度量,粗粒度、零布局)。
+     * 行数 = 合成组的切分行数(displayLines,与渲染共源,含 HUD 行数截断口径)。
      */
-    private int estimateHudGroupHeight(MessageGroupModel group) {
+    private int estimateHudGroupHeight(ChatCardComposer.ComposedGroup group) {
         // K3 三轮:系统消息按 font-system 12/16 估算(与渲染/切分同源),非系统组沿用 body
         boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER;
-        int fontSize = system ? ChatMarkdownSettings.getSystemFontSizePx()
-                : ChatMarkdownSettings.getChatFontSizePx();
         int lineHeight = system ? ChatMarkdownSettings.getSystemLineHeightPx()
                 : ChatMarkdownSettings.getChatLineHeightPx();
         int paddingY = ChatMarkdownSettings.getBubblePaddingY();
         // K3 四轮:组头按实际渲染行高 16 计(原按字号 12 计每组低估 4px)
         int headerRowHeight = ChatMarkdownSettings.getChatHeaderRowHeightPx();
         int innerGap = ChatMarkdownSettings.getGroupInnerGapPx();
-        int maxLineWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)
-                - 2 * ChatMarkdownSettings.getBubblePaddingX());
         int lines = 0;
         int messageCount = 0;
-        for (MessageGroupModel.GroupLine line : group.getLines()) {
+        for (ChatCardComposer.MessageLines message : group.getMessages()) {
             messageCount++;
-            lines += estimatedLines(line.getRest(), maxLineWidth, fontSize);
+            lines += Math.max(1, message.getDisplayLines().size());
         }
         if (system) {
             return lines * lineHeight;
@@ -733,18 +808,23 @@ public final class ChatSceneController {
                 + Math.max(0, messageCount - 1) * innerGap;
     }
 
-    /** 行数估算(粗粒度):整段文本宽 ÷ 单行最大宽,向上取整,至少 1 行。 */
-    private int estimatedLines(String text, int maxLineWidth, int fontSize) {
-        if (text == null || text.isEmpty()) {
-            return 1;
-        }
-        int lines = (int) Math.ceil(measure.advance(text, fontSize) / (double) maxLineWidth);
-        return Math.max(1, lines);
-    }
-
     /** 帧时钟信号(渲染组件淡出/动画驱动)。 */
     ReadableSignal<Long> frameMillisSignal() {
         return frameMillis;
+    }
+
+    /** HUD 可见时钟信号(渲染层每帧淡出驱动;仅 HUD 形态帧推进,聊天框打开期间冻结)。 */
+    ReadableSignal<Long> hudVisibleSignal() {
+        return hudVisibleSignal;
+    }
+
+    /**
+     * 直接切回 HUD 气泡形态(输入屏容器收回动画完成回调):状态机经
+     * {@link DisplayStateMachine#forceHud(long)} 跳过 CLOSING 空窗直接挂 HUD
+     * 气泡——收回动画已由输入屏播完,机器不再需要 140ms 空屏;幂等。
+     */
+    public void closeToHudImmediately() {
+        machine.forceHud(frameMillis.get().longValue());
     }
 
     /**

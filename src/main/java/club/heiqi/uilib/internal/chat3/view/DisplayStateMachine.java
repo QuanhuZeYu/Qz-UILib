@@ -139,6 +139,30 @@ public final class DisplayStateMachine {
     }
 
     /**
+     * 强制切回 HUD(容器收回动画由输入屏播完后调用):跳过机器 CLOSING 空窗,
+     * 容器收回动画完成即直接挂 HUD 气泡,不经过 140ms CLOSING 阶段空屏。
+     *
+     * <p>若 CLOSING 期间收到过打开请求(pendingOpen),则先兑现挂起打开(§4.2)进
+     * COLLAPSING——与 CLOSING 自然完成路径同款,不丢打开请求;否则直接落 HUD
+     * 稳定态(targetOpen=false,锚点归零正向)。HUD 稳定态重复调用无变化(幂等)。</p>
+     *
+     * @param nowMillis 当前时刻
+     */
+    public synchronized void forceHud(long nowMillis) {
+        if (pendingOpen) {
+            // §4.2:CLOSING 期间挂起的打开请求,强制落 HUD 时一并兑现
+            enterCollapsing(nowMillis);
+            return;
+        }
+        phase = Phase.HUD;
+        targetOpen = false;
+        anchorMillis = nowMillis;
+        anchorProgress = 0.0F;
+        direction = 1;
+        pendingOpen = false;
+    }
+
+    /**
      * 推进阶段(幂等;动画时长耗尽自动进入下一阶段)。
      *
      * @param nowMillis     当前时刻

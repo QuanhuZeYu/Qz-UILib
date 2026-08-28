@@ -27,6 +27,7 @@ import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGrouper;
 import club.heiqi.uilib.internal.chat3.viewmodel.SenderColorPalette;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGroupModel;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
@@ -494,11 +495,17 @@ public class ChatMessageListTest {
             // 初始不透明(基础 alpha FF)
             Assert.assertEquals("强调条初始满 alpha", 0xFF, (accentBar.getBackgroundColor() >>> 24) & 0xFF);
 
-            // HUD 淡出中段:easeInQuad p=0.5 → 淡出因子 191 → 强调条 alpha = floor(255×191/255) = 191
+            // 新可见时钟驱动:首帧只锚定不累计,预算 12000 逐帧推进(帧间 delta ≤1000ms 夹取),
+            // 12 帧 = 预算耗尽(p=0 仍满 255),再 +400ms 进入淡出 p=0.5 → 因子 191
+            controller.tick(T0);
+            for (int i = 1; i <= 12; i++) {
+                controller.tick(T0 + 1000L * i);
+                rt.flush();
+            }
             controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
                     + ChatMarkdownSettings.getHudFadeMillis() / 2);
             rt.flush();
-            Assert.assertEquals("强调条随组淡出同步降 alpha", 0xBF,
+            Assert.assertEquals("强调条随组淡出同步降 alpha(p=0.5 因子 191)", 0xBF,
                     (accentBar.getBackgroundColor() >>> 24) & 0xFF);
         } finally {
             ChatMarkdownSettings.setHudPersistMessages(persisted);
@@ -539,6 +546,114 @@ public class ChatMessageListTest {
                 (accentBar.getBackgroundColor() >>> 24) & 0xFF);
         // enter 动画完成归 1
         Assert.assertEquals("常驻模式 enter 动画完成 opacity=1", 1.0F, group.getOpacity(), 0.001F);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    // ==================== HUD 显示时长机制:入场门控 + 可见时钟淡出 ====================
+
+    /**
+     * 新机制:仅组首次以 HUD 形态合成(isEnterOnMount=true)挂入场绑定;
+     * 同组连发消息(组增长重建)后 isEnterOnMount=false → 不重播 enter,
+     * 组节点恒稳态渲染(opacity=1)——修复连发消息整组闪烁。
+     */
+    @Test
+    public void enterOnMountFalseGroupStaysSteadyWhenGroupGrows() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> one"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+
+        // 首次 HUD 合成:isEnterOnMount=true → 入场绑定生效,出生帧 opacity=0
+        controller.tick(T0);
+        rt.flush();
+        SceneNode first = hudGroups(root).get(0);
+        Assert.assertEquals("首合组挂入场绑定(起点 opacity=0)", 0.0F, first.getOpacity(), 0.001F);
+        controller.tick(T0 + ChatMarkdownSettings.getEnterAnimMillis());
+        rt.flush();
+        Assert.assertEquals("入场动画完成 opacity=1", 1.0F, first.getOpacity(), 0.001F);
+
+        // 同发送者 + 相邻时间窗(≤120s)追加第二条 → 组 key 变化 → 整组重建(节点全新)
+        long rebuildAt = T0 + ChatMarkdownSettings.getEnterAnimMillis() + 1000L;
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Alex> two"), 1, rebuildAt));
+        controller.notifyDataChanged();
+        controller.tick(rebuildAt);
+        rt.flush();
+        SceneNode rebuilt = hudGroups(root).get(0);
+        Assert.assertNotSame("组增长 → 整组重建(新节点)", first, rebuilt);
+        // 旧行为(无条件挂入场绑定)此刻 opacity=0;新机制门控跳过 → 恒 1(稳态,不重播)
+        Assert.assertEquals("重建组 isEnterOnMount=false:不重播入场动画,opacity 恒 1", 1.0F,
+                rebuilt.getOpacity(), 0.001F);
+
+        // 基准继续推进:仍稳态,不回拉动画起点
+        controller.tick(rebuildAt + ChatMarkdownSettings.getEnterAnimMillis());
+        rt.flush();
+        Assert.assertEquals("后续帧仍稳态 opacity=1", 1.0F, rebuilt.getOpacity(), 0.001F);
+    }
+
+    /**
+     * 新机制:hudVisible 注入时 HUD 淡出 alpha 走 {@link ChatCardComposer#hudAlpha}
+     * (每条消息显示预算 + 可见起点,仅 HUD 实际渲染时按可见时钟消耗):预算内恒满 →
+     * 淡出中段与纯函数逐位一致 → 预算+淡出窗结束归零;入场门控与时钟注入互不影响。
+     */
+    @Test
+    public void hudVisibleInjectionDrivesFadeThroughHudAlpha() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            // 注入可见时钟(生产侧由 TC 维护,每帧仅值变化时 set;测试手动推进,
+            // 初始 0 = 可见时钟起点,与控制器侧生命周期登记的起点同坐标系)
+            Signal<Long> hudVisible = Signal.create(Long.valueOf(0L));
+            SceneNode list = SceneNode.column().setHitTestable(false);
+            Map<SceneNode, ChatLineRecord> registry =
+                    new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
+            SceneListHandle handle = controller.messageList().mount(rt, list,
+                    controller.groupsSignal(), ChatMessageList.Style.hud(), registry,
+                    controller.frameMillisSignal(), hudVisible);
+            controller.tick(T0);
+            rt.flush();
+
+            SceneNode group = list.__getChildren().get(0);
+            // 首合:入场绑定照常挂(isEnterOnMount 门控与时钟注入互不影响)
+            Assert.assertEquals("首合组入场绑定仍生效(起点 opacity=0)", 0.0F,
+                    group.getOpacity(), 0.001F);
+            // 合成组冻结接口:显示预算与可见起点(渲染闭包与信号缓存同一组实例)
+            ComposedGroup composed = controller.groupsSignal().get().get(0);
+            long start = composed.getHudVisibleStartMillis();
+            long budget = composed.getBudgetMillis();
+            Assert.assertTrue("首合已登记可见起点(非 -1)", start >= 0L);
+            long fade = ChatMarkdownSettings.getHudFadeMillis();
+            SceneNode accentBar = group.__getChildren().get(1).__getChildren().get(1);
+
+            // 预算内:alpha 恒满(预算未消耗)
+            hudVisible.set(Long.valueOf(start));
+            rt.flush();
+            Assert.assertEquals("预算内 alpha 恒 255(未消耗)", 0xFF,
+                    (accentBar.getBackgroundColor() >>> 24) & 0xFF);
+
+            // 淡出中段:与 hudAlpha 纯函数(同源契约)逐位一致,且确实低于满值(递减)
+            long midVisible = start + budget + fade / 2L;
+            int expectedMid = ChatCardComposer.hudAlpha(start, budget, fade, midVisible);
+            Assert.assertTrue("淡出中段 alpha 应递减(<255)", expectedMid < 0xFF);
+            hudVisible.set(Long.valueOf(midVisible));
+            rt.flush();
+            Assert.assertEquals("淡出中段 alpha == hudAlpha 纯函数", expectedMid,
+                    (accentBar.getBackgroundColor() >>> 24) & 0xFF);
+
+            // 预算 + 淡出窗耗尽:归零
+            hudVisible.set(Long.valueOf(start + budget + fade));
+            rt.flush();
+            Assert.assertEquals("预算+淡出窗结束 alpha=0", 0,
+                    (accentBar.getBackgroundColor() >>> 24) & 0xFF);
+            handle.dispose();
         } finally {
             ChatMarkdownSettings.setHudPersistMessages(persisted);
         }
@@ -1071,10 +1186,12 @@ public class ChatMessageListTest {
             Object previousFade = fadeField.get(null);
             try {
                 fadeField.set(null, Long.valueOf(10_000L));
-                long ttl = ChatMarkdownSettings.getHudTtlMillis();
-                // HUD 淡出中段:alpha = floor(255×(1-p²)) p=0.5 → 191
-                controller.tick(T0 + ttl + 5000L);
-                rt.flush();
+                // 新可见时钟驱动:预算按可见帧累计(首帧锚定、帧间 delta ≤1000ms);
+                // 18 帧 ×1s = 可见 18000ms → 超预算 12000 进入淡出 5000ms → p=0.5 → alpha 191
+                for (int i = 1; i <= 18; i++) {
+                    controller.tick(T0 + 1000L * i);
+                    rt.flush();
+                }
 
                 // 气泡 hover 目标置位:alpha=191 时 bake(progress 0)= fadeColor(基础色,191)= 0xB5242B33
                 AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
@@ -1082,11 +1199,11 @@ public class ChatMessageListTest {
                 Assert.assertEquals("hover 目标置位但 progress 0:正常色 × alpha191", 0xB5242B33,
                         bubble.getBackgroundColor());
 
-                // 首帧锚定(alpha=188)
-                controller.tick(T0 + ttl + 5100L);
+                // 帧推进 +100ms:淡出 el=5100 → alpha 188(锚定 hover 插值起点)
+                controller.tick(T0 + 18_100L);
                 rt.flush();
-                // 插值完成 elapsed=100(alpha=186):hover 色 × 淡出 alpha 组合
-                controller.tick(T0 + ttl + 5200L);
+                // 插值完成 +100ms:el=5200 → alpha 186 → hover 色 × 淡出 alpha 组合
+                controller.tick(T0 + 18_200L);
                 rt.flush();
                 Assert.assertEquals("hover 色 × 淡出 alpha186 组合", 0xB02B3139,
                         bubble.getBackgroundColor());
@@ -1095,9 +1212,9 @@ public class ChatMessageListTest {
 
                 // 移出 → 反向插值归零(alpha=180)后恢复淡出后的正常色
                 movePointer(rt, root, 200, 280);
-                controller.tick(T0 + ttl + 5300L);
+                controller.tick(T0 + 18_300L); // el=5300:反向插值首帧(alpha 183)
                 rt.flush();
-                controller.tick(T0 + ttl + 5400L);
+                controller.tick(T0 + 18_400L); // el=5400 → alpha 180
                 rt.flush();
                 Assert.assertEquals("淡出中移出恢复正常 bake(基础色 × alpha180)", 0xAA242B33,
                         bubble.getBackgroundColor());

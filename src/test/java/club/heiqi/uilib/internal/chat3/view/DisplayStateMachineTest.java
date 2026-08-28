@@ -181,4 +181,50 @@ public class DisplayStateMachineTest {
         Assert.assertEquals(DisplayStateMachine.Phase.CLOSING, machine.getPhase());
         Assert.assertEquals(0.0F, machine.progress(1150L + POP, CLOSE), 0.001F);
     }
+
+    // ==================== forceHud:容器收回动画由输入屏播完后直落 HUD ====================
+
+    /** forceHud 跳过 CLOSING 空窗:CLOSING 中直接落 HUD(锚点归零,目标关闭)。 */
+    @Test
+    public void forceHudSkipsClosingStraightToHud() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE);
+        machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
+        setTarget(machine, false, 5000L); // CLOSING(容器收回空窗)
+        Assert.assertEquals(DisplayStateMachine.Phase.CLOSING, machine.getPhase());
+
+        machine.forceHud(5010L);
+        Assert.assertEquals("forceHud 跳过 CLOSING 直接落 HUD", DisplayStateMachine.Phase.HUD,
+                machine.getPhase());
+        Assert.assertEquals("HUD 稳定 progress=0", 0.0F, machine.progress(5010L, COLLAPSE), 0.001F);
+    }
+
+    /** forceHud 时若 CLOSING 期间挂起了打开请求(pendingOpen),先兑现进 COLLAPSING(§4.2)。 */
+    @Test
+    public void forceHudHonorsPendingOpenByEnteringCollapsing() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE);
+        machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
+        setTarget(machine, false, 5000L); // CLOSING
+        setTarget(machine, true, 5030L); // CLOSING 中请求打开 → pendingOpen
+
+        machine.forceHud(5050L);
+        Assert.assertEquals("forceHud 兑现挂起打开进 COLLAPSING",
+                DisplayStateMachine.Phase.COLLAPSING, machine.getPhase());
+        Assert.assertEquals("COLLAPSING 从头播放", 0.0F, machine.progress(5050L, COLLAPSE), 0.001F);
+    }
+
+    /** forceHud 幂等:HUD 稳定态重复调用无变化(阶段/目标/进度不变)。 */
+    @Test
+    public void forceHudIsIdempotentInHudStableState() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        machine.forceHud(1000L);
+        Assert.assertEquals(DisplayStateMachine.Phase.HUD, machine.getPhase());
+        machine.forceHud(2000L);
+        Assert.assertEquals("重复 forceHud 仍 HUD", DisplayStateMachine.Phase.HUD,
+                machine.getPhase());
+        Assert.assertEquals("HUD 稳定 progress 恒 0", 0.0F, machine.progress(2000L, COLLAPSE), 0.001F);
+    }
 }

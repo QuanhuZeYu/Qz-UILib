@@ -143,12 +143,16 @@ public final class ChatInputScreen extends McScreenBridge {
         surface.requestClose(this::closeScreenAfterAnimation);
     }
 
-    /** 关闭动画完成回调:真正关屏(此后 onGuiClosed → surface.onClosed → 容器正常销毁)。 */
+    /**
+     * 关闭动画完成回调:真正关屏(此后 onGuiClosed → surface.onClosed → 容器正常销毁),
+     * 随后通知 surface 切 HUD(forceHud,跳过机器 CLOSING 空窗,气泡立即挂回)。
+     */
     private void closeScreenAfterAnimation() {
         Minecraft mc = Minecraft.getMinecraft();
         // 只关自己:动画期间若被其他屏幕顶替(异路径打开),不误关新屏幕
         if (mc != null && mc.currentScreen == this) {
             mc.displayGuiScreen((GuiScreen) null);
+            surface.notifyScreenClosed();
         }
     }
 }

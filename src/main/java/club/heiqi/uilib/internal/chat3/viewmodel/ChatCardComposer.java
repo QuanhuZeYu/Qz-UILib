@@ -63,6 +63,14 @@ public final class ChatCardComposer {
         private final List<MessageLines> messages;
         private final long latestMillis;
         private final int alpha;
+        // 显示预算生命周期(HUD 形态由控制器经 compose 6 参重载/包级 setter 填充;
+        // 容器形态与旧 TTL 路径保持默认):budgetMillis = 每条消息可见显示时间
+        // (预算只在实际渲染 HUD 时消耗);hudVisibleStartMillis = 首次进入 HUD 渲染的
+        // 可见时钟值;enterOnMount = 组首次以 HUD 形态合成(true,入场动画播放),
+        // 重挂载/组增长重建由控制器置 false
+        private long budgetMillis;
+        private long hudVisibleStartMillis = -1L;
+        private boolean enterOnMount = true;
 
         private ComposedGroup(MessageGroupModel.Alignment alignment, String sender, String headerName,
                 String headerTime, int nameColor, List<MessageLines> messages, long latestMillis, int alpha) {
@@ -74,6 +82,21 @@ public final class ChatCardComposer {
             this.messages = messages;
             this.latestMillis = latestMillis;
             this.alpha = alpha;
+        }
+
+        /** 包级:控制器/合成器填充显示预算(chat3 包内)。 */
+        public void setBudgetMillis(long budgetMillis) {
+            this.budgetMillis = budgetMillis;
+        }
+
+        /** 包级:控制器/合成器填充首次进入 HUD 渲染的可见时钟值。 */
+        public void setHudVisibleStartMillis(long hudVisibleStartMillis) {
+            this.hudVisibleStartMillis = hudVisibleStartMillis;
+        }
+
+        /** 包级:控制器在重挂载/组增长重建时关闭入场动画(enterOnMount=false)。 */
+        public void setEnterOnMount(boolean enterOnMount) {
+            this.enterOnMount = enterOnMount;
         }
 
         /** @return 组对齐 */
@@ -125,6 +148,48 @@ public final class ChatCardComposer {
         public boolean isVisible() {
             return alpha > 0;
         }
+
+        /** @return 每条消息的 HUD 显示预算(ms;0 = 未注入,旧 TTL 路径/容器形态) */
+        public long getBudgetMillis() {
+            return budgetMillis;
+        }
+
+        /** @return 组首次以 HUD 形态进入渲染时的可见时钟值(-1 = 未进入) */
+        public long getHudVisibleStartMillis() {
+            return hudVisibleStartMillis;
+        }
+
+        /** @return 组是否以出生 enter 动画首次挂载(重挂载/组增长重建由控制器置 false) */
+        public boolean isEnterOnMount() {
+            return enterOnMount;
+        }
+    }
+
+    /**
+     * HUD 显示预算值对象(包级 final 字段,public 构造,chat3 控制器注入):
+     * budgetMillis = 单条消息可见显示时间(默认取 {@link ChatMarkdownSettings#getHudTtlMillis()});
+     * hudVisibleStartMillis = 首次进入 HUD 渲染的可见时钟值(-1 = 未进入,
+     * 渲染层每帧以 {@link #hudAlpha} 按可见时钟驱动淡出,预算只在 HUD 可见时消耗)。
+     */
+    public static final class HudBudget {
+
+        final long budgetMillis;
+        final long hudVisibleStartMillis;
+
+        public HudBudget(long budgetMillis, long hudVisibleStartMillis) {
+            this.budgetMillis = budgetMillis;
+            this.hudVisibleStartMillis = hudVisibleStartMillis;
+        }
+
+        /** @return 显示预算(ms) */
+        public long getBudgetMillis() {
+            return budgetMillis;
+        }
+
+        /** @return 首次进入 HUD 渲染的可见时钟值(-1 = 未进入) */
+        public long getHudVisibleStartMillis() {
+            return hudVisibleStartMillis;
+        }
     }
 
     private final ChatLineLayouter layouter;
@@ -148,20 +213,46 @@ public final class ChatCardComposer {
     }
 
     /**
+     * 合成(5 参,旧语义保留):内部转调 6 参重载(budget = null 回退旧 TTL 路径)。
+     *
      * @param group         消息组
      * @param nowMillis     当前时刻
      * @param maxLineWidthPx 单行最大宽度(窗口宽 - 2×边距 - 2×内边距)
-     * @param applyTtl       true = HUD 形态(默认 12s 存活 + easeInQuad 淡出;hudPersistMessages=true
-     *                       时常驻,alpha 恒 255);false = 容器形态(alpha 恒 255)
+     * @param applyTtl       true = HUD 形态;false = 容器形态(alpha 恒 255)
      * @return 合成组
      */
     public ComposedGroup compose(MessageGroupModel group, long nowMillis, int maxLineWidthPx, boolean applyTtl) {
+        return compose(group, nowMillis, maxLineWidthPx, applyTtl, null);
+    }
+
+    /**
+     * 合成(6 参,显示预算版):applyTtl 且 budget 非空 → 组 alpha 恒 255,淡出由渲染层
+     * 每帧 {@link #hudAlpha(long, long, long, long)} 按可见时钟驱动。预算 = 每条消息
+     * 可见显示时间(默认 {@link ChatMarkdownSettings#getHudTtlMillis()}),只在实际渲染
+     * (聊天关闭 HUD 形态)时消耗,聊天框打开时冻结——HUD 形态合成时刻没有已 DONE 的组
+     * 会进来,alpha 不存在"创建即过期"。budget 为 null → 旧路径(wall-clock TTL +
+     * easeInQuad 淡出,老调用方兼容)。
+     *
+     * @param group          消息组
+     * @param nowMillis      当前时刻
+     * @param maxLineWidthPx 单行最大宽度(窗口宽 - 2×边距 - 2×内边距)
+     * @param applyTtl        true = HUD 形态(行数截断 + 预算/生命周期注入);false = 容器形态
+     *                        (alpha 恒 255,不注入)
+     * @param budget         HUD 显示预算(消息生命周期;null = 旧 TTL 路径)
+     * @return 合成组
+     */
+    public ComposedGroup compose(MessageGroupModel group, long nowMillis, int maxLineWidthPx, boolean applyTtl,
+            HudBudget budget) {
         long latestMillis = group.getLatestMillis();
-        // TB1 常驻模式:TTL 淡出关闭,alpha 恒满(设置内读;applyTtl 仍表示 HUD 形态——
-        // 下方 HUD 行数截断 clampHudLines 不受常驻影响,保持 §5.4 语义)
-        int alpha = applyTtl && !ChatMarkdownSettings.isHudPersistMessages() ? fadeAlpha(
-                latestMillis, nowMillis,
-                ChatMarkdownSettings.getHudTtlMillis(), ChatMarkdownSettings.getHudFadeMillis(), 255) : 255;
+        // 预算注入路径(applyTtl 且 budget != null):alpha 恒 255——淡出由渲染层每帧 hudAlpha
+        // 按可见时钟驱动,预算只在 HUD 实际渲染时消耗,聊天框打开时冻结,不按 wall-clock 计算;
+        // TB1 常驻模式(persist=true):TTL 淡出关闭,alpha 恒满(设置内读;applyTtl 仍表示
+        // HUD 形态——下方 HUD 行数截断 clampHudLines 不受常驻影响,保持 §5.4 语义)
+        // 旧路径(budget == null):wall-clock TTL 存活 + easeInQuad 淡出(老调用方兼容)
+        int alpha = applyTtl && budget != null ? 255 : applyTtl && !ChatMarkdownSettings.isHudPersistMessages()
+                ? fadeAlpha(latestMillis, nowMillis,
+                        ChatMarkdownSettings.getHudTtlMillis(), ChatMarkdownSettings.getHudFadeMillis(), 255)
+                : 255;
         MessageGroupModel.Alignment alignment = group.getAlignment();
         String headerName = "";
         String headerTime = "";
@@ -194,8 +285,15 @@ public final class ChatCardComposer {
             }
             messages.add(new MessageLines(record, lines, maxLineWidth));
         }
-        return new ComposedGroup(alignment, group.getSender(), headerName, headerTime, nameColor, messages,
-                latestMillis, alpha);
+        ComposedGroup composed = new ComposedGroup(alignment, group.getSender(), headerName, headerTime, nameColor,
+                messages, latestMillis, alpha);
+        if (applyTtl && budget != null) {
+            // 写入显示预算生命周期;enterOnMount 保持默认 true(首次以 HUD 形态合成播放入场
+            // 动画,重挂载/组增长重建由控制器经包级 setter 置 false,动画不重播)
+            composed.setBudgetMillis(budget.getBudgetMillis());
+            composed.setHudVisibleStartMillis(budget.getHudVisibleStartMillis());
+        }
+        return composed;
     }
 
     /**
@@ -389,6 +487,42 @@ public final class ChatCardComposer {
             faded.add(new TextSegment(segment.getText(), style));
         }
         return faded;
+    }
+
+    /**
+     * 预算驱动存活 alpha(纯函数,HUD 形态):消息只在实际渲染(聊天关闭 HUD 形态)时消耗
+     * 显示预算——可见时钟仅在 HUD 形态帧推进会累计,聊天框打开时冻结(关闭后继续消耗,
+     * 与 wall-clock TTL 互斥,由渲染层每帧调用)。
+     *
+     * <p>语义:未进入 HUD(start &lt; 0)恒满;预算内(remaining &gt; 0)恒满;
+     * 预算耗尽后按 easeInQuad(1-p²) 慢启动降,淡出窗结束归零——与
+     * {@link #fadeAlpha} 同款整数运算 floor 口径,只是时间轴 = 可见时钟而非 wall-clock。</p>
+     *
+     * @param hudVisibleStartMillis 首次进入 HUD 渲染的可见时钟值(-1 = 未进入)
+     * @param budgetMillis          显示预算(ms)
+     * @param fadeMillis            淡出时长(≤0 视为耗尽即消失)
+     * @param hudVisibleMillis      当前可见时钟值
+     * @return 0..255
+     */
+    public static int hudAlpha(long hudVisibleStartMillis, long budgetMillis, long fadeMillis, long hudVisibleMillis) {
+        if (hudVisibleStartMillis < 0) {
+            return 255;
+        }
+        long remaining = budgetMillis - (hudVisibleMillis - hudVisibleStartMillis);
+        if (remaining > 0) {
+            return 255;
+        }
+        if (fadeMillis <= 0) {
+            return 0;
+        }
+        long elapsed = -remaining; // 超出预算的可见时长(≥ 0)
+        if (elapsed >= fadeMillis) {
+            return 0;
+        }
+        // alpha = floor(255 × (1-p²)),p = elapsed/fade;整数运算 = 逐点向下取整(与 fadeAlpha 同口径)
+        long fadeSq = fadeMillis * fadeMillis;
+        long elapsedSq = elapsed * elapsed;
+        return (int) (255L * (fadeSq - elapsedSq) / fadeSq);
     }
 
     /**

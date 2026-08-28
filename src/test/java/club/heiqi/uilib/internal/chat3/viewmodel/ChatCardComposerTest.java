@@ -188,6 +188,94 @@ public class ChatCardComposerTest {
         Assert.assertEquals(0, ChatCardComposer.fadeAlpha(NOW - 10_001L, NOW, 10_000L, 0L, 255));
     }
 
+    // ==================== TB2:预算驱动 HUD 显示时长(hudAlpha 纯函数 / compose 预算注入) ====================
+
+    /** 未进入 HUD(start < 0 = 消息尚未以 HUD 形态渲染):恒满,与可见时钟无关。 */
+    @Test
+    public void hudAlphaStaysFullWhenNeverEnteredHud() {
+        Assert.assertEquals("未进入恒满", 255, ChatCardComposer.hudAlpha(-1L, 12_000L, 800L, 5_000L));
+        Assert.assertEquals("任意可见时钟均恒满", 255, ChatCardComposer.hudAlpha(-1L, 12_000L, 800L, 99_999L));
+        Assert.assertEquals("预算 0 也恒满(渲染前不消耗)", 255, ChatCardComposer.hudAlpha(-1L, 0L, 800L, 99_999L));
+    }
+
+    /** 预算内恒满;恰好耗尽(remaining=0)时 easeInQuad p=0 仍恒满;预算内 fade<=0 也恒满(预算优先)。 */
+    @Test
+    public void hudAlphaStaysFullInsideBudgetAndAtExhaustion() {
+        long start = 1_000L;
+        long budget = 12_000L;
+        Assert.assertEquals("预算内恒满", 255, ChatCardComposer.hudAlpha(start, budget, 800L, 5_000L));
+        Assert.assertEquals("恰好耗尽(remaining=0)→ p=0 恒满", 255,
+                ChatCardComposer.hudAlpha(start, budget, 800L, start + budget));
+        Assert.assertEquals("预算内 fade<=0 恒满(预算优先)", 255,
+                ChatCardComposer.hudAlpha(start, budget, 0L, 5_000L));
+    }
+
+    /** 预算耗尽后按 easeInQuad 淡出:1/4、1/2、3/4 窗严格递减,端点归零(与 fadeAlpha 同款整数 floor)。 */
+    @Test
+    public void hudAlphaFadesWithEaseInQuadLadder() {
+        long start = 1_000L;
+        long budget = 12_000L;
+        long fade = 1_000L;
+        int q1 = ChatCardComposer.hudAlpha(start, budget, fade, start + budget + 250L);
+        int q2 = ChatCardComposer.hudAlpha(start, budget, fade, start + budget + 500L);
+        int q3 = ChatCardComposer.hudAlpha(start, budget, fade, start + budget + 750L);
+        Assert.assertEquals("p=0.25 → 239", 239, q1);
+        Assert.assertEquals("p=0.5 → 191", 191, q2);
+        Assert.assertEquals("p=0.75 → 111(floor(111.5625))", 111, q3);
+        Assert.assertTrue("1/4 > 1/2 > 3/4 严格递减(慢启动)", q1 > q2 && q2 > q3);
+        Assert.assertEquals("淡出窗结束归零", 0,
+                ChatCardComposer.hudAlpha(start, budget, fade, start + budget + fade));
+        Assert.assertEquals("超淡出窗归零", 0,
+                ChatCardComposer.hudAlpha(start, budget, fade, start + budget + fade + 1L));
+    }
+
+    /** fade <= 0:预算耗尽即消失(与 fadeAlpha 同语义)。 */
+    @Test
+    public void hudAlphaDropsToZeroWhenExhaustedAndFadeDisabled() {
+        long start = 1_000L;
+        long budget = 12_000L;
+        Assert.assertEquals("fade=0 已耗尽 → 0", 0, ChatCardComposer.hudAlpha(start, budget, 0L, start + budget + 1L));
+        Assert.assertEquals("fade<0 已耗尽 → 0", 0, ChatCardComposer.hudAlpha(start, budget, -1L, start + budget + 1L));
+    }
+
+    /** compose 6 参重载:HudBudget 注入 → alpha 恒满(淡出交给渲染层 hudAlpha)且组携带预算/start。 */
+    @Test
+    public void composeWithHudBudgetCarriesLifecycleFields() {
+        ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> budgeted"), 1, NOW - 5000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+
+        ChatCardComposer.HudBudget budget = new ChatCardComposer.HudBudget(12_000L, 42L);
+        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, true, budget);
+
+        Assert.assertEquals("预算注入后 alpha 恒满(合成时刻无 DONE 组)", 255, composed.getAlpha());
+        Assert.assertEquals("组携带显示预算", 12_000L, composed.getBudgetMillis());
+        Assert.assertEquals("组携带首次进入 HUD 的可见时钟", 42L, composed.getHudVisibleStartMillis());
+        Assert.assertTrue("首次 HUD 合成默认播放入场动画", composed.isEnterOnMount());
+        Assert.assertTrue(composed.isVisible());
+    }
+
+    /** compose 6 参重载:budget=null 与旧 5 参行为一致;容器形态(applyTtl=false)不注入预算。 */
+    @Test
+    public void composeWithoutHudBudgetKeepsLegacyBehavior() {
+        ChatLineRecord record = new ChatLineRecord(new ChatComponentText("<Steve> legacy"), 1, NOW - 5000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+
+        ChatCardComposer.ComposedGroup withNull = composer.compose(group, NOW, 1000, true, null);
+        ChatCardComposer.ComposedGroup legacy = composer.compose(group, NOW, 1000, true);
+
+        Assert.assertEquals("budget=null → 旧 5 参路径(alpha 一致)", legacy.getAlpha(), withNull.getAlpha());
+        Assert.assertEquals("未注入预算默认 0", 0L, withNull.getBudgetMillis());
+        Assert.assertEquals("未注入 start 默认 -1(未进入 HUD)", -1L, withNull.getHudVisibleStartMillis());
+        Assert.assertTrue("默认入场动画开", withNull.isEnterOnMount());
+
+        ChatCardComposer.ComposedGroup container = composer.compose(group, NOW, 1000, false,
+                new ChatCardComposer.HudBudget(12_000L, 7L));
+        Assert.assertEquals("容器形态 alpha 恒满", 255, container.getAlpha());
+        Assert.assertEquals("容器形态不注入预算", 0L, container.getBudgetMillis());
+        Assert.assertEquals("容器形态不注入 start", -1L, container.getHudVisibleStartMillis());
+        Assert.assertTrue("容器形态入场动画默认开", container.isEnterOnMount());
+    }
+
     // ==================== T6a:气泡 hover 3% 白叠加(设计稿 §2.1 overlay-hover) ====================
 
     @Test

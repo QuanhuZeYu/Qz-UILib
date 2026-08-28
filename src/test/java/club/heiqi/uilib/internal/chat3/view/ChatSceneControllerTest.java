@@ -314,8 +314,9 @@ public class ChatSceneControllerTest {
     }
 
     @Test
-    public void hudFadeBakesAlphaIntoBubbleBackground() {
-        // TB1:常驻模式默认开启(无淡出);本测试验证旧 TTL 淡出行为 → 临时关闭常驻
+    public void hudBudgetPathKeepsFullAlphaWhileVisible() {
+        // 新机制:预算路径(非 persist)合成期 alpha 恒满(淡出撤出合成,由渲染层按
+        // HUD 可见时钟每帧驱动);本测试验证 compose 输出预算注入与恒满 alpha
         boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
         ChatMarkdownSettings.setHudPersistMessages(false);
         try {
@@ -326,14 +327,22 @@ public class ChatSceneControllerTest {
             SceneNode root = build(controller, rt);
 
             SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
-            Assert.assertEquals("初始全量 alpha", 0xF2, (bubble.getBackgroundColor() >>> 24) & 0xFF);
+            Assert.assertEquals("预算路径合成期 alpha 恒满", 0xF2,
+                    (bubble.getBackgroundColor() >>> 24) & 0xFF);
+            // 预算注入:budget = 默认 TTL,起点 = 首次进入时的可见时钟(首帧 flush = 0)
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups =
+                    controller.groupsSignal();
+            Assert.assertEquals("预算 = 默认 TTL", ChatMarkdownSettings.getHudTtlMillis(),
+                    groups.get().get(0).getBudgetMillis());
+            Assert.assertEquals("可见起点 = 首次进入帧", 0L,
+                    groups.get().get(0).getHudVisibleStartMillis());
 
-            // 淡出中段:easeInQuad p=0.5 → 淡出因子 191(floor(255×0.75))
-            controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
-                    + ChatMarkdownSettings.getHudFadeMillis() / 2);
+            // 预算窗口内推进帧(可见时钟累计):alpha 仍满(不在合成期烘焙淡出)
+            controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis() / 2);
             rt.flush();
-            // 组合语义:基础 alpha F2(242) × 淡出因子 191 → 181(0xB5,整数截断)
-            Assert.assertEquals("淡出中段 alpha 组合截断", 0xB5, (bubble.getBackgroundColor() >>> 24) & 0xFF);
+            SceneNode bubbleAfter = hudGroups(root).get(0).__getChildren().get(1);
+            Assert.assertEquals("预算窗口内 alpha 仍满", 0xF2,
+                    (bubbleAfter.getBackgroundColor() >>> 24) & 0xFF);
         } finally {
             ChatMarkdownSettings.setHudPersistMessages(persisted);
         }
@@ -454,7 +463,8 @@ public class ChatSceneControllerTest {
 
     @Test
     public void expiredHudGroupsAreRemovedFromTree() {
-        // TB1:常驻模式(TTL 移除关闭);本测试验证旧 TTL 移除行为 → 临时关闭常驻
+        // 新时钟驱动:可见时钟帧间 delta 夹取 1s,预算+淡出窗(默认 12s+0.8s)需逐帧
+        // 推进(每帧 ≤1000ms);预算耗尽 + 淡出窗结束 → 队首弹出、结构级移除
         boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
         ChatMarkdownSettings.setHudPersistMessages(false);
         try {
@@ -465,11 +475,17 @@ public class ChatSceneControllerTest {
             SceneNode root = build(controller, rt);
             Assert.assertEquals(1, hudGroups(root).size());
 
-            // 完全过期(存活 + 淡出结束)
-            controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
-                    + ChatMarkdownSettings.getHudFadeMillis() + 1);
-            rt.flush();
+            // 逐帧推进:首帧仅定锚(HudVisibleClock 首帧不累计),其后每帧 +1000ms;
+            // 14 帧 = 可见 13000 > 预算 12000 + 淡出 800(13 帧仅 12000,淡出窗未走完)
+            for (int i = 1; i <= 14; i++) {
+                controller.tick(T0 + 1000L * i);
+                rt.flush();
+            }
             Assert.assertEquals("过期组应从树中移除", 0, hudGroups(root).size());
+            // 不复活:继续推帧仍空
+            controller.tick(T0 + 15_000L);
+            rt.flush();
+            Assert.assertEquals("过期移除后不复活", 0, hudGroups(root).size());
         } finally {
             ChatMarkdownSettings.setHudPersistMessages(persisted);
         }
@@ -477,7 +493,7 @@ public class ChatSceneControllerTest {
 
     // ==================== TB1:HUD 常驻消息(默认开启) ====================
 
-    /** 常驻模式:消息不因 TTL 过期移除(多次 tick 越过存活+淡出窗口仍常驻)。 */
+    /** 常驻模式:消息不因预算过期移除(可见时钟逐帧越过预算+淡出窗口仍常驻)。 */
     @Test
     public void persistedHudMessagesSurviveTtl() {
         boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
@@ -490,20 +506,24 @@ public class ChatSceneControllerTest {
         SceneNode root = build(controller, rt);
         Assert.assertEquals(1, hudGroups(root).size());
 
-        // 完全过期(存活 + 淡出结束)+ 更长窗口:常驻模式不触发过期移除
-        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
-                + ChatMarkdownSettings.getHudFadeMillis() + 1);
-        rt.flush();
-        Assert.assertEquals("常驻模式:TTL 过期不移除", 1, hudGroups(root).size());
-        controller.tick(T0 + 10 * ChatMarkdownSettings.getHudTtlMillis());
-        rt.flush();
+        // 可见时钟逐帧越过预算+淡出窗口(13 帧 = 13000ms)与更长窗口(30 帧):
+        // 常驻模式不触发过期移除
+        for (int i = 1; i <= 13; i++) {
+            controller.tick(T0 + 1000L * i);
+            rt.flush();
+        }
+        Assert.assertEquals("常驻模式:预算过期不移除", 1, hudGroups(root).size());
+        for (int i = 14; i <= 30; i++) {
+            controller.tick(T0 + 1000L * i);
+            rt.flush();
+        }
         Assert.assertEquals("常驻模式:更长时间后仍不移除", 1, hudGroups(root).size());
         } finally {
             ChatMarkdownSettings.setHudPersistMessages(persisted);
         }
     }
 
-    /** 常驻模式:越过 TTL 淡出窗口气泡 alpha 仍满(不淡出);enter 出生动画保留。 */
+    /** 常驻模式:可见时钟越过预算+淡出窗口气泡 alpha 仍满(不淡出);enter 出生动画保留。 */
     @Test
     public void persistedHudMessagesKeepFullAlphaAcrossTtl() {
         boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
@@ -516,16 +536,17 @@ public class ChatSceneControllerTest {
         SceneNode root = build(controller, rt);
         SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
 
-        // 淡出中段/结束:常驻模式无淡出烘焙,alpha 恒为气泡基础 alpha F2
-        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
-                + ChatMarkdownSettings.getHudFadeMillis() / 2);
-        rt.flush();
-        Assert.assertEquals("常驻模式:淡出中段 alpha 仍满", 0xF2,
+        // 逐帧推进越过预算窗口(13 帧 = 13000ms)/更长窗口:常驻模式无淡出烘焙,
+        // alpha 恒为气泡基础 alpha F2
+        for (int i = 1; i <= 13; i++) {
+            controller.tick(T0 + 1000L * i);
+            rt.flush();
+        }
+        Assert.assertEquals("常驻模式:越过预算窗 alpha 仍满", 0xF2,
                 (bubble.getBackgroundColor() >>> 24) & 0xFF);
-        controller.tick(T0 + ChatMarkdownSettings.getHudTtlMillis()
-                + ChatMarkdownSettings.getHudFadeMillis());
+        controller.tick(T0 + 30_000L);
         rt.flush();
-        Assert.assertEquals("常驻模式:淡出结束 alpha 仍满", 0xF2,
+        Assert.assertEquals("常驻模式:更长窗口 alpha 仍满", 0xF2,
                 (bubble.getBackgroundColor() >>> 24) & 0xFF);
         } finally {
             ChatMarkdownSettings.setHudPersistMessages(persisted);
@@ -773,5 +794,159 @@ public class ChatSceneControllerTest {
         rt.flush();
         Assert.assertTrue("CLOSING 结束回 HUD transform 恒等", root.getTransform().isIdentity());
         Assert.assertEquals("CLOSING 结束回 HUD opacity=1", 1.0F, root.getOpacity(), 0.001F);
+    }
+
+    // ==================== HUD 显示预算机制(L3) ====================
+
+    /**
+     * 预算冻结:消息只在 HUD 可见时消耗预算。聊天框打开(容器阶段)期间 wall-clock
+     * 大幅越过预算+淡出窗,可见时钟不推进;关闭后用尽剩余预算继续渲染。
+     */
+    @Test
+    public void hudBudgetFreezesWhileChatOpen() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = build(controller, rt);
+        Assert.assertEquals(1, hudGroups(root).size());
+
+        // HUD 可见 5 帧(首帧定锚不累计,可见时钟 = 4000):预算消耗 4000/12000,消息仍在
+        for (int i = 1; i <= 5; i++) {
+            controller.tick(T0 + 1000L * i);
+            rt.flush();
+        }
+        Assert.assertEquals(1, hudGroups(root).size());
+
+        // 打开聊天:粗帧 1s 直接跳过 COLLAPSING(150ms)→ POPPING;容器阶段可见时钟冻结
+        controller.setChatOpen(true);
+        controller.tick(T0 + 6000L); // COLLAPSING→POPPING
+        controller.tick(T0 + 7000L); // POPPING→CONTAINER
+        rt.flush();
+        // 容器阶段长时间推进(wall 越过预算+淡出窗):HUD 树清空(容器由输入屏绘制)
+        for (int i = 8; i <= 27; i++) {
+            controller.tick(T0 + 1000L * i);
+            rt.flush();
+        }
+        SceneNode mount = root.__getChildren().get(0);
+        Assert.assertEquals("打开后 HUD 树清空", 0, mount.__getChildren().size());
+
+        // 关闭聊天(CLOSING 不推进可见时钟)→ 回 HUD:预算冻结,消息完整回归(不因
+        // 打开期间的 wall-clock 过期——旧机制下 27s 墙钟早已移除)
+        controller.setChatOpen(false);
+        controller.tick(T0 + 28_000L);
+        rt.flush();
+        Assert.assertEquals("打开期间预算冻结:关闭后消息仍在树中", 1, hudGroups(root).size());
+
+        // 关闭后继续渲染:HUD 可见期间 clock 继续累计(关闭帧 +1000,其后 12 帧 ×1000
+        // = 13000 ≥ 预算 12000 + 淡出 800),剩余预算用尽后队首弹出移除
+        for (int i = 29; i <= 40; i++) {
+            controller.tick(T0 + 1000L * i);
+            rt.flush();
+        }
+        Assert.assertEquals("剩余预算用尽后移除", 0, hudGroups(root).size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * 队首弹出:两独立组(不同发送者),最旧组预算耗尽+淡出窗结束 → 只移除最旧组
+     * (队首弹出,一帧收敛、结构级),新组不受牵连;继续推帧,新组过期后同样移除(不复活)。
+     */
+    @Test
+    public void hudHeadExpiryPopsOldestGroupOnly() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> first"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = build(controller, rt);
+        Assert.assertEquals(1, hudGroups(root).size());
+
+        // 组1 已进入(可见起点 = 0);推进 3 帧后追加组2(不同发送者 → 独立组,起点更晚)
+        for (int i = 1; i <= 3; i++) {
+            controller.tick(T0 + 1000L * i);
+            rt.flush();
+        }
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> second"), 2, T0 + 500L));
+        controller.notifyDataChanged();
+        controller.tick(T0 + 4000L);
+        rt.flush();
+        Assert.assertEquals("两独立组", 2, hudGroups(root).size());
+
+        // 推帧至最旧组过期(可见时钟 13000 ≥ 12000+800,首帧定锚不累计):队首弹出,
+        // 新组(组2 起点 = 3000,可见 13000-3000=10000 < 12800)不受牵连
+        for (int i = 5; i <= 14; i++) {
+            controller.tick(T0 + 1000L * i);
+            rt.flush();
+        }
+        Assert.assertEquals("最旧组过期后移除,新组保留", 1, hudGroups(root).size());
+
+        // 新组尚未过期(clock 16000,elapsed 12000,淡出窗未结束):不复活、不误删
+        controller.tick(T0 + 16_000L);
+        rt.flush();
+        Assert.assertEquals("新组未过淡出窗仍保留(不复活最旧组)", 1, hudGroups(root).size());
+
+        // 新组过期(clock 16000 ≥ start 3000 + 12800,帧间 delta 夹取 1s:
+        // 18000 帧 delta 2000→1000,hud 仅 15000,淡出窗未走完)→ 19000 帧 hud 16000 弹出
+        controller.tick(T0 + 18_000L);
+        rt.flush();
+        controller.tick(T0 + 19_000L);
+        rt.flush();
+        Assert.assertEquals("新组过期后树清空", 0, hudGroups(root).size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * enterOnMount 门控:组首次以 HUD 形态合成 true(播放入场),重挂载(打开-关闭
+     * 树重建)/组增长重建置 false(动画不重播);全新组仍 true。读取合成列表断言。
+     */
+    @Test
+    public void hudEnterOnMountPlaysOnlyOnFirstHudSynthesis() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = build(controller, rt);
+        ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+        Assert.assertEquals("首次合成 enterOnMount=true(播放入场)", true,
+                groups.get().get(0).isEnterOnMount());
+
+        // 打开-关闭循环:HUD 树重建(重挂载),同组不再播放入场
+        controller.setChatOpen(true);
+        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
+                + ChatMarkdownSettings.getPopAnimMillis());
+        controller.setChatOpen(false);
+        controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
+                + ChatMarkdownSettings.getPopAnimMillis()
+                + ChatMarkdownSettings.getClosingAnimMillis() + 1);
+        rt.flush();
+        Assert.assertEquals("重挂载(同组)enterOnMount=false", false,
+                groups.get().get(0).isEnterOnMount());
+
+        // 新组进入(不同发送者):全新组 true,旧组保持 false
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> new"), 2, T0 + 2000L));
+        controller.notifyDataChanged();
+        controller.tick(T0 + 3000L);
+        rt.flush();
+        Assert.assertEquals("新旧两组同树", 2, groups.get().size());
+        Assert.assertEquals("旧组重挂载仍 false", false, groups.get().get(0).isEnterOnMount());
+        Assert.assertEquals("新组首合成为 true", true, groups.get().get(1).isEnterOnMount());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
     }
 }

@@ -42,6 +42,10 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * {@link ChatUrlLinkifier} 自动链接化,链接行附带行内命中区域(文本包围盒上下 +2 / 左右 +1),
  * 指针命中 → 仅该行段流重建为 hover 变体(提亮色 + 下划线)+ 手型;气泡 hover → 底色 + 3% 白;
  * 链接 hover 持续 400ms 出 URL tooltip(SceneTooltip)。</p>
+ *
+ * <p>HUD 淡出 = 每条消息的可见显示预算(仅 HUD 实际渲染时按可见时钟消耗,聊天框打开期间
+ * 冻结;注入 {@code hudVisible} 后生效);入场动画仅新组(isEnterOnMount)播放,组增长
+ * 重建/重挂载不重播。</p>
  */
 public final class ChatMessageList {
 
@@ -543,20 +547,34 @@ public final class ChatMessageList {
      * @param groups       组列表数据源
      * @param style        形态(HUD/容器)
      * @param registry     消息节点 → 记录登记表(命中检测用,调用方持有)
-     * @param frameMillis  帧时钟(HUD 淡出驱动)
+     * @param frameMillis  帧时钟(旧 wall-clock 淡出路径驱动)
+     * @param hudVisible   HUD 可见时钟信号(新显示预算路径驱动;null = 旧 wall-clock 语义)
+     * @return 列表句柄(dispose 卸载整列表)
+     */
+    public SceneListHandle mount(SceneRuntime rt, SceneNode listParent,
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups, Style style,
+            Map<SceneNode, ChatLineRecord> registry, ReadableSignal<Long> frameMillis,
+            ReadableSignal<Long> hudVisible) {
+        listParent.setGap(style.getGroupGapPx());
+        return rt.forEach(listParent, groups, ChatMessageList::groupKey,
+                group -> buildGroupNode(rt, group, style, registry, frameMillis, hudVisible));
+    }
+
+    /**
+     * 旧 6 参重载(测试兼容):不注入可见时钟,HUD 淡出走旧 wall-clock 路径。
+     *
      * @return 列表句柄(dispose 卸载整列表)
      */
     public SceneListHandle mount(SceneRuntime rt, SceneNode listParent,
             ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups, Style style,
             Map<SceneNode, ChatLineRecord> registry, ReadableSignal<Long> frameMillis) {
-        listParent.setGap(style.getGroupGapPx());
-        return rt.forEach(listParent, groups, ChatMessageList::groupKey,
-                group -> buildGroupNode(rt, group, style, registry, frameMillis));
+        return mount(rt, listParent, groups, style, registry, frameMillis, null);
     }
 
-    /** 构建单组子树:组头 row(名字+时间)+ 消息气泡(背景/四角圆角/行段);HUD 形态挂淡出绑定。 */
+    /** 构建单组子树:组头 row(名字+时间)+ 消息气泡(背景/四角圆角/行段);HUD 形态挂入场与淡出绑定。 */
     private SceneNode buildGroupNode(SceneRuntime rt, ChatCardComposer.ComposedGroup group, Style style,
-            Map<SceneNode, ChatLineRecord> registry, ReadableSignal<Long> frameMillis) {
+            Map<SceneNode, ChatLineRecord> registry, ReadableSignal<Long> frameMillis,
+            ReadableSignal<Long> hudVisible) {
         boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER;
         boolean selfRight = group.getAlignment() == MessageGroupModel.Alignment.SELF_RIGHT;
         // K3 三轮:系统消息独立字号/行高(font-system 12/16,设计稿 §2.2/§3.4),
@@ -891,20 +909,36 @@ public final class ChatMessageList {
             // HUD 形态:组出生 enter 动画(设计稿 §4.1 行1)——translateY +8→0 + opacity 0→1,
             // 180ms easeOutCubic,基准 = 组内最新消息到达时刻(wall-clock;组树重建后老组按进度
             // 立即稳态,不重播;完成态 opacity=1 / transform 恒等,渲染引擎走快速路径)。
-            final long bornMillis = group.getLatestMillis();
-            rt.bind(Computed.create(() -> Float.valueOf(
-                            enterOpacity(bornMillis, frameMillis.get().longValue()))),
-                    opacity -> groupNode.setOpacity(opacity.floatValue()));
-            rt.bind(Computed.create(() -> enterTransform(bornMillis, frameMillis.get().longValue())),
-                    transform -> groupNode.setTransform(transform));
-            // 淡出烘焙:fadeAlpha → currentAlpha → bake(正常/hover 两态同源);
+            // 新机制门控:仅组首次以 HUD 形态合成(isEnterOnMount)时挂入场绑定——组增长重建
+            // (同组连发消息,isEnterOnMount=false)后不重播,组保持稳态渲染,消除整组闪烁;
+            // 重挂载(形态切换树重建)同样跳过,入场动画与消息是否首次进 HUD 一一对应。
+            if (group.isEnterOnMount()) {
+                final long bornMillis = group.getLatestMillis();
+                rt.bind(Computed.create(() -> Float.valueOf(
+                                enterOpacity(bornMillis, frameMillis.get().longValue()))),
+                        opacity -> groupNode.setOpacity(opacity.floatValue()));
+                rt.bind(Computed.create(() -> enterTransform(bornMillis, frameMillis.get().longValue())),
+                        transform -> groupNode.setTransform(transform));
+            }
+            // 淡出烘焙 → currentAlpha → bake(正常/hover 两态同源):
+            // 新显示时长机制(hudVisible 注入):alpha = 每条消息可见预算(hudAlpha 纯函数,
+            // 起点/预算取自合成组,仅 HUD 实际渲染时按可见时钟消耗,聊天框打开期间冻结);
+            // 起点 = -1(未进入 HUD 渲染)时 hudAlpha 恒 255 = 天然稳态,预算不消耗。
+            // 未注入(hudVisible == null):旧 wall-clock 路径(测试兼容)。
             // TB1 常驻模式:TTL 淡出关闭,alpha 恒满 255(设置内读,运行时切换即时生效)
             rt.bind(Computed.create(() -> Integer.valueOf(
                             ChatMarkdownSettings.isHudPersistMessages() ? 255
-                                    : ChatCardComposer.fadeAlpha(
-                                            group.getLatestMillis(), frameMillis.get().longValue(),
-                                            ChatMarkdownSettings.getHudTtlMillis(),
-                                            ChatMarkdownSettings.getHudFadeMillis(), 255))),
+                                    : hudVisible == null
+                                            ? ChatCardComposer.fadeAlpha(
+                                                    group.getLatestMillis(),
+                                                    frameMillis.get().longValue(),
+                                                    ChatMarkdownSettings.getHudTtlMillis(),
+                                                    ChatMarkdownSettings.getHudFadeMillis(), 255)
+                                            : ChatCardComposer.hudAlpha(
+                                                    group.getHudVisibleStartMillis(),
+                                                    group.getBudgetMillis(),
+                                                    ChatMarkdownSettings.getHudFadeMillis(),
+                                                    hudVisible.get().longValue()))),
                     alpha -> {
                         int a = alpha.intValue();
                         if (a != currentAlpha[0]) {

@@ -55,7 +55,7 @@ public final class ChatMarkdownSettings {
     private static volatile float latexMaxLineHeightFactor = 1.6F;
     /** 行内 LaTeX 公式缩放系数(设计稿 §3.5:超限公式按 0.85 缩放重排)。 */
     private static volatile float latexShrinkFactor = 0.85F;
-    /** HUD 形态存活窗口(ms,自组内最新消息起;TTL 10000→12000 给足阅读时间)。 */
+    /** 每条消息的 HUD 显示预算(可见时间,默认 12s;聊天框打开时冻结,关闭后继续消耗)。 */
     private static volatile long hudTtlMillis = 12000L;
     /** HUD 形态淡出时长(ms;fade 500→800 配合 easeInQuad)。 */
     private static volatile long hudFadeMillis = 800L;
