@@ -6,7 +6,9 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -505,6 +507,211 @@ public class ScenePaintCompositeReplayTest {
         Assert.assertFalse("composite 已清", child.__isCompositeDirty());
         Assert.assertFalse("paint 全程干净", child.__isSelfPaintDirty());
         Assert.assertFalse("geometry 全程干净", child.__isSelfGeometryDirty());
+    }
+
+    // ============================================================
+    // F. P10/P10b：opacity / transform layer 区域用子树内容包围盒
+    // ============================================================
+
+    /**
+     * P10：父节点 opacity=0.5 + 溢出子（preferredWidth=150 &gt; 父钉死宽 100）。
+     * <p>PUSH_OPACITY 区域必须覆盖溢出后代的布局盒：离屏层全屏分配，回贴窗口钉节点盒
+     * 会把溢出内容在 opacity&lt;1 期间隐式硬裁。</p>
+     */
+    @Test
+    public void opacityPushRegionShouldCoverOverflowingDescendant() {
+        SceneNode root = new SceneNode();
+        SceneNode parent = new SceneNode();
+        parent.setOpacity(0.5f);
+        parent.setPreferredWidth(100);
+        parent.setPreferredHeight(20);
+        parent.setBackgroundColor(0xFFAA0000);
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(150);
+        child.setPreferredHeight(20);
+        child.setBackgroundColor(0xFF00AA00);
+        parent.appendChild(child);
+        root.appendChild(parent);
+
+        layoutEngine.layout(root, new Constraints(100, 100));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        PaintCommand push = firstOfType(plan.getCommands(), PaintCommandType.PUSH_OPACITY);
+        Assert.assertNotNull("应有 PUSH_OPACITY", push);
+        AnchorRect childBox = SceneGeometry.absoluteBox(child, 0, 0);
+        Assert.assertTrue("PUSH right 覆盖溢出后代右边界",
+                push.getRight() >= childBox.getX() + childBox.getWidth());
+        Assert.assertTrue("PUSH bottom 覆盖溢出后代底边界",
+                push.getBottom() >= childBox.getY() + childBox.getHeight());
+        Assert.assertEquals("PUSH 携带局部 opacity", 0.5f, push.getOpacity(), 1e-6f);
+    }
+
+    /**
+     * P10：嵌套 group opacity（父 0.5 / 子 0.5）+ 溢出孙（preferredWidth=150）。
+     * <p>外层区域必须同样覆盖孙盒：外层离屏层贴回时孙的溢出内容仍在窗口内。</p>
+     */
+    @Test
+    public void nestedOpacityGroupsShouldInflateOuterRegion() {
+        SceneNode root = new SceneNode();
+        SceneNode parent = new SceneNode();
+        parent.setOpacity(0.5f);
+        parent.setPreferredWidth(100);
+        parent.setPreferredHeight(20);
+        SceneNode child = new SceneNode();
+        child.setOpacity(0.5f);
+        SceneNode grandchild = new SceneNode();
+        grandchild.setPreferredWidth(150);
+        grandchild.setPreferredHeight(20);
+        grandchild.setBackgroundColor(0xFF00AA00);
+        child.appendChild(grandchild);
+        parent.appendChild(child);
+        root.appendChild(parent);
+
+        layoutEngine.layout(root, new Constraints(100, 100));
+        List<PaintCommand> cmds = paintEngine.paint(root).getPlan().getCommands();
+
+        int firstPush = indexOfType(cmds, PaintCommandType.PUSH_OPACITY);
+        Assert.assertTrue("应有外层 PUSH_OPACITY", firstPush >= 0);
+        int secondPush = -1;
+        for (int i = firstPush + 1; i < cmds.size(); i++) {
+            if (cmds.get(i).getType() == PaintCommandType.PUSH_OPACITY) {
+                secondPush = i;
+                break;
+            }
+        }
+        Assert.assertTrue("应有内层 PUSH_OPACITY", secondPush >= 0);
+
+        AnchorRect grandBox = SceneGeometry.absoluteBox(grandchild, 0, 0);
+        PaintCommand outer = cmds.get(firstPush);
+        PaintCommand inner = cmds.get(secondPush);
+        Assert.assertTrue("外层区域覆盖孙盒右边界",
+                outer.getRight() >= grandBox.getX() + grandBox.getWidth());
+        Assert.assertTrue("外层区域覆盖孙盒底边界",
+                outer.getBottom() >= grandBox.getY() + grandBox.getHeight());
+        Assert.assertTrue("内层区域同样覆盖孙盒",
+                inner.getRight() >= grandBox.getX() + grandBox.getWidth());
+        Assert.assertEquals("外层 opacity 局部值", 0.5f, outer.getOpacity(), 1e-6f);
+        Assert.assertEquals("内层 opacity 局部值", 0.5f, inner.getOpacity(), 1e-6f);
+    }
+
+    /**
+     * P10：opacity==0 子树被剪枝（零命令），包围盒不为其增长。
+     * <p>预遍历跳过剪枝子树与主遍历同口径：区域恒等于父自身盒（而非 150 宽）。</p>
+     */
+    @Test
+    public void opacityRegionShouldNotGrowForPrunedZeroOpacitySubtree() {
+        SceneNode root = new SceneNode();
+        SceneNode parent = new SceneNode();
+        parent.setOpacity(0.5f);
+        parent.setPreferredWidth(100);
+        parent.setPreferredHeight(20);
+        parent.setBackgroundColor(0xFFAA0000);
+        SceneNode hidden = new SceneNode();
+        hidden.setOpacity(0.0F);
+        hidden.setPreferredWidth(150);
+        hidden.setPreferredHeight(20);
+        hidden.setBackgroundColor(0xFF00FF00);
+        parent.appendChild(hidden);
+        root.appendChild(parent);
+
+        layoutEngine.layout(root, new Constraints(100, 100));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        Assert.assertEquals("剪枝子树零命令：仅 1 对 PUSH/POP_OPACITY", 1,
+                countType(plan.getCommands(), PaintCommandType.PUSH_OPACITY));
+        PaintCommand push = firstOfType(plan.getCommands(), PaintCommandType.PUSH_OPACITY);
+        Assert.assertNotNull("应有 PUSH_OPACITY", push);
+        AnchorRect parentBox = SceneGeometry.absoluteBox(parent, 0, 0);
+        Assert.assertEquals("区域不随剪枝子树增长：right == 父自身盒右边界",
+                parentBox.getX() + parentBox.getWidth(), push.getRight());
+        Assert.assertEquals("区域不随剪枝子树增长：bottom == 父自身盒底边界",
+                parentBox.getY() + parentBox.getHeight(), push.getBottom());
+        Assert.assertNull("剪枝子树不产出 BACKGROUND", findCommandByColor(plan, 0xFF00FF00));
+        Assert.assertNotNull("父自身 BACKGROUND 仍在", findCommandByColor(plan, 0xFFAA0000));
+    }
+
+    /**
+     * P10：scrollable 视口滚动注入口径 —— opacity 区域用注入后的绝对坐标，
+     * 且与 CLIP 叠加不冲突（CLIP 框固定不含注入，opacity 区域跟随内容平移并可覆盖溢出内容）。
+     */
+    @Test
+    public void opacityRegionInsideScrollableMatchesInjectedOffset() {
+        SceneNode root = SceneNode.column();
+        SceneNode viewport = SceneNode.column();
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(50);
+        SceneNode shell = SceneNode.column();
+        shell.setOpacity(0.75f);
+        SceneNode item = new SceneNode();
+        item.setPreferredWidth(150);
+        item.setPreferredHeight(20);
+        item.setBackgroundColor(0xFF123456);
+        shell.appendChild(item);
+        viewport.appendChild(shell);
+        root.appendChild(viewport);
+
+        layoutEngine.layout(root, new Constraints(100, 100));
+        viewport.setScrollOffsetY(5);
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        PaintCommand push = firstOfType(plan.getCommands(), PaintCommandType.PUSH_OPACITY);
+        Assert.assertNotNull("应有 PUSH_OPACITY", push);
+        // 注入口径：shell 绝对 y = 0 - scrollOffsetY(5) = -5；区域覆盖溢出内容宽 150
+        Assert.assertEquals("opacity 区域 top 注入滚动偏移", -5, push.getTop());
+        Assert.assertEquals("opacity 区域 bottom = top + 内容高", 15, push.getBottom());
+        Assert.assertEquals("opacity 区域覆盖溢出内容右边界", 150, push.getRight());
+
+        // CLIP 叠加不冲突：viewport 裁剪框固定不动（不含滚动注入），仍裁 (0,0,100,50)
+        PaintCommand clip = firstOfType(plan.getCommands(), PaintCommandType.CLIP_PUSH);
+        Assert.assertNotNull("应有 CLIP_PUSH", clip);
+        Assert.assertEquals("CLIP top 固定 0（不含注入）", 0, clip.getTop());
+        Assert.assertEquals("CLIP bottom 固定视口高 50", 50, clip.getBottom());
+        Assert.assertEquals("CLIP 仅 1 对（scrollable 自动裁剪）", 1,
+                countType(plan.getCommands(), PaintCommandType.CLIP_PUSH));
+    }
+
+    /**
+     * P10b：preferTransformLayer 无 clip 场景（HUD 根同源缺陷）——PUSH_TRANSFORM_LAYER
+     * 回贴窗口同样必须覆盖溢出后代，否则溢出内容在图层贴回时被隐式硬裁。
+     */
+    @Test
+    public void transformLayerRegionShouldCoverOverflowingDescendant() {
+        SceneNode root = new SceneNode();
+        SceneNode parent = new SceneNode();
+        parent.setPreferTransformLayer(true);
+        parent.setTransform(new Transform(5f, 5f));
+        parent.setPreferredWidth(100);
+        parent.setPreferredHeight(20);
+        parent.setBackgroundColor(0xFFAA0000);
+        SceneNode child = new SceneNode();
+        child.setPreferredWidth(150);
+        child.setPreferredHeight(20);
+        child.setBackgroundColor(0xFF00AA00);
+        parent.appendChild(child);
+        root.appendChild(parent);
+
+        layoutEngine.layout(root, new Constraints(100, 100));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        Assert.assertEquals("无 clip 且 preferTransformLayer 走图层路径：零 PUSH_TRANSFORM", 0,
+                countType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM));
+        Assert.assertEquals("无 clip 场景零 CLIP", 0,
+                countType(plan.getCommands(), PaintCommandType.CLIP_PUSH));
+        PaintCommand layer = firstOfType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM_LAYER);
+        Assert.assertNotNull("应有 PUSH_TRANSFORM_LAYER", layer);
+
+        AnchorRect childBox = SceneGeometry.absoluteBox(child, 0, 0);
+        Assert.assertTrue("图层回贴窗口覆盖溢出后代右边界",
+                layer.getRight() >= childBox.getX() + childBox.getWidth());
+        Assert.assertTrue("图层回贴窗口覆盖溢出后代底边界",
+                layer.getBottom() >= childBox.getY() + childBox.getHeight());
+        Assert.assertEquals("transform translate 分量原样保留", 5f, layer.getTranslateX(), 1e-6f);
+
+        // origin 仍锚定节点自身盒中心（box 归一化语义）：折算后绝对原点恒为节点盒中心 (50,10)
+        float originAbsX = layer.getLeft() + layer.getOriginXRatio() * (layer.getRight() - layer.getLeft());
+        float originAbsY = layer.getTop() + layer.getOriginYRatio() * (layer.getBottom() - layer.getTop());
+        Assert.assertEquals("transform origin 仍锚定节点盒中心 x=50", 50f, originAbsX, 1e-3f);
+        Assert.assertEquals("transform origin 仍锚定节点盒中心 y=10", 10f, originAbsY, 1e-3f);
     }
 
     // ============================================================

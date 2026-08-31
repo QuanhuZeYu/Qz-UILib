@@ -85,13 +85,17 @@ public final class PaintPlan {
      * 追加「进入 group opacity 合成作用域」边界命令（Phase 3B）。
      *
      * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在「本节点 + 全部后代命令」
-     * 外层调用，与 {@link #addPopOpacity()} 严格配对。坐标为<b>绝对屏幕坐标</b>
-     * （绘制引擎已叠加完累计 offset），不再经 fragment 相对坐标通路平移。</p>
+     * 外层调用，与 {@link #addPopOpacity()} 严格配对。区域为<b>子树内容包围盒</b>的
+     * 绝对屏幕坐标（绘制引擎已叠加完累计 offset，不再经 fragment 相对坐标通路平移）。
+     * 离屏层全屏分配、pop 按本区域做回贴 UV 采样窗口——若钉死节点自身盒会把
+     * opacity&lt;1 期间溢出盒外的后代内容隐式硬裁（P10 修复）。<b>group opacity
+     * 不裁剪子树内容</b>：显式裁剪（CLIP/scissor）在离屏层内照常生效，与放大后的
+     * 回贴窗口正交。</p>
      *
-     * @param left    绝对左边界（像素）
-     * @param top     绝对上边界（像素）
-     * @param right   绝对右边界（像素）
-     * @param bottom  绝对下边界（像素）
+     * @param left    子树内容包围盒左边界（绝对屏幕坐标，像素）
+     * @param top     子树内容包围盒上边界（绝对屏幕坐标，像素）
+     * @param right   子树内容包围盒右边界（绝对屏幕坐标，像素）
+     * @param bottom  子树内容包围盒下边界（绝对屏幕坐标，像素）
      * @param opacity 该层局部不透明度 [0,1]
      * @return 当前计划（支持链式调用）
      */
@@ -181,21 +185,24 @@ public final class PaintPlan {
     /**
      * 追加「进入 transform 离屏图层作用域」边界命令（B6 FBO 方案，transform+clip 叠加正确处理）。
      *
-     * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在节点 transform 非恒等<b>且</b>有 clip 时
-     * 于「本节点 + 全部后代命令」外层调用，与 {@link #addPopTransformLayer()} 严格配对。
-     * 坐标为<b>绝对屏幕坐标</b>，transform 分量全 primitive（守 I6），每帧从 node 实时读，绝不进 fragment。</p>
+     * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在节点 transform 非恒等<b>且</b>
+     * （needClip 或 preferTransformLayer）时于「本节点 + 全部后代命令」外层调用，与
+     * {@link #addPopTransformLayer()} 严格配对。区域为<b>子树内容包围盒</b>的绝对屏幕坐标
+     * （P10b：pop 回贴窗口与 opacity 同源——离屏层全屏分配，窗口钉节点盒会把溢出后代隐式硬裁）。
+     * transform 分量全 primitive（守 I6），每帧从 node 实时读，绝不进 fragment；origin 分量已由
+     * 引擎折算为包围盒坐标系下的等价比率，绝对变换原点仍锚定节点自身盒（box 归一化语义不变）。</p>
      *
-     * @param left          绝对左边界（像素）
-     * @param top           绝对上边界（像素）
-     * @param right         绝对右边界（像素）
-     * @param bottom        绝对下边界（像素）
+     * @param left          子树内容包围盒左边界（绝对屏幕坐标，像素）
+     * @param top           子树内容包围盒上边界（绝对屏幕坐标，像素）
+     * @param right         子树内容包围盒右边界（绝对屏幕坐标，像素）
+     * @param bottom        子树内容包围盒下边界（绝对屏幕坐标，像素）
      * @param translateX    X 轴平移量（浮点像素）
      * @param translateY    Y 轴平移量（浮点像素）
      * @param rotateDegrees 绕 Z 轴顺时针旋转角度（度）
      * @param scaleX        X 轴缩放倍率
      * @param scaleY        Y 轴缩放倍率
-     * @param originXRatio  变换原点 X 比率（box 归一化坐标）
-     * @param originYRatio  变换原点 Y 比率（box 归一化坐标）
+     * @param originXRatio  变换原点 X 比率（已折算到包围盒坐标系，绝对原点锚定节点盒）
+     * @param originYRatio  变换原点 Y 比率（已折算到包围盒坐标系，绝对原点锚定节点盒）
      * @return 当前计划（支持链式调用）
      */
     public PaintPlan addPushTransformLayer(int left, int top, int right, int bottom,

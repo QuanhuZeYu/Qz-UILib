@@ -157,14 +157,43 @@ public class ScenePaintEngine {
         boolean needTransform = box != null && transform != null && !transform.isIdentity();
         boolean needClip = box != null && node.isClipWindow();
         boolean needLayer = needClip || node.isPreferTransformLayer();
+
+        // ==== opacity（D1）：< 1.0 且已布局则本节点子树进入 group opacity 合成作用域 ====
+        // box==null（节点未布局）时不开 group：零面积离屏层无意义，且与「无布局节点跳过」语义对齐
+        float opacity = node.getOpacity();
+        boolean needGroup = box != null && opacity < 1.0f - OPACITY_EPSILON;
+
+        // ==== P10/P10b：子树内容包围盒（只读预遍历，布局盒并集） ====
+        // 离屏层虽全屏分配，pop 回贴却只用 PUSH 命令携带的区域做 UV 采样窗口——区域钉死节点
+        // 自身盒会把 opacity<1 / transform layer 期间溢出盒外的后代内容隐式硬裁（引擎机制缺陷）。
+        // 修复：PUSH_OPACITY（P10）与 PUSH_TRANSFORM_LAYER（P10b）区域改用子树内容包围盒。
+        // 放大回贴窗口不绕过任何显式裁剪：CLIP（scissor）在离屏层内照常生效，与回贴窗口正交。
+        // 只读、不产命令、不标脏、不碰 fragment；仅 needGroup / needLayer 路径付出遍历成本。
+        ContentBounds contentBounds = (needGroup || (needTransform && needLayer))
+                ? subtreeContentBounds(node, offsetX, offsetY) : null;
+
         if (needTransform) {
             int width = box.getWidth();
             int height = box.getHeight();
             if (needLayer) {
                 // B6 FBO 方案：transform+clip 叠加走离屏图层，FBO 内 MODELVIEW=I 使 scissor 轴对齐正确裁剪
-                plan.addPushTransformLayer(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
-                        transform.translateX, transform.translateY, transform.rotateDegrees,
-                        transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
+                if (contentBounds != null) {
+                    // P10b：回贴窗口用子树内容包围盒；origin 分量折算为包围盒坐标系下的等价比率，
+                    // 使绝对变换原点仍锚定节点自身盒（Transform.originXRatio 的 box 归一化语义不变）。
+                    plan.addPushTransformLayer(contentBounds.left, contentBounds.top,
+                            contentBounds.right, contentBounds.bottom,
+                            transform.translateX, transform.translateY, transform.rotateDegrees,
+                            transform.scaleX, transform.scaleY,
+                            rebaseOriginRatio(nodeAbsX, width, transform.originXRatio,
+                                    contentBounds.left, contentBounds.right),
+                            rebaseOriginRatio(nodeAbsY, height, transform.originYRatio,
+                                    contentBounds.top, contentBounds.bottom));
+                } else {
+                    // 剪枝边界防御（needTransform 前提 box!=null，正常不可达）：回退节点盒口径
+                    plan.addPushTransformLayer(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
+                            transform.translateX, transform.translateY, transform.rotateDegrees,
+                            transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
+                }
             } else {
                 // 无 clip：走 GL 矩阵纯顶点变换（零重栅格化，守信条五铁律）
                 plan.addPushTransform(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
@@ -173,15 +202,16 @@ public class ScenePaintEngine {
             }
         }
 
-        // ==== opacity（D1）：< 1.0 且已布局则本节点子树进入 group opacity 合成作用域 ====
-        // box==null（节点未布局）时不开 group：零面积离屏层无意义，且与「无布局节点跳过」语义对齐
-        float opacity = node.getOpacity();
-        boolean needGroup = box != null && opacity < 1.0f - OPACITY_EPSILON;
         if (needGroup) {
-            // 区域用本节点绝对边界（含 transform 后的偏移），渲染层据此开离屏层做 group 合成
-            int width = box != null ? box.getWidth() : 0;
-            int height = box != null ? box.getHeight() : 0;
-            plan.addPushOpacity(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height, opacity);
+            if (contentBounds != null) {
+                // P10：区域用子树内容包围盒——group opacity 不裁剪子树内容（与 CLIP 显式裁剪正交）
+                plan.addPushOpacity(contentBounds.left, contentBounds.top,
+                        contentBounds.right, contentBounds.bottom, opacity);
+            } else {
+                // 剪枝边界防御（needGroup 前提 box!=null 且 opacity>0，正常不可达）：回退节点盒口径
+                plan.addPushOpacity(nodeAbsX, nodeAbsY, nodeAbsX + box.getWidth(),
+                        nodeAbsY + box.getHeight(), opacity);
+            }
         }
 
         // ==== clipChildren（Phase 4）：裁剪作用域包住「本节点命令 + 全部后代命令」 ====
@@ -264,6 +294,95 @@ public class ScenePaintEngine {
         node.clearGeometryDirty();
         node.clearCompositeDirty();
         return regenerated;
+    }
+
+    /**
+     * 只读预遍历计算 node 子树的绘制内容包围盒（绝对屏幕坐标）。
+     *
+     * <p>口径与主遍历完全一致：自身盒 include（含 {@link SceneNode#__getPresentationOffsetY()}），
+     * 子节点经 {@link SceneGeometry#childYBase}/{@link SceneGeometry#childXBase} 注入滚动偏移后
+     * 递归 include；box==null 与主遍历「无布局」同口径（自身不贡献、子节点沿用同一偏移继续递归）；
+     * opacity&lt;=0 剪枝与主遍历同口径（整棵零命令不进包围盒——虽不排除也仅区域偏大、无视觉差异，
+     * 但排除之与剪枝语义一致且区域精确）。</p>
+     *
+     * <p>只读：不产命令、不标脏、不触碰 fragment/缓存。</p>
+     *
+     * @param node    子树根节点
+     * @param offsetX 从 root 到该节点父的累积 X 偏移（与主遍历同源）
+     * @param offsetY 从 root 到该节点父的累积 Y 偏移（与主遍历同源）
+     * @return 子树内容包围盒；opacity&lt;=0 剪枝子树返回 {@code null}
+     */
+    private ContentBounds subtreeContentBounds(SceneNode node, int offsetX, int offsetY) {
+        LayoutBox box = (LayoutBox) node.getCachedLayout();
+        // 剪枝同口径：已布局且 opacity<=0 的子树零命令，不进包围盒
+        if (box != null && node.getOpacity() <= 0.0F) {
+            return null;
+        }
+        int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
+        int nodeAbsY = offsetY + (box != null ? box.getY() : 0) + node.__getPresentationOffsetY();
+        ContentBounds bounds = null;
+        if (box != null) {
+            bounds = new ContentBounds(nodeAbsX, nodeAbsY,
+                    nodeAbsX + box.getWidth(), nodeAbsY + box.getHeight());
+        }
+        int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
+        int childOffsetX = SceneGeometry.childXBase(node, nodeAbsX);
+        List<SceneNode> children = node.__getChildren();
+        for (int i = 0; i < children.size(); i++) {
+            ContentBounds childBounds = subtreeContentBounds(children.get(i), childOffsetX, childOffsetY);
+            if (childBounds != null) {
+                bounds = bounds == null ? childBounds : bounds.include(childBounds);
+            }
+        }
+        return bounds;
+    }
+
+    /**
+     * 把 box 归一化的变换原点比率折算为包围盒坐标系下的等价比率。
+     *
+     * <p>P10b 放大 PUSH_TRANSFORM_LAYER 回贴窗口后，渲染层按「区域 + 比率」推绝对原点
+     * （{@code left + ratio * (right - left)}）。若比率不折算，原点会漂移到内容包围盒的
+     * 比率点而非节点自身盒的比率点，破坏 {@code Transform.originXRatio} 的 box 归一化契约。
+     * 本方法解出等价比率，使绝对原点恒等于 {@code nodeAbs + boxRatio * nodeSize}。</p>
+     *
+     * @param nodeAbs    节点自身盒绝对起始坐标（含 presentation offset）
+     * @param nodeSize   节点自身盒尺寸
+     * @param boxRatio   节点盒归一化比率（原样来自 {@link Transform}）
+     * @param contentMin 内容包围盒起始坐标
+     * @param contentMax 内容包围盒结束坐标
+     * @return 包围盒坐标系下的等价比率；包围盒该轴退化时原样返回 boxRatio（区域退化不参与合成）
+     */
+    private static float rebaseOriginRatio(int nodeAbs, int nodeSize, float boxRatio,
+                                           int contentMin, int contentMax) {
+        int span = contentMax - contentMin;
+        if (span <= 0) {
+            return boxRatio;
+        }
+        float originAbs = nodeAbs + boxRatio * nodeSize;
+        return (originAbs - contentMin) / span;
+    }
+
+    /**
+     * 子树内容包围盒（绝对屏幕坐标，left/top/right/bottom）。
+     */
+    private static final class ContentBounds {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+
+        private ContentBounds(int left, int top, int right, int bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+        }
+
+        private ContentBounds include(ContentBounds other) {
+            return new ContentBounds(Math.min(left, other.left), Math.min(top, other.top),
+                    Math.max(right, other.right), Math.max(bottom, other.bottom));
+        }
     }
 
     /**

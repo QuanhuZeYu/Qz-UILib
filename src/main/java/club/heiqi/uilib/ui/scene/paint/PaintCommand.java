@@ -390,15 +390,18 @@ public final class PaintCommand {
     /**
      * 创建「进入 group opacity 合成作用域」边界命令（Phase 3B）。
      *
-     * <p>携带绝对屏幕区域 + 该层局部 opacity。回放器遇此命令调用
-     * {@code ctx.pushGroupOpacity(left, top, right, bottom, opacity)}。
+     * <p>携带<b>子树内容包围盒</b>绝对屏幕区域（非节点自身盒）+ 该层局部 opacity。
+     * 回放器遇此命令调用 {@code ctx.pushGroupOpacity(left, top, right, bottom, opacity)}。
      * 嵌套相乘由渲染层离屏层栈天然完成，<b>opacity 必须传该层局部值（如父 0.5、子 0.5），
      * 绝不传累计值 0.25</b>（否则与 group 合成语义双重衰减）。</p>
      *
-     * @param left    绝对左边界（像素）
-     * @param top     绝对上边界（像素）
-     * @param right   绝对右边界（像素）
-     * @param bottom  绝对下边界（像素）
+     * <p><b>group opacity 不裁剪子树内容</b>：溢出盒外的后代内容同样进入离屏层并按同一
+     * opacity 合成；显式裁剪由 CLIP 命令在层内以 scissor 完成，与本区域放大正交。</p>
+     *
+     * @param left    子树内容包围盒左边界（绝对屏幕坐标，像素）
+     * @param top     子树内容包围盒上边界（绝对屏幕坐标，像素）
+     * @param right   子树内容包围盒右边界（绝对屏幕坐标，像素）
+     * @param bottom  子树内容包围盒下边界（绝对屏幕坐标，像素）
      * @param opacity 该层局部不透明度 [0,1]
      * @return PUSH_OPACITY 边界命令
      */
@@ -499,27 +502,30 @@ public final class PaintCommand {
     /**
      * 创建「进入 transform 离屏图层作用域」边界命令（B6 FBO 方案，transform+clip 叠加正确处理）。
      *
-     * <p>携带绝对屏幕区域 + 7 个浮点 transform 分量（与 {@link #pushTransform} 同构）。
-     * 回放器遇此命令调用 {@link club.heiqi.uilib.ui.render.UiRenderBackend} 的
-     * pushTransformLayer，内部借 FBO 离屏层 + MODELVIEW 归 I + 重建父 clip，
+     * <p>携带<b>子树内容包围盒</b>绝对屏幕区域 + 7 个浮点 transform 分量（与
+     * {@link #pushTransform} 同构）。回放器遇此命令调用 {@link club.heiqi.uilib.ui.render.UiRenderBackend}
+     * 的 pushTransformLayer，内部借 FBO 离屏层 + MODELVIEW 归 I + 重建父 clip，
      * 使段内 scissor 在未变换坐标系下轴对齐正确裁剪。变换作用域包住
      * 「本节点命令 + 全部后代命令」，由绘制引擎递归骨架保证与 {@link #popTransformLayer()} 严格配对。</p>
      *
-     * <p>仅当节点 transform 非恒等<b>且</b>有 clip 时产出此命令（而非 {@link #pushTransform}）。
+     * <p>区域即 pop 回贴窗口（P10b：窗口钉节点盒会把溢出后代隐式硬裁，改用子树内容包围盒）；
+     * origin 分量已由引擎折算为包围盒坐标系下的等价比率，绝对变换原点仍锚定节点自身盒
+     * （box 归一化语义不变）。仅当节点 transform 非恒等<b>且</b>（有 clip 或
+     * preferTransformLayer）时产出此命令（而非 {@link #pushTransform}）。
      * transform 分量全 primitive，绝不持 {@code Transform} 类型字段（守 I6）。
      * 每帧由绘制引擎从 node 实时读取产出，绝不进 fragment。</p>
      *
-     * @param left          绝对左边界（像素）
-     * @param top           绝对上边界（像素）
-     * @param right         绝对右边界（像素）
-     * @param bottom        绝对下边界（像素）
+     * @param left          子树内容包围盒左边界（绝对屏幕坐标，像素）
+     * @param top           子树内容包围盒上边界（绝对屏幕坐标，像素）
+     * @param right         子树内容包围盒右边界（绝对屏幕坐标，像素）
+     * @param bottom        子树内容包围盒下边界（绝对屏幕坐标，像素）
      * @param translateX    X 轴平移量（浮点像素）
      * @param translateY    Y 轴平移量（浮点像素）
      * @param rotateDegrees 绕 Z 轴顺时针旋转角度（度）
      * @param scaleX        X 轴缩放倍率
      * @param scaleY        Y 轴缩放倍率
-     * @param originXRatio  变换原点 X 比率（box 归一化坐标）
-     * @param originYRatio  变换原点 Y 比率（box 归一化坐标）
+     * @param originXRatio  变换原点 X 比率（已折算到包围盒坐标系，绝对原点锚定节点盒）
+     * @param originYRatio  变换原点 Y 比率（已折算到包围盒坐标系，绝对原点锚定节点盒）
      * @return PUSH_TRANSFORM_LAYER 边界命令
      */
     public static PaintCommand pushTransformLayer(int left, int top, int right, int bottom,
