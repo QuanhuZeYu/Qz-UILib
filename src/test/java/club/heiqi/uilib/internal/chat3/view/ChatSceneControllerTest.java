@@ -463,8 +463,10 @@ public class ChatSceneControllerTest {
 
     /**
      * HUD 渐入衔接(2026-08-29 用户设计语义「关闭 - 关闭动画 - 关闭完成 - HUD渐入动画 -
-     * 动画完成」):关闭聊天框(HUD 衔接重建)后根级 opacity 从 0 开始 easeOutCubic
-     * 渐入(替代关屏瞬间气泡跳现=闪烁观感),完成即复位(后续 HUD 帧恒 1 快速路径);
+     * 动画完成」):关闭聊天框(HUD 衔接重建)后根级 opacity 从 0 开始
+     * {@link club.heiqi.uilib.internal.chat3.view.Animator#emergeIn(float)}(sqrt 先快后慢)渐入
+     * (替代关屏瞬间气泡跳现=闪烁观感;2026-08-29 真机取证:原 easeOutCubic 前段近乎不可见,
+     * 长渐入被感知为「消失-出现」,改 sqrt 快速浮现后缓慢稳定),完成即复位(后续 HUD 帧恒 1 快速路径);
      * 非衔接路径(HUD 稳定)恒 1,零参与。
      */
     @Test
@@ -494,10 +496,10 @@ public class ChatSceneControllerTest {
             rt.flush();
             Assert.assertEquals("关闭完成首帧 = 渐入起点 0", 0.0F, root.getOpacity(), 0.001F);
 
-            // 渐入中段:easeOutCubic(0.5) = 0.875
+            // 渐入中段:emergeIn(0.5) = sqrt(0.5) ≈ 0.7071(先快后慢:中段已过 ~71%)
             controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() / 2);
             rt.flush();
-            Assert.assertEquals("渐入中段 = easeOutCubic(0.5)", 0.875F, root.getOpacity(), 0.001F);
+            Assert.assertEquals("渐入中段 = emergeIn(0.5)=sqrt(0.5)", 0.70711F, root.getOpacity(), 0.001F);
 
             // 完成:恒 1,且复位(后续帧仍 1)
             controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() + 1);
@@ -512,12 +514,13 @@ public class ChatSceneControllerTest {
     }
 
     /**
-     * HUD 渐入期间的组级 enter 抑制(2026-08-29 闪烁源之二):渐入(根级 opacity 0→1)
-     * 进行中到达的新消息组,enterOnMount=false——出现动画统一由根级渐入承担;
-     * 渐入完成后到达的新组照常 enter=true。
+     * 窗体过渡期内容冻结(2026-08-29 窗体动画抽象):渐入(根级 opacity 0→1)进行中
+     * 到达的新消息组不合成(composeAll 返回稳态快照)——树/布局/enter 一律不响应,
+     * 窗体整体动画独占画面;渐入完成后冻结解除,积压消息一次性应用(forEach diff
+     * 差量挂载),新组按稳态 enter 正常入场(enter=true)。
      */
     @Test
-    public void fadeInPeriodSuppressesGroupEnterUntilComplete() {
+    public void fadeInPeriodFreezesContentUntilComplete() {
         boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
         ChatMarkdownSettings.setHudPersistMessages(false);
         try {
@@ -533,31 +536,31 @@ public class ChatSceneControllerTest {
             controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
             controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
                     + ChatMarkdownSettings.getPopAnimMillis());
-            // 关闭衔接 → 渐入开始
+            // 关闭衔接 → 渐入开始(过渡窗口开启)
             controller.closeToHudImmediately();
             long frame = T0 + 3000L;
             controller.tick(frame);
             rt.flush();
             Assert.assertEquals("渐入起点 0", 0.0F, root.getOpacity(), 0.001F);
 
-            // 渐入中段(200ms < 400ms):新消息组 enter 被抑制(根级统一承担出现)
+            // 渐入中段(200ms < 400ms):消息到达 → 冻结(不合成,列表仍旧)
             controller.history().append(new ChatLineRecord(
                     new ChatComponentText("<Cara> mid"), 2, T0 + 3100L));
             controller.notifyDataChanged();
             controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() / 2);
             rt.flush();
-            Assert.assertEquals("渐入中段仍进行(<1)", 0.875F, root.getOpacity(), 0.001F);
-            Assert.assertEquals("渐入期间新组 enter=false(不叠加入场动画)", false,
-                    groups.get().get(1).isEnterOnMount());
+            Assert.assertEquals("渐入中段仍进行(<1,sqrt(0.5))", 0.70711F, root.getOpacity(), 0.001F);
+            Assert.assertEquals("渐入期间消息冻结(列表仍旧 1 组)", 1, groups.get().size());
 
-            // 渐入完成 → 实时新消息照常入场
+            // 渐入完成 → 冻结解除,积压一次性应用,新组按稳态 enter 入场
             controller.history().append(new ChatLineRecord(
                     new ChatComponentText("<Alex> live"), 3, T0 + 4000L));
             controller.notifyDataChanged();
             controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() + 100L);
             rt.flush();
             Assert.assertEquals("渐入完成 opacity=1", 1.0F, root.getOpacity(), 0.001F);
-            Assert.assertEquals("渐入完成后新组 enter=true", true,
+            Assert.assertEquals("解冻后积压消息一次性应用(3 组)", 3, groups.get().size());
+            Assert.assertEquals("解冻后新组 enter=true(稳态入场)", true,
                     groups.get().get(2).isEnterOnMount());
         } finally {
             ChatMarkdownSettings.setHudPersistMessages(persisted);

@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
+import club.heiqi.uilib.internal.chat3.view.Animator;
 import club.heiqi.uilib.internal.chat3.view.ChatContainer;
 import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
@@ -133,6 +134,23 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         animator.tick(nowMillis);
         container.root().setTransform(animator.transform(nowMillis));
         container.root().setOpacity(animator.opacity(nowMillis));
+        // 临时诊断:打开弹出期(OPEN 进行中)每帧容器透明度/位移(闪烁取证盲区;验证后删除)
+        if (animator.phase() == ChatSurfaceAnimator.Phase.OPEN
+                && animator.progress(nowMillis) < 1.0F) {
+            float pop = animator.progress(nowMillis);
+            LOG.info("[OpenDiag] t={} phase={} opacity={} progress={} ty={}",
+                    Long.valueOf(nowMillis), animator.phase(),
+                    Float.valueOf(animator.opacity(nowMillis)),
+                    Float.valueOf(pop),
+                    Float.valueOf(24.0F * (1.0F - Animator.easeOutBack(pop))));
+        }
+        // 临时诊断:关闭动画期间每帧容器透明度(闪烁取证;验证后删除)
+        if (animator.isClosing() || animator.isClosed()) {
+            LOG.info("[CloseDiag] t={} phase={} opacity={} progress={}",
+                    Long.valueOf(nowMillis), animator.phase(),
+                    Float.valueOf(animator.opacity(nowMillis)),
+                    Float.valueOf(animator.progress(nowMillis)));
+        }
         super.render(w, h, ctx, absX, absY);
     }
 
@@ -163,7 +181,14 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
      * @return 本次关闭请求令牌(重入时 = 旧令牌)
      */
     public ChatSurfaceAnimator.CloseRequest requestClose(Runnable onCloseComplete) {
-        return animator.requestClose(onCloseComplete, System.currentTimeMillis());
+        long nowMillis = System.currentTimeMillis();
+        // 窗体过渡窗口开启:关闭动画开始 → 内容冻结(消息只入数据层,树/布局/enter/过期
+        // 不响应),窗体整体动画独占画面;结束后(稳态)一次性应用(窗体动画抽象 2026-08-29)
+        controller.beginCloseTransition(nowMillis);
+        // 临时诊断:关闭请求标记(闪烁取证;验证后删除)
+        LOG.info("[CloseDiag] 关闭请求 closeStartProgress={}",
+                Float.valueOf(animator.progress(nowMillis)));
+        return animator.requestClose(onCloseComplete, nowMillis);
     }
 
     /** @return 关闭动画是否已请求/已完成(提交路径防重入用:动画期间重复 Enter 不重发)。 */

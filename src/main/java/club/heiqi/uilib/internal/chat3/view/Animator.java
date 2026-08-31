@@ -30,6 +30,17 @@ public final class Animator {
         return p * p;
     }
 
+    /**
+     * @return 浮现曲线(sqrt(p),先快后慢):HUD 渐入衔接曲线——真机取证(2026-08-29)确认
+     *         easeOutCubic 前段近乎不可见(长渐入配置下被感知为「消失后突然出现」= 闪烁观感);
+     *         本曲线 10% 进度即达 ~32% 透明度(快速浮现),随后缓慢稳定,长渐入(秒级)下
+     *         始终持续可见地变亮。
+     */
+    public static float emergeIn(float progress) {
+        float p = clamp01(progress);
+        return (float) Math.sqrt(p);
+    }
+
     /** @return ease-out 三次缓动(1-(1-p)³,减速更快更干脆;HUD 组出生 enter 曲线,设计稿 §4.1) */
     public static float easeOutCubic(float progress) {
         float p = clamp01(progress);

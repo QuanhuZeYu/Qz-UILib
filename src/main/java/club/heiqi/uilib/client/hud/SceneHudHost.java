@@ -60,6 +60,9 @@ public final class SceneHudHost {
     /** 临时诊断:每 300 帧打印各保留窗口状态(真机定位 HUD 不渲染用)。 */
     private int hostDiagFrames;
 
+    /** 临时诊断:chat3 窗口本帧实测盒(controller 侧逐帧诊断读取;验证后删除)。 */
+    public static volatile String __diagChat3Box = "none";
+
     /** 在 render 主线程执行一帧：挂载缺失窗口 → 测量 → 四角锚定 → 逐窗口帧循环。 */
     public void render(UiRenderBackend backend, HudViewportMetrics viewport, boolean inWorld, boolean screenOpen) {
         render(backend, viewport.getWidth(), viewport.getHeight(), inWorld, screenOpen);
@@ -98,6 +101,14 @@ public final class SceneHudHost {
             RetainedWindow window = retained.get(entry.spec.getId());
             if (window == null || !visible.contains(entry.spec.getId())) continue;
             LayoutBox box = window.measure(width, height);
+            // 临时诊断:chat3 窗口实测盒(含空窗跳过标记;验证后删除)
+            if ("qzuilib:chat3".equals(entry.spec.getId())) {
+                if (window.isEmptyContent()) {
+                    __diagChat3Box = "EMPTY";
+                } else {
+                    __diagChat3Box = box.getWidth() + "x" + box.getHeight();
+                }
+            }
             if (window.isEmptyContent()) continue;
             int minimum = entry.spec.getMinWidth() == 0
                     ? Math.min(HudTokens.NORMAL.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();

@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
@@ -49,6 +50,12 @@ import org.apache.logging.log4j.Logger;
  *   组首次以 HUD 形态合成才播 enter 入场动画(重挂载/组增长重建不重播);
  *   可选常驻模式(ChatMarkdownSettings.hudPersistMessages=true):预算过期移除不生效,
  *   仅 50% 视口高裁剪(trimHudGroupsByHeight)与历史容量 100 天然裁剪;</li>
+ *   <li>窗体过渡抽象(2026-08-29 用户设计指示):关闭 = 窗体整体收回段 → 窗体整体浮现段
+ *   (两段同属一个窗体过渡,总时长 = closing + fadeIn,默认 540ms,可配至秒级);
+ *   过渡期(屏幕关闭动画 → HUD 渐入完成)消息列表冻结快照({@link #transitionFrozen} +
+ *   {@link #steadySnapshot})——消息只入数据层,树/布局/enter/过期/裁剪一律不响应,
+ *   窗体整体动画独占画面;渐入完成(稳态)后积压消息一次性应用(forEach diff 差量
+ *   挂载,新组按稳态 enter 入场)。打开方向不冻结(容器全量即时呈现)。</li>
  * </ul>
  *
  * <p>渲染驱动点 = 接线层每帧调 {@link #tick(long)}(S4 接 drawChat);不依赖 HUD 服务异步帧循环。</p>
@@ -177,6 +184,21 @@ public final class ChatSceneController {
      *  {@link #hudEverFirstSeqs}(集合幂等,任意次 compose 求值结果一致——一次性标志在
      *  Computed 多次求值时会漏,后续求值把组算回 enter=true)。 */
     // (实现见 rebuildTree,无独立字段)
+    /**
+     * 窗体过渡窗口起点(wall millis;>=-1):屏幕 requestClose 时设置(关闭动画开始),
+     * 窗口 = closing + fadeIn 总时长(用户高层语义:关闭动画开始→HUD 渐入结束整体
+     * 可配 500ms~秒级)。窗口内 = 窗体过渡期 → 内容冻结(见 {@link #transitionFrozen})。
+     * tick 推进,窗口耗尽自动复位 -1。
+     */
+    private long transitionStartMillis = -1L;
+    /** 窗体过渡期标志(tick 每帧按即时机器态/窗口计算):过渡期内消息列表冻结快照
+     *  (composeAll 直接返回 {@link #steadySnapshot}),树/布局/enter/过期/裁剪一律
+     *  不响应——窗体整体动画独占画面;过渡完成(稳态)一次性应用。根治「过渡期消息
+     *  到达打穿窗体动画」的闪烁(2026-08-29 窗体动画抽象,见类注释)。 */
+    private boolean transitionFrozen;
+    /** 窗体过渡冻结快照:上次稳态 compose 结果(composeAll 冻结期返回此引用,列表引用
+     *  稳定 → forEach diff 零变化;解冻后按 contentVersion 重算更新)。 */
+    private List<ChatCardComposer.ComposedGroup> steadySnapshot;
     /** 可见时钟信号(HUD 淡出渲染驱动;仅值变化时 set,防每帧唤醒下游)。 */
     private final Signal<Long> hudVisibleSignal = Signal.create(Long.valueOf(0L));
 
@@ -368,6 +390,27 @@ public final class ChatSceneController {
         if (hudVisible != hudVisibleSignal.get().longValue()) {
             hudVisibleSignal.set(Long.valueOf(hudVisible)); // 仅值变化时 set,防每帧唤醒
         }
+        // 窗体过渡期推进(在 rebuildTree 之前:衔接重建帧必须实时合成——冻结快照
+        // 是容器全量未过滤语义,重建需 HUD 预算过滤;重建帧 frozen=false → 实时合成
+        // → steadySnapshot 更新为 HUD 过滤快照,下一帧起冻结返回它)
+        DisplayStateMachine.Phase currentPhase = machine.getPhase();
+        long fadeInStart = hudFadeInStartMillis;
+        boolean fadeInActive = fadeInStart >= 0L
+                && nowMillis - fadeInStart < ChatMarkdownSettings.getHudFadeInAnimMillis();
+        if (transitionStartMillis >= 0L) {
+            boolean windowOpen = nowMillis - transitionStartMillis <
+                    ChatMarkdownSettings.getClosingAnimMillis()
+                    + ChatMarkdownSettings.getHudFadeInAnimMillis();
+            if (!windowOpen) {
+                transitionStartMillis = -1L; // 窗口耗尽:过渡结束,解除冻结
+            }
+        }
+        // 冻结 = 关闭方向过渡:屏幕关闭动画段(窗口内且机器非 HUD) ∪ HUD 渐入活跃段;
+        // 打开方向(COLLAPSING/POPPING/CONTAINER)不冻结——容器全量即时呈现
+        // (打开瞬间玩家就要看到消息列表,冻结反而延迟显示)
+        transitionFrozen = (transitionStartMillis >= 0L
+                && currentPhase != DisplayStateMachine.Phase.HUD)
+                || fadeInActive;
         if (runtime != null && root != null && hudNow != hudTreeBuilt) {
             rebuildTree(nowMillis);
         }
@@ -379,6 +422,54 @@ public final class ChatSceneController {
         // 非空窗口本帧宿主帧循环已 flush 过一次,此处为幂等重跑,常规帧零脏零开销。
         if (runtime != null) {
             runtime.flush();
+        }
+        // 临时诊断:渐入活跃期每帧快照(闪烁取证;验证后删除)
+        if (hudFadeInStartMillis >= 0L && isHudPhase()) {
+            long now = frameMillis.get().longValue();
+            long fadeInMs = ChatMarkdownSettings.getHudFadeInAnimMillis();
+            float p = fadeInMs <= 0 ? 1.0F : Math.min(1.0F,
+                    (float) (now - hudFadeInStartMillis) / (float) fadeInMs);
+            int treeGroups = 0;
+            if (mount != null && !mount.__getChildren().isEmpty()) {
+                treeGroups = ((SceneNode) mount.__getChildren().get(0)).__getChildren().size();
+            }
+            int composed = 0;
+            List<ChatCardComposer.ComposedGroup> composedList = groupsSignal().get();
+            if (composedList != null) {
+                composed = composedList.size();
+            }
+            Object rootBox = root == null ? null : root.getCachedLayout();
+            String box = "null";
+            if (rootBox instanceof LayoutBox) {
+                box = ((LayoutBox) rootBox).getWidth() + "x" + ((LayoutBox) rootBox).getHeight();
+            }
+            DIAG_LOG.info("[FadeDiag] t={} p={} opacity={} groups={} tree={} rootBox={} hostBox={} hudVisible={}",
+                    Long.valueOf(now), Float.valueOf(p),
+                    Float.valueOf(Animator.easeOutCubic(p)),
+                    Integer.valueOf(composed), Integer.valueOf(treeGroups), box,
+                    club.heiqi.uilib.client.hud.SceneHudHost.__diagChat3Box,
+                    Long.valueOf(hudVisibleClock.visibleMillis()));
+            lastFadeDiagMillis = now;
+        }
+        // 临时诊断:打开方向 HUD 收起(COLLAPSING)逐帧快照(闪烁取证盲区;验证后删除)
+        if (machine.getPhase() == DisplayStateMachine.Phase.COLLAPSING) {
+            long now = frameMillis.get().longValue();
+            float progress = machine.progress(now, ChatMarkdownSettings.getCollapseAnimMillis());
+            int treeGroups = 0;
+            if (mount != null && !mount.__getChildren().isEmpty()) {
+                treeGroups = ((SceneNode) mount.__getChildren().get(0)).__getChildren().size();
+            }
+            Object rootBox = root == null ? null : root.getCachedLayout();
+            String box = "null";
+            if (rootBox instanceof LayoutBox) {
+                box = ((LayoutBox) rootBox).getWidth() + "x" + ((LayoutBox) rootBox).getHeight();
+            }
+            DIAG_LOG.info("[CollapseDiag] t={} progress={} opacity={} tree={} rootBox={} hostBox={} hudVisible={}",
+                    Long.valueOf(now), Float.valueOf(progress),
+                    Float.valueOf(1.0F - Animator.easeOut(progress)),
+                    Integer.valueOf(treeGroups), box,
+                    club.heiqi.uilib.client.hud.SceneHudHost.__diagChat3Box,
+                    Long.valueOf(hudVisibleClock.visibleMillis()));
         }
         if (++diagFrames >= 300) {
             diagFrames = 0;
@@ -423,6 +514,20 @@ public final class ChatSceneController {
     /** 任意线程标记数据脏(消息到达网络线程安全):由 {@link #tick} 在主线程冲刷为版本号。 */
     public void markDataDirty() {
         dataDirty = true;
+    }
+
+    /**
+     * 开始窗体过渡窗口(输入屏关闭动画开始):窗口 = closing + fadeIn 总时长,窗口内
+     * 消息列表冻结(composeAll 返回稳态快照),窗体整体动画独占画面——过渡期消息到达
+     * 只入数据层,不触发树/布局/enter/过期变化(窗体动画抽象,2026-08-29)。
+     * 幂等:已开窗口重复调用不重置起点(关闭动画期间重复 Esc/Enter 不延长冻结)。
+     *
+     * @param nowMillis 当前 wall millis(屏幕侧 requestClose 时刻)
+     */
+    public void beginCloseTransition(long nowMillis) {
+        if (transitionStartMillis < 0L) {
+            transitionStartMillis = nowMillis;
+        }
     }
 
     /** 聊天打开状态变化(输入屏开关,接线层调用)。 */
@@ -569,6 +674,15 @@ public final class ChatSceneController {
     private List<ChatCardComposer.ComposedGroup> composeAll() {
         contentVersion.get().intValue(); // 结构依赖
         phaseSignal.get(); // 形态依赖:打开/关闭切换(HUD ↔ 容器)触发重算(容器全量、HUD 过滤);常规帧不变零重算
+        // 窗体过渡期冻结:消息照常入数据层(purge/分组/合成不碰),树/布局/enter/过期
+        // 一律不响应——窗体整体动画独占画面,过渡完成(稳态)后按 contentVersion 重算
+        // 一次性应用(forEach diff 差量挂载,新组按稳态 enter 入场)。返回稳态快照引用
+        // (引用稳定 → 冻结期零结构变化),根治「过渡期消息到达打穿窗体动画」闪烁(2026-08-29)。
+        if (transitionFrozen) {
+            List<ChatCardComposer.ComposedGroup> frozen = steadySnapshot;
+            return frozen != null ? frozen
+                    : java.util.Collections.<ChatCardComposer.ComposedGroup>emptyList();
+        }
         boolean applyTtl = isHudPhase();
         List<ChatLineRecord> snapshot = history.snapshot();
         lifecycles.purge(snapshot); // 历史容量裁剪联动,防注册表泄漏
@@ -614,20 +728,16 @@ public final class ChatSceneController {
             }
             // enterOnMount 门控:仅组首次以 HUD 形态合成(true),此后(重挂载/组增长重建)false;
             // 关闭衔接抑制由 rebuildTree 预登记 firstSeq 承担(集合幂等,任意次求值一致);
-            // HUD 渐入进行中(hudFadeInStartMillis ≥ 0)新合成组也抑制组级 enter——
-            // 出现动画统一由根级渐入承担,避免「根渐入 + 组入场」双重动画叠加突跳(闪烁源)
-            // 时间判断(不依赖复位时机——start 复位发生在 rootOpacity 求值,与本 Computed
-            // 求值顺序不定;用「now − start < 时长」判定渐入活跃,任意求值顺序结果一致)
-            boolean fadeInActive = hudFadeInStartMillis >= 0L
-                    && frameMillis.get().longValue() - hudFadeInStartMillis
-                            < ChatMarkdownSettings.getHudFadeInAnimMillis();
+            // 窗体过渡期(渐入中)消息本就冻结不合成(见 composeAll 开头 transitionFrozen),
+            // 渐入完成解冻后新组按稳态 enter 正常入场——过渡期不再需要额外抑制(2026-08-29)
             ChatCardComposer.ComposedGroup composedGroup =
                     composed.get(composed.size() - 1);
             long firstSeq = group.getLines().get(0).getRecord().getSequenceId();
-            composedGroup.setEnterOnMount(!fadeInActive
-                    && !hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
+            composedGroup.setEnterOnMount(
+                    !hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
             hudEverFirstSeqs.add(Long.valueOf(firstSeq));
         }
+        steadySnapshot = composed; // 稳态快照(窗体过渡期冻结返回;解冻后按版本重算更新)
         return composed;
     }
 
@@ -744,11 +854,19 @@ public final class ChatSceneController {
         return animOpacity() * hudFadeInOpacity();
     }
 
+    /** 临时诊断:渐入活跃期每帧输出(闪烁取证;验证后删除)。 */
+    private long lastFadeDiagMillis = -1L;
+
     /**
-     * HUD 渐入衔接通道(关闭完成→HUD 平滑出现):根级 opacity 0→1 easeOutCubic
+     * HUD 渐入衔接通道(关闭完成→HUD 平滑出现):根级 opacity 0→1
      * ({@link ChatMarkdownSettings#getHudFadeInAnimMillis()} ms),一次性——
      * 播放完成即复位起点标记(-1),此后恒 1 快速路径。非衔接(HUD 稳定/首次进游戏)
      * 恒 1,零参与。
+     *
+     * <p>曲线 = {@link Animator#emergeIn(float)}(sqrt,先快后慢):真机取证(2026-08-29)
+     * easeOutCubic 前段近乎不可见——长渐入(秒级)下气泡「消失数秒后才出现」,被用户
+     * 感知为「关闭时消失-出现来回几下」;sqrt 曲线 10% 进度即达 ~32% 透明度,气泡快速
+     * 浮现后缓慢稳定,任何配置时长下都持续可见地变亮。</p>
      */
     private float hudFadeInOpacity() {
         long start = hudFadeInStartMillis;
@@ -763,7 +881,7 @@ public final class ChatSceneController {
             hudFadeInStartMillis = -1L; // 一次性:完成即复位(快速路径)
             return 1.0F;
         }
-        return Animator.easeOutCubic(progress);
+        return Animator.emergeIn(progress);
     }
 
     /**
@@ -804,6 +922,9 @@ public final class ChatSceneController {
         if (!isHudPhase()) {
             return;
         }
+        if (transitionFrozen) {
+            return; // 窗体过渡期冻结:过期移除等待过渡完成(稳态一次性处理)
+        }
         // TB1 常驻模式:消息常驻,预算过期移除不生效(仅高度裁剪参与)
         if (ChatMarkdownSettings.isHudPersistMessages()) {
             return;
@@ -822,6 +943,11 @@ public final class ChatSceneController {
                 messages.get(messages.size() - 1).getRecord().getSequenceId());
         if (lifecycle != null && lifecycle.isFadeElapsed(hudVisibleClock.visibleMillis(),
                 ChatMarkdownSettings.getHudFadeMillis())) {
+            DIAG_LOG.info("[ExpireDiag] t={} 队首组过期移除 seq={} treeWas={} hud={}",
+                    Long.valueOf(frameMillis.get().longValue()),
+                    Long.valueOf(messages.get(messages.size() - 1).getRecord().getSequenceId()),
+                    Integer.valueOf(groups.size()),
+                    Long.valueOf(hudVisibleClock.visibleMillis()));
             notifyDataChanged(); // 队首过期:触发结构重算,下一帧 compose 排除该组
         }
     }
@@ -840,6 +966,9 @@ public final class ChatSceneController {
     private void trimHudGroupsByHeight() {
         if (!isHudPhase() || hostViewportHeight <= 0 || hostViewportWidth <= 0) {
             return;
+        }
+        if (transitionFrozen) {
+            return; // 窗体过渡期冻结:高度裁剪等待过渡完成
         }
         int version = contentVersion.get().intValue();
         if (version == lastTrimContentVersion && hostViewportHeight == lastTrimViewportHeight) {
@@ -944,7 +1073,11 @@ public final class ChatSceneController {
      * 气泡——收回动画已由输入屏播完,机器不再需要 140ms 空屏;幂等。
      */
     public void closeToHudImmediately() {
-        machine.forceHud(frameMillis.get().longValue());
+        long now = frameMillis.get().longValue();
+        machine.forceHud(now);
+        // 窗体过渡窗口兜底:真机已由屏幕 requestClose → beginCloseTransition 开启(幂等),
+        // 测试/异常路径(未经历屏幕关闭动画)在此补开——窗口 = closing + fadeIn 总时长
+        beginCloseTransition(now);
     }
 
     /**
