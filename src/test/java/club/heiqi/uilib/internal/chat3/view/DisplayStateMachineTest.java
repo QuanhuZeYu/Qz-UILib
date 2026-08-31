@@ -227,4 +227,73 @@ public class DisplayStateMachineTest {
                 machine.getPhase());
         Assert.assertEquals("HUD 稳定 progress 恒 0", 0.0F, machine.progress(2000L, COLLAPSE), 0.001F);
     }
+
+    // ==================== S2:pendingOpen 兑现标志(rebuildTree 权威信号) ====================
+
+    /**
+     * S2:tick 路径兑现置位——CLOSING 中挂起打开,CLOSING 完成后 tick 兑现进 COLLAPSING,
+     * 同帧标志可见(true);consume 读并清位,一次性语义(再次 peek false)。
+     */
+    @Test
+    public void redemptionFlagSetByTickAndConsumedOnce() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING
+        machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
+        setTarget(machine, false, 5000L); // CLOSING
+        setTarget(machine, true, 5030L); // CLOSING 中请求打开 → pendingOpen 挂起
+        Assert.assertFalse("挂起期兑现标志未置位", machine.isPendingOpenRedeemed());
+
+        machine.tick(5000L + CLOSE, COLLAPSE, POP, CLOSE); // CLOSING 完成 → 兑现进 COLLAPSING
+        Assert.assertEquals("兑现进 COLLAPSING", DisplayStateMachine.Phase.COLLAPSING,
+                machine.getPhase());
+        Assert.assertTrue("兑现帧标志可见", machine.isPendingOpenRedeemed());
+        Assert.assertTrue("consume 读并清位", machine.consumePendingOpenRedeemed());
+        Assert.assertFalse("消费后 peek 为 false(一次性)", machine.isPendingOpenRedeemed());
+        Assert.assertFalse("重复 consume 返回 false", machine.consumePendingOpenRedeemed());
+    }
+
+    /**
+     * S2:forceHud 路径兑现置位;非兑现 forceHud 分支清位(卫生)——先造 CLOSING 兑现,
+     * 再关再开再 forceHud 兑现,标志重新置位;随后 plain forceHud(无挂起)清位。
+     */
+    @Test
+    public void redemptionFlagSetByForceHudAndClearedByNonPendingForceHud() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING
+        machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
+        setTarget(machine, false, 5000L); // CLOSING
+        setTarget(machine, true, 5030L); // pendingOpen 挂起
+
+        machine.forceHud(5050L);
+        Assert.assertEquals("forceHud 兑现进 COLLAPSING", DisplayStateMachine.Phase.COLLAPSING,
+                machine.getPhase());
+        Assert.assertTrue("forceHud 兑现帧标志置位", machine.isPendingOpenRedeemed());
+        Assert.assertTrue("consume 消费一次", machine.consumePendingOpenRedeemed());
+
+        // 普通关闭路径再走一遍:非兑现 forceHud 清位
+        machine.tick(6000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING
+        machine.tick(6000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
+        setTarget(machine, false, 7000L); // CLOSING(无挂起)
+        machine.forceHud(7050L);
+        Assert.assertEquals("plain forceHud 落 HUD", DisplayStateMachine.Phase.HUD,
+                machine.getPhase());
+        Assert.assertFalse("非兑现 forceHud 清位", machine.isPendingOpenRedeemed());
+    }
+
+    /** S2:普通关闭(无挂起)CLOSING 完成落 HUD 不置位;消费后同样不置位。 */
+    @Test
+    public void plainCloseToHudDoesNotSetFlag() {
+        DisplayStateMachine machine = new DisplayStateMachine();
+        setTarget(machine, true, 1000L);
+        machine.tick(1000L + COLLAPSE, COLLAPSE, POP, CLOSE); // POPPING
+        machine.tick(1000L + COLLAPSE + POP, COLLAPSE, POP, CLOSE); // CONTAINER
+        setTarget(machine, false, 5000L);
+        machine.tick(5000L + CLOSE, COLLAPSE, POP, CLOSE); // CLOSING 完成 → HUD
+        Assert.assertEquals("plain close 落 HUD", DisplayStateMachine.Phase.HUD,
+                machine.getPhase());
+        Assert.assertFalse("plain close 不置位", machine.isPendingOpenRedeemed());
+        Assert.assertFalse("消费仍 false", machine.consumePendingOpenRedeemed());
+    }
 }

@@ -384,6 +384,12 @@ public final class ChatSceneController {
         DisplayStateMachine.Phase phase = machine.tick(nowMillis,
                 ChatMarkdownSettings.getCollapseAnimMillis(), ChatMarkdownSettings.getPopAnimMillis(),
                 ChatMarkdownSettings.getClosingAnimMillis());
+        // CLOSING 挂起打开兑现进 COLLAPSING(打开方向)本帧作废窗体过渡窗口:窗口只属于
+        // 关闭方向,兑现帧起解冻(打开方向容器全量即时呈现);挂起期标志为 false → 窗口
+        // 保留(不回归 f4b1af36「过渡期消息打穿」)。peek 不清位,rebuildTree 是唯一消费点。
+        if (machine.isPendingOpenRedeemed()) {
+            transitionStartMillis = -1L;
+        }
         if (phase != phaseSignal.get()) {
             phaseSignal.set(phase);
         }
@@ -398,8 +404,11 @@ public final class ChatSceneController {
         // → steadySnapshot 更新为 HUD 过滤快照,下一帧起冻结返回它)
         DisplayStateMachine.Phase currentPhase = machine.getPhase();
         long fadeInStart = hudFadeInStartMillis;
+        // 渐入只属于关闭衔接 HUD 阶段:打开方向(COLLAPSING/POPPING/CONTAINER)不设渐入,
+        // 防 hudFadeInStartMillis 被误设时反向冻结打开方向(护栏)。
         boolean fadeInActive = fadeInStart >= 0L
-                && nowMillis - fadeInStart < ChatMarkdownSettings.getHudFadeInAnimMillis();
+                && nowMillis - fadeInStart < ChatMarkdownSettings.getHudFadeInAnimMillis()
+                && currentPhase == DisplayStateMachine.Phase.HUD;
         if (transitionStartMillis >= 0L) {
             boolean windowOpen = nowMillis - transitionStartMillis <
                     ChatMarkdownSettings.getClosingAnimMillis()
@@ -408,11 +417,12 @@ public final class ChatSceneController {
                 transitionStartMillis = -1L; // 窗口耗尽:过渡结束,解除冻结
             }
         }
-        // 冻结 = 关闭方向过渡:屏幕关闭动画段(窗口内且机器非 HUD) ∪ HUD 渐入活跃段;
-        // 打开方向(COLLAPSING/POPPING/CONTAINER)不冻结——容器全量即时呈现
-        // (打开瞬间玩家就要看到消息列表,冻结反而延迟显示)
+        // 冻结窗口只认关闭方向:窗口内机器处于 CLOSING(屏幕关闭动画段)∪ HUD 渐入活跃段。
+        // 打开方向(COLLAPSING/POPPING/CONTAINER)即使窗口未耗尽也不冻结——容器全量即时呈现
+        // (打开瞬间玩家就要看到消息列表,冻结反而延迟显示)。原判定用「窗口内 && phase != HUD」
+        // 不区分方向,渐入窗内重开/CLOSING 兑现/旧屏回调顶替会把打开方向误冻结成陈旧快照。
         boolean frozenNow = (transitionStartMillis >= 0L
-                && currentPhase != DisplayStateMachine.Phase.HUD)
+                && currentPhase == DisplayStateMachine.Phase.CLOSING)
                 || fadeInActive;
         // 冻结状态翻转 → 内容版本 +1:解冻帧两个组信号立即失效重算(积压消息一次性应用)。
         // 否则解冻瞬间无任何依赖变化,冻结期消费过的 Computed 缓存卡在稳态快照引用,
@@ -424,6 +434,11 @@ public final class ChatSceneController {
         transitionFrozen = frozenNow;
         if (runtime != null && root != null && hudNow != hudTreeBuilt) {
             rebuildTree(nowMillis);
+        }
+        // 渐入通道复位:机器离开 HUD(进入打开方向)即清渐入起点——打开方向根 opacity
+        // 恢复纯 animOpacity,消除渐入残留 × 形态淡出的双重曲线(如渐入窗内重开)。
+        if (currentPhase != DisplayStateMachine.Phase.HUD && hudFadeInStartMillis >= 0L) {
+            hudFadeInStartMillis = -1L;
         }
         expireHudGroupsByHead();
         trimHudGroupsByHeight();
@@ -590,6 +605,11 @@ public final class ChatSceneController {
         return machine.getPhase();
     }
 
+    /** 测试探针:窗体过渡窗口起点(-1 = 未开启)。 */
+    long __transitionStartMillisForTest() {
+        return transitionStartMillis;
+    }
+
     /** 测试探针:形态相位信号(帧末提交时序验证)。 */
     Signal<DisplayStateMachine.Phase> __phaseSignalForTest() {
         return phaseSignal;
@@ -632,6 +652,13 @@ public final class ChatSceneController {
             messageList().setBubbleMaxWidthPx((int) Math.round(
                     bubbleContentWidth * ChatMarkdownSettings.getBubbleMaxWidthRatio()));
         }
+        // pendingOpen 兑现标志一次性消费(唯一消费点):兑现 = 打开方向衔接,
+        // 与关闭衔接互斥——CLOSING 挂起打开兑现进 COLLAPSING 后本帧 hudNow=true
+        // 且 hudTreeBuilt=false,若无标志会被误判为「关闭完成→HUD」而整批预登记
+        // enterOnMount(抑制打开方向 enter)+ 误设渐入起点(打开方向双重淡出)。
+        // 标志为权威信号,nowPhase 为不变式防御(机器兑现后必进 COLLAPSING)。
+        boolean openRedemption = machine.consumePendingOpenRedeemed();
+        DisplayStateMachine.Phase nowPhase = machine.getPhase();
         boolean hud = isHudPhase();
         // 关闭衔接(上次树非 HUD → 本次 HUD 重建):整批组预登记进 hudEverFirstSeqs,
         // enterOnMount 恒 false → 稳态直接出现,不播 180ms 入场动画
@@ -639,8 +666,11 @@ public final class ChatSceneController {
         // HUD 形态时重播入场动画,opacity 0→1 + translateY 8→0 在关屏瞬间闪现);
         // 之后 HUD 形态实时新消息照常入场。
         // previousMount != null 排除首次构建(旧树从未挂过,不抑制);
-        // !hudTreeBuilt 代表上次树形态为容器/空(视口变更的 HUD→HUD 重建不抑制)。
-        if (hud && !hudTreeBuilt && previousMount != null) {
+        // !hudTreeBuilt 代表上次树形态为容器/空(视口变更的 HUD→HUD 重建不抑制);
+        // && !openRedemption 排除 pendingOpen 兑现(打开方向播 enter、不设渐入);
+        // && nowPhase == HUD 锁定严格关闭衔接(COLLAPSING 兑现帧不误判)。
+        if (hud && !hudTreeBuilt && previousMount != null && !openRedemption
+                && nowPhase == DisplayStateMachine.Phase.HUD) {
             List<ChatCardComposer.ComposedGroup> existing = groupsSignal().get();
             if (existing != null) {
                 for (ChatCardComposer.ComposedGroup group0 : existing) {
@@ -1139,6 +1169,12 @@ public final class ChatSceneController {
     public void closeToHudImmediately() {
         long now = frameMillis.get().longValue();
         machine.forceHud(now);
+        // forceHud 兑现挂起打开(进 COLLAPSING)时作废窗体过渡窗口并返回:窗口只属于
+        // 关闭方向,兑现进打开方向不冻结;普通落 HUD 路径照旧补开窗口(兜底)。
+        if (machine.isPendingOpenRedeemed()) {
+            transitionStartMillis = -1L;
+            return;
+        }
         // 窗体过渡窗口兜底:真机已由屏幕 requestClose → beginCloseTransition 开启(幂等),
         // 测试/异常路径(未经历屏幕关闭动画)在此补开——窗口 = closing + fadeIn 总时长
         beginCloseTransition(now);

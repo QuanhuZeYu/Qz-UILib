@@ -53,6 +53,12 @@ public final class DisplayStateMachine {
     private float anchorProgress = 0.0F;
     /** +1 正向播放 / −1 反向播放(仅 COLLAPSING 可反向)。 */
     private int direction = 1;
+    /**
+     * 挂起打开兑现标志:pendingOpen 由 tick/forceHud 兑现进 COLLAPSING 时置位;
+     * controller 侧 rebuildTree 唯一消费({@link #consumePendingOpenRedeemed()}),
+     * 标志为权威信号,phase 为不变式防御。
+     */
+    private boolean pendingOpenRedeemed = false;
 
     /**
      * 设置目标状态(聊天是否打开);按 §4.2 重入规则从当前进度续播/反向/折算,不再硬切。
@@ -151,6 +157,8 @@ public final class DisplayStateMachine {
     public synchronized void forceHud(long nowMillis) {
         if (pendingOpen) {
             // §4.2:CLOSING 期间挂起的打开请求,强制落 HUD 时一并兑现
+            // (标志置位:controller rebuildTree 以标志为权威信号区分关闭衔接/打开兑现)
+            pendingOpenRedeemed = true;
             enterCollapsing(nowMillis);
             return;
         }
@@ -160,6 +168,7 @@ public final class DisplayStateMachine {
         anchorProgress = 0.0F;
         direction = 1;
         pendingOpen = false;
+        pendingOpenRedeemed = false; // 卫生:非兑现 forceHud 清位
     }
 
     /**
@@ -199,6 +208,8 @@ public final class DisplayStateMachine {
                 if (closingProgress(nowMillis, closingMillis) >= 1.0F) {
                     if (pendingOpen) {
                         // §4.2:CLOSING 完成后兑现挂起的打开
+                        // (标志置位:controller rebuildTree 以标志为权威信号区分关闭衔接/打开兑现)
+                        pendingOpenRedeemed = true;
                         enterCollapsing(nowMillis);
                     } else {
                         phase = Phase.HUD;
@@ -253,5 +264,17 @@ public final class DisplayStateMachine {
     /** @return 当前阶段 */
     public synchronized Phase getPhase() {
         return phase;
+    }
+
+    /** @return 挂起打开是否已被兑现(只读 peek,不清位;controller 窗口作废判定用) */
+    public synchronized boolean isPendingOpenRedeemed() {
+        return pendingOpenRedeemed;
+    }
+
+    /** @return 兑现标志当前值并清位(一次性;controller rebuildTree 唯一消费点) */
+    public synchronized boolean consumePendingOpenRedeemed() {
+        boolean redeemed = pendingOpenRedeemed;
+        pendingOpenRedeemed = false;
+        return redeemed;
     }
 }

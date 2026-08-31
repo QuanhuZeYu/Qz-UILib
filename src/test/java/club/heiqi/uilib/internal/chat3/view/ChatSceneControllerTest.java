@@ -1217,6 +1217,382 @@ public class ChatSceneControllerTest {
         }
     }
 
+    // ==================== S1:冻结窗口只认关闭方向(2026-09 打开方向被误冻结) ====================
+
+    /** 打开聊天 → 容器稳定,机器开放置在固定 frameMillis。 */
+    private static void openToContainer(ChatSceneController controller, SceneRuntime rt, long frame) {
+        controller.setChatOpen(true);
+        controller.tick(frame + ChatMarkdownSettings.getCollapseAnimMillis() + 1L);
+        controller.tick(frame + ChatMarkdownSettings.getCollapseAnimMillis() + 1L
+                + ChatMarkdownSettings.getPopAnimMillis());
+        rt.flush();
+    }
+
+    /**
+     * S1 触发路径①:渐入窗口内(CLOSING 后渐入尚未耗尽)机器处于打开方向
+     * (COLLAPSING/POPPING/CONTAINER,均满足旧判定 currentPhase != HUD → 误冻结)时,
+     * 不得冻结——composeAll 返回实时全量而非陈旧稳态快照,渐入通道残留立即复位。
+     */
+    @Test
+    public void openDuringFadeInWindowIsNotFrozenAndNoFadeInResidue() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            // 打开 → 容器稳定(frameMillis=T0+401)→ 关闭衔接:窗口起点 = T0+401(540ms)
+            openToContainer(controller, rt, T0);
+            controller.closeToHudImmediately();
+            controller.tick(T0 + 410L); // HUD 衔接重建帧:渐入起点 = T0+410
+            rt.flush();
+            Assert.assertEquals("窗口起点 = closeToHudImmediately 时刻", T0 + 401L,
+                    controller.__transitionStartMillisForTest());
+
+            // 渐入中段(T0+610,进度 0.5)按 T 重开:COLLAPSING(打开方向),
+            // 旧判定「窗口内 && phase != HUD」误冻结;新判定只认 CLOSING 方向
+            controller.tick(T0 + 610L);
+            rt.flush();
+            controller.setChatOpen(true);
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Cara> live"), 2, T0 + 620L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 620L);
+            rt.flush();
+            Assert.assertEquals("渐入窗内重开不冻结:消息实时应用(2 组)", 2, groups.get().size());
+            Assert.assertEquals("打开方向窗口保留(未兑现不提前作废)", T0 + 401L,
+                    controller.__transitionStartMillisForTest());
+
+            // 窗口整点耗尽帧(T0+941,机器恰好 POPPING 锚点帧):窗口复位、无渐入残留。
+            // 渐入残留通道已复位恒 1 → opacity == 纯 animOpacity(POPPING p=0 → 0)
+            controller.tick(T0 + 941L);
+            rt.flush();
+            Assert.assertEquals("打开方向窗口耗尽帧不冻结", 2, groups.get().size());
+            Assert.assertEquals("打开方向无渐入残留:opacity=纯 animOpacity(POPPING p=0)", 0.0F,
+                    root.getOpacity(), 0.001F);
+            Assert.assertEquals("窗口耗尽复位", -1L, controller.__transitionStartMillisForTest());
+
+            // POPPING 完成 → CONTAINER 稳定:opacity=1(渐入残留通道恒 1 快速路径)
+            controller.tick(T0 + 941L + ChatMarkdownSettings.getPopAnimMillis());
+            rt.flush();
+            Assert.assertEquals("CONTAINER 稳定 opacity=1(无残留)", 1.0F, root.getOpacity(), 0.001F);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * S1 触发路径②:CLOSING 中按 T 重开(pendingOpen 挂起)——CLOSING 挂起期窗口保留
+     * (不回归 f4b1af36「过渡期消息打穿」),兑现进 COLLAPSING 帧即作废,打开方向实时。
+     */
+    @Test
+    public void pendingOpenKeepsFreezeDuringClosingThenUnfreezesAtCollapsing() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            // 打开 → 容器稳定 → 自然关闭:CLOSING 起点 = T0+401,输入屏 requestClose 开窗
+            openToContainer(controller, rt, T0);
+            long closeAt = T0 + 401L;
+            controller.setChatOpen(false);
+            controller.beginCloseTransition(closeAt); // 真机路径:屏幕 requestClose 补开窗口
+            controller.tick(closeAt);
+            rt.flush();
+            Assert.assertEquals("CLOSING 起点开窗", closeAt, controller.__transitionStartMillisForTest());
+
+            // CLOSING 中段按 T 重开:pendingOpen 挂起(CLOSING 不可打断);挂起期窗口保留,
+            // 消息仍冻结(不回归 f4b1af36「过渡期消息打穿」)
+            controller.setChatOpen(true);
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Cara> mid"), 2, T0 + 430L));
+            controller.notifyDataChanged();
+            long mid = closeAt + ChatMarkdownSettings.getClosingAnimMillis() / 2;
+            controller.tick(mid);
+            rt.flush();
+            Assert.assertEquals("挂起期窗口保留", closeAt, controller.__transitionStartMillisForTest());
+            Assert.assertEquals("挂起期消息冻结(仍旧 1 组)", 1, groups.get().size());
+
+            // CLOSING 完成帧:兑现进 COLLAPSING(打开方向)——窗口作废,解冻一次性应用
+            long redemption = closeAt + ChatMarkdownSettings.getClosingAnimMillis();
+            controller.tick(redemption);
+            rt.flush();
+            Assert.assertEquals("兑现帧窗口作废", -1L, controller.__transitionStartMillisForTest());
+            Assert.assertEquals("兑现后积压消息一次性应用(2 组)", 2, groups.get().size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * S1 触发路径③(打开方向重入不冻结):容器稳定时旧关闭窗口被错误顶替开启,
+     * CONTAINER 阶段不得冻结——实时全量(旧判定 currentPhase != HUD 误冻结)。
+     */
+    @Test
+    public void staleCloseWindowDoesNotFreezeContainerPhase() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            // 打开 → 容器稳定(T0+401)→ 旧关闭窗口被顶替开启:窗口起点 = T0+401
+            openToContainer(controller, rt, T0);
+            controller.closeToHudImmediately();
+            controller.tick(T0 + 410L); // HUD 衔接重建帧
+            rt.flush();
+            Assert.assertEquals("窗口起点 = closeToHudImmediately 时刻", T0 + 401L,
+                    controller.__transitionStartMillisForTest());
+
+            // 窗口内重新打开:机器进入 COLLAPSING(打开方向),CONTAINER 稳定后旧窗口未耗尽
+            // (T0+401 起 540ms,耗尽帧 T0+941)——旧判定 phase != HUD 误冻结(陈旧稳态快照);
+            // 新判定只认 CLOSING 方向
+            controller.setChatOpen(true);
+            controller.tick(T0 + 610L); // COLLAPSING 完成 → POPPING(锚点 T0+610)
+            controller.tick(T0 + 850L); // POPPING 完成 → CONTAINER
+            rt.flush();
+            Assert.assertEquals("CONTAINER 阶段窗口尚未耗尽(旧判定的误冻结前提)", T0 + 401L,
+                    controller.__transitionStartMillisForTest());
+
+            // CONTAINER 期消息到达:实时应用(误冻结下仍返回旧稳态快照 1 组)
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Cara> live"), 2, T0 + 880L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 880L);
+            rt.flush();
+            Assert.assertEquals("CONTAINER 期消息实时应用(2 组)", 2, groups.get().size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * S1 边界:COLLAPSING 反悔(方向-1,不冻结):渐入窗内重开进 COLLAPSING 后立即
+     * 反悔(CLOSING 方向),窗口期关闭方向仍冻结;反向播放完回 HUD,窗口保留。
+     */
+    @Test
+    public void collapsingReverseDoesNotFreeze() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            // 打开 → 容器稳定(T0+401)→ 关闭衔接开窗(起点 T0+401)
+            openToContainer(controller, rt, T0);
+            controller.closeToHudImmediately();
+            controller.tick(T0 + 410L);
+            rt.flush();
+            Assert.assertEquals("窗口起点 = closeToHudImmediately 时刻", T0 + 401L,
+                    controller.__transitionStartMillisForTest());
+
+            // 窗口内重开 → COLLAPSING(锚点 T0+610):打开方向实时
+            controller.setChatOpen(true);
+            controller.tick(T0 + 610L);
+            rt.flush();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Cara> live"), 2, T0 + 630L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 630L);
+            rt.flush();
+            Assert.assertEquals("COLLAPSING 阶段消息实时应用(2 组)", 2, groups.get().size());
+
+            // COLLAPSING 反悔(方向-1,仍 COLLAPSING 反向播放):不冻结,消息仍实时
+            controller.setChatOpen(false);
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Dave> live2"), 3, T0 + 650L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 650L);
+            rt.flush();
+            Assert.assertEquals("反悔(方向-1)不冻结:消息仍实时应用(3 组)", 3, groups.get().size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * S1 边界:窗口整点耗尽帧(now - start == closing + fadeIn)不冻结、窗口复位;
+     * 渐入整点完成帧(progress >= 1)opacity 快速路径恒 1、无残留。
+     */
+    @Test
+    public void windowExhaustionBoundaryFrameNotFrozen() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            // 打开 → 容器稳定(T0+401)→ 关闭衔接:窗口起点 = T0+401(540ms)
+            openToContainer(controller, rt, T0);
+            controller.closeToHudImmediately();
+            controller.tick(T0 + 410L); // HUD 衔接重建帧:渐入起点 = T0+410
+            rt.flush();
+            Assert.assertEquals("窗口起点 = closeToHudImmediately 时刻", T0 + 401L,
+                    controller.__transitionStartMillisForTest());
+
+            // 窗口整点耗尽帧(T0+941):窗口复位;渐入进度 (941-410)/400 > 1 → 快速路径恒 1
+            controller.tick(T0 + 941L);
+            rt.flush();
+            Assert.assertEquals("窗口整点耗尽复位", -1L, controller.__transitionStartMillisForTest());
+            Assert.assertEquals("渐入整点完成帧 opacity=1(无残留)", 1.0F, root.getOpacity(), 0.001F);
+
+            // 整点耗尽帧解冻:冻结期到达的消息一次性应用
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Cara> live"), 2, T0 + 900L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 941L + 1000L);
+            rt.flush();
+            Assert.assertEquals("窗口耗尽后消息实时应用(2 组)", 2, groups.get().size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * S1 边界:CLOSING 自然完成且 pendingOpen 兑现帧 == 窗口耗尽帧(tick C 幂等):
+     * 兑现进 COLLAPSING(打开方向)不冻结,窗口作废。
+     */
+    @Test
+    public void redemptionFrameAtWindowExhaustionIsIdempotent() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            // 打开 → 容器稳定(T0+401)→ 自然关闭(CLOSING 起点 T0+401)
+            openToContainer(controller, rt, T0);
+            long closeAt = T0 + 401L;
+            controller.setChatOpen(false);
+            controller.tick(closeAt);
+            rt.flush();
+
+            // CLOSING 中段按 T 重开:pendingOpen 挂起;输入屏 requestClose 补开窗口
+            controller.setChatOpen(true);
+            controller.beginCloseTransition(closeAt);
+            long mid = closeAt + ChatMarkdownSettings.getClosingAnimMillis() / 2;
+            controller.tick(mid);
+            rt.flush();
+            Assert.assertEquals("挂起期窗口保留(不回归 f4b1af36)", closeAt,
+                    controller.__transitionStartMillisForTest());
+
+            // 兑现帧(T0+541)= 窗口耗尽帧(T0+401 + 540):tick C 幂等作废,
+            // COLLAPSING 兑现进打开方向 → 不冻结
+            long redemption = closeAt + ChatMarkdownSettings.getClosingAnimMillis();
+            controller.tick(redemption);
+            rt.flush();
+            Assert.assertEquals("兑现帧==窗口耗尽帧:窗口作废", -1L,
+                    controller.__transitionStartMillisForTest());
+
+            // 兑现后打开方向消息实时应用
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Cara> live"), 2, T0 + 600L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 600L);
+            rt.flush();
+            Assert.assertEquals("兑现帧打开方向消息实时应用(2 组)", 2, groups.get().size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    // ==================== S2:pendingOpen 兑现 rebuildTree 权威信号 ====================
+
+    /**
+     * S2:pendingOpen 兑现(forceHud 路径)不预登记 enterOnMount、不设渐入——
+     * 打开方向(COLLAPSING)首合成 enterOnMount=true 播 enter,渐入残留通道复位。
+     */
+    @Test
+    public void pendingOpenRedemptionPlaysEnterAndSkipsFadeIn() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+            Assert.assertEquals("首合成 enterOnMount=true", true, groups.get().get(0).isEnterOnMount());
+
+            // 打开 → 容器稳定(T0+401);容器期新消息到达(从未 HUD 合成过)
+            openToContainer(controller, rt, T0);
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Cara> during"), 2, T0 + 420L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 450L);
+            rt.flush();
+            Assert.assertEquals("容器期全量 2 组", 2, groups.get().size());
+
+            // 自然关闭(CLOSING 起点 T0+450)→ CLOSING 中按 T 重开:pendingOpen 挂起
+            controller.setChatOpen(false);
+            controller.setChatOpen(true);
+            long redemption = T0 + 450L + ChatMarkdownSettings.getClosingAnimMillis();
+            controller.tick(redemption); // CLOSING 完成 → 兑现进 COLLAPSING
+            rt.flush();
+            Assert.assertEquals("兑现进 COLLAPSING", DisplayStateMachine.Phase.COLLAPSING,
+                    controller.__phaseForTest());
+
+            // S2 修复:兑现帧不预登记(hudEverFirstSeqs 未整批登记)→ 容器期新组
+            // 首合成 enterOnMount=true 播 enter;不设渐入 → opacity 无残留
+            Assert.assertEquals("兑现帧:容器期新组首合成 enter=true(播 enter)", true,
+                    groups.get().get(1).isEnterOnMount());
+            Assert.assertEquals("兑现帧不设渐入:opacity=1(无残留)", 1.0F, root.getOpacity(), 0.001F);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * S2 锁定关闭衔接不回归:普通关闭(无 pendingOpen)整批预登记 enterOnMount=false
+     * + 渐入照旧。
+     */
+    @Test
+    public void normalCloseTransitionStillPreRegistersAndFadesIn() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            openToContainer(controller, rt, T0);
+            controller.closeToHudImmediately();
+            controller.tick(T0 + 410L); // HUD 衔接重建帧:渐入起点 = T0+410
+            rt.flush();
+            Assert.assertEquals("普通关闭衔接:预登记 enterOnMount=false", false,
+                    groups.get().get(0).isEnterOnMount());
+            Assert.assertEquals("普通关闭衔接:渐入起点 opacity=0", 0.0F, root.getOpacity(), 0.001F);
+
+            // 渐入中段仍在渐入(进度 (610-410)/400 = 0.5)
+            controller.tick(T0 + 610L);
+            rt.flush();
+            Assert.assertEquals("渐入中段 opacity=sqrt(0.5)", 0.70711F, root.getOpacity(), 0.001F);
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
     /**
      * 自锁回归(2026-08-28 真机定位):宿主对空 HUD 窗口(measure 0)跳过 frame,若无 tick
      * 内置 flush,消息到达后组永远无法物化进树(「关框看不到消息」)。本用例不手动 flush——
