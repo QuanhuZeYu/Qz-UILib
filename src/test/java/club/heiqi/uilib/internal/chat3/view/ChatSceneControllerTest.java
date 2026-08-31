@@ -1217,6 +1217,196 @@ public class ChatSceneControllerTest {
         }
     }
 
+    // ==================== D6:enterOnMount 组 key 漂移(容量裁剪删组首行 → 组首条 seq 变化) ====================
+
+    /**
+     * D6 根因复现:历史容量裁剪删除显示中合并组的最旧行 → 重新分组后组首条 seq 变化 →
+     * groupKey 漂移 → 组重建;旧门控(按组首条 seq 是否登记)把新首条判为「从未合成」
+     * → enterOnMount=true,在屏老组重播 180ms 入场动画。
+     *
+     * <p>新判定 = 「组内是否存在任一已登记 seq」:裁剪后组内剩余行 seq 均曾登记 →
+     * enterOnMount=false,组 key 漂移重建但不播动画。</p>
+     */
+    @Test
+    public void trimmedGroupHeadDoesNotReplayEnter() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            seedHistory(controller, 100); // 100 条同发送者(Bob),合并为 1 组(seq 1..100)
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+
+            Assert.assertEquals("首合成为 1 组", 1, groups.get().size());
+            Assert.assertEquals("首合成 enterOnMount=true(播放入场)", true,
+                    groups.get().get(0).isEnterOnMount());
+            Long keyBefore = ChatMessageList.groupKey(groups.get().get(0));
+
+            // 第 101 条(同发送者)→ 历史容量裁剪(容量 100)删最旧首行(seq 1)→ 组首条漂移
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Bob> message 100"), 101, T0 - 500L));
+            controller.notifyDataChanged();
+            controller.tick(T0);
+            rt.flush();
+
+            List<ChatCardComposer.ComposedGroup> after = groups.get();
+            Assert.assertEquals("裁剪后仍 1 组(剩余行同发送者同窗)", 1, after.size());
+            Assert.assertEquals("裁剪删首行后 groupKey 漂移(组首条 seq 变化)", false,
+                    keyBefore.equals(ChatMessageList.groupKey(after.get(0))));
+            Assert.assertEquals("组内剩余行 seq 均曾登记 → 重建但不重播入场", false,
+                    after.get(0).isEnterOnMount());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * D6 组合场景(增长 + 裁剪):首合登记 {a..} → 增长 d(同发送者续发,每次 HUD 合成
+     * 无条件登记组内全部 seq)→ 裁剪删光旧行只剩 {d}——d 已登记 → 不重播。
+     *
+     * <p>若门控仅在 enter=true 时登记,增长合成(enter=false)不会登记 d,裁剪后剩
+     * {d} 未登记 → 误播;无条件登记全部是此场景的关键。</p>
+     */
+    @Test
+    public void trimAfterGrowthStillSuppressesEnter() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            seedHistory(controller, 100); // seq 1..100
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+            Assert.assertEquals("首合成 enterOnMount=true", true,
+                    groups.get().get(0).isEnterOnMount());
+
+            // 增长:第 101 条(同发送者)触发容量裁剪删 seq 1 → 组 {2..101},老行已登记 → 不重播
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Bob> growth"), 101, T0 - 500L));
+            controller.notifyDataChanged();
+            controller.tick(T0);
+            rt.flush();
+            Assert.assertEquals("增长 + 裁剪后 enterOnMount=false", false,
+                    groups.get().get(0).isEnterOnMount());
+
+            // 裁剪删光旧行(seq 1..100)只剩增长消息(seq 101):d 在增长合成时已无条件登记 → 不重播
+            for (int id = 1; id <= 100; id++) {
+                controller.history().deleteById(id);
+            }
+            controller.notifyDataChanged();
+            controller.tick(T0 + 1000L);
+            rt.flush();
+            Assert.assertEquals("旧行删光后仍 1 组(单行)", 1, groups.get().size());
+            Assert.assertEquals("组内仅剩曾登记的增长消息 → 不重播入场", false,
+                    groups.get().get(0).isEnterOnMount());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * D6 场景:裁剪删光某组(组 seq 残留于门控集合)→ 新发送者新组首次合成仍播放入场
+     * (集合只增不减,残留 seq 不影响新组判定);再次裁光 → 再新组同样播放。
+     */
+    @Test
+    public void trimmedAwayGroupGoneThenFreshGroupReplays() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            seedHistory(controller, 100); // Bob 组(seq 1..100)
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+            Assert.assertEquals("Bob 首合成 enterOnMount=true", true,
+                    groups.get().get(0).isEnterOnMount());
+
+            // 灌 100 条 Cara → 逐条 append 即时裁剪,Bob 旧行被裁光(渲染侧一次合成)
+            for (int i = 0; i < 100; i++) {
+                controller.history().append(new ChatLineRecord(
+                        new ChatComponentText("<Cara> flood " + i), 1000 + i, T0 - 500L + i));
+            }
+            controller.notifyDataChanged();
+            controller.tick(T0 + 1000L);
+            rt.flush();
+            List<ChatCardComposer.ComposedGroup> afterTrim = groups.get();
+            Assert.assertEquals("Bob 组被裁光,只剩 Cara 组", 1, afterTrim.size());
+            Assert.assertEquals("Cara 组首合成(全新 seq,残留不干扰)= true", true,
+                    afterTrim.get(0).isEnterOnMount());
+
+            // 再次灌 100 条 Dana 裁光 Cara 组 → Dana 组首合成仍播放
+            for (int i = 0; i < 100; i++) {
+                controller.history().append(new ChatLineRecord(
+                        new ChatComponentText("<Dana> flood " + i), 2000 + i, T0 + 3000L + i));
+            }
+            controller.notifyDataChanged();
+            controller.tick(T0 + 4000L);
+            rt.flush();
+            List<ChatCardComposer.ComposedGroup> afterTrim2 = groups.get();
+            Assert.assertEquals("Cara 组被裁光,只剩 Dana 组", 1, afterTrim2.size());
+            Assert.assertEquals("Dana 组首合成 = true", true,
+                    afterTrim2.get(0).isEnterOnMount());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * D6 回归加固(关闭衔接 + 增长):容器期到达的组合多条消息,关闭衔接 HUD 重建时
+     * 整批组内全部 seq 预登记 → 稳态不播入场;HUD 稳定后同组增长(续发)仍不重播。
+     */
+    @Test
+    public void containerSeenGroupStillSuppressedOnCloseTransition() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> old"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> groups = controller.groupsSignal();
+            Assert.assertEquals("首合成 = 1 组", 1, groups.get().size());
+
+            // 打开聊天框(容器形态),期间 Cara 连发 2 条(合并 1 组)
+            controller.setChatOpen(true);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1
+                    + ChatMarkdownSettings.getPopAnimMillis());
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Cara> one"), 2, T0 + 1000L));
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Cara> two"), 3, T0 + 1500L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 2000L);
+            rt.flush();
+            Assert.assertEquals("容器形态 = 2 组", 2, groups.get().size());
+
+            // 关闭衔接 → HUD 重建:容器期到达组(组内 2 条 seq 全部预登记)稳态出现,不播入场
+            controller.closeToHudImmediately();
+            controller.tick(T0 + 3000L);
+            rt.flush();
+            Assert.assertEquals("关闭衔接 = 2 组", 2, groups.get().size());
+            Assert.assertEquals("关闭衔接:容器期到达组 enterOnMount=false(稳态,防闪烁)", false,
+                    groups.get().get(1).isEnterOnMount());
+
+            // HUD 稳定后同组增长(续发第 3 条):组内老行 seq 已登记 → 重建仍不重播
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Cara> three"), 4, T0 + 3500L));
+            controller.notifyDataChanged();
+            controller.tick(T0 + 4000L);
+            rt.flush();
+            Assert.assertEquals("增长重建仍 false", false,
+                    groups.get().get(1).isEnterOnMount());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
     // ==================== S1:冻结窗口只认关闭方向(2026-09 打开方向被误冻结) ====================
 
     /** 打开聊天 → 容器稳定,机器开放置在固定 frameMillis。 */

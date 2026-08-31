@@ -173,14 +173,16 @@ public final class ChatSceneController {
     private final HudVisibleClock hudVisibleClock = new HudVisibleClock();
     /** 消息生命周期注册表(sequenceId → 生命周期;预算/done 脏标记,与历史容量裁剪联动)。 */
     private final MessageLifecycleRegistry lifecycles = new MessageLifecycleRegistry();
-    /** 曾经以 HUD 形态合成过的组首条序列号(enter 入场动画门控:首合成为 true,
-     *  重挂载/组增长重建为 false,动画不重播)。 */
+    /** 曾经以 HUD 形态合成过的消息序列号(enter 入场动画门控:组内全部 seq 均未登记
+     *  → 首次合成播放;组内任一 seq 已登记 → 不重播)。每次 HUD 合成后无条件登记组内
+     *  全部 seq——集合只增不减、add 幂等,任意次 compose 求值收敛同一判定;仅随历史
+     *  容量裁剪保留在史 seq(seq 进程内单调递增不复用,离史不复活,不影响判定)。 */
     private final Set<Long> hudEverFirstSeqs = new HashSet<Long>();
     /** HUD 渐入衔接动画起点(wall millis;关闭衔接重建时设置,根级 opacity 0→1
      *  easeOutCubic 一次性播放,完成复位 -1 快速路径;非衔接恒 -1 不参与)。 */
     private long hudFadeInStartMillis = -1L;
     /** 关闭衔接抑制(2026-08-29 真机「关闭聊天框时闪烁」根因之一):上次树非 HUD → 本次
-     *  HUD 重建时整批组稳态直接出现。实现 = rebuildTree 挂载前把整批组 firstSeq 预登记进
+     *  HUD 重建时整批组稳态直接出现。实现 = rebuildTree 挂载前把整批组内全部 seq 预登记进
      *  {@link #hudEverFirstSeqs}(集合幂等,任意次 compose 求值结果一致——一次性标志在
      *  Computed 多次求值时会漏,后续求值把组算回 enter=true)。 */
     // (实现见 rebuildTree,无独立字段)
@@ -674,10 +676,11 @@ public final class ChatSceneController {
             List<ChatCardComposer.ComposedGroup> existing = groupsSignal().get();
             if (existing != null) {
                 for (ChatCardComposer.ComposedGroup group0 : existing) {
-                    List<ChatCardComposer.MessageLines> msgs = group0.getMessages();
-                    if (!msgs.isEmpty()) {
+                    // 组内全部 seq 预登记(D6:非仅首条)——衔接后若组首行被历史容量
+                    // 裁剪删除,剩余行 seq 仍已登记 → 判定不重播;空组自然跳过
+                    for (ChatCardComposer.MessageLines message : group0.getMessages()) {
                         hudEverFirstSeqs.add(Long.valueOf(
-                                msgs.get(0).getRecord().getSequenceId()));
+                                message.getRecord().getSequenceId()));
                     }
                 }
             }
@@ -781,6 +784,17 @@ public final class ChatSceneController {
     private List<ChatCardComposer.ComposedGroup> composeCore(boolean applyTtl) {
         List<ChatLineRecord> snapshot = history.snapshot();
         lifecycles.purge(snapshot); // 历史容量裁剪联动,防注册表泄漏
+        // D6 收敛(数据路审计 P3[3] 泄漏):hudEverFirstSeqs 只保留当前历史存活 seq——
+        // 序列号进程内单调递增、永不复用(ChatHistory.nextSequence,clear 不重置),
+        // 离史 seq 不再参与任何合成 → retainAll 幂等、不影响判定正确性;
+        // 同时把集合大小收敛为「在史行数」,消解随运行时长线性增长的占用。
+        HashSet<Long> alive = new HashSet<Long>();
+        for (ChatLineRecord record : snapshot) {
+            if (record != null) {
+                alive.add(Long.valueOf(record.getSequenceId()));
+            }
+        }
+        hudEverFirstSeqs.retainAll(alive);
         List<MessageGroupModel> groups = grouper.group(snapshot, selfNameProvider.selfName());
         int maxLine = Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)
                 - 2 * ChatMarkdownSettings.getBubblePaddingX());
@@ -821,16 +835,32 @@ public final class ChatSceneController {
                 // enterOnMount 仍按集合计算
                 composed.add(composer().compose(group, 0L, maxLine, true));
             }
-            // enterOnMount 门控:仅组首次以 HUD 形态合成(true),此后(重挂载/组增长重建)false;
-            // 关闭衔接抑制由 rebuildTree 预登记 firstSeq 承担(集合幂等,任意次求值一致);
+            // enterOnMount 门控(D6 组 key 漂移修复):判定 = 「组内是否存在任一已登记 seq」——
+            // 组内全部 seq 均未登记才播放入场;每次 HUD 合成后无条件登记组内全部 seq。
+            // 三约束验证:
+            //   ① 裁剪不重播:历史容量裁剪删组首行后 groupKey(firstSeq*10000+lineCount)漂移
+            //      → 组重建,但组内剩余行 seq 均曾登记 → seenBefore=true → enter=false;
+            //   ② 增长不重播:同发送者续发仅 lineCount 变,组内老行 seq 均曾登记 → false;
+            //   ③ 幂等:集合只增不减 + HashSet.add 幂等,任意次 compose 求值收敛同一判定。
+            // 必须无条件登记全部(而非仅 enter=true 时登记):否则场景「{a,b,c} 首合登记 →
+            // 增长 d(不登记)→ 裁剪删 a,b,c → 剩 {d}」会误播入场动画。
+            // 关闭衔接抑制由 rebuildTree 预登记组内全部 seq 承担(集合幂等,任意次求值一致);
             // 窗体过渡期(渐入中)消息本就冻结不合成(见 composeAll 开头 transitionFrozen),
             // 渐入完成解冻后新组按稳态 enter 正常入场——过渡期不再需要额外抑制(2026-08-29)
             ChatCardComposer.ComposedGroup composedGroup =
                     composed.get(composed.size() - 1);
-            long firstSeq = group.getLines().get(0).getRecord().getSequenceId();
-            composedGroup.setEnterOnMount(
-                    !hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
-            hudEverFirstSeqs.add(Long.valueOf(firstSeq));
+            boolean seenBefore = false;
+            for (ChatCardComposer.MessageLines message : composedGroup.getMessages()) {
+                if (hudEverFirstSeqs.contains(
+                        Long.valueOf(message.getRecord().getSequenceId()))) {
+                    seenBefore = true;
+                    break;
+                }
+            }
+            composedGroup.setEnterOnMount(!seenBefore);
+            for (ChatCardComposer.MessageLines message : composedGroup.getMessages()) {
+                hudEverFirstSeqs.add(Long.valueOf(message.getRecord().getSequenceId()));
+            }
         }
         return composed;
     }
