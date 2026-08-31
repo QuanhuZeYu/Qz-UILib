@@ -52,8 +52,8 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     private final SceneNode inputRoot;
     /** SceneTextInput 句柄(autocomplete commit 的 caret 对齐窄操作)。 */
     private final SceneTextInput.Handle inputHandle;
-    /** Tab 补全状态机(idle → awaiting → cycling)。 */
-    private final ChatCompletionEngine completion;
+    /** Tab 补全状态机(idle → awaiting → cycling);I5 测试注入口可整体替换为假引擎。 */
+    private ChatCompletionEngine completion;
     /** 聊天输入条描边覆盖绑定(设计稿 §2.1:非 focus 无描边,focus 1px 淡蓝 25%)。 */
     private final Binding borderBinding;
     /** 输入底色覆盖绑定(K3 缺陷:F6① SceneTextInput 内部 SceneStateColors.inputBackground
@@ -200,9 +200,58 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         completion.onTextEdited();
     }
 
-    /** Tab 补全(委托状态机;direction +1 正向 Tab,-1 Shift+Tab 反向)。 */
+    /**
+     * Tab 补全(委托状态机;direction +1 正向 Tab,-1 Shift+Tab 反向)。
+     *
+     * <p>I5 caret 非词尾屏蔽(方案 B):补全按 {@link ChatCompletionState#wordStart(String)}
+     * 恒取行尾词,caret 在词中/词首/分隔符上按 Tab 会拿行尾词候选整段替换并改写用户编辑位置。
+     * 此处 caret 非「当前词词尾」直接 return,不进入状态机——文本/caret/补全态全部不动,状态机零改动。</p>
+     *
+     * <p>体感说明:原版 1.7.10 实际按行尾词补全;B 是「宁可不补、不改用户编辑位」的安全取舍,
+     * 符合体感对齐而非实现对齐——原版体感核心是不打断编辑位置。commit 仍 moveCaretToEndOf
+     * 归词尾,补全后 caret 对齐语义不变。</p>
+     */
     public void autocomplete(int direction) {
+        if (!caretAtWordEnd(inputText.get(), currentCaretCp())) {
+            return;
+        }
         completion.onTab(direction);
+    }
+
+    /**
+     * caret 是否恰在「当前词」(即 {@link ChatCompletionState#wordStart(String)} 所取的行尾词)的词尾。
+     * 词边界与 wordStart 同源(空格为唯一分隔符):caret == 行尾词结束位(含行尾空格域的空词尾、
+     * 越上界 clamp)才放行;词中/词首/分隔符上/空文本一律屏蔽。caretCp 越界按 wordStart 同款 clamp 语义。
+     */
+    static boolean caretAtWordEnd(String text, int caretCp) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        int ws = ChatCompletionState.wordStart(text);
+        int wordEndCp = ws + text.substring(ws).codePointCount(0, text.length() - ws);
+        return caretCp >= wordEndCp;
+    }
+
+    /**
+     * caret 码点索引读取路径(I5 关键陷阱):primitive 的 caretIndex signal 是帧末投影
+     * (Signal.set 入 pending,flush 才 applyAndNotify),flush 外 get() 读旧值;SceneTextInputPrimitive
+     * 内 caretAuthority(int[]) 是即时真值但包外不可达,本任务不改其公共接口。
+     * 此处改用帧末显示投影:primitive 结构固定「子 0 = prefixText = caret 前显示子串」,
+     * 其文本由 rt.bindComputed 在 flush 时与 caret 同帧更新,码点数即 caret 码点索引。
+     * Tab 按键发生在上一帧 flush 之后、下一次按键前,读上一帧末投影无旧值问题;投影不可用时保守返回 0
+     * (caret 在词首 → 非词尾 → 屏蔽,宁可不补,与方案 B 的安全方向一致)。
+     */
+    private int currentCaretCp() {
+        if (inputRoot == null || inputRoot.__getChildren().isEmpty()) {
+            return 0;
+        }
+        String prefix = inputRoot.__getChildren().get(0).getText();
+        return prefix == null ? 0 : prefix.codePointCount(0, prefix.length());
+    }
+
+    /** I5 测试注入口:替换补全状态机(headless 用记录型假宿主观察 Tab 是否驱动状态机;生产恒用真引擎)。 */
+    void __setCompletionEngineForTest(ChatCompletionEngine engineForTest) {
+        completion = engineForTest;
     }
 
     /** 剔除块字符(直接写入口与 primitive 输入路径同源:stripBlockedChars;命中才分配)。 */

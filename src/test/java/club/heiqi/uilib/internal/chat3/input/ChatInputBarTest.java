@@ -1,10 +1,16 @@
 package club.heiqi.uilib.internal.chat3.input;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
 import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
@@ -263,6 +269,147 @@ public class ChatInputBarTest {
         bar.commit("a\u00A7b");
         rt.flush();
         Assert.assertEquals("补全 commit 剔 §", "ab", bar.inputText().get());
+    }
+
+    // ==================== I5 caret 非词尾 Tab 屏蔽(不改用户编辑位) ====================
+
+    /**
+     * 记录型假补全宿主:与 {@link ChatCompletionEngineTest} 同构,bar 注入后观察状态机
+     * 是否被 Tab 驱动(请求数/commit/本地候选查询),不触 Minecraft。
+     */
+    private static final class ProbeHost implements ChatCompletionEngine.Host {
+        final List<String> sentRequests = new ArrayList<String>();
+        final List<String> commits = new ArrayList<String>();
+        int currentTextCalls;
+        int localCommandCalls;
+        int localPlayerCalls;
+        String text = "";
+
+        @Override
+        public String currentText() {
+            currentTextCalls++;
+            return text;
+        }
+
+        @Override
+        public void commit(String nextText) {
+            commits.add(nextText);
+        }
+
+        @Override
+        public boolean networkAvailable() {
+            return true;
+        }
+
+        @Override
+        public void sendRequest(String text) {
+            sentRequests.add(text);
+        }
+
+        @Override
+        public List<String> localPlayerNames() {
+            localPlayerCalls++;
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<String> localCommandCompletions(String text) {
+            localCommandCalls++;
+            return Collections.emptyList();
+        }
+
+        @Override
+        public void printCandidates(List<String> candidates) {
+            // 测试桩:忽略
+        }
+    }
+
+    /**
+     * caret 语义探针:primitive 子 0 = prefixText = caret 前显示文本(码点级投影,
+     * flush 时与 caret 同帧更新),码点数即 caret 码点索引。仅测试用。
+     */
+    private static int caretCp(ChatInputBar bar) {
+        String prefix = bar.root().__getChildren().get(0).getText();
+        return prefix == null ? 0 : prefix.codePointCount(0, prefix.length());
+    }
+
+    /**
+     * I5 主案例:输入 "abc def",←×5 使 caret 落在词 "abc" 中(caret=2),Tab 必须完全无反应:
+     * 文本不变、caret 不动、状态机未被驱动(零请求/零 commit/零本地候选查询)。
+     */
+    @Test
+    public void tabAtNonWordEndCaretIsNoOp() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(harness.getRuntime(), "");
+        SceneNode root = new SceneNode();
+        root.appendChild(bar.root());
+        harness.mountRoot(root, 400, 100);
+        bar.focusAndAlignCaret();
+        harness.flush();
+        harness.typeText("abc def");
+
+        for (int i = 0; i < 5; i++) {
+            harness.pressKey(SceneKey.ARROW_LEFT);
+        }
+        Assert.assertEquals("caret 位于词 abc 中(caret=2)", 2, caretCp(bar));
+
+        ProbeHost probe = new ProbeHost();
+        bar.__setCompletionEngineForTest(new ChatCompletionEngine(probe));
+        bar.autocomplete(1);
+
+        Assert.assertEquals("caret 非词尾 Tab:文本不变", "abc def", bar.inputText().get());
+        Assert.assertEquals("caret 非词尾 Tab:caret 不动", 2, caretCp(bar));
+        Assert.assertEquals("未进入状态机:状态机从未读文本", 0, probe.currentTextCalls);
+        Assert.assertTrue("未进入状态机:零请求", probe.sentRequests.isEmpty());
+        Assert.assertTrue("未进入状态机:零 commit", probe.commits.isEmpty());
+        Assert.assertEquals("未进入状态机:零本地候选查询", 0, probe.localCommandCalls);
+        Assert.assertEquals(0, probe.localPlayerCalls);
+        harness.dispose();
+    }
+
+    /**
+     * 防回归:caret 在末尾词 "def" 的词尾(caret=7,即行尾)Tab 仍照常进入状态机并发出请求
+     * (屏蔽只减请求,不改变既有补全路径)。
+     */
+    @Test
+    public void tabAtWordEndStillCompletes() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(harness.getRuntime(), "");
+        SceneNode root = new SceneNode();
+        root.appendChild(bar.root());
+        harness.mountRoot(root, 400, 100);
+        bar.focusAndAlignCaret();
+        harness.flush();
+        harness.typeText("abc def");
+        Assert.assertEquals("caret 位于末尾词 def 词尾(caret=7)", 7, caretCp(bar));
+
+        ProbeHost probe = new ProbeHost();
+        probe.text = "abc def";
+        bar.__setCompletionEngineForTest(new ChatCompletionEngine(probe));
+        bar.autocomplete(1);
+
+        Assert.assertEquals("词尾 Tab:请求照常发出", Arrays.asList("abc def"), probe.sentRequests);
+        Assert.assertEquals("等待态不修改文本", "abc def", bar.inputText().get());
+        harness.dispose();
+    }
+
+    /**
+     * 词尾判定边界(与 ChatCompletionState.wordStart 的空格唯一分隔语义一致):
+     * caret == 行尾词结束位(含行尾空格域的空词尾、越上界 clamp)才放行;词首/词中/分隔符上/纯空格/空文本 = 屏蔽。
+     */
+    @Test
+    public void caretAtWordEndBoundaries() {
+        Assert.assertTrue("caret 在末尾=词尾", ChatInputBar.caretAtWordEnd("abc def", 7));
+        Assert.assertTrue("caret 越上界 clamp 到行尾(与 wordStart 同语义)", ChatInputBar.caretAtWordEnd("abc def", 99));
+        Assert.assertFalse("caret 在词中", ChatInputBar.caretAtWordEnd("abc def", 2));
+        Assert.assertFalse("caret 在词首", ChatInputBar.caretAtWordEnd("abc def", 0));
+        Assert.assertFalse("caret 在词尾(caret=3)但非末尾词(屏蔽)", ChatInputBar.caretAtWordEnd("abc def", 3));
+        Assert.assertFalse("caret 在分隔符(空格)上", ChatInputBar.caretAtWordEnd("abc def", 4));
+        Assert.assertFalse("caret 在非末尾词词尾(caret=6)", ChatInputBar.caretAtWordEnd("abc def", 6));
+        Assert.assertTrue("caret 在行尾空格域=末尾空词词尾(与 wordStart 同语义)", ChatInputBar.caretAtWordEnd("abc def ", 8));
+        Assert.assertFalse("纯空格文本", ChatInputBar.caretAtWordEnd("   ", 1));
+        Assert.assertFalse("空文本", ChatInputBar.caretAtWordEnd("", 0));
+        Assert.assertFalse("caret 越下界 clamp 到词首", ChatInputBar.caretAtWordEnd("abc def", -3));
     }
 
     @Test
