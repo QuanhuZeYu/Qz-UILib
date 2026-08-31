@@ -868,6 +868,10 @@ public final class ChatSceneController {
     /**
      * 滚动偏移(px)= 平滑显示行 × 行高(内容版本 + 帧时钟驱动重算;供 ChatContainer 滚动绑定)。
      *
+     * <p>输出是「行域权威 → px」的<b>假想几何投影</b>(行 × 18px,与真实内容行高无关);
+     * 真实内容几何的 clamp 在 ChatContainer.viewportScrollPx(V7 方案甲:行域唯一权威 +
+     * 假想几何投影 + 真实几何 clamp,本方法只负责投影,不读真实几何)。</p>
+     *
      * <p>每次重算(幂等)顺序:① 贴底跟随/未读判定(内联)——距底 ≤ {@link #nearBottomLineThreshold()}
      * 行 → 未读清零、目标归底(新消息自动贴底);否则若本次有历史增量(新消息) → 未读累加;
      * ② 目标喂 {@link SmoothScroller#setTarget}:目标变化 → 以当前显示为起点重启 120ms 动画;

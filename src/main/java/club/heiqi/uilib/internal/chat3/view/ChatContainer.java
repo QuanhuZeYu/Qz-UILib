@@ -163,7 +163,29 @@ public final class ChatContainer {
         // 内容下移 = 看上方旧消息,与原版 GuiNewChat.func_146229_b(scroll>0 查看更早消息)一致。
         // maxScrollY 是布局后几何:依赖 layoutDoneSignal 在内容变化帧布局完成后重算(与
         // SceneScrollbar 同模式,layout 未跑时兜底 0)。
+        //
+        // ★ 滚动权威统一在行域(V7 方案甲):滚动状态的唯一事实源 = ChatHistory.scrollOffset
+        // (自底部向上的行数) + SmoothScroller 目标行。四类路径共享同一行域通道,不再互相
+        // 覆盖权威:
+        //   ① 滚轮(ChatInputSurface:releaseDrag + history.scrollBy(±行)+ notifyDataChanged);
+        //   ② 回底(scrollToBottom:目标 0,即行域 0);
+        //   ③ 贴底跟随(scrollOffsetPx 距底 ≤2 行 → 行域目标归 0,新消息自动贴底);
+        //   ④ 拖动(setScrollOffset:scene px → round(chatPx/行高) 折算回行域再 scrollBy;
+        //      onDragStart:snapTo 进入直通,display 恒等于目标行)。
+        // 显示投影(行 × 18px,scrollOffsetPx)与真实几何 clamp(viewportScrollPx)只发生在
+        // 本计算块,不写回权威 → 任何路径都不会把另一套「px 域」真值覆盖进行域。
         Computed<Integer> chatScrollPx = Computed.create(controller::scrollOffsetPx);
+        // ★ V7 方案甲语义(行域权威 + 假想几何投影 + 真实几何 clamp):
+        // chatPx = scrollOffsetPx() = round(显示行 × 18px) 是「行×18px」假想几何投影
+        // (抽象单位,与真实行宽无关);maxScroll = SceneGeometry.maxScrollY(listViewport) 是
+        // 真实内容几何(系统行 16 / 组头 16 / 正文行 18 / 气泡内边距与组距,可含多行换行)。
+        // 双向 clamp(chatPx ∈ [0, maxScroll]) 保证:
+        //   ① 底部恒等恒成立:chatPx=0(贴底)→ 视口偏移 = maxScroll(内容底),
+        //      不依赖内容是否 18px 整倍(混合行高下同样成立);
+        //   ② 顶部死区 ≤ 17px:chatPx 假想上限 = round(行数 × 18) 相对真实内容的残差
+        //      ≤ 行高-1 = 17px,假想上限略超 maxScroll 时视觉已到顶,死区无感;
+        //   ③ 无下溢/上溢:双向 clamp 使视口偏移恒 ∈ [0, maxScroll]。
+        // 现状实现即方案甲语义,保持不动(契约测试见 ChatContainerTest)。
         Computed<Integer> viewportScrollPx = Computed.create(() -> {
             int chatPx = chatScrollPx.get().intValue();
             rt.layoutDoneSignal().get();
@@ -183,10 +205,19 @@ public final class ChatContainer {
         // setScrollOffset 回调(scene px → 聊天行反向换算)与滚轮路径同源(history.scrollBy + notifyDataChanged)。
         // onDragStart:拖动接管时机 → 平滑器 snapTo 当前显示行(取消平滑、进入直通,拖动手感即时;
         // 拖动中每次 setScrollOffset 目标变化经平滑器直通直接到位,display 恒等于目标)。
+        //
+        // ★ V7 折算互逆(拖动路径):round(chatPx/行高) 与投影 round(display × 行高) 互为逆——
+        // onDragStart snapTo 置位后进入直通(direct),scrollOffsetPx 投影的 display 恒为整数行,
+        // round(round(x×18)/18) == x 严格成立(18px 整倍线域无损;拖动后视口偏移与拖动目标
+        // 逐像素一致);非 18 整倍的残差由上方 clamp 吸收(≤17px,见 viewportScrollPx 注释)。
+        // 滚轮/回底/贴底路径不经此折算:scrollBy 直接以「行」写权威,无 px 往返,天然无折损。
+        // 注意:非整数 display 时互逆不成立,但只有滚轮平滑插值期 display 非整,且该期无人
+        // 经 setScrollOffset 回写行域(权威 = SmoothScroller 行目标)→ 折算冲突不存在。
         final int lineHeight = Math.max(1, ChatMarkdownSettings.getChatLineHeightPx());
         ChatScrollbar.Result scrollbar = ChatScrollbar.create(rt, listViewport, viewportScrollPx,
                 offset -> {
-                    // scene px(已由 SceneScrollbar clamp 到 [0, maxScrollY])→ 聊天行(自底部向上)
+                    // scene px(已由 SceneScrollbar clamp 到 [0, maxScrollY])→ 聊天行(自底部向上);
+                    // 这是唯一的「px → 行域」折算回写点,与滚轮/回底同写 history.scrollBy 通道
                     int maxScroll = SceneGeometry.maxScrollY(listViewport);
                     int chatPx = Math.max(0, maxScroll - offset.intValue());
                     int targetLines = (int) Math.round(chatPx / (double) lineHeight);
