@@ -28,7 +28,8 @@ import club.heiqi.uilib.font.layout.TextStyle;
  *   <li>URL 支持跨相邻普通段识别（B12 验收）：§ 彩色段把 URL 拆成多段时，先拼接普通段
  *       文本统一扫描，再把匹配映射回各段切分——链接段一律强制 link 色（设计稿 §3.5
  *       链接恒 text-link），避免 URL 落在 § 彩色段内时颜色被段样式覆盖；
- *       LaTeX/code 段是硬边界，跨段拼接在边界处断开，URL 不得吞并边界段。</li>
+ *       LaTeX/code 段是硬边界（P8）：普通文本按边界段切「普通文本窗口」逐窗口扫描，
+ *       窗口内 § 段仍拼接识别，URL 天然不跨边界段、不得吞并 code/LaTeX 段。</li>
  * </ul>
  */
 public final class ChatUrlLinkifier {
@@ -94,20 +95,51 @@ public final class ChatUrlLinkifier {
         if (base == null || base.isEmpty()) {
             return base;
         }
-        // 先把普通段文本拼接后统一扫描(LaTeX/code 段是硬边界,不参与拼接):
-        // § 彩色段可能把 URL 拆成多段,单段内 findUrls 会漏识别、URL 颜色被 § 段
-        // 样式覆盖(B12 验收偏差 5:链接恒 text-link)。
+        // 先把普通段文本拼接后按「普通文本窗口」分段扫描(LaTeX/code 段是硬边界,
+        // 不参与拼接):§ 彩色段可能把 URL 拆成多段,单段内 findUrls 会漏识别、URL
+        // 颜色被 § 段样式覆盖(B12 验收偏差 5:链接恒 text-link);P8 起窗口在边界段处
+        // 断开,逐窗口独立扫描,窗口内匹配平移回 concat 坐标——URL 天然不跨边界段、
+        // 不得吞并 code/LaTeX 段。
         StringBuilder concat = new StringBuilder();
         int[] starts = new int[base.size()];
+        List<Integer> windowOffsets = new ArrayList<Integer>(2);
+        List<Integer> windowEnds = new ArrayList<Integer>(2);
+        int open = -1; // 当前窗口在 concat 中的起点;-1 = 无窗口
         for (int i = 0; i < base.size(); i++) {
             TextSegment segment = base.get(i);
             starts[i] = concat.length();
             if (!segment.isLatex() && !segment.getStyle().isCodeSpan()) {
+                if (open < 0) {
+                    open = starts[i];
+                }
                 concat.append(segment.getText());
+            } else {
+                if (open >= 0) {
+                    windowOffsets.add(open);
+                    windowEnds.add(concat.length());
+                    open = -1;
+                }
             }
         }
-        List<Match> matches = findUrls(concat.toString());
-        if (matches.isEmpty()) {
+        if (open >= 0) {
+            windowOffsets.add(open);
+            windowEnds.add(concat.length());
+        }
+        List<Match> matches = null; // 各窗口匹配平移回 concat 坐标(按起点有序、互不重叠)
+        for (int w = 0; w < windowOffsets.size(); w++) {
+            int winStart = windowOffsets.get(w).intValue();
+            List<Match> found = findUrls(concat.substring(winStart, windowEnds.get(w).intValue()));
+            if (found.isEmpty()) {
+                continue;
+            }
+            for (Match match : found) {
+                if (matches == null) {
+                    matches = new ArrayList<Match>(2);
+                }
+                matches.add(new Match(winStart + match.start, winStart + match.end, match.url));
+            }
+        }
+        if (matches == null) {
             return base; // 无 URL:原引用返回(零分配)
         }
         List<TextSegment> out = new ArrayList<TextSegment>(base.size() + matches.size());

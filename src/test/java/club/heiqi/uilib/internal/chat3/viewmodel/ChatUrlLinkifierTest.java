@@ -220,6 +220,130 @@ public class ChatUrlLinkifierTest {
                 ChatUrlLinkifier.linkifyPreserveColor(base));
     }
 
+    // ==================== P8:URL 跨 code/LaTeX 边界(分段窗口扫描) ====================
+
+    @Test
+    public void linkifyTruncatesUrlAcrossCodeBoundary() {
+        // P8:段1 "http://x." 后接 code 边界段——旧实现把段3 "z" 拼进幻影 URL
+        // "http://x.z" 且两端同时挂链;窗口扫描下 URL 体 = 分隔符前连续文本,
+        // 尾随 '.' 剥离后产独立 URL "http://x",code 段透传,段3 不误链。
+        TextStyle codeStyle = plainStyle();
+        codeStyle.setCodeSpan(true);
+        List<TextSegment> base = Arrays.asList(
+                seg("http://x."),
+                new TextSegment("y", codeStyle),
+                seg("z"));
+        List<TextSegment> out = ChatUrlLinkifier.linkify(base, LINK);
+        Assert.assertEquals("段1 切出 link+尾点,code 透传,段3 原样 → 4 段", 4, out.size());
+        Assert.assertEquals("http://x", out.get(0).getText());
+        Assert.assertEquals("剥离尾点后挂独立 URL", "http://x", out.get(0).getStyle().getLink());
+        Assert.assertEquals(LINK, out.get(0).getStyle().getColor());
+        Assert.assertEquals("尾随 '.' 剥离为独立非链接段", ".", out.get(1).getText());
+        Assert.assertNull(out.get(1).getStyle().getLink());
+        Assert.assertTrue("code 段透传", out.get(2).getStyle().isCodeSpan());
+        Assert.assertNull("code 段无 link", out.get(2).getStyle().getLink());
+        Assert.assertEquals("z", out.get(3).getText());
+        Assert.assertNull("段3 无 link(不被跨边界 URL 吞并)", out.get(3).getStyle().getLink());
+    }
+
+    @Test
+    public void linkifyKeepsCompleteUrlBeforeCodeBoundary() {
+        // 完整 URL 全部落在边界段前的窗口内 → 全量 link,不因边界截断/吞并。
+        TextStyle codeStyle = plainStyle();
+        codeStyle.setCodeSpan(true);
+        List<TextSegment> base = Arrays.asList(
+                seg("http://x.co"),
+                new TextSegment("y", codeStyle),
+                seg("z"));
+        List<TextSegment> out = ChatUrlLinkifier.linkify(base, LINK);
+        Assert.assertEquals(3, out.size());
+        Assert.assertEquals("http://x.co", out.get(0).getText());
+        Assert.assertEquals("http://x.co", out.get(0).getStyle().getLink());
+        Assert.assertEquals(LINK, out.get(0).getStyle().getColor());
+        Assert.assertTrue("code 段透传", out.get(1).getStyle().isCodeSpan());
+        Assert.assertNull(out.get(1).getStyle().getLink());
+        Assert.assertEquals("z", out.get(2).getText());
+        Assert.assertNull(out.get(2).getStyle().getLink());
+    }
+
+    @Test
+    public void linkifyTruncatesUrlAcrossLatexBoundary() {
+        // LaTeX 段同为硬边界:窗口在 latex 边界处断开,规则与 code 一致。
+        TextStyle style = plainStyle();
+        List<TextSegment> base = Arrays.asList(
+                seg("http://x."),
+                TextSegment.forLatex("y", style),
+                seg("z"));
+        List<TextSegment> out = ChatUrlLinkifier.linkify(base, LINK);
+        Assert.assertEquals(4, out.size());
+        Assert.assertEquals("http://x", out.get(0).getText());
+        Assert.assertEquals("http://x", out.get(0).getStyle().getLink());
+        Assert.assertEquals(".", out.get(1).getText());
+        Assert.assertNull(out.get(1).getStyle().getLink());
+        Assert.assertTrue("LaTeX 段透传", out.get(2).isLatex());
+        Assert.assertSame("LaTeX 段原引用透传", base.get(1), out.get(2));
+        Assert.assertNull(out.get(2).getStyle().getLink());
+        Assert.assertEquals("z", out.get(3).getText());
+        Assert.assertNull(out.get(3).getStyle().getLink());
+    }
+
+    @Test
+    public void linkifyCrossBoundaryNoPhantomUrl() {
+        // URL 全在 code 段内:两侧普通窗口("pre "/" post")无 URL → 零分配原引用返回。
+        TextStyle codeStyle = plainStyle();
+        codeStyle.setCodeSpan(true);
+        List<TextSegment> base = Arrays.asList(
+                seg("pre "),
+                new TextSegment("http://a.co", codeStyle),
+                seg(" post"));
+        List<TextSegment> out = ChatUrlLinkifier.linkify(base, LINK);
+        Assert.assertSame("全部窗口无 URL → 原引用返回(零分配)", base, out);
+        Assert.assertNull(out.get(0).getStyle().getLink());
+        Assert.assertNull(out.get(1).getStyle().getLink());
+        Assert.assertNull(out.get(2).getStyle().getLink());
+    }
+
+    @Test
+    public void linkifyMultipleWindowsEachScanned() {
+        // 两普通窗口(A 边界段隔开)各自独立扫描:各自识别 URL,不得跨窗口合并成
+        // 幻影 "http://a.cohttp://b.co"。
+        TextStyle codeStyle = plainStyle();
+        codeStyle.setCodeSpan(true);
+        List<TextSegment> base = Arrays.asList(
+                seg("see http://a.co"),
+                new TextSegment("c", codeStyle),
+                seg("http://b.co end"));
+        List<TextSegment> out = ChatUrlLinkifier.linkify(base, LINK);
+        Assert.assertEquals("段1(普通+link)→2,code→1,段3(link+普通)→2 → 5 段", 5, out.size());
+        Assert.assertEquals("see ", out.get(0).getText());
+        Assert.assertNull(out.get(0).getStyle().getLink());
+        Assert.assertEquals("http://a.co", out.get(1).getText());
+        Assert.assertEquals("窗口1 URL 独立", "http://a.co", out.get(1).getStyle().getLink());
+        Assert.assertTrue("边界 code 段透传", out.get(2).getStyle().isCodeSpan());
+        Assert.assertNull(out.get(2).getStyle().getLink());
+        Assert.assertEquals("http://b.co", out.get(3).getText());
+        Assert.assertEquals("窗口2 URL 独立", "http://b.co", out.get(3).getStyle().getLink());
+        Assert.assertEquals(" end", out.get(4).getText());
+        Assert.assertNull(out.get(4).getStyle().getLink());
+    }
+
+    @Test
+    public void findUrlsUnchangedDirectUnit() {
+        // 回归护栏:findUrls 扫描器字符类/匹配语义不变(窗口扫描只改调用方式、
+        // 不碰扫描器本身)。带尾点输入在 findUrls 层即剥尾标点("http://x." → "http://x")。
+        List<ChatUrlLinkifier.Match> matches = ChatUrlLinkifier.findUrls("x http://a.co y http://b.co z");
+        Assert.assertEquals(2, matches.size());
+        Assert.assertEquals("http://a.co", matches.get(0).url);
+        Assert.assertEquals(2, matches.get(0).start);
+        Assert.assertEquals(2 + 11, matches.get(0).end);
+        Assert.assertEquals("http://b.co", matches.get(1).url);
+        List<ChatUrlLinkifier.Match> trailingDot = ChatUrlLinkifier.findUrls("http://x.");
+        Assert.assertEquals(1, trailingDot.size());
+        Assert.assertEquals("http://x", trailingDot.get(0).url);
+        Assert.assertEquals(0, trailingDot.get(0).start);
+        Assert.assertEquals(8, trailingDot.get(0).end);
+    }
+
     // ==================== 命中扩展(设计稿 §5.2) ====================
 
     @Test
