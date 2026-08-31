@@ -146,8 +146,11 @@ public final class ChatContainer {
                 .setScrollable(true)
                 .setClipChildren(true);
         listRow.appendChild(listViewport);
+        // 容器列表挂「容器全量信号」(controller.containerGroupsSignal()),不挂共享 HUD 信号:
+        // 打开方向 COLLAPSING 阶段共享信号走 TTL 预算过滤,预算耗尽的历史消息在弹出动画期间
+        // 不合成 → 文字在动画尾部瞬间刷出(2026-08-31 真机闪烁);容器信号恒全量即时呈现。
         SceneListHandle listHandle = controller.messageList().mount(rt, listViewport,
-                controller.groupsSignal(), ChatMessageList.Style.container(), registry,
+                controller.containerGroupsSignal(), ChatMessageList.Style.container(), registry,
                 controller.frameMillisSignal());
 
         // 滚动唯一汇点:历史滚动偏移(px) → 视口滚动属性(结构版本驱动重算)。

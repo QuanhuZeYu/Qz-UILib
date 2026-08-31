@@ -567,6 +567,112 @@ public class ChatSceneControllerTest {
         }
     }
 
+    /**
+     * 容器信号恒全量(2026-08-31 真机「打开动画文字瞬间刷出」回归锚点):预算耗尽被 HUD
+     * 过滤剔除的消息,在打开方向 COLLAPSING 阶段(isHudPhase=true)仍应出现在容器信号中
+     * ——容器列表挂容器信号,打开瞬间即全量呈现,文字随容器弹出动画一同淡入,不再等待
+     * POPPING 切换才物化。
+     */
+    @Test
+    public void containerSignalStaysFullCompositionDuringCollapsing() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Bob> old"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+
+            // HUD 可见时钟逐帧推进(首帧定锚不累计,其后每帧 +1000ms):14 帧 = 可见 13000
+            // > 预算 12000 + 淡出 800,过期队首弹出(与 expiredHudGroupsAreRemovedFromTree 同节奏)
+            for (int i = 1; i <= 14; i++) {
+                controller.tick(T0 + i * 1000L);
+                rt.flush();
+            }
+            Assert.assertEquals("预算耗尽后 HUD 信号剔除该组", 0,
+                    controller.groupsSignal().get().size());
+
+            // 打开 → COLLAPSING(isHudPhase=true,HUD 信号仍过滤;容器信号恒全量)
+            // setChatOpen 以当前 frameMillis(T0+14000)锚定 COLLAPSING,推进须从锚点之后起算
+            // (collapse=150ms:14050 帧进度 1/3 仍 COLLAPSING)
+            controller.setChatOpen(true);
+            controller.tick(T0 + 14_050L);
+            rt.flush();
+            Assert.assertEquals("COLLAPSING 阶段 HUD 信号仍过滤(0 组)", 0,
+                    controller.groupsSignal().get().size());
+            Assert.assertEquals("COLLAPSING 阶段容器信号全量(1 组)", 1,
+                    controller.containerGroupsSignal().get().size());
+
+            // POPPING 后 HUD 信号也切全量,两者一致(容器列表文字自此可见,无延迟);
+            // phaseSignal 帧末提交,POPPING 开始帧读旧值(COLLAPSING),再推进一帧后提交生效
+            controller.tick(T0 + 14_000L + ChatMarkdownSettings.getCollapseAnimMillis() + 1L);
+            controller.tick(T0 + 14_000L + ChatMarkdownSettings.getCollapseAnimMillis() + 2L);
+            rt.flush();
+            Assert.assertEquals("POPPING 后 HUD 信号全量(1 组)", 1,
+                    controller.groupsSignal().get().size());
+            Assert.assertEquals("POPPING 后容器信号仍全量(1 组)", 1,
+                    controller.containerGroupsSignal().get().size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
+    /**
+     * 容器信号冻结快照独立(2026-08-31):关闭衔接渐入期间(fadeInActive)过渡冻结生效时,
+     * 容器信号返回容器稳态快照引用(关闭动画期间容器内容冻结,引用稳定零重建);
+     * 解冻后按 contentVersion 重算一次性应用。与 HUD 信号快照相互独立。
+     */
+    @Test
+    public void containerSignalFreezesDuringTransition() {
+        boolean persisted = ChatMarkdownSettings.isHudPersistMessages();
+        ChatMarkdownSettings.setHudPersistMessages(false);
+        try {
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Bob> old"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode root = build(controller, rt);
+            ReadableSignal<List<ChatCardComposer.ComposedGroup>> containerGroups =
+                    controller.containerGroupsSignal();
+
+            // 打开 → 容器稳定(容器信号 1 组,记录稳态快照引用)
+            controller.setChatOpen(true);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1L);
+            controller.tick(T0 + ChatMarkdownSettings.getCollapseAnimMillis() + 1L
+                    + ChatMarkdownSettings.getPopAnimMillis());
+            rt.flush();
+            List<ChatCardComposer.ComposedGroup> steady = containerGroups.get();
+            Assert.assertEquals("容器稳态 1 组", 1, steady.size());
+
+            // 关闭衔接 → 渐入开始(过渡窗口开启,fadeInActive → 冻结)
+            controller.closeToHudImmediately();
+            long frame = T0 + 3000L;
+            controller.tick(frame);
+            rt.flush();
+
+            // 渐入中段消息到达:容器信号冻结,返回稳态快照引用(仍旧 1 组)
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Cara> mid"), 2, T0 + 3100L));
+            controller.notifyDataChanged();
+            controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() / 2);
+            rt.flush();
+            List<ChatCardComposer.ComposedGroup> frozen = containerGroups.get();
+            Assert.assertSame("冻结期容器信号返回稳态快照引用", steady, frozen);
+            Assert.assertEquals("冻结期容器信号仍旧 1 组", 1, frozen.size());
+
+            // 渐入完成 → 解冻,积压消息一次性应用(2 组)
+            controller.tick(frame + ChatMarkdownSettings.getHudFadeInAnimMillis() + 100L);
+            rt.flush();
+            Assert.assertEquals("解冻后容器信号一次性应用(2 组)", 2,
+                    containerGroups.get().size());
+        } finally {
+            ChatMarkdownSettings.setHudPersistMessages(persisted);
+        }
+    }
+
     @Test
     public void expiredHudGroupsAreRemovedFromTree() {
         // 新时钟驱动:可见时钟帧间 delta 夹取 1s,预算+淡出窗(默认 12s+0.8s)需逐帧

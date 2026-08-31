@@ -196,9 +196,12 @@ public final class ChatSceneController {
      *  不响应——窗体整体动画独占画面;过渡完成(稳态)一次性应用。根治「过渡期消息
      *  到达打穿窗体动画」的闪烁(2026-08-29 窗体动画抽象,见类注释)。 */
     private boolean transitionFrozen;
-    /** 窗体过渡冻结快照:上次稳态 compose 结果(composeAll 冻结期返回此引用,列表引用
+    /** 窗体过渡冻结快照(HUD 信号):上次稳态 compose 结果(composeAll 冻结期返回此引用,列表引用
      *  稳定 → forEach diff 零变化;解冻后按 contentVersion 重算更新)。 */
     private List<ChatCardComposer.ComposedGroup> steadySnapshot;
+    /** 窗体过渡冻结快照(容器信号):容器全量 compose 的稳态快照,冻结期返回此引用
+     *  (关闭动画期间容器内容冻结;与 HUD 信号快照独立——HUD 过滤与容器全量语义不同)。 */
+    private List<ChatCardComposer.ComposedGroup> steadyContainerSnapshot;
     /** 可见时钟信号(HUD 淡出渲染驱动;仅值变化时 set,防每帧唤醒下游)。 */
     private final Signal<Long> hudVisibleSignal = Signal.create(Long.valueOf(0L));
 
@@ -408,9 +411,17 @@ public final class ChatSceneController {
         // 冻结 = 关闭方向过渡:屏幕关闭动画段(窗口内且机器非 HUD) ∪ HUD 渐入活跃段;
         // 打开方向(COLLAPSING/POPPING/CONTAINER)不冻结——容器全量即时呈现
         // (打开瞬间玩家就要看到消息列表,冻结反而延迟显示)
-        transitionFrozen = (transitionStartMillis >= 0L
+        boolean frozenNow = (transitionStartMillis >= 0L
                 && currentPhase != DisplayStateMachine.Phase.HUD)
                 || fadeInActive;
+        // 冻结状态翻转 → 内容版本 +1:解冻帧两个组信号立即失效重算(积压消息一次性应用)。
+        // 否则解冻瞬间无任何依赖变化,冻结期消费过的 Computed 缓存卡在稳态快照引用,
+        // 积压消息要等下一次 contentVersion 变化才应用(2026-08-31 容器信号拆分时发现;
+        // f4b1af36 冻结机制遗留缺陷,渐入中段无新消息到达时同样卡快照)。
+        if (frozenNow != transitionFrozen) {
+            notifyDataChanged();
+        }
+        transitionFrozen = frozenNow;
         if (runtime != null && root != null && hudNow != hudTreeBuilt) {
             rebuildTree(nowMillis);
         }
@@ -576,6 +587,11 @@ public final class ChatSceneController {
         return machine.getPhase();
     }
 
+    /** 测试探针:形态相位信号(帧末提交时序验证)。 */
+    Signal<DisplayStateMachine.Phase> __phaseSignalForTest() {
+        return phaseSignal;
+    }
+
     /**
      * 是否 HUD 气泡流阶段(聊天关闭稳定态 + 收起动画中)。弹出/稳定/收回阶段 HUD 树清空,
      * 容器由输入屏幕绘制(避免 HUD 窗口与屏幕双容器重复渲染)。
@@ -651,8 +667,8 @@ public final class ChatSceneController {
         hudTreeBuilt = hud;
     }
 
-    /** 组列表(结构级 Computed 缓存单例:数据版本 → 合成组;供 ChatContainer/队首过期/
-     *  高度裁剪共用——Computed 记忆化,常规帧(结构无变化)零重算)。 */
+    /** 组列表(HUD 信号,结构级 Computed 缓存单例:数据版本 + 形态 → 合成组;供 HUD 树/
+     *  队首过期/高度裁剪共用——Computed 记忆化,常规帧(结构无变化)零重算)。 */
     ReadableSignal<List<ChatCardComposer.ComposedGroup>> groupsSignal() {
         return groupsSignalValue;
     }
@@ -660,6 +676,23 @@ public final class ChatSceneController {
     /** 组列表派生(缓存单例;见 {@link #groupsSignal()})。 */
     private final ReadableSignal<List<ChatCardComposer.ComposedGroup>> groupsSignalValue =
             Computed.create(this::composeAll);
+
+    /**
+     * 容器形态组列表(输入屏容器挂载;结构级 Computed 缓存单例):恒全量合成
+     * (applyTtl=false,不做 HUD 生命周期过滤),只依赖内容版本。
+     *
+     * <p>2026-08-31 真机「打开动画文字瞬间刷出」根因:容器与 HUD 树曾共享 {@link #groupsSignal()},
+     * 而打开方向 COLLAPSING 阶段 {@code isHudPhase()=true} 使共享信号走 TTL 预算过滤——预算
+     * 耗尽的历史消息在容器弹出动画期间不合成(空白容器),POPPING 才切换全量,文字在动画
+     * 尾部瞬间物化。容器列表独立信号源后,打开瞬间即全量呈现,文字随容器一同淡入。</p>
+     */
+    ReadableSignal<List<ChatCardComposer.ComposedGroup>> containerGroupsSignal() {
+        return containerGroupsSignalValue;
+    }
+
+    /** 容器组列表派生(缓存单例;见 {@link #containerGroupsSignal()})。 */
+    private final ReadableSignal<List<ChatCardComposer.ComposedGroup>> containerGroupsSignalValue =
+            Computed.create(this::composeContainerAll);
 
     /**
      * 合成组列表(HUD 生命周期过滤路径):HUD 形态按每条消息的显示预算(可见时钟驱动)
@@ -683,7 +716,36 @@ public final class ChatSceneController {
             return frozen != null ? frozen
                     : java.util.Collections.<ChatCardComposer.ComposedGroup>emptyList();
         }
-        boolean applyTtl = isHudPhase();
+        List<ChatCardComposer.ComposedGroup> composed = composeCore(isHudPhase());
+        steadySnapshot = composed; // 稳态快照(窗体过渡期冻结返回;解冻后按版本重算更新)
+        return composed;
+    }
+
+    /**
+     * 容器形态合成:恒全量(applyTtl=false,不碰生命周期/enter 门控),窗体过渡期冻结
+     * 返回容器稳态快照(关闭动画期间容器内容冻结——与「打开方向不冻结、关闭方向冻结」
+     * 的窗体动画语义一致;打开方向 transitionStartMillis 未开启,天然实时全量)。
+     */
+    private List<ChatCardComposer.ComposedGroup> composeContainerAll() {
+        contentVersion.get().intValue(); // 结构依赖(容器信号不读形态:恒全量,无 phaseSignal 依赖)
+        if (transitionFrozen) {
+            List<ChatCardComposer.ComposedGroup> frozen = steadyContainerSnapshot;
+            return frozen != null ? frozen
+                    : java.util.Collections.<ChatCardComposer.ComposedGroup>emptyList();
+        }
+        List<ChatCardComposer.ComposedGroup> composed = composeCore(false);
+        steadyContainerSnapshot = composed; // 容器稳态快照(冻结期返回;解冻后按版本重算更新)
+        return composed;
+    }
+
+    /**
+     * 合成核心(applyTtl 参数化):分组 → 布局 → HUD 预算过滤(applyTtl=true)/容器全量
+     * (applyTtl=false) → enter 门控(仅 HUD 路径)。HUD 信号与容器信号共用本核心,
+     * 冻结短路与稳态快照由调用方各自维护(两种形态快照语义不同,不复用同一引用)。
+     *
+     * @param applyTtl true = HUD 生命周期过滤路径;false = 容器全量路径
+     */
+    private List<ChatCardComposer.ComposedGroup> composeCore(boolean applyTtl) {
         List<ChatLineRecord> snapshot = history.snapshot();
         lifecycles.purge(snapshot); // 历史容量裁剪联动,防注册表泄漏
         List<MessageGroupModel> groups = grouper.group(snapshot, selfNameProvider.selfName());
@@ -737,7 +799,6 @@ public final class ChatSceneController {
                     !hudEverFirstSeqs.contains(Long.valueOf(firstSeq)));
             hudEverFirstSeqs.add(Long.valueOf(firstSeq));
         }
-        steadySnapshot = composed; // 稳态快照(窗体过渡期冻结返回;解冻后按版本重算更新)
         return composed;
     }
 
