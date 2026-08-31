@@ -509,6 +509,77 @@ public class ScenePaintEngineTest {
     }
 
     // ============================================================
+    // 测试 9B：opacity<=0 整棵剪枝 —— 「关闭动画尾帧整框回闪」回归锚点
+    // ============================================================
+
+    /**
+     * 已布局且 opacity==0 的子树完全透明：paint 不产出任何命令（含 PUSH_OPACITY/
+     * PUSH_TRANSFORM 边界命令），脏标记保留——恢复可见后按脏标记重新生成。
+     *
+     * <p>回归背景（2026-08-31 真机 60fps 录像 + CloseDiag 日志实锤）：PaintContextCompositor
+     * 对 opacity<=0 走 inactive 直画路径（不开离屏层），PUSH_OPACITY(0) 段内命令会以全
+     * 不透明度直画主帧缓冲——chat3 关闭动画 CLOSED 帧（opacity 精确 0.0 + 关闭终点
+     * transform）整框回闪一帧。源头剪枝后 PUSH/POP 均不产出，零命令零歧义。</p>
+     */
+    @Test
+    public void shouldPruneFullyTransparentSubtreeWithNoCommands() {
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+        SceneNode child = new SceneNode();
+
+        container.setBackgroundColor(0xFF336699);
+        container.setOpacity(0.0F);          // 完全透明
+        container.setTransform(new club.heiqi.uilib.ui.scene.node.Transform(
+                0.0F, 12.0F, 0.0F, 1.0F, 1.0F, 0.0F, 1.0F)); // 非恒等 transform 也不得产出
+        child.setBackgroundColor(0xFFFF0000);
+        child.setText("hidden");
+
+        container.appendChild(child);
+        root.appendChild(container);
+
+        layoutEngine.layout(root, new Constraints(200));
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+
+        // 整棵透明子树零命令：无 BACKGROUND/TEXT/PUSH_OPACITY/PUSH_TRANSFORM
+        Assert.assertEquals("完全透明子树零命令", 0, plan.getCommands().size());
+        // 剪枝不清脏：恢复可见后按脏标记重新生成 fragment
+        Assert.assertTrue("剪枝后 selfPaintDirty 保留", container.__isSelfPaintDirty());
+        Assert.assertTrue("剪枝后 compositeDirty 保留", container.__isCompositeDirty());
+    }
+
+    /**
+     * 剪枝节点恢复可见（opacity 0→0.5）后正常重新生成：PUSH_OPACITY 与子树命令重新出现，
+     * 且第二次 paint 走 fragment 缓存零重生成（剪枝不清脏 → 缓存语义不破坏）。
+     */
+    @Test
+    public void shouldRegenerateAfterTransparentSubtreeBecomesVisible() {
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+
+        container.setBackgroundColor(0xFF336699);
+        container.setOpacity(0.0F);
+
+        root.appendChild(container);
+        layoutEngine.layout(root, new Constraints(200));
+
+        PaintPlan hidden = paintEngine.paint(root).getPlan();
+        Assert.assertEquals("透明帧零命令", 0, hidden.getCommands().size());
+
+        container.setOpacity(0.5F);
+        PaintResult visible = paintEngine.paint(root);
+        PaintCommand push = firstOfType(visible.getPlan().getCommands(),
+                PaintCommandType.PUSH_OPACITY);
+        Assert.assertNotNull("恢复可见后应有 PUSH_OPACITY", push);
+        Assert.assertEquals("PUSH 携带局部 opacity 0.5", 0.5f, push.getOpacity(), 1e-6f);
+        PaintCommand bg = findCommandByColor(visible.getPlan(), 0xFF336699);
+        Assert.assertNotNull("恢复可见后背景命令重新生成", bg);
+
+        // 再次 paint：fragment 缓存命中,零重生成（剪枝不破坏缓存）
+        PaintResult again = paintEngine.paint(root);
+        Assert.assertEquals("可见稳态第二帧零重生成", 0, again.getRegeneratedFragmentCount());
+    }
+
+    // ============================================================
     // 测试 10：replay offset 坐标叠加
     // ============================================================
 

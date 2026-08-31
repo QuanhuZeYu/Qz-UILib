@@ -136,6 +136,17 @@ public class ScenePaintEngine {
         int nodeAbsX = offsetX + (box != null ? box.getX() : 0);
         int nodeAbsY = offsetY + (box != null ? box.getY() : 0) + node.__getPresentationOffsetY();
 
+        // ==== opacity<=0 整棵剪枝（真机「关闭动画尾帧整框回闪」根因,2026-08-31）====
+        // 已布局且 opacity<=0 的子树完全透明：整棵跳过,不生成任何命令（含 transform/opacity
+        // 边界命令）,也不清除脏标记（恢复可见时按脏标记重新生成 fragment,缓存复用语义不变）。
+        // 若继续产出 PUSH_OPACITY(0),PaintContextCompositor 对 opacity<=0 走 inactive 直画
+        // 路径（不开离屏层）——段内命令以全不透明度直画主帧缓冲,一帧整框回闪
+        // （chat3 关闭动画 CLOSED 帧 opacity 精确为 0.0 触发,真机 60fps 录像 + CloseDiag 日志实锤）。
+        // 剪枝与「父 0 × 子任意 = 0」的 group 嵌套相乘语义严格等价,零命令零歧义。
+        if (box != null && node.getOpacity() <= 0.0F) {
+            return regenerated;
+        }
+
         // ==== transform（方案甲完整矩阵 + B6 FBO 方案） ====
         // transform 绝不进 fragment（fragment 只持纯几何相对坐标命令），每帧从 node 实时读取。
         // 门控：needTransform && needClip → PUSH_TRANSFORM_LAYER（FBO 离屏图层，解决 rotate 下 scissor 错位）
