@@ -315,7 +315,9 @@ public class LatexSoftwareRenderTest {
             report.append("  rule y=").append(rule.top).append("..").append(rule.bottom)
                     .append(System.lineSeparator());
         }
-        java.nio.file.Files.write(new java.io.File("build/reports/latex-render/fence-dump.txt").toPath(),
+        java.io.File dumpFile = new java.io.File("build/reports/latex-render/fence-dump.txt");
+        dumpFile.getParentFile().mkdirs();
+        java.nio.file.Files.write(dumpFile.toPath(),
                 report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         Assert.assertTrue("应有分数横线", !rules.isEmpty());
