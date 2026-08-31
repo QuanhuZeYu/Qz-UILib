@@ -46,7 +46,7 @@ public final class ChatSentHistory {
      * 按相对方向回显历史(vanilla getSentHistory 语义,无草稿暂存参数)。
      *
      * @param direction -1 = 上一条,+1 = 下一条
-     * @return 命中历史消息;光标到空槽返回暂存草稿(无暂存时空串)
+     * @return 命中历史消息;光标到空槽恢复暂存草稿;无暂存返回 null(无效操作哨兵)
      */
     public synchronized String recall(int direction) {
         return recall(direction, null);
@@ -58,19 +58,27 @@ public final class ChatSentHistory {
      * <p>首次从空槽翻入历史时暂存当前输入(原版 historyBuffer);回到最底(index=size)时
      * 恢复暂存文本而非清空,并清掉暂存(T4 历史草稿恢复)。</p>
      *
+     * <p>I3 草稿清空修复:底槽且无暂存({@code draft == null})返回 null 无效操作哨兵
+     * (vanilla getSentHistory 越界返回 null 同款);空串是合法暂存值,恢复仍返回 ""。
+     * 入历史暂存条件仅当 draft == null 且 currentInput != null 时生效,使「无暂存」与
+     * 「空草稿」天然区分;单参 recall(direction) 传 null 不暂存。</p>
+     *
      * @param direction    -1 = 上一条,+1 = 下一条
-     * @param currentInput 当前输入文本(进入历史时暂存用)
-     * @return 命中历史消息;光标到空槽返回暂存草稿(无暂存时空串)
+     * @param currentInput 当前输入文本(进入历史时暂存用;null 不暂存)
+     * @return 命中历史消息;光标到空槽恢复暂存草稿;无暂存返回 null(无效操作哨兵)
      */
     public synchronized String recall(int direction, String currentInput) {
         cursor = Math.max(0, Math.min(cursor + direction, messages.size()));
         if (cursor >= messages.size()) {
-            String restored = draft == null ? "" : draft;
+            if (draft == null) {
+                return null;
+            }
+            String restored = draft;
             draft = null;
             return restored;
         }
-        if (draft == null) {
-            draft = currentInput == null ? "" : currentInput;
+        if (draft == null && currentInput != null) {
+            draft = currentInput;
         }
         return messages.get(cursor);
     }

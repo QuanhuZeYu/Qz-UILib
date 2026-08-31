@@ -22,7 +22,7 @@ public class ChatSentHistoryTest {
     @Test
     public void shouldRecallWithEmptySlotSemantics() {
         ChatSentHistory history = new ChatSentHistory();
-        Assert.assertEquals("空历史回显空串", "", history.recall(-1));
+        Assert.assertNull("空历史回显无效操作哨兵", history.recall(-1));
 
         history.add("first");
         history.add("second");
@@ -31,7 +31,7 @@ public class ChatSentHistoryTest {
         Assert.assertEquals("再上一条 = 更旧", "first", history.recall(-1));
         Assert.assertEquals("到顶后停住", "first", history.recall(-1));
         Assert.assertEquals("下一条", "second", history.recall(1));
-        Assert.assertEquals("下到空槽返回空串", "", history.recall(1));
+        Assert.assertNull("下到空槽无草稿返回 null 哨兵", history.recall(1));
         Assert.assertEquals("空槽再上 = 最新", "second", history.recall(-1));
     }
 
@@ -41,7 +41,7 @@ public class ChatSentHistoryTest {
         history.add("a");
         history.recall(-1);
         history.resetCursor();
-        Assert.assertEquals("复位空槽后回显空串", "", history.recall(1));
+        Assert.assertNull("复位空槽后无草稿返回 null 哨兵", history.recall(1));
         Assert.assertEquals("a", history.recall(-1));
     }
 
@@ -61,7 +61,7 @@ public class ChatSentHistoryTest {
         history.add("old");
         history.syncFrom(Arrays.asList("v1", "v2", "v3"));
         Assert.assertEquals(Arrays.asList("v1", "v2", "v3"), history.snapshot());
-        Assert.assertEquals("同步后光标复位空槽", "", history.recall(1));
+        Assert.assertNull("同步后光标复位空槽无草稿返回 null", history.recall(1));
         Assert.assertEquals("v3", history.recall(-1));
     }
 
@@ -76,11 +76,65 @@ public class ChatSentHistoryTest {
         Assert.assertEquals("first", history.recall(-1, "草稿文本"));
         Assert.assertEquals("翻回一格仍是历史", "second", history.recall(1, "草稿文本"));
         Assert.assertEquals("翻回最底恢复暂存草稿而非清空", "草稿文本", history.recall(1, "草稿文本"));
-        // 恢复后暂存清空:再翻回最底无草稿时返回空串
-        Assert.assertEquals("", history.recall(1, ""));
+        // 恢复后暂存清空:再翻回最底无草稿时返回 null
+        Assert.assertNull("恢复后暂存清空,再回底槽无草稿返回 null", history.recall(1, ""));
         // 再次进入历史:重新暂存当前输入
         Assert.assertEquals("second", history.recall(-1, "新草稿"));
         Assert.assertEquals("新草稿", history.recall(1, "新草稿"));
+    }
+
+    // ==================== I3 草稿清空修复(null 哨兵契约) ====================
+
+    /**
+     * I3:底槽且无暂存时返回 null(无效操作哨兵,vanilla getSentHistory 越界返回 null 同款);
+     * 空串是合法暂存值,恢复仍返回空串。
+     */
+    @Test
+    public void shouldReturnNullWhenAtBottomWithoutDraft() {
+        ChatSentHistory history = new ChatSentHistory();
+        // 空历史 + draft == null → null(底槽按 ↓ 或空历史按 ↑ 均无效)
+        Assert.assertNull("空历史按 ↑ 返回 null", history.recall(-1, ""));
+        Assert.assertNull("空历史按 ↓ 返回 null", history.recall(1, ""));
+        history.add("first");
+        // 传 null 不暂存:进历史回底槽 → null(draft == null)
+        Assert.assertEquals("first", history.recall(-1, null));
+        Assert.assertNull("底槽无暂存返回 null", history.recall(1, null));
+        // 底槽 + draft == ""(空串是合法暂存值)→ 恢复 ""
+        Assert.assertEquals("first", history.recall(-1, ""));
+        Assert.assertEquals("空草稿合法暂存,恢复返回空串", "", history.recall(1, ""));
+    }
+
+    /**
+     * I3:底槽返回 null 哨兵时不移动光标、不清草稿(无效操作零副作用)。
+     */
+    @Test
+    public void nullReturnDoesNotMutateCursorOrDraft() {
+        ChatSentHistory history = new ChatSentHistory();
+        history.add("first");
+        history.add("second");
+        Assert.assertEquals("second", history.recall(-1, "草稿"));
+        Assert.assertEquals("first", history.recall(-1, "草稿"));
+        // 已在历史中,非底槽:正常命中不返回 null
+        Assert.assertEquals("second", history.recall(1, "草稿"));
+        Assert.assertEquals("回到底槽恢复草稿", "草稿", history.recall(1, "草稿"));
+        // 已到底槽且草稿已清:再按 ↓ 返回 null,光标保持在底槽、草稿仍为 null
+        Assert.assertNull("底槽再按 ↓ 返回 null", history.recall(1, ""));
+        Assert.assertNull("重复无效操作仍返回 null", history.recall(1, ""));
+        // 随后按 ↑ 仍可正常翻入历史(光标未被 null 哨兵带出底槽)
+        Assert.assertEquals("second", history.recall(-1, "新草稿"));
+        Assert.assertEquals("新草稿", history.recall(1, "新草稿"));
+    }
+
+    /**
+     * I3:单参 recall(direction) 不暂存草稿(语义与双参传 null 一致)。
+     */
+    @Test
+    public void singleArgRecallDoesNotStashDraft() {
+        ChatSentHistory history = new ChatSentHistory();
+        history.add("first");
+        Assert.assertEquals("单参 ↑ 命中历史", "first", history.recall(-1));
+        // 单参路径不暂存:回到底槽返回 null 而非 ""
+        Assert.assertNull("单参回到底槽无暂存返回 null", history.recall(1));
     }
 
     @Test
@@ -95,6 +149,6 @@ public class ChatSentHistoryTest {
         // 打开输入屏复位:草稿清空
         history.recall(-1, "第二份");
         history.resetCursor();
-        Assert.assertEquals("复位后无草稿", "", history.recall(1, ""));
+        Assert.assertNull("复位后无草稿返回 null", history.recall(1, ""));
     }
 }

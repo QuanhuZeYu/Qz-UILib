@@ -176,11 +176,18 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
 
     /** 历史回显(vanilla getSentHistory 语义:-1 上一条 / +1 下一条;回到底恢复暂存草稿)。 */
     public void recallHistory(int direction) {
+        String recalled = sentHistory.recall(direction, inputText.get());
+        // I3 草稿清空修复:recall 返回 null 表示无效操作(底槽按 ↓ / 空历史按 ↑),完全早退,
+        // 不动 caret/文本/补全态(注意:sanitize 内部 nullSafe 会把 null 变 "" 吞掉哨兵,
+        // 必须先判 null 再过滤)
+        if (recalled == null) {
+            return;
+        }
         // TA:历史串过块字符过滤(防御:recordSent 外部直传也可能带 §)
-        String recalled = sanitize(sentHistory.recall(direction, inputText.get()));
+        String clean = sanitize(recalled);
         // caret 归行尾(与 setText 同款:原版回显后光标在末尾,继续输入追加而非插到行首)
-        inputHandle.moveCaretToEndOf().accept(recalled);
-        inputText.set(recalled);
+        inputHandle.moveCaretToEndOf().accept(clean);
+        inputText.set(clean);
         completion.onTextEdited();
     }
 

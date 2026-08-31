@@ -130,7 +130,39 @@ public class ChatInputBarTest {
         Assert.assertNull("仅空白提交不入历史", bar.submitText());
         bar.recallHistory(-1);
         rt.flush();
-        Assert.assertEquals("空提交后 Up 无历史可回显", "", bar.inputText().get());
+        // I3:空历史按 ↑ 是无效操作,不应清空用户已有输入(草稿清空缺陷修复)
+        Assert.assertEquals("空提交后 Up 无历史可回显,输入保持不变", "   ", bar.inputText().get());
+    }
+
+    // ==================== I3 草稿清空修复(无效操作不碰输入) ====================
+
+    /**
+     * I3:有输入但未进过历史,底槽按 ↓ 返回 null 哨兵,输入完全不被清空。
+     */
+    @Test
+    public void recallHistoryAtBottomWithoutDraftKeepsInput() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(rt, "abc");
+        bar.recordSent("sent before");
+        bar.inputText().set("abc");
+        rt.flush();
+        // 光标初始在底槽(未翻入历史):按 ↓ 无效操作,输入保持 "abc"
+        bar.recallHistory(1);
+        rt.flush();
+        Assert.assertEquals("底槽按 ↓ 不草稿清空", "abc", bar.inputText().get());
+    }
+
+    /**
+     * I3:空历史按 ↑ 返回 null 哨兵,输入完全不被清空(此前缺陷:无条件回写 "" 清空输入)。
+     */
+    @Test
+    public void recallHistoryEmptyHistoryDoesNotClearInput() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        ChatInputBar bar = new ChatInputBar(rt, "草稿输入");
+        rt.flush();
+        bar.recallHistory(-1);
+        rt.flush();
+        Assert.assertEquals("空历史按 ↑ 不草稿清空", "草稿输入", bar.inputText().get());
     }
 
     @Test
