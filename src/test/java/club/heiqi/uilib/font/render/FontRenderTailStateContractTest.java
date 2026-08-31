@@ -89,15 +89,20 @@ public class FontRenderTailStateContractTest {
         assertFalse("deferred flush scope 宿主不得补末字形色", adapter.contains("glColor4f"));
     }
 
-    /** 字体共享准备使用与原版世界路径一致的混合函数 (770,771,1,0)，不累积 dst-alpha。 */
+    /**
+     * 字体共享准备：RGB = straight over（与原版一致），alpha 通道 = over 累积——
+     * 离屏合成层内字形画在不透明底板上时 dst alpha 必须保持 1，否则贴回时
+     * {@code ONE_MINUS_SRC_ALPHA} 因子把底下画面从字形边缘漏进来（动画期文字透底脏边）。
+     */
     @Test
-    public void fontStateSupportUsesVanillaConsistentBlendFunc() throws IOException {
+    public void fontStateSupportUsesStraightOverBlendWithAlphaAccumulation() throws IOException {
         String body = methodBody(source(STATE_SUPPORT), "public static void prepareTextRenderState()");
 
-        assertTrue("混合函数必须与原版一致（src_alpha, 1-src_alpha, one, zero）",
+        assertTrue("RGB 混合必须为 straight over（src_alpha, 1-src_alpha）",
                 body.contains("glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,"));
-        assertTrue("dst-alpha 因子必须为 GL_ZERO", body.contains("GL11.GL_ONE, GL11.GL_ZERO)"));
-        assertFalse("dst-alpha 不得再使用 ONE_MINUS_SRC_ALPHA 累积", body.contains("GL11.GL_ONE_MINUS_SRC_ALPHA);"));
+        assertTrue("alpha 通道必须 over 累积（one, 1-src_alpha），不得用 GL_ZERO 覆盖 dst alpha",
+                body.contains("GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);"));
+        assertFalse("alpha 通道不得使用 GL_ZERO 覆盖", body.contains("GL11.GL_ONE, GL11.GL_ZERO)"));
     }
 
     /** 读取 UTF-8 生产源码。 */
