@@ -571,8 +571,11 @@ public final class ChatSceneController {
      */
     public SceneNode buildContent(SceneRuntime rt) {
         this.runtime = rt;
+        // 动画期间离屏栅格化（B6 方案）：开合动画 transform 施加于整体栅格化结果而非字形顶点
+        // （transform 恒等帧 needTransform=false，不产生图层边界命令，稳定态零开销）
         SceneNode newRoot = SceneNode.column()
                 .setHitTestable(false)
+                .setPreferTransformLayer(true)
                 .setPreferredWidth(Math.max(1, ChatMarkdownSettings.chatWidthFor(hostViewportWidth)));
         this.root = newRoot;
         this.mount = null;

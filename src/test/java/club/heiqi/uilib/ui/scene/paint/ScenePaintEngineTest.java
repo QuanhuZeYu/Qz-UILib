@@ -10,6 +10,7 @@ import org.junit.Assert;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -577,6 +578,71 @@ public class ScenePaintEngineTest {
         // 再次 paint：fragment 缓存命中,零重生成（剪枝不破坏缓存）
         PaintResult again = paintEngine.paint(root);
         Assert.assertEquals("可见稳态第二帧零重生成", 0, again.getRegeneratedFragmentCount());
+    }
+
+    // ============================================================
+    // 测试：transform 路径门控（PUSH_TRANSFORM vs PUSH_TRANSFORM_LAYER）
+    // ============================================================
+
+    /**
+     * 无 clip 且未偏好图层时，非恒等 transform 走 PUSH_TRANSFORM 纯顶点变换（默认路径不变）。
+     */
+    @Test
+    public void transformWithoutClipUsesPushTransformByDefault() {
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+        container.setBackgroundColor(0xFF336699);
+        container.setTransform(new Transform(0.0F, 3.5F, 0.0F, 1.0F, 1.0F, 0.0F, 1.0F));
+        root.appendChild(container);
+        layoutEngine.layout(root, new Constraints(200));
+
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+        Assert.assertEquals("默认无 clip 走纯顶点变换", 1,
+                countType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM));
+        Assert.assertEquals("默认不产生离屏图层边界", 0,
+                countType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM_LAYER));
+    }
+
+    /**
+     * preferTransformLayer 节点：非恒等 transform 改走 PUSH_TRANSFORM_LAYER
+     * （FBO 内 identity 栅格化 + 贴回施加 transform），不再逐顶点变换。
+     */
+    @Test
+    public void preferTransformLayerRoutesTransformToOffscreenLayer() {
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+        container.setBackgroundColor(0xFF336699);
+        container.setTransform(new Transform(0.0F, 3.5F, 0.0F, 0.96F, 0.96F, 0.0F, 1.0F));
+        container.setPreferTransformLayer(true);
+        root.appendChild(container);
+        layoutEngine.layout(root, new Constraints(200));
+
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+        Assert.assertEquals("偏好图层后不再逐顶点变换", 0,
+                countType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM));
+        Assert.assertEquals("应产生离屏图层 PUSH 边界", 1,
+                countType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM_LAYER));
+        Assert.assertEquals("应产生离屏图层 POP 边界", 1,
+                countType(plan.getCommands(), PaintCommandType.POP_TRANSFORM_LAYER));
+    }
+
+    /**
+     * preferTransformLayer 节点在 transform 恒等时零边界命令（稳定态零开销）。
+     */
+    @Test
+    public void identityTransformWithLayerPreferenceEmitsNoBoundary() {
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+        container.setBackgroundColor(0xFF336699);
+        container.setPreferTransformLayer(true);
+        root.appendChild(container);
+        layoutEngine.layout(root, new Constraints(200));
+
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+        Assert.assertEquals("恒等 transform 无 PUSH_TRANSFORM", 0,
+                countType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM));
+        Assert.assertEquals("恒等 transform 无 PUSH_TRANSFORM_LAYER", 0,
+                countType(plan.getCommands(), PaintCommandType.PUSH_TRANSFORM_LAYER));
     }
 
     // ============================================================

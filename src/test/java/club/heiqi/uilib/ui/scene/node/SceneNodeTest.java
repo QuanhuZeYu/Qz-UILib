@@ -355,6 +355,20 @@ public class SceneNodeTest {
         Assert.assertFalse("setTransform 不应标 selfPaint", node.__isSelfPaintDirty());
     }
 
+    /**
+     * 验证：setPreferTransformLayer 打出 composite 级失效（渲染路径选择偏好，同 transform 级）。
+     */
+    @Test
+    public void shouldMarkCompositeOnTransformLayerPreferenceChange() {
+        SceneNode node = new SceneNode();
+        flushAll(node);
+
+        node.setPreferTransformLayer(true);
+        Assert.assertTrue("setPreferTransformLayer 后应标 composite", node.__isCompositeDirty());
+        Assert.assertFalse("setPreferTransformLayer 不应标 selfLayout", node.__isSelfLayoutDirty());
+        Assert.assertFalse("setPreferTransformLayer 不应标 selfPaint", node.__isSelfPaintDirty());
+    }
+
     // ==================== 测试 5：同值不标脏（去重铁律） ====================
 
     /**

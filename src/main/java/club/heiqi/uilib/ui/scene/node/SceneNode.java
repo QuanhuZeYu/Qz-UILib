@@ -761,6 +761,17 @@ public class SceneNode {
     /** @see ScenePaintProps#transform */
     public Transform getTransform() { return paintProps.transform; }
 
+    /** @see ScenePaintProps#preferTransformLayer */
+    public SceneNode setPreferTransformLayer(boolean preferTransformLayer) {
+        if (paintProps.preferTransformLayer == preferTransformLayer) return this;
+        paintProps.preferTransformLayer = preferTransformLayer;
+        markComposite();
+        return this;
+    }
+
+    /** @see ScenePaintProps#preferTransformLayer */
+    public boolean isPreferTransformLayer() { return paintProps.preferTransformLayer; }
+
     /**
      * 设置 internal、像素对齐的 presentation Y 位移。
      *

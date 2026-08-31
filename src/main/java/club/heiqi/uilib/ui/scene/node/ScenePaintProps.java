@@ -26,6 +26,13 @@ final class ScenePaintProps {
     Transform transform;
 
     /**
+     * 合成级变换偏好离屏图层栅格化（B6 方案）：transform 非恒等时优先走
+     * PUSH_TRANSFORM_LAYER（FBO 内 identity 栅格化 + 贴回施加 transform），
+     * 而非 PUSH_TRANSFORM 逐顶点变换。默认 false（保持纯顶点变换）。
+     */
+    boolean preferTransformLayer;
+
+    /**
      * 边框颜色（ARGB），默认 0（无边框）。
      *
      * <p>第 0 段裁决：边框不占布局空间（box-sizing: border-box 简化），

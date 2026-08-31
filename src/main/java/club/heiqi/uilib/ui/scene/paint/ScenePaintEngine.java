@@ -149,15 +149,18 @@ public class ScenePaintEngine {
 
         // ==== transform（方案甲完整矩阵 + B6 FBO 方案） ====
         // transform 绝不进 fragment（fragment 只持纯几何相对坐标命令），每帧从 node 实时读取。
-        // 门控：needTransform && needClip → PUSH_TRANSFORM_LAYER（FBO 离屏图层，解决 rotate 下 scissor 错位）
-        //       needTransform && !needClip → PUSH_TRANSFORM（GL 矩阵纯顶点变换，零重栅格化守信条五）
+        // 门控：needTransform && (needClip || preferTransformLayer) → PUSH_TRANSFORM_LAYER
+        //       （FBO 离屏图层：先 identity 清晰栅格化，贴回时再施加 transform——rotate 下 scissor
+        //       轴对齐正确裁剪 + 文字先栅格化后整体动画，不经字形逐顶点重采样）
+        //       needTransform && 其余 → PUSH_TRANSFORM（GL 矩阵纯顶点变换，零重栅格化守信条五）
         Transform transform = node.getTransform();
         boolean needTransform = box != null && transform != null && !transform.isIdentity();
         boolean needClip = box != null && node.isClipWindow();
+        boolean needLayer = needClip || node.isPreferTransformLayer();
         if (needTransform) {
             int width = box.getWidth();
             int height = box.getHeight();
-            if (needClip) {
+            if (needLayer) {
                 // B6 FBO 方案：transform+clip 叠加走离屏图层，FBO 内 MODELVIEW=I 使 scissor 轴对齐正确裁剪
                 plan.addPushTransformLayer(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
                         transform.translateX, transform.translateY, transform.rotateDegrees,
@@ -245,9 +248,9 @@ public class ScenePaintEngine {
         }
 
         // ==== 子树命令全部产出后，闭合 transform 作用域（最外层，与 PUSH 严格配对） ====
-        // B6 FBO 方案：needTransform && needClip → POP_TRANSFORM_LAYER，否则 POP_TRANSFORM
+        // B6 FBO 方案：needTransform && needLayer → POP_TRANSFORM_LAYER，否则 POP_TRANSFORM
         if (needTransform) {
-            if (needClip) {
+            if (needLayer) {
                 plan.addPopTransformLayer();
             } else {
                 plan.addPopTransform();
