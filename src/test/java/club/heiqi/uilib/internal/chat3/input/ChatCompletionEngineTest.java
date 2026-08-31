@@ -76,7 +76,7 @@ public class ChatCompletionEngineTest {
         Assert.assertEquals("首 Tab 发 C14 光标前全文(含 /)", Arrays.asList("/tp ste"), host.sentRequests);
         Assert.assertEquals("等待态不修改文本", "/tp ste", host.text);
 
-        engine.onTab(1); // 等待态重复 Tab:原版语义重发 C14(覆盖请求快照)
+        engine.onTab(1); // 等待态重复 Tab:原版语义重发 C14(I4:FIFO 追加请求,不覆盖既有请求快照)
         Assert.assertEquals(2, host.sentRequests.size());
         Assert.assertEquals(Arrays.asList("/tp ste", "/tp ste"), host.sentRequests);
         Assert.assertEquals("等待态不修改文本", "/tp ste", host.text);
@@ -327,6 +327,135 @@ public class ChatCompletionEngineTest {
 
         engine.onTab(1);
         Assert.assertEquals("重新请求按新文本重算本地候选", 2, host.localCommandCalls);
+    }
+
+    @Test
+    public void secondTabDuringAwaitingAppendsRequestWithoutOverwriting() {
+        FakeHost host = new FakeHost();
+        host.text = "/tp ste";
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+
+        engine.onTab(1); // I4:AWAITING 期重复 Tab 追加请求(FIFO 排队),绝不覆盖既有请求快照
+        Assert.assertEquals(Arrays.asList("/tp ste", "/tp ste"), host.sentRequests);
+
+        // 响应1:空应答(无候选可应用),文本不变 → 请求2 快照仍匹配
+        engine.onResponse(new String[0]);
+        Assert.assertEquals("/tp ste", host.text);
+
+        // 响应2 匹配自己的快照 → 正常应用;旧单槽实现会把这份响应当多余响应丢弃(红)
+        engine.onResponse(new String[] { "steve", "steve2" });
+        Assert.assertEquals("第二份响应仍按 FIFO 消费并应用", "/tp steve", host.text);
+        Assert.assertTrue("公共前缀扩展不打印", host.printed.isEmpty());
+    }
+
+    @Test
+    public void firstResponseMatchingEditedTextIsAppliedBySnapshot() {
+        FakeHost host = new FakeHost();
+        host.text = "/tp ste";
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1); // 请求1 快照 A = "/tp ste"
+
+        // 文本继续编辑为 B(直接改真值,不调 onTextEdited:模拟清队时序缝隙,正是 I4 要防的错配)
+        host.text = "/tp stev";
+        engine.onTab(1); // 请求2 快照 B = "/tp stev",FIFO 追加(不覆盖请求1)
+        Assert.assertEquals("每次 Tab 各发一份请求", 2, host.sentRequests.size());
+
+        // 响应1(A 的候选)先到,快照 A != 当前 B → 丢弃
+        engine.onResponse(new String[] { "steve", "stella" });
+        Assert.assertEquals("响应1 快照 A 不匹配当前文本:丢弃", "/tp stev", host.text);
+        Assert.assertTrue("丢弃路径不打印", host.printed.isEmpty());
+
+        // 响应2(B 的候选)后到,快照 B == 当前文本 → 应用(当前词 "stev" → 公共前缀 "steve")
+        engine.onResponse(new String[] { "steve", "stella" });
+        Assert.assertEquals("响应2 快照 B 匹配当前文本:正常应用", "/tp steve", host.text);
+    }
+
+    @Test
+    public void queueSelfAlignsWhenHeadDropped() {
+        FakeHost host = new FakeHost();
+        host.text = "/tp ste";
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1); // A
+        host.text = "/tp stev";
+        engine.onTab(1); // B
+        host.text = "/tp stevi";
+        engine.onTab(1); // C
+        Assert.assertEquals(3, host.sentRequests.size());
+
+        // 当前文本 = C 的文本;响应1 队首 A 快照不匹配 → 丢弃并继续出队
+        engine.onResponse(new String[] { "steve" });
+        Assert.assertEquals("队首过期丢弃,队列保持自对齐", "/tp stevi", host.text);
+
+        // 响应2 队首 B 仍不匹配 → 丢弃
+        engine.onResponse(new String[] { "steven" });
+        Assert.assertEquals("/tp stevi", host.text);
+
+        // 响应3 队首 C 匹配 → 应用;当前词 "stevi" 与单候选 "stevie" 公共前缀 → 入框
+        engine.onResponse(new String[] { "stevie" });
+        Assert.assertEquals("丢弃队首后队列自对齐:响应3 对到 C", "/tp stevie", host.text);
+    }
+
+    @Test
+    public void onTextEditedClearsAllPendingRequests() {
+        FakeHost host = new FakeHost();
+        host.text = "/tp ste";
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+        engine.onTab(1);
+        Assert.assertEquals(2, host.sentRequests.size());
+
+        engine.onTextEdited(); // I4:清空全部 pending,而非仅清最后一份请求快照
+        Assert.assertEquals("编辑后回到 idle,不残留 pending", 2, host.sentRequests.size());
+
+        engine.onResponse(new String[] { "steve", "stella" });
+        Assert.assertEquals("清队后任何迟到响应都被丢弃", "/tp ste", host.text);
+        Assert.assertTrue(host.printed.isEmpty());
+        engine.onResponse(new String[] { "steve" });
+        Assert.assertEquals("/tp ste", host.text);
+
+        engine.onTab(1); // idle 后再次 Tab 走全新请求
+        Assert.assertEquals(3, host.sentRequests.size());
+        engine.onResponse(new String[] { "steve", "stella" });
+        Assert.assertEquals("清队后新请求响应正常应用", "/tp steve", host.text);
+    }
+
+    @Test
+    public void awaitingWithEmptyPendingDropsToIdle() {
+        FakeHost host = new FakeHost();
+        host.text = "/tp ste";
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+
+        host.text = "/tp stev";
+        engine.onResponse(new String[] { "steve" }); // 唯一 pending 已出队(快照不匹配丢弃)→ idle
+        engine.onResponse(new String[] { "steve" }); // 防御:多余响应不 NPE、不碰文本
+        Assert.assertEquals("/tp stev", host.text);
+
+        engine.onTab(1); // idle 后正常重新请求
+        Assert.assertEquals(2, host.sentRequests.size());
+        engine.onResponse(new String[] { "steve" });
+        Assert.assertEquals("/tp steve", host.text);
+    }
+
+    @Test
+    public void networkDropDuringAwaitingClearsPendingAndFallsBackLocally() {
+        FakeHost host = new FakeHost();
+        host.text = "/qzu";
+        host.localCommands.add("/qzuilib");
+        ChatCompletionEngine engine = engine(host);
+        engine.onTab(1);
+        Assert.assertEquals(Arrays.asList("/qzu"), host.sentRequests);
+
+        // 断线:此前发出的 C14 已随连接作废;AWAITING 期再次 Tab 检测无网络 → 清 pending + 本地兜底
+        host.network = false;
+        engine.onTab(1);
+        Assert.assertEquals("断线后不再发 C14", 1, host.sentRequests.size());
+        Assert.assertEquals("本地命令候选直接兜底(第一段直达)", "/qzuilib", host.text);
+
+        engine.onResponse(new String[] { "server-only" }); // 旧请求残留响应:无 pending → 丢弃
+        Assert.assertEquals("/qzuilib", host.text);
+        Assert.assertTrue(host.printed.isEmpty());
     }
 
     @Test

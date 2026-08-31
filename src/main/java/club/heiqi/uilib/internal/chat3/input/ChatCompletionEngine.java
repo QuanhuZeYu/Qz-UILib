@@ -1,24 +1,36 @@
 package club.heiqi.uilib.internal.chat3.input;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 /**
- * Tab 补全状态机(T2):idle → awaiting(requestSnapshot) → cycling(candidates, index) 三态,
+ * Tab 补全状态机(T2):idle → awaiting(pending FIFO 队列) → cycling(candidates, index) 三态,
  * 还原原版 1.7.10 体感:
  * <ul>
  *   <li>首 Tab 统一发 C14PacketTabComplete(光标前全文,玩家名+命令均由服务端应答);</li>
  *   <li>客户端命令本地候选(forge 补丁同构):"/" 开头文本在请求时同步调
  *       {@link Host#localCommandCompletions(String)} 并随请求快照缓存,响应到达时
  *       本地在前合并去重(dedupe(concat(local, server)))——本地不先行覆盖服务端,首 Tab RTT 体感不变;</li>
+ *   <li>I4 跨请求错配修复:单槽请求快照升级为 FIFO 快照队列,AWAITING 期重复 Tab
+ *       追加请求(每次 Tab 都发请求,原版体感),绝不覆盖既有请求;响应按同连接 FIFO 配对
+ *       (1.7.10 S3APacketTabComplete 无 transaction id,同连接响应顺序=请求顺序,只能 FIFO);</li>
+ *   <li>双守卫解耦:队列负责「哪个响应对应哪个请求」,快照守卫负责「请求是否过期」
+ *       (队首快照 != 当前文本 → 丢弃该响应,队列逐条自对齐);</li>
  *   <li>响应两段式:候选最长公共前缀(大小写不敏感比较)比当前词长 → 就地扩为公共前缀、不弹列表;
  *       已处于公共前缀 → 进入循环态(首候选立即入框 + 候选 ", " 连接打印进聊天区);</li>
  *   <li>候选打印仅 size>1(原版 GuiChat:244):单候选直达/公共前缀直达不刷聊天区;</li>
  *   <li>循环态:Tab 依次替换候选(到尾回卷 0),Shift+Tab 反向(增强);每次以同 messageId 覆盖打印;</li>
- *   <li>stale 守卫:任意输入变化清循环/等待态与本地候选缓存;响应到达校验请求时全文快照(非布尔),不匹配丢弃;</li>
+ *   <li>stale 守卫:任意输入变化清循环/等待态与 pending 队列;响应到达校验请求时全文快照(非布尔),不匹配丢弃;</li>
+ *   <li>断线边界:AWAITING 期 Tab 检测 networkAvailable()==false → 清空 pending 后走本地兜底
+ *       (残留响应回来无 pending 可配对,被 phase 守卫丢弃);</li>
  *   <li>R1:本地 playerInfoList 只做无网络兜底(大小写不敏感匹配),绝不本地先行、服务端后到覆盖。</li>
  * </ul>
+ *
+ * <p>边界分析:同 TCP 连接 C14/S3A 响应 FIFO 严格成立(1.7.10 协议保证);断线残留 pending 由
+ * 下次 Tab 的 networkAvailable() 检测清空;非标准服务端乱序响应 → 队首快照不匹配被丢弃,
+ * 队列逐条自对齐;与 I5(请求屏蔽)交互:屏蔽只减少请求数,不改变队列配对语义。</p>
  */
 final class ChatCompletionEngine {
 
@@ -58,12 +70,27 @@ final class ChatCompletionEngine {
     private final Host host;
 
     private Phase phase = Phase.IDLE;
-    /** AWAITING 时的请求全文快照(stale 守卫用,非布尔)。 */
-    private String requestSnapshot;
-    /** AWAITING 时缓存的本地客户端命令候选(随请求快照同生命周期,响应时本地在前合并)。 */
-    private List<String> requestLocalOptions = Collections.emptyList();
+    /**
+     * AWAITING 期在途请求 FIFO 队列(每份请求含发出时的全文快照 + 本地命令候选缓存)。
+     * 不变量:phase == AWAITING ⟺ pending 非空。
+     */
+    private final ArrayDeque<PendingRequest> pending = new ArrayDeque<PendingRequest>();
     private List<String> cyclingCandidates = Collections.emptyList();
     private int cyclingIndex;
+
+    /**
+     * 单份在途请求快照:发出时的输入全文(stale 快照守卫,非布尔)
+     * + 随请求缓存的本地客户端命令候选(响应时本地在前合并,同生命周期)。
+     */
+    private static final class PendingRequest {
+        final String snapshot;
+        final List<String> localOptions;
+
+        PendingRequest(String snapshot, List<String> localOptions) {
+            this.snapshot = snapshot;
+            this.localOptions = localOptions;
+        }
+    }
 
     ChatCompletionEngine(Host host) {
         this.host = host;
@@ -85,15 +112,16 @@ final class ChatCompletionEngine {
         }
         if (host.networkAvailable()) {
             // 原版路径:统一发 C14(玩家名+命令均由服务端应答);首 Tab 延迟为原版固有体感。
-            // forge 补丁同构:请求时同步算本地客户端命令候选并缓存,响应到达时本地在前合并,
-            // 本地绝不先行覆盖服务端。
-            requestSnapshot = text;
-            requestLocalOptions = text.startsWith("/")
-                    ? new ArrayList<String>(host.localCommandCompletions(text))
-                    : Collections.<String>emptyList();
+            // AWAITING 期重复 Tab 同样发请求(FIFO 追加不覆盖),每次 Tab 都发请求保持原版体感;
+            // forge 补丁同构:请求时同步算本地客户端命令候选并随快照缓存,本地绝不先行覆盖服务端。
+            pending.addLast(capture(text));
             phase = Phase.AWAITING;
             host.sendRequest(text);
         } else {
+            // 断线兜底:在途请求已随连接作废 → 清空 pending 再走本地兜底
+            // (旧请求残留响应回来时无 pending 可配对,被 phase 守卫丢弃)。
+            pending.clear();
+            phase = Phase.IDLE;
             handleLocalFallback(text);
         }
     }
@@ -103,19 +131,29 @@ final class ChatCompletionEngine {
         if (phase != Phase.AWAITING) {
             return; // 非等待态响应丢弃
         }
-        String snapshot = requestSnapshot;
-        List<String> local = requestLocalOptions;
-        requestSnapshot = null;
-        requestLocalOptions = Collections.emptyList();
-        phase = Phase.IDLE;
-        if (!snapshot.equals(host.currentText())) {
-            return; // stale 守卫:请求时文本快照不匹配,丢弃
-        }
-        List<String> candidates = mergeLocalFirst(local, options);
-        if (candidates.isEmpty()) {
+        PendingRequest req = pending.pollFirst();
+        if (req == null) {
+            // 防御:不变量被破坏时的自愈(理论不可达;不 NPE、不留下空转的 AWAITING)
+            phase = Phase.IDLE;
             return;
         }
-        applyCompletion(snapshot, candidates);
+        // 双守卫解耦:队列(FIFO)决定「哪个响应对应哪个请求」,快照守卫决定「请求是否过期」。
+        // 队首快照 != 当前文本 → 该请求已过期,丢弃此响应;队列仍有在途请求则继续等待后续响应。
+        if (!req.snapshot.equals(host.currentText())) {
+            phase = pending.isEmpty() ? Phase.IDLE : Phase.AWAITING;
+            return;
+        }
+        // 快照匹配即应用是安全充分条件:候选只依赖请求快照文本,快照 == 当前文本 ⟹ 候选按当前文本计算。
+        List<String> candidates = mergeLocalFirst(req.localOptions, options);
+        if (candidates.isEmpty()) {
+            phase = pending.isEmpty() ? Phase.IDLE : Phase.AWAITING;
+            return;
+        }
+        // 应用会改变输入(commit),使队列中剩余请求的快照全部过期:继续等待只会逐个丢弃,
+        // 此处直接清空(与 onTextEdited 同构),并避免 applyCompletion 的 CYCLING 副作用被覆盖。
+        pending.clear();
+        phase = Phase.IDLE;
+        applyCompletion(req.snapshot, candidates); // 第二段会覆盖 phase=CYCLING,第一段保持 IDLE
     }
 
     /** 本地在前合并 + 保序去重(与 forge ObjectArrays.concat(latestAutoComplete, server) 同序)。 */
@@ -138,13 +176,19 @@ final class ChatCompletionEngine {
         return merged;
     }
 
-    /** 任意输入变化(用户编辑/历史回显/外部写入)即清循环态/等待态与本地候选缓存。 */
+    /** 任意输入变化(用户编辑/历史回显/外部写入)即清循环态/等待态与 pending 队列。 */
     void onTextEdited() {
         phase = Phase.IDLE;
-        requestSnapshot = null;
-        requestLocalOptions = Collections.emptyList();
+        pending.clear();
         cyclingCandidates = Collections.emptyList();
         cyclingIndex = 0;
+    }
+
+    /** 请求快照捕获:发出时全文 + 随请求缓存的本地客户端命令候选。 */
+    private PendingRequest capture(String text) {
+        return new PendingRequest(text, text.startsWith("/")
+                ? new ArrayList<String>(host.localCommandCompletions(text))
+                : Collections.<String>emptyList());
     }
 
     /** 本地无网络兜底:同步走两段式,不经 AWAITING。 */
