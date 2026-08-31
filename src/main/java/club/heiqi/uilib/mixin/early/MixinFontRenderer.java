@@ -44,6 +44,9 @@ public abstract class MixinFontRenderer {
         InvocationResult<Integer> result = qzuilib$fontInvoker.drawString(text, x, y, color, false);
         if (result.isHandled()) {
             cir.setReturnValue(result.getValue());
+            // 接管即替换：handled 分支内显式 cancel，原版 renderString 不再执行；
+            // 原版尾状态由 FontRendererFallbackInvoker.applyVanillaDrawStringTailState 幂等补齐。
+            cir.cancel();
         }
     }
 
@@ -52,6 +55,8 @@ public abstract class MixinFontRenderer {
         InvocationResult<Integer> result = qzuilib$fontInvoker.drawString(text, x, y, color, dropShadow);
         if (result.isHandled()) {
             cir.setReturnValue(result.getValue());
+            // 阴影变体同理：handled 分支内显式 cancel，避免原版 renderString 再执行一遍。
+            cir.cancel();
         }
     }
 
@@ -60,9 +65,15 @@ public abstract class MixinFontRenderer {
         InvocationResult<Integer> result = qzuilib$fontInvoker.drawString(text, x, y, color, true);
         if (result.isHandled()) {
             cir.setReturnValue(result.getValue());
+            // drawStringWithShadow 原版嵌套 drawString(..., true)：外层不 cancel 则阴影+正文整条
+            // 原版链路会继续执行，与 UILib 已有绘制叠加；handled 分支内显式 cancel 一刀切断。
+            cir.cancel();
         }
     }
 
+    // 度量注入点逐点结论：getStringWidth / listFormattedStringToWidth / splitStringWidth /
+    // trimStringToWidth×2 均纯度量、无 GL 副作用，即使 handled 也只 setReturnValue、有意不 cancel——
+    // 原版方法体执行无任何绘制输出，cancel 只会额外缩小与依赖原版体副作用的其他注入共存面。
     @Inject(method = "getStringWidth", at = @At("HEAD"), cancellable = true)
     public void getStringWidth(String text, CallbackInfoReturnable<Integer> cir) {
         InvocationResult<Integer> result = qzuilib$fontInvoker.getStringWidth(text);
