@@ -473,6 +473,29 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
+     * 绘制带 iOS 材质档的背后滤镜（推荐的质感入口）。
+     *
+     * <p>与旧的 saturation 入口区别：材质档走亮度域保护式 vibrancy，并按
+     * vibrancy -> tint 蒙层 -> 亮度偏置 -> 边缘亮边 -> 抗 banding 噪点 的顺序合成，
+     * 还原 {@code UIVisualEffectView} 的通透质感；旧入口是线性饱和度乘子，
+     * 亮部一起过曝、暗部几乎不变。传 {@code null} 等价于旧语义。</p>
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param blurRadius 模糊半径像素
+     * @param saturation 饱和度倍率；material 非空时被材质档取代
+     * @param cornerRadii 四角圆角
+     * @param material 材质档，可为 null
+     */
+    public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, UiGlassMaterial material) {
+        UiBackdropFilterRenderer.render(this, left, top, right, bottom, blurRadius, saturation, cornerRadii,
+                material);
+    }
+
+    /**
      * 绘制文本。
      *
      * @param text 文本

@@ -36,4 +36,25 @@ public final class UiRenderBackends {
                     UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, cornerRadius)));
         }
     }
+
+    /**
+     * 向支持 backdrop-filter 的后端转发一次带 iOS 材质档的背后滤镜绘制。
+     *
+     * @param backend      渲染后端
+     * @param left         左侧坐标
+     * @param top          顶部坐标
+     * @param right        右侧坐标
+     * @param bottom       底部坐标
+     * @param blurRadius   模糊半径像素
+     * @param saturation   饱和度倍率；material 非空时被材质档取代
+     * @param cornerRadius 圆角半径
+     * @param material     iOS 风格材质档；null 走旧线性饱和度语义
+     */
+    public static void backdropFilter(UiRenderBackend backend, int left, int top, int right, int bottom,
+            int blurRadius, float saturation, int cornerRadius, UiGlassMaterial material) {
+        if (backend instanceof UiRenderContext) {
+            ((UiRenderContext) backend).drawBackdropFilter(left, top, right, bottom, blurRadius, saturation,
+                    UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, cornerRadius)), material);
+        }
+    }
 }

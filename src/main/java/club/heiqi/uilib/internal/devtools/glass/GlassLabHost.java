@@ -2,6 +2,7 @@ package club.heiqi.uilib.internal.devtools.glass;
 
 import club.heiqi.uilib.internal.devtools.playground.PlaygroundKit;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.render.UiRenderBackends;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -46,7 +47,19 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
     private static final int RADIUS_MAX = 40;
     /** 饱和百分比滑杆上限。 */
     private static final int SATURATION_MAX = 300;
-    /** 玻璃面高透白（iOS 材质基调）。 */
+    /** 材质档序列：旧语义置顶，便于从左到右逐级对比"糊一层彩"与 iOS 材质的差距。 */
+    private static final UiGlassMaterial[] MATERIAL_LADDER = {
+            null,
+            UiGlassMaterial.ULTRA_THIN,
+            UiGlassMaterial.THIN,
+            UiGlassMaterial.REGULAR,
+            UiGlassMaterial.THICK,
+            UiGlassMaterial.DARK_ULTRA_THIN,
+            UiGlassMaterial.DARK_THIN,
+            UiGlassMaterial.DARK_REGULAR,
+            UiGlassMaterial.DARK_THICK,
+    };
+    /** 玻璃面高透白（旧语义兜底基调）。 */
     private static final int GLASS_TINT = 0x26FFFFFF;
     /** 玻璃描边（顶部渐亮近似）。 */
     private static final int GLASS_EDGE = 0x66FFFFFF;
@@ -66,17 +79,29 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
     private final Signal<String> pathSignal = Signal.create("backdrop 路径: 等待首帧");
     /** 模糊半径（UI 像素，受控源）。 */
     private final Signal<Double> blurSignal = Signal.create(18.0D);
-    /** 饱和度百分比（受控源）。 */
-    private final Signal<Double> saturationSignal = Signal.create(125.0D);
+    /** 饱和度百分比（受控源）。材质档下为 vibrancy 乘子，100% = 严格采用材质配方值。 */
+    private final Signal<Double> saturationSignal = Signal.create(100.0D);
+    /** 当前材质档序号（0 = 旧线性饱和度语义；双精度以复用 sliderRow）。 */
+    private final Signal<Double> materialIndexSignal = Signal.create(Double.valueOf(3.0D));
+    /** 材质档名称文本。 */
+    private final Signal<String> materialTextSignal = Signal.create(describeMaterial(3));
     /** 圆角半径（UI 像素，受控源）。 */
     private final Signal<Double> radiusSignal = Signal.create(16.0D);
     /** 鼠标跟随玻璃开关。 */
     private final Signal<Boolean> followSignal = Signal.create(Boolean.TRUE);
     /** 暂停玻璃回贴开关（A/B 对比）。 */
     private final Signal<Boolean> frozenSignal = Signal.create(Boolean.FALSE);
+    /**
+     * 本帧请求后端做 backdrop 滤镜的矩形列表（每项 l,t,r,b）。
+     *
+     * <p>材质档生效时玻璃质感全在 shader 内合成，宿主不再叠 tint 面——headless 下
+     * 滤镜请求本身没有可观测副作用。本字段把"宿主算出来的面板矩形"显式暴露为断言锚点，
+     * 避免几何回归测试再次退化成只能靠伴随绘制物间接观察（2026-09-01 坐标根因的教训）。</p>
+     */
+    private final java.util.List<int[]> backdropRectsThisFrame = new java.util.ArrayList<int[]>();
     /** 滑杆值文本（受控源联动）。 */
     private final Signal<String> blurTextSignal = Signal.create("模糊半径 18");
-    private final Signal<String> saturationTextSignal = Signal.create("饱和度 125%");
+    private final Signal<String> saturationTextSignal = Signal.create("饱和度 100%");
     private final Signal<String> radiusTextSignal = Signal.create("圆角 16");
 
     /**
@@ -119,6 +144,7 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         super.render(w, h, ctx, absX, absY);
+        backdropRectsThisFrame.clear();
         if (frozenSignal.get().booleanValue()) {
             pathSignal.set("backdrop 路径: 已暂停（玻璃回贴冻结）");
             return;
@@ -126,6 +152,7 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         int blur = clampToInt(blurSignal.get(), 0, BLUR_MAX);
         int radius = clampToInt(radiusSignal.get(), 0, RADIUS_MAX);
         float saturation = clampToInt(saturationSignal.get(), 0, SATURATION_MAX) / 100.0F;
+        UiGlassMaterial material = materialAt(materialIndexSignal.get().intValue());
 
         // 坐标必须走 SceneGeometry.absoluteBox 权威单点（LayoutBox.x/y 是父相对局部坐标，
         // 直接用会把叠加层画到屏幕左缘——2026-09-01 真机首验根因）；absX/absY 同 hit test 口径。
@@ -137,8 +164,12 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
             int panelRight = stageBox.getX() + stageBox.getWidth() - 10;
             int panelBottom = stageBox.getY() + 190;
             UiRenderBackends.backdropFilter(ctx, panelLeft, panelTop, panelRight, panelBottom,
-                    blur, saturation, radius);
-            ctx.drawSurface(panelLeft, panelTop, panelRight, panelBottom, GLASS_TINT, GLASS_EDGE, radius);
+                    blur, saturation, radius, material);
+            backdropRectsThisFrame.add(new int[] { panelLeft, panelTop, panelRight, panelBottom });
+            if (material == null) {
+                // 旧语义没有 shader 侧 tint/亮边，仍由宿主补一层白面。
+                ctx.drawSurface(panelLeft, panelTop, panelRight, panelBottom, GLASS_TINT, GLASS_EDGE, radius);
+            }
 
             // 鼠标跟随玻璃：需要后端报告指针位置（仅 MC 平台上下文支持）。
             if (followSignal.get().booleanValue() && ctx instanceof UiRenderContext) {
@@ -147,12 +178,18 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
                 int pointerY = context.getMouseY();
                 if (pointerX >= stageBox.getX() && pointerX <= stageBox.getX() + stageBox.getWidth()
                         && pointerY >= stageBox.getY() && pointerY <= stageBox.getY() + stageBox.getHeight()) {
+                    int followRadius = Math.max(radius, FOLLOW_HALF_HEIGHT);
                     UiRenderBackends.backdropFilter(ctx, pointerX - FOLLOW_HALF_WIDTH, pointerY - FOLLOW_HALF_HEIGHT,
                             pointerX + FOLLOW_HALF_WIDTH, pointerY + FOLLOW_HALF_HEIGHT, blur, saturation,
-                            Math.max(radius, FOLLOW_HALF_HEIGHT));
-                    ctx.drawSurface(pointerX - FOLLOW_HALF_WIDTH, pointerY - FOLLOW_HALF_HEIGHT,
-                            pointerX + FOLLOW_HALF_WIDTH, pointerY + FOLLOW_HALF_HEIGHT, GLASS_TINT, GLASS_EDGE,
-                            Math.max(radius, FOLLOW_HALF_HEIGHT));
+                            followRadius, material);
+                    backdropRectsThisFrame.add(new int[] { pointerX - FOLLOW_HALF_WIDTH,
+                            pointerY - FOLLOW_HALF_HEIGHT, pointerX + FOLLOW_HALF_WIDTH,
+                            pointerY + FOLLOW_HALF_HEIGHT });
+                    if (material == null) {
+                        ctx.drawSurface(pointerX - FOLLOW_HALF_WIDTH, pointerY - FOLLOW_HALF_HEIGHT,
+                                pointerX + FOLLOW_HALF_WIDTH, pointerY + FOLLOW_HALF_HEIGHT, GLASS_TINT, GLASS_EDGE,
+                                followRadius);
+                    }
                 }
             }
         }
@@ -160,10 +197,16 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         AnchorRect probeBox = SceneGeometry.absoluteBox(probeCard, absX, absY);
         if (probeBox.getWidth() > 0 && probeBox.getHeight() > 0) {
             // 探针玻璃：固定在卡内顶部 56px 带，观察其下文字是否被采样模糊。
-            UiRenderBackends.backdropFilter(ctx, probeBox.getX() + 8, probeBox.getY() + 8,
-                    probeBox.getX() + probeBox.getWidth() - 8, probeBox.getY() + 64, blur, saturation, radius);
-            ctx.drawSurface(probeBox.getX() + 8, probeBox.getY() + 8, probeBox.getX() + probeBox.getWidth() - 8,
-                    probeBox.getY() + 64, GLASS_TINT, GLASS_EDGE, radius);
+            int probeLeft = probeBox.getX() + 8;
+            int probeTop = probeBox.getY() + 8;
+            int probeRight = probeBox.getX() + probeBox.getWidth() - 8;
+            int probeBottom = probeBox.getY() + 64;
+            UiRenderBackends.backdropFilter(ctx, probeLeft, probeTop, probeRight, probeBottom, blur, saturation,
+                    radius, material);
+            backdropRectsThisFrame.add(new int[] { probeLeft, probeTop, probeRight, probeBottom });
+            if (material == null) {
+                ctx.drawSurface(probeLeft, probeTop, probeRight, probeBottom, GLASS_TINT, GLASS_EDGE, radius);
+            }
         }
         pathSignal.set("backdrop 路径: " + UiRenderContext.getLastBackdropFilterRenderPath().getLabel()
                 + " | 诊断: " + UiRenderContext.getLastBackdropFilterDetail());
@@ -187,6 +230,16 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
     /** 测试访问器：模糊半径受控源。 */
     Signal<Double> __getBlurSignal() {
         return blurSignal;
+    }
+
+    /** 测试访问器：本帧请求 backdrop 滤镜的矩形列表（几何/坐标锁锚点）。 */
+    java.util.List<int[]> __getBackdropRects() {
+        return backdropRectsThisFrame;
+    }
+
+    /** 测试访问器：当前材质档受控源。 */
+    Signal<Double> __getMaterialIndexSignal() {
+        return materialIndexSignal;
     }
 
     /** 测试访问器：渲染路径诊断文本源。 */
@@ -266,12 +319,17 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
     private SceneNode buildControls() {
         SceneNode card = PlaygroundKit.card();
         card.appendChild(PlaygroundKit.title("参数台"));
+        card.appendChild(PlaygroundKit.hint(
+                "材质档非「旧语义」时质感由 shader 合成（vibrancy / tint / 亮边 / 噪点），此时饱和度滑杆是 vibrancy 乘子：100%=配方原值，>100 更艳，<100 更哑"));
         card.appendChild(sliderRow(blurTextSignal, blurSignal, "模糊半径 ", "", 0.0D, BLUR_MAX, 1.0D,
                 value -> String.valueOf(Math.round(value))));
         card.appendChild(sliderRow(saturationTextSignal, saturationSignal, "饱和度 ", "%", 0.0D,
                 SATURATION_MAX, 5.0D, value -> String.valueOf(Math.round(value))));
         card.appendChild(sliderRow(radiusTextSignal, radiusSignal, "圆角 ", "", 0.0D, RADIUS_MAX, 1.0D,
                 value -> String.valueOf(Math.round(value))));
+        card.appendChild(sliderRow(materialTextSignal, materialIndexSignal, "材质 ", "", 0.0D,
+                MATERIAL_LADDER.length - 1, 1.0D,
+                value -> describeMaterial((int) Math.round(value))));
 
         SceneNode switchRow = SceneNode.row(18);
         switchRow.setFillParentWidth(true);
@@ -337,6 +395,20 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         card.appendChild(pathText);
         runtime.bindText(pathText, pathSignal);
         return card;
+    }
+
+    /** 按序号取材质档；越界与 0 均返回 null（旧线性饱和度语义）。 */
+    private static UiGlassMaterial materialAt(int index) {
+        if (index <= 0 || index >= MATERIAL_LADDER.length) {
+            return null;
+        }
+        return MATERIAL_LADDER[index];
+    }
+
+    /** 材质档滑杆文案：序号 0 显示"旧语义"，其余显示枚举名。 */
+    private static String describeMaterial(int index) {
+        UiGlassMaterial material = materialAt(index);
+        return material == null ? "旧语义(线性饱和)" : material.name();
     }
 
     private static int clampToInt(Double value, int min, int max) {

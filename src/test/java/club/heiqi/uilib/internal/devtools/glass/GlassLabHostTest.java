@@ -53,6 +53,8 @@ public class GlassLabHostTest {
 
     @Test
     public void renderPaintsGlassOverlayAfterMainTreeAndRefreshesDiagnostics() {
+        // 序号 0 = 旧线性饱和度语义，此时质感由宿主补的 tint 面表达，才能观察叠加时序。
+        host.__getMaterialIndexSignal().set(Double.valueOf(0.0D));
         renderAndFlush(backend);
 
         int tintCount = 0;
@@ -81,6 +83,26 @@ public class GlassLabHostTest {
     }
 
     /**
+     * 材质档（序号非 0）下质感全部在 shader 内合成，宿主不得再叠 tint 面：
+     * 两层白叠加会二次加白过曝。同时滤镜请求仍必须发生（几何锁的锚点）。
+     */
+    @Test
+    public void materialModeSuppressesHostSideGlassTint() {
+        host.__getMaterialIndexSignal().set(Double.valueOf(3.0D));
+        RecordingRenderBackend mat = new RecordingRenderBackend();
+        renderAndFlush(mat);
+
+        for (RenderCall call : mat.getCalls()) {
+            if (call.methodName().equals("drawSurface")) {
+                Assert.assertNotEquals("材质档下宿主不得再叠玻璃 tint 面",
+                        GLASS_TINT, call.getInt(FILL_COLOR_ARG));
+            }
+        }
+        Assert.assertTrue("材质档仍必须请求 backdrop 滤镜，当前=" + host.__getBackdropRects().size(),
+                host.__getBackdropRects().size() >= 2);
+    }
+
+    /**
      * 坐标基准回归（2026-09-01 真机首验根因锁）：玻璃面板矩形必须落在采样场的
      * <b>绝对</b>盒内（SceneGeometry.absoluteBox 权威口径），而非其父相对局部坐标。
      * 居中列布局下局部 x≈0、绝对 x≈222，两者差之千里——回归时本测试直接失败。
@@ -94,24 +116,26 @@ public class GlassLabHostTest {
         Assert.assertTrue("居中布局下采样场绝对 x 必须大于其父相对局部 x（否则本测试无区分度）",
                 stageBox.getX() > 0);
 
-        RenderCall firstTint = null;
-        for (RenderCall call : backend.getCalls()) {
-            if (call.methodName().equals("drawSurface") && call.getInt(FILL_COLOR_ARG) == GLASS_TINT) {
-                firstTint = call;
-                break;
-            }
-        }
-        Assert.assertNotNull("应存在玻璃 tint 面板", firstTint);
+        java.util.List<int[]> rects = host.__getBackdropRects();
+        Assert.assertTrue("应有玻璃面板滤镜请求作为几何锚点", !rects.isEmpty());
+        int[] panel = rects.get(0);
         Assert.assertEquals("面板左缘必须基于绝对 x（局部坐标回归时=10，正确=stageBox.getX()+10）",
-                stageBox.getX() + 10, firstTint.getInt(0));
+                stageBox.getX() + 10, panel[0]);
         Assert.assertEquals("面板右缘必须基于绝对 x",
-                stageBox.getX() + stageBox.getWidth() - 10, firstTint.getInt(2));
+                stageBox.getX() + stageBox.getWidth() - 10, panel[2]);
         Assert.assertEquals("面板上缘必须基于绝对 y",
-                stageBox.getY() + 26, firstTint.getInt(1));
+                stageBox.getY() + 26, panel[1]);
     }
 
     @Test
     public void frozenSwitchSkipsGlassOverlayForAbComparison() {
+        // 锚点用"滤镜请求 ledger"而非 tint 面：材质档下宿主不叠 tint，若只查 tint
+        // 本测试会恒真——冻结根本没跑也不会被察觉。ledger 与渲染模式无关。
+        host.__getMaterialIndexSignal().set(Double.valueOf(3.0D));
+        RecordingRenderBackend live = new RecordingRenderBackend();
+        renderAndFlush(live);
+        Assert.assertTrue("未冻结时应请求滤镜", !host.__getBackdropRects().isEmpty());
+
         host.__getFrozenSignal().set(Boolean.TRUE);
         RecordingRenderBackend frozen = new RecordingRenderBackend();
         renderAndFlush(frozen);
@@ -124,6 +148,7 @@ public class GlassLabHostTest {
             }
         }
         Assert.assertTrue("冻结帧主树仍应正常回放", surfaceCalls > 0);
+        Assert.assertTrue("冻结帧必须完全停止 backdrop 滤镜请求", host.__getBackdropRects().isEmpty());
         Assert.assertTrue("冻结帧诊断应显示暂停", host.__getPathSignal().get().contains("已暂停"));
     }
 

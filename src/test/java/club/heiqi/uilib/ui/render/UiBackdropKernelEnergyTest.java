@@ -23,11 +23,12 @@ import org.junit.Test;
  *
  * <p>本测试按源码契约锚定：逐行解析 uiBackdropF.frag 的 texture2D 抽头，
  * 提取每抽头权重（形如 (n.0 / d.0) 分式或裸小数），断言抽头数与权重和。
- * 今后调核（改半径分布、改权重）必须保持权重和为 1，改核时同步更新本契约。</p>
+ * 2026-09-01 质感升级把规则核（十字+对角）换成 13 抽头 Poisson 盘以消除大半径
+ * 下的方向性拉丝，抽头数不变、权重和仍须为 1；今后改盘位或权重必须同步本契约。</p>
  */
 public class UiBackdropKernelEnergyTest {
 
-    /** 期望抽头数：中心 1 + 轴 4 + 远轴 4 + 对角 4。 */
+    /** 期望抽头数：中心 1 + Poisson 盘内环 4 + 外环 8。 */
     private static final int EXPECTED_TAP_COUNT = 13;
 
     /** 抽头行标记（每个 texture2D(mainTex, 采样即一个抽头）。 */

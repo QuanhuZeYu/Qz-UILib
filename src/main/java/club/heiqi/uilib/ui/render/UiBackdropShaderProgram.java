@@ -116,6 +116,37 @@ final class UiBackdropShaderProgram {
         }
     }
 
+    /**
+     * 设置三维向量 uniform。
+     *
+     * @param name uniform 名称
+     * @param x X 分量
+     * @param y Y 分量
+     * @param z Z 分量
+     */
+    void setUniform3f(String name, float x, float y, float z) {
+        int location = getUniformLocation(name);
+        if (location != -1) {
+            GL20.glUniform3f(location, x, y, z);
+        }
+    }
+
+    /**
+     * 设置四维向量 uniform。
+     *
+     * @param name uniform 名称
+     * @param x X 分量
+     * @param y Y 分量
+     * @param z Z 分量
+     * @param w W 分量
+     */
+    void setUniform4f(String name, float x, float y, float z, float w) {
+        int location = getUniformLocation(name);
+        if (location != -1) {
+            GL20.glUniform4f(location, x, y, z, w);
+        }
+    }
+
     private void closeProgram() {
         unbind();
         if (shaderProgramId != 0) {
