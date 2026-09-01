@@ -175,8 +175,8 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
                 paintContextCompositor.beginFrame();
                 mainLayerSnapshotService.beginFrame();
                 try {
-                    UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, pointerX, pointerY,
-                            partialTicks, paintContextCompositor, mainLayerSnapshotService,
+                    UiRenderContext context = UiHostRenderSupport.createRenderContext(nativeWidth, nativeHeight,
+                            pointerX, pointerY, partialTicks, paintContextCompositor, mainLayerSnapshotService,
                             runtimeAdapters);
                     surface.render(nativeWidth, nativeHeight, context, 0, 0);
                 } catch (RuntimeException renderError) {

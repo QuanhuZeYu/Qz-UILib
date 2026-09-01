@@ -40,7 +40,7 @@ public class UiHudRenderListenerGlFenceTest {
         int prepare = source.indexOf("UiHostRenderSupport.prepareMainUiRenderState()", renderMethod);
         int compositorBegin = source.indexOf("compositor.beginFrame()", renderMethod);
         int snapshotsBegin = source.indexOf("snapshots.beginFrame()", renderMethod);
-        int context = source.indexOf("new UiRenderContext(", renderMethod);
+        int context = source.indexOf("UiHostRenderSupport.createRenderContext(", renderMethod);
         int hostRender = source.indexOf("host.render(", renderMethod);
         int cleanup = source.indexOf("finishHudFrame()", renderMethod);
 

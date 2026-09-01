@@ -24,8 +24,9 @@ public class McScreenBridgeTest {
 
         Assert.assertTrue("投影必须继续使用完整 framebuffer 高度",
                 bridge.contains("GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D"));
-        Assert.assertTrue("UiRenderContext 必须继续使用完整 framebuffer 高度",
-                bridge.contains("new UiRenderContext(nativeWidth, nativeHeight, pointerX, pointerY"));
+        Assert.assertTrue("渲染上下文工厂必须继续收到完整 framebuffer 高度与指针坐标",
+                bridge.contains("UiHostRenderSupport.createRenderContext(nativeWidth, nativeHeight,")
+                        && bridge.contains("pointerX, pointerY, partialTicks"));
         Assert.assertTrue("通用 host 必须把完整 framebuffer 高度交给 surface",
                 bridge.contains("surface.render(nativeWidth, nativeHeight, context, 0, 0)"));
         Assert.assertTrue("ModernConfigScreen 必须直接使用原 surface，不得裁掉底部世界",

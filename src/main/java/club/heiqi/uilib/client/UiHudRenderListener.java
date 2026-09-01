@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import net.minecraft.client.Minecraft;
@@ -105,7 +106,8 @@ public final class UiHudRenderListener {
         try {
             UiHostRenderSupport.prepareMainUiRenderState();
             compositor.beginFrame(); snapshots.beginFrame();
-            UiRenderContext context = new UiRenderContext(width, height, 0, 0, event.partialTicks, compositor, snapshots);
+            UiRenderContext context = UiHostRenderSupport.createRenderContext(width, height, 0, 0,
+                    event.partialTicks, compositor, snapshots, UiRuntimeAdapters.empty());
             host.render(context, viewport, minecraft.theWorld != null, minecraft.currentScreen != null);
         } catch (RuntimeException failure) {
             frameFailure = failure;
