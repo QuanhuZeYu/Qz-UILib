@@ -91,7 +91,9 @@ void main(void) {
     // 旧语义路径（kernelJitter=0）保持恒等基，升级前后逐像素一致。
     mat2 kernelBasis = mat2(1.0, 0.0, 0.0, 1.0);
     if (kernelJitter > 0.5) {
-        float kernelAngle = hashNoise(gl_FragCoord.xy) * 6.28318530718;
+        // 偏移采样域再取 hash：与最终抖噪用的 hashNoise(gl_FragCoord.xy) 解耦，
+        // 否则同一像素的旋转角与噪声值相关，会露出规则性花纹。
+        float kernelAngle = hashNoise(gl_FragCoord.xy + vec2(37.0, 91.0)) * 6.28318530718;
         float ka = cos(kernelAngle);
         float kb = sin(kernelAngle);
         kernelBasis = mat2(ka, kb, -kb, ka);
