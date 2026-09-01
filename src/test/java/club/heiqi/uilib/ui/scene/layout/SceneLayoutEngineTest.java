@@ -1396,7 +1396,7 @@ public class SceneLayoutEngineTest {
      * 布局，而非父<b>裸约束宽</b>（200），否则 D 宽算成 200 溢出 48 盒右边界 152px。
      *
      * <p>缺陷锚点：layoutInternal 给子的 childConstraints 与 performLayout 排子的 innerWidth
-     * 必须用同一盒宽基准 {@code computeWidth(node, constraints)}。两者分裂时本测试复现溢出。</p>
+     * 必须用同一盒宽基准 {@code sizing.computeWidth}。两者分裂时本测试复现溢出。</p>
      */
     @Test
     public void fixedWidthContainerShouldConstrainChildWidthNoOverflow() {

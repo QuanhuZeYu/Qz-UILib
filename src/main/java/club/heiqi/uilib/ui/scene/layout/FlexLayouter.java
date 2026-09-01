@@ -117,7 +117,7 @@ class FlexLayouter {
         // computeWidth 仍返回约束宽/内在宽，与旧行为完全一致（零回归）。
         //
         // ★ 耦合不变式：此处 innerWidth 的盒宽基准，必须与 layoutInternal 给子节点的
-        // childConstraints 用同一基准 computeWidth(node, constraints)，否则固定宽容器的
+        // childConstraints 用同一基准 sizing.computeWidth，否则固定宽容器的
         // 「依赖约束宽」子节点会按裸约束宽布局而溢出父盒。两处务必同步修改。
         //
         // ★ 阶段 4.3：outerWidth / rootFinalHeight 改由主引擎调 sizing.computeWidth /

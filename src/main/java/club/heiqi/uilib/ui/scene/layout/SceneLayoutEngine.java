@@ -62,15 +62,15 @@ public class SceneLayoutEngine {
      * {@link SizingCalculator}；阶段 4.2 后，约束构造与高度先验计算（buildChildConstraints /
      * priorKnownChildHeight 等）已搬迁至 {@link ConstraintResolver}。本字段仅保留给
      * layout() 入口的 epoch 失效链（{@code measurer.epoch()}）使用，其余尺寸/约束计算
-     * 一律走 {@link #sizing} 或 {@link #constraints}。measurer 引用同时注入
-     * {@link SizingCalculator} 与 {@link ConstraintResolver}（后者供 priorKnownChildHeight
-     * 的 {@code measurer.lineHeight} 使用），三处共享同一实例。</p>
+     * 一律走 {@link #sizing} 或 {@link #constraints}。measurer 引用注入
+     * {@link SizingCalculator}（唯一度量落点；ConstraintResolver 的度量需求经 sizing
+     * 单点满足，2026-09-01 去重后不再直持）。</p>
      */
     private final SceneTextMeasurer measurer;
 
     /**
-     * 尺寸计算器（阶段 4.1 拆出）：computeWidth/computeHeight/viewportHeight/
-     * isHeightConsumingConstraint/countLines 等纯读函数集的协作者。
+     * 尺寸计算器：computeWidth/computeHeight/viewportHeight/
+     * isHeightConsumingConstraint 等纯读函数集的协作者。
      *
      * <p>跨类契约：本字段持有的 SizingCalculator 实例是 ConstraintResolver（4.2 拆出）
      * 与 FlexLayouter（4.3 拆出）计算内宽基准时的同一权威实例——三者必须共享同一
@@ -202,7 +202,7 @@ public class SceneLayoutEngine {
         // measuredTextNodes 在下方字段初始化后已就绪（字段初始化先于构造器体执行）。
         this.sizing = new SizingCalculator(measurer, measuredTextNodes);
         // 阶段 4.2：约束解析协作者，注入同一 sizing 与 measurer 引用。
-        this.constraints = new ConstraintResolver(sizing, measurer);
+        this.constraints = new ConstraintResolver(sizing);
         // 阶段 4.3：Flex 布局定位协作者，纯函数型消费者，无依赖注入。
         // 主引擎先调 sizing.computeWidth/computeHeight 算好尺寸，再传给 flex.positionChildren。
         this.flex = new FlexLayouter();
@@ -338,7 +338,7 @@ public class SceneLayoutEngine {
         // ROW 主轴 grow 比例分配见 ConstraintResolver.computeRowGrowWidths（与 COLUMN 主轴对称）。
         //
         // ★ 耦合不变式：layoutChildren 内 childConstraints 的内宽基准，必须与 positionChildren 步骤1
-        // 的 innerWidth 用同一盒宽基准 computeWidth(node, constraints)（含 preferredWidth 解析），
+        // 的 innerWidth 用同一盒宽基准 sizing.computeWidth（含 preferredWidth 解析），
         // 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
         //
         // ==== 阶段 2.2 串行单循环 + join 点补 bubble ====
@@ -470,7 +470,7 @@ public class SceneLayoutEngine {
      *
      * <h3>与 buildChildConstraints 的耦合（★不变式）</h3>
      * <p>childConstraints 的内宽基准必须与 {@link FlexLayouter#positionChildren} 步骤 1 的 innerWidth
-     * 同源——均基于 {@code computeWidth(node, constraints)}（含 preferredWidth 解析），
+     * 同源——均基于 {@code sizing.computeWidth}（含 preferredWidth 解析），
      * 否则有 preferredWidth 的固定宽容器，其「依赖约束宽」的子节点会按裸约束宽布局而溢出父盒。
      * 该不变式由 {@link ConstraintResolver#buildChildConstraints} 内部保证，本方法只负责调用。</p>
      *

@@ -12,7 +12,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
  * 约束解析器 —— scene 布局算法的约束构造下传 + 约束变化感知 + 高度先验计算协作者
@@ -29,9 +28,9 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * </ul>
  *
  * <h3>铁律：严禁读子 cachedLayout</h3>
- * <p>本类所有方法只读节点属性 + 约束 + measurer 度量，<b>绝不读取任何子节点的
- * cachedLayout</b>，避免父子布局循环依赖（与原主引擎内联时的铁律逐位等价）。
- * {@link #priorKnownChildHeight} 只读节点属性（含 getPreferredHeight / measurer.lineHeight），
+ * <p>本类所有方法只读节点属性 + 约束（度量一律经 {@link SizingCalculator} 单点），
+ * <b>绝不读取任何子节点的 cachedLayout</b>，避免父子布局循环依赖（与原主引擎内联时的铁律逐位等价）。
+ * {@link #priorKnownChildHeight} 只读节点属性（含 getPreferredHeight / sizing.leafTextHeight），
  * {@link #priorKnownInnerHeight} 只读 fill/约束/preferredHeight/padding，均不碰子 cache。</p>
  *
  * <h3>跨类契约（★最高风险，改一处必须同步另一处）</h3>
@@ -92,8 +91,8 @@ class ConstraintResolver {
             Collections.newSetFromMap(new WeakHashMap<>());
 
     /**
-     * 尺寸计算器（阶段 4.1 拆出）：提供 computeWidth（内宽基准权威）+ countLines
-     * （priorKnownChildHeight 文本行数统计）+ viewportHeight（耦合不变式锚点）。
+     * 尺寸计算器：提供 computeWidth（内宽基准权威）+ leafTextHeight（文本叶自然高）
+     * + measureMaxLineWidth（文本最大行宽）+ viewportHeight（耦合不变式锚点）。
      *
      * <p>跨类契约 1：本字段持有的 SizingCalculator 实例必须与 FlexLayouter.positionChildren
      * 用的同一实例，确保 computeWidth 的盒宽基准在 buildChildConstraints 与 positionChildren
@@ -102,27 +101,19 @@ class ConstraintResolver {
     private final SizingCalculator sizing;
 
     /**
-     * 文本度量服务：仅 {@link #priorKnownChildHeight} 计算文本叶先验高时需
-     * {@code measurer.lineHeight(fontSize)}。与 SizingCalculator 持有的 measurer 同源
-     * （主引擎构造时注入同一引用），逐位等价（I7/I8）。
-     */
-    private final SceneTextMeasurer measurer;
-
-    /**
-     * 使用指定尺寸计算器与文本度量服务创建约束解析器。
+     * 使用指定尺寸计算器创建约束解析器。
      *
-     * @param sizing   尺寸计算器（非 null，提供 computeWidth / countLines 等纯读函数）
-     * @param measurer 文本度量服务（非 null，提供 lineHeight）
+     * <p>文本度量（lineHeight / measureWidth / 拆行）一律经 {@link SizingCalculator}
+     * 单点触达 measurer，本类不再直接持有度量引用（度量副本去重，2026-09-01）。</p>
+     *
+     * @param sizing 尺寸计算器（非 null，提供 computeWidth / leafTextHeight /
+     *               measureMaxLineWidth 等纯读函数）
      */
-    ConstraintResolver(SizingCalculator sizing, SceneTextMeasurer measurer) {
+    ConstraintResolver(SizingCalculator sizing) {
         if (sizing == null) {
             throw new IllegalArgumentException("SizingCalculator 不得为 null");
         }
-        if (measurer == null) {
-            throw new IllegalArgumentException("SceneTextMeasurer 不得为 null");
-        }
         this.sizing = sizing;
-        this.measurer = measurer;
     }
 
     /**
@@ -132,7 +123,7 @@ class ConstraintResolver {
      * clamp 到不小于 0。</p>
      *
      * <p>宽度口径与 {@code FlexLayouter.positionChildren} 步骤 1 的 innerWidth 同源
-     * （均基于 {@code computeWidth(node, constraints)} 含 preferredWidth 解析），
+     * （均基于 {@code sizing.computeWidth} 含 preferredWidth 解析），
      * 保证固定宽容器的「依赖约束宽」子节点不溢出父盒。</p>
      *
      * <p><b>★ 跨类契约 1（内宽基准权威）反向锚定</b>：本方法用
@@ -249,15 +240,14 @@ class ConstraintResolver {
     /**
      * 计算固定兄弟的先验外宽（对称于 {@link #priorKnownChildHeight}）。
      *
-     * <p>preferredWidth 最高优先级；文本叶用 measurer 测量文本最大行宽 + 左右 padding；
-     * 无文本叶用左右 padding；容器或其他无法先验的节点返回 {@link Constraints#UNCONSTRAINED}。
-     * 只读节点属性 + measurer 度量，严禁读取 cachedLayout（守 I7）。</p>
+     * <p>preferredWidth 最高优先级；文本叶经 sizing.measureMaxLineWidth 测量文本最大行宽
+     * + 左右 padding；无文本叶用左右 padding；容器或其他无法先验的节点返回
+     * {@link Constraints#UNCONSTRAINED}。只读节点属性 + sizing 度量，严禁读取 cachedLayout（守 I7）。</p>
      *
-     * <p><b>文本宽度估算说明</b>：与高度分支用 {@code countLines * lineHeight} 估算行高对称，
-     * 此处用 {@code measurer.measureWidth} 测量文本各行的最大 UI 像素宽。measurer 已具备
-     * measureWidth 能力（见 {@link SceneTextMeasurer#measureWidth}），故文本叶分支可精确估算，
-     * 不退化为 padH。这与 SizingCalculator.computeWidth 文本叶 shrink-to-fit 分支同源
-     * （均调 measurer.measureWidth），口径一致。</p>
+     * <p><b>文本宽度估算说明</b>：与高度分支（{@link SizingCalculator#leafTextHeight} 的
+     * wrap 感知估算）对称，此处经 {@link SizingCalculator#measureMaxLineWidth} 单点测量文本
+     * 各行最大 UI 像素宽，故文本叶分支可精确估算、不退化为 padH；与 computeWidth 文本叶
+     * shrink-to-fit 分支同源同实例，口径一致。</p>
      *
      * @param child 待估算的固定兄弟
      * @return 先验外宽，无法确定时为 UNCONSTRAINED
@@ -277,48 +267,11 @@ class ConstraintResolver {
             // 文本叶：测量各行最大宽 + padH；wrap 节点内容宽即 maxTextWidth。空文本视作 0 宽。
             int wrapWidth = child.getMaxTextWidth();
             int textW = text.isEmpty() ? 0
-                    : (wrapWidth > 0 ? wrapWidth : measureMaxLineWidth(text, child.getFontSize()));
+                    : (wrapWidth > 0 ? wrapWidth : sizing.measureMaxLineWidth(text, child.getFontSize()));
             int natural = textW + padH;
             return clampToMaxWidth(child, natural);
         }
         return clampToMaxWidth(child, padH);
-    }
-
-    /**
-     * 测量多行文本中各行的最大 UI 像素宽度（对称于 SizingCalculator.measureMaxLineWidth）。
-     *
-     * <p>本类 priorKnownChildWidth 文本叶分支需测量文本宽估算先验外宽。SizingCalculator
-     * 的 measureMaxLineWidth 为 private，无法直接复用，故在此对称实现一份。两处实现
-     * 必须保持逐位等价（均调 measurer.measureWidth，按 Unicode 换行类切行取 max）。</p>
-     *
-     * @param text       文本内容
-     * @param fontSizePx 字号（UI 像素）
-     * @return 各行测量宽的最大值
-     */
-    private int measureMaxLineWidth(String text, int fontSizePx) {
-        int max = 0;
-        int start = 0;
-        int len = text.length();
-        for (int i = 0; i < len; i++) {
-            char ch = text.charAt(i);
-            if (measurer.isLineBreak(ch)) {
-                String line = text.substring(start, i);
-                int w = measurer.measureWidth(line, fontSizePx);
-                if (w > max) {
-                    max = w;
-                }
-                if (ch == '\r' && i + 1 < len && text.charAt(i + 1) == '\n') {
-                    i++;
-                }
-                start = i + 1;
-            }
-        }
-        String last = text.substring(start);
-        int w = measurer.measureWidth(last, fontSizePx);
-        if (w > max) {
-            max = w;
-        }
-        return max;
     }
 
     /**

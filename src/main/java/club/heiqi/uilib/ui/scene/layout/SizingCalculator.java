@@ -82,17 +82,6 @@ class SizingCalculator {
      * ROW 下叶 main=宽=内在宽不被 cross-align 改写。子节点设了 cross 向 preferred
      * 时则在 STRETCH 分支被豁免改写（见 FlexLayouter.positionChildren）。</p>
      *
-     * @param node        节点
-     * @param constraints 当前节点的布局约束
-     * @return 节点宽度（像素）
-     */
-    public int computeWidth(SceneNode node, Constraints constraints) {
-        return computeWidth(node, constraints, true);
-    }
-
-    /**
-     * 计算节点宽度。
-     *
      * <p>当 {@code allowChildCacheForShrink=false} 时，SHRINK 容器不得读取子节点
      * cachedLayout，必须保守回退到外部约束宽度。该分支仅供下传约束和约束变化判断使用，
      * 防止读取未布局或陈旧子宽度。真正的 shrink-to-fit 宽度只在子节点布局完成后的
@@ -481,18 +470,6 @@ class SizingCalculator {
     }
 
     /**
-     * 统计文本逻辑行数（按 {@code \n} 切分），空文本视作 1 行。
-     *
-     * <p><b>可见性说明</b>：本方法原为 private，但主引擎的 {@code priorKnownChildHeight}
-     * 仍需直接调用（阶段 4.1 未搬迁该方法），故改为包级（package-private）以允许同包
-     * SceneLayoutEngine 跨类访问。其余 private 方法（computeContentHeight /
-     * computeShrinkContainerWidth / measureMaxLineWidth）仅本类内部经由 public 路径触达，
-     * 保持 private。</p>
-     *
-     * @param text 文本内容
-     * @return 行数（至少 1）
-     */
-    /**
      * 计算文本叶节点的自然文本高度（wrap 感知）。
      *
      * <p>{@code maxTextWidth>0} 时按 wrap 拆行、逐行行高求和（混排行取该行最大字号行高）；
@@ -514,28 +491,17 @@ class SizingCalculator {
         return plan.getTotalHeight();
     }
 
-    int countLines(String text) {
-        int lines = 1;
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if (measurer.isLineBreak(ch)) {
-                if (ch == '\r' && i + 1 < text.length() && text.charAt(i + 1) == '\n') {
-                    i++;
-                }
-                lines++;
-            }
-        }
-        return lines;
-    }
-
     /**
      * 测量多行文本中各行的最大 UI 像素宽度。
+     *
+     * <p>包级可见：同包 {@link ConstraintResolver#priorKnownChildWidth} 复用本实现，
+     * 全仓唯一的「按换行类扫行取最大行宽」单点（I7 纯读，无副作用）。</p>
      *
      * @param text       文本内容（按 Unicode 换行类切分多行，{@code \r\n} 折叠）
      * @param fontSizePx 字号（UI 像素）
      * @return 各行测量宽的最大值
      */
-    private int measureMaxLineWidth(String text, int fontSizePx) {
+    int measureMaxLineWidth(String text, int fontSizePx) {
         int max = 0;
         int start = 0;
         int len = text.length();
