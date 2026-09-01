@@ -44,11 +44,10 @@ public final class SceneHudHost {
     /** 最近一帧各窗口的权威放置盒（视口逻辑 px；每帧 render 清空重建）。 */
     private final HashMap<String, AnchorRect> lastPlacements = new HashMap<String, AnchorRect>();
 
-    /** 创建消费指定服务注册表的 HUD host；唯一生产构造点，自附到服务供投放方查放置盒。 */
+    /** 创建消费指定服务注册表的 HUD host；唯一生产构造点在 {@code UiHudRenderListener}。 */
     public SceneHudHost(ClientHudServiceImpl service) {
         this(service.registry(), new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance()),
                 new HudScaleSetting());
-        service.attachHost(this);
     }
 
     SceneHudHost(HudRegistry registry, SceneTextMeasurer measurer) {
