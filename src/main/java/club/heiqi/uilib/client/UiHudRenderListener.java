@@ -93,7 +93,11 @@ public final class UiHudRenderListener {
     /** 在已捕获入口状态的围栏内完成一整帧 HUD 业务与清理。 */
     private void renderHudFrame(RenderGameOverlayEvent.Post event, Minecraft minecraft,
             HudViewportMetrics viewport, int width, int height) {
-        debugScreenName.set(currentScreenName());
+        // A8：值变才写——每帧无条件 set 会向全局调度器持续入队同值 pendingWrite。
+        String screenName = currentScreenName();
+        if (!screenName.equals(debugScreenName.get())) {
+            debugScreenName.set(screenName);
+        }
         GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glLoadIdentity();
         GL11.glOrtho(0, width, height, 0, -1000, 1000);
         GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glLoadIdentity();
