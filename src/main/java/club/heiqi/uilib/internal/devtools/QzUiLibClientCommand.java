@@ -6,6 +6,7 @@ import java.util.List;
 import club.heiqi.uilib.config.modern.ModernConfigEntry;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.wiring.ChatMarkdownInstaller;
+import club.heiqi.uilib.internal.devtools.glass.GlassLabEntry;
 import club.heiqi.uilib.internal.devtools.playground.TestPlaygroundEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandBase;
@@ -20,6 +21,8 @@ import net.minecraft.util.ChatComponentText;
  * <ul>
  *   <li>{@code test} —— 打开 scene 测试场地（{@link TestPlaygroundEntry#open()}），
  *       在游戏内验证文本输入/浮层/响应式能力；</li>
+ *   <li>{@code glass} —— 打开磨玻璃实验室（{@link GlassLabEntry#open()}），
+ *       backdrop-filter 仿 iOS 磨玻璃观感与渲染路径验收；</li>
  *   <li>{@code modernconfig} —— 打开新架构配置页调试入口（{@link ModernConfigEntry#open()}）；</li>
  *   <li>{@code chatmd on|off|status} —— 聊天 3.0 接管开关与状态诊断（on 启用/off 逃生舱回退原版/status 查看接管状态）。</li>
  * </ul>
@@ -28,12 +31,13 @@ final class QzUiLibClientCommand extends CommandBase {
 
     private static final String COMMAND_NAME = "qzuilib";
     private static final String SUBCOMMAND_TEST = "test";
+    private static final String SUBCOMMAND_GLASS = "glass";
     private static final String SUBCOMMAND_MODERN_CONFIG = "modernconfig";
     private static final String SUBCOMMAND_CHATMD = "chatmd";
     private static final String ARG_ON = "on";
     private static final String ARG_OFF = "off";
     private static final String ARG_STATUS = "status";
-    private static final String COMMAND_USAGE = "/qzuilib <test|modernconfig|chatmd on|off|status>";
+    private static final String COMMAND_USAGE = "/qzuilib <test|glass|modernconfig|chatmd on|off|status>";
 
     @Override
     public String getCommandName() {
@@ -64,6 +68,9 @@ final class QzUiLibClientCommand extends CommandBase {
         switch (subcommand) {
             case TEST:
                 openTestPlayground(sender);
+                break;
+            case GLASS:
+                openGlassLab(sender);
                 break;
             case MODERN_CONFIG:
                 openModernConfig(sender);
@@ -99,6 +106,9 @@ final class QzUiLibClientCommand extends CommandBase {
             if (SUBCOMMAND_TEST.equalsIgnoreCase(args[0])) {
                 return Subcommand.TEST;
             }
+            if (SUBCOMMAND_GLASS.equalsIgnoreCase(args[0])) {
+                return Subcommand.GLASS;
+            }
             if (SUBCOMMAND_MODERN_CONFIG.equalsIgnoreCase(args[0])) {
                 return Subcommand.MODERN_CONFIG;
             }
@@ -130,6 +140,20 @@ final class QzUiLibClientCommand extends CommandBase {
             return;
         }
         TestPlaygroundEntry.open();
+    }
+
+    /**
+     * 打开磨玻璃实验室。
+     *
+     * @param sender 命令发送者，用于客户端不可用时提示
+     */
+    private void openGlassLab(ICommandSender sender) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null) {
+            sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
+            return;
+        }
+        GlassLabEntry.open();
     }
 
     /**
@@ -191,7 +215,8 @@ final class QzUiLibClientCommand extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST, SUBCOMMAND_MODERN_CONFIG, SUBCOMMAND_CHATMD);
+            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST, SUBCOMMAND_GLASS,
+                    SUBCOMMAND_MODERN_CONFIG, SUBCOMMAND_CHATMD);
         }
         if (args.length == 2 && SUBCOMMAND_CHATMD.equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, ARG_ON, ARG_OFF, ARG_STATUS);
@@ -205,6 +230,8 @@ final class QzUiLibClientCommand extends CommandBase {
     enum Subcommand {
         /** 打开 scene 测试场地。 */
         TEST,
+        /** 打开磨玻璃实验室。 */
+        GLASS,
         /** 打开新架构配置页调试入口。 */
         MODERN_CONFIG,
         /** 聊天 3.0 接管开。 */

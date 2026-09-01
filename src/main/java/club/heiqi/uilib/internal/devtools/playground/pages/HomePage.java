@@ -57,6 +57,8 @@ public final class HomePage implements PlaygroundPage {
                 pagesCard.appendChild(row);
             }
             pagesCard.appendChild(PlaygroundKit.hint("导航段切换页面；页面内状态在切走再切回后保留。"));
+            pagesCard.appendChild(PlaygroundKit.hint(
+                    "磨玻璃（backdrop-filter）验收请使用独立入口 /qzuilib glass（磨玻璃实验室，含参数台与渲染路径诊断）。"));
 
             SceneNode shortcutsCard = PlaygroundKit.card();
             shortcutsCard.appendChild(PlaygroundKit.title("文本能力快捷键速查"));
