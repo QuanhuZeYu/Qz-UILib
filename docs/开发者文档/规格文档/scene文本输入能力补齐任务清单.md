@@ -68,7 +68,7 @@ P2：Undo/Redo、IME 组合态、右键上下文菜单、Dialog/Modal、Toast
 ## 二、分期与步骤
 
 ### Phase A：事件层 clickCount（P0/P2 共同前置）
-- A1 clickCount 通道：RawInputEvent/ScenePointerEvent/SceneInputFrame 加字段，全链构造点透传（InputFrameBuilder、SceneInputRouter、SceneProjectionComposition）
+- A1 clickCount 通道：RawInputEvent/ScenePointerEvent/SceneInputFrame 加字段，全链构造点透传（InputFrameBuilder、SceneInputRouter；原第三透传点 SceneProjectionComposition 已随 U0 废弃删除，见 UI投影宿主语义.md）
 - A2 InputFrameBuilder 合成：同按钮 DOWN 序列计数，时间窗 ≤500ms + 位移 ≤4px 递增 click2/click3，超窗/换按钮/位移超限重置
 - A3 单元测试：合成边界（时间窗、位移、按钮切换、跨帧）+ 既有输入测试回归
 - 公共 API ①：`ScenePointerEvent.getClickCount()`
