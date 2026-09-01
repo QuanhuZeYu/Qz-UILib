@@ -459,13 +459,9 @@ public final class ChatSceneController {
         }
         expireHudGroupsByHead();
         trimHudGroupsByHeight();
-        // 自锁解锁(2026-08-28 真机定位):宿主对空窗口(measure 0)跳过 frame → 本运行时
-        // 的 flush/派发永不发生 → 树永远空(「关闭聊天框看不到消息」根因)。每帧强制 flush:
-        // 消息到达使合成列表失效后,本帧立即把组物化进树,窗口测高 > 0 恢复 frame;
-        // 非空窗口本帧宿主帧循环已 flush 过一次,此处为幂等重跑,常规帧零脏零开销。
-        if (runtime != null) {
-            runtime.flush();
-        }
+        // A2 收口:原「每帧强制 flush」自锁补丁已删——宿主合同改为空窗 flush 照常、
+        // paint 跳过(SceneHudHost RetainedWindow.settleWithoutPaint),本运行时物化不再
+        // 依赖宿主栈外直调;tick 早于 HUD 帧时,宿主本帧 settle 仍会物化本帧新写入。
         // 临时诊断:渐入活跃期每帧快照(闪烁取证;验证后删除)
         if (hudFadeInStartMillis >= 0L && isHudPhase()) {
             long now = frameMillis.get().longValue();

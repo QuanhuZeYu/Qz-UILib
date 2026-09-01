@@ -114,7 +114,12 @@ public final class SceneHudHost {
                     __diagChat3Box = box.getWidth() + "x" + box.getHeight();
                 }
             }
-            if (window.isEmptyContent()) continue;
+            // 宿主合同（A2）：空窗 flush 照常、paint 跳过——signal 物化不被跳帧锁死，
+            // 下一帧有内容即恢复绘制；投放方因此无须在宿主栈外强制 flush。
+            if (window.isEmptyContent()) {
+                window.settleWithoutPaint(width, height);
+                continue;
+            }
             int minimum = entry.spec.getMinWidth() == 0
                     ? Math.min(HudTokens.NORMAL.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
             int measuredWidth = Math.max(minimum, Math.min(entry.spec.getMaxWidth(), box.getWidth()));
@@ -262,6 +267,12 @@ public final class SceneHudHost {
         LayoutBox measure(int width, int height) {
             layoutEngine.layout(root, new Constraints(Math.max(1, width), Math.max(1, height)));
             return (LayoutBox) root.getCachedLayout();
+        }
+
+        /** 空窗帧推进：flush/layout/settle 照常，不 paint 不 replay（宿主合同 A2）。 */
+        void settleWithoutPaint(int width, int height) {
+            runtime.__tickFrame(System.nanoTime());
+            pipeline.settleWithoutPaint(root, width, height);
         }
 
         /** 内容子树无可见尺寸（signal 卸载/空文本）→ 整窗隐藏，对齐旧「空快照不显示」语义。 */

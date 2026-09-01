@@ -491,6 +491,27 @@ public final class SceneFramePipeline {
     // ==================== 测试探针与诊断 ====================
 
     /**
+     * 空窗 settle：flush + layout + 有界 observer 收敛，不 paint 不 replay。
+     *
+     * <p>屏幕级虚拟窗口宿主（HUD）对内容空尺寸的窗口调用本入口——signal 物化照常推进
+     *（窗口一旦有内容下一帧即恢复绘制），仅跳过绘制半边。破「空窗跳帧 → effect 永不
+     * 再物化 → 树恒空」的自锁，使投放方不再需要在宿主 render 栈外强制 flush。</p>
+     *
+     * @param root 窗口内容根节点
+     * @param w    视口宽（空窗布局收敛用）
+     * @param h    视口高
+     */
+    public void settleWithoutPaint(SceneNode root, int w, int h) {
+        Constraints constraints = new Constraints(Math.max(0, w), Math.max(0, h));
+        layoutEngine.layout(root, constraints);
+        layoutOverlays(Math.max(0, w), Math.max(0, h));
+        pipelineFlush("frame.empty-settle");
+        this.lastLayoutResult = layoutEngine.layout(root, constraints);
+        layoutOverlays(Math.max(0, w), Math.max(0, h));
+        settleLayoutObservers(root, constraints, Math.max(0, w), Math.max(0, h));
+    }
+
+    /**
      * 测试探针：模拟 host render 的 layout publication + 有界 observer settle
      *（不含 route/motion sample/paint/replay）。
      *

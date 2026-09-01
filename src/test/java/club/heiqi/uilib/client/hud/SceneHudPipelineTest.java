@@ -131,6 +131,37 @@ public class SceneHudPipelineTest {
         assertNull(host.currentPlacement("gone"));
     }
 
+    /** 宿主合同（A2）：空窗帧 signal 物化照常推进，内容出现后自动恢复绘制（无投放方强制 flush）。 */
+    @Test public void emptyWindowStillMaterializesSignalsAndSelfHeals() {
+        HudRegistry registry = new HudRegistry();
+        Signal<Boolean> show = Signal.create(false);
+        registry.register(HudSpec.builder("heal").build(), rt -> {
+            SceneNode root = SceneNode.row().setHitTestable(false);
+            rt.show(root, show, () -> SceneNode.row().setHitTestable(false)
+                    .setText("late").setTextColor(0xFFFFFFFF).setFontSize(14));
+            return root;
+        });
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        RecordingRenderBackend first = new RecordingRenderBackend();
+        host.render(first, 100, 40, true, false); // 空窗:paint 跳过
+        assertTrue(first.getCalls().stream().noneMatch(call -> "drawText".equals(call.methodName())));
+        show.set(Boolean.TRUE); // 外部写入,无宿主栈外 flush
+        host.render(new RecordingRenderBackend(), 100, 40, true, false); // 空窗 settle 物化
+        RecordingRenderBackend healed = new RecordingRenderBackend();
+        host.render(healed, 100, 40, true, false); // 应自愈恢复绘制
+        assertTrue("空窗 settle 后应自愈恢复绘制", healed.getCalls().stream().anyMatch(call ->
+                "drawText".equals(call.methodName()) && "late".equals(call.getString(0))));
+    }
+
+    /** 立法（A2）：chat3 投放侧禁止宿主 render 栈外 runtime.flush() 补丁回潮。 */
+    @Test public void chat3SourcesMustNotFlushOutsideHostStack() throws Exception {
+        String controller = new String(Files.readAllBytes(Paths.get(
+                "src/main/java/club/heiqi/uilib/internal/chat3/view/ChatSceneController.java")),
+                StandardCharsets.UTF_8);
+        assertFalse("ChatSceneController 不得直调 runtime.flush()（空窗自愈由宿主合同保证）",
+                controller.contains("runtime.flush()"));
+    }
+
     @Test public void windowFactoryFailureIsIsolated() {
         HudRegistry registry = new HudRegistry();
         registry.register(HudSpec.builder("broken").build(),
