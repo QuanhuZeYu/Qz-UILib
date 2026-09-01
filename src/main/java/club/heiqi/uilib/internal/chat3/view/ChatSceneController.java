@@ -28,7 +28,6 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
@@ -149,7 +148,6 @@ public final class ChatSceneController {
     private final Signal<Long> frameMillis = Signal.create(Long.valueOf(0L));
     /** 真机诊断日志器(临时,定位「关闭聊天框看不到消息」;每 300 帧一行快照)。 */
     private static final Logger DIAG_LOG = LogManager.getLogger("QzUILib Chat3Diag");
-    private int diagFrames = 0;
     /** 聊天打开目标(接线层写入)。 */
     private final Signal<Boolean> chatOpen = Signal.create(Boolean.FALSE);
     /** 形态阶段(状态机输出,信号化供绑定追踪)。 */
@@ -462,87 +460,6 @@ public final class ChatSceneController {
         // A2 收口:原「每帧强制 flush」自锁补丁已删——宿主合同改为空窗 flush 照常、
         // paint 跳过(SceneHudHost RetainedWindow.settleWithoutPaint),本运行时物化不再
         // 依赖宿主栈外直调;tick 早于 HUD 帧时,宿主本帧 settle 仍会物化本帧新写入。
-        // 临时诊断:渐入活跃期每帧快照(闪烁取证;验证后删除)
-        if (hudFadeInStartMillis >= 0L && isHudPhase()) {
-            long now = frameMillis.get().longValue();
-            long fadeInMs = ChatMarkdownSettings.getHudFadeInAnimMillis();
-            float p = fadeInMs <= 0 ? 1.0F : Math.min(1.0F,
-                    (float) (now - hudFadeInStartMillis) / (float) fadeInMs);
-            int treeGroups = 0;
-            if (mount != null && !mount.__getChildren().isEmpty()) {
-                treeGroups = ((SceneNode) mount.__getChildren().get(0)).__getChildren().size();
-            }
-            int composed = 0;
-            List<ChatCardComposer.ComposedGroup> composedList = groupsSignal().get();
-            if (composedList != null) {
-                composed = composedList.size();
-            }
-            Object rootBox = root == null ? null : root.getCachedLayout();
-            String box = "null";
-            if (rootBox instanceof LayoutBox) {
-                box = ((LayoutBox) rootBox).getWidth() + "x" + ((LayoutBox) rootBox).getHeight();
-            }
-            DIAG_LOG.info("[FadeDiag] t={} p={} opacity={} groups={} tree={} rootBox={} hostBox={} hudVisible={}",
-                    Long.valueOf(now), Float.valueOf(p),
-                    Float.valueOf(Animator.easeOutCubic(p)),
-                    Integer.valueOf(composed), Integer.valueOf(treeGroups), box,
-                    club.heiqi.uilib.client.hud.SceneHudHost.__diagChat3Box,
-                    Long.valueOf(hudVisibleClock.visibleMillis()));
-            lastFadeDiagMillis = now;
-        }
-        // 临时诊断:打开方向 HUD 收起(COLLAPSING)逐帧快照(闪烁取证盲区;验证后删除)
-        if (machine.getPhase() == DisplayStateMachine.Phase.COLLAPSING) {
-            long now = frameMillis.get().longValue();
-            float progress = machine.progress(now, ChatMarkdownSettings.getCollapseAnimMillis());
-            int treeGroups = 0;
-            if (mount != null && !mount.__getChildren().isEmpty()) {
-                treeGroups = ((SceneNode) mount.__getChildren().get(0)).__getChildren().size();
-            }
-            Object rootBox = root == null ? null : root.getCachedLayout();
-            String box = "null";
-            if (rootBox instanceof LayoutBox) {
-                box = ((LayoutBox) rootBox).getWidth() + "x" + ((LayoutBox) rootBox).getHeight();
-            }
-            DIAG_LOG.info("[CollapseDiag] t={} progress={} opacity={} tree={} rootBox={} hostBox={} hudVisible={}",
-                    Long.valueOf(now), Float.valueOf(progress),
-                    Float.valueOf(1.0F - Animator.easeOut(progress)),
-                    Integer.valueOf(treeGroups), box,
-                    club.heiqi.uilib.client.hud.SceneHudHost.__diagChat3Box,
-                    Long.valueOf(hudVisibleClock.visibleMillis()));
-        }
-        if (++diagFrames >= 300) {
-            diagFrames = 0;
-            logHudSnapshot();
-        }
-    }
-
-    /** 临时诊断:每 300 帧打印 HUD 状态快照(真机定位用;交付后删除)。 */
-    private void logHudSnapshot() {
-        long hud = hudVisibleClock.visibleMillis();
-        // 首次 tick 前 Computed 未物化,get() 返回 null(真机崩溃根因,2026-08-28 修复)
-        List<ChatCardComposer.ComposedGroup> composed = groupsSignal().get();
-        if (composed == null) {
-            composed = java.util.Collections.emptyList();
-        }
-        int treeGroups = 0;
-        if (mount != null && !mount.__getChildren().isEmpty()) {
-            treeGroups = ((SceneNode) mount.__getChildren().get(0)).__getChildren().size();
-        }
-        String newest = "none";
-        if (!composed.isEmpty()) {
-            ChatCardComposer.ComposedGroup last = composed.get(composed.size() - 1);
-            int alpha = ChatCardComposer.hudAlpha(last.getHudVisibleStartMillis(),
-                    last.getBudgetMillis(), ChatMarkdownSettings.getHudFadeMillis(), hud);
-            newest = "start=" + last.getHudVisibleStartMillis() + " budget="
-                    + last.getBudgetMillis() + " alpha=" + alpha + " enter="
-                    + last.isEnterOnMount();
-        }
-        DIAG_LOG.info("[Chat3Diag] phase={} hudVisible={}ms treeGroups={} composed={} history={} persist={} newest[{}] ttl={} fade={}",
-                machine.getPhase(), Long.valueOf(hud), Integer.valueOf(treeGroups),
-                Integer.valueOf(composed.size()), Integer.valueOf(history.size()),
-                Boolean.valueOf(ChatMarkdownSettings.isHudPersistMessages()), newest,
-                Long.valueOf(ChatMarkdownSettings.getHudTtlMillis()),
-                Long.valueOf(ChatMarkdownSettings.getHudFadeMillis()));
     }
 
     /** 数据结构变化(消息到达/删除/清空/滚动/设置)后调用,驱动重协调(主线程)。 */
@@ -992,9 +909,6 @@ public final class ChatSceneController {
     private float rootOpacity() {
         return animOpacity() * hudFadeInOpacity();
     }
-
-    /** 临时诊断:渐入活跃期每帧输出(闪烁取证;验证后删除)。 */
-    private long lastFadeDiagMillis = -1L;
 
     /**
      * HUD 渐入衔接通道(关闭完成→HUD 平滑出现):根级 opacity 0→1
