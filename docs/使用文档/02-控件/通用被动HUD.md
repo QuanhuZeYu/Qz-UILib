@@ -47,13 +47,17 @@ HudRegistration hud = ClientHudService.getInstance().register(spec, rt -> {
     return root;
 });
 
-// 任意线程安全地更新内容（与 UI 页面同机制，帧末 flush 物化）
+// 更新内容（与 UI 页面同机制，帧末 flush 物化）
+// 线程契约：signal 写必须在客户端主线程（ui.reactive 无同步原语；跨线程仅 volatile 标志）
 status.set("Mining");
 ```
 
 - 工厂内可以使用全部 scene 能力：`SceneLabel`（含富文本/链接渲染）、`SceneButton`（仅渲染）、
   `rt.bind/bindText/mount/show/forEach` 与任何 `SceneNode` 组合。
 - 工厂挂载失败（抛异常）只跳过该 HUD，不影响其它窗口。
+- **线程契约（4.9 起成文）**：注册、关闭、`SceneRuntime`/signal 读写全部限定客户端主线程；
+  scene 反应式内核（`ui.reactive`）无同步原语，不提供任意线程写入能力。网络线程等异步来源
+  只投递 volatile 标志/队列（参照 chat3 `markDataDirty` 模式），由主线程 `tick` 冲刷进 signal。
 - **空内容整窗隐藏**：内容树布局尺寸为零（signal 卸载、空文本）时，窗口连同宿主外壳一起隐藏；
   用 `rt.show(root, condition, childFactory)` 表达条件显隐。
 - 宿主提供窗口外壳（半透明背景、padding、子树裁剪、内容宽度收缩），业务方只写内容树，不写绝对坐标。
