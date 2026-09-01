@@ -80,6 +80,36 @@ public class GlassLabHostTest {
                 host.__getPathSignal().get().startsWith("backdrop 路径: "));
     }
 
+    /**
+     * 坐标基准回归（2026-09-01 真机首验根因锁）：玻璃面板矩形必须落在采样场的
+     * <b>绝对</b>盒内（SceneGeometry.absoluteBox 权威口径），而非其父相对局部坐标。
+     * 居中列布局下局部 x≈0、绝对 x≈222，两者差之千里——回归时本测试直接失败。
+     */
+    @Test
+    public void glassPanelUsesAbsoluteBoxNotParentLocalCoordinates() {
+        renderAndFlush(backend);
+        club.heiqi.uilib.ui.scene.layout.AnchorRect stageBox =
+                club.heiqi.uilib.ui.scene.layout.SceneGeometry.absoluteBox(host.__getStage(), 0, 0);
+        Assert.assertTrue("采样场应有绝对宽度", stageBox.getWidth() > 0);
+        Assert.assertTrue("居中布局下采样场绝对 x 必须大于其父相对局部 x（否则本测试无区分度）",
+                stageBox.getX() > 0);
+
+        RenderCall firstTint = null;
+        for (RenderCall call : backend.getCalls()) {
+            if (call.methodName().equals("drawSurface") && call.getInt(FILL_COLOR_ARG) == GLASS_TINT) {
+                firstTint = call;
+                break;
+            }
+        }
+        Assert.assertNotNull("应存在玻璃 tint 面板", firstTint);
+        Assert.assertEquals("面板左缘必须基于绝对 x（局部坐标回归时=10，正确=stageBox.getX()+10）",
+                stageBox.getX() + 10, firstTint.getInt(0));
+        Assert.assertEquals("面板右缘必须基于绝对 x",
+                stageBox.getX() + stageBox.getWidth() - 10, firstTint.getInt(2));
+        Assert.assertEquals("面板上缘必须基于绝对 y",
+                stageBox.getY() + 26, firstTint.getInt(1));
+    }
+
     @Test
     public void frozenSwitchSkipsGlassOverlayForAbComparison() {
         host.__getFrozenSignal().set(Boolean.TRUE);

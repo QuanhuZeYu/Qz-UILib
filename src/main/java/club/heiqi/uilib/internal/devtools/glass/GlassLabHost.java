@@ -10,8 +10,9 @@ import club.heiqi.uilib.ui.scene.control.SceneSlider;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -126,8 +127,10 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         int radius = clampToInt(radiusSignal.get(), 0, RADIUS_MAX);
         float saturation = clampToInt(saturationSignal.get(), 0, SATURATION_MAX) / 100.0F;
 
-        LayoutBox stageBox = layoutBoxOf(stage);
-        if (stageBox != null) {
+        // 坐标必须走 SceneGeometry.absoluteBox 权威单点（LayoutBox.x/y 是父相对局部坐标，
+        // 直接用会把叠加层画到屏幕左缘——2026-09-01 真机首验根因）；absX/absY 同 hit test 口径。
+        AnchorRect stageBox = SceneGeometry.absoluteBox(stage, absX, absY);
+        if (stageBox.getWidth() > 0 && stageBox.getHeight() > 0) {
             // 主玻璃面板：覆盖采样场上半区，位置随布局派生（窗口缩放自动跟随）。
             int panelLeft = stageBox.getX() + 10;
             int panelTop = stageBox.getY() + 26;
@@ -154,8 +157,8 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
             }
         }
 
-        LayoutBox probeBox = layoutBoxOf(probeCard);
-        if (probeBox != null) {
+        AnchorRect probeBox = SceneGeometry.absoluteBox(probeCard, absX, absY);
+        if (probeBox.getWidth() > 0 && probeBox.getHeight() > 0) {
             // 探针玻璃：固定在卡内顶部 56px 带，观察其下文字是否被采样模糊。
             UiRenderBackends.backdropFilter(ctx, probeBox.getX() + 8, probeBox.getY() + 8,
                     probeBox.getX() + probeBox.getWidth() - 8, probeBox.getY() + 64, blur, saturation, radius);
@@ -169,6 +172,11 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
     /** 测试访问器：场景运行时（flush/路由用，同 TestPlaygroundHost 口径）。 */
     SceneRuntime __getRuntime() {
         return runtime;
+    }
+
+    /** 测试访问器：采样场节点（坐标基准断言用）。 */
+    SceneNode __getStage() {
+        return stage;
     }
 
     /** 测试访问器：暂停玻璃开关（A/B 冻结态受控源）。 */
@@ -329,11 +337,6 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         card.appendChild(pathText);
         runtime.bindText(pathText, pathSignal);
         return card;
-    }
-
-    private static LayoutBox layoutBoxOf(SceneNode node) {
-        Object cached = node.getCachedLayout();
-        return cached instanceof LayoutBox ? (LayoutBox) cached : null;
     }
 
     private static int clampToInt(Double value, int min, int max) {
