@@ -77,7 +77,7 @@ final class UiBackdropFilterRenderer {
      * @param right 右侧坐标
      * @param bottom 底部坐标
      * @param blurRadius 模糊半径像素
-     * @param saturation 饱和度倍率；material 非空时本参数被材质档的 vibrancy 取代
+     * @param saturation 饱和度倍率；material 非空时语义转为 vibrancy 乘子（1.0=严格采用材质配方值）
      * @param cornerRadii 四角圆角
      * @param material iOS 风格材质档；为 null 时走旧的线性饱和度语义
      */
