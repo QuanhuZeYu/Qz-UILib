@@ -37,6 +37,7 @@ uniform float innerLightTop;
 uniform float innerShadowBottom;
 uniform float noiseAmount;
 uniform vec2 panelSizePx;
+uniform vec4 cornerRadii;
 uniform float kernelJitter;
 
 vec3 applySaturation(vec3 color, float amount) {
@@ -58,6 +59,14 @@ vec3 applyVibrancy(vec3 color, float amount) {
     float k = 1.0 + (amount - 1.0) * t;
     vec3 gray = vec3(luma);
     return clamp(gray + (color - gray) * k, 0.0, 1.0);
+}
+
+// 按面板局部坐标所在象限取对应角半径。cornerRadii 顺序：左上、右上、右下、左下
+// （与 ResolvedCornerRadii 一致；uv 的 y 向下，故 y<0.5 为上半）。
+float cornerRadiusAt(vec4 radii, vec2 uv) {
+    float topR = mix(radii.x, radii.y, step(0.5, uv.x));
+    float bottomR = mix(radii.w, radii.z, step(0.5, uv.x));
+    return mix(topR, bottomR, step(0.5, uv.y));
 }
 
 // 廉价 hash 噪声：不用 sin 做 hash（各驱动 sin 实现差异会让噪声分布随硬件变化）。
@@ -126,13 +135,18 @@ void main(void) {
         color = applySaturation(blurred.rgb, saturation);
     }
 
-    // 边缘亮边：到面板边界的最短像素距离（x/y 各算再取 min，非度量精确，对圆角
-    // 面板足够且更便宜）。iOS 的亮边集中在顶缘、向两侧衰减，四边等强描边最假，
-    // 故按竖直位置调制强度。
-    float distX = min(panelUv.x, 1.0 - panelUv.x) * panelSizePx.x;
-    float distY = min(panelUv.y, 1.0 - panelUv.y) * panelSizePx.y;
-    float edgeDistance = min(distX, distY);
+    // 边缘亮边：到"圆角矩形边界"的带符号距离（inigo-quirk 的 rounded-box SDF，
+    // 约 10 ALU）。早先用 min(到四直边距离) 近似，圆角处算出的距离偏大，亮边在弧段
+    // 被 stencil 裁掉、留下一圈无高光的圆弧——而 iOS 玻璃最耐看的恰恰是沿弧走的亮边。
+    // 四角半径按所在象限取，非均匀圆角也准确。
+    vec2 halfSize = max(panelSizePx * 0.5, vec2(1.0, 1.0));
+    vec2 local = (panelUv - 0.5) * panelSizePx;
+    float cornerR = cornerRadiusAt(cornerRadii, panelUv);
+    vec2 q = abs(local) - (halfSize - vec2(cornerR));
+    float signedDistance = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - cornerR;
+    float edgeDistance = max(-signedDistance, 0.0);
     float borderBand = 1.0 - smoothstep(0.0, 1.5, edgeDistance);
+    // iOS 的亮边不是四边等强：顶缘最强、向两侧与底缘衰减，等强描边最假。
     float borderWeight = borderBand * mix(0.30, 1.0, 1.0 - clamp(panelUv.y, 0.0, 1.0));
 
     // 内侧上缘柔光 + 内侧下缘暗带：镜面反射与厚度感的近似（pow3 让能量贴住边缘）。

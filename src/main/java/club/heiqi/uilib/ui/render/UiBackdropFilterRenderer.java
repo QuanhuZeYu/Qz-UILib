@@ -151,7 +151,7 @@ final class UiBackdropFilterRenderer {
             if (drawBackdropTextureWithShader(left, top, right, bottom, snapshot.getSampleLeft(),
                     snapshot.getSampleTop(), snapshot.getWidth(), snapshot.getHeight(), snapshot.getTextureWidth(),
                     snapshot.getTextureHeight(), snapshot.getDownsampleFactor(), blurRadius, saturation,
-                    context.getBackdropBlurPolicy(), snapshot, material)) {
+                    context.getBackdropBlurPolicy(), snapshot, material, cornerRadii)) {
                 drewBackdrop = true;
                 return null;
             }
@@ -202,7 +202,8 @@ final class UiBackdropFilterRenderer {
     private static boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
             int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
             int downsampleFactor, int blurRadius, float saturation, BackdropBlurPolicy backdropBlurPolicy,
-            MainLayerSnapshot snapshot, UiGlassMaterial material) {
+            MainLayerSnapshot snapshot, UiGlassMaterial material,
+            UiBorderRadiusResolver.ResolvedCornerRadii panelCornerRadii) {
         BackdropBlurConfig config = BackdropBlurConfig.getInstance();
         BackdropBlurPolicy policy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
                 : backdropBlurPolicy;
@@ -225,6 +226,11 @@ final class UiBackdropFilterRenderer {
         BACKDROP_SHADER_PROGRAM.setUniform2f("panelOrigin", (float) left, (float) top);
         BACKDROP_SHADER_PROGRAM.setUniform2f("panelSizePx", (float) Math.max(1, right - left),
                 (float) Math.max(1, bottom - top));
+        // 四角半径（左上/右上/右下/左下），供 SDF 圆角亮边使用；与 panelSizePx 同一像素空间。
+        UiBorderRadiusResolver.ResolvedCornerRadii radii = panelCornerRadii == null
+                ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : panelCornerRadii;
+        BACKDROP_SHADER_PROGRAM.setUniform4f("cornerRadii", (float) radii.getTopLeft(),
+                (float) radii.getTopRight(), (float) radii.getBottomRight(), (float) radii.getBottomLeft());
         applyMaterialUniforms(material, saturation);
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
