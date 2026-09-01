@@ -21,8 +21,9 @@ import club.heiqi.uilib.font.config.FontConfig;
  *   <li>不调 {@code FontService.reload} —— 调用方职责</li>
  *   <li>不刷 {@code FontConfig.last*} 快照 —— 调用方 {@link FontConfig#onConfigReload()} 职责</li>
  *   <li>不涉及反向持久化：旧栈 {@code FontConfig.activeConfiguration} 反向链路已随阶段 E.2 一并删除</li>
- *   <li>{@code FontConfig.missingFontSort}（FontRegistry 派生态，由 applyFontOrderSnapshot
- *       维护，Bridge 不参与）</li>
+ *   <li>{@code FontConfig.missingFontSort}（FontOrderSnapshot 派生态，由
+ *       {@link FontConfig#applyFontOrderSnapshot} 在 FontGenerationRegistry.prepare 末端维护，
+ *       Bridge 不参与）</li>
  * </ul>
  *
  * <p>预期调用方：</p>
@@ -121,14 +122,16 @@ public final class ConfigValueBridge {
         FontConfig.fontSort = listToStringArray(authority.<List<String>>get("fontSystem.fontSort"));
         FontConfig.characterFontRules = listToStringArray(authority.<List<String>>get("fontSystem.characterFontRules"));
 
-        // fontSortConfigured 语义按 fontSort 数组是否非空决定：
-        // - fontSort 非空 = 用户在 yaml 中填了字体顺序 → true，FontRegistry.reload:40 走 FontConfig.fontSort
-        //   分支（用户配置优先），plan:54-68 用户配置字体先进 resolved（按用户顺序）
-        // - fontSort 为空 = 用户未配置 → false，FontRegistry.reload:40 走
-        //   DefaultFontOrderHints.resolveForCurrentPlatform() 分支（系统字体优先级提示，
-        //   让中文字体如 Microsoft YaHei / PingFang SC 排前），plan:70-83 系统字体按自然名排序追加
-        // 不再强置 true（旧 C1 实现），让 FontRegistry.reload 二分支自动生效；
-        // resolved 末尾追加剩余字体的逻辑保证用户配置字体不会被插队（FontOrderPlanner:70-83 已守）。
+        // fontSortConfigured 语义按 fontSort 数组是否非空决定（活消费点=FontGenerationRegistry
+        // .prepare 的 orderHints 二分支，经 FontRuntimeSettings.isFontSortConfigured 读取；
+        // 注：同名旧类 font/util/FontRegistry 为零实例化遗留壳，勿按其找逻辑）：
+        // - fontSort 非空 = 用户在 yaml 中填了字体顺序 → true，orderHints=settings.getFontSort()
+        //   （用户配置优先），FontOrderPlanner.plan 让用户配置字体先进 resolved（按用户顺序）
+        // - fontSort 为空 = 用户未配置 → false，orderHints=resources.getDefaultOrderHints()
+        //   （系统字体优先级提示，让中文字体如 Microsoft YaHei / PingFang SC 排前），
+        //   FontOrderPlanner.plan 系统字体按自然名排序追加
+        // 不再强置 true（旧实现），让二分支自动生效；resolved 末尾追加剩余字体的逻辑
+        // 保证用户配置字体不会被插队（FontOrderPlanner 已守）。
         FontConfig.fontSortConfigured = FontConfig.fontSort != null && FontConfig.fontSort.length > 0;
     }
 

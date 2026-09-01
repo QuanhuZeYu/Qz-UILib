@@ -5,6 +5,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 
@@ -52,6 +56,12 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
  * </ul>
  */
 public class ScenePaintReplayer {
+
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/PaintReplay");
+
+    /** IMAGE 隔离失败一次性告警位（本类设计为回放期零状态，故用类级 static 而非实例字段）。 */
+    private static final AtomicBoolean IMAGE_FAILURE_WARNED = new AtomicBoolean();
+    private static final AtomicBoolean IMAGE_LINKAGE_WARNED = new AtomicBoolean();
 
     /**
      * 回放 Display List 中的所有命令到渲染上下文。
@@ -188,10 +198,17 @@ public class ScenePaintReplayer {
                 try {
                     ctx.drawImage(cmd.getImageSource(), cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
                             cmd.getRight() + offsetX, cmd.getBottom() + offsetY);
-                } catch (RuntimeException ignored) {
-                    // 单张宿主图片失败不得中断后续 Display List 回放。
-                } catch (LinkageError ignored) {
+                } catch (RuntimeException isolated) {
+                    // 单张宿主图片失败不得中断后续 Display List 回放（隔离语义不变）；
+                    // 首次留 WARN，避免"图片静默消失"无痕迹（对齐 5d-D5 / GlAttribDepth 先例）。
+                    if (IMAGE_FAILURE_WARNED.compareAndSet(false, true)) {
+                        LOG.warn("IMAGE 命令绘制失败（后续同类不再告警，回放继续）：{}", isolated.toString());
+                    }
+                } catch (LinkageError isolated) {
                     // 可选宿主类型链接失败时同样隔离。
+                    if (IMAGE_LINKAGE_WARNED.compareAndSet(false, true)) {
+                        LOG.warn("IMAGE 命令宿主类型链接失败（后续同类不再告警，回放继续）：{}", isolated.toString());
+                    }
                 }
                 break;
 

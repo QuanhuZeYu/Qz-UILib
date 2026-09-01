@@ -63,6 +63,21 @@ public class ScenePackageIsolationTest {
             "club\\.heiqi\\.uilib\\.ui\\.style\\.");
 
     /**
+     * 反向红线：render / host 层不得伸入 scene 的<b>装配与运行时子包</b>（接缝类、runtime、
+     * host、control 等）。白名单为封闭集，仅两个值类型端口：
+     * <ul>
+     *   <li>{@code scene.image.SceneImageSource}：平台中立绘制值类型（后端契约参数）；</li>
+     *   <li>{@code scene.image.ItemRenderTierRegistry}：文档化的渲染分级反向端口；</li>
+     *   <li>{@code scene.text.SceneTextMode}：scene 内容模式唯一语义锚（值类型，code 对齐
+     *       由 SceneTextModeTest 守卫）——UiRenderContext.drawText 的 int→模式归一取它，
+     *       而<b>不</b>取同包的装配接缝类 TextMeasureServiceSceneAdapter（2026-09-01
+     *       越界引用收回，本守卫即其回归锁）。</li>
+     * </ul>
+     */
+    private static final Pattern FORBIDDEN_RENDER_SIDE_SCENE_REF = Pattern.compile(
+            "club\\.heiqi\\.uilib\\.ui\\.scene\\.(?!image\\.|text\\.SceneTextMode)[A-Za-z]");
+
+    /**
      * 验证：input 包及其子包下所有 .java 源文件不包含任何禁止的平台引用。
      */
     @Test
@@ -208,6 +223,52 @@ public class ScenePackageIsolationTest {
             assertNoForbiddenPlatformRef(javaFile);
             assertNoForbiddenRenderRef(javaFile);
             assertNoForbiddenStyleRef(javaFile);
+        }
+    }
+
+    /**
+     * 验证：render / host 层对 scene 的引用被限制在封闭白名单内（反向红线）。
+     *
+     * <p>与 {@link #layoutAndPaintCoreShouldNotReferenceRenderOrPlatform()} 互为正反两向：
+     * 前者锁"scene 核心不认具体渲染"，本方法锁"渲染/宿主层不伸入 scene 装配运行时"。
+     * 历史上唯一实例是 UiRenderContext 直调 scene.text 装配接缝类取映射（已收回），
+     * 本方法即防其复发的回归锁。</p>
+     *
+     * @throws IOException 读取源文件失败
+     */
+    @Test
+    public void renderAndHostShouldNotReachIntoSceneAssemblyRuntime() throws IOException {
+        Path renderDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "render");
+        Path hostDir = Paths.get("src", "main", "java", "club", "heiqi", "uilib", "ui", "host");
+        Assert.assertTrue("ui/render 源文件目录应存在", Files.isDirectory(renderDir));
+        Assert.assertTrue("ui/host 源文件目录应存在", Files.isDirectory(hostDir));
+
+        List<Path> javaFiles;
+        try (Stream<Path> files = Files.walk(renderDir)) {
+            javaFiles = files.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList());
+        }
+        try (Stream<Path> files = Files.walk(hostDir)) {
+            javaFiles.addAll(files.filter(p -> p.toString().endsWith(".java")).collect(Collectors.toList()));
+        }
+        Assert.assertFalse("render+host 应至少扫描到一个源文件", javaFiles.isEmpty());
+
+        for (Path javaFile : javaFiles) {
+            List<String> lines = Files.readAllLines(javaFile);
+            int lineNum = 1;
+            for (String line : lines) {
+                String trimmed = line.trim();
+                boolean comment = trimmed.startsWith("//") || trimmed.startsWith("*")
+                        || trimmed.startsWith("/*");
+                lineNum++;
+                if (comment) {
+                    continue; // 注释/javadoc 中提及类型名合法（如本收回说明）
+                }
+                if (FORBIDDEN_RENDER_SIDE_SCENE_REF.matcher(line).find()) {
+                    Assert.fail("文件 " + javaFile.getFileName() + " 第 " + lineNum
+                            + " 行伸入 scene 装配/运行时子包（白名单仅 scene.image.* 与 scene.text.SceneTextMode）："
+                            + line);
+                }
+            }
         }
     }
 

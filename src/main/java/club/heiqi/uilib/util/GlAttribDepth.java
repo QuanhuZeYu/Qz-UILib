@@ -2,6 +2,8 @@ package club.heiqi.uilib.util;
 
 import java.lang.reflect.Field;
 
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 import org.lwjgl.opengl.GL11;
 
 /**
@@ -16,8 +18,13 @@ import org.lwjgl.opengl.GL11;
  */
 public final class GlAttribDepth {
 
+    private static final Logger LOG = LogManager.getLogger("QzUILib/GlAttribDepth");
+
     private static Field depthField;
     private static boolean initFailed;
+    /** 降级只 WARN 一次：本工具处于每帧调用路径，重复告警会刷屏。 */
+    private static boolean readWarned;
+    private static boolean popWarned;
 
     private GlAttribDepth() {
     }
@@ -30,6 +37,13 @@ public final class GlAttribDepth {
         try {
             return depthField().getInt(null);
         } catch (Throwable throwable) {
+            // 原为静默 return -1；改为首次 WARN 留痕（对齐 5d-D5 assertClientThread 先例），
+            // 语义不变：Angelica 缺席/反射失败时降级 no-op。
+            if (!readWarned) {
+                readWarned = true;
+                LOG.warn("Angelica GLStateManager.attribDepth 不可读，attrib 过量弹出保护降级为 no-op：{}",
+                        throwable.toString());
+            }
             return -1;
         }
     }
@@ -47,6 +61,13 @@ public final class GlAttribDepth {
             try {
                 GL11.glPopAttrib();
             } catch (Throwable throwable) {
+                // 原为静默 return；首次 WARN 留痕。不重抛：本方法运行在绘制边界，
+                // 抛异常会把第三方泄漏升级为崩溃。
+                if (!popWarned) {
+                    popWarned = true;
+                    LOG.warn("glPopAttrib 清理第三方 attrib 泄漏失败，停止本轮过量弹出（depth={}）：{}",
+                            Integer.valueOf(depth), throwable.toString());
+                }
                 return;
             }
         }

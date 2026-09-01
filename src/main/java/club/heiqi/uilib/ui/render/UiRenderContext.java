@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.image.ItemIconRenderer;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+import club.heiqi.uilib.ui.scene.text.SceneTextMode;
 import club.heiqi.uilib.ui.base.props.UiFontStyle;
 import club.heiqi.uilib.ui.base.props.UiFontWeight;
 import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
@@ -500,8 +501,13 @@ public class UiRenderContext implements UiRenderBackend {
 
     @Override
     public void drawText(String text, int x, int y, int color, boolean shadow, int fontSizePx, int textMode) {
+        // 越引用收回（2026-09-01 审查 C1）：本方法曾直调 scene 装配接缝
+        // TextMeasureServiceSceneAdapter.toTextContentMode（render 伸入 scene 装配层的唯一实例）。
+        // 现改经 scene 值类型 SceneTextMode.fromCode 归一（越界回落 UILIB_RAW 语义不变）后按
+        // code 取 TextContentMode——两者逐位对齐由 SceneTextModeTest 编译期守卫锁死，
+        // 不引入第二套 switch；ScenePackageIsolationTest 反向守卫禁止 render 再引装配类。
         drawText(text, x, y, color, shadow, new TextMeasureStyle(fontSizePx,
-                club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter.toTextContentMode(textMode),
+                TextContentMode.values()[SceneTextMode.fromCode(textMode).getCode()],
                 UiFontWeight.NORMAL, UiFontStyle.NORMAL));
     }
 

@@ -119,8 +119,11 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     /**
      * scene → ui.text 内容模式的<b>唯一映射点</b>。
      *
-     * <p>SceneTextMode 守 I10 不得 import {@code ui.text.*}，映射集中在本接缝类；
-     * 渲染层（如 UiRenderContext）也经本方法取 TextContentMode，杜绝第二套 switch。</p>
+     * <p>SceneTextMode 守 I10 不得 import {@code ui.text.*}，本方法的 switch 是 scene 装配
+     * 接缝内的唯一映射点。渲染层（UiRenderContext）不再经本方法取模式（2026-09-01 越界引用
+     * 收回）：其 drawText(int textMode) 重载直取 scene 值类型 SceneTextMode.fromCode 归一后
+     * 按 code 映射 TextContentMode——code↔ordinal 逐位对齐由 SceneTextModeTest 编译期守卫
+     * 锁死，故不构成第二套 switch；ScenePackageIsolationTest 反向守卫禁止 render 再伸入本类。</p>
      *
      * @param mode scene 内容模式（非 null）
      * @return 渲染侧对应模式

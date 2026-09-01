@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -49,6 +50,24 @@ public class LayerContractGuardTest {
      */
     private static final Set<String> KNOWN_PAINT_ELEMENT_NODE_VIOLATIONS = new TreeSet<String>();
 
+    /** 字体引擎包相对路径片段（含全部子包）。 */
+    private static final String FONT_PACKAGE = "club/heiqi/uilib/font/";
+
+    /** 匹配字体层对 UI 文本门面包（{@code ui.text}）的 import。 */
+    private static final Pattern IMPORT_UI_TEXT =
+            Pattern.compile("\\bimport\\s+club\\.heiqi\\.uilib\\.ui\\.text\\.");
+
+    /**
+     * 跨顶层轴包环（font/layout ↔ ui/text）反向边冻结基线（2026-09-01 布局绘制防屎山
+     * 审查 D-6 裁定：不立项物理断环，只冻结增量）。
+     *
+     * <p>环成因：{@code TextContentMode / TextMeasureStyle / TextLinkRegion} 三个纯值词汇
+     * 类型住在上层 ui.text，font 层两个文件被迫反向 import。三类型均在
+     * v4.x-LTS-稳定API清单点名 ✅，换包=breaking，物理断环留 5.x 窗口。</p>
+     */
+    private static final Set<String> KNOWN_FONT_TO_UITEXT_BASELINE = new TreeSet<String>(Arrays.asList(
+            "TextLayoutService.java", "DefaultFontRendererAdapter.java"));
+
     /**
      * 守护 I6 依赖方向：数据层（响应式）不得静态 import 控件层（{@code ui.control}）。
      *
@@ -84,6 +103,34 @@ public class LayerContractGuardTest {
         alreadyPurified.removeAll(actual);
         Assert.assertTrue(
                 "I6 契约线已提纯以下 paint 文件，请从 KNOWN_PAINT_ELEMENT_NODE_VIOLATIONS 基线移除以向下收敛："
+                        + alreadyPurified,
+                alreadyPurified.isEmpty());
+    }
+
+    /**
+     * 冻结 font→ui.text 跨轴环增量（D-6 裁定：环未产生缺陷不立项断环，但禁止再长大）。
+     *
+     * <p>断言「精确相等」而非「不超过基线」：既阻断 font 层新增对 ui.text 的反向 import
+     * （静默加环边），也在提纯发生时提示下收基线。5.x breaking 窗口物理断环（值对象
+     * 换包）落地后，本基线应清零并保留断言作长期回归锁。</p>
+     *
+     * @throws IOException 读取源码失败
+     */
+    @Test
+    public void shouldFreezeFontLayerToUiTextReverseImportBaseline() throws IOException {
+        Set<String> actual = collectFileNamesMatching(FONT_PACKAGE, IMPORT_UI_TEXT);
+
+        Set<String> newlyIntroduced = new TreeSet<String>(actual);
+        newlyIntroduced.removeAll(KNOWN_FONT_TO_UITEXT_BASELINE);
+        Assert.assertTrue(
+                "font 层新增对 ui.text 的 import（LTS 锁定值词汇，全仓唯一跨顶层轴包环边），禁止扩散；"
+                        + "确需引入请先经 5.x breaking 窗口换包裁决：" + newlyIntroduced,
+                newlyIntroduced.isEmpty());
+
+        Set<String> alreadyPurified = new TreeSet<String>(KNOWN_FONT_TO_UITEXT_BASELINE);
+        alreadyPurified.removeAll(actual);
+        Assert.assertTrue(
+                "以下 font 文件已不再反向 import ui.text，请从 KNOWN_FONT_TO_UITEXT_BASELINE 基线移除以向下收敛："
                         + alreadyPurified,
                 alreadyPurified.isEmpty());
     }
