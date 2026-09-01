@@ -141,7 +141,9 @@ void main(void) {
     // 四角半径按所在象限取，非均匀圆角也准确。
     vec2 halfSize = max(panelSizePx * 0.5, vec2(1.0, 1.0));
     vec2 local = (panelUv - 0.5) * panelSizePx;
-    float cornerR = cornerRadiusAt(cornerRadii, panelUv);
+    // 半径夹到短半轴内：宿主不保证已 scaleToFit（实验室探针带高 56 而圆角可到 40，
+    //  退化时 halfSize-cornerR 变负、SDF 几何失效乱贴亮边），故在 shader 侧兜底。
+    float cornerR = min(cornerRadiusAt(cornerRadii, panelUv), min(halfSize.x, halfSize.y));
     vec2 q = abs(local) - (halfSize - vec2(cornerR));
     float signedDistance = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - cornerR;
     float edgeDistance = max(-signedDistance, 0.0);
