@@ -377,11 +377,14 @@ public class ChatSceneControllerTest {
         // HUD 树:root → mount → list → group → (组头, 消息节点)
         SceneNode messageNode = hudGroups(root).get(0).__getChildren().get(1);
 
+        // 期望原点与实现同源(SceneAnchorResolver 视口锚定数学,host 未运行时即此路径)，
+        // 不再在测试里手算第二份公式。
         AnchorRect rootBox = SceneGeometry.absoluteBox(root, 0, 0);
-        int margin = ChatMarkdownSettings.getChatMarginPx();
-        int rootAbsX = margin;
-        int rootAbsY = 300 - margin - rootBox.getHeight();
-        AnchorRect box = SceneGeometry.absoluteBox(messageNode, rootAbsX, rootAbsY);
+        club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.ResolvedViewport origin =
+                club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver.resolveViewport(
+                        false, true, 400, 300, rootBox.getWidth(), rootBox.getHeight(),
+                        ChatMarkdownSettings.getChatMarginPx(), 0, 0, 0, 0, 0);
+        AnchorRect box = SceneGeometry.absoluteBox(messageNode, origin.getX(), origin.getY());
 
         IChatComponent hit = controller.hitTest(box.getX() + 2, box.getY() + 2);
         Assert.assertNotNull("消息矩形内应命中", hit);

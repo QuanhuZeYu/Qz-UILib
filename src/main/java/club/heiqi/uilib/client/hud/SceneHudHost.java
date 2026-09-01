@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -40,11 +41,14 @@ public final class SceneHudHost {
     private final SceneTextMeasurer measurer;
     private final Map<String, RetainedWindow> retained = new HashMap<String, RetainedWindow>();
     private final HudScaleSetting scaleSetting;
+    /** 最近一帧各窗口的权威放置盒（视口逻辑 px；每帧 render 清空重建）。 */
+    private final HashMap<String, AnchorRect> lastPlacements = new HashMap<String, AnchorRect>();
 
-    /** 创建消费指定服务注册表的 HUD host。 */
+    /** 创建消费指定服务注册表的 HUD host；唯一生产构造点，自附到服务供投放方查放置盒。 */
     public SceneHudHost(ClientHudServiceImpl service) {
         this(service.registry(), new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance()),
                 new HudScaleSetting());
+        service.attachHost(this);
     }
 
     SceneHudHost(HudRegistry registry, SceneTextMeasurer measurer) {
@@ -75,6 +79,7 @@ public final class SceneHudHost {
         height = Math.max(1, (int) Math.floor(height / scale));
         backend = backend.scaled(scale);
         HudInsets safeInsets = registry.avoidanceInsets(this::reportProviderFailure);
+        lastPlacements.clear();
         ArrayList<MeasuredHud> measured = new ArrayList<MeasuredHud>();
         Set<String> registered = new HashSet<String>();
         Set<String> visible = new HashSet<String>();
@@ -153,6 +158,8 @@ public final class SceneHudHost {
                     safeInsets.getLeft(), safeInsets.getTop(), safeInsets.getRight(), safeInsets.getBottom(),
                     offset);
             RetainedWindow window = retained.get(spec.getId());
+            lastPlacements.put(spec.getId(),
+                    new AnchorRect(placed.getX(), placed.getY(), placed.getWidth(), placed.getHeight()));
             window.frame(backend, placed.getX(), placed.getY(), placed.getWidth(), placed.getHeight(),
                     frameTimeNanos);
             offsets.put(spec.getAnchor(), offset + placed.getHeight() + HudTokens.STACK_GAP);
@@ -177,10 +184,21 @@ public final class SceneHudHost {
         }
     }
 
+    /**
+     * 最近一帧某窗口的权威放置盒（视口逻辑 px），未放置（不可见/空内容/已注销/无 host 帧）时 null。
+     *
+     * <p>投放方（如 chat3 命中检测）以宿主实际放置为准——含堆叠偏移、安全区与 clamp——
+     * 替代自行反推锚点数学的第二事实源。与 render 同为客户端主线程，逐帧重建。</p>
+     */
+    public AnchorRect currentPlacement(String hudId) {
+        return hudId == null ? null : lastPlacements.get(hudId);
+    }
+
     /** 释放世界级保留窗口；registration 仍归 mod 持有，重连后自动重建。 */
     public void clearWorld() {
         for (RetainedWindow window : retained.values()) window.dispose();
         retained.clear();
+        lastPlacements.clear();
     }
 
     private void disposeInactive(Set<String> active) {

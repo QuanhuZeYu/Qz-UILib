@@ -94,6 +94,43 @@ public class SceneHudPipelineTest {
                 "drawText".equals(call.methodName()) || "fillRect".equals(call.methodName())));
     }
 
+    /** 同锚点多窗堆叠：放置回写探针给出与渲染一致的权威盒，且互不重叠（方案 V4 补零覆盖）。 */
+    @Test public void sameAnchorStackingExposesAuthoritativePlacements() {
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("low").anchor(HudAnchor.BOTTOM_LEFT).stackOrder(0)
+                .margin(3).minWidth(1).build(),
+                rt -> SceneNode.row().setHitTestable(false).setText("A").setFontSize(14));
+        registry.register(HudSpec.builder("high").anchor(HudAnchor.BOTTOM_LEFT).stackOrder(1)
+                .margin(3).minWidth(1).build(),
+                rt -> SceneNode.row().setHitTestable(false).setText("BB").setFontSize(14));
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        host.render(new RecordingRenderBackend(), 200, 100, true, false);
+
+        club.heiqi.uilib.ui.scene.layout.AnchorRect low = host.currentPlacement("low");
+        club.heiqi.uilib.ui.scene.layout.AnchorRect high = host.currentPlacement("high");
+        assertNotNull(low);
+        assertNotNull(high);
+        // 底锚点自下向上堆叠：低槽贴底（底边 = 100 - margin），高槽在其上方且留 STACK_GAP
+        assertEquals(3, low.getX()); // BOTTOM_LEFT: x = margin
+        assertEquals(100 - 3, low.getY() + low.getHeight());
+        assertEquals(low.getY() - HudTokens.STACK_GAP, high.getY() + high.getHeight());
+        assertTrue("同锚点两窗不得重叠", high.getY() + high.getHeight() < low.getY());
+        // 未注册 id 与清理后的探针语义：null 而非陈旧盒
+        assertNull(host.currentPlacement("absent"));
+        host.clearWorld();
+        assertNull(host.currentPlacement("low"));
+    }
+
+    /** 不可见窗口无本帧放置（返回 null 而非上一帧陈旧盒）。 */
+    @Test public void invisibleWindowHasNoPlacement() {
+        HudRegistry registry = new HudRegistry();
+        registry.register(HudSpec.builder("gone").build(), rt -> SceneNode.row()
+                .setHitTestable(false).setText("X").setFontSize(14));
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        host.render(new RecordingRenderBackend(), 100, 40, false, false); // 不在世界 → 不可见
+        assertNull(host.currentPlacement("gone"));
+    }
+
     @Test public void windowFactoryFailureIsIsolated() {
         HudRegistry registry = new HudRegistry();
         registry.register(HudSpec.builder("broken").build(),

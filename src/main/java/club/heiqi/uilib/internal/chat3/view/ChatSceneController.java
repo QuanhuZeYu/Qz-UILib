@@ -10,6 +10,7 @@ import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.IChatComponent;
 
+import club.heiqi.uilib.client.hud.ClientHudServiceImpl;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
@@ -30,6 +31,7 @@ import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -337,8 +339,9 @@ public final class ChatSceneController {
     /**
      * 命中检测(func_146236_a 转发):点 → 消息组件(事件链经原版组件回投)。
      *
-     * <p>窗口原点推导:BOTTOM_LEFT 锚点 + 边距,底边 = 视口高 - 边距 - 根高(chrome=false
-     * 无外壳;聊天窗口 stackOrder 最底无堆叠偏移——S6 真机校准)。</p>
+     * <p>窗口原点:优先取 HUD host 本帧权威放置盒(含堆叠偏移、安全区与 clamp，与像素严格
+     * 对齐)；host 未放置本窗(未注册/空内容/测试)时回退 {@link SceneAnchorResolver} 同一
+     * BOTTOM_LEFT 视口锚定数学。两条路径都不再手算，锚点公式不再有第二事实源。</p>
      *
      * @param x 命中点 x(逻辑 px,scaled resolution 口径)
      * @param y 命中点 y
@@ -348,11 +351,23 @@ public final class ChatSceneController {
         if (root == null || hostViewportWidth <= 0 || hostViewportHeight <= 0) {
             return null;
         }
-        // 注册表命中(节点相对窗口根)+ 窗口原点平移:BOTTOM_LEFT 锚点 + 边距
-        AnchorRect rootBox = SceneGeometry.absoluteBox(root, 0, 0);
-        int margin = ChatMarkdownSettings.getChatMarginPx();
-        int rootAbsX = margin;
-        int rootAbsY = hostViewportHeight - margin - rootBox.getHeight();
+        // 注册表命中(节点相对窗口根)+ 窗口原点平移:宿主权威放置优先,resolver 数学兜底
+        int rootAbsX;
+        int rootAbsY;
+        AnchorRect placed = ClientHudServiceImpl.getInstance()
+                .currentPlacement(ChatHudWindow.HUD_ID);
+        if (placed != null) {
+            rootAbsX = placed.getX();
+            rootAbsY = placed.getY();
+        } else {
+            AnchorRect rootBox = SceneGeometry.absoluteBox(root, 0, 0);
+            SceneAnchorResolver.ResolvedViewport resolved = SceneAnchorResolver.resolveViewport(
+                    false, true, hostViewportWidth, hostViewportHeight,
+                    rootBox.getWidth(), rootBox.getHeight(),
+                    ChatMarkdownSettings.getChatMarginPx(), 0, 0, 0, 0, 0);
+            rootAbsX = resolved.getX();
+            rootAbsY = resolved.getY();
+        }
         for (Map.Entry<SceneNode, ChatLineRecord> entry : messageNodes.entrySet()) {
             SceneNode node = entry.getKey();
             if (node.__getParent() == null) {
