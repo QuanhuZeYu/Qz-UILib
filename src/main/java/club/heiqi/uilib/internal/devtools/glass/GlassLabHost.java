@@ -58,7 +58,7 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
 
     /** 根节点。 */
     private final SceneNode root;
-    /** 采样场节点（玻璃面板位置以其 LayoutBox 为基准）。 */
+    /** 采样场节点（玻璃面板位置以其 SceneGeometry.absoluteBox 绝对盒为基准）。 */
     private SceneNode stage;
     /** 探针玻璃卡节点（卡内顶部玻璃带验证快照含本帧内容）。 */
     private SceneNode probeCard;
