@@ -3,6 +3,7 @@ package club.heiqi.uilib.internal.chat3.view;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.hud.api.ClientHudService;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.hud.api.HudRegistration;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
@@ -22,8 +23,19 @@ public final class ChatHudWindow {
     /** BOTTOM_LEFT 同锚点堆叠顺序:聊天是最底常驻窗口(stackOrder 越小越靠下)。 */
     private static final int STACK_ORDER = -1000;
 
+    /**
+     * 宿主权威放置盒查询端口：由 client 装配层注入（composition root 在接线层，
+     * internal 包不反向依赖 client 包）。未注入时 chat3 命中走 SceneAnchorResolver 兜底。
+     */
+    @FunctionalInterface
+    public interface HudPlacementSource {
+        /** @return 该 id 最近一帧的放置盒（视口逻辑 px）；未放置时 null */
+        AnchorRect placement(String hudId);
+    }
+
     private static volatile HudRegistration registration;
     private static volatile ChatSceneController controller;
+    private static volatile HudPlacementSource placementSource;
 
     private ChatHudWindow() {
     }
@@ -36,6 +48,7 @@ public final class ChatHudWindow {
     public static synchronized ChatSceneController ensureRegistered() {
         if (registration == null || registration.isClosed()) {
             ChatSceneController instance = new ChatSceneController();
+            instance.attachPlacementSource(placementSource);
             HudSpec spec = HudSpec.builder(HUD_ID)
                     .anchor(HudAnchor.BOTTOM_LEFT)
                     .visibility(HudVisibility.IN_WORLD)
@@ -53,6 +66,15 @@ public final class ChatHudWindow {
     /** @return 当前控制器;未注册时 null */
     public static ChatSceneController controller() {
         return controller;
+    }
+
+    /** 装配层注入宿主放置端口（幂等；同步到当前与后续控制器实例）。 */
+    public static synchronized void setPlacementSource(HudPlacementSource source) {
+        placementSource = source;
+        ChatSceneController instance = controller;
+        if (instance != null) {
+            instance.attachPlacementSource(source);
+        }
     }
 
     /** 关闭窗口(总开关关闭/逃生舱回退原版时调用;幂等)。 */

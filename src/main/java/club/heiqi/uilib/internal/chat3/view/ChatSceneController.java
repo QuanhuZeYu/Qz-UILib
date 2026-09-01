@@ -10,7 +10,6 @@ import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.IChatComponent;
 
-import club.heiqi.uilib.client.hud.ClientHudServiceImpl;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
@@ -231,6 +230,13 @@ public final class ChatSceneController {
     /** 宿主视口(逻辑 px,渲染帧由接线层写入;命中检测窗口原点推导用)。 */
     private int hostViewportWidth;
     private int hostViewportHeight;
+    /** 宿主权威放置端口;由装配层注入,未注入时命中检测走 SceneAnchorResolver 兜底。 */
+    private volatile ChatHudWindow.HudPlacementSource placementSource;
+
+    /** 装配层注入 HUD 宿主放置端口(client 包 → internal 为正向依赖)。 */
+    public void attachPlacementSource(ChatHudWindow.HudPlacementSource source) {
+        this.placementSource = source;
+    }
 
     /** 以生产 UILib 度量创建(真机路径)。 */
     public ChatSceneController() {
@@ -352,8 +358,8 @@ public final class ChatSceneController {
         // 注册表命中(节点相对窗口根)+ 窗口原点平移:宿主权威放置优先,resolver 数学兜底
         int rootAbsX;
         int rootAbsY;
-        AnchorRect placed = ClientHudServiceImpl.getInstance()
-                .currentPlacement(ChatHudWindow.HUD_ID);
+        ChatHudWindow.HudPlacementSource source = placementSource;
+        AnchorRect placed = source == null ? null : source.placement(ChatHudWindow.HUD_ID);
         if (placed != null) {
             rootAbsX = placed.getX();
             rootAbsY = placed.getY();

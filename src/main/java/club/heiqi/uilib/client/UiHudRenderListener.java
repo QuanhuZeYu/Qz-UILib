@@ -40,6 +40,9 @@ public final class UiHudRenderListener {
     /** 创建使用指定 Minecraft 环境的 bridge。 */
     UiHudRenderListener(MinecraftHudEnvironment environment) {
         this.environment = environment;
+        // 装配层接线（composition root 在 client）：chat3 命中检测读宿主权威放置盒。
+        // internal→client 为禁止方向,故经端口注入而非直引。
+        club.heiqi.uilib.internal.chat3.view.ChatHudWindow.setPlacementSource(host::currentPlacement);
         registerDebugHud();
     }
 
