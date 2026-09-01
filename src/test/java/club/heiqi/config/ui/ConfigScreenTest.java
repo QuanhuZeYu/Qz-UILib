@@ -71,6 +71,8 @@ public class ConfigScreenTest {
         adapter = new DraftSignalAdapter(null, draft);
         FieldRendererRegistry registry = FieldRendererRegistry.defaultRegistry();
         screen = new ConfigScreen(null, manager, adapter, registry);
+        // A4c:构造期首刷收口后,物化职责移到本 @Before（等价旧 runtime.flush() 语义,全类共用）
+        screen.__getRuntime().flush();
     }
 
     @After

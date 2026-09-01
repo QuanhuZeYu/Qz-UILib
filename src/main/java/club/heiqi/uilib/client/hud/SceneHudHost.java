@@ -7,18 +7,15 @@ import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
+import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -46,8 +43,7 @@ public final class SceneHudHost {
 
     /** 创建消费指定服务注册表的 HUD host；唯一生产构造点在 {@code UiHudRenderListener}。 */
     public SceneHudHost(ClientHudServiceImpl service) {
-        this(service.registry(), new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance()),
-                new HudScaleSetting());
+        this(service.registry(), SceneHostAssembly.defaultMeasurer(), new HudScaleSetting());
     }
 
     SceneHudHost(HudRegistry registry, SceneTextMeasurer measurer) {
@@ -211,10 +207,13 @@ public final class SceneHudHost {
 
         RetainedWindow(HudRegistry.Entry entry, SceneTextMeasurer measurer) {
             HudTokens tokens = HudTokens.NORMAL;
-            runtime = new SceneRuntime(measurer);
-            layoutEngine = new SceneLayoutEngine(measurer);
-            pipeline = new SceneFramePipeline(runtime, layoutEngine, new ScenePaintEngine(measurer),
-                    new ScenePaintReplayer(), measurer, null);
+            // 五件套唯一装配点（A4）；无输入退化模式 inputSource=null。
+            // 构造期不再强制 flush：首帧物化由宿主合同保证（measure 空 → settleWithoutPaint
+            // 同帧 flush+relayout → 次帧绘制），signal 绑定内容至多晚一帧可见。
+            SceneHostAssembly.Bundle bundle = SceneHostAssembly.assemble(measurer, null);
+            runtime = bundle.getRuntime();
+            layoutEngine = bundle.getLayoutEngine();
+            pipeline = bundle.getPipeline();
             SceneNode shell = SceneNode.column().setHitTestable(false).setClipChildren(true)
                     .setWidthSizing(SceneNode.WidthSizing.SHRINK);
             if (entry.spec.isChrome()) {
@@ -230,7 +229,6 @@ public final class SceneHudHost {
             }
             root.appendChild(contentRoot);
             content = contentRoot;
-            runtime.flush();
         }
 
         /** 测量（含外壳）：layout 后返回外壳盒。 */

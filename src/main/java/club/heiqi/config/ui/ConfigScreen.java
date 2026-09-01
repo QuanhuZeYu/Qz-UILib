@@ -395,8 +395,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             scrollContainer.appendChild(scrollbarColumn);
         });
 
-        // 首帧 flush：让所有 Computed 物化（flush 前返回 null）
-        runtime.flush();
+        // A4c:构造期 flush 已收口——生产渲染每帧走管线 FLUSH 相位物化;
+        // headless 测试须在读取 Computed 前自行 runtime.flush()（见 ConfigScreenTest.setUp）。
     }
 
     /**

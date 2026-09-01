@@ -19,8 +19,6 @@ import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
-import club.heiqi.uilib.ui.scene.text.TextMeasureServiceSceneAdapter;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 
 /**
  * scene 宿主统一基类：直接实现 {@link UiSurface}（不依赖旧 Widget 树），
@@ -65,14 +63,24 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
      * @param inputSource 平台输入源，可为 null（退化模式）
      */
     protected AbstractSceneHostWidget(PlatformInputSource inputSource) {
+        this(SceneHostAssembly.defaultMeasurer(), inputSource);
+    }
+
+    /**
+     * measurer 可注入构造（投放职责聚合方案 A4 缺口②）：headless 测试传入确定度量端口。
+     *
+     * @param measurer    文本度量端口，五件套共用（装配事实源 {@link SceneHostAssembly}）
+     * @param inputSource 平台输入源，可为 null（退化模式）
+     */
+    protected AbstractSceneHostWidget(SceneTextMeasurer measurer, PlatformInputSource inputSource) {
+        SceneHostAssembly.Bundle bundle = SceneHostAssembly.assemble(measurer, inputSource);
         this.inputSource = inputSource;
-        this.measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        this.runtime = new SceneRuntime(measurer);
-        this.layoutEngine = new SceneLayoutEngine(measurer);
-        this.paintEngine = new ScenePaintEngine(measurer);
-        this.replayer = new ScenePaintReplayer();
-        this.pipeline = new SceneFramePipeline(runtime, layoutEngine, paintEngine, replayer,
-                measurer, inputSource);
+        this.measurer = bundle.getMeasurer();
+        this.runtime = bundle.getRuntime();
+        this.layoutEngine = bundle.getLayoutEngine();
+        this.paintEngine = bundle.getPaintEngine();
+        this.replayer = bundle.getReplayer();
+        this.pipeline = bundle.getPipeline();
         if (inputSource instanceof CursorBackendProvider) {
             runtime.bindCursor(((CursorBackendProvider) inputSource).createCursorBackend());
         }

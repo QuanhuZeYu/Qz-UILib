@@ -85,7 +85,7 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         buildShell();
         runtime.bind(activePageSignal, this::requestPageTransition);
         mountPage(0);
-        runtime.flush();
+        // A4c:构造期 flush 已收口——首帧管线 FLUSH 相位即物化本页;测试须自行 flush(见各页测试)。
     }
 
     // ==================== 骨架构建 ====================

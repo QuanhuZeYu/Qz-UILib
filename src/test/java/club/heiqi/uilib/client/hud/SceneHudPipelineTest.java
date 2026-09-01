@@ -55,8 +55,12 @@ public class SceneHudPipelineTest {
                     TextStyle.TEXT_MODE_RICH_TAGS)));
             return root;
         });
+        // A4c 契约：signal 绑定内容首帧经空窗 settle 物化，次帧绘制（晚至多一帧，
+        // 由 emptyWindowStillMaterializesSignalsAndSelfHeals 锁语义；此处按两帧断言渲染）。
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        host.render(new RecordingRenderBackend(), 100, 40, true, false); // 首帧:settle 物化
         RecordingRenderBackend backend = new RecordingRenderBackend();
-        new SceneHudHost(registry, MEASURER).render(backend, 100, 40, true, false);
+        host.render(backend, 100, 40, true, false); // 次帧:绘制
         // RICH 模式 drawText 原文含标签（渲染层按 mode 解析着色），断言内容子串即可
         assertTrue(backend.getCalls().stream().anyMatch(call -> "drawText".equals(call.methodName())
                 && call.getString(0).contains("HUD")));
