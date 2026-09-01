@@ -15,6 +15,7 @@
 - `网络层方案.md`：网络层（内容语义 Channel + Fetch + Stream + Store + Vanilla mixin 适配器 + Forge 兼容适配器）方案。
 - `网络编解码线格式.md`：网络层内容 envelope、可选 POJO codec 与分片格式。
 - `网络原版Mixin注入策略.md`：vanilla custom payload early mixin 注入点与传输策略。
+- `投放职责聚合方案.md`：scene 投放层职责归一方案（放置/flush/输入仲裁/装配/渲染出口/外壳/输入面 7 项聚合清单、施工批次与可脚本验收；含「投影化否决但挂触发器」的裁决与 A1 过期战报勘误）。
 
 ## 历史 / 演进记录
 
