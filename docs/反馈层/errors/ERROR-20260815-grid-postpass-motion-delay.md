@@ -1,5 +1,7 @@
 # 网格布局后置定位不得打 layout 级脏标记 + Motion 延时轨道帧外起点
 
+> **状态（2026-09-01）**：`GridLayouter/GridLayouts/GridSpec` 网格门面已整体退役删除（审查裁定：零生产消费者 + 与 SceneVirtualGrid 重复 + layout→runtime 环唯一逆边）。本文「后置步与主布局权威振荡」的教训**保留为永久有效**——未来任何 `layoutDoneSignal` 后置改盒位实现（含 SceneVirtualGrid 的行定位）都适用第 1/2 条；不得因门面已删而视本记录为过期。
+
 > 日期：2026-08-15 · 关联提交：本阶段 SceneVirtualGrid/GridLayouts/SceneTooltip 基础设施提交
 
 ## 现象
