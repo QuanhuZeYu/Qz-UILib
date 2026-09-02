@@ -289,9 +289,11 @@ final class UiBackdropFilterRenderer {
         boolean liquid = effect != null && effect.isLiquid();
         // 液态三参数在所有路径显式赋值（含 null/经典），缺省留 0 依赖"恰好为 0"不可读。
         BACKDROP_SHADER_PROGRAM.setUniformF("liquidGlass", liquid ? 1.0F : 0.0F);
-        // 作者侧 2~12 屏幕像素 -> 纹理素（与 blurRadius 同口径换算）。
+        // 作者侧 3~30 屏幕像素 -> 纹理素（与 blurRadius 同口径换算）。下限不是 0：
+        // 液态档一旦启用就必须肉眼可辨，原 2~12 区间在低强度段几乎无感，
+        // 拉满也只有轻微弯折，用户会误判成"Liquid Glass 没生效"。
         BACKDROP_SHADER_PROGRAM.setUniformF("refraction", liquid
-                ? (2.0F + 10.0F * effect.getLensStrength()) / (float) snapshotDownsampleFactor
+                ? (3.0F + 27.0F * effect.getLensStrength()) / (float) snapshotDownsampleFactor
                 : 0.0F);
         BACKDROP_SHADER_PROGRAM.setUniformF("edgeTint", liquid ? 0.10F + 0.25F * effect.getLensStrength() : 0.0F);
         BACKDROP_SHADER_PROGRAM.setUniform2f("lightDir", lightDirX, lightDirY);

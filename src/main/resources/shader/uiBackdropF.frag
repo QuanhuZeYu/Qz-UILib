@@ -140,7 +140,10 @@ void main(void) {
     vec2 sdfGradient = vec2(0.0);
     vec2 lensShift = vec2(0.0);
     if (liquidGlass > 0.5) {
-        float lensBandPx = max(min(halfSize.x, halfSize.y) * 0.85, 6.0);
+        // 缘带宽度取固定像素量级（8~28px），不能按面板短边比例给：短边 164px 的面板
+        // 用 0.85 比例会算出 70px 缘带，等于整块面板都被当成边缘，折射与厚度 tint 被
+        // 摊薄到全表面，观感退化回普通磨砂——Liquid Glass 的辨识度恰恰来自"只有边缘鼓"。
+        float lensBandPx = clamp(min(halfSize.x, halfSize.y) * 0.35, 8.0, 28.0);
         lensBevel = 1.0 - smoothstep(0.0, lensBandPx, edgeDistance);
         lensBevel = lensBevel * lensBevel;
         vec2 inner = clamp(local, -(halfSize - vec2(cornerR)), halfSize - vec2(cornerR));
@@ -172,12 +175,22 @@ void main(void) {
     if (iosMaterial > 0.5) {
         // 材质分级顺序：vibrancy -> tint 蒙层 -> 亮度偏置。先做色彩校正再叠蒙层，
         // 才能既通透又有 iOS 那层"奶白"；反向会把 tint 一起饱和掉。
+        color = applyVibrancy(blurred.rgb, vibrancy);
+        // 白 tint 必须按背景亮度门控，否则暗背景必发灰：mix(c, 1, a) 把黑场从 0 抬到
+        // a（本档 a=0.2），等于压掉 20% 动态范围——这就是"洗成脏灰"的数学本质，
+        // 不是参数问题。深色 tint 往下压不伤黑场，无需门控。iOS 的真实做法是在暗背景
+        // 上自动改用 dark material（trait 感知），这里用亮度门控近似同一行为：
+        // 暗背景几乎不叠白（保持通透），亮背景照常吃奶白（保住文字可读性）。
+        // 方向从 tint 自身亮度推出，零新增 uniform。
+        float tintLuma = dot(materialTint.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float backdropLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        float whiteGate = mix(1.0, smoothstep(0.05, 0.55, backdropLuma), step(0.5, tintLuma));
         // 厚度 tint：真实玻璃边缘更厚、吃色更多——edgeTint 沿缘带递增蒙层（经典档
         // edgeTint=0，逐项恒等）。
-        color = applyVibrancy(blurred.rgb, vibrancy);
         color = mix(color, materialTint.rgb,
-                clamp(materialTint.a + edgeTint * lensBevel, 0.0, 1.0));
-        color = color + materialLift;
+                clamp((materialTint.a + edgeTint * lensBevel) * whiteGate, 0.0, 1.0));
+        // 亮度补偿同受门控：不门控的话 tint 不抬黑场、lift 却抬，灰底照样被洗白。
+        color = color + materialLift * whiteGate;
     } else {
         color = applySaturation(blurred.rgb, saturation);
     }

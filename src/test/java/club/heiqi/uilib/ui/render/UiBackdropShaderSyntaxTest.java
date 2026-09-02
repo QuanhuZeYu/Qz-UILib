@@ -70,6 +70,23 @@ public class UiBackdropShaderSyntaxTest {
         assertTrue("材质分支必须真实存在（iosMaterial 判定）", code.indexOf("iosMaterial >") >= 0);
     }
 
+    /**
+     * 白 tint 亮度门控必须在位。
+     *
+     * <p>2026-09-01 真机反馈"light 档发灰、DARK 系列更有苹果味"的根因：无门控的
+     * mix(c, 白, a) 把黑场抬到 a、压掉动态范围，暗背景必洗成脏灰。门控（whiteGate）
+     * 让白 tint 只在亮背景吃满、暗背景近乎不叠，深色档 gate 恒 1。将来若有人"简化"
+     * 回裸 mix，暗背景发灰会回归——本锁拦住。</p>
+     */
+    @Test
+    public void whiteTintIsLumaGated() throws IOException {
+        String code = stripComments(read(FRAG));
+        assertTrue("白 tint 必须按背景亮度门控（whiteGate），否则暗背景洗灰",
+                code.indexOf("whiteGate") >= 0);
+        assertTrue("材质合成必须引用门控后的 tint",
+                code.indexOf("materialTint.a + edgeTint * lensBevel) * whiteGate") >= 0);
+    }
+
     private static void assertBalanced(String relative) throws IOException {
         String code = stripComments(read(relative));
         List<Character> stack = new ArrayList<Character>();
