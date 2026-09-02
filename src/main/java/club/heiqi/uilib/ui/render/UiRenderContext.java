@@ -719,8 +719,13 @@ public class UiRenderContext implements UiRenderBackend {
 
     /**
      * 绘制富文本段流：走 UILib 字形批（DefaultFontRendererAdapter.drawSegments，
-     * 真机验证路径）。y 为 em-box 顶（与 TEXT 命令同语义），内部换算基线：
-     * {@code baseline = y + ascent(fontSizePx)}。
+     * 真机验证路径）。y 为 em-box 顶（与 TEXT 命令同语义），<b>原样透传、绝不再加
+     * ascent</b>：字形批的 y 参数名义叫"基线"，实际是<b>字格顶</b>——quad 生成时内部已按
+     * {@code lineBaselineY × baselineScale} 把字格顶换算到基线（见
+     * {@code DefaultFontRendererAdapter.drawPreparedTextIntoCollector} 装饰线注释）。调用方再加
+     * 一次 ascent 就是<b>两次</b>，整段文字下沉一个 ascent（真机 13px 字号下沉 8px，
+     * 聊天气泡文字贴到气泡下缘）。TEXT 路径 {@code drawBaselineAlignedStringPx} 一直是
+     * 原样透传，两条路只有此处偏离——同一锚点契约的第二处重实现走样。
      *
      * <p>段样式（颜色/字重/斜体/下划线/删除线/§k/链接）由命令段流自带；非 UILib
      * 字体后端降级为拼接纯文本（保可见、丢样式），生产环境恒走 UILib 路径。</p>
@@ -732,8 +737,7 @@ public class UiRenderContext implements UiRenderBackend {
         }
         int safeSize = Math.max(1, fontSizePx);
         if (fontRenderer instanceof DefaultFontRendererAdapter) {
-            int baselineY = y + FontService.getInstance().getTextLayoutService().getAscent(safeSize);
-            ((DefaultFontRendererAdapter) fontRenderer).drawSegments(segments, x, baselineY, true, 1.0F, safeSize);
+            ((DefaultFontRendererAdapter) fontRenderer).drawSegments(segments, x, y, true, 1.0F, safeSize);
             notifyMainLayerContentChanged();
             return;
         }

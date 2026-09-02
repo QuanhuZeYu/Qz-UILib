@@ -446,7 +446,10 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      *
      * @param segments       富文本片段（不可为 null/空，返回起始 X）
      * @param x              起始 X
-     * @param y              基线 Y（atlas 基线对齐契约，与 drawBaselineAlignedString 同口径）
+     * @param y              <b>字格顶 Y</b>（与 drawBaselineAlignedString / drawPreparedText 同口径）。
+     *                       方法名里的"BaselineAligned"沿自 vanilla 命名，<b>不</b>表示本参数是基线：
+     *                       quad 生成时内部已按 lineBaselineY×baselineScale 把字格顶换算到基线，
+     *                       调用方再加一次 ascent 会导致文字整体下沉一个 ascent。
      * @param dropShadow     是否绘制阴影 pass
      * @param renderScale    整体渲染缩放（聊天接管对齐原版 chatScale 矩阵，内部坐标用缩放前值）
      * @param baseFontSizePx 正文字号（px，≥1）

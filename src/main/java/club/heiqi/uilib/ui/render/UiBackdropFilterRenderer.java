@@ -252,8 +252,10 @@ final class UiBackdropFilterRenderer {
                 ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : panelCornerRadii;
         BACKDROP_SHADER_PROGRAM.setUniform4f("cornerRadii", (float) radii.getTopLeft(),
                 (float) radii.getTopRight(), (float) radii.getBottomRight(), (float) radii.getBottomLeft());
+        // 面板短边半宽（屏幕像素）：给折射位移做尺寸上限，见 applyMaterialUniforms。
+        float panelShortHalfPx = Math.min(Math.max(1, right - left), Math.max(1, bottom - top)) * 0.5F;
         applyMaterialUniforms(effect, saturation, lightDirX, lightDirY,
-                Math.max(1, downsampleFactor));
+                Math.max(1, downsampleFactor), panelShortHalfPx);
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
         BACKDROP_SHADER_PROGRAM.unbind();
@@ -282,20 +284,28 @@ final class UiBackdropFilterRenderer {
      *
      * @param material 材质档，可为 null
      * @param saturationMultiplier 旧语义的线性饱和度乘子，或材质档的 vibrancy 倍率
+     * @param panelShortHalfPx 面板短边半宽（屏幕像素）：折射位移的尺寸上限来源，见方法体注释
      */
     private static void applyMaterialUniforms(UiBackdropEffect effect, float saturationMultiplier,
-            float lightDirX, float lightDirY, int snapshotDownsampleFactor) {
+            float lightDirX, float lightDirY, int snapshotDownsampleFactor, float panelShortHalfPx) {
         UiGlassMaterial material = effect == null ? null : effect.getMaterial();
         boolean liquid = effect != null && effect.isLiquid();
         // 液态三参数在所有路径显式赋值（含 null/经典），缺省留 0 依赖"恰好为 0"不可读。
         BACKDROP_SHADER_PROGRAM.setUniformF("liquidGlass", liquid ? 1.0F : 0.0F);
-        // 作者侧 3~30 屏幕像素 -> 纹理素（与 blurRadius 同口径换算）。下限不是 0：
-        // 液态档一旦启用就必须肉眼可辨，原 2~12 区间在低强度段几乎无感，
-        // 拉满也只有轻微弯折，用户会误判成"Liquid Glass 没生效"。
-        BACKDROP_SHADER_PROGRAM.setUniformF("refraction", liquid
-                ? (3.0F + 27.0F * effect.getLensStrength()) / (float) snapshotDownsampleFactor
-                : 0.0F);
-        BACKDROP_SHADER_PROGRAM.setUniformF("edgeTint", liquid ? 0.10F + 0.25F * effect.getLensStrength() : 0.0F);
+        // 作者侧屏幕像素 -> 纹理素（与 blurRadius 同口径换算）。下限不是 0：液态档一旦
+        // 启用就必须肉眼可辨，原 2~12 区间在低强度段几乎无感，拉满也只有轻微弯折，
+        // 用户会误判成"Liquid Glass 没生效"。斜率同时从 27 提到 40（50% 强度处 16.5 -> 26px）。
+        //
+        // 上限按面板短边收敛（0.8×半短边）：位移是无量纲的"绝对像素"，而可弯折的
+        // 素材只有面板那么大。聊天气泡短边 28px 若照吃 26px 位移，缘带会把轮廓外很远
+        // 的内容拽进来，边缘糊成一条脏带而不是鼓起的透镜缘。大面板不受约束。
+        float refractionPx = liquid
+                ? Math.min(6.0F + 40.0F * effect.getLensStrength(), panelShortHalfPx * 0.8F) : 0.0F;
+        BACKDROP_SHADER_PROGRAM.setUniformF("refraction",
+                refractionPx / (float) snapshotDownsampleFactor);
+        // 厚度 tint 同步加强（50% 处 0.225 -> 0.31）：小面板上折射位移被尺寸上限压住后，
+        // "边缘更厚、吃色更多"这条线索要承担更多辨识度。
+        BACKDROP_SHADER_PROGRAM.setUniformF("edgeTint", liquid ? 0.14F + 0.34F * effect.getLensStrength() : 0.0F);
         BACKDROP_SHADER_PROGRAM.setUniform2f("lightDir", lightDirX, lightDirY);
         if (material == null) {
             BACKDROP_SHADER_PROGRAM.setUniformF("iosMaterial", 0.0F);

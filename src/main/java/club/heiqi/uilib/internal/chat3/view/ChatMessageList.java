@@ -633,7 +633,7 @@ public final class ChatMessageList {
                         .setHitTestable(false)
                         .setFontSize(ChatMarkdownSettings.getNameFontSizePx())
                         .setSegments(headerNameBase)
-                        .setTextVerticalAlign(TextVerticalAlign.TOP)
+                        .setTextVerticalAlign(TextVerticalAlign.CENTER)
                         // K3 真机修复:组头文本节点缺 preferredHeight → 行高塌为 0(文本被气泡
                         // 背景覆盖的"幽影");段流节点不走文本度量,布局几何必须显式钉高
                         // (设计稿 §3.3:组头一行高 16)
@@ -654,7 +654,7 @@ public final class ChatMessageList {
                         .setHitTestable(false)
                         .setFontSize(ChatMarkdownSettings.getTimestampFontSizePx())
                         .setSegments(headerTimeBase)
-                        .setTextVerticalAlign(TextVerticalAlign.TOP)
+                        .setTextVerticalAlign(TextVerticalAlign.CENTER)
                         // 与名字节点同因(段流节点无文本度量):钉 16px 保组头行不塌(K3 缺陷 1)
                         .setPreferredHeight(HEADER_ROW_HEIGHT_PX);
                 float timeWidth = segmentsWidth(headerTimeBase, segmentMeasurer,
@@ -784,7 +784,7 @@ public final class ChatMessageList {
                             .setHitTestable(false)
                             .setFontSize(fontSize)
                             .setSegments(mathSegments)
-                            .setTextVerticalAlign(TextVerticalAlign.TOP)
+                            .setTextVerticalAlign(TextVerticalAlign.CENTER)
                             .setPreferredHeight(Math.max(1, lineHeight))
                             .setMargin(BLOCK_MATH_GAP_PX, 0, BLOCK_MATH_GAP_PX, 0);
                     if (style.isTtlFade()) {
@@ -848,11 +848,14 @@ public final class ChatMessageList {
                     }
                 }
                 messageLineSpans.add(spans);
+                // 垂直口径：段流节点钉的行框高(lineHeight=字号+行距)大于 em-box(=字号)，
+                // 必须 CENTER 才能把行距按 half-leading 上下均分；TOP 会把整段行距堆到文字
+                // 下方，单行气泡看起来贴底。四处段流节点(组头名/时间/块公式/正文行)同因。
                 SceneNode lineNode = new SceneNode()
                         .setHitTestable(false)
                         .setFontSize(fontSize)
                         .setSegments(segments)
-                        .setTextVerticalAlign(TextVerticalAlign.TOP)
+                        .setTextVerticalAlign(TextVerticalAlign.CENTER)
                         .setPreferredHeight(Math.max(1, lineHeight));
                 // K3 缺陷 2 根因:段流节点不参与文本度量(SceneNode.setSegments 契约),布局宽
                 // = fill 全宽 → messageNode SHRINK 被全宽行顶满 → clamp 到 maxWidth 恒占

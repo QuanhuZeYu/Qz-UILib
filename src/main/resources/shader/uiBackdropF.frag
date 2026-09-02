@@ -143,10 +143,15 @@ void main(void) {
     vec2 sdfGradient = vec2(0.0);
     vec2 lensShift = vec2(0.0);
     if (liquidGlass > 0.5) {
-        // 缘带宽度取固定像素量级（8~28px），不能按面板短边比例给：短边 164px 的面板
-        // 用 0.85 比例会算出 70px 缘带，等于整块面板都被当成边缘，折射与厚度 tint 被
-        // 摊薄到全表面，观感退化回普通磨砂——Liquid Glass 的辨识度恰恰来自"只有边缘鼓"。
-        float lensBandPx = clamp(min(halfSize.x, halfSize.y) * 0.35, 8.0, 28.0);
+        // 缘带宽度：比例 0.35 为主，上下限只兜极端。上限 28px 防大面板整块被当成边缘
+        // （短边 164px 若按 0.85 比例会算出 70px 缘带，折射与厚度 tint 摊薄到全表面，
+        // 观感退化回普通磨砂——Liquid Glass 的辨识度恰恰来自"只有边缘鼓"）。
+        // 下限从 8px 降到 3px 是真机"液态看不出"的根因：聊天气泡短边仅 28px、半高 14，
+        // 8px 下限把缘带撑到占满半高的 57%，bevel 在气泡内部几乎恒为 1 —— 而"整体一致
+        // 位移"是不可见的（等价于平移采样坐标），梯度才是透镜本身。下限再小也必须留
+        // 平坦中心，故另用 shortHalf*0.5 兜底：任何尺寸的面板中心区 bevel 必为 0。
+        float lensShortHalf = min(halfSize.x, halfSize.y);
+        float lensBandPx = min(clamp(lensShortHalf * 0.35, 3.0, 28.0), lensShortHalf * 0.5);
         lensBevel = 1.0 - smoothstep(0.0, lensBandPx, edgeDistance);
         lensBevel = lensBevel * lensBevel;
         vec2 inner = clamp(local, -(halfSize - vec2(cornerR)), halfSize - vec2(cornerR));
@@ -201,13 +206,18 @@ void main(void) {
 
     // 边缘亮边：1.5px 缘带内（SDF 距离，圆角处准确，旧 min(到直边) 近似会把
     // 弧段亮边裁掉）。iOS 的亮边集中在顶缘、向两侧衰减，四边等强描边最假。
-    float borderBand = 1.0 - smoothstep(0.0, 1.5, edgeDistance);
+    // 缘带宽：液态档放宽到 2px——GUI scale=1 时 1.5px 的 SDF 带经 smoothstep 后实际
+    // 只剩约 1 个亮像素，真机上缘光被量化吃掉（聊天气泡"看不出有液态"的第二成因）。
+    float rimBandPx = liquidGlass > 0.5 ? 2.0 : 1.5;
+    float borderBand = 1.0 - smoothstep(0.0, rimBandPx, edgeDistance);
     float borderWeight = borderBand * mix(0.30, 1.0, 1.0 - clamp(panelUv.y, 0.0, 1.0));
     if (liquidGlass > 0.5) {
         // 随动缘光：高光峰值沿边缘滑动到光源方向（官方语义"lighting responds to
         // device motion"，MC 无陀螺仪，宿主以鼠标为光源）。dot(外法线, 光源方向)
         // 让面向光源的缘段最亮、背光缘压暗——这是 Liquid Glass"活的"观感来源。
-        borderWeight *= 0.55 + 0.9 * max(dot(sdfGradient, lightDir), 0.0);
+        // 系数从 0.55+0.9 提到 0.5+1.6：峰值亮边 +45%，且背光/光源两侧的反差拉大
+        // （原比例 1.45/0.55=2.6 倍，现 2.1/0.5=4.2 倍），缘光才有"绕着边走"的方向感。
+        borderWeight *= 0.5 + 1.6 * max(dot(sdfGradient, lightDir), 0.0);
     }
 
     // 内侧上缘柔光 + 内侧下缘暗带：镜面反射与厚度感的近似（pow3 让能量贴住边缘）。

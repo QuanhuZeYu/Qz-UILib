@@ -87,6 +87,26 @@ public class UiBackdropShaderSyntaxTest {
                 code.indexOf("materialTint.a + edgeTint * lensBevel) * whiteGate") >= 0);
     }
 
+    /**
+     * 液态缘带必须随面板尺寸收敛，且必须留出平坦中心。
+     *
+     * <p>2026-09-02 真机反馈「液态效果还能加强一点」的根因不是强度参数，而是缘带
+     * 下限 8px 在小面板上饱和：聊天气泡短边 28px、半高 14，8px 缘带占满半高的 57%，
+     * lensBevel 在气泡内部几乎恒为 1。恒 1 意味着整块面板做同一位移，而「一致的平移」
+     * 在视觉上不可见——透镜的可辨识度全部来自位移的<b>梯度</b>。将来若有人把下限调回
+     * 固定像素或去掉平坦中心约束，小面板液态会再次静默退化成普通磨砂。</p>
+     */
+    @Test
+    public void liquidLensBandScalesWithPanelSize() throws IOException {
+        String code = stripComments(read(FRAG));
+        assertTrue("缘带必须以面板短边半宽为基准（比例项）",
+                code.indexOf("lensShortHalf * 0.35") >= 0);
+        assertTrue("缘带必须被短边半宽封顶，保证中心区 lensBevel 恒 0（平坦中心）",
+                code.indexOf("lensShortHalf * 0.5") >= 0);
+        assertTrue("折射位移必须以缘带梯度为前提（lensShift 乘 lensBevel）",
+                code.indexOf("lensBevel * refraction") >= 0);
+    }
+
     private static void assertBalanced(String relative) throws IOException {
         String code = stripComments(read(relative));
         List<Character> stack = new ArrayList<Character>();
