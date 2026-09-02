@@ -55,6 +55,8 @@ public final class SceneTooltip {
     private static final int BG = SceneChromeTokens.BG_DEFAULT;
     private static final int BORDER = SceneChromeTokens.BORDER_DEFAULT;
     private static final int TEXT_COLOR = SceneChromeTokens.TEXT_SECONDARY;
+    /** 浮层外壳边框宽（与 {@link #content} 里 {@code setBorderWidth(1)} 同源）。 */
+    private static final int BORDER_WIDTH = 1;
 
     private SceneTooltip() {
     }
@@ -180,13 +182,31 @@ public final class SceneTooltip {
                     dismissed[0] = true;
                     visible.set(Boolean.FALSE);
                 }, AnchorProvider.forNode(props.target()),
-                null, new AnchoredPortalLayout(DEFAULT_MAX_WIDTH_PX, 0, 8));
+                null, new AnchoredPortalLayout(portalPreferredWidthPx(props), 0, 8));
 
         owner.onCleanup(() -> {
             armed[0] = false;
             rt.__cancelMotion(timerKey);
             visible.set(Boolean.FALSE);
         });
+    }
+
+    /**
+     * 浮层盒宽：必须容得下「按 {@code props.maxWidthPx()} 排好的最长行 + 内边距 + 边框」。
+     *
+     * <p>历史缺陷：这里硬编码 {@link #DEFAULT_MAX_WIDTH_PX}(260)，而调用方可以要求更宽的
+     * 换行宽（聊天链接 tooltip 用 320）。换行按 320 算、盒子只有 260，两者各说各话 ——
+     * 真机表现为「tooltip 包不住内容」：文字紧贴甚至压过边框，且被盒子二次折行。
+     * 盒宽 = 换行宽 + 左右 padding(PAD_SM) + 左右 1px 边框。</p>
+     *
+     * @param props tooltip 输入契约
+     * @return portal 首选宽度（{@code maxWidthPx <= 0} 时回退默认宽）
+     */
+    static int portalPreferredWidthPx(Props props) {
+        if (props.maxWidthPx() <= 0) {
+            return DEFAULT_MAX_WIDTH_PX;
+        }
+        return props.maxWidthPx() + 2 * SceneChromeTokens.PAD_SM + 2 * BORDER_WIDTH;
     }
 
     /** 浮层内容：SHRINK 整列，hitTestable=false 全树穿透，行文本经 wrapLines 换行。 */

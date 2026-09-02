@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 
 /**
  * {@link SceneTooltip} 单元测试。
@@ -278,4 +279,39 @@ public class SceneTooltipTest {
                 DELAY_MS, 96, 3, true);
         Assert.assertTrue(breaking.breakLongWords());
     }
+
+
+    @Test
+    public void portalBoxWidthMustFitTheWrapWidthTheCallerAskedFor() {
+        // 真机回归：attach 曾把 portal preferredWidth 硬编码为 DEFAULT_MAX_WIDTH_PX(260)，
+        // 而聊天链接 tooltip 要求 320 换行宽 → 盒子比内容窄，文字挤过边框、并被盒子二次折行。
+        // 本测试刻意不走「自己 layout 一遍」的路径：那样会绕开 portal 约束、给出假绿。
+        int expected = 320 + 2 * SceneChromeTokens.PAD_SM + 2;
+        Assert.assertEquals("盒宽 = 换行宽 + 左右 padding + 左右 1px 边框", expected,
+                SceneTooltip.portalPreferredWidthPx(new SceneTooltip.Props(target, textSignal,
+                        null, DELAY_MS, 320, 4, true)));
+        Assert.assertEquals("不限宽时回退默认盒宽", SceneTooltip.DEFAULT_MAX_WIDTH_PX,
+                SceneTooltip.portalPreferredWidthPx(new SceneTooltip.Props(target, textSignal,
+                        null, DELAY_MS, 0, 4)));
+    }
+
+    @Test
+    public void attachMustNotHardcodePortalPreferredWidth() throws Exception {
+        // 零正则源码守卫（仓库既有风格）：盒宽只能由 props 推导，不得再写回硬编码常量
+        StringBuilder sb = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(
+                new java.io.FileInputStream("src/main/java/club/heiqi/uilib/ui/scene/control/"
+                        + "SceneTooltip.java"), "UTF-8"))) {
+            String row;
+            while ((row = reader.readLine()) != null) {
+                sb.append(row).append('\n');
+            }
+        }
+        String src = sb.toString();
+        Assert.assertTrue("attach 必须用 portalPreferredWidthPx(props)",
+                src.indexOf("new AnchoredPortalLayout(portalPreferredWidthPx(props)") >= 0);
+        Assert.assertFalse("不得把盒宽写回硬编码 DEFAULT_MAX_WIDTH_PX",
+                src.indexOf("new AnchoredPortalLayout(DEFAULT_MAX_WIDTH_PX") >= 0);
+    }
+
 }

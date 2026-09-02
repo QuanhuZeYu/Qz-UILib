@@ -436,6 +436,17 @@ public final class ChatMessageList {
             apply(null);
         }
 
+        /**
+         * 屏幕绝对坐标命中链接:换算到 messageNode 局部后复用 {@link #resolveUrl}。
+         *
+         * <p>刻意与 hover 共用同一个命中函数 —— 「亮着的区域」与「可点的区域」必须是
+         * 同一套几何算出来的,分成两处实现迟早各自漂移(本仓已有 1 权威 + N 处重实现教训)。</p>
+         */
+        String resolveAtScreen(int screenX, int screenY) {
+            AnchorRect box = SceneGeometry.absoluteBox(messageNode, 0, 0);
+            return resolveUrl(screenX - box.getX(), screenY - box.getY());
+        }
+
         /** 命中判定 + 行 hover 态写入,返回命中 URL(行内区域 = 文本包围盒上下 +2 / 左右 +1)。 */
         String resolveUrl(int localX, int localY) {
             AnchorRect messageBox = SceneGeometry.absoluteBox(messageNode, 0, 0);
@@ -1310,6 +1321,26 @@ public final class ChatMessageList {
             x += width;
         }
         return spans == null ? Collections.<LinkSpan>emptyList() : spans;
+    }
+
+    /**
+     * 屏幕绝对坐标 → 命中的链接 URL(无命中返回 null)。
+     *
+     * <p>点击路径入口。玩家手打的裸 URL 原版 {@code IChatComponent} 上不带 clickEvent,
+     * 服务端也没下发可点区域 —— 本方法让我们自己的链接化跨度补上这个能力。</p>
+     *
+     * @param screenX 屏幕绝对 X
+     * @param screenY 屏幕绝对 Y
+     * @return 命中链接的完整 URL;未命中任何链接跨度时 null
+     */
+    public String resolveLinkUrlAt(int screenX, int screenY) {
+        for (LinkHoverDriver driver : linkDrivers.values()) {
+            String url = driver.resolveAtScreen(screenX, screenY);
+            if (url != null && !url.isEmpty()) {
+                return url;
+            }
+        }
+        return null;
     }
 
     /** 测试探针:消息节点 → 链接 hover 驱动器。 */

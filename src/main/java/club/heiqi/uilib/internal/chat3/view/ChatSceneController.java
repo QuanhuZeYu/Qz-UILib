@@ -1165,6 +1165,17 @@ public final class ChatSceneController {
     }
 
     /** 懒取消息列表渲染器(依赖段解析器;供 ChatContainer 复用)。 */
+    /**
+     * 屏幕绝对坐标 → 命中的链接 URL(无命中 null;宿主点击路径经此,不直接摸消息列表)。
+     *
+     * @param screenX 屏幕绝对 X
+     * @param screenY 屏幕绝对 Y
+     * @return 命中链接的完整 URL
+     */
+    public String resolveLinkUrlAt(int screenX, int screenY) {
+        return messageList().resolveLinkUrlAt(screenX, screenY);
+    }
+
     ChatMessageList messageList() {
         ChatMessageList current = messageList;
         if (current == null) {

@@ -21,11 +21,13 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglStateReader;
+import club.heiqi.uilib.ui.scene.control.SceneDialog;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 
 /**
  * 聊天输入屏的 scene 渲染面(L4 宿主层,薄壳):装配 {@link ChatContainer}(消息列表 + 输入条),
@@ -50,6 +52,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     private final ChatSurfaceAnimator animator;
     /** 周期诊断帧计数(每 120 帧打印一次渲染视口,真机定位坐标系问题)。 */
     private int renderLogCounter;
+    /** 当前「打开链接？」确认框(连点顶掉旧框;随 runtime.dispose 一并回收)。 */
+    private ScenePortalHandle linkConfirm;
 
     public ChatInputSurface(String initialText) {
         super(new LwjglInputSource(new LwjglStateReader()));
@@ -233,32 +237,69 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         container.bar().applyAutocompleteResponse(options);
     }
 
-    /** 行点击事件回投:原版 ChatStyle click 事件链。 */
+    /**
+     * 行点击事件回投。
+     *
+     * <p>优先级：服务端显式下发的 click 事件 > 我们自己链接化出的跨度。前者保持原版语义
+     * 不动（RUN_COMMAND / SUGGEST_COMMAND 是命令注入，加确认会改变既有行为，故**不弹窗**）；
+     * 但凡是**打开浏览器**，两条来源一律先过确认框。</p>
+     *
+     * <p>后者是为了玩家手打的裸 URL：原版 {@code IChatComponent} 上不带 clickEvent，
+     * 服务端也没下发可点区域，原来点了完全没反应。</p>
+     */
     public void handleLineClick(int mouseX, int mouseY) {
         IChatComponent component = hitTest(mouseX, mouseY);
-        if (component == null) {
-            return;
+        ClickEvent click = component == null ? null
+                : component.getChatStyle().getChatClickEvent();
+        if (click != null) {
+            Minecraft mc = Minecraft.getMinecraft();
+            switch (click.getAction()) {
+                case RUN_COMMAND:
+                    if (mc != null && mc.thePlayer != null) {
+                        mc.thePlayer.sendChatMessage(click.getValue());
+                    }
+                    return;
+                case SUGGEST_COMMAND:
+                    container.bar().setText(click.getValue());
+                    return;
+                case OPEN_URL:
+                    confirmAndOpenUrl(click.getValue());
+                    return;
+                default:
+                    return;
+            }
         }
-        ClickEvent click = component.getChatStyle().getChatClickEvent();
-        if (click == null) {
-            return;
+        String url = controller.resolveLinkUrlAt(mouseX, mouseY);
+        if (url != null) {
+            confirmAndOpenUrl(url);
         }
+    }
+
+    /**
+     * 打开外链前先弹确认框（用户裁定：点链接要真能开浏览器，且必须带确认弹窗）。
+     *
+     * <p>弹窗用本仓自有 {@link SceneDialog#confirm}，不用原版 {@code GuiConfirmOpenLink}
+     * ——「与原版对齐」指体感对齐，实现必须落在自有抽象内（工作站规范）。</p>
+     *
+     * <p>连点不叠窗：新框先 dispose 旧框（{@code ScenePortalHandle.dispose} 幂等，
+     * 已随 runtime 释放的也安全）。原版 {@code gameSettings.chatLinks} 关闭时完全不响应，
+     * 连弹窗都不出现 —— 与原版「链接不可用」口径一致。</p>
+     */
+    private void confirmAndOpenUrl(final String url) {
         Minecraft mc = Minecraft.getMinecraft();
-        switch (click.getAction()) {
-            case RUN_COMMAND:
-                if (mc != null && mc.thePlayer != null) {
-                    mc.thePlayer.sendChatMessage(click.getValue());
-                }
-                break;
-            case SUGGEST_COMMAND:
-                container.bar().setText(click.getValue());
-                break;
-            case OPEN_URL:
-                openUrl(click.getValue());
-                break;
-            default:
-                break;
+        if (mc == null || mc.gameSettings == null || !mc.gameSettings.chatLinks
+                || url == null || url.isEmpty()) {
+            return;
         }
+        if (linkConfirm != null) {
+            linkConfirm.dispose();
+        }
+        linkConfirm = SceneDialog.confirm(runtime, "打开链接？", url, new Runnable() {
+            @Override
+            public void run() {
+                openUrl(url);
+            }
+        });
     }
 
     /** 屏幕树命中:注册表节点绝对盒(屏幕全屏,rootAbs = 0,0)包含点 → 组件。 */

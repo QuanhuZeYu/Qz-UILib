@@ -1863,4 +1863,50 @@ public class ChatMessageListTest {
         Assert.assertEquals("系统消息无 bullet 前缀", 1, segments.size());
         Assert.assertEquals("- 系统公告", segments.get(0).getText());
     }
+
+
+    // ==================== 点击命中链接（屏幕坐标 → URL，与 hover 同一套几何） ====================
+
+    @Test
+    public void resolveLinkUrlAtSharesTheHoverHitBox() {
+        Object[] parts = layoutSingleOtherGroup(linkController());
+        SceneNode bubble = (SceneNode) parts[0];
+        ChatSceneController controller = (ChatSceneController) parts[2];
+        AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
+        // 链接段 = 行内 x[16, 60)（"http://a.co" 11 码点 × 4px），行盒相对气泡 (10, 5)
+        Assert.assertEquals("http://a.co",
+                controller.resolveLinkUrlAt(box.getX() + 10 + 20, box.getY() + 5 + 9));
+        Assert.assertNull("行内非链接区不得命中",
+                controller.resolveLinkUrlAt(box.getX() + 10 + 2, box.getY() + 5 + 9));
+        // 命中盒左右各扩 1px（与 linkHitRegionExpandsTwoPxVerticalAndOnePxHorizontal 同口径）
+        Assert.assertEquals("左扩 1px 内必须命中", "http://a.co",
+                controller.resolveLinkUrlAt(box.getX() + 10 + 16 - 1, box.getY() + 5 + 9));
+        Assert.assertNull("左扩 1px 外不得命中",
+                controller.resolveLinkUrlAt(box.getX() + 10 + 16 - 2, box.getY() + 5 + 9));
+    }
+
+    @Test
+    public void clickingAnyLineOfBrokenUrlResolvesCompleteUrl() {
+        // 点击路径必须拿到**完整**地址：续行片段拼不进 URL、首行只有半截，都会打开错页面
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Bob> " + LONG_URL), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+        SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
+        List<SceneNode> lineNodes = bubble.__getChildren();
+        Assert.assertTrue("前提:URL 需被断成多行,实际 " + lineNodes.size() + " 行",
+                lineNodes.size() >= 2);
+        AnchorRect bubbleBox = SceneGeometry.absoluteBox(bubble, 0, 0);
+        for (int i = 0; i < lineNodes.size(); i++) {
+            AnchorRect lb = SceneGeometry.absoluteBox(lineNodes.get(i), 0, 0);
+            Assert.assertEquals("点击第 " + (i + 1) + " 行都必须解析出完整 URL", LONG_URL,
+                    controller.resolveLinkUrlAt(bubbleBox.getX() + (lb.getX() - bubbleBox.getX()) + 2,
+                            bubbleBox.getY() + (lb.getY() - bubbleBox.getY()) + 9));
+        }
+    }
 }
