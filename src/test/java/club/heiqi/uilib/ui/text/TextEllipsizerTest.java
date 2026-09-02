@@ -250,4 +250,71 @@ public class TextEllipsizerTest {
         List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "ab\u00AD", px(100), 0);
         Assert.assertEquals(Arrays.asList("ab"), lines);
     }
+
+
+    // ==================== breakLongWords：超宽词按码点折行（链接 tooltip 用） ====================
+
+    @Test
+    public void breakLongWordsSplitsOverlongUrlWithoutEllipsis() {
+        String url = "https://a.co/GT-New-Horizons-odpack";
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), url, px(6), 0, true);
+        Assert.assertEquals(Arrays.asList("https:", "//a.co", "/GT-Ne", "w-Hori", "zons-o", "dpack"), lines);
+        StringBuilder joined = new StringBuilder();
+        for (String line : lines) {
+            Assert.assertFalse("折行结果不得含省略号:" + line, line.contains(TextEllipsizer.ELLIPSIS));
+            joined.append(line);
+        }
+        Assert.assertEquals("逐行拼回必须等于原 URL(零丢失)", url, joined.toString());
+    }
+
+    @Test
+    public void defaultOverloadKeepsLegacyEllipsisForOverlongWord() {
+        // 四参重载 = breakLongWords=false：既有调用点行为逐字节不变
+        List<String> legacy = TextEllipsizer.wrapLines(s -> px(s.length()),
+                "https://a.co/GT-New-Horizons-odpack", px(6), 0);
+        Assert.assertEquals(1, legacy.size());
+        Assert.assertTrue("旧行为仍是省略号截断:" + legacy,
+                legacy.get(0).endsWith(TextEllipsizer.ELLIPSIS));
+        Assert.assertEquals(Arrays.asList(legacy.get(0)),
+                TextEllipsizer.wrapLines(s -> px(s.length()),
+                        "https://a.co/GT-New-Horizons-odpack", px(6), 0, false));
+    }
+
+    @Test
+    public void brokenWordTailContinuesWithFollowingWords() {
+        // 切开的最后一段留在当前行，后续词照常续排（不得硬拆成两行浪费一行）
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "averylongword xy",
+                px(6), 0, true);
+        Assert.assertEquals(Arrays.asList("averyl", "ongwor", "d xy"), lines);
+    }
+
+    @Test
+    public void breakLongWordsTerminatesWhenSingleCodePointExceedsWidth() {
+        // 连一个字符都放不下：每行推进一个码点，切分循环必须终止（防死循环锚定）
+        // 宽度直接给 4px（不是 px(4)=32px）：小于一个字符 8px，任何单码点都放不下
+        List<String> lines = TextEllipsizer.wrapLines(s -> s.length() * 8, "abc", 4, 0, true);
+        Assert.assertEquals(Arrays.asList("a", "b", "c"), lines);
+    }
+
+    @Test
+    public void breakLongWordsNeverSplitsSurrogatePair() {
+        // 宽度模型按 UTF-16 单元计数（emoji = 2），折行按码点推进 → 不得产出孤立代理
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()), "a\uD83D\uDE00b",
+                px(2), 0, true);
+        Assert.assertEquals(Arrays.asList("a", "\uD83D\uDE00", "b"), lines);
+        for (String line : lines) {
+            Assert.assertFalse("行内不得出现孤立代理:" + line,
+                    Character.isHighSurrogate(line.charAt(line.length() - 1)));
+        }
+    }
+
+    @Test
+    public void breakLongWordsStillRespectsMaxLinesEllipsis() {
+        // 行数上限优先：折出的行超上限时末行仍带「还有更多」提示
+        List<String> lines = TextEllipsizer.wrapLines(s -> px(s.length()),
+                "https://a.co/GT-New-Horizons-odpack", px(6), 2, true);
+        Assert.assertEquals(2, lines.size());
+        Assert.assertTrue("超行数末行必须带省略号:" + lines,
+                lines.get(1).endsWith(TextEllipsizer.ELLIPSIS));
+    }
 }

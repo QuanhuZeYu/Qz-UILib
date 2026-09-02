@@ -1063,6 +1063,43 @@ public class ChatMessageListTest {
     }
 
     @Test
+    public void hoveringAnyLineOfBrokenUrlLightsWholeUrl() {
+        // 用户口径:「选中的一整条链接都应该变色，目前跨行会断」
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Bob> " + LONG_URL), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+        SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
+        List<SceneNode> lineNodes = bubble.__getChildren();
+        Assert.assertTrue("前提:URL 需被断成多行,实际 " + lineNodes.size() + " 行",
+                lineNodes.size() >= 2);
+        ChatMessageList.LinkHoverDriver driver =
+                controller.messageList().__linkHoverDriverOf(bubble);
+        AnchorRect bubbleBox = SceneGeometry.absoluteBox(bubble, 0, 0);
+
+        // 从中间一行命中 → 每一行都必须一起亮
+        int probe = lineNodes.size() / 2;
+        AnchorRect probeBox = SceneGeometry.absoluteBox(lineNodes.get(probe), 0, 0);
+        driver.onPointerMove(probeBox.getX() - bubbleBox.getX() + 2,
+                probeBox.getY() - bubbleBox.getY() + 9);
+        boolean[] hovered = driver.lineHoveredForTest();
+        for (int i = 0; i < lineNodes.size(); i++) {
+            Assert.assertEquals("命中第 " + (probe + 1) + " 行时，第 " + (i + 1)
+                    + " 行也必须亮（整条链接一体）", true, hovered[i]);
+        }
+        // 离开后必须全清，不得有行残留
+        driver.onPointerLeave();
+        for (int i = 0; i < lineNodes.size(); i++) {
+            Assert.assertFalse("离开后第 " + (i + 1) + " 行 hover 残留", hovered[i]);
+        }
+    }
+
+    @Test
     public void wordWrappedPlainWordIsNotStitchedOntoPrecedingCompleteUrl() {
         // 闸门反向守卫:行末是一段**完整** URL、下一行是另一个词时不得接链。
         // 该情形能否出现由 continuesWord 决定,故直接锁 layouter 标记 + 渲染层无链段。

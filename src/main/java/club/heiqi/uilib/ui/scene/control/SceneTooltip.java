@@ -68,16 +68,25 @@ public final class SceneTooltip {
      * @param delayMillis hover 保持延时（&gt;=0）
      * @param maxWidthPx  换行宽度（&lt;=0 不限宽）
      * @param maxLines    最大行数（&lt;=0 不限）
+     * @param breakLongWords 无折行机会的超宽词（URL/路径/哈希）是否按码点逐行切开；
+     *                        false = 对该词加省略号（旧行为）。tooltip 是用来揭示被截断
+     *                        内容的，链接提示这类文本应传 true
      */
     @Desugar
     public record Props(SceneNode target, ReadableSignal<String> text, ReadableSignal<Boolean> enabled,
-                        int delayMillis, int maxWidthPx, int maxLines) {
+                        int delayMillis, int maxWidthPx, int maxLines, boolean breakLongWords) {
 
-        /**
-         * 创建 Tooltip 属性。
-         */
+        /** 六参便捷构造：超宽词按旧行为 ellipsize（既有调用点零改动）。 */
         public Props(SceneNode target, ReadableSignal<String> text, ReadableSignal<Boolean> enabled,
                      int delayMillis, int maxWidthPx, int maxLines) {
+            this(target, text, enabled, delayMillis, maxWidthPx, maxLines, false);
+        }
+
+        /**
+         * 创建 Tooltip 属性（规范构造：校验 + 逐字段赋值）。
+         */
+        public Props(SceneNode target, ReadableSignal<String> text, ReadableSignal<Boolean> enabled,
+                     int delayMillis, int maxWidthPx, int maxLines, boolean breakLongWords) {
             this.target = Objects.requireNonNull(target, "target");
             this.text = Objects.requireNonNull(text, "text");
             if (delayMillis < 0) {
@@ -87,6 +96,7 @@ public final class SceneTooltip {
             this.delayMillis = delayMillis;
             this.maxWidthPx = maxWidthPx;
             this.maxLines = maxLines;
+            this.breakLongWords = breakLongWords;
         }
 
         /** 便捷工厂：默认延时/宽度/行数、恒启用。 */
@@ -194,7 +204,8 @@ public final class SceneTooltip {
         ReadableSignal<List<Line>> lines = Computed.create(() -> {
             List<String> wrapped = TextEllipsizer.wrapLines(
                     s -> rt.measureTextWidth(s, FONT_SIZE),
-                    props.text().get(), props.maxWidthPx(), props.maxLines());
+                    props.text().get(), props.maxWidthPx(), props.maxLines(),
+                    props.breakLongWords());
             List<Line> result = new ArrayList<>(wrapped.size());
             for (int i = 0; i < wrapped.size(); i++) {
                 result.add(new Line(i, wrapped.get(i)));

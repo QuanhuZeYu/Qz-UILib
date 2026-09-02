@@ -455,12 +455,36 @@ public final class ChatMessageList {
                 for (LinkSpan span : spans) {
                     if (relX >= span.startX - ChatUrlLinkifier.HIT_PAD_X
                             && relX < span.startX + span.width + ChatUrlLinkifier.HIT_PAD_X) {
-                        lineHovered[lineStartOffset + i] = true;
+                        // 整条链接一起亮:长 URL 被字符硬断成多行时,只亮命中那一行会「半截
+                        // 提亮半截不亮」。链闭合时各行 LinkSpan.url 已回填为同一完整 URL,
+                        // 所以「同一链接」的判据就是 url 相等,不需要额外链状态。
+                        markLinesOfUrl(span.url);
                         return span.url;
                     }
                 }
             }
             return null;
+        }
+
+        /**
+         * 把本消息内所有承载同一 URL 的行置 hover。
+         *
+         * <p>长 URL 被字符硬断成多个显示行后，每行各有一个跨度；跨行续链已把它们的 url
+         * 回填成同一个完整地址，故 url 相等即同一链接。同一条 URL 在一行内出现两次
+         * （或跨行各出现一次）也一并点亮。</p>
+         */
+        private void markLinesOfUrl(String url) {
+            if (url == null) {
+                return;
+            }
+            for (int i = 0; i < lineSpans.size(); i++) {
+                for (LinkSpan span : lineSpans.get(i)) {
+                    if (url.equals(span.url)) {
+                        lineHovered[lineStartOffset + i] = true;
+                        break;
+                    }
+                }
+            }
         }
 
         private void clearLineHover() {
@@ -1139,10 +1163,13 @@ public final class ChatMessageList {
                     boundDriver.onPointerMove(ctx.getLocalPointerX(), ctx.getLocalPointerY());
                 });
                 // 400ms 悬停出 URL tooltip(SceneTooltip;无输入宿主自然不显示)
+                // breakLongWords=true:URL 是无折行机会的超长单词,旧行为会对它再加一次
+                // 省略号 —— tooltip 的全部意义就是揭示被气泡截断的地址,再截一次等于白做
                 SceneTooltip.attach(rt, new SceneTooltip.Props(messageNode,
                         Computed.create(() -> hoverLink.get()),
                         Computed.create(() -> Boolean.valueOf(!hoverLink.get().isEmpty())),
-                        LINK_TOOLTIP_DELAY_MILLIS, LINK_TOOLTIP_MAX_WIDTH_PX, LINK_TOOLTIP_MAX_LINES));
+                        LINK_TOOLTIP_DELAY_MILLIS, LINK_TOOLTIP_MAX_WIDTH_PX,
+                        LINK_TOOLTIP_MAX_LINES, true));
             }
         }
         return groupNode;

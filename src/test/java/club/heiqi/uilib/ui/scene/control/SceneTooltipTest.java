@@ -247,4 +247,35 @@ public class SceneTooltipTest {
         Assert.assertTrue("末行宽度仍受 maxWidth 约束",
                 rt.measureTextWidth(lines.get(1).getText(), 12) <= 96);
     }
+
+
+    @Test
+    public void breakLongWordsSplitsOverlongUrlAcrossLines() {
+        // 与 overlongWordEllipsizedToWidth 同一输入：开启 breakLongWords 后不再截断而是逐行
+        // 切开。tooltip 的存在意义就是给出被气泡截掉的完整地址，再截一次等于白做。
+        textSignal.set("abcdefghijklmnop");
+        mountTooltip(new SceneTooltip.Props(target, textSignal, null, DELAY_MS, 96, 3, true));
+        moveTo(30, 12);
+        List<SceneNode> lines = overlayRoot().__getChildren();
+        Assert.assertEquals(2, lines.size());
+        StringBuilder joined = new StringBuilder();
+        for (SceneNode line : lines) {
+            Assert.assertFalse("折行结果不得含省略号:" + line.getText(),
+                    line.getText().contains("\u2026"));
+            Assert.assertTrue("每行宽度 <= maxWidth(96)",
+                    rt.measureTextWidth(line.getText(), 12) <= 96);
+            joined.append(line.getText());
+        }
+        Assert.assertEquals("逐行拼回必须等于原文", "abcdefghijklmnop", joined.toString());
+    }
+
+    @Test
+    public void sixArgPropsKeepsLegacyBreakLongWordsFalse() {
+        // 六参便捷构造必须仍走旧行为，否则本类 overlongWordEllipsizedToWidth 会被静默改变
+        SceneTooltip.Props legacy = new SceneTooltip.Props(target, textSignal, null, DELAY_MS, 96, 3);
+        Assert.assertFalse("六参 = 旧 ellipsis 行为", legacy.breakLongWords());
+        SceneTooltip.Props breaking = new SceneTooltip.Props(target, textSignal, null,
+                DELAY_MS, 96, 3, true);
+        Assert.assertTrue(breaking.breakLongWords());
+    }
 }

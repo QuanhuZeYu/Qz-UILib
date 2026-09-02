@@ -125,6 +125,25 @@ public final class TextEllipsizer {
      */
     public static List<String> wrapLines(ToIntFunction<String> widthOf, String text,
                                          int maxWidthPx, int maxLines) {
+        return wrapLines(widthOf, text, maxWidthPx, maxLines, false);
+    }
+
+    /**
+     * 多行换行 + 行数上限截断（可选「超宽词按码点折行」）。
+     *
+     * <p>{@code breakLongWords = false} 保持历史语义：无折行机会的超宽词（URL/哈希/base64）
+     * 对该词做 ellipsis。<b>但 tooltip 的存在意义就是揭示被截断的内容</b>，把 URL 再截一次
+     * 等于白做——需要完整展示的场景（链接 tooltip、路径提示）应传 true，让该词逐行切开。</p>
+     *
+     * @param widthOf         文本 → UI 像素宽度的函数（非 null）
+     * @param text            原始文本（可为 null）
+     * @param maxWidthPx      换行宽度（UI 像素），&lt;=0 表示不限宽
+     * @param maxLines        最大行数，&lt;=0 表示不限
+     * @param breakLongWords  true = 超宽词按码点折行；false = 超宽词 ellipsis（旧行为）
+     * @return 换行后的行列表（null/空文本返回空列表）
+     */
+    public static List<String> wrapLines(ToIntFunction<String> widthOf, String text,
+                                         int maxWidthPx, int maxLines, boolean breakLongWords) {
         Objects.requireNonNull(widthOf, "widthOf");
         if (text == null || text.isEmpty()) {
             return Collections.emptyList();
@@ -136,7 +155,7 @@ public final class TextEllipsizer {
             }
         } else {
             for (String segment : splitExplicitLines(text)) {
-                wrapSegment(widthOf, segment, maxWidthPx, lines);
+                wrapSegment(widthOf, segment, maxWidthPx, lines, breakLongWords);
             }
         }
         if (maxLines > 0 && lines.size() > maxLines) {
@@ -198,7 +217,7 @@ public final class TextEllipsizer {
 
     /** 单个显式段落的贪心分词换行（Unicode 空白家族分词 + ZWSP/软连字符拆词 + 行尾抛光）。 */
     private static void wrapSegment(ToIntFunction<String> widthOf, String segment,
-                                    int maxWidthPx, List<String> out) {
+                                    int maxWidthPx, List<String> out, boolean breakLongWords) {
         String trimmed = stripUnicodeEdges(segment);
         if (trimmed.isEmpty()) {
             out.add("");
@@ -211,7 +230,7 @@ public final class TextEllipsizer {
             }
             boolean wordStart = true;
             for (String word : splitSoftBreaks(rawWord)) {
-                appendWord(widthOf, word, maxWidthPx, line, out, wordStart);
+                appendWord(widthOf, word, maxWidthPx, line, out, wordStart, breakLongWords);
                 wordStart = false;
             }
         }
@@ -222,7 +241,8 @@ public final class TextEllipsizer {
 
     /** 追加一个词：软断行拆出的同词子词不带前导空格，跨词仍以单空格拼接。 */
     private static void appendWord(ToIntFunction<String> widthOf, String word, int maxWidthPx,
-                                   StringBuilder line, List<String> out, boolean wordStart) {
+                                   StringBuilder line, List<String> out, boolean wordStart,
+                                   boolean breakLongWords) {
         String candidate = line.length() == 0 ? word
                 : line.toString() + (wordStart ? " " : "") + word;
         if (widthOf.applyAsInt(candidate) <= maxWidthPx) {
@@ -235,11 +255,50 @@ public final class TextEllipsizer {
             line.setLength(0);
         }
         if (widthOf.applyAsInt(word) > maxWidthPx) {
-            out.add(polishLineTail(new StringBuilder(ellipsize(widthOf, word, maxWidthPx))));
-        } else {
-            line.setLength(0);
-            line.append(word);
+            if (!breakLongWords) {
+                out.add(polishLineTail(new StringBuilder(ellipsize(widthOf, word, maxWidthPx))));
+                return;
+            }
+            // 词比整行还宽(URL 这类零折行机会的词):逐行按码点切开。切开后的最后一段留在
+            // line 里,后续词照常续排——否则会把"剩余部分"和下一个词硬拆成两行。
+            int pos = 0;
+            while (pos < word.length()) {
+                int end = longestFitEnd(widthOf, word, pos, maxWidthPx);
+                if (end >= word.length()) {
+                    line.setLength(0);
+                    line.append(word, pos, end);
+                } else {
+                    out.add(word.substring(pos, end));
+                }
+                pos = end;
+            }
+            return;
         }
+        line.setLength(0);
+        line.append(word);
+    }
+
+    /**
+     * 从 {@code from} 起、在 {@code maxWidthPx} 内能放下的最多码点数对应的结束下标。
+     *
+     * <p>按码点计数二分(不是按 char),避免把代理对切两半;返回值恒 &gt; {@code from}
+     * (单码点超宽时至少推进一个码点),故调用方的切分循环必然终止。</p>
+     */
+    private static int longestFitEnd(ToIntFunction<String> widthOf, String word, int from,
+                                     int maxWidthPx) {
+        int total = word.codePointCount(from, word.length());
+        int lo = 0;
+        int hi = total;
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            int end = word.offsetByCodePoints(from, mid);
+            if (widthOf.applyAsInt(word.substring(from, end)) <= maxWidthPx) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return word.offsetByCodePoints(from, Math.max(1, lo));
     }
 
     /** 按断词分隔（可断空格 + tab）切词；GL 胶水（NBSP 等）保留在词内不拆开。 */
