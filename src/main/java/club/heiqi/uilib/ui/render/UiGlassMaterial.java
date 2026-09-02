@@ -11,12 +11,23 @@ package club.heiqi.uilib.ui.render;
  * 过曝、暗部几乎不变，是廉价感的来源；本材质档走亮度域保护式 vibrancy，并按
  * vibrancy -> tint 蒙层 -> 亮度偏置 -> 边缘亮边 -> 噪点 的固定顺序合成。</p>
  *
- * <p>取值依据（2026-09-01 调研，均为对 iOS 截图/取色的公开复现，Apple 未公开官方
- * 数值表）：Light 材质蒙层基色白 0.72、alpha 0.3（有效叠加约 0.216）；Dark 材质
- * 蒙层基色是 <strong>systemBlack 0.096 而非纯黑</strong>，且黑色蒙层会吃掉亮度，
- * 需正向亮度补偿而非继续压暗。饱和度倍率实测区间 1.3~1.5，故各档不越过 1.5。
- * 亮度域曲线在 sRGB 口径下取 t = 1.289L - 0.289（线性域等价式 1.889L - 0.889）。
- * 噪点为最终加性幅度约 1~2/255，必须在大半径模糊之后叠加。</p>
+ * <p>取值依据（2026-09-01 两轮调研；一手锚点：① apple.com 线上导航栏 CSS 的
+ * saturate(180%) blur(20px)+scrim ② WWDC13 官方示例 UIImage+ImageEffects.m 的
+ * Light=白 α0.30/sat1.8、Dark=灰0.51 α0.13/sat1.2 ③ 深色材质基色 systemBlack
+ * 0.096（约 0x18）而非纯黑，黑蒙层吃掉亮度故需正向补偿而非继续压暗）：</p>
+ *
+ * <p><strong>vibrancy 口径</strong>：官方 1.8/1.2 是"线性 saturate 矩阵"乘子
+ * （SVG feColorMatrix 定义，保 Rec.709 亮度）；本档用的是亮度域保护曲线
+ * t = clamp(1.289L - 0.289, 0, 1)（sRGB 口径；线性域等价式 1.889L - 0.889），
+ * 中间调实际吃色低于峰值，故峰值取 1.30~1.50 为保守校准。两条必须保持的
+ * <strong>一手关系</strong>由守卫锁定：(a) 同厚度下 dark 档 vibrancy 明显低于
+ * light 档（官方比例 1.2/1.8≈0.67，网传"dark 与 light 等饱和"是错的）；
+ * (b) vibrancy 不超过官方线性上限 1.8 对应的保守峰 1.5。</p>
+ *
+ * <p>噪点：最终加性、大半径模糊之后叠加，shader 侧为 TPDF（两个解耦均匀 hash
+ * 之和）。noiseAmount 即 TPDF 峰值幅度，取 ±1.2~1.8/255：介于 Coherent Labs
+ * "half a unit of bit depth"（±0.5/255 均匀等效）与 Zed TPDF ±2/255 之间，
+ * 均值偏离约 ±0.6~0.9/255，故肉眼不可见颗粒又能打散 8-bit 色带。</p>
  */
 public enum UiGlassMaterial {
 
@@ -33,16 +44,16 @@ public enum UiGlassMaterial {
     THICK(1.50F, 0x4DFFFFFF, 0.055F, 0.085F, 0.075F, 0.024F, 1.8F / 255.0F),
 
     /** 极薄深色。 */
-    DARK_ULTRA_THIN(1.25F, 0x1A181818, 0.012F, 0.040F, 0.028F, 0.026F, 1.2F / 255.0F),
+    DARK_ULTRA_THIN(1.18F, 0x1A181818, 0.012F, 0.040F, 0.028F, 0.026F, 1.2F / 255.0F),
 
     /** 薄深色。 */
-    DARK_THIN(1.30F, 0x26181818, 0.018F, 0.045F, 0.032F, 0.030F, 1.4F / 255.0F),
+    DARK_THIN(1.22F, 0x26181818, 0.018F, 0.045F, 0.032F, 0.030F, 1.4F / 255.0F),
 
     /** 常规深色。 */
-    DARK_REGULAR(1.38F, 0x33181818, 0.026F, 0.050F, 0.036F, 0.036F, 1.6F / 255.0F),
+    DARK_REGULAR(1.28F, 0x33181818, 0.026F, 0.050F, 0.036F, 0.036F, 1.6F / 255.0F),
 
     /** 厚深色。 */
-    DARK_THICK(1.45F, 0x4D181818, 0.034F, 0.055F, 0.040F, 0.042F, 1.8F / 255.0F);
+    DARK_THICK(1.35F, 0x4D181818, 0.034F, 0.055F, 0.040F, 0.042F, 1.8F / 255.0F);
 
     /** 蒙层基色：iOS systemBlack 是 0.096（约 0x18）而非纯黑，纯黑会让深色玻璃失去厚度。 */
     public static final int DARK_TINT_BASE_RGB = 0x181818;

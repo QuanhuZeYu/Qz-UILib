@@ -158,9 +158,12 @@ void main(void) {
     color = color + vec3(topGlow) - vec3(bottomShade) + vec3(borderWeight * edgeHighlight);
 
     // 抗 banding 噪点：必须是大半径模糊之后、任何缩放或 gamma 之前的最后一步加性
-    // 叠加。8-bit 帧缓冲上平滑渐变必然出现量化色带，约 1~2/255 的抖动即可打散。
+    // 叠加。8-bit 帧缓冲上平滑渐变必然出现量化色带。取 TPDF（两个独立均匀源之和，
+    // 三角分布）：同峰值下对渐变的去带优于均匀噪声，Zed 的渐变 dither PR 即此法。
+    // 第二路 hash 走转置+偏移域，防两路同源相关、退化回均匀分布。
     if (noiseAmount > 0.0) {
-        float n = hashNoise(gl_FragCoord.xy) - 0.5;
+        float n = hashNoise(gl_FragCoord.xy)
+                + hashNoise(gl_FragCoord.yx * 1.03 + vec2(7.0, 13.0)) - 1.0;
         color = clamp(color + n * noiseAmount, 0.0, 1.0);
     }
 

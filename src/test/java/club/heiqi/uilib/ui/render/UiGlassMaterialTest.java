@@ -71,15 +71,46 @@ public class UiGlassMaterialTest {
                 < UiGlassMaterial.DARK_THICK.getLuminanceLift());
     }
 
-    /** 饱和度倍率必须落在 iOS 实测区间内：超过 1.5 会明显失真成"塑料彩"。 */
+    /**
+     * vibrancy 峰值上限 1.5。
+     *
+     * <p>口径说明：官方一手值（WWDC13 示例 Light sat 1.8、apple.com 导航栏
+     * saturate(180%)）是<strong>线性 saturate 矩阵</strong>乘子；本档走亮度域保护
+     * 曲线（中间调实际吃色低于峰值），1.30~1.50 是对官方 1.8 的保守映射，
+     * 超过 1.5 在本曲线下会失真成"塑料彩"。</p>
+     */
     @Test
     public void vibrancyStaysWithinMeasuredIosRange() {
         for (UiGlassMaterial material : UiGlassMaterial.values()) {
             assertTrue(material.name() + " vibrancy 应大于 1（低于 1 不是材质语义）",
                     material.getVibrancy() > 1.0F);
-            assertTrue(material.name() + " vibrancy 超出 iOS 实测上限 1.5: " + material.getVibrancy(),
-                    material.getVibrancy() <= 1.5F);
+            assertTrue(material.name() + " vibrancy 超出保守峰 1.5（官方线性上限 1.8）: "
+                    + material.getVibrancy(), material.getVibrancy() <= 1.5F);
         }
+    }
+
+    /**
+     * 一手锚点方向锁：同厚度深色档的 vibrancy 必须明显低于浅色档。
+     *
+     * <p>WWDC13 官方示例里 Dark 的 saturate(1.2) 就低于 Light 的 1.8（约 0.67
+     * 比例），网传"dark 只是与 light 同饱和再叠黑"是讹误。深色玻璃在黑蒙层上
+     * 若吃满饱和，会把彩色背景烧成脏色斑——2026-09-01 一手重定基正是按此方向
+     * 把 dark 系从 1.25~1.45 下移到 1.18~1.35。</p>
+     */
+    @Test
+    public void darkMaterialsAreLessVibrantThanLightPeers() {
+        assertTrue("ULTRA_THIN 系", UiGlassMaterial.DARK_ULTRA_THIN.getVibrancy()
+                < UiGlassMaterial.ULTRA_THIN.getVibrancy());
+        assertTrue("THIN 系", UiGlassMaterial.DARK_THIN.getVibrancy()
+                < UiGlassMaterial.THIN.getVibrancy());
+        assertTrue("REGULAR 系", UiGlassMaterial.DARK_REGULAR.getVibrancy()
+                < UiGlassMaterial.REGULAR.getVibrancy());
+        assertTrue("THICK 系", UiGlassMaterial.DARK_THICK.getVibrancy()
+                < UiGlassMaterial.THICK.getVibrancy());
+        // 差距要真实存在（官方比例 0.67，这里至少 5%），否则方向锁形同虚设
+        double ratio = UiGlassMaterial.DARK_REGULAR.getVibrancy()
+                / UiGlassMaterial.REGULAR.getVibrancy();
+        assertTrue("dark/light vibrancy 比例应 < 0.95，当前=" + ratio, ratio < 0.95D);
     }
 
     /** vibrancy=1.0 是恒等：shader 里 k 恒为 1，用作 A/B 基线必须真无操作。 */
