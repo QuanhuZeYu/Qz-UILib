@@ -65,7 +65,7 @@ final class UiBackdropFilterRenderer {
      */
     static void render(UiRenderContext context, int left, int top, int right, int bottom, int blurRadius,
             float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-        render(context, left, top, right, bottom, blurRadius, saturation, cornerRadii, null);
+        render(context, left, top, right, bottom, blurRadius, saturation, cornerRadii, (UiGlassMaterial) null);
     }
 
     /**
@@ -83,6 +83,25 @@ final class UiBackdropFilterRenderer {
      */
     static void render(UiRenderContext context, int left, int top, int right, int bottom, int blurRadius,
             float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, UiGlassMaterial material) {
+        render(context, left, top, right, bottom, blurRadius, saturation, cornerRadii,
+                UiBackdropEffect.classic(material));
+    }
+
+    /**
+     * 渲染一次 backdrop 效果（带完整配方：家族 + 材质档 + 液态强度）。
+     *
+     * @param context 调用方渲染上下文
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param blurRadius 模糊半径像素
+     * @param saturation 饱和度倍率；effect 带材质档时语义转为 vibrancy 乘子
+     * @param cornerRadii 四角圆角
+     * @param effect 效果配方；null 等价旧线性饱和度语义
+     */
+    static void render(UiRenderContext context, int left, int top, int right, int bottom, int blurRadius,
+            float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, UiBackdropEffect effect) {
         BackdropBlurPolicy policy = context == null ? BackdropBlurPolicy.inheritGlobal()
                 : context.getBackdropBlurPolicy();
         BackdropBlurConfig config = BackdropBlurConfig.getInstance();
@@ -93,19 +112,19 @@ final class UiBackdropFilterRenderer {
         // 材质档自带 tint / 亮边 / 噪点：blur=0 仍有视觉产出（等价 CSS
         // backdrop-filter: blur(0) saturate(...)——不糊但材质照旧），故不能按旧规则短路。
         // 旧语义（material=null）保持"blur<=0 且饱和度恒等"即无操作的既有短路。
-        boolean noVisualEffect = material == null
+        boolean noVisualEffect = effect == null
                 && blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0;
         if (right <= left || bottom <= top || noVisualEffect) {
             recordPath(BackdropFilterRenderPath.NONE, "skipped");
             return;
         }
         String pendingFallbackDetail = drawCurrentUiBackdropFilter(context, left, top, right, bottom, blurRadius,
-                saturation, cornerRadii, material);
+                saturation, cornerRadii, effect);
         if (pendingFallbackDetail == null) {
             return;
         }
         drawTintFallback(context, left, top, right, bottom, blurRadius, saturation, cornerRadii,
-                pendingFallbackDetail, material);
+                pendingFallbackDetail, effect);
     }
 
     /**
@@ -115,7 +134,7 @@ final class UiBackdropFilterRenderer {
      */
     private static String drawCurrentUiBackdropFilter(UiRenderContext context, int left, int top, int right,
             int bottom, int blurRadius, float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
-            UiGlassMaterial material) {
+            UiBackdropEffect effect) {
         int screenWidth = context.getScreenWidth();
         int screenHeight = context.getScreenHeight();
         UiMainLayerSnapshotService snapshotService = context.getMainLayerSnapshotService();
@@ -148,10 +167,12 @@ final class UiBackdropFilterRenderer {
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             GL11.glDisable(GL11.GL_BLEND);
 
+            float[] lightDir = resolveLightDirection(context, left, top, right, bottom);
             if (drawBackdropTextureWithShader(left, top, right, bottom, snapshot.getSampleLeft(),
                     snapshot.getSampleTop(), snapshot.getWidth(), snapshot.getHeight(), snapshot.getTextureWidth(),
                     snapshot.getTextureHeight(), snapshot.getDownsampleFactor(), blurRadius, saturation,
-                    context.getBackdropBlurPolicy(), snapshot, material, cornerRadii)) {
+                    context.getBackdropBlurPolicy(), snapshot, effect, cornerRadii,
+                    lightDir[0], lightDir[1])) {
                 drewBackdrop = true;
                 return null;
             }
@@ -182,7 +203,7 @@ final class UiBackdropFilterRenderer {
             // 固定管线逐 quad 叠加无法表达 vibrancy/亮边/噪点，材质档在此降级为"仅模糊"。
             recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader-unavailable, samples=" + sampleCount
-                            + (material == null ? "" : ", material-degraded(no-vibrancy)")
+                            + (effect == null ? "" : ", effect-degraded(no-vibrancy)")
                             + ", snapshot=" + formatSnapshotState(snapshot));
             drewBackdrop = true;
             return null;
@@ -202,8 +223,8 @@ final class UiBackdropFilterRenderer {
     private static boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
             int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
             int downsampleFactor, int blurRadius, float saturation, BackdropBlurPolicy backdropBlurPolicy,
-            MainLayerSnapshot snapshot, UiGlassMaterial material,
-            UiBorderRadiusResolver.ResolvedCornerRadii panelCornerRadii) {
+            MainLayerSnapshot snapshot, UiBackdropEffect effect,
+            UiBorderRadiusResolver.ResolvedCornerRadii panelCornerRadii, float lightDirX, float lightDirY) {
         BackdropBlurConfig config = BackdropBlurConfig.getInstance();
         BackdropBlurPolicy policy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
                 : backdropBlurPolicy;
@@ -231,14 +252,15 @@ final class UiBackdropFilterRenderer {
                 ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : panelCornerRadii;
         BACKDROP_SHADER_PROGRAM.setUniform4f("cornerRadii", (float) radii.getTopLeft(),
                 (float) radii.getTopRight(), (float) radii.getBottomRight(), (float) radii.getBottomLeft());
-        applyMaterialUniforms(material, saturation);
+        applyMaterialUniforms(effect, saturation, lightDirX, lightDirY,
+                Math.max(1, downsampleFactor));
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
         BACKDROP_SHADER_PROGRAM.unbind();
+        UiGlassMaterial material = effect == null ? null : effect.getMaterial();
         recordPath(BackdropFilterRenderPath.SHADER, "blur=" + blurRadius + ", saturation="
                 + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation)))
-                + (material == null ? "" : ", material=" + material.name() + " vibrancy="
-                        + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(material.getVibrancy())))
+                + (effect == null ? "" : ", " + describeEffect(effect, material))
                 + ", snapshot=" + formatSnapshotState(snapshot));
         return true;
     }
@@ -261,7 +283,18 @@ final class UiBackdropFilterRenderer {
      * @param material 材质档，可为 null
      * @param saturationMultiplier 旧语义的线性饱和度乘子，或材质档的 vibrancy 倍率
      */
-    private static void applyMaterialUniforms(UiGlassMaterial material, float saturationMultiplier) {
+    private static void applyMaterialUniforms(UiBackdropEffect effect, float saturationMultiplier,
+            float lightDirX, float lightDirY, int snapshotDownsampleFactor) {
+        UiGlassMaterial material = effect == null ? null : effect.getMaterial();
+        boolean liquid = effect != null && effect.isLiquid();
+        // 液态三参数在所有路径显式赋值（含 null/经典），缺省留 0 依赖"恰好为 0"不可读。
+        BACKDROP_SHADER_PROGRAM.setUniformF("liquidGlass", liquid ? 1.0F : 0.0F);
+        // 作者侧 2~12 屏幕像素 -> 纹理素（与 blurRadius 同口径换算）。
+        BACKDROP_SHADER_PROGRAM.setUniformF("refraction", liquid
+                ? (2.0F + 10.0F * effect.getLensStrength()) / (float) snapshotDownsampleFactor
+                : 0.0F);
+        BACKDROP_SHADER_PROGRAM.setUniformF("edgeTint", liquid ? 0.10F + 0.25F * effect.getLensStrength() : 0.0F);
+        BACKDROP_SHADER_PROGRAM.setUniform2f("lightDir", lightDirX, lightDirY);
         if (material == null) {
             BACKDROP_SHADER_PROGRAM.setUniformF("iosMaterial", 0.0F);
             BACKDROP_SHADER_PROGRAM.setUniformF("vibrancy", 1.0F);
@@ -313,7 +346,8 @@ final class UiBackdropFilterRenderer {
 
     private static void drawTintFallback(UiRenderContext context, int left, int top, int right, int bottom,
             int blurRadius, float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
-            String fallbackDetail, UiGlassMaterial material) {
+            String fallbackDetail, UiBackdropEffect effect) {
+        UiGlassMaterial material = effect == null ? null : effect.getMaterial();
         BackdropBlurConfig config = BackdropBlurConfig.getInstance();
         BackdropBlurPolicy policy = context.getBackdropBlurPolicy();
         if (!policy.resolveTintFallbackEnabled(config)) {
@@ -321,7 +355,7 @@ final class UiBackdropFilterRenderer {
             return;
         }
         recordPath(BackdropFilterRenderPath.TINT_FALLBACK,
-                fallbackDetail + (material == null ? "" : ", material=" + material.name()));
+                fallbackDetail + (effect == null ? "" : ", " + describeEffect(effect, material)));
         if (material != null) {
             // 材质档自带 tint 蒙层：降级时直接用它做纯色玻璃，保证 shader
             // 可用与否的两类机器看到的玻璃底色一致（模糊没了，但材质色与亮边还在）。
@@ -372,6 +406,52 @@ final class UiBackdropFilterRenderer {
                 + " fbo=" + snapshot.getReadFramebufferId() + " rev=" + snapshot.getContentRevision()
                 + " region=" + snapshot.getRegionDetail() + " " + snapshot.getTileDetail()
                 + " filter=" + snapshot.getFilterDetail();
+    }
+
+    /** 诊断串里的效果描述：家族 + 档名 + 液态强度（shader 与降级路径共用）。 */
+    private static String describeEffect(UiBackdropEffect effect, UiGlassMaterial material) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("family=").append(effect.getFamily().name());
+        if (material != null) {
+            sb.append(", material=").append(material.name())
+                    .append(" vibrancy=")
+                    .append(String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(material.getVibrancy())));
+        }
+        if (effect.isLiquid()) {
+            sb.append(" lens=").append(String.format(java.util.Locale.ROOT, "%.2f",
+                    Float.valueOf(effect.getLensStrength())));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 解析随动缘光的光源方向：以指针相对面板中心的方向为单位向量。
+     *
+     * <p>官方 Liquid Glass 的缘光"responds to device motion"；MC 1.7.10 无陀螺仪，
+     * 宿主以鼠标指针为虚拟光源——指针在哪个方位，缘带就朝哪边最亮。指针不可得或
+     * 恰在中心时退回左上 (0.32, -0.95)（调研推荐的静态高光方向）。</p>
+     *
+     * <p>口径如实说明：{@code getMouseX/Y} 是屏幕绝对坐标，而面板矩形可能处于
+     * 宿主局部空间（带 absX/absY 偏移），偏移大时缘光方向会偏。缘光只是装饰性
+     * 方向调制，不影响采样正确性；若将来要精确，需把面板矩形换算到屏幕空间后
+     * 再传进来（会牵动 render 签名，暂不做）。</p>
+     */
+    private static float[] resolveLightDirection(UiRenderContext context, int left, int top, int right,
+            int bottom) {
+        float centerX = (float) (left + right) * 0.5F;
+        float centerY = (float) (top + bottom) * 0.5F;
+        float dirX = 0.32F;
+        float dirY = -0.95F;
+        if (context != null) {
+            float px = (float) context.getMouseX() - centerX;
+            float py = (float) context.getMouseY() - centerY;
+            float length = (float) Math.sqrt(px * px + py * py);
+            if (length > 1.0F) {
+                dirX = px / length;
+                dirY = py / length;
+            }
+        }
+        return new float[] { dirX, dirY };
     }
 
     private static int clampInt(int value, int min, int max) {

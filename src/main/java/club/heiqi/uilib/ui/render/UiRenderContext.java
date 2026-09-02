@@ -496,6 +496,28 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
+     * 绘制带完整效果配方的背后滤镜（经典磨砂或 Liquid Glass）。
+     *
+     * <p>effect 承载"家族 + 材质档 + 液态强度"三要素；家族为 LIQUID_GLASS 时
+     * 在经典合成链上叠加边缘凸透镜折射、边缘厚度 tint 与随动缘光（光源=指针位置）。
+     * 传 null 等价旧线性饱和度语义。</p>
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param blurRadius 模糊半径像素
+     * @param saturation 饱和度倍率；effect 带材质档时语义转为 vibrancy 乘子
+     * @param cornerRadii 四角圆角
+     * @param effect 效果配方，可为 null
+     */
+    public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, UiBackdropEffect effect) {
+        UiBackdropFilterRenderer.render(this, left, top, right, bottom, blurRadius, saturation, cornerRadii,
+                effect);
+    }
+
+    /**
      * 绘制文本。
      *
      * @param text 文本

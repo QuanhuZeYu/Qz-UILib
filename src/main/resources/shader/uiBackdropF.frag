@@ -9,6 +9,11 @@
 //   4) 亮度偏置 lift + 边缘亮边 + 内侧上缘柔光 / 下缘暗带
 //   5) 抗 banding 噪点：最后一步加性叠加，任何缩放之前
 //
+// 第三家族（liquidGlass 门控，在 1)~5) 之上增量叠加；关闭时折射偏移恒为 0、
+// 缘光调制系数恒为 1、厚度 tint 增量为 0，数值上与经典档一致）：
+//   6) Liquid Glass：边缘凸透镜折射（SDF 梯度偏置采样）+ 边缘厚度 tint 递增
+//      + 随动缘光（高光峰值沿边缘滑动到光源方向；MC 无陀螺仪，光源=鼠标）。
+//
 // 色空间口径：Minecraft 帧缓冲是 sRGB 编码但全程按线性值混合，本 shader 沿用既有
 // 口径直接处理 framebuffer 原值，不做 sRGB<->linear 往返（往返会让灰阶中点掉到
 // 0.47，与原版 UI 整体发暗）。下面所有经验系数都在该口径下取值。
@@ -39,6 +44,10 @@ uniform float noiseAmount;
 uniform vec2 panelSizePx;
 uniform vec4 cornerRadii;
 uniform float kernelJitter;
+uniform float liquidGlass;
+uniform float refraction;
+uniform float edgeTint;
+uniform vec2 lightDir;
 
 vec3 applySaturation(vec3 color, float amount) {
     float luma = dot(color, vec3(0.299, 0.587, 0.114));
@@ -93,6 +102,17 @@ void main(void) {
     // 改盘位会静默改变模糊强度，故必须在契约里同步。
     vec2 radiusStep = texelSize * clamp(blurRadius, 1.0, 128.0) * 1.35;
 
+    // 面板几何必须先于采样计算：Liquid Glass 的透镜折射要偏置采样坐标。
+    // 到"圆角矩形边界"的带符号距离（inigo-quirk 的 rounded-box SDF，约 10 ALU）。
+    vec2 halfSize = max(panelSizePx * 0.5, vec2(1.0, 1.0));
+    vec2 local = (panelUv - 0.5) * panelSizePx;
+    // 半径夹到短半轴内：宿主不保证已 scaleToFit，半径超过短半轴时 halfSize-cornerR
+    //  变负、SDF 几何失效乱贴亮边，故在 shader 侧兜底。
+    float cornerR = min(cornerRadiusAt(cornerRadii, panelUv), min(halfSize.x, halfSize.y));
+    vec2 q = abs(local) - (halfSize - vec2(cornerR));
+    float signedDistance = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - cornerR;
+    float edgeDistance = max(-signedDistance, 0.0);
+
     // 按像素旋转整个采样盘：固定核在大半径下会让每个像素呈现同一套"星星点点"，
     // 叠加起来读作塑料感/蜡感。给每个像素一个确定性的盘旋转角，把结构化伪影打散成
     // 高频噪声（再被最后的抖噪掩盖）。关键是它只依赖 gl_FragCoord、不含时间项，
@@ -108,48 +128,70 @@ void main(void) {
         kernelBasis = mat2(ka, kb, -kb, ka);
     }
 
-    vec4 blurred = texture2D(mainTex, texCoord) * (60.0 / 300.0);
+    // Liquid Glass 边缘折射：圆角矩形像一块有厚度的凸缘玻璃——靠近边缘的
+    // 背景被"抽向轮廓外"再压缩进缘带，产生透镜感（官方 Liquid Glass 区别于
+    // 经典磨砂的决定性特征）。做法：SDF 对位置的梯度就是外法线（等于"该点到
+    // 内切矩形的方向"，无需求导数），把全部 13 个抽头的采样中心沿外法线推到
+    // 轮廓外，越贴边推得越远；中心区梯度为零向量，天然不折射。
+    // lensShift 是 UV 空间偏移：refraction 以纹理素计（宿主已把作者侧屏幕像素数
+    // 除以 downsampleFactor），乘 texelSize 换算到 UV，与 radiusStep 同口径，
+    // 屏幕观感不随快照缩放档位跳变。
+    float lensBevel = 0.0;
+    vec2 sdfGradient = vec2(0.0);
+    vec2 lensShift = vec2(0.0);
+    if (liquidGlass > 0.5) {
+        float lensBandPx = max(min(halfSize.x, halfSize.y) * 0.85, 6.0);
+        lensBevel = 1.0 - smoothstep(0.0, lensBandPx, edgeDistance);
+        lensBevel = lensBevel * lensBevel;
+        vec2 inner = clamp(local, -(halfSize - vec2(cornerR)), halfSize - vec2(cornerR));
+        vec2 outward = local - inner;
+        float outwardLength = length(outward);
+        if (outwardLength > 0.001) {
+            sdfGradient = outward / outwardLength;
+            lensShift = sdfGradient * lensBevel * refraction * texelSize;
+        }
+    }
 
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(-0.280, -0.348) * radiusStep) * (30.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(0.435, 0.055) * radiusStep) * (30.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(0.146, 0.451) * radiusStep) * (30.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(-0.453, 0.157) * radiusStep) * (30.0 / 300.0);
+    vec4 blurred = texture2D(mainTex, texCoord + lensShift) * (60.0 / 300.0);
 
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(-0.721, -0.515) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(0.751, -0.416) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(0.328, 0.813) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(-0.292, 0.829) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(-0.936, 0.196) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(0.198, -0.963) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(0.918, 0.331) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + kernelBasis * vec2(-0.549, -0.811) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.280, -0.348) * radiusStep) * (30.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.435, 0.055) * radiusStep) * (30.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.146, 0.451) * radiusStep) * (30.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.453, 0.157) * radiusStep) * (30.0 / 300.0);
+
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.721, -0.515) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.751, -0.416) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.328, 0.813) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.292, 0.829) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.936, 0.196) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.198, -0.963) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.918, 0.331) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.549, -0.811) * radiusStep) * (15.0 / 300.0);
 
     vec3 color;
     if (iosMaterial > 0.5) {
         // 材质分级顺序：vibrancy -> tint 蒙层 -> 亮度偏置。先做色彩校正再叠蒙层，
         // 才能既通透又有 iOS 那层"奶白"；反向会把 tint 一起饱和掉。
+        // 厚度 tint：真实玻璃边缘更厚、吃色更多——edgeTint 沿缘带递增蒙层（经典档
+        // edgeTint=0，逐项恒等）。
         color = applyVibrancy(blurred.rgb, vibrancy);
-        color = mix(color, materialTint.rgb, clamp(materialTint.a, 0.0, 1.0));
+        color = mix(color, materialTint.rgb,
+                clamp(materialTint.a + edgeTint * lensBevel, 0.0, 1.0));
         color = color + materialLift;
     } else {
         color = applySaturation(blurred.rgb, saturation);
     }
 
-    // 边缘亮边：到"圆角矩形边界"的带符号距离（inigo-quirk 的 rounded-box SDF，
-    // 约 10 ALU）。早先用 min(到四直边距离) 近似，圆角处算出的距离偏大，亮边在弧段
-    // 被 stencil 裁掉、留下一圈无高光的圆弧——而 iOS 玻璃最耐看的恰恰是沿弧走的亮边。
-    // 四角半径按所在象限取，非均匀圆角也准确。
-    vec2 halfSize = max(panelSizePx * 0.5, vec2(1.0, 1.0));
-    vec2 local = (panelUv - 0.5) * panelSizePx;
-    // 半径夹到短半轴内：宿主不保证已 scaleToFit（实验室探针带高 56 而圆角可到 40，
-    //  退化时 halfSize-cornerR 变负、SDF 几何失效乱贴亮边），故在 shader 侧兜底。
-    float cornerR = min(cornerRadiusAt(cornerRadii, panelUv), min(halfSize.x, halfSize.y));
-    vec2 q = abs(local) - (halfSize - vec2(cornerR));
-    float signedDistance = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - cornerR;
-    float edgeDistance = max(-signedDistance, 0.0);
+    // 边缘亮边：1.5px 缘带内（SDF 距离，圆角处准确，旧 min(到直边) 近似会把
+    // 弧段亮边裁掉）。iOS 的亮边集中在顶缘、向两侧衰减，四边等强描边最假。
     float borderBand = 1.0 - smoothstep(0.0, 1.5, edgeDistance);
-    // iOS 的亮边不是四边等强：顶缘最强、向两侧与底缘衰减，等强描边最假。
     float borderWeight = borderBand * mix(0.30, 1.0, 1.0 - clamp(panelUv.y, 0.0, 1.0));
+    if (liquidGlass > 0.5) {
+        // 随动缘光：高光峰值沿边缘滑动到光源方向（官方语义"lighting responds to
+        // device motion"，MC 无陀螺仪，宿主以鼠标为光源）。dot(外法线, 光源方向)
+        // 让面向光源的缘段最亮、背光缘压暗——这是 Liquid Glass"活的"观感来源。
+        borderWeight *= 0.55 + 0.9 * max(dot(sdfGradient, lightDir), 0.0);
+    }
 
     // 内侧上缘柔光 + 内侧下缘暗带：镜面反射与厚度感的近似（pow3 让能量贴住边缘）。
     float topGlow = pow(1.0 - clamp(panelUv.y, 0.0, 1.0), 3.0) * innerLightTop;

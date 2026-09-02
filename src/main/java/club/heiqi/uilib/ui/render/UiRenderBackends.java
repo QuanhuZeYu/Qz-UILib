@@ -57,4 +57,25 @@ public final class UiRenderBackends {
                     UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, cornerRadius)), material);
         }
     }
+
+    /**
+     * 向支持 backdrop-filter 的后端转发一次带完整效果配方（经典/Liquid Glass）的绘制。
+     *
+     * @param backend      渲染后端
+     * @param left         左侧坐标
+     * @param top          顶部坐标
+     * @param right        右侧坐标
+     * @param bottom       底部坐标
+     * @param blurRadius   模糊半径像素
+     * @param saturation   饱和度倍率；effect 带材质档时被材质配方接管（作 vibrancy 乘子）
+     * @param cornerRadius 圆角半径
+     * @param effect       效果配方；null 走旧线性饱和度语义
+     */
+    public static void backdropFilter(UiRenderBackend backend, int left, int top, int right, int bottom,
+            int blurRadius, float saturation, int cornerRadius, UiBackdropEffect effect) {
+        if (backend instanceof UiRenderContext) {
+            ((UiRenderContext) backend).drawBackdropFilter(left, top, right, bottom, blurRadius, saturation,
+                    UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, cornerRadius)), effect);
+        }
+    }
 }

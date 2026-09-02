@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.render;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -176,6 +177,27 @@ public class UiGlassMaterialTest {
             assertEquals(material.name(), ((argb >>> 8) & 0xFF) / 255.0F, material.getTintGreen(), 1.0e-6F);
             assertEquals(material.name(), (argb & 0xFF) / 255.0F, material.getTintBlue(), 1.0e-6F);
         }
+    }
+
+    /** 效果配方的家族语义：classic 永不液态；liquid 夹幅且带材质；null 材质=旧语义。 */
+    @Test
+    public void effectProfileFamilySemantics() {
+        UiBackdropEffect classic = UiBackdropEffect.classic(UiGlassMaterial.REGULAR);
+        assertFalse(classic.isLiquid());
+        assertTrue(classic.carriesMaterialTint());
+        assertEquals(0.0F, classic.getLensStrength(), 1.0e-6F);
+
+        UiBackdropEffect liquid = UiBackdropEffect.liquidGlass(UiGlassMaterial.REGULAR, 1.7F);
+        assertTrue("越界强度应被夹到 1 且仍液态", liquid.isLiquid());
+        assertEquals(1.0F, liquid.getLensStrength(), 1.0e-6F);
+        assertEquals(UiGlassMaterial.REGULAR, liquid.getMaterial());
+        assertEquals(UiBackdropEffect.Family.LIQUID_GLASS, liquid.getFamily());
+
+        assertFalse("强度 0 不启用液态叠加",
+                UiBackdropEffect.liquidGlass(UiGlassMaterial.THIN, 0.0F).isLiquid());
+        UiBackdropEffect legacy = UiBackdropEffect.classic(null);
+        assertFalse(legacy.carriesMaterialTint());
+        assertFalse(legacy.isLiquid());
     }
 
     /** 复刻 shader 的乘子公式：k = 1 + (amount-1) * clamp(1.289L - 0.289, 0, 1)。 */
