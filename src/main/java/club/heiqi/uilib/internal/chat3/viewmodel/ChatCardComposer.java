@@ -28,11 +28,14 @@ public final class ChatCardComposer {
 
         private final ChatLineRecord record;
         private final List<String> displayLines;
+        private final List<ChatLineLayouter.LineFragment> fragments;
         private final float maxLineWidth;
 
-        private MessageLines(ChatLineRecord record, List<String> displayLines, float maxLineWidth) {
+        private MessageLines(ChatLineRecord record, List<String> displayLines,
+                List<ChatLineLayouter.LineFragment> fragments, float maxLineWidth) {
             this.record = record;
             this.displayLines = displayLines;
+            this.fragments = fragments;
             this.maxLineWidth = maxLineWidth;
         }
 
@@ -44,6 +47,19 @@ public final class ChatCardComposer {
         /** @return 切分后的显示行(时间正序) */
         public List<String> getDisplayLines() {
             return displayLines;
+        }
+
+        /**
+         * 切分后的显示行片段(与 {@link #getDisplayLines()} 等长、逐行同文本)。
+         *
+         * <p>多出的信息是每行的<b>断行来源</b>({@code continuesWord}):长 URL 被字符硬断
+         * 成两行时,续行不含 scheme 前缀,按行独立链接化必然漏判;只有切分器能区分「词内
+         * 硬断」与「词边界回退」(两者在行文本上同形),故把该标记随行走完渲染链。</p>
+         *
+         * @return 行片段列表(时间正序;HUD 截断口径与 getDisplayLines 一致)
+         */
+        public List<ChatLineLayouter.LineFragment> getDisplayFragments() {
+            return fragments;
         }
 
         /** @return 消息最宽行宽(px,气泡宽度依据) */
@@ -275,15 +291,22 @@ public final class ChatCardComposer {
         for (MessageGroupModel.GroupLine line : group.getLines()) {
             ChatLineRecord record = line.getRecord();
             String display = displayText(line);
-            List<String> lines = active.layout(display, maxLineWidthPx);
+            // 走 layoutFragments 而非 layout:跨显示行 URL 续链需要每行的断行来源
+            List<ChatLineLayouter.LineFragment> fragments =
+                    active.layoutFragments(display, maxLineWidthPx);
             if (applyTtl) {
-                lines = clampHudLines(lines, maxLineWidthPx);
+                fragments = clampHudFragments(fragments, maxLineWidthPx);
             }
+            List<String> lines = new ArrayList<String>(fragments.size());
             float maxLineWidth = 0.0F;
-            for (String textLine : lines) {
-                maxLineWidth = Math.max(maxLineWidth, active.measureWidth(textLine));
+            for (ChatLineLayouter.LineFragment fragment : fragments) {
+                lines.add(fragment.getText());
+                maxLineWidth = Math.max(maxLineWidth, active.measureWidth(fragment.getText()));
             }
-            messages.add(new MessageLines(record, lines, maxLineWidth));
+            messages.add(new MessageLines(record, Collections.unmodifiableList(lines),
+                    Collections.unmodifiableList(
+                            new ArrayList<ChatLineLayouter.LineFragment>(fragments)),
+                    maxLineWidth));
         }
         ComposedGroup composed = new ComposedGroup(alignment, group.getSender(), headerName, headerTime, nameColor,
                 messages, latestMillis, alpha);
@@ -301,17 +324,22 @@ public final class ChatCardComposer {
      * 末行按行宽上限裁剪后追加省略号(与 SceneLineClamp 语义一致:行数恰好等于上限不截断)。
      * 容器形态(applyTtl=false)不调用,同一消息完整显示(验收 22)。
      *
-     * @param lines         切分后的显示行(layouter 输出,不可变)
+     * @param fragments      切分后的显示行片段(layouter 输出,不可变)
      * @param maxLineWidthPx 单行最大宽度(与 layouter.layout 同款行宽上限,省略号不回填超宽)
-     * @return 截断后的行列表(新列表);未超限返回原列表语义(零拷贝)
+     * @return 截断后的片段列表(新列表);未超限返回原列表语义(零拷贝)
      */
-    private List<String> clampHudLines(List<String> lines, float maxLineWidthPx) {
-        if (lines.size() <= HUD_MAX_LINES) {
-            return lines;
+    private List<ChatLineLayouter.LineFragment> clampHudFragments(
+            List<ChatLineLayouter.LineFragment> fragments, float maxLineWidthPx) {
+        if (fragments.size() <= HUD_MAX_LINES) {
+            return fragments;
         }
-        List<String> kept = new ArrayList<String>(lines.subList(0, HUD_MAX_LINES));
-        String last = kept.get(HUD_MAX_LINES - 1);
-        kept.set(HUD_MAX_LINES - 1, ellipsizeTail(last, maxLineWidthPx));
+        List<ChatLineLayouter.LineFragment> kept =
+                new ArrayList<ChatLineLayouter.LineFragment>(
+                        fragments.subList(0, HUD_MAX_LINES));
+        int last = HUD_MAX_LINES - 1;
+        // withText 保留断行来源:末行裁剪只换文本,不改变「本行是否续词」
+        kept.set(last, kept.get(last).withText(
+                ellipsizeTail(kept.get(last).getText(), maxLineWidthPx)));
         return kept;
     }
 

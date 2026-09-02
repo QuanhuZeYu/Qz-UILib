@@ -1006,6 +1006,101 @@ public class ChatMessageListTest {
         Assert.assertNull("下扩之外不命中", driver.resolveUrl(10 + 40, 5 + 18 + 2));
     }
 
+    // ==================== 跨显示行长 URL(真机缺陷:后半截不是链接) ====================
+
+    /** 会被字符硬断成两行的长 URL(行宽上限 35 字符 × 4px,串长 59)。 */
+    private static final String LONG_URL =
+            "https://github.com/GTNewHorizons/GT-New-Horizons-odpack/issues";
+
+    @Test
+    public void urlBrokenAcrossDisplayLinesStaysOneLinkWithCompleteUrl() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Bob> " + LONG_URL), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+        SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
+        List<SceneNode> lineNodes = bubble.__getChildren();
+
+        // 前提 1:URL 必须真的被断成多行;前提 2:续行自身不含 scheme(否则本测试空转)
+        Assert.assertTrue("前提:长 URL 应被硬断成多个显示行,实际 " + lineNodes.size() + " 行",
+                lineNodes.size() >= 2);
+        int last = lineNodes.size() - 1;
+        String tailLine = lineText(lineNodes.get(last));
+        Assert.assertFalse("前提:续行不应自带 scheme:" + tailLine, tailLine.contains("://"));
+
+        for (int i = 0; i < lineNodes.size(); i++) {
+            List<TextSegment> segments = lineNodes.get(i).getSegments();
+            int linkSegments = 0;
+            for (TextSegment segment : segments) {
+                if (segment.getStyle().getLink() != null) {
+                    linkSegments++;
+                }
+            }
+            Assert.assertEquals("第 " + (i + 1) + " 行的 URL 片段必须挂 link(含无 scheme 的续行)",
+                    1, linkSegments);
+        }
+        Assert.assertEquals("续行不得保留 § 原色(修复前真机表现:URL 中途从链接蓝变 §6 金)",
+                lineNodes.get(0).getSegments().get(0).getStyle().getColor(),
+                lineNodes.get(last).getSegments().get(0).getStyle().getColor());
+
+        // 命中/tooltip 口径:每一行都必须回投**完整** URL
+        ChatMessageList.LinkHoverDriver driver =
+                controller.messageList().__linkHoverDriverOf(bubble);
+        Assert.assertNotNull("跨行 URL 消息必须装配 hover 驱动器", driver);
+        AnchorRect bubbleBox = SceneGeometry.absoluteBox(bubble, 0, 0);
+        for (int i = 0; i < lineNodes.size(); i++) {
+            AnchorRect box = SceneGeometry.absoluteBox(lineNodes.get(i), 0, 0);
+            Assert.assertEquals("第 " + (i + 1) + " 行命中必须回投完整 URL(修复前:续行返回 null,"
+                            + "首行返回半截)", LONG_URL,
+                    driver.resolveUrl(box.getX() - bubbleBox.getX() + 2,
+                            box.getY() - bubbleBox.getY() + 9));
+        }
+    }
+
+    @Test
+    public void wordWrappedPlainWordIsNotStitchedOntoPrecedingCompleteUrl() {
+        // 闸门反向守卫:行末是一段**完整** URL、下一行是另一个词时不得接链。
+        // 该情形能否出现由 continuesWord 决定,故直接锁 layouter 标记 + 渲染层无链段。
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Bob> aaaaaaaaaa http://a.co/bbbbbbbbbbbb ccccccccccc"),
+                1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+        SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
+        List<SceneNode> lineNodes = bubble.__getChildren();
+        Assert.assertTrue("前提:应切成多行,实际 " + lineNodes.size() + " 行",
+                lineNodes.size() >= 2);
+        for (SceneNode lineNode : lineNodes) {
+            for (TextSegment segment : lineNode.getSegments()) {
+                String link = segment.getStyle().getLink();
+                if (link != null) {
+                    Assert.assertTrue("任何链接段的 URL 值都必须以 scheme 开头,不得混入被误接的词:"
+                            + link, link.startsWith("http://a.co/"));
+                    Assert.assertFalse("不得把后续词接进 URL:" + link, link.contains("cccc"));
+                }
+            }
+        }
+    }
+
+    /** 行节点段流拼接文本(不含 § 格式码)。 */
+    private static String lineText(SceneNode lineNode) {
+        StringBuilder builder = new StringBuilder();
+        for (TextSegment segment : lineNode.getSegments()) {
+            builder.append(segment.getText());
+        }
+        return builder.toString();
+    }
+
     // ==================== K3 三轮:C 系统消息 font-system 12/16 + A2 系统行不钳宽 + B 系统链接 hover 清理 ====================
 
     @Test

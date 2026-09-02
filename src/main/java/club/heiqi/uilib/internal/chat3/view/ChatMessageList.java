@@ -14,6 +14,7 @@ import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCodeSpanSplitter;
+import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatMarkdownLineRule;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatUrlLinkifier;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGroupModel;
@@ -112,16 +113,76 @@ public final class ChatMessageList {
         List<TextSegment> postProcess(List<TextSegment> segments, int baseFontSizePx);
     }
 
-    /** 行内链接跨度(行内相对坐标,命中区域扩展在命中判定时统一应用)。 */
+    /**
+     * 行内链接跨度(行内相对坐标,命中区域扩展在命中判定时统一应用)。
+     *
+     * <p>{@code url} 可写:长 URL 被字符硬断成多个显示行时,每行只能看到片段,完整 URL
+     * 要等链闭合才知道,届时由 {@link UrlChain#close()} 回填到链上所有跨度。</p>
+     */
     static final class LinkSpan {
         final float startX;
         final float width;
-        final String url;
+        String url;
 
         LinkSpan(float startX, float width, String url) {
             this.startX = startX;
             this.width = width;
             this.url = url;
+        }
+    }
+
+    /**
+     * 跨显示行的 URL 续链累加器(每条消息一个实例)。
+     *
+     * <p>不变量:处理完一行后,{@code urlChain} 开放 ⟺ 该行最后一段是 link 段;
+     * {@link #url()} = 该链已拼出的 URL 全文,{@link #spans} = 链上所有待回填跨度。
+     * 下一行只有 {@code LineFragment.continuesWord()} 为真(词内字符硬断,断点两侧原文
+     * 无空白)才接链——词边界回退会丢弃断点空白,两种断行在行文本上同形,只有切分器能
+     * 区分,故该标记必须由 {@code ChatLineLayouter} 上报而非在此反推。</p>
+     */
+    private static final class UrlChain {
+
+        private String url = "";
+        private final List<LinkSpan> spans = new ArrayList<LinkSpan>(2);
+        private LinkSpan lastSpan;
+
+        /** @return true = 已有链头(某行末尾是一段未闭合 URL) */
+        boolean open() {
+            return !spans.isEmpty();
+        }
+
+        /** @return 已累积的 URL 全文(链未闭合时是「到目前为止」的前缀) */
+        String url() {
+            return url;
+        }
+
+        /** 链头:本行末尾是一段 URL(scheme 在本行内)。 */
+        void start(String headUrl, LinkSpan span) {
+            url = headUrl == null ? "" : headUrl;
+            register(span);
+        }
+
+        /** 链中:本行行首是上一行 URL 的延续片段。 */
+        void extend(String accumulated, LinkSpan span) {
+            url = accumulated;
+            register(span);
+        }
+
+        private void register(LinkSpan span) {
+            if (span != null && span != lastSpan) {
+                spans.add(span);
+                lastSpan = span;
+            }
+        }
+
+        /** 闭合:把完整 URL 回填到链上每个跨度;无链时零操作(幂等)。 */
+        void close() {
+            for (int i = 0; i < spans.size(); i++) {
+                spans.get(i).url = url;
+            }
+            spans.clear();
+            lastSpan = null;
+            url = "";
         }
     }
 
@@ -753,7 +814,15 @@ public final class ChatMessageList {
                 // P3-3:组内相邻消息间距 sp-1 = 2(组头→首气泡 3px 由 headerRow margin 承载)
                 messageNode.setMargin(Math.max(0, ChatMarkdownSettings.getGroupInnerGapPx()), 0, 0, 0);
             }
-            for (String line : message.getDisplayLines()) {
+            // 跨显示行 URL 续链(每条消息独立;长 URL 被字符硬断时才真正开放)
+            UrlChain urlChain = new UrlChain();
+            List<String> displayLines = message.getDisplayLines();
+            List<ChatLineLayouter.LineFragment> displayFragments = message.getDisplayFragments();
+            for (int lineIndex = 0; lineIndex < displayLines.size(); lineIndex++) {
+                String line = displayLines.get(lineIndex);
+                // 本行是否为「词内字符硬断」的续行(片段数与行数不等时按保守 false 处理)
+                boolean continuesWord = lineIndex < displayFragments.size()
+                        && displayFragments.get(lineIndex).continuesWord();
                 // 引用行(T6b 设计稿 §3.5):行文本以 "> " 或 ">" 开头 → 剥前缀 + 文字降
                 // text-secondary + 行首 2px 竖条(0x40FFFFFF);剥前缀后的文本照常参与
                 // linkify(系统消息按 F5 保留原色链接化)/code 切分;引用只作用于气泡行。
@@ -804,12 +873,17 @@ public final class ChatMessageList {
                     lineBases.add(mathSegments);
                     hoverBases.add(null);
                     messageLineSpans.add(Collections.<LinkSpan>emptyList());
+                    urlChain.close(); // 块级公式独占行不可能是 URL 续行,链到此终止
                     globalLineIndex++;
                     continue;
                 }
                 List<TextSegment> segments;
                 List<TextSegment> hover = null;
                 List<LinkSpan> spans = Collections.<LinkSpan>emptyList();
+                // 本行链接化作用域文本 = 段流可见字符的同口径原文(列表行剥「• 」前缀);
+                // 续链要按它数「行首属于 URL 体的字符」,必须与实际链接化的文本严格同源
+                String scopeText;
+                TextSegment bulletSegment = null;
                 if (markdown.getKind() == ChatMarkdownLineRule.Kind.UNORDERED_LIST) {
                     // 「• 」前缀段(正文色)+ 内容段;层级缩进 = 前导空格数/2,每级 2 个空格
                     // (2 空格=1 级的简单映射,缩进随文本宽度度量,不依赖布局语义)
@@ -820,31 +894,63 @@ public final class ChatMessageList {
                     bulletBuilder.append("• ");
                     TextStyle bulletStyle = new TextStyle();
                     bulletStyle.setColor(lineBaseColor);
-                    TextSegment bulletSegment = new TextSegment(bulletBuilder.toString(), bulletStyle);
+                    bulletSegment = new TextSegment(bulletBuilder.toString(), bulletStyle);
                     String listContent = markdown.getContent() == null ? "" : markdown.getContent();
                     List<TextSegment> contentSegments = parseCached(listContent, lineBaseColor, linkifyMode);
                     List<TextSegment> combined = new ArrayList<TextSegment>(contentSegments.size() + 1);
                     combined.add(bulletSegment);
                     combined.addAll(contentSegments);
                     segments = combined;
-                    if (segmentMeasurer != null) {
-                        spans = linkSpansOf(segments, segmentMeasurer, fontSize);
-                        if (!spans.isEmpty()) {
-                            List<TextSegment> hoverContent = hoverCached(listContent, lineBaseColor, linkifyMode);
+                    scopeText = listContent;
+                } else {
+                    segments = parseCached(renderLine, lineBaseColor, linkifyMode);
+                    scopeText = renderLine;
+                }
+                // —— 跨显示行 URL 续链:上一行末尾是未闭合 URL 且本行是词内硬断续行 ——
+                String chainRun = null;
+                // bulletSegment != null 时本行段流首段是「• 」前缀,不是正文——按可见字符数
+                // 从头吞并会把项目符号划进 URL,故列表行不参与续链(保守不接,不污染)
+                if (continuesWord && urlChain.open() && bulletSegment == null) {
+                    String run = ChatUrlLinkifier.leadingUrlRun(scopeText);
+                    if (run.isEmpty()) {
+                        urlChain.close(); // 行首即终止:URL 其实在上一行就完整了
+                    } else {
+                        chainRun = run;
+                        segments = ChatUrlLinkifier.linkifyLeadingRun(segments,
+                                linkColorArg(linkifyMode), run.length(), urlChain.url() + run);
+                    }
+                }
+                if (segmentMeasurer != null) {
+                    spans = linkSpansOf(segments, segmentMeasurer, fontSize);
+                    if (chainRun != null && !spans.isEmpty()) {
+                        urlChain.extend(urlChain.url() + chainRun, spans.get(0));
+                    }
+                    if (!spans.isEmpty()) {
+                        // 续链行的段流是链上叠加产物,不在 hoverCached 的 key 空间里,
+                        // 必须由最终段流现推(hoverLinkify 只改色与下划线,零副作用)
+                        hover = chainRun == null
+                                ? hoverCached(scopeText, lineBaseColor, linkifyMode)
+                                : ChatUrlLinkifier.hoverLinkify(segments,
+                                        ChatMarkdownSettings.getLinkHoverArgb());
+                        if (bulletSegment != null) {
                             List<TextSegment> combinedHover =
-                                    new ArrayList<TextSegment>(hoverContent.size() + 1);
+                                    new ArrayList<TextSegment>(hover.size() + 1);
                             combinedHover.add(bulletSegment);
-                            combinedHover.addAll(hoverContent);
+                            combinedHover.addAll(hover);
                             hover = combinedHover;
                         }
                     }
-                } else {
-                    segments = parseCached(renderLine, lineBaseColor, linkifyMode);
-                    if (segmentMeasurer != null) {
-                        spans = linkSpansOf(segments, segmentMeasurer, fontSize);
-                        if (!spans.isEmpty()) {
-                            hover = hoverCached(renderLine, lineBaseColor, linkifyMode);
-                        }
+                }
+                // 链尾判定:本行末尾仍是一段 URL → 链保持开放,等下一行的 continuesWord
+                if (chainRun == null
+                        || chainRun.length() < ChatUrlLinkifier.plainLength(scopeText)) {
+                    TextSegment lastSegment = segments.isEmpty() ? null
+                            : segments.get(segments.size() - 1);
+                    String tailLink = lastSegment == null ? null : lastSegment.getStyle().getLink();
+                    urlChain.close();
+                    if (tailLink != null) {
+                        urlChain.start(tailLink, spans.isEmpty() ? null
+                                : spans.get(spans.size() - 1));
                     }
                 }
                 messageLineSpans.add(spans);
@@ -910,6 +1016,8 @@ public final class ChatMessageList {
                 hoverBases.add(hover);
                 globalLineIndex++;
             }
+            // 消息末行仍开放 → 链到此为止,回填完整 URL(下一行不存在,不可能再接)
+            urlChain.close();
             groupNode.appendChild(messageNode);
             messageNodes.add(messageNode);
             registry.put(messageNode, message.getRecord());
@@ -1079,6 +1187,16 @@ public final class ChatMessageList {
     static Transform enterTransform(long bornMillis, long nowMillis) {
         float eased = Animator.easeOutCubic(enterProgress(bornMillis, nowMillis));
         return Transform.translate(0.0F, ENTER_TRANSLATE_PX * (1.0F - eased));
+    }
+
+    /**
+     * 链接色实参:COLORED = 强制设计稿链接色;PRESERVE = {@code null}(保留各段原 § 色,
+     * F5 用户拍板)。与 {@code ChatUrlLinkifier.linkifyInternal} 的 nullable-Integer 约定
+     * 同一开关语义,续链叠加({@code linkifyLeadingRun})与整行链接化因此共用一套配色规则。
+     */
+    private static Integer linkColorArg(LinkifyMode mode) {
+        return mode == LinkifyMode.PRESERVE ? null
+                : Integer.valueOf(ChatMarkdownSettings.getLinkArgb());
     }
 
     /**

@@ -211,6 +211,108 @@ public final class ChatUrlLinkifier {
     }
 
     /**
+     * 跨显示行续链：取行首「URL 体延续段」文本。
+     *
+     * <p>长 URL 被 {@code ChatLineLayouter} 字符硬断成两个显示行后，续行不含 scheme
+     * 前缀，{@link #findUrls} 必然不命中（这是「URL 后半截不是链接」的根因）。本方法按
+     * {@link #scanUrlEnd} 同一套终止规则取回行首仍属于 URL 体的片段：遇首个空白或分隔标点
+     * 即止，§ 格式码对零宽、既不计入也不终止。调用方据此把片段拼回完整 URL。</p>
+     *
+     * @param formattedLine 显示行文本（可含 § 格式码）
+     * @return 行首 URL 体片段（纯文本，不含 §）；行首即终止时返回空串
+     */
+    public static String leadingUrlRun(String formattedLine) {
+        if (formattedLine == null || formattedLine.isEmpty()) {
+            return "";
+        }
+        StringBuilder run = new StringBuilder();
+        int length = formattedLine.length();
+        for (int i = 0; i < length; i++) {
+            char c = formattedLine.charAt(i);
+            if (c == '§' && i + 1 < length) {
+                i++; // § 对：零宽，不计入 URL 体也不终止 URL 体
+                continue;
+            }
+            if (Character.isWhitespace(c) || isDelimiter(c)) {
+                break;
+            }
+            run.append(c);
+        }
+        return run.toString();
+    }
+
+    /**
+     * 显示行文本的可见字符数（§ 格式码对零宽不计；与 {@link #leadingUrlRun} 同口径）。
+     *
+     * @param formattedLine 显示行文本（可含 § 格式码）
+     * @return 可见字符数
+     */
+    public static int plainLength(String formattedLine) {
+        if (formattedLine == null || formattedLine.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        int length = formattedLine.length();
+        for (int i = 0; i < length; i++) {
+            if (formattedLine.charAt(i) == '§' && i + 1 < length) {
+                i++;
+                continue;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    /**
+     * 跨显示行续链：把行首 {@code runChars} 个可见字符标成 {@code fullUrl} 的 link 段。
+     *
+     * <p>与 {@link #linkify} 的差异只在「区间由外部给定」：续行的 URL 归属信息来自上一行
+     * （scheme 在上一行），本行文本自身扫不出来。给定区间之外原段透传；LaTeX 段与 code 段
+     * 是硬边界（P8 语义），遇边界即停止吞并，不得把 code/LaTeX 变成链接的一部分。</p>
+     *
+     * @param base      本行已链接化的段流（{@link #linkify} 产物，只读；返回新列表）
+     * @param linkColor 非 null = 强制该色（COLORED，设计稿 §3.5 链接恒 text-link）；
+     *                  null = 保留原段色（PRESERVE，系统消息用户拍板）。与
+     *                  {@link #linkifyInternal} 同一 nullable 约定
+     * @param runChars  行首属于 URL 体的可见字符数（{@link #leadingUrlRun} 结果的长度）
+     * @param fullUrl   跨行拼接后的**完整** URL（不是本行片段）
+     * @return 续链后的段流（无需续链时返回原列表引用）
+     */
+    public static List<TextSegment> linkifyLeadingRun(List<TextSegment> base, Integer linkColor,
+            int runChars, String fullUrl) {
+        if (base == null || base.isEmpty() || runChars <= 0 || fullUrl == null || fullUrl.isEmpty()) {
+            return base;
+        }
+        List<TextSegment> out = new ArrayList<TextSegment>(base.size() + 1);
+        int remaining = runChars;
+        for (TextSegment segment : base) {
+            String text = segment.getText();
+            if (remaining <= 0 || segment.isLatex() || segment.getStyle().isCodeSpan()
+                    || segment.getStyle().getLink() != null) {
+                // 已覆盖完 / 撞上硬边界 / 本行已自行识别成链接：原样透传并停止续链
+                out.add(segment);
+                remaining = 0;
+                continue;
+            }
+            int take = Math.min(remaining, text.length());
+            TextStyle linkStyle = segment.getStyle().copy();
+            if (linkColor != null) {
+                linkStyle.setColor(linkColor.intValue());
+            }
+            linkStyle.setLink(fullUrl);
+            out.add(new TextSegment(text.substring(0, take), linkStyle));
+            remaining -= take;
+            if (remaining > 0) {
+                continue; // 整段被 URL 体吃掉，继续下一段
+            }
+            if (take < text.length()) {
+                out.add(new TextSegment(text.substring(take), segment.getStyle()));
+            }
+        }
+        return out;
+    }
+
+    /**
      * 扫描文本中的 URL 子串（前缀 + 分隔符终止 + 尾随标点剥离）。
      *
      * @param text 纯文本（不含 § 格式码）

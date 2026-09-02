@@ -231,6 +231,153 @@ public class ChatLineLayouterTest {
         Assert.assertEquals(first, third);
     }
 
+
+    // ==================== 跨显示行 URL 续链:断行来源标记 ====================
+
+    @Test
+    public void shouldMarkEveryLineInsideHardBrokenUrl() {
+        List<ChatLineLayouter.LineFragment> fragments = fragments("https://abcdefghijk");
+        Assert.assertEquals(4, fragments.size());
+        Assert.assertFalse("逻辑首行不接续任何词", fragments.get(0).continuesWord());
+        for (int i = 1; i < fragments.size(); i++) {
+            Assert.assertTrue("无空格长串的每个续行都必须标记 continuesWord(行 " + i + ")",
+                    fragments.get(i).continuesWord());
+        }
+    }
+
+    @Test
+    public void shouldNotMarkLineAfterPendingSpaceHardBreak() {
+        // 反例本体(写测试时实测抓到):"hello world" 在 5 字符宽下,词间空格此刻还在
+        // pendingSpaces 里、未并入 current,故 lastWhitespace(current) 返回 -1 而落入
+        // 字符硬断分支——它仍是词边界,不得标记接续。
+        List<ChatLineLayouter.LineFragment> fragments = fragments("hello world");
+        Assert.assertEquals(list("hello", "world"), texts(fragments));
+        Assert.assertFalse("待定空白处的断行是词边界,不是词内硬断",
+                fragments.get(1).continuesWord());
+    }
+
+    @Test
+    public void shouldNotMarkExplicitNewLineAsContinuation() {
+        List<ChatLineLayouter.LineFragment> fragments = fragments("https\nabcde");
+        Assert.assertEquals(2, fragments.size());
+        Assert.assertFalse("换行符是硬边界", fragments.get(1).continuesWord());
+    }
+
+    @Test
+    public void continuesWordMustEqualAbsenceOfWhitespaceAtBreakPoint() {
+        // 不靠手算行数:直接对账「continuesWord ⟺ 源文本断点两侧无空白」。
+        // 这是跨行 URL 续链唯一的正确性前提——误判会把相邻却不相关的词粘成一条 URL。
+        String[] corpus = { "hello world", "https://abcdefghijk", "aaa http://a.co world",
+                "\u00a76     https://abcdefghijklmnop", "\u4e00\u4e8c\u4e09\u56db\u4e94\u516d",
+                "a\nb\nc", "x http://a.co/b http://c.co/d end",
+                "     leading indent then several words here", "aaaaaaaaaaaaaaaaaaaaaaaa",
+                "https://a.co/x\ty", "\u00a7a\u00a7nword1 word2" };
+        for (String text : corpus) {
+            List<ChatLineLayouter.LineFragment> fragments = fragments(text);
+            StringBuilder joined = new StringBuilder();
+            for (ChatLineLayouter.LineFragment fragment : fragments) {
+                joined.append(visibleChars(fragment.getText()));
+            }
+            Assert.assertEquals("显示行可见字符必须无间隙铺满源文本可见字符:" + text,
+                    visibleChars(text), joined.toString());
+
+            List<Integer> srcIdx = new java.util.ArrayList<Integer>();
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == '\u00a7' && i + 1 < text.length()) {
+                    i++;
+                    continue;
+                }
+                if (Character.isWhitespace(c)) {
+                    continue;
+                }
+                srcIdx.add(Integer.valueOf(i));
+            }
+            int cursor = 0;
+            int prevLast = -1;
+            for (int i = 0; i < fragments.size(); i++) {
+                int count = visibleChars(fragments.get(i).getText()).length();
+                if (count == 0) {
+                    continue; // 仅 § 码的零可见行不参与断点对账
+                }
+                int first = srcIdx.get(cursor).intValue();
+                if (prevLast >= 0) {
+                    String gap = text.substring(prevLast + 1, first);
+                    boolean hasWhitespace = false;
+                    for (int k = 0; k < gap.length(); k++) {
+                        if (Character.isWhitespace(gap.charAt(k))) {
+                            hasWhitespace = true;
+                            break;
+                        }
+                    }
+                    Assert.assertEquals("行 " + i + " continuesWord 必须等于「断点无空白」;文本=["
+                                    + text + "] 断点之间=[" + gap + "]", Boolean.valueOf(!hasWhitespace),
+                            Boolean.valueOf(fragments.get(i).continuesWord()));
+                }
+                cursor += count;
+                prevLast = srcIdx.get(cursor - 1).intValue();
+            }
+        }
+    }
+
+    /** 剥 § 格式码对与空白后的可见字符序列(行 ↔ 源文本对账口径)。 */
+    private static String visibleChars(String text) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\u00a7' && i + 1 < text.length()) {
+                i++;
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                continue;
+            }
+            out.append(c);
+        }
+        return out.toString();
+    }
+
+    @Test
+    public void splitLinesMustBeExactTextProjectionOfSplitFragments() {
+        String[] corpus = { "hello world", "https://abcdefghijk", "aaa http://a.co world",
+                "\u00a76     https://abcdefghijklmnop", "\u4e00\u4e8c\u4e09\u56db\u4e94\u516d",
+                "a\nb\nc", "", "   ", "x http://a.co/b http://c.co/d end" };
+        for (String text : corpus) {
+            Assert.assertEquals("splitLines 必须是 splitFragments 的纯文本投影:" + text,
+                    ChatLineLayouter.splitLines(text, MAX_WIDTH, fixedMeasure(), 13),
+                    texts(fragments(text)));
+        }
+    }
+
+    @Test
+    public void shouldShareOneCacheEntryBetweenLayoutAndFragments() {
+        ChatLineLayouter layouter = new ChatLineLayouter(fixedMeasure(), 13);
+        List<String> lines = layouter.layout("https://abcdefghijk", MAX_WIDTH);
+        List<ChatLineLayouter.LineFragment> fragments =
+                layouter.layoutFragments("https://abcdefghijk", MAX_WIDTH);
+        Assert.assertSame("layout 重复调用必须命中同一缓存实例",
+                layouter.layout("https://abcdefghijk", MAX_WIDTH), lines);
+        Assert.assertSame("两个投影重复调用必须命中同一缓存实例",
+                layouter.layoutFragments("https://abcdefghijk", MAX_WIDTH), fragments);
+        Assert.assertEquals(fragments.size(), lines.size());
+        for (int i = 0; i < lines.size(); i++) {
+            Assert.assertEquals("同一缓存条目内两投影逐行同文本", lines.get(i),
+                    fragments.get(i).getText());
+        }
+    }
+
+    private static List<ChatLineLayouter.LineFragment> fragments(String text) {
+        return ChatLineLayouter.splitFragments(text, MAX_WIDTH, fixedMeasure(), 13);
+    }
+
+    private static List<String> texts(List<ChatLineLayouter.LineFragment> fragments) {
+        List<String> out = new java.util.ArrayList<String>(fragments.size());
+        for (ChatLineLayouter.LineFragment fragment : fragments) {
+            out.add(fragment.getText());
+        }
+        return out;
+    }
+
     private static List<String> split(String text) {
         return ChatLineLayouter.splitLines(text, MAX_WIDTH, fixedMeasure(), 13);
     }

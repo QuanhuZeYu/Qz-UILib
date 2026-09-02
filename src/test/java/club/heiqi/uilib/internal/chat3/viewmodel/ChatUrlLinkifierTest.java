@@ -346,6 +346,97 @@ public class ChatUrlLinkifierTest {
 
     // ==================== 命中扩展(设计稿 §5.2) ====================
 
+    // ==================== 跨显示行续链(长 URL 被字符硬断) ====================
+
+    @Test
+    public void leadingUrlRunStopsAtFirstWhitespaceOrDelimiter() {
+        Assert.assertEquals("odpack/issues",
+                ChatUrlLinkifier.leadingUrlRun("odpack/issues and more"));
+        Assert.assertEquals("odpack/issues",
+                ChatUrlLinkifier.leadingUrlRun("odpack/issues,next"));
+        Assert.assertEquals("a.b/x", ChatUrlLinkifier.leadingUrlRun("a.b/x)tail"));
+        Assert.assertEquals("行首即终止", "", ChatUrlLinkifier.leadingUrlRun(" tail"));
+        Assert.assertEquals("行首是分隔标点", "", ChatUrlLinkifier.leadingUrlRun(",tail"));
+        Assert.assertEquals("", ChatUrlLinkifier.leadingUrlRun(""));
+        Assert.assertEquals("", ChatUrlLinkifier.leadingUrlRun(null));
+    }
+
+    @Test
+    public void leadingUrlRunSkipsSectionPairsWithoutCountingThem() {
+        // § 对零宽:既不计入 URL 体,也不终止 URL 体(与 splitLines 续行重发格式码配套)
+        Assert.assertEquals("odpack/issues",
+                ChatUrlLinkifier.leadingUrlRun("\u00a76odpack\u00a7n/issues"));
+        Assert.assertEquals(13, ChatUrlLinkifier.plainLength("\u00a76odpack\u00a7n/issues"));
+        Assert.assertEquals(0, ChatUrlLinkifier.plainLength(""));
+        Assert.assertEquals("两个 § 对 = 零可见字符", 0, ChatUrlLinkifier.plainLength("\u00a76\u00a7r"));
+    }
+
+    @Test
+    public void linkifyLeadingRunMarksRunAsLinkWithCompleteUrl() {
+        List<TextSegment> base = single("odpack/issues tail");
+        List<TextSegment> out = ChatUrlLinkifier.linkifyLeadingRun(base, Integer.valueOf(LINK),
+                "odpack/issues".length(), "https://a.co/GT-New-Horizons-odpack/issues");
+        Assert.assertEquals("切成 link 段 + 尾段", 2, out.size());
+        Assert.assertEquals("odpack/issues", out.get(0).getText());
+        Assert.assertEquals("link 值必须是跨行拼接后的完整 URL,不是本行片段",
+                "https://a.co/GT-New-Horizons-odpack/issues", out.get(0).getStyle().getLink());
+        Assert.assertEquals("COLORED 口径:强制链接色", LINK,
+                        out.get(0).getStyle().getColor());
+        Assert.assertEquals("尾段保留行内空格(只有 URL 体进链接段)", " tail", out.get(1).getText());
+        Assert.assertNull("尾段不得被吞进链接", out.get(1).getStyle().getLink());
+    }
+
+    @Test
+    public void linkifyLeadingRunKeepsOriginalColorWhenLinkColorNull() {
+        // PRESERVE 口径(系统消息 F5 用户拍板):只挂 link 语义,不强制链接色
+        List<TextSegment> out = ChatUrlLinkifier.linkifyLeadingRun(single("odpack/issues"), null,
+                13, "https://a.co/xodpack/issues");
+        Assert.assertEquals(1, out.size());
+        Assert.assertEquals("https://a.co/xodpack/issues", out.get(0).getStyle().getLink());
+        Assert.assertEquals("保留原段 § 色", 0xFFFFFFFF, out.get(0).getStyle().getColor());
+    }
+
+    @Test
+    public void linkifyLeadingRunDoesNotSwallowCodeOrLatexSegment() {
+        // P8 硬边界:LaTeX/code 段不得被续链吞并成 URL 的一部分
+        TextStyle code = plainStyle();
+        code.setCodeSpan(true);
+        List<TextSegment> base = Arrays.asList(
+                new TextSegment("od", code),
+                seg("pack/issues"));
+        List<TextSegment> out = ChatUrlLinkifier.linkifyLeadingRun(base, Integer.valueOf(LINK),
+                13, "https://a.co/odpack/issues");
+        Assert.assertSame("首段是 code 段 → 原样透传且停止续链", base.get(0), out.get(0));
+        Assert.assertNull("后续段不得被牵连成链接", out.get(1).getStyle().getLink());
+
+        List<TextSegment> latexBase = Arrays.asList(
+                TextSegment.forLatex("od", plainStyle()), seg("pack"));
+        List<TextSegment> latexOut = ChatUrlLinkifier.linkifyLeadingRun(latexBase,
+                Integer.valueOf(LINK), 5, "https://a.co/odpack");
+        Assert.assertTrue("LaTeX 段仍是 LaTeX 段", latexOut.get(0).isLatex());
+        Assert.assertNull(latexOut.get(1).getStyle().getLink());
+    }
+
+    @Test
+    public void linkifyLeadingRunIsNoOpForZeroLengthRun() {
+        List<TextSegment> base = single("tail");
+        Assert.assertSame("runChars<=0 不动段流", base,
+                ChatUrlLinkifier.linkifyLeadingRun(base, Integer.valueOf(LINK), 0, "https://a.co"));
+        Assert.assertSame("fullUrl 为空不动段流", base,
+                ChatUrlLinkifier.linkifyLeadingRun(base, Integer.valueOf(LINK), 4, ""));
+    }
+
+    @Test
+    public void linkifyLeadingRunDoesNotMutateCachedInput() {
+        // parseCached 返回的是 LRU 共享实例:续链叠加必须产出新列表,否则同一行文本
+        // 在另一条消息里会被污染成带链接的段流(缓存串味)。
+        List<TextSegment> base = single("odpack/issues");
+        List<TextSegment> out = ChatUrlLinkifier.linkifyLeadingRun(base, Integer.valueOf(LINK),
+                13, "https://a.co/odpack/issues");
+        Assert.assertNotSame("必须返回新列表", base, out);
+        Assert.assertNull("原列表段流不得被改写", base.get(0).getStyle().getLink());
+    }
+
     @Test
     public void hitPaddingMatchesDesignSpec() {
         Assert.assertEquals("命中区上下扩 2px", 2, ChatUrlLinkifier.HIT_PAD_Y);

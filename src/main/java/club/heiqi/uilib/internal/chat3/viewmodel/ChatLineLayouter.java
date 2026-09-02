@@ -37,14 +37,67 @@ public final class ChatLineLayouter {
         int epoch();
     }
 
+    /**
+     * 一个显示行片段:行文本(保留格式码)+ 该行的断行来源。
+     *
+     * <p>{@code continuesWord} = 本行是<b>词内字符硬断</b>的续行(断点两侧原文没有空白,
+     * 首字符直接续写上一行末尾那个词);词边界回退断行与 \n 硬断产生的行均为 false。
+     * 这个信息<b>只有切分器能给出</b>:词边界回退会丢弃断点处的空白,于是「上一行以 URL
+     * 结尾 + 下一行以 URL 字符开头」在两种断行下**文本完全同形**,从行文本字符串反查不可
+     * 判别(实测重测宽度也无法区分:两种断行下 line+nextChar 都超宽)。跨显示行的 URL
+     * 链接化必须靠它做闸门,否则普通散文会被误接成一条超长 URL。</p>
+     */
+    public static final class LineFragment {
+
+        private final String text;
+        private final boolean continuesWord;
+
+        LineFragment(String text, boolean continuesWord) {
+            this.text = text;
+            this.continuesWord = continuesWord;
+        }
+
+        /** @return 显示行文本(保留格式码,与 {@link #splitLines} 输出口径一致) */
+        public String getText() {
+            return text;
+        }
+
+        /** @return true = 本行由词内字符硬断接上一行而来(首字符是上一行末词的延续) */
+        public boolean continuesWord() {
+            return continuesWord;
+        }
+
+        /**
+         * 换文本、保留断行来源(HUD 末行加省略号时用它:裁剪不改变「本行是否续词」)。
+         *
+         * @param newText 新行文本
+         * @return 新片段(continuesWord 不变)
+         */
+        LineFragment withText(String newText) {
+            return new LineFragment(newText, continuesWord);
+        }
+    }
+
+    /** 一次切分的两个投影(行文本列表 + 行片段列表),同源计算、同一缓存条目。 */
+    private static final class Layout {
+
+        private final List<String> lines;
+        private final List<LineFragment> fragments;
+
+        Layout(List<String> lines, List<LineFragment> fragments) {
+            this.lines = lines;
+            this.fragments = fragments;
+        }
+    }
+
     private final Measure measure;
     private final int fontSizePx;
-    private final Map<String, List<String>> cache =
-            new LinkedHashMap<String, List<String>>(64, 0.75F, true) {
+    private final Map<String, Layout> cache =
+            new LinkedHashMap<String, Layout>(64, 0.75F, true) {
         private static final long serialVersionUID = 1L;
 
         @Override
-        protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, Layout> eldest) {
             return size() > MAX_ENTRIES;
         }
     };
@@ -62,24 +115,51 @@ public final class ChatLineLayouter {
     /**
      * 取行切分(命中返回缓存实例,未命中切分 + 缓存)。
      *
+     * <p>与 {@link #layoutFragments} 同源:两者命中同一缓存条目,行文本列表恒为行片段
+     * 列表的文本投影(长度相等、逐行同文本),不会各自算一遍而漂移。</p>
+     *
      * @param formattedText 带格式码的消息文本
      * @param maxWidthPx    单行最大宽度
      * @return 切好的显示行(保留格式码);空文本 → 单空行
      */
     public synchronized List<String> layout(String formattedText, int maxWidthPx) {
+        return layoutInternal(formattedText, maxWidthPx).lines;
+    }
+
+    /**
+     * 取行切分片段(带断行来源;{@link #layout} 的富信息形态,同一缓存条目)。
+     *
+     * <p>调用方需要判断「某显示行是否为词内硬断续行」时用本方法——典型是跨显示行的
+     * URL 链接化:URL 被字符硬断后,续行不含 scheme 前缀,按行独立识别必然漏判。</p>
+     *
+     * @param formattedText 带格式码的消息文本
+     * @param maxWidthPx    单行最大宽度
+     * @return 切好的显示行片段(保留格式码);空文本 → 单空行片段
+     */
+    public synchronized List<LineFragment> layoutFragments(String formattedText, int maxWidthPx) {
+        return layoutInternal(formattedText, maxWidthPx).fragments;
+    }
+
+    private Layout layoutInternal(String formattedText, int maxWidthPx) {
         int epoch = measure.epoch();
         if (epoch != cachedEpoch) {
             cache.clear();
             cachedEpoch = epoch;
         }
         String key = formattedText + '@' + epoch + '#' + fontSizePx + '#' + maxWidthPx;
-        List<String> hit = cache.get(key);
+        Layout hit = cache.get(key);
         if (hit != null) {
             return hit;
         }
-        List<String> lines = splitLines(formattedText, maxWidthPx, measure, fontSizePx);
-        cache.put(key, lines);
-        return lines;
+        List<LineFragment> fragments = splitFragments(formattedText, maxWidthPx, measure, fontSizePx);
+        List<String> lines = new ArrayList<String>(fragments.size());
+        for (LineFragment fragment : fragments) {
+            lines.add(fragment.getText());
+        }
+        Layout layout = new Layout(Collections.unmodifiableList(lines),
+                Collections.unmodifiableList(fragments));
+        cache.put(key, layout);
+        return layout;
     }
 
     /**
@@ -102,16 +182,45 @@ public final class ChatLineLayouter {
      * @return 切好的显示行(不共享可变状态,调用方可安全持有)
      */
     public static List<String> splitLines(String text, float maxWidthPx, Measure measure, int fontSizePx) {
-        List<String> lines = new ArrayList<String>();
+        List<LineFragment> fragments = splitFragments(text, maxWidthPx, measure, fontSizePx);
+        List<String> lines = new ArrayList<String>(fragments.size());
+        for (LineFragment fragment : fragments) {
+            lines.add(fragment.getText());
+        }
+        return Collections.unmodifiableList(lines);
+    }
+
+    /**
+     * 纯函数切分(带断行来源;可独立单测)。
+     *
+     * <p>与 {@link #splitLines} 唯一差异是返回 {@link LineFragment}(附带
+     * {@code continuesWord} 断行来源标记),行文本口径逐行完全一致。</p>
+     *
+     * @param text        带格式码的消息文本
+     * @param maxWidthPx  单行最大宽度
+     * @param measure     宽度度量
+     * @param fontSizePx  字号
+     * @return 切好的显示行片段(不共享可变状态,调用方可安全持有)
+     */
+    public static List<LineFragment> splitFragments(String text, float maxWidthPx, Measure measure,
+            int fontSizePx) {
+        List<LineFragment> lines = new ArrayList<LineFragment>();
         StringBuilder current = new StringBuilder();
         StringBuilder pendingSpaces = new StringBuilder();
         FormatState format = new FormatState();
+        // 当前在建行是否由「词内字符硬断」从上一行延续而来(逻辑首行恒 false)
+        boolean continuesWord = false;
+        // 最近一个已并入 current 的可见字符在源文本中的下标(-1 = 本行尚无可见字符);
+        // 断点判据要用它去源文本里查「两个可见字符之间有没有空白」,不能拿 pendingSpaces
+        // 的长度当数——前导缩进会长期滞留在 pendingSpaces 里而与断点无关(不变量测试抓到)
+        int lastVisibleAt = -1;
         for (int i = 0; i < text.length();) {
             char c = text.charAt(i);
             if (c == '\n') {
-                lines.add(trimTrailing(current));
+                lines.add(new LineFragment(trimTrailing(current), continuesWord));
                 current.setLength(0);
                 pendingSpaces.setLength(0);
+                continuesWord = false; // 换行符是硬边界,续行不接上一行的词
                 i++;
                 continue;
             }
@@ -133,6 +242,7 @@ public final class ChatLineLayouter {
             if (measure.advance(candidate, fontSizePx) <= maxWidthPx) {
                 current.append(pendingSpaces).append(c);
                 pendingSpaces.setLength(0);
+                lastVisibleAt = i;
                 i++;
                 continue;
             }
@@ -146,17 +256,24 @@ public final class ChatLineLayouter {
                 // 词边界回退:行 = 最后空白之前(去尾空白),续行 = 空白后的整词 + 重发格式码;
                 // 断行点之后的待定空白(词间分隔空格)属于续行内容,一并移入而非丢弃
                 String rest = current.substring(lastWs + 1);
-                lines.add(trimTrailing(current.substring(0, lastWs + 1)));
+                lines.add(new LineFragment(trimTrailing(current.substring(0, lastWs + 1)),
+                        continuesWord));
                 current.setLength(0);
                 current.append(format.prefix());
                 current.append(rest);
                 current.append(pendingSpaces);
                 pendingSpaces.setLength(0);
+                // 词边界回退丢弃了断点空白 → 续行是一个新词的开始,不是上一行末词的延续
+                continuesWord = false;
                 continue; // 不推进 i,重试该字符
             }
             String trimmed = trimTrailing(current);
             if (hasVisibleChar(trimmed, 0, trimmed.length())) {
-                lines.add(trimmed);
+                lines.add(new LineFragment(trimmed, continuesWord));
+                // 断点判据只认源文本:上一行末可见字符与本行首(即本字符)之间若无空白,
+                // 就是词内硬断。不能用 pendingSpaces 长度当数——词间空白确实还没并入
+                // current("hello world" 窄行),但前导缩进也会长期滞留在里面而与断点无关。
+                continuesWord = !hasWhitespaceIn(text, lastVisibleAt + 1, i);
                 current.setLength(0);
                 current.append(format.prefix());
                 pendingSpaces.setLength(0);
@@ -165,13 +282,14 @@ public final class ChatLineLayouter {
             // 行内无可见字符(仅前导空白 + § 格式码):不断出空行,硬放该字符并入缩进
             // (窄行下缩进 + 首词作为整体成行,不产生零内容行)
             current.append(c);
+            lastVisibleAt = i;
             i++;
         }
         String tail = trimTrailing(current);
         if (lines.isEmpty() && tail.isEmpty()) {
-            lines.add("");
+            lines.add(new LineFragment("", false));
         } else if (!tail.isEmpty()) {
-            lines.add(tail);
+            lines.add(new LineFragment(tail, continuesWord));
         }
         return Collections.unmodifiableList(lines);
     }
@@ -241,6 +359,31 @@ public final class ChatLineLayouter {
             }
         }
         return -1;
+    }
+
+    /**
+     * 源文本 {@code [from, to)} 区间内是否存在空白(断点词边界判据)。
+     *
+     * <p>§ 格式码对零宽、不构成词边界:URL 内部被 § 码切色(GTNH 欢迎语即如此)时,
+     * 断点两侧仍属同一个词,必须允许续链。</p>
+     *
+     * @param text 源文本
+     * @param from 区间起点(含)
+     * @param to   区间终点(不含)
+     * @return true = 区间内有空白
+     */
+    private static boolean hasWhitespaceIn(String text, int from, int to) {
+        for (int i = Math.max(0, from); i < to; i++) {
+            char c = text.charAt(i);
+            if (c == '\u00a7' && i + 1 < to) {
+                i++;
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** @return [from, to) 区间内是否存在可见字符(§ 格式码对与空白不计)。 */
