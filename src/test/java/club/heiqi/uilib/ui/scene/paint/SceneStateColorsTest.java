@@ -32,6 +32,23 @@ public class SceneStateColorsTest {
                 SceneStateColors.selectedBackground(true, false, false));
     }
 
+    /**
+     * 危险通道四态。禁用态刻意走 {@code DANGER_BG_DISABLED}（Red 通道自己的禁用色），
+     * 而不是灰通道 {@code BG_DISABLED} —— 该 token 早已存在却长期零消费者，
+     * 因为危险按钮此前根本没有 disabled 派生路径。
+     */
+    @Test
+    public void dangerBackgroundShouldResolveAllBranches() {
+        Assert.assertEquals("禁用态危险背景", SceneChromeTokens.DANGER_BG_DISABLED,
+                SceneStateColors.dangerBackground(false, true, true));
+        Assert.assertEquals("按下态危险背景", SceneChromeTokens.DANGER_BG_PRESSED,
+                SceneStateColors.dangerBackground(true, true, true));
+        Assert.assertEquals("悬停态危险背景", SceneChromeTokens.DANGER_BG_HOVER,
+                SceneStateColors.dangerBackground(true, true, false));
+        Assert.assertEquals("默认态危险背景", SceneChromeTokens.DANGER_BG,
+                SceneStateColors.dangerBackground(true, false, false));
+    }
+
     @Test
     public void standardBorderShouldResolveAllBranches() {
         Assert.assertEquals("禁用态边框", SceneChromeTokens.BORDER_DISABLED,

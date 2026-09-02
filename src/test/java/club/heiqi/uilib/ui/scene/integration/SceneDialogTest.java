@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
@@ -28,6 +29,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
@@ -143,6 +145,15 @@ public class SceneDialogTest {
             parent = parent.__getParent();
         }
         return new int[] {ax + b.getWidth() / 2, ay + b.getHeight() / 2};
+    }
+
+    /** 单发指针事件（MOVE/DOWN/UP 分开路由，用于观察 hover 与按下中间态）。 */
+    private void routePointer(ScenePointerAction action, int absX, int absY) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofPointer(action, absX, absY,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
+        runtime.flush();
     }
 
     private void pressAndReleaseAt(int absX, int absY) {
@@ -376,4 +387,132 @@ public class SceneDialogTest {
         tickAndFlush(1_000_000_000L + LEAVE);
         Assert.assertEquals("ESC 后卸载", 0, overlaySize());
     }
+
+    // ==================== 内容换行：盒宽与换行宽同源 ====================
+
+    /**
+     * 锁：标题/正文的换行宽必须等于「卡片实测内容宽」。
+     *
+     * <p>真机缺陷：卡片固定 320px 且开了 clipChildren，文本节点却从未设换行宽，
+     * 长 URL 以单行 intrinsic 宽度撑出盒子后被静默裁切（弹窗显示内容不全，且无任何报错）。
+     * 内容宽从<b>布局盒与节点自身 padding/border</b>实测，不拿同一组常量重算 ——
+     * 后者是恒等式，证不出东西；只有实测才能在盒宽与换行宽再次分叉时变红。</p>
+     */
+    @Test
+    public void titleAndMessageWrapWidthTracksMeasuredCardContentWidth() {
+        openDialog(Arrays.asList(SceneDialog.Button.of("关闭", null)));
+        SceneNode card = cardNode();
+        LayoutBox cardBox = (LayoutBox) card.getCachedLayout();
+        Assert.assertNotNull("卡片已布局", cardBox);
+        int contentWidth = cardBox.getWidth() - card.getPaddingLeft() - card.getPaddingRight()
+                - 2 * card.getBorderWidth();
+        Assert.assertTrue("卡片内容宽为正数", contentWidth > 0);
+
+        SceneNode title = card.__getChildren().get(0);
+        SceneNode message = card.__getChildren().get(1);
+        Assert.assertEquals("标题换行宽=实测内容宽", contentWidth, title.getMaxTextWidth());
+        Assert.assertEquals("正文换行宽=实测内容宽", contentWidth, message.getMaxTextWidth());
+    }
+
+    /**
+     * 锁：换行宽必须是「盒宽减去内边距与边框」的正数，不得回退成 0（0=不换行）。
+     *
+     * <p>{@code maxTextWidth<=0} 在布局层语义是「不折行」，正是缺陷 1 的成因；
+     * 本用例把这条边界钉死，防止有人把换行宽重新乘回某个错误的除数。</p>
+     */
+    @Test
+    public void messageWrapWidthMustBePositiveAndNarrowerThanCard() {
+        int wrap = SceneDialog.messageWrapWidthPx();
+        Assert.assertTrue("换行宽为正(0 等于关掉换行)", wrap > 0);
+        Assert.assertTrue("换行宽必须窄于卡片，给内边距与边框留位置", wrap < 320);
+    }
+
+    // ==================== 按钮交互反馈（hover / pressed / cursor） ====================
+
+    /**
+     * 真指针驱动的 hover/pressed/cursor：主操作按钮必须有可感知反馈。
+     *
+     * <p>真机缺陷：对话框按钮只在创建时设过一次静态底色，既不响应悬停也不响应按下，
+     * 光标也不切手型（用户反馈「窗口没有 hover 等响应」）。四态派生归共享控件后，
+     * 这里用真实指针事件流（MOVE→DOWN→UP→移开）逐档验证外观确实变了。</p>
+     */
+    @Test
+    public void primaryButtonRespondsToHoverPressAndRelease() {
+        openDialog(Arrays.asList(
+                SceneDialog.Button.of("取消", null),
+                new SceneDialog.Button("确定", SceneDialog.ButtonKind.PRIMARY, false, null)));
+        SceneNode ok = buttonNode(1);
+        int[] c = absCenter(ok);
+        Assert.assertEquals("静止态=ACCENT 主色", SceneChromeTokens.ACCENT, ok.getBackgroundColor());
+
+        routePointer(ScenePointerAction.MOVE, c[0], c[1]);
+        Assert.assertEquals("悬停切 ACCENT_HOVER", SceneChromeTokens.ACCENT_HOVER, ok.getBackgroundColor());
+        Assert.assertEquals("悬停切手型光标", SceneCursor.POINTER, ok.getCursor());
+
+        routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
+        Assert.assertEquals("按下切 ACCENT_PRESSED", SceneChromeTokens.ACCENT_PRESSED, ok.getBackgroundColor());
+
+        routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
+        Assert.assertEquals("抬起回到悬停档", SceneChromeTokens.ACCENT_HOVER, ok.getBackgroundColor());
+
+        routePointer(ScenePointerAction.MOVE, 4, 4); // 移到遮罩上（按钮外）
+        Assert.assertEquals("移开复原静止态", SceneChromeTokens.ACCENT, ok.getBackgroundColor());
+    }
+
+    /** 普通按钮：静止落面板底色、悬停提亮一档（旧实现把 hover 色当静态底色写死）。 */
+    @Test
+    public void normalButtonRestsOnStandardBackgroundAndLightensOnHover() {
+        openDialog(Arrays.asList(SceneDialog.Button.of("取消", null)));
+        SceneNode cancel = buttonNode(0);
+        Assert.assertEquals("静止态=面板底色", SceneChromeTokens.BG_DEFAULT, cancel.getBackgroundColor());
+        int[] c = absCenter(cancel);
+        routePointer(ScenePointerAction.MOVE, c[0], c[1]);
+        Assert.assertEquals("悬停提亮一档", SceneChromeTokens.BG_HOVER, cancel.getBackgroundColor());
+    }
+
+    /** 危险按钮：底色收口到共享 token（旧实现私藏一个同名不同值的 DANGER_BG），且同样有悬停档。 */
+    @Test
+    public void dangerButtonUsesSharedDangerTokensAndHovers() {
+        openDialog(Arrays.asList(
+                new SceneDialog.Button("删除", SceneDialog.ButtonKind.DANGER, false, null)));
+        SceneNode danger = buttonNode(0);
+        Assert.assertEquals("危险底走 token", SceneChromeTokens.DANGER_BG, danger.getBackgroundColor());
+        int[] c = absCenter(danger);
+        routePointer(ScenePointerAction.MOVE, c[0], c[1]);
+        Assert.assertEquals("危险按钮也有悬停反馈",
+                SceneChromeTokens.DANGER_BG_HOVER, danger.getBackgroundColor());
+    }
+
+    // ==================== 内聚化：不得再自带按钮/文本/调色板 ====================
+
+    /**
+     * 源码守卫：对话框必须把按钮行为、文本换行、面板外壳委托给既有权威。
+     *
+     * <p>本类历史上自带一份 {@code rt.on(CLICK/KEY_DOWN)}、一份静态配色、一份私藏 DANGER_BG，
+     * 与 {@code SceneButtonPrimitive}/{@code SceneStateColors} 并行演化，结果四态反馈整个缺失。
+     * 结构用例只证明"现在能用"，证明不了"没退回手搓"——这条按签名粒度钉住委托关系。</p>
+     */
+    @Test
+    public void dialogMustDelegateButtonAndTextToControlAuthorities() throws Exception {
+        java.nio.file.Path path = java.nio.file.Paths.get(
+                "src/main/java/club/heiqi/uilib/ui/scene/control/SceneDialog.java");
+        String raw = new String(java.nio.file.Files.readAllBytes(path),
+                java.nio.charset.StandardCharsets.UTF_8);
+        StringBuilder code = new StringBuilder();
+        for (String line : raw.split("\r?\n")) {
+            String t = line.trim();
+            if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) {
+                continue;
+            }
+            code.append(t).append('\n');
+        }
+        String src = code.toString();
+        Assert.assertFalse("按钮行为不得再自建（CLICK/KEY_DOWN 归 SceneButtonPrimitive）",
+                src.contains("SceneEventType"));
+        Assert.assertTrue("按钮必须委托 SceneButton", src.contains("SceneButton.create("));
+        Assert.assertTrue("标题/正文必须委托 SceneLabel", src.contains("SceneLabel.create("));
+        Assert.assertTrue("卡片外壳必须走 applyPanelChrome", src.contains("applyPanelChrome("));
+        Assert.assertFalse("本类不得再自带 0xFF 色值（调色板归 token）", src.contains("0xFF"));
+    }
 }
+

@@ -335,6 +335,16 @@ public class SceneButtonTest {
         Assert.assertEquals("回 enabled 背景", BG_ENABLED, buttonRoot.getBackgroundColor());
         Assert.assertEquals("R-D1: disabled→enabled 切换零重排", 0, result.getRelayoutCount());
 
+        // ②b 模拟 hover：moveTo 命中 label 中心 → Router 写 hovered=true → 背景提亮一档；
+        //     移开必须回静止档。此档此前在权威层**零断言**（BG_HOVER 常量声明了却没被任何
+        //     用例读过）：反向对照把 hovered 改成恒 false 时本类全绿，缺口即由此暴露。
+        harness.moveTo(labelNode());
+        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        Assert.assertEquals("hover 背景", BG_HOVER, buttonRoot.getBackgroundColor());
+        harness.moveAt(180, 90); // 按钮外（button 约占 0..34px）
+        layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        Assert.assertEquals("移开回静止背景", BG_ENABLED, buttonRoot.getBackgroundColor());
+
         // ③ 模拟 pressed：harness.press 命中 label 几何中心 → Router 写 pressed=true。
         //    核心验收（偏离 2 修复）：labelNode 已 setHitTestable(false)，命中穿透到 buttonRoot，
         //    故点 label 文字时最深命中目标恒为 buttonRoot，按钮正确进入 pressed 态——
@@ -514,4 +524,79 @@ public class SceneButtonTest {
         Assert.assertEquals("primary disabled 文本 TEXT_DISABLED",
                 SceneChromeTokens.TEXT_DISABLED, text.getTextStyle().getColor());
     }
+
+    /**
+     * 试金石 9c：DANGER variant 走 Red 通道四态，文本反白。
+     *
+     * <p>该变体是为「对话框危险按钮」补的：历史上对话框自带一份私藏 {@code 0xFFB3261E}，
+     * 与 {@link SceneChromeTokens#DANGER_BG} 同名不同值，且完全没有 disabled/hover 派生 ——
+     * {@code DANGER_BG_DISABLED} 这个 token 因此长期零消费者。收口后三态必须都能被读到。</p>
+     */
+    @Test
+    public void dangerVariantUsesDangerChannelFourStates() {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        labelSignal = Signal.create("Delete");
+        enabledSignal = Signal.create(Boolean.TRUE);
+        clickCount = new AtomicInteger(0);
+
+        SceneButton.Props props = new SceneButton.Props(
+                labelSignal, enabledSignal, clickCount::incrementAndGet, SceneButtonVariant.DANGER);
+        handle = runtime.mount(sceneRoot, SceneButton.create(runtime, props));
+        buttonRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("danger 启用背景 DANGER_BG",
+                SceneChromeTokens.DANGER_BG, buttonRoot.getBackgroundColor());
+        PaintPlan plan = doPaint();
+        PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertEquals("danger 文本反白",
+                SceneChromeTokens.TEXT_ON_ACCENT, text.getTextStyle().getColor());
+
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        Assert.assertEquals("danger 禁用落 DANGER_BG_DISABLED（该 token 此前无人消费）",
+                SceneChromeTokens.DANGER_BG_DISABLED, buttonRoot.getBackgroundColor());
+    }
+
+    /**
+     * 试金石 10：首次 flush 之前请求焦点也必须生效（懒创建时序契约）。
+     *
+     * <p>{@code focused()} 是懒创建 signal，Router 的 {@code writeFocused} 对未声明节点 null 短路
+     * （契约原文见 {@code SceneInteractionState#focused}）。缺陷原先被 SceneDialog 里一句手写
+     * 声明就地绕过；收口到共享控件后由 primitive 自己声明，所有调用方一并受益。</p>
+     *
+     * <p><b>本用例的顺序是判据的一部分</b>：必须 requestFocus 在前、首次 flush 在后。
+     * 若把 requestFocus 挪到 flush 之后，边框 computed 首跑已经把 {@code focused()} 建好，
+     * 用例就变成恒绿、测不到这条契约 —— 它第一版正是这么写坏的，靠反向对照才暴露。</p>
+     */
+    @Test
+    public void buttonAcceptsFocusRequestedBeforeFirstFlush() {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        labelSignal = Signal.create("OK");
+        enabledSignal = Signal.create(Boolean.TRUE);
+        clickCount = new AtomicInteger(0);
+
+        handle = runtime.mount(sceneRoot, SceneButton.create(runtime, new SceneButton.Props(
+                labelSignal, enabledSignal, clickCount::incrementAndGet, SceneButtonVariant.PRIMARY)));
+        buttonRoot = handle.getRoot();
+
+        runtime.requestFocus(buttonRoot); // 尚未 flush：写焦点只能落在已声明的 signal 上
+        runtime.flush();
+        Assert.assertEquals("首次 flush 前请求焦点应生效", Boolean.TRUE,
+                runtime.interactionState(buttonRoot).focused().get());
+    }
 }
+

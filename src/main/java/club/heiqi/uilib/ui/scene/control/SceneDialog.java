@@ -8,14 +8,12 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -32,8 +30,13 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>焦点陷阱零成本：active overlay 存在时 router 的 Tab 环自动限定在栈顶 overlay root 内
  *       （{@code SceneInputRouter.resolveFocusScope}）；打开时焦点落在第一个按钮；</li>
  *   <li>ESC 经 {@link OverlayDismissPolicy#DEFAULT} 请求关闭（回调 onDismiss，由调用方 set visible=false）；</li>
- *   <li>按钮：label + kind（PRIMARY/NORMAL/DANGER 上色）+ onClick；默认点击后请求关闭，
- *       closesDialog=false 只执行回调；焦点态按钮支持 Enter/Space 激活；</li>
+ *   <li>按钮：委托 {@link SceneButton}（行为在 {@code SceneButtonPrimitive}，四态外观在
+ *       {@code SceneStateColors}），{@link ButtonKind} 只做 variant 映射；hover/pressed/focus/
+ *       cursor 与 Enter/Space 全部继承，本类不再自带色值；默认点击后请求关闭，
+ *       closesDialog=false 只执行回调；</li>
+ *   <li>标题/正文经 {@link SceneLabel} 按<b>卡片内容宽</b>换行（盒宽与换行宽同源，
+ *       见 {@link #messageWrapWidthPx()}）；长 URL 这类无空格词由字体层硬切，
+ *       不再以单行 intrinsic 宽度撑出盒子后被裁剪静默吞掉；</li>
  *   <li>命令式便捷 API：{@link #alert} 单按钮确认、{@link #confirm} 双按钮确认（内部管理 visible）。</li>
  * </ul>
  */
@@ -54,14 +57,10 @@ public final class SceneDialog {
     private static final int CARD_GAP = SceneChromeTokens.PAD_MD;
     /** 按钮行间距。 */
     private static final int BUTTON_GAP = 8;
-    /** 按钮内边距。 */
-    private static final int BUTTON_PAD_V = 6;
-    /** 按钮内边距。 */
-    private static final int BUTTON_PAD_H = 12;
     /** 遮罩色：80% 不透明暗色（与 modernconfig 遮罩同源观感）。 */
     private static final int SCRIM_ARGB = 0xCC121016;
-    /** 危险按钮背景（Material error）。 */
-    private static final int DANGER_BG = 0xFFB3261E;
+    /** 卡片边框宽度，必须与 {@code SceneChromeTokens.applyPanelChrome} 的 1px 外壳一致。 */
+    private static final int CARD_BORDER = 1;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneDialog() {
@@ -260,22 +259,13 @@ public final class SceneDialog {
         card.setPreferredWidth(CARD_WIDTH);
         card.setPadding(CARD_PADDING);
         card.setGap(CARD_GAP);
-        card.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
-        card.setBorderWidth(1);
-        card.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
-        card.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        card.setClipChildren(true);
+        SceneChromeTokens.applyPanelChrome(card, SceneChromeTokens.RADIUS_MD);
         scrim.appendChild(card);
 
-        SceneNode title = new SceneNode();
-        title.setText(SceneTextUtils.nullSafe(props.title()));
-        title.setHitTestable(false);
-        card.appendChild(title);
-
-        SceneNode message = new SceneNode();
-        message.setText(SceneTextUtils.nullSafe(props.message()));
-        message.setHitTestable(false);
-        card.appendChild(message);
+        // 标题/正文按卡片内容宽换行；换行宽与盒宽同源（见 messageWrapWidthPx）。
+        int wrapWidth = messageWrapWidthPx();
+        mountLabel(rt, card, props.title(), wrapWidth);
+        mountLabel(rt, card, props.message(), wrapWidth);
 
         SceneNode buttonRow = SceneNode.row();
         buttonRow.setMainAxisAlign(MainAxisAlign.END);
@@ -284,8 +274,19 @@ public final class SceneDialog {
 
         boolean first = true;
         for (Button button : props.buttons()) {
-            SceneNode buttonNode = buildButton(rt, button, props.onDismiss());
-            buttonRow.appendChild(buttonNode);
+            // 行为（CLICK / Enter / Space / focusable）与四态外观全部由 SceneButton 提供，
+            // 本类只声明语义（label + kind + 激活动作）。
+            MountHandle buttonHandle = rt.mount(buttonRow, SceneButton.create(rt, new SceneButton.Props(
+                    Signal.create(button.label()),
+                    Signal.create(Boolean.TRUE),
+                    activate(button, props.onDismiss()),
+                    toVariant(button.kind()))));
+            SceneNode buttonNode = buttonHandle.getRoot();
+            if (buttonNode == null) {
+                continue;
+            }
+            // 按钮宽度由文案决定（与 PlaygroundKit/FormActionBar 同款装配口径）
+            buttonNode.setWidthSizing(SceneNode.WidthSizing.SHRINK);
             if (first) {
                 // 打开即聚焦第一个按钮（Tab 环在 active overlay 内循环）
                 rt.requestFocus(buttonNode);
@@ -317,25 +318,33 @@ public final class SceneDialog {
     }
 
     /**
-     * 构建单个按钮节点。
+     * 挂一个按卡片内容宽换行的文本标签。
+     *
+     * <p>走 {@link SceneLabel} 而非裸 {@code SceneNode.setText}：换行开关（{@code maxTextWidth}）、
+     * 限行、省略号、字号与文本色 token 全在标签控件里，对话框只负责给宽度。</p>
+     *
+     * @param rt        场景运行时
+     * @param card      卡片节点
+     * @param text      文本（可为 null，按空串处理）
+     * @param wrapWidth 换行宽度（= 卡片内容宽）
      */
-    private static SceneNode buildButton(SceneRuntime rt, Button button, Runnable onDismiss) {
-        SceneNode buttonNode = SceneNode.row();
-        buttonNode.setWidthSizing(SceneNode.WidthSizing.SHRINK);
-        buttonNode.setPadding(BUTTON_PAD_V, BUTTON_PAD_H, BUTTON_PAD_V, BUTTON_PAD_H);
-        buttonNode.setCornerRadius(SceneChromeTokens.RADIUS_SM);
-        buttonNode.setBackgroundColor(resolveButtonBackground(button.kind()));
-        // 声明关心 focused（writeFocused 对未声明节点 null 短路）+ 建容器，再进 Tab 环
-        rt.interactionState(buttonNode).focused();
-        rt.focusable(buttonNode, Signal.create(Boolean.TRUE));
+    private static void mountLabel(SceneRuntime rt, SceneNode card, String text, int wrapWidth) {
+        rt.mount(card, SceneLabel.create(rt, SceneLabel.Props.builder(
+                Signal.create(SceneTextUtils.nullSafe(text))).wrapWidth(wrapWidth).build()));
+    }
 
-        SceneNode label = new SceneNode();
-        label.setText(button.label());
-        label.setHitTestable(false);
-        label.setTextColor(resolveButtonTextColor(button.kind()));
-        buttonNode.appendChild(label);
-
-        Runnable activate = () -> {
+    /**
+     * 按钮激活动作：先执行调用方回调，再按 {@code closesDialog} 请求关闭。
+     *
+     * <p>点击与 Enter/Space 的接线在 {@code SceneButtonPrimitive} 内完成，这里只组合语义。
+     * 历史上本类自带一份 {@code rt.on(CLICK/KEY_DOWN)} 副本，与 primitive 并行演化。</p>
+     *
+     * @param button    按钮描述
+     * @param onDismiss 关闭请求回调
+     * @return 激活动作
+     */
+    private static Runnable activate(Button button, Runnable onDismiss) {
+        return () -> {
             if (button.onClick() != null) {
                 button.onClick().run();
             }
@@ -343,20 +352,24 @@ public final class SceneDialog {
                 onDismiss.run();
             }
         };
-        rt.on(buttonNode, SceneEventType.CLICK, (ev, ctx) -> {
-            activate.run();
-            ctx.stopPropagation();
-        });
-        rt.on(buttonNode, SceneEventType.KEY_DOWN, (ev, ctx) -> {
-            if (ev.getKeyAction() != SceneKeyAction.PRESSED) {
-                return;
-            }
-            if (ev.getKey() == SceneKey.ENTER || ev.getKey() == SceneKey.SPACE) {
-                activate.run();
-                ctx.stopPropagation();
-            }
-        });
-        return buttonNode;
+    }
+
+    /**
+     * 对话框按钮语义 → 共享按钮视觉变体（唯一映射点；本类不再持有任何色值）。
+     *
+     * @param kind 按钮语义
+     * @return 对应变体
+     */
+    private static SceneButtonVariant toVariant(ButtonKind kind) {
+        switch (kind) {
+            case PRIMARY:
+                return SceneButtonVariant.PRIMARY;
+            case DANGER:
+                return SceneButtonVariant.DANGER;
+            case NORMAL:
+            default:
+                return SceneButtonVariant.STANDARD;
+        }
     }
 
     /** 帧时间进度（0..1，clamp 到动画时长）。 */
@@ -371,31 +384,16 @@ public final class SceneDialog {
     }
 
     /**
-     * 解析按钮背景色（按 kind）。
+     * 标题/正文的换行宽度 = 卡片内容宽（<b>盒宽与换行宽同源</b>）。
+     *
+     * <p>历史缺陷：卡片固定 {@value #CARD_WIDTH}px 且开了 {@code clipChildren}，而文本节点从未
+     * 设置换行宽，长 URL 以单行 intrinsic 宽度撑出盒子后被静默裁切 —— 真机表现为「弹窗显示内容不全」，
+     * 且没有任何报错。本方法把两个数字钉在同一来源上：改 {@code CARD_WIDTH} 或内边距，
+     * 换行宽自动跟随，不会再各说各话。</p>
+     *
+     * @return 文本可用宽度（像素）
      */
-    private static int resolveButtonBackground(ButtonKind kind) {
-        switch (kind) {
-            case PRIMARY:
-                return SceneChromeTokens.BORDER_FOCUS;
-            case DANGER:
-                return DANGER_BG;
-            case NORMAL:
-            default:
-                return SceneChromeTokens.BG_HOVER;
-        }
-    }
-
-    /**
-     * 解析按钮文本色（按 kind）。
-     */
-    private static int resolveButtonTextColor(ButtonKind kind) {
-        switch (kind) {
-            case PRIMARY:
-            case DANGER:
-                return SceneChromeTokens.TEXT_ON_ACCENT;
-            case NORMAL:
-            default:
-                return SceneChromeTokens.TEXT_PRIMARY;
-        }
+    public static int messageWrapWidthPx() {
+        return CARD_WIDTH - 2 * CARD_PADDING - 2 * CARD_BORDER;
     }
 }

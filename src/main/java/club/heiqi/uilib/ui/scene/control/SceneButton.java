@@ -54,7 +54,7 @@ public final class SceneButton {
      * @param label   文本内容（响应式只读）
      * @param enabled 是否启用（响应式只读），false 时禁用点击/键盘并切灰态
      * @param onClick 动作输出回调，点击或 Enter/Space 激活时触发
-     * @param variant 视觉变体，STANDARD 灰底 / PRIMARY ACCENT 蓝底白字
+     * @param variant 视觉变体，STANDARD 灰底 / PRIMARY ACCENT 蓝底白字 / DANGER Red 危险底白字
      */
     @Desugar
     public record Props(
@@ -98,27 +98,35 @@ public final class SceneButton {
             root.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
             root.setCornerRadius(BUTTON_RADIUS);
 
-            final boolean primary = props.variant() == SceneButtonVariant.PRIMARY;
+            final SceneButtonVariant variant = props.variant() == null
+                    ? SceneButtonVariant.STANDARD : props.variant();
+            // PRIMARY/DANGER 的底是实底强调色，文本必须走反白通道
+            final boolean onAccent = variant == SceneButtonVariant.PRIMARY
+                    || variant == SceneButtonVariant.DANGER;
 
             // 背景 state layer：Config runtime 用 fast Motion 插值，其它 runtime 保持立即切换。
-            rt.__bindAnimatedColor(() -> primary
-                    ? SceneStateColors.selectedBackground(
-                        Boolean.TRUE.equals(props.enabled().get()),
-                        Boolean.TRUE.equals(interaction.hovered().get()),
-                        Boolean.TRUE.equals(interaction.pressed().get()))
-                    : SceneStateColors.standardBackground(
-                        Boolean.TRUE.equals(props.enabled().get()),
-                        Boolean.TRUE.equals(interaction.hovered().get()),
-                        Boolean.TRUE.equals(interaction.pressed().get())),
-                root::setBackgroundColor,
-                SceneChromeTokens.MOTION_FAST_MS);
+            // 三变体共用同一优先级（disabled > pressed > hover > default），差别只在色通道：
+            // 换行成本 = 加一个 case，而不是再抄一份四态判定。
+            rt.__bindAnimatedColor(() -> {
+                boolean enabled = Boolean.TRUE.equals(props.enabled().get());
+                boolean hovered = Boolean.TRUE.equals(interaction.hovered().get());
+                boolean pressed = Boolean.TRUE.equals(interaction.pressed().get());
+                switch (variant) {
+                    case PRIMARY:
+                        return SceneStateColors.selectedBackground(enabled, hovered, pressed);
+                    case DANGER:
+                        return SceneStateColors.dangerBackground(enabled, hovered, pressed);
+                    case STANDARD:
+                    default:
+                        return SceneStateColors.standardBackground(enabled, hovered, pressed);
+                }
+            }, root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
 
             SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
 
-            // 文本色：primary 用 TEXT_ON_ACCENT（白），standard 用 TEXT_PRIMARY
-            rt.bindComputed(() -> primary
-                    ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
-                    : SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), false),
+            // 文本色：强调底（primary/danger）反白，standard 用 TEXT_PRIMARY
+            rt.bindComputed(() -> SceneStateColors.standardText(
+                    Boolean.TRUE.equals(props.enabled().get()), onAccent),
                 result.label()::setTextColor);
 
             SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);

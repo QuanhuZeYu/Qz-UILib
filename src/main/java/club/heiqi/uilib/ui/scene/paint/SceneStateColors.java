@@ -59,6 +59,32 @@ public final class SceneStateColors {
     }
 
     /**
+     * 危险动作背景四态（删除/不可恢复等危险按钮）。
+     *
+     * <p>走 Red 通道而非 Slate/ACCENT 通道，优先级与其它三态一致：
+     * disabled &gt; pressed &gt; hover &gt; default。禁用态必须落 {@link
+     * SceneChromeTokens#DANGER_BG_DISABLED}——历史缺陷是危险按钮只有静态底色，
+     * 既无 hover/pressed 反馈也不响应 disabled，三态 token 长期无人消费。</p>
+     *
+     * @param enabled 是否启用
+     * @param hovered 是否悬停
+     * @param pressed 是否按下
+     * @return 对应危险背景色 token
+     */
+    public static int dangerBackground(boolean enabled, boolean hovered, boolean pressed) {
+        if (!enabled) {
+            return SceneChromeTokens.DANGER_BG_DISABLED;
+        }
+        if (pressed) {
+            return SceneChromeTokens.DANGER_BG_PRESSED;
+        }
+        if (hovered) {
+            return SceneChromeTokens.DANGER_BG_HOVER;
+        }
+        return SceneChromeTokens.DANGER_BG;
+    }
+
+    /**
      * 边框三态。focus 走 border ring（borderColor 切蓝），borderWidth 常驻不动。
      * 优先级：disabled > focused > default。
      *

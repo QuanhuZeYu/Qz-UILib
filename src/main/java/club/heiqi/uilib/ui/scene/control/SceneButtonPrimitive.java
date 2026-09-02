@@ -75,6 +75,11 @@ public final class SceneButtonPrimitive {
         rt.bindText(labelNode, props.label());
 
         SceneInteractionState is = rt.interactionState(root);
+        // ★ 时序契约（见 SceneInteractionState#focused javadoc）：focused() 是懒创建，必须在任何
+        // writeFocused 之前声明关心，否则 Router 的写入因 signal 尚未创建而 null 短路，
+        // 现象是「requestFocus 调了，focused 却恒 false」。焦点是本 primitive 的职责，
+        // 声明就归它，不能让每个 wrapper 各自补一次。
+        is.focused();
 
         rt.focusable(root, props.enabled());
         rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {

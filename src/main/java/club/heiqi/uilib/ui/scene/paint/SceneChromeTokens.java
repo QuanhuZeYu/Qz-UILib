@@ -194,6 +194,14 @@ public final class SceneChromeTokens {
      */
     public static final int DANGER_BG = 0xFF7F1D1D;
     /**
+     * 危险动作悬停背景色（Red-800，比 {@link #DANGER_BG} 提亮一档）。
+     */
+    public static final int DANGER_BG_HOVER = 0xFF991B1B;
+    /**
+     * 危险动作按下背景色（Red-950，比 {@link #DANGER_BG} 压暗一档）。
+     */
+    public static final int DANGER_BG_PRESSED = 0xFF5C1414;
+    /**
      * 危险动作禁用背景色（暗红，用于删除按钮禁用态）。
      */
     public static final int DANGER_BG_DISABLED = 0xFF3F2A2A;
