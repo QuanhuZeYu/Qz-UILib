@@ -179,7 +179,16 @@ public final class ChatMarkdownSettings {
      * 亮背景上会把浅色文字一起洗白；黑 tint 压暗背景才保得住对比度——这既是可读性约束，
      * 也正是真机反馈"DARK 系列更有苹果味"的成因。</p>
      */
-    private static volatile int glassBubbleAlpha = 0x8C;
+    /**
+     * 玻璃态气泡底色 alpha。
+     *
+     * <p>取 0x73（45%）而不是初版的 0x8C（55%）：这层底色是<b>乘在玻璃之上</b>的一层实心
+     * 填充，会把 shader 算出的折射缘带与镜面高光按 (1-a) 衰减掉。真机反馈「缘带黑黑的、
+     * 没有光泽」时实测侧缘镜面 +4/255 被压到 +2，而同一位置的变暗有 -23/255 —— 材质档
+     * 自己已有 0.20 的黑 tint 在压背景，实心层再叠 55% 属于双重遮罩。降到 45% 后玻璃与
+     * 高光才透得出来，正文对比度由材质 tint 兜住。</p>
+     */
+    private static volatile int glassBubbleAlpha = 0x73;
     /** 玻璃态下的容器底 alpha（比气泡更透，让层级差留在"气泡更实"上）。 */
     private static volatile int glassContainerAlpha = 0x59;
     /** 玻璃态下的输入条底 alpha。 */

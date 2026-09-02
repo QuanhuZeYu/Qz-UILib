@@ -37,6 +37,8 @@ import org.junit.Test;
 public class UiBackdropShaderSyntaxTest {
 
     private static final String FRAG = "src/main/resources/shader/uiBackdropF.frag";
+    private static final String RENDERER =
+            "src/main/java/club/heiqi/uilib/ui/render/UiBackdropFilterRenderer.java";
     private static final String VERT = "src/main/resources/shader/uiBackdropV.vert";
 
     /** 需扩展才可用的采样函数：出现在代码区即视为移植性风险。 */
@@ -84,7 +86,9 @@ public class UiBackdropShaderSyntaxTest {
         assertTrue("白 tint 必须按背景亮度门控（whiteGate），否则暗背景洗灰",
                 code.indexOf("whiteGate") >= 0);
         assertTrue("材质合成必须引用门控后的 tint",
-                code.indexOf("materialTint.a + edgeTint * lensBevel) * whiteGate") >= 0);
+                code.indexOf("materialTint.a + edgeTint * lensBevel * thicknessGate) * whiteGate") >= 0);
+        assertTrue("缘带厚度变暗必须受背景亮度门控（暗背景上叠近黑 tint 只会糊出脏黑边）",
+                code.indexOf("thicknessGate = smoothstep") >= 0);
     }
 
     /**
@@ -105,6 +109,24 @@ public class UiBackdropShaderSyntaxTest {
                 code.indexOf("lensShortHalf * 0.5") >= 0);
         assertTrue("折射位移必须以缘带梯度为前提（lensShift 乘 lensBevel）",
                 code.indexOf("lensBevel * refraction") >= 0);
+    }
+
+    /**
+     * 液态档的镜面高光增益必须在位。
+     *
+     * <p>材质档的 edgeHighlight（DARK 系 0.04~0.055）是为 1.5px 经典发丝边标定的；直接
+     * 拿来撑立体倒角会差一个数量级，真机上侧缘镜面只剩 +4/255、同位置 edgeTint 的变暗却有
+     * -23/255，用户看到的就是「一圈黑边、没有光泽」。液态档必须按透镜强度放大该值，
+     * 且经典档严格不受影响（否则旧观感回归）。</p>
+     */
+    @Test
+    public void liquidSpecularOutweighsClassicEdge() throws IOException {
+        String code = stripComments(read(RENDERER));
+        assertTrue("液态档必须按 lensStrength 放大 edgeHighlight（经典档恒 1.0 倍）",
+                code.indexOf("liquid ? 1.0F + 3.6F * effect.getLensStrength() : 1.0F") >= 0);
+        String frag = stripComments(read(FRAG));
+        assertTrue("缘带纵向衰减只属于经典档，液态档四条边都接光",
+                frag.indexOf("borderWeight = borderBand;") >= 0);
     }
 
     private static void assertBalanced(String relative) throws IOException {

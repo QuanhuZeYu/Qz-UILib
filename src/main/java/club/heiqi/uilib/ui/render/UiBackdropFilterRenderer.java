@@ -327,7 +327,12 @@ final class UiBackdropFilterRenderer {
                 material.getTintBlue(), material.getTintAlpha());
         BACKDROP_SHADER_PROGRAM.setUniform3f("materialLift", material.getLuminanceLift(),
                 material.getLuminanceLift(), material.getLuminanceLift());
-        BACKDROP_SHADER_PROGRAM.setUniformF("edgeHighlight", material.getEdgeHighlight());
+        // 液态档的抛光缘必须显著强于经典档：edgeHighlight 原值（DARK 系 0.04~0.055）是
+        // 为 1.5px 发丝边标定的，用来撑立体倒角会差一个数量级——真机实测侧缘镜面只有
+        // +4/255，同位置 edgeTint 的变暗有 -23/255，于是"缘带只剩黑、没有光泽"。
+        // 增益随液态强度线性放大（50% 处 ×2.8，拉满 ×4.6），经典档严格不受影响。
+        BACKDROP_SHADER_PROGRAM.setUniformF("edgeHighlight", material.getEdgeHighlight()
+                * (liquid ? 1.0F + 3.6F * effect.getLensStrength() : 1.0F));
         BACKDROP_SHADER_PROGRAM.setUniformF("innerLightTop", material.getInnerLightTop());
         BACKDROP_SHADER_PROGRAM.setUniformF("innerShadowBottom", material.getInnerShadowBottom());
         BACKDROP_SHADER_PROGRAM.setUniformF("noiseAmount", material.getNoiseAmount());

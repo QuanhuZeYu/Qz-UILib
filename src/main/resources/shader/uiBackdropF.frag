@@ -195,9 +195,13 @@ void main(void) {
         float backdropLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         float whiteGate = mix(1.0, smoothstep(0.05, 0.55, backdropLuma), step(0.5, tintLuma));
         // 厚度 tint：真实玻璃边缘更厚、吃色更多——edgeTint 沿缘带递增蒙层（经典档
-        // edgeTint=0，逐项恒等）。
+        // edgeTint=0，逐项恒等）。但它必须同样受背景亮度门控：吸收型变暗只在亮背景上
+        // 成立（光程长、吃掉得多），暗背景上再叠近黑 tint 只是把缘带糊成一条脏黑边。
+        // 真机实测（2026-09-02 容器左缘）暗 23 个单位、亮边仅 2~4 个单位，用户反馈
+        // "没有光泽、黑黑的"即此。玻璃缘的第一线索永远是镜面高光，吸收是次要线索。
+        float thicknessGate = smoothstep(0.15, 0.55, backdropLuma);
         color = mix(color, materialTint.rgb,
-                clamp((materialTint.a + edgeTint * lensBevel) * whiteGate, 0.0, 1.0));
+                clamp((materialTint.a + edgeTint * lensBevel * thicknessGate) * whiteGate, 0.0, 1.0));
         // 亮度补偿同受门控：不门控的话 tint 不抬黑场、lift 却抬，灰底照样被洗白。
         color = color + materialLift * whiteGate;
     } else {
@@ -210,7 +214,14 @@ void main(void) {
     // 只剩约 1 个亮像素，真机上缘光被量化吃掉（聊天气泡"看不出有液态"的第二成因）。
     float rimBandPx = liquidGlass > 0.5 ? 2.0 : 1.5;
     float borderBand = 1.0 - smoothstep(0.0, rimBandPx, edgeDistance);
+    // 经典档沿用 iOS 导航栏的"亮边集中在顶缘"衰减（0.30 起）；液态档不能衰减——
+    // 它模拟的是有厚度的<b>立体倒角</b>，四条边都会接光，只是接光量随光源方向不同
+    // （由下面的 dot 项表达）。再叠一层纵向衰减会把左右/下缘的高光压到不可见，
+    // 实测侧缘镜面只剩 +4/255，整圈看下来就只剩暗带。
     float borderWeight = borderBand * mix(0.30, 1.0, 1.0 - clamp(panelUv.y, 0.0, 1.0));
+    if (liquidGlass > 0.5) {
+        borderWeight = borderBand;
+    }
     if (liquidGlass > 0.5) {
         // 随动缘光：高光峰值沿边缘滑动到光源方向（官方语义"lighting responds to
         // device motion"，MC 无陀螺仪，宿主以鼠标为光源）。dot(外法线, 光源方向)
