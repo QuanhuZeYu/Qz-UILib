@@ -1165,15 +1165,31 @@ public final class ChatSceneController {
     }
 
     /**
-     * 取走本次 scene 点击记录(节点身份 + 命中链接 URL),读取即清空。
+     * 注册聊天链接点击出口(宿主)。CLICK 事件发生时即时投递,不经任何暂存。
      *
      * <p>本方法**不接收屏幕坐标**:命中判定在 scene 事件里用框架换算的节点局部坐标完成,
-     * 结果以节点身份交出。早先版本在这里收 screen 坐标再减绝对盒,把 MC 回调的 guiScale
-     * 缩放坐标与 scene 的物理像素几何两套空间混算,guiScale &gt; 1 时每次点击都判空 ——
-     * 链接点了没反应。宿主只取结果,不碰几何。</p>
+     * 交出的是结果而非坐标。宿主也不得在 {@code mouseClicked}(= POINTER_DOWN)时取账 ——
+     * CLICK 要到 POINTER_UP 才由 Router 合成,DOWN 时账上必空,那正是「链接要点第二下
+     * 才有效」的成因。另两版旧实现分别收 screen 坐标减绝对盒(guiScale &gt; 1 恒判空)、
+     * 以及在 DOWN 里取上一次记录,都已废弃。</p>
      */
-    public ChatLinkClick takePendingLinkClick() {
-        return messageList().takePendingLinkClick();
+    public void setMessageLinkClickHandler(
+            java.util.function.Consumer<ChatLinkClick> handler) {
+        messageList().setLinkClickHandler(handler);
+    }
+
+    /**
+     * 视图按真实内容几何回填行域滚动上限。
+     *
+     * <p>上限是**几何事实**(内容高 - 视口高),只有布局完成后的视口知道;但 clamp 必须落在
+     * 权威 {@code ChatHistory} 里,不能只留在渲染投影 —— 否则到顶后行域仍无界累加,往回滚要
+     * 先消费掉那些看不见的死值(真机反馈)。</p>
+     *
+     * @param ceilingLines 可向上滚动的最大显示行数
+     * @return 是否因收缩而把越界偏移拉回过(调用方据此决定是否重算视图)
+     */
+    boolean applyScrollCeilingLines(int ceilingLines) {
+        return history.setMaxScrollOffset(ceilingLines);
     }
 
     /** 懒取消息列表渲染器(依赖段解析器;供 ChatContainer 复用)。 */

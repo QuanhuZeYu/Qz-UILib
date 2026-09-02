@@ -80,6 +80,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
 
         container = ChatContainer.mount(runtime, controller, screenMessageNodes, initialText);
         root.appendChild(container.root());
+        // 链接点击:事件当场投递(不在 mouseClicked 里取账 —— CLICK 要到 UP 才合成)
+        controller.setMessageLinkClickHandler(this::onSceneLinkClick);
 
         // 滚轮滚动聊天历史(vanilla ±7/Shift±1 语义)。
         // 方向语义:wheelDelta > 0(滚轮向上)→ 正行数 → history.scrollBy(+) = 向旧消息
@@ -239,7 +241,7 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     }
 
     /**
-     * 行点击事件回投。
+     * 链接点击回投（scene CLICK 事件当场调用，见 {@link ChatSceneController#setMessageLinkClickHandler}）。
      *
      * <p>优先级：服务端显式下发的 click 事件 > 我们自己链接化出的跨度。前者保持原版语义
      * 不动（RUN_COMMAND / SUGGEST_COMMAND 是命令注入，加确认会改变既有行为，故**不弹窗**）；
@@ -248,14 +250,13 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
      * <p>后者是为了玩家手打的裸 URL：原版 {@code IChatComponent} 上不带 clickEvent，
      * 服务端也没下发可点区域，原来点了完全没反应。</p>
      *
-     * <p><b>不接收鼠标坐标。</b>命中信息全部来自 scene 的 CLICK 事件（{@link
-     * ChatSceneController#takePendingLinkClick()}）：MC 回调坐标是 guiScale 缩放后的逻辑
-     * 像素，而 chat3 几何是物理像素，两者不可无损换算（{@code McScreenBridge} 注释原话），
-     * 拿坐标做二次命中判定在 guiScale &gt; 1 时必然落空。节点身份反查注册表则与缩放无关。</p>
+     * <p><b>既不接收坐标，也不接收"稍后再取"的账。</b>坐标不可用（MC 回调是 guiScale 缩放值，
+     * chat3 几何是物理像素，不可无损换算），账更不能用：CLICK 在 POINTER_UP 才合成，而
+     * {@code mouseClicked} 在 POINTER_DOWN 就跑了 —— 在 DOWN 里取账等于每笔都慢一拍，
+     * 真机就是「要点第二下才有效」。</p>
      */
-    public void handleLineClick() {
-        ChatLinkClick hit = controller.takePendingLinkClick();
-        IChatComponent component = hit.componentFrom(screenMessageNodes);
+    void onSceneLinkClick(ChatLinkClick hit) {
+        IChatComponent component = hit.component();
         ClickEvent click = component == null ? null
                 : component.getChatStyle().getChatClickEvent();
         if (click != null) {

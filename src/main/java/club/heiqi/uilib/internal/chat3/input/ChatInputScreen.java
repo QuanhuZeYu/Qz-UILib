@@ -106,14 +106,10 @@ public final class ChatInputScreen extends McScreenBridge {
         }
     }
 
-    @Override
-    protected void mouseClicked(int mouseX, int mouseY, int button) {
-        super.mouseClicked(mouseX, mouseY, button);
-        if (button == 0) {
-            // 坐标不往下传:命中判据是 scene CLICK 记下的节点身份(见 handleLineClick 注释)
-            surface.handleLineClick();
-        }
-    }
+    // 点击不在此处消费:scene 的 CLICK 由 SceneInputRouter 在 POINTER_UP 合成,而
+    // mouseClicked 是 POINTER_DOWN。链接点击改由 ChatSceneController#setMessageLinkClickHandler
+    // 在 CLICK 发生的当刻投递(见 ChatInputSurface#onSceneLinkClick)。按下事件本身仍由父壳
+    // McScreenBridge.mouseClicked 推进 scene 输入管线,本类不再重写。
 
     /** 服务端补全响应(mixin 转交)。 */
     public void onAutocompleteResponse(String[] options) {

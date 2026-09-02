@@ -134,6 +134,53 @@ public class ChatHistoryTest {
     }
 
     @Test
+    public void scrollByMustStopAtKnownCeiling() {
+        // 真机反馈:到顶后继续上滚,渲染看着正常(投影 clamp),行域却无界累加,
+        // 往回滚要先消费掉那些看不见的死值。上限必须落在权威自己身上。
+        ChatHistory history = new ChatHistory(10);
+        Assert.assertFalse(history.setMaxScrollOffset(4));
+        history.scrollBy(9);
+        Assert.assertEquals("超过上限即截住", 4, history.getScroll());
+        history.scrollBy(3);
+        Assert.assertEquals(4, history.getScroll());
+        // 关键体感:往回滚第一格就必须真的动
+        history.scrollBy(-1);
+        Assert.assertEquals(3, history.getScroll());
+    }
+
+    @Test
+    public void shrinkingCeilingMustPullStaleOffsetBack() {
+        ChatHistory history = new ChatHistory(10);
+        history.scrollBy(12); // 上限未知时不设限(见下一条用例)
+        Assert.assertEquals(12, history.getScroll());
+        // 窗口拉高 / 历史裁剪 → 上限收缩:越界的账必须当场拉回
+        Assert.assertTrue("越界拉回必须回报,调用方据此重算视图",
+                history.setMaxScrollOffset(5));
+        Assert.assertEquals(5, history.getScroll());
+        Assert.assertFalse("已在上限内再回填同值不应误报", history.setMaxScrollOffset(5));
+    }
+
+    @Test
+    public void unknownCeilingMustStayUnconstrained() {
+        // 上限未知 != 不能滚。拿 0 当默认值会把首次布局之前的滚动凭空截断,
+        // 那是用"我还不知道"冒充"我知道不行"。
+        ChatHistory history = new ChatHistory(10);
+        history.scrollBy(1000);
+        Assert.assertEquals(1000, history.getScroll());
+        Assert.assertEquals(Integer.MAX_VALUE, history.getMaxScrollOffset());
+    }
+
+    @Test
+    public void zeroCeilingMustPinScrollToBottom() {
+        // 内容不足一屏(几何已知):一行都不许滚
+        ChatHistory history = new ChatHistory(10);
+        history.setMaxScrollOffset(0);
+        history.scrollBy(7);
+        Assert.assertEquals(0, history.getScroll());
+        Assert.assertFalse(history.isScrolled());
+    }
+
+    @Test
     public void shouldResetScroll() {
         ChatHistory history = new ChatHistory(10);
         history.scrollBy(9);

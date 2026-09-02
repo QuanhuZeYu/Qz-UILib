@@ -7,6 +7,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
+
+import net.minecraft.util.IChatComponent;
 
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
@@ -402,6 +405,7 @@ public final class ChatMessageList {
 
         private final ChatMessageList owner;
         private final SceneNode messageNode;
+        private final IChatComponent component;
         private final List<SceneNode> lineNodes;
         private final List<List<LinkSpan>> lineSpans;
         private final int lineStartOffset;
@@ -412,11 +416,12 @@ public final class ChatMessageList {
         /** 本驱动器上次应用的 URL(去重基准;不读共享 Signal 未提交值——set 是帧末批量提交)。 */
         private String lastUrl = "";
 
-        LinkHoverDriver(ChatMessageList owner, SceneNode messageNode, List<SceneNode> lineNodes,
-                List<List<LinkSpan>> lineSpans, int lineStartOffset, int lineHeight,
-                boolean[] lineHovered, MessageBake bake, int[] currentAlpha) {
+        LinkHoverDriver(ChatMessageList owner, SceneNode messageNode, IChatComponent component,
+                List<SceneNode> lineNodes, List<List<LinkSpan>> lineSpans, int lineStartOffset,
+                int lineHeight, boolean[] lineHovered, MessageBake bake, int[] currentAlpha) {
             this.owner = owner;
             this.messageNode = messageNode;
+            this.component = component;
             this.lineNodes = lineNodes;
             this.lineSpans = lineSpans;
             this.lineStartOffset = lineStartOffset;
@@ -453,7 +458,8 @@ public final class ChatMessageList {
                 return;
             }
             String url = resolveUrl(localX, localY);
-            owner.recordMessageClick(messageNode, url == null || url.isEmpty() ? null : url);
+            owner.deliverLinkClick(new ChatLinkClick(component,
+                    url == null || url.isEmpty() ? null : url));
         }
 
         /** 命中判定 + 行 hover 态写入,返回命中 URL(行内区域 = 文本包围盒上下 +2 / 左右 +1)。 */
@@ -581,18 +587,14 @@ public final class ChatMessageList {
             new java.util.IdentityHashMap<SceneNode, LinkHoverDriver>();
 
     /**
-     * 本次 scene 点击的记录(节点身份 + 命中链接 URL),由 takePendingLinkClick() 取走并清。
+     * 链接点击出口(宿主注册)。CLICK 事件发生时**立即**投递,不做任何延后消费。
      *
-     * <p>刻意只「记账」不「动作」:服务端显式 clickEvent 优先级更高。scene 点击先于 surface
-     * 的判定发生,若在此直接弹窗,一条带 OPEN_URL 的跨度会既走原版又走我们 —— 一次点击两个
-     * 动作。交由 surface 按优先级取用,才能保持单发。</p>
-     *
-     * <p>记的是<b>节点</b>不是坐标,理由见 {@link ChatLinkClick}:MC 回调坐标是 guiScale
-     * 缩放值,与 scene 的物理像素几何不可无损互换,任何"拿屏幕坐标减绝对盒"的命中判定在
-     * guiScale &gt; 1 时必然落空。</p>
+     * <p>旧实现把点击"记账"成 pending,等宿主在 {@code mouseClicked} 回调里取走 —— 那是
+     * 错的:scene 的 CLICK 由 {@code SceneInputRouter} 在 <b>POINTER_UP</b> 合成,而
+     * {@code mouseClicked} 对应 <b>POINTER_DOWN</b>。同一次点击里 DOWN 早于 UP,取账时账上
+     * 永远是空的,真机表现即「链接要点第二下才有效」,且第二下开的是上一次点的那条。</p>
      */
-    private SceneNode pendingClickNode;
-    private String pendingLinkUrl;
+    private Consumer<ChatLinkClick> linkClickHandler;
 
     /** 气泡最大宽上限(px,设计稿 §3.x:气泡 ≤ 0.85 组内容宽;0 = 不限制,headless 默认)。 */
     private volatile int maxBubbleWidthPx;
@@ -807,6 +809,8 @@ public final class ChatMessageList {
         int rLg = ChatMarkdownSettings.getBubbleCornerRadius();
         int rInner = ChatMarkdownSettings.getBubbleInnerCornerRadiusPx();
         List<SceneNode> messageNodes = new ArrayList<SceneNode>();
+        // 与 messageNodes 同序:点击时交出服务端组件(原版语义优先于我们的链接跨度)
+        List<IChatComponent> messageComponents = new ArrayList<IChatComponent>();
         List<SceneNode> accentBars = new ArrayList<SceneNode>();
         List<SceneNode> quoteBars = new ArrayList<SceneNode>();
         List<SceneNode> lineNodes = new ArrayList<SceneNode>();
@@ -1078,6 +1082,7 @@ public final class ChatMessageList {
             urlChain.close();
             groupNode.appendChild(messageNode);
             messageNodes.add(messageNode);
+            messageComponents.add(message.getRecord().getComponent());
             registry.put(messageNode, message.getRecord());
         }
         // ==================== T6a:气泡 hover 叠加 + 链接 hover/tooltip(两形态共用) ====================
@@ -1189,8 +1194,8 @@ public final class ChatMessageList {
                 // 惰性清理离树节点的旧驱动器(树重建后旧组节点不再有输入)
                 linkDrivers.entrySet().removeIf(entry -> entry.getKey().__getParent() == null);
                 final LinkHoverDriver driver = new LinkHoverDriver(this, messageNode,
-                        messageLineNodes, messageSpans, lineStart, lineHeight, lineHovered,
-                        bake, currentAlpha);
+                        messageComponents.get(i), messageLineNodes, messageSpans, lineStart,
+                        lineHeight, lineHovered, bake, currentAlpha);
                 linkDrivers.put(messageNode, driver);
                 final LinkHoverDriver boundDriver = driver;
                 rt.on(messageNode, SceneEventType.POINTER_MOVE, (ev, ctx) -> {
@@ -1354,23 +1359,23 @@ public final class ChatMessageList {
         return spans == null ? Collections.<LinkSpan>emptyList() : spans;
     }
 
-    /** scene CLICK handler 回调入口:记下点中的节点与命中 URL(单槽,后写覆盖)。 */
-    void recordMessageClick(SceneNode messageNode, String url) {
-        pendingClickNode = messageNode;
-        pendingLinkUrl = url;
+    /** scene CLICK handler 回调入口:立即投递给宿主(无暂存、无延后消费)。 */
+    void deliverLinkClick(ChatLinkClick click) {
+        Consumer<ChatLinkClick> handler = linkClickHandler;
+        if (handler != null) {
+            handler.accept(click);
+        }
     }
 
     /**
-     * 取走并清空本次 scene 点击记录(节点身份 + 命中链接 URL)。
+     * 注册链接点击出口(宿主)。
      *
      * <p>玩家手打的裸 URL 原版 {@code IChatComponent} 上不带 clickEvent,服务端也没下发可点
-     * 区域 —— 本出口让我们自己的链接化跨度补上这个能力。读取即清空:一次点击最多开一次。</p>
+     * 区域 —— 本出口让我们自己的链接化跨度补上这个能力。事件驱动:一次 CLICK 恰好一次投递,
+     * 不存在"上一次点击的残留"。</p>
      */
-    public ChatLinkClick takePendingLinkClick() {
-        ChatLinkClick taken = new ChatLinkClick(pendingClickNode, pendingLinkUrl);
-        pendingClickNode = null;
-        pendingLinkUrl = null;
-        return taken;
+    public void setLinkClickHandler(Consumer<ChatLinkClick> handler) {
+        linkClickHandler = handler;
     }
 
     /** 测试探针:消息节点 → 链接 hover 驱动器。 */

@@ -200,6 +200,49 @@ public class ChatContainerTest {
                 listViewport.getScrollOffsetY());
     }
 
+    /**
+     * 行域滚动上限必须由真实几何回填进**权威**(真机反馈:到顶后继续滚,后台记录仍在累加,
+     * 向下要先消费掉这些看不见的死值才能动)。
+     *
+     * <p>旧实现把上限委托给 {@code viewportScrollPx} 的投影 clamp(源码注释原话"上限由视口
+     * 偏移 clamp 折算保证"):渲染到顶就停,行域却无界增长。本用例走完整挂载 + 布局纪元桥接,
+     * 断言权威自身读数,并与真实几何对账 —— 上限既不能大(又回到累加)也不能小(顶部留死区)。</p>
+     */
+    @Test
+    public void overscrollUpMustStopAtGeometryCeilingInTheAuthority() {
+        ChatSceneController controller = controller();
+        controller.setHostViewport(400, 300);
+        controller.setChatOpen(true);
+        Mounted mounted = mountMixed(controller, 30, 12);
+        int lineHeight = ChatMarkdownSettings.getChatLineHeightPx();
+        int ceiling = (int) Math.ceil(
+                SceneGeometry.maxScrollY(mounted.listViewport) / (double) lineHeight);
+        Assert.assertTrue("前提:内容确实溢出视口", ceiling > 2);
+        Assert.assertEquals("布局完成后上限必须已回填进权威",
+                ceiling, controller.history().getMaxScrollOffset());
+
+        controller.history().scrollBy(ceiling * 5);
+        Assert.assertEquals("超滚必须被行域上限截住,不得累加死值",
+                ceiling, controller.history().getScroll());
+        controller.notifyDataChanged();
+        controller.tick(T0);
+        mounted.rt.flush();
+        controller.tick(T0 + 240L);
+        mounted.rt.flush();
+        Assert.assertEquals("上限处正好看到最旧一行(上限偏小会留死区)", 0,
+                mounted.listViewport.getScrollOffsetY());
+
+        // 关键体感:往回滚第一格必须真的动,不必先消费看不见的死值
+        controller.history().scrollBy(-1);
+        controller.notifyDataChanged();
+        controller.tick(T0 + 240L);
+        mounted.rt.flush();
+        controller.tick(T0 + 480L);
+        mounted.rt.flush();
+        Assert.assertTrue("回滚一格必须立刻产生位移",
+                mounted.listViewport.getScrollOffsetY() > 0);
+    }
+
     // ==================== V7 方案甲:行域唯一权威 + 假想几何投影 + 真实几何 clamp ====================
 
     /** 挂载句柄(控制器/运行时/消息视口,三测试共用)。 */

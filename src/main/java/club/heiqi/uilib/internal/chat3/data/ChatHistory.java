@@ -28,6 +28,14 @@ public final class ChatHistory {
 
     /** 自底部向上偏移的行数(0 = 未滚动)。 */
     private int scrollOffset = 0;
+    /**
+     * 行域滚动上限(显示行),由视图按真实内容几何回填。
+     *
+     * <p>默认 {@code Integer.MAX_VALUE} = **几何未知时不设限**,而不是 0。取 0 会让任何
+     * 首次布局之前的滚动(以及不经容器布局的调用方)被凭空拦腰截断,那是拿"我还不知道"
+     * 冒充"我知道不能滚"。已知上限后严格 clamp。</p>
+     */
+    private int maxScrollOffset = Integer.MAX_VALUE;
 
     /** 序列号分配器(进程内单调递增,每条入史记录唯一)。 */
     private long nextSequence = 1L;
@@ -110,12 +118,45 @@ public final class ChatHistory {
     }
 
     /**
-     * 滚动偏移(原版 scroll 语义:n &gt; 0 向旧消息,n &lt; 0 向新消息;下限 0)。
+     * 滚动偏移(原版 scroll 语义:n &gt; 0 向旧消息,n &lt; 0 向新消息;区间 [0, maxScrollOffset])。
+     *
+     * <p><b>上限必须在这里,不能在渲染投影里。</b>旧实现只有下限 0,注释写着"上限由视口偏移
+     * clamp 折算保证" —— 那是把权威约束委托给了显示层:渲染看着正常(到顶就停),行域却一路
+     * 无界累加,玩家要往回滚得先把这些**看不见的死值**全部消费掉,表现为"滚不动/要滚很久才动"。
+     * 上限由视图按真实几何回填({@link #setMaxScrollOffset});几何未知时保持 0。</p>
      *
      * @param amount 偏移增量
      */
     public synchronized void scrollBy(int amount) {
-        scrollOffset = Math.max(0, scrollOffset + amount);
+        scrollOffset = clampScroll(scrollOffset + amount);
+    }
+
+    /** 行域 clamp:[0, maxScrollOffset](上限为负时按 0 处理)。 */
+    private int clampScroll(int value) {
+        return Math.max(0, Math.min(value, Math.max(0, maxScrollOffset)));
+    }
+
+    /**
+     * 回填行域滚动上限(单位:显示行,由视图按真实内容几何算出)。
+     *
+     * <p>内容变少、窗口变高、历史裁剪都会让上限收缩;此时越界的当前偏移必须**当场拉回**,
+     * 否则又回到"账上留着看不见的死值"。</p>
+     *
+     * @param lines 可向上滚动的最大行数(负值按 0)
+     * @return 本次回填是否把当前偏移拉回过(调用方据此决定是否通知视图重算)
+     */
+    public synchronized boolean setMaxScrollOffset(int lines) {
+        int ceiling = Math.max(0, lines);
+        maxScrollOffset = ceiling;
+        int clamped = clampScroll(scrollOffset);
+        boolean pulledBack = clamped != scrollOffset;
+        scrollOffset = clamped;
+        return pulledBack;
+    }
+
+    /** @return 当前行域滚动上限(显示行) */
+    public synchronized int getMaxScrollOffset() {
+        return maxScrollOffset;
     }
 
     /** 复位滚动到底部(最新)。 */

@@ -254,6 +254,26 @@ public final class ChatContainer {
         scrollbar.column().setMargin(0, 2, 0, 0);
         listRow.appendChild(scrollbar.column());
 
+        // 行域滚动上限回填(修「到顶后继续滚,后台仍在累加」):上限是几何事实,只有布局完成后的
+        // 视口知道;但 clamp 必须写进权威 ChatHistory,而不是只靠上面 viewportScrollPx 的投影
+        // clamp —— 投影 clamp 让渲染看起来正常,行域却无界增长,往回滚要先消费掉死值。
+        // 终止性:仅当偏移被拉回时才 notifyDataChanged,重算后上限同值不再拉回 → 不形成回环。
+        rt.bind(rt.layoutDoneSignal(), done -> {
+            if (!(listViewport.getCachedLayout() instanceof LayoutBox)) {
+                return; // 布局未就位:此刻 maxScrollY 读到 0,回填会把偏移误清零
+            }
+            // 必须**向上**取整:行域是整数行,round 会把不足半行的余量抹掉,导致
+            // chatPx 永远够不到 maxScrollY —— 最上那几像素再也滚不出来(既有
+            // clampedTopDoesNotUnderflow / viewportOffsetKeepsBottomIdentity 当场抓到)。
+            // ceil 的代价是顶部最多多出不到一行(<18px)的死值,由投影 clamp 吸收,
+            // 有界且不可感;而旧行为的累加是**无界**的。
+            int ceilingLines = (int) Math.ceil(
+                    SceneGeometry.maxScrollY(listViewport) / (double) lineHeight);
+            if (controller.applyScrollCeilingLines(ceilingLines)) {
+                controller.notifyDataChanged();
+            }
+        });
+
         // 输入条(容器内底部,设计稿 §6.2:输入条区高 40 贴容器底)。
         // ★ 固定高(40)是 COLUMN 容器的"先验固定兄弟":缺了它,ConstraintResolver 的
         //   grow 分配会因"固定兄弟高度无法先验"而对 listRow 回退 shrink-to-fit,
