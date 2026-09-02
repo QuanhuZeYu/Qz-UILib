@@ -768,6 +768,35 @@ public class TextLayoutService {
     }
 
     /**
+     * 按指定语义化文本样式换行：字号<b>真实</b>参与逐码点测量。
+     *
+     * <p>与 {@link #trimStringToWidth(String, int, TextMeasureStyle)} 对称。不带宽度的旧入口
+     * 恒按基准字号（charSize）测量，非基准字号下会把过宽的行放行 —— 渲染层按节点字号绘制，
+     * 行就按比例溢出容器被裁。新入口是桥接层（scene splitLines）唯一应走的口径。</p>
+     *
+     * @param text      文本
+     * @param wrapWidth 换行宽度（UI 像素）
+     * @param style     文本样式快照（字号/模式/字重/字体风格）
+     * @return 包含换行符的新文本
+     */
+    public String wrapFormattedStringToWidth(String text, int wrapWidth, TextMeasureStyle style) {
+        lockGeneration();
+        try {
+            TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+            if (text == null || text.isEmpty() || wrapWidth <= 0) {
+                return "";
+            }
+            text = normalizeNfc(text);
+
+            return strategyFor(resolvedStyle.getTextContentMode()).wrap(text, wrapWidth,
+                    createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()),
+                    resolvedStyle.getFontSizePx());
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    /**
      * 将文本按宽度拆分为多行。
      *
      * @param text      文本
@@ -788,6 +817,22 @@ public class TextLayoutService {
      */
     public List<String> listFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
         String wrapped = wrapFormattedStringToWidth(text, wrapWidth, textContentMode);
+        if (wrapped.isEmpty()) {
+            return new ArrayList<String>();
+        }
+        return Arrays.asList(wrapped.split("\n"));
+    }
+
+    /**
+     * 按指定语义化文本样式拆分行（字号真实参与测量）。
+     *
+     * @param text      文本
+     * @param wrapWidth 换行宽度（UI 像素）
+     * @param style     文本样式快照
+     * @return 行列表
+     */
+    public List<String> listFormattedStringToWidth(String text, int wrapWidth, TextMeasureStyle style) {
+        String wrapped = wrapFormattedStringToWidth(text, wrapWidth, style);
         if (wrapped.isEmpty()) {
             return new ArrayList<String>();
         }

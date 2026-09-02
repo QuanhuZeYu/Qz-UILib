@@ -82,6 +82,12 @@ public class TextEllipsizerTest {
         public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
             return Arrays.asList(text);
         }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth,
+                club.heiqi.uilib.ui.text.TextMeasureStyle style) {
+            return Arrays.asList(text);
+        }
     }
 
     private static final int CHAR = 8;

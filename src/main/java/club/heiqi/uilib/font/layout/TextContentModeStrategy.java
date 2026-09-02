@@ -87,11 +87,15 @@ final class RawTextContentStrategy implements TextContentModeStrategy {
                 continue;
             }
 
-            double charWidth = service.getCodepointWidth(codepoint, baseStyle);
+            // 必须带 baseFontSizePx：两参重载按基准字号（charSize）测量，与本方法要服务的
+            // 节点字号脱钩 —— 非基准字号下每行实际宽度按比例溢出容器（同文件 trim 走的就是
+            // 三参口径，此处是唯一的漏网分支）。
+            double charWidth = service.getCodepointWidth(codepoint, baseStyle, baseFontSizePx);
             if (width + charWidth > wrapWidth && lineHasVisibleContent) {
                 boolean brokeAtSoft = false;
                 if (softBreakPos >= 0) {
-                    double hyphenWidth = softBreakHyphen ? service.getCodepointWidth('-', baseStyle) : 0.0D;
+                    double hyphenWidth = softBreakHyphen
+                            ? service.getCodepointWidth('-', baseStyle, baseFontSizePx) : 0.0D;
                     if (width - widthAtSoftBreak + hyphenWidth <= wrapWidth) {
                         String kept = line.substring(0, softBreakPos);
                         String rest = line.substring(softBreakPos + 1);

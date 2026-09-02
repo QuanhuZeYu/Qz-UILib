@@ -76,7 +76,13 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
         // 非 wrap（wrapWidth<=0）同样按硬换行拆行：无限宽下软换行不触发，
         // 硬换行经 wrap 重建保证样式跨行续传（<br>/\n 不再被渲染层吞掉）。
         int effectiveWrapWidth = wrapWidth <= 0 ? Integer.MAX_VALUE : wrapWidth;
-        return textMeasureService.listFormattedStringToWidth(safeText, effectiveWrapWidth, toTextContentMode(textMode));
+        // 字号必须跟着进换行（与下方 trimToWidth 同源口径）：不走带 style 的重载，
+        // 测量就退回基准 charSize，非基准字号下每行按比例溢出容器被裁 —— 现象是
+        // 「长 URL 首行右侧凭空消失」，布局与拆行都不报错。
+        return textMeasureService.listFormattedStringToWidth(safeText, effectiveWrapWidth,
+                new TextMeasureStyle(fontSizePx, toTextContentMode(textMode),
+                        club.heiqi.uilib.ui.base.props.UiFontWeight.NORMAL,
+                        club.heiqi.uilib.ui.base.props.UiFontStyle.NORMAL));
     }
 
     @Override

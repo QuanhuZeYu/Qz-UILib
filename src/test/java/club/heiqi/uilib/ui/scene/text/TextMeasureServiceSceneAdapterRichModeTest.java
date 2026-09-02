@@ -30,6 +30,29 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         Assert.assertEquals(1, delegate.threeArgCallCount);
     }
 
+    /**
+     * 拆行的字号必须透传（与 {@link #shouldDelegateTrimToWidthWithFontSizePx} 同款回归守卫）。
+     *
+     * <p>不走带 style 的重载，测量就退回基准 {@code charSize}：非基准字号下每行实际渲染宽度
+     * 按比例溢出容器，真机表现为「弹窗长 URL 首行右侧凭空消失」。同一族缺陷此前只修了
+     * {@code trimToWidth}，姊妹方法 {@code splitLines} 被漏下。</p>
+     */
+    @Test
+    public void shouldDelegateSplitLinesWithFontSizePx() {
+        RecordingTextMeasureService delegate = new RecordingTextMeasureService();
+        TextMeasureServiceSceneAdapter adapter = new TextMeasureServiceSceneAdapter(delegate);
+
+        adapter.splitLines("x", 16, 100, 0);
+
+        Assert.assertNotNull("拆行必须走带 style 的重载", delegate.lastWrapStyle);
+        Assert.assertEquals(16, delegate.lastWrapStyle.getFontSizePx());
+        Assert.assertEquals(TextContentMode.UILIB_RAW, delegate.lastWrapStyle.getTextContentMode());
+
+        delegate.lastWrapStyle = null;
+        adapter.splitLines("x", 24, 100, 0);
+        Assert.assertEquals("字号变化必须原样透传", 24, delegate.lastWrapStyle.getFontSizePx());
+    }
+
     @Test
     public void shouldDelegateHardLineBreakSplitWithoutWrap() {
         RecordingTextMeasureService delegate = new RecordingTextMeasureService();
@@ -124,6 +147,7 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         private String lastTrimText;
         private int lastTrimWidth;
         private club.heiqi.uilib.ui.text.TextMeasureStyle lastTrimStyle;
+        private club.heiqi.uilib.ui.text.TextMeasureStyle lastWrapStyle;
         private java.util.List<club.heiqi.uilib.ui.text.TextLinkRegion> nextLinkRegions =
                 new java.util.ArrayList<club.heiqi.uilib.ui.text.TextLinkRegion>();
 
@@ -165,6 +189,17 @@ public class TextMeasureServiceSceneAdapterRichModeTest {
         @Override
         public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
             return Collections.singletonList(text);
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth,
+                club.heiqi.uilib.ui.text.TextMeasureStyle style) {
+            lastText = text;
+            lastWrapWidth = wrapWidth;
+            lastWrapStyle = style;
+            lastMode = style == null ? null : style.getTextContentMode();
+            threeArgCallCount++;
+            return nextLines;
         }
 
         @Override

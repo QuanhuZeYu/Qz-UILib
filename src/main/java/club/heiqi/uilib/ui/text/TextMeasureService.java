@@ -216,4 +216,20 @@ public interface TextMeasureService {
     default List<String> listFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
         return listFormattedStringToWidth(text, wrapWidth);
     }
+
+    /**
+     * 按指定语义化文本样式和 UI 像素宽度换行。
+     *
+     * <p>与 {@link #trimStringToWidth(String, int, TextMeasureStyle)} 同一条章程：接口不承载缩放
+     * 算法，实现按样式字号<b>真实</b>换行，禁止把 UI 像素宽度折回基准字号（charSize）坐标系
+     * 做比例近似。历史上换行只有不带宽度的入口，调用方的 {@code fontSizePx} 在桥接层被丢弃，
+     * 于是「按 16px 渲染、按 9px 拆行」——每行实际宽度约 1.78 倍溢出容器，真机表现为
+     * 弹窗长 URL 首行右侧被裁且无任何报错。</p>
+     *
+     * @param text      文本内容
+     * @param wrapWidth 目标 UI 像素宽度
+     * @param style     文本样式快照（字号参与真实测量）
+     * @return 拆分后的多行文本
+     */
+    List<String> listFormattedStringToWidth(String text, int wrapWidth, TextMeasureStyle style);
 }

@@ -140,6 +140,12 @@ public final class DefaultTextMeasureService implements TextMeasureService {
                 resolveTextContentMode(textContentMode));
     }
 
+    @Override
+    public List<String> listFormattedStringToWidth(String text, int wrapWidth, TextMeasureStyle style) {
+        return getTextLayoutService().listFormattedStringToWidth(text, wrapWidth,
+                resolveTextMeasureStyle(style));
+    }
+
     /**
      * 获取布局期可用的文本布局服务。
      *
