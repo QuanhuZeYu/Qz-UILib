@@ -327,12 +327,14 @@ final class UiBackdropFilterRenderer {
                 material.getTintBlue(), material.getTintAlpha());
         BACKDROP_SHADER_PROGRAM.setUniform3f("materialLift", material.getLuminanceLift(),
                 material.getLuminanceLift(), material.getLuminanceLift());
-        // 液态档的抛光缘必须显著强于经典档：edgeHighlight 原值（DARK 系 0.04~0.055）是
-        // 为 1.5px 发丝边标定的，用来撑立体倒角会差一个数量级——真机实测侧缘镜面只有
-        // +4/255，同位置 edgeTint 的变暗有 -23/255，于是"缘带只剩黑、没有光泽"。
-        // 增益随液态强度线性放大（50% 处 ×2.8，拉满 ×4.6），经典档严格不受影响。
+        // 液态档的镜面增益。上一版取 ×(1+3.6s)（50% 处 ×2.8）把峰值推到 +103/255、
+        // 且压在 2px 宽的环带上，结果就是真机反馈的「边缘生硬」（1px 内 42->145、
+        // 蓝通道 clip 到 255 = 一条画上去的白线）。这一版幅度退到 ×(1+1.4s)，
+        // 光泽改由 shader 侧的**环带宽度 + 峰值内移 + 对向次高光**承担——
+        // 参考 WebGlass：specular-strength 0.65 配 specular-width 0.25，软来自分布
+        // 而不是来自更高的峰值。经典档恒 1.0 倍，严格不受影响。
         BACKDROP_SHADER_PROGRAM.setUniformF("edgeHighlight", material.getEdgeHighlight()
-                * (liquid ? 1.0F + 3.6F * effect.getLensStrength() : 1.0F));
+                * (liquid ? 1.0F + 1.4F * effect.getLensStrength() : 1.0F));
         BACKDROP_SHADER_PROGRAM.setUniformF("innerLightTop", material.getInnerLightTop());
         BACKDROP_SHADER_PROGRAM.setUniformF("innerShadowBottom", material.getInnerShadowBottom());
         BACKDROP_SHADER_PROGRAM.setUniformF("noiseAmount", material.getNoiseAmount());

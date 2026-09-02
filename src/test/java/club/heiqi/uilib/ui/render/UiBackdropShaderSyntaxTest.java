@@ -123,10 +123,17 @@ public class UiBackdropShaderSyntaxTest {
     public void liquidSpecularOutweighsClassicEdge() throws IOException {
         String code = stripComments(read(RENDERER));
         assertTrue("液态档必须按 lensStrength 放大 edgeHighlight（经典档恒 1.0 倍）",
-                code.indexOf("liquid ? 1.0F + 3.6F * effect.getLensStrength() : 1.0F") >= 0);
+                code.indexOf("liquid ? 1.0F + 1.4F * effect.getLensStrength() : 1.0F") >= 0);
         String frag = stripComments(read(FRAG));
-        assertTrue("缘带纵向衰减只属于经典档，液态档四条边都接光",
-                frag.indexOf("borderWeight = borderBand;") >= 0);
+        // 形态锁：液态镜面必须是「峰值内移的环带 + 对向次高光」，不是压在轮廓上的
+        // 单调边缘斜坡。缺任一项就退回真机反馈过的两种缺陷之一：白线描边（生硬）、
+        // 或背光缘完全无光（黑黑的）。
+        assertTrue("镜面环带峰值必须内移，不得最亮点正好压在物理轮廓上",
+                frag.indexOf("edgeDistance - specBandPx * 0.35") >= 0);
+        assertTrue("环带宽度必须按透镜缘带比例取，不得退回固定像素窄描边",
+                frag.indexOf("lensBandPx * 0.25") >= 0);
+        assertTrue("必须有对向次高光 counter-highlight，否则背光缘死黑",
+                frag.indexOf("0.20 * pow(max(-nDotL, 0.0), 1.5)") >= 0);
     }
 
     private static void assertBalanced(String relative) throws IOException {

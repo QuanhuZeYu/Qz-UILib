@@ -142,6 +142,8 @@ void main(void) {
     float lensBevel = 0.0;
     vec2 sdfGradient = vec2(0.0);
     vec2 lensShift = vec2(0.0);
+    // 缘带宽度提到外层作用域：液态镜面环带的宽度要按它的比例取（见下方 border 段）。
+    float lensBandPx = 0.0;
     if (liquidGlass > 0.5) {
         // 缘带宽度：比例 0.35 为主，上下限只兜极端。上限 28px 防大面板整块被当成边缘
         // （短边 164px 若按 0.85 比例会算出 70px 缘带，折射与厚度 tint 摊薄到全表面，
@@ -151,7 +153,7 @@ void main(void) {
         // 位移"是不可见的（等价于平移采样坐标），梯度才是透镜本身。下限再小也必须留
         // 平坦中心，故另用 shortHalf*0.5 兜底：任何尺寸的面板中心区 bevel 必为 0。
         float lensShortHalf = min(halfSize.x, halfSize.y);
-        float lensBandPx = min(clamp(lensShortHalf * 0.35, 3.0, 28.0), lensShortHalf * 0.5);
+        lensBandPx = min(clamp(lensShortHalf * 0.35, 3.0, 28.0), lensShortHalf * 0.5);
         lensBevel = 1.0 - smoothstep(0.0, lensBandPx, edgeDistance);
         lensBevel = lensBevel * lensBevel;
         vec2 inner = clamp(local, -(halfSize - vec2(cornerR)), halfSize - vec2(cornerR));
@@ -208,27 +210,35 @@ void main(void) {
         color = applySaturation(blurred.rgb, saturation);
     }
 
-    // 边缘亮边：1.5px 缘带内（SDF 距离，圆角处准确，旧 min(到直边) 近似会把
-    // 弧段亮边裁掉）。iOS 的亮边集中在顶缘、向两侧衰减，四边等强描边最假。
-    // 缘带宽：液态档放宽到 2px——GUI scale=1 时 1.5px 的 SDF 带经 smoothstep 后实际
-    // 只剩约 1 个亮像素，真机上缘光被量化吃掉（聊天气泡"看不出有液态"的第二成因）。
-    float rimBandPx = liquidGlass > 0.5 ? 2.0 : 1.5;
-    float borderBand = 1.0 - smoothstep(0.0, rimBandPx, edgeDistance);
-    // 经典档沿用 iOS 导航栏的"亮边集中在顶缘"衰减（0.30 起）；液态档不能衰减——
-    // 它模拟的是有厚度的<b>立体倒角</b>，四条边都会接光，只是接光量随光源方向不同
-    // （由下面的 dot 项表达）。再叠一层纵向衰减会把左右/下缘的高光压到不可见，
-    // 实测侧缘镜面只剩 +4/255，整圈看下来就只剩暗带。
+    // ── 边缘亮边：两条路径形态不同，且这是刻意的 ──────────────────────────────
+    // 经典档：iOS 导航栏那种 1.5px 发丝描边，亮边集中在顶缘、向两侧衰减
+    //   （SDF 距离算带宽，圆角处准确，旧 min(到直边) 近似会把弧段亮边裁掉）。
+    // 液态档：**峰值内移的高斯环带 + 对向次高光**，形态取自一手参考 WebGlass
+    //   docs/specular.md + docs/tokens.md（--wg-specular-edge 0.05 / --wg-specular-width
+    //   0.25 / --wg-specular-back 0.20，且明确"counter-highlight 恒锁在 light-angle+180°"）。
+    float borderBand = 1.0 - smoothstep(0.0, 1.5, edgeDistance);
     float borderWeight = borderBand * mix(0.30, 1.0, 1.0 - clamp(panelUv.y, 0.0, 1.0));
     if (liquidGlass > 0.5) {
-        borderWeight = borderBand;
-    }
-    if (liquidGlass > 0.5) {
-        // 随动缘光：高光峰值沿边缘滑动到光源方向（官方语义"lighting responds to
-        // device motion"，MC 无陀螺仪，宿主以鼠标为光源）。dot(外法线, 光源方向)
-        // 让面向光源的缘段最亮、背光缘压暗——这是 Liquid Glass"活的"观感来源。
-        // 系数从 0.55+0.9 提到 0.5+1.6：峰值亮边 +45%，且背光/光源两侧的反差拉大
-        // （原比例 1.45/0.55=2.6 倍，现 2.1/0.5=4.2 倍），缘光才有"绕着边走"的方向感。
-        borderWeight *= 0.5 + 1.6 * max(dot(sdfGradient, lightDir), 0.0);
+        // 真机反馈「边缘生硬」的根因：上一版液态档误用了经典档的形态——
+        //   1 - smoothstep(0, 2px, d) 的**峰值正好压在物理轮廓上**，且只有 2px 宽。
+        // 实测该处 1px 内亮度 42 -> 145（蓝通道直接 clip 到 255），读起来就是"沿轮廓
+        // 画了一条白线"，而不是"玻璃在边缘鼓起来"。参考实现的两个机制恰好各自治一半：
+        //   (a) specular-edge：把峰值**往里挪**，让轮廓线上不是最亮点 -> 消除描边感；
+        //   (b) specular-width：环带取 bezel 的比例（默认 0.25）而不是固定 2px -> 同样的
+        //       能量摊到更宽的肩部上，"软"来自分布而不是降低总亮度。
+        // 高斯而不是 smoothstep：后者在带宽端点斜率为 0 但峰值仍在边缘，前者天然双侧肩部。
+        float specBandPx = max(2.5, lensBandPx * 0.25);
+        float specT = (edgeDistance - specBandPx * 0.35) / specBandPx;
+        float specLobe = exp(-4.0 * specT * specT);
+        // 随动缘光：MC 无陀螺仪，宿主以鼠标为光源（官方语义 lighting responds to
+        // device motion）。pow 1.5 让光斑有方向但不缩成一点。
+        float nDotL = dot(sdfGradient, lightDir);
+        float primary = pow(max(nDotL, 0.0), 1.5);
+        // 对向次高光：真实玻璃背光侧那条弱反光。缺了它，背光缘就只剩"死"和"暗"
+        // （上一轮「黑黑的」有一半是这个）。强度按参考默认 0.20。
+        float counter = 0.20 * pow(max(-nDotL, 0.0), 1.5);
+        // 0.25 底光：非受光方位也保留一丝抛光感，避免某些角度整圈无光。
+        borderWeight = specLobe * (0.25 + primary + counter);
     }
 
     // 内侧上缘柔光 + 内侧下缘暗带：镜面反射与厚度感的近似（pow3 让能量贴住边缘）。
