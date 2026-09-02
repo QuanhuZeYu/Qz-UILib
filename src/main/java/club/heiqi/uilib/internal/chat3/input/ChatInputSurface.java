@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
+import club.heiqi.uilib.internal.chat3.view.ChatLinkClick;
 import club.heiqi.uilib.internal.chat3.view.ChatContainer;
 import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
@@ -246,9 +247,15 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
      *
      * <p>后者是为了玩家手打的裸 URL：原版 {@code IChatComponent} 上不带 clickEvent，
      * 服务端也没下发可点区域，原来点了完全没反应。</p>
+     *
+     * <p><b>不接收鼠标坐标。</b>命中信息全部来自 scene 的 CLICK 事件（{@link
+     * ChatSceneController#takePendingLinkClick()}）：MC 回调坐标是 guiScale 缩放后的逻辑
+     * 像素，而 chat3 几何是物理像素，两者不可无损换算（{@code McScreenBridge} 注释原话），
+     * 拿坐标做二次命中判定在 guiScale &gt; 1 时必然落空。节点身份反查注册表则与缩放无关。</p>
      */
-    public void handleLineClick(int mouseX, int mouseY) {
-        IChatComponent component = hitTest(mouseX, mouseY);
+    public void handleLineClick() {
+        ChatLinkClick hit = controller.takePendingLinkClick();
+        IChatComponent component = hit.componentFrom(screenMessageNodes);
         ClickEvent click = component == null ? null
                 : component.getChatStyle().getChatClickEvent();
         if (click != null) {
@@ -269,9 +276,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
                     return;
             }
         }
-        String url = controller.resolveLinkUrlAt(mouseX, mouseY);
-        if (url != null) {
-            confirmAndOpenUrl(url);
+        if (hit.url() != null) {
+            confirmAndOpenUrl(hit.url());
         }
     }
 
@@ -300,11 +306,6 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
                 openUrl(url);
             }
         });
-    }
-
-    /** 屏幕树命中:注册表节点绝对盒(屏幕全屏,rootAbs = 0,0)包含点 → 组件。 */
-    private IChatComponent hitTest(int x, int y) {
-        return ChatSceneController.hitTestInRegistry(screenMessageNodes, x, y);
     }
 
     /** 链接打开(vanilla chatLinks 设置门控)。 */

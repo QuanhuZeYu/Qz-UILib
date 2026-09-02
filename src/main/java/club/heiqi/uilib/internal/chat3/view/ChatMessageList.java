@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneTooltip;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.layout.AlignSelf;
@@ -437,14 +438,22 @@ public final class ChatMessageList {
         }
 
         /**
-         * 屏幕绝对坐标命中链接:换算到 messageNode 局部后复用 {@link #resolveUrl}。
+         * 链接点击(scene CLICK,指针坐标由框架换算成 messageNode 局部)。
          *
-         * <p>刻意与 hover 共用同一个命中函数 —— 「亮着的区域」与「可点的区域」必须是
-         * 同一套几何算出来的,分成两处实现迟早各自漂移(本仓已有 1 权威 + N 处重实现教训)。</p>
+         * <p>刻意与 hover 共用同一个命中函数 {@link #resolveUrl} —— 「亮着的区域」与
+         * 「可点的区域」必须同源。坐标也同源:两者都吃框架给的节点局部值,不在这里做任何
+         * 屏幕坐标换算。</p>
          */
-        String resolveAtScreen(int screenX, int screenY) {
-            AnchorRect box = SceneGeometry.absoluteBox(messageNode, 0, 0);
-            return resolveUrl(screenX - box.getX(), screenY - box.getY());
+        /**
+         * 链接点击。按钮在驱动内判级:宿主只在左键时取用记录,若右键也记账,会留下一笔
+         * 无人消费的残留,被下一次「落在所有消息之外」的左键当成刚点的链接(幽灵打开)。
+         */
+        void onLinkClick(SceneMouseButton button, int localX, int localY) {
+            if (button != SceneMouseButton.LEFT) {
+                return;
+            }
+            String url = resolveUrl(localX, localY);
+            owner.recordMessageClick(messageNode, url == null || url.isEmpty() ? null : url);
         }
 
         /** 命中判定 + 行 hover 态写入,返回命中 URL(行内区域 = 文本包围盒上下 +2 / 左右 +1)。 */
@@ -570,6 +579,20 @@ public final class ChatMessageList {
     /** 消息节点 → 链接 hover 驱动器(测试探针;树重建时随组节点一起弃用)。 */
     private final Map<SceneNode, LinkHoverDriver> linkDrivers =
             new java.util.IdentityHashMap<SceneNode, LinkHoverDriver>();
+
+    /**
+     * 本次 scene 点击的记录(节点身份 + 命中链接 URL),由 takePendingLinkClick() 取走并清。
+     *
+     * <p>刻意只「记账」不「动作」:服务端显式 clickEvent 优先级更高。scene 点击先于 surface
+     * 的判定发生,若在此直接弹窗,一条带 OPEN_URL 的跨度会既走原版又走我们 —— 一次点击两个
+     * 动作。交由 surface 按优先级取用,才能保持单发。</p>
+     *
+     * <p>记的是<b>节点</b>不是坐标,理由见 {@link ChatLinkClick}:MC 回调坐标是 guiScale
+     * 缩放值,与 scene 的物理像素几何不可无损互换,任何"拿屏幕坐标减绝对盒"的命中判定在
+     * guiScale &gt; 1 时必然落空。</p>
+     */
+    private SceneNode pendingClickNode;
+    private String pendingLinkUrl;
 
     /** 气泡最大宽上限(px,设计稿 §3.x:气泡 ≤ 0.85 组内容宽;0 = 不限制,headless 默认)。 */
     private volatile int maxBubbleWidthPx;
@@ -1173,6 +1196,14 @@ public final class ChatMessageList {
                 rt.on(messageNode, SceneEventType.POINTER_MOVE, (ev, ctx) -> {
                     boundDriver.onPointerMove(ctx.getLocalPointerX(), ctx.getLocalPointerY());
                 });
+                // 点击与悬停共用框架算好的节点局部坐标(SceneLabel 同款)。**不要**在这里
+                // 自己拿屏幕坐标去减绝对盒:GuiScreen 回调给的是 guiScale 缩放后的坐标,
+                // 而 McScreenBridge 喂进 scene 的是输入 reader 读的物理坐标,两套空间
+                // 相减永远命不中(本仓「1 权威 + N 处重实现」教训的第三次复发)。
+                rt.on(messageNode, SceneEventType.CLICK, (ev, ctx) -> {
+                    boundDriver.onLinkClick(ev.getButton(),
+                            ctx.getLocalPointerX(), ctx.getLocalPointerY());
+                });
                 // 400ms 悬停出 URL tooltip(SceneTooltip;无输入宿主自然不显示)
                 // breakLongWords=true:URL 是无折行机会的超长单词,旧行为会对它再加一次
                 // 省略号 —— tooltip 的全部意义就是揭示被气泡截断的地址,再截一次等于白做
@@ -1323,24 +1354,23 @@ public final class ChatMessageList {
         return spans == null ? Collections.<LinkSpan>emptyList() : spans;
     }
 
+    /** scene CLICK handler 回调入口:记下点中的节点与命中 URL(单槽,后写覆盖)。 */
+    void recordMessageClick(SceneNode messageNode, String url) {
+        pendingClickNode = messageNode;
+        pendingLinkUrl = url;
+    }
+
     /**
-     * 屏幕绝对坐标 → 命中的链接 URL(无命中返回 null)。
+     * 取走并清空本次 scene 点击记录(节点身份 + 命中链接 URL)。
      *
-     * <p>点击路径入口。玩家手打的裸 URL 原版 {@code IChatComponent} 上不带 clickEvent,
-     * 服务端也没下发可点区域 —— 本方法让我们自己的链接化跨度补上这个能力。</p>
-     *
-     * @param screenX 屏幕绝对 X
-     * @param screenY 屏幕绝对 Y
-     * @return 命中链接的完整 URL;未命中任何链接跨度时 null
+     * <p>玩家手打的裸 URL 原版 {@code IChatComponent} 上不带 clickEvent,服务端也没下发可点
+     * 区域 —— 本出口让我们自己的链接化跨度补上这个能力。读取即清空:一次点击最多开一次。</p>
      */
-    public String resolveLinkUrlAt(int screenX, int screenY) {
-        for (LinkHoverDriver driver : linkDrivers.values()) {
-            String url = driver.resolveAtScreen(screenX, screenY);
-            if (url != null && !url.isEmpty()) {
-                return url;
-            }
-        }
-        return null;
+    public ChatLinkClick takePendingLinkClick() {
+        ChatLinkClick taken = new ChatLinkClick(pendingClickNode, pendingLinkUrl);
+        pendingClickNode = null;
+        pendingLinkUrl = null;
+        return taken;
     }
 
     /** 测试探针:消息节点 → 链接 hover 驱动器。 */

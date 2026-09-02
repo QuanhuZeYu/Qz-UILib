@@ -1164,18 +1164,19 @@ public final class ChatSceneController {
         };
     }
 
-    /** 懒取消息列表渲染器(依赖段解析器;供 ChatContainer 复用)。 */
     /**
-     * 屏幕绝对坐标 → 命中的链接 URL(无命中 null;宿主点击路径经此,不直接摸消息列表)。
+     * 取走本次 scene 点击记录(节点身份 + 命中链接 URL),读取即清空。
      *
-     * @param screenX 屏幕绝对 X
-     * @param screenY 屏幕绝对 Y
-     * @return 命中链接的完整 URL
+     * <p>本方法**不接收屏幕坐标**:命中判定在 scene 事件里用框架换算的节点局部坐标完成,
+     * 结果以节点身份交出。早先版本在这里收 screen 坐标再减绝对盒,把 MC 回调的 guiScale
+     * 缩放坐标与 scene 的物理像素几何两套空间混算,guiScale &gt; 1 时每次点击都判空 ——
+     * 链接点了没反应。宿主只取结果,不碰几何。</p>
      */
-    public String resolveLinkUrlAt(int screenX, int screenY) {
-        return messageList().resolveLinkUrlAt(screenX, screenY);
+    public ChatLinkClick takePendingLinkClick() {
+        return messageList().takePendingLinkClick();
     }
 
+    /** 懒取消息列表渲染器(依赖段解析器;供 ChatContainer 复用)。 */
     ChatMessageList messageList() {
         ChatMessageList current = messageList;
         if (current == null) {

@@ -33,12 +33,14 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AlignSelf;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -1865,24 +1867,63 @@ public class ChatMessageListTest {
     }
 
 
-    // ==================== 点击命中链接（屏幕坐标 → URL，与 hover 同一套几何） ====================
+    // ==================== 点击命中链接（scene CLICK → 节点身份 + URL） ====================
+    // 注意：这些用例一律喂**气泡局部坐标**，与 hover 用例同口径。曾经的版本在这里
+    // 先 `box.getX() + 局部` 再让被测代码减回去 —— 加减互抵，缺陷存在时照样
+    // 全绿（假绿测试）。不要再把屏幕坐标引进点击路径。
 
     @Test
-    public void resolveLinkUrlAtSharesTheHoverHitBox() {
+    public void linkClickRecordsMessageNodeAndCompleteUrl() {
         Object[] parts = layoutSingleOtherGroup(linkController());
         SceneNode bubble = (SceneNode) parts[0];
         ChatSceneController controller = (ChatSceneController) parts[2];
-        AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
+        ChatMessageList.LinkHoverDriver driver =
+                controller.messageList().__linkHoverDriverOf(bubble);
         // 链接段 = 行内 x[16, 60)（"http://a.co" 11 码点 × 4px），行盒相对气泡 (10, 5)
-        Assert.assertEquals("http://a.co",
-                controller.resolveLinkUrlAt(box.getX() + 10 + 20, box.getY() + 5 + 9));
-        Assert.assertNull("行内非链接区不得命中",
-                controller.resolveLinkUrlAt(box.getX() + 10 + 2, box.getY() + 5 + 9));
+        driver.onLinkClick(SceneMouseButton.LEFT, 10 + 16 + 24, 5 + 9);
+        ChatLinkClick hit = controller.takePendingLinkClick();
+        Assert.assertEquals("http://a.co", hit.url());
+        Assert.assertSame("必须交出节点身份（服务端 clickEvent 靠它反查，不靠几何）",
+                bubble, hit.node());
+        Assert.assertNull("取走即清空：一次点击最多触发一次",
+                controller.takePendingLinkClick().url());
+    }
+
+    @Test
+    public void linkClickAndHoverResolveTheSameUrlAtTheSamePoint() {
+        Object[] parts = layoutSingleOtherGroup(linkController());
+        SceneNode bubble = (SceneNode) parts[0];
+        ChatSceneController controller = (ChatSceneController) parts[2];
+        ChatMessageList.LinkHoverDriver driver =
+                controller.messageList().__linkHoverDriverOf(bubble);
         // 命中盒左右各扩 1px（与 linkHitRegionExpandsTwoPxVerticalAndOnePxHorizontal 同口径）
-        Assert.assertEquals("左扩 1px 内必须命中", "http://a.co",
-                controller.resolveLinkUrlAt(box.getX() + 10 + 16 - 1, box.getY() + 5 + 9));
-        Assert.assertNull("左扩 1px 外不得命中",
-                controller.resolveLinkUrlAt(box.getX() + 10 + 16 - 2, box.getY() + 5 + 9));
+        int[][] probes = new int[][] { { 10 + 16 + 24, 5 + 9 }, { 10 + 16 - 1, 5 + 9 },
+                { 10 + 2, 5 + 9 }, { 10 + 16 - 2, 5 + 9 } };
+        for (int[] p : probes) {
+            Assert.assertEquals("点亮区域与可点区域必须同源 (x=" + p[0] + ")",
+                    driver.resolveUrl(p[0], p[1]),
+                    resolveClick(controller, driver, p[0], p[1]));
+        }
+    }
+
+    @Test
+    public void clickOffLinkStillRecordsNodeForServerClickEvent() {
+        Object[] parts = layoutSingleOtherGroup(linkController());
+        SceneNode bubble = (SceneNode) parts[0];
+        ChatSceneController controller = (ChatSceneController) parts[2];
+        ChatMessageList.LinkHoverDriver driver =
+                controller.messageList().__linkHoverDriverOf(bubble);
+        driver.onLinkClick(SceneMouseButton.LEFT, 10 + 2, 5 + 9);
+        ChatLinkClick hit = controller.takePendingLinkClick();
+        Assert.assertNull("非链接区不得有 URL", hit.url());
+        Assert.assertSame("仍要交出节点：服务端 clickEvent 优先级高于我们的链接跨度",
+                bubble, hit.node());
+    }
+
+    private static String resolveClick(ChatSceneController controller,
+            ChatMessageList.LinkHoverDriver driver, int localX, int localY) {
+        driver.onLinkClick(SceneMouseButton.LEFT, localX, localY);
+        return controller.takePendingLinkClick().url();
     }
 
     @Test
@@ -1901,12 +1942,95 @@ public class ChatMessageListTest {
         List<SceneNode> lineNodes = bubble.__getChildren();
         Assert.assertTrue("前提:URL 需被断成多行,实际 " + lineNodes.size() + " 行",
                 lineNodes.size() >= 2);
+        ChatMessageList.LinkHoverDriver driver =
+                controller.messageList().__linkHoverDriverOf(bubble);
         AnchorRect bubbleBox = SceneGeometry.absoluteBox(bubble, 0, 0);
         for (int i = 0; i < lineNodes.size(); i++) {
+            // 只取**相对气泡**的局部偏移(同一 scene 空间内做差),不叠加气泡自身的绝对原点:
+            // 框架交给 handler 的本来就是节点局部值
             AnchorRect lb = SceneGeometry.absoluteBox(lineNodes.get(i), 0, 0);
+            driver.onLinkClick(SceneMouseButton.LEFT, lb.getX() - bubbleBox.getX() + 2,
+                    lb.getY() - bubbleBox.getY() + 9);
             Assert.assertEquals("点击第 " + (i + 1) + " 行都必须解析出完整 URL", LONG_URL,
-                    controller.resolveLinkUrlAt(bubbleBox.getX() + (lb.getX() - bubbleBox.getX()) + 2,
-                            bubbleBox.getY() + (lb.getY() - bubbleBox.getY()) + 9));
+                    controller.takePendingLinkClick().url());
+        }
+    }
+
+    /**
+     * 端到端:真实 DOWN+UP 经 SceneInputRouter 合成 CLICK,送达 chat3 的链接 handler。
+     *
+     * <p>其余点击用例直接调 driver 方法,证的是**几何**;本条证的是**接线** —— handler
+     * 确实注册在能收到 CLICK 的节点上。只测前者的话,handler 漏注册、节点不可命中、事件被
+     * 子节点消费,三种接线断裂全都照样绿(本仓「测了个寂寞」教训的同型)。</p>
+     */
+    @Test
+    public void realPointerClickOnLinkReachesChatClickHandler() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Bob> see http://a.co x"), 1, T0));
+        controller.notifyDataChanged();
+        SceneInteractionHarness harness =
+                SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        try {
+            SceneNode root = controller.buildContent(harness.getRuntime());
+            // 信号批量提交在建树与布局之间:不 flush 则子节点尚未挂上
+            harness.getRuntime().flush();
+            harness.mountRoot(root, 400, 300);
+            SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
+            AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
+            harness.clickAt(box.getX() + 10 + 16 + 24, box.getY() + 5 + 9);
+            ChatLinkClick hit = controller.takePendingLinkClick();
+            Assert.assertEquals("真 DOWN+UP 合成的 CLICK 必须送达链接 handler",
+                    "http://a.co", hit.url());
+            Assert.assertSame(bubble, hit.node());
+            // 点气泡内非链接处:必须覆盖上一笔,不得残留上一条 URL
+            harness.clickAt(box.getX() + 2, box.getY() + 2);
+            Assert.assertNull("残留 URL 会让我们重开上一次点过的链接",
+                    controller.takePendingLinkClick().url());
+        } finally {
+            harness.dispose();
+        }
+    }
+
+    @Test
+    public void nonLeftClickLeavesNoPendingRecord() {
+        Object[] parts = layoutSingleOtherGroup(linkController());
+        SceneNode bubble = (SceneNode) parts[0];
+        ChatSceneController controller = (ChatSceneController) parts[2];
+        ChatMessageList.LinkHoverDriver driver =
+                controller.messageList().__linkHoverDriverOf(bubble);
+        // 右键命中同一链接:宿主只在左键时取用记录,若这里也记账,残留会被下一次
+        // 「落在所有消息之外」的左键当成刚点的链接 —— 幽灵打开
+        driver.onLinkClick(SceneMouseButton.RIGHT, 10 + 16 + 24, 5 + 9);
+        Assert.assertNull(controller.takePendingLinkClick().url());
+        Assert.assertNull(controller.takePendingLinkClick().node());
+        driver.onLinkClick(SceneMouseButton.MIDDLE, 10 + 16 + 24, 5 + 9);
+        Assert.assertNull(controller.takePendingLinkClick().url());
+    }
+
+    /**
+     * 锁:点击路径不得再收屏幕坐标。
+     *
+     * <p>guiScale &gt; 1 时 MC 回调坐标(scaled 逻辑像素)与 scene 几何(物理像素)不可无损
+     * 换算,任何"收 screenX/screenY 再减绝对盒"的命中 API 都会静默全空 —— 现象就是
+     * 「点了链接没反应」。唯一安全的判据是 scene CLICK 交出的节点身份。</p>
+     */
+    @Test
+    public void clickPathMustNotExposeScreenCoordinateHitApi() throws Exception {
+        Class<?>[] subjects = new Class<?>[] { ChatMessageList.class, ChatSceneController.class };
+        for (int s = 0; s < subjects.length; s++) {
+            java.lang.reflect.Method[] methods = subjects[s].getDeclaredMethods();
+            for (int i = 0; i < methods.length; i++) {
+                java.lang.reflect.Method m = methods[i];
+                Class<?>[] params = m.getParameterTypes();
+                boolean screenHitApi = params.length == 2
+                        && params[0] == int.class && params[1] == int.class
+                        && (m.getName().startsWith("resolveLinkUrl")
+                                || m.getName().startsWith("resolveAtScreen"));
+                Assert.assertFalse(subjects[s].getSimpleName() + "." + m.getName()
+                        + "(int, int) 又成了屏幕坐标命中入口", screenHitApi);
+            }
         }
     }
 }

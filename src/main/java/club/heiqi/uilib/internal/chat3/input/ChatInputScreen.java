@@ -110,7 +110,8 @@ public final class ChatInputScreen extends McScreenBridge {
     protected void mouseClicked(int mouseX, int mouseY, int button) {
         super.mouseClicked(mouseX, mouseY, button);
         if (button == 0) {
-            surface.handleLineClick(mouseX, mouseY);
+            // 坐标不往下传:命中判据是 scene CLICK 记下的节点身份(见 handleLineClick 注释)
+            surface.handleLineClick();
         }
     }
 
