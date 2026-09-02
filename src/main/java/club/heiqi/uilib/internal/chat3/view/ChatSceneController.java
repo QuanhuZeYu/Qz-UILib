@@ -308,47 +308,23 @@ public final class ChatSceneController {
     }
 
     /**
-     * 注册表命中(纯函数,输入屏幕复用):节点绝对盒(全屏原点 0,0)包含点 → 组件。
-     *
-     * @param registry 消息节点 → 记录(离树节点惰性清理)
-     * @param x        命中点 x(逻辑 px)
-     * @param y        命中点 y
-     * @return 命中的消息组件;未命中返回 null
-     */
-    public static IChatComponent hitTestInRegistry(Map<SceneNode, ChatLineRecord> registry, int x, int y) {
-        List<SceneNode> stale = null;
-        for (Map.Entry<SceneNode, ChatLineRecord> entry : registry.entrySet()) {
-            SceneNode node = entry.getKey();
-            if (node.__getParent() == null) {
-                if (stale == null) {
-                    stale = new ArrayList<SceneNode>();
-                }
-                stale.add(node);
-                continue;
-            }
-            AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
-            if (x >= box.getX() && x < box.getX() + box.getWidth()
-                    && y >= box.getY() && y < box.getY() + box.getHeight()) {
-                return entry.getValue().getComponent();
-            }
-        }
-        if (stale != null) {
-            for (SceneNode node : stale) {
-                registry.remove(node);
-            }
-        }
-        return null;
-    }
-
-    /**
      * 命中检测(func_146236_a 转发):点 → 消息组件(事件链经原版组件回投)。
      *
      * <p>窗口原点:优先取 HUD host 本帧权威放置盒(含堆叠偏移、安全区与 clamp，与像素严格
      * 对齐)；host 未放置本窗(未注册/空内容/测试)时回退 {@link SceneAnchorResolver} 同一
      * BOTTOM_LEFT 视口锚定数学。两条路径都不再手算，锚点公式不再有第二事实源。</p>
      *
-     * @param x 命中点 x(逻辑 px,scaled resolution 口径)
-     * @param y 命中点 y
+     * <p><b>入参单位 = 物理 px(raw 鼠标坐标)，不是 scaled 逻辑 px。</b>原版调用点是
+     * {@code GuiChat} 里的 {@code getChatGUI().func_146236_a(Mouse.getX(), Mouse.getY())}
+     * —— 传的是 LWJGL raw 窗口像素；原版自身实现第一步就除以 {@code ScaledResolution
+     * .getScaleFactor()} 再进它的逻辑布局空间。本覆写<b>不除</b>：比较对象
+     * {@code SceneGeometry.absoluteBox} 本就是物理 px 的 scene 几何，两侧同单位。
+     * <b>不许"顺手补一个 /guiScale"</b> —— 补了正好复现"跨空间坐标出现在判定路径"那条缺陷；
+     * 该契约已由 {@code ChatSceneControllerTest} 拿 {@code absoluteBox} 反推坐标钉住。
+     * 历史注释把这里标成"逻辑 px,scaled 口径"，与实现相反，是误导源，已改。</p>
+     *
+     * @param x 命中点 x(物理 px，raw 鼠标坐标)
+     * @param y 命中点 y(物理 px，raw 鼠标坐标)
      * @return 命中的消息组件;未命中返回 null
      */
     public IChatComponent hitTest(int x, int y) {
