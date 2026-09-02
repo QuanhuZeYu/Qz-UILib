@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.Assert;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import net.minecraft.util.ChatComponentText;
@@ -34,6 +36,23 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * ChatSceneController 渲染层测试(S3b):双形态树结构/对齐/容器滚动绑定/淡出烘焙/过期移除。
  */
 public class ChatSceneControllerTest {
+
+    /**
+     * 本类断言的是「非玻璃态」下设计令牌正确落到节点，故显式关闭聊天玻璃。
+     *
+     * <p>玻璃默认开启会把气泡/输入底色换成半透明档（alpha 由 glass*Alpha 决定），
+     * 与本类的令牌等值断言冲突。@After 复位避免静态开关污染同 JVM 其它测试。</p>
+     */
+    @Before
+    public void disableChatGlassForDesignTokenAssertions() {
+        ChatMarkdownSettings.setGlassEnabled(false);
+    }
+
+    @After
+    public void restoreChatGlassDefault() {
+        ChatMarkdownSettings.setGlassEnabled(true);
+    }
+
 
     private static final long T0 = 1_700_000_000_000L;
 

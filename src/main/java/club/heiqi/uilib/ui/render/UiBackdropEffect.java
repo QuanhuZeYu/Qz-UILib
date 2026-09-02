@@ -74,4 +74,31 @@ public final class UiBackdropEffect {
     public boolean carriesMaterialTint() {
         return material != null;
     }
+
+    @Override
+    public boolean equals(Object object) {
+        if (this == object) {
+            return true;
+        }
+        if (!(object instanceof UiBackdropEffect)) {
+            return false;
+        }
+        UiBackdropEffect other = (UiBackdropEffect) object;
+        return family == other.family && material == other.material
+                && Float.compare(lensStrength, other.lensStrength) == 0;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = family.hashCode();
+        result = 31 * result + (material == null ? 0 : material.hashCode());
+        result = 31 * result + Float.hashCode(lensStrength);
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "UiBackdropEffect{" + family + (material == null ? "" : "/" + material.name())
+                + (lensStrength > 0.0F ? " lens=" + lensStrength : "") + '}';
+    }
 }

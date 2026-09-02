@@ -99,18 +99,27 @@ public class ScenePaintReplayer {
             ctx.publishTextDemand(Collections.unmodifiableList(visibleTexts));
         }
         Deque<Scope> openScopes = new ArrayDeque<Scope>();
+        // 一次 replay = 一个 backdrop 批次：本棵树里所有兄弟玻璃共享同一份背景采样
+        // （语义对齐 iOS 同一 visual effect 层级互不透过；性能上 N 次快照捕获降为 1 次）。
+        club.heiqi.uilib.ui.render.UiRenderBackends.beginBackdropBatch(ctx);
         try {
-            for (PaintCommand cmd : plan.getCommands()) {
-                replayCommand(cmd, ctx, offsetX, offsetY, openScopes);
+            try {
+                for (PaintCommand cmd : plan.getCommands()) {
+                    replayCommand(cmd, ctx, offsetX, offsetY, openScopes);
+                }
+            } catch (RuntimeException exception) {
+                IllegalStateException cleanupFailure = unwind(ctx, openScopes, exception);
+                if (cleanupFailure != null) throw cleanupFailure;
+                throw exception;
+            } catch (LinkageError error) {
+                IllegalStateException cleanupFailure = unwind(ctx, openScopes, error);
+                if (cleanupFailure != null) throw cleanupFailure;
+                throw error;
             }
-        } catch (RuntimeException exception) {
-            IllegalStateException cleanupFailure = unwind(ctx, openScopes, exception);
-            if (cleanupFailure != null) throw cleanupFailure;
-            throw exception;
-        } catch (LinkageError error) {
-            IllegalStateException cleanupFailure = unwind(ctx, openScopes, error);
-            if (cleanupFailure != null) throw cleanupFailure;
-            throw error;
+        } finally {
+            // 批次必须无条件收尾：中途抛异常若漏掉 end，冻结的 revision 会让后续帧
+            // 永远看不到新内容（玻璃停在旧背景上）。
+            club.heiqi.uilib.ui.render.UiRenderBackends.endBackdropBatch(ctx);
         }
     }
 
@@ -125,6 +134,24 @@ public class ScenePaintReplayer {
     private void replayCommand(PaintCommand cmd, UiRenderBackend ctx, int offsetX, int offsetY,
             Deque<Scope> openScopes) {
         switch (cmd.getType()) {
+            case BACKDROP: {
+                // 声明式玻璃：坐标与 fragment 偏移同域（logical px），换算与 scaled 穿透
+                // 由门面统一负责——replayer 不碰 GL、不猜后端类型（宪章信条六）。
+                // 四角圆角复用 BORDER 的口径：无分角时退化为 uniform。
+                club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver.ResolvedCornerRadii radii =
+                        cmd.hasPerCornerRadii()
+                                ? club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver.ResolvedCornerRadii.of(
+                                        cmd.getCornerRadiusTopLeft(), cmd.getCornerRadiusTopRight(),
+                                        cmd.getCornerRadiusBottomRight(), cmd.getCornerRadiusBottomLeft())
+                                : club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver.ResolvedCornerRadii
+                                        .uniform(cmd.getCornerRadius());
+                club.heiqi.uilib.ui.render.UiRenderBackends.backdropFilter(ctx,
+                        cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                        cmd.getRight() + offsetX, cmd.getBottom() + offsetY,
+                        cmd.getBackdrop(), radii);
+                break;
+            }
+
             case BACKGROUND:
                 if (cmd.hasPerCornerRadii()) {
                     // 四角独立圆角背景（T4a）：四角数值直接喂后端四角重载（后端内部转 ResolvedCornerRadii）

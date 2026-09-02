@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.node;
 
+import club.heiqi.uilib.ui.render.UiBackdrop;
 import club.heiqi.uilib.ui.scene.image.SceneImageRect;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
@@ -12,6 +13,14 @@ final class ScenePaintProps {
 
     /** 背景颜色（ARGB），默认 0（透明） */
     int backgroundColor;
+
+    /**
+     * 背后滤镜配方（磨玻璃 / Liquid Glass）；null = 不启用。
+     *
+     * <p>PAINT 级属性（只改绘制输出、不改盒尺寸），与 backgroundColor 同构。
+     * 值对象不可变，故 fragment 复用与跨线程读安全。</p>
+     */
+    UiBackdrop backdrop;
 
     /** 平台中立图片源；对象身份变化只触发 PAINT。 */
     SceneImageSource imageSource;

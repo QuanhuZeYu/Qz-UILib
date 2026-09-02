@@ -3,6 +3,8 @@ package club.heiqi.uilib.internal.chat3.view;
 import java.util.Map;
 
 import org.junit.Assert;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import net.minecraft.util.ChatComponentText;
@@ -22,6 +24,23 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 输入框高 24px 钉在输入条区 40px 内,divider 到输入框顶恰好 8px。
  */
 public class ChatContainerTest {
+
+    /**
+     * 本类断言的是「非玻璃态」下设计令牌正确落到节点，故显式关闭聊天玻璃。
+     *
+     * <p>玻璃默认开启会把气泡/输入底色换成半透明档（alpha 由 glass*Alpha 决定），
+     * 与本类的令牌等值断言冲突。@After 复位避免静态开关污染同 JVM 其它测试。</p>
+     */
+    @Before
+    public void disableChatGlassForDesignTokenAssertions() {
+        ChatMarkdownSettings.setGlassEnabled(false);
+    }
+
+    @After
+    public void restoreChatGlassDefault() {
+        ChatMarkdownSettings.setGlassEnabled(true);
+    }
+
 
     /** 测试帧时钟基准(wall millis;SmoothScroller 动画起点/终点驱动)。 */
     private static final long T0 = 1_000_000L;

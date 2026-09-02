@@ -79,6 +79,9 @@ public final class PaintCommand {
     /** 图片源；仅 IMAGE 命令有意义，按身份固化。 */
     private final SceneImageSource imageSource;
 
+    /** 背后滤镜声明；仅 BACKDROP 命令有意义，其余命令为 null。不可变值对象，随 fragment 复用安全。 */
+    private final club.heiqi.uilib.ui.render.UiBackdrop backdrop;
+
     /** 富文本段流；仅 SEGMENTS 命令有意义，其余命令默认 null。
      *  按引用保存（不拷贝，契约：调用方传入不可变列表）；equals/hashCode 按
      *  引用身份（布局缓存保证同布局同实例，translatedBy 平移保持身份复用）。 */
@@ -153,7 +156,7 @@ public final class PaintCommand {
                          float originXRatio, float originYRatio, List<TextSegment> segments) {
         this(type, left, top, right, bottom, color, text, textStyle, linkUrl, imageSource, opacity,
                 cornerRadius, borderWidth, translateX, translateY, rotateDegrees, scaleX, scaleY,
-                originXRatio, originYRatio, segments, -1, -1, -1, -1);
+                originXRatio, originYRatio, segments, -1, -1, -1, -1, null);
     }
 
     private PaintCommand(PaintCommandType type, int left, int top, int right, int bottom,
@@ -164,7 +167,8 @@ public final class PaintCommand {
                          float scaleX, float scaleY,
                          float originXRatio, float originYRatio, List<TextSegment> segments,
                          int cornerRadiusTopLeft, int cornerRadiusTopRight,
-                         int cornerRadiusBottomRight, int cornerRadiusBottomLeft) {
+                         int cornerRadiusBottomRight, int cornerRadiusBottomLeft,
+                         club.heiqi.uilib.ui.render.UiBackdrop backdrop) {
         this.type = Objects.requireNonNull(type, "type");
         this.left = left;
         this.top = top;
@@ -191,6 +195,7 @@ public final class PaintCommand {
         this.scaleY = scaleY;
         this.originXRatio = originXRatio;
         this.originYRatio = originYRatio;
+        this.backdrop = backdrop;
     }
 
     // ========== 静态工厂方法 ==========
@@ -205,6 +210,20 @@ public final class PaintCommand {
      * @param color  背景色（ARGB 格式，如 0xAARRGGBB）
      * @return 背景绘制命令
      */
+    /**
+     * 背后滤镜命令（声明式玻璃）。
+     *
+     * <p>effect 引用是不可变值对象，随 fragment 复用安全；半径/乘子均为 primitive。</p>
+     */
+    public static PaintCommand backdrop(int left, int top, int right, int bottom,
+            club.heiqi.uilib.ui.render.UiBackdrop backdrop, int cornerRadius,
+            int cornerTopLeft, int cornerTopRight, int cornerBottomRight, int cornerBottomLeft) {
+        return new PaintCommand(PaintCommandType.BACKDROP, left, top, right, bottom,
+                0, null, null, null, null, 1.0f, cornerRadius, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f, null,
+                cornerTopLeft, cornerTopRight, cornerBottomRight, cornerBottomLeft, backdrop);
+    }
+
     public static PaintCommand background(int left, int top, int right, int bottom, int color) {
         return new PaintCommand(PaintCommandType.BACKGROUND, left, top, right, bottom,
                 color, null, null, null, null, 1.0f, 0, 0,
@@ -252,7 +271,7 @@ public final class PaintCommand {
                 color, null, null, null, null, 1.0f, 0, 0,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f, null,
                 cornerRadiusTopLeft, cornerRadiusTopRight,
-                cornerRadiusBottomRight, cornerRadiusBottomLeft);
+                cornerRadiusBottomRight, cornerRadiusBottomLeft, null);
     }
 
     /**
@@ -302,7 +321,7 @@ public final class PaintCommand {
                 color, null, null, null, null, 1.0f, 0, borderWidth,
                 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f, null,
                 cornerRadiusTopLeft, cornerRadiusTopRight,
-                cornerRadiusBottomRight, cornerRadiusBottomLeft);
+                cornerRadiusBottomRight, cornerRadiusBottomLeft, null);
     }
 
     /**
@@ -640,6 +659,9 @@ public final class PaintCommand {
     /** @return 图片源；非 IMAGE 命令返回 null */
     public SceneImageSource getImageSource() { return imageSource; }
 
+    /** 仅 BACKDROP 命令有意义；其余命令返回 null。 */
+    public club.heiqi.uilib.ui.render.UiBackdrop getBackdrop() { return backdrop; }
+
     /** @return 富文本段流（不可变视图）；非 SEGMENTS 命令返回 null */
     public List<TextSegment> getSegments() { return segments; }
 
@@ -736,12 +758,14 @@ public final class PaintCommand {
                 || type == PaintCommandType.POP_TRANSFORM_LAYER) {
             return this;
         }
+        // backdrop 必须随命令平移透传：BACKDROP 与 BACKGROUND 同属节点局部坐标通路，
+        // 走本方法叠加 fragment 偏移。漏传会让玻璃声明在平移后静默消失（不报错、只是不画）。
         return new PaintCommand(type, left + dx, top + dy, right + dx, bottom + dy,
                 color, text, textStyle, linkUrl, imageSource, opacity, cornerRadius, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
                 segments,
                 cornerRadiusTopLeft, cornerRadiusTopRight,
-                cornerRadiusBottomRight, cornerRadiusBottomLeft);
+                cornerRadiusBottomRight, cornerRadiusBottomLeft, backdrop);
     }
 
     // ========== equals / hashCode / toString ==========
@@ -779,7 +803,8 @@ public final class PaintCommand {
                 && Float.compare(scaleX, other.scaleX) == 0
                 && Float.compare(scaleY, other.scaleY) == 0
                 && Float.compare(originXRatio, other.originXRatio) == 0
-                && Float.compare(originYRatio, other.originYRatio) == 0;
+                && Float.compare(originYRatio, other.originYRatio) == 0
+                && Objects.equals(backdrop, other.backdrop);
     }
 
     @Override
@@ -789,7 +814,8 @@ public final class PaintCommand {
                 Integer.valueOf(System.identityHashCode(segments)), opacity,
                 cornerRadius, cornerRadiusTopLeft, cornerRadiusTopRight,
                 cornerRadiusBottomRight, cornerRadiusBottomLeft, borderWidth,
-                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio);
+                translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
+                backdrop);
     }
 
     @Override

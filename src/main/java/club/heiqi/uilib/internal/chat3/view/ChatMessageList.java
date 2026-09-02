@@ -18,6 +18,8 @@ import club.heiqi.uilib.internal.chat3.viewmodel.ChatMarkdownLineRule;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatUrlLinkifier;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGroupModel;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.render.UiBackdrop;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneTooltip;
@@ -667,6 +669,18 @@ public final class ChatMessageList {
         int baseTextColor = system ? ChatMarkdownSettings.getSystemTextArgb() : 0xFFFFFFFF;
         int bubbleColor = selfRight ? ChatMarkdownSettings.getBubbleSelfArgb()
                 : ChatMarkdownSettings.getBubbleOtherArgb();
+        // 液态玻璃（用户裁决 2026-09-02）：气泡本身变半透明磨砂玻璃。
+        // alpha 改在这里是唯一正确落点——bubbleColor 同时喂"创建时 setBackgroundColor"
+        // 与"每帧 bake() 淡入/hover 重烘焙"两条路，改别处会被动画回路下一帧覆盖回实心。
+        // 打底用 DARK 系材质：聊天正文是浅色，白 tint 会把浅色文字一起洗白，黑 tint
+        // 压暗背景才保得住对比度（也是真机"DARK 更有苹果味"的成因）。
+        UiBackdrop bubbleBackdrop = null;
+        if (ChatMarkdownSettings.isGlassEnabled()) {
+            bubbleColor = (bubbleColor & 0x00FFFFFF)
+                    | (ChatMarkdownSettings.getGlassBubbleAlpha() << 24);
+            bubbleBackdrop = UiBackdrop.liquidGlass(UiGlassMaterial.DARK_REGULAR,
+                    ChatMarkdownSettings.getGlassBlurRadiusPx(), ChatMarkdownSettings.getGlassLensStrength());
+        }
         int hoverBubbleColor = ChatCardComposer.hoveredBubbleColor(bubbleColor);
         // 方案A accent(§10 已拍板):仅自己气泡 = row[内容列 + 2px 强调条];他人/classic/系统 = 现状 column
         boolean accent = selfRight && ChatMarkdownSettings.getSelfBubbleStyle()
@@ -702,6 +716,7 @@ public final class ChatMessageList {
                         // 贴组右缘:自己组 END 右对齐/他人组 START/系统组 CENTER。
                         .setAlignSelf(align)
                         .setBackgroundColor(bubbleColor)
+                        .setBackdrop(bubbleBackdrop)
                         .setMaxWidth(maxBubbleWidthPx);
                 setGradedCorners(messageNode, cornersFor(messageCount, i, selfRight, rLg, rInner));
                 // K3 缺陷 2:内容列收缩到文本宽,强调条才能贴气泡右内缘——否则列默认 FILL
@@ -727,6 +742,7 @@ public final class ChatMessageList {
                         .setAlignSelf(align);
                 if (!system) {
                     messageNode.setBackgroundColor(bubbleColor)
+                            .setBackdrop(bubbleBackdrop)
                             .setPadding(paddingY, paddingX, paddingY, paddingX)
                             .setMaxWidth(maxBubbleWidthPx);
                     setGradedCorners(messageNode, cornersFor(messageCount, i, selfRight, rLg, rInner));

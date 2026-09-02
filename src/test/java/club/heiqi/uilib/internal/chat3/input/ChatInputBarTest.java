@@ -6,6 +6,8 @@ import java.util.Collections;
 import java.util.List;
 
 import org.junit.Assert;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
@@ -21,6 +23,23 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * 通用 BG_PRESSED 0xFF211F26)、圆角 8、宽度填满父宽。
  */
 public class ChatInputBarTest {
+
+    /**
+     * 本类断言的是「非玻璃态」下设计令牌正确落到节点，故显式关闭聊天玻璃。
+     *
+     * <p>玻璃默认开启会把气泡/输入底色换成半透明档（alpha 由 glass*Alpha 决定），
+     * 与本类的令牌等值断言冲突。@After 复位避免静态开关污染同 JVM 其它测试。</p>
+     */
+    @Before
+    public void disableChatGlassForDesignTokenAssertions() {
+        ChatMarkdownSettings.setGlassEnabled(false);
+    }
+
+    @After
+    public void restoreChatGlassDefault() {
+        ChatMarkdownSettings.setGlassEnabled(true);
+    }
+
 
     private static final int BG_INPUT = ChatMarkdownSettings.getInputBackgroundArgb();
 

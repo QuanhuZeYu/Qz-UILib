@@ -409,6 +409,20 @@ public class ScenePaintEngine {
 
         // 背景色非透明 → BACKGROUND 命令（相对坐标，从 0,0 起；带节点圆角半径）
         // T4a：四角独立设置时走四角工厂；否则旧 uniform 路径（零变化）
+        // 背后滤镜：必须在 BACKGROUND 之前发出——玻璃是"背景被改色"，节点半透明底色
+        // 要叠在玻璃之上才是"气泡即玻璃"；反序会把玻璃整个盖住（等价没接）。
+        club.heiqi.uilib.ui.render.UiBackdrop backdrop = node.getBackdrop();
+        if (backdrop != null && backdrop.isActive()) {
+            if (node.isPerCornerRadius()) {
+                out.add(PaintCommand.backdrop(0, 0, width, height, backdrop, 0,
+                        node.getCornerRadiusTopLeft(), node.getCornerRadiusTopRight(),
+                        node.getCornerRadiusBottomRight(), node.getCornerRadiusBottomLeft()));
+            } else {
+                out.add(PaintCommand.backdrop(0, 0, width, height, backdrop, node.getCornerRadius(),
+                        -1, -1, -1, -1));
+            }
+        }
+
         int bgColor = node.getBackgroundColor();
         if (bgColor != 0) {
             if (node.isPerCornerRadius()) {

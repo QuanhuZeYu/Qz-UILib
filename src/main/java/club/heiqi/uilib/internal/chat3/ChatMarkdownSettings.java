@@ -160,6 +160,31 @@ public final class ChatMarkdownSettings {
     /** 文本选中底(selection-text,25% 链接蓝)。 */
     private static volatile int selectionBackgroundArgb = 0x407AB8F5;
 
+    // ==================== 液态玻璃（用户裁决 2026-09-02：聊天框与聊天 HUD 上 Liquid Glass）====================
+
+    /**
+     * 聊天玻璃总开关（默认开）。关闭后气泡/容器/输入条回退为实心底色、不发 backdrop 命令。
+     *
+     * <p>逃生舱语义与本类 {@link #enabled} 一致：观感不认可时可一键回到改动前。</p>
+     */
+    private static volatile boolean glassEnabled = true;
+    /** 模糊半径（逻辑 px；用户定 8）。 */
+    private static volatile int glassBlurRadiusPx = 8;
+    /** Liquid Glass 透镜强度 [0,1]（用户定 0.5）。 */
+    private static volatile float glassLensStrength = 0.5F;
+    /**
+     * 玻璃态下的气泡底 alpha（用户定"气泡本身变半透明磨砂玻璃"）。
+     *
+     * <p>刻意用 DARK 系材质打底：聊天正文是浅色（text-primary 0xFFE6E8EB），白 tint 在
+     * 亮背景上会把浅色文字一起洗白；黑 tint 压暗背景才保得住对比度——这既是可读性约束，
+     * 也正是真机反馈"DARK 系列更有苹果味"的成因。</p>
+     */
+    private static volatile int glassBubbleAlpha = 0x8C;
+    /** 玻璃态下的容器底 alpha（比气泡更透，让层级差留在"气泡更实"上）。 */
+    private static volatile int glassContainerAlpha = 0x59;
+    /** 玻璃态下的输入条底 alpha。 */
+    private static volatile int glassInputAlpha = 0x73;
+
     private ChatMarkdownSettings() {
     }
 
@@ -171,6 +196,61 @@ public final class ChatMarkdownSettings {
     /** 设置聊天 3.0 接管开关(下一渲染帧生效)。 */
     public static void setEnabled(boolean value) {
         enabled = value;
+    }
+
+    /** @return 聊天玻璃是否启用 */
+    public static boolean isGlassEnabled() {
+        return glassEnabled;
+    }
+
+    /** 设置聊天玻璃开关（下一渲染帧生效）。 */
+    public static void setGlassEnabled(boolean value) {
+        glassEnabled = value;
+    }
+
+    /** @return 玻璃模糊半径（逻辑 px） */
+    public static int getGlassBlurRadiusPx() {
+        return glassBlurRadiusPx;
+    }
+
+    public static void setGlassBlurRadiusPx(int value) {
+        glassBlurRadiusPx = Math.max(0, Math.min(64, value));
+    }
+
+    /** @return Liquid Glass 透镜强度 [0,1] */
+    public static float getGlassLensStrength() {
+        return glassLensStrength;
+    }
+
+    public static void setGlassLensStrength(float value) {
+        glassLensStrength = Math.max(0.0F, Math.min(1.0F, value));
+    }
+
+    /** @return 玻璃态气泡底 alpha（0~255） */
+    public static int getGlassBubbleAlpha() {
+        return glassBubbleAlpha;
+    }
+
+    public static void setGlassBubbleAlpha(int value) {
+        glassBubbleAlpha = Math.max(0, Math.min(255, value));
+    }
+
+    /** @return 玻璃态容器底 alpha（0~255） */
+    public static int getGlassContainerAlpha() {
+        return glassContainerAlpha;
+    }
+
+    public static void setGlassContainerAlpha(int value) {
+        glassContainerAlpha = Math.max(0, Math.min(255, value));
+    }
+
+    /** @return 玻璃态输入条底 alpha（0~255） */
+    public static int getGlassInputAlpha() {
+        return glassInputAlpha;
+    }
+
+    public static void setGlassInputAlpha(int value) {
+        glassInputAlpha = Math.max(0, Math.min(255, value));
     }
 
     /** @return 聊天气泡字号(px) */

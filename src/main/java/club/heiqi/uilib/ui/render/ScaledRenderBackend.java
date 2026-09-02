@@ -12,6 +12,12 @@ final class ScaledRenderBackend implements UiRenderBackend {
 
     ScaledRenderBackend(UiRenderBackend delegate, float scale) { this.delegate = delegate; this.scale = scale; }
     private int p(int value) { return Math.round(value * scale); }
+
+    /** 被包装的真实后端（同包能力门面穿透 scaled 装饰器用；不对外暴露）。 */
+    UiRenderBackend delegate() { return delegate; }
+
+    /** 本层缩放倍率（logical→framebuffer 单次换算量）。 */
+    float scale() { return scale; }
     public void publishTextDemand(List<String> texts){delegate.publishTextDemand(texts);}
     public void fillRect(int l,int t,int r,int b,int c){delegate.fillRect(p(l),p(t),p(r),p(b),c);}
     public void drawImage(SceneImageSource s,int l,int t,int r,int b){delegate.drawImage(s,p(l),p(t),p(r),p(b));}

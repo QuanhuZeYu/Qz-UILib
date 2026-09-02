@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.font.layout.TextSegment;
+import club.heiqi.uilib.ui.render.UiBackdrop;
 import club.heiqi.uilib.ui.scene.control.SceneListOps;
 import club.heiqi.uilib.ui.scene.image.SceneImageRect;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
@@ -716,6 +717,28 @@ public class SceneNode {
 
     /** @see ScenePaintProps#backgroundColor */
     public int getBackgroundColor() { return paintProps.backgroundColor; }
+
+    /**
+     * 设置本节点的背后滤镜（声明式玻璃通道）。
+     *
+     * <p>与 {@link #setBackgroundColor} 同构：PAINT 级属性，只改绘制输出、不改盒尺寸。
+     * 回放时在本节点 BACKGROUND **之前**发出，故节点自身的半透明底色会叠在玻璃之上
+     * ——这正是"气泡本身就是一块玻璃"的观感来源；反序会把玻璃整个盖住。</p>
+     *
+     * @param backdrop 滤镜声明；null 关闭
+     */
+    public SceneNode setBackdrop(UiBackdrop backdrop) {
+        if (paintProps.backdrop == backdrop
+                || (paintProps.backdrop != null && paintProps.backdrop.equals(backdrop))) {
+            return this;
+        }
+        paintProps.backdrop = backdrop;
+        markSelfPaint();
+        return this;
+    }
+
+    /** @see ScenePaintProps#backdrop */
+    public UiBackdrop getBackdrop() { return paintProps.backdrop; }
 
     /** 设置平台中立图片源；按对象身份去重，变化时仅标 PAINT。 */
     public SceneNode setImageSource(SceneImageSource imageSource) {

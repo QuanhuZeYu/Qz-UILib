@@ -62,6 +62,10 @@ public class UiRenderContext implements UiRenderBackend {
     final ClipStack clipStack = new ClipStack();
     private final DeferredPostMainPassQueue deferredPostMainPassQueue = new DeferredPostMainPassQueue();
     private int mainLayerContentRevision;
+    /** backdrop 批次嵌套深度；>0 表示冻结主层版本号（兄弟玻璃共享同一份背景采样）。 */
+    private int backdropBatchDepth;
+    /** 批次期间是否发生过内容写入（决定收尾时要不要 bump 一次）。 */
+    private boolean backdropBatchDirty;
 
     @Override
     public void publishTextDemand(List<String> texts) {
@@ -259,11 +263,50 @@ public class UiRenderContext implements UiRenderBackend {
      * {@code backdrop-filter} 继续复用写入前的旧快照。</p>
      */
     public void notifyMainLayerContentChanged() {
+        // 批次内冻结版本号：见 beginBackdropBatch 的语义说明。
+        if (backdropBatchDepth > 0) {
+            backdropBatchDirty = true;
+            return;
+        }
         if (mainLayerContentRevision == Integer.MAX_VALUE) {
             mainLayerContentRevision = 1;
             return;
         }
         mainLayerContentRevision++;
+    }
+
+    /**
+     * 进入 backdrop 批次：批次内所有 backdrop 与内容写入共享同一份主层版本号。
+     *
+     * <p>语义依据（对齐 iOS 的 UIVisualEffectView 层级）：同一视觉层级里的兄弟玻璃
+     * 采样的是<strong>它们共同的那张背景</strong>，彼此互不透过——气泡 2 的磨砂里
+     * 不该出现气泡 1 已经糊过的画面。冻结版本号同时带来性能收益：快照服务的 tile
+     * 复用以 contentRevision 为键（{@code UiMainLayerSnapshotService
+     * #resolveTileCoveragePlan}），版本不变则同帧后续玻璃只补拷缺失 tile，
+     * 而不是每块玻璃重捕一遍——聊天一屏十几条气泡时这是 N 次捕获与 1 次的差别。</p>
+     *
+     * <p>批次结束时若期间发生过任何写入，统一 bump 一次版本，保证批次之后的绘制
+     * 与下一帧都能看见玻璃自身画上去的内容。可嵌套，只有最外层负责收尾。</p>
+     */
+    public void beginBackdropBatch() {
+        backdropBatchDepth++;
+    }
+
+    /** 退出 backdrop 批次（与 {@link #beginBackdropBatch()} 严格配对）。 */
+    public void endBackdropBatch() {
+        if (backdropBatchDepth <= 0) {
+            return;
+        }
+        backdropBatchDepth--;
+        if (backdropBatchDepth == 0 && backdropBatchDirty) {
+            backdropBatchDirty = false;
+            notifyMainLayerContentChanged();
+        }
+    }
+
+    /** 当前是否处于 backdrop 批次内（诊断与门面用）。 */
+    public boolean isInBackdropBatch() {
+        return backdropBatchDepth > 0;
     }
 
     /**

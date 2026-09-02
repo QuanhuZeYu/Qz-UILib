@@ -11,6 +11,22 @@ package club.heiqi.uilib.ui.scene.paint;
 public enum PaintCommandType {
 
     /**
+     * 背后内容滤镜（backdrop-filter，声明式玻璃通道）。
+     *
+     * <p>渲染层操作：调用 {@code UiRenderBackends.backdropFilter(ctx, ...)} 对当前已绘内容
+     * 做磨玻璃/Liquid Glass 合成。命令携带绝对屏幕矩形（由 fragment 偏移叠加得到）、
+     * 模糊半径、圆角与效果配方引用。</p>
+     *
+     * <p>与 {@link #BACKGROUND} 的关系：BACKDROP 必须在同节点的 BACKGROUND **之前**发出——
+     * 玻璃是"背景被改色"，节点的半透明填充色要叠在玻璃之上，才是 iOS 那层"气泡即玻璃"；
+     * 顺序反了会把玻璃盖住（等价没接）。</p>
+     *
+     * <p>后端不支持该增强能力时静默不绘（宪章信条六：契约不含 backdrop，能力经门面探测）。
+     * 命令携带 effect 引用属不可变值对象，随 fragment 复用安全。</p>
+     */
+    BACKDROP,
+
+    /**
      * 填充矩形/背景色。
      *
      * <p>渲染层操作：在指定矩形区域内用指定颜色填充表面，

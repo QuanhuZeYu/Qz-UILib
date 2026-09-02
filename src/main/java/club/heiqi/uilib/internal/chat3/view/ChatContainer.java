@@ -3,6 +3,8 @@ package club.heiqi.uilib.internal.chat3.view;
 import java.util.Map;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
+import club.heiqi.uilib.ui.render.UiBackdrop;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.input.ChatInputBar;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -120,9 +122,22 @@ public final class ChatContainer {
      */
     public static Result mount(SceneRuntime rt, ChatSceneController controller,
             Map<SceneNode, ChatLineRecord> registry, String initialText) {
+        // 液态玻璃：容器与气泡同处一个 backdrop 批次，故二者采样的是<strong>同一张世界
+        // 画面</strong>（批次内主层 revision 冻结）——气泡的玻璃不会把容器已糊过的画面
+        // 再糊一层。这正是 iOS 一个 visual effect 层级内共享背景采样的语义，
+        // 层级差靠 alpha 递进表达（容器 0x59 < 气泡 0x8C）。
+        UiBackdrop containerBackdrop = ChatMarkdownSettings.isGlassEnabled()
+                ? UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
+                        ChatMarkdownSettings.getGlassBlurRadiusPx(), ChatMarkdownSettings.getGlassLensStrength())
+                : null;
+        int containerBg = ChatMarkdownSettings.isGlassEnabled()
+                ? (ChatMarkdownSettings.getContainerBgArgb() & 0x00FFFFFF)
+                        | (ChatMarkdownSettings.getGlassContainerAlpha() << 24)
+                : ChatMarkdownSettings.getContainerBgArgb();
         SceneNode containerNode = SceneNode.column()
                 .setHitTestable(false)
-                .setBackgroundColor(ChatMarkdownSettings.getContainerBgArgb())
+                .setBackdrop(containerBackdrop)
+                .setBackgroundColor(containerBg)
                 .setBorderColor(ChatMarkdownSettings.getContainerBorderArgb())
                 .setBorderWidth(1)
                 .setCornerRadius(ChatMarkdownSettings.getContainerCornerRadius())

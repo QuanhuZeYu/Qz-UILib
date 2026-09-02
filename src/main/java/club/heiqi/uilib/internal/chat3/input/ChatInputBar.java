@@ -15,6 +15,8 @@ import net.minecraftforge.client.ClientCommandHandler;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiBackdrop;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.scene.control.MaxLengthUnit;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneTextInputPrimitive;
@@ -99,9 +101,18 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         // __bindAnimatedColor(SceneStateColors.inputBackground = BG_PRESSED 0xFF211F26,
         // 实测 (33,31,38))每帧覆盖背景,此处恒值覆盖绑定(注册晚于控件内部绑定,
         // 帧末批量提交时覆盖值恒生效,与 borderBinding 同技巧)。
+        // 液态玻璃：输入条底色 alpha 走同一条覆盖绑定（SceneTextInput 内部每帧重烘焙
+        // 背景，只有在这里出半透明值才不会被覆盖回实色），并挂上 backdrop 声明。
         this.backgroundBinding = runtime.bind(Computed.create(() -> Integer.valueOf(
-                ChatMarkdownSettings.getInputBackgroundArgb())),
+                ChatMarkdownSettings.isGlassEnabled()
+                        ? (ChatMarkdownSettings.getInputBackgroundArgb() & 0x00FFFFFF)
+                                | (ChatMarkdownSettings.getGlassInputAlpha() << 24)
+                        : ChatMarkdownSettings.getInputBackgroundArgb())),
                 inputRoot::setBackgroundColor);
+        if (ChatMarkdownSettings.isGlassEnabled()) {
+            inputRoot.setBackdrop(UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
+                    ChatMarkdownSettings.getGlassBlurRadiusPx(), ChatMarkdownSettings.getGlassLensStrength()));
+        }
         // 设计稿 §2.1:非 focus 无描边(透明),focus 1px 0x406B9BD8(25% 淡蓝)。
         // SceneTextInput 通用描边(=0xFF938F99 常驻灰紫)不符合聊天设计,此处按交互态覆盖;
         // 绑定注册晚于控件内部绑定,帧末批量提交时覆盖值恒生效。
