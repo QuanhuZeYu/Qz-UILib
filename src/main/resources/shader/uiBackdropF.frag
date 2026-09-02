@@ -3,7 +3,7 @@
 // UI 磨玻璃材质着色器。
 //
 // 质感分层（对齐 iOS UIVisualEffectView 的材质构成，顺序不可交换）：
-//   1) 模糊：13 抽头 Poisson 盘
+//   1) 模糊：13 抽头向日葵螺旋核（连续半径，消散光）
 //   2) vibrancy：亮度域保护式饱和提升（不是线性乘饱和度）
 //   3) 材质蒙层 tint：白/深色半透明叠加（在色彩校正之后）
 //   4) 亮度偏置 lift + 边缘亮边 + 内侧上缘柔光 / 下缘暗带
@@ -86,21 +86,24 @@ float hashNoise(vec2 p) {
 }
 
 void main(void) {
-    // 核能量契约：13 抽头（中心 + 12 个 Poisson 盘偏移）权重和恒为 1，保证磨玻璃
+    // 核能量契约：13 抽头（中心 + 12 个向日葵螺旋抽头）权重和恒为 1（/1000 整数化），保证磨玻璃
     // 是"亮度保持"操作。柔化提交 e5a6b2ae 重写核时权重和漂移到 1.12，导致磨玻璃
     // 整体过曝 12%、高光处 clamp 偏色（旧核历史和为 1.02，证明归一是本意而非风格
     // 选择）；2026-09-01 混合语义特勘修复，权重和由 UiBackdropKernelEnergyTest 以
     // 源码契约锚定（抽头数 13 + 和为 1），改核必须同步保持。
     //
-    // 为什么从"十字 + 对角"规则核换成 Poisson 盘：规则核在大半径下必然沿轴向与
-    // 对角向出现方向性拉丝和"星星点点"的采样点分离；Poisson 盘保持抽头间最小间距
-    // （避免纯随机采样的颗粒噪声），同时消除径向伪影。Apple 实时模糊的标准做法是
-    // dual-filter Kawase，但那需要多趟离屏 pass，本管线是单趟，故取 Poisson 盘。
-    // 1.35 为抽头半径补偿，按**加权 RMS 半径**校准（决定糊度的是积分量而非极值）：
-    // 旧规则核 RMS=0.911，本盘未补偿 RMS=0.654，真系数 1.394；取 1.35 后 RMS=0.883，
-    // 与旧核差 3.2%，保持作者侧 blurRadius 观感口径。该 RMS 由核守卫断言锁定，
-    // 改盘位会静默改变模糊强度，故必须在契约里同步。
-    vec2 radiusStep = texelSize * clamp(blurRadius, 1.0, 128.0) * 1.35;
+    // 核形状演进（2026-09-02 散光调优）：规则十字+对角 -> 双半径 Poisson 盘 -> 向日葵螺旋。
+    // 前两版散光（大半径下"星星点点"如散光眼）的数学根源是抽头半径只有离散几档：
+    // 双半径盘 12 个外圈抽头挤在 r≈0.45 与 r≈0.9 两个环上，模糊读作"中心 + 两亮环"；
+    // 旋转是刚体变换救不了径向分层（环旋转对称，转了等于没转）。向日葵螺旋
+    // （r=sqrt(i/12)*1.6 面积均匀、角步进黄金角 2.39996 rad）让 13 个抽头落在 13 个
+    // 连续半径上、角向黄金分布，高斯权重按半径单调衰减——径向能量摊平，亮环消失；
+    // 螺旋残留的角向臂结构恰由下面的逐像素旋转打散（对双半径环旋转无效，对螺旋有效）。
+    // 0.98 为抽头半径补偿，按**加权 RMS 半径**校准（决定糊度的是积分量而非极值）：
+    // 螺旋核未补偿 RMS=0.9294，乘 0.98 后 0.9108，与旧规则核基准 0.91148 差 -0.07%，
+    // 保持作者侧 blurRadius 观感口径。该 RMS 由核守卫断言锁定，改核会静默改变模糊
+    // 强度，故必须在契约里同步。
+    vec2 radiusStep = texelSize * clamp(blurRadius, 1.0, 128.0) * 0.98;
 
     // 面板几何必须先于采样计算：Liquid Glass 的透镜折射要偏置采样坐标。
     // 到"圆角矩形边界"的带符号距离（inigo-quirk 的 rounded-box SDF，约 10 ALU）。
@@ -155,21 +158,22 @@ void main(void) {
         }
     }
 
-    vec4 blurred = texture2D(mainTex, texCoord + lensShift) * (60.0 / 300.0);
+    vec4 blurred = texture2D(mainTex, texCoord + lensShift) * (161.0 / 1000.0);
 
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.280, -0.348) * radiusStep) * (30.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.435, 0.055) * radiusStep) * (30.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.146, 0.451) * radiusStep) * (30.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.453, 0.157) * radiusStep) * (30.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.341, 0.312) * radiusStep) * (139.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.057, -0.651) * radiusStep) * (120.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.487, 0.635) * radiusStep) * (103.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.910, -0.161) * radiusStep) * (89.0 / 1000.0);
 
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.721, -0.515) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.751, -0.416) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.328, 0.813) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.292, 0.829) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.936, 0.196) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.198, -0.963) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.918, 0.331) * radiusStep) * (15.0 / 300.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.549, -0.811) * radiusStep) * (15.0 / 300.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.871, -0.554) * radiusStep) * (77.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.294, 1.093) * radiusStep) * (66.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.563, -1.084) * radiusStep) * (57.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(1.227, 0.448) * radiusStep) * (49.0 / 1000.0);
+
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-1.281, 0.529) * radiusStep) * (43.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.619, -1.323) * radiusStep) * (37.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.458, 1.462) * radiusStep) * (32.0 / 1000.0);
+    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-1.384, -0.802) * radiusStep) * (27.0 / 1000.0);
 
     vec3 color;
     if (iosMaterial > 0.5) {
