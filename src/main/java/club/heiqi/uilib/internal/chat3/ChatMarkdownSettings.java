@@ -21,8 +21,15 @@ public final class ChatMarkdownSettings {
     private static volatile double chatWidthRatio = 0.25;
     /** 聊天窗口最小宽(逻辑 px;仅极小窗口兜底,不干扰比例——guiScale 下 min 过大曾把 1/4 顶成 1/3)。 */
     private static volatile int minChatWidthPx = 160;
-    /** 聊天窗口最大宽(逻辑 px;新增封顶:4K 宽屏下 25% 不再无限拉长)。 */
-    private static volatile int chatWidthMaxPx = 360;
+    /**
+     * 聊天窗口最大宽(物理 px;只防 4K 级"无限拉长",不得压制 1/4 比例本身)。
+     *
+     * <p>历史值 360 是个错误档位:视口喂进来的是 {@code mc.displayWidth}(物理像素、
+     * 不除 guiScale),1440p 宽 2559 下 1/4 = 640 被 360 掐掉,面板只占窗口 14%——
+     * 封顶在常见分辨率上静默覆盖了用户自定的「约 1/4 随窗口缩放」。改 640 后
+     * ≤2560 宽全区间比例真正主导,仅 4K(3840×0.25=960)才被封顶。</p>
+     */
+    private static volatile int chatWidthMaxPx = 640;
     /** 聊天窗口距屏幕边缘边距(px)。 */
     private static volatile int chatMarginPx = 10;
     /** 气泡水平内边距(px;内边距定值 10)。 */
@@ -302,8 +309,8 @@ public final class ChatMarkdownSettings {
      * @return 聊天窗口宽(px),设计稿 §5.5 分段:
      *         视口宽 &lt; 360 → 视口宽 × 0.5(比下限 160 更小,窄屏适配);
      *         [360, 800) → 下限 minChatWidthPx;
-     *         ≥ 800 → clamp(视口宽 × 比例, 最小宽 .. 最大宽),新增 360 封顶:
-     *         4K 宽屏下 25% 不再无限拉长
+     *         ≥ 800 → clamp(视口宽 × 比例, minChatWidthPx .. chatWidthMaxPx);
+     *         封顶只兜 4K 级超长,≤2560 宽由 1/4 比例主导(用户定口径)
      */
     public static int chatWidthFor(int viewportWidth) {
         if (viewportWidth < 360) {

@@ -20,8 +20,8 @@ public class ChatMarkdownSettingsTest {
         // 内边距:气泡纵向 6→5,横向不变
         Assert.assertEquals(5, ChatMarkdownSettings.getBubblePaddingY());
         Assert.assertEquals(10, ChatMarkdownSettings.getBubblePaddingX());
-        // 宽度:新增 360 封顶
-        Assert.assertEquals(360, ChatMarkdownSettings.getChatWidthMaxPx());
+        // 宽度封顶:640 —— 必须 ≥ 2560 宽视口的 1/4,否则封顶会压制用户自定的比例
+        Assert.assertEquals(640, ChatMarkdownSettings.getChatWidthMaxPx());
         // 新增参数(P1 用,本轮落常量)
         Assert.assertEquals(0.5, ChatMarkdownSettings.getHudMaxHeightRatio(), 0.0001);
         // 滚轮默认 7(设计稿 §10.1 拍板改回原版 ×7;Shift 一格 1 行)
@@ -85,7 +85,7 @@ public class ChatMarkdownSettingsTest {
 
     /**
      * §5.5 三档分段:<360 → 视口宽×0.5(比下限更小);[360,800) → 下限 160;
-     * ≥800 → clamp(等比, 160..360)。
+     * ≥800 → clamp(等比, 160..640);封顶只兜 4K 级超长,≤2560 宽由 1/4 比例主导。
      */
     @Test
     public void chatWidthFollowsSection55Segments() {
@@ -99,11 +99,16 @@ public class ChatMarkdownSettingsTest {
         Assert.assertEquals(160, ChatMarkdownSettings.chatWidthFor(640));
         Assert.assertEquals(160, ChatMarkdownSettings.chatWidthFor(661));
         Assert.assertEquals(160, ChatMarkdownSettings.chatWidthFor(799));
-        // ≥800:clamp(等比 1/4, 160..360);800×0.25 = 200
+        // ≥800:clamp(等比 1/4, 160..640);800×0.25 = 200
         Assert.assertEquals(200, ChatMarkdownSettings.chatWidthFor(800));
-        // 新增封顶:1600/3840 均封 360(历史 4K 无上限回归点)
-        Assert.assertEquals(360, ChatMarkdownSettings.chatWidthFor(1600));
-        Assert.assertEquals(360, ChatMarkdownSettings.chatWidthFor(3840));
+        // 1/4 必须在常见分辨率真正生效(历史回归点:封顶 360 曾把 1440p 的 640 掐成 14%)
+        Assert.assertEquals("1600 → 恰为 1/4", 400, ChatMarkdownSettings.chatWidthFor(1600));
+        Assert.assertEquals("2559(1440p 窗口)→ 恰为 1/4", 640,
+                ChatMarkdownSettings.chatWidthFor(2559));
+        Assert.assertEquals("2560 → 恰为 1/4", 640, ChatMarkdownSettings.chatWidthFor(2560));
+        // 封顶只在 4K 级兜底:3840×0.25 = 960 → 封 640(历史 4K 无上限回归点)
+        Assert.assertEquals(640, ChatMarkdownSettings.chatWidthFor(3840));
+        Assert.assertEquals(640, ChatMarkdownSettings.chatWidthFor(7680));
     }
 
     @Test
