@@ -136,6 +136,28 @@ public class UiBackdropShaderSyntaxTest {
                 frag.indexOf("0.20 * pow(max(-nDotL, 0.0), 1.5)") >= 0);
     }
 
+    /**
+     * 静态默认光向必须锚在一手参考的数值约定上，且必须由角度推导向量。
+     *
+     * <p>参考 WebGlass 的 --wg-light-angle 默认 -55（约定 0=右、-90=上、90=下，屏幕 y
+     * 轴向下），与本 shader 的 sdfGradient 同坐标系，角度可直接换算不需翻转。该文档正文
+     * 的"upper-left"与其数值和示意图自相矛盾，按数值+示意图取右上。</p>
+     *
+     * <p>锁"由角度推导"而不是锁一对浮点数：手写向量会让坐标系约定重新变成隐性知识，
+     * 而本仓已经因为把 -71° 的向量注释成"左上"错过一次。</p>
+     */
+    @Test
+    public void staticLightAngleAnchorsToReference() throws IOException {
+        String code = stripComments(read(RENDERER));
+        assertTrue("默认光向必须锚定参考值 -55 度",
+                code.indexOf("DEFAULT_LIGHT_ANGLE_DEG = -55.0F") >= 0);
+        assertTrue("方向必须由该角度推导，不得退回手写单位向量",
+                code.indexOf("Math.cos(Math.toRadians(DEFAULT_LIGHT_ANGLE_DEG))") >= 0
+                        && code.indexOf("Math.sin(Math.toRadians(DEFAULT_LIGHT_ANGLE_DEG))") >= 0);
+        assertTrue("旧的手写向量已废弃（其坐标系约定不可读）",
+                code.indexOf("0.32F") < 0);
+    }
+
     private static void assertBalanced(String relative) throws IOException {
         String code = stripComments(read(relative));
         List<Character> stack = new ArrayList<Character>();

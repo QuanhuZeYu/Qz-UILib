@@ -448,19 +448,33 @@ final class UiBackdropFilterRenderer {
      *
      * <p>官方 Liquid Glass 的缘光"responds to device motion"；MC 1.7.10 无陀螺仪，
      * 宿主以鼠标指针为虚拟光源——指针在哪个方位，缘带就朝哪边最亮。指针不可得或
-     * 恰在中心时退回左上 (0.32, -0.95)（调研推荐的静态高光方向）。</p>
+     * 恰在中心时退回静态默认光向 {@link #DEFAULT_LIGHT_ANGLE_DEG}。</p>
+     *
+     * <h3>默认光向取一手参考的数值约定（-55°，右上）</h3>
+     * <p>参考 WebGlass tokens：{@code --wg-light-angle} 默认 -55，约定为"自 +x 顺时针
+     * 计量、0=右、-90=上、90=下"，即屏幕 y 轴向下——与本 shader 的 {@code sdfGradient}
+     * 同一坐标系，角度可直接换算不需翻转。该文档正文另有一句"upper-left"与其数值和
+     * ASCII 示意图（光源箭头画在右上 ↗）自相矛盾，按数值+示意图两项取<b>右上 55°</b>。
+     * 本仓此前用的 (0.32, -0.95) 等价 -71.4°（几乎正上），且旧注释误写作"左上"，
+     * 一并纠正。要改成左上镜像：把角度取为 -125°。</p>
      *
      * <p>口径如实说明：{@code getMouseX/Y} 是屏幕绝对坐标，而面板矩形可能处于
      * 宿主局部空间（带 absX/absY 偏移），偏移大时缘光方向会偏。缘光只是装饰性
      * 方向调制，不影响采样正确性；若将来要精确，需把面板矩形换算到屏幕空间后
      * 再传进来（会牵动 render 签名，暂不做）。</p>
      */
+    /**
+     * 静态默认光向（度，屏幕 y 轴向下、自 +x 顺时针计量）。-55° = 右上、仰 55°，
+     * 取自一手参考 WebGlass 的 --wg-light-angle 默认值。见 resolveLightDirection 的
+     * 约定说明与文档内部矛盾处置。
+     */
+    private static final float DEFAULT_LIGHT_ANGLE_DEG = -55.0F;
     private static float[] resolveLightDirection(UiRenderContext context, int left, int top, int right,
             int bottom) {
         float centerX = (float) (left + right) * 0.5F;
         float centerY = (float) (top + bottom) * 0.5F;
-        float dirX = 0.32F;
-        float dirY = -0.95F;
+        float dirX = (float) Math.cos(Math.toRadians(DEFAULT_LIGHT_ANGLE_DEG));
+        float dirY = (float) Math.sin(Math.toRadians(DEFAULT_LIGHT_ANGLE_DEG));
         if (context != null) {
             float px = (float) context.getMouseX() - centerX;
             float py = (float) context.getMouseY() - centerY;
