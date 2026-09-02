@@ -90,7 +90,14 @@ public final class ChatMarkdownSettings {
     /** 输入条区高(px;设计稿 §6.2:输入条区高 40 贴容器底)。 */
     private static volatile int inputBarHeightPx = 40;
     /** 输入条圆角(px;设计稿 §2.1/§3.2:r-md 8)。 */
-    private static volatile int inputCornerRadiusPx = 8;
+    /**
+     * 输入框圆角：与容器**同心**推导，不是独立取值。
+     *
+     * <p>同心规则 inner = outer − inset：容器 20、输入区在容器内的内缩
+     * {@code INPUT_AREA_PADDING_PX = 8} ⇒ 输入框 12。原值 8 是容器还是 12 时代留下的，
+     * 容器提到 20 后若不同步，输入框的弧会比容器"更紧"，两圈弧线在视觉上不同心。</p>
+     */
+    private static volatile int inputCornerRadiusPx = 12;
 
     /** 自己气泡视觉风格(§10 已拍板:方案A accent)。 */
     public enum SelfBubbleStyle {
@@ -112,7 +119,15 @@ public final class ChatMarkdownSettings {
     /** 容器 1px 描边(border-container,10% 白)。 */
     private static volatile int containerBorderArgb = 0x1AFFFFFF;
     /** 容器圆角半径(px;r-lg 12)。 */
-    private static volatile int containerCornerRadius = 12;
+    /**
+     * 聊天容器圆角。
+     *
+     * <p>2026-09-02 真机观感定稿时从 12 提到 20（用户：「把聊天框的圆角调大就OK了」）。
+     * 上玻璃后轮廓第一次可见，12px 在 320px 宽的面板上读作"几乎直角"——圆角是 Liquid
+     * Glass 立体倒角的载体，半径太小则缘带没有弧度可挂（缘带宽度按短边比例、峰值内移
+     * 0.35·band，直角处这两项都退化）。改半径不影响玻璃本身，只改轮廓曲率。</p>
+     */
+    private static volatile int containerCornerRadius = 20;
     /** 他人消息气泡底(bg-bubble-other,HUD 与容器同值)。 */
     private static volatile int bubbleOtherArgb = 0xF2242B33;
     /** 自己消息气泡底(bg-bubble-self-A,方案A 暗底配强调条)。 */

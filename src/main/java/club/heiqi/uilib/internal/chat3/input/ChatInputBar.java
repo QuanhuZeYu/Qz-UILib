@@ -90,7 +90,8 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         this.inputRoot = inputHandle.component().get();
         this.inputRoot.setFontSize(INPUT_FONT_SIZE);
         this.inputRoot.setFillParentWidth(true);
-        // 设计稿 §3.2:输入框圆角 r-md = 8(覆盖 SceneTextInput 通用 RADIUS_MD 12)
+        // 输入框圆角走 settings（2026-09-02 起按同心规则 = 容器 20 - 内缩 8 = 12，
+        // 不再是设计稿早期的 r-md 8；容器半径再变要同步改 settings 的那个值）
         this.inputRoot.setCornerRadius(ChatMarkdownSettings.getInputCornerRadiusPx());
         // K3 缺陷 F6②:输入框高钉 24px(40 - 四周 8×2),内 padding 覆盖通用 PAD_MD=8
         // 为 (2,10,2,10)——24 盒高下 font-input 14px 行高 20 恰好撑满(设计稿 §6.2/§2.3)

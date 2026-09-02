@@ -31,6 +31,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 public final class ChatContainer {
 
     /** 输入条区四周内边距(px,设计稿 §2.3 sp-4/§6.2:输入条区四周 8)。 */
+    /** 输入区内缩。参与同心不变量：输入框圆角 = 容器圆角 - 本值，由
+     *  {@code ChatMarkdownSettingsTest.inputRadiusStaysConcentricWithContainer} 锁定，改这里要同步改那个测试。 */
     private static final int INPUT_AREA_PADDING_PX = 8;
     /** 容器内容区上内边距(px,设计稿 §2.3/§6.2:上 10)。 */
     private static final int CONTENT_PADDING_TOP_PX = 10;

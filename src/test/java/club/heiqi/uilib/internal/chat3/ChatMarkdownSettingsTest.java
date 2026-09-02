@@ -49,9 +49,24 @@ public class ChatMarkdownSettingsTest {
         Assert.assertEquals(8, ChatMarkdownSettings.getGroupGapContainerPx());
         Assert.assertEquals(4, ChatMarkdownSettings.getBubbleInnerCornerRadiusPx());
         Assert.assertEquals(0.85, ChatMarkdownSettings.getBubbleMaxWidthRatio(), 0.0001);
-        Assert.assertEquals(12, ChatMarkdownSettings.getContainerCornerRadius());
+        Assert.assertEquals(20, ChatMarkdownSettings.getContainerCornerRadius());
         Assert.assertEquals(450, ChatMarkdownSettings.containerHeightFor(900));
         Assert.assertEquals(160, ChatMarkdownSettings.containerHeightFor(100));
+    }
+
+    /**
+     * 同心不变量：输入框圆角必须等于「容器圆角 − 输入区内缩」。
+     *
+     * <p>两个半径是独立 volatile 值，只锁各自的等值挡不住它们各自漂移；漂移后容器与
+     * 输入框的两圈弧线不同心，圆角越大越明显。内缩取 ChatContainer.INPUT_AREA_PADDING_PX
+     * （该常量处有反向指针指回本测试）。改容器半径必须同步改输入框半径，否则本测试失败。</p>
+     */
+    @Test
+    public void inputRadiusStaysConcentricWithContainer() {
+        final int inputAreaInsetPx = 8;
+        Assert.assertEquals("输入框圆角必须按同心规则 inner = outer - inset 跟随容器圆角",
+                ChatMarkdownSettings.getContainerCornerRadius() - inputAreaInsetPx,
+                ChatMarkdownSettings.getInputCornerRadiusPx());
     }
 
     /** TB1:常驻开关 setter 往返(进程级配置切换后恢复,与 enabled 同款 setter 语义)。 */
