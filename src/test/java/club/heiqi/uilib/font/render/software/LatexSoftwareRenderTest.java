@@ -81,12 +81,16 @@ public class LatexSoftwareRenderTest {
                 denTop = Math.min(denTop, glyph.top);
             }
         }
-        Assert.assertTrue("分子内层分数应在主线上方", numBottom > Integer.MIN_VALUE);
-        Assert.assertTrue("分母内层分数应在主线下方", denTop < Integer.MAX_VALUE);
+        Assert.assertTrue("分子内层分数应在主线上方" + fontScene(), numBottom > Integer.MIN_VALUE);
+        Assert.assertTrue("分母内层分数应在主线下方" + fontScene(), denTop < Integer.MAX_VALUE);
         int topGap = main.top - numBottom;
         int bottomGap = denTop - main.bottom;
-        Assert.assertTrue("分子与主线间隙应 ≥ 0.5px（实测 " + topGap + "px）", topGap >= 0.5);
-        Assert.assertTrue("主线与分母间隙应 ≥ 1.5px（实测 " + bottomGap + "px）", bottomGap >= 1.5);
+        // 注：quad 坐标已取整，topGap 只能落在整数上 —— 0.5 的阈值在本口径下等价于 ≥1px。
+        //     这是判定口径的既有粒度，此处只记录、不放宽（放宽等于删掉验收标准）。
+        Assert.assertTrue("分子与主线间隙应 ≥ 0.5px（实测 " + topGap + "px）"
+                + verticalScene(main, glyphs, 2) + fontScene(), topGap >= 0.5);
+        Assert.assertTrue("主线与分母间隙应 ≥ 1.5px（实测 " + bottomGap + "px）"
+                + verticalScene(main, glyphs, 2) + fontScene(), bottomGap >= 1.5);
     }
 
     /** 分数：规则线水平、位于分子与分母之间、横跨两者。 */
@@ -143,7 +147,8 @@ public class LatexSoftwareRenderTest {
                 break;
             }
         }
-        Assert.assertNotNull("应有分子字形", numerator);
+        Assert.assertNotNull("应有分子字形（判据：glyph.bottom <= rule.top + 1）"
+                + verticalScene(rule, glyphs, 1) + fontScene(), numerator);
         // 布局中横线左端与分子左端同 x（sideSpace 对齐）；渲染侧段起点偏移后两者应保持重合
         int delta = rule.left - numerator.left;
         Assert.assertTrue("横线左端应锚定公式段（与分子同 x），实测偏移=" + delta + "px",
@@ -499,6 +504,43 @@ public class LatexSoftwareRenderTest {
         }
         java.nio.file.Files.write(new java.io.File("build/reports/latex-render/sqrt-index-box.txt").toPath(),
                 report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 断言消息统一带上字体现场。
+     *
+     * <p>这套判据量的是亚像素级垂直间隙，而 {@link LatexSoftwareRenderKit} 的 catalog 用的是 AWT
+     * 逻辑字体 {@code "Dialog"} —— 由操作系统解析成不同物理字体，同一份代码在 Windows 与 Ubuntu 上
+     * 量到的间隙本就不同。只报「间隙 0px」无法区分「渲染真的贴死」与「判据只对本机度量成立」，
+     * 所以把度量指纹一起打进失败消息（Gradle 默认不回显测试 stdout，消息是唯一可靠通道）。</p>
+     */
+    private static String fontScene() {
+        return " {" + LatexSoftwareRenderKit.platformFontReport() + "}";
+    }
+
+    /** 规则线与字形的垂直分布现场：只报「没有分子」不够可诊断，要说清字形都落在哪儿。 */
+    private static String verticalScene(Quad rule, List<Quad> glyphs, int tolerance) {
+        int above = 0;
+        int below = 0;
+        int overlap = 0;
+        int minBottom = Integer.MAX_VALUE;
+        int maxBottom = Integer.MIN_VALUE;
+        for (Quad glyph : glyphs) {
+            // 容差对齐宿主测试的分桶口径，否则现场与判据说的不是同一件事
+            if (glyph.bottom <= rule.top + tolerance) {
+                above++;
+            } else if (glyph.top >= rule.bottom - tolerance) {
+                below++;
+            } else {
+                overlap++;
+            }
+            minBottom = Math.min(minBottom, glyph.bottom);
+            maxBottom = Math.max(maxBottom, glyph.bottom);
+        }
+        return " rule[top=" + rule.top + ",bottom=" + rule.bottom + "] glyphs=" + glyphs.size()
+                + " tol=" + tolerance + " above=" + above + " below=" + below
+                + " overlap=" + overlap
+                + " bottom[" + minBottom + ".." + maxBottom + "]";
     }
 
     /** quad 快照（收集侧验收口径）。 */

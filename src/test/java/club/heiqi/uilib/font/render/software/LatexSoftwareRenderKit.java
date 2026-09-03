@@ -1,6 +1,11 @@
 package club.heiqi.uilib.font.render.software;
 
 import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.GraphicsEnvironment;
+import java.awt.Toolkit;
+import java.awt.font.FontRenderContext;
+import java.awt.font.LineMetrics;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -142,6 +147,97 @@ public final class LatexSoftwareRenderKit {
     /** 契约测试用：共享 TextLayoutService（真机同源度量实现）。 */
     public static club.heiqi.uilib.font.layout.TextLayoutService currentService() {
         return shared().service;
+    }
+
+    /** 垂直度量探针串：与 {@code FontRuntimeMetrics.METRICS_SAMPLE} 同源，不另起口径。 */
+    private static final String DIAG_METRICS_SAMPLE = "Ag";
+
+    /** 推进指纹探针串：宽窄与大写混排，靠巧合撞上另一套物理字体的概率极低。 */
+    private static final String DIAG_WIDTH_SAMPLE = "Hx01MWil";
+
+    /** 与 {@code FontRuntimeMetrics.FONT_RENDER_CONTEXT} 同口径：恒等变换 + AA 开启。 */
+    private static final FontRenderContext DIAG_FRC = new FontRenderContext(null, true, true);
+
+    /** 字体现场只算一次（内含逐家族指纹扫描），供多处断言消息复用。 */
+    private static String platformFontReport;
+
+    /**
+     * 当前 JVM 解析到的字体现场，单行紧凑串。<b>纯观测</b>：不参与任何判定，内部任何异常都降级为
+     * {@code diagError=...} —— 诊断本身绝不允许把测试搞红。
+     *
+     * <p><b>为什么要它</b>：{@code "Dialog"} 是 AWT <b>逻辑字体</b>，由操作系统解析成不同物理字体
+     * （Windows 走 Microsoft Sans Serif/Tahoma 一类，Ubuntu 走 DejaVu 一类）。生产路径用的是同一个
+     * 逻辑字体（{@code FontRuntimeMetrics#prepare} 在 catalog 缺位时 {@code new Font("Dialog", ...)}），
+     * 而仓库不携带任何 TTF —— 所以这里量到的就是该平台上玩家实际会看到的度量，不是测试环境特有。
+     * 分数分子与主线的间隙正由这些垂直度量推导，因此「间隙是否贴死」是个平台相关量。</p>
+     *
+     * <p><b>物理家族名没有公开反解 API</b>，改用度量当指纹：整数 advance/height 走 {@code FontMetrics}
+     * （与 vanilla 宽度口径同源），ascent/descent/leading 走 {@code LineMetrics}；再拿同字号指纹去本机
+     * 已安装家族里比对，命中名即该逻辑字体在本机最可能解析到的物理家族。</p>
+     */
+    public static String platformFontReport() {
+        if (platformFontReport == null) {
+            platformFontReport = buildPlatformFontReport();
+        }
+        return platformFontReport;
+    }
+
+    private static String buildPlatformFontReport() {
+        StringBuilder sb = new StringBuilder();
+        try {
+            sb.append("jvm=").append(System.getProperty("java.version"));
+            sb.append(" os=").append(System.getProperty("os.name"));
+            sb.append("/").append(System.getProperty("os.arch"));
+            Font base = new Font("Dialog", Font.PLAIN, 14);
+            sb.append(" Dialog@14=").append(fontFingerprint(base));
+            sb.append(" @16=").append(fontFingerprint(new Font("Dialog", Font.PLAIN, 16)));
+            sb.append(" @24=").append(fontFingerprint(new Font("Dialog", Font.PLAIN, 24)));
+            String[] families = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                    .getAvailableFontFamilyNames();
+            sb.append(" fam=").append(matchingFamilies(families, base));
+        } catch (Throwable t) {
+            sb.setLength(0);
+            sb.append("diagError=").append(t.getClass().getName()).append(":").append(t.getMessage());
+        }
+        return sb.toString();
+    }
+
+    /** 一套字体在某字号下的整数度量指纹：advance 宽 / 行高 / 垂直三段。 */
+    private static String fontFingerprint(Font font) {
+        FontMetrics fm = Toolkit.getDefaultToolkit().getFontMetrics(font);
+        LineMetrics lm = font.getLineMetrics(DIAG_METRICS_SAMPLE, DIAG_FRC);
+        return fm.stringWidth(DIAG_WIDTH_SAMPLE) + "/" + fm.getHeight()
+                + "/a" + diagRound(lm.getAscent()) + "d" + diagRound(lm.getDescent())
+                + "l" + diagRound(lm.getLeading());
+    }
+
+    /** 同字号逐家族比对指纹；命中名以竖线连接（最多列 4 个），并附命中数与扫描总数。 */
+    private static String matchingFamilies(String[] families, Font logical) {
+        String target = fontFingerprint(logical);
+        String logicalFamily = logical.getFamily();
+        StringBuilder hits = new StringBuilder();
+        int count = 0;
+        for (String family : families) {
+            Font candidate = new Font(family, Font.PLAIN, logical.getSize());
+            if (logicalFamily.equals(candidate.getFamily())) {
+                continue; // 跳过逻辑字体自身：它也出现在家族列表里
+            }
+            if (target.equals(fontFingerprint(candidate))) {
+                count++;
+                if (count <= 4) {
+                    hits.append(count == 1 ? "" : "|").append(family);
+                }
+            }
+        }
+        if (count == 0) {
+            return "none(fp=" + target + ",scanned=" + families.length + ")";
+        }
+        hits.append("(").append(count).append("/").append(families.length).append(")");
+        return hits.toString();
+    }
+
+    private static String diagRound(float value) {
+        return String.valueOf(Math.round(value * 10.0F) / 10.0F);
     }
 
     private LatexSoftwareRenderKit() {}
