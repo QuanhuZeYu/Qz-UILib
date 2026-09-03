@@ -222,12 +222,20 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
         submitThread.join(TimeUnit.SECONDS.toMillis(5L));
         resetThread.join(TimeUnit.SECONDS.toMillis(5L));
 
-        Assert.assertFalse(submitThread.isAlive());
-        Assert.assertFalse(resetThread.isAlive());
+        Assert.assertFalse("submit 线程应已结束", submitThread.isAlive());
+        Assert.assertFalse("reset 线程应已结束", resetThread.isAlive());
         Assert.assertNull(submitFailure.get());
         Assert.assertNull(resetFailure.get());
-        Assert.assertEquals(0, dispatcher.getInFlightTaskCount());
-        Assert.assertFalse(isActive(pageManager.getState('F', FontType.NORMAL)));
+        Assert.assertEquals("in-flight 应清零：count=" + dispatcher.getInFlightTaskCount()
+                + " admitted=" + dispatcher.getActiveDemandCount()
+                + " stateF=" + pageManager.getState('F', FontType.NORMAL),
+                0, dispatcher.getInFlightTaskCount());
+        Assert.assertFalse("'F' 终态不应仍为 active：stateF=" + pageManager.getState('F', FontType.NORMAL)
+                + " inFlight=" + dispatcher.getInFlightTaskCount()
+                + " admitted=" + dispatcher.getActiveDemandCount()
+                + "（reset 声称完成却留着 active 需求 = reset 没等到 admission 线性化，"
+                + "或 release 之后同一码点又被重派）",
+                isActive(pageManager.getState('F', FontType.NORMAL)));
     }
 
     @Test
@@ -414,8 +422,12 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
         promoter.join(TimeUnit.SECONDS.toMillis(5L));
         Assert.assertFalse(promoter.isAlive());
         Assert.assertNull(promotionFailure.get());
-        awaitInFlightCount(dispatcher, 0);
-        Assert.assertEquals(asList('X', 'B', 'A'), matcher.order);
+        Assert.assertEquals("匹配顺序须为 X,B,A；多出一个 A 说明 promotion 没与在飞的 queue selection "
+                + "线性化。promoted=" + dispatcher.getPromotedDemandCount()
+                + " admitted=" + dispatcher.getActiveDemandCount()
+                + " rejected=" + dispatcher.getRejectedDemandCount()
+                + " inFlight=" + dispatcher.getInFlightTaskCount(),
+                asList('X', 'B', 'A'), matcher.order);
         dispatcher.reset();
     }
 

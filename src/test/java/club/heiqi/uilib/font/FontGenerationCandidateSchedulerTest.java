@@ -111,17 +111,26 @@ public class FontGenerationCandidateSchedulerTest {
     public void shutdownRejectsReplacementUntilRetiringExecutorTerminates() throws Exception {
         AsyncFontGenerationCandidateScheduler scheduler = new AsyncFontGenerationCandidateScheduler();
         CountDownLatch entered = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
+        // 中断证据：worker 的第一个 park 用一把永不 signal 的闩 —— 它<b>只有被中断</b>这一条出路。
+        // 旧写法拿 release 同时当"park 的闸口"和"循环退出条件"，于是"被 release 放行走掉"成了
+        // 与"被 shutdownNow 中断"并列的第二条合法出路；而 await 与 interrupt 并发时 AQS 允许
+        // "转入 sync queue 后被信号接管"，await 可以正常返回且不上抛 InterruptedException ——
+        // 那条出路真的会发生（Linux runner 2/6 复现，本机 15/15 绿），终态断言于是在掷硬币。
         AtomicBoolean interruptionObserved = new AtomicBoolean();
+        // 中断之后 worker 仍要留在退休中，才能验"退休未完成时拒绝 replacement"；由测试显式放行。
+        CountDownLatch retireGate = new CountDownLatch(1);
         try {
             scheduler.submit(() -> {
                 entered.countDown();
-                while (release.getCount() > 0L) {
-                    try {
-                        release.await(5L, TimeUnit.SECONDS);
-                    } catch (InterruptedException expected) {
-                        interruptionObserved.set(true);
-                    }
+                try {
+                    new CountDownLatch(1).await(5L, TimeUnit.SECONDS);
+                } catch (InterruptedException expected) {
+                    interruptionObserved.set(true);
+                }
+                try {
+                    retireGate.await(5L, TimeUnit.SECONDS);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
                 }
                 throw new IllegalStateException("retiring finished");
             });
@@ -139,7 +148,10 @@ public class FontGenerationCandidateSchedulerTest {
                 Assert.assertTrue(expected.getMessage().contains("尚未终止"));
             }
 
-            release.countDown();
+            // 正向等"中断确实到达"（有 deadline 的轮询），而不是用固定时长反证"还没完成"。
+            awaitTrue(interruptionObserved, "shutdownNow 必须中断 retiring worker");
+
+            retireGate.countDown();
             awaitQuiescence(scheduler);
             Assert.assertTrue("shutdownNow 必须中断 retiring worker", interruptionObserved.get());
 
@@ -148,9 +160,18 @@ public class FontGenerationCandidateSchedulerTest {
             });
             Assert.assertEquals("replacement finished", awaitResult(replacement).getFailure().getMessage());
         } finally {
-            release.countDown();
+            retireGate.countDown();
             scheduler.shutdown();
         }
+    }
+
+    /** 有期限地正向等待一个标志位；超时即失败并带上现场，不再拿固定时长窗口当反向判据。 */
+    private void awaitTrue(AtomicBoolean flag, String claim) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+        while (!flag.get() && System.nanoTime() < deadline) {
+            Thread.sleep(1L);
+        }
+        Assert.assertTrue(claim + "（5s 内未观测到）", flag.get());
     }
 
     private void awaitQuiescence(AsyncFontGenerationCandidateScheduler scheduler)
