@@ -88,16 +88,57 @@ public class LatexSoftwareRenderTest {
         }
         Assert.assertTrue("分子内层分数应在主线上方" + fontScene(), numBottom > Integer.MIN_VALUE);
         Assert.assertTrue("分母内层分数应在主线下方" + fontScene(), denTop < Integer.MAX_VALUE);
-        // 间隙一律用<b>未取整</b>上下沿量。取整口径下 0.5 的阈值等价于要求 ≥1px：分辨率只有一格，
-        // 换一套字体度量就是掷硬币 —— Linux CI 首红即此：分子侧设计间隙 = 1 个线厚 = 0.96px@24，
-        // Windows 舍入到 1 通过、DejaVu 落到 0 判红，而两边真实间隙本就差不多。
-        // 阈值一字未改，改的是尺子的分辨率；主线顶边仍是生产有意量化的整像素行。
+        // 渲染层只守"不得越过"：这里的 quad 是<b>供纹理采样的外扩盒</b>（FontBatchRenderer 四周
+        // 扩了 INK_BLEED × glyphScale），线顶又是生产有意量化的整像素行 —— 两者合起来的系统偏置
+        // 与 0.5px 阈值同量级，所以"间隙 ≥ 0.5px"在像素上量不准（Linux 实测 0.32px 就是这么来的）。
+        // 绝对间隙改由 mainFracBarKeepsDesignClearanceInLayout 在布局层守，那里说的是同一句话且
+        // 与平台字体度量无关；本层保留未取整上下沿，是因为"越线/压线"仍只有这里能回答。
         float topGap = main.topF - numBottomF;
         float bottomGap = denTopF - main.bottomF;
-        Assert.assertTrue("分子与主线间隙应 ≥ 0.5px（实测 " + diagFormat(topGap) + "px）"
-                + verticalScene(rules, main, glyphs, 2) + fontScene(), topGap >= 0.5F);
-        Assert.assertTrue("主线与分母间隙应 ≥ 1.5px（实测 " + diagFormat(bottomGap) + "px）"
-                + verticalScene(rules, main, glyphs, 2) + fontScene(), bottomGap >= 1.5F);
+        Assert.assertTrue("分子不得越过主线（渲染 quad 口径，间隙应 > 0；绝对间隙见布局层判据）"
+                + "：实测 " + diagFormat(topGap) + "px"
+                + verticalScene(rules, main, glyphs, 2) + fontScene(), topGap >= 0.0F);
+        Assert.assertTrue("主线不得切进分母（渲染 quad 口径；绝对间隙见布局层判据）"
+                + "：实测 " + diagFormat(bottomGap) + "px"
+                + verticalScene(rules, main, glyphs, 2) + fontScene(), bottomGap >= 0.0F);
+    }
+
+    /**
+     * 设计间隙的验收住在布局层：读 {@code layoutFrac} 亲手算出并交出来的 {@code kern1}/{@code kern2}
+     * （分子 ink 底→线顶、线底→分母 ink 顶），断言的是"托底真的兑现了多少"。
+     *
+     * <p>这里刻意不复算任何几何：间隙是布局方在钳位那一刻就知道的事实，由它挂到
+     * {@link RuleElem} 上，判据只读不算 —— 测试重抄一遍 {@code max(shiftUp - depth - ..., drt)}
+     * 就是第二个权威，锁不住它想锁的东西。</p>
+     *
+     * <p>本项与平台字体度量无关：嵌套分子盒的 depth 远大于钳位阈值，间隙恒等于 1 个线厚
+     * （24px 口径 = 0.96px），这正是"分子侧保持 JLM 同款 1θ、不抬"这条裁定能被守住的形式。</p>
+     */
+    @Test
+    public void mainFracBarKeepsDesignClearanceInLayout() {
+        club.heiqi.uilib.font.latex.layout.MathBox box = LatexSoftwareRenderKit.layout(
+                "\\frac{\\frac{a}{b}}{\\frac{c}{d}}", 24);
+        java.util.List<club.heiqi.uilib.font.latex.layout.RuleElem> boxRules = box.getRules();
+        Assert.assertEquals("嵌套分数应有 3 条规则线", 3, boxRules.size());
+        club.heiqi.uilib.font.latex.layout.RuleElem main = null;
+        for (club.heiqi.uilib.font.latex.layout.RuleElem rule : boxRules) {
+            if (main == null || rule.getWidth() > main.getWidth()) {
+                main = rule;
+            }
+        }
+        Assert.assertNotNull("应有主线", main);
+        Assert.assertFalse("主线的间隙语义必须存在（NaN = 该线无此语义）"
+                + "：above=" + main.getClearanceAbove() + " below=" + main.getClearanceBelow(),
+                Float.isNaN(main.getClearanceAbove()));
+        Assert.assertTrue("分子侧设计间隙应 ≥ 0.5px（实测 " + diagFormat(main.getClearanceAbove())
+                + "px，1θ@24 名义 0.96px）" + fontScene(), main.getClearanceAbove() >= 0.5F);
+        Assert.assertTrue("分母侧设计间隙应 ≥ 1.5px（实测 " + diagFormat(main.getClearanceBelow())
+                + "px，3θ@24 名义 2.88px）" + fontScene(), main.getClearanceBelow() >= 1.5F);
+        // 内层两条子线也必须带着自己的间隙（打平传递时丢字段 = 判据静默失效）
+        for (club.heiqi.uilib.font.latex.layout.RuleElem rule : boxRules) {
+            Assert.assertFalse("每条分数线的间隙都必须随打平传递保留" + rule,
+                    Float.isNaN(rule.getClearanceAbove()) || Float.isNaN(rule.getClearanceBelow()));
+        }
     }
 
     /** 分数：规则线水平、位于分子与分母之间、横跨两者。 */

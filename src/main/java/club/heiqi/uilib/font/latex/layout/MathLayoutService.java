@@ -624,7 +624,10 @@ public final class MathLayoutService {
         float denRight = (contentWidth + den.getWidth()) / 2.0F + den.getRightInkOverhang();
         float barLeft = Math.min(numLeft, denLeft);
         float barRight = Math.max(numRight, denRight);
-        builder.addRule(sideSpace + barLeft, -(axis + delta), barRight - barLeft, drt);
+        // kern1 = 分子 ink 底 → 线顶；kern2 = 线底 → 分母 ink 顶（JLaTeXMath VerticalBox strut 语义）。
+        // 这两个量就是本线的设计间隙，就地交给 RuleElem：验收要"间隙 ≥ 0.5px"时读它，
+        // 不去渲染像素里量那个含 INK_BLEED 外扩与整像素线顶的代理值。
+        builder.addRule(sideSpace + barLeft, -(axis + delta), barRight - barLeft, drt, kern1, kern2);
         builder.width = width;
         builder.height = axis + drt + kern1 + num.getDepth() + num.getHeight();
         builder.depth = -axis + kern2 + den.getHeight() + den.getDepth();
@@ -1028,7 +1031,8 @@ public final class MathLayoutService {
                     glyph.isItalic());
         }
         for (RuleElem rule : box.getRules()) {
-            builder.addRule(rule.getX() + dx, rule.getY() + dy, rule.getWidth(), rule.getThickness());
+            builder.addRule(rule.getX() + dx, rule.getY() + dy, rule.getWidth(), rule.getThickness(),
+                    rule.getClearanceAbove(), rule.getClearanceBelow());
         }
         builder.width = box.getWidth() + dx;
         builder.height = box.getHeight() - dy;
@@ -1069,7 +1073,13 @@ public final class MathLayoutService {
         }
 
         void addRule(float x, float y, float ruleWidth, float thickness) {
-            rules.add(new RuleElem(x, y, ruleWidth, thickness));
+            addRule(x, y, ruleWidth, thickness, RuleElem.NO_CLEARANCE, RuleElem.NO_CLEARANCE);
+        }
+
+        /** 带设计间隙的规则线：间隙由算出它的那处布局就地传入（见 {@link RuleElem} 构造说明）。 */
+        void addRule(float x, float y, float ruleWidth, float thickness, float clearanceAbove,
+                float clearanceBelow) {
+            rules.add(new RuleElem(x, y, ruleWidth, thickness, clearanceAbove, clearanceBelow));
             minVisualX = Math.min(minVisualX, x);
             maxVisualX = Math.max(maxVisualX, x + ruleWidth);
         }
@@ -1080,7 +1090,8 @@ public final class MathLayoutService {
                         glyph.getSizeScale() * glyphScale, glyph.isItalic()));
             }
             for (RuleElem rule : child.getRules()) {
-                rules.add(new RuleElem(rule.getX() + dx, rule.getY() + dy, rule.getWidth(), rule.getThickness()));
+                rules.add(new RuleElem(rule.getX() + dx, rule.getY() + dy, rule.getWidth(),
+                        rule.getThickness(), rule.getClearanceAbove(), rule.getClearanceBelow()));
             }
             height = Math.max(height, child.getHeight() - dy);
             depth = Math.max(depth, child.getDepth() + dy);
