@@ -88,9 +88,9 @@ public class LatexSoftwareRenderTest {
         // 注：quad 坐标已取整，topGap 只能落在整数上 —— 0.5 的阈值在本口径下等价于 ≥1px。
         //     这是判定口径的既有粒度，此处只记录、不放宽（放宽等于删掉验收标准）。
         Assert.assertTrue("分子与主线间隙应 ≥ 0.5px（实测 " + topGap + "px）"
-                + verticalScene(main, glyphs, 2) + fontScene(), topGap >= 0.5);
+                + verticalScene(rules, main, glyphs, 2) + fontScene(), topGap >= 0.5);
         Assert.assertTrue("主线与分母间隙应 ≥ 1.5px（实测 " + bottomGap + "px）"
-                + verticalScene(main, glyphs, 2) + fontScene(), bottomGap >= 1.5);
+                + verticalScene(rules, main, glyphs, 2) + fontScene(), bottomGap >= 1.5);
     }
 
     /** 分数：规则线水平、位于分子与分母之间、横跨两者。 */
@@ -148,7 +148,7 @@ public class LatexSoftwareRenderTest {
             }
         }
         Assert.assertNotNull("应有分子字形（判据：glyph.bottom <= rule.top + 1）"
-                + verticalScene(rule, glyphs, 1) + fontScene(), numerator);
+                + verticalScene(rules, rule, glyphs, 1) + fontScene(), numerator);
         // 布局中横线左端与分子左端同 x（sideSpace 对齐）；渲染侧段起点偏移后两者应保持重合
         int delta = rule.left - numerator.left;
         Assert.assertTrue("横线左端应锚定公式段（与分子同 x），实测偏移=" + delta + "px",
@@ -519,7 +519,7 @@ public class LatexSoftwareRenderTest {
     }
 
     /** 规则线与字形的垂直分布现场：只报「没有分子」不够可诊断，要说清字形都落在哪儿。 */
-    private static String verticalScene(Quad rule, List<Quad> glyphs, int tolerance) {
+    private static String verticalScene(List<Quad> rules, Quad used, List<Quad> glyphs, int tolerance) {
         int above = 0;
         int below = 0;
         int overlap = 0;
@@ -527,9 +527,9 @@ public class LatexSoftwareRenderTest {
         int maxBottom = Integer.MIN_VALUE;
         for (Quad glyph : glyphs) {
             // 容差对齐宿主测试的分桶口径，否则现场与判据说的不是同一件事
-            if (glyph.bottom <= rule.top + tolerance) {
+            if (glyph.bottom <= used.top + tolerance) {
                 above++;
-            } else if (glyph.top >= rule.bottom - tolerance) {
+            } else if (glyph.top >= used.bottom - tolerance) {
                 below++;
             } else {
                 overlap++;
@@ -537,10 +537,22 @@ public class LatexSoftwareRenderTest {
             minBottom = Math.min(minBottom, glyph.bottom);
             maxBottom = Math.max(maxBottom, glyph.bottom);
         }
-        return " rule[top=" + rule.top + ",bottom=" + rule.bottom + "] glyphs=" + glyphs.size()
-                + " tol=" + tolerance + " above=" + above + " below=" + below
-                + " overlap=" + overlap
-                + " bottom[" + minBottom + ".." + maxBottom + "]";
+        StringBuilder sb = new StringBuilder();
+        sb.append(" rules=").append(rules.size());
+        for (int index = 0; index < rules.size() && index < 4; index++) {
+            // 每条规则线的 y 与宽度都列出：判据取的是 rules.get(0)，若跨平台下第 0 条
+            // 不是主横线，现场必须先能看出这件事，否则读日志的人会被"间隙 0px"误导。
+            Quad each = rules.get(index);
+            sb.append(" r").append(index).append("[").append(each.top).append(",")
+                    .append(each.bottom).append("]w").append(each.width());
+        }
+        sb.append(" used[top=").append(used.top).append(",").append(used.bottom)
+                .append("] glyphs=").append(glyphs.size())
+                .append(" tol=").append(tolerance)
+                .append(" above=").append(above).append(" below=").append(below)
+                .append(" overlap=").append(overlap)
+                .append(" bottom[").append(minBottom).append("..").append(maxBottom).append("]");
+        return sb.toString();
     }
 
     /** quad 快照（收集侧验收口径）。 */
