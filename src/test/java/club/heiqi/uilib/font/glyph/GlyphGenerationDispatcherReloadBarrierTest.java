@@ -383,6 +383,12 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
 
     @Test
     public void promotionWaitsForConcurrentQueueSelection() throws Exception {
+        // 相位假设（已实测，勿凭直觉改）：4 是「本来会选走 A」的那一次 clock 调用 —— 那一刻
+        // A 仍在队列里（才可被合并）且 worker 正持队列锁（promotion 才会真的等待）。试过改成 3：
+        // 该测试在 Windows 上变为确定性失败，说明 executor 的实际调用节奏里还有一格选择，4 才对。
+        // 残余风险：这仍是"押相位"的夹具，偶发（本机 1/60）会在 A 已结算后才轮到 promoter，
+        // 合并前提自然不成立 —— 已改成下面的显式前提断言，失效时会以"fixture 前提未成立"失败，
+        // 不再伪装成产品竞态。彻底确定化需要在 offer 与 bestIndex 之间开注入点（属产品可测性改动）。
         BlockingSelectionClock clock = new BlockingSelectionClock(4);
         GlyphPageManager pageManager = new GlyphPageManager();
         FontCatalog catalog = new FontCatalog();
@@ -422,6 +428,16 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
         promoter.join(TimeUnit.SECONDS.toMillis(5L));
         Assert.assertFalse(promoter.isAlive());
         Assert.assertNull(promotionFailure.get());
+        // 先断言 fixture 前提本身：promotion 必须真的与在飞需求合并过（promoted>=1）。
+        // 上一轮带仪表的本地样本给出 promoted=0 + 多出一个 A —— 说明 WARMUP 的 A 已匹配完并
+        // 结算为失败（本场地 matcher 恒返回 -1），此时对同一码点重新 claim 是产品的正确行为，
+        // 于是这条测试的"押在第 4 次 selection 上"的隐含前提已经悄悄断了。前提断了却去比匹配顺序，
+        // 表现就是一个偶发的"多一个 A"，看着像产品竞态。把前提写成断言后，它只会以
+        // "前提未成立"的名义失败，不再伪装成调度竞态。
+        Assert.assertTrue("fixture 前提未成立：promotion 没有与在飞需求合并（promoted="
+                + dispatcher.getPromotedDemandCount() + "）。这说明被提升的 WARMUP 需求已经结算，"
+                + "本测试依赖的 selection 相位已丢失，属于夹具问题而非产品竞态",
+                dispatcher.getPromotedDemandCount() >= 1L);
         Assert.assertEquals("匹配顺序须为 X,B,A；多出一个 A 说明 promotion 没与在飞的 queue selection "
                 + "线性化。promoted=" + dispatcher.getPromotedDemandCount()
                 + " admitted=" + dispatcher.getActiveDemandCount()
