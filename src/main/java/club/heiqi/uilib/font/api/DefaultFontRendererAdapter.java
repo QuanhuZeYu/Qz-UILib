@@ -901,24 +901,21 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             currentX += measuredWidth;
         }
         // LaTeX 规则线（分数线/根号横线等）：随字形同帧收集，装饰线批次在字形页之后 flush。
-        // glyph quad 内部按 lineBaselineY×baselineScale 把字格顶换算到基线，decoration 通道
-        // 无此换算——必须手动补基线偏移，否则规则线整体上移约一个 ascent 与字形分离。
-        // 基线口径与公式 glyph 一致（per-rule latexRuleBaseSize），行内居中偏移已在
-        // fillLatexSegment 时并入 rule[1]。
-        int refLineBaselineY = glyphSize;
-        if (preparedText.size() > 0) {
-            int refCodepoint = GlyphRuntimeTables.isValidCodepoint(preparedText.renderCodepoints[0])
-                    ? preparedText.renderCodepoints[0] : 'A';
-            FontType refFontType = preparedText.fontTypes[0];
-            refLineBaselineY = tables.getLineBaselineY(refCodepoint, refFontType);
-        }
+        // glyph quad 内部按 lineBaselineY×baselineScale 把字格顶换算到基线
+        // （{@code FontBatchRenderer#resolveGlyphQuadMetrics}），decoration 通道没有字格 ——
+        // 必须补<b>同一项</b>换算，否则规则线整体上移约一个 ascent 与字形分离。
+        // ★ 这一项只能向<b>产生该规则的公式段自己的字形</b>借，不能向「整行第一个 codepoint」借：
+        //   字格基线是逐字形按自身字号生成的（{@code GlyphGenerator}：lineBaselineY =
+        //   round(glyphSize - descent)），借来的码点既可能字号不同（行首正文 16px vs 公式内 script
+        //   11px，线会漂 1px 级），更可能<b>根本没有字格数据</b>（字体无覆盖、或异步管线尚未出字，
+        //   直读表返回 0）—— 补偿静默归零，规则线整体上飞一整个基线。
+        //   行内居中偏移已在 fillLatexSegment 时并入 rule[1]，此处只补基线。
         for (int ruleIndex = 0; ruleIndex < preparedText.latexRules.length; ruleIndex++) {
             float[] rule = preparedText.latexRules[ruleIndex];
             // 横线位置约束：RuleElem.y 是中心、decoration quad 的 y 是顶，先换算中心→顶；
             // 厚度与中心量化到整像素行，消除 0.64px 浮点厚度在光栅取整下的时粗时细/时隐时现漂移。
-            float ruleBaselineScale = preparedText.latexRuleBaseSize[ruleIndex]
-                    / Math.max(1.0F, (float) glyphSize);
-            float ruleBaselineOffset = refLineBaselineY * ruleBaselineScale;
+            float ruleBaselineOffset = resolveRuleBaselineOffset(preparedText, tables, ruleIndex, glyphSize,
+                    renderScale);
             float ruleCenterY = drawY + ruleBaselineOffset + rule[1];
             float ruleThickness = Math.max(1.0F, Math.round(rule[3]));
             float ruleTopY = Math.round(ruleCenterY - ruleThickness / 2.0F);
@@ -979,7 +976,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         boolean[] italicFlags = new boolean[glyphCount];
         List<float[]> latexRules = new ArrayList<float[]>();
         List<Integer> latexRuleColors = new ArrayList<Integer>();
-        List<Integer> latexRuleBaseSize = new ArrayList<Integer>();
+        List<Integer> latexRuleRefGlyph = new ArrayList<Integer>();
         int[] latexBaseSizePx = new int[glyphCount];
         int maxFontSizePx = resolvedBaseFontSizePx;
         int[] maxFontSizeHolder = new int[] { maxFontSizePx };
@@ -1023,7 +1020,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 glyphIndex = fillLatexSegment(segment, latexBoxes[s], style, segmentFontSizePx,
                         resolvedBaseFontSizePx, textLayoutService, tables, renderScale, renderCodepoints,
                         fontTypes, measuredWidths, styles, fontSizePx, xOffsets, yOffsets, italicFlags,
-                        glyphIndex, segmentStartX, latexRules, latexRuleColors, latexRuleBaseSize,
+                        glyphIndex, segmentStartX, latexRules, latexRuleColors, latexRuleRefGlyph,
                         latexBaseSizePx, maxTextFontSizePx, lineLatexShift, maxFontSizeHolder);
                 segmentStartX += latexBoxes[s].getWidth();
                 // 公式内部存在字号缩放（script 0.7×/定界符放大）同样禁用 uniform 快路径，
@@ -1084,14 +1081,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
         float[][] ruleArray = latexRules.toArray(new float[latexRules.size()][]);
         int[] ruleColors = new int[latexRuleColors.size()];
-        int[] ruleBaseSizes = new int[latexRuleBaseSize.size()];
+        int[] ruleRefGlyphs = new int[latexRuleRefGlyph.size()];
         for (int r = 0; r < ruleColors.length; r++) {
             ruleColors[r] = latexRuleColors.get(r).intValue();
-            ruleBaseSizes[r] = latexRuleBaseSize.get(r).intValue();
+            ruleRefGlyphs[r] = latexRuleRefGlyph.get(r).intValue();
         }
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
                 maxFontSizeHolder[0], resolvedBaseFontSizePx, xOffsets, yOffsets, italicFlags, hasMixedSize,
-                ruleArray, ruleColors, ruleBaseSizes, latexBaseSizePx, maxTextFontSizePx, lineLatexShift);
+                ruleArray, ruleColors, ruleRefGlyphs, latexBaseSizePx, maxTextFontSizePx, lineLatexShift);
     }
 
     /**
@@ -1105,9 +1102,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             float renderScale, int[] renderCodepoints, FontType[] fontTypes, float[] measuredWidths,
             TextStyle[] styles, int[] fontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags,
             int startGlyphIndex, float segmentStartX, List<float[]> latexRules, List<Integer> latexRuleColors,
-            List<Integer> latexRuleBaseSize, int[] latexBaseSizePx, int maxTextFontSizePx,
+            List<Integer> latexRuleRefGlyph, int[] latexBaseSizePx, int maxTextFontSizePx,
             float lineLatexShift, int[] maxFontSizeHolder) {
         int glyphIndex = startGlyphIndex;
+        // 本段实际吐出的第一个字形下标：规则线的基线补偿要向它借同一套换算（-1 = 整段没出字形）
+        int firstSegmentGlyph = -1;
         float segmentAdvanceSum = 0.0F;
         // 公式基线口径 = max(段字号, 行内最大文本段字号)：纯 LaTeX 行用段字号；
         // 混排行与文本共享同一基线。公式内放大型字形（伸缩括号）不参与基线口径——
@@ -1131,6 +1130,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 if (UnicodeTextClassifier.isRenderSkipped(codepoint)) {
                     i += charCount;
                     continue;
+                }
+                if (firstSegmentGlyph < 0) {
+                    firstSegmentGlyph = glyphIndex;
                 }
                 renderCodepoints[glyphIndex] = resolveDisplayCodepoint(codepoint, style.getFontType(), tables);
                 fontTypes[glyphIndex] = style.getFontType();
@@ -1162,7 +1164,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     (rule.getY() + lineLatexShift) * renderScale,
                     rule.getWidth() * renderScale, rule.getThickness() * renderScale });
             latexRuleColors.add(Integer.valueOf(style.getColor()));
-            latexRuleBaseSize.add(Integer.valueOf(latexBaseSize));
+            // 参考本段自己的首个字形：latexBaseSize 已写进 latexBaseSizePx[firstSegmentGlyph]，
+            // 这里再抄一份 per-rule 字号就是第二个权威，且会在两段混排时与字形口径劈叉。
+            latexRuleRefGlyph.add(Integer.valueOf(firstSegmentGlyph));
         }
         return glyphIndex;
     }
@@ -1299,6 +1303,57 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return 0.0F;
     }
 
+    /**
+     * 规则线（分数线/根号横线等）的「字格顶 → 基线」补偿量。
+     *
+     * <p>规则线没有字格、不自带基线，只能沿用<b>产生它的那个公式段自己字形</b>的换算 —— 与
+     * {@code FontBatchRenderer#resolveGlyphQuadMetrics} 里 {@code lineBaselineY × baselineScale}
+     * 逐项同参（同一参考字形、同一基线字号、同一 defaultGlyphSize），装饰线与公式字形因此恒在
+     * 同一基线系上，不再随「整行第一个码点是什么」漂移。</p>
+     *
+     * <p>回退链每一级都要求拿到真实字格数据，绝不静默用 0（0 会让线整体上飞一个基线）：
+     * 本段首字形 → 本行任一有数据字形 → 正文默认字高 {@code glyphSize}（与旧空行路径一致）。</p>
+     */
+    private static float resolveRuleBaselineOffset(PreparedText preparedText, GlyphRuntimeTablesView tables,
+            int ruleIndex, int glyphSize, float renderScale) {
+
+        int[] refs = preparedText.latexRuleRefGlyph;
+        if (ruleIndex < refs.length && refs[ruleIndex] >= 0) {
+            float offset = glyphBaselineOffset(preparedText, tables, refs[ruleIndex], glyphSize, renderScale);
+            if (offset > 0.0F) {
+                return offset;
+            }
+        }
+        for (int index = 0; index < preparedText.size(); index++) {
+            float offset = glyphBaselineOffset(preparedText, tables, index, glyphSize, renderScale);
+            if (offset > 0.0F) {
+                return offset;
+            }
+        }
+        return (float) glyphSize;
+    }
+
+    /**
+     * 单条字形条目的「字格顶 → 基线」补偿量。该条目尚无字格数据（未生成、字体无覆盖、页失效）
+     * 时返回 0，由调用方决定回退 —— 把「无数据」显式化，是为了不让它伪装成一个合法坐标。
+     */
+    private static float glyphBaselineOffset(PreparedText preparedText, GlyphRuntimeTablesView tables,
+            int glyphIndex, int glyphSize, float renderScale) {
+        int codepoint = preparedText.renderCodepoints[glyphIndex];
+        if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return 0.0F;
+        }
+        int lineBaselineY = tables.getLineBaselineY(codepoint, preparedText.fontTypes[glyphIndex]);
+        if (lineBaselineY <= 0) {
+            return 0.0F;
+        }
+        int baseSizePx = preparedText.latexBaseSizePx[glyphIndex] > 0
+                ? preparedText.latexBaseSizePx[glyphIndex]
+                : (preparedText.maxTextFontSizePx > 0 ? preparedText.maxTextFontSizePx
+                        : preparedText.maxFontSizePx);
+        return lineBaselineY * (resolveBaselineCharSize(renderScale, baseSizePx)
+                / Math.max(1.0F, (float) glyphSize));
+    }
     /**
      * 解析整行的基线渲染尺寸：行内最大有效字号乘以调用方缩放，使大字 ascender
      * 完整落在行框内（行高与基线的 ascent 模型对齐），小字共享同一基线。
@@ -1514,8 +1569,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private final float[][] latexRules;
         /** 每条规则的颜色（ARGB，继承所在公式段样式）。 */
         private final int[] latexRuleColors;
-        /** 每条规则线的基线口径字号（px）：= max(段字号, 行内最大文本段字号)，公式基线不与放大字形共享口径。 */
-        private final int[] latexRuleBaseSize;
+        /**
+         * 每条规则线的<b>基线参考字形下标</b>：产生它的那个公式段自己吐出的第一个字形；整段没出字形为 -1。
+         * 规则线没有字格，只能沿用字形的「字格顶 → 基线」换算，参考对象必须是本段字形（见
+         * {@code resolveRuleBaselineOffset}），不得借整行第一个 codepoint 的字格数据。
+         */
+        private final int[] latexRuleRefGlyph;
         /** LaTeX glyph 的基线口径字号（px）：非 LaTeX glyph 恒 0。 */
         private final int[] latexBaseSizePx;
         /** 行内最大<b>文本</b>段字号（px，无文本段为 0）：普通 glyph 与公式基线锚的统一口径。 */
@@ -1526,7 +1585,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         private PreparedText(FontRuntimeSettings settings, int[] renderCodepoints, FontType[] fontTypes,
                 float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx,
                 int baseFontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags,
-                boolean hasMixedSize, float[][] latexRules, int[] latexRuleColors, int[] latexRuleBaseSize,
+                boolean hasMixedSize, float[][] latexRules, int[] latexRuleColors, int[] latexRuleRefGlyph,
                 int[] latexBaseSizePx, int maxTextFontSizePx, float lineLatexShift) {
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
@@ -1542,7 +1601,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             this.hasMixedSize = hasMixedSize;
             this.latexRules = latexRules;
             this.latexRuleColors = latexRuleColors;
-            this.latexRuleBaseSize = latexRuleBaseSize;
+            this.latexRuleRefGlyph = latexRuleRefGlyph;
             this.latexBaseSizePx = latexBaseSizePx;
             this.maxTextFontSizePx = maxTextFontSizePx;
             this.lineLatexShift = lineLatexShift;

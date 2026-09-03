@@ -74,23 +74,30 @@ public class LatexSoftwareRenderTest {
         // 分子内层分数 = 主线以上的字形组，分母内层分数 = 主线以下
         int numBottom = Integer.MIN_VALUE;
         int denTop = Integer.MAX_VALUE;
+        // 同一批字形两套边：int 供存在性判据，float 供间隙判据（见 Quad#topF 注释）
+        float numBottomF = -Float.MAX_VALUE;
+        float denTopF = Float.MAX_VALUE;
         for (Quad glyph : glyphs) {
             if (glyph.bottom <= main.top + 2) {
                 numBottom = Math.max(numBottom, glyph.bottom);
+                numBottomF = Math.max(numBottomF, glyph.bottomF);
             } else if (glyph.top >= main.bottom - 2) {
                 denTop = Math.min(denTop, glyph.top);
+                denTopF = Math.min(denTopF, glyph.topF);
             }
         }
         Assert.assertTrue("分子内层分数应在主线上方" + fontScene(), numBottom > Integer.MIN_VALUE);
         Assert.assertTrue("分母内层分数应在主线下方" + fontScene(), denTop < Integer.MAX_VALUE);
-        int topGap = main.top - numBottom;
-        int bottomGap = denTop - main.bottom;
-        // 注：quad 坐标已取整，topGap 只能落在整数上 —— 0.5 的阈值在本口径下等价于 ≥1px。
-        //     这是判定口径的既有粒度，此处只记录、不放宽（放宽等于删掉验收标准）。
-        Assert.assertTrue("分子与主线间隙应 ≥ 0.5px（实测 " + topGap + "px）"
-                + verticalScene(rules, main, glyphs, 2) + fontScene(), topGap >= 0.5);
-        Assert.assertTrue("主线与分母间隙应 ≥ 1.5px（实测 " + bottomGap + "px）"
-                + verticalScene(rules, main, glyphs, 2) + fontScene(), bottomGap >= 1.5);
+        // 间隙一律用<b>未取整</b>上下沿量。取整口径下 0.5 的阈值等价于要求 ≥1px：分辨率只有一格，
+        // 换一套字体度量就是掷硬币 —— Linux CI 首红即此：分子侧设计间隙 = 1 个线厚 = 0.96px@24，
+        // Windows 舍入到 1 通过、DejaVu 落到 0 判红，而两边真实间隙本就差不多。
+        // 阈值一字未改，改的是尺子的分辨率；主线顶边仍是生产有意量化的整像素行。
+        float topGap = main.topF - numBottomF;
+        float bottomGap = denTopF - main.bottomF;
+        Assert.assertTrue("分子与主线间隙应 ≥ 0.5px（实测 " + diagFormat(topGap) + "px）"
+                + verticalScene(rules, main, glyphs, 2) + fontScene(), topGap >= 0.5F);
+        Assert.assertTrue("主线与分母间隙应 ≥ 1.5px（实测 " + diagFormat(bottomGap) + "px）"
+                + verticalScene(rules, main, glyphs, 2) + fontScene(), bottomGap >= 1.5F);
     }
 
     /** 分数：规则线水平、位于分子与分母之间、横跨两者。 */
@@ -519,6 +526,11 @@ public class LatexSoftwareRenderTest {
     }
 
     /** 规则线与字形的垂直分布现场：只报「没有分子」不够可诊断，要说清字形都落在哪儿。 */
+    /** 断言消息里的浮点度量：固定两位小数与 ROOT locale，避免消息本身随区域设置换格式。 */
+    private static String diagFormat(float value) {
+        return String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(value));
+    }
+
     private static String verticalScene(List<Quad> rules, Quad used, List<Quad> glyphs, int tolerance) {
         int above = 0;
         int below = 0;
@@ -546,8 +558,9 @@ public class LatexSoftwareRenderTest {
             sb.append(" r").append(index).append("[").append(each.top).append(",")
                     .append(each.bottom).append("]w").append(each.width());
         }
-        sb.append(" used[top=").append(used.top).append(",").append(used.bottom)
-                .append("] glyphs=").append(glyphs.size())
+        sb.append(" used[top=").append(diagFormat(used.topF)).append(",")
+                .append(diagFormat(used.bottomF)).append(" int=").append(used.top).append(",")
+                .append(used.bottom).append("] glyphs=").append(glyphs.size())
                 .append(" tol=").append(tolerance)
                 .append(" above=").append(above).append(" below=").append(below)
                 .append(" overlap=").append(overlap)
@@ -563,13 +576,23 @@ public class LatexSoftwareRenderTest {
         final int right;
         final int bottom;
         final int renderType;
+        /**
+         * 未取整的上下沿。生产链路里字形 quad 的 y 全程是 float（只有装饰线的线顶被有意量化到
+         * 整像素行），所以"间隙 ≥ 0.5px"这类亚像素判据必须用这两个值；用上面的 int 时，判据
+         * 的分辨率只有 1px，等于在掷舍入的硬币。注意字形 quad 含 INK_BLEED 外扩（约 0.27px@24），
+         * 即这里量到的间隙是真实 ink 间隙的<b>保守下界</b>。
+         */
+        final float topF;
+        final float bottomF;
 
-        Quad(int left, int top, int right, int bottom, int renderType) {
+        Quad(int left, int top, int right, int bottom, int renderType, float topF, float bottomF) {
             this.left = left;
             this.top = top;
             this.right = right;
             this.bottom = bottom;
             this.renderType = renderType;
+            this.topF = topF;
+            this.bottomF = bottomF;
         }
 
         int width() {
@@ -621,18 +644,25 @@ public class LatexSoftwareRenderTest {
             int minY = Integer.MAX_VALUE;
             int maxX = Integer.MIN_VALUE;
             int maxY = Integer.MIN_VALUE;
+            float minYRaw = Float.MAX_VALUE;
+            float maxYRaw = -Float.MAX_VALUE;
             for (int vertex = 0; vertex < GlyphRenderBatch.VERTICES_PER_QUAD; vertex++) {
                 int offset = (quad * GlyphRenderBatch.VERTICES_PER_QUAD + vertex) * stride;
                 int x = Math.round(v[offset + GlyphRenderBatch.POSITION_OFFSET_FLOATS]);
-                int y = Math.round(v[offset + GlyphRenderBatch.POSITION_OFFSET_FLOATS + 1]);
+                // 顶点本身是 float（生产链路对字形 y 零量化）；这里的取整只为既有整数判据保留，
+                // 亚像素判据一律用下面两个未取整值 —— 否则 0.5px 级的断言会被这一行自己抹平。
+                float yRaw = v[offset + GlyphRenderBatch.POSITION_OFFSET_FLOATS + 1];
+                int y = Math.round(yRaw);
                 minX = Math.min(minX, x);
                 minY = Math.min(minY, y);
                 maxX = Math.max(maxX, x);
                 maxY = Math.max(maxY, y);
+                minYRaw = Math.min(minYRaw, yRaw);
+                maxYRaw = Math.max(maxYRaw, yRaw);
             }
             int renderType = Math.round(v[quad * GlyphRenderBatch.VERTICES_PER_QUAD * stride
                     + GlyphRenderBatch.GLYPH_FLAGS_OFFSET_FLOATS]);
-            quads.add(new Quad(minX, minY, maxX, maxY, renderType));
+            quads.add(new Quad(minX, minY, maxX, maxY, renderType, minYRaw, maxYRaw));
         }
         return quads;
     }
