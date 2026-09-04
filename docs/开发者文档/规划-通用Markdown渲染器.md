@@ -1,10 +1,11 @@
 # 规划：通用 Markdown 解析渲染器（B 案）
 
-**状态：** D1-D4 已裁（§五）；**M1 `6d9de24c` + M2 `08a8034e` + 裁 B 收窄 `736bafc1` 已完成**，
-L1 层（行内 + 块级 + `MarkdownDocument`/`MarkdownStyleTable`）绿且**故意零消费者**；**下一步 M3**（L2 `ui/markdown`
-绘制层 + `MarkdownPage` 可视页 + `build/reports/markdown-render/` headless 出图，见 §二之二/§五之二）。
-方向（用户 2026-09-04）：**先建独立通用渲染器 → 删 chat3 现有简易实现 → 接线**；基线
-**3947 / 0 / 0 / 2，354 类**。
+**状态：** D1-D4 已裁（§五）；**M1 `6d9de24c` + M2 `08a8034e` + 裁 B 收窄 `736bafc1` + M3
+`531da89e`/`339530e0`/`eddd2c29` + M4/M4-fix `075328ef`/`00d1a45a` + M5 接线 & M6 复生锁 `3e89d91e`
+全部完成**（2026-09-04）：chat3 气泡消息已改吃通用 markdown 渲染器，旧行级垫片已删，
+死代码窗口闭合（§六 1）；余下的是真机观感验收（§五之二分工）与后续独立裁定。
+方向（用户 2026-09-04）：**先建独立通用渲染器 → 删 chat3 现有简易实现 → 接线**——三步全部落地；
+基线 **3975 / 0 / 0 / 2，359 类**。
 **目标仓：** Qz-UILib（branch `4.0`，MC 1.7.10，本地提交不 push）。
 **范围声明：** 只写本仓能做且已核实的事；未核实的运行态在下面明确标出，不当已完成。
 
@@ -75,8 +76,8 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 | M3 | L2 `ui/markdown` 绘制层 + `MarkdownPage` + headless 出图 | **完成 `531da89e`/`339530e0`/`eddd2c29`**，见 §二之四 |
 | M4 | chat3 现路 vs B 路行为对拍（产 `-side` 成对图） | **完成，M4-fix 后门禁转绿**（2026-09-04）：PARITY FAIL 6 → **0**、TIE 0、有意差异 1 条（P03@150）→ **M5 可开工**，见 §二之五 与其后「M4-fix 收尾」 |
 | M4+ | 判读分辨率 @Nx 真放大 | **完成**：N=4 上限由 `awtCharSize=64` 定死，@1x 逐位不变 |
-| M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | 未开工（前置门禁已转绿，可以开工；M5 与 M6 同一提交的硬规矩不变） |
-| M6 | 复生锁 G3（与 M5 同一提交） | 未开工 |
+| M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | **完成 `3e89d91e`**（与 M6 同笔，硬规矩满足）：接线本体 `internal/chat3/view/ChatMarkdownPipeline`，见 §二之六 |
+| M6 | 复生锁 G3（与 M5 同一提交） | **完成 `3e89d91e`**：`Chat3MarkdownResurrectionGuardTest` 4 条断言全配正对照+反空跑地板，见 §二之六 |
 
 M1 的验收事实（父代理逐条独立复核过，非采信子代理自述）：三个文件与 `9c4dcae5` **blob hash
 逐一相同**（`84dd897c`/`49cfd000`/`6f639546`，463+48+274 行），**零适配**——两周内 layout 层
@@ -244,8 +245,12 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
    （`ChatLineLayouter` 把行首空白并入行文本，L1 按 CommonMark 以 contentCol 剥缩进）。语料 N04
    属 NEW 档，只记录不判等。
 2. **行中间的 § 码**在文档形参路径（`MarkdownDocument.parse(String)`）仍是字面文本，chat3 会由
-   `parseSegments` 解析成颜色。这是「markdown 不引入颜色」旧裁定；M5 走 § 桥
-   （`MarkdownInlineParser.parse(spans)`）时 § 码已被 L0 消费，不会遇到。
+   `parseSegments` 解析成颜色。这是「markdown 不引入颜色」旧裁定。**M5 实际落定（措辞定稿）**：
+   消息路在 `toSegments` 之后走 chat3 侧 § 桥（`ChatMarkdownPipeline.bridgeSectionCodes`，逐段
+   `TextStyle.applyFormat` 切分，latex/codeSpan 段恒透传），§ 码在消息渲染中被 L0 同源语义消费，
+   不会以字面颜色形态遇到；直接使用文档形参路径的消费方（playground/门禁 B 路 bridge=0 语料）
+   行中 § 仍字面，旧裁定不变。桥不用 `MarkdownInlineParser.parse(spans)` 反接：那会把已消费的
+   未闭合定界符二次配对（双解析漂移），且块级结构（F2/F3/F4/F6）只在文档路径存在。
 3. **围栏代码块**未打 `codeSpan` 位 / 12px / 衬底：F1 只承接行内反引号（chat3 无围栏行为，N02 属
    NEW 档）。围栏内容仍全字面、不解析行内标记（M2 既有裁定不变）。
 
@@ -257,6 +262,92 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
 段级字号**数值序列 —— **61 行全部逐位相同**；而差异像素在 A 路图与 B 路图上的**坐标完全相同**
 （N08 同为 x=14,y=23；P18 同为 x=32,y=28；P17 像素零差仅重编码差异）。数值同而像素移
 ⇒ **共享 atlas 装配位移成立，不是语义变化**（F4 改变了送进 `assembleGlyphs` 的段流）。
+
+## 二之六 M5 接线 + M6 复生锁收尾（`3e89d91e`，2026-09-04，同批硬规矩达成）
+
+工具实测：全量 `build --offline` = BUILD SUCCESSFUL；tally 3976/0/0/2（358 类）→
+**3975 / 0 / 0 / 2，359 类**（−2 旧契约测试类共 21 用例：行级规则 8 + code 切分 13；
++3 新类共 20 用例：复生锁 4 + 管道 6 + 承接 10）；门禁
+`# 汇总: PARITY 条目=19 NEW 条目=11 FAIL 差异=0 TIE=0 有意差异=1 PNG=147`（新增 P19
+「深缩进独立列表行」两宽度 PASS；P03@150 有意差异与正向不变量原样）。
+
+**接线落点**（链路 = 门禁 B 路定义顺序，一字不差）：
+
+| 环节 | 落点 |
+| --- | --- |
+| 消息级管道 | 新 `internal/chat3/view/ChatMarkdownPipeline`：`MarkdownDocument.parse` →
+`toSegments(chatStyleTable, 基础样式)` → § 桥 → `ChatUrlLinkifier.linkify`（换行前整条流）→
+`MarkdownPainter.wrapLines`；两级 LRU（扁平段流 = 原文@色#配色代；视觉行 = +定行宽#字号#
+度量纪元 `FontService.getRuntimeVersion()`），沿用 `ChatLineLayouter` 布局缓存+纪元失效口径，
+每帧零解析；缓存按实例隔离 |
+| 引用色登记 | `chatStyleTable()` 每次以 `setQuoteTextColor(getTextSecondaryArgb())` 现值构建
+（F3 旋钮与 chat3 次级色恒同源，G4；配色变更经缓存 key 即时失效） |
+| § 桥 | `bridgeSectionCodes`：逐段 `TextStyle.applyFormat`（L0 唯一 § 语义实现）切 run，
+markdown 样式位随 run 拷贝保留、latex/codeSpan 段恒透传（code 内容字面旧裁定不破）、
+纯格式码段整段消失（与 `parseSegments` 空 run 丢弃一致）——chat3 现有 § 颜色语义保住，
+「markdown 不引入颜色」不变 |
+| 结构判据 | 引用竖条 = 首可视段色 = 引用旋钮现值（`isQuoteRow`）；块级公式 4px 间距 =
+整行单 latex 原子（`isBlockMathRow`）。旧行级文本前缀判据（"> "/行首 `$$`）随 L1 剥标记
+改为段流结构判定；**行为差**：长引用被换行折断的续行现在也带竖条（旧仅首行带），属
+引用块语义的正常化，无既有测试钉旧缺失 |
+| URL 跨行 | 换行前整条流链接化 → 每行 link 值恒为完整 URL，气泡路 `UrlChain` 回填机制
+不再被触达（系统消息逐行 PRESERVE+续链原样保留）；`ChatUrlLinkifier` 存留件身份不变 |
+| HUD 截断 | `clampHudLines`：L2 视觉行 >8 时保 8 行、末行按度量回退后补 `...`
+（无度量注入时直补）；行节点 maxLines/ellipsis 防御照旧 |
+| headless 同源度量 | `ChatMessageList.SegmentFlowWrapper` 注入缝：生产 = L2 `wrapLines` +
+`FontService` 度量（与切分/钳宽/命中一把尺）；测试注入 4px 同源替身，保持「composer 切行
+宽 == 渲染换行宽 == 命中度量」既有前提（`longSelfMessageClamps...` 首轮即因两把尺而红，
+按铁律修接线而非改断言） |
+| 组头/系统消息 | 仍走 `SegmentParser`（`ChatSceneController.uiLibSegmentParser` 角色收窄，
+javadoc 已记）；逃生舱 `ChatMarkdownSettings.isEnabled()` 与 `ChatMarkdownInstaller` 零触碰 |
+
+**删除与承接**：`ChatMarkdownLineRule.java`(169 行) 与 `ChatCodeSpanSplitter.java`(127 行，
+整类即反引号配对解析；code 样式职责已由 F1 承接进 `MarkdownStyleTable` 包内登记) 整删；
+两旧契约测试删除，其契约在 `MarkdownChat3RuleInheritanceTest` 经 L1 公共接缝逐案复验。
+为让承接完整，L1 包内两处（零公共面变更）：
+
+1. **F2 补全**：顶层列表块携带 `baseLevel = 1 + 首行前导空格/2`（`MarkdownBlock.baseLevel` +
+   `readDeepList` 剥基准缩进），独立成块的 `"  - 乙"`/`"    - deep"` 与 chat3 旧行级规则
+   「层级 = 前导空格/2」同缩进；嵌套子列表（depth≥1，contentCol 已剥）保持相对嵌套，
+   P08 语料输出逐位不变（门禁实测 PASS）。
+2. **markerView 修正**：`§f` 后带空格再命中块标记时，旧实现把该组空格二次计入视图 →
+   缩进翻倍落回字面（丢 F4 承接）。改为按消费点续切；`fixF4` 既有钉死用例输出不变。
+
+**门禁本体**：A 路两旧类语义按 1:1 快照移入私有方法（`classifyReplica`/`codeSpanSplitReplica`，
+含行首/行尾 § 剥离、`$` 计数、空配/未闭合字面、跨段不配对、清 link 全谱）；语料、三档判据、
+比对引擎、容差数字一字未动。
+
+**M6 复生锁**（`Chat3MarkdownResurrectionGuardTest`，4 条断言，全部反向断言配正对照+地板）：
+
+| 断言 | 反向内容 | 正对照（M5 实测→写死地板） |
+| --- | --- | --- |
+| ① 文件存在性 | `ChatMarkdownLineRule.java`/`ChatCodeSpanSplitter.java` 恒不存在 | 探测器对 `ChatMessageList.java`/`ChatUrlLinkifier.java` 必须判「存在」 |
+| ② 定界解析模式 | chat3 主源代码行 0 命中：反引号字面/`\u0060` 文本/`(char) 0x60`/`CODE_TICK`/`'*'`/`"**"`/`"~~"`/`"$$"`/旧类名标识（注释剥除后扫） | L1 兄弟包同扫描器实测 ≥13 → 地板 8；门禁复刻文件实测 ≥5 → 地板 4；chat3 文件数 37 → 地板 30 |
+| ③ 生产锚 | 唯一入口必须实调 `MarkdownDocument.parse(`+`MarkdownPainter.wrapLines(`+`.toSegments(`+`ChatUrlLinkifier.linkify(` | 断言本身即正向锚（命中数 ≥1 写进消息） |
+| ④ 入口唯一 | chat3 内 markdown 层类型引用收敛在 `ChatMarkdownPipeline.java` 单文件 | 同扫描器对 devtools `MarkdownPage` 必须报出 L1+L2 双引用（反空跑） |
+
+**GL11 计数口径统一申明（§二之四 遗留「两把尺」收口）**：markdown 层守卫与
+`UiHudRenderListenerGlFenceTest` 一律**按出现次数计（含注释，逐行 indexOf 累加）**；
+`ui/render` 现值 559（历史 386 = 按行去重口径，已在 `MarkdownLayerGuardTest` 注明只认
+出现次数口径，地板 100 不变）。
+
+**判读图（接线后重跑，@1x 断言照跑、@4x 照产）**：真实聊天语料人工读图 ≥3 张：
+`P10-side@4x.png`（跨行 URL 续链：两路断点/链接色一致）、`P11-side@4x.png`（junction
+长文 7 行逐行对齐）、`P14-side@4x.png`（§ 色混排：红/白切换一致）、`P19-side@4x.png`
+（深缩进承接：两路同「    • deep」）。重影为 §二之四 1 已确证的场地特性，非回归。
+
+**测试期望变更全清单（本批仅 2 处，均已在提交信息登记）**：
+`ChatMessageListTest.orderedListLineKeepsNumberAndIsUnchanged`（段数 1→2，M2 有序标记承接 +
+门禁 P09 coalesce 等价口径，可见文本零差）；`normalLinesAreUnaffectedByMarkdownRules`
+（行内 `$x$` 1 段字面 → 「foo 」+latex+「 bar」，M2 行内语法面复活裁定 + 门禁 N08 NEW 能力
+落地；原意图「不独占行→无块级间距/无 bullet」改正向钉死并加强）。其余 chat3 既有测试
+零断言改动；首轮唯一因接线而红的钳宽用例按铁律以注入缝修复（非改断言）。
+
+**真机待验（本批未跑，如实挂账）**：消息列表实际观感（标题/围栏/删除线等 NEW 能力首现于
+聊天框）、宽引用块续行竖条、§ 色码与 markdown 样式位叠加的真机手感、HUD 长消息 8 行
+截断观感、`MarkdownSettings` 配色热切换。
+
+---
 
 ## 三、迁移与「不得并存」门禁
 
@@ -285,11 +376,13 @@ M4 不过就不进 M5 —— 这是唯一的「先立后破」次序，不因进
 - **G3 复生锁（M6）**：`internal/chat3/**` 不得再出现 markdown 定界符解析
   （模式如 `indexOf('*')`/`"~~"`/`"**"`），且 `ChatMarkdownLineRule` 必须不存在。
   这条只在 M5 之后加，加了就要当场验它现在为真（不是将来时）。
+  **已落地 `3e89d91e`** = `Chat3MarkdownResurrectionGuardTest`（4 断言 + 正对照地板，
+  见 §二之六表）；同笔把 G1 的 GL11 计数口径统一申明为「按出现次数（含注释）」。
 - **G4 度量同源**：块级排版不得自带一套字号/行高常量。chat3 现有一批定值
   （`INPUT_AREA_INSET_PX` 已收口为单一来源；`getCodeFontSizePx()` 等仍在 `ChatMarkdownSettings`）。
   B 的默认样式表放哪属裁定 D3。
 - 每次 M 步收尾跑 `./gradlew.bat build --offline --console=plain`，绿了才提交；当前基线
-  **3855 / 0 / 0 / 2，351 类**。
+  **3975 / 0 / 0 / 2，359 类**（M5+M6 后）。
 
 ## 五、裁定结果（2026-09-04，D1-D4 全部照建议通过）
 
@@ -335,6 +428,8 @@ M4 不过就不进 M5 —— 这是唯一的「先立后破」次序，不因进
 
 1. **死代码窗口**（M1-M4 期间 B 无业务消费者）：靠 M5/M6 同提交收口；期间若被打断，
    仓里会留一份「已测但没接」的解析器 —— 我认为可接受，但要在提交信息里写明窗口结束条件。
+   **已闭合（`3e89d91e`）**：窗口结束条件（chat3 气泡消息段流改吃 L1/L2 且旧垫片同笔删除）
+   已达成并写进该笔提交信息。
 2. **对拍不等价**：chat3 现有实现带着若干真机踩坑修正（行junction 丢失见
    `ERROR-20260825-chat3-line-junction-loss-stale-jar.md`；`ChatLineLayouter` 注释里那条
    「结尾 + 下一行以 URL 字符开头在两种断行下文本完全同形」的反查陷阱）。B 必须承接这些
