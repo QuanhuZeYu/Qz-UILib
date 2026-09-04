@@ -41,8 +41,32 @@ public final class ChatMarkdownInstaller {
     /** 当前接管状态(status 命令用;installIfNeeded 内维护)。 */
     private static volatile boolean installed = false;
 
-    /** 聊天打开感知(输入屏开关;每渲染帧由 tickController 同步)。 */
-    private static boolean lastChatOpen = false;
+    /**
+     * 聊天打开感知闩(输入屏开关;每渲染帧由 tickController 比对)。
+     *
+     * <p>边沿契约保留：同值不重复推，免得每帧打一次信号。但闩必须同时记**归属实例**——
+     * {@code ChatHudWindow} 注销时把 controller 置 null(:86)，重新接管即换上新实例，
+     * 而新实例的 chatOpen 初值是 FALSE。只比布尔值时，「聊天屏开着时切总开关」
+     * 会让新容器停在未打开态(旧闩记得 true，不再推)。故比对引用身份：换实例必重推一次。</p>
+     */
+    static final class ChatOpenLatch {
+
+        private Object owner;
+
+        private boolean open;
+
+        /** @return true 表示应把 nowOpen 推给该 controller(首次、边沿变化或换了实例) */
+        boolean shouldApply(Object candidate, boolean nowOpen) {
+            if (candidate != owner || nowOpen != open) {
+                owner = candidate;
+                open = nowOpen;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    private static final ChatOpenLatch CHAT_OPEN_LATCH = new ChatOpenLatch();
 
     private static boolean finalRemoved = false;
 
@@ -85,8 +109,7 @@ public final class ChatMarkdownInstaller {
             return;
         }
         boolean open = mc.currentScreen instanceof ChatInputScreen;
-        if (open != lastChatOpen) {
-            lastChatOpen = open;
+        if (CHAT_OPEN_LATCH.shouldApply(controller, open)) {
             controller.setChatOpen(open);
         }
         // 与 McScreenBridge 同源:MC 权威物理窗口宽优先,Display 反射兜底(窗口模式不可靠)
