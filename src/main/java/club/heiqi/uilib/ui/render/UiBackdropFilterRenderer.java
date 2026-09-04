@@ -403,7 +403,15 @@ final class UiBackdropFilterRenderer {
         return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
     }
 
-    private static float resolveBackdropShaderRadius(int blurRadius, int downsampleFactor,
+    /**
+     * 用户声明半径（屏幕 px）-> shader 实际半径（快照 texel）的唯一换算口径。
+     *
+     * <p>包私有仅为让 {@code BackdropBlurRadiusDomainTest} 能钉住「聊天可表达域 0..64 撞不到渲染层
+     * 上限」这条不变量（与本包 {@code resolveBackdropSampleStep} 同法）。{@code 0.75F} 是
+     * 用户 px -> 高斯半径换算，{@code /downsampleFactor} 是屏幕 px -> 快照 texel 换算，
+     * 两者不是一层折扣；改任意一项都要同步那条测试。</p>
+     */
+    static float resolveBackdropShaderRadius(int blurRadius, int downsampleFactor,
             BackdropBlurPolicy backdropBlurPolicy) {
         if (blurRadius <= 0) {
             return 0.0F;

@@ -59,9 +59,24 @@ public class UiHudRenderListenerGlFenceTest {
         assertFalse(source.contains("glPopMatrix"));
     }
 
+    /**
+     * 负向清单：守卫不得使用重兼容/诊断 API。
+     *
+     * <p>本方法原先只有十条 {@code assertFalse}，**没有任何正锚**：把 {@code HudGlStateGuard}
+     * 整个掏空（甚至删掉那十条名字涉及的实现）也照样全绿。四条正锚的作用是先证明
+     * 「读到了真的守卫源码」，再让负向清单有意义——R1 内聚轮（2026-09-04）补。
+     * GL11 出现次数下界取自实测（本文件 {@code GL11.} 共 62 处），骤降即说明捕获/恢复被拆。</p>
+     */
     @Test
     public void guardAvoidsHeavyCompatibilityFboAndDiagnosticApis() throws Exception {
         String source = source(GUARD);
+        assertTrue("守卫源码必须读得到（空内容会让下面十条负向断言全部空转）", source.length() > 1000);
+        assertTrue("守卫必须仍持有可注入的 GL 抽象", source.contains("private final GlAccess gl;"));
+        assertTrue("围栏入口 run 必须存在", source.contains("void run(Runnable frame)"));
+        assertTrue("捕获必须真读 GL 状态", source.contains("gl.isEnabled(GL11.GL_DEPTH_TEST)"));
+        assertTrue("恢复路径必须存在", source.contains("private void restore()"));
+        assertTrue("GL11 用量骤降说明捕获/恢复被拆（实测 62 处，地板 30）", occurrences(source, "GL11.") >= 30);
+
         assertFalse(source.contains("glPushAttrib"));
         assertFalse(source.contains("glPushClientAttrib"));
         assertFalse(source.contains("glClientActiveTexture"));

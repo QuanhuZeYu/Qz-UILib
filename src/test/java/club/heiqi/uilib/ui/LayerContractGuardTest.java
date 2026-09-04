@@ -34,21 +34,23 @@ public class LayerContractGuardTest {
     /** 数据层（响应式）包相对路径片段。 */
     private static final String REACTIVE_PACKAGE = "club/heiqi/uilib/ui/reactive/";
 
-    /** 渲染（绘制）层包相对路径片段。 */
-    private static final String PAINT_PACKAGE = "club/heiqi/uilib/ui/paint/";
+    /**
+     * 已按 2026-09-01《裁定-UILib-布局绘制系统》删除的分层包：绘制层 {@code ui.paint}、
+     * 组件层 {@code ui.control}、DOM 层 {@code ui.dom}（含 {@code ElementNode}）。
+     *
+     * <p>原先这里是一条「paint 包不得 import ElementNode」的基线扫描，但被扫的包与被抓的
+     * 类都已不存在，规则退化为 ∅⊆∅（把包名字符串改成任意假串仍全绿）。现改成**反向守卫**：
+     * 目录一旦复生即红，这才是那句话现在唯一还拦得住的东西。</p>
+     */
+    private static final String[] DELETED_PACKAGE_DIRS = {
+            "club/heiqi/uilib/ui/paint",
+            "club/heiqi/uilib/ui/control",
+            "club/heiqi/uilib/ui/dom",
+    };
 
     /** 匹配对控件层（{@code ui.control}）的静态 import。 */
     private static final Pattern IMPORT_UI_CONTROL =
             Pattern.compile("\\bimport\\s+club\\.heiqi\\.uilib\\.ui\\.control\\.");
-
-    /** 匹配对 {@code ElementNode} 的静态 import。 */
-    private static final Pattern IMPORT_ELEMENT_NODE =
-            Pattern.compile("\\bimport\\s+club\\.heiqi\\.uilib\\.ui\\.dom\\.ElementNode\\s*;");
-
-    /**
-     * I6 契约线已知违反基线：旧 paint 包已删除，基线应保持清零。
-     */
-    private static final Set<String> KNOWN_PAINT_ELEMENT_NODE_VIOLATIONS = new TreeSet<String>();
 
     /** 字体引擎包相对路径片段（含全部子包）。 */
     private static final String FONT_PACKAGE = "club/heiqi/uilib/font/";
@@ -84,27 +86,44 @@ public class LayerContractGuardTest {
     }
 
     /**
-     * 度量 I6 契约线提纯进度：paint 包 import {@code ElementNode} 的文件集合必须与已知违反基线精确相等。
+     * 反向守卫：已裁撤的三个分层包不得复生（2026-09-01 裁定：Grid 与旧组件/DOM/绘制三层删除）。
      *
-     * <p>断言「精确相等」而非「不超过基线」，使本测试同时承担两个职责：阻断新增违反、提示提纯收敛。</p>
+     * <p>取代原来的「paint 包 import ElementNode 基线」—— 那两个名字都不存在了，规则只能在
+     * ∅ 上打转；目录存在性是一条**今天就会红**的断言。</p>
      */
     @Test
-    public void shouldTrackPaintLayerElementNodeViolationBaseline() throws IOException {
-        Set<String> actual = collectFileNamesMatching(PAINT_PACKAGE, IMPORT_ELEMENT_NODE);
-
-        Set<String> newlyIntroduced = new TreeSet<String>(actual);
-        newlyIntroduced.removeAll(KNOWN_PAINT_ELEMENT_NODE_VIOLATIONS);
+    public void shouldKeepRevokedUiLayerPackagesDeleted() {
+        List<String> resurrected = new ArrayList<String>();
+        for (String packageDir : DELETED_PACKAGE_DIRS) {
+            Path dir = MAIN_SOURCE_ROOT.resolve(packageDir);
+            if (Files.exists(dir)) {
+                resurrected.add(packageDir + " -> " + dir);
+            }
+        }
         Assert.assertTrue(
-                "paint 包新增了对 ElementNode 的 import，禁止扩散 I6 契约线债（信条六 / 第 10 节）："
-                        + newlyIntroduced,
-                newlyIntroduced.isEmpty());
+                "已裁撤的分层包复生（Grid/旧组件层/DOM 层/旧绘制层已按 2026-09-01 裁定删除，"
+                        + "要复活请先经该裁定的复审窗口）：" + resurrected,
+                resurrected.isEmpty());
+    }
 
-        Set<String> alreadyPurified = new TreeSet<String>(KNOWN_PAINT_ELEMENT_NODE_VIOLATIONS);
-        alreadyPurified.removeAll(actual);
-        Assert.assertTrue(
-                "I6 契约线已提纯以下 paint 文件，请从 KNOWN_PAINT_ELEMENT_NODE_VIOLATIONS 基线移除以向下收敛："
-                        + alreadyPurified,
-                alreadyPurified.isEmpty());
+    /**
+     * 反空跑地板：本类每条规则都必须真的扫到文件，否则「零违反」只是没扫到东西。
+     *
+     * <p>{@link #listJavaFiles(String)} 对不存在的路径返回空列表而不报错，因此任何一条包路径
+     * 拼错都会让上面的扫描规则静默变成 ∅⊆∅（本项目已真实踩过一次）。下界取当前实测规模的一半
+     * 左右（{@code font} 95 个、{@code ui/reactive} 8 个源文件），只防「路径失效」，不防重构增减。</p>
+     */
+    @Test
+    public void scanHarnessMustSeeNonEmptyPopulations() throws IOException {
+        int fontFiles = listJavaFiles(FONT_PACKAGE).size();
+        Assert.assertTrue("font 包扫描集为空说明路径失效（实测 95 个源文件）：" + fontFiles, fontFiles >= 40);
+
+        int reactiveFiles = listJavaFiles(REACTIVE_PACKAGE).size();
+        Assert.assertTrue("ui/reactive 扫描集为空说明路径失效（实测 8 个源文件）：" + reactiveFiles,
+                reactiveFiles >= 5);
+
+        Assert.assertTrue("主源码根本身必须存在：" + MAIN_SOURCE_ROOT.toAbsolutePath(),
+                Files.isDirectory(MAIN_SOURCE_ROOT));
     }
 
     /**
