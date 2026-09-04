@@ -62,7 +62,7 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 | 步 | 内容 | 状态 |
 | --- | --- | --- |
 | M1 | 复活 L1 行内解析器 + 测试矩阵 | **完成 `6d9de24c`**（2026-09-04） |
-| M2 | L1 扩块级 + `MarkdownDocument` 数据模型 | 未开工 |
+| M2 | L1 扩块级 + `MarkdownDocument` 数据模型 | **完成 `08a8034e`**，留下一处待裁矛盾见 §二之三 |
 | M3 | L2 `ui/markdown` 绘制层 + `MarkdownPage` + headless 出图 | 未开工 |
 | M4 | chat3 现路 vs B 路行为对拍（产 `-side` 成对图） | 未开工 |
 | M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | 未开工 |
@@ -79,6 +79,44 @@ M1 的验收事实（父代理逐条独立复核过，非采信子代理自述�
 且不会再回来，M2 动这两个文件时顺手改指本规划；② 本规划的 §一 事实 3 说 blob 一致前我只比对
 了一个文件，现已三文件全比对。
 
+## 二之三 M2 复核结论与一处必须裁的形状矛盾（2026-09-04）
+
+M2 交付经独立复核（`javap` 读编译产物为准，不信自述）：提交 `08a8034e` 仅含
+`font/layout/markdown/**` 8 文件 +1935/-3；`MarkdownBlock`/`MarkdownBlockParser` 实为包内
+`final class`；行内两文件**非注释增删 0 行**、`MarkdownInlineParserTest` diff 为空（行内语义
+确未被改）；全包 import 仅 `java`/`club`（G2 纯 JVM 成立）；**3947 / 0 / 0 / 2，354 类**
+（基线 3881/352 → +66/+2）。自报的两个真缺陷修复（四连反引号栅栏误判、硬换行反斜杠未剥除）
+与三条踩坑语料测试名均实际存在。
+
+### 矛盾：三个 public 几何旋钮在当前接缝下永远读不到
+
+子代理报「越界待裁①：块模型只能 package-private，L2 要引用号底色/缩进/硬换行位图必须先裁公共
+面」，另报「`listIndentPx/quoteIndentPx/blockSpacingPx` 仅 L2 消费、L1 不读取」。两句是同一矛盾
+的两侧。实测该包内（除声明与 getter/setter 自身）的读取者：
+
+```
+getListIndentPx    消费者: *** 无人读取 ***
+getQuoteIndentPx   消费者: *** 无人读取 ***
+getBlockSpacingPx  消费者: *** 无人读取 ***
+对照: getBulletMarker x2 / getThematicBreakText x1 / getHeadingFontSizeDeltaPx x1 /
+      getDefaultFontSizePx x1 / isHeadingBold x1 / isQuoteItalic x1 / isHeadingUnderline x1
+```
+
+而 `MarkdownDocument.toSegments()` 的接缝是 `List<TextSegment>`；`TextSegment` 字段只有
+`text/style/latexSource`，`TextStyle` 全部字段里没有任何 indent/spacing/块边界通道 ——
+**块级边界在扁平化时被抹掉**。所以那三个字段不是「以后 L2 会读」，而是当前形状下无法生效。
+真正的选择是：块模型进公共面（L2 自己走块树），或给 `TextStyle`/`TextSegment` 加几何字段
+（污染全部文本层，最差）。
+
+### 裁定建议
+
+- **B（建议）**：把三对 `*IndentPx`/`blockSpacingPx` 访问器与字段**移出公共面**（零读取者、
+  零消费者，纯收窄），块模型保持包内；等 M3 真要块级几何那一刻再裁「块模型进公共面」。
+  理由：**加方法是兼容变更，删方法是破坏变更**，顺序反了就永久定死。
+- **A**：现在就把 `blocks()`/`MarkdownBlock`/`Kind` 放进公共面，省一次裁定，代价是在 L2 还没
+  写之前就把一棵递归块树承诺进公共兼容面。
+- 本文档 §二 原句「两层的接缝只有 `List<TextSegment>` + 块级盒模型」**自身就是矛盾源**，
+  A/B 任一都要先改掉这句，不留两条真相。
 ## 三、迁移与「不得并存」门禁
 
 B 案最大的风险就是长出第二套真相。用**顺序 + 门禁**防，而不是靠自觉：
