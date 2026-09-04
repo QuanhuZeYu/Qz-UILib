@@ -55,18 +55,21 @@ public class ChatMarkdownSettingsTest {
     }
 
     /**
-     * 同心不变量：输入框圆角必须等于「容器圆角 − 输入区内缩」。
+     * 同心不变量：输入框圆角 = 容器圆角 − 输入区内缩，且**由推导得出**。
      *
-     * <p>两个半径是独立 volatile 值，只锁各自的等值挡不住它们各自漂移；漂移后容器与
-     * 输入框的两圈弧线不同心，圆角越大越明显。内缩取 ChatContainer.INPUT_AREA_PADDING_PX
-     * （该常量处有反向指针指回本测试）。改容器半径必须同步改输入框半径，否则本测试失败。</p>
+     * <p>2026-09-04 内聚轮 R3-D：这条规则原先靠三处各抄一个 8 维持(字段初值、
+     * {@code ChatContainer} 的 padding 常量、本测试局部量)，本测试是当时唯一的防线——
+     * 容器半径一改就得记得来这里改数。现在推导发生在 getter 里，漂移在结构上不可能，
+     * 本测试退化为**推导口径的锁**：钉住减数是 {@code INPUT_AREA_INSET_PX} 而不是别的数，
+     * 并且容器圆角被改时输入框半径自动跟随(无需同步改测试)。</p>
      */
     @Test
     public void inputRadiusStaysConcentricWithContainer() {
-        final int inputAreaInsetPx = 8;
-        Assert.assertEquals("输入框圆角必须按同心规则 inner = outer - inset 跟随容器圆角",
-                ChatMarkdownSettings.getContainerCornerRadius() - inputAreaInsetPx,
+        Assert.assertEquals("内缩常量仍是设计稿 §2.3 的 8(sp-4)", 8, ChatMarkdownSettings.INPUT_AREA_INSET_PX);
+        Assert.assertEquals("输入框圆角按同心规则 inner = outer - inset 由容器圆角推导",
+                ChatMarkdownSettings.getContainerCornerRadius() - ChatMarkdownSettings.INPUT_AREA_INSET_PX,
                 ChatMarkdownSettings.getInputCornerRadiusPx());
+        Assert.assertEquals("当前档位:20 - 8 = 12", 12, ChatMarkdownSettings.getInputCornerRadiusPx());
     }
 
     /** TB1:常驻开关 setter 往返(进程级配置切换后恢复,与 enabled 同款 setter 语义)。 */

@@ -56,7 +56,7 @@ public class ChatInputBarTest {
         Assert.assertEquals("内 padding 左 10", 10, root.getPaddingLeft());
         Assert.assertEquals("输入字号 font-input 14", 14, root.getFontSize());
         Assert.assertTrue("填满父宽(§6.2 fillParentWidth)", root.isFillParentWidth());
-        Assert.assertEquals("圆角 r-md 8", ChatMarkdownSettings.getInputCornerRadiusPx(),
+        Assert.assertEquals("圆角取同心推导值(容器 20 - 内缩 8 = 12)", ChatMarkdownSettings.getInputCornerRadiusPx(),
                 root.getCornerRadius());
     }
 

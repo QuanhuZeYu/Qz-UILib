@@ -30,10 +30,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  */
 public final class ChatContainer {
 
-    /** 输入条区四周内边距(px,设计稿 §2.3 sp-4/§6.2:输入条区四周 8)。 */
-    /** 输入区内缩。参与同心不变量：输入框圆角 = 容器圆角 - 本值，由
-     *  {@code ChatMarkdownSettingsTest.inputRadiusStaysConcentricWithContainer} 锁定，改这里要同步改那个测试。 */
-    private static final int INPUT_AREA_PADDING_PX = 8;
+    // 输入条区四周内边距取 ChatMarkdownSettings.INPUT_AREA_INSET_PX(唯一数值来源)：
+    // 它同时是同心规则的减数(输入框圆角 = 容器圆角 − 内缩)，此处不再抄第二份 8。
     /** 容器内容区上内边距(px,设计稿 §2.3/§6.2:上 10)。 */
     private static final int CONTENT_PADDING_TOP_PX = 10;
     /** 容器内容区左右内边距(px,设计稿 §2.3/§6.2:左右 10)。 */
@@ -284,7 +282,7 @@ public final class ChatContainer {
         SceneNode barRow = SceneNode.row()
                 .setHitTestable(false)
                 .setCrossAxisAlign(CrossAxisAlign.CENTER)
-                .setPadding(INPUT_AREA_PADDING_PX)
+                .setPadding(ChatMarkdownSettings.INPUT_AREA_INSET_PX)
                 .setPreferredHeight(ChatMarkdownSettings.getInputBarHeightPx());
         barRow.appendChild(bar.root());
         containerNode.appendChild(barRow);

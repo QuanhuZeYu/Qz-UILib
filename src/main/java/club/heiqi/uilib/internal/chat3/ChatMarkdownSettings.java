@@ -96,15 +96,15 @@ public final class ChatMarkdownSettings {
     private static volatile int minContainerHeightPx = 160;
     /** 输入条区高(px;设计稿 §6.2:输入条区高 40 贴容器底)。 */
     private static volatile int inputBarHeightPx = 40;
-    /** 输入条圆角(px;设计稿 §2.1/§3.2:r-md 8)。 */
     /**
-     * 输入框圆角：与容器**同心**推导，不是独立取值。
+     * 输入区在容器内的四周内缩(px;设计稿 §2.3 sp-4/§6.2:输入条区四周 8)。
      *
-     * <p>同心规则 inner = outer − inset：容器 20、输入区在容器内的内缩
-     * {@code INPUT_AREA_PADDING_PX = 8} ⇒ 输入框 12。原值 8 是容器还是 12 时代留下的，
-     * 容器提到 20 后若不同步，输入框的弧会比容器"更紧"，两圈弧线在视觉上不同心。</p>
+     * <p>本常量是**同心规则的唯一数值来源**：输入框圆角 = 容器圆角 − 本值(20 − 8 ⇒ 12)。
+     * 原先这个数字抄在三处(本类字段初值、{@code ChatContainer} 的 padding 常量、测试局部量)，
+     * 而注释亲述的"inner = outer − inset"却存成了独立 volatile 字段——假可调。
+     * 现在推导发生在 {@link #getInputCornerRadiusPx()}，漂移在结构上不可能。</p>
      */
-    private static volatile int inputCornerRadiusPx = 12;
+    public static final int INPUT_AREA_INSET_PX = 8;
 
     /** 自己气泡视觉风格(§10 已拍板:方案A accent)。 */
     public enum SelfBubbleStyle {
@@ -384,7 +384,7 @@ public final class ChatMarkdownSettings {
         hudPersistMessages = value;
     }
 
-    /** @return 聊天窗口最大宽(逻辑 px,360 封顶) */
+    /** @return 聊天窗口最大宽(逻辑 px,默认 640 封顶;360 是历史误档，见字段注释) */
     public static int getChatWidthMaxPx() {
         return chatWidthMaxPx;
     }
@@ -579,9 +579,9 @@ public final class ChatMarkdownSettings {
         return inputBarHeightPx;
     }
 
-    /** @return 输入条圆角半径(px,r-md 8) */
+    /** @return 输入框圆角半径(px;同心推导 = 容器圆角 − {@link #INPUT_AREA_INSET_PX}，非独立可调) */
     public static int getInputCornerRadiusPx() {
-        return inputCornerRadiusPx;
+        return Math.max(0, containerCornerRadius - INPUT_AREA_INSET_PX);
     }
 
     /** @return 新消息提示文字色(ARGB) */
