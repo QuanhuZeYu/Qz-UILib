@@ -75,6 +75,10 @@ public class ModernConfigBootstrapTest {
     private String[] saveFontSort;
     private String[] saveCharacterFontRules;
     private boolean saveFontSortConfigured;
+    private int saveWidthCacheMissBudgetPerWindow;
+    private int saveGlyphInkPadding;
+    private double saveAtlasTextureScale;
+    private String[] saveMissingFontSort;
 
     /**
      * 保存所有受测静态字段初值，防止测试间相互污染。
@@ -108,6 +112,10 @@ public class ModernConfigBootstrapTest {
         saveFontSort = FontConfig.fontSort;
         saveCharacterFontRules = FontConfig.characterFontRules;
         saveFontSortConfigured = FontConfig.fontSortConfigured;
+        saveWidthCacheMissBudgetPerWindow = FontConfig.widthCacheMissBudgetPerWindow;
+        saveGlyphInkPadding = FontConfig.glyphInkPadding;
+        saveAtlasTextureScale = FontConfig.atlasTextureScale;
+        saveMissingFontSort = FontConfig.missingFontSort;
     }
 
     /**
@@ -140,6 +148,10 @@ public class ModernConfigBootstrapTest {
         FontConfig.fontSort = saveFontSort;
         FontConfig.characterFontRules = saveCharacterFontRules;
         FontConfig.fontSortConfigured = saveFontSortConfigured;
+        FontConfig.widthCacheMissBudgetPerWindow = saveWidthCacheMissBudgetPerWindow;
+        FontConfig.glyphInkPadding = saveGlyphInkPadding;
+        FontConfig.atlasTextureScale = saveAtlasTextureScale;
+        FontConfig.missingFontSort = saveMissingFontSort;
         // 刷新 characterRuleSet 派生态，避免快照泄漏
         FontConfig.refreshDerivedRuleSet();
         // 同步 last* 私有快照到恢复后的 public 值（bootstrapAndApply 末段会触发

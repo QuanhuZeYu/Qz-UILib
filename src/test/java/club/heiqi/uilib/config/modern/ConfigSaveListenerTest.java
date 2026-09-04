@@ -72,6 +72,10 @@ public class ConfigSaveListenerTest {
     private String[] saveFontSort;
     private String[] saveCharacterFontRules;
     private boolean saveFontSortConfigured;
+    private int saveWidthCacheMissBudgetPerWindow;
+    private int saveGlyphInkPadding;
+    private double saveAtlasTextureScale;
+    private String[] saveMissingFontSort;
 
     @Before
     public void saveStaticState() {
@@ -104,6 +108,10 @@ public class ConfigSaveListenerTest {
         saveFontSort = FontConfig.fontSort;
         saveCharacterFontRules = FontConfig.characterFontRules;
         saveFontSortConfigured = FontConfig.fontSortConfigured;
+        saveWidthCacheMissBudgetPerWindow = FontConfig.widthCacheMissBudgetPerWindow;
+        saveGlyphInkPadding = FontConfig.glyphInkPadding;
+        saveAtlasTextureScale = FontConfig.atlasTextureScale;
+        saveMissingFontSort = FontConfig.missingFontSort;
     }
 
     @After
@@ -140,6 +148,10 @@ public class ConfigSaveListenerTest {
         FontConfig.fontSort = saveFontSort;
         FontConfig.characterFontRules = saveCharacterFontRules;
         FontConfig.fontSortConfigured = saveFontSortConfigured;
+        FontConfig.widthCacheMissBudgetPerWindow = saveWidthCacheMissBudgetPerWindow;
+        FontConfig.glyphInkPadding = saveGlyphInkPadding;
+        FontConfig.atlasTextureScale = saveAtlasTextureScale;
+        FontConfig.missingFontSort = saveMissingFontSort;
         FontConfig.refreshDerivedRuleSet();
         FontConfig.onConfigReload();
     }

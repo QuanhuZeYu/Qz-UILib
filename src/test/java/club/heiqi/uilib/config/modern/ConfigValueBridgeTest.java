@@ -74,6 +74,10 @@ public class ConfigValueBridgeTest {
     private String[] saveFontSort;
     private String[] saveCharacterFontRules;
     private boolean saveFontSortConfigured;
+    private int saveWidthCacheMissBudgetPerWindow;
+    private int saveGlyphInkPadding;
+    private double saveAtlasTextureScale;
+    private String[] saveMissingFontSort;
 
     /**
      * 保存所有受测静态字段初值，防止测试间相互污染。
@@ -107,6 +111,10 @@ public class ConfigValueBridgeTest {
         saveFontSort = FontConfig.fontSort;
         saveCharacterFontRules = FontConfig.characterFontRules;
         saveFontSortConfigured = FontConfig.fontSortConfigured;
+        saveWidthCacheMissBudgetPerWindow = FontConfig.widthCacheMissBudgetPerWindow;
+        saveGlyphInkPadding = FontConfig.glyphInkPadding;
+        saveAtlasTextureScale = FontConfig.atlasTextureScale;
+        saveMissingFontSort = FontConfig.missingFontSort;
     }
 
     /**
@@ -139,8 +147,15 @@ public class ConfigValueBridgeTest {
         FontConfig.fontSort = saveFontSort;
         FontConfig.characterFontRules = saveCharacterFontRules;
         FontConfig.fontSortConfigured = saveFontSortConfigured;
+        FontConfig.widthCacheMissBudgetPerWindow = saveWidthCacheMissBudgetPerWindow;
+        FontConfig.glyphInkPadding = saveGlyphInkPadding;
+        FontConfig.atlasTextureScale = saveAtlasTextureScale;
+        FontConfig.missingFontSort = saveMissingFontSort;
         // 刷新 characterRuleSet 派生态，避免快照泄漏
         FontConfig.refreshDerivedRuleSet();
+        // 同步 last* 私有快照：恢复 public 后若不重跑 onConfigReload，
+        // 下一批测试看到的 last* 仍指向本批改过的值（另两个夹具已如此，本轮补齐）
+        FontConfig.onConfigReload();
     }
 
     /**
