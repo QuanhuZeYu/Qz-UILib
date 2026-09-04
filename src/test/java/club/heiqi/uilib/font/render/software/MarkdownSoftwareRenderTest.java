@@ -7,6 +7,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.layout.markdown.MarkdownInlineParser;
+import club.heiqi.uilib.font.layout.markdown.MarkdownSpan;
+
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -134,14 +138,29 @@ public class MarkdownSoftwareRenderTest {
                     CONTENT_WIDTH_PX, BASE));
         }
 
-        // 逐样本页（可放大目检细节）
+        // 逐样本页（可放大目检细节）——@1x：现有逻辑 px 口径，全部机器断言只跑这份
         for (int i = 0; i < CASES.length; i++) {
             renderCasePage(shared, view, service, i, caseLines.get(i),
-                    new File(OUT_DIR, String.format("%02d-%s.png", Integer.valueOf(i + 1), CASES[i][0])));
+                    new File(OUT_DIR, String.format("%02d-%s.png", Integer.valueOf(i + 1), CASES[i][0])), 1);
         }
         // 整页合成图（多样本纵向拼接 + 左侧 label 列，人眼判整体对齐）
         renderComposite(shared, view, service, caseLines,
-                new File(OUT_DIR, "00-full-page.png"));
+                new File(OUT_DIR, "00-full-page.png"), 1);
+        // @Nx 判读副本（M4 增补需求）：同一 caseLines（同一次解析+换行），只换倍率参数；
+        // 不参与任何机器断言；N=4 时 renderPx=52 ≤ atlas 64px，按字形 px 真放大零事后缩放；
+        // 画布短边背景补白到 ≥854×480。开关=MarkdownRenderScaleKit（系统属性 qz.md.renderScale）。
+        if (MarkdownRenderScaleKit.nxEnabled()) {
+            int n = MarkdownRenderScaleKit.N;
+            for (int i = 0; i < CASES.length; i++) {
+                renderCasePage(shared, view, service, i, caseLines.get(i),
+                        new File(OUT_DIR, String.format("%02d-%s%s.png", Integer.valueOf(i + 1),
+                                CASES[i][0], MarkdownRenderScaleKit.nxSuffix())), n);
+            }
+            renderComposite(shared, view, service, caseLines,
+                    new File(OUT_DIR, "00-full-page" + MarkdownRenderScaleKit.nxSuffix() + ".png"), n);
+            profileLine("renderScale " + MarkdownRenderScaleKit.detailReport(BASE)
+                    + " @Nx=判读副本(与 @1x 同源仅换倍率,无断言,画布补白>=854x480)");
+        }
 
         profileLine("env jvm=" + System.getProperty("java.version")
                 + " os=" + System.getProperty("os.name") + " arch=" + System.getProperty("os.arch"));
@@ -153,57 +172,71 @@ public class MarkdownSoftwareRenderTest {
     /** 单样本页：label 在左栏顶、样本内容在右栏，逐行落 collector。 */
     private void renderCasePage(LatexSoftwareRenderKit.Shared shared, GlyphRuntimeTablesView view,
             TextLayoutService service, int caseIndex,
-            List<List<TextSegment>> lines, File out) throws Exception {
+            List<List<TextSegment>> lines, File out, int scale) throws Exception {
         GlyphBatchCollector collector = new GlyphBatchCollector();
-        int pageWidth = LABEL_GUTTER_PX + CONTENT_WIDTH_PX + 2 * PAD_PX;
-        int contentX = PAD_PX + LABEL_GUTTER_PX;
-        int[] cursor = renderBlock(shared, view, service, collector, lines, contentX, PAD_PX);
-        renderSegments(shared, view, service, collector, labelSegments(caseIndex), PAD_PX, PAD_PX);
-        int pageHeight = Math.max(cursor[0] + PAD_PX, BASE + 2 * PAD_PX);
+        int pageWidth = (LABEL_GUTTER_PX + CONTENT_WIDTH_PX) * scale + 2 * PAD_PX;
+        int contentX = PAD_PX + LABEL_GUTTER_PX * scale;
+        int[] cursor = renderBlock(shared, view, service, collector, lines, contentX, PAD_PX, scale);
+        renderSegments(shared, view, service, collector, labelSegments(caseIndex), PAD_PX, PAD_PX, scale);
+        int pageHeight = Math.max(cursor[0] + PAD_PX, BASE * scale + 2 * PAD_PX);
+        if (scale > 1) {
+            pageWidth = MarkdownRenderScaleKit.padW(pageWidth);
+            pageHeight = MarkdownRenderScaleKit.padH(pageHeight);
+        }
         rasterizeAndWrite(shared, collector, pageWidth, pageHeight, out);
-        enforceFloors(caseIndex, lines, service, collector, out, pageWidth, pageHeight);
+        if (scale == 1) {
+            enforceFloors(caseIndex, lines, service, collector, out, pageWidth, pageHeight);
+        }
     }
 
     /** 整页合成图：8 样本纵向拼接，每条左侧 label 文本。 */
     private void renderComposite(LatexSoftwareRenderKit.Shared shared, GlyphRuntimeTablesView view,
-            TextLayoutService service, List<List<List<TextSegment>>> caseLines, File out) throws Exception {
+            TextLayoutService service, List<List<List<TextSegment>>> caseLines, File out,
+            int scale) throws Exception {
         // 预估高度：先量后画（软件帧要求固定画布）
-        int pageWidth = LABEL_GUTTER_PX + CONTENT_WIDTH_PX + 2 * PAD_PX;
+        int pageWidth = (LABEL_GUTTER_PX + CONTENT_WIDTH_PX) * scale + 2 * PAD_PX;
         int totalHeight = PAD_PX;
         for (int i = 0; i < caseLines.size(); i++) {
-            totalHeight += blockHeight(caseLines.get(i), service) + BLOCK_GAP_PX;
+            totalHeight += blockHeight(caseLines.get(i), service, scale) + BLOCK_GAP_PX * scale;
         }
         totalHeight += PAD_PX;
+        if (scale > 1) {
+            pageWidth = MarkdownRenderScaleKit.padW(pageWidth);
+            totalHeight = MarkdownRenderScaleKit.padH(totalHeight);
+        }
         GlyphBatchCollector collector = new GlyphBatchCollector();
-        int contentX = PAD_PX + LABEL_GUTTER_PX;
+        int contentX = PAD_PX + LABEL_GUTTER_PX * scale;
         int y = PAD_PX;
         for (int i = 0; i < caseLines.size(); i++) {
-            int[] cursor = renderBlock(shared, view, service, collector, caseLines.get(i), contentX, y);
-            renderSegments(shared, view, service, collector, labelSegments(i), PAD_PX, y);
-            y = cursor[0] + BLOCK_GAP_PX;
+            int[] cursor = renderBlock(shared, view, service, collector, caseLines.get(i), contentX, y, scale);
+            renderSegments(shared, view, service, collector, labelSegments(i), PAD_PX, y, scale);
+            y = cursor[0] + BLOCK_GAP_PX * scale;
         }
         rasterizeAndWrite(shared, collector, pageWidth, totalHeight, out);
         int ink = countInk(FontSoftwareRasterizer.render(buildFrame(collector, pageWidth, totalHeight), shared.gl));
         profileLine(String.format("composite %s %dx%d quads=%d ink=%d", out.getName(),
                 Integer.valueOf(pageWidth), Integer.valueOf(totalHeight),
                 Integer.valueOf(collector.getQuadCount()), Integer.valueOf(ink)));
-        Assert.assertTrue("合成图墨水像素地板: 实测=" + String.valueOf(ink),
-                ink >= MIN_INK_PIXELS_PER_PAGE * CASES.length);
-        Assert.assertTrue("合成图必须有 quad", collector.getQuadCount() > 0);
+        if (scale == 1) {
+            Assert.assertTrue("合成图墨水像素地板: 实测=" + String.valueOf(ink),
+                    ink >= MIN_INK_PIXELS_PER_PAGE * CASES.length);
+            Assert.assertTrue("合成图必须有 quad", collector.getQuadCount() > 0);
+        }
     }
 
     /** 画一个样本块的全部视觉行；返回 [下一可用 y]。 */
     private int[] renderBlock(LatexSoftwareRenderKit.Shared shared, GlyphRuntimeTablesView view,
             TextLayoutService service, GlyphBatchCollector collector, List<List<TextSegment>> lines,
-            int x, int top) {
+            int x, int top, int scale) {
         DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
         int y = top;
         for (int i = 0; i < lines.size(); i++) {
-            List<TextSegment> line = lines.get(i);
-            int height = MarkdownPainter.lineHeightPx(line, service, BASE);
+            // scale==1 时 scaleSegments 恒等返回原列表、BASE*1==BASE —— @1x 输出与旧逐位一致
+            List<TextSegment> line = MarkdownRenderScaleKit.scaleSegments(lines.get(i), scale);
+            int height = MarkdownPainter.lineHeightPx(line, service, BASE * scale);
             if (!line.isEmpty()) {
                 adapter.renderSegmentsToCollector(line, shared.settings, service, view,
-                        (float) x, (float) y, false, 1.0F, (float) BASE, collector);
+                        (float) x, (float) y, false, 1.0F, (float) (BASE * scale), collector);
             }
             y += height;
         }
@@ -212,9 +245,10 @@ public class MarkdownSoftwareRenderTest {
 
     private void renderSegments(LatexSoftwareRenderKit.Shared shared, GlyphRuntimeTablesView view,
             TextLayoutService service, GlyphBatchCollector collector, List<TextSegment> segments,
-            int x, int y) {
-        DefaultFontRendererAdapter.getInstance().renderSegmentsToCollector(segments, shared.settings,
-                service, view, (float) x, (float) y, false, 1.0F, (float) LABEL_BASE, collector);
+            int x, int y, int scale) {
+        DefaultFontRendererAdapter.getInstance().renderSegmentsToCollector(
+                MarkdownRenderScaleKit.scaleSegments(segments, scale), shared.settings,
+                service, view, (float) x, (float) y, false, 1.0F, (float) (LABEL_BASE * scale), collector);
     }
 
     private SoftwareRenderFrame buildFrame(GlyphBatchCollector collector, int width, int height) {
@@ -340,6 +374,7 @@ public class MarkdownSoftwareRenderTest {
                 + " lastTop=" + String.valueOf(lastTop), totalHeight > lastTop);
     }
 
+
     /** 换行行为矩阵（K3 语义在段流形态上的等价复写；宽度判据全用实测值，不依赖平台常量）。 */
     @Test
     public void wrapSemanticsMatrix() {
@@ -410,6 +445,198 @@ public class MarkdownSoftwareRenderTest {
         }
     }
 
+
+    /**
+     * F5 §切换处空格归属：采 chat3 口径——切换点的空格归<b>后</b>一段，
+     * 且段文本与段宽双等（与门禁同一把尺：getSegmentWidth @ 基准字号）。
+     */
+    @Test
+    public void fixF5SwitchPointSpaceBelongsToNextSegment() {
+        LatexSoftwareRenderKit.Shared shared = LatexSoftwareRenderKit.shared();
+        TextLayoutService service = shared.service;
+        char sec = (char) 0x00A7;
+        List<TextSegment> raw = service.parseSegments(
+                sec + "c红色警告 " + sec + "fplain tail mixed", 0xFFFFFFFF);
+        LatexSoftwareRenderKit.assembleGlyphs(shared, raw);
+        List<MarkdownSpan> spans = new ArrayList<MarkdownSpan>();
+        for (int i = 0; i < raw.size(); i++) {
+            TextSegment segment = raw.get(i);
+            if (!segment.isLatex() && !segment.getText().isEmpty()) {
+                spans.add(new MarkdownSpan(segment.getText(), segment.getStyle()));
+            }
+        }
+        List<List<TextSegment>> lines = MarkdownPainter.wrapLines(
+                MarkdownInlineParser.parse(spans), service, 4000, BASE);
+        Assert.assertEquals(1, lines.size());
+        List<TextSegment> line = lines.get(0);
+        Assert.assertEquals("切点空格归后一段 → 两段", 2, line.size());
+        Assert.assertEquals("红色警告", line.get(0).getText());
+        Assert.assertEquals(" plain tail mixed", line.get(1).getText());
+        List<TextSegment> reference = new ArrayList<TextSegment>();
+        TextStyle red = new TextStyle();
+        red.setColor(0xFFFF5555);
+        TextStyle white = new TextStyle();
+        white.setColor(0xFFFFFFFF);
+        reference.add(new TextSegment("红色警告", red));
+        reference.add(new TextSegment(" plain tail mixed", white));
+        for (int i = 0; i < reference.size(); i++) {
+            Assert.assertEquals("段文本等值", reference.get(i).getText(), line.get(i).getText());
+            Assert.assertEquals("段宽位级等值（与 A 路同尺）",
+                    service.getSegmentWidth(reference.get(i), BASE),
+                    service.getSegmentWidth(line.get(i), BASE), 0.0D);
+        }
+    }
+
+    // ========= M4-fix：六条修复的定点钉死（F1..F6，对拍门禁之外的机器证据） =========
+
+    /**
+     * F1 行内 code span 承接：反引号对必须打 codeSpan 位 + chat3 衬底色 + chat3 口径段级字号，
+     * 且 code 内容一律字面（不解析行内标记、不做 URL 链接化）。取值出处：
+     * {@code ChatCodeSpanSplitter.java:107-112}（0x26FFFFFF 与 getCodeFontSizePx()=12）；
+     * 旧裁定「第一版 code 仅字面输出」已被 chat3 出货行为取代（2026-09-04）。
+     */
+    @Test
+    public void fixF1InlineCodeSpanCarriesChat3CodeStyle() {
+        char tick = (char) 0x60;
+        String src = "命令 " + tick + "curl http://x.y/z -s" + tick + " 执行";
+        List<TextSegment> segments = MarkdownDocument.parse(src)
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
+        Assert.assertEquals("前段 + code 段 + 后段", 3, segments.size());
+        Assert.assertEquals("命令 ", segments.get(0).getText());
+        TextSegment code = segments.get(1);
+        Assert.assertEquals("反引号已剥、内容字面", "curl http://x.y/z -s", code.getText());
+        Assert.assertTrue("codeSpan 位必须写上", code.getStyle().isCodeSpan());
+        Assert.assertEquals("chat3 衬底色口径", 0x26FFFFFF, code.getStyle().getCodeBackgroundColor());
+        Assert.assertEquals("chat3 code 字号口径", 12, code.getStyle().getFontSizePx());
+        Assert.assertNull("code 段不得带 link（URL 不链接化）", code.getStyle().getLink());
+        Assert.assertFalse("前后普通段不得被误标 code", segments.get(0).getStyle().isCodeSpan());
+        Assert.assertFalse(segments.get(2).getStyle().isCodeSpan());
+        Assert.assertEquals(" 执行", segments.get(2).getText());
+        List<TextSegment> nested = MarkdownDocument.parse("a " + tick + "**b** $x$" + tick + " c")
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
+        Assert.assertEquals("code 内标记一律字面", "**b** $x$", nested.get(1).getText());
+        Assert.assertFalse("code 内 ** 不得成粗体",
+                nested.get(1).getStyle().getFontType() == FontType.BOLD);
+        Assert.assertFalse("code 内 $ 不得成公式原子", nested.get(1).isLatex());
+    }
+
+    /**
+     * F2 嵌套列表缩进：每级 2 个前导空格写进 bullet 段文本（chat3 口径，
+     * {@code ChatMessageList.java:952-956}），靠扁平段流表达，不开块模型/缩进 px 公共面。
+     */
+    @Test
+    public void fixF2NestedListIndentIsLeadingSpacesInMarkerSegment() {
+        List<TextSegment> segments = MarkdownDocument.parse("- 甲\n  - 乙\n    - 丙")
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
+        Assert.assertEquals("首级标记零缩进", "• ", segments.get(0).getText());
+        Assert.assertEquals("二级标记 2 空格缩进", "  • ", markerAt(segments, 1));
+        Assert.assertEquals("三级标记 4 空格缩进", "    • ", markerAt(segments, 2));
+        StringBuilder flat = new StringBuilder();
+        for (int i = 0; i < segments.size(); i++) {
+            flat.append(segments.get(i).getText());
+        }
+        Assert.assertEquals("逐段拼接 = chat3 流式文本",
+                "• 甲\n  • 乙\n    • 丙", flat.toString());
+    }
+
+    /**
+     * F3 引用文字色旋钮：默认值必须等于 chat3 现行次级色 FF9AA0A8
+     * （{@code ChatMessageList.java:891-897} → getTextSecondaryArgb()）；0 = 关闭降色。
+     */
+    @Test
+    public void fixF3QuoteTextColorKnobMatchesChat3Secondary() {
+        MarkdownStyleTable table = MarkdownStyleTable.defaults();
+        Assert.assertEquals("默认 = chat3 出货次级色", 0xFF9AA0A8, table.getQuoteTextColor());
+        List<TextSegment> quote = MarkdownDocument.parse("> 引用的文字")
+                .toSegments(table, bodyStyle());
+        Assert.assertEquals(0xFF9AA0A8, quote.get(0).getStyle().getColor());
+        List<TextSegment> plain = MarkdownDocument.parse("普通文字")
+                .toSegments(table, bodyStyle());
+        Assert.assertEquals("非引用块不得降色", 0xFFFFFFFF, plain.get(0).getStyle().getColor());
+        MarkdownStyleTable off = MarkdownStyleTable.defaults();
+        off.setQuoteTextColor(0);
+        Assert.assertEquals("0 = 继承基础样式色", 0xFFFFFFFF,
+                MarkdownDocument.parse("> x").toSegments(off, bodyStyle()).get(0).getStyle().getColor());
+        MarkdownStyleTable custom = MarkdownStyleTable.defaults();
+        custom.setQuoteTextColor(0xFF112233);
+        Assert.assertEquals("copy() 必须带走引用色", 0xFF112233, custom.copy().getQuoteTextColor());
+        Assert.assertEquals(0xFF112233, MarkdownDocument.parse("> y").toSegments(custom, bodyStyle())
+                .get(0).getStyle().getColor());
+    }
+
+    /**
+     * F4 块层 §-容忍（用户裁「甲」）：行首 § 序列跨过后照旧判块标记；未命中块标记时
+     * § 码必须原样留在输出文本里（容忍不是解析，不得吞字、不得引入颜色）。
+     */
+    @Test
+    public void fixF4BlockLayerToleratesLeadingSectionCodes() {
+        char sec = (char) 0x00A7;
+        List<TextSegment> list = MarkdownDocument.parse(sec + "a- 玩家列表行")
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
+        Assert.assertEquals("• ", list.get(0).getText());
+        Assert.assertEquals("玩家列表行", list.get(1).getText());
+        List<TextSegment> quote = MarkdownDocument.parse(sec + "7> 引用的文字")
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
+        Assert.assertEquals("引用的文字", quote.get(0).getText());
+        Assert.assertEquals("S 容忍与引用色联动", 0xFF9AA0A8, quote.get(0).getStyle().getColor());
+        List<TextSegment> many = MarkdownDocument.parse(
+                sec + "c" + sec + "l" + sec + "f" + sec + "r* 项")
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
+        Assert.assertEquals("• ", many.get(0).getText());
+        Assert.assertEquals("连续 S 码与重置码都要跨过", "项", many.get(1).getText());
+        Assert.assertEquals("标", MarkdownDocument.parse(sec + "a# 标")
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle()).get(0).getText());
+        String literal = sec + "a 普通行";
+        Assert.assertEquals("未命中块标记 → S 码原样保留", literal,
+                textOf(MarkdownDocument.parse(literal)
+                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle())));
+        String mid = "- 甲 " + sec + "a乙";
+        Assert.assertEquals("行中 S 码不参与容忍", "• 甲 " + sec + "a乙",
+                textOf(MarkdownDocument.parse(mid)
+                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle())));
+    }
+
+    /**
+     * F6 块间距（走 C1，零公共面变更）：源空行必须在 L2 展开成一个空显示行；
+     * 无空行的块边界不得加行；空行不产 SEGMENTS 命令，只占行高。
+     */
+    @Test
+    public void fixF6BlockGapBecomesExactlyOneVisualBlankLine() {
+        LatexSoftwareRenderKit.Shared shared = LatexSoftwareRenderKit.shared();
+        TextLayoutService service = shared.service;
+        List<TextSegment> gap = MarkdownDocument.parse("甲\n\n乙")
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
+        int markers = 0;
+        for (int i = 0; i < gap.size(); i++) {
+            if (!gap.get(i).isLatex() && gap.get(i).getText().isEmpty()) {
+                markers++;
+            }
+        }
+        Assert.assertEquals("空行块边界产 1 个占位标记段", 1, markers);
+        List<List<TextSegment>> lines = MarkdownPainter.wrapLines(gap, service, 4000, BASE);
+        Assert.assertEquals("甲 + 空行 + 乙 = 3 显示行（与 chat3 一致）", 3, lines.size());
+        Assert.assertEquals("中间行零段", 0, lines.get(1).size());
+        Assert.assertEquals("甲", textOf(lines.get(0)));
+        Assert.assertEquals("乙", textOf(lines.get(2)));
+        Assert.assertTrue("空行必须占一份行高",
+                MarkdownPainter.lineHeightPx(lines.get(1), service, BASE) > 0);
+        Assert.assertEquals("无空行的块边界不得加行", 2, MarkdownPainter.wrapLines(
+                MarkdownDocument.parse("甲\n乙")
+                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle()),
+                service, 4000, BASE).size());
+        List<PaintCommand> commands = MarkdownPainter.toPaintCommands(gap, service, 4000, BASE);
+        int segmentsCommands = 0;
+        for (int i = 0; i < commands.size(); i++) {
+            if (commands.get(i).getType() == PaintCommandType.SEGMENTS) {
+                segmentsCommands++;
+            }
+        }
+        Assert.assertEquals("空行不产 SEGMENTS 命令", 2, segmentsCommands);
+        int blankHeight = MarkdownPainter.lineHeightPx(new ArrayList<TextSegment>(), service, BASE);
+        Assert.assertTrue("总高必须把空行的行距算进去",
+                MarkdownPainter.measureHeight(gap, service, 4000, BASE) >= blankHeight * 3);
+    }
+
     /** 标题阶梯：样式表登记的字号增量必须体现在行高单调上（人眼看图的真假判据先机器化一层）。 */
     @Test
     public void headingSizeLadderReachesLineGeometry() {
@@ -461,6 +688,21 @@ public class MarkdownSoftwareRenderTest {
         return styles;
     }
 
+    /** 取第 index 个列表标记段（含前导缩进的空格），不存在返回 null。 */
+    private static String markerAt(List<TextSegment> segments, int index) {
+        int seen = -1;
+        for (int i = 0; i < segments.size(); i++) {
+            String text = segments.get(i).getText();
+            if (text.endsWith("• ")) {
+                seen++;
+                if (seen == index) {
+                    return text;
+                }
+            }
+        }
+        return null;
+    }
+
     private static String textOf(List<TextSegment> line) {
         StringBuilder builder = new StringBuilder();
         for (int i = 0; i < line.size(); i++) {
@@ -473,10 +715,11 @@ public class MarkdownSoftwareRenderTest {
         PROFILE.append(line).append(System.lineSeparator());
     }
 
-    private static int blockHeight(List<List<TextSegment>> lines, TextLayoutService service) {
+    private static int blockHeight(List<List<TextSegment>> lines, TextLayoutService service, int scale) {
         int total = 0;
         for (int i = 0; i < lines.size(); i++) {
-            total += MarkdownPainter.lineHeightPx(lines.get(i), service, BASE);
+            total += MarkdownPainter.lineHeightPx(
+                    MarkdownRenderScaleKit.scaleSegments(lines.get(i), scale), service, BASE * scale);
         }
         return total;
     }
