@@ -114,7 +114,7 @@ public class ConfigFieldReaderGuardTest {
         }
         Assert.assertTrue("schema 键数骤降说明提取式子失效（实测 24）：" + declaredSchemaKeys().size(),
                 declaredSchemaKeys().size() >= 20);
-        Assert.assertTrue("Bridge 写点数骤降说明提取式子失效（实测 21）：" + countBridgeWrites(),
+        Assert.assertTrue("Bridge 写点数骤降说明提取式子失效（实测 25）：" + countBridgeWrites(),
                 countBridgeWrites() >= 15);
     }
 
@@ -146,7 +146,12 @@ public class ConfigFieldReaderGuardTest {
     /** schema 声明的字段名：builder 链上每个方法调用的首参字符串。 */
     private static Set<String> declaredSchemaKeys() throws IOException {
         Set<String> keys = new HashSet<String>();
-        Matcher matcher = Pattern.compile("\\.\\w+\\(\\s*\"([A-Za-z0-9_]+)\"").matcher(read(SCHEMA));
+        // 只认字段声明型 builder（实测 .number 16 + .bool 5 + .simpleList 2 + .choice 1 = 24 个键）。
+        // 宽松匹配 \.\w+\( 会把 label("...") 的显示名一并收进来（30 个），那是超集、不精确，
+        // 且一旦哪天 helper 文本与字段重名就会掩盖真缺陷，故按方法名白名单收窄。
+        Matcher matcher = Pattern.compile(
+                "\\.(?:number|integer|bool|choice|simpleList|text|password)\\(\\s*\"([A-Za-z0-9_]+)\"")
+                .matcher(read(SCHEMA));
         while (matcher.find()) {
             keys.add(matcher.group(1));
         }
