@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * 基于当前可用 LWJGL 状态轮询的基础输入后端。
@@ -121,8 +122,8 @@ final class LwjglxPollingInputBackend implements UiInputBackend {
         if (minecraft == null || minecraft.displayWidth <= 0 || minecraft.displayHeight <= 0) {
             return null;
         }
-        int mouseX = clamp(mouseRuntime.getEventX(), 0, minecraft.displayWidth);
-        int mouseY = clamp(minecraft.displayHeight - mouseRuntime.getEventY() - 1, 0, minecraft.displayHeight);
+        int mouseX = UiNumbers.clamp(mouseRuntime.getEventX(), 0, minecraft.displayWidth);
+        int mouseY = UiNumbers.clamp(minecraft.displayHeight - mouseRuntime.getEventY() - 1, 0, minecraft.displayHeight);
         int button = mouseRuntime.getEventButton();
         long now = LwjglInputRuntime.getNanoTime();
         List<UiMouseEvent> mouseEventList = new ArrayList<UiMouseEvent>(1);
@@ -171,8 +172,8 @@ final class LwjglxPollingInputBackend implements UiInputBackend {
 
         int displayWidth = Math.max(1, minecraft.displayWidth);
         int displayHeight = Math.max(1, minecraft.displayHeight);
-        int currentMouseX = clamp(mouseRuntime.getX(), 0, displayWidth);
-        int currentMouseY = clamp(displayHeight - mouseRuntime.getY() - 1, 0, displayHeight);
+        int currentMouseX = UiNumbers.clamp(mouseRuntime.getX(), 0, displayWidth);
+        int currentMouseY = UiNumbers.clamp(displayHeight - mouseRuntime.getY() - 1, 0, displayHeight);
         int deltaX = currentMouseX - previousMouseX;
         int deltaY = currentMouseY - previousMouseY;
         long now = LwjglInputRuntime.getNanoTime();
@@ -248,10 +249,6 @@ final class LwjglxPollingInputBackend implements UiInputBackend {
 
     private boolean isAltPressed() {
         return keyboardRuntime.isKeyDown(UiKeyCodes.KEY_LMENU) || keyboardRuntime.isKeyDown(UiKeyCodes.KEY_RMENU);
-    }
-
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
     }
 
     private static void logTextInputDegradedOnce() {

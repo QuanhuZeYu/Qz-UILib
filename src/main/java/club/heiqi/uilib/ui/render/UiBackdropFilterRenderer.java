@@ -6,6 +6,7 @@ import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
 
 import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * UI backdrop-filter 渲染管线。
@@ -344,12 +345,10 @@ final class UiBackdropFilterRenderer {
 
     private static void drawBackdropTextureQuad(int left, int top, int right, int bottom, int sampleLeft, int sampleTop,
             int sampleWidth, int sampleHeight, float sampleOffsetX, float sampleOffsetY) {
-        float leftU = clampFloat(((float) left + sampleOffsetX - (float) sampleLeft) / (float) sampleWidth, 0.0F, 1.0F);
-        float rightU = clampFloat(((float) right + sampleOffsetX - (float) sampleLeft) / (float) sampleWidth, 0.0F, 1.0F);
-        float topV = clampFloat(1.0F - ((float) top + sampleOffsetY - (float) sampleTop) / (float) sampleHeight,
-                0.0F, 1.0F);
-        float bottomV = clampFloat(1.0F - ((float) bottom + sampleOffsetY - (float) sampleTop) / (float) sampleHeight,
-                0.0F, 1.0F);
+        float leftU = UiNumbers.clamp01(((float) left + sampleOffsetX - (float) sampleLeft) / (float) sampleWidth);
+        float rightU = UiNumbers.clamp01(((float) right + sampleOffsetX - (float) sampleLeft) / (float) sampleWidth);
+        float topV = UiNumbers.clamp01(1.0F - ((float) top + sampleOffsetY - (float) sampleTop) / (float) sampleHeight);
+        float bottomV = UiNumbers.clamp01(1.0F - ((float) bottom + sampleOffsetY - (float) sampleTop) / (float) sampleHeight);
         // 架构禁令:不使用原版包装类(Tessellator),直接 GL 立即模式
         GL11.glBegin(GL11.GL_QUADS);
         GL11.glTexCoord2f(leftU, bottomV);
@@ -378,17 +377,17 @@ final class UiBackdropFilterRenderer {
         if (material != null) {
             // 材质档自带 tint 蒙层：降级时直接用它做纯色玻璃，保证 shader
             // 可用与否的两类机器看到的玻璃底色一致（模糊没了，但材质色与亮边还在）。
-            int materialAlpha = clampInt(Math.round(material.getTintAlpha() * 255.0F)
+            int materialAlpha = UiNumbers.clamp(Math.round(material.getTintAlpha() * 255.0F)
                     + Math.max(0, blurRadius) / 2, 16, 200);
             int materialRgb = material.getTintArgb() & 0x00FFFFFF;
             int tintColor = materialAlpha << 24 | materialRgb;
-            int highlightColor = clampInt(materialAlpha + 26, 32, 230) << 24 | materialRgb;
+            int highlightColor = UiNumbers.clamp(materialAlpha + 26, 32, 230) << 24 | materialRgb;
             context.drawSurface(left, top, right, bottom, tintColor, highlightColor, cornerRadii);
             return;
         }
-        int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
+        int tintAlpha = UiNumbers.clamp(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
                 saturation - 1.0F) * 16.0F), 18, 72);
-        int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
+        int highlightAlpha = UiNumbers.clamp(tintAlpha + 22, 32, 96);
         int tintColor = tintAlpha << 24 | 0x00FFFFFF;
         int highlightColor = highlightAlpha << 24 | 0x00FFFFFF;
         context.drawSurface(left, top, right, bottom, tintColor, highlightColor, cornerRadii);
@@ -493,13 +492,5 @@ final class UiBackdropFilterRenderer {
             }
         }
         return new float[] { dirX, dirY };
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(value, max));
-    }
-
-    private static float clampFloat(float value, float min, float max) {
-        return Math.max(min, Math.min(value, max));
     }
 }

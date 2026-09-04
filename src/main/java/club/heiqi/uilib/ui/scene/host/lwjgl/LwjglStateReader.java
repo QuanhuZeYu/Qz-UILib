@@ -3,6 +3,8 @@ package club.heiqi.uilib.ui.scene.host.lwjgl;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * LWJGL 当前态读取器 —— 适配层生产实现，唯一碰 LWJGL 反射 + 坐标换算。
  *
@@ -157,7 +159,7 @@ public class LwjglStateReader implements PlatformStateReader {
         // L3 注意：clamp 上界 displayWidth（宽像素数）为排他上界，
         // 有效坐标 [0, displayWidth-1]。clamp 到此值意味着允许 displayWidth
         // 作为上界，与旧层 LwjglxPollingInputBackend 一致。
-        return clamp(rawX, 0, displayWidth);
+        return UiNumbers.clamp(rawX, 0, displayWidth);
     }
 
     @Override
@@ -168,7 +170,7 @@ public class LwjglStateReader implements PlatformStateReader {
         if (displayHeight <= 0) return 0;
         int rawY = invokeInt(MOUSE_GET_Y, 0);
         // Y 翻转：LWJGL 原点左下 → UI 原点左上
-        return clamp(displayHeight - rawY - 1, 0, displayHeight);
+        return UiNumbers.clamp(displayHeight - rawY - 1, 0, displayHeight);
     }
 
     @Override
@@ -269,10 +271,6 @@ public class LwjglStateReader implements PlatformStateReader {
     @Override
     public long nowNanos() {
         return System.nanoTime();
-    }
-
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
     }
 
     /**

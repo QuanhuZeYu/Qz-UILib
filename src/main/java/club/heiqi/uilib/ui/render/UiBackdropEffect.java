@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.render;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * 一次 backdrop 效果的完整配方（材质家族 + 材质档 + 液态强度）。
  *
@@ -36,7 +38,7 @@ public final class UiBackdropEffect {
     private UiBackdropEffect(Family family, UiGlassMaterial material, float lensStrength) {
         this.family = family;
         this.material = material;
-        this.lensStrength = Math.max(0.0F, Math.min(1.0F, lensStrength));
+        this.lensStrength = UiNumbers.clamp01(lensStrength);
     }
 
     /** 经典磨砂配方；material 可为 null（旧的线性饱和度语义）。 */

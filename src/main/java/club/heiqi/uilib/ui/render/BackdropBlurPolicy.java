@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.render;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * 页面级背景模糊策略。
  *
@@ -154,7 +156,7 @@ public final class BackdropBlurPolicy {
      */
     public BackdropBlurPolicy withHostBackgroundBlurStrength(float strength) {
         return new BackdropBlurPolicy(enabled, hostBackgroundBlurEnabled,
-                Float.valueOf(clampFloat(strength, 0.0F, 3.0F)), maxBlurRadius, shaderEnabled,
+                Float.valueOf(UiNumbers.clamp(strength, 0.0F, 3.0F)), maxBlurRadius, shaderEnabled,
                 fixedPipelineEnabled, tintFallbackEnabled);
     }
 
@@ -166,7 +168,7 @@ public final class BackdropBlurPolicy {
      */
     public BackdropBlurPolicy withMaxBlurRadius(int radius) {
         return new BackdropBlurPolicy(enabled, hostBackgroundBlurEnabled, hostBackgroundBlurStrength,
-                Integer.valueOf(clampInt(radius, 0, MAX_BLUR_RADIUS)), shaderEnabled, fixedPipelineEnabled,
+                Integer.valueOf(UiNumbers.clamp(radius, 0, MAX_BLUR_RADIUS)), shaderEnabled, fixedPipelineEnabled,
                 tintFallbackEnabled);
     }
 
@@ -352,13 +354,5 @@ public final class BackdropBlurPolicy {
 
     private static BackdropBlurConfig resolveConfig(BackdropBlurConfig config) {
         return config == null ? BackdropBlurConfig.getInstance() : config;
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(value, max));
-    }
-
-    private static float clampFloat(float value, float min, float max) {
-        return Math.max(min, Math.min(value, max));
     }
 }

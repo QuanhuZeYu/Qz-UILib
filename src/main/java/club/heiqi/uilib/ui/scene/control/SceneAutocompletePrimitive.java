@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * SceneAutocompletePrimitive —— 无样式自动补全行为核心。
@@ -631,7 +632,7 @@ public final class SceneAutocompletePrimitive {
     }
 
     /**
-     * 将值裁剪到闭区间（max&lt;min 时返回 min，与 SceneSelectPrimitive.clamp 同语义）。
+     * 将值裁剪到闭区间（max&lt;min 时返回 min，语义收编至 {@code UiNumbers#clamp(int, int, int)}）。
      *
      * @param value 输入值
      * @param min   最小值
@@ -639,9 +640,6 @@ public final class SceneAutocompletePrimitive {
      * @return 裁剪后的值
      */
     static int clamp(int value, int min, int max) {
-        if (max < min) {
-            return min;
-        }
-        return Math.max(min, Math.min(max, value));
+        return UiNumbers.clamp(value, min, max);
     }
 }

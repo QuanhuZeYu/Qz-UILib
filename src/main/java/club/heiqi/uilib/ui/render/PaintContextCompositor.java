@@ -7,6 +7,8 @@ import java.util.List;
 
 import org.lwjgl.opengl.GL11;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * HTML-like paint context 离屏合成器。
  *
@@ -139,11 +141,11 @@ public final class PaintContextCompositor {
 
     void pushGroupOpacity(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
             float opacity, ClipSnapshot clipSnapshot) {
-        int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
-        int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
-        int clampedRight = clampInt(Math.max(left, right), 0, screenWidth);
-        int clampedBottom = clampInt(Math.max(top, bottom), 0, screenHeight);
-        float clampedOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
+        int clampedLeft = UiNumbers.clamp(Math.min(left, right), 0, screenWidth);
+        int clampedTop = UiNumbers.clamp(Math.min(top, bottom), 0, screenHeight);
+        int clampedRight = UiNumbers.clamp(Math.max(left, right), 0, screenWidth);
+        int clampedBottom = UiNumbers.clamp(Math.max(top, bottom), 0, screenHeight);
+        float clampedOpacity = UiNumbers.clamp01(opacity);
         if (disabledForFrame || clampedOpacity <= 0.0F || clampedOpacity >= 0.999F
                 || clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
             frameStack.push(PaintContextFrame.inactive(FrameKind.OPACITY, screenHeight));
@@ -203,10 +205,10 @@ public final class PaintContextCompositor {
             float translateX, float translateY, float rotateDegrees,
             float scaleX, float scaleY, float originXRatio, float originYRatio,
             ClipSnapshot clipSnapshot) {
-        int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
-        int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
-        int clampedRight = clampInt(Math.max(left, right), 0, screenWidth);
-        int clampedBottom = clampInt(Math.max(top, bottom), 0, screenHeight);
+        int clampedLeft = UiNumbers.clamp(Math.min(left, right), 0, screenWidth);
+        int clampedTop = UiNumbers.clamp(Math.min(top, bottom), 0, screenHeight);
+        int clampedRight = UiNumbers.clamp(Math.max(left, right), 0, screenWidth);
+        int clampedBottom = UiNumbers.clamp(Math.max(top, bottom), 0, screenHeight);
         if (disabledForFrame || clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
             // 降级：保留 clip 放弃 transform。push inactive frame，不进 FBO，不压 T。
             // 段内子树在外层 MODELVIEW（无本层 T，但可能有祖先 T）下直画。
@@ -463,10 +465,6 @@ public final class PaintContextCompositor {
             throw (Error) failure;
         }
         throw new IllegalStateException("paint context close failed", failure);
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(value, max));
     }
 
     /**

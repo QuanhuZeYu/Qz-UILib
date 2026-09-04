@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.overlay;
 
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * 浮层锚点解析器。
@@ -162,12 +163,10 @@ public final class SceneAnchorResolver {
         int y = bottom
                 ? height - safeBottom - margin - stackOffset - resolvedHeight
                 : safeTop + margin + stackOffset;
-        x = clamp(x, 0, Math.max(0, width - resolvedWidth));
-        y = clamp(y, 0, Math.max(0, height - resolvedHeight));
+        x = UiNumbers.clamp(x, 0, Math.max(0, width - resolvedWidth));
+        y = UiNumbers.clamp(y, 0, Math.max(0, height - resolvedHeight));
         return new ResolvedViewport(x, y, resolvedWidth, resolvedHeight);
     }
-
-    private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
 
     /** 屏幕四角视口锚定的窗口放置盒。 */
     public static final class ResolvedViewport {

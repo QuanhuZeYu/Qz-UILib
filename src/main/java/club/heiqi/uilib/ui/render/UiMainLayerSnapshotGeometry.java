@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.render;
 
 import java.util.List;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * 主层快照的采样区域、tile 覆盖和滤镜尺寸计算工具。
  */
@@ -19,10 +21,10 @@ final class UiMainLayerSnapshotGeometry {
     static SampleRegion resolveSampleRegion(int screenWidth, int screenHeight, int left, int top, int right,
             int bottom, int blurRadius) {
         int sampleInset = Math.max(1, Math.min(64, blurRadius + resolveSampleStep(blurRadius)));
-        int sampleLeft = clampInt(left - sampleInset, 0, screenWidth);
-        int sampleTop = clampInt(top - sampleInset, 0, screenHeight);
-        int sampleRight = clampInt(right + sampleInset, 0, screenWidth);
-        int sampleBottom = clampInt(bottom + sampleInset, 0, screenHeight);
+        int sampleLeft = UiNumbers.clamp(left - sampleInset, 0, screenWidth);
+        int sampleTop = UiNumbers.clamp(top - sampleInset, 0, screenHeight);
+        int sampleRight = UiNumbers.clamp(right + sampleInset, 0, screenWidth);
+        int sampleBottom = UiNumbers.clamp(bottom + sampleInset, 0, screenHeight);
         if (sampleRight <= sampleLeft || sampleBottom <= sampleTop) {
             return null;
         }
@@ -37,10 +39,10 @@ final class UiMainLayerSnapshotGeometry {
         int sampleTop = alignDown(sampleRegion.getTop(), SNAPSHOT_BLOCK_SIZE);
         int sampleRight = alignUp(sampleRegion.getRight(), SNAPSHOT_BLOCK_SIZE);
         int sampleBottom = alignUp(sampleRegion.getBottom(), SNAPSHOT_BLOCK_SIZE);
-        int alignedLeft = clampInt(sampleLeft, 0, screenWidth);
-        int alignedTop = clampInt(sampleTop, 0, screenHeight);
-        int alignedRight = clampInt(sampleRight, 0, screenWidth);
-        int alignedBottom = clampInt(sampleBottom, 0, screenHeight);
+        int alignedLeft = UiNumbers.clamp(sampleLeft, 0, screenWidth);
+        int alignedTop = UiNumbers.clamp(sampleTop, 0, screenHeight);
+        int alignedRight = UiNumbers.clamp(sampleRight, 0, screenWidth);
+        int alignedBottom = UiNumbers.clamp(sampleBottom, 0, screenHeight);
         if (alignedRight <= alignedLeft || alignedBottom <= alignedTop) {
             return sampleRegion;
         }
@@ -240,10 +242,6 @@ final class UiMainLayerSnapshotGeometry {
 
     private static int resolveSampleStep(int blurRadius) {
         return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(value, max));
     }
 
     private static int alignDown(int value, int blockSize) {

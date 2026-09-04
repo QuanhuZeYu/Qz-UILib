@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * SceneSliderPrimitive —— 无样式连续值滑块行为核心。
@@ -316,12 +317,12 @@ public final class SceneSliderPrimitive {
         if (!Double.isFinite(raw)) {
             return min;
         }
-        double clamped = Math.max(min, Math.min(raw, max));
+        double clamped = UiNumbers.clamp(raw, min, max);
         if (step <= 0.0D || max <= min) {
             return clamped;
         }
         double stepped = min + Math.round((clamped - min) / step) * step;
-        return Math.max(min, Math.min(stepped, max));
+        return UiNumbers.clamp(stepped, min, max);
     }
 
     /**

@@ -5,6 +5,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * 绘制命令纯数据契约 —— 数据层与渲染层之间的唯一合同。
@@ -180,7 +181,7 @@ public final class PaintCommand {
         this.linkUrl = linkUrl == null ? "" : linkUrl;
         this.imageSource = imageSource;
         this.segments = segments;
-        this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
+        this.opacity = UiNumbers.clamp01(opacity);
         this.cornerRadius = Math.max(0, cornerRadius);
         // 四角为 -1 哨兵（未分角）；显式值原样保存，不做 clamp（负值非法，由工厂/节点层契约保证）
         this.cornerRadiusTopLeft = cornerRadiusTopLeft;

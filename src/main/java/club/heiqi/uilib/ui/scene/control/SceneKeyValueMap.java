@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * SceneKeyValueMap —— scene 新栈动态键值对编辑器。
@@ -559,7 +560,7 @@ public final class SceneKeyValueMap {
             TYPE_OPTIONS,
             props.enabled(),
             next -> updateRow(props, row.getRowId(), current -> current.copyWith(current.getKey(),
-                current.getValue(), ValueType.values()[clamp(next.intValue(), 0, ValueType.values().length - 1)])))));
+                current.getValue(), ValueType.values()[UiNumbers.clamp(next.intValue(), 0, ValueType.values().length - 1)])))));
 
         SceneNode actionButton = buildActionButton(rt,
             Computed.create(() -> SceneListOps.canRemove(props.rows().get(), props.minRows())),
@@ -717,16 +718,6 @@ public final class SceneKeyValueMap {
      */
     private static KeyValueRow currentRow(List<KeyValueRow> rows, KeyValueRow fallback) {
         return SceneListOps.current(rows, fallback, (row, current) -> row.getRowId() == current.getRowId());
-    }
-
-    /**
-     * 裁剪整数到闭区间。
-     */
-    private static int clamp(int value, int min, int max) {
-        if (max < min) {
-            return min;
-        }
-        return Math.max(min, Math.min(max, value));
     }
 
     /**

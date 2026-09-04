@@ -10,6 +10,8 @@ import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL30;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * UI 原生分辨率离屏渲染目标。
  */
@@ -207,11 +209,11 @@ public class UiRenderTarget {
      * @param opacity group opacity
      */
     public void compositeToCurrentFramebuffer(int left, int top, int right, int bottom, float opacity) {
-        int clippedLeft = clampInt(Math.min(left, right), 0, width);
-        int clippedTop = clampInt(Math.min(top, bottom), 0, height);
-        int clippedRight = clampInt(Math.max(left, right), 0, width);
-        int clippedBottom = clampInt(Math.max(top, bottom), 0, height);
-        float clampedOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
+        int clippedLeft = UiNumbers.clamp(Math.min(left, right), 0, width);
+        int clippedTop = UiNumbers.clamp(Math.min(top, bottom), 0, height);
+        int clippedRight = UiNumbers.clamp(Math.max(left, right), 0, width);
+        int clippedBottom = UiNumbers.clamp(Math.max(top, bottom), 0, height);
+        float clampedOpacity = UiNumbers.clamp01(opacity);
         if (clippedRight <= clippedLeft || clippedBottom <= clippedTop || clampedOpacity <= 0.0F) {
             return;
         }
@@ -345,10 +347,6 @@ public class UiRenderTarget {
      */
     public int getColorTextureId() {
         return colorTextureId;
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(value, max));
     }
 
     private void initialize(int width, int height) {

@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * SceneSelectPrimitive —— 无样式 scene 单选下拉行为核心。
@@ -358,7 +359,7 @@ public final class SceneSelectPrimitive {
             return 0;
         }
         int raw = value == null ? 0 : value.intValue();
-        return clamp(raw, 0, size - 1);
+        return UiNumbers.clamp(raw, 0, size - 1);
     }
 
     /**
@@ -389,7 +390,7 @@ public final class SceneSelectPrimitive {
         if (highlightedIndex == null) {
             return normalizeIndex(selectedIndex, size);
         }
-        return clamp(highlightedIndex.intValue() + delta, 0, size - 1);
+        return UiNumbers.clamp(highlightedIndex.intValue() + delta, 0, size - 1);
     }
 
     /**
@@ -405,20 +406,5 @@ public final class SceneSelectPrimitive {
             return normalizeIndex(selectedIndex, size);
         }
         return normalizeIndex(highlightedIndex, size);
-    }
-
-    /**
-     * 将值裁剪到闭区间。
-     *
-     * @param value 输入值
-     * @param min   最小值
-     * @param max   最大值
-     * @return 裁剪后的值
-     */
-    private static int clamp(int value, int min, int max) {
-        if (max < min) {
-            return min;
-        }
-        return Math.max(min, Math.min(max, value));
     }
 }

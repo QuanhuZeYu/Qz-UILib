@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.render;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * 单次 backdrop 请求的 tile 覆盖计划。
  */
@@ -28,7 +30,7 @@ final class TileCoveragePlan {
         } else {
             actualCoveredTileCount = coveredTileCount;
         }
-        this.coveredTileCount = clampInt(actualCoveredTileCount, 0, this.requestedTileRegion.getTileCount());
+        this.coveredTileCount = UiNumbers.clamp(actualCoveredTileCount, 0, this.requestedTileRegion.getTileCount());
     }
 
     TileRegion getRequestedTileRegion() {
@@ -56,9 +58,5 @@ final class TileCoveragePlan {
         }
         int tileIndex = localY * requestedTileRegion.getTileWidth() + localX;
         return tileIndex >= 0 && tileIndex < coveredTiles.length && coveredTiles[tileIndex];
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(value, max));
     }
 }

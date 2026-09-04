@@ -709,10 +709,6 @@ public final class UiMainLayerSnapshotService {
         return UiMainLayerSnapshotGeometry.isSnapshotRegionWithinScreen(screenWidth, screenHeight, sampleRegion);
     }
 
-    private static float clampFloat(float value, float min, float max) {
-        return Math.max(min, Math.min(value, max));
-    }
-
     /**
      * 当前帧已捕获快照的匹配结果。
      */

@@ -8,6 +8,8 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * 负责把同帧已捕获 tile 组装为新的快照 atlas。
  */
@@ -203,14 +205,14 @@ final class SnapshotTileAtlasAssembler {
     static void renderSnapshotTileToAtlas(SampleRegion atlasRegion, SampleRegion tileSampleRegion,
                                           FrameSnapshot sourceSnapshot) {
         SampleRegion sourceRegion = toSampleRegion(sourceSnapshot);
-        float leftU = clampFloat(((float) tileSampleRegion.getLeft() - (float) sourceRegion.getLeft())
-                / (float) Math.max(1, sourceRegion.getWidth()), 0.0F, 1.0F);
-        float rightU = clampFloat(((float) tileSampleRegion.getRight() - (float) sourceRegion.getLeft())
-                / (float) Math.max(1, sourceRegion.getWidth()), 0.0F, 1.0F);
-        float topV = clampFloat(1.0F - ((float) tileSampleRegion.getTop() - (float) sourceRegion.getTop())
-                / (float) Math.max(1, sourceRegion.getHeight()), 0.0F, 1.0F);
-        float bottomV = clampFloat(1.0F - ((float) tileSampleRegion.getBottom() - (float) sourceRegion.getTop())
-                / (float) Math.max(1, sourceRegion.getHeight()), 0.0F, 1.0F);
+        float leftU = UiNumbers.clamp01(((float) tileSampleRegion.getLeft() - (float) sourceRegion.getLeft())
+                / (float) Math.max(1, sourceRegion.getWidth()));
+        float rightU = UiNumbers.clamp01(((float) tileSampleRegion.getRight() - (float) sourceRegion.getLeft())
+                / (float) Math.max(1, sourceRegion.getWidth()));
+        float topV = UiNumbers.clamp01(1.0F - ((float) tileSampleRegion.getTop() - (float) sourceRegion.getTop())
+                / (float) Math.max(1, sourceRegion.getHeight()));
+        float bottomV = UiNumbers.clamp01(1.0F - ((float) tileSampleRegion.getBottom() - (float) sourceRegion.getTop())
+                / (float) Math.max(1, sourceRegion.getHeight()));
         int targetLeft = tileSampleRegion.getLeft() - atlasRegion.getLeft();
         int targetTop = tileSampleRegion.getTop() - atlasRegion.getTop();
         int targetRight = tileSampleRegion.getRight() - atlasRegion.getLeft();
@@ -286,9 +288,5 @@ final class SnapshotTileAtlasAssembler {
     private static SampleRegion toSampleRegion(FrameSnapshot snapshot) {
         return new SampleRegion(snapshot.sampleLeft, snapshot.sampleTop, snapshot.sampleLeft + snapshot.width,
                 snapshot.sampleTop + snapshot.height);
-    }
-
-    private static float clampFloat(float value, float min, float max) {
-        return Math.max(min, Math.min(value, max));
     }
 }

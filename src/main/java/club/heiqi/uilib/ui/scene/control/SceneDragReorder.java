@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * 拖拽重排行为工具。
@@ -333,7 +334,7 @@ public final class SceneDragReorder {
                 return;
             }
             int current = synchronizeDragScroll(scrollSignal, dragScrollY, observedScrollY);
-            int next = clamp(current - ev.getWheelDelta(), 0, SceneGeometry.maxScrollY(scrollViewport));
+            int next = UiNumbers.clamp(current - ev.getWheelDelta(), 0, SceneGeometry.maxScrollY(scrollViewport));
             if (next == current) {
                 if (dragging[0]) {
                     ctx.stopPropagation();
@@ -583,7 +584,7 @@ public final class SceneDragReorder {
         int desiredTopY = rawPointerY - treeRootAbsY - grabOffsetY;
         int minTopY = viewportBox.getY();
         int maxTopY = viewportBox.getY() + viewportBox.getHeight() - draggedBox.getHeight();
-        return clamp(desiredTopY, minTopY, maxTopY) - targetLayoutTopY;
+        return UiNumbers.clamp(desiredTopY, minTopY, maxTopY) - targetLayoutTopY;
     }
 
     /**
@@ -602,16 +603,6 @@ public final class SceneDragReorder {
             return targetBox.getY();
         }
         return targetBox.getY() + targetBox.getHeight() - draggedBox.getHeight();
-    }
-
-    /**
-     * 将值夹到闭区间。
-     */
-    private static int clamp(int value, int min, int max) {
-        if (max < min) {
-            return min;
-        }
-        return Math.max(min, Math.min(max, value));
     }
 
     /**
