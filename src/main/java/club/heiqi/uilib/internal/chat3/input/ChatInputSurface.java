@@ -317,7 +317,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         }
         try {
             Desktop.getDesktop().browse(new URI(url));
-        } catch (Exception failure) {
+        } catch (Exception | Error failure) {
+            // 不能只挡 Exception：没有桌面会话时 AWT 桌面子系统集成失败抛的是 Error
+            // （InternalError / UnsatisfiedLinkError）。issue #71 的同一课：AWT 的失败形态不限于 Exception。
             LOG.warn("聊天链接打开失败: {}", failure.toString());
         }
     }

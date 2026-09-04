@@ -103,3 +103,77 @@ AWT 在**构造字体管理器**阶段就抛 `RuntimeException: Fontconfig head 
   与 issue #71 的「起不来」不是一件事，单列待裁。
 - 修复前服务端的字形 worker 线程没有任何关停路径（shutdown hook 只注册在 `ClientProxy`）；
   线程均为 daemon，故不会挂住服务器退出，只是白占。门禁后服务端不再创建它们。
+
+## 同类服务端问题全清单（两路只读审计 + 逐条一手复核）
+
+审计范围：UILib 620 个 main 源文件按 6 条线索穷尽；下游 `qz_miner` 292 个源文件按同样 6 条线索。
+**下游结论：qz_miner 干净** —— 它对 UILib 的 14 处 import 全在 `ClientProxy` / `client/*` / `configGUI/*`
+四个纯客户端文件里，服务端路径零触字体与 UI；因此 #71 的崩溃完全来自 UILib 自身的 preInit。
+
+### 本轮一并修掉的（与 #71 同形，无需产品决策）
+
+| 位置 | 问题 | 处理 |
+| --- | --- | --- |
+| `CommonProxy.preInit` | 客户端 devtools 自检端点集注册在服务端代理里：类加载即起常驻线程
+  `QzNetSelfCheckTimeout`（`NetSelfCheckRegistry:70-78` 的静态 executor），并在服务端注册 1 channel +
+  6 fetch + 1 stream + 3 store 与 3 个订阅，而这些端点唯一驱动者是客户端命令 | 注册移到
+  `ClientProxy.preInit`（紧邻其驱动者 `DevToolsClientBootstrap`），并扩写结构锁：服务端代理字节码
+  不得再出现 `NetRuntimeSelfChecks` |
+| `ChatInputSurface.openUrl` | 只 `catch (Exception)`：无桌面会话时 AWT 桌面子系统集成抛的是
+  `Error`（`InternalError`/`UnsatisfiedLinkError`），点一次聊天链接就能带走客户端 | 改为
+  `catch (Exception | Error)` —— 与 #71 同一课：AWT 的失败形态不限于 Exception |
+
+### 需要你裁的（都是「崩启动/崩运行」级别，但修法涉及契约或 API 面）
+
+- **A1 越界字体配置打死 `FontService.<clinit>`（崩启动，条件触发，两侧都崩）**。链路一手复核过：
+  `ModernConfigBootstrap:106` 把 yaml 值原样写进 `FontConfig.*` → `:112` 触碰 `FontService.getInstance()`
+  → `FontService.<clinit>` → `new GlyphPageManager()` → `GlyphPageManager:68` 字段初始化器
+  `FontRuntimeSettings.capture()` → 构造校验对 `awtCharSize<=0`/`charSize<=0`/`lerpMode` 越界抛
+  `IllegalArgumentException` ⇒ `ExceptionInInitializerError`，**且此后该 JVM 内每次 `getInstance()`
+  都变 `NoClassDefFoundError`**（比 #71 更持久：连可读文案都没了）。
+  根因是磁盘路径只做类型校验、值域校验只在草稿/UI 路径生效（`DraftBuffer.validateField` 是
+  `field.constraints()` 的唯一消费点；`ConfigManager.bootstrap` 用 `DraftValidator.noop()`）。
+  缺键安全（`Authority` 注入默认值），只有「键在但值非法」触发。两个候选修法：
+  (a) 磁盘路径也跑同一套声明式值域校验，越界 ⇒ `ConfigException` ⇒ 现有 `ModernConfigBootstrap:99`
+  已经会「记 ERROR + 保留调用前值 + 不中断启动」；代价是范围按 UI 滑块界（如 `charSize` 上限 72），
+  今天能用的 `charSize: 90` 会被整文件拒绝。 (b) 只在「产品无法表示」的域上兜底（capture 失败 ⇒
+  警告 + 回上一套合法值），保留 UI 界外可用。两者语义不同，要你定哪个是承诺。
+- **A2 未知 `netTransport` 裸抛（崩启动，条件触发）**：`NetTransportFactory:33` 对不认识的值直接
+  `IllegalArgumentException`，`CommonProxy.preInit` 无兜底 ⇒ 一个拼错的可选字段拖死 292 mod 服务器；
+  CHOICE 字段错型时 `Authority` 返回哨兵 `-1` 并被 `String.valueOf` 成字符串，也会走到这条。
+  可选：响亮回退默认 `vanilla`，或按 A1(a) 一起被配置层拒掉。要的是「一个错字不该带走宿主」这条原则。
+- **B2 稳定文本测量 API 在零字体服务端仍抛**（现文案可读、且不再崩启动）：`DefaultTextMeasureService`
+  与 `DefaultFontRendererAdapter` 的测量入口、`FontService` 测量族，三组都列在
+  `docs/使用文档/v4.x-LTS-稳定API清单.md`。要么给无字体回退度量，要么在 LTS 清单把该能力标为
+  「条件可用」。这是产品承诺，不擅自改。
+- **B4 渲染入口拿 `isInitialized()` 当门**：门禁后该值在服务端永假，`initializeForRender` 会空转后
+  继续走 GL。需要「渲染不可用」的可判据（= 把 `FontRuntimeEnvironment` 或等价的渲染可用性判据公开）；
+  新增公开方法是公共 API 变更，按规范先问你。顺带：同一判据公开后可让 `ModernConfigBootstrap`
+  在服务端根本不触碰 `FontService`，一并消掉下面 C1 的 123 MiB。
+- **B5 服务端 CLIENT 队列无界增长（静默失效 + 泄漏）**：`NetService.mainThreadExecutor()` 与
+  `runOnMainThread(NetSide.CLIENT, ...)` 是公共 API，但全仓 CLIENT 队列唯一排空点在
+  `ForgeMainThreadDispatcherBridge.onClientTick`，专用服务端永不 post 该事件 ⇒ 回调永不执行且队列无界。
+  建议：入队即判可用，服务端要么拒绝要么改投服务端主线程，并给队列上界。
+
+### 已查且不构成服务端风险的（记下来免得重复查）
+
+- mixin 侧别：`EarlyMixins.buildMixinsForSide` 已按 launch side 分流，7 个客户端专属 mixin 只在 CLIENT
+  加，服务端只加 `network.MixinNetHandlerPlayServer`（其 import 全是服务端类）。
+- `@Mod(guiFactory=...)`：字符串 hint，取用点在客户端配置 GUI；报告者的栈证明元数据阶段已过。
+- `VanillaPacketBuilders:141`、`FontGenerationBuildRequest:104`、`font/util/FontRegistry:138` 三处
+  客户端类触碰都是 `Class.forName` + catch Throwable ⇒ 服务端安全。
+- `font/util/FontRegistry`（含另一处 `getAllFonts()`）全仓零实例化，是遗留死壳（D-4 待删）。
+- `club.heiqi.config/**` 与 scene core（`ui/scene`、`ui/reactive`、`ui/base`、`ui/event`）零
+  MC/LWJGL/AWT import；`util/GlAttribDepth` 两个公共入口都 `catch (Throwable)` 并只警告一次；
+  `ui/hud/api/ClientHudService` 用反射 Holder + 明确「服务端不得调用」文案 —— 后者是本仓 side
+  契约应有的范式，其余公共客户端 API 建议照它整改（全仓 `@SideOnly` 目前出现 0 次）。
+- 16 个 `@SubscribeEvent` 逐个核对：服务端会 post 的事件处理器只用 `EntityPlayerMP`/`NetworkManager`/
+  `NetHandlerPlayServer` 等服务端类型。`UiHudRenderListener.onWorldUnload` 虽挂在服务端也 post 的
+  `WorldEvent` 上，但它只注册在客户端总线且内部再判 `world.isRemote`。
+- `mixins.qz_uilib.late.json` 是死配置（无 `ILateMixinLoader`/包内类引用点），`mixins.qz_uilib.json`
+  指向不存在的 `mixin.center` 包且三个列表全空 —— 往里放东西不会生效，配置陷阱，未动。
+- 字体线程（`QzFontWorker-*`、`QzFontGenerationBuilder-*`）与 devtools 线程均 `setDaemon(true)`，
+  服务端即便误起也不会挂住退出。
+- 版本面（下游）：`qz_miner` 的 `@Mod` 运行时门是 `qz_uilib@[4.7.0,5.0.0)`，而 `5.3.0` 更新日志写
+  「最低 4.8.0」——下限没跟上，整合包仍可把 qz_miner 配到会崩服务端的旧 UILib。要么把 #71 修复
+  backport 到 4.7.x，要么把 qz_miner 的下限抬到含修复的版本（属下游仓与版本策略，交你决定）。

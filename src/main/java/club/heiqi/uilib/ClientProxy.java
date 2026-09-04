@@ -6,6 +6,7 @@ import club.heiqi.uilib.client.UiInputTickListener;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.chat3.input.ChatInputOpenListener;
 import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
+import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.client.NetStoreUiBridge;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
@@ -42,6 +43,9 @@ public class ClientProxy extends CommonProxy {
         UiInputService.getInstance().initialize();
         NetStoreUiBridge.getInstance().initialize();
         DevToolsClientBootstrap.registerClientDevTools();
+        // 运行时自检端点集属于 devtools：唯一驱动者是客户端命令（DevToolsClientBootstrap 注册的
+        // qzuilib 命令）。在服务端注册只会白起常驻线程，并把 13 个调试端点暴露给任意客户端。
+        NetRuntimeSelfChecks.register();
         MinecraftForge.EVENT_BUS.register(fontRenderTickListener);
         MinecraftForge.EVENT_BUS.register(uiHudRenderListener);
         MinecraftForge.EVENT_BUS.register(chatInputOpenListener);

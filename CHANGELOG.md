@@ -35,6 +35,11 @@
 ### 修复
 
 - 专用服务端因系统无字体而崩启动（issue #71）：`CommonProxy.preInit`（= 服务端代理）此前无条件引导字体**渲染**骨架，第一步就枚举系统字体；Alpine 等精简镜像没有 fontconfig/字体包时 AWT 在构造字体管理器阶段抛 `RuntimeException: Fontconfig head is null`，服务器起不来。现按两个契约拆开：渲染骨架引导移入 `ClientProxy` 并在 `FontService.initialize()` 内部以 `FontRuntimeEnvironment` 做唯一权威侧别门禁（服务端 直接跳过，不再构建 generation candidate、不起字形 worker、不注册永远等不到 GL 的上传回调）； CPU-only 的 `ensureLayoutRuntimeReady()`（文本测量）仍不限启动侧，但环境级「无可用字体」转为一次性可读 `IllegalStateException`（含 apk add fontconfig ttf-dejavu 等补救动作）且不重复枚举，字体文件损坏/超限等 真实缺陷仍原样抛出不降级。回归锁 `FontRuntimeEnvironmentTest`（含四项负控）
+- 客户端 devtools 自检端点集此前注册在公共代理（= 专用服务端代理）里：服务端类加载即常驻一条
+  `QzNetSelfCheckTimeout` 线程，并注册 1 channel + 6 fetch + 1 stream + 3 store 与 3 个订阅端点，而这
+  些端点唯一驱动者是客户端命令。注册移到 `ClientProxy.preInit`，并加字节码结构锁防止回归
+- 聊天链接打开浏览器只 `catch (Exception)`：无桌面会话时 AWT 桌面子系统集成抛的是 `Error`
+  （`InternalError`/`UnsatisfiedLinkError`），点一次链接即可带走客户端；改为 `catch (Exception | Error)`
 - 富文本 span 字号双重放大修复（真机复验：混排行与下一行贴在一起）：px 绘制路径以 renderScale 表达字号缩放时，per-glyph 公式再按 span 字号缩放一次，`<size=24>` 被渲染成 40px、底部超出行框 16px——span 字号语义定为绝对 UI 像素（以调用方 px 字号为基准），px 路径 renderScale 恒 1.0、`prepareGlyphs` 显式接收调用方基准字号，per-glyph 尺寸 = 有效字号 × renderScale；px 路径阴影偏移改为绝对像素（1px，与 FontConfig.shadowOffsetX 语义一致）
 - 富文本混排行高（真机目检修复）：行高按行内最大显式字号计算、多行逐行累计（大字不再侵入相邻行）；测量链路新增富文本感知行高（`TextLayoutService.getLineHeight(text, style)` 取各段最大字号）、绘制引擎按逐行行高推进 textTop、布局侧文本叶 wrap 感知（拆行后逐行行高求和定高、内容宽即 maxTextWidth，非 wrap 富文本按整段最大字号行高）
 - SceneToast 退场状态机列表竞态：tick 曾「remove 退场完成条目后按原索引 set 退场标记副本」，索引错位致同 id 双份（原条目 + leaving 副本）与相邻条目被覆盖 → forEach 重复 key 崩溃（真机 crash-2026-08-18_14.02.57）；改为构建式更新（跳过即删、逐条追加），回归测试 OverlayKeyIntegrityTest 锚定

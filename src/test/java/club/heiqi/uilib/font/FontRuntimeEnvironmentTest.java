@@ -153,8 +153,12 @@ public class FontRuntimeEnvironmentTest {
         Assert.assertFalse("公共代理（= 专用服务端代理）不得引用 FontService：字体渲染骨架只在客户端引导",
                 commonProxy.contains("FontService"));
         Assert.assertTrue("配置回灌必须仍在公共代理里", commonProxy.contains("ModernConfigBootstrap"));
-        Assert.assertTrue("字体引导必须落到客户端代理",
-                classFileConstants(ClientProxy.class).contains("FontService"));
+        String clientProxy = classFileConstants(ClientProxy.class);
+        Assert.assertTrue("字体引导必须落到客户端代理", clientProxy.contains("FontService"));
+        Assert.assertFalse("服务端代理不得注册客户端 devtools 自检端点（常驻线程 + 13 个调试端点）",
+                commonProxy.contains("NetRuntimeSelfChecks"));
+        Assert.assertTrue("devtools 自检端点必须跟着它的客户端驱动一起注册",
+                clientProxy.contains("NetRuntimeSelfChecks"));
     }
 
     private static FontService newFontService(FontGenerationCandidateFactory factory,

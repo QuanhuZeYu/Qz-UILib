@@ -1,7 +1,6 @@
 package club.heiqi.uilib;
 
 import club.heiqi.uilib.config.modern.ModernConfigBootstrap;
-import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.transport.ITransport;
 import club.heiqi.uilib.net.transport.NetTransportFactory;
@@ -38,7 +37,6 @@ public class CommonProxy {
         MyMod.LOG.info("preInit 时序 [2/2]: NetTransportFactory.create 开始");
         ITransport transport = NetTransportFactory.create(Config.netTransport);
         NetService.getInstance().bootstrap(transport);
-        NetRuntimeSelfChecks.register();
         FMLCommonHandler.instance().bus().register(ForgeMainThreadDispatcherBridge.getInstance());
 
         MyMod.LOG.info("Qz-UILib {} 初始化完成", Tags.VERSION);
