@@ -90,7 +90,33 @@ M4 不过就不进 M5 —— 这是唯一的「先立后破」次序，不因进
 - 每次 M 步收尾跑 `./gradlew.bat build --offline --console=plain`，绿了才提交；当前基线
   **3855 / 0 / 0 / 2，351 类**。
 
-## 五、要你裁的四项（D1 不开工就没法写第一行）
+## 五、裁定结果（2026-09-04，D1-D4 全部照建议通过）
+
+> D1 L1 回 `font/layout/markdown` + L2 新建 `ui/markdown`；D2 从 `9c4dcae5` 复活再审；
+> D3 先做最小公共面；D4 图片/表格/任务列表/tooltip·书本全部划到本期范围外。
+> 追加重写：M3 的验收面必须含**游戏内可视测试页**与**headless 出图**两件事，见下 §五之二。
+> 原「要你裁的四项」正文保留在下文作裁定依据，不再待决。
+
+### 五之二 两条必做验收面（用户 2026-09-04 追加，写进 M3 完成定义）
+
+现成范式已核过，**照抄不另造**：
+
+| 能力 | 既有实现（一手核实） | markdown 侧对应做法 |
+| --- | --- | --- |
+| headless 出图 | `FontSoftwareRasterizer.toImage(argb,w,h)` + `writePng(...)`（`ImageIO`） | 同一 rasterizer，产 PNG 条带 |
+| 出图目录与命名 | `LatexSoftwareRenderTest` 写 `build/reports/latex-render/%02d-formula.png`，另有 `profiles.txt` 记环境 | `build/reports/markdown-render/%02d-<case>.png` + `profiles.txt` |
+| 成对对比图 | `LatexReferenceComparisonTest` 写 `-ref.png`/`-ours.png`/`-side.png` 三件套，用 `Assume.assumeTrue("参考 jar 不存在，跳过")` 门控 | 接线前的 chat3 现路 vs B 路**也用 side 成对图**，即 M4 对拍门禁的可视化产物 |
+| 共享装配 | `LatexSoftwareRenderKit` 注释明确「`GlyphRuntimeTables` 每实例约 123MiB，必须共享」，`@AfterClass` 释放 | markdown 出图测试**必须复用同一共享装配**，不得各自 new FontService（否则测试 JVM 堆被 123MiB×N 挤爆） |
+| 游戏内可视页 | `internal/devtools/playground/pages/LatexPage.java`、`RichTextPage.java`；`TestPlaygroundHostTest` 有「注册表含 latex 页」的正向锚 | 新增 `MarkdownPage`，并给 playground 注册表测试补一条「含 markdown 页」正向锚（防注册漏了而测试仍绿） |
+
+**分工明确（用户定的验收姿势）**：headless 出的 PNG **我自己用视觉检验**（读图比对
+定界/换行/公式位/代码块底色），游戏内可视页由你看观感与手感。因此出图测试不能只断言
+「文件存在/像素非空」，必须产出一张**人眼可判**的整页合成图（多样本纵向拼接 + 每条留 label），
+否则我看不出对齐问题。同时保留可机器判的断言（非空像素数、宽度不超容器、基线单调）作为地板。
+
+旧标题：
+
+### （原）五、要你裁的四项（D1 不开工就没法写第一行）
 
 - **D1 包归属**：L1 回到 `font/layout/markdown`（沿用 2026-08 裁定，与 `RichTextTagParser` 同级），
   L2 新建 `ui/markdown`？**建议就这样**。备选：两层都进 `ui/markdown`（好处是门面集中，坏处是
