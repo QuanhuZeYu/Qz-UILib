@@ -81,6 +81,10 @@ AWT 在**构造字体管理器**阶段就抛 `RuntimeException: Fontconfig head 
 - 服务端被一并拦掉的实害：`QzFontWorker-*` 与 `QzFontGenerationBuilder-*` 线程、
   `glyphPageManager::queueUpload` 上传回调、以及一次完整 generation 构建。
 - 独立复算 `GlyphRuntimeTables` 常驻开销：34 个按码点索引的数组 x 1,114,112 槽 = **123.25 MiB**
+- 实测（一次性探针，测试 JVM 内 GC 后取堆增量）：`FontService.getInstance()` 单独一次调用即常驻
+  **150.12 MiB**，随后 `Class.forName(GlyphRuntimeTables)` 增量为 **0.00 MiB** —— 这些表在单例构造期
+  就已全部 materialize。账面 123.25 MiB 只是那 34 个数组，差额是 worker 侧两组 `long[1141112]`
+  （约 17 MiB）与页结构。**给 C1 定价要用实测值，不是账面值。**（探针跑完即删，未入库）
   （byte 4 个 / float 2 / int 18 / long 2 / short 8，构造时全部 `Arrays.fill` 过一遍，是真实占用），
   与本仓 CHANGELOG 中 P0-B 记录的约 123MiB 口径吻合。
 
@@ -123,6 +127,20 @@ AWT 在**构造字体管理器**阶段就抛 `RuntimeException: Fontconfig head 
   `Error`（`InternalError`/`UnsatisfiedLinkError`），点一次聊天链接就能带走客户端 | 改为
   `catch (Exception | Error)` —— 与 #71 同一课：AWT 的失败形态不限于 Exception |
 
+### 第二轮裁定与落地状态（同日；下列 5 条已实施，原始分析保留作判据）
+
+| 编号 | 裁定 | 落地 | 可失败锁 |
+| --- | --- | --- | --- |
+| A1 | 取语义 (b)：只钳"产品无法表示"的值，不按 UI 范围整文件拒载 | `ConfigValueBridge.representableNumber` 守住 5 处数值回灌；判据 `FontRuntimeSettings.isRepresentable` 与构造校验同源（构造改为经判据校验） | 用例 D（真 YAML 越界 ⇒ 不崩且值被修）+ 用例 E（`charSize: 90` 必须保持 90 —— 改成按 schema 钳位即红）+ 判据≡构造矩阵锁 |
+| A2 | "一个错字不该带走宿主"⇒ 响亮回落 | `NetTransportFactory.create` 未知值 WARN + 回落 `vanilla`；`resolveName` 仍不改写原值，坏名留在日志里 | `NetTransportFactoryTest` 2 条新用例（含 system property 覆盖路径） |
+| B2 | 只改承诺，不发明兜底度量（两套宽度真相比缺度量更贵） | 稳定 API 清单把文本测量标为「条件可用」，并给出静态判据 | 行为侧仍由 #71 用例锁（无字体 ⇒ 可读 ISE，不返回假宽度） |
+| B4 + C1 | 公开静态侧判据（获批） | `FontService.isRenderRuntimeSupportedOnThisSide()` 与 `requestReloadIfRenderRuntimeReady(String)`；`ModernConfigBootstrap` 不再 `getInstance()` ⇒ 服务端不再付那 150 MiB | `configBootstrapMustNotCreateFontServiceSingleton`：解析 class 常量池 Methodref，断言不含 `FontService#getInstance`；同用例先断言含真实调用（解析器自检，防恒真） |
+| B5 | 拒绝入队 + 告警一次；不改投服务端队列（那会偷换执行线程语义） | `MainThreadDispatcher.enqueue`/`asExecutor` 在专用服务端拒绝 `NetSide.CLIENT`；`NetService.runOnMainThread` javadoc 同步 | 3 条新用例：拒绝且不入队、SERVER 侧不受牵连、非 SERVER 侧（含未知）仍放行、executor 不得绕行 |
+
+两条支撑性收口：**启动侧判定抽成 `util/LaunchSide`**（B4 与 B5 要的是同一个事实，不写第二份；
+含 fail-open 方向与理由）；`FontRuntimeSettings` 的 `FIELD_*` 常量成为回灌侧唯一合法入参，
+写错常量名不再有"静默不守卫"的余地。
+
 ### 需要你裁的（都是「崩启动/崩运行」级别，但修法涉及契约或 API 面）
 
 - **A1 越界字体配置打死 `FontService.<clinit>`（崩启动，条件触发，两侧都崩）**。链路一手复核过：
@@ -149,7 +167,7 @@ AWT 在**构造字体管理器**阶段就抛 `RuntimeException: Fontconfig head 
 - **B4 渲染入口拿 `isInitialized()` 当门**：门禁后该值在服务端永假，`initializeForRender` 会空转后
   继续走 GL。需要「渲染不可用」的可判据（= 把 `FontRuntimeEnvironment` 或等价的渲染可用性判据公开）；
   新增公开方法是公共 API 变更，按规范先问你。顺带：同一判据公开后可让 `ModernConfigBootstrap`
-  在服务端根本不触碰 `FontService`，一并消掉下面 C1 的 123 MiB。
+  在服务端根本不触碰 `FontService`，一并消掉下面 C1 的单例常驻开销（实测约 150 MiB，见证据节）。
 - **B5 服务端 CLIENT 队列无界增长（静默失效 + 泄漏）**：`NetService.mainThreadExecutor()` 与
   `runOnMainThread(NetSide.CLIENT, ...)` 是公共 API，但全仓 CLIENT 队列唯一排空点在
   `ForgeMainThreadDispatcherBridge.onClientTick`，专用服务端永不 post 该事件 ⇒ 回调永不执行且队列无界。

@@ -19,6 +19,8 @@
 - 现代富文本标签语法（RICH_TAGS 模式）：`font.layout.RichTextTagParser` 标签解析/序列化（`<color=#RRGGBB|#AARRGGBB|命名色>`、`<b>/<i>/<u>/<s>`、`<size=N>` 绝对像素字号、`<br>` 硬换行、任意嵌套、转义实体 `&lt;/&gt;/&amp;`、宽容解析：未知标签字面保留/未闭合自动闭合/坏属性忽略）；测量/裁剪/换行全链路接入（标签不占宽、换行跨样式续传、逐 glyph 字号渲染 per-glyph charSize）
 - TEXT 绘制命令内容模式贯通：`paint.TextStyle` 增加 textMode 字段（0=原始/1=§/2=富文本，旧构造默认 0 零回归）、`SceneNode.setTextContentMode/setMaxTextWidth` 属性槽、`UiRenderBackend.drawText` 7 参重载与 HUD 缩放后端透传、绘制引擎构建期拆行（每行一条 TEXT 命令，多行 em-box 对齐）
 - SceneLabel 通用文本显示组件：原始/富文本双模式、wrapWidth 自动换行、水平/垂直对齐、signal 驱动；测试场地新增「富文本」演示页（样式/字号混排/换行/宽容解析/交互切换）
+- 启动侧判定唯一权威 `club.heiqi.uilib.util.LaunchSide`：客户端 / 专用服务端 / 未知三态，只有明确读到 SERVER 才算服务端（非 FML 宿主读到 null，未知不等于服务端）。字体渲染门禁与网络主线程门禁共用它，不再各写一份侧别判断
+- 字体运行时新增静态判据 `FontService.isRenderRuntimeSupportedOnThisSide()`（本启动侧是否引导渲染骨架；静态，问它不创建单例）与 `FontService.requestReloadIfRenderRuntimeReady(String)`（侧别判据先于单例的配置 reload 入口）；`FontRuntimeSettings.isRepresentable(field, value)` 把"字体运行时能表示什么配置"做成公开判据，字段名只认 `FIELD_*` 常量
 
 ### 变更
 
@@ -38,8 +40,10 @@
 - 客户端 devtools 自检端点集此前注册在公共代理（= 专用服务端代理）里：服务端类加载即常驻一条
   `QzNetSelfCheckTimeout` 线程，并注册 1 channel + 6 fetch + 1 stream + 3 store 与 3 个订阅端点，而这
   些端点唯一驱动者是客户端命令。注册移到 `ClientProxy.preInit`，并加字节码结构锁防止回归
-- 聊天链接打开浏览器只 `catch (Exception)`：无桌面会话时 AWT 桌面子系统集成抛的是 `Error`
-  （`InternalError`/`UnsatisfiedLinkError`），点一次链接即可带走客户端；改为 `catch (Exception | Error)`
+- 手改配置文件里的越界字体值崩启动（#71 同族审计 A1，条件触发、客户端与专用服务端同时中）：新栈 schema 虽声明了 `range`，但那份约束只被配置 UI 提交路径（`DraftBuffer.validateField`）消费，`ConfigManager.bootstrap` 走 `DraftValidator.noop()`、`Authority.load` 只做类型规范化，于是 `charSize: 0` / `lerpMode: 9` / 负值 / `NaN` 一路直写 `FontConfig` 静态字段，撞在 `FontRuntimeSettings` 的构造校验上 —— 而它在 `FontService` 饿汉单例的类初始化里执行，先 `ExceptionInInitializerError`、此后每次 `getInstance()` 都是 `NoClassDefFoundError`。现由 `ConfigValueBridge` 在写回前按"产品能否表示"守卫（判据即 `FontRuntimeSettings.isRepresentable`，与构造校验同源），修复值取 schema 声明范围与默认值，修不出可表示值时保持现值；**产品能表示的高值一律原样保留**（`charSize: 90` 仍生效），配置文件本身不被改写，坏值由 WARN 指名路径与修复动作
+- 未知 `netTransport` 值崩启动（#71 同族审计 A2）：`NetTransportFactory.create` 此前对不认识的名字抛裸 `IllegalArgumentException`，而它由 `CommonProxy.preInit` 直调、两侧启动都挂在它上面 —— 配置里一个字母打错就带走整个进程。改为告警一次 + 回落默认适配器 `vanilla`（`system property` 覆盖优先级不变，`resolveName` 仍不改写原值以便定位），并在文案里列出可选值
+- 专用服务端上 `NetSide.CLIENT` 主线程任务永不执行且队列无界增长（#71 同族审计 B5）：`MainThreadDispatcher.drainClient()` 的唯一驱动点是 `ClientTickEvent`，服务端永不 post，于是 `runOnMainThread(NetSide.CLIENT, ...)` 成"承诺执行但永不执行"。现该侧直接拒绝入队并告警一次（含"服务端逻辑请改用 `NetSide.SERVER`"的方向），`asExecutor` 同受门禁，不留无人消费的队列
+- 专用服务端为一句恒 false 的判断付出整套字形表（#71 同族审计 C1）：`ModernConfigBootstrap` 为问 `isInitialized()` 直接 `FontService.getInstance()`，实测触发约 150 MiB 只服务渲染的按码点直索引表常驻服务端整场。改走静态侧判据 + 静态 reload 入口，服务端不再创建该单例，并以 class 常量池 Methodref 断言钉住（含解析器自检）
 - 富文本 span 字号双重放大修复（真机复验：混排行与下一行贴在一起）：px 绘制路径以 renderScale 表达字号缩放时，per-glyph 公式再按 span 字号缩放一次，`<size=24>` 被渲染成 40px、底部超出行框 16px——span 字号语义定为绝对 UI 像素（以调用方 px 字号为基准），px 路径 renderScale 恒 1.0、`prepareGlyphs` 显式接收调用方基准字号，per-glyph 尺寸 = 有效字号 × renderScale；px 路径阴影偏移改为绝对像素（1px，与 FontConfig.shadowOffsetX 语义一致）
 - 富文本混排行高（真机目检修复）：行高按行内最大显式字号计算、多行逐行累计（大字不再侵入相邻行）；测量链路新增富文本感知行高（`TextLayoutService.getLineHeight(text, style)` 取各段最大字号）、绘制引擎按逐行行高推进 textTop、布局侧文本叶 wrap 感知（拆行后逐行行高求和定高、内容宽即 maxTextWidth，非 wrap 富文本按整段最大字号行高）
 - SceneToast 退场状态机列表竞态：tick 曾「remove 退场完成条目后按原索引 set 退场标记副本」，索引错位致同 id 双份（原条目 + leaving 副本）与相邻条目被覆盖 → forEach 重复 key 崩溃（真机 crash-2026-08-18_14.02.57）；改为构建式更新（跳过即删、逐条追加），回归测试 OverlayKeyIntegrityTest 锚定
