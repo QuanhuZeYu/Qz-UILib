@@ -11,7 +11,10 @@ import club.heiqi.uilib.font.config.FontConfig;
  *
  * <p>A1 的根因是约束装错了地方：新栈 schema 声明了 range，但只有配置 UI 的提交路径消费它，
  * 启动加载完全不读，于是手改文件的越界值一路直写静态字段，最后撞在
- * {@link FontRuntimeSettings} 的构造校验上，把 {@code FontService} 饿汉单例的类初始化炸掉。
+ * {@link FontRuntimeSettings} 的构造校验上，把 {@code FontService} 单例的类初始化炸掉（当时单例
+ * 是饿汉 {@code static final}；2026-09-04 起构造点移入惰性持有者 {@code FontService$InstanceHolder}，
+ * 同一坏值现在炸的是持有者的 {@code <clinit>}。结论不变：单例在构造期抛异常就永久不可用，
+ * 所以校验必须留在回灌侧，不能指望构造校验兜底）。
  * 修复方式是在回灌侧问判据；判据一旦和构造校验各写一份，就会出现"判据说行、构造说不行"
  * 的第三种崩溃。本类把两者钉成同一结论，谁漂移谁红。</p>
  *

@@ -33,7 +33,31 @@ public class FontService {
     private static final long RELOAD_RETRY_BASE_NANOS = TimeUnit.MILLISECONDS.toNanos(250L);
     private static final long RELOAD_RETRY_MAX_NANOS = TimeUnit.SECONDS.toNanos(5L);
     private static final int MAX_RECOVERABLE_SUBMISSIONS_PER_TICK = 64;
-    private static final FontService INSTANCE = new FontService();
+    /**
+     * 单例的惰性持有者。
+     *
+     * <p>原先本字段是 {@code private static final FontService INSTANCE = new FontService();} ——
+     * 饿汉初始化。代价实测（2026-09-04，直接编译真实 {@code GlyphRuntimeTables.java} 微基准）：
+     * 一份 {@code GlyphRuntimeTables} = 34 张 1114112 元素直索引表 = <b>123.25 MiB</b>，加
+     * {@code GlyphPageManager} worker 侧两组 long 码点表 17 MiB，合计 <b>140.25 MiB</b>，构造
+     * 24.6~35.1 ms（7 次）。</p>
+     *
+     * <p>饿汉的问题不在于它慢，而在于<b>付出时点由类初始化决定，而不是由谁需要决定</b>：
+     * {@link #isRenderRuntimeSupportedOnThisSide()} 与 {@link #requestReloadIfRenderRuntimeReady}
+     * 写在同一个类里，按 JLS 12.4.1「初始化一个类会先初始化其直接超类，且静态方法调用触发类初始化」，
+     * 调用这两个<b>源码层面完全不引用 INSTANCE</b> 的静态判据，也会先跑 {@code <clinit>} 把 140 MiB
+     * 建出来。已用同形状探针在真实 JVM 实测：判据返回 {@code false} 的那次调用照样构造了表
+     * （{@code Service.<clinit> 已执行 = true}）。也就是说 {@link #requestReloadIfRenderRuntimeReady}
+     * 里那句"本侧不引导渲染运行时就跳过"，是在<b>钱已经花完之后</b>才回答的。</p>
+     *
+     * <p>改持有者惯用法后，静态判据不再触发建表；真正的客户端入口（{@code ClientProxy} 的
+     * {@code initialize()}）语义不变，只是把 25 ms 从类加载时挪到首次 {@link #getInstance()}。
+     * 专用服务端若不用文本测量 API 就一分钱不付；若用（{@code DefaultTextMeasureService} 要
+     * {@code getInstance()}），照付 —— 那是它确实需要的运行时，不是白交的税。</p>
+     */
+    private static final class InstanceHolder {
+        private static final FontService INSTANCE = new FontService();
+    }
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean layoutRuntimeReady = new AtomicBoolean(false);
@@ -162,17 +186,22 @@ public class FontService {
      * @return 字体系统实例
      */
     public static FontService getInstance() {
-        return INSTANCE;
+        return InstanceHolder.INSTANCE;
     }
 
     /**
      * 本启动侧是否允许引导字体渲染运行时。<b>静态判据：不得为问它而触碰 {@link #getInstance()}</b>。
      *
-     * <p>原因不是风格而是代价：{@code INSTANCE} 是饿汉单例，其构造链经 GlyphPageManager 建出
-     * 按码点直索引表（GlyphRuntimeTables 的 34 个数组加 worker 侧两组 long 表），实测一次
-     * {@code getInstance()} 常驻约 150 MiB，全部只服务渲染。专用服务端这个答案恒为 false，
-     * 一次都不该付这笔钱（#71 同族审计 C1）。业务侧可用它把"字体渲染在本侧是否受支持"
-     * 做成显式条件，而不是等 {@link #initialize()} 静默跳过或等测量抛异常。</p>
+     * <p>原因不是风格而是代价：{@link #getInstance()} 的构造链经 GlyphPageManager 建出按码点直索引
+     * 表（GlyphRuntimeTables 的 34 个数组加 worker 侧两组 long 表），实测常驻 <b>140.25 MiB</b>、构造
+     * 24.6~35.1 ms，全部只服务渲染。专用服务端这个答案恒为 false，一次都不该付这笔钱（#71 同族审计
+     * C1）。业务侧可用它把"字体渲染在本侧是否受支持"做成显式条件，而不是等 {@link #initialize()}
+     * 静默跳过或等测量抛异常。</p>
+     *
+     * <p><b>本方法必须继续留在 {@link InstanceHolder} 之外</b>：单例一旦改回饿汉 {@code static final}
+     * 字段，调用本判据就会先跑 {@code <clinit>} 建表（JLS 12.4.1：静态方法调用触发类初始化），
+     * "不碰单例"的源码写法在字节码层面根本拦不住那笔钱。锁见
+     * {@code FontRuntimeEnvironmentTest.fontServiceClassInitMustNotBuildGlyphRuntimeTables}。</p>
      *
      * @return 客户端与侧别未知环境（非 FML 宿主）返回 true，专用服务端返回 false
      */

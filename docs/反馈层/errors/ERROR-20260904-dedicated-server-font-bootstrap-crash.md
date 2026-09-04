@@ -188,8 +188,16 @@ AWT 在**构造字体管理器**阶段就抛 `RuntimeException: Fontconfig head 
 - 16 个 `@SubscribeEvent` 逐个核对：服务端会 post 的事件处理器只用 `EntityPlayerMP`/`NetworkManager`/
   `NetHandlerPlayServer` 等服务端类型。`UiHudRenderListener.onWorldUnload` 虽挂在服务端也 post 的
   `WorldEvent` 上，但它只注册在客户端总线且内部再判 `world.isRemote`。
-- `mixins.qz_uilib.late.json` 是死配置（无 `ILateMixinLoader`/包内类引用点），`mixins.qz_uilib.json`
-  指向不存在的 `mixin.center` 包且三个列表全空 —— 往里放东西不会生效，配置陷阱，未动。
+- `mixins.qz_uilib.late.json` 是死配置（无 `ILateMixinLoader`、`mixin/late` 包不存在、src 与
+  运行日志均零引用），往它里面放东西确实不生效；2026-09-04 复核后经你裁定**保留不动**。
+- **同日的初判把 `mixins.qz_uilib.json` 一并算成死配置，是错的，现予更正**：该文件的 `package` 指向不
+  存在的 `mixin.center` 包、`mixins`/`client`/`server` 三个列表全空（此半仍对），但它**是一条已注册的
+  活通道** —— GTNH 工具链把 `MixinConfigs: mixins.qz_uilib.json` 写进 jar MANIFEST（一手实测：
+  `build/libs/qz_uilib-4.8.0-4-0.316+1ca9d5e52f-dirty.jar` 的 `META-INF/MANIFEST.MF`，同包内另含
+  `early`/`late`/`refmap` 三项），unimixins `MixinPlatformAgentDefault` 读 MANIFEST 注册，缺省名即
+  `mixins.<配置>.json`，因此 `early` 是第二通道、`late` 不在任何注册面上。结论：它是「活通道 + 空内容」，
+  往里补 mixin 会生效（须同目录建类，`GenerateMixinAssetsTask` 只在文件缺失时按模板重生成为 `required:true`），
+  而**删掉它会被构建任务重生成、反而把 `required:false` 的宽容改成严格**。未动。
 - 字体线程（`QzFontWorker-*`、`QzFontGenerationBuilder-*`）与 devtools 线程均 `setDaemon(true)`，
   服务端即便误起也不会挂住退出。
 - 版本面（下游）：`qz_miner` 的 `@Mod` 运行时门是 `qz_uilib@[4.7.0,5.0.0)`，而 `5.3.0` 更新日志写

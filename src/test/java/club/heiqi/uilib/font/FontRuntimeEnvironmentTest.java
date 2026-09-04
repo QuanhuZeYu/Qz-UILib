@@ -172,9 +172,11 @@ public class FontRuntimeEnvironmentTest {
     /**
      * 结构锁：启动配置回灌不得为了问一句"要不要 reload"而创建 FontService 单例。
      *
-     * <p>{@code INSTANCE} 是饿汉单例，构造链经 GlyphPageManager 建出按码点直索引表；实测一次
-     * {@code getInstance()} 常驻约 150 MiB，且这些表全部只服务渲染（#71 同族审计 C1）。
-     * 专用服务端要的答案是"本侧根本不 bootstrap"，那是静态判据，不该用这笔内存去换。</p>
+     * <p>单例构造链经 GlyphPageManager 建出按码点直索引表；实测一次 {@code getInstance()} 常驻
+     * 140.25 MiB（GlyphRuntimeTables 34 张表 123.25 MiB + worker 侧两组 long 表 17 MiB，构造
+     * 24.6~35.1 ms），且这些表全部只服务渲染（#71 同族审计 C1）。专用服务端要的答案是"本侧根本不
+     * bootstrap"，那是静态判据，不该用这笔内存去换。注意：本锁只约束调用方源码，<b>不足以保证</b>
+     * 服务端不付费 —— 那一半由 {@link #fontServiceClassInitMustNotBuildGlyphRuntimeTables()} 守。</p>
      */
     @Test
     public void configBootstrapMustNotCreateFontServiceSingleton() throws IOException {
@@ -186,6 +188,63 @@ public class FontRuntimeEnvironmentTest {
         Assert.assertFalse("启动配置回灌不得触碰 FontService 单例：改回 getInstance() 会让专用服务端"
                 + "为一句恒 false 的判断付出约 150 MiB 只服务渲染的字形表",
                 bootstrapRefs.contains("club/heiqi/uilib/font/FontService#getInstance"));
+    }
+
+    /**
+     * 结构锁：单例必须待在惰性持有者里，不许回到 {@code FontService} 的类初始化（#71 同族审计 C1 第二层）。
+     *
+     * <p>{@link #configBootstrapMustNotCreateFontServiceSingleton()} 只看调用方源码/常量池里有没有写
+     * {@code getInstance}。这个前提当时是错的：按 JLS 12.4.1，<b>调用一个类的静态方法就会初始化该类</b>，
+     * 所以只要 {@code INSTANCE} 是饿汉 {@code static final} 字段，{@code ModernConfigBootstrap} 老老实实
+     * 调"不碰单例"的 {@code FontService.requestReloadIfRenderRuntimeReady(...)} 也照样先跑 {@code <clinit>}，
+     * 把 140.25 MiB 按码点直索引表建出来（实测构造 24.6~35.1 ms；同形状 JVM 探针确认：判据返回
+     * {@code false} 的那次调用仍然实例化了表）。源码层"没碰单例"在类初始化语义面前根本不算数。</p>
+     *
+     * <p>盯的性质因此是<b>声明形态</b>而不是常量池引用：{@code FontService} 自己不得声明任何
+     * {@code static} 的 {@code FontService} 字段（= 饿汉单例复生的唯一写法），构造点必须落在一个
+     * 独立的嵌套持有者类里，由它的 {@code <clinit>} 承担惰性。注意不能用"常量池里有没有
+     * {@code FontService#<init>}"来判：本类私有构造链 {@code FontService() -> this(...)} 互调，
+     * 那个引用合法地必须存在，拿它当判据会把锁做成恒假。</p>
+     */
+    @Test
+    public void fontServiceSingletonMustLiveInLazyHolderNotInItsOwnClassInit() {
+        // 正对照：反射确实读得到 FontService 的静态字段总体（读字段元数据不触发类初始化）。
+        Field[] declared = FontService.class.getDeclaredFields();
+        int statics = 0;
+        for (Field field : declared) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                statics++;
+            }
+        }
+        Assert.assertTrue("反射自检：必须读得到 FontService 的静态字段（少于 4 个说明扫的不是本类），"
+                + "否则下面的反向断言恒真；实际静态字段数：", statics >= 4);
+        // 反向锁 1：本类不得声明 static FontService 字段。
+        for (Field field : declared) {
+            Assert.assertFalse("FontService 不得把单例声明成本类的 static 字段（" + field.getName()
+                            + "）：静态判据 isRenderRuntimeSupportedOnThisSide()/"
+                            + "requestReloadIfRenderRuntimeReady() 与本类同处一个 class，调用即触发"
+                            + " <clinit>，会替专用服务端白建 140.25 MiB 只服务渲染的字形表。",
+                    java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                            && field.getType() == FontService.class);
+        }
+        // 反向锁 2：惰性持有者必须存在且是唯一构造点，否则"改到哪去了"无人知道。
+        Class<?> holder = null;
+        for (Class<?> nested : FontService.class.getDeclaredClasses()) {
+            if ("InstanceHolder".equals(nested.getSimpleName())) {
+                holder = nested;
+            }
+        }
+        Assert.assertNotNull("必须保留 FontService$InstanceHolder 惰性持有者：把单例挪回本类 static 字段"
+                + " 就等于让静态判据付费", holder);
+        boolean holderHasInstance = false;
+        for (Field field : holder.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                    && field.getType() == FontService.class) {
+                holderHasInstance = true;
+            }
+        }
+        Assert.assertTrue("InstanceHolder 必须持有 static final FontService 字段（惰性构造点所在）",
+                holderHasInstance);
     }
 
     /**
@@ -314,7 +373,9 @@ public class FontRuntimeEnvironmentTest {
                     in.skipBytes(4);
                     break;
                 case 18:
-                    in.skipBytes(1);
+                    // CONSTANT_InvokeDynamic_info = name_and_type_index(u2)
+                    //                               + bootstrap_method_attr_index(u2) = 4 字节。
+                    in.skipBytes(2);
                     in.skipBytes(2);
                     break;
                 case 19:
@@ -326,6 +387,20 @@ public class FontRuntimeEnvironmentTest {
                             + "（索引 " + index + "），必须同步更新解析器，不能跳过");
             }
         }
+        // 解析器自检（2026-09-04 补）：走完常量池后紧接的是 access_flags(u2) + this_class(u2)。
+        // 把 this_class 反查回内部类名并与反射拿到的真实类名比对 —— 池内任何一处宽度算错都会
+        // 让这里立刻失配。本方法此前就靠这条自检被抓出真 bug：case 18（InvokeDynamic）按
+        // MethodHandle 的 3 字节跳，而它是 4 字节，于是含 invokedynamic 的 class 从第一处起
+        // 整池错位 1 字节，之后的 tag 全是伪值、方法引用集是碎的。
+        in.skipBytes(2);
+        int thisClass = in.readUnsignedShort();
+        String parsedName = utf8[classNames[thisClass]];
+        String expectedName = type.getName().replace('.', '/');
+        if (!expectedName.equals(parsedName)) {
+            throw new IllegalStateException("常量池解析已错位：this_class 反查得到 " + parsedName
+                    + "，应为 " + expectedName + "（某类常量项宽度算错了）");
+        }
+
         Set<String> methods = new LinkedHashSet<String>();
         for (Integer refIndex : methodRefs) {
             int entry = refIndex.intValue();
