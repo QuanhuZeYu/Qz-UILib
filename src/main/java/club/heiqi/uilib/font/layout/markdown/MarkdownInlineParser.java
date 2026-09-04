@@ -11,7 +11,8 @@ import club.heiqi.uilib.font.layout.TextStyle;
 /**
  * markdown 行内解析器（纯 JVM，不依赖 Minecraft 类型）：样式锚点 span 流 → {@link TextSegment} 序列。
  *
- * <p>设计见《规划-聊天框Markdown接管.md》L1：行内子集 + CommonMark emphasis 定界简化 +
+ * <p>设计见《规划-通用Markdown渲染器.md》§二 L1 语法面（语义裁定沿用《规划-聊天框Markdown接管.md》
+ * §L1，照抄不重设计）：行内子集 + CommonMark emphasis 定界简化 +
  * 聊天误伤防护裁定。风格与 {@code LatexParser} 同哲学：宽容失败——未闭合/孤立标记一律
  * 字面输出，不抛异常。</p>
  *
@@ -26,7 +27,8 @@ import club.heiqi.uilib.font.layout.TextStyle;
  *       {@code $} 后邻居为数字时不触发——防 {@code $5.99} 误判）；</li>
  *   <li>{@code [text](url)}：链接（= {@code <a>} 语义：setLink + 自动下划线），
  *       url 支持一层嵌套括号，链接文字内可嵌套粗斜体；</li>
- *   <li>反斜杠转义；块级语法不支持，字面输出。</li>
+ *   <li>反斜杠转义；块级语法不支持，字面输出（块级构造由 {@link MarkdownDocument} 识别后，
+ *       仅将每块正文交给本类，块级标记不进入本类输入）。</li>
  * </ul>
  *
  * <h3>样式叠加</h3>

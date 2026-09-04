@@ -5,7 +5,7 @@ import club.heiqi.uilib.font.layout.TextStyle;
 /**
  * markdown 解析输入单元：一段文本 + 其基础样式。
  *
- * <p>聊天组件桥（阶段二 {@code internal/chat}）把 IChatComponent 树展开为带样式锚点的
+ * <p>聊天组件桥（见《规划-通用Markdown渲染器.md》§二 L3，chat3 接线属 M5）把 IChatComponent 树展开为带样式锚点的
  * span 流：每个 span 的 {@link TextStyle} 承载组件样式（颜色/粗体/斜体/下划线/删除线/链接），
  * markdown 标记只在 span 文本内解析并叠加样式位，不改变颜色等组件决定的属性。</p>
  */
