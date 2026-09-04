@@ -12,13 +12,10 @@ import java.util.function.Consumer;
 import net.minecraft.util.IChatComponent;
 
 import club.heiqi.uilib.font.layout.TextSegment;
-import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
-import club.heiqi.uilib.internal.chat3.viewmodel.ChatCodeSpanSplitter;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
-import club.heiqi.uilib.internal.chat3.viewmodel.ChatMarkdownLineRule;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatUrlLinkifier;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGroupModel;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -49,6 +46,14 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * {@link ChatUrlLinkifier} 自动链接化,链接行附带行内命中区域(文本包围盒上下 +2 / 左右 +1),
  * 指针命中 → 仅该行段流重建为 hover 变体(提亮色 + 下划线)+ 手型;气泡 hover → 底色 + 3% 白;
  * 链接 hover 持续 400ms 出 URL tooltip(SceneTooltip)。</p>
+ *
+ * <p><b>M5 接线(规划《通用Markdown渲染器》§三)</b>:气泡消息的段流来源 = 消息级 markdown 管道
+ * {@link ChatMarkdownPipeline}(L1 {@code MarkdownDocument} 解析 + § 桥 + 换行前整条流链接化
+ * + L2 {@code MarkdownPainter.wrapLines} 换行,两级 LRU 缓存 + 度量纪元失效,每帧零解析)。
+ * 旧行级规则垫片与行内 code 切分器已删,列表「• 」、引用「&gt; 」、块级公式、行内 code 由 L1/L2
+ * 承接(引用竖条与块公式间距改由段流结构判定,见 {@link ChatMarkdownPipeline#isQuoteRow}/
+ * {@link ChatMarkdownPipeline#isBlockMathRow})。系统消息与组头仍走 {@link SegmentParser}(§ 解析),
+ * 行为逐旧。</p>
  *
  * <p>HUD 淡出 = 每条消息的可见显示预算(仅 HUD 实际渲染时按可见时钟消耗,聊天框打开期间
  * 冻结;注入 {@code hudVisible} 后生效);入场动画仅新组(isEnterOnMount)播放,组增长
@@ -105,8 +110,10 @@ public final class ChatMessageList {
      * 段流后处理(T8 设计稿 §3.5:行内 LaTeX 行高约束;生产 =
      * TextLayoutService.applyLatexLineHeightConstraint,headless 测试注入替身)。
      *
-     * <p>在段解析返回后、code 切分/链接化之前执行;处理结果进段流缓存
-     * (segmentCache key 不含后处理产物细节,同一 text@baseColor 恒定触发同款处理)。</p>
+     * <p>在段解析返回后、链接化之前执行;处理结果进段流缓存
+     * (segmentCache key 不含后处理产物细节,同一 text@baseColor 恒定触发同款处理)。
+     * M5 起气泡路的该挂点由 {@link ChatMarkdownPipeline} 在扁平段流上应用(换行之前),
+     * 系统路仍在逐行 {@link #parseCached} 内应用,语义同旧。</p>
      */
     public interface SegmentPostProcessor {
         /**
@@ -115,6 +122,22 @@ public final class ChatMessageList {
          * @return 处理后的段流
          */
         List<TextSegment> postProcess(List<TextSegment> segments, int baseFontSizePx);
+    }
+
+    /**
+     * markdown 扁平段流 → 视觉行的换行注入缝(M5;生产 = {@code MarkdownPainter.wrapLines} +
+     * {@code FontService} 度量,与渲染推进/钳宽同源——一把尺)。headless 测试注入与本类
+     * {@code Measure}/{@code SegmentMeasurer} 替身同度量的确定性换行,保持「composer 切行宽 ==
+     * 渲染换行宽 == 命中/钳宽度量」的既有同源前提;null = 生产路。
+     */
+    public interface SegmentFlowWrapper {
+        /**
+         * @param flatSegments 链接化后的扁平段流(含 {@code \n} 分隔段与 F6 空文本占位段)
+         * @param maxWidthPx   定行宽(UI px;{@code <= 0} = 只按 {@code \n} 硬断)
+         * @param baseFontSizePx 正文基准字号
+         * @return 视觉行列表(每行段流不含 {@code \n})
+         */
+        List<List<TextSegment>> wrap(List<TextSegment> flatSegments, int maxWidthPx, int baseFontSizePx);
     }
 
     /**
@@ -544,6 +567,10 @@ public final class ChatMessageList {
     private final SegmentParser segmentParser;
     /** 段宽度度量;null = 链接化特性关闭(旧行为,测试/纯文本注入)。 */
     private final SegmentMeasurer segmentMeasurer;
+    /** 视觉行换行注入(M5;null = 生产 L2 换行 + FontService 度量同源,见 {@link SegmentFlowWrapper})。 */
+    private final SegmentFlowWrapper segmentFlowWrapper;
+    /** M5 消息级 markdown 管道(气泡段流唯一来源;缓存按实例隔离,同段解析缓存纪律)。 */
+    private final ChatMarkdownPipeline markdown = new ChatMarkdownPipeline();
     /** 段流后处理;null = 关闭(T8 latex 行高约束接入点,生产注入)。 */
     private final SegmentPostProcessor segmentPostProcessor;
 
@@ -569,12 +596,11 @@ public final class ChatMessageList {
         }
     };
 
-    /** 链接化模式(parseCached/缓存 key 用):关闭 / 统一 link 色(气泡) / 保留 § 原色(系统消息)。 */
+    /** 链接化模式(M5 后仅系统消息的逐行 {@link #parseCached} 使用):关闭 / 保留 § 原色;
+     *  气泡路的统一 link 色链接化已随消息级管道前移(换行前整条流,见 ChatMarkdownPipeline)。 */
     private enum LinkifyMode {
         /** 不链接化(旧行为;系统消息无链接度量注入时)。 */
         NONE,
-        /** 链接化 + 强制统一 link 色(气泡消息,设计稿 §3.5 链接恒 text-link)。 */
-        COLORED,
         /** 链接化但保留 URL 原 § 格式色(系统消息,K3/用户拍板 F5:命中 + 点击回投、不强制 0xFF7AB8F5)。 */
         PRESERVE
     }
@@ -627,12 +653,27 @@ public final class ChatMessageList {
      */
     public ChatMessageList(SegmentParser segmentParser, SegmentMeasurer segmentMeasurer,
             SegmentPostProcessor segmentPostProcessor) {
+        this(segmentParser, segmentMeasurer, segmentPostProcessor, null);
+    }
+
+    /**
+     * 完整形态 + 换行注入(M5;{@code flowWrapper} null = 生产路 L2 {@code MarkdownPainter.wrapLines}
+     * + FontService 度量同源)。
+     *
+     * @param segmentParser   段解析器(组头/系统消息 § 路;生产/测试注入)
+     * @param segmentMeasurer 段宽度度量(null = 关闭链接化命中区)
+     * @param segmentPostProcessor 段流后处理(null = 关闭;生产 latex 行高约束)
+     * @param flowWrapper     视觉行换行注入(headless 确定性替身;null = 生产 L2 换行)
+     */
+    public ChatMessageList(SegmentParser segmentParser, SegmentMeasurer segmentMeasurer,
+            SegmentPostProcessor segmentPostProcessor, SegmentFlowWrapper flowWrapper) {
         if (segmentParser == null) {
             throw new IllegalArgumentException("segmentParser 不能为空");
         }
         this.segmentParser = segmentParser;
         this.segmentMeasurer = segmentMeasurer;
         this.segmentPostProcessor = segmentPostProcessor;
+        this.segmentFlowWrapper = flowWrapper;
     }
 
     /** @return 链接化是否启用(度量注入后才计算命中区域)。 */
@@ -876,143 +917,100 @@ public final class ChatMessageList {
                 // P3-3:组内相邻消息间距 sp-1 = 2(组头→首气泡 3px 由 headerRow margin 承载)
                 messageNode.setMargin(Math.max(0, ChatMarkdownSettings.getGroupInnerGapPx()), 0, 0, 0);
             }
-            // 跨显示行 URL 续链(每条消息独立;长 URL 被字符硬断时才真正开放)
-            UrlChain urlChain = new UrlChain();
+            // M5 接线(规划《通用Markdown渲染器》§三):气泡行 = 消息级 markdown 管道的 L2 视觉行;
+            // 系统行 = 旧逐行 § 解析 + PRESERVE 链接化 + continuesWord 续链(行为逐旧)。
             List<String> displayLines = message.getDisplayLines();
             List<ChatLineLayouter.LineFragment> displayFragments = message.getDisplayFragments();
-            for (int lineIndex = 0; lineIndex < displayLines.size(); lineIndex++) {
-                String line = displayLines.get(lineIndex);
-                // 本行是否为「词内字符硬断」的续行(片段数与行数不等时按保守 false 处理)
-                boolean continuesWord = lineIndex < displayFragments.size()
-                        && displayFragments.get(lineIndex).continuesWord();
-                // 引用行(T6b 设计稿 §3.5):行文本以 "> " 或 ">" 开头 → 剥前缀 + 文字降
-                // text-secondary + 行首 2px 竖条(0x40FFFFFF);剥前缀后的文本照常参与
-                // linkify(系统消息按 F5 保留原色链接化)/code 切分;引用只作用于气泡行。
-                boolean quoteLine = line.startsWith("> ");
-                String renderLine = quoteLine ? line.substring(2) : line;
-                if (!quoteLine && line.startsWith(">")) {
-                    quoteLine = true;
-                    renderLine = line.substring(1);
-                }
-                int lineBaseColor = quoteLine ? ChatMarkdownSettings.getTextSecondaryArgb()
-                        : baseTextColor;
-                // F5 用户拍板:系统消息中的裸 URL 也链接化(命中区 + 点击回投原版事件链),
-                // 但保留 URL 原 § 格式色(LinkifyMode.PRESERVE)、不强制 0xFF7AB8F5;
-                // 气泡消息维持统一链接色(COLORED)。系统消息仍不 code 切分(§3.5 排版规则
-                // 仅作用于气泡内;链接度量为 null 时 PRESERVE 内部不生效 = 旧行为)。
-                LinkifyMode linkifyMode = system ? LinkifyMode.PRESERVE : LinkifyMode.COLORED;
-                // C 拍板(§10.1):行级 markdown 轻量规则——列表「• 」前缀行与块级公式独占行。
-                // 与 code 切分同边界(仅气泡行,系统消息不套用;引用行保持既有语义)。
-                ChatMarkdownLineRule.Match markdown = (!system && !quoteLine)
-                        ? ChatMarkdownLineRule.classify(renderLine) : ChatMarkdownLineRule.NONE;
-                if (markdown.getKind() == ChatMarkdownLineRule.Kind.BLOCK_MATH) {
-                    // 块级公式独占行:TeX 源走既有 LaTeX 渲染链,上下各 4px 间距,左对齐(不居中)
-                    TextStyle mathStyle = new TextStyle();
-                    mathStyle.setColor(lineBaseColor);
-                    List<TextSegment> mathSegments = Collections.singletonList(
-                            TextSegment.forLatex(markdown.getLatexSource(), mathStyle));
-                    SceneNode mathNode = new SceneNode()
-                            .setHitTestable(false)
-                            .setFontSize(fontSize)
-                            .setSegments(mathSegments)
-                            .setTextVerticalAlign(TextVerticalAlign.CENTER)
-                            .setPreferredHeight(Math.max(1, lineHeight))
-                            .setMargin(BLOCK_MATH_GAP_PX, 0, BLOCK_MATH_GAP_PX, 0);
-                    if (style.isTtlFade()) {
-                        mathNode.setMaxLines(ChatCardComposer.HUD_MAX_LINES).setEllipsis(true);
-                    }
-                    if (segmentMeasurer != null) {
-                        int mathWidth = Math.max(1, (int) Math.ceil(
-                                segmentsWidth(mathSegments, segmentMeasurer, fontSize)));
-                        if (maxBubbleWidthPx > 0) {
-                            mathWidth = Math.min(mathWidth, Math.max(1, maxBubbleWidthPx
-                                    - 2 * paddingX - (accent ? ACCENT_BAR_WIDTH_PX : 0)));
-                        }
-                        mathNode.setPreferredWidth(mathWidth);
-                    }
-                    contentNode.appendChild(mathNode);
-                    lineNodes.add(mathNode);
-                    lineBases.add(mathSegments);
-                    hoverBases.add(null);
-                    messageLineSpans.add(Collections.<LinkSpan>emptyList());
-                    urlChain.close(); // 块级公式独占行不可能是 URL 续行,链到此终止
-                    globalLineIndex++;
-                    continue;
-                }
+            List<List<TextSegment>> markdownLines = system ? null
+                    : markdown.layout(message.getDisplayText(), baseTextColor,
+                            message.getWrapWidthPx(), fontSize, segmentPostProcessor, segmentFlowWrapper);
+            if (markdownLines != null && style.isTtlFade()) {
+                // T8 设计稿 §5.4(验收 22):HUD 形态 8 行截断 + 末行省略号(M5 起作用于
+                // L2 视觉行;行节点级 maxLines/ellipsis 防御仍保留在下方构建处)
+                markdownLines = ChatMarkdownPipeline.clampHudLines(markdownLines, segmentMeasurer,
+                        fontSize, message.getWrapWidthPx());
+            }
+            int lineCount = system ? displayLines.size() : markdownLines.size();
+            // 跨显示行 URL 续链(仅系统消息;每条消息独立,长 URL 被字符硬断时才真正开放)
+            UrlChain urlChain = new UrlChain();
+            for (int lineIndex = 0; lineIndex < lineCount; lineIndex++) {
                 List<TextSegment> segments;
                 List<TextSegment> hover = null;
                 List<LinkSpan> spans = Collections.<LinkSpan>emptyList();
-                // 本行链接化作用域文本 = 段流可见字符的同口径原文(列表行剥「• 」前缀);
-                // 续链要按它数「行首属于 URL 体的字符」,必须与实际链接化的文本严格同源
-                String scopeText;
-                TextSegment bulletSegment = null;
-                if (markdown.getKind() == ChatMarkdownLineRule.Kind.UNORDERED_LIST) {
-                    // 「• 」前缀段(正文色)+ 内容段;层级缩进 = 前导空格数/2,每级 2 个空格
-                    // (2 空格=1 级的简单映射,缩进随文本宽度度量,不依赖布局语义)
-                    StringBuilder bulletBuilder = new StringBuilder();
-                    for (int l = 0; l < markdown.getLevel(); l++) {
-                        bulletBuilder.append("  ");
+                boolean quoteLine;
+                boolean blockMathRow = false;
+                if (system) {
+                    String line = displayLines.get(lineIndex);
+                    // 本行是否为「词内字符硬断」的续行(片段数与行数不等时按保守 false 处理)
+                    boolean continuesWord = lineIndex < displayFragments.size()
+                            && displayFragments.get(lineIndex).continuesWord();
+                    // 引用行(T6b 设计稿 §3.5,系统路逐旧):行文本以 "> " 或 ">" 开头 →
+                    // 剥前缀 + 文字降 text-secondary + 行首 2px 竖条(0x40FFFFFF)
+                    quoteLine = line.startsWith("> ");
+                    String renderLine = quoteLine ? line.substring(2) : line;
+                    if (!quoteLine && line.startsWith(">")) {
+                        quoteLine = true;
+                        renderLine = line.substring(1);
                     }
-                    bulletBuilder.append("• ");
-                    TextStyle bulletStyle = new TextStyle();
-                    bulletStyle.setColor(lineBaseColor);
-                    bulletSegment = new TextSegment(bulletBuilder.toString(), bulletStyle);
-                    String listContent = markdown.getContent() == null ? "" : markdown.getContent();
-                    List<TextSegment> contentSegments = parseCached(listContent, lineBaseColor, linkifyMode);
-                    List<TextSegment> combined = new ArrayList<TextSegment>(contentSegments.size() + 1);
-                    combined.add(bulletSegment);
-                    combined.addAll(contentSegments);
-                    segments = combined;
-                    scopeText = listContent;
-                } else {
-                    segments = parseCached(renderLine, lineBaseColor, linkifyMode);
-                    scopeText = renderLine;
-                }
-                // —— 跨显示行 URL 续链:上一行末尾是未闭合 URL 且本行是词内硬断续行 ——
-                String chainRun = null;
-                // bulletSegment != null 时本行段流首段是「• 」前缀,不是正文——按可见字符数
-                // 从头吞并会把项目符号划进 URL,故列表行不参与续链(保守不接,不污染)
-                if (continuesWord && urlChain.open() && bulletSegment == null) {
-                    String run = ChatUrlLinkifier.leadingUrlRun(scopeText);
-                    if (run.isEmpty()) {
-                        urlChain.close(); // 行首即终止:URL 其实在上一行就完整了
-                    } else {
-                        chainRun = run;
-                        segments = ChatUrlLinkifier.linkifyLeadingRun(segments,
-                                linkColorArg(linkifyMode), run.length(), urlChain.url() + run);
-                    }
-                }
-                if (segmentMeasurer != null) {
-                    spans = linkSpansOf(segments, segmentMeasurer, fontSize);
-                    if (chainRun != null && !spans.isEmpty()) {
-                        urlChain.extend(urlChain.url() + chainRun, spans.get(0));
-                    }
-                    if (!spans.isEmpty()) {
-                        // 续链行的段流是链上叠加产物,不在 hoverCached 的 key 空间里,
-                        // 必须由最终段流现推(hoverLinkify 只改色与下划线,零副作用)
-                        hover = chainRun == null
-                                ? hoverCached(scopeText, lineBaseColor, linkifyMode)
-                                : ChatUrlLinkifier.hoverLinkify(segments,
-                                        ChatMarkdownSettings.getLinkHoverArgb());
-                        if (bulletSegment != null) {
-                            List<TextSegment> combinedHover =
-                                    new ArrayList<TextSegment>(hover.size() + 1);
-                            combinedHover.add(bulletSegment);
-                            combinedHover.addAll(hover);
-                            hover = combinedHover;
+                    int lineBaseColor = quoteLine ? ChatMarkdownSettings.getTextSecondaryArgb()
+                            : baseTextColor;
+                    // F5 用户拍板:系统消息中的裸 URL 也链接化(命中区 + 点击回投原版事件链),
+                    // 但保留 URL 原 § 格式色(LinkifyMode.PRESERVE)、不强制 0xFF7AB8F5;
+                    // 系统消息不套 markdown 排版规则(§3.5 仅作用于气泡内)。
+                    segments = parseCached(renderLine, lineBaseColor,
+                            segmentMeasurer == null ? LinkifyMode.NONE : LinkifyMode.PRESERVE);
+                    // —— 跨显示行 URL 续链:上一行末尾是未闭合 URL 且本行是词内硬断续行 ——
+                    String chainRun = null;
+                    if (continuesWord && urlChain.open()) {
+                        String run = ChatUrlLinkifier.leadingUrlRun(renderLine);
+                        if (run.isEmpty()) {
+                            urlChain.close(); // 行首即终止:URL 其实在上一行就完整了
+                        } else {
+                            chainRun = run;
+                            segments = ChatUrlLinkifier.linkifyLeadingRun(segments,
+                                    linkColorArg(LinkifyMode.PRESERVE), run.length(),
+                                    urlChain.url() + run);
                         }
                     }
-                }
-                // 链尾判定:本行末尾仍是一段 URL → 链保持开放,等下一行的 continuesWord
-                if (chainRun == null
-                        || chainRun.length() < ChatUrlLinkifier.plainLength(scopeText)) {
-                    TextSegment lastSegment = segments.isEmpty() ? null
-                            : segments.get(segments.size() - 1);
-                    String tailLink = lastSegment == null ? null : lastSegment.getStyle().getLink();
-                    urlChain.close();
-                    if (tailLink != null) {
-                        urlChain.start(tailLink, spans.isEmpty() ? null
-                                : spans.get(spans.size() - 1));
+                    if (segmentMeasurer != null) {
+                        spans = linkSpansOf(segments, segmentMeasurer, fontSize);
+                        if (chainRun != null && !spans.isEmpty()) {
+                            urlChain.extend(urlChain.url() + chainRun, spans.get(0));
+                        }
+                        if (!spans.isEmpty()) {
+                            // 续链行的段流是链上叠加产物,不在 hoverCached 的 key 空间里,
+                            // 必须由最终段流现推(hoverLinkify 只改色与下划线,零副作用)
+                            hover = chainRun == null
+                                    ? hoverCached(renderLine, lineBaseColor, LinkifyMode.PRESERVE)
+                                    : ChatUrlLinkifier.hoverLinkify(segments,
+                                            ChatMarkdownSettings.getLinkHoverArgb());
+                        }
+                    }
+                    // 链尾判定:本行末尾仍是一段 URL → 链保持开放,等下一行的 continuesWord
+                    if (chainRun == null
+                            || chainRun.length() < ChatUrlLinkifier.plainLength(renderLine)) {
+                        TextSegment lastSegment = segments.isEmpty() ? null
+                                : segments.get(segments.size() - 1);
+                        String tailLink = lastSegment == null ? null : lastSegment.getStyle().getLink();
+                        urlChain.close();
+                        if (tailLink != null) {
+                            urlChain.start(tailLink, spans.isEmpty() ? null
+                                    : spans.get(spans.size() - 1));
+                        }
+                    }
+                } else {
+                    // 气泡路(M5):段流 = L1→桥→链接化→L2 换行的产物;引用竖条与块公式
+                    // 间距改按段流结构判定(L1 已剥「&gt; 「• 」,原文前缀判据不复存在);
+                    // 换行前整条流链接化 → 每行 link 值恒为完整 URL,旧 UrlChain 回填机制不再需要。
+                    segments = markdownLines.get(lineIndex);
+                    quoteLine = ChatMarkdownPipeline.isQuoteRow(segments);
+                    blockMathRow = ChatMarkdownPipeline.isBlockMathRow(segments);
+                    if (segmentMeasurer != null) {
+                        spans = linkSpansOf(segments, segmentMeasurer, fontSize);
+                        if (!spans.isEmpty()) {
+                            hover = ChatUrlLinkifier.hoverLinkify(segments,
+                                    ChatMarkdownSettings.getLinkHoverArgb());
+                        }
                     }
                 }
                 messageLineSpans.add(spans);
@@ -1025,6 +1023,11 @@ public final class ChatMessageList {
                         .setSegments(segments)
                         .setTextVerticalAlign(TextVerticalAlign.CENTER)
                         .setPreferredHeight(Math.max(1, lineHeight));
+                        if (blockMathRow) {
+                            // 块级公式独占行(C 拍板 §10.1,M5 起由段流结构判定):上下各 4px 间距、
+                            // 左对齐(不居中)——旧 mathNode 专用分支的几何语义原样承接
+                            lineNode.setMargin(BLOCK_MATH_GAP_PX, 0, BLOCK_MATH_GAP_PX, 0);
+                        }
                 // K3 缺陷 2 根因:段流节点不参与文本度量(SceneNode.setSegments 契约),布局宽
                 // = fill 全宽 → messageNode SHRINK 被全宽行顶满 → clamp 到 maxWidth 恒占
                 // 289px 且组节点被 headerRow 顶成全宽后 AlignSelf.END 偏移恒 0(左对齐)。
@@ -1045,7 +1048,8 @@ public final class ChatMessageList {
                     lineNode.setPreferredWidth(lineWidth);
                 }
                 // T8 设计稿 §5.4(验收 22):HUD 形态行节点携带 maxLines=8 + 省略号语义;
-                // 实际行数截断在 L2 ChatCardComposer(displayLines 上限),此处为节点级
+                // 实际行数截断:气泡路在 ChatMarkdownPipeline.clampHudLines(L2 视觉行 8 行 +
+                // 末行省略号),系统路在 ChatCardComposer(displayLines 上限);此处为节点级
                 // 语义一致 + 防御(行文本含换行符时 SceneLineClamp 生效);容器形态不设。
                 if (style.isTtlFade()) {
                     lineNode.setMaxLines(ChatCardComposer.HUD_MAX_LINES)
@@ -1264,9 +1268,10 @@ public final class ChatMessageList {
     }
 
     /**
-     * 链接色实参:COLORED = 强制设计稿链接色;PRESERVE = {@code null}(保留各段原 § 色,
-     * F5 用户拍板)。与 {@code ChatUrlLinkifier.linkifyInternal} 的 nullable-Integer 约定
-     * 同一开关语义,续链叠加({@code linkifyLeadingRun})与整行链接化因此共用一套配色规则。
+     * 续链叠加的链接色实参:M5 后仅系统消息续链使用,PRESERVE = {@code null}(保留各段
+     * 原 § 色,F5 用户拍板)。与 {@code ChatUrlLinkifier.linkifyInternal} 的 nullable-Integer
+     * 约定同一开关语义。气泡路的统一 link 色(设计稿 §3.5 链接恒 text-link)在
+     * {@link ChatMarkdownPipeline} 换行前整条流链接化处生效。
      */
     private static Integer linkColorArg(LinkifyMode mode) {
         return mode == LinkifyMode.PRESERVE ? null
@@ -1274,38 +1279,31 @@ public final class ChatMessageList {
     }
 
     /**
-     * 段解析缓存(text@baseColor@mode):NONE = 原样 § 解析(旧行为);COLORED = code 切分 +
-     * 统一 link 色链接化(气泡);PRESERVE = 保留 § 原色的链接化(系统消息,F5 用户拍板),
-     * 不 code 切分(§3.5 排版规则仅作用于气泡内)。链接度量为 null 时 COLORED/PRESERVE
-     * 的链接化步骤内部跳过(旧行为)。
+     * 逐行段解析缓存(text@baseColor@mode)——M5 后仅系统消息与组头逐行路使用:
+     * NONE = 原样 § 解析(旧行为);PRESERVE = 保留 § 原色的链接化(系统消息,F5 用户拍板)。
+     * 链接度量为 null 时 PRESERVE 的链接化步骤内部跳过(旧行为)。
      *
-     * <p>T6b 解析顺序：先 {@link ChatCodeSpanSplitter#split code 切分} 再
-     * {@link ChatUrlLinkifier#linkify linkify}——code 段是文本语义边界（不嵌套解析），
-     * linkify 已对 code 段跳过；若反向（先 linkify），URL 扫描会把反引号吞进 URL 文本
-     * （反引号不在 URL 分隔符/尾随标点集），code 配对被破坏（headless 实测
-     * "``http://a.co``" 链接化后闭引号进入 link 段）。</p>
+     * <p>M5 接线:气泡消息不再经本方法(消息级 markdown 管道 {@link ChatMarkdownPipeline}
+     * 一步到位);旧 T6b 的「先 code 切分再 linkify」顺序裁定随 {@code ChatCodeSpanSplitter}
+     * 删除一并上收 L1(行内反引号在吃定界符的当场写 code 位并清 link,规划 §二之五 F1),
+     * 链接化仍恒在 code 语义之后(段流里 codeSpan 位先于 linkify 存在;该顺序曾防 URL 扫描
+     * 吞掉成对反引号标记——同理由 L1 行内解析器在 linkify 之前消费定界符承接)。</p>
      */
     private List<TextSegment> parseCached(String text, int baseColor, LinkifyMode mode) {
-        String key = text + '@' + baseColor + (mode == LinkifyMode.COLORED ? '@'
-                : mode == LinkifyMode.PRESERVE ? '~' : '!');
+        String key = text + '@' + baseColor + (mode == LinkifyMode.PRESERVE ? '~' : '!');
         List<TextSegment> hit = segmentCache.get(key);
         if (hit != null) {
             return hit;
         }
         List<TextSegment> segments = segmentParser.parse(text, baseColor);
-        // T8 设计稿 §3.5:行内 LaTeX 行高约束(超 1.6× 行高按 0.85 缩放重排),在其他
-        // 段变换(code 切分/链接化)之前执行——latex 段是原子段,变换均透传,顺序无实质差异;
+        // T8 设计稿 §3.5:行内 LaTeX 行高约束(超 1.6× 行高按 0.85 缩放重排),在链接化
+        // 之前执行——latex 段是原子段,变换均透传,顺序无实质差异;
         // 生产注入 TextLayoutService.applyLatexLineHeightConstraint,测试注入替身/关闭。
         if (segmentPostProcessor != null) {
             segments = segmentPostProcessor.postProcess(segments, ChatMarkdownSettings.getChatFontSizePx());
         }
-        if (mode == LinkifyMode.COLORED) {
-            segments = ChatCodeSpanSplitter.split(segments, ChatMarkdownSettings.getCodeBackgroundArgb());
-        }
         if (segmentMeasurer != null && mode != LinkifyMode.NONE) {
-            segments = mode == LinkifyMode.PRESERVE
-                    ? ChatUrlLinkifier.linkifyPreserveColor(segments)
-                    : ChatUrlLinkifier.linkify(segments, ChatMarkdownSettings.getLinkArgb());
+            segments = ChatUrlLinkifier.linkifyPreserveColor(segments);
         }
         segmentCache.put(key, segments);
         return segments;

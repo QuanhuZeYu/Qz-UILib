@@ -492,7 +492,8 @@ public class MarkdownSoftwareRenderTest {
     /**
      * F1 行内 code span 承接：反引号对必须打 codeSpan 位 + chat3 衬底色 + chat3 口径段级字号，
      * 且 code 内容一律字面（不解析行内标记、不做 URL 链接化）。取值出处：
-     * {@code ChatCodeSpanSplitter.java:107-112}（0x26FFFFFF 与 getCodeFontSizePx()=12）；
+     * {@code ChatCodeSpanSplitter.java:107-112}（0x26FFFFFF 与 getCodeFontSizePx()=12；
+     * 该源文件已随 M5 接线删除，数值现恒登记于 {@code MarkdownStyleTable} 包内项）；
      * 旧裁定「第一版 code 仅字面输出」已被 chat3 出货行为取代（2026-09-04）。
      */
     @Test

@@ -181,6 +181,10 @@ final class MarkdownBlockParser {
             }
             stripped += eaten;
             if (eaten == 0) {
+                // M5 修:定点「§f 空格 标记」形态——本跳刚追加进 view 的空格不得随
+                // substring(i) 二次追加(旧行为使 §f 后带空格的列表/标题行视图缩进翻倍而
+                // 落回字面,丢失旧 classify「行首 § 码后照常取标记」行为;规划 §二之五 F4 承接面)
+                i = cursor;
                 break;
             }
             i = cursor;
@@ -450,6 +454,15 @@ final class MarkdownBlockParser {
                     stamp(blocks, before, blanks); blanks = 0;
                     continue;
                 }
+            } else if (depth == 0 && ind < line.length()
+                    && matchListStart(line.substring(ind)) != null) {
+                // M5 F2 补全（chat3 行级规则承接）：顶层「行首 ≥4 空格 + 列表标记」不是缩进代码
+                //（本层刻意不支持缩进代码），也不是普通段落字面——chat3 出货口径把它渲染成
+                // 深缩进列表项（旧行级规则：层级 = 前导空格 / 2）。剥基准缩进后交 readList，
+                // 层叠增量按绝对缩进计（readDeepList javadoc）。无标记的「    缩进行」仍走段落字面。
+                i = readDeepList(lines, i, blocks, depth, ind);
+                stamp(blocks, before, blanks); blanks = 0;
+                continue;
             }
             i = readParagraph(lines, i, blocks);
             stamp(blocks, before, blanks); blanks = 0;
@@ -576,6 +589,16 @@ final class MarkdownBlockParser {
      * （嵌套子列表因此自然成立）；未缩进行按惰性续行收拢；空行后视下一行归属决定松/断。
      */
     private static int readList(List<String> lines, int start, List<MarkdownBlock> out, int depth) {
+        // M5 F2 补全：顶层（depth==0）列表的层叠增量按「绝对前导空格 / 2 + 1」计——独立成块的
+        // "  - 乙"/"   - x" 与 chat3 旧行级规则（层级 = 前导空格 / 2）同缩进；嵌套子列表恒在
+        // depth ≥ 1 的项体/引用体里解析（ind 已被 contentCol 剥除，绝对口径会双重计缩进），
+        // 保持相对嵌套语义不变。首行 ind ≤ 1 时 base=1，与原行为逐位一致（P08 语料零改动）。
+        return readList(lines, start, out, depth,
+                depth == 0 ? 1 + leadingSpaces(markerView(lines.get(start))) / 2 : 1);
+    }
+
+    private static int readList(List<String> lines, int start, List<MarkdownBlock> out, int depth,
+            int baseLevel) {
         ListStart first = matchListStart(markerView(lines.get(start)));
         boolean ordered = first.ordered;
         char unit = ordered ? first.delim : first.bullet;
@@ -653,8 +676,51 @@ final class MarkdownBlockParser {
             pendingItemBlanks = 0;
             i = j;
         }
-        out.add(MarkdownBlock.list(items, ordered));
+        out.add(MarkdownBlock.list(items, ordered).withBaseLevel(baseLevel));
         return i;
+    }
+
+    /**
+     * 顶层深缩进列表起点（M5 F2 补全，承接 chat3 旧行级规则「层级 = 前导空格数 / 2」）。
+     *
+     * <p>把从本行起、行首缩进 ≥{@code baseIndent} 的连续行（含中间空行，只要后续仍达缩进）
+     * 整段剥掉 {@code baseIndent} 个空格，再交 {@link #readList}，并显式携带
+     * {@code baseLevel = 1 + baseIndent / 2}。段落续行里的「    - x」不受影响：readParagraph
+     * 先吞掉惰性续行，本分支只在块起点触发；「    缩进行」（无列表标记）仍按 M2 裁定落段落
+     * 字面，{@code MarkdownBlockParserTest} 的缩进代码不支持钉死不变。</p>
+     *
+     * @param baseIndent 首行绝对前导空格数（{@code >= 4}）
+     * @return 消费到的下一源行下标
+     */
+    private static int readDeepList(List<String> lines, int start, List<MarkdownBlock> out, int depth,
+            int baseIndent) {
+        List<String> dedented = new ArrayList<String>();
+        int n = lines.size();
+        int j = start;
+        while (j < n) {
+            String line = markerView(lines.get(j));
+            if (isBlank(line)) {
+                int k = j;
+                while (k < n && isBlank(markerView(lines.get(k)))) {
+                    k++;
+                }
+                if (k < n && leadingSpaces(markerView(lines.get(k))) >= baseIndent) {
+                    for (int b = j; b < k; b++) {
+                        dedented.add("");
+                    }
+                    j = k;
+                    continue;
+                }
+                break;
+            }
+            if (leadingSpaces(line) < baseIndent) {
+                break;
+            }
+            dedented.add(lines.get(j).substring(baseIndent));
+            j++;
+        }
+        readList(dedented, 0, out, depth, 1 + baseIndent / 2);
+        return j;
     }
 
     private static int readParagraph(List<String> lines, int start, List<MarkdownBlock> out) {

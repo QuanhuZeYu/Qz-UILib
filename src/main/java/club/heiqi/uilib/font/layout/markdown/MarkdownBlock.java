@@ -60,10 +60,17 @@ final class MarkdownBlock {
      * {@code List<TextSegment>}，既不加 {@code TextStyle} 几何字段也不外开块模型）。</p>
      */
     final int blanksBefore;
+    /**
+     * LIST 扁平化时子项的层叠增量（包内，M5 F2 补全）：默认 1 = 纯相对嵌套（M2 起行为）；
+     * 顶层深缩进列表起点（行首 ≥2 空格命中列表标记）按 chat3 出货口径「层级 = 前导空格数 / 2」
+     * 取 1 + 前导空格/2，使独立成块的 {@code "  - 乙"} / {@code "    - deep"} 与旧行级规则同缩进。
+     * 非列表块恒 1，不影响任何其他扁平化输出。
+     */
+    final int baseLevel;
 
     private MarkdownBlock(Kind kind, int level, String text, List<String> lines, boolean[] hardBreaks,
                           String info, String marker, boolean ordered, List<MarkdownBlock> children,
-                          int blanksBefore) {
+                          int blanksBefore, int baseLevel) {
         this.kind = kind;
         this.level = level;
         this.text = text;
@@ -76,6 +83,7 @@ final class MarkdownBlock {
                 ? Collections.<MarkdownBlock>emptyList()
                 : Collections.unmodifiableList(new ArrayList<MarkdownBlock>(children));
         this.blanksBefore = blanksBefore;
+        this.baseLevel = Math.max(1, baseLevel);
     }
 
     /**
@@ -86,36 +94,48 @@ final class MarkdownBlock {
      */
     MarkdownBlock withBlanksBefore(int blanks) {
         return new MarkdownBlock(kind, level, text, lines, hardBreaks, info, marker, ordered, children,
-                Math.max(0, blanks));
+                Math.max(0, blanks), baseLevel);
+    }
+
+    /**
+     * 复制本节点并写入 LIST 子项层叠增量（包内，M5 F2 补全）；节点仍不可变。
+     *
+     * @param level1 层叠增量（{@code >= 1}；1 = 默认相对嵌套）
+     * @return 等值副本（baseLevel 已更新）
+     */
+    MarkdownBlock withBaseLevel(int level1) {
+        return new MarkdownBlock(kind, level, text, lines, hardBreaks, info, marker, ordered, children,
+                blanksBefore, level1);
     }
 
     static MarkdownBlock paragraph(List<String> trimmedLines, boolean[] hardBreaks) {
-        return new MarkdownBlock(Kind.PARAGRAPH, 0, null, trimmedLines, hardBreaks, null, null, false, null, 0);
+        return new MarkdownBlock(Kind.PARAGRAPH, 0, null, trimmedLines, hardBreaks, null, null, false, null,
+                0, 1);
     }
 
     static MarkdownBlock heading(int level, String body) {
-        return new MarkdownBlock(Kind.HEADING, level, body, null, null, null, null, false, null, 0);
+        return new MarkdownBlock(Kind.HEADING, level, body, null, null, null, null, false, null, 0, 1);
     }
 
     static MarkdownBlock code(String info, List<String> codeLines) {
-        return new MarkdownBlock(Kind.CODE, 0, null, codeLines, null, info, null, false, null, 0);
+        return new MarkdownBlock(Kind.CODE, 0, null, codeLines, null, info, null, false, null, 0, 1);
     }
 
     static MarkdownBlock quote(List<MarkdownBlock> childBlocks) {
-        return new MarkdownBlock(Kind.QUOTE, 0, null, null, null, null, null, false, childBlocks, 0);
+        return new MarkdownBlock(Kind.QUOTE, 0, null, null, null, null, null, false, childBlocks, 0, 1);
     }
 
     static MarkdownBlock list(List<MarkdownBlock> items, boolean orderedList) {
-        return new MarkdownBlock(Kind.LIST, 0, null, null, null, null, null, orderedList, items, 0);
+        return new MarkdownBlock(Kind.LIST, 0, null, null, null, null, null, orderedList, items, 0, 1);
     }
 
     static MarkdownBlock listItem(String markerText, boolean itemOrdered, List<MarkdownBlock> contentBlocks) {
         return new MarkdownBlock(Kind.LIST_ITEM, 0, null, null, null, null, markerText, itemOrdered,
-                contentBlocks, 0);
+                contentBlocks, 0, 1);
     }
 
     static MarkdownBlock thematicBreak() {
-        return new MarkdownBlock(Kind.THEMATIC_BREAK, 0, null, null, null, null, null, false, null, 0);
+        return new MarkdownBlock(Kind.THEMATIC_BREAK, 0, null, null, null, null, null, false, null, 0, 1);
     }
 
     /** PARAGRAPH / CODE 的行集以 '\n' 连接。 */

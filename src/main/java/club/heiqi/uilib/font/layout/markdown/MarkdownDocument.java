@@ -160,7 +160,8 @@ public final class MarkdownDocument {
                 walk(block.children, quoteStyle(style, table), table, out, markerLevel);
                 break;
             case LIST:
-                walk(block.children, style, table, out, markerLevel + 1);
+                // M5 F2 补全：层叠增量由块携带（默认 1 = 相对嵌套；顶层深缩进起点按绝对缩进 / 2 计）
+                walk(block.children, style, table, out, markerLevel + block.baseLevel);
                 break;
             case LIST_ITEM:
                 emitListItem(block, style, table, out, markerLevel);

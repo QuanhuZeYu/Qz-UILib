@@ -734,7 +734,110 @@ public class ChatMessageListTest {
                 }
             };
 
-    /** 链接化形态 controller(注入段宽度度量 → 启用 URL 自动链接)。 */
+    /**
+     * M5 视觉行换行替身:与 {@link #FIXED}(4px/码点)同度量的确定性段流换行——
+     * {@code \n} 硬断、F6 空文本占位段产空行、超宽逐码点硬断、行尾空白丢弃。
+     * 保持「composer 切行宽 == 渲染换行宽 == 命中/钳宽度量」的测试内同源前提
+     * (生产路 = MarkdownPainter.wrapLines + FontService 度量同源,不注入本替身)。
+     */
+    private static final ChatMessageList.SegmentFlowWrapper FIXED_WRAP =
+            new ChatMessageList.SegmentFlowWrapper() {
+                @Override
+                public List<List<TextSegment>> wrap(List<TextSegment> flat, int maxWidthPx,
+                        int fontSizePx) {
+                    List<List<TextSegment>> lines = new ArrayList<List<TextSegment>>();
+                    List<TextSegment> current = new ArrayList<TextSegment>();
+                    double limit = maxWidthPx <= 0 ? Double.MAX_VALUE : maxWidthPx;
+                    double width = 0.0D;
+                    for (TextSegment segment : flat) {
+                        String text = segment.getText();
+                        if (segment.isLatex()) {
+                            current.add(segment);
+                            continue;
+                        }
+                        if (text.isEmpty()) {
+                            // F6 块边界占位段:先收当前行,再产一个空显示行
+                            width = flushLine(lines, current, width);
+                            List<TextSegment> blank = new ArrayList<TextSegment>();
+                            blank.add(segment);
+                            lines.add(blank);
+                            continue;
+                        }
+                        if ("\n".equals(text)) {
+                            width = flushLine(lines, current, width);
+                            continue;
+                        }
+                        for (int i = 0; i < text.length(); i++) {
+                            char ch = text.charAt(i);
+                            if (ch == '\n') {
+                                // 段文本内嵌软/硬换行(L1 段落 joinedLines)同样硬断,与 L2 口径一致
+                                width = flushLine(lines, current, width);
+                                continue;
+                            }
+                            double cw = 4.0D;
+                            if (width + cw > limit && !current.isEmpty()) {
+                                width = flushLine(lines, current, width);
+                            }
+                            appendChar(current, ch, segment.getStyle());
+                            width += cw;
+                        }
+                    }
+                    flushLine(lines, current, width);
+                    if (lines.isEmpty()) {
+                        lines.add(new ArrayList<TextSegment>());
+                    }
+                    List<List<TextSegment>> out = new ArrayList<List<TextSegment>>(lines.size());
+                    for (List<TextSegment> line : lines) {
+                        out.add(Collections.unmodifiableList(line));
+                    }
+                    return Collections.unmodifiableList(out);
+                }
+
+                /** 逐字符并入行尾段(样式同引用即合并,新样式开新段)。 */
+                private void appendChar(List<TextSegment> line, char ch, TextStyle style) {
+                    if (!line.isEmpty()) {
+                        TextSegment last = line.get(line.size() - 1);
+                        if (last.getStyle() == style) {
+                            line.set(line.size() - 1, new TextSegment(last.getText() + ch, style));
+                            return;
+                        }
+                    }
+                    line.add(new TextSegment(String.valueOf(ch), style));
+                }
+
+                /** 收行:行尾空白丢弃;空行不产(首行除外由调用端兜)。返回 0(新行宽度)。 */
+                private double flushLine(List<List<TextSegment>> lines, List<TextSegment> current,
+                        double width) {
+                    if (width <= 0.0D && current.isEmpty()) {
+                        return 0.0D;
+                    }
+                    while (!current.isEmpty()) {
+                        TextSegment last = current.get(current.size() - 1);
+                        String trimmed = rtrim(last.getText());
+                        if (trimmed.isEmpty()) {
+                            current.remove(current.size() - 1);
+                            continue;
+                        }
+                        if (trimmed.length() != last.getText().length()) {
+                            current.set(current.size() - 1, new TextSegment(trimmed, last.getStyle()));
+                        }
+                        break;
+                    }
+                    lines.add(new ArrayList<TextSegment>(current));
+                    current.clear();
+                    return 0.0D;
+                }
+
+                private String rtrim(String s) {
+                    int end = s.length();
+                    while (end > 0 && Character.isWhitespace(s.charAt(end - 1))) {
+                        end--;
+                    }
+                    return s.substring(0, end);
+                }
+            };
+
+    /** 链接化形态 controller(注入段宽度度量 → 启用 URL 自动链接;M5 另注入同源度量换行)。 */
     private static ChatSceneController linkController() {
         return new ChatSceneController(FIXED,
                 new ChatSceneController.SelfNameProvider() {
@@ -742,7 +845,7 @@ public class ChatMessageListTest {
                     public String selfName() {
                         return "Alex";
                     }
-                }, PARSER, FIXED_MEASURER);
+                }, PARSER, FIXED_MEASURER, FIXED_WRAP);
     }
 
     // ==================== T8:单条消息 8 行截断(设计稿 §5.4,验收 22) + latex 段流后处理 ====================
@@ -1642,8 +1745,14 @@ public class ChatMessageListTest {
         SceneNode bubble = (SceneNode) parts[0];
         SceneNode lineNode = bubble.__getChildren().get(0);
         List<TextSegment> segments = lineNode.getSegments();
-        Assert.assertEquals("有序列表保留序号原样", 1, segments.size());
-        Assert.assertEquals("1. first", segments.get(0).getText());
+        // M5 期望变更(非放宽):L1 块层承接有序列表后,序号恒为独立标记段(规划 §二之二 M2
+        // 「有序保留源序号原文 + 空格」+ 门禁 P09 PARITY 以「相邻同款式段合并」为等价口径,
+        // 合并后与旧单段逐字段全等)。可见文本/样式/宽度与旧行为零差,变的是段边界。
+        Assert.assertEquals("序号标记 + 内容两段(合并后=旧单段口径)", 2, segments.size());
+        Assert.assertEquals("序号原样保留", "1. ", segments.get(0).getText());
+        Assert.assertEquals("内容去标记", "first", segments.get(1).getText());
+        Assert.assertEquals("两段同款式(与旧单段等价前提)", segments.get(0).getStyle().getColor(),
+                segments.get(1).getStyle().getColor());
     }
 
     @Test
@@ -1679,7 +1788,7 @@ public class ChatMessageListTest {
     @Test
     public void normalLinesAreUnaffectedByMarkdownRules() {
         ChatSceneController controller = controller();
-        // 行首连字符但无空格 / 行内 $ 不独占 → 全部原样
+        // 行首连字符但无空格 / 行内 $ 不独占 → 不成列表、不成块级公式(不套 4px 间距)
         controller.history().append(new ChatLineRecord(new ChatComponentText(
                 "<Bob> -not-list\nfoo $x$ bar"), 1, T0));
         Object[] parts = layoutSingleOtherBubble(controller);
@@ -1689,9 +1798,26 @@ public class ChatMessageListTest {
         List<TextSegment> first = lineNodes.get(0).getSegments();
         Assert.assertEquals(1, first.size());
         Assert.assertEquals("-not-list", first.get(0).getText());
+        Assert.assertEquals("非列表行无「• 」前缀", 0, lineNodes.get(0).getMarginTop());
         List<TextSegment> second = lineNodes.get(1).getSegments();
-        Assert.assertEquals(1, second.size());
-        Assert.assertEquals("foo $x$ bar", second.get(0).getText());
+        // M5 期望变更(行为增强非丢失):行内 $x$ 由 L1 行内解析成 latex 原子段(规划 §二
+        // 「行内 = 复活既有裁定」$ / $$ 语法面;门禁 N08 记 NEW)。本用例钉的意图不变:
+        // 行内公式独占行判据仍成立 —— 该行不产块级公式的 4px 上下间距。段流可见文本逐字符保序。
+        Assert.assertTrue("行内公式原子段存在", second.size() >= 2);
+        boolean hasLatex = false;
+        StringBuilder visible = new StringBuilder();
+        for (TextSegment segment : second) {
+            if (segment.isLatex()) {
+                hasLatex = true;
+                Assert.assertEquals("x", segment.getLatexSource());
+                continue;
+            }
+            visible.append(segment.getText());
+        }
+        Assert.assertTrue("行内 $x$ 渲染为公式原子", hasLatex);
+        Assert.assertEquals("非公式文本保序", "foo  bar", visible.toString());
+        Assert.assertEquals("不独占行不套块级公式间距", 0, lineNodes.get(1).getMarginTop());
+        Assert.assertEquals("不独占行不套块级公式间距", 0, lineNodes.get(1).getMarginBottom());
     }
 
     @Test

@@ -103,7 +103,15 @@ public final class ChatSceneController {
         };
     }
 
-    /** 生产段解析:TextLayoutService 解析 § 样式码。 */
+    /**
+     * 生产段解析:TextLayoutService 解析 § 样式码。
+     *
+     * <p>M5 接线后本适配器的角色收窄为「组头(名字/时间)与系统消息行的 § 段解析」;
+     * 气泡消息段流改走消息级 markdown 管道 {@code ChatMarkdownPipeline}
+     * (L1 MarkdownDocument → § 桥 → 换行前链接化 → L2 MarkdownPainter.wrapLines,
+     * 规划《通用Markdown渲染器》§三 M5)。§ 颜色语义两路同保(桥恒用 {@code TextStyle.applyFormat}
+     * 的 L0 § 语义),「markdown 不引入颜色」旧裁定不变。</p>
+     */
     public static ChatMessageList.SegmentParser uiLibSegmentParser() {
         final TextLayoutService service = FontService.getInstance().getTextLayoutService();
         return new ChatMessageList.SegmentParser() {
@@ -135,6 +143,8 @@ public final class ChatSceneController {
     private final ChatMessageList.SegmentParser segmentParser;
     /** 段宽度度量(null = 关闭 URL 链接化;生产恒注入,T6a)。 */
     private final ChatMessageList.SegmentMeasurer segmentMeasurer;
+    /** 视觉行换行注入(M5;null = 生产 L2 换行,headless 测试注入同源度量替身)。 */
+    private final ChatMessageList.SegmentFlowWrapper segmentFlowWrapper;
     private ChatLineLayouter layouter;
     /** 系统消息行切分器(font-system 12px 口径,K3 三轮)。 */
     private ChatLineLayouter systemLayouter;
@@ -256,6 +266,16 @@ public final class ChatSceneController {
      */
     public ChatSceneController(ChatLineLayouter.Measure measure, SelfNameProvider selfNameProvider,
             ChatMessageList.SegmentParser segmentParser, ChatMessageList.SegmentMeasurer segmentMeasurer) {
+        this(measure, selfNameProvider, segmentParser, segmentMeasurer, null);
+    }
+
+    /**
+     * 以指定依赖创建(headless;M5 追加视觉行换行注入——测试用与 {@code measure}/
+     * {@code segmentMeasurer} 同度量的确定性换行替身,null = 生产 L2 换行 + FontService 度量同源)。
+     */
+    public ChatSceneController(ChatLineLayouter.Measure measure, SelfNameProvider selfNameProvider,
+            ChatMessageList.SegmentParser segmentParser, ChatMessageList.SegmentMeasurer segmentMeasurer,
+            ChatMessageList.SegmentFlowWrapper segmentFlowWrapper) {
         if (measure == null || selfNameProvider == null || segmentParser == null) {
             throw new IllegalArgumentException("依赖不能为空");
         }
@@ -263,6 +283,7 @@ public final class ChatSceneController {
         this.selfNameProvider = selfNameProvider;
         this.segmentParser = segmentParser;
         this.segmentMeasurer = segmentMeasurer;
+        this.segmentFlowWrapper = segmentFlowWrapper;
     }
 
     // ==================== 数据访问 ====================
@@ -1176,7 +1197,7 @@ public final class ChatSceneController {
                 current = messageList;
                 if (current == null) {
                     current = new ChatMessageList(segmentParser, segmentMeasurer,
-                            latexLineHeightConstraint());
+                            latexLineHeightConstraint(), segmentFlowWrapper);
                     messageList = current;
                 }
             }

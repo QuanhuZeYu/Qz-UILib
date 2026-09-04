@@ -23,20 +23,27 @@ public final class ChatCardComposer {
     /** 截断末行省略号(与 SceneLineClamp.ELLIPSIS 同款三 ASCII 点,任何字体都有字形)。 */
     public static final String ELLIPSIS = "...";
 
-    /** 组内一条消息的渲染数据:记录 + 切分后的显示行(去前缀,保留格式码)。 */
+    /** 组内一条消息的渲染数据:记录 + 切分后的显示行(去前缀,保留格式码)+ 消息原文与定行宽。 */
     public static final class MessageLines {
 
         private final ChatLineRecord record;
         private final List<String> displayLines;
         private final List<ChatLineLayouter.LineFragment> fragments;
         private final float maxLineWidth;
+        /** 去发送者前缀后的消息原文(切行前;M5 起为 markdown 段流管道的输入)。 */
+        private final String displayText;
+        /** 本消息切行使用的定行宽(px;与 {@link ChatLineLayouter} 的 maxWidthPx 同源,M5 起透传给 L2 换行)。 */
+        private final int wrapWidthPx;
 
         private MessageLines(ChatLineRecord record, List<String> displayLines,
-                List<ChatLineLayouter.LineFragment> fragments, float maxLineWidth) {
+                List<ChatLineLayouter.LineFragment> fragments, float maxLineWidth,
+                String displayText, int wrapWidthPx) {
             this.record = record;
             this.displayLines = displayLines;
             this.fragments = fragments;
             this.maxLineWidth = maxLineWidth;
+            this.displayText = displayText;
+            this.wrapWidthPx = wrapWidthPx;
         }
 
         /** @return 消息记录(命中检测回投事件链用) */
@@ -65,6 +72,16 @@ public final class ChatCardComposer {
         /** @return 消息最宽行宽(px,气泡宽度依据) */
         public float getMaxLineWidth() {
             return maxLineWidth;
+        }
+
+        /** @return 去前缀后的消息原文(切行前;M5 markdown 段流管道输入,恒非 null) */
+        public String getDisplayText() {
+            return displayText;
+        }
+
+        /** @return 切行定宽(px;M5 起 L2 换行与行切分同宽口径) */
+        public int getWrapWidthPx() {
+            return wrapWidthPx;
         }
     }
 
@@ -306,7 +323,7 @@ public final class ChatCardComposer {
             messages.add(new MessageLines(record, Collections.unmodifiableList(lines),
                     Collections.unmodifiableList(
                             new ArrayList<ChatLineLayouter.LineFragment>(fragments)),
-                    maxLineWidth));
+                    maxLineWidth, display, maxLineWidthPx));
         }
         ComposedGroup composed = new ComposedGroup(alignment, group.getSender(), headerName, headerTime, nameColor,
                 messages, latestMillis, alpha);

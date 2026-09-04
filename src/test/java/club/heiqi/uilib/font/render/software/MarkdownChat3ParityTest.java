@@ -29,9 +29,7 @@ import club.heiqi.uilib.font.layout.markdown.MarkdownSpan;
 import club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.view.ChatMessageList;
-import club.heiqi.uilib.internal.chat3.viewmodel.ChatCodeSpanSplitter;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
-import club.heiqi.uilib.internal.chat3.viewmodel.ChatMarkdownLineRule;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatUrlLinkifier;
 import club.heiqi.uilib.ui.markdown.MarkdownPainter;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -48,11 +46,14 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
  *
  * <h3>两路定义（对拍前写死，事后不改）</h3>
  * <ul>
- *   <li><b>A 路（chat3 现行）</b>：{@code ChatLineLayouter.splitFragments}(真机同源度量,13px)
- *   → 逐显示行：引用 "&gt; " 剥除 → {@code ChatMarkdownLineRule.classify}（块公式/无序列表「• 」）
- *   → {@code parseSegments}(§) → {@code ChatCodeSpanSplitter.split} → {@code ChatUrlLinkifier.linkify}
- *   （COLORED 强制链接色）→ 跨行 continuesWord 闸门 + leadingUrlRun 续链（ChatMessageList.java:879-1017
- *   的 1:1 复刻，SceneNode 装配部分与本门禁无关不复刻）。度量适配器 = ChatSceneController.uiLibMeasure/
+ *   <li><b>A 路（chat3 旧现行 = 行为规格快照）</b>：{@code ChatLineLayouter.splitFragments}
+ *   (真机同源度量,13px) → 逐显示行：引用 "&gt; " 剥除 → 行级规则（块公式/无序列表「• 」，
+ *   {@link #classifyReplica}）→ {@code parseSegments}(§) → code 切分（{@link #codeSpanSplitReplica}）
+ *   → {@code ChatUrlLinkifier.linkify}（COLORED 强制链接色）→ 跨行 continuesWord 闸门 +
+ *   leadingUrlRun 续链（旧 ChatMessageList 段流部分 1:1 复刻，SceneNode 装配部分与本门禁无关
+ *   不复刻）。<b>M5 起接线落地，旧 ChatMarkdownLineRule/ChatCodeSpanSplitter 已从 main 删除，
+ *   其语义按 1:1 快照移入本类私有方法——A 路定义、语料、判据与比对引擎一字未动</b>
+ *   （规划 §二之五：门禁判据不许为接线让路）。度量适配器 = ChatSceneController.uiLibMeasure/
  *   uiLibSegmentParser/uiLibSegmentMeasurer 的逐行等价复制（仅 FontService.getInstance() 换成共享
  *   TextLayoutService）。</li>
  *   <li><b>B 路（L1+L2 + M5 保留的消费者层接线）</b>：{@code MarkdownDocument.parse(src).toSegments
@@ -172,6 +173,8 @@ public class MarkdownChat3ParityTest {
             "这是超长单行的中文部分用于测试窄容器下的逐字硬断行为它没有任何空白所以只能按字符硬断并且混入englishsegmentwithoutanyspace这种无空白英文串再加上数字1234567890和符号_-.+=/?来覆盖硬断路径的所有字符类别最后以简短收尾"},
         {"P18", "普通文本基线", "P", "0",
             "普通聊天文字 mixed English 12345"},
+        {"P19", "深缩进独立列表行", "P", "0",
+            "    - deep"},
         {"N01", "ATX标题", "N", "0",
             "# 一级标题\n##### 五级标题"},
         {"N02", "围栏代码", "N", "0",
@@ -539,12 +542,184 @@ public class MarkdownChat3ParityTest {
         };
     }
 
-    /** 复刻 ChatMessageList.parseCached(:1288-1312,COLORED;postProcessor 生产未注入=恒 null)。 */
+    /** 复刻 ChatMessageList.parseCached(旧 COLORED 路;postProcessor 生产未注入=恒 null)。
+     *  M5 后 code 切分器已删,快照语义复刻于本类私有方法(规划 §三:M4 门禁 A 路 = 行为规格,
+     *  不随被删实现消失——判据与逐段比对逻辑一字未动)。 */
     private static List<TextSegment> parseCached(String text, int baseColor, TextLayoutService service) {
         List<TextSegment> segments = service.parseSegments(text, baseColor);
-        segments = ChatCodeSpanSplitter.split(segments, ChatMarkdownSettings.getCodeBackgroundArgb());
+        segments = codeSpanSplitReplica(segments, ChatMarkdownSettings.getCodeBackgroundArgb());
         segments = ChatUrlLinkifier.linkify(segments, ChatMarkdownSettings.getLinkArgb());
         return segments;
+    }
+
+    /** 行级 markdown 规则档位(复刻旧 ChatMarkdownLineRule.Kind,语义快照)。 */
+    private enum RuleKind { NONE, UNORDERED_LIST, ORDERED_LIST, BLOCK_MATH }
+
+    /** 旧 ChatMarkdownLineRule.Match 的行为快照(M5 删类后 A 路自持)。 */
+    private static final class RuleMatch {
+        final RuleKind kind;
+        final int level;
+        final String content;
+        final String latexSource;
+
+        RuleMatch(RuleKind kind, int level, String content, String latexSource) {
+            this.kind = kind;
+            this.level = level;
+            this.content = content;
+            this.latexSource = latexSource;
+        }
+    }
+
+    private static final RuleMatch NO_MATCH = new RuleMatch(RuleKind.NONE, 0, null, null);
+
+    /** 旧 ChatMarkdownLineRule.classify 的 1:1 语义快照(含行首/行尾 § 码剥离与 $ 计数)。 */
+    private static RuleMatch classifyReplica(String line) {
+        if (line == null || line.isEmpty()) {
+            return NO_MATCH;
+        }
+        line = stripLeadingFormatCodesReplica(line);
+        if (line.isEmpty()) {
+            return NO_MATCH;
+        }
+        int leading = 0;
+        while (leading < line.length() && line.charAt(leading) == ' ') {
+            leading++;
+        }
+        int level = leading / 2;
+        String body = line.substring(leading);
+        body = stripTrailingFormatCodesReplica(body);
+        if (body.isEmpty()) {
+            return NO_MATCH;
+        }
+        if (body.startsWith("$$")) {
+            String source = body.substring(2);
+            if (source.endsWith("$$")) {
+                source = source.substring(0, source.length() - 2);
+            }
+            return new RuleMatch(RuleKind.BLOCK_MATH, level, null, source);
+        }
+        if (body.length() >= 2 && isBulletMarkReplica(body.charAt(0)) && body.charAt(1) == ' ') {
+            return new RuleMatch(RuleKind.UNORDERED_LIST, level, body.substring(2), null);
+        }
+        int digits = 0;
+        while (digits < body.length() && Character.isDigit(body.charAt(digits))) {
+            digits++;
+        }
+        if (digits > 0 && digits + 1 < body.length()
+                && body.charAt(digits) == '.' && body.charAt(digits + 1) == ' ') {
+            return new RuleMatch(RuleKind.ORDERED_LIST, level, body, null);
+        }
+        if (body.startsWith("$") && body.length() >= 3 && body.endsWith("$")
+                && countDollarsReplica(body) == 2) {
+            return new RuleMatch(RuleKind.BLOCK_MATH, level, null, body.substring(1, body.length() - 1));
+        }
+        return NO_MATCH;
+    }
+
+    private static boolean isBulletMarkReplica(char c) {
+        return c == '-' || c == '*' || c == '+';
+    }
+
+    private static int countDollarsReplica(String text) {
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '$') {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static String stripLeadingFormatCodesReplica(String text) {
+        int start = 0;
+        while (start + 1 < text.length() && text.charAt(start) == '\u00a7') {
+            start += 2;
+        }
+        return start == 0 ? text : text.substring(start);
+    }
+
+    private static String stripTrailingFormatCodesReplica(String text) {
+        int end = text.length();
+        while (end >= 2 && text.charAt(end - 2) == '\u00a7') {
+            end -= 2;
+        }
+        return end == text.length() ? text : text.substring(0, end);
+    }
+
+    /** 旧 ChatCodeSpanSplitter.split/splitSegment 的 1:1 语义快照(M5 删类后 A 路自持;
+     *  反引号书写沿用仓内 0x60 惯例)。 */
+    private static List<TextSegment> codeSpanSplitReplica(List<TextSegment> base, int codeBackgroundColor) {
+        if (base == null || base.isEmpty()) {
+            return base;
+        }
+        List<TextSegment> out = null;
+        for (TextSegment segment : base) {
+            List<TextSegment> pieces = codeSpanSplitReplicaOne(segment, codeBackgroundColor);
+            if (pieces == null) {
+                if (out != null) {
+                    out.add(segment);
+                }
+                continue;
+            }
+            if (out == null) {
+                out = new ArrayList<TextSegment>(base.size() + 2);
+                for (TextSegment pre : base) {
+                    if (pre == segment) {
+                        break;
+                    }
+                    out.add(pre);
+                }
+            }
+            out.addAll(pieces);
+        }
+        return out == null ? base : out;
+    }
+
+    private static List<TextSegment> codeSpanSplitReplicaOne(TextSegment segment, int codeBackgroundColor) {
+        if (segment.isLatex()) {
+            return null;
+        }
+        String text = segment.getText();
+        TextStyle style = segment.getStyle();
+        List<TextSegment> out = null;
+        char tick = (char) 0x60;
+        int cursor = 0;
+        int index = 0;
+        int length = text.length();
+        while (index < length) {
+            int open = text.indexOf(tick, index);
+            if (open < 0) {
+                break;
+            }
+            int close = text.indexOf(tick, open + 1);
+            if (close < 0) {
+                break;
+            }
+            index = close + 1;
+            if (close == open + 1) {
+                continue;
+            }
+            if (out == null) {
+                out = new ArrayList<TextSegment>(3);
+            }
+            if (open > cursor) {
+                out.add(new TextSegment(text.substring(cursor, open), style));
+            }
+            TextStyle codeStyle = style.copy();
+            codeStyle.setCodeSpan(true);
+            codeStyle.setCodeBackgroundColor(codeBackgroundColor);
+            codeStyle.setFontSizePx(ChatMarkdownSettings.getCodeFontSizePx());
+            codeStyle.setLink(null);
+            out.add(new TextSegment(text.substring(open + 1, close), codeStyle));
+            cursor = close + 1;
+        }
+        if (out == null) {
+            return null;
+        }
+        if (cursor < length) {
+            out.add(new TextSegment(text.substring(cursor), style));
+        }
+        return out;
     }
 
     private static List<ALine> chat3Lines(String src, int width, TextLayoutService service) {
@@ -564,29 +739,28 @@ public class MarkdownChat3ParityTest {
                 renderLine = line.substring(1);
             }
             int lineBaseColor = quoteLine ? ChatMarkdownSettings.getTextSecondaryArgb() : WHITE;
-            ChatMarkdownLineRule.Match markdown = quoteLine
-                    ? ChatMarkdownLineRule.NONE : ChatMarkdownLineRule.classify(renderLine);
-            if (markdown.getKind() == ChatMarkdownLineRule.Kind.BLOCK_MATH) {
+            RuleMatch markdown = quoteLine ? NO_MATCH : classifyReplica(renderLine);
+            if (markdown.kind == RuleKind.BLOCK_MATH) {
                 TextStyle mathStyle = new TextStyle();
                 mathStyle.setColor(lineBaseColor);
                 a.segments = Collections.singletonList(
-                        TextSegment.forLatex(markdown.getLatexSource(), mathStyle));
+                        TextSegment.forLatex(markdown.latexSource, mathStyle));
                 chain.close();
                 out.add(a);
                 continue;
             }
             String scopeText;
             TextSegment bulletSegment = null;
-            if (markdown.getKind() == ChatMarkdownLineRule.Kind.UNORDERED_LIST) {
+            if (markdown.kind == RuleKind.UNORDERED_LIST) {
                 StringBuilder bulletBuilder = new StringBuilder();
-                for (int l = 0; l < markdown.getLevel(); l++) {
+                for (int l = 0; l < markdown.level; l++) {
                     bulletBuilder.append("  ");
                 }
                 bulletBuilder.append("\u2022 ");
                 TextStyle bulletStyle = new TextStyle();
                 bulletStyle.setColor(lineBaseColor);
                 bulletSegment = new TextSegment(bulletBuilder.toString(), bulletStyle);
-                String listContent = markdown.getContent() == null ? "" : markdown.getContent();
+                String listContent = markdown.content == null ? "" : markdown.content;
                 List<TextSegment> combined = new ArrayList<TextSegment>();
                 combined.add(bulletSegment);
                 combined.addAll(parseCached(listContent, lineBaseColor, service));
@@ -1264,7 +1438,7 @@ public class MarkdownChat3ParityTest {
                 .append("# TIE:文本漂移但漂移 ≤1 码点 且 该两行交叉实测宽差 ≤2.0px(float/double 并列切点)\n")
                 .append("# 命中区 y 不比(A 行框钉死 18px、B 自然量;记 profiles)。链头行段 link 允许「A 为 B 前缀」回填口径,\n")
                 .append("# 但回填后命中区 url 必须与 B 全 url 严格相等。\n")
-                .append("# A 路=ChatMessageList.java:879-1017 段流部分 1:1 复刻(真机同源度量);B 路=toSegments→linkify→wrapLines。\n")
+                .append("# A 路=旧 ChatMessageList 段流部分 1:1 行为快照(真机同源度量;M5 删旧实现后复刻在本类私有方法);B 路=toSegments→linkify→wrapLines。\n")
                 .append("# 代理对预裁:A 若在代理对中间断行(违反 ERROR-20260825 零丢失规范面),该行差异记 TIE/RECORD 不比字面。\n")
                 .append("# 出图倍率:").append(MarkdownRenderScaleKit.detailReport(BASE)).append('\n')
                 .append("# @1x=现有文件名(全部机器断言只跑这份);@Nx 后缀=判读副本(同一次解析/换行,只换倍率,零断言,\n")

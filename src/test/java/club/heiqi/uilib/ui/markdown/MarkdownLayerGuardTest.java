@@ -32,12 +32,22 @@ public class MarkdownLayerGuardTest {
     private static final String L2_PACKAGE = "club/heiqi/uilib/ui/markdown/";
 
     /**
-     * G1 正对照（GL11 真实使用者）：{@code ui/render} 实测 380+ 处、{@code font/render} 实测
-     * 50 处；同一扫描器对二者计数之和必须 &gt;30，否则「两 markdown 包 0 命中」是空跑。
+     * G1 正对照（GL11 真实使用者）：{@code ui/render}；同一扫描器对其计数必须 &gt;30，
+     * 否则「两 markdown 包 0 命中」是空跑。
+     *
+     * <p><b>计数口径统一申明（M5；规划 §二之四「同一把尺没统一」的收口）：本文件与
+     * {@code UiHudRenderListenerGlFenceTest} 一律按「出现次数」计</b>——逐行内
+     * {@code indexOf} 循环计数，注释行同样计入（{@code countToken} 无注释过滤）。
+     * 历史「559 / 386」两个数不是两把尺打架，而是两种口径：559 = 出现次数（本文件口径，
+     * {@code ui/render} 现值），386 = 按行去重（父代理 M3 复核的另一算法）。自本注释起
+     * 门禁只承认出现次数口径，改动扫描器口径必须同步改本申明。</p>
      */
     private static final String GL11_CONTROL_PACKAGE = "club/heiqi/uilib/ui/render/";
 
-    /** G1 对照命中地板（规划 §四 + M3 任务书：&gt;30；实测 386，取 1/2 仍远高于 30 防重构波动）。 */
+    /**
+     * G1 对照命中地板（规划 §四 + M3 任务书：&gt;30；M5 按统一口径实测 {@code ui/render}
+     * = 559 次，地板取 100 —— 远高于 30 且对重构留裕量）。
+     */
     private static final int GL11_CONTROL_MIN_HITS = 100;
 
     /** G2 正对照一：client 包 import net.minecraft/cpw.mods（实测 10 处）。 */
@@ -130,7 +140,8 @@ public class MarkdownLayerGuardTest {
 
     // ==================== 扫描器 ====================
 
-    /** 统计包内字符串 token 出现次数（按行按 indexOf 计数，同 UiHudRenderListenerGlFenceTest 口径）。 */
+    /** 统计包内字符串 token 出现次数（按出现次数口径、含注释行；与 UiHudRenderListenerGlFenceTest
+     *  的 occurrences 及本类 {@link #GL11_CONTROL_PACKAGE} 注释口径申明一致）。 */
     private static int countToken(String packageFragment, String token) throws IOException {
         int count = 0;
         for (Path file : listJavaFiles(packageFragment)) {
