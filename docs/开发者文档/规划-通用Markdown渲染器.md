@@ -57,6 +57,28 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
   图片需要网络与缓存，`ui/image/DocumentRemoteImageCache` 是既有面，但它是「文档远程图片」用途，
   接不接进 markdown 属独立裁定（本文列为 D4）。
 
+## 二之二 进度状态（跨轮恢复看这一节）
+
+| 步 | 内容 | 状态 |
+| --- | --- | --- |
+| M1 | 复活 L1 行内解析器 + 测试矩阵 | **完成 `6d9de24c`**（2026-09-04） |
+| M2 | L1 扩块级 + `MarkdownDocument` 数据模型 | 未开工 |
+| M3 | L2 `ui/markdown` 绘制层 + `MarkdownPage` + headless 出图 | 未开工 |
+| M4 | chat3 现路 vs B 路行为对拍（产 `-side` 成对图） | 未开工 |
+| M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | 未开工 |
+| M6 | 复生锁 G3（与 M5 同一提交） | 未开工 |
+
+M1 的验收事实（父代理逐条独立复核过，非采信子代理自述）：三个文件与 `9c4dcae5` **blob hash
+逐一相同**（`84dd897c`/`49cfd000`/`6f639546`，463+48+274 行），**零适配**——两周内 layout 层
+对 markdown 的使用面无破坏性漂移；`MarkdownInlineParserTest` 26 个用例、90 处 `Assert.` 全绿；
+提交仅含 `font/layout/markdown/**`；`src/main` 内除自身外零引用（**故意零消费者**，死代码窗口
+按 §三 到 M5 才闭合）。基线 3855 → **3881 / 0 / 0 / 2，352 类**。
+
+子代理留的两条尾巴（真事，不装完）：① `MarkdownInlineParser`/`MarkdownSpan` 的 javadoc 里
+仍指向《规划-聊天框Markdown接管.md》与「阶段二 `internal/chat` 桥」——那个包已被 `d8d10250` 删
+且不会再回来，M2 动这两个文件时顺手改指本规划；② 本规划的 §一 事实 3 说 blob 一致前我只比对
+了一个文件，现已三文件全比对。
+
 ## 三、迁移与「不得并存」门禁
 
 B 案最大的风险就是长出第二套真相。用**顺序 + 门禁**防，而不是靠自觉：
