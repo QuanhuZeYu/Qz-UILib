@@ -27,7 +27,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public class TestPlaygroundHostTest {
 
-    private static final int CANVAS_WIDTH = 720;
+    /** 画布宽：导航段横排总宽随页数线性增长（9 页实测末段右缘 833px），
+     *  旧 720 宽在 8 页时贴边、9 页起末页段整体出界导致点击不可达；与既有断言无耦合。 */
+    private static final int CANVAS_WIDTH = 1000;
     private static final int CANVAS_HEIGHT = 520;
 
     private TestPlaygroundHost host;
@@ -182,6 +184,32 @@ public class TestPlaygroundHostTest {
                 + vb.getHeight() + " c=" + cb.getHeight(), vb.getHeight() < cb.getHeight());
         Assert.assertTrue("视口应有纵向滚动区间（maxScrollY>0），实测=" + maxScroll,
                 maxScroll > 0);
+    }
+
+    /** 正向锚：注册表必须含 markdown 页（M3 验收面之一）。既有 latex 锚用 Assume 门控，
+     *  漏注册只会静默跳过仍算绿；本锚用硬断言把「注册存在 + 可挂载 + 可滚动」钉死。 */
+    @Test
+    public void registryContainsMarkdownPageAndMounts() {
+        Assert.assertNotNull("注册表含 markdown 页（PlaygroundPageRegistry.lookup）",
+                PlaygroundPageRegistry.lookup("markdown"));
+        List<PlaygroundPage> pages = PlaygroundPageRegistry.defaultPages();
+        int markdownIndex = -1;
+        for (int i = 0; i < pages.size(); i++) {
+            if ("markdown".equals(pages.get(i).id())) {
+                Assert.assertTrue("markdown 页 id 唯一", markdownIndex < 0);
+                markdownIndex = i;
+            }
+        }
+        Assert.assertTrue("注册表含 id=markdown 的演示页", markdownIndex >= 0);
+        clickNode(navSegment(markdownIndex));
+        doLayout();
+        Assert.assertEquals("可切到 markdown 页", "markdown", host.__getDisplayedPageId());
+        SceneNode pageRoot = host.__getDisplayedPageRoot();
+        Assert.assertNotNull("markdown 页根已挂载", pageRoot);
+        Assert.assertTrue("markdown 页含全部样本卡（实测 " + pageRoot.__getChildren().size() + "）",
+                pageRoot.__getChildren().size() >= 8);
+        Assert.assertTrue("markdown 页应有纵向滚动区间，实测=" + SceneGeometry.maxScrollY(host.__getViewport()),
+                SceneGeometry.maxScrollY(host.__getViewport()) > 0);
     }
 
     @Test

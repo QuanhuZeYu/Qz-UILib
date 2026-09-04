@@ -127,7 +127,12 @@ public final class LatexSoftwareRenderKit {
 
     private static Shared shared;
 
-    private static synchronized Shared shared() {
+    /**
+     * 共享装配入口（包内可见）：markdown 出图等 headless 场地与 LaTeX 共用同一份
+     * {@code GlyphRuntimeTables}（每实例约 123MiB，严禁另建）。外部类用完必须经
+     * {@link #resetShared()}（@AfterClass）释放。
+     */
+    static synchronized Shared shared() {
         if (shared == null) {
             shared = new Shared();
         }
@@ -315,13 +320,30 @@ public final class LatexSoftwareRenderKit {
         FontSoftwareRasterizer.writePng(result.pixels, result.width, result.height, out);
     }
 
-    /** 为渲染所需码点生成字形并装配到软件字符页（真 skyline + 真上传路径；已常驻码点跳过）。 */
-    private static void assembleGlyphs(Shared shared, List<TextSegment> segments) {
-        assembleCodepoints(shared, collectCodepoints(segments));
+    /** 为渲染所需码点生成字形并装配到软件字符页（真 skyline + 真上传路径；已常驻码点跳过；包内共享入口）。 */
+    static void assembleGlyphs(Shared shared, List<TextSegment> segments) {
+        // 按段样式分派字重：BOLD 段（markdown 标题/粗体）的码点必须装配进 BOLD 表，
+        // 否则渲染侧 packedLocation(NORMAL≠BOLD) 查无位图（LaTeX 旧场地恒 NORMAL 不受影响）。
+        Set<Integer> normal = new LinkedHashSet<Integer>();
+        Set<Integer> bold = new LinkedHashSet<Integer>();
+        for (TextSegment segment : segments) {
+            Set<Integer> bucket = segment.getStyle() != null
+                    && segment.getStyle().getFontType() == FontType.BOLD ? bold : normal;
+            bucket.addAll(collectCodepoints(Arrays.asList(segment)));
+        }
+        assembleCodepoints(shared, normal, FontType.NORMAL);
+        if (!bold.isEmpty()) {
+            assembleCodepoints(shared, bold, FontType.BOLD);
+        }
     }
 
-    /** 生成并装配给定码点集合（layout 与 render 共用的同源入口）。 */
-    private static void assembleCodepoints(Shared shared, Set<Integer> codepoints) {
+    /** 生成并装配给定码点集合（layout 与 render 共用的同源入口；恒 NORMAL 字重）。 */
+    static void assembleCodepoints(Shared shared, Set<Integer> codepoints) {
+        assembleCodepoints(shared, codepoints, FontType.NORMAL);
+    }
+
+    /** 生成并装配给定码点集合到指定字重表（M3 markdown 出图扩展：BOLD 标题字形）。 */
+    static void assembleCodepoints(Shared shared, Set<Integer> codepoints, FontType fontType) {
         GlyphGenerator generator = new GlyphGenerator(shared.fontMatcher, shared.derivedFontCache);
         if (shared.pages.isEmpty()) {
             shared.pages.add(SoftwareGlyphPageAssembler.createPage(1, 0, shared.settings.getTextureSize(),
@@ -330,19 +352,19 @@ public final class LatexSoftwareRenderKit {
         }
         long requestId = System.nanoTime();
         for (int codepoint : codepoints) {
-            if (shared.tables.stateArray(FontType.NORMAL)[codepoint]
+            if (shared.tables.stateArray(fontType)[codepoint]
                     == GlyphRuntimeTables.STATE_RESIDENT) {
                 continue;
             }
-            GlyphRequestToken token = new GlyphRequestToken(1, requestId++, codepoint, FontType.NORMAL);
+            GlyphRequestToken token = new GlyphRequestToken(1, requestId++, codepoint, fontType);
             GlyphGenerationResult result = generator.generate(new GlyphGenerationTask(token,
                     shared.settings.getPageGlyphSize(), GlyphGenerationPriority.HIGH));
             if (result == null || result.getGlyphInfo() == null || !result.getGlyphInfo().hasBitmap()) {
                 continue;
             }
             GlyphPage page = findPage(shared.pages, result.getGlyphInfo(), shared.settings, shared.gl);
-            shared.tables.setPage(FontType.NORMAL, page.getPageIndex(), page);
-            SoftwareGlyphPageAssembler.publish(FontType.NORMAL, page, shared.tables, codepoint,
+            shared.tables.setPage(fontType, page.getPageIndex(), page);
+            SoftwareGlyphPageAssembler.publish(fontType, page, shared.tables, codepoint,
                     result.getGlyphInfo(), result.getImage(), token);
         }
     }
