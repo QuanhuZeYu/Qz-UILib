@@ -73,7 +73,8 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 | M1 | 复活 L1 行内解析器 + 测试矩阵 | **完成 `6d9de24c`**（2026-09-04） |
 | M2 | L1 扩块级 + `MarkdownDocument` 数据模型 | **完成 `08a8034e`**，留下一处待裁矛盾见 §二之三 |
 | M3 | L2 `ui/markdown` 绘制层 + `MarkdownPage` + headless 出图 | **完成 `531da89e`/`339530e0`/`eddd2c29`**，见 §二之四 |
-| M4 | chat3 现路 vs B 路行为对拍（产 `-side` 成对图） | 未开工 |
+| M4 | chat3 现路 vs B 路行为对拍（产 `-side` 成对图） | **完成但未过门禁**：6 条 PARITY FAIL → **M5 不许开工**，见 §二之五 |
+| M4+ | 判读分辨率 @Nx 真放大 | **完成**：N=4 上限由 `awtCharSize=64` 定死，@1x 逐位不变 |
 | M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | 未开工 |
 | M6 | 复生锁 G3（与 M5 同一提交） | 未开工 |
 
@@ -164,6 +165,30 @@ tally **3969 / 0 / 0 / 2，357 类**；出图 9 张 PNG + `profiles.txt` 实存�
   `\n` 段，由 `MarkdownPainter` 认它加行距），零公共面变更、零 L1 变更。
 - **C2**：给 `TextStyle` 加行几何位 —— 污染全部文本层，规划 §二之三 已判为最差选项。
 - **C3**：块模型进公共面（A 案复活）—— 只有在 C1 证明表达不了更复杂块级排版（表格、多栏）时才值。
+
+## 二之五 M4 对拍结果：门禁拦住 6 条真实回退（2026-09-04）
+
+M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成立），三文件以 `refs/wip/m4-parity-gate`
+（`81dc45c5`，3 files +1341/−29）保住，主树工作区与 `4.0 @ b2909a03` 未受影响。父代理独立复核：
+`git diff HEAD -- src/main internal/chat3` **为空**；`FontConfig.awtCharSize=64.0` 坐实 N=4 上限
+（13×4=52≤64，N>4 自动改口"纹理插值"）；M3 测试 `Assert` 36→36、`@Test` 4→4（断言只被 `scale==1`
+门控，**零删除**）；`@1x` 产物 sha 与 M3 时逐位相同；`diff.txt` 102 行、35 处 FAIL、六语料号俱在。
+
+判据跑前定死三档：PARITY（chat3 有行为 → 逐段等价）/ NEW（chat3 无行为 → 只记录）/ REGRESSION。
+结果 **PARITY 18：PASS 12 / FAIL 6**，NEW 11 条，TIE 0。六条 FAIL 全是**真回退**，不是口径噪声：
+
+| # | 场景 | chat3 现行为 | B 路 | 归属 |
+| --- | --- | --- | --- | --- |
+| F1 | 命令 `` `curl http://x.y/z -s` `` | 反引号→codeSpan 衬底 + 12px，code 内 URL **不**链接化 | 反引号被吃但无 code 位，URL 被 linkify | L1「第一版 code 仅字面」旧裁定未承接 chat3 现行为 |
+| F2 | 缩进列表（2/4 空格） | 每级 2 空格进文本流（`• 乙`/`    • 丙`） | 全部 `• ` 无缩进 | 裁 B 把缩进留在包内块模型，扁平接缝丢了 |
+| F3 | `> 引用的文字` | 剥 `> ` + 降为次级色 FF9AA0A8 | 剥 `> ` 但恒白 | 样式表缺引用色旋钮 |
+| F4 | `§a- 玩家列表行` | 行首 § 码被无视后识别为列表 | 整行字面 | **块层 §-盲**（`MarkdownDocument.parse` 只吃 String） |
+| F5 | `§c红 §fplain` 切换处 | 空格归**后**段（`红色警告`/` plain`） | 空格归**前**段 | §桥输入形态差（整串 vs 逐显示行） |
+| F6 | `甲\n\n乙` | 3 显示行（含空行） | 2 行 | 块间距塌缩（§二之四 3 已预见，本门禁钉成 FAIL） |
+
+另记两条场地事实：门禁测试落在 `font.render.software`（`LatexSoftwareRenderKit.Shared` 为包内可见，
+与 M3 同先例）—— 属可接受的权宜，M6 应把共享装配升成正式 testkit 位置；N10 暴露 chat3 自身
+怪癖（code 配对不识别转义），如实记录未修。
 
 ## 三、迁移与「不得并存」门禁
 
