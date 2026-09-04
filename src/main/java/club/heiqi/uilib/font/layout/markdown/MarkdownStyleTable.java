@@ -8,7 +8,13 @@ package club.heiqi.uilib.font.layout.markdown;
  * 不读取任何散落的私有常量；字号相关数值仅在能解析出基准字号时写入
  * {@link club.heiqi.uilib.font.layout.TextStyle#setFontSizePx(int)}，基准不可解析
  * （{@code getDefaultFontSizePx() == 0} 且基础样式未显式指定）时保持继承渲染器基准，
- * 满足 G4「度量同源」。缩进/间距 px 不被 L1 消费，供 L2 绘制层（M3）盒模型读取。</p>
+ * 满足 G4「度量同源」。</p>
+ *
+ * <p><b>裁定 B（M2-narrow）记死在案</b>：块级几何（列表缩进/引用缩进/块间距 px）
+ * 刻意不进本期公共面——{@code toSegments()} 的接缝是 {@code List<TextSegment>}，而
+ * {@code TextSegment} 只有 text/style/latexSource 三通道、{@code TextStyle} 无任何行/块几何
+ * 通道，块边界在扁平化时已被抹掉，这组旋钮在当前形状下没有消费者；待 M3 需要块级
+ * 几何再裁「块模型是否进公共面」——加方法是兼容变更、删方法是破坏变更，故先删后加。</p>
  *
  * <p>语义约定：字号增量 {@code 0} = 不改变继承字号；{@code bulletMarker} 空串 = 列表标记
  * 不输出；{@code thematicBreakText} 空串 = 分隔线在扁平文本流中不输出占位文本。</p>
@@ -27,9 +33,6 @@ public final class MarkdownStyleTable {
     private int defaultFontSizePx;
     private String bulletMarker = "\u2022";
     private String thematicBreakText = repeat('-', DEFAULT_BREAK_LENGTH);
-    private int listIndentPx = 10;
-    private int quoteIndentPx = 8;
-    private int blockSpacingPx = 4;
 
     /**
      * 创建默认表（行为规格即此组默认值，块级 javadoc 与测试矩阵按它钉死）。
@@ -64,9 +67,6 @@ public final class MarkdownStyleTable {
         out.defaultFontSizePx = defaultFontSizePx;
         out.bulletMarker = bulletMarker;
         out.thematicBreakText = thematicBreakText;
-        out.listIndentPx = listIndentPx;
-        out.quoteIndentPx = quoteIndentPx;
-        out.blockSpacingPx = blockSpacingPx;
         return out;
     }
 
@@ -152,35 +152,5 @@ public final class MarkdownStyleTable {
     /** @param thematicBreakText 分隔线文本；null 归一为空串（不输出） */
     public void setThematicBreakText(String thematicBreakText) {
         this.thematicBreakText = thematicBreakText == null ? "" : thematicBreakText;
-    }
-
-    /** @return 每级列表缩进 px（L2 绘制层消费；L1 解析不读取） */
-    public int getListIndentPx() {
-        return listIndentPx;
-    }
-
-    /** @param listIndentPx 每级列表缩进 px，负值归 0 */
-    public void setListIndentPx(int listIndentPx) {
-        this.listIndentPx = Math.max(0, listIndentPx);
-    }
-
-    /** @return 每级引用缩进 px（L2 绘制层消费；L1 解析不读取） */
-    public int getQuoteIndentPx() {
-        return quoteIndentPx;
-    }
-
-    /** @param quoteIndentPx 每级引用缩进 px，负值归 0 */
-    public void setQuoteIndentPx(int quoteIndentPx) {
-        this.quoteIndentPx = Math.max(0, quoteIndentPx);
-    }
-
-    /** @return 块间距 px（L2 绘制层消费；L1 解析不读取） */
-    public int getBlockSpacingPx() {
-        return blockSpacingPx;
-    }
-
-    /** @param blockSpacingPx 块间距 px，负值归 0 */
-    public void setBlockSpacingPx(int blockSpacingPx) {
-        this.blockSpacingPx = Math.max(0, blockSpacingPx);
     }
 }
