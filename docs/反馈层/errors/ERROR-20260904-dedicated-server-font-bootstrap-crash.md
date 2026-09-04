@@ -104,7 +104,7 @@ AWT 在**构造字体管理器**阶段就抛 `RuntimeException: Fontconfig head 
 - 修复前服务端的字形 worker 线程没有任何关停路径（shutdown hook 只注册在 `ClientProxy`）；
   线程均为 daemon，故不会挂住服务器退出，只是白占。门禁后服务端不再创建它们。
 
-## 同类服务端问题全清单（两路只读审计 + 逐条一手复核）
+## 同类服务端问题全清单（两路只读审计 + 一手抽查复核；证据等级见文末标注）
 
 审计范围：UILib 620 个 main 源文件按 6 条线索穷尽；下游 `qz_miner` 292 个源文件按同样 6 条线索。
 **下游结论：qz_miner 干净** —— 它对 UILib 的 14 处 import 全在 `ClientProxy` / `client/*` / `configGUI/*`
@@ -177,3 +177,9 @@ AWT 在**构造字体管理器**阶段就抛 `RuntimeException: Fontconfig head 
 - 版本面（下游）：`qz_miner` 的 `@Mod` 运行时门是 `qz_uilib@[4.7.0,5.0.0)`，而 `5.3.0` 更新日志写
   「最低 4.8.0」——下限没跟上，整合包仍可把 qz_miner 配到会崩服务端的旧 UILib。要么把 #71 修复
   backport 到 4.7.x，要么把 qz_miner 的下限抬到含修复的版本（属下游仓与版本策略，交你决定）。
+
+证据等级标注（免得把二手当一手）：本节内 `@SubscribeEvent` 的 16 个处理器逐个核对、
+`club/heiqi/config/**` 与 scene core 的 import 面扫描、`GlAttribDepth`/`ClientHudService` 两条
+**出自审计子代理，我没有逐行复核**，按二手对待；其余条目（mixin 分流、反射三处、
+`FontRegistry` 零实例化、线程 daemon 标志、late 配置无引用点、A1 崩溃链、
+`dispatcher.reset()` 不碰字符页）我逐条读过代码或跑过 grep/实验。
