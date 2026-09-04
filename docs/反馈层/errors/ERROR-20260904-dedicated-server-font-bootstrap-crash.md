@@ -135,7 +135,7 @@ AWT 在**构造字体管理器**阶段就抛 `RuntimeException: Fontconfig head 
 | A2 | "一个错字不该带走宿主"⇒ 响亮回落 | `NetTransportFactory.create` 未知值 WARN + 回落 `vanilla`；`resolveName` 仍不改写原值，坏名留在日志里 | `NetTransportFactoryTest` 2 条新用例（含 system property 覆盖路径） |
 | B2 | 只改承诺，不发明兜底度量（两套宽度真相比缺度量更贵） | 稳定 API 清单把文本测量标为「条件可用」，并给出静态判据 | 行为侧仍由 #71 用例锁（无字体 ⇒ 可读 ISE，不返回假宽度） |
 | B4 + C1 | 公开静态侧判据（获批） | `FontService.isRenderRuntimeSupportedOnThisSide()` 与 `requestReloadIfRenderRuntimeReady(String)`；`ModernConfigBootstrap` 不再 `getInstance()` ⇒ 服务端不再付那 150 MiB | `configBootstrapMustNotCreateFontServiceSingleton`：解析 class 常量池 Methodref，断言不含 `FontService#getInstance`；同用例先断言含真实调用（解析器自检，防恒真） |
-| B5 | 拒绝入队 + 告警一次；不改投服务端队列（那会偷换执行线程语义） | `MainThreadDispatcher.enqueue`/`asExecutor` 在专用服务端拒绝 `NetSide.CLIENT`；`NetService.runOnMainThread` javadoc 同步 | 3 条新用例：拒绝且不入队、SERVER 侧不受牵连、非 SERVER 侧（含未知）仍放行、executor 不得绕行 |
+| B5 | 拒绝入队 + 告警一次；不改投服务端队列（那会偷换执行线程语义） | `MainThreadDispatcher.enqueue`/`asExecutor` 在专用服务端拒绝 `NetSide.CLIENT`；`NetService.runOnMainThread` javadoc 同步。**严重度限定**：仓内唯一的 CLIENT 入队点 `NetStoreUiBridge:54` 只经 `ClientProxy.preInit` 初始化 ⇒ 本轮**没有发现服务端实际泄漏**，这条修的是公共 API 的陷阱（下游按 javadoc 字面理解就会踩），不是已发生的故障 | 3 条新用例：拒绝且不入队、SERVER 侧不受牵连、非 SERVER 侧（含未知）仍放行、executor 不得绕行 |
 
 两条支撑性收口：**启动侧判定抽成 `util/LaunchSide`**（B4 与 B5 要的是同一个事实，不写第二份；
 含 fail-open 方向与理由）；`FontRuntimeSettings` 的 `FIELD_*` 常量成为回灌侧唯一合法入参，
