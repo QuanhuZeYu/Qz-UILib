@@ -1,10 +1,16 @@
 package club.heiqi.uilib.font;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -13,6 +19,8 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ClientProxy;
 import club.heiqi.uilib.CommonProxy;
+import club.heiqi.uilib.config.modern.ModernConfigBootstrap;
+import club.heiqi.uilib.util.LaunchSide;
 import club.heiqi.uilib.font.glyph.GlyphGenerationDispatcher;
 import cpw.mods.fml.relauncher.Side;
 
@@ -161,6 +169,38 @@ public class FontRuntimeEnvironmentTest {
                 clientProxy.contains("NetRuntimeSelfChecks"));
     }
 
+    /**
+     * 结构锁：启动配置回灌不得为了问一句"要不要 reload"而创建 FontService 单例。
+     *
+     * <p>{@code INSTANCE} 是饿汉单例，构造链经 GlyphPageManager 建出按码点直索引表；实测一次
+     * {@code getInstance()} 常驻约 150 MiB，且这些表全部只服务渲染（#71 同族审计 C1）。
+     * 专用服务端要的答案是"本侧根本不 bootstrap"，那是静态判据，不该用这笔内存去换。</p>
+     */
+    @Test
+    public void configBootstrapMustNotCreateFontServiceSingleton() throws IOException {
+        Set<String> bootstrapRefs = referencedMethods(ModernConfigBootstrap.class);
+        Assert.assertTrue("解析器自检：必须读得到真实的 FontService.requestReloadIfRenderRuntimeReady 引用，"
+                        + "否则下面的反向断言恒真（解析器坏掉时也会看起来通过）",
+                bootstrapRefs.contains(
+                        "club/heiqi/uilib/font/FontService#requestReloadIfRenderRuntimeReady"));
+        Assert.assertFalse("启动配置回灌不得触碰 FontService 单例：改回 getInstance() 会让专用服务端"
+                + "为一句恒 false 的判断付出约 150 MiB 只服务渲染的字形表",
+                bootstrapRefs.contains("club/heiqi/uilib/font/FontService#getInstance"));
+    }
+
+    /**
+     * 侧别判据必须是静态可问的，且与启动侧权威同源——不允许各留一份判断。
+     */
+    @Test
+    public void renderRuntimeSupportPredicateSharesLaunchSideAuthority() {
+        Assert.assertEquals("FontService 静态侧判据必须与 LaunchSide 权威同结论",
+                Boolean.valueOf(!LaunchSide.LAUNCH.isDedicatedServer()),
+                Boolean.valueOf(FontService.isRenderRuntimeSupportedOnThisSide()));
+        Assert.assertEquals("静态判据与注入式环境判定必须同源，不能各写一遍规则",
+                Boolean.valueOf(FontRuntimeEnvironment.LAUNCH.allowsRenderBootstrap()),
+                Boolean.valueOf(FontService.isRenderRuntimeSupportedOnThisSide()));
+    }
+
     private static FontService newFontService(FontGenerationCandidateFactory factory,
             GlyphGenerationDispatcher dispatcher, Side launchSide) {
         return new FontService(new FontReloadSignal(0L, 0L, 0L, System::nanoTime), factory, dispatcher,
@@ -187,6 +227,10 @@ public class FontRuntimeEnvironmentTest {
     }
 
     private static String classFileConstants(Class<?> type) throws IOException {
+        return new String(classFileBytes(type), StandardCharsets.ISO_8859_1);
+    }
+
+    private static byte[] classFileBytes(Class<?> type) throws IOException {
         String resource = type.getName().replace('.', '/') + ".class";
         InputStream input = type.getClassLoader().getResourceAsStream(resource);
         Assert.assertNotNull("测试需要读到 " + resource + " 的字节码", input);
@@ -197,10 +241,101 @@ public class FontRuntimeEnvironmentTest {
             while ((read = input.read(chunk)) > 0) {
                 buffer.write(chunk, 0, read);
             }
-            return new String(buffer.toByteArray(), StandardCharsets.ISO_8859_1);
+            return buffer.toByteArray();
         } finally {
             input.close();
         }
+    }
+
+    /**
+     * 解析 class 常量池，返回该方法引用到的全部方法，形如 {@code owner#name}。
+     *
+     * <p>之所以不能在 class 字节里直接 contains("getInstance")：常量池把类名和方法名存成两条
+     * 独立 UTF8，方法引用只是一对索引，子串匹配既会漏也会假阳性。未识别的 tag 一律抛异常，
+     * 让解析器不可能"安静地"返回空集而把反向断言变成恒真。</p>
+     */
+    private static Set<String> referencedMethods(Class<?> type) throws IOException {
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(classFileBytes(type)));
+        in.readInt();
+        in.readUnsignedShort();
+        in.readUnsignedShort();
+        int count = in.readUnsignedShort();
+        String[] utf8 = new String[count];
+        int[] classNames = new int[count];
+        int[] refOwner = new int[count];
+        int[] refNameAndType = new int[count];
+        int[] nameAndTypeName = new int[count];
+        List<Integer> methodRefs = new ArrayList<Integer>();
+        for (int index = 1; index < count; index++) {
+            int tag = in.readUnsignedByte();
+            switch (tag) {
+                case 1: {
+                    byte[] raw = new byte[in.readUnsignedShort()];
+                    in.readFully(raw);
+                    utf8[index] = new String(raw, StandardCharsets.UTF_8);
+                    break;
+                }
+                case 3:
+                case 4:
+                    in.skipBytes(4);
+                    break;
+                case 5:
+                case 6:
+                    in.skipBytes(8);
+                    index++;
+                    break;
+                case 7:
+                    classNames[index] = in.readUnsignedShort();
+                    break;
+                case 8:
+                    in.skipBytes(2);
+                    break;
+                case 9:
+                    in.skipBytes(2);
+                    in.skipBytes(2);
+                    break;
+                case 10:
+                case 11:
+                    refOwner[index] = in.readUnsignedShort();
+                    refNameAndType[index] = in.readUnsignedShort();
+                    methodRefs.add(Integer.valueOf(index));
+                    break;
+                case 12:
+                    nameAndTypeName[index] = in.readUnsignedShort();
+                    in.skipBytes(2);
+                    break;
+                case 15:
+                    in.skipBytes(3);
+                    break;
+                case 16:
+                    in.skipBytes(2);
+                    break;
+                case 17:
+                    in.skipBytes(4);
+                    break;
+                case 18:
+                    in.skipBytes(1);
+                    in.skipBytes(2);
+                    break;
+                case 19:
+                case 20:
+                    in.skipBytes(2);
+                    break;
+                default:
+                    throw new IllegalStateException("常量池出现解析器未覆盖的 tag " + tag
+                            + "（索引 " + index + "），必须同步更新解析器，不能跳过");
+            }
+        }
+        Set<String> methods = new LinkedHashSet<String>();
+        for (Integer refIndex : methodRefs) {
+            int entry = refIndex.intValue();
+            String className = utf8[classNames[refOwner[entry]]];
+            String methodName = utf8[nameAndTypeName[refNameAndType[entry]]];
+            if (className != null && methodName != null) {
+                methods.add(className + "#" + methodName);
+            }
+        }
+        return methods;
     }
 
     /** 记录构建次数的 candidate 工厂；给了 failure 就固定抛出该异常实例。 */

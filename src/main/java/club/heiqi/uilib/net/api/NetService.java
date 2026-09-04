@@ -344,6 +344,11 @@ public final class NetService {
     /**
      * 入队到主线程。
      *
+     * <p>侧别不是装饰：{@code NetSide.CLIENT} 的任务由 {@code ClientTickEvent} 排空，
+     * 专用服务端上不存在这条通道，因此那里的 CLIENT 入队会被直接丢弃并告警一次
+     * （见 {@link club.heiqi.uilib.net.core.MainThreadDispatcher#enqueue}）。服务端也要跑的逻辑
+     * 请用 {@code NetSide.SERVER}，不要指望 CLIENT 队列。</p>
+     *
      * @param side 目标侧
      * @param runnable 任务
      */

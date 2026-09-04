@@ -166,6 +166,47 @@ public class FontService {
     }
 
     /**
+     * 本启动侧是否允许引导字体渲染运行时。<b>静态判据：不得为问它而触碰 {@link #getInstance()}</b>。
+     *
+     * <p>原因不是风格而是代价：{@code INSTANCE} 是饿汉单例，其构造链经 GlyphPageManager 建出
+     * 按码点直索引表（GlyphRuntimeTables 的 34 个数组加 worker 侧两组 long 表），实测一次
+     * {@code getInstance()} 常驻约 150 MiB，全部只服务渲染。专用服务端这个答案恒为 false，
+     * 一次都不该付这笔钱（#71 同族审计 C1）。业务侧可用它把"字体渲染在本侧是否受支持"
+     * 做成显式条件，而不是等 {@link #initialize()} 静默跳过或等测量抛异常。</p>
+     *
+     * @return 客户端与侧别未知环境（非 FML 宿主）返回 true，专用服务端返回 false
+     */
+    public static boolean isRenderRuntimeSupportedOnThisSide() {
+        return FontRuntimeEnvironment.LAUNCH.allowsRenderBootstrap();
+    }
+
+    /**
+     * 配置回灌后请求刷新字体渲染运行时，条件不满足时静默跳过。
+     *
+     * <p>判据顺序就是这条入口的全部意义：先问静态侧别，再（必要时）取单例问
+     * {@link #isInitialized()}。调用方不要再自己写 {@code getInstance().isInitialized()}
+     * 的等价判断——那会把服务端重新拉进单例初始化。</p>
+     *
+     * @param reason 刷新原因，用于日志与 reload 溯源
+     * @return 真正发起 reload 时返回 true
+     */
+    public static boolean requestReloadIfRenderRuntimeReady(String reason) {
+        if (!isRenderRuntimeSupportedOnThisSide()) {
+            MyMod.LOG.debug("本启动侧（{}）不引导字体渲染运行时，跳过 reload：reason={}",
+                    FontRuntimeEnvironment.LAUNCH.describeLaunchSide(), reason);
+            return false;
+        }
+        FontService service = getInstance();
+        if (!service.isInitialized()) {
+            MyMod.LOG.debug("FontService 未初始化，跳过 reload（由后续 initialize 直接用新值建运行时）");
+            return false;
+        }
+        MyMod.LOG.info("启动加载触发字体 reload: reason={}", reason);
+        service.reload(new FontReloadRequest(reason));
+        return true;
+    }
+
+    /**
      * 确保布局期文本测量所需的轻量运行时已就绪。
      *
      * <p>该入口只准备 CPU catalog、generation envelope 与布局缓存，不创建 atlas texture、worker、

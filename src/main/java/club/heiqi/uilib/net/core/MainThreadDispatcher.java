@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.transport.NetSide;
+import club.heiqi.uilib.util.LaunchSide;
 
 /**
  * 双端主线程派发队列。
@@ -39,6 +40,9 @@ import club.heiqi.uilib.net.transport.NetSide;
  *   <li>{@link ErrorSink} 不得吞掉 {@link AssertionError}；若 sink 抛 AssertionError，
  *       与任务体 Assertion 同路径：尾重排 + rethrow</li>
  *   <li>producer / coordinator 在 drain 中 re-enqueue 不会同 tick 自旋耗尽</li>
+ *   <li>专用服务端拒绝 {@link NetSide#CLIENT} 入队——该侧的排空通道只由
+ *       {@code ClientTickEvent} 驱动，照旧入队等于承诺执行但永不执行，
+ *       且留下无人消费的无界队列；改为丢弃 + 告警一次</li>
  * </ul>
  *
  * <p>{@link VirtualMachineError}、{@link ThreadDeath}、{@link LinkageError} 不吞掉。</p>
@@ -67,7 +71,28 @@ public final class MainThreadDispatcher {
      */
     private final AtomicReference<ErrorSink> errorSink = new AtomicReference<ErrorSink>(null);
 
+    /** CLIENT 任务被侧别判据拒绝的告警开关（只告一次，避免刷屏）。 */
+    private final AtomicBoolean clientRejectLogged = new AtomicBoolean(false);
+
+    /** 启动侧覆盖，仅测试用；null 表示读真实启动侧。 */
+    private static final AtomicReference<LaunchSide> LAUNCH_SIDE_OVERRIDE =
+            new AtomicReference<LaunchSide>(null);
+
     private MainThreadDispatcher() {}
+
+    /**
+     * 测试接缝：覆盖启动侧判定，用于在同一个 JVM 里分别跑客户端与服务端分支。
+     *
+     * @param launchSide 覆盖值；传 null 恢复真实启动侧
+     */
+    static void overrideLaunchSideForTests(LaunchSide launchSide) {
+        LAUNCH_SIDE_OVERRIDE.set(launchSide);
+    }
+
+    private static LaunchSide launchSide() {
+        LaunchSide override = LAUNCH_SIDE_OVERRIDE.get();
+        return override != null ? override : LaunchSide.LAUNCH;
+    }
 
     /**
      * 返回单例。
@@ -98,6 +123,11 @@ public final class MainThreadDispatcher {
      * <p>若当前侧正在 drain（已 swap），本任务进入<strong>新 current</strong>，
      * 计入 next-drain，不会被本次 batch 消费。</p>
      *
+     * <p><b>专用服务端不接受 {@link NetSide#CLIENT} 任务</b>：{@code drainClient()} 的唯一
+     * 触发点是 {@code ClientTickEvent}，服务端永远不会发。照旧入队就等于"承诺执行但
+     * 永不执行"，且队列无人消费、无界增长（#71 同族审计 B5）。这里直接拒绝入队并
+     * 告警一次，而不是抛异常——同一份代码在两侧跑，不该让服务端因为一段 UI 逻辑崩掉。</p>
+     *
      * @param side 目标侧
      * @param runnable 任务
      */
@@ -106,6 +136,10 @@ public final class MainThreadDispatcher {
             return;
         }
         if (side == NetSide.CLIENT) {
+            if (launchSide().isDedicatedServer()) {
+                rejectClientTaskOnDedicatedServer();
+                return;
+            }
             synchronized (clientLock) {
                 clientQueue.add(runnable);
             }
@@ -114,6 +148,15 @@ public final class MainThreadDispatcher {
                 serverQueue.add(runnable);
             }
         }
+    }
+
+    private void rejectClientTaskOnDedicatedServer() {
+        if (!clientRejectLogged.compareAndSet(false, true)) {
+            return;
+        }
+        MyMod.LOG.warn("专用服务端没有客户端主线程排空通道（drainClient 只由 ClientTickEvent 触发），"
+                + "NetSide.CLIENT 任务不会执行；本次入队已丢弃，后续同类入队同样丢弃且不再重复告警。"
+                + "服务端需要跑的逻辑请改用 NetSide.SERVER 入队。");
     }
 
     /**

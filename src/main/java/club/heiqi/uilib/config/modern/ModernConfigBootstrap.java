@@ -8,7 +8,6 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.config.FontConfig;
-import club.heiqi.uilib.font.event.FontReloadRequest;
 
 /**
  * 启动加载首次回灌：游戏启动阶段把新栈 YAML 配置回灌到 {@code Config}/{@code FontConfig}
@@ -22,16 +21,18 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  *   <li>{@link ConfigValueBridge#applyFromAuthority} 全量回灌 {@code Config}/{@code FontConfig} 静态字段</li>
  *   <li>补刀（语义等价迁移自旧栈 Config.applyLoadedFontConfig）：
  *       {@link FontConfig#affectsFontRuntime()} 判断字体运行时是否变化
- *       → 变化且 {@link FontService#isInitialized()} 时 {@link FontService#reload}
+ *       → 变化时交 {@link FontService#requestReloadIfRenderRuntimeReady(String)}
+ *         （侧别判据先于单例，服务端不为此创建 FontService）
  *       → {@link FontConfig#onConfigReload()} 刷 {@code last*} 快照</li>
  * </ol>
  *
  * <h3>语义等价迁移自旧栈 Config.applyLoadedFontConfig</h3>
  * <p>去掉 Forge {@code Configuration} 依赖，换 {@link ConfigValueBridge} 回灌源；
  * reload reason 用 {@code "modern_config_loaded"} 区分旧栈的 {@code "config_loaded"}。
- * 保留 {@code isInitialized()} 判断——preInit 阶段 {@link FontService} 可能尚未初始化
- * （{@code CommonProxy.preInit:34} 才 initialize），此时不应触发 reload（应等
- * initialize 用新值建运行时）。</p>
+ * 保留"运行时是否已建好"判断——preInit 阶段 {@link FontService} 可能尚未初始化
+ * （{@code ClientProxy.preInit} 才 initialize，#71 起渲染 bootstrap 只在客户端做），
+ * 此时不应触发 reload（应等 initialize 用新值建运行时）。该判断连同侧别判据一起
+ * 收进 {@link FontService#requestReloadIfRenderRuntimeReady(String)}，本类不再直接触碰单例。</p>
  *
  * <h3>异常容错</h3>
  * <p>{@link ConfigManager#bootstrap} 失败（YAML 解析错、IO 错等）抛 {@link ConfigException}。
@@ -53,7 +54,8 @@ import club.heiqi.uilib.font.event.FontReloadRequest;
  * <h3>守 I1</h3>
  * <p>{@link ConfigValueBridge#applyFromAuthority} 写静态字段是配置数据模型层
  * （非 {@code SceneNode} 属性槽，非 UI 状态）。{@link FontService#reload}（仅在
- * {@code affectsFontRuntime && isInitialized} 时触发）→ {@code invalidateAll}
+ * {@code affectsFontRuntime} 且运行时已就绪时触发，判据见
+ * {@link FontService#requestReloadIfRenderRuntimeReady(String)}）→ {@code invalidateAll}
  * 失效注册表，非命令式改节点。I1 守。</p>
  *
  * <h3>与 {@link ModernConfigEntry#createScreen} 的关系</h3>
@@ -77,8 +79,9 @@ public final class ModernConfigBootstrap {
      * 启动加载首次回灌：{@link ConfigManager#bootstrap} 新栈 ConfigManager
      * → {@link ConfigValueBridge#applyFromAuthority} 回灌静态字段
      * → {@code applyLoadedFontConfig} 等价补刀（{@link FontConfig#affectsFontRuntime()}
-     * + {@link FontService#isInitialized()} + {@link FontService#reload} +
-     * {@link FontConfig#onConfigReload()}）。
+     * + {@link FontService#requestReloadIfRenderRuntimeReady(String)} +
+     * {@link FontConfig#onConfigReload()}）。侧别判据先于单例，服务端不会为这次判断
+     * 创建 {@link FontService}。
      *
      * <p>语义等价迁移自旧栈 {@code Config.applyLoadedFontConfig}（去 Forge cfg 依赖，
      * 换 Bridge 回灌源）。异常容错：bootstrap 失败（YAML 解析错）log + return，
@@ -108,15 +111,13 @@ public final class ModernConfigBootstrap {
                 Integer.valueOf(FontConfig.fontSort.length),
                 Boolean.valueOf(FontConfig.fontSortConfigured));
         // 2. 补刀（语义等价迁移自旧栈 Config.applyLoadedFontConfig）
+        //    判据顺序是刻意的：先问静态侧别，再谈单例。旧写法直接 getInstance().isInitialized()
+        //    会让专用服务端为一句恒 false 的判断付出单例类初始化——实测约 150 MiB 只服务渲染的
+        //    按码点直索引表（#71 同族审计 C1）。
         boolean fontRuntimeChanged = FontConfig.affectsFontRuntime();
-        boolean isInitialized = FontService.getInstance().isInitialized();
-        MyMod.LOG.debug("affectsFontRuntime={}, FontService.isInitialized={}",
-                Boolean.valueOf(fontRuntimeChanged), Boolean.valueOf(isInitialized));
-        if (fontRuntimeChanged && isInitialized) {
-            MyMod.LOG.info("启动加载触发字体 reload: reason={}", RELOAD_REASON);
-            FontService.getInstance().reload(new FontReloadRequest(RELOAD_REASON));
-        } else if (fontRuntimeChanged) {
-            MyMod.LOG.debug("FontService 未初始化，跳过 reload（由后续 initialize 直接用新值建运行时）");
+        MyMod.LOG.debug("affectsFontRuntime={}", Boolean.valueOf(fontRuntimeChanged));
+        if (fontRuntimeChanged) {
+            FontService.requestReloadIfRenderRuntimeReady(RELOAD_REASON);
         }
         FontConfig.onConfigReload();
         MyMod.LOG.debug("启动加载首次回灌完成");

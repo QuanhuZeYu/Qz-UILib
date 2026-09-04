@@ -1,6 +1,8 @@
 package club.heiqi.uilib.net.core;
 
 import club.heiqi.uilib.net.transport.NetSide;
+import club.heiqi.uilib.util.LaunchSide;
+import cpw.mods.fml.relauncher.Side;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -8,6 +10,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -422,5 +425,76 @@ public class MainThreadDispatcherTest {
         assertEquals(3, runs.get());
         assertFalse(d.isClientDrainOwned());
         assertEquals(0, d.clientQueueSize());
+    }
+
+    /**
+     * 专用服务端拒绝 CLIENT 入队（#71 同族审计 B5）。
+     *
+     * <p>drainClient 的唯一驱动是 ClientTickEvent，服务端永远不会发。照旧入队的后果是
+     * "承诺执行但永不执行"+ 无人消费的队列无界增长。这里锁三件事：任务没进队列、
+     * 任务没被执行、SERVER 侧派发不受牵连。</p>
+     */
+    @Test
+    public void dedicatedServer_rejectsClientEnqueue_andKeepsServerSideWorking() {
+        MainThreadDispatcher d = MainThreadDispatcher.getInstance();
+        try {
+            MainThreadDispatcher.overrideLaunchSideForTests(LaunchSide.forSide(Side.SERVER));
+            AtomicInteger clientRan = new AtomicInteger();
+            AtomicInteger serverRan = new AtomicInteger();
+
+            d.enqueue(NetSide.CLIENT, clientRan::incrementAndGet);
+            d.enqueue(NetSide.CLIENT, clientRan::incrementAndGet);
+
+            assertEquals("服务端上 CLIENT 队列没有排空通道，必须拒绝入队而不是留着它增长",
+                    0, d.clientQueueSize());
+            assertEquals(0, clientRan.get());
+            d.drainClient();
+            assertEquals("被拒绝的任务不得凭空冒出来执行", 0, clientRan.get());
+
+            d.enqueue(NetSide.SERVER, serverRan::incrementAndGet);
+            d.drainServer();
+            assertEquals("同侧的 SERVER 派发照常", 1, serverRan.get());
+        } finally {
+            MainThreadDispatcher.overrideLaunchSideForTests(null);
+        }
+    }
+
+    /**
+     * 判据只针对明确的 SERVER：客户端与侧别未知环境不得被顺手关掉功能（fail-open 方向）。
+     */
+    @Test
+    public void nonServerLaunchSides_stillAcceptClientEnqueue() {
+        MainThreadDispatcher d = MainThreadDispatcher.getInstance();
+        try {
+            Side[] sides = {Side.CLIENT, null};
+            for (int i = 0; i < sides.length; i++) {
+                AtomicInteger ran = new AtomicInteger();
+                MainThreadDispatcher.overrideLaunchSideForTests(LaunchSide.forSide(sides[i]));
+                d.enqueue(NetSide.CLIENT, ran::incrementAndGet);
+                assertEquals("侧别 " + sides[i] + " 下 CLIENT 任务必须正常入队", 1, d.clientQueueSize());
+                d.drainClient();
+                assertEquals("侧别 " + sides[i] + " 下 CLIENT 任务必须被执行", 1, ran.get());
+            }
+        } finally {
+            MainThreadDispatcher.overrideLaunchSideForTests(null);
+        }
+    }
+
+    /**
+     * asExecutor 与 enqueue 共用同一判据：不能留一条绕行入口。
+     */
+    @Test
+    public void dedicatedServer_clientExecutorDoesNotBypassGate() {
+        MainThreadDispatcher d = MainThreadDispatcher.getInstance();
+        try {
+            MainThreadDispatcher.overrideLaunchSideForTests(LaunchSide.forSide(Side.SERVER));
+            AtomicInteger ran = new AtomicInteger();
+            Executor executor = d.asExecutor(NetSide.CLIENT);
+            executor.execute(ran::incrementAndGet);
+            assertEquals(0, d.clientQueueSize());
+            assertEquals(0, ran.get());
+        } finally {
+            MainThreadDispatcher.overrideLaunchSideForTests(null);
+        }
     }
 }
