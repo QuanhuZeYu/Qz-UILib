@@ -55,7 +55,16 @@ final class FontResourceSnapshot {
         List<AssetFontResource> assetFonts = captureAssetFonts(request, maxAssetFontFiles,
                 maxAssetFontFileBytes, maxAssetFontTotalBytes);
         assertNotInterrupted();
-        Font[] installedFonts = GraphicsEnvironment.getLocalGraphicsEnvironment().getAllFonts();
+        Font[] installedFonts;
+        try {
+            installedFonts = GraphicsEnvironment.getLocalGraphicsEnvironment().getAllFonts();
+        } catch (RuntimeException | Error failure) {
+            // 系统没有可用字体时（issue #71：Alpine 等精简镜像缺 fontconfig 或字体包），AWT 在构造
+            // 字体管理器的这一步就抛原生异常。这里只补一句可定位的上下文并原样上抛：是否降级由调用方
+            // （FontService.ensureLayoutRuntimeReady）按契约决定，快照层不做策略。
+            throw new IllegalStateException("无法枚举系统字体：AWT 字体子系统初始化失败（系统未安装字体，"
+                    + "或缺少 fontconfig）", failure);
+        }
         assertNotInterrupted();
         if (installedFonts != null) {
             Arrays.sort(installedFonts, new Comparator<Font>() {

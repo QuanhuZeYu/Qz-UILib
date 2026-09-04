@@ -1,7 +1,6 @@
 package club.heiqi.uilib;
 
 import club.heiqi.uilib.config.modern.ModernConfigBootstrap;
-import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.transport.ITransport;
@@ -21,26 +20,28 @@ import java.io.File;
 public class CommonProxy {
 
     /**
-     * 预初始化阶段先建立配置与字体系统骨架。
+     * 预初始化阶段建立配置与网络骨架。
+     *
+     * <p>字体渲染骨架不在这里引导：它需要渲染上下文，只由 {@link ClientProxy#preInit} 触发
+     * （issue #71：专用服务端可能没有字体甚至没有 AWT 字体子系统）。文本测量类调用方走
+     * {@code FontService.ensureLayoutRuntimeReady()}，与启动侧无关。</p>
      *
      * @param event Forge 预初始化事件
      */
     public void preInit(FMLPreInitializationEvent event) {
-        // 阶段 C C3：启动加载首次回灌，从新栈 YAML 读值覆盖静态字段（必须在 FontService.initialize
-        // 之前，让字体系统直接用新栈值初始化；必须在 NetTransportFactory.create 之前，让 netTransport 用新栈值）
+        // 阶段 C C3：启动加载首次回灌，从新栈 YAML 读值覆盖静态字段（必须在 ClientProxy 的
+        // FontService.initialize 之前，让字体系统直接用新栈值初始化；必须在 NetTransportFactory.create
+        // 之前，让 netTransport 用新栈值）
         File modernConfigFile = new File(event.getSuggestedConfigurationFile().getParentFile(), "qzuilib-modern.yaml");
-        MyMod.LOG.info("preInit 时序 [1/3]: ModernConfigBootstrap.bootstrapAndApply 开始");
+        MyMod.LOG.info("preInit 时序 [1/2]: ModernConfigBootstrap.bootstrapAndApply 开始");
         ModernConfigBootstrap.bootstrapAndApply(modernConfigFile);
-        MyMod.LOG.info("preInit 时序 [2/3]: FontService.initialize 开始");
-        FontService.getInstance().initialize();
-        MyMod.LOG.info("preInit 时序 [3/3]: NetTransportFactory.create 开始");
+        MyMod.LOG.info("preInit 时序 [2/2]: NetTransportFactory.create 开始");
         ITransport transport = NetTransportFactory.create(Config.netTransport);
         NetService.getInstance().bootstrap(transport);
         NetRuntimeSelfChecks.register();
         FMLCommonHandler.instance().bus().register(ForgeMainThreadDispatcherBridge.getInstance());
 
         MyMod.LOG.info("Qz-UILib {} 初始化完成", Tags.VERSION);
-        MyMod.LOG.info("字体系统已启用：{}", FontService.getInstance().isInitialized());
         MyMod.LOG.info("网络传输适配器：{}", transport.getName());
         MyMod.LOG.info("I am Qz-UILib at version " + Tags.VERSION);
     }

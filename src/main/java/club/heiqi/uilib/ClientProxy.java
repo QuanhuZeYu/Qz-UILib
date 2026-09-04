@@ -34,6 +34,11 @@ public class ClientProxy extends CommonProxy {
     @Override
     public void preInit(FMLPreInitializationEvent event) {
         super.preInit(event);
+        // 字体渲染骨架只在客户端引导，且必须晚于 ModernConfigBootstrap（读新栈配置值）、
+        // 早于渲染/输入监听注册。判定权威在 FontService 内部，这里不做侧别判断。
+        MyMod.LOG.info("preInit 时序 [client]: FontService.initialize 开始");
+        FontService.getInstance().initialize();
+        MyMod.LOG.info("字体系统已启用：{}", FontService.getInstance().isInitialized());
         UiInputService.getInstance().initialize();
         NetStoreUiBridge.getInstance().initialize();
         DevToolsClientBootstrap.registerClientDevTools();

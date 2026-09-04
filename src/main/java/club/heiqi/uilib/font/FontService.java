@@ -37,6 +37,7 @@ public class FontService {
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean layoutRuntimeReady = new AtomicBoolean(false);
+    private final AtomicBoolean renderBootstrapSkippedLogged = new AtomicBoolean(false);
     /**
      * 渲染主线程引用。
      *
@@ -67,6 +68,7 @@ public class FontService {
     private final FontReloadSignal reloadSignal;
     private final FontGenerationCandidateFactory generationCandidateFactory;
     private final FontGenerationCandidateScheduler generationCandidateScheduler;
+    private final FontRuntimeEnvironment runtimeEnvironment;
     private final AtomicReference<ReloadState> reloadState = new AtomicReference<ReloadState>(ReloadState.RUNNING);
     private static final AtomicBoolean NON_RENDER_THREAD_TICK_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean NON_RENDER_THREAD_SHUTDOWN_GL_LOGGED = new AtomicBoolean(false);
@@ -74,6 +76,8 @@ public class FontService {
 
     private long lastDrawStageUploadAt = 0L;
     private volatile ActiveFontGeneration activeGeneration;
+    /** 环境级字体不可用的结论；非空表示不再重试，直接给出同一可读失败。 */
+    private volatile String layoutRuntimeUnavailableReason;
     private CandidateFlight candidateFlight;
     private ActiveFontGeneration.GenerationLease frameGenerationLease;
     private boolean workerRecoveryPending;
@@ -114,6 +118,14 @@ public class FontService {
     FontService(FontReloadSignal reloadSignal, FontGenerationCandidateFactory generationCandidateFactory,
             GlyphGenerationDispatcher glyphGenerationDispatcher,
             FontGenerationCandidateScheduler generationCandidateScheduler) {
+        this(reloadSignal, generationCandidateFactory, glyphGenerationDispatcher,
+                generationCandidateScheduler, FontRuntimeEnvironment.LAUNCH);
+    }
+
+    FontService(FontReloadSignal reloadSignal, FontGenerationCandidateFactory generationCandidateFactory,
+            GlyphGenerationDispatcher glyphGenerationDispatcher,
+            FontGenerationCandidateScheduler generationCandidateScheduler,
+            FontRuntimeEnvironment runtimeEnvironment) {
         if (reloadSignal == null) {
             throw new IllegalArgumentException("reloadSignal 不得为 null");
         }
@@ -126,9 +138,13 @@ public class FontService {
         if (generationCandidateScheduler == null) {
             throw new IllegalArgumentException("generationCandidateScheduler 不得为 null");
         }
+        if (runtimeEnvironment == null) {
+            throw new IllegalArgumentException("runtimeEnvironment 不得为 null");
+        }
         this.reloadSignal = reloadSignal;
         this.generationCandidateFactory = generationCandidateFactory;
         this.generationCandidateScheduler = generationCandidateScheduler;
+        this.runtimeEnvironment = runtimeEnvironment;
         this.glyphPageManager = new GlyphPageManager(runtimeOwnerToken);
         this.fontMatcher = new FontMatcher(fontCatalog, derivedFontCache, generationLock.readLock(),
                 runtimeOwnerToken);
@@ -153,35 +169,70 @@ public class FontService {
      * 确保布局期文本测量所需的轻量运行时已就绪。
      *
      * <p>该入口只准备 CPU catalog、generation envelope 与布局缓存，不创建 atlas texture、worker、
-     * 批渲染器或着色器。</p>
+     * 批渲染器或着色器。因此它不受启动侧限制：专用服务端也可以用文本测量公共 API。</p>
+     *
+     * <p>环境里没有可用系统字体时（issue #71：Alpine 等精简镜像缺 fontconfig 或字体包），AWT 会在
+     * 构造字体管理器阶段抛原生异常。那属于环境不可用而不是产品缺陷，在这里转成一次性的可读
+     * {@link IllegalStateException} 并缓存结论：后续调用不再重复枚举字体，也不再让 AWT 异常穿透到
+     * 业务调用栈。字体文件损坏、数量超限等真实错误仍按原样抛出，不降级。环境结论在同一进程内保留
+     * （AWT 字体管理器初始化失败不可恢复，重启进程才行）。</p>
      */
     public void ensureLayoutRuntimeReady() {
         if (layoutRuntimeReady.get()) {
             return;
+        }
+        String unavailableReason = layoutRuntimeUnavailableReason;
+        if (unavailableReason != null) {
+            throw new IllegalStateException(unavailableReason);
         }
 
         synchronized (this) {
             if (layoutRuntimeReady.get()) {
                 return;
             }
-            FontRuntimeAccess.run(runtimeOwnerToken, () -> {
-                if (activeGeneration == null) {
-                    FontGenerationCandidate candidate = prepareNextGenerationCandidate();
-                    ActiveFontGeneration generation = publishGenerationLocked(candidate);
-                    completeCatalogPublicationBestEffort(candidate);
-                    MyMod.LOG.info("字体布局测量运行时初始化完成：version={} settings={}",
-                            Integer.valueOf(generation.getRuntimeVersion()), FontConfig.buildSummary());
+            unavailableReason = layoutRuntimeUnavailableReason;
+            if (unavailableReason != null) {
+                throw new IllegalStateException(unavailableReason);
+            }
+            try {
+                FontRuntimeAccess.run(runtimeOwnerToken, () -> {
+                    if (activeGeneration == null) {
+                        FontGenerationCandidate candidate = prepareNextGenerationCandidate();
+                        ActiveFontGeneration generation = publishGenerationLocked(candidate);
+                        completeCatalogPublicationBestEffort(candidate);
+                        MyMod.LOG.info("字体布局测量运行时初始化完成：version={} settings={}",
+                                Integer.valueOf(generation.getRuntimeVersion()), FontConfig.buildSummary());
+                    }
+                    layoutRuntimeReady.set(true);
+                });
+            } catch (RuntimeException | Error failure) {
+                if (!FontRuntimeEnvironment.isFontSubsystemUnavailable(failure)) {
+                    throw failure;
                 }
-                layoutRuntimeReady.set(true);
-            });
+                layoutRuntimeUnavailableReason = FontRuntimeEnvironment.describeFontSubsystemUnavailable(
+                        runtimeEnvironment, failure);
+                MyMod.LOG.error("字体测量运行时不可用：{}", layoutRuntimeUnavailableReason, failure);
+                throw new IllegalStateException(layoutRuntimeUnavailableReason, failure);
+            }
         }
     }
 
     /**
-     * 初始化字体系统基础骨架。
+     * 初始化字体系统基础骨架：generation、字符页管理、字形 worker 与上传回调。
+     *
+     * <p>该方法建立的是<b>渲染</b>骨架，只有客户端存在渲染上下文，因此专用服务端（issue #71）
+     * 直接跳过且不报错：服务端可以没有字体、没有窗口，引导它只会白起 worker 线程并注册一个
+     * 永远不会有 GL 上下文的上传回调。判定权威见 {@link FontRuntimeEnvironment}，调用方
+     * （含 {@code CommonProxy} 与 {@code DefaultFontRendererAdapter} 的懒初始化）不必各自判断侧别。</p>
+     *
+     * <p>需要文本测量的调用方走 {@link #ensureLayoutRuntimeReady()}，那条路径与启动侧无关。</p>
      */
     public void initialize() {
         if (initialized.get()) {
+            return;
+        }
+        if (!runtimeEnvironment.allowsRenderBootstrap()) {
+            logRenderBootstrapSkippedOnce();
             return;
         }
 
@@ -210,6 +261,15 @@ public class FontService {
         }
 
         MyMod.LOG.info("字体系统骨架初始化完成：{}", FontConfig.buildSummary());
+    }
+
+    private void logRenderBootstrapSkippedOnce() {
+        if (!renderBootstrapSkippedLogged.compareAndSet(false, true)) {
+            return;
+        }
+        MyMod.LOG.info("启动侧 {}：跳过字体渲染骨架引导（字形 worker 与字符页上传只在客户端需要）。"
+                + "文本测量仍可按需通过 ensureLayoutRuntimeReady 使用，但需要系统存在可用字体。",
+                runtimeEnvironment.describeLaunchSide());
     }
 
     /**
