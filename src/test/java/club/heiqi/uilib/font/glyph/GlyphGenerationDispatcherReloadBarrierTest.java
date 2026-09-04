@@ -36,6 +36,9 @@ import club.heiqi.uilib.font.util.FontMatcher;
  */
 public class GlyphGenerationDispatcherReloadBarrierTest {
 
+    /** reset 返回后的静默观察窗口：这段时间内不得再有 glyph 状态推进。 */
+    private static final long RESET_SETTLE_WINDOW_MILLIS = 250L;
+
     /**
      * 验证暂停后的生成请求会被重载屏障丢弃，不会污染字符状态。
      */
@@ -183,6 +186,22 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
         fixture.dispatcher.reset();
     }
 
+    /**
+     * 与并发 claim 竞争时，{@code dispatcher.reset()} 必须等到底层停手才返回。
+     *
+     * <p><b>本用例只锁 dispatcher 自己交付的性质</b>：reset 返回之后不得再有 glyph 状态推进。
+     * 字形生命周期（state / demands / requestId）不属于 dispatcher，属于
+     * {@code GlyphPageManager.reset()} 与 {@code setGeneration()}；"reset 后某码点必须变成不 active"
+     * 从来不是 {@code GlyphGenerationDispatcher#reset} 的契约——它的实现只有 pause +
+     * generationEpoch + cancelInFlight + shutdownNow/awaitTermination，全程不碰字符页。
+     * 把别人的性质挂在自己的终态上，等于拿调度当阈值：worker 赢得竞争时，一次完全合法跑完的
+     * claim 会停在 UPLOAD_QUEUED，用例就红（CI 实测约 1/5）；worker 输了就绿——而绿的那几次
+     * 并没有测到它声称测的东西。参见 {@link #completedClaimSettlesBeforeResetWithoutAnyRace()}。</p>
+     *
+     * <p>换代后迟到 token 必须失效这条，由
+     * {@code GlyphRuntimeVersionIsolationTest#oldGenerationTokenCannotMutateTransferredStorage} 与
+     * {@code #lazyLifecycleResetGatesStaleGeometryAndInvalidatesOldTokens} 锁，本文件不重复实现。</p>
+     */
     @Test
     public void resetWaitsForConcurrentClaimAdmission() throws Exception {
         BlockingClaimPageManager pageManager = new BlockingClaimPageManager();
@@ -229,18 +248,83 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
 
         Assert.assertFalse("submit 线程应已结束", submitThread.isAlive());
         Assert.assertFalse("reset 线程应已结束", resetThread.isAlive());
-        Assert.assertNull(submitFailure.get());
-        Assert.assertNull(resetFailure.get());
+        Assert.assertNull("submit 不得抛", submitFailure.get());
+        Assert.assertNull("reset 不得抛", resetFailure.get());
         Assert.assertEquals("in-flight 应清零：count=" + dispatcher.getInFlightTaskCount()
                 + " admitted=" + dispatcher.getActiveDemandCount()
                 + " stateF=" + pageManager.getState('F', FontType.NORMAL),
                 0, dispatcher.getInFlightTaskCount());
-        Assert.assertFalse("'F' 终态不应仍为 active：stateF=" + pageManager.getState('F', FontType.NORMAL)
-                + " inFlight=" + dispatcher.getInFlightTaskCount()
-                + " admitted=" + dispatcher.getActiveDemandCount()
-                + "（reset 声称完成却留着 active 需求 = reset 没等到 admission 线性化，"
-                + "或 release 之后同一码点又被重派）",
-                isActive(pageManager.getState('F', FontType.NORMAL)));
+        // 本方法自己的契约：返回即停手。终值本身可以是 UPLOAD_QUEUED（那是合法跑完的字形，
+        // 见 completedClaimSettlesBeforeResetWithoutAnyRace）；这条观察留作回归兜网——
+        // 今天它由 awaitTermination 构造保证，但"把上传移出池线程"一类演进会把它变成真可判的性质。
+        GlyphState settledState = pageManager.getState('F', FontType.NORMAL);
+        String drift = observeStateDrift(pageManager, 'F', RESET_SETTLE_WINDOW_MILLIS);
+        Assert.assertNull("dispatcher.reset() 返回后仍在推进 glyph 状态（它没有真正等到底层停手）："
+                + "基线=" + settledState + "，漂移=" + drift, drift);
+    }
+
+    /**
+     * 判据归位的反证基线：没有任何并发竞争时，一次跑完的 claim 合法停在 UPLOAD_QUEUED。
+     *
+     * <p>这条路径产品完全正确，而旧的"F 终态不得为 active"断言在这里必红——因为它把
+     * {@code GlyphPageManager} 的生命周期性质挂在了 {@code dispatcher.reset()} 上。
+     * 本用例确定性地锁住两件事：合法终态是 UPLOAD_QUEUED；reset 返回后不再有任何推进。</p>
+     */
+    @Test
+    public void completedClaimSettlesBeforeResetWithoutAnyRace() throws Exception {
+        GlyphPageManager pageManager = new GlyphPageManager();
+        FontCatalog catalog = new FontCatalog();
+        DerivedFontCache cache = new DerivedFontCache(catalog);
+        GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher();
+        pageManager.setRuntimeVersion(1);
+        dispatcher.setRuntimeVersion(1);
+        dispatcher.initialize(new StableMatcher(catalog, cache), pageManager, cache, pageManager::queueUpload);
+        try {
+            dispatcher.submit(task('G'));
+            awaitState(pageManager, 'G', GlyphState.UPLOAD_QUEUED);
+            awaitInFlightCount(dispatcher, 0);
+
+            dispatcher.reset();
+
+            Assert.assertEquals("没有竞争时 claim 的合法终态就是 UPLOAD_QUEUED（旧判据在这里会红）",
+                    GlyphState.UPLOAD_QUEUED, pageManager.getState('G', FontType.NORMAL));
+            String drift = observeStateDrift(pageManager, 'G', RESET_SETTLE_WINDOW_MILLIS);
+            Assert.assertNull("reset 返回后不得再有状态推进，实际漂移：" + drift, drift);
+        } finally {
+            pageManager.discardPendingUploads();
+        }
+    }
+
+    /**
+     * 量具自检：漂移观察必须看得见漂移。
+     *
+     * <p>没有这条，上面两处 {@code assertNull(drift)} 就是恒真仪表——它绿只说明没人写，
+     * 不说明写了我看得见。</p>
+     */
+    @Test
+    public void stateDriftObserverDetectsAWriteAfterBaseline() throws Exception {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+        final GlyphRequestToken token = manager.claimRequest(1, 'R', FontType.NORMAL);
+        Assert.assertNotNull(token);
+        Assert.assertNull("无人写入时观察器不得报漂移", observeStateDrift(manager, 'R', 30L));
+
+        Thread mutator = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Thread.sleep(20L);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                manager.markRasterizing(token);
+            }
+        }, "glyph-drift-control-mutator");
+        mutator.start();
+        String drift = observeStateDrift(manager, 'R', 2000L);
+        mutator.join(5000L);
+        Assert.assertNotNull("基线之后有人推进了状态，观察器必须报漂移（否则 reset 用例的断言恒真）", drift);
     }
 
     @Test
@@ -635,9 +719,23 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
                 + dispatcher.getInFlightTaskCount());
     }
 
-    private static boolean isActive(GlyphState state) {
-        return state == GlyphState.QUEUED || state == GlyphState.RASTERIZING
-                || state == GlyphState.UPLOAD_QUEUED || state == GlyphState.UPLOADING;
+    /**
+     * 在 windowMillis 内观察该码点的状态是否从基线推进；返回漂移描述，未漂移返回 null。
+     *
+     * <p>可失败性由 {@link #stateDriftObserverDetectsAWriteAfterBaseline()} 自检。</p>
+     */
+    private static String observeStateDrift(GlyphPageManager manager, int codepoint, long windowMillis)
+            throws Exception {
+        GlyphState baseline = manager.getState(codepoint, FontType.NORMAL);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(windowMillis);
+        do {
+            GlyphState current = manager.getState(codepoint, FontType.NORMAL);
+            if (current != baseline) {
+                return baseline + " -> " + current;
+            }
+            Thread.sleep(5L);
+        } while (System.nanoTime() < deadline);
+        return null;
     }
 
     private interface MatcherFactory {
