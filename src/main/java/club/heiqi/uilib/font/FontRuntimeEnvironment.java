@@ -1,7 +1,8 @@
 package club.heiqi.uilib.font;
 
-import cpw.mods.fml.relauncher.FMLLaunchHandler;
 import cpw.mods.fml.relauncher.Side;
+
+import club.heiqi.uilib.util.LaunchSide;
 
 /**
  * 字体子系统的启动环境判定：唯一权威。
@@ -16,8 +17,8 @@ import cpw.mods.fml.relauncher.Side;
  *       而不是把 AWT 的原生异常抛进 FML 生命周期或业务调用栈。</li>
  * </ul>
  *
- * <p>启动侧只用于第一条契约。侧别读不出来时（非 FML 宿主：单元测试、离线工具）一律按
- * 允许处理：判定不到不等于判定为服务端。</p>
+ * <p>启动侧只用于第一条契约，且判定本身不在本类实现——委托 {@link LaunchSide}
+ * （启动侧唯一权威，含 fail-open 理由）。本类只保留字体侧的策略与文案。</p>
  */
 final class FontRuntimeEnvironment {
 
@@ -36,8 +37,8 @@ final class FontRuntimeEnvironment {
     /** AWT 在字体目录为空 / fontconfig head 为 null 时给出的固定原文。 */
     private static final String FONTCONFIG_HEAD_NULL = "Fontconfig head is null";
 
-    /** 生产实例：启动侧取 FML 的 launch side。 */
-    static final FontRuntimeEnvironment LAUNCH = new FontRuntimeEnvironment(currentLaunchSide());
+    /** 生产实例：启动侧取 {@link LaunchSide#LAUNCH}。 */
+    static final FontRuntimeEnvironment LAUNCH = new FontRuntimeEnvironment(LaunchSide.LAUNCH);
 
     /**
      * 构造指定启动侧的判定实例，供单测覆盖 CLIENT / SERVER / 未知三种取值。
@@ -46,12 +47,12 @@ final class FontRuntimeEnvironment {
      * @return 判定实例
      */
     static FontRuntimeEnvironment forLaunchSide(Side launchSide) {
-        return new FontRuntimeEnvironment(launchSide);
+        return new FontRuntimeEnvironment(LaunchSide.forSide(launchSide));
     }
 
-    private final Side launchSide;
+    private final LaunchSide launchSide;
 
-    private FontRuntimeEnvironment(Side launchSide) {
+    private FontRuntimeEnvironment(LaunchSide launchSide) {
         this.launchSide = launchSide;
     }
 
@@ -61,7 +62,7 @@ final class FontRuntimeEnvironment {
      * @return 专用服务端返回 false；客户端与判定不到侧别的环境返回 true
      */
     boolean allowsRenderBootstrap() {
-        return launchSide != Side.SERVER;
+        return !launchSide.isDedicatedServer();
     }
 
     /**
@@ -70,7 +71,7 @@ final class FontRuntimeEnvironment {
      * @return 启动侧描述
      */
     String describeLaunchSide() {
-        return launchSide == null ? "未知（非 FML 启动环境）" : launchSide.name();
+        return launchSide.describe();
     }
 
     /**
@@ -142,12 +143,4 @@ final class FontRuntimeEnvironment {
         return root.getClass().getName() + ": " + root.getMessage();
     }
 
-    private static Side currentLaunchSide() {
-        try {
-            return FMLLaunchHandler.side();
-        } catch (Throwable ignored) {
-            // 非 FML 宿主（单元测试、离线工具）没有 launch side，不猜测。
-            return null;
-        }
-    }
 }
