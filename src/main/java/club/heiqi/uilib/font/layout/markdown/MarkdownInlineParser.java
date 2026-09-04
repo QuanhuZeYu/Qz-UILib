@@ -22,7 +22,14 @@ import club.heiqi.uilib.font.layout.TextStyle;
  *   <li>{@code *italic*} / {@code _italic_}：斜体（词边界定界，防 snake_case/乘法误伤）；</li>
  *   <li>{@code ***bold+italic***}：粗斜组合；</li>
  *   <li>{@code ~~strike~~}：删除线；</li>
- *   <li>{@code code span}：内容内不解析任何标记（第一版仅字面输出）；</li>
+ *   <li>{@code code span}：反引号对识别为行内 code 段——打既有 {@code TextStyle.codeSpan} 位、
+ *       注入 {@code codeBackgroundColor} 衬底色、按 chat3 口径写段级 {@code fontSizePx}；
+ *       code 内容一律字面：不解析任何行内标记、不做 URL 链接化（下游 linkify 见
+ *       {@code ChatUrlLinkifier} 恒跳过 codeSpan 段）。<b>取代关系</b>：M1 复活时的旧裁定
+ *       「第一版 code 仅字面输出（等宽字体缺失，不引入假样式）」自 2026-09-04 起被
+ *       chat3 出货行为取代（M4-fix F1；对拍门禁 P03 钉死，见
+ *       {@code font/render/software/MarkdownChat3ParityTest}）；本层剥掉的反引号永不回补，
+ *       故 code 位必须在吃定界符的当场写进段样式。</li>
  *   <li>{@code $latex$} / {@code $$latex$$}：行内公式（{@code TextSegment.forLatex}，
  *       {@code $} 后邻居为数字时不触发——防 {@code $5.99} 误判）；</li>
  *   <li>{@code [text](url)}：链接（= {@code <a>} 语义：setLink + 自动下划线），
@@ -43,6 +50,9 @@ public final class MarkdownInlineParser {
     /** code span 定界符 U+0060 GRAVE ACCENT（反引号，0x60 书写避免 Unicode 转义陷阱）。 */
     private static final char CODE_TICK = 0x60;
 
+    /** 公共入口（无样式表形参）时的 code 段口径来源——恒取默认登记表，与包内形参路径同值。 */
+    private static final MarkdownStyleTable CODE_TABLE_FALLBACK = MarkdownStyleTable.defaults();
+
     private MarkdownInlineParser() {
     }
 
@@ -61,25 +71,53 @@ public final class MarkdownInlineParser {
     }
 
     /**
+     * 解析单段 markdown 文本（包内：带样式/排版表，code 段口径取表内登记值）。
+     *
+     * @param markdown  markdown 文本（可为 null/空，返回空列表）
+     * @param baseStyle 基础样式（不可为 null）
+     * @param styles    样式表（可为 null，取 {@link MarkdownStyleTable#defaults()}）
+     * @return 富文本片段序列
+     */
+    static List<TextSegment> parse(String markdown, TextStyle baseStyle, MarkdownStyleTable styles) {
+        if (markdown == null || markdown.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return parse(Collections.singletonList(new MarkdownSpan(markdown, baseStyle)), styles);
+    }
+
+    /**
      * 解析样式锚点 span 流（聊天组件桥的输入口径）。
      *
      * @param spans 带基础样式的文本 span 流（可为 null/空，返回空列表）
      * @return 富文本片段序列
      */
     public static List<TextSegment> parse(List<MarkdownSpan> spans) {
+        return parse(spans, null);
+    }
+
+    /**
+     * 解析样式锚点 span 流（包内：带样式表）。
+     *
+     * @param spans  带基础样式的文本 span 流（可为 null/空，返回空列表）
+     * @param styles code 段口径的登记表（可为 null，取 {@link MarkdownStyleTable#defaults()}）
+     * @return 富文本片段序列
+     */
+    static List<TextSegment> parse(List<MarkdownSpan> spans, MarkdownStyleTable styles) {
         if (spans == null || spans.isEmpty()) {
             return Collections.emptyList();
         }
+        MarkdownStyleTable table = styles == null ? CODE_TABLE_FALLBACK : styles;
         List<TextSegment> out = new ArrayList<TextSegment>();
         for (MarkdownSpan span : spans) {
-            parseInline(span.getText(), span.getBaseStyle(), 0, out);
+            parseInline(span.getText(), span.getBaseStyle(), 0, out, table);
         }
         return out;
     }
 
     // ==================== 扫描核心 ====================
 
-    private static void parseInline(String text, TextStyle base, int depth, List<TextSegment> out) {
+    private static void parseInline(String text, TextStyle base, int depth, List<TextSegment> out,
+            MarkdownStyleTable styles) {
         if (depth > MAX_DEPTH) {
             out.add(new TextSegment(text, base.copy()));
             return;
@@ -106,7 +144,7 @@ public final class MarkdownInlineParser {
                     TextStyle inner = base.copy();
                     inner.setFontType(FontType.BOLD);
                     inner.setItalic(true);
-                    parseInline(text.substring(index + 3, close), inner, depth + 1, out);
+                    parseInline(text.substring(index + 3, close), inner, depth + 1, out, styles);
                     index = close + 3;
                     continue;
                 }
@@ -118,7 +156,7 @@ public final class MarkdownInlineParser {
                         flush(buffer, base, out);
                         TextStyle inner = base.copy();
                         inner.setFontType(FontType.BOLD);
-                        parseInline(text.substring(index + 2, close), inner, depth + 1, out);
+                        parseInline(text.substring(index + 2, close), inner, depth + 1, out, styles);
                         index = close + 2;
                         continue;
                     }
@@ -134,7 +172,7 @@ public final class MarkdownInlineParser {
                         flush(buffer, base, out);
                         TextStyle inner = base.copy();
                         inner.setFontType(FontType.BOLD);
-                        parseInline(text.substring(index + 2, close), inner, depth + 1, out);
+                        parseInline(text.substring(index + 2, close), inner, depth + 1, out, styles);
                         index = close + 2;
                         continue;
                     }
@@ -150,7 +188,7 @@ public final class MarkdownInlineParser {
                         flush(buffer, base, out);
                         TextStyle inner = base.copy();
                         inner.setItalic(true);
-                        parseInline(text.substring(index + 1, close), inner, depth + 1, out);
+                        parseInline(text.substring(index + 1, close), inner, depth + 1, out, styles);
                         index = close + 1;
                         continue;
                     }
@@ -165,7 +203,7 @@ public final class MarkdownInlineParser {
                     flush(buffer, base, out);
                     TextStyle inner = base.copy();
                     inner.setStrikethrough(true);
-                    parseInline(text.substring(index + 2, close), inner, depth + 1, out);
+                    parseInline(text.substring(index + 2, close), inner, depth + 1, out, styles);
                     index = close + 2;
                     continue;
                 }
@@ -177,8 +215,12 @@ public final class MarkdownInlineParser {
                 int close = text.indexOf(CODE_TICK, index + 1);
                 if (close > index + 1) {
                     flush(buffer, base, out);
-                    // 第一版：code span 仅字面输出（等宽字体缺失，不引入假样式）
-                    out.add(new TextSegment(text.substring(index + 1, close), base.copy()));
+                    // F1（2026-09-04）：反引号对 = 行内 code 段。样式在吃定界符的当场写好
+                    // （旧裁定「第一版仅字面输出」已被 chat3 出货行为取代）：codeSpan 位 +
+                    // 衬底色 + chat3 口径段级字号，数值恒取自 MarkdownStyleTable（G4 度量同源）。
+                    // 内容字面：substring 原样进段，不递归 parseInline（行内标记不解析），
+                    // 并清 link——下游 ChatUrlLinkifier 见 codeSpan 位即跳过，URL 不链接化。
+                    out.add(new TextSegment(text.substring(index + 1, close), codeStyle(base, styles)));
                     index = close + 1;
                     continue;
                 }
@@ -203,7 +245,7 @@ public final class MarkdownInlineParser {
                 continue;
             }
             if (ch == '[') {
-                LinkMatch link = tryParseLink(text, index, base, depth);
+                LinkMatch link = tryParseLink(text, index, base, depth, styles);
                 if (link != null) {
                     flush(buffer, base, out);
                     out.addAll(link.segments);
@@ -235,7 +277,8 @@ public final class MarkdownInlineParser {
     /**
      * 尝试在 index 解析 {@code [text](url)}；失败返回 null（调用方按字面继续）。
      */
-    private static LinkMatch tryParseLink(String text, int index, TextStyle base, int depth) {
+    private static LinkMatch tryParseLink(String text, int index, TextStyle base, int depth,
+            MarkdownStyleTable styles) {
         int labelClose = findLinkLabelClose(text, index + 1);
         if (labelClose < 0) {
             return null;
@@ -257,7 +300,7 @@ public final class MarkdownInlineParser {
         linkBase.setLink(url);
         linkBase.setUnderline(true);
         List<TextSegment> inner = new ArrayList<TextSegment>();
-        parseInline(label, linkBase, depth + 1, inner);
+        parseInline(label, linkBase, depth + 1, inner, styles);
         return new LinkMatch(inner, urlClose + 1);
     }
 
@@ -454,6 +497,20 @@ public final class MarkdownInlineParser {
     }
 
     // ==================== 输出 ====================
+
+    /** 行内 code 段样式：基础样式拷贝 + chat3 口径的 codeSpan 位/衬底色/段级字号（F1）。 */
+    private static TextStyle codeStyle(TextStyle base, MarkdownStyleTable styles) {
+        TextStyle code = base.copy();
+        code.setCodeSpan(true);
+        code.setCodeBackgroundColor(styles.getCodeBackgroundColor());
+        int codePx = styles.getCodeFontSizePx();
+        if (codePx > 0) {
+            code.setFontSizePx(codePx);
+        }
+        // code 内不嵌套任何语义：link 位一并清掉（同 ChatCodeSpanSplitter:113-115 口径）
+        code.setLink(null);
+        return code;
+    }
 
     private static void flush(StringBuilder buffer, TextStyle base, List<TextSegment> out) {
         if (buffer.length() == 0) {

@@ -116,42 +116,54 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         List<TextSegment> out = new ArrayList<TextSegment>();
-        walk(blocks, baseStyle, table, out);
+        walk(blocks, baseStyle, table, out, 0);
         return out;
     }
 
     // ==================== 扁平化 ====================
 
-    private static void walk(List<MarkdownBlock> siblings, TextStyle style,
-                             MarkdownStyleTable table, List<TextSegment> out) {
+    /**
+     * 同层兄弟块扁平化。
+     *
+     * @param markerLevel 当前列表嵌套层数（F2：0 = 不在任何列表内）
+     */
+    private static void walk(List<MarkdownBlock> siblings, TextStyle style, MarkdownStyleTable table,
+                             List<TextSegment> out, int markerLevel) {
         for (int i = 0; i < siblings.size(); i++) {
+            MarkdownBlock next = siblings.get(i);
             if (i > 0) {
                 addNewline(style, out);
+                // F6（走 C1）：块边界若吃掉过源空行，换行段后紧跟一个「占位标记段」——
+                // 文本为空串、不带任何几何字段，公共接缝仍是 List<TextSegment>；
+                // L2 MarkdownPainter 认它加一空行（见 MarkdownLineLayout#splitLogicalLines）。
+                if (next.blanksBefore > 0) {
+                    out.add(new TextSegment("", style.copy()));
+                }
             }
-            emit(siblings.get(i), style, table, out);
+            emit(next, style, table, out, markerLevel);
         }
     }
 
-    private static void emit(MarkdownBlock block, TextStyle style,
-                             MarkdownStyleTable table, List<TextSegment> out) {
+    private static void emit(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
+                             List<TextSegment> out, int markerLevel) {
         switch (block.kind) {
             case PARAGRAPH:
-                emitInline(block.joinedLines(), style, out);
+                emitInline(block.joinedLines(), style, table, out);
                 break;
             case HEADING:
-                emitInline(block.text, headingStyle(style, block.level, table), out);
+                emitInline(block.text, headingStyle(style, block.level, table), table, out);
                 break;
             case CODE:
                 emitCode(block, style, out);
                 break;
             case QUOTE:
-                walk(block.children, quoteStyle(style, table), table, out);
+                walk(block.children, quoteStyle(style, table), table, out, markerLevel);
                 break;
             case LIST:
-                walk(block.children, style, table, out);
+                walk(block.children, style, table, out, markerLevel + 1);
                 break;
             case LIST_ITEM:
-                emitListItem(block, style, table, out);
+                emitListItem(block, style, table, out, markerLevel);
                 break;
             case THEMATIC_BREAK:
                 emitThematicBreak(table, style, out);
@@ -162,11 +174,12 @@ public final class MarkdownDocument {
     }
 
     /** 块正文交行内解析器（行内语义照抄既有裁定，本层只叠加块级样式位）。 */
-    private static void emitInline(String body, TextStyle style, List<TextSegment> out) {
+    private static void emitInline(String body, TextStyle style, MarkdownStyleTable table,
+                                 List<TextSegment> out) {
         if (body == null || body.isEmpty()) {
             return;
         }
-        out.addAll(MarkdownInlineParser.parse(body, style));
+        out.addAll(MarkdownInlineParser.parse(body, style, table));
     }
 
     /** 围栏代码：字面段，不经过行内解析（块内 {@code **}/{@code $}/{@code >} 一律字面）。 */
@@ -179,8 +192,8 @@ public final class MarkdownDocument {
     }
 
     /** 列表项：标记段 + 首个段落正文同行，其余子块换行起。 */
-    private static void emitListItem(MarkdownBlock block, TextStyle style,
-                                     MarkdownStyleTable table, List<TextSegment> out) {
+    private static void emitListItem(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
+                                     List<TextSegment> out, int markerLevel) {
         String marker;
         if (block.ordered) {
             marker = block.marker + " "; // 有序：保留源序号原文（"3." / "3)"），与 chat3 现行裁定一致
@@ -189,6 +202,18 @@ public final class MarkdownDocument {
             if (!marker.isEmpty()) {
                 marker = marker + " ";
             }
+        }
+        // F2：嵌套列表每级缩进写成标记段文本里的前导空格，每级 2 个空格——复刻 chat3
+        // 出货口径（ChatMessageList.java:952-956：level 由前导空格数 / 2 得出，每级 append "  "）。
+        // 缩进靠扁平段流表达，不把块模型 / 缩进 px 开进公共面（规划 §二之三 裁 B 不变）。
+        int level = Math.max(0, markerLevel - 1);
+        if (!marker.isEmpty() && level > 0) {
+            StringBuilder indented = new StringBuilder(marker.length() + 2 * level);
+            for (int l = 0; l < level; l++) {
+                indented.append("  ");
+            }
+            indented.append(marker);
+            marker = indented.toString();
         }
         if (!marker.isEmpty()) {
             out.add(new TextSegment(marker, style.copy()));
@@ -199,8 +224,11 @@ public final class MarkdownDocument {
             boolean sameLine = i == 0 && child.kind == MarkdownBlock.Kind.PARAGRAPH;
             if (!sameLine && !out.isEmpty()) {
                 addNewline(style, out);
+                if (child.blanksBefore > 0) {
+                    out.add(new TextSegment("", style.copy()));   // F6 占位标记段
+                }
             }
-            emit(child, style, table, out);
+            emit(child, style, table, out, markerLevel);
         }
     }
 
@@ -237,6 +265,12 @@ public final class MarkdownDocument {
         TextStyle style = base.copy();
         if (table.isQuoteItalic()) {
             style.setItalic(true);
+        }
+        // F3：引用正文色旋钮（MarkdownStyleTable.getQuoteTextColor），默认对齐 chat3 现行次级色
+        // FF9AA0A8（ChatMessageList.java:891-897）；0 = 不改色，继承调用方基础样式。
+        int quoteColor = table.getQuoteTextColor();
+        if (quoteColor != 0) {
+            style.setColor(quoteColor);
         }
         return style;
     }

@@ -10,10 +10,21 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
  * markdown L2 绘制层门面（规划《通用Markdown渲染器》§二 L2 / §五 D1）。
  *
  * <p><b>唯一接缝 = {@code List<TextSegment>}</b>（裁定 B，规划 §二之三）：输入是
- * {@code MarkdownDocument.toSegments(...)} 的扁平段流——块边界、缩进与围栏底色在扁平化时
- * 已抹掉，本层不反查块模型；标题/引用/列表的可见差异全部由段样式位（字号增量、粗斜、
- * 下划线、链接、列表符号字面文本）承载。块级几何若被证明必需，走独立「块模型进公共面」
+ * {@code MarkdownDocument.toSegments(...)} 的扁平段流，本层<b>不</b>反查块模型；标题/引用/
+ * 列表的可见差异全部由段样式位（字号增量、粗斜、下划线、链接、行内 code 位）与段文本
+ * （列表符号与其前导缩进空格）承载。块级几何若被证明需要 px 通道，走独立「块模型进公共面」
  * 裁定，不由本层私开后门。</p>
+ *
+ * <p><b>本层认得的两种段流编码</b>（M4-fix 落地，仍是零公共面变更——两者都只用既有的
+ * {@code text}/{@code style} 通道）：
+ * <ul>
+ *   <li><b>块边界占位段</b>（F6，规划 §二之四 C1）：源里被空行分开的两块，L1 在换行段之后
+ *       紧跟一个「文本为空串」的占位段；本层认它加一空行（与 chat3 对 {@code 甲\n\n乙}
+ *       产 3 显示行一致）。空行不产 SEGMENTS 命令，只占一份行高。</li>
+ *   <li><b>§ 切换点空格归属</b>（F5）：见 {@code MarkdownLineLayout#unifySwitchPointSpaces}
+ *       ——只在两侧度量完全一致、差异仅为颜色的切换点把尾随空格并入后一段，逐字符推进宽
+ *       与总行宽一字不变。</li>
+ * </ul></p>
  *
  * <p><b>输出 = 仓内既有绘制抽象</b>：{@link PaintCommand} 流（每视觉行一条 SEGMENTS 命令 +
  * 链接段 LINK_REGION 命中区，与 {@code ScenePaintEngine} 同一契约），段流节点

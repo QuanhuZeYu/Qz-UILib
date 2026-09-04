@@ -17,7 +17,8 @@ package club.heiqi.uilib.font.layout.markdown;
  * 几何再裁「块模型是否进公共面」——加方法是兼容变更、删方法是破坏变更，故先删后加。</p>
  *
  * <p>语义约定：字号增量 {@code 0} = 不改变继承字号；{@code bulletMarker} 空串 = 列表标记
- * 不输出；{@code thematicBreakText} 空串 = 分隔线在扁平文本流中不输出占位文本。</p>
+ * 不输出；{@code thematicBreakText} 空串 = 分隔线在扁平文本流中不输出占位文本；
+ * {@code quoteTextColor} 为 {@code 0} = 引用块不改色、继承调用方基础样式。</p>
  *
  * <p>实例在构造期可变异，传给 {@code toSegments} 后应视为只读；线程安全仅在该约定下成立。</p>
  */
@@ -26,6 +27,25 @@ public final class MarkdownStyleTable {
     /** 分隔线默认文本长度（个 ASCII '-'），仅用于扁平文本流展示，绘制宽度由 L2 盒模型决定。 */
     private static final int DEFAULT_BREAK_LENGTH = 36;
 
+    /**
+     * 引用文字默认色：chat3 出货口径的次级色（{@code ChatMarkdownSettings.textSecondaryArgb}
+     * 现值 0xFF9AA0A8，见 {@code ChatMessageList.java:891-897} 引用行降色）。M4-fix F3 登记。
+     */
+    private static final int DEFAULT_QUOTE_TEXT_ARGB = 0xFF9AA0A8;
+
+    /**
+     * 行内 code 段默认字号：chat3 出货口径 font-code 12px
+     * （{@code ChatCodeSpanSplitter.java:107-112} 的 {@code getCodeFontSizePx()} 现值）。
+     * 值进本表即满足 G4「度量同源」——L1 不读散落常量。
+     */
+    private static final int DEFAULT_CODE_FONT_SIZE_PX = 12;
+
+    /**
+     * 行内 code 段默认衬底色：chat3 出货口径（{@code ChatMarkdownSettings.codeBackgroundArgb}
+     * 现值 0x26FFFFFF，设计稿 §3.5）。M4-fix F1 登记。
+     */
+    private static final int DEFAULT_CODE_BACKGROUND_ARGB = 0x26FFFFFF;
+
     private boolean headingBold = true;
     private boolean headingUnderline;
     private boolean quoteItalic;
@@ -33,6 +53,10 @@ public final class MarkdownStyleTable {
     private int defaultFontSizePx;
     private String bulletMarker = "\u2022";
     private String thematicBreakText = repeat('-', DEFAULT_BREAK_LENGTH);
+    private int quoteTextColor = DEFAULT_QUOTE_TEXT_ARGB;
+    /** 包内登记：行内 code 段字号/衬底色（M4-fix F1）；本期不外开公共旋钮（加方法是兼容变更）。 */
+    private int codeFontSizePx = DEFAULT_CODE_FONT_SIZE_PX;
+    private int codeBackgroundColor = DEFAULT_CODE_BACKGROUND_ARGB;
 
     /**
      * 创建默认表（行为规格即此组默认值，块级 javadoc 与测试矩阵按它钉死）。
@@ -67,6 +91,9 @@ public final class MarkdownStyleTable {
         out.defaultFontSizePx = defaultFontSizePx;
         out.bulletMarker = bulletMarker;
         out.thematicBreakText = thematicBreakText;
+        out.quoteTextColor = quoteTextColor;
+        out.codeFontSizePx = codeFontSizePx;
+        out.codeBackgroundColor = codeBackgroundColor;
         return out;
     }
 
@@ -152,5 +179,45 @@ public final class MarkdownStyleTable {
     /** @param thematicBreakText 分隔线文本；null 归一为空串（不输出） */
     public void setThematicBreakText(String thematicBreakText) {
         this.thematicBreakText = thematicBreakText == null ? "" : thematicBreakText;
+    }
+
+    /**
+     * 引用块正文色（M4-fix F3 新增旋钮）。
+     *
+     * <p>chat3 现行行为：引用行剥 {@code "> "} 后整行降为次级色
+     * （{@code ChatMessageList.java:891-897} → {@code getTextSecondaryArgb()}），默认值与本旋钮
+     * 默认值同为 {@code 0xFF9AA0A8}。由 {@code MarkdownDocument.toSegments} 在 QUOTE 块上应用。</p>
+     *
+     * @return 引用正文色（ARGB）；{@code 0} = 不改色，继承调用方基础样式
+     */
+    public int getQuoteTextColor() {
+        return quoteTextColor;
+    }
+
+    /**
+     * 设置引用正文色。
+     *
+     * @param quoteTextColor ARGB 引用色；{@code 0} = 关闭降色（继承基础样式）；
+     *                       非 0 时高位 alpha 缺失（&lt; 0x01000000 量级）按不透明补全
+     */
+    public void setQuoteTextColor(int quoteTextColor) {
+        this.quoteTextColor = quoteTextColor == 0 ? 0
+                : ((quoteTextColor >>> 24) == 0 ? (quoteTextColor | 0xFF000000) : quoteTextColor);
+    }
+
+    /**
+     * 行内 code 段字号（包内登记，非公共面）；{@code 0} = 继承渲染器基准。
+     *
+     * <p>M4-fix F1：chat3 出货口径 12px（{@code ChatCodeSpanSplitter.java:107-112}），
+     * 数值恒由 L1 在吃反引号时对 code 段 {@code setFontSizePx} 写入，公共面本期不外开旋钮
+     * （未发布类上加方法是兼容变更，需要时另裁）。</p>
+     */
+    int getCodeFontSizePx() {
+        return codeFontSizePx;
+    }
+
+    /** 行内 code 段衬底色（包内登记，非公共面）；{@code 0} = 无衬底。 */
+    int getCodeBackgroundColor() {
+        return codeBackgroundColor;
     }
 }

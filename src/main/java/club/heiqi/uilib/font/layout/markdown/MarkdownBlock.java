@@ -52,9 +52,18 @@ final class MarkdownBlock {
     final boolean ordered;
     /** QUOTE/LIST/LIST_ITEM: 子块树；其余空表。 */
     final List<MarkdownBlock> children;
+    /**
+     * 本块之前被剥掉的源空行数（包内，M4-fix F6）——块间距的唯一登记处。
+     *
+     * <p>扁平化时 {@code > 0} 的块边界会额外产一个「占位段」（{@code TextSegment} 文本为空串），
+     * 由 L2 {@code MarkdownPainter} 认它加一空行（规划 §二之四 C1：零公共面变更——接缝仍是
+     * {@code List<TextSegment>}，既不加 {@code TextStyle} 几何字段也不外开块模型）。</p>
+     */
+    final int blanksBefore;
 
     private MarkdownBlock(Kind kind, int level, String text, List<String> lines, boolean[] hardBreaks,
-                          String info, String marker, boolean ordered, List<MarkdownBlock> children) {
+                          String info, String marker, boolean ordered, List<MarkdownBlock> children,
+                          int blanksBefore) {
         this.kind = kind;
         this.level = level;
         this.text = text;
@@ -66,34 +75,47 @@ final class MarkdownBlock {
         this.children = children == null
                 ? Collections.<MarkdownBlock>emptyList()
                 : Collections.unmodifiableList(new ArrayList<MarkdownBlock>(children));
+        this.blanksBefore = blanksBefore;
+    }
+
+    /**
+     * 复制本节点并写入「块前空行数」（包内，F6）；节点仍不可变。
+     *
+     * @param blanks 本块之前被剥掉的源空行数（{@code >= 0}）
+     * @return 等值副本（blanksBefore 已更新）
+     */
+    MarkdownBlock withBlanksBefore(int blanks) {
+        return new MarkdownBlock(kind, level, text, lines, hardBreaks, info, marker, ordered, children,
+                Math.max(0, blanks));
     }
 
     static MarkdownBlock paragraph(List<String> trimmedLines, boolean[] hardBreaks) {
-        return new MarkdownBlock(Kind.PARAGRAPH, 0, null, trimmedLines, hardBreaks, null, null, false, null);
+        return new MarkdownBlock(Kind.PARAGRAPH, 0, null, trimmedLines, hardBreaks, null, null, false, null, 0);
     }
 
     static MarkdownBlock heading(int level, String body) {
-        return new MarkdownBlock(Kind.HEADING, level, body, null, null, null, null, false, null);
+        return new MarkdownBlock(Kind.HEADING, level, body, null, null, null, null, false, null, 0);
     }
 
     static MarkdownBlock code(String info, List<String> codeLines) {
-        return new MarkdownBlock(Kind.CODE, 0, null, codeLines, null, info, null, false, null);
+        return new MarkdownBlock(Kind.CODE, 0, null, codeLines, null, info, null, false, null, 0);
     }
 
     static MarkdownBlock quote(List<MarkdownBlock> childBlocks) {
-        return new MarkdownBlock(Kind.QUOTE, 0, null, null, null, null, null, false, childBlocks);
+        return new MarkdownBlock(Kind.QUOTE, 0, null, null, null, null, null, false, childBlocks, 0);
     }
 
     static MarkdownBlock list(List<MarkdownBlock> items, boolean orderedList) {
-        return new MarkdownBlock(Kind.LIST, 0, null, null, null, null, null, orderedList, items);
+        return new MarkdownBlock(Kind.LIST, 0, null, null, null, null, null, orderedList, items, 0);
     }
 
     static MarkdownBlock listItem(String markerText, boolean itemOrdered, List<MarkdownBlock> contentBlocks) {
-        return new MarkdownBlock(Kind.LIST_ITEM, 0, null, null, null, null, markerText, itemOrdered, contentBlocks);
+        return new MarkdownBlock(Kind.LIST_ITEM, 0, null, null, null, null, markerText, itemOrdered,
+                contentBlocks, 0);
     }
 
     static MarkdownBlock thematicBreak() {
-        return new MarkdownBlock(Kind.THEMATIC_BREAK, 0, null, null, null, null, null, false, null);
+        return new MarkdownBlock(Kind.THEMATIC_BREAK, 0, null, null, null, null, null, false, null, 0);
     }
 
     /** PARAGRAPH / CODE 的行集以 '\n' 连接。 */
@@ -111,6 +133,7 @@ final class MarkdownBlock {
     @Override
     public String toString() {
         return "MarkdownBlock(" + kind + (level > 0 ? " h" + level : "")
-                + (marker != null ? " marker=" + marker : "") + ")";
+                + (marker != null ? " marker=" + marker : "")
+                + (blanksBefore > 0 ? " blanksBefore=" + Integer.valueOf(blanksBefore) : "") + ")";
     }
 }

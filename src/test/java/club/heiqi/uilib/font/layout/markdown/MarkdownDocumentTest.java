@@ -13,7 +13,8 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * {@link MarkdownDocument} 公共面与扁平化测试矩阵（M2，D3 最小面验收依据）。
  * 三条踩坑语料在公共面的投影：① 硬换行扁平后不留行尾空格且与软换行在块模型位图中区分；
  * ② 围栏代码段内粗体/公式/引用记号在片段流中一律字面（无 BOLD/斜体/LaTeX 段）；
- * ③ 嵌套引用与列表项续行缩进只进结构、不进文本。
+ * ③ 嵌套引用只进结构；列表项缩进自 2026-09-04 裁 F2 起以段文本前导空格表达（见
+ * {@code shouldFlattenNestedListItemAndContinuation} 的注释）。
  */
 public class MarkdownDocumentTest {
 
@@ -217,8 +218,11 @@ public class MarkdownDocumentTest {
     public void shouldFlattenNestedListItemAndContinuation() {
         List<TextSegment> segments = MarkdownDocument.parse(nl("- 甲", "  续行", "", "  - 乙"))
                 .toSegments(baseStyle());
-        // 项体续行与子列表：缩进不进文本流（由 L2 依表 px 数值排版盒模型）
-        Assert.assertEquals(nl("• 甲", "续行", "• 乙"), plainText(segments));
+        // 2026-09-04 裁 F2（M4-fix）：嵌套列表每级缩进以 bullet 段文本的前导空格表达（每级 2 空格），
+        // 取代裁 B 时期「缩进不进文本流」的口径；依据 = 对拍门禁 P08 与 chat3 现行实现同口径
+        // （ChatMessageList.java:952-956：level 由前导空格数 / 2 得出，每级 append 两个空格）。
+        // 块模型与缩进 px 仍未进公共面（裁 B 的「不外开块树」这一半不变）。
+        Assert.assertEquals(nl("• 甲", "续行", "  • 乙"), plainText(segments));
     }
 
     @Test

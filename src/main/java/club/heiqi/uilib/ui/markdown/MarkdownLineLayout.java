@@ -19,6 +19,13 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
  * 与 chat3 的差异仅在输入形态：这里吃带样式的段流而非 § 格式码文本，样式随段
  * 天然续传，无需行首重发格式码。</p>
  *
+ * <p>M4-fix 在本类落了两处「段流编码识别」，都不扩公共面：
+ * 入口先做 {@link #unifySwitchPointSpaces}（F5：§ 颜色切换点的尾随空格归后一段——chat3 的
+ * 行切分器把 § 码排在 pending 空白之前，故其空格恒归后段；本层只在度量完全一致时搬，
+ * 逐字符推进宽与总行宽不变），再在 {@link #splitLogicalLines} 认 L1 的块边界占位段
+ * （F6：空文本段 = 源里被空行分开的块边界）并强制产一个空显示行，
+ * {@link #wrapVisualLine} 因此不再吞中间的空白逻辑行。</p>
+ *
  * <p>推进宽度恒走 {@link TextLayoutService#resolveAdvance(int, TextStyle, int)} 与
  * {@link TextLayoutService#getSegmentWidth(TextSegment, int)}（测量/渲染唯一同源原语，
  * G4），本类零自设字号、字宽与行高常量。纯 JVM：不 import Minecraft/AWT，不发 GL 调用。</p>
@@ -59,7 +66,8 @@ final class MarkdownLineLayout {
     static List<List<TextSegment>> wrap(List<TextSegment> segments, TextLayoutService measurer,
             int maxWidthPx, int baseFontSizePx) {
         requireMeasurer(measurer);
-        List<List<Token>> logicalTokens = splitLogicalLines(segments, measurer, baseFontSizePx);
+        List<List<Token>> logicalTokens =
+                splitLogicalLines(unifySwitchPointSpaces(segments), measurer, baseFontSizePx);
         List<List<TextSegment>> out = new ArrayList<List<TextSegment>>();
         for (int i = 0; i < logicalTokens.size(); i++) {
             wrapVisualLine(logicalTokens.get(i), maxWidthPx, out, baseFontSizePx);
@@ -97,6 +105,117 @@ final class MarkdownLineLayout {
 
     // ==================== 换行 ====================
 
+    /**
+     * § 切换点空格归属归一（M4-fix F5，采 chat3 口径：切换点的空格归<b>后</b>一段）。
+     *
+     * <p><b>相反切分产生在哪一环</b>：A 路是「逐显示行 parse」——
+     * {@code ChatLineLayouter.splitFragments} 把空白先扣在 {@code pendingSpaces} 里，遇到 § 码对
+     * 却<em>立即</em>并入行文本（{@code ChatLineLayouter.java:227-233} 的格式码分支排在
+     * {@code :235-239} 的空白分支之前），于是源里的 {@code §c红色警告 §fplain} 到行文本上已成
+     * {@code §c红色警告§f plain}，再交给 § 解析，空格天然落在<strong>后</strong>一段。
+     * B 路的段流在进本层之前就已按 § 码切好，同一个空格留在<strong>前</strong>一段——
+     * 差的是「布局期按显示行归一」这一环，不是语义。</p>
+     *
+     * <p><b>为什么落在 L2</b>：空格归属是排版事实（chat3 也是在行切分器里做的，见上），
+     * 不是解析事实；放进 L1 的 {@code MarkdownInlineParser.parse(spans)} 会改掉 span 流既有契约
+     * （既有测试 {@code shouldParseSpanStream} 钉死「前缀 」尾随空格归前段）。本方法只做
+     * <b>度量中性</b>的切点搬移：字符全序一字不动，只是把上一段末尾的连续空格并进后一段头部，
+     * 且要求两侧 {@code fontSizePx}/{@code FontType}/{@code italic} 完全相同、两侧都不是
+     * code / link / latex 段——因此逐字符推进宽、总行宽、切行位置全部不变，变的只有段边界。</p>
+     *
+     * <p>不吞 L1 的块边界占位标记段（空文本段），也不改写调用方传入的段与样式实例。</p>
+     *
+     * @param segments 输入段流（可为 null）
+     * @return 归一后的段流；无需归一时同引用返回原列表
+     */
+    static List<TextSegment> unifySwitchPointSpaces(List<TextSegment> segments) {
+        if (segments == null || segments.size() < 2) {
+            return segments;
+        }
+        int size = segments.size();
+        List<TextSegment> out = null;
+        int i = 0;
+        while (i < size) {
+            TextSegment current = segments.get(i);
+            TextSegment next = i + 1 < size ? segments.get(i + 1) : null;
+            if (!isSpaceNeutralPair(current, next)) {
+                if (out != null) {
+                    out.add(current);
+                }
+                i++;
+                continue;
+            }
+            String text = current.getText();
+            int keep = text.length();
+            while (keep > 0 && text.charAt(keep - 1) == ' ') {
+                keep--;
+            }
+            if (keep == text.length()) {
+                if (out != null) {
+                    out.add(current);
+                }
+                i++;
+                continue;
+            }
+            if (out == null) {
+                out = new ArrayList<TextSegment>(size + 2);
+                for (int k = 0; k < i; k++) {
+                    out.add(segments.get(k));
+                }
+            }
+            if (keep > 0) {
+                out.add(new TextSegment(text.substring(0, keep), current.getStyle()));
+            }
+            out.add(new TextSegment(text.substring(keep) + next.getText(), next.getStyle()));
+            i += 2;
+        }
+        return out == null ? segments : out;
+    }
+
+    /**
+     * 该相邻段对是否允许做「度量中性」的空格归一。
+     *
+     * <p>判据两半：<b>(1) 切换必须与 § 样式码同形</b>——两侧差异只剩颜色/下划线/删除线
+     * （A 路的 § 色码切换正是这种切换）；<b>(2) 搬动不得改变任何推进宽度</b>——两侧
+     * {@code FontType}、{@code fontSizePx}、{@code italic} 必须逐项相同，且两侧都不是 code /
+     * link / latex 段。条件 (2) 是硬性安全阀：门禁的段宽容差是 {@code 0.0px}（位级等值），
+     * 若把空格从 13px 段搬进 12px 的 code 段、或跨字体搬动，浮点求和顺序一变就会把已经
+     * PASS 的条目判红（实测：P13 的「{@code • } + {@code 玩家列表行}」两段同为白色 NORMAL，
+     * 一旦搬动即出现 1e-14 量位的浮点差 → 段宽差异）。</p>
+     *
+     * @param left  前一段（不可为 null）
+     * @param right 后一段（可为 null）
+     * @return true = 允许把 left 末尾空格并进 right 头部
+     */
+    private static boolean isSpaceNeutralPair(TextSegment left, TextSegment right) {
+        if (left == null || right == null || left.isLatex() || right.isLatex()) {
+            return false;
+        }
+        String leftText = left.getText();
+        String rightText = right.getText();
+        // 空文本段 = L1 的 F6 块边界占位标记段，不参与归一；右侧已是空格开头则无切点可归一
+        if (leftText.isEmpty() || rightText.isEmpty() || rightText.charAt(0) == ' ') {
+            return false;
+        }
+        TextStyle a = left.getStyle();
+        TextStyle b = right.getStyle();
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a.isCodeSpan() || b.isCodeSpan() || a.getLink() != null || b.getLink() != null) {
+            return false;
+        }
+        // 宽度必须逐项同尺，搬动才可能位级无损
+        if (a.getFontType() != b.getFontType() || a.getFontSizePx() != b.getFontSizePx()
+                || a.isItalic() != b.isItalic()) {
+            return false;
+        }
+        // 只在「§ 颜色码切换点」归一（F5 裁定的原场景）：两侧颜色必须真的不同。
+        // 下划线/删除线/字重差异不触发——那些差异在 chat3 里由 §l/§m/§n 产生，本层不猜；
+        // 且无差异时归一会改变浮点求和顺序，把已 PASS 的条目判成段宽差异（P13 实测）。
+        return a.getColor() != b.getColor();
+    }
+
     /** 段流 → 逻辑行 token 序列（按 {@code \n} 硬断，含段内嵌 {@code \n}）。 */
     private static List<List<Token>> splitLogicalLines(List<TextSegment> segments,
             TextLayoutService measurer, int baseFontSizePx) {
@@ -114,6 +233,13 @@ final class MarkdownLineLayout {
             if (segment.isLatex()) {
                 current.add(new Token(segment, 0, 0,
                         measurer.getSegmentWidth(segment, Math.max(1, baseFontSizePx)), false, true));
+                continue;
+            }
+            if (segment.getText().isEmpty()) {
+                // F6（走 C1）：L1 在「吃掉过源空行的块边界」的 \n 段后紧跟一个空文本占位标记段。
+                // 认它加一空行（与 chat3 一致：甲\n\n乙 = 3 显示行，中间一行零段）。
+                lines.add(current);
+                current = new ArrayList<Token>();
                 continue;
             }
             String text = segment.getText();
@@ -215,8 +341,9 @@ final class MarkdownLineLayout {
         }
         if (!line.isEmpty()) {
             out.add(materialize(line, baseFontSizePx));
-        } else if (out.isEmpty()) {
-            // 全空白/空逻辑行 → 单空行（与 chat3「空文本 → 单空行」一致）
+        } else {
+            // 空逻辑行必须留成一个空显示行（F6）：与 chat3 行切分器对 \n\n 的实测口径一致
+            // ——中间空行产一段零段行，仅当整段流只有一个空逻辑行时也是单空行（既有行为不变）。
             out.add(Collections.<TextSegment>emptyList());
         }
     }

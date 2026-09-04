@@ -73,9 +73,9 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 | M1 | 复活 L1 行内解析器 + 测试矩阵 | **完成 `6d9de24c`**（2026-09-04） |
 | M2 | L1 扩块级 + `MarkdownDocument` 数据模型 | **完成 `08a8034e`**，留下一处待裁矛盾见 §二之三 |
 | M3 | L2 `ui/markdown` 绘制层 + `MarkdownPage` + headless 出图 | **完成 `531da89e`/`339530e0`/`eddd2c29`**，见 §二之四 |
-| M4 | chat3 现路 vs B 路行为对拍（产 `-side` 成对图） | **完成但未过门禁**：6 条 PARITY FAIL → **M5 不许开工**，见 §二之五 |
+| M4 | chat3 现路 vs B 路行为对拍（产 `-side` 成对图） | **完成，M4-fix 后门禁转绿**（2026-09-04）：PARITY FAIL 6 → **0**、TIE 0、有意差异 1 条（P03@150）→ **M5 可开工**，见 §二之五 与其后「M4-fix 收尾」 |
 | M4+ | 判读分辨率 @Nx 真放大 | **完成**：N=4 上限由 `awtCharSize=64` 定死，@1x 逐位不变 |
-| M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | 未开工 |
+| M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | 未开工（前置门禁已转绿，可以开工；M5 与 M6 同一提交的硬规矩不变） |
 | M6 | 复生锁 G3（与 M5 同一提交） | 未开工 |
 
 M1 的验收事实（父代理逐条独立复核过，非采信子代理自述）：三个文件与 `9c4dcae5` **blob hash
@@ -189,6 +189,41 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
 另记两条场地事实：门禁测试落在 `font.render.software`（`LatexSoftwareRenderKit.Shared` 为包内可见，
 与 M3 同先例）—— 属可接受的权宜，M6 应把共享装配升成正式 testkit 位置；N10 暴露 chat3 自身
 怪癖（code 配对不识别转义），如实记录未修。
+
+### M4-fix 收尾：六条修复落地，门禁 FAIL 6 → 0（2026-09-04）
+
+工具实测：`# 汇总: PARITY 条目=18 NEW 条目=11 FAIL 差异=0 TIE=0 有意差异=1 PNG=141`；
+`diff.txt` 的 PASS 行 24 → 36；全量 `build` 绿。逐条落点与钉死测试（钉死用例全在
+`MarkdownSoftwareRenderTest`，门禁本体 `MarkdownChat3ParityTest` 的判据一字未动）：
+
+| # | 落点 | 钉死 |
+| --- | --- | --- |
+| F1 | `MarkdownInlineParser` 的 CODE_TICK 分支 + `codeStyle()`：吃反引号的当场写 `codeSpan` 位、`codeBackgroundColor`、`fontSizePx`（chat3 口径 12px）并清 `link`；值取自 `MarkdownStyleTable` 的**包内**登记项（L1 不 import chat3，G4 唯一登记面）。旧裁定「第一版 code 仅字面输出」自 2026-09-04 起被 chat3 出货行为取代 | `fixF1InlineCodeSpanCarriesChat3CodeStyle` + 门禁 P03@269 |
+| F2 | `MarkdownDocument.walk/emit` 带 `markerLevel`，`emitListItem` 按级拼 2 个前导空格进 bullet 段文本（`ChatMessageList.java:952-956` 同口径）；块模型与缩进 px 仍未外开 | `fixF2NestedListIndentIsLeadingSpacesInMarkerSegment` + 门禁 P08@150/@269 |
+| F3 | `MarkdownStyleTable.get/setQuoteTextColor`（默认 0xFF9AA0A8 = chat3 次级色），`quoteStyle()` 在 QUOTE 块应用；0 = 不降色 | `fixF3QuoteTextColorKnobMatchesChat3Secondary` + 门禁 P12 |
+| F4 | `MarkdownBlockParser.markerView()`：**定稿口径 = 行首 § 序列仅在确实命中块标记时随标记一并消费；未命中块标记时一字不动；这不是解析 § 颜色，颜色语义仍由下游决定**。理由：A 路 `ChatMarkdownLineRule.classify` 第一步就 `stripLeadingFormatCodes`，实测 A 侧文本 `«• 玩家列表行»` 不含 `§a`；若「命中也原样保留」则漂移 2 码点 / 14px，P13 恒红 | `fixF4BlockLayerToleratesLeadingSectionCodes` + 门禁 P13 |
+| F5 | 落在 **L2** `MarkdownLineLayout.unifySwitchPointSpaces`：只在「两侧仅颜色不同、FontType/fontSizePx/italic 逐项相同、两侧非 code/link/latex」时把上一段尾随空格并进后一段（度量中性，逐字符推进宽与总行宽一字不变）。不落在 L1 的 `parse(spans)`：那里有既有测试 `shouldParseSpanStream` 钉死「尾随空格归前段」 | `fixF5SwitchPointSpaceBelongsToNextSegment`（段文本+段宽双等）+ 门禁 P14 |
+| F6 | 走 C1：`MarkdownBlock.blanksBefore`（包内）由 `parseBlocks` 在消费空行处 `stamp()`，`walk` 在该类块边界产**一个空文本占位段**；L2 `splitLogicalLines` 认它强制产一个空显示行、`wrapVisualLine` 不再吞中间空行。零公共面变更（未给 `TextStyle`/`TextSegment` 加几何字段） | `fixF6BlockGapBecomesExactlyOneVisualBlankLine` + 门禁 P16 |
+
+**有意差异（唯一 1 条，PARITY → 有意差异，三处留档）**：**P03@150**。第二个根因与 F1 无关——A 路是
+「先按容器宽切显示行、再在显示行内配对反引号」，于是同一条消息换个窗口宽度就换一种样式语义：
+@150 跨行的反引号对留字面 `` ` `` 且 code 内 URL 被链化（实测 `A=[«命令·`curl·» w=63.84 |
+«http://x.y/z» c=FF7AB8F5 link=… w=60.98]`），@269 却剥反引号 + 12px + 无 link。用户裁定：该顺序
+副作用是 **chat3 缺陷，B 不复刻**（B 的「解析 → linkify → 换行」使 code span 语义与容器宽无关，
+与 CommonMark 及「内容不变则样式不变」一致，严格更优）。门禁**没有摘掉这条比对**，而是改判一条
+**更强的正向不变量**（`assertWidthIndependentCodeStyle`）：① 同语料在 @150/@269 下 B 的 code 段指纹
+（文本 + codeSpan + 衬底色 + fontSizePx + link==null + 段宽）逐项相等；② 两宽度的换行确实不同
+（否则不变量空转）；③ A 侧确实随宽度换语义（否则登记理由不成立）。留档三处 = `diff.txt` 的
+`DIVERGENT` 行、`profiles.txt` 的 `divergent` 行、本节。**其余 17 条 PARITY 判据一字未动**。
+
+**公共面变化清单（javap -public 逐行数，不含 class 声明行）**：`MarkdownStyleTable` **16 → 18**，
+增量恰为 F3 的引用色一对；`MarkdownInlineParser` 仍 2、`MarkdownDocument` 仍 6、`MarkdownPainter` 仍 5
+（F1 的 code 字号/衬底与 F5/F6 的新入口全部包内）；`TextStyle`/`TextSegment` 零改动；
+`MarkdownBlock`/`MarkdownBlockParser`/`blocks()` 仍包内；`internal/chat3/**` 一行未改。
+
+**旧裁 B 的一处口径被取代（非放宽断言）**：`MarkdownDocumentTest:217-222` 原钉「缩进不进文本流」，
+与 F2（chat3 同口径）互斥；期望由 `«• 乙»` 改为 `«  • 乙»` —— 新期望**更具体**（多两个必须存在的
+前导空格），属规格变更下的收紧。裁 B 的另一半「不外开块模型 / 不开缩进 px」不变。
 
 ## 三、迁移与「不得并存」门禁
 
