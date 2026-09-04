@@ -322,7 +322,7 @@ javadoc 已记）；逃生舱 `ChatMarkdownSettings.isEnabled()` 与 `ChatMarkdo
 | 断言 | 反向内容 | 正对照（M5 实测→写死地板） |
 | --- | --- | --- |
 | ① 文件存在性 | `ChatMarkdownLineRule.java`/`ChatCodeSpanSplitter.java` 恒不存在 | 探测器对 `ChatMessageList.java`/`ChatUrlLinkifier.java` 必须判「存在」 |
-| ② 定界解析模式 | chat3 主源代码行 0 命中：反引号字面/`\u0060` 文本/`(char) 0x60`/`CODE_TICK`/`'*'`/`"**"`/`"~~"`/`"$$"`/旧类名标识（注释剥除后扫） | L1 兄弟包同扫描器实测 ≥13 → 地板 8；门禁复刻文件实测 ≥5 → 地板 4；chat3 文件数 37 → 地板 30 |
+| ② 定界解析模式 | chat3 主源代码行 0 命中（实测 0）：反引号字面/`\u0060` 文本/`(char) 0x60`/`CODE_TICK`/`'*'`/`"**"`/`"~~"`/`"$$"`/旧类名标识（注释剥除后扫） | L1 兄弟包同扫描器实测 **21** → 地板 8；门禁 A 路复刻文件实测 **17** → 地板 4；chat3 文件数实测 37 → 地板 30 |
 | ③ 生产锚 | 唯一入口必须实调 `MarkdownDocument.parse(`+`MarkdownPainter.wrapLines(`+`.toSegments(`+`ChatUrlLinkifier.linkify(` | 断言本身即正向锚（命中数 ≥1 写进消息） |
 | ④ 入口唯一 | chat3 内 markdown 层类型引用收敛在 `ChatMarkdownPipeline.java` 单文件 | 同扫描器对 devtools `MarkdownPage` 必须报出 L1+L2 双引用（反空跑） |
 
