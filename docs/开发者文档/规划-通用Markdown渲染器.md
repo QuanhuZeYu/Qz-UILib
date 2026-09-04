@@ -193,8 +193,11 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
 ### M4-fix 收尾：六条修复落地，门禁 FAIL 6 → 0（2026-09-04）
 
 工具实测：`# 汇总: PARITY 条目=18 NEW 条目=11 FAIL 差异=0 TIE=0 有意差异=1 PNG=141`；
-`diff.txt` 的 PASS 行 24 → 36；全量 `build` 绿。逐条落点与钉死测试（钉死用例全在
-`MarkdownSoftwareRenderTest`，门禁本体 `MarkdownChat3ParityTest` 的判据一字未动）：
+`diff.txt` 的 PASS 行 24 → **35**（另 1 条 `DIVERGENT` + 1 条 `INVARIANT`）；tally 3969/0/0/2（357 类）
+→ **3976 / 0 / 0 / 2，358 类**；全量 `build --offline` = BUILD SUCCESSFUL。逐条落点与钉死测试
+（钉死用例全在 `MarkdownSoftwareRenderTest`，相对门禁 ref 是 +212/−0 纯新增；门禁本体相对 ref 是
++139/−2，被改的 2 行只是主循环 `if (parity)` 改三分支与汇总行加计数，`compareParityEntry`、
+段宽 0.0px、TIE 2.0px、行宽 1px、命中区 1px 判据一字未动）：
 
 | # | 落点 | 钉死 |
 | --- | --- | --- |
@@ -221,9 +224,39 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
 （F1 的 code 字号/衬底与 F5/F6 的新入口全部包内）；`TextStyle`/`TextSegment` 零改动；
 `MarkdownBlock`/`MarkdownBlockParser`/`blocks()` 仍包内；`internal/chat3/**` 一行未改。
 
-**旧裁 B 的一处口径被取代（非放宽断言）**：`MarkdownDocumentTest:217-222` 原钉「缩进不进文本流」，
-与 F2（chat3 同口径）互斥；期望由 `«• 乙»` 改为 `«  • 乙»` —— 新期望**更具体**（多两个必须存在的
-前导空格），属规格变更下的收紧。裁 B 的另一半「不外开块模型 / 不开缩进 px」不变。
+**两条用户裁定（2026-09-04，M4-fix 收尾轮）**
+
+- **裁定①（F2 撞既有非门禁测试）**：授权并要求改 `MarkdownDocumentTest:217-225` 那一条期望——它钉的是
+  2026-08 裁 B 的「缩进不进文本流」，而用户已裁 PARITY 优先、chat3 现行是把每级 2 空格写进段文本。
+  期望由 `«• 乙»` 改为 `«  • 乙»`：新期望**更具体**（多两个必须存在的前导空格），属规格变更下的
+  **收紧**，不是为换绿放宽断言；注释三要素（取代关系 / 日期 / 依据 = 门禁 P08 与
+  `ChatMessageList.java:952-956` 同口径）已写进该处与其类 javadoc。裁 B 的另一半「不外开块模型 /
+  不开缩进 px」不变。
+- **裁定②（P03@150 第二根因）**：判定 chat3 该行为是**缺陷**，B **不复刻**；但**不许把这条从门禁里
+  摘掉**——改为正向断言 B 的宽度无关性（比原 PARITY 判据更强），并在 diff.txt / profiles.txt / 本节
+  三处留档。判据原文：A 路「先按宽度切显示行、再在显示行内配对反引号」使 code span 识别依赖排版
+  结果，同一条消息换个窗口宽度就换一种样式语义，与 CommonMark 及「内容不变则样式不变」都相反；
+  B 的顺序（解析 → linkify → wrap）严格更优且宽度无关。
+
+**修完后仍与 chat3 有意的差异（3 条遗留，M5 接线时按此对齐，不得当成 bug 顺手改）**
+
+1. **列表项续行**（lazy continuation）不带 chat3 保留的源前导空格：A 路 `«  续行»`，B 路 `«续行»`
+   （`ChatLineLayouter` 把行首空白并入行文本，L1 按 CommonMark 以 contentCol 剥缩进）。语料 N04
+   属 NEW 档，只记录不判等。
+2. **行中间的 § 码**在文档形参路径（`MarkdownDocument.parse(String)`）仍是字面文本，chat3 会由
+   `parseSegments` 解析成颜色。这是「markdown 不引入颜色」旧裁定；M5 走 § 桥
+   （`MarkdownInlineParser.parse(spans)`）时 § 码已被 L0 消费，不会遇到。
+3. **围栏代码块**未打 `codeSpan` 位 / 12px / 衬底：F1 只承接行内反引号（chat3 无围栏行为，N02 属
+   NEW 档）。围栏内容仍全字面、不解析行内标记（M2 既有裁定不变）。
+
+**@1x 产物 sha 归因（含 1px 位移的区分性检查）**：先把生产码复位 + 门禁原样做 HEAD 对照复跑，
+304 项产物与基线 `changed=0`（场地确定）；带修复后像素真有差的只落在被修复命中的条目
+（`05-hard-break` 行数 6→7、`08-thematic-break` quads 67→76 / ink 1790→2444 = F1 衬底，
+`03`/`04` = F3/F2，门禁侧 P03/P08/P12/P13/P16/N03 = 对应条目）。余下 N08/P17/P18 各差 1px：
+用同一探针在修复前后各跑一次，比对这三条 A 路与 B 路的**行宽 / 行高 / 段数 / 逐段宽（%.17g）/
+段级字号**数值序列 —— **61 行全部逐位相同**；而差异像素在 A 路图与 B 路图上的**坐标完全相同**
+（N08 同为 x=14,y=23；P18 同为 x=32,y=28；P17 像素零差仅重编码差异）。数值同而像素移
+⇒ **共享 atlas 装配位移成立，不是语义变化**（F4 改变了送进 `assembleGlyphs` 的段流）。
 
 ## 三、迁移与「不得并存」门禁
 
