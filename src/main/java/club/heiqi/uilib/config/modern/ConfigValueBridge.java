@@ -3,8 +3,11 @@ package club.heiqi.uilib.config.modern;
 import java.util.List;
 
 import club.heiqi.config.runtime.Authority;
+import club.heiqi.config.schema.FieldConstraints;
+import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.config.FontConfig;
 
 /**
@@ -41,11 +44,23 @@ import club.heiqi.uilib.font.config.FontConfig;
  * <p>调用方需保证传入的 {@link Authority} 经 {@code ConfigManager.bootstrap} 完整加载，
  * 其 schema 字段已 normalizeDefault 注入（{@link Authority} 默认走此路径）。</p>
  *
+ * <h3>数值字段的表示性守卫（#71 同族审计 A1）</h3>
+ * <p>喂给 {@link FontRuntimeSettings} 构造校验的数值字段（lerpMode / spaceWidth /
+ * characterSpacing / awtCharSize / charSize）一律经 {@link #representableNumber} 回灌。
+ * 原因：新栈 schema 虽然声明了 range 约束，但那份约束只被配置 UI 提交路径
+ * （{@code DraftBuffer.validateField}）消费，{@code ConfigManager.bootstrap} 走的是
+ * {@code DraftValidator.noop()}；手改文件里的 {@code charSize: 0}、{@code lerpMode: 9}、
+ * {@code NaN} 会一路直写静态字段，撞进 {@code FontService} 饿汉单例的类初始化，
+ * 先 {@code ExceptionInInitializerError} 再永久 {@code NoClassDefFoundError}，
+ * 客户端与专用服务端同时崩（问题 #71 的同类，但触发条件与字体缺失无关）。
+ * 布尔/字符串/列表字段没有这类构造校验，不需要守卫。</p>
+ *
  * <p><b>残缺 Authority 的降级行为</b>（测试与防御性参考）：若 path 不存在，
  * {@link Authority#getNumber} 返 0.0、{@link Authority#getString} 返 null、
- * {@link Authority#getBool} 返 false、{@link Authority#get} 返 null——这些值会被
- * <b>直接写入</b>对应静态字段。其中 SIMPLE_LIST 字段经 {@link #listToStringArray}
- * null 守卫转为 {@code new String[0]}，不触发 NPE。</p>
+ * {@link Authority#getBool} 返 false、{@link Authority#get} 返 null——字符串/布尔/列表
+ * 字段仍会被<b>直接写入</b>对应静态字段。其中 SIMPLE_LIST 字段经 {@link #listToStringArray}
+ * null 守卫转为 {@code new String[0]}，不触发 NPE；受守卫的数值字段则因 0.0 不可表示
+ * 而回退 schema 默认值。</p>
  *
  * <p><b>生产路径下不会触发降级</b>：{@link QzUiLibModernSchema} 总声明全部字段，
  * bootstrap 后 Authority 必完整。本前置条件主要用于 C2（ConfigSaveListener）/ C3（启动回灌）
@@ -99,11 +114,20 @@ public final class ConfigValueBridge {
      */
     private static void applyFontSystem(Authority authority) {
         // int 字段：Authority.getNumber 返回 double 原始类型，Math.round 避免 2.9999→2 浮点截断
-        FontConfig.lerpMode = (int) Math.round(authority.getNumber("fontSystem.lerpMode"));
+        // 送进 Math.round 之前必须先过 representableNumber：越界/NaN/Infinity 会被字体运行时
+        // 的构造校验拒绝，而 Math.round(NaN)=0、Math.round(Infinity)=Integer.MAX_VALUE，
+        // 强转后正好落在非法区间（A1）。
+        FontConfig.lerpMode = (int) Math.round(representableNumber(authority, "fontSystem.lerpMode",
+                FontRuntimeSettings.FIELD_LERP_MODE, authority.getNumber("fontSystem.lerpMode"),
+                FontConfig.lerpMode));
         FontConfig.aaMode = (int) Math.round(authority.getNumber("fontSystem.aaMode"));
         FontConfig.brightnessGain = authority.getNumber("fontSystem.brightnessGain");
-        FontConfig.spaceWidth = authority.getNumber("fontSystem.spaceWidth");
-        FontConfig.characterSpacing = authority.getNumber("fontSystem.characterSpacing");
+        FontConfig.spaceWidth = representableNumber(authority, "fontSystem.spaceWidth",
+                FontRuntimeSettings.FIELD_SPACE_WIDTH, authority.getNumber("fontSystem.spaceWidth"),
+                FontConfig.spaceWidth);
+        FontConfig.characterSpacing = representableNumber(authority, "fontSystem.characterSpacing",
+                FontRuntimeSettings.FIELD_CHARACTER_SPACING,
+                authority.getNumber("fontSystem.characterSpacing"), FontConfig.characterSpacing);
         FontConfig.shadowOffsetX = authority.getNumber("fontSystem.shadowOffsetX");
         FontConfig.shadowOffsetY = authority.getNumber("fontSystem.shadowOffsetY");
         FontConfig.renderOffset = authority.getNumber("fontSystem.renderOffset");
@@ -141,8 +165,88 @@ public final class ConfigValueBridge {
      * @param authority 权威源
      */
     private static void applyFontSizeSetting(Authority authority) {
-        FontConfig.awtCharSize = authority.getNumber("fontSizeSetting.awtCharSize");
-        FontConfig.charSize = authority.getNumber("fontSizeSetting.charSize");
+        FontConfig.awtCharSize = representableNumber(authority, "fontSizeSetting.awtCharSize",
+                FontRuntimeSettings.FIELD_AWT_CHAR_SIZE, authority.getNumber("fontSizeSetting.awtCharSize"),
+                FontConfig.awtCharSize);
+        FontConfig.charSize = representableNumber(authority, "fontSizeSetting.charSize",
+                FontRuntimeSettings.FIELD_CHAR_SIZE, authority.getNumber("fontSizeSetting.charSize"),
+                FontConfig.charSize);
+    }
+
+    /**
+     * 数值字段安全回灌：只修产品无法表示的值，可表示的值一律原样写入。
+     *
+     * <p>语义要点（刻意的取舍，不是遗漏）：判据是<b>产品能不能表示</b>，不是 schema 的
+     * UI 范围。{@code charSize: 90} 超出 schema 声明的 1..72，但字体运行时完全能表示它，
+     * 因此不得被钳成 72——手改配置放大字号是受支持的用法。反之 {@code charSize: 0}
+     * 会让 {@code FontRuntimeSettings.capture()} 抛异常，必须修。</p>
+     *
+     * <p>修复顺序：①按 schema 声明的 min/max 钳位 → ②schema 默认值 → ③保持字段当前值不动
+     * （启动期即代码默认值）。每步都用 {@link FontRuntimeSettings#isRepresentable} 复核，
+     * 绝不写入仍不可表示的值；配置文件本身不改写，坏值留在文件里并由 WARN 指明。</p>
+     *
+     * @param authority 权威源（用于查 schema 声明的范围与默认值）
+     * @param path 配置路径，例如 {@code fontSizeSetting.charSize}
+     * @param field 运行时字段名，取 {@link FontRuntimeSettings} 的 FIELD_* 常量
+     * @param configured 文件里的原始值
+     * @param current 该静态字段当前值，作为最后兜底
+     * @return 一定可被字体运行时表示的值
+     */
+    private static double representableNumber(Authority authority, String path, String field,
+            double configured, double current) {
+        if (FontRuntimeSettings.isRepresentable(field, configured)) {
+            return configured;
+        }
+        FieldSpec spec = authority.schema() == null ? null : authority.schema().field(path);
+        double repaired = clampToSchema(field, configured, spec);
+        String action = "按 schema 声明范围钳位";
+        if (!FontRuntimeSettings.isRepresentable(field, repaired) && spec != null) {
+            repaired = asNumber(spec.defaultValue());
+            action = "回退 schema 默认值";
+        }
+        if (!FontRuntimeSettings.isRepresentable(field, repaired)) {
+            MyMod.LOG.warn("配置字段 {} 的值 {} 无法被字体运行时表示，且 schema 也修不出可表示的值，" +
+                    "保持当前值 {}", path, fmt(configured), fmt(current));
+            return current;
+        }
+        MyMod.LOG.warn("配置字段 {} 的值 {} 无法被字体运行时表示，已{}为 {}（配置文件未被改写）",
+                path, fmt(configured), action, fmt(repaired));
+        return repaired;
+    }
+
+    /**
+     * 按 schema 声明的 min/max 钳位；非有限值无法钳位，原样返回交由下一步兜底。
+     */
+    private static double clampToSchema(String field, double configured, FieldSpec spec) {
+        if (spec == null || Double.isNaN(configured) || Double.isInfinite(configured)) {
+            return configured;
+        }
+        FieldConstraints constraints = spec.constraints();
+        if (constraints == null) {
+            return configured;
+        }
+        double clamped = configured;
+        if (clamped < constraints.min()) {
+            clamped = constraints.min();
+        }
+        if (clamped > constraints.max()) {
+            clamped = constraints.max();
+        }
+        return clamped;
+    }
+
+    /**
+     * schema 默认值取数值；非数值默认值返 NaN（交给表示性复核兜底）。
+     */
+    private static double asNumber(Object defaultValue) {
+        return defaultValue instanceof Number ? ((Number) defaultValue).doubleValue() : Double.NaN;
+    }
+
+    /**
+     * 日志文案：非有限值用 String 表示，避免 NaN/Infinity 在占位符里丢失语义。
+     */
+    private static String fmt(double value) {
+        return Double.isNaN(value) || Double.isInfinite(value) ? String.valueOf(value) : Double.toString(value);
     }
 
     /**

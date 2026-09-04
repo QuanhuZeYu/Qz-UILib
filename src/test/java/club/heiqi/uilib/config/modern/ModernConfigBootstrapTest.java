@@ -15,6 +15,7 @@ import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.runtime.SaveOutcome;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.uilib.Config;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.config.FontConfig;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -38,8 +39,8 @@ import static org.junit.Assert.assertTrue;
  *
  * <p><b>不断言</b>：reload 真执行——L1 测试线程非 Client/Server thread，
  * {@link club.heiqi.uilib.font.FontService#reload} 线程闸静默丢弃，不崩但不真执行。
- * 也不测 {@link club.heiqi.uilib.font.FontService#initialize}（那是
- * {@code CommonProxy.preInit:34} 的职责，L1 难覆盖）。</p>
+ * 也不测 {@link club.heiqi.uilib.font.FontService#initialize}（#71 起它是
+ * {@code ClientProxy.preInit} 的职责，专用服务端根本不引导渲染骨架，L1 难覆盖）。</p>
  */
 public class ModernConfigBootstrapTest {
 
@@ -260,5 +261,62 @@ public class ModernConfigBootstrapTest {
         assertTrue("非法 YAML 不应触发回灌，useDebug 应保持 true", Config.useDebug);
         assertEquals("非法 YAML 不应触发回灌，netTransport 应保持 preset",
                 "preset", Config.netTransport);
+    }
+
+    /**
+     * 用例 D：手改文件里的越界值不得把启动带走（#71 同族审计 A1）。
+     *
+     * <p>新栈 schema 声明了 range，但那份约束只被配置 UI 的提交路径消费；启动加载走
+     * {@code DraftValidator.noop()}，于是越界值一路直写 FontConfig 静态字段，最后撞在
+     * {@link FontRuntimeSettings} 的构造校验上——而它是在 {@code FontService} 饿汉单例的
+     * 类初始化里执行的，后果是先 {@code ExceptionInInitializerError}、此后每次
+     * {@code getInstance()} 都是 {@code NoClassDefFoundError}，客户端与专用服务端同时崩。</p>
+     *
+     * <p>场景只能用真实 YAML 文本复现：{@code draft.setDraft + save} 会经过提交路径的内置校验，
+     * 根本产不出越界的 Authority。断言分两层——回灌本身不抛，以及真实漏斗
+     * {@link FontRuntimeSettings#capture()} 接受修完的值。</p>
+     */
+    @Test
+    public void bootstrapAndApplyRepairsUnrepresentableValues() throws Exception {
+        File file = tempFolder.newFile("qzuilib-bootstrap-out-of-range.yaml");
+        try (java.io.PrintWriter pw = new java.io.PrintWriter(file, "UTF-8")) {
+            pw.write("fontSystem:\n  lerpMode: 9\n");
+            pw.write("fontSizeSetting:\n  charSize: 0\n  awtCharSize: -5\n");
+        }
+
+        ModernConfigBootstrap.bootstrapAndApply(file);
+
+        assertEquals("lerpMode 越上界应钳到 schema 声明的上界 3", 3, FontConfig.lerpMode);
+        assertEquals("charSize=0 无法表示，应钳到 schema 下界 1", 1.0D, FontConfig.charSize, 0.0D);
+        assertEquals("awtCharSize 负值无法表示，应钳到 schema 下界 8", 8.0D, FontConfig.awtCharSize, 0.0D);
+        FontRuntimeSettings settings = FontRuntimeSettings.capture();
+        assertEquals("capture() 必须接受修完的值（这一句以前会抛 ExceptionInInitializerError）",
+                3, settings.getLerpMode());
+        assertEquals(1.0D, settings.getCharSize(), 0.0D);
+        assertEquals(8.0D, settings.getAwtCharSize(), 0.0D);
+    }
+
+    /**
+     * 用例 E：产品能表示的高值必须原样保留（A1 选定语义的钉子）。
+     *
+     * <p>修复只针对"产品无法表示"的值，而不是"超出 UI 滑条范围"的值。{@code charSize: 90}
+     * 超出 schema 声明的 1..72，但字体运行时完全能表示它；若图省事按 schema 统一钳位，
+     * 等于用一次崩溃修复悄悄没收用户特意手改的大字号。这条断言把取舍钉死：
+     * 谁改成按 schema 范围钳，这里立刻红。</p>
+     */
+    @Test
+    public void bootstrapAndApplyKeepsLegalValuesBeyondUiRanges() throws Exception {
+        File file = tempFolder.newFile("qzuilib-bootstrap-legal-high.yaml");
+        try (java.io.PrintWriter pw = new java.io.PrintWriter(file, "UTF-8")) {
+            pw.write("fontSizeSetting:\n  charSize: 90\n  awtCharSize: 300\n");
+        }
+
+        ModernConfigBootstrap.bootstrapAndApply(file);
+
+        assertEquals("charSize=90 超出 UI 上限但产品可表示，不得被钳成 72",
+                90.0D, FontConfig.charSize, 0.0D);
+        assertEquals("awtCharSize=300 同理，必须保持 300", 300.0D, FontConfig.awtCharSize, 0.0D);
+        assertEquals("capture() 读到的就是用户配的值",
+                90.0D, FontRuntimeSettings.capture().getCharSize(), 0.0D);
     }
 }

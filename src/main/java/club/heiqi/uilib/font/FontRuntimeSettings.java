@@ -9,8 +9,40 @@ import club.heiqi.uilib.font.config.FontConfig;
 
 /**
  * 单个字体 generation 使用的不可变配置快照。
+ *
+ * <p>本类是"字体运行时能表示什么配置"的<b>唯一权威</b>：构造校验与对外判据
+ * {@link #isRepresentable(String, double)} 共用同一张规则表。配置回灌侧
+ * （{@code ConfigValueBridge}）只准问判据，不准复制规则——新栈配置的 schema 声明了
+ * range 约束，但那份约束只在配置 UI 提交路径上生效，启动加载完全不读它（#71 同族审计 A1）。</p>
  */
 public final class FontRuntimeSettings {
+
+    /** atlas 采样模式字段名。 */
+    public static final String FIELD_LERP_MODE = "lerpMode";
+    /** AWT 字形生成分辨率字段名。 */
+    public static final String FIELD_AWT_CHAR_SIZE = "awtCharSize";
+    /** 默认显示字号字段名。 */
+    public static final String FIELD_CHAR_SIZE = "charSize";
+    /** 空格宽度字段名。 */
+    public static final String FIELD_SPACE_WIDTH = "spaceWidth";
+    /** 字间距字段名。 */
+    public static final String FIELD_CHARACTER_SPACING = "characterSpacing";
+    /** atlas 纹理边长倍数字段名。 */
+    public static final String FIELD_ATLAS_TEXTURE_SCALE = "atlasTextureScale";
+
+    /** lerpMode 合法下界（含）。 */
+    public static final int LERP_MODE_MIN = 0;
+    /** lerpMode 合法上界（含）。 */
+    public static final int LERP_MODE_MAX = 3;
+
+    /** 必须有限且大于 0 的字段。 */
+    private static final String[] FIELDS_REQUIRING_POSITIVE = {
+            FIELD_AWT_CHAR_SIZE, FIELD_CHAR_SIZE, FIELD_ATLAS_TEXTURE_SCALE,
+    };
+    /** 只要求有限的字段（0 与负值有明确语义，不得被改动）。 */
+    private static final String[] FIELDS_REQUIRING_FINITE = {
+            FIELD_SPACE_WIDTH, FIELD_CHARACTER_SPACING,
+    };
 
     private final int lerpMode;
     private final double awtCharSize;
@@ -45,14 +77,12 @@ public final class FontRuntimeSettings {
     private FontRuntimeSettings(int lerpMode, double awtCharSize, double charSize, double spaceWidth,
             double characterSpacing, boolean fontSortConfigured, String[] fontSort, String[] characterFontRules,
             FontCharacterRuleSet characterRuleSet, double atlasTextureScale) {
-        validateFinitePositive("awtCharSize", awtCharSize);
-        validateFinitePositive("charSize", charSize);
-        validateFinite("spaceWidth", spaceWidth);
-        validateFinite("characterSpacing", characterSpacing);
-        validateFinitePositive("atlasTextureScale", atlasTextureScale);
-        if (lerpMode < 0 || lerpMode > 3) {
-            throw new IllegalArgumentException("lerpMode 必须位于 0..3");
-        }
+        requireRepresentable(FIELD_AWT_CHAR_SIZE, awtCharSize);
+        requireRepresentable(FIELD_CHAR_SIZE, charSize);
+        requireRepresentable(FIELD_SPACE_WIDTH, spaceWidth);
+        requireRepresentable(FIELD_CHARACTER_SPACING, characterSpacing);
+        requireRepresentable(FIELD_ATLAS_TEXTURE_SCALE, atlasTextureScale);
+        requireRepresentable(FIELD_LERP_MODE, lerpMode);
         this.lerpMode = lerpMode;
         this.awtCharSize = awtCharSize;
         this.charSize = charSize;
@@ -196,16 +226,68 @@ public final class FontRuntimeSettings {
         return index;
     }
 
-    private static void validateFinitePositive(String name, double value) {
-        validateFinite(name, value);
-        if (value <= 0.0D) {
-            throw new IllegalArgumentException(name + " 必须大于 0");
+    /**
+     * 判断某个配置值能否被字体运行时表示——与构造校验同源的<b>唯一判据</b>。
+     *
+     * <p>配置回灌侧据此决定要不要修值，因此"什么算坏值"只有一份定义。未列入规则表的
+     * 字段返回 true，含义是本类不约束它，不是漏判——所以调用方只准传本类的 {@code FIELD_*}
+     * 常量，不要自造字符串。</p>
+     *
+     * @param field 字段名，取本类 FIELD_* 常量
+     * @param value 待判值
+     * @return 无需修复即可写入时返回 true
+     */
+    public static boolean isRepresentable(String field, double value) {
+        if (FIELD_LERP_MODE.equals(field)) {
+            return isFiniteValue(value) && value >= LERP_MODE_MIN && value <= LERP_MODE_MAX;
+        }
+        if (requiresPositive(field)) {
+            return isFiniteValue(value) && value > 0.0D;
+        }
+        if (requiresFinite(field)) {
+            return isFiniteValue(value);
+        }
+        return true;
+    }
+
+    private static void requireRepresentable(String field, double value) {
+        if (!isRepresentable(field, value)) {
+            throw new IllegalArgumentException(rejectionMessage(field, value));
         }
     }
 
-    private static void validateFinite(String name, double value) {
-        if (Double.isNaN(value) || Double.isInfinite(value)) {
-            throw new IllegalArgumentException(name + " 必须是有限数值");
+    /**
+     * 拒绝文案：非有限一律"必须是有限数值"（与旧 validateFinite 优先报同一条保持一致），
+     * 其余按字段要求给方向。
+     */
+    private static String rejectionMessage(String field, double value) {
+        if (!isFiniteValue(value)) {
+            return field + " 必须是有限数值";
         }
+        if (requiresPositive(field)) {
+            return field + " 必须大于 0";
+        }
+        return field + " 必须位于 " + LERP_MODE_MIN + ".." + LERP_MODE_MAX;
+    }
+
+    private static boolean requiresPositive(String field) {
+        return contains(FIELDS_REQUIRING_POSITIVE, field);
+    }
+
+    private static boolean requiresFinite(String field) {
+        return contains(FIELDS_REQUIRING_FINITE, field);
+    }
+
+    private static boolean contains(String[] fields, String field) {
+        for (String candidate : fields) {
+            if (candidate.equals(field)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isFiniteValue(double value) {
+        return !Double.isNaN(value) && !Double.isInfinite(value);
     }
 }
