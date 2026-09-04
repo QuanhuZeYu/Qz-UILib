@@ -182,7 +182,8 @@ public final class ConfigValueBridge {
      * 会让 {@code FontRuntimeSettings.capture()} 抛异常，必须修。</p>
      *
      * <p>修复顺序：①按 schema 声明的 min/max 钳位 → ②schema 默认值 → ③保持字段当前值不动
-     * （启动期即代码默认值）。每步都用 {@link FontRuntimeSettings#isRepresentable} 复核，
+     * （启动期即代码默认值；③ 成立的前提是该值本身来自一次受守卫的写入或静态初始化，
+     * 否则等于把一个已知坏值原封不动留下）。每步都用 {@link FontRuntimeSettings#isRepresentable} 复核，
      * 绝不写入仍不可表示的值；配置文件本身不改写，坏值留在文件里并由 WARN 指明。</p>
      *
      * @param authority 权威源（用于查 schema 声明的范围与默认值）
@@ -198,7 +199,7 @@ public final class ConfigValueBridge {
             return configured;
         }
         FieldSpec spec = authority.schema() == null ? null : authority.schema().field(path);
-        double repaired = clampToSchema(field, configured, spec);
+        double repaired = clampToSchema(configured, spec);
         String action = "按 schema 声明范围钳位";
         if (!FontRuntimeSettings.isRepresentable(field, repaired) && spec != null) {
             repaired = asNumber(spec.defaultValue());
@@ -217,7 +218,7 @@ public final class ConfigValueBridge {
     /**
      * 按 schema 声明的 min/max 钳位；非有限值无法钳位，原样返回交由下一步兜底。
      */
-    private static double clampToSchema(String field, double configured, FieldSpec spec) {
+    private static double clampToSchema(double configured, FieldSpec spec) {
         if (spec == null || Double.isNaN(configured) || Double.isInfinite(configured)) {
             return configured;
         }
