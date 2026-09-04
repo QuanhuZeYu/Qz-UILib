@@ -9,6 +9,7 @@ import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * 值回灌抽象：从新栈 {@link Authority} 全量拉值回灌 Config + FontConfig 静态字段。
@@ -219,7 +220,7 @@ public final class ConfigValueBridge {
      * 按 schema 声明的 min/max 钳位；非有限值无法钳位，原样返回交由下一步兜底。
      */
     private static double clampToSchema(double configured, FieldSpec spec) {
-        if (spec == null || Double.isNaN(configured) || Double.isInfinite(configured)) {
+        if (spec == null || !UiNumbers.isFinite(configured)) {
             return configured;
         }
         FieldConstraints constraints = spec.constraints();
@@ -247,7 +248,7 @@ public final class ConfigValueBridge {
      * 日志文案：非有限值用 String 表示，避免 NaN/Infinity 在占位符里丢失语义。
      */
     private static String fmt(double value) {
-        return Double.isNaN(value) || Double.isInfinite(value) ? String.valueOf(value) : Double.toString(value);
+        return !UiNumbers.isFinite(value) ? String.valueOf(value) : Double.toString(value);
     }
 
     /**

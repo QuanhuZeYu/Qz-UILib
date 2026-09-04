@@ -6,6 +6,7 @@ import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
+import club.heiqi.uilib.util.UiNumbers;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -606,7 +607,7 @@ public final class ConfigManager {
             // disk 路径：NUMBER 必须已是有限 Number；字符串/错型原样保留供校验拒绝
             if (field.type() == FieldType.NUMBER && value instanceof Number) {
                 double n = ((Number) value).doubleValue();
-                if (!Double.isNaN(n) && !Double.isInfinite(n)) {
+                if (UiNumbers.isFinite(n)) {
                     out.put(path, Double.valueOf(n));
                     continue;
                 }

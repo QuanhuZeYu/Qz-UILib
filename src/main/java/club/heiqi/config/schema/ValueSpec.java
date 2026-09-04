@@ -2,6 +2,7 @@ package club.heiqi.config.schema;
 
 import club.heiqi.config.ConfigException;
 import club.heiqi.config.ConfigNode;
+import club.heiqi.uilib.util.UiNumbers;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
@@ -295,7 +296,7 @@ public final class ValueSpec {
                     errors.put(path, "值必须是数字类型");
                 } else {
                     double number = ((Number) value).doubleValue();
-                    if (Double.isNaN(number) || Double.isInfinite(number)) {
+                    if (!UiNumbers.isFinite(number)) {
                         errors.put(path, "值不是有限数字");
                     }
                 }
@@ -378,7 +379,7 @@ public final class ValueSpec {
             case NUMBER:
                 if (node.getType() != ConfigNode.NodeType.NUMBER) return wrong(node, path, strict, "NUMBER");
                 double number = node.asDouble();
-                if (Double.isNaN(number) || Double.isInfinite(number)) {
+                if (!UiNumbers.isFinite(number)) {
                     if (strict) throw validationError(path + " must be finite");
                     return nodeToJava(node);
                 }

@@ -34,6 +34,7 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.overlay.OverlayHandle;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * 场景树运行时 —— 新 UI 组件层入口，对接 reactive 原语与 SceneNode 属性槽。
@@ -356,7 +357,7 @@ public class SceneRuntime {
                                   int durationMillis,
                                   int itemDelayMillis,
                                   int maxDelayMillis) {
-        if (Float.isNaN(startOffsetY) || Float.isInfinite(startOffsetY)) {
+        if (!UiNumbers.isFinite(startOffsetY)) {
             throw new IllegalArgumentException("startOffsetY 必须是有限值");
         }
         if (durationMillis < 0 || itemDelayMillis < 0 || maxDelayMillis < 0) {

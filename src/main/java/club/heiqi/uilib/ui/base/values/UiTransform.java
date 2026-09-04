@@ -3,6 +3,8 @@ package club.heiqi.uilib.ui.base.values;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.util.UiNumbers;
+
 /**
  * CSS-like transform 值对象。
  *
@@ -298,7 +300,7 @@ public final class UiTransform {
     }
 
     private static float sanitize(float value, float fallback) {
-        return Float.isNaN(value) || Float.isInfinite(value) ? fallback : value;
+        return !UiNumbers.isFinite(value) ? fallback : value;
     }
 
     private static float normalizeDegrees(float degrees) {

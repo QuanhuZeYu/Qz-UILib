@@ -6,6 +6,7 @@ import java.util.List;
 import club.heiqi.uilib.font.config.FontCharacterRule;
 import club.heiqi.uilib.font.config.FontCharacterRuleSet;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * 单个字体 generation 使用的不可变配置快照。
@@ -239,13 +240,13 @@ public final class FontRuntimeSettings {
      */
     public static boolean isRepresentable(String field, double value) {
         if (FIELD_LERP_MODE.equals(field)) {
-            return isFiniteValue(value) && value >= LERP_MODE_MIN && value <= LERP_MODE_MAX;
+            return UiNumbers.isFinite(value) && value >= LERP_MODE_MIN && value <= LERP_MODE_MAX;
         }
         if (requiresPositive(field)) {
-            return isFiniteValue(value) && value > 0.0D;
+            return UiNumbers.isFinite(value) && value > 0.0D;
         }
         if (requiresFinite(field)) {
-            return isFiniteValue(value);
+            return UiNumbers.isFinite(value);
         }
         return true;
     }
@@ -261,7 +262,7 @@ public final class FontRuntimeSettings {
      * 其余按字段要求给方向。
      */
     private static String rejectionMessage(String field, double value) {
-        if (!isFiniteValue(value)) {
+        if (!UiNumbers.isFinite(value)) {
             return field + " 必须是有限数值";
         }
         if (requiresPositive(field)) {
@@ -285,9 +286,5 @@ public final class FontRuntimeSettings {
             }
         }
         return false;
-    }
-
-    private static boolean isFiniteValue(double value) {
-        return !Double.isNaN(value) && !Double.isInfinite(value);
     }
 }

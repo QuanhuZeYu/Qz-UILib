@@ -9,6 +9,7 @@ import java.util.Map;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.util.UnicodeTextClassifier;
+import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * UILib 现代富文本标签解析器 —— 纯解析核心，输出与字体布局服务同构的 {@link TextSegment} 序列。
@@ -409,7 +410,7 @@ public final class RichTextTagParser {
         }
         try {
             float spacing = Float.parseFloat(value.trim());
-            if (Float.isNaN(spacing) || Float.isInfinite(spacing)) {
+            if (!UiNumbers.isFinite(spacing)) {
                 return null;
             }
             return Float.valueOf(Math.max(-64.0F, Math.min(64.0F, spacing)));

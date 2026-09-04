@@ -4,6 +4,7 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldConstraints;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
+import club.heiqi.uilib.util.UiNumbers;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -510,7 +511,7 @@ public final class DraftBuffer {
                 } else {
                     return "值必须是数字类型";
                 }
-                if (Double.isNaN(v) || Double.isInfinite(v)) {
+                if (!UiNumbers.isFinite(v)) {
                     return "值不是有限数字";
                 }
                 if (c != null) {
@@ -602,7 +603,7 @@ public final class DraftBuffer {
         } else {
             return ValueCopy.copyOf(value);
         }
-        if (Double.isNaN(number) || Double.isInfinite(number)) {
+        if (!UiNumbers.isFinite(number)) {
             return ValueCopy.copyOf(value);
         }
         return Double.valueOf(number);

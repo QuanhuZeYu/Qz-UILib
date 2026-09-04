@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.config.schema.ValueSpec;
+import club.heiqi.uilib.util.UiNumbers;
 
 /** 结构化列表 renderer 的纯数据模型，供 JVM 测试和 scene 适配层共同使用。 */
 public final class StructuredListModel {
@@ -254,7 +255,7 @@ public final class StructuredListModel {
         if (identity instanceof String && ((String) identity).trim().isEmpty()) return null;
         if (identity instanceof Number) {
             double number = ((Number) identity).doubleValue();
-            if (Double.isNaN(number) || Double.isInfinite(number)) return null;
+            if (!UiNumbers.isFinite(number)) return null;
         }
         return identity;
     }

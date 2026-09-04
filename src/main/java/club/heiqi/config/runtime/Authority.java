@@ -9,6 +9,7 @@ import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
 import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.MutableConfig;
+import club.heiqi.uilib.util.UiNumbers;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -200,7 +201,7 @@ public final class Authority {
                 }
                 try {
                     double v = node.asDouble();
-                    if (Double.isNaN(v) || Double.isInfinite(v)) {
+                    if (!UiNumbers.isFinite(v)) {
                         return "nan";
                     }
                     return Double.valueOf(v);
@@ -415,7 +416,7 @@ public final class Authority {
                     throw new ConfigException("strict type: field " + path + " expected NUMBER NodeType, got " + nt + " (quoted numeric strings are rejected on disk path)", ConfigException.Category.VALIDATION);
                 }
                 double v = node.asDouble();
-                if (Double.isNaN(v) || Double.isInfinite(v)) {
+                if (!UiNumbers.isFinite(v)) {
                     throw new ConfigException("strict type: field " + path + " NUMBER is not finite", ConfigException.Category.VALIDATION);
                 }
                 return Double.valueOf(v);
