@@ -92,15 +92,19 @@ public final class FontSoftwareRasterizer {
         double x3 = v[base + stride * 3 + GlyphRenderBatch.POSITION_OFFSET_FLOATS];
         double y3 = v[base + stride * 3 + GlyphRenderBatch.POSITION_OFFSET_FLOATS + 1];
 
-        rasterizeTriangle(buffer, width, height, v, base, stride, renderType, pagePixels, pageSize,
-                x0, y0, x1, y1, x2, y2);
-        rasterizeTriangle(buffer, width, height, v, base, stride, renderType, pagePixels, pageSize,
-                x2, y2, x3, y3, x0, y0);
+        // 属性插值必须按「本三角形自己的顶点」绑定重心权重：T1=(TL,BL,BR)→顶点槽 0,1,2；
+        // T2=(BR,TR,TL)→槽 2,3,0。历史实现 shade 恒把 w0/w1/w2 绑到槽 0,1,2，等价于把
+        // T2（屏幕右上半区）按 (u,v)→(1-u,1-v) 做 180° 旋转采样——非旋转对称字形必坏
+        // （e→ǝ、CJK 右上半沿对角错切），由 FontSoftwareRasterizerSamplingTest 钉死。
+        rasterizeTriangle(buffer, width, height, v, base, renderType, pagePixels, pageSize,
+                0, stride, 2 * stride, x0, y0, x1, y1, x2, y2);
+        rasterizeTriangle(buffer, width, height, v, base, renderType, pagePixels, pageSize,
+                2 * stride, 3 * stride, 0, x2, y2, x3, y3, x0, y0);
     }
 
-    private static void rasterizeTriangle(int[] buffer, int width, int height, float[] v, int base, int stride,
-            float renderType, int[] pagePixels, int pageSize, double ax, double ay, double bx, double by,
-            double cx, double cy) {
+    private static void rasterizeTriangle(int[] buffer, int width, int height, float[] v, int base,
+            float renderType, int[] pagePixels, int pageSize, int offA, int offB, int offC,
+            double ax, double ay, double bx, double by, double cx, double cy) {
         int minX = Math.max(0, (int) Math.floor(Math.min(Math.min(ax, bx), cx)));
         int maxX = Math.min(width - 1, (int) Math.ceil(Math.max(Math.max(ax, bx), cx)) - 1);
         int minY = Math.max(0, (int) Math.floor(Math.min(Math.min(ay, by), cy)));
@@ -122,7 +126,7 @@ public final class FontSoftwareRasterizer {
                 if (w0 < -1.0e-9 || w1 < -1.0e-9 || w2 < -1.0e-9) {
                     continue;
                 }
-                int argb = shade(v, base, stride, renderType, pagePixels, pageSize, w0, w1, w2);
+                int argb = shade(v, base, renderType, pagePixels, pageSize, offA, offB, offC, w0, w1, w2);
                 if ((argb >>> 24) == 0) {
                     continue;
                 }
@@ -131,17 +135,20 @@ public final class FontSoftwareRasterizer {
         }
     }
 
-    private static int shade(float[] v, int base, int stride, float renderType, int[] pagePixels, int pageSize,
-            double w0, double w1, double w2) {
+    private static int shade(float[] v, int base, float renderType, int[] pagePixels, int pageSize,
+            int offA, int offB, int offC, double w0, double w1, double w2) {
         int uOff = GlyphRenderBatch.UV_OFFSET_FLOATS;
         int cOff = GlyphRenderBatch.COLOR_OFFSET_FLOATS;
-        double u = v[base + uOff] * w0 + v[base + stride + uOff] * w1 + v[base + stride * 2 + uOff] * w2;
-        double vv = v[base + uOff + 1] * w0 + v[base + stride + uOff + 1] * w1
-                + v[base + stride * 2 + uOff + 1] * w2;
-        double r = v[base + cOff] * w0 + v[base + stride + cOff] * w1 + v[base + stride * 2 + cOff] * w2;
-        double g = v[base + cOff + 1] * w0 + v[base + stride + cOff + 1] * w1 + v[base + stride * 2 + cOff + 1] * w2;
-        double b = v[base + cOff + 2] * w0 + v[base + stride + cOff + 2] * w1 + v[base + stride * 2 + cOff + 2] * w2;
-        double a = v[base + cOff + 3] * w0 + v[base + stride + cOff + 3] * w1 + v[base + stride * 2 + cOff + 3] * w2;
+        double u = v[base + offA + uOff] * w0 + v[base + offB + uOff] * w1 + v[base + offC + uOff] * w2;
+        double vv = v[base + offA + uOff + 1] * w0 + v[base + offB + uOff + 1] * w1
+                + v[base + offC + uOff + 1] * w2;
+        double r = v[base + offA + cOff] * w0 + v[base + offB + cOff] * w1 + v[base + offC + cOff] * w2;
+        double g = v[base + offA + cOff + 1] * w0 + v[base + offB + cOff + 1] * w1
+                + v[base + offC + cOff + 1] * w2;
+        double b = v[base + offA + cOff + 2] * w0 + v[base + offB + cOff + 2] * w1
+                + v[base + offC + cOff + 2] * w2;
+        double a = v[base + offA + cOff + 3] * w0 + v[base + offB + cOff + 3] * w1
+                + v[base + offC + cOff + 3] * w2;
 
         if (renderType > GlyphRenderBatch.RENDER_TYPE_COLORED_GLYPH) {
             // decoration：纯色直出

@@ -43,10 +43,12 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
  * 每条左侧 label 列，人眼判对齐）+ {@code %02d-<case>.png} 逐样本放大页 + {@code profiles.txt}
  * 记环境（JVM/OS/字体现场指纹）与逐样本数值（行数/行宽/quad 数/墨水像素）。</p>
  *
- * <p><b>场地既有特性（如实声明）</b>：软件光栅器对 CJK 字形有水平重影（无 AA 多抽头 +
- * ink-bleed 外扩区直出所致），既有 LaTeX 场地 {@code \text{速度}} 出图同样如此（本轮以
- * HEAD 原代码对照实测，非 M3 回归）。人眼判读因此聚焦结构面：换行位置、字号阶梯、
- * 基线节奏、下划线/删除线、公式落位、列表符号；字形观感由真机验收。</p>
+ * <p><b>历史缺陷已修复（如实更正）</b>：M3 时把「CJK 右上半沿对角错切、拉丁字母画成
+ * 别的字母」误记为场地既有特性（无 AA + ink-bleed 直出所致）。实为软件光栅器
+ * {@code FontSoftwareRasterizer} 自 04a8a8bb 引入起就把第二个三角形 (BR,TR,TL) 的重心权重
+ * 错绑到顶点槽 0/1/2，导致每个字形右上半区被 180° 旋转采样（180° 对称字形与 decoration
+ * quad 恰好正常，掩盖了缺陷）。修复见 {@code FontSoftwareRasterizerSamplingTest} 钉死断言；
+ * 修复后出图字形本体可读，人眼判读可覆盖字形观感面。</p>
  *
  * <p><b>机器判地板</b>（不只「文件存在」）：每页非背景像素数 ≥ 地板值、每视觉行实测宽 ≤
  * 容器宽、行框顶 y 严格单调递增、链接样本必产带 URL 的 LINK_REGION、标题样本首行行高
