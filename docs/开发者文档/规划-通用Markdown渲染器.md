@@ -480,6 +480,88 @@ assertWidthIndependentCodeStyle` 的 P03 专用不变量——那是判据改动
    不是等价的强度**。且实测序列 20/19/19/18 说明 8px/层扣宽在 269px 容器上仅移动一两个字，
    **该语料钉住的是一件小事**；若日后调大 `quoteIndentPx`，必须重测该序列。
 
+9. **M8 装配侧第二套真相：围栏底色「三表面三口径」，块内统一宽上收 L2（2026-09-05，用户裁定，代码批 `4ba7d871`）**
+   用户实机发现 devtools 页围栏底色右缘参差；逐处核实到行后确认：**同一件几何事实被抄了两份、漏了第三份**。
+
+   - **(a) L2 出图路** `src/main/java/club/heiqi/uilib/ui/markdown/MarkdownLineLayout.java:182`（本批**前**行号）
+     —— 连续同 `blockId` 的 CODE 行合并成一个矩形（合并本身是对的），但矩形宽取 **容器右缘** `contentRight`；
+   - **(b) 聊天面板** `src/main/java/club/heiqi/uilib/internal/chat3/view/ChatMessageList.java:1088-1092`
+     —— 自建**私有** `Map<Integer,Integer> codeBlockWidthPx`，按 `blockId` 查块内最宽行，`lineWidth = max(行宽, 块宽)`
+     （视觉干净，但是第二份实现）；
+   - **(c) devtools 页** `src/main/java/club/heiqi/uilib/internal/devtools/playground/pages/MarkdownPage.java:140-143`
+     —— 每行宽 = **该行自身文字宽 + `CODE_BG_PAD_PX*2`**，完全没有块口径 → 用户在 game 里看到的参差右缘就是它。
+
+   即「块内统一宽」没有单一产地：(a)(b) 各写一遍且**口径还不同**（容器宽 vs 块内最宽行宽），(c) 根本没写。
+
+   - **裁定与落点**：块内统一宽是**度量事实**（要持 `TextLayoutService` 才量得出来），产地只能是 L2。
+     接缝新增 `MarkdownLayoutLine#getBlockContentWidthPx()`，由 `MarkdownLineLayout#unifyCodeBlockContentWidth`
+     在 `wrapLayoutLines` 折行后按 `blockId` 聚合写入。**取值语义（不留未定义值）**：CODE 行 = 同块全部 CODE
+     视觉行「自身文字宽（`ceil(段流推进宽)`）」的最大值，下限 1（整块皆空行也画得出一条可辨识底色）；
+     非 CODE 行恒 `0 = 不适用`；L1 逻辑行恒 `0 = 未算`（L1 纯解析层零度量）。三侧改读同一个数：
+     (a) 合并矩形宽 = 该值（旧「铺满容器右缘」作废——那是与两路消费者都不一致的**第四套数**）；
+     (b) 私有 `codeBlockWidthPx` 机制**整块删除**，`RenderedLine` 逐字透传 L2 值；(c) 改读该值。
+     内衬 `CODE_BG_SIDE_PAD_PX` / `CODE_BG_PAD_PX` 留在各自视图（节点盒装饰口径，不是块宽口径），
+     `max(本行宽, 块宽) + 2*pad` 与旧数值逐位等价 → 聊天面板**零观感变化**。
+   - **兼容性处理（选拷贝法，构造器一个不加）**：公共 10 参全字段构造器**签名一字不动**（该类型已对外、
+     有存量消费者：L1 装配、门禁 `MarkdownChat3ParityTest:541` 合成行、L2 复制路），另加
+     `withBlockContentWidthPx(int)` + getter，实现收在**私有** 11 参构造器里。理由：① 块宽是**换行之后
+     才存在的派生量**，本质「从已有行派生一行」，与既有 `withSegments()` 同构；② 再加一个全参重载会把
+     「哪个是权威构造入口」变成两代并存，下次增字段继续膨胀；③ L1 永远产不出这个数，却让 L1 看见一个
+     「度量字段形参」本身就是误导。`withSegments()` 同步透传该字段（防「换段流丢块宽」）。
+     公共成员 15 → **17**（+1 getter +1 拷贝法）。
+   - **上收后的单一真相链路**：`MarkdownDocument.toLayoutLines`（身份/缩进/颜色，块宽 0=未算）→ §桥 +
+     换行前链接化（`withSegments` 保身份）→ **`MarkdownPainter.wrapLayoutLines` = 块宽唯一产地**（按
+     `blockId` 聚合）→ 三条消费路只读 `getBlockContentWidthPx()`：L2 `blockCommands` 出合并 BACKGROUND
+     矩形宽 / `ChatMarkdownPipeline.RenderedLine` 逐字透传 → `ChatMessageList` 钉行节点宽 / `MarkdownPage`
+     钉行节点宽。全仓不再有任何一处「按 blockId 求块内最宽」。
+   - **核心锁（三面对一份真相的机器形式）**：新增 `MarkdownBlockContentWidthLockTest`（5 用例）。判据不是
+     「矩形读的就是 getter」这种自证，而是**三方同数**：合并 BACKGROUND 矩形宽 == 该行
+     `getBlockContentWidthPx()` == **独立 oracle**（只用公共入口 `MarkdownPainter.lineWidthPx` 逐行量「本行
+     自身宽」再取块内最大）。再加两条**反同义反复地板**：≥3 个块的成员行宽互不相同（否则被废弃的 (c)
+     逐行口径也能过等式）、≥4 个块宽严格小于容器宽（否则被废弃的 (a) 铺满口径也能过）。实测参与比较：
+     CODE 视觉行 14 / 合并矩形 6 / ragged 块 5 / 块宽<容器 6（地板分别写死 10/6/3/4）。**正对照**：无围栏
+     文档零 CODE 矩形 + 全行 getter 取定义值 0，且同一扫描器在围栏语料上必须恰命中 1 条矩形（证明「零
+     命中」不是扫帚坏）。**突变检验**（各实跑一遍）：矩形改回铺满容器 → 核心锁红 1 条；聚合退化为不写值
+     → 红 4 条（核心锁 + 块内等值锁 + 定义值语义锁 + 页面级锁）；页面改回逐行自字宽 → 页面级锁红。
+     恒真断言已排除。
+   - **页面级是真页面断言**（未用 L2 断言冒充）：`PlaygroundPageRegistryTest#markdownPageCodeBlockLineNodes
+     ShareWidthPerBlock` —— headless 构造 markdown 页后遍历**已装配的 scene 节点**，断言同一围栏块内全部
+     CODE 行节点 `getPreferredWidth()` 彼此相等（识别口径：非空段流 + 左右内衬 + 非零背景色；**正对照**：
+     同页两个围栏块的统一宽必须互不相等，钉住「按块取值」而非全局常量/铺满容器；地板：块数 ≥2、
+     节点数 ≥4）。**刻意并入该既有类而不是新开测试类**，原因见本节末条。
+   - **守卫是否扩到装配侧 —— 本仓判断：扩，但只扩「聚合产地唯一」这一条窄锚。** M6 复生锁
+     `Chat3MarkdownResurrectionGuardTest` 守的是**解析侧**（锚点 = 反引号 / `*` / `~~` / `$$` 等**内容字符** +
+     旧类名 + 文件存在性），它能机器判定是因为「重新解析 markdown」有具体字符特征。装配侧的第二套真相
+     **没有这种字符特征**：`Math.max(lineWidth, blockW)`、`+2*pad`、`min(lineWidth, maxBubble-reserve)`
+     在消费者里都是**合法且必要**的本地几何。若把守卫写成「消费者不得对块几何做任何计算」，就会把内衬、
+     气泡钳宽、引用扣宽一起判成违规 —— 那是**防写代码，不是防第二套真相**，故**不采**。
+     **采的窄形态**：给聚合起唯一专名 `unifyCodeBlockContentWidth`，守卫只断言 ① 该 token 在主源里只出现
+     在 L2（定义+调用 ≥2 = 正对照）；② 三个消费者文件里该 token 与被删的私有机制名 `codeBlockWidth`
+     各 0 命中；③ 消费者代码行必须**真的读 getter**（合计 ≥3 命中，反 ∅）。扫描沿用 M6 同一「剥注释后
+     代码行」口径（否则注释里提一句被禁 token 就假红）。落点
+     `MarkdownBlockContentWidthLockTest#blockWidthAggregationMayLiveOnlyInL2`。**如实标注局限**：改名即可
+     绕过 —— 静态窄锚防的是「把那份实现整份复制过去」这一最常见形态，防不住「重写一个等价聚合」；
+     真正兜住**数值**漂移的是上面的三方同数核心锁与页面级锁。两者互补，都刻意不扩宽。若日后要把守卫
+     扩成「禁止消费者新增任何块级本地几何计算」，属门禁语义改变，须另裁。
+   - **门禁与计数对账**：门禁 `MarkdownChat3ParityTest` 判据/容差/登记表/比对引擎一字未动；与基线（同机
+     `10dbe20b` 重跑产物）逐项等值：PARITY=20 / NEW=11 / FAIL=0 / TIE=0 / 有意差异=3 / PNG=153，且
+     `diff.txt` 87 行**逐行完全一致**。全量 `build --offline` = BUILD SUCCESSFUL；测试计数 3993 → **3999**
+     （+6 = 新锁 5 条 + 页面级锁 1 条，**删除 0 条**），套件 362 → 363（+1 新测试类），
+     0 failures / 0 errors / 2 skipped 与基线同。反向核查四项：① `ui/markdown` 的 `GL11.` 按出现次数 =
+     **0**（正对照 `ui/render` = **559** > 0，同口径）；② `MarkdownStyleTable` `javap -public` 方法数恒 **18**
+     （+1 构造器 = 19 成员，与基线逐行等值）；③ `ChatMessageList` / `ChatSceneController` 及 5 个嵌套
+     public 类型与基线**逐成员差异为空**（本批只改私有成员与包内 `RenderedLine`）；④ `MarkdownLayoutLine`
+     公共成员 15 → **17**。
+   - **本批暴露的一条既有跨测试耦合（非我引入，但必须留档）**：`PlaygroundButtonRowLayoutTest` 的「home 页
+     按钮行不越界」断言用的是**真实字体测量**（`SceneHostAssembly.defaultMeasurer()` →
+     `DefaultTextMeasureService` → `FontService.getInstance()`），而字体注册**异步**：注册完成后 home 页文本
+     变宽，行子节点越界 22~36px。基线树（`10dbe20b`）实测——加一个「仅构造 markdown 页、零断言」的前置
+     测试类且类名排序在 `Playground*` 之前 → **3/6 红**；同一个类改名排到其后 → **0/4 红**。本批最初新开
+     `MarkdownPageCodeBlockWidthTest` 正好踩中前者（同命令一红一绿），据此把页面级锁**并入基线就已构造
+     全部页面的 `PlaygroundPageRegistryTest`**（排序在 row 测试之后）→ 回到基线暴露面。**遗留待裁**：这条
+     耦合本身仍在（任何先跑并构造 markdown 页的新测试类都会暴露它），修法是给该测试注入确定度量端口
+     或等注册完成再断言 —— 均属验证设施改动、与本批无关，未动，等放行。
+
 ---
 
 ## 三、迁移与「不得并存」门禁
