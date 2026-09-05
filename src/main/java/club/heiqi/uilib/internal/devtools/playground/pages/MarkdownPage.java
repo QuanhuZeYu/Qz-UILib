@@ -95,6 +95,63 @@ public final class MarkdownPage implements PlaygroundPage {
         };
     }
 
+    /**
+     * 一个围栏块 = 一个带底色的 COLUMN 容器（gap=0），内部逐行挂段流节点。
+     *
+     * <p>底色宽（横向）恒取 L2 的 {@code getBlockContentWidthPx()}（M8 单一真相）；
+     * 底色<b>纵向连续</b>由「容器盒覆盖全部子行」保证（M9 修「三截条」）——
+     * 容器上下内衬保持 0，块外缘观感与旧版逐字节相同，只消掉行间那条 8px 缝。</p>
+     */
+    private static SceneNode codeBlockNode(List<MarkdownLayoutLine> lines, int from, int to,
+            TextLayoutService measurer) {
+        MarkdownLayoutLine head = lines.get(from);
+        int contentWidthPx = head.getBlockContentWidthPx();
+        SceneNode block = SceneNode.column(0)
+                .setHitTestable(false)
+                .setBackgroundColor(head.getBackgroundArgb())
+                .setPadding(0, CODE_BG_PAD_PX, 0, CODE_BG_PAD_PX);
+        for (int k = from; k <= to; k++) {
+            MarkdownLayoutLine row = lines.get(k);
+            List<TextSegment> segments = row.getSegments();
+            SceneNode rowNode = new SceneNode()
+                    .setHitTestable(false)
+                    .setFontSize(BASE_FONT_PX)
+                    .setTextVerticalAlign(TextVerticalAlign.TOP)
+                    .setPreferredHeight(Math.max(1,
+                            MarkdownPainter.lineHeightPx(segments, measurer, BASE_FONT_PX)));
+            if (!segments.isEmpty()) {
+                rowNode.setSegments(segments);
+                rowNode.setPreferredWidth(Math.max(1,
+                        MarkdownPainter.lineWidthPx(segments, measurer, BASE_FONT_PX)));
+                contentWidthPx = Math.max(contentWidthPx, rowNode.getPreferredWidth());
+            } else {
+                rowNode.setWidthSizing(SceneNode.WidthSizing.FILL);
+            }
+            block.appendChild(rowNode);
+        }
+        block.setPreferredWidth(Math.max(1, contentWidthPx + CODE_BG_PAD_PX * 2));
+        return block;
+    }
+
+    /** 引用嵌套：每层 row[竖条 2px + gap 6 + 内容]，一/二/三层肉眼可分（level=0 原样返回）。 */
+    private static SceneNode quoteWrap(SceneNode inner, MarkdownLayoutLine line) {
+        SceneNode node = inner;
+        for (int level = line.getQuoteLevel(); level >= 1; level--) {
+            SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
+                    .setHitTestable(false)
+                    .setWidthSizing(SceneNode.WidthSizing.SHRINK);
+            quoteRow.appendChild(new SceneNode()
+                    .setHitTestable(false)
+                    .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
+                    .setFillParentHeight(true)
+                    .setBackgroundColor(line.getAccentArgb())
+                    .setCornerRadius(QUOTE_BAR_RADIUS_PX));
+            quoteRow.appendChild(node);
+            node = quoteRow;
+        }
+        return node;
+    }
+
     /** 一张样本卡 = 标题 + 渲染出的视觉行节点（每行一个段流节点，钉实测宽与行高）+ 说明。 */
     private static SceneNode sampleCard(String[] sample, TextLayoutService measurer) {
         SceneNode card = PlaygroundKit.card();
@@ -116,8 +173,26 @@ public final class MarkdownPage implements PlaygroundPage {
                 MarkdownDocument.parse(sample[2]).toLayoutLines(styles, base),
                 measurer, WRAP_WIDTH_PX, BASE_FONT_PX);
         List<SceneNode> lineNodes = new ArrayList<SceneNode>();
-        for (int i = 0; i < lines.size(); i++) {
+        int i = 0;
+        while (i < lines.size()) {
             MarkdownLayoutLine line = lines.get(i);
+            // M9 围栏块 = 一个块级容器节点（既有 COLUMN + 背景色 + 内衬能力，零新图元）：
+            // 旧写法给每条 CODE 行各挂一个底色节点，而卡片列 gap=8 被当成行距 →
+            // 底色只有 14px 行盒高、行间留 8px 无底色缝 → 真机看到「三截条」。
+            // 合并成单容器后，底色矩形天然覆盖块内全部行（与 L2「连续同 blockId 合并
+            // 为单矩形」同口径；聊天面板本就无此问题——它的内容列 gap=0、行盒高=节距）。
+            if (line.getKind() == MarkdownLayoutLine.Kind.CODE
+                    && line.getBlockId() != MarkdownLayoutLine.NO_BLOCK) {
+                int j = i;
+                while (j + 1 < lines.size()
+                        && lines.get(j + 1).getKind() == MarkdownLayoutLine.Kind.CODE
+                        && lines.get(j + 1).getBlockId() == line.getBlockId()) {
+                    j++;
+                }
+                lineNodes.add(quoteWrap(codeBlockNode(lines, i, j, measurer), line));
+                i = j + 1;
+                continue;
+            }
             List<TextSegment> segments = line.getSegments();
             SceneNode lineNode;
             if (line.getKind() == MarkdownLayoutLine.Kind.THEMATIC_BREAK) {
@@ -135,43 +210,21 @@ public final class MarkdownPage implements PlaygroundPage {
                         .setTextVerticalAlign(TextVerticalAlign.TOP)
                         .setPreferredHeight(Math.max(1,
                                 MarkdownPainter.lineHeightPx(segments, measurer, BASE_FONT_PX)));
-                boolean codeLine = line.getKind() == MarkdownLayoutLine.Kind.CODE;
                 if (!segments.isEmpty()) {
                     lineNode.setSegments(segments);
                 }
                 int contentWidthPx = MarkdownPainter.lineWidthPx(segments, measurer, BASE_FONT_PX);
-                if (codeLine) {
-                    // M8 单一真相：块内统一宽恒读 L2 的 getBlockContentWidthPx()，不再用本行
-                    // 自字宽（旧口径「每行 = 自身文字宽 + 2×内衬」正是用户在 game 里看到的
-                    // 右缘参差的根因）。取 max 只为兜住「L2 未给块宽」的定义值 0，不是第二套口径。
-                    contentWidthPx = Math.max(contentWidthPx, line.getBlockContentWidthPx());
-                    lineNode.setBackgroundColor(line.getBackgroundArgb());
-                    lineNode.setPadding(0, CODE_BG_PAD_PX, 0, CODE_BG_PAD_PX);
-                    lineNode.setPreferredWidth(Math.max(1, contentWidthPx + CODE_BG_PAD_PX * 2));
-                } else if (!segments.isEmpty()) {
+                if (!segments.isEmpty()) {
                     lineNode.setPreferredWidth(Math.max(1, contentWidthPx));
                 } else {
                     lineNode.setWidthSizing(SceneNode.WidthSizing.FILL);
                 }
             }
-            // 引用嵌套：每层 row[竖条 2px + gap 6 + 内容]，一/二/三层肉眼可分
-            for (int level = line.getQuoteLevel(); level >= 1; level--) {
-                SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
-                        .setHitTestable(false)
-                        .setWidthSizing(SceneNode.WidthSizing.SHRINK);
-                quoteRow.appendChild(new SceneNode()
-                        .setHitTestable(false)
-                        .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
-                        .setFillParentHeight(true)
-                        .setBackgroundColor(line.getAccentArgb())
-                        .setCornerRadius(QUOTE_BAR_RADIUS_PX));
-                quoteRow.appendChild(lineNode);
-                lineNode = quoteRow;
-            }
-            lineNodes.add(lineNode);
+            lineNodes.add(quoteWrap(lineNode, line));
+            i++;
         }
-        for (int i = 0; i < lineNodes.size(); i++) {
-            card.appendChild(lineNodes.get(i));
+        for (int n = 0; n < lineNodes.size(); n++) {
+            card.appendChild(lineNodes.get(n));
         }
         card.appendChild(PlaygroundKit.hint(sample[1]));
         return card;

@@ -234,6 +234,61 @@ public class MarkdownBlockContentWidthLockTest {
                 narrowerThanContainer >= MIN_NARROWER_THAN_CONTAINER);
     }
 
+    /**
+     * 纵向口径锁（M9）：L2 出图路的合并矩形<b>高度</b>恒等于该块全部 CODE 视觉行的行高之和——
+     * 「合并单矩形」在纵向上天然无缝。这正是页面缺陷的反面教材：页面旧写法把行距交给卡片列
+     * {@code gap}，于是每行各自一块底色、中间留 8px 缝（真机「三截条」）。
+     *
+     * <p>反 ∅ 地板：矩形数 &ge; 4、跨 &ge;2 行的无缝矩形 &ge; 3。
+     * <b>正对照</b>：单行块也必须出现（否则「矩形高严格大于单行行高」是恒真判据）。</p>
+     */
+    @Test
+    public void mergedCodeRectHeightCoversAllRowsSeamlessly() {
+        TextLayoutService service = assembleAll();
+        int rects = 0;
+        int multiRowRects = 0;
+        int singleRowRects = 0;
+        for (int c = 0; c < CORPUS.length; c++) {
+            String tag = CORPUS[c][0];
+            String src = CORPUS[c][1];
+            int container = Integer.parseInt(CORPUS[c][2]);
+            List<MarkdownLayoutLine> visual =
+                    MarkdownPainter.wrapLayoutLines(logical(src), service, container, BASE);
+            List<PaintCommand> commands =
+                    MarkdownPainter.toLayoutPaintCommands(logical(src), service, container, BASE);
+            int codeBg = codeBackdropArgb(visual, tag);
+            List<PaintCommand> rectsOfCase = codeRects(commands, codeBg);
+            Map<Integer, List<MarkdownLayoutLine>> blocks = codeBlocks(visual);
+            Assert.assertEquals(tag + "：合并矩形数 == CODE 块数", blocks.size(), rectsOfCase.size());
+            int index = 0;
+            for (Map.Entry<Integer, List<MarkdownLayoutLine>> entry : blocks.entrySet()) {
+                PaintCommand rect = rectsOfCase.get(index++);
+                List<MarkdownLayoutLine> rows = entry.getValue();
+                int sumRows = 0;
+                for (MarkdownLayoutLine row : rows) {
+                    sumRows += MarkdownPainter.lineHeightPx(row.getSegments(), service, BASE);
+                }
+                int rectHeight = rect.getBottom() - rect.getTop();
+                Assert.assertEquals(tag + " 块 " + entry.getKey() + "：合并矩形高必须等于块内全部 CODE 行"
+                        + "行高之和（纵向无缝，不得只盖首行）", sumRows, rectHeight);
+                if (rows.size() >= 2) {
+                    int oneRow = MarkdownPainter.lineHeightPx(rows.get(0).getSegments(), service, BASE);
+                    Assert.assertTrue(tag + " 多行块矩形高必须严格大于单行行高: " + rectHeight + " vs "
+                            + oneRow, rectHeight > oneRow);
+                    multiRowRects++;
+                } else {
+                    singleRowRects++;
+                }
+                rects++;
+            }
+        }
+        Assert.assertTrue("反 ∅ 地板：参与比较的合并矩形 >= 4，实测 " + rects, rects >= 4);
+        Assert.assertTrue("反 ∅ 地板：跨 >=2 行的无缝矩形 >= 3，实测 " + multiRowRects,
+                multiRowRects >= 3);
+        Assert.assertTrue("正对照：单行块也必须出现（否则「矩形高>单行高」是恒真），实测 "
+                + singleRowRects, singleRowRects >= 1);
+    }
+
     /** 同一 blockId 内所有 CODE 行的块宽彼此相等，且 >= 各行自身文字宽。 */
     @Test
     public void blockWidthIsUniformPerBlockAndNeverBelowOwnRowWidth() {

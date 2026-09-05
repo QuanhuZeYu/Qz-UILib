@@ -1716,6 +1716,38 @@ public class ChatMessageListTest {
     }
 
     @Test
+    public void fencedCodeBubbleLineBoxesAreVerticallySeamless() {
+        // M9 纵向口径证据：聊天面板的内容列 gap=0 且行节点盒高==行高，故同块 CODE 行的底色盒
+        // **首尾相接**（y[i+1] == y[i] + h[i]），不存在页面上那条 8px 缝。这条断言把「聊天面板
+        // 本来就没有该缺陷」钉成机器事实——若日后有人给内容列加 gap，这里立刻红。
+        char tick = (char) 0x60;
+        String fence = String.valueOf(tick) + tick + tick;
+        String nl = String.valueOf((char) 0x0A);
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob> " + fence + nl + "int a = 1;" + nl + "int bb = 2222;" + nl + fence), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        List<SceneNode> codeBoxes = new ArrayList<SceneNode>();
+        for (SceneNode node : bubble.__getChildren()) {
+            if (node.getSegments() != null && !node.getSegments().isEmpty()
+                    && node.getBackgroundColor() == ChatMarkdownSettings.getCodeBackgroundArgb()) {
+                codeBoxes.add(node);
+            }
+        }
+        Assert.assertTrue("反 ∅ 地板：至少 2 条 CODE 行盒，实测 " + codeBoxes.size(),
+                codeBoxes.size() >= 2);
+        for (int i = 1; i < codeBoxes.size(); i++) {
+            LayoutBox prev = (LayoutBox) codeBoxes.get(i - 1).getCachedLayout();
+            LayoutBox cur = (LayoutBox) codeBoxes.get(i).getCachedLayout();
+            Assert.assertNotNull("行盒必须已布局", cur);
+            Assert.assertEquals("聊天面板同块 CODE 行底色盒必须首尾相接（无缝）: 第 " + i
+                            + " 行 y=" + cur.getY() + " 上一行底 y=" + (prev.getY() + prev.getHeight()),
+                    prev.getY() + prev.getHeight(), cur.getY());
+        }
+    }
+
+    @Test
     public void quoteLineInsideAccentBubbleKeepsRowLayout() {
         // 方案A accent 自己气泡:内容列内引用行保持 row[竖条 + 文本],强调条仍在行末
         ChatSceneController controller = controller();
