@@ -143,6 +143,13 @@ public final class MarkdownPainter {
      * §二之五 登记表说明）。身份字段（kind/quoteLevel/blockId/几何/装饰色）逐视觉行透传，
      * 消费层据此表达块级几何；{@code getSegments()} 的可见文本与段流路逐字等值。</p>
      *
+     * <p><b>M8 块内统一内容宽的产地（唯一实现）</b>：本方法是全仓唯一计算围栏「块内统一宽」的地方
+     * ——按 {@code blockId} 聚合该 CODE 块全部视觉行的自身文字宽取最大，写进
+     * {@link MarkdownLayoutLine#getBlockContentWidthPx()}。L2 出图的合并底色矩形、聊天面板
+     * ({@code ChatMessageList})、devtools 演示页 ({@code MarkdownPage}) 三侧都只读这一个数
+     * （规划 §二之七·续 第 9 条；恒等式「矩形宽 == getter」由
+     * {@code MarkdownBlockContentWidthLockTest} 锁死）。非 CODE 行该字段恒 {@code 0 = 不适用}。</p>
+     *
      * @param logicalLines   逻辑行序列（null/空 → 单空行）
      * @param measurer       度量服务（不可为 null）
      * @param maxWidthPx     内容盒最大宽度（UI 像素）；{@code <= 0} = 不限宽（只按行边界断行）
@@ -159,14 +166,16 @@ public final class MarkdownPainter {
      * （用户裁定：真横线 = 一条 1px 高的 BACKGROUND；引用竖条、围栏块底色同理——零新造图元）。
      *
      * <p>先 {@link #wrapLayoutLines} 换行，再按序产出：围栏底色（连续同块行合并为覆盖全部
-     * 显示行的单矩形）→ 引用竖条（逐层逐行，y 相邻成视觉连续柱）与分隔线真横线（
+     * 显示行的单矩形，<b>其宽恒取该块的 {@code getBlockContentWidthPx()}——与两路消费者同数</b>，
+     * M8 起不再铺至容器右缘）→ 引用竖条（逐层逐行，y 相邻成视觉连续柱）与分隔线真横线（
      * ruleThicknessPx 高、铺至内容右缘）→ 每文本行 SEGMENTS（{@code left = leftInsetPx}）
      * + LINK_REGION（同偏移平移）。几何数值恒取行上的样式表解析值（G4 度量同源，本包零
      * GL11 直调、零自设常量，由 MarkdownLayerGuardTest 锁死）。</p>
      *
      * @param logicalLines   L1 逻辑行序列（null/空 → 空命令流）
      * @param measurer       度量服务（不可为 null）
-     * @param maxWidthPx     内容盒最大宽度（UI 像素；横线/底色铺至该右缘）
+     * @param maxWidthPx     内容盒最大宽度（UI 像素；真横线铺至该右缘，折行扣宽亦以它为基准。
+     *                       <b>M8 起围栏底色不再铺至本参数的右缘</b>，改用块内统一内容宽）
      * @param baseFontSizePx 基准字号（UI 像素）
      * @return 不可变命令流
      */

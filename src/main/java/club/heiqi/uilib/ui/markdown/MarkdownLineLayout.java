@@ -2,7 +2,9 @@ package club.heiqi.uilib.ui.markdown;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
@@ -142,7 +144,51 @@ final class MarkdownLineLayout {
                 out.add(copyWithSegments(line, visual.get(v)));
             }
         }
-        return Collections.unmodifiableList(out);
+        // M8 单一真相：块内统一内容宽在本层（唯一持度量服务处）算出并写入行对象——
+        // L2 出图矩形、聊天面板、devtools 页三面对这一个数（规划 §二之七·续 第 9 条）。
+        return Collections.unmodifiableList(unifyCodeBlockContentWidth(out, measurer, baseFontSizePx));
+    }
+
+    /**
+     * 按 blockId 把 CODE 视觉行的「块内统一内容宽」写进行对象（M8 上收；三面对一份真相的产地）。
+     *
+     * <p>口径：<b>同 blockId 全部 CODE 视觉行自身文字宽（{@code ceil(段流推进宽)}）的最大值，
+     * 下限 1</b>；非 CODE 行一律不写（保持 {@code 0 = 不适用}）。下限 1 是给「整块皆空行」的围栏
+     * 仍留一条可辨识底色，且不破坏「块宽 &ge; 每行自身宽」这条不变量（空行自身宽为 0）。</p>
+     *
+     * <p>本方法是块宽的<b>唯一实现</b>：消费层（L3 与 devtools 页）只读
+     * {@link MarkdownLayoutLine#getBlockContentWidthPx()}，不得各自再抄一份查表/取最大
+     * ——那正是本轮要拆掉的装配侧第二套真相。</p>
+     */
+    private static List<MarkdownLayoutLine> unifyCodeBlockContentWidth(List<MarkdownLayoutLine> lines,
+            TextLayoutService measurer, int baseFontSizePx) {
+        Map<Integer, Integer> widestByBlock = new HashMap<Integer, Integer>();
+        for (int i = 0; i < lines.size(); i++) {
+            MarkdownLayoutLine line = lines.get(i);
+            if (line.getKind() != MarkdownLayoutLine.Kind.CODE) {
+                continue;
+            }
+            Integer key = Integer.valueOf(line.getBlockId());
+            int own = (int) Math.ceil(lineAdvance(line.getSegments(), measurer, baseFontSizePx));
+            Integer old = widestByBlock.get(key);
+            if (old == null || own > old.intValue()) {
+                widestByBlock.put(key, Integer.valueOf(own));
+            }
+        }
+        if (widestByBlock.isEmpty()) {
+            return lines; // 零围栏：一行都不必重建（非 CODE 行的 0 = 不适用天然成立）
+        }
+        List<MarkdownLayoutLine> out = new ArrayList<MarkdownLayoutLine>(lines.size());
+        for (int i = 0; i < lines.size(); i++) {
+            MarkdownLayoutLine line = lines.get(i);
+            if (line.getKind() != MarkdownLayoutLine.Kind.CODE) {
+                out.add(line);
+                continue;
+            }
+            Integer widest = widestByBlock.get(Integer.valueOf(line.getBlockId()));
+            out.add(line.withBlockContentWidthPx(Math.max(1, widest == null ? 0 : widest.intValue())));
+        }
+        return out;
     }
 
     /**
@@ -189,8 +235,11 @@ final class MarkdownLineLayout {
                         && visualLines.get(j + 1).getBlockId() == line.getBlockId()) {
                     j++;
                 }
+                // 宽恒取块内统一内容宽（M8 上收；同 blockId 各行的 getter 同值）。
+                // 旧口径「铺满容器右缘」是与两路消费者都不一致的第四套数，故弃
+                //（规划 §二之七·续 第 9 条；核心锁 MarkdownBlockContentWidthLockTest 钉死）。
                 out.add(PaintCommand.background(line.getLeftInsetPx(), tops[i],
-                        Math.max(contentRight, line.getLeftInsetPx() + 1),
+                        line.getLeftInsetPx() + Math.max(1, line.getBlockContentWidthPx()),
                         tops[j] + heights[j], line.getBackgroundArgb()));
                 i = j + 1;
                 continue;

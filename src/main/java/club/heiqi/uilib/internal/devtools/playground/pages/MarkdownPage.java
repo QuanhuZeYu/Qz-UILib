@@ -135,18 +135,23 @@ public final class MarkdownPage implements PlaygroundPage {
                         .setTextVerticalAlign(TextVerticalAlign.TOP)
                         .setPreferredHeight(Math.max(1,
                                 MarkdownPainter.lineHeightPx(segments, measurer, BASE_FONT_PX)));
+                boolean codeLine = line.getKind() == MarkdownLayoutLine.Kind.CODE;
                 if (!segments.isEmpty()) {
                     lineNode.setSegments(segments);
-                    lineNode.setPreferredWidth(Math.max(1,
-                            MarkdownPainter.lineWidthPx(segments, measurer, BASE_FONT_PX)
-                                    + (line.getKind() == MarkdownLayoutLine.Kind.CODE
-                                            ? CODE_BG_PAD_PX * 2 : 0)));
-                } else {
-                    lineNode.setWidthSizing(SceneNode.WidthSizing.FILL);
                 }
-                if (line.getKind() == MarkdownLayoutLine.Kind.CODE) {
+                int contentWidthPx = MarkdownPainter.lineWidthPx(segments, measurer, BASE_FONT_PX);
+                if (codeLine) {
+                    // M8 单一真相：块内统一宽恒读 L2 的 getBlockContentWidthPx()，不再用本行
+                    // 自字宽（旧口径「每行 = 自身文字宽 + 2×内衬」正是用户在 game 里看到的
+                    // 右缘参差的根因）。取 max 只为兜住「L2 未给块宽」的定义值 0，不是第二套口径。
+                    contentWidthPx = Math.max(contentWidthPx, line.getBlockContentWidthPx());
                     lineNode.setBackgroundColor(line.getBackgroundArgb());
                     lineNode.setPadding(0, CODE_BG_PAD_PX, 0, CODE_BG_PAD_PX);
+                    lineNode.setPreferredWidth(Math.max(1, contentWidthPx + CODE_BG_PAD_PX * 2));
+                } else if (!segments.isEmpty()) {
+                    lineNode.setPreferredWidth(Math.max(1, contentWidthPx));
+                } else {
+                    lineNode.setWidthSizing(SceneNode.WidthSizing.FILL);
                 }
             }
             // 引用嵌套：每层 row[竖条 2px + gap 6 + 内容]，一/二/三层肉眼可分

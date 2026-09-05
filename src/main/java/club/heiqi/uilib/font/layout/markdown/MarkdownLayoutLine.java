@@ -65,9 +65,14 @@ public final class MarkdownLayoutLine {
     private final int ruleThicknessPx;
     private final int accentArgb;
     private final int backgroundArgb;
+    private final int blockContentWidthPx;
 
     /**
-     * 全字段构造（L1 装配与 L2 视觉行复制共用）。
+     * 全字段构造（L1 装配与 L2 视觉行复制共用；<b>签名自 M7 起冻结，存量消费者不受影响</b>）。
+     *
+     * <p>本构造器把 {@link #getBlockContentWidthPx()} 置 {@code 0 = 不适用}——块统一内容宽
+     * 是<b>度量事实</b>，只有持度量服务的 L2（{@code MarkdownPainter.wrapLayoutLines}）能算，
+     * L1 与手写样本一律取定义值 0；需要带上该值走 {@link #withBlockContentWidthPx(int)}。</p>
      *
      * @param kind            块类别（不可为 null）
      * @param quoteLevel      引用嵌套层数（&ge;0；0 = 不在引用内）
@@ -83,6 +88,18 @@ public final class MarkdownLayoutLine {
     public MarkdownLayoutLine(Kind kind, int quoteLevel, int blockId, List<TextSegment> segments,
             int leftInsetPx, int indentStepPx, int barWidthPx, int ruleThicknessPx,
             int accentArgb, int backgroundArgb) {
+        this(kind, quoteLevel, blockId, segments, leftInsetPx, indentStepPx, barWidthPx,
+                ruleThicknessPx, accentArgb, backgroundArgb, 0);
+    }
+
+    /**
+     * 全字段构造（含块内容宽；唯一实现体，公共 10 参构造器与本类两个 {@code with*} 拷贝法共用）。
+     *
+     * @param blockContentWidthPx 块内统一内容宽（{@code >=0}；非 CODE 行恒 0 = 不适用）
+     */
+    private MarkdownLayoutLine(Kind kind, int quoteLevel, int blockId, List<TextSegment> segments,
+            int leftInsetPx, int indentStepPx, int barWidthPx, int ruleThicknessPx,
+            int accentArgb, int backgroundArgb, int blockContentWidthPx) {
         if (kind == null) {
             throw new IllegalArgumentException("kind 不能为空");
         }
@@ -98,6 +115,7 @@ public final class MarkdownLayoutLine {
         this.ruleThicknessPx = Math.max(0, ruleThicknessPx);
         this.accentArgb = accentArgb;
         this.backgroundArgb = backgroundArgb;
+        this.blockContentWidthPx = Math.max(0, blockContentWidthPx);
     }
 
     /**
@@ -118,7 +136,26 @@ public final class MarkdownLayoutLine {
      */
     public MarkdownLayoutLine withSegments(List<TextSegment> newSegments) {
         return new MarkdownLayoutLine(kind, quoteLevel, blockId, newSegments,
-                leftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb, backgroundArgb);
+                leftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb, backgroundArgb,
+                blockContentWidthPx);
+    }
+
+    /**
+     * 同身份换块内容宽副本（M8 块统一内容宽上收 L2 的唯一写入口；与 {@link #withSegments} 同形）。
+     *
+     * <p><b>为什么是拷贝法而不是追加公共构造器</b>：本类公共 10 参构造器已对外且有存量消费者
+     * （L1 装配、门禁 {@code MarkdownChat3ParityTest} 合成行、L2 复制），再加一个 11 参重载会把
+     * 「哪个是全字段入口」变成两代并存、并在下次加字段时继续膨胀；而块内容宽是 L2 换行<b>之后</b>
+     * 才存在的派生量（同一行集内的最大值），本质就是「从已有行派生一行」，与 withSegments 同构。
+     * 公共面因此只 +1 getter +1 拷贝法，构造器一个不加。</p>
+     *
+     * @param newBlockContentWidthPx 块内统一内容宽（{@code >=0}；{@code 0} = 不适用）
+     * @return 携带相同 kind/quoteLevel/blockId/段流/几何/装饰色的新行
+     */
+    public MarkdownLayoutLine withBlockContentWidthPx(int newBlockContentWidthPx) {
+        return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
+                leftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb, backgroundArgb,
+                newBlockContentWidthPx);
     }
 
     /** @return 块类别 */
@@ -169,6 +206,32 @@ public final class MarkdownLayoutLine {
     /** @return 块底色 ARGB（0 = 无衬底） */
     public int getBackgroundArgb() {
         return backgroundArgb;
+    }
+
+    /**
+     * 块内统一内容宽（UI 像素）——围栏底色的<b>唯一宽度真相</b>，三表面共读此值。
+     *
+     * <table border="1">
+     *   <caption>取值语义（无未定义值）</caption>
+     *   <tr><th>行类别</th><th>取值</th></tr>
+     *   <tr><td>{@code CODE}</td><td>该块（同 {@code blockId}）全部 CODE <b>视觉行</b>自身文字宽
+     *       （{@code ceil(段流推进宽)}）的<b>最大值</b>，下限 1（纯空行围栏也画得出一条可辨识底色）。
+     *       同块各 CODE 行因此<b>彼此相等</b>，且 {@code >=} 每行自身文字宽。</td></tr>
+     *   <tr><td>{@code TEXT} / {@code THEMATIC_BREAK}</td><td>恒 {@code 0} = <b>不适用</b>
+     *       （这两类无「块内统一宽」概念；行宽取自身实测）。</td></tr>
+     *   <tr><td>L1 逻辑行（未经 L2 换行）</td><td>恒 {@code 0} = <b>未算</b>——块内容宽是度量事实，
+     *       只有持 {@code TextLayoutService} 的 L2 能产；L1 纯解析层零度量。</td></tr>
+     * </table>
+     *
+     * <p>由 L2 {@code MarkdownPainter.wrapLayoutLines} 在折行时按 blockId 聚合写入
+     * （M8 上收，规划 §二之七·续 第 9 条）。L2 出图路的合并 BACKGROUND 矩形宽与本值<b>恒等</b>，
+     * 由 {@code MarkdownBlockContentWidthLockTest} 机器锁死（配独立 oracle 与反同义反复地板）；
+     * 聊天面板与 devtools 页一律读本 getter，不得自算第二份块宽。</p>
+     *
+     * @return 块内统一内容宽（{@code >=0}；非 CODE 行 0 = 不适用）
+     */
+    public int getBlockContentWidthPx() {
+        return blockContentWidthPx;
     }
 
     @Override

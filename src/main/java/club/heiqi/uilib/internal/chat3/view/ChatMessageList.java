@@ -933,23 +933,6 @@ public final class ChatMessageList {
                         fontSize, message.getWrapWidthPx());
             }
             int lineCount = system ? displayLines.size() : markdownLines.size();
-            // M7:围栏底色「整段一块」——同 blockId 的 CODE 行统一钉到块内最宽行宽
-            // (仅注入度量时有意义;纯文本形态走 FILL 旧行为,背景横跨气泡可用宽)。
-            Map<Integer, Integer> codeBlockWidthPx = null;
-            if (markdownLines != null && segmentMeasurer != null) {
-                codeBlockWidthPx = new java.util.HashMap<Integer, Integer>();
-                for (int mi = 0; mi < markdownLines.size(); mi++) {
-                    ChatMarkdownPipeline.RenderedLine ml = markdownLines.get(mi);
-                    if (ml.isCode()) {
-                        int w = (int) Math.ceil(segmentsWidth(ml.segments(), segmentMeasurer,
-                                fontSize)) + 2 * CODE_BG_SIDE_PAD_PX;
-                        Integer old = codeBlockWidthPx.get(Integer.valueOf(ml.blockId()));
-                        if (old == null || w > old.intValue()) {
-                            codeBlockWidthPx.put(Integer.valueOf(ml.blockId()), Integer.valueOf(w));
-                        }
-                    }
-                }
-            }
             // 跨显示行 URL 续链(仅系统消息;每条消息独立,长 URL 被字符硬断时才真正开放)
             UrlChain urlChain = new UrlChain();
             for (int lineIndex = 0; lineIndex < lineCount; lineIndex++) {
@@ -1085,11 +1068,14 @@ public final class ChatMessageList {
                                 ? maxBubbleWidthPx - 2 * paddingX : message.getWrapWidthPx();
                         lineWidth = Math.max(1, roomy - quoteLevel
                                 * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX));
-                    } else if (codeLine && codeBlockWidthPx != null) {
-                        Integer blockW = codeBlockWidthPx.get(Integer.valueOf(rendered.blockId()));
-                        if (blockW != null) {
-                            lineWidth = Math.max(lineWidth, blockW.intValue());
-                        }
+                    } else if (codeLine && rendered.blockContentWidthPx() > 0) {
+                        // M8 单一真相：块内统一宽恒读 L2 产出的
+                        // MarkdownLayoutLine#getBlockContentWidthPx()（经 ChatMarkdownPipeline 逐字
+                        // 透传），本类不再自建查表取块内最大行宽——旧 codeBlockWidthPx 私有机制已删。
+                        // +2*CODE_BG_SIDE_PAD_PX 是本视图的底色内衬（既有装配口径，不是第二套块宽）；
+                        // getter == 0（换行替身注入路不经 L2 度量）时按「不适用」退回本行实测宽。
+                        lineWidth = Math.max(lineWidth,
+                                rendered.blockContentWidthPx() + 2 * CODE_BG_SIDE_PAD_PX);
                     }
                     // K3 三轮:钳宽仅作用于气泡行(气泡 ≤ 0.85 组内容宽);系统消息无气泡,
                     // 行宽 = 实宽(钳到 269 会把居中的系统行节点收缩到 269,行文本 340 溢出

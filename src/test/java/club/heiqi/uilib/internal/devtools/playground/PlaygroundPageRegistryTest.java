@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.devtools.playground;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -9,6 +10,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -94,5 +96,102 @@ public class PlaygroundPageRegistryTest {
             Assert.assertFalse("根有子节点: " + page.id(), root.__getChildren().isEmpty());
             runtime.flush();
         }
+    }
+
+    // ==================== M8 页面级锁：围栏底色「块内统一宽」读自 L2 ====================
+
+    /** 与 MarkdownPage.CODE_BG_PAD_PX 同值：本页只有 CODE 行节点带左右内衬。 */
+    private static final int CODE_SIDE_PAD = 3;
+    /** 反 ∅ 地板：参与比较的 CODE 行节点数。 */
+    private static final int MIN_CODE_NODES = 4;
+    /** 反 ∅ 地板：参与比较的围栏块数。 */
+    private static final int MIN_CODE_BLOCKS = 2;
+
+    /**
+     * 页面级真断言（不是拿 L2 断言冒充）：headless 构造注册表里的 markdown 页，遍历<b>已装配的
+     * scene 节点</b>，断言同一围栏块内全部 CODE 行节点的 {@code getPreferredWidth()} 彼此相等。
+     *
+     * <p>用户在 game 里看到的「底色右缘参差」出在这一页：旧实现每行宽 = 该行自身文字宽 + 内衬，
+     * 完全没有块口径。M8 起改读 {@code MarkdownLayoutLine#getBlockContentWidthPx()}（L2 单一真相）。</p>
+     *
+     * <p>识别方式：本页只有 CODE 行节点同时具备「非空段流 + 左右内衬 + 非零背景色」——真横线节点
+     * 无段流、普通行无内衬。同一父节点内的连续命中段即一个围栏块。<b>正对照</b>：同页两个围栏块的
+     * 统一宽必须互不相等（钉住「按块取值」，排除「全局常量宽 / 铺满容器」也能蒙过）。
+     * <b>反 ∅ 地板</b>：块数与节点数各设下限。</p>
+     *
+     * <p>刻意并入本类（基线就已构造 markdown 页）而不是新开测试类：新开类会改变同 JVM 内
+     * 「谁先预热真实字体测量」的次序，把 {@code PlaygroundButtonRowLayoutTest} 的既有
+     * 跨测试测量预热耦合放大成可见 flaky（本轮已实测归因，见交付报告）。</p>
+     */
+    @Test
+    public void markdownPageCodeBlockLineNodesShareWidthPerBlock() {
+        PlaygroundPage page = PlaygroundPageRegistry.lookup("markdown");
+        Assert.assertNotNull("注册表含 markdown 页", page);
+        SceneNode shell = page.build(runtime).get();
+        Assert.assertNotNull("markdown 页可 headless 构造", shell);
+
+        List<List<SceneNode>> blocks = codeBlocksOf(shell);
+        int codeNodes = 0;
+        for (int b = 0; b < blocks.size(); b++) {
+            List<SceneNode> block = blocks.get(b);
+            int first = block.get(0).getPreferredWidth();
+            Assert.assertTrue("块内统一宽必须 > 0: " + first, first > 0);
+            for (SceneNode node : block) {
+                Assert.assertEquals("同一围栏块内所有 CODE 行节点宽度必须一致（旧逐行自字宽"
+                                + "口径在此会红）: 块首=" + first + " 本行=" + node.getPreferredWidth()
+                                + " 文本=<" + segmentsText(node) + '>',
+                        first, node.getPreferredWidth());
+                codeNodes++;
+            }
+        }
+        Assert.assertTrue("反 ∅ 地板：围栏块数 >= " + MIN_CODE_BLOCKS + "，实测 " + blocks.size(),
+                blocks.size() >= MIN_CODE_BLOCKS);
+        Assert.assertTrue("反 ∅ 地板：CODE 行节点数 >= " + MIN_CODE_NODES + "，实测 " + codeNodes,
+                codeNodes >= MIN_CODE_NODES);
+        Assert.assertTrue("正对照：两个围栏块的统一宽必须互不相等（否则不是按块取值）: "
+                        + blocks.get(0).get(0).getPreferredWidth() + " vs "
+                        + blocks.get(1).get(0).getPreferredWidth(),
+                blocks.get(0).get(0).getPreferredWidth() != blocks.get(1).get(0).getPreferredWidth());
+    }
+
+    /** 递归收集「CODE 行节点」，按同一父节点内的连续段归块。 */
+    private static List<List<SceneNode>> codeBlocksOf(SceneNode root) {
+        List<List<SceneNode>> blocks = new ArrayList<List<SceneNode>>();
+        collectCodeBlocks(root, blocks);
+        return blocks;
+    }
+
+    private static void collectCodeBlocks(SceneNode node, List<List<SceneNode>> blocks) {
+        List<SceneNode> children = node.__getChildren();
+        int i = 0;
+        while (i < children.size()) {
+            if (isCodeLineNode(children.get(i))) {
+                List<SceneNode> run = new ArrayList<SceneNode>();
+                while (i < children.size() && isCodeLineNode(children.get(i))) {
+                    run.add(children.get(i));
+                    i++;
+                }
+                blocks.add(run);
+                continue;
+            }
+            collectCodeBlocks(children.get(i), blocks);
+            i++;
+        }
+    }
+
+    private static boolean isCodeLineNode(SceneNode node) {
+        List<TextSegment> segments = node.getSegments();
+        return segments != null && !segments.isEmpty()
+                && node.getPaddingLeft() == CODE_SIDE_PAD
+                && node.getPaddingRight() == CODE_SIDE_PAD
+                && node.getBackgroundColor() != 0;
+    }
+
+    private static String segmentsText(SceneNode node) {
+        StringBuilder sb = new StringBuilder();
+        for (TextSegment segment : node.getSegments()) {
+            sb.append(segment.getText());
+        }
+        return sb.toString();
     }
 }

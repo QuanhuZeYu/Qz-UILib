@@ -72,9 +72,11 @@ final class ChatMarkdownPipeline {
         private final int ruleThicknessPx;
         private final int accentArgb;
         private final int backgroundArgb;
+        private final int blockContentWidthPx;
 
         RenderedLine(List<TextSegment> segments, int quoteLevel, int leftInsetPx, int blockId,
-                boolean code, boolean rule, int ruleThicknessPx, int accentArgb, int backgroundArgb) {
+                boolean code, boolean rule, int ruleThicknessPx, int accentArgb, int backgroundArgb,
+                int blockContentWidthPx) {
             this.segments = segments;
             this.quoteLevel = quoteLevel;
             this.leftInsetPx = leftInsetPx;
@@ -84,6 +86,7 @@ final class ChatMarkdownPipeline {
             this.ruleThicknessPx = ruleThicknessPx;
             this.accentArgb = accentArgb;
             this.backgroundArgb = backgroundArgb;
+            this.blockContentWidthPx = blockContentWidthPx;
         }
 
         /** @return 本视觉行段流（不可变；与段流接缝逐字等值） */
@@ -129,6 +132,19 @@ final class ChatMarkdownPipeline {
         /** @return 围栏底色（仅 isCode 有意义） */
         int backgroundArgb() {
             return backgroundArgb;
+        }
+
+        /**
+         * @return 块内统一内容宽（UI px；{@code 0} = 不适用）——<b>逐字透传 L2 的
+         * {@code MarkdownLayoutLine.getBlockContentWidthPx()}</b>，本层零再算。
+         *
+         * <p>M8 单一真相：围栏底色的「块内统一宽」只在 L2（{@code MarkdownPainter.wrapLayoutLines}
+         * 持度量服务处）算一次；本视图类型只做搬运，{@code ChatMessageList} 读它钉行节点宽。
+         * 换行替身注入路（headless 测试用，不经 L2 度量）拿不到度量，故保持定义值 {@code 0}，
+         * 消费端按「不适用 → 用本行实测宽」处理——这是<b>缺度量</b>而非第二套块宽口径。</p>
+         */
+        int blockContentWidthPx() {
+            return blockContentWidthPx;
         }
     }
 
@@ -176,7 +192,7 @@ final class ChatMarkdownPipeline {
                             line.getKind() == MarkdownLayoutLine.Kind.THEMATIC_BREAK,
                             line.getQuoteLevel(), line.getLeftInsetPx(), line.getBlockId(),
                             line.getRuleThicknessPx(), line.getAccentArgb(),
-                            line.getBackgroundArgb(), segments));
+                            line.getBackgroundArgb(), line.getBlockContentWidthPx(), segments));
                 }
             }
             lines = Collections.unmodifiableList(out);
@@ -222,17 +238,17 @@ final class ChatMarkdownPipeline {
                     line.getKind() == MarkdownLayoutLine.Kind.THEMATIC_BREAK,
                     line.getQuoteLevel(), line.getLeftInsetPx(), line.getBlockId(),
                     line.getRuleThicknessPx(), line.getAccentArgb(), line.getBackgroundArgb(),
-                    line.getSegments()));
+                    line.getBlockContentWidthPx(), line.getSegments()));
         }
         return Collections.unmodifiableList(out);
     }
 
     private static RenderedLine toRendered(boolean code, boolean rule, int quoteLevel,
             int leftInsetPx, int blockId, int ruleThicknessPx, int accentArgb, int backgroundArgb,
-            List<TextSegment> segments) {
+            int blockContentWidthPx, List<TextSegment> segments) {
         return new RenderedLine(Collections.unmodifiableList(new ArrayList<TextSegment>(segments)),
                 quoteLevel, leftInsetPx, blockId, code, rule, ruleThicknessPx, accentArgb,
-                backgroundArgb);
+                backgroundArgb, blockContentWidthPx);
     }
 
     /**
@@ -356,7 +372,7 @@ final class ChatMarkdownPipeline {
 
     /** 测试工厂：普通文本行视图（同包测试构造 clamp/形状断言样本用）。 */
     static RenderedLine renderedForTest(List<TextSegment> segments) {
-        return toRendered(false, false, 0, 0, MarkdownLayoutLine.NO_BLOCK, 0, 0, 0, segments);
+        return toRendered(false, false, 0, 0, MarkdownLayoutLine.NO_BLOCK, 0, 0, 0, 0, segments);
     }
 
     /** 视觉行是否引用行（M5 旧结构判据，headless/调试兜底用；M7 生产判据 = RenderedLine.quoteLevel）。 */
@@ -398,7 +414,7 @@ final class ChatMarkdownPipeline {
         appendEllipsis(segments, measurer, fontSizePx, Math.max(1, maxWidthPx - last.leftInsetPx()));
         out.add(toRendered(last.isCode(), last.isRule(), last.quoteLevel(), last.leftInsetPx(),
                 last.blockId(), last.ruleThicknessPx(), last.accentArgb(), last.backgroundArgb(),
-                segments));
+                last.blockContentWidthPx(), segments));
         return Collections.unmodifiableList(out);
     }
 
