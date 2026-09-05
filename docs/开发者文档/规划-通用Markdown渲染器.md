@@ -693,6 +693,72 @@ assertWidthIndependentCodeStyle` 的 P03 专用不变量——那是判据改动
       **突变实跑全红**：①内列 gap→0 ⇒ 页面引用锁红（行距 22 vs 14）；②页面 padding 写入摘除 ⇒
       列表像素锁红（x 位移期望 13 实得 0）；③L2 正文列清零 ⇒ L2 四条锁连同正对照全红。
       已知跨类耦合（`PlaygroundButtonRowLayoutTest` 字体异步注册）本批全量 build 内未触发红。
+12. **M10c 聊天面补票：列表正文列真正落到气泡（2026-09-05 用户裁定「补」，代码批 `6300a0f2`）**
+
+    M10b 只让正文列进了接缝与页面/出图路，聊天面板当时「不消费、只透传」（第 11 条挂账）。
+    用户当日裁定补上。本轮改动全在 L3 内部，**三个类公共面逐位不变**（javap -public 前后
+    对数：`ChatMessageList` 9→9、`ChatSceneController` 26→26、`ChatMarkdownPipeline` 0→0；
+    `RenderedLine` 为包内 static final 嵌套类，其新增成员不算公共面）。
+
+    - **前提一（取证在后，动手在前）**：`RenderedLine.leftInsetPx()` 在改动前全仓只有
+      `ChatMarkdownPipeline` 自己的省略号路读（:414-415），`ChatMessageList` 里
+      `leftInset` 出现 **0 次**；而 `RenderedLine` javadoc 写着「消费端行盒/钳宽 reserve
+      同源用」——写下时即假。本轮**把这句变成真**（javadoc 就地改写成新事实并标注其历史，
+      不留假话）。
+    - **前提二（决定实现形状）**：chat3 的引用水平缩进走私有常数
+      `QUOTE_BAR_WIDTH_PX(2)+QUOTE_GAP_PX(6)`（:89/:93 定义，:1070/:1085 reserve、:1109/:1116
+      嵌套结构消费），**不读样式表 quoteIndentPx**——8==8 是巧合等值。故**绝对禁止**把
+      `leftInsetPx` 整值当 padding 施加：那会把引用份额算两遍（结构一遍+padding 一遍）。
+      唯一正确反解式与页面同式：`listExtra = max(0, leftInsetPx − quoteLevel × indentStepPx)`。
+    - **任务面 1：接缝搬运 indentStepPx**。`RenderedLine` 增字段 + 包内访问器，
+      **逐字透传** `MarkdownLayoutLine#getIndentStepPx()`（M8 blockContentWidthPx 同范式）；
+      生产路（`render()`）、换行替身注入路（`wrapOverride`）与 HUD 截断重建
+      （`clampHudLines`）三处同源填充，不留两口径——替身路的逻辑行 inset 本就不带
+      M10b 悬挂列（既有「缺度量替身」语义，未动），但步长必须到位，否则消费端反解失真。
+      `renderedForTest` 合成行几何字段取定义值 0（无块身份），不是第三口径。
+    - **任务面 2：ChatMessageList 施加（纯内部装配）**。① 正文列施加为
+      `setPadding(0, codePad, 0, codePad + listExtra)` 的**显式合成**——CODE 行恒非 LIST
+      身份 ⇒ 两项必有一项为 0，但写成加法，不靠「后句覆盖前句」的巧合；② 钳宽 reserve
+      同扣 `listExtra`（钳宽与偏移是一式两面）；③ rule 行 roomy 用同式（其 listExtra
+      恒 0，同式防漂移）；④ 系统/纯文本路（无 RenderedLine）恒 0，零新分支语义。
+      HUD 复核：`ChatCardComposer`（viewmodel 包）grep `RenderedLine` **0 命中**，
+      HUD 与容器两形态共用 `ChatMessageList` 同一装配块 ⇒ 无第二条 HUD 装配路，未顺手改。
+    - **锁的翻转（第 11 条聊天锁的旧断言「续行与标记行盒左缘重合」钉的是补票前的世界，
+      本轮就地改写成新事实）**：
+      ① `markdownListContinuationGetsNoDoubleOffsetAndFitsBubble`（重写）——续行**内容左缘**
+      （行盒 x + 左内衬）与标记行之差 == 测试内**独立量出**的标记推进宽（自造「圆点+空格」段
+      逐码点 `resolveAdvance` 求和取 ceil，与被测写入路径、接缝读值零共享实现），且
+      `!= 2×列`（钉引用份额没被算两遍）、== 接缝反解值（`leftInsetPx − ql×indentStepPx`，
+      管道透传贯通证据）、标记行左内衬恒 0；正对照拆出独立用例
+      `plainParagraphContinuationKeepsColumnOrigin`（两行短段落左缘差恒 0，防正文列泄漏，
+      与字体注册态无关）。② 新增 `markdownListInsideQuoteAppliesColumnOnceOnTopOfStructuralIndent`
+      ——引用内列表续行内容左缘 == 标记行内容左缘 + **一份**列（结构引用偏移两侧同额抵消），
+      并显式断言 `!= 标记行 + 整值 leftInsetPx`；前置自检钉「该行接缝 inset 确含引用份额」
+      防样本退化成顶层列表的空转正对照。③ 钳宽断言踩坑记档：布局引擎 SHRINK 聚合只数子节点
+      `preferredWidth`、**不计子内衬**，用 bubbleBox 反推内宽会让断言恒真——账面值断言
+      `preferred + 左右内衬 ≤ 生产公式内宽`（`round((chatWidthFor(400)−2padX)×ratio) − 2padX`，
+      含「inner < 换行宽」的反 ∅ 工况自检，保证钳宽分支真被踩到）。地板：rows≥3、
+      续行族≥2（实测 rows=8、族=7，HUD 截断内）；引用锁族≥2（实测 6）。
+    - **突变实跑（两向全红）**：① reserve 摘掉 `+ listExtra` ⇒
+      「行账面值（preferred+左右内衬）不得超气泡内宽」红（line=111 inner=99）——第一版该突变
+      曾**存活**，根因是测试钉的 4px/码点替身度量与生产换行宽不同源、钳宽分支从未触发；换
+      `uiLibSegmentMeasurer` + 生产公式内宽后抓红（教训：**钳宽类断言必须自带工况自检**）。
+      ② 反解式摘掉 `− ql×indentStepPx`（整值施加）⇒ 引用组合锁红
+      「引用内列表标记行不得吃正文列 expected 0 but was 8」——引用份额算两遍当场现形。
+    - **仍存边界（如实，不销账）**：(a) 第 11 条 (c) 不变——松散项第二段与标记行之后的
+      嵌套子块另起 blockId，拿不到父项正文列（本裁定只覆盖同块懒延续/软折）；
+      (b) chat3 私有常数 2+6=8 与样式表 `quoteIndentPx=8` 仍是**巧合等值**：本轮靠透传
+      `indentStepPx` 让反解不再依赖巧合，但 chat3 **结构嵌套本身仍用私有常数**——
+      归入既有待办「chat3 clamp 字面量收 named 常数」，不得当已完成。
+    - **回归对账**：门禁判据/容差/登记表一字未动，汇总 PARITY=20 / NEW=11 / FAIL=0 / TIE=0 /
+      有意差异=3 / PNG=153 与基线等，`diff.txt` 87 行与第 11 条留档基线**逐行 0 差异**
+      （padding/钳宽是几何，不触段流文本与断点，如预期）。全量 `build --offline` =
+      BUILD SUCCESSFUL：suites 364→364（无新类）、tests 4010→**4012**（+2 净新增：引用组合锁、
+      防泄漏独立对照；翻转 1 条；删除 0），0 失败 0 错误 2 跳过。层界：`ui/markdown`
+      `GL11.`=0（正对照 `ui/render`=559）、样式表公共方法恒 18、`MarkdownLayoutLine`
+      公共成员维持 18（**本批零新接缝成员**）。M10 的页面像素锁、L2 悬挂列锁、L1 身份锁
+      全部原样绿（本批未触其判据）。
+
 
 ---
 
