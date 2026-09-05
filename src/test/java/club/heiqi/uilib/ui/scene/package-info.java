@@ -33,6 +33,8 @@
  * </ul>
  *
  * <p><b>分层细则</b>见 {@code layout/package-info.java} 与 {@code integration/package-info.java}；
- * <b>防错清单</b>见 {@code docs/传感层/测试体系约定.md}。</p>
+ * <b>L2 防错精要</b>：FixedTextMeasurer(8,16) 确定性桩、复用 LayoutAssertions、独立 engine 实例、
+ * 禁 import reactive/runtime/input/paint、新 setter 补 InvalidationLevelMatrixTest 矩阵、
+ * 新 grow 场景补 GrowAllocationTableTest。</p>
  */
 package club.heiqi.uilib.ui.scene;

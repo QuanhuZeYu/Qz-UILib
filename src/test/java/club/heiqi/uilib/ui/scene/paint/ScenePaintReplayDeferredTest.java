@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>验证 {@link PaintPlan} 是自包含不可变交付物：paint 产出 plan 后，即使中间做了
  * 无关操作（修改节点属性、signal.set + flush），同一 plan 的 replay 结果与立即 replay
  * 完全一致。这证明 plan 不持有任何上游可变状态引用（SceneNode/Transform/Signal），
- * 是数据层与渲染层之间唯一的合同交付物（守 NORTH_STAR 信条六/I6 并行强化）。</p>
+ * 是数据层与渲染层之间唯一的合同交付物（守渲染出口只认抽象契约，旧信条六/I6，并行强化）。</p>
  *
  * <h3>为阶段 2 跨线程并行铺路</h3>
  * <p>阶段 2 子树并行化的前提是：worker 线程产出的 PaintPlan 可在主线程延迟 replay，

@@ -25,8 +25,8 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
  *       顶点与后代 clip。常规 transform 仍仅出现在 {@code pushTransform} 的 7 个浮点分量里，
  *       不烤入 box 顶点。</li>
  *   <li>不做「变换后顶点」断言：变换后的最终像素位置属 GPU 顶点层，由 GL 矩阵栈在 pushTransform
- *       作用域内实时算出，纯 JUnit mock backend 不可观测；transform 对 hit-test 的已知限制见
- *       NORTH_STAR.md《已知限制》。</li>
+ *       作用域内实时算出，纯 JUnit mock backend 不可观测；同理，transform 对 hit-test 的已知限制：
+ *       仅 GPU 顶点层生效，hit-test 不可观测（旧 NORTH_STAR《已知限制》，含义以本条内联直述为准）。</li>
  * </ul>
  *
  * <h3>定位</h3>

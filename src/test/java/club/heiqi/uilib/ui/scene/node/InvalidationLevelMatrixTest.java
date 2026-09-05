@@ -21,7 +21,7 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  * I4 失效级别矩阵表测试 —— 对 {@link SceneNode} 全部属性 setter 逐个验证
  * 「调用后恰好点亮正确的失效位，不污染其它级别」。
  *
- * <p>对齐 {@code NORTH_STAR.md} I4 关键不变量：每个属性变化必须只触发其声明级别的
+ * <p>对齐四级失效矩阵（旧 I4）关键不变量：每个属性变化必须只触发其声明级别的
  * 失效（LAYOUT / PAINT / GEOMETRY / COMPOSITE 之一或明确的组合），不得越级污染。
  * 断言工具复用 {@link LayoutAssertions#assertOnlyInvalidation}（恰好单级别）与
  * {@link LayoutAssertions#assertClean}（全 8 位 clean）。</p>

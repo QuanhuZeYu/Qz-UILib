@@ -19,7 +19,7 @@ import org.junit.Test;
 /**
  * 分层契约守护测试。
  *
- * <p>把 NORTH_STAR.md 关键不变量（I1-I9）里反复靠人工 grep + 交接口述守护的分层铁律，
+ * <p>把架构关键不变量里反复靠人工 grep + 交接口述守护的分层铁律（I1-I9 旧编号，含义以本类断言为准），
  * 资产化为可执行、可在 CI 阻断合并的源码扫描断言。复用 {@code Lwjgl3ifyInputBackendTest}
  * 已验证的 {@code Files.walk("src/main/java")} 静态扫描范式，无需真机 / GUI 依赖。</p>
  *

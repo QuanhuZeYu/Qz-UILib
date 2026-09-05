@@ -10,8 +10,8 @@ import org.junit.Assume;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
- * 布局不变量断言库 —— 把 {@code NORTH_STAR.md} 的关键不变量（I4 失效级别矩阵、
- * I7 重算收敛、I12 / §4.5 坐标语义、求和不变量）翻译成可复用的数学断言方法。
+ * 布局不变量断言库 —— 把关键布局不变量（失效四级矩阵、干净子树三阶段跳过 / 重算收敛、
+ * 两层坐标语义、求和不变量；旧编号 I4 / I7 / I12 / §4.5，含义以本库各方法与所在测试为准）翻译成可复用的数学断言方法。
  *
  * <p>本类专供 L2 纯数学测试层使用：构造场景树 → 调用
  * {@link SceneLayoutEngine#layout} → 用本库的方法断言布局结果与失效状态。
@@ -55,7 +55,7 @@ public final class LayoutAssertions {
     }
 
     /**
-     * 失效级别枚举 —— 对齐 {@code NORTH_STAR} I4 的四级失效矩阵。
+     * 失效级别枚举 —— 对齐四级失效矩阵（LAYOUT / PAINT / GEOMETRY / COMPOSITE）。
      *
      * <p>每个值映射到 {@link SceneNode} 的一个 self dirty 探针，
      * 用于 {@link #assertOnlyInvalidation} 精确判定本节点恰好处于哪一级失效。</p>

@@ -43,11 +43,14 @@
  *   <li>普通 box 顶点反映 layout 几何；internal presentation geometry offset 直接累加到顶点与
  *       后代 clip。常规 transform 仍仅出现在 {@code pushTransform} 的 7 个浮点分量里。</li>
  *   <li><b>不做「变换后顶点」</b>：变换后的最终像素位置属 GPU 顶点层，纯 JUnit mock backend
- *       不可观测；transform 对 hit-test 的已知限制见 {@code NORTH_STAR.md}《已知限制》。</li>
+ *       不可观测；transform 对 hit-test 的已知限制：仅 GPU 顶点层生效，hit-test 不可观测
+ *       （旧 NORTH_STAR《已知限制》，含义以本条内联直述为准）。</li>
  *   <li>控件顶点断言按需：仅独特自绘结构才补，默认复用 {@code SceneBackendContractTest} 8 场景
  *       + L2 坐标不变量。</li>
  * </ul>
  *
- * <p><b>详细边界与速查表</b>见 {@code docs/传感层/测试体系约定.md} §7。</p>
+ * <p><b>入口纪律精要</b>（旧测试体系约定 §7，已并入本节节文内联，不再另立母本）：交互测试一律走
+ * {@link SceneInteractionHarness}，白盒回退裸 {@code InputFrameBuilder} 须标回退类别；
+ * 渲染侧顶点断言走 {@link ScenePaintCapture#paintAndCapture} 唯一入口。</p>
  */
 package club.heiqi.uilib.ui.scene.testkit;

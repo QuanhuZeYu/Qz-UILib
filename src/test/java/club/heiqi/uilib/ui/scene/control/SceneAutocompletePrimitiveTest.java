@@ -12,7 +12,7 @@ import org.junit.Test;
  * SceneAutocompletePrimitive L2 纯数学测试 —— 验证 filter_candidates / normalize / isExactMatchInFiltered / clamp
  * 等无 runtime/input/reactive 依赖的纯函数契约。
  *
- * <p>按 {@code docs/传感层/测试体系约定.md} §L2：本层只测纯数学，禁依赖 runtime/input/reactive；
+ * <p>本层只测纯数学（L2 边界），禁依赖 runtime/input/reactive；
  * 守 L2 边界靠评审纪律（无 @Before、无 SceneRuntime 字段、无 reactive signal）。</p>
  *
  * <p>覆盖：前缀/包含匹配、大小写不敏感（Locale.ENGLISH）、trim、空输入、空候选、input 长于候选、

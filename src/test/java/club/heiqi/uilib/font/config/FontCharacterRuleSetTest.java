@@ -6,8 +6,9 @@ import org.junit.Test;
 /**
  * {@link FontCharacterRuleSet} 的 L2 纯数学边界测试。
  *
- * <p>不挂 runtime / 不建 scene，仅断言 resolveFontName 的代数性质（按
- * {@code docs/传感层/测试体系约定.md} §L2 边界，纯数学：首命中语义 / 空集 / 逗号展开匹配）。</p>
+ * <p>不挂 runtime / 不建 scene，仅断言 resolveFontName 的代数性质（纯数学层边界：本测试
+ * 仅确定性桩 + 纯函数，零 runtime/signal/input/paint 依赖，旧测试体系约定 §L2；
+ * 覆盖：首命中语义 / 空集 / 逗号展开匹配）。</p>
  *
  * <p>覆盖 P5 逗号多点语法扩展：{@code a,b=X} 配置 → 'a' 与 'b' 都命中 X。</p>
  */

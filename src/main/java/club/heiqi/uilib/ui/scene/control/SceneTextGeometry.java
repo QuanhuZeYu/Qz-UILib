@@ -29,7 +29,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * {@code new SceneTextGeometry.PrefixWidthCache()} 实例级持有——绝不能改成静态字段，
  * 否则多输入控件实例会跨实例串味（display/fontSize/epoch 三元组失效键被覆盖）。</p>
  *
- * <p>本类为纯静态工具：不碰节点、不订阅 signal、不写失效级别（守 NORTH_STAR I1-I12）。
+ * <p>本类为纯静态工具：不碰节点、不订阅 signal、不写失效级别（守分层不变量，旧 I1-I12 总称）。
  * 删除/编辑方法的副作用全部落在传入的 {@code onChange}/{@code caretIndex} 参数上。</p>
  */
 public final class SceneTextGeometry {

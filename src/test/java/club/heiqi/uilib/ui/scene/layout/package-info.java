@@ -1,5 +1,6 @@
 /**
- * L2 纯数学布局测试层 —— 锚定 {@code NORTH_STAR.md} 的 I4 / I7 / I12 / §4.5 数学不变量。
+ * L2 纯数学布局测试层 —— 锚定布局不变量（失效四级矩阵 / 干净子树三阶段跳过 / 两层坐标，
+ * 旧编号 I4 / I7 / I12 / §4.5）。
  *
  * <h3>L2 定义</h3>
  * <p>纯数学层：零 runtime / signal / input / paint 依赖。测试只做三件事——
@@ -46,6 +47,9 @@
  *   <li>{@link SceneParallelExecutorTest} —— 并行池基建（executor 隔离 / 任务调度）。</li>
  * </ul>
  *
- * <p><b>详细防错清单</b>见 {@code docs/传感层/测试体系约定.md}。</p>
+ * <p><b>L2 防错精要</b>（旧测试体系约定 §2 七条，上文「强制纪律」节已全文内联展开）：
+ * FixedTextMeasurer(8,16) 确定性桩、复用 {@link LayoutAssertions}、独立 engine 实例、
+ * 禁 import reactive/runtime/input/paint、新 setter 补 {@code InvalidationLevelMatrixTest} 矩阵、
+ * 新 grow 场景补 {@link GrowAllocationTableTest}。</p>
  */
 package club.heiqi.uilib.ui.scene.layout;

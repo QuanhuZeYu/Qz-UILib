@@ -30,7 +30,7 @@ import java.util.concurrent.ForkJoinWorkerThread;
  * 出现任何并行相关回归（帧抖动/数据竞争/死锁），{@code setParallelEnabled(false)} 即可
  * 全局关闭并行路径，无需改代码。</p>
  *
- * <h3>worker render-scoped 不变量（NORTH_STAR 已登记，2.4 实际使用时守）</h3>
+ * <h3>worker render-scoped 不变量（架构偏离登记在案，2.4 实际使用时守）</h3>
  * <p>pool 常驻但 worker 任务必须 <b>render-scoped</b>：每帧 fork 的任务必须在帧内 join 完成，
  * 不跨帧存活、不跨帧缓存任务对象。pool 本身只是线程池常驻，任务生命周期严格限定在单次
  * render 调用内。违反此不变量会导致跨帧数据依赖、任务泄漏与不可重入。</p>

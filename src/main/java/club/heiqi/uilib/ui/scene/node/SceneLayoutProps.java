@@ -35,7 +35,7 @@ final class SceneLayoutProps {
      *
      * <p><b>对称说明</b>：与 fillParentHeight 形成两轴对称——COLUMN 主轴（高）由
      * fillParentHeight 桥接隐式 grow，ROW 主轴（宽）由 fillParentWidth 桥接隐式 grow。
-     * 还清原 ROW/COLUMN 不对称偏离（见 NORTH_STAR 偏离登记 2026-06-30）。</p>
+     * 还清原 ROW/COLUMN 不对称偏离（见偏离登记 2026-06-30，今随编号表并入 AGENTS.md 设计取向节）。</p>
      */
     boolean fillParentWidth;
 
@@ -251,7 +251,7 @@ final class SceneLayoutProps {
      *
      * <p>横向滚动已提供 scrollOffsetX（GEOMETRY 级偏移注入，见上）；独立 scrollableX
      * 标志仍不实现（YAGNI：无横向视口尺寸语义需求）。contentSize/viewportSize/maxScroll
-     * 全部派生不存（守 NORTH_STAR §6：新增缓存必须答出让哪层跳过什么重算，存这些答不上来）。</p>
+     * 全部派生不存（守缓存纪律：新增缓存必须答出让哪层跳过什么重算，存这些答不上来）。</p>
      */
     boolean scrollable;
 }

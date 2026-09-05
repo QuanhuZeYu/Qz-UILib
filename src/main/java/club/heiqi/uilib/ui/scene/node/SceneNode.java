@@ -60,7 +60,7 @@ public class SceneNode {
 
     /**
      * 宽轴尺寸策略。高轴无对称枚举——COLUMN 容器高度默认 shrink-to-fit（由子节点累加决定），
-     * 高轴的"shrink"是默认态无需开关。详见 NORTH_STAR.md §4 视口条款。
+     * 高轴的"shrink"是默认态无需开关——视口钉死经 preferredHeight / fillParentHeight 达成，不设高轴收缩开关（旧 §4 视口条款，含义以本条直述为准）。
      * fillParentHeight(true) 是 COLUMN 主轴 grow 桥，与 WidthSizing 语义正交。
      *
      * <p>{@link #FILL} 保持默认填满父约束宽度；{@link #SHRINK} 让容器在未设置

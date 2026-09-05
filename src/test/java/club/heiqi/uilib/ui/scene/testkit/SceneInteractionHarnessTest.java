@@ -269,7 +269,7 @@ public class SceneInteractionHarnessTest {
      * <p>注册一个 overlay root（默认 anchor=0,0），其下挂一个 60x40 的 button 节点，
      * 独立 layout 一次让 box 就位。harness {@link SceneInteractionHarness#centerOf(button)}
      * 沿 {@code __getParent()} 链累加到 overlay root 即停，得到相对 overlay root 的局部坐标，
-     * 与 Router 在 anchor=0 时 raw==local 自洽（守 NORTH_STAR I12）相符——所以这个 button 可以被
+     * 与 Router 在 anchor=0 时 raw==local 自洽（守两层坐标契约：anchor=0 时 raw 局部 == local）相符——所以这个 button 可以被
      * {@code pressReleaseAcrossFrames} 命中并合成 CLICK。</p>
      *
      * @param buttonHolder 接收刚 layout 完的 button 节点（用于注册 on(CLICK)）

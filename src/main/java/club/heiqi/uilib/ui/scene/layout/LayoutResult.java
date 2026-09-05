@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *
  * <p>本类是 Display List 契约线阶段 1 的产物：把原本散落在 {@link SceneLayoutEngine}
  * 实例字段中的「本次 layout 重算次数 / 重算节点集合 / 约束被迫重算节点集合」探针
- * 打包成 per-call 不可变交付物，使引擎逐步走向无状态化（守 NORTH_STAR I7/I8）。</p>
+ * 打包成 per-call 不可变交付物，使引擎逐步走向无状态化（守干净子树三阶段跳过与不可变交付物，旧 I7/I8）。</p>
  *
  * <h3>不可变契约</h3>
  * <ul>

@@ -13,8 +13,9 @@ import club.heiqi.uilib.config.modern.CharacterRuleFieldRenderer.CharacterRuleIt
  * {@link CharacterRuleFieldRenderer} 的 L2 纯数学边界测试：双向映射、normalize 幂等、
  * errorMessage 派生、无效行写回不丢失。
  *
- * <p>不挂 runtime / 不建 scene，仅断言 render 内部翻译函数的代数性质（按
- * {@code docs/传感层/测试体系约定.md} §L2 边界，纯数学：双向映射/normalize/errorMessage）。</p>
+ * <p>不挂 runtime / 不建 scene，仅断言 render 内部翻译函数的代数性质（纯数学层边界：本测试
+ * 仅确定性桩 + 纯函数，零 runtime/signal/input/paint 依赖，旧测试体系约定 §L2；
+ * 覆盖：双向映射 / normalize / errorMessage）。</p>
  *
  * <h3>覆盖分支（对齐 FontCharacterRule.parse 各分支）</h3>
  * <ul>

@@ -7,8 +7,8 @@ import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
- * 坐标系契约不变量表测试 —— 锚定 {@code NORTH_STAR.md} 的 I12（两层坐标：raw 局部 vs absolute
- * 绝对）与 §4.5（坐标系契约）的<b>布局侧数学不变量</b>。
+ * 坐标系契约不变量表测试 —— 锚定两层坐标不变量（raw 局部 vs absolute
+ * 绝对）与坐标系契约（旧编号 I12 / §4.5）的<b>布局侧数学不变量</b>。
  *
  * <p>本类只验证 {@link SceneGeometry} 的只读几何工具在 layout 产出 LayoutBox 后返回的绝对坐标
  * 是否严格满足父链累加 + scrollOffsetY 注入 + rootAbs 偏移三条数学规则，不触发 paint/composite，

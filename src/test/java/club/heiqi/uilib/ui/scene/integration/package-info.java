@@ -12,6 +12,7 @@
  *   <li>L3 集成（{@code scene.integration}）：多子系统协作，端到端行为验证，宽松运行</li>
  * </ul>
  *
- * <p><b>测试体系防错清单</b>见 {@code docs/传感层/测试体系约定.md}。</p>
+ * <p><b>测试体系防错清单已并入各相关包 package-info</b>（分层总纲与 L2 防错七条，
+ * 见 {@code scene/layout/package-info.java}）。</p>
  */
 package club.heiqi.uilib.ui.scene.integration;

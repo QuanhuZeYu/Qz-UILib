@@ -28,7 +28,8 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * <p>本类属 testkit 跨包搭台设施，对应「输入侧入口 A 编程注入帧」——直接构造
  * {@link InputFrameBuilder} 帧推入 {@link SceneRuntime#route}，覆盖交互路由 + 状态机。
  * <b>不经 {@code MockPlatformInputSource}</b>（那是桥封板契约测试入口 B，≡ InputFrameBuilder
- * 壳，交互测试不必经它；详见 docs/传感层/测试体系约定.md §7）。</p>
+ * 壳，交互测试不必经它）。统一测试入口（旧测试体系约定 §7）：交互测试一律走 harness，
+ * 白盒回退须标回退类别；渲染侧顶点断言走 {@code ScenePaintCapture#paintAndCapture} 唯一入口。</p>
  *
  * <h3>生命周期</h3>
  * <ul>
@@ -170,7 +171,7 @@ public final class SceneInteractionHarness {
      * <p>harness <b>不</b>承担 overlay 锚点解析，{@link #centerOf} 取 {@link SceneGeometry#absoluteBox}
      * 沿 {@code __getParent()} 链累加到最顶祖先（overlay item 走到 overlay root 即停），得到
      * <b>相对 overlay root 的局部坐标</b>。这与 Router 在 {@code anchor=0}（默认 unset）时
-     * {@code raw==local} 自洽（守 NORTH_STAR I12）的命中语义相符，故可用于：
+     * {@code raw==local} 自洽（守两层坐标契约：anchor=0 时 raw 局部 == local）的命中语义相符，故可用于：
      * <ul>
      *   <li>focus 跨帧不掐断时序回归</li>
      *   <li>CLICK 合成是否存活的守卫回归</li>

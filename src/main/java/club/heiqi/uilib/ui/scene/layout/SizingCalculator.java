@@ -339,7 +339,8 @@ class SizingCalculator {
      * </ol>
      *
      * <p>主动忽略内容撑大（首次解耦 viewport/content），是布局计算语义的一等例外，
-     * NORTH_STAR §4 已转正为正式能力。详见偏离登记 2026-06-21-扩展。</p>
+     * 已转正为正式能力：视口高只由「preferredHeight 钉死 &gt; fill 约束高 &gt; 内容高截断」
+     * 优先级决定，不随内容增长（旧 NORTH_STAR §4 视口条款，含义以上述优先级口径为准）。详见偏离登记 2026-06-21-扩展。</p>
      *
      * <p><b>耦合不变式（跨类契约 2：viewportHeight 与 priorKnownInnerHeight）</b>：
      * 本方法 fill 分支（preferredHeight&lt;=0 且 fillParentHeight 且

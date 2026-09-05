@@ -5,7 +5,7 @@ package club.heiqi.uilib.ui.scene.paint;
  *
  * <p>本类是 Display List 契约线阶段 1 的产物：把原本散落在 {@link ScenePaintEngine}
  * 实例字段中的「本次 paint 重生成 fragment 计数」探针打包成 per-call 不可变交付物，
- * 使引擎逐步走向无状态化（守 NORTH_STAR 信条六/I6 并行强化方向）。</p>
+ * 使引擎逐步走向无状态化（守渲染出口只认抽象契约，旧信条六/I6，并行强化方向）。</p>
  *
  * <h3>不可变契约</h3>
  * <ul>

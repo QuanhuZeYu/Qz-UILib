@@ -20,4 +20,4 @@ Minecraft GUI Scale 不为 1 时，scene 的 MOVE/hover 与 DOWN/UP/click 落点
 
 - 坐标换算只允许在平台边界基于权威原始值做一次；禁止从已量化的 scaled 整数逆推原值。
 - 旁路回归测试必须让宿主回调坐标与 reader 坐标刻意不一致，并断言 DOWN/UP 与 MOVE 最终采用 reader 坐标。
-- GUI Scale、`ScaledResolution` 不得进入 UILib 自有 input 闭环，持续遵守 NORTH_STAR I13。
+- GUI Scale、`ScaledResolution` 不得进入 UILib 自有 input 闭环。

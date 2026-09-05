@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p>分层：build 内部经 {@link SceneRuntime} 注册 scroll bind/handler 与 scrollbar，触 runtime
  * 子系统，属 L3 集成范畴。照 control 包测试范式（同为 runtime 消费方）直接 new SceneRuntime，
- * 放 form 同包（守测试体系约定 §1「其余子包按各自子系统归属」）。build 不跑 layout/flush，
+ * 放 form 同包（守分层约定：其余子包按各自子系统归属，白盒测试留对应包）。build 不跑 layout/flush，
  * 仅做节点装配与 effect 注册，无需真机字体度量。</p>
  */
 public class FormPageShellTest {
