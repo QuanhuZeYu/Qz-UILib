@@ -196,8 +196,10 @@ public final class MarkdownLayoutLine {
      * {@link #withBlockContentWidthPx} 同形的拷贝法）。
      *
      * <p><b>为什么走本方法而不是新旋钮</b>：{@code leftInsetPx} 是接缝上唯一的
-     * 「行左偏移」真相——引用缩进（{@code quoteLevel × indentStepPx}）与列表正文列共用它，
-     * L2 出图（SEGMENTS.left）、聊天面板与页面装配都读同一个数；正文列是<b>度量事实</b>，
+     * 「行左偏移」<b>视觉行层面的合成真相</b> = L1 装配的引用份额（{@code quoteLevel × indentStepPx}）
+     * + L2 折行时追加的列表正文列——L2 出图（SEGMENTS.left）、聊天面板与页面装配都读
+     * 视觉行上合成后的同一个数；L1 装配的逻辑 LIST 行自身只含引用份额（M10d 起正文列不在逻辑行上）。
+     * 正文列是<b>度量事实</b>，
      * 只有持度量服务的 L2 算得出，故由 L2 在折行时以本方法把列表归属行偏移改写为
      * {@code 原 inset + 沿 listMarkerChain 求和的正文列}（M10d；标记行的第一个视觉行
      * 只吃祖先份额）。公共 10 参构造器签名自 M7 起冻结，不因它膨胀。</p>
@@ -232,9 +234,10 @@ public final class MarkdownLayoutLine {
     }
 
     /**
-     * @return 行文本左偏移（px；接缝唯一「行左偏移」真相——L1 写引用缩进
-     *         {@code quoteLevel × indentStepPx}，L2 可对 LIST 块续行视觉行追加正文列，
-     *         L2 出图/聊天面板/演示页三侧共读此值）
+     * @return 行文本左偏移（px；接缝唯一「行左偏移」视觉行层面的合成真相——合成真相 =
+     *         L1 逻辑行装配写出的引用份额 {@code quoteLevel × indentStepPx}
+     *         + L2 折行时追加的列表正文列；逻辑 LIST 行自身只含引用份额（M10d 起正文列
+     *         不在逻辑行上），L2 出图/聊天面板/演示页三侧共读视觉行上合成后的终值）
      */
     public int getLeftInsetPx() {
         return leftInsetPx;

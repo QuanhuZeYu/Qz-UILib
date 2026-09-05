@@ -31,7 +31,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * 纵向滚动视口单元测试 —— Phase 4 批 4 步骤 B「滚动/视口基础设施地基」验收。
  *
  * <p>验证核心约束：scrollable 钉死视口高、scrollOffsetY 只标 geometry 不标 layout/paint、
- * 滚动帧 layout 零重排（I7 命门反证）、后代 fragment 复用（信条七反证）、CLIP 裁剪固定不随滚动跑、
+ * 滚动帧 layout 零重排（I7 命门反证）、滚动帧后代 fragment 复用（滚动只重定位不重绘）、CLIP 裁剪固定不随滚动跑、
  * 滚轮 handler clamp、几何偏移生效。</p>
  *
  * <p>归类 L3 集成层：依赖 reactive/runtime/input/paint 多子系统协作，已从 layout 包迁出至
@@ -146,7 +146,7 @@ public class SceneScrollViewportTest {
                 0, scrollLayoutCount);
     }
 
-    // ==================== 验收 3：后代 fragment 复用（信条七反证） ====================
+    // ==================== 验收 3：滚动帧后代 fragment 复用（滚动只重定位不重绘） ====================
 
     /**
      * 滚动帧断言 paint 的 regeneratedFragmentCount 不增——
@@ -179,7 +179,7 @@ public class SceneScrollViewportTest {
         result = doPaint();
         PaintPlan plan2 = result.getPlan();
         int scrollRegenCount = result.getRegeneratedFragmentCount();
-        Assert.assertEquals("滚动帧应零 fragment 重生成（信条七反证：滚动只重定位不重绘）",
+        Assert.assertEquals("滚动帧应零 fragment 重生成——滚动只重定位不重绘",
                 0, scrollRegenCount);
     }
 

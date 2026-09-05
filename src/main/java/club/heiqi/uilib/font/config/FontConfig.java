@@ -108,7 +108,7 @@ public final class FontConfig {
      *
      * <p>值回灌抽象（{@code ConfigValueBridge}）喂完 {@code characterFontRules} 后调用，
      * 保证 {@code characterRuleSet} 与 {@code characterFontRules} 一致
-     * （守宪章信条六/七，派生态不陈旧）。</p>
+     * （派生态不陈旧：缓存必须有明确失效来源）。</p>
      *
      * <p>派生逻辑（parse）归属 FontConfig 所有者，回灌抽象只喂原始值后调本方法。</p>
      */
