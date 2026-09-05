@@ -233,6 +233,16 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
 （否则不变量空转）；③ A 侧确实随宽度换语义（否则登记理由不成立）。留档三处 = `diff.txt` 的
 `DIVERGENT` 行、`profiles.txt` 的 `divergent` 行、本节。**其余 17 条 PARITY 判据一字未动**。
 
+> **2026-09-05 用户裁定「甲」——登记通道重构授权注记**：上述登记机制存在结构性缺陷——
+> `INTENTIONAL_DIVERGENCES` 是 `String[]`，处置却是「凡登记条目一律改跑
+> `assertWidthIndependentCodeStyle`」：通道只有一条语义，登记一条与 code 无关的差异会得到
+> 一条 code 不变量去判，必然通过且通过得毫无意义（**假绿机器**）。按 §二之五 铁律
+> 「改判据引擎须另裁」，本次由用户 2026-09-05 明确授权另裁：每条登记改为携带
+> `{key, reason, 替代不变量标识}`，分派表对未知/缺失标识**硬失败**（绝不默认放行、绝不
+> 退化为跳过）；P03@150 的替代不变量语义**逐位保留**（通道重构后 diff.txt 与基线逐行
+> 零差异实证）。落点、P20 长引用语料的「先实测后登记」全程与对账表见 §二之七 末段，
+> 代码批 `06a9e45d`。
+
 **公共面变化清单（javap -public 逐行数，不含 class 声明行）**：`MarkdownStyleTable` **16 → 18**，
 增量恰为 F3 的引用色一对；`MarkdownInlineParser` 仍 2、`MarkdownDocument` 仍 6、`MarkdownPainter` 仍 5
 （F1 的 code 字号/衬底与 F5/F6 的新入口全部包内）；`TextStyle`/`TextSegment` 零改动；
@@ -421,6 +431,46 @@ assertWidthIndependentCodeStyle` 的 P03 专用不变量——那是判据改动
 
 **真机待验（本批未跑，如实挂账）**：chat3 气泡内嵌套引用竖条观感、真横线厚度（1px 在
 高 GUI Scale 下是否够眼）、围栏底色与气泡底色叠加观感、playground MarkdownPage 手感。
+
+### 二之七·续 门禁登记通道重构（方案甲，2026-09-05 用户授权另裁，代码批 `06a9e45d`）
+
+§二之七 首版写「若未来加长引用语料进门禁，其登记会撞 P03 专用不变量——属判据改动，须另裁」；
+用户当日裁定走甲，本节记录重构与实测全程。**本轮主源零改动，仅动门禁测试一个文件。**
+
+1. **通道**：登记条目 = `Divergence{key, reason, invariant}`；`resolveDivergenceInvariant`
+   显式查表分派（`MarkdownChat3ParityTest.java` 内），**未知/缺失标识抛
+   `IllegalArgumentException`——不默认放行、不退化跳过**；主循环命中登记 →
+   `applyIntentionalDivergence` 分派到对应不变量。硬失败本身由新增 @Test
+   `divergenceChannelMustHardFailOnUnknownInvariant` 钉死：正对照 = 两个已知标识可解析；
+   未知标识与 null 各须抛且异常消息点破语义；反 ∅ 地板 = 登记表逐项真实走分派
+   （条目数 ≥1、理由非空）。
+2. **P03@150 逐位保留**：迁移到 `CODE_STYLE_WIDTH_INDEPENDENT` 标识下，判据正文参数化但
+   字符串逐字不变；通道重构后、P20 入库前 diff.txt 与基线**逐行零差异**（83 行全保留）。
+3. **P20 二层引用长文（先测量，不预设结论）**：`>> + 84 CJK`，@150/@269 两档都折行、
+   quoteLevel=2。**未登记态实测 = REGRESSION**（@269 5 FAIL：行数 A=6/B=5、行#0
+   A=<`>>`>残行 vs B=<正文>、行宽 A=8/B=263 等；@150 同型 5 FAIL；汇总 FAIL=10 TIE=9）。
+   差异构成如实记录：① A 路嵌套引用只剥一层 `>` 留残行（chat3 旧缺陷，N03 属 NEW 档佐证）；
+   ② 门禁 B 路走旧接缝不扣宽，而 M7 新接缝按层扣宽——扣宽效应由不变量处理器在新接缝上
+   直接实测，不依赖 B 路切换。
+4. **引用专属不变量 `QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED`**（登记 P20@269、P20@150 两条）：
+   ① 断点单调：同一文本合成层级 0..3，首行断点 idx 单调不增且 idx(3)<idx(0) 严格不等
+   （防「扣宽没生效」的同义反复）——实测 @269 = 20/19/19/18、@150 = 11/10/10/9；
+   ② 文本守恒：B 折行拼接 == 单行原文（不丢不增）且 == A 拼接剥净行首引用标记后的文本
+   （剥净必要：A 只剥一层是旧缺陷，不复刻；只钉「几何可变、文本不可变」）；
+   ③ 每次调用实际比较计数 ≥6 地板（反分派空跑）。凭什么不弱于逐段等价：逐段等价根本不比
+   层级间断点关系（本不变量额外钉单调方向），文本维度取更严口径（整条流逐字等，仅行界
+   放开——行界正是被许可的唯一差异维度）。
+5. **门禁全量对账（基线 → 现在）**：PARITY 19→**20**（新增 P20，不降）/ NEW 11→11 /
+   FAIL 0→0 / TIE 0→0 / 有意差异 1→**3**（P03@150 + P20@两档）/ PNG 147→**153**
+   （P20×2 宽×3 图，语料新增的合法后果）。diff.txt 逐行对账：基线 83 行仅汇总行更新，
+   其余逐字保留；新增 P20 四行（2×DIVERGENT + 2×INVARIANT）。
+6. **不碰清单全守**：容差 0.0D/2.0D/1/1 一字未改；三档语义未改；既有语料不删不改；
+   `compareParityEntry` 函数本体一字未动（比对字段未减）。
+7. **测试计数**：3992→**3993**（+1 = 通道自检 @Test；零删除）；全量
+   `gradlew build --offline --console=plain` = BUILD SUCCESSFUL（0 失败 0 错误 2 跳过）。
+   反向核查：ui/markdown GL11.=0（正对照 ui/render=559）；MarkdownStyleTable 公共方法
+   恒 18（本轮未触主源）；ChatMessageList/ChatSceneController public diff 为空
+   （本轮 git diff 仅门禁测试 1 文件）。
 
 ---
 
