@@ -25,6 +25,7 @@ import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.layout.markdown.MarkdownDocument;
 import club.heiqi.uilib.font.layout.markdown.MarkdownInlineParser;
+import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
 import club.heiqi.uilib.font.layout.markdown.MarkdownSpan;
 import club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
@@ -122,6 +123,12 @@ public class MarkdownChat3ParityTest {
     /** 每张出图墨水地板(低于即「空跑」,属场地缺陷而非对拍差异)。 */
     private static final int MIN_INK_PER_PAGE = 30;
 
+    /** 有意差异替代不变量①：B 的 code 段样式与容器宽无关（M4-fix P03 原语义，逐位保留）。 */
+    static final String INVARIANT_CODE_STYLE_WIDTH_INDEPENDENT = "CODE_STYLE_WIDTH_INDEPENDENT";
+    /** 有意差异替代不变量②：引用扣宽断点单调 + 可见文本跨接缝逐字等值（M7 方案甲新增）。 */
+    static final String INVARIANT_QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED =
+            "QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED";
+
     private static final StringBuilder DIFF = new StringBuilder();
     private static final StringBuilder PROFILE = new StringBuilder();
     private static final List<String> PARITY_FAILURES = new ArrayList<String>();
@@ -175,6 +182,8 @@ public class MarkdownChat3ParityTest {
             "普通聊天文字 mixed English 12345"},
         {"P19", "深缩进独立列表行", "P", "0",
             "    - deep"},
+        {"P20", "二层引用长文扣宽断点", "P", "0",
+            ">> 引用的长文要长到在两百六十九与一百五十两档都必然折行以此证明每层八像素的扣宽真的影响断点而不是纸面几何门禁通道重构方案甲落地之后可见文本仍须逐字不变缩进只走行盒与图元"},
         {"N01", "ATX标题", "N", "0",
             "# 一级标题\n##### 五级标题"},
         {"N02", "围栏代码", "N", "0",
@@ -201,21 +210,101 @@ public class MarkdownChat3ParityTest {
 
     /**
      * 有意差异登记表（键 = 语料号@宽度）。<b>这不是跳过比对，也不是放宽判据</b>：该条改判一条
-     * <em>更强</em>的正向不变量（见 {@link #assertWidthIndependentCodeStyle}），并在 diff.txt、
-     * profiles.txt 与本仓规划《通用Markdown渲染器》§二之五 三处留档。
+     * <em>更强或至少等价</em>的正向不变量（按登记条目携带的标识显式分派，见
+     * {@link #resolveDivergenceInvariant}），并在 diff.txt、profiles.txt 与本仓规划
+     * 《通用Markdown渲染器》§二之五 / §二之七 留档。
      *
-     * <p>P03@150：A 路（chat3 现行）是「先按容器宽切显示行、再在显示行内配对反引号」，于是同一条
-     * 消息换个窗口宽度就换一种样式语义——跨显示行的反引号对在 @150 留字面 反引号 并把 code 内 URL
-     * 链接化（实测 A=[«命令·反引号curl·» c=FFFFFFFF w=63.84 | «http://x.y/z» c=FF7AB8F5
-     * link=http://x.y/z w=60.98]），而 @269 却剥反引号 + 12px + 不链接化。用户 2026-09-04 裁定：
-     * 该顺序副作用属 chat3 缺陷，B 不复刻；B 的「解析 → linkify → 换行」让 code span 语义与容器宽
-     * 无关，严格更优（CommonMark 与「内容不变则样式不变」两侧都一致）。</p>
+     * <p><b>P03@150（历史案例，语义逐位保留）</b>：A 路（chat3 现行）是「先按容器宽切显示行、
+     * 再在显示行内配对反引号」，于是同一条消息换个窗口宽度就换一种样式语义——跨显示行的反引号对
+     * 在 @150 留字面 反引号 并把 code 内 URL 链接化（实测 A=[«命令·反引号curl·» c=FFFFFFFF
+     * w=63.84 | «http://x.y/z» c=FF7AB8F5 link=http://x.y/z w=60.98]），而 @269 却剥反引号 +
+     * 12px + 不链接化。用户 2026-09-04 裁定：该顺序副作用属 chat3 缺陷，B 不复刻；B 的
+     * 「解析 → linkify → 换行」让 code span 语义与容器宽无关，严格更优（CommonMark 与
+     * 「内容不变则样式不变」两侧都一致）。</p>
+     *
+     * <p><b>方案甲通道重构（2026-09-05 用户授权，规划 §二之五 加注 + §二之七 补落点）</b>：
+     * 旧登记表是 String[]，处置却是「凡登记条目一律改跑 {@code assertWidthIndependentCodeStyle}」
+     * ——通道只有一条语义，登记一条与 code 无关的差异会得到一条 code 不变量去判，必然通过且
+     * 通过得毫无意义（假绿机器）。现每条登记 = {key, reason, 替代不变量标识}，分派经
+     * {@link #resolveDivergenceInvariant(String)} 显式查表，<b>未知或缺失标识硬失败
+     * （IllegalArgumentException），绝不默认放行、绝不退化为跳过</b>；该硬失败本身由
+     * {@link #divergenceChannelMustHardFailOnUnknownInvariant()} 钉死（正对照=已知标识可解析、
+     * 反 ∅ 地板=登记表逐项走分派且计数达标）。</p>
+     *
+     * <p><b>新通道</b>：每条登记 = {条目 key, 理由, 替代不变量标识}；分派经
+     * {@link #resolveDivergenceInvariant(String)} 显式查表，<b>未知或缺失标识硬失败
+     * （抛 IllegalArgumentException），绝不默认放行、绝不退化为跳过</b>。P03@150 的
+     * 替代不变量语义逐位保留（仍报 DIVERGENT + INVARIANT，判据正文不变）。</p>
      */
-    private static final String[] INTENTIONAL_DIVERGENCES = {"P03@" + W_NARROW};
+    private static final Divergence[] INTENTIONAL_DIVERGENCES = {
+        new Divergence("P03@" + W_NARROW,
+                "chat3 的 code span 配对依赖换行位置（缺陷）；B 宽度无关",
+                INVARIANT_CODE_STYLE_WIDTH_INDEPENDENT),
+        // P20@两档（2026-09-05 实测：未登记态 = REGRESSION，@269 与 @150 各 5 条 FAIL——
+        // A 路嵌套引用只剥一层 '>' 留「>」残行 + M7 新接缝按层扣宽使断点前移；
+        // 登记前证据存档于本轮提交信息。差异属「B 有 chat3 无」的引用几何/剥标记，
+        // 文本本体一字不差，由 QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED 逐字钉死。）
+        new Divergence("P20@" + W_MAIN,
+                "嵌套引用剥标记+每层扣宽断点前移（M7 有意差异）；文本跨接缝逐字等",
+                INVARIANT_QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED),
+        new Divergence("P20@" + W_NARROW,
+                "嵌套引用剥标记+每层扣宽断点前移（M7 有意差异）；文本跨接缝逐字等",
+                INVARIANT_QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED),
+    };
 
-    /** 有意差异的判据正文（写进 diff.txt / profiles.txt 留档）。 */
-    private static final String DIVERGENCE_REASON =
-            "chat3 的 code span 配对依赖换行位置（缺陷）；B 宽度无关";
+    /** 有意差异登记条目（key=语料号@宽度；invariant=替代不变量标识，必须可被分派表解析）。 */
+    static final class Divergence {
+        final String key;
+        final String reason;
+        final String invariant;
+
+        Divergence(String key, String reason, String invariant) {
+            this.key = key;
+            this.reason = reason;
+            this.invariant = invariant;
+        }
+    }
+
+    /**
+     * 分派表解析：已知标识原样返回；未知/缺失一律硬失败。
+     *
+     * <p>这是「登记通道只此一扇门」的机器保证：{@code default} 分支是抛，不是放行，
+     * 也不是跳过。{@link #divergenceChannelMustHardFailOnUnknownInvariant()} 钉死本函数。</p>
+     */
+    static String resolveDivergenceInvariant(String invariantId) {
+        if (INVARIANT_CODE_STYLE_WIDTH_INDEPENDENT.equals(invariantId)) {
+            return INVARIANT_CODE_STYLE_WIDTH_INDEPENDENT;
+        }
+        if (INVARIANT_QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED.equals(invariantId)) {
+            return INVARIANT_QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED;
+        }
+        throw new IllegalArgumentException("未知有意差异不变量标识: <" + invariantId
+                + ">——登记必须显式分派到一条真实不变量；不允许默认放行/跳过（方案甲，2026-09-05 用户授权）");
+    }
+
+    /** 该语料@宽度的登记条目（未登记返回 null）。 */
+    private static Divergence findDivergence(String id, int w) {
+        String key = id + "@" + w;
+        for (Divergence entry : INTENTIONAL_DIVERGENCES) {
+            if (entry.key.equals(key)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    /** 分派执行：解析标识 → 跑对应替代不变量；解析失败=硬失败（不可达兜底 fail）。 */
+    private static void applyIntentionalDivergence(Divergence entry, String id, String src,
+            int width, TextLayoutService service, boolean bridge) {
+        String invariant = resolveDivergenceInvariant(entry.invariant);
+        if (INVARIANT_CODE_STYLE_WIDTH_INDEPENDENT.equals(invariant)) {
+            assertWidthIndependentCodeStyle(id, src, service, bridge, entry.reason);
+        } else if (INVARIANT_QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED.equals(invariant)) {
+            assertQuoteBreakMonotonicTextPreserved(id, src, width, service, entry.reason);
+        } else {
+            Assert.fail("分派表漏号（resolve 放行但无执行分支）: " + invariant);
+        }
+    }
 
     private static final int[] WIDTHS_PARITY = {W_MAIN, W_NARROW};
     private static final int[] WIDTHS_NEW = {W_MAIN};
@@ -297,8 +386,9 @@ public class MarkdownChat3ParityTest {
             for (int w : widths) {
                 List<ALine> aLines = chat3Lines(src, w, service);
                 List<List<TextSegment>> bLines = bLines(src, w, service, bridge);
-                if (parity && isIntentionalDivergence(id, w)) {
-                    assertWidthIndependentCodeStyle(id, src, service, bridge);
+                Divergence registered = parity ? findDivergence(id, w) : null;
+                if (registered != null) {
+                    applyIntentionalDivergence(registered, id, src, w, service, bridge);
                 } else if (parity) {
                     compareParityEntry(id, label, w, aLines, bLines, service);
                 } else {
@@ -325,17 +415,6 @@ public class MarkdownChat3ParityTest {
         }
     }
 
-    /** 该语料@宽度是否登记为有意差异（见 {@link #INTENTIONAL_DIVERGENCES}）。 */
-    private static boolean isIntentionalDivergence(String id, int w) {
-        String key = id + "@" + w;
-        for (String registered : INTENTIONAL_DIVERGENCES) {
-            if (registered.equals(key)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
      * 有意差异条目的正向不变量断言（取代该条的逐段等价，比原判据更强，两宽度都跑）。
      *
@@ -352,7 +431,7 @@ public class MarkdownChat3ParityTest {
      * </ol></p>
      */
     private static void assertWidthIndependentCodeStyle(String id, String src,
-            TextLayoutService service, boolean bridge) {
+            TextLayoutService service, boolean bridge, String divergenceReason) {
         List<List<TextSegment>> wide = bLines(src, W_MAIN, service, bridge);
         List<List<TextSegment>> narrow = bLines(src, W_NARROW, service, bridge);
         List<String> wideCode = codeStyleVector(wide, service);
@@ -389,16 +468,164 @@ public class MarkdownChat3ParityTest {
                 tickWide != tickNarrow || aWideHits != aNarrowHits);
         divergentCount++;
         diffLine(id, W_NARROW, "DIVERGENT", "有意差异（不判逐段等价，改判宽度无关不变量）："
-                + DIVERGENCE_REASON + "；B code 段样式=" + narrowCode
+                + divergenceReason + "；B code 段样式=" + narrowCode
                 + "；A@150=<" + aNarrow + "> 命中区=" + aNarrowHits
                 + "；A@269=<" + aWide + "> 命中区=" + aWideHits);
         diffLine(id, W_MAIN, "INVARIANT", "B 宽度无关不变量通过（@269 code 段样式与 @150 全等："
                 + wideCode + "）");
         PROFILE.append("divergent ").append(id).append('@').append(W_NARROW)
-                .append(" reason=").append(DIVERGENCE_REASON)
+                .append(" reason=").append(divergenceReason)
                 .append(" bCodeStyle=").append(narrowCode)
                 .append(" aWideHits=").append(Integer.valueOf(aWideHits))
                 .append(" aNarrowHits=").append(Integer.valueOf(aNarrowHits)).append('\n');
+    }
+
+    /**
+     * 引用专属替代不变量（M7 方案甲，登记通道第二号不变量）。
+     *
+     * <p>钉两件事（当前宽度档各跑一遍，两档都登记=两档各跑）：</p>
+     * <ol>
+     *   <li><b>断点单调不增（B 内层级间）</b>——同一引用文本合成放到层级 0/1/2/3
+     *       （inset=层级×样式表步长），层级越高首行可用宽越小 ⇒ 首行断点字符数
+     *       idx(0)&ge;idx(1)&ge;idx(2)&ge;idx(3)，并强制 idx(3)&lt;idx(0) 严格不等
+     *       （防「扣宽根本没生效」的同义反复）；</li>
+     *   <li><b>可见文本跨接缝逐字等值（A↔B）</b>——B 各行拼接 == 单行原文（折行不丢字），
+     *       且 == A 路各行拼接剥净行首引用标记（'&gt;' 与空格）后的文本。剥净是必要的：
+     *       A 路 chat3 只剥一层 '&gt; '，嵌套引用残留 '&gt; x' 是旧缺陷（N03 属 NEW 档的
+     *       既有登记事实），本不变量不复刻该缺陷、只钉「几何可变、文本不可变」——
+     *       除标记剥离外两路一字不差。</li>
+     * </ol>
+     *
+     * <p>凭什么不弱于逐段等价：逐段等价只比「两侧各自成行后的行内容」，本不变量在其
+     * 覆盖的文本维度上取更严口径（整条流逐字等，行界完全放开——这正是差异被许可的唯一
+     * 维度），并额外钉死断点随层级的单调方向（逐段等价根本不比较层级间的断点关系）。
+     * 每条比较计数入 comparisons，地板 &ge; 6 防分派空转。</p>
+     */
+    private static void assertQuoteBreakMonotonicTextPreserved(String id, String src, int width,
+            TextLayoutService service, String divergenceReason) {
+        int comparisons = 0;
+        List<MarkdownLayoutLine> logical = MarkdownDocument.parse(src)
+                .toLayoutLines(MarkdownStyleTable.defaults(), bodyStyle());
+        Assert.assertTrue(id + " 引用语料必须至少 1 个逻辑行", !logical.isEmpty());
+        MarkdownLayoutLine quoteLine = logical.get(0);
+        Assert.assertTrue(id + " 语料首行必须是引用行(quoteLevel>=2): " + quoteLine,
+                quoteLine.getQuoteLevel() >= 2);
+        String textB = concatSegmentText(quoteLine.getSegments());
+        // 1) B 折行不丢字 + 行数 >= 2（扣宽在窄容器下必须真的折）
+        List<MarkdownLayoutLine> visualB =
+                MarkdownPainter.wrapLayoutLines(logical, service, width, BASE);
+        StringBuilder bJoined = new StringBuilder();
+        for (MarkdownLayoutLine line : visualB) {
+            bJoined.append(concatSegmentText(line.getSegments()));
+        }
+        Assert.assertEquals(id + " @" + width + " B 折行后文本必须与单行原文逐字等（不丢不增）",
+                textB, bJoined.toString());
+        Assert.assertTrue(id + " @" + width + " 该语料必须真的折行(>=2 显示行): " + visualB.size(),
+                visualB.size() >= 2);
+        comparisons += 2;
+        // 2) A↔B 文本逐字等（剥净 A 行首引用标记后；标记剥离 = A 旧缺陷，不复刻）
+        List<ALine> aLines = chat3Lines(src, width, service);
+        StringBuilder aJoined = new StringBuilder();
+        for (ALine a : aLines) {
+            aJoined.append(concatSegmentText(a.segments));
+        }
+        Assert.assertEquals(id + " @" + width + " 剥净行首引用标记后 A 与 B 可见文本一字不等",
+                textB, stripQuoteMarkers(aJoined.toString()));
+        comparisons += 1;
+        // 3) 层级 0..3 断点单调不增 + 严格不等（同文本合成不同层级）
+        int step = quoteLine.getIndentStepPx();
+        Assert.assertTrue(id + " 步长必须 >0: " + step, step > 0);
+        int[] idx = new int[4];
+        TextSegment probe = quoteLine.getSegments().get(0);
+        for (int level = 0; level <= 3; level++) {
+            MarkdownLayoutLine synthetic = new MarkdownLayoutLine(
+                    MarkdownLayoutLine.Kind.TEXT, level, 900000 + level,
+                    java.util.Collections.singletonList(probe),
+                    level * step, step, 2, 0, 0, 0);
+            List<MarkdownLayoutLine> wrapped = MarkdownPainter.wrapLayoutLines(
+                    java.util.Collections.singletonList(synthetic), service, width, BASE);
+            idx[level] = wrapped.get(0).getSegments().isEmpty() ? 0
+                    : concatSegmentText(wrapped.get(0).getSegments()).codePointCount(
+                            0, concatSegmentText(wrapped.get(0).getSegments()).length());
+            if (level > 0) {
+                Assert.assertTrue(id + " @" + width + " 断点必须随层级单调不增: idx("
+                        + (level - 1) + ")=" + idx[level - 1] + " < idx(" + level + ")=" + idx[level],
+                        idx[level] <= idx[level - 1]);
+                comparisons += 1;
+            }
+        }
+        Assert.assertTrue(id + " @" + width + " 扣宽必须真的影响断点(idx(3)<idx(0)): "
+                + idx[0] + "<=" + idx[3], idx[3] < idx[0]);
+        comparisons += 1;
+        Assert.assertTrue(id + " @" + width + " 实际比较数地板 >=6（反分派空跑）: " + comparisons,
+                comparisons >= 6);
+        divergentCount++;
+        diffLine(id, width, "DIVERGENT", "有意差异（不判逐段等价，改判引用专属不变量）："
+                + divergenceReason + "；首行断点 idx(层级0..3)=" + idx[0] + "/" + idx[1] + "/"
+                + idx[2] + "/" + idx[3] + "；A/B 文本等值=PASS");
+        diffLine(id, width, "INVARIANT", "引用不变量通过：折行不丢字 + 剥标记后 A≡B 逐字等 + 断点单调不增（comparisons=" + comparisons + "）");
+        PROFILE.append("divergent-quote ").append(id).append('@').append(width)
+                .append(" reason=").append(divergenceReason)
+                .append(" idxByLevel=").append(idx[0]).append('/').append(idx[1]).append('/')
+                .append(idx[2]).append('/').append(idx[3])
+                .append(" comparisons=").append(Integer.valueOf(comparisons)).append("\n");
+    }
+
+    /** 段流可见文本拼接（latex 以 ⟦源⟧ 占位，与 A 路 visible 口径同）。 */
+    private static String concatSegmentText(List<TextSegment> segments) {
+        StringBuilder sb = new StringBuilder();
+        for (TextSegment segment : segments) {
+            sb.append(segment.isLatex()
+                    ? "\u27e6" + segment.getLatexSource() + "\u27e7" : segment.getText());
+        }
+        return sb.toString();
+    }
+
+    /** 剥净整条流式文本行首的引用标记（'&gt;' 与空格），只作用于头部（A 路只剥一层的残留形态）。 */
+    private static String stripQuoteMarkers(String joined) {
+        int i = 0;
+        while (i < joined.length() && (joined.charAt(i) == '>' || joined.charAt(i) == ' ')) {
+            i++;
+        }
+        return joined.substring(i);
+    }
+
+    /**
+     * 登记通道自检（方案甲硬失败机器断言，纯逻辑零度量依赖）：
+     * 正对照 = 两个已知标识可解析；未知/缺失标识必须抛（绝不默认放行/跳过）；
+     * 反 ∅ 地板 = 登记表逐项真实走分派且条目数达标。
+     */
+    @Test
+    public void divergenceChannelMustHardFailOnUnknownInvariant() {
+        Assert.assertEquals("正对照一：code 不变量标识可解析",
+                INVARIANT_CODE_STYLE_WIDTH_INDEPENDENT,
+                resolveDivergenceInvariant(INVARIANT_CODE_STYLE_WIDTH_INDEPENDENT));
+        Assert.assertEquals("正对照二：引用不变量标识可解析",
+                INVARIANT_QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED,
+                resolveDivergenceInvariant(INVARIANT_QUOTE_BREAK_MONOTONIC_TEXT_PRESERVED));
+        try {
+            resolveDivergenceInvariant("NO_SUCH_INVARIANT");
+            Assert.fail("未知不变量标识必须硬失败（不允许默认放行/跳过）");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue("异常消息须点破硬失败语义: " + expected.getMessage(),
+                    expected.getMessage().contains("未知有意差异不变量标识"));
+        }
+        try {
+            resolveDivergenceInvariant(null);
+            Assert.fail("缺失(null)不变量标识必须硬失败");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertNotNull(expected.getMessage());
+        }
+        int dispatched = 0;
+        for (Divergence entry : INTENTIONAL_DIVERGENCES) {
+            Assert.assertNotNull(entry.key + " 缺 key", entry.key);
+            Assert.assertTrue(entry.key + " 理由不得为空",
+                    entry.reason != null && !entry.reason.isEmpty());
+            Assert.assertNotNull(entry.key + " 分派失败", resolveDivergenceInvariant(entry.invariant));
+            dispatched++;
+        }
+        Assert.assertTrue("登记表条目地板（分派表确被逐项执行，非恒真分支）: " + dispatched,
+                dispatched >= 1);
     }
 
     /** A 路在指定宽度下的整条流式可见文本（有意差异留档用）。 */
