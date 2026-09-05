@@ -946,10 +946,11 @@ public final class ChatMessageList {
                 int quoteLevel = 0;
                 boolean ruleLine = false;
                 boolean codeLine = false;
-                // M10c（2026-09-05 裁定：列表正文列落到聊天面）：本行的「正文列残余」——
-                // leftInsetPx = 引用份额(ql×step) + 列表续行正文列，而引用份额已由下方
-                // quoteLevel 层嵌套 row 结构表达，故只允许施加<b>差值</b>一份；系统路/纯文本路
-                // 无 RenderedLine，恒 0（不引入任何新分支语义）。
+                // M10c（2026-09-05 裁定：列表正文列落到聊天面）+ M10d「做全」（同日追加）：
+                // 本行的「正文列残余」——leftInsetPx = 引用份额(ql×step) + 沿列表项标记链
+                // 求和的正文列（覆盖：续行、嵌套项标记行自身、项内段落/标题/引用/围栏），
+                // 而引用份额已由下方 quoteLevel 层嵌套 row 结构表达，故只允许施加<b>差值</b>
+                // 一份；系统路/纯文本路无 RenderedLine，恒 0，零新分支语义。
                 int listExtra = 0;
                 if (system) {
                     String line = displayLines.get(lineIndex);
@@ -1072,7 +1073,8 @@ public final class ChatMessageList {
                             (int) Math.ceil(segmentsWidth(segments, segmentMeasurer, fontSize)));
                     if (ruleLine && rendered != null) {
                         // M7 真横线铺到行盒可用宽（无文本段可量，取容器口径）。
-                        // M10c：与下方钳宽 reserve 同式（横线行 listExtra 恒 0，写成同式防漂移）。
+                        // M10c：与下方钳宽 reserve 同式；M10d 起「横线行 listExtra 恒 0」不再
+                        // 保证（项内横线吃正文列），同式本身即正确行为，不按 0 特判。
                         int roomy = maxBubbleWidthPx > 0
                                 ? maxBubbleWidthPx - 2 * paddingX : message.getWrapWidthPx();
                         lineWidth = Math.max(1, roomy - quoteLevel
@@ -1099,8 +1101,9 @@ public final class ChatMessageList {
                                 Math.max(1, maxBubbleWidthPx - 2 * paddingX - reserve));
                     }
                     lineNode.setPreferredWidth(lineWidth);
-                    // M10c：CODE 内衬与列表正文列<b>显式合成一次</b> setPadding（CODE 行恒非
-                    // LIST 身份 ⇒ 二者必有一侧为 0，但写成加法，不靠「后句覆盖前句」的巧合）。
+                    // M10c：CODE 内衬与列表正文列<b>显式合成一次</b> setPadding，写成加法。
+                    // M10d 前的互斥前提（CODE 行必非列表身份 ⇒ 两项必有一项为 0）已随「做
+                    // 全」作废（项内围栏两项可同时非零），加法形式恰好是正确合成。
                     int padSideX = codeLine ? CODE_BG_SIDE_PAD_PX : 0;
                     lineNode.setPadding(0, padSideX, 0, padSideX + listExtra);
                 }

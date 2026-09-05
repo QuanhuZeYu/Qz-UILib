@@ -36,9 +36,11 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 它们行距恒等于行高）。分组内列 gap <b>恒取 {@code card.getGap()}</b>——组容器高 =
  * Σ行高 + gap×(n-1) 与平铺时逐字节相同，文字位置一字不动，只有竖条变连续。</p>
  *
- * <p><b>M10b 列表续行对齐正文列（2026-09-05 裁定 2）</b>：正文列宽由 L2 写进续行视觉行的
- * {@code leftInsetPx}（唯一行左偏移真相）；页面用 {@code extra = leftInsetPx - quoteLevel ×
- * indentStepPx} 反解列表专属偏移并以 {@code setPadding} 平移文字——页面不自算第二份标记宽。</p>
+ * <p><b>M10b 列表续行对齐正文列（2026-09-05 裁定 2）→ M10d「做全」（同日追加裁定）</b>：
+ * 正文列（沿列表项标记链求和，L2 唯一算列处）由 L2 写进列表项名下<b>全部</b>视觉行的
+ * {@code leftInsetPx}（唯一行左偏移真相）——含嵌套项标记行自身（它吃祖先份额）与项内
+ * 后续段落/标题/引用；页面用 {@code extra = leftInsetPx - quoteLevel × indentStepPx}
+ * 反解列表专属偏移并以 {@code setPadding} 平移文字——页面不自算第二份标记宽。</p>
  *
  * <p>解析/换行在 mount 时一次性完成（零每帧解析裁定，规划 §六 3）；观感与手感由真机验收，
  * headless 对拍见 {@code MarkdownSoftwareRenderTest}（build/reports/markdown-render/）。
@@ -66,8 +68,10 @@ public final class MarkdownPage implements PlaygroundPage {
                     "```java\nclass Hello {\n    // 注释里的 **星号** 与 $公式$ 都不解析\n}\n```\n\n~~~\n波浪围栏块 echo $HOME\n~~~"},
             {"嵌套引用", "> 可嵌套；引用样式位（斜体开关）叠加在段样式上",
                     "> 一层引用\n>> 二层引用\n>>> 三层引用\n> 惰性续行（下一行不带 > 仍属本引用块）\n\n> 引用里套列表：\n> - 子项甲\n> - 子项乙"},
-            {"列表与续行", "无序归一圆点符号、有序保留源序号；缩进续行并入同项并对齐正文列",
+            {"列表与续行", "无序归一圆点符号、有序保留源序号；缩进续行并入同项并对齐正文列；" + "嵌套子项的标记从父项正文列起笔，其下全部行再递进一级列",
                     "- 第一项首行\n  第一项的缩进续行（懒延续）\n- 第二项\n  - 嵌套子项\n    - 更深层子项\n3. 有序三\n4) 有序四（右括号定界）\n   有序四项的续行"},
+            {"列表项名下全部块（M10d）", "松散项的第二段/第三段、项内子标题、项内引用与项内有序子项，全部与首段正文同列；有序子项自身及其内容再递进一级",
+                    "- 松散项的第一段\n\n  松散项的第二段（空行分开的兄弟块）\n\n  松散项的第三段\n\n  #### 项内子标题\n\n  > 项内引用行\n\n  1. 项内有序子项\n  2. 次一个\n\n- 下一个顶层项"},
             {"硬换行与软换行", "行尾两空格 / 反斜杠 = 硬换行；超长行按容器宽软折",
                     "硬换行第一行  \n硬换行第二行（上行为行尾两空格）\\\n第三行（反斜杠硬换行）\n\n这是一段足够长的中文正文用于演示软换行在容器宽度处的折行行为，混合 English words 与 Punctuation, and even averyveryverylongunbreakstoken 时按词边界回退、超长 token 字符级硬断。"},
             {"行内公式", "$...$ 走 TextSegment.forLatex 原子段，与文本共享基线",
@@ -90,7 +94,7 @@ public final class MarkdownPage implements PlaygroundPage {
 
     @Override
     public String description() {
-        return "L1 块身份行接缝 → L2 layoutLines 换行(引用缩进/列表正文列) → 段流/连续竖条/真横线/围栏底色（8 张样本卡）";
+        return "L1 块身份行接缝 → L2 layoutLines 换行(引用缩进/列表正文列) → 段流/连续竖条/真横线/围栏底色（9 张样本卡）";
     }
 
     @Override
@@ -118,10 +122,14 @@ public final class MarkdownPage implements PlaygroundPage {
             TextLayoutService measurer) {
         MarkdownLayoutLine head = lines.get(from);
         int contentWidthPx = head.getBlockContentWidthPx();
+        // M10d：项内围栏整块随正文列平移（同块各行同链同列 ⇒ 矩形仍连续，M9 语义不变；
+        // 顶层围栏 extra 恒 0 ⇒ 与旧行为逐字节相同）。反解式与普通行同式，不另发明。
+        int listExtra = Math.max(0, head.getLeftInsetPx()
+                - head.getQuoteLevel() * head.getIndentStepPx());
         SceneNode block = SceneNode.column(0)
                 .setHitTestable(false)
                 .setBackgroundColor(head.getBackgroundArgb())
-                .setPadding(0, CODE_BG_PAD_PX, 0, CODE_BG_PAD_PX);
+                .setPadding(0, CODE_BG_PAD_PX, 0, CODE_BG_PAD_PX + listExtra);
         for (int k = from; k <= to; k++) {
             MarkdownLayoutLine row = lines.get(k);
             List<TextSegment> segments = row.getSegments();

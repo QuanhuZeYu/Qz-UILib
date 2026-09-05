@@ -587,12 +587,14 @@ public class PlaygroundPageRegistryTest {
     // ==================== M10b 页面级锁：列表续行对齐正文列 ====================
 
     /**
-     * 「懒续行首墨 x == 同项标记行正文首墨 x（不是标记 x）」的像素级形态：
+     * 「列表项名下所有行的首墨 x 落在同一正文列」的像素级形态（M10b → M10d「做全」）：
      * 断在<b>后端收到的 drawSegments.x</b> 上——它就是真机 GL 的字形起点几何。
      * 判据：以卡内最小 drawSegments.x 为列原点，每行 x 位移恒等于该行接缝
-     * {@code leftInsetPx}；每个带懒延续的项，其延续行位移 == <b>独立量出</b>（逐码点
-     * resolveAdvance，不经被测写入口）的标记段宽，且严格大于标记行位移。
-     * 反 ∅ 地板：参与行 >= 8、对齐延续行（位移&gt;0）>= 2。
+     * {@code leftInsetPx}；每个吃列的行，其位移 == <b>独立沿链量出</b>（逐元素逐码点
+     * resolveAdvance、逐级 ceil，不经被测写入口）的正文列（块首 LIST 标记行再扣本级标记宽）。
+     * 三级列硬值（页 BASE=14，headless 实测）：一级 13、二级 26、三级 39；同时钉死
+     * 旧 F2 文本代理形态不得出现（代理把祖先份额写成 2 空格/级 ⇒ 二级标记落点 12≠13）。
+     * 反 ∅ 地板：参与行 >= 8、对齐行（位移&gt;0）>= 2、标记行 >= 5。
      */
     @Test
     public void markdownPageListContinuationAlignsToContentColumn() {
@@ -619,44 +621,73 @@ public class PlaygroundPageRegistryTest {
         for (int[] pt : pts) {
             originX = Math.min(originX, pt[0]);
         }
+        java.util.Set<Integer> blockHeadSeen = new java.util.HashSet<Integer>();
         int shifted = 0;
         for (int i = 0; i < seam.size(); i++) {
+            MarkdownLayoutLine line = seam.get(i);
             int offset = pts.get(i)[0] - originX;
             Assert.assertEquals("第 " + i + " 行 drawSegments.x 位移必须恒等于接缝 leftInsetPx"
-                    + "（页面不得另算第二套真相）", seam.get(i).getLeftInsetPx(), offset);
-            if (seam.get(i).getLeftInsetPx() > 0) {
+                    + "（页面不得另算第二套真相）", line.getLeftInsetPx(), offset);
+            boolean firstOfBlock = blockHeadSeen.add(Integer.valueOf(line.getBlockId()));
+            if (line.getLeftInsetPx() > 0) {
                 shifted++;
-                // 独立 oracle：该块标记段逐码点推进宽（ceil）
-                int blockId = seam.get(i).getBlockId();
-                int markerWidth = 0;
-                for (MarkdownLayoutLine line : seam) {
-                    if (line.getBlockId() == blockId
-                            && line.getKind() == MarkdownLayoutLine.Kind.LIST
-                            && !line.getSegments().isEmpty()) {
-                        markerWidth = oracleAdvance(svc, line.getSegments().get(0));
-                        break;
-                    }
+                // 独立 oracle：沿该行标记链逐级 ceil 求和；块首 LIST 标记行再扣本级标记宽
+                int expected = oracleChainColumn(svc, line);
+                if (firstOfBlock && line.getKind() == MarkdownLayoutLine.Kind.LIST
+                        && !line.getListMarkerChain().isEmpty()) {
+                    // 本级宽取链尾元素（= 块首标记逻辑行 seg0 厗文）；视觉行 seg0 可能
+                    // 已折成「•」残片，据子宽反扣会错（同锁⑥探针实测）。
+                    expected -= oracleAdvance(svc, line.getListMarkerChain()
+                            .get(line.getListMarkerChain().size() - 1));
                 }
-                Assert.assertTrue("对齐行位移必须 == 独立量出的标记宽（实测 offset="
-                        + seam.get(i).getLeftInsetPx() + " oracle=" + markerWidth + "）",
-                        seam.get(i).getLeftInsetPx() == markerWidth && markerWidth > 0);
+                Assert.assertEquals("对齐行位移必须 == 独立沿链量出的正文列（行#" + i + "）",
+                        expected, line.getLeftInsetPx());
+                Assert.assertTrue("对齐行列必须 > 0，实测 " + expected, expected > 0);
             }
         }
         Assert.assertTrue("反 ∅ 地板：>=2 个对齐续行，实测 " + shifted, shifted >= 2);
         Assert.assertTrue("反 ∅ 地板：参与行 >= 8，实测 " + pts.size(), pts.size() >= 8);
-        // 正对照：标记行本身恒在原点上（x 位移 0）——「对齐正文列」≠「整项平移」
+
+        // 硬值三钉（M10d；@BASE=14 逐级 ceil(「• 」)=13）：一级标记行仍在 0（正对照，
+        // 「对齐正文列」≠「整项平移」）；二级标记行落在一级列 13；三级标记行落在二级列 26。
         int markerRows = 0;
+        int level1AtZero = 0;
+        int level2Hit = 0;
+        int level3Hit = 0;
         for (int i = 0; i < seam.size(); i++) {
             MarkdownLayoutLine line = seam.get(i);
             if (line.getKind() == MarkdownLayoutLine.Kind.LIST && !line.getSegments().isEmpty()
                     && isMarkerSegment(line.getSegments().get(0).getText())) {
-                Assert.assertEquals("标记行 x 位移必须为 0（首墨仍在标记列）", 0,
-                        pts.get(i)[0] - originX);
+                int offset = pts.get(i)[0] - originX;
+                int chainLen = line.getListMarkerChain().size();
+                Assert.assertEquals("第 " + i + " 行标记行位移 == 祖先列硬值（链长 " + chainLen + "）",
+                        (chainLen - 1) * 13, offset);
+                if (chainLen == 1) {
+                    level1AtZero++; // 上式已钉 ==0
+                } else if (chainLen == 2) {
+                    Assert.assertTrue("二级标记列不得落在 F2 代理文本宽 12 上", offset != 12);
+                    level2Hit++;
+                } else if (chainLen == 3) {
+                    level3Hit++; // 26（非代理 25）已由上式钉死
+                }
                 markerRows++;
             }
         }
         Assert.assertTrue("反 ∅ 地板：>=5 个标记行（2 无序 + 2 嵌套 + 2 有序），实测 "
                 + markerRows, markerRows >= 5);
+        Assert.assertTrue("一级标记行 >= 3（正对照非恒真），实测 " + level1AtZero,
+                level1AtZero >= 3);
+        Assert.assertEquals("恰一个二级标记行", 1, level2Hit);
+        Assert.assertEquals("恰一个三级标记行", 1, level3Hit);
+    }
+
+    /** 独立链列 oracle（逐元素逐码点 resolveAdvance、逐级 ceil；与 L2 写入路径零共享实现）。 */
+    private static int oracleChainColumn(TextLayoutService svc, MarkdownLayoutLine line) {
+        int column = 0;
+        for (TextSegment element : line.getListMarkerChain()) {
+            column += oracleAdvance(svc, element);
+        }
+        return column;
     }
 
     /** 独立标记宽 oracle（逐码点 resolveAdvance，与 L2 写入路径零共享实现）。 */
@@ -671,8 +702,9 @@ public class PlaygroundPageRegistryTest {
         return (int) Math.ceil(width);
     }
 
+    /** M10d 起标记段裸体（无 F2 前导空格）——正则同步收紧，旧「 *• 」宽容已作废。 */
     private static boolean isMarkerSegment(String text) {
-        return text.matches(" *\u2022 ") || text.matches("[0-9]+[.)] ");
+        return text.matches("\u2022 ") || text.matches("[0-9]+[.)] ");
     }
 
     private static SceneNode cardByTitle(SceneNode shell, String title) {

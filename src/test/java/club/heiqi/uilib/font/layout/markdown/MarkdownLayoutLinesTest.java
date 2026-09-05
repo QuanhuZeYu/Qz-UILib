@@ -12,11 +12,14 @@ import club.heiqi.uilib.font.layout.TextStyle;
 /**
  * L1 块身份行接缝（{@code toLayoutLines}，M7 方案乙）钉死测试——纯 JVM，零度量依赖。
  *
- * <p><b>核心不变量：接缝加身份、文本零改动。</b>每条反向断言按事故档
+ * <p><b>核心不变量：接缝加身份、文本改动只许一处。</b>M10d（2026-09-05「做全」追加裁定）
+ * 起行接缝的列表标记段剥净 F2「  」前导空格（几何不编码在可见文本里，改由 listMarkerChain
+ * 显式携带）——这是两路可见文本唯一被许可的差异，等值锁就地改写成「剥净前导后逐字等 +
+ * 差异必为偶数个前导空格 + 落差不在此形态的行当场红」。每条反向断言按事故档
  * ERROR-20260905 第八节配「正对照 + 反空跑地板（命中数 >= N）」：</p>
  * <ul>
  *   <li>{@link #visibleTextIdenticalAcrossSeamsOnGateCorpus()}——门禁语料镜像逐条对拍：
- *       行路可见文本与段路一字不差、行界符数量一致（去界符字符序列 + 界符计数双保险）；</li>
+ *       行路可见文本与段路逐行等值（仅容 LIST 标记行的 F2 前导空格差），行数量一致；</li>
  *   <li>{@link #quoteIndentMonotonicPerLevel()}——引用第 N 层左偏移随层数严格单调增；</li>
  *   <li>{@link #codeLinesShareBlockIdAndCarryBackdrop()} / {@link #thematicBreakLineAlwaysExists()}
  *       ——CODE 归组与横线恒成行；</li>
@@ -80,71 +83,87 @@ public class MarkdownLayoutLinesTest {
         return sb.toString();
     }
 
-    /** 行路整串可见文本：行间以 LF 连接（空行即相邻两个 LF）。 */
-    private static String linesVisible(List<MarkdownLayoutLine> lines) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < lines.size(); i++) {
-            if (i > 0) {
-                sb.append(LF);
-            }
-            sb.append(flatVisible(lines.get(i).getSegments()));
-        }
-        return sb.toString();
-    }
 
     // ==================== 不变量①：可见文本跨接缝逐字等值 ====================
 
-    /**
-     * 段流的「逻辑行序列化」：按 L2 splitLogicalLines 同规则切行（latex 原子随段整体入行；
-     * 空文本段 = 行边界不携带字符；段内嵌 LF 逐处断行），行间以 LF 连接。
-     * 用它对比行接缝产物，才能把「F6 占位段产空行」与「行接缝空行」对齐——纯字符拼接对比
-     * 会把占位段的零字符差异漏掉，那是不合格的等值判据。
-     */
-    private static String segmentsSerializedByLines(List<TextSegment> segments) {
-        StringBuilder sb = new StringBuilder();
-        boolean first = true;
-        for (TextSegment segment : segments) {
-            if (segment.isLatex()) {
-                if (!first && sb.length() > 0 && sb.charAt(sb.length() - 1) == LF) {
-                    // 新行起点已在换行时处理
-                }
-                sb.append("⟦").append(segment.getLatexSource()).append("⟧");
-                continue;
-            }
-            String text = segment.getText();
-            if (text.isEmpty()) {
-                sb.append(LF); // 占位空段 = 空行（其自带一个行界符，与前一行分离）
-                first = false;
-                continue;
-            }
-            int start = 0;
-            for (int i = 0; i < text.length(); i++) {
-                if (text.charAt(i) == LF) {
-                    sb.append(text, start, i).append(LF);
-                    start = i + 1;
-                }
-            }
-            sb.append(text, start, text.length());
-            first = false;
-        }
-        return sb.toString();
-    }
 
     @Test
     public void visibleTextIdenticalAcrossSeamsOnGateCorpus() {
         String[][] corpus = corpus();
         int checked = 0;
+        int prefixFolded = 0;
         for (String[] entry : corpus) {
             MarkdownDocument doc = MarkdownDocument.parse(entry[1]);
-            String viaSegments = segmentsSerializedByLines(
+            List<String> viaSegments = segmentsByLineList(
                     doc.toSegments(MarkdownStyleTable.defaults(), base()));
-            String viaLines = linesVisible(
-                    doc.toLayoutLines(MarkdownStyleTable.defaults(), base()));
-            Assert.assertEquals(entry[0] + " 两接缝行序列化不等（可见文本或断行结构被改动）",
-                    viaSegments, viaLines);
+            List<MarkdownLayoutLine> lines =
+                    doc.toLayoutLines(MarkdownStyleTable.defaults(), base());
+            Assert.assertEquals(entry[0] + " 两接缝行数不等（断行结构被改动）",
+                    viaSegments.size(), lines.size());
+            for (int i = 0; i < lines.size(); i++) {
+                String segLine = viaSegments.get(i);
+                MarkdownLayoutLine line = lines.get(i);
+                String lineText = flatVisible(line.getSegments());
+                if (segLine.equals(lineText)) {
+                    continue;
+                }
+                // 唯一被许可的差异（M10d）：段路 LIST 标记行带 F2「  」前导空格、行路剥净。
+                // 差异必须【整体是前导空格、个数成双、剥净后逐字等、且落在块首 LIST 标记行上
+                // ——行路 seg0 本身不带前导】。任何其它形态的差都当场红。
+                int d = 0;
+                while (d < segLine.length() && segLine.charAt(d) == ' ') {
+                    d++;
+                }
+                Assert.assertEquals(entry[0] + " 行#" + i + " 差异必须是纯前导空格（F2 代理）",
+                        segLine.substring(d), lineText);
+                Assert.assertTrue(entry[0] + " 行#" + i + " 前导空格必须成双（2/级）且非零: d=" + d,
+                        d > 0 && d % 2 == 0);
+                Assert.assertEquals(entry[0] + " 行#" + i + " 剥前导只许发生在 LIST 标记行",
+                        MarkdownLayoutLine.Kind.LIST, line.getKind());
+                Assert.assertTrue(entry[0] + " 行#" + i + " 行路标记段本身不得带前导空格（几何进文本=违仓规）: <"
+                        + line.getSegments().get(0).getText() + ">",
+                        !line.getSegments().get(0).getText().startsWith(" "));
+                prefixFolded++;
+            }
             checked++;
         }
         Assert.assertTrue("语料数地板（反空跑）：实测 " + checked + "，>=13", checked >= 13);
+        Assert.assertTrue("正对照地板（P08 二级+三级必须各折叠 1 行）：实测 "
+                + prefixFolded + "，>=2", prefixFolded >= 2);
+    }
+
+    /**
+     * 段流 → 行文本列表：按 L2 splitLogicalLines 同规则切行（latex 原子整体入行；空文本段
+     * = F6 占位空行；段内嵌 LF 逐处断行）。用它逐行对比行接缝产物，才能把「F6 占位段产空行」
+     * 与「行接缝空行」对齐——纯字符拼接对比会把占位段的零字符差异漏掉，那是不合格的等值判据。
+     */
+    private static List<String> segmentsByLineList(List<TextSegment> segments) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<String>();
+        StringBuilder current = new StringBuilder();
+        for (TextSegment segment : segments) {
+            if (segment.isLatex()) {
+                current.append("\u27e6").append(segment.getLatexSource()).append("\u27e7");
+                continue;
+            }
+            String text = segment.getText();
+            if (text.isEmpty()) {
+                out.add(current.toString()); // F6 占位空段 = 空行
+                current.setLength(0);
+                continue;
+            }
+            int start = 0;
+            for (int i = 0; i < text.length(); i++) {
+                if (text.charAt(i) == LF) {
+                    current.append(text, start, i);
+                    out.add(current.toString());
+                    current.setLength(0);
+                    start = i + 1;
+                }
+            }
+            current.append(text, start, text.length());
+        }
+        out.add(current.toString());
+        return out;
     }
 
     // ==================== M10b 不变量⑥：LIST 身份与「同块首行才带标记段」 ====================
@@ -168,7 +187,9 @@ public class MarkdownLayoutLinesTest {
         int listLines = 0;
         int blocks = 0;
         java.util.Set<Integer> seenBlocks = new java.util.HashSet<Integer>();
-        java.util.Set<Integer> markerBlocks = new java.util.HashSet<Integer>();
+        java.util.Map<Integer, List<TextSegment>> chainByBlock =
+                new java.util.HashMap<Integer, List<TextSegment>>();
+        int chainedContinuations = 0;
         for (int i = 0; i < lines.size(); i++) {
             MarkdownLayoutLine line = lines.get(i);
             if (line.getKind() != MarkdownLayoutLine.Kind.LIST) {
@@ -176,20 +197,47 @@ public class MarkdownLayoutLinesTest {
             }
             listLines++;
             boolean firstOfBlock = seenBlocks.add(Integer.valueOf(line.getBlockId()));
+            // M10d：LIST 行必带非空链；链尾 = 本级标记段（同文同款，单源 bareListMarker）
+            List<TextSegment> chain = line.getListMarkerChain();
+            Assert.assertTrue("LIST 行必须携带非空标记链: " + line, !chain.isEmpty());
             if (firstOfBlock) {
                 blocks++;
-                // ② 块首 LIST 行的 seg0 必须是独立标记段（圆点+空格 或 源序号+定界+空格）
+                // ② 块首 LIST 行的 seg0 = 裸标记段（圆点+空格 或 源序号+定界+空格），
+                //    **无** F2 前导空格——几何不编码进可见文本（M10d 仓规钉）
                 String seg0 = line.getSegments().get(0).getText();
-                Assert.assertTrue("块首 LIST 行 seg0 应为标记段，实测 <" + seg0 + ">",
-                        seg0.matches(" *• ") || seg0.matches("[0-9]+[.)] "));
-                markerBlocks.add(Integer.valueOf(line.getBlockId()));
+                Assert.assertTrue("块首 LIST 行 seg0 应为裸标记段（无空格前导），实测 <" + seg0 + ">",
+                        seg0.equals("• ") || seg0.matches("[0-9]+[.)] "));
+                Assert.assertEquals("链尾元素文本 == seg0", seg0,
+                        chain.get(chain.size() - 1).getText());
+                Assert.assertEquals("链尾元素颜色 == seg0 颜色",
+                        line.getSegments().get(0).getStyle().getColor(),
+                        chain.get(chain.size() - 1).getStyle().getColor());
+                chainByBlock.put(Integer.valueOf(line.getBlockId()), chain);
             } else {
-                // ③ 同块后续 LIST 行不再带标记段
+                // ③ 同块后续 LIST 行不再带标记段，但必须继承同一条链（懒延续吃列的地基）
                 String seg0 = line.getSegments().get(0).getText();
                 Assert.assertFalse("同 blockId 非首行不得再带标记段: <" + seg0 + ">",
-                        seg0.matches(" *• ") || seg0.matches("[0-9]+[.)] "));
+                        seg0.equals("• ") || seg0.matches("[0-9]+[.)] ")
+                                || seg0.startsWith("• "));
+                Assert.assertEquals("同块续行的链必须与块首逐元素等值",
+                        chainByBlock.get(Integer.valueOf(line.getBlockId())), chain);
+                chainedContinuations++;
             }
         }
+        // 嵌套深度钉：「  - 嵌套丙」链长 2；「- 甲项首行 / - 乙项 / 1. 有序一」链长 1
+        int twoLevel = 0;
+        int oneLevel = 0;
+        for (List<TextSegment> chain : chainByBlock.values()) {
+            if (chain.size() == 2) {
+                twoLevel++;
+            } else if (chain.size() == 1) {
+                oneLevel++;
+            }
+        }
+        Assert.assertEquals("恰一条 2 级链（嵌套丙）", 1, twoLevel);
+        Assert.assertTrue("1 级链 >= 3（甲/乙/有序一），实测 " + oneLevel, oneLevel >= 3);
+        Assert.assertTrue("带链懒延续行地板 >= 2，实测 " + chainedContinuations,
+                chainedContinuations >= 2);
         // ① 正对照：普通段落行必须仍 TEXT（不是全员 LIST 的假象）
         boolean plainIsText = false;
         for (MarkdownLayoutLine line : lines) {
@@ -219,6 +267,9 @@ public class MarkdownLayoutLinesTest {
             Assert.assertEquals("空圆点下无 LIST 身份可用，恒退 TEXT",
                     MarkdownLayoutLine.Kind.TEXT, line.getKind());
             Assert.assertEquals("退 TEXT 行不携带任何引用几何", 0, line.getLeftInsetPx());
+            // M10d：空串圆点无可渲染标记 ⇒ 该级零宽、不进链（链不注水，几何恒等）
+            Assert.assertTrue("空圆点级不得进链: " + line,
+                    line.getListMarkerChain().isEmpty());
         }
         List<MarkdownLayoutLine> control = MarkdownDocument.parse(src)
                 .toLayoutLines(MarkdownStyleTable.defaults(), base());

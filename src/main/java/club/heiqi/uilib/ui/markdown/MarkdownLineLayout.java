@@ -118,14 +118,19 @@ final class MarkdownLineLayout {
      * 可见文本与段流路逐字等值（L1 {@code MarkdownLayoutLinesTest} 钉死），
      * 折行差异<b>只</b>应出现在带左偏移的引用行（用户裁定的有意差异，规划 §二之三 M7 注记）。</p>
      *
-     * <p><b>M10b 列表续行对齐正文列（2026-09-05 裁定 2）</b>：先扫逻辑行，按 {@code blockId}
-     * 求该块「正文列」= {@code ceil(lineAdvance(单元素表[该块首条 LIST 行的 segments.get(0)]))}
-     * ——地基是 L1 的不变量「同 blockId 内只有第一行带标记段且居 {@code segments.get(0)}」。
-     * LIST 块分档：标记逻辑行的<b>第一个</b>视觉行保持原 {@code leftInsetPx}（可用宽
-     * {@code maxWidth - inset}）；此后每个视觉行——含同行软折、含同块后续逻辑行——取
-     * {@code leftInsetPx + 正文列}（可用宽同步扣减，经 {@link MarkdownLayoutLine
-     * #withLeftInsetPx(int)} 写回接缝，L2 出图/页面/聊天三侧共读）。正文列是度量事实，
-     * 本层是全仓唯一算它的地方；非 LIST 行路径一字不改。</p>
+     * <p><b>M10b 列表续行对齐正文列（2026-09-05 裁定 2）→ M10d「做全」（同日追加裁定）</b>：
+     * 触发器从「kind==LIST 的块内列」换成「{@code getListMarkerChain()} 非空的行」——项内
+     * 后续段落/标题/引用/围栏/嵌套子项虽另起 blockId、不带标记段，同样携链，因此同样吃到
+     * 正文列（旧实现的已知缺口就此闭合）。正文列 = 沿链<b>逐级</b> {@code ceil(单元素表
+     * (链元素) 推进宽)} 之和——与首行量标记段用的是<b>同一个度量器</b>（{@code lineAdvance} →
+     * {@code resolveAdvance}，无第二把尺子；逐级取整因父列是已落定的整 px 几何，本级标记从
+     * 父列起笔）。旧实现里「祖先份额 = 标记段里的 2 空格前导 × 层数」这一文本代理已废
+     * （headless 16px 基准：代理 14/29/43 vs 真值 14/28/42，漂移方向逐档不同，实测见
+     * {@code MarkdownListContinuationLockTest} 三级列硬值锁）。分档规则：块首 LIST 行（标记行）
+     * 的第一个视觉行 = 引用份额 + 祖先份额（本级 {@code seg0} 实测宽从文本里挣），其余一切
+     * 视觉行 = 引用份额 + 全额列；可用宽随 inset 同步扣减（{@code withLeftInsetPx} 写回接缝，
+     * L2 出图/页面/聊天三侧共读）。零段行（项内围栏空行/横线行）只平移不折行。本层是
+     * 全仓唯一算正文列的地方；<b>无链行</b>（不在列表项内）路径一字不改。</p>
      */
     static List<MarkdownLayoutLine> layoutLines(List<MarkdownLayoutLine> logicalLines,
             TextLayoutService measurer, int maxWidthPx, int baseFontSizePx) {
@@ -135,9 +140,9 @@ final class MarkdownLineLayout {
             out.add(MarkdownLayoutLine.blank());
             return Collections.unmodifiableList(out);
         }
-        // M10b 前置扫：按 blockId 记「该块首条 LIST 行的下标」与「正文列」（标记段实测宽，ceil）。
+        // M10d 前置扫：按 blockId 记「该块首条 LIST 行的下标」——只有这一行的 seg0 是本级
+        // 标记段，它的第一个视觉行不吃本级宽（标记从祖先列起笔，正文从标记之后起笔）。
         Map<Integer, Integer> listMarkerRow = new HashMap<Integer, Integer>();
-        Map<Integer, Integer> listColumnByBlock = new HashMap<Integer, Integer>();
         for (int i = 0; i < logicalLines.size(); i++) {
             MarkdownLayoutLine line = logicalLines.get(i);
             if (line.getKind() != MarkdownLayoutLine.Kind.LIST
@@ -146,32 +151,39 @@ final class MarkdownLineLayout {
                 continue;
             }
             listMarkerRow.put(Integer.valueOf(line.getBlockId()), Integer.valueOf(i));
-            List<TextSegment> segments = line.getSegments();
-            if (!segments.isEmpty()) {
-                int column = (int) Math.ceil(lineAdvance(
-                        Collections.singletonList(segments.get(0)), measurer, baseFontSizePx));
-                if (column > 0) {
-                    listColumnByBlock.put(Integer.valueOf(line.getBlockId()), Integer.valueOf(column));
-                }
-            }
         }
         for (int i = 0; i < logicalLines.size(); i++) {
             MarkdownLayoutLine line = logicalLines.get(i);
             List<TextSegment> segments = line.getSegments();
+            List<TextSegment> chain = line.getListMarkerChain();
+            int column = listColumnPx(chain, measurer, baseFontSizePx);
             if (segments.isEmpty()) {
-                out.add(line); // 空行/无线文本的分隔线行：一行即一显示行
+                // 空行/无线文本的分隔线行：一行即一显示行；M10d 项内零段行仍平移吃列
+                // （围栏底色/横线矩形随行头缘平移，块内连续性由「同块同列」保证）。
+                if (column > 0) {
+                    out.add(line.withLeftInsetPx(line.getLeftInsetPx() + column));
+                } else {
+                    out.add(line);
+                }
                 continue;
             }
-            Integer columnKey = line.getKind() == MarkdownLayoutLine.Kind.LIST
-                    ? listColumnByBlock.get(Integer.valueOf(line.getBlockId())) : null;
             Integer markerIdxKey = line.getKind() == MarkdownLayoutLine.Kind.LIST
                     ? listMarkerRow.get(Integer.valueOf(line.getBlockId())) : null;
-            if (columnKey == null || markerIdxKey == null) {
-                // 原路径（含非 LIST 行与拿不到正文列的退化 LIST 行）：一字不改
+            boolean isMarkerRow = markerIdxKey != null && markerIdxKey.intValue() == i;
+            // 本级宽 = 标记段自身实测（= 链尾元素，文本与样式同源；非标记行为 0）。
+            int ownColumn = isMarkerRow
+                    ? (int) Math.ceil(lineAdvance(Collections.singletonList(segments.get(0)),
+                            measurer, baseFontSizePx))
+                    : 0;
+            int inset = line.getLeftInsetPx();
+            int restInset = inset + column;
+            int firstInset = isMarkerRow ? restInset - ownColumn : restInset;
+            if (chain.isEmpty() || (column == 0 && firstInset == inset)) {
+                // 原路径（无列表归属行；column==0 只在圆点空串退化时出现）：一字不改
                 List<List<Token>> tokenLines = splitLogicalLines(
                         unifySwitchPointSpaces(segments), measurer, baseFontSizePx);
                 int availablePx = maxWidthPx <= 0
-                        ? 0 : Math.max(1, maxWidthPx - line.getLeftInsetPx());
+                        ? 0 : Math.max(1, maxWidthPx - inset);
                 List<List<TextSegment>> visual = new ArrayList<List<TextSegment>>();
                 for (int t = 0; t < tokenLines.size(); t++) {
                     wrapVisualLine(tokenLines.get(t), availablePx, visual, baseFontSizePx);
@@ -181,23 +193,19 @@ final class MarkdownLineLayout {
                 }
                 continue;
             }
-            // LIST 悬挂列路径
-            int inset = line.getLeftInsetPx();
-            int column = columnKey.intValue();
-            boolean isMarkerRow = markerIdxKey.intValue() == i;
-            int restInset = inset + column; // 标记行首视觉行之外的每个视觉行
+            // 列表归属行悬挂列路径（M10d）：标记行首视觉行 = 祖先份额，其余视觉行 = 全额列
             List<List<Token>> tokenLines = splitLogicalLines(
                     unifySwitchPointSpaces(segments), measurer, baseFontSizePx);
             for (int t = 0; t < tokenLines.size(); t++) {
                 List<List<TextSegment>> visual = new ArrayList<List<TextSegment>>();
                 boolean firstKeepsInset = isMarkerRow && t == 0;
-                int firstInset = firstKeepsInset ? inset : inset + column;
+                int firstRowInset = firstKeepsInset ? firstInset : restInset;
                 wrapVisualLine(tokenLines.get(t),
-                        availableForWidth(maxWidthPx, firstInset),
+                        availableForWidth(maxWidthPx, firstRowInset),
                         availableForWidth(maxWidthPx, restInset),
                         visual, baseFontSizePx);
                 for (int v = 0; v < visual.size(); v++) {
-                    int rowInset = v == 0 ? firstInset : restInset;
+                    int rowInset = v == 0 ? firstRowInset : restInset;
                     MarkdownLayoutLine copy = copyWithSegments(line, visual.get(v));
                     out.add(rowInset == copy.getLeftInsetPx()
                             ? copy : copy.withLeftInsetPx(rowInset));
@@ -343,13 +351,34 @@ final class MarkdownLineLayout {
         return Collections.unmodifiableList(out);
     }
 
-    /** 视觉行复制：身份与几何字段原样继承，仅换段流（materialize 产物）。 */
+    /**
+     * 视觉行复制：身份与几何字段原样继承，仅换段流（materialize 产物）。M10d 起必须走
+     * {@code withSegments}（类内拷贝法）而不是公共 10 参构造器——后者会把列表归属链与块
+     * 内容宽一并丢掉，视觉行退化成「无列表身份」，续行/项内块的列就断了（旧实现靠
+     * 「列已在 leftInsetPx 里」侥幸成立，链一上接缝就是隐性回归，此处是踩坑点，记死）。
+     */
     private static MarkdownLayoutLine copyWithSegments(MarkdownLayoutLine source,
             List<TextSegment> segments) {
-        return new MarkdownLayoutLine(source.getKind(), source.getQuoteLevel(),
-                source.getBlockId(), segments, source.getLeftInsetPx(), source.getIndentStepPx(),
-                source.getBarWidthPx(), source.getRuleThicknessPx(), source.getAccentArgb(),
-                source.getBackgroundArgb());
+        return source.withSegments(segments);
+    }
+
+    /**
+     * 沿链正文列（M10d，全仓唯一算列处）：Σ 逐级 {@code ceil(链元素推进宽)}。链元素自带
+     * L1 产出该标记时的样式（引用斜体改变推进宽），故引用内列表与顶层列表各按各尺；
+     * 「逐级取整」而非「双精度求和后一次取整」——父正文列是已渲染落定的整 px 几何，
+     * 本级标记段从父列起笔，其自身宽度也按同一把尺（{@code lineAdvance}）单独取整。
+     */
+    private static int listColumnPx(List<TextSegment> chain, TextLayoutService measurer,
+            int baseFontSizePx) {
+        if (chain == null || chain.isEmpty()) {
+            return 0;
+        }
+        int column = 0;
+        for (int i = 0; i < chain.size(); i++) {
+            column += (int) Math.ceil(lineAdvance(
+                    Collections.singletonList(chain.get(i)), measurer, baseFontSizePx));
+        }
+        return column;
     }
 
     // ==================== 换行 ====================

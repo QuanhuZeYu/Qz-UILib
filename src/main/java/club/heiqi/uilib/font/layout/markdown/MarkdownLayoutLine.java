@@ -19,8 +19,11 @@ import club.heiqi.uilib.font.layout.TextSegment;
  * <p><b>它刻意不是什么</b>：不是块模型（无子树、无 children、无源偏移量——
  * {@code MarkdownBlock}/{@code MarkdownBlockParser} 恒 package-private，裁定 B 未重开的
  * 「不外开块树」这一半不变）；也不是文本通道（{@link #getSegments()} 携扁平接缝对应行的
- * 原段引用，可见文本一字不改——缩进<b>绝不</b>写成前导空格塞进段文本，列表项 F2 的
- * 「  」前导空格机制保持原样）。它是扁平的行序列，不可变。</p>
+ * 原段引用，可见文本一字不改——缩进<b>绝不</b>写成前导空格塞进段文本。<b>M10d（2026-09-05
+ * 追加裁定「做全」）起，列表几何同样不进可见文本</b>：行接缝的标记段不再携带 F2 的
+ * 「  」前导空格，祖先列表项归属改由 {@link #getListMarkerChain()} 显式携带、L2 沿链求和
+ * 成像素；段接缝（{@code toSegments}）的 F2 前导空格机制原样保留，两路各自自洽）。它是
+ * 扁平的行序列，不可变。</p>
  *
  * <p><b>几何数值出处（G4 度量同源）</b>：indentStepPx/barWidthPx/ruleThicknessPx 与两路
  * 装饰色全部由 L1 在装配行时从 {@link MarkdownStyleTable} 的<b>包内登记项</b>解析
@@ -40,22 +43,25 @@ public final class MarkdownLayoutLine {
      * 行的块类别（封闭枚举；决定 L2 产哪种块级几何）。
      *
      * <p>引用身份不占枚举措——{@link #getQuoteLevel()} 独立正交（引用块内的 CODE 行 =
-     * kind=CODE + quoteLevel&gt;0，竖条与底色同时成立）。标题/普通段对 L2 无块级几何差异，
+     * kind=CODE + quoteLevel&gt;0，竖条与底色同时成立）。标题/普通段自身不产块级几何，
      * 恒 TEXT。<b>列表行不在此列（2026-09-05 裁定 2，推翻本类旧版「列表对 L2 无块级几何
-     * 差异」的说法）</b>：带标记的列表首行 = {@link Kind#LIST}，L2 据此把该块其余视觉行
-     * （软折续行与同块懒延续行）的 {@link #getLeftInsetPx()} 追加「正文列宽」，让续行
-     * 对齐标记行之后的正文列；列表专属偏移与引用缩进共用 leftInsetPx 这唯一行左偏移
-     * 真相（{@code leftInsetPx = quoteLevel × indentStepPx + 列表续行的正文列}），不新增
-     * 几何字段、不开样式表旋钮。</p>
+     * 差异」的说法）</b>：带标记的列表首行 = {@link Kind#LIST}。但 M10d 起「对齐正文列」
+     * 的触发器<b>不是</b>本枚举——是 {@link #getListMarkerChain()} 非空：项内后续段落/
+     * 标题恒 TEXT、项内围栏恒 CODE，同样吃正文列；LIST 只额外标出「seg0 = 本级标记段、
+     * 首视觉行不吃本级宽」这一处形态差。列表专属偏移与引用缩进共用 leftInsetPx 这唯一
+     * 行左偏移真相（{@code leftInsetPx = quoteLevel × indentStepPx + 沿链求和的正文列}），
+     * 不新增几何字段、不开样式表旋钮。</p>
      */
     public enum Kind {
         /** 普通文本行（段落/标题；无块级底几何）。 */
         TEXT,
         /**
-         * 带列表标记的行（M10b，2026-09-05 裁定 2）：同一 {@code blockId} 内<b>只有首行</b>
-         * 携带标记段（{@code segments.get(0)} 即标记——L1 续行按内嵌 \n 断行时继承行身份，
-         * 标记段不复制）。L2 只给该块的第一个 LIST 逻辑行保持原 {@code leftInsetPx}，
-         * 其余视觉行一律追加「正文列」= 该标记段实测宽（{@code ceil(推进宽)}），
+         * 带列表标记的行（M10b，2026-09-05 裁定 2；M10d 同日「做全」追加裁定更新）：
+         * 同一 {@code blockId} 内<b>只有首行</b>携带标记段（{@code segments.get(0)} 即标记——
+         * L1 续行按内嵌 \n 断行时继承行身份，标记段不复制）。标记段文本<b>不含</b>
+         * F2 前导空格（几何不编码在可见文本里，仓规）；其所属列表项链见
+         * {@link #getListMarkerChain()}。L2 给标记行的第一个视觉行保持「引用份额 +
+         * 祖先链求和列」，其余视觉行一律再追加本级标记实测宽（{@code ceil(推进宽)}），
          * 由 {@link #withLeftInsetPx(int)} 落进接缝；页面/出图/聊天读的都是这一个数。
          */
         LIST,
@@ -79,6 +85,7 @@ public final class MarkdownLayoutLine {
     private final int accentArgb;
     private final int backgroundArgb;
     private final int blockContentWidthPx;
+    private final List<TextSegment> listMarkerChain;
 
     /**
      * 全字段构造（L1 装配与 L2 视觉行复制共用；<b>签名自 M7 起冻结，存量消费者不受影响</b>）。
@@ -92,8 +99,10 @@ public final class MarkdownLayoutLine {
      * @param blockId         块归属 id（同一块的行同值；{@link #NO_BLOCK} = 无归属）
      * @param segments        行段流（可见文本；null 归一为空表）
      * @param leftInsetPx     行文本左偏移（L1 装配时 = quoteLevel × indentStepPx；M10b 起
-     *                        L2 可对 LIST 块的续行视觉行经 {@link #withLeftInsetPx(int)}
-     *                        追加正文列——它是接缝上唯一的「行左偏移」真相）
+     *                        L2 可对列表归属行的视觉行经 {@link #withLeftInsetPx(int)}
+     *                        追加正文列（M10d：列 = 沿 {@code listMarkerChain} 求和）——
+     *                        它是接缝上唯一的「行左偏移」真相）。经本构造器合成的行
+     *                        列表链恒为空（= 无列表归属）
      * @param indentStepPx    每层引用水平步长（非引用行 0）
      * @param barWidthPx      引用竖条宽（非引用行 0）
      * @param ruleThicknessPx 分隔线厚（仅 THEMATIC_BREAK 行 &gt;0）
@@ -104,17 +113,23 @@ public final class MarkdownLayoutLine {
             int leftInsetPx, int indentStepPx, int barWidthPx, int ruleThicknessPx,
             int accentArgb, int backgroundArgb) {
         this(kind, quoteLevel, blockId, segments, leftInsetPx, indentStepPx, barWidthPx,
-                ruleThicknessPx, accentArgb, backgroundArgb, 0);
+                ruleThicknessPx, accentArgb, backgroundArgb, 0, null);
     }
 
     /**
-     * 全字段构造（含块内容宽；唯一实现体，公共 10 参构造器与本类两个 {@code with*} 拷贝法共用）。
+     * 全字段构造（含块内容宽与列表链；唯一实现体，公共 10 参构造器、本类三个 {@code with*}
+     * 拷贝法与 L1 装配共用）。<b>package-private 而非 public</b>：链是 L1（同包
+     * {@code MarkdownDocument}）装配期事实，公共面只 +1 getter 读端（用户批准 18 → 19），
+     * 不为写端扩构造器重载族。
      *
      * @param blockContentWidthPx 块内统一内容宽（{@code >=0}；非 CODE 行恒 0 = 不适用）
+     * @param listMarkerChain     所属列表项标记链（外层 → 自身；null/空 = 不在任何列表项内，
+     *                            见 {@link #getListMarkerChain()}）
      */
-    private MarkdownLayoutLine(Kind kind, int quoteLevel, int blockId, List<TextSegment> segments,
+    MarkdownLayoutLine(Kind kind, int quoteLevel, int blockId, List<TextSegment> segments,
             int leftInsetPx, int indentStepPx, int barWidthPx, int ruleThicknessPx,
-            int accentArgb, int backgroundArgb, int blockContentWidthPx) {
+            int accentArgb, int backgroundArgb, int blockContentWidthPx,
+            List<TextSegment> listMarkerChain) {
         if (kind == null) {
             throw new IllegalArgumentException("kind 不能为空");
         }
@@ -131,6 +146,9 @@ public final class MarkdownLayoutLine {
         this.accentArgb = accentArgb;
         this.backgroundArgb = backgroundArgb;
         this.blockContentWidthPx = Math.max(0, blockContentWidthPx);
+        this.listMarkerChain = listMarkerChain == null || listMarkerChain.isEmpty()
+                ? Collections.<TextSegment>emptyList()
+                : Collections.unmodifiableList(new ArrayList<TextSegment>(listMarkerChain));
     }
 
     /**
@@ -152,7 +170,7 @@ public final class MarkdownLayoutLine {
     public MarkdownLayoutLine withSegments(List<TextSegment> newSegments) {
         return new MarkdownLayoutLine(kind, quoteLevel, blockId, newSegments,
                 leftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb, backgroundArgb,
-                blockContentWidthPx);
+                blockContentWidthPx, listMarkerChain);
     }
 
     /**
@@ -170,26 +188,27 @@ public final class MarkdownLayoutLine {
     public MarkdownLayoutLine withBlockContentWidthPx(int newBlockContentWidthPx) {
         return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
                 leftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb, backgroundArgb,
-                newBlockContentWidthPx);
+                newBlockContentWidthPx, listMarkerChain);
     }
 
     /**
      * 同身份换左偏移副本（M10b 列表续行对齐正文列的唯一写入口；与 {@link #withSegments}、
      * {@link #withBlockContentWidthPx} 同形的拷贝法）。
      *
-     * <p><b>为什么走本方法而不是新字段/新旋钮</b>：{@code leftInsetPx} 是接缝上唯一的
+     * <p><b>为什么走本方法而不是新旋钮</b>：{@code leftInsetPx} 是接缝上唯一的
      * 「行左偏移」真相——引用缩进（{@code quoteLevel × indentStepPx}）与列表正文列共用它，
      * L2 出图（SEGMENTS.left）、聊天面板与页面装配都读同一个数；正文列是<b>度量事实</b>，
-     * 只有持度量服务的 L2 算得出，故由 L2 在折行时以本方法把续行偏移改写为
-     * {@code 原 inset + ceil(标记段宽)}。公共 10 参构造器签名自 M7 起冻结，不因它膨胀。</p>
+     * 只有持度量服务的 L2 算得出，故由 L2 在折行时以本方法把列表归属行偏移改写为
+     * {@code 原 inset + 沿 listMarkerChain 求和的正文列}（M10d；标记行的第一个视觉行
+     * 只吃祖先份额）。公共 10 参构造器签名自 M7 起冻结，不因它膨胀。</p>
      *
      * @param newLeftInsetPx 新行左偏移（{@code >=0}）
-     * @return 携带相同 kind/quoteLevel/blockId/段流/其余几何与装饰色的新行
+     * @return 携带相同 kind/quoteLevel/blockId/段流/列表链/其余几何与装饰色的新行
      */
     public MarkdownLayoutLine withLeftInsetPx(int newLeftInsetPx) {
         return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
                 newLeftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb,
-                backgroundArgb, blockContentWidthPx);
+                backgroundArgb, blockContentWidthPx, listMarkerChain);
     }
 
     /** @return 块类别 */
@@ -244,6 +263,30 @@ public final class MarkdownLayoutLine {
     /** @return 块底色 ARGB（0 = 无衬底） */
     public int getBackgroundArgb() {
         return backgroundArgb;
+    }
+
+    /**
+     * 所属列表项的标记链（M10d「做全」，2026-09-05 追加裁定；用户批准的接缝唯一新增读端）。
+     *
+     * <p>内容 = 从最外层到本行所属项的<b>渲染后标记段</b>（每级一段，文本如 {@code "• "} /
+     * {@code "3. "}——含尾随空格、<b>不含</b>旧 F2 的「  」前导空格；圆点被样式表配成空串时
+     * 该级元素文本为空，推进宽贡献 0）。样式随段携带：链上每级标记必须按 L1 产出该标记时
+     * 的样式度量（引用样式位会改斜体 ⇒ 同文本推进宽不同），纯文本无法单一求和——这是
+     * 元素选 {@link TextSegment} 而非 {@code String} 的全部理由。</p>
+     *
+     * <p><b>谁携带</b>：列表项名下的<b>全部</b>行——标记行及其懒延续/软折、项内后续段落、
+     * 项内标题/引用/围栏代码/嵌套子项（子项链 = 父链 + 子项自身标记）。这正是「做全」的
+     * 载体：旧实现只有带标记段的首块能推出正文列。</p>
+     *
+     * <p><b>谁消费</b>：仅 L2（{@code MarkdownLineLayout.layoutLines}，全仓唯一度量产地）——
+     * 正文列 = Σ 各级 {@code ceil(标记段推进宽)}（逐级取整再相加：父列是已渲染的整 px 几何，
+     * 本级标记从父列起笔），写回 {@code leftInsetPx} 后经 {@link #withLeftInsetPx(int)}
+     * 供页面/出图/聊天共读。消费层不得沿链自算第二份像素。</p>
+     *
+     * @return 不可变标记链（外层 → 自身；空表 = 本行不属于任何列表项，永不 null）
+     */
+    public List<TextSegment> getListMarkerChain() {
+        return listMarkerChain;
     }
 
     /**

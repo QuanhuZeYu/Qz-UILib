@@ -2123,10 +2123,16 @@ public class ChatMessageListTest {
         Assert.assertEquals("内容去标记", "item", segments.get(1).getText());
     }
 
+    /**
+     * M10d「做全」推翻本用例旧断言（「4 前导空格 = 2 级缩进，bullet 段含 '    ' 前缀」——
+     * 那是 F2 文本代理：几何编码进可见文本、且与实测标记宽漂移，2026-09-05 追加裁定作废）。
+     * 行接缝标记段恒为裸体「• 」；缩进唯一真相 = listMarkerChain 经 L2 沿链求和。
+     * 本例是「深缩进起步的单一顶层项」——没有父项 ⇒ 没有祖先链 ⇒ 偏移恒 0 是正确行为
+     * （旧代理会凭空给它 4 空格文本缩进）。嵌套项的列见下方正对照（链给出，非文本）。
+     */
     @Test
-    public void unorderedListIndentMapsLeadingSpacesPerLevel() {
+    public void unorderedListDeepStartItemCarriesNoTextIndent() {
         ChatSceneController controller = controller();
-        // 4 前导空格 = 2 级 → bullet 段前缀含 4 个空格(2 空格=1 级的简单映射)
         controller.history().append(new ChatLineRecord(new ChatComponentText(
                 "<Bob>     - deep"), 1, T0));
         Object[] parts = layoutSingleOtherBubble(controller);
@@ -2134,8 +2140,28 @@ public class ChatMessageListTest {
         SceneNode lineNode = bubble.__getChildren().get(0);
         List<TextSegment> segments = lineNode.getSegments();
         Assert.assertEquals(2, segments.size());
-        Assert.assertEquals("4 前导空格 = 2 级缩进(每级 2 空格)", "    • ", segments.get(0).getText());
+        Assert.assertEquals("标记段裸体（几何不进文本）", "• ", segments.get(0).getText());
         Assert.assertEquals("deep", segments.get(1).getText());
+        Assert.assertEquals("无父项 ⇒ 左内衬恒 0（旧代理世界这里会有 4 空格文本缩进）",
+                0, lineNode.getPaddingLeft());
+        // 正对照：真有父项的嵌套项，其标记行由链给出祖先列（接缝 inset>0）
+        ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
+        List<ChatMarkdownPipeline.RenderedLine> flat = pipeline.layout(
+                "- top" + String.valueOf((char) 0x0A) + "  - deep", 0xFFFFFFFF, 4000,
+                ChatMarkdownSettings.getChatFontSizePx(), null, null);
+        int markers = 0;
+        boolean nestedMarkerShifted = false;
+        for (ChatMarkdownPipeline.RenderedLine line : flat) {
+            if (!line.segments().isEmpty()
+                    && line.segments().get(0).getText().equals("• ")) {
+                markers++;
+                if (line.leftInsetPx() > 0) {
+                    nestedMarkerShifted = true;
+                }
+            }
+        }
+        Assert.assertEquals("恰两条标记段（反 ∅）", 2, markers);
+        Assert.assertTrue("正对照：嵌套标记行必须由链给出祖先列（inset>0）", nestedMarkerShifted);
     }
 
     @Test

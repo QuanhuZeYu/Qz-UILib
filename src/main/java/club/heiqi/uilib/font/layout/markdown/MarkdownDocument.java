@@ -49,6 +49,9 @@ public final class MarkdownDocument {
 
     private static final MarkdownStyleTable FALLBACK_TABLE = MarkdownStyleTable.defaults();
 
+    /** 行路的「不在任何列表项内」空链常量（不可变，随处共享）。 */
+    private static final List<TextSegment> NO_CHAIN = Collections.emptyList();
+
     private final String source;
     private final List<MarkdownBlock> blocks;
 
@@ -125,14 +128,18 @@ public final class MarkdownDocument {
      *
      * <p><b>与 {@link #toSegments} 的关系</b>：同一块树、同一段生成原语（行内解析/引用样式/
      * 标题样式/列表标记全部共用，防两路漂移）。行接缝的逐行可见文本恒等于段接缝按 \n 与
-     * F6 占位切分的行——由 {@code MarkdownLayoutLinesTest} 在门禁 30 条语料上逐字钉死；
-     * <b>本方法不产任何新可见文本，也不删任何可见文本</b>（分隔线文本仍由既有
-     * {@code setThematicBreakText} 旋钮决定；几何另以行的块身份与行盒字段表达，二者正交）。</p>
+     * F6 占位切分的行——由 {@code MarkdownLayoutLinesTest} 在门禁语料上逐字钉死；
+     * <b>唯一被许可的文本差（M10d，2026-09-05「做全」追加裁定）</b>：列表项标记段的 F2
+     * 「  」前导空格只留在段接缝（chat3 出货口径），行进接缝时剥净——几何不编码在可见
+     * 文本里（仓规），归属改由 {@code listMarkerChain} 显式携带、L2 沿链求和成像素；
+     * 等值锁按「剥净前导空格后逐字等 + 段路前导必须是偶数个空格」钉。除此之外本方法
+     * 不产任何新可见文本，也不删任何可见文本（分隔线文本仍由既有 {@code setThematicBreakText}
+     * 旋钮决定；几何另以行的块身份与行盒字段表达，二者正交）。</p>
      *
-     * <p><b>身份字段</b>：kind（TEXT/CODE/THEMATIC_BREAK）、quoteLevel（引用嵌套层数，
+     * <p><b>身份字段</b>：kind（TEXT/LIST/CODE/THEMATIC_BREAK）、quoteLevel（引用嵌套层数，
      * 续行天然继承）、blockId（同一块的所有行同值——L2 据此把围栏底色合并为覆盖全部
      * 显示行的单矩形）、leftInsetPx 等行盒几何（数值恒取自 {@link MarkdownStyleTable}
-     * 包内登记项，L2 零自设常量，G4）。</p>
+     * 包内登记项，L2 零自设常量，G4）、listMarkerChain（列表项归属链，M10d）。</p>
      *
      * @param styles    样式/排版表（可为 null，取 {@link MarkdownStyleTable#defaults()}）
      * @param baseStyle 基础样式（不可为 null）
@@ -144,7 +151,7 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         LineFlattener flattener = new LineFlattener(table);
-        walkLayout(blocks, baseStyle, table, flattener, 0, 0);
+        walkLayout(blocks, baseStyle, table, flattener, NO_CHAIN, 0);
         return flattener.finish();
     }
 
@@ -239,28 +246,20 @@ public final class MarkdownDocument {
     }
 
     /**
-     * 列表标记文本（F2 口径，两路共用防漂移）：无序 = 样式表符号 + 空格；有序 = 源序号原文 + 空格。
+     * 列表标记文本（F2 口径，<b>段流路专用</b>）：无序 = 样式表符号 + 空格；有序 = 源序号原文 + 空格。
      *
-     * <p>嵌套列表每级缩进写成标记段文本里的前导空格，每级 2 个空格——复刻 chat3
-     * 出货口径（ChatMessageList.java:952-956：level 由前导空格数 / 2 得出，每级 append "  "）。
-     * 段流路（{@code toSegments}）的这套缩进机制原样保留；<b>M7 旧句「行接缝同样不给列表开
-     * 几何通道——引用几何才走行盒」已于 2026-09-05 裁定 2 作废</b>：行接缝（{@code toLayoutLines}）
-     * 用 {@link MarkdownLayoutLine.Kind#LIST} 给 L2 认「本块首条 {@code segments.get(0)} 即
-     * 标记段」，L2 按该段<b>实测推进宽</b>（ceil，含上述前导空格 ⇒ 嵌套层正文列天然更宽）
-     * 给块内其余视觉行的 leftInsetPx 追加正文列，实现「续行对齐正文列」。两机制各司其职、
-     * 互不侵犯：段流路继续用空格表达缩进，行接缝另走行盒；块模型与缩进 px 仍不开进
-     * 公共面（规划 §二之三 裁 B 未重开的那一半不变）。</p>
+     * <p>嵌套列表每级缩进写成标记段文本里的前导空格，每级 2 个空格。段流路
+     * （{@code toSegments}）的这套机制原样保留——对拍门禁 B 侧的可见文本、与旧 chat3 出货
+     * 口径的逐字节一致全赖它。<b>M10d（2026-09-05「做全」追加裁定）起本方法不再被行接缝
+     * 使用</b>：行接缝（{@code toLayoutLines}）改用 {@link #bareListMarker}（无 F2 前导空格）+
+     * {@code listMarkerChain} 显式链，旧句「行接缝仍用 F2 前导空格当每级列宽代理」作废——
+     * 代理宽（2 空格的 ceil）与「父正文列 + 本级标记实测宽」不等（headless 16px 基准实测
+     * 三级 14/29/43 对真值 14/28/42，漂移方向逐档不同），几何编码进可见文本也违反仓规。
+     * 两接缝的标记<b>主体</b>仍由 {@link #bareListMarker} 单源产出，文本无从漂移；块模型与
+     * 缩进 px 仍不开进公共面（规划 §二之三 裁 B 未重开的那一半不变）。</p>
      */
     private static String listMarker(MarkdownBlock block, MarkdownStyleTable table, int markerLevel) {
-        String marker;
-        if (block.ordered) {
-            marker = block.marker + " "; // 有序：保留源序号原文（"3." / "3)"），与 chat3 现行裁定一致
-        } else {
-            marker = table.getBulletMarker(); // 空串 = 标记完全不输出（含空格）
-            if (!marker.isEmpty()) {
-                marker = marker + " ";
-            }
-        }
+        String marker = bareListMarker(block, table);
         int level = Math.max(0, markerLevel - 1);
         if (!marker.isEmpty() && level > 0) {
             StringBuilder indented = new StringBuilder(marker.length() + 2 * level);
@@ -271,6 +270,19 @@ public final class MarkdownDocument {
             marker = indented.toString();
         }
         return marker;
+    }
+
+    /**
+     * 列表标记裸体（无任何前导空格；两路标记文本的<b>单源</b>）：无序 = 样式表符号 + 空格，
+     * 有序 = 源序号原文 + 空格；圆点被样式表配成空串 ⇒ 空串（标记完全不输出，含空格）。
+     * 段流路在它外面叠 F2 前导（{@link #listMarker}），行接缝拿它直接作标记段与链元素。
+     */
+    private static String bareListMarker(MarkdownBlock block, MarkdownStyleTable table) {
+        if (block.ordered) {
+            return block.marker + " "; // 有序：保留源序号原文（"3." / "3)"），与 chat3 现行裁定一致
+        }
+        String bullet = table.getBulletMarker(); // 空串 = 标记完全不输出（含空格）
+        return bullet.isEmpty() ? bullet : bullet + " ";
     }
 
     /** 行内解析（两路共用）：块正文交行内解析器，行内语义照抄既有裁定。 */
@@ -313,10 +325,11 @@ public final class MarkdownDocument {
 
     // ==================== 扁平化（块身份行路，M7） ====================
 
-    /** 块身份路：同层兄弟行走（语义与 walk 逐点对偶——边界断行、F6 空行）。 */
+    /** 块身份路：同层兄弟行走（语义与 walk 逐点对偶——边界断行、F6 空行）。
+     *  M10d：行路不再传 markerLevel——嵌套宽度事实改由标记链 {@code chain} 显式携带。 */
     private static void walkLayout(List<MarkdownBlock> siblings, TextStyle style,
                                    MarkdownStyleTable table, LineFlattener f,
-                                   int markerLevel, int quoteLevel) {
+                                   List<TextSegment> chain, int quoteLevel) {
         for (int i = 0; i < siblings.size(); i++) {
             MarkdownBlock next = siblings.get(i);
             if (i > 0) {
@@ -325,58 +338,60 @@ public final class MarkdownDocument {
                     f.blankLine();
                 }
             }
-            emitLayout(next, style, table, f, markerLevel, quoteLevel);
+            emitLayout(next, style, table, f, chain, quoteLevel);
         }
     }
 
-    /** 块身份路：按块派发（引用只加层级不占行；标题/段/列表恒 TEXT 身份）。 */
+    /** 块身份路：按块派发（引用只加层级不占行；标题/段恒 TEXT 身份，但 M10d 起落在列表项
+     *  内时照旧携带标记链——链才是正文列的触发器，kind 不是）。 */
     private static void emitLayout(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
-                                   LineFlattener f, int markerLevel, int quoteLevel) {
+                                   LineFlattener f, List<TextSegment> chain, int quoteLevel) {
         switch (block.kind) {
             case PARAGRAPH:
-                f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel);
+                f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel, chain);
                 f.append(inlineSegments(block.joinedLines(), style, table));
                 break;
             case HEADING:
-                f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel);
+                f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel, chain);
                 f.append(inlineSegments(block.text, headingStyle(style, block.level, table), table));
                 break;
             case CODE:
-                emitCodeLayout(block, style, f, quoteLevel);
+                emitCodeLayout(block, style, f, quoteLevel, chain);
                 break;
             case QUOTE:
-                walkLayout(block.children, quoteStyle(style, table), table, f, markerLevel,
+                walkLayout(block.children, quoteStyle(style, table), table, f, chain,
                         quoteLevel + 1);
                 break;
             case LIST:
-                walkLayout(block.children, style, table, f, markerLevel + block.baseLevel,
-                        quoteLevel);
+                walkLayout(block.children, style, table, f, chain, quoteLevel);
                 break;
             case LIST_ITEM:
-                emitListItemLayout(block, style, table, f, markerLevel, quoteLevel);
+                emitListItemLayout(block, style, table, f, chain, quoteLevel);
                 break;
             case THEMATIC_BREAK:
                 f.ruleLine(quoteLevel,
                         table.getThematicBreakText().isEmpty()
                                 ? Collections.<TextSegment>emptyList()
                                 : Collections.singletonList(new TextSegment(
-                                        table.getThematicBreakText(), style.copy())));
+                                        table.getThematicBreakText(), style.copy())),
+                        chain);
                 break;
             default:
                 break;
         }
     }
 
-    /** 围栏代码：每个源行一条 kind=CODE 行（块内空行也带 CODE 身份，底色归组不断裂）。 */
+    /** 围栏代码：每个源行一条 kind=CODE 行（块内空行也带 CODE 身份，底色归组不断裂；
+     *  M10d：项内围栏携链，本块全部源行同吃正文列——底色矩形随头行平移，连续语义不变）。 */
     private static void emitCodeLayout(MarkdownBlock block, TextStyle style, LineFlattener f,
-                                       int quoteLevel) {
+                                       int quoteLevel, List<TextSegment> chain) {
         List<String> lines = block.lines;
         if (lines.isEmpty()) {
             return;
         }
         for (int i = 0; i < lines.size(); i++) {
             if (i == 0) {
-                f.startBlock(MarkdownLayoutLine.Kind.CODE, quoteLevel);
+                f.startBlock(MarkdownLayoutLine.Kind.CODE, quoteLevel, chain);
             } else {
                 f.continueBlockLine();
             }
@@ -391,24 +406,33 @@ public final class MarkdownDocument {
     }
 
     /**
-     * 列表项：标记 + 首段同行；其余子块断行起（与 emitListItem 逐点对偶，F2 前导空格共用助手）。
+     * 列表项：标记 + 首段同行；其余子块断行起（与 emitListItem 逐点对偶）。
      *
      * <p><b>M10b 行身份（2026-09-05 裁定 2）</b>：标记文本在 {@code startBlock} <b>之前</b>
      * 算好——标记非空 ⇒ 本块首行为 {@link MarkdownLayoutLine.Kind#LIST}，圆点被样式表配成
      * 空串（有序恒有源序号）⇒ 退 {@link MarkdownLayoutLine.Kind#TEXT}。{@code LineFlattener
-     * .appendOne} 按内嵌 
- 断行并让续行继承 curKind/curBlockId，故<b>同一 blockId 内只有
-     * 第一行带标记段</b>（且它就是 {@code segments.get(0)}）——L2 据这两条把该块其余视觉行
-     * 的 leftInsetPx 追加正文列，身份地基由 {@code MarkdownLayoutLinesTest} 钉死。</p>
+     * .appendOne} 按内嵌换行符断行并让续行继承 curKind/curBlockId，故<b>同一 blockId 内只有
+     * 第一行带标记段</b>（且它就是 {@code segments.get(0)}）。旧文中「L2 据这两条把该块其余
+     * 视觉行追加正文列」只覆盖了同块续行——2026-09-05「做全」追加裁定推翻其覆盖面，见下。</p>
+     *
+     * <p><b>M10d「做全」</b>：标记段文本 = {@link #bareListMarker}（<b>无</b> F2 前导空格——
+     * 几何不编码在可见文本里）；本级裸标记段追加到父链尾得 {@code ownChain}，交给该
+     * <b>项</b>而非只交首块——首块行、懒延续、软折，连同项名下<b>另起 blockId</b> 的后续
+     * 段落/标题/引用/围栏/嵌套子项（子项链 = ownChain + 子项标记）全部携带。正文列由 L2
+     * 沿链求和；本层零度量、不产 px。</p>
      */
     private static void emitListItemLayout(MarkdownBlock block, TextStyle style,
                                            MarkdownStyleTable table, LineFlattener f,
-                                           int markerLevel, int quoteLevel) {
-        String marker = listMarker(block, table, markerLevel);
-        f.startBlock(marker.isEmpty()
-                ? MarkdownLayoutLine.Kind.TEXT : MarkdownLayoutLine.Kind.LIST, quoteLevel);
-        if (!marker.isEmpty()) {
-            f.append(Collections.singletonList(new TextSegment(marker, style.copy())));
+                                           List<TextSegment> chain, int quoteLevel) {
+        String marker = bareListMarker(block, table);
+        TextSegment markerSegment = marker.isEmpty()
+                ? null : new TextSegment(marker, style.copy());
+        // 空串圆点 ⇒ 本级无可渲染标记，链不追加（零宽级不进链；几何恒等）
+        List<TextSegment> ownChain = markerSegment == null ? chain : appendChain(chain, markerSegment);
+        f.startBlock(markerSegment == null
+                ? MarkdownLayoutLine.Kind.TEXT : MarkdownLayoutLine.Kind.LIST, quoteLevel, ownChain);
+        if (markerSegment != null) {
+            f.append(Collections.singletonList(markerSegment));
         }
         List<MarkdownBlock> children = block.children;
         for (int i = 0; i < children.size(); i++) {
@@ -422,15 +446,26 @@ public final class MarkdownDocument {
             if (child.blanksBefore > 0) {
                 f.blankLine();
             }
-            emitLayout(child, style, table, f, markerLevel, quoteLevel);
+            emitLayout(child, style, table, f, ownChain, quoteLevel);
         }
+    }
+
+    /** 链追加一级（产出不可变新表；旧表零改动，兄弟项/后续块共享父链不互相污染）。 */
+    private static List<TextSegment> appendChain(List<TextSegment> chain, TextSegment element) {
+        ArrayList<TextSegment> out = new ArrayList<TextSegment>(chain.size() + 1);
+        out.addAll(chain);
+        out.add(element);
+        return Collections.unmodifiableList(out);
     }
 
     /**
      * 行收集器：段流事件 → 逻辑行（M7）。块归属 id 每叶子块一个；续行（段内嵌 \n、
      * 围栏源行、列表项子块断行）继承同值——L2 用「连续同 id」判定块矩形合并。
+     * M10d 起列表归属链（listMarkerChain）与块身份同生命周期：startBlock 落定、
+     * 块内续行继承、换块不残留（新块必带自身链或空链）。
      *
-     * <p>行盒几何与装饰色在行封口时从样式表包内登记项解析（G4 度量同源；公共面零膨胀）。</p>
+     * <p>行盒几何与装饰色在行封口时从样式表包内登记项解析（G4 度量同源；公共面零膨胀
+     * ——链写端走 {@code MarkdownLayoutLine} 的包内全参构造器，公共面只 +1 读端 getter）。</p>
      */
     private static final class LineFlattener {
 
@@ -440,6 +475,7 @@ public final class MarkdownDocument {
         private MarkdownLayoutLine.Kind curKind = MarkdownLayoutLine.Kind.TEXT;
         private int curQuoteLevel;
         private int curBlockId = MarkdownLayoutLine.NO_BLOCK;
+        private List<TextSegment> curListChain = NO_CHAIN;
         private int idGen;
         private boolean open;
         private boolean structural;
@@ -448,12 +484,13 @@ public final class MarkdownDocument {
             this.table = table;
         }
 
-        /** 新叶子块首行：封前行、分配新 blockId。 */
-        void startBlock(MarkdownLayoutLine.Kind kind, int quoteLevel) {
+        /** 新叶子块首行：封前行、分配新 blockId、落定列表归属链（M10d；null 归一空链）。 */
+        void startBlock(MarkdownLayoutLine.Kind kind, int quoteLevel, List<TextSegment> chain) {
             close();
             curKind = kind;
             curQuoteLevel = quoteLevel;
             curBlockId = ++idGen;
+            curListChain = chain == null ? NO_CHAIN : chain;
             structural = false;
             open = true;
         }
@@ -481,9 +518,10 @@ public final class MarkdownDocument {
             out.add(MarkdownLayoutLine.blank());
         }
 
-        /** 分隔线行：恒成行（可见文本由样式表旋钮决定，横线几何由 kind 承载——正交）。 */
-        void ruleLine(int quoteLevel, List<TextSegment> textSegments) {
-            startBlock(MarkdownLayoutLine.Kind.THEMATIC_BREAK, quoteLevel);
+        /** 分隔线行：恒成行（可见文本由样式表旋钮决定，横线几何由 kind 承载——正交；
+         *  M10d 项内横线随链落进正文列，与引用层级正交）。 */
+        void ruleLine(int quoteLevel, List<TextSegment> textSegments, List<TextSegment> chain) {
+            startBlock(MarkdownLayoutLine.Kind.THEMATIC_BREAK, quoteLevel, chain);
             structural = true;
             append(textSegments);
             close();
@@ -555,8 +593,10 @@ public final class MarkdownDocument {
             int accent = quoteLevel > 0 || kind == MarkdownLayoutLine.Kind.THEMATIC_BREAK
                     ? table.getBlockAccentArgb() : 0;
             int background = kind == MarkdownLayoutLine.Kind.CODE ? table.getCodeBackgroundColor() : 0;
+            // M10d：leftInsetPx 只写引用份额（L1 零度量）；列表正文列由 L2 沿链求和后
+            // 经 withLeftInsetPx 追加——链在此逐字交给接缝行。
             return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
-                    quoteLevel * step, step, barWidth, rule, accent, background);
+                    quoteLevel * step, step, barWidth, rule, accent, background, 0, curListChain);
         }
     }
 
