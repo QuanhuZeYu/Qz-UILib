@@ -1748,34 +1748,42 @@ public class ChatMessageListTest {
     }
 
     /**
-     * M10b（裁定 2）L3 实测锁：列表续行的正文列偏移恒由 L2 折进 {@code leftInsetPx} 随接缝
-     * 进管道（{@code ChatMarkdownPipeline} 逐字透传），{@code ChatMessageList} 的气泡行位置
-     * 由引用嵌套结构决定、<b>不得再二次施加</b>该偏移（二次施加 → 续行 x 比标记行多移一份，
-     * 本锁红）；同时长续行（L2 已按 inset+列 扣宽折行）不得被推出气泡行盒。
+     * M10c（2026-09-05 裁定：列表正文列落到聊天面）L3 实测锁。本条 javadoc 的上一版
+     * （「行位置由引用嵌套结构决定、不得施加该偏移」「续行与标记行盒左缘重合」）钉的是
+     * M10b 落地前的世界，<b>已被裁定推翻，就地改写成新事实</b>：
      *
-     * <p>口径与 {@link #fencedCodeBubbleLineBoxesAreVerticallySeamless()} 同范式：headless
-     * 建气泡 → 布局 → 断行盒几何。语料取「短标记行 + 长懒延续行」——标记行两路换行器
-     * （生产 L2 / 测试可注入替身）都恒单行，长延续行两路都必然软折；族归属按位置算，
-     * 不依赖软折断点。反 ∅ 地板：总行数 &ge; 3、续行族 &ge; 2（度量突变到不折时地板先红，
-     * 不静默空跑）。</p>
+     * <p>新口径——正文列<b>必须</b>施加，且<b>只能施加一次</b>：消费端唯一合法量是差值
+     * {@code leftInsetPx - quoteLevel × indentStepPx}（引用份额由嵌套 row 结构另行表达，
+     * 整值施加=把引用缩进算两遍）。本锁三面：① 续行<b>内容左缘</b>（行盒 x + 左内衬）与
+     * 标记行内容左缘之差 == 测试内<b>独立量出</b>的标记段推进宽（逐码点 resolveAdvance 求和
+     * 取 ceil，禁从接缝/管道读回自证）；② 该差值 == 接缝反解值（管道逐字透传 leftInsetPx+
+     * indentStepPx 的贯通证据）且 != 2×列（钉「没算两遍」）；③ 非列表段落行内容左缘与标记行
+     * 差恒 0（正文列不得泄漏到普通段）。长续行仍不得顶出气泡左右缘（钳宽同扣 listExtra 的
+     * 下游证据）。</p>
+     *
+     * <p>语料「短标记行 + 长懒延续 + 空行后普通段对照」：族归属按位置算，不依赖软折断点。
+     * 反 ∅ 地板：总行数 &ge; 4、续行族 &ge; 2（度量突变到不折时地板先红，不静默空跑）。</p>
      */
     @Test
     public void markdownListContinuationGetsNoDoubleOffsetAndFitsBubble() {
         String nl = String.valueOf((char) 0x0A);
-        String bodyA = "甲项短首行"; // 标记行短：两路换行器（生产 L2 度量 / FIXED_WRAP 替身）都恒单行
+        String bodyA = "甲项短首行"; // 标记行短：恒单行，族界干净
         StringBuilder builder = new StringBuilder();
         for (int i = 0; i < 20; i++) {
-            builder.append("续行长正文"); // 懒延续行长：两路口径都必然软折 >=2 视觉行
+            builder.append("续行长正文"); // 100 字：兜底大字形(~19px)≈6 视觉行、注册后小字形(~3px)≈2 行，
+                                          // 两种度量模式下「续行族 >= 2」与「HUD 8 行截断」都同时成立。
         }
         String bodyB = builder.toString();
-        ChatSceneController controller = controller();
+        // 生产形装配：度量 = 真机同款 uiLibSegmentMeasurer（与 L2 换行同源，钳宽才真触发），
+        // 不注换行替身。视图侧正文列施加在「有度量注入」块内（与钉宽/钳宽同块）。
+        ChatSceneController controller = new ChatSceneController(FIXED, selfAlex(), PARSER,
+                ChatSceneController.uiLibSegmentMeasurer());
+        // 钳宽工况是生产自带的：控制器每次建树按 (chatWidthFor(viewport) − 2pad) × 0.85
+        // 同步 maxBubbleWidthPx，而 L2 换行用的是更宽的 wrapWidthPx——宽续行必然撞钳宽分支。
         controller.history().append(new ChatLineRecord(new ChatComponentText(
                 "<Bob> - " + bodyA + nl + bodyB), 1, T0));
         Object[] parts = layoutSingleOtherBubble(controller);
         SceneNode bubble = (SceneNode) parts[0];
-        // 软折的行片段起点不可预测（重复短语会被整段切开），族归属按位置算：
-        // 「圆点开头的行」= 标记族首行；「首个以「续行」二字开头的行」= 懒延续族首行；
-        // 两者之间全是标记族的续视觉行，其后全是续行族的续视觉行。
         List<SceneNode> rows = new ArrayList<SceneNode>();
         for (SceneNode node : bubble.__getChildren()) {
             if (node.getSegments() != null && !node.getSegments().isEmpty()) {
@@ -1794,24 +1802,70 @@ public class ChatMessageListTest {
             }
         }
         Assert.assertTrue("标记行必须在气泡里: rows=" + rows.size(), markerIdx >= 0);
-        Assert.assertTrue("懒延续行必须在气泡里且排在标记行之后", contIdx > markerIdx);
-        SceneNode markerRow = rows.get(markerIdx);
-        SceneNode continuationRow = rows.get(contIdx);
-        int continuationLines = rows.size() - contIdx;
+        Assert.assertTrue("懒延续行必须排在标记行之后", contIdx > markerIdx);
         Assert.assertTrue("反 ∅ 地板：气泡总行数 >= 3，实测 " + rows.size(), rows.size() >= 3);
+        int continuationLines = rows.size() - contIdx;
         Assert.assertTrue("反 ∅ 地板：续行族视觉行 >= 2（长续行必须真软折），实测 "
                 + continuationLines, continuationLines >= 2);
-        // ① 不二次施加：懒延续行与标记行同左缘（chat3 的列表续行位置恒由行盒结构给出，
-        //    左内衬必须同为 0——若 ChatMessageList 未来自己再补一份正文列，这里立刻红）。
-        Assert.assertEquals("气泡行不得自带左内衬（正文列只在接缝里，不在视图里）",
-                markerRow.getPaddingLeft(), continuationRow.getPaddingLeft());
-        LayoutBox markerBox = (LayoutBox) markerRow.getCachedLayout();
-        LayoutBox contBox = (LayoutBox) continuationRow.getCachedLayout();
-        Assert.assertNotNull("两行都必须已布局", contBox);
-        Assert.assertEquals("懒延续行盒左缘必须与标记行盒左缘重合（不得二次施加偏移）",
-                markerBox.getX(), contBox.getX());
-        // ② 长续行不被推出气泡宽（列扣宽发生在 L2 折行侧，视图端零溢出）
+        SceneNode markerRow = rows.get(markerIdx);
+        SceneNode continuationRow = rows.get(contIdx);
+
+        // 独立 oracle：测试自造标记段「圆点+空格」逐码点 resolveAdvance 求和取 ceil
+        // （在 L2 消费 chat 字体号上量，与被测写入路径、与接缝读值都无共享实现）。
+        int oracle = oracleMarkerAdvance();
+        int shift = contentLeft(continuationRow) - contentLeft(markerRow);
+        Assert.assertEquals("续行内容左缘差必须 == 独立量出的正文列（M10c 生效面）",
+                oracle, shift);
+        Assert.assertTrue("续行偏移 != 2×列——引用份额绝不允许被算两遍: shift=" + shift,
+                shift != 2 * oracle && oracle > 0);
+        Assert.assertEquals("标记行自带左内衬恒 0（正文列只落在续行上）",
+                0, markerRow.getPaddingLeft());
+        Assert.assertEquals("续行左内衬恰为一份正文列", oracle,
+                continuationRow.getPaddingLeft());
+
+        // 接缝贯通交叉校验：管道须把 leftInsetPx 与 indentStepPx 同数带到消费端，
+        // 消费端反解 (leftInsetPx − ql×step) 与视图实测差一致（两路一真值，非自证——
+        // oracle 才是判据源，这里钉「读的是同一份数」）。
+        ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
+        List<ChatMarkdownPipeline.RenderedLine> seam = pipeline.layout(
+                "- " + bodyA + nl + bodyB, 0xFFFFFFFF, 4000,
+                ChatMarkdownSettings.getChatFontSizePx(), null, null);
+        ChatMarkdownPipeline.RenderedLine seamCont = null;
+        for (ChatMarkdownPipeline.RenderedLine line : seam) {
+            if (!line.segments().isEmpty() && line.segments().get(0).getText().startsWith("续行")) {
+                seamCont = line;
+                break;
+            }
+        }
+        Assert.assertNotNull("接缝里必须有懒延续视觉行", seamCont);
+        int seamExtra = Math.max(0,
+                seamCont.leftInsetPx() - seamCont.quoteLevel() * seamCont.indentStepPx());
+        Assert.assertEquals("视图实测差 == 接缝反解值（管道逐字透传两字段）", shift, seamExtra);
+        Assert.assertEquals("接缝反解值 == 独立 oracle", oracle, seamExtra);
+
+        // 长续行不被推出气泡（钳宽同扣 listExtra 的下游证据）：节点级判据「行盒宽
+        // （preferred + 左右内衬）≤ 气泡内宽」——布局引擎会把子盒裁进可用宽，光看
+        // 盒坐标差抓不到钳宽漏扣（MUT 实测），必须直接核记账值与内衬之和。
         LayoutBox bubbleBox = (LayoutBox) bubble.getCachedLayout();
+        // 内宽分母恒取生产同步式（控制器每次建树用同式钉 maxBubbleWidthPx）：
+        // maxBubble = round((chatWidthFor(viewport) - 2padX) × ratio)，inner = maxBubble - 2padX。
+        // 不用 bubbleBox 反推：SHRINK 盒宽只按子节点 preferred 聚合，不计子内衬（实测如此），
+        // 拿它当分母会把「pref+padding ≤ inner」这一钳宽契约测成恒真。
+        int padX = ChatMarkdownSettings.getBubblePaddingX();
+        int maxBubble = (int) Math.round(Math.max(1,
+                ChatMarkdownSettings.chatWidthFor(400) - 2 * padX)
+                * ChatMarkdownSettings.getBubbleMaxWidthRatio());
+        int bubbleInnerW = maxBubble - 2 * padX;
+        Assert.assertTrue("钳宽工况自检（反 ∅：inner 必须真小于换行宽，否则本断言空转）: "
+                + bubbleInnerW + " < " + ChatMarkdownSettings.chatWidthFor(400),
+                bubbleInnerW < ChatMarkdownSettings.chatWidthFor(400));
+        for (SceneNode node : rows) {
+            int boxW = node.getPreferredWidth() + node.getPaddingLeft() + node.getPaddingRight();
+            Assert.assertTrue("行账面值（preferred+左右内衬）不得超气泡内宽（钉「钳宽同扣 listExtra」）: "
+                    + "line=" + boxW + " inner=" + bubbleInnerW
+                    + " <" + node.getSegments().get(0).getText() + "…>",
+                    boxW <= bubbleInnerW);
+        }
         for (SceneNode node : bubble.__getChildren()) {
             LayoutBox box = (LayoutBox) node.getCachedLayout();
             if (box == null) {
@@ -1822,6 +1876,161 @@ public class ChatMessageListTest {
                     box.getX() + box.getWidth() <= bubbleBox.getX() + bubbleBox.getWidth());
             Assert.assertTrue("行盒左缘不得越过气泡左缘", box.getX() >= bubbleBox.getX());
         }
+    }
+
+    /**
+     * M10c 引用组合锁：「引用内的列表续行」行盒左缘 = 结构嵌套给出的引用偏移 + <b>一份</b>
+     * 正文列，<b>不得</b> = 引用偏移 + leftInsetPx（整值施加会把引用份额算两遍——chat3 的
+     * 引用缩进由每行 row[竖条, 内容] 嵌套结构另行表达，与页面分组容器口径不同、同源同一数）。
+     * 正文列仍由独立 oracle（逐码点 resolveAdvance）量出；地板：引用列表族 >= 2 行。
+     */
+    @Test
+    public void markdownListInsideQuoteAppliesColumnOnceOnTopOfStructuralIndent() {
+        String nl = String.valueOf((char) 0x0A);
+        String cont = "甲项懒延续正文";
+        for (int i = 0; i < 11; i++) {
+            cont = cont + "甲项懒延续正文"; // 96 字：两种度量模式下都必然软折 >=2 行且不超 HUD 截断
+        }
+        ChatSceneController controller = new ChatSceneController(FIXED, selfAlex(), PARSER,
+                ChatSceneController.uiLibSegmentMeasurer());
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob> > - 甲项短首行" + nl + ">   " + cont), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        // 引用行结构：bubble → quoteRow → [竖条, 行节点]；行节点才是段流盒。
+        List<SceneNode> lineNodes = new ArrayList<SceneNode>();
+        for (SceneNode row : bubble.__getChildren()) {
+            if (row.getSegments() != null && !row.getSegments().isEmpty()) {
+                lineNodes.add(row); // 非引用行（若有）
+                continue;
+            }
+            for (int c = 0; c < row.__getChildren().size(); c++) {
+                SceneNode child = row.__getChildren().get(c);
+                if (child.getSegments() != null && !child.getSegments().isEmpty()) {
+                    lineNodes.add(child);
+                }
+            }
+        }
+        // 族计数按「标记行之后的全部视觉行」——软折片段行的开头字符不可预测，不能按前缀数。
+        SceneNode markerRow = null;
+        int markerAt = -1;
+        int firstContAt = -1;
+        for (int i = 0; i < lineNodes.size(); i++) {
+            String text = lineNodes.get(i).getSegments().get(0).getText();
+            if (markerRow == null && text.charAt(0) == '•') {
+                markerRow = lineNodes.get(i);
+                markerAt = i;
+            } else if (markerRow != null && firstContAt < 0
+                    && text.startsWith("甲项懒延续")) {
+                firstContAt = i;
+            }
+        }
+        Assert.assertNotNull("引用列表标记行必须在气泡里", markerRow);
+        Assert.assertTrue("引用内懒延续首行必须在气泡里", firstContAt > markerAt);
+        int contFamily = lineNodes.size() - firstContAt;
+        Assert.assertTrue("反 ∅ 地板：引用内懒延续视觉行 >= 2，实测 " + contFamily,
+                contFamily >= 2);
+        int oracle = oracleMarkerAdvance();
+        SceneNode first = lineNodes.get(firstContAt);
+        Assert.assertEquals("引用内续行内容左缘 == 标记行内容左缘 + 一份正文列"
+                        + "（结构引用偏移两边同额抵消）",
+                contentLeft(markerRow) + oracle, contentLeft(first));
+        // 反「整值施加」：接缝里该行的 leftInsetPx = 引用份额 + 列；若消费端误把整值当 padding，
+        // 内容左缘会多移 quoteLevel×indentStepPx——用 != 显式钉死这一路走不通。
+        ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
+        List<ChatMarkdownPipeline.RenderedLine> seam = pipeline.layout(
+                "> - 甲项短首行" + nl + ">   " + cont, 0xFFFFFFFF, 4000,
+                ChatMarkdownSettings.getChatFontSizePx(), null, null);
+        ChatMarkdownPipeline.RenderedLine seamCont = null;
+        for (ChatMarkdownPipeline.RenderedLine line : seam) {
+            if (!line.segments().isEmpty()
+                    && line.segments().get(0).getText().startsWith("甲项懒延续")) {
+                seamCont = line;
+                break;
+            }
+        }
+        Assert.assertNotNull("接缝里必须有引用内懒延续行", seamCont);
+        Assert.assertTrue("前置自检：引用行接缝 leftInsetPx 必须含引用份额（ql×step>0）: "
+                        + seamCont.leftInsetPx(),
+                seamCont.quoteLevel() * seamCont.indentStepPx() > 0);
+        Assert.assertTrue("不得 = 引用偏移 + leftInsetPx（引用份额算两遍的红线）",
+                contentLeft(first) != contentLeft(markerRow) + seamCont.leftInsetPx());
+        // 正对照：标记行内容左缘 == 结构引用偏移（它自己 padding 恒 0，不叠第二份）。
+        Assert.assertEquals("引用内列表标记行不得吃正文列", 0, markerRow.getPaddingLeft());
+        // 全盒仍不得越出气泡左右缘。
+        LayoutBox bubbleBox = (LayoutBox) bubble.getCachedLayout();
+        for (SceneNode node : bubble.__getChildren()) {
+            LayoutBox box = (LayoutBox) node.getCachedLayout();
+            if (box == null) {
+                continue;
+            }
+            Assert.assertTrue("引用行盒右缘不得越过气泡右缘",
+                    box.getX() + box.getWidth() <= bubbleBox.getX() + bubbleBox.getWidth());
+            Assert.assertTrue("引用行盒左缘不得越过气泡左缘", box.getX() >= bubbleBox.getX());
+        }
+    }
+
+    /**
+     * M10c 正对照（防泄漏）：<b>非列表</b>段落的两条逻辑行——次行是普通 TEXT 续行，
+     * 内容左缘与首行重合（正文列/左内衬不得渗进无列表身份的块）。语料两行都短，
+     * 任何字体度量模式下都不软折，判据与注册时序无关。
+     */
+    @Test
+    public void plainParagraphContinuationKeepsColumnOrigin() {
+        String nl = String.valueOf((char) 0x0A);
+        ChatSceneController controller = new ChatSceneController(FIXED, selfAlex(), PARSER,
+                ChatSceneController.uiLibSegmentMeasurer());
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob> 普通段落首行甲" + nl + "普通段落次行乙"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        List<SceneNode> rows = new ArrayList<SceneNode>();
+        for (SceneNode node : bubble.__getChildren()) {
+            if (node.getSegments() != null && !node.getSegments().isEmpty()) {
+                rows.add(node);
+            }
+        }
+        Assert.assertEquals("两行短段落必须恰两行（样本失效先红）", 2, rows.size());
+        Assert.assertEquals("非列表续行不得吃正文列：左缘差恒 0",
+                contentLeft(rows.get(0)), contentLeft(rows.get(1)));
+        Assert.assertEquals("两行左内衬都恒 0", 0, rows.get(0).getPaddingLeft());
+        Assert.assertEquals("两行左内衬都恒 0", 0, rows.get(1).getPaddingLeft());
+    }
+
+    private static ChatSceneController.SelfNameProvider selfAlex() {
+        return new ChatSceneController.SelfNameProvider() {
+            @Override
+            public String selfName() {
+                return "Alex";
+            }
+        };
+    }
+
+    /** 内容左缘 = 行盒 x + 左内衬（padding 平移文字不平移盒，M9 页面已证实此语义）。 */
+    private static int contentLeft(SceneNode node) {
+        LayoutBox box = (LayoutBox) node.getCachedLayout();
+        Assert.assertNotNull("行盒必须已布局", box);
+        return box.getX() + node.getPaddingLeft();
+    }
+
+    /**
+     * 独立 oracle：测试自造「圆点+空格」段，逐码点 {@code TextLayoutService.resolveAdvance}
+     * 求和取 ceil——与气泡同款字号（chat 字体号），与被测写入路径零共享实现。
+     */
+    private static int oracleMarkerAdvance() {
+        TextStyle style = new TextStyle();
+        style.setColor(0xFFFFFFFF);
+        TextSegment marker = new TextSegment("• ", style);
+        club.heiqi.uilib.font.layout.TextLayoutService svc =
+                club.heiqi.uilib.font.FontService.getInstance().getTextLayoutService();
+        double width = 0.0D;
+        String text = marker.getText();
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            width += svc.resolveAdvance(cp, style, ChatMarkdownSettings.getChatFontSizePx());
+            i += Character.charCount(cp);
+        }
+        return (int) Math.ceil(width);
     }
 
     @Test

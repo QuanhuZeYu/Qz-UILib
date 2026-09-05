@@ -66,6 +66,7 @@ final class ChatMarkdownPipeline {
         private final List<TextSegment> segments;
         private final int quoteLevel;
         private final int leftInsetPx;
+        private final int indentStepPx;
         private final int blockId;
         private final boolean code;
         private final boolean rule;
@@ -74,12 +75,13 @@ final class ChatMarkdownPipeline {
         private final int backgroundArgb;
         private final int blockContentWidthPx;
 
-        RenderedLine(List<TextSegment> segments, int quoteLevel, int leftInsetPx, int blockId,
-                boolean code, boolean rule, int ruleThicknessPx, int accentArgb, int backgroundArgb,
-                int blockContentWidthPx) {
+        RenderedLine(List<TextSegment> segments, int quoteLevel, int leftInsetPx, int indentStepPx,
+                int blockId, boolean code, boolean rule, int ruleThicknessPx, int accentArgb,
+                int backgroundArgb, int blockContentWidthPx) {
             this.segments = segments;
             this.quoteLevel = quoteLevel;
             this.leftInsetPx = leftInsetPx;
+            this.indentStepPx = indentStepPx;
             this.blockId = blockId;
             this.code = code;
             this.rule = rule;
@@ -99,9 +101,33 @@ final class ChatMarkdownPipeline {
             return quoteLevel;
         }
 
-        /** @return 行文本左偏移（引用缩进；消费端行盒/钳宽 reserve 同源用） */
+        /**
+         * @return 行文本左偏移（UI px；接缝唯一「行左偏移」真相，L1/L2 逐字送达）——
+         *         构成 = 引用份额（{@code quoteLevel × indentStepPx}）+ 列表续行的正文列
+         *         （M10b 由 L2 量标记段实测宽后经 {@code withLeftInsetPx} 写回）。
+         *
+         * <p><b>M10c 消费端（2026-09-05 裁定；旧句「消费端行盒/钳宽 reserve 同源用」
+         * 在写下时是假的——全仓曾只有本类省略号路读它——本轮使其成真）</b>：
+         * {@code ChatMessageList} 气泡路只施加差值
+         * {@code leftInsetPx - quoteLevel × indentStepPx}（正文列残余）——引用份额已由其
+         * 嵌套 row 结构表达，整值施加=把引用缩进算两遍。钳宽 reserve 同扣该残余。</p>
+         */
         int leftInsetPx() {
             return leftInsetPx;
+        }
+
+        /**
+         * @return 每层引用水平步长（UI px；非引用行 0）——<b>逐字透传 L2 的
+         *         {@code MarkdownLayoutLine#getIndentStepPx()}</b>，本层零再算。
+         *
+         * <p>M10c（规划 §二之七·续 第 12 条）：消费端反解正文列要用它。chat3 的引用缩进
+         * 结构走私有常数 2+6=8，与样式表 quoteIndentPx=8 的等值是<b>巧合不是同源</b>；
+         * 透传步长后「leftInsetPx − quoteLevel×indentStepPx」不再依赖该巧合。
+         * 范式与 {@link #blockContentWidthPx()} 的 M8 透传完全相同；生产路与换行替身
+         * 注入路（wrapOverride）同源填充，不留两口径。</p>
+         */
+        int indentStepPx() {
+            return indentStepPx;
         }
 
         /** @return 块归属 id（CODE 相邻同行用于统一底色块宽） */
@@ -188,9 +214,12 @@ final class ChatMarkdownPipeline {
                 List<List<TextSegment>> visual =
                         wrapOverride.wrap(line.getSegments(), availPx, fontSizePx);
                 for (List<TextSegment> segments : visual) {
+                    // M10c：步长与 leftInsetPx 同源逐字透传——替身注入路也必须填，
+                    // 不留「生产有列、替身无列」的两口径（消费端反解式两路同式）。
                     out.add(toRendered(line.getKind() == MarkdownLayoutLine.Kind.CODE,
                             line.getKind() == MarkdownLayoutLine.Kind.THEMATIC_BREAK,
-                            line.getQuoteLevel(), line.getLeftInsetPx(), line.getBlockId(),
+                            line.getQuoteLevel(), line.getLeftInsetPx(), line.getIndentStepPx(),
+                            line.getBlockId(),
                             line.getRuleThicknessPx(), line.getAccentArgb(),
                             line.getBackgroundArgb(), line.getBlockContentWidthPx(), segments));
                 }
@@ -236,7 +265,8 @@ final class ChatMarkdownPipeline {
             MarkdownLayoutLine line = visualLines.get(i);
             out.add(toRendered(line.getKind() == MarkdownLayoutLine.Kind.CODE,
                     line.getKind() == MarkdownLayoutLine.Kind.THEMATIC_BREAK,
-                    line.getQuoteLevel(), line.getLeftInsetPx(), line.getBlockId(),
+                    line.getQuoteLevel(), line.getLeftInsetPx(), line.getIndentStepPx(),
+                    line.getBlockId(),
                     line.getRuleThicknessPx(), line.getAccentArgb(), line.getBackgroundArgb(),
                     line.getBlockContentWidthPx(), line.getSegments()));
         }
@@ -244,11 +274,11 @@ final class ChatMarkdownPipeline {
     }
 
     private static RenderedLine toRendered(boolean code, boolean rule, int quoteLevel,
-            int leftInsetPx, int blockId, int ruleThicknessPx, int accentArgb, int backgroundArgb,
-            int blockContentWidthPx, List<TextSegment> segments) {
+            int leftInsetPx, int indentStepPx, int blockId, int ruleThicknessPx, int accentArgb,
+            int backgroundArgb, int blockContentWidthPx, List<TextSegment> segments) {
         return new RenderedLine(Collections.unmodifiableList(new ArrayList<TextSegment>(segments)),
-                quoteLevel, leftInsetPx, blockId, code, rule, ruleThicknessPx, accentArgb,
-                backgroundArgb, blockContentWidthPx);
+                quoteLevel, leftInsetPx, indentStepPx, blockId, code, rule, ruleThicknessPx,
+                accentArgb, backgroundArgb, blockContentWidthPx);
     }
 
     /**
@@ -372,7 +402,8 @@ final class ChatMarkdownPipeline {
 
     /** 测试工厂：普通文本行视图（同包测试构造 clamp/形状断言样本用）。 */
     static RenderedLine renderedForTest(List<TextSegment> segments) {
-        return toRendered(false, false, 0, 0, MarkdownLayoutLine.NO_BLOCK, 0, 0, 0, 0, segments);
+        // 结构判据用的合成行：无块身份 ⇒ 几何字段恒定义值 0（不是「漏填」的第三口径）。
+        return toRendered(false, false, 0, 0, 0, MarkdownLayoutLine.NO_BLOCK, 0, 0, 0, 0, segments);
     }
 
     /** 视觉行是否引用行（M5 旧结构判据，headless/调试兜底用；M7 生产判据 = RenderedLine.quoteLevel）。 */
@@ -413,6 +444,7 @@ final class ChatMarkdownPipeline {
         List<TextSegment> segments = new ArrayList<TextSegment>(last.segments());
         appendEllipsis(segments, measurer, fontSizePx, Math.max(1, maxWidthPx - last.leftInsetPx()));
         out.add(toRendered(last.isCode(), last.isRule(), last.quoteLevel(), last.leftInsetPx(),
+                last.indentStepPx(),
                 last.blockId(), last.ruleThicknessPx(), last.accentArgb(), last.backgroundArgb(),
                 last.blockContentWidthPx(), segments));
         return Collections.unmodifiableList(out);

@@ -946,6 +946,11 @@ public final class ChatMessageList {
                 int quoteLevel = 0;
                 boolean ruleLine = false;
                 boolean codeLine = false;
+                // M10c（2026-09-05 裁定：列表正文列落到聊天面）：本行的「正文列残余」——
+                // leftInsetPx = 引用份额(ql×step) + 列表续行正文列，而引用份额已由下方
+                // quoteLevel 层嵌套 row 结构表达，故只允许施加<b>差值</b>一份；系统路/纯文本路
+                // 无 RenderedLine，恒 0（不引入任何新分支语义）。
+                int listExtra = 0;
                 if (system) {
                     String line = displayLines.get(lineIndex);
                     // 本行是否为「词内字符硬断」的续行(片段数与行数不等时按保守 false 处理)
@@ -1015,6 +1020,9 @@ public final class ChatMessageList {
                     quoteLine = quoteLevel > 0;
                     ruleLine = rendered.isRule();
                     codeLine = rendered.isCode();
+                    // 唯一正确反解式（与 devtools 页同式，不另发明）：正文列 = 行左偏移 − 引用份额。
+                    listExtra = Math.max(0,
+                            rendered.leftInsetPx() - quoteLevel * rendered.indentStepPx());
                     segments = rendered.segments();
                     blockMathRow = ChatMarkdownPipeline.isBlockMathRow(segments);
                     if (segmentMeasurer != null) {
@@ -1063,11 +1071,12 @@ public final class ChatMessageList {
                     int lineWidth = Math.max(1,
                             (int) Math.ceil(segmentsWidth(segments, segmentMeasurer, fontSize)));
                     if (ruleLine && rendered != null) {
-                        // M7 真横线铺到行盒可用宽（无文本段可量，取容器口径）
+                        // M7 真横线铺到行盒可用宽（无文本段可量，取容器口径）。
+                        // M10c：与下方钳宽 reserve 同式（横线行 listExtra 恒 0，写成同式防漂移）。
                         int roomy = maxBubbleWidthPx > 0
                                 ? maxBubbleWidthPx - 2 * paddingX : message.getWrapWidthPx();
                         lineWidth = Math.max(1, roomy - quoteLevel
-                                * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX));
+                                * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX) - listExtra);
                     } else if (codeLine && rendered.blockContentWidthPx() > 0) {
                         // M8 单一真相：块内统一宽恒读 L2 产出的
                         // MarkdownLayoutLine#getBlockContentWidthPx()（经 ChatMarkdownPipeline 逐字
@@ -1081,15 +1090,19 @@ public final class ChatMessageList {
                     // 行宽 = 实宽(钳到 269 会把居中的系统行节点收缩到 269,行文本 340 溢出
                     // 节点且居中几何错位——K3 摘要第 4 条)
                     if (maxBubbleWidthPx > 0 && !system) {
+                        // M10c：reserve 必须同扣 listExtra——续行节点盒还额外吃掉正文列，
+                        // 不扣则「行宽=可用宽 + padding」顶出气泡右缘（钳宽与偏移是一式两面）。
                         int reserve = (accent ? ACCENT_BAR_WIDTH_PX : 0)
-                                + quoteLevel * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX);
+                                + quoteLevel * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX)
+                                + listExtra;
                         lineWidth = Math.min(lineWidth,
                                 Math.max(1, maxBubbleWidthPx - 2 * paddingX - reserve));
                     }
                     lineNode.setPreferredWidth(lineWidth);
-                    if (codeLine) {
-                        lineNode.setPadding(0, CODE_BG_SIDE_PAD_PX, 0, CODE_BG_SIDE_PAD_PX);
-                    }
+                    // M10c：CODE 内衬与列表正文列<b>显式合成一次</b> setPadding（CODE 行恒非
+                    // LIST 身份 ⇒ 二者必有一侧为 0，但写成加法，不靠「后句覆盖前句」的巧合）。
+                    int padSideX = codeLine ? CODE_BG_SIDE_PAD_PX : 0;
+                    lineNode.setPadding(0, padSideX, 0, padSideX + listExtra);
                 }
                 // T8 设计稿 §5.4(验收 22):HUD 形态行节点携带 maxLines=8 + 省略号语义;
                 // 实际行数截断:气泡路在 ChatMarkdownPipeline.clampHudLines(L2 视觉行 8 行 +
