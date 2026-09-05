@@ -631,6 +631,69 @@ assertWidthIndependentCodeStyle` 的 P03 专用不变量——那是判据改动
       第 9 条的窄锚因此**不扩**：纵向连续性由「块级容器 = 单矩形」这一实现形状加三把像素/几何锁共同保证，
       而不是再立一条静态 token 锚。
 
+11. **M10 两条实机裁定落地：引用竖条连续化（页面层专属）+ 列表续行对齐正文列（2026-09-05，代码批 `1c27a847`）**
+
+    用户 2026-09-05 依实机 887×1320 像素实测裁三条：①引用竖条合并成连续条；②列表续行对齐正文列；
+    ③顺手改掉假文案。③已随本批完成（`SAMPLES` 「分隔线」卡说明改「--- 产真横线（1px 铺内容宽）」、
+    「列表与续行」卡说明补「并对齐正文列」）。①②是本条。
+
+    - **(a) 两句被推翻的旧注释就地改写成新事实（不得只删不写）**：`MarkdownDocument.listMarker`
+      javadoc 的「M7 行接缝同样不给列表开几何通道——引用几何才走行盒」与 `MarkdownLayoutLine.Kind`
+      javadoc 的「标题/列表/普通段对 L2 无块级几何差异，恒 TEXT」均被裁定②作废，新版文字写在原处。
+      **通道裁定（定死，不再发明）**：复用 `leftInsetPx` 作接缝上唯一「行左偏移」真相
+      （引用份额 `quoteLevel × indentStepPx` + 列表续行的正文列），**不加新几何字段、不开样式表旋钮**
+      ——正文列是度量事实，零度量的 L1 算不出像素；`MarkdownStyleTable` 公共方法恒 **18** 不变。
+      公共面净增 = `Kind.LIST` 枚举常量 + `MarkdownLayoutLine#withLeftInsetPx(int)` 拷贝法
+      （与 `withSegments`/`withBlockContentWidthPx` 同形，私有 11 参构造器 + 公共 10 参冻结不动）；
+      `MarkdownLayoutLine` 外层类公共成员 **17 → 18**（本仓无守卫测试钉该数，javap -public 实测在此记档）。
+    - **L1 地基（测试钉死）**：`emitListItemLayout` 把 `listMarker` 计算提到 `startBlock` 之前，
+      标记非空 ⇒ 首行 `Kind.LIST`、圆点配空串 ⇒ 退 `TEXT` 零偏移；`appendOne` 让内嵌 \n 的续行
+      继承 curKind/curBlockId ⇒ **同 blockId 内只有第一行带标记段且恰居 `segments.get(0)`**——
+      锁在 `MarkdownLayoutLinesTest#listIdentityMarksOnlyFirstLineOfEachBlock`。
+      可见文本跨两接缝逐字等值由既有对拍钉（几何走 px 不走文本，裁定 B 底线），语料新增 L01 条。
+    - **L2 唯一产地**：`layoutLines` 前置扫按 blockId 记「首条 LIST 行下标 + 正文列
+      = ceil(该块标记段推进宽)」——嵌套项标记段自带 F2 前导空格 ⇒ 正文列天然逐级变宽
+      （实测 13/25/38px 与有序 19/20px，对上实机正文首墨 45−32=13 系）。标记逻辑行的**第一个**
+      视觉行保持原 inset，其后每个视觉行（含同行软折、含同块后续逻辑行）`inset + 正文列` 且可用宽
+      同扣——`wrapVisualLine` 扩为「首行/续行」双宽重载，**两宽相等时与旧单宽逐位一致**，
+      段流路 `wrap()` 恒走该形态 ⇒ 门禁比对路零扰动。竖条按 `l×step`、CODE 底色按
+      `leftInset+blockContentWidth`、真横线按 `leftInset` 与 LIST 偏移正交 ⇒ **`blockCommands`
+      零改动**（正交性由锁③机器钉：竖条 x 恒 0 槽 + SEGMENTS.left 与视觉行 inset 逐行相等）。
+      `withLeftInsetPx` 只在算出的偏移不同才重建，非 LIST 行路径一字不改。
+    - **(b) M10a 取证结论：只有页面断，修复只落在页面层**。L2 `blockCommands` 的 y 是游标
+      （`tops[k]=cursor; cursor+=heights[k]`）⇒ 相邻同层竖条首尾相接；一次性探针实测同一样本
+      三槽 bars=7/3/2、**接缝=0**（跑完即删，结论与判据转正进页面锁）。聊天面板内容列 `gap=0`、
+      行盒高==节距（M9 锁 `fencedCodeBubbleLineBoxesAreVerticallySeamless` 在案）。页面缺陷真身：
+      旧 `quoteWrap` 给**每条行**各挂一层 `row[bar(fillParentHeight), content]`，而
+      `PlaygroundKit.card()` 列 gap=8 被当成行距 ⇒ 条只有 14px、行间 8px 空档。修法=两趟装配：
+      第一趟产 `(node, quoteLevel, accentArgb)` 单元（围栏合并/真横线/普通行口径不动），第二趟对
+      「连续 quoteLevel>=1」极大段递归 `quoteGroup` 成套容器 `row[贯穿竖条 + 内层 column]`，
+      内层列 gap **恒读 `card.getGap()`**（SceneNode.getGap() public，禁硬编码——改 gap 条随行距走）；
+      旧 `quoteWrap` 整方法删除不留死代码；零新图元。**边界**：`blankLine()` 产 quoteLevel=0
+      ⇒ 相邻两引用块天然断组，绝不跨组连条（本页样本恰因 readQuote 把「空行后仍是 > 行」并成
+      同一引用块而 7 行一组——连续条/断组两态都由同一判据「极大连续段」统一）。
+    - **文字位置一字不动的反自证钉法（本批踩过的坑，记死）**：第一版像素锁拿「实测 drawSegments 行 y」
+      同时当行距真值与游程期望——突变（内列 gap→0）下两者一起挪，锁**跟着假绿**（突变检验当场抓出）。
+      改后判据双向独立：行距式 `ys[i+1]-ys[i] == 行高 + card.getGap()` 与条高式
+      `run高 == n×行高 + (n-1)×card.gap`（行高/层级/条宽/步距全从接缝现取），任一 mutation 只挪一边即红。
+    - **(c) 已知边界（本裁定未覆盖，如实记「未完成」）**：裁定②只覆盖**同 blockId 的懒延续/软折续行**。
+      松散项标记行之后的第二段落、以及嵌套列表等子块在 L1 各自 `startBlock` 另起 blockId ⇒
+      **拿不到父项的正文列**（嵌套子项自身是带更宽标记的标记行，其自身续行已覆盖；「父项第二段落
+      缩进不齐正文列」为已知残留）。要覆盖需给接缝开「块父子归属」——超出本轮裁定范围，未做。
+    - **(d) 门禁与计数对账（E 序实跑）**：门禁判据/容差/登记表/不变量标识**一字未动、零新增**，
+      汇总 PARITY=20 / NEW=11 / FAIL=0 / TIE=0 / 有意差异=3 / PNG=153 与基线逐项等，且
+      `diff.txt` 与**基线提交 b4ebf431 worktree 同机重跑产物逐行对账 87 行 0 差异**。
+      全量 `build --offline` = BUILD SUCCESSFUL：suites 363→**364**（新 `MarkdownListContinuationLockTest`），
+      tests 4001→**4010**（+9 全新增、删除 0：L1 身份 2 + L2 锁 4 + 页面像素 2 + 聊天 L3 锁 1），
+      0 failures / 0 errors / 2 skipped。层界反向核查：`ui/markdown` `GL11.` 出现次数 **0**
+      （同扫描器正对照 `ui/render`=**559**>地板100）、`MarkdownStyleTable` 公共方法恒 **18**、
+      `ChatMessageList`/`ChatSceneController` 本批文件零接触（公共面 diff 恒空）。
+      聊天实测锁：`markdownListContinuationGetsNoDoubleOffsetAndFitsBubble`——续行与标记行盒左缘重合
+      （视图不得二次施加正文列）+ 全部行盒不出气泡左右缘。
+      **突变实跑全红**：①内列 gap→0 ⇒ 页面引用锁红（行距 22 vs 14）；②页面 padding 写入摘除 ⇒
+      列表像素锁红（x 位移期望 13 实得 0）；③L2 正文列清零 ⇒ L2 四条锁连同正对照全红。
+      已知跨类耦合（`PlaygroundButtonRowLayoutTest` 字体异步注册）本批全量 build 内未触发红。
+
 ---
 
 ## 三、迁移与「不得并存」门禁
