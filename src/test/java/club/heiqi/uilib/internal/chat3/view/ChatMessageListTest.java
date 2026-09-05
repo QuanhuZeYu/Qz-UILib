@@ -1747,6 +1747,83 @@ public class ChatMessageListTest {
         }
     }
 
+    /**
+     * M10b（裁定 2）L3 实测锁：列表续行的正文列偏移恒由 L2 折进 {@code leftInsetPx} 随接缝
+     * 进管道（{@code ChatMarkdownPipeline} 逐字透传），{@code ChatMessageList} 的气泡行位置
+     * 由引用嵌套结构决定、<b>不得再二次施加</b>该偏移（二次施加 → 续行 x 比标记行多移一份，
+     * 本锁红）；同时长续行（L2 已按 inset+列 扣宽折行）不得被推出气泡行盒。
+     *
+     * <p>口径与 {@link #fencedCodeBubbleLineBoxesAreVerticallySeamless()} 同范式：headless
+     * 建气泡 → 布局 → 断行盒几何。语料取「短标记行 + 长懒延续行」——标记行两路换行器
+     * （生产 L2 / 测试可注入替身）都恒单行，长延续行两路都必然软折；族归属按位置算，
+     * 不依赖软折断点。反 ∅ 地板：总行数 &ge; 3、续行族 &ge; 2（度量突变到不折时地板先红，
+     * 不静默空跑）。</p>
+     */
+    @Test
+    public void markdownListContinuationGetsNoDoubleOffsetAndFitsBubble() {
+        String nl = String.valueOf((char) 0x0A);
+        String bodyA = "甲项短首行"; // 标记行短：两路换行器（生产 L2 度量 / FIXED_WRAP 替身）都恒单行
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            builder.append("续行长正文"); // 懒延续行长：两路口径都必然软折 >=2 视觉行
+        }
+        String bodyB = builder.toString();
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText(
+                "<Bob> - " + bodyA + nl + bodyB), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        // 软折的行片段起点不可预测（重复短语会被整段切开），族归属按位置算：
+        // 「圆点开头的行」= 标记族首行；「首个以「续行」二字开头的行」= 懒延续族首行；
+        // 两者之间全是标记族的续视觉行，其后全是续行族的续视觉行。
+        List<SceneNode> rows = new ArrayList<SceneNode>();
+        for (SceneNode node : bubble.__getChildren()) {
+            if (node.getSegments() != null && !node.getSegments().isEmpty()) {
+                rows.add(node);
+            }
+        }
+        int markerIdx = -1;
+        int contIdx = -1;
+        for (int i = 0; i < rows.size(); i++) {
+            String text = rows.get(i).getSegments().get(0).getText();
+            if (markerIdx < 0 && text.charAt(0) == '•') {
+                markerIdx = i;
+            }
+            if (contIdx < 0 && text.startsWith("续行")) {
+                contIdx = i;
+            }
+        }
+        Assert.assertTrue("标记行必须在气泡里: rows=" + rows.size(), markerIdx >= 0);
+        Assert.assertTrue("懒延续行必须在气泡里且排在标记行之后", contIdx > markerIdx);
+        SceneNode markerRow = rows.get(markerIdx);
+        SceneNode continuationRow = rows.get(contIdx);
+        int continuationLines = rows.size() - contIdx;
+        Assert.assertTrue("反 ∅ 地板：气泡总行数 >= 3，实测 " + rows.size(), rows.size() >= 3);
+        Assert.assertTrue("反 ∅ 地板：续行族视觉行 >= 2（长续行必须真软折），实测 "
+                + continuationLines, continuationLines >= 2);
+        // ① 不二次施加：懒延续行与标记行同左缘（chat3 的列表续行位置恒由行盒结构给出，
+        //    左内衬必须同为 0——若 ChatMessageList 未来自己再补一份正文列，这里立刻红）。
+        Assert.assertEquals("气泡行不得自带左内衬（正文列只在接缝里，不在视图里）",
+                markerRow.getPaddingLeft(), continuationRow.getPaddingLeft());
+        LayoutBox markerBox = (LayoutBox) markerRow.getCachedLayout();
+        LayoutBox contBox = (LayoutBox) continuationRow.getCachedLayout();
+        Assert.assertNotNull("两行都必须已布局", contBox);
+        Assert.assertEquals("懒延续行盒左缘必须与标记行盒左缘重合（不得二次施加偏移）",
+                markerBox.getX(), contBox.getX());
+        // ② 长续行不被推出气泡宽（列扣宽发生在 L2 折行侧，视图端零溢出）
+        LayoutBox bubbleBox = (LayoutBox) bubble.getCachedLayout();
+        for (SceneNode node : bubble.__getChildren()) {
+            LayoutBox box = (LayoutBox) node.getCachedLayout();
+            if (box == null) {
+                continue;
+            }
+            Assert.assertTrue("行盒右缘不得越过气泡右缘: line=" + box.getX() + "+"
+                            + box.getWidth() + " bubble=" + (bubbleBox.getX() + bubbleBox.getWidth()),
+                    box.getX() + box.getWidth() <= bubbleBox.getX() + bubbleBox.getWidth());
+            Assert.assertTrue("行盒左缘不得越过气泡左缘", box.getX() >= bubbleBox.getX());
+        }
+    }
+
     @Test
     public void quoteLineInsideAccentBubbleKeepsRowLayout() {
         // 方案A accent 自己气泡:内容列内引用行保持 row[竖条 + 文本],强调条仍在行末

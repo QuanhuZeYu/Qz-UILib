@@ -59,6 +59,8 @@ public class MarkdownLayoutLinesTest {
             {"N07", "**粗** *斜* ~~删~~ ***粗斜*** 混排"},
             {"N08", "质能 $e=mc^2$ 行内混排 with 尾"},
             {"N09", "访问 [Qz 主页](https://example.com/qz) 详情"},
+            // M10b 语料：LIST 身份行 + 懒延续行——两接缝可见文本必须仍逐字等值（几何走 px 不走文本）
+            {"L01", joinLF("- 首行", "  缩进续行（懒延续）", "1. 有序项", "   有序项续行", "2) 右括号项")},
         };
     }
 
@@ -142,7 +144,86 @@ public class MarkdownLayoutLinesTest {
                     viaSegments, viaLines);
             checked++;
         }
-        Assert.assertTrue("语料数地板（反空跑）：实测 " + checked + "，>=12", checked >= 12);
+        Assert.assertTrue("语料数地板（反空跑）：实测 " + checked + "，>=13", checked >= 13);
+    }
+
+    // ==================== M10b 不变量⑥：LIST 身份与「同块首行才带标记段」 ====================
+
+    /**
+     * LIST 身份三钉（2026-09-05 裁定 2 的地基，L2 悬挂列全赖这两条）：
+     * ① 带标记的列表行 kind=LIST（正对照：同源的普通段落行仍 TEXT）；
+     * ② LIST 块的<b>首行 segments.get(0) 恰为独立标记段</b>（"• " / "3. " / "4) "）；
+     * ③ 同一 blockId 内<b>只有第一行</b>带标记段——懒延续/软折续行的 seg0 是正文，
+     *    这正是 L2「按块首条 LIST 行的 seg0 量正文列」不会量错的依据。
+     * 反 ∅ 地板：LIST 行命中 >= 4、比较块数 >= 3。
+     */
+    @Test
+    public void listIdentityMarksOnlyFirstLineOfEachBlock() {
+        // 末块与列表之间隔一个空行——不加空行时「普通段落」会被 CommonMark 懒延续吸进
+        // 有序项段落（那也是 LIST 身份），正对照就失效了；这本身是 L1 行身份的正确行为。
+        String src = joinLF("- 甲项首行", "  甲项缩进续行（懒延续）", "- 乙项", "  - 嵌套丙",
+                "1. 有序一", "   有序一续行", "", "普通段落");
+        List<MarkdownLayoutLine> lines =
+                MarkdownDocument.parse(src).toLayoutLines(MarkdownStyleTable.defaults(), base());
+        int listLines = 0;
+        int blocks = 0;
+        java.util.Set<Integer> seenBlocks = new java.util.HashSet<Integer>();
+        java.util.Set<Integer> markerBlocks = new java.util.HashSet<Integer>();
+        for (int i = 0; i < lines.size(); i++) {
+            MarkdownLayoutLine line = lines.get(i);
+            if (line.getKind() != MarkdownLayoutLine.Kind.LIST) {
+                continue;
+            }
+            listLines++;
+            boolean firstOfBlock = seenBlocks.add(Integer.valueOf(line.getBlockId()));
+            if (firstOfBlock) {
+                blocks++;
+                // ② 块首 LIST 行的 seg0 必须是独立标记段（圆点+空格 或 源序号+定界+空格）
+                String seg0 = line.getSegments().get(0).getText();
+                Assert.assertTrue("块首 LIST 行 seg0 应为标记段，实测 <" + seg0 + ">",
+                        seg0.matches(" *• ") || seg0.matches("[0-9]+[.)] "));
+                markerBlocks.add(Integer.valueOf(line.getBlockId()));
+            } else {
+                // ③ 同块后续 LIST 行不再带标记段
+                String seg0 = line.getSegments().get(0).getText();
+                Assert.assertFalse("同 blockId 非首行不得再带标记段: <" + seg0 + ">",
+                        seg0.matches(" *• ") || seg0.matches("[0-9]+[.)] "));
+            }
+        }
+        // ① 正对照：普通段落行必须仍 TEXT（不是全员 LIST 的假象）
+        boolean plainIsText = false;
+        for (MarkdownLayoutLine line : lines) {
+            if (!line.getSegments().isEmpty()
+                    && "普通段落".equals(line.getSegments().get(0).getText())) {
+                Assert.assertEquals("普通段落行恒 TEXT", MarkdownLayoutLine.Kind.TEXT, line.getKind());
+                plainIsText = true;
+            }
+        }
+        Assert.assertTrue("正对照缺普通段落行（语料失效）", plainIsText);
+        Assert.assertTrue("LIST 行地板 >= 4（4 项 + 2 续行，实测 " + listLines + "）", listLines >= 4);
+        Assert.assertTrue("参与块数地板 >= 3（实测 " + blocks + "）", blocks >= 3);
+    }
+
+    /**
+     * 圆点被样式表配成空串 ⇒ 列表行退回 TEXT 身份（没有标记段可量，悬挂列无从谈起）。
+     * 反 ∅：同一语料在默认表下 LIST 行 >= 2（证明退 TEXT 不是恒真）。
+     */
+    @Test
+    public void emptyBulletMarkerFallsBackToTextKind() {
+        MarkdownStyleTable empty = MarkdownStyleTable.defaults();
+        empty.setBulletMarker("");
+        String src = joinLF("- 甲", "- 乙");
+        List<MarkdownLayoutLine> lines =
+                MarkdownDocument.parse(src).toLayoutLines(empty, base());
+        for (MarkdownLayoutLine line : lines) {
+            Assert.assertEquals("空圆点下无 LIST 身份可用，恒退 TEXT",
+                    MarkdownLayoutLine.Kind.TEXT, line.getKind());
+            Assert.assertEquals("退 TEXT 行不携带任何引用几何", 0, line.getLeftInsetPx());
+        }
+        List<MarkdownLayoutLine> control = MarkdownDocument.parse(src)
+                .toLayoutLines(MarkdownStyleTable.defaults(), base());
+        int listLines = countKind(control, MarkdownLayoutLine.Kind.LIST);
+        Assert.assertTrue("正对照：默认表下同一语料 LIST 行 >= 2，实测 " + listLines, listLines >= 2);
     }
 
     // ==================== 不变量②：引用第 N 层左偏移严格单调增 ====================

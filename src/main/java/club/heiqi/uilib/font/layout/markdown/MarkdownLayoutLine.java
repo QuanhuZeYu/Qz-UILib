@@ -40,12 +40,25 @@ public final class MarkdownLayoutLine {
      * 行的块类别（封闭枚举；决定 L2 产哪种块级几何）。
      *
      * <p>引用身份不占枚举措——{@link #getQuoteLevel()} 独立正交（引用块内的 CODE 行 =
-     * kind=CODE + quoteLevel&gt;0，竖条与底色同时成立）。标题/列表/普通段对 L2 无块级
-     * 几何差异，恒 TEXT。</p>
+     * kind=CODE + quoteLevel&gt;0，竖条与底色同时成立）。标题/普通段对 L2 无块级几何差异，
+     * 恒 TEXT。<b>列表行不在此列（2026-09-05 裁定 2，推翻本类旧版「列表对 L2 无块级几何
+     * 差异」的说法）</b>：带标记的列表首行 = {@link Kind#LIST}，L2 据此把该块其余视觉行
+     * （软折续行与同块懒延续行）的 {@link #getLeftInsetPx()} 追加「正文列宽」，让续行
+     * 对齐标记行之后的正文列；列表专属偏移与引用缩进共用 leftInsetPx 这唯一行左偏移
+     * 真相（{@code leftInsetPx = quoteLevel × indentStepPx + 列表续行的正文列}），不新增
+     * 几何字段、不开样式表旋钮。</p>
      */
     public enum Kind {
-        /** 普通文本行（段落/标题/列表项；无块级底几何）。 */
+        /** 普通文本行（段落/标题；无块级底几何）。 */
         TEXT,
+        /**
+         * 带列表标记的行（M10b，2026-09-05 裁定 2）：同一 {@code blockId} 内<b>只有首行</b>
+         * 携带标记段（{@code segments.get(0)} 即标记——L1 续行按内嵌 \n 断行时继承行身份，
+         * 标记段不复制）。L2 只给该块的第一个 LIST 逻辑行保持原 {@code leftInsetPx}，
+         * 其余视觉行一律追加「正文列」= 该标记段实测宽（{@code ceil(推进宽)}），
+         * 由 {@link #withLeftInsetPx(int)} 落进接缝；页面/出图/聊天读的都是这一个数。
+         */
+        LIST,
         /** 围栏代码块的一源行（同块各源行同 blockId，底色经归组合并）。 */
         CODE,
         /** 分隔线行（真横线：一条 ruleThicknessPx 高的 BACKGROUND）。 */
@@ -78,7 +91,9 @@ public final class MarkdownLayoutLine {
      * @param quoteLevel      引用嵌套层数（&ge;0；0 = 不在引用内）
      * @param blockId         块归属 id（同一块的行同值；{@link #NO_BLOCK} = 无归属）
      * @param segments        行段流（可见文本；null 归一为空表）
-     * @param leftInsetPx     行文本左偏移（= quoteLevel × indentStepPx，L1 解析）
+     * @param leftInsetPx     行文本左偏移（L1 装配时 = quoteLevel × indentStepPx；M10b 起
+     *                        L2 可对 LIST 块的续行视觉行经 {@link #withLeftInsetPx(int)}
+     *                        追加正文列——它是接缝上唯一的「行左偏移」真相）
      * @param indentStepPx    每层引用水平步长（非引用行 0）
      * @param barWidthPx      引用竖条宽（非引用行 0）
      * @param ruleThicknessPx 分隔线厚（仅 THEMATIC_BREAK 行 &gt;0）
@@ -158,6 +173,25 @@ public final class MarkdownLayoutLine {
                 newBlockContentWidthPx);
     }
 
+    /**
+     * 同身份换左偏移副本（M10b 列表续行对齐正文列的唯一写入口；与 {@link #withSegments}、
+     * {@link #withBlockContentWidthPx} 同形的拷贝法）。
+     *
+     * <p><b>为什么走本方法而不是新字段/新旋钮</b>：{@code leftInsetPx} 是接缝上唯一的
+     * 「行左偏移」真相——引用缩进（{@code quoteLevel × indentStepPx}）与列表正文列共用它，
+     * L2 出图（SEGMENTS.left）、聊天面板与页面装配都读同一个数；正文列是<b>度量事实</b>，
+     * 只有持度量服务的 L2 算得出，故由 L2 在折行时以本方法把续行偏移改写为
+     * {@code 原 inset + ceil(标记段宽)}。公共 10 参构造器签名自 M7 起冻结，不因它膨胀。</p>
+     *
+     * @param newLeftInsetPx 新行左偏移（{@code >=0}）
+     * @return 携带相同 kind/quoteLevel/blockId/段流/其余几何与装饰色的新行
+     */
+    public MarkdownLayoutLine withLeftInsetPx(int newLeftInsetPx) {
+        return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
+                newLeftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb,
+                backgroundArgb, blockContentWidthPx);
+    }
+
     /** @return 块类别 */
     public Kind getKind() {
         return kind;
@@ -178,7 +212,11 @@ public final class MarkdownLayoutLine {
         return segments;
     }
 
-    /** @return 行文本左偏移（引用缩进已解析，px） */
+    /**
+     * @return 行文本左偏移（px；接缝唯一「行左偏移」真相——L1 写引用缩进
+     *         {@code quoteLevel × indentStepPx}，L2 可对 LIST 块续行视觉行追加正文列，
+     *         L2 出图/聊天面板/演示页三侧共读此值）
+     */
     public int getLeftInsetPx() {
         return leftInsetPx;
     }

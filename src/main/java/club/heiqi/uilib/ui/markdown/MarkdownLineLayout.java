@@ -112,10 +112,20 @@ final class MarkdownLineLayout {
     /**
      * 块身份行换行：逻辑行 → 视觉行（身份字段透传，折行宽度扣除该行左偏移）。
      *
-     * <p>复用既有 token 引擎（splitLogicalLines/wrapVisualLine/materialize 一字不动），
-     * 每行仅把可用宽改为 {@code maxWidthPx - leftInsetPx}——引用续行、块内折断天然继承
-     * 行身份。可见文本与段流路逐字等值（L1 {@code MarkdownLayoutLinesTest} 钉死），
+     * <p>复用既有 token 引擎（splitLogicalLines/materialize 一字不动；wrapVisualLine 扩为
+     * 「首行/续行」双宽，两宽相等时与旧单宽行为逐位一致），每行把可用宽改为
+     * {@code maxWidthPx - leftInsetPx}——引用续行、块内折断天然继承行身份。
+     * 可见文本与段流路逐字等值（L1 {@code MarkdownLayoutLinesTest} 钉死），
      * 折行差异<b>只</b>应出现在带左偏移的引用行（用户裁定的有意差异，规划 §二之三 M7 注记）。</p>
+     *
+     * <p><b>M10b 列表续行对齐正文列（2026-09-05 裁定 2）</b>：先扫逻辑行，按 {@code blockId}
+     * 求该块「正文列」= {@code ceil(lineAdvance(单元素表[该块首条 LIST 行的 segments.get(0)]))}
+     * ——地基是 L1 的不变量「同 blockId 内只有第一行带标记段且居 {@code segments.get(0)}」。
+     * LIST 块分档：标记逻辑行的<b>第一个</b>视觉行保持原 {@code leftInsetPx}（可用宽
+     * {@code maxWidth - inset}）；此后每个视觉行——含同行软折、含同块后续逻辑行——取
+     * {@code leftInsetPx + 正文列}（可用宽同步扣减，经 {@link MarkdownLayoutLine
+     * #withLeftInsetPx(int)} 写回接缝，L2 出图/页面/聊天三侧共读）。正文列是度量事实，
+     * 本层是全仓唯一算它的地方；非 LIST 行路径一字不改。</p>
      */
     static List<MarkdownLayoutLine> layoutLines(List<MarkdownLayoutLine> logicalLines,
             TextLayoutService measurer, int maxWidthPx, int baseFontSizePx) {
@@ -125,6 +135,26 @@ final class MarkdownLineLayout {
             out.add(MarkdownLayoutLine.blank());
             return Collections.unmodifiableList(out);
         }
+        // M10b 前置扫：按 blockId 记「该块首条 LIST 行的下标」与「正文列」（标记段实测宽，ceil）。
+        Map<Integer, Integer> listMarkerRow = new HashMap<Integer, Integer>();
+        Map<Integer, Integer> listColumnByBlock = new HashMap<Integer, Integer>();
+        for (int i = 0; i < logicalLines.size(); i++) {
+            MarkdownLayoutLine line = logicalLines.get(i);
+            if (line.getKind() != MarkdownLayoutLine.Kind.LIST
+                    || line.getBlockId() == MarkdownLayoutLine.NO_BLOCK
+                    || listMarkerRow.containsKey(Integer.valueOf(line.getBlockId()))) {
+                continue;
+            }
+            listMarkerRow.put(Integer.valueOf(line.getBlockId()), Integer.valueOf(i));
+            List<TextSegment> segments = line.getSegments();
+            if (!segments.isEmpty()) {
+                int column = (int) Math.ceil(lineAdvance(
+                        Collections.singletonList(segments.get(0)), measurer, baseFontSizePx));
+                if (column > 0) {
+                    listColumnByBlock.put(Integer.valueOf(line.getBlockId()), Integer.valueOf(column));
+                }
+            }
+        }
         for (int i = 0; i < logicalLines.size(); i++) {
             MarkdownLayoutLine line = logicalLines.get(i);
             List<TextSegment> segments = line.getSegments();
@@ -132,16 +162,46 @@ final class MarkdownLineLayout {
                 out.add(line); // 空行/无线文本的分隔线行：一行即一显示行
                 continue;
             }
+            Integer columnKey = line.getKind() == MarkdownLayoutLine.Kind.LIST
+                    ? listColumnByBlock.get(Integer.valueOf(line.getBlockId())) : null;
+            Integer markerIdxKey = line.getKind() == MarkdownLayoutLine.Kind.LIST
+                    ? listMarkerRow.get(Integer.valueOf(line.getBlockId())) : null;
+            if (columnKey == null || markerIdxKey == null) {
+                // 原路径（含非 LIST 行与拿不到正文列的退化 LIST 行）：一字不改
+                List<List<Token>> tokenLines = splitLogicalLines(
+                        unifySwitchPointSpaces(segments), measurer, baseFontSizePx);
+                int availablePx = maxWidthPx <= 0
+                        ? 0 : Math.max(1, maxWidthPx - line.getLeftInsetPx());
+                List<List<TextSegment>> visual = new ArrayList<List<TextSegment>>();
+                for (int t = 0; t < tokenLines.size(); t++) {
+                    wrapVisualLine(tokenLines.get(t), availablePx, visual, baseFontSizePx);
+                }
+                for (int v = 0; v < visual.size(); v++) {
+                    out.add(copyWithSegments(line, visual.get(v)));
+                }
+                continue;
+            }
+            // LIST 悬挂列路径
+            int inset = line.getLeftInsetPx();
+            int column = columnKey.intValue();
+            boolean isMarkerRow = markerIdxKey.intValue() == i;
+            int restInset = inset + column; // 标记行首视觉行之外的每个视觉行
             List<List<Token>> tokenLines = splitLogicalLines(
                     unifySwitchPointSpaces(segments), measurer, baseFontSizePx);
-            int availablePx = maxWidthPx <= 0
-                    ? 0 : Math.max(1, maxWidthPx - line.getLeftInsetPx());
-            List<List<TextSegment>> visual = new ArrayList<List<TextSegment>>();
             for (int t = 0; t < tokenLines.size(); t++) {
-                wrapVisualLine(tokenLines.get(t), availablePx, visual, baseFontSizePx);
-            }
-            for (int v = 0; v < visual.size(); v++) {
-                out.add(copyWithSegments(line, visual.get(v)));
+                List<List<TextSegment>> visual = new ArrayList<List<TextSegment>>();
+                boolean firstKeepsInset = isMarkerRow && t == 0;
+                int firstInset = firstKeepsInset ? inset : inset + column;
+                wrapVisualLine(tokenLines.get(t),
+                        availableForWidth(maxWidthPx, firstInset),
+                        availableForWidth(maxWidthPx, restInset),
+                        visual, baseFontSizePx);
+                for (int v = 0; v < visual.size(); v++) {
+                    int rowInset = v == 0 ? firstInset : restInset;
+                    MarkdownLayoutLine copy = copyWithSegments(line, visual.get(v));
+                    out.add(rowInset == copy.getLeftInsetPx()
+                            ? copy : copy.withLeftInsetPx(rowInset));
+                }
             }
         }
         // M8 单一真相：块内统一内容宽在本层（唯一持度量服务处）算出并写入行对象——
@@ -463,9 +523,27 @@ final class MarkdownLineLayout {
         return lines;
     }
 
+    /** 容器宽 → 扣除行左偏移后的可用宽（{@code maxWidthPx <= 0} = 不限宽，与旧语义同）。 */
+    private static int availableForWidth(int maxWidthPx, int insetPx) {
+        return maxWidthPx <= 0 ? 0 : Math.max(1, maxWidthPx - insetPx);
+    }
+
     /** 单逻辑行 → 视觉行（词边界回退 + 无空格硬断，K3 语义），materialize 后追加到 out。 */
     private static void wrapVisualLine(List<Token> tokens, int maxWidthPx, List<List<TextSegment>> out,
             int baseFontSizePx) {
+        wrapVisualLine(tokens, maxWidthPx, maxWidthPx, out, baseFontSizePx);
+    }
+
+    /**
+     * 单逻辑行 → 视觉行，首行与续行分别限宽（M10b 列表悬挂缩进；两宽相等时与旧单宽逐位一致）。
+     *
+     * <p>判「首行」只看<b>本次调用</b>是否还未向 out 吐过行（起始尺寸比较），跨调用累计的
+     * out 不影响判定；空逻辑行兜底产出的零段行同样计入吐行。除限宽数值外，切分算法
+     * 一字未动——段流路 {@link #wrap} 恒走两宽相等路径，与门禁对拍行为逐位不变。</p>
+     */
+    private static void wrapVisualLine(List<Token> tokens, int firstMaxWidthPx, int restMaxWidthPx,
+            List<List<TextSegment>> out, int baseFontSizePx) {
+        int startSize = out.size();
         List<Token> line = new ArrayList<Token>();
         List<Token> pending = new ArrayList<Token>();
         double lineWidth = 0.0D;
@@ -480,6 +558,8 @@ final class MarkdownLineLayout {
                 pendingWidth += token.advance;
                 continue;
             }
+            // 正在填的行是本次调用的首视觉行吗——是则用首行宽，否则用续行宽（两宽相等时恒等旧值）
+            int maxWidthPx = out.size() == startSize ? firstMaxWidthPx : restMaxWidthPx;
             double candidate = lineWidth + pendingWidth + token.advance;
             if (maxWidthPx <= 0 || visibleCount == 0 || candidate <= (double) maxWidthPx) {
                 if (!pending.isEmpty()) {

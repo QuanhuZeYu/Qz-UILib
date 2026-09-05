@@ -24,9 +24,21 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p>链路 = 完整 L1→L2→scene 既有抽象（M7 方案乙后）：{@code MarkdownDocument.parse} →
  * {@code toLayoutLines}（块身份行接缝）→ {@link MarkdownPainter#wrapLayoutLines}（度量同源换行，
- * 折行宽度按行扣除引用缩进）→ 每视觉行一个段流 {@code SceneNode.setSegments} 节点（chat3 消息行
- * 同款钉宽钉高范式），引用嵌套竖条 / 真横线 / 围栏底色用既有背景色节点表达。
+ * 折行宽度按行扣除引用缩进与列表正文列）→ 每视觉行一个段流 {@code SceneNode.setSegments}
+ * 节点（chat3 消息行同款钉宽钉高范式），引用嵌套竖条 / 真横线 / 围栏底色用既有背景色节点表达。
  * 页面零 GL、零块模型引用。</p>
+ *
+ * <p><b>M10a 引用竖条连续化（2026-09-05 裁定 1）</b>：{@code sampleCard} 两趟装配——第一趟逐行
+ * 产出「装配单元」（叶子节点 + 引用层级 + 装饰色），第二趟把<b>连续同引用段的极大区间</b>
+ * 递归分组成套容器 {@code row[竖条(fillParentHeight) + 内层 column(card.gap)]}，每层一根
+ * 贯穿全组的连续竖条。旧版按「每条行各挂一层 row[bar,content]」装配时，卡片列 gap=8
+ * 被当成行距 → 竖条只有单行 14px 高、行间留 8px 缝（聊天面板与 L2 出图路本无此缺陷：
+ * 它们行距恒等于行高）。分组内列 gap <b>恒取 {@code card.getGap()}</b>——组容器高 =
+ * Σ行高 + gap×(n-1) 与平铺时逐字节相同，文字位置一字不动，只有竖条变连续。</p>
+ *
+ * <p><b>M10b 列表续行对齐正文列（2026-09-05 裁定 2）</b>：正文列宽由 L2 写进续行视觉行的
+ * {@code leftInsetPx}（唯一行左偏移真相）；页面用 {@code extra = leftInsetPx - quoteLevel ×
+ * indentStepPx} 反解列表专属偏移并以 {@code setPadding} 平移文字——页面不自算第二份标记宽。</p>
  *
  * <p>解析/换行在 mount 时一次性完成（零每帧解析裁定，规划 §六 3）；观感与手感由真机验收，
  * headless 对拍见 {@code MarkdownSoftwareRenderTest}（build/reports/markdown-render/）。
@@ -54,7 +66,7 @@ public final class MarkdownPage implements PlaygroundPage {
                     "```java\nclass Hello {\n    // 注释里的 **星号** 与 $公式$ 都不解析\n}\n```\n\n~~~\n波浪围栏块 echo $HOME\n~~~"},
             {"嵌套引用", "> 可嵌套；引用样式位（斜体开关）叠加在段样式上",
                     "> 一层引用\n>> 二层引用\n>>> 三层引用\n> 惰性续行（下一行不带 > 仍属本引用块）\n\n> 引用里套列表：\n> - 子项甲\n> - 子项乙"},
-            {"列表与续行", "无序归一圆点符号、有序保留源序号；缩进续行并入同项",
+            {"列表与续行", "无序归一圆点符号、有序保留源序号；缩进续行并入同项并对齐正文列",
                     "- 第一项首行\n  第一项的缩进续行（懒延续）\n- 第二项\n  - 嵌套子项\n    - 更深层子项\n3. 有序三\n4) 有序四（右括号定界）\n   有序四项的续行"},
             {"硬换行与软换行", "行尾两空格 / 反斜杠 = 硬换行；超长行按容器宽软折",
                     "硬换行第一行  \n硬换行第二行（上行为行尾两空格）\\\n第三行（反斜杠硬换行）\n\n这是一段足够长的中文正文用于演示软换行在容器宽度处的折行行为，混合 English words 与 Punctuation, and even averyveryverylongunbreakstoken 时按词边界回退、超长 token 字符级硬断。"},
@@ -62,7 +74,7 @@ public final class MarkdownPage implements PlaygroundPage {
                     "行内公式：质量能量等价 $e = mc^2$ 收尾。\n分数与根号混排：$\\frac{1}{2} + \\sqrt{x^2 + y^2}$ 在文本流中。\n求和：$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$ 与 $\\alpha\\beta\\gamma$ 希腊字母。"},
             {"链接与行内样式", "[text](url) 产 setLink+下划线段；![图片] 只产字面 ! + 链接段",
                     "访问 [Qz-UILib 主页](https://example.com/qz) 看详情。\n组合：**粗体里的[链接](https://a.test)** 与 ~~删除线~~ 和 `code span 字面`。\n图片刻意不支持：![alt 文本](https://img.test/x.png) 输出字面感叹号加链接段。"},
-            {"分隔线与刻意不支持面", "--- 产样式表分隔线文本；表格/任务列表整行字面保留",
+            {"分隔线与刻意不支持面", "--- 产真横线（1px 铺内容宽）；表格/任务列表整行字面保留",
                     "上文与下文被 --- 分开。\n---\n表格不解析：| 列一 | 列二 |\n|---|---|\n任务列表不解析：- [ ] 未完成项"},
     };
 
@@ -78,7 +90,7 @@ public final class MarkdownPage implements PlaygroundPage {
 
     @Override
     public String description() {
-        return "L1 块身份行接缝 → L2 layoutLines 换行(引用缩进扣除) → 段流/竖条/真横线/围栏底色（8 张样本卡）";
+        return "L1 块身份行接缝 → L2 layoutLines 换行(引用缩进/列表正文列) → 段流/连续竖条/真横线/围栏底色（8 张样本卡）";
     }
 
     @Override
@@ -100,7 +112,7 @@ public final class MarkdownPage implements PlaygroundPage {
      *
      * <p>底色宽（横向）恒取 L2 的 {@code getBlockContentWidthPx()}（M8 单一真相）；
      * 底色<b>纵向连续</b>由「容器盒覆盖全部子行」保证（M9 修「三截条」）——
-     * 容器上下内衬保持 0，块外缘观感与旧版逐字节相同，只消掉行间那条 8px 缝。</p>
+     * 容器上下内衬保持 0，块外缘观感与旧版逐字节相同，只消掉块内那条 8px 缝。</p>
      */
     private static SceneNode codeBlockNode(List<MarkdownLayoutLine> lines, int from, int to,
             TextLayoutService measurer) {
@@ -133,26 +145,67 @@ public final class MarkdownPage implements PlaygroundPage {
         return block;
     }
 
-    /** 引用嵌套：每层 row[竖条 2px + gap 6 + 内容]，一/二/三层肉眼可分（level=0 原样返回）。 */
-    private static SceneNode quoteWrap(SceneNode inner, MarkdownLayoutLine line) {
-        SceneNode node = inner;
-        for (int level = line.getQuoteLevel(); level >= 1; level--) {
-            SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
-                    .setHitTestable(false)
-                    .setWidthSizing(SceneNode.WidthSizing.SHRINK);
-            quoteRow.appendChild(new SceneNode()
-                    .setHitTestable(false)
-                    .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
-                    .setFillParentHeight(true)
-                    .setBackgroundColor(line.getAccentArgb())
-                    .setCornerRadius(QUOTE_BAR_RADIUS_PX));
-            quoteRow.appendChild(node);
-            node = quoteRow;
+    /** 第一趟的装配单元：叶子节点 + 它所属块的引用层级与装饰色（第二趟分组入料）。 */
+    private static final class Unit {
+        final SceneNode node;
+        final int quoteLevel;
+        final int accentArgb;
+
+        Unit(SceneNode node, int quoteLevel, int accentArgb) {
+            this.node = node;
+            this.quoteLevel = quoteLevel;
+            this.accentArgb = accentArgb;
         }
-        return node;
     }
 
-    /** 一张样本卡 = 标题 + 渲染出的视觉行节点（每行一个段流节点，钉实测宽与行高）+ 说明。 */
+    /**
+     * 第二趟的递归分组容器（M10a）：{@code [from,to)} 内每个单元引用层级 {@code >= level}，
+     * 产 {@code row[本层连续竖条 + 内层 column]}；层级 {@code > level} 的极大连续段递归成
+     * 更深一层的分组容器并入内层列，其余单元节点直接入内层列。
+     *
+     * <p>内层列 gap <b>恒取卡片列 gap（{@code rowGapPx} 参数由调用方传 {@code card.getGap()}）</b>：
+     * 组容器高 = Σ行高 + gap×(n-1)，与这些行平铺在卡列时占据的高度逐字节相同——文字位置
+     * 一字不动，竖条经 {@code fillParentHeight} 从「每行一截」变成「一组一根连续条」。
+     * 跨引用组不连条：组间由 {@code blankLine()} 产的 {@code quoteLevel=0} 单元天然断开。</p>
+     */
+    private static SceneNode quoteGroup(List<Unit> units, int from, int toExclusive, int level,
+            int rowGapPx) {
+        SceneNode inner = SceneNode.column(rowGapPx).setHitTestable(false);
+        int k = from;
+        while (k < toExclusive) {
+            if (units.get(k).quoteLevel > level) {
+                int m = k;
+                while (m < toExclusive && units.get(m).quoteLevel > level) {
+                    m++;
+                }
+                inner.appendChild(quoteGroup(units, k, m, level + 1, rowGapPx));
+                k = m;
+            } else {
+                inner.appendChild(units.get(k).node);
+                k++;
+            }
+        }
+        SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
+                .setHitTestable(false)
+                .setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        quoteRow.appendChild(new SceneNode()
+                .setHitTestable(false)
+                .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
+                .setFillParentHeight(true)
+                .setBackgroundColor(units.get(from).accentArgb)
+                .setCornerRadius(QUOTE_BAR_RADIUS_PX));
+        quoteRow.appendChild(inner);
+        return quoteRow;
+    }
+
+    /**
+     * 一张样本卡 = 标题 + 渲染出的视觉行（两趟装配，M10a）+ 说明。
+     *
+     * <p>第一趟按现状逐行/逐围栏产装配单元（围栏合并、真横线、普通文本行与 M9 前口径
+     * 一字不动）；第二趟把「连续 quoteLevel&gt;=1」的极大段调
+     * {@link #quoteGroup(java.util.List, int, int, int, int)} 成套容器，quoteLevel==0 的单元
+     * 原样入卡列。列表续行偏移（M10b）在第一趟用 {@code leftInsetPx} 反解为节点 padding。</p>
+     */
     private static SceneNode sampleCard(String[] sample, TextLayoutService measurer) {
         SceneNode card = PlaygroundKit.card();
         card.appendChild(PlaygroundKit.title(sample[0]));
@@ -172,15 +225,13 @@ public final class MarkdownPage implements PlaygroundPage {
         List<MarkdownLayoutLine> lines = MarkdownPainter.wrapLayoutLines(
                 MarkdownDocument.parse(sample[2]).toLayoutLines(styles, base),
                 measurer, WRAP_WIDTH_PX, BASE_FONT_PX);
-        List<SceneNode> lineNodes = new ArrayList<SceneNode>();
+        // 第一趟：逐行/逐围栏产「装配单元」，不套引用容器
+        List<Unit> units = new ArrayList<Unit>();
         int i = 0;
         while (i < lines.size()) {
             MarkdownLayoutLine line = lines.get(i);
             // M9 围栏块 = 一个块级容器节点（既有 COLUMN + 背景色 + 内衬能力，零新图元）：
-            // 旧写法给每条 CODE 行各挂一个底色节点，而卡片列 gap=8 被当成行距 →
-            // 底色只有 14px 行盒高、行间留 8px 无底色缝 → 真机看到「三截条」。
-            // 合并成单容器后，底色矩形天然覆盖块内全部行（与 L2「连续同 blockId 合并
-            // 为单矩形」同口径；聊天面板本就无此问题——它的内容列 gap=0、行盒高=节距）。
+            // 底色矩形天然覆盖块内全部行（与 L2「连续同 blockId 合并为单矩形」同口径）。
             if (line.getKind() == MarkdownLayoutLine.Kind.CODE
                     && line.getBlockId() != MarkdownLayoutLine.NO_BLOCK) {
                 int j = i;
@@ -189,7 +240,8 @@ public final class MarkdownPage implements PlaygroundPage {
                         && lines.get(j + 1).getBlockId() == line.getBlockId()) {
                     j++;
                 }
-                lineNodes.add(quoteWrap(codeBlockNode(lines, i, j, measurer), line));
+                units.add(new Unit(codeBlockNode(lines, i, j, measurer),
+                        line.getQuoteLevel(), line.getAccentArgb()));
                 i = j + 1;
                 continue;
             }
@@ -219,12 +271,34 @@ public final class MarkdownPage implements PlaygroundPage {
                 } else {
                     lineNode.setWidthSizing(SceneNode.WidthSizing.FILL);
                 }
+                // M10b：leftInsetPx 是唯一「行左偏移」真相；扣掉引用份额后剩下的就是列表
+                // 正文列偏移（M10a 文字位置一字不动 ⇒ 引用部分仍由分组结构表达，不进 padding）。
+                // padding 会真实平移文字（M9 的 CODE_BG_PAD_PX 左内衬已证实），页面不自算标记宽。
+                int listExtra = line.getLeftInsetPx()
+                        - line.getQuoteLevel() * line.getIndentStepPx();
+                if (listExtra > 0) {
+                    lineNode.setPadding(0, 0, 0, listExtra);
+                }
             }
-            lineNodes.add(quoteWrap(lineNode, line));
+            units.add(new Unit(lineNode, line.getQuoteLevel(), line.getAccentArgb()));
             i++;
         }
-        for (int n = 0; n < lineNodes.size(); n++) {
-            card.appendChild(lineNodes.get(n));
+        // 第二趟：连续同引用段递归分组，竖条自组首贯穿组尾（M10a）
+        int gapPx = card.getGap();
+        int p = 0;
+        while (p < units.size()) {
+            Unit unit = units.get(p);
+            if (unit.quoteLevel <= 0) {
+                card.appendChild(unit.node);
+                p++;
+                continue;
+            }
+            int q = p;
+            while (q < units.size() && units.get(q).quoteLevel >= 1) {
+                q++;
+            }
+            card.appendChild(quoteGroup(units, p, q, 1, gapPx));
+            p = q;
         }
         card.appendChild(PlaygroundKit.hint(sample[1]));
         return card;

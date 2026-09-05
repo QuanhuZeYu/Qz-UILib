@@ -243,8 +243,13 @@ public final class MarkdownDocument {
      *
      * <p>嵌套列表每级缩进写成标记段文本里的前导空格，每级 2 个空格——复刻 chat3
      * 出货口径（ChatMessageList.java:952-956：level 由前导空格数 / 2 得出，每级 append "  "）。
-     * 缩进靠段流表达，不把块模型 / 缩进 px 开进公共面（规划 §二之三 裁 B 不变；
-     * M7 行接缝同样不给列表开几何通道——引用几何才走行盒，两者互不侵犯）。</p>
+     * 段流路（{@code toSegments}）的这套缩进机制原样保留；<b>M7 旧句「行接缝同样不给列表开
+     * 几何通道——引用几何才走行盒」已于 2026-09-05 裁定 2 作废</b>：行接缝（{@code toLayoutLines}）
+     * 用 {@link MarkdownLayoutLine.Kind#LIST} 给 L2 认「本块首条 {@code segments.get(0)} 即
+     * 标记段」，L2 按该段<b>实测推进宽</b>（ceil，含上述前导空格 ⇒ 嵌套层正文列天然更宽）
+     * 给块内其余视觉行的 leftInsetPx 追加正文列，实现「续行对齐正文列」。两机制各司其职、
+     * 互不侵犯：段流路继续用空格表达缩进，行接缝另走行盒；块模型与缩进 px 仍不开进
+     * 公共面（规划 §二之三 裁 B 未重开的那一半不变）。</p>
      */
     private static String listMarker(MarkdownBlock block, MarkdownStyleTable table, int markerLevel) {
         String marker;
@@ -385,12 +390,23 @@ public final class MarkdownDocument {
         }
     }
 
-    /** 列表项：标记 + 首段同行；其余子块断行起（与 emitListItem 逐点对偶，F2 前导空格共用助手）。 */
+    /**
+     * 列表项：标记 + 首段同行；其余子块断行起（与 emitListItem 逐点对偶，F2 前导空格共用助手）。
+     *
+     * <p><b>M10b 行身份（2026-09-05 裁定 2）</b>：标记文本在 {@code startBlock} <b>之前</b>
+     * 算好——标记非空 ⇒ 本块首行为 {@link MarkdownLayoutLine.Kind#LIST}，圆点被样式表配成
+     * 空串（有序恒有源序号）⇒ 退 {@link MarkdownLayoutLine.Kind#TEXT}。{@code LineFlattener
+     * .appendOne} 按内嵌 
+ 断行并让续行继承 curKind/curBlockId，故<b>同一 blockId 内只有
+     * 第一行带标记段</b>（且它就是 {@code segments.get(0)}）——L2 据这两条把该块其余视觉行
+     * 的 leftInsetPx 追加正文列，身份地基由 {@code MarkdownLayoutLinesTest} 钉死。</p>
+     */
     private static void emitListItemLayout(MarkdownBlock block, TextStyle style,
                                            MarkdownStyleTable table, LineFlattener f,
                                            int markerLevel, int quoteLevel) {
-        f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel);
         String marker = listMarker(block, table, markerLevel);
+        f.startBlock(marker.isEmpty()
+                ? MarkdownLayoutLine.Kind.TEXT : MarkdownLayoutLine.Kind.LIST, quoteLevel);
         if (!marker.isEmpty()) {
             f.append(Collections.singletonList(new TextSegment(marker, style.copy())));
         }
