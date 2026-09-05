@@ -1,0 +1,179 @@
+package club.heiqi.uilib.font.layout.markdown;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import club.heiqi.uilib.font.layout.TextSegment;
+
+/**
+ * 块身份行（L1→L2 新接缝的唯一公共类型；2026-09-05 用户裁定方案乙，规划 §二之三 M7 重开注记）。
+ *
+ * <p><b>它解决什么</b>：裁定 B 把块级几何随块模型整体留在包内，接缝只剩扁平
+ * {@code List<TextSegment>}——L2 因此「看得见字、看不见块」，引用嵌套缩进、真分隔线、
+ * 围栏块底色三类块级几何无处表达（实机截图实证缺失）。本类型把<b>行粒度块身份</b>送进接缝：
+ * 一条 = 一个逻辑行（按 \n 与 F6 占位边界切好），携带块类别（kind）、引用层级
+ * （quoteLevel）、块归属（blockId）、行盒几何（leftInsetPx / indentStepPx / barWidthPx /
+ * ruleThicknessPx）与两路装饰色（accentArgb 竖条·横线色，backgroundArgb 块底色）。</p>
+ *
+ * <p><b>它刻意不是什么</b>：不是块模型（无子树、无 children、无源偏移量——
+ * {@code MarkdownBlock}/{@code MarkdownBlockParser} 恒 package-private，裁定 B 未重开的
+ * 「不外开块树」这一半不变）；也不是文本通道（{@link #getSegments()} 携扁平接缝对应行的
+ * 原段引用，可见文本一字不改——缩进<b>绝不</b>写成前导空格塞进段文本，列表项 F2 的
+ * 「  」前导空格机制保持原样）。它是扁平的行序列，不可变。</p>
+ *
+ * <p><b>几何数值出处（G4 度量同源）</b>：indentStepPx/barWidthPx/ruleThicknessPx 与两路
+ * 装饰色全部由 L1 在装配行时从 {@link MarkdownStyleTable} 的<b>包内登记项</b>解析
+ * （沿用 F1 code 字号/衬底的包内登记先例）——{@code MarkdownStyleTable} 的公共方法面
+ * 不因此膨胀，L2 侧零自设常量。</p>
+ *
+ * <p><b>双重角色</b>：L1 的 {@code MarkdownDocument.toLayoutLines} 产「逻辑行」（身份与
+ * 缩进已解析）；L2 的 {@code MarkdownPainter.layoutLines} 把逻辑行按容器宽（已扣
+ * {@link #getLeftInsetPx()}）切成「视觉行」——同一类型逐行透传身份，续行天然继承
+ * （长引用折断的续行也带层级与竖条，与 M5「行为差」口径一致）。</p>
+ *
+ * <p>纯 JVM，不依赖 Minecraft/AWT（G2 锁）。</p>
+ */
+public final class MarkdownLayoutLine {
+
+    /**
+     * 行的块类别（封闭枚举；决定 L2 产哪种块级几何）。
+     *
+     * <p>引用身份不占枚举措——{@link #getQuoteLevel()} 独立正交（引用块内的 CODE 行 =
+     * kind=CODE + quoteLevel&gt;0，竖条与底色同时成立）。标题/列表/普通段对 L2 无块级
+     * 几何差异，恒 TEXT。</p>
+     */
+    public enum Kind {
+        /** 普通文本行（段落/标题/列表项；无块级底几何）。 */
+        TEXT,
+        /** 围栏代码块的一源行（同块各源行同 blockId，底色经归组合并）。 */
+        CODE,
+        /** 分隔线行（真横线：一条 ruleThicknessPx 高的 BACKGROUND）。 */
+        THEMATIC_BREAK
+    }
+
+    /** 无归属块的行（空行占位）的 blockId。 */
+    public static final int NO_BLOCK = -1;
+
+    private final Kind kind;
+    private final int quoteLevel;
+    private final int blockId;
+    private final List<TextSegment> segments;
+    private final int leftInsetPx;
+    private final int indentStepPx;
+    private final int barWidthPx;
+    private final int ruleThicknessPx;
+    private final int accentArgb;
+    private final int backgroundArgb;
+
+    /**
+     * 全字段构造（L1 装配与 L2 视觉行复制共用）。
+     *
+     * @param kind            块类别（不可为 null）
+     * @param quoteLevel      引用嵌套层数（&ge;0；0 = 不在引用内）
+     * @param blockId         块归属 id（同一块的行同值；{@link #NO_BLOCK} = 无归属）
+     * @param segments        行段流（可见文本；null 归一为空表）
+     * @param leftInsetPx     行文本左偏移（= quoteLevel × indentStepPx，L1 解析）
+     * @param indentStepPx    每层引用水平步长（非引用行 0）
+     * @param barWidthPx      引用竖条宽（非引用行 0）
+     * @param ruleThicknessPx 分隔线厚（仅 THEMATIC_BREAK 行 &gt;0）
+     * @param accentArgb      装饰色（竖条/横线共用；0 = 无）
+     * @param backgroundArgb  块底色（CODE 行衬底；0 = 无）
+     */
+    public MarkdownLayoutLine(Kind kind, int quoteLevel, int blockId, List<TextSegment> segments,
+            int leftInsetPx, int indentStepPx, int barWidthPx, int ruleThicknessPx,
+            int accentArgb, int backgroundArgb) {
+        if (kind == null) {
+            throw new IllegalArgumentException("kind 不能为空");
+        }
+        this.kind = kind;
+        this.quoteLevel = Math.max(0, quoteLevel);
+        this.blockId = blockId;
+        this.segments = segments == null
+                ? Collections.<TextSegment>emptyList()
+                : Collections.unmodifiableList(new ArrayList<TextSegment>(segments));
+        this.leftInsetPx = Math.max(0, leftInsetPx);
+        this.indentStepPx = Math.max(0, indentStepPx);
+        this.barWidthPx = Math.max(0, barWidthPx);
+        this.ruleThicknessPx = Math.max(0, ruleThicknessPx);
+        this.accentArgb = accentArgb;
+        this.backgroundArgb = backgroundArgb;
+    }
+
+    /**
+     * 产空行（F6 块边界占位的行级形态：零段、无块身份、无几何）。
+     *
+     * @return 空行实例
+     */
+    public static MarkdownLayoutLine blank() {
+        return new MarkdownLayoutLine(Kind.TEXT, 0, NO_BLOCK, Collections.<TextSegment>emptyList(),
+                0, 0, 0, 0, 0, 0);
+    }
+
+    /**
+     * 同身份换段流副本（M7 消费侧 §桥/链接化/换行的行级重挂点；身份与几何字段原样继承）。
+     *
+     * @param newSegments 新段流（可见文本与原段流逐字等值或由行内切段产生）
+     * @return 携带相同 kind/quoteLevel/blockId/几何/装饰色的新行
+     */
+    public MarkdownLayoutLine withSegments(List<TextSegment> newSegments) {
+        return new MarkdownLayoutLine(kind, quoteLevel, blockId, newSegments,
+                leftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb, backgroundArgb);
+    }
+
+    /** @return 块类别 */
+    public Kind getKind() {
+        return kind;
+    }
+
+    /** @return 引用嵌套层数（0 = 不在引用内） */
+    public int getQuoteLevel() {
+        return quoteLevel;
+    }
+
+    /** @return 块归属 id（供 L2 把围栏底色合并为覆盖全部显示行的单矩形） */
+    public int getBlockId() {
+        return blockId;
+    }
+
+    /** @return 行段流（不可变；与扁平接缝对应行的段一字相同，永不携带缩进空格） */
+    public List<TextSegment> getSegments() {
+        return segments;
+    }
+
+    /** @return 行文本左偏移（引用缩进已解析，px） */
+    public int getLeftInsetPx() {
+        return leftInsetPx;
+    }
+
+    /** @return 每层引用水平步长（px；非引用行 0） */
+    public int getIndentStepPx() {
+        return indentStepPx;
+    }
+
+    /** @return 引用竖条宽（px；非引用行 0） */
+    public int getBarWidthPx() {
+        return barWidthPx;
+    }
+
+    /** @return 分隔线厚度（px；仅 THEMATIC_BREAK 行 &gt;0） */
+    public int getRuleThicknessPx() {
+        return ruleThicknessPx;
+    }
+
+    /** @return 装饰色（竖条/横线共用 ARGB；0 = 无） */
+    public int getAccentArgb() {
+        return accentArgb;
+    }
+
+    /** @return 块底色 ARGB（0 = 无衬底） */
+    public int getBackgroundArgb() {
+        return backgroundArgb;
+    }
+
+    @Override
+    public String toString() {
+        return "MarkdownLayoutLine(" + kind + " q" + quoteLevel + " b" + blockId
+                + " inset=" + leftInsetPx + " segs=" + segments.size() + ")";
+    }
+}

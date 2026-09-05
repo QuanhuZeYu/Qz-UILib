@@ -112,22 +112,29 @@ public class ChatMarkdownPipelineTest {
                 ChatMarkdownPipeline.isBlockMathRow(inlineMix));
     }
 
+    private static ChatMarkdownPipeline.RenderedLine rline(String text) {
+        return ChatMarkdownPipeline.renderedForTest(
+                Collections.singletonList(seg(text, white())));
+    }
+
     @Test
     public void hudClampKeepsEightAndAppendsEllipsisWithWidthBudget() {
-        List<List<TextSegment>> shortDoc = new ArrayList<List<TextSegment>>();
+        List<ChatMarkdownPipeline.RenderedLine> shortDoc =
+                new ArrayList<ChatMarkdownPipeline.RenderedLine>();
         for (int i = 0; i < 8; i++) {
-            shortDoc.add(Collections.singletonList(seg("行" + i, white())));
+            shortDoc.add(rline("行" + i));
         }
         Assert.assertSame("恰好 8 行不截断(§5.4 语义)", shortDoc,
                 ChatMarkdownPipeline.clampHudLines(shortDoc, null, 13, 140));
-        List<List<TextSegment>> longDoc = new ArrayList<List<TextSegment>>();
+        List<ChatMarkdownPipeline.RenderedLine> longDoc =
+                new ArrayList<ChatMarkdownPipeline.RenderedLine>();
         for (int i = 0; i < 12; i++) {
-            longDoc.add(Collections.singletonList(seg("x", white())));
+            longDoc.add(rline("x"));
         }
-        List<List<TextSegment>> clamped =
+        List<ChatMarkdownPipeline.RenderedLine> clamped =
                 ChatMarkdownPipeline.clampHudLines(longDoc, null, 13, 140);
         Assert.assertEquals(8, clamped.size());
-        List<TextSegment> last = clamped.get(7);
+        List<TextSegment> last = clamped.get(7).segments();
         Assert.assertEquals(1, last.size());
         Assert.assertTrue("无度量注入:末行直接补省略号",
                 last.get(0).getText().endsWith("..."));
@@ -138,12 +145,14 @@ public class ChatMarkdownPipelineTest {
                 return segment.getText().length() * 4.0F;
             }
         };
-        List<List<TextSegment>> wide = new ArrayList<List<TextSegment>>();
+        List<ChatMarkdownPipeline.RenderedLine> wide =
+                new ArrayList<ChatMarkdownPipeline.RenderedLine>();
         for (int i = 0; i < 9; i++) {
-            wide.add(Collections.singletonList(seg("abcdefghij", white())));
+            wide.add(rline("abcdefghij"));
         }
-        List<List<TextSegment>> cut = ChatMarkdownPipeline.clampHudLines(wide, fourPx, 13, 40);
-        TextSegment tail = cut.get(7).get(cut.get(7).size() - 1);
+        List<ChatMarkdownPipeline.RenderedLine> cut =
+                ChatMarkdownPipeline.clampHudLines(wide, fourPx, 13, 40);
+        TextSegment tail = cut.get(7).segments().get(cut.get(7).segments().size() - 1);
         // 10 字行 = 40px 已吃满预算 → 逐码点回退到 7 字 + "..." = 40px
         Assert.assertEquals("abcdefg...", tail.getText());
         Assert.assertTrue("末行含省略号且总宽 ≤ 预算",
@@ -164,16 +173,18 @@ public class ChatMarkdownPipelineTest {
             }
         };
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
-        List<List<TextSegment>> first = pipeline.layout("- item", 0xFFFFFFFF, 140, 13, null, counting);
-        List<List<TextSegment>> second = pipeline.layout("- item", 0xFFFFFFFF, 140, 13, null, counting);
+        List<ChatMarkdownPipeline.RenderedLine> first =
+                pipeline.layout("- item", 0xFFFFFFFF, 140, 13, null, counting);
+        List<ChatMarkdownPipeline.RenderedLine> second =
+                pipeline.layout("- item", 0xFFFFFFFF, 140, 13, null, counting);
         Assert.assertSame("每帧零解析:同参二次调用命中缓存(换行未重算)", first, second);
         Assert.assertEquals(1, wrapCalls.size());
-        List<List<TextSegment>> otherWidth =
+        List<ChatMarkdownPipeline.RenderedLine> otherWidth =
                 pipeline.layout("- item", 0xFFFFFFFF, 120, 13, null, counting);
         Assert.assertNotSame("定行宽变化 → 重换行(缓存 key 含宽度)", otherWidth, first);
         Assert.assertEquals(2, wrapCalls.size());
-        // 管道产物形状:「• 」+ 内容(经计数换行原样带出扁平流)
-        Assert.assertEquals("\u2022 ", otherWidth.get(0).get(0).getText());
-        Assert.assertEquals("item", otherWidth.get(0).get(1).getText());
+        // 管道产物形状:「• 」+ 内容(经计数换行原样带出;F2 前导空格机制不变)
+        Assert.assertEquals("\u2022 ", otherWidth.get(0).segments().get(0).getText());
+        Assert.assertEquals("item", otherWidth.get(0).segments().get(1).getText());
     }
 }

@@ -120,7 +120,35 @@ public final class MarkdownDocument {
         return out;
     }
 
-    // ==================== 扁平化 ====================
+    /**
+     * 扁平化为块身份行序列（M7 方案乙，2026-09-05 用户裁定：块几何进 L1→L2 接缝）。
+     *
+     * <p><b>与 {@link #toSegments} 的关系</b>：同一块树、同一段生成原语（行内解析/引用样式/
+     * 标题样式/列表标记全部共用，防两路漂移）。行接缝的逐行可见文本恒等于段接缝按 \n 与
+     * F6 占位切分的行——由 {@code MarkdownLayoutLinesTest} 在门禁 30 条语料上逐字钉死；
+     * <b>本方法不产任何新可见文本，也不删任何可见文本</b>（分隔线文本仍由既有
+     * {@code setThematicBreakText} 旋钮决定；几何另以行的块身份与行盒字段表达，二者正交）。</p>
+     *
+     * <p><b>身份字段</b>：kind（TEXT/CODE/THEMATIC_BREAK）、quoteLevel（引用嵌套层数，
+     * 续行天然继承）、blockId（同一块的所有行同值——L2 据此把围栏底色合并为覆盖全部
+     * 显示行的单矩形）、leftInsetPx 等行盒几何（数值恒取自 {@link MarkdownStyleTable}
+     * 包内登记项，L2 零自设常量，G4）。</p>
+     *
+     * @param styles    样式/排版表（可为 null，取 {@link MarkdownStyleTable#defaults()}）
+     * @param baseStyle 基础样式（不可为 null）
+     * @return 逻辑行序列（不可变列表；空文档返回空列表）
+     */
+    public List<MarkdownLayoutLine> toLayoutLines(MarkdownStyleTable styles, TextStyle baseStyle) {
+        if (baseStyle == null) {
+            throw new IllegalArgumentException("baseStyle 不能为空");
+        }
+        MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
+        LineFlattener flattener = new LineFlattener(table);
+        walkLayout(blocks, baseStyle, table, flattener, 0, 0);
+        return flattener.finish();
+    }
+
+    // ==================== 扁平化（段流路） ====================
 
     /**
      * 同层兄弟块扁平化。
@@ -177,10 +205,7 @@ public final class MarkdownDocument {
     /** 块正文交行内解析器（行内语义照抄既有裁定，本层只叠加块级样式位）。 */
     private static void emitInline(String body, TextStyle style, MarkdownStyleTable table,
                                  List<TextSegment> out) {
-        if (body == null || body.isEmpty()) {
-            return;
-        }
-        out.addAll(MarkdownInlineParser.parse(body, style, table));
+        out.addAll(inlineSegments(body, style, table));
     }
 
     /** 围栏代码：字面段，不经过行内解析（块内 {@code **}/{@code $}/{@code >} 一律字面）。 */
@@ -195,27 +220,7 @@ public final class MarkdownDocument {
     /** 列表项：标记段 + 首个段落正文同行，其余子块换行起。 */
     private static void emitListItem(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
                                      List<TextSegment> out, int markerLevel) {
-        String marker;
-        if (block.ordered) {
-            marker = block.marker + " "; // 有序：保留源序号原文（"3." / "3)"），与 chat3 现行裁定一致
-        } else {
-            marker = table.getBulletMarker(); // 空串 = 标记完全不输出（含空格）
-            if (!marker.isEmpty()) {
-                marker = marker + " ";
-            }
-        }
-        // F2：嵌套列表每级缩进写成标记段文本里的前导空格，每级 2 个空格——复刻 chat3
-        // 出货口径（ChatMessageList.java:952-956：level 由前导空格数 / 2 得出，每级 append "  "）。
-        // 缩进靠扁平段流表达，不把块模型 / 缩进 px 开进公共面（规划 §二之三 裁 B 不变）。
-        int level = Math.max(0, markerLevel - 1);
-        if (!marker.isEmpty() && level > 0) {
-            StringBuilder indented = new StringBuilder(marker.length() + 2 * level);
-            for (int l = 0; l < level; l++) {
-                indented.append("  ");
-            }
-            indented.append(marker);
-            marker = indented.toString();
-        }
+        String marker = listMarker(block, table, markerLevel);
         if (!marker.isEmpty()) {
             out.add(new TextSegment(marker, style.copy()));
         }
@@ -231,6 +236,45 @@ public final class MarkdownDocument {
             }
             emit(child, style, table, out, markerLevel);
         }
+    }
+
+    /**
+     * 列表标记文本（F2 口径，两路共用防漂移）：无序 = 样式表符号 + 空格；有序 = 源序号原文 + 空格。
+     *
+     * <p>嵌套列表每级缩进写成标记段文本里的前导空格，每级 2 个空格——复刻 chat3
+     * 出货口径（ChatMessageList.java:952-956：level 由前导空格数 / 2 得出，每级 append "  "）。
+     * 缩进靠段流表达，不把块模型 / 缩进 px 开进公共面（规划 §二之三 裁 B 不变；
+     * M7 行接缝同样不给列表开几何通道——引用几何才走行盒，两者互不侵犯）。</p>
+     */
+    private static String listMarker(MarkdownBlock block, MarkdownStyleTable table, int markerLevel) {
+        String marker;
+        if (block.ordered) {
+            marker = block.marker + " "; // 有序：保留源序号原文（"3." / "3)"），与 chat3 现行裁定一致
+        } else {
+            marker = table.getBulletMarker(); // 空串 = 标记完全不输出（含空格）
+            if (!marker.isEmpty()) {
+                marker = marker + " ";
+            }
+        }
+        int level = Math.max(0, markerLevel - 1);
+        if (!marker.isEmpty() && level > 0) {
+            StringBuilder indented = new StringBuilder(marker.length() + 2 * level);
+            for (int l = 0; l < level; l++) {
+                indented.append("  ");
+            }
+            indented.append(marker);
+            marker = indented.toString();
+        }
+        return marker;
+    }
+
+    /** 行内解析（两路共用）：块正文交行内解析器，行内语义照抄既有裁定。 */
+    private static List<TextSegment> inlineSegments(String body, TextStyle style,
+                                                    MarkdownStyleTable table) {
+        if (body == null || body.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return MarkdownInlineParser.parse(body, style, table);
     }
 
     private static void emitThematicBreak(MarkdownStyleTable table, TextStyle style,
@@ -260,6 +304,244 @@ public final class MarkdownDocument {
             style.setFontSizePx(Math.max(1, anchor + delta));
         }
         return style;
+    }
+
+    // ==================== 扁平化（块身份行路，M7） ====================
+
+    /** 块身份路：同层兄弟行走（语义与 walk 逐点对偶——边界断行、F6 空行）。 */
+    private static void walkLayout(List<MarkdownBlock> siblings, TextStyle style,
+                                   MarkdownStyleTable table, LineFlattener f,
+                                   int markerLevel, int quoteLevel) {
+        for (int i = 0; i < siblings.size(); i++) {
+            MarkdownBlock next = siblings.get(i);
+            if (i > 0) {
+                f.breakLine();
+                if (next.blanksBefore > 0) {
+                    f.blankLine();
+                }
+            }
+            emitLayout(next, style, table, f, markerLevel, quoteLevel);
+        }
+    }
+
+    /** 块身份路：按块派发（引用只加层级不占行；标题/段/列表恒 TEXT 身份）。 */
+    private static void emitLayout(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
+                                   LineFlattener f, int markerLevel, int quoteLevel) {
+        switch (block.kind) {
+            case PARAGRAPH:
+                f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel);
+                f.append(inlineSegments(block.joinedLines(), style, table));
+                break;
+            case HEADING:
+                f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel);
+                f.append(inlineSegments(block.text, headingStyle(style, block.level, table), table));
+                break;
+            case CODE:
+                emitCodeLayout(block, style, f, quoteLevel);
+                break;
+            case QUOTE:
+                walkLayout(block.children, quoteStyle(style, table), table, f, markerLevel,
+                        quoteLevel + 1);
+                break;
+            case LIST:
+                walkLayout(block.children, style, table, f, markerLevel + block.baseLevel,
+                        quoteLevel);
+                break;
+            case LIST_ITEM:
+                emitListItemLayout(block, style, table, f, markerLevel, quoteLevel);
+                break;
+            case THEMATIC_BREAK:
+                f.ruleLine(quoteLevel,
+                        table.getThematicBreakText().isEmpty()
+                                ? Collections.<TextSegment>emptyList()
+                                : Collections.singletonList(new TextSegment(
+                                        table.getThematicBreakText(), style.copy())));
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** 围栏代码：每个源行一条 kind=CODE 行（块内空行也带 CODE 身份，底色归组不断裂）。 */
+    private static void emitCodeLayout(MarkdownBlock block, TextStyle style, LineFlattener f,
+                                       int quoteLevel) {
+        List<String> lines = block.lines;
+        if (lines.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            if (i == 0) {
+                f.startBlock(MarkdownLayoutLine.Kind.CODE, quoteLevel);
+            } else {
+                f.continueBlockLine();
+            }
+            // 围栏的每个源行恒成行（空源行也是显示行——与段流路 joinedLines 内嵌 \n 的
+            // splitLogicalLines 口径一致），底色归组靠同 blockId 不断裂
+            f.markStructural();
+            String text = lines.get(i);
+            if (!text.isEmpty()) {
+                f.append(Collections.singletonList(new TextSegment(text, style.copy())));
+            }
+        }
+    }
+
+    /** 列表项：标记 + 首段同行；其余子块断行起（与 emitListItem 逐点对偶，F2 前导空格共用助手）。 */
+    private static void emitListItemLayout(MarkdownBlock block, TextStyle style,
+                                           MarkdownStyleTable table, LineFlattener f,
+                                           int markerLevel, int quoteLevel) {
+        f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel);
+        String marker = listMarker(block, table, markerLevel);
+        if (!marker.isEmpty()) {
+            f.append(Collections.singletonList(new TextSegment(marker, style.copy())));
+        }
+        List<MarkdownBlock> children = block.children;
+        for (int i = 0; i < children.size(); i++) {
+            MarkdownBlock child = children.get(i);
+            boolean sameLine = i == 0 && child.kind == MarkdownBlock.Kind.PARAGRAPH;
+            if (sameLine) {
+                // 首段并入标记行（与段流路 emitListItem 无分隔符紧接同构）
+                f.append(inlineSegments(child.joinedLines(), style, table));
+                continue;
+            }
+            if (child.blanksBefore > 0) {
+                f.blankLine();
+            }
+            emitLayout(child, style, table, f, markerLevel, quoteLevel);
+        }
+    }
+
+    /**
+     * 行收集器：段流事件 → 逻辑行（M7）。块归属 id 每叶子块一个；续行（段内嵌 \n、
+     * 围栏源行、列表项子块断行）继承同值——L2 用「连续同 id」判定块矩形合并。
+     *
+     * <p>行盒几何与装饰色在行封口时从样式表包内登记项解析（G4 度量同源；公共面零膨胀）。</p>
+     */
+    private static final class LineFlattener {
+
+        private final MarkdownStyleTable table;
+        private final List<MarkdownLayoutLine> out = new ArrayList<MarkdownLayoutLine>();
+        private final List<TextSegment> cur = new ArrayList<TextSegment>();
+        private MarkdownLayoutLine.Kind curKind = MarkdownLayoutLine.Kind.TEXT;
+        private int curQuoteLevel;
+        private int curBlockId = MarkdownLayoutLine.NO_BLOCK;
+        private int idGen;
+        private boolean open;
+        private boolean structural;
+
+        LineFlattener(MarkdownStyleTable table) {
+            this.table = table;
+        }
+
+        /** 新叶子块首行：封前行、分配新 blockId。 */
+        void startBlock(MarkdownLayoutLine.Kind kind, int quoteLevel) {
+            close();
+            curKind = kind;
+            curQuoteLevel = quoteLevel;
+            curBlockId = ++idGen;
+            structural = false;
+            open = true;
+        }
+
+        /** 块内续行：继承 kind/quoteLevel/blockId。 */
+        void continueBlockLine() {
+            close();
+            structural = false;
+            open = true;
+        }
+
+        /** 标记本行为结构行（零段也落账——围栏空源行、分隔线行的空文本形态）。 */
+        void markStructural() {
+            structural = true;
+        }
+
+        /** 块边界断行（对应段流路的 \n 分隔段）。 */
+        void breakLine() {
+            close();
+        }
+
+        /** F6 块边界空行（对应段流路的空文本占位段）。 */
+        void blankLine() {
+            close();
+            out.add(MarkdownLayoutLine.blank());
+        }
+
+        /** 分隔线行：恒成行（可见文本由样式表旋钮决定，横线几何由 kind 承载——正交）。 */
+        void ruleLine(int quoteLevel, List<TextSegment> textSegments) {
+            startBlock(MarkdownLayoutLine.Kind.THEMATIC_BREAK, quoteLevel);
+            structural = true;
+            append(textSegments);
+            close();
+        }
+
+        /** 追加段：内嵌 \n 断行，续行继承行身份（可见文本一字不改，只按行分装）。 */
+        void append(List<TextSegment> segments) {
+            for (int i = 0; i < segments.size(); i++) {
+                appendOne(segments.get(i));
+            }
+        }
+
+        private void appendOne(TextSegment segment) {
+            if (segment.isLatex()) {
+                open = true;
+                cur.add(segment);
+                return;
+            }
+            String text = segment.getText();
+            if (text.indexOf('\n') < 0) {
+                if (!text.isEmpty()) {
+                    open = true;
+                    cur.add(segment);
+                }
+                return;
+            }
+            int start = 0;
+            for (int i = 0; i < text.length(); i++) {
+                if (text.charAt(i) == '\n') {
+                    String part = text.substring(start, i);
+                    if (!part.isEmpty()) {
+                        cur.add(new TextSegment(part, segment.getStyle()));
+                    }
+                    structural = false;
+                    close();
+                    open = true; // 内嵌换行的续行同属本块
+                    start = i + 1;
+                }
+            }
+            String tail = text.substring(start);
+            if (!tail.isEmpty()) {
+                open = true;
+                cur.add(new TextSegment(tail, segment.getStyle()));
+            }
+        }
+
+        List<MarkdownLayoutLine> finish() {
+            close();
+            return Collections.unmodifiableList(out);
+        }
+
+        private void close() {
+            if (!open) {
+                return;
+            }
+            if (!cur.isEmpty() || structural) {
+                out.add(buildLine(curKind, curQuoteLevel, curBlockId, cur));
+            }
+            cur.clear();
+            open = false;
+            structural = false;
+        }
+
+        private MarkdownLayoutLine buildLine(MarkdownLayoutLine.Kind kind, int quoteLevel,
+                                             int blockId, List<TextSegment> segments) {
+            int step = quoteLevel > 0 ? table.getQuoteIndentPx() : 0;
+            int barWidth = quoteLevel > 0 ? table.getQuoteBarWidthPx() : 0;
+            int rule = kind == MarkdownLayoutLine.Kind.THEMATIC_BREAK ? table.getRuleThicknessPx() : 0;
+            int accent = quoteLevel > 0 || kind == MarkdownLayoutLine.Kind.THEMATIC_BREAK
+                    ? table.getBlockAccentArgb() : 0;
+            int background = kind == MarkdownLayoutLine.Kind.CODE ? table.getCodeBackgroundColor() : 0;
+            return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
+                    quoteLevel * step, step, barWidth, rule, accent, background);
+        }
     }
 
     private static TextStyle quoteStyle(TextStyle base, MarkdownStyleTable table) {

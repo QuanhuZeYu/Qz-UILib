@@ -91,6 +91,8 @@ public final class ChatMessageList {
     private static final int QUOTE_BAR_RADIUS_PX = 1;
     /** 引用行竖条与文本间距(px,设计稿 §3.5:竖条右 6px)。 */
     private static final int QUOTE_GAP_PX = 6;
+    /** M7 围栏底色左右内衬(px)——背景块比文字宽出的呼吸位；非度量常量（G4 不涉字号/行高）。 */
+    private static final int CODE_BG_SIDE_PAD_PX = 3;
 
     /** 段解析器(文本 → 样式段流;生产 = TextLayoutService.parseSegments,测试注入)。 */
     public interface SegmentParser {
@@ -921,7 +923,7 @@ public final class ChatMessageList {
             // 系统行 = 旧逐行 § 解析 + PRESERVE 链接化 + continuesWord 续链(行为逐旧)。
             List<String> displayLines = message.getDisplayLines();
             List<ChatLineLayouter.LineFragment> displayFragments = message.getDisplayFragments();
-            List<List<TextSegment>> markdownLines = system ? null
+            List<ChatMarkdownPipeline.RenderedLine> markdownLines = system ? null
                     : markdown.layout(message.getDisplayText(), baseTextColor,
                             message.getWrapWidthPx(), fontSize, segmentPostProcessor, segmentFlowWrapper);
             if (markdownLines != null && style.isTtlFade()) {
@@ -931,6 +933,23 @@ public final class ChatMessageList {
                         fontSize, message.getWrapWidthPx());
             }
             int lineCount = system ? displayLines.size() : markdownLines.size();
+            // M7:围栏底色「整段一块」——同 blockId 的 CODE 行统一钉到块内最宽行宽
+            // (仅注入度量时有意义;纯文本形态走 FILL 旧行为,背景横跨气泡可用宽)。
+            Map<Integer, Integer> codeBlockWidthPx = null;
+            if (markdownLines != null && segmentMeasurer != null) {
+                codeBlockWidthPx = new java.util.HashMap<Integer, Integer>();
+                for (int mi = 0; mi < markdownLines.size(); mi++) {
+                    ChatMarkdownPipeline.RenderedLine ml = markdownLines.get(mi);
+                    if (ml.isCode()) {
+                        int w = (int) Math.ceil(segmentsWidth(ml.segments(), segmentMeasurer,
+                                fontSize)) + 2 * CODE_BG_SIDE_PAD_PX;
+                        Integer old = codeBlockWidthPx.get(Integer.valueOf(ml.blockId()));
+                        if (old == null || w > old.intValue()) {
+                            codeBlockWidthPx.put(Integer.valueOf(ml.blockId()), Integer.valueOf(w));
+                        }
+                    }
+                }
+            }
             // 跨显示行 URL 续链(仅系统消息;每条消息独立,长 URL 被字符硬断时才真正开放)
             UrlChain urlChain = new UrlChain();
             for (int lineIndex = 0; lineIndex < lineCount; lineIndex++) {
@@ -939,6 +958,11 @@ public final class ChatMessageList {
                 List<LinkSpan> spans = Collections.<LinkSpan>emptyList();
                 boolean quoteLine;
                 boolean blockMathRow = false;
+                // M7 行身份（气泡路由 RenderedLine 直给；系统路恒零，走旧文本前缀判据）
+                ChatMarkdownPipeline.RenderedLine rendered = null;
+                int quoteLevel = 0;
+                boolean ruleLine = false;
+                boolean codeLine = false;
                 if (system) {
                     String line = displayLines.get(lineIndex);
                     // 本行是否为「词内字符硬断」的续行(片段数与行数不等时按保守 false 处理)
@@ -999,11 +1023,16 @@ public final class ChatMessageList {
                         }
                     }
                 } else {
-                    // 气泡路(M5):段流 = L1→桥→链接化→L2 换行的产物;引用竖条与块公式
-                    // 间距改按段流结构判定(L1 已剥「&gt; 「• 」,原文前缀判据不复存在);
+                    // 气泡路(M7):段流 + 块身份 = L1 行接缝→桥→链接化→L2 换行的产物;
+                    // 引用竖条层级、CODE 底色、RULE 真横线由 RenderedLine 身份直给(M5 的
+                    // 颜色结构判据退居兜底,不再参与气泡判定);
                     // 换行前整条流链接化 → 每行 link 值恒为完整 URL,旧 UrlChain 回填机制不再需要。
-                    segments = markdownLines.get(lineIndex);
-                    quoteLine = ChatMarkdownPipeline.isQuoteRow(segments);
+                    rendered = markdownLines.get(lineIndex);
+                    quoteLevel = rendered.quoteLevel();
+                    quoteLine = quoteLevel > 0;
+                    ruleLine = rendered.isRule();
+                    codeLine = rendered.isCode();
+                    segments = rendered.segments();
                     blockMathRow = ChatMarkdownPipeline.isBlockMathRow(segments);
                     if (segmentMeasurer != null) {
                         spans = linkSpansOf(segments, segmentMeasurer, fontSize);
@@ -1023,6 +1052,20 @@ public final class ChatMessageList {
                         .setSegments(segments)
                         .setTextVerticalAlign(TextVerticalAlign.CENTER)
                         .setPreferredHeight(Math.max(1, lineHeight));
+                if (ruleLine) {
+                    // M7 真横线：字面 dash 文本已由 chatStyleTable 的既有旋钮关掉（chat3 行
+                    // 恒零段），此处用既有 SceneNode 背景条能力画线（1px 逻辑厚 + 上下留气），
+                    // 不新造任何图元。
+                    lineNode = new SceneNode()
+                            .setHitTestable(false)
+                            .setPreferredHeight(Math.max(1, rendered.ruleThicknessPx()))
+                            .setBackgroundColor(rendered.accentArgb())
+                            .setMargin(2, 0, 2, 0);
+                } else if (codeLine) {
+                    // M7 围栏底色：行节点自带背景（既有能力）；同 blockId 相邻行宽度在下方
+                    // 统一为块内最宽行 → 视觉整段一块底。零新图元。
+                    lineNode.setBackgroundColor(rendered.backgroundArgb());
+                }
                         if (blockMathRow) {
                             // 块级公式独占行(C 拍板 §10.1,M5 起由段流结构判定):上下各 4px 间距、
                             // 左对齐(不居中)——旧 mathNode 专用分支的几何语义原样承接
@@ -1036,16 +1079,31 @@ public final class ChatMessageList {
                 if (segmentMeasurer != null) {
                     int lineWidth = Math.max(1,
                             (int) Math.ceil(segmentsWidth(segments, segmentMeasurer, fontSize)));
+                    if (ruleLine && rendered != null) {
+                        // M7 真横线铺到行盒可用宽（无文本段可量，取容器口径）
+                        int roomy = maxBubbleWidthPx > 0
+                                ? maxBubbleWidthPx - 2 * paddingX : message.getWrapWidthPx();
+                        lineWidth = Math.max(1, roomy - quoteLevel
+                                * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX));
+                    } else if (codeLine && codeBlockWidthPx != null) {
+                        Integer blockW = codeBlockWidthPx.get(Integer.valueOf(rendered.blockId()));
+                        if (blockW != null) {
+                            lineWidth = Math.max(lineWidth, blockW.intValue());
+                        }
+                    }
                     // K3 三轮:钳宽仅作用于气泡行(气泡 ≤ 0.85 组内容宽);系统消息无气泡,
                     // 行宽 = 实宽(钳到 269 会把居中的系统行节点收缩到 269,行文本 340 溢出
                     // 节点且居中几何错位——K3 摘要第 4 条)
                     if (maxBubbleWidthPx > 0 && !system) {
                         int reserve = (accent ? ACCENT_BAR_WIDTH_PX : 0)
-                                + (quoteLine ? QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX : 0);
+                                + quoteLevel * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX);
                         lineWidth = Math.min(lineWidth,
                                 Math.max(1, maxBubbleWidthPx - 2 * paddingX - reserve));
                     }
                     lineNode.setPreferredWidth(lineWidth);
+                    if (codeLine) {
+                        lineNode.setPadding(0, CODE_BG_SIDE_PAD_PX, 0, CODE_BG_SIDE_PAD_PX);
+                    }
                 }
                 // T8 设计稿 §5.4(验收 22):HUD 形态行节点携带 maxLines=8 + 省略号语义;
                 // 实际行数截断:气泡路在 ChatMarkdownPipeline.clampHudLines(L2 视觉行 8 行 +
@@ -1056,24 +1114,29 @@ public final class ChatMessageList {
                             .setEllipsis(true);
                 }
                 if (quoteLine) {
-                    // 引用行结构 = row[竖条(宽2、bar-quote 色、fillParentHeight、圆角1、不可命中)
-                    // + gap 6 + 文本节点];相邻行各自 18px 竖条行高无缝衔接即视觉连续
-                    // (同一消息内行间无 gap;跨消息 2px 组内间距处竖条留 2px 缺口,属可接受)。
-                    SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
-                            .setHitTestable(false)
-                            // K3 缺陷 2:引用行同样收缩(竖条 2 + gap 6 + 文本),否则引用行
-                            // FILL 全宽会把 messageNode 顶回全宽、气泡无法按内容收缩
-                            .setWidthSizing(SceneNode.WidthSizing.SHRINK);
-                    SceneNode quoteBar = new SceneNode()
-                            .setHitTestable(false)
-                            .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
-                            .setFillParentHeight(true)
-                            .setBackgroundColor(ChatMarkdownSettings.getQuoteBarArgb())
-                            .setCornerRadius(QUOTE_BAR_RADIUS_PX);
-                    quoteRow.appendChild(quoteBar);
-                    quoteRow.appendChild(lineNode);
-                    contentNode.appendChild(quoteRow);
-                    quoteBars.add(quoteBar);
+                    // M7 引用嵌套几何:每层 = row[竖条(宽2、bar-quote 色、fillParentHeight、
+                    // 圆角1、不可命中) + gap 6 + 内层];quoteLevel 层嵌套 ⇒ 一层/二层/三层
+                    // 水平缩进 8/16/24px + 各自竖条,肉眼可分。level=1 结构与旧版逐位相同
+                    // (单层 row[竖条, 文本],既有测试钉死)。相邻行同层竖条行高无缝衔接即视觉连续。
+                    SceneNode current = lineNode;
+                    for (int level = quoteLevel; level >= 1; level--) {
+                        SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
+                                .setHitTestable(false)
+                                // K3 缺陷 2:引用行同样收缩(每层竖条 2 + gap 6 + 内容),否则引用行
+                                // FILL 全宽会把 messageNode 顶回全宽、气泡无法按内容收缩
+                                .setWidthSizing(SceneNode.WidthSizing.SHRINK);
+                        SceneNode quoteBar = new SceneNode()
+                                .setHitTestable(false)
+                                .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
+                                .setFillParentHeight(true)
+                                .setBackgroundColor(ChatMarkdownSettings.getQuoteBarArgb())
+                                .setCornerRadius(QUOTE_BAR_RADIUS_PX);
+                        quoteRow.appendChild(quoteBar);
+                        quoteRow.appendChild(current);
+                        quoteBars.add(quoteBar);
+                        current = quoteRow;
+                    }
+                    contentNode.appendChild(current);
                 } else {
                     contentNode.appendChild(lineNode);
                 }

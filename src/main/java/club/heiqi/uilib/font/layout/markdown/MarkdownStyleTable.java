@@ -57,6 +57,20 @@ public final class MarkdownStyleTable {
     /** 包内登记：行内 code 段字号/衬底色（M4-fix F1）；本期不外开公共旋钮（加方法是兼容变更）。 */
     private int codeFontSizePx = DEFAULT_CODE_FONT_SIZE_PX;
     private int codeBackgroundColor = DEFAULT_CODE_BACKGROUND_ARGB;
+    /**
+     * 包内登记：块级几何旋钮（M7 方案乙，2026-09-05）——引用步长/竖条宽、分隔线厚与装饰色。
+     *
+     * <p>数值只经 {@code MarkdownDocument.toLayoutLines} 解析进 {@link MarkdownLayoutLine}
+     * 的几何字段送达 L2；{@code MarkdownStyleTable} 的<b>公共</b>方法面不因此膨胀
+     * （裁定 B 重开注记，规划 §二之三）。默认值取 chat3 出货口径：每层缩进 8 = 竖条 2 + 间隙 6
+     * （{@code ChatMessageList} QUOTE_BAR_WIDTH_PX/QUOTE_GAP_PX），竖条色 0x40FFFFFF
+     * （{@code ChatMarkdownSettings.getQuoteBarArgb}），分隔线厚 1px（规划 §二之三 M7：
+     * 真横线 = 一条 1px 高的 BACKGROUND）。</p>
+     */
+    private int quoteIndentPx = 8;
+    private int quoteBarWidthPx = 2;
+    private int ruleThicknessPx = 1;
+    private int blockAccentArgb = 0x40FFFFFF;
 
     /**
      * 创建默认表（行为规格即此组默认值，块级 javadoc 与测试矩阵按它钉死）。
@@ -94,6 +108,10 @@ public final class MarkdownStyleTable {
         out.quoteTextColor = quoteTextColor;
         out.codeFontSizePx = codeFontSizePx;
         out.codeBackgroundColor = codeBackgroundColor;
+        out.quoteIndentPx = quoteIndentPx;
+        out.quoteBarWidthPx = quoteBarWidthPx;
+        out.ruleThicknessPx = ruleThicknessPx;
+        out.blockAccentArgb = blockAccentArgb;
         return out;
     }
 
@@ -219,5 +237,25 @@ public final class MarkdownStyleTable {
     /** 行内 code 段衬底色（包内登记，非公共面）；{@code 0} = 无衬底。 */
     int getCodeBackgroundColor() {
         return codeBackgroundColor;
+    }
+
+    /** 每层引用水平步长（包内登记，非公共面；M7）：默认 8 = 竖条 2 + 间隙 6。 */
+    int getQuoteIndentPx() {
+        return quoteIndentPx;
+    }
+
+    /** 引用竖条宽（包内登记，非公共面；M7）：默认 2，与 chat3 QUOTE_BAR_WIDTH_PX 同值。 */
+    int getQuoteBarWidthPx() {
+        return quoteBarWidthPx;
+    }
+
+    /** 分隔线厚度（包内登记，非公共面；M7）：默认 1px（真横线 = 1px 高 BACKGROUND）。 */
+    int getRuleThicknessPx() {
+        return ruleThicknessPx;
+    }
+
+    /** 块级装饰色（包内登记，非公共面；M7）：引用竖条与分隔线共用，默认 0x40FFFFFF。 */
+    int getBlockAccentArgb() {
+        return blockAccentArgb;
     }
 }

@@ -24,6 +24,7 @@ import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.layout.markdown.MarkdownDocument;
+import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
 import club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable;
 import club.heiqi.uilib.font.render.GlyphBatchCollector;
 import club.heiqi.uilib.ui.markdown.MarkdownPainter;
@@ -122,21 +123,24 @@ public class MarkdownSoftwareRenderTest {
         MarkdownStyleTable styles = demoStyles();
 
         // 先一次性装配全部样本（含 label 文本）码点；再换行——装配会发布 ink 度量，
-        // 换行必须用装配后的同源度量（否则行宽判据与渲染口径错位）
+        // 换行必须用装配后的同源度量（否则行宽判据与渲染口径错位）。
+        // M7 方案乙：出图路切块身份行接缝（toLayoutLines → wrapLayoutLines → 命令流渲染），
+        // 引用嵌套竖条/真横线/围栏底色随 PaintCommand 进入 headless 图——「图即产物」。
         List<TextSegment> allSegments = new ArrayList<TextSegment>();
-        List<List<TextSegment>> segmentsPerCase = new ArrayList<List<TextSegment>>();
+        List<List<MarkdownLayoutLine>> logicalPerCase = new ArrayList<List<MarkdownLayoutLine>>();
         for (int i = 0; i < CASES.length; i++) {
-            List<TextSegment> segments = MarkdownDocument.parse(CASES[i][2])
-                    .toSegments(styles, bodyStyle());
-            allSegments.addAll(segments);
+            MarkdownDocument doc = MarkdownDocument.parse(CASES[i][2]);
+            allSegments.addAll(doc.toSegments(styles, bodyStyle()));
+            List<MarkdownLayoutLine> logical = doc.toLayoutLines(styles, bodyStyle());
+            allSegments.addAll(flattenForAssembly(logical));
             allSegments.addAll(labelSegments(i));
-            segmentsPerCase.add(segments);
+            logicalPerCase.add(logical);
         }
         LatexSoftwareRenderKit.assembleGlyphs(shared, allSegments);
         GlyphRuntimeTablesView view = GlyphRuntimeTablesView.snapshot(shared.tables, shared.manager, 1);
-        List<List<List<TextSegment>>> caseLines = new ArrayList<List<List<TextSegment>>>();
-        for (int i = 0; i < segmentsPerCase.size(); i++) {
-            caseLines.add(MarkdownPainter.wrapLines(segmentsPerCase.get(i), service,
+        List<List<MarkdownLayoutLine>> caseLines = new ArrayList<List<MarkdownLayoutLine>>();
+        for (int i = 0; i < logicalPerCase.size(); i++) {
+            caseLines.add(MarkdownPainter.wrapLayoutLines(logicalPerCase.get(i), service,
                     CONTENT_WIDTH_PX, BASE));
         }
 
@@ -174,7 +178,7 @@ public class MarkdownSoftwareRenderTest {
     /** 单样本页：label 在左栏顶、样本内容在右栏，逐行落 collector。 */
     private void renderCasePage(LatexSoftwareRenderKit.Shared shared, GlyphRuntimeTablesView view,
             TextLayoutService service, int caseIndex,
-            List<List<TextSegment>> lines, File out, int scale) throws Exception {
+            List<MarkdownLayoutLine> lines, File out, int scale) throws Exception {
         GlyphBatchCollector collector = new GlyphBatchCollector();
         int pageWidth = (LABEL_GUTTER_PX + CONTENT_WIDTH_PX) * scale + 2 * PAD_PX;
         int contentX = PAD_PX + LABEL_GUTTER_PX * scale;
@@ -193,7 +197,7 @@ public class MarkdownSoftwareRenderTest {
 
     /** 整页合成图：8 样本纵向拼接，每条左侧 label 文本。 */
     private void renderComposite(LatexSoftwareRenderKit.Shared shared, GlyphRuntimeTablesView view,
-            TextLayoutService service, List<List<List<TextSegment>>> caseLines, File out,
+            TextLayoutService service, List<List<MarkdownLayoutLine>> caseLines, File out,
             int scale) throws Exception {
         // 预估高度：先量后画（软件帧要求固定画布）
         int pageWidth = (LABEL_GUTTER_PX + CONTENT_WIDTH_PX) * scale + 2 * PAD_PX;
@@ -226,23 +230,41 @@ public class MarkdownSoftwareRenderTest {
         }
     }
 
-    /** 画一个样本块的全部视觉行；返回 [下一可用 y]。 */
+    /**
+     * 画一个样本块：M7 起经 L2 块身份命令流渲染——BACKGROUND → 无纹理实心 quad
+     * （markBackground 批，先于字形绘制即在字下），SEGMENTS → 既有段流收集器；
+     * LINK_REGION 纯数据不入图。@1x 无几何行输出与旧逐位一致（同一 y 游标口径）。
+     */
     private int[] renderBlock(LatexSoftwareRenderKit.Shared shared, GlyphRuntimeTablesView view,
-            TextLayoutService service, GlyphBatchCollector collector, List<List<TextSegment>> lines,
-            int x, int top, int scale) {
+            TextLayoutService service, GlyphBatchCollector collector,
+            List<MarkdownLayoutLine> lines, int x, int top, int scale) {
         DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
-        int y = top;
-        for (int i = 0; i < lines.size(); i++) {
-            // scale==1 时 scaleSegments 恒等返回原列表、BASE*1==BASE —— @1x 输出与旧逐位一致
-            List<TextSegment> line = MarkdownRenderScaleKit.scaleSegments(lines.get(i), scale);
-            int height = MarkdownPainter.lineHeightPx(line, service, BASE * scale);
-            if (!line.isEmpty()) {
-                adapter.renderSegmentsToCollector(line, shared.settings, service, view,
-                        (float) x, (float) y, false, 1.0F, (float) (BASE * scale), collector);
+        // 命令流整体按 scale 口径生成一次（@1x 与旧 wrap 完全同源；@Nx 视觉副本内部自洽：
+        // 底色/竖条/横线与文本共用同一 y 游标，绝不出现「背景盖错位」）
+        List<PaintCommand> commands = MarkdownPainter.toLayoutPaintCommands(
+                lines, service, CONTENT_WIDTH_PX * scale, BASE * scale);
+        for (int c = 0; c < commands.size(); c++) {
+            PaintCommand command = commands.get(c);
+            int cx = x + command.getLeft();
+            int cy = top + command.getTop();
+            if (command.getType() == PaintCommandType.BACKGROUND) {
+                collector.collectMarkBackground(cx, cy,
+                        command.getRight() - command.getLeft(),
+                        command.getBottom() - command.getTop(), command.getColor());
+            } else if (command.getType() == PaintCommandType.SEGMENTS) {
+                adapter.renderSegmentsToCollector(
+                        MarkdownRenderScaleKit.scaleSegments(command.getSegments(), scale),
+                        shared.settings, service, view,
+                        (float) cx, (float) cy, false, 1.0F, (float) (BASE * scale), collector);
             }
-            y += height;
         }
-        return new int[] {y};
+        int bottom = top;
+        for (int i = 0; i < lines.size(); i++) {
+            bottom += MarkdownPainter.lineHeightPx(
+                    MarkdownRenderScaleKit.scaleSegments(lines.get(i).getSegments(), scale),
+                    service, BASE * scale);
+        }
+        return new int[] {bottom};
     }
 
     private void renderSegments(LatexSoftwareRenderKit.Shared shared, GlyphRuntimeTablesView view,
@@ -275,22 +297,24 @@ public class MarkdownSoftwareRenderTest {
     }
 
     /** 机器判地板 + profiles 记录。 */
-    private void enforceFloors(int caseIndex, List<List<TextSegment>> lines, TextLayoutService service,
+    private void enforceFloors(int caseIndex, List<MarkdownLayoutLine> lines,
+            TextLayoutService service,
             GlyphBatchCollector collector, File out, int width, int height) throws Exception {
         Assert.assertTrue("PNG 应已写出且非平凡: " + out, out.isFile() && out.length() > 1000);
         int previousTop = -1;
         int maxLineWidth = 0;
         int nonEmptyLines = 0;
         for (int i = 0; i < lines.size(); i++) {
-            List<TextSegment> line = lines.get(i);
-            int lineWidth = MarkdownPainter.lineWidthPx(line, service, BASE);
-            Assert.assertTrue("行宽不得超容器: case=" + CASES[caseIndex][0] + " line#" + i
+            List<TextSegment> line = lines.get(i).getSegments();
+            int lineWidth = MarkdownPainter.lineWidthPx(line, service, BASE)
+                    + lines.get(i).getLeftInsetPx();
+            Assert.assertTrue("行宽+左偏移不得超容器: case=" + CASES[caseIndex][0] + " line#" + i
                     + " 实测=" + String.valueOf(lineWidth) + " 容器=" + String.valueOf(CONTENT_WIDTH_PX)
                     + " 文本=<" + textOf(line) + "> 段数=" + String.valueOf(line.size()),
                     lineWidth <= CONTENT_WIDTH_PX);
             maxLineWidth = Math.max(maxLineWidth, lineWidth);
             int top = previousTop < 0 ? -1 : previousTop
-                    + MarkdownPainter.lineHeightPx(lines.get(i - 1), service, BASE);
+                    + MarkdownPainter.lineHeightPx(lines.get(i - 1).getSegments(), service, BASE);
             if (i > 0) {
                 Assert.assertTrue("基线（行框顶 y）必须严格单调递增: case=" + CASES[caseIndex][0]
                         + " line#" + i, top > previousTop);
@@ -640,6 +664,86 @@ public class MarkdownSoftwareRenderTest {
                 MarkdownPainter.measureHeight(gap, service, 4000, BASE) >= blankHeight * 3);
     }
 
+    /**
+     * M7 几何入图地板（事故档 ERROR-20260905 第八节：出图断言必须含「能区分是哪个字/哪个位置」
+     * 的判据，墨量与文件数不合格）：嵌套引用页必须真的在竖条列落墨——第一层竖条 x 处像素 ≠
+     * 页底色，而 gap 列同 y 像素 = 页底色（偏移探针，证几何不是只活在命令流里）；并配 heading
+     * 页同位点正对照（无引用 ⇒ 该列无墨）。命令计数交叉钉 mark-quad 批：nested-quote ≥ 6 条
+     * BACKGROUND（1+2+3 竖条），thematic-break/code-fence 各 ≥ 1，heading = 0（反 ∅ 双向）。
+     */
+    @Test
+    public void blockGeometryReachesRasterPages() throws Exception {
+        LatexSoftwareRenderKit.Shared shared = LatexSoftwareRenderKit.shared();
+        TextLayoutService service = shared.service;
+        MarkdownStyleTable styles = demoStyles();
+        java.util.Map<Integer, Integer> bgCommands = new java.util.HashMap<Integer, Integer>();
+        List<List<MarkdownLayoutLine>> built = new ArrayList<List<MarkdownLayoutLine>>();
+        List<TextSegment> all = new ArrayList<TextSegment>();
+        for (int i = 0; i < CASES.length; i++) {
+            MarkdownDocument doc = MarkdownDocument.parse(CASES[i][2]);
+            all.addAll(doc.toSegments(styles, bodyStyle()));
+            built.add(doc.toLayoutLines(styles, bodyStyle()));
+        }
+        all.addAll(labelSegments(0));
+        LatexSoftwareRenderKit.assembleGlyphs(shared, all);
+        for (int i = 0; i < built.size(); i++) {
+            List<PaintCommand> commands = MarkdownPainter.toLayoutPaintCommands(
+                    MarkdownPainter.wrapLayoutLines(built.get(i), service, CONTENT_WIDTH_PX, BASE),
+                    service, CONTENT_WIDTH_PX, BASE);
+            int bg = 0;
+            for (PaintCommand command : commands) {
+                if (command.getType() == PaintCommandType.BACKGROUND) {
+                    bg++;
+                }
+            }
+            bgCommands.put(Integer.valueOf(i), Integer.valueOf(bg));
+        }
+        // 用例索引：0=heading 1=code-fence 2=nested-quote 7=thematic-break（CASES 表序）
+        Assert.assertEquals("heading 页零 BACKGROUND（正向对照/防误计）", Integer.valueOf(0),
+                bgCommands.get(Integer.valueOf(0)));
+        Assert.assertTrue("nested-quote BACKGROUND >= 6（1+2+3 竖条）: " + bgCommands.get(Integer.valueOf(2)),
+                bgCommands.get(Integer.valueOf(2)).intValue() >= 6);
+        Assert.assertTrue("code-fence 底色 >= 1: " + bgCommands.get(Integer.valueOf(1)),
+                bgCommands.get(Integer.valueOf(1)).intValue() >= 1);
+        Assert.assertTrue("thematic-break 横线 >= 1: " + bgCommands.get(Integer.valueOf(7)),
+                bgCommands.get(Integer.valueOf(7)).intValue() >= 1);
+
+        // 像素探针：真出两页，验证竖条列在光栅图上有墨、gap 列没有
+        GlyphRuntimeTablesView view = GlyphRuntimeTablesView.snapshot(shared.tables, shared.manager, 1);
+        // 像素探针只在嵌套引用页跑（bar 列有墨 / gap 列无墨）；heading 反向对照用
+        // markBackground 批 quad 计数——像素列会被无缩进字形撞色，计数批无此干扰且同样可失败。
+        GlyphBatchCollector quoteCollector = new GlyphBatchCollector();
+        List<MarkdownLayoutLine> quoteLines = MarkdownPainter.wrapLayoutLines(
+                built.get(2), service, CONTENT_WIDTH_PX, BASE);
+        renderBlock(shared, view, service, quoteCollector, quoteLines,
+                PAD_PX + LABEL_GUTTER_PX, PAD_PX, 1);
+        int[] pixels = FontSoftwareRasterizer.render(buildFrame(quoteCollector,
+                (LABEL_GUTTER_PX + CONTENT_WIDTH_PX) + 2 * PAD_PX, PAD_PX + 200), shared.gl);
+        int pageW = (LABEL_GUTTER_PX + CONTENT_WIDTH_PX) + 2 * PAD_PX;
+        int contentX = PAD_PX + LABEL_GUTTER_PX;
+        int barPixel = pixels[(PAD_PX + 4) * pageW + contentX + 1];
+        int gapPixel = pixels[(PAD_PX + 4) * pageW + contentX + 4];
+        Assert.assertTrue("嵌套引用页竖条列必须有非底色墨（bar blend 白）: argb="
+                + Integer.toHexString(barPixel), (barPixel & 0xFFFFFF) != (BACKGROUND & 0xFFFFFF));
+        Assert.assertEquals("gap 列同 y 应仍是页底色（证明墨只落在竖条 x 槽）",
+                BACKGROUND | 0xFF000000, gapPixel);
+        Assert.assertTrue("嵌套引用页 mark 批 quad 地板 >= 6: "
+                        + quoteCollector.getMarkBackgroundBatch().getQuadCount(),
+                quoteCollector.getMarkBackgroundBatch().getQuadCount() >= 6);
+        GlyphBatchCollector headingCollector = new GlyphBatchCollector();
+        List<MarkdownLayoutLine> headingLines = MarkdownPainter.wrapLayoutLines(
+                built.get(0), service, CONTENT_WIDTH_PX, BASE);
+        renderBlock(shared, view, service, headingCollector, headingLines,
+                PAD_PX + LABEL_GUTTER_PX, PAD_PX, 1);
+        Assert.assertEquals("heading 页 mark 批零 quad（反向对照，计数器不是恒真）", 0,
+                headingCollector.getMarkBackgroundBatch().getQuadCount());
+        profileLine("geometryProbe nestedQuoteBars=" + bgCommands.get(Integer.valueOf(2))
+                + " codeBg=" + bgCommands.get(Integer.valueOf(1))
+                + " rule=" + bgCommands.get(Integer.valueOf(7))
+                + " headingControl=" + bgCommands.get(Integer.valueOf(0))
+                + " 像素探针(bar列有墨/gap列无墨/heading列无墨)=PASS");
+    }
+
     /** 标题阶梯：样式表登记的字号增量必须体现在行高单调上（人眼看图的真假判据先机器化一层）。 */
     @Test
     public void headingSizeLadderReachesLineGeometry() {
@@ -658,6 +762,15 @@ public class MarkdownSoftwareRenderTest {
     }
 
     // ==================== 共用装配 ====================
+
+    /** 行接缝段流展平（仅供字形装配喂码点；与 toSegments 路同字集）。 */
+    private static List<TextSegment> flattenForAssembly(List<MarkdownLayoutLine> lines) {
+        List<TextSegment> out = new ArrayList<TextSegment>();
+        for (int i = 0; i < lines.size(); i++) {
+            out.addAll(lines.get(i).getSegments());
+        }
+        return out;
+    }
 
     private static List<TextSegment> labelSegments(int caseIndex) {
         TextStyle label = new TextStyle();
@@ -682,6 +795,8 @@ public class MarkdownSoftwareRenderTest {
     private static MarkdownStyleTable demoStyles() {
         MarkdownStyleTable styles = MarkdownStyleTable.defaults();
         styles.setDefaultFontSizePx(BASE);
+        // M7 方案乙：真横线取代字面 dash 文本（既有旋钮，用户指定用法）
+        styles.setThematicBreakText("");
         styles.setHeadingFontSizeDeltaPx(1, 10);
         styles.setHeadingFontSizeDeltaPx(2, 7);
         styles.setHeadingFontSizeDeltaPx(3, 4);
@@ -718,11 +833,13 @@ public class MarkdownSoftwareRenderTest {
         PROFILE.append(line).append(System.lineSeparator());
     }
 
-    private static int blockHeight(List<List<TextSegment>> lines, TextLayoutService service, int scale) {
+    private static int blockHeight(List<MarkdownLayoutLine> lines, TextLayoutService service,
+            int scale) {
         int total = 0;
         for (int i = 0; i < lines.size(); i++) {
             total += MarkdownPainter.lineHeightPx(
-                    MarkdownRenderScaleKit.scaleSegments(lines.get(i), scale), service, BASE * scale);
+                    MarkdownRenderScaleKit.scaleSegments(lines.get(i).getSegments(), scale),
+                    service, BASE * scale);
         }
         return total;
     }

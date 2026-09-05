@@ -7,7 +7,9 @@ import java.util.List;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
+import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 
 /**
  * 段流视觉行布局器（包内实现，非公共面；对外只有 {@link MarkdownPainter} 门面）。
@@ -101,6 +103,144 @@ final class MarkdownLineLayout {
             total += lineHeightPx(lines.get(i), measurer, baseFontSizePx);
         }
         return total;
+    }
+
+    // ==================== 块身份行路（M7 方案乙） ====================
+
+    /**
+     * 块身份行换行：逻辑行 → 视觉行（身份字段透传，折行宽度扣除该行左偏移）。
+     *
+     * <p>复用既有 token 引擎（splitLogicalLines/wrapVisualLine/materialize 一字不动），
+     * 每行仅把可用宽改为 {@code maxWidthPx - leftInsetPx}——引用续行、块内折断天然继承
+     * 行身份。可见文本与段流路逐字等值（L1 {@code MarkdownLayoutLinesTest} 钉死），
+     * 折行差异<b>只</b>应出现在带左偏移的引用行（用户裁定的有意差异，规划 §二之三 M7 注记）。</p>
+     */
+    static List<MarkdownLayoutLine> layoutLines(List<MarkdownLayoutLine> logicalLines,
+            TextLayoutService measurer, int maxWidthPx, int baseFontSizePx) {
+        requireMeasurer(measurer);
+        List<MarkdownLayoutLine> out = new ArrayList<MarkdownLayoutLine>();
+        if (logicalLines == null || logicalLines.isEmpty()) {
+            out.add(MarkdownLayoutLine.blank());
+            return Collections.unmodifiableList(out);
+        }
+        for (int i = 0; i < logicalLines.size(); i++) {
+            MarkdownLayoutLine line = logicalLines.get(i);
+            List<TextSegment> segments = line.getSegments();
+            if (segments.isEmpty()) {
+                out.add(line); // 空行/无线文本的分隔线行：一行即一显示行
+                continue;
+            }
+            List<List<Token>> tokenLines = splitLogicalLines(
+                    unifySwitchPointSpaces(segments), measurer, baseFontSizePx);
+            int availablePx = maxWidthPx <= 0
+                    ? 0 : Math.max(1, maxWidthPx - line.getLeftInsetPx());
+            List<List<TextSegment>> visual = new ArrayList<List<TextSegment>>();
+            for (int t = 0; t < tokenLines.size(); t++) {
+                wrapVisualLine(tokenLines.get(t), availablePx, visual, baseFontSizePx);
+            }
+            for (int v = 0; v < visual.size(); v++) {
+                out.add(copyWithSegments(line, visual.get(v)));
+            }
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    /**
+     * 块身份命令流：视觉行 → BACKGROUND（引用竖条/真横线/围栏底色）+ SEGMENTS + LINK_REGION。
+     *
+     * <p>三类几何全部落在既有 {@link PaintCommandType} 图元上（用户裁定：真横线 = 一条
+     * 1px 高的 BACKGROUND，引用竖条、围栏底色同理）——零新增图元。底色/竖条/横线命令先于
+     * 文本发出（软件回放按列表顺序绘制，几何在字下）。围栏块按连续同 blockId 合并为覆盖
+     * 全部显示行的单矩形；引用竖条逐层逐行成段（行间 y 相邻 → 视觉连续）。</p>
+     */
+    static List<PaintCommand> blockCommands(List<MarkdownLayoutLine> visualLines,
+            TextLayoutService measurer, int maxWidthPx, int baseFontSizePx) {
+        requireMeasurer(measurer);
+        List<PaintCommand> out = new ArrayList<PaintCommand>();
+        if (visualLines == null || visualLines.isEmpty()) {
+            return Collections.unmodifiableList(out);
+        }
+        int n = visualLines.size();
+        int[] tops = new int[n];
+        int[] heights = new int[n];
+        int cursor = 0;
+        double maxContentRight = 0.0D;
+        for (int i = 0; i < n; i++) {
+            MarkdownLayoutLine line = visualLines.get(i);
+            heights[i] = lineHeightPx(line.getSegments(), measurer, baseFontSizePx);
+            tops[i] = cursor;
+            cursor += heights[i];
+            double right = line.getLeftInsetPx()
+                    + lineAdvance(line.getSegments(), measurer, baseFontSizePx);
+            if (right > maxContentRight) {
+                maxContentRight = right;
+            }
+        }
+        int contentRight = maxWidthPx > 0
+                ? maxWidthPx : Math.max(1, (int) Math.ceil(maxContentRight));
+
+        // 1) 围栏底色：连续同 blockId 的 CODE 视觉行合并为单矩形
+        int i = 0;
+        while (i < n) {
+            MarkdownLayoutLine line = visualLines.get(i);
+            if (line.getKind() == MarkdownLayoutLine.Kind.CODE && line.getBackgroundArgb() != 0) {
+                int j = i;
+                while (j + 1 < n && visualLines.get(j + 1).getKind() == MarkdownLayoutLine.Kind.CODE
+                        && visualLines.get(j + 1).getBlockId() == line.getBlockId()) {
+                    j++;
+                }
+                out.add(PaintCommand.background(line.getLeftInsetPx(), tops[i],
+                        Math.max(contentRight, line.getLeftInsetPx() + 1),
+                        tops[j] + heights[j], line.getBackgroundArgb()));
+                i = j + 1;
+                continue;
+            }
+            i++;
+        }
+        // 2) 引用竖条 + 分隔线真横线
+        for (int k = 0; k < n; k++) {
+            MarkdownLayoutLine line = visualLines.get(k);
+            int level = line.getQuoteLevel();
+            if (level > 0 && line.getAccentArgb() != 0) {
+                int step = line.getIndentStepPx();
+                int barWidth = line.getBarWidthPx();
+                for (int l = 0; l < level; l++) {
+                    int left = l * step;
+                    out.add(PaintCommand.background(left, tops[k],
+                            Math.max(left + 1, left + barWidth), tops[k] + heights[k],
+                            line.getAccentArgb()));
+                }
+            }
+            if (line.getKind() == MarkdownLayoutLine.Kind.THEMATIC_BREAK
+                    && line.getAccentArgb() != 0) {
+                int thickness = Math.max(1, line.getRuleThicknessPx());
+                int left = line.getLeftInsetPx();
+                int top = tops[k] + Math.max(0, (heights[k] - thickness) / 2);
+                out.add(PaintCommand.background(left, top,
+                        Math.max(left + 1, contentRight), top + thickness, line.getAccentArgb()));
+            }
+        }
+        // 3) 文本 + 命中区（左缘整体平移 leftInsetPx）
+        for (int t = 0; t < n; t++) {
+            MarkdownLayoutLine line = visualLines.get(t);
+            List<TextSegment> segments = line.getSegments();
+            if (segments.isEmpty()) {
+                continue;
+            }
+            int left = line.getLeftInsetPx();
+            out.add(PaintCommand.segments(segments, left, tops[t], Math.max(1, baseFontSizePx)));
+            appendLinkRegions(out, segments, measurer, baseFontSizePx, tops[t], heights[t], left);
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    /** 视觉行复制：身份与几何字段原样继承，仅换段流（materialize 产物）。 */
+    private static MarkdownLayoutLine copyWithSegments(MarkdownLayoutLine source,
+            List<TextSegment> segments) {
+        return new MarkdownLayoutLine(source.getKind(), source.getQuoteLevel(),
+                source.getBlockId(), segments, source.getLeftInsetPx(), source.getIndentStepPx(),
+                source.getBarWidthPx(), source.getRuleThicknessPx(), source.getAccentArgb(),
+                source.getBackgroundArgb());
     }
 
     // ==================== 换行 ====================
@@ -445,7 +585,13 @@ final class MarkdownLineLayout {
     /** 链接命中区：带 link 样式的段按实测推进宽累计出矩形（LINK_REGION 纯数据命令）。 */
     private static void appendLinkRegions(List<PaintCommand> out, List<TextSegment> line,
             TextLayoutService measurer, int baseFontSizePx, int top, int height) {
-        double x = 0.0D;
+        appendLinkRegions(out, line, measurer, baseFontSizePx, top, height, 0);
+    }
+
+    /** 带左偏移的命中区累计（M7 块身份路：SEGMENTS 平移多少，命中区平移多少）。 */
+    private static void appendLinkRegions(List<PaintCommand> out, List<TextSegment> line,
+            TextLayoutService measurer, int baseFontSizePx, int top, int height, int leftOffset) {
+        double x = (double) leftOffset;
         for (int i = 0; i < line.size(); i++) {
             TextSegment segment = line.get(i);
             double width = segmentAdvance(segment, measurer, baseFontSizePx);

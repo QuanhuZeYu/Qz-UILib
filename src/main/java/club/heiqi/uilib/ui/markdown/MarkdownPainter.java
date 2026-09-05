@@ -4,16 +4,23 @@ import java.util.List;
 
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
+import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 
 /**
  * markdown L2 绘制层门面（规划《通用Markdown渲染器》§二 L2 / §五 D1）。
  *
- * <p><b>唯一接缝 = {@code List<TextSegment>}</b>（裁定 B，规划 §二之三）：输入是
- * {@code MarkdownDocument.toSegments(...)} 的扁平段流，本层<b>不</b>反查块模型；标题/引用/
- * 列表的可见差异全部由段样式位（字号增量、粗斜、下划线、链接、行内 code 位）与段文本
- * （列表符号与其前导缩进空格）承载。块级几何若被证明需要 px 通道，走独立「块模型进公共面」
- * 裁定，不由本层私开后门。</p>
+ * <p><b>两条接缝并存（M7 方案乙，2026-09-05 用户裁定重开裁定 B 的块几何部分）</b>：
+ * <ul>
+ *   <li><b>段流路（恒保留）</b>：{@code List<TextSegment>} 扁平接缝（{@link #wrapLines} /
+ *       {@link #toPaintCommands}）——行为逐位不变，对拍门禁 {@code MarkdownChat3ParityTest}
+ *       的 B 路定义与本层历史消费者继续走这条;</li>
+ *   <li><b>块身份行路（M7 新增）</b>：{@code List<MarkdownLayoutLine>}（{@link #wrapLayoutLines} /
+ *       {@link #toLayoutPaintCommands}）——行粒度块身份 + 行盒几何进接缝，本层据此产
+ *       BACKGROUND 块级几何（引用每层竖条、真横线、围栏块底色）。<b>块模型本身仍不外泄</b>
+ *       （{@code MarkdownBlock}/{@code MarkdownBlockParser} 恒 package-private）；可见文本
+ *       与段流路逐字等值，几何一律经位置与图元表达。</li>
+ * </ul></p>
  *
  * <p><b>本层认得的两种段流编码</b>（M4-fix 落地，仍是零公共面变更——两者都只用既有的
  * {@code text}/{@code style} 通道）：
@@ -125,5 +132,49 @@ public final class MarkdownPainter {
     public static int measureHeight(List<TextSegment> segments, TextLayoutService measurer,
             int maxWidthPx, int baseFontSizePx) {
         return MarkdownLineLayout.measureHeight(segments, measurer, maxWidthPx, baseFontSizePx);
+    }
+
+    /**
+     * 块身份行换行（M7）：L1 {@code MarkdownDocument.toLayoutLines} 的逻辑行 → 视觉行。
+     *
+     * <p>切分语义与 {@link #wrapLines} 完全同源（同一 token 引擎），唯一差异：每行的折行
+     * 宽度<b>扣除该行左偏移</b>（{@code maxWidthPx - line.getLeftInsetPx()}）——引用文字
+     * 因此不溢出容器；引用的断点与 chat3 旧行为不同属用户裁定的有意差异（规划 §二之三 M7 注记 /
+     * §二之五 登记表说明）。身份字段（kind/quoteLevel/blockId/几何/装饰色）逐视觉行透传，
+     * 消费层据此表达块级几何；{@code getSegments()} 的可见文本与段流路逐字等值。</p>
+     *
+     * @param logicalLines   逻辑行序列（null/空 → 单空行）
+     * @param measurer       度量服务（不可为 null）
+     * @param maxWidthPx     内容盒最大宽度（UI 像素）；{@code <= 0} = 不限宽（只按行边界断行）
+     * @param baseFontSizePx 基准字号（UI 像素）
+     * @return 视觉行序列（不可变列表）
+     */
+    public static List<MarkdownLayoutLine> wrapLayoutLines(List<MarkdownLayoutLine> logicalLines,
+            TextLayoutService measurer, int maxWidthPx, int baseFontSizePx) {
+        return MarkdownLineLayout.layoutLines(logicalLines, measurer, maxWidthPx, baseFontSizePx);
+    }
+
+    /**
+     * 块身份命令流（M7）：逻辑行 → {@link PaintCommand} 流，块级几何全部落在既有图元上
+     * （用户裁定：真横线 = 一条 1px 高的 BACKGROUND；引用竖条、围栏块底色同理——零新造图元）。
+     *
+     * <p>先 {@link #wrapLayoutLines} 换行，再按序产出：围栏底色（连续同块行合并为覆盖全部
+     * 显示行的单矩形）→ 引用竖条（逐层逐行，y 相邻成视觉连续柱）与分隔线真横线（
+     * ruleThicknessPx 高、铺至内容右缘）→ 每文本行 SEGMENTS（{@code left = leftInsetPx}）
+     * + LINK_REGION（同偏移平移）。几何数值恒取行上的样式表解析值（G4 度量同源，本包零
+     * GL11 直调、零自设常量，由 MarkdownLayerGuardTest 锁死）。</p>
+     *
+     * @param logicalLines   L1 逻辑行序列（null/空 → 空命令流）
+     * @param measurer       度量服务（不可为 null）
+     * @param maxWidthPx     内容盒最大宽度（UI 像素；横线/底色铺至该右缘）
+     * @param baseFontSizePx 基准字号（UI 像素）
+     * @return 不可变命令流
+     */
+    public static List<PaintCommand> toLayoutPaintCommands(List<MarkdownLayoutLine> logicalLines,
+            TextLayoutService measurer, int maxWidthPx, int baseFontSizePx) {
+        List<MarkdownLayoutLine> visual = MarkdownLineLayout.layoutLines(
+                logicalLines, measurer, maxWidthPx, baseFontSizePx);
+        // 空输入换行产物 = 单空行：零段/零层级/零色 → blockCommands 天然零命令
+        return MarkdownLineLayout.blockCommands(visual, measurer, maxWidthPx, baseFontSizePx);
     }
 }

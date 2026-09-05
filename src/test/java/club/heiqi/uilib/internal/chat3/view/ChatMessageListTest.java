@@ -1632,6 +1632,89 @@ public class ChatMessageListTest {
         Assert.assertEquals("http://a.co", segments.get(1).getStyle().getLink());
     }
 
+    // ==================== M7 方案乙：块几何进真机（行身份驱动，文本零改动） ====================
+
+    @Test
+    public void nestedQuoteLevelTwoBuildsNestedBarRows() {
+        // 「>> deep」= quoteLevel 2 → row[bar, row[bar, 文本]]：每层 8px 水平缩进 + 各自竖条。
+        // 反向断言（几何不写进文本）：文本段前导必须无空格——缩进只存在于行盒/图元。
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> >> deep"), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        Assert.assertEquals("引用行仍 1 个外层 row", 1, bubble.__getChildren().size());
+        SceneNode outer = bubble.__getChildren().get(0);
+        Assert.assertEquals("外层 = 竖条 + 内层 row", 2, outer.__getChildren().size());
+        SceneNode outerBar = outer.__getChildren().get(0);
+        Assert.assertEquals("外层竖条宽 2", 2, outerBar.getPreferredWidth());
+        Assert.assertEquals("外层竖条色", ChatMarkdownSettings.getQuoteBarArgb(),
+                outerBar.getBackgroundColor());
+        SceneNode inner = outer.__getChildren().get(1);
+        Assert.assertEquals("内层 = 竖条 + 文本", 2, inner.__getChildren().size());
+        Assert.assertEquals("内层竖条色", ChatMarkdownSettings.getQuoteBarArgb(),
+                inner.__getChildren().get(0).getBackgroundColor());
+        List<TextSegment> segments = inner.__getChildren().get(1).getSegments();
+        Assert.assertEquals("deep", segments.get(0).getText());
+        Assert.assertFalse("缩进绝不写成前导空格（几何走行盒）",
+                segments.get(0).getText().startsWith(" "));
+    }
+
+    @Test
+    public void thematicBreakBubbleLineIsSolidRuleNotDashes() {
+        // 有意差异登记（规划 §二之三 M7 注记）：chat3 旧路「---」是字面文本行；M7 经
+        // setThematicBreakText("") 既有旋钮关掉文本，行身份 RULE 用背景条表达——
+        // 「文字变横线」是用户裁定的 B 有新行为，非回退。
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Bob> 上句" + (char) 0x0A + "---" + (char) 0x0A + "下句"),
+                        1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        Assert.assertEquals("3 显示行", 3, bubble.__getChildren().size());
+        SceneNode rule = bubble.__getChildren().get(1);
+        Assert.assertTrue("横线行零文本段（不再是字面 dash）",
+                rule.getSegments() == null || rule.getSegments().isEmpty());
+        Assert.assertTrue("横线有厚度: " + rule.getPreferredHeight(),
+                rule.getPreferredHeight() >= 1);
+        Assert.assertNotEquals("横线有颜色", 0, rule.getBackgroundColor());
+        Assert.assertEquals("首行仍文本行", "上句",
+                bubble.__getChildren().get(0).getSegments().get(0).getText());
+        Assert.assertEquals("次行仍文本行", "下句",
+                bubble.__getChildren().get(2).getSegments().get(0).getText());
+        for (SceneNode node : bubble.__getChildren()) {
+            if (node.getSegments() != null) {
+                for (TextSegment segment : node.getSegments()) {
+                    Assert.assertFalse("任何行不得再出现字面 dash 横线文本: " + segment.getText(),
+                            segment.getText().matches("-{3,}"));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void fencedCodeBubbleLinesCarryBlockBackdrop() {
+        // 围栏两源行各钉 CODE 底色（同色相接 = 整段底色）；文本内容一字不少（可见文本不变）
+        char tick = (char) 0x60;
+        String fence = String.valueOf(tick) + tick + tick;
+        ChatSceneController controller = controller();
+        String nl = String.valueOf((char) 0x0A);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("<Bob> " + fence + nl + "int a = 1;" + nl + fence), 1, T0));
+        Object[] parts = layoutSingleOtherBubble(controller);
+        SceneNode bubble = (SceneNode) parts[0];
+        SceneNode codeLine = null;
+        for (SceneNode node : bubble.__getChildren()) {
+            if (node.getSegments() != null && !node.getSegments().isEmpty()
+                    && "int a = 1;".equals(node.getSegments().get(0).getText())) {
+                codeLine = node;
+            }
+        }
+        Assert.assertNotNull("围栏源行成显示行且文本一字不改", codeLine);
+        Assert.assertNotEquals("CODE 行带块底色", 0, codeLine.getBackgroundColor());
+        Assert.assertEquals("底色 = 出货口径 codeBackgroundArgb",
+                ChatMarkdownSettings.getCodeBackgroundArgb(), codeLine.getBackgroundColor());
+    }
+
     @Test
     public void quoteLineInsideAccentBubbleKeepsRowLayout() {
         // 方案A accent 自己气泡:内容列内引用行保持 row[竖条 + 文本],强调条仍在行末

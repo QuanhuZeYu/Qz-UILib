@@ -9,6 +9,7 @@ import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.layout.markdown.MarkdownDocument;
+import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
 import club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable;
 import club.heiqi.uilib.internal.devtools.playground.PlaygroundKit;
 import club.heiqi.uilib.internal.devtools.playground.PlaygroundPage;
@@ -21,10 +22,11 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 /**
  * Markdown 渲染演示页（M3 验收面之一：游戏内可视页，规划 §五之二）。
  *
- * <p>链路 = 完整 L1→L2→scene 既有抽象：{@code MarkdownDocument.parse} →
- * {@code toSegments}（裁定 B 唯一段流接缝）→ {@link MarkdownPainter#wrapLines}（度量同源换行）→
- * 每视觉行一个段流 {@code SceneNode.setSegments} 节点（chat3 消息行同款钉宽钉高范式），
- * 由 ScenePaintEngine 产 SEGMENTS 绘制命令回放。页面零 GL、零块模型引用。</p>
+ * <p>链路 = 完整 L1→L2→scene 既有抽象（M7 方案乙后）：{@code MarkdownDocument.parse} →
+ * {@code toLayoutLines}（块身份行接缝）→ {@link MarkdownPainter#wrapLayoutLines}（度量同源换行，
+ * 折行宽度按行扣除引用缩进）→ 每视觉行一个段流 {@code SceneNode.setSegments} 节点（chat3 消息行
+ * 同款钉宽钉高范式），引用嵌套竖条 / 真横线 / 围栏底色用既有背景色节点表达。
+ * 页面零 GL、零块模型引用。</p>
  *
  * <p>解析/换行在 mount 时一次性完成（零每帧解析裁定，规划 §六 3）；观感与手感由真机验收，
  * headless 对拍见 {@code MarkdownSoftwareRenderTest}（build/reports/markdown-render/）。
@@ -37,6 +39,12 @@ public final class MarkdownPage implements PlaygroundPage {
 
     /** 演示段流的换行宽（UI 像素），与 LatexPage 混排行同值，避免长行横向溢出宿主视口。 */
     private static final int WRAP_WIDTH_PX = 600;
+
+    /** M7 演示几何常量（与 chat3 设计稿同源：竖条 2 + 间隙 6、code 底色内衬 3）。 */
+    private static final int QUOTE_BAR_WIDTH_PX = 2;
+    private static final int QUOTE_BAR_RADIUS_PX = 1;
+    private static final int QUOTE_GAP_PX = 6;
+    private static final int CODE_BG_PAD_PX = 3;
 
     /** 样本：{卡标题, 说明, markdown 源}。覆盖验收要求的标题/围栏代码/嵌套引用/列表续行/硬换行/行内公式/链接段。 */
     private static final String[][] SAMPLES = {
@@ -70,7 +78,7 @@ public final class MarkdownPage implements PlaygroundPage {
 
     @Override
     public String description() {
-        return "L1 解析 → 段流接缝 → L2 MarkdownPainter 换行 → SEGMENTS 段流节点（8 张样本卡）";
+        return "L1 块身份行接缝 → L2 layoutLines 换行(引用缩进扣除) → 段流/竖条/真横线/围栏底色（8 张样本卡）";
     }
 
     @Override
@@ -100,25 +108,60 @@ public final class MarkdownPage implements PlaygroundPage {
         styles.setHeadingFontSizeDeltaPx(4, 2);
         styles.setHeadingFontSizeDeltaPx(5, 1);
         styles.setHeadingFontSizeDeltaPx(6, 0);
+        // M7 方案乙：真横线取代字面 dash（既有旋钮）；本页走块身份行接缝
+        styles.setThematicBreakText("");
         TextStyle base = new TextStyle();
         base.setColor(PlaygroundKit.TEXT);
-        List<TextSegment> segments =
-                MarkdownDocument.parse(sample[2]).toSegments(styles, base);
-        List<List<TextSegment>> lines =
-                MarkdownPainter.wrapLines(segments, measurer, WRAP_WIDTH_PX, BASE_FONT_PX);
+        List<MarkdownLayoutLine> lines = MarkdownPainter.wrapLayoutLines(
+                MarkdownDocument.parse(sample[2]).toLayoutLines(styles, base),
+                measurer, WRAP_WIDTH_PX, BASE_FONT_PX);
         List<SceneNode> lineNodes = new ArrayList<SceneNode>();
         for (int i = 0; i < lines.size(); i++) {
-            List<TextSegment> line = lines.get(i);
-            SceneNode lineNode = new SceneNode()
-                    .setHitTestable(false)
-                    .setFontSize(BASE_FONT_PX)
-                    .setTextVerticalAlign(TextVerticalAlign.TOP)
-                    .setPreferredHeight(Math.max(1, MarkdownPainter.lineHeightPx(line, measurer, BASE_FONT_PX)));
-            if (!line.isEmpty()) {
-                lineNode.setSegments(line);
-                lineNode.setPreferredWidth(Math.max(1, MarkdownPainter.lineWidthPx(line, measurer, BASE_FONT_PX)));
+            MarkdownLayoutLine line = lines.get(i);
+            List<TextSegment> segments = line.getSegments();
+            SceneNode lineNode;
+            if (line.getKind() == MarkdownLayoutLine.Kind.THEMATIC_BREAK) {
+                // 真横线：既有背景条能力，1px 逻辑厚 + 上下留气
+                lineNode = new SceneNode()
+                        .setHitTestable(false)
+                        .setPreferredHeight(Math.max(1, line.getRuleThicknessPx()))
+                        .setBackgroundColor(line.getAccentArgb())
+                        .setPreferredWidth(Math.max(1, WRAP_WIDTH_PX - line.getLeftInsetPx()))
+                        .setMargin(2, 0, 2, 0);
             } else {
-                lineNode.setWidthSizing(SceneNode.WidthSizing.FILL);
+                lineNode = new SceneNode()
+                        .setHitTestable(false)
+                        .setFontSize(BASE_FONT_PX)
+                        .setTextVerticalAlign(TextVerticalAlign.TOP)
+                        .setPreferredHeight(Math.max(1,
+                                MarkdownPainter.lineHeightPx(segments, measurer, BASE_FONT_PX)));
+                if (!segments.isEmpty()) {
+                    lineNode.setSegments(segments);
+                    lineNode.setPreferredWidth(Math.max(1,
+                            MarkdownPainter.lineWidthPx(segments, measurer, BASE_FONT_PX)
+                                    + (line.getKind() == MarkdownLayoutLine.Kind.CODE
+                                            ? CODE_BG_PAD_PX * 2 : 0)));
+                } else {
+                    lineNode.setWidthSizing(SceneNode.WidthSizing.FILL);
+                }
+                if (line.getKind() == MarkdownLayoutLine.Kind.CODE) {
+                    lineNode.setBackgroundColor(line.getBackgroundArgb());
+                    lineNode.setPadding(0, CODE_BG_PAD_PX, 0, CODE_BG_PAD_PX);
+                }
+            }
+            // 引用嵌套：每层 row[竖条 2px + gap 6 + 内容]，一/二/三层肉眼可分
+            for (int level = line.getQuoteLevel(); level >= 1; level--) {
+                SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
+                        .setHitTestable(false)
+                        .setWidthSizing(SceneNode.WidthSizing.SHRINK);
+                quoteRow.appendChild(new SceneNode()
+                        .setHitTestable(false)
+                        .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
+                        .setFillParentHeight(true)
+                        .setBackgroundColor(line.getAccentArgb())
+                        .setCornerRadius(QUOTE_BAR_RADIUS_PX));
+                quoteRow.appendChild(lineNode);
+                lineNode = quoteRow;
             }
             lineNodes.add(lineNode);
         }

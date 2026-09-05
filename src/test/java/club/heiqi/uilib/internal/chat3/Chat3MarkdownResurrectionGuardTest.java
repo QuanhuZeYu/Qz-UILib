@@ -122,7 +122,15 @@ public class Chat3MarkdownResurrectionGuardTest {
 
     // ==================== 断言② ====================
 
-    /** 生产锚：唯一入口必须真的调用 L1 parse 与 L2 wrapLines。 */
+    /**
+     * 生产锚：唯一入口必须真的调用 L1 parse 与 L2 换行。
+     *
+     * <p>M7（2026-09-05 方案乙）锚字符串随生产接线演进：{@code .toSegments(} →
+     * {@code .toLayoutLines(}、{@code MarkdownPainter.wrapLines(} →
+     * {@code MarkdownPainter.wrapLayoutLines(}——断言语义（「chat3 唯一入口必须经 L1 解析 +
+     * L2 换行 + 换行前链接化」，命中数 &gt;= 1 的正向锚）一字未放松，只随实际入口更名而更。
+     * 门禁 {@code MarkdownChat3ParityTest} 的判据/容差/引擎与本锁无关、未动。</p>
+     */
     @Test
     public void pipelineMustActuallyRouteThroughL1AndL2() throws IOException {
         Path pipeline = CHAT3_DIR.resolve("view/ChatMarkdownPipeline.java");
@@ -131,10 +139,10 @@ public class Chat3MarkdownResurrectionGuardTest {
         List<String> code = codeLines(pipeline);
         Assert.assertTrue("入口必须经 L1:MarkdownDocument.parse 调用点 >=1",
                 countSubstring(code, "MarkdownDocument.parse(") >= 1);
-        Assert.assertTrue("入口必须经 L2:MarkdownPainter.wrapLines 调用点 >=1",
-                countSubstring(code, "MarkdownPainter.wrapLines(") >= 1);
-        Assert.assertTrue("段流接缝调用点 >=1: .toSegments(",
-                countSubstring(code, ".toSegments(") >= 1);
+        Assert.assertTrue("入口必须经 L2:MarkdownPainter.wrapLayoutLines 调用点 >=1",
+                countSubstring(code, "MarkdownPainter.wrapLayoutLines(") >= 1);
+        Assert.assertTrue("块身份行接缝调用点 >=1: .toLayoutLines(",
+                countSubstring(code, ".toLayoutLines(") >= 1);
         Assert.assertTrue("链接化存留件调用点 >=1: ChatUrlLinkifier.linkify(",
                 countSubstring(code, "ChatUrlLinkifier.linkify(") >= 1);
     }
