@@ -559,6 +559,22 @@ public final class ChatSceneController {
         return phase == DisplayStateMachine.Phase.HUD || phase == DisplayStateMachine.Phase.COLLAPSING;
     }
 
+    /**
+     * 气泡最大宽钳制式(A3 提取,包内唯一真相):
+     * {@code round(max(1, chatWidthFor(v) − 2×bubblePaddingX) × bubbleMaxWidthRatio)}。
+     * 控制器每次建树用它钉 maxBubbleWidthPx,{@code ChatMessageListTest} 内宽分母改调
+     * 本方法——测试不再镜像公式(镜像即第二把尺,口径漂移只会测成恒真或假红)。
+     *
+     * @param hostViewportWidth 宿主视口宽(px)
+     * @return 气泡最大宽(px)
+     */
+    static int bubbleMaxWidthPxFor(int hostViewportWidth) {
+        int bubbleContentWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(
+                hostViewportWidth) - 2 * ChatMarkdownSettings.getBubblePaddingX());
+        return (int) Math.round(bubbleContentWidth
+                * ChatMarkdownSettings.getBubbleMaxWidthRatio());
+    }
+
     /** 树根重建(形态切换;旧挂载点整体移除,新树上重新 forEach 组列表)。
      *  @param nowMillis 当前帧 wall millis(帧信号未提交也可用;tick 驱动传精确帧时刻) */
     private void rebuildTree(long nowMillis) {
@@ -580,10 +596,7 @@ public final class ChatSceneController {
         // 容器路径由 ChatContainer.setViewport 每帧同值幂等同步;未知视口(0)时
         // 保持不限制,避免把气泡错误 clamp 到 1px)
         if (hostViewportWidth > 0) {
-            int bubbleContentWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(
-                    hostViewportWidth) - 2 * ChatMarkdownSettings.getBubblePaddingX());
-            messageList().setBubbleMaxWidthPx((int) Math.round(
-                    bubbleContentWidth * ChatMarkdownSettings.getBubbleMaxWidthRatio()));
+            messageList().setBubbleMaxWidthPx(bubbleMaxWidthPxFor(hostViewportWidth));
         }
         // pendingOpen 兑现标志一次性消费(唯一消费点):兑现 = 打开方向衔接,
         // 与关闭衔接互斥——CLOSING 挂起打开兑现进 COLLAPSING 后本帧 hudNow=true

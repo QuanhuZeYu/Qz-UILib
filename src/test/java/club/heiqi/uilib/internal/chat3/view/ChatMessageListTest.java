@@ -1778,8 +1778,10 @@ public class ChatMessageListTest {
         // 不注换行替身。视图侧正文列施加在「有度量注入」块内（与钉宽/钳宽同块）。
         ChatSceneController controller = new ChatSceneController(FIXED, selfAlex(), PARSER,
                 ChatSceneController.uiLibSegmentMeasurer());
-        // 钳宽工况是生产自带的：控制器每次建树按 (chatWidthFor(viewport) − 2pad) × 0.85
-        // 同步 maxBubbleWidthPx，而 L2 换行用的是更宽的 wrapWidthPx——宽续行必然撞钳宽分支。
+        // 钳宽工况是生产自带的：控制器每次建树按生产提取式
+        // ChatSceneController.bubbleMaxWidthPxFor(viewport) 同步 maxBubbleWidthPx
+        //（A3 起该式为唯一钳制源，本测试不再镜像公式），而 L2 换行用的是更宽的
+        // wrapWidthPx——宽续行必然撞钳宽分支。
         controller.history().append(new ChatLineRecord(new ChatComponentText(
                 "<Bob> - " + bodyA + nl + bodyB), 1, T0));
         Object[] parts = layoutSingleOtherBubble(controller);
@@ -1847,14 +1849,13 @@ public class ChatMessageListTest {
         // （preferred + 左右内衬）≤ 气泡内宽」——布局引擎会把子盒裁进可用宽，光看
         // 盒坐标差抓不到钳宽漏扣（MUT 实测），必须直接核记账值与内衬之和。
         LayoutBox bubbleBox = (LayoutBox) bubble.getCachedLayout();
-        // 内宽分母恒取生产同步式（控制器每次建树用同式钉 maxBubbleWidthPx）：
-        // maxBubble = round((chatWidthFor(viewport) - 2padX) × ratio)，inner = maxBubble - 2padX。
+        // 内宽分母恒取生产提取式：maxBubble = ChatSceneController.bubbleMaxWidthPxFor(400)
+        //（A3 提取后测试与生产同源，不再镜像公式；镜像即第二把尺，漂移只会测成恒真或假红），
+        // inner = maxBubble - 2padX。
         // 不用 bubbleBox 反推：SHRINK 盒宽只按子节点 preferred 聚合，不计子内衬（实测如此），
         // 拿它当分母会把「pref+padding ≤ inner」这一钳宽契约测成恒真。
         int padX = ChatMarkdownSettings.getBubblePaddingX();
-        int maxBubble = (int) Math.round(Math.max(1,
-                ChatMarkdownSettings.chatWidthFor(400) - 2 * padX)
-                * ChatMarkdownSettings.getBubbleMaxWidthRatio());
+        int maxBubble = ChatSceneController.bubbleMaxWidthPxFor(400);
         int bubbleInnerW = maxBubble - 2 * padX;
         Assert.assertTrue("钳宽工况自检（反 ∅：inner 必须真小于换行宽，否则本断言空转）: "
                 + bubbleInnerW + " < " + ChatMarkdownSettings.chatWidthFor(400),

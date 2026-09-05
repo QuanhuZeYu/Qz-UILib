@@ -89,8 +89,6 @@ public final class ChatMessageList {
     private static final int QUOTE_BAR_WIDTH_PX = 2;
     /** 引用行竖条圆角(px,设计稿 §3.5:圆角 1)。 */
     private static final int QUOTE_BAR_RADIUS_PX = 1;
-    /** 引用行竖条与文本间距(px,设计稿 §3.5:竖条右 6px)。 */
-    private static final int QUOTE_GAP_PX = 6;
     /** M7 围栏底色左右内衬(px)——背景块比文字宽出的呼吸位；非度量常量（G4 不涉字号/行高）。 */
     private static final int CODE_BG_SIDE_PAD_PX = 3;
 
@@ -1078,7 +1076,7 @@ public final class ChatMessageList {
                         int roomy = maxBubbleWidthPx > 0
                                 ? maxBubbleWidthPx - 2 * paddingX : message.getWrapWidthPx();
                         lineWidth = Math.max(1, roomy - quoteLevel
-                                * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX) - listExtra);
+                                * rendered.indentStepPx() - listExtra);
                     } else if (codeLine && rendered.blockContentWidthPx() > 0) {
                         // M8 单一真相：块内统一宽恒读 L2 产出的
                         // MarkdownLayoutLine#getBlockContentWidthPx()（经 ChatMarkdownPipeline 逐字
@@ -1095,7 +1093,7 @@ public final class ChatMessageList {
                         // M10c：reserve 必须同扣 listExtra——续行节点盒还额外吃掉正文列，
                         // 不扣则「行宽=可用宽 + padding」顶出气泡右缘（钳宽与偏移是一式两面）。
                         int reserve = (accent ? ACCENT_BAR_WIDTH_PX : 0)
-                                + quoteLevel * (QUOTE_BAR_WIDTH_PX + QUOTE_GAP_PX)
+                                + quoteLevel * rendered.indentStepPx()
                                 + listExtra;
                         lineWidth = Math.min(lineWidth,
                                 Math.max(1, maxBubbleWidthPx - 2 * paddingX - reserve));
@@ -1116,15 +1114,19 @@ public final class ChatMessageList {
                             .setEllipsis(true);
                 }
                 if (quoteLine) {
-                    // M7 引用嵌套几何:每层 = row[竖条(宽2、bar-quote 色、fillParentHeight、
-                    // 圆角1、不可命中) + gap 6 + 内层];quoteLevel 层嵌套 ⇒ 一层/二层/三层
-                    // 水平缩进 8/16/24px + 各自竖条,肉眼可分。level=1 结构与旧版逐位相同
+                    // M7 引用嵌套几何(B2 起同源派生):每层 = row[竖条(宽
+                    // QUOTE_BAR_WIDTH_PX、bar-quote 色、fillParentHeight、圆角1、不可命中)
+                    // + gap + 内层],gap = 接缝 indentStepPx − 竖条宽(步长为 L1
+                    // MarkdownStyleTable.quoteIndentPx 单源,引用行恒 8 ⇒ gap 恒 6,几何逐位
+                    // 与旧私有常数口径相同);quoteLevel 层嵌套 ⇒ 每层水平缩进
+                    // = indentStepPx 的整数倍 + 各自竖条,肉眼可分。level=1 结构与旧版逐位相同
                     // (单层 row[竖条, 文本],既有测试钉死)。相邻行同层竖条行高无缝衔接即视觉连续。
                     SceneNode current = lineNode;
                     for (int level = quoteLevel; level >= 1; level--) {
-                        SceneNode quoteRow = SceneNode.row(QUOTE_GAP_PX)
+                        SceneNode quoteRow = SceneNode.row(
+                                Math.max(0, rendered.indentStepPx() - QUOTE_BAR_WIDTH_PX))
                                 .setHitTestable(false)
-                                // K3 缺陷 2:引用行同样收缩(每层竖条 2 + gap 6 + 内容),否则引用行
+                                // K3 缺陷 2:引用行同样收缩(每层竖条 + 派生 gap + 内容),否则引用行
                                 // FILL 全宽会把 messageNode 顶回全宽、气泡无法按内容收缩
                                 .setWidthSizing(SceneNode.WidthSizing.SHRINK);
                         SceneNode quoteBar = new SceneNode()

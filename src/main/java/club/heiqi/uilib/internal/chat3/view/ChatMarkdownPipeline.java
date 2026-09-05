@@ -120,9 +120,11 @@ final class ChatMarkdownPipeline {
          * @return 每层引用水平步长（UI px；非引用行 0）——<b>逐字透传 L2 的
          *         {@code MarkdownLayoutLine#getIndentStepPx()}</b>，本层零再算。
          *
-         * <p>M10c（规划 §二之七·续 第 12 条）：消费端反解正文列要用它。chat3 的引用缩进
-         * 结构走私有常数 2+6=8，与样式表 quoteIndentPx=8 的等值是<b>巧合不是同源</b>；
-         * 透传步长后「leftInsetPx − quoteLevel×indentStepPx」不再依赖该巧合。
+         * <p>M10c（规划 §二之七·续 第 12 条）：消费端反解正文列要用它。B2（2026-09-06
+         * 合并批次）已兑现同源派生：{@code ChatMessageList} 的引用嵌套几何、ruleLine 宽、
+         * 钳宽 reserve 三处直取本步长（pitch = indentStepPx 构造等值），旧「私有常数
+         * 2+6=8 与样式表 quoteIndentPx=8 等值是巧合不是同源」就此销账；
+         * 「leftInsetPx − quoteLevel×indentStepPx」与视图嵌套步长从此同尺同值。
          * 范式与 {@link #blockContentWidthPx()} 的 M8 透传完全相同；生产路与换行替身
          * 注入路（wrapOverride）同源填充，不留两口径。</p>
          */
