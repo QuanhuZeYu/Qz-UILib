@@ -2,10 +2,12 @@
 
 **状态：** D1-D4 已裁（§五）；**M1 `6d9de24c` + M2 `08a8034e` + 裁 B 收窄 `736bafc1` + M3
 `531da89e`/`339530e0`/`eddd2c29` + M4/M4-fix `075328ef`/`00d1a45a` + M5 接线 & M6 复生锁 `3e89d91e`
-全部完成**（2026-09-04）：chat3 气泡消息已改吃通用 markdown 渲染器，旧行级垫片已删，
-死代码窗口闭合（§六 1）；余下的是真机观感验收（§五之二分工）与后续独立裁定。
++ M7 方案乙块几何 `8c86a644`（2026-09-05，裁定 B 块几何部分经用户裁定重开，见 §二之三注记
+与 §二之七）全部完成**：chat3 气泡消息已改吃通用 markdown 渲染器，旧行级垫片已删，
+死代码窗口闭合（§六 1），引用嵌套/真分隔线/围栏底色三项块级几何已入接缝入真机；
+余下的是真机观感验收（§五之二分工）与后续独立裁定。
 方向（用户 2026-09-04）：**先建独立通用渲染器 → 删 chat3 现有简易实现 → 接线**——三步全部落地；
-基线 **3975 / 0 / 0 / 2，359 类**。
+基线 **3992 / 0 / 0 / 2，362 类**（M7 方案乙后）。
 **目标仓：** Qz-UILib（branch `4.0`，MC 1.7.10，本地提交不 push）。
 **范围声明：** 只写本仓能做且已核实的事；未核实的运行态在下面明确标出，不当已完成。
 
@@ -78,6 +80,7 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 | M4+ | 判读分辨率 @Nx 真放大 | **完成**：N=4 上限由 `awtCharSize=64` 定死，@1x 逐位不变 |
 | M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | **完成 `3e89d91e`**（与 M6 同笔，硬规矩满足）：接线本体 `internal/chat3/view/ChatMarkdownPipeline`，见 §二之六 |
 | M6 | 复生锁 G3（与 M5 同一提交） | **完成 `3e89d91e`**：`Chat3MarkdownResurrectionGuardTest` 4 条断言全配正对照+反空跑地板，见 §二之六 |
+| M7 | 方案乙：块身份行进接缝 + 三项块级几何（2026-09-05 用户裁定重开裁定 B 块几何部分） | **完成 `8c86a644`**：唯一新公共类型 `MarkdownLayoutLine`；引用嵌套竖条+缩进 / 真横线 / 围栏底色经 BACKGROUND/位置表达，可见文本零改动；门禁零接触全绿；见 §二之七 |
 
 M1 的验收事实（父代理逐条独立复核过，非采信子代理自述）：三个文件与 `9c4dcae5` **blob hash
 逐一相同**（`84dd897c`/`49cfd000`/`6f639546`，463+48+274 行），**零适配**——两周内 layout 层
@@ -120,6 +123,16 @@ getBlockSpacingPx  消费者: *** 无人读取 ***
 （污染全部文本层，最差）。
 
 ### 裁定建议
+
+> **2026-09-05 经用户裁定重开块几何部分（方案乙）**——本裁定 B 的「三对 `*IndentPx`
+> 访问器移出公共面 + 几何无处表达」结论**部分作废**：作废范围 = 块级几何必须能被 L2 消费
+> 这一半（引用嵌套缩进/竖条、真分隔线、围栏块底色在实机截图证实缺失，且软光栅修复
+> `2a5ab61a` 后 headless 图才可信——事故档 `ERROR-20260905-software-rasterizer-half-quad-rotated-sampling.md`
+> 第八节「立此规矩」为本次全部断言的纪律来源）。**未作废范围**：块模型不外开
+> （`MarkdownBlock`/`MarkdownBlockParser` 恒 package-private）、「给 TextStyle 加几何位」
+> 仍是最差选项、`MarkdownStyleTable` 公共方法数恒 18。落点 = 新增**唯一**公共类型
+> `MarkdownLayoutLine`（行粒度块身份 + 行盒几何 + 块归属，见 §二之七），
+> 刻意**不是**回到被删的三对 `*IndentPx` 访问器。
 
 **已裁 B 并执行（`736bafc1`，2026-09-04）**。父代理独立复核：全仓 `git grep` 三对符号
 `src/main` + `src/test` 命中均 **0**；`javap -public` 原始清单逐行数得 **16 个 public 成员**
@@ -347,6 +360,68 @@ javadoc 已记）；逃生舱 `ChatMarkdownSettings.isEnabled()` 与 `ChatMarkdo
 聊天框）、宽引用块续行竖条、§ 色码与 markdown 样式位叠加的真机手感、HUD 长消息 8 行
 截断观感、`MarkdownSettings` 配色热切换。
 
+## 二之七 M7 方案乙落点：块身份行进接缝，三项块级几何落地（2026-09-05，代码批 `8c86a644`）
+
+> 触发：用户实机截图证实三项缺失——①引用嵌套无水平缩进/竖条不分层（chat3 仅有单层
+> 2px 竖条，一/二/三层肉眼不可分）；②分隔线是 36~38 个字面 `-`；③围栏代码块无底色。
+> 前提核实：src 全树 `IndentPx` 命中 0，引用缩进无任何代码表达；
+> `MarkdownDocument` 旧 case QUOTE 只调 `quoteStyle()`（斜体位+颜色），零几何。
+
+**接缝形状（唯一新增公共类型）**：`font.layout.markdown.MarkdownLayoutLine`——
+行粒度不可变 DTO：`kind(TEXT/CODE/THEMATIC_BREAK)` + `quoteLevel` + `blockId`(块归属)
++ 行盒几何 `leftInsetPx/indentStepPx/barWidthPx/ruleThicknessPx` + 装饰色
+`accentArgb/backgroundArgb` + `segments` + `withSegments`。为什么这比三对 `*IndentPx`
+访问器窄：样式表公共面**零膨胀**（18→18，4 个新旋钮 `quoteIndentPx=8/quoteBarWidthPx=2/
+ruleThicknessPx=1/blockAccentArgb=0x40FFFFFF` 全包内登记，沿 F1 code 口径先例，
+`MarkdownStyleTable.java:70-73`）；块模型不外开（无子树/无 children/无源偏移）；
+消费者拿到的是扁平行序列而非需要遍历的树。
+
+**三项几何实现落点**（「几何一律经位置与图元表达，绝不改可见文本」）：
+
+| 项 | L1 | L2（PaintCommand 路） | L3（chat3 SceneNode 路） |
+| --- | --- | --- | --- |
+| 引用嵌套几何 | `toLayoutLines`（`MarkdownDocument.java:141`）沿 QUOTE 递归加层级，行盒 `leftInsetPx=level×8`；**不写前导空格**（列表 F2 机制原样保留、不侵犯） | `MarkdownLineLayout.blockCommands:200` 每层每行 1 条竖条 BACKGROUND（x=`l×step`，y 相邻成连续柱）；`layoutLines:118` 折行宽=容器−`leftInsetPx` | `ChatMessageList.java:1117` `quoteLevel` 层嵌套 `row[竖条+内层]`（level=1 与旧结构逐位相同）；`ChatMarkdownPipeline.java:64` `RenderedLine` 自有视图（markdown 类型不出管道文件，复生锁④不破） |
+| 真分隔线 | `ruleLine`（`MarkdownDocument.java:469`）恒成行 kind=THEMATIC_BREAK；文本有无由**既有** `setThematicBreakText` 旋钮（未新加） | `blockCommands` 横线 = 1px 高 BACKGROUND 铺至内容右缘（`MarkdownLineLayout.java:200` 段） | `chatStyleTable()` 设 `setThematicBreakText("")`（`ChatMarkdownPipeline.java:251`）→ 行身份 RULE 用背景条节点画线（`ChatMessageList.java:1056`） |
+| 围栏底色 | 每源行 kind=CODE 同 `blockId`（空源行也带 CODE 身份，`emitCodeLayout:366`） | 连续同 blockId 合并**单条** BACKGROUND 覆盖全部显示行（`MarkdownLineLayout.java:182`） | CODE 行 `setBackgroundColor` + 块内统一宽（`ChatMessageList.java:1065`） |
+
+「不改可见文本」证据：`MarkdownLayoutLinesTest.visibleTextIdenticalAcrossSeamsOnGateCorpus`
+在门禁 12 条语料镜像上断言两接缝**行序列化逐字等值**（含行界符计数）；`toSegments` 本体
+一字未动（段生成原语 `listMarker/inlineSegments` 抽助手两路共用防漂移）。
+
+**门禁处置（§二之五 铁律）**：`MarkdownChat3ParityTest` 文件**零接触**——判据/容差
+（段宽 0.0D、TIE 2.0D、行宽 1、命中区 1）/登记表/比对引擎/语料未改一字。实测汇总
+`PARITY=19 NEW=11 FAIL=0 TIE=0 有意差异=1(P03@150) PNG=147` 与基线逐字一致。
+为何无新表项：门禁比较面 = 段流文本/样式位/段宽/断点/命中区，**不含** BACKGROUND 命令
+与行盒 x 偏移；引用断点差异需「长引用行」才触发，现有 PARITY 语料唯一引用条目 P12 为
+短行（@150 扣 8px 仍单行）→ 零新差异。四项「B 有 chat3 无」的有意差异在此节与代码
+注释（`ChatMessageListTest.thematicBreakBubbleLineIsSolidRuleNotDashes` 头部）留档；
+若未来给门禁加长引用语料，其断点差异将撞 `isIntentionalDivergence →
+assertWidthIndependentCodeStyle` 的 P03 专用不变量——那是判据改动，须另裁，不得顺手。
+
+**复生锁锚点演进**：`Chat3MarkdownResurrectionGuardTest` 断言③生产锚字符串随接线更名
+（`.toSegments(`→`.toLayoutLines(`、`wrapLines(`→`wrapLayoutLines(`），「>=1 命中」正向
+语义与全部地板一字未放松；断言①②④未动。门禁本体未触碰（上段）。
+
+**公共面清单（javap -public）**：`MarkdownStyleTable` 18→18；`MarkdownDocument` 6→7
+（+`toLayoutLines`）；`MarkdownPainter` 5→7（+`wrapLayoutLines`/`toLayoutPaintCommands`）；
+新公共类型 1 个 = `MarkdownLayoutLine`；`ui/markdown` 顶层 public 类型恒 1；
+`ChatMessageList`/`ChatSceneController` public 面 diff 为空；L1/L2 `GL11.` 出现次数恒 0
+（同扫描器正对照 `ui/render`=559）。
+
+**测试与出图**：360→362 套件、3979→3992（+13 全新增零删除：L1 行接缝 6、L2 几何 3、
+出图入图探针 1、chat3 结构 3）；`MarkdownSoftwareRenderTest` 出图路切命令流渲染，
+几何入图配「像素列探针 + mark 批 quad 计数对照」双判据（事故档第八节：能区分是哪个
+位置，非墨量非文件数）。读图亲验（修复后光栅器）：03 嵌套引用一/二/三层竖条 1/2/3 根
++ 缩进递增肉眼可分；08 分隔线为整幅实线**非**破折号；02 围栏整段灰底且内容全字面；
+00 整页字形完整无错切（先证仪器可读再谈判读，未把任何错切误读为位移）。
+新图 sha256：`00-full-page.png` 7961ed63fe8f1845f76410d97b7cbdb60ed01eaa63ee9dd081ba66b5c07ce3de；
+`03-nested-quote.png` 8a358db679454176cbd9df90ec88f4a534446769ceb884cf59415146df8a8d01；
+`08-thematic-break.png` 4e5fb5b57bd9a652c2d5c429dbb05b9177c196786eb30aa9d6cc27e0b6d9366c；
+`02-code-fence.png` d3d3be5d4d3a1051dd9c79b61090b0ac1750171f42d7774c10fbb2fb848b2f12。
+
+**真机待验（本批未跑，如实挂账）**：chat3 气泡内嵌套引用竖条观感、真横线厚度（1px 在
+高 GUI Scale 下是否够眼）、围栏底色与气泡底色叠加观感、playground MarkdownPage 手感。
+
 ---
 
 ## 三、迁移与「不得并存」门禁
@@ -382,7 +457,7 @@ M4 不过就不进 M5 —— 这是唯一的「先立后破」次序，不因进
   （`INPUT_AREA_INSET_PX` 已收口为单一来源；`getCodeFontSizePx()` 等仍在 `ChatMarkdownSettings`）。
   B 的默认样式表放哪属裁定 D3。
 - 每次 M 步收尾跑 `./gradlew.bat build --offline --console=plain`，绿了才提交；当前基线
-  **3975 / 0 / 0 / 2，359 类**（M5+M6 后）。
+  **3992 / 0 / 0 / 2，362 类**（M7 方案乙后；M5+M6 时 3975/359，软光栅修复批 +4=3979/360）。
 
 ## 五、裁定结果（2026-09-04，D1-D4 全部照建议通过）
 
