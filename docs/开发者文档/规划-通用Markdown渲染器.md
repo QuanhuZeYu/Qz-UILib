@@ -67,12 +67,14 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
   无序/有序列表（含缩进续行与内容列嵌套，续排/起始序号按主流 = C3b2 修 1）、**setext 标题**
   （段落紧邻 `===`→H1 / `---`→H2，本文初版「setext 缺失」偏离由 C3b2 补实现，惰性续行不得
   充当下划线的收紧由 C4 N2 落地）、分隔线 `---`/`***`、段落与空行、硬换行（行尾两空格 / 反斜杠）。
-- **§ 颜色码 = L1 零认知（C4 归位，2026-09-06）**：§ 是 MC 特有格式，只准作为 chat3 集成层的
-  输入清洗（`ChatMarkdownPipeline.stripLeadingSectionCodes`，C4-fix 乙′：行首「≤3 空格 +
-  码对」交替视图<b>命中块标记才剥</b>，未命中整行保留）与输出样式解释（`bridgeSectionCodes`，
-  行中/段中码<b>与未命中行的行首码</b>）存在；本层的 § 一律字面文本，「块层内嵌 §-容忍」
-  （旧 M4-fix F4 在 L1 里的 markerView 机制）已整体拆除——判据本身随 C4-fix 搬进 chat3
-  集成层（L1 仍零认知 §，宪法满足）——见 §二之八 拆除批记录与 C4-fix 细账。
+- **§ 颜色码 = L1 零认知（C4 归位，2026-09-06；消费口径 C6b 甲 2026-09-07 重定）**：§ 是
+  MC 特有格式，只准作为 chat3 集成层的<b>输入转换</b>（`ChatMarkdownPipeline.toSpanStream`：
+  进 markdown 前把 § 码对按 L0 `TextStyle.applyFormat` 同源语义转成样式锚点 span 流，码本身
+  不进文本）或显式扩展存在；乙′ 的「行首预清洗 stripLeadingSectionCodes/markerView/coarse 粗检」
+  与「输出后置桥 bridgeSectionCodes」已在 C6b·3 <b>整套拆除</b>。本层（L1）的 § 一律字面文本，
+  「块层内嵌 §-容忍」旧机制早已拆除；L1 直连消费者不经集成层时 § 恒字面（`MarkdownChat3RuleInheritanceTest`
+  钉死）。零认知由常驻守卫 `MarkdownL1ZeroSectionKnowledgeGuardTest` 机器看护——见 §二之八
+  C6a/C6b 细账。
 - 行内：`**`/`__`、`*`/`_`、`***`、`~~`、`` ` ``、`$`/`$$`、`[text](url)`、反斜杠转义 ——
   **语义照抄 §L1 既有裁定，不重开**。
 - 刻意不支持（写进文档，别默默失败）：表格、任务列表、HTML 内联、脚注、图片 `![alt](url)`。
@@ -91,7 +93,7 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 | M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | **完成 `3e89d91e`**（与 M6 同笔，硬规矩满足）：接线本体 `internal/chat3/view/ChatMarkdownPipeline`，见 §二之六 |
 | M6 | 复生锁 G3（与 M5 同一提交） | **完成 `3e89d91e`**：`Chat3MarkdownResurrectionGuardTest` 4 条断言全配正对照+反空跑地板，见 §二之六 |
 | M7 | 方案乙：块身份行进接缝 + 三项块级几何（2026-09-05 用户裁定重开裁定 B 块几何部分） | **完成 `8c86a644`**：唯一新公共类型 `MarkdownLayoutLine`；引用嵌套竖条+缩进 / 真横线 / 围栏底色经 BACKGROUND/位置表达，可见文本零改动；门禁零接触全绿；见 §二之七 |
-| C 系列 | 向 CommonMark 0.30 归位的拆除批（2026-09-06 宪法裁定后开拆）：C1a 缩进代码 + 内容列唯一判据、C3b1 门禁重基线（R=commonmark-java）、C3b2 有序续排 + setext、C3b3 标题直拍撤豁免、**C4 § 归位 chat3 + setext 惰性收紧 + 门禁 RECORD 清零**、**C4-fix 乙′（命中块标记才剥）+ 一致性锁 + N2 惰性 setext 语料补齐** | **C4 + C4-fix 已完成**，逐批记录见 §二之八 |
+| C 系列 | 向 CommonMark 0.30 归位的拆除批（2026-09-06 宪法裁定后开拆）：C1a 缩进代码 + 内容列唯一判据、C3b1 门禁重基线（R=commonmark-java）、C3b2 有序续排 + setext、C3b3 标题直拍撤豁免、**C4 § 归位 chat3 + setext 惰性收紧 + 门禁 RECORD 清零**、**C4-fix 乙′（命中块标记才剥）+ 一致性锁 + N2 惰性 setext 语料补齐**、**C6a L1 span 流地基 + C6b 甲（§→span 输入转换，预清洗与输出桥整套拆除）** | **C4 + C4-fix + C6a + C6b 已完成**，逐批记录见 §二之八 |
 
 M1 的验收事实（父代理逐条独立复核过，非采信子代理自述）：三个文件与 `9c4dcae5` **blob hash
 逐一相同**（`84dd897c`/`49cfd000`/`6f639546`，463+48+274 行），**零适配**——两周内 layout 层
@@ -283,20 +285,15 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
 1. **列表项续行**（lazy continuation）不带 chat3 保留的源前导空格：A 路 `«  续行»`，B 路 `«续行»`
    （`ChatLineLayouter` 把行首空白并入行文本，L1 按 CommonMark 以 contentCol 剥缩进）。语料 N04
    属 NEW 档，只记录不判等。
-2. **行中间的 § 码**在文档形参路径（`MarkdownDocument.parse(String)`）仍是字面文本，chat3 会由
-   `parseSegments` 解析成颜色。这是「markdown 不引入颜色」旧裁定。**M5 实际落定（措辞定稿）**
-   〔**C4 更新 + C4-fix 乙′改判**：chat3 消息路在 parse 前做行首 § 码对的**输入侧清洗**——
-   乙′口径 = 「至多 3 空格 + 码对」交替视图**命中块标记才剥**（§a- x → - x，命中行行首色与
-   C4 前同样随消费消失），未命中整行保留（§c红色警告 的行首色由输出侧桥解释，与 C4 前观感
-   逐位一致）；C4 初版的「无条件剥」实测丢行首色，已改判（细账见 §二之八）。行中/段中码不变、
-   仍由输出侧桥解释。文档形参路径（playground/门禁 B 路直连消费者）行首 § 恒字面——旧「L1 块层
-   内嵌 markerView」机制废止、判据搬到集成层，锁面见 {@code MarkdownChat3RuleInheritanceTest}
-   与 {@code ChatMarkdownPipelineTest}（含乙′ 粗检⇔L1 真判据一致性锁）。〕：
-   消息路在 `toSegments` 之后走 chat3 侧 § 桥（`ChatMarkdownPipeline.bridgeSectionCodes`，逐段
-   `TextStyle.applyFormat` 切分，latex/codeSpan 段恒透传），§ 码在消息渲染中被 L0 同源语义消费，
-   不会以字面颜色形态遇到；直接使用文档形参路径的消费方（playground/门禁 B 路 bridge=0 语料）
-   行中 § 仍字面，旧裁定不变。桥不用 `MarkdownInlineParser.parse(spans)` 反接：那会把已消费的
-   未闭合定界符二次配对（双解析漂移），且块级结构（F2/F3/F4/F6）只在文档路径存在。
+2. **行中间的 § 码**在文档形参路径（`MarkdownDocument.parse(String)`）仍是字面文本，chat3 会
+   解析成颜色。这是「markdown 不引入颜色」旧裁定。**M5 落定 → C4/C4-fix 改判 → C6b 甲落地（措辞定稿）**：
+   chat3 消息路在进 markdown **之前**把 § 码对转成样式锚点 span 流（`ChatMarkdownPipeline.toSpanStream`
+   → `MarkdownDocument.parseSpans`；逐码 `TextStyle.applyFormat` 与 L0 同源，码不进文本，行尾/
+   换行前孤立 § 恒字面）；乙′ 的「输入侧预清洗 + 输出侧后置桥」两点机制已于 C6b·3 **整套拆除**，
+   § 处理自此在集成层只有一处（输入转换）。文档形参路径（playground/门禁 B 路直连消费者）§ 恒字面、
+   旧裁定不变，`MarkdownChat3RuleInheritanceTest` 的 L1 直连字面判据原样保留；`ChatMarkdownPipelineTest`
+   § 族锁现为转换断言 + 甲口径渲染断言，甲↔乙′ 逐段对账、桥退役 no-op 实证与退役镜像在
+   `ChatMarkdownSectionSpanMigrationLockTest`。细账见 §二之八 C6a/C6b 条。
    〔**C6a 区分注记（2026-09-06，防拿旧句当挡箭牌）**：本句禁的只是**输出侧反接**——把解析
    产物（`toSegments` 的段）再喂回 `parse(spans)` 做第二次解析。C6a 新增的都是**输入侧单次
    解析**通道，不违反其字面与理由：① `parse(spans)` 自 C6a 起为拼接文本上的跨 span 连续扫描
@@ -460,6 +457,15 @@ assertWidthIndependentCodeStyle` 的 P03 专用不变量——那是判据改动
 `parse(spans, table, StyleTransform)` 为包内重载不进账）；`MarkdownLayoutLine` 全成员 **20
 冻结不变**（样式锚点只在包内随块模型走，出接缝仍只 `TextSegment`）；新类型 `StyleTransform`/
 `StyleValues` 均 package-private（顶层 public 类型账不变）。
+
+**C6b 续账（2026-09-07，方案甲收尾批，代码批 `28e71094`/`7d92e4f5`/`c9ae3b54`）**：
+`MarkdownDocument` 公共静态方法数 **8→8**——`parse(List<MarkdownSpan>)` **改名**
+`parseSpans(List<MarkdownSpan>)`：C6a 引入的重载曾使 `parse(null)` 二义编译失败（与该形参「可为
+null」的 javadoc 承诺冲突），本批收回该零收益源码破坏；方法从未随版本发布，属周期内自纠、不算
+破坏公共面承诺（`MarkdownDocumentTest:63` 的 `(String)` 强转同批退还）。出段样式定序改判（块级链
+叠位、span 显式色覆盖块级色、行内位最后）为包内行为，接缝与公共面零接触；`MarkdownInlineParser`
+公共面恒 2；`MarkdownLayoutLine` 全成员 20 冻结不动；chat3 `ChatMarkdownPipeline` 仍
+package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均包内）。
 
 **测试与出图**：360→362 套件、3979→3992（+13 全新增零删除：L1 行接缝 6、L2 几何 3、
 出图入图探针 1、chat3 结构 3）；`MarkdownSoftwareRenderTest` 出图路切命令流渲染，
@@ -1024,6 +1030,85 @@ assertWidthIndependentCodeStyle` 的 P03 专用不变量——那是判据改动
      进围栏），代码面显示 `§a- x` 字面；乙′ 预清洗按物理行「行首 §+标记」命中 ⇒ 围栏内显示
      `- x`（与 C4 现状同形）。玩家消息含「§色码 + 列表标记」形态的整段围栏属罕见角落，
      彻底对齐需在集成层做围栏感知（= 第二套块扫描，违宪风险），留待与 C5 同批裁定。
+
+### C6a/C6b 细账（方案甲落地：§ → 样式锚点 span 流；预清洗与输出桥整套拆除）
+
+1. **批次结构**：C6a（第一步，`9b49b79f`/`09d91abe`/`f468430b`/`3259d6a8`）打 L1 地基：块级文档
+   span 流入口 + 行内跨 span 连续扫描 + L1 § 零知识常驻守卫。C6b（第二步收尾，本批，分三笔）：
+   把 chat3 气泡消息路从「§ 输入预清洗 + 输出后置桥」切到「§ 在进 markdown 前转样式锚点 span 流」，
+   并整套拆除预清洗与桥。代码批 `28e71094`（L1 改名+定序）/`7d92e4f5`（chat3 切换+迁移锁）/
+   `c9ae3b54`（拆除）。
+2. **输入转换器**（`ChatMarkdownPipeline.toSpanStream`）：扫描与 L0 `TextLayoutService.parseSegments`/
+   旧桥 `splitRunsOnFormatCodes` 同源——§ 与其后一字符成码对、逐码 `TextStyle.applyFormat` 消费
+   （大小写同义；未知码走 default=重置，与 L0/原版同形）；码对不进 span 文本。**行界不可吞**：紧邻
+   CR/LF 的孤立 § 与消息尾 § 按字面保留（旧桥按逐行段流作业、从来看不到跨行码对；换行是 L1 块检测的
+   输入材料，吞行界=伪造第二套切行）。码效应沿整条消息累计、不随 markdown 段重启——样式锚点的
+   定义性属性（差异清单第 5 条）。起始样式 = `resetAll(baseColor)`（非显式底色，见第 3 条）。转换器住
+   ChatMarkdownPipeline.java 本体内（G3 断言②唯一 markdown 层引用文件），不引入任何 markdown 定界字面。
+3. **样式施加顺序裁定（本批关键改判）**：旧桥语义 =「markdown 样式位先叠加、§ 码后生效 ⇒ 服务端色
+   优先于块级色」；C6a 链序（span 为底、块链压顶）会在引用内把 § 色洗成引用降色——沿用即观感回退。
+   C6b 定序改判为：**块级链在 span 基础样式拷贝上叠样式位 → span 携带显式色（`isColorExplicit`）
+   时其颜色覆盖块级色 → 行内位最后**（行内 `MarkdownInlineParser.resolve` 与 `BlockStyle.applied`
+   同一把尺；标题粗体/字号、引用斜体等块级位仍存活，「样式位叠加、色覆盖」）。显式/非显式二分同时
+   保住「引用降色对宿主未着色文本照常生效」（C6a 锁 1 的「无语义样式」输入因此改记非显式底色 =
+   宿主未指定色的诚实编码；新增定序锁 `explicitSpanColorMustWinOverBlockChainColor` 钉两侧）。
+   转换器以 `isColorExplicit` 为 § 着色尺（色码→true；§r→false）⇒ 旧桥的「§r 引用内重置回段起色」
+   「§f 显式白压引用色」两落点逐位保持。String 路（blockTransform 恒 null）不经覆盖分支、行为逐位
+   不变——门禁 48 条 + `MarkdownInlineParserTest` 26 例常绿即机器证明。
+4. **两缺陷结构性消灭**：缺陷 a（围栏内行被误剥——预清洗看不见围栏上下文，「§c# 标」类内容被改写
+   且色丢）：甲转换与块上下文无关、围栏内容恒字面且样式锚点保留（迁移锁
+   `fenceLineLookingLikeBlockMarkerIsDocumentedDelta` + C6a 锁 5）。缺陷 b（容器行首 § 不剥——判据
+   只看物理行首，`> §a- x` 内层不升格）：甲转后文本恒纯，L1 在容器内层照常升格（迁移锁
+   `listLineInsideContainerIsDocumentedDelta` + C6a 锁 6）。C4-fix 细账第 8 条登记的两处乙′ 残留
+   不一致（嵌套行内层 §、围栏内行）随本批一并消灭。
+5. **迁移等价对账**（`ChatMarkdownSectionSpanMigrationLockTest`，任务书点名交付）：等价 9 条
+   （行中色 §c甲§f乙 / 引用内 > §c甲 / 围栏内普通 § / §r 引用外与引用内 / 连续码 §c§l / 行尾孤立 § /
+   **a§cb** 强调内色 / §a- §citem 复合）逐段文本+全视觉样式字段+行身份直断等值；有意差异 8 条
+   （行首色+列表保色、围栏标记形、容器升格、**§f+4 空格 → 缩进代码块**（任务书第三部分第 4 条点名
+   改判：色进锚点后文本以 4 空格开头，L1 按 CommonMark §4.4 判缩进代码——主流正确结果，乙′ 的
+   「段落字面」妥协随机制退役）、§z 结构差、色跨强调持续染色、色跨软换行持续、残留 § 反噬强调结构）
+   双期望写死 + 逐条成因，无容差；**不可能等价 2 条**（latex 段内 §、行内 code span 段内 §）：甲按
+   定义转换先于 markdown——转换器要豁免这两域必须持有一份 markdown 上下文 = 第二套块扫描（违宪 +
+   G3 雷区）；且乙′ 对该两域的豁免与它对围栏内 § 的上色行为本不自洽，甲把 § 语义统一为
+   「与原版 parseSegments（系统消息路）同解读」，双侧期望写死留证。比较尺不含 `colorExplicit`
+   （第 7 条）。
+6. **桥退役**：删桥前置实证 = 对全部新增语料 + 门禁 P13/P14 原文断言「甲 段流上桥 = 恒 no-op」
+   （`convertedStreamLeavesNoConsumableSectionPairsForTheBridge`，C6b·3 起对镜像跑、常驻防漏）；
+   无 § 的门禁语料按构造 trivially no-op（转换器零改写 + 桥对无 § 段流零拷贝直通）。P13/P14 语料
+   保持现状（门禁两侧 § 均字面 ⇒ NO_DIFF 不变），缺陷场景覆盖在 L3 锁层、不进门禁语料；本批门禁
+   判据/容差/登记表零接触、零新增豁免域（豁免照登通道仍仅剩 N11 的 EM_FLANK_SIMPLIFIED）。
+7. **`colorExplicit` 落点迁移**（如实登记）：乙′ 路该位除 §r 后外恒 true（caller 底色经 setColor）；
+   甲 路宿主未着色段为 false（resetAll 起点）、§ 着色段 true。该位在 chat3 渲染链零消费点（全仓消费
+   点 = RichTextTagParser / TextContentModeStrategy 的 vanilla 合并尺 / StyleValues 分组粒度三处，
+   均不触气泡像素），观感不变；甲 路引用文本该位仍随块级 setColor 为 true、与乙′ 同。
+8. **缓存口径重定**：两级 key 吃消息**原文**（displayText 未转换形态）+ baseColor + 配色代指纹
+   （次级色/链接色）+ 定行宽/字号/度量纪元（+ wrap 替身分标记）；转换只在未命中时做。论证：转换 =
+   (原文, baseColor) 纯函数 ⇒ 同 key 同语义输入，结构上无「同 key 不同语义」；「转换后等值的异原文」
+   （§r- x vs - x）分占条目 = 去重效率回退、无串味（锁内双断言）。乙′「吃清洗后文本」口径随机制退役。
+   锁 = `cacheKeyUsesRawTextAndNeverSharesAcrossSemantics`。
+9. **parse→parseSpans 改名**：见公共面账 §二之七·续 C6b 续账（周期内自纠、非破坏承诺；
+   `MarkdownDocumentTest:63` 的 (String) 强转同批退还）。
+10. **守卫面**：`Chat3MarkdownResurrectionGuardTest` 断言②生产锚字符串随入口更名演进
+    （`MarkdownDocument.parse(` → `MarkdownDocument.parseSpans(`；「>=1 命中」正向语义与全部地板
+    一字未放松——先例 = M7 的 toSegments→toLayoutLines 演进，演进纪律在锁自身 javadoc 有档）。
+    `MarkdownL1ZeroSectionKnowledgeGuardTest` 零接触：L1 代码面 § 恒 0 主断言照绿；对照文件代码命中
+    地板（现实测 3 = 地板 3，由转换器的 § 字面两处与 applyFormat 一处继续满足）照常成立。
+11. **拆除清单（C6b·3 numstat 原值）**：`ChatMarkdownPipeline.java` +9/−348（stripLeadingSectionCodes、
+    markerView、coarseHitsBlockMarker、coarseBlockStart、coarseLeadingSpaces、coarseHeadingLevel、
+    coarseFenceStart、coarseThematicBreak、coarseListStart、isChatFormatCode、bridgeSectionCodes、
+    splitRunsOnFormatCodes 共 12 方法 + FENCE_TICK_HEX/MARK_STAR_HEX/MAX_ORDINAL_DIGITS 三常量 +
+    分节注释；isChatFormatCode 无需保留改名——转换器的「§+任意字符」消费与 L0 applyFormat 天然同集，
+    码集判定随粗检族失去唯一消费者，留之即孤儿）；`ChatMarkdownPipelineTest.java` +5/−233（删 5 条
+    退役直测锁：bridgeSplitsSectionCodesLikeParseSegments、
+    bridgePreservesMarkdownBitsAndCodePathResetsLikeMc、bridgeSkipsLatexCodeAndPlainSegmentsZeroCopy、
+    stripLeadingSectionCodesConsumesOnlyOnBlockMarkerHitAndIdempotent、
+    coarseBlockMarkerAgreesWithL1BlockIdentity——判据已由转换族锁与迁移锁承接）；迁移锁 +415/−3
+    （乙′ 只读镜像 RetiredBPrime 逐句照搬自 `7d92e4f5` 随锁常驻——迁移等值结论在机制删除后仍可机器
+    复验；镜像不随生产演化，分叉代价如实登记）。测试计数 4074 → **4095**（净 +21：新增迁移/转换/
+    定序/缓存锁，删除 5 条退役直测锁与 1 条随桥迁移的实证锁位，全部增减逐条可对应，无故减为零）。
+12. **文档口径**：本文 §二 L1 语法面 § 条、§二之五 遗留差异第 2 条、AGENTS.md 主权条款拆除项已同步
+    甲口径（宪法句一字未动）；门禁类头新增分层声明一句话（B 路管 markdown 语义对齐、§ 转换属集成层
+    由 L3 锁管）；未新增独立文档。
 
 ---
 
