@@ -12,6 +12,7 @@ import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.layout.markdown.MarkdownDocument;
 import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
+import club.heiqi.uilib.font.layout.markdown.MarkdownSpan;
 import club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
@@ -21,22 +22,27 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
 /**
  * chat3 消息级 markdown 管道（M5 接线本体；规划《通用Markdown渲染器》§三 M5/§二 L3）。
  *
- * <p><b>M7 接线升级（2026-09-05，方案乙）</b>：链路换吃块身份行接缝，顺序仍 = 门禁 B 路
- * 定义顺序的对应升级形：消息原文 → <b>行首 § 输入清洗</b>（{@link #stripLeadingSectionCodes}，
- * C4 归位：MC 特有格式只在本集成层消费，L1 对 § 零认知；C4-fix 乙′：清洗只在命中块标记时
- * 消费 § 序列，未命中的行原样进 parse、行首色由输出侧桥解释）→ {@link MarkdownDocument#parse(String)} →
+ * <p><b>C6b 方案甲落地（2026-09-07，取代 M7 时期的「预清洗 + 输出后置桥」乙′接线）</b>：
+ * 顺序 = 门禁 B 路定义顺序的对应升级形：消息原文 → <b>§ → 样式锚点 span 流转换</b>
+ * （{@link #toSpanStream}，MC 特有格式在集成层<b>进 markdown 之前</b>一次性消化：§ 码对经
+ * {@code TextStyle.applyFormat} 逐码解释为该处生效样式，码本身不进文本；语义与 L0
+ * {@code TextLayoutService.parseSegments} 同源，L1 对 § 零认知的宪法不变）→
+ * {@link MarkdownDocument#parseSpans(java.util.List)} →
  * {@link MarkdownDocument#toLayoutLines(MarkdownStyleTable, TextStyle)}（逻辑行 +
- * kind/quoteLevel/行盒几何/块归属）→ <b>&sect; 桥</b>（{@link #bridgeSectionCodes}，逐行
- * 段流，语义同旧——桥本就段局部，行内窗口拼接与整条流等价：URL 扫描以空白为终止，
- * 永不跨行）→ {@link ChatUrlLinkifier#linkify}（<b>换行前</b>整条流链接化的逐行形态，
- * 理由同上）→ {@link MarkdownPainter#wrapLayoutLines}（L2 换行，折行宽度按行扣除引用缩进）。
+ * kind/quoteLevel/行盒几何/块归属）→ {@link ChatUrlLinkifier#linkify}（<b>换行前</b>整条流
+ * 链接化的逐行形态，理由同旧）→ {@link MarkdownPainter#wrapLayoutLines}（L2 换行，折行
+ * 宽度按行扣除引用缩进）。乙′ 的两处结构性缺陷随输入侧转换根除：围栏内形似块标记的
+ * § 行不再被误剥（围栏内容恒字面，样式锚点保留）；容器标记后的 § + 块标记
+ * （{@code > §a- x}）由 L1 在纯文本上自然升格。出段样式定序 = 宿主显式色优先于块级色
+ * （规划 §二之八 C6b 细账；对齐旧 § 桥「markdown 位先叠、§ 码后生效」的裁定）。
  * 产出的 {@link RenderedLine} 携带引用层级与 CODE/RULE 身份，{@link ChatMessageList} 据此
  * 用既有 SceneNode 能力（背景色节点/竖条/嵌套行）表达三项块级几何——<b>块模型与 L1/L2
  * 类型不外泄出本文件</b>（复生锁 G3 断言④口径不变），消费方面向 {@link RenderedLine}
  * 自有视图类型，可见 API 面零变化。</p>
  *
  * <p><b>每帧零解析（规划 §六 3）</b>：两级 LRU 沿用 {@code ChatLineLayouter} 既有布局缓存
- * 纪律——逻辑行缓存 key = 原文@基础色#配色代（解析/桥/链接化与字体无关，配色变更即时失效）；
+ * 纪律——逻辑行缓存 key = <b>消息原文</b>@基础色#配色代（转换/解析/链接化与字体无关，
+ * 配色变更即时失效；C6b：key 吃未转换原文，§ → span 转换只在未命中时做）；
  * 视觉行缓存 key = 逻辑行 key#定行宽#字号#度量纪元（{@code FontService.getRuntimeVersion()}）。
  * 渲染帧只在结构重建时命中缓存，不逐帧 parse。缓存按实例隔离。</p>
  *
@@ -50,7 +56,7 @@ final class ChatMarkdownPipeline {
     /** 视觉行缓存上限（同 {@code ChatLineLayouter.MAX_ENTRIES} 口径）。 */
     private static final int LINES_CACHE_MAX = 160;
 
-    /** 逻辑行缓存：原文@基础色#配色代 → 桥+链接化后的逻辑行（含块身份）。 */
+    /** 逻辑行缓存：原文@基础色#配色代 → span 转换+解析+链接化后的逻辑行（含块身份；C6b：桥已退役）。 */
     private final Map<String, List<MarkdownLayoutLine>> logicalCache = newLru(LOGICAL_CACHE_MAX);
     /** 视觉行缓存：逻辑行 key#定行宽#字号#度量纪元 → 换行产物。 */
     private final Map<String, List<RenderedLine>> linesCache = newLru(LINES_CACHE_MAX);
@@ -182,8 +188,8 @@ final class ChatMarkdownPipeline {
      * 消息原文 → 显示行（每行 = 段流 + 块身份）。
      *
      * @param messageText   去前缀消息原文（{@code ChatCardComposer.MessageLines.getDisplayText()}；
-     *                    进链路前先经 {@link #stripLeadingSectionCodes} 行首 § 输入清洗；
-     *                    乙′：命中块标记才消费，未命中的行原文直进）
+     *                    含 § 码对的原文直接进链路——C6b 方案甲：先经 {@link #toSpanStream}
+     *                    转样式锚点 span 流再喂 {@code parseSpans}，§ 不进 markdown）
      * @param baseColor     气泡正文基础色（ARGB）
      * @param maxWidthPx    定行宽（与行切分器同口径；{@code <= 0} = 只按行边界硬断）
      * @param fontSizePx    正文基准字号（UI px）
@@ -198,15 +204,14 @@ final class ChatMarkdownPipeline {
     synchronized List<RenderedLine> layout(String messageText, int baseColor, int maxWidthPx,
             int fontSizePx, ChatMessageList.SegmentPostProcessor postProcessor,
             ChatMessageList.SegmentFlowWrapper wrapOverride) {
-        // C4-fix 乙′（归位宪法不变：L1 对 § 零认知，MC 特有格式只在本集成层消费）：逐行清洗
-        // 只在「≤3 空格 + 行首 § 码对」交替视图命中块标记（标题/围栏/引用/列表/分隔线）时消费
-        // § 序列；不命中的行（如 §c红色警告）原样进 parse，行首色由输出侧桥解释——chat3 观感
-        // 在「物理行首 §」形态上与 C4 前逐位一致（C4 初版「无条件剥」丢行首色，已改判，细账见
-        // 规划 §二之八 C4-fix）。清洗仍是原文的纯函数且幂等（命中的视图行首必是触发字符、无可
-        // 剥 § 序列；不命中的行二次判定结果不变）⇒ 两级缓存 key 继续吃清洗后文本：清洗后同串
-        // （如「§a- x」与「- x」）产物逐段等值，共享条目是去重不是串味；清洗后不同串则 key 必
-        // 不同。「串味」需要「同 key 不同语义」，而 key 唯一决定 parse 输入。
-        String text = stripLeadingSectionCodes(messageText == null ? "" : messageText);
+        // C6b 甲（归位宪法不变：L1 对 § 零认知，MC 特有格式只在本集成层消费——消费点从
+        // 「清洗+后置桥」两处收拢为「输入转换」一处，细账见规划 §二之八 C6b）：两级缓存 key
+        // 吃消息**原文**（displayText 未转换形态），§ → span 流转换只在缓存未命中时做。
+        // 自洽论证：转换是 (原文, baseColor) 的纯函数（toSpanStream 无外部状态），baseColor 与
+        // 配色代指纹（cacheKey 吃次级色/链接色现值）都在 key 上 ⇒ 同 key ⇒ 同一语义输入，
+        // 结构上不存在「同 key 不同语义」；「§a- x」与「- x」这类转换后等值的**不同原文**
+        // 分占条目——只回退去重效率，不会串味。乙′ 吃清洗后文本的旧口径随预清洗退役。
+        String text = messageText == null ? "" : messageText;
         List<MarkdownLayoutLine> logical = logicalCached(text, baseColor, postProcessor);
         int epoch = FontService.getInstance().getRuntimeVersion();
         String key = cacheKey(text, baseColor) + '#' + maxWidthPx + '#' + fontSizePx + '#' + epoch
@@ -244,7 +249,12 @@ final class ChatMarkdownPipeline {
         return lines;
     }
 
-    /** 解析 → 桥 → 链接化（换行前），带逻辑行缓存；后处理在入缓存前逐行施加。 */
+    /**
+     * 转换 → 解析（span 流入口）→ 链接化（换行前），带逻辑行缓存；后处理在入缓存前逐行施加。
+     * C6b：key 吃原文（缓存未命中才做 § → span 转换）；旧输出侧 {@code bridgeSectionCodes}
+     * 随输入侧转换退役——markdown 段流不再含可消费 § 码对（仅剩行尾孤立 § 字面，桥对它们
+     * 本就无力，桥退役前的 no-op 实证见 {@code ChatMarkdownSectionSpanMigrationLockTest}）。
+     */
     private List<MarkdownLayoutLine> logicalCached(String text, int baseColor,
             ChatMessageList.SegmentPostProcessor postProcessor) {
         String key = cacheKey(text, baseColor) + (postProcessor == null ? "" : "#p");
@@ -254,8 +264,8 @@ final class ChatMarkdownPipeline {
         }
         TextStyle base = new TextStyle();
         base.setColor(baseColor);
-        List<MarkdownLayoutLine> logical =
-                MarkdownDocument.parse(text).toLayoutLines(chatStyleTable(), base);
+        List<MarkdownLayoutLine> logical = MarkdownDocument.parseSpans(toSpanStream(text, base))
+                .toLayoutLines(chatStyleTable(), base);
         List<MarkdownLayoutLine> processed = new ArrayList<MarkdownLayoutLine>(logical.size());
         for (int i = 0; i < logical.size(); i++) {
             MarkdownLayoutLine line = logical.get(i);
@@ -263,13 +273,72 @@ final class ChatMarkdownPipeline {
             if (postProcessor != null && !segments.isEmpty()) {
                 segments = postProcessor.postProcess(segments, ChatMarkdownSettings.getChatFontSizePx());
             }
-            segments = bridgeSectionCodes(segments);
             segments = ChatUrlLinkifier.linkify(segments, ChatMarkdownSettings.getLinkArgb());
             processed.add(line.withSegments(segments));
         }
         processed = Collections.unmodifiableList(processed);
         logicalCache.put(key, processed);
         return processed;
+    }
+
+    /**
+     * § → 样式锚点 {@link MarkdownSpan} 流转换器（C6b 方案甲落地形；chat3 气泡路唯一的
+     * § 解释点，宪法②「§ 只能作为 chat3 集成层的输入转换存在」的实现处）。
+     *
+     * <p>扫描语义与旧输出侧 {@link #splitRunsOnFormatCodes} 及 L0
+     * {@code TextLayoutService.parseSegments} <b>同源</b>（不另造第二套 § 解释）：§ 与其后一
+     * 字符构成码对、{@code TextStyle.applyFormat(code, baseColor)} 逐码消费，码对本身不进
+     * span 文本；大小写同义；未知码对走 applyFormat 的 default 分支（= 重置，与 L0/原版同形，
+     * 色码同时清先前 § 样式位亦是 MC 语义）。<b>行界不可跨</b>：紧邻 {@code \n}/{@code \r}
+     * 的孤立 § 不消费、按字面进文本——旧桥按逐行段流作业、从来看不到跨行码对，而换行是 L1
+     * 块检测的输入材料，此处吞行界等于伪造第二套切行。与旧桥的既裁差异：码效应沿<b>整条
+     * 消息</b>累计（跨 markdown 段/跨软换行不重启）——色码在加粗/斜体等强调边界之后
+     * 不再丢色（方案甲的设计意图，规划 §二之八 C6b 细账差异清单第 5 条）。</p>
+     *
+     * <p>起始样式经 {@code resetAll(baseColor)} 表达：caller 底色 {@code colorExplicit=false}。
+     * 按 C6b 定序裁定（L1 resolve/applied 同一把尺），只有<b>显式着色</b>的 span 覆盖引用降色
+     * 等块级色；未着色的底色 span 让位块级——与旧桥「§ 码改过色的段才变色、其余承块级色」
+     * 逐位对齐（§r 重置后亦回落为非显式 ⇒ 引用内 {@code §c甲§r乙} 的乙仍吃引用色，同旧）。</p>
+     *
+     * @param text       消息原文（非 null；可含 § 码对与换行）
+     * @param callerBase 气泡正文基样式（取色值与字体基状态；转换起点为其 resetAll 拷贝）
+     * @return 样式锚点 span 流（无可见文本时为空表；直喂 {@link MarkdownDocument#parseSpans}）
+     */
+    static List<MarkdownSpan> toSpanStream(String text, TextStyle callerBase) {
+        int baseColor = callerBase.getColor();
+        TextStyle current = callerBase.copy();
+        current.resetAll(baseColor);
+        List<MarkdownSpan> out = new ArrayList<MarkdownSpan>();
+        StringBuilder buffer = new StringBuilder(text.length());
+        for (int i = 0; i < text.length();) {
+            char c = text.charAt(i);
+            if (c == '\u00a7' && i + 1 < text.length()
+                    && text.charAt(i + 1) != '\n' && text.charAt(i + 1) != '\r') {
+                flushSpan(out, buffer, current);
+                current = current.copy();
+                current.applyFormat(Character.toLowerCase(text.charAt(i + 1)), baseColor);
+                i += 2;
+                continue;
+            }
+            buffer.append(c);
+            i++;
+        }
+        flushSpan(out, buffer, current);
+        return out;
+    }
+
+    /** 缓冲成段（空缓冲不成段——MarkdownSpan 拒空文本；连续码对之间恒走此空段路径）。 */
+    private static void flushSpan(List<MarkdownSpan> out, StringBuilder buffer, TextStyle style) {
+        if (buffer.length() == 0) {
+            return;
+        }
+        out.add(new MarkdownSpan(buffer.toString(), style));
+        buffer.setLength(0);
+    }
+
+    /** 测试工厂：消息原文 → 逻辑行（生产同路同缓存；C6b 迁移等价锁的甲侧读数）。 */
+    synchronized List<MarkdownLayoutLine> logicalForTest(String messageText, int baseColor) {
+        return logicalCached(messageText == null ? "" : messageText, baseColor, null);
     }
 
     /** markdown 行 → RenderedLine 视图（块模型/L1 类型到此为止，不再外传）。 */
@@ -313,7 +382,10 @@ final class ChatMarkdownPipeline {
     }
 
     /**
-     * § 桥（输出侧）：把 toLayoutLines 产物里残留在段文本中的 § 样式码解释为样式（chat3 现有
+     * <b>〔已退役（C6b 甲）——本批仅作为 {@code ChatMarkdownSectionSpanMigrationLockTest}
+     * 迁移等价锁的乙′对照 oracle 暂存，生产链路零调用，C6b·3 批与预清洗一并拆除〕</b>
+     *
+     * <p>§ 桥（输出侧）：把 toLayoutLines 产物里残留在段文本中的 § 样式码解释为样式（chat3 现有
      * § 颜色语义的出口面）。C4-fix 乙′配套：{@link #stripLeadingSectionCodes} 只消费命中块标记
      * 行的行首码对——<b>未命中行的行首码与行中/段中残留码都在本方法出口上色</b>（这正是
      * {@code §c红色警告} 行首色保住的机制，C4 前旧 NONE 分支同款）——输入清洗与输出解释均在
@@ -400,7 +472,11 @@ final class ChatMarkdownPipeline {
     }
 
     /**
-     * 输入侧 § 清洗（C4 归位 + C4-fix 乙′，规划 §二之五 F4 承接面的归位形 → §二之八 C4-fix
+     * <b>〔已退役（C6b 甲）——本批仅作为 {@code ChatMarkdownSectionSpanMigrationLockTest}
+     * 迁移等价锁的乙′对照 oracle 暂存，生产链路零调用，C6b·3 批与 {@link #markerView}/
+     * coarse 粗检族一并拆除〕</b>
+     *
+     * <p>输入侧 § 清洗（C4 归位 + C4-fix 乙′，规划 §二之五 F4 承接面的归位形 → §二之八 C4-fix
      * 改判）：逐行做「至多 3 个空格 + 连续 § 码对」交替检测视图（{@link #markerView}），
      * <b>只有视图中确实命中块标记（标题/围栏/引用/列表/分隔线）才采用剥后视图</b>；不命中的
      * 行一字不动。码集 0-9a-f 颜色、k-o 样式、r 重置，大小写同义；非法码字符（§z）与行尾

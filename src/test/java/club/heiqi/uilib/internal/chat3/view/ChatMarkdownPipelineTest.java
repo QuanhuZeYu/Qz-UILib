@@ -12,15 +12,19 @@ import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.layout.markdown.MarkdownDocument;
 import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
+import club.heiqi.uilib.font.layout.markdown.MarkdownSpan;
 import club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 
 /**
- * M5 接线本体单元测试(§ 桥 / 结构判据 / HUD 截断 / 缓存命中;规划 §三 M5)。
+ * M5 接线本体单元测试(§ → span 转换 / 结构判据 / HUD 截断 / 缓存命中;规划 §三 M5、
+ * §二之八 C6b)。
  *
- * <p>§ 桥断言与 {@code TextLayoutService.parseSegments} 的 § 语义逐位对齐(同
- * {@code TextStyle.applyFormat} 语义源);markdown 样式位保留断言钉「样式叠加不改
- * 颜色、§ 码后生效」旧裁定在接线后的落点。</p>
+ * <p><b>C6b 方案甲</b>：§ 在进 markdown 前转样式锚点 span 流（{@code toSpanStream}），
+ * 本类 § 族锁按甲口径重定（乙′ 的「预清洗 + 输出后置桥」机制锁随机制退役）；§ 转换断言与
+ * {@code TextLayoutService.parseSegments}/{@code TextStyle.applyFormat} 语义逐位同源。
+ * 甲↔乙′ 的逐段迁移对账在 {@code ChatMarkdownSectionSpanMigrationLockTest}。桥/strip/coarse
+ * 直测用例（本类旧段）只存活到 C6b·3 拆除批（其间它们是被迁移锁引用的退役 oracle）。</p>
  */
 public class ChatMarkdownPipelineTest {
 
@@ -191,7 +195,9 @@ public class ChatMarkdownPipelineTest {
         Assert.assertEquals("item", otherWidth.get(0).segments().get(1).getText());
     }
 
-    // ==================== C4-fix 乙′ 输入侧 § 清洗（命中块标记才消费；归位宪法：L1 零认知 §） ====================
+    // ==================== C6b 甲：§ → span 输入转换族（预清洗已退役；归位宪法：L1 零认知 §）。====
+    // 本段之下的 stripLeadingSectionCodes/markerView/coarse 直测与桥直测 = 已退役乙′ 机制的
+    // 迁移对照 oracle 锁，只存活到 C6b·3 拆除批（机制本体与这些锁同批删）。
 
     /** 直通换行替身：每条逻辑行原样出一条视觉行（不进 FontService 生产度量）。 */
     private static final ChatMessageList.SegmentFlowWrapper PASSTHROUGH =
@@ -268,7 +274,12 @@ public class ChatMarkdownPipelineTest {
         Assert.assertSame(once, ChatMarkdownPipeline.stripLeadingSectionCodes(once));
     }
 
-    /** 归位目的锁：§a- 玩家列表行命中块标记、消费行首码后在 chat3 链路仍渲染为列表项。 */
+    /**
+     * 归位目的锁（C6b 甲口径）：§a- 玩家列表行的码在进 markdown 前转成样式锚点，文本行首
+     * 恒纯「- x」⇒ L1 判列表项；<b>行首色不再随旧清洗丢弃</b>（乙′ 命中块标记即消费色码，
+     * 甲 色码转样式由服务端色存活——规划 §二之八 C6b 差异清单第 1 条）。段流不残留任何
+     * § 字面（转换侧无 § 进文本，桥已退役）。输入侧结构（kind/标记段文本）与乙′ 逐位一致。
+     */
     @Test
     public void sectionPrefixedListLineStillRendersAsListItemThroughPipeline() {
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
@@ -278,27 +289,45 @@ public class ChatMarkdownPipelineTest {
         List<TextSegment> segments = out.get(0).segments();
         Assert.assertEquals("\u2022 " + "\u73a9\u5bb6\u5217\u8868\u884c", visible(out));
         Assert.assertEquals("标记段", "\u2022 ", segments.get(0).getText());
-        Assert.assertTrue("命中行清洗后不得残留 § 字面: " + visible(out),
+        Assert.assertTrue("转换后段流不得残留 § 字面: " + visible(out),
                 visible(out).indexOf('\u00a7') < 0);
+        Assert.assertEquals("甲：行首 §a 转锚点存活为服务端绿（旧乙′随清洗丢弃）",
+                0xFF55FF55, segments.get(1).getStyle().getColor());
+        Assert.assertEquals("合成标记段恒 caller 基色（白）", WHITE,
+                segments.get(0).getStyle().getColor());
     }
 
     /**
-     * C4 前语义恢复锁（本任务书点名回退项）：§f- item / §f  - item / §f§l- item 命中块标记
-     * 仍剥（消费行首码 ⇒ 列表项、行首色让位于块结构，与 C4 前逐位一致）；§c 纯文本行保留
-     * （行首色进桥）。旧 L1 直连口径（markerView 在块层）搬到集成层后观感不漂移。
+     * § 族语义锁（C6b 甲改判，取代乙′ 的「C4 前语义恢复」口径）：§f- item / §f  - item /
+     * §f§l- item / §f §a- item 的码对进 markdown 前全部消化 ⇒ 文本行首恒纯「- item」⇒
+     * L1 判列表项——「• item」可见形与乙′ 一致；<b>甲 新增</b>：§f 白 = 显式色（引用等块级
+     * 色让位）、§l 粗体位在列表行存活（乙′ 命中即连样式位一并丢弃）、§a 绿存活。
+     * §c 纯文本行 = 锚点着色（旧乙′ 经桥、结果同色）。改判理由：任务书第三部分第 4 条。
      */
     @Test
-    public void preC4SectionFamilySemanticsRestoredThroughIntegrationLayer() {
+    public void sectionFamilySemanticsUnderSpanStreamConversionC6b() {
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
-        Assert.assertEquals("\u2022 item", visible(pipeline.layout(
-                "\u00a7f- item", WHITE, 4000, 13, null, PASSTHROUGH)));
-        Assert.assertEquals("\u2022 item", visible(pipeline.layout(
-                "\u00a7f  - item", WHITE, 4000, 13, null, PASSTHROUGH)));
-        Assert.assertEquals("\u2022 item", visible(pipeline.layout(
-                "\u00a7f\u00a7l- item", WHITE, 4000, 13, null, PASSTHROUGH)));
-        Assert.assertEquals("\u2022 item", visible(pipeline.layout(
-                "\u00a7f \u00a7a- item", WHITE, 4000, 13, null, PASSTHROUGH)));
-        // 未命中 ⇒ 原样保留、由桥上色（见 leadingColorSemanticsSurviveOnNonHitLines 专项）
+        List<ChatMarkdownPipeline.RenderedLine> f1 = pipeline.layout(
+                "\u00a7f- item", WHITE, 4000, 13, null, PASSTHROUGH);
+        Assert.assertEquals("\u2022 item", visible(f1));
+        Assert.assertEquals("§f = 显式基础白（甲：色进锚点，非旧口径的『随消费消失』）",
+                WHITE, f1.get(0).segments().get(1).getStyle().getColor());
+        Assert.assertTrue("§f 显式色位（非显式底色与 § 着色的分尺点）",
+                f1.get(0).segments().get(1).getStyle().isColorExplicit());
+        List<ChatMarkdownPipeline.RenderedLine> f2 = pipeline.layout(
+                "\u00a7f  - item", WHITE, 4000, 13, null, PASSTHROUGH);
+        Assert.assertEquals("≤3 空格进视图 ⇒ 列表项（与 CommonMark 缩进列一致）",
+                "\u2022 item", visible(f2));
+        List<ChatMarkdownPipeline.RenderedLine> f3 = pipeline.layout(
+                "\u00a7f\u00a7l- item", WHITE, 4000, 13, null, PASSTHROUGH);
+        Assert.assertEquals("\u2022 item", visible(f3));
+        Assert.assertEquals("§l 样式位在列表行存活（乙′ 命中行随剥丢弃，甲 不再丢）",
+                club.heiqi.uilib.font.FontType.BOLD,
+                f3.get(0).segments().get(1).getStyle().getFontType());
+        List<ChatMarkdownPipeline.RenderedLine> f4 = pipeline.layout(
+                "\u00a7f \u00a7a- item", WHITE, 4000, 13, null, PASSTHROUGH);
+        Assert.assertEquals("\u2022 item", visible(f4));
+        Assert.assertEquals(0xFF55FF55, f4.get(0).segments().get(1).getStyle().getColor());
         List<ChatMarkdownPipeline.RenderedLine> plain = pipeline.layout(
                 "\u00a7c\u7eaf\u6587\u672c\u884c", WHITE, 4000, 13, null, PASSTHROUGH);
         Assert.assertEquals("\u7eaf\u6587\u672c\u884c", visible(plain));
@@ -306,29 +335,37 @@ public class ChatMarkdownPipelineTest {
     }
 
     /**
-     * 行为变化锁（乙′ 改判，C4 初版「§f+4 空格 ⇒ 缩进代码块」反转回 C4 前形态）：
-     * §f + 4 空格 + 「- item」——粗检视图 ind&gt;3 不算命中 ⇒ <b>不剥</b> ⇒ L1 见 §f 行首 ⇒
-     * 段落字面（剥除从未发生，谈不上缩进代码）。注释口径必须写明：这是 chat3 集成层的既有
-     * 语义差——纯 markdown 消费者走 L1 直连时，「    - item」（4 空格开头）才是缩进代码块
-     * （CommonMark 0.30 §4.4 / 本仓 C1a），与本行无关，不是 bug。
+     * 行为变化锁（C6b 甲改判，任务书第三部分第 4 条点名）：§f + 4 空格 + 「- item」——
+     * §f 转样式后文本以 4 空格开头 ⇒ L1 按 CommonMark 0.30 §4.4 判<b>缩进代码块</b>。
+     * 这才是主流正确结果：乙′ 的「段落字面」是为保行首色做的妥协（不剥则 § 挡在行首使块
+     * 判据失明，剥了则 ind&gt;3 又不可消费——两难皆因清洗看不到块上下文），甲 把色存进
+     * 锚点后文本恒纯，妥协随机制一并退役。§f 白随锚点存活（显式色），衬底/行身份走 CODE。
      */
     @Test
-    public void leadingCodePlusFourSpaceMarkerStaysParagraphLiteral() {
+    public void leadingCodePlusFourSpaceMarkerBecomesIndentedCodeBlockC6b() {
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
         List<ChatMarkdownPipeline.RenderedLine> out = pipeline.layout(
                 "\u00a7f    - item", WHITE, 4000, 13, null, PASSTHROUGH);
         Assert.assertEquals(1, out.size());
-        Assert.assertFalse("身份 = 段落字面（乙′ 不剥 → L1 见行首 § 非空白）", out.get(0).isCode());
+        Assert.assertTrue("身份 = 缩进代码块（CommonMark §4.4 主流口径）", out.get(0).isCode());
         Assert.assertFalse(out.get(0).isRule());
-        Assert.assertEquals("    - item", visible(out));
-        Assert.assertEquals("空格位置进可见文本（视图未采用）", 0, out.get(0).leftInsetPx());
-        Assert.assertEquals("§f 进桥解释为基础色白", WHITE,
-                out.get(0).segments().get(out.get(0).segments().size() - 1).getStyle().getColor());
+        // 缩进代码正文剥 4 空格列（C1a 与 String 直连「    - deep」→「- deep」同口径）
+        Assert.assertEquals("- item", visible(out));
+        Assert.assertEquals("缩进代码不产引用/列表缩进", 0, out.get(0).leftInsetPx());
+        Assert.assertTrue("§f 显式白随锚点存活（CODE 路 applied 同款定尺）",
+                out.get(0).segments().get(0).getStyle().isColorExplicit());
+        Assert.assertEquals(WHITE,
+                out.get(0).segments().get(0).getStyle().getColor());
     }
 
-    /** 行中 § 码不受输入清洗影响，仍由输出侧桥解释成颜色（M4-fix F4 的另一半原样保住）。 */
+    /**
+     * 行中 § 码锁（C6b 改判名：原 midLineSectionCodesAreStillBridgedToColor）：行中码在
+     * 输入转换处变身为样式锚点（不再「后置桥上色」）——逐段可见形与旧桥逐位一致
+     * （「甲 」基色 + 「红」MC 红；M4-fix F4 的另一半语义不变，只是消费点归位到进
+     * markdown 之前）。
+     */
     @Test
-    public void midLineSectionCodesAreStillBridgedToColor() {
+    public void midLineSectionCodesBecomeSpanAnchorsBeforeParse() {
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
         List<ChatMarkdownPipeline.RenderedLine> out = pipeline.layout(
                 "\u7532 \u00a7c\u7ea2", WHITE, 4000, 13, null, PASSTHROUGH);
@@ -341,13 +378,14 @@ public class ChatMarkdownPipelineTest {
     }
 
     /**
-     * 行首色保住锁（乙′ 改判，反转 C4 初版「无条件剥」的行首色丢失）：§c红色警告 不命中块
-     * 标记 ⇒ 不剥 ⇒ 段文本进桥 ⇒ MC 红上色——与 C4 前逐位一致（旧 ChatMessageList NONE 分支
-     * parseCached(renderLine) 含行首 § 码、颜色保留；旧 classify 的剥码只是其检测局部变量）。
-     * 对照：命中行（§a- §citem）行首码仍消费、行中码仍上色。
+     * 行首色保住锁（C6b 改判名：原 leadingColorSemanticsSurviveOnNonHitLines——「命中/
+     * 未命中」概念随预清洗退役）：§c红色警告 的色经锚点存活为 MC 红；复合形态
+     * 「§a- §citem」= 列表项 + 红内容——<b>与乙′ 逐段逐色逐位等值</b>（该行两侧行首码都
+     * 消失、行中码都上色；差异仅在甲 下 §a 的绿色会停在被列表标记吃掉的「- 」区间上，
+     * 见迁移等价锁专项）。可见形不变，消费点从桥移到转换。
      */
     @Test
-    public void leadingColorSemanticsSurviveOnNonHitLines() {
+    public void leadingColorSemanticsSurviveViaSpanAnchors() {
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
         List<ChatMarkdownPipeline.RenderedLine> out = pipeline.layout(
                 "\u00a7c\u7ea2\u8272\u8b66\u544a", WHITE, 4000, 13, null, PASSTHROUGH);
@@ -366,35 +404,45 @@ public class ChatMarkdownPipelineTest {
     }
 
     /**
-     * 缓存陷阱锁（乙′ 口径）：两级 key 用清洗后文本 ⇒「§a- x」（命中 ⇒ 清洗后「- x」）与
-     * 「- x」同串、渲染逐段等值 ⇒ 共享条目是去重（assertSame 坐实同 key）；「不同原文清洗后
-     * 不同串」互不可见（夹进「§b- y」再回读「§a- x」不串味）；baseColor 仍分 key。未命中行
-     * （§c红色警告）清洗后仍含 §，与命中行天然不同 key，无需额外口径。
+     * 缓存口径锁（C6b 重定，任务书第一部分第 4 条）：两级 key 改吃<b>原文</b>（displayText
+     * 未转换形态）——转换 = (原文, baseColor) 的纯函数、只在未命中时做，baseColor 与配色代
+     * 指纹（cacheKey 吃次级色/链接色现值）都在 key 上 ⇒ <b>同 key ⇒ 同一语义输入</b>，
+     * 结构上无「同 key 不同语义」；「不同语义共享条目」同样不可能。副作用 = 「§a- x」与「- x」
+     * 不再共享条目（乙′ 靠清洗后同串去重）——只回退去重效率，语义零损失，且本例两者产物本就
+     * 不等值（甲 下行首 §a 绿色存活），旧「同串」前提已不成立。
      */
     @Test
-    public void cacheKeyUsesCleanedTextWithoutFlavorMixing() {
+    public void cacheKeyUsesRawTextAndNeverSharesAcrossSemantics() {
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
         List<ChatMarkdownPipeline.RenderedLine> secForm = pipeline.layout(
                 "\u00a7a- x", WHITE, 4000, 13, null, PASSTHROUGH);
+        List<ChatMarkdownPipeline.RenderedLine> again = pipeline.layout(
+                "\u00a7a- x", WHITE, 4000, 13, null, PASSTHROUGH);
+        Assert.assertSame("同原文同参 ⇒ 同实例（每帧零解析不回归）", secForm, again);
         List<ChatMarkdownPipeline.RenderedLine> plainForm = pipeline.layout(
                 "- x", WHITE, 4000, 13, null, PASSTHROUGH);
-        Assert.assertSame("清洗后同串 ⇒ 同 key（去重而非两条语义相同的缓存）",
+        Assert.assertNotSame("甲 口径：§ 版与纯净版分占条目（去重回退，非串味）",
                 secForm, plainForm);
+        Assert.assertEquals(0xFF55FF55, secForm.get(0).segments().get(1).getStyle().getColor());
+        Assert.assertEquals(WHITE, plainForm.get(0).segments().get(1).getStyle().getColor());
         List<ChatMarkdownPipeline.RenderedLine> other = pipeline.layout(
                 "\u00a7b- y", WHITE, 4000, 13, null, PASSTHROUGH);
         Assert.assertEquals("\u2022 y", visible(other));
-        List<ChatMarkdownPipeline.RenderedLine> again = pipeline.layout(
-                "\u00a7a- x", WHITE, 4000, 13, null, PASSTHROUGH);
-        Assert.assertSame("串味防御：回读仍是自己的产物", secForm, again);
-        Assert.assertEquals("\u2022 x", visible(again));
+        Assert.assertSame("串味防御：夹读后回读仍是自己的产物", secForm,
+                pipeline.layout("\u00a7a- x", WHITE, 4000, 13, null, PASSTHROUGH));
         List<ChatMarkdownPipeline.RenderedLine> otherBase = pipeline.layout(
-                "\u00a7a- x", 0xFF101010, 4000, 13,
-                null, PASSTHROUGH);
-        Assert.assertNotSame("baseColor 参与 key，不得与白字条目共享",
-                secForm, otherBase);
+                "\u00a7a- x", 0xFF101010, 4000, 13, null, PASSTHROUGH);
+        Assert.assertNotSame("baseColor 参与 key，不得与白底条目共享", secForm, otherBase);
         Assert.assertEquals("\u2022 x", visible(otherBase));
-        Assert.assertEquals("基础色进段样式", 0xFF101010,
-                otherBase.get(0).segments().get(1).getStyle().getColor());
+        // §r 形态：转换后与纯净版语义等值（锚点底色 = 基色、非显式），但 key 不同 ⇒ 两条
+        // 目不同实例、逐段等值——「同语义两条目」= 允许的去重回退，锁死其不串语义。
+        List<ChatMarkdownPipeline.RenderedLine> resetForm = pipeline.layout(
+                "\u00a7r- x", WHITE, 4000, 13, null, PASSTHROUGH);
+        Assert.assertNotSame("等值语义不同原文 ⇒ 不共享条目（无「同 key 不同语义」的另一半）",
+                plainForm, resetForm);
+        Assert.assertEquals(visible(plainForm), visible(resetForm));
+        Assert.assertEquals(plainForm.get(0).segments().get(1).getStyle().getColor(),
+                resetForm.get(0).segments().get(1).getStyle().getColor());
     }
 
     // ==================== 乙′ 一致性锁：chat3 粗检 ⇔ L1 真判据（两份代码防漂移，漂移即红） ====================
@@ -470,4 +518,148 @@ public class ChatMarkdownPipelineTest {
         Assert.assertTrue("命中样本地板（实测 " + Integer.valueOf(hits) + "）", hits >= 15);
         Assert.assertTrue("未命中样本地板（实测 " + Integer.valueOf(misses) + "）", misses >= 10);
     }
+
+    // ==================== C6b § → span 转换器单元锁（§ 族按甲改写主体） ====================
+
+    private static TextStyle whiteBase() {
+        TextStyle s = new TextStyle();
+        s.setColor(WHITE);
+        return s;
+    }
+
+    private static int colorOf(TextStyle s) {
+        return s.getColor();
+    }
+
+    /** 码对逐码消费、§ 不进 span 文本（与 splitRunsOnFormatCodes/parseSegments 同源语义）。 */
+    @Test
+    public void converterSplitsCodePairsIntoStyledSpansWithoutSectionChars() {
+        List<MarkdownSpan> spans = ChatMarkdownPipeline.toSpanStream(
+                "\u00a7c\u7532\u00a7f\u4e59", whiteBase());
+        Assert.assertEquals(2, spans.size());
+        Assert.assertEquals("\u7532", spans.get(0).getText());
+        Assert.assertEquals(0xFFFF5555, colorOf(spans.get(0).getBaseStyle()));
+        Assert.assertTrue("§ 着色 = 显式色（C6b 定序的分尺）",
+                spans.get(0).getBaseStyle().isColorExplicit());
+        Assert.assertEquals("\u4e59", spans.get(1).getText());
+        Assert.assertEquals(WHITE, colorOf(spans.get(1).getBaseStyle()));
+        Assert.assertTrue("\u00a7f 也记显式（引用内 §f 压引用色，同旧桥）",
+                spans.get(1).getBaseStyle().isColorExplicit());
+        // 连续码 §c§l 逐对消费、色清样式位再叠加（MC 语义，applyFormat 原生行为）
+        List<MarkdownSpan> pair = ChatMarkdownPipeline.toSpanStream(
+                "\u00a7c\u00a7l\u7532", whiteBase());
+        Assert.assertEquals(1, pair.size());
+        Assert.assertEquals(0xFFFF5555, colorOf(pair.get(0).getBaseStyle()));
+        Assert.assertEquals(FontType.BOLD, pair.get(0).getBaseStyle().getFontType());
+        // 色码清先前 § 样式位（与 parseSegments 同源）：§l甲§c乙 ⇒ 乙红不粗
+        List<MarkdownSpan> clears = ChatMarkdownPipeline.toSpanStream(
+                "\u00a7l\u7532\u00a7c\u4e59", whiteBase());
+        Assert.assertEquals(FontType.BOLD,
+                clears.get(0).getBaseStyle().getFontType());
+        Assert.assertEquals("\u00a7c 后 §l 位被色码重置（MC 语义）", FontType.NORMAL,
+                clears.get(1).getBaseStyle().getFontType());
+    }
+
+    /** 起点样式 = 非显式底色：无 § 着色的文本让位块级色（引用降色），与旧桥零改动段同色。 */
+    @Test
+    public void converterStartStyleIsNonExplicitCallerBase() {
+        List<MarkdownSpan> spans = ChatMarkdownPipeline.toSpanStream(
+                "plain \u6587\u672c", whiteBase());
+        Assert.assertEquals(1, spans.size());
+        Assert.assertEquals(WHITE, colorOf(spans.get(0).getBaseStyle()));
+        Assert.assertFalse("底色 span 非显式（甲 定序：不覆盖块级色）",
+                spans.get(0).getBaseStyle().isColorExplicit());
+        // §r 重置回「非显式底色」：引用内 §c甲§r乙 的乙让位引用色 = 旧桥 resetAll(段起色) 同色
+        List<MarkdownSpan> resets = ChatMarkdownPipeline.toSpanStream(
+                "\u00a7c\u7532\u00a7r\u4e59", whiteBase());
+        Assert.assertTrue(resets.get(0).getBaseStyle().isColorExplicit());
+        Assert.assertFalse("§r 后回落非显式", resets.get(1).getBaseStyle().isColorExplicit());
+        Assert.assertEquals(WHITE, colorOf(resets.get(1).getBaseStyle()));
+    }
+
+    /** 行界与孤立 § 不可吞：紧邻 \n/\r 的 § 与消息尾 § 按字面进文本（换行 = L1 块检测材料）。 */
+    @Test
+    public void converterNeverEatsLineBoundariesOrLoneSection() {
+        List<MarkdownSpan> crlf = ChatMarkdownPipeline.toSpanStream(
+                "\u7532\u00a7\n\u4e59", whiteBase());
+        Assert.assertEquals(1, crlf.size());
+        Assert.assertEquals("\u7532\u00a7\n\u4e59", crlf.get(0).getText());
+        List<MarkdownSpan> tail = ChatMarkdownPipeline.toSpanStream(
+                "\u7532\u00a7", whiteBase());
+        Assert.assertEquals("\u7532\u00a7", tail.get(0).getText());
+        List<MarkdownSpan> cr = ChatMarkdownPipeline.toSpanStream(
+                "\u7532\u00a7\r\u4e59", whiteBase());
+        Assert.assertEquals("\u7532\u00a7\r\u4e59", cr.get(0).getText());
+    }
+
+    /** 未知码对走 applyFormat default（= 重置、两字符消费）——与 L0 parseSegments 同形，非另造。 */
+    @Test
+    public void converterConsumesUnknownPairAsResetLikeL0() {
+        List<MarkdownSpan> unknown = ChatMarkdownPipeline.toSpanStream(
+                "\u00a7c\u7532\u00a7z\u4e59", whiteBase());
+        Assert.assertEquals(2, unknown.size());
+        Assert.assertEquals("\u4e59", unknown.get(1).getText());
+        Assert.assertFalse("\u00a7z default=重置 ⇒ 非显式底色", 
+                unknown.get(1).getBaseStyle().isColorExplicit());
+        Assert.assertEquals(WHITE, colorOf(unknown.get(1).getBaseStyle()));
+    }
+
+    /** 大小写同义 + 空文本空流。 */
+    @Test
+    public void converterIsCaseInsensitiveAndEmptySafe() {
+        List<MarkdownSpan> upper = ChatMarkdownPipeline.toSpanStream(
+                "\u00a7F\u7532", whiteBase());
+        Assert.assertEquals(WHITE, colorOf(upper.get(0).getBaseStyle()));
+        Assert.assertTrue(upper.get(0).getBaseStyle().isColorExplicit());
+        Assert.assertTrue(ChatMarkdownPipeline.toSpanStream("", whiteBase()).isEmpty());
+    }
+
+    // ==================== 桥退役前实证：甲 段流上桥 = no-op（任务书第三部分第 3 条） ====================
+
+    /** 甲 产物段文本里 § 只可能作行尾孤立体存在（无可消费码对）⇒ 桥结构上无事可做。 */
+    @Test
+    public void convertedStreamLeavesNoConsumableSectionPairsForTheBridge() {
+        String[] corpus = {
+            "\u00a7a- x", "\u00a7c\u7532\u00a7f\u4e59", "> \u00a7c\u7532",
+            "```\n\u00a7cfoo\n```", "```\n\u00a7c# \u6807\n```", "> \u00a7a- x",
+            "\u00a7c\u7532\u00a7r\u4e59", "\u00a7c\u00a7l\u7532", "\u7532\u00a7", "\u00a7f    - item",
+            "\u00a7z- x", "\u00a7c**a**b", "\u00a7c\u7532\n\u4e59", "> \u00a7c\u7532\u00a7r\u4e59",
+            "\u00a7a- \u73a9\u5bb6\u5217\u8868\u884c",
+            "\u00a7c\u7ea2\u8272\u8b66\u544a \u00a7fplain tail mixed English 123",
+            "\u666e\u901a\u6bb5\u843d", "- \u65e0 § \u5217\u8868", "# \u6807\u9898",
+        };
+        ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
+        for (int i = 0; i < corpus.length; i++) {
+            String msg = corpus[i];
+            List<MarkdownLayoutLine> logical = pipeline.logicalForTest(msg, WHITE);
+            for (int k = 0; k < logical.size(); k++) {
+                List<TextSegment> segments = logical.get(k).getSegments();
+                for (int s = 0; s < segments.size(); s++) {
+                    TextSegment segment = segments.get(s);
+                    if (segment.isLatex()) {
+                        Assert.fail("latex 源含 § 说明消费点漏了（甲在进 markdown 前已全部消化）: "
+                                + msg);
+                    }
+                    String text = segment.getText();
+                    int at = text.indexOf('\u00a7');
+                    if (at >= 0) {
+                        Assert.assertTrue("孤立 § 只许在段文本末位且全段仅此一枚: " + msg
+                                        + " / " + text,
+                                at == text.length() - 1 && text.indexOf('\u00a7', at + 1) < 0);
+                    }
+                    // 桥 no-op 实证：调旧桥后段流逐段等值（文本 + 全样式字段）
+                    List<TextSegment> bridged = ChatMarkdownPipeline.bridgeSectionCodes(segments);
+                    Assert.assertEquals("桥改段数 = 桥未 no-op: " + msg, segments.size(), bridged.size());
+                    for (int b = 0; b < segments.size(); b++) {
+                        Assert.assertEquals("桥改文本: " + msg,
+                                segments.get(b).getText(), bridged.get(b).getText());
+                        Assert.assertEquals("桥改样式: " + msg,
+                                StyleFieldsKey.of(segments.get(b).getStyle()),
+                                StyleFieldsKey.of(bridged.get(b).getStyle()));
+                    }
+                }
+            }
+        }
+    }
 }
+

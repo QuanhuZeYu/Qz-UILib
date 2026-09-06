@@ -16,12 +16,15 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * L1 承接——§ 行首码的输入清洗整体迁至 chat3 集成层（{@code ChatMarkdownPipeline}），L1 对 §
  * 零认知，本类该域钉「§ 行经 L1 直连 = 字面文本」的归位判据（见
  * {@link #sectionPrefixedLinesAreLiteralParagraphsAtL1AfterC4}）。C4 初版把集成层清洗做成
- * 「无条件剥」、登记「旧期望作废」，乙′ 已改判：<b>命中块标记才消费、未命中原样保留</b> ⇒
- * 旧期望「§f- item → • item」（§f  - item / §f§l- item 同款）与「§c 纯文本行色保留」
- * <b>对 chat3 消费者恢复 C4 前语义</b>——作废的只是「任何消费者经 L1 直连即得剥码」这一
- * C4 前才存在的能力（归位目的本身）。恢复后的观感锁在 {@code ChatMarkdownPipelineTest}
- * （preC4SectionFamilySemanticsRestoredThroughIntegrationLayer /
- * leadingColorSemanticsSurviveOnNonHitLines），本类不再声称旧期望整体作废。
+ * 「无条件剥」、登记「旧期望作废」，乙′ 改判「命中才剥 + 未命中进桥」；<b>C6b 甲（2026-09-07
+ * 第二步收尾）</b>再把乙′ 的「预清洗 + 输出后置桥」整套退役——chat3 现于进 markdown 前把
+ * § 码对转成样式锚点 span 流（{@code ChatMarkdownPipeline.toSpanStream}）。旧期望
+ * 「§f- item → • item」与「§c 纯文本行色保留」<b>对 chat3 消费者仍然成立</b>（机制换了、
+ * 落点没换）；作废的仍只是「任何消费者经 L1 直连即得剥码」这一 C4 前才存在的能力。
+ * 甲 口径的观感锁在 {@code ChatMarkdownPipelineTest}
+ * （sectionFamilySemanticsUnderSpanStreamConversionC6b /
+ * leadingColorSemanticsSurviveViaSpanAnchors），甲↔乙′ 逐段对账在
+ * {@code ChatMarkdownSectionSpanMigrationLockTest}；本类不再声称旧期望整体作废。
  *
  * <p>期望为 B 路裁定行为：与旧垫片语义有差处按规划裁定登记（未闭合标记字面宽容 = M1 裁定；
  * code 段样式 = F1）。<b>C1a（2026-09-06 对齐裁定）</b>：旧「深缩进独立列表行绝对层级
@@ -130,14 +133,15 @@ public class MarkdownChat3RuleInheritanceTest {
      * 的 L1 直连表达——markerView 机制已从 L1 拆除，公共面守卫钉死 {@code ChatMarkdownPipeline}
      * 包外不可达，「命中才剥」的旧期望在<b>本类所钉的 L1 直连接缝</b>上无从谈起）：
      * <b>L1 对 § 零认知</b>，行首 § 码对既不被消费、也不参与块标记检测，一切按原始字面文本——
-     * ① 「§f- item」「§f  - item」「§f§l- item」在 L1 直连 = 普通段落字面；<b>对 chat3 消费者
-     *    则按乙′恢复 C4 前语义</b>（命中块标记仍剥 ⇒ 「• item」，锁在
-     *    {@code ChatMarkdownPipelineTest#preC4SectionFamilySemanticsRestoredThroughIntegrationLayer}）；
-     * ② 「§f    - item」：行首是非空白 § → 连缩进代码块都不命中 → L1 直连字面段落——chat3
-     *    侧乙′ 同样不剥（ind&gt;3 不算命中）⇒ 两侧同形（C4 初版「剥后成缩进代码块」已改判，
-     *    锁 {@code ChatMarkdownPipelineTest#leadingCodePlusFourSpaceMarkerStaysParagraphLiteral}）；
-     * ③ 原 F4「未命中兜底」例（§f§r / §f-not 列表）行为不变——那时 L1 兜底字面，现在 L1 直连
-     *    恒字面、chat3 集成层按同判据也不剥。
+     * ① 「§f- item」「§f  - item」「§f§l- item」在 L1 直连 = 普通段落字面；<b>chat3 消费者经
+     *    甲 转换后行首恒纯文本 ⇒ 照常「• item」（且 §l 粗体、§f 显式白随锚点存活，锁在
+     *    {@code ChatMarkdownPipelineTest#sectionFamilySemanticsUnderSpanStreamConversionC6b}）；
+     * ② 「§f    - item」：行首是非空白 § → 连缩进代码块都不命中 → L1 直连字面段落不变；
+     *    chat3 甲 侧 §f 转样式后文本以 4 空格开头 ⇒ 缩进代码块（CommonMark §4.4 主流正确
+     *    结果；乙′ 的「段落字面」是保色妥协，随机制退役，锁
+     *    {@code ChatMarkdownPipelineTest#leadingCodePlusFourSpaceMarkerBecomesIndentedCodeBlockC6b}）；
+     * ③ 原 F4「未命中兜底」例（§f§r / §f-not 列表）L1 直连仍恒字面；chat3 甲 侧码对
+     *    （§f/§r）转锚点、文本「-not 列表」不命中任何块标记 ⇒ 段落字面同形。
      */
     @Test
     public void sectionPrefixedLinesAreLiteralParagraphsAtL1AfterC4() {
