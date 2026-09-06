@@ -97,14 +97,15 @@ public final class ChatContainer {
             return bar;
         }
 
-        /** 每帧同步动态尺寸(视口 1/4 × 1/2)与气泡最大宽(设计稿 §3.x:气泡 ≤ 0.85 组内容宽)。 */
+        /** 每帧同步动态尺寸(视口 1/4 × 1/2)与气泡最大宽。钳宽式唯一出处 =
+         *  {@link ChatSceneController#bubbleMaxWidthPxFor(int)}(包内 static,A3 提取),
+         *  容器路不再自算镜像式(A3 镜像残留收口);传入前 Math.max(1, width) 视口守卫
+         *  原样保持,未知视口(0)时既有语义不变。 */
         public void setViewport(int width, int height) {
             root.setPreferredWidth(ChatMarkdownSettings.chatWidthFor(Math.max(1, width)));
             root.setPreferredHeight(ChatMarkdownSettings.containerHeightFor(Math.max(1, height)));
-            int contentWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(Math.max(1, width))
-                    - 2 * ChatMarkdownSettings.getBubblePaddingX());
-            controller.messageList().setBubbleMaxWidthPx((int) Math.round(
-                    contentWidth * ChatMarkdownSettings.getBubbleMaxWidthRatio()));
+            controller.messageList().setBubbleMaxWidthPx(
+                    ChatSceneController.bubbleMaxWidthPxFor(Math.max(1, width)));
         }
     }
 
