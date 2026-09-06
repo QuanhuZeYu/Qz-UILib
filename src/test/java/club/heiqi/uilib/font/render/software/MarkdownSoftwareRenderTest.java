@@ -548,22 +548,25 @@ public class MarkdownSoftwareRenderTest {
     }
 
     /**
-     * F2 嵌套列表缩进：每级 2 个前导空格写进 bullet 段文本（chat3 口径，
-     * {@code ChatMessageList.java:952-956}），靠扁平段流表达，不开块模型/缩进 px 公共面。
+     * F2 嵌套列表前导空格编码已在 C1a（2026-09-06 对齐裁定，CommonMark）退役：旧「每级
+     * 2 个前导空格写进 bullet 段文本」的 chat3 出货代理整体作废——段流路标记段与行接缝
+     * 同源（bareListMarker 单源），恒为裸体「• 」，层级不再编码进可见文本（归行接缝
+     * listMarkerChain 承载，{@code MarkdownLayoutLinesTest} 等值锁钉）。本例钉退役后的
+     * 新形态：各级标记文本全等、逐段拼接与行接缝可见文本逐字相同。
      */
     @Test
-    public void fixF2NestedListIndentIsLeadingSpacesInMarkerSegment() {
+    public void nestedListMarkerSegmentsAreBareWithoutLeadingSpaces() {
         List<TextSegment> segments = MarkdownDocument.parse("- 甲\n  - 乙\n    - 丙")
                 .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
         Assert.assertEquals("首级标记零缩进", "• ", segments.get(0).getText());
-        Assert.assertEquals("二级标记 2 空格缩进", "  • ", markerAt(segments, 1));
-        Assert.assertEquals("三级标记 4 空格缩进", "    • ", markerAt(segments, 2));
+        Assert.assertEquals("二级标记裸体（旧「  」前导随 F2 退役）", "• ", markerAt(segments, 1));
+        Assert.assertEquals("三级标记裸体（旧「    」前导随 F2 退役）", "• ", markerAt(segments, 2));
         StringBuilder flat = new StringBuilder();
         for (int i = 0; i < segments.size(); i++) {
             flat.append(segments.get(i).getText());
         }
-        Assert.assertEquals("逐段拼接 = chat3 流式文本",
-                "• 甲\n  • 乙\n    • 丙", flat.toString());
+        Assert.assertEquals("逐段拼接 = 行接缝可见文本（层级不进文本）",
+                "• 甲\n• 乙\n• 丙", flat.toString());
     }
 
     /**
@@ -806,7 +809,7 @@ public class MarkdownSoftwareRenderTest {
         return styles;
     }
 
-    /** 取第 index 个列表标记段（含前导缩进的空格），不存在返回 null。 */
+    /** 取第 index 个列表标记段（C1a 起恒裸体、无前导空格），不存在返回 null。 */
     private static String markerAt(List<TextSegment> segments, int index) {
         int seen = -1;
         for (int i = 0; i < segments.size(); i++) {

@@ -12,14 +12,16 @@ import club.heiqi.uilib.font.layout.TextStyle;
 /**
  * L1 块身份行接缝（{@code toLayoutLines}，M7 方案乙）钉死测试——纯 JVM，零度量依赖。
  *
- * <p><b>核心不变量：接缝加身份、文本改动只许一处。</b>M10d（2026-09-05「做全」追加裁定）
- * 起行接缝的列表标记段剥净 F2「  」前导空格（几何不编码在可见文本里，改由 listMarkerChain
- * 显式携带）——这是两路可见文本唯一被许可的差异，等值锁就地改写成「剥净前导后逐字等 +
- * 差异必为偶数个前导空格 + 落差不在此形态的行当场红」。每条反向断言按事故档
+ * <p><b>核心不变量：接缝加身份、文本改动只许一处。</b>C1a（2026-09-06 对齐裁定，CommonMark）
+ * 把 F2「  」前导空格编码从段流里退役——两接缝标记段统一取 bareListMarker 单源，M10d 曾许可的
+ * 「唯一文本差」不复存在：等值锁就地收紧为「两接缝可见文本严格逐字等 + LIST 行两侧均无前导空格」，
+ * 旧四判据里「剥净前导后逐字等 / 差异必为偶数个前导空格 / 剥前导只许落 LIST 标记行」三条款随
+ * 前导在源头的消亡作废（不再有「被许可的差」需要甄别，任何差都是坏差）。层级只由行接缝
+ * {@code listMarkerChain} 沿链求和承载几何。每条反向断言按事故档
  * ERROR-20260905 第八节配「正对照 + 反空跑地板（命中数 >= N）」：</p>
  * <ul>
  *   <li>{@link #visibleTextIdenticalAcrossSeamsOnGateCorpus()}——门禁语料镜像逐条对拍：
- *       行路可见文本与段路逐行等值（仅容 LIST 标记行的 F2 前导空格差），行数量一致；</li>
+ *       行路可见文本与段路逐行零差异等值，行数量一致；</li>
  *   <li>{@link #quoteIndentMonotonicPerLevel()}——引用第 N 层左偏移随层数严格单调增；</li>
  *   <li>{@link #codeLinesShareBlockIdAndCarryBackdrop()} / {@link #thematicBreakLineAlwaysExists()}
  *       ——CODE 归组与横线恒成行；</li>
@@ -91,7 +93,7 @@ public class MarkdownLayoutLinesTest {
     public void visibleTextIdenticalAcrossSeamsOnGateCorpus() {
         String[][] corpus = corpus();
         int checked = 0;
-        int prefixFolded = 0;
+        int nestedListLines = 0;
         for (String[] entry : corpus) {
             MarkdownDocument doc = MarkdownDocument.parse(entry[1]);
             List<String> viaSegments = segmentsByLineList(
@@ -104,32 +106,33 @@ public class MarkdownLayoutLinesTest {
                 String segLine = viaSegments.get(i);
                 MarkdownLayoutLine line = lines.get(i);
                 String lineText = flatVisible(line.getSegments());
-                if (segLine.equals(lineText)) {
-                    continue;
+                // C1a（2026-09-06 对齐裁定）：M10d 曾许可的唯一文本差（段路 LIST 标记行带
+                // F2「  」前导、行路剥净）随前导机制退役——段路不再产前导空格，两接缝可见
+                // 文本必须严格逐字等，任何差（含前导差）当场红。
+                Assert.assertEquals(entry[0] + " 行#" + i
+                        + " 两接缝可见文本必须逐字相等（C1a 裸标记口径）", segLine, lineText);
+                if (line.getKind() == MarkdownLayoutLine.Kind.LIST) {
+                    // 「均无前导空格」钉：旧「成双空格/只落 LIST 标记行」条款的替代形——
+                    // 两侧同钉裸体，段路与行路一律不许把层级写进文本（几何进文本=违仓规）。
+                    Assert.assertFalse(entry[0] + " 行#" + i
+                            + " 段路 LIST 行不得带前导空格（F2 前导已退役）: <" + segLine + ">",
+                            segLine.startsWith(" "));
+                    Assert.assertFalse(entry[0] + " 行#" + i
+                            + " 行路 LIST 行不得带前导空格（几何进文本=违仓规）: <" + lineText + ">",
+                            lineText.startsWith(" "));
+                    // 层级走链不走文本：嵌套项（链 >=2 级）在场即是「等值锁真跑过旧 F2 行」的
+                    // 正对照素材，计数进地板。
+                    if (line.getListMarkerChain().size() >= 2) {
+                        nestedListLines++;
+                    }
                 }
-                // 唯一被许可的差异（M10d）：段路 LIST 标记行带 F2「  」前导空格、行路剥净。
-                // 差异必须【整体是前导空格、个数成双、剥净后逐字等、且落在块首 LIST 标记行上
-                // ——行路 seg0 本身不带前导】。任何其它形态的差都当场红。
-                int d = 0;
-                while (d < segLine.length() && segLine.charAt(d) == ' ') {
-                    d++;
-                }
-                Assert.assertEquals(entry[0] + " 行#" + i + " 差异必须是纯前导空格（F2 代理）",
-                        segLine.substring(d), lineText);
-                Assert.assertTrue(entry[0] + " 行#" + i + " 前导空格必须成双（2/级）且非零: d=" + d,
-                        d > 0 && d % 2 == 0);
-                Assert.assertEquals(entry[0] + " 行#" + i + " 剥前导只许发生在 LIST 标记行",
-                        MarkdownLayoutLine.Kind.LIST, line.getKind());
-                Assert.assertTrue(entry[0] + " 行#" + i + " 行路标记段本身不得带前导空格（几何进文本=违仓规）: <"
-                        + line.getSegments().get(0).getText() + ">",
-                        !line.getSegments().get(0).getText().startsWith(" "));
-                prefixFolded++;
             }
             checked++;
         }
         Assert.assertTrue("语料数地板（反空跑）：实测 " + checked + "，>=13", checked >= 13);
-        Assert.assertTrue("正对照地板（P08 二级+三级必须各折叠 1 行）：实测 "
-                + prefixFolded + "，>=2", prefixFolded >= 2);
+        Assert.assertTrue("正对照地板（P08 二级+三级嵌套 LIST 行必须各命中 1 行，"
+                + "证等值锁真跑过曾带 F2 前导的行）：实测 " + nestedListLines + "，>=2",
+                nestedListLines >= 2);
     }
 
     /**

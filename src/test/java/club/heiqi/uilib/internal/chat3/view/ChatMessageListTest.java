@@ -2125,14 +2125,15 @@ public class ChatMessageListTest {
     }
 
     /**
-     * M10d「做全」推翻本用例旧断言（「4 前导空格 = 2 级缩进，bullet 段含 '    ' 前缀」——
-     * 那是 F2 文本代理：几何编码进可见文本、且与实测标记宽漂移，2026-09-05 追加裁定作废）。
-     * 行接缝标记段恒为裸体「• 」；缩进唯一真相 = listMarkerChain 经 L2 沿链求和。
-     * 本例是「深缩进起步的单一顶层项」——没有父项 ⇒ 没有祖先链 ⇒ 偏移恒 0 是正确行为
-     * （旧代理会凭空给它 4 空格文本缩进）。嵌套项的列见下方正对照（链给出，非文本）。
+     * C1a（2026-09-06 对齐裁定，CommonMark 0.30 §4.4）使本用例旧前提作废：块起点前导
+     * >=4 空格的「    - deep」不论是否命中列表标记，现一律落<b>缩进代码块</b>——
+     * M5 F2 深缩进独立列表机制（readDeepList/baseLevel）已退役，「深缩进起步的单一顶层
+     * 项」不再存在。改钉新主流行为：<b>缩进代码块的字面段不产生列表正文列/内衬</b>
+     * （身份 = CODE 衬底行、左偏移恒 0，"-" 是代码内容而非标记）。嵌套项的祖先列仍由
+     * listMarkerChain 给出（下方正对照，反证上面的 0 不是恒真）。
      */
     @Test
-    public void unorderedListDeepStartItemCarriesNoTextIndent() {
+    public void indentedCodeAtBlockStartCarriesNoListBodyColumn() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText(
                 "<Bob>     - deep"), 1, T0));
@@ -2140,13 +2141,23 @@ public class ChatMessageListTest {
         SceneNode bubble = (SceneNode) parts[0];
         SceneNode lineNode = bubble.__getChildren().get(0);
         List<TextSegment> segments = lineNode.getSegments();
-        Assert.assertEquals(2, segments.size());
-        Assert.assertEquals("标记段裸体（几何不进文本）", "• ", segments.get(0).getText());
-        Assert.assertEquals("deep", segments.get(1).getText());
-        Assert.assertEquals("无父项 ⇒ 左内衬恒 0（旧代理世界这里会有 4 空格文本缩进）",
-                0, lineNode.getPaddingLeft());
-        // 正对照：真有父项的嵌套项，其标记行由链给出祖先列（接缝 inset>0）
+        Assert.assertEquals("单一字面段（不再是「标记 + 正文」两段的列表形态）",
+                1, segments.size());
+        Assert.assertEquals("剥至多 4 前导空格后余文按代码内容原样（'-' 不是标记）",
+                "- deep", segments.get(0).getText());
+        Assert.assertEquals("CODE 身份带块底色（与围栏同款出货口径）",
+                ChatMarkdownSettings.getCodeBackgroundArgb(), lineNode.getBackgroundColor());
+        // 正文列/内衬唯一真相 = RenderedLine.leftInsetPx（气泡路 listExtra 由它反解）：
+        // 无列表 ⇒ 恒 0。旧 F2 文本代理世界会在这里凭空造出 4 空格缩进。
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
+        List<ChatMarkdownPipeline.RenderedLine> code = pipeline.layout(
+                "    - deep", 0xFFFFFFFF, 4000,
+                ChatMarkdownSettings.getChatFontSizePx(), null, null);
+        Assert.assertEquals("4 空格缩进行 = 单行缩进代码块", 1, code.size());
+        Assert.assertTrue("行身份 = CODE（不是 LIST）", code.get(0).isCode());
+        Assert.assertEquals("缩进代码字面段不产生列表正文列（leftInset 恒 0）",
+                0, code.get(0).leftInsetPx());
+        // 正对照：真有父项的嵌套项，其标记行由链给出祖先列（接缝 inset>0）
         List<ChatMarkdownPipeline.RenderedLine> flat = pipeline.layout(
                 "- top" + String.valueOf((char) 0x0A) + "  - deep", 0xFFFFFFFF, 4000,
                 ChatMarkdownSettings.getChatFontSizePx(), null, null);
