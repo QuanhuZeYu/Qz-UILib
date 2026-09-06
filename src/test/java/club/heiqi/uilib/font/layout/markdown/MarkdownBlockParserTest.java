@@ -279,6 +279,62 @@ public class MarkdownBlockParserTest {
         Assert.assertEquals("丙", innerList.children.get(0).children.get(0).joinedLines());
     }
 
+    /** C1a：块起点前导 1-3 空格 = 顶级列表项，前导缩进被剥除、不进项体文本
+     *（旧「层级 = 前导空格 / 2 + baseLevel」口径作废）。 */
+    @Test
+    public void topLevelListMarkerAtOneToThreeSpacesStripsIndent() {
+        MarkdownBlock list = single("  - x", Kind.LIST);
+        Assert.assertFalse(list.ordered);
+        MarkdownBlock item = list.children.get(0);
+        Assert.assertEquals("-", item.marker);
+        Assert.assertEquals("x", item.children.get(0).joinedLines());
+        MarkdownBlock three = single("   - y", Kind.LIST);
+        Assert.assertEquals("y", three.children.get(0).children.get(0).joinedLines());
+        // 有序同理：「  12. z」= 顶级项，内容列自绝对列起算
+        MarkdownBlock ord = single(nl("  12. z", "      续"), Kind.LIST);
+        MarkdownBlock zItem = ord.children.get(0);
+        Assert.assertEquals("12.", zItem.marker);
+        Assert.assertEquals(nl("z", "续"), zItem.children.get(0).joinedLines());
+        Assert.assertEquals(1, ord.children.size());
+    }
+
+    /** 内容列口径（CommonMark 例 296/297）：宽标记「10) 」内容列 = 4，嵌套要 4 空格；
+     * 3 空格不属内容、又命中列表标记（打断段落）→ 本列表结束、另起一个列表。 */
+    @Test
+    public void nestingFollowsParentMarkerActualWidth() {
+        MarkdownBlock list = single(nl("10) 甲", "    - 乙"), Kind.LIST);
+        MarkdownBlock item = list.children.get(0);
+        Assert.assertEquals(2, item.children.size());
+        Assert.assertEquals(Kind.LIST, item.children.get(1).kind);
+        Assert.assertEquals("乙",
+                item.children.get(1).children.get(0).children.get(0).joinedLines());
+        List<MarkdownBlock> two = MarkdownBlockParser.parse(nl("10) 甲", "   - 乙"));
+        Assert.assertEquals(2, two.size());
+        Assert.assertEquals(Kind.LIST, two.get(0).kind);
+        Assert.assertTrue(two.get(0).ordered);
+        Assert.assertEquals(1, two.get(0).children.size());
+        Assert.assertEquals(Kind.LIST, two.get(1).kind);
+        Assert.assertFalse(two.get(1).ordered);
+        Assert.assertEquals(1, two.get(1).children.size());
+    }
+
+    /** 续行 < 内容列且非块标记 = CommonMark 惰性续行（例 291）：仍属该项段落、行首空白
+     * 折叠；「空行 + < 内容列」才是真项结束（列表断块、行落顶层段落）。 */
+    @Test
+    public void continuationBelowContentColumnIsLazyThenEndsAfterBlank() {
+        MarkdownBlock list = single(nl("12. 甲", "   续行"), Kind.LIST);
+        Assert.assertEquals(1, list.children.size());
+        MarkdownBlock para = list.children.get(0).children.get(0);
+        Assert.assertEquals(2, para.lines.size());
+        Assert.assertEquals("续行", para.lines.get(1)); // 折叠剥除 3 前导空格
+        List<MarkdownBlock> split = MarkdownBlockParser.parse(nl("12. 甲", "", "   续行"));
+        Assert.assertEquals(2, split.size());
+        Assert.assertEquals(Kind.LIST, split.get(0).kind);
+        Assert.assertEquals(1, split.get(0).children.get(0).children.get(0).lines.size());
+        Assert.assertEquals(Kind.PARAGRAPH, split.get(1).kind);
+        Assert.assertEquals("续行", split.get(1).joinedLines());
+    }
+
     @Test
     public void shouldKeepSameIndentSiblingItemsInOneList() {
         MarkdownBlock list = single(nl("- 甲", "- 乙", "- 丙"), Kind.LIST);
@@ -311,12 +367,90 @@ public class MarkdownBlockParserTest {
         Assert.assertEquals("甲", list.children.get(0).children.get(0).joinedLines());
     }
 
-    /** 钉死范围裁定：4 空格缩进不是缩进代码块，是段落续行（行首空格字面保留）。 */
+    // —— 缩进代码块（C1a，2026-09-06 CommonMark 对齐裁定；旧「4 空格缩进不是缩进代码块」
+    //    裁定作废，本节按 CommonMark 0.30 §4.4 例 110/111/113/114/116/117 重钉）——
+
+    /** 块起点 ≥4 前导空格 = 缩进代码块；剥 4 后为内容，info 恒空。 */
     @Test
-    public void shouldNotParseIndentedCode() {
+    public void indentedCodeAtBlockStartBecomesCodeBlock() {
+        MarkdownBlock code = single("    foo", Kind.CODE);
+        Assert.assertEquals(1, code.lines.size());
+        Assert.assertEquals("foo", code.lines.get(0));
+        Assert.assertEquals("", code.info);
+        Assert.assertTrue(code.children.isEmpty());
+    }
+
+    /** 6 空格行剥 4 留 2（多余缩进属于代码内容，例 116）。 */
+    @Test
+    public void indentedCodeStripsOnlyFourColumns() {
+        MarkdownBlock code = single(nl("      foo", "    bar"), Kind.CODE);
+        Assert.assertEquals(2, code.lines.size());
+        Assert.assertEquals("  foo", code.lines.get(0));
+        Assert.assertEquals("bar", code.lines.get(1));
+    }
+
+    /** 块内行内 markdown 不解析：与围栏 CODE 同一字面口径。 */
+    @Test
+    public void indentedCodeContentStaysLiteral() {
+        MarkdownBlock code = single(nl("    **粗** [a](http://x.y) $x$"), Kind.CODE);
+        Assert.assertEquals("**粗** [a](http://x.y) $x$", code.joinedLines());
+    }
+
+    /** 连续 ≥4 空格行并入同块；块间空行属于块；尾随空行不入块（例 111/117）。 */
+    @Test
+    public void indentedCodeChunksMergeAcrossInteriorBlanks() {
+        MarkdownBlock one = single(nl("    a", "    b"), Kind.CODE);
+        Assert.assertEquals(nl("a", "b"), one.joinedLines());
+        MarkdownBlock merged = single(nl("    a", "", "    b"), Kind.CODE);
+        Assert.assertEquals(nl("a", "", "b"), merged.joinedLines());
+        // 空行后被 <4 非空行中断：尾随空行不入块，归下一块的块前空行（F6）
+        List<MarkdownBlock> split = MarkdownBlockParser.parse(nl("    a", "", "bar"));
+        Assert.assertEquals(2, split.size());
+        Assert.assertEquals("a", split.get(0).joinedLines());
+        Assert.assertEquals(Kind.PARAGRAPH, split.get(1).kind);
+        Assert.assertEquals(1, split.get(1).blanksBefore);
+    }
+
+    /** 首个前导 <4 的非空行即刻结束缩进代码块（例 114）。 */
+    @Test
+    public void lessIndentedNonBlankLineEndsIndentedCode() {
+        List<MarkdownBlock> blocks = MarkdownBlockParser.parse(nl("    foo", "bar"));
+        Assert.assertEquals(2, blocks.size());
+        Assert.assertEquals(Kind.CODE, blocks.get(0).kind);
+        Assert.assertEquals("foo", blocks.get(0).joinedLines());
+        Assert.assertEquals(Kind.PARAGRAPH, blocks.get(1).kind);
+        Assert.assertEquals("bar", blocks.get(1).joinedLines());
+    }
+
+    /** 缩进代码不得中断段落：段落已开始后 4+ 空格行仍是续行，且行首空白折叠剥除
+     *（旧「字面保留」裁定作废，例 113）。 */
+    @Test
+    public void indentedLineAfterParagraphIsFoldedContinuation() {
         MarkdownBlock para = single(nl("正文", "    缩进行"), Kind.PARAGRAPH);
         Assert.assertEquals(2, para.lines.size());
-        Assert.assertEquals("    缩进行", para.lines.get(1));
+        Assert.assertEquals("缩进行", para.lines.get(1));
+    }
+
+    /** 段落经空行结束后，4+ 空格行才成为缩进代码块（块上下文边界）。 */
+    @Test
+    public void blankThenIndentedLineBecomesCodeBlock() {
+        List<MarkdownBlock> blocks = MarkdownBlockParser.parse(nl("甲", "", "    x"));
+        Assert.assertEquals(2, blocks.size());
+        Assert.assertEquals(Kind.PARAGRAPH, blocks.get(0).kind);
+        Assert.assertEquals(Kind.CODE, blocks.get(1).kind);
+        Assert.assertEquals("x", blocks.get(1).joinedLines());
+        Assert.assertEquals(1, blocks.get(1).blanksBefore);
+    }
+
+    /** 块起点 4 空格 + 列表标记 = 缩进代码字面（M5 F2「深缩进独立列表」裁定作废）；
+     * 5 空格剥 4 留 1。 */
+    @Test
+    public void deepIndentedListMarkerIsCodeLiteral() {
+        MarkdownBlock code = single("    - deep", Kind.CODE);
+        Assert.assertEquals("- deep", code.joinedLines());
+        List<MarkdownBlock> blocks = MarkdownBlockParser.parse("     - deep");
+        Assert.assertEquals(Kind.CODE, blocks.get(0).kind);
+        Assert.assertEquals(" - deep", blocks.get(0).joinedLines());
     }
 
     /** 钉死已裁简化：正文中序数不为 1 的有序起始不打断段落。 */

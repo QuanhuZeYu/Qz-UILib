@@ -8,22 +8,26 @@ import java.util.List;
  * 块级 markdown 扫描器（包内实现，对外唯一入口是 {@link MarkdownDocument}）。
  * 纯 JVM：不 import net.minecraft / cpw.mods / java.awt（规划 §四 G2 锁）。
  *
- * <p>语法面（《规划-通用Markdown渲染器.md》§二 L1 语法面，M2 范围）：ATX 标题
- * {@code #..######}、围栏代码（3 连 {@code `} 与 {@code ~~~}）、引用块 {@code >}
- * （可嵌套）、无序/有序列表（含缩进续行与嵌套子列表）、分隔线 {@code ---}/{@code ***}/
- * {@code ___}、段落与空行、硬换行（行尾两空格或行尾未转义反斜杠）。</p>
+ * <p>语法面（《规划-通用Markdown渲染器.md》§二 L1 语法面，M2 范围；缩进代码块为 C1a
+ * 2026-09-06 对齐裁定新增）：ATX 标题 {@code #..######}、围栏代码（3 连 {@code `} 与
+ * {@code ~~~}）、缩进代码块（块起点 ≥4 前导空格，CommonMark 0.30 §4.4，产出与围栏同款
+ * {@link MarkdownBlock.Kind#CODE} 节点、info 恒空）、引用块 {@code >}（可嵌套）、
+ * 无序/有序列表（含缩进续行与嵌套子列表，嵌套/续行判定恒按父项内容列）、
+ * 分隔线 {@code ---}/{@code ***}/{@code ___}、段落与空行、硬换行（行尾两空格或行尾未转义反斜杠）。</p>
  *
  * <p>刻意不支持（按普通文本字面保留，不进任何专用节点，不做默默吞掉）：表格、任务列表、
- * HTML 内联、脚注、图片 {@code ![alt](url)}、缩进代码（4 空格缩进行是段落/列表续行）。
- * 图片的「字面」边界说明：块层不识别 {@code !}，正文原样交 {@link MarkdownInlineParser}
- * 后 {@code [alt](url)} 部分按既有行内裁定解析为链接、{@code !} 为字面文本——行内语义
- * 照抄 9c4dcae5 裁定（规划 §五 D2），本层一行不改。</p>
+ * HTML 内联、脚注、图片 {@code ![alt](url)}。图片的「字面」边界说明：块层不识别 {@code !}，
+ * 正文原样交 {@link MarkdownInlineParser} 后 {@code [alt](url)} 部分按既有行内裁定解析为链接、
+ * {@code !} 为字面文本——行内语义照抄 9c4dcae5 裁定（规划 §五 D2），本层一行不改。</p>
  *
  * <p>相对 CommonMark 的已裁简化（均有测试钉死）：制表符不展开（块缩进只数行首空格，
  * 标记后空格/制表符均接受）；行首反斜杠不构成块转义（{@code \# x} 整行按字面段落处理，
  * {@code #} 不在本包 escapable 集，反斜杠由行内层字面输出）；backtick 围栏 info 校验已按
  * CommonMark 实现（含反引号不算开栏）；无 setext 标题（{@code ---}
- * 恒为分隔线）；嵌套深度上限 {@code MAX_BLOCK_DEPTH}（超限层按段落字面收拢，宽容失败）。</p>
+ * 恒为分隔线）；嵌套深度上限 {@code MAX_BLOCK_DEPTH}（超限层按段落字面收拢，宽容失败）；
+ * 列表项体内部源空行折叠（项体段落不因空行分裂，空行只在项与项/列表边界生效——M4 既有
+ * 简化、非 C1a 范围；副作用 = 项内「段落行 + 空行 + ≥4 空格行」按段落续行折叠而非缩进代码，
+ * 其余缩进代码与惰性续行判定均与 CommonMark 一致）。</p>
  *
  * <p>风格与 {@link MarkdownInlineParser} 同哲学：宽容失败、不抛异常、纯函数；
  * 零每帧解析裁定（规划 §六 3）——只在文档到达时调用一次，缓存责任在消费层。</p>
@@ -228,6 +232,15 @@ final class MarkdownBlockParser {
         return line.substring(k);
     }
 
+    /** 剥掉行首全部块语法空白（段落行折叠用；NBSP 不算空白，同 isSpaceChar 口径）。 */
+    private static String stripLeadingSpace(String line) {
+        int k = 0;
+        while (k < line.length() && isSpaceChar(line.charAt(k))) {
+            k++;
+        }
+        return k == 0 ? line : line.substring(k);
+    }
+
     // ==================== 块识别 ====================
 
     /** ATX 标题级别；0 = 非标题。要求 1..6 个 # 后为空格/制表符/行尾。 */
@@ -424,43 +437,45 @@ final class MarkdownBlockParser {
             }
             int ind = leadingSpaces(line);
             int before = blocks.size();
-            if (ind <= 3) {
-                String body = line.substring(ind);
-                if (fenceStart(body, 3) != 0) {
-                    i = readFence(lines, i, blocks);
-                    stamp(blocks, before, blanks); blanks = 0;
-                    continue;
-                }
-                int heading = headingLevel(body);
-                if (heading > 0) {
-                    blocks.add(MarkdownBlock.heading(heading, headingBody(body, heading)));
-                    i++;
-                    stamp(blocks, before, blanks); blanks = 0;
-                    continue;
-                }
-                if (isThematicBreak(body)) {
-                    blocks.add(MarkdownBlock.thematicBreak());
-                    i++;
-                    stamp(blocks, before, blanks); blanks = 0;
-                    continue;
-                }
-                if (body.charAt(0) == '>') {
-                    i = readQuote(lines, i, blocks, depth);
-                    stamp(blocks, before, blanks); blanks = 0;
-                    continue;
-                }
-                if (matchListStart(line) != null) {
-                    i = readList(lines, i, blocks, depth);
-                    stamp(blocks, before, blanks); blanks = 0;
-                    continue;
-                }
-            } else if (depth == 0 && ind < line.length()
-                    && matchListStart(line.substring(ind)) != null) {
-                // M5 F2 补全（chat3 行级规则承接）：顶层「行首 ≥4 空格 + 列表标记」不是缩进代码
-                //（本层刻意不支持缩进代码），也不是普通段落字面——chat3 出货口径把它渲染成
-                // 深缩进列表项（旧行级规则：层级 = 前导空格 / 2）。剥基准缩进后交 readList，
-                // 层叠增量按绝对缩进计（readDeepList javadoc）。无标记的「    缩进行」仍走段落字面。
-                i = readDeepList(lines, i, blocks, depth, ind);
+            if (ind > 3) {
+                // C1a（2026-09-06 对齐裁定，CommonMark 0.30 §4.4）：块起点前导 ≥4 空格 = 缩进
+                // 代码块。旧 M5 F2「depth==0 且 ≥4 空格 + 列表标记 → 深缩进独立列表」
+                //（readDeepList + baseLevel）裁定作废——同一行现落代码块字面。
+                // 「缩进代码不得中断段落」由 readParagraph 天然保证：段落已开始后，≥4 空格行
+                // 是续行（interruptsParagraph 对 ind>3 恒 false，行首空白折叠后进正文），只有
+                // 块上下文（段落已被空行/其它块终结）才会走到本分支。
+                // 不变式：markerView 只在视图 ind≤3 且命中块标记时消费 § 序列（见其 javadoc），
+                // 故此处 ind>3 的视图恒等于原行，剥空格按原文列计，与 § 桥零纠缠。
+                i = readIndentedCode(lines, i, blocks);
+                stamp(blocks, before, blanks); blanks = 0;
+                continue;
+            }
+            String body = line.substring(ind);
+            if (fenceStart(body, 3) != 0) {
+                i = readFence(lines, i, blocks);
+                stamp(blocks, before, blanks); blanks = 0;
+                continue;
+            }
+            int heading = headingLevel(body);
+            if (heading > 0) {
+                blocks.add(MarkdownBlock.heading(heading, headingBody(body, heading)));
+                i++;
+                stamp(blocks, before, blanks); blanks = 0;
+                continue;
+            }
+            if (isThematicBreak(body)) {
+                blocks.add(MarkdownBlock.thematicBreak());
+                i++;
+                stamp(blocks, before, blanks); blanks = 0;
+                continue;
+            }
+            if (body.charAt(0) == '>') {
+                i = readQuote(lines, i, blocks, depth);
+                stamp(blocks, before, blanks); blanks = 0;
+                continue;
+            }
+            if (matchListStart(line) != null) {
+                i = readList(lines, i, blocks, depth);
                 stamp(blocks, before, blanks); blanks = 0;
                 continue;
             }
@@ -532,6 +547,49 @@ final class MarkdownBlockParser {
         return j;
     }
 
+    /**
+     * 缩进代码块（C1a，CommonMark 0.30 §4.4）：一个或多个「缩进块」= 连续前导 >=4 空格的
+     * 非空行；块间空行并入本块（每行剥至多 4 个前导空格，多余空格保留——含空行上的第 5 个
+     * 空格起，例 112）、尾随空行不属于本块（交外层循环计 blanksBefore，F6），首个前导 <4 的
+     * 非空行即刻结束本块（例 114）。内容 = 剥后的字面文本，行内 markdown 一律不解析
+     * （与围栏 CODE 同一字面口径）；info 恒为空串（CommonMark：缩进代码无 info string）。
+     *
+     * <p>只在块上下文被调用（见 parseBlocks 的 ind>3 分支——缩进代码不得中断段落，
+     * 段落已开始后的 ≥4 空格行由 readParagraph 收为续行）。行首 § 序列与判定的隔离靠
+     * markerView 不变式：本分支的视图行恒等于原始行。</p>
+     *
+     * @return 消费到的下一源行下标
+     */
+    private static int readIndentedCode(List<String> lines, int start, List<MarkdownBlock> out) {
+        List<String> body = new ArrayList<String>();
+        int j = start;
+        int n = lines.size();
+        while (j < n) {
+            String line = lines.get(j);
+            if (isBlank(line)) {
+                int k = j;
+                while (k < n && isBlank(lines.get(k))) {
+                    k++;
+                }
+                if (k < n && leadingSpaces(lines.get(k)) >= 4) {
+                    for (int b = j; b < k; b++) {
+                        body.add(stripFirst(lines.get(b), 4));
+                    }
+                    j = k;
+                    continue;
+                }
+                break; // 尾随空行不入块（例 117）；外层循环继续计空行/收后续块
+            }
+            if (leadingSpaces(line) < 4) {
+                break; // 前导 <4 的非空行即刻结束（例 114）
+            }
+            body.add(stripFirst(line, 4)); // 剥至多 4（例 116：首行 8 空格剥 4 留 4）
+            j++;
+        }
+        out.add(MarkdownBlock.code("", body));
+        return j;
+    }
+
     /** 引用块：消费连续引用行与惰性续行；空行后仍带标记则并入同一引用（多段落）。 */
     private static int readQuote(List<String> lines, int start, List<MarkdownBlock> out, int depth) {
         List<String> inner = new ArrayList<String>();
@@ -585,20 +643,16 @@ final class MarkdownBlockParser {
     }
 
     /**
-     * 列表：项内容列 = 标记 + 1..4 空格（>=5 空格时内容带余空格）；缩进 >= 内容列的行剥列后入项体
-     * （嵌套子列表因此自然成立）；未缩进行按惰性续行收拢；空行后视下一行归属决定松/断。
+     * 列表：项内容列 = 父标记实际宽度（「- 」宽 2、「12. 」宽 4；序号后 1..4 空格并入标记与内容
+     * 之间、>=5 空格时首列归内容）；缩进 >= 内容列的行剥列后入项体（嵌套子列表/续行因此自然
+     * 成立），< 内容列的同标记行 = 下一项、他类块 = 列表结束、非块标记行 = 段落惰性续行
+     * （CommonMark 0.30 §5.2 内容列口径，C1a 起为唯一判据）；空行后视下一行归属决定松/断。
+     *
+     * <p>C1a（2026-09-06 裁定）：块起点前导 0-3 空格被内容列天然吸收 = 顶级列表项（前导空格
+     * 不进项体文本）；「层级 = 前导空格 / 2 + baseLevel」的 M5 F2 深缩进机制退役，
+     * 前导 >=4 空格的「列表标记」行进缩进代码块字面（parseBlocks 的 ind>3 分支）。</p>
      */
     private static int readList(List<String> lines, int start, List<MarkdownBlock> out, int depth) {
-        // M5 F2 补全：顶层（depth==0）列表的层叠增量按「绝对前导空格 / 2 + 1」计——独立成块的
-        // "  - 乙"/"   - x" 与 chat3 旧行级规则（层级 = 前导空格 / 2）同缩进；嵌套子列表恒在
-        // depth ≥ 1 的项体/引用体里解析（ind 已被 contentCol 剥除，绝对口径会双重计缩进），
-        // 保持相对嵌套语义不变。首行 ind ≤ 1 时 base=1，与原行为逐位一致（P08 语料零改动）。
-        return readList(lines, start, out, depth,
-                depth == 0 ? 1 + leadingSpaces(markerView(lines.get(start))) / 2 : 1);
-    }
-
-    private static int readList(List<String> lines, int start, List<MarkdownBlock> out, int depth,
-            int baseLevel) {
         ListStart first = matchListStart(markerView(lines.get(start)));
         boolean ordered = first.ordered;
         char unit = ordered ? first.delim : first.bullet;
@@ -676,51 +730,8 @@ final class MarkdownBlockParser {
             pendingItemBlanks = 0;
             i = j;
         }
-        out.add(MarkdownBlock.list(items, ordered).withBaseLevel(baseLevel));
+        out.add(MarkdownBlock.list(items, ordered));
         return i;
-    }
-
-    /**
-     * 顶层深缩进列表起点（M5 F2 补全，承接 chat3 旧行级规则「层级 = 前导空格数 / 2」）。
-     *
-     * <p>把从本行起、行首缩进 ≥{@code baseIndent} 的连续行（含中间空行，只要后续仍达缩进）
-     * 整段剥掉 {@code baseIndent} 个空格，再交 {@link #readList}，并显式携带
-     * {@code baseLevel = 1 + baseIndent / 2}。段落续行里的「    - x」不受影响：readParagraph
-     * 先吞掉惰性续行，本分支只在块起点触发；「    缩进行」（无列表标记）仍按 M2 裁定落段落
-     * 字面，{@code MarkdownBlockParserTest} 的缩进代码不支持钉死不变。</p>
-     *
-     * @param baseIndent 首行绝对前导空格数（{@code >= 4}）
-     * @return 消费到的下一源行下标
-     */
-    private static int readDeepList(List<String> lines, int start, List<MarkdownBlock> out, int depth,
-            int baseIndent) {
-        List<String> dedented = new ArrayList<String>();
-        int n = lines.size();
-        int j = start;
-        while (j < n) {
-            String line = markerView(lines.get(j));
-            if (isBlank(line)) {
-                int k = j;
-                while (k < n && isBlank(markerView(lines.get(k)))) {
-                    k++;
-                }
-                if (k < n && leadingSpaces(markerView(lines.get(k))) >= baseIndent) {
-                    for (int b = j; b < k; b++) {
-                        dedented.add("");
-                    }
-                    j = k;
-                    continue;
-                }
-                break;
-            }
-            if (leadingSpaces(line) < baseIndent) {
-                break;
-            }
-            dedented.add(lines.get(j).substring(baseIndent));
-            j++;
-        }
-        readList(dedented, 0, out, depth, 1 + baseIndent / 2);
-        return j;
     }
 
     private static int readParagraph(List<String> lines, int start, List<MarkdownBlock> out) {
@@ -739,13 +750,17 @@ final class MarkdownBlockParser {
         return j;
     }
 
-    /** 段落收拢：行尾 rtrim；行间硬换行位图（长度 = 行数 - 1）。 */
+    /**
+     * 段落收拢：每行剥行首空白（C1a，CommonMark：段落行——含首行与列表项内续行——的行首
+     * 空白是块缩进/惰性续行缩进，一律折叠剥除、不进文本，例 113/291；旧「字面保留」裁定
+     * 作废）、行尾 rtrim；行间硬换行位图（长度 = 行数 - 1）。
+     */
     private static MarkdownBlock makeParagraph(List<String> rawLines) {
         int size = rawLines.size();
         boolean[] flags = size > 1 ? new boolean[size - 1] : new boolean[0];
         List<String> kept = new ArrayList<String>(size);
         for (int i = 0; i < size; i++) {
-            String line = rawLines.get(i);
+            String line = stripLeadingSpace(rawLines.get(i));
             if (i < size - 1) {
                 flags[i] = isHardBreakLine(line);
                 if (flags[i]) {

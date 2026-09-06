@@ -14,7 +14,9 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * 覆盖不随实现消失，规划 §三 M5「行级规则由 L1 块层承接」与 §二之五 F1-F4 的可追溯证据）。
  *
  * <p>期望为 B 路裁定行为：与旧垫片语义有差处按规划裁定登记（未闭合标记字面宽容 = M1 裁定；
- * 深缩进独立列表行绝对层级 = M5 F2 补全；code 段样式 = F1）。§ 颜色解释属 § 桥
+ * code 段样式 = F1）。<b>C1a（2026-09-06 对齐裁定）</b>：旧「深缩进独立列表行绝对层级
+ * = M5 F2 补全」一条按 CommonMark 拆除——0-3 前导空格 = 顶级项（缩进剥除、不进文本），
+ * ≥4 前导空格 = 缩进代码字面，层级不再进段流文本。§ 颜色解释属 § 桥
  * （chat3 侧，见 {@code ChatMarkdownPipelineTest}），本类只钉 L1 段流形状。</p>
  */
 public class MarkdownChat3RuleInheritanceTest {
@@ -48,17 +50,21 @@ public class MarkdownChat3RuleInheritanceTest {
         }
     }
 
+    /**
+     * C1a 重定（2026-09-06 裁定）：旧 chat3 行级契约「层级 = 前导空格 / 2、每级 2 前导空格
+     * 进段流文本」作废，按 CommonMark 逐档复验——0-3 前导空格 = 顶级项（标记段裸体「• 」，
+     * 缩进剥除不进文本）；≥4 前导空格 = 缩进代码块字面（含列表标记形态）；多行内容列嵌套
+     * （门禁 P08 同语料）保持成立，但层级只由行接缝 listMarkerChain 承载，段流文本无前导。
+     */
     @Test
-    public void indentLevelsMapLeadingSpacesPerTwoAsAbsoluteOrRelativeNesting() {
-        // 旧契约「2 空格 = 1 级、每级 2 空格」逐档复验（M5 F2 补全后独立深缩进行同样成立）
+    public void indentLevelsFollowCommonMarkIndentationModel() {
         Assert.assertEquals("\u2022 ", flat("- a").get(0).getText());
-        Assert.assertEquals("  \u2022 ", flat("  - a").get(0).getText());
-        Assert.assertEquals("  \u2022 ", flat("   - a").get(0).getText());
-        Assert.assertEquals("    \u2022 ", flat("    - a").get(0).getText());
-        Assert.assertEquals("    \u2022 ", flat("     - a").get(0).getText());
-        // 多行相对嵌套（门禁 P08 同语料）不回归
+        Assert.assertEquals("\u2022 ", flat("  - a").get(0).getText());
+        Assert.assertEquals("\u2022 ", flat("   - a").get(0).getText());
+        Assert.assertEquals("- a", joined(flat("    - a")));   // 缩进代码字面（剥 4）
+        Assert.assertEquals(" - a", joined(flat("     - a"))); // 5 空格剥 4 留 1
         List<TextSegment> nested = flat("- 甲\n  - 乙\n    - 丙");
-        Assert.assertEquals("\u2022 甲\n  \u2022 乙\n    \u2022 丙", joined(nested));
+        Assert.assertEquals("\u2022 甲\n\u2022 乙\n\u2022 丙", joined(nested));
     }
 
     @Test
@@ -91,13 +97,24 @@ public class MarkdownChat3RuleInheritanceTest {
                 "$$x^2", joined(flat("$$x^2")));
     }
 
+    /**
+     * F4 §-容忍本体本批不动（C4 另批归位），期望按 C1a 主流语义重定：
+     * ① 「§f  - item」：markerView 视图「  - item」命中块标记照常消费 §（F4 定稿口径不变），
+     *    而 0-3 前导空格按主流 = 顶级项、F2 段流前导退役 → 「• item」（旧期望「  • item」作废）；
+     * ② 「§f    - item」：视图「    - item」ind>3 不命中块标记 → markerView 原样返回（F4 判据：
+     *    § 只在 ≤3 缩进命中块标记时消费）；行首是 § 非空格 → 也不落缩进代码块 → 整行字面段落。
+     *    主流判据 = ≥4 缩进不是列表上下文（是缩进代码或字面），不再剥 § 当列表；§ 保留属 F4
+     *    未命中兜底、颜色解释属 § 桥（此条为按实测主流一致行为重钉，理由见注）。
+     */
     @Test
     public void sectionPrefixedListLinesConsumeCodesWithMarker() {
         // 真机同款:行首 §f 残留 + 列表标记（旧 classify 先行、F4 承接）
         List<TextSegment> plain = flat("\u00a7f- item");
         Assert.assertEquals("\u2022 item", joined(plain));
-        Assert.assertEquals("  \u2022 item", joined(flat("\u00a7f  - item")));
+        Assert.assertEquals("\u2022 item", joined(flat("\u00a7f  - item")));
         Assert.assertEquals("\u2022 item", joined(flat("\u00a7f\u00a7l- item")));
+        // ≥4 空格 + 标记：不再剥 § 当列表，字面保留（见类注释②）
+        Assert.assertEquals("\u00a7f    - item", joined(flat("\u00a7f    - item")));
         // 未命中块标记:§ 序列一字不动（F4 定稿口径;颜色解释属 § 桥）
         Assert.assertEquals("\u00a7f\u00a7r", joined(flat("\u00a7f\u00a7r")));
         Assert.assertEquals("\u00a7f-not 列表", joined(flat("\u00a7f-not 列表")));

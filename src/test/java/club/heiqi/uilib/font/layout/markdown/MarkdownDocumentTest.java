@@ -13,8 +13,9 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * {@link MarkdownDocument} 公共面与扁平化测试矩阵（M2，D3 最小面验收依据）。
  * 三条踩坑语料在公共面的投影：① 硬换行扁平后不留行尾空格且与软换行在块模型位图中区分；
  * ② 围栏代码段内粗体/公式/引用记号在片段流中一律字面（无 BOLD/斜体/LaTeX 段）；
- * ③ 嵌套引用只进结构；列表项缩进自 2026-09-04 裁 F2 起以段文本前导空格表达（见
- * {@code shouldFlattenNestedListItemAndContinuation} 的注释）。
+ * ③ 嵌套引用只进结构。<b>C1a（2026-09-06 对齐裁定）</b>：列表层级不再编码进段流文本
+ * （旧 F2「每级 2 前导空格」退役，标记段恒裸体，见
+ * {@code shouldFlattenNestedListItemAndContinuation} 注释）；缩进代码块与围栏同款 CODE 字面。
  */
 public class MarkdownDocumentTest {
 
@@ -218,11 +219,41 @@ public class MarkdownDocumentTest {
     public void shouldFlattenNestedListItemAndContinuation() {
         List<TextSegment> segments = MarkdownDocument.parse(nl("- 甲", "  续行", "", "  - 乙"))
                 .toSegments(baseStyle());
-        // 2026-09-04 裁 F2（M4-fix）：嵌套列表每级缩进以 bullet 段文本的前导空格表达（每级 2 空格），
-        // 取代裁 B 时期「缩进不进文本流」的口径；依据 = 对拍门禁 P08 与 chat3 现行实现同口径
-        // （ChatMessageList.java:952-956：level 由前导空格数 / 2 得出，每级 append 两个空格）。
-        // 块模型与缩进 px 仍未进公共面（裁 B 的「不外开块树」这一半不变）。
-        Assert.assertEquals(nl("• 甲", "续行", "  • 乙"), plainText(segments));
+        // C1a（2026-09-06 对齐裁定）重定：旧 2026-09-04 裁 F2「嵌套每级 2 个前导空格写进 bullet
+        // 段文本」作废——主流（CommonMark）不把层级编码进可见文本；标记段恒裸体「• 」，
+        // 嵌套层级由行接缝 listMarkerChain 几何承载（M10d），两接缝文本同源等值。
+        // 内容列嵌套判定本身不变（「  - 乙」= 父项「- 甲」内容列 2 的子列表）；块模型与
+        // 缩进 px 仍未进公共面（裁 B 的「不外开块树」这一半不变）。
+        Assert.assertEquals(nl("• 甲", "续行", "• 乙"), plainText(segments));
+    }
+
+    /** C1a：缩进代码块扁平 = 与围栏同款字面 CODE 段（不进段内解析、无 BOLD/链接段）。 */
+    @Test
+    public void shouldFlattenIndentedCodeAsLiteralSegmentLikeFence() {
+        List<TextSegment> segments = MarkdownDocument.parse(nl("甲", "", "    **粗** [a](http://x.y)"))
+                .toSegments(baseStyle());
+        Assert.assertEquals(nl("甲", "**粗** [a](http://x.y)"), plainText(segments));
+        for (TextSegment segment : segments) {
+            Assert.assertFalse("代码内容不得成粗体",
+                    segment.getStyle().getFontType() == FontType.BOLD);
+            Assert.assertNull("代码内容不得链接化", segment.getStyle().getLink());
+        }
+    }
+
+    /** C1a：块起点 1-3 空格 = 顶级列表，标记段无前导空格（baseLevel 深缩进口径作废）。 */
+    @Test
+    public void topLevelMarkerAtIndentUpToThreeHasBareMarkerSegment() {
+        List<TextSegment> segments = MarkdownDocument.parse("   - x").toSegments(baseStyle());
+        Assert.assertEquals("• ", segments.get(0).getText());
+        Assert.assertEquals("x", segments.get(1).getText());
+    }
+
+    /** C1a：块起点 4 空格 + 列表标记 = 缩进代码字面段（不再是深缩进列表项）。 */
+    @Test
+    public void deepIndentedListMarkerFlattensToCodeLiteral() {
+        List<TextSegment> segments = MarkdownDocument.parse("    - deep").toSegments(baseStyle());
+        Assert.assertEquals(1, segments.size());
+        Assert.assertEquals("- deep", segments.get(0).getText());
     }
 
     @Test

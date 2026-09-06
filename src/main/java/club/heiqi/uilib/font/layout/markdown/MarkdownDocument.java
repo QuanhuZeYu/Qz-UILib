@@ -20,6 +20,8 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * <ul>
  *   <li>ATX 标题 {@code #}..{@code ######}（可带闭序列）；</li>
  *   <li>围栏代码块（三连反引号或 {@code ~~~}，info 串存而不用，内容永不进行内解析）；</li>
+ *   <li>缩进代码块（块起点 ≥4 前导空格，C1a 2026-09-06 对齐裁定新增：产出与围栏同款 CODE
+ *       节点、info 恒空、内容字面；不得中断段落，段落已开始后的 ≥4 空格行是折叠缩进的续行）；</li>
  *   <li>引用块 {@code >}（可嵌套，含惰性续行）；</li>
  *   <li>无序/有序列表（{@code -}/{@code *}/{@code +}、{@code N.}/{@code N)}，
  *       含缩进续行与嵌套子列表）；</li>
@@ -28,7 +30,7 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * </ul>
  *
  * <h3>刻意不支持（必须字面输出，见 MarkdownBlockParser javadoc 与测试钉死）</h3>
- * <p>表格、任务列表、HTML 内联、脚注、图片 {@code ![alt](url)}、缩进代码块。
+ * <p>表格、任务列表、HTML 内联、脚注、图片 {@code ![alt](url)}（缩进代码块自 C1a 起支持）。
  * 图片说明：块层不生成任何图片节点；{@code ![alt](url)} 整体按普通文本进段内解析，
  * 依既有行内裁定（规划 §五 D2，9c4dcae5 语义照抄不改）产出字面 {@code !} + 链接段。
  * 表格/任务列表/HTML/脚注则整行原样保留为段落/列表项文本。</p>
@@ -41,7 +43,11 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * 引用与列表的缩进不进文本流（裁定 B：块级几何随块模型留包内、不入公共接缝；
  * M3 落地的 L2 按段流排版，缩进如需可见再随块模型公共面另裁）。
  * 列表项标记：无序归一为 {@code MarkdownStyleTable.getBulletMarker()} + 空格
- * （默认实心圆点，与 chat3 现行视觉对齐），有序保留源序号原文 + 空格。</p>
+ * （默认实心圆点，与 chat3 现行视觉对齐），有序保留源序号原文 + 空格。
+ * <b>C1a（2026-09-06 对齐裁定）</b>：两接缝标记段一律裸体（无前导空格）——旧 M5 F2
+ * 「每级 2 个前导空格写进段流标记文本」机制连同 {@code markerLevel}/{@code baseLevel}
+ * 参数链退役；列表层级只由行接缝 {@code listMarkerChain} 几何承载（M10d），
+ * 可见文本不再编码层级。</p>
  *
  * <p>纯 JVM，不依赖 Minecraft 类型（沿用原裁定，headless 可测）。</p>
  */
@@ -119,7 +125,7 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         List<TextSegment> out = new ArrayList<TextSegment>();
-        walk(blocks, baseStyle, table, out, 0);
+        walk(blocks, baseStyle, table, out);
         return out;
     }
 
@@ -128,13 +134,13 @@ public final class MarkdownDocument {
      *
      * <p><b>与 {@link #toSegments} 的关系</b>：同一块树、同一段生成原语（行内解析/引用样式/
      * 标题样式/列表标记全部共用，防两路漂移）。行接缝的逐行可见文本恒等于段接缝按 \n 与
-     * F6 占位切分的行——由 {@code MarkdownLayoutLinesTest} 在门禁语料上逐字钉死；
-     * <b>唯一被许可的文本差（M10d，2026-09-05「做全」追加裁定）</b>：列表项标记段的 F2
-     * 「  」前导空格只留在段接缝（chat3 出货口径），行进接缝时剥净——几何不编码在可见
-     * 文本里（仓规），归属改由 {@code listMarkerChain} 显式携带、L2 沿链求和成像素；
-     * 等值锁按「剥净前导空格后逐字等 + 段路前导必须是偶数个空格」钉。除此之外本方法
-     * 不产任何新可见文本，也不删任何可见文本（分隔线文本仍由既有 {@code setThematicBreakText}
-     * 旋钮决定；几何另以行的块身份与行盒字段表达，二者正交）。</p>
+     * F6 占位切分的行——由 {@code MarkdownLayoutLinesTest} 在门禁语料上逐字钉死。
+     * M10d 曾许可的唯一文本差（段接缝标记段叠 F2 「  」前导、行接缝剥净）已随 <b>C1a
+     * （2026-09-06 对齐裁定）作废</b>：段路不再叠前导，两接缝可见文本严格同源等值，
+     * 层级归属两路统一由 {@code listMarkerChain} 显式携带、L2 沿链求和成像素（几何从不
+     * 编码进可见文本）。本方法不产任何新可见文本，也不删任何可见文本（分隔线文本仍由
+     * 既有 {@code setThematicBreakText} 旋钮决定；几何另以行的块身份与行盒字段表达，
+     * 二者正交）。</p>
      *
      * <p><b>身份字段</b>：kind（TEXT/LIST/CODE/THEMATIC_BREAK）、quoteLevel（引用嵌套层数，
      * 续行天然继承）、blockId（同一块的所有行同值——L2 据此把围栏底色合并为覆盖全部
@@ -158,12 +164,11 @@ public final class MarkdownDocument {
     // ==================== 扁平化（段流路） ====================
 
     /**
-     * 同层兄弟块扁平化。
-     *
-     * @param markerLevel 当前列表嵌套层数（F2：0 = 不在任何列表内）
+     * 同层兄弟块扁平化（C1a 起 markerLevel 参数链退役：列表层级不再编码进段流文本，
+     * 标记恒裸体，见 {@link #bareListMarker}）。
      */
     private static void walk(List<MarkdownBlock> siblings, TextStyle style, MarkdownStyleTable table,
-                             List<TextSegment> out, int markerLevel) {
+                             List<TextSegment> out) {
         for (int i = 0; i < siblings.size(); i++) {
             MarkdownBlock next = siblings.get(i);
             if (i > 0) {
@@ -175,12 +180,12 @@ public final class MarkdownDocument {
                     out.add(new TextSegment("", style.copy()));
                 }
             }
-            emit(next, style, table, out, markerLevel);
+            emit(next, style, table, out);
         }
     }
 
     private static void emit(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
-                             List<TextSegment> out, int markerLevel) {
+                             List<TextSegment> out) {
         switch (block.kind) {
             case PARAGRAPH:
                 emitInline(block.joinedLines(), style, table, out);
@@ -192,14 +197,13 @@ public final class MarkdownDocument {
                 emitCode(block, style, out);
                 break;
             case QUOTE:
-                walk(block.children, quoteStyle(style, table), table, out, markerLevel);
+                walk(block.children, quoteStyle(style, table), table, out);
                 break;
             case LIST:
-                // M5 F2 补全：层叠增量由块携带（默认 1 = 相对嵌套；顶层深缩进起点按绝对缩进 / 2 计）
-                walk(block.children, style, table, out, markerLevel + block.baseLevel);
+                walk(block.children, style, table, out);
                 break;
             case LIST_ITEM:
-                emitListItem(block, style, table, out, markerLevel);
+                emitListItem(block, style, table, out);
                 break;
             case THEMATIC_BREAK:
                 emitThematicBreak(table, style, out);
@@ -224,10 +228,10 @@ public final class MarkdownDocument {
         out.add(new TextSegment(code, style.copy()));
     }
 
-    /** 列表项：标记段 + 首个段落正文同行，其余子块换行起。 */
+    /** 列表项：裸标记段 + 首个段落正文同行，其余子块换行起（C1a：标记段无前导空格）。 */
     private static void emitListItem(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
-                                     List<TextSegment> out, int markerLevel) {
-        String marker = listMarker(block, table, markerLevel);
+                                     List<TextSegment> out) {
+        String marker = bareListMarker(block, table);
         if (!marker.isEmpty()) {
             out.add(new TextSegment(marker, style.copy()));
         }
@@ -241,41 +245,19 @@ public final class MarkdownDocument {
                     out.add(new TextSegment("", style.copy()));   // F6 占位标记段
                 }
             }
-            emit(child, style, table, out, markerLevel);
+            emit(child, style, table, out);
         }
     }
 
     /**
-     * 列表标记文本（F2 口径，<b>段流路专用</b>）：无序 = 样式表符号 + 空格；有序 = 源序号原文 + 空格。
+     * 列表标记裸体（无任何前导空格；两接缝标记文本的<b>唯一单源</b>）：无序 = 样式表符号 +
+     * 空格，有序 = 源序号原文 + 空格；圆点被样式表配成空串 ⇒ 空串（标记完全不输出，含空格）。
      *
-     * <p>嵌套列表每级缩进写成标记段文本里的前导空格，每级 2 个空格。段流路
-     * （{@code toSegments}）的这套机制原样保留——对拍门禁 B 侧的可见文本、与旧 chat3 出货
-     * 口径的逐字节一致全赖它。<b>M10d（2026-09-05「做全」追加裁定）起本方法不再被行接缝
-     * 使用</b>：行接缝（{@code toLayoutLines}）改用 {@link #bareListMarker}（无 F2 前导空格）+
-     * {@code listMarkerChain} 显式链，旧句「行接缝仍用 F2 前导空格当每级列宽代理」作废——
-     * 代理宽（2 空格的 ceil）与「父正文列 + 本级标记实测宽」不等（headless 16px 基准实测
-     * 三级 14/29/43 对真值 14/28/42，漂移方向逐档不同），几何编码进可见文本也违反仓规。
-     * 两接缝的标记<b>主体</b>仍由 {@link #bareListMarker} 单源产出，文本无从漂移；块模型与
-     * 缩进 px 仍不开进公共面（规划 §二之三 裁 B 未重开的那一半不变）。</p>
-     */
-    private static String listMarker(MarkdownBlock block, MarkdownStyleTable table, int markerLevel) {
-        String marker = bareListMarker(block, table);
-        int level = Math.max(0, markerLevel - 1);
-        if (!marker.isEmpty() && level > 0) {
-            StringBuilder indented = new StringBuilder(marker.length() + 2 * level);
-            for (int l = 0; l < level; l++) {
-                indented.append("  ");
-            }
-            indented.append(marker);
-            marker = indented.toString();
-        }
-        return marker;
-    }
-
-    /**
-     * 列表标记裸体（无任何前导空格；两路标记文本的<b>单源</b>）：无序 = 样式表符号 + 空格，
-     * 有序 = 源序号原文 + 空格；圆点被样式表配成空串 ⇒ 空串（标记完全不输出，含空格）。
-     * 段流路在它外面叠 F2 前导（{@link #listMarker}），行接缝拿它直接作标记段与链元素。
+     * <p><b>C1a（2026-09-06 对齐裁定）</b>：段流路（{@code toSegments}）旧由 {@code listMarker}
+     * 在本裸体上叠 M5 F2「每级 2 前导空格」——该机制连同 {@code markerLevel} 参数链、块模型
+     * {@code baseLevel} 字段退役：主流引擎（CommonMark）不把列表层级编码进可见文本，本方法
+     * 自此是两接缝标记段的同一来源（行接缝 M10d 起本就直用本方法 + {@code listMarkerChain}）。
+     * 块模型与缩进 px 仍不开进公共面（规划 §二之三 裁 B 未重开的那一半不变）。</p>
      */
     private static String bareListMarker(MarkdownBlock block, MarkdownStyleTable table) {
         if (block.ordered) {
