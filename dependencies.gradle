@@ -57,6 +57,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // 门禁参考渲染器（CommonMark 0.29 规范实现），testImplementation 不进生产 jar（2026-09-06 用户裁定引入）
     testImplementation("org.commonmark:commonmark:0.21.0")
+    // C3b1 重基线：删除线属 GFM 扩展（本仓支持 ~~删~~），参考侧用官方 GFM 扩展对齐；同 parent、Java 7 字节码、test 域
+    testImplementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.21.0")
 
     // SnakeYAML：用于现代化配置页的 YAML 解析与序列化，shadow relocate 后随 jar 分发
     shadowImplementation("org.yaml:snakeyaml:2.2")
