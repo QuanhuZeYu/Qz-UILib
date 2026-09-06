@@ -297,6 +297,14 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
    不会以字面颜色形态遇到；直接使用文档形参路径的消费方（playground/门禁 B 路 bridge=0 语料）
    行中 § 仍字面，旧裁定不变。桥不用 `MarkdownInlineParser.parse(spans)` 反接：那会把已消费的
    未闭合定界符二次配对（双解析漂移），且块级结构（F2/F3/F4/F6）只在文档路径存在。
+   〔**C6a 区分注记（2026-09-06，防拿旧句当挡箭牌）**：本句禁的只是**输出侧反接**——把解析
+   产物（`toSegments` 的段）再喂回 `parse(spans)` 做第二次解析。C6a 新增的都是**输入侧单次
+   解析**通道，不违反其字面与理由：① `parse(spans)` 自 C6a 起为拼接文本上的跨 span 连续扫描
+   （定界符可跨样式锚点合法配对——旧句立论所依赖的「逐 span 漏配」已消除，未闭合仍恒字面）；
+   ② `MarkdownDocument.parse(List<MarkdownSpan>)` 为块级文档 span 流入口，是裁定「方案甲：§
+   在进 markdown 前转样式锚点」的 L1 地基（块检测由 L1 在纯文本上跑、与 String 入口共用判据），
+   C6b 将把 chat3 消息路切到该入口并拆除输入侧预清洗。**两禁不变**：不许援引旧句否决输入侧
+   通道，也不许借新入口造「先产段再喂回」的双解析。〕
 3. **围栏代码块**未打 `codeSpan` 位 / 12px / 衬底：F1 只承接行内反引号（chat3 无围栏行为，N02 属
    NEW 档）。围栏内容仍全字面、不解析行内标记（M2 既有裁定不变）。
 
@@ -444,6 +452,14 @@ assertWidthIndependentCodeStyle` 的 P03 专用不变量——那是判据改动
 新公共类型 1 个 = `MarkdownLayoutLine`；`ui/markdown` 顶层 public 类型恒 1；
 `ChatMessageList`/`ChatSceneController` public 面 diff 为空；L1/L2 `GL11.` 出现次数恒 0
 （同扫描器正对照 `ui/render`=559）。
+**C6a 续账（2026-09-06，`javap -public` 实测于 `build/classes/java/main`）**：
+`MarkdownDocument` 7→**8**（+静态 `parse(List<MarkdownSpan>)`＝能力①块级文档 span 流入口；
+连带源码兼容注记——`parse(null)` 裸 null 由单义变二义，调用方须 `parse((String) null)` 强转，
+本仓唯一受影响点 `MarkdownDocumentTest:63` 已同批加 cast）；`MarkdownInlineParser` 公共方法面
+**2→2 不变**（`parse(spans)` 实现换为能力②跨 span 连续扫描，签名不动；块级叠加链
+`parse(spans, table, StyleTransform)` 为包内重载不进账）；`MarkdownLayoutLine` 全成员 **20
+冻结不变**（样式锚点只在包内随块模型走，出接缝仍只 `TextSegment`）；新类型 `StyleTransform`/
+`StyleValues` 均 package-private（顶层 public 类型账不变）。
 
 **测试与出图**：360→362 套件、3979→3992（+13 全新增零删除：L1 行接缝 6、L2 几何 3、
 出图入图探针 1、chat3 结构 3）；`MarkdownSoftwareRenderTest` 出图路切命令流渲染，
