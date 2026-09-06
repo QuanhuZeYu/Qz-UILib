@@ -28,9 +28,9 @@ import club.heiqi.uilib.font.render.software.CommonMarkReferenceSemantics.Semant
  *   <li><b>LIST depth 口径（M10d {@code getListMarkerChain} 读后定死）</b>：链=「从最外层到
  *       本行所属项的渲染后标记段，每级一段」（圆点被样式表配空串时该级不进链——默认表恒有
  *       圆点，链长=列表嵌套层数），故 {@code depth = chain.size()}，与 R 路的列表祖先计数
- *       同尺。有序判定与参考序取链尾标记文本（{@code "3. "} / {@code "3) "} 形态 →
- *       ordinal=3）；本仓有序保留源序号原文，与 commonmark start+下标推算之差按
- *       EXT_ORDERED_START 域登记。</li>
+ *       同尺。有序判定与参考序取链尾标记文本（C3b2 起恒为 {@code "N. "} 形态 → ordinal=N；
+ *       源右括号定界已在 L1 归一句点）。本仓 L1 与 R 路同为 start+项下标续排 ⇒ 该域两侧
+ *       零差异；EXT_ORDERED_START 域登记保留在案防回潮，语料已撤豁免直接对拍。</li>
  *   <li><b>marker 段</b>：kind==LIST 行的 seg0 即本级标记段（{@link MarkdownLayoutLine.Kind#LIST}
  *       javadoc 钉死），但「同一 blockId 内只有首行带标记段」——故判据为
  *       {@code seg0.text == 链尾标记段文本}（同一文本在链上恒为标记形态「X. 」/「\u2022 」）。
@@ -175,7 +175,7 @@ final class BPathSemantics {
         return new InlineTok(marks, seg.getText(), dest);
     }
 
-    /** 有序标记文本判定（链尾形态 "N. " / "N) "，源序号原文，见 bareListMarker）。 */
+    /** 有序标记文本判定（C3b2 起链尾恒 "N. "；"N) " 形态仍兼容识别，见 bareListMarker）。 */
     static boolean isOrderedMarker(String markerText) {
         return ordinalOfMarker(markerText) > 0;
     }

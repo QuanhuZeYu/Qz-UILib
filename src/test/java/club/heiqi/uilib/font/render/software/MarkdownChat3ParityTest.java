@@ -35,44 +35,67 @@ import club.heiqi.uilib.internal.chat3.viewmodel.ChatUrlLinkifier;
 import club.heiqi.uilib.ui.markdown.MarkdownPainter;
 
 /**
- * C3b1 门禁重基线（2026-09-06 对齐裁定「UILib 对齐主流引擎」，AGENTS.md :12）：
- * <b>CommonMark 参考对拍矩阵生成器</b>——旧「chat3 旧行为规格快照 A 路 + 三档判据 +
- * 有意差异登记表」整体废止（A 路 replicate 全套私有方法已删），本类改为：
+ * <h2>门禁判据定稿（C3b2，2026-09-06 对齐裁定第二步；母批 C1a 语义 + C3b1 对拍引擎）</h2>
  *
- * <ul>
- *   <li><b>R 路</b>＝{@link CommonMarkReferenceSemantics}（commonmark-java 0.21.0 +
- *       GFM strikethrough 扩展，官方参考实现）；</li>
- *   <li><b>B 路</b>＝{@link BPathSemantics}（本仓 M10d 行接缝
- *       {@code toLayoutLines} 同构映射）；</li>
- *   <li>逐语料、逐行、逐 token 对齐比较，<b>差异一律写
- *       {@code build/reports/markdown-compare/matrix.txt}，本阶段不判 PASS/FAIL</b>
- *       （重基线中间态，矩阵供父代理与用户逐条裁定后再定新判据）。</li>
- * </ul>
+ * <p>R 路＝{@link CommonMarkReferenceSemantics}（commonmark-java 0.21.0 + GFM strikethrough，
+ * 官方参考实现）；B 路＝{@link BPathSemantics}（本仓 M10d 行接缝 {@code toLayoutLines} 同构映射）。
+ * C3b1 的「全量照登、不判 PASS/FAIL」中间态到此结束：<b>逐条语料、逐行、逐 token 对拍，
+ * 归一后仍存的差异一律 FAIL 即红</b>——门禁自本批起恢复常驻门禁地位（红 = build 红 = 不许交付）。</p>
  *
- * <h3>本阶段断言（且仅这些）</h3>
+ * <h3>豁免核准表（唯一合法差异口径；逐条经用户裁定，代码落点见 {@link #foldPair}）</h3>
  * <ol>
+ *   <li><b>EXT_FORMULA</b>（P04/P05/N08）——{@code $} 公式是本仓扩展、CommonMark 无此语法：
+ *       R 侧 TEXT token 文本与 B 侧 FORMULA token 源文本，<b>剥成对 {@code $} 定界后逐字等</b>
+ *       ⇒ 判等（类型不比对、切段不比对；{@code visible()} 仍恒 \u27e6源\u27e7 形态，吞字地板不破）。
+ *       <b>P06（{@code $5.99} 防误伤）已撤豁免</b>：该条两侧都不产公式，直接逐 token 对拍，
+ *       真把 {@code $5.99} 吃成公式原子当场红——豁免域不许当防误伤的挡箭牌。</li>
+ *   <li><b>EXT_BARE_URL</b>（P01/P02/P07/P10/P11）——链接化属消费层（{@code ChatUrlLinkifier}），
+ *       <b>不进接缝对拍</b>：归一时剥掉两侧 LINK 标记与 dest，接缝文本逐字等即判等。</li>
+ *   <li><b>EXT_HTML</b>（语料暂无使用者，规则在案）——本仓刻意不支持 HTML：RAW_HTML token
+ *       两侧文本等即判等（剥标记，字面文本仍逐字比）。</li>
+ *   <li><b>BRIDGE_SECTION</b>（P13/P14）——§ 桥接域（L1 剥 § 后才认块标记，属 C4 归位范围）：
+ *       <b>整条记 RECORD 跳过</b>，不做行/token 比对；C4 §桥归位后撤销本条。</li>
+ *   <li><b>THEMATIC_BREAK_TEXT</b>（N06/X10）——分隔线可见 36 连字符是样式表旋钮产物、
+ *       不是语义：TB 行两侧 tokens <b>归一为空</b>再判（行身份 THEMATIC_BREAK 本身仍须等）。</li>
+ *   <li><b>HEADING_STYLE_ONLY</b>（N01/X10/X11）——本仓行接缝 {@code Kind} 无标题块身份：
+ *       R=HEADING 而 B=TEXT/BLOCK_QUOTE 的行<b>kind 豁免、只比文本</b>（标记与级别不比对）。
+ *       C3b3 补上标题身份后本条收紧（届时行级 kind 必须等）。</li>
+ *   <li><b>EXT_ORDERED_START</b>——C3b2 修 1（有序列表主流续排：首项源序号 = start，其后按
+ *       start+项下标、定界统一句点）后<b>该域应零差异</b>：P09/X04/X05 已撤豁免直接对拍；
+ *       域名与分类通道保留在案防回潮（一旦 L1 再偏离，差异照登且当场 FAIL）。</li>
+ *   <li><b>EXT_STRIKE / EM_FLANK_SIMPLIFIED / ESCAPE_SUBSET</b>——C3b2 后 N07/N09/N10/X09
+ *       已 NO_DIFF，<b>撤豁免直接对拍</b>；<u>N11 是唯一未清项</u>：R 侧按 CommonMark flanking
+ *       规则把 {@code a*b，2*3} 判成 emphasis、{@code a**b**c} 判成 strong，本仓行内层仍按
+ *       「邻空白」简化口径出字面——差异是<b>真实语义差</b>（文本都不等），任何归一都等于放宽判据，
+ *       故本批只保留 N11 的 EM_FLANK_SIMPLIFIED 登记照登（不判红），撤销条件 = 行内 emphasis
+ *       定界主流化那一批（规划在案的 C3 后续）落地后复跑。该保留已在本类自检里钉死为
+ *       「域内照登不判红 + 域外同形差异必红」两条，不许扩成第二条同类豁免。</li>
+ *   <li><b>其余语料无豁免</b>：直接逐行逐 token 对拍。</li>
+ * </ol>
+ *
+ * <h3>断言（常驻，全绿才许交付）</h3>
+ * <ol>
+ *   <li><b>FAIL 即红</b>：归一后仍存且域未在核准表内的差异 = 0（失败消息逐条列出行号/域/R/B）；</li>
+ *   <li>计数 PASS 全量：每条目都要出结论（NO_DIFF / 归一判等 / 豁免照登 / RECORD 四态之一），
+ *       条目数 == 语料数，缺一即红；</li>
  *   <li>B 侧不崩：{@code toLayoutLines} 与语义提取全程无异常；</li>
  *   <li>B 侧不吞字：①提取器逐行可见串 == 行接缝原段流拼接（latex 恒 \u27e6源\u27e7）
  *       ②行接缝可见文本与段接缝（{@code toSegments}）去行界后逐字等（C1a 两接缝同源钉）；</li>
- *   <li>matrix.txt 成功落盘、每语料有块头、矩阵引擎由自检用例（已知差异样本驱动）钉死
- *       真实分类——「记录差异」通道不许恒真。</li>
+ *   <li>产物与地板：matrix.txt / diff.txt 落盘、每语料成块、B 路单侧 PNG 出图数与墨水地板
+ *       （{@code MIN_INK_PER_PAGE}）照旧；矩阵引擎由自检用例钉死「分类/归一/FAIL」三条通道
+ *       都不恒真——归一不许把不该判等的行判成等，FAIL 不许恒 0。</li>
  * </ol>
  *
- * <h3>比较口径（差异域词表，矩阵条目携带其一）</h3>
+ * <h3>比较口径（差异域词表；未列入核准表的域一旦出现差异即 FAIL）</h3>
  * <p>kind 家族归一（CODE_FENCED≡CODE_INDENTED≡B 统一 CODE）；F6 空行占位剔除后逐行序号
- * 直对；marker 归一 bullet=样式表符号「\u2022 」。EXT_FORMULA（$公式，R 无此语法）、
- * EXT_BARE_URL（裸链链接化属消费层扩展，接缝两侧同字面——语料声明用）、
- * EXT_HTML（本仓刻意不支持 HTML）、BRIDGE_SECTION（§ 码桥接域，声明用）、
- * EXT_STRIKE（删除线严格度）、EXT_ORDERED_START（本仓有序保留源序号，R 按 start+下标推算）、
- * HEADING_STYLE_ONLY（本仓行接缝无标题块身份：文本+样式豁免）、SETEXT_NO_SUPPORT（本仓无
- * setext，--- 恒分隔线）、THEMATIC_BREAK_TEXT（分隔线可见 36 连字符为样式表旋钮产物）、
- * EM_FLANK_SIMPLIFIED（emphasis 定界简化差）、ESCAPE_SUBSET（反斜杠转义集差）、
- * CODE_SPAN_TRIM（code span 空格剥离差）、CODE_SCOPE/LINK_DEST/LINK_SCOPE/EXT_AUTOLINK
- * （链接与 code 面）、LIST_DEPTH/QUOTE_DEPTH（层级）、LINE_ALIGN/TOKEN_ALIGN（错位）、
- * TOKEN_TEXT/KIND_MISMATCH（兜底）。</p>
+ * 直对；marker 归一 bullet=样式表符号「\u2022 」、有序=start+项下标+句点（两侧同口径）。
+ * 在案域：EXT_FORMULA、EXT_BARE_URL、EXT_HTML、BRIDGE_SECTION、THEMATIC_BREAK_TEXT、
+ * HEADING_STYLE_ONLY、EXT_STRIKE、EXT_ORDERED_START、EM_FLANK_SIMPLIFIED、ESCAPE_SUBSET、
+ * CODE_SPAN_TRIM、CODE_SCOPE/LINK_DEST/LINK_SCOPE/EXT_AUTOLINK、LIST_DEPTH/QUOTE_DEPTH、
+ * LINE_ALIGN/TOKEN_ALIGN、MARKER_MISMATCH、TOKEN_TEXT/KIND_MISMATCH（兜底域均不进豁免表）。</p>
  *
- * <p><b>常驻测试</b>：随 build 全量执行；只读消费者——不改生产代码、不改 internal/chat3/**。
- * 出图/墨水地板/产物目录保留，但只出 B 路单侧图（A 侧图随 A 路一并废止）。
+ * <p><b>常驻测试</b>：随 build 全量执行；只读消费者——本批不改生产代码、不改 internal/chat3/**。
+ * 出图/墨水地板/产物目录保留，只出 B 路单侧图（A 侧图随 A 路一并废止）。
  * 共享装配恒 {@code LatexSoftwareRenderKit.Shared}（严禁另 new FontService）。
  * 软件光栅器对 CJK 有水平重影（M3 复核在案），出图判读聚焦结构。</p>
  */
@@ -102,7 +125,8 @@ public class MarkdownChat3ParityTest {
     static final String D_STRIKE = "EXT_STRIKE";
     static final String D_ORDERED = "EXT_ORDERED_START";
     static final String D_HEADING = "HEADING_STYLE_ONLY";
-    static final String D_SETEXT = "SETEXT_NO_SUPPORT";
+    // C3b2 修 2 落地后 SETEXT_NO_SUPPORT 域废止：setext 已支持，残差只剩「接缝无标题块身份」
+    // 这一条（HEADING_STYLE_ONLY），故本类不再登记该域（域名从词表移除，防拿旧口径当挡箭牌）。
     static final String D_TB_TEXT = "THEMATIC_BREAK_TEXT";
     static final String D_FLANK = "EM_FLANK_SIMPLIFIED";
     static final String D_ESCAPE = "ESCAPE_SUBSET";
@@ -122,9 +146,12 @@ public class MarkdownChat3ParityTest {
     // ==================== 语料表 ====================
     // {id, 中文label, §桥 1/0(仅出图接缝口径), 豁免域声明(逗号分隔,"-"=无), 源文本}
     // 原 20 P + 11 N 全保留（P/N 三档判据随 A 路废止，id 沿用便于回溯）；
-    // X01..X10 = C3b1 新增主流边界语料（任务书点名场景逐条覆盖，见各行 label）。
+    // X01..X10 = C3b1 新增主流边界语料（任务书点名场景逐条覆盖，见各行 label）；
+    // X11 = C3b2 新增 setext 标题语料（与修 2 同期落地）。
     // 学费场景:① 行 junction 丢失 = P11(+P10@150、P17);② 两断行同形陷阱 = P10;③ 圆点剥除与
     // 链接化作用域 = P07(+P08)。防误伤项:$5.99→P06,hello_world/2*3→N11。
+    // C3b2 判据定稿：豁免域声明只准写类头核准表里的域；已修好的域（EXT_ORDERED_START 与
+    // EXT_STRIKE/ESCAPE_SUBSET）一律撤成 "-" 直接对拍，域登记留在词表防回潮。
 
     private static final String[][] CORPUS = {
         {"P01", "裸URL+www大写", "0", D_BARE_URL,
@@ -137,13 +164,14 @@ public class MarkdownChat3ParityTest {
             "$$\\frac{a}{b}$$"},
         {"P05", "整行单$公式", "0", D_FORMULA,
             "$E=mc^2$"},
-        {"P06", "$价格防误伤", "0", D_FORMULA,
+        // P06 撤豁免：两侧都不产公式，直接逐 token 对拍（防误伤真判据，见类头核准表第 1 条）
+        {"P06", "$价格防误伤", "0", "-",
             "价格 $5.99 与 100$ 加 x$y 未闭合"},
         {"P07", "列表+链接作用域", "0", D_BARE_URL,
             "- 详见 http://a.b/c 完"},
         {"P08", "嵌套列表缩进", "0", "-",
             "- 甲\n  - 乙\n    - 丙"},
-        {"P09", "有序列表", "0", D_ORDERED,
+        {"P09", "有序列表", "0", "-",
             "1. 第一\n2. 第二"},
         {"P10", "跨行URL续链②", "0", D_BARE_URL,
             "参考 http://qz.example.com/releases/GTNH-Latest-9.zip 完\nhow 都不同"},
@@ -177,16 +205,21 @@ public class MarkdownChat3ParityTest {
             "- 甲项\n  甲项缩进续行"},
         {"N05", "硬换行", "0", "-",
             "第一行  \n第二行\\\n第三行"},
-        {"N06", "分隔线", "0", D_SETEXT + "," + D_TB_TEXT,
-            "上半句。\n---\n下半句。"},
-        {"N07", "行内强调", "0", D_STRIKE + "," + D_FLANK,
+        // N06 源文本改空行隔开式（保住 label「分隔线」本义）：段落紧邻的 --- 现按 CommonMark
+        // 判 setext 下划线（修 2），只剩分隔线可见文本这一条核准归一
+        {"N06", "分隔线", "0", D_TB_TEXT,
+            "上半句。\n\n---\n下半句。"},
+        {"N07", "行内强调", "0", "-",
             "**粗** *斜* ~~删~~ ***粗斜*** 混排"},
         {"N08", "行内公式", "0", D_FORMULA,
             "质能 $e=mc^2$ 行内混排 with 尾"},
         {"N09", "链接语法", "0", "-",
             "访问 [Qz 主页](https://example.com/qz) 详情"},
-        {"N10", "反斜杠转义", "0", D_ESCAPE,
+        {"N10", "反斜杠转义", "0", "-",
             "路径 C:\\temp 与 \\* 星号 \\`x\\` 字面"},
+        // N11 = 核准表第 8 条点名的唯一未清项：R 按 CommonMark flanking 判 emphasis/strong、
+        // 本仓行内层按「邻空白」简化出口字面（文本都不等 ⇒ 无可归一），照登不判红，
+        // 行内 emphasis 定界主流化那一批落地后连这条一起撤。
         {"N11", "emphasis防误伤", "0", D_FLANK,
             "hello_world 与 a*b，2*3=6 和 x_1 a**b**c"},
         {"X01", "缩进代码块多行与空行中断", "0", "-",
@@ -195,9 +228,10 @@ public class MarkdownChat3ParityTest {
             "段落第一行开头\n    带四空格前导的续行应折叠进同一段落"},
         {"X03", "三空格顶级列表", "0", "-",
             "   - 三空格缩进的顶级项甲\n   - 三空格缩进的顶级项乙"},
-        {"X04", "宽标记内容列12.", "0", D_ORDERED,
+        {"X04", "宽标记内容列12.", "0", "-",
             "12. 两位数宽标记的项\n13.   标记后多空格仍属同一内容列"},
-        {"X05", "有序跨序号续排", "0", D_ORDERED,
+        // X05 = 修 1 的正面语料：C3b1 该条目 2 处 EXT_ORDERED_START 差异，修后 NO_DIFF（撤豁免）
+        {"X05", "有序跨序号续排", "0", "-",
             "3. 源序号三\n1. 源序号一\n9. 源序号九"},
         {"X06", "列表内空行松紧", "0", "-",
             "- 紧凑项甲\n- 松项第一段\n\n  松项第二段\n- 紧凑项乙"},
@@ -205,15 +239,35 @@ public class MarkdownChat3ParityTest {
             "> - 引用内项甲\n>   引用内惰性续行\n> - 引用内项乙"},
         {"X08", "围栏带语言标识", "0", "-",
             "```swift\nlet x = 1 // **粗** 与 ~~删~~ 均字面\n```"},
-        {"X09", "行内混排嵌套强调", "0", D_STRIKE + "," + D_FLANK,
+        {"X09", "行内混排嵌套强调", "0", "-",
             "**外粗 *内外都粗斜* 尾** 与 ~~删中 **粗删嵌套** 尾~~ 混排"},
-        {"X10", "分隔线与列表歧义", "0", D_SETEXT + "," + D_TB_TEXT,
+        // X10 保留原文（任务书口径）：首段 --- 现按修 2 判 setext H2（残差只剩接缝无标题身份
+        // ⇒ HEADING_STYLE_ONLY），第二处 --- 仍是分隔线 ⇒ THEMATIC_BREAK_TEXT；两条都在核准表内
+        {"X10", "分隔线与列表歧义", "0", D_HEADING + "," + D_TB_TEXT,
             "歧义上句\n---\n- 列表项甲\n---\n歧义下句"},
+        // C3b2 修 2 新增：setext 标题（=== → H1、--- → H2），下划线行本身不产内容行
+        {"X11", "setext标题", "0", D_HEADING,
+            "甲行\n===\n乙行\n---"},
     };
 
     private static final StringBuilder MATRIX = new StringBuilder();
+    /** diff.txt 正文：未豁免差异（FAIL 明细）+ 逐条目判定，门禁红时先看这份。 */
+    private static final StringBuilder DIFF = new StringBuilder();
+    /** diff.txt 头部（判据/计数/FAIL 明细）——先于逐条目判定行写出，故另起一表。 */
+    private static final StringBuilder DIFF_HEAD = new StringBuilder();
     private static final StringBuilder PROFILE = new StringBuilder();
-    private static int diffTotal;
+    /** 未豁免差异清单（FAIL 即红；自检用例走独立 sink，不入此表）。 */
+    private static final List<String> FAILS = new ArrayList<String>();
+    /** 归一后仍存且域在核准表内（无归一规则可靠）的照登行数。 */
+    private static int exemptTotal;
+    /** 施加归一规则后判等（不再算差异）的行数。 */
+    private static int normTotal;
+    /** BRIDGE_SECTION 整条记 RECORD 跳过的条目数（C4 §桥归位后应为 0）。 */
+    private static int recordTotal;
+    /** FAIL 条目数（判据定稿：必须恒 0，红即不许交付）。 */
+    private static int failEntries;
+    /** 已出判定结论的条目数（与 CORPUS.length 全量对齐的计数地板）。 */
+    private static int verdicts;
     private static int blankTotal;
     private static int pngCount;
 
@@ -238,6 +292,8 @@ public class MarkdownChat3ParityTest {
         OUT_DIR.mkdirs();
         Files.write(new File(OUT_DIR, "matrix.txt").toPath(),
                 MATRIX.toString().getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(OUT_DIR, "diff.txt").toPath(),
+                diffReport().getBytes(StandardCharsets.UTF_8));
         Files.write(new File(OUT_DIR, "profiles.txt").toPath(),
                 PROFILE.toString().getBytes(StandardCharsets.UTF_8));
         LatexSoftwareRenderKit.resetShared();
@@ -300,8 +356,20 @@ public class MarkdownChat3ParityTest {
             Assert.assertTrue(id + " 语料非空时 B 侧不得零行输出: " + b.lines,
                     !src.trim().isEmpty() ? !b.lines.isEmpty() : b.lines.isEmpty());
 
-            int diffs = compareEntry(id, label, exemptions, r, b.lines, b.blanksRemoved, MATRIX);
-            diffTotal += diffs;
+            // —— 判据定稿（C3b2）：归一后仍存的差异 ⇒ FAIL ——
+            Verdict v = compareEntry(id, label, exemptions, r, b.lines, b.blanksRemoved,
+                    MATRIX, FAILS);
+            normTotal += v.normed;
+            exemptTotal += v.exempt;
+            verdicts++;
+            if (v.skipped) {
+                recordTotal++;
+            }
+            DIFF.append("## ").append(id).append(' ').append(label)
+                    .append(" 判定=").append(v.summary()).append('\n');
+            if (!v.passed()) {
+                failEntries++;
+            }
 
             // —— 出图：B 路单侧（A 侧图随 A 路废止）——
             for (int w : RENDER_WIDTHS) {
@@ -314,21 +382,43 @@ public class MarkdownChat3ParityTest {
             }
         }
 
-        MATRIX.append("#\n# 汇总: 条目=").append(Integer.valueOf(CORPUS.length))
-                .append(" 差异=").append(Integer.valueOf(diffTotal))
+        MATRIX.append("#\n# 汇总（C3b2 判据定稿）: 条目=").append(Integer.valueOf(CORPUS.length))
+                .append(" FAIL条目=").append(Integer.valueOf(failEntries))
+                .append(" FAIL差异行=").append(Integer.valueOf(FAILS.size()))
+                .append(" 归一判等行=").append(Integer.valueOf(normTotal))
+                .append(" 豁免照登行=").append(Integer.valueOf(exemptTotal))
+                .append(" RECORD条目=").append(Integer.valueOf(recordTotal))
                 .append(" F6剔行=").append(Integer.valueOf(blankTotal))
-                .append(" PNG=").append(Integer.valueOf(pngCount))
-                .append(" 本阶段不判PASS/FAIL(重基线中间态)\n");
+                .append(" PNG=").append(Integer.valueOf(pngCount)).append('\n');
+        DIFF_HEAD.append("# C3b2 门禁判定汇总（判据与豁免核准表见 MarkdownChat3ParityTest 类头）\n")
+                .append("# 条目=").append(Integer.valueOf(CORPUS.length))
+                .append(" FAIL差异行=").append(Integer.valueOf(FAILS.size()))
+                .append(" 归一判等=").append(Integer.valueOf(normTotal))
+                .append(" 豁免照登=").append(Integer.valueOf(exemptTotal))
+                .append(" RECORD=").append(Integer.valueOf(recordTotal)).append('\n');
+        for (String row : FAILS) {
+            DIFF_HEAD.append("FAIL ").append(row).append('\n');
+        }
+        if (FAILS.isEmpty()) {
+            DIFF_HEAD.append("(无未豁免差异：以下逐条目判定全部 PASS)\n");
+        }
         PROFILE.append("summary entries=").append(Integer.valueOf(CORPUS.length))
-                .append(" diffs=").append(Integer.valueOf(diffTotal))
+                .append(" fails=").append(Integer.valueOf(FAILS.size()))
+                .append(" normed=").append(Integer.valueOf(normTotal))
+                .append(" exempt=").append(Integer.valueOf(exemptTotal))
                 .append(" blanksRemoved=").append(Integer.valueOf(blankTotal)).append('\n');
 
-        // —— 本阶段断言③：矩阵落盘 + 反空转地板 ——
+        // —— 断言③：产物落盘 + 反空转地板 ——
         Files.write(new File(OUT_DIR, "matrix.txt").toPath(),
                 MATRIX.toString().getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(OUT_DIR, "diff.txt").toPath(),
+                diffReport().getBytes(StandardCharsets.UTF_8));
         File matrix = new File(OUT_DIR, "matrix.txt");
         Assert.assertTrue("matrix.txt 必须成功生成: " + matrix,
                 matrix.isFile() && matrix.length() > 0);
+        File diff = new File(OUT_DIR, "diff.txt");
+        Assert.assertTrue("diff.txt（FAIL 明细/判定汇总）必须成功生成: " + diff,
+                diff.isFile() && diff.length() > 0);
         String text = new String(Files.readAllBytes(matrix.toPath()), StandardCharsets.UTF_8);
         int blocks = 0;
         for (String line : text.split("\n", -1)) {
@@ -342,72 +432,372 @@ public class MarkdownChat3ParityTest {
                 MATRIX.length() >= CORPUS.length * 40);
         Assert.assertTrue("B 侧出图数量地板: png=" + Integer.valueOf(pngCount),
                 pngCount >= CORPUS.length * RENDER_WIDTHS.length);
+        // —— 断言④（定稿判据）：归一后仍存的未豁免差异一律 FAIL 即红；计数 PASS 必须全量 ——
+        Assert.assertTrue("归一通道必须真跑到（否则核准表形同虚设）: normed="
+                + Integer.valueOf(normTotal), normTotal >= 3);
+        Assert.assertEquals("计数 PASS 全量：每条语料都必须出判定结论（引擎不许漏跑）",
+                Integer.valueOf(CORPUS.length), Integer.valueOf(verdicts));
+        Assert.assertTrue("RECORD（BRIDGE_SECTION 整条跳过）条目必须在案（C4 归位后应转 0）: record="
+                + Integer.valueOf(recordTotal), recordTotal >= 1);
+        if (!FAILS.isEmpty()) {
+            Assert.fail("C3b2 门禁 FAIL 即红：" + Integer.valueOf(failEntries)
+                    + " 个条目共 " + Integer.valueOf(FAILS.size())
+                    + " 处未豁免差异（逐条见 build/reports/markdown-compare/diff.txt）——"
+                    + "红即不许交付。\n  " + join(FAILS, "\n  "));
+        }
     }
 
-    // ==================== 矩阵引擎 ====================
+    /** diff.txt 正文：头部汇总 + FAIL 明细在前，逐条目判定行在后。 */
+    private static String diffReport() {
+        return new StringBuilder(DIFF_HEAD).append(DIFF).toString();
+    }
+
+    private static String join(List<String> rows, String sep) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < rows.size(); i++) {
+            if (i > 0) {
+                sb.append(sep);
+            }
+            sb.append(rows.get(i));
+        }
+        return sb.toString();
+    }
+
+    // ==================== 矩阵引擎（C3b2 判据定稿：归一 + FAIL 即红） ====================
+
+    /** 核准表里「只登记不判红」的域（类头第 8 条点名的 N11 唯一特例，不得私自扩充）。 */
+    private static final java.util.Set<String> RECORD_ONLY =
+            java.util.Collections.singleton(D_FLANK);
+
+    /** 单条目判定结论（三态计数 + BRIDGE_SECTION 整条跳过标记）。 */
+    static final class Verdict {
+        private final int normed;
+        private final int exempt;
+        private final int fails;
+        private final boolean skipped;
+
+        Verdict(int normed, int exempt, int fails, boolean skipped) {
+            this.normed = normed;
+            this.exempt = exempt;
+            this.fails = fails;
+            this.skipped = skipped;
+        }
+
+        /** 未豁免差异为 0 即 PASS（归一判等与豁免照登都不算红）。 */
+        boolean passed() {
+            return fails == 0;
+        }
+
+        int fails() {
+            return fails;
+        }
+
+        int normed() {
+            return normed;
+        }
+
+        int exempt() {
+            return exempt;
+        }
+
+        boolean skipped() {
+            return skipped;
+        }
+
+        String summary() {
+            if (skipped) {
+                return "RECORD(整条跳过 BRIDGE_SECTION)";
+            }
+            if (fails > 0) {
+                return "FAIL×" + Integer.valueOf(fails);
+            }
+            if (normed > 0 && exempt > 0) {
+                return "PASS(归一判等×" + Integer.valueOf(normed)
+                        + " 豁免照登×" + Integer.valueOf(exempt) + ")";
+            }
+            if (normed > 0) {
+                return "PASS(归一判等×" + Integer.valueOf(normed) + ")";
+            }
+            if (exempt > 0) {
+                return "PASS(豁免照登×" + Integer.valueOf(exempt) + ")";
+            }
+            return "PASS(NO_DIFF)";
+        }
+    }
 
     /**
-     * 单语料逐行逐 token 对齐比较，差异追加到 out；返回差异条数。
-     * 行对齐＝剔除 F6 空行后的序号直对（不做 LCS——错位本身按 LINE_ALIGN/TOKEN_ALIGN
-     * 照登，供裁定层看清全貌）。kind 家族归一见 {@code kindFamily}；行级 kind 差异已
-     * 含 token 面成因（如同域）不重复刷行。
+     * 单语料对拍（C3b2 定稿判据）：逐行先按该条目声明的豁免域施加<b>归一</b>
+     * （{@link #foldPair}），归一后判等的行记 NORM（照登不判红、计入 normed）；仍不等的行，
+     * 差异域若属 {@link #RECORD_ONLY} 且被该条目声明，记「豁免照登」（唯一一条：N11 的
+     * EM_FLANK_SIMPLIFIED，见类头核准表第 8 条），<b>其余一律 FAIL 即红</b>。
+     * BRIDGE_SECTION 条目整条记 RECORD 跳过（C4 §桥归位后撤）。
+     *
+     * <p>行对齐＝剔 F6 空行后序号直对（不做 LCS——错位本身就是判据要看清的东西）；
+     * kind 家族归一见 {@code kindFamily}；行级 kind 差异已含的 token 面成因不重复刷行。</p>
      */
-    static int compareEntry(String id, String label, String exemptions, List<SemanticLine> r,
-            List<SemanticLine> b, int blanksRemoved, StringBuilder out) {
+    static Verdict compareEntry(String id, String label, String exemptions, List<SemanticLine> r,
+            List<SemanticLine> b, int blanksRemoved, StringBuilder out, List<String> fails) {
+        java.util.Set<String> ex = declared(exemptions);
         out.append("\n## ").append(id).append(" \u300c").append(label).append("\u300d")
                 .append(" 豁免域=").append(exemptions)
                 .append(" 行数R=").append(Integer.valueOf(r.size()))
                 .append(" 行数B=").append(Integer.valueOf(b.size()))
                 .append(" F6剔行=").append(Integer.valueOf(blanksRemoved)).append('\n');
-        int diffs = 0;
+        if (ex.contains(D_BRIDGE)) {
+            out.append("| 行* | RECORD | BRIDGE_SECTION 整条跳过（C4 §桥归位后撤本条）|\n");
+            return new Verdict(0, 0, 0, true);
+        }
+        int normed = 0;
+        int exempt = 0;
+        int fail = 0;
         int n = Math.max(r.size(), b.size());
         for (int i = 0; i < n; i++) {
             SemanticLine rl = i < r.size() ? r.get(i) : null;
             SemanticLine bl = i < b.size() ? b.get(i) : null;
-            if (rl == null || bl == null) {
-                out.append(row(id, i, D_LINE_ALIGN,
-                        rl == null ? "\u2205(本侧无此行)" : render(rl),
-                        bl == null ? "\u2205(本侧无此行)" : render(bl))).append('\n');
-                diffs++;
+            List<String[]> strict = new ArrayList<String[]>();
+            collectLineRows(id, i, rl, bl, strict);
+            if (strict.isEmpty()) {
                 continue;
             }
-            String kindDom = classifyKind(rl, bl);
-            if (kindDom != null) {
-                out.append(row(id, i, kindDom, render(rl), render(bl))).append('\n');
-                diffs++;
+            List<String[]> judged = strict;
+            if (!ex.isEmpty() && rl != null && bl != null) {
+                List<String> fired = new ArrayList<String>();
+                SemanticLine[] pair = foldPair(rl, bl, ex, fired);
+                if (!fired.isEmpty()) {
+                    List<String[]> folded = new ArrayList<String[]>();
+                    collectLineRows(id, i, pair[0], pair[1], folded);
+                    if (folded.isEmpty()) {
+                        // 归一判等：照登 strict 行（保留未归一时的两侧形态供审计），不计差异
+                        normed += strict.size();
+                        for (String[] entryRow : strict) {
+                            out.append(entryRow[1] + "(归一判等:" + entryRow[0] + ")").append('\n');
+                        }
+                        continue;
+                    }
+                    judged = folded;
+                }
             }
-            int m = Math.min(rl.tokens.size(), bl.tokens.size());
-            for (int k = 0; k < m; k++) {
-                InlineTok rt = rl.tokens.get(k);
-                InlineTok bt = bl.tokens.get(k);
-                if (rt.sameShape(bt)) {
-                    continue;
+            for (String[] entryRow : judged) {
+                String dom = entryRow[0];
+                boolean waived = RECORD_ONLY.contains(dom) && ex.contains(dom);
+                String line = entryRow[1] + (waived ? "(豁免照登)" : "(FAIL)");
+                out.append(line).append('\n');
+                if (waived) {
+                    exempt++;
+                } else {
+                    fail++;
+                    if (fails != null) {
+                        fails.add(line);
+                    }
                 }
-                String dom = classifyToken(rl, bl, rt, bt);
-                if (kindDom != null && dom.equals(kindDom)) {
-                    continue; // 行级 kind 差异已含该成因，不重复刷
-                }
-                if (kindDom != null && (D_HEADING.equals(kindDom) || D_SETEXT.equals(kindDom))
-                        && rt.text.equals(bt.text)) {
-                    continue; // 标题豁免：行级已登记一次，token 面「只多一个 S 标记」不再刷
-                }
-                out.append(row(id, i, dom,
-                        lineTok(rl, k), lineTok(bl, k))).append('\n');
-                diffs++;
-            }
-            if (rl.tokens.size() != bl.tokens.size()) {
-                String dom = alignDomain(rl, bl);
-                if (kindDom != null && dom.equals(kindDom)) {
-                    continue;
-                }
-                out.append(row(id, i, dom, render(rl), render(bl))).append('\n');
-                diffs++;
             }
         }
-        if (diffs == 0) {
+        if (normed == 0 && exempt == 0 && fail == 0) {
             out.append("| 行* | NO_DIFF | 本条目 R/B 语义全等 |\n");
         }
-        return diffs;
+        return new Verdict(normed, exempt, fail, false);
+    }
+
+    /**
+     * 兼容旧签名的自检入口：返回照登差异条数（FAIL + 归一判等 + 豁免），不写全局 FAIL 账——
+     * 自检用例要的是「分类通道不恒真」，不是门禁结论。
+     */
+    static int compareEntry(String id, String label, String exemptions, List<SemanticLine> r,
+            List<SemanticLine> b, int blanksRemoved, StringBuilder out) {
+        Verdict v = compareEntry(id, label, exemptions, r, b, blanksRemoved, out, null);
+        return v.fails() + v.normed() + v.exempt();
+    }
+
+    /** 豁免域声明解析（逗号分隔；"-" 或空 = 无豁免）。 */
+    private static java.util.Set<String> declared(String exemptions) {
+        java.util.Set<String> out = new java.util.HashSet<String>();
+        if (exemptions == null || "-".equals(exemptions.trim())) {
+            return out;
+        }
+        for (String part : exemptions.split(",")) {
+            String t = part.trim();
+            if (!t.isEmpty()) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 核准表归一（唯一允许的判等前处理；逐条对偶类头注释，未声明的域一律不施加）。
+     * 施加过的域名追加进 {@code fired}，矩阵据此把该行照登成「归一判等」，宽松点全程可见。
+     *
+     * <ul>
+     *   <li><b>THEMATIC_BREAK_TEXT</b>：两侧同为分隔线行 ⇒ tokens 归一为空再判（行身份仍须等）；</li>
+     *   <li><b>HEADING_STYLE_ONLY</b>：R=HEADING（含 \u21b6SETEXT 注记，仅作展示）而 B 侧接缝只有
+     *       TEXT/BLOCK_QUOTE 身份 ⇒ kind 归一为 TEXT、两侧各折成一条纯文本 token = 只比文本
+     *       （级别与标题样式位不进语义面；C3b3 补标题身份后收紧）；</li>
+     *   <li><b>EXT_FORMULA</b>：该行含公式原子或 {@code $} 定界 ⇒ FORMULA 标记与 {@code $}
+     *       字符一并剥除、再合并相邻同形 token ⇒「R 侧 TEXT 文本与 B 侧公式源文本逐字等
+     *       即判等（类型不比对）」；</li>
+     *   <li><b>EXT_BARE_URL</b>：剥 LINK 标记与 dest（链接化属消费层，不进接缝对拍）；</li>
+     *   <li><b>EXT_HTML</b>：剥 RAW_HTML 标记（两侧文本仍逐字比）。</li>
+     * </ul>
+     */
+    private static SemanticLine[] foldPair(SemanticLine rl, SemanticLine bl,
+            java.util.Set<String> ex, List<String> fired) {
+        SemanticLine a = rl;
+        SemanticLine b = bl;
+        if (ex.contains(D_TB_TEXT) && isTb(a) && isTb(b)) {
+            a = reline(a, Collections.<InlineTok>emptyList());
+            b = reline(b, Collections.<InlineTok>emptyList());
+            fired.add(D_TB_TEXT);
+        }
+        if (ex.contains(D_HEADING) && a.kind == Kind.HEADING
+                && (b.kind == Kind.TEXT || b.kind == Kind.BLOCK_QUOTE)) {
+            a = reline(a, Kind.TEXT, 0, textOnly(a));
+            b = reline(b, Kind.TEXT, 0, textOnly(b));
+            fired.add(D_HEADING);
+        }
+        if (ex.contains(D_FORMULA) && (lineHasMark(a, Mark.FORMULA)
+                || lineHasMark(b, Mark.FORMULA) || hasDollar(a) || hasDollar(b))) {
+            a = reline(a, mergeText(stripDollars(unFormula(a.tokens))));
+            b = reline(b, mergeText(stripDollars(unFormula(b.tokens))));
+            fired.add(D_FORMULA);
+        }
+        if (ex.contains(D_BARE_URL)) {
+            a = reline(a, mergeText(stripMark(a.tokens, Mark.LINK)));
+            b = reline(b, mergeText(stripMark(b.tokens, Mark.LINK)));
+            fired.add(D_BARE_URL);
+        }
+        if (ex.contains(D_HTML)) {
+            a = reline(a, mergeText(stripMark(a.tokens, Mark.RAW_HTML)));
+            b = reline(b, mergeText(stripMark(b.tokens, Mark.RAW_HTML)));
+            fired.add(D_HTML);
+        }
+        return new SemanticLine[] {a, b};
+    }
+
+    /**
+     * 单行比对（行对可为归一后的形态）：行级 kind 差异 + 逐 token 差异 + 段数错位；
+     * 每条差异以 {@code {域, 行文本}} 追加进 rows（判据分派与打标由调用方定）。
+     */
+    private static void collectLineRows(String id, int i, SemanticLine rl, SemanticLine bl,
+            List<String[]> rows) {
+        if (rl == null || bl == null) {
+            // 行界错位无可归一（任何核准规则都不改行数）
+            rows.add(new String[] {D_LINE_ALIGN, row(id, i, D_LINE_ALIGN,
+                    rl == null ? "\u2205(本侧无此行)" : render(rl),
+                    bl == null ? "\u2205(本侧无此行)" : render(bl))});
+            return;
+        }
+        String kindDom = classifyKind(rl, bl);
+        if (kindDom != null) {
+            rows.add(new String[] {kindDom, row(id, i, kindDom, render(rl), render(bl))});
+        }
+        int m = Math.min(rl.tokens.size(), bl.tokens.size());
+        for (int k = 0; k < m; k++) {
+            InlineTok rt = rl.tokens.get(k);
+            InlineTok bt = bl.tokens.get(k);
+            if (rt.sameShape(bt)) {
+                continue;
+            }
+            String dom = classifyToken(rl, bl, rt, bt);
+            if (kindDom != null && dom.equals(kindDom)) {
+                continue; // 行级 kind 差异已含该成因，不重复刷
+            }
+            if (kindDom != null && D_HEADING.equals(kindDom) && rt.text.equals(bt.text)) {
+                continue; // 标题域：行级已登记一次，token 面「只多一个 S 标记」不再刷
+            }
+            rows.add(new String[] {dom, row(id, i, dom, lineTok(rl, k), lineTok(bl, k))});
+        }
+        if (rl.tokens.size() != bl.tokens.size()) {
+            String dom = alignDomain(rl, bl);
+            if (kindDom == null || !dom.equals(kindDom)) {
+                rows.add(new String[] {dom, row(id, i, dom, render(rl), render(bl))});
+            }
+        }
+    }
+
+    private static boolean isTb(SemanticLine line) {
+        return CommonMarkReferenceSemantics.kindFamily(line.kind).equals("THEMATIC_BREAK");
+    }
+
+    /** 重建行：只换 tokens（kind/level/层级/注记原样保留）。 */
+    private static SemanticLine reline(SemanticLine line, List<InlineTok> tokens) {
+        return reline(line, line.kind, line.level, tokens);
+    }
+
+    /** 重建行（可改 kind/level；ordered/ordinal/depth/note 不动，它们各有自己的域要判）。 */
+    private static SemanticLine reline(SemanticLine line, Kind kind, int level,
+            List<InlineTok> tokens) {
+        return new SemanticLine(kind, level, line.ordered, line.ordinal, line.quoteDepth,
+                line.listDepth, line.note, tokens);
+    }
+
+    /** 「只比文本」：折成一条无标记 token。 */
+    private static List<InlineTok> textOnly(SemanticLine line) {
+        StringBuilder sb = new StringBuilder();
+        for (InlineTok t : line.tokens) {
+            sb.append(t.text);
+        }
+        List<InlineTok> out = new ArrayList<InlineTok>(1);
+        if (sb.length() > 0) {
+            out.add(new InlineTok(EnumSet.noneOf(Mark.class), sb.toString(), null));
+        }
+        return out;
+    }
+
+    /** FORMULA 标记降为普通文本（类型不比对；token 文本本就是公式源）。 */
+    private static List<InlineTok> unFormula(List<InlineTok> in) {
+        return stripMark(in, Mark.FORMULA);
+    }
+
+    /** 剥 {@code $} 定界字符（公式是本仓扩展，定界不进语义面）。 */
+    private static List<InlineTok> stripDollars(List<InlineTok> in) {
+        List<InlineTok> out = new ArrayList<InlineTok>(in.size());
+        for (InlineTok t : in) {
+            out.add(new InlineTok(t.marks, t.text.replace("$", ""), t.linkDest));
+        }
+        return out;
+    }
+
+    /** 剥指定标记；LINK 的 dest 随标记一并退出对拍。 */
+    private static List<InlineTok> stripMark(List<InlineTok> in, Mark mark) {
+        List<InlineTok> out = new ArrayList<InlineTok>(in.size());
+        for (InlineTok t : in) {
+            EnumSet<Mark> marks = EnumSet.noneOf(Mark.class);
+            marks.addAll(t.marks);
+            boolean had = marks.remove(mark);
+            out.add(new InlineTok(marks, t.text,
+                    had && mark == Mark.LINK ? null : t.linkDest));
+        }
+        return out;
+    }
+
+    /** 合并相邻同形 token（归一后切段差不该算差；与两提取器各自的 merge 口径同构）。 */
+    private static List<InlineTok> mergeText(List<InlineTok> in) {
+        List<InlineTok> out = new ArrayList<InlineTok>(in.size());
+        for (InlineTok t : in) {
+            if (t.text.isEmpty()) {
+                continue;
+            }
+            if (!out.isEmpty()) {
+                InlineTok last = out.get(out.size() - 1);
+                if (last.marks.equals(t.marks)
+                        && CommonMarkReferenceSemantics.eq(last.linkDest, t.linkDest)) {
+                    out.set(out.size() - 1,
+                            new InlineTok(last.marks, last.text + t.text, last.linkDest));
+                    continue;
+                }
+            }
+            out.add(new InlineTok(t.marks, t.text, t.linkDest));
+        }
+        return out;
+    }
+
+    private static boolean hasDollar(SemanticLine line) {
+        for (InlineTok t : line.tokens) {
+            if (t.text.indexOf('$') >= 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 行 kind 差异域（null=kind 家族与参数全等）。 */
@@ -437,7 +827,9 @@ public class MarkdownChat3ParityTest {
         }
         if (rl.kind == Kind.HEADING
                 && (bl.kind == Kind.TEXT || bl.kind == Kind.BLOCK_QUOTE)) {
-            return "SETEXT".equals(rl.note) ? D_SETEXT : D_HEADING;
+            // C3b2 修 2 后 setext 已支持：R=HEADING（\u21b6SETEXT 注记只作展示）而 B 只缺
+            // 「接缝标题身份」⇒ 一律归口 HEADING_STYLE_ONLY（SETEXT_NO_SUPPORT 域已废止）。
+            return D_HEADING;
         }
         if (startsWithSection(rl) || startsWithSection(bl)) {
             return D_BRIDGE; // § 前导参与块身份判定（本仓 L1 剥 § 后才识别标记）→ 桥接域
@@ -617,6 +1009,50 @@ public class MarkdownChat3ParityTest {
                 compareEntry("T5", "自检分隔线", "-", rT, bT, 0, scratch));
         Assert.assertTrue("须登记 THEMATIC_BREAK_TEXT", scratch.indexOf(D_TB_TEXT) >= 0);
         // 6) 反空转地板：五个差异样本各恰命中一条（T1..T5 计数断言即其钉），T0 正对照零差。
+        //    且这五例声明都是「-」（无豁免）⇒ 全部计入 FAIL——判据定稿后「照登即红」的正面钉。
+        Assert.assertEquals("无豁免声明的差异必须全计入 FAIL", 1, verdict(rH, bH, "-").fails());
+
+        // ===== C3b2 定稿判据通道自检（归一/豁免/FAIL/RECORD 四条都不许恒真或恒假）=====
+        // 7) 归一判等：标题身份差声明 HEADING_STYLE_ONLY ⇒ FAIL 归零、计一条 NORM（照登不判红）
+        Verdict v7 = verdict(rH, bH, D_HEADING);
+        Assert.assertEquals("声明后不得再判红", 0, v7.fails());
+        Assert.assertEquals("必须真归一一条", 1, v7.normed());
+        // 8) 归一不许放宽：同域声明但文本确实不等 ⇒ 仍 FAIL（判据只豁免身份，不豁免丢字）
+        List<SemanticLine> rH2 = new ArrayList<SemanticLine>();
+        rH2.add(line(Kind.HEADING, 1, false, 0, tok(EnumSet.noneOf(Mark.class), "一级标题", null)));
+        List<SemanticLine> bH2 = new ArrayList<SemanticLine>();
+        bH2.add(line(Kind.TEXT, 0, false, 0, tok(EnumSet.of(Mark.STRONG), "二级标题", null)));
+        Assert.assertEquals("文本不等时归一不得吞掉差异", 1, verdict(rH2, bH2, D_HEADING).fails());
+        // 9) 公式归一判等（类型不比对）；而两侧文本真不等时仍须红
+        Assert.assertEquals("公式声明后判等", 0, verdict(rF, bF, D_FORMULA).fails());
+        Assert.assertEquals("公式声明后计一条 NORM", 1, verdict(rF, bF, D_FORMULA).normed());
+        List<SemanticLine> bF2 = new ArrayList<SemanticLine>();
+        bF2.add(line(Kind.TEXT, 0, false, 0, tok(EnumSet.of(Mark.FORMULA), "y", null)));
+        Assert.assertEquals("公式源文本不等必红", 1, verdict(rF, bF2, D_FORMULA).fails());
+        // 10) 分隔线文本归一判等；未声明同一样本必红（T5 已钉）
+        Assert.assertEquals("TB 声明后判等", 0, verdict(rT, bT, D_TB_TEXT).fails());
+        Assert.assertEquals("TB 声明后计一条 NORM", 1, verdict(rT, bT, D_TB_TEXT).normed());
+        // 11) 只登记不判红的唯一特例（N11 的 EM_FLANK_SIMPLIFIED）：声明 ⇒ 豁免照登，不声明 ⇒ 红
+        List<SemanticLine> rK = new ArrayList<SemanticLine>();
+        rK.add(line(Kind.TEXT, 0, false, 0, tok(EnumSet.of(Mark.EM), "b", null)));
+        List<SemanticLine> bK = new ArrayList<SemanticLine>();
+        bK.add(line(Kind.TEXT, 0, false, 0, tok(EnumSet.noneOf(Mark.class), "b", null)));
+        Verdict v11 = verdict(rK, bK, D_FLANK);
+        Assert.assertEquals("豁免域内不判红", 0, v11.fails());
+        Assert.assertEquals("豁免必须照登计数", 1, v11.exempt());
+        Assert.assertEquals("同一样本不声明即红", 1, verdict(rK, bK, "-").fails());
+        // 12) BRIDGE_SECTION 整条 RECORD 跳过：不产 FAIL 也不产 PASS 差异（C4 归位后撤本通道）
+        Verdict v12 = verdict(rH, bH, D_BRIDGE);
+        Assert.assertTrue("须标记整条跳过", v12.skipped());
+        Assert.assertEquals("跳过条目不得计差异", 0, v12.fails());
+        // 13) 声明了别的域不构成放宽：公式域声明救不了标题身份差
+        Assert.assertEquals("跨域声明不得互相顶包", 1, verdict(rH, bH, D_FORMULA).fails());
+    }
+
+    /** 自检便捷口：跑一次判据并返回结论（failSink 用局部表，不污染门禁账）。 */
+    private static Verdict verdict(List<SemanticLine> r, List<SemanticLine> b, String exemptions) {
+        return compareEntry("TX", "自检", exemptions, copy(r), copy(b), 0,
+                new StringBuilder(), new ArrayList<String>());
     }
 
     // —— 自检构造小工具 ——
@@ -782,10 +1218,12 @@ public class MarkdownChat3ParityTest {
     // ==================== 报告 ====================
 
     private static void writeMatrixHeader() {
-        MATRIX.append("# C3b1 重基线矩阵 —— R=commonmark-java 0.21.0(+GFM strikethrough) vs B=本仓 toLayoutLines(M10d 行接缝)\n")
-                .append("# 本阶段不判 PASS/FAIL——全部差异逐条照登，供父代理与用户逐条裁定（2026-09-06 对齐裁定第一步）。\n")
+        MATRIX.append("# C3b2 判据定稿矩阵 —— R=commonmark-java 0.21.0(+GFM strikethrough)"
+                + " vs B=本仓 toLayoutLines(M10d 行接缝)\n")
+                .append("# 判据：逐行先按条目声明的豁免域施加归一（核准表见本类 javadoc），归一后仍存且域未核准的差异一律 FAIL 即红。\n")
+                .append("# 行标后缀：(FAIL)=未豁免差异（红）｜(归一判等:域)=核准归一后判等，照登不判红｜(豁免照登)=RECORD_ONLY 域（仅 N11 的 EM_FLANK_SIMPLIFIED）。\n")
                 .append("# 口径: kind 家族归一(CODE_FENCED\u2261CODE_INDENTED\u2261B 统一 CODE) | F6 空行占位剔除后逐行序号直对 |\n")
-                .append("# marker 归一 bullet=样式表符号「\u2022 」，有序=源数值文本 | token 文本逐字等、标记集等、LINK dest 等 |\n")
+                .append("# marker 归一 bullet=样式表符号「\u2022 」、有序=start+项下标+句点（两侧同口径）| token 文本逐字等、标记集等、LINK dest 等 |\n")
                 .append("# 颜色/字号/下划线/几何不进语义面（样式豁免）；R 行注记 \u21b6SOFT/\u21b6HARD/\u21b6SETEXT 表示该行来源断行型。\n")
                 .append("# 行格式: | 条目 行#N | 域 | R: … | B: … |；条目头: ## 条目 \u300clabel\u300d 豁免域=… 行数R/B=… F6剔行=…。\n");
     }

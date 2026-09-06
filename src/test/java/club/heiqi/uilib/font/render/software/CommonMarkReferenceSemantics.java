@@ -53,7 +53,8 @@ import org.commonmark.parser.Parser;
  *   <li><b>列表项标记</b>：R 侧 AST 不携带 marker 原文（无序只有字符、有序只有
  *       startNumber，续项按 start+项下标推算），故合成 {@link Mark#LIST_MARKER} 行首
  *       token：bullet 归一为样式表符号「\u2022 」，有序取 (start+项下标) + ". "。
- *       本仓有序保留源序号原文（含 ")" 结尾），其差按 EXT_ORDERED_START 域登记。
+ *       C3b2 起本仓 L1 与本合同口径一致（有序续排 + 定界归一句点），该域两侧应零差异——
+ *       EXT_ORDERED_START 域登记保留在门禁词表里防回潮，语料已撤豁免直接对拍。
  *       已知口径缺口：「项的第一块即嵌套列表/引用直落」等病态形态的合成 marker 归
  *       最内层项（父 marker 丢行）——语料不含该形态，出现即矩阵 LINE_ALIGN 照登。</li>
  *   <li><b>HTML</b>：HtmlBlock/HtmlInline 字面进 {@link Mark#RAW_HTML} token（本仓刻意不
@@ -413,8 +414,9 @@ final class CommonMarkReferenceSemantics {
 
     /**
      * setext 判定（SourceSpan 0.21 只有行/列索引，按行号对位）：标题 span 未从 '#' 起
-     * （非 ATX），且 span 末行或紧随一行为「=== / ---」全字符下划线行时记 SETEXT，供矩阵
-     * 按 SETEXT_NO_SUPPORT 分域（本仓无 setext，--- 恒分隔线）。
+     * （非 ATX），且 span 末行或紧随一行为「=== / ---」全字符下划线行时记 SETEXT。
+     * C3b2 起本仓已支持 setext，该注记只作矩阵展示（\u21b6SETEXT）；标题身份差统一按
+     * HEADING_STYLE_ONLY 归口（SETEXT_NO_SUPPORT 域已废止，见门禁类头核准表）。
      */
     private static String setextNote(Heading h, String source) {
         if (h.getLevel() > 2) {
