@@ -110,6 +110,9 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  *
  * <p><b>常驻测试</b>：随 build 全量执行，门禁本体是只读消费者（C3b3 的接缝标题身份在
  * {@code [Refactor]} 生产码提交里，测试域不自改生产码）；不改 internal/chat3/**。
+ * 语料现 48 条 = 20 P + 11 N + 17 X（X12..X17 = C4-fix 补 N2 惰性 setext 与深层嵌套组合
+ * 覆盖，全部直接对拍、零新增豁免域；条目数断言与反空转地板随 {@code CORPUS.length} 自动扩，
+ * 出图地板 PNG ≥ 条目数 × 2 同式）。
  * 出图/墨水地板/产物目录保留，只出 B 路单侧图（A 侧图随 A 路一并废止）。
  * 共享装配恒 {@code LatexSoftwareRenderKit.Shared}（严禁另 new FontService）。
  * 软件光栅器对 CJK 有水平重影（M3 复核在案），出图判读聚焦结构。</p>
@@ -162,7 +165,8 @@ public class MarkdownChat3ParityTest {
     // {id, 中文label, §桥 1/0(仅出图接缝口径), 豁免域声明(逗号分隔,"-"=无), 源文本}
     // 原 20 P + 11 N 全保留（P/N 三档判据随 A 路废止，id 沿用便于回溯）；
     // X01..X10 = C3b1 新增主流边界语料（任务书点名场景逐条覆盖，见各行 label）；
-    // X11 = C3b2 新增 setext 标题语料（与修 2 同期落地）。
+    // X11 = C3b2 新增 setext 标题语料（与修 2 同期落地）；
+    // X12..X17 = C4-fix 新增惰性 setext 语料（N2 收紧 + 深层嵌套组合，42 → 48 条，全直拍）。
     // 学费场景:① 行 junction 丢失 = P11(+P10@150、P17);② 两断行同形陷阱 = P10;③ 圆点剥除与
     // 链接化作用域 = P07(+P08)。防误伤项:$5.99→P06,hello_world/2*3→N11。
     // C3b2 判据定稿：豁免域声明只准写类头核准表里的域；已修好的域（EXT_ORDERED_START 与
@@ -268,6 +272,28 @@ public class MarkdownChat3ParityTest {
         // C3b3 撤标题豁免：setext 身份与级别同经接缝直拍（X11 = 全 setext 形态的正对照）
         {"X11", "setext标题", "0", "-",
             "甲行\n===\n乙行\n---"},
+        // C4-fix 批补语料（任务书第三部分：C4 N2「setext 惰性续行收紧」挂下的覆盖缺口；
+        // 全部 '-' 直接对拍，零新增豁免域——红 = 实现有偏必须修实现，等 = 保守侧锁住）：
+        // X12/X13 = N2 收紧本体的两条正反面（惰性跟 === 主流判段内字面；自带标记 === 升格 H1）
+        {"X12", "引用惰性setext字面", "0", "-",
+            "> 甲\n==="},
+        {"X13", "引用自带标记setext", "0", "-",
+            "> 甲\n> ==="},
+        // X14..X17 = 深层嵌套「惰性继承 + setext」组合（子代理未逐例实证 commonmark 的保守侧
+        // 取「宁可少升格」；本批以 R 路 oracle 实证：等 ⇒ 锁，红 ⇒ 修 SrcLine 惰性继承策略）。
+        // 立项注：本批初稿 X16 曾取「> a / > - b / >   ===」（内容列自带下划线 = 正常升格），
+        // 实测红于「项首块=标题 ⇒ 标记段独占空行」的行折形态差（B=两行 LIST+HEADING，R=一行
+        // LIST_ITEM+H1 注记 + 标题基样式位泄漏语义面）——该差对任意「- # t」ATX 同形、与惰性
+        // 无关，属 C3b3 在 BPathSemantics 登记域旁的既有装配/C5 范围（放宽判据/改归一通道均
+        // 被禁），本批按范围改册惰性形态；证据见规划 §二之八 C4-fix 细账第 7 条。
+        {"X14", "引用内列表惰性setext", "0", "-",
+            "> a\n> - b\n==="},
+        {"X15", "引用内列表自带标记setext", "0", "-",
+            "> a\n> - b\n> ==="},
+        {"X16", "引用内有序列表惰性setext", "0", "-",
+            "> a\n> 1. b\n==="},
+        {"X17", "嵌套引用跨层惰性setext", "0", "-",
+            ">> a\n> ==="},
     };
 
     private static final StringBuilder MATRIX = new StringBuilder();
@@ -406,7 +432,7 @@ public class MarkdownChat3ParityTest {
             }
         }
 
-        MATRIX.append("#\n# 汇总（C3b2 判据定稿 + C3b3 标题直拍 + C4 § 域撤豁免）: 条目=").append(Integer.valueOf(CORPUS.length))
+        MATRIX.append("#\n# 汇总（C3b2 判据定稿 + C3b3 标题直拍 + C4 § 域撤豁免 + C4-fix 乙′与惰性 setext 语料）: 条目=").append(Integer.valueOf(CORPUS.length))
                 .append(" FAIL条目=").append(Integer.valueOf(failEntries))
                 .append(" FAIL差异行=").append(Integer.valueOf(FAILS.size()))
                 .append(" 归一判等行=").append(Integer.valueOf(normTotal))
@@ -414,7 +440,7 @@ public class MarkdownChat3ParityTest {
                 .append(" RECORD条目=").append(Integer.valueOf(recordTotal))
                 .append(" F6剔行=").append(Integer.valueOf(blankTotal))
                 .append(" PNG=").append(Integer.valueOf(pngCount)).append('\n');
-        DIFF_HEAD.append("# C3b2/C3b3/C4 门禁判定汇总（判据与豁免核准表见 MarkdownChat3ParityTest 类头）\n")
+        DIFF_HEAD.append("# C3b2/C3b3/C4/C4-fix 门禁判定汇总（判据与豁免核准表见 MarkdownChat3ParityTest 类头）\n")
                 .append("# 条目=").append(Integer.valueOf(CORPUS.length))
                 .append(" FAIL差异行=").append(Integer.valueOf(FAILS.size()))
                 .append(" 归一判等=").append(Integer.valueOf(normTotal))
@@ -1333,8 +1359,9 @@ public class MarkdownChat3ParityTest {
     // ==================== 报告 ====================
 
     private static void writeMatrixHeader() {
-        MATRIX.append("# C3b2 判据定稿 + C3b3 标题直拍 + C4 § 域撤豁免矩阵 —— R=commonmark-java 0.21.0"
-                + "(+GFM strikethrough) vs B=本仓 toLayoutLines(M10d 行接缝 + C3b3 标题身份)\n")
+        MATRIX.append("# C3b2 判据定稿 + C3b3 标题直拍 + C4 § 域撤豁免 + C4-fix 惰性 setext 语料矩阵"
+                + " —— R=commonmark-java 0.21.0(+GFM strikethrough) vs B=本仓 toLayoutLines"
+                + "(M10d 行接缝 + C3b3 标题身份)\n")
                 .append("# 判据：逐行先按条目声明的豁免域施加归一（核准表见本类 javadoc），归一后仍存且域未核准的差异一律 FAIL 即红。\n")
                 .append("# 行标后缀：(FAIL)=未豁免差异（红）｜(归一判等:域)=核准归一后判等，照登不判红｜(豁免照登)=RECORD_ONLY 域（仅 N11 的 EM_FLANK_SIMPLIFIED）。\n")
                 .append("# C3b3：标题行 kind+level 直拍（N01/X10/X11 撤豁免；旧标题豁免域已从词表移除），标题基样式位不进 B 语义面。\n")
