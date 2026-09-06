@@ -12,7 +12,8 @@ import club.heiqi.uilib.font.layout.TextSegment;
  * <p><b>它解决什么</b>：裁定 B 把块级几何随块模型整体留在包内，接缝只剩扁平
  * {@code List<TextSegment>}——L2 因此「看得见字、看不见块」，引用嵌套缩进、真分隔线、
  * 围栏块底色三类块级几何无处表达（实机截图实证缺失）。本类型把<b>行粒度块身份</b>送进接缝：
- * 一条 = 一个逻辑行（按 \n 与 F6 占位边界切好），携带块类别（kind）、引用层级
+ * 一条 = 一个逻辑行（按 \n 与 F6 占位边界切好），携带块类别（kind，C3b3 起含
+ * {@code HEADING}，标题级别经 {@link #getHeadingLevel()} 随行）、引用层级
  * （quoteLevel）、块归属（blockId）、行盒几何（leftInsetPx / indentStepPx / barWidthPx /
  * ruleThicknessPx）与两路装饰色（accentArgb 竖条·横线色，backgroundArgb 块底色）。</p>
  *
@@ -43,18 +44,30 @@ public final class MarkdownLayoutLine {
      * 行的块类别（封闭枚举；决定 L2 产哪种块级几何）。
      *
      * <p>引用身份不占枚举措——{@link #getQuoteLevel()} 独立正交（引用块内的 CODE 行 =
-     * kind=CODE + quoteLevel&gt;0，竖条与底色同时成立）。标题/普通段自身不产块级几何，
-     * 恒 TEXT。<b>列表行不在此列（2026-09-05 裁定 2，推翻本类旧版「列表对 L2 无块级几何
+     * kind=CODE + quoteLevel&gt;0，竖条与底色同时成立）。普通段自身不产块级几何，恒 TEXT。
+     * <b>标题（C3b3，2026-09-06 拆除批）不再让位 TEXT</b>：标题行 = {@link Kind#HEADING}，
+     * 级别经 {@link #getHeadingLevel()} 随行携带（1..6）——块模型里的标题身份自此不再在
+     * 接缝处被丢弃；标题仍不产块级底几何，观感由段内样式位承载，出图零变化。
+     * <b>列表行不在此列（2026-09-05 裁定 2，推翻本类旧版「列表对 L2 无块级几何
      * 差异」的说法）</b>：带标记的列表首行 = {@link Kind#LIST}。但 M10d 起「对齐正文列」
-     * 的触发器<b>不是</b>本枚举——是 {@link #getListMarkerChain()} 非空：项内后续段落/
-     * 标题恒 TEXT、项内围栏恒 CODE，同样吃正文列；LIST 只额外标出「seg0 = 本级标记段、
+     * 的触发器<b>不是</b>本枚举——是 {@link #getListMarkerChain()} 非空：项内后续段落、
+     * 项内标题（kind=HEADING 与链非空正交并存）、项内围栏（恒 CODE），同样吃正文列；
+     * LIST 只额外标出「seg0 = 本级标记段、
      * 首视觉行不吃本级宽」这一处形态差。列表专属偏移与引用缩进共用 leftInsetPx 这唯一
      * 行左偏移真相（{@code leftInsetPx = quoteLevel × indentStepPx + 沿链求和的正文列}），
      * 不新增几何字段、不开样式表旋钮。</p>
      */
     public enum Kind {
-        /** 普通文本行（段落/标题；无块级底几何）。 */
+        /** 普通文本行（段落；无块级底几何）。 */
         TEXT,
+        /**
+         * 标题行（C3b3，2026-09-06 拆除批）：ATX 与 setext 皆算，级别 1..6 经
+         * {@link #getHeadingLevel()} 随行携带。与引用层级、列表链正交并存（引用内/项内
+         * 标题 = kind=HEADING + quoteLevel&gt;0 / 链非空）。标题不产块级底几何——观感
+         * （粗体/下划线/字号增量）由 {@code MarkdownDocument} 装配期写进段样式位，
+         * L2 消费块级几何的分支（底色/竖条/横线/正文列触发）一律不认本 kind。
+         */
+        HEADING,
         /**
          * 带列表标记的行（M10b，2026-09-05 裁定 2；M10d 同日「做全」追加裁定更新）：
          * 同一 {@code blockId} 内<b>只有首行</b>携带标记段（{@code segments.get(0)} 即标记——
@@ -85,6 +98,7 @@ public final class MarkdownLayoutLine {
     private final int accentArgb;
     private final int backgroundArgb;
     private final int blockContentWidthPx;
+    private final int headingLevel;
     private final List<TextSegment> listMarkerChain;
 
     /**
@@ -92,7 +106,9 @@ public final class MarkdownLayoutLine {
      *
      * <p>本构造器把 {@link #getBlockContentWidthPx()} 置 {@code 0 = 不适用}——块统一内容宽
      * 是<b>度量事实</b>，只有持度量服务的 L2（{@code MarkdownPainter.wrapLayoutLines}）能算，
-     * L1 与手写样本一律取定义值 0；需要带上该值走 {@link #withBlockContentWidthPx(int)}。</p>
+     * L1 与手写样本一律取定义值 0；需要带上该值走 {@link #withBlockContentWidthPx(int)}。
+     * {@link #getHeadingLevel()} 同样置 0：标题级别是 L1 装配期事实（C3b3），本签名自 M7
+     * 冻结、不因它膨胀——经本构造器合成的行不带级别身份。</p>
      *
      * @param kind            块类别（不可为 null）
      * @param quoteLevel      引用嵌套层数（&ge;0；0 = 不在引用内）
@@ -113,22 +129,25 @@ public final class MarkdownLayoutLine {
             int leftInsetPx, int indentStepPx, int barWidthPx, int ruleThicknessPx,
             int accentArgb, int backgroundArgb) {
         this(kind, quoteLevel, blockId, segments, leftInsetPx, indentStepPx, barWidthPx,
-                ruleThicknessPx, accentArgb, backgroundArgb, 0, null);
+                ruleThicknessPx, accentArgb, backgroundArgb, 0, 0, null);
     }
 
     /**
-     * 全字段构造（含块内容宽与列表链；唯一实现体，公共 10 参构造器、本类三个 {@code with*}
-     * 拷贝法与 L1 装配共用）。<b>package-private 而非 public</b>：链是 L1（同包
-     * {@code MarkdownDocument}）装配期事实，公共面只 +1 getter 读端（用户批准 18 → 19），
-     * 不为写端扩构造器重载族。
+     * 全字段构造（含块内容宽、标题级别与列表链；唯一实现体，公共 10 参构造器、本类三个
+     * {@code with*} 拷贝法与 L1 装配共用）。<b>package-private 而非 public</b>：链是 L1（同包
+     * {@code MarkdownDocument}）装配期事实，标题级别同理（块模型 {@code MarkdownBlock.level}
+     * 搬运，C3b3）——公共面只 +getter 读端（M10d 批准 18→19；C3b3 批准 19→20，
+     * 全成员尺），不为写端扩构造器重载族；公共 10 参签名自 M7 冻结不因本批膨胀。
      *
      * @param blockContentWidthPx 块内统一内容宽（{@code >=0}；非 CODE 行恒 0 = 不适用）
+     * @param headingLevel        标题级别（{@code >=0}；仅 {@link Kind#HEADING} 生效，
+     *                            其余 kind 一律归一为 0——级别是标题身份的专属属性）
      * @param listMarkerChain     所属列表项标记链（外层 → 自身；null/空 = 不在任何列表项内，
      *                            见 {@link #getListMarkerChain()}）
      */
     MarkdownLayoutLine(Kind kind, int quoteLevel, int blockId, List<TextSegment> segments,
             int leftInsetPx, int indentStepPx, int barWidthPx, int ruleThicknessPx,
-            int accentArgb, int backgroundArgb, int blockContentWidthPx,
+            int accentArgb, int backgroundArgb, int blockContentWidthPx, int headingLevel,
             List<TextSegment> listMarkerChain) {
         if (kind == null) {
             throw new IllegalArgumentException("kind 不能为空");
@@ -146,13 +165,15 @@ public final class MarkdownLayoutLine {
         this.accentArgb = accentArgb;
         this.backgroundArgb = backgroundArgb;
         this.blockContentWidthPx = Math.max(0, blockContentWidthPx);
+        this.headingLevel = kind == Kind.HEADING ? Math.max(0, headingLevel) : 0;
         this.listMarkerChain = listMarkerChain == null || listMarkerChain.isEmpty()
                 ? Collections.<TextSegment>emptyList()
                 : Collections.unmodifiableList(new ArrayList<TextSegment>(listMarkerChain));
     }
 
     /**
-     * 产空行（F6 块边界占位的行级形态：零段、无块身份、无几何）。
+     * 产空行（F6 块边界占位的行级形态：零段、无块身份、无几何；kind=TEXT，
+     * {@link #getHeadingLevel()} 恒 0——空行不是标题）。
      *
      * @return 空行实例
      */
@@ -165,12 +186,13 @@ public final class MarkdownLayoutLine {
      * 同身份换段流副本（M7 消费侧 §桥/链接化/换行的行级重挂点；身份与几何字段原样继承）。
      *
      * @param newSegments 新段流（可见文本与原段流逐字等值或由行内切段产生）
-     * @return 携带相同 kind/quoteLevel/blockId/几何/装饰色的新行
+     * @return 携带相同 kind/headingLevel/quoteLevel/blockId/几何/装饰色的新行
+     *         （C3b3：标题行换段流/换列后身份与级别不丢）
      */
     public MarkdownLayoutLine withSegments(List<TextSegment> newSegments) {
         return new MarkdownLayoutLine(kind, quoteLevel, blockId, newSegments,
                 leftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb, backgroundArgb,
-                blockContentWidthPx, listMarkerChain);
+                blockContentWidthPx, headingLevel, listMarkerChain);
     }
 
     /**
@@ -183,12 +205,12 @@ public final class MarkdownLayoutLine {
      * 公共面因此只 +1 getter +1 拷贝法，构造器一个不加。</p>
      *
      * @param newBlockContentWidthPx 块内统一内容宽（{@code >=0}；{@code 0} = 不适用）
-     * @return 携带相同 kind/quoteLevel/blockId/段流/几何/装饰色的新行
+     * @return 携带相同 kind/headingLevel/quoteLevel/blockId/段流/几何/装饰色的新行
      */
     public MarkdownLayoutLine withBlockContentWidthPx(int newBlockContentWidthPx) {
         return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
                 leftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb, backgroundArgb,
-                newBlockContentWidthPx, listMarkerChain);
+                newBlockContentWidthPx, headingLevel, listMarkerChain);
     }
 
     /**
@@ -205,17 +227,30 @@ public final class MarkdownLayoutLine {
      * 只吃祖先份额）。公共 10 参构造器签名自 M7 起冻结，不因它膨胀。</p>
      *
      * @param newLeftInsetPx 新行左偏移（{@code >=0}）
-     * @return 携带相同 kind/quoteLevel/blockId/段流/列表链/其余几何与装饰色的新行
+     * @return 携带相同 kind/headingLevel/quoteLevel/blockId/段流/列表链/其余几何与装饰色的新行
      */
     public MarkdownLayoutLine withLeftInsetPx(int newLeftInsetPx) {
         return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
                 newLeftInsetPx, indentStepPx, barWidthPx, ruleThicknessPx, accentArgb,
-                backgroundArgb, blockContentWidthPx, listMarkerChain);
+                backgroundArgb, blockContentWidthPx, headingLevel, listMarkerChain);
     }
 
     /** @return 块类别 */
     public Kind getKind() {
         return kind;
+    }
+
+    /**
+     * 标题级别（C3b3，2026-09-06 拆除批：块模型 {@code MarkdownBlock.level} 搬进接缝）。
+     *
+     * <p>{@link Kind#HEADING} 行 = 1..6（ATX 井号数；setext {@code ===}→1、{@code ---}→2）；
+     * 其余 kind 恒 0（构造器归一——级别是标题身份的专属属性，不向别的 kind 泄漏）。
+     * 公共面只 +1 读端；写端经包内全字段构造器（公共 10 参签名自 M7 冻结，恒产 0）。</p>
+     *
+     * @return 标题级别（{@code >=0}；仅 kind=HEADING 时 &gt;0）
+     */
+    public int getHeadingLevel() {
+        return headingLevel;
     }
 
     /** @return 引用嵌套层数（0 = 不在引用内） */
@@ -320,7 +355,9 @@ public final class MarkdownLayoutLine {
 
     @Override
     public String toString() {
-        return "MarkdownLayoutLine(" + kind + " q" + quoteLevel + " b" + blockId
+        return "MarkdownLayoutLine(" + kind
+                + (kind == Kind.HEADING ? " h" + headingLevel : "")
+                + " q" + quoteLevel + " b" + blockId
                 + " inset=" + leftInsetPx + " segs=" + segments.size() + ")";
     }
 }

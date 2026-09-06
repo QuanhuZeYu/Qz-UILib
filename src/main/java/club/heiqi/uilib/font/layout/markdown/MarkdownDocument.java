@@ -358,8 +358,9 @@ public final class MarkdownDocument {
         }
     }
 
-    /** 块身份路：按块派发（引用只加层级不占行；标题/段恒 TEXT 身份，但 M10d 起落在列表项
-     *  内时照旧携带标记链——链才是正文列的触发器，kind 不是）。 */
+    /** 块身份路：按块派发（引用只加层级不占行；段恒 TEXT 身份，标题恒 HEADING 身份并带
+     *  级别 1..6——C3b3 把块模型 {@code MarkdownBlock.level} 搬进行接缝，不再在派发处丢弃；
+     *  M10d 起落在列表项内时照旧携带标记链——链才是正文列的触发器，kind 不是）。 */
     private static void emitLayout(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
                                    LineFlattener f, List<TextSegment> chain, int quoteLevel,
                                    int ordinal) {
@@ -369,7 +370,8 @@ public final class MarkdownDocument {
                 f.append(inlineSegments(block.joinedLines(), style, table));
                 break;
             case HEADING:
-                f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel, chain);
+                // C3b3：块级身份 + 级别进接缝（ATX 与 setext 都走本 case，level 已在块模型定级）
+                f.startBlock(MarkdownLayoutLine.Kind.HEADING, quoteLevel, chain, block.level);
                 f.append(inlineSegments(block.text, headingStyle(style, block.level, table), table));
                 break;
             case CODE:
@@ -482,7 +484,8 @@ public final class MarkdownDocument {
      * 行收集器：段流事件 → 逻辑行（M7）。块归属 id 每叶子块一个；续行（段内嵌 \n、
      * 围栏源行、列表项子块断行）继承同值——L2 用「连续同 id」判定块矩形合并。
      * M10d 起列表归属链（listMarkerChain）与块身份同生命周期：startBlock 落定、
-     * 块内续行继承、换块不残留（新块必带自身链或空链）。
+     * 块内续行继承、换块不残留（新块必带自身链或空链）。C3b3 起标题级别（headingLevel）
+     * 与 kind 同生命周期：startBlock 落定、续行继承、换块必随新块归零。
      *
      * <p>行盒几何与装饰色在行封口时从样式表包内登记项解析（G4 度量同源；公共面零膨胀
      * ——链写端走 {@code MarkdownLayoutLine} 的包内全参构造器，公共面只 +1 读端 getter）。</p>
@@ -495,6 +498,7 @@ public final class MarkdownDocument {
         private MarkdownLayoutLine.Kind curKind = MarkdownLayoutLine.Kind.TEXT;
         private int curQuoteLevel;
         private int curBlockId = MarkdownLayoutLine.NO_BLOCK;
+        private int curHeadingLevel;
         private List<TextSegment> curListChain = NO_CHAIN;
         private int idGen;
         private boolean open;
@@ -504,18 +508,28 @@ public final class MarkdownDocument {
             this.table = table;
         }
 
-        /** 新叶子块首行：封前行、分配新 blockId、落定列表归属链（M10d；null 归一空链）。 */
+        /** 新叶子块首行（非标题：级别恒归零）：见 4 参重载。 */
         void startBlock(MarkdownLayoutLine.Kind kind, int quoteLevel, List<TextSegment> chain) {
+            startBlock(kind, quoteLevel, chain, 0);
+        }
+
+        /**
+         * 新叶子块首行：封前行、分配新 blockId、落定列表归属链（M10d；null 归一空链）与
+         * 标题级别（C3b3；{@code kind != HEADING} 时传值无意义，构造器归一为 0）。
+         */
+        void startBlock(MarkdownLayoutLine.Kind kind, int quoteLevel, List<TextSegment> chain,
+                int headingLevel) {
             close();
             curKind = kind;
             curQuoteLevel = quoteLevel;
             curBlockId = ++idGen;
+            curHeadingLevel = kind == MarkdownLayoutLine.Kind.HEADING ? Math.max(0, headingLevel) : 0;
             curListChain = chain == null ? NO_CHAIN : chain;
             structural = false;
             open = true;
         }
 
-        /** 块内续行：继承 kind/quoteLevel/blockId。 */
+        /** 块内续行：继承 kind/quoteLevel/blockId/headingLevel。 */
         void continueBlockLine() {
             close();
             structural = false;
@@ -614,9 +628,10 @@ public final class MarkdownDocument {
                     ? table.getBlockAccentArgb() : 0;
             int background = kind == MarkdownLayoutLine.Kind.CODE ? table.getCodeBackgroundColor() : 0;
             // M10d：leftInsetPx 只写引用份额（L1 零度量）；列表正文列由 L2 沿链求和后
-            // 经 withLeftInsetPx 追加——链在此逐字交给接缝行。
+            // 经 withLeftInsetPx 追加——链在此逐字交给接缝行。C3b3：标题级别随 kind 落行。
             return new MarkdownLayoutLine(kind, quoteLevel, blockId, segments,
-                    quoteLevel * step, step, barWidth, rule, accent, background, 0, curListChain);
+                    quoteLevel * step, step, barWidth, rule, accent, background, 0,
+                    curHeadingLevel, curListChain);
         }
     }
 
