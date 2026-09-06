@@ -28,8 +28,8 @@ import java.util.List;
  * 或显式扩展存在（AGENTS.md 主权条款；旧 F4 的立论「复刻 ChatMarkdownLineRule.classify」随该类
  * 在 3e89d91e 删除且被复生锁钉死不得复活而失效）。行为后果：L1 直连消费者（不经 chat3 桥）拿到
  * {@code §a- x} 时得到<b>字面段落文本</b>而非列表项——这正是归位目的；chat3 的
- * {@code ChatMarkdownPipeline} 在 parse 前做行首 § 码对输入清洗，玩家消息残留色码行的观感由
- * 集成层保住。</p>
+ * {@code ChatMarkdownPipeline} 在 parse 前做行首 § 码对输入清洗（C4-fix 乙′：命中块标记才
+ * 剥，未命中整行保留进本层、观感由集成层输出侧桥保住）。</p>
  *
  * <p>相对 CommonMark 的已裁简化（均有测试钉死）：制表符不展开（块缩进只数行首空格，
  * 标记后空格/制表符均接受）；行首反斜杠不构成块转义（{@code \# x} 整行按字面段落处理，

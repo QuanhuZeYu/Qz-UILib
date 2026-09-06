@@ -23,7 +23,8 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  *
  * <p><b>M7 接线升级（2026-09-05，方案乙）</b>：链路换吃块身份行接缝，顺序仍 = 门禁 B 路
  * 定义顺序的对应升级形：消息原文 → <b>行首 § 输入清洗</b>（{@link #stripLeadingSectionCodes}，
- * C4 归位：MC 特有格式只在本集成层消费，L1 对 § 零认知）→ {@link MarkdownDocument#parse(String)} →
+ * C4 归位：MC 特有格式只在本集成层消费，L1 对 § 零认知；C4-fix 乙′：清洗只在命中块标记时
+ * 消费 § 序列，未命中的行原样进 parse、行首色由输出侧桥解释）→ {@link MarkdownDocument#parse(String)} →
  * {@link MarkdownDocument#toLayoutLines(MarkdownStyleTable, TextStyle)}（逻辑行 +
  * kind/quoteLevel/行盒几何/块归属）→ <b>&sect; 桥</b>（{@link #bridgeSectionCodes}，逐行
  * 段流，语义同旧——桥本就段局部，行内窗口拼接与整条流等价：URL 扫描以空白为终止，
@@ -181,7 +182,8 @@ final class ChatMarkdownPipeline {
      * 消息原文 → 显示行（每行 = 段流 + 块身份）。
      *
      * @param messageText   去前缀消息原文（{@code ChatCardComposer.MessageLines.getDisplayText()}；
-     *                    进链路前先经 {@link #stripLeadingSectionCodes} 行首 § 输入清洗）
+     *                    进链路前先经 {@link #stripLeadingSectionCodes} 行首 § 输入清洗；
+     *                    乙′：命中块标记才消费，未命中的行原文直进）
      * @param baseColor     气泡正文基础色（ARGB）
      * @param maxWidthPx    定行宽（与行切分器同口径；{@code <= 0} = 只按行边界硬断）
      * @param fontSizePx    正文基准字号（UI px）
@@ -196,11 +198,14 @@ final class ChatMarkdownPipeline {
     synchronized List<RenderedLine> layout(String messageText, int baseColor, int maxWidthPx,
             int fontSizePx, ChatMessageList.SegmentPostProcessor postProcessor,
             ChatMessageList.SegmentFlowWrapper wrapOverride) {
-        // C4 § 归位：MC 特有的行首颜色码只在本集成层清洗（语义 = 旧行级规则的「无条件剥行首
-        // 格式码」，不是旧 L1 那套「命中块标记才剥」）。清洗是原文的纯函数——同一原文恒映射同一
-        // 清洗结果，故两级缓存 key 一律改用清洗后文本：不同原文若清洗后同串（如「§a- x」与
-        // 「- x」），其 parse/桥/链接化产物逐段等值 ⇒ 共享条目是去重，不是串味；清洗后不同串则
-        // key 必不同、互不可见。「串味」需要「同 key 不同语义」，而 key 唯一决定 parse 输入。
+        // C4-fix 乙′（归位宪法不变：L1 对 § 零认知，MC 特有格式只在本集成层消费）：逐行清洗
+        // 只在「≤3 空格 + 行首 § 码对」交替视图命中块标记（标题/围栏/引用/列表/分隔线）时消费
+        // § 序列；不命中的行（如 §c红色警告）原样进 parse，行首色由输出侧桥解释——chat3 观感
+        // 在「物理行首 §」形态上与 C4 前逐位一致（C4 初版「无条件剥」丢行首色，已改判，细账见
+        // 规划 §二之八 C4-fix）。清洗仍是原文的纯函数且幂等（命中的视图行首必是触发字符、无可
+        // 剥 § 序列；不命中的行二次判定结果不变）⇒ 两级缓存 key 继续吃清洗后文本：清洗后同串
+        // （如「§a- x」与「- x」）产物逐段等值，共享条目是去重不是串味；清洗后不同串则 key 必
+        // 不同。「串味」需要「同 key 不同语义」，而 key 唯一决定 parse 输入。
         String text = stripLeadingSectionCodes(messageText == null ? "" : messageText);
         List<MarkdownLayoutLine> logical = logicalCached(text, baseColor, postProcessor);
         int epoch = FontService.getInstance().getRuntimeVersion();
@@ -309,8 +314,10 @@ final class ChatMarkdownPipeline {
 
     /**
      * § 桥（输出侧）：把 toLayoutLines 产物里残留在段文本中的 § 样式码解释为样式（chat3 现有
-     * § 颜色语义的出口面）。C4 归位配套：行首 § 码对已在 {@link #stripLeadingSectionCodes} 输入侧
-     * 剥除，本方法消费的是行中/段中残留的 § 对——输入清洗与输出解释同在本集成层，L1 零认知。
+     * § 颜色语义的出口面）。C4-fix 乙′配套：{@link #stripLeadingSectionCodes} 只消费命中块标记
+     * 行的行首码对——<b>未命中行的行首码与行中/段中残留码都在本方法出口上色</b>（这正是
+     * {@code §c红色警告} 行首色保住的机制，C4 前旧 NONE 分支同款）——输入清洗与输出解释均在
+     * 本集成层，L1 零认知。
      *
      * <p>逐段扫描：latex 原子段（TeX 源是数学文本，§ 无意义）、code 衬底段（code 内容恒字面，
      * F1/旧裁定「code 内不解析任何标记」）与不含 § 的段原样透传（零拷贝）。命中的段以
@@ -393,22 +400,35 @@ final class ChatMarkdownPipeline {
     }
 
     /**
-     * 输入侧 § 清洗（C4 归位，规划 §二之五 F4 的承接面从 L1 迁入本集成层）：逐行剥除<b>行首</b>
-     * § 码对（§ 紧随码字符为一对；码集 {@code 0-9a-f} 颜色、{@code k-o} 样式、{@code r} 重置，
-     * 大小写同义；连续多码逐个消费），使真机玩家消息「去前缀后行首残留色码」不再遮蔽 markdown
-     * 块结构——{@code §a- 玩家列表行} 照常是列表项。
+     * 输入侧 § 清洗（C4 归位 + C4-fix 乙′，规划 §二之五 F4 承接面的归位形 → §二之八 C4-fix
+     * 改判）：逐行做「至多 3 个空格 + 连续 § 码对」交替检测视图（{@link #markerView}），
+     * <b>只有视图中确实命中块标记（标题/围栏/引用/列表/分隔线）才采用剥后视图</b>；不命中的
+     * 行一字不动。码集 0-9a-f 颜色、k-o 样式、r 重置，大小写同义；非法码字符（§z）与行尾
+     * 孤立 § 原样保留，非破坏性宽容。
      *
-     * <p>语义参照旧行级规则的「无条件剥行首格式码」（不是旧 L1 markerView 那套「命中块标记才
-     * 剥」）：普通段落行 {@code §a x} 也剥成 {@code x}。代价如实登记——<b>行首码的颜色语义随剥
-     * 消失</b>（行中/段中码仍由输出侧 {@link #bridgeSectionCodes} 解释）；这与旧规则把「行首」
-     * 视为零宽检测噪声的口径同源。行首之前的空格不允许（{@code "  §a- x"} 不命中——旧规则同
-     * 口径），未闭合/非法码字符（§z、行尾孤立 §）原样保留，非破坏性宽容。</p>
+     * <p><b>判据出处（C4-fix 裁定，用户裁定方案乙′）</b>：旧 L1（{@code bd58b343^}）
+     * markerView 的「命中块标记才消费、未命中原样保留」精确复刻旧 chat3 观感——旧
+     * ChatMarkdownLineRule.classify 的剥码只作用于其检测局部变量、从不改显示文本；旧
+     * ChatMessageList 的 NONE 分支走 parseCached(renderLine)，renderLine 含行首 § 码 ⇒
+     * 不命中块标记的行<b>颜色保留</b>；只有命中列表/公式的行才用 markdown.getContent()
+     * （无码）⇒ 那类行行首色才丢。C4 初版误按「无条件剥」口径搬迁，实测丢失
+     * {@code §c红色警告} 的行首色（当时如实登记的代价⑤C），本批改判乙′：判据与循环结构
+     * 整体搬进集成层（L1 仍零认知 §，宪法满足），未命中行的行首码与行中/段中码一律由输出侧
+     * {@link #bridgeSectionCodes} 解释上色；命中行消费的是行首码对——与 C4 前逐位一致
+     * （那类行旧口径同样是剥后无码显示）。</p>
      *
-     * <p>纯函数 + 幂等（清洗结果行首必不再有可剥码对 ⇒ 二次调用恒返回同引用），这是缓存 key
-     * 改用清洗后文本仍自洽的前提（见 {@link #layout} 的注释）。</p>
+     * <p>纯函数 + 幂等：命中的视图行首必是 ≤3 空格 + 块标记触发字符（二次调用无可剥 § 序列、
+     * 恒同引用，如 {@code §a- x} 剥后 {@code - x} 二次不动）；不命中的行恒返回原行（二次判定
+     * 结果不变，如 {@code §c红色警告} 二次仍不剥）⇒ 二次调用恒同引用。这是缓存 key 用清洗后
+     * 文本仍自洽的前提（见 {@link #layout} 的注释）。</p>
+     *
+     * <p><b>粗检漂移风险与锁</b>：本类粗检判据与 L1 真判据是两份代码（L1 私有面跨包不可见、
+     * 公共面冻结，不得为此扩 L1、不得反射进 L1 私有），由
+     * {@code ChatMarkdownPipelineTest#coarseBlockMarkerAgreesWithL1BlockIdentity} 对一批样本行
+     * 断言「chat3 粗检命中 ⇔ 该行剥后交给 L1 实际产出块级身份（非段落字面）」，漂移即红。</p>
      *
      * @param text 消息原文（非 null）
-     * @return 清洗后文本（无任何行命中时同引用）
+     * @return 清洗后文本（无任何行命中块标记时同引用）
      */
     static String stripLeadingSectionCodes(String text) {
         if (text.indexOf('\u00a7') < 0) {
@@ -421,7 +441,7 @@ final class ChatMarkdownPipeline {
             int br = text.indexOf('\n', pos);
             int end = br < 0 ? text.length() : br;
             String line = text.substring(pos, end);
-            String cleaned = stripLineLeadingCodes(line);
+            String cleaned = markerView(line);
             if (cleaned != line) {
                 changed = true;
             }
@@ -432,19 +452,198 @@ final class ChatMarkdownPipeline {
             out.append('\n');
             pos = br + 1;
         }
-        // 无任何行命中 ⇒ 同引用返回（「无 § 命中不复制」与桥的零拷贝纪律同款；命中时清洗
-        // 结果行首必不再有可剥码对 ⇒ 幂等，二次调用恒同引用）
+        // 无任何行命中 ⇒ 同引用返回（「无命中不复制」与桥的零拷贝纪律同款；命中的视图行首
+        // 必是块标记触发字符 ⇒ 二次调用恒不命中、恒同引用 = 幂等）
         return changed ? out.toString() : text;
     }
 
-    /** 单行行首 § 码对逐个消费；无命中返回同引用（{@code \r} 只在行尾、不碍行首判定）。 */
-    private static String stripLineLeadingCodes(String line) {
-        int i = 0;
-        while (i + 1 < line.length() && line.charAt(i) == '\u00a7'
-                && isChatFormatCode(Character.toLowerCase(line.charAt(i + 1)))) {
-            i += 2;
+    /**
+     * 单行块标记检测视图（乙′本体；自 C4 从 L1 拆除的 markerView 逐句照搬——循环结构与判据
+     * 蓝本 {@code git show bd58b343^} 该文件 :172-210，勿简化成「只剥最前面连续码对」：
+     * 蓝本是「至多 3 个空格 + 连续 § 码对」<b>交替</b>循环，空格位置保留进视图（嵌套列表
+     * 缩进语义不变），{@code §f §a- x}、{@code §f  - x} 这类形态因此能正确命中；停住处首个
+     * 非空白字符不是块标记触发字符时返回原行、不做任何剥除（{@code §f + 4 空格 + 标记}
+     * ind&gt;3 不算命中 ⇒ 整行保留，行首色进桥））。
+     *
+     * @param line 源行（{@code \r} 只在行尾、不碍行首判定）
+     * @return 命中块标记 ⇒ 剥后视图（新串）；否则原行同引用
+     */
+    static String markerView(String line) {
+        if (line == null || line.isEmpty() || line.indexOf('\u00a7') < 0) {
+            return line;
         }
-        return i == 0 ? line : line.substring(i);
+        StringBuilder view = new StringBuilder(line.length());
+        int i = 0;
+        int stripped = 0;
+        while (i < line.length()) {
+            int spaces = 0;
+            while (i + spaces < line.length() && line.charAt(i + spaces) == ' ' && spaces < 3) {
+                spaces++;
+            }
+            view.append(line, i, i + spaces);
+            int cursor = i + spaces;
+            int eaten = 0;
+            while (cursor + 1 < line.length() && line.charAt(cursor) == '\u00a7'
+                    && isChatFormatCode(Character.toLowerCase(line.charAt(cursor + 1)))) {
+                cursor += 2;
+                eaten += 2;
+            }
+            stripped += eaten;
+            if (eaten == 0) {
+                // 蓝本 M5 修原样保留：本跳刚追加进视图的空格不得随 substring(i) 二次追加
+                // （否则「§f + 空格 + 标记」视图缩进翻倍落回字面，丢失旧口径「行首 § 码后
+                // 照常取标记」行为）
+                i = cursor;
+                break;
+            }
+            i = cursor;
+        }
+        if (stripped == 0) {
+            return line;
+        }
+        view.append(line.substring(i));
+        // 只有「视图中确实命中一个块标记」才允许消费 § 序列，否则原样交回（普通段落行的
+        // 行首 § 码一字不动——容忍不得变成吞字）
+        String candidate = view.toString();
+        return coarseBlockStart(candidate) ? candidate : line;
+    }
+
+    /** 乙′粗检命中判据（一致性锁的 chat3 侧读数）：视图与原文不同引用 = 命中块标记才消费。 */
+    static boolean coarseHitsBlockMarker(String line) {
+        return markerView(line) != line;
+    }
+
+    // ==================== 块标记粗检（L1 真判据的包私有同构复刻，勿扩公共面） ====================
+
+    /**
+     * 反引号 U+0060：以无强转十六进制赋值书写——复生锁 G3 断言①禁 chat3 源码出现反引号
+     * 字面、反斜杠-u 转义文本与 char 强转 0x60 三种形态（注释虽被扫描器剥除，书写面仍从严）。
+     */
+    private static final char FENCE_TICK_HEX = 0x60;
+
+    /** 星号 U+002A：单引号字面被复生锁 G3 断言①列为旧行级规则定界形态，同样以常量代。 */
+    private static final char MARK_STAR_HEX = 0x2A;
+
+    /** 有序列表序号最大位数（L1 同值口径——粗检与真判据的漂移点之一就是这里）。 */
+    private static final int MAX_ORDINAL_DIGITS = 9;
+
+    /**
+     * 块起始粗检：判据结构与 L1 已退役的 isBlockStart（蓝本 {@code bd58b343^} :212-222）
+     * 逐句同构——围栏/ATX/分隔线/引用（对剥 ≤3 空格后的 body）或列表起始（对整视图，内部
+     * 自数缩进）。<b>刻意不含 setext 下划线</b>（蓝本同缺：独立 {@code ===} 不是块起点，
+     * 段落上下文中才可能升格，行首 § 序列不为其消费——一致性锁对此有专项样本）。
+     */
+    private static boolean coarseBlockStart(String view) {
+        int ind = coarseLeadingSpaces(view);
+        if (ind > 3 || ind >= view.length()) {
+            return false;
+        }
+        String body = view.substring(ind);
+        if (coarseFenceStart(body, 3) != 0 || coarseHeadingLevel(body) > 0
+                || coarseThematicBreak(body) || body.charAt(0) == '>') {
+            return true;
+        }
+        return coarseListStart(view);
+    }
+
+    /** 行首空格数（制表符不计入块缩进——L1 同款已裁简化，粗检必须同口径）。 */
+    private static int coarseLeadingSpaces(String s) {
+        int i = 0;
+        while (i < s.length() && s.charAt(i) == ' ') {
+            i++;
+        }
+        return i;
+    }
+
+    /** ATX 标题级别；0 = 非标题。1..6 个 # 后须为空格/制表符/行尾（L1 同款）。 */
+    private static int coarseHeadingLevel(String body) {
+        int i = 0;
+        while (i < body.length() && body.charAt(i) == '#') {
+            i++;
+        }
+        if (i == 0 || i > 6) {
+            return 0;
+        }
+        if (i == body.length()) {
+            return i;
+        }
+        char next = body.charAt(i);
+        return (next == ' ' || next == '\t') ? i : 0;
+    }
+
+    /** 围栏起始定界符字符；0 = 非围栏；backtick 围栏 info 含反引号不算起始（L1 同款）。 */
+    private static char coarseFenceStart(String body, int minLen) {
+        if (body.isEmpty()) {
+            return 0;
+        }
+        char ch = body.charAt(0);
+        if (ch != FENCE_TICK_HEX && ch != '~') {
+            return 0;
+        }
+        int run = 0;
+        while (run < body.length() && body.charAt(run) == ch) {
+            run++;
+        }
+        if (run < minLen) {
+            return 0;
+        }
+        if (ch == FENCE_TICK_HEX && body.indexOf(ch, run) >= 0) {
+            return 0;
+        }
+        return ch;
+    }
+
+    /** 分隔线：整行仅一种星号/连字符/下划线加空白，且标记字符数 &gt;= 3（L1 同款）。 */
+    private static boolean coarseThematicBreak(String body) {
+        char unit = 0;
+        int count = 0;
+        for (int i = 0; i < body.length(); i++) {
+            char ch = body.charAt(i);
+            if (ch == ' ' || ch == '\t') {
+                continue;
+            }
+            if (ch != '-' && ch != '_' && ch != MARK_STAR_HEX) {
+                return false;
+            }
+            if (unit == 0) {
+                unit = ch;
+            } else if (ch != unit) {
+                return false;
+            }
+            count++;
+        }
+        return count >= 3;
+    }
+
+    /**
+     * 列表起始粗检（bool 版 matchListStart，蓝本 L1 :283-313）：无序 星/连/加 + 空格/制表符/
+     * 行尾；有序 1..9 位数字 + 句点/右括号 + 同上（数字不解析、无异常面）。
+     */
+    private static boolean coarseListStart(String line) {
+        int ind = coarseLeadingSpaces(line);
+        if (ind > 3 || ind >= line.length()) {
+            return false;
+        }
+        String body = line.substring(ind);
+        char c0 = body.charAt(0);
+        if ((c0 == '-' || c0 == MARK_STAR_HEX || c0 == '+')
+                && (body.length() == 1 || body.charAt(1) == ' ' || body.charAt(1) == '\t')) {
+            return true;
+        }
+        int digits = 0;
+        while (digits < body.length() && digits <= MAX_ORDINAL_DIGITS
+                && Character.isDigit(body.charAt(digits))) {
+            digits++;
+        }
+        if (digits == 0 || digits > MAX_ORDINAL_DIGITS || digits >= body.length()) {
+            return false;
+        }
+        char delim = body.charAt(digits);
+        if (delim != '.' && delim != ')') {
+            return false;
+        }
+        return digits + 1 >= body.length() || body.charAt(digits + 1) == ' '
+                || body.charAt(digits + 1) == '\t';
     }
 
     /** MC 格式码字符集（0-9a-f 颜色、k-o 样式、r 重置；入参已小写化）。 */
