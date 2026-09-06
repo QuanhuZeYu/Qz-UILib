@@ -12,10 +12,16 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * chat3 旧行级规则 / code 切分器契约的 L1 承接钉死（M5 删除 {@code ChatMarkdownLineRule} 与
  * {@code ChatCodeSpanSplitter} 后，其全部行为契约经 {@link MarkdownDocument} 公共接缝复验——
  * 覆盖不随实现消失，规划 §三 M5「行级规则由 L1 块层承接」与 §二之五 F1-F3 的可追溯证据。
- * <b>C4 归位（2026-09-06 宪法裁定）</b>：F4「块层 §-容忍」不再由 L1 承接——§ 行首码的输入
- * 清洗整体迁至 chat3 集成层（{@code ChatMarkdownPipeline}），L1 对 § 零认知，该域改钉
- * 「§ 行在 L1 = 字面文本」的归位判据（见 {@link #sectionPrefixedLinesAreLiteralParagraphsAtL1AfterC4}），
- * 清洗后的观感锁在 {@code ChatMarkdownPipelineTest}。
+ * <b>C4 归位（2026-09-06 宪法裁定）+ C4-fix 乙′（同周改判）</b>：F4「块层 §-容忍」不再由
+ * L1 承接——§ 行首码的输入清洗整体迁至 chat3 集成层（{@code ChatMarkdownPipeline}），L1 对 §
+ * 零认知，本类该域钉「§ 行经 L1 直连 = 字面文本」的归位判据（见
+ * {@link #sectionPrefixedLinesAreLiteralParagraphsAtL1AfterC4}）。C4 初版把集成层清洗做成
+ * 「无条件剥」、登记「旧期望作废」，乙′ 已改判：<b>命中块标记才消费、未命中原样保留</b> ⇒
+ * 旧期望「§f- item → • item」（§f  - item / §f§l- item 同款）与「§c 纯文本行色保留」
+ * <b>对 chat3 消费者恢复 C4 前语义</b>——作废的只是「任何消费者经 L1 直连即得剥码」这一
+ * C4 前才存在的能力（归位目的本身）。恢复后的观感锁在 {@code ChatMarkdownPipelineTest}
+ * （preC4SectionFamilySemanticsRestoredThroughIntegrationLayer /
+ * leadingColorSemanticsSurviveOnNonHitLines），本类不再声称旧期望整体作废。
  *
  * <p>期望为 B 路裁定行为：与旧垫片语义有差处按规划裁定登记（未闭合标记字面宽容 = M1 裁定；
  * code 段样式 = F1）。<b>C1a（2026-09-06 对齐裁定）</b>：旧「深缩进独立列表行绝对层级
@@ -120,14 +126,18 @@ public class MarkdownChat3RuleInheritanceTest {
     }
 
     /**
-     * C4 归位重定（替代旧 {@code sectionPrefixedListLinesConsumeCodesWithMarker}——它锁的「命中
-     * 块标记才消费行首 §」F4 容忍机制已整体拆除）：<b>L1 对 § 零认知</b>，行首 § 码对既不被
-     * 消费、也不参与块标记检测，一切按原始字面文本——
-     * ① 「§f- item」「§f  - item」「§f§l- item」= 普通段落字面（旧期望「• item」作废；真机
-     *    观感由 chat3 集成层输入清洗保住，锁在 {@code ChatMarkdownPipelineTest}）；
-     * ② 「§f    - item」：行首是非空白 § → 连缩进代码块都不命中 → 同样字面段落（C4 前后同形，
-     *    但理由换了：本层不再存在任何 § 视图机制）；
-     * ③ 原 F4「未命中兜底」例（§f§r / §f-not 列表）行为不变——那时是兜底路径，现在就是常态。
+     * C4 归位重定 + C4-fix 乙′口径更新（替代旧 {@code sectionPrefixedListLinesConsumeCodesWithMarker}
+     * 的 L1 直连表达——markerView 机制已从 L1 拆除，公共面守卫钉死 {@code ChatMarkdownPipeline}
+     * 包外不可达，「命中才剥」的旧期望在<b>本类所钉的 L1 直连接缝</b>上无从谈起）：
+     * <b>L1 对 § 零认知</b>，行首 § 码对既不被消费、也不参与块标记检测，一切按原始字面文本——
+     * ① 「§f- item」「§f  - item」「§f§l- item」在 L1 直连 = 普通段落字面；<b>对 chat3 消费者
+     *    则按乙′恢复 C4 前语义</b>（命中块标记仍剥 ⇒ 「• item」，锁在
+     *    {@code ChatMarkdownPipelineTest#preC4SectionFamilySemanticsRestoredThroughIntegrationLayer}）；
+     * ② 「§f    - item」：行首是非空白 § → 连缩进代码块都不命中 → L1 直连字面段落——chat3
+     *    侧乙′ 同样不剥（ind&gt;3 不算命中）⇒ 两侧同形（C4 初版「剥后成缩进代码块」已改判，
+     *    锁 {@code ChatMarkdownPipelineTest#leadingCodePlusFourSpaceMarkerStaysParagraphLiteral}）；
+     * ③ 原 F4「未命中兜底」例（§f§r / §f-not 列表）行为不变——那时 L1 兜底字面，现在 L1 直连
+     *    恒字面、chat3 集成层按同判据也不剥。
      */
     @Test
     public void sectionPrefixedLinesAreLiteralParagraphsAtL1AfterC4() {
