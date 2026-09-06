@@ -11,13 +11,17 @@ import club.heiqi.uilib.font.layout.TextStyle;
 /**
  * chat3 旧行级规则 / code 切分器契约的 L1 承接钉死（M5 删除 {@code ChatMarkdownLineRule} 与
  * {@code ChatCodeSpanSplitter} 后，其全部行为契约经 {@link MarkdownDocument} 公共接缝复验——
- * 覆盖不随实现消失，规划 §三 M5「行级规则由 L1 块层承接」与 §二之五 F1-F4 的可追溯证据）。
+ * 覆盖不随实现消失，规划 §三 M5「行级规则由 L1 块层承接」与 §二之五 F1-F3 的可追溯证据。
+ * <b>C4 归位（2026-09-06 宪法裁定）</b>：F4「块层 §-容忍」不再由 L1 承接——§ 行首码的输入
+ * 清洗整体迁至 chat3 集成层（{@code ChatMarkdownPipeline}），L1 对 § 零认知，该域改钉
+ * 「§ 行在 L1 = 字面文本」的归位判据（见 {@link #sectionPrefixedLinesAreLiteralParagraphsAtL1AfterC4}），
+ * 清洗后的观感锁在 {@code ChatMarkdownPipelineTest}。
  *
  * <p>期望为 B 路裁定行为：与旧垫片语义有差处按规划裁定登记（未闭合标记字面宽容 = M1 裁定；
  * code 段样式 = F1）。<b>C1a（2026-09-06 对齐裁定）</b>：旧「深缩进独立列表行绝对层级
  * = M5 F2 补全」一条按 CommonMark 拆除——0-3 前导空格 = 顶级项（缩进剥除、不进文本），
- * ≥4 前导空格 = 缩进代码字面，层级不再进段流文本。§ 颜色解释属 § 桥
- * （chat3 侧，见 {@code ChatMarkdownPipelineTest}），本类只钉 L1 段流形状。</p>
+ * ≥4 前导空格 = 缩进代码字面，层级不再进段流文本。§ 颜色解释与行首 § 输入清洗均在 chat3
+ * 集成层（C4 归位，见 {@code ChatMarkdownPipelineTest}），本类只钉 L1 段流形状。</p>
  */
 public class MarkdownChat3RuleInheritanceTest {
 
@@ -116,26 +120,27 @@ public class MarkdownChat3RuleInheritanceTest {
     }
 
     /**
-     * F4 §-容忍本体本批不动（C4 另批归位），期望按 C1a 主流语义重定：
-     * ① 「§f  - item」：markerView 视图「  - item」命中块标记照常消费 §（F4 定稿口径不变），
-     *    而 0-3 前导空格按主流 = 顶级项、F2 段流前导退役 → 「• item」（旧期望「  • item」作废）；
-     * ② 「§f    - item」：视图「    - item」ind>3 不命中块标记 → markerView 原样返回（F4 判据：
-     *    § 只在 ≤3 缩进命中块标记时消费）；行首是 § 非空格 → 也不落缩进代码块 → 整行字面段落。
-     *    主流判据 = ≥4 缩进不是列表上下文（是缩进代码或字面），不再剥 § 当列表；§ 保留属 F4
-     *    未命中兜底、颜色解释属 § 桥（此条为按实测主流一致行为重钉，理由见注）。
+     * C4 归位重定（替代旧 {@code sectionPrefixedListLinesConsumeCodesWithMarker}——它锁的「命中
+     * 块标记才消费行首 §」F4 容忍机制已整体拆除）：<b>L1 对 § 零认知</b>，行首 § 码对既不被
+     * 消费、也不参与块标记检测，一切按原始字面文本——
+     * ① 「§f- item」「§f  - item」「§f§l- item」= 普通段落字面（旧期望「• item」作废；真机
+     *    观感由 chat3 集成层输入清洗保住，锁在 {@code ChatMarkdownPipelineTest}）；
+     * ② 「§f    - item」：行首是非空白 § → 连缩进代码块都不命中 → 同样字面段落（C4 前后同形，
+     *    但理由换了：本层不再存在任何 § 视图机制）；
+     * ③ 原 F4「未命中兜底」例（§f§r / §f-not 列表）行为不变——那时是兜底路径，现在就是常态。
      */
     @Test
-    public void sectionPrefixedListLinesConsumeCodesWithMarker() {
-        // 真机同款:行首 §f 残留 + 列表标记（旧 classify 先行、F4 承接）
-        List<TextSegment> plain = flat("\u00a7f- item");
-        Assert.assertEquals("\u2022 item", joined(plain));
-        Assert.assertEquals("\u2022 item", joined(flat("\u00a7f  - item")));
-        Assert.assertEquals("\u2022 item", joined(flat("\u00a7f\u00a7l- item")));
-        // ≥4 空格 + 标记：不再剥 § 当列表，字面保留（见类注释②）
+    public void sectionPrefixedLinesAreLiteralParagraphsAtL1AfterC4() {
+        // 归位判据：§ 前缀行进 L1 = 字面段落，行内 § 一字不动
+        Assert.assertEquals("\u00a7f- item", joined(flat("\u00a7f- item")));
+        Assert.assertEquals("\u00a7f  - item", joined(flat("\u00a7f  - item")));
+        Assert.assertEquals("\u00a7f\u00a7l- item", joined(flat("\u00a7f\u00a7l- item")));
         Assert.assertEquals("\u00a7f    - item", joined(flat("\u00a7f    - item")));
-        // 未命中块标记:§ 序列一字不动（F4 定稿口径;颜色解释属 § 桥）
         Assert.assertEquals("\u00a7f\u00a7r", joined(flat("\u00a7f\u00a7r")));
         Assert.assertEquals("\u00a7f-not 列表", joined(flat("\u00a7f-not 列表")));
+        // 反证「§ 行字面化」不是「一切恒字面」：无 § 的同形态照常命中专用块
+        Assert.assertEquals("\u2022 item", joined(flat("- item")));
+        Assert.assertEquals("item", joined(flat("# item")));
     }
 
     @Test

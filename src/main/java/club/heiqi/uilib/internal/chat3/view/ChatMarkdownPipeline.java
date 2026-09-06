@@ -22,7 +22,8 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  * chat3 消息级 markdown 管道（M5 接线本体；规划《通用Markdown渲染器》§三 M5/§二 L3）。
  *
  * <p><b>M7 接线升级（2026-09-05，方案乙）</b>：链路换吃块身份行接缝，顺序仍 = 门禁 B 路
- * 定义顺序的对应升级形：消息原文 → {@link MarkdownDocument#parse(String)} →
+ * 定义顺序的对应升级形：消息原文 → <b>行首 § 输入清洗</b>（{@link #stripLeadingSectionCodes}，
+ * C4 归位：MC 特有格式只在本集成层消费，L1 对 § 零认知）→ {@link MarkdownDocument#parse(String)} →
  * {@link MarkdownDocument#toLayoutLines(MarkdownStyleTable, TextStyle)}（逻辑行 +
  * kind/quoteLevel/行盒几何/块归属）→ <b>&sect; 桥</b>（{@link #bridgeSectionCodes}，逐行
  * 段流，语义同旧——桥本就段局部，行内窗口拼接与整条流等价：URL 扫描以空白为终止，
@@ -179,7 +180,8 @@ final class ChatMarkdownPipeline {
     /**
      * 消息原文 → 显示行（每行 = 段流 + 块身份）。
      *
-     * @param messageText   去前缀消息原文（{@code ChatCardComposer.MessageLines.getDisplayText()}）
+     * @param messageText   去前缀消息原文（{@code ChatCardComposer.MessageLines.getDisplayText()}；
+     *                    进链路前先经 {@link #stripLeadingSectionCodes} 行首 § 输入清洗）
      * @param baseColor     气泡正文基础色（ARGB）
      * @param maxWidthPx    定行宽（与行切分器同口径；{@code <= 0} = 只按行边界硬断）
      * @param fontSizePx    正文基准字号（UI px）
@@ -194,7 +196,12 @@ final class ChatMarkdownPipeline {
     synchronized List<RenderedLine> layout(String messageText, int baseColor, int maxWidthPx,
             int fontSizePx, ChatMessageList.SegmentPostProcessor postProcessor,
             ChatMessageList.SegmentFlowWrapper wrapOverride) {
-        String text = messageText == null ? "" : messageText;
+        // C4 § 归位：MC 特有的行首颜色码只在本集成层清洗（语义 = 旧行级规则的「无条件剥行首
+        // 格式码」，不是旧 L1 那套「命中块标记才剥」）。清洗是原文的纯函数——同一原文恒映射同一
+        // 清洗结果，故两级缓存 key 一律改用清洗后文本：不同原文若清洗后同串（如「§a- x」与
+        // 「- x」），其 parse/桥/链接化产物逐段等值 ⇒ 共享条目是去重，不是串味；清洗后不同串则
+        // key 必不同、互不可见。「串味」需要「同 key 不同语义」，而 key 唯一决定 parse 输入。
+        String text = stripLeadingSectionCodes(messageText == null ? "" : messageText);
         List<MarkdownLayoutLine> logical = logicalCached(text, baseColor, postProcessor);
         int epoch = FontService.getInstance().getRuntimeVersion();
         String key = cacheKey(text, baseColor) + '#' + maxWidthPx + '#' + fontSizePx + '#' + epoch
@@ -301,8 +308,9 @@ final class ChatMarkdownPipeline {
     }
 
     /**
-     * § 桥：把 toLayoutLines 产物里残留在段文本中的 § 样式码解释为样式（chat3 现有 § 颜色语义
-     * 原样保住，M4-fix F4 定稿口径「块层只容忍、不解析颜色」的另一半）。
+     * § 桥（输出侧）：把 toLayoutLines 产物里残留在段文本中的 § 样式码解释为样式（chat3 现有
+     * § 颜色语义的出口面）。C4 归位配套：行首 § 码对已在 {@link #stripLeadingSectionCodes} 输入侧
+     * 剥除，本方法消费的是行中/段中残留的 § 对——输入清洗与输出解释同在本集成层，L1 零认知。
      *
      * <p>逐段扫描：latex 原子段（TeX 源是数学文本，§ 无意义）、code 衬底段（code 内容恒字面，
      * F1/旧裁定「code 内不解析任何标记」）与不含 § 的段原样透传（零拷贝）。命中的段以
@@ -382,6 +390,67 @@ final class ChatMarkdownPipeline {
             out.add(new TextSegment(buffer.toString(), current));
         }
         return out;
+    }
+
+    /**
+     * 输入侧 § 清洗（C4 归位，规划 §二之五 F4 的承接面从 L1 迁入本集成层）：逐行剥除<b>行首</b>
+     * § 码对（§ 紧随码字符为一对；码集 {@code 0-9a-f} 颜色、{@code k-o} 样式、{@code r} 重置，
+     * 大小写同义；连续多码逐个消费），使真机玩家消息「去前缀后行首残留色码」不再遮蔽 markdown
+     * 块结构——{@code §a- 玩家列表行} 照常是列表项。
+     *
+     * <p>语义参照旧行级规则的「无条件剥行首格式码」（不是旧 L1 markerView 那套「命中块标记才
+     * 剥」）：普通段落行 {@code §a x} 也剥成 {@code x}。代价如实登记——<b>行首码的颜色语义随剥
+     * 消失</b>（行中/段中码仍由输出侧 {@link #bridgeSectionCodes} 解释）；这与旧规则把「行首」
+     * 视为零宽检测噪声的口径同源。行首之前的空格不允许（{@code "  §a- x"} 不命中——旧规则同
+     * 口径），未闭合/非法码字符（§z、行尾孤立 §）原样保留，非破坏性宽容。</p>
+     *
+     * <p>纯函数 + 幂等（清洗结果行首必不再有可剥码对 ⇒ 二次调用恒返回同引用），这是缓存 key
+     * 改用清洗后文本仍自洽的前提（见 {@link #layout} 的注释）。</p>
+     *
+     * @param text 消息原文（非 null）
+     * @return 清洗后文本（无任何行命中时同引用）
+     */
+    static String stripLeadingSectionCodes(String text) {
+        if (text.indexOf('\u00a7') < 0) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text.length());
+        boolean changed = false;
+        int pos = 0;
+        while (true) {
+            int br = text.indexOf('\n', pos);
+            int end = br < 0 ? text.length() : br;
+            String line = text.substring(pos, end);
+            String cleaned = stripLineLeadingCodes(line);
+            if (cleaned != line) {
+                changed = true;
+            }
+            out.append(cleaned);
+            if (br < 0) {
+                break;
+            }
+            out.append('\n');
+            pos = br + 1;
+        }
+        // 无任何行命中 ⇒ 同引用返回（「无 § 命中不复制」与桥的零拷贝纪律同款；命中时清洗
+        // 结果行首必不再有可剥码对 ⇒ 幂等，二次调用恒同引用）
+        return changed ? out.toString() : text;
+    }
+
+    /** 单行行首 § 码对逐个消费；无命中返回同引用（{@code \r} 只在行尾、不碍行首判定）。 */
+    private static String stripLineLeadingCodes(String line) {
+        int i = 0;
+        while (i + 1 < line.length() && line.charAt(i) == '\u00a7'
+                && isChatFormatCode(Character.toLowerCase(line.charAt(i + 1)))) {
+            i += 2;
+        }
+        return i == 0 ? line : line.substring(i);
+    }
+
+    /** MC 格式码字符集（0-9a-f 颜色、k-o 样式、r 重置；入参已小写化）。 */
+    private static boolean isChatFormatCode(char lower) {
+        return (lower >= '0' && lower <= '9') || (lower >= 'a' && lower <= 'f')
+                || (lower >= 'k' && lower <= 'o') || lower == 'r';
     }
 
     /** 配色代指纹（次级色/链接色变更 → 两级缓存整体失效重算）。 */

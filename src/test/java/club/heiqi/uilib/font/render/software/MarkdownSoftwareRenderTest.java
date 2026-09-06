@@ -597,35 +597,41 @@ public class MarkdownSoftwareRenderTest {
     }
 
     /**
-     * F4 块层 §-容忍（用户裁「甲」）：行首 § 序列跨过后照旧判块标记；未命中块标记时
-     * § 码必须原样留在输出文本里（容忍不是解析，不得吞字、不得引入颜色）。
+     * C4 归位锁（重写旧 {@code fixF4BlockLayerToleratesLeadingSectionCodes}——它锁的「块层 §-
+     * 容忍/命中块标记才消费行首 §」机制已随 § 处理归位 chat3 集成层而整体拆除）：<b>L1 对 §
+     * 零认知</b>——行首 § 码对不被消费、不遮蔽也不触发任何块标记，§a- x / §7> x / 连码 §c§l§f§r*
+     * 项 / §a# 标 一律字面段落；行中 § 同样原样保留（颜色解释属 chat3 桥，锁在
+     * {@code ChatMarkdownPipelineTest}）。反证不是恒字面：无 § 的同形态照常出专用块。
      */
     @Test
-    public void fixF4BlockLayerToleratesLeadingSectionCodes() {
+    public void fixF4RetiredL1BlockLayerIsSectionCodeBlind() {
         char sec = (char) 0x00A7;
-        List<TextSegment> list = MarkdownDocument.parse(sec + "a- 玩家列表行")
+        Assert.assertEquals("行首 §+列表标记 = 字面段落（旧期望「• + 玩家列表行」两段作废）",
+                sec + "a- 玩家列表行",
+                textOf(MarkdownDocument.parse(sec + "a- 玩家列表行")
+                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle())));
+        Assert.assertEquals("行首 §+引用标记 = 字面段落、不降引用色",
+                sec + "7> 引用的文字",
+                textOf(MarkdownDocument.parse(sec + "7> 引用的文字")
+                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle())));
+        Assert.assertEquals("连续 § 码与重置码不再被跨过（旧期望「• + 项」作废）",
+                sec + "c" + sec + "l" + sec + "f" + sec + "r* 项",
+                textOf(MarkdownDocument.parse(
+                        sec + "c" + sec + "l" + sec + "f" + sec + "r* 项")
+                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle())));
+        Assert.assertEquals("§ 前导不再命中 ATX（旧期望标题文本「标」作废）",
+                sec + "a# 标",
+                textOf(MarkdownDocument.parse(sec + "a# 标")
+                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle())));
+        // —— 反 ∅ 正对照：去掉 § 前缀，同形态仍走专用块 ——
+        List<TextSegment> list = MarkdownDocument.parse("- 玩家列表行")
                 .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
         Assert.assertEquals("• ", list.get(0).getText());
         Assert.assertEquals("玩家列表行", list.get(1).getText());
-        List<TextSegment> quote = MarkdownDocument.parse(sec + "7> 引用的文字")
-                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
-        Assert.assertEquals("引用的文字", quote.get(0).getText());
-        Assert.assertEquals("S 容忍与引用色联动", 0xFF9AA0A8, quote.get(0).getStyle().getColor());
-        List<TextSegment> many = MarkdownDocument.parse(
-                sec + "c" + sec + "l" + sec + "f" + sec + "r* 项")
-                .toSegments(MarkdownStyleTable.defaults(), bodyStyle());
-        Assert.assertEquals("• ", many.get(0).getText());
-        Assert.assertEquals("连续 S 码与重置码都要跨过", "项", many.get(1).getText());
-        Assert.assertEquals("标", MarkdownDocument.parse(sec + "a# 标")
+        Assert.assertEquals("引用的文字", MarkdownDocument.parse("> 引用的文字")
                 .toSegments(MarkdownStyleTable.defaults(), bodyStyle()).get(0).getText());
-        String literal = sec + "a 普通行";
-        Assert.assertEquals("未命中块标记 → S 码原样保留", literal,
-                textOf(MarkdownDocument.parse(literal)
-                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle())));
-        String mid = "- 甲 " + sec + "a乙";
-        Assert.assertEquals("行中 S 码不参与容忍", "• 甲 " + sec + "a乙",
-                textOf(MarkdownDocument.parse(mid)
-                        .toSegments(MarkdownStyleTable.defaults(), bodyStyle())));
+        Assert.assertEquals("标", MarkdownDocument.parse("# 标")
+                .toSegments(MarkdownStyleTable.defaults(), bodyStyle()).get(0).getText());
     }
 
     /**

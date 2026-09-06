@@ -22,6 +22,15 @@ import java.util.List;
  * 正文原样交 {@link MarkdownInlineParser} 后 {@code [alt](url)} 部分按既有行内裁定解析为链接、
  * {@code !} 为字面文本——行内语义照抄 9c4dcae5 裁定（规划 §五 D2），本层一行不改。</p>
  *
+ * <p><b>对 § 颜色码零认知（C4 归位，2026-09-06 宪法裁定；替代旧 M4-fix F4「块层 §-容忍」
+ * 与 markerView 检测视图机制）</b>：§（U+00A7）在本层是普通字面文本字符——既不构成前导空白、
+ * 也不参与任何块标记检测，更不被解释为颜色/样式。MC 特有格式只能作为 chat3 集成层的输入清洗
+ * 或显式扩展存在（AGENTS.md 主权条款；旧 F4 的立论「复刻旧行级规则 classify 的行首码剥离」随该
+ * 类在 3e89d91e 删除且被复生锁钉死不得复活而失效）。行为后果：L1 直连消费者（不经 chat3 桥）拿到
+ * {@code §a- x} 时得到<b>字面段落文本</b>而非列表项——这正是归位目的；chat3 的
+ * {@code ChatMarkdownPipeline} 在 parse 前做行首 § 码对输入清洗，玩家消息残留色码行的观感由
+ * 集成层保住。</p>
+ *
  * <p>相对 CommonMark 的已裁简化（均有测试钉死）：制表符不展开（块缩进只数行首空格，
  * 标记后空格/制表符均接受）；行首反斜杠不构成块转义（{@code \# x} 整行按字面段落处理，
  * {@code #} 不在本包 escapable 集，反斜杠由行内层字面输出）；backtick 围栏 info 校验已按
@@ -132,101 +141,6 @@ final class MarkdownBlockParser {
             i++;
         }
         return i;
-    }
-
-    /** § 字符 U+00A7（书写成转义形态，避免源码编码陷阱）。 */
-    private static final char SECTION = '\u00a7';
-
-    /**
-     * 行首 § 容忍视图（M4-fix F4，用户裁「甲」；2026-09-04 裁定③定稿口径）。
-     *
-     * <p><b>定稿口径：块层 §-容忍 = 行首 § 序列仅在确实命中块标记时随标记一并消费；
-     * 未命中块标记时一字不动；这不是解析 § 颜色，颜色语义仍由下游决定。</b>本方法只做「让既有
-     * 块级检测（标题/围栏/引用/列表/分隔线）能跨过聊天框残留的行首格式码照常命中」这一件事，
-     * 从不把 § 码解释成颜色或样式（markdown 不引入颜色这条旧裁定不变）。</p>
-     *
-     * <p><b>为什么命中块标记时必须一并消费</b>：这是复刻 chat3 出货行为，不是新裁定——
-     * {@code ChatMarkdownLineRule.classify} 第一步就是 {@code stripLeadingFormatCodes(line)}，
-     * 之后才取 {@code body.substring(2)} 当列表内容，故 chat3 现行渲染里行首 {@code §a} 既不产字面
-     * 文本也不生效（门禁语料 P13 的 A 侧实测文本 = {@code «• 玩家列表行»}，无 {@code §a}）。
-     * 若改成「命中块标记也原样保留」，B 侧必为 {@code «• §a玩家列表行»}：漂移 2 码点 &gt; TIE 阈值 1、
-     * 宽差 14px &gt; 2.0px，P13 恒红——等于把裁「甲」变成永远做不到 PARITY，与裁定目的相反。</p>
-     *
-     * <p><b>未命中块标记时 § 序列原样保留在输出文本里</b>：普通段落、项体续行、列表项正文与
-     * 行中间的 § 码一律一字不动（容忍不得变成吞字）。这一点由下面的 {@code isBlockStart}
-     * 兜底，并有 {@code MarkdownSoftwareRenderTest#fixF4BlockLayerToleratesLeadingSectionCodes}
-     * 的两条反向断言钉死。</p>
-     *
-     * <p><b>为什么 § 出现在 L1</b>：同族 {@code font/layout} 包里 {@code MinecraftColorTable} 与
-     * {@code RichTextTagParser} 就是既有同源代码，chat3 行级规则做的也是同一件事；本方法承接既有
-     * 行为，不给 L1 引入任何新依赖（本包仍纯 JVM，零 MC/AWT 类型，G2 锁）。</p>
-     *
-     * <p>规则：从行首起循环「至多 3 个空格 + 连续 § 码对」；码字符集为 {@code 0-9a-f k-o r}
-     * （大小写同义，含 {@code §f}/{@code §r} 等重置码；连续多个 § 码逐个吃掉）；空格位置保留在
-     * 视图里（嵌套列表缩进语义不变）。若最终停住处的首个非空白字符不是块标记触发字符，
-     * 则返回原行、不做任何剥除。</p>
-     *
-     * @param line 源行
-     * @return 块标记检测视图（无标记可命中时 = 原行同引用）
-     */
-    static String markerView(String line) {
-        if (line == null || line.isEmpty() || line.indexOf(SECTION) < 0) {
-            return line;
-        }
-        StringBuilder view = new StringBuilder(line.length());
-        int i = 0;
-        int stripped = 0;
-        while (i < line.length()) {
-            int spaces = 0;
-            while (i + spaces < line.length() && line.charAt(i + spaces) == ' ' && spaces < 3) {
-                spaces++;
-            }
-            view.append(line, i, i + spaces);
-            int cursor = i + spaces;
-            int eaten = 0;
-            while (cursor + 1 < line.length() && line.charAt(cursor) == SECTION
-                    && isFormatCode(Character.toLowerCase(line.charAt(cursor + 1)))) {
-                cursor += 2;
-                eaten += 2;
-            }
-            stripped += eaten;
-            if (eaten == 0) {
-                // M5 修:定点「§f 空格 标记」形态——本跳刚追加进 view 的空格不得随
-                // substring(i) 二次追加(旧行为使 §f 后带空格的列表/标题行视图缩进翻倍而
-                // 落回字面,丢失旧 classify「行首 § 码后照常取标记」行为;规划 §二之五 F4 承接面)
-                i = cursor;
-                break;
-            }
-            i = cursor;
-        }
-        if (stripped == 0) {
-            return line;
-        }
-        view.append(line.substring(i));
-        // 只有「视图中确实命中一个块标记」才允许消费 § 序列，否则原样交回（普通段落里的
-        // 行首 § 码一字不动——容忍不得变成吞字）
-        String candidate = view.toString();
-        return isBlockStart(candidate) ? candidate : line;
-    }
-
-    /** 该行的块标记检测视图：与 parseBlocks 同一组判据（标题/围栏/引用/列表/分隔线）。 */
-    private static boolean isBlockStart(String view) {
-        int ind = leadingSpaces(view);
-        if (ind > 3 || ind >= view.length()) {
-            return false;
-        }
-        String body = view.substring(ind);
-        if (fenceStart(body, 3) != 0 || headingLevel(body) > 0 || isThematicBreak(body)
-                || body.charAt(0) == '>') {
-            return true;
-        }
-        return matchListStart(view) != null;
-    }
-
-    /** MC 格式码字符集（0-9a-f 颜色、k-o 样式、r 重置）；大小写均接受。 */
-    private static boolean isFormatCode(char lower) {
-        return (lower >= '0' && lower <= '9') || (lower >= 'a' && lower <= 'f')
-                || (lower >= 'k' && lower <= 'o') || lower == 'r';
     }
 
     /** 剥掉行首至多 count 个空格。 */
@@ -435,7 +349,7 @@ final class MarkdownBlockParser {
         // F6：本层连续空行数 → 打在下一个新块上（blanksBefore），扁平化时产占位段
         int blanks = 0;
         while (i < n) {
-            String line = markerView(lines.get(i));
+            String line = lines.get(i);
             if (isBlank(line)) {
                 blanks++;
                 i++;
@@ -450,8 +364,8 @@ final class MarkdownBlockParser {
                 // 「缩进代码不得中断段落」由 readParagraph 天然保证：段落已开始后，≥4 空格行
                 // 是续行（interruptsParagraph 对 ind>3 恒 false，行首空白折叠后进正文），只有
                 // 块上下文（段落已被空行/其它块终结）才会走到本分支。
-                // 不变式：markerView 只在视图 ind≤3 且命中块标记时消费 § 序列（见其 javadoc），
-                // 故此处 ind>3 的视图恒等于原行，剥空格按原文列计，与 § 桥零纠缠。
+                // C4（§ 归位）后本层不存在任何「行改写视图」：块检测与剥空格恒按原始行列计，
+                // 行首 § 是普通文本字符、不构成前导空白，这类行不进本分支。
                 i = readIndentedCode(lines, i, blocks);
                 stamp(blocks, before, blanks); blanks = 0;
                 continue;
@@ -561,8 +475,8 @@ final class MarkdownBlockParser {
      * （与围栏 CODE 同一字面口径）；info 恒为空串（CommonMark：缩进代码无 info string）。
      *
      * <p>只在块上下文被调用（见 parseBlocks 的 ind>3 分支——缩进代码不得中断段落，
-     * 段落已开始后的 ≥4 空格行由 readParagraph 收为续行）。行首 § 序列与判定的隔离靠
-     * markerView 不变式：本分支的视图行恒等于原始行。</p>
+     * 段落已开始后的 ≥4 空格行由 readParagraph 收为续行）。本方法只吃原始行（C4 起
+     * 块层对 § 零认知，不存在视图/原文两套口径）。</p>
      *
      * @return 消费到的下一源行下标
      */
@@ -602,17 +516,17 @@ final class MarkdownBlockParser {
         int j = start;
         int n = lines.size();
         while (j < n) {
-            String line = markerView(lines.get(j));
+            String line = lines.get(j);
             if (isBlank(line)) {
                 int k = j;
-                while (k < n && isBlank(markerView(lines.get(k)))) {
+                while (k < n && isBlank(lines.get(k))) {
                     k++;
                 }
                 if (k >= n) {
                     j = k;
                     break;
                 }
-                String next = markerView(lines.get(k));
+                String next = lines.get(k);
                 int ni = leadingSpaces(next);
                 if (ni <= 3 && next.charAt(ni) == '>') {
                     inner.add("");
@@ -630,7 +544,7 @@ final class MarkdownBlockParser {
                 }
                 inner.add(content);
             } else if (!interruptsParagraph(line)) {
-                inner.add(line);   // 惰性续行：line 已是检测视图（普通 § 文本仍原样，见 markerView）
+                inner.add(line);   // 惰性续行（原始行原样入集；N2 收紧见同批后续提交）
             } else {
                 break;
             }
@@ -659,7 +573,7 @@ final class MarkdownBlockParser {
      * 前导 >=4 空格的「列表标记」行进缩进代码块字面（parseBlocks 的 ind>3 分支）。</p>
      */
     private static int readList(List<String> lines, int start, List<MarkdownBlock> out, int depth) {
-        ListStart first = matchListStart(markerView(lines.get(start)));
+        ListStart first = matchListStart(lines.get(start));
         boolean ordered = first.ordered;
         char unit = ordered ? first.delim : first.bullet;
         int n = lines.size();
@@ -668,7 +582,7 @@ final class MarkdownBlockParser {
         int i = start;
         int pendingItemBlanks = 0;
         while (i < n && !listEnded) {
-            String itemLine = markerView(lines.get(i));
+            String itemLine = lines.get(i);
             ListStart st = matchListStart(itemLine);
             if (!sameKind(st, ordered, unit)) {
                 break;
@@ -680,10 +594,10 @@ final class MarkdownBlockParser {
             int contentCol = st.contentCol;
             int j = i + 1;
             while (j < n) {
-                String line = markerView(lines.get(j));
+                String line = lines.get(j);
                 if (isBlank(line)) {
                     int k = j;
-                    while (k < n && isBlank(markerView(lines.get(k)))) {
+                    while (k < n && isBlank(lines.get(k))) {
                         k++;
                     }
                     if (k >= n) {
@@ -691,7 +605,7 @@ final class MarkdownBlockParser {
                         listEnded = true;
                         break;
                     }
-                    String next = markerView(lines.get(k));
+                    String next = lines.get(k);
                     int ni = leadingSpaces(next);
                     ListStart nx = matchListStart(next);
                     if (ni < contentCol) {
@@ -762,7 +676,7 @@ final class MarkdownBlockParser {
         int j = start;
         int n = lines.size();
         while (j < n) {
-            String line = markerView(lines.get(j));
+            String line = lines.get(j);
             if (isBlank(line)) {
                 break;
             }
