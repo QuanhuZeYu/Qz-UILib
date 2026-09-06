@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.layout.markdown;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.Assert;
@@ -25,6 +26,12 @@ import club.heiqi.uilib.font.layout.TextStyle;
  *   <li>{@link #quoteIndentMonotonicPerLevel()}——引用第 N 层左偏移随层数严格单调增；</li>
  *   <li>{@link #codeLinesShareBlockIdAndCarryBackdrop()} / {@link #thematicBreakLineAlwaysExists()}
  *       ——CODE 归组与横线恒成行；</li>
+ *   <li>C3b3（2026-09-06 拆除批）标题身份锁——{@link #headingLinesCarryKindAndLevel1To6()} /
+ *       {@link #setextHeadingsCarryKindAndLevelInSeam()} /
+ *       {@link #headingInsideQuoteKeepsHeadingKindAndQuoteGeometry()} /
+ *       {@link #headingInsideListItemKeepsHeadingKindAndNonEmptyChain()} /
+ *       {@link #withMethodsPreserveHeadingKindAndLevel()}：块模型的标题身份与级别不再在
+ *       接缝丢弃，{@code Kind.HEADING} + {@code getHeadingLevel()} 随行；</li>
  *   <li>反向对照：无引用/无围栏/无分隔线文档对应字段恒零（证明字段不是常量假象）。</li>
  * </ul>
  */
@@ -387,6 +394,172 @@ public class MarkdownLayoutLinesTest {
                 36, flatVisible(dashRule.getSegments()).length());
         Assert.assertTrue("dash 全部是 '-'", flatVisible(dashRule.getSegments())
                 .matches("-{36}"));
+    }
+
+    // ==================== C3b3 不变量⑦：标题块身份 + 级别进接缝 ====================
+
+    /** 取指定文本前缀的首行（找不到即红，防空跑）。 */
+    private static MarkdownLayoutLine firstLineStartingWith(List<MarkdownLayoutLine> lines,
+            String prefix, String what) {
+        for (MarkdownLayoutLine line : lines) {
+            if (!line.getSegments().isEmpty()
+                    && flatVisible(line.getSegments()).startsWith(prefix)) {
+                return line;
+            }
+        }
+        Assert.fail("缺 " + what + "（文本前缀 <" + prefix + ">）: " + lines);
+        return null;
+    }
+
+    /**
+     * ATX 1..6 级逐档钉：块模型级别原样进接缝（{@code Kind.HEADING} +
+     * {@code getHeadingLevel()}=1..6），可见文本不变；正对照=纯段落行仍 TEXT 且级别 0。
+     * 反向锁旧口径「标题/普通段恒 TEXT」（本批作废的类头注记）。
+     */
+    @Test
+    public void headingLinesCarryKindAndLevel1To6() {
+        StringBuilder sb = new StringBuilder();
+        for (int level = 1; level <= 6; level++) {
+            if (level > 1) {
+                sb.append(LF).append(LF); // 空行隔开，保证是 6 个独立标题块
+            }
+            for (int h = 0; h < level; h++) {
+                sb.append('#');
+            }
+            sb.append(" 标题").append(level);
+        }
+        List<MarkdownLayoutLine> lines =
+                MarkdownDocument.parse(sb.toString()).toLayoutLines(MarkdownStyleTable.defaults(), base());
+        int locked = 0;
+        for (int level = 1; level <= 6; level++) {
+            MarkdownLayoutLine line = firstLineStartingWith(lines, "标题" + level,
+                    "ATX h" + level);
+            Assert.assertEquals("ATX h" + level + " 行 kind 必须 HEADING",
+                    MarkdownLayoutLine.Kind.HEADING, line.getKind());
+            Assert.assertEquals("ATX h" + level + " 级别随行进接缝", level,
+                    line.getHeadingLevel());
+            Assert.assertTrue("标题行 blockId 有效", line.getBlockId() > 0);
+            Assert.assertEquals("标题不进列表链", 0, line.getListMarkerChain().size());
+            Assert.assertEquals("顶层标题不在引用内", 0, line.getQuoteLevel());
+            locked++;
+        }
+        Assert.assertEquals("六档级别全配齐（反空跑）", 6, locked);
+        // 正对照：段落行 TEXT、级别 0（级别不是全员常量）
+        List<MarkdownLayoutLine> para = MarkdownDocument.parse(joinLF("普通段落", "# 二级", "#### 四级"))
+                .toLayoutLines(MarkdownStyleTable.defaults(), base());
+        MarkdownLayoutLine text = firstLineStartingWith(para, "普通段落", "段落行");
+        Assert.assertEquals(MarkdownLayoutLine.Kind.TEXT, text.getKind());
+        Assert.assertEquals("非标题行级别恒 0", 0, text.getHeadingLevel());
+        Assert.assertEquals("ATX 闭序列（## 尾）级别仍按井号数", 2,
+                firstLineStartingWith(MarkdownDocument.parse("## 尾 ##")
+                        .toLayoutLines(MarkdownStyleTable.defaults(), base()), "尾",
+                        "闭序列标题").getHeadingLevel());
+    }
+
+    /** setext 定级进接缝：{@code ===}→H1、{@code ---}→H2（与块模型/门禁 R 路同尺）。 */
+    @Test
+    public void setextHeadingsCarryKindAndLevelInSeam() {
+        List<MarkdownLayoutLine> h1 = MarkdownDocument.parse(joinLF("甲行", "==="))
+                .toLayoutLines(MarkdownStyleTable.defaults(), base());
+        Assert.assertEquals("setext === 产 HEADING", MarkdownLayoutLine.Kind.HEADING,
+                h1.get(0).getKind());
+        Assert.assertEquals("=== → 1 级", 1, h1.get(0).getHeadingLevel());
+        Assert.assertEquals("下划线行不产内容行", 1, h1.size());
+        List<MarkdownLayoutLine> h2 = MarkdownDocument.parse(joinLF("乙行", "---"))
+                .toLayoutLines(MarkdownStyleTable.defaults(), base());
+        Assert.assertEquals("setext --- 产 HEADING", MarkdownLayoutLine.Kind.HEADING,
+                h2.get(0).getKind());
+        Assert.assertEquals("--- → 2 级", 2, h2.get(0).getHeadingLevel());
+        // 反空跑：同宽度 --- 若被误判分隔线（旧歧义口径），这里就不是 HEADING ——两形态都钉
+        List<MarkdownLayoutLine> mixed = MarkdownDocument.parse(joinLF("丙行", "==="))
+                .toLayoutLines(MarkdownStyleTable.defaults(), base());
+        Assert.assertNotEquals("setext 行不得退 CODE/TB", MarkdownLayoutLine.Kind.THEMATIC_BREAK,
+                mixed.get(0).getKind());
+    }
+
+    /** 引用内标题：kind=HEADING 与 quoteLevel 正交并存，引用几何照常。 */
+    @Test
+    public void headingInsideQuoteKeepsHeadingKindAndQuoteGeometry() {
+        List<MarkdownLayoutLine> lines = MarkdownDocument.parse(joinLF("> ### 引用内标题"))
+                .toLayoutLines(MarkdownStyleTable.defaults(), base());
+        MarkdownLayoutLine line = firstLineStartingWith(lines, "引用内标题", "引用内标题");
+        Assert.assertEquals("引用不遮蔽标题身份（R 路同构）", MarkdownLayoutLine.Kind.HEADING,
+                line.getKind());
+        Assert.assertEquals(3, line.getHeadingLevel());
+        Assert.assertEquals("引用层级独立正交", 1, line.getQuoteLevel());
+        Assert.assertTrue("引用几何照给（步长/竖条/色）", line.getIndentStepPx() > 0
+                && line.getBarWidthPx() > 0 && line.getAccentArgb() != 0);
+        Assert.assertEquals("inset = quoteLevel × step",
+                line.getQuoteLevel() * line.getIndentStepPx(), line.getLeftInsetPx());
+    }
+
+    /**
+     * 列表项内标题（M10d「做全」的 kind 侧补钉）：kind=HEADING 与 listMarkerChain 非空
+     * <b>正交并存</b>——链仍是正文列触发器（与 kind 无关），级别不因让位链而丢。
+     */
+    @Test
+    public void headingInsideListItemKeepsHeadingKindAndNonEmptyChain() {
+        String src = joinLF("- 首段", "", "  ## 项内标题");
+        List<MarkdownLayoutLine> lines =
+                MarkdownDocument.parse(src).toLayoutLines(MarkdownStyleTable.defaults(), base());
+        MarkdownLayoutLine heading = firstLineStartingWith(lines, "项内标题", "项内标题");
+        Assert.assertEquals(MarkdownLayoutLine.Kind.HEADING, heading.getKind());
+        Assert.assertEquals(2, heading.getHeadingLevel());
+        List<TextSegment> chain = heading.getListMarkerChain();
+        Assert.assertTrue("项内标题必须带非空链（链与 kind 正交）: " + heading,
+                !chain.isEmpty());
+        Assert.assertEquals("链尾 = 本级圆点标记", "• ", chain.get(chain.size() - 1).getText());
+        // 嵌套子项内标题：链长 2（父 + 子），级别照带
+        String nested = joinLF("- 父段", "  - 子段", "", "    ### 深标题");
+        List<MarkdownLayoutLine> nlines =
+                MarkdownDocument.parse(nested).toLayoutLines(MarkdownStyleTable.defaults(), base());
+        MarkdownLayoutLine deep = firstLineStartingWith(nlines, "深标题", "深链标题");
+        Assert.assertEquals(MarkdownLayoutLine.Kind.HEADING, deep.getKind());
+        Assert.assertEquals(3, deep.getHeadingLevel());
+        Assert.assertEquals("子项内标题链 = 父级 + 子级", 2, deep.getListMarkerChain().size());
+    }
+
+    /**
+     * 身份经三个 {@code with*} 拷贝法原样继承（D 约束：换段流/追加正文列/写块宽后标题行
+     * 不得退化成无级别 TEXT）；{@code blank()} 与公共 10 参构造器恒 level=0；
+     * 非 HEADING kind 经全参构造器传级别被归一 0（级别是标题专属属性，不外溢）。
+     */
+    @Test
+    public void withMethodsPreserveHeadingKindAndLevel() {
+        List<TextSegment> body =
+                Collections.singletonList(new TextSegment("标题正文", base()));
+        List<TextSegment> chain =
+                Collections.singletonList(new TextSegment("• ", base()));
+        // 包内 13 参全字段构造器（同包测试可用；公共 10 参签名不许动——A1 守卫钉）
+        MarkdownLayoutLine heading = new MarkdownLayoutLine(MarkdownLayoutLine.Kind.HEADING,
+                1, 7, body, 8, 8, 2, 0, 0x40FFFFFF, 0, 0, 4, chain);
+        Assert.assertEquals(4, heading.getHeadingLevel());
+        List<TextSegment> swapped =
+                Collections.singletonList(new TextSegment("换了段流", base()));
+        Assert.assertEquals("withSegments 保 kind", MarkdownLayoutLine.Kind.HEADING,
+                heading.withSegments(swapped).getKind());
+        Assert.assertEquals("withSegments 保级别", 4,
+                heading.withSegments(swapped).getHeadingLevel());
+        Assert.assertEquals("withLeftInsetPx 保级别（L2 折行追加正文列后身份不丢）", 4,
+                heading.withLeftInsetPx(22).getHeadingLevel());
+        Assert.assertEquals("withBlockContentWidthPx 保级别", 4,
+                heading.withBlockContentWidthPx(120).getHeadingLevel());
+        Assert.assertEquals("with* 链式连打仍保级别", 4, heading.withSegments(swapped)
+                .withLeftInsetPx(22).withBlockContentWidthPx(120).getHeadingLevel());
+        // 公共 10 参构造器与 blank()：恒 level 0
+        Assert.assertEquals("公共 10 参构造器恒产级别 0", 0,
+                new MarkdownLayoutLine(MarkdownLayoutLine.Kind.HEADING, 0, 1, body, 0, 0, 0, 0,
+                        0, 0).getHeadingLevel());
+        Assert.assertEquals("blank() kind=TEXT", MarkdownLayoutLine.Kind.TEXT,
+                MarkdownLayoutLine.blank().getKind());
+        Assert.assertEquals("blank() 级别恒 0", 0, MarkdownLayoutLine.blank().getHeadingLevel());
+        // 非标题 kind 传级别 ⇒ 构造器归一 0（级别不外溢）
+        Assert.assertEquals("TEXT 行传级别必须归零", 0,
+                new MarkdownLayoutLine(MarkdownLayoutLine.Kind.TEXT, 0, 1, body, 0, 0, 0, 0,
+                        0, 0, 0, 6, null).getHeadingLevel());
+        Assert.assertEquals("CODE 行传级别必须归零", 0,
+                new MarkdownLayoutLine(MarkdownLayoutLine.Kind.CODE, 0, 1, body, 0, 0, 0, 0,
+                        0, 0, 0, 6, null).getHeadingLevel());
     }
 
     // ==================== 不变量⑤：F6 空行 = 零段零身份行 ====================

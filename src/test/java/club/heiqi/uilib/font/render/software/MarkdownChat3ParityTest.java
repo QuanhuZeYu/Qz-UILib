@@ -37,6 +37,12 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
 /**
  * <h2>门禁判据定稿（C3b2，2026-09-06 对齐裁定第二步；母批 C1a 语义 + C3b1 对拍引擎）</h2>
  *
+ * <p><b>C3b3 收紧（2026-09-06 同周第三批）</b>：行接缝 {@code Kind} 补上标题块身份
+ * （{@code HEADING} + {@code getHeadingLevel()}=1..6），标题域随之<b>整体从核准表与差异域
+ * 词表移除</b>——N01/X10/X11 直接对拍，kind 与 level 都必须等；防拿旧口径当挡箭牌
+ * （先例＝SETEXT_NO_SUPPORT 废止），并由 {@link #headingStyleOnlyExemptionMustBeGone()}
+ * 反向锁钉死「该域名再现即红」。</p>
+ *
  * <p>R 路＝{@link CommonMarkReferenceSemantics}（commonmark-java 0.21.0 + GFM strikethrough，
  * 官方参考实现）；B 路＝{@link BPathSemantics}（本仓 M10d 行接缝 {@code toLayoutLines} 同构映射）。
  * C3b1 的「全量照登、不判 PASS/FAIL」中间态到此结束：<b>逐条语料、逐行、逐 token 对拍，
@@ -56,10 +62,10 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  *   <li><b>BRIDGE_SECTION</b>（P13/P14）——§ 桥接域（L1 剥 § 后才认块标记，属 C4 归位范围）：
  *       <b>整条记 RECORD 跳过</b>，不做行/token 比对；C4 §桥归位后撤销本条。</li>
  *   <li><b>THEMATIC_BREAK_TEXT</b>（N06/X10）——分隔线可见 36 连字符是样式表旋钮产物、
- *       不是语义：TB 行两侧 tokens <b>归一为空</b>再判（行身份 THEMATIC_BREAK 本身仍须等）。</li>
- *   <li><b>HEADING_STYLE_ONLY</b>（N01/X10/X11）——本仓行接缝 {@code Kind} 无标题块身份：
- *       R=HEADING 而 B=TEXT/BLOCK_QUOTE 的行<b>kind 豁免、只比文本</b>（标记与级别不比对）。
- *       C3b3 补上标题身份后本条收紧（届时行级 kind 必须等）。</li>
+ *       不是语义：TB 行两侧 tokens <b>归一为空</b>再判（行身份 THEMATIC_BREAK 本身仍须等）。
+ *       <b>标题不设同类目</b>：标题块身份与级别 C3b3 起已进行接缝，标题行 kind+level 直拍，
+ *       标题基样式（粗体/下划线/字号）与颜色/字号/下划线一样根本不进语义面（B 提取侧剥除，
+ *       见 {@code BPathSemantics} 类头 HEADING 条）——旧的「kind 豁免、只比文本」通道已删除。</li>
  *   <li><b>EXT_ORDERED_START</b>——C3b2 修 1（有序列表主流续排：首项源序号 = start，其后按
  *       start+项下标、定界统一句点）后<b>该域应零差异</b>：P09/X04/X05 已撤豁免直接对拍；
  *       域名与分类通道保留在案防回潮（一旦 L1 再偏离，差异照登且当场 FAIL）。</li>
@@ -90,11 +96,13 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  * <p>kind 家族归一（CODE_FENCED≡CODE_INDENTED≡B 统一 CODE）；F6 空行占位剔除后逐行序号
  * 直对；marker 归一 bullet=样式表符号「\u2022 」、有序=start+项下标+句点（两侧同口径）。
  * 在案域：EXT_FORMULA、EXT_BARE_URL、EXT_HTML、BRIDGE_SECTION、THEMATIC_BREAK_TEXT、
- * HEADING_STYLE_ONLY、EXT_STRIKE、EXT_ORDERED_START、EM_FLANK_SIMPLIFIED、ESCAPE_SUBSET、
+ * EXT_STRIKE、EXT_ORDERED_START、EM_FLANK_SIMPLIFIED、ESCAPE_SUBSET、
  * CODE_SPAN_TRIM、CODE_SCOPE/LINK_DEST/LINK_SCOPE/EXT_AUTOLINK、LIST_DEPTH/QUOTE_DEPTH、
- * LINE_ALIGN/TOKEN_ALIGN、MARKER_MISMATCH、TOKEN_TEXT/KIND_MISMATCH（兜底域均不进豁免表）。</p>
+ * LINE_ALIGN/TOKEN_ALIGN、MARKER_MISMATCH、TOKEN_TEXT/KIND_MISMATCH（兜底域均不进豁免表；
+ * 标题级别差 = 行身份差，直判 KIND_MISMATCH，不设独立域）。</p>
  *
- * <p><b>常驻测试</b>：随 build 全量执行；只读消费者——本批不改生产代码、不改 internal/chat3/**。
+ * <p><b>常驻测试</b>：随 build 全量执行，门禁本体是只读消费者（C3b3 的接缝标题身份在
+ * {@code [Refactor]} 生产码提交里，测试域不自改生产码）；不改 internal/chat3/**。
  * 出图/墨水地板/产物目录保留，只出 B 路单侧图（A 侧图随 A 路一并废止）。
  * 共享装配恒 {@code LatexSoftwareRenderKit.Shared}（严禁另 new FontService）。
  * 软件光栅器对 CJK 有水平重影（M3 复核在案），出图判读聚焦结构。</p>
@@ -124,9 +132,10 @@ public class MarkdownChat3ParityTest {
     static final String D_BRIDGE = "BRIDGE_SECTION";
     static final String D_STRIKE = "EXT_STRIKE";
     static final String D_ORDERED = "EXT_ORDERED_START";
-    static final String D_HEADING = "HEADING_STYLE_ONLY";
-    // C3b2 修 2 落地后 SETEXT_NO_SUPPORT 域废止：setext 已支持，残差只剩「接缝无标题块身份」
-    // 这一条（HEADING_STYLE_ONLY），故本类不再登记该域（域名从词表移除，防拿旧口径当挡箭牌）。
+    // C3b2 修 2 落地后 SETEXT_NO_SUPPORT 域废止；C3b3 接缝标题身份（Kind.HEADING +
+    // getHeadingLevel）落地后 HEADING_STYLE_ONLY 域也随之整体从词表移除——两个旧域名
+    // 都不许再当挡箭牌（反向锁见 headingStyleOnlyExemptionMustBeGone()）。N01/X10/X11
+    // 改为直接对拍：行级 kind 与标题级别都必须等，不等即 KIND_MISMATCH 当场红。
     static final String D_TB_TEXT = "THEMATIC_BREAK_TEXT";
     static final String D_FLANK = "EM_FLANK_SIMPLIFIED";
     static final String D_ESCAPE = "ESCAPE_SUBSET";
@@ -152,6 +161,7 @@ public class MarkdownChat3ParityTest {
     // 链接化作用域 = P07(+P08)。防误伤项:$5.99→P06,hello_world/2*3→N11。
     // C3b2 判据定稿：豁免域声明只准写类头核准表里的域；已修好的域（EXT_ORDERED_START 与
     // EXT_STRIKE/ESCAPE_SUBSET）一律撤成 "-" 直接对拍，域登记留在词表防回潮。
+    // C3b3 收紧：标题域连词表登记一并撤销（N01/X10/X11 直拍 kind+level，见域名注释）。
 
     private static final String[][] CORPUS = {
         {"P01", "裸URL+www大写", "0", D_BARE_URL,
@@ -195,7 +205,8 @@ public class MarkdownChat3ParityTest {
             "    - deep"},
         {"P20", "二层引用长文扣宽断点", "0", "-",
             ">> 引用的长文要长到在两百六十九与一百五十两档都必然折行以此证明每层八像素的扣宽真的影响断点而不是纸面几何门禁通道重构方案甲落地之后可见文本仍须逐字不变缩进只走行盒与图元"},
-        {"N01", "ATX标题", "0", D_HEADING,
+        // N01 撤豁免（C3b3）：接缝已带 Kind.HEADING + level 1/5，kind 与级别直拍
+        {"N01", "ATX标题", "0", "-",
             "# 一级标题\n##### 五级标题"},
         {"N02", "围栏代码", "0", "-",
             "```java\nint x = 1; // **粗** $y$ > 引号 全字面\n```"},
@@ -217,7 +228,7 @@ public class MarkdownChat3ParityTest {
             "访问 [Qz 主页](https://example.com/qz) 详情"},
         {"N10", "反斜杠转义", "0", "-",
             "路径 C:\\temp 与 \\* 星号 \\`x\\` 字面"},
-        // N11 = 核准表第 8 条点名的唯一未清项：R 按 CommonMark flanking 判 emphasis/strong、
+        // N11 = 核准表第 7 条点名的唯一未清项：R 按 CommonMark flanking 判 emphasis/strong、
         // 本仓行内层按「邻空白」简化出口字面（文本都不等 ⇒ 无可归一），照登不判红，
         // 行内 emphasis 定界主流化那一批落地后连这条一起撤。
         {"N11", "emphasis防误伤", "0", D_FLANK,
@@ -241,12 +252,13 @@ public class MarkdownChat3ParityTest {
             "```swift\nlet x = 1 // **粗** 与 ~~删~~ 均字面\n```"},
         {"X09", "行内混排嵌套强调", "0", "-",
             "**外粗 *内外都粗斜* 尾** 与 ~~删中 **粗删嵌套** 尾~~ 混排"},
-        // X10 保留原文（任务书口径）：首段 --- 现按修 2 判 setext H2（残差只剩接缝无标题身份
-        // ⇒ HEADING_STYLE_ONLY），第二处 --- 仍是分隔线 ⇒ THEMATIC_BREAK_TEXT；两条都在核准表内
-        {"X10", "分隔线与列表歧义", "0", D_HEADING + "," + D_TB_TEXT,
+        // X10 保留原文（任务书口径）：首段 --- 按修 2 判 setext H2，C3b3 起接缝带 HEADING(2)
+        // 直接对拍（原标题豁免已撤）；第二处 --- 仍是分隔线 ⇒ THEMATIC_BREAK_TEXT 留在核准表
+        {"X10", "分隔线与列表歧义", "0", D_TB_TEXT,
             "歧义上句\n---\n- 列表项甲\n---\n歧义下句"},
-        // C3b2 修 2 新增：setext 标题（=== → H1、--- → H2），下划线行本身不产内容行
-        {"X11", "setext标题", "0", D_HEADING,
+        // C3b2 修 2 新增：setext 标题（=== → H1、--- → H2），下划线行本身不产内容行；
+        // C3b3 撤标题豁免：setext 身份与级别同经接缝直拍（X11 = 全 setext 形态的正对照）
+        {"X11", "setext标题", "0", "-",
             "甲行\n===\n乙行\n---"},
     };
 
@@ -382,7 +394,7 @@ public class MarkdownChat3ParityTest {
             }
         }
 
-        MATRIX.append("#\n# 汇总（C3b2 判据定稿）: 条目=").append(Integer.valueOf(CORPUS.length))
+        MATRIX.append("#\n# 汇总（C3b2 判据定稿 + C3b3 标题直拍）: 条目=").append(Integer.valueOf(CORPUS.length))
                 .append(" FAIL条目=").append(Integer.valueOf(failEntries))
                 .append(" FAIL差异行=").append(Integer.valueOf(FAILS.size()))
                 .append(" 归一判等行=").append(Integer.valueOf(normTotal))
@@ -390,7 +402,7 @@ public class MarkdownChat3ParityTest {
                 .append(" RECORD条目=").append(Integer.valueOf(recordTotal))
                 .append(" F6剔行=").append(Integer.valueOf(blankTotal))
                 .append(" PNG=").append(Integer.valueOf(pngCount)).append('\n');
-        DIFF_HEAD.append("# C3b2 门禁判定汇总（判据与豁免核准表见 MarkdownChat3ParityTest 类头）\n")
+        DIFF_HEAD.append("# C3b2/C3b3 门禁判定汇总（判据与豁免核准表见 MarkdownChat3ParityTest 类头）\n")
                 .append("# 条目=").append(Integer.valueOf(CORPUS.length))
                 .append(" FAIL差异行=").append(Integer.valueOf(FAILS.size()))
                 .append(" 归一判等=").append(Integer.valueOf(normTotal))
@@ -465,7 +477,8 @@ public class MarkdownChat3ParityTest {
 
     // ==================== 矩阵引擎（C3b2 判据定稿：归一 + FAIL 即红） ====================
 
-    /** 核准表里「只登记不判红」的域（类头第 8 条点名的 N11 唯一特例，不得私自扩充）。 */
+    /** 核准表里「只登记不判红」的域（类头第 7 条点名的 N11 唯一特例，不得私自扩充；
+     *  C3b3 收紧后仍只剩这一条——标题域已连词表登记一并撤销）。 */
     private static final java.util.Set<String> RECORD_ONLY =
             java.util.Collections.singleton(D_FLANK);
 
@@ -529,7 +542,7 @@ public class MarkdownChat3ParityTest {
      * 单语料对拍（C3b2 定稿判据）：逐行先按该条目声明的豁免域施加<b>归一</b>
      * （{@link #foldPair}），归一后判等的行记 NORM（照登不判红、计入 normed）；仍不等的行，
      * 差异域若属 {@link #RECORD_ONLY} 且被该条目声明，记「豁免照登」（唯一一条：N11 的
-     * EM_FLANK_SIMPLIFIED，见类头核准表第 8 条），<b>其余一律 FAIL 即红</b>。
+     * EM_FLANK_SIMPLIFIED，见类头核准表第 7 条），<b>其余一律 FAIL 即红</b>。
      * BRIDGE_SECTION 条目整条记 RECORD 跳过（C4 §桥归位后撤）。
      *
      * <p>行对齐＝剔 F6 空行后序号直对（不做 LCS——错位本身就是判据要看清的东西）；
@@ -629,9 +642,8 @@ public class MarkdownChat3ParityTest {
      *
      * <ul>
      *   <li><b>THEMATIC_BREAK_TEXT</b>：两侧同为分隔线行 ⇒ tokens 归一为空再判（行身份仍须等）；</li>
-     *   <li><b>HEADING_STYLE_ONLY</b>：R=HEADING（含 \u21b6SETEXT 注记，仅作展示）而 B 侧接缝只有
-     *       TEXT/BLOCK_QUOTE 身份 ⇒ kind 归一为 TEXT、两侧各折成一条纯文本 token = 只比文本
-     *       （级别与标题样式位不进语义面；C3b3 补标题身份后收紧）；</li>
+     *   <li>标题<b>无归一通道</b>（C3b3 收紧）：接缝已带 HEADING+level，行级 kind 与级别直接
+     *       判等，原标题归一通道连同词表登记一并删除——防拿旧口径当挡箭牌；</li>
      *   <li><b>EXT_FORMULA</b>：该行含公式原子或 {@code $} 定界 ⇒ FORMULA 标记与 {@code $}
      *       字符一并剥除、再合并相邻同形 token ⇒「R 侧 TEXT 文本与 B 侧公式源文本逐字等
      *       即判等（类型不比对）」；</li>
@@ -647,12 +659,6 @@ public class MarkdownChat3ParityTest {
             a = reline(a, Collections.<InlineTok>emptyList());
             b = reline(b, Collections.<InlineTok>emptyList());
             fired.add(D_TB_TEXT);
-        }
-        if (ex.contains(D_HEADING) && a.kind == Kind.HEADING
-                && (b.kind == Kind.TEXT || b.kind == Kind.BLOCK_QUOTE)) {
-            a = reline(a, Kind.TEXT, 0, textOnly(a));
-            b = reline(b, Kind.TEXT, 0, textOnly(b));
-            fired.add(D_HEADING);
         }
         if (ex.contains(D_FORMULA) && (lineHasMark(a, Mark.FORMULA)
                 || lineHasMark(b, Mark.FORMULA) || hasDollar(a) || hasDollar(b))) {
@@ -701,9 +707,6 @@ public class MarkdownChat3ParityTest {
             if (kindDom != null && dom.equals(kindDom)) {
                 continue; // 行级 kind 差异已含该成因，不重复刷
             }
-            if (kindDom != null && D_HEADING.equals(kindDom) && rt.text.equals(bt.text)) {
-                continue; // 标题域：行级已登记一次，token 面「只多一个 S 标记」不再刷
-            }
             rows.add(new String[] {dom, row(id, i, dom, lineTok(rl, k), lineTok(bl, k))});
         }
         if (rl.tokens.size() != bl.tokens.size()) {
@@ -728,19 +731,6 @@ public class MarkdownChat3ParityTest {
             List<InlineTok> tokens) {
         return new SemanticLine(kind, level, line.ordered, line.ordinal, line.quoteDepth,
                 line.listDepth, line.note, tokens);
-    }
-
-    /** 「只比文本」：折成一条无标记 token。 */
-    private static List<InlineTok> textOnly(SemanticLine line) {
-        StringBuilder sb = new StringBuilder();
-        for (InlineTok t : line.tokens) {
-            sb.append(t.text);
-        }
-        List<InlineTok> out = new ArrayList<InlineTok>(1);
-        if (sb.length() > 0) {
-            out.add(new InlineTok(EnumSet.noneOf(Mark.class), sb.toString(), null));
-        }
-        return out;
     }
 
     /** FORMULA 标记降为普通文本（类型不比对；token 文本本就是公式源）。 */
@@ -817,6 +807,11 @@ public class MarkdownChat3ParityTest {
                     && rl.level != bl.level) {
                 return D_QUOTE_DEPTH;
             }
+            if (rl.kind == Kind.HEADING && bl.kind == Kind.HEADING
+                    && rl.level != bl.level) {
+                // C3b3：标题级别是行身份的一部分，级别差=kind 参数差，直判兜底域（不设豁免域）
+                return D_KIND;
+            }
             if (rl.quoteDepth != bl.quoteDepth) {
                 return D_QUOTE_DEPTH;
             }
@@ -824,12 +819,6 @@ public class MarkdownChat3ParityTest {
                 return D_LIST_DEPTH;
             }
             return null;
-        }
-        if (rl.kind == Kind.HEADING
-                && (bl.kind == Kind.TEXT || bl.kind == Kind.BLOCK_QUOTE)) {
-            // C3b2 修 2 后 setext 已支持：R=HEADING（\u21b6SETEXT 注记只作展示）而 B 只缺
-            // 「接缝标题身份」⇒ 一律归口 HEADING_STYLE_ONLY（SETEXT_NO_SUPPORT 域已废止）。
-            return D_HEADING;
         }
         if (startsWithSection(rl) || startsWithSection(bl)) {
             return D_BRIDGE; // § 前导参与块身份判定（本仓 L1 剥 § 后才识别标记）→ 桥接域
@@ -870,11 +859,6 @@ public class MarkdownChat3ParityTest {
             }
             if (rt.marks.contains(Mark.CODE) != bt.marks.contains(Mark.CODE)) {
                 return D_CODE_SCOPE;
-            }
-            if (rt.marks.contains(Mark.STRONG) != bt.marks.contains(Mark.STRONG)
-                    && !rt.marks.contains(Mark.STRONG)
-                    && (rl.kind == Kind.HEADING || bl.kind == Kind.HEADING)) {
-                return D_HEADING;
             }
             return D_FLANK;
         }
@@ -952,6 +936,13 @@ public class MarkdownChat3ParityTest {
                 + " | R: " + rText + " | B: " + bText + " |";
     }
 
+    /**
+     * C3b3 整体废止的旧标题豁免域名。<b>本类源码里禁止出现该连续字面量</b>（词表/核准表/
+     * 比对口径三处反向锁扫源码；历史说明只准写代码区注释），故这里用拼装造字——一旦有人
+     * 把域名原样写回核准表或比对口径段，反向锁当场红。
+     */
+    private static final String GONE_HEADING_DOMAIN = "HEADING_" + "STYLE" + "_ONLY";
+
     /** 已知差异样本驱动矩阵引擎自检：正对照（全等输入零差异）+ 各域真实命中（反恒真）。 */
     @Test
     public void matrixChannelMustClassifyKnownDivergences() {
@@ -961,14 +952,17 @@ public class MarkdownChat3ParityTest {
         same.add(line(Kind.TEXT, 0, false, 0, tok(EnumSet.noneOf(Mark.class), "甲", null)));
         Assert.assertEquals("全等输入必须零差异", 0,
                 compareEntry("T0", "自检正对照", "-", same, copy(same), 0, scratch));
-        // 1) 标题身份差（R=HEADING vs B=TEXT+S 标记）→ HEADING_STYLE_ONLY 恰一条
+        // 1) 标题身份差（C3b3 收紧后）：R=HEADING vs B=TEXT+S 标记——行级 kind 差直判
+        //    KIND_MISMATCH，token 面 S 标记差不再被标题域吸收 ⇒ 两条都是未豁免差异（红）。
+        //    旧「恰一条 + 登记 HEADING 域」的反向对照：域名不得再出现在任何差异行里。
         List<SemanticLine> rH = new ArrayList<SemanticLine>();
         rH.add(line(Kind.HEADING, 2, false, 0, tok(EnumSet.noneOf(Mark.class), "标题", null)));
         List<SemanticLine> bH = new ArrayList<SemanticLine>();
         bH.add(line(Kind.TEXT, 0, false, 0, tok(EnumSet.of(Mark.STRONG), "标题", null)));
-        Assert.assertEquals("标题域应恰一条", 1,
-                compareEntry("T1", "自检标题", "-", rH, bH, 0, scratch));
-        Assert.assertTrue("须登记 HEADING_STYLE_ONLY", scratch.indexOf(D_HEADING) >= 0);
+        Assert.assertEquals("标题身份差行级+token 面共两条", 2,
+                compareEntry("T1", "自检标题直拍", "-", rH, bH, 0, scratch));
+        Assert.assertTrue("行级身份差须判 KIND_MISMATCH", scratch.indexOf(D_KIND) >= 0);
+        Assert.assertTrue("被废止的标题域不得再现身", scratch.indexOf(GONE_HEADING_DOMAIN) < 0);
         // 2) 有序源序号差 → EXT_ORDERED_START（行级一条，marker token 同域不重复刷）
         List<SemanticLine> rO = new ArrayList<SemanticLine>();
         rO.add(line(Kind.LIST_ITEM, 1, true, 4,
@@ -1008,21 +1002,29 @@ public class MarkdownChat3ParityTest {
         Assert.assertEquals("分隔线文本差恰一条", 1,
                 compareEntry("T5", "自检分隔线", "-", rT, bT, 0, scratch));
         Assert.assertTrue("须登记 THEMATIC_BREAK_TEXT", scratch.indexOf(D_TB_TEXT) >= 0);
-        // 6) 反空转地板：五个差异样本各恰命中一条（T1..T5 计数断言即其钉），T0 正对照零差。
-        //    且这五例声明都是「-」（无豁免）⇒ 全部计入 FAIL——判据定稿后「照登即红」的正面钉。
-        Assert.assertEquals("无豁免声明的差异必须全计入 FAIL", 1, verdict(rH, bH, "-").fails());
+        // 6) 反空转地板：五个差异样本全命中（T1 因标题直拍=行级+token 面两条，T2..T5 各一条；
+        //    T0 正对照零差），且这五例声明都是「-」（无豁免）⇒ 全部计入 FAIL——
+        //    判据定稿后「照登即红」的正面钉。
+        Assert.assertEquals("无豁免声明的标题差异必须全计入 FAIL", 2, verdict(rH, bH, "-").fails());
 
-        // ===== C3b2 定稿判据通道自检（归一/豁免/FAIL/RECORD 四条都不许恒真或恒假）=====
-        // 7) 归一判等：标题身份差声明 HEADING_STYLE_ONLY ⇒ FAIL 归零、计一条 NORM（照登不判红）
-        Verdict v7 = verdict(rH, bH, D_HEADING);
-        Assert.assertEquals("声明后不得再判红", 0, v7.fails());
-        Assert.assertEquals("必须真归一一条", 1, v7.normed());
-        // 8) 归一不许放宽：同域声明但文本确实不等 ⇒ 仍 FAIL（判据只豁免身份，不豁免丢字）
-        List<SemanticLine> rH2 = new ArrayList<SemanticLine>();
-        rH2.add(line(Kind.HEADING, 1, false, 0, tok(EnumSet.noneOf(Mark.class), "一级标题", null)));
-        List<SemanticLine> bH2 = new ArrayList<SemanticLine>();
-        bH2.add(line(Kind.TEXT, 0, false, 0, tok(EnumSet.of(Mark.STRONG), "二级标题", null)));
-        Assert.assertEquals("文本不等时归一不得吞掉差异", 1, verdict(rH2, bH2, D_HEADING).fails());
+        // ===== C3b2 定稿判据 + C3b3 标题直拍通道自检（归一/豁免/FAIL/RECORD 都不许恒真或恒假）=====
+        // 7) 标题直拍正对照：kind+level 全等 ⇒ 零差异（NO_DIFF，不走任何归一通道）
+        List<SemanticLine> bHsame = new ArrayList<SemanticLine>();
+        bHsame.add(line(Kind.HEADING, 2, false, 0, tok(EnumSet.noneOf(Mark.class), "标题", null)));
+        Verdict v7 = verdict(rH, bHsame, "-");
+        Assert.assertEquals("kind+level 全等必须零差异", 0, v7.fails());
+        Assert.assertEquals("直拍不经归一通道", 0, v7.normed());
+        // 7b) 级别差也是身份差：HEADING(2) vs HEADING(3) ⇒ 当场 FAIL（KIND_MISMATCH）
+        List<SemanticLine> bHlv = new ArrayList<SemanticLine>();
+        bHlv.add(line(Kind.HEADING, 3, false, 0, tok(EnumSet.noneOf(Mark.class), "标题", null)));
+        Verdict v7b = verdict(rH, bHlv, "-");
+        Assert.assertEquals("级别差必须计入 FAIL", 1, v7b.fails());
+        // 8) 旧豁免域不是挡箭牌：把被废止的域名当豁免声明传进判据 ⇒ 无归一、无照登、
+        //    差异照红（foldPair 通道与分类归口都已从代码中删除）
+        Verdict v8 = verdict(rH, bH, GONE_HEADING_DOMAIN);
+        Assert.assertEquals("声明旧域名不得放宽判据", 2, v8.fails());
+        Assert.assertEquals("旧域名无归一通道", 0, v8.normed());
+        Assert.assertEquals("旧域名无照登通道", 0, v8.exempt());
         // 9) 公式归一判等（类型不比对）；而两侧文本真不等时仍须红
         Assert.assertEquals("公式声明后判等", 0, verdict(rF, bF, D_FORMULA).fails());
         Assert.assertEquals("公式声明后计一条 NORM", 1, verdict(rF, bF, D_FORMULA).normed());
@@ -1045,8 +1047,64 @@ public class MarkdownChat3ParityTest {
         Verdict v12 = verdict(rH, bH, D_BRIDGE);
         Assert.assertTrue("须标记整条跳过", v12.skipped());
         Assert.assertEquals("跳过条目不得计差异", 0, v12.fails());
-        // 13) 声明了别的域不构成放宽：公式域声明救不了标题身份差
-        Assert.assertEquals("跨域声明不得互相顶包", 1, verdict(rH, bH, D_FORMULA).fails());
+        // 13) 声明了别的域不构成放宽：公式域声明救不了标题身份差（行级+token 面两条照红）
+        Assert.assertEquals("跨域声明不得互相顶包", 2, verdict(rH, bH, D_FORMULA).fails());
+    }
+
+    /**
+     * 反向锁（C3b3）：旧标题豁免域已整体废止——域名不得再出现在<b>差异域词表</b>（本类
+     * String 常量值）、<b>语料豁免声明列</b>、<b>类头核准表</b>与<b>比较口径</b>两段 javadoc
+     * 里；{@link #RECORD_ONLY} 仍恒等于 N11 的 EM_FLANK_SIMPLIFIED 单例（G 约束：本批之后
+     * 照登通道只剩这一条）。任何一处再现身即红——防拿旧口径当挡箭牌
+     * （先例：C3b2 废止 SETEXT_NO_SUPPORT 时把域名从词表移除并写明同款理由）。
+     */
+    @Test
+    public void headingStyleOnlyExemptionMustBeGone() throws Exception {
+        // ① 词表：差异域常量的值里不得再出现旧域名（按 D_ 命名约定反射扫，含 private；
+        //    本锁自用的拼装常量 GONE_HEADING_DOMAIN 不属词表，天然不在 D_ 约定内）
+        java.lang.reflect.Field[] fields = MarkdownChat3ParityTest.class.getDeclaredFields();
+        int scanned = 0;
+        for (int i = 0; i < fields.length; i++) {
+            if (fields[i].getType() == String.class
+                    && java.lang.reflect.Modifier.isStatic(fields[i].getModifiers())
+                    && fields[i].getName().startsWith("D_")) {
+                scanned++;
+                Assert.assertFalse("差异域词表回潮：常量 " + fields[i].getName()
+                        + " 的值是被废止的标题豁免域", GONE_HEADING_DOMAIN.equals(fields[i].get(null)));
+            }
+        }
+        Assert.assertTrue("反射必须真扫到域常量表（实测 D_ 系 String 静态常量 " + scanned
+                + " 个，低于地板说明扫描空转）", scanned >= 15);
+        // ② 语料豁免声明列：任何条目不得声明旧域名
+        for (int i = 0; i < CORPUS.length; i++) {
+            Assert.assertFalse(CORPUS[i][0] + " 语料豁免声明列回潮",
+                    CORPUS[i][3].contains(GONE_HEADING_DOMAIN));
+        }
+        // ③ 类头 javadoc：核准表段与比较口径段不得再现该域名（读自身源码；工作目录与
+        //    build/reports 产物同一 Gradle 约定 = 项目根）
+        File self = new File("src/test/java/club/heiqi/uilib/font/render/software/"
+                + "MarkdownChat3ParityTest.java");
+        Assert.assertTrue("本类源码必须可按仓内约定路径读回: " + self.getAbsolutePath(),
+                self.isFile());
+        String src = new String(Files.readAllBytes(self.toPath()), StandardCharsets.UTF_8);
+        assertDomainAbsentInRegion(src, "<h3>豁免核准表", "<h3>断言", "核准表");
+        assertDomainAbsentInRegion(src, "<h3>比较口径", "public class MarkdownChat3ParityTest",
+                "比较口径段");
+        // ④ 照登通道唯一性：RECORD_ONLY 恒 = {EM_FLANK_SIMPLIFIED}（本批不许新增豁免域）
+        Assert.assertEquals("RECORD_ONLY 必须只剩 N11 的 EM_FLANK_SIMPLIFIED 一条（G 约束）",
+                Collections.singleton(D_FLANK), RECORD_ONLY);
+    }
+
+    /** 反向锁 ③ 的区域切割：找不到边界标记也算红（防止悄悄删掉表头来绕过扫描）。 */
+    private static void assertDomainAbsentInRegion(String src, String beginMark, String endMark,
+            String regionName) {
+        int begin = src.indexOf(beginMark);
+        int end = src.indexOf(endMark, begin);
+        Assert.assertTrue(regionName + "边界标记丢失（表体被挪走/改名同样是拆锁）: begin="
+                + Integer.valueOf(begin) + " end=" + Integer.valueOf(end), begin >= 0 && end > begin);
+        String region = src.substring(begin, end);
+        Assert.assertFalse("被废止的标题豁免域不得再现身于" + regionName,
+                region.contains(GONE_HEADING_DOMAIN));
     }
 
     /** 自检便捷口：跑一次判据并返回结论（failSink 用局部表，不污染门禁账）。 */
@@ -1218,10 +1276,11 @@ public class MarkdownChat3ParityTest {
     // ==================== 报告 ====================
 
     private static void writeMatrixHeader() {
-        MATRIX.append("# C3b2 判据定稿矩阵 —— R=commonmark-java 0.21.0(+GFM strikethrough)"
-                + " vs B=本仓 toLayoutLines(M10d 行接缝)\n")
+        MATRIX.append("# C3b2 判据定稿 + C3b3 标题直拍矩阵 —— R=commonmark-java 0.21.0"
+                + "(+GFM strikethrough) vs B=本仓 toLayoutLines(M10d 行接缝 + C3b3 标题身份)\n")
                 .append("# 判据：逐行先按条目声明的豁免域施加归一（核准表见本类 javadoc），归一后仍存且域未核准的差异一律 FAIL 即红。\n")
                 .append("# 行标后缀：(FAIL)=未豁免差异（红）｜(归一判等:域)=核准归一后判等，照登不判红｜(豁免照登)=RECORD_ONLY 域（仅 N11 的 EM_FLANK_SIMPLIFIED）。\n")
+                .append("# C3b3：标题行 kind+level 直拍（N01/X10/X11 撤豁免；旧标题豁免域已从词表移除），标题基样式位不进 B 语义面。\n")
                 .append("# 口径: kind 家族归一(CODE_FENCED\u2261CODE_INDENTED\u2261B 统一 CODE) | F6 空行占位剔除后逐行序号直对 |\n")
                 .append("# marker 归一 bullet=样式表符号「\u2022 」、有序=start+项下标+句点（两侧同口径）| token 文本逐字等、标记集等、LINK dest 等 |\n")
                 .append("# 颜色/字号/下划线/几何不进语义面（样式豁免）；R 行注记 \u21b6SOFT/\u21b6HARD/\u21b6SETEXT 表示该行来源断行型。\n")

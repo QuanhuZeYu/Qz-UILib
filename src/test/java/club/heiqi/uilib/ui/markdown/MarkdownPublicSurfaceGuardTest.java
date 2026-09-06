@@ -32,16 +32,19 @@ import org.junit.Test;
  *
  * <p>两把尺挨在同一行记账里，于是「样式表 18」与「行 19」看着像「行比样式表多一个成员」，
  * 真相却是<b>同一类人数的两把尺</b>：样式表按全成员尺也是 19（18 方法 + 1 构造器 + 0 字段）。
- * 后人拿 18 去对 19 必然打架。</p>
+ * 后人拿 18 去对 19 必然打架。现状注记（C3b3）：样式表纯方法尺仍恒 18（零膨胀）；
+ * 行按全成员尺 19→<b>20</b>（+{@code getHeadingLevel()} 一个读端）——两数各是各尺。</p>
  *
  * <p><b>本锁把尺统一为「全成员口径」，并逐类钉死分解</b>（方法 / 构造器 / 字段三个数分别相等，
- * 不只钉总数）。锚定值分解（2026-09-06 {@code javap -public} 于 {@code build/classes/java/main}
- * 实测，JDK 8 与 JDK 25 双跑逐位一致）：</p>
+ * 不只钉总数）。锚定值分解（基线 2026-09-06 {@code javap -public} 于 {@code build/classes/java/main}
+ * 实测，JDK 8 与 JDK 25 双跑逐位一致；{@code MarkdownLayoutLine} 行已按 C3b3 +1 读端更新为
+ * 20=18+1+1，仍为全成员尺——历史「样式表 18」是纯方法尺，两把尺不许混写）：</p>
  *
  * <table border="1">
  *   <caption>五锚定值 = 全成员数（public 方法 + public 构造器 + public 字段）</caption>
  *   <tr><th>类</th><th>全成员</th><th>public 方法</th><th>public 构造器</th><th>public 字段</th></tr>
- *   <tr><td>{@code MarkdownLayoutLine}</td><td>19</td><td>17</td><td>1</td><td>1（NO_BLOCK）</td></tr>
+ *   <tr><td>{@code MarkdownLayoutLine}</td><td>20</td><td>18</td><td>1</td><td>1（NO_BLOCK）
+ *       （C3b3 +getHeadingLevel()：19→20，全成员尺）</td></tr>
  *   <tr><td>{@code MarkdownStyleTable}</td><td>19</td><td>18</td><td>1</td><td>0</td></tr>
  *   <tr><td>{@code ChatMessageList}</td><td>9</td><td>5</td><td>4</td><td>0</td></tr>
  *   <tr><td>{@code ChatSceneController}</td><td>26</td><td>22</td><td>4</td><td>0</td></tr>
@@ -56,10 +59,12 @@ import org.junit.Test;
  *       <b>类声明行本身不计</b>——{@code public class Foo} 不是一个成员。</li>
  *   <li>{@code getDeclaredClasses()} <b>一律不计</b>（见
  *       {@link #publicNestedTypesMustNotEnterTheCount()}）。{@code MarkdownLayoutLine.Kind}
- *       是 public 嵌套枚举，但 19 里没有它的位置。</li>
+ *       是 public 嵌套枚举，但 20（全成员尺）里没有它的位置——给枚举加常量（C3b3 的
+ *       {@code HEADING}）只动「枚举常量计数」哨兵，不动成员账。</li>
  *   <li>「继承自 Object 的 public 方法如 {@code toString}」只在本类<b>显式覆写</b>时才进账——
  *       {@code getDeclaredMethods()} 只返回本类声明的方法。{@code MarkdownLayoutLine} 覆写了
- *       {@code toString}（17 个方法含它）；{@code ChatMessageList}/{@code ChatSceneController}/
+ *       {@code toString}（18 个方法含它——C3b3 后全成员尺的方法分解）；
+ *       {@code ChatMessageList}/{@code ChatSceneController}/
  *       {@code MarkdownStyleTable} 未覆写，故不因其 +1。这与 {@code javap -public} 同口径，
  *       不是第三把尺。</li>
  *   <li>不额外排除 {@code synthetic}/bridge 成员（{@code javap -public} 也不排除）。若将来出现
@@ -111,9 +116,10 @@ public class MarkdownPublicSurfaceGuardTest {
 
     // ==================== 锚定值（全成员口径；分解 = 方法 / 构造器 / 字段）====================
 
-    /** {@code MarkdownLayoutLine} = 19（17 方法 + 1 构造器 + 1 字段 {@code NO_BLOCK}）。 */
-    private static final int LAYOUT_LINE_TOTAL = 19;
-    private static final int LAYOUT_LINE_METHODS = 17;
+    /** {@code MarkdownLayoutLine} = 20（18 方法 + 1 构造器 + 1 字段 {@code NO_BLOCK}；
+     *  C3b3 接缝标题身份 +1 读端 getHeadingLevel()，全成员尺 19→20，用户裁定见任务书 B）。 */
+    private static final int LAYOUT_LINE_TOTAL = 20;
+    private static final int LAYOUT_LINE_METHODS = 18;
     private static final int LAYOUT_LINE_CONSTRUCTORS = 1;
     private static final int LAYOUT_LINE_FIELDS = 1;
 
@@ -142,22 +148,28 @@ public class MarkdownPublicSurfaceGuardTest {
     private static final int PIPELINE_FIELDS = 0;
 
     /**
-     * 五类合计地板（反空跑）。实测合计 = 19 + 19 + 9 + 26 + 0 = <b>73</b>；地板取 50。
-     * 地板的唯一职责是「计数函数被写成恒 0 时当场红」——精确性由各类的相等断言负责。
+     * 五类合计地板（反空跑）。实测合计 = 20 + 19 + 9 + 26 + 0 = <b>74</b>（C3b3 后；
+     * 均为全成员尺）；地板取 50 不动——地板的唯一职责是「计数函数被写成恒 0 时当场红」，
+     * 精确性由各类的相等断言负责。
      */
     private static final int TOTAL_SURFACE_FLOOR = 50;
 
-    /** 公共 10 参构造器的参数个数（M7 起签名冻结；带链写端构造器 12 参，必须非 public）。 */
+    /** 公共 10 参构造器的参数个数（M7 起签名冻结，C3b3 加标题级别也未动；带链/带级别写端
+     *  构造器 13 参，必须非 public）。 */
     private static final int PUBLIC_CTOR_ARITY = 10;
 
-    /** M10d 新增、经用户批准的接缝唯一公共读端（计数清单里的形态：方法名/参数个数）。 */
+    /** M10d 新增、经用户批准的接缝公共读端（计数清单里的形态：方法名/参数个数）。 */
     private static final String LIST_MARKER_CHAIN_GETTER = "getListMarkerChain/0";
+
+    /** C3b3 新增、经任务书 B 批准的接缝标题级别读端（19→20 全成员尺的唯一增量）。 */
+    private static final String HEADING_LEVEL_GETTER = "getHeadingLevel/0";
 
     // ==================== 每类精确相等（全成员 + 三项分解）====================
 
-    /** {@code MarkdownLayoutLine} 锚定 19 = 17 方法 + 1 构造器 + 1 字段（{@code NO_BLOCK}）。 */
+    /** {@code MarkdownLayoutLine} 锚定 20 = 18 方法 + 1 构造器 + 1 字段（全成员尺；
+     *  C3b3 起 17→18 方法，多的是 {@code getHeadingLevel()}）。 */
     @Test
-    public void markdownLayoutLinePublicSurfaceIsAnchoredAt19() {
+    public void markdownLayoutLinePublicSurfaceIsAnchoredAt20() {
         assertSurface(publicSurface(load(LAYOUT_LINE)), LAYOUT_LINE_TOTAL, LAYOUT_LINE_METHODS,
                 LAYOUT_LINE_CONSTRUCTORS, LAYOUT_LINE_FIELDS);
     }
@@ -219,7 +231,7 @@ public class MarkdownPublicSurfaceGuardTest {
         }
         Assert.assertTrue("五个锚定类的 public 成员合计必须 > 0（恒 0 = 计数函数失效）: 合计 "
                 + total + detail, total > 0);
-        Assert.assertTrue("合计地板（实测 73，用途见 TOTAL_SURFACE_FLOOR 注释）: 合计 " + total
+        Assert.assertTrue("合计地板（实测 74，全成员尺，用途见 TOTAL_SURFACE_FLOOR 注释）: 合计 " + total
                 + detail, total >= TOTAL_SURFACE_FLOOR);
     }
 
@@ -247,17 +259,20 @@ public class MarkdownPublicSurfaceGuardTest {
     }
 
     /**
-     * 正对照二：{@code MarkdownLayoutLine$Kind}（public 嵌套枚举）字段路径必须报出 4 个常量
-     * （TEXT/LIST/CODE/THEMATIC_BREAK），方法路径 &ge; 2（{@code values()}/{@code valueOf(String)}）。
+     * 正对照二：{@code MarkdownLayoutLine$Kind}（public 嵌套枚举）字段路径必须报出 &ge; 5 个
+     * 常量（TEXT/HEADING/LIST/CODE/THEMATIC_BREAK——C3b3 起含 HEADING），方法路径 &ge; 2
+     * （{@code values()}/{@code valueOf(String)}）。
      *
-     * <p>Object 的字段数是 0，证明不了字段路径没坏；本哨兵专补这一条。方法与字段都用下限而非
-     * 精确值——给枚举新增一个常量是合法演进，不该让公共面守卫为它红。</p>
+     * <p>Object 的字段数是 0，证明不了字段路径没坏；本哨兵专补这一条。C3b3 起它还兼任
+     * <b>枚举常量计数的正对照</b>：Kind 从 4 常量到 5 常量（加 HEADING）是嵌套类型演进、
+     * 不进全成员账（细则 2），但字段计数路径必须看得见这次增长——下限随之 4→5。
+     * 方法与字段都用下限而非精确值——再加一个常量仍是合法演进，不该让公共面守卫为它红。</p>
      */
     @Test
     public void counterFieldPathMustNotBeHardwiredToZeroOnNestedEnumSentinel() {
         Surface surface = publicSurface(load(NESTED_ENUM_SENTINEL));
-        Assert.assertTrue("正对照：字段计数路径必须报出 >= 4 个 public 枚举常量，实到 "
-                + surface.describe(), surface.fields >= 4);
+        Assert.assertTrue("正对照：字段计数路径必须报出 >= 5 个 public 枚举常量（C3b3 起含 HEADING），实到 "
+                + surface.describe(), surface.fields >= 5);
         Assert.assertTrue("正对照：枚举方法路径必须报出 >= 2（values()/valueOf），实到 "
                 + surface.describe(), surface.methods >= 2);
         Assert.assertTrue("正对照：哨兵合计必须 > 0，实到 " + surface.describe(), surface.total > 0);
@@ -266,13 +281,15 @@ public class MarkdownPublicSurfaceGuardTest {
     // ==================== 结构钉（不只数数）====================
 
     /**
-     * 结构钉 a：{@code MarkdownLayoutLine} 的 public 构造器<b>恰好 1 个、参数个数 10</b>；
-     * 带链写端（12 参全字段构造器，多出的两项是 {@code blockContentWidthPx} 与
-     * {@code listMarkerChain}）必须保持 package-private。
+     * 结构钉 a：{@code MarkdownLayoutLine} 的 public 构造器<b>恰好 1 个、参数个数 10</b>
+     * （M7 冻结，C3b3 未动）；带链写端（C3b3 起 13 参全字段构造器，多出的三项是
+     * {@code blockContentWidthPx}、{@code headingLevel} 与 {@code listMarkerChain}）
+     * 必须保持 package-private。
      *
-     * <p>这是 M10d 的写端收口：链是 L1（同包 {@code MarkdownDocument}）装配期事实，公共面只加
-     * 读端 {@code getListMarkerChain()}，不为写端扩构造器重载族。哪天有人把 12 参全参构造器放开
-     * public，包外即可自造带链行、绕开 L1 装配与 L2 度量——本钉当场红。</p>
+     * <p>这是 M10d 的写端收口（C3b3 同款口径延用到标题级别）：链与级别都是 L1（同包
+     * {@code MarkdownDocument}）装配期事实，公共面只加读端 {@code getListMarkerChain()}/
+     * {@code getHeadingLevel()}，不为写端扩构造器重载族。哪天有人把 13 参全参构造器放开
+     * public，包外即可自造带链/带级别行、绕开 L1 装配与 L2 度量——本钉当场红。</p>
      */
     @Test
     public void layoutLineChainWriteCtorMustStayPackagePrivate() {
@@ -305,7 +322,7 @@ public class MarkdownPublicSurfaceGuardTest {
 
     /**
      * 结构钉 b：public 方法名集合必须含 {@code getListMarkerChain()}——M10d（2026-09-05 追加裁定
-     * 「做全」）经用户批准进入公共面的<b>唯一</b>新增读端。少它 = 读端被悄悄摘掉（18→19 的裁定作废）。
+     * 「做全」）经用户批准进入公共面的读端。少它 = 读端被悄悄摘掉（18→19 的裁定作废）。
      */
     @Test
     public void layoutLineMustExposeListMarkerChainReadEnd() {
@@ -313,6 +330,18 @@ public class MarkdownPublicSurfaceGuardTest {
         Assert.assertTrue("public 方法清单必须含 M10d 读端 getListMarkerChain()（列表正文列的唯一"
                 + "显式载体：几何不编码进可见文本）: 实到 " + surface.describe(),
                 surface.inventory.contains(LIST_MARKER_CHAIN_GETTER));
+    }
+
+    /**
+     * 结构钉 d（C3b3）：public 方法名集合必须含 {@code getHeadingLevel()}——标题身份进接缝的
+     * 唯一级别读端（全成员尺 19→20 的那 +1）。少它 = 标题级别只活在包内块模型、接缝照旧丢身份。
+     */
+    @Test
+    public void layoutLineMustExposeHeadingLevelReadEnd() {
+        Surface surface = publicSurface(load(LAYOUT_LINE));
+        Assert.assertTrue("public 方法清单必须含 C3b3 读端 getHeadingLevel()（HEADING 行级别 1..6，"
+                + "其余 kind 恒 0）: 实到 " + surface.describe(),
+                surface.inventory.contains(HEADING_LEVEL_GETTER));
     }
 
     /** 结构钉 c：public 嵌套类型（{@code Kind}）一律不计入成员数。 */

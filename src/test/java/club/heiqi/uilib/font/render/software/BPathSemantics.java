@@ -22,9 +22,10 @@ import club.heiqi.uilib.font.render.software.CommonMarkReferenceSemantics.Semant
  *
  * <h3>映射口径（与 R 路类 javadoc 的同构契约逐条对偶，差异点全部照登矩阵）</h3>
  * <ul>
- *   <li><b>kind 优先级</b>：CODE ＞ THEMATIC_BREAK ＞ 列表归属（LIST kind，或 TEXT kind 但
- *       {@code listMarkerChain} 非空=项内后续块）＞ 引用（quoteLevel&gt;0）＞ TEXT。
- *       与 R 路一致；引用/列表层级同时落在 quoteDepth/listDepth 正交字段。</li>
+ *   <li><b>kind 优先级</b>：CODE ＞ THEMATIC_BREAK ＞ 列表归属（LIST kind，或 TEXT/HEADING kind
+ *       但 {@code listMarkerChain} 非空=项内后续块）＞ HEADING（C3b3 起接缝带身份）＞
+ *       引用（quoteLevel&gt;0）＞ TEXT。与 R 路一致；引用/列表层级同时落在 quoteDepth/listDepth
+ *       正交字段。</li>
  *   <li><b>LIST depth 口径（M10d {@code getListMarkerChain} 读后定死）</b>：链=「从最外层到
  *       本行所属项的渲染后标记段，每级一段」（圆点被样式表配空串时该级不进链——默认表恒有
  *       圆点，链长=列表嵌套层数），故 {@code depth = chain.size()}，与 R 路的列表祖先计数
@@ -39,10 +40,16 @@ import club.heiqi.uilib.font.render.software.CommonMarkReferenceSemantics.Semant
  *   <li><b>CODE</b>：kind==CODE 恒映射 {@link Kind#CODE_FENCED} 家族值（本仓行接缝不区分
  *       围栏/缩进、info 语言忽略——{@code kindFamily} 归一后与 R 的 CODE_INDENTED 同类，
  *       子型差不报；这是有意豁免，见 R 路类注释）。</li>
- *   <li><b>HEADING</b>：本仓 {@code MarkdownLayoutLine.Kind} 只有 TEXT/LIST/CODE/
- *       THEMATIC_BREAK，<b>无标题块身份</b>（默认样式表标题仅=全文 BOLD、字号增量 0）——
- *       B 侧标题行按 TEXT 提取，与 R 的 HEADING(level) 差由矩阵按 HEADING_STYLE_ONLY 域
- *       登记（「文本+样式豁免」，2026-09-06 拆除批口径）。</li>
+ *   <li><b>HEADING</b>：C3b3（2026-09-06 拆除批）起 {@code MarkdownLayoutLine.Kind} 含
+ *       {@code HEADING}，{@code getHeadingLevel()}=1..6——B 侧标题行直映 {@link Kind#HEADING}
+ *       并带级别，与 R 的 HEADING(level) <b>直接对拍、零豁免</b>（原 HEADING_STYLE_ONLY 域
+ *       已随本批整体废止）。项内标题让位 LIST_ITEM（链优先，与 R 同构，级别差落 note 域
+ *       不进判等）。<b>标题行的块级基样式位不进语义面</b>：装配期 headingStyle 的 BOLD
+ *       （默认表 isHeadingBold=true）与引用底色的斜体叠加是样式表旋钮产物，提取时对
+ *       {@code Kind#HEADING} 行的 token 剥 STRONG/EM——与「颜色/字号/下划线不进语义面」
+ *       同口径；标题正文若真含行内强调，剥除后与 R 侧标记不等 ⇒ 差异当场 FAIL（收紧不放宽）。
+ *       注：L1 的 ATX 闭序列与 setext 定级早已在块模型（{@code MarkdownBlock}），本批只是
+ *       搬运身份，无解析语义变化。</li>
  *   <li><b>F6 空行占位</b>：{@code blank()} 行（零段 + blockId==NO_BLOCK）是块间距接缝工件，
  *       R 路不存在——对齐前剔除并计数，矩阵条目头注明剔行数。</li>
  *   <li><b>行内标记</b>：FontType.BOLD→STRONG、isItalic→EM、isCodeSpan→CODE、
@@ -102,6 +109,7 @@ final class BPathSemantics {
 
         Kind kind;
         int level;
+        boolean seamHeading = line.getKind() == MarkdownLayoutLine.Kind.HEADING;
         switch (line.getKind()) {
             case CODE:
                 kind = Kind.CODE_FENCED;
@@ -114,6 +122,18 @@ final class BPathSemantics {
             case LIST:
                 kind = Kind.LIST_ITEM;
                 level = listDepth;
+                break;
+            case HEADING:
+                // C3b3：链优先（项内标题让位 LIST_ITEM，与 R 的 kind 优先级同构），否则
+                // 直映 HEADING 并带级别；引用不遮蔽标题身份（R 同：引用内标题仍是 HEADING，
+                // 层级走 quoteDepth 正交字段）。
+                if (listDepth > 0) {
+                    kind = Kind.LIST_ITEM;
+                    level = listDepth;
+                } else {
+                    kind = Kind.HEADING;
+                    level = line.getHeadingLevel();
+                }
                 break;
             default: // TEXT：链优先（项内后续块），其次引用，最后裸文本
                 if (listDepth > 0) {
@@ -143,10 +163,25 @@ final class BPathSemantics {
             if (seg.getText().isEmpty() && !seg.isLatex()) {
                 continue; // F6 占位段（行内零宽）
             }
-            toks.add(mapSeg(seg));
+            InlineTok tok = mapSeg(seg);
+            if (seamHeading) {
+                // 标题行的块级基样式位（headingStyle 的 BOLD、引用叠层斜体）是样式表旋钮
+                // 产物，不进语义面（见类头 HEADING 条）；真含行内强调时 R 侧标记差会当场 FAIL
+                tok = new InlineTok(dropBaseStyleMarks(tok.marks), tok.text, tok.linkDest);
+            }
+            toks.add(tok);
         }
         return new SemanticLine(kind, level, chainOrdered, chainOrdinal, quote, listDepth,
                 null, mergeAdjacent(toks));
+    }
+
+    /** 剥块级基样式位（STRONG/EM）——仅 {@code Kind#HEADING} 行的 token 应用，见类头。 */
+    private static java.util.EnumSet<Mark> dropBaseStyleMarks(java.util.EnumSet<Mark> marks) {
+        java.util.EnumSet<Mark> out = java.util.EnumSet.noneOf(Mark.class);
+        out.addAll(marks);
+        out.remove(Mark.STRONG);
+        out.remove(Mark.EM);
+        return out;
     }
 
     private static InlineTok mapSeg(TextSegment seg) {

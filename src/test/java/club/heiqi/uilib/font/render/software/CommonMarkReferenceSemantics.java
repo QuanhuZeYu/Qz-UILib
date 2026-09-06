@@ -41,8 +41,8 @@ import org.commonmark.parser.Parser;
  * <h3>与 B 路（{@link BPathSemantics}）共用的行 kind 口径（两提取器同构，此处记死）</h3>
  * <ul>
  *   <li><b>kind 优先级</b>：CODE（围栏/缩进）＞ THEMATIC_BREAK ＞ 列表归属（LIST_ITEM，
- *       含项内标题/段落/续行）＞ HEADING（仅 R 有——本仓行接缝无标题块身份，B 侧恒落
- *       TEXT/BLOCK_QUOTE，该差按 HEADING_STYLE_ONLY 域登记）＞ BLOCK_QUOTE(depth) ＞ TEXT。
+ *       含项内标题/段落/续行）＞ HEADING(level)（C3b3 起 B 侧接缝同带标题身份，两侧直拍；
+ *       原 HEADING_STYLE_ONLY 登记域已整体废止）＞ BLOCK_QUOTE(depth) ＞ TEXT。
  *       引用/列表嵌套层数同时记在 {@link SemanticLine#quoteDepth}/{@link SemanticLine#listDepth}
  *       两个正交字段上，kind 只取最高优先级者（单 kind 模型对组合块的表达口径）。</li>
  *   <li><b>行粒度＝逻辑行</b>：Paragraph/Heading 内 SoftLineBreak、HardLineBreak 都断行
@@ -279,7 +279,7 @@ final class CommonMarkReferenceSemantics {
             } else if (n instanceof Heading) {
                 Heading h = (Heading) n;
                 if (listDepth > 0) {
-                    // 项内标题：kind 让位 LIST_ITEM（B 无标题身份、链优先），级别进 note 留档
+                    // 项内标题：kind 让位 LIST_ITEM（链优先，B 路同构），级别进 note 留档
                     emitLines(n, out, Kind.LIST_ITEM, listDepth, ordered, ordinalRef, quote,
                             listDepth, marker, "H" + Integer.valueOf(h.getLevel()));
                 } else {
@@ -415,8 +415,9 @@ final class CommonMarkReferenceSemantics {
     /**
      * setext 判定（SourceSpan 0.21 只有行/列索引，按行号对位）：标题 span 未从 '#' 起
      * （非 ATX），且 span 末行或紧随一行为「=== / ---」全字符下划线行时记 SETEXT。
-     * C3b2 起本仓已支持 setext，该注记只作矩阵展示（\u21b6SETEXT）；标题身份差统一按
-     * HEADING_STYLE_ONLY 归口（SETEXT_NO_SUPPORT 域已废止，见门禁类头核准表）。
+     * C3b2 起本仓已支持 setext，该注记只作矩阵展示（\u21b6SETEXT）；标题身份两侧直拍。
+     * （SETEXT_NO_SUPPORT 域 C3b2 废止；HEADING_STYLE_ONLY 域随 C3b3 接缝标题身份落地
+     * 后整体从词表移除——注记不参与判等，kind 与 level 都必须等。）
      */
     private static String setextNote(Heading h, String source) {
         if (h.getLevel() > 2) {
