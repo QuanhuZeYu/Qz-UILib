@@ -10,10 +10,7 @@ import org.junit.Test;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
-import club.heiqi.uilib.font.layout.markdown.MarkdownDocument;
-import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
 import club.heiqi.uilib.font.layout.markdown.MarkdownSpan;
-import club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 
 /**
@@ -23,8 +20,9 @@ import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
  * <p><b>C6b 方案甲</b>：§ 在进 markdown 前转样式锚点 span 流（{@code toSpanStream}），
  * 本类 § 族锁按甲口径重定（乙′ 的「预清洗 + 输出后置桥」机制锁随机制退役）；§ 转换断言与
  * {@code TextLayoutService.parseSegments}/{@code TextStyle.applyFormat} 语义逐位同源。
- * 甲↔乙′ 的逐段迁移对账在 {@code ChatMarkdownSectionSpanMigrationLockTest}。桥/strip/coarse
- * 直测用例（本类旧段）只存活到 C6b·3 拆除批（其间它们是被迁移锁引用的退役 oracle）。</p>
+ * 甲↔乙′ 的逐段迁移对账在 {@code ChatMarkdownSectionSpanMigrationLockTest}（C6b·3 起乙′
+ * 机制已从生产拆除，其只读镜像随 oracle 住进该锁的 {@code RetiredBPrime} 嵌套类——本类
+ * 不再挂桥/strip/coarse 直测锁）。</p>
  */
 public class ChatMarkdownPipelineTest {
 
@@ -36,61 +34,6 @@ public class ChatMarkdownPipelineTest {
         TextStyle s = new TextStyle();
         s.setColor(0xFFFFFFFF);
         return s;
-    }
-
-    @Test
-    public void bridgeSplitsSectionCodesLikeParseSegments() {
-        List<TextSegment> in = Collections.singletonList(
-                seg("\u00a7c红色警告 \u00a7fplain tail", white()));
-        List<TextSegment> out = ChatMarkdownPipeline.bridgeSectionCodes(in);
-        Assert.assertEquals("§ 切换产两段", 2, out.size());
-        Assert.assertEquals("红色警告 ", out.get(0).getText());
-        Assert.assertEquals("§c = MC 红(与 parseSegments 同色表)", 0xFFFF5555,
-                out.get(0).getStyle().getColor());
-        Assert.assertEquals("plain tail", out.get(1).getText());
-        Assert.assertEquals("§f 回基础色", 0xFFFFFFFF, out.get(1).getStyle().getColor());
-        Assert.assertEquals("切换点空格归前段(桥),L2 unifySwitchPointSpaces 再归一(M4-fix F5)",
-                " ", out.get(0).getText().substring(out.get(0).getText().length() - 1));
-    }
-
-    @Test
-    public void bridgePreservesMarkdownBitsAndCodePathResetsLikeMc() {
-        // 加粗段中途 §c:颜色切换 + MC 语义「色码清样式位」——与旧 A 路 parseSegments 行为一致
-        TextStyle bold = white();
-        bold.setFontType(FontType.BOLD);
-        List<TextSegment> in = Collections.singletonList(seg("x\u00a7c红y", bold));
-        List<TextSegment> out = ChatMarkdownPipeline.bridgeSectionCodes(in);
-        Assert.assertEquals(2, out.size());
-        Assert.assertEquals("x", out.get(0).getText());
-        Assert.assertEquals("§ 前 run 保留 markdown 粗体", FontType.BOLD,
-                out.get(0).getStyle().getFontType());
-        Assert.assertEquals("红y", out.get(1).getText());
-        Assert.assertEquals(0xFFFF5555, out.get(1).getStyle().getColor());
-        // 字体位保持 = L0 TextStyle 既有语义(setFontType 同步 baseFontType,§ 色码 resetFlags
-        // 回落到 base)——与 TextLayoutService.parseSegments 完全同源,桥不另造第二套 § 规则
-        Assert.assertEquals("§ 语义与 parseSegments 逐位同源(base 字体位不被色码清掉)",
-                FontType.BOLD, out.get(1).getStyle().getFontType());
-        Assert.assertSame("输入段样式对象不被改写", bold, in.get(0).getStyle());
-    }
-
-    @Test
-    public void bridgeSkipsLatexCodeAndPlainSegmentsZeroCopy() {
-        List<TextSegment> in = new ArrayList<TextSegment>();
-        in.add(TextSegment.forLatex("\u00a7ax^2", white()));
-        TextStyle code = white();
-        code.setCodeSpan(true);
-        code.setCodeBackgroundColor(0x26FFFFFF);
-        TextSegment codeSeg = seg("\u00a7cx\u00a7", code);
-        in.add(codeSeg);
-        TextSegment plain = seg("无格式码", white());
-        in.add(plain);
-        List<TextSegment> out = ChatMarkdownPipeline.bridgeSectionCodes(in);
-        Assert.assertSame("latex 原子恒透传", in.get(0), out.get(0));
-        Assert.assertSame("code 段恒透传(F1/旧裁定 code 内容字面)", codeSeg, out.get(1));
-        Assert.assertSame("无 § 段透传", plain, out.get(2));
-        Assert.assertEquals("纯 § 无可视文本 → 桥后整段消失(与 parseSegments 空 run 丢弃一致)", 0,
-                ChatMarkdownPipeline.bridgeSectionCodes(Collections.singletonList(
-                        seg("\u00a7f\u00a7r", white()))).size());
     }
 
     @Test
@@ -195,9 +138,8 @@ public class ChatMarkdownPipelineTest {
         Assert.assertEquals("item", otherWidth.get(0).segments().get(1).getText());
     }
 
-    // ==================== C6b 甲：§ → span 输入转换族（预清洗已退役；归位宪法：L1 零认知 §）。====
-    // 本段之下的 stripLeadingSectionCodes/markerView/coarse 直测与桥直测 = 已退役乙′ 机制的
-    // 迁移对照 oracle 锁，只存活到 C6b·3 拆除批（机制本体与这些锁同批删）。
+    // ==================== C6b 甲：§ → span 输入转换族（预清洗与输出桥已整套退役；
+    // 归位宪法不变：L1 零认知 §，MC 特有格式只在集成层作为输入转换存在）。====
 
     /** 直通换行替身：每条逻辑行原样出一条视觉行（不进 FontService 生产度量）。 */
     private static final ChatMessageList.SegmentFlowWrapper PASSTHROUGH =
@@ -225,53 +167,6 @@ public class ChatMarkdownPipelineTest {
             }
         }
         return out.toString();
-    }
-
-    /**
-     * 清洗函数本体（乙′口径）：行首「≤3 空格 + § 码对」交替视图，命中块标记才采用剥后视图；
-     * 不命中一字不动（行首色保住——C4 初版「无条件剥」的改判点）。码集校验、大小写同义、
-     * 连续多码、幂等、非破坏宽容逐项复验。
-     */
-    @Test
-    public void stripLeadingSectionCodesConsumesOnlyOnBlockMarkerHitAndIdempotent() {
-        // 命中块标记：列表/标题/围栏/引用/分隔线 ⇒ 消费行首码对
-        Assert.assertEquals("- x",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7a- x"));
-        Assert.assertEquals("连续多码逐个消费", "- x",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7a\u00a7b\u00a7c- x"));
-        Assert.assertEquals("重置码 r 在码集内", "- x",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7r\u00a7a- x"));
-        Assert.assertEquals("大小写同义", "- x",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7F\u00a7L- x"));
-        Assert.assertEquals("数字码", "- x",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a70- x"));
-        Assert.assertEquals("空格交替循环（蓝本 M5 修形态）", " - x",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7f \u00a7a- x"));
-        Assert.assertEquals("§f + 2 空格 + 标记 = 命中且空格保留进视图", "  - x",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7f  - x"));
-        // 未命中块标记：整行保留（行首色语义进输出侧桥——乙′ 相对 C4 初版的改判点）
-        Assert.assertSame("§c + 普通文本不剥（行首色保住）", "\u00a7c\u7ea2\u8272\u8b66\u544a",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7c\u7ea2\u8272\u8b66\u544a"));
-        Assert.assertSame("§f + 4 空格 + 标记 ind>3 不算命中", "\u00a7f    - item",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7f    - item"));
-        Assert.assertSame("非法码字符不消费", "\u00a7z- x",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7z- x"));
-        Assert.assertSame("行尾孤立 § 不吞", "x\u00a7",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("x\u00a7"));
-        Assert.assertSame("行中 § 不动", "a \u00a7c b",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("a \u00a7c b"));
-        Assert.assertSame("setext 下划线独立行不是块起点（蓝本 isBlockStart 同缺，锁死该口径）",
-                "\u00a7f===", ChatMarkdownPipeline.stripLeadingSectionCodes("\u00a7f==="));
-        Assert.assertSame("无 § 文本同引用", "plain",
-                ChatMarkdownPipeline.stripLeadingSectionCodes("plain"));
-        // 多行：逐行独立判定——命中行剥、未命中行保、行界与空行原样保序
-        Assert.assertEquals("a\n- x\n\u00a7r\u6e05\u7a7a",
-                ChatMarkdownPipeline.stripLeadingSectionCodes(
-                        "a\n\u00a7b- x\n\u00a7r\u6e05\u7a7a"));
-        // 幂等（缓存 key 用清洗后文本仍自洽的前提）：命中/未命中混合二次调用恒同引用
-        String once = ChatMarkdownPipeline.stripLeadingSectionCodes(
-                "\u00a7a- x\n\u00a7b> y\n\u00a7c\u7eaf\u6587\u672c");
-        Assert.assertSame(once, ChatMarkdownPipeline.stripLeadingSectionCodes(once));
     }
 
     /**
@@ -445,80 +340,6 @@ public class ChatMarkdownPipelineTest {
                 resetForm.get(0).segments().get(1).getStyle().getColor());
     }
 
-    // ==================== 乙′ 一致性锁：chat3 粗检 ⇔ L1 真判据（两份代码防漂移，漂移即红） ====================
-
-    /**
-     * 样本行（覆盖任务书点名形态：ATX 1..6、setext 下划线、围栏两定界、引用、无序三标记、
-     * 有序两句点右括号、分隔线三种、缩进 &gt;3、纯文本、§z 非法码、行尾孤立 §、§f+4 空格，
-     * 外加空格交替、空视图、井号无空格等边界）。断言双向一致：
-     * <b>chat3 粗检命中 ⇔ 该行清洗后（markerView 产物）交给 L1 实际产出块级身份</b>
-     * （行接缝 kind != TEXT 或 quoteLevel &gt; 0 = 非段落字面）。两份判据代码必然漂移于
-     * 未来某次单侧改动——本锁当场红。
-     */
-    @Test
-    public void coarseBlockMarkerAgreesWithL1BlockIdentity() {
-        String[] samples = {
-            // ATX 1..6 + 边界
-            "\u00a7f# h1", "\u00a7f## h2", "\u00a7f### h3", "\u00a7f#### h4",
-            "\u00a7f##### h5", "\u00a7f###### h6",
-            "\u00a7f####### h7",      // 7 个井号：两边都否
-            "\u00a7f#nospace",        // 井号后无空格：两边都否
-            // setext 下划线（粗检蓝本不认独立下划线行——两边同为「否」即一致）
-            "\u00a7f===", "\u00a7f====", "\u00a7f--", "\u00a7f= =",
-            // 围栏
-            "\u00a7f\u0060\u0060\u0060 java", "\u00a7f~~~", "\u00a7f\u0060\u0060",
-            "\u00a7f\u0060\u0060\u0060a\u0060\u0060\u0060", // info 含反引号：两边都否
-            // 引用
-            "\u00a7f> q", "\u00a7f>> q2", "\u00a7f>nosp",
-            // 无序/有序列表
-            "\u00a7f- x", "\u00a7f* x", "\u00a7f+ x", "\u00a7f-",
-            "\u00a7f1. x", "\u00a7f12) x", "\u00a7f1.x", "\u00a7f-not",
-            "\u00a7f1234567890. x",   // 10 位序号：两边都否
-            // 分隔线
-            "\u00a7f***", "\u00a7f---", "\u00a7f___", "\u00a7f- - -", "\u00a7f**",
-            // 缩进边界
-            "\u00a7f  - x", "\u00a7f   - x", "\u00a7f    - x", "\u00a7f     ### h",
-            // 空格交替循环
-            "\u00a7f \u00a7a- x", " \u00a7f- x", "  \u00a7f# t", "   \u00a7f> q",
-            // 纯文本 / 非法码 / 孤立 § / 空视图
-            "\u00a7c\u7eaf\u6587\u672c", "\u00a7r", "\u00a7f\u00a7r", "\u00a7z- x",
-            "x\u00a7", "\u00a7f\u00a7", "\u00a7f\t- x",
-        };
-        int hits = 0;
-        int misses = 0;
-        TextStyle base = new TextStyle();
-        base.setColor(WHITE);
-        for (int i = 0; i < samples.length; i++) {
-            String line = samples[i];
-            boolean coarseHit = ChatMarkdownPipeline.coarseHitsBlockMarker(line);
-            String eff = ChatMarkdownPipeline.markerView(line);
-            // 清洗入口与单行视图同源（防「两级缓存吃的不是判据吃的那个函数」的暗漂移）
-            Assert.assertEquals(line + " stripLeadingSectionCodes 与 markerView 同读数",
-                    eff, ChatMarkdownPipeline.stripLeadingSectionCodes(line));
-            List<MarkdownLayoutLine> logical = MarkdownDocument.parse(eff)
-                    .toLayoutLines(MarkdownStyleTable.defaults(), base);
-            // 零行 = 空块结构（如未闭合空围栏）而非段落字面——字面段落恒 ≥1 行，故零行算
-            // 块级身份为真（这类 eff 只能是命中后的视图，未命中的 § 行恒产 1 行 TEXT）
-            boolean blockIdentity = logical.isEmpty();
-            for (int k = 0; k < logical.size(); k++) {
-                MarkdownLayoutLine l = logical.get(k);
-                if (l.getKind() != MarkdownLayoutLine.Kind.TEXT || l.getQuoteLevel() > 0) {
-                    blockIdentity = true;
-                }
-            }
-            Assert.assertEquals(line + "：粗检命中与 L1 实际块级身份必须一致（漂移即红）",
-                    coarseHit, blockIdentity);
-            if (coarseHit) {
-                hits++;
-            } else {
-                misses++;
-            }
-        }
-        // 反空跑地板：判据两边都不许恒真/恒假（全命中或全不命中 = 样本表或粗检退化）
-        Assert.assertTrue("命中样本地板（实测 " + Integer.valueOf(hits) + "）", hits >= 15);
-        Assert.assertTrue("未命中样本地板（实测 " + Integer.valueOf(misses) + "）", misses >= 10);
-    }
-
     // ==================== C6b § → span 转换器单元锁（§ 族按甲改写主体） ====================
 
     private static TextStyle whiteBase() {
@@ -613,53 +434,4 @@ public class ChatMarkdownPipelineTest {
         Assert.assertTrue(upper.get(0).getBaseStyle().isColorExplicit());
         Assert.assertTrue(ChatMarkdownPipeline.toSpanStream("", whiteBase()).isEmpty());
     }
-
-    // ==================== 桥退役前实证：甲 段流上桥 = no-op（任务书第三部分第 3 条） ====================
-
-    /** 甲 产物段文本里 § 只可能作行尾孤立体存在（无可消费码对）⇒ 桥结构上无事可做。 */
-    @Test
-    public void convertedStreamLeavesNoConsumableSectionPairsForTheBridge() {
-        String[] corpus = {
-            "\u00a7a- x", "\u00a7c\u7532\u00a7f\u4e59", "> \u00a7c\u7532",
-            "```\n\u00a7cfoo\n```", "```\n\u00a7c# \u6807\n```", "> \u00a7a- x",
-            "\u00a7c\u7532\u00a7r\u4e59", "\u00a7c\u00a7l\u7532", "\u7532\u00a7", "\u00a7f    - item",
-            "\u00a7z- x", "\u00a7c**a**b", "\u00a7c\u7532\n\u4e59", "> \u00a7c\u7532\u00a7r\u4e59",
-            "\u00a7a- \u73a9\u5bb6\u5217\u8868\u884c",
-            "\u00a7c\u7ea2\u8272\u8b66\u544a \u00a7fplain tail mixed English 123",
-            "\u666e\u901a\u6bb5\u843d", "- \u65e0 § \u5217\u8868", "# \u6807\u9898",
-        };
-        ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
-        for (int i = 0; i < corpus.length; i++) {
-            String msg = corpus[i];
-            List<MarkdownLayoutLine> logical = pipeline.logicalForTest(msg, WHITE);
-            for (int k = 0; k < logical.size(); k++) {
-                List<TextSegment> segments = logical.get(k).getSegments();
-                for (int s = 0; s < segments.size(); s++) {
-                    TextSegment segment = segments.get(s);
-                    if (segment.isLatex()) {
-                        Assert.fail("latex 源含 § 说明消费点漏了（甲在进 markdown 前已全部消化）: "
-                                + msg);
-                    }
-                    String text = segment.getText();
-                    int at = text.indexOf('\u00a7');
-                    if (at >= 0) {
-                        Assert.assertTrue("孤立 § 只许在段文本末位且全段仅此一枚: " + msg
-                                        + " / " + text,
-                                at == text.length() - 1 && text.indexOf('\u00a7', at + 1) < 0);
-                    }
-                    // 桥 no-op 实证：调旧桥后段流逐段等值（文本 + 全样式字段）
-                    List<TextSegment> bridged = ChatMarkdownPipeline.bridgeSectionCodes(segments);
-                    Assert.assertEquals("桥改段数 = 桥未 no-op: " + msg, segments.size(), bridged.size());
-                    for (int b = 0; b < segments.size(); b++) {
-                        Assert.assertEquals("桥改文本: " + msg,
-                                segments.get(b).getText(), bridged.get(b).getText());
-                        Assert.assertEquals("桥改样式: " + msg,
-                                StyleFieldsKey.of(segments.get(b).getStyle()),
-                                StyleFieldsKey.of(bridged.get(b).getStyle()));
-                    }
-                }
-            }
-        }
-    }
 }
-
