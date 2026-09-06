@@ -573,6 +573,41 @@ public class MarkdownBlockParserTest {
                 && h2Size != atxSize);
     }
 
+    /**
+     * C4 N2 收紧锁（2026-09-06）：setext 下划线行不得是惰性续行（CommonMark 同款规则，
+     * 原「类头已裁简化表」登记的偏离已删除）。{@code > 甲} + 惰性 {@code ===} 与
+     * {@code - 甲} + 惰性 {@code ===} 必须保持段内字面；正对照钉「字面化」不是恒字面——
+     * 自带 '>' 标记的下划线行与顶层段落紧邻下划线照常升格（X11 / setext 三例同形）。
+     */
+    @Test
+    public void setextUnderlineMustNotBeLazyContinuation() {
+        // 引用侧：惰性 === 留在段内字面
+        MarkdownBlock quote = single(nl("> 甲", "==="), Kind.QUOTE);
+        Assert.assertEquals(1, quote.children.size());
+        MarkdownBlock para = quote.children.get(0);
+        Assert.assertEquals(Kind.PARAGRAPH, para.kind);
+        Assert.assertEquals(nl("甲", "==="), para.joinedLines());
+        // 惰性行后继续有普通续行，仍不升格
+        Assert.assertEquals(nl("甲", "===", "乙"),
+                single(nl("> 甲", "===", "乙"), Kind.QUOTE).children.get(0).joinedLines());
+        // 列表侧：低于内容列的惰性 === 同样字面
+        MarkdownBlock list = single(nl("- 甲", "==="), Kind.LIST);
+        MarkdownBlock itemPara = list.children.get(0).children.get(0);
+        Assert.assertEquals(Kind.PARAGRAPH, itemPara.kind);
+        Assert.assertEquals(nl("甲", "==="), itemPara.joinedLines());
+        // 惰性 === 不得「吞掉」下划线后的正常行继续聚段（行为 = 普通段落续行）
+        MarkdownBlock mixed = single(nl("> 甲", "===", "> 乙"), Kind.QUOTE);
+        Assert.assertEquals(1, mixed.children.size());
+        Assert.assertEquals(nl("甲", "===", "乙"), mixed.children.get(0).joinedLines());
+        // 正对照 1：自带 '>' 的下划线行（非惰性）照常升格
+        MarkdownBlock marked = single(nl("> 甲", "> ==="), Kind.QUOTE);
+        Assert.assertEquals(Kind.HEADING, marked.children.get(0).kind);
+        Assert.assertEquals(1, marked.children.get(0).level);
+        // 正对照 2：顶层段落紧邻下划线照常升格（非惰性路径未受影响）
+        MarkdownBlock top = single(nl("甲", "==="), Kind.HEADING);
+        Assert.assertEquals(1, top.level);
+    }
+
     // ==================== 段落与换行 ====================
 
     @Test

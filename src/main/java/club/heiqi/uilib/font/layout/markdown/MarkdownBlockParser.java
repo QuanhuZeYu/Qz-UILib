@@ -25,8 +25,8 @@ import java.util.List;
  * <p><b>对 § 颜色码零认知（C4 归位，2026-09-06 宪法裁定；替代旧 M4-fix F4「块层 §-容忍」
  * 与 markerView 检测视图机制）</b>：§（U+00A7）在本层是普通字面文本字符——既不构成前导空白、
  * 也不参与任何块标记检测，更不被解释为颜色/样式。MC 特有格式只能作为 chat3 集成层的输入清洗
- * 或显式扩展存在（AGENTS.md 主权条款；旧 F4 的立论「复刻旧行级规则 classify 的行首码剥离」随该
- * 类在 3e89d91e 删除且被复生锁钉死不得复活而失效）。行为后果：L1 直连消费者（不经 chat3 桥）拿到
+ * 或显式扩展存在（AGENTS.md 主权条款；旧 F4 的立论「复刻 ChatMarkdownLineRule.classify」随该类
+ * 在 3e89d91e 删除且被复生锁钉死不得复活而失效）。行为后果：L1 直连消费者（不经 chat3 桥）拿到
  * {@code §a- x} 时得到<b>字面段落文本</b>而非列表项——这正是归位目的；chat3 的
  * {@code ChatMarkdownPipeline} 在 parse 前做行首 § 码对输入清洗，玩家消息残留色码行的观感由
  * 集成层保住。</p>
@@ -36,11 +36,7 @@ import java.util.List;
  * {@code #} 不在本包 escapable 集，反斜杠由行内层字面输出）；backtick 围栏 info 校验已按
  * CommonMark 实现（含反引号不算开栏）；嵌套深度上限 {@code MAX_BLOCK_DEPTH}（超限层按段落
  * 字面收拢，宽容失败）；setext 下划线只认单字符连续串（{@code = =}/{@code - -} 夹空白按段落
- * 续行字面，同主流实证）；setext 判定发生在{@code readParagraph}，而引用/列表的惰性续行在
- * 收拢后与「自带标记的下划线行」不再可分，故 {@code > 甲} + 惰性 {@code ===} 这类形态本层照升格
- * 标题、主流（commonmark-java 0.21 实证）则把 {@code ===} 留在段内字面——本层登记的已知偏离，
- * 语料不含该形态，出现即矩阵 LINE_ALIGN/QUOTE_DEPTH 照登（收紧需先给行打「惰性」标记）；
- * 列表项体内部源空行折叠（项体段落不因空行分裂，空行只在项与项/列表边界生效——M4 既有
+ * 续行字面，同主流实证）；列表项体内部源空行折叠（项体段落不因空行分裂，空行只在项与项/列表边界生效——M4 既有
  * 简化、非 C1a 范围；副作用 = 项内「段落行 + 空行 + ≥4 空格行」按段落续行折叠而非缩进代码，
  * 其余缩进代码与惰性续行判定均与 CommonMark 一致）。</p>
  *
@@ -57,6 +53,26 @@ final class MarkdownBlockParser {
 
     /** 有序列表序号最大位数（超出按普通文本）。 */
     private static final int MAX_ORDINAL_DIGITS = 9;
+
+    /**
+     * 带「惰性」标记的源行（C4 N2 收紧）：在引用/列表收拢时<b>未携带本容器标记</b>而被
+     * 惰性续行吸收的行 {@code lazy=true}；按 CommonMark，setext 下划线行不得是惰性续行，
+     * {@link #readParagraph} 对这类行跳过升格判定。其余行（首行、带标记行、内容列续行）
+     * 恒 {@code lazy=false}；被再次收拢的行保持原标记随文本走（外层惰性不因内层剥标记洗白）。
+     */
+    private static final class SrcLine {
+        final String text;
+        final boolean lazy;
+
+        SrcLine(String text, boolean lazy) {
+            this.text = text;
+            this.lazy = lazy;
+        }
+
+        static SrcLine plain(String text) {
+            return new SrcLine(text, false);
+        }
+    }
 
     private MarkdownBlockParser() {
     }
@@ -76,24 +92,24 @@ final class MarkdownBlockParser {
 
     // ==================== 行工具 ====================
 
-    private static List<String> splitLines(String source) {
-        List<String> out = new ArrayList<String>();
+    private static List<SrcLine> splitLines(String source) {
+        List<SrcLine> out = new ArrayList<SrcLine>();
         int start = 0;
         int n = source.length();
         for (int i = 0; i < n; i++) {
             char ch = source.charAt(i);
             if (ch == '\n') {
-                out.add(source.substring(start, i));
+                out.add(SrcLine.plain(source.substring(start, i)));
                 start = i + 1;
             } else if (ch == '\r') {
-                out.add(source.substring(start, i));
+                out.add(SrcLine.plain(source.substring(start, i)));
                 if (i + 1 < n && source.charAt(i + 1) == '\n') {
                     i++;
                 }
                 start = i + 1;
             }
         }
-        out.add(source.substring(start));
+        out.add(SrcLine.plain(source.substring(start)));
         return out;
     }
 
@@ -342,14 +358,14 @@ final class MarkdownBlockParser {
 
     // ==================== 块消费 ====================
 
-    private static List<MarkdownBlock> parseBlocks(List<String> lines, int depth) {
+    private static List<MarkdownBlock> parseBlocks(List<SrcLine> lines, int depth) {
         List<MarkdownBlock> blocks = new ArrayList<MarkdownBlock>();
         int i = 0;
         int n = lines.size();
         // F6：本层连续空行数 → 打在下一个新块上（blanksBefore），扁平化时产占位段
         int blanks = 0;
         while (i < n) {
-            String line = lines.get(i);
+            String line = lines.get(i).text;
             if (isBlank(line)) {
                 blanks++;
                 i++;
@@ -420,14 +436,14 @@ final class MarkdownBlockParser {
         blocks.set(from, blocks.get(from).withBlanksBefore(Math.min(1, blanks)));
     }
 
-    private static List<MarkdownBlock> parseWithDepthCap(List<String> lines, int childDepth) {
+    private static List<MarkdownBlock> parseWithDepthCap(List<SrcLine> lines, int childDepth) {
         if (childDepth >= MAX_BLOCK_DEPTH) {
             return singletonParagraphFallback(lines);
         }
         return parseBlocks(lines, childDepth);
     }
 
-    private static List<MarkdownBlock> singletonParagraphFallback(List<String> rawLines) {
+    private static List<MarkdownBlock> singletonParagraphFallback(List<SrcLine> rawLines) {
         if (rawLines.isEmpty()) {
             return Collections.emptyList();
         }
@@ -437,8 +453,8 @@ final class MarkdownBlockParser {
     }
 
     /** 围栏代码：闭合要求同字符、长度 >= 开栏、行首 <=3 空格、行尾仅空白；未闭合消费到 EOF（宽容）。 */
-    private static int readFence(List<String> lines, int start, List<MarkdownBlock> out) {
-        String opener = lines.get(start);
+    private static int readFence(List<SrcLine> lines, int start, List<MarkdownBlock> out) {
+        String opener = lines.get(start).text;
         int fenceIndent = leadingSpaces(opener);
         String head = opener.substring(fenceIndent);
         char ch = head.charAt(0);
@@ -448,7 +464,7 @@ final class MarkdownBlockParser {
         int j = start + 1;
         int n = lines.size();
         while (j < n) {
-            String line = lines.get(j);
+            String line = lines.get(j).text;
             int ind = leadingSpaces(line);
             if (ind <= 3 && !isBlank(line)) {
                 String rest = line.substring(ind);
@@ -480,20 +496,20 @@ final class MarkdownBlockParser {
      *
      * @return 消费到的下一源行下标
      */
-    private static int readIndentedCode(List<String> lines, int start, List<MarkdownBlock> out) {
+    private static int readIndentedCode(List<SrcLine> lines, int start, List<MarkdownBlock> out) {
         List<String> body = new ArrayList<String>();
         int j = start;
         int n = lines.size();
         while (j < n) {
-            String line = lines.get(j);
+            String line = lines.get(j).text;
             if (isBlank(line)) {
                 int k = j;
-                while (k < n && isBlank(lines.get(k))) {
+                while (k < n && isBlank(lines.get(k).text)) {
                     k++;
                 }
-                if (k < n && leadingSpaces(lines.get(k)) >= 4) {
+                if (k < n && leadingSpaces(lines.get(k).text) >= 4) {
                     for (int b = j; b < k; b++) {
-                        body.add(stripFirst(lines.get(b), 4));
+                        body.add(stripFirst(lines.get(b).text, 4));
                     }
                     j = k;
                     continue;
@@ -511,25 +527,25 @@ final class MarkdownBlockParser {
     }
 
     /** 引用块：消费连续引用行与惰性续行；空行后仍带标记则并入同一引用（多段落）。 */
-    private static int readQuote(List<String> lines, int start, List<MarkdownBlock> out, int depth) {
-        List<String> inner = new ArrayList<String>();
+    private static int readQuote(List<SrcLine> lines, int start, List<MarkdownBlock> out, int depth) {
+        List<SrcLine> inner = new ArrayList<SrcLine>();
         int j = start;
         int n = lines.size();
         while (j < n) {
-            String line = lines.get(j);
+            String line = lines.get(j).text;
             if (isBlank(line)) {
                 int k = j;
-                while (k < n && isBlank(lines.get(k))) {
+                while (k < n && isBlank(lines.get(k).text)) {
                     k++;
                 }
                 if (k >= n) {
                     j = k;
                     break;
                 }
-                String next = lines.get(k);
+                String next = lines.get(k).text;
                 int ni = leadingSpaces(next);
                 if (ni <= 3 && next.charAt(ni) == '>') {
-                    inner.add("");
+                    inner.add(SrcLine.plain(""));
                     j = k;
                     continue;
                 }
@@ -542,9 +558,11 @@ final class MarkdownBlockParser {
                 if (content.startsWith(" ") || content.startsWith("\t")) {
                     content = content.substring(1);
                 }
-                inner.add(content);
+                inner.add(new SrcLine(content, lines.get(j).lazy));
             } else if (!interruptsParagraph(line)) {
-                inner.add(line);   // 惰性续行（原始行原样入集；N2 收紧见同批后续提交）
+                // 惰性续行：本行不带 '>' 标记，N2 收紧在此打「惰性」标记——
+                // 收拢后它不得再被 readParagraph 判成 setext 下划线（CommonMark 同款规则）。
+                inner.add(new SrcLine(line, true));
             } else {
                 break;
             }
@@ -572,8 +590,8 @@ final class MarkdownBlockParser {
      * 不进项体文本）；「层级 = 前导空格 / 2 + baseLevel」的 M5 F2 深缩进机制退役，
      * 前导 >=4 空格的「列表标记」行进缩进代码块字面（parseBlocks 的 ind>3 分支）。</p>
      */
-    private static int readList(List<String> lines, int start, List<MarkdownBlock> out, int depth) {
-        ListStart first = matchListStart(lines.get(start));
+    private static int readList(List<SrcLine> lines, int start, List<MarkdownBlock> out, int depth) {
+        ListStart first = matchListStart(lines.get(start).text);
         boolean ordered = first.ordered;
         char unit = ordered ? first.delim : first.bullet;
         int n = lines.size();
@@ -582,22 +600,22 @@ final class MarkdownBlockParser {
         int i = start;
         int pendingItemBlanks = 0;
         while (i < n && !listEnded) {
-            String itemLine = lines.get(i);
+            String itemLine = lines.get(i).text;
             ListStart st = matchListStart(itemLine);
             if (!sameKind(st, ordered, unit)) {
                 break;
             }
-            List<String> body = new ArrayList<String>();
+            List<SrcLine> body = new ArrayList<SrcLine>();
             if (!st.content.isEmpty()) {
-                body.add(st.content);
+                body.add(new SrcLine(st.content, lines.get(i).lazy));
             }
             int contentCol = st.contentCol;
             int j = i + 1;
             while (j < n) {
-                String line = lines.get(j);
+                String line = lines.get(j).text;
                 if (isBlank(line)) {
                     int k = j;
-                    while (k < n && isBlank(lines.get(k))) {
+                    while (k < n && isBlank(lines.get(k).text)) {
                         k++;
                     }
                     if (k >= n) {
@@ -605,7 +623,7 @@ final class MarkdownBlockParser {
                         listEnded = true;
                         break;
                     }
-                    String next = lines.get(k);
+                    String next = lines.get(k).text;
                     int ni = leadingSpaces(next);
                     ListStart nx = matchListStart(next);
                     if (ni < contentCol) {
@@ -631,12 +649,14 @@ final class MarkdownBlockParser {
                     break;
                 }
                 if (ni >= contentCol) {
-                    body.add(line.substring(contentCol));
+                    body.add(new SrcLine(line.substring(contentCol), lines.get(j).lazy));
                     j++;
                     continue;
                 }
                 if (nx == null && !interruptsParagraph(line)) {
-                    body.add(line); // 惰性续行
+                    // 惰性续行：本行低于内容列且不带任何列表标记——N2 收紧打「惰性」
+                    // 标记，内层 readParagraph 不得拿它当 setext 下划线。
+                    body.add(new SrcLine(line, true));
                     j++;
                     continue;
                 }
@@ -668,20 +688,24 @@ final class MarkdownBlockParser {
      * 主流优先判 setext（实证 commonmark-java 0.21：`a\n---` → H2；`---\na` → TB + 段落，
      * 后者由 {@code parseBlocks} 的分隔线分支承接——块起点/空行后的下划线行走不到本方法）。
      * `= =`/`- -` 这类夹空白形态主流判段落续行而非下划线（实证 0.21：`a\n= =` → 段落
-     * `a= =`），本层同口径：下划线须是单一字符的连续串。惰性续行侧（{@code readQuote}/{@code readList}）
-     * 收拢后与自带标记的下划线行不再可分，故该侧形态照升格——类头已裁简化表登记的已知偏离。</p>
+     * `a= =`），本层同口径：下划线须是单一字符的连续串。<b>C4 N2 收紧（2026-09-06）</b>：
+     * 引用/列表的惰性续行在收拢处即打「惰性」标记（{@link SrcLine#lazy}），本方法对惰性行
+     * 跳过 setext 判定——{@code > 甲} + 惰性 {@code ===} 保持段内字面（CommonMark：setext 的
+     * 下划线行不得是惰性续行）；自带标记的下划线（{@code > 甲\n> ===}）照常升格。</p>
      */
-    private static int readParagraph(List<String> lines, int start, List<MarkdownBlock> out) {
-        List<String> raw = new ArrayList<String>();
+    private static int readParagraph(List<SrcLine> lines, int start, List<MarkdownBlock> out) {
+        List<SrcLine> raw = new ArrayList<SrcLine>();
         int j = start;
         int n = lines.size();
         while (j < n) {
-            String line = lines.get(j);
+            String line = lines.get(j).text;
             if (isBlank(line)) {
                 break;
             }
             if (!raw.isEmpty()) {
-                int setext = setextUnderlineLevel(line);
+                // N2 收紧（C4）：惰性续行不得充当 setext 下划线（readQuote/readList 收拢
+                // 时已打标记），> 甲 + 惰性 === 保持段内字面——与 CommonMark 对齐。
+                int setext = lines.get(j).lazy ? 0 : setextUnderlineLevel(line);
                 if (setext > 0) {
                     out.add(MarkdownBlock.heading(setext, makeParagraph(raw).joinedLines()));
                     return j + 1;
@@ -690,7 +714,7 @@ final class MarkdownBlockParser {
                     break;
                 }
             }
-            raw.add(line);
+            raw.add(lines.get(j));
             j++;
         }
         out.add(makeParagraph(raw));
@@ -726,12 +750,12 @@ final class MarkdownBlockParser {
      * 空白是块缩进/惰性续行缩进，一律折叠剥除、不进文本，例 113/291；旧「字面保留」裁定
      * 作废）、行尾 rtrim；行间硬换行位图（长度 = 行数 - 1）。
      */
-    private static MarkdownBlock makeParagraph(List<String> rawLines) {
+    private static MarkdownBlock makeParagraph(List<SrcLine> rawLines) {
         int size = rawLines.size();
         boolean[] flags = size > 1 ? new boolean[size - 1] : new boolean[0];
         List<String> kept = new ArrayList<String>(size);
         for (int i = 0; i < size; i++) {
-            String line = stripLeadingSpace(rawLines.get(i));
+            String line = stripLeadingSpace(rawLines.get(i).text);
             if (i < size - 1) {
                 flags[i] = isHardBreakLine(line);
                 if (flags[i]) {
