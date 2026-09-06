@@ -284,7 +284,7 @@ final class MarkdownBlockParser {
 
     /**
      * 块级解析入口（C6a 能力①）：{@code source} 必须是 {@code spans} 文本按序拼接的同一份
-     * 纯文本（由 {@code MarkdownDocument.parse(List)} 保证）。块检测只跑在 {@code source}
+     * 纯文本（由 {@code MarkdownDocument.parseSpans(List)} 保证）。块检测只跑在 {@code source}
      * 上——与 String 入口共用同一套判据；行切分（{@link #splitLines}）同步把每行文本切成
      * 该行的样式锚点段随 {@link SrcLine} 走。
      *

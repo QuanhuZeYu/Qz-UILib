@@ -52,16 +52,20 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * 参数链退役；列表层级只由行接缝 {@code listMarkerChain} 几何承载（M10d），
  * 可见文本不再编码层级。</p>
  *
- * <h3>C6a（能力①）：块级文档的 span 流入口</h3>
- * <p>{@link #parse(List)} 吃 {@link MarkdownSpan} 流表达整篇文档，产同一棵块树：span 文本按换行符
+ * <h3>C6a（能力①）：块级文档的 span 流入口（方法名自 C6b 起为 {@link #parseSpans(List)}）</h3>
+ * <p>{@link #parseSpans(List)} 吃 {@link MarkdownSpan} 流表达整篇文档，产同一棵块树：span 文本按换行符
  * 切成带样式的源行（一个 span 跨多行拆成多段、样式继承；空行 = 该行无文本段），
  * <b>块级检测恒在拼接后的纯文本行上跑、与 {@code parse(String)} 共用同一套判据</b>
  * （{@link MarkdownBlockParser}，不存在第二份判据）。每行的样式锚点随块模型走到行内解析，
  * 块层不把样式丢掉压成 String。输出接缝（{@link #toSegments}/{@link #toLayoutLines}）
  * 签名与语义不变：产出 {@link TextSegment} 样式 = 行内 markdown 样式叠加在 <b>span 基础
- * 样式</b>之上（叠加顺序：span 基础样式为底 → 块级链（标题/引用变换）→ 行内位；颜色由
- * span 决定，行内 markdown 不引入颜色——旧裁定不变；引用色 {@code quoteTextColor} 与
- * 标题字号属样式表块级旋钮，按链序最后施加，与 String 路同值同序）。合成段（列表标记、
+ * 样式</b>之上。<b>叠加顺序（C6b 2026-09-07 裁定改判，取代 C6a 的「span 为底、块链压顶」
+ * 链序）</b>：span 基础样式铺底 → 块级链（标题粗体/字号、引用斜体等样式位）叠加 →
+ * <b>span 携带显式色（{@link TextStyle#isColorExplicit()}）时其颜色覆盖块级色</b>（引用降色
+ * 等块级色不洗宿主显式色；无显式色的 span = 纯 caller 底色，不做覆盖，引用降色照常
+ * 生效）→ 行内位最后。此序与 chat3 旧输出侧 § 桥「markdown 样式位先叠加、§ 码后生效
+ * ⇒ 服务端色优先于块级色」对齐（规划 §二之八 C6b 细账）。行内 markdown 不引入颜色——
+ * 旧裁定不变。合成段（列表标记、
  * 块边界换行、F6 占位、分隔线文本）不对应任何源 span，恒取 caller baseStyle 的块级变换
  * 值——与 String 路逐位一致。L1→L2 接缝 {@link MarkdownLayoutLine} 公共面冻结：锚点只活
  * 在包内，出接缝仍只有 {@code TextSegment}。</p>
@@ -95,11 +99,15 @@ public final class MarkdownDocument {
     }
 
     /**
-     * 解析样式锚点 span 流表达的<b>整篇块级文档</b>（C6a 能力①）。
+     * 解析样式锚点 span 流表达的<b>整篇块级文档</b>（C6a 能力①；原名 {@code parse(List)}，
+     * C6b 改名——与 {@link #parse(String)} 的重载使 {@code parse(null)} 变二义编译失败，而
+     * {@link #parse(String)} 的 javadoc 承诺「source 可为 null」是合法调用形态，零收益的
+     * 源码破坏不留；本方法尚未随版本发布，属周期内自纠，公共面账见规划 §二之七·续）。
      *
      * <p>与 {@link #parse(String)} 产同一棵块树：入口先按换行符把 span 流切成带样式的源行，
      * 块检测恒跑在拼接后的纯文本上（判据与 String 路单源）；每行样式锚点随块模型走到
-     * 行内解析（行内为跨 span 连续扫描，见 {@link MarkdownInlineParser} 类头）。</p>
+     * 行内解析（行内为跨 span 连续扫描，见 {@link MarkdownInlineParser} 类头）。出段样式
+     * 叠加顺序 = span 基础 → 块级链 → span 显式色覆盖 → 行内位（C6b 裁定，见类头）。</p>
      *
      * <p><b>单次解析承诺</b>：这是「输入侧」通道——带样式的源文本只进 markdown 这一次。
      * 把 {@code toSegments} 产物再喂回行内入口属输出侧反接（双解析漂移），规划 §二之八
@@ -108,7 +116,7 @@ public final class MarkdownDocument {
      * @param spans 带基础样式的文本 span 流（可为 null/空，返回空文档；span 文本可含换行符）
      * @return 不可变文档模型（{@link #getSource()} = span 文本按序拼接）
      */
-    public static MarkdownDocument parse(List<MarkdownSpan> spans) {
+    public static MarkdownDocument parseSpans(List<MarkdownSpan> spans) {
         if (spans == null || spans.isEmpty()) {
             return new MarkdownDocument("", Collections.<MarkdownBlock>emptyList());
         }
@@ -298,7 +306,7 @@ public final class MarkdownDocument {
         }
         for (int i = 0; i < anchored.size(); i++) {
             MarkdownSpan span = anchored.get(i);
-            out.add(new TextSegment(span.getText(), style.applied(span.getBaseStyle().copy())));
+            out.add(new TextSegment(span.getText(), style.applied(span.getBaseStyle())));
         }
     }
 
@@ -529,8 +537,7 @@ public final class MarkdownDocument {
             List<TextSegment> segs = new ArrayList<TextSegment>();
             for (int k = 0; k < anchors.get(i).size(); k++) {
                 MarkdownSpan span = anchors.get(i).get(k);
-                segs.add(new TextSegment(span.getText(),
-                        style.applied(span.getBaseStyle().copy())));
+                segs.add(new TextSegment(span.getText(), style.applied(span.getBaseStyle())));
             }
             f.append(segs);
         }
@@ -802,9 +809,22 @@ public final class MarkdownDocument {
             return resolved.copy();
         }
 
-        /** 把块级链施加到给定拷贝上（span 基础样式回溯用；入参必须已是拷贝）。 */
-        TextStyle applied(TextStyle copy) {
-            return transform == null ? copy : transform.apply(copy);
+        /**
+         * span 基础样式回溯出段（C6b 定序，替代 C6a 的「链压顶」形参语义）：入参 = span
+         * 基础样式（内部取拷贝，调用方实例零改动）；先叠块级链（标题/引用样式位），
+         * <b>span 携带显式色（{@link TextStyle#isColorExplicit()}）时其颜色覆盖块级色</b>——
+         * 与行内路 {@code MarkdownInlineParser.resolve} 同一把尺（宿主色优先、样式位叠加）。
+         * 无链时恒等（透传拷贝）。
+         */
+        TextStyle applied(TextStyle spanBase) {
+            TextStyle out = spanBase.copy();
+            if (transform != null) {
+                out = transform.apply(out);
+                if (spanBase.isColorExplicit()) {
+                    out.setColor(spanBase.getColor());
+                }
+            }
+            return out;
         }
 
         /** 行内解析用的块级链（null = 无叠加）。 */

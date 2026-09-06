@@ -20,6 +20,13 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * 本锁钉死 L1 侧地基的八条行为（任务书测试要求 1..8，逐条见用例 javadoc）；
  * chat3 切换与 § 清洗拆除属 C6b，本批零消费者改动。</p>
  *
+ * <p><b>C6b 同步（方案甲收尾批）</b>：块级 span 入口改名 {@code parse(List)} →
+ * {@code parseSpans(List)}（消除与 {@code parse(String)} 重载的 {@code parse(null)} 二义）；
+ * 出段样式定序改判为「块级链叠位、<b>span 显式色（{@code isColorExplicit}）覆盖块级色</b>」
+ * （宿主色优先，对齐旧 § 桥顺序）——锁 1 因此把「无语义样式」输入改记为<b>非显式</b>底色
+ * （{@code resetAll} 形，宿主未指定颜色的诚实编码），显式色压块级色的新口径由
+ * {@link #explicitSpanColorMustWinOverBlockChainColor()} 专项钉死（净增判据，非放松）。
+ *
  * <p>注：本类源码刻意不用反斜杠字面（换行/反引号/反斜杠一律 char 拼接），避免
  * 定界语料在编辑器与扫描器之间的转义歧义——与 L1 主源 {@code (char) 0x60} 惯例同风。</p>
  */
@@ -45,6 +52,17 @@ public class MarkdownSpanStreamC6aLockTest {
 
     private static MarkdownSpan span(String text, int color) {
         return new MarkdownSpan(text, style(color));
+    }
+
+    /** 非显式底色（C6b 定序下「无语义样式」的诚实编码：颜色=caller 底色但不覆盖块级色）。 */
+    private static TextStyle neutral(int color) {
+        TextStyle s = new TextStyle();
+        s.resetAll(color);
+        return s;
+    }
+
+    private static MarkdownSpan neutralSpan(String text, int color) {
+        return new MarkdownSpan(text, neutral(color));
     }
 
     /** 段流逐位判等：文本 + latex 源 + 样式深比较（{@link StyleValues} 全字段尺）。 */
@@ -82,9 +100,9 @@ public class MarkdownSpanStreamC6aLockTest {
                 + "歧义上句" + NL + "---" + NL + NL
                 + "---" + NL + "尾段 *斜* 结束";
         MarkdownDocument viaString = MarkdownDocument.parse(doc);
-        MarkdownDocument viaSpan = MarkdownDocument.parse(
-                Collections.singletonList(span(doc, WHITE)));
-        TextStyle base = style(WHITE);
+        MarkdownDocument viaSpan = MarkdownDocument.parseSpans(
+                Collections.singletonList(neutralSpan(doc, WHITE)));
+        TextStyle base = neutral(WHITE);
         MarkdownStyleTable table = MarkdownStyleTable.defaults();
         List<MarkdownLayoutLine> a = viaString.toLayoutLines(table, base);
         List<MarkdownLayoutLine> b = viaSpan.toLayoutLines(table, base);
@@ -160,7 +178,7 @@ public class MarkdownSpanStreamC6aLockTest {
      */
     @Test
     public void styledLineStartMustNotBlockListDetection() {
-        MarkdownDocument doc = MarkdownDocument.parse(Arrays.asList(
+        MarkdownDocument doc = MarkdownDocument.parseSpans(Arrays.asList(
                 span("- ", RED), span("项", BLUE)));
         List<MarkdownLayoutLine> lines = doc.toLayoutLines(MarkdownStyleTable.defaults(),
                 style(WHITE));
@@ -192,7 +210,7 @@ public class MarkdownSpanStreamC6aLockTest {
                 span(FENCE + NL, WHITE),
                 span(body, RED),
                 span(NL + FENCE + NL, WHITE));
-        MarkdownDocument doc = MarkdownDocument.parse(spans);
+        MarkdownDocument doc = MarkdownDocument.parseSpans(spans);
         List<MarkdownLayoutLine> lines = doc.toLayoutLines(MarkdownStyleTable.defaults(),
                 style(WHITE));
         Assert.assertEquals("围栏内容 1 显示行", 1, lines.size());
@@ -209,14 +227,15 @@ public class MarkdownSpanStreamC6aLockTest {
     /**
      * 任务书要求 6：引用标记为普通文本、列表标记行带样式锚点（= 方案甲下容器标记后
      * 带码列表行的形态）必须升格为引用内列表——旧预清洗只认物理行首、容器标记后的
-     * 标记不处理。用 quoteTextColor=0 的表（颜色由 span 决定的口径）验色轴，
-     * 默认表验结构轴。
+     * 标记不处理。用 quoteTextColor=0 的表验色轴（关旋钮 ⇒ 色 = span），默认表验结构轴
+     * （C6b 定序后默认表下显式 span 色同样压过引用色，色轴专项锁见
+     * {@link #explicitSpanColorMustWinOverBlockChainColor()}）。
      */
     @Test
     public void styledListLineInsideContainerMustUpgrade() {
         MarkdownStyleTable table = new MarkdownStyleTable();
         table.setQuoteTextColor(0);
-        MarkdownDocument doc = MarkdownDocument.parse(Arrays.asList(
+        MarkdownDocument doc = MarkdownDocument.parseSpans(Arrays.asList(
                 span("> ", WHITE), span("- ", RED), span("x", BLUE)));
         List<MarkdownLayoutLine> lines = doc.toLayoutLines(table, style(WHITE));
         Assert.assertEquals(1, lines.size());
@@ -232,6 +251,55 @@ public class MarkdownSpanStreamC6aLockTest {
                 style(WHITE)).get(0);
         Assert.assertEquals(line.getKind(), defaulted.getKind());
         Assert.assertEquals(line.getQuoteLevel(), defaulted.getQuoteLevel());
+    }
+
+    // ==================== 锁 6.5（C6b 定序改判）：显式 span 色压块级色 ====================
+
+    /**
+     * C6b 定序锁（任务书第二部分机器证明的 L1 侧）：块级链先叠样式位，<b>span 显式色
+     * （isColorExplicit）覆盖块级色</b>；无显式色（纯 caller 底色）不覆盖、引用降色照常；
+     * 围栏/引用路的 {@code BlockStyle.applied} 与行内 {@code resolve} 同一把尺。
+     */
+    @Test
+    public void explicitSpanColorMustWinOverBlockChainColor() {
+        int quoteColor = MarkdownStyleTable.defaults().getQuoteTextColor();
+        TextStyle base = neutral(WHITE);
+        // 无显式色 ⇒ 块级引用色生效（与 String 路/旧乙′桥同形）
+        MarkdownDocument neutralQuote = MarkdownDocument.parseSpans(
+                Collections.singletonList(neutralSpan("> 语", WHITE)));
+        TextSegment neutralSeg = neutralQuote.toLayoutLines(MarkdownStyleTable.defaults(), base)
+                .get(0).getSegments().get(0);
+        Assert.assertEquals("非显式底色 span ⇒ 引用色生效", quoteColor, neutralSeg.getStyle().getColor());
+        // 显式锚点色 ⇒ 压过引用色
+        MarkdownDocument explicitQuote = MarkdownDocument.parseSpans(Arrays.asList(
+                neutralSpan("> ", WHITE), span("语", RED)));
+        TextSegment explicitSeg = explicitQuote.toLayoutLines(MarkdownStyleTable.defaults(), base)
+                .get(0).getSegments().get(0);
+        Assert.assertEquals("显式 span 色覆盖块级引用色（服务端色优先旧裁定）", RED,
+                explicitSeg.getStyle().getColor());
+        // 覆盖的是色、不是位：块级斜体旋钮仍叠加在位上（样式位叠加裁定）
+        MarkdownStyleTable italic = new MarkdownStyleTable();
+        italic.setQuoteItalic(true);
+        TextSegment it = explicitQuote.toLayoutLines(italic, base).get(0).getSegments().get(0);
+        Assert.assertTrue("块级样式位不因色覆盖丢失", it.getStyle().isItalic());
+        Assert.assertEquals(RED, it.getStyle().getColor());
+        // 围栏路（不进内解析，走 BlockStyle.applied）同款尺：引用内围栏显式色压引用色
+        MarkdownDocument fenceQuote = MarkdownDocument.parseSpans(Arrays.asList(
+                neutralSpan("> " + FENCE + NL, WHITE), neutralSpan("> ", WHITE),
+                span("码", RED), neutralSpan(NL + "> " + FENCE, WHITE)));
+        java.util.List<MarkdownLayoutLine> fenceLines =
+                fenceQuote.toLayoutLines(MarkdownStyleTable.defaults(), base);
+        MarkdownLayoutLine codeLine = null;
+        for (int i = 0; i < fenceLines.size(); i++) {
+            if (fenceLines.get(i).getKind() == MarkdownLayoutLine.Kind.CODE) {
+                codeLine = fenceLines.get(i);
+            }
+        }
+        Assert.assertNotNull("围栏行在场", codeLine);
+        Assert.assertEquals(1, codeLine.getQuoteLevel());
+        Assert.assertEquals("围栏路同尺：显式色覆盖块级色", RED,
+                codeLine.getSegments().get(0).getStyle().getColor());
+        Assert.assertEquals("围栏内容字面", "码", codeLine.getSegments().get(0).getText());
     }
 
     // ==================== 锁 7：单 span 等价性（能力②回归防线） ====================
@@ -343,7 +411,7 @@ public class MarkdownSpanStreamC6aLockTest {
     /** 一个 span 跨多行：样式继承到每一行；行接缝按行拆分。 */
     @Test
     public void spanCrossingNewlinesMustSplitIntoStyledSourceLines() {
-        MarkdownDocument doc = MarkdownDocument.parse(
+        MarkdownDocument doc = MarkdownDocument.parseSpans(
                 Collections.singletonList(span("甲" + NL + "乙" + NL + "丙", RED)));
         List<MarkdownLayoutLine> lines = doc.toLayoutLines(MarkdownStyleTable.defaults(),
                 style(WHITE));
@@ -360,7 +428,7 @@ public class MarkdownSpanStreamC6aLockTest {
     /** 换行归属：跨样式边界的换行后新样式段正确起新行；行中段流按样式边界切。 */
     @Test
     public void newlineAttributionMustKeepAdjacentStylePiecesOnTheirLines() {
-        MarkdownDocument doc = MarkdownDocument.parse(Arrays.asList(
+        MarkdownDocument doc = MarkdownDocument.parseSpans(Arrays.asList(
                 span("甲" + NL + "乙", RED), span("丙", BLUE)));
         List<MarkdownLayoutLine> lines = doc.toLayoutLines(MarkdownStyleTable.defaults(),
                 style(WHITE));
@@ -376,7 +444,7 @@ public class MarkdownSpanStreamC6aLockTest {
     /** 空行归属：单 span 含空行 ⇒ 正常切块（两段落 + F6 占位），样式继承两段。 */
     @Test
     public void blankLineInsideSpanMustBelongToNoLine() {
-        MarkdownDocument doc = MarkdownDocument.parse(
+        MarkdownDocument doc = MarkdownDocument.parseSpans(
                 Collections.singletonList(span("a" + NL + NL + "b", RED)));
         Assert.assertEquals("空行切出两个段落", 2, doc.getBlockCount());
         // 两路对比口径 = 同值 base（span 语义样式下色由 span 定，caller 传红 → 与 String 路同形）

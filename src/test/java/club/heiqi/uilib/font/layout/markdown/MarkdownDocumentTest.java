@@ -60,7 +60,9 @@ public class MarkdownDocumentTest {
 
     @Test
     public void shouldParseNullAndEmptyAsEmptyDocument() {
-        MarkdownDocument nullDoc = MarkdownDocument.parse((String) null);
+        // C6b：span 入口改名 parseSpans 后 parse(null) 恢复单义（C6a 的强转是重载二义的
+        // 临时代价，随改名一并退还——「source 可为 null」承诺重新无摩擦）。
+        MarkdownDocument nullDoc = MarkdownDocument.parse(null);
         Assert.assertTrue(nullDoc.isEmpty());
         Assert.assertEquals("", nullDoc.getSource());
         Assert.assertEquals(0, nullDoc.getBlockCount());

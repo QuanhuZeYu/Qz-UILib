@@ -62,9 +62,10 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * <h3>样式叠加</h3>
  * <p>markdown 只叠加样式位（粗体/斜体/删除线/下划线[链接]），颜色恒由 span 基础样式决定；
  * 输出每个片段持有基础样式的拷贝（{@link TextStyle#copy()}），不修改调用方传入的样式。
- * 块级文档入口（{@code MarkdownDocument.parse(List)}）可另带 {@link StyleTransform}
- * 块级叠加链：施加顺序 = 先 span 基础样式、再块级链、再行内位——与 String 路
- * 「先块级变换再逐段 parse」的先后关系同值。</p>
+ * 块级文档入口（{@code MarkdownDocument.parseSpans(List)}）可另带 {@link StyleTransform}
+ * 块级叠加链：施加顺序（C6b 定序裁定，取代 C6a「链压顶」）= span 基础样式铺底、块级链
+ * 叠样式位、<b>span 显式色（{@code isColorExplicit}）覆盖块级色</b>、行内位最后——
+ * 宿主色优先、样式位叠加，与 chat3 旧输出侧 § 桥「markdown 位先叠、§ 码后生效」对齐。</p>
  */
 public final class MarkdownInlineParser {
 
@@ -582,13 +583,20 @@ public final class MarkdownInlineParser {
     // ==================== 样式回溯输出 ====================
 
     /**
-     * 解析第 {@code charIndex} 个源字符出段样式：区间基础样式拷贝 → 块级叠加链 →
-     * 行内叠加栈（自外向内）。单 span/单组输入下与旧「base 拷 + 逐层叠位」逐位同值。
+     * 解析第 {@code charIndex} 个源字符出段样式。C6b 定序裁定（取代 C6a「链压顶」）：
+     * 区间基础样式拷贝 → 块级叠加链（标题/引用样式位）→ <b>span 携带显式色时其颜色
+     * 覆盖块级色</b>（宿主色优先；无显式色的 span = 纯 caller 底色，不覆盖，引用降色
+     * 照常生效）→ 行内叠加栈（自外向内）。String 路（blockTransform 恒 null）不经覆盖
+     * 分支，逐位不变；与 {@code MarkdownDocument.BlockStyle.applied} 同一把尺。
      */
     private static TextStyle resolve(int charIndex, Layer layer, ScanCtx ctx) {
-        TextStyle style = ctx.styleAt(charIndex).copy();
+        TextStyle base = ctx.styleAt(charIndex);
+        TextStyle style = base.copy();
         if (ctx.blockTransform != null) {
             style = ctx.blockTransform.apply(style);
+            if (base.isColorExplicit()) {
+                style.setColor(base.getColor());
+            }
         }
         layer.applyTo(style, ctx);
         return style;
