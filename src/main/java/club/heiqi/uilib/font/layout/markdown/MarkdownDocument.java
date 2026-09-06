@@ -52,6 +52,20 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * 参数链退役；列表层级只由行接缝 {@code listMarkerChain} 几何承载（M10d），
  * 可见文本不再编码层级。</p>
  *
+ * <h3>C6a（能力①）：块级文档的 span 流入口</h3>
+ * <p>{@link #parse(List)} 吃 {@link MarkdownSpan} 流表达整篇文档，产同一棵块树：span 文本按换行符
+ * 切成带样式的源行（一个 span 跨多行拆成多段、样式继承；空行 = 该行无文本段），
+ * <b>块级检测恒在拼接后的纯文本行上跑、与 {@code parse(String)} 共用同一套判据</b>
+ * （{@link MarkdownBlockParser}，不存在第二份判据）。每行的样式锚点随块模型走到行内解析，
+ * 块层不把样式丢掉压成 String。输出接缝（{@link #toSegments}/{@link #toLayoutLines}）
+ * 签名与语义不变：产出 {@link TextSegment} 样式 = 行内 markdown 样式叠加在 <b>span 基础
+ * 样式</b>之上（叠加顺序：span 基础样式为底 → 块级链（标题/引用变换）→ 行内位；颜色由
+ * span 决定，行内 markdown 不引入颜色——旧裁定不变；引用色 {@code quoteTextColor} 与
+ * 标题字号属样式表块级旋钮，按链序最后施加，与 String 路同值同序）。合成段（列表标记、
+ * 块边界换行、F6 占位、分隔线文本）不对应任何源 span，恒取 caller baseStyle 的块级变换
+ * 值——与 String 路逐位一致。L1→L2 接缝 {@link MarkdownLayoutLine} 公共面冻结：锚点只活
+ * 在包内，出接缝仍只有 {@code TextSegment}。</p>
+ *
  * <p>纯 JVM，不依赖 Minecraft 类型（沿用原裁定，headless 可测）。</p>
  */
 public final class MarkdownDocument {
@@ -80,7 +94,33 @@ public final class MarkdownDocument {
         return new MarkdownDocument(source == null ? "" : source, parsed);
     }
 
-    /** @return 原始源文本（null 输入归一为空串） */
+    /**
+     * 解析样式锚点 span 流表达的<b>整篇块级文档</b>（C6a 能力①）。
+     *
+     * <p>与 {@link #parse(String)} 产同一棵块树：入口先按换行符把 span 流切成带样式的源行，
+     * 块检测恒跑在拼接后的纯文本上（判据与 String 路单源）；每行样式锚点随块模型走到
+     * 行内解析（行内为跨 span 连续扫描，见 {@link MarkdownInlineParser} 类头）。</p>
+     *
+     * <p><b>单次解析承诺</b>：这是「输入侧」通道——带样式的源文本只进 markdown 这一次。
+     * 把 {@code toSegments} 产物再喂回行内入口属输出侧反接（双解析漂移），规划 §二之八
+     * 旧裁定禁止，两路都不允许。</p>
+     *
+     * @param spans 带基础样式的文本 span 流（可为 null/空，返回空文档；span 文本可含换行符）
+     * @return 不可变文档模型（{@link #getSource()} = span 文本按序拼接）
+     */
+    public static MarkdownDocument parse(List<MarkdownSpan> spans) {
+        if (spans == null || spans.isEmpty()) {
+            return new MarkdownDocument("", Collections.<MarkdownBlock>emptyList());
+        }
+        StringBuilder joined = new StringBuilder();
+        for (int i = 0; i < spans.size(); i++) {
+            joined.append(spans.get(i).getText());
+        }
+        return new MarkdownDocument(joined.toString(),
+                MarkdownBlockParser.parse(joined.toString(), spans));
+    }
+
+    /** @return 原始源文本（null 输入归一为空串；span 路为拼接文本） */
     public String getSource() {
         return source;
     }
@@ -128,7 +168,7 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         List<TextSegment> out = new ArrayList<TextSegment>();
-        walk(blocks, baseStyle, table, out, NO_ORDINAL);
+        walk(blocks, new BlockStyle(baseStyle), table, out, NO_ORDINAL);
         return out;
     }
 
@@ -160,7 +200,7 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         LineFlattener flattener = new LineFlattener(table);
-        walkLayout(blocks, baseStyle, table, flattener, NO_CHAIN, 0, NO_ORDINAL);
+        walkLayout(blocks, new BlockStyle(baseStyle), table, flattener, NO_CHAIN, 0, NO_ORDINAL);
         return flattener.finish();
     }
 
@@ -174,37 +214,37 @@ public final class MarkdownDocument {
      * {@code listStart}（第 i 项渲染序号 = ordinalBase + i），否则 {@link #NO_ORDINAL}——
      * 只随「列表 → 项」这一跳生效，项内子块/引用/顶层一律重置，嵌套子列表自记自身 start。</p>
      */
-    private static void walk(List<MarkdownBlock> siblings, TextStyle style, MarkdownStyleTable table,
-                             List<TextSegment> out, int ordinalBase) {
+    private static void walk(List<MarkdownBlock> siblings, BlockStyle style,
+                             MarkdownStyleTable table, List<TextSegment> out, int ordinalBase) {
         for (int i = 0; i < siblings.size(); i++) {
             MarkdownBlock next = siblings.get(i);
             if (i > 0) {
-                addNewline(style, out);
+                addNewline(style.value(), out);
                 // F6（走 C1）：块边界若吃掉过源空行，换行段后紧跟一个「占位标记段」——
                 // 文本为空串、不带任何几何字段，公共接缝仍是 List<TextSegment>；
                 // L2 MarkdownPainter 认它加一空行（见 MarkdownLineLayout#splitLogicalLines）。
                 if (next.blanksBefore > 0) {
-                    out.add(new TextSegment("", style.copy()));
+                    out.add(new TextSegment("", style.value()));
                 }
             }
             emit(next, style, table, out, ordinalBase == NO_ORDINAL ? NO_ORDINAL : ordinalBase + i);
         }
     }
 
-    private static void emit(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
+    private static void emit(MarkdownBlock block, BlockStyle style, MarkdownStyleTable table,
                              List<TextSegment> out, int ordinal) {
         switch (block.kind) {
             case PARAGRAPH:
-                emitInline(block.joinedLines(), style, table, out);
+                emitInline(block, block.joinedLines(), style, table, out);
                 break;
             case HEADING:
-                emitInline(block.text, headingStyle(style, block.level, table), table, out);
+                emitInline(block, block.text, style.heading(block.level, table), table, out);
                 break;
             case CODE:
                 emitCode(block, style, out);
                 break;
             case QUOTE:
-                walk(block.children, quoteStyle(style, table), table, out, NO_ORDINAL);
+                walk(block.children, style.quote(table), table, out, NO_ORDINAL);
                 break;
             case LIST:
                 walk(block.children, style, table, out,
@@ -221,19 +261,45 @@ public final class MarkdownDocument {
         }
     }
 
-    /** 块正文交行内解析器（行内语义照抄既有裁定，本层只叠加块级样式位）。 */
-    private static void emitInline(String body, TextStyle style, MarkdownStyleTable table,
-                                 List<TextSegment> out) {
-        out.addAll(inlineSegments(body, style, table));
+    /** 块正文交行内解析器（行内语义照抄既有裁定，本层只叠加块级样式位；C6a：span 路带锚点）。 */
+    private static void emitInline(MarkdownBlock block, String body, BlockStyle style,
+                                   MarkdownStyleTable table, List<TextSegment> out) {
+        out.addAll(inlineSegments(body, anchorsOf(block, style), style, table));
     }
 
-    /** 围栏代码：字面段，不经过行内解析（块内 {@code **}/{@code $}/{@code >} 一律字面）。 */
-    private static void emitCode(MarkdownBlock block, TextStyle style, List<TextSegment> out) {
+    /**
+     * C6a：块 → 行内消费的样式锚点段流（null = String 路）。PARAGRAPH/CODE 的多行锚点
+     * 经 {@link MarkdownBlockParser#joinStyledLines} 归并（行间换行符归属前一行末段，
+     * 与 String 路 body 内嵌换行同粒度）；HEADING 的锚点在块模型已定（ATX 单行切段、
+     * setext 归并流）。
+     */
+    private static List<MarkdownSpan> anchorsOf(MarkdownBlock block, BlockStyle style) {
+        if (block.headingAnchors != null) {
+            return block.headingAnchors;
+        }
+        if (block.lineAnchors == null) {
+            return null;
+        }
+        return MarkdownBlockParser.joinStyledLines(block.lineAnchors, style.value());
+    }
+
+    /** 围栏代码：字面段，不经过行内解析（块内 {@code **}/{@code $}/{@code >} 一律字面）。
+     *  C6a：span 路逐样式锚点切段——内容仍全字面（能力①「围栏内样式保留、内容不改写」），
+     *  仅样式回溯，不做任何行内配对。 */
+    private static void emitCode(MarkdownBlock block, BlockStyle style, List<TextSegment> out) {
         String code = block.joinedLines();
         if (code.isEmpty()) {
             return;
         }
-        out.add(new TextSegment(code, style.copy()));
+        List<MarkdownSpan> anchored = anchorsOf(block, style);
+        if (anchored == null) {
+            out.add(new TextSegment(code, style.value()));
+            return;
+        }
+        for (int i = 0; i < anchored.size(); i++) {
+            MarkdownSpan span = anchored.get(i);
+            out.add(new TextSegment(span.getText(), style.applied(span.getBaseStyle().copy())));
+        }
     }
 
     /**
@@ -242,20 +308,20 @@ public final class MarkdownDocument {
      * @param ordinal 本项渲染序号（有序 = 母列表 start + 项下标；无序/非有序上下文
      *                {@link #NO_ORDINAL}），只用于 marker 文本合成，见 {@link #bareListMarker}
      */
-    private static void emitListItem(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
-                                     List<TextSegment> out, int ordinal) {
+    private static void emitListItem(MarkdownBlock block, BlockStyle style,
+                                     MarkdownStyleTable table, List<TextSegment> out, int ordinal) {
         String marker = bareListMarker(block, table, ordinal);
         if (!marker.isEmpty()) {
-            out.add(new TextSegment(marker, style.copy()));
+            out.add(new TextSegment(marker, style.value()));
         }
         List<MarkdownBlock> children = block.children;
         for (int i = 0; i < children.size(); i++) {
             MarkdownBlock child = children.get(i);
             boolean sameLine = i == 0 && child.kind == MarkdownBlock.Kind.PARAGRAPH;
             if (!sameLine && !out.isEmpty()) {
-                addNewline(style, out);
+                addNewline(style.value(), out);
                 if (child.blanksBefore > 0) {
-                    out.add(new TextSegment("", style.copy()));   // F6 占位标记段
+                    out.add(new TextSegment("", style.value()));   // F6 占位标记段
                 }
             }
             emit(child, style, table, out, NO_ORDINAL);
@@ -300,49 +366,80 @@ public final class MarkdownDocument {
         return i == 0 ? 1 : n;
     }
 
-    /** 行内解析（两路共用）：块正文交行内解析器，行内语义照抄既有裁定。 */
-    private static List<TextSegment> inlineSegments(String body, TextStyle style,
-                                                    MarkdownStyleTable table) {
+    /**
+     * 行内解析（两接缝共用）：块正文交行内解析器，行内语义照抄既有裁定。
+     *
+     * <p>C6a 双路：{@code anchored == null} = String 路（原行为逐位不变）；非 null =
+     * span 路，正文恒等于锚点段拼接（{@code MarkdownBlockParser} 保证），解析器做跨锚点
+     * 连续扫描、逐区间回溯「span 基础样式 → 块级链 → 行内位」。</p>
+     */
+    private static List<TextSegment> inlineSegments(String body, List<MarkdownSpan> anchored,
+                                                    BlockStyle style, MarkdownStyleTable table) {
+        if (anchored != null) {
+            return MarkdownInlineParser.parse(anchored, table, style.transform());
+        }
         if (body == null || body.isEmpty()) {
             return Collections.emptyList();
         }
-        return MarkdownInlineParser.parse(body, style, table);
+        return MarkdownInlineParser.parse(body, style.value(), table);
     }
 
-    private static void emitThematicBreak(MarkdownStyleTable table, TextStyle style,
+    private static void emitThematicBreak(MarkdownStyleTable table, BlockStyle style,
                                           List<TextSegment> out) {
         String text = table.getThematicBreakText();
         if (text.isEmpty()) {
             return;
         }
-        out.add(new TextSegment(text, style.copy()));
+        out.add(new TextSegment(text, style.value()));
     }
 
     private static void addNewline(TextStyle style, List<TextSegment> out) {
         out.add(new TextSegment("\n", style.copy()));
     }
 
-    private static TextStyle headingStyle(TextStyle base, int level, MarkdownStyleTable table) {
-        TextStyle style = base.copy();
-        if (table.isHeadingBold()) {
-            style.setFontType(FontType.BOLD);
+    /**
+     * 标题块级变换（C6a 起为 {@link StyleTransform}，String 路与 span 路共用同一实现）。
+     *
+     * <p>施加对象是「出段那一刻」的基样式拷贝：String 路 = caller baseStyle（与旧
+     * {@code headingStyle(style, ...)} 传值同序同值）；span 路 = 该字符区间的 span 基础
+     * 样式——字号锚（{@code getFontSizePx()>0 ? : 表默认}）随之逐区间取，与旧「单值锚」
+     * 在单 span 文档下逐位一致。</p>
+     */
+    private static final class HeadingStep implements StyleTransform {
+
+        private final boolean bold;
+        private final boolean underline;
+        private final int delta;
+        private final int tableDefaultFontPx;
+
+        HeadingStep(int level, MarkdownStyleTable table) {
+            this.bold = table.isHeadingBold();
+            this.underline = table.isHeadingUnderline();
+            this.delta = table.getHeadingFontSizeDeltaPx(level);
+            this.tableDefaultFontPx = table.getDefaultFontSizePx();
         }
-        if (table.isHeadingUnderline()) {
-            style.setUnderline(true);
+
+        @Override
+        public TextStyle apply(TextStyle style) {
+            if (bold) {
+                style.setFontType(FontType.BOLD);
+            }
+            if (underline) {
+                style.setUnderline(true);
+            }
+            int anchor = style.getFontSizePx() > 0 ? style.getFontSizePx() : tableDefaultFontPx;
+            if (delta != 0 && anchor > 0) {
+                style.setFontSizePx(Math.max(1, anchor + delta));
+            }
+            return style;
         }
-        int delta = table.getHeadingFontSizeDeltaPx(level);
-        int anchor = base.getFontSizePx() > 0 ? base.getFontSizePx() : table.getDefaultFontSizePx();
-        if (delta != 0 && anchor > 0) {
-            style.setFontSizePx(Math.max(1, anchor + delta));
-        }
-        return style;
     }
 
     // ==================== 扁平化（块身份行路，M7） ====================
 
     /** 块身份路：同层兄弟行走（语义与 walk 逐点对偶——边界断行、F6 空行）。
      *  M10d：行路不再传 markerLevel——嵌套宽度事实改由标记链 {@code chain} 显式携带。 */
-    private static void walkLayout(List<MarkdownBlock> siblings, TextStyle style,
+    private static void walkLayout(List<MarkdownBlock> siblings, BlockStyle style,
                                    MarkdownStyleTable table, LineFlattener f,
                                    List<TextSegment> chain, int quoteLevel, int ordinalBase) {
         for (int i = 0; i < siblings.size(); i++) {
@@ -361,24 +458,25 @@ public final class MarkdownDocument {
     /** 块身份路：按块派发（引用只加层级不占行；段恒 TEXT 身份，标题恒 HEADING 身份并带
      *  级别 1..6——C3b3 把块模型 {@code MarkdownBlock.level} 搬进行接缝，不再在派发处丢弃；
      *  M10d 起落在列表项内时照旧携带标记链——链才是正文列的触发器，kind 不是）。 */
-    private static void emitLayout(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
+    private static void emitLayout(MarkdownBlock block, BlockStyle style, MarkdownStyleTable table,
                                    LineFlattener f, List<TextSegment> chain, int quoteLevel,
                                    int ordinal) {
         switch (block.kind) {
             case PARAGRAPH:
                 f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel, chain);
-                f.append(inlineSegments(block.joinedLines(), style, table));
+                f.append(inlineSegments(block.joinedLines(), anchorsOf(block, style), style, table));
                 break;
             case HEADING:
                 // C3b3：块级身份 + 级别进接缝（ATX 与 setext 都走本 case，level 已在块模型定级）
                 f.startBlock(MarkdownLayoutLine.Kind.HEADING, quoteLevel, chain, block.level);
-                f.append(inlineSegments(block.text, headingStyle(style, block.level, table), table));
+                f.append(inlineSegments(block.text, block.headingAnchors,
+                        style.heading(block.level, table), table));
                 break;
             case CODE:
                 emitCodeLayout(block, style, f, quoteLevel, chain);
                 break;
             case QUOTE:
-                walkLayout(block.children, quoteStyle(style, table), table, f, chain,
+                walkLayout(block.children, style.quote(table), table, f, chain,
                         quoteLevel + 1, NO_ORDINAL);
                 break;
             case LIST:
@@ -393,7 +491,7 @@ public final class MarkdownDocument {
                         table.getThematicBreakText().isEmpty()
                                 ? Collections.<TextSegment>emptyList()
                                 : Collections.singletonList(new TextSegment(
-                                        table.getThematicBreakText(), style.copy())),
+                                        table.getThematicBreakText(), style.value())),
                         chain);
                 break;
             default:
@@ -403,25 +501,38 @@ public final class MarkdownDocument {
 
     /** 围栏代码：每个源行一条 kind=CODE 行（块内空行也带 CODE 身份，底色归组不断裂；
      *  M10d：项内围栏携链，本块全部源行同吃正文列——底色矩形随头行平移，连续语义不变）。 */
-    private static void emitCodeLayout(MarkdownBlock block, TextStyle style, LineFlattener f,
+    private static void emitCodeLayout(MarkdownBlock block, BlockStyle style, LineFlattener f,
                                        int quoteLevel, List<TextSegment> chain) {
         List<String> lines = block.lines;
         if (lines.isEmpty()) {
             return;
         }
+        List<List<MarkdownSpan>> anchors = block.lineAnchors;
         for (int i = 0; i < lines.size(); i++) {
             if (i == 0) {
                 f.startBlock(MarkdownLayoutLine.Kind.CODE, quoteLevel, chain);
             } else {
                 f.continueBlockLine();
             }
-            // 围栏的每个源行恒成行（空源行也是显示行——与段流路 joinedLines 内嵌 \n 的
+            // 围栏的每个源行恒成行（空源行也是显示行——与段流路 joinedLines 内嵌换行的
             // splitLogicalLines 口径一致），底色归组靠同 blockId 不断裂
             f.markStructural();
             String text = lines.get(i);
-            if (!text.isEmpty()) {
-                f.append(Collections.singletonList(new TextSegment(text, style.copy())));
+            if (text.isEmpty()) {
+                continue;
             }
+            if (anchors == null) {
+                f.append(Collections.singletonList(new TextSegment(text, style.value())));
+                continue;
+            }
+            // C6a：围栏行内容字面、按行内样式锚点切段（样式回溯，永不进行内解析）
+            List<TextSegment> segs = new ArrayList<TextSegment>();
+            for (int k = 0; k < anchors.get(i).size(); k++) {
+                MarkdownSpan span = anchors.get(i).get(k);
+                segs.add(new TextSegment(span.getText(),
+                        style.applied(span.getBaseStyle().copy())));
+            }
+            f.append(segs);
         }
     }
 
@@ -441,13 +552,15 @@ public final class MarkdownDocument {
      * 段落/标题/引用/围栏/嵌套子项（子项链 = ownChain + 子项标记）全部携带。正文列由 L2
      * 沿链求和；本层零度量、不产 px。</p>
      */
-    private static void emitListItemLayout(MarkdownBlock block, TextStyle style,
+    private static void emitListItemLayout(MarkdownBlock block, BlockStyle style,
                                            MarkdownStyleTable table, LineFlattener f,
                                            List<TextSegment> chain, int quoteLevel, int ordinal) {
         // 标记文本与链上标记段同源（bareListMarker）：有序 = 母列表 start + 项下标 + ". "
+        // C6a：标记段是块层合成文本（非源文本），样式恒 caller 基样式 + 块级链——不随源
+        // 行锚点着色（锚点只服务正文的行内解析）。
         String marker = bareListMarker(block, table, ordinal);
         TextSegment markerSegment = marker.isEmpty()
-                ? null : new TextSegment(marker, style.copy());
+                ? null : new TextSegment(marker, style.value());
         // 空串圆点 ⇒ 本级无可渲染标记，链不追加（零宽级不进链；几何恒等）
         List<TextSegment> ownChain = markerSegment == null ? chain : appendChain(chain, markerSegment);
         f.startBlock(markerSegment == null
@@ -461,7 +574,7 @@ public final class MarkdownDocument {
             boolean sameLine = i == 0 && child.kind == MarkdownBlock.Kind.PARAGRAPH;
             if (sameLine) {
                 // 首段并入标记行（与段流路 emitListItem 无分隔符紧接同构）
-                f.append(inlineSegments(child.joinedLines(), style, table));
+                f.append(inlineSegments(child.joinedLines(), anchorsOf(child, style), style, table));
                 continue;
             }
             if (child.blanksBefore > 0) {
@@ -635,17 +748,76 @@ public final class MarkdownDocument {
         }
     }
 
-    private static TextStyle quoteStyle(TextStyle base, MarkdownStyleTable table) {
-        TextStyle style = base.copy();
-        if (table.isQuoteItalic()) {
-            style.setItalic(true);
+    /** 引用块级变换（F3 色/斜体旋钮；施加序与旧 {@code quoteStyle} 逐行同值）。 */
+    private static final class QuoteStep implements StyleTransform {
+
+        private final boolean italic;
+        private final int quoteColor;
+
+        QuoteStep(MarkdownStyleTable table) {
+            this.italic = table.isQuoteItalic();
+            // F3：引用正文色旋钮（MarkdownStyleTable.getQuoteTextColor），默认对齐 chat3 现行次级色
+            // FF9AA0A8（ChatMessageList.java:891-897）；0 = 不改色，继承调用方基础样式。
+            this.quoteColor = table.getQuoteTextColor();
         }
-        // F3：引用正文色旋钮（MarkdownStyleTable.getQuoteTextColor），默认对齐 chat3 现行次级色
-        // FF9AA0A8（ChatMessageList.java:891-897）；0 = 不改色，继承调用方基础样式。
-        int quoteColor = table.getQuoteTextColor();
-        if (quoteColor != 0) {
-            style.setColor(quoteColor);
+
+        @Override
+        public TextStyle apply(TextStyle style) {
+            if (italic) {
+                style.setItalic(true);
+            }
+            if (quoteColor != 0) {
+                style.setColor(quoteColor);
+            }
+            return style;
         }
-        return style;
+    }
+
+    /**
+     * 块级样式上下文（C6a）：caller 基样式 + 块级变换链的不可变对。
+     *
+     * <p><b>为什么不是样式值</b>：String 路历史上把「已施加块级变换的样式值」沿树传递；
+     * span 流的基样式逐字符来自锚点，必须把「变换」本身传下去、出段时施加（见
+     * {@link StyleTransform}）。{@link #value()} 给出与旧值传完全同形的 caller 样式
+     * （= 链施加于 baseStyle 拷贝；每次 fresh copy，对应旧代码各产出点的 style.copy()）。</p>
+     */
+    private static final class BlockStyle {
+
+        private final TextStyle root;
+        private final StyleTransform transform;
+        private final TextStyle resolved;
+
+        BlockStyle(TextStyle root) {
+            this(root, null);
+        }
+
+        private BlockStyle(TextStyle root, StyleTransform transform) {
+            this.root = root;
+            this.transform = transform;
+            this.resolved = transform == null ? root : transform.apply(root.copy());
+        }
+
+        /** 合成段/换行段/占位段样式：caller 基样式叠块级链后的拷贝（旧 {@code style.copy()}）。 */
+        TextStyle value() {
+            return resolved.copy();
+        }
+
+        /** 把块级链施加到给定拷贝上（span 基础样式回溯用；入参必须已是拷贝）。 */
+        TextStyle applied(TextStyle copy) {
+            return transform == null ? copy : transform.apply(copy);
+        }
+
+        /** 行内解析用的块级链（null = 无叠加）。 */
+        StyleTransform transform() {
+            return transform;
+        }
+
+        BlockStyle heading(int level, MarkdownStyleTable table) {
+            return new BlockStyle(root, StyleTransform.compose(transform, new HeadingStep(level, table)));
+        }
+
+        BlockStyle quote(MarkdownStyleTable table) {
+            return new BlockStyle(root, StyleTransform.compose(transform, new QuoteStep(table)));
+        }
     }
 }

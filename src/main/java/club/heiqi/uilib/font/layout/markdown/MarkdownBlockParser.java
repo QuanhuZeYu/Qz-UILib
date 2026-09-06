@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.font.layout.TextStyle;
+
 /**
  * 块级 markdown 扫描器（包内实现，对外唯一入口是 {@link MarkdownDocument}）。
  * 纯 JVM：不 import net.minecraft / cpw.mods / java.awt（规划 §四 G2 锁）。
@@ -40,6 +42,15 @@ import java.util.List;
  * 简化、非 C1a 范围；副作用 = 项内「段落行 + 空行 + ≥4 空格行」按段落续行折叠而非缩进代码，
  * 其余缩进代码与惰性续行判定均与 CommonMark 一致）。</p>
  *
+ * <p><b>C6a 能力①（块级文档 span 流入口）</b>：{@link #parse(String, List)} 吃
+ * {@link MarkdownSpan} 流拼接出的同一份纯文本，按 
+ 切成<b>带样式锚点的源行</b>
+ * （{@link SrcLine#spans}，一个 span 跨多行拆成多段、样式继承、空行 = 无文本段）。
+ * 块级检测（标题/围栏/引用/列表/分隔线/缩进代码/内容列）恒在拼接后的纯文本行上跑，
+ * 与 String 入口<b>共用同一套判据函数</b>——不存在第二份判据，也不对行文本做任何
+ * 改写；剥标记/剥缩进等文本截断经 {@link #dropLead}/{@link #dropTail} 同步裁剪该行
+ * 锚点段，样式随正文走到行内解析，块层不把样式压掉。</p>
+ *
  * <p>风格与 {@link MarkdownInlineParser} 同哲学：宽容失败、不抛异常、纯函数；
  * 零每帧解析裁定（规划 §六 3）——只在文档到达时调用一次，缓存责任在消费层。</p>
  */
@@ -63,15 +74,196 @@ final class MarkdownBlockParser {
     private static final class SrcLine {
         final String text;
         final boolean lazy;
+        /** C6a 能力①：本行文本的样式锚点段（null = String 路；空列表 = 空行/零宽行）。 */
+        final List<MarkdownSpan> spans;
 
         SrcLine(String text, boolean lazy) {
+            this(text, lazy, null);
+        }
+
+        SrcLine(String text, boolean lazy, List<MarkdownSpan> spans) {
             this.text = text;
             this.lazy = lazy;
+            this.spans = spans;
         }
 
         static SrcLine plain(String text) {
             return new SrcLine(text, false);
         }
+
+        /** span 路的零宽行（空行）：锚点为空列表，与 String 路的 null 判别块路径归属。 */
+        static SrcLine blank(boolean spanPath) {
+            return new SrcLine("", false, spanPath ? Collections.<MarkdownSpan>emptyList() : null);
+        }
+    }
+
+    /**
+     * C6a 能力①：span 流在拼接文本上的绝对坐标区间表（仅解析期使用，不进块模型）。
+     * {@link #slice} 取 {@code [from,to)} 的行区间并把<b>相邻同值样式</b>并成一段——
+     * 单 span 文档切行后逐行仍同值 ⇒ 归并为每行一段，拼接归并后与 String 路同粒度。
+     */
+    private static final class SpanRuns {
+        private final List<MarkdownSpan> spans;
+        private final int[] start;
+        private final int[] end;
+
+        SpanRuns(List<MarkdownSpan> spans) {
+            this.spans = spans;
+            this.start = new int[spans.size()];
+            this.end = new int[spans.size()];
+            int pos = 0;
+            for (int i = 0; i < spans.size(); i++) {
+                start[i] = pos;
+                pos += spans.get(i).getText().length();
+                end[i] = pos;
+            }
+        }
+
+        List<MarkdownSpan> slice(int from, int to) {
+            List<MarkdownSpan> out = new ArrayList<MarkdownSpan>();
+            for (int i = 0; i < spans.size(); i++) {
+                int s = Math.max(from, start[i]);
+                int e = Math.min(to, end[i]);
+                if (s >= e) {
+                    continue;
+                }
+                MarkdownSpan span = spans.get(i);
+                String piece = (s == start[i] && e == end[i])
+                        ? span.getText()
+                        : span.getText().substring(s - start[i], e - start[i]);
+                appendMerged(out, piece, span.getBaseStyle());
+            }
+            return out;
+        }
+    }
+
+    /** 相邻同值并段（{@link StyleValues#same}）；{@code out} 尾段文本随之增长。 */
+    static void appendMerged(List<MarkdownSpan> out, String text, TextStyle style) {
+        if (text.isEmpty()) {
+            return;
+        }
+        if (!out.isEmpty()) {
+            MarkdownSpan last = out.get(out.size() - 1);
+            if (StyleValues.same(last.getBaseStyle(), style)) {
+                out.set(out.size() - 1,
+                        new MarkdownSpan(last.getText() + text, last.getBaseStyle()));
+                return;
+            }
+        }
+        out.add(new MarkdownSpan(text, style));
+    }
+
+    /** 裁掉锚点段列表头 {@code count} 个字符（null 透传；被裁空的段丢弃）。 */
+    static List<MarkdownSpan> dropLead(List<MarkdownSpan> line, int count) {
+        if (line == null || count <= 0) {
+            return line;
+        }
+        List<MarkdownSpan> out = new ArrayList<MarkdownSpan>(line.size());
+        int skip = count;
+        for (int i = 0; i < line.size(); i++) {
+            MarkdownSpan span = line.get(i);
+            String t = span.getText();
+            if (skip >= t.length()) {
+                skip -= t.length();
+                continue;
+            }
+            appendMerged(out, skip > 0 ? t.substring(skip) : t, span.getBaseStyle());
+            skip = 0;
+        }
+        return out;
+    }
+
+    /** 裁掉锚点段列表尾 {@code count} 个字符（null 透传）。 */
+    static List<MarkdownSpan> dropTail(List<MarkdownSpan> line, int count) {
+        if (line == null || count <= 0) {
+            return line;
+        }
+        int total = 0;
+        for (int i = 0; i < line.size(); i++) {
+            total += line.get(i).getText().length();
+        }
+        int keep = Math.max(0, total - count);
+        List<MarkdownSpan> out = new ArrayList<MarkdownSpan>(line.size());
+        int used = 0;
+        for (int i = 0; i < line.size() && used < keep; i++) {
+            MarkdownSpan span = line.get(i);
+            String t = span.getText();
+            int take = Math.min(t.length(), keep - used);
+            used += take;
+            appendMerged(out, take == t.length() ? t : t.substring(0, take), span.getBaseStyle());
+        }
+        return out;
+    }
+
+    /** 锚点段列表取 {@code [from,to)} 子区间（{@code dropLead} + {@code dropTail} 复合）。 */
+    static List<MarkdownSpan> sliceSpans(List<MarkdownSpan> line, int from, int to) {
+        List<MarkdownSpan> cut = dropLead(line, from);
+        if (cut == null) {
+            return null;
+        }
+        int len = 0;
+        for (int i = 0; i < cut.size(); i++) {
+            len += cut.get(i).getText().length();
+        }
+        return dropTail(cut, len - to);
+    }
+
+    /**
+     * C6a 能力①：把「每行锚点段」归并为块级段流——行间补 
+（归属前一行末段尾，
+     * 前无内容段则挂后段头部；全文零可见字符时兜底用 {@code fallbackStyle}），相邻同值
+     * 并段。String 路（{@code lineAnchors} null）恒返回 null。
+     */
+    static List<MarkdownSpan> joinStyledLines(List<List<MarkdownSpan>> lineAnchors,
+                                              TextStyle fallbackStyle) {
+        if (lineAnchors == null) {
+            return null;
+        }
+        List<MarkdownSpan> out = new ArrayList<MarkdownSpan>();
+        int pending = 0;
+        for (int i = 0; i < lineAnchors.size(); i++) {
+            if (i > 0) {
+                pending++;
+            }
+            for (int k = 0; k < lineAnchors.get(i).size(); k++) {
+                MarkdownSpan piece = lineAnchors.get(i).get(k);
+                String text = piece.getText();
+                if (text.isEmpty()) {
+                    continue;
+                }
+                String prefix = "";
+                if (pending > 0) {
+                    if (!out.isEmpty()) {
+                        // 行界换行符归属前一行末段尾（样式随前段，与 String 路同段嵌入一致）
+                        MarkdownSpan tail = out.get(out.size() - 1);
+                        out.set(out.size() - 1, new MarkdownSpan(
+                                tail.getText() + repeatNewlines(pending), tail.getBaseStyle()));
+                    } else {
+                        prefix = repeatNewlines(pending);
+                    }
+                    pending = 0;
+                }
+                appendMerged(out, prefix + text, piece.getBaseStyle());
+            }
+        }
+        if (pending > 0) {
+            if (!out.isEmpty()) {
+                MarkdownSpan tailSpan = out.get(out.size() - 1);
+                out.set(out.size() - 1, new MarkdownSpan(
+                        tailSpan.getText() + repeatNewlines(pending), tailSpan.getBaseStyle()));
+            } else {
+                appendMerged(out, repeatNewlines(pending), fallbackStyle);
+            }
+        }
+        return out;
+    }
+
+    private static String repeatNewlines(int n) {
+        StringBuilder sb = new StringBuilder(n);
+        for (int i = 0; i < n; i++) {
+            sb.append('\n');
+        }
+        return sb.toString();
     }
 
     private MarkdownBlockParser() {
@@ -87,30 +279,56 @@ final class MarkdownBlockParser {
         if (source == null || source.isEmpty()) {
             return Collections.emptyList();
         }
-        return parseBlocks(splitLines(source), 0);
+        return parseBlocks(splitLines(source, null), 0);
+    }
+
+    /**
+     * 块级解析入口（C6a 能力①）：{@code source} 必须是 {@code spans} 文本按序拼接的同一份
+     * 纯文本（由 {@code MarkdownDocument.parse(List)} 保证）。块检测只跑在 {@code source}
+     * 上——与 String 入口共用同一套判据；行切分（{@link #splitLines}）同步把每行文本切成
+     * 该行的样式锚点段随 {@link SrcLine} 走。
+     *
+     * @param source 拼接后的文档源文本（可为 null/空，返回空表）
+     * @param spans  样式锚点 span 流（null/空 ⇒ 退化为 String 路，块模型不带锚点）
+     * @return 顶层块序列
+     */
+    static List<MarkdownBlock> parse(String source, List<MarkdownSpan> spans) {
+        if (source == null || source.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (spans == null || spans.isEmpty()) {
+            return parse(source);
+        }
+        return parseBlocks(splitLines(source, new SpanRuns(spans)), 0);
     }
 
     // ==================== 行工具 ====================
 
-    private static List<SrcLine> splitLines(String source) {
+    private static List<SrcLine> splitLines(String source, SpanRuns runs) {
         List<SrcLine> out = new ArrayList<SrcLine>();
         int start = 0;
         int n = source.length();
         for (int i = 0; i < n; i++) {
             char ch = source.charAt(i);
             if (ch == '\n') {
-                out.add(SrcLine.plain(source.substring(start, i)));
+                out.add(line(source, start, i, runs));
                 start = i + 1;
             } else if (ch == '\r') {
-                out.add(SrcLine.plain(source.substring(start, i)));
+                out.add(line(source, start, i, runs));
                 if (i + 1 < n && source.charAt(i + 1) == '\n') {
                     i++;
                 }
                 start = i + 1;
             }
         }
-        out.add(SrcLine.plain(source.substring(start)));
+        out.add(line(source, start, n, runs));
         return out;
+    }
+
+    /** 切一行：文本 = {@code source[from,to)}；span 路同步取该行的样式锚点段。 */
+    private static SrcLine line(String source, int from, int to, SpanRuns runs) {
+        return new SrcLine(source.substring(from, to), false,
+                runs == null ? null : runs.slice(from, to));
     }
 
     /** 块语法空白集（U+0020 及以下，同 CommonMark ASCII 空白口径；NBSP 不算空白）。 */
@@ -195,6 +413,55 @@ final class MarkdownBlockParser {
         return (next == ' ' || next == '\t') ? i : 0;
     }
 
+    /**
+     * C6a：ATX 标题块（文本恒走 {@link #headingBody}——与 String 路同一判据与产出；
+     * span 路另算 {@link #atxRange} 的开闭裁切量，把样式锚点同步裁到正文区间）。
+     */
+    private static MarkdownBlock atxHeading(SrcLine src, int ind, int level) {
+        String body = src.text.substring(ind);
+        String text = headingBody(body, level);
+        List<MarkdownSpan> anchors = null;
+        if (src.spans != null) {
+            int[] range = atxRange(body, level);
+            anchors = sliceSpans(dropLead(src.spans, ind), range[0], range[1]);
+        }
+        return MarkdownBlock.heading(level, text, anchors);
+    }
+
+    /**
+     * {@link #headingBody} 的区间形态：正文在 {@code body} 上的 {@code [from,to)}。
+     * 剥前导 # 序列 + 两侧空白 + 带空白隔开的闭 # 序列——与字符串版逐分支等值。
+     */
+    private static int[] atxRange(String body, int level) {
+        int a = Math.min(level, body.length());
+        int b = body.length();
+        while (a < b && isSpaceChar(body.charAt(a))) {
+            a++;
+        }
+        while (b > a && isSpaceChar(body.charAt(b - 1))) {
+            b--;
+        }
+        int run = 0;
+        while (run < b - a && body.charAt(b - 1 - run) == '#') {
+            run++;
+        }
+        if (run == 0) {
+            return new int[] {a, b};
+        }
+        if (run == b - a) {
+            return new int[] {a, a};
+        }
+        char before = body.charAt(b - run - 1);
+        if (before == ' ' || before == '\t') {
+            b -= run;
+            while (b > a && isSpaceChar(body.charAt(b - 1))) {
+                b--;
+            }
+            return new int[] {a, b};
+        }
+        return new int[] {a, b};
+    }
+
     /** 去开闭 # 序列后的标题正文。 */
     private static String headingBody(String body, int level) {
         String s = trim(body.substring(level));
@@ -266,6 +533,8 @@ final class MarkdownBlockParser {
         final int number;
         final int contentCol;
         final String content;
+        /** C6a：内容列后正文的样式锚点段（仅 {@link #matchListStart(SrcLine)} 填；null = String 路）。 */
+        List<MarkdownSpan> contentSpans;
 
         ListStart(boolean ordered, String marker, char bullet, char delim, int number,
                   int contentCol, String content) {
@@ -277,6 +546,15 @@ final class MarkdownBlockParser {
             this.contentCol = contentCol;
             this.content = content;
         }
+    }
+
+    /** C6a：带样式锚点同步裁切的列表起始检测（判据恒走 String 版 {@link #matchListStart(String)}）。 */
+    private static ListStart matchListStart(SrcLine line) {
+        ListStart st = matchListStart(line.text);
+        if (st != null && line.spans != null) {
+            st.contentSpans = sliceSpans(line.spans, st.contentCol, line.text.length());
+        }
+        return st;
     }
 
     /** 列表起始检测：无序 {@code [-*+]} + 空格/制表符/行尾；有序 1..9 位数字 + {@code .}/{@code )} + 同上。 */
@@ -394,7 +672,7 @@ final class MarkdownBlockParser {
             }
             int heading = headingLevel(body);
             if (heading > 0) {
-                blocks.add(MarkdownBlock.heading(heading, headingBody(body, heading)));
+                blocks.add(atxHeading(lines.get(i), ind, heading));
                 i++;
                 stamp(blocks, before, blanks); blanks = 0;
                 continue;
@@ -461,10 +739,13 @@ final class MarkdownBlockParser {
         int openLen = runLength(head, ch);
         String info = trim(head.substring(openLen));
         List<String> body = new ArrayList<String>();
+        boolean spanPath = lines.get(start).spans != null;
+        List<List<MarkdownSpan>> anchors = spanPath ? new ArrayList<List<MarkdownSpan>>() : null;
         int j = start + 1;
         int n = lines.size();
         while (j < n) {
-            String line = lines.get(j).text;
+            SrcLine src = lines.get(j);
+            String line = src.text;
             int ind = leadingSpaces(line);
             if (ind <= 3 && !isBlank(line)) {
                 String rest = line.substring(ind);
@@ -476,10 +757,15 @@ final class MarkdownBlockParser {
                     }
                 }
             }
-            body.add(isBlank(line) ? "" : stripFirst(line, fenceIndent));
+            String kept = isBlank(line) ? "" : stripFirst(line, fenceIndent);
+            body.add(kept);
+            if (anchors != null) {
+                anchors.add(isBlank(line) ? Collections.<MarkdownSpan>emptyList()
+                        : dropLead(src.spans, line.length() - kept.length()));
+            }
             j++;
         }
-        out.add(MarkdownBlock.code(info, body));
+        out.add(MarkdownBlock.code(info, body, anchors));
         return j;
     }
 
@@ -498,6 +784,8 @@ final class MarkdownBlockParser {
      */
     private static int readIndentedCode(List<SrcLine> lines, int start, List<MarkdownBlock> out) {
         List<String> body = new ArrayList<String>();
+        boolean spanPath = lines.get(start).spans != null;
+        List<List<MarkdownSpan>> anchors = spanPath ? new ArrayList<List<MarkdownSpan>>() : null;
         int j = start;
         int n = lines.size();
         while (j < n) {
@@ -509,7 +797,7 @@ final class MarkdownBlockParser {
                 }
                 if (k < n && leadingSpaces(lines.get(k).text) >= 4) {
                     for (int b = j; b < k; b++) {
-                        body.add(stripFirst(lines.get(b).text, 4));
+                        addIndentedCodeLine(lines.get(b), body, anchors);
                     }
                     j = k;
                     continue;
@@ -519,20 +807,32 @@ final class MarkdownBlockParser {
             if (leadingSpaces(line) < 4) {
                 break; // 前导 <4 的非空行即刻结束（例 114）
             }
-            body.add(stripFirst(line, 4)); // 剥至多 4（例 116：首行 8 空格剥 4 留 4）
+            addIndentedCodeLine(lines.get(j), body, anchors); // 剥至多 4（例 116：首行 8 空格剥 4 留 4）
             j++;
         }
-        out.add(MarkdownBlock.code("", body));
+        out.add(MarkdownBlock.code("", body, anchors));
         return j;
+    }
+
+    /** 缩进代码收一行：剥至多 4 前导空格，锚点同步裁。 */
+    private static void addIndentedCodeLine(SrcLine src, List<String> body,
+                                            List<List<MarkdownSpan>> anchors) {
+        String kept = stripFirst(src.text, 4);
+        body.add(kept);
+        if (anchors != null) {
+            anchors.add(dropLead(src.spans, src.text.length() - kept.length()));
+        }
     }
 
     /** 引用块：消费连续引用行与惰性续行；空行后仍带标记则并入同一引用（多段落）。 */
     private static int readQuote(List<SrcLine> lines, int start, List<MarkdownBlock> out, int depth) {
         List<SrcLine> inner = new ArrayList<SrcLine>();
+        boolean spanPath = lines.get(start).spans != null;
         int j = start;
         int n = lines.size();
         while (j < n) {
-            String line = lines.get(j).text;
+            SrcLine src = lines.get(j);
+            String line = src.text;
             if (isBlank(line)) {
                 int k = j;
                 while (k < n && isBlank(lines.get(k).text)) {
@@ -545,7 +845,7 @@ final class MarkdownBlockParser {
                 String next = lines.get(k).text;
                 int ni = leadingSpaces(next);
                 if (ni <= 3 && next.charAt(ni) == '>') {
-                    inner.add(SrcLine.plain(""));
+                    inner.add(SrcLine.blank(spanPath));
                     j = k;
                     continue;
                 }
@@ -555,14 +855,17 @@ final class MarkdownBlockParser {
             int ind = leadingSpaces(line);
             if (ind <= 3 && line.charAt(ind) == '>') {
                 String content = line.substring(ind + 1);
+                int strip = ind + 1;
                 if (content.startsWith(" ") || content.startsWith("\t")) {
                     content = content.substring(1);
+                    strip++;
                 }
-                inner.add(new SrcLine(content, lines.get(j).lazy));
+                inner.add(new SrcLine(content, src.lazy, dropLead(src.spans, strip)));
             } else if (!interruptsParagraph(line)) {
                 // 惰性续行：本行不带 '>' 标记，N2 收紧在此打「惰性」标记——
                 // 收拢后它不得再被 readParagraph 判成 setext 下划线（CommonMark 同款规则）。
-                inner.add(new SrcLine(line, true));
+                // 锚点原样随行文本走（未剥任何字符）。
+                inner.add(new SrcLine(line, true, src.spans));
             } else {
                 break;
             }
@@ -591,7 +894,7 @@ final class MarkdownBlockParser {
      * 前导 >=4 空格的「列表标记」行进缩进代码块字面（parseBlocks 的 ind>3 分支）。</p>
      */
     private static int readList(List<SrcLine> lines, int start, List<MarkdownBlock> out, int depth) {
-        ListStart first = matchListStart(lines.get(start).text);
+        ListStart first = matchListStart(lines.get(start));
         boolean ordered = first.ordered;
         char unit = ordered ? first.delim : first.bullet;
         int n = lines.size();
@@ -600,14 +903,14 @@ final class MarkdownBlockParser {
         int i = start;
         int pendingItemBlanks = 0;
         while (i < n && !listEnded) {
-            String itemLine = lines.get(i).text;
-            ListStart st = matchListStart(itemLine);
+            SrcLine itemSrc = lines.get(i);
+            ListStart st = matchListStart(itemSrc);
             if (!sameKind(st, ordered, unit)) {
                 break;
             }
             List<SrcLine> body = new ArrayList<SrcLine>();
             if (!st.content.isEmpty()) {
-                body.add(new SrcLine(st.content, lines.get(i).lazy));
+                body.add(new SrcLine(st.content, itemSrc.lazy, st.contentSpans));
             }
             int contentCol = st.contentCol;
             int j = i + 1;
@@ -649,14 +952,16 @@ final class MarkdownBlockParser {
                     break;
                 }
                 if (ni >= contentCol) {
-                    body.add(new SrcLine(line.substring(contentCol), lines.get(j).lazy));
+                    SrcLine src = lines.get(j);
+                    body.add(new SrcLine(line.substring(contentCol), src.lazy,
+                            dropLead(src.spans, contentCol)));
                     j++;
                     continue;
                 }
                 if (nx == null && !interruptsParagraph(line)) {
                     // 惰性续行：本行低于内容列且不带任何列表标记——N2 收紧打「惰性」
-                    // 标记，内层 readParagraph 不得拿它当 setext 下划线。
-                    body.add(new SrcLine(line, true));
+                    // 标记，内层 readParagraph 不得拿它当 setext 下划线。锚点原样随行走。
+                    body.add(new SrcLine(line, true, lines.get(j).spans));
                     j++;
                     continue;
                 }
@@ -707,7 +1012,9 @@ final class MarkdownBlockParser {
                 // 时已打标记），> 甲 + 惰性 === 保持段内字面——与 CommonMark 对齐。
                 int setext = lines.get(j).lazy ? 0 : setextUnderlineLevel(line);
                 if (setext > 0) {
-                    out.add(MarkdownBlock.heading(setext, makeParagraph(raw).joinedLines()));
+                    MarkdownBlock para = makeParagraph(raw);
+                    out.add(MarkdownBlock.heading(setext, para.joinedLines(),
+                            joinStyledLines(para.lineAnchors, null)));
                     return j + 1;
                 }
                 if (interruptsParagraph(line)) {
@@ -754,17 +1061,30 @@ final class MarkdownBlockParser {
         int size = rawLines.size();
         boolean[] flags = size > 1 ? new boolean[size - 1] : new boolean[0];
         List<String> kept = new ArrayList<String>(size);
+        boolean spanPath = size > 0 && rawLines.get(0).spans != null;
+        List<List<MarkdownSpan>> anchors = spanPath ? new ArrayList<List<MarkdownSpan>>() : null;
         for (int i = 0; i < size; i++) {
-            String line = stripLeadingSpace(rawLines.get(i).text);
+            SrcLine src = rawLines.get(i);
+            String line = stripLeadingSpace(src.text);
+            List<MarkdownSpan> slice = anchors == null ? null
+                    : dropLead(src.spans, src.text.length() - line.length());
+            // 尾裁基准 = 行首折叠后、任何尾剥前的全长（硬换行剥除内部先做 rtrim，
+            // 若以剥后长度为基准会把行尾两空格漏裁——C6a 锁 1 实测回归即此）。
+            int tailBase = line.length();
             if (i < size - 1) {
                 flags[i] = isHardBreakLine(line);
                 if (flags[i]) {
                     line = stripHardBreakMarker(line); // 两空格已被 rtrim 吃掉，反斜杠在此剥除
                 }
             }
-            kept.add(rtrim(line));
+            String text = rtrim(line);
+            if (anchors != null) {
+                slice = dropTail(slice, tailBase - text.length());
+                anchors.add(slice);
+            }
+            kept.add(text);
         }
-        return MarkdownBlock.paragraph(kept, flags);
+        return MarkdownBlock.paragraph(kept, flags, anchors);
     }
 
     /** 硬换行行判定：行尾两空格（含更多），或 rtrim 后以奇数个未转义反斜杠结尾。 */

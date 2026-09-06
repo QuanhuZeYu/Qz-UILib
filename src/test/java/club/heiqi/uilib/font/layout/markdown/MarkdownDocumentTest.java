@@ -60,7 +60,7 @@ public class MarkdownDocumentTest {
 
     @Test
     public void shouldParseNullAndEmptyAsEmptyDocument() {
-        MarkdownDocument nullDoc = MarkdownDocument.parse(null);
+        MarkdownDocument nullDoc = MarkdownDocument.parse((String) null);
         Assert.assertTrue(nullDoc.isEmpty());
         Assert.assertEquals("", nullDoc.getSource());
         Assert.assertEquals(0, nullDoc.getBlockCount());
