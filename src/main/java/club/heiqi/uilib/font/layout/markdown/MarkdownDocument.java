@@ -43,7 +43,10 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * 引用与列表的缩进不进文本流（裁定 B：块级几何随块模型留包内、不入公共接缝；
  * M3 落地的 L2 按段流排版，缩进如需可见再随块模型公共面另裁）。
  * 列表项标记：无序归一为 {@code MarkdownStyleTable.getBulletMarker()} + 空格
- * （默认实心圆点，与 chat3 现行视觉对齐），有序保留源序号原文 + 空格。
+ * （默认实心圆点，与 chat3 现行视觉对齐）；有序按 CommonMark 续排——渲染序号恒为
+ * <b>母列表 start（= 首项源数字）+ 项下标</b> 再跟句点与一个空格（C3b2 2026-09-06 对齐裁定，
+ * 取代旧「有序保留源序号原文」裁定）：源里 {@code 3. 乙} + {@code 4) 丙} 因定界符不同另起一
+ * 列表，两项仍渲染成 {@code 3. }/{@code 4. }；嵌套有序子列表各记自己的 start、互不影响。
  * <b>C1a（2026-09-06 对齐裁定）</b>：两接缝标记段一律裸体（无前导空格）——旧 M5 F2
  * 「每级 2 个前导空格写进段流标记文本」机制连同 {@code markerLevel}/{@code baseLevel}
  * 参数链退役；列表层级只由行接缝 {@code listMarkerChain} 几何承载（M10d），
@@ -125,7 +128,7 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         List<TextSegment> out = new ArrayList<TextSegment>();
-        walk(blocks, baseStyle, table, out);
+        walk(blocks, baseStyle, table, out, NO_ORDINAL);
         return out;
     }
 
@@ -157,7 +160,7 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         LineFlattener flattener = new LineFlattener(table);
-        walkLayout(blocks, baseStyle, table, flattener, NO_CHAIN, 0);
+        walkLayout(blocks, baseStyle, table, flattener, NO_CHAIN, 0, NO_ORDINAL);
         return flattener.finish();
     }
 
@@ -166,9 +169,13 @@ public final class MarkdownDocument {
     /**
      * 同层兄弟块扁平化（C1a 起 markerLevel 参数链退役：列表层级不再编码进段流文本，
      * 标记恒裸体，见 {@link #bareListMarker}）。
+     *
+     * <p>{@code ordinalBase} 是 C3b2 的有序续排基准：本层兄弟同属一个有序列表时 = 该列表
+     * {@code listStart}（第 i 项渲染序号 = ordinalBase + i），否则 {@link #NO_ORDINAL}——
+     * 只随「列表 → 项」这一跳生效，项内子块/引用/顶层一律重置，嵌套子列表自记自身 start。</p>
      */
     private static void walk(List<MarkdownBlock> siblings, TextStyle style, MarkdownStyleTable table,
-                             List<TextSegment> out) {
+                             List<TextSegment> out, int ordinalBase) {
         for (int i = 0; i < siblings.size(); i++) {
             MarkdownBlock next = siblings.get(i);
             if (i > 0) {
@@ -180,12 +187,12 @@ public final class MarkdownDocument {
                     out.add(new TextSegment("", style.copy()));
                 }
             }
-            emit(next, style, table, out);
+            emit(next, style, table, out, ordinalBase == NO_ORDINAL ? NO_ORDINAL : ordinalBase + i);
         }
     }
 
     private static void emit(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
-                             List<TextSegment> out) {
+                             List<TextSegment> out, int ordinal) {
         switch (block.kind) {
             case PARAGRAPH:
                 emitInline(block.joinedLines(), style, table, out);
@@ -197,13 +204,14 @@ public final class MarkdownDocument {
                 emitCode(block, style, out);
                 break;
             case QUOTE:
-                walk(block.children, quoteStyle(style, table), table, out);
+                walk(block.children, quoteStyle(style, table), table, out, NO_ORDINAL);
                 break;
             case LIST:
-                walk(block.children, style, table, out);
+                walk(block.children, style, table, out,
+                        block.ordered ? block.listStart : NO_ORDINAL);
                 break;
             case LIST_ITEM:
-                emitListItem(block, style, table, out);
+                emitListItem(block, style, table, out, ordinal);
                 break;
             case THEMATIC_BREAK:
                 emitThematicBreak(table, style, out);
@@ -228,10 +236,15 @@ public final class MarkdownDocument {
         out.add(new TextSegment(code, style.copy()));
     }
 
-    /** 列表项：裸标记段 + 首个段落正文同行，其余子块换行起（C1a：标记段无前导空格）。 */
+    /**
+     * 列表项：裸标记段 + 首个段落正文同行，其余子块换行起（C1a：标记段无前导空格）。
+     *
+     * @param ordinal 本项渲染序号（有序 = 母列表 start + 项下标；无序/非有序上下文
+     *                {@link #NO_ORDINAL}），只用于 marker 文本合成，见 {@link #bareListMarker}
+     */
     private static void emitListItem(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
-                                     List<TextSegment> out) {
-        String marker = bareListMarker(block, table);
+                                     List<TextSegment> out, int ordinal) {
+        String marker = bareListMarker(block, table, ordinal);
         if (!marker.isEmpty()) {
             out.add(new TextSegment(marker, style.copy()));
         }
@@ -245,26 +258,46 @@ public final class MarkdownDocument {
                     out.add(new TextSegment("", style.copy()));   // F6 占位标记段
                 }
             }
-            emit(child, style, table, out);
+            emit(child, style, table, out, NO_ORDINAL);
         }
     }
 
+    /** 有序项「无序号上下文」哨兵（{@code walk} 非列表层传它；合成时回落到源标记取数）。 */
+    private static final int NO_ORDINAL = -1;
+
     /**
-     * 列表标记裸体（无任何前导空格；两接缝标记文本的<b>唯一单源</b>）：无序 = 样式表符号 +
-     * 空格，有序 = 源序号原文 + 空格；圆点被样式表配成空串 ⇒ 空串（标记完全不输出，含空格）。
+     * 列表标记裸体（无任何前导空格；两接缝标记文本的<b>唯一单源</b>，链上标记段与标记段文本
+     * 同出此处）：无序 = 样式表符号 + 空格；有序 = <b>{@code (start + 项下标) + ". "}</b>
+     * （C3b2 2026-09-06 对齐裁定，CommonMark 0.30 §5.1）——定界符一律归一句点，源序号与源
+     * 定界符都不进可见文本；圆点被样式表配成空串 ⇒ 空串（标记完全不输出，含空格）。
      *
      * <p><b>C1a（2026-09-06 对齐裁定）</b>：段流路（{@code toSegments}）旧由 {@code listMarker}
      * 在本裸体上叠 M5 F2「每级 2 前导空格」——该机制连同 {@code markerLevel} 参数链、块模型
      * {@code baseLevel} 字段退役：主流引擎（CommonMark）不把列表层级编码进可见文本，本方法
      * 自此是两接缝标记段的同一来源（行接缝 M10d 起本就直用本方法 + {@code listMarkerChain}）。
      * 块模型与缩进 px 仍不开进公共面（规划 §二之三 裁 B 未重开的那一半不变）。</p>
+     *
+     * @param ordinal 本项渲染序号（母列表 {@code listStart + 项下标}）；{@link #NO_ORDINAL}
+     *                = 调用方没走列表项通道（防御回落：从源标记原文取首项序号，仍归一句点）
      */
-    private static String bareListMarker(MarkdownBlock block, MarkdownStyleTable table) {
+    private static String bareListMarker(MarkdownBlock block, MarkdownStyleTable table, int ordinal) {
         if (block.ordered) {
-            return block.marker + " "; // 有序：保留源序号原文（"3." / "3)"），与 chat3 现行裁定一致
+            int n = ordinal == NO_ORDINAL ? sourceOrdinal(block.marker) : ordinal;
+            return n + ". "; // 序号推算恒按 start+下标；源定界符 ")" 归一为 "."（主流口径）
         }
         String bullet = table.getBulletMarker(); // 空串 = 标记完全不输出（含空格）
         return bullet.isEmpty() ? bullet : bullet + " ";
+    }
+
+    /** 从源标记原文取数（"3."/"3)"→3；取不到数回 1，防御用，正常路径不走）。 */
+    private static int sourceOrdinal(String markerText) {
+        int n = 0;
+        int i = 0;
+        while (i < markerText.length() && Character.isDigit(markerText.charAt(i))) {
+            n = n * 10 + (markerText.charAt(i) - '0');
+            i++;
+        }
+        return i == 0 ? 1 : n;
     }
 
     /** 行内解析（两路共用）：块正文交行内解析器，行内语义照抄既有裁定。 */
@@ -311,7 +344,7 @@ public final class MarkdownDocument {
      *  M10d：行路不再传 markerLevel——嵌套宽度事实改由标记链 {@code chain} 显式携带。 */
     private static void walkLayout(List<MarkdownBlock> siblings, TextStyle style,
                                    MarkdownStyleTable table, LineFlattener f,
-                                   List<TextSegment> chain, int quoteLevel) {
+                                   List<TextSegment> chain, int quoteLevel, int ordinalBase) {
         for (int i = 0; i < siblings.size(); i++) {
             MarkdownBlock next = siblings.get(i);
             if (i > 0) {
@@ -320,14 +353,16 @@ public final class MarkdownDocument {
                     f.blankLine();
                 }
             }
-            emitLayout(next, style, table, f, chain, quoteLevel);
+            emitLayout(next, style, table, f, chain, quoteLevel,
+                    ordinalBase == NO_ORDINAL ? NO_ORDINAL : ordinalBase + i);
         }
     }
 
     /** 块身份路：按块派发（引用只加层级不占行；标题/段恒 TEXT 身份，但 M10d 起落在列表项
      *  内时照旧携带标记链——链才是正文列的触发器，kind 不是）。 */
     private static void emitLayout(MarkdownBlock block, TextStyle style, MarkdownStyleTable table,
-                                   LineFlattener f, List<TextSegment> chain, int quoteLevel) {
+                                   LineFlattener f, List<TextSegment> chain, int quoteLevel,
+                                   int ordinal) {
         switch (block.kind) {
             case PARAGRAPH:
                 f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel, chain);
@@ -342,13 +377,14 @@ public final class MarkdownDocument {
                 break;
             case QUOTE:
                 walkLayout(block.children, quoteStyle(style, table), table, f, chain,
-                        quoteLevel + 1);
+                        quoteLevel + 1, NO_ORDINAL);
                 break;
             case LIST:
-                walkLayout(block.children, style, table, f, chain, quoteLevel);
+                walkLayout(block.children, style, table, f, chain, quoteLevel,
+                        block.ordered ? block.listStart : NO_ORDINAL);
                 break;
             case LIST_ITEM:
-                emitListItemLayout(block, style, table, f, chain, quoteLevel);
+                emitListItemLayout(block, style, table, f, chain, quoteLevel, ordinal);
                 break;
             case THEMATIC_BREAK:
                 f.ruleLine(quoteLevel,
@@ -392,7 +428,7 @@ public final class MarkdownDocument {
      *
      * <p><b>M10b 行身份（2026-09-05 裁定 2）</b>：标记文本在 {@code startBlock} <b>之前</b>
      * 算好——标记非空 ⇒ 本块首行为 {@link MarkdownLayoutLine.Kind#LIST}，圆点被样式表配成
-     * 空串（有序恒有源序号）⇒ 退 {@link MarkdownLayoutLine.Kind#TEXT}。{@code LineFlattener
+     * 空串（有序恒有续排序号，永不空）⇒ 退 {@link MarkdownLayoutLine.Kind#TEXT}。{@code LineFlattener
      * .appendOne} 按内嵌换行符断行并让续行继承 curKind/curBlockId，故<b>同一 blockId 内只有
      * 第一行带标记段</b>（且它就是 {@code segments.get(0)}）。旧文中「L2 据这两条把该块其余
      * 视觉行追加正文列」只覆盖了同块续行——2026-09-05「做全」追加裁定推翻其覆盖面，见下。</p>
@@ -405,8 +441,9 @@ public final class MarkdownDocument {
      */
     private static void emitListItemLayout(MarkdownBlock block, TextStyle style,
                                            MarkdownStyleTable table, LineFlattener f,
-                                           List<TextSegment> chain, int quoteLevel) {
-        String marker = bareListMarker(block, table);
+                                           List<TextSegment> chain, int quoteLevel, int ordinal) {
+        // 标记文本与链上标记段同源（bareListMarker）：有序 = 母列表 start + 项下标 + ". "
+        String marker = bareListMarker(block, table, ordinal);
         TextSegment markerSegment = marker.isEmpty()
                 ? null : new TextSegment(marker, style.copy());
         // 空串圆点 ⇒ 本级无可渲染标记，链不追加（零宽级不进链；几何恒等）
@@ -428,7 +465,8 @@ public final class MarkdownDocument {
             if (child.blanksBefore > 0) {
                 f.blankLine();
             }
-            emitLayout(child, style, table, f, ownChain, quoteLevel);
+            // 项内子块不是「项」，序号上下文到此为止（嵌套子列表自带自身 start）
+            emitLayout(child, style, table, f, ownChain, quoteLevel, NO_ORDINAL);
         }
     }
 

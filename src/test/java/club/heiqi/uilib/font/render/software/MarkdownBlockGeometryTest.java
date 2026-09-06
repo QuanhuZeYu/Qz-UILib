@@ -146,9 +146,14 @@ public class MarkdownBlockGeometryTest {
 
     // ==================== 断言②：THEMATIC_BREAK 恰一条实线 ====================
 
+    /**
+     * C3b2（2026-09-06 对齐裁定）改空行隔开式：段落紧邻的 {@code ---} 已按 CommonMark 判 setext
+     * 下划线（不再是分隔线，见 {@code MarkdownBlockParserTest} setext 三例），本锁钉的
+     * 「THEMATIC_BREAK 恰一条实线」不变量本身不动。
+     */
     @Test
     public void thematicBreakEmitsOneSolidBackground() {
-        String src = joinLF("上句", "---", "下句");
+        String src = joinLF("上句", "", "---", "下句");
         TextLayoutService service = assemble(src);
         MarkdownStyleTable solidOnly = MarkdownStyleTable.defaults();
         solidOnly.setThematicBreakText(""); // 既有旋钮（用户指定用法，不新加）

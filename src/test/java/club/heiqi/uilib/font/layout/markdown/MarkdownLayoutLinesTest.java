@@ -60,7 +60,7 @@ public class MarkdownLayoutLinesTest {
             {"N02", joinLF(fence3() + "java", "int x = 1; // **粗** $y$ > 引号 全字面", fence3())},
             {"N03", joinLF("> 甲", ">> 乙", ">>> 丙")},
             {"N05", joinLF("第一行  ", "第二行" + String.valueOf((char) 0x5C), "第三行")},
-            {"N06", joinLF("上半句。", "---", "下半句。")},
+            {"N06", joinLF("上半句。", "", "---", "下半句。")},
             {"N07", "**粗** *斜* ~~删~~ ***粗斜*** 混排"},
             {"N08", "质能 $e=mc^2$ 行内混排 with 尾"},
             {"N09", "访问 [Qz 主页](https://example.com/qz) 详情"},
@@ -174,7 +174,8 @@ public class MarkdownLayoutLinesTest {
     /**
      * LIST 身份三钉（2026-09-05 裁定 2 的地基，L2 悬挂列全赖这两条）：
      * ① 带标记的列表行 kind=LIST（正对照：同源的普通段落行仍 TEXT）；
-     * ② LIST 块的<b>首行 segments.get(0) 恰为独立标记段</b>（"• " / "3. " / "4) "）；
+     * ② LIST 块的<b>首行 segments.get(0) 恰为独立标记段</b>（"• " / "3. "；C3b2 起有序恒为
+     * 「续排序号 + 句点」，源右括号定界不进可见文本）；
      * ③ 同一 blockId 内<b>只有第一行</b>带标记段——懒延续/软折续行的 seg0 是正文，
      *    这正是 L2「按块首条 LIST 行的 seg0 量正文列」不会量错的依据。
      * 反 ∅ 地板：LIST 行命中 >= 4、比较块数 >= 3。
@@ -356,11 +357,16 @@ public class MarkdownLayoutLinesTest {
 
     // ==================== 不变量④：分隔线恒成行 ====================
 
+    /**
+     * C3b2（2026-09-06 对齐裁定）后源文本改成空行隔开式：段落<b>紧邻</b>的 {@code ---} 按 CommonMark
+     * 判 setext 下划线（不再是分隔线；该形态由 {@code MarkdownBlockParserTest} 的 setext 三例钉死），
+     * 本例钉的不变量不变——「分隔线恒成行」，只把源里的 --- 移到块起点位。
+     */
     @Test
     public void thematicBreakLineAlwaysExists() {
         MarkdownStyleTable noText = MarkdownStyleTable.defaults();
         noText.setThematicBreakText(""); // 既有旋钮，不新加
-        String src = joinLF("上句", "---", "下句");
+        String src = joinLF("上句", "", "---", "下句");
         Assert.assertEquals("无分隔线文档 0 横线行（反向对照）",
                 0, countKind(MarkdownDocument.parse("纯文本").toLayoutLines(noText, base()),
                         MarkdownLayoutLine.Kind.THEMATIC_BREAK));

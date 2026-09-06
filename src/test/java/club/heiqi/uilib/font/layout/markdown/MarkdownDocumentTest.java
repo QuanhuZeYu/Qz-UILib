@@ -208,11 +208,20 @@ public class MarkdownDocumentTest {
 
     // ==================== 列表（语料 ③ 公共面） ====================
 
+    /**
+     * C3b2（2026-09-06 对齐裁定）重定：旧「有序保留源序号原文（含右括号定界）」作废，按 CommonMark
+     * 续排——首项源数字 = 列表 start，其后按 start + 项下标 合成、定界符统一句点。本例 "3) 乙"
+     * 与上一项定界符不同（")" vs 圆点）故另起一个有序列表，其 start=3 ⇒ 渲染序号仍为 "3. "。
+     */
     @Test
-    public void shouldFlattenBulletAsTableMarkerAndOrderedKeepsSourceOrdinal() {
+    public void shouldFlattenBulletAsTableMarkerAndOrderedByStartPlusIndex() {
         List<TextSegment> segments = MarkdownDocument.parse(nl("- 甲", "", "3) 乙"))
                 .toSegments(baseStyle());
-        Assert.assertEquals(nl("• 甲", "3) 乙"), plainText(segments));
+        Assert.assertEquals(nl("• 甲", "3. 乙"), plainText(segments));
+        // 同一列表内跨序号：start 只取首项，后续项源数字被忽略并续排
+        List<TextSegment> cont = MarkdownDocument.parse(nl("3. 乙", "4) 丙")).toSegments(baseStyle());
+        Assert.assertEquals("首项 = start 保留", "3. ", cont.get(0).getText());
+        Assert.assertEquals(nl("3. 乙", "4. 丙"), plainText(cont));
     }
 
     @Test

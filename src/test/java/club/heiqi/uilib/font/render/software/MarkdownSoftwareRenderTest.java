@@ -78,7 +78,9 @@ public class MarkdownSoftwareRenderTest {
             {"hard-break", "硬换行", "硬换行第一行  \n硬换行第二行（上行尾两空格）\\\n第三行（反斜杠硬换行）\n\n这是一段足够长的中文正文用于演示软换行在容器宽度处的折行行为，混合 English words 与 averyveryverylongunbreakstoken 时按词边界回退、超长 token 字符级硬断。"},
             {"inline-latex", "行内公式", "质能等价 $e = mc^2$ 与分数 $\\frac{1}{2}$ 混排在正文基线上。\n根号：$\\sqrt{x^2 + y^2}$ 收尾。"},
             {"link", "链接段", "访问 [Qz 主页](https://example.com/qz) 与 **粗体中的[嵌套链接](https://a.test)**。"},
-            {"thematic-break", "分隔线", "上半句。\n---\n下半句。~~删除线~~ 与 `code span` 字面。"},
+            // C3b2（2026-09-06 对齐裁定）：分隔线源文本用空行隔开——段落紧邻的 --- 按 CommonMark
+            // 判 setext 标题下划线（不再是分隔线），本样本要钉的仍是「--- 产真横线」这条几何不变量。
+            {"thematic-break", "分隔线", "上半句。\n\n---\n下半句。~~删除线~~ 与 `code span` 字面。"},
     };
 
     private static final StringBuilder PROFILE = new StringBuilder();

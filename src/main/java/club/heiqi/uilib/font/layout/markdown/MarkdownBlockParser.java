@@ -13,7 +13,9 @@ import java.util.List;
  * {@code ~~~}）、缩进代码块（块起点 ≥4 前导空格，CommonMark 0.30 §4.4，产出与围栏同款
  * {@link MarkdownBlock.Kind#CODE} 节点、info 恒空）、引用块 {@code >}（可嵌套）、
  * 无序/有序列表（含缩进续行与嵌套子列表，嵌套/续行判定恒按父项内容列）、
- * 分隔线 {@code ---}/{@code ***}/{@code ___}、段落与空行、硬换行（行尾两空格或行尾未转义反斜杠）。</p>
+ * 分隔线 {@code ---}/{@code ***}/{@code ___}、setext 标题（段落紧邻的一行 {@code ===} →H1 /
+ * {@code ---} →H2，C3b2 2026-09-06 对齐裁定新增，见 {@link #readParagraph}）、段落与空行、
+ * 硬换行（行尾两空格或行尾未转义反斜杠）。</p>
  *
  * <p>刻意不支持（按普通文本字面保留，不进任何专用节点，不做默默吞掉）：表格、任务列表、
  * HTML 内联、脚注、图片 {@code ![alt](url)}。图片的「字面」边界说明：块层不识别 {@code !}，
@@ -23,8 +25,12 @@ import java.util.List;
  * <p>相对 CommonMark 的已裁简化（均有测试钉死）：制表符不展开（块缩进只数行首空格，
  * 标记后空格/制表符均接受）；行首反斜杠不构成块转义（{@code \# x} 整行按字面段落处理，
  * {@code #} 不在本包 escapable 集，反斜杠由行内层字面输出）；backtick 围栏 info 校验已按
- * CommonMark 实现（含反引号不算开栏）；无 setext 标题（{@code ---}
- * 恒为分隔线）；嵌套深度上限 {@code MAX_BLOCK_DEPTH}（超限层按段落字面收拢，宽容失败）；
+ * CommonMark 实现（含反引号不算开栏）；嵌套深度上限 {@code MAX_BLOCK_DEPTH}（超限层按段落
+ * 字面收拢，宽容失败）；setext 下划线只认单字符连续串（{@code = =}/{@code - -} 夹空白按段落
+ * 续行字面，同主流实证）；setext 判定发生在{@code readParagraph}，而引用/列表的惰性续行在
+ * 收拢后与「自带标记的下划线行」不再可分，故 {@code > 甲} + 惰性 {@code ===} 这类形态本层照升格
+ * 标题、主流（commonmark-java 0.21 实证）则把 {@code ===} 留在段内字面——本层登记的已知偏离，
+ * 语料不含该形态，出现即矩阵 LINE_ALIGN/QUOTE_DEPTH 照登（收紧需先给行打「惰性」标记）；
  * 列表项体内部源空行折叠（项体段落不因空行分裂，空行只在项与项/列表边界生效——M4 既有
  * 简化、非 C1a 范围；副作用 = 项内「段落行 + 空行 + ≥4 空格行」按段落续行折叠而非缩进代码，
  * 其余缩进代码与惰性续行判定均与 CommonMark 一致）。</p>
@@ -730,24 +736,75 @@ final class MarkdownBlockParser {
             pendingItemBlanks = 0;
             i = j;
         }
-        out.add(MarkdownBlock.list(items, ordered));
+        // C3b2（2026-09-06 对齐裁定，CommonMark 0.30 §5.1）：有序列表只认**首项**源数字为
+        // start（后续项源数字一律不参与语义）。序号真相在此登记进块模型，两接缝的渲染序号由
+        // MarkdownDocument 按「start + 项下标」合成（见其 bareListMarker）；无序列表恒 0。
+        out.add(MarkdownBlock.list(items, ordered, ordered ? first.number : 0));
         return i;
     }
 
+    /**
+     * 段落收集（含 C3b2 setext 标题判定，2026-09-06 对齐裁定，CommonMark 0.30 §5.2）：收集中
+     * 遇到「≤3 前导空格 + 仅由 ≥1 个 `=`（→H1）或 `-`（→H2）连续组成 + 任意尾随空白」的
+     * 下划线行 ⇒ 已收集的段落<b>整体</b>升格为 setext 标题，下划线行本身<b>不产内容行</b>；
+     * 多行段落的正文按软换行以 `\n` 连接（与 ATX 同一条标题样式通道，H1 走 delta[0]、
+     * H2 走 delta[1]）。
+     *
+     * <p>判序在 {@code interruptsParagraph} <b>之前</b>：{@code ---} 单看是分隔线，但段落紧邻时
+     * 主流优先判 setext（实证 commonmark-java 0.21：`a\n---` → H2；`---\na` → TB + 段落，
+     * 后者由 {@code parseBlocks} 的分隔线分支承接——块起点/空行后的下划线行走不到本方法）。
+     * `= =`/`- -` 这类夹空白形态主流判段落续行而非下划线（实证 0.21：`a\n= =` → 段落
+     * `a= =`），本层同口径：下划线须是单一字符的连续串。惰性续行侧（{@code readQuote}/{@code readList}）
+     * 收拢后与自带标记的下划线行不再可分，故该侧形态照升格——类头已裁简化表登记的已知偏离。</p>
+     */
     private static int readParagraph(List<String> lines, int start, List<MarkdownBlock> out) {
         List<String> raw = new ArrayList<String>();
         int j = start;
         int n = lines.size();
         while (j < n) {
             String line = markerView(lines.get(j));
-            if (isBlank(line) || (!raw.isEmpty() && interruptsParagraph(line))) {
+            if (isBlank(line)) {
                 break;
+            }
+            if (!raw.isEmpty()) {
+                int setext = setextUnderlineLevel(line);
+                if (setext > 0) {
+                    out.add(MarkdownBlock.heading(setext, makeParagraph(raw).joinedLines()));
+                    return j + 1;
+                }
+                if (interruptsParagraph(line)) {
+                    break;
+                }
             }
             raw.add(line);
             j++;
         }
         out.add(makeParagraph(raw));
         return j;
+    }
+
+    /**
+     * setext 下划线行判据（包内唯一出处）：{@code =} 连续串 → 1 级、{@code -} 连续串 → 2 级；
+     * 前导空格 >3、夹其它字符（含空白）、或长度为空 → 0 = 非下划线行。
+     */
+    private static int setextUnderlineLevel(String line) {
+        if (leadingSpaces(line) > 3) {
+            return 0;
+        }
+        String t = trim(line);
+        if (t.isEmpty()) {
+            return 0;
+        }
+        char unit = t.charAt(0);
+        if (unit != '=' && unit != '-') {
+            return 0;
+        }
+        for (int i = 1; i < t.length(); i++) {
+            if (t.charAt(i) != unit) {
+                return 0;
+            }
+        }
+        return unit == '=' ? 1 : 2;
     }
 
     /**

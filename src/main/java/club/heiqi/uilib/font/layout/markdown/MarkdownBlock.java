@@ -47,10 +47,23 @@ final class MarkdownBlock {
     final boolean[] hardBreaks;
     /** CODE: 围栏 info 字符串（存而不消费，高亮属未来裁定）；其余 null。 */
     final String info;
-    /** LIST_ITEM: 源标记原文（"-"/"*"/"+"/"3."/"3)"）；其余 null。 */
+    /**
+     * LIST_ITEM: 源标记原文（"-"/"*"/"+"/"3."/"3)"）——只作块模型留档与<b>内容列</b>口径
+     * （项体缩进按首项源标记宽定列，C1a 起不变）；<b>不进可见文本</b>：有序渲染序号恒取
+     * 母列表 {@link #listStart} + 项下标 + 句点（C3b2 主流续排，见 {@code bareListMarker}）。
+     */
     final String marker;
     /** LIST: 是否有序列表；其余 false。 */
     final boolean ordered;
+    /**
+     * LIST（有序）: 起始序号 = <b>首项</b>标记数字（C3b2 主流续排，2026-09-06 对齐裁定）。
+     *
+     * <p>CommonMark 只把首项的源数字当语义（{@code OrderedList.start}），后续项的源数字一律
+     * 忽略、渲染序号恒为 {@code start + 项下标} 且定界符统一句点。本字段因此是序号的唯一真相，
+     * {@code MarkdownDocument} 的两处 marker 文本合成（两接缝共用的 {@code bareListMarker}
+     * 与列表归属链上的标记段）都按它推算；无序列表与其余块恒 0。</p>
+     */
+    final int listStart;
     /** QUOTE/LIST/LIST_ITEM: 子块树；其余空表。 */
     final List<MarkdownBlock> children;
     /**
@@ -63,8 +76,8 @@ final class MarkdownBlock {
     final int blanksBefore;
 
     private MarkdownBlock(Kind kind, int level, String text, List<String> lines, boolean[] hardBreaks,
-                          String info, String marker, boolean ordered, List<MarkdownBlock> children,
-                          int blanksBefore) {
+                          String info, String marker, boolean ordered, int listStart,
+                          List<MarkdownBlock> children, int blanksBefore) {
         this.kind = kind;
         this.level = level;
         this.text = text;
@@ -73,6 +86,7 @@ final class MarkdownBlock {
         this.info = info;
         this.marker = marker;
         this.ordered = ordered;
+        this.listStart = listStart;
         this.children = children == null
                 ? Collections.<MarkdownBlock>emptyList()
                 : Collections.unmodifiableList(new ArrayList<MarkdownBlock>(children));
@@ -86,38 +100,38 @@ final class MarkdownBlock {
      * @return 等值副本（blanksBefore 已更新）
      */
     MarkdownBlock withBlanksBefore(int blanks) {
-        return new MarkdownBlock(kind, level, text, lines, hardBreaks, info, marker, ordered, children,
-                Math.max(0, blanks));
+        return new MarkdownBlock(kind, level, text, lines, hardBreaks, info, marker, ordered, listStart,
+                children, Math.max(0, blanks));
     }
 
     static MarkdownBlock paragraph(List<String> trimmedLines, boolean[] hardBreaks) {
-        return new MarkdownBlock(Kind.PARAGRAPH, 0, null, trimmedLines, hardBreaks, null, null, false, null,
-                0);
+        return new MarkdownBlock(Kind.PARAGRAPH, 0, null, trimmedLines, hardBreaks, null, null, false, 0,
+                null, 0);
     }
 
     static MarkdownBlock heading(int level, String body) {
-        return new MarkdownBlock(Kind.HEADING, level, body, null, null, null, null, false, null, 0);
+        return new MarkdownBlock(Kind.HEADING, level, body, null, null, null, null, false, 0, null, 0);
     }
 
     static MarkdownBlock code(String info, List<String> codeLines) {
-        return new MarkdownBlock(Kind.CODE, 0, null, codeLines, null, info, null, false, null, 0);
+        return new MarkdownBlock(Kind.CODE, 0, null, codeLines, null, info, null, false, 0, null, 0);
     }
 
     static MarkdownBlock quote(List<MarkdownBlock> childBlocks) {
-        return new MarkdownBlock(Kind.QUOTE, 0, null, null, null, null, null, false, childBlocks, 0);
+        return new MarkdownBlock(Kind.QUOTE, 0, null, null, null, null, null, false, 0, childBlocks, 0);
     }
 
-    static MarkdownBlock list(List<MarkdownBlock> items, boolean orderedList) {
-        return new MarkdownBlock(Kind.LIST, 0, null, null, null, null, null, orderedList, items, 0);
+    static MarkdownBlock list(List<MarkdownBlock> items, boolean orderedList, int start) {
+        return new MarkdownBlock(Kind.LIST, 0, null, null, null, null, null, orderedList, start, items, 0);
     }
 
     static MarkdownBlock listItem(String markerText, boolean itemOrdered, List<MarkdownBlock> contentBlocks) {
-        return new MarkdownBlock(Kind.LIST_ITEM, 0, null, null, null, null, markerText, itemOrdered,
+        return new MarkdownBlock(Kind.LIST_ITEM, 0, null, null, null, null, markerText, itemOrdered, 0,
                 contentBlocks, 0);
     }
 
     static MarkdownBlock thematicBreak() {
-        return new MarkdownBlock(Kind.THEMATIC_BREAK, 0, null, null, null, null, null, false, null, 0);
+        return new MarkdownBlock(Kind.THEMATIC_BREAK, 0, null, null, null, null, null, false, 0, null, 0);
     }
 
     /** PARAGRAPH / CODE 的行集以 '\n' 连接。 */
@@ -136,6 +150,7 @@ final class MarkdownBlock {
     public String toString() {
         return "MarkdownBlock(" + kind + (level > 0 ? " h" + level : "")
                 + (marker != null ? " marker=" + marker : "")
+                + (listStart > 0 ? " start=" + Integer.valueOf(listStart) : "")
                 + (blanksBefore > 0 ? " blanksBefore=" + Integer.valueOf(blanksBefore) : "") + ")";
     }
 }

@@ -67,11 +67,29 @@ public class MarkdownChat3RuleInheritanceTest {
         Assert.assertEquals("\u2022 甲\n\u2022 乙\n\u2022 丙", joined(nested));
     }
 
+    /**
+     * C3b2（2026-09-06 对齐裁定）语义重定：旧「有序保留<b>每项</b>源序号原文」按 CommonMark
+     * 拆除，现钉的是「<b>首项</b>源序号 = 列表 start 保留」——{@code 12. keep me} 单项目
+     * start 即 12，渲染仍「12. 」（与旧口径同值，差异从第二项起，见续排断言）。
+     */
     @Test
-    public void orderedListKeepsSourceOrdinalMarker() {
+    public void orderedListFirstOrdinalIsStartAndItemsContinue() {
         List<TextSegment> out = flat("12. keep me");
-        Assert.assertEquals("12. ", out.get(0).getText());
+        Assert.assertEquals("首项源序号 = start 保留", "12. ", out.get(0).getText());
         Assert.assertEquals("keep me", out.get(1).getText());
+        // 同列表续排（定界符同为句点）：源 1./2. → start=1 续排 1./2.
+        Assert.assertEquals("1. 第一\n2. 第二", joined(flat("1. 第一\n2. 第二")));
+        // 跨序号：首项 3 ⇒ start=3，后续项源数字（1./9.）被忽略，续排成 4./5.
+        Assert.assertEquals("3. 甲\n4. 乙\n5. 丙", joined(flat("3. 甲\n1. 乙\n9. 丙")));
+        // 定界符不同 = 另起一列表（其首项源数字成为自身 start），句点归一进可见文本
+        Assert.assertEquals("3. 乙\n4. 丙", joined(flat("3. 乙\n4) 丙")));
+        // 嵌套有序子列表各记自身 start、互不串号：外层 5 ⇒ 续排 5./6.，内层 1) ⇒ 续排 1./2.
+        // （内层首项必须是 1 或无序标记才能打断项内段落，这是 CommonMark 既有的
+        // 「有序列表非 1 起始不打断段落」规则，与本条续排判据正交）
+        Assert.assertEquals("5. 外\n1. 内一\n2. 内二\n6. 外二",
+                joined(flat("5. 外\n   1) 内一\n   2) 内二\n6. 外二")));
+        // 定界符右括号也归一句点：单项目 start 取自源数字
+        Assert.assertEquals("7. ", flat("7) 单项").get(0).getText());
     }
 
     @Test

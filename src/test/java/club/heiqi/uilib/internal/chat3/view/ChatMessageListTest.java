@@ -1664,9 +1664,12 @@ public class ChatMessageListTest {
         // 有意差异登记（规划 §二之三 M7 注记）：chat3 旧路「---」是字面文本行；M7 经
         // setThematicBreakText("") 既有旋钮关掉文本，行身份 RULE 用背景条表达——
         // 「文字变横线」是用户裁定的 B 有新行为，非回退。
+        // C3b2（2026-09-06 对齐裁定）：样本改用 *** ——CommonMark 里紧邻段落的 --- 已判 setext
+        // 标题下划线（不再产分隔线），*** 与 === 不同、恒为分隔线，本例要钉的「文字变横线」
+        // 判据与 3 显示行形态因此保持不变（setext 侧的正向钉死见 L1 块层测试）。
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(
-                new ChatComponentText("<Bob> 上句" + (char) 0x0A + "---" + (char) 0x0A + "下句"),
+                new ChatComponentText("<Bob> 上句" + (char) 0x0A + "***" + (char) 0x0A + "下句"),
                         1, T0));
         Object[] parts = layoutSingleOtherBubble(controller);
         SceneNode bubble = (SceneNode) parts[0];

@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.layout.markdown.MarkdownBlock.Kind;
 
 /**
@@ -487,13 +488,89 @@ public class MarkdownBlockParserTest {
         Assert.assertEquals(Kind.LIST, MarkdownBlockParser.parse("* x").get(0).kind);
     }
 
+    /**
+     * C3b2（2026-09-06 对齐裁定）重定：旧「段落紧邻的 {@code ---} 恒为分隔线」是 MC 小众口径，
+     * 按 CommonMark 拆除——段落<b>紧邻</b>的下划线行判 setext（见下面 setext 三例），要被
+     * 分隔线切开必须空行隔开（实证 commonmark-java 0.21）。
+     */
     @Test
     public void shouldBreakParagraphAroundThematicBreak() {
-        List<MarkdownBlock> blocks = MarkdownBlockParser.parse(nl("前文", "---", "后文"));
+        List<MarkdownBlock> blocks = MarkdownBlockParser.parse(nl("前文", "", "---", "后文"));
         Assert.assertEquals(3, blocks.size());
         Assert.assertEquals(Kind.PARAGRAPH, blocks.get(0).kind);
         Assert.assertEquals(Kind.THEMATIC_BREAK, blocks.get(1).kind);
         Assert.assertEquals(Kind.PARAGRAPH, blocks.get(2).kind);
+    }
+
+    // ==================== setext 标题（C3b2 新增，2026-09-06 对齐裁定） ====================
+
+    /** {@code ===} 下划线 → H1；{@code ---} 下划线 → H2；下划线行本身不产内容行。 */
+    @Test
+    public void setextUnderlinePromotesParagraphToHeading() {
+        List<MarkdownBlock> blocks = MarkdownBlockParser.parse(nl("上半句。", "---", "下半句。"));
+        Assert.assertEquals(2, blocks.size());
+        Assert.assertEquals(Kind.HEADING, blocks.get(0).kind);
+        Assert.assertEquals(2, blocks.get(0).level);
+        Assert.assertEquals("上半句。", blocks.get(0).text);
+        Assert.assertEquals(Kind.PARAGRAPH, blocks.get(1).kind);
+        MarkdownBlock h1 = single(nl("甲行", "======"), Kind.HEADING);
+        Assert.assertEquals(1, h1.level);
+        Assert.assertEquals("甲行", h1.text);
+        // 单个字符也是下划线（主流实证："a\n=" → H1、"a\n-" → H2）
+        Assert.assertEquals(1, single(nl("甲", "="), Kind.HEADING).level);
+        Assert.assertEquals(2, single(nl("甲", "-"), Kind.HEADING).level);
+    }
+
+    /** 多行段落整体升格：正文按软换行以 '\n' 连接（与 ATX 同一标题通道）。 */
+    @Test
+    public void setextHeadingTakesWholeMultiLineParagraph() {
+        MarkdownBlock h = single(nl("甲", "乙", "---"), Kind.HEADING);
+        Assert.assertEquals(2, h.level);
+        Assert.assertEquals(nl("甲", "乙"), h.text);
+    }
+
+    /** 块起点/空行后的 {@code ===}/{@code ---} 仍是分隔线或段落，不升格；夹空白不是下划线。 */
+    @Test
+    public void setextNeedsAdjacentParagraphAndPureUnderlineRun() {
+        List<MarkdownBlock> head = MarkdownBlockParser.parse(nl("---", "下半句。"));
+        Assert.assertEquals(Kind.THEMATIC_BREAK, head.get(0).kind);
+        Assert.assertEquals(Kind.PARAGRAPH, head.get(1).kind);
+        // 空行隔开 → 不升格（下划线属下一块起点）
+        List<MarkdownBlock> afterBlank = MarkdownBlockParser.parse(nl("甲", "", "---", "乙"));
+        Assert.assertEquals(Kind.PARAGRAPH, afterBlank.get(0).kind);
+        Assert.assertEquals(Kind.THEMATIC_BREAK, afterBlank.get(1).kind);
+        Assert.assertEquals(Kind.PARAGRAPH, afterBlank.get(2).kind);
+        // 文档以 === 开头 = 段落字面；"= =" 夹空白按段落续行（主流实证同形）
+        Assert.assertEquals("===", single("===", Kind.PARAGRAPH).joinedLines());
+        MarkdownBlock spaced = single(nl("甲", "= ="), Kind.PARAGRAPH);
+        Assert.assertEquals(nl("甲", "= ="), spaced.joinedLines());
+        // 标题（非段落）紧邻 --- 不升格：ATX 后跟下划线行 = 分隔线
+        List<MarkdownBlock> afterHeading = MarkdownBlockParser.parse(nl("## 标题", "---", "正文"));
+        Assert.assertEquals(Kind.HEADING, afterHeading.get(0).kind);
+        Assert.assertEquals(Kind.THEMATIC_BREAK, afterHeading.get(1).kind);
+        // ≥4 前导空格的 --- 不作下划线（段落续行折叠，实证同形）
+        MarkdownBlock deep = single(nl("甲", "    ---"), Kind.PARAGRAPH);
+        Assert.assertEquals(nl("甲", "---"), deep.joinedLines());
+    }
+
+    /** setext 标题走与 ATX 同一条样式通道：级别决定 heading 旋钮档位（H1=delta[0]/H2=delta[1]）。 */
+    @Test
+    public void setextAndAtxShareTheSameHeadingChannel() {
+        MarkdownStyleTable table = MarkdownStyleTable.defaults();
+        table.setDefaultFontSizePx(16);
+        table.setHeadingFontSizeDeltaPx(1, 10);
+        table.setHeadingFontSizeDeltaPx(2, 4);
+        TextStyle base = new TextStyle();
+        base.setColor(0xFFFFFFFF);
+        int setSize = MarkdownDocument.parse(nl("甲", "===")).toSegments(table, base).get(0)
+                .getStyle().getFontSizePx();
+        int atxSize = MarkdownDocument.parse("# 甲").toSegments(table, base).get(0)
+                .getStyle().getFontSizePx();
+        Assert.assertEquals("setext H1 与 ATX H1 字号同档", atxSize, setSize);
+        int h2Size = MarkdownDocument.parse(nl("甲", "---")).toSegments(table, base).get(0)
+                .getStyle().getFontSizePx();
+        Assert.assertTrue("setext H2 走 delta[1] 档（实测 " + h2Size + "）", h2Size > 0
+                && h2Size != atxSize);
     }
 
     // ==================== 段落与换行 ====================
