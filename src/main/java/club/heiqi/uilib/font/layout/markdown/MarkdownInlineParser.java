@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.layout.markdown;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -16,6 +17,23 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * 聊天误伤防护裁定。风格与 {@code LatexParser} 同哲学：宽容失败——未闭合/孤立标记一律
  * 字面输出，不抛异常。</p>
  *
+ * <h3>C6a（能力②）：跨 span 连续扫描</h3>
+ * <p>旧实现逐 span 独立 {@code parseInline}，跨 span 边界的定界符永不闭合——span[("**",A),
+ * ("粗",B),("**",A)] 产字面 <code>**粗**</code> 而单文本 {@code **粗**} 产粗体，两种输入
+ * 形态语义分叉。服务端格式码不知道 markdown 边界（「方案甲」把 § 转成样式锚点后这类形态
+ * 海量出现），分叉即回归。本层自此在 <b>span 拼接文本上单次连续扫描</b>，产段时按字符
+ * 区间回溯样式：一个 markdown 语义段跨多个样式区间时按样式边界再切成多段，每段样式 =
+ * 该区间基础样式 + markdown 叠加位（叠加顺序不变：基础样式为底、markdown 只叠位）。
+ * 相邻样式值相等的 span 先并组（{@link StyleValues}），保证切分只发生在真正的样式边界。</p>
+ *
+ * <p><b>单 span 等价性（在案硬约束）</b>：{@code parse(String, TextStyle)} 恒走
+ * {@code singletonList(new MarkdownSpan(...))}，拼接文本 = 原 String、单一样式组，扫描
+ * 坐标与逐位语义和改造前逐行对偶（递归子段改 from/to 区间参数、判据边界从 length 改 to，
+ * 一一对应）；门禁 48 条语料 + {@code MarkdownInlineParserTest} 全绿即机器证明。</p>
+ *
+ * <p><b>宽容失败不变</b>：连续扫描只改变「定界符可见范围」，不新造配对——未闭合定界符
+ * 仍恒字面（类头在案哲学的适用面从「单段文本」扩展到「拼接文本」，判定规则一字不改）。</p>
+ *
  * <h3>支持语法</h3>
  * <ul>
  *   <li>{@code **bold**} / {@code __bold__}：粗体（{@link FontType#BOLD}），内容可嵌套斜体；</li>
@@ -29,18 +47,24 @@ import club.heiqi.uilib.font.layout.TextStyle;
  *       「第一版 code 仅字面输出（等宽字体缺失，不引入假样式）」自 2026-09-04 起被
  *       chat3 出货行为取代（M4-fix F1；对拍门禁 P03 钉死，见
  *       {@code font/render/software/MarkdownChat3ParityTest}）；本层剥掉的反引号永不回补，
- *       故 code 位必须在吃定界符的当场写进段样式。</li>
+ *       故 code 位必须在吃定界符的当场写进段样式。C6a 起 code 段跨样式区间时同样按样式
+ *       边界切段，每段都带全套 code 位。</li>
  *   <li>{@code $latex$} / {@code $$latex$$}：行内公式（{@code TextSegment.forLatex}，
- *       {@code $} 后邻居为数字时不触发——防 {@code $5.99} 误判）；</li>
+ *       {@code $} 后邻居为数字时不触发——防 {@code $5.99} 误判）；公式原子不切段，
+ *       基础样式取内容首字符所在区间；</li>
  *   <li>{@code [text](url)}：链接（= {@code <a>} 语义：setLink + 自动下划线），
  *       url 支持一层嵌套括号，链接文字内可嵌套粗斜体；</li>
- *   <li>反斜杠转义；块级语法不支持，字面输出（块级构造由 {@link MarkdownDocument} 识别后，
- *       仅将每块正文交给本类，块级标记不进入本类输入）。</li>
+ *   <li>反斜杠转义（转义产出的字符继承被转义字符所在样式区间）；块级语法不支持，
+ *       字面输出（块级构造由 {@link MarkdownDocument} 识别后，仅将每块正文连同其样式锚点
+ *       交给本类，块级标记不进入本类输入）。</li>
  * </ul>
  *
  * <h3>样式叠加</h3>
  * <p>markdown 只叠加样式位（粗体/斜体/删除线/下划线[链接]），颜色恒由 span 基础样式决定；
- * 输出每个片段持有基础样式的拷贝（{@link TextStyle#copy()}），不修改调用方传入的样式。</p>
+ * 输出每个片段持有基础样式的拷贝（{@link TextStyle#copy()}），不修改调用方传入的样式。
+ * 块级文档入口（{@code MarkdownDocument.parse(List)}）可另带 {@link StyleTransform}
+ * 块级叠加链：施加顺序 = 先 span 基础样式、再块级链、再行内位——与 String 路
+ * 「先块级变换再逐段 parse」的先后关系同值。</p>
  */
 public final class MarkdownInlineParser {
 
@@ -55,6 +79,8 @@ public final class MarkdownInlineParser {
 
     private MarkdownInlineParser() {
     }
+
+    // ==================== 入口 ====================
 
     /**
      * 解析单段 markdown 文本。
@@ -88,6 +114,10 @@ public final class MarkdownInlineParser {
     /**
      * 解析样式锚点 span 流（聊天组件桥的输入口径）。
      *
+     * <p><b>C6a 起为跨 span 连续扫描</b>：定界符可跨 span 边界配对（拼接文本单次解析），
+     * 产段按样式边界回溯基础样式。旧「逐 span 独立解析」下跨边界定界符恒字面的行为
+     * 不复存在；单 span 流与 String 入口逐位等价（类头在案锁）。</p>
+     *
      * @param spans 带基础样式的文本 span 流（可为 null/空，返回空列表）
      * @return 富文本片段序列
      */
@@ -103,163 +133,212 @@ public final class MarkdownInlineParser {
      * @return 富文本片段序列
      */
     static List<TextSegment> parse(List<MarkdownSpan> spans, MarkdownStyleTable styles) {
+        return parse(spans, styles, null);
+    }
+
+    /**
+     * 解析样式锚点 span 流（包内，C6a 能力①接缝：块级文档路的行内消费）。
+     *
+     * <p>与公共 {@code parse(List)} 同一扫描核，仅多一条 {@link StyleTransform} 块级叠加链
+     * （null = 无块级叠加）。<b>单次解析承诺</b>：本入口是「输入侧」通道——span 流只进
+     * markdown 解析这一次；任何「先产段再喂回来」的输出侧反接都属规划 §二之八 旧裁定
+     * 警告的双解析漂移，禁止。</p>
+     *
+     * @param spans          带基础样式的文本 span 流（可为 null/空，返回空列表）
+     * @param styles         code 段口径登记表（可为 null，取 defaults）
+     * @param blockTransform 块级样式叠加链（可为 null；施加于每个区间的 span 基础样式之上、
+     *                       行内叠加位之下）
+     * @return 富文本片段序列
+     */
+    static List<TextSegment> parse(List<MarkdownSpan> spans, MarkdownStyleTable styles,
+            StyleTransform blockTransform) {
         if (spans == null || spans.isEmpty()) {
             return Collections.emptyList();
         }
         MarkdownStyleTable table = styles == null ? CODE_TABLE_FALLBACK : styles;
-        List<TextSegment> out = new ArrayList<TextSegment>();
-        for (MarkdownSpan span : spans) {
-            parseInline(span.getText(), span.getBaseStyle(), 0, out, table);
+        // 拼接纯文本 + 每字符样式组号；相邻值相等的 span 并为同组（StyleValues 深比较），
+        // 保证「单 span 文档」只有一组 → 出段粒度与旧 String 路逐位一致。
+        int total = 0;
+        for (int i = 0; i < spans.size(); i++) {
+            total += spans.get(i).getText().length();
         }
+        if (total == 0) {
+            return Collections.emptyList();
+        }
+        StringBuilder text = new StringBuilder(total);
+        int[] group = new int[total];
+        List<TextStyle> groupStyles = new ArrayList<TextStyle>();
+        int pos = 0;
+        int current = -1;
+        for (int i = 0; i < spans.size(); i++) {
+            MarkdownSpan span = spans.get(i);
+            String piece = span.getText();
+            int gi;
+            if (current >= 0 && StyleValues.same(groupStyles.get(current), span.getBaseStyle())) {
+                gi = current;
+            } else {
+                gi = groupStyles.size();
+                groupStyles.add(span.getBaseStyle());
+            }
+            current = gi;
+            for (int k = 0; k < piece.length(); k++) {
+                group[pos++] = gi;
+            }
+            text.append(piece);
+        }
+        List<TextSegment> out = new ArrayList<TextSegment>();
+        parseInline(text.toString(), 0, total, 0, Layer.ROOT,
+                new ScanCtx(group, groupStyles, blockTransform, table), out);
         return out;
     }
 
     // ==================== 扫描核心 ====================
 
-    private static void parseInline(String text, TextStyle base, int depth, List<TextSegment> out,
-            MarkdownStyleTable styles) {
+    /**
+     * 连续扫描 {@code text[from, to)}。C6a：区间参数取代旧 substring 递归——
+     * 判据函数以 [from,to) 为「可见全文」，区间外字符（父段的定界残留、兄弟 span 的
+     * 文本）与旧实现一样不可见，逐位语义不变；绝对坐标让样式回溯成为可能。
+     */
+    private static void parseInline(String text, int from, int to, int depth, Layer layer,
+            ScanCtx ctx, List<TextSegment> out) {
         if (depth > MAX_DEPTH) {
-            out.add(new TextSegment(text, base.copy()));
+            emitRange(text, from, to, layer, ctx, out);
             return;
         }
-        StringBuilder buffer = new StringBuilder();
-        int index = 0;
-        int length = text.length();
-        while (index < length) {
+        Buf buffer = new Buf();
+        int index = from;
+        while (index < to) {
             char ch = text.charAt(index);
-            if (ch == '\\' && index + 1 < length && isEscapable(text.charAt(index + 1))) {
-                buffer.append(text.charAt(index + 1));
+            if (ch == '\\' && index + 1 < to && isEscapable(text.charAt(index + 1))) {
+                buffer.append(text.charAt(index + 1), index + 1);
                 index += 2;
                 continue;
             }
             if (ch == '\n') {
-                buffer.append(ch);
+                buffer.append(ch, index);
                 index++;
                 continue;
             }
-            if (startsWith(text, index, "***") && isOpeningDelim(text, index, '*')) {
-                int close = findDelimClose(text, index + 3, "***");
+            if (startsWith(text, index, to, "***") && isOpeningDelim(text, from, to, index, '*')) {
+                int close = findDelimClose(text, from, to, index + 3, "***");
                 if (close >= 0) {
-                    flush(buffer, base, out);
-                    TextStyle inner = base.copy();
-                    inner.setFontType(FontType.BOLD);
-                    inner.setItalic(true);
-                    parseInline(text.substring(index + 3, close), inner, depth + 1, out, styles);
+                    buffer.emit(layer, ctx, out);
+                    parseInline(text, index + 3, close, depth + 1,
+                            layer.push(Layer.BOLD_ITALIC, null), ctx, out);
                     index = close + 3;
                     continue;
                 }
             }
-            if (startsWith(text, index, "**")) {
-                if (isOpeningDelim(text, index, '*')) {
-                    int close = findDelimClose(text, index + 2, "**");
+            if (startsWith(text, index, to, "**")) {
+                if (isOpeningDelim(text, from, to, index, '*')) {
+                    int close = findDelimClose(text, from, to, index + 2, "**");
                     if (close >= 0) {
-                        flush(buffer, base, out);
-                        TextStyle inner = base.copy();
-                        inner.setFontType(FontType.BOLD);
-                        parseInline(text.substring(index + 2, close), inner, depth + 1, out, styles);
+                        buffer.emit(layer, ctx, out);
+                        parseInline(text, index + 2, close, depth + 1,
+                                layer.push(Layer.BOLD, null), ctx, out);
                         index = close + 2;
                         continue;
                     }
                 }
-                buffer.append("**");
+                buffer.appendPair("**", index);
                 index += 2;
                 continue;
             }
-            if (startsWith(text, index, "__")) {
-                if (isOpeningDelim(text, index, '_')) {
-                    int close = findDelimClose(text, index + 2, "__");
+            if (startsWith(text, index, to, "__")) {
+                if (isOpeningDelim(text, from, to, index, '_')) {
+                    int close = findDelimClose(text, from, to, index + 2, "__");
                     if (close >= 0) {
-                        flush(buffer, base, out);
-                        TextStyle inner = base.copy();
-                        inner.setFontType(FontType.BOLD);
-                        parseInline(text.substring(index + 2, close), inner, depth + 1, out, styles);
+                        buffer.emit(layer, ctx, out);
+                        parseInline(text, index + 2, close, depth + 1,
+                                layer.push(Layer.BOLD, null), ctx, out);
                         index = close + 2;
                         continue;
                     }
                 }
-                buffer.append("__");
+                buffer.appendPair("__", index);
                 index += 2;
                 continue;
             }
             if (ch == '*' || ch == '_') {
-                if (isOpeningDelim(text, index, ch)) {
-                    int close = findDelimClose(text, index + 1, String.valueOf(ch));
+                if (isOpeningDelim(text, from, to, index, ch)) {
+                    int close = findDelimClose(text, from, to, index + 1, String.valueOf(ch));
                     if (close >= 0) {
-                        flush(buffer, base, out);
-                        TextStyle inner = base.copy();
-                        inner.setItalic(true);
-                        parseInline(text.substring(index + 1, close), inner, depth + 1, out, styles);
+                        buffer.emit(layer, ctx, out);
+                        parseInline(text, index + 1, close, depth + 1,
+                                layer.push(Layer.ITALIC, null), ctx, out);
                         index = close + 1;
                         continue;
                     }
                 }
-                buffer.append(ch);
+                buffer.append(ch, index);
                 index++;
                 continue;
             }
-            if (startsWith(text, index, "~~")) {
-                int close = findDelimClose(text, index + 2, "~~");
+            if (startsWith(text, index, to, "~~")) {
+                int close = findDelimClose(text, from, to, index + 2, "~~");
                 if (close >= 0) {
-                    flush(buffer, base, out);
-                    TextStyle inner = base.copy();
-                    inner.setStrikethrough(true);
-                    parseInline(text.substring(index + 2, close), inner, depth + 1, out, styles);
+                    buffer.emit(layer, ctx, out);
+                    parseInline(text, index + 2, close, depth + 1,
+                            layer.push(Layer.STRIKE, null), ctx, out);
                     index = close + 2;
                     continue;
                 }
-                buffer.append("~~");
+                buffer.appendPair("~~", index);
                 index += 2;
                 continue;
             }
             if (ch == CODE_TICK) {
                 int close = text.indexOf(CODE_TICK, index + 1);
-                if (close > index + 1) {
-                    flush(buffer, base, out);
+                if (close > index + 1 && close < to) {
+                    buffer.emit(layer, ctx, out);
                     // F1（2026-09-04）：反引号对 = 行内 code 段。样式在吃定界符的当场写好
                     // （旧裁定「第一版仅字面输出」已被 chat3 出货行为取代）：codeSpan 位 +
                     // 衬底色 + chat3 口径段级字号，数值恒取自 MarkdownStyleTable（G4 度量同源）。
-                    // 内容字面：substring 原样进段，不递归 parseInline（行内标记不解析），
+                    // 内容字面：区间原样进段，不递归 parseInline（行内标记不解析），
                     // 并清 link——下游 ChatUrlLinkifier 见 codeSpan 位即跳过，URL 不链接化。
-                    out.add(new TextSegment(text.substring(index + 1, close), codeStyle(base, styles)));
+                    // C6a：内容跨样式区间按边界切段，code 位全套随段（旧单段 = 单组特例）。
+                    emitRange(text, index + 1, close, layer.push(Layer.CODE, null), ctx, out);
                     index = close + 1;
                     continue;
                 }
-                buffer.append(ch);
+                buffer.append(ch, index);
                 index++;
                 continue;
             }
             if (ch == '$') {
-                int openLength = startsWith(text, index, "$$") ? 2 : 1;
-                if (isLatexOpening(text, index, openLength)) {
-                    int close = findDollarClose(text, index + openLength, openLength);
+                int openLength = startsWith(text, index, to, "$$") ? 2 : 1;
+                if (isLatexOpening(text, to, index, openLength)) {
+                    int close = findDollarClose(text, to, index + openLength, openLength);
                     if (close >= 0) {
-                        flush(buffer, base, out);
+                        buffer.emit(layer, ctx, out);
                         String source = text.substring(index + openLength, close);
-                        out.add(TextSegment.forLatex(source, base.copy()));
+                        // latex 原子段不切样式区间：基础样式取内容首字符所在组。
+                        out.add(TextSegment.forLatex(source,
+                                resolve(index + openLength, layer, ctx)));
                         index = close + openLength;
                         continue;
                     }
                 }
-                buffer.append(text, index, index + openLength);
+                buffer.appendRun(text, index, index + openLength);
                 index += openLength;
                 continue;
             }
             if (ch == '[') {
-                LinkMatch link = tryParseLink(text, index, base, depth, styles);
+                LinkMatch link = tryParseLink(text, from, to, index, layer, depth, ctx);
                 if (link != null) {
-                    flush(buffer, base, out);
+                    buffer.emit(layer, ctx, out);
                     out.addAll(link.segments);
                     index = link.endIndex;
                     continue;
                 }
-                buffer.append(ch);
+                buffer.append(ch, index);
                 index++;
                 continue;
             }
-            buffer.append(ch);
+            buffer.append(ch, index);
             index++;
         }
-        flush(buffer, base, out);
+        buffer.emit(layer, ctx, out);
     }
 
     // ==================== 链接 ====================
@@ -276,39 +355,38 @@ public final class MarkdownInlineParser {
 
     /**
      * 尝试在 index 解析 {@code [text](url)}；失败返回 null（调用方按字面继续）。
+     * 链接位经 {@link Layer#LINK} 叠加：label 内每个出段位点先叠父层位、再叠 link+下划线，
+     * 与旧「linkBase 拷基础样式先叠位再递归」的先后顺序同值。
      */
-    private static LinkMatch tryParseLink(String text, int index, TextStyle base, int depth,
-            MarkdownStyleTable styles) {
-        int labelClose = findLinkLabelClose(text, index + 1);
+    private static LinkMatch tryParseLink(String text, int from, int to, int index, Layer layer,
+            int depth, ScanCtx ctx) {
+        int labelClose = findLinkLabelClose(text, to, index + 1);
         if (labelClose < 0) {
             return null;
         }
         int urlOpen = labelClose + 1;
-        if (urlOpen >= text.length() || text.charAt(urlOpen) != '(') {
+        if (urlOpen >= to || text.charAt(urlOpen) != '(') {
             return null;
         }
-        int urlClose = findLinkUrlClose(text, urlOpen + 1);
+        int urlClose = findLinkUrlClose(text, to, urlOpen + 1);
         if (urlClose < 0) {
             return null;
         }
-        String label = text.substring(index + 1, labelClose);
         String url = text.substring(urlOpen + 1, urlClose);
-        if (label.isEmpty() || url.isEmpty()) {
+        if (labelClose == index + 1 || url.isEmpty()) {
             return null;
         }
-        TextStyle linkBase = base.copy();
-        linkBase.setLink(url);
-        linkBase.setUnderline(true);
         List<TextSegment> inner = new ArrayList<TextSegment>();
-        parseInline(label, linkBase, depth + 1, inner, styles);
+        parseInline(text, index + 1, labelClose, depth + 1,
+                layer.push(Layer.LINK, url), ctx, inner);
         return new LinkMatch(inner, urlClose + 1);
     }
 
     /** 找 {@code [text](url)} 的 {@code ]}：支持 {@code \]} 转义，不允许嵌套 {@code [}。 */
-    private static int findLinkLabelClose(String text, int from) {
-        for (int index = from; index < text.length(); index++) {
+    private static int findLinkLabelClose(String text, int to, int from) {
+        for (int index = from; index < to; index++) {
             char ch = text.charAt(index);
-            if (ch == '\\' && index + 1 < text.length() && text.charAt(index + 1) == ']') {
+            if (ch == '\\' && index + 1 < to && text.charAt(index + 1) == ']') {
                 index++;
                 continue;
             }
@@ -323,11 +401,11 @@ public final class MarkdownInlineParser {
     }
 
     /** 找 url 的 {@code )}：支持一层嵌套括号与 {@code \)} 转义，url 内不允许空白。 */
-    private static int findLinkUrlClose(String text, int from) {
+    private static int findLinkUrlClose(String text, int to, int from) {
         int depth = 1;
-        for (int index = from; index < text.length(); index++) {
+        for (int index = from; index < to; index++) {
             char ch = text.charAt(index);
-            if (ch == '\\' && index + 1 < text.length()
+            if (ch == '\\' && index + 1 < to
                     && (text.charAt(index + 1) == ')' || text.charAt(index + 1) == '(')) {
                 index++;
                 continue;
@@ -359,16 +437,19 @@ public final class MarkdownInlineParser {
      * - 前邻居为定界符字符（* 或 _）时拒绝（防 {@code a***b***} 拆解误开）；
      * - CJK 邻接：{@code *} 系列放宽（中文无空格习惯，{@code 这是**粗**体} 合法），
      *   {@code _} 系列维持严格（防中文 snake_case 分隔符误伤）。
+     *
+     * <p>C6a：邻居可见域 = 本递归段 {@code [from,to)}——与旧 substring 递归的
+     * {@code [0,length)} 逐位对偶（{@code index>from} ⇔ 旧 {@code relativeIndex>0}）。</p>
      */
-    private static boolean isOpeningDelim(String text, int index, char delim) {
-        if (index + 1 >= text.length()) {
+    private static boolean isOpeningDelim(String text, int from, int to, int index, char delim) {
+        if (index + 1 >= to) {
             return false;
         }
         char next = text.charAt(index + 1);
         if (Character.isWhitespace(next)) {
             return false;
         }
-        if (index > 0) {
+        if (index > from) {
             char prev = text.charAt(index - 1);
             if (prev == '*' || prev == '_') {
                 return false;
@@ -387,11 +468,11 @@ public final class MarkdownInlineParser {
      * emphasis 闭定界：前邻居非空白；后邻居 ASCII 字母数字拒绝；CJK 后邻对 {@code _}
      * 拒绝、对 {@code *} 放宽（中文闭标记后紧跟汉字合法，如 {@code **粗**体}）。
      */
-    private static boolean isClosingDelim(String text, int index, char delim) {
-        if (index <= 0 || Character.isWhitespace(text.charAt(index - 1))) {
+    private static boolean isClosingDelim(String text, int from, int to, int index, char delim) {
+        if (index <= from || Character.isWhitespace(text.charAt(index - 1))) {
             return false;
         }
-        if (index + 1 < text.length()) {
+        if (index + 1 < to) {
             char next = text.charAt(index + 1);
             if (isAsciiWord(next)) {
                 return false;
@@ -414,9 +495,9 @@ public final class MarkdownInlineParser {
     }
 
     /** {@code $} 开定界：非数字后邻居（防 {@code $5.99}）+ 后邻居非空白。 */
-    private static boolean isLatexOpening(String text, int index, int openLength) {
+    private static boolean isLatexOpening(String text, int to, int index, int openLength) {
         int nextIndex = index + openLength;
-        if (nextIndex >= text.length()) {
+        if (nextIndex >= to) {
             return false;
         }
         char next = text.charAt(nextIndex);
@@ -424,10 +505,10 @@ public final class MarkdownInlineParser {
     }
 
     /** 找 {@code $} 闭合：内容非空、前邻居非空白；支持 {@code \$} 转义。 */
-    private static int findDollarClose(String text, int from, int openLength) {
-        for (int index = from; index < text.length(); index++) {
+    private static int findDollarClose(String text, int to, int from, int openLength) {
+        for (int index = from; index < to; index++) {
             char ch = text.charAt(index);
-            if (ch == '\\' && index + 1 < text.length() && text.charAt(index + 1) == '$') {
+            if (ch == '\\' && index + 1 < to && text.charAt(index + 1) == '$') {
                 index++;
                 continue;
             }
@@ -446,21 +527,22 @@ public final class MarkdownInlineParser {
     /**
      * 找定界闭合（emphasis 类）：跳过 {@code \delim} 转义；遇到满足闭定界的位置返回。
      * 嵌套同定界时取第一个满足条件的闭合（宽容近似，未闭合按字面由调用方处理）。
+     * 跨 {@code to} 边界的定界串不算闭合（旧 substring 版的等价形态）。
      */
-    private static int findDelimClose(String text, int from, String delim) {
-        int index = from;
-        while (index < text.length()) {
+    private static int findDelimClose(String text, int from, int to, int start, String delim) {
+        int index = start;
+        while (index < to) {
             int found = text.indexOf(delim, index);
-            if (found < 0) {
+            if (found < 0 || found + delim.length() > to) {
                 return -1;
             }
-            int escaped = countPrecedingBackslashes(text, found);
-            if (escaped % 2 == 1) {
+            int escaped = countPrecedingBackslashes(text, from, found);
+            if ((escaped & 1) == 1) {
                 index = found + delim.length();
                 continue;
             }
             // 闭定界检查作用于定界符最后一个字符
-            if (isClosingDelim(text, found + delim.length() - 1, delim.charAt(0))) {
+            if (isClosingDelim(text, from, to, found + delim.length() - 1, delim.charAt(0))) {
                 return found;
             }
             index = found + delim.length();
@@ -468,16 +550,17 @@ public final class MarkdownInlineParser {
         return -1;
     }
 
-    private static int countPrecedingBackslashes(String text, int index) {
+    private static int countPrecedingBackslashes(String text, int from, int index) {
         int count = 0;
-        for (int cursor = index - 1; cursor >= 0 && text.charAt(cursor) == '\\'; cursor--) {
+        for (int cursor = index - 1; cursor >= from && text.charAt(cursor) == '\\'; cursor--) {
             count++;
         }
         return count;
     }
 
-    private static boolean startsWith(String text, int index, String token) {
-        return text.regionMatches(index, token, 0, token.length());
+    private static boolean startsWith(String text, int index, int to, String token) {
+        return index + token.length() <= to
+                && text.regionMatches(index, token, 0, token.length());
     }
 
     private static boolean isEscapable(char ch) {
@@ -496,27 +579,180 @@ public final class MarkdownInlineParser {
         }
     }
 
-    // ==================== 输出 ====================
+    // ==================== 样式回溯输出 ====================
 
-    /** 行内 code 段样式：基础样式拷贝 + chat3 口径的 codeSpan 位/衬底色/段级字号（F1）。 */
-    private static TextStyle codeStyle(TextStyle base, MarkdownStyleTable styles) {
-        TextStyle code = base.copy();
-        code.setCodeSpan(true);
-        code.setCodeBackgroundColor(styles.getCodeBackgroundColor());
-        int codePx = styles.getCodeFontSizePx();
-        if (codePx > 0) {
-            code.setFontSizePx(codePx);
+    /**
+     * 解析第 {@code charIndex} 个源字符出段样式：区间基础样式拷贝 → 块级叠加链 →
+     * 行内叠加栈（自外向内）。单 span/单组输入下与旧「base 拷 + 逐层叠位」逐位同值。
+     */
+    private static TextStyle resolve(int charIndex, Layer layer, ScanCtx ctx) {
+        TextStyle style = ctx.styleAt(charIndex).copy();
+        if (ctx.blockTransform != null) {
+            style = ctx.blockTransform.apply(style);
         }
-        // code 内不嵌套任何语义：link 位一并清掉（同 ChatCodeSpanSplitter:113-115 口径）
-        code.setLink(null);
-        return code;
+        layer.applyTo(style, ctx);
+        return style;
     }
 
-    private static void flush(StringBuilder buffer, TextStyle base, List<TextSegment> out) {
-        if (buffer.length() == 0) {
-            return;
+    /** 源区间出段：按样式组边界切段，每段样式在段首字符处解析（{@link #resolve}）。 */
+    private static void emitRange(String text, int from, int to, Layer layer, ScanCtx ctx,
+            List<TextSegment> out) {
+        int i = from;
+        while (i < to) {
+            int g = ctx.group[i];
+            int j = i + 1;
+            while (j < to && ctx.group[j] == g) {
+                j++;
+            }
+            out.add(new TextSegment(text.substring(i, j), resolve(i, layer, ctx)));
+            i = j;
         }
-        out.add(new TextSegment(buffer.toString(), base.copy()));
-        buffer.setLength(0);
+    }
+
+    /**
+     * 字面缓冲：文本与「每字符绝对源下标」平行推进（转义吃掉反斜杠、定界符字面回填都
+     * 不改写来源），出段时按样式组边界切分——与 {@link #emitRange} 同一把尺。
+     */
+    private static final class Buf {
+
+        private final StringBuilder sb = new StringBuilder();
+        private int[] idxs = new int[16];
+        private int size;
+
+        void append(char ch, int sourceIndex) {
+            grow(1);
+            idxs[size++] = sourceIndex;
+            sb.append(ch);
+        }
+
+        /** 双字符定界符字面回填（两字符各记自己的源下标，跨样式边界照样可切）。 */
+        void appendPair(String token, int sourceIndex) {
+            grow(token.length());
+            for (int i = 0; i < token.length(); i++) {
+                idxs[size] = sourceIndex + i;
+                size++;
+            }
+            sb.append(token);
+        }
+
+        /** 连续源区间字面回填（如 $$ 双定界）。 */
+        void appendRun(String text, int from, int to) {
+            int n = to - from;
+            grow(n);
+            for (int i = 0; i < n; i++) {
+                idxs[size] = from + i;
+                size++;
+            }
+            sb.append(text, from, to);
+        }
+
+        private void grow(int extra) {
+            if (size + extra > idxs.length) {
+                idxs = Arrays.copyOf(idxs, Math.max(idxs.length * 2, size + extra));
+            }
+        }
+
+        void emit(Layer layer, ScanCtx ctx, List<TextSegment> out) {
+            if (size == 0) {
+                return;
+            }
+            int i = 0;
+            while (i < size) {
+                int g = ctx.group[idxs[i]];
+                int j = i + 1;
+                while (j < size && ctx.group[idxs[j]] == g) {
+                    j++;
+                }
+                out.add(new TextSegment(sb.substring(i, j), resolve(idxs[i], layer, ctx)));
+                i = j;
+            }
+            sb.setLength(0);
+            size = 0;
+        }
+    }
+
+    /** 行内叠加栈节点：BOLD/ITALIC/粗斜/删除线/链接/CODE，父先子后施加（旧拷贝链同序）。 */
+    private static final class Layer {
+
+        static final Layer ROOT = new Layer(null, 0, null);
+
+        static final int BOLD = 1;
+        static final int ITALIC = 2;
+        static final int BOLD_ITALIC = 3;
+        static final int STRIKE = 4;
+        static final int LINK = 5;
+        static final int CODE = 6;
+
+        private final Layer parent;
+        private final int op;
+        private final String link;
+
+        Layer(Layer parent, int op, String link) {
+            this.parent = parent;
+            this.op = op;
+            this.link = link;
+        }
+
+        Layer push(int opCode, String linkUrl) {
+            return new Layer(this, opCode, linkUrl);
+        }
+
+        void applyTo(TextStyle style, ScanCtx ctx) {
+            if (parent != null) {
+                parent.applyTo(style, ctx);
+            }
+            switch (op) {
+                case BOLD:
+                    style.setFontType(FontType.BOLD);
+                    break;
+                case ITALIC:
+                    style.setItalic(true);
+                    break;
+                case BOLD_ITALIC:
+                    style.setFontType(FontType.BOLD);
+                    style.setItalic(true);
+                    break;
+                case STRIKE:
+                    style.setStrikethrough(true);
+                    break;
+                case LINK:
+                    style.setLink(link);
+                    style.setUnderline(true);
+                    break;
+                case CODE:
+                    // 与旧 codeStyle 同序：codeSpan 位 → 衬底色 → 段级字号（>0 才写）→ 清 link。
+                    style.setCodeSpan(true);
+                    style.setCodeBackgroundColor(ctx.styles.getCodeBackgroundColor());
+                    int codePx = ctx.styles.getCodeFontSizePx();
+                    if (codePx > 0) {
+                        style.setFontSizePx(codePx);
+                    }
+                    style.setLink(null);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    /** 单次解析的可变上下文：字符→样式组映射 + 块级叠加链 + code 口径登记表。 */
+    private static final class ScanCtx {
+
+        private final int[] group;
+        private final List<TextStyle> groupStyles;
+        private final StyleTransform blockTransform;
+        private final MarkdownStyleTable styles;
+
+        ScanCtx(int[] group, List<TextStyle> groupStyles, StyleTransform blockTransform,
+                MarkdownStyleTable styles) {
+            this.group = group;
+            this.groupStyles = groupStyles;
+            this.blockTransform = blockTransform;
+            this.styles = styles;
+        }
+
+        TextStyle styleAt(int charIndex) {
+            return groupStyles.get(group[charIndex]);
+        }
     }
 }
