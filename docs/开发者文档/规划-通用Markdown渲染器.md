@@ -481,8 +481,9 @@ package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均
 `MarkdownInlineParser` 恒 2、`ChatMessageList` 恒 9、`ChatSceneController` 恒 26；
 `ChatMarkdownPipeline` public 恒 0，<b>声明成员（含非 public）20→19</b>（删 `toSpanStream` 与
 `flushSpan`；javap -p 逐条数得，反射反空跑地板的实测数同步）。chat3 侧新增
-`internal.chat3.viewmodel.StructuredChatReader`（public final，全成员尺 **3** =
-`read/1` + `PlayerChat.getSender/0` + `getContent/0`；私有构造与包内键集合不入账），属集成层
+`internal.chat3.viewmodel.StructuredChatReader`（public final）按全成员尺 = 本体 **1**
+（`read/1`）+ public 嵌套 `PlayerChat` **3**（`getSender/0`/`getContent/0`/`toString/0`；
+嵌套类型不计入外层账，见锁细则 2；私有构造与包内键集合不入账），属集成层
 内部类型、不在 markdown 五锚定表内；`MessageGroupModel` 只加包内 `isStructured()`，公共签名零变化。
 删除的公共类型 1 个 = `FormatPrefixStripper`（划界后全仓零引用，连本体与直测锁一并拆）。
 
@@ -1206,8 +1207,9 @@ package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均
    `ChatMarkdownPipeline` public 成员恒 **0**（类仍非 public），其**声明**成员（含非 public）
    **20→19**（删 toSpanStream/flushSpan），反射反空跑地板的实测数已同步。新增类型
    `StructuredChatReader`（`internal.chat3.viewmodel`，非 markdown 接缝、不在门禁五锚定表内）
-   的 public 成员按全成员尺 = **3**：`read/1`、`getSender/0`、`getContent/0`（类声明行不计，
-   私有构造与包内键集合不入账）；`MessageGroupModel` 侧只加包内 `isStructured()`，
+   的 public 成员按全成员尺 = **1 + 3**：本体 `read/1`；public 嵌套 `PlayerChat`
+   `getSender/0`、`getContent/0`、`toString/0`（类声明行不计、私有构造与包内键集合不入账，
+   嵌套类型按锁细则 2 单独数）；`MessageGroupModel` 侧只加包内 `isStructured()`，
    公共签名零变化。
 8. **缓存单轨**：两级 key = 最终喂进 `MarkdownDocument.parse` 的那个字符串 @基础色#配色代，
    装配处（`displayText` 三分支）与缓存处共用同一个值，不留「一处用原文、一处用结构内容」

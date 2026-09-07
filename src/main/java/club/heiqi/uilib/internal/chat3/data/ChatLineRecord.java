@@ -89,7 +89,14 @@ public final class ChatLineRecord {
     }
 
     /**
-     * @return 格式化文本(含 § 样式码;惰性缓存;渲染切分与样式解析输入)
+     * @return 格式化文本(含 § 样式码;惰性缓存;原版解析链的系统行切分与样式解析输入)
+     *
+     * <p><b>C7 收口边界</b>：本方法<b>不得</b>作 markdown 输入——{@code ChatComponentStyle
+     * .getFormattedText()} 由客户端逐组件前置样式码、尾追 RESET（实测
+     * {@code <§rSteve§r> §r<b>hi</b>§r}），是旧气泡 § 残渣的唯一来源；markdown 通道的内容
+     * 一律取 unformatted 源（结构 {@code getFormatArgs()[1]} 或 plain 正则 rest），
+     * 见 {@code ChatCardComposer#displayText} 与规划 §二之八 C7。另注：对翻译组件调用本方法
+     * 会走 {@code ensureInitialized -> StatCollector} 语言表查找，非纯函数。</p>
      */
     public String getFormattedText() {
         String cached = formattedText;
