@@ -122,8 +122,9 @@ public class PlaygroundPageRegistryTest {
     private static final int MIN_RUNS = 2;
     /** 反 ∅ 地板：至少一个游程要跨过的行数（证明「跨行无缝」真发生过）。 */
     private static final int MIN_MULTIROW_RUNS = 1;
-    /** 反 ∅ 地板：底色像素总量。 */
-    private static final int MIN_BACKDROP_PIXELS = 3000;
+    // C9：原「底色像素总量 ≥ 3000」是 Windows 一次实测的绝对数（面积=块宽×行高×行数，
+    // 三个因子全随字体漂移）。改为派生形：每个底色带高度 ≥ 一个行高（行高取本 JVM
+    // 实测探针值）+ 带数 ≥ 围栏块数（结构常量），见 markdownPageCodeBackdropIsOneContinuousPixelBlock。
 
     /**
      * 页面级<b>纯像素</b>锁（M9；取代上一批那条 {@code getPreferredWidth()} 记账值断言，
@@ -158,8 +159,11 @@ public class PlaygroundPageRegistryTest {
         int[] canvas = rasterizeSolidFaces(backend);
 
         int backdropPixels = countColorAll(canvas, codeBg);
-        Assert.assertTrue("反 ∅ 地板：底色像素总量 >= " + MIN_BACKDROP_PIXELS + "，实测 "
-                + backdropPixels, backdropPixels >= MIN_BACKDROP_PIXELS);
+        // 派生地板（C9）：像素总量 ≥ 带数 × 行高（每带至少覆盖一整行高、宽 ≥1px）——
+        // 「什么都没画/画成薄片」在两平台同一判据下先红，不再依赖 Windows 面积读数。
+        Assert.assertTrue("反 ∅ 地板：底色像素总量 >= 带数×行高（派生形），实测 " + backdropPixels
+                + " 带数(下界)=" + MIN_RUNS + " 行高=" + rowHeightPx,
+                backdropPixels >= MIN_RUNS * rowHeightPx);
 
         // 逐列扫游程：找「块内裂缝」（两段之间空档 < 行高）
         int seams = 0;
@@ -197,6 +201,9 @@ public class PlaygroundPageRegistryTest {
             int top = band[0];
             int bottom = band[1];
             int height = bottom - top + 1;
+            // 派生地板（C9）：任何底色带至少盖满一行（块行高由本 JVM 度量现取）
+            Assert.assertTrue("像素级：横向带#" + b + " 高度必须 >= 一个行高（" + height + " < "
+                    + rowHeightPx + "）", height >= rowHeightPx);
             if (height >= 2 * rowHeightPx) {
                 multiRowRuns++;
             }
@@ -372,8 +379,9 @@ public class PlaygroundPageRegistryTest {
             + "  - 嵌套子项" + LF + "    - 更深层子项" + LF + "3. 有序三" + LF
             + "4) 有序四（右括号定界）" + LF + "   有序四项的续行";
 
-    /** 反 ∅ 地板：竖条像素总量（实测 480：(2×146)+(2×58)+(2×36)）。 */
-    private static final int MIN_BAR_PIXELS = 200;
+    // C9：原「竖条像素 ≥ 200」（Windows 实测 480 的一次读数）改派生形：
+    // barPixels ≥ barWidth × rowH × maxLevel（每层至少一行连续段 × 条宽 × 行高，
+    // 三因子全取本 JVM 现测量，见 markdownPageQuoteBarIsOneContinuousColumn）。
     /** 反 ∅ 地板：竖条列数（一层/二层/三层 = 3 列）。 */
     private static final int MIN_BAR_COLUMNS = 3;
 
@@ -447,8 +455,11 @@ public class PlaygroundPageRegistryTest {
             x++;
         }
         int barPixels = countColor(canvas, box, accent);
-        Assert.assertTrue("反 ∅ 地板：卡内竖条像素 >= " + MIN_BAR_PIXELS + "，实测 " + barPixels,
-                barPixels >= MIN_BAR_PIXELS);
+        // 派生地板（C9）：maxLevel 层各至少一根 ≥1 行高的条（列数==maxLevel 由下方
+        // 结构断言钉），每根 ≥ barWidth×rowH ⇒ 总量 ≥ barWidth×rowH×maxLevel。
+        Assert.assertTrue("反 ∅ 地板：卡内竖条像素 >= barWidth×行高×层数（派生形）: 实测 "
+                + barPixels + " 下界 " + (barWidth * rowH * maxLevel),
+                barPixels >= barWidth * rowH * maxLevel);
         Assert.assertTrue("反 ∅ 地板：竖条列数 >= " + MIN_BAR_COLUMNS + "，实测 "
                 + barColumns.size(), barColumns.size() >= MIN_BAR_COLUMNS);
         Assert.assertEquals("竖条列数必须恰等于最大引用层级（每层一列）", maxLevel,
@@ -592,9 +603,12 @@ public class PlaygroundPageRegistryTest {
      * 判据：以卡内最小 drawSegments.x 为列原点，每行 x 位移恒等于该行接缝
      * {@code leftInsetPx}；每个吃列的行，其位移 == <b>独立沿链量出</b>（逐元素逐码点
      * resolveAdvance、逐级 ceil，不经被测写入口）的正文列（块首 LIST 标记行再扣本级标记宽）。
-     * 三级列硬值（页 BASE=14，headless 实测）：一级 13、二级 26、三级 39；同时钉死
-     * 旧 F2 文本代理形态不得出现（代理把祖先份额写成 2 空格/级 ⇒ 二级标记落点 12≠13）。
-     * 反 ∅ 地板：参与行 >= 8、对齐行（位移&gt;0）>= 2、标记行 >= 5。
+     * 三级列（页 BASE=14；C9 起全部同 JVM 独立量出，Windows 读数只作注记：一级 13、
+     * 二级 26、三级 39；Linux CI 实测 15/30/45——字面量即误红源）：标记行位移 ==
+     * 沿链扣除本级后的祖先列（逐元素 resolveAdvance 逐级 ceil 求和）；同时钉死旧 F2
+     * 文本代理形态不得出现（代理把祖先份额写成 2 空格/级、取串宽 floor——两式在本档
+     * 四组度量下都可区分，重合则样本失效先红，不静默放宽）。
+     * 反 ∅ 地板：参与行 >= 8、对齐行（位移&gt;0）>= 2、标记行 >= 5（语料结构推导）。
      */
     @Test
     public void markdownPageListContinuationAlignsToContentColumn() {
@@ -648,8 +662,16 @@ public class PlaygroundPageRegistryTest {
         Assert.assertTrue("反 ∅ 地板：>=2 个对齐续行，实测 " + shifted, shifted >= 2);
         Assert.assertTrue("反 ∅ 地板：参与行 >= 8，实测 " + pts.size(), pts.size() >= 8);
 
-        // 硬值三钉（M10d；@BASE=14 逐级 ceil(「• 」)=13）：一级标记行仍在 0（正对照，
-        // 「对齐正文列」≠「整项平移」）；二级标记行落在一级列 13；三级标记行落在二级列 26。
+        // 三钉（M10d 语义，C9 测量形；@BASE=14 Windows 读数 13/26/39 仅注记）：一级标记
+        // 行仍在 0（正对照，「对齐正文列」≠「整项平移」）；二级标记行落在一级列；三级落在
+        // 二级列——期望值 = 该行标记链扣除本级后的逐元素独立量出之和（与 :643 对齐行 oracle
+        // 同源不同例：这里专测「标记行吃祖先列」这条写入路径）。
+        // F2 代理 = 祖先份额写成 2 空格/级、串宽取 floor（Win 读数 12）——当场量出并钉
+        // 「不得落在代理上」；代理与真值在本 JVM 不可区分时样本失效先红（不静默放宽）。
+        int twoSpaceProxy = (int) Math.floor(oracleAdvanceRaw(svc, "  ", BASE_FONT_PX));
+        int trueCol1 = oracleAdvance(svc, new TextSegment("• ", base));
+        Assert.assertTrue("F2 代理与本 JVM 真值列必须可区分（否则本例失去判别力，如实红）: proxy="
+                + twoSpaceProxy + " trueCol1=" + trueCol1, twoSpaceProxy != trueCol1);
         int markerRows = 0;
         int level1AtZero = 0;
         int level2Hit = 0;
@@ -660,15 +682,21 @@ public class PlaygroundPageRegistryTest {
                     && isMarkerSegment(line.getSegments().get(0).getText())) {
                 int offset = pts.get(i)[0] - originX;
                 int chainLen = line.getListMarkerChain().size();
-                Assert.assertEquals("第 " + i + " 行标记行位移 == 祖先列硬值（链长 " + chainLen + "）",
-                        (chainLen - 1) * 13, offset);
+                int ancestorColumn = 0;
+                List<TextSegment> chain = line.getListMarkerChain();
+                for (int k = 0; k + 1 < chain.size(); k++) {
+                    ancestorColumn += oracleAdvance(svc, chain.get(k));
+                }
+                Assert.assertEquals("第 " + i + " 行标记行位移 == 祖先列（同 JVM 独立量出，链长 "
+                        + chainLen + "）", ancestorColumn, offset);
                 if (chainLen == 1) {
                     level1AtZero++; // 上式已钉 ==0
                 } else if (chainLen == 2) {
-                    Assert.assertTrue("二级标记列不得落在 F2 代理文本宽 12 上", offset != 12);
+                    Assert.assertTrue("二级标记列不得落在 F2 代理文本宽 " + twoSpaceProxy + " 上",
+                            offset != twoSpaceProxy);
                     level2Hit++;
                 } else if (chainLen == 3) {
-                    level3Hit++; // 26（非代理 25）已由上式钉死
+                    level3Hit++; // 二级列（非代理口径）已由上式钉死
                 }
                 markerRows++;
             }
@@ -688,6 +716,17 @@ public class PlaygroundPageRegistryTest {
             column += oracleAdvance(svc, element);
         }
         return column;
+    }
+
+    /** 双精度版独立宽（C9：量 F2 代理串宽用 floor 口径，与被测写入口零共享）。 */
+    private static double oracleAdvanceRaw(TextLayoutService svc, String text, int sizePx) {
+        double width = 0.0D;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            width += svc.resolveAdvance(cp, new TextStyle(), sizePx);
+            i += Character.charCount(cp);
+        }
+        return width;
     }
 
     /** 独立标记宽 oracle（逐码点 resolveAdvance，与 L2 写入路径零共享实现）。 */
