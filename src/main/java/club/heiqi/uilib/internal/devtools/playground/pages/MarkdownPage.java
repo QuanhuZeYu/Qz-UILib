@@ -175,10 +175,27 @@ public final class MarkdownPage implements PlaygroundPage {
      * 组容器高 = Σ行高 + gap×(n-1)，与这些行平铺在卡列时占据的高度逐字节相同——文字位置
      * 一字不动，竖条经 {@code fillParentHeight} 从「每行一截」变成「一组一根连续条」。
      * 跨引用组不连条：组间由 {@code blankLine()} 产的 {@code quoteLevel=0} 单元天然断开。</p>
+     *
+     * <p><b>宽度语义（#7 修复，C9·7）</b>：内层列显式 {@code SHRINK}——引用组宽 =
+     * 竖条（{@code QUOTE_BAR_WIDTH_PX}）+ gap（{@code QUOTE_GAP_PX}）+ 内容列实测宽
+     * （{@code SizingCalculator.computeShrinkContainerWidth} COLUMN 分支：子行最大宽 +
+     * 水平 padding，被可用宽 clamp），不再伪装拉满。旧形内列随容器默认 FILL：SHRINK 行在
+     * 约束下传阶段无己宽先验（{@code computeWidth(c, false)} 对 SHRINK 保守回退外层可用宽），
+     * FILL 子列照单全收整行宽（720 画布实测 628），定位侧却又叠上条+gap 的 8px 主轴偏移，
+     * 子右缘 636 恒超行宽 8px——纯结构缺陷，与字体无关，两平台逐字同数；此前未被看见只因
+     * 切页夹具点击静默 miss（见规划 §二之八 C9 #7 与 {@code PlaygroundButtonRowLayoutTest}）。
+     * 「与平铺在卡列时逐字节相同」的承诺维度不受影响：COLUMN 容器高与子定位只吃行高与 gap，
+     * 组高恒 = Σ行高 + gap×(n-1)；行 y、文字 x（条+gap 起算）、竖条像素全同——变的只是
+     * 隐形容器盒的右缘（引用组无底色，该边缘无像素表现）。组内各行共享内容列宽（取最宽
+     * 子行），无参差；这正是「量出该组最宽子行显式 preferredWidth」设想的引擎原生形，
+     * 页面不自算第二套宽度真相。</p>
      */
     private static SceneNode quoteGroup(List<Unit> units, int from, int toExclusive, int level,
             int rowGapPx) {
-        SceneNode inner = SceneNode.column(rowGapPx).setHitTestable(false);
+        // #7 修复（C9·7）：内层列显式 SHRINK——宽度语义见方法 javadoc。
+        SceneNode inner = SceneNode.column(rowGapPx)
+                .setHitTestable(false)
+                .setWidthSizing(SceneNode.WidthSizing.SHRINK);
         int k = from;
         while (k < toExclusive) {
             if (units.get(k).quoteLevel > level) {
