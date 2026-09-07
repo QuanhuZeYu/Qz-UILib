@@ -1482,6 +1482,36 @@ C9·3 出图/门禁墨水关系形 + PNG 字节地板拆除；C9·4 页面锁测
 C9·5 双字体探针（@Ignore）；C9·6 文档（本细账 + Parity 类头门禁段 + 踩坑记录 C9 条）。
 版本文件（gradle.properties / build.gradle.kts / CHANGELOG.md）零接触；主源零接触。
 
+**#7 闭环（C9·7，2026-09-07——本系列首个动主源的测试缺陷闭环批）**：
+
+- 缺陷机理（复核确认）：`MarkdownPage.quoteGroup` 内层列默认 FILL；SHRINK 行在约束下传阶段无己宽
+  先验（`SizingCalculator.computeWidth(c,false)` SHRINK 分支保守回退外层可用宽，:85-88/:134-138），
+  FILL 子列照单全收整行宽；定位侧再叠条 2px+gap 6px=8px 主轴偏移 ⇒ 子右缘恒超行宽 8px（720 画布
+  628+8=636>628）。纯结构性、与字体无关。取证（工作站 temp 临时探针，跑完即删）：修复前 markdown 页
+  **pairs=8、OVERFLOW=4**（与 Linux CI 及主控 Windows 探针逐字同数）；修复后 **pairs=8、overflow=0**，
+  9 页全扫零溢出。
+- 修复形=内列 `setWidthSizing(SHRINK)`（一行+javadoc 宽度语义段）：引用组宽=条+gap+内容列实测宽
+  （`computeShrinkContainerWidth` COLUMN 分支=最宽子行+padding，被可用宽 clamp），不再伪装拉满。
+  M10a「与平铺在卡列时逐字节相同」承诺仍成立的维度：组高=Σ行高+gap×(n−1)、行 y、文字 x、竖条像素
+  全同；变窄的只有隐形容器盒右缘（引用组无底色=零像素表现）。组内各行共享内容列宽（取最宽子行），
+  无参差——「量最宽子行写显式 preferredWidth」设想即 SHRINK 的引擎原生形，页面不自算第二套宽度真相，
+  故弃显式形。观感影响=设备清单：真机 MarkdownPage 引用演示区（预期零像素差；引用组右缘无可见物，
+  既有锁覆盖：像素三锁证文字/竖条不动；盒宽本身无锁覆盖——无像素表现故无需锁）。
+- 夹具收口两改（与主源修同批提交，缺一判不合格条款）：①切页确定性化——`TestPlaygroundHost
+  .__getActivePageSignal()`（包级探针外露 R8 受控源=SceneSegmented.onSelect 写回的同一 signal，非新
+  通道）`set+flush`，切页后硬断言 `__getDisplayedPageId()==目标`（`PlaygroundButtonRowLayoutTest
+  .switchToPage`、`PlaygroundPageRegistryTest.everyPageBuildsNonNullTreeAndMountsCleanly` 宿主落点段、
+  `PlaygroundTextInputPageTest.setUp` 钉落点）；②markdown 页非空覆盖锁——pairs≥1 且含引用组行（ROW 恰
+  2 子、内列 COLUMN 且 SHRINK）回锁，内列回改 FILL 则覆盖锁与右缘不变量双杀。更正下发口径：
+  PlaygroundPageRegistryTest 原状无点击式 switchToPage（其 markdown 像素锁走 lookup+build 直建，与点击
+  无关），2a/2b 在该类落点=新增宿主段而非改既有点击。
+- 新增观察（非 #7、挂主控裁定）：home 页「演示页」长描述行文本叶在 ROW 主轴拿整行宽 clamp（可用宽
+  不扣主轴已占量），Windows 实测随类序/JVM 初始化在「溢出（671/721/754 读数漂移）」与「不溢出」间
+  摆动——与 #7 同族（引擎侧 ROW 约束下传），面大，本批未动。
+- 提交分解：C9·7-1 主源（d2aac5a2）；C9·7-2 夹具（同批）；C9·7-3 文档（本块 + 踩坑记录 C9 第 5 点
+  挂账指针改闭环）。实测：`build --offline` 绿 + `cleanTest test --offline` 强制复跑绿，4118/369/0/0/6
+  与基线逐字同（只加断言不新增用例）；diff.txt/matrix.txt 二件套哈希逐字未变，profiles 复现登记值。
+
 ---
 
 ## 三、迁移与「不得并存」门禁
