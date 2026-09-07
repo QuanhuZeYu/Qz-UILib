@@ -125,7 +125,7 @@ public class ChatCoreTest {
         core.appendMarkdown(null, 0);
         Assert.assertEquals(0, controller.history().size());
         net.minecraft.util.IChatComponent a = new net.minecraft.util.ChatComponentTranslation(
-                "uilib.markdown", new Object[] {"one"});
+                ChatAccess.MARKDOWN_CHAT_KEY, new Object[] {"one"});
         core.appendMarkdown(a, 7);
         core.appendMarkdown(a, 7);
         Assert.assertEquals("同 id=7 替换(原版 setChatLine 口径)", 1, controller.history().size());
