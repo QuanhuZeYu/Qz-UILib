@@ -59,6 +59,17 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  * {@code ChatMarkdownPipelineTest#sectionCodesAreLiteralTextWithZeroStyleEffect} 钉死——
  * 与本门禁 B 路同形，故 P13/P14 语料两侧 § 均为字面、维持直拍 NO_DIFF，判据/容差/登记表零接触。</p>
  *
+ * <p><b>C9 门禁判据收窄（2026-09-07，测试平台鲁棒化批，三件套→二件套）</b>：原「L1 门禁
+ * 三件套哈希逐字不变」判据由 C8 批登记（规划 §二之八 C8 细账第 9 条，2026-09-07，
+ * 主控按用户裁定 a1 记录并随 C8·3 文档笔 3222cc7e 落档）。CI run 944175267
+ * （Linux/xvfb，GTNH build-and-test）实证：<b>diff.txt / matrix.txt 与本地逐字同哈希</b>
+ * ——语义工件，平台无关，继续要求逐字不变（SHA256 前 16：diff=A826A2B9E7B0EB57、
+ * matrix=804A42FB09D74FF5）；<b>profiles.txt 记的是环境观测</b>（fontScene/ink/行高/
+ * fam 扫描计数），Linux 值与 Windows 全面不同，且本机过滤跑与全量跑之间 fam 计数
+ * 245↔251 漂移（C8-era 代码复跑同漂移，非代码引入）——对观测件要求哈希不变=把假红
+ * 制度化。自 C9 起门禁「哈希不变」判据收窄为<b>二件套（diff.txt + matrix.txt）</b>，
+ * profiles.txt 降为记录不校验。</p>
+ *
  * <p>R 路＝{@link CommonMarkReferenceSemantics}（commonmark-java 0.21.0 + GFM strikethrough，
  * 官方参考实现）；B 路＝{@link BPathSemantics}（本仓 M10d 行接缝 {@code toLayoutLines} 同构映射）。
  * C3b1 的「全量照登、不判 PASS/FAIL」中间态到此结束：<b>逐条语料、逐行、逐 token 对拍，

@@ -102,6 +102,7 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 |    | 装饰须显式 decorate 后递入；uilib.markdown 键旁路注入零穿参；markdown 判定短路在
 |    | 一切取文本之前；渲染形 = MARKDOWN_LEFT 左对齐无气泡无 sender 不居中） |
 |    | **完成 67e44c00**（2026-09-07），细账见 §二之八 C8 |
+| C9 | **测试平台鲁棒化**（2026-09-07 用户裁定「甲」：Linux CI 8 红=Windows 字体度量下的绝对像素/计数魔数进了断言；修法=同 JVM 独立测量关系形 + 输入侧按实测 advance 自适应构造，禁 assumeTrue、禁 OS 分支、禁为绿放宽；门禁三件套收窄为二件套） | **测试批完成**，#7 判为<b>真实布局缺陷挂账</b>（主源未动，见 §二之八 C9 第 7 条），细账见 §二之八 C9 |
 
 M1 的验收事实（父代理逐条独立复核过，非采信子代理自述）：三个文件与 `9c4dcae5` **blob hash
 逐一相同**（`84dd897c`/`49cfd000`/`6f639546`，463+48+274 行），**零适配**——两周内 layout 层
@@ -1367,6 +1368,119 @@ public `ChatAccess.decorate(IChatComponent)`（只变换不注入），把结果
     列表/引用/代码块/粗斜体排版与气泡行同源；⑥ 未接管（总开关关/接管未装）时 String 形降级
     不露 `uilib.markdown` 字面、显示原文（组件形给自定义组件时原版渲 key 字面属固有形状，
     观感确认即可，非缺陷）。
+
+### C9 细账（测试平台鲁棒化，2026-09-07 用户裁定「甲」；测试批，主源零接触）
+
+**背景与定性**：Windows 本地全绿（4114/368/0/0/2）下，Linux CI（GTNH build-and-test，xvfb）
+红 8 项（run 944175267，报告存档工作站 `temp\ci_reports\944175267-reports\tests\test\`）。
+共性=断言里写了 Windows 字体度量下的绝对像素/计数魔数，语义零平台差——铁证：CI 产出的
+门禁 diff.txt / matrix.txt 与本地**逐字同哈希**，只有 profiles.txt 平台相关。根因面：
+测试与生产共用 AWT 逻辑字体 `Dialog`（仓库不携带 TTF），Windows 解析到 Microsoft Sans
+Serif 系（CJK 全宽 ≈16px@16），Linux 解析到 DejaVu Sans（拉丁宽 ~10%、**无 CJK 覆盖** →
+CJK 窄化 ≈10px 且无墨）。裁定「甲=平台鲁棒化」：判据改「同 JVM 独立测量后比较」的相对形
+或「由构造推导」的派生形；禁 assumeTrue 跳过、禁 OS 分支放宽、禁为绿调容差。先例在案：
+`docs/反馈层/errors/ERROR-20260716-font-test-platform-advance.md`（同一课，当时只修一例）。
+
+**8 条逐例**（Linux 为何红 → 改后为何两平台都真）：
+
+1. `FontSoftwareRasterizerSamplingTest#realPipelineGlyphQuadsSampleAtlasWindowAtCorrectPositions`
+   （:214「字形#4 右上半区像素地板 实测=11<12」）——红因：「I」字形 quad 宽随字体 ink 盒
+   （Win 2.5px、Linux 2.25px），T2 计数 11 是几何事实不是缺陷，地板 12 是 Windows 一次
+   读数。修法：地板全部关系化——①覆盖 tri1+tri2 ≥8（16px 大写 cap-height ≥8 行 × ≥1 列）；
+   ②上下半区计数比 ∈[¼,¾]（quad 对角线二等分面积，像素中心离散化偏移 ≤¼，几何不变量）；
+   ③T2 真墨 ≥1 且 K≥N/13（缺陷 180° 旋转使失配 ≈2K，击穿 0.85 率阈需 2K>0.15N——地板即
+   判别力下界，字体稀疏到带外如实红「本环境样本失去判别力」）；④全页墨 ≥ Σatlas真墨/2
+   （正确渲染墨 ⊇ atlas 真墨）。0.85 一致率与正对照判据一字未动。两平台真：计数比
+   Win 13/24、Linux 11/26、Verdana 33/60、SimSun 30/60 全落带内；旧页墨 150 在 SimSun
+   （实测 122）下反证为哑弹。
+2. `MarkdownListContinuationLockTest#continuationInsetEqualsIndependentlyMeasuredMarkerWidth`
+   （:232「续行数地板 ≥6 实测 3」）——红因：语料长行 30/40 字按 Windows CJK@16≈16px 写死，
+   Linux CJK≈10px 不折行，续行只剩逻辑行。修法：语料改 `wrapCountChars`（实测单字 advance
+   推导「容量+2」字数 ⇒ 任何字体必折且第二行 ≥2 字），地板 6 保留并注记构造推导值 ≥9；
+   名字里 IndependentlyMeasured 的本意（oracle 独立 + 输入侧不绑度量）至此名实相符。
+3. 同类 `#listColumnIsActuallyConsumedByWrapping`（:316「b(45) < a(45)」）——红因：45 个 CJK
+   在 Linux 480 容器两案都不折 → b=a。修法：容器宽改 `narrowWrapWidth = round(3cw)+inset−1`
+   （cw=实测「癸」宽、inset=实测「• 」列宽），b=2、a≥3 **由构造必然**；补构造反证地板 a≥3、
+   b≥1（防「两边空转 b<a 恒成立」）。实测：Win a=3/b=2，Linux a=4/b=2，Verdana a=5/b=2。
+4. 同类 `#looseItemFollowUpBlocksAllGetTheirItemsContentColumn`（:609「expected:<14> but
+   was:<17>」）——红因：期望列宽是 Windows 字面量 COL_BULLET=14，Linux「• 」@16 实测 17。
+   修法：期望值全部 `measuredColumn` 当场量（与 L2 写入路径零共享的 oracle 早已存在，缺的
+   只是别把 Windows 读数当规格）；混级「21」→实测「1. 」列宽；语料长度自适应；断言行数
+   地板 ≥8 保留（构造推导 ≥10）。引用步长 8 为样式表登记常量（非字体度量），字面保留。
+5. 同类 `#threeLevelColumnsAreChainSumsNotFixedStepProxies`（:435←:524「每块必须软折出
+   第二条视觉行」）——红因同 2。修法：真值 14/28/42 与反证代理 29/43/36 全测量形（真值=
+   逐级 ceil 之和、代理=整串 ceil 当场量），并加「代理与真值必须可区分」前置——某平台重合
+   即「样本失去判别力」如实红（Win 29≠28、Verdana 31≠34、SimSun 30≠32 三组实测可区分），
+   既不硬写会误红的字面量、也不静默放宽；折行由构造保证。
+6. `MarkdownSoftwareRenderTest#writesPerCaseAndCompositePngsWithFloors`（:332「case=heading
+   实测=130<500」）——红因：CI 的 DejaVu 无 CJK，纯中文标题页只剩 ASCII label 有墨（CI 存档
+   `markdown-render/01-heading.png` 目检铁证：只有「01 1..6」）。读码确认**无逐像素金样
+   比对**（PNG 只回读数墨），故无需任何金样 OS 条件化。修法：页/合成图墨水地板改
+   「ink ≥ 同 JVM 实收 quad 数」（bbox 定尺画布上每枚 quad ≥1 非背景像素；「页非空」语义
+   两平台同一真断言）；顺带拆掉同类 PNG 字节地板 >1000（Verdana 模拟 <1000B 实证误红、
+   Linux 1129B 余量仅 129B——字节数随字体覆盖与压缩器漂移，非语义；职责移交「可解码 +
+   墨水关系形」）。
+7. `PlaygroundButtonRowLayoutTest#buttonRowsStayInsideRowContainersOnEveryPage`
+   （:175「行 @x=12,w=628 子右缘 636>628」）——**判为真实布局缺陷，本批不闭环**（主源未动、
+   断言未放宽）。证据链：①测试纯量引擎输出，零硬编码；②工作站 temp 临时取证（跑完即删）
+   强制切到 markdown 页后 **Windows 同样溢出 628/636，数字与 CI 逐字相同**——溢出与字体
+   无关：`MarkdownPage.quoteGroup` 的内层列默认 FILL，在 SHRINK 行里拿到整行宽 628、
+   x=8 ⇒ 右缘 636，行自身被 clamp 到可用宽 628；③Windows 为何从未见红：navBar 可用宽内
+   第 9 段（x=685..833）中心 759 > 画布 720，`clickNode` 静默 miss、页面切换未发生，
+   测试停在 latex 页（无 ROW 容器 ⇒ pairs 空 continue）——**该测试在 Windows 上从未覆盖
+   markdown 页**；Linux CJK 窄 ⇒ 导航放得下 ⇒ 切页成功 ⇒ 真缺陷第一次被看见。建议（供主控
+   裁定，主源批）：页面侧 `quoteGroup` 内层列 `setWidthSizing(SHRINK)`（一行，语义=行按
+   内容宽）；或引擎侧「SHRINK 行内 FILL 子的可用宽扣主轴已占量」（影响面大，需盘点既有
+   消费者）；测试侧应改为切页后断言 `__getDisplayedPageId()==目标`（或经 signal+flush
+   确定性切页）——测试侧收口必须与主源修同批，否则 Windows 先红。工作站 parked 清单该条
+   处置由主控更新。
+8. `PlaygroundPageRegistryTest#markdownPageListContinuationAlignsToContentColumn`
+   （:663「expected:<13> but was:<15>」）——红因：祖先列硬值 (chainLen−1)×13 的 13 是
+   「• 」@14 Windows 读数，Linux=15。修法：期望改「该行标记链扣除本级后逐元素独立量出之和」
+   （与同例 :643 对齐行 oracle 同源不同例，专钉「标记行吃祖先列」写入路径）；代理反证 12
+   改当场 floor(adv(「  」))（Win 读数仍 12）+「代理与真值可区分」前置。同批派生化：
+   MIN_BACKDROP_PIXELS=3000 / MIN_BAR_PIXELS=200（Windows 面积一次读数）→「每底色带高 ≥
+   本 JVM 实测行高」「竖条像素 ≥ barWidth×行高×层数」（三因子现取）。双度量自证见下。
+
+**同类扫描（grep 证据）**：全测试树扫「地板/ink/MIN_*」——已修=上列 1/6/8 涉及的 6 处绝对
+地板 + PNG 字节地板；**保留并给理由**：合成 quad 用例地板（8×6 画布自造纹理，字体无关）、
+`MarkdownBlockGeometryTest`（命令计数形；65 字 ASCII token@120 容器 ≥3 行由构造）、
+`MarkdownBlockContentWidthLockTest`（全计数形 + CI 已证两平台真）、`PlaygroundPageRegistryTest`
+MIN_RUNS/MIN_BAR_COLUMNS/参与行≥8/标记行≥5（语料结构常量）、`MarkdownChat3ParityTest`
+矩阵正文/出图数地板与反射扫描数 `scanned≥15`（计数形）、@Nx 判读副本 `png.length()>100`
+（防截断守卫：最小画布 854×480 的纯色 PNG 本体即 >100B，任何字体下不可能误红，非度量
+读数）、`ChatMessageListTest` 软折地板（100 字语料「两种度量模式
+同真」构造形，设计注释在案 :1928-1929）、`LatexSoftwareRenderTest`（ink 判据全 >0 或 ±
+相对形，公式字形 DejaVu 有覆盖）、`MarkdownRenderScaleKit.MIN_CANVAS_*`（输入侧补白常量）、
+guard 族 MIN_HITS（源码扫描计数）、`GtnhWelcomeLineBreakRealMetricsTest`（真度量但判据
+结构形、语料纯 ASCII）。
+
+**门禁判据更正（三件套→二件套）**：原三件套判据由 C8 批登记（本 § C8 细账第 9 条，
+2026-09-07，主控按用户裁定 a1 记录）。C9 起「哈希逐字不变」判据收窄为 **diff.txt
+(A826A2B9E7B0EB57) + matrix.txt (804A42FB09D74FF5)** 二件套；profiles.txt 降为环境观测
+记录、退出哈希判据——实证两面：Linux 值全面不同（fontScene/ink/Bh 行）；本机过滤跑与
+全量跑之间 fam 扫描计数 245↔251 漂移（C8-era 代码复跑同漂移，非代码引入）。已同步登记
+`MarkdownChat3ParityTest` 类头「C9 门禁判据收窄」段。
+
+**双字体模拟（自证方法与结果）**：kit 面=`LatexSoftwareRenderKit` 环境变量钩子
+`QZ_C9_TEST_FONT`（默认不设=行为逐字不变）；生产度量面=`C9DualFontProbeTest`
+（@Ignore+理由常驻：fontSort 扰动只在 FontService 首初始化前生效，禁与常规套件同 JVM
+共跑；含扰动生效自检 adv(•)@14 5.844→7.791）。实测矩阵（Windows 主机，Dialog/Verdana/
+SimSun 三组度量）：`MarkdownListContinuationLockTest` 6/6×3、`FontSoftwareRasterizerSamplingTest`
+4/4×3、`MarkdownSoftwareRenderTest`+`MarkdownChat3ParityTest` 15/15×3、playground 三锁
+4/4（Verdana）。Verdana 的「• 」@16 列宽=17 恰与 Linux CI 实测同值——模拟的正是炸出来的
+那类扰动面。**最终 Linux 真证 = 推送后 CI 复跑（主控执行，非本批未完成项）**。
+
+**实测计数与门禁**：`build --offline` = BUILD SUCCESSFUL；`cleanTest test` =
+**4118 tests / 369 suites / 0 failures / 0 errors / 6 skipped**（脚本数 XML 非心算；C8 基线
+4114/368/0/0/2 净 **+4 用例 / +1 类 / +4 skipped**，全部来自 C9·5 探针类 @Ignore 常驻，
+零既有用例删改）。diff.txt / matrix.txt 哈希逐字未变；profiles.txt 全量复跑逐字重现
+C8 登记值 83C4AD6B6317B8A6（本批零接触实证）。
+
+**提交分解**：C9·1 采样断言关系形 + kit 钩子；C9·2 列表正文列锁测量形+自适应语料；
+C9·3 出图/门禁墨水关系形 + PNG 字节地板拆除；C9·4 页面锁测量形 + 面积地板派生化；
+C9·5 双字体探针（@Ignore）；C9·6 文档（本细账 + Parity 类头门禁段 + 踩坑记录 C9 条）。
+版本文件（gradle.properties / build.gradle.kts / CHANGELOG.md）零接触；主源零接触。
 
 ---
 
