@@ -22,9 +22,11 @@ import net.minecraft.util.IChatComponent;
  * <p><b>硬约束(为什么只调 getKey()/getFormatArgs())</b>:
  * {@code ChatComponentTranslation} 的取文本方法
  * ({@code getUnformattedText()}/{@code getFormattedText()})会走
- * {@code ensureInitialized -> StatCollector} 的语言表翻译查找——headless 测试环境不可靠
- * (缺 commons-io 直接 NoClassDefFoundError)，实机上格式缺参还会抛
- * {@code ChatComponentTranslationFormatException}。故本类<b>一律不调</b>翻译组件自身的取文本
+ * {@code ensureInitialized -> StatCollector} 的语言表翻译查找：与读取结构无关的开销，且在无
+ * Minecraft 实例的环境里不可靠，格式缺参时还会抛
+ * {@code ChatComponentTranslationFormatException}。而 {@code getFormattedText()} 由
+ * {@code ChatComponentStyle} 逐组件前置样式码、尾追 RESET(母本 :105-119)——那一步正是把 §
+ * 注进文本的源头，markdown 输入一律不经它。故本类<b>一律不调</b>翻译组件自身的取文本
  * 路径；内容只从 {@code getFormatArgs()[1]} 取，绝不重新翻译。发送者侧文本取自
  * {@code ChatComponentText}(其 {@code getUnformattedText()} 实现是纯的)。</p>
  *
