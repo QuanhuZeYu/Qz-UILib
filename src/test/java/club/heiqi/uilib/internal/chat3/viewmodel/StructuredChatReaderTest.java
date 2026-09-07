@@ -117,6 +117,34 @@ public class StructuredChatReaderTest {
         Assert.assertEquals("<b>hi</b>", hit.getContent());
     }
 
+/**
+     * Forge 实形锁（本仓 Forge 10.13.4 打过 `NetHandlerPlayServer:768`）：内容槽不是裸
+     * String，而是 {@code ForgeHooks.newChatWithLinks(s)} 产的 {@code ChatComponentText("")}
+     * <b>带 URL siblings</b>（每个链接一段挂 ClickEvent.OPEN_URL）。reader 取它的
+     * <b>unformatted</b> 拼接文本 ⇒ 原文逐字回来、不带 §（服务端 :755 已按
+     * {@code ChatAllowedCharacters} 逐字符拦下 §，:757 直接 kick），也不带事件——
+     * markdown 路的链接化本来就由 {@code ChatUrlLinkifier} 在段流上重做，不依赖组件事件。
+     */
+    @Test
+    public void readsForgeLinkWrappedContentComponent() {
+        ChatComponentText body = new ChatComponentText("");
+        body.appendText("看 ");
+        ChatComponentText link = new ChatComponentText("http://a.co");
+        link.getChatStyle().setChatClickEvent(
+                new net.minecraft.event.ClickEvent(net.minecraft.event.ClickEvent.Action.OPEN_URL,
+                        "http://a.co"));
+        body.appendSibling(link);
+        body.appendText(" 吧");
+        CountingTranslation root = new CountingTranslation("chat.type.text",
+                new Object[] {new ChatComponentText("Steve"), body});
+
+        StructuredChatReader.PlayerChat hit = StructuredChatReader.read(root);
+        Assert.assertNotNull("Forge 打链接后的 ChatComponentText 内容形必须命中", hit);
+        Assert.assertEquals("看 http://a.co 吧", hit.getContent());
+        Assert.assertEquals("渲染路径调用数仍须 0: " + root.report(), 0, root.renderCalls);
+    }
+
+
     /** 未登记 key 不命中（可扩展键集合的反面）。 */
     @Test
     public void unregisteredFormatKeyFallsBack() {

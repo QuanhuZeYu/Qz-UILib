@@ -47,9 +47,10 @@ public final class StructuredChatReader {
     /**
      * 结构命中结果(不可变):发送者文本 + 消息内容文本。
      *
-     * <p>两值都是「组件里的原始文本」——内容侧即原版保证不含 § 的那段玩家输入
-     * ({@code ChatAllowedCharacters.isAllowedCharacter} 排除 U+00A7)，可直接作为
-     * markdown 输入，不需要任何 § 预清洗。</p>
+     * <p>两值都是「组件里的 unformatted 原始文本」——内容侧即原版保证不含 § 的那段玩家输入
+     * (服务端 {@code NetHandlerPlayServer} :753-760 逐字符过
+     * {@code ChatAllowedCharacters.isAllowedCharacter}，该判定本体排除 U+00A7，不过就 kick)，
+     * 可直接作为 markdown 输入，不需要任何 § 预清洗或后清洗。</p>
      */
     public static final class PlayerChat {
 
@@ -107,8 +108,10 @@ public final class StructuredChatReader {
     /**
      * 参数位文本提取(String 形与 {@code ChatComponentText} 形两形都支持；其余形态一律不认)。
      *
-     * <p>反序列化侧 {@code IChatComponent.Serializer} 会把「无样式且无 siblings」的
-     * ChatComponentText 降级成 String，故同一槽位的实际类型两形都可能出现，必须都吃。
+     * <p>反序列化侧 {@code IChatComponent.Serializer}(:133-141) 会把「无样式且无 siblings」的
+     * ChatComponentText 降级成 String，故同一槽位的实际类型两形都可能出现，必须都吃；
+     * ChatComponentText 侧 {@code getUnformattedText()} 会顺带拼接其 siblings(Forge 链接片段)，
+     * 该实现在 {@code ChatComponentStyle} 里不触碰语言表。
      * 拒绝 {@code ChatComponentTranslation} 等任何可能触发翻译查找的组件：宁可不命中退回
      * 正则，也不在结构化路径里碰语言表。</p>
      *

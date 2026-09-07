@@ -1148,13 +1148,31 @@ package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均
 ③ 玩家名称走原版解析、发送内容走 UILib markdown，两者不混合；④ markdown 解析器内 § 原样
 显示、不做任何处理。
 
-1. **实测证据链（本地复读，母本 = `build/rfg/minecraft-src` + `javap` 对
-   `build/rfg/recompiled_minecraft-1.7.10.jar`）**：服务端 `PlayerManager`（notch `nh.a(ir)`）
-   广播的正是 `ChatComponentTranslation("chat.type.text", [player.getDisplayName(), 原始消息
-   String])`；客户端 `NetHandlerPlayClient:790-795` 的 `handleChat` 把 component 原样交给
-   `printChatMessage`，结构未丢；`ChatComponentTranslation` 公开 `getKey()`/`getFormatArgs()`
-   （javap 确认，两者纯）；反序列化侧 `IChatComponent.Serializer:133-141` 把「无样式且无
-   siblings」的 ChatComponentText 降级成 String ⇒ 同一槽位两形都可能出现，读取器两形都吃。
+1. **实测证据链（本代理逐条复读母本源码 + `javap`，行号是本仓 `build/rfg/minecraft-src`
+   与 `build/rfg/recompiled_minecraft-1.7.10.jar` 的实测值）**：
+   - **构造点 = `net/minecraft/network/NetHandlerPlayServer.java:768`**（不是 PlayerManager；
+     PlayerManager 只在 :771 的 `sendChatMsgImpl` 里负责广播）：
+     `new ChatComponentTranslation("chat.type.text", [player.func_145748_c_() /*getDisplayName*/,
+     ForgeHooks.newChatWithLinks(s)])`，其后 :769 再过 `ForgeHooks.onServerChatEvent`（mod 可改写
+     或丢弃）⇒ **key 与两槽形状是 Forge 保证的，不是裸 vanilla 保证的**；
+   - **内容槽在 Forge 下通常是 `ChatComponentText("")` 带 URL siblings**（`ForgeHooks.java:391-433`
+     `newChatWithLinks`：命中 URL 正则的片段拆成子组件并挂 `ClickEvent.OPEN_URL`），**不是**任务书
+     写的「原始消息 String」；无 URL 时才是单段 ChatComponentText，经
+     `IChatComponent.Serializer:191-193` 序列化 + `:133-141` 反序列化按「无样式且无 siblings」
+     降级成 String ⇒ 同一槽位**两形都可能出现**，读取器必须两形都吃（本批实测锁
+     `StructuredChatReaderTest#readsForgeLinkWrappedContentComponent` 用带链接的 Forge 实形复验：
+     取到的 unformatted 内容 = `看 http://a.co 吧`，事件不进内容、由
+     `ChatUrlLinkifier` 在段流上重做链接化）；
+   - § 进不来玩家输入的实证在 `NetHandlerPlayServer.java:753-760`：逐字符
+     `ChatAllowedCharacters.isAllowedCharacter`，不过就 :757
+     `kickPlayerFromServer("Illegal characters in chat")`；该判定本体在
+     `ChatAllowedCharacters.java:11` `return character != 167 && ...`（167 == 0xA7 == §）；
+   - 客户端 `NetHandlerPlayClient.java:790-797` `handleChat` 把 `event.message` 原样交给
+     `printChatMessage` ⇒ 结构到得了 chat3 的接收入口（`ChatFacade.printChatMessage` →
+     `ChatCore.appendMessage` → `ChatHistory.append`，全程持引用不转字符串）；
+   - `ChatComponentTranslation` 公开 `getKey()`/`getFormatArgs()`（`javap` 确认），且
+     `getUnformattedText()`/`getFormattedText()` 在 `ChatComponentStyle` 里是 **final**
+     （`javap` 确认）——这决定了测试侧的「不碰翻译」计数锁只能覆写 `iterator()`/`getUnformattedTextForChat()`。
    **§ 残渣的真来源（本批新证，比原任务书「服务端为消息体定起始样式」的说法更准）**：不是
    服务端塞的，是 `ChatComponentStyle.getFormattedText()`（母本 :105-119）逐组件
    `append(getChatStyle().getFormattingCode())` + `append(EnumChatFormatting.RESET)`（:115
