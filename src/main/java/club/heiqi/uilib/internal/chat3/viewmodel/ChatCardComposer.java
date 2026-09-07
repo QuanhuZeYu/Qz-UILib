@@ -293,7 +293,9 @@ public final class ChatCardComposer {
         String headerName = "";
         String headerTime = "";
         int nameColor = 0xFFFFFFFF;
-        if (alignment != MessageGroupModel.Alignment.SYSTEM_CENTER) {
+        // C8 MARKDOWN_LEFT 与 SYSTEM_CENTER 同属「无组头」家族(无 sender 语义):不建组头。
+        if (alignment != MessageGroupModel.Alignment.SYSTEM_CENTER
+                && alignment != MessageGroupModel.Alignment.MARKDOWN_LEFT) {
             String sender = group.getSender();
             nameColor = alignment == MessageGroupModel.Alignment.SELF_RIGHT
                     ? SenderColorPalette.SELF_NAME_ARGB : SenderColorPalette.colorFor(sender);
@@ -303,9 +305,12 @@ public final class ChatCardComposer {
                     && !ChatMarkdownSettings.isShowSelfName() ? "" : sender;
         }
         // SYSTEM_CENTER:无组头(headerName/headerTime 空,nameColor 白)
+        // C8:MARKDOWN_LEFT 同族(无组头 + 渲染行字族 = font-system,见 ChatMessageList
+        // markdownSystem),切分与渲染必须同源 → 共用 systemLayouter。
         // K3 三轮:系统消息按 font-system 12px 口径切分(切分与渲染同源),
         // 系统行切分器未注入时回退 body 切分器(旧行为)
-        ChatLineLayouter active = alignment == MessageGroupModel.Alignment.SYSTEM_CENTER
+        ChatLineLayouter active = (alignment == MessageGroupModel.Alignment.SYSTEM_CENTER
+                || alignment == MessageGroupModel.Alignment.MARKDOWN_LEFT)
                 && systemLayouter != null ? systemLayouter : layouter;
         List<MessageLines> messages = new ArrayList<MessageLines>();
         for (MessageGroupModel.GroupLine line : group.getLines()) {
@@ -394,7 +399,8 @@ public final class ChatCardComposer {
     /**
      * 气泡内显示文本(M5 起即 markdown 管道输入)。
      *
-     * <p><b>C7 收口：三条装配分支，玩家行一律不读组件的 formatted 文本</b>
+     * <p><b>C8 起为四条装配分支（markdown 递交形最先短路）；玩家行一律不读组件的
+     * formatted 文本</b>
      * （{@code ChatComponentStyle.getFormattedText()} 逐组件前置样式码、尾追 RESET，实测
      * {@code <§rSteve§r> §r<b>hi</b>§r}——那是旧气泡 § 残渣的唯一来源，从源头断开后
      * markdown 侧就不需要任何 § 机制）：</p>
@@ -410,6 +416,9 @@ public final class ChatCardComposer {
      * </ul>
      */
     private static String displayText(MessageGroupModel.GroupLine line) {
+        if (line.isMarkdown()) {
+            return line.getRest();
+        }
         if (line.isStructured()) {
             return line.getRest();
         }

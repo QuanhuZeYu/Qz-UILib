@@ -859,6 +859,158 @@ public class ChatMessageListTest {
         return sb.toString();
     }
 
+    // ==================== C8 通道③：markdown 系统行的渲染路由 ====================
+
+    private static final String MARKDOWN_KEY =
+            club.heiqi.uilib.api.chat.ChatAccess.MARKDOWN_CHAT_KEY;
+
+    /**
+     * 锁 8（渲染路由 + 呈现形状）：markdown 记录 ⇒ 组走 markdown 管道（非系统 § 路）。
+     * 判别三连：** 出粗体段（§ 路 parser 不产 markdown 粗体）、§a 字面存活（本测试
+     * PARSER 会吞未识别 § 码对——markdown 路不吞 ⇒ 反证）、零 "uilib.markdown" key 字面
+     * （短路在取文本之前，语言表查找压根没发生）。形状三连：组节点无组头（子节点 1 个
+     * = 消息节点本体）、无气泡（背景 0/无 padding/无圆角）、左对齐（AlignSelf.START）。
+     */
+    @Test
+    public void markdownRecordRoutesThroughPipelineWithLeftPlainShape() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        String section = String.valueOf((char) 0x00A7);
+        controller.history().append(new ChatLineRecord(
+                new net.minecraft.util.ChatComponentTranslation(MARKDOWN_KEY,
+                        new Object[] {"**b**" + section + "a 公告 http://a.co"}), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        SceneNode group = hudGroups(root).get(0);
+        Assert.assertEquals("markdown 组 = 左对齐(不居中)", AlignSelf.START, group.getAlignSelf());
+        Assert.assertEquals("无组头:组直挂唯一消息节点", 1, group.__getChildren().size());
+        SceneNode messageNode = group.__getChildren().get(0);
+        Assert.assertEquals("无气泡背景", 0, messageNode.getBackgroundColor());
+        Assert.assertEquals("无气泡左内衬", 0, messageNode.getPaddingLeft());
+        Assert.assertEquals("无气泡右内衬", 0, messageNode.getPaddingRight());
+        Assert.assertEquals("无圆角", 0, messageNode.getCornerRadius());
+
+        List<SceneNode> lineNodes = messageNode.__getChildren();
+        Assert.assertEquals("单逻辑行", 1, lineNodes.size());
+        StringBuilder text = new StringBuilder();
+        boolean bold = false;
+        for (TextSegment segment : lineNodes.get(0).getSegments()) {
+            text.append(segment.getText());
+            if (segment.getStyle().getFontType() == FontType.BOLD) {
+                bold = true;
+            }
+        }
+        Assert.assertTrue("** 定界必须经 markdown 解析出粗体段(系统 § 路不产此形状): " + text, bold);
+        Assert.assertTrue("§a 字面存活(markdown 路零 § 机制): " + text, text.indexOf(section) >= 0);
+        Assert.assertFalse("key 字面不得上屏: " + text, text.toString().contains(MARKDOWN_KEY));
+    }
+
+    /**
+     * 锁 8 同源段（行序列与非注入路径同源）：视图喂进 pipeline 的字符串 = args[0] 原文、
+     * 定行宽 = 系统行口径的 compose maxLine（chatWidth − 2×paddingX）、字号 = font-system
+     * ——与直连消费者拿同一串/同宽/同字号调管道（非注入路径）在替身换行下逐行等值。
+     * 长度刻意不触发 HUD 8 行截断（截断语义另有既有锁钉），保证比对落在同一层产物上。
+     */
+    @Test
+    public void markdownLineSequenceMatchesDirectPipelineCallSameStringSameWidth() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        StringBuilder body = new StringBuilder("第一行 ");
+        for (int i = 0; i < 60; i++) {
+            body.append("字").append(i);
+        }
+        String md = body.toString();
+        controller.history().append(new ChatLineRecord(
+                new net.minecraft.util.ChatComponentTranslation(MARKDOWN_KEY, new Object[] {md}),
+                1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        SceneNode messageNode = hudGroups(root).get(0).__getChildren().get(0);
+        List<SceneNode> viewLines = messageNode.__getChildren();
+
+        ChatMarkdownPipeline direct = new ChatMarkdownPipeline();
+        int maxLine = Math.max(1, ChatMarkdownSettings.chatWidthFor(400)
+                - 2 * ChatMarkdownSettings.getBubblePaddingX());
+        List<ChatMarkdownPipeline.RenderedLine> sameSource = direct.layout(md,
+                ChatMarkdownSettings.getSystemTextArgb(), maxLine,
+                ChatMarkdownSettings.getSystemFontSizePx(), null, FIXED_WRAP);
+        Assert.assertTrue("反 ∅：内容足够长必然多行，实测 " + viewLines.size(),
+                viewLines.size() > 1);
+        Assert.assertTrue("工况自检（反空跑）：本例必须不触 HUD 截断，实测 " + viewLines.size(),
+                viewLines.size() < ChatCardComposer.HUD_MAX_LINES);
+        Assert.assertEquals("同串同宽同行数(注入内容与直连消费者同一管道)",
+                sameSource.size(), viewLines.size());
+        for (int i = 0; i < sameSource.size(); i++) {
+            StringBuilder expect = new StringBuilder();
+            for (TextSegment segment : sameSource.get(i).segments()) {
+                expect.append(segment.getText());
+            }
+            StringBuilder got = new StringBuilder();
+            for (TextSegment segment : viewLines.get(i).getSegments()) {
+                got.append(segment.getText());
+            }
+            Assert.assertEquals("第 " + i + " 行逐字同源", expect.toString(), got.toString());
+        }
+    }
+
+    /**
+     * 锁 8 补丁（HUD 8 行截断平价）：markdown 系统行与气泡行同走 clampHudLines——
+     * 超 8 行时视图取前 8 行、末行补省略号（§5.4 验收 22 语义），与非注入路径直调
+     * 管道 + clamp 的产物逐行等值。配上一条「不触截断」的同源锁合成完整口径。
+     */
+    @Test
+    public void markdownRowHonoursHudEightLineClampExactlyLikePipeline() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        StringBuilder body = new StringBuilder();
+        for (int i = 0; i < 240; i++) {
+            body.append("字").append(i);
+        }
+        String md = body.toString();
+        controller.history().append(new ChatLineRecord(
+                new net.minecraft.util.ChatComponentTranslation(MARKDOWN_KEY, new Object[] {md}),
+                1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        List<SceneNode> viewLines = hudGroups(root).get(0).__getChildren().get(0)
+                .__getChildren();
+        Assert.assertEquals("HUD 形态恒 ≤ 8 视觉行", ChatCardComposer.HUD_MAX_LINES,
+                viewLines.size());
+        StringBuilder tail = new StringBuilder();
+        for (TextSegment segment : viewLines.get(7).getSegments()) {
+            tail.append(segment.getText());
+        }
+        Assert.assertTrue("末行带省略号(截断语义与气泡行同源): " + tail,
+                tail.toString().endsWith(ChatCardComposer.ELLIPSIS));
+    }
+    /** 对照锁（防误锁）：普通系统行仍居中、仍走 § 解析路（既有行为一字未动）。 */
+    @Test
+    public void ordinarySystemRowStillCenteredVanillaPath() {
+        ChatSceneController controller = linkController();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(
+                new ChatComponentText("[公告] 维护通知"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        SceneNode group = hudGroups(root).get(0);
+        Assert.assertEquals(AlignSelf.CENTER, group.getAlignSelf());
+        SceneNode messageNode = group.__getChildren().get(0);
+        String text = "";
+        for (TextSegment segment : messageNode.__getChildren().get(0).getSegments()) {
+            text += segment.getText();
+        }
+        Assert.assertTrue("普通系统行走 § 路: " + text,
+                text.contains("[公告] 维护通知"));
+    }
+
     /** root → 组节点气泡的行节点列表(HUD 树,单消息他人组)。 */
     private static List<SceneNode> hudLineNodesOfFirstGroup(SceneNode root) {
         SceneNode group = hudGroups(root).get(0);

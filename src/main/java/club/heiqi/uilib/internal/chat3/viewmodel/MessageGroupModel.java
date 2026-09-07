@@ -13,7 +13,8 @@ import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
  * {@link #getLatestMillis()} 驱动。每行携带去前缀后的消息本体(气泡内只显示本体)。</p>
  *
  * <p>C7 起每行另带「本体来源」标记(结构通道 / 正则兜底)，气泡装配处据此决定是否回读组件
- * 文本，见 {@link GroupLine#isStructured()}。</p>
+ * 文本，见 {@link GroupLine#isStructured()}。C8 起再加姊妹标记「markdown 递交形」
+ * （{@link GroupLine#isMarkdown()}），装配处据此直取 {@code args[0]} 原文、零组件回读。</p>
  */
 public final class MessageGroupModel {
 
@@ -24,7 +25,13 @@ public final class MessageGroupModel {
         /** 他人的消息组:左对齐 + 深灰气泡。 */
         OTHER_LEFT,
         /** 系统/广播消息:居中灰白小字,无气泡,每条独立。 */
-        SYSTEM_CENTER
+        SYSTEM_CENTER,
+        /**
+         * C8 通道③（printMarkdown 递交）:markdown 系统行——左对齐、无气泡、无 sender、
+         * 不居中、每条独立；行内容进 markdown 渲染管道（与玩家气泡同一 L1/L2 管道，
+         * 这是它存在的意义）。
+         */
+        MARKDOWN_LEFT
     }
 
     /** 组内一行:消息记录 + 去前缀后的消息本体(系统消息 = 全文) + 本体来源标记。 */
@@ -42,11 +49,18 @@ public final class MessageGroupModel {
          * false ⇒ 正则兜底或系统行，走旧装配口径。</p>
          */
         private final boolean structured;
+        /**
+         * C8:本行是否 {@code printMarkdown} 递交形（{@link MessageGroupModel.Alignment#MARKDOWN_LEFT}
+         * 组的行）。true ⇒ rest = {@code getFormatArgs()[0]} 的 markdown 原文
+         * （{@link StructuredChatReader#markdownContentOf}），装配处直取、零组件回读。
+         */
+        private final boolean markdown;
 
-        private GroupLine(ChatLineRecord record, String rest, boolean structured) {
+        private GroupLine(ChatLineRecord record, String rest, boolean structured, boolean markdown) {
             this.record = record;
             this.rest = rest;
             this.structured = structured;
+            this.markdown = markdown;
         }
 
         /** @return 消息记录 */
@@ -63,6 +77,11 @@ public final class MessageGroupModel {
         boolean isStructured() {
             return structured;
         }
+
+        /** @return true = markdown 递交形(C8 通道③;包内装配读端，公共面零变化) */
+        boolean isMarkdown() {
+            return markdown;
+        }
     }
 
     private final String sender;
@@ -70,11 +89,11 @@ public final class MessageGroupModel {
     private final List<GroupLine> lines;
 
     private MessageGroupModel(String sender, Alignment alignment, ChatLineRecord record, String rest,
-            boolean structured) {
+            boolean structured, boolean markdown) {
         this.sender = sender;
         this.alignment = alignment;
         this.lines = new ArrayList<GroupLine>();
-        this.lines.add(new GroupLine(record, rest, structured));
+        this.lines.add(new GroupLine(record, rest, structured, markdown));
     }
 
     /**
@@ -89,7 +108,7 @@ public final class MessageGroupModel {
     static MessageGroupModel player(String sender, boolean isSelf, ChatLineRecord record, String rest,
             boolean structured) {
         return new MessageGroupModel(sender, isSelf ? Alignment.SELF_RIGHT : Alignment.OTHER_LEFT,
-                record, rest, structured);
+                record, rest, structured, false);
     }
 
     /**
@@ -99,12 +118,23 @@ public final class MessageGroupModel {
      */
     static MessageGroupModel system(ChatLineRecord record) {
         return new MessageGroupModel(null, Alignment.SYSTEM_CENTER, record, record.getPlainText(),
-                false);
+                false, false);
     }
 
-    /** 追加一条消息(仅同发送者合并路径调用)。 */
+    /**
+     * C8 通道③ markdown 系统行组（每条独立，不并组）。
+     *
+     * @param record  markdown 键组件记录
+     * @param content {@link StructuredChatReader#markdownContentOf} 取到的 args[0] 原文
+     *                （调用方已判非 null;本工厂不做判形、不回读组件文本）
+     */
+    static MessageGroupModel markdown(ChatLineRecord record, String content) {
+        return new MessageGroupModel(null, Alignment.MARKDOWN_LEFT, record, content, false, true);
+    }
+
+    /** 追加一条消息(仅同发送者合并路径调用;markdown 行恒独立组，不经本入口)。 */
     void addLine(ChatLineRecord record, String rest, boolean structured) {
-        lines.add(new GroupLine(record, rest, structured));
+        lines.add(new GroupLine(record, rest, structured, false));
     }
 
     /** @return 发送者名(系统组为 null) */

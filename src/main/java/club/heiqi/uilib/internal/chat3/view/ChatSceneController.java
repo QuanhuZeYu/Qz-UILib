@@ -1107,7 +1107,9 @@ public final class ChatSceneController {
      */
     private int estimateHudGroupHeight(ChatCardComposer.ComposedGroup group) {
         // K3 三轮:系统消息按 font-system 12/16 估算(与渲染/切分同源),非系统组沿用 body
-        boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER;
+        // C8:MARKDOWN_LEFT 同族(无壳无组头、字族 font-system),「行数×行高」同式。
+        boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER
+                || group.getAlignment() == MessageGroupModel.Alignment.MARKDOWN_LEFT;
         int lineHeight = system ? ChatMarkdownSettings.getSystemLineHeightPx()
                 : ChatMarkdownSettings.getChatLineHeightPx();
         int paddingY = ChatMarkdownSettings.getBubblePaddingY();

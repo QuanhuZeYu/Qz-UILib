@@ -42,6 +42,22 @@ public final class ChatCore {
         controller.markDataDirty();
     }
 
+    /**
+     * C8 通道③ markdown 递交入口(旁路注入,<b>不过装饰器链</b>)。
+     *
+     * <p>与 {@link #appendMessage} 的区别只有一件事:不调 {@code ChatAccess.decorate}——
+     * print 家族与装饰链解耦(定案)。网络线程安全同 {@link #appendMessage}(历史加锁 +
+     * 脏标记主线程冲刷)。messageId 恒 0 由调用方(安装器 sink)决定:markdown 消息互相
+     * 不替换(原版普通聊天 id=0 语义同)。</p>
+     */
+    public void appendMarkdown(IChatComponent component, int messageId) {
+        if (component == null) {
+            return;
+        }
+        controller.history().append(component, messageId);
+        controller.markDataDirty();
+    }
+
     /** 清空聊天。 */
     public void clear() {
         controller.history().clear();

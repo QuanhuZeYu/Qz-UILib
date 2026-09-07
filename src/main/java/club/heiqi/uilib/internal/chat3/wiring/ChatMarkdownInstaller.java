@@ -124,6 +124,8 @@ public final class ChatMarkdownInstaller {
         Object current = CHAT_FIELD.get(mc.ingameGUI);
         if (current instanceof ChatFacade) {
             installed = true;
+            // C8:已接管(含「字段本就被他处置好 Facade」的边角)也重指 sink——幂等。
+            registerMarkdownSink((ChatFacade) current);
             return;
         }
         if (originalChat == null && current instanceof GuiNewChat) {
@@ -135,12 +137,24 @@ public final class ChatMarkdownInstaller {
         if (verified instanceof ChatFacade) {
             installed = true;
             ChatAccess.getInstance().setTakeoverActive(true);
+            registerMarkdownSink((ChatFacade) verified);
             LOG.info("聊天系统 3.0 接管已安装(架空原版)");
         } else {
             installed = false;
             ChatAccess.getInstance().setTakeoverActive(false);
+            ChatAccess.getInstance().setMarkdownSink(null);
             LOG.warn("聊天 3.0 读回验证失败(字段仍被占用): {}", verified);
         }
+    }
+
+    /**
+     * C8 markdown 注入 sink 回写(api.chat 侧字段与 {@code setTakeoverActive} 同先例、
+     * 同口径:安装器装配成功后写、回退/失败清)。旁路 = {@code ChatCore.appendMarkdown}
+     * ——不经 Facade.printChatMessage(那条会 decorate),不经 ChatBridge、不触发送链。
+     */
+    private static void registerMarkdownSink(ChatFacade facade) {
+        final ChatCore core = facade.core();
+        ChatAccess.getInstance().setMarkdownSink(component -> core.appendMarkdown(component, 0));
     }
 
     /** 关闭:把留存的原版实例写回,零残留。 */
@@ -159,6 +173,8 @@ public final class ChatMarkdownInstaller {
         if (!(verified instanceof ChatFacade)) {
             installed = false;
             ChatAccess.getInstance().setTakeoverActive(false);
+            // C8:sink 与接管态同步撤销——printMarkdown 随即降级原版显示。
+            ChatAccess.getInstance().setMarkdownSink(null);
             ChatHudWindow.close();
             LOG.info("聊天 3.0 已回退原版对话框(逃生舱)");
         }

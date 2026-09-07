@@ -78,6 +78,84 @@ public class ChatCoreTest {
         }
     }
 
+    /**
+     * C8 通道③ wiring 锁：安装器先例的 sink 注册（setMarkdownSink → core::appendMarkdown）
+     * 打通 printMarkdown 端到端——注入进的是 markdown 键组件、历史零装饰（计数装饰器
+     * 恒 0）、reader 从入史组件取回 args[0] 原文（含 **、\n、中文、URL 形状，§ 字面零特判）。
+     * 对照正例：原版注入路径（appendMessage）同装饰器次数 ≥ 1（防空断言）。
+     */
+    @Test
+    public void printMarkdownEndToEndViaSinkBypassesDecoratorsAndKeepsRawArgs() throws Exception {
+        ChatSceneController controller = controller();
+        ChatCore core = new ChatCore(controller);
+        final int[] calls = new int[1];
+        AutoCloseable counting = ChatAccess.getInstance().registerDecorator(component -> {
+            calls[0]++;
+            return component;
+        });
+        ChatAccess.getInstance().setMarkdownSink(component -> core.appendMarkdown(component, 0));
+        try {
+            String md = "# 公告 **粗**\n看 http://a.co 吧 " + (char) 0x00A7 + "ab";
+            ChatAccess.getInstance().printMarkdown(md);
+            Assert.assertEquals("print 路径装饰器恒 0", 0, calls[0]);
+            Assert.assertEquals(1, controller.history().size());
+            net.minecraft.util.IChatComponent injected =
+                    controller.history().snapshot().get(0).getComponent();
+            Assert.assertTrue("历史持有的是 markdown 键翻译组件（结构不丢）",
+                    club.heiqi.uilib.internal.chat3.viewmodel.StructuredChatReader
+                            .rendersAsMarkdown(injected));
+            Assert.assertEquals("reader 取回 args[0] = 递交原文（逐字）", md,
+                    club.heiqi.uilib.internal.chat3.viewmodel.StructuredChatReader
+                            .markdownContentOf(injected));
+
+            // 对照正例（防空断言）：原版注入路径照常过装饰链
+            core.appendMessage(new ChatComponentText("<Steve> hi"), 1);
+            Assert.assertTrue("原版路径装饰器计数必须动: calls=" + calls[0], calls[0] >= 1);
+        } finally {
+            ChatAccess.getInstance().setMarkdownSink(null);
+            counting.close();
+        }
+    }
+
+    /** appendMarkdown 对 null 组件零入史、messageId 语义与 append 一致（同 id 替换不刷屏）。 */
+    @Test
+    public void appendMarkdownGuardsNullAndKeepsMessageIdSemantics() {
+        ChatSceneController controller = controller();
+        ChatCore core = new ChatCore(controller);
+        core.appendMarkdown(null, 0);
+        Assert.assertEquals(0, controller.history().size());
+        net.minecraft.util.IChatComponent a = new net.minecraft.util.ChatComponentTranslation(
+                "uilib.markdown", new Object[] {"one"});
+        core.appendMarkdown(a, 7);
+        core.appendMarkdown(a, 7);
+        Assert.assertEquals("同 id=7 替换(原版 setChatLine 口径)", 1, controller.history().size());
+        core.appendMarkdown(a, 0);
+        Assert.assertEquals("id=0 恒追加", 2, controller.history().size());
+    }
+
+    /** Facade 的 printChatMessage 路径（会 decorate）与 core.appendMarkdown（不会）语义分离锁。 */
+    @Test
+    public void facadePrintPathDecoratesWhileMarkdownBypassDoesNot() throws Exception {
+        ChatSceneController controller = controller();
+        final int[] calls = new int[1];
+        AutoCloseable counting = ChatAccess.getInstance().registerDecorator(component -> {
+            calls[0]++;
+            return component;
+        });
+        try {
+            ChatFacade facade = new ChatFacade(null, controller);
+            facade.printChatMessage(new ChatComponentText("<Steve> hi"));
+            Assert.assertTrue("Facade.printChatMessage 仍走装饰链（既有行为一字不动）", calls[0] >= 1);
+            int after = calls[0];
+            facade.core().appendMarkdown(new net.minecraft.util.ChatComponentTranslation(
+                    club.heiqi.uilib.api.chat.ChatAccess.MARKDOWN_CHAT_KEY,
+                    new Object[] {"plain"}), 0);
+            Assert.assertEquals("appendMarkdown 旁路零装饰", after, calls[0]);
+        } finally {
+            counting.close();
+        }
+    }
+
     @Test
     public void shouldForwardClearDeleteAndScroll() {
         ChatSceneController controller = controller();

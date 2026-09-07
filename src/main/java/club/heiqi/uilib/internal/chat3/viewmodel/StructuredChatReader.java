@@ -9,6 +9,8 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.IChatComponent;
 
+import club.heiqi.uilib.api.chat.ChatAccess;
+
 /**
  * 聊天 3.0 结构化聊天读取器(L2 视图模型,纯函数、headless 可测):原版玩家聊天组件
  * → (发送者文本, 消息内容文本)。
@@ -32,6 +34,15 @@ import net.minecraft.util.IChatComponent;
  *
  * <p><b>不命中即返回 null</b>(不抛、不猜)，调用方 {@link MessageGrouper} 随即退回
  * {@link SenderExtractor} 正则兜底——行为与划界前完全一致。</p>
+ *
+ * <p><b>C8 通道③（2026-09-07 用户裁决 a1）</b>：{@code ChatAccess.printMarkdown} 递交的
+ * 消息落在 {@link ChatAccess#MARKDOWN_CHAT_KEY} 键上。它<b>不是玩家聊天</b>——
+ * {@link #read(IChatComponent)} 对它恒返回 null（键未登记进 {@code PLAYER_CHAT_FORMAT_KEYS}，
+ * 且形参也不合 [sender, content]）；本类对它只负责两件事：
+ * {@link #rendersAsMarkdown(IChatComponent)} 结构判形（渲染路由在任何取文本调用之前短路
+ * 用它），{@link #markdownContentOf(IChatComponent)} 取 {@code getFormatArgs()[0]} 的
+ * unformatted 原文（String 与 ChatComponentText 两形都吃，照 {@code plainTextOf} 现法，
+ * 全程不触翻译查找）。</p>
  */
 public final class StructuredChatReader {
 
@@ -105,6 +116,45 @@ public final class StructuredChatReader {
             return null;
         }
         return new PlayerChat(sender, content);
+    }
+
+    /**
+     * 该组件是否是「按 markdown 渲染」的系统行（C8 通道③判形，{@link MessageGrouper} 与
+     * 渲染路由在任何取文本调用<b>之前</b>用它短路）。
+     *
+     * <p>判据 = 纯结构：root 是 {@code ChatComponentTranslation} 且 {@code getKey()} 命中
+     * {@link ChatAccess#MARKDOWN_CHAT_KEY}。不调 {@code getUnformattedText()} /
+     * {@code getFormattedText()}——对翻译组件那是语言表查找，未注册键实机返回 key 字面
+     * {@code "uilib.markdown"}，正则兜底若先读到它会把它当普通系统文本（错形）。</p>
+     *
+     * @param component 消息根组件（可为 null）
+     * @return true = markdown 递交键组件；null / 非翻译根 / 其他键 ⇒ false
+     */
+    public static boolean rendersAsMarkdown(IChatComponent component) {
+        return component instanceof ChatComponentTranslation
+                && ChatAccess.MARKDOWN_CHAT_KEY.equals(((ChatComponentTranslation) component).getKey());
+    }
+
+    /**
+     * 取 markdown 递交组件的内容原文（{@code getFormatArgs()[0]}；String 与
+     * {@code ChatComponentText} 两形都吃，其余形态不认）。
+     *
+     * <p>与 {@link #read(IChatComponent)} 的硬约束同款：只走 {@code getKey()} /
+     * {@code getFormatArgs()}，永不触翻译取文本。args 缺位、形态不合返回 null——不抛、
+     * 不猜，调用方按系统行降级处理。</p>
+     *
+     * @param component 消息根组件（可为 null；应先用 {@link #rendersAsMarkdown} 判形）
+     * @return markdown 内容原文（可为空串）；取不到 ⇒ null
+     */
+    public static String markdownContentOf(IChatComponent component) {
+        if (!rendersAsMarkdown(component)) {
+            return null;
+        }
+        Object[] args = ((ChatComponentTranslation) component).getFormatArgs();
+        if (args == null || args.length != 1) {
+            return null;
+        }
+        return plainTextOf(args[0]);
     }
 
     /**

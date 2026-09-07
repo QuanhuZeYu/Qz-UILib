@@ -741,12 +741,17 @@ public final class ChatMessageList {
             Map<SceneNode, ChatLineRecord> registry, ReadableSignal<Long> frameMillis,
             ReadableSignal<Long> hudVisible) {
         boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER;
+        // C8 通道③:markdown 系统行(printMarkdown 递交)——左对齐、无气泡、无组头、不居中,
+        // 但行内容走 markdown 管道(下方 layout 判据只认 system,那正是本形状存在的意义)。
+        // 字族/底色随系统层:它属系统消息层里唯一被划出走 markdown 的例外(宪法 1 口径)。
+        boolean markdownSystem =
+                group.getAlignment() == MessageGroupModel.Alignment.MARKDOWN_LEFT;
         boolean selfRight = group.getAlignment() == MessageGroupModel.Alignment.SELF_RIGHT;
         // K3 三轮:系统消息独立字号/行高(font-system 12/16,设计稿 §2.2/§3.4),
         // 不再沿用 body 13/18;行段宽与链接命中区度量随之同源(12px 口径)
-        int fontSize = system ? ChatMarkdownSettings.getSystemFontSizePx()
+        int fontSize = system || markdownSystem ? ChatMarkdownSettings.getSystemFontSizePx()
                 : ChatMarkdownSettings.getChatFontSizePx();
-        int lineHeight = system ? ChatMarkdownSettings.getSystemLineHeightPx()
+        int lineHeight = system || markdownSystem ? ChatMarkdownSettings.getSystemLineHeightPx()
                 : ChatMarkdownSettings.getChatLineHeightPx();
         int paddingX = ChatMarkdownSettings.getBubblePaddingX();
         int paddingY = ChatMarkdownSettings.getBubblePaddingY();
@@ -757,6 +762,10 @@ public final class ChatMessageList {
                 break;
             case SYSTEM_CENTER:
                 align = AlignSelf.CENTER;
+                break;
+            case MARKDOWN_LEFT:
+                // C8:markdown 系统行左对齐、不居中(定案呈现形状)。
+                align = AlignSelf.START;
                 break;
             default:
                 align = AlignSelf.START;
@@ -829,7 +838,8 @@ public final class ChatMessageList {
             }
             groupNode.appendChild(headerRow);
         }
-        int baseTextColor = system ? ChatMarkdownSettings.getSystemTextArgb() : 0xFFFFFFFF;
+        int baseTextColor = system || markdownSystem
+                ? ChatMarkdownSettings.getSystemTextArgb() : 0xFFFFFFFF;
         int bubbleColor = selfRight ? ChatMarkdownSettings.getBubbleSelfArgb()
                 : ChatMarkdownSettings.getBubbleOtherArgb();
         // 液态玻璃（用户裁决 2026-09-02）：气泡本身变半透明磨砂玻璃。
@@ -905,7 +915,8 @@ public final class ChatMessageList {
                         .setWidthSizing(SceneNode.WidthSizing.SHRINK)
                         // 同右对齐修复(见 accent 分支注释):非 accent 形态气泡同样贴组右缘
                         .setAlignSelf(align);
-                if (!system) {
+                // C8:markdown 系统行同样无气泡(与系统行同族,无背景/padding/maxWidth/圆角)。
+                if (!system && !markdownSystem) {
                     messageNode.setBackgroundColor(bubbleColor)
                             .setBackdrop(bubbleBackdrop)
                             .setPadding(paddingY, paddingX, paddingY, paddingX)
@@ -1090,7 +1101,7 @@ public final class ChatMessageList {
                     // K3 三轮:钳宽仅作用于气泡行(气泡 ≤ 0.85 组内容宽);系统消息无气泡,
                     // 行宽 = 实宽(钳到 269 会把居中的系统行节点收缩到 269,行文本 340 溢出
                     // 节点且居中几何错位——K3 摘要第 4 条)
-                    if (maxBubbleWidthPx > 0 && !system) {
+                    if (maxBubbleWidthPx > 0 && !system && !markdownSystem) {
                         // M10c：reserve 必须同扣 listExtra——续行节点盒还额外吃掉正文列，
                         // 不扣则「行宽=可用宽 + padding」顶出气泡右缘（钳宽与偏移是一式两面）。
                         int reserve = (accent ? ACCENT_BAR_WIDTH_PX : 0)
@@ -1165,7 +1176,7 @@ public final class ChatMessageList {
                 nameNode, headerNameBase, timeNode, headerTimeBase, accentBars,
                 ChatMarkdownSettings.getAccentBarSelfArgb(), quoteBars,
                 ChatMarkdownSettings.getQuoteBarArgb(), lineHovered, bubbleHovered,
-                bubbleColor, hoverBubbleColor, system);
+                bubbleColor, hoverBubbleColor, system || markdownSystem);
         // P2-4:hover 颜色插值每帧推进(气泡 100ms / 链接 80ms,easeOutQuad;目标态由
         // hovered 绑定与 LinkHoverDriver 写入,本绑定只推进进度并按需重烘)。
         // 与 HUD 淡出烘焙共享 currentAlpha,两路重烘幂等。
@@ -1228,7 +1239,7 @@ public final class ChatMessageList {
                 boolean now = Boolean.TRUE.equals(hovered);
                 boolean changed = now != ownBubble[0];
                 ownBubble[0] = now;
-                if (!system) {
+                if (!system && !markdownSystem) {
                     bubbleHovered[idx] = now;
                 }
                 if (!now) {
@@ -1237,7 +1248,7 @@ public final class ChatMessageList {
                         driver.onPointerLeave();
                     }
                 }
-                if (!system && changed) {
+                if (!system && !markdownSystem && changed) {
                     bake.bake(currentAlpha[0]);
                 }
             });

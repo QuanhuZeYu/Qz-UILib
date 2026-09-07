@@ -485,6 +485,52 @@ public class ChatCardComposerTest {
     }
 
 
+    // ==================== C8 通道③：markdown 行的装配分支 ====================
+
+    /**
+     * 锁 8 前半（装配内容与 pipeline 输入同源 + 形状）：markdown 记录装配出的
+     * displayText 必须恰 = {@code args[0]} 原文（含 **、\n、中文、URL 形状），
+     * 不带系统行那套 formatted 尾巴（§r）；组无组头、无 sender，形态 = MARKDOWN_LEFT。
+     */
+    @Test
+    public void markdownLineComposesWithRawArgsTextAndNoHeader() {
+        String md = "# 公告 **粗**\n第二行 中文 http://a.co";
+        ChatLineRecord record = new ChatLineRecord(
+                new ChatComponentTranslation(club.heiqi.uilib.api.chat.ChatAccess.MARKDOWN_CHAT_KEY,
+                        new Object[] {md}), 1, NOW - 5000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, false);
+
+        Assert.assertEquals(MessageGroupModel.Alignment.MARKDOWN_LEFT, composed.getAlignment());
+        Assert.assertNull("markdown 组无 sender", composed.getSender());
+        Assert.assertEquals("无组头名", "", composed.getHeaderName());
+        Assert.assertEquals("无组头时间", "", composed.getHeaderTime());
+        ChatCardComposer.MessageLines message = composed.getMessages().get(0);
+        Assert.assertEquals("displayText = args[0] 原文（逐字，含换行）", md, message.getDisplayText());
+        Assert.assertEquals("同一字符串喂 pipeline（cacheKey 单轨自然覆盖）", md,
+                message.getDisplayText());
+    }
+
+    /**
+     * 锁 8 后半（§ 规则对注入内容同样成立）：递交含 § 字面 ⇒ displayText 原样带 §、
+     * 零 formatted 追加（对照系统行分支会被 {@code getFormattedText()} 尾注 §r——
+     * markdown 分支不得出现该形状）。
+     */
+    @Test
+    public void markdownTextKeepsSectionLiteralWithoutFormattedTail() {
+        String section = String.valueOf((char) 0x00A7);
+        String md = section + "ab **x**";
+        ChatLineRecord record = new ChatLineRecord(
+                new ChatComponentTranslation(club.heiqi.uilib.api.chat.ChatAccess.MARKDOWN_CHAT_KEY,
+                        new Object[] {md}), 1, NOW - 5000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+        ChatCardComposer.MessageLines message = composer.compose(group, NOW, 1000, false)
+                .getMessages().get(0);
+        Assert.assertEquals("§ 原样字面，不剥不转", md, message.getDisplayText());
+        Assert.assertFalse("无 formatted 尾注（不进原版渲染文本通道）: " + message.getDisplayText(),
+                message.getDisplayText().endsWith(section + "r"));
+    }
+
     private static ChatLineLayouter.Measure fixedMeasure() {
         return new ChatLineLayouter.Measure() {
             @Override

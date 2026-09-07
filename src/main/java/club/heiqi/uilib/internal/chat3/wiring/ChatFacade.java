@@ -27,6 +27,11 @@ public final class ChatFacade extends GuiNewChat {
         this.core = new ChatCore(controller);
     }
 
+    /** 内部编排器(包内:安装器 sink 注册用)。 */
+    ChatCore core() {
+        return core;
+    }
+
     /** 测试探针:内部编排器(转发断言用)。 */
     ChatCore __coreForTest() {
         return core;

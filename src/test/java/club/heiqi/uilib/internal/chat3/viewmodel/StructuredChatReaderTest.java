@@ -186,6 +186,85 @@ public class StructuredChatReaderTest {
         Assert.assertEquals("Steve", hit.getSender());
     }
 
+    // ==================== C8 通道③：markdown 键识别与内容读取 ====================
+
+    private static final String MARKDOWN_KEY = "uilib.markdown";
+
+    /** 锁 1（命中/不命中矩阵）：判形只认「root 是翻译组件且 key 命中 markdown 键」。 */
+    @Test
+    public void rendersAsMarkdownMatchesOnlyMarkdownKeyRoot() {
+        Assert.assertTrue("markdown 键 = true", StructuredChatReader.rendersAsMarkdown(
+                new ChatComponentTranslation(MARKDOWN_KEY, new Object[] {"**hi**"})));
+        Assert.assertFalse("chat.type.text = false", StructuredChatReader.rendersAsMarkdown(
+                new ChatComponentTranslation("chat.type.text",
+                        new Object[] {"Steve", "hi"})));
+        Assert.assertFalse("ChatComponentText = false",
+                StructuredChatReader.rendersAsMarkdown(new ChatComponentText(MARKDOWN_KEY)));
+        Assert.assertFalse("null = false", StructuredChatReader.rendersAsMarkdown(null));
+        // root 判形不递归 siblings：markdown 键只挂在 args 槽里不算递交形
+        Assert.assertFalse("markdown 键藏在参数槽不算 root 判形", StructuredChatReader.rendersAsMarkdown(
+                new ChatComponentTranslation("chat.type.text", new Object[] {
+                        new ChatComponentText("Steve"),
+                        new ChatComponentTranslation(MARKDOWN_KEY, new Object[] {"x"})})));
+    }
+
+    /** 锁 2（args[0] 原文）：String 与 ChatComponentText 两形都吃，含 **、\n、中文、URL 形状、§ 字面零特判。 */
+    @Test
+    public void markdownContentOfReturnsRawArgsTextInBothForms() {
+        String md = "第一行 **粗**\n第二行 中文 https://a.co/x?y=1 *斜*";
+        Assert.assertEquals("String 形原样", md, StructuredChatReader.markdownContentOf(
+                new ChatComponentTranslation(MARKDOWN_KEY, new Object[] {md})));
+        Assert.assertEquals("ChatComponentText 形同样原文（经 unformatted 拼接）", md,
+                StructuredChatReader.markdownContentOf(
+                        new ChatComponentTranslation(MARKDOWN_KEY,
+                                new Object[] {new ChatComponentText(md)})));
+        // § 字面照 plainTextOf 现法原样透传，零特判、零剥离
+        Assert.assertEquals("含 § 输入零特判", SECTION + "ab **x**",
+                StructuredChatReader.markdownContentOf(new ChatComponentTranslation(MARKDOWN_KEY,
+                        new Object[] {SECTION + "ab **x**"})));
+        Assert.assertEquals("空串仍是合法内容", "",
+                StructuredChatReader.markdownContentOf(
+                        new ChatComponentTranslation(MARKDOWN_KEY, new Object[] {""})));
+    }
+
+    /** 形不合（槽数、槽形、null、非 markdown 键、null 根）一律不猜：markdownContentOf = null。 */
+    @Test
+    public void markdownContentOfRejectsEveryMalformedShape() {
+        Assert.assertNull("0 参数", StructuredChatReader.markdownContentOf(
+                new ChatComponentTranslation(MARKDOWN_KEY)));
+        Assert.assertNull("2 参数", StructuredChatReader.markdownContentOf(
+                new ChatComponentTranslation(MARKDOWN_KEY, new Object[] {"a", "b"})));
+        Assert.assertNull("槽位是翻译组件（触碰即翻译查找，宁可不取）",
+                StructuredChatReader.markdownContentOf(new ChatComponentTranslation(MARKDOWN_KEY,
+                        new Object[] {new ChatComponentTranslation("chat.type.text")})));
+        Assert.assertNull("非 markdown 键", StructuredChatReader.markdownContentOf(
+                new ChatComponentTranslation("chat.type.text", new Object[] {"x"})));
+        Assert.assertNull("ChatComponentText 根", StructuredChatReader.markdownContentOf(
+                new ChatComponentText("md")));
+        Assert.assertNull("null 根", StructuredChatReader.markdownContentOf(null));
+    }
+
+    /** 分工锁：markdown 键组件不是玩家聊天——read() 对它恒 null（判形归判形、结构归结构）。 */
+    @Test
+    public void readNeverHitsMarkdownKeyComponent() {
+        ChatComponentTranslation markdown = new ChatComponentTranslation(MARKDOWN_KEY,
+                new Object[] {"<Steve> looks like player chat"});
+        Assert.assertTrue("判形命中", StructuredChatReader.rendersAsMarkdown(markdown));
+        Assert.assertNull("结构读取必须 null（两判据互斥）", StructuredChatReader.read(markdown));
+    }
+
+    /** 取文本路径零触碰：markdownContentOf 对渲染入口计数组件调用数恒 0（配正对照反空跑）。 */
+    @Test
+    public void markdownReadNeverWalksTheTranslationRenderPath() {
+        CountingTranslation root = new CountingTranslation(MARKDOWN_KEY,
+                new Object[] {"**a**\nb 中文 http://x.co"});
+        Assert.assertTrue(StructuredChatReader.rendersAsMarkdown(root));
+        Assert.assertEquals("**a**\nb 中文 http://x.co", StructuredChatReader.markdownContentOf(root));
+        Assert.assertEquals("判形+取内容全程零渲染路径: " + root.report(), 0, root.renderCalls);
+        root.getUnformattedText();
+        Assert.assertTrue("计数链路正对照: " + root.report(), root.renderCalls > 0);
+    }
+
     /**
      * 翻译渲染路径计数器。{@code getUnformattedText()}/{@code getFormattedText()} 在
      * {@code ChatComponentStyle} 里是 final，覆写不了；但两者第一步都是 {@code iterator()}

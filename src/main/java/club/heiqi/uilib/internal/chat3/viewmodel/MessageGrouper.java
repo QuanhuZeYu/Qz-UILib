@@ -15,6 +15,12 @@ import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
  *   <li>发送者提取失败(null = 系统/广播)→ 每条独立成组,并切断前后合并;</li>
  *   <li>「自己」判定:发送者 == 本地玩家名(调用方传入,视图模型不依赖 Minecraft);</li>
  *   <li>输出组序 = 时间正序(旧 → 新)。</li>
+ *   <li><b>C8 通道③（短路，先于以上全部）</b>:{@link StructuredChatReader#rendersAsMarkdown}
+ *       命中且 {@link StructuredChatReader#markdownContentOf} 取到内容的记录 ⇒ 独立成
+ *       {@code MARKDOWN_LEFT} 行(左对齐、无 sender、不并组),并切断前后合并。该判定排在
+ *       任何取文本调用<b>之前</b>:正则兜底要先 {@code record.getPlainText()},对
+ *       {@code uilib.markdown} 键那是语言表查找、实机只返回 key 字面——markdown 记录
+ *       全程零取文本(硬锁:markdown 路径渲染入口调用数恒 0)。</li>
  * </ul>
  *
  * <p><b>C7 划界：结构优先、正则兜底</b>（定案 3「玩家名称走原版解析、发送内容走 markdown、
@@ -64,6 +70,20 @@ public final class MessageGrouper {
         // 从最旧到最新遍历,保证「相邻」判断与组内时间正序
         for (int i = recordsNewestFirst.size() - 1; i >= 0; i--) {
             ChatLineRecord record = recordsNewestFirst.get(i);
+            // C8 通道③：markdown 递交形先于一切取文本调用短路（不读 plain/formatted、
+            // 不进 SenderExtractor），独立成 markdown 系统行形并切断合并。
+            // 唯一例外：args 形不合（缺位 / 非 String·ChatComponentText 槽）——不猜，退回
+            // 下方既有通道（对翻译组件那是 key 字面系统行），与 reader「不合形即 null」同律。
+            if (StructuredChatReader.rendersAsMarkdown(record.getComponent())) {
+                String markdownContent =
+                        StructuredChatReader.markdownContentOf(record.getComponent());
+                if (markdownContent != null) {
+                    groups.add(MessageGroupModel.markdown(record, markdownContent));
+                    current = null;
+                    currentSender = null;
+                    continue;
+                }
+            }
             // C7 结构优先：命中原版 chat.type.text 结构 ⇒ sender/rest 直取结构结果，
             // 不再走 getPlainText()（翻译组件上那是语言表查找）。
             StructuredChatReader.PlayerChat structured =

@@ -187,6 +187,77 @@ public class MessageGrouperTest {
         Assert.assertEquals("旧的那条（非 vanilla 形）", groups.get(0).getLines().get(1).getRest());
     }
 
+    // ==================== C8 通道③：markdown 递交形短路 ====================
+
+    /** 键字面 = 公共常量的契约（常量单一定义点由 ChatAccessTest 钉，这里再钉一次消费侧）。 */
+    private static final String MARKDOWN_KEY =
+            club.heiqi.uilib.api.chat.ChatAccess.MARKDOWN_CHAT_KEY;
+
+    /**
+     * 锁 5（markdown 记录零取文本，「短路在取文本之前」的硬证）：markdown 键组件走分组器，
+     * 渲染入口（iterator/getUnformattedTextForChat）调用数恒 0——若判定排在兜底取文本之后，
+     * 对翻译组件那就是语言表查找，计数器必动。配正对照（亲手渲染一次必须非 0）反空跑。
+     */
+    @Test
+    public void markdownRecordShortCircuitsBeforeAnyTextExtraction() {
+        RenderCountingComponent root = new RenderCountingComponent(MARKDOWN_KEY,
+                new Object[] {"<Steve> looks like player chat"});
+        java.util.List<MessageGroupModel> groups =
+                grouper.group(java.util.Arrays.asList(new ChatLineRecord(root, 1, 1000L)), "Alex");
+
+        Assert.assertEquals(1, groups.size());
+        Assert.assertEquals(MessageGroupModel.Alignment.MARKDOWN_LEFT, groups.get(0).getAlignment());
+        Assert.assertNull("markdown 行无 sender 语义", groups.get(0).getSender());
+        Assert.assertTrue(groups.get(0).getLines().get(0).isMarkdown());
+        Assert.assertEquals("本体 = args[0] 原文（连 <Steve> 前缀形状都不碰正则）",
+                "<Steve> looks like player chat", groups.get(0).getLines().get(0).getRest());
+        Assert.assertEquals("markdown 路径取文本调用必须恒 0: " + root.report(), 0, root.calls);
+        root.getUnformattedText();
+        Assert.assertTrue("计数器正对照失效: " + root.report(), root.calls > 0);
+    }
+
+    /**
+     * 锁 6（兜底正则不被误染）：markdown 递交内容与「玩家前缀形状」「相邻玩家消息」都不串道——
+     * markdown 记录恒 MARKDOWN_LEFT 独立成组并切断合并；对照正例：真 chat.type.text 玩家消息
+     * 照常结构识别（防误锁）。args 形不合的 markdown 键组件退回既有通道（不猜语义）。
+     */
+    @Test
+    public void markdownShapeNeverEntersSenderRegexAndNeverMerges() {
+        ChatLineRecord mdNew = new ChatLineRecord(
+                new ChatComponentTranslation(MARKDOWN_KEY, new Object[] {"<Steve> hello"}), 3, 3000L);
+        ChatLineRecord playerMid = new ChatLineRecord(new ChatComponentTranslation("chat.type.text",
+                new Object[] {new ChatComponentText("Steve"), "mid"}), 2, 2000L);
+        ChatLineRecord mdOld = new ChatLineRecord(
+                new ChatComponentTranslation(MARKDOWN_KEY, new Object[] {"# 公告"}), 1, 1000L);
+        List<MessageGroupModel> groups = grouper.group(
+                newestFirst(mdNew, playerMid, mdOld), "Alex");
+
+        Assert.assertEquals("3 条 = 3 组（markdown 切断前后合并）", 3, groups.size());
+        Assert.assertEquals(MessageGroupModel.Alignment.MARKDOWN_LEFT, groups.get(0).getAlignment());
+        Assert.assertEquals("旧的 markdown 行本体 = args[0] 原文", "# 公告",
+                groups.get(0).getLines().get(0).getRest());
+        Assert.assertEquals("中间玩家消息照常结构识别（对照正例，防误锁成恒 markdown）",
+                MessageGroupModel.Alignment.OTHER_LEFT, groups.get(1).getAlignment());
+        Assert.assertEquals("Steve", groups.get(1).getSender());
+        Assert.assertEquals("真玩家行的 markdown 标记必须为 false", false,
+                groups.get(1).getLines().get(0).isMarkdown());
+        Assert.assertEquals(MessageGroupModel.Alignment.MARKDOWN_LEFT, groups.get(2).getAlignment());
+        Assert.assertNull("markdown 组恒无 sender", groups.get(2).getSender());
+    }
+
+    /** 形不合（args 非 1 槽 / 槽形不认）的 markdown 键组件不猜：退回既有通道（正则兜底 → 系统行）。 */
+    @Test
+    public void malformedMarkdownKeyComponentFallsBackToExistingChannels() {
+        ChatLineRecord twoArgs = new ChatLineRecord(
+                new ChatComponentTranslation(MARKDOWN_KEY, new Object[] {"a", "b"}), 1, 1000L);
+        java.util.List<MessageGroupModel> groups = grouper.group(
+                java.util.Arrays.asList(twoArgs), "Alex");
+        Assert.assertEquals(1, groups.size());
+        Assert.assertEquals("退回普通系统行形（不冒充 markdown 行）",
+                MessageGroupModel.Alignment.SYSTEM_CENTER, groups.get(0).getAlignment());
+        Assert.assertFalse(groups.get(0).getLines().get(0).isMarkdown());
+    }
+
     /**
      * 已知边界（设计行为，不是缺陷）：非 vanilla 形（自定义 key / 改写 chat.type.text）走正则兜底时
      * 内容可能带 §，本体照旧是 plain 的 rest，§ 原样带着走——交给 markdown 当普通字符显示。
