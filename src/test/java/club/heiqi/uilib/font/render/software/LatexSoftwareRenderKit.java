@@ -116,13 +116,27 @@ public final class LatexSoftwareRenderKit {
             settings = FontRuntimeSettings.capture();
             tables.setFontMetrics(FontRuntimeMetrics.prepare(settings, null));
             FontCatalog catalog = new FontCatalog();
-            catalog.replaceAll(Arrays.asList(new Font("Dialog", Font.PLAIN, 14)));
+            catalog.replaceAll(Arrays.asList(baseCatalogFont()));
             derivedFontCache = new DerivedFontCache(catalog);
             fontMatcher = new FontMatcher(catalog, derivedFontCache);
             fontMatcher.setRuntimeTables(1, tables);
             service = new TextLayoutService(fontMatcher, manager, derivedFontCache);
             service.setRuntimeVersion(1);
         }
+    }
+
+    /**
+     * C9 双字体模拟钩子（仅测试场地）：环境变量 {@code QZ_C9_TEST_FONT} 非空时，共享装配的
+     * catalog 基准字体从逻辑字体 Dialog 换成指定物理字体——用来在单一 OS 上验证「相对判据」
+     * 在第二套度量下同样成立（平台鲁棒化自证，见规划 §二之八 C9）。默认（不设变量）
+     * 行为与改动前逐字相同（仍 Dialog），CI/门禁零接触。
+     */
+    static Font baseCatalogFont() {
+        String probe = System.getenv("QZ_C9_TEST_FONT");
+        if (probe != null && !probe.trim().isEmpty()) {
+            return new Font(probe.trim(), Font.PLAIN, 14);
+        }
+        return new Font("Dialog", Font.PLAIN, 14);
     }
 
     private static Shared shared;
@@ -193,7 +207,7 @@ public final class LatexSoftwareRenderKit {
             sb.append("jvm=").append(System.getProperty("java.version"));
             sb.append(" os=").append(System.getProperty("os.name"));
             sb.append("/").append(System.getProperty("os.arch"));
-            Font base = new Font("Dialog", Font.PLAIN, 14);
+            Font base = baseCatalogFont();
             sb.append(" Dialog@14=").append(fontFingerprint(base));
             sb.append(" @16=").append(fontFingerprint(new Font("Dialog", Font.PLAIN, 16)));
             sb.append(" @24=").append(fontFingerprint(new Font("Dialog", Font.PLAIN, 24)));
