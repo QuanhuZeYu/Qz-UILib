@@ -33,12 +33,20 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
  * 事故档 ERROR-20260905 §八）。反向断言一律配正对照 + 反 ∅ 地板（断言到的行数/比较数下限，
  * 实测写进失败消息）。</p>
  *
- * <p><b>三级列硬值（锁⑤）</b>：派单假设的「上轮实测 13/25/38、真值 13/26/39」出自真机
- * 14px 档；headless 软件栅格器 @16px 逐码点实测 adv(「• 」)=13.789→14、adv(「  」)=14.222→15，
- * 故本档：代理列 14/29/43（旧 F2 前导文本代理，ceil 整串）vs 真值列 14/28/42（逐级
- * ceil(「• 」) 相加）。{@code adv('  ') != adv('• ')}——代理与度量确不相等，「每级少 1px」
- * 的模型缺陷在本档成立（方向：代理偏宽 1/1px 每级）。两档都写死进锁⑤，另以混级标记
- * （「• 」/「12. 」）杀「level × 固定步长」代理。</p>
+ * <p><b>三级列（锁⑤）——C9 起为「同 JVM 独立测量」形，不再写死 Windows 读数</b>：原硬值
+ * 14/28/42 与代理 29/43 出自 Windows Dialog 一次实测（@16px adv(「• 」)=13.789→14）；
+ * Linux CI（DejaVu）同式实测 17/34/51、代理 25，Windows 字面量即 8 例误红之一。现全部
+ * 经 {@link #measuredColumn} 当场量：真值列 = 逐级 ceil(本级标记宽) 之和；代理列 =
+ * ceil(整串前导空格+标记)（旧 F2 文本代理口径，floor/ceil 各自复现）。两式在 Windows、
+ * Verdana、SimSun、DejaVu 四组度量下都互不相等（temp 探针 2026-09-07：Win 29≠28、
+ * Verdana 31≠34、SimSun 30≠32），「每级差 1px」的模型缺陷在四档都成立；混级标记
+ * （「• 」/「1. 」）继续杀「level × 固定步长」代理。</p>
+ *
+ * <p><b>C9 输入侧自适应</b>：一切「必须软折出第二条视觉行」的锁（②⑤⑥与①的计数地板），
+ * 语料字数不再按 Windows 度量写死（Linux 下 CJK advance 收窄 → 不折行 → 反 ∅ 地板与
+ * 断点前移判据整批空转/误红），改为本 JVM 实测单字 advance 后按 {@link #wrapCountChars}
+ * 推导「必然折行 + 第二行 ≥2 字」的字数；折行容器宽按 {@link #narrowWrapWidth} 由
+ * 3 字宽 + 实测列构造，b&lt;a 由构造必然成立。地板数值保留（= 构造推导值），语义不变。</p>
  *
  * <p>装配纪律与 {@code MarkdownBlockGeometryTest} 同：复用 {@code LatexSoftwareRenderKit}
  * 共享装配，先喂字形再断度量，严禁另 new FontService。</p>
@@ -48,10 +56,9 @@ public class MarkdownListContinuationLockTest {
     private static final char LF = (char) 0x0A;
     private static final int BASE = 16;
     private static final int WIDTH = 480;
-    /** 16px 基准下「• 」实测推进宽（6.678+7.111=13.789 → ceil）。 */
-    private static final int COL_BULLET = 14;
-    /** 16px 基准下「12. 」实测推进宽（9.076+9.076+4.623+7.111=29.886 → ceil）。 */
-    private static final int COL_ORDERED_12 = 30;
+    /** 语料用 CJK 码点集（自适应字数前必须先把这些字形装配进度量表）。 */
+    private static final String CORPUS_CHARS =
+            "甲乙丙丁戊己庚辛壬癸寅卯续行首项缩进嵌懒序短标记段落普通文长文本字";
 
     private int savedWidthMissBudget = -1;
 
@@ -106,6 +113,39 @@ public class MarkdownListContinuationLockTest {
         }
         LatexSoftwareRenderKit.assembleGlyphs(shared, all);
         return shared.service;
+    }
+
+    /** C9：独立量出某标记文本在 BASE 档的整列推进宽（逐码点 resolveAdvance 求和取 ceil）。 */
+    private static int measuredColumn(TextLayoutService svc, String markerText) {
+        return oracleAdvance(svc, new TextSegment(markerText, base()));
+    }
+
+    /** C9：单码点推进宽（双精度，构造自适应语料用）。 */
+    private static double charAdvance(TextLayoutService svc, char ch) {
+        return svc.resolveAdvance(ch, base(), BASE);
+    }
+
+    /**
+     * C9 自适应字数：返回使「prefixChars + n 个单宽字符 + inset 偏移」必然超过 width 的 n，
+     * 且折出第二行 ≥2 字（推导：第一行最多容纳 floor((width-inset)/cw) 字，取该值 −prefix+2
+     * 即总字数比容量多 2 ⇒ 第二行 ≥2 字；cw 为本 JVM 实测，任何字体下成立）。
+     */
+    private static int wrapCountChars(TextLayoutService svc, char ch, int prefixChars, int inset,
+            int width) {
+        double cw = charAdvance(svc, ch);
+        Assert.assertTrue("单字推进宽必须 > 0，实测 " + cw, cw > 0.0D);
+        int capacity = (int) Math.floor((width - inset) / cw);
+        return Math.max(1, capacity - prefixChars + 2);
+    }
+
+    /**
+     * C9 窄折行容器宽（锁②构造）：{@code round(k×cw) + inset − 1}（k=3）。
+     * 推导：零偏移行首行容量 a = floor(W/cw) ≥ k = 3；带 inset 偏移行首行容量
+     * b = floor((round(3cw) − 1)/cw) = 2（round(3cw) − 1 ∈ [3cw − 1.5, 3cw − 0.5]，
+     * cw ≥ 2 时严格落在 [2cw, 3cw) 内）⇒ b &lt; a 由构造必然，与字体无关。
+     */
+    private static int narrowWrapWidth(double cw, int inset) {
+        return (int) Math.round(3.0D * cw) + inset - 1;
     }
 
     /**
@@ -163,35 +203,39 @@ public class MarkdownListContinuationLockTest {
         return null;
     }
 
-    /** 语料：4 个列表块（两软折标记行 + 懒延续 + 嵌套更深标记）+ 一个双行长段落（防泄漏对照）。 */
-    private static final String LONG_MARK_A = "甲项首行" + repeat('甲', 30);      // 裸标记+34 字 → 必软折
-    private static final String LAZY_A = "甲项缩进续行" + repeat('乙', 16);        // inset=0+14
-    private static final String LONG_MARK_B = "乙项首行" + repeat('丙', 30);
-    private static final String NESTED_C = "嵌套丙项" + repeat('丁', 30);          // 链长 2 → 列 28 且必软折
-    private static final String NESTED_LAZY = "嵌套丙的懒延续" + repeat('戊', 14);
-    private static final String ORDERED_D = "有序一" + repeat('己', 30);           // 必软折
-    private static final String ORDERED_LAZY = "有序一懒延续" + repeat('庚', 16);
+    /**
+     * 语料：4 个列表块（两软折标记行 + 懒延续 + 嵌套更深标记）+ 一个双行长段落（防泄漏
+     * 对照）。C9：长行字数按本 JVM 实测 advance 推导（每行必然软折且第二行 ≥2 字），
+     * 不再按 Windows 度量写死；行首文本（startsWith 认人用）保持不变。
+     */
+    private static String longRow(TextLayoutService svc, String prefix, char ch, int inset) {
+        return prefix + repeat(ch, wrapCountChars(svc, ch, prefix.codePointCount(0, prefix.length()),
+                inset, WIDTH));
+    }
 
-    private static String listCorpus() {
+    private static String listCorpus(TextLayoutService svc) {
+        int col = measuredColumn(svc, "• ");          // 一级列（懒延续/标记行 inset 来源）
+        int col2 = 2 * col;                                 // 二级列（嵌套行 inset 来源）
         return joinLF(
-                "- " + LONG_MARK_A,
-                "  " + LAZY_A,
+                "- " + longRow(svc, "甲项首行", '甲', col),
+                "  " + longRow(svc, "甲项缩进续行", '乙', col),
                 "- 乙项短",
-                "  - " + NESTED_C,
-                "    " + NESTED_LAZY,
-                "1. " + ORDERED_D,
-                "   " + ORDERED_LAZY,
+                "  - " + longRow(svc, "嵌套丙项", '丁', col2),
+                "    " + longRow(svc, "嵌套丙的懒延续", '戊', col2),
+                "1. " + longRow(svc, "有序一", '己', col),
+                "   " + longRow(svc, "有序一懒延续", '庚', col),
                 "", // 空行断开与列表的普通段落对照块
-                "普通段落首行" + repeat('辛', 40),
-                "普通段落次行" + repeat('壬', 24));
+                longRow(svc, "普通段落首行", '辛', 0),
+                longRow(svc, "普通段落次行", '壬', 0));
     }
 
     // ==================== 锁①：同块续行 inset == 标记行 inset + 独立量出的本级标记宽 ====================
 
     @Test
     public void continuationInsetEqualsIndependentlyMeasuredMarkerWidth() {
-        String src = listCorpus();
-        TextLayoutService service = assemble(src);
+        TextLayoutService service = assemble(CORPUS_CHARS);
+        String src = listCorpus(service);
+        service = assemble(src);
         List<MarkdownLayoutLine> logical = logicalOf(src);
         List<MarkdownLayoutLine> visual =
                 MarkdownPainter.wrapLayoutLines(logical, service, WIDTH, BASE);
@@ -224,12 +268,17 @@ public class MarkdownListContinuationLockTest {
                     + "独立量出的本级标记宽（expected=" + expected + "）",
                     expected, line.getLeftInsetPx());
         }
-        Assert.assertTrue("LIST 视觉行地板 >= 6，实测 " + listVisualLines, listVisualLines >= 6);
+        // 地板为构造推导值（C9）：三个长块各含 2 条自适应长行，每行必软折 ≥2 视觉行
+        // ⇒ LIST 视觉行 ≥ 3×4+1 = 13 ≥ 6；每块续行 ≥3 ⇒ compared ≥ 9 ≥ 6。
+        // 若度量突变到不折行（样本失效），地板先红，不静默空跑。
+        Assert.assertTrue("LIST 视觉行地板 >= 6（构造推导 ≥13），实测 " + listVisualLines,
+                listVisualLines >= 6);
         int totalCompared = 0;
         for (Integer v : compared.values()) {
             totalCompared += v.intValue();
         }
-        Assert.assertTrue("参与比较的续行数地板 >= 6，实测 " + totalCompared, totalCompared >= 6);
+        Assert.assertTrue("参与比较的续行数地板 >= 6（构造推导 ≥9），实测 " + totalCompared,
+                totalCompared >= 6);
 
         // M10d 新事实：嵌套项「标记行自身」落在父项正文列（旧代理世界它落在 0 列、靠 2 空格撑文本）。
         int parentBlock = -1;
@@ -262,7 +311,9 @@ public class MarkdownListContinuationLockTest {
                 plainVisual++;
             }
         }
-        Assert.assertTrue("非列表对照行地板 >= 2（软折两行），实测 " + plainVisual, plainVisual >= 2);
+        // 自适应构造 ⇒ 首/次行各 ≥2 视觉行，对照行地板 ≥2 由构造必然（推导见 listCorpus）。
+        Assert.assertTrue("非列表对照行地板 >= 2（构造推导 ≥4），实测 " + plainVisual,
+                plainVisual >= 2);
     }
 
     private static int visualInsetOfLaterRowsThanFirst(List<MarkdownLayoutLine> visual, int blockId) {
@@ -287,15 +338,26 @@ public class MarkdownListContinuationLockTest {
     public void listColumnIsActuallyConsumedByWrapping() {
         // 同一段长文本 T：(a) 作为 inset=0 的 TEXT 行折 → 首视觉行码点数 a；
         // (b) 作为 "- 短标记行" 的懒延续行折（inset=正文列）→ 首视觉行码点数 b。b 必须 < a。
-        String t = "续行长文本" + repeat('癸', 40);
+        // C9：容器宽与文本长度按本 JVM 实测单字 advance 构造（narrowWrapWidth 推导
+        // b=2、a≥3，任何字体下 b<a 必然）——原 480 容器 + 45 字在 Linux（CJK 收窄到
+        // ~10px）两行都不折，b=a=45 误红（CI 944175267）。
+        TextLayoutService svc0 = assemble(CORPUS_CHARS, "续行长文本");
+        int inset = measuredColumn(svc0, "• ");
+        double cw = charAdvance(svc0, '癸');
+        int wrapWidth = narrowWrapWidth(cw, inset);
+        int totalChars = (int) Math.floor(wrapWidth / cw) + 3;
+        String prefix = "续行长文本";
+        String t = prefix + repeat('癸', totalChars - prefix.length());
         String src = joinLF("- 短标记行", "  " + t);
         TextLayoutService service = assemble(src, t);
         List<MarkdownLayoutLine> logical = logicalOf(src);
         List<MarkdownLayoutLine> visual =
-                MarkdownPainter.wrapLayoutLines(logical, service, WIDTH, BASE);
+                MarkdownPainter.wrapLayoutLines(logical, service, wrapWidth, BASE);
         MarkdownLayoutLine continuation = null;
+        // 查找前缀取「续行」二字（窄容器下懒延续首行可能只装得下前缀残段；标记行
+        // 「- 短标记行」的折残段不含「续行」开头，认人仍唯一）
         for (MarkdownLayoutLine line : visual) {
-            if (textOf(line.getSegments()).startsWith("续行长文本")) {
+            if (textOf(line.getSegments()).startsWith("续行")) {
                 continuation = line;
                 break;
             }
@@ -308,13 +370,18 @@ public class MarkdownListContinuationLockTest {
                 0, 555, Collections.singletonList(new TextSegment(t, base())),
                 0, 0, 0, 0, 0, 0);
         List<MarkdownLayoutLine> plainWrapped =
-                MarkdownPainter.wrapLayoutLines(Collections.singletonList(plain), service, WIDTH, BASE);
+                MarkdownPainter.wrapLayoutLines(Collections.singletonList(plain), service,
+                        wrapWidth, BASE);
         String aText = textOf(plainWrapped.get(0).getSegments());
         int a = aText.codePointCount(0, aText.length());
-        int b = textOf(continuation.getSegments()).codePointCount(
-                0, textOf(continuation.getSegments()).length());
+        String bText = textOf(continuation.getSegments());
+        int b = bText.codePointCount(0, bText.length());
+        // 构造反证地板：a≥3、b≥1 不成立即样本失效先红（防「b<a 因两边都空转成立」）
+        Assert.assertTrue("构造地板：零偏移行首行 a≥3，实测 " + a, a >= 3);
+        Assert.assertTrue("构造地板：带偏移行首行 b≥1，实测 " + b, b >= 1);
         Assert.assertTrue("inset 生效时断点必须早于 inset=0（钉「偏移真被消费」）: b(" + b
-                + ") < a(" + a + ")", b < a);
+                + ") < a(" + a + ")，wrapWidth=" + wrapWidth + " cw=" + cw + " inset=" + inset,
+                b < a);
     }
 
     // ==================== 锁③：与引用竖条/横线/围栏底色正交（blockCommands 零改动） ====================
@@ -416,34 +483,48 @@ public class MarkdownListContinuationLockTest {
     // ==================== 锁⑤（M10d 硬值）：三级列 = 沿链求和，非文本代理、非固定步长 ====================
 
     /**
-     * 三级列硬值，两档语料：
-     * ① 均匀圆点三层：真值 <b>14 / 28 / 42</b>（逐级 ceil(「• 」)=14 相加）；旧 F2
-     *    文本代理档（整串 ceil）为 14/29/43——二、三级都钉死「不得等于」；
-     * ② 混级标记（圆点 →「1. 」→圆点）：真值 <b>14 / 35 / 28</b>——均匀档 42 恰与
-     *    「level×固定步长」同值，正因如此必须配混级档杀该代理（2×14=28≠35）。
-     * 数字出处：headless 软件栅格器 @BASE=16 逐码点 resolveAdvance 实测（「1. 」=20.81→21）。
+     * 三级列，两档语料（C9：全部数值同 JVM 独立量出，Windows 读数只作示例注记）：
+     * ① 均匀圆点三层：真值 = k×ceil(「• 」)（Win 14/28/42）；旧 F2 文本代理档
+     *    （整串 ceil）= ceil(「  • 」)/ceil(「    • 」)（Win 14/29/43）——二、三级都
+     *    钉死「不得等于实测代理」；
+     * ② 混级标记（圆点 →「1. 」→圆点）：真值 = col / col+colOrdered / …（Win 14/35/28）
+     *    ——均匀档三级恰与「level×固定步长」同值，正因如此必须配混级档杀该代理。
+     * 长行字数按实测 advance 推导（每块必软折出第二条视觉行，反 ∅ 地板由构造成立）。
      */
     @Test
     public void threeLevelColumnsAreChainSumsNotFixedStepProxies() {
+        TextLayoutService svc0 = assemble(CORPUS_CHARS);
+        int col = measuredColumn(svc0, "• ");
+        int proxy2 = measuredColumn(svc0, "  • ");
+        int proxy3 = measuredColumn(svc0, "    • ");
+        // 反证前置：本档代理与真值必须可区分（若某平台二者重合，样本失去判别力，
+        // 如实红——Windows 29/43 vs 28/42、Verdana 31/45 vs 34/51、SimSun 30/44 vs
+        // 32/48 三组实测都可区分，temp 探针 2026-09-07）。
+        Assert.assertTrue("代理必须与真值可区分（样本失效先红）: proxy2=" + proxy2
+                + " 2col=" + 2 * col, proxy2 != 2 * col);
+        Assert.assertTrue("代理必须与真值可区分（样本失效先红）: proxy3=" + proxy3
+                + " 3col=" + 3 * col, proxy3 != 3 * col);
         String uniform = joinLF(
-                "- 甲" + repeat('甲', 40),
-                "  - 乙" + repeat('乙', 40),
-                "    - 丙" + repeat('丙', 40));
+                "- 甲" + repeat('甲', wrapCountChars(svc0, '甲', 1, col, WIDTH)),
+                "  - 乙" + repeat('乙', wrapCountChars(svc0, '乙', 1, 2 * col, WIDTH)),
+                "    - 丙" + repeat('丙', wrapCountChars(svc0, '丙', 1, 3 * col, WIDTH)));
         TextLayoutService service = assemble(uniform);
         List<MarkdownLayoutLine> uVisual =
                 MarkdownPainter.wrapLayoutLines(logicalOf(uniform), service, WIDTH, BASE);
         int[] uCols = secondVisualInsetByBlockOrder(uVisual);
         Assert.assertEquals("均匀档必须恰 3 个列表块", 3, uCols.length);
-        Assert.assertEquals("一级正文列（硬值）", COL_BULLET, uCols[0]);
-        Assert.assertEquals("二级正文列（硬值=父列+本级）", 2 * COL_BULLET, uCols[1]);
-        Assert.assertEquals("三级正文列（硬值=父列+本级）", 3 * COL_BULLET, uCols[2]);
-        Assert.assertTrue("二级不得 = 旧文本代理 ceil(「  • 」)=29", uCols[1] != 29);
-        Assert.assertTrue("三级不得 = 旧文本代理 ceil(「    • 」)=43", uCols[2] != 43);
+        Assert.assertEquals("一级正文列（独立量出）", col, uCols[0]);
+        Assert.assertEquals("二级正文列（独立量出=父列+本级）", 2 * col, uCols[1]);
+        Assert.assertEquals("三级正文列（独立量出=父列+本级）", 3 * col, uCols[2]);
+        Assert.assertTrue("二级不得 = 旧文本代理实测 ceil(「  • 」)=" + proxy2, uCols[1] != proxy2);
+        Assert.assertTrue("三级不得 = 旧文本代理实测 ceil(「    • 」)=" + proxy3, uCols[2] != proxy3);
 
+        int colOrdered = measuredColumn(svc0, "1. ");
+        int proxyOrdered2 = measuredColumn(svc0, "  1. ");
         String mixed = joinLF(
-                "- 甲" + repeat('甲', 40),
-                "  1. 乙" + repeat('乙', 40),
-                "    - 丙" + repeat('丙', 40));
+                "- 甲" + repeat('甲', wrapCountChars(svc0, '甲', 1, col, WIDTH)),
+                "  1. 乙" + repeat('乙', wrapCountChars(svc0, '乙', 1, col + colOrdered, WIDTH)),
+                "    - 丙" + repeat('丙', wrapCountChars(svc0, '丙', 1, 2 * col, WIDTH)));
         TextLayoutService mService = assemble(mixed);
         List<MarkdownLayoutLine> mLogical = logicalOf(mixed);
         List<MarkdownLayoutLine> mVisual =
@@ -494,12 +575,14 @@ public class MarkdownListContinuationLockTest {
                 cBullet = laterInset;
             }
         }
-        Assert.assertEquals("混级一级硬值", COL_BULLET, c1);
-        Assert.assertEquals("混级「1. 」二级硬值（14+21）", COL_BULLET + 21, cOrdered);
-        Assert.assertEquals("混级圆点二级硬值（14+14）", 2 * COL_BULLET, cBullet);
-        Assert.assertTrue("「1. 」二级不得 = 2×固定步长 28（level×step 代理）: " + cOrdered,
-                cOrdered != 2 * COL_BULLET);
-        Assert.assertTrue("「1. 」二级不得 = 旧文本代理 ceil(「  1. 」)=36", cOrdered != 36);
+        Assert.assertEquals("混级一级（独立量出）", col, c1);
+        Assert.assertEquals("混级「1. 」二级（独立量出 " + col + "+" + colOrdered + "）",
+                col + colOrdered, cOrdered);
+        Assert.assertEquals("混级圆点二级（独立量出 " + col + "+" + col + "）", 2 * col, cBullet);
+        Assert.assertTrue("「1. 」二级不得 = 2×固定步长 " + 2 * col + "（level×step 代理）: " + cOrdered,
+                cOrdered != 2 * col);
+        Assert.assertTrue("「1. 」二级不得 = 旧文本代理实测 ceil(「  1. 」)=" + proxyOrdered2,
+                cOrdered != proxyOrdered2);
     }
 
     /** 按 LIST 块首现序返回各块「第二条视觉行 inset」（= 全额正文列）；缺第二条即红（反 ∅）。 */
@@ -521,8 +604,8 @@ public class MarkdownListContinuationLockTest {
         int[] out = new int[pairs.size()];
         int i = 0;
         for (int[] pair : pairs.values()) {
-            Assert.assertTrue("每块必须软折出第二条视觉行（反 ∅，样本失效先红）",
-                    pair[1] >= 0);
+            Assert.assertTrue("每块必须软折出第二条视觉行（反 ∅，自适应构造下必然成立；"
+                    + "不成立=语料/度量样本失效，先红）", pair[1] >= 0);
             out[i++] = pair[1];
         }
         return out;
@@ -549,10 +632,15 @@ public class MarkdownListContinuationLockTest {
      */
     @Test
     public void looseItemFollowUpBlocksAllGetTheirItemsContentColumn() {
+        TextLayoutService svc0 = assemble(CORPUS_CHARS);
+        int col = measuredColumn(svc0, "• ");
+        int colOrdered = measuredColumn(svc0, "1. ");
+        // 长段字数按实测 advance 推导（首段/第二段/子项首段各必软折 ≥2 视觉行，
+        // 断言行数地板 ≥8 由构造成立：head≥2+2+1、heading≥1、quote≥1、ordered≥2+1）
         String src = joinLF(
-                "- 甲项首段" + repeat('甲', 30),
+                "- 甲项首段" + repeat('甲', wrapCountChars(svc0, '甲', 4, col, WIDTH)),
                 "",
-                "  第二段正文" + repeat('乙', 30),
+                "  第二段正文" + repeat('乙', wrapCountChars(svc0, '乙', 5, col, WIDTH)),
                 "",
                 "  第三段正文",
                 "",
@@ -560,7 +648,8 @@ public class MarkdownListContinuationLockTest {
                 "",
                 "  > 项内引用行",
                 "",
-                "  1. 有序子项首段" + repeat('丙', 30),
+                "  1. 有序子项首段" + repeat('丙',
+                        wrapCountChars(svc0, '丙', 6, col + colOrdered, WIDTH)),
                 "     子项懒延续");
         TextLayoutService service = assemble(src);
         List<MarkdownLayoutLine> logical = logicalOf(src);
@@ -606,7 +695,9 @@ public class MarkdownListContinuationLockTest {
                 break;
             }
         }
-        Assert.assertEquals("首段所在链（[「• 」]）沿列硬值", COL_BULLET, col1);
+        Assert.assertEquals("首段所在链（[「• 」]）沿列 = 同 JVM 独立量出的标记宽（C9：期望值"
+                + "不得是字面量——Linux 实测 17 vs Windows 14，语义零平台差）col=" + col,
+                col, col1);
         int assertedRows = 0;
         java.util.Set<Integer> blockHeadSeen = new java.util.HashSet<Integer>();
         for (MarkdownLayoutLine line : visual) {
@@ -633,27 +724,31 @@ public class MarkdownListContinuationLockTest {
                     line.getLeftInsetPx());
             assertedRows++;
         }
-        // 分项硬值点名（防「两边同错互相抵消」：列、份额、层级各钉各的数）
+        // 分项数值点名（防「两边同错互相抵消」：列、份额、层级各钉各的数——C9 起
+        // 「列」全部取同 JVM 独立量出值，引用步长 8 是样式表登记常量非字体度量，保留字面）
         // 标记行身份按「该块首条视觉行」判；seg0 会被折断成「1.」残片
         // （行尾空白丢弃，K3 既有行为，探针实测），不可据其文本认人。
         boolean orderedFirstSeen = false;
         for (MarkdownLayoutLine line : visual) {
             if (line.getBlockId() == headingBlock) {
-                Assert.assertEquals("项内标题（另起块）inset == 列 14", COL_BULLET,
+                Assert.assertEquals("项内标题（另起块）inset == 独立量出列 " + col, col,
                         line.getLeftInsetPx());
             } else if (line.getBlockId() == quoteBlock) {
-                Assert.assertEquals("项内引用（另起块）inset == 引用 8 + 列 14",
-                        8 + COL_BULLET, line.getLeftInsetPx());
+                Assert.assertEquals("项内引用（另起块）inset == 引用 8 + 独立量出列 " + col,
+                        8 + col, line.getLeftInsetPx());
                 Assert.assertEquals("引用步长仍取样式表 8", 8, line.getIndentStepPx());
                 Assert.assertEquals("引用层级不被列表改动", 1, line.getQuoteLevel());
             } else if (line.getBlockId() == orderedBlock) {
                 boolean markerRow = !orderedFirstSeen;
                 orderedFirstSeen = true;
-                Assert.assertEquals("有序子项" + (markerRow ? "标记行吃祖先列 14" : "续行吃全额列 35"),
-                        markerRow ? COL_BULLET : COL_BULLET + 21, line.getLeftInsetPx());
+                Assert.assertEquals("有序子项" + (markerRow ? "标记行吃祖先列 " + col
+                        : "续行吃全额列 " + (col + colOrdered)),
+                        markerRow ? col : col + colOrdered, line.getLeftInsetPx());
             }
         }
-        Assert.assertTrue("断言行数地板 >= 8，实测 " + assertedRows, assertedRows >= 8);
+        // 地板 = 构造推导（见语料处注释：≥10），保留 8 作样本失效先红线。
+        Assert.assertTrue("断言行数地板 >= 8（构造推导 ≥10），实测 " + assertedRows,
+                assertedRows >= 8);
         // 覆盖形态计数：同块段行 / 另起标题 / 另起引用 / 嵌套子项（标记行+懒延续行）
         int kinds = 0;
         if (mergedParaBlocks.size() == 1) {
