@@ -1242,9 +1242,12 @@ package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均
     （至少一行）」在两代实现里都不成立（空流与空文档同样产空表），按现状更正并由
     `emptyAndNullInputsProduceNoLines` 钉住（配非空正例防空跑）。非 C7 引入，就地处理。
 11. **实测计数**：`build --offline` = BUILD SUCCESSFUL；`cleanTest test` =
-    **4088 tests / 368 suites / 0 failures / 0 errors / 2 skipped**（skipped 恒为
-    `LatexReferenceComparisonTest` 两条）。C6b 基线 4095/368 → 净 **−7**（脚本逐文件数：
-    删 30 例、增 23 例；被删 @Test = 迁移锁 20 + 管道甲族 7 + FormatPrefixStripper 直测 3）。
+    **4089 tests / 368 suites / 0 failures / 0 errors / 2 skipped**（skipped 恒为
+    `LatexReferenceComparisonTest` 两条，脚本数 XML 得）。C6b 基线 4095/368 → 净 **−6**
+    （脚本逐文件数 @Test 注解：文件净口径删 30 例 / 增 24 例；按用例名口径 34 例消失
+    / 28 例新增）。消失的用例名 = 迁移等价锁 20 例 + `ChatMarkdownPipelineTest` § 族 11 例
+    （其中 4 例是同义换名，净 −7）+ `FormatPrefixStripperTest` 3 例；新增 = reader 契约 9 例 +
+    L1「§ 是普通字符」8 例 + grouper 结构 4 例 + composer 三分支 3 例 + pipeline C7 锁 4 例。
     门禁 48 条目产物**零变化**：`条目=48 FAIL条目=0 FAIL差异行=0 归一判等行=6 豁免照登行=2
     RECORD条目=0 F6剔行=2 PNG=96`，**无新增豁免域**（B 路本就 L1 直连 String、两侧 § 恒字面，
     划界只删 chat3 侧转换器，不触门禁判据/容差/登记表）。
