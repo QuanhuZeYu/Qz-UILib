@@ -100,3 +100,34 @@ HudRegistration registration = TextHud.register("example:status", HudAnchor.TOP_
 registration 归调用 mod 所有，跨断线与世界切换保持有效，直到调用方在客户端主线程调用 `close()`。
 provider 在 render 主线程读取，应无副作用并返回不可变 `HudSnapshot`。
 HUD 使用的 session scene 会在世界卸载时释放，并在重连后按仍有效的 registration 重建。
+
+## 聊天 markdown 递交（ChatAccess.printMarkdown）
+
+聊天接管（`ChatMarkdownSettings.isEnabled()`）生效后，mod 可以用 `ChatAccess` 的两个 public
+入口把消息**按 markdown 渲染**递交进聊天框（AGENTS 三条输入通道的第③条）。语义定案：
+**print 家族恒纯——内容即所见，永不过装饰器链**；要装饰必须由调用方主动调既有
+`decorate(IChatComponent)`（只变换不注入）再把结果递进来。两者语义完全分开，没有
+「过装饰链的 markdown 打印」这种糖。
+
+```java
+// 用法一：纯 markdown 一行递交（** # > ` 等定界按 markdown 渲染；左对齐、无气泡、无 sender）
+ChatAccess.getInstance().printMarkdown("### 维护公告\n今晚 **22:00** 起停服，见 http://example.net");
+
+// 用法二：显式装饰 = 自己先构造组件、手动过一次装饰器链，再把结果递进 markdown 通道
+IChatComponent raw = new ChatComponentTranslation(ChatAccess.MARKDOWN_CHAT_KEY,
+        new Object[] {"- 列表项 A\n- 列表项 B"});   // 组件形递交的 markdown 内容装在这个槽
+IChatComponent decorated = ChatAccess.getInstance().decorate(raw);
+if (decorated != null) { // decorate 返回 null = 装饰链丢弃语义
+    ChatAccess.getInstance().printMarkdown(decorated);
+}
+```
+
+- **线程语义**：与原版 `printChatMessage` 同主线程约定（客户端主线程调用；投递即入史，
+  视图刷新由接管层脏标记在主线程冲刷）。
+- **未接管时**：两入口降级为原版显示——String 形按原文纯文本显示（不露任何内部键字面）；
+  组件形直接把原组件交原版（自定义组件被原版渲染其 key 属「未接管时给自定义组件」的
+  固有形状）。
+- 与装饰器链的关系：`registerDecorator` 的链照旧只作用于**原版消息到达路径**
+  （网络/第三方 mod 经 `printChatMessage` 注入的消息），print 家族对其零自动调用。
+- **永不发送**：printMarkdown 任何路径不触发送链（不写已发送历史、不发聊天包），
+  它只递交显示。

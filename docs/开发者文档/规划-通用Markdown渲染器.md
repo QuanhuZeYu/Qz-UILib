@@ -98,6 +98,10 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 | M6 | 复生锁 G3（与 M5 同一提交） | **完成 `3e89d91e`**：`Chat3MarkdownResurrectionGuardTest` 4 条断言全配正对照+反空跑地板，见 §二之六 |
 | M7 | 方案乙：块身份行进接缝 + 三项块级几何（2026-09-05 用户裁定重开裁定 B 块几何部分） | **完成 `8c86a644`**：唯一新公共类型 `MarkdownLayoutLine`；引用嵌套竖条+缩进 / 真横线 / 围栏底色经 BACKGROUND/位置表达，可见文本零改动；门禁零接触全绿；见 §二之七 |
 | C 系列 | 向 CommonMark 0.30 归位 + § 划界的拆除批（2026-09-06 宪法裁定后开拆）：C1a 缩进代码 + 内容列唯一判据、C3b1 门禁重基线（R=commonmark-java）、C3b2 有序续排 + setext、C3b3 标题直拍撤豁免、**C4 § 归位 chat3 + setext 惰性收紧 + 门禁 RECORD 清零**、**C4-fix 乙′（命中块标记才剥）+ 一致性锁 + N2 惰性 setext 语料补齐**、**C6a L1 span 流地基 + C6b 甲（§→span 输入转换，预清洗与输出桥整套拆除）**、**C7 § 划界（集成层 § 机制全拆 + 玩家消息结构读取 + L1「§ 是普通字符」定为无条件规则）** | **C4 + C4-fix + C6a + C6b + C7 已完成**，逐批记录见 §二之八 |
+| C8 | **通道③落地 = ChatAccess.printMarkdown 双入口**（a1 定案：print 恒纯不过装饰链、
+|    | 装饰须显式 decorate 后递入；uilib.markdown 键旁路注入零穿参；markdown 判定短路在
+|    | 一切取文本之前；渲染形 = MARKDOWN_LEFT 左对齐无气泡无 sender 不居中） |
+|    | **完成 67e44c00**（2026-09-07），细账见 §二之八 C8 |
 
 M1 的验收事实（父代理逐条独立复核过，非采信子代理自述）：三个文件与 `9c4dcae5` **blob hash
 逐一相同**（`84dd897c`/`49cfd000`/`6f639546`，463+48+274 行），**零适配**——两周内 layout 层
@@ -1260,6 +1264,109 @@ package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均
 13. **设备验证清单（本批未跑真机，如实挂账）**：① 真机玩家气泡是否还有 § 残渣；② 给内容着色
     的服务端（含改写 `chat.type.text` 者）气泡丢色的观感；③ 昵称/前缀是彩色组件时组头是否
     仍按原版着色（名称侧路径未动）；④ HUD 8 行截断与末行省略号在新正文下的形状。
+
+### C8 细账（通道③落地：`ChatAccess.printMarkdown` 双入口，2026-09-07 用户裁决 a1）
+
+**定案（用户裁决，逐字口径）**：「给甲额外添加入口，两者语义完全分开，要么纯 markdown，
+要么显式调用装饰方法」的落地形——`printMarkdown` = 显式递交、内容即所见，**永不过装饰器链**
+（print 家族整体与装饰链解耦，不是默认过链，也不是默认跳过+变体）；装饰 = 调用方主动调既有
+public `ChatAccess.decorate(IChatComponent)`（只变换不注入），把结果递进
+`printMarkdown(IChatComponent)`；**不新增 `printDecoratedMarkdown` 一类糖**。装饰器链对原版
+消息的既有行为（`ChatCore.appendMessage:37` 处 decorate）一字不动。本条 = AGENTS 三条输入
+通道的第③条落地，属系统消息层里唯一被划出走 markdown 的例外（宪法 1 原文『系统消息层除
+使用markdown方法发送的消息，其余全走原版解析链条』——宪法句一字未动）。
+
+1. **机制（复用 C7 结构通道，零穿参）**：`printMarkdown(String md)` 包成
+   `ChatComponentTranslation(键, [md])`（args[0]=String；C7 探针与 `StructuredChatReaderTest`
+   已证 args 读取 headless 安全）；`printMarkdown(IChatComponent)` 同样旁路注入（供显式装饰后
+   的组件）。注入出口 = 安装器回写的 sink（`ChatAccess.setMarkdownSink`，完全照
+   `setTakeoverActive` 先例与包内注释同口径：接管装成两条路径写入 `core::appendMarkdown`、
+   读回失败与逃生舱回退两条路径清 null），**不经 `ChatFacade.printChatMessage`（那条会
+   decorate）**。sink 缺席（未接管/未安装）降级原版显示：String 形 = `ChatComponentText(md
+   原文)`（零键字面外泄）；组件形 = 直接递原组件——若它正是 markdown 键翻译组件，原版会渲染
+   key 字面 "uilib.markdown"，这属『未接管时给自定义组件』的固有形状（组件通道对原版本就
+   没有 markdown 语义），注释写明、不特判。降级出口抽成包内可测缝 `__setVanillaPrintForTest`
+   （headless 无 Minecraft 实例，测试注入捕获器断言产物类型与文本；真机默认实现 = 原样直连
+   `mc.ingameGUI.getChatGUI().printChatMessage`，行为不变）。
+2. **键常量单一定义点** = `ChatAccess.MARKDOWN_CHAT_KEY`（api.chat 层 public 常量，值
+   "uilib.markdown"）；`internal.chat3` 的 `StructuredChatReader` 引用它——internal→api 是
+   既有依赖方向（`ChatCore` 已调 `ChatAccess.decorate`），零新依赖边；测试侧消费同一常量，
+   锁 `markdownKeyConstantIsSingleSourceOfTruth` 钉字面值——两处各自定义字面量的形态堵死。
+3. **`StructuredChatReader` +2 public static（记账）**：`rendersAsMarkdown(IChatComponent)`
+   （root 是翻译组件且 `getKey()` 命中 markdown 键 ⇒ true；纯结构判形，不触翻译查找，不递归
+   siblings）；`markdownContentOf(IChatComponent)`（取 `getFormatArgs()[0]`，String 与
+   `ChatComponentText` 两形都吃，照 `plainTextOf` 现法；形不合一律 null 不猜）。
+   `PLAYER_CHAT_FORMAT_KEYS` 未动；`read()` 对 markdown 键组件恒 null（两判据互斥，锁
+   `readNeverHitsMarkdownKeyComponent`——markdown 内容含 `<Steve> ` 形状也不得被玩家通道认领）。
+4. **渲染路由（关键正确性点）**：markdown 判定在 `MessageGrouper.group` 里排在**任何取文本
+   调用之前**（先于 C7 结构读取与正则兜底）——兜底要先 `record.getPlainText()`，对 markdown
+   键组件那是语言表查找、实机只返回 key 字面，错。硬证 = markdown 短路锁
+   `markdownRecordShortCircuitsBeforeAnyTextExtraction`：计数组件包 markdown 键走分组器 ⇒
+   渲染入口调用数恒 0（配「亲手渲染一次必非 0」正对照反空跑）。命中且内容非 null ⇒
+   `MessageGroupModel.markdown` 形（不进 `SenderExtractor`、独立成组并切断前后合并）；
+   args 形不合的 markdown 键组件退回既有通道（不猜，与 reader「不合形即 null」同律）。
+5. **呈现形状与装配**：`Alignment` +`MARKDOWN_LEFT`（枚举常量 3→4；按公共面守卫细则 2 不进
+   成员账。不复用 `SYSTEM_CENTER`——「居中」与该形「左对齐」定案直接冲突；也不复用
+   `OTHER_LEFT`——它带气泡与 sender 语义。新增值是唯一不撒谎的形状）；`GroupLine`
+   +`isMarkdown()`（包内姊妹判据，命名对齐 C7 的 `isStructured()`，公共签名零变化）。
+   `ChatCardComposer.displayText` 四条装配分支（markdown 最先短路 ⇒ 本体 = args[0] 原文；
+   `getPlainText()/getFormattedText()` 永不调用，unformatted 源纪律不破）；`MARKDOWN_LEFT`
+   切行共用 `systemLayouter`（与渲染字族 font-system 同源）；组头分支与 SYSTEM_CENTER 同族
+   「无组头」。`ChatMessageList` 的路由 `system ? null : markdown.layout(...)` 判据只认
+   `SYSTEM_CENTER`，markdown 行**天然进 layout**（这正是它存在的意义），同时吃系统字族/底色、
+   无气泡（背景/padding/maxWidth/圆角全不建）、左对齐（`AlignSelf.START`）、不吃气泡钳宽，
+   bake/hover 归无气泡族；`ChatSceneController.estimateHudGroupHeight` 同族（行数×行高无壳）。
+   HUD 8 行截断与气泡行同一 `clampHudLines` 路（平价锁）。`ChatMarkdownPipeline` 零逻辑改动：
+   cacheKey 单轨（C7 第 8 条）自然覆盖——markdown 形传入的字符串恰是 args[0]（同源锁
+   `markdownLineSequenceMatchesDirectPipelineCallSameStringSameWidth`：同串同宽在替身换行下
+   逐行等值；§ 字面锁喂 `"§ab"` 断言字面）。
+6. **永不触碰发送链（自证）**：printMarkdown 全路径代码零 `ChatBridge` / `sendChatMessage` /
+   `addToSentMessages` / `getSentMessages` 引用（代码路径锁
+   `printMarkdownCodePathNeverTouchesSendChain` + 「send() 方法体仍含 ChatBridge」正对照防
+   扫描器瞎）；`ChatCore.appendMarkdown` 方法体零 `decorate`（结构锁与 `appendMessage`
+   对照锁同文件）；已发送历史与原版发送链结构性不可达。
+7. **锁 25 例（全部真跑，逐类对应见第 9 条）**：reader ×5（判形矩阵 / args[0] 两形原文含
+   `**`、换行、中文、URL 形状、§ 零特判 / 形不合全 null / read 互斥 / 渲染路径零计数）；
+   grouper ×3（短路先于取文本硬证 / 正则不污染 + 真玩家消息对照正例防误锁 / 形不合退通道）；
+   composer ×2（displayText = args[0] 同源 + § 零 formatted 尾注）；ChatAccessTest ×6（键常量
+   锚 / print 恒纯计数 0 + decorate 对照 ≥1 防空断言 / 显式装饰恰 1 次 / 降级产物类型与文本
+   断言（锁 7 接法 = 可测缝注入捕获器）/ null 两形忽略 / 永不发送路径锁）；ChatCoreTest ×3
+   （sink 端到端旁路零装饰 + reader 从入史组件取回原文 + appendMessage 对照 / appendMarkdown
+   null 守卫与消息 id 替换语义 / Facade 两路分尺）；InstallerTest ×2（sink 与 takeover 标志
+   成对回写的接线锁 + 旁路体零 decorate 结构锁）；MessageListTest ×4（渲染路由形状三连：
+   左对齐/无组头/无气泡无圆角，且 `**` 出粗体段、§a 字面存活、零 key 字面上屏 / 同源行序 /
+   HUD 截断平价 / 普通系统行仍居中走 § 路的对照防误锁）。既有 4089 例零回归（装饰器链语义
+   一字未动；`MarkdownPublicSurfaceGuardTest` 12 例、`Chat3MarkdownResurrectionGuardTest`
+   4 例、门禁族全绿）。
+8. **公共面续账（`javap -public` 实测于 `build/classes/java/main`，全成员尺）**：`ChatAccess`
+   **7→11**（+字段 `MARKDOWN_CHAT_KEY`、+方法 `setMarkdownSink/1`、`printMarkdown/1` ×2；
+   其余 7 方法逐位与 C7 终态一致，私有构造不入账）——api.chat 属公共兼容承诺包，全部纯增量、
+   零签名破坏；
+   `StructuredChatReader` 本体 **1→3**（+`rendersAsMarkdown/1`、+`markdownContentOf/1`），
+   嵌套 `PlayerChat` 恒 3；`MessageGroupModel` 公共面零变化（`markdown(...)` 工厂与
+   `isMarkdown()` 皆包内；`Alignment` 枚举常量 +1 按守卫细则 2 不进成员账）。
+   `MarkdownPublicSurfaceGuardTest` 五锚定值核实**不含 ChatAccess/Reader**（锚 =
+   `MarkdownLayoutLine` 20 / `MarkdownStyleTable` 19 / `ChatMessageList` 9 /
+   `ChatSceneController` 26 / `ChatMarkdownPipeline` 0，类头口径明示「markdown 接缝与 chat3
+   消费面」）——五值实测零变化、无需同步锚点；「守卫不覆盖 api.chat」这一核实结论登记于此，
+   防后人误以为 printMarkdown 该进那张表。
+9. **实测计数与门禁**：`build --offline` = BUILD SUCCESSFUL；`cleanTest test` =
+   **4114 tests / 368 suites / 0 failures / 0 errors / 2 skipped**（skipped 恒为
+   `LatexReferenceComparisonTest` 两条；脚本数 XML 非心算）。C7 基线 4089 → 净 **+25**，
+   逐类可对应：reader 9→14、grouper 13→16、composer 30→32、ChatAccessTest 7→13、ChatCoreTest
+   4→7、InstallerTest 2→4、MessageListTest 72→76。L1 门禁三工件哈希**逐字未变**（diff.txt
+   `A826A2B9E7B0EB57` / matrix.txt `804A42FB09D74FF5` / profiles.txt `83C4AD6B6317B8A6`，
+   SHA256 前 16）——本批零 L1 接触。
+10. **文档口径**：AGENTS.md 主权条款第③通道改「已落地」（两入口语义写清：print 恒纯、
+    装饰须显式 `decorate` 后递入；宪法句一字未动）；使用文档《Minecraft 界面入口》并入
+    「聊天 markdown 递交」条目（纯递交 + 显式装饰两例、线程语义 = 与原版 `printChatMessage`
+    同主线程约定、未接管降级行为）；未新建独立文档、未触版本文件（gradle.properties /
+    build.gradle.kts / CHANGELOG.md 零接触）。
+11. **设备验证清单（本批未跑真机，如实挂账；①-④ 沿 C7 未销项不重列，本批新增 ⑤⑥）**：
+    ⑤ `printMarkdown` 真机观感——markdown 系统行左对齐、无气泡、无 sender、不居中，行内
+    列表/引用/代码块/粗斜体排版与气泡行同源；⑥ 未接管（总开关关/接管未装）时 String 形降级
+    不露 `uilib.markdown` 字面、显示原文（组件形给自定义组件时原版渲 key 字面属固有形状，
+    观感确认即可，非缺陷）。
 
 ---
 
