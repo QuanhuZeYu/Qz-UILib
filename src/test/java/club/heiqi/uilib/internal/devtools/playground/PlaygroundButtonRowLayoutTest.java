@@ -9,15 +9,9 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
-import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
-import club.heiqi.uilib.ui.scene.input.RawInputEvent;
-import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
-import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
-import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
@@ -39,7 +33,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
  * </ul>
  *
  * <p>headless 构造（input=null）+ 真实布局引擎驱动，与 {@link TestPlaygroundHostTest}
- * 同口径。</p>
+ * 同口径。切页走宿主受控源 signal.set + flush（C9·7，勿改回点击式——点击在窄画布对末段
+ * 静默 miss，页覆盖会假绿）。</p>
  */
 public class PlaygroundButtonRowLayoutTest {
 
@@ -69,30 +64,21 @@ public class PlaygroundButtonRowLayoutTest {
         engine.layout(host.__getRoot(), new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
-    /** 取第 index 个导航段节点（segmented root 的第 index 个子节点）。 */
-    private SceneNode navSegment(int index) {
-        SceneNode segmentedRoot = host.__getNavBar().__getChildren().get(0);
-        return segmentedRoot.__getChildren().get(index);
-    }
-
-    /** 在指定节点中心合成 CLICK（DOWN+UP 两帧 route + flush）。 */
-    private void clickNode(SceneNode node) {
-        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
-        int x = box.getX() + box.getWidth() / 2;
-        int y = box.getY() + box.getHeight() / 2;
-        InputFrameBuilder builder = new InputFrameBuilder(x, y);
-        builder.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1000L));
-        builder.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y, SceneMouseButton.LEFT,
-                0, 0, 0, false, false, false, false, 1001L));
-        host.__getRuntime().route(host.__getRoot(), builder.drainFrame(), 0, 0);
-        host.__getRuntime().flush();
-    }
-
-    /** 切到指定页并重排。 */
+    /**
+     * 切到指定页并重排（C9·7：R8 signal-first 确定性通道 + 落点页 id 硬断言）。
+     *
+     * <p>旧形为 clickNode(navSegment(i)) 合成点击——markdown 是注册表第 9 段，其中心 x 在
+     * 720 画布外，点击静默 miss、displayed 恒停在 home，本类两页遍历循环从未量到 markdown 页
+     * 的 ROW pairs（#7 布局缺陷因此存活）。切页改走宿主受控源 {@code set + flush}
+     * （与点击无关、与 SceneSegmented.onSelect 写回的同一 signal 同通道），并钉落点 id，
+     * 静默 miss 自此不可能再骗过覆盖计数。</p>
+     */
     private void switchToPage(int index) {
-        clickNode(navSegment(index));
+        host.__getActivePageSignal().set(Integer.valueOf(index));
+        host.__getRuntime().flush();
         doLayout();
+        Assert.assertEquals("切页必须真实落到目标页（防静默 miss 再犯）：index=" + index,
+                PlaygroundPageRegistry.defaultPages().get(index).id(), host.__getDisplayedPageId());
     }
 
     /** ROW 容器与其直接子节点的一对（供断言）。 */
@@ -145,6 +131,25 @@ public class PlaygroundButtonRowLayoutTest {
 
             List<RowChild> pairs = new ArrayList<RowChild>();
             collectRowChildren(pageRoot, pairs);
+            if ("markdown".equals(pages.get(i).id())) {
+                // C9·7 非空覆盖：#7 的存活路径正是「切页空转 → markdown 的 ROW pairs 从未被量到」。
+                // 引用组即 ROW 容器（row[竖条 + 内层列]），该页 pairs 恒 0 = 夹具失效，先红不静默。
+                Assert.assertTrue("markdown 页必须产出 ROW pairs（引用组行；为 0 即覆盖空转），实测 "
+                        + pairs.size(), pairs.size() >= 1);
+                int quoteGroups = 0;
+                for (RowChild rc : pairs) {
+                    // 引用组形：恰 2 子（2px 竖条 + 内容列），内容列 COLUMN 且宽 SHRINK——
+                    // #7 修复形回锁：内列若被改回默认 FILL，它在 SHRINK 行内拿整行宽 → 本判据与
+                    // 下方「右缘越出行容器」不变量双双命中。
+                    if (rc.row.__getChildren().size() == 2
+                            && rc.child.getFlexDirection() == FlexDirection.COLUMN
+                            && rc.child.getWidthSizing() == WidthSizing.SHRINK) {
+                        quoteGroups++;
+                    }
+                }
+                Assert.assertTrue("markdown 页必须含引用组行（row[条+内列]，内列 SHRINK 内容宽），实测 "
+                        + quoteGroups, quoteGroups >= 1);
+            }
             if (pairs.isEmpty()) {
                 // 无 ROW 的纯纵向页面（如「控制字符」页：全部为卡片列文本，无按钮行）
                 // 不适用按钮行越界不变量，跳过该页。

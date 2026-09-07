@@ -44,9 +44,12 @@ public class PlaygroundTextInputPageTest {
         ReactiveScheduler.get().reset();
         host = new TestPlaygroundHost(null);
         doLayout();
-        // 切到「单行文本」页（注册表第 2 项）并重排。
+        // 切到「单行文本」页（注册表第 2 项）并重排。C9·7：钉落点 id——点击式切页若静默
+        // miss（页增删后段位移动、画布变窄），displayed 会停在 home 而 setUp 不红。
         clickNode(navSegment(1));
         doLayout();
+        Assert.assertEquals("setUp 切页必须真实落到「单行文本」页", "text-input",
+                host.__getDisplayedPageId());
     }
 
     @After

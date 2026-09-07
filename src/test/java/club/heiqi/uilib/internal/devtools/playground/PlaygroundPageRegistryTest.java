@@ -101,13 +101,31 @@ public class PlaygroundPageRegistryTest {
 
     @Test
     public void everyPageBuildsNonNullTreeAndMountsCleanly() {
-        for (PlaygroundPage page : PlaygroundPageRegistry.defaultPages()) {
+        List<PlaygroundPage> pages = PlaygroundPageRegistry.defaultPages();
+        for (PlaygroundPage page : pages) {
             SceneNode parent = new SceneNode();
             SceneNode root = runtime.mount(parent, page.build(runtime)).getRoot();
             Assert.assertNotNull("页面构建非 null: " + page.id(), root);
             Assert.assertSame("根已挂入父节点: " + page.id(), root, parent.__getChildren().get(0));
             Assert.assertFalse("根有子节点: " + page.id(), root.__getChildren().isEmpty());
             runtime.flush();
+        }
+        // C9·7 注册面另一半：每页必须能经宿主 R8 signal-first 通道（与点击命中无关）真实
+        // 切到且落点 id = 目标页——#7 的存活路径正是点击式切页在末段静默 miss，注册页在
+        // 宿主里「存在但从未被显示过」。TestPlaygroundHostTest 的同款遍历走的是点击面
+        // （那里点击本身是 SUT），这里钉受控源面。
+        TestPlaygroundHost host = new TestPlaygroundHost(null);
+        try {
+            for (int i = 0; i < pages.size(); i++) {
+                host.__getActivePageSignal().set(Integer.valueOf(i));
+                ReactiveScheduler.get().flush();
+                Assert.assertEquals("宿主切页落点 id 必须为注册表第 " + i + " 项",
+                        pages.get(i).id(), host.__getDisplayedPageId());
+                Assert.assertNotNull("落点页根非 null: " + pages.get(i).id(),
+                        host.__getDisplayedPageRoot());
+            }
+        } finally {
+            host.dispose();
         }
     }
 

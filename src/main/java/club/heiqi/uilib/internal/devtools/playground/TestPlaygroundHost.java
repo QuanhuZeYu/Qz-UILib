@@ -225,6 +225,15 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         return navBar;
     }
 
+    /**
+     * @return 受控导航源（R8 signal-first 唯一切页通道——SceneSegmented.onSelect 写的就是它；
+     *     测试可 {@code set(index) + flush()} 确定性切页，不依赖点击命中坐标，防窄画布末段
+     *     出界静默 miss——C9·7 #7 存活路径之一）
+     */
+    Signal<Integer> __getActivePageSignal() {
+        return activePageSignal;
+    }
+
     /** @return 滚动视口节点 */
     SceneNode __getViewport() {
         return viewport;
