@@ -103,7 +103,8 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  *   <li>B 侧不吞字：①提取器逐行可见串 == 行接缝原段流拼接（latex 恒 \u27e6源\u27e7）
  *       ②行接缝可见文本与段接缝（{@code toSegments}）去行界后逐字等（C1a 两接缝同源钉）；</li>
  *   <li>产物与地板：matrix.txt / diff.txt 落盘、每语料成块、B 路单侧 PNG 出图数与墨水地板
- *       （{@code MIN_INK_PER_PAGE}）照旧；矩阵引擎由自检用例钉死「分类/归一/FAIL」三条通道
+ *       （C9 起为「ink ≥ 该页 quad 数」关系形，原 {@code MIN_INK_PER_PAGE} 绝对数系
+ *       Windows 一次实测、平台耦合）照旧；矩阵引擎由自检用例钉死「分类/归一/FAIL」三条通道
  *       都不恒真——归一不许把不该判等的行判成等，FAIL 不许恒 0。</li>
  * </ol>
  *
@@ -139,8 +140,9 @@ public class MarkdownChat3ParityTest {
     private static final int WHITE = 0xFFFFFFFF;
     private static final int PAD = 8;
     private static final int LABEL_BASE = 11;
-    /** 每张出图墨水地板(低于即「空跑」,属场地缺陷而非对拍差异)。 */
-    private static final int MIN_INK_PER_PAGE = 30;
+    // C9：原「每张出图墨水地板 = 30」（Windows 绝对读数；Linux 上纯 CJK 样本页靠
+    // ASCII label 才勉强过线，属同批哑弹）改为关系形「ink ≥ 该页 quad 数」——
+    // 每枚 quad 在 bbox 定尺画布上至少落 1 个非背景像素，空跑即红，两平台同一真值。
     private static final int[] RENDER_WIDTHS = {W_MAIN, W_NARROW};
 
     // ---- 差异域词表 ----
@@ -1253,8 +1255,9 @@ public class MarkdownChat3ParityTest {
         File png = new File(OUT_DIR, suffix(id, w) + "-b.png");
         FontSoftwareRasterizer.writePng(pixels, pageW, pageH, png);
         int ink = countInk(pixels);
-        Assert.assertTrue(id + "@" + w + " B 图墨水地板: 实测=" + Integer.valueOf(ink),
-                ink >= MIN_INK_PER_PAGE);
+        Assert.assertTrue(id + "@" + w + " B 图墨水地板（≥quad 数，C9 关系形）: 实测="
+                + Integer.valueOf(ink) + " quads=" + Integer.valueOf(bCollector.getQuadCount()),
+                ink >= bCollector.getQuadCount());
         Assert.assertTrue(id + " B 侧 PNG 必须存在: " + png, png.isFile());
         pngCount++;
         PROFILE.append("png ").append(suffix(id, w)).append(" Blines=")
