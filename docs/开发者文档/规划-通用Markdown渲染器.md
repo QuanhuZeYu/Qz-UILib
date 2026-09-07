@@ -67,14 +67,18 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
   无序/有序列表（含缩进续行与内容列嵌套，续排/起始序号按主流 = C3b2 修 1）、**setext 标题**
   （段落紧邻 `===`→H1 / `---`→H2，本文初版「setext 缺失」偏离由 C3b2 补实现，惰性续行不得
   充当下划线的收紧由 C4 N2 落地）、分隔线 `---`/`***`、段落与空行、硬换行（行尾两空格 / 反斜杠）。
-- **§ 颜色码 = L1 零认知（C4 归位，2026-09-06；消费口径 C6b 甲 2026-09-07 重定）**：§ 是
-  MC 特有格式，只准作为 chat3 集成层的<b>输入转换</b>（`ChatMarkdownPipeline.toSpanStream`：
-  进 markdown 前把 § 码对按 L0 `TextStyle.applyFormat` 同源语义转成样式锚点 span 流，码本身
-  不进文本）或显式扩展存在；乙′ 的「行首预清洗 stripLeadingSectionCodes/markerView/coarse 粗检」
-  与「输出后置桥 bridgeSectionCodes」已在 C6b·3 <b>整套拆除</b>。本层（L1）的 § 一律字面文本，
-  「块层内嵌 §-容忍」旧机制早已拆除；L1 直连消费者不经集成层时 § 恒字面（`MarkdownChat3RuleInheritanceTest`
-  钉死）。零认知由常驻守卫 `MarkdownL1ZeroSectionKnowledgeGuardTest` 机器看护——见 §二之八
-  C6a/C6b 细账。
+- **§（U+00A7）= 普通字符，L1 零认知零分支（C4 归位 2026-09-06；C7 定案 2026-09-07）**：
+  L1 代码里不存在任何 § 的识别、剥离、转换或上色机制，§ 与任何其它文本字符同格——不参与块标记
+  检测（所以行首 `§a- x` 是段落字面而非列表项）、不进前导空白、不在行内 code/围栏/latex 里被
+  特殊对待、出段也不切段不上色。这是<b>无条件解析规则</b>：不依赖「输入保证不含 §」的事实，
+  事实面（原版 `ChatAllowedCharacters` 排除 U+00A7）只解释「为什么集成层可以不留 § 机制」。
+  MC 特有格式若要做成语义，只能作为调用方的<b>显式扩展</b>存在，永远不进解析核心。
+  历史上在 chat3 集成层存在过三代 § 处理（C4 初版无条件剥 → C4-fix 乙′「命中才剥 + 输出后置桥」
+  → C6b 甲「进 markdown 前 `toSpanStream` 转样式锚点 span 流」），<b>已于 C7 全部拆除</b>：
+  玩家消息内容改取原版结构参数（`StructuredChatReader`）或 plain 正则 rest，源头无 §。
+  正向行为锁 `MarkdownSectionCodeIsPlainTextLockTest`，反向常驻守卫
+  `MarkdownL1ZeroSectionKnowledgeGuardTest`（反例现指仍合法含 § 的原版链 `ChatLineLayouter`），
+  L1 直连字面判据仍在 `MarkdownChat3RuleInheritanceTest`——细账见 §二之八 C7。
 - 行内：`**`/`__`、`*`/`_`、`***`、`~~`、`` ` ``、`$`/`$$`、`[text](url)`、反斜杠转义 ——
   **语义照抄 §L1 既有裁定，不重开**。
 - 刻意不支持（写进文档，别默默失败）：表格、任务列表、HTML 内联、脚注、图片 `![alt](url)`。
@@ -93,7 +97,7 @@ L0 既有     TextSegment / TextStyle / TextLayoutService / RichTextTagParser / 
 | M5 | 接线并删除 `ChatMarkdownLineRule` 等旧解析 | **完成 `3e89d91e`**（与 M6 同笔，硬规矩满足）：接线本体 `internal/chat3/view/ChatMarkdownPipeline`，见 §二之六 |
 | M6 | 复生锁 G3（与 M5 同一提交） | **完成 `3e89d91e`**：`Chat3MarkdownResurrectionGuardTest` 4 条断言全配正对照+反空跑地板，见 §二之六 |
 | M7 | 方案乙：块身份行进接缝 + 三项块级几何（2026-09-05 用户裁定重开裁定 B 块几何部分） | **完成 `8c86a644`**：唯一新公共类型 `MarkdownLayoutLine`；引用嵌套竖条+缩进 / 真横线 / 围栏底色经 BACKGROUND/位置表达，可见文本零改动；门禁零接触全绿；见 §二之七 |
-| C 系列 | 向 CommonMark 0.30 归位的拆除批（2026-09-06 宪法裁定后开拆）：C1a 缩进代码 + 内容列唯一判据、C3b1 门禁重基线（R=commonmark-java）、C3b2 有序续排 + setext、C3b3 标题直拍撤豁免、**C4 § 归位 chat3 + setext 惰性收紧 + 门禁 RECORD 清零**、**C4-fix 乙′（命中块标记才剥）+ 一致性锁 + N2 惰性 setext 语料补齐**、**C6a L1 span 流地基 + C6b 甲（§→span 输入转换，预清洗与输出桥整套拆除）** | **C4 + C4-fix + C6a + C6b 已完成**，逐批记录见 §二之八 |
+| C 系列 | 向 CommonMark 0.30 归位 + § 划界的拆除批（2026-09-06 宪法裁定后开拆）：C1a 缩进代码 + 内容列唯一判据、C3b1 门禁重基线（R=commonmark-java）、C3b2 有序续排 + setext、C3b3 标题直拍撤豁免、**C4 § 归位 chat3 + setext 惰性收紧 + 门禁 RECORD 清零**、**C4-fix 乙′（命中块标记才剥）+ 一致性锁 + N2 惰性 setext 语料补齐**、**C6a L1 span 流地基 + C6b 甲（§→span 输入转换，预清洗与输出桥整套拆除）**、**C7 § 划界（集成层 § 机制全拆 + 玩家消息结构读取 + L1「§ 是普通字符」定为无条件规则）** | **C4 + C4-fix + C6a + C6b + C7 已完成**，逐批记录见 §二之八 |
 
 M1 的验收事实（父代理逐条独立复核过，非采信子代理自述）：三个文件与 `9c4dcae5` **blob hash
 逐一相同**（`84dd897c`/`49cfd000`/`6f639546`，463+48+274 行），**零适配**——两周内 layout 层
@@ -285,15 +289,18 @@ M4 交付**未提交**（红 build 不提交 + 宁可红着回来两条同时成
 1. **列表项续行**（lazy continuation）不带 chat3 保留的源前导空格：A 路 `«  续行»`，B 路 `«续行»`
    （`ChatLineLayouter` 把行首空白并入行文本，L1 按 CommonMark 以 contentCol 剥缩进）。语料 N04
    属 NEW 档，只记录不判等。
-2. **行中间的 § 码**在文档形参路径（`MarkdownDocument.parse(String)`）仍是字面文本，chat3 会
-   解析成颜色。这是「markdown 不引入颜色」旧裁定。**M5 落定 → C4/C4-fix 改判 → C6b 甲落地（措辞定稿）**：
-   chat3 消息路在进 markdown **之前**把 § 码对转成样式锚点 span 流（`ChatMarkdownPipeline.toSpanStream`
-   → `MarkdownDocument.parseSpans`；逐码 `TextStyle.applyFormat` 与 L0 同源，码不进文本，行尾/
-   换行前孤立 § 恒字面）；乙′ 的「输入侧预清洗 + 输出侧后置桥」两点机制已于 C6b·3 **整套拆除**，
-   § 处理自此在集成层只有一处（输入转换）。文档形参路径（playground/门禁 B 路直连消费者）§ 恒字面、
-   旧裁定不变，`MarkdownChat3RuleInheritanceTest` 的 L1 直连字面判据原样保留；`ChatMarkdownPipelineTest`
-   § 族锁现为转换断言 + 甲口径渲染断言，甲↔乙′ 逐段对账、桥退役 no-op 实证与退役镜像在
-   `ChatMarkdownSectionSpanMigrationLockTest`。细账见 §二之八 C6a/C6b 条。
+2. **§ 码在 markdown 路径恒字面（C7 定案后本条不再是「差异」）**。历史三代口径（C4 无条件剥 →
+   C4-fix 乙′预清洗+后置桥 → C6b 甲 `toSpanStream` → `parseSpans` 转样式锚点）曾让 chat3 消息路
+   与文档形参路对 § 有两种结果；**C7（2026-09-07 划界）把集成层的 § 机制整套拆除**，玩家消息内容
+   改取原版 `chat.type.text` 的结构参数 `getFormatArgs()[1]`（`StructuredChatReader`）或 plain
+   正则 rest——两条通道都从 unformatted 源取值，而 § 残渣本来的来源是客户端
+   `ChatComponentStyle.getFormattedText()` 逐组件注样式码（母本 :105-119，:115 无条件
+   `append(RESET)`），不是服务端。于是 chat3 与 L1 直连消费者对 § 得到同一结果：<b>普通字符、
+   原样显示、零样式</b>；「markdown 不引入颜色」旧裁定继续成立，且不再需要任何转换。
+   甲↔乙′ 迁移等价锁与其退役镜像、比较尺、`FormatPrefixStripper`、`toSpanStream` 均随对象消失
+   删除；正向锁改由 `MarkdownSectionCodeIsPlainTextLockTest`（L1）与
+   `ChatMarkdownPipelineTest#sectionCodesAreLiteralTextWithZeroStyleEffect`（chat3）承担。
+   `MarkdownChat3RuleInheritanceTest` 的 L1 直连字面判据原样保留。细账见 §二之八 C7 条。
    〔**C6a 区分注记（2026-09-06，防拿旧句当挡箭牌）**：本句禁的只是**输出侧反接**——把解析
    产物（`toSegments` 的段）再喂回 `parse(spans)` 做第二次解析。C6a 新增的都是**输入侧单次
    解析**通道，不违反其字面与理由：① `parse(spans)` 自 C6a 起为拼接文本上的跨 span 连续扫描
@@ -466,6 +473,18 @@ null」的 javadoc 承诺冲突），本批收回该零收益源码破坏；方�
 叠位、span 显式色覆盖块级色、行内位最后）为包内行为，接缝与公共面零接触；`MarkdownInlineParser`
 公共面恒 2；`MarkdownLayoutLine` 全成员 20 冻结不动；chat3 `ChatMarkdownPipeline` 仍
 package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均包内）。
+
+**C7 续账（2026-09-07，§ 划界批，代码批 `2144cfc4`/`2c03e683`）**：**L1/L2 公共签名零变化**——
+`MarkdownDocument` public 方法恒 8（`parse(String)` 与 `parseSpans(List)` 都在册；本批只把 chat3
+的调用点从后者换回前者，`parseSpans` 自此<b>零生产消费者</b>、能力由 `MarkdownSpanStreamC6aLockTest`
+继续钉，且不得被任何 § 相关代码使用）；`MarkdownStyleTable` 恒 19、`MarkdownLayoutLine` 全成员恒 20、
+`MarkdownInlineParser` 恒 2、`ChatMessageList` 恒 9、`ChatSceneController` 恒 26；
+`ChatMarkdownPipeline` public 恒 0，<b>声明成员（含非 public）20→19</b>（删 `toSpanStream` 与
+`flushSpan`；javap -p 逐条数得，反射反空跑地板的实测数同步）。chat3 侧新增
+`internal.chat3.viewmodel.StructuredChatReader`（public final，全成员尺 **3** =
+`read/1` + `PlayerChat.getSender/0` + `getContent/0`；私有构造与包内键集合不入账），属集成层
+内部类型、不在 markdown 五锚定表内；`MessageGroupModel` 只加包内 `isStructured()`，公共签名零变化。
+删除的公共类型 1 个 = `FormatPrefixStripper`（划界后全仓零引用，连本体与直测锁一并拆）。
 
 **测试与出图**：360→362 套件、3979→3992（+13 全新增零删除：L1 行接缝 6、L2 几何 3、
 出图入图探针 1、chat3 结构 3）；`MarkdownSoftwareRenderTest` 出图路切命令流渲染，
@@ -912,6 +931,13 @@ package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均
 |   | 门禁最后一个 RECORD 豁免撤销** | 见下段逐条 | 见下段逐条 |
 | **C4-fix（本批）** | **chat3 § 清洗「无条件剥」改判乙′「命中块标记才剥」+ 一致性锁 +
 |   | 门禁补 N2 惰性 setext 语料（42→48）+ 上述两条行为变化全部改回 C4 前观感** | 见「C4-fix 细账」 | 见「C4-fix 细账」 |
+| **C6a/C6b** | 三代 § 机制的第二代（乙′）拆除：chat3 气泡路切「§ → 样式锚点 span 流」甲口径 |
+|   | `ChatMarkdownPipeline.toSpanStream` + `MarkdownDocument.parseSpans`（L1 地基 = C6a） |
+|   | 迁移等价锁 20 例 + 转换器直测族（**两者均已被 C7 删除**，见下行） |
+| **C7（本批）** | **markdown 路径与 § 彻底划界**：三代 § 机制（甲 的 `toSpanStream`）连同
+|   | 一代清洗器 `FormatPrefixStripper`、甲↔乙′ 迁移等价锁与退役镜像、比较尺全部拆除；
+|   | 玩家消息改走**结构读取**（`StructuredChatReader` 读原版 `chat.type.text`），两条玩家
+|   | 通道一律取 unformatted 源；L1 定「§ 是普通字符」为无条件规则** | 见「C7 细账」 | 见「C7 细账」 |
 
 ### C4 细账（§ 归位 + N2 + RECORD 清零）
 
@@ -1109,6 +1135,108 @@ package-private、public 成员账恒 0（新增 toSpanStream/logicalForTest 均
 12. **文档口径**：本文 §二 L1 语法面 § 条、§二之五 遗留差异第 2 条、AGENTS.md 主权条款拆除项已同步
     甲口径（宪法句一字未动）；门禁类头新增分层声明一句话（B 路管 markdown 语义对齐、§ 转换属集成层
     由 L3 锁管）；未新增独立文档。
+    〔**C7 注记（2026-09-07）**：本条所同步的「甲口径」已整体作废——甲 转换器与集成层全部 § 机制
+    随 C7 拆除，上述三处口径现按下方「C7 细账」重写；门禁类头分层声明同步改口为「集成层无 § 机制，
+    § 行为由 L1 正向锁钉」。〕
+
+### C7 细账（划界定案：markdown 路径不解释 §；玩家消息走结构读取）
+
+**定案四条（用户裁决，不可自行改设计）**：① 系统消息层除用 markdown 方法发送的消息外，其余
+全走原版解析链；② 玩家消息里 § 一定不会出现（原版 `ChatAllowedCharacters.isAllowedCharacter`
+第 11 行 `character != 167`，167 == 0xA7 == §；服务端逐字符校验，含 § 的输入整条拒收）；
+③ 玩家名称走原版解析、发送内容走 UILib markdown，两者不混合；④ markdown 解析器内 § 原样
+显示、不做任何处理。
+
+1. **实测证据链（本地复读，母本 = `build/rfg/minecraft-src` + `javap` 对
+   `build/rfg/recompiled_minecraft-1.7.10.jar`）**：服务端 `PlayerManager`（notch `nh.a(ir)`）
+   广播的正是 `ChatComponentTranslation("chat.type.text", [player.getDisplayName(), 原始消息
+   String])`；客户端 `NetHandlerPlayClient:790-795` 的 `handleChat` 把 component 原样交给
+   `printChatMessage`，结构未丢；`ChatComponentTranslation` 公开 `getKey()`/`getFormatArgs()`
+   （javap 确认，两者纯）；反序列化侧 `IChatComponent.Serializer:133-141` 把「无样式且无
+   siblings」的 ChatComponentText 降级成 String ⇒ 同一槽位两形都可能出现，读取器两形都吃。
+   **§ 残渣的真来源（本批新证，比原任务书「服务端为消息体定起始样式」的说法更准）**：不是
+   服务端塞的，是 `ChatComponentStyle.getFormattedText()`（母本 :105-119）逐组件
+   `append(getChatStyle().getFormattingCode())` + `append(EnumChatFormatting.RESET)`（:115
+   无条件追加）注进去的。实测同一条 `chat.type.text`：`getFormattedText()` =
+   `<§rSteve§r> §r<b>hi</b>§r`，`getUnformattedText()` = `<Steve> <b>hi</b>`。
+2. **新增 `internal/chat3/viewmodel/StructuredChatReader`（127 行，纯函数、headless 可测）**：
+   `root instanceof ChatComponentTranslation` + `getKey()` 命中可扩展键集合
+   `PLAYER_CHAT_FORMAT_KEYS`（现只登记 `chat.type.text`，将来加 `chat.type.action` 一类
+   同源结构只改常量）+ `getFormatArgs()` 形如 `[sender, content]` ⇒ 返回不可变
+   `PlayerChat(sender, content)`，否则 null（不抛、不猜）。sender 支持 String 与
+   ChatComponentText 两形，内容只从 args[1] 取。**硬约束**：结构化路径禁调翻译组件的
+   `getUnformattedText()`/`getFormattedText()`（二者 final，第一步都是 `iterator()`，
+   `ChatComponentTranslation.iterator()` 先 `ensureInitialized()` → `StatCollector` 语言表）。
+   **额外收益**：结构读取绕开原版语言表翻译查找（`chat.type.text` 需 StatCollector 参与），
+   既少一次依赖，也消除格式缺参时 `ChatComponentTranslationFormatException` 的抛出风险。
+3. **装配收口：markdown 输入永不取自 `getFormattedText()`**。两条玩家通道都从源头无 §——
+   结构命中取 args[1]，正则兜底取 `getPlainText()` 上 `SenderExtractor` 的 rest；
+   `ChatCardComposer.displayText` 三分支（结构 / 兜底玩家行 / 系统行），系统行仍取 formatted
+   全文交 `ChatMessageList` 原版解析链（定案 ①）。**代价（登记 + 设备验证项）**：上游原版链
+   给内容定的颜色不再透传进气泡，气泡颜色一律由基础色 / 样式表 / markdown 自有语法决定——
+   与定案 ③「不混合」同向。
+4. **被删机制清单与作废原因**：
+
+   | 删除物 | 原职责 | 作废原因 |
+   | --- | --- | --- |
+   | `ChatMarkdownPipeline.toSpanStream` + `flushSpan`（C6b 甲，−97 行主源） | 进 markdown 前把 § 码对转样式锚点 span 流 | 输入侧已无 §，转换器恒空转；且它是「markdown 结果依赖 §」的最后载体 |
+   | `MarkdownDocument.parseSpans(List)` 的 chat3 消费路径 | 甲 的落地入口 | **入口本体保留**（将来富文本 component 通道），只删 § 相关用法；现零生产消费者，能力仍由 `MarkdownSpanStreamC6aLockTest` 钉 |
+   | `FormatPrefixStripper`（本体 40 行 + 直测锁 3 例） | 从 formatted 文本按「有效字符数」跳过 § 对切前缀 | § 残渣的搬运工而非清洗器；随第 3 条收口退出装配路径后全仓零引用 ⇒ 本体与锁一并删（原版链与组头均不经它，已核引用） |
+   | `ChatMarkdownSectionSpanMigrationLockTest`（20 @Test / 797 行）+ 只读镜像 `RetiredBPrime` + 比较尺 `StyleFieldsKey`（39 行） | 「§ 与 markdown 共存输入」的甲↔乙′ 逐段迁移等价对账 | 划界后该输入不再存在，等价锁失去对账对象；镜像与尺仅被本锁使用（`StyleFieldsKey` 零他引，已核） |
+   | `ChatMarkdownPipelineTest` 5 条转换器直测 + 甲 口径观感锁（该类 14→7） | 钉 § 上色、锚点存活、显式色定序 | 行为整体作废；替换为「§ 字面零样式」「行中字面」「缓存单轨」「空输入形状」4 条新锁 |
+5. **L1 定案「§ 是普通字符」= 无条件解析规则**（不得写成、也不得依赖「输入保证不含 §」）：
+   事实面（原版排除 167）只解释「为什么可以删掉那堆 § 机制」，不参与决定解析器行为。新增
+   `MarkdownSectionCodeIsPlainTextLockTest`（8 例，纯 L1 测试侧，不依赖 chat3 与 MC 类，
+   每例真的把 § 喂进 `parse` 再断言）：正文含 § 逐字符保留且样式字段与无 § 等价输入逐字段
+   全等；行内 code、围栏代码、latex 原子内 § 字面；**行首 § 吃掉块标记**（`§a- x` /
+   `§a# t` / `§a> q` 全判段落，配「去掉行首 § 照常命中」正例对照防误锁成空断言）；§ 出现在
+   缩进之后走 CommonMark 正常后果（4 空格 + § ⇒ 缩进代码且 § 留在 CODE 文本，≤3 空格 + §
+   ⇒ 段落且行首空白按既有口径折叠）；孤立 § 宽容字面。禁止清单同步入册：不得新增任何 §
+   识别/剥离/转换机制，不得恢复输出侧 § 桥，不得引入 markerView/κ 一类检测视图。
+6. **守卫面**：`MarkdownL1ZeroSectionKnowledgeGuardTest` 保留，两处同步——（a）反例文件从
+   `ChatMarkdownPipeline` 改指仍合法含 § 的原版链 `ChatLineLayouter`（划界删转换器后前者
+   代码面 § 命中归 0，继续拿它当反例等于把反例换成第二个空跑；「反例必须真能触发红」性质
+   不变）；（b）代码命中地板 3→1（3 是上一批自设过紧的基线值，1 已足以区分「恒假」与
+   「真命中」），实测 5/全行 20 由脚本复读，理由写进类头。`Chat3MarkdownResurrectionGuardTest`
+   的 L1 入口锚随生产演进 `MarkdownDocument.parseSpans(` → `MarkdownDocument.parse(`
+   （「>=1 命中」正向语义与全部地板一字未放松，先例见该锁 javadoc）。
+7. **公共面账（javap -public 实测于 `build/classes/java/main`）**：L1 零接触——
+   `MarkdownDocument` public 方法恒 **8**、`MarkdownLayoutLine` 全成员恒 **20**、
+   `MarkdownStyleTable` 恒 **19**、`ChatMessageList` 恒 **9**、`ChatSceneController` 恒 **26**；
+   `ChatMarkdownPipeline` public 成员恒 **0**（类仍非 public），其**声明**成员（含非 public）
+   **20→19**（删 toSpanStream/flushSpan），反射反空跑地板的实测数已同步。新增类型
+   `StructuredChatReader`（`internal.chat3.viewmodel`，非 markdown 接缝、不在门禁五锚定表内）
+   的 public 成员按全成员尺 = **3**：`read/1`、`getSender/0`、`getContent/0`（类声明行不计，
+   私有构造与包内键集合不入账）；`MessageGroupModel` 侧只加包内 `isStructured()`，
+   公共签名零变化。
+8. **缓存单轨**：两级 key = 最终喂进 `MarkdownDocument.parse` 的那个字符串 @基础色#配色代，
+   装配处（`displayText` 三分支）与缓存处共用同一个值，不留「一处用原文、一处用结构内容」
+   的两把尺（锁 `ChatMarkdownPipelineTest#cacheKeyIsExactlyTheStringFedToMarkdown`）。
+9. **已知边界（设计行为，不是缺陷；三处加锁）**：非 vanilla 聊天格式（服务端自定义 key 或
+   改写过的 `chat.type.text`）走正则兜底时内容可能带 §，此时 markdown 原样显示字面 §、
+   不产生任何样式——L1 侧 `MarkdownSectionCodeIsPlainTextLockTest`、chat3 侧
+   `ChatMarkdownPipelineTest#sectionCodesAreLiteralTextWithZeroStyleEffect`、视图模型侧
+   `MessageGrouperTest#fallbackContentKeepsSectionCodeVerbatim`。一句话：**markdown 路径
+   对 § 不做任何分支**。
+10. **顺带修的一处旧失真**：`ChatMarkdownPipeline.layout` javadoc 的「空文本 → 单空行
+    （至少一行）」在两代实现里都不成立（空流与空文档同样产空表），按现状更正并由
+    `emptyAndNullInputsProduceNoLines` 钉住（配非空正例防空跑）。非 C7 引入，就地处理。
+11. **实测计数**：`build --offline` = BUILD SUCCESSFUL；`cleanTest test` =
+    **4088 tests / 368 suites / 0 failures / 0 errors / 2 skipped**（skipped 恒为
+    `LatexReferenceComparisonTest` 两条）。C6b 基线 4095/368 → 净 **−7**（脚本逐文件数：
+    删 30 例、增 23 例；被删 @Test = 迁移锁 20 + 管道甲族 7 + FormatPrefixStripper 直测 3）。
+    门禁 48 条目产物**零变化**：`条目=48 FAIL条目=0 FAIL差异行=0 归一判等行=6 豁免照登行=2
+    RECORD条目=0 F6剔行=2 PNG=96`，**无新增豁免域**（B 路本就 L1 直连 String、两侧 § 恒字面，
+    划界只删 chat3 侧转换器，不触门禁判据/容差/登记表）。
+12. **踩坑档**：本批任务书里「对 `ChatComponentTranslation.getUnformattedText()` 调一次必抛
+    `NoClassDefFoundError: commons-io`」的实测结论出自仓库外的单文件 javac 探针（classpath
+    不完备），在 gradle 测试 classpath 上**不成立**（commons-io 在场、StatCollector 可用、
+    取文本不抛），按它写的断言实测必红。已按现实改锁（`iterator()` 计数恒 0 + 形参不合时
+    原版抛而 reader 退 null + formatted/raw 对照），并把「跨环境结论必须标明 classpath 前提」
+    记入 `踩坑记录.md`。
+13. **设备验证清单（本批未跑真机，如实挂账）**：① 真机玩家气泡是否还有 § 残渣；② 给内容着色
+    的服务端（含改写 `chat.type.text` 者）气泡丢色的观感；③ 昵称/前缀是彩色组件时组头是否
+    仍按原版着色（名称侧路径未动）；④ HUD 8 行截断与末行省略号在新正文下的形状。
 
 ---
 
