@@ -48,8 +48,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 链接 hover 持续 400ms 出 URL tooltip(SceneTooltip)。</p>
  *
  * <p><b>M5 接线(规划《通用Markdown渲染器》§三)</b>:气泡消息的段流来源 = 消息级 markdown 管道
- * {@link ChatMarkdownPipeline}(L1 {@code MarkdownDocument} 解析 + § 桥 + 换行前整条流链接化
- * + L2 {@code MarkdownPainter.wrapLines} 换行,两级 LRU 缓存 + 度量纪元失效,每帧零解析)。
+ * {@link ChatMarkdownPipeline}(L1 {@code MarkdownDocument.parse(String)} + 换行前整条流链接化
+ * + L2 {@code MarkdownPainter.wrapLayoutLines} 换行,两级 LRU 缓存 + 度量纪元失效,每帧零解析)。
+ * C7 划界后该管道不再含 § 桥——markdown 输入恒取 unformatted 源，§ 若出现就是普通字符。
  * 旧行级规则垫片与行内 code 切分器已删,列表「• 」、引用「&gt; 」、块级公式、行内 code 由 L1/L2
  * 承接(引用竖条与块公式间距改由段流结构判定,见 {@link ChatMarkdownPipeline#isQuoteRow}/
  * {@link ChatMarkdownPipeline#isBlockMathRow})。系统消息与组头仍走 {@link SegmentParser}(§ 解析),

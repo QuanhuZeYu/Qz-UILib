@@ -51,10 +51,13 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  * 任何 RECORD 条目</b>（{@code recordTotal == 0} 地板常驻）；豁免照登通道只剩 N11 的
  * EM_FLANK_SIMPLIFIED（唯一 RECORD_ONLY 成员，属 C5 范围，本批不动）。</p>
  *
- * <p><b>分层声明（C6b）</b>：本门禁 B 路继续走 L1 直连 String（{@code toLayoutLines}）、只管
- * markdown 语义对齐；§ → span 输入转换属 chat3 集成层，不归本门禁，其行为由 L3 层
- * {@code ChatMarkdownPipelineTest} 与 {@code ChatMarkdownSectionSpanMigrationLockTest} 钉死——
- * 故 P13/P14 语料两侧 § 均为字面、维持直拍 NO_DIFF，缺陷场景不进门禁语料。</p>
+ * <p><b>分层声明（C6b 立，C7 收敛）</b>：本门禁 B 路走 L1 直连 String（{@code toLayoutLines}）、
+ * 只管 markdown 语义对齐；chat3 集成层的 § 处理不归本门禁。<b>C7（2026-09-07 划界）后集成层
+ * 已无任何 § 机制</b>（§ → span 输入转换器与甲↔乙′ 迁移等价锁
+ * {@code ChatMarkdownSectionSpanMigrationLockTest} 一并退役），「§ 是普通字符」由 L1 正向锁
+ * {@code MarkdownSectionCodeIsPlainTextLockTest} 与 chat3 侧
+ * {@code ChatMarkdownPipelineTest#sectionCodesAreLiteralTextWithZeroStyleEffect} 钉死——
+ * 与本门禁 B 路同形，故 P13/P14 语料两侧 § 均为字面、维持直拍 NO_DIFF，判据/容差/登记表零接触。</p>
  *
  * <p>R 路＝{@link CommonMarkReferenceSemantics}（commonmark-java 0.21.0 + GFM strikethrough，
  * 官方参考实现）；B 路＝{@link BPathSemantics}（本仓 M10d 行接缝 {@code toLayoutLines} 同构映射）。

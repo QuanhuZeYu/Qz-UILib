@@ -108,9 +108,10 @@ public final class ChatSceneController {
      *
      * <p>M5 接线后本适配器的角色收窄为「组头(名字/时间)与系统消息行的 § 段解析」;
      * 气泡消息段流改走消息级 markdown 管道 {@code ChatMarkdownPipeline}
-     * (L1 MarkdownDocument → § 桥 → 换行前链接化 → L2 MarkdownPainter.wrapLines,
-     * 规划《通用Markdown渲染器》§三 M5)。§ 颜色语义两路同保(桥恒用 {@code TextStyle.applyFormat}
-     * 的 L0 § 语义),「markdown 不引入颜色」旧裁定不变。</p>
+     * (L1 MarkdownDocument → 换行前链接化 → L2 MarkdownPainter.wrapLines,规划《通用Markdown
+     * 渲染器》§三 M5)。C7 划界后本管道不再有任何 § 机制：气泡内容取自 unformatted 源，
+     * 两路各守各自语义——markdown 路不解释 §（§ 是普通字符，定案 4），组头/系统行仍走
+     * 上面那句 L0 § 段解析，「markdown 不引入颜色」旧裁定不变。</p>
      */
     public static ChatMessageList.SegmentParser uiLibSegmentParser() {
         final TextLayoutService service = FontService.getInstance().getTextLayoutService();

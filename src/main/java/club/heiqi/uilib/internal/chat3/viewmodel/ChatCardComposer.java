@@ -30,7 +30,9 @@ public final class ChatCardComposer {
         private final List<String> displayLines;
         private final List<ChatLineLayouter.LineFragment> fragments;
         private final float maxLineWidth;
-        /** 去发送者前缀后的消息原文(切行前;M5 起为 markdown 段流管道的输入)。 */
+        /** 去发送者前缀后的消息原文(切行前;M5 起为 markdown 段流管道的输入，C7 起恒取自
+         *  unformatted 源——结构 args[1] 或正则 rest，系统行除外，见
+         *  {@link #displayText(MessageGroupModel.GroupLine)})。 */
         private final String displayText;
         /** 本消息切行使用的定行宽(px;与 {@link ChatLineLayouter} 的 maxWidthPx 同源,M5 起透传给 L2 换行)。 */
         private final int wrapWidthPx;
@@ -74,7 +76,8 @@ public final class ChatCardComposer {
             return maxLineWidth;
         }
 
-        /** @return 去前缀后的消息原文(切行前;M5 markdown 段流管道输入,恒非 null) */
+        /** @return 去前缀后的消息原文(切行前;M5 起为 markdown 管道输入，C7 起玩家行恒取
+         *         unformatted 源;恒非 null) */
         public String getDisplayText() {
             return displayText;
         }
@@ -389,16 +392,33 @@ public final class ChatCardComposer {
     }
 
     /**
-     * 气泡内显示文本:去「&lt;名字&gt; 」前缀(按有效字符数剥离,保留 § 样式码)。
-     * 系统消息显示全文。
+     * 气泡内显示文本(M5 起即 markdown 管道输入)。
+     *
+     * <p><b>C7 收口：三条装配分支，玩家行一律不读组件的 formatted 文本</b>
+     * （{@code ChatComponentStyle.getFormattedText()} 逐组件前置样式码、尾追 RESET，实测
+     * {@code <§rSteve§r> §r<b>hi</b>§r}——那是旧气泡 § 残渣的唯一来源，从源头断开后
+     * markdown 侧就不需要任何 § 机制）：</p>
+     * <ul>
+     *   <li><b>结构命中</b>（{@link MessageGroupModel.GroupLine#isStructured()}）⇒ 本体 =
+     *       {@code getFormatArgs()[1]} 的原始文本，零组件回读、零 §；</li>
+     *   <li><b>正则兜底的玩家行</b>（rest 比 plain 短）⇒ 本体 = {@code getPlainText()} 上
+     *       {@link SenderExtractor} 的 rest，同样不读 formatted 文本（代价：上游原版链给内容定的
+     *       颜色不再透传进气泡，颜色交基础色/样式表/markdown 自有语法——规划 §二之八 C7 登记）；</li>
+     *   <li><b>系统/广播行</b>（rest == plain）⇒ 整条 formatted 文本原样交给
+     *       {@code ChatMessageList} 的原版解析链（定案 1：markdown 之外的消息全走原版链），
+     *       分支判定与旧实现同式。</li>
+     * </ul>
      */
     private static String displayText(MessageGroupModel.GroupLine line) {
+        if (line.isStructured()) {
+            return line.getRest();
+        }
         String plain = line.getRecord().getPlainText();
         String rest = line.getRest();
         if (plain.length() == rest.length()) {
             return line.getRecord().getFormattedText();
         }
-        return FormatPrefixStripper.strip(line.getRecord().getFormattedText(), plain.length() - rest.length());
+        return rest;
     }
 
     /**

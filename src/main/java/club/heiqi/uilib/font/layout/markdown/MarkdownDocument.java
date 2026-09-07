@@ -113,6 +113,14 @@ public final class MarkdownDocument {
      * 把 {@code toSegments} 产物再喂回行内入口属输出侧反接（双解析漂移），规划 §二之八
      * 旧裁定禁止，两路都不允许。</p>
      *
+     * <p><b>C7 消费者现状（2026-09-07 划界）</b>：chat3 气泡路已退回 {@link #parse(String)}，
+     * 本入口<b>当前零生产消费者</b>，作为「将来富文本 component / 业务 mod 样式流」的通道
+     * 保留在公共面（规划 §二之八 C7 拆除清单与理由）。它承载的是<b>通用样式锚点</b>语义，
+     * 与 § 无关：任何 § 识别/转换都不得挂到这条入口上（定案 4/6；反向守卫
+     * {@code MarkdownL1ZeroSectionKnowledgeGuardTest}，行为正向锁
+     * {@code MarkdownSectionCodeIsPlainTextLockTest}）。能力锁 {@code MarkdownSpanStreamC6aLockTest}
+     * 因此保留——锁的是通道能力本身，不是某个已退役的消费者。</p>
+     *
      * @param spans 带基础样式的文本 span 流（可为 null/空，返回空文档；span 文本可含换行符）
      * @return 不可变文档模型（{@link #getSource()} = span 文本按序拼接）
      */

@@ -26,10 +26,20 @@ import org.junit.Test;
  *
  * <p><b>反空跑地板</b>（规划 §四 G1 纪律「扫到 ∅ 先怀疑扫帚」，先例
  * {@code Chat3MarkdownResurrectionGuardTest}:68/:88-89）：同一扫描器对已知含 § 知识的
- * 对照文件 {@code internal/chat3/view/ChatMarkdownPipeline.java} 必须报出真实命中
- * （地板 = 实测基线）；L1 注释行 § 命中计数恒 &gt; 0（边界声明「本层对 § 零认知」
- * 确实以注释形态存在于扫到的文件里——证明扫描器看见了文件与字符，只是代码面为零）；
- * 目录/文件缺失、扫描集规模低于地板一律<b>红</b>而非静默跳过。</p>
+ * 对照文件必须报出真实命中（地板 = 实测基线）；L1 注释行 § 命中计数恒 &gt; 0（边界声明
+ * 「本层对 § 零认知」确实以注释形态存在于扫到的文件里——证明扫描器看见了文件与字符，只是
+ * 代码面为零）；目录/文件缺失、扫描集规模低于地板一律<b>红</b>而非静默跳过。</p>
+ *
+ * <p><b>C7 划界后的对照文件改指（第 7 条）</b>：反例原本指
+ * {@code internal/chat3/view/ChatMarkdownPipeline.java}——那里曾是集成层唯一的 § 解释点
+ * （{@code toSpanStream} 的 § 字面 + {@code applyFormat}，实测代码命中 3）。C7 定案
+ * 「markdown 路径不解释 §」后该转换器<b>整套删除</b>，ChatMarkdownPipeline 代码面 § 命中
+ * 归零，继续拿它当反例就等于把反例换成第二个空跑。故改指<b>仍然合法含 §</b> 的原版链文件
+ * {@code internal/chat3/viewmodel/ChatLineLayouter.java}（系统/广播行走原版解析链，逐字符
+ * 认 § 码对、续行重发样式，实测代码命中 5 / 全行命中 20）。地板随之从 &ge;3 放宽到
+ * <b>&ge;1</b>：原值 3 是照抄旧基线的自设值，与本锁的性质（证明扫描器看得见 §）无关，
+ * 1 已经足够区分「恒假」与「真命中」；放宽理由在此留档，不许再往回收。
+ * 「反例必须真能触发红」这条性质不变——若哪天 ChatLineLayouter 也褪 §，本锁当场红。</p>
  */
 public class MarkdownL1ZeroSectionKnowledgeGuardTest {
 
@@ -37,9 +47,13 @@ public class MarkdownL1ZeroSectionKnowledgeGuardTest {
     private static final Path L1_DIR = Paths.get(
             "src/main/java/club/heiqi/uilib/font/layout/markdown");
 
-    /** 正对照：chat3 集成层的 § 管道（现含 § 字符面、markerView、stripLeadingSectionCodes、applyFormat）。 */
+    /**
+     * 正对照：chat3 <b>原版链</b>的行切分器（合法 § 知识：逐字符认码对、零宽不可拆、
+     * 续行重发生效样式）。C7 前此处曾是 {@code ChatMarkdownPipeline}（集成层唯一 §
+     * 解释点），该转换器随「markdown 路径不解释 §」删除后 § 命中归零，故改指本文件。
+     */
     private static final Path CONTROL_FILE = Paths.get(
-            "src/main/java/club/heiqi/uilib/internal/chat3/view/ChatMarkdownPipeline.java");
+            "src/main/java/club/heiqi/uilib/internal/chat3/viewmodel/ChatLineLayouter.java");
 
     /** § 字符本体（(char) 0x00A7 运行时拼装，规避 Java 源码 Unicode 预处理陷阱——同 L1 (char) 0x60 惯例）。 */
     private static final String SECTION_CHAR = String.valueOf((char) 0x00A7);
@@ -59,8 +73,8 @@ public class MarkdownL1ZeroSectionKnowledgeGuardTest {
 
     /** L1 扫描集规模地板（实测 9 文件；路径失效/整包失踪先红）。 */
     private static final int L1_FILE_FLOOR = 7;
-    /** 对照文件代码行命中地板（实测基线，低于即扫描器失效）。 */
-    private static final int CONTROL_CODE_HIT_FLOOR = 3;
+    /** 对照文件代码行命中地板（实测 5；C7 起地板放宽到 1，理由见类头「对照文件改指」段）。 */
+    private static final int CONTROL_CODE_HIT_FLOOR = 1;
     /** 对照文件含注释全行命中地板。 */
     private static final int CONTROL_ANY_HIT_FLOOR = 10;
     /** L1 注释行 § 提及地板（「对 § 零认知」边界声明在案，命中 0 = 扫描器或注释一起没了）。 */
@@ -109,9 +123,9 @@ public class MarkdownL1ZeroSectionKnowledgeGuardTest {
                 Files.isRegularFile(CONTROL_FILE));
         int codeHits = countFile(CONTROL_FILE, codeLines(CONTROL_FILE));
         int allHits = countAllLines(CONTROL_FILE);
-        Assert.assertTrue("同一扫描器对 ChatMarkdownPipeline 代码行实测命中 " + codeHits
-                + "（基线地板 " + CONTROL_CODE_HIT_FLOOR + "）；命中 0 = 扫描器恒假，主断言即虚锁",
-                codeHits >= CONTROL_CODE_HIT_FLOOR);
+        Assert.assertTrue("同一扫描器对原版链切分器 ChatLineLayouter 代码行实测命中 " + codeHits
+                + "（地板 " + CONTROL_CODE_HIT_FLOOR + "，放宽理由见类头）；命中 0 = 扫描器恒假，"
+                + "主断言即虚锁", codeHits >= CONTROL_CODE_HIT_FLOOR);
         Assert.assertTrue("对照文件全行命中 " + allHits + " 必须 >= 代码行命中（注释里也有 § 提及）",
                 allHits >= codeHits && allHits >= CONTROL_ANY_HIT_FLOOR);
         System.out.println("[C6a-guard] control=" + CONTROL_FILE + " codeHits=" + codeHits

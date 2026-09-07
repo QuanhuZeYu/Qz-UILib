@@ -11,6 +11,9 @@ import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
  *
  * <p>行序 = 时间正序(最旧在上,最新在下);组存活/淡出以组内最新消息的
  * {@link #getLatestMillis()} 驱动。每行携带去前缀后的消息本体(气泡内只显示本体)。</p>
+ *
+ * <p>C7 起每行另带「本体来源」标记(结构通道 / 正则兜底)，气泡装配处据此决定是否回读组件
+ * 文本，见 {@link GroupLine#isStructured()}。</p>
  */
 public final class MessageGroupModel {
 
@@ -24,15 +27,26 @@ public final class MessageGroupModel {
         SYSTEM_CENTER
     }
 
-    /** 组内一行:消息记录 + 去前缀后的消息本体(系统消息 = 全文)。 */
+    /** 组内一行:消息记录 + 去前缀后的消息本体(系统消息 = 全文) + 本体来源标记。 */
     public static final class GroupLine {
 
         private final ChatLineRecord record;
         private final String rest;
+        /**
+         * C7:rest 是否来自 {@link StructuredChatReader} 的原版结构参数
+         * ({@code getFormatArgs()[1]})。
+         *
+         * <p>true ⇒ 本体已是「组件里的原始文本」，直接进 markdown；装配处不得再回读
+         * {@code record.getPlainText()}/{@code getFormattedText()}——前者对翻译组件是
+         * StatCollector 语言表查找，后者还逐组件注样式码(§ 残渣的唯一来源)。
+         * false ⇒ 正则兜底或系统行，走旧装配口径。</p>
+         */
+        private final boolean structured;
 
-        private GroupLine(ChatLineRecord record, String rest) {
+        private GroupLine(ChatLineRecord record, String rest, boolean structured) {
             this.record = record;
             this.rest = rest;
+            this.structured = structured;
         }
 
         /** @return 消息记录 */
@@ -44,29 +58,38 @@ public final class MessageGroupModel {
         public String getRest() {
             return rest;
         }
+
+        /** @return true = 本体取自原版结构(C7 结构通道;包内装配读端，公共面零变化) */
+        boolean isStructured() {
+            return structured;
+        }
     }
 
     private final String sender;
     private final Alignment alignment;
     private final List<GroupLine> lines;
 
-    private MessageGroupModel(String sender, Alignment alignment, ChatLineRecord record, String rest) {
+    private MessageGroupModel(String sender, Alignment alignment, ChatLineRecord record, String rest,
+            boolean structured) {
         this.sender = sender;
         this.alignment = alignment;
         this.lines = new ArrayList<GroupLine>();
-        this.lines.add(new GroupLine(record, rest));
+        this.lines.add(new GroupLine(record, rest, structured));
     }
 
     /**
      * 玩家消息组(非系统)。
      *
-     * @param sender    发送者名(非空)
-     * @param isSelf    是否本地玩家
-     * @param record    组内首条消息
-     * @param rest      去前缀后的消息本体
+     * @param sender     发送者名(非空)
+     * @param isSelf     是否本地玩家
+     * @param record     组内首条消息
+     * @param rest       去前缀后的消息本体(unformatted 源:结构 args[1] 或正则 rest)
+     * @param structured 本体是否来自 {@link StructuredChatReader}(C7 两条通道的分尺点)
      */
-    static MessageGroupModel player(String sender, boolean isSelf, ChatLineRecord record, String rest) {
-        return new MessageGroupModel(sender, isSelf ? Alignment.SELF_RIGHT : Alignment.OTHER_LEFT, record, rest);
+    static MessageGroupModel player(String sender, boolean isSelf, ChatLineRecord record, String rest,
+            boolean structured) {
+        return new MessageGroupModel(sender, isSelf ? Alignment.SELF_RIGHT : Alignment.OTHER_LEFT,
+                record, rest, structured);
     }
 
     /**
@@ -75,12 +98,13 @@ public final class MessageGroupModel {
      * @param record 消息
      */
     static MessageGroupModel system(ChatLineRecord record) {
-        return new MessageGroupModel(null, Alignment.SYSTEM_CENTER, record, record.getPlainText());
+        return new MessageGroupModel(null, Alignment.SYSTEM_CENTER, record, record.getPlainText(),
+                false);
     }
 
     /** 追加一条消息(仅同发送者合并路径调用)。 */
-    void addLine(ChatLineRecord record, String rest) {
-        lines.add(new GroupLine(record, rest));
+    void addLine(ChatLineRecord record, String rest, boolean structured) {
+        lines.add(new GroupLine(record, rest, structured));
     }
 
     /** @return 发送者名(系统组为 null) */

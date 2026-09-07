@@ -24,15 +24,22 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * 正文原样交 {@link MarkdownInlineParser} 后 {@code [alt](url)} 部分按既有行内裁定解析为链接、
  * {@code !} 为字面文本——行内语义照抄 9c4dcae5 裁定（规划 §五 D2），本层一行不改。</p>
  *
- * <p><b>对 § 颜色码零认知（C4 归位，2026-09-06 宪法裁定；替代旧 M4-fix F4「块层 §-容忍」
- * 与 markerView 检测视图机制）</b>：§（U+00A7）在本层是普通字面文本字符——既不构成前导空白、
- * 也不参与任何块标记检测，更不被解释为颜色/样式。MC 特有格式只能作为 chat3 集成层的输入转换
- * 或显式扩展存在（AGENTS.md 主权条款；旧 F4 的立论「复刻 ChatMarkdownLineRule.classify」随该类
- * 在 3e89d91e 删除且被复生锁钉死不得复活而失效）。行为后果：L1 直连消费者（不经 chat3 桥）拿到
- * {@code §a- x} 时得到<b>字面段落文本</b>而非列表项——这正是归位目的；chat3 的
- * {@code ChatMarkdownPipeline} 自 C6b（方案甲）起在进本层<b>之前</b>把 § 码对转成样式锚点
- * span 流（{@code parseSpans} 入口）——本层拿到的恒为 § 已消化的纯文本 + 每字符基础样式，
- * 块检测判据与 String 路单源；旧的「行首 § 码对输入清洗 + 输出侧桥」乙′双点机制已整套拆除。</p>
+ * <p><b>§（U+00A7）在本层就是普通字符（C4 归位 + C7 定案 4，2026-09-07）</b>：L1 对 § 零认知
+ * 且零分支——本层代码里不存在任何 § 的识别、剥离、转换或上色机制，§ 与 'a'、'\u2022' 一样只是
+ * 一个普通文本字符；一切后果都由「它是普通字符」这一条推出，不为它开特例：既不构成前导空白、
+ * 也不参与任何块标记检测；<b>行首 § 因此吃掉块标记</b>（{@code §a- x} 是段落字面而非列表项，
+ * {@code §a# t} 不是标题，{@code §a> q} 不是引用）；<b>行内 code、围栏代码与 latex 原子内的 §
+ * 同样原样保留</b>（这些域本就不解析任何标记，§ 也就没有额外特权）；出段也不因 § 切段或上色。
+ * 该语义由 {@code MarkdownSectionCodeIsPlainTextLockTest} 逐条正向钉死——每例都真的把 § 喂进
+ * {@code parse} 再断言结果，不靠「输入恰好不含 §」过关；反向则由常驻守卫
+ * {@code MarkdownL1ZeroSectionKnowledgeGuardTest} 钉住 L1 代码面 § 知识恒 0。
+ *
+ * <p>「为什么这里可以什么都不做」只是输入事实、不是本层的行为依据：chat3 划界（C7）后，玩家
+ * 消息内容取自原版 {@code chat.type.text} 的结构参数（原版服务端逐字符拒收 §，见
+ * {@code ChatAllowedCharacters.isAllowedCharacter}），兜底通道取自 unformatted 文本，两条通道
+ * 都不再往 markdown 里塞样式码；而 markdown 侧遇到 §（例如业务 mod 直接递交的富文本）依旧按
+ * 上面那条规则处理。MC 特有格式若要成为语义，只能作为调用方的显式扩展存在（AGENTS.md 主权
+ * 条款），永远不进解析核心。</p>
  *
  * <p>相对 CommonMark 的已裁简化（均有测试钉死）：制表符不展开（块缩进只数行首空格，
  * 标记后空格/制表符均接受）；行首反斜杠不构成块转义（{@code \# x} 整行按字面段落处理，

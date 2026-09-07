@@ -211,9 +211,13 @@ public class MarkdownPublicSurfaceGuardTest {
                 + Modifier.toString(type.getModifiers()), Modifier.isPublic(type.getModifiers()));
         int declared = type.getDeclaredMethods().length + type.getDeclaredConstructors().length
                 + type.getDeclaredFields().length;
-        Assert.assertTrue("反空跑：ChatMarkdownPipeline 声明成员（含非 public）实测 20"
-                + "（15 方法 + 1 构造器 + 4 字段），地板取 15；低于地板说明反射没真扫到这个类，"
-                + "上面那个「0 public 成员」就成了假绿: 实到声明成员 " + declared, declared >= 15);
+        // 实测数随生产码演进（javap -p 逐条数得，非心算）：C6b 时 20 = 15 方法 + 1 构造器 + 4 字段；
+        // C7 划界删掉 § → span 输入转换器 toSpanStream 与其 flushSpan 助手 ⇒ 19 = 14 + 1 + 4。
+        // 地板 15 不动——它的职责只是「反射没扫到位就当场红」。
+        Assert.assertTrue("反空跑：ChatMarkdownPipeline 声明成员（含非 public）实测 19"
+                + "（14 方法 + 1 构造器 + 4 字段；C7 删 toSpanStream/flushSpan 前是 20），地板取 15；"
+                + "低于地板说明反射没真扫到这个类，上面那个「0 public 成员」就成了假绿: 实到声明成员 "
+                + declared, declared >= 15);
     }
 
     // ==================== 总量地板（防恒真）====================

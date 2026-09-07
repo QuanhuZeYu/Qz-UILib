@@ -131,7 +131,10 @@ public class Chat3MarkdownResurrectionGuardTest {
      * L2 换行 + 换行前链接化」，命中数 &gt;= 1 的正向锚）一字未放松，只随实际入口更名而更。
      * C6b（2026-09-07 方案甲）同款演进：{@code MarkdownDocument.parse(} →
      * {@code MarkdownDocument.parseSpans(}（String 入口随输入清洗退役，span 流入口成为
-     * 唯一 L1 解析入口）——仍是「>=1 命中」正向锚，语义零放松。
+     * 唯一 L1 解析入口）；<b>C7（2026-09-07 划界）再演回</b> {@code MarkdownDocument.parse(}
+     * ——§ → span 输入转换随「markdown 路径不解释 §」退役，String 入口重新是唯一 L1 解析入口
+     * （{@code parseSpans} 保留在 L1 公共面留给将来富文本 component 通道，chat3 侧零 § 消费者）。
+     * 两轮都仍是「>=1 命中」正向锚，语义零放松。
      * 门禁 {@code MarkdownChat3ParityTest} 的判据/容差/引擎与本锁无关、未动。</p>
      */
     @Test
@@ -140,10 +143,10 @@ public class Chat3MarkdownResurrectionGuardTest {
         Assert.assertTrue("M5 接线本体 ChatMarkdownPipeline.java 必须存在",
                 Files.isRegularFile(pipeline));
         List<String> code = codeLines(pipeline);
-        // C6b 甲（2026-09-07）：锚串随生产入口更名演进（parse( → parseSpans(，String 入口
-        // 随输入清洗退役），「>=1 命中」正向语义与全部地板一字未放松（先例见本方法 javadoc）。
-        Assert.assertTrue("入口必须经 L1:MarkdownDocument.parseSpans 调用点 >=1",
-                countSubstring(code, "MarkdownDocument.parseSpans(") >= 1);
+        // C6b → C7 两轮锚串随生产入口演进（parse( → parseSpans( → parse(），「>=1 命中」正向
+        // 语义与全部地板一字未放松（先例与理由见本方法 javadoc）。
+        Assert.assertTrue("入口必须经 L1:MarkdownDocument.parse 调用点 >=1",
+                countSubstring(code, "MarkdownDocument.parse(") >= 1);
         Assert.assertTrue("入口必须经 L2:MarkdownPainter.wrapLayoutLines 调用点 >=1",
                 countSubstring(code, "MarkdownPainter.wrapLayoutLines(") >= 1);
         Assert.assertTrue("块身份行接缝调用点 >=1: .toLayoutLines(",

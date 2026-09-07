@@ -16,6 +16,21 @@ import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
  *   <li>「自己」判定:发送者 == 本地玩家名(调用方传入,视图模型不依赖 Minecraft);</li>
  *   <li>输出组序 = 时间正序(旧 → 新)。</li>
  * </ul>
+ *
+ * <p><b>C7 划界：结构优先、正则兜底</b>（定案 3「玩家名称走原版解析、发送内容走 markdown、
+ * 两者不混合」的落点）。每条记录先交 {@link StructuredChatReader} 读原版结构
+ * （{@code chat.type.text} + {@code [sender, content]}）——命中即为玩家消息，sender 与 rest
+ * 直取结构结果，<b>整条路径不碰 {@code record.getPlainText()}/{@code getFormattedText()}</b>
+ * （翻译组件上这两个方法要走 StatCollector 语言表查找：多一次依赖，缺参还抛
+ * {@code ChatComponentTranslationFormatException}）。未命中（自定义或改写过的格式键、
+ * 系统与广播消息）才退回既有 {@link SenderExtractor} 正则口径，行为与今天完全一致。</p>
+ *
+ * <p><b>两条通道的内容都取自 unformatted 源</b>：结构通道取 {@code getFormatArgs()[1]}
+ * 的原始字符串，兜底通道取 {@code getPlainText()} 的正则 rest；{@code getFormattedText()}
+ * 一律不作 markdown 输入——{@code ChatComponentStyle.getFormattedText()} 逐组件前置
+ * {@code getFormattingCode()}、尾追 {@code RESET}（实测 {@code <§rSteve§r> §r<b>hi</b>§r}），
+ * 那正是旧气泡行 § 残渣的唯一来源。代价（如实登记）：上游原版链给<b>内容</b>定的颜色不再透传进
+ * markdown 气泡，颜色一律由基础色/样式表/markdown 自有语法决定——与定案 3「不混合」同向。</p>
  */
 public final class MessageGrouper {
 
@@ -49,22 +64,32 @@ public final class MessageGrouper {
         // 从最旧到最新遍历,保证「相邻」判断与组内时间正序
         for (int i = recordsNewestFirst.size() - 1; i >= 0; i--) {
             ChatLineRecord record = recordsNewestFirst.get(i);
-            SenderExtractor.SenderMatch match = extractor.extract(record.getPlainText());
-            String sender = match == null ? null : match.getSender();
+            // C7 结构优先：命中原版 chat.type.text 结构 ⇒ sender/rest 直取结构结果，
+            // 不再走 getPlainText()（翻译组件上那是语言表查找）。
+            StructuredChatReader.PlayerChat structured =
+                    StructuredChatReader.read(record.getComponent());
+            SenderExtractor.SenderMatch match = structured == null
+                    ? extractor.extract(record.getPlainText()) : null;
+            String sender = structured != null ? structured.getSender()
+                    : match == null ? null : match.getSender();
             if (sender == null) {
                 groups.add(MessageGroupModel.system(record));
                 current = null;
                 currentSender = null;
                 continue;
             }
+            // 两条通道的消息本体恒取自 unformatted 源（结构 args[1] / 正则 rest），
+            // 下游 markdown 输入不再经 § 跳跃切片。
+            String rest = structured != null ? structured.getContent() : match.getRest();
             // 时间窗(设计稿 §3.3):相邻同发送者消息间隔 > 120s 断开开新组
             boolean withinWindow = current != null && sender.equals(currentSender)
                     && record.getArrivedWallMillis() - lastArrivedMillis <= MERGE_WINDOW_MILLIS;
             if (withinWindow) {
-                current.addLine(record, match.getRest());
+                current.addLine(record, rest, structured != null);
             } else {
                 boolean isSelf = selfName != null && sender.equals(selfName);
-                current = MessageGroupModel.player(sender, isSelf, record, match.getRest());
+                current = MessageGroupModel.player(sender, isSelf, record, rest,
+                        structured != null);
                 currentSender = sender;
                 groups.add(current);
             }

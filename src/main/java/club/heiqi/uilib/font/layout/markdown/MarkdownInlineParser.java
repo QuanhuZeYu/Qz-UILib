@@ -20,8 +20,8 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * <h3>C6a（能力②）：跨 span 连续扫描</h3>
  * <p>旧实现逐 span 独立 {@code parseInline}，跨 span 边界的定界符永不闭合——span[("**",A),
  * ("粗",B),("**",A)] 产字面 <code>**粗**</code> 而单文本 {@code **粗**} 产粗体，两种输入
- * 形态语义分叉。服务端格式码不知道 markdown 边界（「方案甲」把 § 转成样式锚点后这类形态
- * 海量出现），分叉即回归。本层自此在 <b>span 拼接文本上单次连续扫描</b>，产段时按字符
+ * 形态语义分叉。宿主样式流（IChatComponent 展开、业务 mod 富文本等）不知道 markdown 边界，
+ * 跨锚点配对是常态而非角落，分叉即回归。本层自此在 <b>span 拼接文本上单次连续扫描</b>，产段时按字符
  * 区间回溯样式：一个 markdown 语义段跨多个样式区间时按样式边界再切成多段，每段样式 =
  * 该区间基础样式 + markdown 叠加位（叠加顺序不变：基础样式为底、markdown 只叠位）。
  * 相邻样式值相等的 span 先并组（{@link StyleValues}），保证切分只发生在真正的样式边界。</p>

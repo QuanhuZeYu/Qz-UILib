@@ -5,9 +5,13 @@ import club.heiqi.uilib.font.layout.TextStyle;
 /**
  * markdown 解析输入单元：一段文本 + 其基础样式。
  *
- * <p>聊天组件桥（见《规划-通用Markdown渲染器.md》§二 L3，chat3 接线属 M5）把 IChatComponent 树展开为带样式锚点的
- * span 流：每个 span 的 {@link TextStyle} 承载组件样式（颜色/粗体/斜体/下划线/删除线/链接），
- * markdown 标记只在 span 文本内解析并叠加样式位，不改变颜色等组件决定的属性。</p>
+ * <p>本类型是<b>通用样式锚点通道</b>的输入单元（{@link MarkdownDocument#parseSpans(List)}）：
+ * 每个 span 的 {@link TextStyle} 承载该段文本的基础样式（颜色/粗体/斜体/下划线/删除线/链接），
+ * markdown 标记只在拼接文本上解析并把样式位叠加回各区间，不改变 span 决定的颜色。
+ * 计划的调用方是 IChatComponent 树展开与业务 mod 富文本；<b>chat3 自 C7（2026-09-07 划界）起
+ * 不再经本通道</b>——它曾用于把 § 码流转成样式锚点，该转换器已随「markdown 路径不解释 §」删除，
+ * 本通道不得再被任何 § 相关代码使用（守卫 {@code MarkdownL1ZeroSectionKnowledgeGuardTest}）。
+ * 入口与能力保留在案，等富文本 component 通道接线时启用。</p>
  */
 public final class MarkdownSpan {
 

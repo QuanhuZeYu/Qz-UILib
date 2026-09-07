@@ -7,6 +7,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.ChatComponentTranslation;
 
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
@@ -37,8 +38,9 @@ public class ChatCardComposerTest {
         Assert.assertEquals("Steve " + ChatClock.formatTime(arrived), composed.getHeaderText());
         Assert.assertEquals(SenderColorPalette.colorFor("Steve"), composed.getNameColor());
         Assert.assertEquals(1, composed.getMessages().size());
-        // ChatComponentText.getFormattedText 尾部带 §r 重置码(真实口径,渲染时被解析为样式重置)
-        Assert.assertEquals(Arrays.asList("hello world\u00a7r"), composed.getMessages().get(0).getDisplayLines());
+        // C7 收口：正则兜底的玩家行本体改取 getPlainText() 的 rest，不再从
+        // ChatComponentText.getFormattedText()（尾部自带 §r 重置码）上切片 ⇒ 气泡文本零 §。
+        Assert.assertEquals(Arrays.asList("hello world"), composed.getMessages().get(0).getDisplayLines());
         Assert.assertTrue(composed.isVisible());
     }
 
@@ -395,7 +397,8 @@ public class ChatCardComposerTest {
 
         List<String> lines = composed.getMessages().get(0).getDisplayLines();
         Assert.assertEquals(8, lines.size());
-        Assert.assertEquals("yyyyy\u00a7r", lines.get(7)); // ChatComponentText 尾部 §r 重置码(真实口径)
+        // C7 收口后本体无 §r（旧期望 "yyyyy\u00a7r" 的来源正是 formatted 文本尾部重置码）
+        Assert.assertEquals("yyyyy", lines.get(7));
     }
 
     @Test
@@ -426,6 +429,61 @@ public class ChatCardComposerTest {
         Assert.assertEquals(8, lines.size());
         Assert.assertEquals("格式码对不可拆且保留在裁剪行首", "\u00a7bxx...", lines.get(7));
     }
+
+// ==================== C7：气泡装配的三条内容分支 ====================
+
+    /**
+     * 结构命中分支：气泡 displayText 与切行输入都必须是 {@code getFormatArgs()[1]} 的原文，
+     * 不再经「formatted 文本 + § 跳跃切片」（旧 § 残渣唯一来源）。
+     */
+    @Test
+    public void structuredLineUsesRawContentVerbatim() {
+        String section = String.valueOf((char) 0x00A7);
+        ChatLineRecord record = new ChatLineRecord(new ChatComponentTranslation("chat.type.text",
+                new Object[] {new ChatComponentText("Steve"), "- item"}), 1, NOW - 5000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+        ChatCardComposer.ComposedGroup composed = composer.compose(group, NOW, 1000, false);
+
+        ChatCardComposer.MessageLines message = composed.getMessages().get(0);
+        Assert.assertEquals("- item", message.getDisplayText());
+        Assert.assertEquals("切行输入与 markdown 输入同源同值", "- item",
+                message.getDisplayLines().get(0));
+        Assert.assertFalse("结构通道 displayText 不得带任何 §: " + message.getDisplayText(),
+                message.getDisplayText().contains(section));
+        // 对照：同一形态若走旧口径（formatted 切片）必然带 §r——证明本锁不是空断言。
+        Assert.assertTrue("正例对照（formatted 文本自带 §，旧口径的残渣来源）",
+                record.getFormattedText().contains(section));
+    }
+
+    /** 正则兜底分支：本体 = plain 的 rest（unformatted 源），旧 §r 尾注随 formatted 切片一并消失。 */
+    @Test
+    public void fallbackLineUsesPlainRestWithoutFormattedCodes() {
+        String section = String.valueOf((char) 0x00A7);
+        ChatLineRecord record = new ChatLineRecord(
+                new ChatComponentText("<Steve> 兜底内容"), 1, NOW - 5000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+        ChatCardComposer.MessageLines message = composer.compose(group, NOW, 1000, false)
+                .getMessages().get(0);
+
+        Assert.assertEquals("兜底本体 = 正则 rest", "兜底内容", message.getDisplayText());
+        Assert.assertFalse("不再从 formatted 文本上切片 ⇒ 无 §r 尾注: " + message.getDisplayText(),
+                message.getDisplayText().contains(section));
+    }
+
+    /** 系统/广播分支：整条 formatted 文本原样交给原版解析链（定案 1），行为逐旧。 */
+    @Test
+    public void systemLineKeepsFormattedTextForVanillaChain() {
+        String section = String.valueOf((char) 0x00A7);
+        ChatLineRecord record = new ChatLineRecord(
+                new ChatComponentText("[公告] 维护通知"), 1, NOW - 5000L);
+        MessageGroupModel group = new MessageGrouper().group(Arrays.asList(record), "Alex").get(0);
+        ChatCardComposer.MessageLines message = composer.compose(group, NOW, 1000, false)
+                .getMessages().get(0);
+
+        Assert.assertEquals("系统行走原版链，保留 § 样式码（ChatComponentText 尾注 §r）",
+                "[公告] 维护通知" + section + "r", message.getDisplayText());
+    }
+
 
     private static ChatLineLayouter.Measure fixedMeasure() {
         return new ChatLineLayouter.Measure() {

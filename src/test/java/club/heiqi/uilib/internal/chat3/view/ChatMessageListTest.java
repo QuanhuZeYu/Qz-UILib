@@ -2297,9 +2297,16 @@ public class ChatMessageListTest {
     }
 
     // ==================== C 拍板回归:真机同款行首颜色码(vision-exp 五轮截图) ====================
+    //
+    // C7 划界后的读法:本组用例的组件是**非 vanilla 形**桩(plain/formatted 两形,不是
+    // chat.type.text 翻译组件)⇒ 走正则兜底通道;兜底通道现在也从 getPlainText() 取本体,
+    // 行首 § 残渣随「从 formatted 上切片」这一动作一并消失 ⇒ 块级规则(列表/块公式/行内 code)
+    // 在纯文本上照常命中。真机 vanilla 玩家消息更干净:内容直取结构参数 args[1],而原版服务端
+    // 逐字符拒收 §。旧机制(C6b 的 § → span 输入转换)本就是为了让这些 § 残渣不坏块规则才
+    // 存在——从源头断开后不再需要，故本组用例的期望值一字未改而成立理由变了。
 
-    /** 真机同款消息组件:原版 chat.type.text translation 形态,发送者与消息本体各带独立
-     *  颜色码(§f&lt;Bob&gt; §f- item),去前缀后行首恒残留 §f。 */
+    /** 非 vanilla 形组件桩:发送者与消息本体各带独立颜色码(§f&lt;Bob&gt; §f- item)，
+     *  plain 形无 §、formatted 形有 §——用来验兜底通道吃的是 plain 源。 */
     private static final class SiblingStyledComponent implements IChatComponent {
 
         private final String plain;

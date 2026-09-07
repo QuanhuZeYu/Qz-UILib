@@ -183,7 +183,8 @@ public final class MarkdownLayoutLine {
     }
 
     /**
-     * 同身份换段流副本（M7 消费侧 §桥/链接化/换行的行级重挂点；身份与几何字段原样继承）。
+     * 同身份换段流副本（M7 消费侧的行级重挂点：链接化与换行各环节在此换段流而保行身份；
+     * 身份与几何字段原样继承。旧句里的「§桥」已随 C7 划界退役，不再列）。
      *
      * @param newSegments 新段流（可见文本与原段流逐字等值或由行内切段产生）
      * @return 携带相同 kind/headingLevel/quoteLevel/blockId/几何/装饰色的新行
