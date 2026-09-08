@@ -4,11 +4,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -100,6 +103,74 @@ public class MathFontResourceTest {
             Assert.assertEquals(device.get("endPpem").getAsInt() - device.get("startPpem").getAsInt() + 1,
                     device.getAsJsonArray("deltaPixels").size());
         }
+    }
+
+    /**
+     * manifest 的豁免表必须与实际数据里那两类坏配方逐项相等——否则它就是一个无据白名单，
+     * 而 runtime 正是靠它决定「哪些 assembly 允许缺省」。
+     */
+    @Test
+    public void assemblyExemptionsAreBackedByActualRecipes() throws Exception {
+        JsonObject manifest = json("source-manifest.json");
+        JsonObject exemptions = manifest.getAsJsonObject("assemblyExemptions");
+        Assert.assertNotNull("manifest 必须声明 assemblyExemptions", exemptions);
+        JsonObject data = json("math-data.json");
+        int overlap = data.get("minConnectorOverlap").getAsInt();
+
+        Set<String> disabled = new HashSet<String>();
+        Set<String> shortConnector = new HashSet<String>();
+        for (String axis : new String[] { "horizontal", "vertical" }) {
+            JsonObject constructions = data.getAsJsonObject("constructions").getAsJsonObject(axis);
+            for (Map.Entry<String, JsonElement> entry : constructions.entrySet()) {
+                JsonElement raw = entry.getValue().getAsJsonObject().get("assembly");
+                if (raw == null || raw.isJsonNull()) {
+                    continue;
+                }
+                JsonObject assembly = raw.getAsJsonObject();
+                if (!assembly.get("validConnectorLengths").getAsBoolean()) {
+                    Assert.assertEquals("runtime 只豁免 horizontal 的非法 connector 配方", "horizontal", axis);
+                    disabled.add(entry.getKey());
+                    continue;
+                }
+                if (!"horizontal".equals(axis)) {
+                    continue;
+                }
+                if (!supportsOverlap(assembly.getAsJsonArray("parts"), overlap)) {
+                    shortConnector.add(entry.getKey());
+                }
+            }
+        }
+        Assert.assertEquals(disabled, exemptionSet(exemptions, "disabledAssemblyGlyphs"));
+        Assert.assertEquals(shortConnector, exemptionSet(exemptions, "shortConnectorAssemblyGlyphs"));
+    }
+
+    /** 复现 runtime {@code BundledMathFont.supportsOverlap} 的判定，只读数据、不改数据。 */
+    private static boolean supportsOverlap(JsonArray parts, int overlap) {
+        JsonObject previous = null;
+        for (JsonElement element : parts) {
+            JsonObject part = element.getAsJsonObject();
+            int start = part.get("startConnector").getAsInt();
+            int end = part.get("endConnector").getAsInt();
+            if (previous != null && (previous.get("endConnector").getAsInt() < overlap || start < overlap)) {
+                return false;
+            }
+            if (part.get("extender").getAsBoolean() && (start < overlap || end < overlap)) {
+                return false;
+            }
+            previous = part;
+        }
+        return true;
+    }
+
+    private static Set<String> exemptionSet(JsonObject exemptions, String name) {
+        JsonArray ids = exemptions.getAsJsonArray(name);
+        Assert.assertNotNull("manifest 缺少豁免表 " + name, ids);
+        Set<String> result = new HashSet<String>();
+        for (JsonElement id : ids) {
+            Assert.assertTrue("豁免 gid 必须为正: " + id, id.getAsInt() > 0);
+            Assert.assertTrue("豁免 gid 不得重复: " + id, result.add(Integer.toString(id.getAsInt())));
+        }
+        return result;
     }
 
     private static void glyph(int id, int count) {

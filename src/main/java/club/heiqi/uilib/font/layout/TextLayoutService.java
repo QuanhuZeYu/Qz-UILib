@@ -1111,6 +1111,8 @@ public class TextLayoutService {
     private MathMetrics createMathMetrics(final TextStyle style, final FontType hostFontType, final int baseSizePx) {
         final FontCatalog.Snapshot catalog = fontMatcher.getCatalogSnapshot(runtimeVersion);
         final MathFontSupport provider = catalog == null ? null : catalog.getMathFontSupport();
+        // 字重不由调用点决定：forFontStyle(BOLD) 已把宿主字体类别写进 hostFontType，
+        // 因此包装层一律用 hostFontType，忽略 resolve 形参 weight，避免同一公式内字重来源分裂。
         final MathFontSupport support = provider == null ? null : new MathFontSupport() {
             @Override
             public MathGlyphRef resolve(int codepoint, MathFontStyle fontStyle, FontType weight) {

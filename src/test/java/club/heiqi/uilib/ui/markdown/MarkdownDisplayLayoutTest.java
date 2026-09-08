@@ -54,11 +54,22 @@ public class MarkdownDisplayLayoutTest {
         throw new AssertionError("missing formula segment");
     }
     private static void assertCentered(PaintCommand formula, int bodyLeft, int right) {
+        assertCentered(formula, bodyLeft, right, 2.0);
+    }
+
+    /**
+     * 居中偏移落在整数列（{@code MarkdownLineLayout.withLeftInsetPx} 是 int），当「可用宽 − 公式宽」
+     * 带小数时单侧截断不足 1px，但<b>两侧留白差是截断量的两倍</b>——实测 1.375px（320 宽、
+     * 公式宽 40.625 时 leftMargin=139.0 / rightMargin=140.375）。上界取 2px，不能用 1px。
+     * 带引用/列表缩进的用例另叠加左 ink 越量保护（{@code Math.max(leftOverhang, center)}），仍在此上界内。
+     */
+    private static void assertCentered(PaintCommand formula, int bodyLeft, int right, double tolerance) {
         double advance = service().getSegmentWidth(latex(formula), FONT);
         double leftMargin = formula.getLeft() - bodyLeft;
         double rightMargin = right - formula.getLeft() - advance;
         assertTrue("fixture fits body column", leftMargin > 0);
-        assertEquals("正文列两侧留白仅容许整像素舍入", leftMargin, rightMargin, 2.0);
+        assertEquals("正文列两侧留白对称偏差超界（整像素截断 1px，另加左 ink 越量保护）",
+                leftMargin, rightMargin, tolerance);
     }
 
     @Test public void displayCentersInBodyColumnIncludingQuoteAndListInsets() {

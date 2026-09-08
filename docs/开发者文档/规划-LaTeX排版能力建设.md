@@ -158,9 +158,9 @@ B1 与 B3 的字体小样调研可以并行；B2a 在样式状态稳定后实施
 
 本批先修复 Markdown 双美元关闭符不完整时吞正文：`$$x$Z` 不再将 Z 当作第二个关闭美元消耗，增加完整/不完整关闭及正文保留回归。尚未启用新的 display 语义。
 
-参考测试改为显式 jar/classpath/版本/来源/字号/样式/实际 renderScale 参数，未配置参考 jar 才跳过，显式非法配置失败；ours 继续生产 collector 并按实际 quad 建画布，参考通过独立 classloader 加载 JLaTeXMath 1.0.7，共享实际公式基线，不对异字体要求像素相等。
+参考测试改为显式 jar/classpath/版本/来源/字号/样式/实际 renderScale 参数，未配置参考 jar 才跳过，显式非法配置失败；ours 继续生产 collector 并按实际 quad 建画布，参考通过独立 classloader 加载 JLaTeXMath 1.0.7，共享实际公式基线，不对异字体要求像素相等。**该测试在未配置参考 jar 的环境（含 CI）恒跳过，且类内只产出对照图、无几何或像素断言，因此它是开发期人工对拍工具，不是验收门禁；本批对拍结论均来自人眼查看，不得记作自动通过。**
 
-完整离线 build 经原 manifest 缓存恢复入口通过：Python 汇总 392 类、4346 项测试，4340 通过、6 跳过、零失败/错误。配置参考资源后另行运行 text/16px/scale1、text/16px/scale1.25、display/16px/scale4，三次 JUnit 均通过各自两项测试；Python 检查 48 对实际样张、144 张 PNG、共享基线一致，showcase 未报告 CJK 参考异常。主代理已目视查看 display 分式及原尺寸重音对照。该结果证明对照工具实际执行，不代表 UILib 与参考排版已等价；旧 Arial 字形与参考数学字体的粗细、比例和重音仍有明显差异。
+完整离线 build 经原 manifest 缓存恢复入口通过：Python 汇总 392 类、4346 项测试，4340 通过、6 跳过、零失败/错误。配置参考资源后另行运行 text/16px/scale1、text/16px/scale1.25、display/16px/scale4，三次 JUnit 均通过各自两项测试；Python 检查 48 对实际样张、144 张 PNG、共享基线一致，showcase 未报告 CJK 参考异常。主代理已目视查看 display 分式及原尺寸重音对照。该结果证明对照工具在配置后能实际执行，不代表 UILib 与参考排版已等价，也不构成 CI 门禁；旧 Arial 字形与参考数学字体的粗细、比例和重音仍有明显差异。
 
 资源调研取得固定 STIX Two Math 2.12 b168 和 OFL 1.1，实际解析 MATH 及 glyph-id AWT 小样；程序固定 stroke 宽重音也已出小样。资源仍仅在工作站 temp，没有进入分发包，Java25独立小样不等于 UILib 字体页/Java8/GPU通过。新字体、伸缩及 display 仍须实施和正式回归。
 

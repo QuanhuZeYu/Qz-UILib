@@ -1,0 +1,953 @@
+# LaTeX 公共面快照；缺失或 qz.latex.surface.update=true 时自动重建。
+
+## club.heiqi.uilib.font.latex.LatexNode
+visibility public
+ctor protected (club.heiqi.uilib.font.latex.LatexNode$Kind)
+ctor protected (club.heiqi.uilib.font.latex.LatexNode$Kind,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode$Kind getKind()
+method public club.heiqi.uilib.font.latex.MathStyleOverride getMathStyleOverride()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.LatexNode$Kind
+visibility public
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind ACCENT
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind ATOM
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind BINOM
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind FRAC
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind GROUP
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind LEFT_RIGHT
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind MATRIX
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind OPERATOR
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind SPACE
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind SQRT
+field public static final club.heiqi.uilib.font.latex.LatexNode$Kind SUP_SUB
+method public static [Lclub.heiqi.uilib.font.latex.LatexNode$Kind; values()
+method public static club.heiqi.uilib.font.latex.LatexNode$Kind valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.LatexParser
+visibility public
+method public static java.util.List parse(java.lang.String)
+
+## club.heiqi.uilib.font.latex.LatexParser$1
+visibility package
+
+## club.heiqi.uilib.font.latex.LatexShowcaseFormulas
+visibility public
+field public static final [Ljava.lang.String; ACCENTS
+field public static final [Ljava.lang.String; DELIM_BINOM
+field public static final [Ljava.lang.String; FRAC_SQRT
+field public static final [Ljava.lang.String; HERO
+field public static final [Ljava.lang.String; MATRIX_CASES
+field public static final [Ljava.lang.String; SUP_SUB
+field public static final [Ljava.lang.String; SYMBOLS
+field public static final [Ljava.lang.String; TEXT_INHERIT
+method public static [Ljava.lang.String; all()
+
+## club.heiqi.uilib.font.latex.LatexSymbols
+visibility public
+method public static boolean isBigOperator(java.lang.String)
+method public static boolean isFunctionName(java.lang.String)
+method public static boolean isLimitsFunctionName(java.lang.String)
+method public static boolean isSymbolCommand(java.lang.String)
+method public static club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass atomClassOf(java.lang.String)
+method public static club.heiqi.uilib.font.latex.node.LatexMatrix$Fence matrixFence(java.lang.String)
+method public static java.lang.Integer spaceEm18(java.lang.String)
+method public static java.lang.String accentText(java.lang.String)
+method public static java.lang.String symbolText(java.lang.String)
+method public static java.lang.String textEscape(java.lang.String)
+
+## club.heiqi.uilib.font.latex.MathFontStyle
+visibility public
+field public static final club.heiqi.uilib.font.latex.MathFontStyle BOLD
+field public static final club.heiqi.uilib.font.latex.MathFontStyle INHERIT
+field public static final club.heiqi.uilib.font.latex.MathFontStyle ITALIC
+field public static final club.heiqi.uilib.font.latex.MathFontStyle MATH_NORMAL
+field public static final club.heiqi.uilib.font.latex.MathFontStyle UPRIGHT
+method public static [Lclub.heiqi.uilib.font.latex.MathFontStyle; values()
+method public static club.heiqi.uilib.font.latex.MathFontStyle valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.MathStyleOverride
+visibility public
+field public static final club.heiqi.uilib.font.latex.MathStyleOverride DISPLAY
+field public static final club.heiqi.uilib.font.latex.MathStyleOverride INHERIT
+field public static final club.heiqi.uilib.font.latex.MathStyleOverride SCRIPT
+field public static final club.heiqi.uilib.font.latex.MathStyleOverride SCRIPTSCRIPT
+field public static final club.heiqi.uilib.font.latex.MathStyleOverride TEXT
+method public static [Lclub.heiqi.uilib.font.latex.MathStyleOverride; values()
+method public static club.heiqi.uilib.font.latex.MathStyleOverride valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.layout.GlyphElem
+visibility public
+ctor public (java.lang.String,float,float,float)
+ctor public (java.lang.String,float,float,float,boolean)
+ctor public (java.lang.String,float,float,float,boolean,boolean)
+ctor public (java.lang.String,float,float,float,boolean,boolean,club.heiqi.uilib.font.latex.MathFontStyle)
+ctor public (java.lang.String,float,float,float,boolean,boolean,club.heiqi.uilib.font.latex.MathFontStyle,club.heiqi.uilib.font.latex.layout.MathGlyphRef)
+ctor public (java.lang.String,float,float,float,boolean,boolean,club.heiqi.uilib.font.latex.MathFontStyle,club.heiqi.uilib.font.latex.layout.MathGlyphRef,club.heiqi.uilib.font.latex.layout.MathGlyphClip)
+method public boolean isInheritTextItalic()
+method public boolean isItalic()
+method public club.heiqi.uilib.font.latex.MathFontStyle getMathFontStyle()
+method public club.heiqi.uilib.font.latex.layout.MathGlyphClip getMathGlyphClip()
+method public club.heiqi.uilib.font.latex.layout.MathGlyphRef getMathGlyphRef()
+method public float getSizeScale()
+method public float getX()
+method public float getY()
+method public java.lang.String getText()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.layout.GlyphElem
+visibility public
+ctor public (java.lang.String,float,float,float)
+ctor public (java.lang.String,float,float,float,boolean)
+ctor public (java.lang.String,float,float,float,boolean,boolean)
+ctor public (java.lang.String,float,float,float,boolean,boolean,club.heiqi.uilib.font.latex.MathFontStyle)
+ctor public (java.lang.String,float,float,float,boolean,boolean,club.heiqi.uilib.font.latex.MathFontStyle,club.heiqi.uilib.font.latex.layout.MathGlyphRef)
+ctor public (java.lang.String,float,float,float,boolean,boolean,club.heiqi.uilib.font.latex.MathFontStyle,club.heiqi.uilib.font.latex.layout.MathGlyphRef,club.heiqi.uilib.font.latex.layout.MathGlyphClip)
+method public boolean isInheritTextItalic()
+method public boolean isItalic()
+method public club.heiqi.uilib.font.latex.MathFontStyle getMathFontStyle()
+method public club.heiqi.uilib.font.latex.layout.MathGlyphClip getMathGlyphClip()
+method public club.heiqi.uilib.font.latex.layout.MathGlyphRef getMathGlyphRef()
+method public float getSizeScale()
+method public float getX()
+method public float getY()
+method public java.lang.String getText()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.layout.LatexCache
+visibility public
+method public club.heiqi.uilib.font.latex.layout.MathBox getOrLayout(java.lang.String,int,int,club.heiqi.uilib.font.FontType,club.heiqi.uilib.font.latex.layout.MathLayoutService,club.heiqi.uilib.font.latex.layout.MathMetrics,int)
+method public club.heiqi.uilib.font.latex.layout.MathBox getOrLayout(java.lang.String,int,int,club.heiqi.uilib.font.FontType,club.heiqi.uilib.font.latex.layout.MathLayoutService,club.heiqi.uilib.font.latex.layout.MathMetrics,int,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public int size()
+method public static club.heiqi.uilib.font.latex.layout.LatexCache getInstance()
+
+## club.heiqi.uilib.font.latex.layout.LatexCache
+visibility public
+method public club.heiqi.uilib.font.latex.layout.MathBox getOrLayout(java.lang.String,int,int,club.heiqi.uilib.font.FontType,club.heiqi.uilib.font.latex.layout.MathLayoutService,club.heiqi.uilib.font.latex.layout.MathMetrics,int)
+method public club.heiqi.uilib.font.latex.layout.MathBox getOrLayout(java.lang.String,int,int,club.heiqi.uilib.font.FontType,club.heiqi.uilib.font.latex.layout.MathLayoutService,club.heiqi.uilib.font.latex.layout.MathMetrics,int,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public int size()
+method public static club.heiqi.uilib.font.latex.layout.LatexCache getInstance()
+
+## club.heiqi.uilib.font.latex.layout.LatexCache$1
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.LatexCache$1
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.LatexCache$Key
+visibility private
+
+## club.heiqi.uilib.font.latex.layout.LatexCache$Key
+visibility private
+
+## club.heiqi.uilib.font.latex.layout.MathBox
+visibility public
+ctor public (float,float,float,java.util.List,java.util.List)
+ctor public (float,float,float,java.util.List,java.util.List,float,float)
+method public float getDepth()
+method public float getHeight()
+method public float getLeftInkOverhang()
+method public float getRightInkOverhang()
+method public float getTotalHeight()
+method public float getWidth()
+method public java.lang.String toString()
+method public java.util.List getGlyphs()
+method public java.util.List getRules()
+method public static club.heiqi.uilib.font.latex.layout.MathBox empty()
+
+## club.heiqi.uilib.font.latex.layout.MathBox
+visibility public
+ctor public (float,float,float,java.util.List,java.util.List)
+ctor public (float,float,float,java.util.List,java.util.List,float,float)
+method public float getDepth()
+method public float getHeight()
+method public float getLeftInkOverhang()
+method public float getRightInkOverhang()
+method public float getTotalHeight()
+method public float getWidth()
+method public java.lang.String toString()
+method public java.util.List getGlyphs()
+method public java.util.List getRules()
+method public static club.heiqi.uilib.font.latex.layout.MathBox empty()
+
+## club.heiqi.uilib.font.latex.layout.MathConstants
+visibility public
+field public static final [F SQRT_VARIANT_DEPTH_EM
+field public static final float ACCENT_SKEW_FACTOR
+field public static final float AXIS_HEIGHT_EM
+field public static final float BIGOP1_EM
+field public static final float BIGOP2_EM
+field public static final float BIGOP3_EM
+field public static final float BIGOP4_EM
+field public static final float BIGOP5_EM
+field public static final float BIG_OPERATOR_TAIL_SPACE_EM
+field public static final float DELIMITER_FACTOR
+field public static final float DELIMITER_SHORTFALL_EM
+field public static final float DENOM1_EM
+field public static final float DENOM2_EM
+field public static final float MATRIX_COL_GAP_EM
+field public static final float MATRIX_OUTER_PAD_EX
+field public static final float MATRIX_ROW_SEP_EX
+field public static final float MED_MU
+field public static final float MU_EM
+field public static final float NO_RULE_CLR_FACTOR
+field public static final float NULL_DELIMITER_SPACE_EM
+field public static final float NUM1_EM
+field public static final float NUM2_EM
+field public static final float NUM3_EM
+field public static final float OVERBAR_BOX_FACTOR
+field public static final float OVERBAR_KERN_FACTOR
+field public static final float RULE_THICKNESS_EM
+field public static final float SCRIPT_SCALE
+field public static final float SCRIPT_SCRIPT_SCALE
+field public static final float SCRIPT_SPACE_EM
+field public static final float SCRIPT_SUB_DROP_EM
+field public static final float SCRIPT_SUP_DROP_EM
+field public static final float SQRT_INDEX_FACTOR
+field public static final float SQRT_INDEX_NEG_KERN_MU
+field public static final float SUB1_EM
+field public static final float SUB2_EM
+field public static final float SUB_DROP_EM
+field public static final float SUP1_EM
+field public static final float SUP2_EM
+field public static final float SUP3_EM
+field public static final float SUP_DROP_EM
+field public static final float THICK_MU
+field public static final float THIN_MU
+
+## club.heiqi.uilib.font.latex.layout.MathConstants
+visibility public
+field public static final [F SQRT_VARIANT_DEPTH_EM
+field public static final float ACCENT_SKEW_FACTOR
+field public static final float AXIS_HEIGHT_EM
+field public static final float BIGOP1_EM
+field public static final float BIGOP2_EM
+field public static final float BIGOP3_EM
+field public static final float BIGOP4_EM
+field public static final float BIGOP5_EM
+field public static final float BIG_OPERATOR_TAIL_SPACE_EM
+field public static final float DELIMITER_FACTOR
+field public static final float DELIMITER_SHORTFALL_EM
+field public static final float DENOM1_EM
+field public static final float DENOM2_EM
+field public static final float MATRIX_COL_GAP_EM
+field public static final float MATRIX_OUTER_PAD_EX
+field public static final float MATRIX_ROW_SEP_EX
+field public static final float MED_MU
+field public static final float MU_EM
+field public static final float NO_RULE_CLR_FACTOR
+field public static final float NULL_DELIMITER_SPACE_EM
+field public static final float NUM1_EM
+field public static final float NUM2_EM
+field public static final float NUM3_EM
+field public static final float OVERBAR_BOX_FACTOR
+field public static final float OVERBAR_KERN_FACTOR
+field public static final float RULE_THICKNESS_EM
+field public static final float SCRIPT_SCALE
+field public static final float SCRIPT_SCRIPT_SCALE
+field public static final float SCRIPT_SPACE_EM
+field public static final float SCRIPT_SUB_DROP_EM
+field public static final float SCRIPT_SUP_DROP_EM
+field public static final float SQRT_INDEX_FACTOR
+field public static final float SQRT_INDEX_NEG_KERN_MU
+field public static final float SUB1_EM
+field public static final float SUB2_EM
+field public static final float SUB_DROP_EM
+field public static final float SUP1_EM
+field public static final float SUP2_EM
+field public static final float SUP3_EM
+field public static final float SUP_DROP_EM
+field public static final float THICK_MU
+field public static final float THIN_MU
+
+## club.heiqi.uilib.font.latex.layout.MathFontParameters
+visibility public
+ctor public (float,float,float,float,float,int,float)
+method public float getAccentBaseHeight()
+method public float getAxisHeight()
+method public float getRadicalDisplayStyleVerticalGap()
+method public float getRadicalExtraAscender()
+method public float getRadicalVerticalGap()
+method public float getRuleThickness()
+method public int getRadicalDegreeBottomRaisePercent()
+
+## club.heiqi.uilib.font.latex.layout.MathFontParameters
+visibility public
+ctor public (float,float,float,float,float,int,float)
+method public float getAccentBaseHeight()
+method public float getAxisHeight()
+method public float getRadicalDisplayStyleVerticalGap()
+method public float getRadicalExtraAscender()
+method public float getRadicalVerticalGap()
+method public float getRuleThickness()
+method public int getRadicalDegreeBottomRaisePercent()
+
+## club.heiqi.uilib.font.latex.layout.MathFontSupport
+visibility public
+method public abstract club.heiqi.uilib.font.latex.layout.MathFontParameters constants(int)
+method public abstract club.heiqi.uilib.font.latex.layout.MathGlyphConstruction construction(club.heiqi.uilib.font.latex.layout.MathGlyphRef,club.heiqi.uilib.font.latex.layout.MathStretchAxis,int)
+method public abstract club.heiqi.uilib.font.latex.layout.MathGlyphMetrics measure(club.heiqi.uilib.font.latex.layout.MathGlyphRef,int)
+method public abstract club.heiqi.uilib.font.latex.layout.MathGlyphRef resolve(int,club.heiqi.uilib.font.latex.MathFontStyle,club.heiqi.uilib.font.FontType)
+
+## club.heiqi.uilib.font.latex.layout.MathFontSupport
+visibility public
+method public abstract club.heiqi.uilib.font.latex.layout.MathFontParameters constants(int)
+method public abstract club.heiqi.uilib.font.latex.layout.MathGlyphConstruction construction(club.heiqi.uilib.font.latex.layout.MathGlyphRef,club.heiqi.uilib.font.latex.layout.MathStretchAxis,int)
+method public abstract club.heiqi.uilib.font.latex.layout.MathGlyphMetrics measure(club.heiqi.uilib.font.latex.layout.MathGlyphRef,int)
+method public abstract club.heiqi.uilib.font.latex.layout.MathGlyphRef resolve(int,club.heiqi.uilib.font.latex.MathFontStyle,club.heiqi.uilib.font.FontType)
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphClip
+visibility public
+ctor public (float,float,float,float)
+method public boolean equals(java.lang.Object)
+method public float getBottom()
+method public float getLeft()
+method public float getRight()
+method public float getTop()
+method public int hashCode()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphClip
+visibility public
+ctor public (float,float,float,float)
+method public boolean equals(java.lang.Object)
+method public float getBottom()
+method public float getLeft()
+method public float getRight()
+method public float getTop()
+method public int hashCode()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphConstruction
+visibility public
+ctor public (java.util.List,club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Assembly)
+method public club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Assembly getAssembly()
+method public java.util.List getVariants()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphConstruction
+visibility public
+ctor public (java.util.List,club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Assembly)
+method public club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Assembly getAssembly()
+method public java.util.List getVariants()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Assembly
+visibility public
+ctor public (java.util.List,float,float)
+method public float getItalicCorrection()
+method public float getMinConnectorOverlap()
+method public java.util.List getParts()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Assembly
+visibility public
+ctor public (java.util.List,float,float)
+method public float getItalicCorrection()
+method public float getMinConnectorOverlap()
+method public java.util.List getParts()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Part
+visibility public
+ctor public (club.heiqi.uilib.font.latex.layout.MathGlyphRef,float,float,float,boolean)
+method public boolean isExtender()
+method public club.heiqi.uilib.font.latex.layout.MathGlyphRef getGlyphRef()
+method public float getEndConnector()
+method public float getFullAdvance()
+method public float getStartConnector()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Part
+visibility public
+ctor public (club.heiqi.uilib.font.latex.layout.MathGlyphRef,float,float,float,boolean)
+method public boolean isExtender()
+method public club.heiqi.uilib.font.latex.layout.MathGlyphRef getGlyphRef()
+method public float getEndConnector()
+method public float getFullAdvance()
+method public float getStartConnector()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Variant
+visibility public
+ctor public (club.heiqi.uilib.font.latex.layout.MathGlyphRef,float)
+method public club.heiqi.uilib.font.latex.layout.MathGlyphRef getGlyphRef()
+method public float getStretchAdvance()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphConstruction$Variant
+visibility public
+ctor public (club.heiqi.uilib.font.latex.layout.MathGlyphRef,float)
+method public club.heiqi.uilib.font.latex.layout.MathGlyphRef getGlyphRef()
+method public float getStretchAdvance()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphMetrics
+visibility public
+ctor public (float,float,float,float,float,float,boolean,float)
+method public boolean hasTopAccentAttachment()
+method public float getAdvance()
+method public float getInkBottom()
+method public float getInkLeft()
+method public float getInkRight()
+method public float getInkTop()
+method public float getItalicCorrection()
+method public float getTopAccentAttachment()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphMetrics
+visibility public
+ctor public (float,float,float,float,float,float,boolean,float)
+method public boolean hasTopAccentAttachment()
+method public float getAdvance()
+method public float getInkBottom()
+method public float getInkLeft()
+method public float getInkRight()
+method public float getInkTop()
+method public float getItalicCorrection()
+method public float getTopAccentAttachment()
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphRef
+visibility public
+method public boolean equals(java.lang.Object)
+method public club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind getKind()
+method public club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec getProceduralAccent()
+method public int getGlyphId()
+method public int hashCode()
+method public java.lang.String getFaceKey()
+method public static club.heiqi.uilib.font.latex.layout.MathGlyphRef forFontGlyph(java.lang.String,int)
+method public static club.heiqi.uilib.font.latex.layout.MathGlyphRef forProceduralAccent(club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec)
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphRef
+visibility public
+method public boolean equals(java.lang.Object)
+method public club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind getKind()
+method public club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec getProceduralAccent()
+method public int getGlyphId()
+method public int hashCode()
+method public java.lang.String getFaceKey()
+method public static club.heiqi.uilib.font.latex.layout.MathGlyphRef forFontGlyph(java.lang.String,int)
+method public static club.heiqi.uilib.font.latex.layout.MathGlyphRef forProceduralAccent(club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec)
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind
+visibility public
+field public static final club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind FONT_GLYPH
+field public static final club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind PROCEDURAL_ACCENT
+method public static [Lclub.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind; values()
+method public static club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind
+visibility public
+field public static final club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind FONT_GLYPH
+field public static final club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind PROCEDURAL_ACCENT
+method public static [Lclub.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind; values()
+method public static club.heiqi.uilib.font.latex.layout.MathGlyphRef$Kind valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.layout.MathLayoutService
+visibility public
+ctor public ()
+field public static final int LAYOUT_VERSION
+method public club.heiqi.uilib.font.latex.layout.MathBox layout(java.util.List,float,club.heiqi.uilib.font.latex.layout.MathMetrics)
+method public club.heiqi.uilib.font.latex.layout.MathBox layout(java.util.List,float,club.heiqi.uilib.font.latex.layout.MathMetrics,club.heiqi.uilib.font.latex.MathStyleOverride)
+
+## club.heiqi.uilib.font.latex.layout.MathLayoutService
+visibility public
+ctor public ()
+field public static final int LAYOUT_VERSION
+method public club.heiqi.uilib.font.latex.layout.MathBox layout(java.util.List,float,club.heiqi.uilib.font.latex.layout.MathMetrics)
+method public club.heiqi.uilib.font.latex.layout.MathBox layout(java.util.List,float,club.heiqi.uilib.font.latex.layout.MathMetrics,club.heiqi.uilib.font.latex.MathStyleOverride)
+
+## club.heiqi.uilib.font.latex.layout.MathLayoutService$1
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathLayoutService$1
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathLayoutService$Builder
+visibility private
+
+## club.heiqi.uilib.font.latex.layout.MathLayoutService$Builder
+visibility private
+
+## club.heiqi.uilib.font.latex.layout.MathLayoutService$DelimBox
+visibility private
+
+## club.heiqi.uilib.font.latex.layout.MathLayoutService$DelimBox
+visibility private
+
+## club.heiqi.uilib.font.latex.layout.MathMetrics
+visibility public
+method public abstract float advance(java.lang.String,float)
+method public abstract float ascent(float)
+method public abstract float descent(float)
+method public abstract float xHeight(float)
+method public club.heiqi.uilib.font.latex.layout.MathFontSupport mathFontSupport()
+method public club.heiqi.uilib.font.latex.layout.MathMetrics forFontStyle(club.heiqi.uilib.font.latex.MathFontStyle)
+method public float inkCenterOffsetY(java.lang.String,float)
+method public float inkHeight(java.lang.String,float)
+method public float inkLeftBearing(java.lang.String,float)
+method public float inkWidth(java.lang.String,float)
+method public float italicCorrection(java.lang.String,float)
+method public float italicOverhang(java.lang.String,float)
+
+## club.heiqi.uilib.font.latex.layout.MathMetrics
+visibility public
+method public abstract float advance(java.lang.String,float)
+method public abstract float ascent(float)
+method public abstract float descent(float)
+method public abstract float xHeight(float)
+method public club.heiqi.uilib.font.latex.layout.MathFontSupport mathFontSupport()
+method public club.heiqi.uilib.font.latex.layout.MathMetrics forFontStyle(club.heiqi.uilib.font.latex.MathFontStyle)
+method public float inkCenterOffsetY(java.lang.String,float)
+method public float inkHeight(java.lang.String,float)
+method public float inkLeftBearing(java.lang.String,float)
+method public float inkWidth(java.lang.String,float)
+method public float italicCorrection(java.lang.String,float)
+method public float italicOverhang(java.lang.String,float)
+
+## club.heiqi.uilib.font.latex.layout.MathStretchAxis
+visibility public
+field public static final club.heiqi.uilib.font.latex.layout.MathStretchAxis HORIZONTAL
+field public static final club.heiqi.uilib.font.latex.layout.MathStretchAxis VERTICAL
+method public static [Lclub.heiqi.uilib.font.latex.layout.MathStretchAxis; values()
+method public static club.heiqi.uilib.font.latex.layout.MathStretchAxis valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.layout.MathStretchAxis
+visibility public
+field public static final club.heiqi.uilib.font.latex.layout.MathStretchAxis HORIZONTAL
+field public static final club.heiqi.uilib.font.latex.layout.MathStretchAxis VERTICAL
+method public static [Lclub.heiqi.uilib.font.latex.layout.MathStretchAxis; values()
+method public static club.heiqi.uilib.font.latex.layout.MathStretchAxis valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.layout.MathStretchLayout
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStretchLayout
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStretchLayout$1
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStretchLayout$1
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStretchLayout$Bounds
+visibility private
+
+## club.heiqi.uilib.font.latex.layout.MathStretchLayout$Bounds
+visibility private
+
+## club.heiqi.uilib.font.latex.layout.MathStyle
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStyle
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStyle$1
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStyle$1
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStyle$Level
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.MathStyle$Level
+visibility package
+
+## club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec
+visibility public
+method public boolean equals(java.lang.Object)
+method public club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind getKind()
+method public int getHeightUnits()
+method public int getProfileRevision()
+method public int getStrokeUnits()
+method public int getWidthUnits()
+method public int hashCode()
+method public static club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec of(club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind,int,int,int,int)
+
+## club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec
+visibility public
+method public boolean equals(java.lang.Object)
+method public club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind getKind()
+method public int getHeightUnits()
+method public int getProfileRevision()
+method public int getStrokeUnits()
+method public int getWidthUnits()
+method public int hashCode()
+method public static club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec of(club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind,int,int,int,int)
+
+## club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind
+visibility public
+field public static final club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind HAT
+field public static final club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind TILDE
+method public static [Lclub.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind; values()
+method public static club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind
+visibility public
+field public static final club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind HAT
+field public static final club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind TILDE
+method public static [Lclub.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind; values()
+method public static club.heiqi.uilib.font.latex.layout.ProceduralAccentSpec$Kind valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.layout.RuleElem
+visibility public
+ctor public (float,float,float,float)
+ctor public (float,float,float,float,float,float)
+field public static final float NO_CLEARANCE
+method public float getClearanceAbove()
+method public float getClearanceBelow()
+method public float getThickness()
+method public float getWidth()
+method public float getX()
+method public float getY()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.layout.RuleElem
+visibility public
+ctor public (float,float,float,float)
+ctor public (float,float,float,float,float,float)
+field public static final float NO_CLEARANCE
+method public float getClearanceAbove()
+method public float getClearanceBelow()
+method public float getThickness()
+method public float getWidth()
+method public float getX()
+method public float getY()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexAccent
+visibility public
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,boolean,boolean)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,boolean,boolean,club.heiqi.uilib.font.latex.MathStyleOverride)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode,boolean)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode,boolean,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public boolean isBelow()
+method public boolean isStretchable()
+method public club.heiqi.uilib.font.latex.LatexNode getBase()
+method public club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode getAccentMode()
+method public java.lang.String getAccentText()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexAccent
+visibility public
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,boolean,boolean)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,boolean,boolean,club.heiqi.uilib.font.latex.MathStyleOverride)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode,boolean)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode,boolean,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public boolean isBelow()
+method public boolean isStretchable()
+method public club.heiqi.uilib.font.latex.LatexNode getBase()
+method public club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode getAccentMode()
+method public java.lang.String getAccentText()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode FIXED
+field public static final club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode RULE
+field public static final club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode WIDE
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexAccent$AccentMode; values()
+method public static club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode FIXED
+field public static final club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode RULE
+field public static final club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode WIDE
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexAccent$AccentMode; values()
+method public static club.heiqi.uilib.font.latex.node.LatexAccent$AccentMode valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexAtom
+visibility public
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass,club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass,club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode,club.heiqi.uilib.font.latex.MathStyleOverride)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass,club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode,club.heiqi.uilib.font.latex.MathStyleOverride,club.heiqi.uilib.font.latex.MathFontStyle)
+field public static final int LIMITS_DEFAULT
+field public static final int LIMITS_LIMITS
+field public static final int LIMITS_NOLIMITS
+method public club.heiqi.uilib.font.latex.MathFontStyle getMathFontStyle()
+method public club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass getAtomClass()
+method public club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode getOperatorMode()
+method public int getLimitsFlag()
+method public java.lang.String getText()
+method public java.lang.String toString()
+method public void setLimitsFlag(int)
+
+## club.heiqi.uilib.font.latex.node.LatexAtom
+visibility public
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass,club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass,club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode,club.heiqi.uilib.font.latex.MathStyleOverride)
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass,club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode,club.heiqi.uilib.font.latex.MathStyleOverride,club.heiqi.uilib.font.latex.MathFontStyle)
+field public static final int LIMITS_DEFAULT
+field public static final int LIMITS_LIMITS
+field public static final int LIMITS_NOLIMITS
+method public club.heiqi.uilib.font.latex.MathFontStyle getMathFontStyle()
+method public club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass getAtomClass()
+method public club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode getOperatorMode()
+method public int getLimitsFlag()
+method public java.lang.String getText()
+method public java.lang.String toString()
+method public void setLimitsFlag(int)
+
+## club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass BIN
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass CLOSE
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass INNER
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass OP
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass OPEN
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass ORD
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass PUNCT
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass REL
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass TEXT
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexAtom$AtomClass; values()
+method public static club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass BIN
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass CLOSE
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass INNER
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass OP
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass OPEN
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass ORD
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass PUNCT
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass REL
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass TEXT
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexAtom$AtomClass; values()
+method public static club.heiqi.uilib.font.latex.node.LatexAtom$AtomClass valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode BIG_OPERATOR
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode LIMITS_OPERATOR
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode NONE
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode; values()
+method public static club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode BIG_OPERATOR
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode LIMITS_OPERATOR
+field public static final club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode NONE
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode; values()
+method public static club.heiqi.uilib.font.latex.node.LatexAtom$OperatorMode valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexBinom
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode getLower()
+method public club.heiqi.uilib.font.latex.LatexNode getUpper()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexBinom
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode getLower()
+method public club.heiqi.uilib.font.latex.LatexNode getUpper()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexFrac
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.MathStyleOverride,club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle)
+method public club.heiqi.uilib.font.latex.LatexNode getDenominator()
+method public club.heiqi.uilib.font.latex.LatexNode getNumerator()
+method public club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle getFractionStyle()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexFrac
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.MathStyleOverride,club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle)
+method public club.heiqi.uilib.font.latex.LatexNode getDenominator()
+method public club.heiqi.uilib.font.latex.LatexNode getNumerator()
+method public club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle getFractionStyle()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle DISPLAY
+field public static final club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle INHERIT
+field public static final club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle TEXT
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle; values()
+method public static club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle DISPLAY
+field public static final club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle INHERIT
+field public static final club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle TEXT
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle; values()
+method public static club.heiqi.uilib.font.latex.node.LatexFrac$FractionStyle valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexGroup
+visibility public
+ctor public (java.util.List)
+ctor public (java.util.List,club.heiqi.uilib.font.latex.MathStyleOverride)
+ctor public (java.util.List,club.heiqi.uilib.font.latex.MathStyleOverride,boolean)
+method public boolean isTransparentForAtomClass()
+method public java.lang.String toString()
+method public java.util.List getChildren()
+
+## club.heiqi.uilib.font.latex.node.LatexGroup
+visibility public
+ctor public (java.util.List)
+ctor public (java.util.List,club.heiqi.uilib.font.latex.MathStyleOverride)
+ctor public (java.util.List,club.heiqi.uilib.font.latex.MathStyleOverride,boolean)
+method public boolean isTransparentForAtomClass()
+method public java.lang.String toString()
+method public java.util.List getChildren()
+
+## club.heiqi.uilib.font.latex.node.LatexLeftRight
+visibility public
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,java.lang.String)
+ctor public (java.lang.String,java.util.List,java.util.List,java.lang.String)
+ctor public (java.lang.String,java.util.List,java.util.List,java.lang.String,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode getContent()
+method public java.lang.String getLeftDelimiter()
+method public java.lang.String getRightDelimiter()
+method public java.lang.String toString()
+method public java.util.List getMiddleDelimiters()
+method public java.util.List getParts()
+
+## club.heiqi.uilib.font.latex.node.LatexLeftRight
+visibility public
+ctor public (java.lang.String,club.heiqi.uilib.font.latex.LatexNode,java.lang.String)
+ctor public (java.lang.String,java.util.List,java.util.List,java.lang.String)
+ctor public (java.lang.String,java.util.List,java.util.List,java.lang.String,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode getContent()
+method public java.lang.String getLeftDelimiter()
+method public java.lang.String getRightDelimiter()
+method public java.lang.String toString()
+method public java.util.List getMiddleDelimiters()
+method public java.util.List getParts()
+
+## club.heiqi.uilib.font.latex.node.LatexMatrix
+visibility public
+ctor public (club.heiqi.uilib.font.latex.node.LatexMatrix$Fence,java.util.List)
+ctor public (club.heiqi.uilib.font.latex.node.LatexMatrix$Fence,java.util.List,java.util.List)
+ctor public (club.heiqi.uilib.font.latex.node.LatexMatrix$Fence,java.util.List,java.util.List,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public char columnAlignOf(int)
+method public club.heiqi.uilib.font.latex.node.LatexMatrix$Fence getFence()
+method public java.lang.String toString()
+method public java.util.List getRows()
+
+## club.heiqi.uilib.font.latex.node.LatexMatrix
+visibility public
+ctor public (club.heiqi.uilib.font.latex.node.LatexMatrix$Fence,java.util.List)
+ctor public (club.heiqi.uilib.font.latex.node.LatexMatrix$Fence,java.util.List,java.util.List)
+ctor public (club.heiqi.uilib.font.latex.node.LatexMatrix$Fence,java.util.List,java.util.List,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public char columnAlignOf(int)
+method public club.heiqi.uilib.font.latex.node.LatexMatrix$Fence getFence()
+method public java.lang.String toString()
+method public java.util.List getRows()
+
+## club.heiqi.uilib.font.latex.node.LatexMatrix$Fence
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence BAR
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence BRACKET
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence CASES
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence NONE
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence PAREN
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexMatrix$Fence; values()
+method public static club.heiqi.uilib.font.latex.node.LatexMatrix$Fence valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexMatrix$Fence
+visibility public
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence BAR
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence BRACKET
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence CASES
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence NONE
+field public static final club.heiqi.uilib.font.latex.node.LatexMatrix$Fence PAREN
+method public static [Lclub.heiqi.uilib.font.latex.node.LatexMatrix$Fence; values()
+method public static club.heiqi.uilib.font.latex.node.LatexMatrix$Fence valueOf(java.lang.String)
+
+## club.heiqi.uilib.font.latex.node.LatexOperator
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,boolean)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,boolean,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public boolean isLimitsInDisplayStyle()
+method public club.heiqi.uilib.font.latex.LatexNode getBody()
+method public int getLimitsFlag()
+method public java.lang.String toString()
+method public void setLimitsFlag(int)
+
+## club.heiqi.uilib.font.latex.node.LatexOperator
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,boolean)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,boolean,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public boolean isLimitsInDisplayStyle()
+method public club.heiqi.uilib.font.latex.LatexNode getBody()
+method public int getLimitsFlag()
+method public java.lang.String toString()
+method public void setLimitsFlag(int)
+
+## club.heiqi.uilib.font.latex.node.LatexSpace
+visibility public
+ctor public (double)
+ctor public (double,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public double getEmWidth()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexSpace
+visibility public
+ctor public (double)
+ctor public (double,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public double getEmWidth()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexSqrt
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode getIndex()
+method public club.heiqi.uilib.font.latex.LatexNode getRadicand()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexSqrt
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode getIndex()
+method public club.heiqi.uilib.font.latex.LatexNode getRadicand()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexSupSub
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode getBase()
+method public club.heiqi.uilib.font.latex.LatexNode getSub()
+method public club.heiqi.uilib.font.latex.LatexNode getSup()
+method public java.lang.String toString()
+
+## club.heiqi.uilib.font.latex.node.LatexSupSub
+visibility public
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode)
+ctor public (club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.LatexNode,club.heiqi.uilib.font.latex.MathStyleOverride)
+method public club.heiqi.uilib.font.latex.LatexNode getBase()
+method public club.heiqi.uilib.font.latex.LatexNode getSub()
+method public club.heiqi.uilib.font.latex.LatexNode getSup()
+method public java.lang.String toString()
+
+## seam
+club.heiqi.uilib.font.glyph.GlyphGenerationResult#forMathGlyph(club.heiqi.uilib.font.glyph.GlyphRequestToken,java.awt.image.BufferedImage,club.heiqi.uilib.font.glyph.GlyphInfo) present
+club.heiqi.uilib.font.glyph.GlyphGenerationResult#getKind() present
+club.heiqi.uilib.font.glyph.GlyphGenerationResult#getMathGlyphInfo() present
+club.heiqi.uilib.font.glyph.GlyphGenerationResult#getMathGlyphRef() present
+club.heiqi.uilib.font.glyph.GlyphGenerationResult#getRasterSize() present
+club.heiqi.uilib.font.glyph.GlyphGenerationResult#getTileIndex() present
+club.heiqi.uilib.font.glyph.GlyphGenerationTask#forMathGlyph(int,club.heiqi.uilib.font.latex.layout.MathGlyphRef,int,int,club.heiqi.uilib.font.glyph.GlyphGenerationPriority) present
+club.heiqi.uilib.font.glyph.GlyphGenerationTask#getKind() present
+club.heiqi.uilib.font.glyph.GlyphGenerationTask#getMathGlyphRef() present
+club.heiqi.uilib.font.glyph.GlyphGenerationTask#getRasterSize() present
+club.heiqi.uilib.font.glyph.GlyphGenerationTask#getTileIndex() present
+club.heiqi.uilib.font.glyph.GlyphInfo#copyOf(club.heiqi.uilib.font.glyph.GlyphInfo) present
+club.heiqi.uilib.font.glyph.GlyphInfo#getKind() present
+club.heiqi.uilib.font.glyph.GlyphInfo#getMathGlyphRef() present
+club.heiqi.uilib.font.glyph.GlyphRequestToken#forMathGlyph(int,long,club.heiqi.uilib.font.latex.layout.MathGlyphRef,int,int) present
+club.heiqi.uilib.font.glyph.GlyphRequestToken#getKind() present
+club.heiqi.uilib.font.glyph.GlyphRequestToken#getMathGlyphRef() present
+club.heiqi.uilib.font.glyph.GlyphRequestToken#getRasterSize() present
+club.heiqi.uilib.font.glyph.GlyphRequestToken#getTileIndex() present
+club.heiqi.uilib.font.layout.TextLayoutService#getLatexBox(club.heiqi.uilib.font.layout.TextSegment,int) present
+club.heiqi.uilib.font.layout.TextSegment#forLatex(java.lang.String,club.heiqi.uilib.font.layout.TextStyle,club.heiqi.uilib.font.latex.MathStyleOverride) present
+club.heiqi.uilib.font.layout.TextSegment#getLatexMathStyle() present
+club.heiqi.uilib.font.layout.TextSegment#withStyle(club.heiqi.uilib.font.layout.TextStyle) present
+club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine$Kind#MATH_DISPLAY present

@@ -136,8 +136,9 @@ public class MathStretchLayoutTest {
         assertSeams(vertical, MathStretchAxis.VERTICAL, advances, 1, 3);
         Assert.assertEquals(2, stretch(support, MathStretchAxis.HORIZONTAL, 50).getGlyphs().stream()
                 .filter(g -> g.getMathGlyphRef().equals(ref(2))).count());
-        // 以同一最小 overlap 求上一份数可达上界，必须小于 target。
-        Assert.assertTrue(10 + 8 + 6 + 8 + 10 - 4 * 1 < 50);
+        // 上一份数（repeat=1）的可达上界 38 < 39，必须再升一份；38 本身仍落在同一份数内。
+        Assert.assertEquals(5, stretch(support, MathStretchAxis.HORIZONTAL, 38).getGlyphs().size());
+        Assert.assertEquals(7, stretch(support, MathStretchAxis.HORIZONTAL, 39).getGlyphs().size());
         MathBox noExtenders = stretch(support, MathStretchAxis.HORIZONTAL, 1);
         Assert.assertEquals(3, noExtenders.getGlyphs().size());
     }

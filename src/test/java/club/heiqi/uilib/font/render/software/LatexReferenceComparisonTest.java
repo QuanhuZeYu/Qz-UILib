@@ -33,8 +33,9 @@ import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.latex.layout.RuleElem;
 
 /**
- * 开发期 LaTeX 对照工具，JLaTeXMath 仅通过独立 classloader 加载，不进入生产依赖。
- * 它是另一套 Java 数学排版器，并非 TeX 可执行程序；不同字体不做像素相等断言。
+ * 开发期 LaTeX 对照工具，**不构成 CI 门禁**：未配置参考 jar 时整类跳过，配置后也只产出
+ * 对照图供人眼查看，类内无几何/像素断言。JLaTeXMath 仅通过独立 classloader 加载，
+ * 不进入生产依赖。它是另一套 Java 数学排版器，并非 TeX 可执行程序；不同字体不做像素相等断言。
  *
  * <p>所有设置优先 system property，其次 env。必需设置（未设置时 JUnit skip）：
  * {@code qz.latex.reference.jar / QZ_LATEX_REFERENCE_JAR}。

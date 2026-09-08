@@ -9,8 +9,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -46,6 +49,9 @@ public final class BundledMathFont implements MathFontSupport {
     private final int unitsPerEm;
     private final int glyphCount;
     private final String faceKey;
+    // 「固定原件已知缺陷配方」的 glyph-id 白名单来自 manifest，不在代码里硬编码 gid。
+    private final Set<Integer> disabledAssemblyGlyphs;
+    private final Set<Integer> shortConnectorAssemblyGlyphs;
 
     private static final class Holder {
         private static final BundledMathFont INSTANCE = load();
@@ -73,15 +79,17 @@ public final class BundledMathFont implements MathFontSupport {
             require(PROFILE.equals(data.get("profile").getAsString()), "data profile");
             // createFont 从字节显式创建物理 face，绝不按 family 名查系统逻辑字体。
             Font physical = Font.createFont(Font.TRUETYPE_FONT, new ByteArrayInputStream(fontBytes));
-            return new BundledMathFont(physical, data);
+            return new BundledMathFont(physical, data, manifest);
         } catch (Exception failure) {
             throw new IllegalStateException("Cannot load pinned STIX math font", failure);
         }
     }
 
-    private BundledMathFont(Font physicalFont, JsonObject data) {
+    private BundledMathFont(Font physicalFont, JsonObject data, JsonObject manifest) {
         this.physicalFont = physicalFont;
         this.data = data;
+        disabledAssemblyGlyphs = glyphSet(manifest, "disabledAssemblyGlyphs");
+        shortConnectorAssemblyGlyphs = glyphSet(manifest, "shortConnectorAssemblyGlyphs");
         unitsPerEm = data.get("unitsPerEm").getAsInt();
         glyphCount = data.get("glyphCount").getAsInt();
         faceKey = "sha256:" + FONT_SHA + ":face:0:profile:" + PROFILE;
@@ -187,9 +195,11 @@ public final class BundledMathFont implements MathFontSupport {
         if (!recipe.get("assembly").isJsonNull()) {
             JsonObject source = recipe.getAsJsonObject("assembly");
             if (!source.get("validConnectorLengths").getAsBoolean()) {
-                // 固定原件 U+0305/gid746 含 connector > fullAdvance，只禁用该 assembly。
+                // 固定原件含 connector > fullAdvance 的配方（gid 由 manifest 的豁免表声明）只禁用该 assembly。
                 // 保留有序原生 variants；不篡改源数据，也不因这一配方拒绝整个 font。
-                require(axis == MathStretchAxis.HORIZONTAL && glyph.getGlyphId() == 746, "unexpected unsafe assembly");
+                require(axis == MathStretchAxis.HORIZONTAL
+                        && disabledAssemblyGlyphs.contains(Integer.valueOf(glyph.getGlyphId())),
+                        "unexpected unsafe assembly");
             } else {
                 List<MathGlyphConstruction.Part> parts = new ArrayList<MathGlyphConstruction.Part>();
                 for (JsonElement item : source.getAsJsonArray("parts")) {
@@ -200,21 +210,35 @@ public final class BundledMathFont implements MathFontSupport {
                             scale(part.get("fullAdvance").getAsInt(), effectiveSizePx), part.get("extender").getAsBoolean()));
                 }
                 float overlap = scale(data.get("minConnectorOverlap").getAsInt(), effectiveSizePx);
-                // horizontal gid1510/1514/1532 的原始配方有相邻 startConnector=0，
-                // 无法满足全局 min overlap。保留 variants，只让这些 assembly 缺省；
-                // 不把全局最小重叠偷偷降低到 0，也不拒绝圆括号/根号等有效配方。
+                // manifest 声明的短连接器配方有相邻 startConnector=0，无法满足全局 min overlap。
+                // 保留 variants，只让这些 assembly 缺省；不把全局最小重叠偷偷降低到 0，
+                // 也不拒绝圆括号/根号等有效配方。
                 if (supportsOverlap(parts, overlap)) {
                     // 此固定 schema 的 assembly correction 没有 Device 表。
                     assembly = new MathGlyphConstruction.Assembly(parts, overlap,
                             scale(source.get("italicCorrection").getAsInt(), effectiveSizePx));
                 } else {
-                    int id = glyph.getGlyphId();
-                    require(axis == MathStretchAxis.HORIZONTAL && (id == 1510 || id == 1514 || id == 1532),
+                    require(axis == MathStretchAxis.HORIZONTAL
+                            && shortConnectorAssemblyGlyphs.contains(Integer.valueOf(glyph.getGlyphId())),
                             "unexpected short assembly seam");
                 }
             }
         }
         return new MathGlyphConstruction(variants, assembly);
+    }
+
+    /** 读取 manifest 声明的已知缺陷配方 gid 白名单；缺失或非法即失败，不做静默兜底。 */
+    private static Set<Integer> glyphSet(JsonObject manifest, String name) {
+        JsonObject exemptions = manifest.getAsJsonObject("assemblyExemptions");
+        require(exemptions != null, "assembly exemptions");
+        JsonArray ids = exemptions.getAsJsonArray(name);
+        require(ids != null, "assembly exemption " + name);
+        Set<Integer> result = new HashSet<Integer>();
+        for (JsonElement id : ids) {
+            int value = id.getAsInt();
+            require(value > 0 && result.add(Integer.valueOf(value)), "assembly exemption glyph " + name);
+        }
+        return Collections.unmodifiableSet(result);
     }
 
     private static boolean supportsOverlap(List<MathGlyphConstruction.Part> parts, float overlap) {

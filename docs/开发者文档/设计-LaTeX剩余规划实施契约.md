@@ -49,7 +49,7 @@ LatexOperator body 非 null，可为空组；limitsFlag 复用 LatexAtom 现有�
 
 ### 实物资源与可见影响
 
-推荐原样捆绑 STIXTwoMath-Regular.otf，内嵌版本 **2.12 b168**，配套 OFL.txt。实际取得自 [清华 CTAN 镜像](https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/stix2-otf.zip)。数学 face 为 838508 bytes，SHA-256 `95bc2729e41faf93b0bcae9e96c4dc4da45855067fd0581e621e30734fe8d90b`；OFL 为 4882 bytes，Python 验算两者未压缩合计 843390 bytes，不含元数据且不等于最终 JAR 增量。OFL 1.1 允许随软件分发，保留版权与许可，不修改/子集化原字体、不捆绑无关 Text face/PDF。Cambria Math 6.99 只作本机对照，不进入分发包。
+推荐原样捆绑 STIXTwoMath-Regular.otf，内嵌版本 **2.12 b168**，配套 OFL.txt。实际取得自 [清华 CTAN 镜像](https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/stix2-otf.zip)。数学 face 为 838508 bytes，SHA-256 `95bc2729e41faf93b0bcae9e96c4dc4da45855067fd0581e621e30734fe8d90b`；OFL 为 4882 bytes，Python 验算两者未压缩合计 843390 bytes，不含元数据且不等于最终 JAR 增量。**实际落地后的 JAR 增量实测：2751983 → 3531254 bytes（+779271，+28.3%），含 `math-data.json` 321992 bytes 与 `source-manifest.json` 697 bytes。** OFL 1.1 允许随软件分发，保留版权与许可，不修改/子集化原字体、不捆绑无关 Text face/PDF。Cambria Math 6.99 只作本机对照，不进入分发包。
 
 数学字母、数字、符号优先使用该固定数学字体。普通正文和 `\text` 保留现有字体排序。真实数学 italic/bold 字母通过明确 Unicode 映射及例外表选择物理 glyph，不能再次几何斜切或伪粗体。缺字回退到既有 FontMatcher，并记录实际 face；结构部件必须来自同一 face，不跨字体拼接。此举会改变既有公式宽度、行高、断行和观感，是默认数学字体变更。
 
@@ -137,6 +137,53 @@ STIX 实物数据确认：圆括号各有 13 个竖向变体及端部/重复段�
 
 为区别横线与宽重音，LatexAccent 新增 `AccentMode { FIXED, RULE, WIDE }`、带 mode 的构造重载和 getAccentMode，旧 stretchable=true 仍仅表示 RULE。宽重音通过字形来源中的程序形状分支承载目标尺寸，不额外增加 scaleX，也不复用 sizeScale 改变整个结构高度。最终字形来源重载保留所有旧签名，固定 stroke 只在字形生成层使用 AWT 路径，不新增通用 PaintCommand path API。
 
+### B4 追加：字形接缝裁剪承载（事后补录）
+
+本追加在 2026-09-08 用户授权「组 1、组 2 按推荐实施」后补录。原契约的公共增量只批到
+「GlyphElem 新增末尾带 MathGlyphRef 的兼容重载」，未包含下列已实现且被回归固化的承载，
+现追认为本批公共面的一部分：
+
+```java
+// 新增公共不可变值：可见矩形，相对 glyph origin，单位为该字号下的 logical px。
+public final class MathGlyphClip {
+    public MathGlyphClip(float left, float top, float right, float bottom);
+    public float getLeft(); public float getTop(); public float getRight(); public float getBottom();
+    // 值语义 equals/hashCode；NaN 与朝内的无限边界拒绝。
+}
+// GlyphElem 追加兼容重载与只读访问：
+public GlyphElem(String text, float x, float y, float sizeScale,
+    boolean italic, boolean inheritTextItalic, MathFontStyle mathFontStyle,
+    MathGlyphRef mathGlyphRef, MathGlyphClip mathGlyphClip);
+public MathGlyphClip getMathGlyphClip();
+```
+
+语义：clip 只限制绘制范围（分片接缝的中点归属），不改变字形栅格化、采样 padding 或 MathBox 几何；
+`left/top` 可为负无穷、`right/bottom` 可为正无穷，表示该方向不裁剪；旧构造器默认 null（不裁剪）。
+适配边界只做 logical px 到 screen 的换算，不得再乘 `GlyphElem.sizeScale`。
+外部 AST/盒复制者重建 GlyphElem 时必须一并复制 clip，否则分片接缝会重复叠加 alpha。
+
+同批新增、未在原契约「最小公开数据与能力入口」清单内的公共面（均为本批实现所必需，
+不改变既有语义，按层归属）：
+
+- 生成/调度层：`MathGlyphKey`、`MathGlyphRasterPlan`（含 `MAX_TILES`）、`GlyphRequestToken.Kind`、
+  `forMathGlyph` 及 `getRasterSize/getTileIndex`、`GlyphGenerationTask.forMathGlyph/getRasterSize/getTileIndex`、
+  `GlyphGenerationResult.forMathGlyph/getRasterSize/getTileIndex/getMathGlyphInfo`、
+  `GlyphInfo` 的数学构造器与 `getKind/getMathGlyphRef/copyOf`、`ProceduralAccentShape`
+  （固定 stroke profile，仅在字形生成层使用 AWT 路径）。
+- 页面层：`MathGlyphSlot`、`GlyphPageManager` 的 `claimMathRequest/promoteMathDemand/hasActiveMathDemand/
+  getMathGlyphSlot/evictMathGlyphPage/getMathState`、`GlyphRuntimeTables.GLYPH_FLAG_MATH_CORE`、
+  `GlyphRuntimeTablesView.getMathGlyphSlot`。
+- 渲染层：`FontBatchRenderer.collectBaselineAlignedGlyphClipped` 与 `GlyphBatchCollector` 同名入口
+  （只承载字形 quad 的裁剪，不是通用 PaintCommand path API）。
+- 工具/宿主层：`BundledMathFont`（含 `getPhysicalFont`，返回按字号派生的物理 AWT Font，仅生成层使用）、
+  `FontCatalog` 的 `prepareSnapshotWithMath/getMathFontSupport/getMathPhysicalFont`、
+  `FontMatcher.getCatalogSnapshot(int)/getRuntimeSettings(int)`、`FontRuntimeSettings.getGlyphInkPadding()`、
+  `font.internal.LatexFontSize`。
+
+上述类型与方法跨包使用（`font.api`/`font.glyph`/`font.page`/`font.render`/`font.util` 互调），
+不能降为包内可见，因此本追加以「追认 + 常驻签名锁」代替降可见性。公共签名锁见
+`LatexPublicSurfaceSnapshotTest`（双向快照：新增与删除都失败，需显式更新快照）。
+
 ### 必须补齐的证据
 
 资源 SHA/许可、AWT 实际 glyph-id 绘制、数学映射例外、fallback face、轴/线厚/间隙单位换算、圆括号每个变体阈值和 assembly 重复、根号接缝、宽重音上限内/外、两个 face 同 gid 不串页、过期 token/plan、异步重排、预算/驱逐，都需要正式回归和实际图。当前已完成资源/数学表取证及独立 AWT glyph-id 小样：STIX 实际加载与请求 glyph-id 绘制成功，四字号样张与固定 stroke 宽重音可审查。主代理已查看两张总图；该环境是 Java 25，未经过 UILib 字体页或游戏 shader，不能写为生产绘制通过。小样在工作站 temp/b3b4-font-evidence/awt-probe/，包括 comparison.png、procedural-accent-comparison.png、字体和耗时记录。
@@ -193,6 +240,6 @@ public MathBox getLatexBox(TextSegment segment, int baseFontSizePx);
 
 ## 验收与完成定义
 
-每个生产增量完成正式回归、完整离线 build、实际软件样张和本地提交；旧 public/protected 签名快照检查保留。数学计算与测试计数由 Python 核验。检验正常/阴影、双字体及固定资源版本、缺字身份、不同字号/实际倍率、非整数起点、缓存 reload/inkEpoch、中文混排、块/表格/列表/聊天和链接区域。参考引擎仅为开发期外部工具，统一数学样式、逻辑字号、实际倍率与基线，不对异字体强求像素相等。
+每个生产增量完成正式回归、完整离线 build、实际软件样张和本地提交；旧 public/protected 签名快照检查保留，并已常驻为 `LatexPublicSurfaceSnapshotTest`（包内公共类型全成员 + 跨包接缝成员，双向：新增与删除都失败，需显式更新快照）；B4 的接缝像素判据同样常驻为 `LatexAssemblySeamPixelLockTest`（稳定竖直列逐行亮度恒定；负向验证：移除接缝裁剪即变红）。数学计算与测试计数由 Python 核验。检验正常/阴影、双字体及固定资源版本、缺字身份、不同字号/实际倍率、非整数起点、缓存 reload/inkEpoch、中文混排、块/表格/列表/聊天和链接区域。参考引擎仅为开发期外部工具，统一数学样式、逻辑字号、实际倍率与基线，不对异字体强求像素相等。
 
 游戏客户端/GPU 验收遵守仓库 runClient/runServer 由用户或 CI 执行的边界；软件和 scene 几何通过不写成 GPU shader 或真机观感通过。缺未授权运行态时保留明确验收项，不把规划整体标为完成。

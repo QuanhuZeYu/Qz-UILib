@@ -1,4 +1,14 @@
 {
+  "assemblyExemptions": {
+    "disabledAssemblyGlyphs": [
+      746
+    ],
+    "shortConnectorAssemblyGlyphs": [
+      1510,
+      1514,
+      1532
+    ]
+  },
   "faceIndex": 0,
   "family": "STIX Two Math",
   "files": {
