@@ -1158,6 +1158,10 @@ public class GlyphPageManager {
         } else {
             FontType fontType = token.getFontType();
             int codepoint = token.getCodepoint();
+            // 装配期 advance 对「有位图」和「空像素」两类都有效（GlyphGenerator 两种情况都算了
+            // TextLayout.getAdvance()），因此回填必须在 slot 判空之前，否则无位图字符仍会
+            // 落到冷启动预算的「按空格宽近似」分支上。
+            runtimeTables.publishAssembledAdvance(fontType, codepoint, info.getAdvance(), runtimeSettings);
             if (slot != null) cacheGlyphGeometry(fontType, codepoint, slot, info);
             runtimeTables.flagsArray(fontType)[codepoint] = buildGlyphFlags(info);
             runtimeTables.locationArray(fontType)[codepoint] = location;
@@ -1589,6 +1593,11 @@ public class GlyphPageManager {
         runtimeTables.inkHeightArray(fontType)[codepoint] = (short) glyphInfo.getGlyphHeight();
         runtimeTables.bearingXArray(fontType)[codepoint] = (short) glyphInfo.getBearingX();
         runtimeTables.bearingYArray(fontType)[codepoint] = (short) glyphInfo.getBearingY();
+        // 装配期已由 GlyphGenerator 算出 AWT advance（同字体、同 getGlyphSize() 尺寸、同
+        // TextLayout.getAdvance() 口径），此前只进 GlyphInfo 就被丢弃。这里按 measureAwtWidth
+        // 的同一公式归一化写入宽度缓存：冷启动布局因此无需再做 AWT 测量，也就不会撞上
+        // widthCacheMissBudgetPerWindow 的「按空格宽近似」分支（CJK 被低估 2 倍以上 → 列宽
+        // 算窄、文字压过表格竖线，且错误布局被缓存到下一次重布局）。
         // ink 数据就绪 → 递增就绪代，使依赖 ink 表的 LatexCache 布局条目失效重布局
         runtimeTables.bumpInkEpoch();
     }

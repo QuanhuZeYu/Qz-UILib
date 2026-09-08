@@ -464,7 +464,13 @@ public final class LatexSoftwareRenderKit {
             GlyphRequestToken token = new GlyphRequestToken(1, requestId++, codepoint, fontType);
             GlyphGenerationResult result = generator.generate(new GlyphGenerationTask(token,
                     shared.settings.getPageGlyphSize(), GlyphGenerationPriority.HIGH));
-            if (result == null || result.getGlyphInfo() == null || !result.getGlyphInfo().hasBitmap()) {
+            if (result == null || result.getGlyphInfo() == null) {
+                continue;
+            }
+            // 与真机 GlyphPageManager#publishGlyph 同源：有无位图都回填装配期 advance
+            shared.tables.publishAssembledAdvance(fontType, codepoint,
+                    result.getGlyphInfo().getAdvance(), shared.settings);
+            if (!result.getGlyphInfo().hasBitmap()) {
                 continue;
             }
             GlyphPage page = findPage(shared.pages, result.getGlyphInfo(), shared.settings, shared.gl);

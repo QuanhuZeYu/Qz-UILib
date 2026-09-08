@@ -7,6 +7,7 @@ import club.heiqi.uilib.font.glyph.MathGlyphKey;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.FontRuntimeMetrics;
+import club.heiqi.uilib.font.FontRuntimeSettings;
 
 /**
  * 字体运行时按码点直索引表。
@@ -173,6 +174,39 @@ public final class GlyphRuntimeTables {
 
     public static int unpackSlotIndex(int packedLocation) {
         return packedLocation & 0xFFFF;
+    }
+
+    /**
+     * 把装配期 AWT advance 归一化写入宽度缓存（与 {@code TextLayoutService#measureAwtWidth} 同式）。
+     *
+     * <p>{@code GlyphGenerator} 光栅化时已算出同字体、同 {@code getGlyphSize()} 尺寸的
+     * {@code TextLayout.getAdvance()}，此前只进 {@code GlyphInfo} 即丢弃。写入宽度缓存后，
+     * 冷启动布局无需再做 AWT 测量，也就不会撞上 {@code widthCacheMissBudgetPerWindow} 的
+     * 「按空格宽近似」分支（CJK 被低估 2 倍以上 → 列宽算窄、文字压过表格竖线，
+     * 且错误布局被缓存到下一次重布局）。</p>
+     *
+     * <p>缓存已有值（已测量）时保留原值：测量是权威来源，装配值只填空缺。</p>
+     *
+     * @param fontType  字重
+     * @param codepoint 码点
+     * @param advance   装配期 AWT advance（getGlyphSize() 像素坐标系）
+     * @param settings  当前 generation 设置；null 或 advance 不可用时跳过
+     */
+    public void publishAssembledAdvance(FontType fontType, int codepoint, float advance,
+            FontRuntimeSettings settings) {
+        if (settings == null || !(advance > 0.0F) || !isValidCodepoint(codepoint)) {
+            return;
+        }
+        int glyphSize = settings.getGlyphSize();
+        if (glyphSize <= 0) {
+            return;
+        }
+        float[] widthCache = widthArray(fontType);
+        if (!Float.isNaN(widthCache[codepoint])) {
+            return;
+        }
+        widthCache[codepoint] = (float) (((double) advance / glyphSize) * settings.getCharSize())
+                + (float) settings.getCharacterSpacing();
     }
 
     public float[] widthArray(FontType fontType) {
