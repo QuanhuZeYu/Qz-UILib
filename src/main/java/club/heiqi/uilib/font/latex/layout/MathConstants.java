@@ -15,7 +15,7 @@ public final class MathConstants {
     /** script 字号缩放（上/下标、分数分子分母）。TeX scriptfactor。 */
     public static final float SCRIPT_SCALE = 0.7F;
 
-    /** scriptscript 字号缩放（二级缩放，预留）。TeX scriptscriptfactor。 */
+    /** scriptscript 相对根字号缩放（二级后封顶）。TeX scriptscriptfactor。 */
     public static final float SCRIPT_SCRIPT_SCALE = 0.5F;
 
     /** 数学轴高（em）：分数线/大运算符的垂直中心。 */

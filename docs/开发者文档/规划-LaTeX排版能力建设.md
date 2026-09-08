@@ -4,7 +4,7 @@
 
 在确认缺陷修复之后，改善小字号公式的可读性、数学字形一致性及高结构的伸缩质量。继续使用 LatexParser → MathLayoutService/MathMetrics → MathBox → 字体批次/PaintCommand 的既有链路，不新增独立公式渲染器，不依赖原版 GUI 或 Tessellator。
 
-本文件是建设规划，不表示以下能力已经实现。本轮执行范围是根号接缝修复与规划交付；能力建设待用户指示实施。本规划也不替代对公共 API、默认字体、依赖及既有行为变化的具体裁定。近期基线为 ceac9a2d 的 L01–L13 修复；根号接缝补修与验证已在本轮完成，见文末 B0 实际交付。
+用户已指示开始 LaTeX 排版能力建设，首个实施增量为 B1 内部离散数学样式与深层脚本封顶。B0 根号接缝修复已随 69686e04 交付，B1 实际结果见文末；其余批次仍按依赖推进。本规划不替代对公共 API、默认字体、依赖及既有入口行为变化的具体裁定。
 
 ## 现状与约束
 
@@ -62,11 +62,11 @@ B1 与 B3 的字体小样调研可以并行；B2a 在样式状态稳定后实施
 - **公开类型扩展**：新增 TextSegment 模式、AST 枚举、MathMetrics/GlyphElem 能力或 FontType 值时，列出旧构造器、第三方实现和穷举分派的兼容方案。模式还需贯穿段复制与映射、MarkdownDocument、MarkdownTableModel、TextContentModeStrategy，以及 LatexCache 键。
 - **字体与依赖**：实际替换默认数学字体、增加分发资源或第三方 MATH 解析依赖前，提交覆盖对比、许可、回退、包体和生成成本评估。
 
-这些裁定是对应实施批次的边界；当前用户已授权的根号修复和本规划不因此暂停，也不预先启动接口或依赖变更。
+这些裁定是对应实施批次的边界，不阻塞已授权的 B1 内部建设。后续涉及公共 AST、默认字体资源或 display 宿主行为时，应先提交具体兼容方案。
 
 ## 完成定义
 
-生产代码实施批次交付源码与正式回归、同条件样张、完整构建结果和剩余限制，并创建本地增量提交；只读字体调研和兼容裁定交付证据即可，无需制造代码或资源变更。获得后续实施指示后，建议首先进入 B1 的内部样式与深层脚本封顶，随后推进 B2a；字体与伸缩资源采用独立可复核的小样决策。上述验收矩阵是后续目标，本轮实际完成范围另列于下节。
+生产代码实施批次交付源码与正式回归、同条件样张、完整构建结果和剩余限制，并创建本地增量提交；只读字体调研和兼容裁定交付证据即可，无需制造代码或资源变更。当前按 B1 的内部样式与深层脚本封顶推进，随后进入 B2a；字体与伸缩资源采用独立可复核的小样决策。上述验收矩阵是分批扩展的目标，各批实际完成范围分别记录。
 
 ## B0 本轮实际交付
 
@@ -80,4 +80,41 @@ B1 与 B3 的字体小样调研可以并行；B2a 在样式状态稳定后实施
 
 制品：`build/reports/latex-radical-seam/comparison.png`（左旧右新，同为16px、8倍实际重绘）；`before/`、`after-built/` 保存原图；`pixel-connectivity.json`、`numeric-summary.json`、`joint-profile.csv`、`build-verification.json` 保存像素判据、数值和构建证据。制品在 build 下，不纳入 Git。
 
-本轮使用 testkit 当前真实字体环境，未覆盖两套真实字体、非整数绘制起点或完整 shader AA 参数矩阵；未运行游戏客户端/GPU。这些保留为后续验收扩展和实机回验范围，不将软件复现写成实机已确认修复。B1–B5 尚未实施。
+本轮使用 testkit 当前真实字体环境，未覆盖两套真实字体、非整数绘制起点或完整 shader AA 参数矩阵；未运行游戏客户端/GPU。这些保留为后续验收扩展和实机回验范围，不将软件复现写成实机已确认修复。以上是 B0 交付时的覆盖范围；B1 的后续进展单独记录如下。
+
+## B1 内部数学样式
+
+生产实现继续沿用 MathLayoutService/MathMetrics/MathBox 链路，内部 MathStyle 保存公式根字号、display/text/script/scriptscript 级别及 cramped 状态。各级字号直接从根字号按 1/0.7/0.5 推导并通过 LatexFontSize 量化，后续脚本停留在 scriptscript。对子盒只换算字形倍率，不重复缩放已经度量的坐标和规则线。布局版本更新为 19；现有公开入口仍使用 text，limits 默认位置与美元入口语义保持。
+
+| 结构 | 明确转换 |
+| --- | --- |
+| 上标／下标 | display/text → script，script/scriptscript → scriptscript；上标继承 cramped，下标强制 cramped。 |
+| 分子／分母、组合数 | display → text → script → scriptscript，二级后封顶；分子继承 cramped，分母强制 cramped。 |
+| 根体／根指数 | 根体同级 cramped；根指数固定非 cramped scriptscript。 |
+| 组、复合基底、left/middle/right | 保留父样式。 |
+| 重音／overline／underline | 普通重音和 overline 内容 cramped；underline 继承；规则线结构的外层脚本使用实际盒作参照。 |
+| 矩阵及 cases 单元 | 显式切到非 cramped text；外围数学轴仍取所在样式。 |
+| 自动间距 | script/scriptscript 只保留 Ord→Op、Op→Ord、Op→Op、Close→Op、Inner→Op 的细间距；显式 kern 保留。 |
+
+审查同时发现旧水平拼接用包围盒最大宽度充当推进量，导致负 kern 被夹到零；本批将推进与视觉边界分开，根级包装也保留完整盒语义。正式回归用独立的负推进与实际后续字形左移预期验证，避免仅对照布局自身返回值而漏检。输入字号的无效值转换沿用现有有效字号策略。display 状态在内部回归中验证，本批尚不提供新的对外 display 入口。矩阵内部间距仍为现有比例近似，普通字体整字伸缩与数学斜体近似留待 B3/B4。
+
+参考复核入口为 KaTeX v0.16.22 的 Style.js、spacings.js 与 functions 下各结构实现。本轮网络全文抓取受工具 DNS 判定阻挡，未逐行下载核验，也未运行外部引擎对拍；回归以明确转换表和几何不变量验证。
+
+### B1 验证结果
+
+- 新增 MathStyleGeometryRegressionTest，覆盖状态转换、非整数与低字号、深层脚本盒包含、cramped 传播、矩阵和根指数、脚本间距与负 kern、display 分式及异常字号。生产 collector 回归扩展深层上下标在各 renderScale 的实际字号，并独立验证负细间距使后续字形左移。
+- 布局包针对性测试 56 项通过；完整 `gradlew.bat build --offline --console=plain` 成功。Python 读取实际 JUnit XML 汇总：386 个测试类、4295 项测试，4289 通过、6 跳过、0 失败、0 错误。包含既有缓存命中、runtimeVersion/inkEpoch 失效与根号接缝回归。
+- 旧版编译类先独立快照，新版样张由完整构建产物生成；同一探针、Arial 与 Times New Roman、字号 12/14/16/24、renderScale 1/1.25/4/8。前后各 256 组实际重绘、320 张 PNG（含原尺寸 nearest8）；Python 核验样张矩阵一致、非零墨迹、有限 quad 坐标与文件存在。256 组中 224 组图像发生变化，这是观察值，不作为质量通过阈值。
+- 主代理实际查看深层脚本、嵌套分式与根指数样张；软件图中深层脚本保持可辨识字号。几何回归与最终静态复审通过。未运行游戏客户端、GPU shader 或外部参考引擎对拍。
+
+画布边界检查额外发现：24px 文本混排的固定起点样张存在顶部裁切（旧版 7 张触边，新版 8 张触边，含负 Y quad 证据），最深上标未完整显示。独立公式的深脚本对照图有边缘余量；混排样张不能作为“完整显示无裁切”通过证据。后续需单独完善 testkit 的包围画布与宿主行框验收，不将该现象直接推定为游戏裁剪结果。
+
+制品位于 `build/reports/latex-style-b1/`：`comparison.png` 是精选原像素对照总图，`comparison.html` 是逐样本前后对照，`before/` 与 `after/` 含原图和字体记录，`comparison.csv`、`glyph-comparison.csv` 与 `build-verification.json` 保存数值证据。仍未覆盖非整数绘制起点、中文混排、逐字形 fallback 归属或固定字体文件版本；本轮使用本机已安装字体，不新增分发资源。
+
+## B2a 实施前的承载方案
+
+现有 AST 节点为公开不可变类型，Kind 分派后按具体类型强转。样式声明需要作用于当前数学列表后续节点，不能把这段列表包成普通 GROUP，否则会改变原子类别、二元符号降级和间距；也不能借文本或 SPACE 的特殊值传递样式。
+
+建议下一批采用明确的增量 AST 样式承载：保留既有 Kind、parse/layout 入口和全部旧构造器，旧调用默认 INHERIT；新增不可变的样式覆盖信息及只读访问能力，分式区分自身 dfrac/tfrac 覆盖与外层脚本的声明上下文。内部按节点身份的旁表虽然可避开旧签名修改，但有重建节点丢状态、外部遍历不可见及生命周期成本，不作为首选实现。该公共 API 增量应在具体签名和迁移说明裁定后实施。
+
+必测作用域包括：`a+\scriptstyle b` 保持同一数学列表；`{\scriptstyle a}b` 不泄漏；脚本内显式 display 可放大；分子局部覆盖不影响分母；矩阵单元/行边界关闭局部声明；`\dfrac ab^2` 保留正确脚本绑定；text 内容与未知命令继续字面处理。命令样式已包含在源码缓存键中，复用现有 LatexCache，不增加另一套缓存。

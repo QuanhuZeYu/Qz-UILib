@@ -30,10 +30,22 @@ public class LatexSizeAndAdvanceRegressionTest {
     @Test
     public void scriptAndNestedScriptUseMeasuredTruncatedSize() {
         assertSizes("<latex>x^{23}</latex>", 14, 1.0F, 14, 9, 9);
-        assertSizes("<latex>x^{y^2}</latex>", 10, 1.0F, 10, 7, 4);
-        assertSizes("<latex>x^{y^{z^2}}</latex>", 14, 1.25F, 14, 9, 6, 4);
+        assertSizes("<latex>x^{y^2}</latex>", 10, 1.0F, 10, 7, 5);
+        assertSizes("<latex>x^{y^{z^2}}</latex>", 14, 1.25F, 14, 9, 7, 7);
         assertSizes("<latex>x</latex>", 14, 1.25F, 14); // uniform 快路径
         assertSizes("<latex>x^{y^{z^{a^{b^2}}}}</latex>", 1, 1.0F, 1, 1, 1, 1, 1, 1);
+    }
+
+    @Test
+    public void deepScriptsKeepTheirFloorThroughProductionCollectorAtEveryRenderScale() {
+        int[][] sizes = {{12, 8, 6, 6, 6, 6}, {14, 9, 7, 7, 7, 7},
+                {16, 11, 8, 8, 8, 8}, {24, 16, 12, 12, 12, 12}};
+        for (int[] expected : sizes) {
+            for (float scale : new float[] {1.0F, 1.25F, 4.0F, 8.0F}) {
+                assertSizes("<latex>x^{y^{z^{a^{b^2}}}}</latex>", expected[0], scale, expected);
+                assertSizes("<latex>x_{y_{z_{a_{b_2}}}}</latex>", expected[0], scale, expected);
+            }
+        }
     }
 
     @Test
@@ -97,6 +109,18 @@ public class LatexSizeAndAdvanceRegressionTest {
                     Assert.assertEquals("必须返回包括尾段的终点：" + text,
                             (int) Math.ceil(expectedX), result.end);
                 }
+            }
+        }
+    }
+
+    @Test
+    public void negativeThinSpaceMovesTheActualFollowingGlyphLeft() {
+        for (String source : new String[] {"\\!", "{\\!}"}) {
+            Assert.assertEquals(-3.0F, LatexSoftwareRenderKit.layout(source, 18).getWidth(), 0.0001F);
+            for (float scale : new float[] {1.0F, 1.25F, 4.0F}) {
+                Recorder result = render(latex(source) + "A", 18, scale);
+                Assert.assertEquals(1, result.glyphs.size());
+                Assert.assertEquals(4.0F - 3.0F * scale, result.glyphs.get(0)[0], 0.0001F);
             }
         }
     }

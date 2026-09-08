@@ -197,8 +197,8 @@ public class MathLayoutServiceTest {
         // 上隙 max(bigop1, bigop3 − sup.d)、下隙 max(bigop2, bigop4 − sub.h)，
         // 外沿 bigop5、上下限水平居中、盒尾补 MEDMUSKIP（BigOperatorAtom limits 路径）
         MathBox box = layout("\\sum_{i=1}^{n}");
-        // sub = i=1：3 码点 × 0.35S + 2 个 thick 间距（5/18 × 0.7S）；sup = n：0.35S；base = ∑：0.5S
-        float subWidth = 3.0F * 0.35F * S + 2.0F * (MathConstants.THICK_MU / 18.0F) * 0.7F * S;
+        // sub = i=1：3 码点 × 0.35S，script 不加 REL glue；sup = n：0.35S；base = ∑：0.5S
+        float subWidth = 3.0F * 0.35F * S; // script 样式不插入 REL glue
         // 轴居中（fake 回退盒度量）：inkCenterOffsetY=(0.2S−0.8S)/2=−0.3S（y 向下），inkH=1.0S →
         // baseShift = −axis − inkCenter×scale = 0.3S−axis；refH=inkH/2+axis=0.75S，refD=inkH/2−axis=0.25S
         float baseShift = 0.3F * S - MathConstants.AXIS_HEIGHT_EM * S;
@@ -262,7 +262,7 @@ public class MathLayoutServiceTest {
         float axis = MathConstants.AXIS_HEIGHT_EM * S;
         float baseShift = 0.3F * S - axis;
         // 脚本参照平移后的 ink 盒：refH = 0.5S + axis、refD = 0.5S - axis（不走单字符归零）
-        float subWidth = 3.0F * 0.35F * S + 2.0F * (MathConstants.THICK_MU / 18.0F) * 0.7F * S;
+        float subWidth = 3.0F * 0.35F * S; // script 样式不插入 REL glue
         float subDrop = MathConstants.SCRIPT_SUB_DROP_EM * S;
         float subY = Math.max(Math.max(0.5F * S - axis + subDrop, MathConstants.SUB2_EM * S),
                 0.56F * S - 4.0F * 0.45F * S / 5.0F);
