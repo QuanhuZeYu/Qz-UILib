@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.input;
 
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -15,6 +16,8 @@ import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSide;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSpec;
+import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
+import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -23,16 +26,55 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 聊天工具栏契约（规划《聊天工具栏与HUD布局编辑》P1/P2 最小闭环）：
- * 注册动作渲染/排序/隐藏、编辑态切换到完成/取消/重置、内置动作经注册链到达当前屏。
+ * 聊天工具栏契约：图标动作渲染/隐藏、编辑态切换到完成/取消/重置、
+ * 内置动作经注册链到达当前屏；真实命中和 tooltip 行为见 ChatToolbarGeometryTest。
  */
 public class ChatToolbarTest {
 
     /** 本用例绑定的工具栏宿主（@After 解绑，避免静态可见性信号污染同 JVM 其它测试）。 */
     private ChatToolbar.Host attachedHost;
+    private SceneRuntime rt;
+
+    /** 两个工具栏测试在挂载前预热全部图标，request 只命中 LOADED 条目，不启动下载。 */
+    static void primeIconCache() {
+        DocumentRemoteImageCache cache = DocumentRemoteImageCache.getInstance();
+        cache.clearForTesting();
+        for (String name : new String[] {"action", "edit", "finish", "cancel", "reset-current", "reset-all"}) {
+            BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+            image.setRGB(8, 8, 0xFFFFFFFF);
+            cache.putForTesting(ChatToolbarIcons.urlFor(name), image);
+        }
+    }
+
+    static SceneNode assertIconButton(SceneNode button, String name) {
+        Assert.assertEquals("按钮只能有一个图标直接子节点", 1, button.__getChildren().size());
+        Assert.assertTrue("按钮不保留文字标签", texts(button).isEmpty());
+        Assert.assertEquals(24, button.getPreferredWidth());
+        Assert.assertEquals(24, button.getPreferredHeight());
+        SceneNode icon = button.__getChildren().get(0);
+        Assert.assertEquals(16, icon.getPreferredWidth());
+        Assert.assertEquals(16, icon.getPreferredHeight());
+        Assert.assertTrue("图标必须使用 UILib 宿主图片源", icon.getImageSource() instanceof HostImageSource);
+        HostImageSource source = (HostImageSource) icon.getImageSource();
+        Assert.assertEquals(HostImageSource.Kind.BUFFERED_IMAGE, source.getKind());
+        Assert.assertEquals("图标语义与缓存来源必须对应: " + name,
+                "chat-toolbar:white:" + ChatToolbarIcons.urlFor(name), source.getImageKey());
+        Assert.assertNotNull(source.getBufferedImage());
+        Assert.assertEquals("缓存位图中的不透明像素必须进入图像源",
+                0xFFFFFFFF, source.getBufferedImage().getRGB(8, 8));
+        return icon;
+    }
+
+    static void assertIconRow(SceneNode toolbar, String... names) {
+        Assert.assertEquals("可见动作数", names.length, toolbar.__getChildren().size());
+        for (int i = 0; i < names.length; i++) {
+            assertIconButton(toolbar.__getChildren().get(i), names[i]);
+        }
+    }
 
     @Before
     public void setUp() {
+        primeIconCache();
         ChatActionService.getInstance().clear();
         ChatHudWindow.setToolbarSide(HudToolbarSide.DEFAULT);
         ReactiveScheduler.get().reset();
@@ -40,6 +82,11 @@ public class ChatToolbarTest {
 
     @After
     public void tearDown() {
+        if (rt != null) {
+            rt.dispose();
+            rt = null;
+        }
+        DocumentRemoteImageCache.getInstance().clearForTesting();
         if (attachedHost != null) {
             ChatHudWindow.detachToolbarHost(attachedHost);
             attachedHost = null;
@@ -70,8 +117,8 @@ public class ChatToolbarTest {
                 }).build();
     }
 
-    /** 深度收集树中所有非空文本（按钮标签经 bindText 在 flush 后落值）。 */
-    private static List<String> texts(SceneNode node) {
+    /** 用于断言图标按钮无残留标签，以及 tooltip 浮层中的用户文本。 */
+    static List<String> texts(SceneNode node) {
         List<String> result = new ArrayList<String>();
         collect(node, result);
         return result;
@@ -90,22 +137,19 @@ public class ChatToolbarTest {
     public void rendersRegisteredActionsAndSwitchesToEditRow() {
         ChatActionRegistration registration = ChatActionService.getInstance()
                 .register(action("test:action", "测试动作", 1));
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
         Signal<Boolean> editing = Signal.create(Boolean.FALSE);
         SceneNode toolbar = ChatToolbar.mount(rt, host(editing));
         rt.flush();
 
-        Assert.assertTrue("普通态应渲染注册动作", texts(toolbar).contains("测试动作"));
-        Assert.assertFalse("普通态不应出现编辑动作", texts(toolbar).contains("完成"));
+        assertIconRow(toolbar, "action");
 
         editing.set(Boolean.TRUE);
         rt.flush();
-        List<String> editTexts = texts(toolbar);
-        Assert.assertTrue("编辑态应出现完成", editTexts.contains("完成"));
-        Assert.assertTrue("编辑态应出现取消", editTexts.contains("取消"));
-        Assert.assertTrue("编辑态应出现恢复当前默认", editTexts.contains("恢复当前默认"));
-        Assert.assertTrue("编辑态应出现恢复全部默认", editTexts.contains("恢复全部默认"));
-        Assert.assertFalse("编辑态隐藏注册动作", editTexts.contains("测试动作"));
+        assertIconRow(toolbar, "finish", "cancel", "reset-current", "reset-all");
+        editing.set(Boolean.FALSE);
+        rt.flush();
+        assertIconRow(toolbar, "action");
 
         registration.close();
     }
@@ -119,10 +163,10 @@ public class ChatToolbarTest {
                 .action(new Runnable() {
                     @Override public void run() { }
                 }).build());
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
         SceneNode toolbar = ChatToolbar.mount(rt, host(Signal.create(Boolean.FALSE)));
         rt.flush();
-        Assert.assertFalse("visible=false 的动作不渲染", texts(toolbar).contains("隐藏动作"));
+        assertIconRow(toolbar);
     }
 
     /**
@@ -140,14 +184,14 @@ public class ChatToolbarTest {
         Assert.assertTrue("打开态聊天屏工具栏可见", Boolean.TRUE.equals(spec.getVisible().get()));
 
         ChatActionService.getInstance().register(action("test:layer", "图层动作", 1));
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
         SceneNode content = SceneNode.column().setPreferredWidth(200).setPreferredHeight(100);
         HudToolbarLayer.Result layer = HudToolbarLayer.mount(rt, spec, content,
                 r -> ChatToolbar.mount(r, host(Signal.create(Boolean.FALSE))));
         rt.flush();
         Assert.assertNotNull(layer.toolbar());
         Assert.assertNotSame("工具栏必须挂在聊天内容盒之外", content, layer.root());
-        Assert.assertTrue("聊天动作经外接层渲染", texts(layer.toolbar()).contains("图层动作"));
+        assertIconRow(layer.toolbar(), "action");
         Assert.assertEquals("外框高 = 内容 + gap + 厚度",
                 100 + spec.getGap() + spec.getThickness(), layer.outerHeight(100));
 

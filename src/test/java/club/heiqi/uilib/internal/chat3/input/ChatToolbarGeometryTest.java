@@ -1,6 +1,7 @@
 package club.heiqi.uilib.internal.chat3.input;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -28,10 +29,12 @@ import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
 import club.heiqi.uilib.ui.hud.api.HudToolbarService;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSide;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSpec;
+import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.control.SceneTooltip;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
@@ -53,22 +56,21 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 入口完全不可见）。
  *
  * <h3>为什么必须有本类</h3>
- * <p>{@code ChatToolbarTest} 只断言树里存在标签文本——文本存在 ≠ 可见。真实缺陷是
+ * <p>仅检查节点存在不能证明可见。历史缺陷是
  * {@code SceneRuntime.show} 的零高 anchor 在 ROW 里吃满主轴宽（无文本叶宽度取父约束宽），
  * 把动作行推到视口外：树里有「编辑 HUD」文本，布局盒却在 x=1240、命中次数 0。本类用
  * 真实 {@link ChatToolbar}（含内置「编辑 HUD」动作）+ 真实 {@link HudToolbarService}/
  * {@link HudToolbarLayer} + 真实 {@link ChatContainer}，走与 {@code ChatInputSurface} 相同的
  * root/viewport/{@code applyOuterPlacement} 流程，断言按钮的非零可见盒与真实命中。</p>
  *
- * <h3>度量选择</h3>
- * <p>用 {@link FixedTextMeasurer}(16, 16) 模拟全角字号 16 的 CJK 文本（每字 16px），
- * 使「竖直条宽必须容得下最长标签」的断言确定且不依赖机器字体。</p>
+ * <p>图标经预热缓存、scene paint/replay 验证，中文动作含义由真实 hover tooltip 解释；
+ * FixedTextMeasurer 使聊天内容和 tooltip 的文本度量不依赖机器字体。</p>
  */
 public class ChatToolbarGeometryTest {
 
     private static final int W = 854;
     private static final int H = 480;
-    /** 每字 16px = SceneNode 默认字号下的全角 CJK 宽，用于钉死竖直条宽预算。 */
+    /** 聊天内容与 tooltip 使用确定的字体度量，图标布局独立于标签字数。 */
     private static final FixedTextMeasurer MEASURER = new FixedTextMeasurer(16, 16);
 
     private static final ChatMessageList.SegmentParser PARSER = new ChatMessageList.SegmentParser() {
@@ -94,6 +96,7 @@ public class ChatToolbarGeometryTest {
 
     @Before
     public void setUp() {
+        ChatToolbarTest.primeIconCache();
         ReactiveScheduler.get().reset();
         ChatActionService.getInstance().clear();
         HudToolbarService.getInstance().clear();
@@ -111,6 +114,10 @@ public class ChatToolbarGeometryTest {
             rt.dispose();
             rt = null;
         }
+        if (host != null) {
+            ChatHudWindow.detachToolbarHost(host);
+        }
+        DocumentRemoteImageCache.getInstance().clearForTesting();
         ChatActionService.getInstance().clear();
         HudToolbarService.getInstance().clear();
         ChatHudWindow.close();
@@ -185,6 +192,8 @@ public class ChatToolbarGeometryTest {
         ChatInputSurface.applyOuterPlacement(layer, W, H, placement, HudInsets.NONE);
         rt.flush();
         engine.layout(root, new Constraints(W, H));
+        rt.__bridgeLayoutEpoch(engine.layoutEpoch());
+        rt.flush();
     }
 
     private void frames(int count) {
@@ -202,27 +211,14 @@ public class ChatToolbarGeometryTest {
                 }).build();
     }
 
-    private static void collectByText(SceneNode node, String want, List<SceneNode> sink) {
-        if (want.equals(node.getText())) {
-            sink.add(node);
-        }
-        for (SceneNode child : node.__getChildren()) {
-            collectByText(child, want, sink);
-        }
+    /** 普通项按 order/注册序，编辑项固定为完成、取消、恢复当前、恢复全部。 */
+    private SceneNode buttonAt(int index) {
+        return layer.toolbar().__getChildren().get(index);
     }
 
-    /** @return 标签文本对应的按钮根节点（label 是按钮根的直接子节点） */
-    private SceneNode buttonOf(String label) {
-        List<SceneNode> labels = new ArrayList<SceneNode>();
-        collectByText(root, label, labels);
-        Assert.assertEquals("标签「" + label + "」应恰有一个", 1, labels.size());
-        return labels.get(0).__getParent();
-    }
-
-    private boolean hasLabel(String label) {
-        List<SceneNode> labels = new ArrayList<SceneNode>();
-        collectByText(root, label, labels);
-        return !labels.isEmpty();
+    /** 本类普通动作 order 均小于内置编辑项，故编辑项在最后。 */
+    private SceneNode editButton() {
+        return buttonAt(layer.toolbar().__getChildren().size() - 1);
     }
 
     private static AnchorRect box(SceneNode node) {
@@ -253,11 +249,28 @@ public class ChatToolbarGeometryTest {
         AnchorRect b = box(node);
         int cx = b.getX() + Math.max(1, b.getWidth()) / 2;
         int cy = b.getY() + Math.max(1, b.getHeight()) / 2;
+        routePointer(cx, cy, action);
+    }
+
+    private void routePointer(int cx, int cy, ScenePointerAction action) {
         InputFrameBuilder fb = new InputFrameBuilder(cx, cy);
         fb.push(RawInputEvent.ofPointer(action, cx, cy,
                 SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
         SceneInputFrame inputFrame = fb.drainFrame();
         rt.route(root, inputFrame, 0, 0);
+        rt.flush();
+    }
+
+    private void assertTooltipText(String... lines) {
+        Assert.assertEquals("悬停动作只展示一个 tooltip", 1, rt.getOverlayHost().size());
+        SceneNode tooltip = rt.getOverlayHost().bottomFirst().get(0).getRoot();
+        Assert.assertEquals(Arrays.asList(lines), ChatToolbarTest.texts(tooltip));
+    }
+
+    /** 通过帧采样推进真实 tooltip 延时，无 sleep、无直接写 hover 信号。 */
+    private void completeTooltipDelay() {
+        rt.__sampleMotion(0L);
+        rt.__sampleMotion(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(SceneTooltip.DEFAULT_DELAY_MILLIS));
         rt.flush();
     }
 
@@ -287,6 +300,12 @@ public class ChatToolbarGeometryTest {
         Assert.assertTrue("工具栏必须挂在内容盒之外", layer.toolbar() != null);
         Assert.assertSame("工具栏必须是外框的直接子节点", layer.root(), layer.toolbar().__getParent());
         Assert.assertTrue(layer.isVisible());
+        Assert.assertEquals("工具栏与聊天容器共用玻璃参数",
+                container.root().getBackdrop(), layer.toolbar().getBackdrop());
+        Assert.assertEquals("工具栏与聊天容器共用背景",
+                container.root().getBackgroundColor(), layer.toolbar().getBackgroundColor());
+        Assert.assertEquals("工具栏与聊天容器共用圆角",
+                container.root().getCornerRadius(), layer.toolbar().getCornerRadius());
 
         AnchorRect wrapper = box(layer.root());
         AnchorRect toolbar = box(layer.toolbar());
@@ -303,12 +322,12 @@ public class ChatToolbarGeometryTest {
         Assert.assertEquals("外框高必须与放置口径一致",
                 ChatInputSurface.outerHeightFor(layer, H), wrapper.getHeight());
 
-        for (String label : new String[] {"编辑 HUD", "测试动作"}) {
-            SceneNode button = buttonOf(label);
-            assertVisibleInside(button, toolbar, "按钮「" + label + "」");
-            Assert.assertTrue("按钮「" + label + "」必须在工具栏行内（不得被锚点顶出屏幕）: "
-                    + describe(button), box(button).getX() < toolbar.getX() + toolbar.getWidth());
-            Assert.assertEquals("按钮「" + label + "」中心必须真实命中", 1, pressCenter(button));
+        ChatToolbarTest.assertIconRow(layer.toolbar(), "action", "edit");
+        for (SceneNode button : layer.toolbar().__getChildren()) {
+            assertVisibleInside(button, toolbar, "图标按钮");
+            Assert.assertEquals(24, box(button).getWidth());
+            Assert.assertEquals(24, box(button).getHeight());
+            Assert.assertEquals("图标按钮中心必须真实命中", 1, pressCenter(button));
         }
     }
 
@@ -329,40 +348,45 @@ public class ChatToolbarGeometryTest {
         };
         ChatHudEditIntent.attach(sink);
 
-        clickCenter(buttonOf("编辑 HUD"));
+        clickCenter(editButton());
         Assert.assertEquals("点击「编辑 HUD」必须真实命中并发布意图到当前屏", 1, enterEditCount[0]);
         frame();
 
-        Assert.assertTrue("编辑态必须出现完成", hasLabel("完成"));
-        Assert.assertTrue("编辑态必须出现取消", hasLabel("取消"));
-        Assert.assertTrue("编辑态必须出现恢复当前默认", hasLabel("恢复当前默认"));
-        Assert.assertTrue("编辑态必须出现恢复全部默认", hasLabel("恢复全部默认"));
-        Assert.assertFalse("编辑态不得再显示普通动作", hasLabel("测试动作"));
+        ChatToolbarTest.assertIconRow(layer.toolbar(), "finish", "cancel", "reset-current", "reset-all");
+        String[] labels = {"完成", "取消", "恢复当前默认", "恢复全部默认"};
+        for (int i = 0; i < labels.length; i++) {
+            routePointer(buttonAt(i), ScenePointerAction.MOVE);
+            assertTooltipText(labels[i]);
+        }
+        clickCenter(buttonAt(2));
+        clickCenter(buttonAt(3));
+        Assert.assertEquals("恢复当前默认回调", 1, host.resetCurrentCount);
+        Assert.assertEquals("恢复全部默认回调", 1, host.resetAllCount);
 
         AnchorRect toolbar = box(layer.toolbar());
-        SceneNode finish = buttonOf("完成");
-        SceneNode cancel = buttonOf("取消");
+        SceneNode finish = buttonAt(0);
+        SceneNode cancel = buttonAt(1);
         assertVisibleInside(finish, toolbar, "按钮「完成」");
         assertVisibleInside(cancel, toolbar, "按钮「取消」");
-        assertVisibleInside(buttonOf("恢复当前默认"), toolbar, "按钮「恢复当前默认」");
-        assertVisibleInside(buttonOf("恢复全部默认"), toolbar, "按钮「恢复全部默认」");
+        assertVisibleInside(buttonAt(2), toolbar, "按钮「恢复当前默认」");
+        assertVisibleInside(buttonAt(3), toolbar, "按钮「恢复全部默认」");
         clickCenter(finish);
         Assert.assertEquals("「完成」回调必须执行", 1, host.finishCount);
         Assert.assertEquals("完成后退出编辑态", Boolean.FALSE, host.editing.get());
         frame();
-        Assert.assertTrue("完成后回到普通动作行", hasLabel("测试动作"));
+        ChatToolbarTest.assertIconRow(layer.toolbar(), "action", "edit");
 
         host.editing.set(Boolean.TRUE);
         frame();
-        clickCenter(buttonOf("取消"));
+        clickCenter(buttonAt(1));
         Assert.assertEquals("「取消」回调必须执行", 1, host.cancelCount);
     }
 
     /**
-     * 竖直边（LEFT/RIGHT）必须真实纵向排布：按钮竖排、条宽容得下最长标签（不裁字）、可命中。
+     * 竖直边（LEFT/RIGHT）必须真实纵向排布：28px 条宽容纳 24px 按钮与 16px 图标，可命中。
      */
     @Test
-    public void verticalSidesStackButtonsWithoutClippingLabels() {
+    public void verticalSidesStackButtonsWithoutClippingIcons() {
         for (HudToolbarSide side : new HudToolbarSide[] {HudToolbarSide.LEFT, HudToolbarSide.RIGHT}) {
             tearDown();
             setUp();
@@ -371,7 +395,8 @@ public class ChatToolbarGeometryTest {
             frames(3);
 
             AnchorRect toolbar = box(layer.toolbar());
-            Assert.assertEquals("竖直边条宽 = 规格厚度（文本预算）",
+            Assert.assertEquals(HudToolbarSpec.DEFAULT_THICKNESS_PX, ChatToolbar.VERTICAL_THICKNESS_PX);
+            Assert.assertEquals("竖直边条宽 = 默认规格厚度",
                     ChatToolbar.VERTICAL_THICKNESS_PX, toolbar.getWidth());
             Assert.assertTrue("竖直边工具栏必须在视口内: " + toolbar,
                     toolbar.getX() >= 0 && toolbar.getY() >= 0
@@ -380,10 +405,10 @@ public class ChatToolbarGeometryTest {
             Assert.assertEquals("竖直边外框宽必须与放置口径一致",
                     ChatInputSurface.outerWidthFor(layer, W), box(layer.root()).getWidth());
 
-            SceneNode finish = buttonOf("完成");
-            SceneNode cancel = buttonOf("取消");
-            SceneNode resetCurrent = buttonOf("恢复当前默认");
-            SceneNode resetAll = buttonOf("恢复全部默认");
+            SceneNode finish = buttonAt(0);
+            SceneNode cancel = buttonAt(1);
+            SceneNode resetCurrent = buttonAt(2);
+            SceneNode resetAll = buttonAt(3);
             AnchorRect[] buttons = {box(finish), box(cancel), box(resetCurrent), box(resetAll)};
             for (int i = 1; i < buttons.length; i++) {
                 Assert.assertTrue("竖直边必须竖排（按钮 " + i + " 不得与上一个重叠）: "
@@ -392,13 +417,13 @@ public class ChatToolbarGeometryTest {
             }
             for (SceneNode button : new SceneNode[] {finish, cancel, resetCurrent, resetAll}) {
                 AnchorRect b = box(button);
-                Assert.assertTrue("竖直边按钮必须有非零盒: " + describe(button),
-                        b.getWidth() > 0 && b.getHeight() > 0);
-                SceneNode label = button.__getChildren().get(0);
-                AnchorRect labelBox = box(label);
-                Assert.assertTrue("标签不得被条宽裁掉: 标签 " + labelBox + " 必须落在按钮 " + b + " 内",
-                        labelBox.getX() >= b.getX()
-                                && labelBox.getX() + labelBox.getWidth() <= b.getX() + b.getWidth());
+                Assert.assertEquals(24, b.getWidth());
+                Assert.assertEquals(24, b.getHeight());
+                assertVisibleInside(button, toolbar, "竖直图标按钮");
+                SceneNode icon = button.__getChildren().get(0);
+                Assert.assertEquals(16, box(icon).getWidth());
+                Assert.assertEquals(16, box(icon).getHeight());
+                assertVisibleInside(icon, b, "图标");
             }
             Assert.assertEquals("竖直边「完成」必须可命中", 1, pressCenter(finish));
         }
@@ -410,7 +435,7 @@ public class ChatToolbarGeometryTest {
     @Test
     public void rightAnchoredToolbarWiderThanContentStaysInsideViewport() {
         List<ChatAction> actions = new ArrayList<ChatAction>();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 20; i++) {
             actions.add(action("test:wide" + i, "动作标签" + i, i));
         }
         mount(HudToolbarSide.BOTTOM, actions.toArray(new ChatAction[0]));
@@ -445,7 +470,7 @@ public class ChatToolbarGeometryTest {
         AnchorRect toolbar = box(layer.toolbar());
         Assert.assertTrue("初始帧工具栏必须有非零盒: " + describe(layer.toolbar()),
                 toolbar.getWidth() > 0 && toolbar.getHeight() > 0);
-        SceneNode editButton = buttonOf("编辑 HUD");
+        SceneNode editButton = editButton();
         assertVisibleInside(editButton, toolbar, "初始帧按钮「编辑 HUD」");
         Assert.assertEquals("初始帧「编辑 HUD」必须可命中", 1, pressCenter(editButton));
 
@@ -458,7 +483,7 @@ public class ChatToolbarGeometryTest {
         host.editing.set(Boolean.TRUE);
         frame(); // 切入编辑仅一帧
         AnchorRect editToolbar = box(layer.toolbar());
-        SceneNode finish = buttonOf("完成");
+        SceneNode finish = buttonAt(0);
         assertVisibleInside(finish, editToolbar, "切入编辑首帧按钮「完成」");
         Assert.assertEquals("切入编辑首帧「完成」必须可命中", 1, pressCenter(finish));
     }
@@ -472,7 +497,7 @@ public class ChatToolbarGeometryTest {
     @Test
     public void rightAnchoredWideToolbarStableFromSecondFrame() {
         List<ChatAction> actions = new ArrayList<ChatAction>();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 20; i++) {
             actions.add(action("test:wide" + i, "动作标签" + i, i));
         }
         mount(HudToolbarSide.BOTTOM, actions.toArray(new ChatAction[0]));
@@ -486,34 +511,42 @@ public class ChatToolbarGeometryTest {
                 wrapper.getX() >= 0 && wrapper.getX() + wrapper.getWidth() <= W);
         Assert.assertEquals("稳定后外框宽必须与实测一致",
                 ChatInputSurface.outerWidthFor(layer, W), wrapper.getWidth());
-        Assert.assertEquals("稳定后「编辑 HUD」仍可命中", 1, pressCenter(buttonOf("编辑 HUD")));
+        Assert.assertEquals("稳定后「编辑 HUD」仍可命中", 1, pressCenter(editButton()));
     }
 
-    /**
-     * 可见性必须一路到绘制计划：几何非零 + 命中可达还不够，标签必须真的进入 paint→replay
-     * 的 drawText 调用且落在视口内（真机缺陷的另一面：几何对但没画出来同样不可见）。
-     */
+    /** 六种图标均必须进入 scene paint → replay，且绘制矩形与真实 16px 布局盒一致。 */
     @Test
-    public void toolbarButtonLabelIsActuallyPaintedInsideViewport() {
+    public void toolbarIconsAreActuallyPaintedInsideViewport() {
         mount(HudToolbarSide.BOTTOM, action("test:one", "测试动作", 1));
-        frames(3);
+        frame();
+        assertIconsPainted("action", "edit");
+        host.editing.set(Boolean.TRUE);
+        frame();
+        assertIconsPainted("finish", "cancel", "reset-current", "reset-all");
+    }
 
-        ScenePaintEngine paintEngine = new ScenePaintEngine(MEASURER);
+    private void assertIconsPainted(String... names) {
+        ChatToolbarTest.assertIconRow(layer.toolbar(), names);
         RecordingRenderBackend backend = new RecordingRenderBackend();
-        new ScenePaintReplayer().replay(paintEngine.paint(root).getPlan(), backend);
-
-        boolean painted = false;
+        new ScenePaintReplayer().replay(new ScenePaintEngine(MEASURER).paint(root).getPlan(), backend);
+        List<RecordingRenderBackend.RenderCall> images = new ArrayList<RecordingRenderBackend.RenderCall>();
         for (RecordingRenderBackend.RenderCall call : backend.getCalls()) {
-            if (!"drawText".equals(call.methodName()) || !"编辑 HUD".equals(call.getString(0))) {
-                continue;
+            if ("drawImage".equals(call.methodName())) {
+                images.add(call);
             }
-            int x = call.getInt(1);
-            int y = call.getInt(2);
-            Assert.assertTrue("「编辑 HUD」必须绘制在视口内: x=" + x + " y=" + y,
-                    x >= 0 && x <= W && y >= 0 && y <= H);
-            painted = true;
         }
-        Assert.assertTrue("「编辑 HUD」标签必须真实进入绘制计划（几何可见 ≠ 已绘制）", painted);
+        Assert.assertEquals("每个可见动作必须绘制一个真实 image", names.length, images.size());
+        for (int i = 0; i < names.length; i++) {
+            SceneNode icon = ChatToolbarTest.assertIconButton(buttonAt(i), names[i]);
+            AnchorRect iconBox = box(icon);
+            assertVisibleInside(icon, box(buttonAt(i)), "绘制图标 " + names[i]);
+            RecordingRenderBackend.RenderCall call = images.get(i);
+            Assert.assertSame("paint/replay 保留图像源", icon.getImageSource(), call.args()[0]);
+            Assert.assertEquals(iconBox.getX(), call.getInt(1));
+            Assert.assertEquals(iconBox.getY(), call.getInt(2));
+            Assert.assertEquals(iconBox.getX() + 16, call.getInt(3));
+            Assert.assertEquals(iconBox.getY() + 16, call.getInt(4));
+        }
     }
 
     /**
@@ -526,7 +559,7 @@ public class ChatToolbarGeometryTest {
         mount(HudToolbarSide.BOTTOM, action("test:one", "测试动作", 1));
         frames(3);
         Assert.assertTrue("初次打开必须可见", layer.isVisible());
-        Assert.assertEquals("初次打开必须可命中", 1, pressCenter(buttonOf("编辑 HUD")));
+        Assert.assertEquals("初次打开必须可命中", 1, pressCenter(editButton()));
 
         // 关闭：解绑宿主 + 销毁旧实例（container/runtime）；注册表保持不变
         closeInstance();
@@ -537,7 +570,7 @@ public class ChatToolbarGeometryTest {
         frames(2);
         Assert.assertTrue("再打开必须重新挂载", layer.isVisible());
         AnchorRect toolbar = box(layer.toolbar());
-        SceneNode editButton = buttonOf("编辑 HUD");
+        SceneNode editButton = editButton();
         assertVisibleInside(editButton, toolbar, "再打开后的按钮「编辑 HUD」");
 
         final int[] enterEditCount = new int[1];
@@ -551,10 +584,59 @@ public class ChatToolbarGeometryTest {
         clickCenter(editButton);
         Assert.assertEquals("再打开后「编辑 HUD」动作必须到达新屏", 1, enterEditCount[0]);
         frame();
-        SceneNode finish = buttonOf("完成");
+        SceneNode finish = buttonAt(0);
         assertVisibleInside(finish, box(layer.toolbar()), "再打开后编辑态按钮「完成」");
         clickCenter(finish);
         Assert.assertEquals("再打开后「完成」必须生效", 1, host.finishCount);
+    }
+
+    @Test
+    public void tooltipExplainsDisabledActionWithoutActivatingAndClosesOnLeave() {
+        Signal<Boolean> enabled = Signal.create(Boolean.FALSE);
+        final int[] activations = new int[1];
+        ChatAction disabled = ChatAction.builder("test:disabled").label("测试动作")
+                .tooltip("当前不可用").order(1).enabled(enabled)
+                .visible(Signal.create(Boolean.TRUE)).action(() -> activations[0]++).build();
+        mount(HudToolbarSide.BOTTOM, disabled);
+        rt.__enableMotion();
+        frame();
+        SceneNode button = buttonAt(0);
+        routePointer(button, ScenePointerAction.MOVE);
+        Assert.assertEquals("延时未到不显示提示", 0, rt.getOverlayHost().size());
+        completeTooltipDelay();
+        assertTooltipText("测试动作", "当前不可用");
+        clickCenter(button);
+        Assert.assertEquals("禁用动作不能激活", 0, activations[0]);
+        assertTooltipText("测试动作", "当前不可用");
+        routePointer(0, 0, ScenePointerAction.MOVE);
+        Assert.assertEquals("离开按钮立即关闭 tooltip", 0, rt.getOverlayHost().size());
+        enabled.set(Boolean.TRUE);
+        frame();
+        clickCenter(button);
+        Assert.assertEquals("可用性信号恢复后同一按钮可以真实激活", 1, activations[0]);
+    }
+
+    @Test
+    public void registeredActionsKeepOrderAndRegistrationOrderWithGenericIcons() {
+        List<String> calls = new ArrayList<String>();
+        ChatAction later = ChatAction.builder("test:later").label("后注册前排序")
+                .visible(Signal.create(Boolean.TRUE)).enabled(Signal.create(Boolean.TRUE))
+                .order(-1).action(() -> calls.add("first")).build();
+        ChatAction tiedFirst = ChatAction.builder("test:tied-first").label("同序先注册")
+                .visible(Signal.create(Boolean.TRUE)).enabled(Signal.create(Boolean.TRUE))
+                .order(1).action(() -> calls.add("second")).build();
+        ChatAction tiedSecond = ChatAction.builder("test:tied-second").label("同序后注册")
+                .visible(Signal.create(Boolean.TRUE)).enabled(Signal.create(Boolean.TRUE))
+                .order(1).action(() -> calls.add("third")).build();
+        mount(HudToolbarSide.BOTTOM, tiedFirst, tiedSecond, later);
+        frame();
+        ChatToolbarTest.assertIconRow(layer.toolbar(), "action", "action", "action", "edit");
+        for (int i = 0; i < 3; i++) {
+            clickCenter(buttonAt(i));
+        }
+        Assert.assertEquals(Arrays.asList("first", "second", "third"), calls);
+        routePointer(editButton(), ScenePointerAction.MOVE);
+        assertTooltipText("编辑 HUD", "拖动聊天框，调整 HUD 布局");
     }
 
     /** 四边可用性：任一边的外框实测尺寸都必须等于放置口径，且整体在视口内。 */
@@ -576,7 +658,7 @@ public class ChatToolbarGeometryTest {
                     wrapper.getX() >= 0 && wrapper.getY() >= 0
                             && wrapper.getX() + wrapper.getWidth() <= W
                             && wrapper.getY() + wrapper.getHeight() <= H);
-            Assert.assertEquals(side + " 「编辑 HUD」必须可命中", 1, pressCenter(buttonOf("编辑 HUD")));
+            Assert.assertEquals(side + " 「编辑 HUD」必须可命中", 1, pressCenter(editButton()));
         }
     }
 }

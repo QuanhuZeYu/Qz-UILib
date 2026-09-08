@@ -187,7 +187,7 @@ public final class ChatHudWindow {
      * 聊天 HUD 的外接工具栏规格（纯函数：不注册、不碰宿主，供装配与测试读取）。
      *
      * @return 规格：边 = 当前 {@link #getToolbarSide()}，间隙取 {@link HudToolbarSpec} 默认值，
-     *         厚度按边位取（水平边 = 默认行高；竖直边 = 文本标签可容纳的条宽，见
+     *         水平行高与竖直条宽共用紧凑图标厚度（见
      *         {@link ChatToolbar#VERTICAL_THICKNESS_PX}），可见性 = 聊天输入屏打开信号
      */
     public static HudToolbarSpec chatToolbarSpec() {

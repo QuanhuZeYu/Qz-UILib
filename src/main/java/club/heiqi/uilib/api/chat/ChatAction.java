@@ -3,11 +3,12 @@ package club.heiqi.uilib.api.chat;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 
 /**
- * 聊天工具栏动作（候选 API，规划《聊天工具栏与HUD布局编辑》P1）。
+ * 聊天工具栏动作（候选 API）。
  *
  * <p>动作只发布语义：{@link #getAction()} 在安全的主线程阶段执行；注册方通过
  * {@link ChatActionService} 增删，工具栏按 {@link #getOrder()} 排序渲染，隐藏动作不占位、
- * 禁用动作仍显示。首版文本按钮，图标与任意节点注入是后续扩展，不在本类型开放。</p>
+ * 禁用动作仍显示。工具栏以图标按钮呈现，label 与 tooltip 用于悬停提示；图标由工具栏
+ * 内部提供，自定义图标与任意节点注入不在本类型开放。</p>
  */
 public final class ChatAction {
     private final String id;

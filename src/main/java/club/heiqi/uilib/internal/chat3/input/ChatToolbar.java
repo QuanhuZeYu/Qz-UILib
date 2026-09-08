@@ -8,23 +8,31 @@ import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.api.chat.ChatAction;
 import club.heiqi.uilib.api.chat.ChatActionService;
+import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSide;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSpec;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.render.UiBackdrop;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
+import club.heiqi.uilib.ui.scene.control.SceneButtonPrimitive;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
+import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
+import club.heiqi.uilib.ui.scene.control.SceneTooltip;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 聊天工具栏内容组件（L3 组件层，规划《聊天工具栏与HUD布局编辑》P1/P2）：
+ * 聊天工具栏内容组件（L3 组件层）：
  * 一行紧凑按钮，普通态渲染 {@link ChatActionService} 注册的动作，编辑态切换为
  * 「完成 / 取消 / 恢复当前默认 / 恢复全部默认」。
  *
- * <p><b>挂载位置不属于本组件</b>：自 P1/P2 增量起，工具栏不再插在聊天容器内部，
+ * <p><b>挂载位置不属于本组件</b>：工具栏不插在聊天容器内部，
  * 而是由 HUD 级 {@link club.heiqi.uilib.ui.hud.api.HudToolbarService} 为
  * {@code qzuilib:chat3} 注册规格与工厂，{@link club.heiqi.uilib.ui.hud.api.HudToolbarLayer}
  * 把它挂在聊天内容盒外侧一条边（默认下边），厚度与间隙参与外框测量/放置。本类只负责
@@ -32,7 +40,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p><b>形态随挂载边</b>：{@link HudToolbarSide#isHorizontalEdge()} 决定根容器方向——
  * 水平边（TOP/BOTTOM）是 ROW 单行，竖直边（LEFT/RIGHT）是 COLUMN 竖列；沿边方向的厚度由
- * 规格钉死，交叉轴由内容/外接层决定。文本按钮在竖直边下必须给足条宽，否则标签被裁。</p>
+ * 规格钉死，交叉轴由内容/外接层决定。四边共用方形图标按钮，名称与说明由悬停提示展示。</p>
  *
  * <h3>为什么不用 rt.show 切编辑态/普通态</h3>
  * <p>{@code SceneRuntime.show} 用零尺寸 anchor 占位，但那个 anchor 只是「零高」——
@@ -41,7 +49,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 工具栏不可见）。故本类改走 {@link SceneRuntime#forEach} 单一 keyed 动作列表：编辑态/普通态
  * 由同一个列表信号切换，容器子节点全由协调器管理，天然无占位锚点。</p>
  *
- * <p>全部经 {@link SceneButton} + {@link Signal} + keyed list 渲染；动作只发布语义
+ * <p>全部经 {@link SceneButtonPrimitive} + {@link Signal} + keyed list 渲染；动作只发布语义
  * （{@link ChatAction#run()}），执行失败仅影响当前动作。隐藏动作不占位、禁用动作仍显示。</p>
  */
 public final class ChatToolbar {
@@ -49,9 +57,9 @@ public final class ChatToolbar {
     private static final Logger LOG = LogManager.getLogger("QzUILib Chat3Toolbar");
     /** 工具栏四周内边距（与输入条区同源，保证左右对齐）。 */
     private static final int PADDING_X = 8;
-    /** 紧凑按钮内边距（覆盖 SceneButton 默认 PAD_MD，避免工具栏过高）。 */
-    private static final int BUTTON_PAD_Y = 2;
-    private static final int BUTTON_PAD_X = 8;
+    /** 图标命中盒与内容盒固定，异步图片就绪不触发布局跳动。 */
+    private static final int BUTTON_SIZE_PX = 24;
+    private static final int ICON_SIZE_PX = 16;
     /**
      * 水平边工具栏固定行高 = HUD 外接工具栏规格的默认厚度（唯一数值来源，避免两处 28 漂移）。
      *
@@ -59,16 +67,8 @@ public final class ChatToolbar {
      * placement，工具栏不能等一帧实测。首版单行紧凑工具栏；多行/溢出菜单留待后续。</p>
      */
     private static final int TOOLBAR_HEIGHT_PX = HudToolbarSpec.DEFAULT_THICKNESS_PX;
-    /**
-     * 竖直边工具栏条宽（LEFT/RIGHT；规格 thickness 用它）。
-     *
-     * <p>竖直边下按钮竖排、文字仍是横排，28 只能放图标，放文本必裁，故竖直边改用此条宽。
-     * 取值按内置最长标签「恢复全部默认」在默认字号（16px）全角字宽 + 按钮内边距与描边估算，
-     * 由 {@code ChatToolbarGeometryTest} 钉死内置标签落在条宽内。<b>第三方注册的超长标签
-     * 仍可能被按钮裁剪</b>（按钮 {@code clipChildren}）——这是固定条宽预算的已知边界，
-     * 需要自适应条宽时应改为按标签实测宽动态声明。</p>
-     */
-    public static final int VERTICAL_THICKNESS_PX = 128;
+    /** 竖直边与水平边共用图标条厚度，标签长度不再影响条宽。 */
+    public static final int VERTICAL_THICKNESS_PX = TOOLBAR_HEIGHT_PX;
     /** 编辑态「完成 / 取消」恒可用（语义与行为一致，不随草稿状态变化）。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = Signal.create(Boolean.TRUE);
 
@@ -93,15 +93,17 @@ public final class ChatToolbar {
     /** 工具栏项（普通态动作 / 编辑态命令共用一个 keyed 列表，key 决定节点复用）。 */
     private static final class Item {
         final String key;
-        final String label;
+        final String tooltip;
+        final String icon;
         final ReadableSignal<Boolean> enabled;
         final Runnable onClick;
         final SceneButtonVariant variant;
 
-        Item(String key, String label, ReadableSignal<Boolean> enabled, Runnable onClick,
+        Item(String key, String tooltip, String icon, ReadableSignal<Boolean> enabled, Runnable onClick,
                 SceneButtonVariant variant) {
             this.key = key;
-            this.label = label;
+            this.tooltip = tooltip;
+            this.icon = icon;
             this.enabled = enabled;
             this.onClick = onClick;
             this.variant = variant;
@@ -152,18 +154,36 @@ public final class ChatToolbar {
         final HudToolbarSide effective = side == null ? HudToolbarSide.DEFAULT : side;
         final boolean horizontal = effective.isHorizontalEdge();
         SceneNode root = horizontal ? SceneNode.row() : SceneNode.column();
-        root.setHitTestable(true).setGap(4);
+        boolean glass = ChatMarkdownSettings.isGlassEnabled();
+        root.setHitTestable(true).setGap(4)
+                .setCrossAxisAlign(CrossAxisAlign.CENTER)
+                .setBorderWidth(1)
+                .setBorderColor(ChatMarkdownSettings.getContainerBorderArgb())
+                .setCornerRadius(ChatMarkdownSettings.getContainerCornerRadius())
+                .setBackdrop(glass ? UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
+                        ChatMarkdownSettings.getGlassBlurRadiusPx(),
+                        ChatMarkdownSettings.getGlassLensStrength()) : null)
+                .setBackgroundColor(glass
+                        ? (ChatMarkdownSettings.getContainerBgArgb() & 0x00FFFFFF)
+                                | (ChatMarkdownSettings.getGlassContainerAlpha() << 24)
+                        : ChatMarkdownSettings.getContainerBgArgb());
         if (horizontal) {
-            root.setCrossAxisAlign(CrossAxisAlign.CENTER)
-                    .setPreferredHeight(TOOLBAR_HEIGHT_PX)
-                    .setPadding(0, PADDING_X, 0, PADDING_X);
+            root.setPreferredHeight(TOOLBAR_HEIGHT_PX).setPadding(1, PADDING_X, 1, PADDING_X);
         } else {
-            // 竖直边：按钮交叉轴拉满条宽（文字居中），根高由按钮堆叠决定
-            root.setPadding(PADDING_X, 0, PADDING_X, 0);
+            root.setPreferredWidth(VERTICAL_THICKNESS_PX).setPadding(PADDING_X, 1, PADDING_X, 1);
         }
         // 单一 keyed 列表：编辑态/普通态是同一个列表信号的两个分支（无 show 占位锚点）。
         ReadableSignal<List<Item>> items = Computed.create(() -> buildItems(host));
-        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item, horizontal));
+        if (horizontal) {
+            // 方形按钮有确定尺寸，直接从动作列表声明条宽。右锚点首帧给出的约束可能很窄，
+            // 若只用 SHRINK，固定宽子项不会随约束变化，条宽会继续复用被夹窄的旧布局盒。
+            rt.bindComputed(() -> {
+                int count = items.get().size();
+                return count * BUTTON_SIZE_PX + Math.max(0, count - 1) * root.getGap()
+                        + root.getPaddingLeft() + root.getPaddingRight();
+            }, root::setPreferredWidth);
+        }
+        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item));
         return root;
     }
 
@@ -171,13 +191,13 @@ public final class ChatToolbar {
     private static List<Item> buildItems(Host host) {
         List<Item> items = new ArrayList<Item>();
         if (Boolean.TRUE.equals(host.editing().get())) {
-            items.add(new Item("edit:finish", "完成", ALWAYS_ENABLED, host::finishEdit,
+            items.add(new Item("edit:finish", "完成", "finish", ALWAYS_ENABLED, host::finishEdit,
                     SceneButtonVariant.PRIMARY));
-            items.add(new Item("edit:cancel", "取消", ALWAYS_ENABLED, host::cancelEdit,
+            items.add(new Item("edit:cancel", "取消", "cancel", ALWAYS_ENABLED, host::cancelEdit,
                     SceneButtonVariant.STANDARD));
-            items.add(new Item("edit:reset-current", "恢复当前默认", host.canResetCurrent(),
+            items.add(new Item("edit:reset-current", "恢复当前默认", "reset-current", host.canResetCurrent(),
                     host::resetCurrent, SceneButtonVariant.STANDARD));
-            items.add(new Item("edit:reset-all", "恢复全部默认", host.canResetAll(),
+            items.add(new Item("edit:reset-all", "恢复全部默认", "reset-all", host.canResetAll(),
                     host::resetAll, SceneButtonVariant.STANDARD));
             return items;
         }
@@ -185,23 +205,50 @@ public final class ChatToolbar {
         service.revision().get();
         for (ChatAction action : service.actions()) {
             if (Boolean.TRUE.equals(action.getVisible().get())) {
-                items.add(new Item("action:" + action.getId(), action.getLabel(), action.getEnabled(),
+                String detail = action.getTooltip();
+                String tooltip = detail == null || detail.trim().isEmpty() || detail.equals(action.getLabel())
+                        ? action.getLabel() : action.getLabel() + "\n" + detail;
+                String icon = ChatHudEditIntent.ACTION_ID.equals(action.getId()) ? "edit" : "action";
+                items.add(new Item("action:" + action.getId(), tooltip, icon, action.getEnabled(),
                         () -> runAction(action), SceneButtonVariant.STANDARD));
             }
         }
         return items;
     }
 
-    /** 紧凑按钮（覆盖 SceneButton 默认内边距；水平边收缩到文本内在宽，竖直边拉满条宽）。 */
-    private static SceneNode buildButton(SceneRuntime rt, Item item, boolean horizontal) {
-        SceneNode button = SceneButton.create(rt, new SceneButton.Props(
-                Signal.create(item.label), item.enabled, item.onClick, item.variant)).get();
-        button.setPadding(BUTTON_PAD_Y, BUTTON_PAD_X, BUTTON_PAD_Y, BUTTON_PAD_X);
-        if (horizontal) {
-            // ★ SceneNode 默认 widthSizing=FILL：在 SHRINK 工具栏行里每个按钮会被拉成整行宽，
-            //   并把 SHRINK 外框反向反馈成视口宽（工具栏比内容宽）。按钮必须收缩到文本内在宽。
-            button.setWidthSizing(SceneNode.WidthSizing.SHRINK);
-        }
+    /** 复用按钮交互原语；透明状态层让整条液态玻璃底材可见。 */
+    private static SceneNode buildButton(SceneRuntime rt, Item item) {
+        SceneButtonPrimitive.Result primitive = SceneButtonPrimitive.create(rt,
+                new SceneButtonPrimitive.Props(Signal.create(""), item.enabled, item.onClick));
+        SceneNode button = primitive.root();
+        button.removeChild(primitive.label());
+        button.setPreferredWidth(BUTTON_SIZE_PX).setPreferredHeight(BUTTON_SIZE_PX)
+                .setWidthSizing(SceneNode.WidthSizing.SHRINK)
+                .setPadding(3).setBorderWidth(1).setCornerRadius(SceneChromeTokens.RADIUS_MD);
+        SceneNode icon = new SceneNode().setHitTestable(false)
+                .setPreferredWidth(ICON_SIZE_PX).setPreferredHeight(ICON_SIZE_PX);
+        button.appendChild(icon);
+        ChatToolbarIcons.attach(rt, icon, item.icon);
+        SceneInteractionState interaction = primitive.interaction();
+        rt.__bindAnimatedColor(() -> {
+            if (!Boolean.TRUE.equals(item.enabled.get())) {
+                return 0x00000000;
+            }
+            boolean primary = item.variant == SceneButtonVariant.PRIMARY;
+            if (Boolean.TRUE.equals(interaction.pressed().get())) {
+                return primary ? 0x806BAAFF : 0x38FFFFFF;
+            }
+            if (Boolean.TRUE.equals(interaction.hovered().get())) {
+                return primary ? 0x606BAAFF : 0x24FFFFFF;
+            }
+            return primary ? 0x406BAAFF : 0x00000000;
+        }, button::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+        rt.bindComputed(() -> Boolean.TRUE.equals(interaction.focused().get())
+                ? SceneChromeTokens.BORDER_FOCUS : 0x00000000, button::setBorderColor);
+        rt.bind(item.enabled, enabled -> icon.setOpacity(Boolean.TRUE.equals(enabled) ? 1.0F : 0.35F));
+        SceneControlChrome.bindCursor(rt, button, item.enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
+        // 禁用项仍显示说明；点击/键盘激活由 primitive 的 enabled 信号约束。
+        SceneTooltip.attach(rt, SceneTooltip.Props.of(button, Signal.create(item.tooltip)));
         return button;
     }
 
