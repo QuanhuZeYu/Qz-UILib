@@ -165,13 +165,20 @@ public class SceneRuntime {
         Owner current = Owner.current();
         Owner childOwner = (current != null ? current : rootOwner).createChild();
         SceneNode[] rootHolder = new SceneNode[1];
-        childOwner.run(() -> {
-            SceneNode root = builder.get();
-            if (root != null) {
-                parent.appendChild(root);
-                rootHolder[0] = root;
-            }
-        });
+        try {
+            childOwner.run(() -> {
+                SceneNode root = builder.get();
+                if (root != null) {
+                    parent.appendChild(root);
+                    rootHolder[0] = root;
+                }
+            });
+        } catch (RuntimeException | Error failure) {
+            // 工厂失败：回收刚建立的挂载子作用域。builder 内已登记的 effect / 子 Owner / cleanup
+            // 随作用域一并退订，调用方拿不到句柄也不会留下活跃订阅（半挂载作用域残留）。
+            childOwner.dispose();
+            throw failure;
+        }
         // 卸载时：从父节点摘除根节点
         childOwner.onCleanup(() -> {
             SceneNode root = rootHolder[0];
@@ -1047,7 +1054,13 @@ public class SceneRuntime {
         private void mount() {
             Owner owner = portalOwner.createChild();
             SceneNode[] holder = new SceneNode[1];
-            owner.run(() -> holder[0] = Objects.requireNonNull(content.get(), "portal content root"));
+            try {
+                owner.run(() -> holder[0] = Objects.requireNonNull(content.get(), "portal content root"));
+            } catch (RuntimeException | Error failure) {
+                // 工厂失败：回收刚建立的子作用域，避免浮层半挂载作用域残留
+                owner.dispose();
+                throw failure;
+            }
             OverlayHandle handle = overlayHost.register(holder[0], dismissPolicy, dismissRequest, anchorProvider,
                     protectedNodes, anchoredLayout);
             owner.onCleanup(handle::dispose);

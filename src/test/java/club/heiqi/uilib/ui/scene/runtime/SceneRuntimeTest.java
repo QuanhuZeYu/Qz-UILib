@@ -288,6 +288,40 @@ public class SceneRuntimeTest {
         Assert.assertTrue("mount dispose 后 handler 绑定应退订", bindingHolder[0].isDisposed());
     }
 
+    /**
+     * 验证：mount builder 抛异常时，已建立的挂载子作用域被回收——builder 内登记的 effect
+     * 不再随 signal 变化重跑，异常原样传播给调用方。
+     *
+     * <p>半挂载残留会让调用方拿不到句柄却留下活跃订阅；F5 式主动重挂依赖
+     * 「工厂失败不留作用域」这一前置。</p>
+     */
+    @Test
+    public void mountFailureShouldReleaseChildScope() {
+        SceneNode parent = new SceneNode();
+        Signal<Integer> colorSignal = Signal.create(0);
+        AtomicInteger effectRuns = new AtomicInteger(0);
+
+        try {
+            runtime.mount(parent, () -> {
+                SceneNode child = new SceneNode();
+                runtime.bind(colorSignal, value -> {
+                    effectRuns.incrementAndGet();
+                    child.setBackgroundColor(value.intValue());
+                });
+                throw new IllegalStateException("builder failure");
+            });
+            Assert.fail("builder 抛出的异常应原样传播给调用方");
+        } catch (IllegalStateException expected) {
+            Assert.assertEquals("builder failure", expected.getMessage());
+        }
+
+        // 工厂失败后其作用域内的 effect 必须已退订：signal 变化不得再触发
+        colorSignal.set(0xFFFF0000);
+        runtime.flush();
+        Assert.assertEquals("工厂失败后挂载作用域内的 effect 不应再重跑", 0, effectRuns.get());
+        Assert.assertTrue("工厂失败不得在 parent 上留下半挂载节点", parent.__getChildren().isEmpty());
+    }
+
     private void routeScroll(SceneNode root) {
         InputFrameBuilder builder = new InputFrameBuilder(50, 50);
         builder.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, 50, 50,

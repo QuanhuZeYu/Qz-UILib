@@ -120,10 +120,17 @@ final class SceneConditionalRenderer {
     private void mount() {
         Owner owner = condOwner.createChild();
         SceneNode[] holder = new SceneNode[1];
-        owner.run(() -> {
-            SceneNode node = content.get();
-            holder[0] = Objects.requireNonNull(node, "show content root");
-        });
+        try {
+            owner.run(() -> {
+                SceneNode node = content.get();
+                holder[0] = Objects.requireNonNull(node, "show content root");
+            });
+        } catch (RuntimeException | Error failure) {
+            // 工厂失败：回收刚建立的子作用域，避免 show 留下半挂载作用域
+            // （后续 update 会因 contentOwner 仍为 null 再次尝试 mount，残留作用域会累积）。
+            owner.dispose();
+            throw failure;
+        }
         SceneNode node = holder[0];
         // anchor 作为锚点：插到占位锚点之前，保持声明顺序位置。
         parent.insertBefore(node, anchor);
