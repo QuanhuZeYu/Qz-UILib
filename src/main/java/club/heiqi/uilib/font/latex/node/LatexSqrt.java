@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.latex.node;
 
 import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /**
  * 根号节点 {@code \sqrt[index]{radicand}}；index 可为 null（平方根）。
@@ -17,7 +18,13 @@ public final class LatexSqrt extends LatexNode {
      * @param radicand 被开方内容
      */
     public LatexSqrt(LatexNode index, LatexNode radicand) {
-        super(Kind.SQRT);
+        this(index, radicand, MathStyleOverride.INHERIT);
+    }
+
+    /** 创建带局部数学样式声明的节点；样式不得为 null。 */
+    public LatexSqrt(LatexNode index, LatexNode radicand,
+            MathStyleOverride mathStyleOverride) {
+        super(Kind.SQRT, mathStyleOverride);
         if (radicand == null) {
             throw new IllegalArgumentException("radicand 不能为空");
         }

@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /**
  * 可伸缩括号节点 {@code \left<delim>...\right<delim>}。
@@ -42,7 +43,14 @@ public final class LatexLeftRight extends LatexNode {
      */
     public LatexLeftRight(String leftDelimiter, List<LatexNode> parts, List<String> middleDelimiters,
             String rightDelimiter) {
-        super(Kind.LEFT_RIGHT);
+        this(leftDelimiter, parts, middleDelimiters, rightDelimiter, MathStyleOverride.INHERIT);
+    }
+
+    /** 创建带局部数学样式声明的节点；样式不得为 null。 */
+    public LatexLeftRight(String leftDelimiter, List<LatexNode> parts, List<String> middleDelimiters,
+            String rightDelimiter,
+            MathStyleOverride mathStyleOverride) {
+        super(Kind.LEFT_RIGHT, mathStyleOverride);
         if (parts == null || parts.isEmpty()) {
             throw new IllegalArgumentException("parts 不能为空");
         }

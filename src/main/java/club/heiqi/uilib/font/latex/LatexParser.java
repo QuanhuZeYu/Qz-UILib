@@ -2,6 +2,7 @@ package club.heiqi.uilib.font.latex;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 
 import club.heiqi.uilib.font.latex.node.LatexAccent;
@@ -20,7 +21,7 @@ import club.heiqi.uilib.font.latex.node.LatexSupSub;
  * LaTeX 数学子集递归下降解析器（M1：纯解析，无布局/渲染）。
  *
  * <h3>语法范围</h3>
- * <p>规划 §7 的 L1+L2 命令：上下标、分组、分数、根号、\left/\right 伸缩括号、
+ * <p>支持上下标、分组、分数、数学样式声明、根号、\left/\right 伸缩括号、
  * 大运算符（\sum \int \prod \lim 及函数名）、希腊字母与运算符符号（{@link LatexSymbols}）、
  * 矩阵环境（matrix/pmatrix/bmatrix/vmatrix/cases）、\binom、重音、\text、间距命令。</p>
  *
@@ -66,6 +67,9 @@ public final class LatexParser {
     private final String source;
     private final int length;
     private int index;
+    // 仅本次 AST 构造期间保留 array 的完整原始列说明（含超出现有行宽的列）。
+    // 最终节点自行防御拷贝，不依赖此记录；不缓存解析/布局结果，非 array 不登记。
+    private IdentityHashMap<LatexMatrix, List<Character>> matrixColumnAligns;
 
     private LatexParser(String source) {
         this.source = source;
@@ -83,10 +87,16 @@ public final class LatexParser {
      */
     private List<LatexNode> parseList(int stops) {
         List<LatexNode> nodes = new ArrayList<LatexNode>();
+        MathStyleOverride style = MathStyleOverride.INHERIT;
         while (index < length) {
             skipMathSpaces();
             if (index >= length) {
                 break;
+            }
+            MathStyleOverride declaration = consumeStyleDeclaration();
+            if (declaration != null) {
+                style = declaration;
+                continue;
             }
             char ch = source.charAt(index);
             if (ch == '}') {
@@ -100,7 +110,7 @@ public final class LatexParser {
                 if ((stops & STOP_BRACKET) != 0) {
                     break;
                 }
-                nodes.add(new LatexAtom("]", AtomClass.CLOSE));
+                nodes.add(withStyle(new LatexAtom("]", AtomClass.CLOSE), style));
                 index++;
                 continue;
             }
@@ -108,7 +118,7 @@ public final class LatexParser {
                 if ((stops & STOP_AMP) != 0) {
                     break;
                 }
-                nodes.add(new LatexAtom("&", AtomClass.ORD));
+                nodes.add(withStyle(new LatexAtom("&", AtomClass.ORD), style));
                 index++;
                 continue;
             }
@@ -124,22 +134,109 @@ public final class LatexParser {
                 }
                 LatexNode node = parseFactor(); // 命令同样参与上下标绑定（如 \\sum_{i=1}^{n}）
                 if (node != null) {
-                    nodes.add(node);
+                    nodes.add(withStyle(node, style));
                 }
                 continue;
             }
             if (ch == '^' || ch == '_') {
                 // 孤立上下标：宽容按字面字符输出
-                nodes.add(new LatexAtom(String.valueOf(ch), AtomClass.ORD));
+                nodes.add(withStyle(new LatexAtom(String.valueOf(ch), AtomClass.ORD), style));
                 index++;
                 continue;
             }
             LatexNode node = parseFactor();
             if (node != null) {
-                nodes.add(node);
+                nodes.add(withStyle(node, style));
             }
         }
         return nodes;
+    }
+
+    /** 消费局部声明，不生成可见节点；调用者保存本数学列表的状态。 */
+    private MathStyleOverride consumeStyleDeclaration() {
+        MathStyleOverride style;
+        if (peekCommand("displaystyle")) {
+            style = MathStyleOverride.DISPLAY;
+        } else if (peekCommand("textstyle")) {
+            style = MathStyleOverride.TEXT;
+        } else if (peekCommand("scriptstyle")) {
+            style = MathStyleOverride.SCRIPT;
+        } else if (peekCommand("scriptscriptstyle")) {
+            style = MathStyleOverride.SCRIPTSCRIPT;
+        } else {
+            return null;
+        }
+        index++;
+        readCommandName();
+        return style;
+    }
+
+    /** 裸参数宽容接受前导声明，但仍只绑定一个原子，不吞后续脚本或终止符。 */
+    private MathStyleOverride consumeArgumentStyle() {
+        MathStyleOverride style = MathStyleOverride.INHERIT;
+        while (true) {
+            skipMathSpaces();
+            MathStyleOverride declaration = consumeStyleDeclaration();
+            if (declaration == null) {
+                return style;
+            }
+            style = declaration;
+        }
+    }
+
+    /** 只重建当前完整因子；子树保持局部声明，避免重复覆盖结构转换后的样式。 */
+    private LatexNode withStyle(LatexNode node, MathStyleOverride style) {
+        if (node == null || style == MathStyleOverride.INHERIT || node.getMathStyleOverride() == style) {
+            return node;
+        }
+        switch (node.getKind()) {
+            case ATOM: {
+                LatexAtom atom = (LatexAtom) node;
+                LatexAtom copy = new LatexAtom(atom.getText(), atom.getAtomClass(), atom.getOperatorMode(), style);
+                copy.setLimitsFlag(atom.getLimitsFlag());
+                return copy;
+            }
+            case SUP_SUB: {
+                LatexSupSub scripts = (LatexSupSub) node;
+                return new LatexSupSub(scripts.getBase(), scripts.getSup(), scripts.getSub(), style);
+            }
+            case FRAC: {
+                LatexFrac fraction = (LatexFrac) node;
+                return new LatexFrac(fraction.getNumerator(), fraction.getDenominator(), style,
+                        fraction.getFractionStyle());
+            }
+            case SQRT: {
+                LatexSqrt root = (LatexSqrt) node;
+                return new LatexSqrt(root.getIndex(), root.getRadicand(), style);
+            }
+            case GROUP:
+                return new LatexGroup(((LatexGroup) node).getChildren(), style);
+            case BINOM: {
+                LatexBinom binom = (LatexBinom) node;
+                return new LatexBinom(binom.getUpper(), binom.getLower(), style);
+            }
+            case SPACE:
+                return new LatexSpace(((LatexSpace) node).getEmWidth(), style);
+            case ACCENT: {
+                LatexAccent accent = (LatexAccent) node;
+                return new LatexAccent(accent.getAccentText(), accent.getBase(), accent.isStretchable(),
+                        accent.isBelow(), style);
+            }
+            case LEFT_RIGHT: {
+                LatexLeftRight fence = (LatexLeftRight) node;
+                return new LatexLeftRight(fence.getLeftDelimiter(), fence.getParts(), fence.getMiddleDelimiters(),
+                        fence.getRightDelimiter(), style);
+            }
+            case MATRIX: {
+                LatexMatrix matrix = (LatexMatrix) node;
+                List<Character> aligns = matrixColumnAligns == null ? null : matrixColumnAligns.get(matrix);
+                LatexMatrix copy = new LatexMatrix(matrix.getFence(), matrix.getRows(), aligns, style);
+                rememberColumnAligns(copy, aligns);
+                return copy;
+            }
+            default:
+                throw new IllegalArgumentException("Unsupported parser node: " + node.getKind());
+        }
     }
 
     /** 因子 = 原子 + 可选的上下标（各至多一个）。 */
@@ -208,6 +305,11 @@ public final class LatexParser {
      * 遇终止符/EOF 返回 null（宽容：上下标缺省）。
      */
     private LatexNode parseSupSubArgument() {
+        MathStyleOverride style = consumeArgumentStyle();
+        return withStyle(parseSupSubArgumentAtom(), style);
+    }
+
+    private LatexNode parseSupSubArgumentAtom() {
         skipMathSpaces();
         if (index >= length) {
             return null;
@@ -217,7 +319,7 @@ public final class LatexParser {
             return null;
         }
         if (ch == '\\') {
-            if (peekRowBreak() || peekCommand("right") || peekCommand("end")) {
+            if (peekRowBreak() || peekCommand("right") || peekCommand("middle") || peekCommand("end")) {
                 return null;
             }
             return parseCommand();
@@ -244,8 +346,10 @@ public final class LatexParser {
         }
         String name = readCommandName();
         // ---- 结构命令 ----
-        if ("frac".equals(name)) {
-            return parseFrac();
+        if ("frac".equals(name) || "dfrac".equals(name) || "tfrac".equals(name)) {
+            LatexFrac.FractionStyle fractionStyle = "dfrac".equals(name) ? LatexFrac.FractionStyle.DISPLAY
+                    : "tfrac".equals(name) ? LatexFrac.FractionStyle.TEXT : LatexFrac.FractionStyle.INHERIT;
+            return parseFrac(fractionStyle);
         }
         if ("sqrt".equals(name)) {
             return parseSqrt();
@@ -342,6 +446,11 @@ public final class LatexParser {
 
     /** 命令参数：花括号组或单 token；缺失容错为空组。 */
     private LatexNode parseArgument() {
+        MathStyleOverride style = consumeArgumentStyle();
+        return withStyle(parseArgumentAtom(), style);
+    }
+
+    private LatexNode parseArgumentAtom() {
         skipMathSpaces();
         if (index >= length) {
             return emptyGroup();
@@ -359,7 +468,7 @@ public final class LatexParser {
             return emptyGroup();
         }
         if (ch == '\\') {
-            if (peekRowBreak() || peekCommand("right") || peekCommand("end")) {
+            if (peekRowBreak() || peekCommand("right") || peekCommand("middle") || peekCommand("end")) {
                 return emptyGroup();
             }
             LatexNode node = parseCommand();
@@ -375,10 +484,10 @@ public final class LatexParser {
         return new LatexGroup(Collections.<LatexNode>emptyList());
     }
 
-    private LatexNode parseFrac() {
+    private LatexNode parseFrac(LatexFrac.FractionStyle fractionStyle) {
         LatexNode numerator = parseArgument();
         LatexNode denominator = parseArgument();
-        return new LatexFrac(numerator, denominator);
+        return new LatexFrac(numerator, denominator, MathStyleOverride.INHERIT, fractionStyle);
     }
 
     private LatexNode parseSqrt() {
@@ -403,8 +512,12 @@ public final class LatexParser {
         // 收尾统一包装。
         List<List<LatexNode>> rawParts = new ArrayList<List<LatexNode>>();
         List<String> middles = new ArrayList<String>();
+        // 分段入口样式同时保留 middle 位置的声明，即使此前声明后没有因子。
+        List<MathStyleOverride> partStyles = new ArrayList<MathStyleOverride>();
+        partStyles.add(MathStyleOverride.INHERIT);
         List<LatexNode> current = new ArrayList<LatexNode>();
         rawParts.add(current);
+        MathStyleOverride style = MathStyleOverride.INHERIT;
         while (index < length) {
             skipMathSpaces();
             if (index >= length) {
@@ -421,6 +534,7 @@ public final class LatexParser {
                     middles.add(parseDelimiter());
                     current = new ArrayList<LatexNode>();
                     rawParts.add(current);
+                    partStyles.add(style);
                     continue;
                 }
                 if (peekRowBreak() || peekCommand("end")) {
@@ -431,14 +545,19 @@ public final class LatexParser {
                 index++; // 多余闭括号宽容忽略（与 parseList 同语义）
                 continue;
             }
+            MathStyleOverride declaration = consumeStyleDeclaration();
+            if (declaration != null) {
+                style = declaration;
+                continue;
+            }
             LatexNode node = parseFactor();
             if (node != null) {
-                current.add(node);
+                current.add(withStyle(node, style));
             }
         }
         List<LatexNode> parts = new ArrayList<LatexNode>(rawParts.size());
-        for (List<LatexNode> rawPart : rawParts) {
-            parts.add(new LatexGroup(rawPart));
+        for (int part = 0; part < rawParts.size(); part++) {
+            parts.add(new LatexGroup(rawParts.get(part), partStyles.get(part)));
         }
         String right = null;
         if (index < length && source.charAt(index) == '\\' && peekCommand("right")) {
@@ -479,6 +598,15 @@ public final class LatexParser {
     }
 
     // ==================== 矩阵环境 ====================
+
+    private void rememberColumnAligns(LatexMatrix matrix, List<Character> aligns) {
+        if (aligns != null) {
+            if (matrixColumnAligns == null) {
+                matrixColumnAligns = new IdentityHashMap<LatexMatrix, List<Character>>();
+            }
+            matrixColumnAligns.put(matrix, aligns);
+        }
+    }
 
     private LatexNode parseMatrix() {
         String environment = readEnvironmentName();
@@ -521,7 +649,9 @@ public final class LatexParser {
         if (rows.isEmpty()) {
             rows.add(new ArrayList<List<LatexNode>>()); // 空环境容错
         }
-        return new LatexMatrix(fence, rows, columnAligns);
+        LatexMatrix matrix = new LatexMatrix(fence, rows, columnAligns);
+        rememberColumnAligns(matrix, columnAligns);
+        return matrix;
     }
 
     /**

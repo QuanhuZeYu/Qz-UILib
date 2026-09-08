@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /**
  * 矩阵环境节点（{@code \begin{matrix/pmatrix/bmatrix/vmatrix/cases}...\end{...}}）。
@@ -52,7 +53,13 @@ public final class LatexMatrix extends LatexNode {
      * @param columnAligns array 列说明（\{ll\} 等，仅取 l/c/r；null 按 fence 默认）
      */
     public LatexMatrix(Fence fence, List<List<List<LatexNode>>> rows, List<Character> columnAligns) {
-        super(Kind.MATRIX);
+        this(fence, rows, columnAligns, MathStyleOverride.INHERIT);
+    }
+
+    /** 创建带局部数学样式声明的节点；样式不得为 null。 */
+    public LatexMatrix(Fence fence, List<List<List<LatexNode>>> rows, List<Character> columnAligns,
+            MathStyleOverride mathStyleOverride) {
+        super(Kind.MATRIX, mathStyleOverride);
         if (fence == null) {
             throw new IllegalArgumentException("fence 不能为空");
         }

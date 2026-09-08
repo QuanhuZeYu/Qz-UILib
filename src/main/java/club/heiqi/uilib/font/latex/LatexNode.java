@@ -1,7 +1,7 @@
 package club.heiqi.uilib.font.latex;
 
 /**
- * LaTeX 数学 AST 节点基类（不可变）。
+ * LaTeX 数学 AST 节点基类；节点类别与局部样式字段不可变。
  *
  * <p>节点由 {@link LatexParser} 产出、由数学布局层消费；节点树本身不含像素尺寸，
  * 布局结果由后续里程碑的 MathBox 体系承载。</p>
@@ -33,8 +33,17 @@ public abstract class LatexNode {
     }
 
     private final Kind kind;
+    private final MathStyleOverride mathStyleOverride;
 
     protected LatexNode(Kind kind) {
+        this(kind, MathStyleOverride.INHERIT);
+    }
+
+    protected LatexNode(Kind kind, MathStyleOverride mathStyleOverride) {
+        if (mathStyleOverride == null) {
+            throw new IllegalArgumentException("mathStyleOverride 不能为空");
+        }
+        this.mathStyleOverride = mathStyleOverride;
         if (kind == null) {
             throw new IllegalArgumentException("kind 不能为空");
         }
@@ -44,6 +53,11 @@ public abstract class LatexNode {
     /** @return 节点类别 */
     public Kind getKind() {
         return kind;
+    }
+
+    /** @return 局部样式声明；不包含父结构继承或转换的样式 */
+    public MathStyleOverride getMathStyleOverride() {
+        return mathStyleOverride;
     }
 
     @Override

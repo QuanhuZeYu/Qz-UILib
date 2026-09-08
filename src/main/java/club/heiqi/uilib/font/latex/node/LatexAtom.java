@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.latex.node;
 
 import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /**
  * 数学原子：一段不可再分的显示文本（单个字符、符号命令映射结果、函数名或 \text 内容）。
@@ -76,7 +77,13 @@ public final class LatexAtom extends LatexNode {
      * @param operatorMode 算子排版模式（BIG_OPERATOR / LIMITS_OPERATOR / NONE）
      */
     public LatexAtom(String text, AtomClass atomClass, OperatorMode operatorMode) {
-        super(Kind.ATOM);
+        this(text, atomClass, operatorMode, MathStyleOverride.INHERIT);
+    }
+
+    /** 创建带局部数学样式声明的节点；样式不得为 null。 */
+    public LatexAtom(String text, AtomClass atomClass, OperatorMode operatorMode,
+            MathStyleOverride mathStyleOverride) {
+        super(Kind.ATOM, mathStyleOverride);
         if (text == null || text.isEmpty()) {
             throw new IllegalArgumentException("text 不能为空");
         }

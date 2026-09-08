@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.latex.node;
 
 import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /**
  * 重音节点（{@code \hat \bar \vec \dot \ddot \tilde}）与可变长横线
@@ -22,7 +23,13 @@ public final class LatexAccent extends LatexNode {
      * @param below       是否置于下方（\\underline）
      */
     public LatexAccent(String accentText, LatexNode base, boolean stretchable, boolean below) {
-        super(Kind.ACCENT);
+        this(accentText, base, stretchable, below, MathStyleOverride.INHERIT);
+    }
+
+    /** 创建带局部数学样式声明的节点；样式不得为 null。 */
+    public LatexAccent(String accentText, LatexNode base, boolean stretchable, boolean below,
+            MathStyleOverride mathStyleOverride) {
+        super(Kind.ACCENT, mathStyleOverride);
         if (base == null) {
             throw new IllegalArgumentException("base 不能为空");
         }

@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.latex.node;
 
 import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /**
  * 组合数节点 {@code \binom{n}{k}}。
@@ -17,7 +18,13 @@ public final class LatexBinom extends LatexNode {
      * @param lower 下元素
      */
     public LatexBinom(LatexNode upper, LatexNode lower) {
-        super(Kind.BINOM);
+        this(upper, lower, MathStyleOverride.INHERIT);
+    }
+
+    /** 创建带局部数学样式声明的节点；样式不得为 null。 */
+    public LatexBinom(LatexNode upper, LatexNode lower,
+            MathStyleOverride mathStyleOverride) {
+        super(Kind.BINOM, mathStyleOverride);
         if (upper == null || lower == null) {
             throw new IllegalArgumentException("upper/lower 不能为空");
         }

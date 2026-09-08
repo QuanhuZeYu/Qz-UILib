@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.latex.layout;
 
 import club.heiqi.uilib.font.internal.LatexFontSize;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /** 内部不可变数学样式；所有字号直接从根字号推导，不递归缩小。 */
 final class MathStyle {
@@ -30,6 +31,17 @@ final class MathStyle {
 
     boolean isScript() {
         return level == Level.SCRIPT || level == Level.SCRIPTSCRIPT;
+    }
+
+    /** 显式声明从根字号选级，并解除继承的 cramped。 */
+    MathStyle withOverride(MathStyleOverride override) {
+        switch (override) {
+            case DISPLAY: return new MathStyle(rootSize, Level.DISPLAY, false);
+            case TEXT: return new MathStyle(rootSize, Level.TEXT, false);
+            case SCRIPT: return new MathStyle(rootSize, Level.SCRIPT, false);
+            case SCRIPTSCRIPT: return new MathStyle(rootSize, Level.SCRIPTSCRIPT, false);
+            default: return this;
+        }
     }
 
     MathStyle cramp() {

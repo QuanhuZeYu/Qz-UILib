@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.latex.node;
 
 import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /**
  * 上/下标节点（{@code base^sup_sub}）；sup 与 sub 至少一个非空。
@@ -19,7 +20,13 @@ public final class LatexSupSub extends LatexNode {
      * @param sub  下标内容（可为 null）
      */
     public LatexSupSub(LatexNode base, LatexNode sup, LatexNode sub) {
-        super(Kind.SUP_SUB);
+        this(base, sup, sub, MathStyleOverride.INHERIT);
+    }
+
+    /** 创建带局部数学样式声明的节点；样式不得为 null。 */
+    public LatexSupSub(LatexNode base, LatexNode sup, LatexNode sub,
+            MathStyleOverride mathStyleOverride) {
+        super(Kind.SUP_SUB, mathStyleOverride);
         if (base == null) {
             throw new IllegalArgumentException("base 不能为空");
         }
