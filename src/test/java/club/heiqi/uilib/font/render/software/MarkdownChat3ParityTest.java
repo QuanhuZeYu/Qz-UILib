@@ -70,6 +70,12 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  * 制度化。自 C9 起门禁「哈希不变」判据收窄为<b>二件套（diff.txt + matrix.txt）</b>，
  * profiles.txt 降为记录不校验。</p>
  *
+ * <p><b>T2 扩面迁移</b>：上述旧哈希对应 legacy-diff.txt / legacy-matrix.txt 的无表格回归。
+ * 现行 diff.txt / matrix.txt 在旧正文后新增 T01..T18 的 TABLE 身份、完整形状与文档交错章节，
+ * R 为独立 TablesExtension，B 为 toLayoutContent。扩面二件套 SHA256 前 16：
+ * diff=6A3339AB3C81787E、matrix=83647E59842DD50C（新增内容即上述 T01..T18 章节）。
+ * 新增语料没有豁免，不把旧段流 PNG 当表格出图证据。</p>
+ *
  * <p>R 路＝{@link CommonMarkReferenceSemantics}（commonmark-java 0.21.0 + GFM strikethrough，
  * 官方参考实现）；B 路＝{@link BPathSemantics}（本仓 M10d 行接缝 {@code toLayoutLines} 同构映射）。
  * C3b1 的「全量照登、不判 PASS/FAIL」中间态到此结束：<b>逐条语料、逐行、逐 token 对拍，
@@ -317,6 +323,28 @@ public class MarkdownChat3ParityTest {
             ">> a\n> ==="},
     };
 
+    /** T2 扩面独立编号；原 P/N/X 源文本与判据保留，所有新样本零豁免。 */
+    private static final String[][] TABLE_CORPUS = {
+        {"T01", "四种对齐", "|a|b|c|d|\n|-|:-|:-:|-:|\n|1|2|3|4|"},
+        {"T02", "仅表头", "a|b\n-|-"},
+        {"T03", "补空与截列", "a|b\n-|-\nx\ny|z|discard\n| |"},
+        {"T04", "cell行内样式", "**head**|plain\n-|-\n**bold** ~~strike~~ \u0060code\u0060 *italic* [link](https://example.test)|§a plain"},
+        {"T05", "转义管线与code", "a|b\n-|-\nx\\|y|\u0060x\\|y\u0060"},
+        {"T06", "段落表格段落", "before\n\na|b\n-|-\nx|y\n\nafter"},
+        {"T07", "相邻多表文档序", "a|b\n-|-\n\nc|d\n-|-"},
+        {"T08", "多表交错块", "# title\n\na|b\n-|-\n\nmiddle\n\nc|d\n-|-\n\n- tail"},
+        {"T09", "引用内交错", "> before\n>\n> a|b\n> -|-\n> x|y\n>\n> after"},
+        {"T10", "嵌套引用多表", "> > a|b\n> > -|-\n\n> > c|d\n> > -|-"},
+        {"T11", "列表内表格", "- a|b\n  -|-\n  x|y"},
+        {"T12", "setext仍为标题", "a\n---\nb"},
+        {"T13", "表头列数不匹配", "a|b|c\n-|-\nx|y"},
+        {"T14", "引用惰性分隔行", "> a|b\n-|-\nx|y"},
+        {"T15", "表格后围栏", "a|b\n-|-\n\u0060\u0060\u0060\ncode\n\u0060\u0060\u0060"},
+        {"T16", "空cell与边界", "a|b\n-|-\n||\n| |"},
+        {"T17", "有序列表首块表格", "3. a|b\n   -|-\n   x|y"},
+        {"T18", "列表段落后表格", "- before\n\n  a|b\n  -|-\n  x|y"},
+    };
+
     private static final StringBuilder MATRIX = new StringBuilder();
     /** diff.txt 正文：未豁免差异（FAIL 明细）+ 逐条目判定，门禁红时先看这份。 */
     private static final StringBuilder DIFF = new StringBuilder();
@@ -418,6 +446,13 @@ public class MarkdownChat3ParityTest {
             List<SemanticLine> r = CommonMarkReferenceSemantics.parse(src);
             Result b = BPathSemantics.extract(src);
             blankTotal += b.blanksRemoved;
+            // 新出口对旧无表格语料必须语义等价；仍保留旧出口原有的逐字地板。
+            Result migrated = BPathSemantics.extractLayoutContent(src);
+            Assert.assertTrue(id + " 新旧接缝无表格回归", compareEntry(id, label, "-", b.lines,
+                    migrated.lines, migrated.blanksRemoved, new StringBuilder(), null).passed());
+            Assert.assertTrue(id + " TablesExtension不得扰动旧语料", compareEntry(id, label, "-", r,
+                    CommonMarkReferenceSemantics.parseLayoutContent(src), 0,
+                    new StringBuilder(), null).passed());
 
             // —— 本阶段断言①②：B 不崩（走到此即未崩）+ 不吞字（两条逐字等值）——
             Assert.assertEquals(id + " B 语义提取器不得吞字/改字：提取可见串必须逐字等于行接缝原段流拼接",
@@ -517,6 +552,97 @@ public class MarkdownChat3ParityTest {
                     + " 处未豁免差异（逐条见 build/reports/markdown-compare/diff.txt）——"
                     + "红即不许交付。\n  " + join(FAILS, "\n  "));
         }
+        appendTableReports();
+    }
+
+    /**
+     * 二件套迁移：legacy 文件保留原无表格语料的逐字报告；现行文件追加 T2 独立章节。
+     * 新增内容是 TABLE 身份/块锚/行列边界/对齐/cell tokens 与文档交错事件；没有新豁免。
+     * 旧 PNG 只证明旧段流渲染，T2 表格像素证据由专门 headless 消费测试负责。
+     */
+    private static void appendTableReports() throws Exception {
+        Files.write(new File(OUT_DIR, "legacy-matrix.txt").toPath(), MATRIX.toString().getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(OUT_DIR, "legacy-diff.txt").toPath(), diffReport().getBytes(StandardCharsets.UTF_8));
+        MATRIX.append("\n# T2 扩面：R=TablesExtension；B=toLayoutContent；按文档序严格对拍 TABLE 与普通行\n");
+        DIFF.append("\n# T2 扩面：新增表格身份/形状/块锚/单元格行内语义及文档交错；新语料零豁免\n");
+        List<String> tableFails = new ArrayList<String>();
+        for (String[] entry : TABLE_CORPUS) {
+            List<SemanticLine> r = CommonMarkReferenceSemantics.parseLayoutContent(entry[2]);
+            Result b = BPathSemantics.extractLayoutContent(entry[2]);
+            Assert.assertEquals(entry[0] + " 新缝提取不得吞字", BPathSemantics.layoutContentVisibleOf(entry[2]),
+                    b.seamVisibleJoined);
+            Verdict v = compareEntry(entry[0], entry[1], "-", r, b.lines, b.blanksRemoved, MATRIX, tableFails);
+            DIFF.append("## ").append(entry[0]).append(' ').append(entry[1]).append(" 判定=")
+                    .append(v.summary()).append('\n');
+            // 即使全等也展示 TABLE 形状和完整交错序，保证扩面内容可审计。
+            MATRIX.append("R events=").append(r).append('\n');
+            MATRIX.append("B events=").append(b.lines).append('\n');
+        }
+        String summary = "# T2 条目=" + TABLE_CORPUS.length + " FAIL差异行=" + tableFails.size()
+                + " 豁免=0 RECORD=0\n";
+        MATRIX.append(summary);
+        DIFF.append(summary);
+        for (String failure : tableFails) DIFF.append("FAIL ").append(failure).append('\n');
+        Files.write(new File(OUT_DIR, "matrix.txt").toPath(), MATRIX.toString().getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(OUT_DIR, "diff.txt").toPath(), diffReport().getBytes(StandardCharsets.UTF_8));
+        Assert.assertTrue("T2 表格新差异必须修复，不能豁免：" + tableFails, tableFails.isEmpty());
+    }
+
+    @Test
+    public void tableListMarkerUsesExistingNonParagraphPrefixConvention() {
+        // MarkdownDocument.emitListItemLayout：仅首个 PARAGRAPH 与 marker 共行；
+        // code/quote 首块沿用独立 marker 行。TABLE 参考投影复用这一既有展示合同，
+        // marker 的内容/存在性仍由 R 的 ListItem AST 与 pending 状态独立推导。
+        String[] existing = {"- \u0060\u0060\u0060\n  code\n  \u0060\u0060\u0060", "- > quote"};
+        for (String source : existing) {
+            List<SemanticLine> old = BPathSemantics.extract(source).lines;
+            Assert.assertTrue("非段落首块应有独立标记与正文", old.size() > 1);
+            Assert.assertEquals(Kind.LIST_ITEM, old.get(0).kind);
+            Assert.assertEquals(1, old.get(0).tokens.size());
+            Assert.assertEquals(EnumSet.of(Mark.LIST_MARKER), old.get(0).tokens.get(0).marks);
+        }
+        List<SemanticLine> table = CommonMarkReferenceSemantics.parseLayoutContent(TABLE_CORPUS[10][2]);
+        Assert.assertEquals(Kind.LIST_ITEM, table.get(0).kind);
+        Assert.assertEquals(EnumSet.of(Mark.LIST_MARKER), table.get(0).tokens.get(0).marks);
+        Assert.assertEquals(Kind.TABLE, table.get(1).kind);
+    }
+
+    @Test
+    public void tableComparisonMustRejectMissingReorderedAndChangedContent() {
+        List<SemanticLine> reference = CommonMarkReferenceSemantics.parseLayoutContent(TABLE_CORPUS[5][2]);
+        Assert.assertEquals(Kind.TABLE, reference.get(1).kind);
+        Assert.assertTrue(verdict(reference, reference, "-").passed());
+        List<SemanticLine> missing = new ArrayList<SemanticLine>(reference);
+        missing.remove(1);
+        Assert.assertFalse("丢表必须红", verdict(reference, missing, "-").passed());
+        List<SemanticLine> reordered = new ArrayList<SemanticLine>(reference);
+        Collections.swap(reordered, 0, 1);
+        Assert.assertFalse("文档交错错误必须红", verdict(reference, reordered, "-").passed());
+        SemanticLine table = reference.get(1);
+        String[] changedShapes = {
+            table.tableShape.replace("path=[1]", "path=[2]"),
+            table.tableShape.replace(";H[", ";B["),
+            table.tableShape.replaceFirst("NONE", "RIGHT"),
+            table.tableShape + ";B[NONE:0,NONE:0,]",
+            table.tableShape.replaceFirst("NONE:1,NONE:1,", "NONE:2,NONE:0,"),
+        };
+        for (String shape : changedShapes) {
+            Assert.assertNotEquals("负对照必须真的改变形状", table.tableShape, shape);
+            List<SemanticLine> changed = new ArrayList<SemanticLine>(reference);
+            changed.set(1, new SemanticLine(Kind.TABLE, 0, false, 0, table.quoteDepth,
+                    table.listDepth, null, table.tokens, shape));
+            Assert.assertFalse("表格形状不准只记录而不判等：" + shape, verdict(reference, changed, "-").passed());
+        }
+        List<InlineTok> changedTokens = new ArrayList<InlineTok>(table.tokens);
+        InlineTok original = changedTokens.get(0);
+        changedTokens.set(0, new InlineTok(original.marks, original.text + "changed", original.linkDest));
+        List<SemanticLine> changed = new ArrayList<SemanticLine>(reference);
+        changed.set(1, new SemanticLine(Kind.TABLE, 0, false, 0, table.quoteDepth,
+                table.listDepth, null, changedTokens, table.tableShape));
+        Assert.assertFalse("cell内容错误必须红", verdict(reference, changed, "-").passed());
+        changed.set(1, new SemanticLine(Kind.TEXT, 0, false, 0, table.quoteDepth,
+                table.listDepth, null, table.tokens, table.tableShape));
+        Assert.assertFalse("TABLE身份丢失必须红", verdict(reference, changed, "-").passed());
     }
 
     /** diff.txt 正文：头部汇总 + FAIL 明细在前，逐条目判定行在后。 */
@@ -787,7 +913,7 @@ public class MarkdownChat3ParityTest {
     private static SemanticLine reline(SemanticLine line, Kind kind, int level,
             List<InlineTok> tokens) {
         return new SemanticLine(kind, level, line.ordered, line.ordinal, line.quoteDepth,
-                line.listDepth, line.note, tokens);
+                line.listDepth, line.note, tokens, line.tableShape);
     }
 
     /** FORMULA 标记降为普通文本（类型不比对；token 文本本就是公式源）。 */
@@ -852,6 +978,7 @@ public class MarkdownChat3ParityTest {
         String fr = CommonMarkReferenceSemantics.kindFamily(rl.kind);
         String fb = CommonMarkReferenceSemantics.kindFamily(bl.kind);
         if (fr.equals(fb)) {
+            if (!CommonMarkReferenceSemantics.eq(rl.tableShape, bl.tableShape)) return D_KIND;
             if (rl.kind == Kind.LIST_ITEM && bl.kind == Kind.LIST_ITEM) {
                 if (rl.level != bl.level) {
                     return D_LIST_DEPTH;

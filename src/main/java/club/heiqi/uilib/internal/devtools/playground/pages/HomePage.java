@@ -53,7 +53,8 @@ public final class HomePage implements PlaygroundPage {
                 SceneNode row = SceneNode.row(8);
                 row.setHitTestable(false);
                 row.appendChild(PlaygroundKit.text("· " + page.title(), PlaygroundKit.ACCENT, 14));
-                row.appendChild(PlaygroundKit.hint(page.description()));
+                // 标题占自然宽，说明显式领取剩余列宽；两个默认文本叶各按整行 clamp 会相加越界。
+                row.appendChild(PlaygroundKit.hint(page.description()).setFlexGrow(1));
                 pagesCard.appendChild(row);
             }
             pagesCard.appendChild(PlaygroundKit.hint("导航段切换页面；页面内状态在切走再切回后保留。"));
@@ -82,7 +83,7 @@ public final class HomePage implements PlaygroundPage {
         SceneNode row = SceneNode.row(8);
         row.setHitTestable(false);
         row.appendChild(PlaygroundKit.text(keys, PlaygroundKit.TEXT, 13));
-        row.appendChild(PlaygroundKit.hint(description));
+        row.appendChild(PlaygroundKit.hint(description).setFlexGrow(1));
         return row;
     }
 }

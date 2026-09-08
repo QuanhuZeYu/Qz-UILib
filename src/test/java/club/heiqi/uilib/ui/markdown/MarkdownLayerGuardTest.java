@@ -97,6 +97,8 @@ public class MarkdownLayerGuardTest {
         List<Path> l1Files = listJavaFiles(L1_PACKAGE);
         Assert.assertTrue("T1 新公共接缝必须明确进入 G2 同一扫描集: " + l1Files,
                 l1Files.contains(MAIN_SOURCE_ROOT.resolve(L1_PACKAGE + "MarkdownTableModel.java")));
+        Assert.assertTrue("T2 表格像素 pass 必须明确进入 G1/G2 的 L2 扫描集",
+                listJavaFiles(L2_PACKAGE).contains(MAIN_SOURCE_ROOT.resolve(L2_PACKAGE + "MarkdownTableLayout.java")));
         Assert.assertTrue("L1 包 import 违反项: " + collectForbidden(L1_PACKAGE, FORBIDDEN_IMPORT),
                 collectForbidden(L1_PACKAGE, FORBIDDEN_IMPORT).isEmpty());
         Assert.assertTrue("L2 包 import 违反项: " + collectForbidden(L2_PACKAGE, FORBIDDEN_IMPORT),

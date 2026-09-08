@@ -54,6 +54,10 @@ public final class CommonMarkTableOracle {
         cases.put("quote-lazy-pipe-paragraph", "> before\nx|y\n> z");
         cases.put("quote-unmarked-blank", "> a|b\n> -|-\n\n> x|y");
         cases.put("list-table", "- a|b\n  -|-\n  x|y");
+        cases.put("list-paragraph-then-table", "- before\n\n  a|b\n  -|-\n  x|y");
+        cases.put("list-table-then-paragraph", "- a|b\n  -|-\n  x|y\n\n  after");
+        cases.put("list-two-tables", "- a|b\n  -|-\n\n  c|d\n  -|-");
+        cases.put("nested-list-paragraph-table", "- parent\n  - before\n\n    a|b\n    -|-\n    x|y");
         cases.put("list-lazy-delimiter", "- a|b\n-|-\nx|y");
         cases.put("escaped-pipe", "a|b\n-|-\nx\\|y|z");
         cases.put("escaped-code-pipe", "a|b\n-|-\n`x\\|y`|z");

@@ -19,7 +19,7 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * {@code ---} →H2，C3b2 2026-09-06 对齐裁定新增，见 {@link #readParagraph}）、段落与空行、
  * 硬换行（行尾两空格或行尾未转义反斜杠）。</p>
  *
- * <p>TABLE 于 T2 前只解析、不布局。刻意不支持（按普通文本字面保留）：任务列表、
+ * <p>TABLE 的语义由本层识别，显式布局出口交 L2 绘制；历史出口保持字面降级。刻意不支持：任务列表、
  * HTML 内联、脚注、图片 {@code ![alt](url)}。图片的「字面」边界说明：块层不识别 {@code !}，
  * 正文原样交 {@link MarkdownInlineParser} 后 {@code [alt](url)} 部分按既有行内裁定解析为链接、
  * {@code !} 为字面文本——行内语义照抄 9c4dcae5 裁定（规划 §五 D2），本层一行不改。</p>
@@ -46,7 +46,7 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * {@code #} 不在本包 escapable 集，反斜杠由行内层字面输出）；backtick 围栏 info 校验已按
  * CommonMark 实现（含反引号不算开栏）；嵌套深度上限 {@code MAX_BLOCK_DEPTH}（超限层按段落
  * 字面收拢，宽容失败）；setext 下划线只认单字符连续串（{@code = =}/{@code - -} 夹空白按段落
- * 续行字面，同主流实证）；列表项体内部源空行折叠（项体段落不因空行分裂，空行只在项与项/列表边界生效——M4 既有
+ * 续行字面，同主流实证）；无表格文档及历史出口的列表项体内部源空行折叠（空行只在项与项/列表边界生效——M4 既有
  * 简化、非 C1a 范围；副作用 = 项内「段落行 + 空行 + ≥4 空格行」按段落续行折叠而非缩进代码，
  * 其余缩进代码与惰性续行判定均与 CommonMark 一致）。</p>
  *
@@ -287,7 +287,7 @@ final class MarkdownBlockParser {
         if (source == null || source.isEmpty()) {
             return Collections.emptyList();
         }
-        return parseBlocks(splitLines(source, null), 0, true);
+        return parseTableAware(splitLines(source, null));
     }
 
     /**
@@ -307,7 +307,7 @@ final class MarkdownBlockParser {
         if (spans == null || spans.isEmpty()) {
             return parse(source);
         }
-        return parseBlocks(splitLines(source, new SpanRuns(spans)), 0, true);
+        return parseTableAware(splitLines(source, new SpanRuns(spans)));
     }
 
     /** T1 旧出口专用：同源判据关闭表格识别，仅在文档创建时调用。 */
@@ -317,6 +317,19 @@ final class MarkdownBlockParser {
         }
         return parseBlocks(splitLines(source, spans == null || spans.isEmpty() ? null : new SpanRuns(spans)),
                 0, false);
+    }
+
+    /**
+     * 表格必须看到列表项中的真实空行，才能升级段落后的单行表头。
+     * 无管线候选直接走历史解析；候选未成表时也保留原有列表空行折叠语义，
+     * 防止仅含字面管线的非表格文档被本批顺带迁移。额外扫描只在创建文档时发生。
+     */
+    private static List<MarkdownBlock> parseTableAware(List<SrcLine> lines) {
+        if (!hasTableCandidate(lines)) {
+            return parseBlocks(lines, 0, false);
+        }
+        List<MarkdownBlock> semantic = parseBlocks(lines, 0, true);
+        return containsTable(semantic) ? semantic : parseBlocks(lines, 0, false);
     }
 
     // ==================== 行工具 ====================
@@ -985,6 +998,10 @@ final class MarkdownBlockParser {
                         j = k;
                         listEnded = true; // 他类块开始，本列表结束
                         break;
+                    }
+                    if (tablesEnabled) {
+                        // TablesExtension：空行终止前段；否则后面的表头被并入多行段落而不能升级。
+                        body.add(SrcLine.blank(lines.get(j).spans != null));
                     }
                     j = k; // 空行后仍有缩进 >= 内容列，项体继续
                     continue;

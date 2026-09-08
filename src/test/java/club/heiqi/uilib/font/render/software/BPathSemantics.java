@@ -9,6 +9,9 @@ import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.layout.markdown.MarkdownDocument;
+import club.heiqi.uilib.font.layout.markdown.MarkdownDocument.LayoutContent;
+import club.heiqi.uilib.font.layout.markdown.MarkdownDocument.TableUnit;
+import club.heiqi.uilib.font.layout.markdown.MarkdownTableModel;
 import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
 import club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable;
 import club.heiqi.uilib.font.render.software.CommonMarkReferenceSemantics.InlineTok;
@@ -97,6 +100,97 @@ final class BPathSemantics {
             joined.append(mapped.visible());
         }
         return new Result(out, blanks, joined.toString());
+    }
+
+    /** T2：按真实 beforeLineIndex 插回表格事件；不排序、不猜测原文，也不从 R 借结构。 */
+    static Result extractLayoutContent(String source) {
+        LayoutContent content = layoutContent(source);
+        List<SemanticLine> out = new ArrayList<SemanticLine>();
+        int tableIndex = 0;
+        int blanks = 0;
+        for (int i = 0; i <= content.getLines().size(); i++) {
+            while (tableIndex < content.getTables().size()
+                    && content.getTables().get(tableIndex).getBeforeLineIndex() == i) {
+                out.add(mapTable(content.getTables().get(tableIndex++)));
+            }
+            if (i == content.getLines().size()) break;
+            MarkdownLayoutLine line = content.getLines().get(i);
+            if (line.getSegments().isEmpty() && line.getBlockId() == MarkdownLayoutLine.NO_BLOCK) {
+                blanks++;
+            } else {
+                out.add(mapLine(line));
+            }
+        }
+        if (tableIndex != content.getTables().size()) {
+            throw new AssertionError("TableUnit 锚必须有序且落在 lines 闭区间内");
+        }
+        StringBuilder visible = new StringBuilder();
+        for (SemanticLine line : out) visible.append(line.visible());
+        return new Result(out, blanks, visible.toString());
+    }
+
+    private static LayoutContent layoutContent(String source) {
+        TextStyle base = new TextStyle();
+        base.setColor(0xFFFFFFFF);
+        return MarkdownDocument.parse(source).toLayoutContent(MarkdownStyleTable.defaults(), base);
+    }
+
+    private static SemanticLine mapTable(TableUnit unit) {
+        MarkdownTableModel model = unit.getModel();
+        StringBuilder shape = new StringBuilder("path=").append(model.getBlockPath());
+        List<InlineTok> tokens = new ArrayList<InlineTok>();
+        appendTableRow(shape, tokens, model.getHeader(), model.getAlignments(), true);
+        for (MarkdownTableModel.Row row : model.getRows()) {
+            appendTableRow(shape, tokens, row, model.getAlignments(), false);
+        }
+        MarkdownLayoutLine context = unit.getContext();
+        return new SemanticLine(Kind.TABLE, 0, false, 0, context.getQuoteLevel(),
+                context.getListMarkerChain().size(), null, tokens, shape.toString());
+    }
+
+    private static void appendTableRow(StringBuilder shape, List<InlineTok> tokens,
+            MarkdownTableModel.Row row, List<MarkdownTableModel.Alignment> alignments, boolean header) {
+        shape.append(header ? ";H[" : ";B[");
+        if (row.getCells().size() != alignments.size()) {
+            throw new AssertionError("表格列数与对齐数不一致");
+        }
+        for (int c = 0; c < row.getCells().size(); c++) {
+            List<InlineTok> cellTokens = new ArrayList<InlineTok>();
+            for (TextSegment seg : row.getCells().get(c).getSegments()) {
+                if (!seg.getText().isEmpty() || seg.isLatex()) cellTokens.add(mapSeg(seg));
+            }
+            cellTokens = mergeAdjacent(cellTokens);
+            shape.append(alignments.get(c).name()).append(':').append(cellTokens.size()).append(',');
+            tokens.addAll(cellTokens);
+        }
+        shape.append(']');
+    }
+
+    /** 独立可见字地板：直接拼新缝原段流，完全不经 mapLine/mapTable/token 归一。 */
+    static String layoutContentVisibleOf(String source) {
+        LayoutContent content = layoutContent(source);
+        StringBuilder visible = new StringBuilder();
+        int t = 0;
+        for (int i = 0; i <= content.getLines().size(); i++) {
+            while (t < content.getTables().size() && content.getTables().get(t).getBeforeLineIndex() == i) {
+                MarkdownTableModel model = content.getTables().get(t++).getModel();
+                for (MarkdownTableModel.Cell cell : model.getHeader().getCells()) {
+                    appendVisible(visible, cell.getSegments());
+                }
+                for (MarkdownTableModel.Row row : model.getRows()) {
+                    for (MarkdownTableModel.Cell cell : row.getCells()) appendVisible(visible, cell.getSegments());
+                }
+            }
+            if (i < content.getLines().size()) appendVisible(visible, content.getLines().get(i).getSegments());
+        }
+        if (t != content.getTables().size()) throw new AssertionError("存在无法交错的 TableUnit");
+        return visible.toString();
+    }
+
+    private static void appendVisible(StringBuilder out, List<TextSegment> segments) {
+        for (TextSegment seg : segments) {
+            out.append(seg.isLatex() ? "\u27e6" + seg.getLatexSource() + "\u27e7" : seg.getText());
+        }
     }
 
     /** 单行映射：kind 参数 + 行内 token 两阶段。 */

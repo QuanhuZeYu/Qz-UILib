@@ -51,7 +51,11 @@ import org.junit.Test;
  *   <tr><td>{@code ChatSceneController}</td><td>26</td><td>22</td><td>4</td><td>0</td></tr>
  *   <tr><td>{@code ChatMarkdownPipeline}</td><td>0</td><td>0</td><td>0</td><td>0（类本身非 public）</td></tr>
  *   <tr><td>{@code MarkdownTableModel}</td><td>4</td><td>4</td><td>0</td><td>0</td></tr>
- *   <tr><td>{@code MarkdownDocument}</td><td>9</td><td>9（T1 前 8，+toTableModels）</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownDocument}</td><td>10</td><td>10（T1 +toTableModels；T2 +toLayoutContent）</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownDocument.LayoutContent}</td><td>2</td><td>2</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownDocument.TableUnit}</td><td>8</td><td>8</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownPainter.ContentLayout}</td><td>3</td><td>3</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownPainter}</td><td>8</td><td>8（原 7，+layoutContent）</td><td>0</td><td>0</td></tr>
  *   <tr><td>{@code MarkdownTableModel.Row}</td><td>1</td><td>1</td><td>0</td><td>0</td></tr>
  *   <tr><td>{@code MarkdownTableModel.Cell}</td><td>1</td><td>1</td><td>0</td><td>0</td></tr>
  *   <tr><td>{@code MarkdownTableModel.Alignment}</td><td>6</td><td>2</td><td>0</td><td>4</td></tr>
@@ -160,11 +164,11 @@ public class MarkdownPublicSurfaceGuardTest {
     private static final int PIPELINE_FIELDS = 0;
 
     /**
-     * T1 合计（Python 按契约验算）= 原五类 74 + 外壳 4 + Document 9 + Row 1 + Cell 1
-     * + Alignment 6 = 95；各嵌套独立入账，不回灌外壳。地板由 50 续为 80，
+     * T2 合计（Python 按契约验算）= T1 的 95 + Document 新出口 1 + LayoutContent 2
+     * + TableUnit 8 + ContentLayout 3 + 本批明确锚定 Painter 门面 8 = 117。地板续为 100，
      * 防扩面后总量扫描仍漏掉新账；精确性由各类相等断言负责。
      */
-    private static final int TOTAL_SURFACE_FLOOR = 80;
+    private static final int TOTAL_SURFACE_FLOOR = 100;
 
     /** 公共 10 参构造器的参数个数（M7 起签名冻结，C3b3 加标题级别也未动；带链/带级别写端
      *  构造器 13 参，必须非 public）。 */
@@ -272,19 +276,47 @@ public class MarkdownPublicSurfaceGuardTest {
                 alignment.inventory);
     }
 
-    /** Document 原有八方法仅续一个导出法；匿名 StyleTransform.apply 不属于外层成员。 */
+    /** T2 在 T1 的表格语义导出旁新增布局内容出口，旧出口继续供字面降级消费者使用。 */
     @Test
-    public void documentAddsOnlyTableModelExport() throws NoSuchMethodException {
+    public void documentAddsOnlyPlannedTableExports() throws NoSuchMethodException {
         Class<?> type = load(DOCUMENT);
         Surface surface = publicSurface(type);
-        assertSurface(surface, 9, 9, 0, 0);
+        assertSurface(surface, 10, 10, 0, 0);
         Assert.assertEquals(Arrays.asList("getBlockCount/0", "getSource/0", "isEmpty/0", "parse/1",
-                "parseSpans/1", "toLayoutLines/2", "toSegments/1", "toSegments/2", "toTableModels/1"),
+                "parseSpans/1", "toLayoutContent/2", "toLayoutLines/2", "toSegments/1", "toSegments/2", "toTableModels/1"),
                 surface.inventory);
         Method export = type.getDeclaredMethod("toTableModels", load("club.heiqi.uilib.font.layout.TextStyle"));
         Assert.assertFalse("导出使用当前文档，不能成为静态旁路", Modifier.isStatic(export.getModifiers()));
         Assert.assertEquals("导出泛型必须是最小表格接缝，不能外泄包内 AST",
                 "java.util.List<" + TABLE_MODEL + ">", export.getGenericReturnType().getTypeName());
+    }
+
+    /** T2 平行表格布局缝：每个嵌套读端独立计数，禁止向语义 Model 回填像素。 */
+    @Test
+    public void layoutContentPublicSurfacesAreMinimal() throws NoSuchMethodException {
+        Surface content = publicSurface(load(DOCUMENT + "$LayoutContent"));
+        assertSurface(content, 2, 2, 0, 0);
+        Assert.assertEquals(Arrays.asList("getLines/0", "getTables/0"), content.inventory);
+        Surface unit = publicSurface(load(DOCUMENT + "$TableUnit"));
+        assertSurface(unit, 8, 8, 0, 0);
+        Assert.assertEquals(Arrays.asList("getBeforeLineIndex/0", "getBorderArgb/0", "getBorderPx/0",
+                "getContext/0", "getHeaderArgb/0", "getModel/0", "getPaddingXPx/0", "getPaddingYPx/0"),
+                unit.inventory);
+        Class<?> painter = load("club.heiqi.uilib.ui.markdown.MarkdownPainter");
+        Surface facade = publicSurface(painter);
+        assertSurface(facade, 8, 8, 0, 0);
+        Assert.assertEquals(Arrays.asList("layoutContent/4", "lineHeightPx/3", "lineWidthPx/3",
+                "measureHeight/4", "toLayoutPaintCommands/4", "toPaintCommands/4", "wrapLayoutLines/4",
+                "wrapLines/4"), facade.inventory);
+        Surface result = publicSurface(load(painter.getName() + "$ContentLayout"));
+        assertSurface(result, 3, 3, 0, 0);
+        Assert.assertEquals(Arrays.asList("getCommands/0", "getHeightPx/0", "getWidthPx/0"), result.inventory);
+        Method export = load(DOCUMENT).getDeclaredMethod("toLayoutContent", load(STYLE_TABLE),
+                load("club.heiqi.uilib.font.layout.TextStyle"));
+        Assert.assertEquals(DOCUMENT + "$LayoutContent", export.getReturnType().getName());
+        Method layout = painter.getDeclaredMethod("layoutContent", export.getReturnType(),
+                load("club.heiqi.uilib.font.layout.TextLayoutService"), int.class, int.class);
+        Assert.assertEquals(painter.getName() + "$ContentLayout", layout.getReturnType().getName());
     }
 
     // ==================== 总量地板（防恒真）====================
@@ -294,7 +326,9 @@ public class MarkdownPublicSurfaceGuardTest {
     public void anchoredPublicSurfaceHasNonZeroFloor() {
         String[] names = { LAYOUT_LINE, STYLE_TABLE, MESSAGE_LIST, SCENE_CONTROLLER, PIPELINE,
                 TABLE_MODEL, DOCUMENT, TABLE_MODEL + "$Row", TABLE_MODEL + "$Cell",
-                TABLE_MODEL + "$Alignment" };
+                TABLE_MODEL + "$Alignment", DOCUMENT + "$LayoutContent", DOCUMENT + "$TableUnit",
+                "club.heiqi.uilib.ui.markdown.MarkdownPainter",
+                "club.heiqi.uilib.ui.markdown.MarkdownPainter$ContentLayout" };
         int total = 0;
         StringBuilder detail = new StringBuilder();
         for (int i = 0; i < names.length; i++) {
@@ -304,7 +338,7 @@ public class MarkdownPublicSurfaceGuardTest {
         }
         Assert.assertTrue("全部锚定类的 public 成员合计必须 > 0（恒 0 = 计数函数失效）: 合计 "
                 + total + detail, total > 0);
-        Assert.assertTrue("合计地板（T1 契约 95，全成员尺，用途见 TOTAL_SURFACE_FLOOR 注释）: 合计 " + total
+        Assert.assertTrue("合计地板（T2 契约 117，全成员尺，用途见 TOTAL_SURFACE_FLOOR 注释）: 合计 " + total
                 + detail, total >= TOTAL_SURFACE_FLOOR);
     }
 

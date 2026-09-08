@@ -69,12 +69,23 @@ final class MarkdownLineLayout {
 
     static List<List<TextSegment>> wrap(List<TextSegment> segments, TextLayoutService measurer,
             int maxWidthPx, int baseFontSizePx) {
+        return wrap(segments, measurer, maxWidthPx, baseFontSizePx, false);
+    }
+
+    /** 表格单元格复用同一 token 引擎；词回退后必须重新核对固定列预算。 */
+    static List<List<TextSegment>> wrapCell(List<TextSegment> segments, TextLayoutService measurer,
+            int maxWidthPx, int baseFontSizePx) {
+        return wrap(segments, measurer, maxWidthPx, baseFontSizePx, true);
+    }
+
+    private static List<List<TextSegment>> wrap(List<TextSegment> segments, TextLayoutService measurer,
+            int maxWidthPx, int baseFontSizePx, boolean retryAfterWordBreak) {
         requireMeasurer(measurer);
         List<List<Token>> logicalTokens =
                 splitLogicalLines(unifySwitchPointSpaces(segments), measurer, baseFontSizePx);
         List<List<TextSegment>> out = new ArrayList<List<TextSegment>>();
         for (int i = 0; i < logicalTokens.size(); i++) {
-            wrapVisualLine(logicalTokens.get(i), maxWidthPx, out, baseFontSizePx);
+            wrapVisualLine(logicalTokens.get(i), maxWidthPx, maxWidthPx, out, baseFontSizePx, retryAfterWordBreak);
         }
         return Collections.unmodifiableList(out);
     }
@@ -572,6 +583,11 @@ final class MarkdownLineLayout {
      */
     private static void wrapVisualLine(List<Token> tokens, int firstMaxWidthPx, int restMaxWidthPx,
             List<List<TextSegment>> out, int baseFontSizePx) {
+        wrapVisualLine(tokens, firstMaxWidthPx, restMaxWidthPx, out, baseFontSizePx, false);
+    }
+
+    private static void wrapVisualLine(List<Token> tokens, int firstMaxWidthPx, int restMaxWidthPx,
+            List<List<TextSegment>> out, int baseFontSizePx, boolean retryAfterWordBreak) {
         int startSize = out.size();
         List<Token> line = new ArrayList<Token>();
         List<Token> pending = new ArrayList<Token>();
@@ -610,6 +626,16 @@ final class MarkdownLineLayout {
                 List<Token> rest = new ArrayList<Token>(line.subList(wsRunEnd + 1, line.size()));
                 double restWidth = suffixWidth(line, wsRunEnd + 1);
                 line = new ArrayList<Token>(rest);
+                if (retryAfterWordBreak) {
+                    // suffix + 不可拆公式仍可能超列宽，不能回退一次就无条件放置。
+                    // 重试沿用下方硬断/空行强制放置，旧行出口的字面降级行为不变。
+                    lineWidth = restWidth;
+                    visibleCount = rest.size();
+                    wsRunStart = -1;
+                    wsRunEnd = -1;
+                    i--;
+                    continue;
+                }
                 if (pending.isEmpty()) {
                     // 断行机会已被上一次回退消耗：续行只剩可见 token，退回硬断路径
                     wsRunStart = -1;
@@ -747,8 +773,15 @@ final class MarkdownLineLayout {
     }
 
     /** 带左偏移的命中区累计（M7 块身份路：SEGMENTS 平移多少，命中区平移多少）。 */
-    private static void appendLinkRegions(List<PaintCommand> out, List<TextSegment> line,
+    static void appendLinkRegions(List<PaintCommand> out, List<TextSegment> line,
             TextLayoutService measurer, int baseFontSizePx, int top, int height, int leftOffset) {
+        appendLinkRegions(out, line, measurer, baseFontSizePx, top, height, leftOffset, top, height);
+    }
+
+    /** 表格混排公式可超出文本字体框：只给公式链接使用额外的完整视觉行纵框。 */
+    static void appendLinkRegions(List<PaintCommand> out, List<TextSegment> line,
+            TextLayoutService measurer, int baseFontSizePx, int top, int height, int leftOffset,
+            int latexTop, int latexHeight) {
         double x = (double) leftOffset;
         for (int i = 0; i < line.size(); i++) {
             TextSegment segment = line.get(i);
@@ -759,7 +792,9 @@ final class MarkdownLineLayout {
                 int left = (int) Math.floor(x);
                 int right = (int) Math.ceil(x + width);
                 if (right > left) {
-                    out.add(PaintCommand.linkRegion(left, top, right, top + height, url));
+                    int linkTop = segment.isLatex() ? latexTop : top;
+                    int linkHeight = segment.isLatex() ? latexHeight : height;
+                    out.add(PaintCommand.linkRegion(left, linkTop, right, linkTop + linkHeight, url));
                 }
             }
             x += width;

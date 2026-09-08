@@ -1,6 +1,6 @@
 # 规划-Markdown 表格（立项定稿）
 
-**状态：** 立项**冻结**（2026-09-07）。来源 = 用户发起「可否推进表格解析渲染」→ GPT 网页两轮审查 + 本地一手核查逐轮收口，终轮双方一致「不需要再改方案，等 C9 收口后落笔」；C9·6（`cdde849f`）落地后成文本档。**T1 已完成**（2026-09-08：语义与契约、独立对拍、历史降级反锁与台账同批验收；T2/T3 的消费者裁定边界不变）。
+**状态：** 立项**冻结**（2026-09-07）。来源 = 用户发起「可否推进表格解析渲染」→ GPT 网页两轮审查 + 本地一手核查逐轮收口，终轮双方一致「不需要再改方案，等 C9 收口后落笔」；C9·6（`cdde849f`）落地后成文本档。**T1/T2 已完成**（2026-09-08：语义契约、像素布局、页面/headless 首消费者、独立对拍、真实 chat3 字面降级反锁与台账同批验收；T3a/T3b 仍待各自裁定）。
 **上游裁定：** 《规划-通用Markdown渲染器.md》§五 D4「图片/表格/任务列表/tooltip·书本划到本期范围外（可另立项）」——本文即该"另立项"；§202 C3（块模型进公共面）的预定触发器（"证明行接缝表达不了表格/多栏"）已由 T1 的 B1 最小契约承接，**不整套复活 A 案**。
 **目标仓：** Qz-UILib（branch `4.0`，MC 1.7.10，本地提交不 push）。
 **基线（立项时点，一手核实）：** `4118 / 0 / 0 / 6，369 类`（C9 收口后）；常驻门禁 R = commonmark-java 0.21.0（+GFM strikethrough）对 `toLayoutLines` 逐行逐 token 对拍，RECORD 恒 0；判据按 C9·6 为**二件套**——语义工件 `diff=A826A2B9E7B0EB57`、`matrix=804A42FB09D74FF5` 逐字不变（profiles 降为记录不校验）。
@@ -98,7 +98,7 @@ G1（L2 零直连 GL）/ G2（L1 零 MC·AWT）/ G3 扩展项（表格语法只�
 |---|---|---|
 | 立项 | 两轮收口 + 本地核查 + 本轮复审补正（闭环指针/消费者分批与接缝门/二件套性质/源码指针） | **完成** |
 | T1 | 语义+契约+独立 oracle 面对拍+降级三件套+台账续账 | **完成**：完整 build 绿，4194 / 0 / 0 / 6、372 类；二件套未变，57 项 Table oracle 与历史反锁通过，javap 入账见 §八 |
-| T2 | 像素 pass+交错三案+首消费者+行接缝并表格+chat3 接缝门+缓存；前置观察 home ROW clamp | 未开始 |
+| T2 | 像素 pass+交错三案+首消费者+行接缝并表格+chat3 接缝门+缓存；前置观察 home ROW clamp | **完成**：完整 build 绿，4228 / 0 / 0 / 6、377 类；平行表格 units＋块锚、页面与双度量出图、真实 chat3 降级反锁均通过；见 §九 |
 | T3a | chat3 `printMarkdown` 表格与 HUD/容器待遇裁定 | 未开始 |
 | T3b | chat3 玩家气泡表格与 HUD/容器待遇裁定 | 未开始 |
 
@@ -195,5 +195,139 @@ public final class club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable {
   public void setThematicBreakText(java.lang.String);
   public int getQuoteTextColor();
   public void setQuoteTextColor(int);
+}
+```
+
+## 九、T2 实施记录
+
+- **交错接缝**：采用裁定表中的③“平行表格 units＋块锚”。`MarkdownDocument.toLayoutContent(MarkdownStyleTable, TextStyle)` 返回非表格逻辑行及有序 `TableUnit`；`beforeLineIndex` 表示插入到哪一条逻辑行之前，同锚按 units 顺序。表格仍携带 T1 语义块路径，`MarkdownTableModel` 不增加像素或布局服务。①哨兵方案会给既有行消费者引入占位行语义，②替换旧返回类型的 union 方案破坏兼容；三案证据与边界样例随本批测试验收。
+- **度量与样式**：L2 完整度量全部单元格，生成 intrinsic 列宽和不可拆原子的最小宽，再分配、逐 cell 换行、确定行高、定位 `PaintCommand`。最小宽先保底，剩余预算向未达到自然宽的列均分，短列封顶后把余量留给长列；宽视图不再因长说明比例过大而拆开短表头。极窄容器小于原子与边框最小宽时，保留原子并报告实际溢出宽，不缩字、不拆公式。包内样式登记经 `TableUnit` 快照传递；`MarkdownLayoutLine` 的公共构造和成员、`MarkdownStyleTable` 公共面保持冻结。
+- **公式与列表几何**：单元格真实行盒复用数学布局器与注入度量，包含纯公式居中和混排上伸补偿；公式链接覆盖完整单元格视觉行框，普通文字链接保留文本框。列表直接以表格开头时，L1 仍导出独立标记事件，L2 匹配直属标记后与首表头同行，不增加一整行高度。既有 LaTeX 缓存需要未公开的度量运行时版本；本批不增加公共 API 或伪造缓存键，因此布局阶段存在额外的同源 MathBox 测量，L3 命中后无每帧重复。
+- **首消费者与缓存**：`MarkdownPainter.layoutContent` 生成带总宽高的计划，供页面和 headless 共用；内部 `MarkdownPageContent` 每次挂载解析一次，缓存键包含消费实例（固定内容/样式）、实际可用宽、基础字号、度量服务及纪元。`layoutDone` 读取最终内容盒，帧信号只比较纪元；同计划跳过度量、布局、命令及节点重建。页面通过既有 scene 叶承接 BACKGROUND/SEGMENTS，并以实际计划钉总高；普通链接及公式链接沿既有非交互预览语义保留样式，LINK_REGION 由 headless 验证而不写 scene 所有的命中缓存。
+- **宿主传宽与 home 观察**：`MarkdownTableHostWidthTest` 从真实宿主切页并往返变宽，画布 `360/720/1080/720` 对应页面 `292/652/824/652`、表格可用宽 `268/628/800/628`。约束来源是宿主宽上限、滚动条与 viewport/card padding，已用 Python 按源码常量验算；内容宽不由表格 intrinsic 反推。初始 home ROW 盒越界可复现，隔离观察数 `13/1/0/1`，且首次完整 build 被既有 `PlaygroundButtonRowLayoutTest` 挡住（行宽 628、子右缘 721）。本批在 `HomePage` 两种说明行中给说明叶设置既有 `flexGrow=1`：标题自然宽计入 fixedW，说明只领取扣除标题与 gap 后的剩余预算；无 scene core 改动，未开启 C10 通用算法改造。原失败测试未削弱，定向复验通过；同组画布往返观察为 `0/0/0/0`，表格传宽仍为原值。该修复只修节点盒预算，不承诺改变普通 TEXT 默认 `maxTextWidth=0` 的字形换行/截断策略。旧页在切换时 dispose，其 ROW 不在表格祖先链；表格宽在往返与重复布局中保持稳定。
+- **chat3 接缝门**：`printMarkdown` 与玩家气泡均显式维持字面降级，继续消费旧 `toLayoutLines`；T1 两个旧出口的历史快照锁保留。本批另以固定 T1 提交的真实消费者结果和实时 L2 路径反锁验证 HUD/展开容器，T3a/T3b 接入尚未裁定。
+- **报告迁移**：原无表格回归报告保留为 `legacy-diff.txt` / `legacy-matrix.txt`，继续核对 T1 二件套；当前 `diff.txt` / `matrix.txt` 追加 TABLE 结构与文档交错章节，其新基线以本批完整测试实测登记。
+- **列表表格漏项修复**：扩面 oracle 的 `- before`／空行／缩进表格样例暴露历史列表收拢丢失空行的问题。本批表格语义模式保留列表内部空行；无管线候选直接历史解析，有候选但未成表也回退历史语义。全文含表格时，新出口的其他列表项也保留真实段落边界，旧 `toLayoutLines/toSegments` 仍来自历史树。该兼容边界以混合文档锁和独立 AST 对拍验证，不声称仅改表格所在子树。
+- **词回退预算**：既有 token 换行器在词边界回退后可能无条件拼接“后缀＋不可拆公式”，超过已分配列宽。包内 `wrapCell` 复用同一 token 引擎，回退后重新检查列预算；旧 `wrap/layoutLines` 保持原行为，未裁定的聊天表格消费者不被动迁移。
+- **完整验收**：最终 `build --offline --console=plain` 成功，生产编译与 `:test` 实际执行；Python 汇总 `4228 / 0 / 0 / 6，377 类`。独立 AST 对拍 61 项、模型 14 项、T1 历史降级锁 3 项、表格布局 16 项及预算反例 1 项全部通过；真实 chat3 新增 3 项反锁包含四份固定历史快照和无换行替身的 L2 路径。首次失败的 home ROW 盒预算问题已按上文修复，原测试完整通过，未用重跑碰运气或豁免掩盖。
+- **扩面基线迁移**：完整主测试生成现行 `diff=6A3339AB3C81787E`、`matrix=83647E59842DD50C`，新增 T01–T18 表格结构/文档交错章节，零新增豁免；`legacy-diff=A826A2B9E7B0EB57`、`legacy-matrix=804A42FB09D74FF5` 保持 T1 字节基线。表格形状、块锚、表头/正文边界、对齐及单元格 token 进入严格判等，缺表/重排/篡改形状等负对照均能报错。
+- **出图与双度量**：`build/reports/markdown-table-render/00-full-page.png` 为宽窄整页合成图，另有 `00-full-page@4x.png` 真字号放大副本。机判使用从 collector 排除背景/装饰的 glyph-only 帧，要求真实 glyph quads 非零且墨水数不小于 quads，另验几何、链接和高公式。最终源码重新编译后，以 `QZ_C9_TEST_FONT=Serif` 对页面缓存/scene/headless 再验 4 项全绿；两套 `metricProbeWidth=65.02374087439642/65.79620255364311` 从实际 profiles 读取后经 Python Decimal 验证不同。第二套出图在 `markdown-table-render-Serif/`。已目检最终默认合成图，短列完整、公式不穿框；未跑真机、未独立跑 CI。
+- **公共面实测**：Document `10=10/0/0`、LayoutContent `2=2/0/0`、TableUnit `8=8/0/0`、Painter `8=8/0/0`、ContentLayout `3=3/0/0`；嵌套均无 public 构造。Model 与 Row/Cell/Alignment 延续 T1 台账，Line 20/10 参、StyleTable 19 保持冻结。所有已锚定类含 Painter 及独立嵌套合计 117，地板 100，Python 验算与反射守卫一致。以下是最终编译产物的 `javap -public` 原文：
+
+```text
+Compiled from "MarkdownDocument.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownDocument {
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownDocument parse(java.lang.String);
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownDocument parseSpans(java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownSpan>);
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel> toTableModels(club.heiqi.uilib.font.layout.TextStyle);
+  public java.lang.String getSource();
+  public int getBlockCount();
+  public boolean isEmpty();
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> toSegments(club.heiqi.uilib.font.layout.TextStyle);
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> toSegments(club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable, club.heiqi.uilib.font.layout.TextStyle);
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine> toLayoutLines(club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable, club.heiqi.uilib.font.layout.TextStyle);
+  public club.heiqi.uilib.font.layout.markdown.MarkdownDocument$LayoutContent toLayoutContent(club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable, club.heiqi.uilib.font.layout.TextStyle);
+}
+Compiled from "MarkdownDocument.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownDocument$LayoutContent {
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine> getLines();
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownDocument$TableUnit> getTables();
+}
+Compiled from "MarkdownDocument.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownDocument$TableUnit {
+  public int getBeforeLineIndex();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownTableModel getModel();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine getContext();
+  public int getPaddingXPx();
+  public int getPaddingYPx();
+  public int getBorderPx();
+  public int getBorderArgb();
+  public int getHeaderArgb();
+}
+Compiled from "MarkdownTableModel.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownTableModel {
+  public java.util.List<java.lang.Integer> getBlockPath();
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment> getAlignments();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Row getHeader();
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Row> getRows();
+}
+Compiled from "MarkdownTableModel.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Row {
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Cell> getCells();
+}
+Compiled from "MarkdownTableModel.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Cell {
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> getSegments();
+}
+Compiled from "MarkdownTableModel.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment extends java.lang.Enum<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment> {
+  public static final club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment NONE;
+  public static final club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment LEFT;
+  public static final club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment CENTER;
+  public static final club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment RIGHT;
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment[] values();
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment valueOf(java.lang.String);
+}
+Compiled from "MarkdownLayoutLine.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine {
+  public static final int NO_BLOCK;
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine(club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine$Kind, int, int, java.util.List<club.heiqi.uilib.font.layout.TextSegment>, int, int, int, int, int, int);
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine blank();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine withSegments(java.util.List<club.heiqi.uilib.font.layout.TextSegment>);
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine withBlockContentWidthPx(int);
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine withLeftInsetPx(int);
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine$Kind getKind();
+  public int getHeadingLevel();
+  public int getQuoteLevel();
+  public int getBlockId();
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> getSegments();
+  public int getLeftInsetPx();
+  public int getIndentStepPx();
+  public int getBarWidthPx();
+  public int getRuleThicknessPx();
+  public int getAccentArgb();
+  public int getBackgroundArgb();
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> getListMarkerChain();
+  public int getBlockContentWidthPx();
+  public java.lang.String toString();
+}
+Compiled from "MarkdownStyleTable.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable {
+  public club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable();
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable defaults();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable copy();
+  public boolean isHeadingBold();
+  public void setHeadingBold(boolean);
+  public boolean isHeadingUnderline();
+  public void setHeadingUnderline(boolean);
+  public boolean isQuoteItalic();
+  public void setQuoteItalic(boolean);
+  public int getHeadingFontSizeDeltaPx(int);
+  public void setHeadingFontSizeDeltaPx(int, int);
+  public int getDefaultFontSizePx();
+  public void setDefaultFontSizePx(int);
+  public java.lang.String getBulletMarker();
+  public void setBulletMarker(java.lang.String);
+  public java.lang.String getThematicBreakText();
+  public void setThematicBreakText(java.lang.String);
+  public int getQuoteTextColor();
+  public void setQuoteTextColor(int);
+}
+Compiled from "MarkdownPainter.java"
+public final class club.heiqi.uilib.ui.markdown.MarkdownPainter {
+  public static club.heiqi.uilib.ui.markdown.MarkdownPainter$ContentLayout layoutContent(club.heiqi.uilib.font.layout.markdown.MarkdownDocument$LayoutContent, club.heiqi.uilib.font.layout.TextLayoutService, int, int);
+  public static java.util.List<java.util.List<club.heiqi.uilib.font.layout.TextSegment>> wrapLines(java.util.List<club.heiqi.uilib.font.layout.TextSegment>, club.heiqi.uilib.font.layout.TextLayoutService, int, int);
+  public static java.util.List<club.heiqi.uilib.ui.scene.paint.PaintCommand> toPaintCommands(java.util.List<club.heiqi.uilib.font.layout.TextSegment>, club.heiqi.uilib.font.layout.TextLayoutService, int, int);
+  public static int lineWidthPx(java.util.List<club.heiqi.uilib.font.layout.TextSegment>, club.heiqi.uilib.font.layout.TextLayoutService, int);
+  public static int lineHeightPx(java.util.List<club.heiqi.uilib.font.layout.TextSegment>, club.heiqi.uilib.font.layout.TextLayoutService, int);
+  public static int measureHeight(java.util.List<club.heiqi.uilib.font.layout.TextSegment>, club.heiqi.uilib.font.layout.TextLayoutService, int, int);
+  public static java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine> wrapLayoutLines(java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine>, club.heiqi.uilib.font.layout.TextLayoutService, int, int);
+  public static java.util.List<club.heiqi.uilib.ui.scene.paint.PaintCommand> toLayoutPaintCommands(java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine>, club.heiqi.uilib.font.layout.TextLayoutService, int, int);
+}
+Compiled from "MarkdownPainter.java"
+public final class club.heiqi.uilib.ui.markdown.MarkdownPainter$ContentLayout {
+  public java.util.List<club.heiqi.uilib.ui.scene.paint.PaintCommand> getCommands();
+  public int getHeightPx();
+  public int getWidthPx();
 }
 ```

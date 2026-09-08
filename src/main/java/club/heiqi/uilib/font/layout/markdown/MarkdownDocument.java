@@ -33,8 +33,8 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * <p>任务列表、HTML 内联、脚注、图片 {@code ![alt](url)}（缩进代码块自 C1a 起支持）。
  * 图片说明：块层不生成任何图片节点；{@code ![alt](url)} 整体按普通文本进段内解析，
  * 依既有行内裁定（规划 §五 D2，9c4dcae5 语义照抄不改）产出字面 {@code !} + 链接段。
- * 任务列表/HTML/脚注则整行原样保留为段落/列表项文本。TABLE 于 T2 前只解析、不布局；
- * 两个旧出口继续输出识别表格前的字面语义（包括原段落/setext/容器边界）。</p>
+ * 任务列表/HTML/脚注则整行原样保留为段落/列表项文本。TABLE 通过 toLayoutContent 显式布局；
+ * 两个旧出口继续输出识别表格前的字面语义（包括原段落/setext/容器边界），供尚未迁移的消费者。</p>
  *
  * <h3>块级与行内的分工</h3>
  * <p>本层只识别块结构、剥除块标记，然后把每块正文交给 {@link MarkdownInlineParser}
@@ -82,7 +82,7 @@ public final class MarkdownDocument {
 
     private final String source;
     private final List<MarkdownBlock> blocks;
-    /** T1 暂态：只在实际含表格时保留第二棵旧语义树，出口不重新解析。 */
+    /** 尚未迁移的消费者使用旧语义树；只在实际含表格时保留，出口不重新解析。 */
     private final List<MarkdownBlock> literalBlocks;
 
     private MarkdownDocument(String source, List<MarkdownBlock> blocks, List<MarkdownSpan> spans) {
@@ -145,9 +145,9 @@ public final class MarkdownDocument {
      * 导出文档内所有表格的最小语义契约，按深度优先文档顺序排列。
      *
      * <p>复用既有行内解析器及 span 样式锚点；引用样式沿容器继承默认样式表。
-     * TABLE 于 T2 前只解析、不布局。仅含表格的文档在创建时额外解析并保存旧语义树，
+     * 表格布局由 toLayoutContent 显式导出；含表格的文档在创建时额外解析并保存旧语义树，
      * 两个旧出口共用它，避免识别表格改变历史段落/setext/容器边界；没有表格时共用原树。
-     * T2 按消费者裁定迁移布局时再处理该暂态成本，本方法不暴露 capability 开关。</p>
+     * 未迁移的消费者继续使用旧出口，本方法不暴露 capability 开关。</p>
      *
      * @param baseStyle 基础样式，不可为 null
      * @return 不可变表格列表，表格单元格隔离可变 TextStyle
@@ -157,7 +157,7 @@ public final class MarkdownDocument {
             throw new IllegalArgumentException("baseStyle 不能为空");
         }
         List<MarkdownTableModel> out = new ArrayList<MarkdownTableModel>();
-        collectTables(blocks, Collections.<Integer>emptyList(), new BlockStyle(baseStyle), out);
+        collectTables(blocks, Collections.<Integer>emptyList(), new BlockStyle(baseStyle), FALLBACK_TABLE, out);
         return Collections.unmodifiableList(out);
     }
 
@@ -171,7 +171,7 @@ public final class MarkdownDocument {
     }
 
     private static void collectTables(List<MarkdownBlock> nodes, List<Integer> parentPath,
-                                      BlockStyle style, List<MarkdownTableModel> out) {
+                                      BlockStyle style, MarkdownStyleTable styles, List<MarkdownTableModel> out) {
         for (int i = 0; i < nodes.size(); i++) {
             MarkdownBlock block = nodes.get(i);
             List<Integer> path = new ArrayList<Integer>(parentPath);
@@ -182,7 +182,7 @@ public final class MarkdownDocument {
                     List<MarkdownTableModel.Cell> cells = new ArrayList<MarkdownTableModel.Cell>();
                     for (MarkdownBlock.CellSource cell : sourceRow) {
                         cells.add(new MarkdownTableModel.Cell(
-                                tableCellSegments(cell, style)));
+                                tableCellSegments(cell, style, styles)));
                     }
                     rows.add(new MarkdownTableModel.Row(cells));
                 }
@@ -190,18 +190,19 @@ public final class MarkdownDocument {
                         rows.subList(1, rows.size())));
             } else {
                 collectTables(block.children, path,
-                        block.kind == MarkdownBlock.Kind.QUOTE ? style.quote(FALLBACK_TABLE) : style, out);
+                        block.kind == MarkdownBlock.Kind.QUOTE ? style.quote(styles) : style, styles, out);
             }
         }
     }
 
-    private static List<TextSegment> tableCellSegments(MarkdownBlock.CellSource cell, BlockStyle style) {
+    private static List<TextSegment> tableCellSegments(MarkdownBlock.CellSource cell, BlockStyle style,
+                                                        MarkdownStyleTable styles) {
         if (cell.text.isEmpty()) {
             return Collections.emptyList();
         }
         List<MarkdownSpan> spans = cell.spans == null
                 ? Collections.singletonList(new MarkdownSpan(cell.text, style.root)) : cell.spans;
-        return MarkdownInlineParser.parse(spans, FALLBACK_TABLE, style.transform(), true);
+        return MarkdownInlineParser.parse(spans, styles, style.transform(), true);
     }
 
     /** @return 原始源文本（null 输入归一为空串；span 路为拼接文本） */
@@ -285,6 +286,80 @@ public final class MarkdownDocument {
         LineFlattener flattener = new LineFlattener(table);
         walkLayout(literalBlocks, new BlockStyle(baseStyle), table, flattener, NO_CHAIN, 0, NO_ORDINAL);
         return flattener.finish();
+    }
+
+    /**
+     * 首消费者的文档布局投影：普通逻辑行与表格 units 平行存放。
+     * 表格锚指向未换行的逻辑行间隙；相同锚按 units 列表顺序插入。
+     * 两个历史出口继续保留字面降级，调用本方法才取得表格布局内容。
+     *
+     * @param styles 样式表，null 使用默认值
+     * @param baseStyle 基础样式，不可为 null
+     * @return 无度量的文档布局输入；不暴露完整块树
+     */
+    public LayoutContent toLayoutContent(MarkdownStyleTable styles, TextStyle baseStyle) {
+        if (baseStyle == null) {
+            throw new IllegalArgumentException("baseStyle 不能为空");
+        }
+        MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
+        List<MarkdownTableModel> models = new ArrayList<MarkdownTableModel>();
+        collectTables(blocks, Collections.<Integer>emptyList(), new BlockStyle(baseStyle), table, models);
+        LineFlattener f = new LineFlattener(table);
+        f.tableModels = models;
+        walkLayout(blocks, new BlockStyle(baseStyle), table, f, NO_CHAIN, 0, NO_ORDINAL);
+        return new LayoutContent(f.finish(), f.tableUnits);
+    }
+
+    /** 平行的逻辑行与表格序列；表格自身不占据任何逻辑行。 */
+    public static final class LayoutContent {
+        private final List<MarkdownLayoutLine> lines;
+        private final List<TableUnit> tables;
+
+        private LayoutContent(List<MarkdownLayoutLine> lines, List<TableUnit> tables) {
+            this.lines = Collections.unmodifiableList(new ArrayList<MarkdownLayoutLine>(lines));
+            this.tables = Collections.unmodifiableList(new ArrayList<TableUnit>(tables));
+        }
+
+        public List<MarkdownLayoutLine> getLines() { return lines; }
+        public List<TableUnit> getTables() { return tables; }
+    }
+
+    /** 表格块锚和样式投影；像素旋钮属于此布局输入，不属于零像素的 TableModel。 */
+    public static final class TableUnit {
+        private final int beforeLineIndex;
+        private final MarkdownTableModel model;
+        private final MarkdownLayoutLine context;
+        private final int paddingXPx;
+        private final int paddingYPx;
+        private final int borderPx;
+        private final int borderArgb;
+        private final int headerArgb;
+
+        private TableUnit(int beforeLineIndex, MarkdownTableModel model,
+                          MarkdownLayoutLine context, MarkdownStyleTable styles) {
+            this.beforeLineIndex = beforeLineIndex;
+            this.model = model;
+            this.context = context;
+            this.paddingXPx = styles.tablePaddingXPx;
+            this.paddingYPx = styles.tablePaddingYPx;
+            this.borderPx = styles.tableBorderPx;
+            this.borderArgb = styles.tableBorderArgb;
+            this.headerArgb = styles.tableHeaderArgb;
+        }
+
+        /** 插入于此逻辑行之前；等于 lines.size() 表示文档末尾。 */
+        public int getBeforeLineIndex() { return beforeLineIndex; }
+        public MarkdownTableModel getModel() { return model; }
+        /**
+         * 仅复用行盒的引用/列表几何上下文，零文本；不是 TABLE 哨兵，
+         * 不在 getLines() 流中，也不贡献空行或文本行高。
+         */
+        public MarkdownLayoutLine getContext() { return context; }
+        public int getPaddingXPx() { return paddingXPx; }
+        public int getPaddingYPx() { return paddingYPx; }
+        public int getBorderPx() { return borderPx; }
+        public int getBorderArgb() { return borderArgb; }
+        public int getHeaderArgb() { return headerArgb; }
     }
 
     // ==================== 扁平化（段流路） ====================
@@ -545,6 +620,9 @@ public final class MarkdownDocument {
                                    LineFlattener f, List<TextSegment> chain, int quoteLevel,
                                    int ordinal) {
         switch (block.kind) {
+            case TABLE:
+                f.tableUnit(quoteLevel, chain);
+                break;
             case PARAGRAPH:
                 f.startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel, chain);
                 f.append(inlineSegments(block.joinedLines(), anchorsOf(block, style), style, table));
@@ -698,6 +776,16 @@ public final class MarkdownDocument {
         private int idGen;
         private boolean open;
         private boolean structural;
+        private List<MarkdownTableModel> tableModels = Collections.emptyList();
+        private final List<TableUnit> tableUnits = new ArrayList<TableUnit>();
+
+        void tableUnit(int quoteLevel, List<TextSegment> chain) {
+            startBlock(MarkdownLayoutLine.Kind.TEXT, quoteLevel, chain);
+            MarkdownLayoutLine context = buildLine(curKind, quoteLevel, curBlockId,
+                    Collections.<TextSegment>emptyList());
+            close(); // 空上下文不进逻辑行流；先前正文已经封口，锚因此稳定。
+            tableUnits.add(new TableUnit(out.size(), tableModels.get(tableUnits.size()), context, table));
+        }
 
         LineFlattener(MarkdownStyleTable table) {
             this.table = table;

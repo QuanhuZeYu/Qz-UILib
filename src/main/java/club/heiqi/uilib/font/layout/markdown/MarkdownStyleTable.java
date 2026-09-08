@@ -72,6 +72,13 @@ public final class MarkdownStyleTable {
     private int ruleThicknessPx = 1;
     private int blockAccentArgb = 0x40FFFFFF;
 
+    // 表格样式只在包内登记，由 LayoutContent 的 TableUnit 快照送到 L2。
+    final int tablePaddingXPx = 6;
+    final int tablePaddingYPx = 4;
+    final int tableBorderPx = 1;
+    final int tableBorderArgb = 0x40FFFFFF;
+    final int tableHeaderArgb = 0x18FFFFFF;
+
     /**
      * 创建默认表（行为规格即此组默认值，块级 javadoc 与测试矩阵按它钉死）。
      *

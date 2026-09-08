@@ -1,12 +1,17 @@
 package club.heiqi.uilib.font.render.software;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
+import org.commonmark.ext.gfm.tables.TablesExtension;
+import org.commonmark.ext.gfm.tables.TableBlock;
+import org.commonmark.ext.gfm.tables.TableCell;
+import org.commonmark.ext.gfm.tables.TableHead;
 import org.commonmark.node.BlockQuote;
 import org.commonmark.node.BulletList;
 import org.commonmark.node.Code;
@@ -76,7 +81,7 @@ final class CommonMarkReferenceSemantics {
 
     /** 行块类别（kind 优先级见类 javadoc）。 */
     enum Kind {
-        TEXT, HEADING, CODE_FENCED, CODE_INDENTED, THEMATIC_BREAK, BLOCK_QUOTE, LIST_ITEM
+        TEXT, HEADING, CODE_FENCED, CODE_INDENTED, THEMATIC_BREAK, BLOCK_QUOTE, LIST_ITEM, TABLE
     }
 
     /** 行内 token 标记集（空集=纯文本；嵌套强调按标记并集压平，与 B 路段样式位对拍）。 */
@@ -154,9 +159,17 @@ final class CommonMarkReferenceSemantics {
         /** 断行/来源注记（SOFT/HARD/SETEXT/H<n>；B 侧恒 null——接缝不携带该身份）。 */
         final String note;
         final List<InlineTok> tokens;
+        /** TABLE 的块锚、行列/表头身份、对齐及 cell token 边界；参与严格判等。 */
+        final String tableShape;
 
         SemanticLine(Kind kind, int level, boolean ordered, int ordinal, int quoteDepth,
                 int listDepth, String note, List<InlineTok> tokens) {
+            this(kind, level, ordered, ordinal, quoteDepth, listDepth, note, tokens, null);
+        }
+
+        SemanticLine(Kind kind, int level, boolean ordered, int ordinal, int quoteDepth,
+                int listDepth, String note, List<InlineTok> tokens, String tableShape) {
+            this.tableShape = tableShape;
             this.kind = kind;
             this.level = level;
             this.ordered = ordered;
@@ -170,6 +183,7 @@ final class CommonMarkReferenceSemantics {
         String renderKind() {
             StringBuilder sb = new StringBuilder();
             sb.append(kind);
+            if (tableShape != null) sb.append("{").append(tableShape).append("}");
             if (kind == Kind.HEADING || kind == Kind.BLOCK_QUOTE) {
                 sb.append('(').append(Integer.valueOf(level)).append(')');
             } else if (kind == Kind.LIST_ITEM) {
@@ -237,9 +251,20 @@ final class CommonMarkReferenceSemantics {
 
     /** 默认 Parser + GFM strikethrough 扩展（本仓 ~~删~~ 支持的对齐参考）。 */
     static List<SemanticLine> parse(String source) {
+        return parse(source, false);
+    }
+
+    /** T2 独立参考：只从源文本与 TablesExtension AST 产生文档序事件。 */
+    static List<SemanticLine> parseLayoutContent(String source) {
+        return parse(source, true);
+    }
+
+    private static List<SemanticLine> parse(String source, boolean tables) {
         String src = source == null ? "" : source;
         Parser parser = Parser.builder()
-                .extensions(Collections.singletonList(StrikethroughExtension.create()))
+                .extensions(tables
+                        ? Arrays.asList(StrikethroughExtension.create(), TablesExtension.create())
+                        : Collections.singletonList(StrikethroughExtension.create()))
                 // sourceSpan 默认不记录；setext 判定按行号对位必须开 BLOCKS 级
                 .includeSourceSpans(IncludeSourceSpans.BLOCKS)
                 .build();
@@ -261,7 +286,9 @@ final class CommonMarkReferenceSemantics {
     private static void walk(Node parent, List<SemanticLine> out, int quote, int listDepth,
             int ordinalRef, boolean ordered, Marker marker, String source) {
         for (Node n = parent.getFirstChild(); n != null; n = n.getNext()) {
-            if (n instanceof Paragraph) {
+            if (n instanceof TableBlock) {
+                emitTable(n, out, quote, listDepth, ordered, ordinalRef, marker);
+            } else if (n instanceof Paragraph) {
                 Kind kind;
                 int level;
                 if (listDepth > 0) {
@@ -315,6 +342,43 @@ final class CommonMarkReferenceSemantics {
             // 其余块（ReferenceDefinition 等）不产行——与 B 侧「不识别即字面段落」的差
             // 会在行对不齐时按 LINE_ALIGN 照登。
         }
+    }
+
+    private static void emitTable(Node table, List<SemanticLine> out, int quote, int listDepth,
+            boolean ordered, int ordinal, Marker marker) {
+        // TABLE 是二维事件，不把列表 marker 塞进首个 cell。项首尚未领取的 marker 独立成行；
+        // 真值仅来自 R 的 ListItem 遍历状态，项内先有段落时不再重复出 marker。
+        if (marker != null && marker.text != null) {
+            out.add(new SemanticLine(Kind.LIST_ITEM, listDepth, ordered, ordinal, quote, listDepth,
+                    null, Collections.singletonList(new InlineTok(EnumSet.of(Mark.LIST_MARKER), marker.text, null))));
+            marker.text = null;
+        }
+        List<Integer> path = new ArrayList<Integer>();
+        for (Node n = table; n.getParent() != null; n = n.getParent()) {
+            int index = 0;
+            for (Node prev = n.getPrevious(); prev != null; prev = prev.getPrevious()) index++;
+            path.add(0, Integer.valueOf(index));
+        }
+        StringBuilder shape = new StringBuilder("path=").append(path);
+        List<InlineTok> tokens = new ArrayList<InlineTok>();
+        for (Node section = table.getFirstChild(); section != null; section = section.getNext()) {
+            for (Node row = section.getFirstChild(); row != null; row = row.getNext()) {
+                shape.append(section instanceof TableHead ? ";H[" : ";B[");
+                for (Node cell = row.getFirstChild(); cell != null; cell = cell.getNext()) {
+                    TableCell tc = (TableCell) cell;
+                    List<SemanticLine> cellLines = new ArrayList<SemanticLine>();
+                    emitLines(cell, cellLines, Kind.TEXT, 0, false, 0, 0, 0, null, null);
+                    List<InlineTok> cellTokens = new ArrayList<InlineTok>();
+                    for (SemanticLine line : cellLines) cellTokens.addAll(line.tokens);
+                    shape.append(tc.getAlignment() == null ? "NONE" : tc.getAlignment().name())
+                            .append(':').append(cellTokens.size()).append(',');
+                    tokens.addAll(cellTokens);
+                }
+                shape.append(']');
+            }
+        }
+        out.add(new SemanticLine(Kind.TABLE, 0, false, 0, quote, listDepth, null, tokens,
+                shape.toString()));
     }
 
     /** 列表子项循环：每项新建合成 marker 槽（父项 pending marker 到此为止，见类 javadoc）。 */

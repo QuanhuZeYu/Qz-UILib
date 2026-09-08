@@ -1,16 +1,20 @@
 package club.heiqi.uilib.ui.markdown;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine;
+import club.heiqi.uilib.font.layout.markdown.MarkdownDocument.LayoutContent;
+import club.heiqi.uilib.font.layout.markdown.MarkdownDocument.TableUnit;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 
 /**
  * markdown L2 绘制层门面（规划《通用Markdown渲染器》§二 L2 / §五 D1）。
  *
- * <p><b>两条接缝并存（M7 方案乙，2026-09-05 用户裁定重开裁定 B 的块几何部分）</b>：
+ * <p><b>历史两条接缝保留，表格通过显式文档入口接入</b>：
  * <ul>
  *   <li><b>段流路（恒保留）</b>：{@code List<TextSegment>} 扁平接缝（{@link #wrapLines} /
  *       {@link #toPaintCommands}）——行为逐位不变，对拍门禁 {@code MarkdownChat3ParityTest}
@@ -20,6 +24,8 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
  *       BACKGROUND 块级几何（引用每层竖条、真横线、围栏块底色）。<b>块模型本身仍不外泄</b>
  *       （{@code MarkdownBlock}/{@code MarkdownBlockParser} 恒 package-private）；可见文本
  *       与段流路逐字等值，几何一律经位置与图元表达。</li>
+ *   <li><b>文档内容路</b>：{@link #layoutContent} 接收平行逻辑行/表格 units，
+ *       按块锚合成同一绘制计划；只由已迁移的消费者调用，历史两路表格仍字面显示。</li>
  * </ul></p>
  *
  * <p><b>本层认得的两种段流编码</b>（M4-fix 落地，仍是零公共面变更——两者都只用既有的
@@ -48,6 +54,139 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 public final class MarkdownPainter {
 
     private MarkdownPainter() {
+    }
+
+    /**
+     * 已定位的统一绘制计划；消费层按内容、宽度、基础字号和度量纪元缓存。
+     * 集合不可修改；段流遵循 PaintCommand 的只读约定，调用方不得修改其 TextStyle。
+     */
+    public static final class ContentLayout {
+        private final List<PaintCommand> commands;
+        private final int heightPx;
+        private final int widthPx;
+
+        private ContentLayout(List<PaintCommand> commands, int heightPx, int widthPx) {
+            this.commands = Collections.unmodifiableList(new ArrayList<PaintCommand>(commands));
+            this.heightPx = heightPx;
+            this.widthPx = widthPx;
+        }
+
+        public List<PaintCommand> getCommands() { return commands; }
+        public int getHeightPx() { return heightPx; }
+        /** 实际内容右缘；不可拆公式/码点的最小宽超过容器时可大于 maxWidthPx。 */
+        public int getWidthPx() { return widthPx; }
+    }
+
+    /**
+     * 带表格的显式布局入口。先按逻辑行锚切普通行区间，再插入表格计划；
+     * 同锚的表格按序定位，普通行仍由既有 MarkdownLineLayout 处理。
+     * maxWidthPx 小于等于零表示不约束宽度；空文档的高度为零。
+     * Page 与 headless 消费此同一计划，历史行路和段流路保持字面表格。
+     */
+    public static ContentLayout layoutContent(LayoutContent content, TextLayoutService measurer,
+                                              int maxWidthPx, int baseFontSizePx) {
+        if (content == null || measurer == null) {
+            throw new IllegalArgumentException("content 与 measurer 不可为 null");
+        }
+        List<PaintCommand> out = new ArrayList<PaintCommand>();
+        int before = 0;
+        int y = 0;
+        int width = 0;
+        for (TableUnit unit : content.getTables()) {
+            int end = unit.getBeforeLineIndex();
+            MarkdownLayoutLine marker = end > before ? content.getLines().get(end - 1) : null;
+            boolean inlineMarker = isDirectTableMarker(marker, unit.getContext());
+            ContentLayout run = layoutRun(content.getLines().subList(before, inlineMarker ? end - 1 : end),
+                    measurer, maxWidthPx, baseFontSizePx);
+            appendTranslated(out, run.commands, y);
+            y += run.heightPx;
+            width = Math.max(width, run.widthPx);
+            MarkdownTableLayout.Result table = MarkdownTableLayout.layout(unit, measurer, maxWidthPx, baseFontSizePx);
+            appendTranslated(out, table.commands, y);
+            if (inlineMarker) {
+                List<MarkdownLayoutLine> visualMarker = MarkdownLineLayout.layoutLines(
+                        Collections.singletonList(marker), measurer, 0, baseFontSizePx);
+                List<PaintCommand> markerCommands = MarkdownLineLayout.blockCommands(
+                        visualMarker, measurer, maxWidthPx, baseFontSizePx);
+                List<PaintCommand> textOnly = new ArrayList<PaintCommand>();
+                for (PaintCommand command : markerCommands) {
+                    // 表格自身已铺引用竖条；只把直属项标记与首表头放在同一行。
+                    if (command.getType() != club.heiqi.uilib.ui.scene.paint.PaintCommandType.BACKGROUND) {
+                        textOnly.add(command);
+                    }
+                }
+                appendTranslated(out, textOnly, y + unit.getBorderPx() + unit.getPaddingYPx());
+            }
+            y += table.height;
+            width = Math.max(width, table.width);
+            before = unit.getBeforeLineIndex();
+        }
+        ContentLayout tail = layoutRun(content.getLines().subList(before, content.getLines().size()),
+                measurer, maxWidthPx, baseFontSizePx);
+        appendTranslated(out, tail.commands, y);
+        return new ContentLayout(out, y + tail.heightPx, Math.max(width, tail.widthPx));
+    }
+
+    /** L1 首表格列表项保留独立标记事件；L2 只对直属、零正文标记行消除额外行高。 */
+    private static boolean isDirectTableMarker(MarkdownLayoutLine marker, MarkdownLayoutLine context) {
+        if (marker == null || marker.getKind() != MarkdownLayoutLine.Kind.LIST
+                || marker.getSegments().size() != 1 || marker.getQuoteLevel() != context.getQuoteLevel()
+                || marker.getBlockId() + 1 != context.getBlockId()) {
+            return false;
+        }
+        List<TextSegment> chain = context.getListMarkerChain();
+        if (chain.isEmpty() || marker.getListMarkerChain().size() != chain.size()
+                || marker.getSegments().get(0) != chain.get(chain.size() - 1)) {
+            return false;
+        }
+        // 同一文档投影共享标记段身份；文字恰等于圆点的普通正文不能冒充直属标记。
+        for (int i = 0; i < chain.size(); i++) {
+            if (marker.getListMarkerChain().get(i) != chain.get(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ContentLayout layoutRun(List<MarkdownLayoutLine> lines, TextLayoutService measurer,
+                                           int maxWidthPx, int font) {
+        if (lines.isEmpty()) {
+            return new ContentLayout(Collections.<PaintCommand>emptyList(), 0, 0);
+        }
+        List<MarkdownLayoutLine> visual = MarkdownLineLayout.layoutLines(lines, measurer, maxWidthPx, font);
+        int height = 0;
+        int width = 0;
+        for (MarkdownLayoutLine line : visual) {
+            height += MarkdownLineLayout.lineHeightPx(line.getSegments(), measurer, font);
+            width = Math.max(width, line.getLeftInsetPx()
+                    + MarkdownLineLayout.lineWidthPx(line.getSegments(), measurer, font));
+        }
+        List<PaintCommand> commands = MarkdownLineLayout.blockCommands(visual, measurer, maxWidthPx, font);
+        for (PaintCommand command : commands) {
+            width = Math.max(width, command.getRight());
+        }
+        return new ContentLayout(commands, height, width);
+    }
+
+    private static void appendTranslated(List<PaintCommand> out, List<PaintCommand> commands, int y) {
+        for (PaintCommand command : commands) {
+            switch (command.getType()) {
+                case BACKGROUND:
+                    out.add(PaintCommand.background(command.getLeft(), command.getTop() + y,
+                            command.getRight(), command.getBottom() + y, command.getColor()));
+                    break;
+                case SEGMENTS:
+                    out.add(PaintCommand.segments(command.getSegments(), command.getLeft(), command.getTop() + y,
+                            command.getTextStyle().getFontSize()));
+                    break;
+                case LINK_REGION:
+                    out.add(PaintCommand.linkRegion(command.getLeft(), command.getTop() + y,
+                            command.getRight(), command.getBottom() + y, command.getLinkUrl()));
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unexpected markdown command: " + command.getType());
+            }
+        }
     }
 
     /**

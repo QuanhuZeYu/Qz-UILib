@@ -170,6 +170,43 @@ public class MarkdownTableModelTest {
         Assert.assertEquals(Arrays.asList(1, 0, 0), models.get(1).getBlockPath());
     }
 
+    @Test
+    public void mixedTableDocumentPreservesListParagraphGapOnlyInNewLayout() throws Exception {
+        String ordinaryItem = "- first" + NL + NL + "  second";
+        MarkdownDocument mixed = MarkdownDocument.parse(ordinaryItem + NL
+                + "- a|b" + NL + "  -|-" + NL + "  x|y");
+        MarkdownDocument.LayoutContent content = mixed.toLayoutContent(null, new TextStyle());
+        Assert.assertEquals("样例必须实际进入含 TABLE 分支", 1, content.getTables().size());
+        List<MarkdownLayoutLine> lines = content.getLines();
+        Assert.assertEquals("另一列表项内部空行必须保留", MarkdownLayoutLine.NO_BLOCK,
+                lines.get(1).getBlockId());
+        Assert.assertTrue(lines.get(1).getSegments().isEmpty());
+        Assert.assertEquals("second", lines.get(2).getSegments().get(0).getText());
+        Assert.assertNotEquals("空行后的段落必须独立成块", lines.get(0).getBlockId(), lines.get(2).getBlockId());
+
+        // 旧列表解析会把项内空行折叠。使用同一字面前缀，复用完整 getter 快照，
+        // 同时比较样式、块 id、列表链和几何，避免仅可见字符串一致掩盖旧出口变化。
+        List<MarkdownLayoutLine> historical = MarkdownDocument.parse(ordinaryItem)
+                .toLayoutLines(null, new TextStyle());
+        List<MarkdownLayoutLine> legacy = mixed.toLayoutLines(null, new TextStyle());
+        Assert.assertEquals(MarkdownTableLiteralSnapshot.encode(historical),
+                MarkdownTableLiteralSnapshot.encode(legacy.subList(0, historical.size())));
+        Assert.assertEquals(historical.get(0).getBlockId(), historical.get(1).getBlockId());
+    }
+
+    @Test
+    public void literalPipeWithoutTableKeepsHistoricalListGapBehavior() throws Exception {
+        String withGap = "- first|literal" + NL + NL + "  second";
+        // 去掉空行是旧列表折叠行为的正对照；pipe 没有合法 delimiter，不能开启 TABLE 树。
+        MarkdownDocument historical = MarkdownDocument.parse("- first|literal" + NL + "  second");
+        MarkdownDocument document = MarkdownDocument.parse(withGap);
+        MarkdownDocument.LayoutContent content = document.toLayoutContent(null, new TextStyle());
+        Assert.assertTrue(content.getTables().isEmpty());
+        String expected = MarkdownTableLiteralSnapshot.encode(historical.toLayoutLines(null, new TextStyle()));
+        Assert.assertEquals(expected, MarkdownTableLiteralSnapshot.encode(document.toLayoutLines(null, new TextStyle())));
+        Assert.assertEquals(expected, MarkdownTableLiteralSnapshot.encode(content.getLines()));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void nullBaseStyleIsRejectedEvenForAnEmptyDocument() {
         MarkdownDocument.parse(null).toTableModels(null);

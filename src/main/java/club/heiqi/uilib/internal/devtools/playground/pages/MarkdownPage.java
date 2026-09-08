@@ -42,8 +42,10 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 后续段落/标题/引用；页面用 {@code extra = leftInsetPx - quoteLevel × indentStepPx}
  * 反解列表专属偏移并以 {@code setPadding} 平移文字——页面不自算第二份标记宽。</p>
  *
- * <p>解析/换行在 mount 时一次性完成（零每帧解析裁定，规划 §六 3）；观感与手感由真机验收，
- * headless 对拍见 {@code MarkdownSoftwareRenderTest}（build/reports/markdown-render/）。
+ * <p>既有行样本在 mount 时解析/换行。表格卡每次挂载只解析一次，实际内容宽或字体度量纪元
+ * 变化时才重新布局，稳态复用消费层计划与节点；表格链接沿本页既有语义仅作非交互样式预览。
+ * headless 见 {@code MarkdownSoftwareRenderTest} 与 {@code MarkdownTableSoftwareRenderTest}，
+ * 观感与手感仍由真机验收。
  * 滚动由 {@link TestPlaygroundHost} 视口统一提供（与其它页同构，不自建滚动容器）。</p>
  */
 public final class MarkdownPage implements PlaygroundPage {
@@ -78,8 +80,8 @@ public final class MarkdownPage implements PlaygroundPage {
                     "行内公式：质量能量等价 $e = mc^2$ 收尾。\n分数与根号混排：$\\frac{1}{2} + \\sqrt{x^2 + y^2}$ 在文本流中。\n求和：$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$ 与 $\\alpha\\beta\\gamma$ 希腊字母。"},
             {"链接与行内样式", "[text](url) 产 setLink+下划线段；![图片] 只产字面 ! + 链接段",
                     "访问 [Qz-UILib 主页](https://example.com/qz) 看详情。\n组合：**粗体里的[链接](https://a.test)** 与 ~~删除线~~ 和 `code span 字面`。\n图片刻意不支持：![alt 文本](https://img.test/x.png) 输出字面感叹号加链接段。"},
-            {"分隔线与刻意不支持面", "空行隔开的 --- 产真横线（1px 铺内容宽）；段落紧邻的一行 ---/=== 是" + " setext 标题下划线（C3b2 主流语义，故这里隔了空行）；表格/任务列表整行字面保留",
-                    "上文与下文被 --- 分开。\n\n---\n表格不解析：| 列一 | 列二 |\n|---|---|\n任务列表不解析：- [ ] 未完成项"},
+            {"分隔线与刻意不支持面", "空行隔开的 --- 产真横线（1px 铺内容宽）；段落紧邻的一行 ---/=== 是" + " setext 标题下划线（C3b2 主流语义，故这里隔了空行）；任务列表整行字面保留；表格另见下方演示",
+                    "上文与下文被 --- 分开。\n\n---\n任务列表不解析：- [ ] 未完成项"},
     };
 
     @Override
@@ -94,7 +96,7 @@ public final class MarkdownPage implements PlaygroundPage {
 
     @Override
     public String description() {
-        return "L1 块身份行接缝 → L2 layoutLines 换行(引用缩进/列表正文列) → 段流/连续竖条/真横线/围栏底色（9 张样本卡）";
+        return "标题、代码、引用、列表、公式与表格；支持对齐和自动换行";
     }
 
     @Override
@@ -107,8 +109,30 @@ public final class MarkdownPage implements PlaygroundPage {
             for (int i = 0; i < SAMPLES.length; i++) {
                 shell.appendChild(sampleCard(SAMPLES[i], measurer));
             }
+            shell.appendChild(tableCard(rt));
             return shell;
         };
+    }
+
+    /** 表格首消费者；其它样本保留原装配，引用组与列表的既有观感不变。 */
+    private static SceneNode tableCard(SceneRuntime rt) {
+        SceneNode card = PlaygroundKit.card();
+        card.appendChild(PlaygroundKit.title("表格：对齐与自动换行"));
+        MarkdownStyleTable styles = MarkdownStyleTable.defaults();
+        styles.setDefaultFontSizePx(BASE_FONT_PX);
+        TextStyle base = new TextStyle();
+        base.setColor(PlaygroundKit.TEXT);
+        String source = "表格前的说明。\n\n"
+                + "| 项目 | 说明 | 数量 |\n| :--- | :---: | ---: |\n"
+                + "| **基础材料** | 随窗口宽度自动换行的长说明，含中文与 English words。 | 128 |\n"
+                + "| [使用指南](https://example.com/guide) | `code` 与 ~~旧名称~~ | 16 |\n"
+                + "| 公式 | $e = mc^2$ | 1 |\n\n"
+                + "表格后的正文继续显示。";
+        card.appendChild(MarkdownPageContent.create(rt, source, styles, base, BASE_FONT_PX,
+                () -> FontService.getInstance().getTextLayoutService(),
+                () -> FontService.getInstance().getTextMeasureEpoch()));
+        card.appendChild(PlaygroundKit.hint("左对齐、居中和右对齐；缩窄窗口可观察单元格换行。"));
+        return card;
     }
 
     /**

@@ -9,7 +9,7 @@ import club.heiqi.uilib.font.layout.TextSegment;
 /**
  * 表格的最小跨层数据契约：仅行、单元格与对齐，不包含像素、度量或完整块子树。
  *
- * <p>由 {@link MarkdownDocument#toTableModels} 导出。TABLE 于 T2 前只解析、不布局；
+ * <p>由 {@link MarkdownDocument#toTableModels} 导出，表格布局走文档的显式 toLayoutContent 出口；
  * 旧段流与行接缝继续保持历史字面降级。集合均不可修改。</p>
  */
 public final class MarkdownTableModel {

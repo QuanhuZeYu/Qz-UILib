@@ -859,6 +859,178 @@ public class ChatMessageListTest {
         return sb.toString();
     }
 
+
+    /**
+     * T2 接缝门：T3a/T3b 均未裁定。快照来自 6c7637e512d7d2ce5a641b4d819580f730c23357，
+     * 捕获真实 printMarkdown / chat.type.text → composer → pipeline → 消息节点。
+     * FIXED_WRAP 仅用于冻结确定性历史输出；另测不注换行替身的真实 L2 路径。
+     * 不以当前 toLayoutLines 或当前 pipeline 计算期望，不提供运行时更新快照开关。
+     */
+    @Test
+    public void tablePrintMarkdownKeepsHistoricalLiteralHudAndContainer() throws Exception {
+        assertTableLiteralHistory(true);
+    }
+
+    @Test
+    public void tablePlayerBubbleKeepsHistoricalLiteralHudAndContainer() throws Exception {
+        assertTableLiteralHistory(false);
+    }
+
+    private static String tableLockSource() {
+        StringBuilder source = new StringBuilder("| A | B |\n| --- | --- |\n");
+        for (int row = 0; row < 12; row++) {
+            source.append("| **row").append(row).append("** | ");
+            for (int n = 0; n < 20; n++) {
+                source.append("word ");
+            }
+            source.append("|\n");
+        }
+        return source.append("\nafter-table").toString();
+    }
+
+    private static void assertTableLiteralHistory(boolean explicit) throws Exception {
+        String source = tableLockSource();
+        List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel> tables =
+                club.heiqi.uilib.font.layout.markdown.MarkdownDocument.parse(source)
+                        .toTableModels(new TextStyle());
+        Assert.assertEquals("反空跑：样本必须被识别为一个 TABLE", 1, tables.size());
+        Assert.assertEquals("反空跑：表头两列", 2, tables.get(0).getHeader().getCells().size());
+        Assert.assertEquals("反空跑：十二个数据行属于 TABLE", 12, tables.get(0).getRows().size());
+        for (boolean hud : new boolean[] {true, false}) {
+            SceneNode message = tableConsumerMessage(source, explicit, hud, true);
+            String snapshot = tableNodeSnapshot(message);
+            String resource = "table-literal-" + explicit + "_" + hud + ".snapshot";
+            try (java.io.InputStream input = ChatMessageListTest.class.getResourceAsStream(resource)) {
+                Assert.assertNotNull("固定历史快照不可缺席: " + resource, input);
+                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = input.read(buffer)) >= 0) {
+                    bytes.write(buffer, 0, count);
+                }
+                Assert.assertEquals("历史消费者可见输出必须逐字节等价: " + resource,
+                        new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8), snapshot);
+            }
+            assertLiteralTableFloor(message, hud);
+        }
+    }
+
+    @Test
+    public void tableBothConsumersKeepLiteralOutputThroughRealL2() throws Exception {
+        for (boolean explicit : new boolean[] {true, false}) {
+            SceneNode hud = tableConsumerMessage(tableLockSource(), explicit, true, false);
+            SceneNode container = tableConsumerMessage(tableLockSource(), explicit, false, false);
+            assertLiteralTableFloor(hud, true);
+            assertLiteralTableFloor(container, false);
+            Assert.assertTrue("窄列必须实际软折（超出源物理行数）",
+                    container.__getChildren().size() > tableLockSource().split("\n").length);
+        }
+    }
+
+    private static void assertLiteralTableFloor(SceneNode message, boolean hud) {
+        List<SceneNode> rows = message.__getChildren();
+        StringBuilder all = new StringBuilder();
+        for (SceneNode row : rows) {
+            if (row.getSegments() != null) {
+                for (TextSegment segment : row.getSegments()) {
+                    all.append(segment.getText());
+                }
+            }
+        }
+        Assert.assertTrue("表头 pipe 必须仍是字面", all.toString().contains("| A | B |"));
+        Assert.assertTrue("delimiter 不可被 TABLE 布局吞掉", all.toString().contains("| --- | --- |"));
+        if (hud) {
+            Assert.assertEquals("真实消费者 HUD 八行预算", ChatCardComposer.HUD_MAX_LINES, rows.size());
+            Assert.assertTrue("跨预算末行省略", all.toString().endsWith(ChatCardComposer.ELLIPSIS));
+            Assert.assertFalse("HUD 必须真截断尾文", all.toString().contains("after-table"));
+        } else {
+            Assert.assertTrue("展开容器保留完整尾文", all.toString().endsWith("after-table"));
+            Assert.assertTrue("展开容器超过 HUD 预算", rows.size() > ChatCardComposer.HUD_MAX_LINES);
+            for (SceneNode row : rows) {
+                Assert.assertEquals(0, row.getMaxLines());
+                Assert.assertFalse(row.isEllipsis());
+            }
+        }
+    }
+
+    private static SceneNode tableConsumerMessage(String source, boolean explicit, boolean hud,
+            boolean fixedWrap) throws Exception {
+        final ChatSceneController controller = fixedWrap ? linkController()
+                : new ChatSceneController(FIXED, selfAlex(), PARSER,
+                        ChatSceneController.uiLibSegmentMeasurer());
+        controller.setHostViewport(400, 300);
+        if (explicit) {
+            club.heiqi.uilib.api.chat.ChatAccess access = club.heiqi.uilib.api.chat.ChatAccess.getInstance();
+            Field sinkField = access.getClass().getDeclaredField("markdownSink");
+            sinkField.setAccessible(true);
+            Object previous = sinkField.get(access);
+            access.setMarkdownSink(component -> controller.history().append(new ChatLineRecord(component, 1, T0)));
+            try {
+                access.printMarkdown(source);
+            } finally {
+                sinkField.set(access, previous);
+            }
+        } else {
+            controller.history().append(new ChatLineRecord(new net.minecraft.util.ChatComponentTranslation(
+                    "chat.type.text", new Object[] {new ChatComponentText("Bob"), new ChatComponentText(source)}),
+                    1, T0));
+        }
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode group;
+        SceneListHandle handle = null;
+        if (hud) {
+            SceneNode root = controller.buildContent(rt);
+            rt.flush();
+            group = hudGroups(root).get(0);
+        } else {
+            SceneNode list = SceneNode.column();
+            ChatMessageList renderer = new ChatMessageList(PARSER,
+                    fixedWrap ? FIXED_MEASURER : ChatSceneController.uiLibSegmentMeasurer(),
+                    null, fixedWrap ? FIXED_WRAP : null);
+            renderer.setBubbleMaxWidthPx(ChatSceneController.bubbleMaxWidthPxFor(400));
+            handle = renderer.mount(rt, list, controller.groupsSignal(), ChatMessageList.Style.container(),
+                    new java.util.IdentityHashMap<SceneNode, ChatLineRecord>(), controller.frameMillisSignal());
+            rt.flush();
+            group = list.__getChildren().get(0);
+        }
+        Assert.assertEquals("两路组头形状独立", explicit ? 1 : 2, group.__getChildren().size());
+        SceneNode message = group.__getChildren().get(explicit ? 0 : 1);
+        Assert.assertEquals("printMarkdown 无气泡；玩家保留气泡内衬", explicit ? 0
+                : ChatMarkdownSettings.getBubblePaddingX(), message.getPaddingLeft());
+        if (handle != null) {
+            handle.dispose();
+        }
+        return message;
+    }
+
+    private static String tableNodeSnapshot(SceneNode node) throws Exception {
+        StringBuilder out = new StringBuilder();
+        tableNodeSnapshot(node, out, 0);
+        return out.toString();
+    }
+
+    private static void tableNodeSnapshot(SceneNode node, StringBuilder out, int depth) throws Exception {
+        out.append(depth).append(':').append(node.getBackgroundColor()).append(':')
+                .append(node.getPaddingLeft()).append(',').append(node.getPaddingRight()).append(':')
+                .append(node.getMaxWidth()).append(':').append(node.getPreferredWidth()).append(':')
+                .append(node.getPreferredHeight()).append(':').append(node.getFontSize()).append(':')
+                .append(node.getMaxLines()).append(':').append(node.isEllipsis()).append('\n');
+        if (node.getSegments() != null) {
+            for (TextSegment segment : node.getSegments()) {
+                TextStyle style = segment.getStyle();
+                out.append(segment.getText()).append('|').append(style.getColor()).append('|')
+                        .append(style.getFontType()).append('|').append(style.getFontSizePx()).append('|')
+                        .append(style.getLink()).append('|').append(style.isUnderline()).append('|')
+                        .append(style.isStrikethrough()).append('|').append(style.isItalic()).append('|')
+                        .append(segment.isLatex()).append('\n');
+            }
+        }
+        for (SceneNode child : node.__getChildren()) {
+            tableNodeSnapshot(child, out, depth + 1);
+        }
+    }
+
     // ==================== C8 通道③：markdown 系统行的渲染路由 ====================
 
     private static final String MARKDOWN_KEY =
