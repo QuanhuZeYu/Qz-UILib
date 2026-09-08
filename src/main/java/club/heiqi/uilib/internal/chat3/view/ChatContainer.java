@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.render.UiBackdrop;
 import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.input.ChatInputBar;
+import club.heiqi.uilib.internal.chat3.input.ChatToolbar;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
@@ -50,11 +51,15 @@ public final class ChatContainer {
         private final ChatScrollbar.Result scrollbar;
         private final ChatInputBar bar;
         private final ChatSceneController controller;
+        /** 输入条行（编辑态用于拦截拖动起点，保证输入区优先命中）。 */
+        private final SceneNode barRow;
+        /** 工具栏行（编辑态用于拦截拖动起点，保证按钮优先命中）。 */
+        private final SceneNode toolbarRow;
 
         private Result(SceneNode root, SceneListHandle listHandle, Binding scrollBinding,
                 Binding hintBinding, InputBinding hintInputBinding,
                 ChatScrollbar.Result scrollbar, ChatInputBar bar,
-                ChatSceneController controller) {
+                ChatSceneController controller, SceneNode barRow, SceneNode toolbarRow) {
             this.root = root;
             this.listHandle = listHandle;
             this.scrollBinding = scrollBinding;
@@ -63,6 +68,8 @@ public final class ChatContainer {
             this.scrollbar = scrollbar;
             this.bar = bar;
             this.controller = controller;
+            this.barRow = barRow;
+            this.toolbarRow = toolbarRow;
         }
 
         /** 释放列表与滚动绑定(屏幕关闭时)。 */
@@ -97,6 +104,16 @@ public final class ChatContainer {
             return bar;
         }
 
+        /** @return 输入条行节点(编辑态拖动起点拦截用) */
+        public SceneNode barRow() {
+            return barRow;
+        }
+
+        /** @return 工具栏行节点(编辑态拖动起点拦截用) */
+        public SceneNode toolbarRow() {
+            return toolbarRow;
+        }
+
         /** 每帧同步动态尺寸(视口 1/4 × 1/2)与气泡最大宽。钳宽式唯一出处 =
          *  {@link ChatSceneController#bubbleMaxWidthPxFor(int)}(包内 static,A3 提取),
          *  容器路不再自算镜像式(A3 镜像残留收口);传入前 Math.max(1, width) 视口守卫
@@ -119,10 +136,26 @@ public final class ChatContainer {
      * @param controller  聊天场景控制器(数据源:组列表 / 滚动偏移 / 消息列表渲染器 / 帧时钟)
      * @param registry    消息节点 → 记录登记表(命中检测用,调用方持有)
      * @param initialText 输入框预填文本
+     * @param toolbarHost 工具栏宿主端口(编辑子模式信号与动作)
+     * @return 容器装配结果
+     */
+    public static Result mount(SceneRuntime rt, ChatSceneController controller,
+            Map<SceneNode, ChatLineRecord> registry, String initialText, ChatToolbar.Host toolbarHost) {
+        return mountInternal(rt, controller, registry, initialText, toolbarHost);
+    }
+
+    /**
+     * 兼容重载：不接入 HUD 编辑子模式（惰性工具栏宿主，仅渲染注册动作）。
+     *
      * @return 容器装配结果
      */
     public static Result mount(SceneRuntime rt, ChatSceneController controller,
             Map<SceneNode, ChatLineRecord> registry, String initialText) {
+        return mountInternal(rt, controller, registry, initialText, ChatToolbar.inertHost());
+    }
+
+    private static Result mountInternal(SceneRuntime rt, ChatSceneController controller,
+            Map<SceneNode, ChatLineRecord> registry, String initialText, ChatToolbar.Host toolbarHost) {
         // 液态玻璃：容器与气泡同处一个 backdrop 批次，故二者采样的是<strong>同一张世界
         // 画面</strong>（批次内主层 revision 冻结）——气泡的玻璃不会把容器已糊过的画面
         // 再糊一层。这正是 iOS 一个 visual effect 层级内共享背景采样的语义，
@@ -295,6 +328,11 @@ public final class ChatContainer {
                 .setBackgroundColor(ChatMarkdownSettings.getDividerInputArgb());
         containerNode.insertBefore(divider, barRow);
 
+        // 工具栏(P1/P2):消息区底部、分隔线之上(与输入条分行,保留输入宽度;divider 到输入框
+        // 的既有间距契约不变)。普通态 = 注册动作,编辑态 = 完成/取消/重置;隐藏动作不占位。
+        SceneNode toolbarRow = ChatToolbar.mount(rt, toolbarHost);
+        containerNode.insertBefore(toolbarRow, divider);
+
         // 输入条上方「↓ N 条新消息」提示(设计稿 §5.1 P1):unreadSignal > 0 时显示,点击回底。
         // 挂摘式显隐:文本节点空文本也占一行(拆分契约「至少一行」),故 unread=0 时移出树(零占位、
         // 不消费命中);显示时插到分隔线上方(设计稿 §6.2:提示位于 Divider 上方)。
@@ -320,6 +358,6 @@ public final class ChatContainer {
                 (SceneEvent event, SceneEventContext ctx) -> controller.scrollToBottom());
 
         return new Result(containerNode, listHandle, scrollBinding, hintBinding, hintInputBinding,
-                scrollbar, bar, controller);
+                scrollbar, bar, controller, barRow, toolbarRow);
     }
 }

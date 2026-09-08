@@ -18,15 +18,24 @@ import club.heiqi.uilib.internal.chat3.view.ChatContainer;
 import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 import club.heiqi.uilib.internal.chat3.view.ChatSurfaceAnimator;
+import club.heiqi.uilib.ui.hud.api.HudAnchor;
+import club.heiqi.uilib.ui.hud.api.HudInsets;
+import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
+import club.heiqi.uilib.ui.hud.api.HudLayoutService;
+import club.heiqi.uilib.ui.hud.api.HudPlacement;
+import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglStateReader;
 import club.heiqi.uilib.ui.scene.control.SceneDialog;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
+import club.heiqi.uilib.ui.scene.input.SceneEventContext;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
-import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
-import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
+import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 
@@ -39,7 +48,8 @@ import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
  * 关闭完成回调不在渲染栈内触发,由屏幕 updateScreen 每 tick 经 {@link #tickCloseState()} 取走
  * (关屏 displayGuiScreen 会销毁本 surface,不能在 render 栈内执行)。</p>
  */
-public final class ChatInputSurface extends AbstractSceneHostWidget {
+public final class ChatInputSurface extends AbstractSceneHostWidget
+        implements ChatToolbar.Host, ChatHudEditIntent.Sink {
 
     private static final Logger LOG = LogManager.getLogger("QzUILib Chat3Input");
 
@@ -56,6 +66,33 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     /** 当前「打开链接？」确认框(连点顶掉旧框;随 runtime.dispose 一并回收)。 */
     private ScenePortalHandle linkConfirm;
 
+    /** 用户布局服务(会话内唯一事实源;打开态容器与关闭态 HUD 共用同一份放置)。 */
+    private final HudLayoutService layoutService = HudLayoutService.getInstance();
+    /** 编辑子模式信号(工具栏行切换 + 拖动启停 + 输入暂停)。 */
+    private final Signal<Boolean> editing = Signal.create(Boolean.FALSE);
+    /** 「恢复当前默认」可用性(草稿或已提交覆盖存在时为真)。 */
+    private final ReadableSignal<Boolean> canResetCurrent = Computed.create(() -> {
+        layoutService.revision().get();
+        return Boolean.valueOf(layoutService.hasDraftOverride(ChatHudWindow.HUD_ID)
+                || layoutService.hasCommittedOverride(ChatHudWindow.HUD_ID));
+    });
+    /** 「恢复全部默认」可用性(存在任一已提交覆盖时为真)。 */
+    private final ReadableSignal<Boolean> canResetAll = Computed.create(() -> {
+        layoutService.revision().get();
+        return Boolean.valueOf(layoutService.hasCommittedOverrides());
+    });
+    /** 拖动状态:true = 本次按下已取得指针捕获(单一 gesture 到 UP/CANCEL)。 */
+    private final boolean[] dragging = new boolean[1];
+    /** 按下时指针屏幕绝对坐标(raw 层;容器随动,增量必须用 raw 而非局部坐标)。 */
+    private final int[] dragOrigin = new int[2];
+    /** 按下前的生效放置(取消手势时回滚)。 */
+    private HudPlacement dragOriginPlacement;
+    /** 按下前是否已有用户覆盖(决定取消时 clearDraft 还是回写原放置)。 */
+    private boolean dragOriginHadOverride;
+    /** 最近一帧宿主视口(logical px;拖动换算与放置解析用)。 */
+    private int hostWidth = 1;
+    private int hostHeight = 1;
+
     public ChatInputSurface(String initialText) {
         super(new LwjglInputSource(new LwjglStateReader()));
         this.controller = ChatHudWindow.ensureRegistered();
@@ -70,18 +107,31 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
                 ChatSurfaceAnimator.closeTimeoutFor(ChatMarkdownSettings.getClosingAnimMillis()));
         this.animator.startOpen(System.currentTimeMillis());
 
-        int margin = ChatMarkdownSettings.getChatMarginPx();
+        // 根节点只做视口盒(padding 0):容器位置由统一 HUD 布局服务解析后写入 margin,
+        // 默认放置 = BOTTOM_LEFT + margin,与历史 padding + mainAxis END 完全同值。
         root = SceneNode.column()
                 .setHitTestable(true)
                 .setFillParentHeight(true)
-                .setMainAxisAlign(MainAxisAlign.END)
-                .setCrossAxisAlign(CrossAxisAlign.START)
-                .setPadding(0, margin, margin, margin);
+                .setPadding(0);
 
-        container = ChatContainer.mount(runtime, controller, screenMessageNodes, initialText);
+        container = ChatContainer.mount(runtime, controller, screenMessageNodes, initialText, this);
         root.appendChild(container.root());
         // 链接点击:事件当场投递(不在 mouseClicked 里取账 —— CLICK 要到 UP 才合成)
         controller.setMessageLinkClickHandler(this::onSceneLinkClick);
+
+        // 编辑子模式:容器自身在编辑态才可命中(空白/消息区按下 = 开始拖动并捕获);
+        // 工具栏与输入条在 DOWN 停止冒泡,保证按钮/输入框优先命中,不被拖动夺走 gesture。
+        runtime.bind(editing, value -> container.root().setHitTestable(Boolean.TRUE.equals(value)));
+        runtime.on(container.root(), SceneEventType.POINTER_DOWN, this::onDragDown);
+        runtime.on(container.root(), SceneEventType.POINTER_MOVE, this::onDragMove);
+        runtime.on(container.root(), SceneEventType.POINTER_UP, this::onDragUp);
+        runtime.on(container.root(), SceneEventType.POINTER_CANCEL, this::onDragCancel);
+        runtime.on(container.toolbarRow(), SceneEventType.POINTER_DOWN,
+                (event, ctx) -> ctx.stopPropagation());
+        runtime.on(container.barRow(), SceneEventType.POINTER_DOWN,
+                (event, ctx) -> ctx.stopPropagation());
+
+        ChatHudEditIntent.attach(this);
 
         // 滚轮滚动聊天历史(vanilla ±7/Shift±1 语义)。
         // 方向语义:wheelDelta > 0(滚轮向上)→ 正行数 → history.scrollBy(+) = 向旧消息
@@ -89,6 +139,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         // wheelDelta < 0(滚轮向下)→ 负行数 → 回最新底部。
         runtime.on(root, SceneEventType.SCROLL,
                 (SceneEvent event, club.heiqi.uilib.ui.scene.input.SceneEventContext ctx) -> {
+                    if (Boolean.TRUE.equals(editing.get())) {
+                        return; // 编辑子模式:暂停历史滚动交互,滚轮不穿透到聊天
+                    }
                     int wheel = wheelScrollLines(event.getWheelDelta(), event.isShiftDown());
                     if (wheel == 0) {
                         return;
@@ -127,6 +180,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         container.setViewport(w, h);
+        hostWidth = Math.max(1, w);
+        hostHeight = Math.max(1, h);
+        applyPlacement(hostWidth, hostHeight);
         if ((renderLogCounter++ % 120) == 0) {
             LOG.info("聊天输入屏渲染视口: w={}, h={}, chatWidthFor={}, containerHeightFor={}",
                     Integer.valueOf(w), Integer.valueOf(h),
@@ -148,9 +204,194 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
         container.bar().onOpened();
     }
 
-    /** 屏幕关闭:释放容器句柄(列表 + 滚动绑定)。 */
+    /** 屏幕关闭:取消未完成编辑会话并释放容器句柄(列表 + 滚动绑定)。 */
     public void onClosed() {
+        ChatHudEditIntent.detach(this);
+        if (Boolean.TRUE.equals(editing.get())) {
+            endDrag(true);
+            layoutService.cancelEdit();
+            editing.set(Boolean.FALSE);
+        }
         container.dispose();
+    }
+
+    // ==================== HUD 编辑子模式(P1/P2 最小闭环) ====================
+
+    /** @return 是否处于 HUD 编辑子模式 */
+    public boolean isEditing() {
+        return Boolean.TRUE.equals(editing.get());
+    }
+
+    /**
+     * 屏幕级 Esc 决策(由 {@link ChatInputScreen} 在原生键路径最先调用)。
+     *
+     * <p>拖动中 = 先取消当前手势并恢复按下前位置(返回 true,屏幕不关闭);无拖动 = 取消整个
+     * 会话并退出编辑(返回 true)。非编辑态返回 false,交由聊天原有关闭流程处理。</p>
+     *
+     * @return true = 已消费本次 Esc
+     */
+    public boolean handleEscape() {
+        if (!Boolean.TRUE.equals(editing.get())) {
+            return false;
+        }
+        if (dragging[0]) {
+            endDrag(true);
+            return true;
+        }
+        cancelEdit();
+        return true;
+    }
+
+    /** 每帧把权威放置解析为容器 margin(统一 HUD 布局服务 → 宿主放置 → 既有 layout/paint)。 */
+    private void applyPlacement(int width, int height) {
+        HudPlacement placement = effectivePlacement();
+        AnchorRect rect = HudLayoutResolver.resolve(placement, width, height,
+                ChatMarkdownSettings.chatWidthFor(width),
+                ChatMarkdownSettings.containerHeightFor(height), ChatHudWindow.currentSafeInsets());
+        container.root().setMargin(rect.getY(), 0, 0, rect.getX());
+    }
+
+    /** @return 生效放置(用户覆盖优先,否则按注册规格算默认放置 = BOTTOM_LEFT + margin) */
+    private HudPlacement effectivePlacement() {
+        HudPlacement placement = layoutService.placement(ChatHudWindow.HUD_ID);
+        return placement != null ? placement
+                : HudPlacement.defaultOf(HudAnchor.BOTTOM_LEFT, ChatMarkdownSettings.getChatMarginPx());
+    }
+
+    private void onDragDown(SceneEvent event, SceneEventContext ctx) {
+        if (!Boolean.TRUE.equals(editing.get()) || event.getButton() != SceneMouseButton.LEFT) {
+            return;
+        }
+        dragging[0] = true;
+        dragOrigin[0] = ctx.getRawPointerX();
+        dragOrigin[1] = ctx.getRawPointerY();
+        dragOriginHadOverride = layoutService.placement(ChatHudWindow.HUD_ID) != null;
+        dragOriginPlacement = effectivePlacement();
+        ctx.requestPointerCapture();
+        ctx.stopPropagation();
+    }
+
+    private void onDragMove(SceneEvent event, SceneEventContext ctx) {
+        if (!dragging[0]) {
+            return;
+        }
+        int dx = ctx.getRawPointerX() - dragOrigin[0];
+        int dy = ctx.getRawPointerY() - dragOrigin[1];
+        HudPlacement desired = dragOriginPlacement.translate(dx, dy);
+        HudPlacement clamped = HudLayoutResolver.clamp(desired, hostWidth, hostHeight,
+                ChatMarkdownSettings.chatWidthFor(hostWidth),
+                ChatMarkdownSettings.containerHeightFor(hostHeight), ChatHudWindow.currentSafeInsets());
+        layoutService.setDraft(ChatHudWindow.HUD_ID, clamped);
+        ctx.stopPropagation();
+    }
+
+    private void onDragUp(SceneEvent event, SceneEventContext ctx) {
+        if (!dragging[0]) {
+            return;
+        }
+        endDrag(false);
+        ctx.stopPropagation();
+    }
+
+    private void onDragCancel(SceneEvent event, SceneEventContext ctx) {
+        endDrag(true);
+    }
+
+    /** 结束拖动;rollback = true 时把草稿回滚到按下前状态(取消手势语义)。 */
+    private void endDrag(boolean rollback) {
+        if (!dragging[0]) {
+            return;
+        }
+        dragging[0] = false;
+        if (!rollback) {
+            return;
+        }
+        if (dragOriginHadOverride) {
+            layoutService.setDraft(ChatHudWindow.HUD_ID, dragOriginPlacement);
+        } else {
+            layoutService.clearDraft(ChatHudWindow.HUD_ID);
+        }
+    }
+
+    private void restoreInputFocus() {
+        container.bar().refocus();
+    }
+
+    /** 编辑态暂停聊天输入:文本桥旁路直接调 pushText,必须在 surface 层拦截。 */
+    @Override
+    public void pushText(String text) {
+        if (Boolean.TRUE.equals(editing.get())) {
+            return;
+        }
+        super.pushText(text);
+    }
+
+    @Override
+    public void onKeyTyped(char typedChar, int keyCode) {
+        if (Boolean.TRUE.equals(editing.get())) {
+            return;
+        }
+        super.onKeyTyped(typedChar, keyCode);
+    }
+
+    // ==================== ChatToolbar.Host ====================
+
+    @Override
+    public ReadableSignal<Boolean> editing() {
+        return editing;
+    }
+
+    @Override
+    public ReadableSignal<Boolean> canResetCurrent() {
+        return canResetCurrent;
+    }
+
+    @Override
+    public ReadableSignal<Boolean> canResetAll() {
+        return canResetAll;
+    }
+
+    @Override
+    public void finishEdit() {
+        if (!Boolean.TRUE.equals(editing.get())) {
+            return;
+        }
+        endDrag(false);
+        layoutService.commitEdit();
+        editing.set(Boolean.FALSE);
+        restoreInputFocus();
+    }
+
+    @Override
+    public void cancelEdit() {
+        if (!Boolean.TRUE.equals(editing.get())) {
+            return;
+        }
+        endDrag(true);
+        layoutService.cancelEdit();
+        editing.set(Boolean.FALSE);
+        restoreInputFocus();
+    }
+
+    @Override
+    public void resetCurrent() {
+        layoutService.resetDraft(ChatHudWindow.HUD_ID);
+    }
+
+    @Override
+    public void resetAll() {
+        layoutService.resetAllDraft();
+    }
+
+    // ==================== ChatHudEditIntent.Sink ====================
+
+    @Override
+    public void requestEnterEdit() {
+        if (Boolean.TRUE.equals(editing.get())) {
+            return;
+        }
+        layoutService.beginEdit();
+        editing.set(Boolean.TRUE);
     }
 
     /**
@@ -256,6 +497,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget {
      * 真机就是「要点第二下才有效」。</p>
      */
     void onSceneLinkClick(ChatLinkClick hit) {
+        if (Boolean.TRUE.equals(editing.get())) {
+            return; // 编辑子模式:暂停消息链接交互(拖动/点击都不应打开外链)
+        }
         IChatComponent component = hit.component();
         ClickEvent click = component == null ? null
                 : component.getChatStyle().getChatClickEvent();

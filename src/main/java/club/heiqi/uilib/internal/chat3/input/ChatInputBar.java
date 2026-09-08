@@ -161,6 +161,11 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         inputHandle.moveCaretToEndOf().accept(inputText.get());
     }
 
+    /** 重新聚焦输入框(编辑子模式退出时恢复输入焦点;不动文本/caret/选区)。 */
+    public void refocus() {
+        runtime.requestFocus(inputRoot);
+    }
+
     /** 提交文本(trim 后);空串返回空。 */
     public String takeText() {
         return inputText.get().trim();

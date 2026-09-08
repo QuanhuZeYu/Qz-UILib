@@ -3,6 +3,9 @@ package club.heiqi.uilib.client.hud;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
+import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
+import club.heiqi.uilib.ui.hud.api.HudLayoutService;
+import club.heiqi.uilib.ui.hud.api.HudPlacement;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
@@ -40,6 +43,8 @@ public final class SceneHudHost {
     private final HudScaleSetting scaleSetting;
     /** 最近一帧各窗口的权威放置盒（视口逻辑 px；每帧 render 清空重建）。 */
     private final HashMap<String, AnchorRect> lastPlacements = new HashMap<String, AnchorRect>();
+    /** 最近一帧安全区（打开态容器与关闭态 HUD 共用同一份安全区事实的对外端口）。 */
+    private HudInsets lastSafeInsets = HudInsets.NONE;
 
     /** 创建消费指定服务注册表的 HUD host；唯一生产构造点在 {@code UiHudRenderListener}。 */
     public SceneHudHost(ClientHudServiceImpl service) {
@@ -68,6 +73,7 @@ public final class SceneHudHost {
         height = Math.max(1, (int) Math.floor(height / scale));
         backend = backend.scaled(scale);
         HudInsets safeInsets = registry.avoidanceInsets(this::reportProviderFailure);
+        lastSafeInsets = safeInsets;
         lastPlacements.clear();
         ArrayList<MeasuredHud> measured = new ArrayList<MeasuredHud>();
         Set<String> registered = new HashSet<String>();
@@ -122,6 +128,18 @@ public final class SceneHudHost {
         EnumMap<HudAnchor, Integer> offsets = new EnumMap<HudAnchor, Integer>(HudAnchor.class);
         for (MeasuredHud item : sorted) {
             HudSpec spec = item.entry.spec;
+            // 用户布局覆盖（会话内）：走统一解析数学，并脱离默认堆叠（不参与 offset 累积）。
+            // 无覆盖时保持原四角锚定 + 同锚点堆叠，既有行为零回归。
+            HudPlacement custom = HudLayoutService.getInstance().placement(spec.getId());
+            if (custom != null) {
+                RetainedWindow customWindow = retained.get(spec.getId());
+                AnchorRect rect = HudLayoutResolver.resolve(custom, width, height,
+                        item.width, item.height, safeInsets);
+                lastPlacements.put(spec.getId(), rect);
+                customWindow.frame(backend, rect.getX(), rect.getY(), rect.getWidth(), rect.getHeight(),
+                        frameTimeNanos);
+                continue;
+            }
             int offset = offsets.containsKey(spec.getAnchor()) ? offsets.get(spec.getAnchor()) : 0;
             SceneAnchorResolver.ResolvedViewport placed = SceneAnchorResolver.resolveViewport(
                     isRight(spec.getAnchor()), isBottom(spec.getAnchor()),
@@ -163,6 +181,11 @@ public final class SceneHudHost {
      */
     public AnchorRect currentPlacement(String hudId) {
         return hudId == null ? null : lastPlacements.get(hudId);
+    }
+
+    /** @return 最近一帧安全区（未渲染过时 {@link HudInsets#NONE}）；供打开态容器共用同一事实。 */
+    public HudInsets currentSafeInsets() {
+        return lastSafeInsets;
     }
 
     /** 释放世界级保留窗口；registration 仍归 mod 持有，重连后自动重建。 */

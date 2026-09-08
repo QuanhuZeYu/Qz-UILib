@@ -71,9 +71,19 @@ public final class ChatInputScreen extends McScreenBridge {
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
         if (keyCode == KEY_ESCAPE) {
+            // HUD 编辑子模式(规划 P2):Esc 先取消当前拖动手势,再次 Esc 取消整个会话;
+            // 两次都由编辑层消费,不关屏。非编辑态走原关闭路径。
+            if (surface.handleEscape()) {
+                return;
+            }
             // 关闭路径:先播容器 CLOSING 动画再关屏(不交父壳——McScreenBridge/原版会立即
             // displayGuiScreen(null),动画不可见;动画期间重复 Esc 由 requestClose 幂等)
             requestClose();
+            return;
+        }
+        if (surface.isEditing()) {
+            // 编辑子模式:Enter/历史/补全/翻页一律不执行聊天命令,也不转发 scene(暂停聊天输入)。
+            // 文本桥旁路直接调 surface.pushText,由 ChatInputSurface 在编辑态拦截。
             return;
         }
         ChatInputKeyAction.Action action = ChatInputKeyAction.of(keyCode);

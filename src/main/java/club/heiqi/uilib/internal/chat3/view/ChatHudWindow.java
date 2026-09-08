@@ -1,8 +1,10 @@
 package club.heiqi.uilib.internal.chat3.view;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
+import club.heiqi.uilib.internal.chat3.input.ChatHudEditIntent;
 import club.heiqi.uilib.ui.hud.api.ClientHudService;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
+import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.hud.api.HudRegistration;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
@@ -33,9 +35,20 @@ public final class ChatHudWindow {
         AnchorRect placement(String hudId);
     }
 
+    /**
+     * 宿主安全区查询端口（由 client 装配层注入）：打开态聊天容器与关闭态 HUD 共用同一份
+     * 安全区事实，避免两套坐标/占位口径（规划 P2「双形态共用宿主坐标转换与安全区事实」）。
+     */
+    @FunctionalInterface
+    public interface HudSafeAreaSource {
+        /** @return 最近一帧宿主安全区；不可用时返回 {@link HudInsets#NONE} */
+        HudInsets insets();
+    }
+
     private static volatile HudRegistration registration;
     private static volatile ChatSceneController controller;
     private static volatile HudPlacementSource placementSource;
+    private static volatile HudSafeAreaSource safeAreaSource;
 
     private ChatHudWindow() {
     }
@@ -46,6 +59,8 @@ public final class ChatHudWindow {
      * @return 聊天场景控制器(非 null)
      */
     public static synchronized ChatSceneController ensureRegistered() {
+        // 内置「编辑 HUD」动作与第三方动作走同一注册链（幂等；跨聊天开关保持注册）。
+        ChatHudEditIntent.install();
         if (registration == null || registration.isClosed()) {
             ChatSceneController instance = new ChatSceneController();
             instance.attachPlacementSource(placementSource);
@@ -74,6 +89,25 @@ public final class ChatHudWindow {
         ChatSceneController instance = controller;
         if (instance != null) {
             instance.attachPlacementSource(source);
+        }
+    }
+
+    /** 装配层注入宿主安全区端口（幂等）。 */
+    public static synchronized void setSafeAreaSource(HudSafeAreaSource source) {
+        safeAreaSource = source;
+    }
+
+    /** @return 最近一帧宿主安全区（未注入/不可用时 NONE，调用方无需判空） */
+    public static HudInsets currentSafeInsets() {
+        HudSafeAreaSource source = safeAreaSource;
+        if (source == null) {
+            return HudInsets.NONE;
+        }
+        try {
+            HudInsets insets = source.insets();
+            return insets == null ? HudInsets.NONE : insets;
+        } catch (RuntimeException failure) {
+            return HudInsets.NONE;
         }
     }
 

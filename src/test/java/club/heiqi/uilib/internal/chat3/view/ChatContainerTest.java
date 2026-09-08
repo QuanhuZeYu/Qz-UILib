@@ -90,11 +90,12 @@ public class ChatContainerTest {
         ChatContainer.Result result = ChatContainer.mount(rt, controller, registry, "");
         rt.flush();
 
-        // containerNode 子顺序 = [listRow, divider, barRow](挂载顺序 + insertBefore)
+        // containerNode 子顺序 = [listRow, toolbarRow, divider, barRow](挂载顺序 + insertBefore;
+        // 工具栏为 P1/P2 新增,位于分隔线之上,divider→输入框间距契约不变)
         SceneNode container = result.root();
-        Assert.assertEquals(3, container.__getChildren().size());
-        SceneNode divider = container.__getChildren().get(1);
-        SceneNode barRow = container.__getChildren().get(2);
+        Assert.assertEquals(4, container.__getChildren().size());
+        SceneNode divider = container.__getChildren().get(2);
+        SceneNode barRow = container.__getChildren().get(3);
 
         Assert.assertEquals("divider 高 1px", 1, divider.getPreferredHeight());
         Assert.assertEquals("输入条区高 40", ChatMarkdownSettings.getInputBarHeightPx(),
