@@ -64,6 +64,147 @@ final class ChatMarkdownPipeline {
     /** 视觉行缓存：逻辑行 key#定行宽#字号#度量纪元 → 换行产物。 */
     private final Map<String, List<RenderedLine>> linesCache = newLru(LINES_CACHE_MAX);
 
+    /** 显式文档缓存按原文保存解析树，宽/字体/配色变化均不重复解析。 */
+    private final Map<String, ContentEntry> contentCache = newLru(LOGICAL_CACHE_MAX);
+    private final java.util.function.Function<String, MarkdownDocument> contentParser;
+
+    ChatMarkdownPipeline() {
+        this(MarkdownDocument::parse);
+    }
+
+    ChatMarkdownPipeline(java.util.function.Function<String, MarkdownDocument> contentParser) {
+        this.contentParser = contentParser;
+    }
+
+    static final class RenderedContent {
+        final List<PaintLeaf> leaves;
+        final int width;
+        final int height;
+
+        RenderedContent(List<PaintLeaf> leaves, int width, int height) {
+            this.leaves = Collections.unmodifiableList(new ArrayList<PaintLeaf>(leaves));
+            this.width = width;
+            this.height = height;
+        }
+    }
+
+    /** L2 命令及同源度量叶盒；消费 helper 不认识 markdown 类型。 */
+    static final class PaintLeaf {
+        final club.heiqi.uilib.ui.scene.paint.PaintCommand command;
+        final int width;
+        final int height;
+        final int top;
+
+        PaintLeaf(club.heiqi.uilib.ui.scene.paint.PaintCommand command, int width, int height) {
+            this(command, width, height, command.getTop());
+        }
+
+        PaintLeaf(club.heiqi.uilib.ui.scene.paint.PaintCommand command, int width, int height, int top) {
+            this.command = command;
+            this.width = width;
+            this.height = height;
+            this.top = top;
+        }
+    }
+
+    private static final class ContentEntry {
+        final MarkdownDocument document;
+        final boolean tables;
+        int baseColor;
+        int font;
+        int epoch;
+        int secondaryColor;
+        int linkColor;
+        MarkdownDocument.LayoutContent projection;
+        TextLayoutService measurer;
+        ChatMessageList.SegmentPostProcessor processor;
+        // 同一消息仅保留 HUD 与展开 occurrence 最近两个正文宽。
+        final Map<Integer, RenderedContent> rendered = newLru(2);
+
+        ContentEntry(MarkdownDocument document) {
+            this.document = document;
+            tables = !document.toLayoutContent(chatStyleTable(), new TextStyle()).getTables().isEmpty();
+        }
+    }
+
+    private ContentEntry contentEntry(String source) {
+        String text = source == null ? "" : source;
+        ContentEntry entry = contentCache.get(text);
+        if (entry == null) {
+            entry = new ContentEntry(contentParser.apply(text));
+            contentCache.put(text, entry);
+        }
+        return entry;
+    }
+
+    synchronized boolean hasTables(String source) {
+        return contentEntry(source).tables;
+    }
+
+    synchronized RenderedContent layoutContent(String source, int baseColor, int width, int font,
+            ChatMessageList.SegmentPostProcessor processor) {
+        FontService fonts = FontService.getInstance();
+        return layoutContent(source, baseColor, width, font, processor,
+                fonts.getTextLayoutService(), fonts.getRuntimeVersion());
+    }
+
+    synchronized RenderedContent layoutContent(String source, int baseColor, int width, int font,
+            ChatMessageList.SegmentPostProcessor processor, TextLayoutService measurer, int epoch) {
+        ContentEntry entry = contentEntry(source);
+        int available = Math.max(1, width);
+        int secondaryColor = ChatMarkdownSettings.getTextSecondaryArgb();
+        int linkColor = ChatMarkdownSettings.getLinkArgb();
+        boolean sameProjection = entry.projection != null && entry.baseColor == baseColor && entry.font == font
+                && entry.epoch == epoch && entry.secondaryColor == secondaryColor && entry.linkColor == linkColor
+                && entry.processor == processor && entry.measurer == measurer;
+        RenderedContent hit = sameProjection ? entry.rendered.get(available) : null;
+        if (hit != null) return hit;
+        if (!sameProjection) {
+            TextStyle base = new TextStyle();
+            base.setColor(baseColor);
+            entry.projection = entry.document.toLayoutContent(chatStyleTable(), base).mapSegments(segments -> {
+                List<TextSegment> processed = processor == null || segments.isEmpty() ? segments
+                        : processor.postProcess(segments, font);
+                return ChatUrlLinkifier.linkify(processed, ChatMarkdownSettings.getLinkArgb());
+            });
+            entry.rendered.clear();
+            entry.baseColor = baseColor;
+            entry.font = font;
+            entry.epoch = epoch;
+            entry.secondaryColor = secondaryColor;
+            entry.linkColor = linkColor;
+            entry.processor = processor;
+            entry.measurer = measurer;
+        }
+        MarkdownPainter.ContentLayout plan = MarkdownPainter.layoutContent(entry.projection, measurer, available, font);
+        List<PaintLeaf> leaves = new ArrayList<PaintLeaf>();
+        int top = 0;
+        int bottom = plan.getHeightPx();
+        int right = plan.getWidthPx();
+        for (club.heiqi.uilib.ui.scene.paint.PaintCommand command : plan.getCommands()) {
+            int w = Math.max(1, command.getRight() - command.getLeft());
+            int h = Math.max(1, command.getBottom() - command.getTop());
+            if (command.getType() == club.heiqi.uilib.ui.scene.paint.PaintCommandType.SEGMENTS) {
+                int size = command.getTextStyle().getFontSize();
+                w = Math.max(1, MarkdownPainter.lineWidthPx(command.getSegments(), measurer, size));
+                h = Math.max(1, MarkdownPainter.lineHeightPx(command.getSegments(), measurer, size));
+
+            }
+            top = Math.min(top, command.getTop());
+            bottom = Math.max(bottom, command.getTop() + h);
+            right = Math.max(right, command.getLeft() + w);
+            leaves.add(new PaintLeaf(command, w, h));
+        }
+        if (top < 0) {
+            List<PaintLeaf> shifted = new ArrayList<PaintLeaf>();
+            for (PaintLeaf leaf : leaves) shifted.add(new PaintLeaf(leaf.command, leaf.width, leaf.height, leaf.top - top));
+            leaves = shifted;
+        }
+        RenderedContent rendered = new RenderedContent(leaves, right, bottom - top);
+        entry.rendered.put(available, rendered);
+        return rendered;
+    }
+
     /**
      * 一条已渲染视觉行（chat3 自有视图，不含任何 markdown 层类型引用）。
      *
@@ -271,8 +412,10 @@ final class ChatMarkdownPipeline {
         }
         TextStyle base = new TextStyle();
         base.setColor(baseColor);
-        List<MarkdownLayoutLine> logical = MarkdownDocument.parse(text)
-                .toLayoutLines(chatStyleTable(), base);
+        // 显式非表格消息已为通道判断解析过；玩家路未命中仍保持原解析入口。
+        ContentEntry known = contentCache.get(text);
+        MarkdownDocument document = known == null ? MarkdownDocument.parse(text) : known.document;
+        List<MarkdownLayoutLine> logical = document.toLayoutLines(chatStyleTable(), base);
         List<MarkdownLayoutLine> processed = new ArrayList<MarkdownLayoutLine>(logical.size());
         for (int i = 0; i < logical.size(); i++) {
             MarkdownLayoutLine line = logical.get(i);
@@ -347,12 +490,12 @@ final class ChatMarkdownPipeline {
                 + Integer.toHexString(ChatMarkdownSettings.getLinkArgb());
     }
 
-    private static <V> Map<String, V> newLru(final int max) {
-        return new LinkedHashMap<String, V>(64, 0.75F, true) {
+    private static <K, V> Map<K, V> newLru(final int max) {
+        return new LinkedHashMap<K, V>(64, 0.75F, true) {
             private static final long serialVersionUID = 1L;
 
             @Override
-            protected boolean removeEldestEntry(Map.Entry<String, V> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
                 return size() > max;
             }
         };

@@ -4,9 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import club.heiqi.uilib.font.latex.LatexParser;
-import club.heiqi.uilib.font.latex.layout.MathBox;
-import club.heiqi.uilib.font.latex.layout.MathLayoutService;
+import club.heiqi.uilib.ui.markdown.MarkdownLineLayout.VisualLine;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.markdown.MarkdownDocument.TableUnit;
@@ -16,70 +14,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 
 /** 表格像素 pass；文本、公式、链接均复用既有行布局，零语法识别。 */
 final class MarkdownTableLayout {
-    private static final MathLayoutService MATH = new MathLayoutService();
-
     private MarkdownTableLayout() {}
-
-    private static final class CellLine {
-        final List<TextSegment> segments;
-        final int width;
-        final int height;
-        final int textOffsetY;
-
-        CellLine(List<TextSegment> segments, TextLayoutService measurer, int font) {
-            this.segments = segments;
-            this.width = MarkdownLineLayout.lineWidthPx(segments, measurer, font);
-            int textHeight = MarkdownLineLayout.lineHeightPx(segments, measurer, font);
-            MathBox[] boxes = new MathBox[segments.size()];
-            int maxTextSize = 0;
-            int maxLatexSize = 0;
-            int latexCount = 0;
-            double tallest = 0;
-            double tallestAscent = 0;
-            for (int i = 0; i < segments.size(); i++) {
-                TextSegment segment = segments.get(i);
-                int size = Math.max(1, segment.getStyle().resolveEffectiveFontSizePx(font));
-                if (!segment.isLatex()) {
-                    maxTextSize = Math.max(maxTextSize, size);
-                    continue;
-                }
-                latexCount++;
-                maxLatexSize = Math.max(maxLatexSize, size);
-                // 与 TextLayoutService/renderer 相同数学布局器与同一注入尺。
-                // 既有 LatexCache 需要 runtimeVersion，而注入服务未公开该读端；不伪造版本，
-                // 不新建缓存。这里只在消费层布局失效时额外计算盒；每帧复用已缓存 ContentLayout。
-                MathBox box = MATH.layout(LatexParser.parse(segment.getLatexSource()), size,
-                        measurer.createMathMetrics(segment.getStyle(), size));
-                boxes[i] = box;
-                if (box.getTotalHeight() > tallest) {
-                    tallest = box.getTotalHeight();
-                    tallestAscent = box.getHeight();
-                }
-            }
-            double shift = 0;
-            if (latexCount > 0 && latexCount == segments.size()) {
-                int ascent = measurer.getAscent(maxLatexSize);
-                int lineHeight = ascent + measurer.getDescent(maxLatexSize) + measurer.getLineGap(maxLatexSize);
-                double padded = Math.ceil(tallest + 2.0 * TextLayoutService.LATEX_LINE_PAD_EM * maxLatexSize);
-                double pureHeight = Math.max(lineHeight, padded);
-                // 纯公式 SEGMENTS 的回放器自动居中；混排则沿文本基线，不做此偏移。
-                shift = (pureHeight - tallest) / 2.0 + tallestAscent - ascent;
-                textHeight = Math.max(textHeight, (int) Math.ceil(pureHeight));
-            }
-            double top = 0;
-            double bottom = textHeight;
-            for (int i = 0; i < boxes.length; i++) {
-                if (boxes[i] == null) { continue; }
-                int size = Math.max(1, segments.get(i).getStyle().resolveEffectiveFontSizePx(font));
-                double baseline = measurer.getAscent(Math.max(size, maxTextSize)) + shift;
-                top = Math.min(top, baseline - boxes[i].getHeight());
-                bottom = Math.max(bottom, baseline + boxes[i].getDepth());
-            }
-            // 混排高公式可向基线上方伸出；单增加底高不够，命令与链接还须同移。
-            this.textOffsetY = (int) Math.ceil(-top);
-            this.height = Math.max(1, (int) Math.ceil(bottom) + textOffsetY);
-        }
-    }
 
     static final class Result {
         final List<PaintCommand> commands;
@@ -132,19 +67,19 @@ final class MarkdownTableLayout {
             tableWidth += width;
         }
         // 2. 列分配完成才换行；整行高取所有 cell 的实际行高最大值。
-        List<List<List<CellLine>>> wrapped = new ArrayList<List<List<CellLine>>>();
+        List<List<List<VisualLine>>> wrapped = new ArrayList<List<List<VisualLine>>>();
         int[] heights = new int[rows.size()];
         int tableHeight = border;
         for (int r = 0; r < rows.size(); r++) {
-            List<List<CellLine>> wrappedRow = new ArrayList<List<CellLine>>();
+            List<List<VisualLine>> wrappedRow = new ArrayList<List<VisualLine>>();
             int contentHeight = 0;
             for (int c = 0; c < columns; c++) {
                 List<List<TextSegment>> lines = MarkdownLineLayout.wrapCell(cells.get(r).get(c), measurer, widths[c], font);
-                List<CellLine> measured = new ArrayList<CellLine>();
+                List<VisualLine> measured = new ArrayList<VisualLine>();
                 wrappedRow.add(measured);
                 int height = 0;
                 for (List<TextSegment> line : lines) {
-                    CellLine cellLine = new CellLine(line, measurer, font);
+                    VisualLine cellLine = new VisualLine(line, measurer, font);
                     measured.add(cellLine);
                     height += cellLine.height;
                 }
@@ -182,7 +117,7 @@ final class MarkdownTableLayout {
             x = inset + border + px;
             for (int c = 0; c < columns; c++) {
                 int lineY = y + py;
-                for (CellLine measured : wrapped.get(r).get(c)) {
+                for (VisualLine measured : wrapped.get(r).get(c)) {
                     List<TextSegment> line = measured.segments;
                     int height = measured.height;
                     int textTop = lineY + measured.textOffsetY;
@@ -193,7 +128,7 @@ final class MarkdownTableLayout {
                     if (!line.isEmpty()) {
                         out.add(PaintCommand.segments(line, lineX, textTop, Math.max(1, font)));
                         MarkdownLineLayout.appendLinkRegions(out, line, measurer, font, textTop,
-                                height - measured.textOffsetY, lineX, lineY, height);
+                                measured.textHeight, lineX, lineY, height);
                     }
                     lineY += height;
                 }

@@ -550,7 +550,20 @@ public final class ChatMessageList {
          */
         private void apply(String url) {
             String next = url == null ? "" : url;
-            if (lastUrl.equals(next)) {
+            // 即时归属先于批量 Signal 提交：旧目标延迟 leave 不得覆盖新目标（含行路↔region）。
+            boolean entering = false;
+            if (next.isEmpty()) {
+                if (owner.activeLinkDriver != this) {
+                    lastUrl = "";
+                    messageNode.setCursor(SceneCursor.DEFAULT);
+                    return;
+                }
+                owner.activeLinkDriver = null;
+            } else {
+                entering = owner.activeLinkDriver != this;
+                owner.activeLinkDriver = this;
+            }
+            if (!entering && lastUrl.equals(next)) {
                 return;
             }
             lastUrl = next;
@@ -608,6 +621,7 @@ public final class ChatMessageList {
 
     /** 当前 hover 链接 URL(空串 = 无;设计稿 §6.3 hoverLinkSignal)。 */
     private final Signal<String> hoverLink = Signal.create("");
+    private LinkHoverDriver activeLinkDriver;
 
     /** 消息节点 → 链接 hover 驱动器(测试探针;树重建时随组节点一起弃用)。 */
     private final Map<SceneNode, LinkHoverDriver> linkDrivers =
@@ -875,6 +889,7 @@ public final class ChatMessageList {
         // 每条消息在 lineNodes 中的起始行索引(hover 驱动器按消息切片)
         int[] messageLineStart = new int[messageCount];
         int globalLineIndex = 0;
+        List<SceneNode> documentNodes = new ArrayList<SceneNode>();
         for (int i = 0; i < messageCount; i++) {
             ChatCardComposer.MessageLines message = messages.get(i);
             messageLineStart[i] = globalLineIndex;
@@ -931,6 +946,23 @@ public final class ChatMessageList {
             }
             // M5 接线(规划《通用Markdown渲染器》§三):气泡行 = 消息级 markdown 管道的 L2 视觉行;
             // 系统行 = 旧逐行 § 解析 + PRESERVE 链接化 + continuesWord 续链(行为逐旧)。
+            if (markdownSystem && markdown.hasTables(message.getDisplayText())) {
+                // 仅显式含表格消息迁移。玩家与非表格 markdown 保留历史行路。
+                messageNode.setFillParentWidth(true).setWidthSizing(SceneNode.WidthSizing.FILL);
+                ChatMarkdownContent.Result content = ChatMarkdownContent.create(rt,
+                        ChatCardComposer.HUD_MAX_LINES * lineHeight, !style.isTtlFade(),
+                        width -> markdown.layoutContent(message.getDisplayText(),
+                                ChatMarkdownSettings.getSystemTextArgb(), width,
+                                ChatMarkdownSettings.getSystemFontSizePx(), segmentPostProcessor),
+                        (node, command) -> attachContentLink(rt, node, command, message.getRecord().getComponent(), frameMillis));
+                contentNode.appendChild(content.root);
+                documentNodes.add(content.root);
+                groupNode.appendChild(messageNode);
+                messageNodes.add(messageNode);
+                messageComponents.add(message.getRecord().getComponent());
+                registry.put(messageNode, message.getRecord());
+                continue;
+            }
             List<String> displayLines = message.getDisplayLines();
             List<ChatLineLayouter.LineFragment> displayFragments = message.getDisplayFragments();
             List<ChatMarkdownPipeline.RenderedLine> markdownLines = system ? null
@@ -1224,6 +1256,7 @@ public final class ChatMessageList {
                         if (a != currentAlpha[0]) {
                             currentAlpha[0] = a;
                             bake.bake(a);
+                            for (SceneNode document : documentNodes) document.setOpacity(a / 255.0F);
                         }
                     });
         }
@@ -1280,6 +1313,10 @@ public final class ChatMessageList {
                         messageComponents.get(i), messageLineNodes, messageSpans, lineStart,
                         lineHeight, lineHovered, bake, currentAlpha);
                 linkDrivers.put(messageNode, driver);
+                club.heiqi.uilib.ui.reactive.Owner.current().onCleanup(() -> {
+                    linkDrivers.remove(messageNode);
+                    driver.onPointerLeave();
+                });
                 final LinkHoverDriver boundDriver = driver;
                 rt.on(messageNode, SceneEventType.POINTER_MOVE, (ev, ctx) -> {
                     boundDriver.onPointerMove(ctx.getLocalPointerX(), ctx.getLocalPointerY());
@@ -1303,6 +1340,58 @@ public final class ChatMessageList {
             }
         }
         return groupNode;
+    }
+
+    /** 精确 L2 链接矩形复用 LinkHoverDriver → ChatLinkClick → 宿主适配链。 */
+    private void attachContentLink(SceneRuntime rt, SceneNode node,
+            club.heiqi.uilib.ui.scene.paint.PaintCommand command, IChatComponent component,
+            ReadableSignal<Long> frameMillis) {
+        if (segmentMeasurer == null) return;
+        if (command.getType() == club.heiqi.uilib.ui.scene.paint.PaintCommandType.SEGMENTS) {
+            List<TextSegment> base = command.getSegments();
+            boolean links = false;
+            for (TextSegment segment : base) links |= segment.getStyle().getLink() != null;
+            if (!links) return;
+            boolean[] hovered = {false};
+            MessageBake bake = new MessageBake(Collections.emptyList(), Collections.singletonList(node),
+                    Collections.singletonList(base), Collections.singletonList(ChatUrlLinkifier.hoverLinkify(base,
+                            ChatMarkdownSettings.getLinkHoverArgb())), null, null, null, null,
+                    Collections.emptyList(), 0, Collections.emptyList(), 0, hovered, new boolean[0], 0, 0, true);
+            rt.bind(hoverLink, url -> {
+                boolean match = false;
+                for (TextSegment segment : base) match |= !url.isEmpty() && url.equals(segment.getStyle().getLink());
+                hovered[0] = match;
+            });
+            rt.bind(frameMillis, now -> {
+                if (bake.advanceHover(now)) bake.bake(255);
+            });
+            return;
+        }
+        if (command.getType() != club.heiqi.uilib.ui.scene.paint.PaintCommandType.LINK_REGION) return;
+        node.setHitTestable(true);
+        List<LinkSpan> spans = Collections.singletonList(new LinkSpan(0, node.getPreferredWidth(), command.getLinkUrl()));
+        MessageBake bake = new MessageBake(Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+                Collections.emptyList(), null, null, null, null, Collections.emptyList(), 0,
+                Collections.emptyList(), 0, new boolean[0], new boolean[0], 0, 0, true);
+        LinkHoverDriver driver = new LinkHoverDriver(this, node, component, Collections.singletonList(node),
+                Collections.singletonList(spans), 0, node.getPreferredHeight(), new boolean[1], bake, new int[] {255});
+        linkDrivers.put(node, driver);
+        // 叶子离树时父 body 仍可能存在，不能靠 parent==null 猜生命周期。
+        club.heiqi.uilib.ui.reactive.Owner.current().onCleanup(() -> {
+            linkDrivers.remove(node);
+            driver.onPointerLeave();
+        });
+        rt.on(node, SceneEventType.POINTER_MOVE, (ev, ctx) ->
+                driver.onPointerMove(ctx.getLocalPointerX(), ctx.getLocalPointerY()));
+        rt.on(node, SceneEventType.CLICK, (ev, ctx) ->
+                driver.onLinkClick(ev.getButton(), ctx.getLocalPointerX(), ctx.getLocalPointerY()));
+        rt.bind(rt.interactionState(node).hovered(), value -> {
+            if (!Boolean.TRUE.equals(value)) driver.onPointerLeave();
+        });
+        SceneTooltip.attach(rt, new SceneTooltip.Props(node,
+                Computed.create(() -> hoverLink.get()),
+                Computed.create(() -> !hoverLink.get().isEmpty()),
+                LINK_TOOLTIP_DELAY_MILLIS, LINK_TOOLTIP_MAX_WIDTH_PX, LINK_TOOLTIP_MAX_LINES, true));
     }
 
     /** 把分级四角写入节点(T4a 四角 API)。 */

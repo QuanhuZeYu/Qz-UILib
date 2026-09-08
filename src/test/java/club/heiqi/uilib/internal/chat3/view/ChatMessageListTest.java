@@ -861,14 +861,30 @@ public class ChatMessageListTest {
 
 
     /**
-     * T2 接缝门：T3a/T3b 均未裁定。快照来自 6c7637e512d7d2ce5a641b4d819580f730c23357，
+     * 玩家气泡接缝门：T3b 仍维持字面。快照来自 6c7637e512d7d2ce5a641b4d819580f730c23357，
      * 捕获真实 printMarkdown / chat.type.text → composer → pipeline → 消息节点。
      * FIXED_WRAP 仅用于冻结确定性历史输出；另测不注换行替身的真实 L2 路径。
      * 不以当前 toLayoutLines 或当前 pipeline 计算期望，不提供运行时更新快照开关。
      */
+    // T3a 显式表格转由 ChatMarkdownTableConsumerTest 验收；两份 true_* 快照只保留历史证据。
     @Test
-    public void tablePrintMarkdownKeepsHistoricalLiteralHudAndContainer() throws Exception {
-        assertTableLiteralHistory(true);
+    public void explicitTableHistoricalEvidenceRemainsFrozen() throws Exception {
+        String[][] evidence = {
+                {"table-literal-true_true.snapshot", "9e533da55e5ba5ffed4769d362d11335b720d49c57706ef74606fc31f46b6fdc"},
+                {"table-literal-true_false.snapshot", "8323f443d3a2f7af19e6bcd0aac1dfcaee178f93fea7a8d8655bc3ca62e182ee"}
+        };
+        for (String[] item : evidence) {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            try (java.io.InputStream input = ChatMessageListTest.class.getResourceAsStream(item[0])) {
+                Assert.assertNotNull("历史证据不得删除: " + item[0], input);
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = input.read(buffer)) >= 0) digest.update(buffer, 0, count);
+            }
+            StringBuilder actual = new StringBuilder();
+            for (byte value : digest.digest()) actual.append(String.format("%02x", value & 0xff));
+            Assert.assertEquals("历史证据不得重录: " + item[0], item[1], actual.toString());
+        }
     }
 
     @Test
@@ -916,8 +932,8 @@ public class ChatMessageListTest {
     }
 
     @Test
-    public void tableBothConsumersKeepLiteralOutputThroughRealL2() throws Exception {
-        for (boolean explicit : new boolean[] {true, false}) {
+    public void tablePlayerBubbleKeepsLiteralOutputThroughRealL2() throws Exception {
+        for (boolean explicit : new boolean[] {false}) {
             SceneNode hud = tableConsumerMessage(tableLockSource(), explicit, true, false);
             SceneNode container = tableConsumerMessage(tableLockSource(), explicit, false, false);
             assertLiteralTableFloor(hud, true);

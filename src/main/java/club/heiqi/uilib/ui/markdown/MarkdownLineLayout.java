@@ -6,6 +6,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import club.heiqi.uilib.font.latex.LatexParser;
+import club.heiqi.uilib.font.latex.layout.MathBox;
+import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
@@ -35,6 +38,80 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
  * G4），本类零自设字号、字宽与行高常量。纯 JVM：不 import Minecraft/AWT，不发 GL 调用。</p>
  */
 final class MarkdownLineLayout {
+
+    private static final MathLayoutService MATH = new MathLayoutService();
+
+    /** 新文档入口共享的视觉行盒；表格和普通行同取实际公式上下界，旧行路不使用它。 */
+    static final class VisualLine {
+        final List<TextSegment> segments;
+        final int width;
+        final int height;
+        final int textOffsetY;
+        final int textHeight;
+
+        VisualLine(List<TextSegment> segments, TextLayoutService measurer, int font) {
+            this.segments = segments;
+            this.width = MarkdownLineLayout.lineWidthPx(segments, measurer, font);
+            int textHeight = lineHeightPx(segments, measurer, font);
+            this.textHeight = textHeight;
+            boolean hasLatex = false;
+            for (TextSegment segment : segments) hasLatex |= segment.isLatex();
+            if (!hasLatex) {
+                this.height = textHeight;
+                this.textOffsetY = 0;
+                return;
+            }
+            MathBox[] boxes = new MathBox[segments.size()];
+            int maxTextSize = 0;
+            int maxLatexSize = 0;
+            int latexCount = 0;
+            double tallest = 0;
+            double tallestAscent = 0;
+            for (int i = 0; i < segments.size(); i++) {
+                TextSegment segment = segments.get(i);
+                int size = Math.max(1, segment.getStyle().resolveEffectiveFontSizePx(font));
+                if (!segment.isLatex()) {
+                    maxTextSize = Math.max(maxTextSize, size);
+                    continue;
+                }
+                latexCount++;
+                maxLatexSize = Math.max(maxLatexSize, size);
+                // 与 TextLayoutService/renderer 相同数学布局器与同一注入尺。
+                // 既有 LatexCache 需要 runtimeVersion，而注入服务未公开该读端；不伪造版本，
+                // 不新建缓存。这里只在消费层布局失效时额外计算盒；每帧复用已缓存 ContentLayout。
+                MathBox box = MATH.layout(LatexParser.parse(segment.getLatexSource()), size,
+                        measurer.createMathMetrics(segment.getStyle(), size));
+                boxes[i] = box;
+                if (box.getTotalHeight() > tallest) {
+                    tallest = box.getTotalHeight();
+                    tallestAscent = box.getHeight();
+                }
+            }
+            double shift = 0;
+            if (latexCount > 0 && latexCount == segments.size()) {
+                int ascent = measurer.getAscent(maxLatexSize);
+                int lineHeight = ascent + measurer.getDescent(maxLatexSize) + measurer.getLineGap(maxLatexSize);
+                double padded = Math.ceil(tallest + 2.0 * TextLayoutService.LATEX_LINE_PAD_EM * maxLatexSize);
+                double pureHeight = Math.max(lineHeight, padded);
+                // 纯公式 SEGMENTS 的回放器自动居中；混排则沿文本基线，不做此偏移。
+                shift = (pureHeight - tallest) / 2.0 + tallestAscent - ascent;
+                textHeight = Math.max(textHeight, (int) Math.ceil(pureHeight));
+            }
+            double top = 0;
+            double bottom = textHeight;
+            for (int i = 0; i < boxes.length; i++) {
+                if (boxes[i] == null) { continue; }
+                int size = Math.max(1, segments.get(i).getStyle().resolveEffectiveFontSizePx(font));
+                double baseline = measurer.getAscent(Math.max(size, maxTextSize)) + shift;
+                top = Math.min(top, baseline - boxes[i].getHeight());
+                bottom = Math.max(bottom, baseline + boxes[i].getDepth());
+            }
+            // 混排高公式可向基线上方伸出；单增加底高不够，命令与链接还须同移。
+            this.textOffsetY = (int) Math.ceil(-top);
+            this.height = Math.max(1, (int) Math.ceil(bottom) + textOffsetY);
+        }
+    }
+
 
     /** 布局 token：一个不可再断的最小放置单元（文本码点 / 空白串 / 整条公式段）。 */
     private static final class Token {
@@ -280,6 +357,12 @@ final class MarkdownLineLayout {
      */
     static List<PaintCommand> blockCommands(List<MarkdownLayoutLine> visualLines,
             TextLayoutService measurer, int maxWidthPx, int baseFontSizePx) {
+        return blockCommands(visualLines, measurer, maxWidthPx, baseFontSizePx, null);
+    }
+
+    /** 仅文档入口传入实测视觉盒；块底色、引用、横线规则与历史行路共用。 */
+    static List<PaintCommand> blockCommands(List<MarkdownLayoutLine> visualLines,
+            TextLayoutService measurer, int maxWidthPx, int baseFontSizePx, VisualLine[] measured) {
         requireMeasurer(measurer);
         List<PaintCommand> out = new ArrayList<PaintCommand>();
         if (visualLines == null || visualLines.isEmpty()) {
@@ -292,7 +375,8 @@ final class MarkdownLineLayout {
         double maxContentRight = 0.0D;
         for (int i = 0; i < n; i++) {
             MarkdownLayoutLine line = visualLines.get(i);
-            heights[i] = lineHeightPx(line.getSegments(), measurer, baseFontSizePx);
+            heights[i] = measured == null ? lineHeightPx(line.getSegments(), measurer, baseFontSizePx)
+                    : measured[i].height;
             tops[i] = cursor;
             cursor += heights[i];
             double right = line.getLeftInsetPx()
@@ -356,8 +440,14 @@ final class MarkdownLineLayout {
                 continue;
             }
             int left = line.getLeftInsetPx();
-            out.add(PaintCommand.segments(segments, left, tops[t], Math.max(1, baseFontSizePx)));
-            appendLinkRegions(out, segments, measurer, baseFontSizePx, tops[t], heights[t], left);
+            int textTop = tops[t] + (measured == null ? 0 : measured[t].textOffsetY);
+            out.add(PaintCommand.segments(segments, left, textTop, Math.max(1, baseFontSizePx)));
+            if (measured == null) {
+                appendLinkRegions(out, segments, measurer, baseFontSizePx, tops[t], heights[t], left);
+            } else {
+                appendLinkRegions(out, segments, measurer, baseFontSizePx, textTop,
+                        measured[t].textHeight, left, tops[t], heights[t]);
+            }
         }
         return Collections.unmodifiableList(out);
     }

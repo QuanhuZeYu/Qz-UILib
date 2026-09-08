@@ -2,7 +2,10 @@ package club.heiqi.uilib.font.layout.markdown;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.UnaryOperator;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.layout.TextSegment;
@@ -322,6 +325,109 @@ public final class MarkdownDocument {
 
         public List<MarkdownLayoutLine> getLines() { return lines; }
         public List<TableUnit> getTables() { return tables; }
+
+        /**
+         * 在换行前变换每条逻辑行的正文和每个表格单元格，返回独立的布局输入。
+         * 行顺序、表格锚、块路径、几何与装饰样式均保留；不解析文本、不进行度量。
+         *
+         * <p>列表合成标记及归属链是结构信息，不交给 mapper；标记行的首段与链中对应
+         * 标记在副本内仍共享身份，表格 context 沿用同一条身份链。mapper 可改变正文
+         * 段数（包括返回空列表），不会删除逻辑行或单元格。空正文也调用 mapper；
+         * context 的零文本不调用 mapper。</p>
+         *
+         * <p>每次调用给 mapper 可修改的深拷贝，返回列表及其段样式再次复制；
+         * mapper 保留的引用不能修改结果，结果也不与原件共享可变样式。
+         * mapper 抛出的异常原样传播，原件不受影响。调用期间不得从旁路修改原件。</p>
+         *
+         * @param mapper 纯段流变换，不可为 null
+         * @return 保持结构的新布局输入
+         * @throws IllegalArgumentException mapper 为 null、返回 null 或包含 null 段
+         */
+        public LayoutContent mapSegments(UnaryOperator<List<TextSegment>> mapper) {
+            if (mapper == null) {
+                throw new IllegalArgumentException("mapper 不能为空");
+            }
+            Map<TextSegment, TextSegment> markers = new IdentityHashMap<TextSegment, TextSegment>();
+            List<MarkdownLayoutLine> mappedLines = new ArrayList<MarkdownLayoutLine>();
+            for (MarkdownLayoutLine line : lines) {
+                mappedLines.add(mapLine(line, mapper, markers, true));
+            }
+            List<TableUnit> mappedTables = new ArrayList<TableUnit>();
+            for (TableUnit unit : tables) {
+                MarkdownTableModel original = unit.model;
+                MarkdownTableModel.Row header = mapRow(original.getHeader(), mapper);
+                List<MarkdownTableModel.Row> rows = new ArrayList<MarkdownTableModel.Row>();
+                for (MarkdownTableModel.Row row : original.getRows()) {
+                    rows.add(mapRow(row, mapper));
+                }
+                MarkdownTableModel model = new MarkdownTableModel(original.getBlockPath(),
+                        original.getAlignments(), header, rows);
+                mappedTables.add(new TableUnit(unit, model, mapLine(unit.context, mapper, markers, false)));
+            }
+            return new LayoutContent(mappedLines, mappedTables);
+        }
+
+        private static MarkdownTableModel.Row mapRow(MarkdownTableModel.Row row,
+                UnaryOperator<List<TextSegment>> mapper) {
+            List<MarkdownTableModel.Cell> cells = new ArrayList<MarkdownTableModel.Cell>();
+            for (MarkdownTableModel.Cell cell : row.getCells()) {
+                cells.add(new MarkdownTableModel.Cell(mapFlow(cell.getSegments(), mapper)));
+            }
+            return new MarkdownTableModel.Row(cells);
+        }
+
+        private static MarkdownLayoutLine mapLine(MarkdownLayoutLine line,
+                UnaryOperator<List<TextSegment>> mapper, Map<TextSegment, TextSegment> markers,
+                boolean mapBody) {
+            List<TextSegment> source = line.getSegments();
+            List<TextSegment> chain = new ArrayList<TextSegment>();
+            for (TextSegment marker : line.getListMarkerChain()) {
+                TextSegment copy = markers.get(marker);
+                if (copy == null) {
+                    copy = copySegment(marker);
+                    markers.put(marker, copy);
+                }
+                chain.add(copy);
+            }
+            boolean hasMarker = line.getKind() == MarkdownLayoutLine.Kind.LIST
+                    && !source.isEmpty() && !chain.isEmpty()
+                    && source.get(0) == line.getListMarkerChain().get(chain.size() - 1);
+            List<TextSegment> body = hasMarker ? source.subList(1, source.size()) : source;
+            List<TextSegment> segments = mapBody ? mapFlow(body, mapper) : copyFlow(body);
+            if (hasMarker) {
+                segments.add(0, chain.get(chain.size() - 1));
+            }
+            return new MarkdownLayoutLine(line.getKind(), line.getQuoteLevel(), line.getBlockId(), segments,
+                    line.getLeftInsetPx(), line.getIndentStepPx(), line.getBarWidthPx(),
+                    line.getRuleThicknessPx(), line.getAccentArgb(), line.getBackgroundArgb(),
+                    line.getBlockContentWidthPx(), line.getHeadingLevel(), chain);
+        }
+
+        private static List<TextSegment> mapFlow(List<TextSegment> source,
+                UnaryOperator<List<TextSegment>> mapper) {
+            List<TextSegment> result = mapper.apply(copyFlow(source));
+            if (result == null) {
+                throw new IllegalArgumentException("mapper 返回的段流不能为空");
+            }
+            return copyFlow(result);
+        }
+
+        private static List<TextSegment> copyFlow(List<TextSegment> source) {
+            List<TextSegment> copy = new ArrayList<TextSegment>();
+            for (TextSegment segment : source) {
+                if (segment == null) {
+                    throw new IllegalArgumentException("mapper 返回的段流不能包含 null 段");
+                }
+                copy.add(copySegment(segment));
+            }
+            return copy;
+        }
+
+        private static TextSegment copySegment(TextSegment segment) {
+            return segment.isLatex()
+                    ? TextSegment.forLatex(segment.getLatexSource(), segment.getStyle().copy())
+                    : new TextSegment(segment.getText(), segment.getStyle().copy());
+        }
     }
 
     /** 表格块锚和样式投影；像素旋钮属于此布局输入，不属于零像素的 TableModel。 */
@@ -345,6 +451,17 @@ public final class MarkdownDocument {
             this.borderPx = styles.tableBorderPx;
             this.borderArgb = styles.tableBorderArgb;
             this.headerArgb = styles.tableHeaderArgb;
+        }
+
+        private TableUnit(TableUnit original, MarkdownTableModel model, MarkdownLayoutLine context) {
+            this.beforeLineIndex = original.beforeLineIndex;
+            this.model = model;
+            this.context = context;
+            this.paddingXPx = original.paddingXPx;
+            this.paddingYPx = original.paddingYPx;
+            this.borderPx = original.borderPx;
+            this.borderArgb = original.borderArgb;
+            this.headerArgb = original.headerArgb;
         }
 
         /** 插入于此逻辑行之前；等于 lines.size() 表示文档末尾。 */

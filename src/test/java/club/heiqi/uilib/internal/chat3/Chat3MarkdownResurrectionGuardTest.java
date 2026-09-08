@@ -197,6 +197,13 @@ public class Chat3MarkdownResurrectionGuardTest {
                 countSubstring(code, ".toLayoutLines(") >= 1);
         Assert.assertTrue("链接化存留件调用点 >=1: ChatUrlLinkifier.linkify(",
                 countSubstring(code, "ChatUrlLinkifier.linkify(") >= 1);
+        // 显式含表格消息仍只由本入口取得结构、换行前转换段流并交给既有 L2 布局。
+        Assert.assertTrue("表格文档必须由 L1 显式导出",
+                countSubstring(code, ".toLayoutContent(") >= 1);
+        Assert.assertTrue("表格段流后处理必须通过获批的不可变映射接缝",
+                countSubstring(code, ".mapSegments(") >= 1);
+        Assert.assertTrue("表格必须复用 L2 文档布局，不在聊天重算列宽",
+                countSubstring(code, "MarkdownPainter.layoutContent(") >= 1);
     }
 
     /** chat3 内 markdown 层类型引用必须收敛在唯一入口文件（不得长出第二个解析入口）。 */

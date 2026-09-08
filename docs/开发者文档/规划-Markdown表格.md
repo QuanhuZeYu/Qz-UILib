@@ -1,6 +1,6 @@
 # 规划-Markdown 表格（立项定稿）
 
-**状态：** 立项**冻结**（2026-09-07）。来源 = 用户发起「可否推进表格解析渲染」→ GPT 网页两轮审查 + 本地一手核查逐轮收口，终轮双方一致「不需要再改方案，等 C9 收口后落笔」；C9·6（`cdde849f`）落地后成文本档。**T1/T2 已完成**（2026-09-08：语义契约、像素布局、页面/headless 首消费者、独立对拍、真实 chat3 字面降级反锁与台账同批验收；T3a/T3b 仍待各自裁定）。
+**状态：** 立项**冻结**（2026-09-07）。来源 = 用户发起「可否推进表格解析渲染」→ GPT 网页两轮审查 + 本地一手核查逐轮收口，终轮双方一致「不需要再改方案，等 C9 收口后落笔」；C9·6（`cdde849f`）落地后成文本档。**T1/T2 已完成**（2026-09-08：语义契约、像素布局、页面/headless 首消费者、独立对拍、真实 chat3 字面降级反锁与台账同批验收）。**T3a 已完成**：按用户裁定将含表格显式消息接入滚动视口，关闭聊天裁剪预览，开启后鼠标滚动查看；完整 build 与真实消费者验收通过，见 §十。T3b 仍待单独裁定。
 **上游裁定：** 《规划-通用Markdown渲染器.md》§五 D4「图片/表格/任务列表/tooltip·书本划到本期范围外（可另立项）」——本文即该"另立项"；§202 C3（块模型进公共面）的预定触发器（"证明行接缝表达不了表格/多栏"）已由 T1 的 B1 最小契约承接，**不整套复活 A 案**。
 **目标仓：** Qz-UILib（branch `4.0`，MC 1.7.10，本地提交不 push）。
 **基线（立项时点，一手核实）：** `4118 / 0 / 0 / 6，369 类`（C9 收口后）；常驻门禁 R = commonmark-java 0.21.0（+GFM strikethrough）对 `toLayoutLines` 逐行逐 token 对拍，RECORD 恒 0；判据按 C9·6 为**二件套**——语义工件 `diff=A826A2B9E7B0EB57`、`matrix=804A42FB09D74FF5` 逐字不变（profiles 降为记录不校验）。
@@ -64,12 +64,14 @@
 
 **T3 拆分依据（T3a/T3b 共用的宽度与 HUD 事实）：** `ChatSceneController:744-745` 生成同一个 `maxLine = chatWidthFor(viewport) − 2×bubblePaddingX`，`ChatCardComposer:321/:334` 把同值送给玩家消息与 `printMarkdown`。后者豁免的是 `ChatMessageList:919-925/:1104-1111` 的气泡盒 maxWidth、padding 及行盒 reserve 钳制；玩家气泡另受 `0.85×` 盒宽上限。默认参数下，传入逻辑视口宽 1920 时两路折行宽均为 460px；在 `[360, 800)` 档，两路均只有 140px（Python 按代码公式验算；低于 360 另走半视口宽分支）。折行宽、气泡盒上限和最终正文可用宽属于不同约束层，不能用「整行宽所以顺带可做」论证 `printMarkdown` 表格可用。
 
-`ChatMessageList:936-943` 对两路 markdown 的 HUD 输出都调用 `clampHudLines`，当前上限 8 个视觉行；`printMarkdown` 无气泡也无此豁免。表格可能在中途被截断，故 **HUD 与展开容器的表格待遇须分别裁定和验收**，不能把容器出图通过视为 HUD 通过。
+T3a 前，`ChatMessageList` 对两路 markdown 的 HUD 输出都调用 `clampHudLines`，上限 8 个视觉行，`printMarkdown` 无气泡也无此豁免。T3a 按下述用户裁定将显式含表格消息改为完整内容的有界视口，HUD 裁剪预览；玩家消息及显式非表格消息仍沿用旧截断。**HUD 与展开容器分别验收**，容器可滚动不代替 HUD 裁剪证据。
 
-### T3a —— chat3 显式 markdown 行（`printMarkdown`，另裁）
+### T3a —— chat3 显式 markdown 行（`printMarkdown`，已完成）
 
-- 在同源窄聊天列下评估表格布局或维持字面降级，由用户裁定；无气泡盒约束是独立评估的理由，不是充分宽度保证。
-- 裁定须明确超出 HUD 行预算时的行为，并以跨预算表格样本验收；展开容器另验完整展示或裁定的降级形态。
+- 用户裁定：“用可滚动容器包装，聊天框未开启保持显示不完整，打开聊天框后鼠标被释放可以滚动查看”。含表格的整条显式消息复用已有文档布局计划，放入尺寸受限的滚动视口；完整内容保留，HUD 只裁剪预览，打开聊天后由现有输入屏提供滚动交互。
+- 窄聊天列保持实际正文宽预算；不可分公式等导致最小表宽超出时提供横向滚动，不回退字面。长内容通过纵向滚动查看，内层到边缘后允许滚轮冒泡给聊天历史。HUD 与输入屏的 live scene、滚动状态按 occurrence 隔离。
+- 本批仅接入 `printMarkdown` 含表格消息，非表格消息和玩家气泡保持原路径；显式路径字面反锁迁移为真实消费/裁剪/滚动验收，玩家反锁继续保留。
+- 用户另批准 `LayoutContent.mapSegments(UnaryOperator<List<TextSegment>>)` 公共纯段流转换方法，用于在度量与换行前复用聊天公式处理和 URL 自动链接；返回新内容，保留块锚与表格结构，同批更新公共面台账。
 
 ### T3b —— chat3 玩家气泡（另裁）
 
@@ -99,7 +101,7 @@ G1（L2 零直连 GL）/ G2（L1 零 MC·AWT）/ G3 扩展项（表格语法只�
 | 立项 | 两轮收口 + 本地核查 + 本轮复审补正（闭环指针/消费者分批与接缝门/二件套性质/源码指针） | **完成** |
 | T1 | 语义+契约+独立 oracle 面对拍+降级三件套+台账续账 | **完成**：完整 build 绿，4194 / 0 / 0 / 6、372 类；二件套未变，57 项 Table oracle 与历史反锁通过，javap 入账见 §八 |
 | T2 | 像素 pass+交错三案+首消费者+行接缝并表格+chat3 接缝门+缓存；前置观察 home ROW clamp | **完成**：完整 build 绿，4228 / 0 / 0 / 6、377 类；平行表格 units＋块锚、页面与双度量出图、真实 chat3 降级反锁均通过；见 §九 |
-| T3a | chat3 `printMarkdown` 表格与 HUD/容器待遇裁定 | 未开始 |
+| T3a | chat3 `printMarkdown` 表格与 HUD/容器待遇裁定 | **完成**：滚动视口、完整公式范围、链接命中/交接、宽度/缓存与历史隔离；完整 build 绿，4258 / 0 / 0 / 6、381 类；见 §十 |
 | T3b | chat3 玩家气泡表格与 HUD/容器待遇裁定 | 未开始 |
 
 ## 八、T1 实施记录
@@ -329,5 +331,30 @@ public final class club.heiqi.uilib.ui.markdown.MarkdownPainter$ContentLayout {
   public java.util.List<club.heiqi.uilib.ui.scene.paint.PaintCommand> getCommands();
   public int getHeightPx();
   public int getWidthPx();
+}
+```
+
+## 十、T3a 实施记录
+
+- **用户可见行为**：含表格的 `printMarkdown` 整条消息使用有界双轴视口。HUD 保留完整内容但只显示裁剪预览；打开聊天后以既有输入屏的鼠标滚轮和纵向滚动条查看长内容，横向滑块查看超宽列。非表格显式消息和玩家气泡沿用原行出口。两种 occurrence 的 scene 节点、滚动 Signal 和交互状态独立。
+- **布局与消费**：表格识别仍只在 L1，chat3 唯一 markdown 入口仍为 `ChatMarkdownPipeline`。它将 `toLayoutContent` 的内容按批准的 `mapSegments` 接缝施加现有公式处理及 URL 自动链接，再交 `MarkdownPainter.layoutContent`；包内 `ChatMarkdownContent` 只消费定位后的 PaintCommand 和叶盒，不解析语法、不自算列宽、不调用原版 GUI 或 GL。
+- **滚动与裁剪**：宽度来自 viewport 最终 LayoutBox；正文尺寸取完整 L2 计划。预览高度沿用 HUD 行数预算与聊天系统行高。纵向复用 `SceneScrolls`/`SceneScrollbar`，只有实际移动才消费滚轮，边缘事件继续冒泡给已有聊天历史；横向复用 `SceneSliderPrimitive` 的受控拖动，不叠加第二个滚轮处理器。
+- **缓存**：按消息原文缓存解析树，映射/布局随基础色、引用色、链接色、系统字号、字体纪元、度量服务或后处理器身份变化失效；同一文档保留 HUD/展开容器两种宽度的像素计划。稳态仅比较标量、引用和计划身份，滚动跳过语法解析、段流映射、表格度量和叶子重建；不逐帧拼接完整消息作为缓存键。非表格显式消息复用已解析的文档走旧出口，避免探测表格后重复解析。
+- **公式几何收口**：表格原有 MathBox 视觉行计算抽到 L2 包内 `MarkdownLineLayout.VisualLine`，新文档入口的普通行也复用它，修复表格前首行负向墨迹、表格后尾公式行高及滚动范围；原 `wrapLayoutLines`/`toLayoutPaintCommands` 路径不变。普通文本链接使用字体行框，公式链接使用真实视觉区域。聊天将 L2 LINK_REGION 投放为透明 scene 命中叶，裁剪与滚后坐标归现有 scene，不写 scene 拥有的命中缓存。
+- **锁迁移**：显式 HUD/容器的两份字面快照保留为固定历史 SHA256 证据，不再与新二维输出比较；玩家两份快照及真实 L2 字面反锁继续作为当前行为锁。新验收经真实 ChatAccess sink、history、composer、ChatMessageList、ChatContainer、scene layout/paint/input；外层滚轮测试只替换平台输入屏根回调，另有源码接线锁，未代替 Minecraft 平台壳运行。
+- **输入与生命周期**：旧行与新表格链接共用即时 `activeLinkDriver`，非当前 owner 的延迟离开或作用域清理不能清除新链接的 hover；同 URL 跨节点重入会重新认领。链接驱动器、tooltip 和绑定按现有 Owner 回收。横条拖动中窗口变宽至无溢出时隐藏呈现与新命中，但保留 active primitive，UP/CANCEL 经既有路由终止后才卸载；没有业务层越权取消其它手势，也未改变 scene 核心的捕获规则。
+- **验收结果（本轮完整构建）**：`build --offline --console=plain` 成功（`BUILD SUCCESSFUL in 42s`），`:compileJava/:compileTestJava/:test` 实际执行。Python 汇总 **4258 / 0 / 0 / 6，381 类**；其中新映射 6、内容/cache/拖动生命周期 7、真实消费者 11、L2 首尾公式 6 项均通过。最终源码另做 Serif PageContent/headless 复验，4 项通过；实际度量探针 `65.02374087439642` 与 `65.79620255364311` 经 Python Decimal 确认可区分。独立源码审查收口，`git diff --check` 通过。
+- **语义与历史证据**：完整测试重新生成 `diff=6A3339AB3C81787E`、`matrix=83647E59842DD50C`、`legacy-diff=A826A2B9E7B0EB57`、`legacy-matrix=804A42FB09D74FF5`，与 T2 基线全部一致；四份 chat3 字面快照的完整 SHA256 也逐份核对不变。当前显式接入行为由新消费者锁证明，历史哈希不代替新行为证据。
+- **公共面实测**：仅获批的 `LayoutContent.mapSegments` 增加一个公共方法，LayoutContent 从 2 到 3，全成员独立台账合计从 117 到 118（Python 验算、完整反射守卫与最终 `javap -public` 一致，反空跑地板仍为 100）。Document 10、TableUnit 8、LayoutLine 20 与公共 10 参构造器、StyleTable 19、Painter 8 均不变。mapper 输入和结果深拷贝，非法空返回/空段明确失败，合成列表标记按结构保留，旧出口无新语义。
+- **运行态边界**：本轮 headless 合成图使用 JDK 字形替身与实际 scene 绘制坐标、clip、scroll，产物为 `build/reports/chat-markdown-table-consumer/scene-clip-scroll.png`；它证明内容保留、HUD 裁剪和展开滚尾，不代表 GPU/真机观感验收。未运行客户端、独立 CI 或发布；T3b 仍未接入。
+
+本批最终编译产物新增公共接缝的 `javap -public` 原文：
+
+```text
+Compiled from "MarkdownDocument.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownDocument$LayoutContent {
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine> getLines();
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownDocument$TableUnit> getTables();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownDocument$LayoutContent mapSegments(java.util.function.UnaryOperator<java.util.List<club.heiqi.uilib.font.layout.TextSegment>>);
 }
 ```

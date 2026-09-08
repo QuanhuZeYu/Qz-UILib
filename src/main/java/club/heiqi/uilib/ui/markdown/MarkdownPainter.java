@@ -156,12 +156,14 @@ public final class MarkdownPainter {
         List<MarkdownLayoutLine> visual = MarkdownLineLayout.layoutLines(lines, measurer, maxWidthPx, font);
         int height = 0;
         int width = 0;
-        for (MarkdownLayoutLine line : visual) {
-            height += MarkdownLineLayout.lineHeightPx(line.getSegments(), measurer, font);
-            width = Math.max(width, line.getLeftInsetPx()
-                    + MarkdownLineLayout.lineWidthPx(line.getSegments(), measurer, font));
+        MarkdownLineLayout.VisualLine[] measured = new MarkdownLineLayout.VisualLine[visual.size()];
+        for (int i = 0; i < visual.size(); i++) {
+            MarkdownLayoutLine line = visual.get(i);
+            measured[i] = new MarkdownLineLayout.VisualLine(line.getSegments(), measurer, font);
+            height += measured[i].height;
+            width = Math.max(width, line.getLeftInsetPx() + measured[i].width);
         }
-        List<PaintCommand> commands = MarkdownLineLayout.blockCommands(visual, measurer, maxWidthPx, font);
+        List<PaintCommand> commands = MarkdownLineLayout.blockCommands(visual, measurer, maxWidthPx, font, measured);
         for (PaintCommand command : commands) {
             width = Math.max(width, command.getRight());
         }

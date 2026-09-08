@@ -52,7 +52,7 @@ import org.junit.Test;
  *   <tr><td>{@code ChatMarkdownPipeline}</td><td>0</td><td>0</td><td>0</td><td>0（类本身非 public）</td></tr>
  *   <tr><td>{@code MarkdownTableModel}</td><td>4</td><td>4</td><td>0</td><td>0</td></tr>
  *   <tr><td>{@code MarkdownDocument}</td><td>10</td><td>10（T1 +toTableModels；T2 +toLayoutContent）</td><td>0</td><td>0</td></tr>
- *   <tr><td>{@code MarkdownDocument.LayoutContent}</td><td>2</td><td>2</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownDocument.LayoutContent}</td><td>3</td><td>3</td><td>0</td><td>0</td></tr>
  *   <tr><td>{@code MarkdownDocument.TableUnit}</td><td>8</td><td>8</td><td>0</td><td>0</td></tr>
  *   <tr><td>{@code MarkdownPainter.ContentLayout}</td><td>3</td><td>3</td><td>0</td><td>0</td></tr>
  *   <tr><td>{@code MarkdownPainter}</td><td>8</td><td>8（原 7，+layoutContent）</td><td>0</td><td>0</td></tr>
@@ -164,8 +164,8 @@ public class MarkdownPublicSurfaceGuardTest {
     private static final int PIPELINE_FIELDS = 0;
 
     /**
-     * T2 合计（Python 按契约验算）= T1 的 95 + Document 新出口 1 + LayoutContent 2
-     * + TableUnit 8 + ContentLayout 3 + 本批明确锚定 Painter 门面 8 = 117。地板续为 100，
+     * 段流映射经用户批准：LayoutContent +mapSegments，公共面 2→3。
+     * Python 按契约验算：T2 合计 117 + 此方法 1 = 118。地板续为 100，
      * 防扩面后总量扫描仍漏掉新账；精确性由各类相等断言负责。
      */
     private static final int TOTAL_SURFACE_FLOOR = 100;
@@ -295,8 +295,15 @@ public class MarkdownPublicSurfaceGuardTest {
     @Test
     public void layoutContentPublicSurfacesAreMinimal() throws NoSuchMethodException {
         Surface content = publicSurface(load(DOCUMENT + "$LayoutContent"));
-        assertSurface(content, 2, 2, 0, 0);
-        Assert.assertEquals(Arrays.asList("getLines/0", "getTables/0"), content.inventory);
+        assertSurface(content, 3, 3, 0, 0);
+        Assert.assertEquals(Arrays.asList("getLines/0", "getTables/0", "mapSegments/1"), content.inventory);
+        Method mapping = load(DOCUMENT + "$LayoutContent").getDeclaredMethod("mapSegments",
+                java.util.function.UnaryOperator.class);
+        Assert.assertEquals(DOCUMENT + "$LayoutContent", mapping.getReturnType().getName());
+        Assert.assertFalse(Modifier.isStatic(mapping.getModifiers()));
+        Assert.assertEquals("java.util.function.UnaryOperator<java.util.List<"
+                + "club.heiqi.uilib.font.layout.TextSegment>>",
+                mapping.getGenericParameterTypes()[0].getTypeName());
         Surface unit = publicSurface(load(DOCUMENT + "$TableUnit"));
         assertSurface(unit, 8, 8, 0, 0);
         Assert.assertEquals(Arrays.asList("getBeforeLineIndex/0", "getBorderArgb/0", "getBorderPx/0",
@@ -338,7 +345,7 @@ public class MarkdownPublicSurfaceGuardTest {
         }
         Assert.assertTrue("全部锚定类的 public 成员合计必须 > 0（恒 0 = 计数函数失效）: 合计 "
                 + total + detail, total > 0);
-        Assert.assertTrue("合计地板（T2 契约 117，全成员尺，用途见 TOTAL_SURFACE_FLOOR 注释）: 合计 " + total
+        Assert.assertTrue("合计地板（段流映射契约 118，全成员尺，用途见 TOTAL_SURFACE_FLOOR 注释）: 合计 " + total
                 + detail, total >= TOTAL_SURFACE_FLOOR);
     }
 
