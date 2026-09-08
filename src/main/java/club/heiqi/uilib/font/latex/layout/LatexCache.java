@@ -56,21 +56,24 @@ public final class LatexCache {
      * @param fontType      字体类别（宽度口径参与 key）
      * @param layoutService 布局引擎
      * @param metrics       度量注入（与 key 匹配的口径）
+     * @param metricEpoch   几何/宽度复合代（字形几何就绪代 + 宽度收敛代，见
+     *                      {@code TextLayoutService#currentLatexMetricEpoch()}）：盒宽同时依赖
+     *                      ink 表与 advance，任一从回退/近似态收敛都必须使旧盒失效
      * @return 布局盒
      */
     public MathBox getOrLayout(String latexSource, int baseSizePx, int runtimeVersion, FontType fontType,
-            MathLayoutService layoutService, MathMetrics metrics, int inkEpoch) {
+            MathLayoutService layoutService, MathMetrics metrics, int metricEpoch) {
         return getOrLayout(latexSource, baseSizePx, runtimeVersion, fontType, layoutService, metrics,
-                inkEpoch, MathStyleOverride.TEXT);
+                metricEpoch, MathStyleOverride.TEXT);
     }
 
     /** 根样式参与同一缓存键；旧入口仍为 TEXT。 */
     public MathBox getOrLayout(String latexSource, int baseSizePx, int runtimeVersion, FontType fontType,
-            MathLayoutService layoutService, MathMetrics metrics, int inkEpoch, MathStyleOverride mathStyle) {
+            MathLayoutService layoutService, MathMetrics metrics, int metricEpoch, MathStyleOverride mathStyle) {
         if (mathStyle == null) { throw new IllegalArgumentException("mathStyle 不能为空"); }
         MathStyleOverride rootStyle = mathStyle == MathStyleOverride.INHERIT ? MathStyleOverride.TEXT : mathStyle;
         Key key = new Key(latexSource, baseSizePx, runtimeVersion, LAYOUT_VERSION, fontType.ordinal(),
-                inkEpoch, rootStyle);
+                metricEpoch, rootStyle);
         MathBox box = cache.get(key);
         if (box != null) {
             return box;
@@ -98,17 +101,17 @@ public final class LatexCache {
         private final int version;
         private final int layoutVersion;
         private final int fontTypeOrdinal;
-        private final int inkEpoch;
+        private final int metricEpoch;
         private final MathStyleOverride mathStyle;
 
-        Key(String source, int size, int version, int layoutVersion, int fontTypeOrdinal, int inkEpoch,
+        Key(String source, int size, int version, int layoutVersion, int fontTypeOrdinal, int metricEpoch,
                 MathStyleOverride mathStyle) {
             this.source = source;
             this.size = size;
             this.version = version;
             this.layoutVersion = layoutVersion;
             this.fontTypeOrdinal = fontTypeOrdinal;
-            this.inkEpoch = inkEpoch;
+            this.metricEpoch = metricEpoch;
             this.mathStyle = mathStyle;
         }
 
@@ -122,7 +125,7 @@ public final class LatexCache {
             }
             Key key = (Key) other;
             return size == key.size && version == key.version && layoutVersion == key.layoutVersion
-                    && fontTypeOrdinal == key.fontTypeOrdinal && inkEpoch == key.inkEpoch
+                    && fontTypeOrdinal == key.fontTypeOrdinal && metricEpoch == key.metricEpoch
                     && mathStyle == key.mathStyle && source.equals(key.source);
         }
 
@@ -133,7 +136,7 @@ public final class LatexCache {
             result = 31 * result + version;
             result = 31 * result + layoutVersion;
             result = 31 * result + fontTypeOrdinal;
-            result = 31 * result + inkEpoch;
+            result = 31 * result + metricEpoch;
             result = 31 * result + mathStyle.hashCode();
             return result;
         }

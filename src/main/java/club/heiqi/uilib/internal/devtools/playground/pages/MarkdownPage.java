@@ -130,7 +130,7 @@ public final class MarkdownPage implements PlaygroundPage {
                 + "表格后的正文继续显示。";
         card.appendChild(MarkdownPageContent.create(rt, source, styles, base, BASE_FONT_PX,
                 () -> FontService.getInstance().getTextLayoutService(),
-                () -> FontService.getInstance().getTextMeasureEpoch()));
+                rt::textMeasureEpoch));
         card.appendChild(PlaygroundKit.hint("左对齐、居中和右对齐；缩窄窗口可观察单元格换行。"));
         return card;
     }

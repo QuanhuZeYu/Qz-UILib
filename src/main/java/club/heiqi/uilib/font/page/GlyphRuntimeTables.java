@@ -3,6 +3,8 @@ package club.heiqi.uilib.font.page;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLongArray;
 import club.heiqi.uilib.font.glyph.MathGlyphKey;
 
 import club.heiqi.uilib.font.FontType;
@@ -49,6 +51,22 @@ public final class GlyphRuntimeTables {
      */
     private volatile int inkEpoch;
 
+    /** 宽度近似债务位图字数：{@link #CODEPOINT_COUNT} 位 / 64。 */
+    private static final int WIDTH_DEBT_WORD_COUNT = (CODEPOINT_COUNT + 63) >>> 6;
+
+    /**
+     * 宽度近似债务位图：置位表示该码点曾落到「按空格宽近似」分支、真值尚未取得。
+     *
+     * <p>按码点对账而非计数近似次数——若只记「近似次数 / 真值写入次数」两个计数器，
+     * 同一窗口内无关码点的真值写入会立刻把债务冲平，导致过早收敛。</p>
+     */
+    private final AtomicLongArray widthApproximationDebtNormal =
+            new AtomicLongArray(WIDTH_DEBT_WORD_COUNT);
+    private final AtomicLongArray widthApproximationDebtBold =
+            new AtomicLongArray(WIDTH_DEBT_WORD_COUNT);
+    private final AtomicInteger widthApproximationDebtCount = new AtomicInteger();
+    private final AtomicInteger widthConvergeEpoch = new AtomicInteger();
+
     // Sparse mathematical identities share the ordinary page arrays and owner lock.
     final Map<MathGlyphKey, MathGlyphRecord> mathGlyphs = new HashMap<MathGlyphKey, MathGlyphRecord>();
 
@@ -60,6 +78,97 @@ public final class GlyphRuntimeTables {
     /** 字形几何写入完成时递增就绪代（使依赖 ink 表数据的布局缓存失效）。 */
     public void bumpInkEpoch() {
         inkEpoch++;
+    }
+
+    /**
+     * 当前宽度收敛代：宽度近似债务由 &gt; 0 归零时 +1。
+     *
+     * <p>页面层把本代与字体换代代复合进文本测量纪元，使「近似态布局产物」在真值
+     * 回填后自动失效重算，而不必等用户关掉再打开页面。收敛是幂等的：债务归零后
+     * 不再产生新近似，纪元停止变化，稳态零重排。</p>
+     *
+     * @return 宽度收敛代（本会话内单调递增，不随 generation 重置）
+     */
+    public int getWidthConvergeEpoch() {
+        return widthConvergeEpoch.get();
+    }
+
+    /** @return 当前未清偿的宽度近似债务码点数（诊断与测试用）。 */
+    public int getWidthApproximationDebtCount() {
+        return widthApproximationDebtCount.get();
+    }
+
+    /**
+     * 登记一次宽度近似：该码点按空格宽排版、真值未取到。
+     *
+     * <p>同一码点重复登记只计一次。装配线程与布局线程都会写，故用 CAS 保证原子。</p>
+     *
+     * @param fontType  字重
+     * @param codepoint 码点
+     */
+    public void markWidthApproximated(FontType fontType, int codepoint) {
+        AtomicLongArray debt = widthApproximationDebtArray(fontType);
+        if (debt == null || !isValidCodepoint(codepoint)) {
+            return;
+        }
+        int index = codepoint >>> 6;
+        long bit = 1L << (codepoint & 63);
+        while (true) {
+            long current = debt.get(index);
+            if ((current & bit) != 0L) {
+                return;
+            }
+            if (debt.compareAndSet(index, current, current | bit)) {
+                widthApproximationDebtCount.incrementAndGet();
+                return;
+            }
+        }
+    }
+
+    /**
+     * 清偿一次宽度近似债务：该码点已取到真值（AWT 测量或装配回填）。
+     *
+     * <p>债务计数由 &gt; 0 归零时递增宽度收敛代。</p>
+     *
+     * @param fontType  字重
+     * @param codepoint 码点
+     */
+    public void clearWidthApproximated(FontType fontType, int codepoint) {
+        AtomicLongArray debt = widthApproximationDebtArray(fontType);
+        if (debt == null || !isValidCodepoint(codepoint)) {
+            return;
+        }
+        int index = codepoint >>> 6;
+        long bit = 1L << (codepoint & 63);
+        while (true) {
+            long current = debt.get(index);
+            if ((current & bit) == 0L) {
+                return;
+            }
+            if (debt.compareAndSet(index, current, current & ~bit)) {
+                if (widthApproximationDebtCount.decrementAndGet() == 0) {
+                    widthConvergeEpoch.incrementAndGet();
+                }
+                return;
+            }
+        }
+    }
+
+    /**
+     * 清空宽度近似债务（generation 生命周期重置）。
+     *
+     * <p>不递增收敛代：换代本身已由字体换代代区分，收敛代只表达「债务清偿完毕」。</p>
+     */
+    private void clearWidthApproximationDebt() {
+        for (int index = 0; index < WIDTH_DEBT_WORD_COUNT; index++) {
+            widthApproximationDebtNormal.set(index, 0L);
+            widthApproximationDebtBold.set(index, 0L);
+        }
+        widthApproximationDebtCount.set(0);
+    }
+
+    private AtomicLongArray widthApproximationDebtArray(FontType fontType) {
+        return fontType == FontType.BOLD ? widthApproximationDebtBold : widthApproximationDebtNormal;
     }
 
     public final float[] widthNormal = createWidthArray();
@@ -207,6 +316,9 @@ public final class GlyphRuntimeTables {
         }
         widthCache[codepoint] = (float) (((double) advance / glyphSize) * settings.getCharSize())
                 + (float) settings.getCharacterSpacing();
+        // 装配真值入缓存即清偿该码点的宽度近似债务：冷启动布局若曾按空格宽近似过，
+        // 债务归零时递增宽度收敛代，页面层布局产物随之失效重算。
+        clearWidthApproximated(fontType, codepoint);
     }
 
     public float[] widthArray(FontType fontType) {
@@ -339,6 +451,7 @@ public final class GlyphRuntimeTables {
         xHeightBold = 0.0F;
         clearGlyphGeometry();
         clearPageReferences();
+        clearWidthApproximationDebt();
     }
 
     /**
@@ -374,6 +487,7 @@ public final class GlyphRuntimeTables {
         xHeightNormal = 0.0F;
         xHeightBold = 0.0F;
         clearPageReferences();
+        clearWidthApproximationDebt();
     }
 
     /**

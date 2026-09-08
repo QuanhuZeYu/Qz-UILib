@@ -1022,7 +1022,7 @@ public class TextLayoutService {
     private MathBox getLatexBoxAtSize(TextSegment segment, int size) {
         TextStyle style = segment.getStyle();
         return LatexCache.getInstance().getOrLayout(segment.getLatexSource(), size, runtimeVersion,
-                style.getFontType(), MATH_LAYOUT, createMathMetrics(style, size), currentInkEpoch(),
+                style.getFontType(), MATH_LAYOUT, createMathMetrics(style, size), currentLatexMetricEpoch(),
                 segment.getLatexMathStyle());
     }
 
@@ -1383,6 +1383,46 @@ public class TextLayoutService {
         return (float) (bounds.getY() + bounds.getHeight() / 2.0D);
     }
 
+    /**
+     * 当前宽度收敛代（页面层文本测量纪元的低 16 位；tables 未就绪回退 0）。
+     *
+     * <p>语义见 {@link GlyphRuntimeTables#getWidthConvergeEpoch()}：宽度近似债务
+     * 由 &gt; 0 归零时 +1，使「近似态布局产物」在真值回填后自动失效。</p>
+     *
+     * @return 宽度收敛代
+     */
+    public int currentWidthConvergeEpoch() {
+        lockGeneration();
+        try {
+            GlyphRuntimeTables tables = currentRuntimeTables();
+            return tables == null ? 0 : tables.getWidthConvergeEpoch();
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    /**
+     * LaTeX 盒缓存的几何/宽度复合代：高 16 位 = 字形几何就绪代，低 16 位 = 宽度收敛代。
+     *
+     * <p>两者都影响盒宽：ink 代覆盖「字形几何从回退值就绪」，宽度收敛代覆盖「advance 从
+     * 空格宽近似收敛到真值」。LaTeX 内部字符宽度同样经 {@code measureCodepointWidth}，
+     * 冷启动预算耗尽时盒宽会被算错并永久缓存，故两者必须同时进键。</p>
+     *
+     * @return 复合代（tables 未就绪回退 0）
+     */
+    public int currentLatexMetricEpoch() {
+        lockGeneration();
+        try {
+            GlyphRuntimeTables tables = currentRuntimeTables();
+            if (tables == null) {
+                return 0;
+            }
+            return (tables.getInkEpoch() << 16) | (tables.getWidthConvergeEpoch() & 0xFFFF);
+        } finally {
+            unlockGeneration();
+        }
+    }
+
     /** 当前字形几何就绪代（LatexCache 键组成部分；tables 未就绪回退 0）。 */
     public int currentInkEpoch() {
         lockGeneration();
@@ -1465,11 +1505,15 @@ public class TextLayoutService {
         widthCacheMissCount.increment();
         if (!tryAcquireWidthMissBudget()) {
             widthCacheBudgetRejectedCount.increment();
+            // 近似值不写缓存，但必须留下债务：真值（AWT 测量或装配回填）到位后清偿，
+            // 债务归零即递增宽度收敛代，驱动页面层布局产物失效重算（方案 D）。
+            tables.markWidthApproximated(fontType, codepoint);
             return currentSettings().getSpaceWidth();
         }
 
         float measuredWidth = (float) measureAwtWidth(codepoint, fontType);
         widthCache[codepoint] = measuredWidth;
+        tables.clearWidthApproximated(fontType, codepoint);
         return measuredWidth;
     }
 

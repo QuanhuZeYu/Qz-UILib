@@ -1292,7 +1292,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return LatexCache.getInstance().getOrLayout(segment.getLatexSource(), baseFontSizePx, runtimeVersion,
                 segment.getStyle().getFontType(), MATH_LAYOUT,
                 textLayoutService.createMathMetrics(segment.getStyle(), baseFontSizePx),
-                textLayoutService.currentInkEpoch(), segment.getLatexMathStyle());
+                textLayoutService.currentLatexMetricEpoch(), segment.getLatexMathStyle());
     }
 
     /** 布局盒内是否存在字号缩放字形（sizeScale != 1.0）。 */

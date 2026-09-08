@@ -46,7 +46,27 @@ public final class DefaultTextMeasureService implements TextMeasureService {
 
     @Override
     public int getEpoch() {
-        return FontService.getInstance().getTextMeasureEpoch();
+        return composeEpoch(FontService.getInstance().getTextMeasureEpoch(),
+                getTextLayoutService().currentWidthConvergeEpoch());
+    }
+
+    /**
+     * 复合页面层文本测量纪元：高 16 位 = 字体换代代，低 16 位 = 宽度收敛代。
+     *
+     * <p>{@link TextMeasureService#getEpoch()} 的契约只要求「变化时返回新值」，消费方
+     * （{@code SceneNode.lastMeasuredEpoch}、{@code ChatLineLayouter.cachedEpoch}、
+     * {@code TextLayoutEngine.cachedEpoch}）一律做 {@code !=} 比较，故复合值只需可区分。</p>
+     *
+     * <p>{@code FontService.getTextMeasureEpoch()} 参与 generation 构建协议不变量
+     * （{@code textMeasureEpoch == baseTextMeasureEpoch + 1}），不得改其返回值；复合只发生在
+     * 页面层端口，字体层协议不受影响。</p>
+     *
+     * @param generationEpoch    字体换代代（远小于 32768）
+     * @param widthConvergeEpoch 宽度收敛代（一次会话内不会绕回 65536）
+     * @return 复合纪元
+     */
+    static int composeEpoch(int generationEpoch, int widthConvergeEpoch) {
+        return (generationEpoch << 16) | (widthConvergeEpoch & 0xFFFF);
     }
 
     @Override

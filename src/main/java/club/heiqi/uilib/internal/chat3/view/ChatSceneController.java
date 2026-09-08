@@ -33,6 +33,7 @@ import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -84,7 +85,7 @@ public final class ChatSceneController {
 
             @Override
             public int epoch() {
-                return fontService.getRuntimeVersion();
+                return DefaultTextMeasureService.getInstance().getEpoch();
             }
         };
     }

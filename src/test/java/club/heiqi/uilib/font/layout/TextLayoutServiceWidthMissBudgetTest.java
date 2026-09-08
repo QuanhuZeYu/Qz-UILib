@@ -53,6 +53,8 @@ public class TextLayoutServiceWidthMissBudgetTest {
         double deferredWidth = service.getCodepointWidth('丙', new TextStyle());
         Assert.assertEquals(7.5D, deferredWidth, 0.0001D);
         Assert.assertEquals(2L, service.getWidthCacheBudgetRejectedCount());
+        Assert.assertEquals("被近似的码点必须留下可清偿债务", 1,
+                glyphPageManager.getRuntimeTables().getWidthApproximationDebtCount());
 
         // 顺延字符仍未污染宽度缓存。
         Assert.assertTrue(Float.isNaN(glyphPageManager.getRuntimeTables().widthArray(FontType.NORMAL)['丙']));
@@ -66,6 +68,7 @@ public class TextLayoutServiceWidthMissBudgetTest {
         service.getStringWidth("甲乙丙丁", TextContentMode.UILIB_RAW);
 
         Assert.assertEquals(0L, service.getWidthCacheBudgetRejectedCount());
+        Assert.assertEquals(0, glyphPageManager.getRuntimeTables().getWidthApproximationDebtCount());
         Assert.assertEquals(4L, service.getWidthCacheMissCount());
         Assert.assertEquals(0L, service.getWidthCacheHitCount());
     }

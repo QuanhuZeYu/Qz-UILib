@@ -17,6 +17,7 @@ import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatUrlLinkifier;
 import club.heiqi.uilib.ui.markdown.MarkdownPainter;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 
 /**
  * chat3 消息级 markdown 管道（M5 接线本体；规划《通用Markdown渲染器》§三 M5/§二 L3）。
@@ -45,7 +46,8 @@ import club.heiqi.uilib.ui.markdown.MarkdownPainter;
  * <p><b>每帧零解析（规划 §六 3）</b>：两级 LRU 沿用 {@code ChatLineLayouter} 既有布局缓存
  * 纪律——逻辑行缓存 key = <b>最终喂进 {@code MarkdownDocument.parse} 的那个字符串</b>
  * @基础色#配色代（解析/链接化与字体无关，配色变更即时失效）；视觉行缓存 key = 逻辑行
- * key#定行宽#字号#度量纪元（{@code FontService.getRuntimeVersion()}）。渲染帧只在结构重建时
+ * key#定行宽#字号#度量纪元（{@code DefaultTextMeasureService#getEpoch()}：字体换代代 + 宽度收敛代）。
+ * 渲染帧只在结构重建时
  * 命中缓存，不逐帧 parse。缓存按实例隔离。<b>单轨纪律（C7 第 8 条）</b>：键与 parse 输入同源
  * 同值，不存在「一处用原文、一处用结构内容」的两把尺（见 {@link #cacheKey}）。</p>
  *
@@ -160,7 +162,7 @@ final class ChatMarkdownPipeline {
             ChatMessageList.SegmentPostProcessor processor) {
         FontService fonts = FontService.getInstance();
         return layoutContent(source, baseColor, width, font, processor,
-                fonts.getTextLayoutService(), fonts.getRuntimeVersion());
+                fonts.getTextLayoutService(), DefaultTextMeasureService.getInstance().getEpoch());
     }
 
     synchronized RenderedContent layoutContent(String source, int baseColor, int width, int font,
@@ -377,7 +379,7 @@ final class ChatMarkdownPipeline {
         // 单一真相）。baseColor 与配色代指纹同在 key 上 ⇒ 同 key ⇒ 同一语义输入。
         String text = messageText == null ? "" : messageText;
         List<MarkdownLayoutLine> logical = logicalCached(text, baseColor, postProcessor);
-        int epoch = FontService.getInstance().getRuntimeVersion();
+        int epoch = DefaultTextMeasureService.getInstance().getEpoch();
         String key = cacheKey(text, baseColor) + '#' + maxWidthPx + '#' + fontSizePx + '#' + epoch
                 + (wrapOverride == null ? "" : "#w");
         List<RenderedLine> hit = linesCache.get(key);
