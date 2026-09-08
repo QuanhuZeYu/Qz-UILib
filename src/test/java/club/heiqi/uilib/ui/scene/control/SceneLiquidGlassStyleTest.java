@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -56,12 +57,15 @@ public class SceneLiquidGlassStyleTest {
     public void routedHoverPressAndReleaseChangeGlassWithoutMovingTheHitBox() {
         Fixture f = new Fixture(liquidBackdrop(), true);
         Appearance idle = f.frame();
+        Assert.assertEquals(0.5F, idle.elevation, EPSILON);
+        Assert.assertEquals(0.85F, idle.lens() / liquidBackdrop().getEffect().getLensStrength(), EPSILON);
         f.harness.moveTo(f.content);
         Assert.assertTrue(f.primitive.interaction().hovered().get());
         Appearance hover = f.frame();
         Assert.assertNotEquals("hover 有可见染色反馈", idle.background, hover.background);
         Assert.assertTrue("hover 缘光更明显", alpha(hover.edge) > alpha(idle.edge));
-        Assert.assertTrue("hover 圆角展开", hover.radius > idle.radius);
+        Assert.assertEquals("hover 实体抬起", 1.0F, hover.elevation, EPSILON);
+        Assert.assertEquals(liquidBackdrop().getEffect().getLensStrength(), hover.lens(), EPSILON);
         Assert.assertTrue("hover 透镜增强", hover.lens() > idle.lens());
 
         Assert.assertTrue(f.runtime.requestFocus(f.button));
@@ -77,7 +81,8 @@ public class SceneLiquidGlassStyleTest {
         Assert.assertTrue("验证 pressed 与 hover 同时存在", f.primitive.interaction().hovered().get());
         Appearance pressed = f.frame();
         Assert.assertNotEquals("pressed 压过 hover 染色", hover.background, pressed.background);
-        Assert.assertTrue("按压收拢圆角", pressed.radius < hover.radius);
+        Assert.assertEquals("按压实体落下", 0.0F, pressed.elevation, EPSILON);
+        Assert.assertEquals(0.60F, pressed.lens() / liquidBackdrop().getEffect().getLensStrength(), EPSILON);
         Assert.assertTrue("按压减弱透镜", pressed.lens() < hover.lens());
         f.leave();
         Assert.assertFalse(f.primitive.interaction().hovered().get());
@@ -104,7 +109,9 @@ public class SceneLiquidGlassStyleTest {
         Appearance disabled = f.frame();
         Assert.assertTrue("禁用内容仍可辨认", disabled.opacity > 0.0F);
         Assert.assertTrue("禁用降低内容透明度", disabled.opacity < idle.opacity);
-        Assert.assertEquals("禁用关闭液态透镜", 0.0F, disabled.lens(), EPSILON);
+        Assert.assertEquals("禁用保留实体高度", 0.35F, disabled.elevation, EPSILON);
+        Assert.assertEquals("禁用仍可辨认玻璃透镜",
+                liquidBackdrop().getEffect().getLensStrength() * 0.65F, disabled.lens(), EPSILON);
         Assert.assertNotEquals(idle.background, disabled.background);
         Assert.assertEquals(SceneCursor.NOT_ALLOWED, f.button.getCursor());
 
@@ -160,7 +167,9 @@ public class SceneLiquidGlassStyleTest {
         Appearance late = f.frame();
         assertBetween("背景 alpha 中间值", alpha(idle.background), alpha(middle.background), alpha(hover.background));
         assertBetween("缘光 alpha 中间值", alpha(idle.edge), alpha(middle.edge), alpha(hover.edge));
-        assertBetween("圆角中间值", idle.radius, middle.radius, hover.radius);
+        assertBetween("实体高度中间值", idle.elevation, middle.elevation, hover.elevation);
+        Assert.assertTrue(early.elevation < middle.elevation);
+        Assert.assertTrue(middle.elevation < late.elevation);
         assertBetween("透镜中间值", idle.lens(), middle.lens(), hover.lens());
         Assert.assertTrue(early.lens() < middle.lens());
         Assert.assertTrue(middle.lens() < late.lens());
@@ -183,6 +192,7 @@ public class SceneLiquidGlassStyleTest {
         f.sample(81);
         Appearance turning = f.frame();
         Assert.assertTrue(turning.lens() > idle.lens());
+        Assert.assertTrue(turning.elevation > idle.elevation);
 
         f.leave();
         assertAppearance(turning, f.frame());
@@ -191,6 +201,7 @@ public class SceneLiquidGlassStyleTest {
         f.sample(162);
         Appearance returning = f.frame();
         assertBetween("离开后透镜从当前值平滑回退", idle.lens(), returning.lens(), turning.lens());
+        assertBetween("离开后高度从当前值平滑回退", idle.elevation, returning.elevation, turning.elevation);
         assertBetween("染色同样重定向", alpha(idle.background), alpha(returning.background), alpha(turning.background));
         f.sample(242);
         assertAppearance(idle, f.frame());
@@ -246,11 +257,11 @@ public class SceneLiquidGlassStyleTest {
         Appearance hover = f.frame();
         Assert.assertNotEquals(idle.background, hover.background);
         Assert.assertNotEquals(idle.edge, hover.edge);
-        Assert.assertTrue(hover.radius > idle.radius);
+        Assert.assertEquals(1.0F, hover.elevation, EPSILON);
         f.harness.press(f.content);
         Appearance pressed = f.frame();
         Assert.assertNotEquals(hover.background, pressed.background);
-        Assert.assertTrue(pressed.radius < hover.radius);
+        Assert.assertEquals(0.0F, pressed.elevation, EPSILON);
         f.harness.release(f.content);
         Assert.assertEquals(1, f.clicks.get());
         f.frame();
@@ -293,6 +304,9 @@ public class SceneLiquidGlassStyleTest {
         Assert.assertEquals("染色", expected.background, actual.background);
         Assert.assertEquals("缘光", expected.edge, actual.edge);
         Assert.assertEquals("圆角", expected.radius, actual.radius);
+        Assert.assertEquals("实体高度", expected.elevation, actual.elevation, EPSILON);
+        Assert.assertEquals("内容变换", expected.contentTransform, actual.contentTransform);
+        Assert.assertEquals("根变换", expected.buttonTransform, actual.buttonTransform);
         Assert.assertEquals("内容透明度", expected.opacity, actual.opacity, EPSILON);
         Assert.assertEquals("玻璃配方", expected.backdrop, actual.backdrop);
     }
@@ -326,12 +340,60 @@ public class SceneLiquidGlassStyleTest {
         return null;
     }
 
-    private static void assertBounds(AnchorRect bounds, PaintCommand command) {
+    private static PaintCommand uniqueColor(PaintPlan plan, PaintCommandType type, int color) {
+        PaintCommand match = null;
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == type && command.getColor() == color) {
+                Assert.assertNull("同一面部染色不得重复绘制", match);
+                match = command;
+            }
+        }
+        Assert.assertNotNull("面部染色必须进入真实命令", match);
+        return match;
+    }
+
+    private static void assertFaceBounds(AnchorRect bounds, float elevation, PaintCommand command) {
         Assert.assertNotNull(command);
-        Assert.assertEquals(bounds.getX(), command.getLeft());
-        Assert.assertEquals(bounds.getY(), command.getTop());
-        Assert.assertEquals(bounds.getX() + bounds.getWidth(), command.getRight());
-        Assert.assertEquals(bounds.getBottom(), command.getBottom());
+        int lift = Math.round(2.0F * elevation);
+        Assert.assertEquals(bounds.getX() + 1, command.getLeft());
+        Assert.assertEquals(bounds.getY() + 2 - lift, command.getTop());
+        Assert.assertEquals(bounds.getX() + bounds.getWidth() - 1, command.getRight());
+        Assert.assertEquals(bounds.getBottom() - 2 - lift, command.getBottom());
+        Assert.assertEquals(7, command.getCornerRadiusTopLeft());
+        Assert.assertEquals(7, command.getCornerRadiusTopRight());
+        Assert.assertEquals(7, command.getCornerRadiusBottomRight());
+        Assert.assertEquals(7, command.getCornerRadiusBottomLeft());
+    }
+
+    private static void assertDirectionalRelief(PaintPlan plan, PaintCommand face) {
+        PaintCommand top = null;
+        PaintCommand bottom = null;
+        boolean darkBase = false;
+        int centerX = (face.getLeft() + face.getRight()) / 2;
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() != PaintCommandType.BACKGROUND || command == face) continue;
+            if (plan.getCommands().indexOf(command) < plan.getCommands().indexOf(face)) {
+                if (command.getTop() >= face.getBottom() && alpha(command.getColor()) > 0) {
+                    int rgb = command.getColor() & 0xFFFFFF;
+                    darkBase |= ((rgb >> 16) & 0xFF) < 128
+                            && ((rgb >> 8) & 0xFF) < 128 && (rgb & 0xFF) < 128;
+                }
+                continue;
+            }
+            if (command.getLeft() > centerX || command.getRight() <= centerX) continue;
+            if (command.getTop() == face.getTop() && command.getBottom() == face.getTop() + 1) {
+                Assert.assertNull("上倒角只绘制一次中央高光", top);
+                top = command;
+            }
+            if (command.getTop() == face.getBottom() - 1 && command.getBottom() == face.getBottom()) {
+                Assert.assertNull("下倒角只绘制一次中央反光", bottom);
+                bottom = command;
+            }
+        }
+        Assert.assertTrue("玻璃面下方必须有可见暗色厚底或接触阴影", darkBase);
+        Assert.assertNotNull("上倒角高光进入真实绘制", top);
+        Assert.assertNotNull("下倒角弱反光进入真实绘制", bottom);
+        Assert.assertTrue("定向边缘上亮下弱，不能退回均匀描边", alpha(top.getColor()) > alpha(bottom.getColor()));
     }
 
     private static final class Appearance {
@@ -339,6 +401,9 @@ public class SceneLiquidGlassStyleTest {
         final int edge;
         final int radius;
         final float opacity;
+        final float elevation;
+        final Transform contentTransform;
+        final Transform buttonTransform;
         final UiBackdrop backdrop;
 
         Appearance(SceneNode button, SceneNode content) {
@@ -346,6 +411,9 @@ public class SceneLiquidGlassStyleTest {
             edge = button.getBorderColor();
             radius = button.getCornerRadius();
             opacity = content.getOpacity();
+            elevation = button.__getSurfaceElevation();
+            contentTransform = content.getTransform();
+            buttonTransform = button.getTransform();
             backdrop = button.getBackdrop();
         }
 
@@ -416,24 +484,46 @@ public class SceneLiquidGlassStyleTest {
             Assert.assertSame("复用 button 布局盒", buttonLayout, button.getCachedLayout());
             Assert.assertSame("复用 content 布局盒", contentLayout, content.getCachedLayout());
             SceneHitTester hitTester = new SceneHitTester();
-            Assert.assertTrue("圆角变化不挖掉布局命中盒左上角",
+            Assert.assertTrue("实体高度变化不挖掉布局命中盒左上角",
                     hitTester.hitTest(sceneRoot, bounds.getX(), bounds.getY(), 0, 0).contains(button));
-            Assert.assertTrue("圆角变化不缩小命中盒右下角", hitTester.hitTest(sceneRoot,
+            Assert.assertTrue("实体高度变化不缩小命中盒右下角", hitTester.hitTest(sceneRoot,
                     bounds.getX() + bounds.getWidth() - 1, bounds.getBottom() - 1, 0, 0).contains(button));
             Assert.assertFalse("滤镜不扩大按钮命中盒", hitTester.hitTest(sceneRoot,
                     bounds.getX() + bounds.getWidth(), bounds.getY(), 0, 0).contains(button));
 
             PaintPlan plan = paint.paint(sceneRoot).getPlan();
             Appearance appearance = new Appearance(button, content);
-            PaintCommand background = first(plan, PaintCommandType.BACKGROUND);
-            PaintCommand border = first(plan, PaintCommandType.BORDER);
-            assertBounds(bounds, background);
-            assertBounds(bounds, border);
-            Assert.assertEquals(appearance.background, background.getColor());
-            Assert.assertEquals(appearance.edge, border.getColor());
-            Assert.assertEquals(appearance.radius, background.getCornerRadius());
-            Assert.assertEquals(appearance.radius, border.getCornerRadius());
-            Assert.assertTrue("始终保留可见边框", border.getBorderWidth() > 0 && alpha(border.getColor()) > 0);
+            Assert.assertEquals("实体轮廓固定圆角", 8, appearance.radius);
+            Assert.assertNull("按钮根不设置变换，升降只作用于内容", appearance.buttonTransform);
+            Assert.assertEquals("内容随面部高度移动",
+                    Transform.translate(0.0F, -2.0F * appearance.elevation), appearance.contentTransform);
+            PaintCommand background = uniqueColor(plan, PaintCommandType.BACKGROUND, appearance.background);
+            assertFaceBounds(bounds, appearance.elevation, background);
+            assertDirectionalRelief(plan, background);
+            int backdropCount = 0;
+            for (PaintCommand command : plan.getCommands()) {
+                if (command.getType() == PaintCommandType.BACKDROP) backdropCount++;
+                if (command.getType() == PaintCommandType.BACKGROUND
+                        || command.getType() == PaintCommandType.BORDER
+                        || command.getType() == PaintCommandType.BACKDROP) {
+                    Assert.assertTrue("面部、厚底和投影全部保留在固定按钮盒内",
+                            command.getLeft() >= bounds.getX() && command.getTop() >= bounds.getY()
+                                    && command.getRight() <= bounds.getX() + bounds.getWidth()
+                                    && command.getBottom() <= bounds.getBottom());
+                }
+            }
+            Assert.assertEquals("每颗按钮只采样一次背景", baseBackdrop == null ? 0 : 1, backdropCount);
+            PaintCommand transform = first(plan, PaintCommandType.PUSH_TRANSFORM);
+            if (appearance.contentTransform.isIdentity()) {
+                Assert.assertNull("按到底时内容回到原位", transform);
+            } else {
+                Assert.assertNotNull("内容升降进入真实合成命令", transform);
+                Assert.assertEquals(0.0F, transform.getTranslateX(), EPSILON);
+                Assert.assertEquals(appearance.contentTransform.translateY, transform.getTranslateY(), EPSILON);
+                Assert.assertNotNull(first(plan, PaintCommandType.POP_TRANSFORM));
+                Assert.assertTrue("变换只包裹内容，面部不跟随内容重复位移",
+                        plan.getCommands().indexOf(background) < plan.getCommands().indexOf(transform));
+            }
             Assert.assertNotNull("禁用只降低可见度，仍绘制内容", first(plan, PaintCommandType.TEXT));
             PaintCommand opacity = first(plan, PaintCommandType.PUSH_OPACITY);
             if (appearance.opacity < 1.0F) {
@@ -448,14 +538,15 @@ public class SceneLiquidGlassStyleTest {
                 Assert.assertNull("关闭滤镜时节点不持配方", appearance.backdrop);
                 Assert.assertNull("关闭滤镜时不产生 BACKDROP", backdrop);
             } else {
-                assertBounds(bounds, backdrop);
-                Assert.assertEquals(appearance.radius, backdrop.getCornerRadius());
+                assertFaceBounds(bounds, appearance.elevation, backdrop);
+                Assert.assertEquals(background.getCornerRadius(), backdrop.getCornerRadius());
+                Assert.assertTrue("面部先采样玻璃再叠轻染色",
+                        plan.getCommands().indexOf(backdrop) < plan.getCommands().indexOf(background));
                 Assert.assertEquals(appearance.backdrop, backdrop.getBackdrop());
                 Assert.assertEquals(baseBackdrop.getBlurRadius(), backdrop.getBackdrop().getBlurRadius());
                 Assert.assertEquals(baseBackdrop.getSaturation(), backdrop.getBackdrop().getSaturation(), EPSILON);
                 Assert.assertSame(baseBackdrop.getEffect().getMaterial(), backdrop.getBackdrop().getEffect().getMaterial());
                 Assert.assertEquals(baseBackdrop.getEffect().getFamily(), backdrop.getBackdrop().getEffect().getFamily());
-                Assert.assertTrue("滤镜先于透明染色", plan.getCommands().indexOf(backdrop) < plan.getCommands().indexOf(background));
             }
             return appearance;
         }

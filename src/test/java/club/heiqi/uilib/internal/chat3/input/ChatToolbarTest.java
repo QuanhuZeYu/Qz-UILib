@@ -12,6 +12,7 @@ import org.junit.Test;
 import club.heiqi.uilib.api.chat.ChatAction;
 import club.heiqi.uilib.api.chat.ChatActionRegistration;
 import club.heiqi.uilib.api.chat.ChatActionService;
+import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSide;
@@ -21,6 +22,8 @@ import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiBackdropEffect;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -51,6 +54,8 @@ public class ChatToolbarTest {
         Assert.assertTrue("按钮不保留文字标签", texts(button).isEmpty());
         Assert.assertEquals(24, button.getPreferredWidth());
         Assert.assertEquals(24, button.getPreferredHeight());
+        Assert.assertEquals("每颗按钮保持固定实体轮廓", 8, button.getCornerRadius());
+        Assert.assertNull("按钮根不设置变换，表面升降不影响命中", button.getTransform());
         SceneNode icon = button.__getChildren().get(0);
         Assert.assertEquals(16, icon.getPreferredWidth());
         Assert.assertEquals(16, icon.getPreferredHeight());
@@ -67,6 +72,10 @@ public class ChatToolbarTest {
 
     static void assertIconRow(SceneNode toolbar, String... names) {
         Assert.assertEquals("可见动作数", names.length, toolbar.__getChildren().size());
+        Assert.assertEquals("按钮之间露出背景的间隙", 6, toolbar.getGap());
+        Assert.assertEquals("工具栏根没有背景底座", 0, toolbar.getBackgroundColor());
+        Assert.assertEquals("工具栏根没有整条边框", 0, toolbar.getBorderWidth());
+        Assert.assertNull("玻璃配方只挂在每颗按钮", toolbar.getBackdrop());
         for (int i = 0; i < names.length; i++) {
             assertIconButton(toolbar.__getChildren().get(i), names[i]);
         }
@@ -152,6 +161,50 @@ public class ChatToolbarTest {
         assertIconRow(toolbar, "action");
 
         registration.close();
+    }
+
+    @Test
+    public void everyButtonGetsItsOwnGlassRecipeWithCappedBlurAndDisabledLens() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        int savedBlur = ChatMarkdownSettings.getGlassBlurRadiusPx();
+        float savedLens = ChatMarkdownSettings.getGlassLensStrength();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            ChatMarkdownSettings.setGlassLensStrength(0.8F);
+            for (int blur : new int[] {0, 3, 20}) {
+                ChatMarkdownSettings.setGlassBlurRadiusPx(blur);
+                rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+                SceneNode toolbar = ChatToolbar.mount(rt, host(Signal.create(Boolean.TRUE)));
+                rt.flush();
+                assertIconRow(toolbar, "finish", "cancel", "reset-current", "reset-all");
+                for (int i = 0; i < toolbar.__getChildren().size(); i++) {
+                    SceneNode button = toolbar.__getChildren().get(i);
+                    Assert.assertNotNull("启用与禁用按钮都各持玻璃配方", button.getBackdrop());
+                    Assert.assertEquals(Math.min(6, blur), button.getBackdrop().getBlurRadius());
+                    Assert.assertSame(UiGlassMaterial.DARK_THIN, button.getBackdrop().getEffect().getMaterial());
+                    Assert.assertEquals(UiBackdropEffect.Family.LIQUID_GLASS,
+                            button.getBackdrop().getEffect().getFamily());
+                    Assert.assertEquals(0.8F * (i < 2 ? 0.85F : 0.65F),
+                            button.getBackdrop().getEffect().getLensStrength(), 0.0001F);
+                    Assert.assertEquals(i < 2 ? 0.5F : 0.35F, button.__getSurfaceElevation(), 0.0001F);
+                }
+                rt.dispose();
+                rt = null;
+            }
+            ChatMarkdownSettings.setGlassEnabled(false);
+            rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode toolbar = ChatToolbar.mount(rt, host(Signal.create(Boolean.TRUE)));
+            rt.flush();
+            assertIconRow(toolbar, "finish", "cancel", "reset-current", "reset-all");
+            for (SceneNode button : toolbar.__getChildren()) {
+                Assert.assertNull("关闭滤镜后每颗按钮释放配方", button.getBackdrop());
+                Assert.assertTrue("关闭滤镜仍保留实体", button.__getSurfaceElevation() >= 0.0F);
+            }
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+            ChatMarkdownSettings.setGlassBlurRadiusPx(savedBlur);
+            ChatMarkdownSettings.setGlassLensStrength(savedLens);
+        }
     }
 
     @Test

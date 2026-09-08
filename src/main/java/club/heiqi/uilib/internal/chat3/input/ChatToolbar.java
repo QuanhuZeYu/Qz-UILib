@@ -152,18 +152,12 @@ public final class ChatToolbar {
         final boolean horizontal = effective.isHorizontalEdge();
         SceneNode root = horizontal ? SceneNode.row() : SceneNode.column();
         boolean glass = ChatMarkdownSettings.isGlassEnabled();
-        root.setHitTestable(true).setGap(4)
-                .setCrossAxisAlign(CrossAxisAlign.CENTER)
-                .setBorderWidth(1)
-                .setBorderColor(ChatMarkdownSettings.getContainerBorderArgb())
-                .setCornerRadius(ChatMarkdownSettings.getContainerCornerRadius())
-                .setBackdrop(glass ? UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
-                        ChatMarkdownSettings.getGlassBlurRadiusPx(),
-                        ChatMarkdownSettings.getGlassLensStrength()) : null)
-                .setBackgroundColor(glass
-                        ? (ChatMarkdownSettings.getContainerBgArgb() & 0x00FFFFFF)
-                                | (ChatMarkdownSettings.getGlassContainerAlpha() << 24)
-                        : ChatMarkdownSettings.getContainerBgArgb());
+        // 根只负责排列；每颗按钮独立采样背景，按钮间隙直接露出游戏画面。
+        root.setHitTestable(true).setGap(6)
+                .setCrossAxisAlign(CrossAxisAlign.CENTER);
+        UiBackdrop buttonBackdrop = glass ? UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
+                Math.min(6, ChatMarkdownSettings.getGlassBlurRadiusPx()),
+                ChatMarkdownSettings.getGlassLensStrength()) : null;
         if (horizontal) {
             root.setPreferredHeight(TOOLBAR_HEIGHT_PX).setPadding(1, PADDING_X, 1, PADDING_X);
         } else {
@@ -180,7 +174,7 @@ public final class ChatToolbar {
                         + root.getPaddingLeft() + root.getPaddingRight();
             }, root::setPreferredWidth);
         }
-        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item, root.getBackdrop()));
+        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item, buttonBackdrop));
         return root;
     }
 

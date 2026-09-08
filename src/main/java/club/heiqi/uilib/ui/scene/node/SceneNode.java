@@ -719,6 +719,22 @@ public class SceneNode {
     public int getBackgroundColor() { return paintProps.backgroundColor; }
 
     /**
+     * 内部表面浮雕属性；负数或 NaN 关闭，非负值限制到 0..1。
+     * 归一化后去重，仅失效 PAINT，不改布局、transform 或命中盒。
+     */
+    public SceneNode __setSurfaceElevation(float elevation) {
+        float normalized = Float.isNaN(elevation) || elevation < 0.0f
+                ? -1.0f : Math.max(0.0f, Math.min(1.0f, elevation));
+        if (Float.compare(paintProps.surfaceElevation, normalized) == 0) return this;
+        paintProps.surfaceElevation = normalized;
+        markSelfPaint();
+        return this;
+    }
+
+    /** @return 内部表面浮雕高度；-1 表示使用普通绘制路径。 */
+    public float __getSurfaceElevation() { return paintProps.surfaceElevation; }
+
+    /**
      * 设置本节点的背后滤镜（声明式玻璃通道）。
      *
      * <p>与 {@link #setBackgroundColor} 同构：PAINT 级属性，只改绘制输出、不改盒尺寸。

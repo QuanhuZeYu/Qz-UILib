@@ -14,6 +14,9 @@ final class ScenePaintProps {
     /** 背景颜色（ARGB），默认 0（透明） */
     int backgroundColor;
 
+    /** 内部表面浮雕高度；-1 关闭，0..1 仅改变盒内绘制。 */
+    float surfaceElevation = -1.0f;
+
     /**
      * 背后滤镜配方（磨玻璃 / Liquid Glass）；null = 不启用。
      *

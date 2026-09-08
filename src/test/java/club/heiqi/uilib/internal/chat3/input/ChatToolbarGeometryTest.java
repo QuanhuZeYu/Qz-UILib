@@ -46,6 +46,9 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintFragment;
 import club.heiqi.uilib.ui.scene.paint.RecordingRenderBackend;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
@@ -93,9 +96,18 @@ public class ChatToolbarGeometryTest {
     private HudToolbarLayer.Result layer;
     private TestHost host;
     private ChatHudEditIntent.Sink sink;
+    private boolean savedGlass;
+    private int savedBlur;
+    private float savedLens;
 
     @Before
     public void setUp() {
+        savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        savedBlur = ChatMarkdownSettings.getGlassBlurRadiusPx();
+        savedLens = ChatMarkdownSettings.getGlassLensStrength();
+        ChatMarkdownSettings.setGlassEnabled(true);
+        ChatMarkdownSettings.setGlassBlurRadiusPx(8);
+        ChatMarkdownSettings.setGlassLensStrength(0.5F);
         ChatToolbarTest.primeIconCache();
         ReactiveScheduler.get().reset();
         ChatActionService.getInstance().clear();
@@ -106,6 +118,9 @@ public class ChatToolbarGeometryTest {
 
     @After
     public void tearDown() {
+        ChatMarkdownSettings.setGlassEnabled(savedGlass);
+        ChatMarkdownSettings.setGlassBlurRadiusPx(savedBlur);
+        ChatMarkdownSettings.setGlassLensStrength(savedLens);
         if (sink != null) {
             ChatHudEditIntent.detach(sink);
             sink = null;
@@ -300,12 +315,7 @@ public class ChatToolbarGeometryTest {
         Assert.assertTrue("工具栏必须挂在内容盒之外", layer.toolbar() != null);
         Assert.assertSame("工具栏必须是外框的直接子节点", layer.root(), layer.toolbar().__getParent());
         Assert.assertTrue(layer.isVisible());
-        Assert.assertEquals("工具栏与聊天容器共用玻璃参数",
-                container.root().getBackdrop(), layer.toolbar().getBackdrop());
-        Assert.assertEquals("工具栏与聊天容器共用背景",
-                container.root().getBackgroundColor(), layer.toolbar().getBackgroundColor());
-        Assert.assertEquals("工具栏与聊天容器共用圆角",
-                container.root().getCornerRadius(), layer.toolbar().getCornerRadius());
+        assertIndependentGlassPaint();
 
         AnchorRect wrapper = box(layer.root());
         AnchorRect toolbar = box(layer.toolbar());
@@ -411,9 +421,8 @@ public class ChatToolbarGeometryTest {
             SceneNode resetAll = buttonAt(3);
             AnchorRect[] buttons = {box(finish), box(cancel), box(resetCurrent), box(resetAll)};
             for (int i = 1; i < buttons.length; i++) {
-                Assert.assertTrue("竖直边必须竖排（按钮 " + i + " 不得与上一个重叠）: "
-                        + buttons[i - 1] + " vs " + buttons[i],
-                        buttons[i].getY() >= buttons[i - 1].getY() + buttons[i - 1].getHeight());
+                Assert.assertEquals("竖直按钮之间固定露出 6px 背景",
+                        6, buttons[i].getY() - buttons[i - 1].getBottom());
             }
             for (SceneNode button : new SceneNode[] {finish, cancel, resetCurrent, resetAll}) {
                 AnchorRect b = box(button);
@@ -514,7 +523,83 @@ public class ChatToolbarGeometryTest {
         Assert.assertEquals("稳定后「编辑 HUD」仍可命中", 1, pressCenter(editButton()));
     }
 
-    /** 六种图标均必须进入 scene paint → replay，且绘制矩形与真实 16px 布局盒一致。 */
+    private void assertButtonSpacing(HudToolbarSide side) {
+        AnchorRect toolbar = box(layer.toolbar());
+        Assert.assertEquals("四边工具栏厚度固定为 28px", 28,
+                side.isHorizontalEdge() ? toolbar.getHeight() : toolbar.getWidth());
+        SceneNode previous = null;
+        for (SceneNode button : layer.toolbar().__getChildren()) {
+            AnchorRect current = box(button);
+            Assert.assertEquals(24, current.getWidth());
+            Assert.assertEquals(24, current.getHeight());
+            assertVisibleInside(button, toolbar, "独立玻璃按钮");
+            if (previous != null) {
+                AnchorRect before = box(previous);
+                Assert.assertEquals("独立玻璃之间必须有 6px 净空", 6, side.isHorizontalEdge()
+                        ? current.getX() - before.getX() - before.getWidth()
+                        : current.getY() - before.getBottom());
+            }
+            previous = button;
+        }
+    }
+
+    private void assertIndependentGlassPaint() {
+        new ScenePaintEngine(MEASURER).paint(root);
+        SceneNode toolbar = layer.toolbar();
+        Assert.assertEquals(0, toolbar.getBackgroundColor());
+        Assert.assertEquals(0, toolbar.getBorderWidth());
+        Assert.assertNull(toolbar.getBackdrop());
+        PaintFragment rootFragment = (PaintFragment) toolbar.getCachedPaint();
+        Assert.assertNotNull(rootFragment);
+        Assert.assertEquals("工具栏根 fragment 不绘制连续底座", 0, rootFragment.size());
+        for (SceneNode button : toolbar.__getChildren()) {
+            PaintFragment fragment = (PaintFragment) button.getCachedPaint();
+            Assert.assertNotNull(fragment);
+            PaintCommand backdrop = null;
+            PaintCommand face = null;
+            for (PaintCommand command : fragment.getCommands()) {
+                if (command.getType() == PaintCommandType.BACKDROP) {
+                    Assert.assertNull("单颗按钮不能重复采样背景", backdrop);
+                    backdrop = command;
+                }
+                if (command.getType() == PaintCommandType.BACKGROUND
+                        && command.getColor() == button.getBackgroundColor()) {
+                    Assert.assertNull("每颗按钮只有一层面部染色", face);
+                    face = command;
+                }
+                Assert.assertTrue("按钮绘制不得侵入相邻按钮或间隙",
+                        command.getLeft() >= 0 && command.getTop() >= 0
+                                && command.getRight() <= 24 && command.getBottom() <= 24);
+            }
+            Assert.assertNotNull("每颗按钮必须有独立 BACKDROP", backdrop);
+            Assert.assertNotNull("每颗按钮必须有独立轻染色面", face);
+            Assert.assertEquals(button.getBackdrop(), backdrop.getBackdrop());
+            Assert.assertEquals(6, backdrop.getBackdrop().getBlurRadius());
+            int lift = Math.round(2.0F * button.__getSurfaceElevation());
+            Assert.assertEquals(1, backdrop.getLeft());
+            Assert.assertEquals(2 - lift, backdrop.getTop());
+            Assert.assertEquals(24 - 1, backdrop.getRight());
+            Assert.assertEquals(24 - 2 - lift, backdrop.getBottom());
+            Assert.assertEquals(backdrop.getLeft(), face.getLeft());
+            Assert.assertEquals(backdrop.getTop(), face.getTop());
+            Assert.assertEquals(backdrop.getRight(), face.getRight());
+            Assert.assertEquals(backdrop.getBottom(), face.getBottom());
+            for (PaintCommand surface : new PaintCommand[] {backdrop, face}) {
+                Assert.assertEquals(7, surface.getCornerRadiusTopLeft());
+                Assert.assertEquals(7, surface.getCornerRadiusTopRight());
+                Assert.assertEquals(7, surface.getCornerRadiusBottomRight());
+                Assert.assertEquals(7, surface.getCornerRadiusBottomLeft());
+            }
+            Assert.assertTrue("采样之后才叠面部染色",
+                    fragment.getCommands().indexOf(backdrop) < fragment.getCommands().indexOf(face));
+            PaintFragment iconFragment = (PaintFragment) button.__getChildren().get(0).getCachedPaint();
+            for (PaintCommand command : iconFragment.getCommands()) {
+                Assert.assertNotEquals("图标子节点不能重复采样玻璃", PaintCommandType.BACKDROP, command.getType());
+            }
+        }
+    }
+
+    /** 六种图标均必须进入 scene paint → replay；16px 内容盒由合成变换随玻璃面升降。 */
     @Test
     public void toolbarIconsAreActuallyPaintedInsideViewport() {
         mount(HudToolbarSide.BOTTOM, action("test:one", "测试动作", 1));
@@ -527,6 +612,7 @@ public class ChatToolbarGeometryTest {
 
     private void assertIconsPainted(String... names) {
         ChatToolbarTest.assertIconRow(layer.toolbar(), names);
+        assertIndependentGlassPaint();
         RecordingRenderBackend backend = new RecordingRenderBackend();
         new ScenePaintReplayer().replay(new ScenePaintEngine(MEASURER).paint(root).getPlan(), backend);
         List<RecordingRenderBackend.RenderCall> images = new ArrayList<RecordingRenderBackend.RenderCall>();
@@ -658,6 +744,8 @@ public class ChatToolbarGeometryTest {
                     wrapper.getX() >= 0 && wrapper.getY() >= 0
                             && wrapper.getX() + wrapper.getWidth() <= W
                             && wrapper.getY() + wrapper.getHeight() <= H);
+            assertIndependentGlassPaint();
+            assertButtonSpacing(side);
             Assert.assertEquals(side + " 「编辑 HUD」必须可命中", 1, pressCenter(editButton()));
         }
     }

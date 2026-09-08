@@ -10,14 +10,15 @@ import club.heiqi.uilib.ui.render.UiBackdropEffect;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 液态玻璃专属样式：统一按钮的透明染色、缘光、圆角与透镜反馈。
+ * 液态玻璃专属样式：每颗按钮都是有倒角、高光、厚底和接触阴影的独立玻璃实体。
  *
  * <p>样式绑定器，不创建交互控件：调用方复用 SceneButtonPrimitive 提供行为、布局与内容，
  * 本类仅消费其交互信号。图标、文字或其他内容使用同一套状态样式，不依赖聊天、HUD 或图片来源。
- * 颜色、圆角与滤镜只影响 paint，内容透明度只影响 composite；不改变命中盒或触发布局。</p>
+ * 染色、实体厚度与滤镜只影响 paint，内容微移与透明度只影响 composite；不改变命中盒或触发布局。</p>
  */
 public final class SceneLiquidGlassStyle {
 
@@ -40,7 +41,7 @@ public final class SceneLiquidGlassStyle {
      *
      * @param rt 运行时（启用 Motion 时平滑过渡，否则立即应用）
      * @param button 交互根，已由按钮 primitive 注册行为
-     * @param content 图标或文字内容根；样式管理其可用性透明度
+     * @param content 图标或文字内容根；样式管理其可用性透明度与高度微移 transform
      * @param enabled 可用性信号，禁用态压过 hover、pressed 和 focus
      * @param variant STANDARD / PRIMARY / DANGER 染色，null 视作 STANDARD
      * @param backdrop 宿主提供的玻璃配方；null 表示关闭滤镜，保留轮廓和状态反馈
@@ -71,8 +72,12 @@ public final class SceneLiquidGlassStyle {
                 button::setBackgroundColor, TRANSITION_MS);
         rt.__bindAnimatedColor(() -> edge(state.get(), Boolean.TRUE.equals(interaction.focused().get())),
                 button::setBorderColor, TRANSITION_MS);
-        rt.__bindAnimatedFloat(() -> radius(state.get()),
-                value -> button.setCornerRadius(Math.round(value)), TRANSITION_MS);
+        // 玻璃实体保持轮廓；按压反馈来自厚度、接触阴影与面部高度。
+        button.setCornerRadius(8);
+        rt.__bindAnimatedFloat(() -> elevation(state.get()), value -> {
+            button.__setSurfaceElevation(value);
+            content.setTransform(Transform.translate(0.0F, -2.0F * value));
+        }, TRANSITION_MS);
         rt.__bindAnimatedFloat(() -> state.get() == State.DISABLED ? DISABLED_CONTENT_OPACITY : 1.0F,
                 content::setOpacity, TRANSITION_MS);
         if (backdrop == null) {
@@ -96,9 +101,9 @@ public final class SceneLiquidGlassStyle {
         int alpha;
         switch (state) {
             case DISABLED: alpha = 0x06; break;
-            case PRESSED: alpha = accented ? 0x58 : 0x30; break;
-            case HOVERED: alpha = accented ? 0x40 : 0x20; break;
-            default: alpha = accented ? 0x28 : 0x0C; break;
+            case PRESSED: alpha = accented ? 0x24 : 0x0A; break;
+            case HOVERED: alpha = accented ? 0x2A : 0x12; break;
+            default: alpha = accented ? 0x20 : 0x0C; break;
         }
         return (alpha << 24) | tint;
     }
@@ -111,16 +116,17 @@ public final class SceneLiquidGlassStyle {
         return 0x24FFFFFF;
     }
 
-    private static float radius(State state) {
-        if (state == State.PRESSED) return 6.0F;
-        if (state == State.HOVERED) return 12.0F;
-        return 8.0F;
+    private static float elevation(State state) {
+        if (state == State.DISABLED) return 0.35F;
+        if (state == State.PRESSED) return 0.0F;
+        if (state == State.HOVERED) return 1.0F;
+        return 0.5F;
     }
 
     private static float lensFactor(State state) {
-        if (state == State.DISABLED) return 0.0F;
-        if (state == State.PRESSED) return 0.15F;
+        if (state == State.DISABLED) return 0.65F;
+        if (state == State.PRESSED) return 0.60F;
         if (state == State.HOVERED) return 1.0F;
-        return 0.35F;
+        return 0.85F;
     }
 }
