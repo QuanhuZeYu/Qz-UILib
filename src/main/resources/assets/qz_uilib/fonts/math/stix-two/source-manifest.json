@@ -1,0 +1,24 @@
+{
+  "faceIndex": 0,
+  "family": "STIX Two Math",
+  "files": {
+    "OFL.txt": {
+      "bytes": 4882,
+      "sha256": "bec17cee6412788db45fd2644b301afbc99cc5d372ddd3345dc4a7bfdefb9f04"
+    },
+    "STIXTwoMath-Regular.otf": {
+      "bytes": 838508,
+      "sha256": "95bc2729e41faf93b0bcae9e96c4dc4da45855067fd0581e621e30734fe8d90b"
+    },
+    "math-data.json": {
+      "bytes": 321992,
+      "sha256": "5bb2eb12c65fced8fe6dba2f679f369c89090b79bb9a5129739df7e7929a1eca"
+    }
+  },
+  "generator": "tools/generate_math_font.py",
+  "license": "OFL-1.1",
+  "modified": false,
+  "schemaVersion": 1,
+  "sourceUrl": "https://mirrors.tuna.tsinghua.edu.cn/CTAN/fonts/stix2-otf.zip",
+  "version": "2.12 b168"
+}

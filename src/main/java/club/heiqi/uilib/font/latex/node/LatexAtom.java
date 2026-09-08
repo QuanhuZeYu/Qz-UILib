@@ -43,7 +43,7 @@ public final class LatexAtom extends LatexNode {
         /** 大运算符符号（\sum \int \prod 等）：行内 limits 上下堆叠 + 符号轴居中；
          *  \nolimits 显式降级为侧挂脚本（符号仍轴居中）。 */
         BIG_OPERATOR,
-        /** limits 算子（\lim \max \min 等）：上下限恒上下堆叠。 */
+        /** 既有函数名（\lim \max \min 等）：沿用侧挂脚本；命名算子的显示上下限由 LatexOperator 承载。 */
         LIMITS_OPERATOR,
     }
 

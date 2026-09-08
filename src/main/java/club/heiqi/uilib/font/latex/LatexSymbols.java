@@ -68,7 +68,7 @@ public final class LatexSymbols {
         return Boolean.TRUE.equals(BIG_OPERATORS.get(name));
     }
 
-    /** @return 是否 limits 函数名（上下限恒上下堆叠） */
+    /** @return 是否既有 limits 类函数名（布局仍沿用侧挂脚本） */
     public static boolean isLimitsFunctionName(String name) {
         return Boolean.TRUE.equals(LIMITS_FUNCTION_NAMES.get(name));
     }
@@ -147,6 +147,7 @@ public final class LatexSymbols {
             map.put("pm", 177);
             map.put("mp", 8723);
             map.put("times", 215);
+            map.put("ast", 0x2217);
             map.put("div", 247);
             map.put("cdot", 8901);
             map.put("cup", 8746);
@@ -208,6 +209,7 @@ public final class LatexSymbols {
             map.put("pm", AtomClass.BIN);
             map.put("mp", AtomClass.BIN);
             map.put("times", AtomClass.BIN);
+            map.put("ast", AtomClass.BIN);
             map.put("div", AtomClass.BIN);
             map.put("cdot", AtomClass.BIN);
             map.put("cup", AtomClass.BIN);

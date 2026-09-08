@@ -25,6 +25,10 @@ import club.heiqi.uilib.font.glyph.GlyphGenerator;
 import club.heiqi.uilib.font.glyph.GlyphRequestToken;
 import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.LatexParser;
+import club.heiqi.uilib.font.latex.MathFontStyle;
+import club.heiqi.uilib.font.latex.layout.GlyphElem;
+import club.heiqi.uilib.font.latex.layout.MathBox;
+import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.latex.node.LatexAccent;
 import club.heiqi.uilib.font.latex.node.LatexAtom;
 import club.heiqi.uilib.font.latex.node.LatexBinom;
@@ -32,6 +36,7 @@ import club.heiqi.uilib.font.latex.node.LatexFrac;
 import club.heiqi.uilib.font.latex.node.LatexGroup;
 import club.heiqi.uilib.font.latex.node.LatexLeftRight;
 import club.heiqi.uilib.font.latex.node.LatexMatrix;
+import club.heiqi.uilib.font.latex.node.LatexOperator;
 import club.heiqi.uilib.font.latex.node.LatexSqrt;
 import club.heiqi.uilib.font.latex.node.LatexSupSub;
 import club.heiqi.uilib.font.layout.TextLayoutService;
@@ -325,11 +330,7 @@ public final class LatexSoftwareRenderKit {
         style.resetAll(0xFFFFFFFF);
         List<club.heiqi.uilib.font.latex.LatexNode> nodes = club.heiqi.uilib.font.latex.LatexParser
                 .parse(latexSource);
-        Set<Integer> codepoints = new LinkedHashSet<Integer>();
-        for (club.heiqi.uilib.font.latex.LatexNode node : nodes) {
-            collectNode(node, codepoints);
-        }
-        assembleCodepoints(shared, codepoints);
+        assembleGlyphs(shared, Arrays.asList(TextSegment.forLatex(latexSource, style)));
         return new club.heiqi.uilib.font.latex.layout.MathLayoutService().layout(
                 nodes, baseFontSizePx, shared.service.createMathMetrics(style, baseFontSizePx));
     }
@@ -342,14 +343,24 @@ public final class LatexSoftwareRenderKit {
 
     /** 为渲染所需码点生成字形并装配到软件字符页（真 skyline + 真上传路径；已常驻码点跳过；包内共享入口）。 */
     static void assembleGlyphs(Shared shared, List<TextSegment> segments) {
-        // 按段样式分派字重：BOLD 段（markdown 标题/粗体）的码点必须装配进 BOLD 表，
-        // 否则渲染侧 packedLocation(NORMAL≠BOLD) 查无位图（LaTeX 旧场地恒 NORMAL 不受影响）。
+        // 普通文本按段字重装配；公式另按生产布局给出的局部字体选择装配，
+        // 否则普通宿主中的 mathbf 会在 BOLD 表查不到位图。预布局仅用于收集需求，
+        // 正式几何仍在全部字体页就绪后重新计算。
         Set<Integer> normal = new LinkedHashSet<Integer>();
         Set<Integer> bold = new LinkedHashSet<Integer>();
         for (TextSegment segment : segments) {
             Set<Integer> bucket = segment.getStyle() != null
                     && segment.getStyle().getFontType() == FontType.BOLD ? bold : normal;
             bucket.addAll(collectCodepoints(Arrays.asList(segment)));
+            if (segment.isLatex()) {
+                MathBox preview = new MathLayoutService().layout(LatexParser.parse(segment.getLatexSource()),
+                        14, shared.service.createMathMetrics(segment.getStyle(), 14));
+                for (GlyphElem glyph : preview.getGlyphs()) {
+                    Set<Integer> glyphBucket = glyph.getMathFontStyle() == MathFontStyle.BOLD
+                            ? bold : bucket;
+                    collectText(glyph.getText(), glyphBucket);
+                }
+            }
         }
         assembleCodepoints(shared, normal, FontType.NORMAL);
         if (!bold.isEmpty()) {
@@ -432,6 +443,9 @@ public final class LatexSoftwareRenderKit {
         switch (node.getKind()) {
             case ATOM:
                 collectText(((LatexAtom) node).getText(), out);
+                return;
+            case OPERATOR:
+                collectNode(((LatexOperator) node).getBody(), out);
                 return;
             case SUP_SUB:
                 LatexSupSub supSub = (LatexSupSub) node;

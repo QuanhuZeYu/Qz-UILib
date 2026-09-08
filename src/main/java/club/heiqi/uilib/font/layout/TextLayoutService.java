@@ -22,6 +22,7 @@ import club.heiqi.uilib.font.latex.layout.LatexCache;
 import club.heiqi.uilib.font.latex.layout.MathBox;
 import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.latex.layout.MathMetrics;
+import club.heiqi.uilib.font.latex.MathFontStyle;
 import club.heiqi.uilib.font.FontRuntimeAccess;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.FontType;
@@ -1086,7 +1087,21 @@ public class TextLayoutService {
      * @return 度量实现
      */
     public MathMetrics createMathMetrics(final TextStyle style, final int baseSizePx) {
+        return createMathMetrics(style.copy(), style.getFontType(), baseSizePx);
+    }
+
+    private MathMetrics createMathMetrics(final TextStyle style, final FontType hostFontType, final int baseSizePx) {
         return new MathMetrics() {
+            @Override
+            public MathMetrics forFontStyle(MathFontStyle fontStyle) {
+                if (fontStyle == null) throw new IllegalArgumentException("fontStyle 不能为空");
+                FontType selected = fontStyle == MathFontStyle.BOLD ? FontType.BOLD : hostFontType;
+                if (selected == style.getFontType()) return this;
+                TextStyle local = style.copy();
+                local.setFontType(selected);
+                return createMathMetrics(local, hostFontType, baseSizePx);
+            }
+
             @Override
             public float advance(String text, float sizePx) {
                 double total = 0.0D;
@@ -1100,17 +1115,17 @@ public class TextLayoutService {
 
             @Override
             public float ascent(float sizePx) {
-                return getAscent(LatexFontSize.effective(sizePx));
+                return getAscent(LatexFontSize.effective(sizePx), style.getFontType());
             }
 
             @Override
             public float descent(float sizePx) {
-                return getDescent(LatexFontSize.effective(sizePx));
+                return getDescent(LatexFontSize.effective(sizePx), style.getFontType());
             }
 
             @Override
             public float xHeight(float sizePx) {
-                return getXHeight(LatexFontSize.effective(sizePx));
+                return getXHeight(LatexFontSize.effective(sizePx), style.getFontType());
             }
 
             @Override
@@ -1242,7 +1257,7 @@ public class TextLayoutService {
                             return 0.25F * (float) ink * size / (float) awt;
                         }
                     }
-                    return 0.25F * getXHeight(size);
+                    return 0.25F * getXHeight(size, style.getFontType());
                 } finally {
                     unlockGeneration();
                 }
@@ -1694,10 +1709,14 @@ public class TextLayoutService {
      * @return UI 像素上升量
      */
     public int getAscent(int fontSizePx) {
+        return getAscent(fontSizePx, FontType.NORMAL);
+    }
+
+    private int getAscent(int fontSizePx, FontType fontType) {
         lockGeneration();
         try {
             GlyphRuntimeTables tables = currentRuntimeTables();
-            float atlasAscent = tables == null ? 0.0F : tables.ascent(FontType.NORMAL);
+            float atlasAscent = tables == null ? 0.0F : tables.ascent(fontType);
             return Math.round(atlasAscent * Math.max(1, fontSizePx)
                     / (float) currentSettings().getAwtCharSize());
         } finally {
@@ -1712,10 +1731,14 @@ public class TextLayoutService {
      * @return UI 像素下降量
      */
     public int getDescent(int fontSizePx) {
+        return getDescent(fontSizePx, FontType.NORMAL);
+    }
+
+    private int getDescent(int fontSizePx, FontType fontType) {
         lockGeneration();
         try {
             GlyphRuntimeTables tables = currentRuntimeTables();
-            float atlasDescent = tables == null ? 0.0F : tables.descent(FontType.NORMAL);
+            float atlasDescent = tables == null ? 0.0F : tables.descent(fontType);
             return Math.round(atlasDescent * Math.max(1, fontSizePx)
                     / (float) currentSettings().getAwtCharSize());
         } finally {
@@ -1730,10 +1753,14 @@ public class TextLayoutService {
      * @return UI 像素 x-height
      */
     public int getXHeight(int fontSizePx) {
+        return getXHeight(fontSizePx, FontType.NORMAL);
+    }
+
+    private int getXHeight(int fontSizePx, FontType fontType) {
         lockGeneration();
         try {
             GlyphRuntimeTables tables = currentRuntimeTables();
-            float atlasXHeight = tables == null ? 0.0F : tables.xHeight(FontType.NORMAL);
+            float atlasXHeight = tables == null ? 0.0F : tables.xHeight(fontType);
             if (atlasXHeight <= 0.0F) {
                 // 度量未发布时回退 CM 比例（x-height ≈ 0.431em）
                 atlasXHeight = (float) (0.431D * currentSettings().getAwtCharSize());

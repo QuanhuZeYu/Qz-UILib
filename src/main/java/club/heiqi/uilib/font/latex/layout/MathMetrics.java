@@ -1,5 +1,7 @@
 package club.heiqi.uilib.font.latex.layout;
 
+import club.heiqi.uilib.font.latex.MathFontStyle;
+
 /**
  * 数学布局度量注入接口：布局层不直接依赖字体引擎，度量经此接口进入（纯 JVM 可测）。
  *
@@ -7,6 +9,14 @@ package club.heiqi.uilib.font.latex.layout;
  * ascent/descent 复用内部度量路径）。</p>
  */
 public interface MathMetrics {
+
+    /** 选择局部数学字体度量；旧实现保持原度量，支持字重的实现覆盖本方法。 */
+    default MathMetrics forFontStyle(MathFontStyle style) {
+        if (style == null) {
+            throw new IllegalArgumentException("style 不能为空");
+        }
+        return this;
+    }
 
     /**
      * 文本推进宽度（逐码点求和；空格等零宽符按现有分类语义）。

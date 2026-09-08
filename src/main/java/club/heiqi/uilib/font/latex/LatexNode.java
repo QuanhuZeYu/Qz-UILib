@@ -30,6 +30,8 @@ public abstract class LatexNode {
         ACCENT,
         /** 显式间距（\, \: \; \! \quad \qquad）。 */
         SPACE,
+        /** 命名算子：完整主体与独立的上下限策略。 */
+        OPERATOR,
     }
 
     private final Kind kind;

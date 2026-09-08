@@ -4,5 +4,9 @@ package club.heiqi.uilib.font.latex;
 public enum MathFontStyle {
     INHERIT,
     UPRIGHT,
-    ITALIC
+    ITALIC,
+    /** 显式粗正体数学 alphabet；不等于所有符号通用加粗。 */
+    BOLD,
+    /** 显式复位局部数学字体，仍屏蔽宿主斜体的再次叠加。 */
+    MATH_NORMAL
 }

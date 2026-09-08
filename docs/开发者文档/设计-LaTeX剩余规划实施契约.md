@@ -2,7 +2,7 @@
 
 ## 状态与目标
 
-用户要求继续完成全部排版规划。本文把 B2b 后续、B3/B4 字体与伸缩、B5 display 的具体可见行为和公共兼容后果集中供审查；本文是拟实施契约，不是完成报告。已交付 B0、B1、B2a、B2b 首批 mathrm/mathit 保持原交付记录。
+用户在集中说明默认数学字体、公共接口、双美元行为和宽重音方案后明确“采纳建议，继续”，本文整套契约据此获准实施。本文定义 B2b 后续、B3/B4 字体与伸缩、B5 display 的具体可见行为和公共兼容后果，不是完成报告；同一契约范围内不再逐批请求确认。已交付 B0、B1、B2a、B2b 首批 mathrm/mathit 保持原交付记录。
 
 所有实现复用 LatexParser → MathLayoutService/MathMetrics → MathBox/GlyphElem → 字体任务/页面 → collector/PaintCommand，以及 Markdown/scene/滚动宿主。不开辟独立公式渲染器，不使用原版 GUI 或 Tessellator，不引入生产参考引擎。
 
@@ -103,7 +103,7 @@ public interface MathFontSupport {
 public enum MathStretchAxis { HORIZONTAL, VERTICAL }
 ```
 
-公开不可变值类型范围固定：MathGlyphMetrics 保存 advance、inkLeft/Top/Right/Bottom、italicCorrection、hasTopAccentAttachment/topAccentAttachment；MathFontParameters 保存本批使用的数学轴、规则线厚、根号普通/display间隙、根号额外上伸/指数抬升及重音基础高度；MathGlyphConstruction 保存有序 Variant(glyphRef,stretchAdvance) 和可选 Assembly(parts,minConnectorOverlap,italicCorrection)，Part 保存 glyphRef/startConnector/endConnector/fullAdvance/extender。各值类使用与这些字段同序的构造器和同名 get/is 只读方法，防御复制列表，拒绝 null/非有限/非法负尺寸及不满足connector范围的数据；所有几何量均为有效字号下 logical px，只换算一次。可选 attachment 用显式 has 标志，缺 construction/无法解析的字符返回 null，不以 .notdef 伪成功。来源引用不依赖平台对象，不把 glyph-id 编码成 Unicode/PUA。MathGlyphRef 是内容身份，不含 generation，不能声称凭该值判断引用年龄。faceKey 必须完整绑定资源 SHA、face index 与影响字形选择的 profile；同内容身份可以跨代复用。provider 只接受当前已注册且身份一致的资源，不将旧 faceKey 偷换成另一个 face。任务 token、页槽引用和绘制计划另携 generation/requestId，旧代结果与计划必须按既有屏障拒绝。程序形状身份由版本化 profile 和规范化尺寸决定，同样与运行代际分开。
+公开不可变值类型范围固定：MathGlyphMetrics 保存 advance、inkLeft/Top/Right/Bottom、italicCorrection、hasTopAccentAttachment/topAccentAttachment；MathFontParameters 保存本批使用的数学轴、规则线厚、根号普通/display间隙、根号额外上伸/指数抬升及重音基础高度；MathGlyphConstruction 保存有序 Variant(glyphRef,stretchAdvance) 和可选 Assembly(parts,minConnectorOverlap,italicCorrection)，Part 保存 glyphRef/startConnector/endConnector/fullAdvance/extender。各值类使用与这些字段同序的构造器和同名 get/is 只读方法，防御复制列表，拒绝 null/非有限/非法负尺寸及不满足connector范围的数据；所有几何长度均为有效字号下 logical px，只换算一次；RadicalDegreeBottomRaisePercent 保留整数百分比，作用于最终根号高度，不能在仅知字号时提前换成 px。可选 attachment 用显式 has 标志，缺 construction/无法解析的字符返回 null，不以 .notdef 伪成功。来源引用不依赖平台对象，不把 glyph-id 编码成 Unicode/PUA。MathGlyphRef 是内容身份，不含 generation，不能声称凭该值判断引用年龄。faceKey 必须完整绑定资源 SHA、face index 与影响字形选择的 profile；同内容身份可以跨代复用。provider 只接受当前已注册且身份一致的资源，不将旧 faceKey 偷换成另一个 face。任务 token、页槽引用和绘制计划另携 generation/requestId，旧代结果与计划必须按既有屏障拒绝。程序形状身份由版本化 profile 和规范化尺寸决定，同样与运行代际分开。
 
 固定点程序形状参数只决定形状，不包含 AWT 或 atlas；运行时 key 加 generation、raster size 和 tile 身份。超过 atlas 单槽宽度的形状，在生成侧按同一全局路径分片绘制，保留采样 padding、核心区不重复叠加 alpha，不先分配超大整图。各片继续受同页面预算和驱逐管理，逻辑 MathBox 保留整个形状的 advance/ink。该分片和生命周期必须实际验收后才能将任意宽重音范围标为完成。
 

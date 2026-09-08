@@ -165,3 +165,15 @@ B1 与 B3 的字体小样调研可以并行；B2a 在样式状态稳定后实施
 资源调研取得固定 STIX Two Math 2.12 b168 和 OFL 1.1，实际解析 MATH 及 glyph-id AWT 小样；程序固定 stroke 宽重音也已出小样。资源仍仅在工作站 temp，没有进入分发包，Java25独立小样不等于 UILib 字体页/Java8/GPU通过。新字体、伸缩及 display 仍须实施和正式回归。
 
 制品：`build/reports/latex-plan-completion/build-verification.json`、`reference-verification.json`、`reference/`；工作站 `temp/b3b4-font-evidence/awt-probe/` 保存字体和程序形状小样。构建缓存故障原因及恢复见 `docs/反馈层/errors/ERROR-elytra-offline-manifest-cache.md`。
+
+## B2b 完整命令与 B3 数据准备
+
+用户明确采纳剩余契约后，本批完成 `\mathbf`、`\mathnormal`、`\operatorname`、`\operatorname*`。新增真实 OPERATOR AST 保留主体/空算子/结构与字号层，名称直接字符归一在度量前完成，额外组/嵌套字体/结构不递归抹平。非星号只吞紧随的一个 limits；星号按有效 DISPLAY 默认堆叠，显式修饰优先。独立自然基底上下限布局不放大名称，不加大符号尾距；旧算子产品行为保持。补齐 ast 符号映射。
+
+局部粗体同时贯通 MathMetrics 完整字体视图、GlyphElem、adapter、字形需求和字体页；明确复位可恢复原宿主字重。全部字形复制保留字体/宿主斜体继承信息，并修复大算子轴居中时的遗漏。布局版本为22。软件testkit先收集局部字重需求，再在字形页就绪后正式布局。
+
+本批同时准备 B3/B4 数据基础：原样捆绑固定 STIX Two Math 2.12 b168、OFL 1.1 与 SHA manifest；标准库工具 `tools/generate_math_font.py --check` 可复现固定数学数据，含cmap/advance/MATH常量/italic/topAccent/Device修正/伸缩配方，明确不包含MathKernInfo。新增不可变 MathGlyphRef/ProceduralAccentSpec/MathFontSupport/度量/常量/配方类型，保留内容身份与runtime generation分工；根指数抬升保留百分比单位。资源和类型尚未接入生产默认字体、glyph-id任务/页面或伸缩布局，B3/B4不能据此标完成。
+
+实际验证：完整离线build通过，Python汇总398类、4383项测试，4377通过、6跳过、零失败/错误。选定27类原297个公开/受保护成员声明与JVM descriptor成对检查，无缺失。Arial与Times New Roman分别运行新增生产绘制回归，各3项通过；实际生成512组同构建不同源码样张，覆盖12/14/16/24字号与1/1.25/4/8真实倍率。Python验证样本完整、有限边界和动态画布包含，正式helper检查非空及无边缘墨水；主代理查看命名算子堆叠、直接名称字距与原尺寸小字号字体图。Times小字号仍有细笔画偏弱，后续数学字体接入与GPU采样验收仍必要。
+
+本批报告：`build/reports/latex-plan-completion/b2b-complete/`，含build-verification.json、api/verification.json、visual/index.html、visual/manifest.json与逐字体原图。固定资源目录为`src/main/resources/assets/qz_uilib/fonts/math/stix-two/`。未执行客户端/GPU，本批保留生产默认字体与美元入口语义；下一步持续实施B3运行时、B4结构、B5宿主，不再重复请求同契约确认。

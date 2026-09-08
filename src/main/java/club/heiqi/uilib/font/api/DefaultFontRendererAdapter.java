@@ -11,6 +11,7 @@ import club.heiqi.uilib.font.internal.LatexFontSize;
 import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.LatexParser;
 import club.heiqi.uilib.font.latex.layout.GlyphElem;
+import club.heiqi.uilib.font.latex.MathFontStyle;
 import club.heiqi.uilib.font.latex.layout.LatexCache;
 import club.heiqi.uilib.font.latex.layout.MathBox;
 import club.heiqi.uilib.font.latex.layout.MathLayoutService;
@@ -1130,6 +1131,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         int latexBaseSize = Math.max(Math.max(1, segmentFontSizePx), maxTextFontSizePx);
         MathMetrics glyphMetrics = textLayoutService.createMathMetrics(style, segmentFontSizePx);
         for (GlyphElem elem : box.getGlyphs()) {
+            FontType glyphFontType = elem.getMathFontStyle() == MathFontStyle.BOLD
+                    ? FontType.BOLD : style.getFontType();
+            MathMetrics localMetrics = glyphMetrics.forFontStyle(elem.getMathFontStyle());
             int glyphSizePx = LatexFontSize.effective(segmentFontSizePx * elem.getSizeScale());
             if (glyphSizePx > maxFontSizeHolder[0]) {
                 maxFontSizeHolder[0] = glyphSizePx; // 放大型字形（伸缩括号）参与整行基线基准
@@ -1147,11 +1151,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 if (firstSegmentGlyph < 0) {
                     firstSegmentGlyph = glyphIndex;
                 }
-                renderCodepoints[glyphIndex] = resolveDisplayCodepoint(codepoint, style.getFontType(), tables);
-                fontTypes[glyphIndex] = style.getFontType();
+                renderCodepoints[glyphIndex] = resolveDisplayCodepoint(codepoint, glyphFontType, tables);
+                fontTypes[glyphIndex] = glyphFontType;
                 italicFlags[glyphIndex] = elem.isItalic();
                 inheritTextItalicFlags[glyphIndex] = elem.isInheritTextItalic();
-                double advance = glyphMetrics.advance(CodepointTextCache.getText(codepoint), glyphSizePx);
+                double advance = localMetrics.advance(CodepointTextCache.getText(codepoint), glyphSizePx);
                 measuredWidths[glyphIndex] = (float) advance * renderScale;
                 styles[glyphIndex] = style;
                 fontSizePx[glyphIndex] = glyphSizePx;
@@ -1167,7 +1171,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 i += charCount;
             }
         }
-        // 段尾推进差补偿（盒宽 - 段内 advance 和；布局度量与渲染度量口径差异的兜底）
+        // 盒宽还包含数学 glue、kern 和脚本等结构推进；字形 advance 已使用与布局相同的局部字重度量。
         float tail = (box.getWidth() - segmentAdvanceSum) * renderScale;
         if (glyphIndex > startGlyphIndex) {
             measuredWidths[glyphIndex - 1] += tail;

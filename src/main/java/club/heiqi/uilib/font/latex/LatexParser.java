@@ -13,6 +13,7 @@ import club.heiqi.uilib.font.latex.node.LatexFrac;
 import club.heiqi.uilib.font.latex.node.LatexGroup;
 import club.heiqi.uilib.font.latex.node.LatexLeftRight;
 import club.heiqi.uilib.font.latex.node.LatexMatrix;
+import club.heiqi.uilib.font.latex.node.LatexOperator;
 import club.heiqi.uilib.font.latex.node.LatexSpace;
 import club.heiqi.uilib.font.latex.node.LatexSqrt;
 import club.heiqi.uilib.font.latex.node.LatexSupSub;
@@ -198,6 +199,12 @@ public final class LatexParser {
                 copy.setLimitsFlag(atom.getLimitsFlag());
                 return copy;
             }
+            case OPERATOR: {
+                LatexOperator operator = (LatexOperator) node;
+                LatexOperator copy = new LatexOperator(operator.getBody(), operator.isLimitsInDisplayStyle(), style);
+                copy.setLimitsFlag(operator.getLimitsFlag());
+                return copy;
+            }
             case SUP_SUB: {
                 LatexSupSub scripts = (LatexSupSub) node;
                 return new LatexSupSub(scripts.getBase(), scripts.getSup(), scripts.getSub(), style);
@@ -274,9 +281,11 @@ public final class LatexParser {
                 while (target instanceof LatexGroup && ((LatexGroup) target).isTransparentForAtomClass()) {
                     target = ((LatexGroup) target).getChildren().get(0);
                 }
+                int flag = "limits".equals(modifier) ? LatexAtom.LIMITS_LIMITS : LatexAtom.LIMITS_NOLIMITS;
                 if (target instanceof LatexAtom && ((LatexAtom) target).getAtomClass() == AtomClass.OP) {
-                    ((LatexAtom) target).setLimitsFlag("limits".equals(modifier)
-                            ? LatexAtom.LIMITS_LIMITS : LatexAtom.LIMITS_NOLIMITS);
+                    ((LatexAtom) target).setLimitsFlag(flag);
+                } else if (target instanceof LatexOperator) {
+                    ((LatexOperator) target).setLimitsFlag(flag);
                 }
                 continue;
             }
@@ -355,6 +364,12 @@ public final class LatexParser {
         if ("mathrm".equals(name) || "mathit".equals(name)) {
             return parseMathFont("mathrm".equals(name) ? MathFontStyle.UPRIGHT : MathFontStyle.ITALIC);
         }
+        if ("mathbf".equals(name) || "mathnormal".equals(name)) {
+            return parseMathFont("mathbf".equals(name) ? MathFontStyle.BOLD : MathFontStyle.MATH_NORMAL);
+        }
+        if ("operatorname".equals(name)) {
+            return parseOperatorName();
+        }
         // ---- 结构命令 ----
         if ("frac".equals(name) || "dfrac".equals(name) || "tfrac".equals(name)) {
             LatexFrac.FractionStyle fractionStyle = "dfrac".equals(name) ? LatexFrac.FractionStyle.DISPLAY
@@ -410,7 +425,7 @@ public final class LatexParser {
                     LatexAtom.OperatorMode.BIG_OPERATOR);
             return atom;
         }
-        // ---- limits 算子（\lim \max \min …：上下限恒上下堆叠，正体） ----
+        // ---- 既有 limits 类函数名（\lim \max \min …：保留正体与侧挂脚本） ----
         if (LatexSymbols.isLimitsFunctionName(name)) {
             return mathAtom(name, AtomClass.OP, LatexAtom.OperatorMode.LIMITS_OPERATOR);
         }
@@ -478,6 +493,76 @@ public final class LatexParser {
         } finally {
             mathFontStyle = previous;
         }
+    }
+
+    /** 名称参数保留结构；只在参数定界层归一名称字符，不递归改写数学子树。 */
+    private LatexNode parseOperatorName() {
+        skipMathSpaces();
+        boolean displayLimits = index < length && source.charAt(index) == '*';
+        if (displayLimits) {
+            index++;
+        }
+        MathFontStyle previous = mathFontStyle;
+        mathFontStyle = MathFontStyle.UPRIGHT;
+        LatexNode body;
+        try {
+            MathStyleOverride style = consumeArgumentStyle();
+            List<LatexNode> children;
+            if (index < length && source.charAt(index) == '{') {
+                index++;
+                children = parseList(STOP_BRACE);
+                if (index < length && source.charAt(index) == '}') {
+                    index++;
+                }
+            } else {
+                children = Collections.singletonList(parseArgumentAtom());
+            }
+            List<LatexNode> normalized = new ArrayList<LatexNode>(children.size());
+            for (LatexNode child : children) {
+                normalized.add(normalizeOperatorNameChild(child, true));
+            }
+            body = new LatexGroup(normalized, style);
+        } finally {
+            mathFontStyle = previous;
+        }
+        // amsopn 的 nolimits@ 只吞一个紧随的 limits；不是永久禁用后续显式修饰。
+        skipMathSpaces();
+        if (!displayLimits && peekCommand("limits")) {
+            index++;
+            readCommandName();
+        }
+        return new LatexOperator(body, displayLimits);
+    }
+
+    private LatexNode normalizeOperatorNameChild(LatexNode node, boolean direct) {
+        if (node instanceof LatexGroup) {
+            LatexGroup group = (LatexGroup) node;
+            if (group.isTransparentForAtomClass()) {
+                LatexNode child = group.getChildren().get(0);
+                LatexNode normalized = normalizeOperatorNameChild(child, false);
+                if (normalized != child) {
+                    return new LatexGroup(Collections.singletonList(normalized), group.getMathStyleOverride(), true);
+                }
+            }
+            return node;
+        }
+        if (!(node instanceof LatexAtom)) {
+            return node;
+        }
+        LatexAtom atom = (LatexAtom) node;
+        if (atom.getAtomClass() == AtomClass.OP || atom.getAtomClass() == AtomClass.TEXT) {
+            return atom;
+        }
+        // 在度量前逐码点替换，避免参考引擎合并文本后只替换第一个标点的缺陷。
+        String text = atom.getText().replace('−', '-').replace('∗', '*');
+        AtomClass atomClass = direct ? AtomClass.ORD : atom.getAtomClass();
+        if (text.equals(atom.getText()) && atomClass == atom.getAtomClass()) {
+            return atom;
+        }
+        LatexAtom normalized = new LatexAtom(text, atomClass, atom.getOperatorMode(),
+                atom.getMathStyleOverride(), atom.getMathFontStyle());
+        normalized.setLimitsFlag(atom.getLimitsFlag());
+        return normalized;
     }
 
     /** 仅真正数学 token 使用词法字体；text 与未知命令保留旧字面语义。 */
