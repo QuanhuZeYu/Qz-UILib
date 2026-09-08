@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 16;
+    public static final int LAYOUT_VERSION = 17;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -297,7 +297,16 @@ public final class MathLayoutService {
         if (node.getKind() == LatexNode.Kind.ATOM) {
             return ((LatexAtom) node).getAtomClass();
         }
-        return AtomClass.INNER; // 复合结构按 Inner（TeX 惯例）
+        switch (node.getKind()) {
+            case SUP_SUB:
+                return atomClassOf(((LatexSupSub) node).getBase());
+            case GROUP:
+            case SQRT:
+            case ACCENT:
+                return AtomClass.ORD;
+            default:
+                return AtomClass.INNER; // 分数、定界结构和矩阵保持 Inner
+        }
     }
 
     // ==================== 上下标 ====================
@@ -541,8 +550,9 @@ public final class MathLayoutService {
         Builder builder = new Builder();
         builder.addGlyph(text, 0.0F, -axis - inkCenter, 1.0F);
         builder.width = base.getWidth();
-        builder.height = Math.max(0.0F, inkHalf - inkCenter);
-        builder.depth = Math.max(0.0F, inkCenter + inkHalf);
+        // 平移后 ink 中心为 -axis；包围盒必须与 glyph 的新坐标一致。
+        builder.height = Math.max(0.0F, inkHalf + axis);
+        builder.depth = Math.max(0.0F, inkHalf - axis);
         return builder.toBox();
     }
 
@@ -654,6 +664,8 @@ public final class MathLayoutService {
                 break;
             }
         }
+        // 尺寸表只提供阶梯，不是高度上限；高内容继续沿现有 ink 缩放路径扩展。
+        variantDepth = Math.max(variantDepth, target);
         clr += (variantDepth - target) / 2.0F;
         // 横线：顶 = 内容顶 + clr + θ，只依赖内容几何与 TeX 常数
         float barTopAbove = radicand.getHeight() + clr + drt;
@@ -698,7 +710,8 @@ public final class MathLayoutService {
         float ruleCenterY = -(barTopAbove - drt / 2.0F);
         // 左端 = 勾的 ink 右缘（ink 左偏移 + ink 宽）：仅按 ink 宽会左移 bearingX 吃进勾内
         float barLeft = radicalLeft + m.inkLeftBearing(RADICAL, radicalSize) + m.inkWidth(RADICAL, radicalSize);
-        float barRight = barLeft + radicand.getWidth() + radicand.getRightInkOverhang() + mu;
+        float barRight = Math.max(barLeft, radicalLeft + radicalWidth)
+                + radicand.getWidth() + radicand.getRightInkOverhang() + mu;
         builder.addRule(barLeft, ruleCenterY, barRight - barLeft, drt);
         builder.addBox(radicand, radicalLeft + radicalWidth, 0.0F, 1.0F);
         float height = barTopAbove;
@@ -712,8 +725,9 @@ public final class MathLayoutService {
             depth = Math.max(depth, indexY + index.getDepth());
         }
         builder.width = Math.max(builder.width, radicalLeft + radicalWidth + radicand.getWidth());
-        builder.height = height;
-        builder.depth = depth;
+        // 保留 addBox 合并的内容和根指数边界，同时纳入根号 ink 与规则线。
+        builder.height = Math.max(builder.height, height);
+        builder.depth = Math.max(builder.depth, depth);
         return builder.toBox();
     }
 

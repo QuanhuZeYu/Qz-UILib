@@ -261,10 +261,10 @@ public class MathLayoutServiceTest {
         // 轴居中盒（自然尺寸）：inkCenter = −0.3S、inkHalf = 0.5S → baseShift = 0.3S − axis
         float axis = MathConstants.AXIS_HEIGHT_EM * S;
         float baseShift = 0.3F * S - axis;
-        // 脚本参照轴居中盒度量：refH = 0.8S、refD = 0.2S（不走单字符归零）
+        // 脚本参照平移后的 ink 盒：refH = 0.5S + axis、refD = 0.5S - axis（不走单字符归零）
         float subWidth = 3.0F * 0.35F * S + 2.0F * (MathConstants.THICK_MU / 18.0F) * 0.7F * S;
         float subDrop = MathConstants.SCRIPT_SUB_DROP_EM * S;
-        float subY = Math.max(Math.max(0.2F * S + subDrop, MathConstants.SUB2_EM * S),
+        float subY = Math.max(Math.max(0.5F * S - axis + subDrop, MathConstants.SUB2_EM * S),
                 0.56F * S - 4.0F * 0.45F * S / 5.0F);
         boolean foundBase = false;
         boolean foundSub = false;

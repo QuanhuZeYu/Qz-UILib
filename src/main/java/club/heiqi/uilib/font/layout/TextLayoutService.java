@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Lock;
 
 import club.heiqi.uilib.font.ActiveFontGeneration;
+import club.heiqi.uilib.font.internal.LatexFontSize;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.LatexParser;
@@ -1091,7 +1092,7 @@ public class TextLayoutService {
                 double total = 0.0D;
                 for (int i = 0; i < text.length(); ) {
                     int codepoint = text.codePointAt(i);
-                    total += resolveCodepointAdvance(codepoint, style, Math.max(1, (int) sizePx));
+                    total += resolveCodepointAdvance(codepoint, style, LatexFontSize.effective(sizePx));
                     i += Character.charCount(codepoint);
                 }
                 return (float) total;
@@ -1099,17 +1100,17 @@ public class TextLayoutService {
 
             @Override
             public float ascent(float sizePx) {
-                return getAscent(Math.max(1, (int) sizePx));
+                return getAscent(LatexFontSize.effective(sizePx));
             }
 
             @Override
             public float descent(float sizePx) {
-                return getDescent(Math.max(1, (int) sizePx));
+                return getDescent(LatexFontSize.effective(sizePx));
             }
 
             @Override
             public float xHeight(float sizePx) {
-                return getXHeight(Math.max(1, (int) sizePx));
+                return getXHeight(LatexFontSize.effective(sizePx));
             }
 
             @Override
@@ -1122,7 +1123,7 @@ public class TextLayoutService {
                     return 0.0F;
                 }
                 int codepoint = text.codePointAt(0);
-                int size = Math.max(1, (int) sizePx);
+                int size = LatexFontSize.effective(sizePx);
                 lockGeneration();
                 try {
                     GlyphRuntimeTables tables = currentRuntimeTables();
@@ -1151,7 +1152,7 @@ public class TextLayoutService {
                     return advance(text, sizePx);
                 }
                 int codepoint = text.codePointAt(0);
-                int size = Math.max(1, (int) sizePx);
+                int size = LatexFontSize.effective(sizePx);
                 lockGeneration();
                 try {
                     GlyphRuntimeTables tables = currentRuntimeTables();
@@ -1177,7 +1178,7 @@ public class TextLayoutService {
                     return 0.0F;
                 }
                 int codepoint = text.codePointAt(0);
-                int size = Math.max(1, (int) sizePx);
+                int size = LatexFontSize.effective(sizePx);
                 lockGeneration();
                 try {
                     GlyphRuntimeTables tables = currentRuntimeTables();
@@ -1206,7 +1207,7 @@ public class TextLayoutService {
                     return ascent(sizePx) + descent(sizePx);
                 }
                 int codepoint = text.codePointAt(0);
-                int size = Math.max(1, (int) sizePx);
+                int size = LatexFontSize.effective(sizePx);
                 lockGeneration();
                 try {
                     GlyphRuntimeTables tables = currentRuntimeTables();
@@ -1228,7 +1229,7 @@ public class TextLayoutService {
             @Override
             public float italicOverhang(String text, float sizePx) {
                 // 几何斜切右越量 = tan(斜角 0.25) × ink 高（有表数据按 ink 高，缺表回退 x-height）
-                int size = Math.max(1, (int) sizePx);
+                int size = LatexFontSize.effective(sizePx);
                 lockGeneration();
                 try {
                     GlyphRuntimeTables tables = currentRuntimeTables();
@@ -1254,7 +1255,7 @@ public class TextLayoutService {
                     return (descent(sizePx) - ascent(sizePx)) / 2.0F;
                 }
                 int codepoint = text.codePointAt(0);
-                int size = Math.max(1, (int) sizePx);
+                int size = LatexFontSize.effective(sizePx);
                 lockGeneration();
                 try {
                     GlyphRuntimeTables tables = currentRuntimeTables();

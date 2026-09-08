@@ -66,8 +66,6 @@ public final class LatexParser {
     private final String source;
     private final int length;
     private int index;
-    /** 最近创建的大运算符符号原子（\limits/\nolimits 修饰目标，TeX \mathop 修饰的宽容近似）。 */
-    private LatexAtom lastBigOperator;
 
     private LatexParser(String source) {
         this.source = source;
@@ -153,6 +151,10 @@ public final class LatexParser {
         LatexNode sup = null;
         LatexNode sub = null;
         while (index < length) {
+            skipMathSpaces();
+            if (index >= length) {
+                break;
+            }
             char ch = source.charAt(index);
             if (ch == '^' && sup == null) {
                 index++;
@@ -165,9 +167,13 @@ public final class LatexParser {
                 continue;
             }
             if (ch == '\\' && (peekCommand("limits") || peekCommand("nolimits"))) {
-                // TeX \mathop 修饰插在运算符与脚本之间（\sum\nolimits_{i}）：消费修饰并继续
-                // 绑定上下标；修饰目标（lastBigOperator）由 parseCommand 内处理
-                parseCommand(); // 内部消费反斜杠与命令名
+                index++;
+                String modifier = readCommandName();
+                // 修饰只绑定本因子的算子，不能污染参数、分组或此前的算子。
+                if (base instanceof LatexAtom && ((LatexAtom) base).getAtomClass() == AtomClass.OP) {
+                    ((LatexAtom) base).setLimitsFlag("limits".equals(modifier)
+                            ? LatexAtom.LIMITS_LIMITS : LatexAtom.LIMITS_NOLIMITS);
+                }
                 continue;
             }
             break;
@@ -192,12 +198,13 @@ public final class LatexParser {
         if (ch == '\\') {
             return parseCommand();
         }
+        int start = index;
         index += Character.charCount(source.codePointAt(index));
-        return new LatexAtom(String.valueOf(ch), classifyChar(ch));
+        return new LatexAtom(source.substring(start, index), classifyChar(ch));
     }
 
     /**
-     * 上下标参数：花括号组、单个命令（含其上下标）或单字符。
+     * 上下标参数：花括号组、单个命令（含其参数）或单字符。
      * 遇终止符/EOF 返回 null（宽容：上下标缺省）。
      */
     private LatexNode parseSupSubArgument() {
@@ -264,12 +271,7 @@ public final class LatexParser {
             return parseText();
         }
         if ("limits".equals(name) || "nolimits".equals(name)) {
-            // TeX \mathop 修饰：作用于最近创建的大运算符（\sum\limits / \sum\nolimits）；
-            // 目标缺失时宽容忽略（不产生节点）
-            if (lastBigOperator != null) {
-                lastBigOperator.setLimitsFlag("limits".equals(name)
-                        ? LatexAtom.LIMITS_LIMITS : LatexAtom.LIMITS_NOLIMITS);
-            }
+            // 无当前因子的孤立修饰宽容忽略。
             return null;
         }
         if ("overline".equals(name) || "underline".equals(name)) {
@@ -292,7 +294,6 @@ public final class LatexParser {
             String symbol = LatexSymbols.symbolText(name);
             LatexAtom atom = new LatexAtom(symbol != null ? symbol : name, AtomClass.OP,
                     LatexAtom.OperatorMode.BIG_OPERATOR);
-            lastBigOperator = atom;
             return atom;
         }
         // ---- limits 算子（\lim \max \min …：上下限恒上下堆叠，正体） ----
@@ -367,7 +368,7 @@ public final class LatexParser {
         if (ch == '^' || ch == '_' || ch == '&') {
             return emptyGroup();
         }
-        return parseFactor();
+        return parseAtom(); // 裸参数只取一个原子，后续脚本属于外层因子
     }
 
     private static LatexGroup emptyGroup() {
@@ -425,11 +426,6 @@ public final class LatexParser {
                 if (peekRowBreak() || peekCommand("end")) {
                     break; // 未闭合 \left 的宽容终止
                 }
-                LatexNode node = parseCommand();
-                if (node != null) {
-                    current.add(node);
-                }
-                continue;
             }
             if (ch == '}') {
                 index++; // 多余闭括号宽容忽略（与 parseList 同语义）
@@ -496,7 +492,7 @@ public final class LatexParser {
         while (index < length) {
             skipMathSpaces();
             if (peekCommand("end")) {
-                consumeEndEnvironment();
+                consumeEndEnvironment(environment);
                 break;
             }
             List<List<LatexNode>> row = new ArrayList<List<LatexNode>>();
@@ -516,6 +512,9 @@ public final class LatexParser {
             if (peekRowBreak()) {
                 index += 2; // 消费 "\\\\"
                 continue;
+            }
+            if (peekCommand("end")) {
+                consumeEndEnvironment(environment);
             }
             break;
         }
@@ -569,10 +568,13 @@ public final class LatexParser {
         return readCommandName();
     }
 
-    private void consumeEndEnvironment() {
+    private void consumeEndEnvironment(String environment) {
+        int start = index;
         index++; // 消费反斜杠
         readCommandName(); // "end"
-        skipEnvironmentName();
+        if (!environment.equals(readEnvironmentName())) {
+            index = start; // 未匹配的结束符留给父环境，支持缺少内层 end 的宽容恢复
+        }
     }
 
     private void skipEnvironmentName() {
@@ -611,8 +613,21 @@ public final class LatexParser {
             index++;
         }
         StringBuilder builder = new StringBuilder();
-        while (index < length && source.charAt(index) != '}') {
+        int depth = 1;
+        while (index < length) {
             char ch = source.charAt(index);
+            if (ch == '{') {
+                depth++;
+                index++;
+                continue;
+            }
+            if (ch == '}') {
+                index++;
+                if (--depth == 0) {
+                    break;
+                }
+                continue;
+            }
             if (ch == '\\') {
                 index++;
                 if (index >= length) {
@@ -638,10 +653,7 @@ public final class LatexParser {
             builder.append(ch);
             index++;
         }
-        if (index < length && source.charAt(index) == '}') {
-            index++;
-        }
-        return new LatexAtom(builder.toString(), AtomClass.TEXT);
+        return builder.length() == 0 ? emptyGroup() : new LatexAtom(builder.toString(), AtomClass.TEXT);
     }
 
     // ==================== 扫描工具 ====================
@@ -666,7 +678,7 @@ public final class LatexParser {
 
     /** index 是否指向反斜杠 + 指定命令名（后随非字母边界）。 */
     private boolean peekCommand(String name) {
-        if (source.charAt(index) != '\\') {
+        if (index >= length || source.charAt(index) != '\\') {
             return false;
         }
         int cursor = index + 1;
