@@ -268,13 +268,35 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
      * 因此四边工具栏参与 placement/clamp，且不遮挡聊天主体。</p>
      */
     private void applyPlacement(int width, int height) {
-        HudPlacement placement = effectivePlacement();
-        int contentWidth = ChatMarkdownSettings.chatWidthFor(width);
-        int contentHeight = ChatMarkdownSettings.containerHeightFor(height);
-        AnchorRect rect = HudLayoutResolver.resolve(placement, width, height,
-                toolbarLayer.outerWidth(contentWidth), toolbarLayer.outerHeight(contentHeight),
+        applyOuterPlacement(toolbarLayer, width, height, effectivePlacement(),
                 ChatHudWindow.currentSafeInsets());
-        toolbarLayer.root().setMargin(rect.getY(), 0, 0, rect.getX());
+    }
+
+    /**
+     * 外框放置（打开态聊天屏与 headless 装配测试共用同一份口径）：外框 = 内容盒 + 挂载边
+     * 工具栏，placement 与拖动 clamp 必须用同一份外框尺寸，否则两者会互相打架。
+     *
+     * @param layer            外接工具栏层
+     * @param viewportWidth    宿主视口宽
+     * @param viewportHeight   宿主视口高
+     * @param placement        生效放置
+     * @param insets           宿主安全区
+     */
+    static void applyOuterPlacement(HudToolbarLayer.Result layer, int viewportWidth, int viewportHeight,
+            HudPlacement placement, HudInsets insets) {
+        AnchorRect rect = HudLayoutResolver.resolve(placement, viewportWidth, viewportHeight,
+                outerWidthFor(layer, viewportWidth), outerHeightFor(layer, viewportHeight), insets);
+        layer.root().setMargin(rect.getY(), 0, 0, rect.getX());
+    }
+
+    /** @return 外框宽 = 内容盒 + 挂载边工具栏（放置与拖动 clamp 共用的唯一口径） */
+    static int outerWidthFor(HudToolbarLayer.Result layer, int viewportWidth) {
+        return layer.outerWidth(ChatMarkdownSettings.chatWidthFor(Math.max(1, viewportWidth)));
+    }
+
+    /** @return 外框高 = 内容盒 + 挂载边工具栏（放置与拖动 clamp 共用的唯一口径） */
+    static int outerHeightFor(HudToolbarLayer.Result layer, int viewportHeight) {
+        return layer.outerHeight(ChatMarkdownSettings.containerHeightFor(Math.max(1, viewportHeight)));
     }
 
     /** @return 生效放置(用户覆盖优先,否则按注册规格算默认放置 = BOTTOM_LEFT + margin) */
@@ -304,9 +326,11 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         int dx = ctx.getRawPointerX() - dragOrigin[0];
         int dy = ctx.getRawPointerY() - dragOrigin[1];
         HudPlacement desired = dragOriginPlacement.translate(dx, dy);
+        // clamp 与 applyPlacement 同口径：用外框（内容 + 工具栏），不是裸内容尺寸，
+        // 否则拖动到边界时工具栏仍会被推到视口外。
         HudPlacement clamped = HudLayoutResolver.clamp(desired, hostWidth, hostHeight,
-                ChatMarkdownSettings.chatWidthFor(hostWidth),
-                ChatMarkdownSettings.containerHeightFor(hostHeight), ChatHudWindow.currentSafeInsets());
+                outerWidthFor(toolbarLayer, hostWidth), outerHeightFor(toolbarLayer, hostHeight),
+                ChatHudWindow.currentSafeInsets());
         layoutService.setDraft(ChatHudWindow.HUD_ID, clamped);
         ctx.stopPropagation();
     }

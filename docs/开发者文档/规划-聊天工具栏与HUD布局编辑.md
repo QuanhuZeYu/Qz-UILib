@@ -126,8 +126,10 @@
   `revision()` 信号，`mountLayer` 未注册直通）、`HudToolbarLayer`（外框 = 内容 + 工具栏的
   flex 容器，并给出确定性 `outerWidth/outerHeight`）。
 - **布局语义**：工具栏在内容盒外侧该边、间隙 = gap；沿边方向厚度 = thickness；
-  **外框 = 内容盒 + 该边的 (gap + thickness)**。外框参与测量 / placement / clamp / 裁剪，
-  因此四边工具栏不遮挡主体、也不被视口裁掉；`visible=false` 时外框退化为内容尺寸。
+  **外框 = 内容盒 + 该边的 (gap + thickness)**，其中「沿边垂直方向」那一轴取内容与工具栏实测
+  外尺寸的较大者（工具栏比内容宽/高时外框随之变宽/高）。外框参与测量 / placement / clamp / 裁剪，
+  因此四边工具栏不遮挡主体，正常锚点下也不被视口裁掉；`visible=false` 时外框退化为内容尺寸。
+  竖直边（LEFT/RIGHT）条宽由 thickness 决定，文本按钮需给足条宽（聊天工具栏取 128）。
 - **宿主接入**：`SceneHudHost.RetainedWindow` 经 `HudToolbarService.mountLayer` 把外接层装进
   窗口外壳，`measure` 返回外框盒（`placeAndFrame` 数学无需改动）；注册表版本变化时重建该保留
   窗口；工具栏工厂失败只丢工具栏，HUD 主体照常。
@@ -141,9 +143,15 @@
 - **测试**：`HudToolbarLayerTest`（四边几何 / 外框放置 / 可见性挂摘 / 事件仲裁）、
   `HudToolbarServiceTest`（注册表与规格默认值）、`SceneHudPipelineTest` 新增四条宿主用例、
   `ChatToolbarTest` / `ChatContainerTest` 更新。
+- **缺陷修复（2026-09-09，真机「工具栏与编辑 HUD 入口完全不可见」）**：根因是
+  `SceneRuntime.show` 的零高 anchor 在 ROW 里吃满主轴宽（无文本叶宽度取父约束宽），把动作行
+  推到视口外；同时 `SceneButton` 默认 FILL 把 SHRINK 工具栏行反馈成视口宽。聊天工具栏改为
+  单一 keyed `forEach` 动作列表（编辑/普通态切同一列表信号，去掉 show 锚点），水平边按钮设
+  SHRINK；`outerWidth/outerHeight` 未钉死轴改用工具栏实测外尺寸，打开态 `applyPlacement` 与
+  拖动 clamp 共用同一外框口径（此前水平工具栏比内容宽时右锚点会溢出）。回归见
+  `ChatToolbarGeometryTest`（真实装配 + 真实布局盒 + 真实命中）。
 - **未完成（仍属 P3）**：位置与工具栏边位的跨重启持久化、同一 HUD 多工具栏、溢出「更多」菜单、
-  交叉轴对齐自定义；水平边工具栏若比内容宽，外框按工具栏加宽，而打开态页面按内容宽计算
-  placement，此时右侧可能溢出（宿主测量路径不受影响）。
+  交叉轴对齐自定义、竖直边条宽按标签实测自适应（当前为固定预算，超长第三方标签会被按钮裁剪）。
 
 ## 实施批准边界
 

@@ -1,5 +1,9 @@
 package club.heiqi.uilib.ui.hud.api;
 
+import java.util.List;
+
+import club.heiqi.uilib.ui.scene.layout.FlexDirection;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -21,6 +25,13 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>TOP/BOTTOM 下工具栏宽度用 SHRINK 而非 FILL：FILL 子节点会把 SHRINK 外框的宽度
  *       反馈成父约束宽（SizingCalculator.computeShrinkContainerWidth 读子 cachedLayout），
  *       工具栏就会被拉到整个视口宽；SHRINK 让外框宽度 = max(内容宽, 工具栏自身宽)；</li>
+ *   <li><b>只给工具栏根设 SHRINK 不够</b>：SceneNode 默认 widthSizing=FILL，工具栏行里的
+ *       按钮若也是 FILL，会被拉成整行宽，行宽再反馈成视口宽。工具栏内容的按钮/子项必须
+ *       自己收缩（如 {@code ChatToolbar} 对水平边按钮设 SHRINK），本层只负责外框方向与厚度；</li>
+ *   <li>外框尺寸（{@link Result#outerWidth(int)} / {@link Result#outerHeight(int)}）在未被
+ *       厚度钉死的那一轴取「内容尺寸」与「工具栏实测外尺寸」的较大者：工具栏比内容宽/高时
+ *       外框随之变宽/高，放置与拖动 clamp 才不会把工具栏推出视口。首帧工具栏尚未布局时退回
+ *       内容尺寸，下一帧按实测收敛；</li>
  *   <li>{@link HudToolbarSpec#getVisible()} 为 false 时工具栏节点移出树，外框退化为内容
  *       自身尺寸（{@link Result#outerWidth(int)} / {@link Result#outerHeight(int)} 同步
  *       反映），恢复为 true 时按挂载边重新插回原位置。</li>
@@ -81,31 +92,90 @@ public final class HudToolbarLayer {
         }
 
         /**
-         * 给定内容盒宽度求外框宽度（确定性，可在 layout 之前用于 placement）。
+         * 给定内容盒宽度求外框宽度（可在 layout 之前用于 placement）。
+         *
+         * <p>水平边（TOP/BOTTOM）：宽度由「内容宽」与「工具栏实测宽」的较大者决定——工具栏
+         * 比内容宽时外框必须跟着变宽，否则打开态页面按内容宽 placement，右锚点下整条工具栏
+         * 会溢出视口右侧（已知缺陷）。工具栏尚未布局时（首帧）退回内容宽，下一帧按实测收敛。</p>
          *
          * @param contentWidth 内容盒宽（logical px）
          * @return 外框宽；LEFT/RIGHT 且可见时 = 内容宽 + gap + thickness
          */
         public int outerWidth(int contentWidth) {
             int width = Math.max(1, contentWidth);
-            if (spec == null || !isVisible() || spec.getSide().isHorizontalEdge()) {
+            if (spec == null || !isVisible()) {
                 return width;
+            }
+            if (spec.getSide().isHorizontalEdge()) {
+                return Math.max(width, measuredExtent(true));
             }
             return width + spec.getGap() + spec.getThickness();
         }
 
         /**
-         * 给定内容盒高度求外框高度（确定性，可在 layout 之前用于 placement）。
+         * 给定内容盒高度求外框高度（可在 layout 之前用于 placement）。
+         *
+         * <p>竖直边（LEFT/RIGHT）：高度由「内容高」与「工具栏实测高」的较大者决定（竖列
+         * 按钮可能比内容高）；工具栏尚未布局时退回内容高，下一帧按实测收敛。</p>
          *
          * @param contentHeight 内容盒高（logical px）
          * @return 外框高；TOP/BOTTOM 且可见时 = 内容高 + gap + thickness
          */
         public int outerHeight(int contentHeight) {
             int height = Math.max(1, contentHeight);
-            if (spec == null || !isVisible() || !spec.getSide().isHorizontalEdge()) {
+            if (spec == null || !isVisible()) {
                 return height;
             }
+            if (!spec.getSide().isHorizontalEdge()) {
+                return Math.max(height, measuredExtent(false));
+            }
             return height + spec.getGap() + spec.getThickness();
+        }
+
+        /**
+         * 工具栏沿挂载边垂直方向（水平边取宽、竖直边取高）的内在尺寸。
+         *
+         * <p><b>为什么按子项聚合而不是直接读工具栏自身盒</b>：打开态页面用 margin 表达放置
+         * 偏移，而布局引擎会把 marginH 从子的可用宽里扣掉——右锚点/大偏移时工具栏自身盒会被
+         * 父约束夹窄，读它会把"被夹窄的宽度"当成内在宽，放置随之漂移（实测每帧左移一个 margin）。
+         * 工具栏的直接子项（按钮）在自己那一层不受该夹取影响，故按工具栏主轴聚合子项占位 +
+         * gap + padding 得到真实内在尺寸。工具栏主轴方向与请求轴不一致时退回自身盒。</p>
+         *
+         * <p>未布局时返回 0（调用方退回内容尺寸）。只读 cachedLayout，不改树、不打脏。</p>
+         *
+         * @param horizontal true = 取工具栏宽（水平边），false = 取工具栏高（竖直边）
+         * @return 内在外尺寸；未布局时为 0
+         */
+        private int measuredExtent(boolean horizontal) {
+            List<SceneNode> children = toolbar.__getChildren();
+            boolean row = toolbar.getFlexDirection() == FlexDirection.ROW;
+            if (!children.isEmpty() && row == horizontal) {
+                int total = 0;
+                int count = 0;
+                for (SceneNode child : children) {
+                    Object childBox = child.getCachedLayout();
+                    if (!(childBox instanceof LayoutBox)) {
+                        total = 0;
+                        count = 0;
+                        break;
+                    }
+                    LayoutBox box = (LayoutBox) childBox;
+                    total += row ? box.getWidth() + child.marginH() : box.getHeight() + child.marginV();
+                    count++;
+                }
+                if (count > 0) {
+                    int gaps = count > 1 ? toolbar.getGap() * (count - 1) : 0;
+                    int padding = row
+                            ? toolbar.getPaddingLeft() + toolbar.getPaddingRight()
+                            : toolbar.getPaddingTop() + toolbar.getPaddingBottom();
+                    return total + gaps + padding;
+                }
+            }
+            Object ownBox = toolbar.getCachedLayout();
+            if (!(ownBox instanceof LayoutBox)) {
+                return 0;
+            }
+            return horizontal ? ((LayoutBox) ownBox).getWidth() : ((LayoutBox) ownBox).getHeight();
         }
     }
 

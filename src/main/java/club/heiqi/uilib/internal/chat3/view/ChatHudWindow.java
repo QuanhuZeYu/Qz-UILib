@@ -159,29 +159,42 @@ public final class ChatHudWindow {
     /**
      * 幂等注册聊天外接工具栏（{@link HudToolbarService}；聊天 HUD 是首个使用者）。
      *
-     * <p>以注册表实际内容判幂等（而非只看静态句柄）：外部 {@code clear()} 后仍能装回，
-     * 测试隔离与接管重装都安全。工具栏工厂在装配时取"当前打开态聊天屏"的宿主端口，
-     * 关闭态 HUD 取惰性宿主（且该形态工具栏不可见）。</p>
+     * <p><b>以注册表实际内容判幂等（而非只看静态句柄）</b>：{@link HudToolbarService#clear()}
+     * 只清注册表 map、<b>不关闭</b>已发出的句柄，若只看句柄就会在 clear 之后永久跳过重装
+     * （与"外部 clear 后仍能装回"的承诺矛盾，且再打开聊天屏时工具栏静默消失）。故此处先看
+     * 注册表是否存在：不存在则关掉陈旧句柄（避免其后续 close 误删新项）再重装。</p>
+     *
+     * <p>工具栏工厂在装配时取"当前打开态聊天屏"的宿主端口与当前挂载边，关闭态 HUD 取惰性
+     * 宿主（且该形态工具栏不可见）。</p>
+     *
+     * <p>包级可见：供 {@code ChatHudWindowToolbarTest} 做 clear/重装回归（本方法不触碰
+     * Minecraft，注册路径 headless 可测）。</p>
      */
-    private static void ensureToolbarRegistered() {
+    static void ensureToolbarRegistered() {
+        HudToolbarService service = HudToolbarService.getInstance();
+        if (service.hasToolbar(HUD_ID)) {
+            return;
+        }
         if (toolbarRegistration != null && !toolbarRegistration.isClosed()) {
-            return;
+            // 注册表里没有但句柄仍"未关闭" = 被外部 clear() 摘掉：先关掉陈旧句柄。
+            toolbarRegistration.close();
         }
-        if (HudToolbarService.getInstance().hasToolbar(HUD_ID)) {
-            return;
-        }
-        toolbarRegistration = HudToolbarService.getInstance().register(HUD_ID, chatToolbarSpec(),
-                rt -> ChatToolbar.mount(rt, currentToolbarHost()));
+        toolbarRegistration = service.register(HUD_ID, chatToolbarSpec(),
+                rt -> ChatToolbar.mount(rt, currentToolbarHost(), getToolbarSide()));
     }
 
     /**
      * 聊天 HUD 的外接工具栏规格（纯函数：不注册、不碰宿主，供装配与测试读取）。
      *
-     * @return 规格：边 = 当前 {@link #getToolbarSide()}，间隙/厚度取
-     *         {@link HudToolbarSpec} 默认值，可见性 = 聊天输入屏打开信号
+     * @return 规格：边 = 当前 {@link #getToolbarSide()}，间隙取 {@link HudToolbarSpec} 默认值，
+     *         厚度按边位取（水平边 = 默认行高；竖直边 = 文本标签可容纳的条宽，见
+     *         {@link ChatToolbar#VERTICAL_THICKNESS_PX}），可见性 = 聊天输入屏打开信号
      */
     public static HudToolbarSpec chatToolbarSpec() {
-        return HudToolbarSpec.builder(toolbarSide).visible(TOOLBAR_VISIBLE).build();
+        HudToolbarSide side = toolbarSide;
+        int thickness = side.isHorizontalEdge()
+                ? HudToolbarSpec.DEFAULT_THICKNESS_PX : ChatToolbar.VERTICAL_THICKNESS_PX;
+        return HudToolbarSpec.builder(side).thickness(thickness).visible(TOOLBAR_VISIBLE).build();
     }
 
     /** @return 当前聊天工具栏挂载边 */
