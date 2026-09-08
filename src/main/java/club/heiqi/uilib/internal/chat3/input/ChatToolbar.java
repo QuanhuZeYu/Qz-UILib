@@ -18,13 +18,10 @@ import club.heiqi.uilib.ui.render.UiBackdrop;
 import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.scene.control.SceneButtonPrimitive;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
-import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
+import club.heiqi.uilib.ui.scene.control.SceneLiquidGlassStyle;
 import club.heiqi.uilib.ui.scene.control.SceneTooltip;
-import club.heiqi.uilib.ui.scene.input.SceneCursor;
-import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
@@ -183,7 +180,7 @@ public final class ChatToolbar {
                         + root.getPaddingLeft() + root.getPaddingRight();
             }, root::setPreferredWidth);
         }
-        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item));
+        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item, root.getBackdrop()));
         return root;
     }
 
@@ -216,37 +213,20 @@ public final class ChatToolbar {
         return items;
     }
 
-    /** 复用按钮交互原语；透明状态层让整条液态玻璃底材可见。 */
-    private static SceneNode buildButton(SceneRuntime rt, Item item) {
+    /** 复用按钮交互原语；玻璃外观统一交给专属样式，内容与动作留在工具栏。 */
+    private static SceneNode buildButton(SceneRuntime rt, Item item, UiBackdrop backdrop) {
         SceneButtonPrimitive.Result primitive = SceneButtonPrimitive.create(rt,
                 new SceneButtonPrimitive.Props(Signal.create(""), item.enabled, item.onClick));
         SceneNode button = primitive.root();
         button.removeChild(primitive.label());
         button.setPreferredWidth(BUTTON_SIZE_PX).setPreferredHeight(BUTTON_SIZE_PX)
                 .setWidthSizing(SceneNode.WidthSizing.SHRINK)
-                .setPadding(3).setBorderWidth(1).setCornerRadius(SceneChromeTokens.RADIUS_MD);
+                .setPadding(3);
         SceneNode icon = new SceneNode().setHitTestable(false)
                 .setPreferredWidth(ICON_SIZE_PX).setPreferredHeight(ICON_SIZE_PX);
         button.appendChild(icon);
         ChatToolbarIcons.attach(rt, icon, item.icon);
-        SceneInteractionState interaction = primitive.interaction();
-        rt.__bindAnimatedColor(() -> {
-            if (!Boolean.TRUE.equals(item.enabled.get())) {
-                return 0x00000000;
-            }
-            boolean primary = item.variant == SceneButtonVariant.PRIMARY;
-            if (Boolean.TRUE.equals(interaction.pressed().get())) {
-                return primary ? 0x806BAAFF : 0x38FFFFFF;
-            }
-            if (Boolean.TRUE.equals(interaction.hovered().get())) {
-                return primary ? 0x606BAAFF : 0x24FFFFFF;
-            }
-            return primary ? 0x406BAAFF : 0x00000000;
-        }, button::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
-        rt.bindComputed(() -> Boolean.TRUE.equals(interaction.focused().get())
-                ? SceneChromeTokens.BORDER_FOCUS : 0x00000000, button::setBorderColor);
-        rt.bind(item.enabled, enabled -> icon.setOpacity(Boolean.TRUE.equals(enabled) ? 1.0F : 0.35F));
-        SceneControlChrome.bindCursor(rt, button, item.enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
+        SceneLiquidGlassStyle.bindButton(rt, button, icon, item.enabled, item.variant, backdrop);
         // 禁用项仍显示说明；点击/键盘激活由 primitive 的 enabled 信号约束。
         SceneTooltip.attach(rt, SceneTooltip.Props.of(button, Signal.create(item.tooltip)));
         return button;

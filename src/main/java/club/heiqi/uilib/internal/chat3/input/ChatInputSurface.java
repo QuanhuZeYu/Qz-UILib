@@ -99,6 +99,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
 
     public ChatInputSurface(String initialText) {
         super(new LwjglInputSource(new LwjglStateReader()));
+        // 宿主负责启用并逐帧采样动画：玻璃按钮过渡与 tooltip 延时共用标准帧管线。
+        runtime.__enableMotion();
         this.controller = ChatHudWindow.ensureRegistered();
 
         // 开合动画状态机:生产参数取自设计稿 §4.1 同源配置(pop 240 / closing 140 可配);
