@@ -275,6 +275,11 @@ public final class LatexSoftwareRenderKit {
      * @return 渲染结果
      */
     public static RenderResult render(String richText, int baseFontSizePx, boolean realGlyphs) {
+        return render(richText, baseFontSizePx, realGlyphs, 1.0F);
+    }
+
+    /** 真 renderScale 进入生产 adapter；不是放大已光栅化的图片或修改布局字号。 */
+    public static RenderResult render(String richText, int baseFontSizePx, boolean realGlyphs, float renderScale) {
         Shared shared = shared();
         GlyphRuntimeTables tables = shared.tables;
         FontRuntimeSettings settings = shared.settings;
@@ -286,7 +291,8 @@ public final class LatexSoftwareRenderKit {
         GlyphRuntimeTablesView view = GlyphRuntimeTablesView.snapshot(tables, shared.manager, 1);
         GlyphBatchCollector collector = new GlyphBatchCollector();
         int advanced = DefaultFontRendererAdapter.getInstance().renderSegmentsToCollector(segments, settings,
-                shared.service, view, ORIGIN_X, ORIGIN_Y, false, 1.0F, baseFontSizePx, collector);
+                shared.service, view, ORIGIN_X * renderScale, ORIGIN_Y * renderScale, false, renderScale,
+                baseFontSizePx, collector);
 
         int[] bbox = computeBoundingBox(collector);
         int width = Math.max(16, bbox[2] + 1 + PAD);

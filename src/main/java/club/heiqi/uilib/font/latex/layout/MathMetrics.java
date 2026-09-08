@@ -52,7 +52,7 @@ public interface MathMetrics {
      * 字形 ink 宽度（px）：单字符字形的可见墨水宽度（左右留白剥离后的宽度）。
      *
      * <p>排版推进（advance）与可见墨水（ink）是两套口径：斜体剪切后 ink 右缘超出
-     * advance、根号字形 ink 右缘则小于 advance。规则线端点必须对齐 ink 边界才视觉精准。
+     * advance、根号字形 ink 右缘则小于 advance。规则线接头锚定 ink 边界，再按笔画需要局部搭接。
      * 默认实现回退 advance（mock 度量与无 ink 数据的场景）。</p>
      *
      * @param text   单字符文本（布局侧仅对根号/定界符等基元字形调用）
@@ -66,8 +66,8 @@ public interface MathMetrics {
     /**
      * 字形 ink 左缘相对推进原点的偏移（px，正值 = ink 起点在推进原点右侧）。
      *
-     * <p>规则线端点须锚定 ink 边界：根号横线左端应从根号字形勾的 ink 右缘
-     * （= ink 左偏移 + ink 宽）起，仅按 ink 宽会把横线左端吃进勾内（实测约 0.1em）。
+     * <p>根号横线接头先锚定字形 ink 右缘（= ink 左偏移 + ink 宽），再向斜笔内局部
+     * 搭接以覆盖 alpha 边缘；仅按 ink 宽会额外漏掉 bearing，将接头过度左移。
      * 默认实现返回 0（mock 度量与无 ink 数据场景）。</p>
      *
      * @param text   单字符文本（布局侧仅对根号等基元字形调用）

@@ -530,9 +530,9 @@ public class MathLayoutServiceTest {
         Assert.assertEquals(1, box.getRules().size());
         RuleElem rule = box.getRules().get(0);
         Assert.assertEquals(-(barTop - drt / 2.0F), rule.getY(), EPS);
-        Assert.assertEquals(radicalWidth, rule.getX(), EPS);
-        // 横线右端 = 内容宽 + 1mu
-        Assert.assertEquals(0.5F * S + mu, rule.getWidth(), EPS);
+        Assert.assertEquals(radicalWidth - drt, rule.getX(), EPS);
+        // 接头向斜笔内搭接，右端仍覆盖内容宽 + 1mu，clearance 不变。
+        Assert.assertEquals(radicalWidth + 0.5F * S + mu, rule.getX() + rule.getWidth(), EPS);
         Assert.assertEquals(radicalWidth + 0.5F * S, box.getWidth(), EPS);
         Assert.assertEquals(barTop, box.getHeight(), EPS);
         Assert.assertEquals(Math.max(0.2F * S, radicalY + radicalDescent), box.getDepth(), EPS);

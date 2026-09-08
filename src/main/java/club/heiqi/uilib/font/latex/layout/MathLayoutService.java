@@ -32,7 +32,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 17;
+    public static final int LAYOUT_VERSION = 18;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -705,12 +705,15 @@ public final class MathLayoutService {
         // 根号字形：ink 顶对齐横线顶（radicalY = bar 顶 − ink 顶偏移；盒顶对齐会把勾抬高 pad 量）
         float radicalY = -barTopAbove - (radicalInkCenter - radicalInkHalf);
         builder.addGlyph(RADICAL, radicalLeft, radicalY, radicalScale);
-        // 横线：中心 = 内容顶 + clr + drt/2；左端对齐根号字形 ink 右缘（勾的视觉终点，
-        // 而非 advance——ink 窄于 advance 时横线左端悬空），右端覆盖被开方内容视觉右缘 + 1mu
+        // 横线：中心 = 内容顶 + clr + drt/2；接头锚定根号 ink 右缘后局部搭接，
+        // 不以 advance 定位（ink 窄于 advance 时会悬空）；右端覆盖内容视觉右缘 + 1mu
         float ruleCenterY = -(barTopAbove - drt / 2.0F);
-        // 左端 = 勾的 ink 右缘（ink 左偏移 + ink 宽）：仅按 ink 宽会左移 bearingX 吃进勾内
-        float barLeft = radicalLeft + m.inkLeftBearing(RADICAL, radicalSize) + m.inkWidth(RADICAL, radicalSize);
-        float barRight = Math.max(barLeft, radicalLeft + radicalWidth)
+        float inkRight = radicalLeft + m.inkLeftBearing(RADICAL, radicalSize) + m.inkWidth(RADICAL, radicalSize);
+        // ink 包围盒右缘并非顶行实心笔画：斜笔尖及纹理 alpha 边缘仍在它左侧。
+        // 仅在接头处向字形内搭接一个线厚，避免高 renderScale 下两段各自的 AA 边界露缝；
+        // 保留横线高度、厚度、右端及内容位置，不能用全局加粗侵占根号 clearance。
+        float barLeft = inkRight - drt;
+        float barRight = Math.max(inkRight, radicalLeft + radicalWidth)
                 + radicand.getWidth() + radicand.getRightInkOverhang() + mu;
         builder.addRule(barLeft, ruleCenterY, barRight - barLeft, drt);
         builder.addBox(radicand, radicalLeft + radicalWidth, 0.0F, 1.0F);
