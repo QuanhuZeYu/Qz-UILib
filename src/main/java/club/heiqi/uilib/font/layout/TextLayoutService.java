@@ -1368,6 +1368,10 @@ public class TextLayoutService {
         }
         java.awt.Font sized = font.deriveFont(fontType == FontType.BOLD ? java.awt.Font.BOLD
                 : java.awt.Font.PLAIN, (float) Math.max(1, sizePx));
+        // fractional=false 与生产 FONT_RENDER_CONTEXT 的 true 不同，但该标志只作用于 advance 的
+        // 亚像素取整，不改变轮廓边界：实测 Dialog/Serif × 字号 14/24/48 × 9 个字形（含 CJK、
+        // 定界符、数学符号）共 54 组，getVisualBounds() 的 x/y/width/height 逐位相同，差异 0。
+        // 此处不是口径分叉，不要为"对齐"改成 true（详见 踩坑记录.md 2026-09-08 条）。
         java.awt.font.FontRenderContext frc = new java.awt.font.FontRenderContext(
                 sized.getTransform(), true, false);
         // createGlyphVector(FontRenderContext, int[]) 收的是 glyph code，不是 Unicode 码点：
@@ -1497,6 +1501,17 @@ public class TextLayoutService {
 
     /**
      * 码点推进宽度追加字符间距：每个非零宽码点之后追加段样式 letterSpacing（可为负）。
+     *
+     * <p><b>字距按码点计入，不按字素簇</b>：{@code UnicodeTextClassifier#isZeroWidth} 覆盖的是
+     * 渲染跳过类（换行/剥离/软断行/连字控制/变体选择符），<b>组合标记（COMBINING_MARK）不在其中</b>
+     * ——它在字体里 advance 为 0（见 {@code measureCodepointWidth} 的 COMBINING_MARK 分支），
+     * 但推进侧仍追加一份 letterSpacing。故 {@code <spacing=N>} 下 {@code a+U+0338+b} 的基字间距
+     * 是 2N 而非 N（仅 NFC 不可预组合的序列会保留到这一步）。</p>
+     *
+     * <p>测量侧（{@code resolveCodepointAdvance}）与渲染侧（{@code resolveMarkPositions}）必须
+     * 同源走本方法：任一侧自行拼装 {@code measureCodepointWidth + letterSpacing}、或漏掉标记
+     * 那一份字距，整段会按字距倍数错位（锁见
+     * {@code TextLayoutServiceControlCharTest#markPositionsShareAdvanceSpacingWithLayout}）。</p>
      *
      * @param charWidth 码点推进宽度
      * @param codepoint 码点
