@@ -512,7 +512,7 @@ public final class MarkdownInlineParser {
         return !Character.isWhitespace(next) && !Character.isDigit(next);
     }
 
-    /** 找 {@code $} 闭合：内容非空、前邻居非空白；支持 {@code \$} 转义。 */
+    /** 找美元闭合：双美元要求完整闭合串；内容非空、前邻居非空白，支持转义美元。 */
     private static int findDollarClose(String text, int to, int from, int openLength) {
         for (int index = from; index < to; index++) {
             char ch = text.charAt(index);
@@ -521,6 +521,10 @@ public final class MarkdownInlineParser {
                 continue;
             }
             if (ch == '$') {
+                // 双美元开定界必须由完整双美元关闭，不能把单个 $ 后的正文当作第二个定界符吞掉。
+                if (openLength == 2 && !startsWith(text, index, to, "$$")) {
+                    continue;
+                }
                 if (index > from && !Character.isWhitespace(text.charAt(index - 1))) {
                     return index;
                 }

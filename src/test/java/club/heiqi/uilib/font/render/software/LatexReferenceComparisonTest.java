@@ -2,37 +2,56 @@ package club.heiqi.uilib.font.render.software;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Insets;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Properties;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
+import javax.swing.Icon;
+
+import org.junit.AfterClass;
 import org.junit.Assume;
 import org.junit.Test;
 
 import club.heiqi.uilib.font.latex.LatexShowcaseFormulas;
 import club.heiqi.uilib.font.latex.layout.GlyphElem;
 import club.heiqi.uilib.font.latex.layout.MathBox;
+import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.latex.layout.RuleElem;
 
 /**
- * LaTeX 参考对比工具：同一公式分别经 JLaTeXMath（真 TeX 排版内核 + Computer Modern，
- * 仅作开发期对比基准，GPLv2+Classpath Exception，动态加载、不进入 mod 构建）与本仓
- * headless 软件渲染，产出并排 PNG 与几何差异报告，供布局常量与字体策略校准。
+ * 开发期 LaTeX 对照工具，JLaTeXMath 仅通过独立 classloader 加载，不进入生产依赖。
+ * 它是另一套 Java 数学排版器，并非 TeX 可执行程序；不同字体不做像素相等断言。
  *
- * <p>输出：{@code build/reports/latex-compare/}（ref/ours/side-by-side PNG + comparison.txt）。
- * 参考 jar 不存在时整类跳过（CI 安全）。</p>
+ * <p>所有设置优先 system property，其次 env。必需设置（未设置时 JUnit skip）：
+ * {@code qz.latex.reference.jar / QZ_LATEX_REFERENCE_JAR}。
+ * 显式空路径、非法 jar、API 不兼容与渲染失败均失败，不伪装成缺资源跳过。</p>
+ * <p>可选设置：同前缀 {@code size / SIZE}（整数逻辑 px，默认 16），
+ * {@code scale / SCALE}（真实 renderScale，默认 1），{@code style / STYLE}
+ * （display/text/script/scriptscript，默认 text），{@code source / SOURCE}
+ * （下载 URL 或本地来源说明），{@code version / VERSION}（预期版本，设置后验证），
+ * {@code output / OUTPUT}（报告根目录，默认 build/reports/latex-compare）。
+ * {@code classpath / CLASSPATH} 可显式指定附加参考字体 jar（按平台 pathSeparator 分隔），
+ * 不自动扫描目录。每次使用唯一 run 目录保留旧报告。Gradle 调用优先用环境变量，避免 -D 未转发到 test JVM。</p>
+ * <p>建议从 Maven Central 取得 org.scilab.forge:jlatexmath:1.0.7 及 sources.jar，记录实际
+ * 下载地址；镜像取得的文件明确标注镜像，不能仅凭文件名宣称已验证官方制品。
+ * 参考 bridge 基于该版本 TeXIcon.java 的公开 API：清零 insets 后，绘制基线为
+ * box.height * size；getBaseLine() 是比例，不能当作像素。</p>
  */
 public class LatexReferenceComparisonTest {
-
-    private static final String JAR = "D:\\Code\\MC\\Qz工作站\\temp\\latex-compare\\jlatexmath-1.0.7.jar";
-    private static final File OUT_DIR = new File("build/reports/latex-compare");
 
     private static final String[][] FORMULAS = {
             {"frac-quadratic", "\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}"},
@@ -53,217 +72,340 @@ public class LatexReferenceComparisonTest {
             {"overline", "\\overline{AB} + \\underline{x}"},
     };
 
-    /** 生成参考图 + 自己渲染图 + 并排图 + 几何对比报告。 */
+    @AfterClass
+    public static void release() {
+        LatexSoftwareRenderKit.resetShared();
+    }
+
     @Test
     public void generateReferenceComparison() throws Exception {
-        Assume.assumeTrue("参考 jar 不存在，跳过对比（开发期工具）", new File(JAR).isFile());
-        if (!OUT_DIR.exists() && !OUT_DIR.mkdirs()) {
-            throw new IllegalStateException("无法创建输出目录: " + OUT_DIR);
-        }
-        StringBuilder report = new StringBuilder();
-        report.append("LaTeX 参考对比报告（JLaTeXMath=真 TeX 排版基准 / ours=headless 软件渲染）")
-                .append(System.lineSeparator());
-        for (int index = 0; index < FORMULAS.length; index++) {
-            String name = FORMULAS[index][0];
-            String latex = FORMULAS[index][1];
-            BufferedImage ref = renderReference(latex, 22.0F);
-            LatexSoftwareRenderKit.RenderResult ours = LatexSoftwareRenderKit.render(
-                    "<latex>" + latex + "</latex>", 16);
-            MathBox box = LatexSoftwareRenderKit.layout(latex, 16);
-            if (ref == null) {
-                report.append(String.format("[%s] 参考渲染失败，跳过%n", name));
-                continue;
+        Config config = Config.load();
+        try (Reference reference = new Reference(config)) {
+            File output = outputDirectory(config, "comparison-");
+            StringBuilder report = metadata(config, reference);
+            for (int index = 0; index < FORMULAS.length; index++) {
+                String name = FORMULAS[index][0];
+                String latex = FORMULAS[index][1];
+                String styled = "\\" + config.style + "style " + latex;
+                ReferenceSample ref = reference.prepare(latex);
+                LatexComparisonRenderHelper.Sample ours = LatexComparisonRenderHelper.render(
+                        styled, config.size, config.scale, null);
+                float baseline = (float) Math.ceil(Math.max(ours.baseline,
+                        ref.height * config.scale + LatexComparisonRenderHelper.PAD));
+                ours = LatexComparisonRenderHelper.render(styled, config.size, config.scale,
+                        Float.valueOf(baseline));
+                BufferedImage refImage = ref.render(config.scale, baseline);
+                String prefix = String.format(Locale.ROOT, "%02d-%s", Integer.valueOf(index), name);
+                writePng(refImage, new File(output, prefix + "-ref.png"));
+                writePng(ours.image, new File(output, prefix + "-ours.png"));
+                writePng(sideBySide(refImage, ours.image), new File(output, prefix + "-side.png"));
+                report.append(String.format(Locale.ROOT, "[%s] %s%n", prefix, latex));
+                report.append(String.format(Locale.ROOT,
+                        "  ref logical box: advance=%.4f height=%.4f depth=%.4f%n",
+                        Float.valueOf(ref.width), Float.valueOf(ref.height), Float.valueOf(ref.depth)));
+                report.append(String.format(Locale.ROOT,
+                        "  ours logical box: advance=%.4f height=%.4f depth=%.4f%n",
+                        Float.valueOf(ours.box.getWidth()), Float.valueOf(ours.box.getHeight()),
+                        Float.valueOf(ours.box.getDepth())));
+                report.append(String.format(Locale.ROOT,
+                        "  actual renderScale=%.4f shared baselinePx=%.4f; ref canvas=%dx%d ours canvas=%dx%d%n",
+                        Float.valueOf(config.scale), Float.valueOf(baseline), Integer.valueOf(refImage.getWidth()),
+                        Integer.valueOf(refImage.getHeight()), Integer.valueOf(ours.image.getWidth()),
+                        Integer.valueOf(ours.image.getHeight())));
+                report.append("  ours originPx=").append(ours.originX).append(',').append(ours.originY)
+                        .append(" observedBaselinePx=").append(ours.baseline)
+                        .append(" collectorEndXCeilPx=").append(ours.endX)
+                        .append(" frameBoundsPx=").append(Arrays.toString(ours.bounds)).append('\n');
+                dumpOursBox(report, ours.box);
+                // Keep useful diagnostics even if a later formula fails.
+                writeReport(output, report);
             }
-            int scale = 2;
-            BufferedImage oursImage = FontSoftwareRasterizer.toImage(ours.pixels, ours.width, ours.height);
-            BufferedImage scaled = scaleNearest(oursImage, scale);
-            File refFile = new File(OUT_DIR, String.format("%02d-%s-ref.png", Integer.valueOf(index), name));
-            File oursFile = new File(OUT_DIR, String.format("%02d-%s-ours.png", Integer.valueOf(index), name));
-            File sideFile = new File(OUT_DIR, String.format("%02d-%s-side.png", Integer.valueOf(index), name));
-            writePng(ref, refFile);
-            writePng(scaleNearest(oursImage, scale), oursFile);
-            writePng(sideBySide(ref, scaled), sideFile);
-
-            report.append(String.format("[%02d] %s : %s%n", Integer.valueOf(index), name, latex));
-            report.append(String.format("  ref : %dx%d  advance=%.1f%n", Integer.valueOf(ref.getWidth()),
-                    Integer.valueOf(ref.getHeight()), Float.valueOf(referenceAdvance(latex, 22.0F))));
-            report.append(String.format("  ours: %dx%d  advance=%d  box(w=%.1f h=%.1f d=%.1f)%n",
-                    Integer.valueOf(ours.width), Integer.valueOf(ours.height),
-                    Integer.valueOf(ours.advanceWidth), Float.valueOf(box.getWidth()),
-                    Float.valueOf(box.getHeight()), Float.valueOf(box.getDepth())));
-            dumpOursBox(report, box);
-            report.append(System.lineSeparator());
+            System.out.println("LaTeX comparison: " + output.getCanonicalPath());
         }
-        Files.write(new File(OUT_DIR, "comparison.txt").toPath(),
-                report.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    /** 全部演示公式的参考渲染存在性（Smoke：JLaTeXMath 可渲染同集）。 */
     @Test
     public void referenceRendersAllShowcaseFormulas() throws Exception {
-        Assume.assumeTrue("参考 jar 不存在，跳过对比（开发期工具）", new File(JAR).isFile());
-        String[] formulas = LatexShowcaseFormulas.all();
-        int rendered = 0;
-        for (String formula : formulas) {
-            BufferedImage ref = renderReference(formula, 20.0F);
-            if (ref != null && ref.getWidth() > 0 && ref.getHeight() > 0) {
-                rendered++;
+        Config config = Config.load();
+        try (Reference reference = new Reference(config)) {
+            File output = outputDirectory(config, "showcase-");
+            StringBuilder report = metadata(config, reference);
+            for (String formula : LatexShowcaseFormulas.all()) {
+                try {
+                    ReferenceSample sample = reference.prepare(formula);
+                    sample.render(config.scale, (float) Math.ceil(
+                            sample.height * config.scale + LatexComparisonRenderHelper.PAD));
+                    report.append("OK: ").append(formula).append('\n');
+                } catch (InvocationTargetException failure) {
+                    // Explicitly report CJK font limitations; do not swallow API/linkage or unrelated failures.
+                    if (!containsHan(formula) || failure.getCause() == null
+                            || !"org.scilab.forge.jlatexmath.ParseException".equals(
+                                    failure.getCause().getClass().getName())) throw failure;
+                    report.append("CJK reference limitation: ").append(formula).append(" -> ")
+                            .append(failure.getCause()).append('\n');
+                }
+                writeReport(output, report);
             }
+            System.out.println("LaTeX showcase reference: " + output.getCanonicalPath());
         }
-        // Computer Modern 无 CJK，\text{中文} 参考渲染允许失败；其余应全部成功
-        org.junit.Assert.assertTrue("参考渲染应覆盖演示公式（允许中文 1 条失败）: " + rendered + "/"
-                + formulas.length, rendered >= formulas.length - 1);
     }
 
-    // ==================== JLaTeXMath 反射桥 ====================
-
-    private static URLClassLoader referenceLoader() throws Exception {
-        return new URLClassLoader(new URL[] {new File(JAR).toURI().toURL()},
-                LatexReferenceComparisonTest.class.getClassLoader());
+    private static boolean containsHan(String text) {
+        for (int offset = 0; offset < text.length();) {
+            int cp = text.codePointAt(offset);
+            if (Character.UnicodeScript.of(cp) == Character.UnicodeScript.HAN) return true;
+            offset += Character.charCount(cp);
+        }
+        return false;
     }
 
-    private static BufferedImage renderReference(String latex, float size) {
-        try {
-            URLClassLoader loader = referenceLoader();
-            Class<?> formulaClass = Class.forName("org.scilab.forge.jlatexmath.TeXFormula", true, loader);
-            Object formula = formulaClass.getConstructor(String.class).newInstance(latex);
-            // 优先 createBufferedImage(style, size, Color fg, Color bg)
+    private static final class Config {
+        File jar;
+        final List<File> classpath = new ArrayList<File>();
+        int size;
+        float scale;
+        String style;
+        String source;
+        String version;
+        File output;
+
+        static Config load() throws Exception {
+            String jar = setting("jar", null);
+            Assume.assumeTrue("Configure qz.latex.reference.jar or QZ_LATEX_REFERENCE_JAR to enable comparison",
+                    jar != null);
+            Config config = new Config();
+            config.jar = new File(jar).getCanonicalFile();
+            if (jar.trim().isEmpty() || !config.jar.isFile() || !config.jar.canRead()) {
+                throw new IllegalArgumentException("Explicit reference jar is not a readable file: " + jar);
+            }
+            config.classpath.add(config.jar);
+            String extraClasspath = setting("classpath", null);
+            if (extraClasspath != null) {
+                for (String entry : extraClasspath.split(java.util.regex.Pattern.quote(File.pathSeparator), -1)) {
+                    File extra = new File(entry).getCanonicalFile();
+                    if (entry.trim().isEmpty() || !extra.isFile() || !extra.canRead()) {
+                        throw new IllegalArgumentException("Invalid explicit reference classpath entry: " + entry);
+                    }
+                    try (JarFile archive = new JarFile(extra)) {
+                        if (archive.getJarEntry("org/scilab/forge/jlatexmath/TeXFormula.class") != null) {
+                            throw new IllegalArgumentException("Additional classpath must not replace reference engine: " + extra);
+                        }
+                    }
+                    config.classpath.add(extra);
+                }
+            }
+            config.size = Integer.parseInt(setting("size", "16"));
+            config.scale = Float.parseFloat(setting("scale", "1"));
+            if (config.size < 1 || config.size > 256 || !Float.isFinite(config.scale)
+                    || config.scale <= 0 || config.scale > 16) {
+                throw new IllegalArgumentException("Require size in [1,256], finite scale in (0,16]");
+            }
+            config.style = setting("style", "text").toLowerCase(Locale.ROOT);
+            if (!Arrays.asList("display", "text", "script", "scriptscript").contains(config.style)) {
+                throw new IllegalArgumentException("Unknown math style: " + config.style);
+            }
+            config.source = setting("source", "unspecified (local jar; download origin not attested)");
+            config.version = setting("version", null);
+            config.output = new File(setting("output", "build/reports/latex-compare"));
+            return config;
+        }
+    }
+
+    private static String setting(String name, String fallback) {
+        String value = System.getProperty("qz.latex.reference." + name);
+        if (value == null) value = System.getenv("QZ_LATEX_REFERENCE_" + name.toUpperCase(Locale.ROOT));
+        return value == null ? fallback : value.trim();
+    }
+
+    private static final class Reference implements AutoCloseable {
+        final Config config;
+        final URLClassLoader loader;
+        final Class<?> formulaClass;
+        final Class<?> iconClass;
+        final int style;
+        final String version;
+        final String versionSource;
+
+        Reference(Config config) throws Exception {
+            this.config = config;
+            String discoveredVersion = null;
+            String discoveredSource = "unknown (jar has no Maven/manifest version)";
+            // Validate the configured archive even when no version expectation was provided.
+            try (JarFile jar = new JarFile(config.jar)) {
+                JarEntry entry = jar.getJarEntry("META-INF/maven/org.scilab.forge/jlatexmath/pom.properties");
+                if (entry != null) {
+                    Properties properties = new Properties();
+                    try (InputStream stream = jar.getInputStream(entry)) { properties.load(stream); }
+                    discoveredVersion = properties.getProperty("version");
+                    discoveredSource = entry.getName();
+                }
+                if (discoveredVersion == null && jar.getManifest() != null) {
+                    discoveredVersion = jar.getManifest().getMainAttributes().getValue("Implementation-Version");
+                    discoveredSource = "META-INF/MANIFEST.MF Implementation-Version";
+                }
+            }
+            version = discoveredVersion == null ? "unknown" : discoveredVersion;
+            versionSource = discoveredSource;
+            if (config.version != null && !config.version.equals(version)) {
+                throw new IllegalArgumentException("Reference version expected=" + config.version + " actual=" + version);
+            }
+            // No parent test classpath: the loaded implementation must come from this exact configured jar.
+            URL[] urls = new URL[config.classpath.size()];
+            for (int i = 0; i < urls.length; i++) urls[i] = config.classpath.get(i).toURI().toURL();
+            loader = new URLClassLoader(urls, null);
             try {
-                Method create = formulaClass.getMethod("createBufferedImage", int.class, float.class,
-                        Color.class, Color.class);
-                return (BufferedImage) create.invoke(formula, Integer.valueOf(0), Float.valueOf(size),
-                        Color.BLACK, Color.WHITE);
-            } catch (NoSuchMethodException noBuffered) {
-                Method createPng = formulaClass.getMethod("createPNG", int.class, float.class, int.class,
-                        int.class);
-                Object icon = createPng.invoke(formula, Integer.valueOf(0), Float.valueOf(size),
-                        Integer.valueOf(0x000000), Integer.valueOf(0xFFFFFF));
-                Class<?> imageIconClass = Class.forName("javax.swing.ImageIcon", true, loader);
-                Method getImage = imageIconClass.getMethod("getImage");
-                java.awt.Image image = (java.awt.Image) getImage.invoke(icon);
-                BufferedImage buffered = new BufferedImage(image.getWidth(null), image.getHeight(null),
-                        BufferedImage.TYPE_INT_ARGB);
-                Graphics2D graphics = buffered.createGraphics();
-                graphics.drawImage(image, 0, 0, null);
-                graphics.dispose();
-                return buffered;
+                formulaClass = Class.forName("org.scilab.forge.jlatexmath.TeXFormula", true, loader);
+                iconClass = Class.forName("org.scilab.forge.jlatexmath.TeXIcon", true, loader);
+                Class<?> constants = Class.forName("org.scilab.forge.jlatexmath.TeXConstants", true, loader);
+                style = constants.getField("STYLE_" + config.style.toUpperCase(Locale.ROOT)).getInt(null);
+                // Static magnification defaults are part of the effective size contract, even in isolated loaders.
+                if (iconClass.getField("defaultSize").getFloat(null) != -1
+                        || iconClass.getField("magFactor").getFloat(null) != 0) {
+                    throw new IllegalStateException("Reference applies unexpected global size/magnification");
+                }
+            } catch (Exception | LinkageError failure) {
+                loader.close();
+                throw failure;
             }
-        } catch (Throwable throwable) {
-            return null;
         }
-    }
 
-    private static float referenceAdvance(String latex, float size) {
-        try {
-            URLClassLoader loader = referenceLoader();
-            Class<?> formulaClass = Class.forName("org.scilab.forge.jlatexmath.TeXFormula", true, loader);
+        ReferenceSample prepare(String latex) throws Exception {
             Object formula = formulaClass.getConstructor(String.class).newInstance(latex);
-            Object root = formulaClass.getMethod("getRoot").invoke(formula);
+            Object icon = formulaClass.getMethod("createTeXIcon", int.class, float.class)
+                    .invoke(formula, Integer.valueOf(style), Float.valueOf(config.size));
+            iconClass.getMethod("setInsets", Insets.class, boolean.class)
+                    .invoke(icon, new Insets(0, 0, 0, 0), Boolean.TRUE);
+            iconClass.getMethod("setForeground", Color.class).invoke(icon, Color.BLACK);
+            float width = ((Number) iconClass.getMethod("getTrueIconWidth").invoke(icon)).floatValue();
+            Object box = iconClass.getMethod("getBox").invoke(icon);
             Class<?> boxClass = Class.forName("org.scilab.forge.jlatexmath.Box", true, loader);
-            float width = ((Number) boxClass.getMethod("getWidth").invoke(root)).floatValue();
-            float height = ((Number) boxClass.getMethod("getHeight").invoke(root)).floatValue();
-            float depth = ((Number) boxClass.getMethod("getDepth").invoke(root)).floatValue();
-            return width + height + depth;
-        } catch (Throwable throwable) {
-            return Float.NaN;
+            float height = ((Number) boxClass.getMethod("getHeight").invoke(box)).floatValue() * config.size;
+            float depth = ((Number) iconClass.getMethod("getTrueIconDepth").invoke(icon)).floatValue();
+            return new ReferenceSample((Icon) icon, width, height, depth);
+        }
+
+        @Override
+        public void close() throws Exception {
+            loader.close();
         }
     }
 
-    // ==================== 图合成 ====================
+    private static final class ReferenceSample {
+        final Icon icon;
+        final float width;
+        final float height;
+        final float depth;
+
+        ReferenceSample(Icon icon, float width, float height, float depth) {
+            this.icon = icon;
+            this.width = width;
+            this.height = height;
+            this.depth = depth;
+        }
+
+        BufferedImage render(float scale, float baseline) {
+            int pad = LatexComparisonRenderHelper.PAD;
+            int canvasWidth = LatexComparisonRenderHelper.dimension(icon.getIconWidth() * scale + pad * 2);
+            int canvasHeight = LatexComparisonRenderHelper.dimension(baseline
+                    + Math.max(depth * scale, (icon.getIconHeight() - height) * scale) + pad);
+            BufferedImage image = new BufferedImage(canvasWidth, canvasHeight, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D graphics = image.createGraphics();
+            try {
+                graphics.setColor(Color.WHITE);
+                graphics.fillRect(0, 0, canvasWidth, canvasHeight);
+                graphics.translate(pad, baseline - height * scale);
+                // Scale the vector/font paint before rasterization; never resample an existing image.
+                graphics.scale(scale, scale);
+                icon.paintIcon(null, graphics, 0, 0);
+            } finally {
+                graphics.dispose();
+            }
+            LatexComparisonRenderHelper.requireUnclippedInk(image, "JLaTeXMath reference");
+            return image;
+        }
+    }
+
+    private static StringBuilder metadata(Config config, Reference reference) throws Exception {
+        StringBuilder report = new StringBuilder("LaTeX geometry/visual comparison; no cross-font pixel equality\n");
+        report.append("reference.jar=").append(config.jar).append('\n')
+                .append("reference.sha256=").append(sha256(config.jar)).append('\n')
+                .append("reference.version=").append(reference.version).append('\n')
+                .append("reference.versionSource=").append(reference.versionSource).append('\n')
+                .append("reference.declaredDownloadSource=").append(config.source).append('\n')
+                .append("reference.codeSource=").append(reference.formulaClass.getProtectionDomain()
+                        .getCodeSource().getLocation()).append('\n')
+                .append("logicalSizePx=").append(config.size).append(" mathStyle=").append(config.style)
+                .append(" actualRenderScale=").append(config.scale).append('\n')
+                .append("foreground=FF000000 background=FFFFFFFF; shadow=false; imageResampling=none\n")
+                .append("baseline=first production glyph baseline minus MathBox glyph offset; reference=Box.height * logicalSizePx * renderScale\n")
+                .append("reference.fonts=jar-bundled TeX fonts (typically Computer Modern); ours.font=")
+                .append(LatexSoftwareRenderKit.baseCatalogFont()).append('\n')
+                .append("ours.platform=").append(LatexSoftwareRenderKit.platformFontReport()).append('\n')
+                .append("ours.layoutVersion=").append(MathLayoutService.LAYOUT_VERSION).append('\n')
+                .append("ours.awtCharSize=").append(LatexSoftwareRenderKit.currentAwtCharSize()).append('\n')
+                .append("Limits: font metrics, glyph designs, atlas filtering and antialiasing differ. Width/height/depth\n")
+                .append("are observations, not equality assertions. Reference is not the TeX executable.\n\n");
+        for (File entry : config.classpath) {
+            report.append("reference.classpath=").append(entry).append(" sha256=").append(sha256(entry)).append('\n');
+        }
+        return report;
+    }
+
+    private static String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = Files.newInputStream(file.toPath())) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
+        }
+        StringBuilder result = new StringBuilder();
+        for (byte value : digest.digest()) result.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        return result.toString();
+    }
+
+    private static File outputDirectory(Config config, String prefix) throws Exception {
+        Files.createDirectories(config.output.toPath());
+        return Files.createTempDirectory(config.output.toPath(), prefix).toFile();
+    }
+
+    private static void writeReport(File output, StringBuilder report) throws Exception {
+        Files.write(new File(output, "comparison.txt").toPath(), report.toString().getBytes(StandardCharsets.UTF_8));
+    }
 
     private static BufferedImage sideBySide(BufferedImage left, BufferedImage right) {
-        int gap = 10;
+        int gap = 12;
         int width = left.getWidth() + gap + right.getWidth();
-        int height = Math.max(left.getHeight(), right.getHeight()) + 8;
+        int height = Math.max(left.getHeight(), right.getHeight());
         BufferedImage combined = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = combined.createGraphics();
-        graphics.setColor(Color.WHITE);
-        graphics.fillRect(0, 0, width, height);
-        graphics.drawImage(left, 2, 4, null);
-        graphics.setColor(new Color(200, 60, 60));
-        graphics.fillRect(left.getWidth() + 4, 4, 2, height - 8);
-        graphics.drawImage(right, left.getWidth() + gap + 2, 4, null);
-        graphics.dispose();
+        try {
+            graphics.setColor(Color.WHITE);
+            graphics.fillRect(0, 0, width, height);
+            graphics.drawImage(left, 0, 0, null);
+            graphics.drawImage(right, left.getWidth() + gap, 0, null);
+            graphics.setColor(new Color(200, 60, 60));
+            graphics.fillRect(left.getWidth() + gap / 2, 0, 1, height);
+        } finally {
+            graphics.dispose();
+        }
         return combined;
     }
 
-    private static BufferedImage scaleNearest(BufferedImage source, int scale) {
-        if (scale <= 1) {
-            return source;
-        }
-        BufferedImage scaled = new BufferedImage(source.getWidth() * scale, source.getHeight() * scale,
-                BufferedImage.TYPE_INT_ARGB);
-        Graphics2D graphics = scaled.createGraphics();
-        graphics.drawImage(source, 0, 0, source.getWidth() * scale, source.getHeight() * scale, null);
-        graphics.dispose();
-        return scaled;
-    }
-
     private static void writePng(BufferedImage image, File out) throws Exception {
-        if (!javax.imageio.ImageIO.write(image, "png", out)) {
-            throw new IllegalStateException("PNG 编码失败: " + out);
-        }
+        if (!javax.imageio.ImageIO.write(image, "png", out)) throw new IllegalStateException("PNG writer unavailable");
     }
 
     private static void dumpOursBox(StringBuilder report, MathBox box) {
-        report.append("  ours glyphs:");
+        report.append("  ours glyphs (logical px):");
         for (GlyphElem glyph : box.getGlyphs()) {
-            report.append(String.format(" [%s x=%.1f y=%.1f s=%.2f]", glyph.getText(),
-                    Float.valueOf(glyph.getX()), Float.valueOf(glyph.getY()),
-                    Float.valueOf(glyph.getSizeScale())));
+            report.append(String.format(Locale.ROOT, " [%s x=%.4f y=%.4f scale=%.4f]", glyph.getText(),
+                    Float.valueOf(glyph.getX()), Float.valueOf(glyph.getY()), Float.valueOf(glyph.getSizeScale())));
         }
         for (RuleElem rule : box.getRules()) {
-            report.append(String.format(" [rule x=%.1f y=%.1f w=%.1f t=%.1f]", Float.valueOf(rule.getX()),
-                    Float.valueOf(rule.getY()), Float.valueOf(rule.getWidth()),
+            report.append(String.format(Locale.ROOT, " [rule x=%.4f y=%.4f w=%.4f t=%.4f]",
+                    Float.valueOf(rule.getX()), Float.valueOf(rule.getY()), Float.valueOf(rule.getWidth()),
                     Float.valueOf(rule.getThickness())));
         }
-        report.append(System.lineSeparator());
-    }
-
-    /** Box 树反射 dump（保留给后续深度对比；当前仅报告 ours 侧几何）。 */
-    @SuppressWarnings("unused")
-    private static void dumpReferenceBox(StringBuilder report, Object box, int depth, int maxDepth) {
-        if (box == null || depth > maxDepth) {
-            return;
-        }
-        try {
-            Class<?> boxClass = box.getClass();
-            Method getWidth = boxClass.getMethod("getWidth");
-            Method getHeight = boxClass.getMethod("getHeight");
-            Method getDepth = boxClass.getMethod("getDepth");
-            StringBuilder indent = new StringBuilder();
-            for (int i = 0; i < depth; i++) {
-                indent.append("  ");
-            }
-            report.append(indent).append(boxClass.getSimpleName()).append(String.format(" w=%.1f h=%.1f d=%.1f%n",
-                    ((Number) getWidth.invoke(box)).floatValue(),
-                    ((Number) getHeight.invoke(box)).floatValue(),
-                    ((Number) getDepth.invoke(box)).floatValue()));
-            Field childrenField = findField(boxClass, "children");
-            if (childrenField != null) {
-                childrenField.setAccessible(true);
-                Object children = childrenField.get(box);
-                if (children instanceof List<?>) {
-                    List<?> list = new ArrayList<Object>((List<?>) children);
-                    for (Object child : list) {
-                        dumpReferenceBox(report, child, depth + 1, maxDepth);
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-            // 反射失败静默跳过（对比工具宽容失败）
-        }
-    }
-
-    private static Field findField(Class<?> type, String name) {
-        Class<?> current = type;
-        while (current != null && current != Object.class) {
-            try {
-                return current.getDeclaredField(name);
-            } catch (NoSuchFieldException missing) {
-                current = current.getSuperclass();
-            }
-        }
-        return null;
+        report.append('\n');
     }
 }

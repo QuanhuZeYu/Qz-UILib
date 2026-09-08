@@ -189,6 +189,16 @@ public class MarkdownInlineParserTest {
     }
 
     @Test
+    public void shouldPreserveTextAfterIncompleteDoubleDollarClose() {
+        Assert.assertEquals("$$x$Z", plainText(MarkdownInlineParser.parse("$$x$Z", baseStyle())));
+        Assert.assertEquals("$$x$", plainText(MarkdownInlineParser.parse("$$x$", baseStyle())));
+        Assert.assertEquals("<latex>x$y</latex>Z",
+                plainText(MarkdownInlineParser.parse("$$x$y$$Z", baseStyle())));
+        Assert.assertEquals("<latex>x</latex>Z",
+                plainText(MarkdownInlineParser.parse("$$x$$Z", baseStyle())));
+    }
+
+    @Test
     public void shouldNotTreatDollarAmountsAsLatex() {
         Assert.assertEquals("$5.99", plainText(MarkdownInlineParser.parse("$5.99", baseStyle())));
         Assert.assertEquals("$5 and $6", plainText(MarkdownInlineParser.parse("$5 and $6", baseStyle())));

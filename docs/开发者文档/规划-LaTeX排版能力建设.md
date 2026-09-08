@@ -51,7 +51,7 @@ B1 与 B3 的字体小样调研可以并行；B2a 在样式状态稳定后实施
 
 ## 参考对照方法
 
-既有 LatexReferenceComparisonTest 依赖开发者固定 jar 路径，缺失时跳过，而且参考字号与自身字号不一致；它目前是开发辅助工具。后续将参考版本、来源及调用路径显式配置，统一公式、数学样式、逻辑字号、输出缩放与基线。
+原 LatexReferenceComparisonTest 依赖开发者固定 jar 路径，缺失时跳过，而且参考字号与自身字号不一致；这些对照工具问题已在剩余规划准备批修复。它仍是开发辅助工具。剩余规划准备批已改为显式配置参考版本、来源及调用路径，并统一公式、数学样式、逻辑字号、实际输出缩放与基线；实际执行结果见文末。
 
 先对 AST 语义、字体无关的几何不变量建立强回归；字体不同的参考图主要比较结构、间隙和比例，不要求逐像素相同。只有固定同字体同采样环境才适合像素差异阈值。缺参考工具时明确标记未执行，不能用跳过数量证明对拍成功，也不为运行时引入参考引擎。
 
@@ -151,3 +151,17 @@ B1 与 B3 的字体小样调研可以并行；B2a 在样式状态稳定后实施
 制品：`build/reports/latex-font-b2b/comparison.png`、`after/index.html`、`README.md`、`build-verification.json`、`test-details.json`、`numeric-verification.json`和`api/verification.json`。软件画布结果不等同于宿主行框、atlas完整性或GPU验证；未运行游戏客户端／外部参考引擎对拍。
 
 本批仍使用普通字体几何斜切，未增加独立数学italic face。显式字体覆盖数学原子；结构生成根号／重音／伸缩定界符保留原宿主斜体继承，text和未知命令保持原规则。未覆盖固定字体版本、逐字形fallback身份或中文混排。mathbf、operatorname等尚未实现；后续继续评估字体命令与B3字形资源，B4伸缩拼接和B5宿主display仍未实施。
+
+## 剩余规划准备与验收工具修复
+
+用户要求持续推进至全部规划完成。已将剩余默认字体、公共 AST/字形能力、宽重音及 display 宿主的具体契约集中到《设计-LaTeX剩余规划实施契约》。该文档是拟实施方案，不将设计完成当作 B2b/B3/B4/B5 已实现。
+
+本批先修复 Markdown 双美元关闭符不完整时吞正文：`$$x$Z` 不再将 Z 当作第二个关闭美元消耗，增加完整/不完整关闭及正文保留回归。尚未启用新的 display 语义。
+
+参考测试改为显式 jar/classpath/版本/来源/字号/样式/实际 renderScale 参数，未配置参考 jar 才跳过，显式非法配置失败；ours 继续生产 collector 并按实际 quad 建画布，参考通过独立 classloader 加载 JLaTeXMath 1.0.7，共享实际公式基线，不对异字体要求像素相等。
+
+完整离线 build 经原 manifest 缓存恢复入口通过：Python 汇总 392 类、4346 项测试，4340 通过、6 跳过、零失败/错误。配置参考资源后另行运行 text/16px/scale1、text/16px/scale1.25、display/16px/scale4，三次 JUnit 均通过各自两项测试；Python 检查 48 对实际样张、144 张 PNG、共享基线一致，showcase 未报告 CJK 参考异常。主代理已目视查看 display 分式及原尺寸重音对照。该结果证明对照工具实际执行，不代表 UILib 与参考排版已等价；旧 Arial 字形与参考数学字体的粗细、比例和重音仍有明显差异。
+
+资源调研取得固定 STIX Two Math 2.12 b168 和 OFL 1.1，实际解析 MATH 及 glyph-id AWT 小样；程序固定 stroke 宽重音也已出小样。资源仍仅在工作站 temp，没有进入分发包，Java25独立小样不等于 UILib 字体页/Java8/GPU通过。新字体、伸缩及 display 仍须实施和正式回归。
+
+制品：`build/reports/latex-plan-completion/build-verification.json`、`reference-verification.json`、`reference/`；工作站 `temp/b3b4-font-evidence/awt-probe/` 保存字体和程序形状小样。构建缓存故障原因及恢复见 `docs/反馈层/errors/ERROR-elytra-offline-manifest-cache.md`。
