@@ -23,6 +23,8 @@ import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
 import club.heiqi.uilib.ui.hud.api.HudLayoutService;
 import club.heiqi.uilib.ui.hud.api.HudPlacement;
+import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
+import club.heiqi.uilib.ui.hud.api.HudToolbarService;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -56,6 +58,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     private final ChatSceneController controller;
     private final SceneNode root;
     private final ChatContainer.Result container;
+    /** 外接工具栏层：聊天内容盒外侧一条边（HUD 级注册表取规格与工厂）。 */
+    private final HudToolbarLayer.Result toolbarLayer;
     /** 屏幕树消息节点 → 记录(命中检测)。 */
     private final Map<SceneNode, ChatLineRecord> screenMessageNodes =
             new IdentityHashMap<SceneNode, ChatLineRecord>();
@@ -114,8 +118,14 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
                 .setFillParentHeight(true)
                 .setPadding(0);
 
-        container = ChatContainer.mount(runtime, controller, screenMessageNodes, initialText, this);
-        root.appendChild(container.root());
+        // 工具栏宿主绑定必须先于外接层装配：HUD 级注册表的工厂在装配时取当前宿主。
+        ChatHudWindow.attachToolbarHost(this);
+        container = ChatContainer.mount(runtime, controller, screenMessageNodes, initialText);
+        // 外接工具栏层（P1/P2 增量）：工具栏不再进容器内部，由 HUD 级注册表提供规格/工厂，
+        // 挂在聊天内容盒外侧（默认下边）；未注册时直通（root 子树与旧行为一致）。
+        toolbarLayer = HudToolbarService.getInstance().mountLayer(runtime, ChatHudWindow.HUD_ID,
+                container.root());
+        root.appendChild(toolbarLayer.root());
         // 链接点击:事件当场投递(不在 mouseClicked 里取账 —— CLICK 要到 UP 才合成)
         controller.setMessageLinkClickHandler(this::onSceneLinkClick);
 
@@ -126,8 +136,13 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         runtime.on(container.root(), SceneEventType.POINTER_MOVE, this::onDragMove);
         runtime.on(container.root(), SceneEventType.POINTER_UP, this::onDragUp);
         runtime.on(container.root(), SceneEventType.POINTER_CANCEL, this::onDragCancel);
-        runtime.on(container.toolbarRow(), SceneEventType.POINTER_DOWN,
-                (event, ctx) -> ctx.stopPropagation());
+        // 工具栏在内容盒之外：按钮/空白按下在此停止冒泡，拖动只挂在内容根上，
+        // 两者天然不抢事件（编辑态按钮与拖动区域各走各的命中链）。
+        SceneNode toolbarNode = toolbarLayer.toolbar();
+        if (toolbarNode != null) {
+            runtime.on(toolbarNode, SceneEventType.POINTER_DOWN,
+                    (event, ctx) -> ctx.stopPropagation());
+        }
         runtime.on(container.barRow(), SceneEventType.POINTER_DOWN,
                 (event, ctx) -> ctx.stopPropagation());
 
@@ -194,8 +209,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         // 完成回调由屏幕 updateScreen 经 tickCloseState 在渲染栈外取走(关屏会销毁本 surface)
         long nowMillis = System.currentTimeMillis();
         animator.tick(nowMillis);
-        container.root().setTransform(animator.transform(nowMillis));
-        container.root().setOpacity(animator.opacity(nowMillis));
+        // 动画施加在外框上：工具栏在内容盒之外，也必须随聊天整体弹入/收起（未注册时外框就是内容根）
+        toolbarLayer.root().setTransform(animator.transform(nowMillis));
+        toolbarLayer.root().setOpacity(animator.opacity(nowMillis));
         super.render(w, h, ctx, absX, absY);
     }
 
@@ -207,6 +223,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     /** 屏幕关闭:取消未完成编辑会话并释放容器句柄(列表 + 滚动绑定)。 */
     public void onClosed() {
         ChatHudEditIntent.detach(this);
+        // 解绑工具栏宿主并置不可见：关闭态 HUD 形态不显示工具栏（规划 P1 语义）。
+        ChatHudWindow.detachToolbarHost(this);
         if (Boolean.TRUE.equals(editing.get())) {
             endDrag(true);
             layoutService.cancelEdit();
@@ -242,13 +260,21 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         return true;
     }
 
-    /** 每帧把权威放置解析为容器 margin(统一 HUD 布局服务 → 宿主放置 → 既有 layout/paint)。 */
+    /**
+     * 每帧把权威放置解析为外框 margin（统一 HUD 布局服务 → 宿主放置 → 既有 layout/paint）。
+     *
+     * <p>外框尺寸由 {@link HudToolbarLayer.Result#outerWidth(int)} /
+     * {@link HudToolbarLayer.Result#outerHeight(int)} 给出（内容盒 + 挂载边上的 gap + 厚度），
+     * 因此四边工具栏参与 placement/clamp，且不遮挡聊天主体。</p>
+     */
     private void applyPlacement(int width, int height) {
         HudPlacement placement = effectivePlacement();
+        int contentWidth = ChatMarkdownSettings.chatWidthFor(width);
+        int contentHeight = ChatMarkdownSettings.containerHeightFor(height);
         AnchorRect rect = HudLayoutResolver.resolve(placement, width, height,
-                ChatMarkdownSettings.chatWidthFor(width),
-                ChatMarkdownSettings.containerHeightFor(height), ChatHudWindow.currentSafeInsets());
-        container.root().setMargin(rect.getY(), 0, 0, rect.getX());
+                toolbarLayer.outerWidth(contentWidth), toolbarLayer.outerHeight(contentHeight),
+                ChatHudWindow.currentSafeInsets());
+        toolbarLayer.root().setMargin(rect.getY(), 0, 0, rect.getX());
     }
 
     /** @return 生效放置(用户覆盖优先,否则按注册规格算默认放置 = BOTTOM_LEFT + margin) */

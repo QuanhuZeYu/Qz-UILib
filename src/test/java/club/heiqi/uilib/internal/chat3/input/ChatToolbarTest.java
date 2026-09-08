@@ -11,6 +11,10 @@ import org.junit.Test;
 import club.heiqi.uilib.api.chat.ChatAction;
 import club.heiqi.uilib.api.chat.ChatActionRegistration;
 import club.heiqi.uilib.api.chat.ChatActionService;
+import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
+import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
+import club.heiqi.uilib.ui.hud.api.HudToolbarSide;
+import club.heiqi.uilib.ui.hud.api.HudToolbarSpec;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -24,14 +28,23 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  */
 public class ChatToolbarTest {
 
+    /** 本用例绑定的工具栏宿主（@After 解绑，避免静态可见性信号污染同 JVM 其它测试）。 */
+    private ChatToolbar.Host attachedHost;
+
     @Before
     public void setUp() {
         ChatActionService.getInstance().clear();
+        ChatHudWindow.setToolbarSide(HudToolbarSide.DEFAULT);
         ReactiveScheduler.get().reset();
     }
 
     @After
     public void tearDown() {
+        if (attachedHost != null) {
+            ChatHudWindow.detachToolbarHost(attachedHost);
+            attachedHost = null;
+        }
+        ChatHudWindow.setToolbarSide(HudToolbarSide.DEFAULT);
         ChatActionService.getInstance().clear();
         ReactiveScheduler.get().reset();
     }
@@ -110,6 +123,37 @@ public class ChatToolbarTest {
         SceneNode toolbar = ChatToolbar.mount(rt, host(Signal.create(Boolean.FALSE)));
         rt.flush();
         Assert.assertFalse("visible=false 的动作不渲染", texts(toolbar).contains("隐藏动作"));
+    }
+
+    /**
+     * 聊天 HUD 声明的是 HUD 级外接工具栏（不是容器内部行）：规格默认值正确、
+     * 工具栏在内容盒之外渲染、外框高度计入厚度，且"聊天配置边位"生效。
+     */
+    @Test
+    public void chatHudDeclaresExternalToolbarLayerAndHonorsConfiguredSide() {
+        attachedHost = host(Signal.create(Boolean.FALSE));
+        ChatHudWindow.attachToolbarHost(attachedHost);
+        HudToolbarSpec spec = ChatHudWindow.chatToolbarSpec();
+        Assert.assertEquals("聊天工具栏默认挂下边", HudToolbarSide.DEFAULT, spec.getSide());
+        Assert.assertEquals(HudToolbarSpec.DEFAULT_THICKNESS_PX, spec.getThickness());
+        Assert.assertEquals(HudToolbarSpec.DEFAULT_GAP_PX, spec.getGap());
+        Assert.assertTrue("打开态聊天屏工具栏可见", Boolean.TRUE.equals(spec.getVisible().get()));
+
+        ChatActionService.getInstance().register(action("test:layer", "图层动作", 1));
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode content = SceneNode.column().setPreferredWidth(200).setPreferredHeight(100);
+        HudToolbarLayer.Result layer = HudToolbarLayer.mount(rt, spec, content,
+                r -> ChatToolbar.mount(r, host(Signal.create(Boolean.FALSE))));
+        rt.flush();
+        Assert.assertNotNull(layer.toolbar());
+        Assert.assertNotSame("工具栏必须挂在聊天内容盒之外", content, layer.root());
+        Assert.assertTrue("聊天动作经外接层渲染", texts(layer.toolbar()).contains("图层动作"));
+        Assert.assertEquals("外框高 = 内容 + gap + 厚度",
+                100 + spec.getGap() + spec.getThickness(), layer.outerHeight(100));
+
+        ChatHudWindow.setToolbarSide(HudToolbarSide.RIGHT);
+        Assert.assertEquals("聊天配置边位必须反映到规格",
+                HudToolbarSide.RIGHT, ChatHudWindow.chatToolbarSpec().getSide());
     }
 
     @Test

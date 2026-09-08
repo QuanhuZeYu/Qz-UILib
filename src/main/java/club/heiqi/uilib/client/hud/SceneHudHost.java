@@ -7,6 +7,8 @@ import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
 import club.heiqi.uilib.ui.hud.api.HudLayoutService;
 import club.heiqi.uilib.ui.hud.api.HudPlacement;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
+import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
+import club.heiqi.uilib.ui.hud.api.HudToolbarService;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
@@ -75,6 +77,8 @@ public final class SceneHudHost {
         HudInsets safeInsets = registry.avoidanceInsets(this::reportProviderFailure);
         lastSafeInsets = safeInsets;
         lastPlacements.clear();
+        // 外接工具栏注册表版本：本帧与保留窗口建立时的版本不一致 → 该窗口重建（接上/摘掉外接层）
+        int toolbarRevision = HudToolbarService.getInstance().revision().get().intValue();
         ArrayList<MeasuredHud> measured = new ArrayList<MeasuredHud>();
         Set<String> registered = new HashSet<String>();
         Set<String> visible = new HashSet<String>();
@@ -82,6 +86,12 @@ public final class SceneHudHost {
         for (HudRegistry.Entry entry : registry.frameEntries()) {
             registered.add(entry.spec.getId());
             RetainedWindow window = retained.get(entry.spec.getId());
+            if (window != null && window.toolbarRevision() != toolbarRevision) {
+                // 工具栏注册/注销：保留窗口重建才能换掉外接层（注册变更低频，代价可接受）
+                window.dispose();
+                retained.remove(entry.spec.getId());
+                window = null;
+            }
             if (window == null) {
                 try {
                     window = new RetainedWindow(entry, measurer);
@@ -227,6 +237,10 @@ public final class SceneHudHost {
         private final SceneRuntime runtime;
         private final SceneLayoutEngine layoutEngine;
         private final SceneFramePipeline pipeline;
+        /** 外接工具栏层（未注册该 HUD 的工具栏时为内容直通）。 */
+        private final HudToolbarLayer.Result toolbarLayer;
+        /** 建立本窗口时的工具栏注册表版本（宿主据此判断是否重建）。 */
+        private final int toolbarRevision;
 
         RetainedWindow(HudRegistry.Entry entry, SceneTextMeasurer measurer) {
             HudTokens tokens = HudTokens.NORMAL;
@@ -250,7 +264,21 @@ public final class SceneHudHost {
                 throw new IllegalStateException("HUD window factory must return a content root: "
                         + entry.spec.getId());
             }
-            root.appendChild(contentRoot);
+            // 外接工具栏层：挂在内容盒外侧一条边，尺寸参与外框测量与放置（四边工具栏
+            // 不遮挡主体）；未注册该 HUD 的工具栏时直通，root 子树与既有行为逐位一致。
+            // 工具栏工厂失败只丢工具栏，HUD 主体照常显示（单点隔离）。
+            HudToolbarLayer.Result layer;
+            try {
+                layer = HudToolbarService.getInstance()
+                        .mountLayer(runtime, entry.spec.getId(), contentRoot);
+            } catch (RuntimeException failure) {
+                MyMod.LOG.warn("HUD 工具栏工厂挂载失败，已跳过该工具栏: id={}",
+                        entry.spec.getId(), failure);
+                layer = HudToolbarLayer.passthrough(contentRoot);
+            }
+            toolbarLayer = layer;
+            toolbarRevision = HudToolbarService.getInstance().revision().get().intValue();
+            root.appendChild(layer.root());
             content = contentRoot;
         }
 
@@ -266,10 +294,26 @@ public final class SceneHudHost {
             pipeline.settleWithoutPaint(root, width, height);
         }
 
-        /** 内容子树无可见尺寸（signal 卸载/空文本）→ 整窗隐藏，对齐旧「空快照不显示」语义。 */
+        /**
+         * 内容子树无可见尺寸（signal 卸载/空文本）→ 整窗隐藏，对齐旧「空快照不显示」语义。
+         *
+         * <p><b>只看内容、不看工具栏</b>：外接工具栏是内容的附属，内容为空时整窗（含工具栏）
+         * 都不出现。这条同时避免了聊天"双形态"下的重复渲染——聊天输入屏打开期间 HUD 树为空，
+         * 若工具栏可见就单独渲染，工具栏会在屏幕与 HUD 各画一次。</p>
+         */
         boolean isEmptyContent() {
             Object box = content.getCachedLayout();
             return box == null || ((LayoutBox) box).getWidth() <= 0 || ((LayoutBox) box).getHeight() <= 0;
+        }
+
+        /** @return 建立本窗口时的工具栏注册表版本 */
+        int toolbarRevision() {
+            return toolbarRevision;
+        }
+
+        /** @return 外接工具栏层（测试/诊断探针；无注册时是内容直通） */
+        HudToolbarLayer.Result toolbarLayer() {
+            return toolbarLayer;
         }
 
         /** 窗口帧循环：与 UI 页面同源的 11 阶段帧管线，并以放置盒硬裁剪（内容超长不溢出窗口）。 */

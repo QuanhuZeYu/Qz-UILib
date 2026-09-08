@@ -22,6 +22,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 /**
  * ChatContainer 契约测试(K3 缺陷 F6②):输入条区四周 8px 内边距(设计稿 §2.3/§6.2),
  * 输入框高 24px 钉在输入条区 40px 内,divider 到输入框顶恰好 8px。
+ *
+ * <p>另立法：工具栏不得再挂进容器内部（P1/P2 增量迁移为 HUD 级外接层）。</p>
  */
 public class ChatContainerTest {
 
@@ -90,12 +92,12 @@ public class ChatContainerTest {
         ChatContainer.Result result = ChatContainer.mount(rt, controller, registry, "");
         rt.flush();
 
-        // containerNode 子顺序 = [listRow, toolbarRow, divider, barRow](挂载顺序 + insertBefore;
-        // 工具栏为 P1/P2 新增,位于分隔线之上,divider→输入框间距契约不变)
+        // containerNode 子顺序 = [listRow, divider, barRow]：工具栏自 P1/P2 增量起不再挂在
+        // 容器内部（改为 HUD 级外接层），divider→输入框间距契约不变
         SceneNode container = result.root();
-        Assert.assertEquals(4, container.__getChildren().size());
-        SceneNode divider = container.__getChildren().get(2);
-        SceneNode barRow = container.__getChildren().get(3);
+        Assert.assertEquals(3, container.__getChildren().size());
+        SceneNode divider = container.__getChildren().get(1);
+        SceneNode barRow = container.__getChildren().get(2);
 
         Assert.assertEquals("divider 高 1px", 1, divider.getPreferredHeight());
         Assert.assertEquals("输入条区高 40", ChatMarkdownSettings.getInputBarHeightPx(),
@@ -110,6 +112,22 @@ public class ChatContainerTest {
         Assert.assertEquals("输入框高 24(40 - 2×8)", 24, input.getPreferredHeight());
         Assert.assertEquals("输入框底色 = 设计令牌 bg-input", ChatMarkdownSettings.getInputBackgroundArgb(),
                 input.getBackgroundColor());
+    }
+
+    /**
+     * 立法：聊天工具栏必须经 HUD 级外接层挂载，不得回退到容器内部插行。
+     *
+     * <p>源码级守卫（与 SceneHudPipelineTest 的宿主栈守卫同型）：容器一旦重新 import /
+     * 调用 ChatToolbar，工具栏就又变成"固定在聊天容器内部"，四边可配置与外框尺寸参与
+     * placement 两条语义同时失效。</p>
+     */
+    @Test
+    public void containerMustNotMountToolbarInternally() throws Exception {
+        String source = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(
+                "src/main/java/club/heiqi/uilib/internal/chat3/view/ChatContainer.java")),
+                java.nio.charset.StandardCharsets.UTF_8);
+        Assert.assertFalse("ChatContainer 不得再引用 ChatToolbar（工具栏属 HUD 级外接层）",
+                source.contains("ChatToolbar"));
     }
 
     @Test

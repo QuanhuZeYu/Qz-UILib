@@ -77,6 +77,42 @@ status.set("Mining");
 registration 归调用 mod 所有，断线或世界卸载只释放 UILib 的 session 窗口；重连后会自动重建，
 调用方无需重新注册。仅在 mod 资源释放时于客户端主线程调用 `close()`。
 
+## HUD 外接工具栏（外接挂载层）
+
+`HudToolbarService` 把「某个 HUD 外侧挂一条工具栏」声明在 **HUD 级别**，而不是写死在某个
+容器组件内部：工具栏挂在内容盒外侧 `HudToolbarSide` 指定的一条边（TOP/BOTTOM/LEFT/RIGHT，
+默认 **BOTTOM**），与内容盒之间留 `gap`（默认 4），沿该边方向恰占 `thickness`（默认 28）。
+**外框 = 内容盒 + 该边上的 gap + thickness**，外框才是测量 / 四角锚定 / clamp / 裁剪的输入——
+四边工具栏既不遮挡 HUD 主体，也不会被视口裁掉。聊天 HUD（`qzuilib:chat3`）是首个使用者。
+
+```java
+// 为 example:status 挂一条底部工具栏；工厂与 HUD 窗口工厂同一契约（HudWindowFactory）。
+HudRegistration toolbar = HudToolbarService.getInstance().register(
+        "example:status",
+        HudToolbarSpec.builder(HudToolbarSide.BOTTOM)
+                .gap(4)
+                .thickness(28)
+                .visible(Signal.create(Boolean.TRUE))   // false = 不挂载、不占外框尺寸
+                .build(),
+        rt -> SceneNode.row(4).setHitTestable(true)
+                .setCrossAxisAlign(CrossAxisAlign.CENTER));   // 按钮用 SceneButton + rt.forEach
+
+toolbar.close();
+```
+
+- 同一 hudId 只允许一条工具栏，重复注册抛 `IllegalArgumentException`（不静默覆盖）。
+- 工具栏工厂失败只丢工具栏，HUD 主体照常显示（单点隔离）。
+- `visible` 为 false 时工具栏移出树，外框退化为内容尺寸；恢复为 true 时按挂载边插回原位置。
+- 交叉轴语义：水平边（TOP/BOTTOM）工具栏用 SHRINK 宽度（= 自身内在宽与内容宽取大者，不拉伸），
+  竖直边（LEFT/RIGHT）工具栏未设 `preferredHeight` 时由 STRETCH 拉满内容高。
+- 注册/注销后，宿主在下一帧重建该 HUD 的保留窗口以接上/摘掉外接层（注册表版本经帧末批处理
+  生效，故有一帧延迟）。
+- 确定性 placement 查询：`HudToolbarLayer.Result.outerWidth(contentWidth)` /
+  `outerHeight(contentHeight)`；`isVisible()` 以**实际挂载状态**为准（不是信号已提交值，
+  避免同帧内"信号已请求可见、树还没挂上"给出错位外框）。
+- 工具栏节点仍是普通 scene 子树，输入命中与作用域由宿主/页面统一管理（HUD 窗口宿主本身无
+  输入源）。
+
 ## 与旧「快照协议」的差异（4.9 起）
 
 旧版 `HudSnapshot/HudLine/HudSpan/HudTone` 行式数据协议已随 4.9 删除（路线 A，一步到位）：

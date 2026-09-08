@@ -1,6 +1,7 @@
 # 聊天工具栏与 HUD 布局编辑路线
 
-状态：规划草案，供审阅；未实现，候选类型名不是已发布 API。
+状态：P1/P2 已实现（容器内行版本 = 提交 6764c75a）；2026-09 增量把工具栏迁移为 HUD 级
+外接挂载层（见文末「实施记录」）。候选类型名不是已发布 API。
 
 ## 目标与范围
 
@@ -112,6 +113,37 @@
 - 改分辨率、HUD scale、MC GUI scale、缩小再放大窗口；视觉、轮廓与命中一致，保存偏好不被临时 clamp 污染。
 - 保存失败、损坏/未知版本配置、未注册 ID、重启恢复、取消不落盘；全局重置作用于已保存覆盖并且在完成前可撤销。
 - chat3 开关动画、消息链接、聊天 scrollbar、渲染 GL 状态隔离回归；拖动仅位置变化时不重建工厂或整棵内容树。
+
+## 实施记录：HUD 级外接工具栏（2026-09 增量）
+
+原 P1/P2 把工具栏做成 ChatContainer 内部一行。用户新需求：工具栏不应固定在聊天容器内部，
+而应成为可复用的 HUD 外接挂载层，支持挂在 HUD 外侧上 / 下 / 左 / 右四边可选，聊天 HUD 是
+首个使用者。已落地：
+
+- **公共 API（`ui/hud/api`，候选）**：`HudToolbarSide`（TOP/BOTTOM/LEFT/RIGHT，
+  `DEFAULT = BOTTOM`）、`HudToolbarSpec`（`gap` 默认 4、`thickness` 默认 28、`visible` 默认恒真；
+  负 gap / 非正厚度立即拒绝）、`HudToolbarService`（`hudId -> spec + factory`，重复 id 拒绝，
+  `revision()` 信号，`mountLayer` 未注册直通）、`HudToolbarLayer`（外框 = 内容 + 工具栏的
+  flex 容器，并给出确定性 `outerWidth/outerHeight`）。
+- **布局语义**：工具栏在内容盒外侧该边、间隙 = gap；沿边方向厚度 = thickness；
+  **外框 = 内容盒 + 该边的 (gap + thickness)**。外框参与测量 / placement / clamp / 裁剪，
+  因此四边工具栏不遮挡主体、也不被视口裁掉；`visible=false` 时外框退化为内容尺寸。
+- **宿主接入**：`SceneHudHost.RetainedWindow` 经 `HudToolbarService.mountLayer` 把外接层装进
+  窗口外壳，`measure` 返回外框盒（`placeAndFrame` 数学无需改动）；注册表版本变化时重建该保留
+  窗口；工具栏工厂失败只丢工具栏，HUD 主体照常。
+- **聊天迁移**：`ChatContainer` 不再持有工具栏行（源码守卫测试钉死）；`ChatHudWindow` 为
+  `qzuilib:chat3` 注册规格 + 工厂（默认下边，边位可经 `setToolbarSide` 配置），打开态聊天屏
+  经 `HudToolbarLayer` 外接挂载并用外框做 placement；关闭态 HUD 因可见性信号为假而不挂载。
+  **打开态容器与关闭态 HUD 仍共享 `HudLayoutService` 的同一份 `HudPlacement`**，位置状态未分裂。
+- **事件**：拖动 handler 只挂在聊天内容根上，工具栏是内容盒之外的兄弟节点并自行
+  `stopPropagation`，编辑态按钮与拖动区域互不抢占（`HudToolbarLayerTest` 用真实
+  SceneInputRouter 路由覆盖）。
+- **测试**：`HudToolbarLayerTest`（四边几何 / 外框放置 / 可见性挂摘 / 事件仲裁）、
+  `HudToolbarServiceTest`（注册表与规格默认值）、`SceneHudPipelineTest` 新增四条宿主用例、
+  `ChatToolbarTest` / `ChatContainerTest` 更新。
+- **未完成（仍属 P3）**：位置与工具栏边位的跨重启持久化、同一 HUD 多工具栏、溢出「更多」菜单、
+  交叉轴对齐自定义；水平边工具栏若比内容宽，外框按工具栏加宽，而打开态页面按内容宽计算
+  placement，此时右侧可能溢出（宿主测量路径不受影响）。
 
 ## 实施批准边界
 

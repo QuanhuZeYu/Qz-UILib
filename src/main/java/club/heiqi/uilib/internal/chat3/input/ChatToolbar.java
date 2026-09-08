@@ -10,6 +10,7 @@ import club.heiqi.uilib.api.chat.ChatAction;
 import club.heiqi.uilib.api.chat.ChatActionService;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.hud.api.HudToolbarSpec;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
@@ -18,13 +19,19 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 聊天工具栏（L3 组件层，规划《聊天工具栏与HUD布局编辑》P1/P2 最小闭环）：
- * 输入框上方一行紧凑按钮，普通态渲染 {@link ChatActionService} 注册的动作，
- * 编辑态切换为「完成 / 取消 / 恢复当前默认 / 恢复全部默认」。
+ * 聊天工具栏内容组件（L3 组件层，规划《聊天工具栏与HUD布局编辑》P1/P2）：
+ * 一行紧凑按钮，普通态渲染 {@link ChatActionService} 注册的动作，编辑态切换为
+ * 「完成 / 取消 / 恢复当前默认 / 恢复全部默认」。
+ *
+ * <p><b>挂载位置不属于本组件</b>：自 P1/P2 增量起，工具栏不再插在聊天容器内部，
+ * 而是由 HUD 级 {@link club.heiqi.uilib.ui.hud.api.HudToolbarService} 为
+ * {@code qzuilib:chat3} 注册规格与工厂，{@link club.heiqi.uilib.ui.hud.api.HudToolbarLayer}
+ * 把它挂在聊天内容盒外侧一条边（默认下边），厚度与间隙参与外框测量/放置。本类只负责
+ * 这一行按钮的内容与行为。</p>
  *
  * <p>全部经 {@link SceneButton} + {@link Signal} + keyed list 渲染；动作只发布语义
  * （{@link ChatAction#run()}），执行失败仅影响当前动作。隐藏动作不占位、禁用动作仍显示。
- * 工具栏与输入框分行，保留输入宽度。首版不做「更多」溢出菜单与图标，留待 P1 完整验收。</p>
+ * 首版不做「更多」溢出菜单与图标，留待 P1 完整验收。</p>
  */
 public final class ChatToolbar {
 
@@ -35,12 +42,13 @@ public final class ChatToolbar {
     private static final int BUTTON_PAD_Y = 2;
     private static final int BUTTON_PAD_X = 8;
     /**
-     * 工具栏固定行高：必须给「固定兄弟」一个可先验高度，否则 COLUMN 容器（消息列表 +
-     * 工具栏 + 分隔线 + 输入条）的 grow 分配会放弃，listViewport 被内容撑大、maxScroll=0
-     * （ConstraintResolver 的同名 WARN 即此缺陷）。首版单行紧凑工具栏；多行/溢出菜单留待
-     * P1 完整验收，届时高度改为可先验的动态值。
+     * 工具栏固定行高 = HUD 外接工具栏规格的默认厚度（唯一数值来源，避免两处 28 漂移）。
+     *
+     * <p>必须给外框一个可先验的厚度：宿主/打开态页面在 layout 之前就要算外框高度来
+     * placement，工具栏不能等一帧实测。首版单行紧凑工具栏；多行/溢出菜单留待 P1 完整
+     * 验收，届时厚度改为可先验的动态值。</p>
      */
-    private static final int TOOLBAR_HEIGHT_PX = 28;
+    private static final int TOOLBAR_HEIGHT_PX = HudToolbarSpec.DEFAULT_THICKNESS_PX;
 
     /** 工具栏宿主端口：编辑态信号 + 编辑动作 + 重置可用性。 */
     public interface Host {

@@ -3,6 +3,10 @@ package club.heiqi.uilib.client.hud;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudRegistration;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
+import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
+import club.heiqi.uilib.ui.hud.api.HudToolbarService;
+import club.heiqi.uilib.ui.hud.api.HudToolbarSide;
+import club.heiqi.uilib.ui.hud.api.HudToolbarSpec;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
@@ -29,8 +33,15 @@ import static org.junit.Assert.*;
 public class SceneHudPipelineTest {
     private static final FixedTextMeasurer MEASURER = new FixedTextMeasurer(8, 16);
 
-    @Before public void setUp() { ReactiveScheduler.get().reset(); }
-    @After public void tearDown() { ReactiveScheduler.get().reset(); }
+    @Before public void setUp() {
+        ReactiveScheduler.get().reset();
+        HudToolbarService.getInstance().clear();
+    }
+
+    @After public void tearDown() {
+        HudToolbarService.getInstance().clear();
+        ReactiveScheduler.get().reset();
+    }
 
     private static void registerText(HudRegistry registry, String id, String text) {
         registry.register(HudSpec.builder(id).build(), rt -> SceneNode.row()
@@ -261,6 +272,116 @@ public class SceneHudPipelineTest {
         host.render(backend, 100, 40, true, false);
         assertTrue(backend.getCalls().stream().anyMatch(call ->
                 "drawText".equals(call.methodName()) && "reconnected".equals(call.getString(0))));
+    }
+
+    // ==================== 外接工具栏（P1/P2 增量） ====================
+
+    private static void registerBody(HudRegistry registry, String id) {
+        registry.register(HudSpec.builder(id).margin(2).minWidth(1).build(),
+                rt -> SceneNode.row().setHitTestable(false).setText("BODY").setFontSize(14));
+    }
+
+    private static HudRegistration registerTools(String id, HudToolbarSide side, int thickness,
+            int gap, Signal<Boolean> visible) {
+        return HudToolbarService.getInstance().register(id, HudToolbarSpec.builder(side)
+                .thickness(thickness).gap(gap).visible(visible).build(),
+                rt -> SceneNode.row().setHitTestable(false).setText("TOOLS").setFontSize(14));
+    }
+
+    private static SceneHudHost.RetainedWindow retainedWindow(SceneHudHost host, String id)
+            throws Exception {
+        Field retainedField = SceneHudHost.class.getDeclaredField("retained");
+        retainedField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, SceneHudHost.RetainedWindow> retained =
+                (Map<String, SceneHudHost.RetainedWindow>) retainedField.get(host);
+        return retained.get(id);
+    }
+
+    /** 外框高度 = 外壳上下内边距 + 内容高 + gap + 厚度（工具栏尺寸参与测量/放置）。 */
+    @Test public void hudToolbarExpandsOuterPlacementAndPaintsOutsideContent() throws Exception {
+        HudRegistry registry = new HudRegistry();
+        registerBody(registry, "bar");
+        registerTools("bar", HudToolbarSide.BOTTOM, 20, 3, Signal.create(Boolean.TRUE));
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        host.render(backend, 200, 100, true, false);
+
+        club.heiqi.uilib.ui.scene.layout.AnchorRect placement = host.currentPlacement("bar");
+        assertNotNull("挂工具栏的 HUD 必须有权威放置盒", placement);
+        assertEquals("外框高计入工具栏厚度与间隙",
+                HudTokens.NORMAL.paddingY * 2 + 16 + 3 + 20, placement.getHeight());
+        assertTrue("主体照常绘制", backend.getCalls().stream().anyMatch(call ->
+                "drawText".equals(call.methodName()) && "BODY".equals(call.getString(0))));
+        assertTrue("工具栏内容必须落在同一外框内绘制", backend.getCalls().stream().anyMatch(call ->
+                "drawText".equals(call.methodName()) && "TOOLS".equals(call.getString(0))));
+
+        SceneHudHost.RetainedWindow window = retainedWindow(host, "bar");
+        HudToolbarLayer.Result layer = window.toolbarLayer();
+        assertNotNull(layer.toolbar());
+        club.heiqi.uilib.ui.scene.layout.AnchorRect contentBox =
+                club.heiqi.uilib.ui.scene.layout.SceneGeometry.absoluteBox(layer.content(), 0, 0);
+        club.heiqi.uilib.ui.scene.layout.AnchorRect toolbarBox =
+                club.heiqi.uilib.ui.scene.layout.SceneGeometry.absoluteBox(layer.toolbar(), 0, 0);
+        assertTrue("工具栏不得遮挡 HUD 主体",
+                toolbarBox.getY() >= contentBox.getY() + contentBox.getHeight());
+    }
+
+    @Test public void hiddenHudToolbarKeepsContentOnlyPlacement() {
+        HudRegistry registry = new HudRegistry();
+        registerBody(registry, "quiet");
+        registerTools("quiet", HudToolbarSide.BOTTOM, 20, 3, Signal.create(Boolean.FALSE));
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        host.render(backend, 200, 100, true, false);
+
+        club.heiqi.uilib.ui.scene.layout.AnchorRect placement = host.currentPlacement("quiet");
+        assertNotNull(placement);
+        assertEquals("不可见工具栏不占外框尺寸",
+                HudTokens.NORMAL.paddingY * 2 + 16, placement.getHeight());
+        assertTrue("工具栏内容不得绘制", backend.getCalls().stream().noneMatch(call ->
+                "drawText".equals(call.methodName()) && "TOOLS".equals(call.getString(0))));
+    }
+
+    /** 注册表版本变化必须重建已保留窗口，否则首帧之后注册的工具栏永远不生效。 */
+    @Test public void toolbarRegisteredAfterFirstFrameRebuildsRetainedWindow() {
+        HudRegistry registry = new HudRegistry();
+        registerBody(registry, "late");
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        host.render(new RecordingRenderBackend(), 200, 100, true, false);
+        club.heiqi.uilib.ui.scene.layout.AnchorRect before = host.currentPlacement("late");
+        assertNotNull(before);
+        assertEquals(HudTokens.NORMAL.paddingY * 2 + 16, before.getHeight());
+
+        registerTools("late", HudToolbarSide.BOTTOM, 20, 3, Signal.create(Boolean.TRUE));
+        // 注册表版本经帧末批处理生效；宿主在下一帧入口读到新版本后重建保留窗口
+        ReactiveScheduler.get().flush();
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        host.render(backend, 200, 100, true, false);
+        club.heiqi.uilib.ui.scene.layout.AnchorRect after = host.currentPlacement("late");
+        assertEquals("注册后必须重建并计入工具栏",
+                HudTokens.NORMAL.paddingY * 2 + 16 + 3 + 20, after.getHeight());
+        assertTrue(backend.getCalls().stream().anyMatch(call ->
+                "drawText".equals(call.methodName()) && "TOOLS".equals(call.getString(0))));
+    }
+
+    /** 工具栏工厂失败只丢工具栏，HUD 主体照常（单点隔离，不拖垮窗口）。 */
+    @Test public void brokenHudToolbarFactoryIsIsolated() {
+        HudRegistry registry = new HudRegistry();
+        registerBody(registry, "broken-tools");
+        HudToolbarService.getInstance().register("broken-tools",
+                HudToolbarSpec.builder(HudToolbarSide.BOTTOM).build(),
+                rt -> { throw new IllegalStateException("toolbar boom"); });
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        host.render(backend, 200, 100, true, false);
+
+        assertTrue("主体必须照常绘制", backend.getCalls().stream().anyMatch(call ->
+                "drawText".equals(call.methodName()) && "BODY".equals(call.getString(0))));
+        club.heiqi.uilib.ui.scene.layout.AnchorRect placement = host.currentPlacement("broken-tools");
+        assertNotNull(placement);
+        assertEquals("工具栏工厂失败时外框退化为内容尺寸",
+                HudTokens.NORMAL.paddingY * 2 + 16, placement.getHeight());
     }
 
     @Test public void renderPathDoesNotMutateShellSizingDeclaration() throws Exception {
