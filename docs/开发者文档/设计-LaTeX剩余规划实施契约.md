@@ -103,13 +103,31 @@ public interface MathFontSupport {
 public enum MathStretchAxis { HORIZONTAL, VERTICAL }
 ```
 
-公开不可变值类型范围固定：MathGlyphMetrics 保存 advance、inkLeft/Top/Right/Bottom、italicCorrection、hasTopAccentAttachment/topAccentAttachment；MathFontParameters 保存本批使用的数学轴、规则线厚、根号普通/display间隙、根号额外上伸/指数抬升及重音基础高度；MathGlyphConstruction 保存有序 Variant(glyphRef,stretchAdvance) 和可选 Assembly(parts,minConnectorOverlap,italicCorrection)，Part 保存 glyphRef/startConnector/endConnector/fullAdvance/extender。各值类使用与这些字段同序的构造器和同名 get/is 只读方法，防御复制列表，拒绝 null/非有限/非法负尺寸及不满足connector范围的数据；所有几何量均为有效字号下 logical px，只换算一次。可选 attachment 用显式 has 标志，缺 construction/无法解析的字符返回 null，不以 .notdef 伪成功。来源引用不依赖平台对象，不把 glyph-id 编码成 Unicode/PUA。外部实现可注入完整数据，但调用侧必须保持同 generation 的引用与 provider；过期引用不能重新匹配成另一个字体。
+公开不可变值类型范围固定：MathGlyphMetrics 保存 advance、inkLeft/Top/Right/Bottom、italicCorrection、hasTopAccentAttachment/topAccentAttachment；MathFontParameters 保存本批使用的数学轴、规则线厚、根号普通/display间隙、根号额外上伸/指数抬升及重音基础高度；MathGlyphConstruction 保存有序 Variant(glyphRef,stretchAdvance) 和可选 Assembly(parts,minConnectorOverlap,italicCorrection)，Part 保存 glyphRef/startConnector/endConnector/fullAdvance/extender。各值类使用与这些字段同序的构造器和同名 get/is 只读方法，防御复制列表，拒绝 null/非有限/非法负尺寸及不满足connector范围的数据；所有几何量均为有效字号下 logical px，只换算一次。可选 attachment 用显式 has 标志，缺 construction/无法解析的字符返回 null，不以 .notdef 伪成功。来源引用不依赖平台对象，不把 glyph-id 编码成 Unicode/PUA。MathGlyphRef 是内容身份，不含 generation，不能声称凭该值判断引用年龄。faceKey 必须完整绑定资源 SHA、face index 与影响字形选择的 profile；同内容身份可以跨代复用。provider 只接受当前已注册且身份一致的资源，不将旧 faceKey 偷换成另一个 face。任务 token、页槽引用和绘制计划另携 generation/requestId，旧代结果与计划必须按既有屏障拒绝。程序形状身份由版本化 profile 和规范化尺寸决定，同样与运行代际分开。
 
 固定点程序形状参数只决定形状，不包含 AWT 或 atlas；运行时 key 加 generation、raster size 和 tile 身份。超过 atlas 单槽宽度的形状，在生成侧按同一全局路径分片绘制，保留采样 padding、核心区不重复叠加 alpha，不先分配超大整图。各片继续受同页面预算和驱逐管理，逻辑 MathBox 保留整个形状的 advance/ink。该分片和生命周期必须实际验收后才能将任意宽重音范围标为完成。
 
 数学 face 与元数据在现有 candidate/generation 中原子发布，faceKey 包含资源身份，generation 验证防旧盒指向新版字体。GlyphGenerator 增明确 glyph-id 分支，通过同一物理字体 createGlyphVector(int[])、drawGlyphVector 生成；复用现有 probe、裁边、页面和上传。GlyphPageManager 在原码点数组之外维护稀疏数学字形记录，继续同一 claim/token/dispatcher/mailbox/page budget/驱逐/reload/inkEpoch 生命周期，不建第二套 atlas。缓存/绘制计划不能绕过旧 generation 屏障。
 
 外部 GlyphElem 复制者需保留新引用，外部 MathMetrics 可维持旧路径但不会自动获得数学字体质量。公开能力中的新增类型/签名、runtime token 身份扩展属于本批公共兼容范围，不伪装为纯内部改动。
+
+GlyphRequestToken、GlyphGenerationTask、GlyphGenerationResult 也是公开类型，现有 token 构造器强制合法 Unicode，worker 构造器无条件读 codepoint，必须同步增量适配：
+
+```java
+// GlyphRequestToken
+public enum Kind { CODEPOINT, MATH_GLYPH }
+public static GlyphRequestToken forMathGlyph(int generation, long requestId,
+    MathGlyphRef glyphRef, int rasterSize, int tileIndex);
+public Kind getKind();
+public MathGlyphRef getMathGlyphRef();
+public int getRasterSize();
+public int getTileIndex();
+// GlyphGenerationTask 与 GlyphGenerationResult 同步提供
+public GlyphRequestToken.Kind getKind();
+public MathGlyphRef getMathGlyphRef();
+```
+
+旧构造器保持 CODEPOINT 分支和旧 getter 语义；新数学分支 getCodepoint/getFontType 抛 IllegalStateException，不能返回假码点、PUA或伪字重。旧 getCodepoint 消费者必须先分派 kind 后才处理新任务/结果。数学字形已解析物理样式，其余信息来自 glyphRef；rasterSize为正，tileIndex非负，普通未分片数学字形为tileIndex零。相同形状、rasterSize及固定分页profile确定tile裁片，worker使用token中的尺寸且拒绝冲突，不另设可漂移的第二份尺寸。旧 token 的数学专属 getter 同样拒绝错误kind。现有 GlyphGenerationTask(token, size, priority) 保留签名，内部按 kind 取信息；结果冻结像素和数学元数据时不得再强制构造码点 GlyphInfo，数学元数据走明确分支，原getGlyphInfo仅适用于CODEPOINT。所有正常码点任务/结果保持兼容。
 
 ### 伸缩结构
 
@@ -139,7 +157,7 @@ STIX 实物数据确认：圆括号各有 13 个竖向变体及端部/重复段�
 
 行中双美元只在同物理行配对；多行数学仅由独占行围栏承载。不支持开栏同行有正文而跨行关闭的混合形式。块开/闭行位于当前列表/引用内容列后零至三个空格，闭合后只能空白；代码通道优先。围栏不跨列表项、引用边界，不靠 lazy 续行开闭；数学内部空行独立于表格开关保留。表格继续先按既有未转义 pipe 分列，数学不改 GFM 分列规则。
 
-采用既有表格的显式出口迁移方式：MarkdownDocument.toLayoutContent 提供新数学块和 DISPLAY；历史 toSegments/toLayoutLines 保留旧段落投影与旧双美元 TEXT 表现。直接 MarkdownInlineParser.parse 的双美元变 DISPLAY 属于明确视觉变化。旧 forLatex、旧 layout/cache 入口及无属性 `<latex>` 保持根 TEXT。页面和聊天都消费新 Content 出口，不能仅有表格时才启用内容宿主。
+采用既有表格的显式出口迁移方式：MarkdownDocument.toLayoutContent 提供新数学块和 DISPLAY；历史 toSegments/toLayoutLines 保留旧段落投影、完整旧美元词法和旧双美元 TEXT 表现。不能仅把 DISPLAY 结果改回 TEXT：旧入口对数字开头/首尾空白的拒绝与原跨行关闭规则也由内部 LEGACY policy 保留，policy 必须贯穿旧 walk/inline 路径；literalBlocks 本身只能隔离块树。新旧出口以 `$$2+2$$`、`$$ x $$`、行中双美元跨行等输入分别回归。直接 MarkdownInlineParser.parse 的双美元变 DISPLAY 属于明确视觉变化。旧 forLatex、旧 layout/cache 入口及无属性 `<latex>` 保持根 TEXT。页面和聊天都消费新 Content 出口，不能仅有表格时才启用内容宿主。
 
 ### 公共增量
 
@@ -171,7 +189,7 @@ public MathBox getLatexBox(TextSegment segment, int baseFontSizePx);
 
 链接区域与公式同一几何、同一滚动/裁剪投影，覆盖完整公式行框；非链接公式不创建假链接。复用 scene 和现有双轴滚动内容宿主，测量/绘制/命中共享 logical px。聊天块公式默认不套旧行内限高；行内 DISPLAY 仍可接受调用方的显式限高，但不能丢数学样式。
 
-本批复制契约是源码保真：单公式通过 getLatexSource 获取原 TeX，全文通过 document.getSource 获取原 Markdown；样式映射、缩小和换行不改源码。当前没有富段公式内部 caret，本批不把 TeX 字符长度伪装成内部字符位置，不新增右键复制菜单或全文选区公共 API。
+本批复制契约明确区分两种源码：全文 document.getSource 保留原始 Markdown（包括 CR/LF/CRLF、容器前缀与定界符）；单公式 getLatexSource 返回提取后的 TeX，允许统一换行为 LF，但保留正文内部空行、尾空格，剥除每行容器前缀和约定开栏缩进。独占开栏后的第一处换行与闭栏前的最后一处换行不计入 TeX；正文行之间换行保留，因此多余空白行仍可表示。单行公式只剥定界符，保留体首尾空白。块扫描器私有 SrcLine 保存原始源区间/换行种类，或从统一原source切片提取，不能在丢弃offset/换行后靠拼接行文本宣称恢复原文。CRLF、空行、尾空格、列表和引用前缀分别回归。样式映射、缩小和换行不得再次改写已提取的源码。当前没有富段公式内部 caret，本批不把 TeX 字符长度伪装成内部字符位置，不新增右键复制菜单或全文选区公共 API。
 
 ## 验收与完成定义
 
