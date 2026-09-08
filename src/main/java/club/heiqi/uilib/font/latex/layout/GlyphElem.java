@@ -12,8 +12,10 @@ public final class GlyphElem {
     private final float x;
     private final float y;
     private final float sizeScale;
-    /** 数学变量斜体（TeX mathnormal：ORD 类 ASCII 字母走斜体字形；函数名/数字/符号直体）。 */
+    /** 本地数学斜体选择，渲染侧复用既有几何斜切。 */
     private final boolean italic;
+    /** 是否接受宿主 TextStyle 的斜体叠加；显式数学字体选择关闭继承。 */
+    private final boolean inheritTextItalic;
 
     /**
      * 创建字形单元（直体）。
@@ -37,6 +39,11 @@ public final class GlyphElem {
      * @param italic    数学变量斜体（渲染侧斜切几何）
      */
     public GlyphElem(String text, float x, float y, float sizeScale, boolean italic) {
+        this(text, x, y, sizeScale, italic, true);
+    }
+
+    /** 创建携带本地斜体与宿主继承开关的字形；旧构造器默认继承宿主。 */
+    public GlyphElem(String text, float x, float y, float sizeScale, boolean italic, boolean inheritTextItalic) {
         if (text == null || text.isEmpty()) {
             throw new IllegalArgumentException("text 不能为空");
         }
@@ -45,6 +52,7 @@ public final class GlyphElem {
         this.y = y;
         this.sizeScale = sizeScale;
         this.italic = italic;
+        this.inheritTextItalic = inheritTextItalic;
     }
 
     public String getText() {
@@ -65,6 +73,10 @@ public final class GlyphElem {
 
     public boolean isItalic() {
         return italic;
+    }
+
+    public boolean isInheritTextItalic() {
+        return inheritTextItalic;
     }
 
     @Override

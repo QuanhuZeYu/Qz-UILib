@@ -1,6 +1,7 @@
 package club.heiqi.uilib.font.latex.node;
 
 import club.heiqi.uilib.font.latex.LatexNode;
+import club.heiqi.uilib.font.latex.MathFontStyle;
 import club.heiqi.uilib.font.latex.MathStyleOverride;
 
 /**
@@ -56,6 +57,7 @@ public final class LatexAtom extends LatexNode {
     private final String text;
     private final AtomClass atomClass;
     private final OperatorMode operatorMode;
+    private final MathFontStyle mathFontStyle;
     /** \limits/\nolimits 显式修饰（解析期写入；0/1/2，见 LIMITS_* 常量）。 */
     private int limitsFlag = LIMITS_DEFAULT;
 
@@ -83,7 +85,17 @@ public final class LatexAtom extends LatexNode {
     /** 创建带局部数学样式声明的节点；样式不得为 null。 */
     public LatexAtom(String text, AtomClass atomClass, OperatorMode operatorMode,
             MathStyleOverride mathStyleOverride) {
+        this(text, atomClass, operatorMode, mathStyleOverride, MathFontStyle.INHERIT);
+    }
+
+    /** 创建带局部字号和字体选择的原子；两种样式均不得为 null。 */
+    public LatexAtom(String text, AtomClass atomClass, OperatorMode operatorMode,
+            MathStyleOverride mathStyleOverride, MathFontStyle mathFontStyle) {
         super(Kind.ATOM, mathStyleOverride);
+        if (mathFontStyle == null) {
+            throw new IllegalArgumentException("mathFontStyle 不能为空");
+        }
+        this.mathFontStyle = mathFontStyle;
         if (text == null || text.isEmpty()) {
             throw new IllegalArgumentException("text 不能为空");
         }
@@ -93,6 +105,11 @@ public final class LatexAtom extends LatexNode {
         this.text = text;
         this.atomClass = atomClass;
         this.operatorMode = operatorMode == null ? OperatorMode.NONE : operatorMode;
+    }
+
+    /** @return 局部数学字体选择 */
+    public MathFontStyle getMathFontStyle() {
+        return mathFontStyle;
     }
 
     /** @return 显示文本 */

@@ -67,6 +67,7 @@ public final class LatexParser {
     private final String source;
     private final int length;
     private int index;
+    private MathFontStyle mathFontStyle = MathFontStyle.INHERIT;
     // 仅本次 AST 构造期间保留 array 的完整原始列说明（含超出现有行宽的列）。
     // 最终节点自行防御拷贝，不依赖此记录；不缓存解析/布局结果，非 array 不登记。
     private IdentityHashMap<LatexMatrix, List<Character>> matrixColumnAligns;
@@ -110,7 +111,7 @@ public final class LatexParser {
                 if ((stops & STOP_BRACKET) != 0) {
                     break;
                 }
-                nodes.add(withStyle(new LatexAtom("]", AtomClass.CLOSE), style));
+                nodes.add(withStyle(mathAtom("]", AtomClass.CLOSE), style));
                 index++;
                 continue;
             }
@@ -118,7 +119,7 @@ public final class LatexParser {
                 if ((stops & STOP_AMP) != 0) {
                     break;
                 }
-                nodes.add(withStyle(new LatexAtom("&", AtomClass.ORD), style));
+                nodes.add(withStyle(mathAtom("&", AtomClass.ORD), style));
                 index++;
                 continue;
             }
@@ -140,7 +141,7 @@ public final class LatexParser {
             }
             if (ch == '^' || ch == '_') {
                 // 孤立上下标：宽容按字面字符输出
-                nodes.add(withStyle(new LatexAtom(String.valueOf(ch), AtomClass.ORD), style));
+                nodes.add(withStyle(mathAtom(String.valueOf(ch), AtomClass.ORD), style));
                 index++;
                 continue;
             }
@@ -192,7 +193,8 @@ public final class LatexParser {
         switch (node.getKind()) {
             case ATOM: {
                 LatexAtom atom = (LatexAtom) node;
-                LatexAtom copy = new LatexAtom(atom.getText(), atom.getAtomClass(), atom.getOperatorMode(), style);
+                LatexAtom copy = new LatexAtom(atom.getText(), atom.getAtomClass(), atom.getOperatorMode(), style,
+                        atom.getMathFontStyle());
                 copy.setLimitsFlag(atom.getLimitsFlag());
                 return copy;
             }
@@ -210,7 +212,8 @@ public final class LatexParser {
                 return new LatexSqrt(root.getIndex(), root.getRadicand(), style);
             }
             case GROUP:
-                return new LatexGroup(((LatexGroup) node).getChildren(), style);
+                return new LatexGroup(((LatexGroup) node).getChildren(), style,
+                        ((LatexGroup) node).isTransparentForAtomClass());
             case BINOM: {
                 LatexBinom binom = (LatexBinom) node;
                 return new LatexBinom(binom.getUpper(), binom.getLower(), style);
@@ -266,9 +269,13 @@ public final class LatexParser {
             if (ch == '\\' && (peekCommand("limits") || peekCommand("nolimits"))) {
                 index++;
                 String modifier = readCommandName();
-                // 修饰只绑定本因子的算子，不能污染参数、分组或此前的算子。
-                if (base instanceof LatexAtom && ((LatexAtom) base).getAtomClass() == AtomClass.OP) {
-                    ((LatexAtom) base).setLimitsFlag("limits".equals(modifier)
+                // 仅穿过字体命令的透明参数组；额外显式组仍隔离修饰。
+                LatexNode target = base;
+                while (target instanceof LatexGroup && ((LatexGroup) target).isTransparentForAtomClass()) {
+                    target = ((LatexGroup) target).getChildren().get(0);
+                }
+                if (target instanceof LatexAtom && ((LatexAtom) target).getAtomClass() == AtomClass.OP) {
+                    ((LatexAtom) target).setLimitsFlag("limits".equals(modifier)
                             ? LatexAtom.LIMITS_LIMITS : LatexAtom.LIMITS_NOLIMITS);
                 }
                 continue;
@@ -297,7 +304,7 @@ public final class LatexParser {
         }
         int start = index;
         index += Character.charCount(source.codePointAt(index));
-        return new LatexAtom(source.substring(start, index), classifyChar(ch));
+        return mathAtom(source.substring(start, index), classifyChar(ch));
     }
 
     /**
@@ -345,6 +352,9 @@ public final class LatexParser {
             return parseEscapedChar(ch);
         }
         String name = readCommandName();
+        if ("mathrm".equals(name) || "mathit".equals(name)) {
+            return parseMathFont("mathrm".equals(name) ? MathFontStyle.UPRIGHT : MathFontStyle.ITALIC);
+        }
         // ---- 结构命令 ----
         if ("frac".equals(name) || "dfrac".equals(name) || "tfrac".equals(name)) {
             LatexFrac.FractionStyle fractionStyle = "dfrac".equals(name) ? LatexFrac.FractionStyle.DISPLAY
@@ -396,21 +406,21 @@ public final class LatexParser {
         // ---- 大运算符符号（\sum \int \prod …：行内 limits 堆叠 + 轴居中，可 \nolimits 降级） ----
         if (LatexSymbols.isBigOperator(name)) {
             String symbol = LatexSymbols.symbolText(name);
-            LatexAtom atom = new LatexAtom(symbol != null ? symbol : name, AtomClass.OP,
+            LatexAtom atom = mathAtom(symbol != null ? symbol : name, AtomClass.OP,
                     LatexAtom.OperatorMode.BIG_OPERATOR);
             return atom;
         }
         // ---- limits 算子（\lim \max \min …：上下限恒上下堆叠，正体） ----
         if (LatexSymbols.isLimitsFunctionName(name)) {
-            return new LatexAtom(name, AtomClass.OP, LatexAtom.OperatorMode.LIMITS_OPERATOR);
+            return mathAtom(name, AtomClass.OP, LatexAtom.OperatorMode.LIMITS_OPERATOR);
         }
         // ---- 符号命令 ----
         if (LatexSymbols.isSymbolCommand(name)) {
-            return new LatexAtom(LatexSymbols.symbolText(name), LatexSymbols.atomClassOf(name));
+            return mathAtom(LatexSymbols.symbolText(name), LatexSymbols.atomClassOf(name));
         }
         // ---- 函数名（正体文本算子，无 limits） ----
         if (LatexSymbols.isFunctionName(name)) {
-            return new LatexAtom(name, AtomClass.OP);
+            return mathAtom(name, AtomClass.OP);
         }
         // ---- 未知命令：宽容字面保留 ----
         return new LatexAtom("\\" + name, AtomClass.ORD);
@@ -424,17 +434,17 @@ public final class LatexParser {
         }
         switch (ch) {
             case '{':
-                return new LatexAtom("{", AtomClass.OPEN);
+                return mathAtom("{", AtomClass.OPEN);
             case '}':
-                return new LatexAtom("}", AtomClass.CLOSE);
+                return mathAtom("}", AtomClass.CLOSE);
             case '%':
             case '#':
             case '$':
             case '&':
             case '_':
-                return new LatexAtom(String.valueOf(ch), AtomClass.ORD);
+                return mathAtom(String.valueOf(ch), AtomClass.ORD);
             case '+':
-                return new LatexAtom("+", AtomClass.BIN);
+                return mathAtom("+", AtomClass.BIN);
             case ' ':
             case '\t':
             case '\n':
@@ -442,6 +452,41 @@ public final class LatexParser {
             default:
                 return new LatexAtom("\\" + ch, AtomClass.ORD); // 未知转义字面保留
         }
+    }
+
+    /** 字体只在参数解析期间生效，外层因子后续的脚本使用恢复后的字体。 */
+    private LatexNode parseMathFont(MathFontStyle font) {
+        MathFontStyle previous = mathFontStyle;
+        mathFontStyle = font;
+        try {
+            MathStyleOverride style = consumeArgumentStyle();
+            List<LatexNode> children;
+            if (index < length && source.charAt(index) == '{') {
+                index++;
+                children = parseList(STOP_BRACE);
+                if (index < length && source.charAt(index) == '}') {
+                    index++;
+                }
+            } else {
+                children = Collections.singletonList(parseArgumentAtom());
+            }
+            LatexGroup argument = new LatexGroup(children, style, children.size() == 1);
+            // 参数前置的字号声明也属于参数内部；外列表后续 withStyle 只能标注外层。
+            return style == MathStyleOverride.INHERIT ? argument
+                    : new LatexGroup(Collections.<LatexNode>singletonList(argument),
+                            MathStyleOverride.INHERIT, true);
+        } finally {
+            mathFontStyle = previous;
+        }
+    }
+
+    /** 仅真正数学 token 使用词法字体；text 与未知命令保留旧字面语义。 */
+    private LatexAtom mathAtom(String text, AtomClass atomClass) {
+        return mathAtom(text, atomClass, LatexAtom.OperatorMode.NONE);
+    }
+
+    private LatexAtom mathAtom(String text, AtomClass atomClass, LatexAtom.OperatorMode operatorMode) {
+        return new LatexAtom(text, atomClass, operatorMode, MathStyleOverride.INHERIT, mathFontStyle);
     }
 
     /** 命令参数：花括号组或单 token；缺失容错为空组。 */
