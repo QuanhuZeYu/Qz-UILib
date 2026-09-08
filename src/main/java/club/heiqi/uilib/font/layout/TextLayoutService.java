@@ -1358,8 +1358,12 @@ public class TextLayoutService {
                 : java.awt.Font.PLAIN, (float) Math.max(1, sizePx));
         java.awt.font.FontRenderContext frc = new java.awt.font.FontRenderContext(
                 sized.getTransform(), true, false);
-        java.awt.geom.Rectangle2D bounds = sized.createGlyphVector(frc, new int[] { codepoint })
-                .getVisualBounds();
+        // createGlyphVector(FontRenderContext, int[]) 收的是 glyph code，不是 Unicode 码点：
+        // 传码点会取到无关字形（小码点落在别的字形上）或 missing glyph（CJK/数学符号一律
+        // 落到同一个豆腐块边界），定界符轴锚定随之系统性偏移。走字符串重载由 AWT 完成
+        // 码点→gid 映射，与 BundledMathFont 的解析口径一致。
+        java.awt.geom.Rectangle2D bounds = sized.createGlyphVector(frc,
+                new String(Character.toChars(codepoint))).getVisualBounds();
         return (float) (bounds.getY() + bounds.getHeight() / 2.0D);
     }
 
@@ -1636,12 +1640,20 @@ public class TextLayoutService {
                                 : baseCenterX;
                         result[codePointIndex * 2 + 1] = upCursorY;
                     }
+                    // 标记自身零宽（视觉上叠加在基字上），但推进侧仍按码点追加字距
+                    // （UnicodeTextClassifier.isZeroWidth(COMBINING_MARK)=false），此处必须同源累加。
+                    runningX += advanceWithSpacing(0.0D, codepoint, style);
                 } else {
-                    double advance = measureCodepointWidth(codepoint, style.getFontType(), segmentFontSizePx);
+                    // 视觉宽（不含字距）决定基字中心；推进宽（含字距）决定下一码点起点——
+                    // 与渲染侧 measuredWidths 的 resolveAdvance 口径同源，避免字距被
+                    // xOffsets（markPosition − runningAdvance）反向抵消成整段左移。
+                    double visualAdvance = measureCodepointWidth(codepoint, style.getFontType(),
+                            segmentFontSizePx);
+                    double advance = advanceWithSpacing(visualAdvance, codepoint, style);
                     result[codePointIndex * 2] = runningX;
                     result[codePointIndex * 2 + 1] = 0.0F;
-                    baseCenterX = runningX + (float) advance / 2.0F;
-                    baseAdvance = (float) advance;
+                    baseCenterX = runningX + (float) visualAdvance / 2.0F;
+                    baseAdvance = (float) visualAdvance;
                     runningX += advance;
                     upLayer = 0;
                     downLayer = 0;

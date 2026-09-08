@@ -337,6 +337,38 @@ public class TextLayoutServiceControlCharTest {
         Assert.assertEquals("\u00E9", segments.get(0).getText());
     }
 
+    @Test
+    public void markPositionsShareAdvanceSpacingWithLayout() {
+        // 组合标记定位计划必须与渲染推进同源：正文码点的字距按 advanceWithSpacing 口径累加，
+        // 标记自身零宽但仍追加字距（UnicodeTextClassifier.isZeroWidth(COMBINING_MARK)=false）。
+        // 回归：修复前 letterSpacing=3 时 'b' 的计划位置比推进原点偏左 6px（2×字距）。
+        TextLayoutService service = createService();
+        String text = "a\u0338b";
+        float[] spacings = { 0.0F, 3.0F, -2.0F };
+        for (float spacing : spacings) {
+            TextStyle style = new TextStyle();
+            style.resetAll(0xFFFFFFFF);
+            style.setLetterSpacing(spacing);
+            float[] positions = service.resolveMarkPositions(text, style, 16);
+            Assert.assertNotNull("letterSpacing=" + spacing + " 时应有标记位置计划", positions);
+            Assert.assertEquals(6, positions.length);
+            double running = 0.0D;
+            int index = 0;
+            for (int i = 0; i < text.length(); ) {
+                int codepoint = text.codePointAt(i);
+                if (index == 2) {
+                    Assert.assertEquals("letterSpacing=" + spacing
+                                    + " 时 'b' 的计划位置必须与逐码点推进累加同源: positions="
+                                    + Arrays.toString(positions) + " running=" + running,
+                            (float) running, positions[index * 2], 0.01F);
+                }
+                running += service.resolveAdvance(codepoint, style, 16);
+                index++;
+                i += Character.charCount(codepoint);
+            }
+        }
+    }
+
     private static TextLayoutService createService(int... fixedWidthCodepoints) {
         FontCatalog fontCatalog = new FontCatalog();
         fontCatalog.replaceAll(Arrays.asList(new Font("Dialog", Font.PLAIN, 14)));
