@@ -1190,8 +1190,8 @@ public class TextLayoutService {
                         return 0.0F; // 字形未就绪：无越出
                     }
                     short[] bearings = tables.bearingXArray(style.getFontType());
-                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
-                    float inkRight = (float) (bearings[codepoint] + ink) * size / (float) awt;
+                    int atlas = atlasInkDenominator();
+                    float inkRight = (float) (bearings[codepoint] + ink) * size / (float) atlas;
                     float overhang = inkRight - advance(text, sizePx);
                     return overhang > 0.0F ? overhang : 0.0F;
                 } finally {
@@ -1218,8 +1218,8 @@ public class TextLayoutService {
                     if (ink <= 0) {
                         return advance(text, sizePx);
                     }
-                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
-                    return (float) ink * size / (float) awt;
+                    int atlas = atlasInkDenominator();
+                    return (float) ink * size / (float) atlas;
                 } finally {
                     unlockGeneration();
                 }
@@ -1247,8 +1247,8 @@ public class TextLayoutService {
                         return 0.0F;
                     }
                     short bearing = bearings[codepoint];
-                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
-                    return (float) bearing * size / (float) awt;
+                    int atlas = atlasInkDenominator();
+                    return (float) bearing * size / (float) atlas;
                 } finally {
                     unlockGeneration();
                 }
@@ -1273,8 +1273,8 @@ public class TextLayoutService {
                     if (ink <= 0) {
                         return ascent(sizePx) + descent(sizePx);
                     }
-                    int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
-                    return (float) ink * size / (float) awt;
+                    int atlas = atlasInkDenominator();
+                    return (float) ink * size / (float) atlas;
                 } finally {
                     unlockGeneration();
                 }
@@ -1292,8 +1292,8 @@ public class TextLayoutService {
                         short[] inks = tables.inkHeightArray(style.getFontType());
                         short ink = inks[text.codePointAt(0)];
                         if (ink > 0) {
-                            int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
-                            return 0.25F * (float) ink * size / (float) awt;
+                            int atlas = atlasInkDenominator();
+                            return 0.25F * (float) ink * size / (float) atlas;
                         }
                     }
                     return 0.25F * getXHeight(size, style.getFontType());
@@ -1319,8 +1319,8 @@ public class TextLayoutService {
                         // ink 中心相对字体基线 = bearingY + inkHeight/2（quad 顶 = 基线 + bearingY）
                         float centerAtlas = (float) tables.bearingYArray(style.getFontType())[codepoint]
                                 + inkHeight / 2.0F;
-                        int awt = Math.max(1, (int) currentSettings().getAwtCharSize());
-                        return centerAtlas * size / (float) awt;
+                        int atlas = atlasInkDenominator();
+                        return centerAtlas * size / (float) atlas;
                     }
                 } finally {
                     unlockGeneration();
@@ -1335,6 +1335,18 @@ public class TextLayoutService {
                 return (descent(sizePx) - ascent(sizePx)) / 2.0F;
             }
         };
+    }
+
+    /**
+     * ink 表换算分母：字形页像素表的基准是 AWT 字形生成的整数点阵
+     * （{@code FontRuntimeSettings#getGlyphSize()}，{@code GlyphGenerator} 以该尺寸光栅化并
+     * 扫描像素得 ink 表），不是 awtCharSize 浮点值、也不是其截断——后者在非整数 awtCharSize
+     * 下与生成基准相差 ceil/trunc 倍，使测量侧与绘制侧对同一张表用出两把尺子。
+     *
+     * @return 字形格整数尺寸
+     */
+    private int atlasInkDenominator() {
+        return currentSettings().getGlyphSize();
     }
 
     /**
