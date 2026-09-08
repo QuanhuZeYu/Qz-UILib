@@ -12,7 +12,8 @@ import club.heiqi.uilib.font.layout.markdown.MarkdownBlock.Kind;
  * 块级扫描器测试矩阵（M2）。每个块级构造至少一条用例，含规划外三条既有踩坑语料：
  * ① 行尾两空格硬换行 vs 普通换行不得互相误判；② 围栏代码块内粗体星号/美元符/尖角号一律
  * 字面（块模型钉死：CODE 正文原样、children 为空，永不进行内解析）；③ 嵌套引用两连 &gt; 与
- * 列表项内的续行缩进。刻意不支持语法（表格/任务列表/HTML 内联/脚注/图片）的字面输出同测。
+ * 列表项内的续行缩进。TABLE 自 T1 起识别，旧出口暂态字面降级仍在本测试保留；
+ * 刻意不支持语法（任务列表/HTML 内联/脚注/图片）的字面输出同测。
  */
 public class MarkdownBlockParserTest {
 
@@ -663,7 +664,13 @@ public class MarkdownBlockParserTest {
 
     @Test
     public void shouldKeepTableRowsLiteral() {
-        MarkdownBlock para = single(nl("| a | b |", "|-|-|"), Kind.PARAGRAPH);
+        String source = nl("| a | b |", "|-|-|");
+        single(source, Kind.TABLE);
+        // T1 识别已升级；旧出口使用的同源降级树必须仍保持原两行段落。
+        List<MarkdownBlock> literal = MarkdownBlockParser.parseLiteral(source, null);
+        Assert.assertEquals(1, literal.size());
+        MarkdownBlock para = literal.get(0);
+        Assert.assertEquals(Kind.PARAGRAPH, para.kind);
         Assert.assertEquals(2, para.lines.size());
         Assert.assertEquals("| a | b |", para.lines.get(0));
         Assert.assertEquals("|-|-|", para.lines.get(1));

@@ -120,6 +120,50 @@ public class Chat3MarkdownResurrectionGuardTest {
                 + GATE_CONTROL_MIN_HITS + ")", gateHits >= GATE_CONTROL_MIN_HITS);
     }
 
+    /** T1：管线字符检测只能在 L1。扫描字符、单管线字符串、转义管线正则与数值写法。
+     *  普通 || 运算符与 SenderExtractor 的既有正则分支不是表格语法。 */
+    private static final Pattern[] TABLE_SYNTAX_PATTERNS = {
+            Pattern.compile(Pattern.quote("'|'")),
+            Pattern.compile(Pattern.quote("\"|\"")),
+            Pattern.compile(Pattern.quote("\\\\|")),
+            Pattern.compile(Pattern.quote("\\" + "u007c"), Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\b0[xX]0*7[cC]\\b"),
+            Pattern.compile("\\(char\\)\\s*124\\b"),
+    };
+
+    /** 正对照来自真实 L1 主源（T1 Python 同口径复核 6 次命中），地板取 2；不能用测试夹具替代。 */
+    private static final int TABLE_CONTROL_MIN_HITS = 2;
+
+    @Test
+    public void tableSyntaxMustStayInL1() throws IOException {
+        List<Path> l2Files = listJava(MAIN_ROOT.resolve("club/heiqi/uilib/ui/markdown"));
+        List<Path> chat3Files = listJava(CHAT3_DIR);
+        Assert.assertTrue("ui/markdown 扫描集地板", l2Files.size() >= 2);
+        Assert.assertTrue("chat3 扫描集地板", chat3Files.size() >= CHAT3_FILE_FLOOR);
+        List<Path> consumers = new ArrayList<Path>(l2Files);
+        consumers.addAll(chat3Files);
+        List<String> violations = new ArrayList<String>();
+        for (Path file : consumers) {
+            for (String line : codeLines(file)) {
+                for (Pattern pattern : TABLE_SYNTAX_PATTERNS) {
+                    if (pattern.matcher(line).find()) {
+                        violations.add(normalize(file) + ": " + line.trim());
+                    }
+                }
+            }
+        }
+        Assert.assertTrue("ui/markdown 与 chat3 不得自行检测管线表格语法: " + violations,
+                violations.isEmpty());
+        List<Path> l1Files = listJava(MAIN_ROOT.resolve(L1_PACKAGE));
+        Assert.assertTrue("L1 正对照扫描集地板", l1Files.size() >= 4);
+        int hits = 0;
+        for (Path file : l1Files) {
+            hits += countPatternsInFile(file, TABLE_SYNTAX_PATTERNS);
+        }
+        Assert.assertTrue("同一扫描器必须看到真实 L1 管线检测，命中 " + hits
+                + "，地板 " + TABLE_CONTROL_MIN_HITS, hits >= TABLE_CONTROL_MIN_HITS);
+    }
+
     // ==================== 断言② ====================
 
     /**
@@ -202,9 +246,13 @@ public class Chat3MarkdownResurrectionGuardTest {
     }
 
     private static int countPatternsInFile(Path file) throws IOException {
+        return countPatternsInFile(file, RESURRECTION_PATTERNS);
+    }
+
+    private static int countPatternsInFile(Path file, Pattern[] patterns) throws IOException {
         int hits = 0;
         for (String line : codeLines(file)) {
-            for (Pattern pattern : RESURRECTION_PATTERNS) {
+            for (Pattern pattern : patterns) {
                 java.util.regex.Matcher matcher = pattern.matcher(line);
                 while (matcher.find()) {
                     hits++;

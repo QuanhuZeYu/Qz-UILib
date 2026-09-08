@@ -5,6 +5,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -41,7 +42,7 @@ import org.junit.Test;
  * 20=18+1+1，仍为全成员尺——历史「样式表 18」是纯方法尺，两把尺不许混写）：</p>
  *
  * <table border="1">
- *   <caption>五锚定值 = 全成员数（public 方法 + public 构造器 + public 字段）</caption>
+ *   <caption>锚定值 = 全成员数（public 方法 + public 构造器 + public 字段；嵌套类型独立记账）</caption>
  *   <tr><th>类</th><th>全成员</th><th>public 方法</th><th>public 构造器</th><th>public 字段</th></tr>
  *   <tr><td>{@code MarkdownLayoutLine}</td><td>20</td><td>18</td><td>1</td><td>1（NO_BLOCK）
  *       （C3b3 +getHeadingLevel()：19→20，全成员尺）</td></tr>
@@ -49,6 +50,11 @@ import org.junit.Test;
  *   <tr><td>{@code ChatMessageList}</td><td>9</td><td>5</td><td>4</td><td>0</td></tr>
  *   <tr><td>{@code ChatSceneController}</td><td>26</td><td>22</td><td>4</td><td>0</td></tr>
  *   <tr><td>{@code ChatMarkdownPipeline}</td><td>0</td><td>0</td><td>0</td><td>0（类本身非 public）</td></tr>
+ *   <tr><td>{@code MarkdownTableModel}</td><td>4</td><td>4</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownDocument}</td><td>9</td><td>9（T1 前 8，+toTableModels）</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownTableModel.Row}</td><td>1</td><td>1</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownTableModel.Cell}</td><td>1</td><td>1</td><td>0</td><td>0</td></tr>
+ *   <tr><td>{@code MarkdownTableModel.Alignment}</td><td>6</td><td>2</td><td>0</td><td>4</td></tr>
  * </table>
  *
  * <p><b>计数细则（改本锁前必读，否则又会造出第三把尺）</b>：</p>
@@ -57,10 +63,11 @@ import org.junit.Test;
  *       {@code Modifier.isPublic}，构造器用 {@code getConstructors()}（本就是 public-only，
  *       且构造器不继承，与「getDeclared + isPublic 过滤」等价）。
  *       <b>类声明行本身不计</b>——{@code public class Foo} 不是一个成员。</li>
- *   <li>{@code getDeclaredClasses()} <b>一律不计</b>（见
+ *   <li>{@code getDeclaredClasses()} <b>不并入外层成员数</b>（见
  *       {@link #publicNestedTypesMustNotEnterTheCount()}）。{@code MarkdownLayoutLine.Kind}
  *       是 public 嵌套枚举，但 20（全成员尺）里没有它的位置——给枚举加常量（C3b3 的
- *       {@code HEADING}）只动「枚举常量计数」哨兵，不动成员账。</li>
+ *       {@code HEADING}）只动「枚举常量计数」哨兵，不动外层成员账。T1 的 Row/Cell/Alignment
+ *       各自用同一把尺独立记账；嵌套声明本身不计，不表示嵌套的 public 成员免审。</li>
  *   <li>「继承自 Object 的 public 方法如 {@code toString}」只在本类<b>显式覆写</b>时才进账——
  *       {@code getDeclaredMethods()} 只返回本类声明的方法。{@code MarkdownLayoutLine} 覆写了
  *       {@code toString}（18 个方法含它——C3b3 后全成员尺的方法分解）；
@@ -71,13 +78,13 @@ import org.junit.Test;
  *       public 合成成员（泛型桥等），锚定值随之 +1——那确实是一次公共面变化，须独立裁定。</li>
  * </ol>
  *
- * <h2>为什么只有一个测试类、且五个主体全走 {@code Class.forName}</h2>
+ * <h2>为什么只有一个测试类、且全部主体都走 {@code Class.forName}</h2>
  *
  * <p>被点的类可见性不齐：{@code ChatMarkdownPipeline} 是 package-private final（其源码头注释明言
  * 「块模型与 L1/L2 类型不外泄」），在别的包里只能按名字反射拿。本锁只<b>列成员、读修饰符</b>，
  * 从不 invoke、从不读字段值，因此不需要 {@code setAccessible}、也不需要与被测类同包。据此：
  * ① 一个测试类 = 一套计数函数 = 一把尺；拆两类必然要么复制计数、要么各自演化，正是上面那段
- * 「两把尺」旧账的成因，不再重演；② 五类统一 {@code Class.forName}，不出现「直引的走 A 路径、
+ * 「两把尺」旧账的成因，不再重演；② 全部类统一 {@code Class.forName}，不出现「直引的走 A 路径、
  * 反射的走 B 路径」的口径分叉；③ 落点选 {@code ui/markdown} 守卫族，与既有
  * {@code MarkdownLayerGuardTest} 同处，公共面锁不外散进 chat3 测试包。</p>
  *
@@ -106,6 +113,11 @@ public class MarkdownPublicSurfaceGuardTest {
     /** chat3 markdown 唯一入口：package-private final，公共面恒 0。 */
     private static final String PIPELINE =
             "club.heiqi.uilib.internal.chat3.view.ChatMarkdownPipeline";
+
+    private static final String TABLE_MODEL =
+            "club.heiqi.uilib.font.layout.markdown.MarkdownTableModel";
+    private static final String DOCUMENT =
+            "club.heiqi.uilib.font.layout.markdown.MarkdownDocument";
 
     /** 正对照一（JDK 稳定哨兵）：覆盖方法 + 构造器两条计数路径。 */
     private static final String JDK_SENTINEL = "java.lang.Object";
@@ -148,11 +160,11 @@ public class MarkdownPublicSurfaceGuardTest {
     private static final int PIPELINE_FIELDS = 0;
 
     /**
-     * 五类合计地板（反空跑）。实测合计 = 20 + 19 + 9 + 26 + 0 = <b>74</b>（C3b3 后；
-     * 均为全成员尺）；地板取 50 不动——地板的唯一职责是「计数函数被写成恒 0 时当场红」，
-     * 精确性由各类的相等断言负责。
+     * T1 合计（Python 按契约验算）= 原五类 74 + 外壳 4 + Document 9 + Row 1 + Cell 1
+     * + Alignment 6 = 95；各嵌套独立入账，不回灌外壳。地板由 50 续为 80，
+     * 防扩面后总量扫描仍漏掉新账；精确性由各类相等断言负责。
      */
-    private static final int TOTAL_SURFACE_FLOOR = 50;
+    private static final int TOTAL_SURFACE_FLOOR = 80;
 
     /** 公共 10 参构造器的参数个数（M7 起签名冻结，C3b3 加标题级别也未动；带链/带级别写端
      *  构造器 13 参，必须非 public）。 */
@@ -220,12 +232,69 @@ public class MarkdownPublicSurfaceGuardTest {
                 + declared, declared >= 15);
     }
 
+    /** T1 单公共外壳：只有读端，无 public 写端；嵌套声明不计入这四个成员。 */
+    @Test
+    public void tableModelPublicSurfaceIsReadOnlyAndAnchored() {
+        Class<?> type = load(TABLE_MODEL);
+        Assert.assertTrue("表格接缝必须是 public final", Modifier.isPublic(type.getModifiers())
+                && Modifier.isFinal(type.getModifiers()));
+        Surface surface = publicSurface(type);
+        assertSurface(surface, 4, 4, 0, 0);
+        Assert.assertEquals(Arrays.asList("getAlignments/0", "getBlockPath/0", "getHeader/0", "getRows/0"),
+                surface.inventory);
+        List<String> nested = new ArrayList<String>();
+        for (Class<?> member : type.getDeclaredClasses()) {
+            if (Modifier.isPublic(member.getModifiers())) {
+                Assert.assertTrue("嵌套契约必须 static: " + member.getName(),
+                        Modifier.isStatic(member.getModifiers()));
+                nested.add(member.getSimpleName());
+            }
+        }
+        Collections.sort(nested);
+        Assert.assertEquals("单外壳的公共嵌套集合必须明确，新增类型不能逃过台账",
+                Arrays.asList("Alignment", "Cell", "Row"), nested);
+    }
+
+    /** 嵌套成员独立计数：Row/Cell 无 public 构造，Alignment 含编译器生成的 values/valueOf。 */
+    @Test
+    public void tableNestedPublicSurfacesHaveIndependentAccounts() {
+        Surface row = publicSurface(load(TABLE_MODEL + "$Row"));
+        assertSurface(row, 1, 1, 0, 0);
+        Assert.assertEquals(Collections.singletonList("getCells/0"), row.inventory);
+        Surface cell = publicSurface(load(TABLE_MODEL + "$Cell"));
+        assertSurface(cell, 1, 1, 0, 0);
+        Assert.assertEquals(Collections.singletonList("getSegments/0"), cell.inventory);
+        Class<?> alignmentType = load(TABLE_MODEL + "$Alignment");
+        Assert.assertTrue("Alignment 必须是枚举", alignmentType.isEnum());
+        Surface alignment = publicSurface(alignmentType);
+        assertSurface(alignment, 6, 2, 0, 4);
+        Assert.assertEquals(Arrays.asList("CENTER", "LEFT", "NONE", "RIGHT", "valueOf/1", "values/0"),
+                alignment.inventory);
+    }
+
+    /** Document 原有八方法仅续一个导出法；匿名 StyleTransform.apply 不属于外层成员。 */
+    @Test
+    public void documentAddsOnlyTableModelExport() throws NoSuchMethodException {
+        Class<?> type = load(DOCUMENT);
+        Surface surface = publicSurface(type);
+        assertSurface(surface, 9, 9, 0, 0);
+        Assert.assertEquals(Arrays.asList("getBlockCount/0", "getSource/0", "isEmpty/0", "parse/1",
+                "parseSpans/1", "toLayoutLines/2", "toSegments/1", "toSegments/2", "toTableModels/1"),
+                surface.inventory);
+        Method export = type.getDeclaredMethod("toTableModels", load("club.heiqi.uilib.font.layout.TextStyle"));
+        Assert.assertFalse("导出使用当前文档，不能成为静态旁路", Modifier.isStatic(export.getModifiers()));
+        Assert.assertEquals("导出泛型必须是最小表格接缝，不能外泄包内 AST",
+                "java.util.List<" + TABLE_MODEL + ">", export.getGenericReturnType().getTypeName());
+    }
+
     // ==================== 总量地板（防恒真）====================
 
-    /** 五类合计 &gt; 0 且不低于地板：计数函数被写成恒 0 时，本条与上面的相等断言一起红。 */
+    /** 所有锚定类（含独立嵌套账）合计不低于地板；漏扫新账或计数恒 0 即红。 */
     @Test
-    public void fiveClassPublicSurfaceHasNonZeroFloor() {
-        String[] names = { LAYOUT_LINE, STYLE_TABLE, MESSAGE_LIST, SCENE_CONTROLLER, PIPELINE };
+    public void anchoredPublicSurfaceHasNonZeroFloor() {
+        String[] names = { LAYOUT_LINE, STYLE_TABLE, MESSAGE_LIST, SCENE_CONTROLLER, PIPELINE,
+                TABLE_MODEL, DOCUMENT, TABLE_MODEL + "$Row", TABLE_MODEL + "$Cell",
+                TABLE_MODEL + "$Alignment" };
         int total = 0;
         StringBuilder detail = new StringBuilder();
         for (int i = 0; i < names.length; i++) {
@@ -233,9 +302,9 @@ public class MarkdownPublicSurfaceGuardTest {
             total += surface.total;
             detail.append("\n  ").append(surface.oneLine());
         }
-        Assert.assertTrue("五个锚定类的 public 成员合计必须 > 0（恒 0 = 计数函数失效）: 合计 "
+        Assert.assertTrue("全部锚定类的 public 成员合计必须 > 0（恒 0 = 计数函数失效）: 合计 "
                 + total + detail, total > 0);
-        Assert.assertTrue("合计地板（实测 74，全成员尺，用途见 TOTAL_SURFACE_FLOOR 注释）: 合计 " + total
+        Assert.assertTrue("合计地板（T1 契约 95，全成员尺，用途见 TOTAL_SURFACE_FLOOR 注释）: 合计 " + total
                 + detail, total >= TOTAL_SURFACE_FLOOR);
     }
 
@@ -362,7 +431,7 @@ public class MarkdownPublicSurfaceGuardTest {
         Assert.assertTrue("反空跑：MarkdownLayoutLine 确有 public 嵌套类型（Kind），"
                 + "「不计嵌套类」这条细则才算被检验到: " + publicNested, !publicNested.isEmpty());
         Surface surface = publicSurface(type);
-        Assert.assertEquals("全成员口径的 19 里没有嵌套类型的位置（19 = 17 方法 + 1 构造器 + 1 字段）；"
+        Assert.assertEquals("全成员口径的 20 里没有嵌套类型的位置（20 = 18 方法 + 1 构造器 + 1 字段）；"
                 + "哪天把 getDeclaredClasses 也计入，本条会与锚定值一起红。public 嵌套类 = "
                 + publicNested, LAYOUT_LINE_TOTAL, surface.total);
     }

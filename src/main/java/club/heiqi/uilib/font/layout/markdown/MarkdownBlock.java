@@ -7,17 +7,15 @@ import java.util.List;
 /**
  * 块级文档节点模型（包内实现，非公共面；公共接缝只有 {@link MarkdownDocument}）。
  *
- * <p>设计见《规划-通用Markdown渲染器.md》§二/§二之三（裁定 B）：L1 与 L2 的唯一公共接缝
- * 是 {@code List<TextSegment>} 段流；本块模型是<b>包内</b>中间表示，不随 M3 进公共面。
- * 块模型信息（类型/级别/标记原文/围栏 info/硬换行位图/嵌套树）只供包内扁平化消费，
- * 未来若 L2 被证明必须要块级几何，另走「块模型进公共面」的独立裁定。节点不可变。</p>
+ * <p>本块模型保持包内；段流与 MarkdownLayoutLine 承载既有文本出口，表格仅经
+ * {@link MarkdownTableModel} 导出最小数据契约，不公开完整块树。节点不可变。</p>
  *
  * <p><b>C6a（能力①）</b>：包内加 {@link #lineAnchors}/{@link #headingAnchors} 两个样式锚点
  * 字段，把 span 流入口的每行样式随块模型带到行内解析（块层不得丢样式压成 String）。
  * 公共接缝 {@code MarkdownLayoutLine} 面冻结不受影响——锚点只活在包内，出接缝仍只有
  * {@code TextSegment}。</p>
  *
- * <p>刻意不支持（{@link MarkdownBlockParser} 按普通文本字面保留）：表格、任务列表、
+ * <p>TABLE 于 T2 前只解析、不布局。刻意不支持（按普通文本字面保留）：任务列表、
  * HTML 内联、脚注、图片 {@code ![alt](url)}。缩进代码块自 C1a（2026-09-06 对齐裁定）起
  * 支持，复用 {@link Kind#CODE}（info 恒空），不设独立 Kind。</p>
  */
@@ -38,7 +36,9 @@ final class MarkdownBlock {
         /** 列表项（子节点为内容块树）。 */
         LIST_ITEM,
         /** 分隔线。 */
-        THEMATIC_BREAK
+        THEMATIC_BREAK,
+        /** GFM 表格；旧出口仍用文档创建时保留的字面降级树。 */
+        TABLE
     }
 
     final Kind kind;
@@ -94,10 +94,50 @@ final class MarkdownBlock {
      */
     final int blanksBefore;
 
+    /** TABLE 专有内容，表头占 rows[0]；其余块为 null。 */
+    final TableData table;
+
+    static final class TableData {
+        final List<MarkdownTableModel.Alignment> alignments;
+        final List<List<CellSource>> rows;
+
+        TableData(List<MarkdownTableModel.Alignment> alignments, List<List<CellSource>> rows) {
+            this.alignments = Collections.unmodifiableList(
+                    new ArrayList<MarkdownTableModel.Alignment>(alignments));
+            List<List<CellSource>> copy = new ArrayList<List<CellSource>>();
+            for (List<CellSource> row : rows) {
+                copy.add(Collections.unmodifiableList(new ArrayList<CellSource>(row)));
+            }
+            this.rows = Collections.unmodifiableList(copy);
+        }
+    }
+
+    /** 未经行内解析的源文本及裁剪后的样式锚点；不存渲染字符串。 */
+    static final class CellSource {
+        final String text;
+        final List<MarkdownSpan> spans;
+
+        CellSource(String text, List<MarkdownSpan> spans) {
+            this.text = text;
+            this.spans = spans == null ? null
+                    : Collections.unmodifiableList(new ArrayList<MarkdownSpan>(spans));
+        }
+    }
+
     private MarkdownBlock(Kind kind, int level, String text, List<String> lines, boolean[] hardBreaks,
                           String info, String marker, boolean ordered, int listStart,
                           List<MarkdownBlock> children, int blanksBefore,
                           List<List<MarkdownSpan>> lineAnchors, List<MarkdownSpan> headingAnchors) {
+        this(kind, level, text, lines, hardBreaks, info, marker, ordered, listStart, children,
+                blanksBefore, lineAnchors, headingAnchors, null);
+    }
+
+    private MarkdownBlock(Kind kind, int level, String text, List<String> lines, boolean[] hardBreaks,
+                          String info, String marker, boolean ordered, int listStart,
+                          List<MarkdownBlock> children, int blanksBefore,
+                          List<List<MarkdownSpan>> lineAnchors, List<MarkdownSpan> headingAnchors,
+                          TableData table) {
+        this.table = table;
         this.kind = kind;
         this.level = level;
         this.text = text;
@@ -125,7 +165,7 @@ final class MarkdownBlock {
      */
     MarkdownBlock withBlanksBefore(int blanks) {
         return new MarkdownBlock(kind, level, text, lines, hardBreaks, info, marker, ordered, listStart,
-                children, Math.max(0, blanks), lineAnchors, headingAnchors);
+                children, Math.max(0, blanks), lineAnchors, headingAnchors, table);
     }
 
     static MarkdownBlock paragraph(List<String> trimmedLines, boolean[] hardBreaks) {
@@ -173,6 +213,11 @@ final class MarkdownBlock {
     static MarkdownBlock listItem(String markerText, boolean itemOrdered, List<MarkdownBlock> contentBlocks) {
         return new MarkdownBlock(Kind.LIST_ITEM, 0, null, null, null, null, markerText, itemOrdered, 0,
                 contentBlocks, 0, null, null);
+    }
+
+    static MarkdownBlock table(TableData table) {
+        return new MarkdownBlock(Kind.TABLE, 0, null, null, null, null, null, false, 0, null, 0,
+                null, null, table);
     }
 
     static MarkdownBlock thematicBreak() {

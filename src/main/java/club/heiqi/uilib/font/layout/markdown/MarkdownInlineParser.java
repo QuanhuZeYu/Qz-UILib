@@ -153,6 +153,12 @@ public final class MarkdownInlineParser {
      */
     static List<TextSegment> parse(List<MarkdownSpan> spans, MarkdownStyleTable styles,
             StyleTransform blockTransform) {
+        return parse(spans, styles, blockTransform, false);
+    }
+
+    /** 表格单元格允许 pipe 转义，仍复用同一扫描核；旧入口的转义集合不变。 */
+    static List<TextSegment> parse(List<MarkdownSpan> spans, MarkdownStyleTable styles,
+            StyleTransform blockTransform, boolean escapePipe) {
         if (spans == null || spans.isEmpty()) {
             return Collections.emptyList();
         }
@@ -189,7 +195,7 @@ public final class MarkdownInlineParser {
         }
         List<TextSegment> out = new ArrayList<TextSegment>();
         parseInline(text.toString(), 0, total, 0, Layer.ROOT,
-                new ScanCtx(group, groupStyles, blockTransform, table), out);
+                new ScanCtx(group, groupStyles, blockTransform, table, escapePipe), out);
         return out;
     }
 
@@ -210,7 +216,8 @@ public final class MarkdownInlineParser {
         int index = from;
         while (index < to) {
             char ch = text.charAt(index);
-            if (ch == '\\' && index + 1 < to && isEscapable(text.charAt(index + 1))) {
+            if (ch == '\\' && index + 1 < to && (isEscapable(text.charAt(index + 1))
+                    || (ctx.escapePipe && text.charAt(index + 1) == '|'))) {
                 buffer.append(text.charAt(index + 1), index + 1);
                 index += 2;
                 continue;
@@ -750,9 +757,11 @@ public final class MarkdownInlineParser {
         private final List<TextStyle> groupStyles;
         private final StyleTransform blockTransform;
         private final MarkdownStyleTable styles;
+        private final boolean escapePipe;
 
         ScanCtx(int[] group, List<TextStyle> groupStyles, StyleTransform blockTransform,
-                MarkdownStyleTable styles) {
+                MarkdownStyleTable styles, boolean escapePipe) {
+            this.escapePipe = escapePipe;
             this.group = group;
             this.groupStyles = groupStyles;
             this.blockTransform = blockTransform;

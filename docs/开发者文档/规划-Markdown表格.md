@@ -1,6 +1,6 @@
 # 规划-Markdown 表格（立项定稿）
 
-**状态：** 立项**冻结**（2026-09-07）。来源 = 用户发起「可否推进表格解析渲染」→ GPT 网页两轮审查 + 本地一手核查逐轮收口，终轮双方一致「不需要再改方案，等 C9 收口后落笔」；C9·6（`cdde849f`）落地后成文本档。**T1 未开工。**
+**状态：** 立项**冻结**（2026-09-07）。来源 = 用户发起「可否推进表格解析渲染」→ GPT 网页两轮审查 + 本地一手核查逐轮收口，终轮双方一致「不需要再改方案，等 C9 收口后落笔」；C9·6（`cdde849f`）落地后成文本档。**T1 已完成**（2026-09-08：语义与契约、独立对拍、历史降级反锁与台账同批验收；T2/T3 的消费者裁定边界不变）。
 **上游裁定：** 《规划-通用Markdown渲染器.md》§五 D4「图片/表格/任务列表/tooltip·书本划到本期范围外（可另立项）」——本文即该"另立项"；§202 C3（块模型进公共面）的预定触发器（"证明行接缝表达不了表格/多栏"）已由 T1 的 B1 最小契约承接，**不整套复活 A 案**。
 **目标仓：** Qz-UILib（branch `4.0`，MC 1.7.10，本地提交不 push）。
 **基线（立项时点，一手核实）：** `4118 / 0 / 0 / 6，369 类`（C9 收口后）；常驻门禁 R = commonmark-java 0.21.0（+GFM strikethrough）对 `toLayoutLines` 逐行逐 token 对拍，RECORD 恒 0；判据按 C9·6 为**二件套**——语义工件 `diff=A826A2B9E7B0EB57`、`matrix=804A42FB09D74FF5` 逐字不变（profiles 降为记录不校验）。
@@ -97,7 +97,103 @@ G1（L2 零直连 GL）/ G2（L1 零 MC·AWT）/ G3 扩展项（表格语法只�
 | 步 | 内容 | 状态 |
 |---|---|---|
 | 立项 | 两轮收口 + 本地核查 + 本轮复审补正（闭环指针/消费者分批与接缝门/二件套性质/源码指针） | **完成** |
-| T1 | 语义+契约+独立 oracle 面对拍+降级三件套+台账续账 | 待开工 |
+| T1 | 语义+契约+独立 oracle 面对拍+降级三件套+台账续账 | **完成**：完整 build 绿，4194 / 0 / 0 / 6、372 类；二件套未变，57 项 Table oracle 与历史反锁通过，javap 入账见 §八 |
 | T2 | 像素 pass+交错三案+首消费者+行接缝并表格+chat3 接缝门+缓存；前置观察 home ROW clamp | 未开始 |
 | T3a | chat3 `printMarkdown` 表格与 HUD/容器待遇裁定 | 未开始 |
 | T3b | chat3 玩家气泡表格与 HUD/容器待遇裁定 | 未开始 |
+
+## 八、T1 实施记录
+
+- **契约落点**：`MarkdownDocument.toTableModels(TextStyle)` 是本批唯一新增公共导出法；`MarkdownTableModel` 只有 `getBlockPath/getAlignments/getHeader/getRows` 四个读端，`Row.getCells` 与 `Cell.getSegments` 独立嵌套。块锚是语义块树的零基索引路径，不等同于旧行接缝的 `blockId`，不承诺跨文档编辑稳定；不导出完整 AST 或像素数据。
+- **降级实现**：文档创建时识别表格；含表格时由同一块解析器的包内模式额外生成历史降级树，两个旧出口共用该树，无表格时共享原树。该暂态成本只发生在文档创建时，不在输出或绘制时重新解析块；T2 按消费者迁移时再收口，不公开能力开关。
+- **参考前置**：`commonmark-ext-gfm-tables:0.21.0` 已通过独立 Gradle resolve 任务联网拉入缓存，仅 `testImplementation`。`CommonMarkTableOracle` 和 `MarkdownTableOracleParityTest` 独立核对表结构、对齐、单元格行内语义和块锚；既有 `MarkdownChat3ParityTest` 的扩展、语料、归一与报告保持原样。
+- **历史反锁出处**：`table-literal-head.snapshot` 来自固定提交 `de4b53a557a4e2269f2480774d688276c434d349` 源码隔离编译，另与开工前隔离的旧字节码执行结果逐字一致。12 个样本覆盖两出口全部公开 getter（样式、链接、code/latex、块身份、链与几何），不是用新实现的禁表模式自比。fixture SHA-256：`748874a0dbfdf2b691cc174dcb7139aa324b243bb508a695c2f7767f5d62a244`。
+- **验收结果（2026-09-08 本地实跑）**：`build --offline --console=plain` 成功，`:compileJava/:compileTestJava/:test` 实际执行；Python 汇总 `4194 / 0 / 0 / 6，372 类`。其中 Table oracle 57 项、历史降级锁 3 项、Model 契约锁 12 项均零失败零跳过；独立源码复核发现的测试 API、引用默认样式、公式语料和 span 裁剪问题均已修复。
+- **既有语义回归**：本批完整测试重新生成 `diff=A826A2B9E7B0EB57`、`matrix=804A42FB09D74FF5`，与立项基线逐字不变；该结果仅证明既有无表格语料回归，表格语义与降级由上述独立面证明。未跑真机，T2 像素/首消费者、home ROW clamp 观察及 T3a/T3b 裁定均未开始。
+- **公共面实测**：本批 `javap -public` 与反射守卫一致：Model `4=4/0/0`、Document `9=9/0/0`（原 8 方法 +1）；Row `1=1/0/0`、Cell `1=1/0/0`、Alignment `6=2/0/4` 独立计账。原五锚仍为 `20/19/9/26/0`；含本批外壳、Document 和独立嵌套账合计 95，反空跑地板 80。LayoutLine 公共 10 参构造器与 StyleTable 19 成员不变。
+
+以下为本批编译产物的 `javap -public` 原文（新契约、Document 与两个冻结面）：
+
+```text
+Compiled from "MarkdownTableModel.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownTableModel {
+  public java.util.List<java.lang.Integer> getBlockPath();
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment> getAlignments();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Row getHeader();
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Row> getRows();
+}
+Compiled from "MarkdownTableModel.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Row {
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Cell> getCells();
+}
+Compiled from "MarkdownTableModel.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Cell {
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> getSegments();
+}
+Compiled from "MarkdownTableModel.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment extends java.lang.Enum<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment> {
+  public static final club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment NONE;
+  public static final club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment LEFT;
+  public static final club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment CENTER;
+  public static final club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment RIGHT;
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment[] values();
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownTableModel$Alignment valueOf(java.lang.String);
+}
+Compiled from "MarkdownDocument.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownDocument {
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownDocument parse(java.lang.String);
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownDocument parseSpans(java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownSpan>);
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownTableModel> toTableModels(club.heiqi.uilib.font.layout.TextStyle);
+  public java.lang.String getSource();
+  public int getBlockCount();
+  public boolean isEmpty();
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> toSegments(club.heiqi.uilib.font.layout.TextStyle);
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> toSegments(club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable, club.heiqi.uilib.font.layout.TextStyle);
+  public java.util.List<club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine> toLayoutLines(club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable, club.heiqi.uilib.font.layout.TextStyle);
+}
+Compiled from "MarkdownLayoutLine.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine {
+  public static final int NO_BLOCK;
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine(club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine$Kind, int, int, java.util.List<club.heiqi.uilib.font.layout.TextSegment>, int, int, int, int, int, int);
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine blank();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine withSegments(java.util.List<club.heiqi.uilib.font.layout.TextSegment>);
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine withBlockContentWidthPx(int);
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine withLeftInsetPx(int);
+  public club.heiqi.uilib.font.layout.markdown.MarkdownLayoutLine$Kind getKind();
+  public int getHeadingLevel();
+  public int getQuoteLevel();
+  public int getBlockId();
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> getSegments();
+  public int getLeftInsetPx();
+  public int getIndentStepPx();
+  public int getBarWidthPx();
+  public int getRuleThicknessPx();
+  public int getAccentArgb();
+  public int getBackgroundArgb();
+  public java.util.List<club.heiqi.uilib.font.layout.TextSegment> getListMarkerChain();
+  public int getBlockContentWidthPx();
+  public java.lang.String toString();
+}
+Compiled from "MarkdownStyleTable.java"
+public final class club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable {
+  public club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable();
+  public static club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable defaults();
+  public club.heiqi.uilib.font.layout.markdown.MarkdownStyleTable copy();
+  public boolean isHeadingBold();
+  public void setHeadingBold(boolean);
+  public boolean isHeadingUnderline();
+  public void setHeadingUnderline(boolean);
+  public boolean isQuoteItalic();
+  public void setQuoteItalic(boolean);
+  public int getHeadingFontSizeDeltaPx(int);
+  public void setHeadingFontSizeDeltaPx(int, int);
+  public int getDefaultFontSizePx();
+  public void setDefaultFontSizePx(int);
+  public java.lang.String getBulletMarker();
+  public void setBulletMarker(java.lang.String);
+  public java.lang.String getThematicBreakText();
+  public void setThematicBreakText(java.lang.String);
+  public int getQuoteTextColor();
+  public void setQuoteTextColor(int);
+}
+```

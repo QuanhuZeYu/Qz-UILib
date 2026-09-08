@@ -94,6 +94,9 @@ public class MarkdownLayerGuardTest {
     /** G2 锁：L1 与 L2 不得 import net.minecraft / cpw.mods / java.awt。 */
     @Test
     public void markdownPackagesMustStayPureJvm() throws IOException {
+        List<Path> l1Files = listJavaFiles(L1_PACKAGE);
+        Assert.assertTrue("T1 新公共接缝必须明确进入 G2 同一扫描集: " + l1Files,
+                l1Files.contains(MAIN_SOURCE_ROOT.resolve(L1_PACKAGE + "MarkdownTableModel.java")));
         Assert.assertTrue("L1 包 import 违反项: " + collectForbidden(L1_PACKAGE, FORBIDDEN_IMPORT),
                 collectForbidden(L1_PACKAGE, FORBIDDEN_IMPORT).isEmpty());
         Assert.assertTrue("L2 包 import 违反项: " + collectForbidden(L2_PACKAGE, FORBIDDEN_IMPORT),

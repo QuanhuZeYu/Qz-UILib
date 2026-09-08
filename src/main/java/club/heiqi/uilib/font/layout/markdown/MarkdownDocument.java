@@ -30,10 +30,11 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * </ul>
  *
  * <h3>刻意不支持（必须字面输出，见 MarkdownBlockParser javadoc 与测试钉死）</h3>
- * <p>表格、任务列表、HTML 内联、脚注、图片 {@code ![alt](url)}（缩进代码块自 C1a 起支持）。
+ * <p>任务列表、HTML 内联、脚注、图片 {@code ![alt](url)}（缩进代码块自 C1a 起支持）。
  * 图片说明：块层不生成任何图片节点；{@code ![alt](url)} 整体按普通文本进段内解析，
  * 依既有行内裁定（规划 §五 D2，9c4dcae5 语义照抄不改）产出字面 {@code !} + 链接段。
- * 表格/任务列表/HTML/脚注则整行原样保留为段落/列表项文本。</p>
+ * 任务列表/HTML/脚注则整行原样保留为段落/列表项文本。TABLE 于 T2 前只解析、不布局；
+ * 两个旧出口继续输出识别表格前的字面语义（包括原段落/setext/容器边界）。</p>
  *
  * <h3>块级与行内的分工</h3>
  * <p>本层只识别块结构、剥除块标记，然后把每块正文交给 {@link MarkdownInlineParser}
@@ -81,10 +82,14 @@ public final class MarkdownDocument {
 
     private final String source;
     private final List<MarkdownBlock> blocks;
+    /** T1 暂态：只在实际含表格时保留第二棵旧语义树，出口不重新解析。 */
+    private final List<MarkdownBlock> literalBlocks;
 
-    private MarkdownDocument(String source, List<MarkdownBlock> blocks) {
+    private MarkdownDocument(String source, List<MarkdownBlock> blocks, List<MarkdownSpan> spans) {
         this.source = source;
         this.blocks = Collections.unmodifiableList(blocks);
+        this.literalBlocks = containsTable(blocks)
+                ? Collections.unmodifiableList(MarkdownBlockParser.parseLiteral(source, spans)) : this.blocks;
     }
 
     /**
@@ -95,7 +100,7 @@ public final class MarkdownDocument {
      */
     public static MarkdownDocument parse(String source) {
         List<MarkdownBlock> parsed = MarkdownBlockParser.parse(source);
-        return new MarkdownDocument(source == null ? "" : source, parsed);
+        return new MarkdownDocument(source == null ? "" : source, parsed, null);
     }
 
     /**
@@ -126,14 +131,77 @@ public final class MarkdownDocument {
      */
     public static MarkdownDocument parseSpans(List<MarkdownSpan> spans) {
         if (spans == null || spans.isEmpty()) {
-            return new MarkdownDocument("", Collections.<MarkdownBlock>emptyList());
+            return new MarkdownDocument("", Collections.<MarkdownBlock>emptyList(), null);
         }
         StringBuilder joined = new StringBuilder();
         for (int i = 0; i < spans.size(); i++) {
             joined.append(spans.get(i).getText());
         }
         return new MarkdownDocument(joined.toString(),
-                MarkdownBlockParser.parse(joined.toString(), spans));
+                MarkdownBlockParser.parse(joined.toString(), spans), spans);
+    }
+
+    /**
+     * 导出文档内所有表格的最小语义契约，按深度优先文档顺序排列。
+     *
+     * <p>复用既有行内解析器及 span 样式锚点；引用样式沿容器继承默认样式表。
+     * TABLE 于 T2 前只解析、不布局。仅含表格的文档在创建时额外解析并保存旧语义树，
+     * 两个旧出口共用它，避免识别表格改变历史段落/setext/容器边界；没有表格时共用原树。
+     * T2 按消费者裁定迁移布局时再处理该暂态成本，本方法不暴露 capability 开关。</p>
+     *
+     * @param baseStyle 基础样式，不可为 null
+     * @return 不可变表格列表，表格单元格隔离可变 TextStyle
+     */
+    public List<MarkdownTableModel> toTableModels(TextStyle baseStyle) {
+        if (baseStyle == null) {
+            throw new IllegalArgumentException("baseStyle 不能为空");
+        }
+        List<MarkdownTableModel> out = new ArrayList<MarkdownTableModel>();
+        collectTables(blocks, Collections.<Integer>emptyList(), new BlockStyle(baseStyle), out);
+        return Collections.unmodifiableList(out);
+    }
+
+    private static boolean containsTable(List<MarkdownBlock> nodes) {
+        for (MarkdownBlock block : nodes) {
+            if (block.kind == MarkdownBlock.Kind.TABLE || containsTable(block.children)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void collectTables(List<MarkdownBlock> nodes, List<Integer> parentPath,
+                                      BlockStyle style, List<MarkdownTableModel> out) {
+        for (int i = 0; i < nodes.size(); i++) {
+            MarkdownBlock block = nodes.get(i);
+            List<Integer> path = new ArrayList<Integer>(parentPath);
+            path.add(i);
+            if (block.kind == MarkdownBlock.Kind.TABLE) {
+                List<MarkdownTableModel.Row> rows = new ArrayList<MarkdownTableModel.Row>();
+                for (List<MarkdownBlock.CellSource> sourceRow : block.table.rows) {
+                    List<MarkdownTableModel.Cell> cells = new ArrayList<MarkdownTableModel.Cell>();
+                    for (MarkdownBlock.CellSource cell : sourceRow) {
+                        cells.add(new MarkdownTableModel.Cell(
+                                tableCellSegments(cell, style)));
+                    }
+                    rows.add(new MarkdownTableModel.Row(cells));
+                }
+                out.add(new MarkdownTableModel(path, block.table.alignments, rows.get(0),
+                        rows.subList(1, rows.size())));
+            } else {
+                collectTables(block.children, path,
+                        block.kind == MarkdownBlock.Kind.QUOTE ? style.quote(FALLBACK_TABLE) : style, out);
+            }
+        }
+    }
+
+    private static List<TextSegment> tableCellSegments(MarkdownBlock.CellSource cell, BlockStyle style) {
+        if (cell.text.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<MarkdownSpan> spans = cell.spans == null
+                ? Collections.singletonList(new MarkdownSpan(cell.text, style.root)) : cell.spans;
+        return MarkdownInlineParser.parse(spans, FALLBACK_TABLE, style.transform(), true);
     }
 
     /** @return 原始源文本（null 输入归一为空串；span 路为拼接文本） */
@@ -152,8 +220,7 @@ public final class MarkdownDocument {
     }
 
     /**
-     * 块树接缝（包内：测试消费；裁定 B 记死——M3 落地 L2 未消费块模型，公共面不外开，
-     * 唯一公共接缝恒为 {@link #toSegments} 的段流）。
+     * 语义块树（仅包内测试消费）；表格通过最小数据契约导出，完整块树不进入公共面。
      *
      * @return 顶层块序列（不可变）
      */
@@ -184,14 +251,14 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         List<TextSegment> out = new ArrayList<TextSegment>();
-        walk(blocks, new BlockStyle(baseStyle), table, out, NO_ORDINAL);
+        walk(literalBlocks, new BlockStyle(baseStyle), table, out, NO_ORDINAL);
         return out;
     }
 
     /**
      * 扁平化为块身份行序列（M7 方案乙，2026-09-05 用户裁定：块几何进 L1→L2 接缝）。
      *
-     * <p><b>与 {@link #toSegments} 的关系</b>：同一块树、同一段生成原语（行内解析/引用样式/
+     * <p><b>与 {@link #toSegments} 的关系</b>：同一字面降级树、同一段生成原语（行内解析/引用样式/
      * 标题样式/列表标记全部共用，防两路漂移）。行接缝的逐行可见文本恒等于段接缝按 \n 与
      * F6 占位切分的行——由 {@code MarkdownLayoutLinesTest} 在门禁语料上逐字钉死。
      * M10d 曾许可的唯一文本差（段接缝标记段叠 F2 「  」前导、行接缝剥净）已随 <b>C1a
@@ -216,7 +283,7 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         LineFlattener flattener = new LineFlattener(table);
-        walkLayout(blocks, new BlockStyle(baseStyle), table, flattener, NO_CHAIN, 0, NO_ORDINAL);
+        walkLayout(literalBlocks, new BlockStyle(baseStyle), table, flattener, NO_CHAIN, 0, NO_ORDINAL);
         return flattener.finish();
     }
 
