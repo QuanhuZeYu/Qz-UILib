@@ -222,4 +222,96 @@ public class TestPlaygroundHostTest {
             Assert.assertNotNull("页面根非 null: " + pages.get(i).id(), host.__getDisplayedPageRoot());
         }
     }
+
+    // ==================== 主动刷新（F5 语义） ====================
+
+    /**
+     * 刷新是「新 occurrence」：丢弃 live 页实例、重执行页工厂，产出全新根节点，
+     * 且仍只有一个 live 页根占据同一独占槽位。
+     */
+    @Test
+    public void refreshPageRebuildsNewInstanceInSameSlot() {
+        SceneNode before = host.__getDisplayedPageRoot();
+        Assert.assertNotNull("前置：当前页已挂载", before);
+
+        SceneNode after = host.refreshPage();
+
+        Assert.assertNotNull("刷新后仍有 live 页", after);
+        Assert.assertNotSame("刷新必须产出新实例（不得复用旧树）", before, after);
+        Assert.assertNull("旧页根已从树摘除", before.__getParent());
+        Assert.assertEquals("content 仍只有一个 live 页根",
+                1, host.__getContent().__getChildren().size());
+        Assert.assertSame("新页根占据原槽位", after, host.__getContent().__getChildren().get(0));
+        Assert.assertEquals("刷新不改变当前页下标", 0, host.__getDisplayedPageIndex());
+        Assert.assertEquals("刷新不改变当前页 id", "home", host.__getDisplayedPageId());
+    }
+
+    /**
+     * 位置保持来自「独占内容容器」，不来自任何占位/锚点节点：
+     * 刷新前后 viewport 的子节点集合与几何必须一致。
+     */
+    @Test
+    public void refreshPageKeepsSlotGeometryWithoutPlaceholder() {
+        SceneNode viewport = host.__getViewport();
+        int childrenBefore = viewport.__getChildren().size();
+        int gapBefore = viewport.getGap();
+        AnchorRect boxBefore = SceneGeometry.absoluteBox(viewport, 0, 0);
+
+        host.refreshPage();
+        doLayout();
+
+        AnchorRect boxAfter = SceneGeometry.absoluteBox(viewport, 0, 0);
+        Assert.assertEquals("刷新不得增删 viewport 子节点", childrenBefore, viewport.__getChildren().size());
+        Assert.assertEquals("刷新不得改变视口 gap", gapBefore, viewport.getGap());
+        Assert.assertEquals("刷新不得改变视口宽", boxBefore.getWidth(), boxAfter.getWidth());
+        Assert.assertEquals("刷新不得改变视口高", boxBefore.getHeight(), boxAfter.getHeight());
+        Assert.assertEquals("content 仍是视口唯一子节点", 1, viewport.__getChildren().size());
+    }
+
+    /**
+     * 重复刷新不得累积节点：每次刷新都必须是「dispose 旧的 + mount 新的」。
+     */
+    @Test
+    public void repeatedRefreshDoesNotAccumulateNodes() {
+        for (int i = 0; i < 6; i++) {
+            host.refreshPage();
+        }
+        Assert.assertEquals("重复刷新不累积 content 子节点",
+                1, host.__getContent().__getChildren().size());
+        Assert.assertEquals("重复刷新不累积 viewport 子节点",
+                1, host.__getViewport().__getChildren().size());
+    }
+
+    /**
+     * 刷新保留阅读位置（对齐浏览器 F5）；导航切页仍归零滚动——两条路径不得混同。
+     */
+    @Test
+    public void refreshPageKeepsScrollOffsetWhileNavigationResetsIt() {
+        org.junit.Assume.assumeTrue("至少 2 页才演示导航对照", PlaygroundPageRegistry.defaultPages().size() >= 2);
+
+        host.__getViewport().setScrollOffsetY(37);
+        int kept = host.__getViewport().getScrollOffsetY();
+
+        host.refreshPage();
+        Assert.assertEquals("刷新不主动重置滚动位置", kept, host.__getViewport().getScrollOffsetY());
+
+        host.__getActivePageSignal().set(Integer.valueOf(1));
+        host.__getRuntime().flush();
+        Assert.assertEquals("导航切页仍把滚动归零", 0, host.__getViewport().getScrollOffsetY());
+    }
+
+    /**
+     * 刷新与同页导航是两条路径：同页导航仍是 no-op（不重建），只有显式刷新才重建。
+     */
+    @Test
+    public void sameIndexNavigationIsNoOpWhileRefreshRebuilds() {
+        SceneNode before = host.__getDisplayedPageRoot();
+
+        host.__getActivePageSignal().set(Integer.valueOf(0));
+        host.__getRuntime().flush();
+        Assert.assertSame("同页导航不得重建", before, host.__getDisplayedPageRoot());
+
+        SceneNode after = host.refreshPage();
+        Assert.assertNotSame("显式刷新才重建", before, after);
+    }
 }

@@ -35,7 +35,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  *       宿主在 onSelect 写回 signal；signal-first，handler 不直接改树）。</li>
  *   <li>单槽切换：先 dispose 旧 mount 句柄（回收旧页 Owner 内全部 bind/effect/on），
  *       再 mount 新页；任一时刻至多一个 live 页面。</li>
- *   <li>页切换后重置 viewport 滚动到顶部，并请求 hover 重对账。</li>
+ *   <li>页切换后重置 viewport 滚动到顶部，并请求 hover 重对账；主动刷新（{@link #refreshPage()}）
+ *       走同一单槽路径但保留滚动位置。</li>
  * </ul>
  *
  * <p>构造器接受可为 null 的 {@link PlatformInputSource}（headless 测试传 null，
@@ -186,14 +187,57 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
 
     /** 单槽切换：先完整回收旧页 Owner（bind/effect/on 全部退订），再挂载新页。 */
     private SceneNode switchPage(int index) {
+        return switchPage(index, true);
+    }
+
+    /**
+     * 单槽替换：先完整回收旧页 Owner，再挂载新页；任一时刻至多一个 live 页。
+     *
+     * @param index       目标页下标
+     * @param resetScroll 是否把视口滚动归零（导航切页为 true；主动刷新为 false，保留阅读位置）
+     */
+    private SceneNode switchPage(int index, boolean resetScroll) {
         if (pageMount != null) {
             pageMount.dispose();
             pageMount = null;
         }
-        viewport.setScrollOffsetY(0);
+        if (resetScroll) {
+            viewport.setScrollOffsetY(0);
+        }
         SceneNode incoming = mountPage(index);
+        // 两种路径都必须重对账：outgoing 子树的 hoveredNode 已随卸载失效。
         runtime.__requestHoverReconcileAfterScroll();
         return incoming;
+    }
+
+    /**
+     * 主动刷新当前页（F5 语义）：丢弃当前 live 页实例，重新执行页工厂，建立全新实例。
+     *
+     * <p>刷新与导航切页共用同一条 {@code dispose → mount} 单槽路径，区别只在触发源与滚动策略：
+     * 导航由 {@link #activePageSignal} 驱动并归零滚动，刷新由宿主/测试显式请求且保留阅读位置
+     * （对齐浏览器 F5）。位置保持来自 content 是 viewport 的<b>独占内容容器</b>——
+     * 不引入占位锚点，因此不改变视口与兄弟节点的几何；任意父容器下的原位重挂不在本方法范围内。</p>
+     *
+     * <h4>状态契约（必须写死，否则用户会误判为 bug）</h4>
+     * <ul>
+     *   <li><b>重建</b>：页工厂重新执行一次，产出全新根节点；旧 live 树的节点、effect、
+     *       输入 handler、浮层、动画全部随页 Owner 卸载回收。</li>
+     *   <li><b>不保留</b>：页工厂内部的 Signal 与局部状态、页内输入控件的 caret / 选区 /
+     *       撤销历史、页内焦点。这与浏览器 F5 一致（未持久化的运行态丢弃）。</li>
+     *   <li><b>保留</b>：声明在刷新作用域之外的业务状态（例如注册表/宿主持有的跨页状态），
+     *       以及本宿主的滚动位置。</li>
+     *   <li><b>异常</b>：页工厂抛异常时挂载子作用域已被回收，异常原样传播，
+     *       content 不会留下半挂载节点。</li>
+     *   <li><b>与同页导航区分</b>：同页导航仍是 no-op（不重建），只有本方法才重建。</li>
+     * </ul>
+     *
+     * @return 新页根节点；当前无 live 页时返回 {@code null}
+     */
+    public SceneNode refreshPage() {
+        if (displayedPageIndex < 0) {
+            return null;
+        }
+        return switchPage(displayedPageIndex, false);
     }
 
     // ==================== 基类实现 ====================
