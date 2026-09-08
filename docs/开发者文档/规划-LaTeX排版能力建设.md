@@ -4,15 +4,15 @@
 
 在确认缺陷修复之后，改善小字号公式的可读性、数学字形一致性及高结构的伸缩质量。继续使用 LatexParser → MathLayoutService/MathMetrics → MathBox → 字体批次/PaintCommand 的既有链路，不新增独立公式渲染器，不依赖原版 GUI 或 Tessellator。
 
-用户已指示开始 LaTeX 排版能力建设，首个实施增量为 B1 内部离散数学样式与深层脚本封顶。B0 根号接缝修复已随 69686e04 交付，B1、B2a 与 B2b 首批实际结果见文末；其余批次仍按依赖推进。本规划不替代对公共 API、默认字体、依赖及既有入口行为变化的具体裁定。
+用户已指示开始 LaTeX 排版能力建设，首个实施增量为 B1 内部离散数学样式与深层脚本封顶。B0至B5约定实现和可执行验收已逐批交付，具体结果见文末；客户端/GPU回验仍交用户或CI。本规划不替代对公共 API、默认字体、依赖及既有入口行为变化的具体裁定。
 
 ## 现状与约束
 
 - 已有基础：MathBox 保存基线相对坐标、advance、左右 ink 越量、字形与规则线；MathMetrics 注入真实字体度量；TextLayoutService 与绘制共用有效字号量化；LatexCache 根据源码、字号、字体类别、运行时版本、布局版本和 inkEpoch 失效。
 - B1 已建立根字号相对的离散 MathStyle 与 cramped 转换，scriptscript 后封顶。B2a 将其用于显式样式命令；display 与 text 的分式间距有明确差异，算子默认上下限位置仍按既有规则。
-- TextSegment 仅有 text/style/latexSource，没有独立数学模式；MarkdownInlineParser 明确将 `$...$` 与 `$$...$$` 都交给同一行内公式入口，`<latex>` 亦无 display 状态。不能只在扫描时识别双美元而让后续复制、缓存丢失模式。
+- TextSegment 已承载明确根数学样式，复制/富文本往返/缓存/测量/回放贯通。新 Content 出口支持独占双美元块与行中 DISPLAY；历史出口及旧公式 API 保留原 TEXT 默认和旧词法。
 - 行内大运算符默认 limits 上下堆叠是现有产品决策；命名算子也有独立模式。新数学样式不得悄悄改变这些默认值。
-- 根号和定界符目前整字等比缩放，越高越宽、笔画越粗；GlyphElem 只有文本、坐标、scale、italic，没有字体 face/glyph-id 或 MATH 变体信息。替换字体本身不会自动获得伸缩拼接能力。
+- 固定 STIX 数学字体已通过真实 glyph-id、变体/部件接入原字体任务与页面。GlyphElem 保存内容身份与连接区裁片，真实斜体不再二次斜切，assembly 重叠区单次输出避免加深；无数学能力的旧注入实现保留 legacy。
 - 软件渲染复用生产几何和字形，双线性采样可用于连接检查；它尚未完整模拟实机 shader 的多抽头 AA、smoothstep 和宿主裁剪。
 
 ## 分批建设
@@ -177,3 +177,19 @@ B1 与 B3 的字体小样调研可以并行；B2a 在样式状态稳定后实施
 实际验证：完整离线build通过，Python汇总398类、4383项测试，4377通过、6跳过、零失败/错误。选定27类原297个公开/受保护成员声明与JVM descriptor成对检查，无缺失。Arial与Times New Roman分别运行新增生产绘制回归，各3项通过；实际生成512组同构建不同源码样张，覆盖12/14/16/24字号与1/1.25/4/8真实倍率。Python验证样本完整、有限边界和动态画布包含，正式helper检查非空及无边缘墨水；主代理查看命名算子堆叠、直接名称字距与原尺寸小字号字体图。Times小字号仍有细笔画偏弱，后续数学字体接入与GPU采样验收仍必要。
 
 本批报告：`build/reports/latex-plan-completion/b2b-complete/`，含build-verification.json、api/verification.json、visual/index.html、visual/manifest.json与逐字体原图。固定资源目录为`src/main/resources/assets/qz_uilib/fonts/math/stix-two/`。未执行客户端/GPU，本批保留生产默认字体与美元入口语义；下一步持续实施B3运行时、B4结构、B5宿主，不再重复请求同契约确认。
+
+## B3/B4/B5 实施与可执行验收交付
+
+按用户已采纳的整套契约，B3固定STIX字体及MATH度量已接入生产目录candidate；真实glyph-id、程序形状、分片任务共用原dispatcher/mailbox/页面/预算/上传/失效链，数学稀疏记录不占用伪Unicode。正文排序保持，旧手工字体目录可维持legacy。固定资源使用原SHA与OFL；MathKernInfo及完整OpenType高级特性不在本次实现范围。
+
+B4原生变体和同字号assembly覆盖括号及根号，宽帽/波浪超原生范围使用固定stroke程序形状和有界分片。实际像素曾揭示合法overlap的AA边缘重复source-over加深；现MathGlyphClip在连接中点分配单一输出归属，collector同步裁quad/UV而保留完整slot采样邻域，正常/阴影一致。程序波浪采用全局统一展平路径，避免AWT按局部clip细分造成片间覆盖差异。
+
+B5根样式贯通TextSegment、富文本属性、cache、测量和回放；现代Content出口独占双美元居中、行中双美元DISPLAY，超宽保字号与滚动。旧出口完整legacy词法保留。列表标记只绘一次，引用/列表正文列独立，链接覆盖公式完整纵框与ink外伸；页面沿原Content，聊天math内容转同滚动宿主，保原消息字号/配色，块豁免旧限高。复制保全文Markdown和提取TeX源码，不新增公式内部caret或菜单。
+
+最终完整离线build通过：Python汇总416类、4476项测试，4470通过、6跳过、零失败/错误。包含真实STIX->生成->上传、typed identity/generation、预算与显式驱逐、分页、数学几何、clip、root cache、富文本往返、现代/历史词法、display居中/超宽/links/list marker、聊天真实Content布局周期等正式回归。旧27类297项成员声明/descriptor检查无缺失；新增枚举/方法及外部visitor/collector适配要求仍见契约。
+
+真实软件矩阵192组：12/14/16/24字号、1/1.25/4/8实际倍率、输出起点X=.25/Y=.5，32组实际多片重音。Python核验全部样本与有限contained quads；16px/scale4高左右括号和根号直条逐行50%黑度宽度分别恒8/7/5px，覆盖量分别恒1828/1827/1095，无周期接头加深。主代理已查看修复前后高结构图；源码与倍率不同的图不当作逐像素前后对拍。样张为固定STIX配合本机正文/中文fallback，旧B2b另有Arial/Times双字体矩阵。
+
+完成范围：B0至B5约定实现及本会话可执行的build、软件、scene回归已交付。游戏客户端/GPU shader真机回验尚未执行，按仓规交用户或CI；不将软件裁片/scene几何通过写成GPU通过。现有注入legacy、MathKernInfo、未支持命令和程序重音形态差异明确保留在支持清单，不能称为完整TeX引擎。
+
+最终制品：`build/reports/latex-plan-completion/all-plan-validation-r2/build-verification.json`；`b3b4-visual/full-20260908-170513/{index.html,manifest.json,verification.json}`；`integration-clip/api/verification.json`。

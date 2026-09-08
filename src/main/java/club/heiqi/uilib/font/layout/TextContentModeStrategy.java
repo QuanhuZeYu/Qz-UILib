@@ -283,7 +283,7 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
                     break;
                 }
                 width += latexWidth;
-                kept.add(TextSegment.forLatex(segment.getLatexSource(), style));
+                kept.add(segment.withStyle(style));
                 continue;
             }
             String segmentText = segment.getText();
@@ -327,7 +327,7 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
                     width = 0.0D;
                     lineHasVisibleContent = false;
                 }
-                currentLine.add(TextSegment.forLatex(segment.getLatexSource(), style));
+                currentLine.add(segment.withStyle(style));
                 width += latexWidth;
                 lineHasVisibleContent = true;
                 continue;
@@ -408,7 +408,7 @@ final class RichTextContentStrategy implements TextContentModeStrategy {
         String glyphText = new String(Character.toChars(codepoint));
         if (!line.isEmpty()) {
             TextSegment last = line.get(line.size() - 1);
-            if (sameRichStyle(last.getStyle(), style)) {
+            if (!last.isLatex() && sameRichStyle(last.getStyle(), style)) {
                 line.set(line.size() - 1, new TextSegment(last.getText() + glyphText, style));
                 return;
             }

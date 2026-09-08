@@ -42,13 +42,27 @@ public final class GlyphBatchCollector implements GlyphCollector {
             int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX, int atlasBaselineY,
             int lineBaselineY, int defaultGlyphSize, int inkWidth, int inkHeight, int bearingX, int bearingY,
             float x, float y, float charSize, int color, boolean italic, byte glyphFlags, float baseCharSize) {
+        collectBaselineAlignedGlyphClipped(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX, bearingY,
+                x, y, charSize, color, italic, glyphFlags, baseCharSize,
+                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY);
+    }
+
+    @Override
+    public void collectBaselineAlignedGlyphClipped(FontType fontType, int pageIndex, int textureId, int textureSize,
+            int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX, int atlasBaselineY,
+            int lineBaselineY, int defaultGlyphSize, int inkWidth, int inkHeight, int bearingX, int bearingY,
+            float x, float y, float charSize, int color, boolean italic, byte glyphFlags, float baseCharSize,
+            float clipLeft, float clipTop, float clipRight, float clipBottom) {
         if (pageIndex < 0 || textureId <= 0 || textureSize <= 0 || slotWidth <= 0 || slotHeight <= 0
                 || inkWidth <= 0 || inkHeight <= 0) {
             return;
         }
         FontBatchRenderer.GlyphQuadMetrics metrics = FontBatchRenderer.resolveGlyphQuadMetrics(textureSize, slotX, slotY, slotWidth,
                 slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight,
-                bearingX, bearingY, x, y, charSize, baseCharSize);
+                bearingX, bearingY, x, y, charSize, baseCharSize, glyphFlags);
+        metrics = FontBatchRenderer.clipGlyphQuad(metrics, clipLeft, clipTop, clipRight, clipBottom);
+        if (metrics == null) { return; }
 
         float alpha = (float) (color >> 24 & 255) / 255.0F;
         float red = (float) (color >> 16 & 255) / 255.0F;

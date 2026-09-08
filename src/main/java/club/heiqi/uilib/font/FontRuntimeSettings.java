@@ -46,6 +46,7 @@ public final class FontRuntimeSettings {
     };
 
     private final int lerpMode;
+    private final int glyphInkPadding;
     private final double awtCharSize;
     private final double charSize;
     private final double spaceWidth;
@@ -85,6 +86,7 @@ public final class FontRuntimeSettings {
         requireRepresentable(FIELD_ATLAS_TEXTURE_SCALE, atlasTextureScale);
         requireRepresentable(FIELD_LERP_MODE, lerpMode);
         this.lerpMode = lerpMode;
+        this.glyphInkPadding = Math.max(0, Math.min(32, FontConfig.glyphInkPadding));
         this.awtCharSize = awtCharSize;
         this.charSize = charSize;
         this.spaceWidth = spaceWidth;
@@ -111,6 +113,11 @@ public final class FontRuntimeSettings {
 
     public int getLerpMode() {
         return lerpMode;
+    }
+
+    /** Fixed generation padding used by mathematical tile identity and rasterization. */
+    public int getGlyphInkPadding() {
+        return glyphInkPadding;
     }
 
     public double getAwtCharSize() {
@@ -160,6 +167,7 @@ public final class FontRuntimeSettings {
             return false;
         }
         return lerpMode == other.lerpMode
+                && glyphInkPadding == other.glyphInkPadding
                 && Double.compare(awtCharSize, other.awtCharSize) == 0
                 && Double.compare(charSize, other.charSize) == 0
                 && Double.compare(spaceWidth, other.spaceWidth) == 0

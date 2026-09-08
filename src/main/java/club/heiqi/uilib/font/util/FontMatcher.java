@@ -435,6 +435,33 @@ public class FontMatcher {
                 && (binding.generation == null || binding.generation.isActive());
     }
 
+    /** 捕获指定 generation 的不可变物理字体目录；过期请求不转向当前字体。 */
+    public FontCatalog.Snapshot getCatalogSnapshot(int runtimeVersion) {
+        lockGeneration();
+        try {
+            RuntimeTableBinding binding = runtimeBinding;
+            return isCurrentGeneration(runtimeVersion, binding) ? binding.catalogSnapshot : null;
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    /** 与目录同代的固定 raster/atlas 设置；调用方保留 token 进入最终发布屏障。 */
+    public FontRuntimeSettings getRuntimeSettings(int runtimeVersion) {
+        lockGeneration();
+        try {
+            RuntimeTableBinding binding = runtimeBinding;
+            return isCurrentGeneration(runtimeVersion, binding) ? binding.settings : null;
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    private boolean isCurrentGeneration(int runtimeVersion, RuntimeTableBinding binding) {
+        return runtimeVersion == binding.runtimeVersion && binding == runtimeBinding
+                && (binding.generation == null || binding.generation.isActive());
+    }
+
     private void lockGeneration() {
         if (generationReadLock != null) {
             generationReadLock.lock();

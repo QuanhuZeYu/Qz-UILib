@@ -67,9 +67,7 @@ public final class MarkdownTableModel {
         private static List<TextSegment> copySegments(List<TextSegment> source) {
             List<TextSegment> copy = new ArrayList<TextSegment>();
             for (TextSegment segment : source) {
-                copy.add(segment.isLatex()
-                        ? TextSegment.forLatex(segment.getLatexSource(), segment.getStyle().copy())
-                        : new TextSegment(segment.getText(), segment.getStyle().copy()));
+                copy.add(segment.withStyle(segment.getStyle().copy()));
             }
             return Collections.unmodifiableList(copy);
         }

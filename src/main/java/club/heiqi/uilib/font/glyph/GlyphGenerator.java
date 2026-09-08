@@ -4,6 +4,8 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.Shape;
+
 import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.font.LineMetrics;
@@ -12,6 +14,10 @@ import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
+import club.heiqi.uilib.font.FontRuntimeSettings;
+import club.heiqi.uilib.font.latex.layout.MathGlyphMetrics;
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
+import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.util.CodepointTextCache;
 import club.heiqi.uilib.font.util.DerivedFontCache;
@@ -44,6 +50,9 @@ public class GlyphGenerator {
         GlyphRequestToken token = task.getToken();
         if (token == null) {
             throw new IllegalStateException("GlyphGenerator 只接受已领取 token 的 worker task");
+        }
+        if (token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) {
+            return generateMathGlyph(task);
         }
         int fontIndex = fontMatcher.matchFontIndex(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
         if (fontIndex < 0) {
@@ -137,6 +146,110 @@ public class GlyphGenerator {
         }
         FontRuntimeDiagnostics.logGeneratedGlyph(task, image, glyphInfo);
         return new GlyphGenerationResult(token, image, glyphInfo);
+    }
+
+    private GlyphGenerationResult generateMathGlyph(GlyphGenerationTask task) {
+        GlyphRequestToken token = task.getToken();
+        int size = token.getRasterSize();
+        if (task.getGlyphSize() != size) {
+            throw new IllegalArgumentException("数学任务字号必须与 token 一致");
+        }
+        FontCatalog.Snapshot snapshot = fontMatcher.getCatalogSnapshot(token.getGeneration());
+        FontRuntimeSettings settings = fontMatcher.getRuntimeSettings(token.getGeneration());
+        if (snapshot == null || settings == null || snapshot.getMathFontSupport() == null) {
+            return null;
+        }
+        MathGlyphRef ref = token.getMathGlyphRef();
+        MathGlyphMetrics metrics = snapshot.getMathFontSupport().measure(ref, size);
+        if (metrics == null) {
+            return null;
+        }
+        GlyphVector vector = null;
+        Shape shape = null;
+        if (ref.getKind() == MathGlyphRef.Kind.FONT_GLYPH) {
+            Font font = snapshot.getMathPhysicalFont(ref, size);
+            if (font == null || ref.getGlyphId() >= font.getNumGlyphs()) {
+                return null;
+            }
+            BufferedImage contextImage = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D graphics = contextImage.createGraphics();
+            try {
+                applyRenderingHints(graphics);
+                vector = font.createGlyphVector(graphics.getFontRenderContext(), new int[] { ref.getGlyphId() });
+            } finally {
+                graphics.dispose();
+            }
+            if (vector.getGlyphCode(0) != ref.getGlyphId()) {
+                throw new IllegalArgumentException("物理字体拒绝请求的 glyph-id");
+            }
+        } else {
+            shape = ProceduralAccentShape.create(ref.getProceduralAccent(), size);
+        }
+        MathGlyphRasterPlan plan = new MathGlyphRasterPlan(metrics, settings.getTextureSize(), settings.getGlyphInkPadding());
+        return rasterMathTile(token, metrics, vector, shape, plan);
+    }
+
+    // 每次只分配有限核心 probe；padding 是全局路径邻域，仅供采样，adapter 只输出 core quad。
+    GlyphGenerationResult rasterMathTile(GlyphRequestToken token, MathGlyphMetrics metrics,
+            GlyphVector vector, Shape shape, MathGlyphRasterPlan plan) {
+        int tile = token.getTileIndex();
+        int left = plan.getLeft(tile);
+        int top = plan.getTop();
+        BufferedImage probe = new BufferedImage(plan.getWidth(tile), plan.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = probe.createGraphics();
+        try {
+            applyRenderingHints(graphics);
+            graphics.setColor(Color.WHITE);
+            graphics.translate(-left, -top);
+            if (vector != null) {
+                graphics.drawGlyphVector(vector, 0, 0);
+            } else {
+                graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+                graphics.fill(shape);
+            }
+        } finally {
+            graphics.dispose();
+        }
+        PixelBounds bounds = scanActualPixelBounds(probe);
+        int size = token.getRasterSize();
+        float ascent = Math.max(0, -metrics.getInkTop());
+        float descent = Math.max(0, metrics.getInkBottom());
+        if (bounds.empty) {
+            GlyphInfo info = new GlyphInfo(token.getMathGlyphRef(), size, size, metrics.getAdvance(),
+                    ascent, descent, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, false);
+            return GlyphGenerationResult.forMathGlyph(token, null, info);
+        }
+        int padding = plan.getPadding();
+        // 数学核心范围固定为 plan 的完整整数矩形，含透明像素；采样时相邻 quad 严格相接。
+        int width = plan.getWidth(tile);
+        int height = plan.getHeight();
+        int bearingX = left;
+        int bearingY = top;
+        BufferedImage image = new BufferedImage(width + 2 * padding, height + 2 * padding,
+                BufferedImage.TYPE_INT_ARGB);
+        Graphics2D slotGraphics = image.createGraphics();
+        try {
+            applyRenderingHints(slotGraphics);
+            slotGraphics.setColor(Color.WHITE);
+            slotGraphics.translate(padding - bearingX, padding - bearingY);
+            if (vector != null) {
+                slotGraphics.drawGlyphVector(vector, 0, 0);
+            } else {
+                slotGraphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                slotGraphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+                slotGraphics.fill(shape);
+            }
+        } finally {
+            slotGraphics.dispose();
+        }
+        // 用已扫描 core 的原始覆盖率覆盖核心，避免第二次路径 clip 改变接缝像素。
+        int[] pixels = probe.getRGB(0, 0, width, height, null, 0, width);
+        image.setRGB(padding, padding, width, height, pixels, 0, width);
+        GlyphInfo info = new GlyphInfo(token.getMathGlyphRef(), size, size, metrics.getAdvance(),
+                ascent, descent, 0, width, height, image.getWidth(), image.getHeight(),
+                padding - bearingX, padding - bearingY, 0, bearingX, bearingY, true, containsColoredPixels(image));
+        return GlyphGenerationResult.forMathGlyph(token, image, info);
     }
 
     /** 有效 ink 留白：0..32 截断（超出 mipmap 隔离余量上限无意义）。 */

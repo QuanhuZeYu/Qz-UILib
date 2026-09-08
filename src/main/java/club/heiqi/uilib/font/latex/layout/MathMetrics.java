@@ -10,6 +10,11 @@ import club.heiqi.uilib.font.latex.MathFontStyle;
  */
 public interface MathMetrics {
 
+    /** 可选真实数学字体能力；null 保留原有布局路径。 */
+    default MathFontSupport mathFontSupport() {
+        return null;
+    }
+
     /** 选择局部数学字体度量；旧实现保持原度量，支持字重的实现覆盖本方法。 */
     default MathMetrics forFontStyle(MathFontStyle style) {
         if (style == null) {

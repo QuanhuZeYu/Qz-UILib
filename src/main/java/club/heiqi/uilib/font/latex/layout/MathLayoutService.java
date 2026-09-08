@@ -3,6 +3,8 @@ package club.heiqi.uilib.font.latex.layout;
 import java.util.ArrayList;
 import java.util.List;
 
+import club.heiqi.uilib.font.FontType;
+
 import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.MathFontStyle;
 import club.heiqi.uilib.font.latex.MathStyleOverride;
@@ -23,7 +25,7 @@ import club.heiqi.uilib.font.latex.node.LatexSupSub;
  * 数学布局引擎：AST → {@link MathBox}（TeX box 模型简化）。
  *
  * <p>纯 JVM 可测：字体度量经 {@link MathMetrics} 注入；布局参数取 {@link MathConstants}
- * 比例常量；当前不读取字体 MATH 表。</p>
+ * 比例常量；可选 {@link MathFontSupport} 提供真实字形、MATH 常量及伸缩配方。</p>
  *
  * <p>坐标：盒内元素 x/y 相对盒基线，y 向下为正。字号缩放：正文 1.0、script 0.7、
  * scriptscript 0.5；有效字号从根字号推导，addBox 只转换字形倍率，不再缩放已度量的坐标。</p>
@@ -35,7 +37,7 @@ public final class MathLayoutService {
      * 与 {@link LatexCache} 键联动使旧缓存盒失效（字体 runtimeVersion 只管字形重载，
      * 不管布局算法）。
      */
-    public static final int LAYOUT_VERSION = 22;
+    public static final int LAYOUT_VERSION = 23;
 
     /** 根号字符（U+221A）。 */
     private static final String RADICAL = "\u221A";
@@ -49,10 +51,15 @@ public final class MathLayoutService {
      * @return 布局盒
      */
     public MathBox layout(List<LatexNode> nodes, float baseSizePx, MathMetrics metrics) {
-        if (nodes == null || nodes.isEmpty()) {
-            return MathBox.empty();
+        return layout(nodes, baseSizePx, metrics, MathStyleOverride.TEXT);
+    }
+
+    /** 显式根数学样式；INHERIT 归一为旧 TEXT 入口，null 拒绝。 */
+    public MathBox layout(List<LatexNode> nodes, float baseSizePx, MathMetrics metrics, MathStyleOverride mathStyle) {
+        if (mathStyle == null) {
+            throw new IllegalArgumentException("mathStyle 不能为空");
         }
-        return layout(nodes, new MathStyle(baseSizePx, MathStyle.Level.TEXT, false), metrics);
+        return layout(nodes, new MathStyle(baseSizePx, MathStyle.Level.TEXT, false).withOverride(mathStyle), metrics);
     }
 
     // ==================== 节点分派 ====================
@@ -67,7 +74,7 @@ public final class MathLayoutService {
         float scale = style.size() / style.rootSize;
         for (GlyphElem glyph : box.getGlyphs()) {
             glyphs.add(new GlyphElem(glyph.getText(), glyph.getX(), glyph.getY(),
-                    glyph.getSizeScale() * scale, glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle()));
+                    glyph.getSizeScale() * scale, glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle(), glyph.getMathGlyphRef(), glyph.getMathGlyphClip()));
         }
         // 仅转换字形的根字号基准，保留负 kern advance 和原盒的完整边界。
         return new MathBox(box.getWidth(), box.getHeight(), box.getDepth(), glyphs, box.getRules(),
@@ -87,7 +94,7 @@ public final class MathLayoutService {
         List<GlyphElem> glyphs = new ArrayList<GlyphElem>(box.getGlyphs().size());
         for (GlyphElem glyph : box.getGlyphs()) {
             glyphs.add(new GlyphElem(glyph.getText(), glyph.getX(), glyph.getY(),
-                    glyph.getSizeScale() * scale, glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle()));
+                    glyph.getSizeScale() * scale, glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle(), glyph.getMathGlyphRef(), glyph.getMathGlyphClip()));
         }
         return new MathBox(box.getWidth(), box.getHeight(), box.getDepth(), glyphs, box.getRules(),
                 box.getLeftInkOverhang(), box.getRightInkOverhang());
@@ -149,6 +156,10 @@ public final class MathLayoutService {
     // ==================== 原子/列表/间距 ====================
 
     private MathBox layoutAtom(LatexAtom atom, float size, MathMetrics m) {
+        if (m.mathFontSupport() != null && atom.getAtomClass() != AtomClass.TEXT
+                && !atom.getText().startsWith("\\")) {
+            return layoutResolvedAtom(atom, size, m);
+        }
         MathFontStyle font = atomFontStyle(atom);
         m = m.forFontStyle(font);
         String text = atom.getText();
@@ -169,7 +180,7 @@ public final class MathLayoutService {
         float height;
         float depth;
         if (isDelimiterAtom(atom)) {
-            float axis = MathConstants.AXIS_HEIGHT_EM * size;
+            float axis = axisHeight(size, m);
             float inkCenter = m.inkCenterOffsetY(text, size);
             float inkHalf = m.inkHeight(text, size) / 2.0F;
             glyphY = -axis - inkCenter;
@@ -195,6 +206,72 @@ public final class MathLayoutService {
         // 斜体视觉右越量（ink 超出 advance 的量）：随盒向上嵌套传播（TeX box 的 ink 边界抽象）
         float rightOverhang = italic ? m.italicOverhang(text, size) : 0.0F;
         return new MathBox(width, height, depth, glyphs, null, 0.0F, rightOverhang);
+    }
+
+    private static int mathSize(float size) {
+        if (!Float.isFinite(size) || size <= 0 || size > 16384) {
+            throw new IllegalArgumentException("数学字号必须在 (0, 16384] 内");
+        }
+        return Math.max(1, Math.round(size));
+    }
+
+    private static float axisHeight(float size, MathMetrics m) {
+        MathFontSupport support = m.mathFontSupport();
+        return support == null ? MathConstants.AXIS_HEIGHT_EM * size
+                : support.constants(mathSize(size)).getAxisHeight();
+    }
+
+    private static float ruleThickness(float size, MathMetrics m) {
+        MathFontSupport support = m.mathFontSupport();
+        return support == null ? MathConstants.RULE_THICKNESS_EM * size
+                : support.constants(mathSize(size)).getRuleThickness();
+    }
+
+    private MathBox layoutResolvedAtom(LatexAtom atom, float size, MathMetrics m) {
+        MathFontSupport support = m.mathFontSupport();
+        int actualSize = mathSize(size);
+        MathFontStyle font = atomFontStyle(atom);
+        // 分类决定数学 alphabet：函数名和符号永远不能因默认 mathnormal 变成变量。
+        MathFontStyle resolvedFont = atom.getAtomClass() == AtomClass.ORD ? font : MathFontStyle.UPRIGHT;
+        Builder builder = new Builder();
+        String text = atom.getText();
+        for (int offset = 0; offset < text.length(); ) {
+            int cp = text.codePointAt(offset);
+            offset += Character.charCount(cp);
+            String token = new String(Character.toChars(cp));
+            MathGlyphRef ref = support.resolve(cp, resolvedFont, FontType.NORMAL);
+            MathBox box;
+            if (ref == null) {
+                // provider 未找到真实字形时仅保留字面正体，不偷偷切回几何数学斜切。
+                MathMetrics fallback = m.forFontStyle(resolvedFont);
+                float width = fallback.advance(token, actualSize);
+                float center = fallback.inkCenterOffsetY(token, actualSize);
+                float half = fallback.inkHeight(token, actualSize) / 2.0F;
+                List<GlyphElem> glyphs = new ArrayList<GlyphElem>(1);
+                glyphs.add(new GlyphElem(token, 0, 0, actualSize / size, false, false, resolvedFont));
+                box = new MathBox(width, Math.max(0, half - center), Math.max(0, center + half), glyphs, null);
+            } else {
+                box = MathStretchLayout.glyphBox(token, ref, support, actualSize, size);
+            }
+            if (isDelimiterAtom(atom)) {
+                float center = (box.getDepth() - box.getHeight()) / 2.0F;
+                Builder centered = new Builder();
+                centered.addBox(box, 0, -axisHeight(size, m) - center, 1);
+                centered.width = box.getWidth();
+                box = centered.toBox();
+            }
+            float cursor = builder.width;
+            builder.addBox(box, cursor, 0, 1);
+            builder.width = cursor + box.getWidth();
+        }
+        return builder.toBox();
+    }
+
+    private static MathGlyphMetrics resolvedMetrics(MathBox box, float parentSize, MathMetrics m) {
+        if (m.mathFontSupport() == null || box.getGlyphs().size() != 1) { return null; }
+        GlyphElem glyph = box.getGlyphs().get(0);
+        return glyph.getMathGlyphRef() == null ? null : m.mathFontSupport().measure(glyph.getMathGlyphRef(),
+                mathSize(parentSize * glyph.getSizeScale()));
     }
 
     /** 是否为定界符原子（OPEN/CLOSE 类，或 ORD 类定界符字符 |、‖）。 */
@@ -473,7 +550,7 @@ public final class MathLayoutService {
             return base;
         }
 
-        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float drt = ruleThickness(size, m);
         float xHeight = m.xHeight(size);
         // drop 取实际子脚本字号；不能继续按父字号乘 0.7，否则封顶后仍漂移。
         float supDrop = MathConstants.SUP_DROP_EM * scriptSize;
@@ -559,6 +636,12 @@ public final class MathLayoutService {
             }
         }
 
+        MathGlyphMetrics physicalBase = resolvedMetrics(base, size, m);
+        if (physicalBase != null) {
+            scriptShift = physicalBase.getItalicCorrection();
+        }
+        float subScriptShift = physicalBase == null || nolimitsBigOp ? scriptShift : 0.0F;
+
         // 脚本水平位置（TeX ScriptsAtom）：上/下标左缘紧贴基底右缘（+斜体校正），
         // scriptspace 加在脚本盒内部而非与基底之间，故此处不额外加
         Builder builder = new Builder();
@@ -567,9 +650,10 @@ public final class MathLayoutService {
             builder.addBox(sup, base.getWidth() + scriptShift, supY, scriptSize / size);
         }
         if (sub != null) {
-            builder.addBox(sub, base.getWidth() + scriptShift, subY, scriptSize / size);
+            builder.addBox(sub, base.getWidth() + subScriptShift, subY, scriptSize / size);
         }
-        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptWidth : 0.0F) + scriptShift;
+        builder.width = base.getWidth() + (scriptWidth > 0.0F ? scriptWidth : 0.0F)
+                + (sup != null ? scriptShift : subScriptShift);
         builder.height = Math.max(builder.height, refHeight);
         builder.depth = Math.max(builder.depth, refDepth);
         if (sup != null) {
@@ -581,8 +665,8 @@ public final class MathLayoutService {
         if (nolimitsBigOp) {
             // 侧挂尾部 = MEDMUSKIP + 符号自然 italic（TeX deltaSymbol + 无下标时 StrutBox(delta)）
             builder.width += MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * baseSize
-                    + (sub == null ? m.forFontStyle(atomFontStyle((LatexAtom) baseNode))
-                            .italicCorrection(baseText, baseSize) : 0.0F);
+                    + (sub == null ? physicalBase != null ? physicalBase.getItalicCorrection()
+                            : m.forFontStyle(atomFontStyle((LatexAtom) baseNode)).italicCorrection(baseText, baseSize) : 0.0F);
         }
         return builder.toBox();
     }
@@ -640,11 +724,15 @@ public final class MathLayoutService {
             MathStyle baseStyle, MathMetrics m) {
         float size = style.size();
         float baseSize = baseStyle.size();
+        if (m.mathFontSupport() != null && !base.getGlyphs().isEmpty()
+                && base.getGlyphs().get(0).getMathGlyphRef() != null) {
+            return layoutResolvedLimits(base, sup, sub, style, baseStyle, m);
+        }
         if (!base.getGlyphs().isEmpty()) {
             m = m.forFontStyle(base.getGlyphs().get(0).getMathFontStyle());
         }
         Builder builder = new Builder();
-        float axis = MathConstants.AXIS_HEIGHT_EM * baseSize;
+        float axis = axisHeight(baseSize, m);
         // ink 锚定（y 向下口径，与 layoutFence/layoutAtom 同源）：中心偏移 inkCenterY，总高 inkH；
         // 盒度量回退保持旧行为。
         String baseText = base.getGlyphs().isEmpty() ? null : base.getGlyphs().get(0).getText();
@@ -707,23 +795,84 @@ public final class MathLayoutService {
         return builder.toBox();
     }
 
+    private static MathBox axisCenterResolved(MathBox base, float size, MathMetrics m, int actualSize) {
+        float top = Float.POSITIVE_INFINITY;
+        float bottom = Float.NEGATIVE_INFINITY;
+        for (GlyphElem glyph : base.getGlyphs()) {
+            MathGlyphMetrics ink = m.mathFontSupport().measure(glyph.getMathGlyphRef(), actualSize);
+            top = Math.min(top, glyph.getY() + ink.getInkTop());
+            bottom = Math.max(bottom, glyph.getY() + ink.getInkBottom());
+        }
+        Builder builder = new Builder();
+        builder.addBox(base, 0, -axisHeight(size, m) - (top + bottom) / 2.0F, 1);
+        builder.width = base.getWidth();
+        // addBox 的零基线占位不属于 ink，轴居中后的度量用实际并集重建。
+        return new MathBox(builder.width, Math.max(0, (bottom - top) / 2 + axisHeight(size, m)),
+                Math.max(0, (bottom - top) / 2 - axisHeight(size, m)), builder.glyphs, base.getRules(),
+                base.getLeftInkOverhang(), base.getRightInkOverhang());
+    }
+
+    private MathBox layoutResolvedLimits(MathBox natural, MathBox sup, MathBox sub, MathStyle style,
+            MathStyle baseStyle, MathMetrics m) {
+        MathFontSupport support = m.mathFontSupport();
+        GlyphElem source = natural.getGlyphs().get(0);
+        float size = style.size();
+        int actual = mathSize(baseStyle.size());
+        MathBox stretched = MathStretchLayout.stretch(source.getText(), source.getMathGlyphRef(), support,
+                MathStretchAxis.VERTICAL, bigOperatorTargetHeightEm(source.getText()) * actual, actual, size);
+        MathBox base = axisCenterResolved(stretched, baseStyle.size(), m, actual);
+        float correction;
+        if (base.getGlyphs().size() == 1) {
+            correction = support.measure(base.getGlyphs().get(0).getMathGlyphRef(), actual).getItalicCorrection();
+        } else {
+            MathGlyphConstruction construction = support.construction(source.getMathGlyphRef(), MathStretchAxis.VERTICAL, actual);
+            correction = construction == null || construction.getAssembly() == null ? 0
+                    : construction.getAssembly().getItalicCorrection();
+        }
+        float width = base.getWidth();
+        if (sup != null) { width = Math.max(width, sup.getWidth()); }
+        if (sub != null) { width = Math.max(width, sub.getWidth()); }
+        Builder builder = new Builder();
+        builder.addBox(base, (width - base.getWidth()) / 2, 0, 1);
+        if (sup != null) {
+            float gap = Math.max(MathConstants.BIGOP1_EM * size, MathConstants.BIGOP3_EM * size - sup.getDepth());
+            builder.addBox(sup, (width - sup.getWidth()) / 2 + (sub != null ? correction / 2 : 0),
+                    -(base.getHeight() + gap + sup.getDepth()), style.superscript().size() / size);
+            builder.height += MathConstants.BIGOP5_EM * size;
+        }
+        if (sub != null) {
+            float gap = Math.max(MathConstants.BIGOP2_EM * size, MathConstants.BIGOP4_EM * size - sub.getHeight());
+            builder.addBox(sub, (width - sub.getWidth()) / 2 - (sup != null ? correction / 2 : 0),
+                    base.getDepth() + gap + sub.getHeight(), style.subscript().size() / size);
+            builder.depth += MathConstants.BIGOP5_EM * size;
+        }
+        builder.width = width + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * baseStyle.size()
+                + (sup != null && sub != null ? 0 : correction);
+        return builder.toBox();
+    }
+
     /**
      * 大运算符符号轴居中盒（自然尺寸，不缩放到 limits 目标视觉高）：\nolimits 侧挂路径。
      * glyph 直接入盒 y = baseShift，盒度量按 ink 边界（与 layoutFence 同口径）。
      */
     private MathBox axisCenteredBigOperator(MathBox base, float size, MathMetrics m) {
+        if (m.mathFontSupport() != null && !base.getGlyphs().isEmpty()
+                && base.getGlyphs().get(0).getMathGlyphRef() != null) {
+            // 基底字号倍率可能相对外层 style；单字的有效字号以参数 size 为准。
+            return axisCenterResolved(base, size, m, mathSize(size));
+        }
         String text = base.getGlyphs().isEmpty() ? null : base.getGlyphs().get(0).getText();
         if (text == null) {
             return base;
         }
         GlyphElem glyph = base.getGlyphs().get(0);
         m = m.forFontStyle(glyph.getMathFontStyle());
-        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        float axis = axisHeight(size, m);
         float inkCenter = m.inkCenterOffsetY(text, size);
         float inkHalf = m.inkHeight(text, size) / 2.0F;
         Builder builder = new Builder();
         builder.addGlyph(text, glyph.getX(), -axis - inkCenter, glyph.getSizeScale(),
-                glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle());
+                glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle(), glyph.getMathGlyphRef(), glyph.getMathGlyphClip());
         builder.width = base.getWidth();
         // 平移后 ink 中心为 -axis；包围盒必须与 glyph 的新坐标一致。
         builder.height = Math.max(0.0F, inkHalf + axis);
@@ -738,8 +887,12 @@ public final class MathLayoutService {
         }
         Builder builder = new Builder();
         builder.addBox(base, 0.0F, 0.0F, 1.0F);
+        MathGlyphMetrics physical = m.mathFontSupport() == null || base.getGlyphs().isEmpty()
+                || base.getGlyphs().get(0).getMathGlyphRef() == null ? null
+                        : m.mathFontSupport().measure(base.getGlyphs().get(0).getMathGlyphRef(), mathSize(size));
         builder.width = base.getWidth() + MathConstants.BIG_OPERATOR_TAIL_SPACE_EM * size
-                + (baseText == null ? 0.0F : m.italicCorrection(baseText, size));
+                + (physical != null ? physical.getItalicCorrection()
+                        : baseText == null ? 0.0F : m.italicCorrection(baseText, size));
         return builder.toBox();
     }
 
@@ -769,8 +922,8 @@ public final class MathLayoutService {
         MathBox num = layoutNode(node.getNumerator(), style.numerator(), m);
         MathBox den = layoutNode(node.getDenominator(), style.denominator(), m);
         // TeX FractionAtom（行内=text 样式口径）：轴高对齐 + num2/denom2 + clr 补足链
-        float drt = MathConstants.RULE_THICKNESS_EM * size;
-        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        float drt = ruleThickness(size, m);
+        float axis = axisHeight(size, m);
         float delta = drt / 2.0F;
         float contentWidth = Math.max(num.getWidth(), den.getWidth());
         float sideSpace = MathConstants.NULL_DELIMITER_SPACE_EM * size;
@@ -825,10 +978,13 @@ public final class MathLayoutService {
     // ==================== 根号 ====================
 
     private MathBox layoutSqrt(LatexSqrt node, MathStyle style, MathMetrics m) {
+        if (m.mathFontSupport() != null) {
+            return layoutResolvedSqrt(node, style, m);
+        }
         float size = style.size();
         // 被开方内容用 cramped style（TeX NthRoot）
         MathBox radicand = layoutNode(node.getRadicand(), style.cramp(), m);
-        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float drt = ruleThickness(size, m);
         // TeX NthRoot（text 口径）：clr = θ + θ/4，再经根号变体阶梯余量对半补偿——
         // DelimiterFactory 选最小 ≥ totalH+clr 的 radical 变体，depth 超出部分的一半补入 clr
         // （JLaTeXMath NthRoot delta/2；小根号 clr 由 0.05em 提升到 ≈0.29em，横线不再贴内容）。
@@ -913,6 +1069,61 @@ public final class MathLayoutService {
         return builder.toBox();
     }
 
+    private MathBox layoutResolvedSqrt(LatexSqrt node, MathStyle style, MathMetrics m) {
+        float size = style.size();
+        int actual = mathSize(size);
+        MathFontSupport support = m.mathFontSupport();
+        MathFontParameters constants = support.constants(actual);
+        MathBox radicand = layoutNode(node.getRadicand(), style.cramp(), m);
+        float rule = constants.getRuleThickness();
+        float gap = style.isDisplay() ? constants.getRadicalDisplayStyleVerticalGap() : constants.getRadicalVerticalGap();
+        float target = radicand.getTotalHeight() + gap + rule;
+        MathGlyphRef ref = support.resolve(0x221A, MathFontStyle.UPRIGHT, FontType.NORMAL);
+        MathBox radical = ref == null ? layoutAtom(new LatexAtom(RADICAL, AtomClass.ORD), size, m)
+                : MathStretchLayout.stretch(RADICAL, ref, support, MathStretchAxis.VERTICAL,
+                        Math.max(target, 0.01F), actual, size);
+        float top = Float.POSITIVE_INFINITY;
+        float bottom = Float.NEGATIVE_INFINITY;
+        for (GlyphElem glyph : radical.getGlyphs()) {
+            if (glyph.getMathGlyphRef() == null) {
+                top = -radical.getHeight();
+                bottom = radical.getDepth();
+                break;
+            }
+            MathGlyphMetrics ink = support.measure(glyph.getMathGlyphRef(), actual);
+            top = Math.min(top, glyph.getY() + ink.getInkTop());
+            bottom = Math.max(bottom, glyph.getY() + ink.getInkBottom());
+        }
+        // 原生变体的离散余量分给上下两侧，避免全部堆到被开方内容下方。
+        gap += Math.max(0, (bottom - top) - target) / 2;
+        float barTop = -(radicand.getHeight() + gap + rule);
+        float radicalY = barTop - top;
+        MathBox index = node.getIndex() == null ? null : layoutNode(node.getIndex(), style.rootIndex(), m);
+        float indexX = 0;
+        float radicalX = 0;
+        if (index != null) {
+            float afterKern = index.getWidth() - MathConstants.SQRT_INDEX_NEG_KERN_MU * size / 18;
+            radicalX = Math.max(0, afterKern);
+            indexX = Math.max(0, -afterKern);
+        }
+        Builder builder = new Builder();
+        builder.addBox(radical, radicalX, radicalY, 1);
+        float bodyX = radicalX + radical.getWidth();
+        builder.addBox(radicand, bodyX, 0, 1);
+        float radicalRight = radicalX + radical.getWidth() + radical.getRightInkOverhang();
+        float barLeft = radicalRight - rule;
+        float barRight = Math.max(radicalRight, bodyX + radicand.getWidth() + radicand.getRightInkOverhang()) + size / 18;
+        builder.addRule(barLeft, barTop + rule / 2, barRight - barLeft, rule);
+        if (index != null) {
+            float degreeBottom = radicalY + bottom
+                    - (bottom - top) * constants.getRadicalDegreeBottomRaisePercent() / 100.0F;
+            builder.addBox(index, indexX, degreeBottom - index.getDepth(), style.rootIndex().size() / size);
+        }
+        builder.width = Math.max(builder.width, bodyX + radicand.getWidth());
+        builder.height = Math.max(builder.height, -barTop + constants.getRadicalExtraAscender());
+        return builder.toBox();
+    }
+
     // ==================== 伸缩括号 ====================
 
     private MathBox layoutLeftRight(LatexLeftRight node, MathStyle style, MathMetrics m) {
@@ -928,7 +1139,7 @@ public final class MathLayoutService {
         }
         MathBox content = contentBuilder.toBox();
         // TeX FencedAtom：δ = max(h − axis, d + axis)；minHeight = max(δ×901/500, 2δ − 5pt)
-        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        float axis = axisHeight(size, m);
         float delta = Math.max(content.getHeight() - axis, content.getDepth() + axis);
         float minHeight = Math.max(delta * MathConstants.DELIMITER_FACTOR,
                 2.0F * delta - MathConstants.DELIMITER_SHORTFALL_EM * size);
@@ -988,7 +1199,16 @@ public final class MathLayoutService {
      * baselineY 又经 addBox 平移一次，行高虚增 |baselineY|、嵌套几何错位）。</p>
      */
     private DelimBox layoutFence(String delimiter, float minHeight, float size, MathMetrics m) {
-        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        if (m.mathFontSupport() != null) {
+            MathFontSupport support = m.mathFontSupport();
+            MathGlyphRef ref = support.resolve(delimiter.codePointAt(0), MathFontStyle.UPRIGHT, FontType.NORMAL);
+            MathBox box = ref == null
+                    ? layoutAtom(new LatexAtom(delimiter, AtomClass.OPEN), size, m)
+                    : axisCenterResolved(MathStretchLayout.stretch(delimiter, ref, support, MathStretchAxis.VERTICAL,
+                            Math.max(minHeight, 0.01F), mathSize(size), size), size, m, mathSize(size));
+            return new DelimBox(box, 0);
+        }
+        float axis = axisHeight(size, m);
         float nativeInkH = m.inkHeight(delimiter, size);
         float nativeH = nativeInkH > 0.0F ? nativeInkH : m.ascent(size) + m.descent(size);
         float scale = nativeH <= 0.0F ? 1.0F : Math.max(1.0F, minHeight / nativeH);
@@ -1059,7 +1279,7 @@ public final class MathLayoutService {
             cursorY = rowBaseline[i] + rowMaxDepth[i] + rowSep;
         }
         float totalHeight = cursorY - rowSep + outerPad;
-        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        float axis = axisHeight(size, m);
         float height = totalHeight / 2.0F + axis;
         float depth = totalHeight / 2.0F - axis;
 
@@ -1127,7 +1347,7 @@ public final class MathLayoutService {
         // 无线分式与普通分式使用相同子样式转换。
         MathBox upper = layoutNode(node.getUpper(), style.numerator(), m);
         MathBox lower = layoutNode(node.getLower(), style.denominator(), m);
-        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float drt = ruleThickness(size, m);
         float clr = (style.isDisplay() ? 7.0F : MathConstants.NO_RULE_CLR_FACTOR) * drt;
         float shiftUp = (style.isDisplay() ? MathConstants.NUM1_EM : MathConstants.NUM3_EM) * size;
         float shiftDown = (style.isDisplay() ? MathConstants.DENOM1_EM : MathConstants.DENOM2_EM) * size;
@@ -1139,7 +1359,7 @@ public final class MathLayoutService {
         }
         float contentWidth = Math.max(upper.getWidth(), lower.getWidth());
         float sideSpace = MathConstants.NULL_DELIMITER_SPACE_EM * size;
-        float axis = MathConstants.AXIS_HEIGHT_EM * size;
+        float axis = axisHeight(size, m);
         float height = shiftUp + upper.getHeight();
         float depth = shiftDown + lower.getDepth();
         // 圆括号：TeX FencedAtom minHeight + 轴居中（\binom = \left( … \right) 语义）
@@ -1169,7 +1389,7 @@ public final class MathLayoutService {
         // 重音基底用 cramped style（TeX AccentedAtom）；\\underline 基底不 cramp（TeX UnderlinedAtom）
         MathBox base = layoutNode(node.getBase(), node.isBelow() ? style : style.cramp(), m);
         Builder builder = new Builder();
-        float drt = MathConstants.RULE_THICKNESS_EM * size;
+        float drt = ruleThickness(size, m);
         if (node.isStretchable()) {
             builder.addBox(base, 0.0F, 0.0F, 1.0F);
             // \overline：kern 3θ + 线 θ，盒高 h+5θ；\\underline：kern 3θ + 线 θ，盒深 d+5θ；
@@ -1188,7 +1408,14 @@ public final class MathLayoutService {
             }
             return builder.toBox();
         }
+        if (m.mathFontSupport() != null) {
+            return layoutResolvedAccent(node, base, style, m);
+        }
         String accentText = node.getAccentText();
+        // 无可选数学字体能力的旧实现仍使用既有固定重音路径。
+        if (node.getAccentMode() == LatexAccent.AccentMode.WIDE) {
+            accentText = "\u0302".equals(accentText) ? "^" : "~";
+        }
         // TeX AccentedAtom（acc=false 路径，hat/bar/vec/dot/tilde）：重音字符为 spacing
         // 字形（^ U+005E / ¯ U+00AF / → U+2192 / · U+00B7 / ¨ U+00A8 / ~ U+007E），
         // ink 尺寸与 CM 重音字形比例接近；垂直定位按 ink 底贴基底 ink 顶（组合符时代
@@ -1232,6 +1459,72 @@ public final class MathLayoutService {
         return builder.toBox();
     }
 
+    private MathBox layoutResolvedAccent(LatexAccent node, MathBox base, MathStyle style, MathMetrics m) {
+        float size = style.size();
+        int actual = mathSize(size);
+        MathFontSupport support = m.mathFontSupport();
+        String source = node.getAccentText();
+        int cp = source.codePointAt(0);
+        if ("^".equals(source)) { cp = 0x0302; }
+        else if ("~".equals(source)) { cp = 0x0303; }
+        else if ("¯".equals(source)) { cp = 0x0304; }
+        else if ("→".equals(source)) { cp = 0x20D7; }
+        else if ("·".equals(source)) { cp = 0x0307; }
+        else if ("¨".equals(source)) { cp = 0x0308; }
+        String text = new String(Character.toChars(cp));
+        MathGlyphRef ref = support.resolve(cp, MathFontStyle.UPRIGHT, FontType.NORMAL);
+        float target = Math.max(0.01F, base.getWidth() + base.getLeftInkOverhang() + base.getRightInkOverhang());
+        boolean wide = node.getAccentMode() == LatexAccent.AccentMode.WIDE;
+        MathBox accent;
+        if (wide) {
+            MathGlyphConstruction construction = ref == null ? null
+                    : support.construction(ref, MathStretchAxis.HORIZONTAL, actual);
+            float maximum = ref == null ? 0 : support.measure(ref, actual).getAdvance();
+            if (construction != null && !construction.getVariants().isEmpty()) {
+                maximum = construction.getVariants().get(construction.getVariants().size() - 1).getStretchAdvance();
+            }
+            if (target > maximum && (construction == null || construction.getAssembly() == null)) {
+                MathFontParameters constants = support.constants(actual);
+                float stroke = Math.max(constants.getRuleThickness(), actual / 65536.0F);
+                float height = Math.max(stroke * 3, actual * 0.2F);
+                ref = MathGlyphRef.forProceduralAccent(ProceduralAccentSpec.of(cp == 0x0302
+                        ? ProceduralAccentSpec.Kind.HAT : ProceduralAccentSpec.Kind.TILDE, 1,
+                        fixedUnits(target, actual), fixedUnits(height, actual), fixedUnits(stroke, actual)));
+                accent = MathStretchLayout.glyphBox(text, ref, support, actual, size);
+            } else {
+                accent = MathStretchLayout.stretch(text, ref, support, MathStretchAxis.HORIZONTAL, target, actual, size);
+            }
+        } else {
+            accent = ref == null ? layoutAtom(new LatexAtom(source, AtomClass.ORD), size, m)
+                    : MathStretchLayout.glyphBox(text, ref, support, actual, size);
+        }
+        MathGlyphMetrics baseMetrics = resolvedMetrics(base, size, m);
+        MathGlyphMetrics accentMetrics = resolvedMetrics(accent, size, m);
+        float baseAttachment = baseMetrics != null && baseMetrics.hasTopAccentAttachment()
+                ? base.getGlyphs().get(0).getX() + baseMetrics.getTopAccentAttachment()
+                : (base.getWidth() - base.getLeftInkOverhang() + base.getRightInkOverhang()) / 2;
+        float accentAttachment = !wide && accentMetrics != null && accentMetrics.hasTopAccentAttachment()
+                ? accentMetrics.getTopAccentAttachment() : accent.getWidth() / 2;
+        float x = baseAttachment - accentAttachment;
+        float inkBottom = accentMetrics == null ? accent.getDepth() : accentMetrics.getInkBottom();
+        // 字体 attachment 负责水平位置；accentBaseHeight 限定矮基底的重音基准。
+        float baseTop = Math.max(base.getHeight(), support.constants(actual).getAccentBaseHeight());
+        float y = -baseTop - inkBottom;
+        Builder builder = new Builder();
+        builder.addBox(base, 0, 0, 1);
+        builder.addBox(accent, x, y, 1);
+        builder.width = base.getWidth();
+        return builder.toBox();
+    }
+
+    private static int fixedUnits(float pixels, int size) {
+        double units = Math.ceil((double) pixels / size * 65536.0D);
+        if (!Double.isFinite(units) || units < 1 || units > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("程序重音尺寸超出固定点范围");
+        }
+        return (int) units;
+    }
+
     // ==================== 工具 ====================
 
     /** 盒平移（用于 left/right 归一基线）。 */
@@ -1242,7 +1535,7 @@ public final class MathLayoutService {
         Builder builder = new Builder();
         for (GlyphElem glyph : box.getGlyphs()) {
             builder.addGlyph(glyph.getText(), glyph.getX() + dx, glyph.getY() + dy, glyph.getSizeScale(),
-                    glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle());
+                    glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle(), glyph.getMathGlyphRef(), glyph.getMathGlyphClip());
         }
         for (RuleElem rule : box.getRules()) {
             builder.addRule(rule.getX() + dx, rule.getY() + dy, rule.getWidth(), rule.getThickness(),
@@ -1289,7 +1582,17 @@ public final class MathLayoutService {
 
         void addGlyph(String text, float x, float y, float sizeScale, boolean italic,
                 boolean inheritTextItalic, MathFontStyle font) {
-            glyphs.add(new GlyphElem(text, x, y, sizeScale, italic, inheritTextItalic, font));
+            addGlyph(text, x, y, sizeScale, italic, inheritTextItalic, font, null);
+        }
+
+        void addGlyph(String text, float x, float y, float sizeScale, boolean italic,
+                boolean inheritTextItalic, MathFontStyle font, MathGlyphRef ref) {
+            addGlyph(text, x, y, sizeScale, italic, inheritTextItalic, font, ref, null);
+        }
+
+        void addGlyph(String text, float x, float y, float sizeScale, boolean italic,
+                boolean inheritTextItalic, MathFontStyle font, MathGlyphRef ref, MathGlyphClip clip) {
+            glyphs.add(new GlyphElem(text, x, y, sizeScale, italic, inheritTextItalic, font, ref, clip));
             // 非变量基元字形（根号/重音/定界符）ink 不超出 advance：只记占位边界
             minVisualX = Math.min(minVisualX, x);
             maxVisualX = Math.max(maxVisualX, x);
@@ -1312,7 +1615,7 @@ public final class MathLayoutService {
         void addBox(MathBox child, float dx, float dy, float glyphScale) {
             for (GlyphElem glyph : child.getGlyphs()) {
                 glyphs.add(new GlyphElem(glyph.getText(), glyph.getX() + dx, glyph.getY() + dy,
-                        glyph.getSizeScale() * glyphScale, glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle()));
+                        glyph.getSizeScale() * glyphScale, glyph.isItalic(), glyph.isInheritTextItalic(), glyph.getMathFontStyle(), glyph.getMathGlyphRef(), glyph.getMathGlyphClip()));
             }
             for (RuleElem rule : child.getRules()) {
                 rules.add(new RuleElem(rule.getX() + dx, rule.getY() + dy, rule.getWidth(),

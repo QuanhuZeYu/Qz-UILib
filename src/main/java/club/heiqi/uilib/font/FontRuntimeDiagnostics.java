@@ -208,9 +208,13 @@ public final class FontRuntimeDiagnostics {
         if (occurrence == 1L || isPowerOfTwo(occurrence)) {
             Integer generation = token != null ? Integer.valueOf(token.getGeneration())
                     : demand == null ? null : Integer.valueOf(demand.getRuntimeVersion());
-            Integer codepoint = token != null ? Integer.valueOf(token.getCodepoint())
+            boolean math = token != null ? token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH
+                    : demand != null && demand.getKind() == GlyphRequestToken.Kind.MATH_GLYPH;
+            Object codepoint = math ? (token != null ? token.getMathGlyphRef() : demand.getMathGlyphRef())
+                    : token != null ? Integer.valueOf(token.getCodepoint())
                     : demand == null ? null : Integer.valueOf(demand.getCodepoint());
-            Object fontType = token != null ? token.getFontType() : demand == null ? null : demand.getFontType();
+            Object fontType = math ? "MATH_GLYPH"
+                    : token != null ? token.getFontType() : demand == null ? null : demand.getFontType();
             MyMod.LOG.debug("字体 glyph 容量事件: token={} generation={} codepoint={} fontType={} stage={} "
                     + "priority={} records={}/{} bytes={}/{} reason={} occurrences={}", token, generation, codepoint,
                     fontType, stage, priority, Integer.valueOf(currentRecords), Integer.valueOf(maxRecords),

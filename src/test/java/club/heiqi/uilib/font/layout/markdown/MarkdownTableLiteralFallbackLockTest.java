@@ -9,6 +9,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 
@@ -45,6 +46,30 @@ public class MarkdownTableLiteralFallbackLockTest {
             actual.append(sample);
         }
         Assert.assertEquals("fixture 不得多余、遗漏、重排或归一化", expected, actual.toString());
+    }
+
+    @Test
+    public void addedMathStyleGetterKeepsLegacyDefaultsAcrossBothHistoricalSeams() {
+        boolean sawPlain = false;
+        boolean sawLatex = false;
+        for (int i = 0; i < MarkdownTableLiteralSnapshot.NAMES.length; i++) {
+            MarkdownDocument document = MarkdownTableLiteralSnapshot.document(i);
+            List<TextSegment> segments = new java.util.ArrayList<TextSegment>(
+                    document.toSegments(MarkdownTableLiteralSnapshot.base()));
+            for (MarkdownLayoutLine line : document.toLayoutLines(null, MarkdownTableLiteralSnapshot.base())) {
+                segments.addAll(line.getSegments());
+                segments.addAll(line.getListMarkerChain());
+            }
+            for (TextSegment segment : segments) {
+                Assert.assertEquals("新增数学样式字段的历史默认值: " + MarkdownTableLiteralSnapshot.NAMES[i],
+                        segment.isLatex() ? MathStyleOverride.TEXT : MathStyleOverride.INHERIT,
+                        segment.getLatexMathStyle());
+                sawPlain |= !segment.isLatex();
+                sawLatex |= segment.isLatex();
+            }
+        }
+        Assert.assertTrue("历史语料必须实际覆盖普通段", sawPlain);
+        Assert.assertTrue("历史语料必须实际覆盖公式段", sawLatex);
     }
 
     @Test

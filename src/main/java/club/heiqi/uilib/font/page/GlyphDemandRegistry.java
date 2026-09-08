@@ -2,6 +2,7 @@ package club.heiqi.uilib.font.page;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.glyph.GlyphRequestToken;
+import club.heiqi.uilib.font.glyph.MathGlyphKey;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 final class GlyphDemandRegistry {
 
-    private final Map<Long, ActiveGlyphDemand> demands = new HashMap<Long, ActiveGlyphDemand>();
+    private final Map<Object, ActiveGlyphDemand> demands = new HashMap<Object, ActiveGlyphDemand>();
 
     ActiveGlyphDemand put(int generation, int codepoint, FontType fontType, GlyphRequestToken token,
             int priority) {
@@ -27,13 +28,23 @@ final class GlyphDemandRegistry {
     }
 
     ActiveGlyphDemand get(GlyphRequestToken token) {
-        return demands.get(Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
-                token.getFontType())));
+        return demands.get(key(token));
     }
 
     ActiveGlyphDemand remove(GlyphRequestToken token) {
-        return demands.remove(Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
-                token.getFontType())));
+        return demands.remove(key(token));
+    }
+
+    ActiveGlyphDemand get(MathGlyphKey key) { return demands.get(key); }
+
+    void put(GlyphRequestToken token, int priority) {
+        demands.put(key(token), new ActiveGlyphDemand(token, priority));
+    }
+
+    private Object key(GlyphRequestToken token) {
+        return token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH
+                ? new MathGlyphKey(token.getGeneration(), token.getMathGlyphRef(), token.getRasterSize(), token.getTileIndex())
+                : Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(), token.getFontType()));
     }
 
     void clear() {

@@ -946,14 +946,14 @@ public final class ChatMessageList {
             }
             // M5 接线(规划《通用Markdown渲染器》§三):气泡行 = 消息级 markdown 管道的 L2 视觉行;
             // 系统行 = 旧逐行 § 解析 + PRESERVE 链接化 + continuesWord 续链(行为逐旧)。
-            if (markdownSystem && markdown.hasTables(message.getDisplayText())) {
-                // 仅显式含表格消息迁移。玩家与非表格 markdown 保留历史行路。
+            if (markdownSystem && markdown.hasTables(message.getDisplayText())
+                    || !system && markdown.hasDisplayMath(message.getDisplayText())) {
+                // 表格显式消息及 display 数学内容复用同一滚动宿主；普通消息保留历史行路。
                 messageNode.setFillParentWidth(true).setWidthSizing(SceneNode.WidthSizing.FILL);
                 ChatMarkdownContent.Result content = ChatMarkdownContent.create(rt,
                         ChatCardComposer.HUD_MAX_LINES * lineHeight, !style.isTtlFade(),
                         width -> markdown.layoutContent(message.getDisplayText(),
-                                ChatMarkdownSettings.getSystemTextArgb(), width,
-                                ChatMarkdownSettings.getSystemFontSizePx(), segmentPostProcessor),
+                                baseTextColor, width, fontSize, segmentPostProcessor),
                         (node, command) -> attachContentLink(rt, node, command, message.getRecord().getComponent(), frameMillis));
                 contentNode.appendChild(content.root);
                 documentNodes.add(content.root);

@@ -1,11 +1,14 @@
 package club.heiqi.uilib.font.glyph;
 
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
+
 /**
  * 字符度量信息。
  */
 public class GlyphInfo {
 
-    private final int codepoint;
+    private final Integer codepoint;
+    private final MathGlyphRef mathGlyphRef;
     private final int width;
     private final int height;
     private final float advance;
@@ -105,7 +108,26 @@ public class GlyphInfo {
                      float glyphWidth, float glyphHeight, int slotWidth, int slotHeight, int atlasBaselineX,
                      int atlasBaselineY, int lineBaselineY, int bearingX, int bearingY, boolean hasBitmap,
                      boolean coloredGlyph) {
+        this(Integer.valueOf(codepoint), null, width, height, advance, ascent, descent, leading, glyphWidth,
+                glyphHeight, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY,
+                bearingX, bearingY, hasBitmap, coloredGlyph);
+    }
+
+    /** 数学元数据复用相同的 atlas 几何，身份不经过 Unicode 码点。 */
+    public GlyphInfo(MathGlyphRef glyphRef, int width, int height, float advance, float ascent, float descent,
+            float leading, float glyphWidth, float glyphHeight, int slotWidth, int slotHeight, int atlasBaselineX,
+            int atlasBaselineY, int lineBaselineY, int bearingX, int bearingY, boolean hasBitmap, boolean coloredGlyph) {
+        this(null, requireMathGlyphRef(glyphRef), width, height, advance, ascent, descent, leading, glyphWidth,
+                glyphHeight, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY,
+                bearingX, bearingY, hasBitmap, coloredGlyph);
+    }
+
+    private GlyphInfo(Integer codepoint, MathGlyphRef glyphRef, int width, int height, float advance, float ascent,
+            float descent, float leading, float glyphWidth, float glyphHeight, int slotWidth, int slotHeight,
+            int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int bearingX, int bearingY,
+            boolean hasBitmap, boolean coloredGlyph) {
         this.codepoint = codepoint;
+        this.mathGlyphRef = glyphRef;
         this.width = width;
         this.height = height;
         this.advance = advance;
@@ -116,8 +138,9 @@ public class GlyphInfo {
         this.glyphHeight = glyphHeight;
         this.slotWidth = Math.max(0, slotWidth);
         this.slotHeight = Math.max(0, slotHeight);
-        this.atlasBaselineX = Math.max(0, atlasBaselineX);
-        this.atlasBaselineY = Math.max(0, atlasBaselineY);
+        // 数学 tile 的原点可位于基线另一侧；负槽内基线不能按普通字符格钳制。
+        this.atlasBaselineX = glyphRef == null ? Math.max(0, atlasBaselineX) : atlasBaselineX;
+        this.atlasBaselineY = glyphRef == null ? Math.max(0, atlasBaselineY) : atlasBaselineY;
         this.lineBaselineY = Math.max(0, lineBaselineY);
         this.bearingX = bearingX;
         this.bearingY = bearingY;
@@ -151,7 +174,39 @@ public class GlyphInfo {
                 atlasBaselineX, atlasBaselineY, lineBaselineY, bearingX, bearingY, hasBitmap, coloredGlyph);
     }
 
+    public GlyphRequestToken.Kind getKind() {
+        return mathGlyphRef == null ? GlyphRequestToken.Kind.CODEPOINT : GlyphRequestToken.Kind.MATH_GLYPH;
+    }
+
+    public MathGlyphRef getMathGlyphRef() {
+        if (mathGlyphRef == null) { throw new IllegalStateException("码点元数据没有数学身份"); }
+        return mathGlyphRef;
+    }
+
+    private static MathGlyphRef requireMathGlyphRef(MathGlyphRef glyphRef) {
+        if (glyphRef == null) { throw new IllegalArgumentException("glyphRef 不得为 null"); }
+        return glyphRef;
+    }
+
+    /** 冻结包括潜在可变子类在内的全部元数据；数学身份保留明确分支。 */
+    public static GlyphInfo copyOf(GlyphInfo source) {
+        if (source == null) { return null; }
+        if (source.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) {
+            return new GlyphInfo(source.getMathGlyphRef(), source.getWidth(), source.getHeight(), source.getAdvance(),
+                    source.getAscent(), source.getDescent(), source.getLeading(), source.getGlyphWidth(),
+                    source.getGlyphHeight(), source.getSlotWidth(), source.getSlotHeight(), source.getAtlasBaselineX(),
+                    source.getAtlasBaselineY(), source.getLineBaselineY(), source.getBearingX(), source.getBearingY(),
+                    source.hasBitmap(), source.isColoredGlyph());
+        }
+        return new GlyphInfo(source.getCodepoint(), source.getWidth(), source.getHeight(), source.getAdvance(),
+                source.getAscent(), source.getDescent(), source.getLeading(), source.getGlyphWidth(),
+                source.getGlyphHeight(), source.getSlotWidth(), source.getSlotHeight(), source.getAtlasBaselineX(),
+                source.getAtlasBaselineY(), source.getLineBaselineY(), source.getBearingX(), source.getBearingY(),
+                source.hasBitmap(), source.isColoredGlyph());
+    }
+
     public int getCodepoint() {
+        if (mathGlyphRef != null) { throw new IllegalStateException("数学元数据没有 Unicode 码点"); }
         return codepoint;
     }
 

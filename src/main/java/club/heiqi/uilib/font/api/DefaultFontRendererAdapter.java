@@ -11,6 +11,14 @@ import club.heiqi.uilib.font.internal.LatexFontSize;
 import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.LatexParser;
 import club.heiqi.uilib.font.latex.layout.GlyphElem;
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
+import club.heiqi.uilib.font.latex.layout.MathGlyphClip;
+import club.heiqi.uilib.font.latex.layout.MathFontSupport;
+import club.heiqi.uilib.font.latex.layout.MathGlyphMetrics;
+import club.heiqi.uilib.font.glyph.MathGlyphRasterPlan;
+import club.heiqi.uilib.font.glyph.MathGlyphKey;
+import club.heiqi.uilib.font.glyph.GlyphInfo;
+import club.heiqi.uilib.font.page.MathGlyphSlot;
 import club.heiqi.uilib.font.latex.MathFontStyle;
 import club.heiqi.uilib.font.latex.layout.LatexCache;
 import club.heiqi.uilib.font.latex.layout.MathBox;
@@ -478,7 +486,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int runtimeVersion = demandTables.getRuntimeVersion();
             int glyphSize = settings.getGlyphSize();
             Set<Long> submittedDemands = new HashSet<Long>();
+            Set<MathGlyphKey> submittedMathDemands = new HashSet<MathGlyphKey>();
             for (int index = 0; index < preparedText.size(); index++) {
+                if (preparedText.mathGlyphs[index] != null) {
+                    submitVisibleMathDemand(fontService, demandTables, preparedText, index, submittedMathDemands);
+                    continue;
+                }
                 submitVisibleDemandIfNeeded(fontService, demandTables, runtimeVersion, glyphSize,
                         preparedText.renderCodepoints[index], preparedText.fontTypes[index], submittedDemands);
             }
@@ -742,7 +755,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         int runtimeVersion = demandTables.getRuntimeVersion();
         int glyphSize = settings.getGlyphSize();
         Set<Long> submittedDemands = new HashSet<Long>();
+        Set<MathGlyphKey> submittedMathDemands = new HashSet<MathGlyphKey>();
         for (int index = 0; index < preparedText.size(); index++) {
+            if (preparedText.mathGlyphs[index] != null) {
+                submitVisibleMathDemand(fontService, demandTables, preparedText, index, submittedMathDemands);
+                continue;
+            }
             submitVisibleDemandIfNeeded(fontService, demandTables, runtimeVersion, glyphSize,
                     preparedText.renderCodepoints[index], preparedText.fontTypes[index], submittedDemands);
         }
@@ -820,6 +838,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         for (int glyphIndex = 0; glyphIndex < preparedText.size(); glyphIndex++) {
             currentX += preparedText.boundaryAdvances[glyphIndex];
             TextStyle style = preparedText.styles[glyphIndex];
+            if (preparedText.mathGlyphs[glyphIndex] != null) {
+                collectPreparedMathGlyph(preparedText, glyphIndex, currentX, drawY, dropShadow, renderScale, tables, collector);
+                currentX += preparedText.measuredWidths[glyphIndex];
+                continue;
+            }
             FontType fontType = preparedText.fontTypes[glyphIndex];
             int pageCount = tables.getPageCount(fontType);
             int renderCodepoint = preparedText.renderCodepoints[glyphIndex];
@@ -932,6 +955,55 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return (int) Math.ceil(currentX);
     }
 
+    private void collectPreparedMathGlyph(PreparedText prepared, int index, float currentX, float y,
+            boolean shadow, float scale, GlyphRuntimeTablesView tables, GlyphCollector collector) {
+        PreparedMathGlyph math = prepared.mathGlyphs[index];
+        if (math.runtimeVersion != tables.getRuntimeVersion()) return;
+        TextStyle style = prepared.styles[index];
+        int size = prepared.fontSizePx[index];
+        float charSize = resolveGlyphCharSize(scale, size);
+        float baseSize = resolveBaselineCharSize(scale, prepared.latexBaseSizePx[index]);
+        float x = currentX + prepared.xOffsets[index];
+        float top = y + prepared.yOffsets[index] + resolveBaselineOffsetY(style, charSize);
+        float baseline = top + math.baselineOffset;
+        for (int tile = 0; tile < math.plan.getTileCount(); tile++) {
+            MathGlyphSlot slot = tables.getMathGlyphSlot(math.ref, math.rasterSize, tile);
+            if (slot == null || !slot.getGlyphInfo().hasBitmap()) continue;
+            GlyphInfo info = slot.getGlyphInfo();
+            byte flags = slot.getFlags();
+            // Resolved physical glyphs never inherit host shear; each tile covers only its integer core.
+            for (int pass = shadow ? 0 : 1; pass < 2; pass++) {
+                boolean isShadow = pass == 0;
+                float passX = x + (isShadow ? (float) FontConfig.shadowOffsetX * scale : 0);
+                float passBaseline = baseline + (isShadow ? (float) FontConfig.shadowOffsetY * scale : 0);
+                int color = isShadow ? darkenShadow(style.getColor()) : style.getColor();
+                if (math.clip == null) {
+                    collector.collectBaselineAlignedGlyph(FontType.NORMAL, slot.getPageIndex(), slot.getTextureId(),
+                            slot.getTextureSize(), slot.getSlotX(), slot.getSlotY(), info.getSlotWidth(), info.getSlotHeight(),
+                            info.getAtlasBaselineX(), info.getAtlasBaselineY(), 0, math.rasterSize,
+                            (int) info.getGlyphWidth(), (int) info.getGlyphHeight(), info.getBearingX(), info.getBearingY(),
+                            passX, passBaseline, charSize, color, false, flags, charSize);
+                } else {
+                    // clip 已是相对字形原点的最终 logical px，只应用一次宿主 renderScale。
+                    collector.collectBaselineAlignedGlyphClipped(FontType.NORMAL, slot.getPageIndex(), slot.getTextureId(),
+                            slot.getTextureSize(), slot.getSlotX(), slot.getSlotY(), info.getSlotWidth(), info.getSlotHeight(),
+                            info.getAtlasBaselineX(), info.getAtlasBaselineY(), 0, math.rasterSize,
+                            (int) info.getGlyphWidth(), (int) info.getGlyphHeight(), info.getBearingX(), info.getBearingY(),
+                            passX, passBaseline, charSize, color, false, flags, charSize,
+                            passX + math.clip.getLeft() * scale, passBaseline + math.clip.getTop() * scale,
+                            passX + math.clip.getRight() * scale, passBaseline + math.clip.getBottom() * scale);
+                }
+                markDeferredFlushDirtyIfNeeded();
+            }
+        }
+        // Logical advance and decorations belong to the glyph, not each bitmap tile.
+        if (shadow) collectDecorations(collector, x + (float) FontConfig.shadowOffsetX * scale,
+                top + (float) FontConfig.shadowOffsetY * scale, prepared.measuredWidths[index], charSize, baseSize,
+                scale, style, darkenShadow(style.getColor()), false);
+        collectDecorations(collector, x, top, prepared.measuredWidths[index], charSize, baseSize,
+                scale, style, style.getColor(), true);
+    }
+
     private PreparedText prepareGlyphs(FontRuntimeSettings settings, List<TextSegment> segments,
             TextLayoutService textLayoutService, float renderScale, float baseFontSizePx,
             GlyphRuntimeTablesView tables) {
@@ -958,7 +1030,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         tables.getRuntimeVersion());
                 latexBoxes[s] = box;
                 for (GlyphElem elem : box.getGlyphs()) {
-                    glyphCount += countRenderableCodepoints(elem.getText());
+                    glyphCount += elem.getMathGlyphRef() == null ? countRenderableCodepoints(elem.getText()) : 1;
                 }
                 continue;
             }
@@ -974,6 +1046,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             }
         }
         int[] renderCodepoints = new int[glyphCount];
+        PreparedMathGlyph[] mathGlyphs = new PreparedMathGlyph[glyphCount];
         FontType[] fontTypes = new FontType[glyphCount];
         float[] measuredWidths = new float[glyphCount];
         // 无字形公式在真实字形之间推进；末项保留尾段/整行宽度，不借假字形占位。
@@ -1032,7 +1105,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                         resolvedBaseFontSizePx, textLayoutService, tables, renderScale, renderCodepoints,
                         fontTypes, measuredWidths, styles, fontSizePx, xOffsets, yOffsets, italicFlags, inheritTextItalicFlags,
                         glyphIndex, segmentStartX, latexRules, latexRuleColors, latexRuleRefGlyph,
-                        latexBaseSizePx, maxTextFontSizePx, lineLatexShift, maxFontSizeHolder);
+                        latexBaseSizePx, maxTextFontSizePx, lineLatexShift, maxFontSizeHolder, mathGlyphs, settings);
                 if (glyphIndex == segmentFirstGlyph) {
                     boundaryAdvances[glyphIndex] += latexBoxes[s].getWidth() * renderScale;
                 }
@@ -1104,7 +1177,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return new PreparedText(settings, renderCodepoints, fontTypes, measuredWidths, styles, fontSizePx,
                 maxFontSizeHolder[0], resolvedBaseFontSizePx, xOffsets, yOffsets, italicFlags, inheritTextItalicFlags, hasMixedSize,
                 ruleArray, ruleColors, ruleRefGlyphs, latexBaseSizePx, maxTextFontSizePx, lineLatexShift,
-                boundaryAdvances);
+                boundaryAdvances, mathGlyphs);
     }
 
     /**
@@ -1119,7 +1192,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             TextStyle[] styles, int[] fontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags, boolean[] inheritTextItalicFlags,
             int startGlyphIndex, float segmentStartX, List<float[]> latexRules, List<Integer> latexRuleColors,
             List<Integer> latexRuleRefGlyph, int[] latexBaseSizePx, int maxTextFontSizePx,
-            float lineLatexShift, int[] maxFontSizeHolder) {
+            float lineLatexShift, int[] maxFontSizeHolder, PreparedMathGlyph[] mathGlyphs, FontRuntimeSettings settings) {
         int glyphIndex = startGlyphIndex;
         // 本段实际吐出的第一个字形下标：规则线的基线补偿要向它借同一套换算（-1 = 整段没出字形）
         int firstSegmentGlyph = -1;
@@ -1137,6 +1210,29 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             int glyphSizePx = LatexFontSize.effective(segmentFontSizePx * elem.getSizeScale());
             if (glyphSizePx > maxFontSizeHolder[0]) {
                 maxFontSizeHolder[0] = glyphSizePx; // 放大型字形（伸缩括号）参与整行基线基准
+            }
+            if (elem.getMathGlyphRef() != null) {
+                MathFontSupport support = glyphMetrics.mathFontSupport();
+                if (support == null) throw new IllegalStateException("Resolved math glyph has no font support");
+                MathGlyphMetrics metrics = support.measure(elem.getMathGlyphRef(), glyphSizePx);
+                // 图集沿用高分辨率基准；逻辑 Device/advance 只在上面的有效字号测量一次。
+                int rasterSize = settings.getPageGlyphSize();
+                MathGlyphRasterPlan plan = new MathGlyphRasterPlan(support.measure(elem.getMathGlyphRef(), rasterSize),
+                        settings.getTextureSize(), settings.getGlyphInkPadding());
+                mathGlyphs[glyphIndex] = new PreparedMathGlyph(elem.getMathGlyphRef(), plan, rasterSize,
+                        textLayoutService.getAscent(latexBaseSize) * renderScale, tables.getRuntimeVersion(), elem.getMathGlyphClip());
+                renderCodepoints[glyphIndex] = -1;
+                fontTypes[glyphIndex] = FontType.NORMAL; // physical glyph identity already selected its face/style
+                measuredWidths[glyphIndex] = metrics.getAdvance() * renderScale;
+                styles[glyphIndex] = style;
+                fontSizePx[glyphIndex] = glyphSizePx;
+                latexBaseSizePx[glyphIndex] = latexBaseSize;
+                xOffsets[glyphIndex] = (elem.getX() - segmentAdvanceSum) * renderScale;
+                yOffsets[glyphIndex] = (elem.getY() + lineLatexShift) * renderScale;
+                if (firstSegmentGlyph < 0) firstSegmentGlyph = glyphIndex;
+                segmentAdvanceSum += metrics.getAdvance();
+                glyphIndex++;
+                continue;
             }
             // 字形尺寸与推进共享量化字号；不再次应用段样式中的 size/sup/sub。
             float elemInnerAdvance = 0.0F;
@@ -1190,13 +1286,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return glyphIndex;
     }
 
-    /** 布局 LaTeX 段（经 LatexCache 缓存；与测量侧 TextLayoutService.measureLatexWidth 同口径）。 */
+    /** 布局 LaTeX 段（经 LatexCache 缓存；与测量侧 TextLayoutService.getLatexBox 同口径）。 */
     private MathBox layoutLatexSegment(TextSegment segment, TextLayoutService textLayoutService,
             int baseFontSizePx, int runtimeVersion) {
         return LatexCache.getInstance().getOrLayout(segment.getLatexSource(), baseFontSizePx, runtimeVersion,
                 segment.getStyle().getFontType(), MATH_LAYOUT,
                 textLayoutService.createMathMetrics(segment.getStyle(), baseFontSizePx),
-                textLayoutService.currentInkEpoch());
+                textLayoutService.currentInkEpoch(), segment.getLatexMathStyle());
     }
 
     /** 布局盒内是否存在字号缩放字形（sizeScale != 1.0）。 */
@@ -1363,6 +1459,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     private static float glyphBaselineOffset(PreparedText preparedText, GlyphRuntimeTablesView tables,
             int glyphIndex, int glyphSize, float renderScale) {
+        if (preparedText.mathGlyphs[glyphIndex] != null) {
+            return preparedText.mathGlyphs[glyphIndex].baselineOffset;
+        }
         int codepoint = preparedText.renderCodepoints[glyphIndex];
         if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return 0.0F;
@@ -1388,6 +1487,20 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     static float resolveBaselineCharSize(float renderScale, int maxFontSizePx) {
         return Math.max(1, maxFontSizePx) * Math.max(0.01F, renderScale);
+    }
+
+    private void submitVisibleMathDemand(FontService service, GlyphRuntimeTablesView tables, PreparedText prepared,
+            int index, Set<MathGlyphKey> submitted) {
+        PreparedMathGlyph math = prepared.mathGlyphs[index];
+        int size = math.rasterSize;
+        if (math.runtimeVersion != tables.getRuntimeVersion()) return;
+        for (int tile = 0; tile < math.plan.getTileCount(); tile++) {
+            if (tables.getMathGlyphSlot(math.ref, math.rasterSize, tile) == null
+                    && submitted.add(new MathGlyphKey(math.runtimeVersion, math.ref, size, tile))) {
+                service.submitGlyphGeneration(GlyphGenerationTask.forMathGlyph(math.runtimeVersion, math.ref, size, tile,
+                        GlyphGenerationPriority.HIGH));
+            }
+        }
     }
 
     private void submitVisibleDemandIfNeeded(FontService fontService, GlyphRuntimeTablesView tables,
@@ -1571,7 +1684,27 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         int run();
     }
 
+    private static final class PreparedMathGlyph {
+        private final MathGlyphRef ref;
+        private final MathGlyphRasterPlan plan;
+        private final MathGlyphClip clip;
+        private final int rasterSize;
+        private final float baselineOffset;
+        private final int runtimeVersion;
+
+        private PreparedMathGlyph(MathGlyphRef ref, MathGlyphRasterPlan plan, int rasterSize, float baselineOffset,
+                int runtimeVersion, MathGlyphClip clip) {
+            this.clip = clip;
+            this.rasterSize = rasterSize;
+            this.ref = ref;
+            this.plan = plan;
+            this.baselineOffset = baselineOffset;
+            this.runtimeVersion = runtimeVersion;
+        }
+    }
+
     private static final class PreparedText {
+        private final PreparedMathGlyph[] mathGlyphs;
 
         private final FontRuntimeSettings settings;
         private final int[] renderCodepoints;
@@ -1614,7 +1747,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 float[] measuredWidths, TextStyle[] styles, int[] fontSizePx, int maxFontSizePx,
                 int baseFontSizePx, float[] xOffsets, float[] yOffsets, boolean[] italicFlags, boolean[] inheritTextItalicFlags,
                 boolean hasMixedSize, float[][] latexRules, int[] latexRuleColors, int[] latexRuleRefGlyph,
-                int[] latexBaseSizePx, int maxTextFontSizePx, float lineLatexShift, float[] boundaryAdvances) {
+                int[] latexBaseSizePx, int maxTextFontSizePx, float lineLatexShift, float[] boundaryAdvances,
+                PreparedMathGlyph[] mathGlyphs) {
+            this.mathGlyphs = mathGlyphs;
             this.settings = settings;
             this.renderCodepoints = renderCodepoints;
             this.fontTypes = fontTypes;
@@ -1649,7 +1784,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
                     new int[0], (int) settings.getCharSize(), (int) settings.getCharSize(),
                     new float[0], new float[0], new boolean[0], new boolean[0], false, new float[0][0], new int[0],
-                    new int[0], new int[0], 0, 0.0F, new float[1]);
+                    new int[0], new int[0], 0, 0.0F, new float[1], new PreparedMathGlyph[0]);
         }
     }
 

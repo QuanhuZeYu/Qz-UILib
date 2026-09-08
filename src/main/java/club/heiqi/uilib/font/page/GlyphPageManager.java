@@ -24,6 +24,8 @@ import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResult;
 import club.heiqi.uilib.font.glyph.GlyphInfo;
 import club.heiqi.uilib.font.glyph.GlyphRequestToken;
+import club.heiqi.uilib.font.glyph.MathGlyphKey;
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
 
 /**
  * 字符页管理器。
@@ -133,7 +135,7 @@ public class GlyphPageManager {
                 uploadDrainBitmapByteBudget, nanoTime, LwjglGlApi.INSTANCE);
     }
 
-    private GlyphPageManager(Object ownerToken, int maxPendingUploads, long maxPendingBitmapBytes,
+    GlyphPageManager(Object ownerToken, int maxPendingUploads, long maxPendingBitmapBytes,
             int visibleRecordReserve, long visibleBitmapReserve, long mailboxAgingStepNanos,
             int maxResidentAtlasPages, long maxResidentAtlasBytes, long uploadDrainTimeBudgetNanos,
             long uploadDrainBitmapByteBudget, LongSupplier nanoTime, GlApi glApi) {
@@ -358,6 +360,72 @@ public class GlyphPageManager {
         }
         GlyphDemandRegistry.ActiveGlyphDemand demand = demands.get(generation, codepoint, fontType);
         return demand != null && matchesActiveDemand(demand);
+    }
+
+    /** Claim a mathematical content identity in the same request lifecycle as Unicode glyphs. */
+    public synchronized GlyphRequestToken claimMathRequest(int generation, MathGlyphRef ref, int rasterSize,
+            int tileIndex, int demandPriority) {
+        assertRuntimeAccess();
+        MathGlyphKey key = new MathGlyphKey(generation, ref, rasterSize, tileIndex);
+        if (generation != runtimeVersion || !isValidDemandPriority(demandPriority)) return null;
+        MathGlyphRecord record = runtimeTables.mathGlyphs.get(key);
+        if (record != null && (isActiveState(record.state) || isReadyState(record.state) || record.pressure)) return null;
+        if (record == null) {
+            record = new MathGlyphRecord();
+            runtimeTables.mathGlyphs.put(key, record);
+        }
+        record.clearResidency();
+        record.token = GlyphRequestToken.forMathGlyph(generation, nextRequestId(), ref, rasterSize, tileIndex);
+        record.state = GlyphRuntimeTables.STATE_QUEUED;
+        demands.put(record.token, demandPriority);
+        return record.token;
+    }
+
+    public GlyphRequestToken promoteMathDemand(int generation, MathGlyphRef ref, int rasterSize,
+            int tileIndex, int demandPriority) {
+        assertRuntimeAccess();
+        GlyphDemandRegistry.ActiveGlyphDemand demand;
+        synchronized (this) {
+            demand = demands.get(new MathGlyphKey(generation, ref, rasterSize, tileIndex));
+            if (!isValidDemandPriority(demandPriority) || demand == null || !matchesActiveDemand(demand)
+                    || demand.priority.get() >= demandPriority) return null;
+            demand.priority.set(demandPriority);
+        }
+        synchronized (mailboxLock) { mailboxLock.notifyAll(); }
+        return demand.token;
+    }
+
+    public synchronized boolean hasActiveMathDemand(int generation, MathGlyphRef ref, int rasterSize, int tileIndex) {
+        GlyphDemandRegistry.ActiveGlyphDemand demand = demands.get(new MathGlyphKey(generation, ref, rasterSize, tileIndex));
+        return demand != null && matchesActiveDemand(demand);
+    }
+
+    /** Immutable current slot snapshot; caller must re-query after reload or eviction. */
+    public synchronized MathGlyphSlot getMathGlyphSlot(int generation, MathGlyphRef ref, int rasterSize, int tileIndex) {
+        assertRuntimeAccess();
+        if (generation != runtimeVersion) return null;
+        MathGlyphRecord record = runtimeTables.mathGlyphs.get(new MathGlyphKey(generation, ref, rasterSize, tileIndex));
+        if (record == null || !isReadyState(record.state)) return null;
+        if (record.state == GlyphRuntimeTables.STATE_RESIDENT
+                && getPageByLocation(record.location, FontType.NORMAL) == null) return null;
+        return record.slot;
+    }
+
+    /** Retire the shared physical page containing this current mathematical glyph. */
+    public synchronized boolean evictMathGlyphPage(GlyphRequestToken token) {
+        assertRuntimeAccess();
+        if (token == null || token.getKind() != GlyphRequestToken.Kind.MATH_GLYPH
+                || !matches(token, GlyphState.RESIDENT)) return false;
+        GlyphPage page = getPageByLocation(mathRecord(token).location, FontType.NORMAL);
+        if (page == null || page.isBatchActive()) return false;
+        quarantineAtlasPage(FontType.NORMAL, page);
+        return true;
+    }
+
+    public synchronized GlyphState getMathState(int generation, MathGlyphRef ref, int rasterSize, int tileIndex) {
+        if (generation != runtimeVersion) return null;
+        MathGlyphRecord record = runtimeTables.mathGlyphs.get(new MathGlyphKey(generation, ref, rasterSize, tileIndex));
+        return record == null ? GlyphState.ABSENT : toGlyphState(record.state);
     }
 
     /**
@@ -748,7 +816,7 @@ public class GlyphPageManager {
         if (!isCurrentToken(token)) {
             return null;
         }
-        return toGlyphState(runtimeTables.stateArray(token.getFontType())[token.getCodepoint()]);
+        return toGlyphState(tokenState(token));
     }
 
     /**
@@ -954,7 +1022,7 @@ public class GlyphPageManager {
 
     private AtlasReservation reserveAtlasSlot(GlyphRequestToken token, GlyphInfo glyphInfo,
             UploadAttemptContext context) {
-        FontType fontType = token.getFontType();
+        FontType fontType = atlasGroup(token);
         int slotWidth = glyphInfo.getSlotWidth();
         int slotHeight = glyphInfo.getSlotHeight();
         if (slotWidth > textureSize || slotHeight > textureSize) {
@@ -999,15 +1067,12 @@ public class GlyphPageManager {
         GlyphUploadPlan plan = upload.getUploadPlan();
         GlyphRequestToken token = plan.getToken();
         GlyphInfo glyphInfo = plan.getGlyphInfo();
-        FontType fontType = token.getFontType();
-        int codepoint = token.getCodepoint();
-        byte flags = buildGlyphFlags(glyphInfo);
+        FontType fontType = atlasGroup(token);
+
         if (!glyphInfo.hasBitmap()) {
             synchronized (mailboxLock) {
                 if (isUploadLeaseCurrentLocked(upload) && matches(token, GlyphState.UPLOADING)) {
-                    runtimeTables.flagsArray(fontType)[codepoint] = flags;
-                    runtimeTables.locationArray(fontType)[codepoint] = GlyphRuntimeTables.LOCATION_NO_BITMAP;
-                    runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_NO_BITMAP;
+                    publishGlyph(token, null, null, glyphInfo);
                     removeActiveDemand(token);
                     readyGlyphCount++;
                     return UploadOutcome.COMMITTED;
@@ -1044,12 +1109,8 @@ public class GlyphPageManager {
                 if (leaseCurrent && matches(token, GlyphState.UPLOADING)) {
                     reservation.commit();
                     GlyphPage.GlyphSlot slot = reservation.slotReservation.getSlot();
-                    cacheGlyphGeometry(fontType, codepoint, slot, glyphInfo);
-                    runtimeTables.flagsArray(fontType)[codepoint] = flags;
-                    runtimeTables.locationArray(fontType)[codepoint] =
-                            GlyphRuntimeTables.packLocation(reservation.page.getPageIndex(), slot.getSlotIndex());
+                    publishGlyph(token, reservation.page, slot, glyphInfo);
                     reservation.seal();
-                    runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_RESIDENT;
                     removeActiveDemand(token);
                     readyGlyphCount++;
                     committed = true;
@@ -1058,7 +1119,7 @@ public class GlyphPageManager {
             if (!committed) {
                 context.rollbackReason = leaseCurrent ? "TOKEN_STALE_AFTER_GL" : "MAILBOX_EPOCH_STALE_AFTER_GL";
                 uploadPage.rollbackUploadedRegion(reservation.slotReservation.getSlot());
-                rollbackUpload(reservation, fontType, codepoint, context, null);
+                rollbackUpload(reservation, token, context, null);
                 markCancelled(token, GlyphState.UPLOADING);
                 FontRuntimeDiagnostics.logGlyphTokenRejection(token, "upload_commit", GlyphState.UPLOADING,
                         getTokenState(token), "RESIDENT_COMMIT_REJECTED");
@@ -1072,20 +1133,40 @@ public class GlyphPageManager {
         } catch (RuntimeException exception) {
             context.rollbackReason = uploadRollbackReason(exception);
             if (!reservation.isRolledBack()) {
-                rollbackUpload(reservation, fontType, codepoint, context, exception);
+                rollbackUpload(reservation, token, context, exception);
             }
             throw exception;
         } catch (Error error) {
             context.rollbackReason = uploadRollbackReason(error);
             if (!reservation.isRolledBack()) {
-                rollbackUpload(reservation, fontType, codepoint, context, error);
+                rollbackUpload(reservation, token, context, error);
             }
             throw error;
         }
     }
 
+    private void publishGlyph(GlyphRequestToken token, GlyphPage page, GlyphPage.GlyphSlot slot, GlyphInfo info) {
+        int location = info.hasBitmap() ? GlyphRuntimeTables.packLocation(page.getPageIndex(), slot.getSlotIndex())
+                : GlyphRuntimeTables.LOCATION_NO_BITMAP;
+        if (token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) {
+            MathGlyphRecord record = mathRecord(token);
+            record.location = location;
+            record.slot = new MathGlyphSlot(token, page == null ? -1 : page.getPageIndex(), page == null ? 0 : page.getTextureId(),
+                    page == null ? 0 : page.getTextureSize(), slot == null ? 0 : slot.getX(),
+                    slot == null ? 0 : slot.getY(), info);
+            runtimeTables.bumpInkEpoch();
+        } else {
+            FontType fontType = token.getFontType();
+            int codepoint = token.getCodepoint();
+            if (slot != null) cacheGlyphGeometry(fontType, codepoint, slot, info);
+            runtimeTables.flagsArray(fontType)[codepoint] = buildGlyphFlags(info);
+            runtimeTables.locationArray(fontType)[codepoint] = location;
+        }
+        setTokenState(token, info.hasBitmap() ? GlyphRuntimeTables.STATE_RESIDENT : GlyphRuntimeTables.STATE_NO_BITMAP);
+    }
+
     private void markAtlasPressure(GlyphRequestToken token, UploadAttemptContext context, String reason) {
-        FontType fontType = token.getFontType();
+        FontType fontType = atlasGroup(token);
         if (fontType == FontType.BOLD) {
             atlasBookkeeping.setPressure(FontType.BOLD, true);
         } else {
@@ -1103,8 +1184,9 @@ public class GlyphPageManager {
         if (!matches(token, GlyphState.UPLOADING)) {
             return false;
         }
-        pressureGlyphs(token.getFontType()).set(token.getCodepoint());
-        runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] = GlyphRuntimeTables.STATE_ABSENT;
+        if (token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) mathRecord(token).pressure = true;
+        else pressureGlyphs(token.getFontType()).set(token.getCodepoint());
+        setTokenState(token, GlyphRuntimeTables.STATE_ABSENT);
         removeActiveDemand(token);
         return true;
     }
@@ -1113,9 +1195,13 @@ public class GlyphPageManager {
         return atlasBookkeeping.pressureGlyphs(fontType);
     }
 
-    private void rollbackUpload(AtlasReservation reservation, FontType fontType, int codepoint,
+    private void rollbackUpload(AtlasReservation reservation, GlyphRequestToken token,
             UploadAttemptContext context, Throwable originalFailure) {
-        clearGlyphResidency(fontType, codepoint);
+        FontType fontType = atlasGroup(token);
+        if (isCurrentToken(token)) {
+            if (token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) mathRecord(token).clearResidency();
+            else clearGlyphResidency(fontType, token.getCodepoint());
+        }
         Throwable rollbackFailure = null;
         boolean firstRollback = !reservation.isRolledBack();
         try {
@@ -1158,6 +1244,17 @@ public class GlyphPageManager {
                 readyGlyphCount--;
             }
         }
+        if (fontType == FontType.NORMAL) {
+            for (MathGlyphRecord record : runtimeTables.mathGlyphs.values()) {
+                if (record.state == GlyphRuntimeTables.STATE_RESIDENT
+                        && GlyphRuntimeTables.unpackPageIndex(record.location) == pageIndex) {
+                    record.clearResidency();
+                    record.state = GlyphRuntimeTables.STATE_ABSENT;
+                    readyGlyphCount--;
+                    runtimeTables.bumpInkEpoch();
+                }
+            }
+        }
         page.close();
         atlasBookkeeping.decrementResident();
         releaseAtlasPressureIfCapacityAvailable();
@@ -1167,6 +1264,7 @@ public class GlyphPageManager {
         if (atlasActivationPressureReason() != null) {
             return;
         }
+        for (MathGlyphRecord record : runtimeTables.mathGlyphs.values()) record.pressure = false;
         atlasBookkeeping.clearPressureGlyphs();
         atlasBookkeeping.setPressure(FontType.NORMAL, false);
         atlasBookkeeping.setPressure(FontType.BOLD, false);
@@ -1292,7 +1390,7 @@ public class GlyphPageManager {
         if (!matches(token, expectedState)) {
             return false;
         }
-        runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] = stateByte(nextState);
+        setTokenState(token, stateByte(nextState));
         if (!isActiveState(nextState)) {
             removeActiveDemand(token);
         }
@@ -1328,9 +1426,9 @@ public class GlyphPageManager {
     }
 
     private long estimateUploadPlanBytes(GlyphGenerationResult result) {
-        GlyphInfo glyphInfo = result.getGlyphInfo();
+        GlyphInfo glyphInfo = GlyphUploadPlan.resultInfo(result);
         GlyphRequestToken token = result.getToken();
-        if (glyphInfo == null || token == null || glyphInfo.getCodepoint() != token.getCodepoint()) {
+        if (!GlyphUploadPlan.matchesInfo(token, glyphInfo)) {
             throw new IllegalArgumentException("glyph result 的 token 与 glyphInfo 不一致");
         }
         if (!glyphInfo.hasBitmap()) {
@@ -1346,7 +1444,7 @@ public class GlyphPageManager {
         if (demand == null || !isCurrentToken(demand.token)) {
             return false;
         }
-        byte state = runtimeTables.stateArray(demand.token.getFontType())[demand.token.getCodepoint()];
+        byte state = tokenState(demand.token);
         return isActiveState(state);
     }
 
@@ -1383,13 +1481,37 @@ public class GlyphPageManager {
 
     private boolean matches(GlyphRequestToken token, GlyphState expectedState) {
         return expectedState != null && isCurrentToken(token)
-                && runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] == stateByte(expectedState);
+                && tokenState(token) == stateByte(expectedState);
     }
 
     private boolean isCurrentToken(GlyphRequestToken token) {
+        if (token != null && token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) {
+            MathGlyphRecord record = mathRecord(token);
+            return token.getGeneration() == runtimeVersion && record != null && token.equals(record.token);
+        }
         return token != null && token.getGeneration() == runtimeVersion
                 && GlyphRuntimeTables.isValidCodepoint(token.getCodepoint())
                 && runtimeTables.requestIdArray(token.getFontType())[token.getCodepoint()] == token.getRequestId();
+    }
+
+    private MathGlyphRecord mathRecord(GlyphRequestToken token) {
+        return runtimeTables.mathGlyphs.get(new MathGlyphKey(token.getGeneration(), token.getMathGlyphRef(),
+                token.getRasterSize(), token.getTileIndex()));
+    }
+
+    private byte tokenState(GlyphRequestToken token) {
+        return token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH ? mathRecord(token).state
+                : runtimeTables.stateArray(token.getFontType())[token.getCodepoint()];
+    }
+
+    private void setTokenState(GlyphRequestToken token, byte state) {
+        if (token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) mathRecord(token).state = state;
+        else runtimeTables.stateArray(token.getFontType())[token.getCodepoint()] = state;
+    }
+
+    // A physical atlas allocation group, never the mathematical glyph's font weight.
+    private FontType atlasGroup(GlyphRequestToken token) {
+        return token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH ? FontType.NORMAL : token.getFontType();
     }
 
     private long nextRequestId() {

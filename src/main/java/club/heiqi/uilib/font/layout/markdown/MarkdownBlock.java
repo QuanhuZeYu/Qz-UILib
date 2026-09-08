@@ -38,7 +38,9 @@ final class MarkdownBlock {
         /** 分隔线。 */
         THEMATIC_BREAK,
         /** GFM 表格；旧出口仍用文档创建时保留的字面降级树。 */
-        TABLE
+        TABLE,
+        /** 独占双美元数学块，正文不再进入 Markdown 行内解析。 */
+        MATH_DISPLAY
     }
 
     final Kind kind;
@@ -213,6 +215,11 @@ final class MarkdownBlock {
     static MarkdownBlock listItem(String markerText, boolean itemOrdered, List<MarkdownBlock> contentBlocks) {
         return new MarkdownBlock(Kind.LIST_ITEM, 0, null, null, null, null, markerText, itemOrdered, 0,
                 contentBlocks, 0, null, null);
+    }
+
+    static MarkdownBlock mathDisplay(List<String> body, List<List<MarkdownSpan>> anchors) {
+        return new MarkdownBlock(Kind.MATH_DISPLAY, 0, null, body, null, null, null, false, 0,
+                null, 0, anchors, null);
     }
 
     static MarkdownBlock table(TableData table) {

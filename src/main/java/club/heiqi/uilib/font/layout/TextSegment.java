@@ -1,5 +1,7 @@
 package club.heiqi.uilib.font.layout;
 
+import club.heiqi.uilib.font.latex.MathStyleOverride;
+
 /**
  * 文本片段模型：普通文本片段或 LaTeX 公式片段（二者互斥）。
  */
@@ -8,6 +10,7 @@ public class TextSegment {
     private final String text;
     private final TextStyle style;
     private final String latexSource;
+    private final MathStyleOverride latexMathStyle;
 
     /**
      * 创建普通文本片段。
@@ -16,10 +19,10 @@ public class TextSegment {
      * @param style 片段样式
      */
     public TextSegment(String text, TextStyle style) {
-        this(text, style, null);
+        this(text, style, null, MathStyleOverride.INHERIT);
     }
 
-    private TextSegment(String text, TextStyle style, String latexSource) {
+    private TextSegment(String text, TextStyle style, String latexSource, MathStyleOverride latexMathStyle) {
         if (text == null) {
             throw new IllegalArgumentException("text 不能为空");
         }
@@ -28,7 +31,11 @@ public class TextSegment {
         }
         this.text = text;
         this.style = style;
+        if (latexMathStyle == null) {
+            throw new IllegalArgumentException("latexMathStyle 不能为空");
+        }
         this.latexSource = latexSource;
+        this.latexMathStyle = latexMathStyle;
     }
 
     /**
@@ -38,10 +45,29 @@ public class TextSegment {
      * @param style       继承的段落样式
      */
     public static TextSegment forLatex(String latexSource, TextStyle style) {
+        return forLatex(latexSource, style, MathStyleOverride.TEXT);
+    }
+
+    /** 创建具有明确根数学样式的公式；根 INHERIT 归一 TEXT。 */
+    public static TextSegment forLatex(String latexSource, TextStyle style, MathStyleOverride mathStyle) {
+        if (mathStyle == null) {
+            throw new IllegalArgumentException("mathStyle 不能为空");
+        }
         if (latexSource == null) {
             throw new IllegalArgumentException("latexSource 不能为空");
         }
-        return new TextSegment("", style, latexSource);
+        return new TextSegment("", style, latexSource,
+                mathStyle == MathStyleOverride.INHERIT ? MathStyleOverride.TEXT : mathStyle);
+    }
+
+    /** 普通段返回 INHERIT，公式段返回归一后的根数学样式。 */
+    public MathStyleOverride getLatexMathStyle() {
+        return latexMathStyle;
+    }
+
+    /** 仅替换样式引用；调用方需要隔离时传入 style.copy()。 */
+    public TextSegment withStyle(TextStyle style) {
+        return new TextSegment(text, style, latexSource, latexMathStyle);
     }
 
     /** @return 片段文本（LaTeX 片段为空串） */

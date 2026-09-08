@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
+
 /**
  * 字体目录快照。
  */
@@ -33,6 +35,24 @@ public class FontCatalog {
             return new Snapshot(Collections.<Font>emptyList(), nextVersion);
         }
         return new Snapshot(Collections.unmodifiableList(new ArrayList<Font>(updatedFonts)), nextVersion);
+    }
+
+    /**
+     * 生产数学候选入口：字体顺序与数学 face/数据同一快照发布。
+     * 旧 prepareSnapshot/replaceAll 保持 legacy，无数学能力。
+     */
+    public synchronized Snapshot prepareSnapshotWithMath(List<Font> updatedFonts, BundledMathFont mathFont) {
+        if (mathFont == null) { throw new IllegalArgumentException("mathFont must not be null"); }
+        Snapshot legacy = prepareSnapshot(updatedFonts);
+        return new Snapshot(legacy.getFonts(), legacy.getVersion(), mathFont);
+    }
+
+    /** 当前注册的数学能力；手动 legacy 目录返回 null。 */
+    public BundledMathFont getMathFontSupport() { return snapshot.getMathFontSupport(); }
+
+    /** 绘制侧仍必须使用 generation owner 的任务/计划屏障。 */
+    public Font getMathPhysicalFont(MathGlyphRef glyph, int sizePx) {
+        return snapshot.getMathPhysicalFont(glyph, sizePx);
     }
 
     /**
@@ -123,10 +143,24 @@ public class FontCatalog {
 
         private final List<Font> fonts;
         private final int version;
+        private final BundledMathFont mathFont;
 
         private Snapshot(List<Font> fonts, int version) {
+            this(fonts, version, null);
+        }
+
+        private Snapshot(List<Font> fonts, int version, BundledMathFont mathFont) {
             this.fonts = fonts;
             this.version = version;
+            this.mathFont = mathFont;
+        }
+
+        /** 平台对象留在 util 层，layout 仅通过 MathFontSupport 读取值。 */
+        public BundledMathFont getMathFontSupport() { return mathFont; }
+
+        /** 只解析本 candidate 注册的相同内容身份，不将未知/过期 face 偷换。 */
+        public Font getMathPhysicalFont(MathGlyphRef glyph, int sizePx) {
+            return mathFont == null ? null : mathFont.getPhysicalFont(glyph, sizePx);
         }
 
         /**

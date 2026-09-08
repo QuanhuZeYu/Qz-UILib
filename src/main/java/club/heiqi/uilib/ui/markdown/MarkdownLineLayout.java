@@ -6,9 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import club.heiqi.uilib.font.latex.LatexParser;
 import club.heiqi.uilib.font.latex.layout.MathBox;
-import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
@@ -39,8 +37,6 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
  */
 final class MarkdownLineLayout {
 
-    private static final MathLayoutService MATH = new MathLayoutService();
-
     /** 新文档入口共享的视觉行盒；表格和普通行同取实际公式上下界，旧行路不使用它。 */
     static final class VisualLine {
         final List<TextSegment> segments;
@@ -48,6 +44,8 @@ final class MarkdownLineLayout {
         final int height;
         final int textOffsetY;
         final int textHeight;
+        final int leftOverhang;
+        final int inkRight;
 
         VisualLine(List<TextSegment> segments, TextLayoutService measurer, int font) {
             this.segments = segments;
@@ -55,13 +53,27 @@ final class MarkdownLineLayout {
             int textHeight = lineHeightPx(segments, measurer, font);
             this.textHeight = textHeight;
             boolean hasLatex = false;
-            for (TextSegment segment : segments) hasLatex |= segment.isLatex();
+            MathBox[] boxes = new MathBox[segments.size()];
+            double x = 0, inkLeft = 0, inkRight = width;
+            for (int i = 0; i < segments.size(); i++) {
+                TextSegment segment = segments.get(i);
+                if (segment.isLatex()) {
+                    hasLatex = true;
+                    // 根字号只应用一次 span；缓存同时保留根数学样式与字体纪元。
+                    MathBox box = measurer.getLatexBox(segment, font);
+                    boxes[i] = box;
+                    inkLeft = Math.min(inkLeft, x - box.getLeftInkOverhang());
+                    inkRight = Math.max(inkRight, x + box.getWidth() + box.getRightInkOverhang());
+                }
+                x += segmentAdvance(segment, measurer, font);
+            }
+            this.leftOverhang = (int) Math.ceil(-inkLeft);
+            this.inkRight = (int) Math.ceil(inkRight);
             if (!hasLatex) {
                 this.height = textHeight;
                 this.textOffsetY = 0;
                 return;
             }
-            MathBox[] boxes = new MathBox[segments.size()];
             int maxTextSize = 0;
             int maxLatexSize = 0;
             int latexCount = 0;
@@ -76,12 +88,7 @@ final class MarkdownLineLayout {
                 }
                 latexCount++;
                 maxLatexSize = Math.max(maxLatexSize, size);
-                // 与 TextLayoutService/renderer 相同数学布局器与同一注入尺。
-                // 既有 LatexCache 需要 runtimeVersion，而注入服务未公开该读端；不伪造版本，
-                // 不新建缓存。这里只在消费层布局失效时额外计算盒；每帧复用已缓存 ContentLayout。
-                MathBox box = MATH.layout(LatexParser.parse(segment.getLatexSource()), size,
-                        measurer.createMathMetrics(segment.getStyle(), size));
-                boxes[i] = box;
+                MathBox box = boxes[i];
                 if (box.getTotalHeight() > tallest) {
                     tallest = box.getTotalHeight();
                     tallestAscent = box.getHeight();
@@ -245,6 +252,14 @@ final class MarkdownLineLayout {
             List<TextSegment> segments = line.getSegments();
             List<TextSegment> chain = line.getListMarkerChain();
             int column = listColumnPx(chain, measurer, baseFontSizePx);
+            if (line.getKind() == MarkdownLayoutLine.Kind.MATH_DISPLAY && !segments.isEmpty()) {
+                int inset = line.getLeftInsetPx() + column;
+                VisualLine box = new VisualLine(segments, measurer, baseFontSizePx);
+                int center = maxWidthPx <= 0 ? 0 : Math.max(0, (maxWidthPx - inset - box.width) / 2);
+                // 超宽原子不拆不缩；左 ink 留在正文列内，marker 仍由独立 LIST 行拥有。
+                out.add(line.withLeftInsetPx(inset + Math.max(box.leftOverhang, center)));
+                continue;
+            }
             if (segments.isEmpty()) {
                 // 空行/无线文本的分隔线行：一行即一显示行；M10d 项内零段行仍平移吃列
                 // （围栏底色/横线矩形随行头缘平移，块内连续性由「同块同列」保证）。
@@ -440,6 +455,9 @@ final class MarkdownLineLayout {
                 continue;
             }
             int left = line.getLeftInsetPx();
+            if (measured != null && line.getKind() != MarkdownLayoutLine.Kind.MATH_DISPLAY) {
+                left += measured[t].leftOverhang;
+            }
             int textTop = tops[t] + (measured == null ? 0 : measured[t].textOffsetY);
             out.add(PaintCommand.segments(segments, left, textTop, Math.max(1, baseFontSizePx)));
             if (measured == null) {
@@ -879,8 +897,9 @@ final class MarkdownLineLayout {
             TextStyle style = segment == null ? null : segment.getStyle();
             String url = style == null ? null : style.getLink();
             if (url != null) {
-                int left = (int) Math.floor(x);
-                int right = (int) Math.ceil(x + width);
+                MathBox linkBox = segment.isLatex() ? measurer.getLatexBox(segment, baseFontSizePx) : null;
+                int left = (int) Math.floor(x - (linkBox == null ? 0 : linkBox.getLeftInkOverhang()));
+                int right = (int) Math.ceil(x + width + (linkBox == null ? 0 : linkBox.getRightInkOverhang()));
                 if (right > left) {
                     int linkTop = segment.isLatex() ? latexTop : top;
                     int linkHeight = segment.isLatex() ? latexHeight : height;

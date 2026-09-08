@@ -3,6 +3,8 @@ package club.heiqi.uilib.font;
 import club.heiqi.uilib.font.page.GlyphPage;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
+import club.heiqi.uilib.font.page.MathGlyphSlot;
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
 
 /**
  * 字形渲染所需的只读 runtime table view。
@@ -16,6 +18,7 @@ public final class GlyphRuntimeTablesView {
     private final GlyphPageManager pageManager;
     private final Object ownerToken;
     private final int runtimeVersion;
+    private final GlyphPage[] mathPages;
     private final int[] textureIdNormal;
     private final int[] textureIdBold;
     private final int[] textureSizeNormal;
@@ -36,6 +39,8 @@ public final class GlyphRuntimeTablesView {
         this.textureIdBold = snapshotTextureIds(FontType.BOLD);
         this.textureSizeNormal = snapshotTextureSizes(FontType.NORMAL);
         this.textureSizeBold = snapshotTextureSizes(FontType.BOLD);
+        this.mathPages = new GlyphPage[tables.pageCount(FontType.NORMAL)];
+        System.arraycopy(tables.pages(FontType.NORMAL), 0, mathPages, 0, mathPages.length);
     }
 
     /**
@@ -53,6 +58,23 @@ public final class GlyphRuntimeTablesView {
     public static GlyphRuntimeTablesView snapshot(GlyphRuntimeTables tables, GlyphPageManager pageManager,
             int runtimeVersion) {
         return new GlyphRuntimeTablesView(tables, pageManager, null, runtimeVersion);
+    }
+
+    /** 数学身份只经同代 owner 查询，旧页或快照后新页均不可向旧绘制计划泄漏纹理。 */
+    public MathGlyphSlot getMathGlyphSlot(MathGlyphRef ref, int rasterSize, int tileIndex) {
+        return FontRuntimeAccess.call(ownerToken, () -> {
+            MathGlyphSlot slot = pageManager.getMathGlyphSlot(runtimeVersion, ref, rasterSize, tileIndex);
+            if (slot == null || slot.getToken().getGeneration() != runtimeVersion
+                    || !ref.equals(slot.getToken().getMathGlyphRef())
+                    || slot.getToken().getRasterSize() != rasterSize || slot.getToken().getTileIndex() != tileIndex) return null;
+            if (!slot.getGlyphInfo().hasBitmap()) return slot;
+            int page = slot.getPageIndex();
+            if (page < 0 || page >= mathPages.length || mathPages[page] != resolvePage(FontType.NORMAL, page)
+                    || slot.getTextureId() <= 0
+                    || slot.getTextureId() != getPageTextureIdSnapshot(FontType.NORMAL, page)
+                    || slot.getTextureSize() != getPageTextureSizeSnapshot(FontType.NORMAL, page)) return null;
+            return slot;
+        });
     }
 
     public int getRuntimeVersion() {

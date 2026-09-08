@@ -84,15 +84,51 @@ final class MarkdownBlockParser {
         final boolean lazy;
         /** C6a 能力①：本行文本的样式锚点段（null = String 路；空列表 = 空行/零宽行）。 */
         final List<MarkdownSpan> spans;
+        // 同一原文的私有区间；容器切片仅推进 sourceStart，不重建原始换行。
+        final String source;
+        final int sourceStart;
+        final int sourceEnd;
+        final String lineEnding;
+        final boolean foldedListBlank;
 
         SrcLine(String text, boolean lazy) {
             this(text, lazy, null);
         }
 
         SrcLine(String text, boolean lazy, List<MarkdownSpan> spans) {
+            this(text, lazy, spans, null, -1, -1, "");
+        }
+
+        SrcLine(String text, boolean lazy, List<MarkdownSpan> spans, String source,
+                int sourceStart, int sourceEnd, String lineEnding) {
+            this(text, lazy, spans, source, sourceStart, sourceEnd, lineEnding, false);
+        }
+
+        SrcLine(String text, boolean lazy, List<MarkdownSpan> spans, String source,
+                int sourceStart, int sourceEnd, String lineEnding, boolean foldedListBlank) {
+            this.foldedListBlank = foldedListBlank;
             this.text = text;
             this.lazy = lazy;
             this.spans = spans;
+            this.source = source;
+            this.sourceStart = sourceStart;
+            this.sourceEnd = sourceEnd;
+            this.lineEnding = lineEnding;
+        }
+
+        SrcLine slice(int from, int to) {
+            return new SrcLine(text.substring(from, to), lazy,
+                    dropTail(dropLead(spans, from), text.length() - to), source,
+                    sourceStart < 0 ? -1 : sourceStart + from,
+                    sourceStart < 0 ? -1 : sourceStart + to, lineEnding, foldedListBlank);
+        }
+
+        SrcLine asLazy() {
+            return new SrcLine(text, true, spans, source, sourceStart, sourceEnd, lineEnding, foldedListBlank);
+        }
+
+        SrcLine foldedBlank() {
+            return new SrcLine(text, lazy, spans, source, sourceStart, sourceEnd, lineEnding, true);
         }
 
         static SrcLine plain(String text) {
@@ -316,7 +352,7 @@ final class MarkdownBlockParser {
             return Collections.emptyList();
         }
         return parseBlocks(splitLines(source, spans == null || spans.isEmpty() ? null : new SpanRuns(spans)),
-                0, false);
+                0, false, false);
     }
 
     /**
@@ -326,10 +362,58 @@ final class MarkdownBlockParser {
      */
     private static List<MarkdownBlock> parseTableAware(List<SrcLine> lines) {
         if (!hasTableCandidate(lines)) {
-            return parseBlocks(lines, 0, false);
+            return parseBlocks(lines, 0, false, true);
         }
-        List<MarkdownBlock> semantic = parseBlocks(lines, 0, true);
-        return containsTable(semantic) ? semantic : parseBlocks(lines, 0, false);
+        List<MarkdownBlock> semantic = parseBlocks(lines, 0, true, true);
+        return containsTable(semantic) ? semantic : parseBlocks(lines, 0, false, true);
+    }
+
+    /** 一次成功识别才提交消费范围；失败不推进外层游标。 */
+    private static final class MathBlockMatch {
+        final MarkdownBlock block;
+        final int end;
+        MathBlockMatch(MarkdownBlock block, int end) { this.block = block; this.end = end; }
+    }
+
+    private static boolean mathFence(SrcLine line) {
+        return !line.lazy && leadingSpaces(line.text) <= 3 && trim(line.text).equals("$$");
+    }
+
+    private static MathBlockMatch matchMathBlock(List<SrcLine> lines, int start) {
+        SrcLine opening = lines.get(start);
+        int indent = leadingSpaces(opening.text);
+        if (opening.lazy || indent > 3 || !opening.text.startsWith("$$", indent)
+                || opening.text.startsWith("$$$", indent)) return null;
+        List<SrcLine> body = new ArrayList<SrcLine>();
+        int end;
+        if (!mathFence(opening)) {
+            int close = MarkdownInlineParser.findDisplayClose(opening.text, indent + 2, opening.text.length());
+            if (close < 0 || !isBlank(opening.text.substring(close + 2))) return null;
+            body.add(opening.slice(indent + 2, close));
+            end = start + 1;
+        } else {
+            end = start + 1;
+            while (end < lines.size() && !mathFence(lines.get(end))) {
+                SrcLine line = lines.get(end);
+                if (line.lazy) return null;
+                int strip = Math.min(indent, leadingSpaces(line.text));
+                body.add(line.slice(strip, line.text.length()));
+                end++;
+            }
+            if (end == lines.size()) return null;
+            end++;
+        }
+        List<String> texts = new ArrayList<String>();
+        List<List<MarkdownSpan>> anchors = opening.spans == null ? null : new ArrayList<List<MarkdownSpan>>();
+        boolean visible = false;
+        for (SrcLine line : body) {
+            // 区间指向原文，提取后的正文只规范行间换行为 LF；首尾围栏换行不进体。
+            String text = line.source == null ? line.text : line.source.substring(line.sourceStart, line.sourceEnd);
+            texts.add(text);
+            visible |= !isBlank(text);
+            if (anchors != null) anchors.add(line.spans);
+        }
+        return visible ? new MathBlockMatch(MarkdownBlock.mathDisplay(texts, anchors), end) : null;
     }
 
     // ==================== 行工具 ====================
@@ -357,8 +441,10 @@ final class MarkdownBlockParser {
 
     /** 切一行：文本 = {@code source[from,to)}；span 路同步取该行的样式锚点段。 */
     private static SrcLine line(String source, int from, int to, SpanRuns runs) {
+        String ending = to == source.length() ? "" : source.startsWith("\r\n", to)
+                ? "\r\n" : source.substring(to, to + 1);
         return new SrcLine(source.substring(from, to), false,
-                runs == null ? null : runs.slice(from, to));
+                runs == null ? null : runs.slice(from, to), source, from, to, ending);
     }
 
     /** 块语法空白集（U+0020 及以下，同 CommonMark ASCII 空白口径；NBSP 不算空白）。 */
@@ -666,7 +752,7 @@ final class MarkdownBlockParser {
 
     // ==================== 块消费 ====================
 
-    private static List<MarkdownBlock> parseBlocks(List<SrcLine> lines, int depth, boolean tablesEnabled) {
+    private static List<MarkdownBlock> parseBlocks(List<SrcLine> lines, int depth, boolean tablesEnabled, boolean mathEnabled) {
         List<MarkdownBlock> blocks = new ArrayList<MarkdownBlock>();
         int i = 0;
         int n = lines.size();
@@ -675,6 +761,7 @@ final class MarkdownBlockParser {
         while (i < n) {
             String line = lines.get(i).text;
             if (isBlank(line)) {
+                if (lines.get(i).foldedListBlank) { i++; continue; }
                 blanks++;
                 i++;
                 continue;
@@ -700,6 +787,13 @@ final class MarkdownBlockParser {
                 stamp(blocks, before, blanks); blanks = 0;
                 continue;
             }
+            MathBlockMatch math = mathEnabled ? matchMathBlock(lines, i) : null;
+            if (math != null) {
+                blocks.add(math.block);
+                i = math.end;
+                stamp(blocks, before, blanks); blanks = 0;
+                continue;
+            }
             int heading = headingLevel(body);
             if (heading > 0) {
                 blocks.add(atxHeading(lines.get(i), ind, heading));
@@ -714,16 +808,16 @@ final class MarkdownBlockParser {
                 continue;
             }
             if (body.charAt(0) == '>') {
-                i = readQuote(lines, i, blocks, depth, tablesEnabled);
+                i = readQuote(lines, i, blocks, depth, tablesEnabled, mathEnabled);
                 stamp(blocks, before, blanks); blanks = 0;
                 continue;
             }
             if (matchListStart(line) != null) {
-                i = readList(lines, i, blocks, depth, tablesEnabled);
+                i = readList(lines, i, blocks, depth, tablesEnabled, mathEnabled);
                 stamp(blocks, before, blanks); blanks = 0;
                 continue;
             }
-            i = readParagraph(lines, i, blocks, tablesEnabled);
+            i = readParagraph(lines, i, blocks, tablesEnabled, mathEnabled);
             stamp(blocks, before, blanks); blanks = 0;
         }
         return blocks;
@@ -744,11 +838,11 @@ final class MarkdownBlockParser {
         blocks.set(from, blocks.get(from).withBlanksBefore(Math.min(1, blanks)));
     }
 
-    private static List<MarkdownBlock> parseWithDepthCap(List<SrcLine> lines, int childDepth, boolean tablesEnabled) {
+    private static List<MarkdownBlock> parseWithDepthCap(List<SrcLine> lines, int childDepth, boolean tablesEnabled, boolean mathEnabled) {
         if (childDepth >= MAX_BLOCK_DEPTH) {
             return singletonParagraphFallback(lines);
         }
-        return parseBlocks(lines, childDepth, tablesEnabled);
+        return parseBlocks(lines, childDepth, tablesEnabled, mathEnabled);
     }
 
     private static List<MarkdownBlock> singletonParagraphFallback(List<SrcLine> rawLines) {
@@ -775,6 +869,7 @@ final class MarkdownBlockParser {
         int n = lines.size();
         while (j < n) {
             SrcLine src = lines.get(j);
+            if (src.foldedListBlank) { j++; continue; }
             String line = src.text;
             int ind = leadingSpaces(line);
             if (ind <= 3 && !isBlank(line)) {
@@ -847,6 +942,7 @@ final class MarkdownBlockParser {
     /** 缩进代码收一行：剥至多 4 前导空格，锚点同步裁。 */
     private static void addIndentedCodeLine(SrcLine src, List<String> body,
                                             List<List<MarkdownSpan>> anchors) {
+        if (src.foldedListBlank) return;
         String kept = stripFirst(src.text, 4);
         body.add(kept);
         if (anchors != null) {
@@ -856,7 +952,7 @@ final class MarkdownBlockParser {
 
     /** 引用块：消费连续引用行与惰性续行；空行后仍带标记则并入同一引用（多段落）。 */
     private static int readQuote(List<SrcLine> lines, int start, List<MarkdownBlock> out, int depth,
-                                 boolean tablesEnabled) {
+                                 boolean tablesEnabled, boolean mathEnabled) {
         List<SrcLine> inner = new ArrayList<SrcLine>();
         boolean spanPath = lines.get(start).spans != null;
         int j = start;
@@ -878,13 +974,13 @@ final class MarkdownBlockParser {
                 if (ni <= 3 && next.charAt(ni) == '>') {
                     // TablesExtension：表格后的无标记空行结束引用；旧字面模式仍保留历史收拢。
                     if (tablesEnabled && hasTableCandidate(inner)) {
-                        List<MarkdownBlock> parsed = parseWithDepthCap(inner, depth + 1, true);
+                        List<MarkdownBlock> parsed = parseWithDepthCap(inner, depth + 1, true, mathEnabled);
                         if (containsTable(parsed)) {
                             out.add(MarkdownBlock.quote(parsed));
                             return j;
                         }
                     }
-                    inner.add(SrcLine.blank(spanPath));
+                    inner.add(mathEnabled ? lines.get(j).asLazy() : SrcLine.blank(spanPath));
                     j = k;
                     continue;
                 }
@@ -899,18 +995,19 @@ final class MarkdownBlockParser {
                     content = content.substring(1);
                     strip++;
                 }
-                inner.add(new SrcLine(content, src.lazy, dropLead(src.spans, strip)));
-            } else if (!interruptsParagraph(line)) {
+                inner.add(src.slice(strip, src.text.length()));
+            } else if (!interruptsParagraph(line)
+                    && !(mathEnabled && matchMathBlock(lines, j) != null)) {
                 // 惰性续行：本行不带 '>' 标记，N2 收紧在此打「惰性」标记——
                 // 收拢后它不得再被 readParagraph 判成 setext 下划线（CommonMark 同款规则）。
                 // 锚点原样随行文本走（未剥任何字符）。
-                inner.add(new SrcLine(line, true, src.spans));
+                inner.add(src.asLazy());
             } else {
                 break;
             }
             j++;
         }
-        out.add(MarkdownBlock.quote(parseWithDepthCap(inner, depth + 1, tablesEnabled)));
+        out.add(MarkdownBlock.quote(parseWithDepthCap(inner, depth + 1, tablesEnabled, mathEnabled)));
         return j;
     }
 
@@ -953,7 +1050,7 @@ final class MarkdownBlockParser {
      * 前导 >=4 空格的「列表标记」行进缩进代码块字面（parseBlocks 的 ind>3 分支）。</p>
      */
     private static int readList(List<SrcLine> lines, int start, List<MarkdownBlock> out, int depth,
-                                boolean tablesEnabled) {
+                                boolean tablesEnabled, boolean mathEnabled) {
         ListStart first = matchListStart(lines.get(start));
         boolean ordered = first.ordered;
         char unit = ordered ? first.delim : first.bullet;
@@ -970,7 +1067,7 @@ final class MarkdownBlockParser {
             }
             List<SrcLine> body = new ArrayList<SrcLine>();
             if (!st.content.isEmpty()) {
-                body.add(new SrcLine(st.content, itemSrc.lazy, st.contentSpans));
+                body.add(itemSrc.slice(itemSrc.text.length() - st.content.length(), itemSrc.text.length()));
             }
             int contentCol = st.contentCol;
             int j = i + 1;
@@ -999,8 +1096,15 @@ final class MarkdownBlockParser {
                         listEnded = true; // 他类块开始，本列表结束
                         break;
                     }
-                    if (tablesEnabled) {
-                        // TablesExtension：空行终止前段；否则后面的表头被并入多行段落而不能升级。
+                    if (mathEnabled) {
+                        // 保留每个源空白行，只有成功数学围栏会消费它们；普通旧列表正文仍折叠。
+                        for (int blank = j; blank < k; blank++) {
+                            SrcLine original = lines.get(blank);
+                            SrcLine stripped = original.slice(Math.min(contentCol, leadingSpaces(original.text)),
+                                    original.text.length());
+                            body.add(tablesEnabled && blank == j ? stripped : stripped.foldedBlank());
+                        }
+                    } else if (tablesEnabled) {
                         body.add(SrcLine.blank(lines.get(j).spans != null));
                     }
                     j = k; // 空行后仍有缩进 >= 内容列，项体继续
@@ -1017,15 +1121,15 @@ final class MarkdownBlockParser {
                 }
                 if (ni >= contentCol) {
                     SrcLine src = lines.get(j);
-                    body.add(new SrcLine(line.substring(contentCol), src.lazy,
-                            dropLead(src.spans, contentCol)));
+                    body.add(src.slice(contentCol, src.text.length()));
                     j++;
                     continue;
                 }
-                if (nx == null && !interruptsParagraph(line)) {
+                if (nx == null && !interruptsParagraph(line)
+                        && !(mathEnabled && matchMathBlock(lines, j) != null)) {
                     // 惰性续行：本行低于内容列且不带任何列表标记——N2 收紧打「惰性」
                     // 标记，内层 readParagraph 不得拿它当 setext 下划线。锚点原样随行走。
-                    body.add(new SrcLine(line, true, lines.get(j).spans));
+                    body.add(lines.get(j).asLazy());
                     j++;
                     continue;
                 }
@@ -1033,7 +1137,7 @@ final class MarkdownBlockParser {
                 break;
             }
             MarkdownBlock item = MarkdownBlock.listItem(st.marker, st.ordered,
-                    parseWithDepthCap(body, depth + 1, tablesEnabled));
+                    parseWithDepthCap(body, depth + 1, tablesEnabled, mathEnabled));
             // loose list：项与项之间被源空行分开 → 空行数打在下一项上（F6）
             items.add(pendingItemBlanks > 0 ? item.withBlanksBefore(1) : item);
             pendingItemBlanks = 0;
@@ -1063,16 +1167,19 @@ final class MarkdownBlockParser {
      * 下划线行不得是惰性续行）；自带标记的下划线（{@code > 甲\n> ===}）照常升格。</p>
      */
     private static int readParagraph(List<SrcLine> lines, int start, List<MarkdownBlock> out,
-                                     boolean tablesEnabled) {
+                                     boolean tablesEnabled, boolean mathEnabled) {
         List<SrcLine> raw = new ArrayList<SrcLine>();
         int j = start;
         int n = lines.size();
         while (j < n) {
             String line = lines.get(j).text;
             if (isBlank(line)) {
+                if (lines.get(j).foldedListBlank) { j++; continue; }
                 break;
             }
             if (!raw.isEmpty()) {
+                if (mathEnabled && matchMathBlock(lines, j) != null
+                        && !codeSpanCrossesLine(lines, start, j)) break;
                 // TablesExtension 0.21 实测：仅单行段落可升级；惰性分隔行不得升级。
                 // 无 pipe 的 --- 仍走既有 setext 优先级。
                 if (tablesEnabled && raw.size() == 1 && !lines.get(j).lazy) {
@@ -1099,6 +1206,37 @@ final class MarkdownBlockParser {
         }
         out.add(makeParagraph(raw));
         return j;
+    }
+
+    /** 既有行内 code 可以跨物理行；数学块不得中断已闭合 code span 的内部源行。 */
+    private static boolean codeSpanCrossesLine(List<SrcLine> lines, int start, int candidate) {
+        StringBuilder paragraph = new StringBuilder();
+        int boundary = -1;
+        for (int i = start; i < lines.size(); i++) {
+            String line = lines.get(i).text;
+            if (isBlank(line) || (i > start && interruptsParagraph(line))) break;
+            if (i > start) paragraph.append('\n');
+            if (i == candidate) boundary = paragraph.length();
+            paragraph.append(line);
+        }
+        if (boundary < 0) return false;
+        String text = paragraph.toString();
+        for (int cursor = 0; cursor < text.length();) {
+            int open = text.indexOf(CODE_TICK, cursor);
+            if (open < 0 || open >= boundary) return false;
+            int slashes = 0;
+            for (int k = open - 1; k >= 0 && text.charAt(k) == '\\'; k--) slashes++;
+            if ((slashes & 1) != 0) { cursor = open + 1; continue; }
+            // 与现行 inline 的单反引号配对相同：空对不消费，close 不另作转义解释。
+            int close = text.indexOf(CODE_TICK, open + 1);
+            if (close > open + 1) {
+                if (close >= boundary) return true;
+                cursor = close + 1;
+            } else {
+                cursor = open + 1;
+            }
+        }
+        return false;
     }
 
     /** 表格升级判据只在单行段落之后调用，不另造段落边界。 */

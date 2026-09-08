@@ -14,6 +14,7 @@ import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
 
 /**
@@ -263,6 +264,35 @@ public class FontBatchRenderer implements GlyphCollector {
                 bearingX, bearingY, x, y, charSize, color, italic, glyphFlags, baseCharSize);
     }
 
+    @Override
+    public void collectBaselineAlignedGlyphClipped(FontType fontType, int pageIndex, int textureId, int textureSize,
+            int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX, int atlasBaselineY,
+            int lineBaselineY, int defaultGlyphSize, int inkWidth, int inkHeight, int bearingX, int bearingY,
+            float x, float y, float charSize, int color, boolean italic, byte glyphFlags, float baseCharSize,
+            float clipLeft, float clipTop, float clipRight, float clipBottom) {
+        initialize();
+        collector.collectBaselineAlignedGlyphClipped(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX, bearingY,
+                x, y, charSize, color, italic, glyphFlags, baseCharSize, clipLeft, clipTop, clipRight, clipBottom);
+    }
+
+    /** 裁片仅改变输出四边形与 UV，保留完整 slot 作为采样邻域。 */
+    static GlyphQuadMetrics clipGlyphQuad(GlyphQuadMetrics m, float left, float top, float right, float bottom) {
+        if (Float.isNaN(left) || Float.isNaN(top) || Float.isNaN(right) || Float.isNaN(bottom)) {
+            throw new IllegalArgumentException("NaN glyph clip");
+        }
+        float l = Math.max(m.quadX, left);
+        float t = Math.max(m.quadY, top);
+        float r = Math.min(m.quadX + m.renderWidth, right);
+        float b = Math.min(m.quadY + m.renderHeight, bottom);
+        if (l >= r || t >= b) { return null; }
+        float du = (m.u1 - m.u0) / m.renderWidth;
+        float dv = (m.v1 - m.v0) / m.renderHeight;
+        return new GlyphQuadMetrics(m.u0 + (l - m.quadX) * du, m.u1 - (m.quadX + m.renderWidth - r) * du,
+                m.v0 + (t - m.quadY) * dv, m.v1 - (m.quadY + m.renderHeight - b) * dv,
+                m.clipU0, m.clipU1, m.clipV0, m.clipV1, l, t, r - l, b - t);
+    }
+
     /**
      * 按 atlas 基线契约计算单个字形的屏幕 quad 与 UV。
      *
@@ -322,6 +352,16 @@ public class FontBatchRenderer implements GlyphCollector {
                                                      int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
                                                      int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize,
                                                      float baseCharSize) {
+        return resolveGlyphQuadMetrics(textureSize, slotX, slotY, slotWidth, slotHeight, atlasBaselineX,
+                atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX, bearingY,
+                x, y, charSize, baseCharSize, (byte) 0);
+    }
+
+    /** 数学分片只绘制核心区域，slot 邻域继续用于采样；旧字形保留外扩。 */
+    static GlyphQuadMetrics resolveGlyphQuadMetrics(int textureSize, int slotX, int slotY, int slotWidth,
+            int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize,
+            int inkWidth, int inkHeight, int bearingX, int bearingY, float x, float y, float charSize,
+            float baseCharSize, byte glyphFlags) {
         float resolvedTextureSize = (float) textureSize;
         float glyphScale = charSize / Math.max(1.0F, (float) defaultGlyphSize);
         float baselineScale = baseCharSize / Math.max(1.0F, (float) defaultGlyphSize);
@@ -333,8 +373,9 @@ public class FontBatchRenderer implements GlyphCollector {
         float renderWidth = (float) inkWidth * glyphScale;
         float renderHeight = (float) inkHeight * glyphScale;
         // UV 与几何协同外扩 INK_BLEED 像素，放宽 uvBounds 硬墙，采到 ink 子区外 padding 的自然渗透过渡
-        float bleedUv = INK_BLEED / resolvedTextureSize;
-        float bleedGeometry = INK_BLEED * glyphScale;
+        float bleed = (glyphFlags & GlyphRuntimeTables.GLYPH_FLAG_MATH_CORE) != 0 ? 0.0F : INK_BLEED;
+        float bleedUv = bleed / resolvedTextureSize;
+        float bleedGeometry = bleed * glyphScale;
         // 顶点 texCoord：ink 子区 ± INK_BLEED，用于 quad 几何与纹理对齐（mipmap 缩放时仍只覆盖 ink 邻域）
         float u0 = ((float) slotX + inkLeftInSlot) / resolvedTextureSize - bleedUv;
         float u1 = ((float) slotX + inkLeftInSlot + (float) inkWidth) / resolvedTextureSize + bleedUv;

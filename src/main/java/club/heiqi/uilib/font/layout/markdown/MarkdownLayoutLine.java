@@ -81,7 +81,9 @@ public final class MarkdownLayoutLine {
         /** 围栏代码块的一源行（同块各源行同 blockId，底色经归组合并）。 */
         CODE,
         /** 分隔线行（真横线：一条 ruleThicknessPx 高的 BACKGROUND）。 */
-        THEMATIC_BREAK
+        THEMATIC_BREAK,
+        /** 独占数学块；公式原子与列表链/引用层级正交。 */
+        MATH_DISPLAY
     }
 
     /** 无归属块的行（空行占位）的 blockId。 */

@@ -1,12 +1,18 @@
 package club.heiqi.uilib.font.glyph;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
 
 /**
  * 一次字形请求在线程与上传阶段之间共享的不可变身份。
  */
 public final class GlyphRequestToken {
 
+    public enum Kind { CODEPOINT, MATH_GLYPH }
+
+    private final MathGlyphRef mathGlyphRef;
+    private final int rasterSize;
+    private final int tileIndex;
     private final int generation;
     private final long requestId;
     private final int codepoint;
@@ -34,6 +40,36 @@ public final class GlyphRequestToken {
         this.requestId = requestId;
         this.codepoint = codepoint;
         this.fontType = fontType;
+        this.mathGlyphRef = null;
+        this.rasterSize = 0;
+        this.tileIndex = 0;
+    }
+
+    private GlyphRequestToken(int generation, long requestId, MathGlyphRef glyphRef, int rasterSize, int tileIndex) {
+        if (requestId == 0L || glyphRef == null || rasterSize <= 0 || tileIndex < 0) {
+            throw new IllegalArgumentException("数学请求要求非零 requestId、非空 glyphRef、正 rasterSize 和非负 tileIndex");
+        }
+        this.generation = generation;
+        this.requestId = requestId;
+        this.mathGlyphRef = glyphRef;
+        this.rasterSize = rasterSize;
+        this.tileIndex = tileIndex;
+        this.codepoint = 0;
+        this.fontType = null;
+    }
+
+    public static GlyphRequestToken forMathGlyph(int generation, long requestId, MathGlyphRef glyphRef,
+            int rasterSize, int tileIndex) {
+        return new GlyphRequestToken(generation, requestId, glyphRef, rasterSize, tileIndex);
+    }
+
+    public Kind getKind() { return mathGlyphRef == null ? Kind.CODEPOINT : Kind.MATH_GLYPH; }
+    public MathGlyphRef getMathGlyphRef() { requireKind(Kind.MATH_GLYPH); return mathGlyphRef; }
+    public int getRasterSize() { requireKind(Kind.MATH_GLYPH); return rasterSize; }
+    public int getTileIndex() { requireKind(Kind.MATH_GLYPH); return tileIndex; }
+
+    private void requireKind(Kind expected) {
+        if (getKind() != expected) { throw new IllegalStateException("请求类型不匹配: " + getKind()); }
     }
 
     public int getGeneration() {
@@ -45,10 +81,12 @@ public final class GlyphRequestToken {
     }
 
     public int getCodepoint() {
+        requireKind(Kind.CODEPOINT);
         return codepoint;
     }
 
     public FontType getFontType() {
+        requireKind(Kind.CODEPOINT);
         return fontType;
     }
 
@@ -63,14 +101,21 @@ public final class GlyphRequestToken {
         GlyphRequestToken token = (GlyphRequestToken) other;
         return generation == token.generation
                 && requestId == token.requestId
-                && codepoint == token.codepoint
-                && fontType == token.fontType;
+                && getKind() == token.getKind()
+                && (getKind() == Kind.CODEPOINT ? codepoint == token.codepoint && fontType == token.fontType
+                        : rasterSize == token.rasterSize && tileIndex == token.tileIndex
+                                && mathGlyphRef.equals(token.mathGlyphRef));
     }
 
     @Override
     public int hashCode() {
         int result = generation;
         result = 31 * result + (int) (requestId ^ requestId >>> 32);
+        if (getKind() == Kind.MATH_GLYPH) {
+            result = 31 * result + mathGlyphRef.hashCode();
+            result = 31 * result + rasterSize;
+            return 31 * result + tileIndex;
+        }
         result = 31 * result + codepoint;
         result = 31 * result + fontType.hashCode();
         return result;
@@ -80,7 +125,9 @@ public final class GlyphRequestToken {
     public String toString() {
         return "GlyphRequestToken{generation=" + generation
                 + ", requestId=" + requestId
-                + ", codepoint=" + codepoint
-                + ", fontType=" + fontType + '}';
+                + ", kind=" + getKind()
+                + (getKind() == Kind.CODEPOINT ? ", codepoint=" + codepoint + ", fontType=" + fontType
+                        : ", mathGlyphRef=" + mathGlyphRef + ", rasterSize=" + rasterSize + ", tileIndex=" + tileIndex)
+                + '}';
     }
 }

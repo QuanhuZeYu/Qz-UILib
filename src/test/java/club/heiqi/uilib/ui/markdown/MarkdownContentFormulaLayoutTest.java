@@ -198,7 +198,7 @@ public class MarkdownContentFormulaLayoutTest {
     private static MathBox mathBox(TextSegment segment) {
         int size = segment.getStyle().resolveEffectiveFontSizePx(FONT);
         return new MathLayoutService().layout(LatexParser.parse(segment.getLatexSource()), size,
-                service().createMathMetrics(segment.getStyle(), size));
+                service().createMathMetrics(segment.getStyle(), size), segment.getLatexMathStyle());
     }
     private static double[] mixedInk(PaintCommand text) {
         MathBox box = mathBox(latex(text));

@@ -22,6 +22,13 @@ import club.heiqi.uilib.font.latex.layout.LatexCache;
 import club.heiqi.uilib.font.latex.layout.MathBox;
 import club.heiqi.uilib.font.latex.layout.MathLayoutService;
 import club.heiqi.uilib.font.latex.layout.MathMetrics;
+import club.heiqi.uilib.font.latex.layout.MathFontSupport;
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
+import club.heiqi.uilib.font.latex.layout.MathGlyphMetrics;
+import club.heiqi.uilib.font.latex.layout.MathFontParameters;
+import club.heiqi.uilib.font.latex.layout.MathGlyphConstruction;
+import club.heiqi.uilib.font.latex.layout.MathStretchAxis;
+import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.latex.MathFontStyle;
 import club.heiqi.uilib.font.FontRuntimeAccess;
 import club.heiqi.uilib.font.FontRuntimeSettings;
@@ -949,7 +956,7 @@ public class TextLayoutService {
                 TextStyle style = segment.getStyle();
                 int effectiveSize = style == null ? 0
                         : style.resolveEffectiveFontSizePx((int) currentSettings().getCharSize());
-                return measureLatexWidth(segment.getLatexSource(), style, Math.max(1, effectiveSize));
+                return getLatexBoxAtSize(segment, Math.max(1, effectiveSize)).getWidth();
             }
             double width = 0.0D;
             String text = segment.getText();
@@ -980,7 +987,7 @@ public class TextLayoutService {
             if (segment.isLatex()) {
                 TextStyle style = segment.getStyle();
                 int effectiveSize = style == null ? fontSizePx : style.resolveEffectiveFontSizePx(fontSizePx);
-                return measureLatexWidth(segment.getLatexSource(), style, Math.max(1, effectiveSize));
+                return getLatexBoxAtSize(segment, Math.max(1, effectiveSize)).getWidth();
             }
             double width = 0.0D;
             String text = segment.getText();
@@ -998,12 +1005,25 @@ public class TextLayoutService {
     }
 
     /**
-     * 度量 LaTeX 公式宽度（经 {@link LatexCache} 缓存；渲染侧 DefaultFontRendererAdapter 同口径）。
+     * 获取含根数学样式的公式盒（经 {@link LatexCache} 缓存；与生产绘制同口径）。
+     * baseFontSizePx 是尚未应用段样式的根字号；此入口只应用一次段 size/sup/sub。
      */
-    private double measureLatexWidth(String latexSource, TextStyle style, int fontSizePx) {
-        MathBox box = LatexCache.getInstance().getOrLayout(latexSource, fontSizePx, runtimeVersion,
-                style.getFontType(), MATH_LAYOUT, createMathMetrics(style, fontSizePx), currentInkEpoch());
-        return box.getWidth();
+    public MathBox getLatexBox(TextSegment segment, int baseFontSizePx) {
+        if (segment == null || !segment.isLatex()) throw new IllegalArgumentException("需要 LaTeX segment");
+        lockGeneration();
+        try {
+            int size = segment.getStyle().resolveEffectiveFontSizePx(Math.max(1, baseFontSizePx));
+            return getLatexBoxAtSize(segment, Math.max(1, size));
+        } finally {
+            unlockGeneration();
+        }
+    }
+
+    private MathBox getLatexBoxAtSize(TextSegment segment, int size) {
+        TextStyle style = segment.getStyle();
+        return LatexCache.getInstance().getOrLayout(segment.getLatexSource(), size, runtimeVersion,
+                style.getFontType(), MATH_LAYOUT, createMathMetrics(style, size), currentInkEpoch(),
+                segment.getLatexMathStyle());
     }
 
     /**
@@ -1050,9 +1070,7 @@ public class TextLayoutService {
                     continue;
                 }
                 int sizePx = Math.max(1, style.resolveEffectiveFontSizePx(baseFontSizePx));
-                MathBox box = LatexCache.getInstance().getOrLayout(segment.getLatexSource(), sizePx,
-                        runtimeVersion, style.getFontType(), MATH_LAYOUT,
-                        createMathMetrics(style, sizePx), currentInkEpoch());
+                MathBox box = getLatexBoxAtSize(segment, sizePx);
                 if (box.getTotalHeight() <= threshold) {
                     if (out != null) {
                         out.add(segment);
@@ -1071,7 +1089,7 @@ public class TextLayoutService {
                 }
                 TextStyle scaled = style.copy();
                 scaled.setFontSizePx(shrunk);
-                out.set(i, TextSegment.forLatex(segment.getLatexSource(), scaled));
+                out.set(i, segment.withStyle(scaled));
             }
             return out == null ? segments : out;
         } finally {
@@ -1091,7 +1109,26 @@ public class TextLayoutService {
     }
 
     private MathMetrics createMathMetrics(final TextStyle style, final FontType hostFontType, final int baseSizePx) {
+        final FontCatalog.Snapshot catalog = fontMatcher.getCatalogSnapshot(runtimeVersion);
+        final MathFontSupport provider = catalog == null ? null : catalog.getMathFontSupport();
+        final MathFontSupport support = provider == null ? null : new MathFontSupport() {
+            @Override
+            public MathGlyphRef resolve(int codepoint, MathFontStyle fontStyle, FontType weight) {
+                return provider.resolve(codepoint, fontStyle, hostFontType);
+            }
+            @Override
+            public MathGlyphMetrics measure(MathGlyphRef glyph, int size) { return provider.measure(glyph, size); }
+            @Override
+            public MathFontParameters constants(int size) { return provider.constants(size); }
+            @Override
+            public MathGlyphConstruction construction(MathGlyphRef glyph, MathStretchAxis axis, int size) {
+                return provider.construction(glyph, axis, size);
+            }
+        };
         return new MathMetrics() {
+            @Override
+            public MathFontSupport mathFontSupport() { return support; }
+
             @Override
             public MathMetrics forFontStyle(MathFontStyle fontStyle) {
                 if (fontStyle == null) throw new IllegalArgumentException("fontStyle 不能为空");
@@ -1688,9 +1725,7 @@ public class TextLayoutService {
                     // 盒度量 ink 化后总高=内容墨水高，若不加余量则公式行与相邻行零间距
                     //（24px 压力卡多行分数视觉重叠）；上下各 0.1em 余量对齐 UI 行距观感。
                     int safeLatexSize = Math.max(1, fontSizePx);
-                    MathBox box = LatexCache.getInstance().getOrLayout(segment.getLatexSource(),
-                            safeLatexSize, runtimeVersion, segment.getStyle().getFontType(), MATH_LAYOUT,
-                            createMathMetrics(segment.getStyle(), safeLatexSize), currentInkEpoch());
+                    MathBox box = getLatexBoxAtSize(segment, safeLatexSize);
                     float linePad = 2.0F * LATEX_LINE_PAD_EM * safeLatexSize;
                     maxLineHeightPx = Math.max(maxLineHeightPx,
                             (int) Math.ceil(box.getTotalHeight() + linePad));

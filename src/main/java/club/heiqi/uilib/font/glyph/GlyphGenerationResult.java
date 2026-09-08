@@ -4,6 +4,7 @@ import java.awt.image.BufferedImage;
 import java.util.Arrays;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
 
 /**
  * 字符生成结果。
@@ -27,8 +28,28 @@ public class GlyphGenerationResult {
      * @param glyphInfo 字符度量信息
      */
     public GlyphGenerationResult(GlyphRequestToken token, BufferedImage image, GlyphInfo glyphInfo) {
+        this(token, image, glyphInfo, GlyphRequestToken.Kind.CODEPOINT);
+    }
+
+    /** 数学结果入口；保留旧构造器的码点语义及 null 元数据兼容性。 */
+    public static GlyphGenerationResult forMathGlyph(GlyphRequestToken token, BufferedImage image, GlyphInfo glyphInfo) {
+        return new GlyphGenerationResult(token, image, glyphInfo, GlyphRequestToken.Kind.MATH_GLYPH);
+    }
+
+    private GlyphGenerationResult(GlyphRequestToken token, BufferedImage image, GlyphInfo glyphInfo,
+            GlyphRequestToken.Kind expectedKind) {
         if (token == null) {
             throw new IllegalArgumentException("token 不得为 null");
+        }
+        if (token.getKind() != expectedKind) {
+            throw new IllegalArgumentException("结果入口与 token 类型不匹配");
+        }
+        // 先冻结再验证，以免调用方的可变子类改变已验证的数学身份。
+        GlyphInfo frozenInfo = GlyphInfo.copyOf(glyphInfo);
+        if (frozenInfo != null && (frozenInfo.getKind() != expectedKind
+                || (expectedKind == GlyphRequestToken.Kind.MATH_GLYPH
+                        && !token.getMathGlyphRef().equals(frozenInfo.getMathGlyphRef())))) {
+            throw new IllegalArgumentException("结果元数据与 token 数学身份不匹配");
         }
         this.token = token;
         if (image == null) {
@@ -40,7 +61,21 @@ public class GlyphGenerationResult {
             this.imageWidth = image.getWidth();
             this.imageHeight = image.getHeight();
         }
-        this.glyphInfo = copyGlyphInfo(glyphInfo);
+        this.glyphInfo = frozenInfo;
+    }
+
+    public GlyphRequestToken.Kind getKind() { return token.getKind(); }
+    public MathGlyphRef getMathGlyphRef() { return token.getMathGlyphRef(); }
+    public int getRasterSize() { return token.getRasterSize(); }
+    public int getTileIndex() { return token.getTileIndex(); }
+
+    public GlyphInfo getMathGlyphInfo() {
+        requireKind(GlyphRequestToken.Kind.MATH_GLYPH);
+        return glyphInfo;
+    }
+
+    private void requireKind(GlyphRequestToken.Kind expected) {
+        if (getKind() != expected) { throw new IllegalStateException("结果类型不匹配: " + getKind()); }
     }
 
     public GlyphRequestToken getToken() {
@@ -73,6 +108,7 @@ public class GlyphGenerationResult {
     }
 
     public GlyphInfo getGlyphInfo() {
+        requireKind(GlyphRequestToken.Kind.CODEPOINT);
         return glyphInfo;
     }
 
@@ -113,14 +149,4 @@ public class GlyphGenerationResult {
         return pixels;
     }
 
-    private static GlyphInfo copyGlyphInfo(GlyphInfo source) {
-        if (source == null) {
-            return null;
-        }
-        return new GlyphInfo(source.getCodepoint(), source.getWidth(), source.getHeight(), source.getAdvance(),
-                source.getAscent(), source.getDescent(), source.getLeading(), source.getGlyphWidth(),
-                source.getGlyphHeight(), source.getSlotWidth(), source.getSlotHeight(), source.getAtlasBaselineX(),
-                source.getAtlasBaselineY(), source.getLineBaselineY(), source.getBearingX(), source.getBearingY(),
-                source.hasBitmap(), source.isColoredGlyph());
-    }
 }

@@ -110,6 +110,7 @@ final class ChatMarkdownPipeline {
     private static final class ContentEntry {
         final MarkdownDocument document;
         final boolean tables;
+        final boolean displayMath;
         int baseColor;
         int font;
         int epoch;
@@ -123,7 +124,17 @@ final class ChatMarkdownPipeline {
 
         ContentEntry(MarkdownDocument document) {
             this.document = document;
-            tables = !document.toLayoutContent(chatStyleTable(), new TextStyle()).getTables().isEmpty();
+            MarkdownDocument.LayoutContent content = document.toLayoutContent(chatStyleTable(), new TextStyle());
+            tables = !content.getTables().isEmpty();
+            boolean math = false;
+            for (MarkdownLayoutLine line : content.getLines()) {
+                if (line.getKind() == MarkdownLayoutLine.Kind.MATH_DISPLAY) { math = true; break; }
+                for (TextSegment segment : line.getSegments()) {
+                    if (segment.isLatex() && segment.getLatexMathStyle()
+                            == club.heiqi.uilib.font.latex.MathStyleOverride.DISPLAY) { math = true; break; }
+                }
+            }
+            displayMath = math;
         }
     }
 
@@ -139,6 +150,10 @@ final class ChatMarkdownPipeline {
 
     synchronized boolean hasTables(String source) {
         return contentEntry(source).tables;
+    }
+
+    synchronized boolean hasDisplayMath(String source) {
+        return contentEntry(source).displayMath;
     }
 
     synchronized RenderedContent layoutContent(String source, int baseColor, int width, int font,
@@ -162,8 +177,13 @@ final class ChatMarkdownPipeline {
         if (!sameProjection) {
             TextStyle base = new TextStyle();
             base.setColor(baseColor);
-            entry.projection = entry.document.toLayoutContent(chatStyleTable(), base).mapSegments(segments -> {
-                List<TextSegment> processed = processor == null || segments.isEmpty() ? segments
+            MarkdownDocument.LayoutContent raw = entry.document.toLayoutContent(chatStyleTable(), base);
+            final int[] mappedLine = {0};
+            entry.projection = raw.mapSegments(segments -> {
+                int lineIndex = mappedLine[0]++;
+                boolean displayBlock = lineIndex < raw.getLines().size()
+                        && raw.getLines().get(lineIndex).getKind() == MarkdownLayoutLine.Kind.MATH_DISPLAY;
+                List<TextSegment> processed = processor == null || segments.isEmpty() || displayBlock ? segments
                         : processor.postProcess(segments, font);
                 return ChatUrlLinkifier.linkify(processed, ChatMarkdownSettings.getLinkArgb());
             });

@@ -54,7 +54,8 @@ public class FontRegistry {
         String[] orderHints = settings.isFontSortConfigured() ? settings.getFontSort()
                 : DefaultFontOrderHints.resolveForCurrentPlatform();
         FontOrderSnapshot orderSnapshot = fontOrderPlanner.plan(fonts, orderHints, settings.isFontSortConfigured());
-        return new PreparedCatalog(fontCatalog.prepareSnapshot(orderSnapshot.getOrderedFonts()), orderSnapshot);
+        return new PreparedCatalog(
+                fontCatalog.prepareSnapshotWithMath(orderSnapshot.getOrderedFonts(), BundledMathFont.shared()), orderSnapshot);
     }
 
     /**

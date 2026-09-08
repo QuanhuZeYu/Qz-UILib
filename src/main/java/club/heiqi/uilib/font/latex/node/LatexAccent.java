@@ -9,9 +9,11 @@ import club.heiqi.uilib.font.latex.MathStyleOverride;
  */
 public final class LatexAccent extends LatexNode {
 
+    public enum AccentMode { FIXED, RULE, WIDE }
+
     private final String accentText;
     private final LatexNode base;
-    private final boolean stretchable;
+    private final AccentMode accentMode;
     private final boolean below;
 
     /**
@@ -29,16 +31,28 @@ public final class LatexAccent extends LatexNode {
     /** 创建带局部数学样式声明的节点；样式不得为 null。 */
     public LatexAccent(String accentText, LatexNode base, boolean stretchable, boolean below,
             MathStyleOverride mathStyleOverride) {
+        this(accentText, base, stretchable ? AccentMode.RULE : AccentMode.FIXED, below, mathStyleOverride);
+    }
+
+    public LatexAccent(String accentText, LatexNode base, AccentMode accentMode, boolean below) {
+        this(accentText, base, accentMode, below, MathStyleOverride.INHERIT);
+    }
+
+    public LatexAccent(String accentText, LatexNode base, AccentMode accentMode, boolean below,
+            MathStyleOverride mathStyleOverride) {
         super(Kind.ACCENT, mathStyleOverride);
+        if (accentMode == null) {
+            throw new IllegalArgumentException("accentMode 不能为空");
+        }
         if (base == null) {
             throw new IllegalArgumentException("base 不能为空");
         }
-        if (!stretchable && (accentText == null || accentText.isEmpty())) {
+        if (accentMode != AccentMode.RULE && (accentText == null || accentText.isEmpty())) {
             throw new IllegalArgumentException("非可变长重音需要 accentText");
         }
         this.accentText = accentText;
         this.base = base;
-        this.stretchable = stretchable;
+        this.accentMode = accentMode;
         this.below = below;
     }
 
@@ -53,7 +67,11 @@ public final class LatexAccent extends LatexNode {
 
     /** @return 是否可变长横线（\overline/\\underline） */
     public boolean isStretchable() {
-        return stretchable;
+        return accentMode == AccentMode.RULE;
+    }
+
+    public AccentMode getAccentMode() {
+        return accentMode;
     }
 
     /** @return 是否置于下方（\\underline） */
@@ -63,6 +81,6 @@ public final class LatexAccent extends LatexNode {
 
     @Override
     public String toString() {
-        return "Accent(" + (stretchable ? (below ? "underline" : "overline") : accentText) + ", " + base + ")";
+        return "Accent(" + (isStretchable() ? (below ? "underline" : "overline") : accentText) + ", " + base + ")";
     }
 }

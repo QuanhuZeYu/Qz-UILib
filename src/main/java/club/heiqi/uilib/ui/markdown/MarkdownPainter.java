@@ -95,7 +95,7 @@ public final class MarkdownPainter {
         for (TableUnit unit : content.getTables()) {
             int end = unit.getBeforeLineIndex();
             MarkdownLayoutLine marker = end > before ? content.getLines().get(end - 1) : null;
-            boolean inlineMarker = isDirectTableMarker(marker, unit.getContext());
+            boolean inlineMarker = isDirectBlockMarker(marker, unit.getContext());
             ContentLayout run = layoutRun(content.getLines().subList(before, inlineMarker ? end - 1 : end),
                     measurer, maxWidthPx, baseFontSizePx);
             appendTranslated(out, run.commands, y);
@@ -104,18 +104,8 @@ public final class MarkdownPainter {
             MarkdownTableLayout.Result table = MarkdownTableLayout.layout(unit, measurer, maxWidthPx, baseFontSizePx);
             appendTranslated(out, table.commands, y);
             if (inlineMarker) {
-                List<MarkdownLayoutLine> visualMarker = MarkdownLineLayout.layoutLines(
-                        Collections.singletonList(marker), measurer, 0, baseFontSizePx);
-                List<PaintCommand> markerCommands = MarkdownLineLayout.blockCommands(
-                        visualMarker, measurer, maxWidthPx, baseFontSizePx);
-                List<PaintCommand> textOnly = new ArrayList<PaintCommand>();
-                for (PaintCommand command : markerCommands) {
-                    // 表格自身已铺引用竖条；只把直属项标记与首表头放在同一行。
-                    if (command.getType() != club.heiqi.uilib.ui.scene.paint.PaintCommandType.BACKGROUND) {
-                        textOnly.add(command);
-                    }
-                }
-                appendTranslated(out, textOnly, y + unit.getBorderPx() + unit.getPaddingYPx());
+                appendMarker(out, marker, measurer, maxWidthPx, baseFontSizePx,
+                        y + unit.getBorderPx() + unit.getPaddingYPx());
             }
             y += table.height;
             width = Math.max(width, table.width);
@@ -127,8 +117,22 @@ public final class MarkdownPainter {
         return new ContentLayout(out, y + tail.heightPx, Math.max(width, tail.widthPx));
     }
 
-    /** L1 首表格列表项保留独立标记事件；L2 只对直属、零正文标记行消除额外行高。 */
-    private static boolean isDirectTableMarker(MarkdownLayoutLine marker, MarkdownLayoutLine context) {
+    private static void appendMarker(List<PaintCommand> out, MarkdownLayoutLine marker,
+            TextLayoutService measurer, int maxWidthPx, int font, int y) {
+        List<MarkdownLayoutLine> visual = MarkdownLineLayout.layoutLines(
+                Collections.singletonList(marker), measurer, 0, font);
+        List<PaintCommand> textOnly = new ArrayList<PaintCommand>();
+        for (PaintCommand command : MarkdownLineLayout.blockCommands(visual, measurer, maxWidthPx, font)) {
+            // 表格/数学块自身拥有引用装饰；marker 保留原列表列，只投放一次。
+            if (command.getType() != club.heiqi.uilib.ui.scene.paint.PaintCommandType.BACKGROUND) {
+                textOnly.add(command);
+            }
+        }
+        appendTranslated(out, textOnly, y);
+    }
+
+    /** 首表格/数学列表项保留独立标记事件；只对直属、零正文标记行消除额外行高。 */
+    private static boolean isDirectBlockMarker(MarkdownLayoutLine marker, MarkdownLayoutLine context) {
         if (marker == null || marker.getKind() != MarkdownLayoutLine.Kind.LIST
                 || marker.getSegments().size() != 1 || marker.getQuoteLevel() != context.getQuoteLevel()
                 || marker.getBlockId() + 1 != context.getBlockId()) {
@@ -153,7 +157,19 @@ public final class MarkdownPainter {
         if (lines.isEmpty()) {
             return new ContentLayout(Collections.<PaintCommand>emptyList(), 0, 0);
         }
-        List<MarkdownLayoutLine> visual = MarkdownLineLayout.layoutLines(lines, measurer, maxWidthPx, font);
+        List<MarkdownLayoutLine> body = new ArrayList<MarkdownLayoutLine>();
+        java.util.Map<Integer, MarkdownLayoutLine> markers = new java.util.HashMap<Integer, MarkdownLayoutLine>();
+        for (int i = 0; i < lines.size(); i++) {
+            MarkdownLayoutLine line = lines.get(i);
+            MarkdownLayoutLine next = i + 1 < lines.size() ? lines.get(i + 1) : null;
+            if (next != null && next.getKind() == MarkdownLayoutLine.Kind.MATH_DISPLAY
+                    && isDirectBlockMarker(line, next)) {
+                markers.put(next.getBlockId(), line);
+            } else {
+                body.add(line);
+            }
+        }
+        List<MarkdownLayoutLine> visual = MarkdownLineLayout.layoutLines(body, measurer, maxWidthPx, font);
         int height = 0;
         int width = 0;
         MarkdownLineLayout.VisualLine[] measured = new MarkdownLineLayout.VisualLine[visual.size()];
@@ -161,9 +177,17 @@ public final class MarkdownPainter {
             MarkdownLayoutLine line = visual.get(i);
             measured[i] = new MarkdownLineLayout.VisualLine(line.getSegments(), measurer, font);
             height += measured[i].height;
-            width = Math.max(width, line.getLeftInsetPx() + measured[i].width);
+            int inkShift = line.getKind() == MarkdownLayoutLine.Kind.MATH_DISPLAY ? 0 : measured[i].leftOverhang;
+            width = Math.max(width, line.getLeftInsetPx() + inkShift + measured[i].inkRight);
         }
-        List<PaintCommand> commands = MarkdownLineLayout.blockCommands(visual, measurer, maxWidthPx, font, measured);
+        List<PaintCommand> commands = new ArrayList<PaintCommand>(
+                MarkdownLineLayout.blockCommands(visual, measurer, maxWidthPx, font, measured));
+        int y = 0;
+        for (int i = 0; i < visual.size(); i++) {
+            MarkdownLayoutLine marker = markers.remove(visual.get(i).getBlockId());
+            if (marker != null) appendMarker(commands, marker, measurer, maxWidthPx, font, y);
+            y += measured[i].height;
+        }
         for (PaintCommand command : commands) {
             width = Math.max(width, command.getRight());
         }

@@ -5,9 +5,11 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 import club.heiqi.uilib.font.util.UnicodeTextClassifier;
 import club.heiqi.uilib.util.UiNumbers;
 
@@ -23,6 +25,7 @@ import club.heiqi.uilib.util.UiNumbers;
  *   <li>{@code <size=N>} 绝对像素字号（{@value #MIN_FONT_SIZE_PX}..{@value #MAX_FONT_SIZE_PX}，越界截断）</li>
  *   <li>{@code <spacing=N>} 字符间距（UI 像素，可为负，越界截断到 -64..64）</li>
  *   <li>{@code <a=URL>} 链接（自动下划线；{@code <a href=URL>} 与 {@code <a href="URL">} 亦可）</li>
+ *   <li>{@code <latex math-style="display">} 公式；另接受 text/script/scriptscript，缺省或未知值为 text</li>
  *   <li>{@code <br>} / {@code <br/>} 硬换行；闭合标签 {@code </name>} 或通用闭合 {@code </>}</li>
  * </ul>
  *
@@ -115,7 +118,8 @@ public final class RichTextTagParser {
                         latexBuilder.append(latexChar);
                         index++;
                     }
-                    segments.add(TextSegment.forLatex(latexBuilder.toString(), current.copy()));
+                    segments.add(TextSegment.forLatex(latexBuilder.toString(), current.copy(),
+                            parseMathStyle(match.value)));
                     continue;
                 }
                 if (match.closing) {
@@ -177,15 +181,27 @@ public final class RichTextTagParser {
         }
         StringBuilder out = new StringBuilder();
         TextStyle current = baseStyle == null ? createDefaultStyle() : baseStyle.copy();
+        boolean previousLatex = false;
         for (TextSegment segment : segments) {
             TextStyle next = segment.getStyle() == null ? current : segment.getStyle();
+            if (segment.isLatex() || previousLatex) {
+                // 公式边界重新打开完整样式，避免关闭外层标签时吞掉仍需继承的内层样式。
+                appendClosings(out, current);
+                current = baseStyle == null ? createDefaultStyle() : baseStyle.copy();
+            }
             appendStyleDiff(out, current, next);
             if (segment.isLatex()) {
-                out.append("<latex>").append(escapeText(segment.getLatexSource())).append("</latex>");
+                out.append("<latex");
+                if (segment.getLatexMathStyle() != MathStyleOverride.TEXT) {
+                    out.append(" math-style=\"")
+                            .append(segment.getLatexMathStyle().name().toLowerCase(Locale.ROOT)).append('"');
+                }
+                out.append('>').append(escapeText(segment.getLatexSource())).append("</latex>");
             } else {
                 out.append(escapeText(segment.getText()));
             }
             current = next.copy();
+            previousLatex = segment.isLatex();
         }
         appendClosings(out, current);
         return out.toString();
@@ -248,6 +264,33 @@ public final class RichTextTagParser {
             return trimmed.substring(cursor).trim();
         }
         return cursor < trimmed.length() ? trimmed.substring(cursor).trim() : "";
+    }
+
+    private static MathStyleOverride parseMathStyle(String value) {
+        String attribute = "math-style";
+        String trimmed = value.trim();
+        if (!trimmed.regionMatches(true, 0, attribute, 0, attribute.length())) {
+            return MathStyleOverride.TEXT;
+        }
+        String rest = trimmed.substring(attribute.length()).trim();
+        if (!rest.startsWith("=")) {
+            return MathStyleOverride.TEXT;
+        }
+        String style = parseValue(trimmed, attribute.length());
+        if (style.length() >= 2 && ((style.charAt(0) == '"' && style.charAt(style.length() - 1) == '"')
+                || (style.charAt(0) == '\'' && style.charAt(style.length() - 1) == '\''))) {
+            style = style.substring(1, style.length() - 1).trim();
+        }
+        if ("display".equalsIgnoreCase(style)) {
+            return MathStyleOverride.DISPLAY;
+        }
+        if ("script".equalsIgnoreCase(style)) {
+            return MathStyleOverride.SCRIPT;
+        }
+        if ("scriptscript".equalsIgnoreCase(style)) {
+            return MathStyleOverride.SCRIPTSCRIPT;
+        }
+        return MathStyleOverride.TEXT;
     }
 
     private static boolean isKnownTagName(String name) {

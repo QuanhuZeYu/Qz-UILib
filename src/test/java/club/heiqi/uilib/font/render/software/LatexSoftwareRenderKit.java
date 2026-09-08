@@ -22,6 +22,10 @@ import club.heiqi.uilib.font.glyph.GlyphGenerationPriority;
 import club.heiqi.uilib.font.glyph.GlyphGenerationResult;
 import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.glyph.GlyphGenerator;
+import club.heiqi.uilib.font.glyph.MathGlyphRasterPlan;
+import club.heiqi.uilib.font.latex.layout.MathFontSupport;
+import club.heiqi.uilib.font.latex.layout.MathGlyphRef;
+import club.heiqi.uilib.font.util.BundledMathFont;
 import club.heiqi.uilib.font.glyph.GlyphRequestToken;
 import club.heiqi.uilib.font.latex.LatexNode;
 import club.heiqi.uilib.font.latex.LatexParser;
@@ -105,6 +109,7 @@ public final class LatexSoftwareRenderKit {
     /** 共享服务装配：{@code GlyphRuntimeTables} 为百万级 direct-index 表，每实例约 123MiB，必须共享。 */
     static final class Shared {
 
+        final int runtimeVersion;
         final SoftwareGlApi gl;
         final GlyphPageManager manager;
         final GlyphRuntimeTables tables;
@@ -114,19 +119,28 @@ public final class LatexSoftwareRenderKit {
         final TextLayoutService service;
         final List<GlyphPage> pages = new ArrayList<GlyphPage>();
 
-        Shared() {
+        Shared() { this(false); }
+
+        Shared(boolean mathFont) {
+            runtimeVersion = mathFont ? 2 : 1;
             gl = new SoftwareGlApi();
             manager = new GlyphPageManager(gl);
             tables = manager.getRuntimeTables();
             settings = FontRuntimeSettings.capture();
             tables.setFontMetrics(FontRuntimeMetrics.prepare(settings, null));
             FontCatalog catalog = new FontCatalog();
-            catalog.replaceAll(Arrays.asList(baseCatalogFont()));
+            if (mathFont) {
+                catalog.publish(catalog.prepareSnapshotWithMath(Arrays.asList(baseCatalogFont()), BundledMathFont.shared()));
+                manager.setGeneration(runtimeVersion, settings);
+                manager.initialize();
+            } else {
+                catalog.replaceAll(Arrays.asList(baseCatalogFont()));
+            }
             derivedFontCache = new DerivedFontCache(catalog);
             fontMatcher = new FontMatcher(catalog, derivedFontCache);
-            fontMatcher.setRuntimeTables(1, tables);
+            fontMatcher.setRuntimeTables(runtimeVersion, tables);
             service = new TextLayoutService(fontMatcher, manager, derivedFontCache);
-            service.setRuntimeVersion(1);
+            service.setRuntimeVersion(runtimeVersion);
         }
     }
 
@@ -161,6 +175,11 @@ public final class LatexSoftwareRenderKit {
     /** 释放共享装配（{@code GlyphRuntimeTables} 约 123MiB）：测试类 @AfterClass 调用，避免挤压测试 JVM 堆。 */
     public static synchronized void resetShared() {
         shared = null;
+    }
+
+    /** 新数学管线测试显式启用；旧字体 oracle 保留 legacy 场地。 */
+    static synchronized void enableMathFont() {
+        shared = new Shared(true);
     }
 
     /** 诊断用：当前共享装配的 awt 基准字号（ink 表值换算到渲染像素的同源口径）。 */
@@ -291,9 +310,9 @@ public final class LatexSoftwareRenderKit {
 
         List<TextSegment> segments = shared.service.layoutSegments(richText, 0xFFFFFFFF,
                 TextContentMode.RICH_TAGS, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
-        assembleGlyphs(shared, segments);
+        assembleGlyphs(shared, segments, baseFontSizePx);
 
-        GlyphRuntimeTablesView view = GlyphRuntimeTablesView.snapshot(tables, shared.manager, 1);
+        GlyphRuntimeTablesView view = GlyphRuntimeTablesView.snapshot(tables, shared.manager, shared.runtimeVersion);
         GlyphBatchCollector collector = new GlyphBatchCollector();
         int advanced = DefaultFontRendererAdapter.getInstance().renderSegmentsToCollector(segments, settings,
                 shared.service, view, ORIGIN_X * renderScale, ORIGIN_Y * renderScale, false, renderScale,
@@ -330,7 +349,7 @@ public final class LatexSoftwareRenderKit {
         style.resetAll(0xFFFFFFFF);
         List<club.heiqi.uilib.font.latex.LatexNode> nodes = club.heiqi.uilib.font.latex.LatexParser
                 .parse(latexSource);
-        assembleGlyphs(shared, Arrays.asList(TextSegment.forLatex(latexSource, style)));
+        assembleGlyphs(shared, Arrays.asList(TextSegment.forLatex(latexSource, style)), baseFontSizePx);
         return new club.heiqi.uilib.font.latex.layout.MathLayoutService().layout(
                 nodes, baseFontSizePx, shared.service.createMathMetrics(style, baseFontSizePx));
     }
@@ -343,6 +362,15 @@ public final class LatexSoftwareRenderKit {
 
     /** 为渲染所需码点生成字形并装配到软件字符页（真 skyline + 真上传路径；已常驻码点跳过；包内共享入口）。 */
     static void assembleGlyphs(Shared shared, List<TextSegment> segments) {
+        assembleGlyphs(shared, segments, 14);
+    }
+
+    static void assembleGlyphs(Shared shared, List<TextSegment> segments, int baseSizePx) {
+        if (shared.service.createMathMetrics(new club.heiqi.uilib.font.layout.TextStyle(), baseSizePx)
+                .mathFontSupport() != null) {
+            assembleMathPipeline(shared, segments, baseSizePx);
+            return;
+        }
         // 普通文本按段字重装配；公式另按生产布局给出的局部字体选择装配，
         // 否则普通宿主中的 mathbf 会在 BOLD 表查不到位图。预布局仅用于收集需求，
         // 正式几何仍在全部字体页就绪后重新计算。
@@ -366,6 +394,52 @@ public final class LatexSoftwareRenderKit {
         if (!bold.isEmpty()) {
             assembleCodepoints(shared, bold, FontType.BOLD);
         }
+    }
+
+    private static void assembleMathPipeline(Shared shared, List<TextSegment> segments, int baseSizePx) {
+        GlyphGenerator generator = new GlyphGenerator(shared.fontMatcher, shared.derivedFontCache);
+        for (TextSegment segment : segments) {
+            int size = segment.getStyle().resolveEffectiveFontSizePx(baseSizePx);
+            if (!segment.isLatex()) {
+                assembleManagedText(shared, generator, segment.getText(), segment.getStyle().getFontType());
+                continue;
+            }
+            MathFontSupport support = shared.service.createMathMetrics(segment.getStyle(), size).mathFontSupport();
+            MathBox box = new MathLayoutService().layout(LatexParser.parse(segment.getLatexSource()), size,
+                    shared.service.createMathMetrics(segment.getStyle(), size), segment.getLatexMathStyle());
+            for (GlyphElem glyph : box.getGlyphs()) {
+                MathGlyphRef ref = glyph.getMathGlyphRef();
+                if (ref == null) {
+                    assembleManagedText(shared, generator, glyph.getText(), glyph.getMathFontStyle() == MathFontStyle.BOLD
+                            ? FontType.BOLD : segment.getStyle().getFontType());
+                    continue;
+                }
+                int rasterSize = shared.settings.getPageGlyphSize();
+                MathGlyphRasterPlan plan = new MathGlyphRasterPlan(support.measure(ref, rasterSize),
+                        shared.settings.getTextureSize(), shared.settings.getGlyphInkPadding());
+                for (int tile = 0; tile < plan.getTileCount(); tile++) {
+                    GlyphRequestToken token = shared.manager.claimMathRequest(shared.runtimeVersion, ref, rasterSize, tile, 0);
+                    if (token != null) { publishManaged(shared, generator, token, rasterSize); }
+                }
+            }
+        }
+    }
+
+    private static void assembleManagedText(Shared shared, GlyphGenerator generator, String text, FontType weight) {
+        for (int offset = 0; offset < text.length();) {
+            int cp = text.codePointAt(offset);
+            offset += Character.charCount(cp);
+            if (UnicodeTextClassifier.isRenderSkipped(cp)) { continue; }
+            GlyphRequestToken token = shared.manager.claimRequest(shared.runtimeVersion, cp, weight);
+            if (token != null) { publishManaged(shared, generator, token, shared.settings.getPageGlyphSize()); }
+        }
+    }
+
+    private static void publishManaged(Shared shared, GlyphGenerator generator, GlyphRequestToken token, int size) {
+        if (!shared.manager.markRasterizing(token)) { throw new AssertionError("claim state: " + token); }
+        GlyphGenerationResult result = generator.generate(new GlyphGenerationTask(token, size, GlyphGenerationPriority.HIGH));
+        if (result == null || !shared.manager.queueUpload(result)) { throw new AssertionError("generation/upload: " + token); }
+        shared.manager.flushPendingUploads(1);
     }
 
     /** 生成并装配给定码点集合（layout 与 render 共用的同源入口；恒 NORMAL 字重）。 */

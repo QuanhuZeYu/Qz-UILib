@@ -19,6 +19,8 @@ public final class GlyphElem {
     /** 是否接受宿主 TextStyle 的斜体叠加；显式数学字体选择关闭继承。 */
     private final boolean inheritTextItalic;
     private final MathFontStyle mathFontStyle;
+    private final MathGlyphRef mathGlyphRef;
+    private final MathGlyphClip mathGlyphClip;
 
     /**
      * 创建字形单元（直体）。
@@ -53,6 +55,19 @@ public final class GlyphElem {
     /** 字体选择同时交给测量和绘制；不得为 null。 */
     public GlyphElem(String text, float x, float y, float sizeScale, boolean italic,
             boolean inheritTextItalic, MathFontStyle mathFontStyle) {
+        this(text, x, y, sizeScale, italic, inheritTextItalic, mathFontStyle, null);
+    }
+
+    /** 已解析引用直接标识物理字形或程序形状，不再叠加斜切。 */
+    public GlyphElem(String text, float x, float y, float sizeScale, boolean italic,
+            boolean inheritTextItalic, MathFontStyle mathFontStyle, MathGlyphRef mathGlyphRef) {
+        this(text, x, y, sizeScale, italic, inheritTextItalic, mathFontStyle, mathGlyphRef, null);
+    }
+
+    /** 可选裁片相对 glyph origin，已是实际 logical px；旧构造器不裁片。 */
+    public GlyphElem(String text, float x, float y, float sizeScale, boolean italic,
+            boolean inheritTextItalic, MathFontStyle mathFontStyle, MathGlyphRef mathGlyphRef,
+            MathGlyphClip mathGlyphClip) {
         if (mathFontStyle == null) {
             throw new IllegalArgumentException("mathFontStyle 不能为空");
         }
@@ -63,9 +78,11 @@ public final class GlyphElem {
         this.x = x;
         this.y = y;
         this.sizeScale = sizeScale;
-        this.italic = italic;
-        this.inheritTextItalic = inheritTextItalic;
+        this.italic = mathGlyphRef == null && italic;
+        this.inheritTextItalic = mathGlyphRef == null && inheritTextItalic;
         this.mathFontStyle = mathFontStyle;
+        this.mathGlyphRef = mathGlyphRef;
+        this.mathGlyphClip = mathGlyphClip;
     }
 
     public String getText() {
@@ -94,6 +111,14 @@ public final class GlyphElem {
 
     public MathFontStyle getMathFontStyle() {
         return mathFontStyle;
+    }
+
+    public MathGlyphRef getMathGlyphRef() {
+        return mathGlyphRef;
+    }
+
+    public MathGlyphClip getMathGlyphClip() {
+        return mathGlyphClip;
     }
 
     @Override

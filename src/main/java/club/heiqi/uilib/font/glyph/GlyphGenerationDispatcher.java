@@ -45,8 +45,8 @@ public class GlyphGenerationDispatcher {
     private final AtomicLong rejectedDemandCount = new AtomicLong(0L);
     private final AtomicLong promotedDemandCount = new AtomicLong(0L);
     private final AtomicLong enqueueSequence = new AtomicLong(0L);
-    private final ConcurrentHashMap<Long, GlyphGenerationTask> inFlightTasks =
-            new ConcurrentHashMap<Long, GlyphGenerationTask>();
+    private final ConcurrentHashMap<Object, GlyphGenerationTask> inFlightTasks =
+            new ConcurrentHashMap<Object, GlyphGenerationTask>();
     private final int maxDemandCount;
     private final int visibleReserve;
     private final long agingStepNanos;
@@ -160,8 +160,7 @@ public class GlyphGenerationDispatcher {
         }
 
         GlyphDemandLevel requestedLevel = task.getDemandLevel();
-        Long requestKey = Long.valueOf(packRequestKey(task.getRuntimeVersion(), task.getCodepoint(),
-                task.getFontType()));
+        Object requestKey = requestKey(task);
         GlyphGenerationTask existingTask = inFlightTasks.get(requestKey);
         if (existingTask != null) {
             GlyphRequestToken promotedToken = promoteActiveTask(existingTask, task, requestedLevel);
@@ -169,19 +168,18 @@ public class GlyphGenerationDispatcher {
                 recordPromotion(promotedToken, requestedLevel, true, "ACTIVE_DEMAND");
                 return;
             }
-            if (glyphPageManager.hasActiveDemand(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType())) {
+            if (hasActiveDemand(task)) {
                 return;
             }
             removeInFlightTask(requestKey, existingTask);
         }
 
-        GlyphRequestToken mailboxToken = glyphPageManager.promoteDemand(task.getRuntimeVersion(),
-                task.getCodepoint(), task.getFontType(), requestedLevel.getPriorityOrder());
+        GlyphRequestToken mailboxToken = promoteDemand(task, requestedLevel);
         if (mailboxToken != null) {
             recordPromotion(mailboxToken, requestedLevel, true, "UPLOAD_DEMAND");
             return;
         }
-        if (glyphPageManager.hasActiveDemand(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType())) {
+        if (hasActiveDemand(task)) {
             return;
         }
 
@@ -196,8 +194,7 @@ public class GlyphGenerationDispatcher {
         final long enqueuedNanos = nanoTime.getAsLong();
         final long sequence = enqueueSequence.incrementAndGet();
 
-        GlyphRequestToken token = glyphPageManager.claimRequest(task.getRuntimeVersion(), task.getCodepoint(),
-                task.getFontType(), requestedLevel.getPriorityOrder());
+        GlyphRequestToken token = claimRequest(task, requestedLevel);
         if (token == null) {
             return;
         }
@@ -331,8 +328,7 @@ public class GlyphGenerationDispatcher {
         if (queue != null) {
             return queue.promote(existingTask, request, requestedLevel);
         }
-        GlyphRequestToken token = glyphPageManager.promoteDemand(request.getRuntimeVersion(), request.getCodepoint(),
-                request.getFontType(), requestedLevel.getPriorityOrder());
+        GlyphRequestToken token = promoteDemand(request, requestedLevel);
         if (token != null) {
             existingTask.promoteTo(requestedLevel);
         }
@@ -365,7 +361,7 @@ public class GlyphGenerationDispatcher {
                 settled ? settledReason : staleReason, throwable);
     }
 
-    private void settleDispatchFailure(Long requestKey, GlyphGenerationTask generationTask, GlyphRequestToken token,
+    private void settleDispatchFailure(Object requestKey, GlyphGenerationTask generationTask, GlyphRequestToken token,
             Throwable throwable) {
         GlyphState actualState = glyphPageManager.getTokenState(token);
         boolean settled = settleFailed(token);
@@ -382,7 +378,8 @@ public class GlyphGenerationDispatcher {
         GlyphRequestToken token = task.getToken();
         String stage = "worker_gate";
         try {
-            if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null || glyphGenerator == null
+            if (!isTaskCurrent(taskGenerationEpoch) || glyphGenerator == null
+                    || (task.getKind() == GlyphRequestToken.Kind.CODEPOINT && fontMatcher == null)
                     || task.getRuntimeVersion() != runtimeVersion) {
                 cancelTask(task);
                 return;
@@ -397,14 +394,15 @@ public class GlyphGenerationDispatcher {
                 return;
             }
 
-            stage = "matcher";
-            FontType fontType = task.getFontType();
-            if (fontMatcher.matchFontIndex(task.getRuntimeVersion(), task.getCodepoint(), fontType) < 0) {
-                GlyphState actualState = glyphPageManager.getTokenState(token);
-                boolean settled = glyphPageManager.markFailed(token, GlyphState.RASTERIZING);
-                FontRuntimeDiagnostics.logGlyphTokenEvent(token, stage, GlyphState.RASTERIZING, actualState,
-                        settled ? "NO_MATCHING_FONT" : "NO_MATCHING_FONT_STALE");
-                return;
+            if (task.getKind() == GlyphRequestToken.Kind.CODEPOINT) {
+                stage = "matcher";
+                if (fontMatcher.matchFontIndex(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType()) < 0) {
+                    GlyphState actualState = glyphPageManager.getTokenState(token);
+                    boolean settled = glyphPageManager.markFailed(token, GlyphState.RASTERIZING);
+                    FontRuntimeDiagnostics.logGlyphTokenEvent(token, stage, GlyphState.RASTERIZING, actualState,
+                            settled ? "NO_MATCHING_FONT" : "NO_MATCHING_FONT_STALE");
+                    return;
+                }
             }
 
             stage = "rasterize";
@@ -457,15 +455,13 @@ public class GlyphGenerationDispatcher {
     private void cancelInFlightTasks() {
         GlyphGenerationTask[] tasks = inFlightTasks.values().toArray(new GlyphGenerationTask[0]);
         for (GlyphGenerationTask task : tasks) {
-            GlyphRequestToken token = task.getToken();
-            Long requestKey = Long.valueOf(packRequestKey(token.getGeneration(), token.getCodepoint(),
-                    token.getFontType()));
+            Object requestKey = requestKey(task);
             removeInFlightTask(requestKey, task);
             cancelTask(task);
         }
     }
 
-    private void removeInFlightTask(Long requestKey, GlyphGenerationTask task) {
+    private void removeInFlightTask(Object requestKey, GlyphGenerationTask task) {
         if (inFlightTasks.remove(requestKey, task)) {
             admittedDemandCount.decrementAndGet();
         }
@@ -492,6 +488,40 @@ public class GlyphGenerationDispatcher {
         }
     }
 
+    private Object requestKey(GlyphGenerationTask task) {
+        if (task.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) {
+            return new MathGlyphKey(task.getRuntimeVersion(), task.getMathGlyphRef(), task.getRasterSize(),
+                    task.getTileIndex());
+        }
+        return Long.valueOf(packRequestKey(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType()));
+    }
+
+    private GlyphRequestToken claimRequest(GlyphGenerationTask task, GlyphDemandLevel level) {
+        if (task.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) {
+            return glyphPageManager.claimMathRequest(task.getRuntimeVersion(), task.getMathGlyphRef(),
+                    task.getRasterSize(), task.getTileIndex(), level.getPriorityOrder());
+        }
+        return glyphPageManager.claimRequest(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType(),
+                level.getPriorityOrder());
+    }
+
+    private GlyphRequestToken promoteDemand(GlyphGenerationTask task, GlyphDemandLevel level) {
+        if (task.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) {
+            return glyphPageManager.promoteMathDemand(task.getRuntimeVersion(), task.getMathGlyphRef(),
+                    task.getRasterSize(), task.getTileIndex(), level.getPriorityOrder());
+        }
+        return glyphPageManager.promoteDemand(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType(),
+                level.getPriorityOrder());
+    }
+
+    private boolean hasActiveDemand(GlyphGenerationTask task) {
+        if (task.getKind() == GlyphRequestToken.Kind.MATH_GLYPH) {
+            return glyphPageManager.hasActiveMathDemand(task.getRuntimeVersion(), task.getMathGlyphRef(),
+                    task.getRasterSize(), task.getTileIndex());
+        }
+        return glyphPageManager.hasActiveDemand(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
+    }
+
     private long packRequestKey(int generation, int codepoint, FontType fontType) {
         long versionBits = ((long) generation & 0xFFFFFFFFL) << 32;
         long codepointBits = ((long) codepoint & 0x1FFFFFL) << 1;
@@ -503,12 +533,12 @@ public class GlyphGenerationDispatcher {
 
         private final GlyphGenerationTask task;
         private final int taskGenerationEpoch;
-        private final Long requestKey;
+        private final Object requestKey;
         private final Object taskOwnerToken;
         private final long sequence;
         private final long enqueuedNanos;
 
-        private ScheduledGlyphTask(GlyphGenerationTask task, int taskGenerationEpoch, Long requestKey,
+        private ScheduledGlyphTask(GlyphGenerationTask task, int taskGenerationEpoch, Object requestKey,
                 Object taskOwnerToken, long sequence, long enqueuedNanos) {
             this.task = task;
             this.taskGenerationEpoch = taskGenerationEpoch;
@@ -751,8 +781,7 @@ public class GlyphGenerationDispatcher {
                 GlyphDemandLevel requestedLevel) {
             lock.lock();
             try {
-                GlyphRequestToken token = glyphPageManager.promoteDemand(request.getRuntimeVersion(),
-                        request.getCodepoint(), request.getFontType(), requestedLevel.getPriorityOrder());
+                GlyphRequestToken token = promoteDemand(request, requestedLevel);
                 if (token != null) {
                     existingTask.promoteTo(requestedLevel);
                 }

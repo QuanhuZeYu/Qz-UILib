@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.function.UnaryOperator;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
+import club.heiqi.uilib.font.layout.markdown.MarkdownInlineParser.MathPolicy;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 
@@ -85,14 +87,13 @@ public final class MarkdownDocument {
 
     private final String source;
     private final List<MarkdownBlock> blocks;
-    /** 尚未迁移的消费者使用旧语义树；只在实际含表格时保留，出口不重新解析。 */
+    /** 历史出口的完整旧块树与 LEGACY 词法配套；创建时解析，出口不重新解析。 */
     private final List<MarkdownBlock> literalBlocks;
 
     private MarkdownDocument(String source, List<MarkdownBlock> blocks, List<MarkdownSpan> spans) {
         this.source = source;
         this.blocks = Collections.unmodifiableList(blocks);
-        this.literalBlocks = containsTable(blocks)
-                ? Collections.unmodifiableList(MarkdownBlockParser.parseLiteral(source, spans)) : this.blocks;
+        this.literalBlocks = Collections.unmodifiableList(MarkdownBlockParser.parseLiteral(source, spans));
     }
 
     /**
@@ -160,17 +161,8 @@ public final class MarkdownDocument {
             throw new IllegalArgumentException("baseStyle 不能为空");
         }
         List<MarkdownTableModel> out = new ArrayList<MarkdownTableModel>();
-        collectTables(blocks, Collections.<Integer>emptyList(), new BlockStyle(baseStyle), FALLBACK_TABLE, out);
+        collectTables(blocks, Collections.<Integer>emptyList(), new BlockStyle(baseStyle, MathPolicy.MODERN), FALLBACK_TABLE, out);
         return Collections.unmodifiableList(out);
-    }
-
-    private static boolean containsTable(List<MarkdownBlock> nodes) {
-        for (MarkdownBlock block : nodes) {
-            if (block.kind == MarkdownBlock.Kind.TABLE || containsTable(block.children)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void collectTables(List<MarkdownBlock> nodes, List<Integer> parentPath,
@@ -306,10 +298,10 @@ public final class MarkdownDocument {
         }
         MarkdownStyleTable table = styles == null ? FALLBACK_TABLE : styles;
         List<MarkdownTableModel> models = new ArrayList<MarkdownTableModel>();
-        collectTables(blocks, Collections.<Integer>emptyList(), new BlockStyle(baseStyle), table, models);
+        collectTables(blocks, Collections.<Integer>emptyList(), new BlockStyle(baseStyle, MathPolicy.MODERN), table, models);
         LineFlattener f = new LineFlattener(table);
         f.tableModels = models;
-        walkLayout(blocks, new BlockStyle(baseStyle), table, f, NO_CHAIN, 0, NO_ORDINAL);
+        walkLayout(blocks, new BlockStyle(baseStyle, MathPolicy.MODERN), table, f, NO_CHAIN, 0, NO_ORDINAL);
         return new LayoutContent(f.finish(), f.tableUnits);
     }
 
@@ -424,9 +416,7 @@ public final class MarkdownDocument {
         }
 
         private static TextSegment copySegment(TextSegment segment) {
-            return segment.isLatex()
-                    ? TextSegment.forLatex(segment.getLatexSource(), segment.getStyle().copy())
-                    : new TextSegment(segment.getText(), segment.getStyle().copy());
+            return segment.withStyle(segment.getStyle().copy());
         }
     }
 
@@ -651,12 +641,13 @@ public final class MarkdownDocument {
     private static List<TextSegment> inlineSegments(String body, List<MarkdownSpan> anchored,
                                                     BlockStyle style, MarkdownStyleTable table) {
         if (anchored != null) {
-            return MarkdownInlineParser.parse(anchored, table, style.transform());
+            return MarkdownInlineParser.parse(anchored, table, style.transform(), false, style.mathPolicy);
         }
         if (body == null || body.isEmpty()) {
             return Collections.emptyList();
         }
-        return MarkdownInlineParser.parse(body, style.value(), table);
+        return MarkdownInlineParser.parse(Collections.singletonList(new MarkdownSpan(body, style.value())),
+                table, null, false, style.mathPolicy);
     }
 
     private static void emitThematicBreak(MarkdownStyleTable table, BlockStyle style,
@@ -737,6 +728,14 @@ public final class MarkdownDocument {
                                    LineFlattener f, List<TextSegment> chain, int quoteLevel,
                                    int ordinal) {
         switch (block.kind) {
+            case MATH_DISPLAY:
+                f.startBlock(MarkdownLayoutLine.Kind.MATH_DISPLAY, quoteLevel, chain);
+                List<MarkdownSpan> mathAnchors = anchorsOf(block, style);
+                TextStyle mathStyle = mathAnchors == null || mathAnchors.isEmpty() ? style.value()
+                        : style.applied(mathAnchors.get(0).getBaseStyle());
+                f.append(Collections.singletonList(TextSegment.forLatex(block.joinedLines(), mathStyle,
+                        MathStyleOverride.DISPLAY)));
+                break;
             case TABLE:
                 f.tableUnit(quoteLevel, chain);
                 break;
@@ -1073,12 +1072,18 @@ public final class MarkdownDocument {
         private final TextStyle root;
         private final StyleTransform transform;
         private final TextStyle resolved;
+        private final MathPolicy mathPolicy;
 
         BlockStyle(TextStyle root) {
-            this(root, null);
+            this(root, MathPolicy.LEGACY);
         }
 
-        private BlockStyle(TextStyle root, StyleTransform transform) {
+        BlockStyle(TextStyle root, MathPolicy mathPolicy) {
+            this(root, null, mathPolicy);
+        }
+
+        private BlockStyle(TextStyle root, StyleTransform transform, MathPolicy mathPolicy) {
+            this.mathPolicy = mathPolicy;
             this.root = root;
             this.transform = transform;
             this.resolved = transform == null ? root : transform.apply(root.copy());
@@ -1113,11 +1118,11 @@ public final class MarkdownDocument {
         }
 
         BlockStyle heading(int level, MarkdownStyleTable table) {
-            return new BlockStyle(root, StyleTransform.compose(transform, new HeadingStep(level, table)));
+            return new BlockStyle(root, StyleTransform.compose(transform, new HeadingStep(level, table)), mathPolicy);
         }
 
         BlockStyle quote(MarkdownStyleTable table) {
-            return new BlockStyle(root, StyleTransform.compose(transform, new QuoteStep(table)));
+            return new BlockStyle(root, StyleTransform.compose(transform, new QuoteStep(table)), mathPolicy);
         }
     }
 }

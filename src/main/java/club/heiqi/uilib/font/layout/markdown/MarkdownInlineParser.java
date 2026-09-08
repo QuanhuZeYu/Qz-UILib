@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.latex.MathStyleOverride;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
 
@@ -77,6 +78,9 @@ public final class MarkdownInlineParser {
 
     /** 公共入口（无样式表形参）时的 code 段口径来源——恒取默认登记表，与包内形参路径同值。 */
     private static final MarkdownStyleTable CODE_TABLE_FALLBACK = MarkdownStyleTable.defaults();
+
+    /** 出口迁移策略同时控制词法与根数学样式，不通过结果降级模拟旧解析。 */
+    enum MathPolicy { LEGACY, MODERN }
 
     private MarkdownInlineParser() {
     }
@@ -159,6 +163,11 @@ public final class MarkdownInlineParser {
     /** 表格单元格允许 pipe 转义，仍复用同一扫描核；旧入口的转义集合不变。 */
     static List<TextSegment> parse(List<MarkdownSpan> spans, MarkdownStyleTable styles,
             StyleTransform blockTransform, boolean escapePipe) {
+        return parse(spans, styles, blockTransform, escapePipe, MathPolicy.MODERN);
+    }
+
+    static List<TextSegment> parse(List<MarkdownSpan> spans, MarkdownStyleTable styles,
+            StyleTransform blockTransform, boolean escapePipe, MathPolicy mathPolicy) {
         if (spans == null || spans.isEmpty()) {
             return Collections.emptyList();
         }
@@ -195,7 +204,7 @@ public final class MarkdownInlineParser {
         }
         List<TextSegment> out = new ArrayList<TextSegment>();
         parseInline(text.toString(), 0, total, 0, Layer.ROOT,
-                new ScanCtx(group, groupStyles, blockTransform, table, escapePipe), out);
+                new ScanCtx(group, groupStyles, blockTransform, table, escapePipe, mathPolicy), out);
         return out;
     }
 
@@ -218,6 +227,15 @@ public final class MarkdownInlineParser {
             char ch = text.charAt(index);
             if (ch == '\\' && index + 1 < to && (isEscapable(text.charAt(index + 1))
                     || (ctx.escapePipe && text.charAt(index + 1) == '|'))) {
+                if (ctx.mathPolicy == MathPolicy.MODERN && text.charAt(index + 1) == '$') {
+                    int end = index + 2;
+                    while (end < to && text.charAt(end) == '$') end++;
+                    if (end > index + 2) {
+                        buffer.appendRun(text, index + 1, end);
+                        index = end;
+                        continue;
+                    }
+                }
                 buffer.append(text.charAt(index + 1), index + 1);
                 index += 2;
                 continue;
@@ -314,6 +332,24 @@ public final class MarkdownInlineParser {
                 continue;
             }
             if (ch == '$') {
+                if (ctx.mathPolicy == MathPolicy.MODERN) {
+                    int runEnd = index + 1;
+                    while (runEnd < to && text.charAt(runEnd) == '$') runEnd++;
+                    int runLength = runEnd - index;
+                    if (runLength >= 2) {
+                        int close = runLength == 2 ? findDisplayClose(text, index + 2, to) : -1;
+                        if (close >= 0) {
+                            buffer.emit(layer, ctx, out);
+                            out.add(TextSegment.forLatex(text.substring(index + 2, close),
+                                    resolve(index + 2, layer, ctx), MathStyleOverride.DISPLAY));
+                            index = close + 2;
+                        } else {
+                            buffer.appendRun(text, index, runEnd);
+                            index = runEnd;
+                        }
+                        continue;
+                    }
+                }
                 int openLength = startsWith(text, index, to, "$$") ? 2 : 1;
                 if (isLatexOpening(text, to, index, openLength)) {
                     int close = findDollarClose(text, to, index + openLength, openLength);
@@ -510,6 +546,22 @@ public final class MarkdownInlineParser {
         }
         char next = text.charAt(nextIndex);
         return !Character.isWhitespace(next) && !Character.isDigit(next);
+    }
+
+    /** 精确双美元，同物理行、非空白体；长美元串不贡献定界符。 */
+    static int findDisplayClose(String text, int from, int to) {
+        for (int i = from; i < to;) {
+            char ch = text.charAt(i);
+            if (ch == '\r' || ch == '\n') return -1;
+            if (ch != '$') { i++; continue; }
+            int end = i + 1;
+            while (end < to && text.charAt(end) == '$') end++;
+            if (end - i == 2 && (countPrecedingBackslashes(text, from, i) & 1) == 0) {
+                return text.substring(from, i).trim().isEmpty() ? -1 : i;
+            }
+            i = end;
+        }
+        return -1;
     }
 
     /** 找美元闭合：双美元要求完整闭合串；内容非空、前邻居非空白，支持转义美元。 */
@@ -762,9 +814,11 @@ public final class MarkdownInlineParser {
         private final StyleTransform blockTransform;
         private final MarkdownStyleTable styles;
         private final boolean escapePipe;
+        private final MathPolicy mathPolicy;
 
         ScanCtx(int[] group, List<TextStyle> groupStyles, StyleTransform blockTransform,
-                MarkdownStyleTable styles, boolean escapePipe) {
+                MarkdownStyleTable styles, boolean escapePipe, MathPolicy mathPolicy) {
+            this.mathPolicy = mathPolicy;
             this.escapePipe = escapePipe;
             this.group = group;
             this.groupStyles = groupStyles;

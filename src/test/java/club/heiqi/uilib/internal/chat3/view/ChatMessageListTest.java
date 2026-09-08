@@ -2538,19 +2538,60 @@ public class ChatMessageListTest {
     }
 
     @Test
-    public void blockMathLineRendersOwnLatexSegmentWithFourPxMargins() {
+    public void blockMathLineUsesCenteredDisplayContent() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> $$x^2$$"), 1, T0));
         Object[] parts = layoutSingleOtherBubble(controller);
         SceneNode bubble = (SceneNode) parts[0];
-        SceneNode lineNode = bubble.__getChildren().get(0);
+        settleDisplayContent(parts);
+        assertDisplayContentBubble(bubble);
+    }
+
+    private static void settleDisplayContent(Object[] parts) {
+        SceneRuntime rt = (SceneRuntime) parts[2];
+        SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+        for (int pass = 0; pass < 5; pass++) {
+            engine.layout((SceneNode) parts[1], new Constraints(400, 300));
+            rt.__setLayoutDoneEpoch(engine.layoutEpoch());
+            rt.flush();
+        }
+    }
+
+    private static SceneNode findDisplayContentNode(SceneNode node,
+            java.util.function.Predicate<SceneNode> predicate) {
+        if (predicate.test(node)) return node;
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findDisplayContentNode(child, predicate);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static void assertDisplayContentBubble(SceneNode bubble) {
+        SceneNode viewport = findDisplayContentNode(bubble, node -> node.isScrollable() && node.isScrollableX());
+        Assert.assertNotNull("数学使用既有双轴 Content viewport", viewport);
+        Assert.assertTrue("Content viewport 裁剪子树", viewport.isClipChildren());
+        SceneNode lineNode = findDisplayContentNode(viewport, node -> {
+            if (node.getSegments() == null) return false;
+            for (TextSegment segment : node.getSegments()) if (segment.isLatex()) return true;
+            return false;
+        });
+        Assert.assertNotNull("递归寻找 Content 中实际 SEGMENTS 叶子", lineNode);
         List<TextSegment> segments = lineNode.getSegments();
         Assert.assertEquals("块级公式 = 单个 latex 段", 1, segments.size());
-        Assert.assertTrue("latex 段", segments.get(0).isLatex());
-        Assert.assertEquals("TeX 源剥 $$ 边界", "x^2", segments.get(0).getLatexSource());
-        Assert.assertEquals("上下各 4px 间距(上 margin)", 4, lineNode.getMarginTop());
-        Assert.assertEquals("上下各 4px 间距(下 margin)", 4, lineNode.getMarginBottom());
-        Assert.assertEquals("左右无 margin(左对齐不居中)", 0, lineNode.getMarginLeft());
+        Assert.assertTrue(segments.get(0).isLatex());
+        Assert.assertEquals("x^2", segments.get(0).getLatexSource());
+        Assert.assertEquals(club.heiqi.uilib.font.latex.MathStyleOverride.DISPLAY,
+                segments.get(0).getLatexMathStyle());
+        LayoutBox viewportBox = (LayoutBox) viewport.getCachedLayout();
+        LayoutBox formulaBox = (LayoutBox) lineNode.getCachedLayout();
+        Assert.assertNotNull(viewportBox);
+        Assert.assertNotNull(formulaBox);
+        int left = lineNode.getMarginLeft();
+        int right = viewportBox.getWidth() - viewport.getPaddingLeft() - viewport.getPaddingRight()
+                - left - formulaBox.getWidth();
+        Assert.assertTrue("可容纳公式在正文列有居中留白", left > 0);
+        Assert.assertEquals("两侧留白仅有像素取整误差", left, right, 2.0);
     }
 
     @Test
@@ -2726,19 +2767,14 @@ public class ChatMessageListTest {
 
     @Test
     public void singleLineBlockMathWithLeadingColorCodeRendersLatex() {
-        // 真机同款:$$ 独占行行首残留 §f → 块级公式应照常走 LaTeX 渲染链
+        // formatted 分支含 §f，但聊天内容读取 unformatted 源，仍进入新 DISPLAY Content。
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new SiblingStyledComponent(
                 "<Bob> $$x^2$$", "§f<Bob> §f$$x^2$$"), 1, T0));
         Object[] parts = layoutSingleOtherBubble(controller);
         SceneNode bubble = (SceneNode) parts[0];
-        SceneNode lineNode = bubble.__getChildren().get(0);
-        List<TextSegment> segments = lineNode.getSegments();
-        Assert.assertEquals("块级公式 = 单个 latex 段", 1, segments.size());
-        Assert.assertTrue("latex 段", segments.get(0).isLatex());
-        Assert.assertEquals("TeX 源剥 $$ 边界", "x^2", segments.get(0).getLatexSource());
-        Assert.assertEquals("上下各 4px 间距", 4, lineNode.getMarginTop());
-        Assert.assertEquals("上下各 4px 间距", 4, lineNode.getMarginBottom());
+        settleDisplayContent(parts);
+        assertDisplayContentBubble(bubble);
     }
 
     @Test

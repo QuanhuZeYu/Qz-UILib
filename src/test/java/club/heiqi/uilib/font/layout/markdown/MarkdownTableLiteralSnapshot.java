@@ -65,7 +65,8 @@ final class MarkdownTableLiteralSnapshot {
     }
 
     /**
-     * 递归记录全部公开 getter，按名称排序；新增 getter 也会使旧 fixture 失配。
+     * 递归记录历史公开 getter，按名称排序；除已批准新增的 TextSegment.getLatexMathStyle
+     * 外，新增 getter 仍使旧 fixture 失配。该新增字段在降级锁中独立断言，不重录历史 fixture。
      * 样式/链接/code/latex、行 id/链/几何全部展开，不以 toString 代替数据。
      * 浮点按原始位记录，字符串以 UTF-16 转义保留每一个字符与换行。
      */
@@ -97,6 +98,9 @@ final class MarkdownTableLiteralSnapshot {
         List<String> fields = new ArrayList<String>();
         for (Method method : methods) {
             String name = method.getName();
+            // 只排除这个确切的新增零参 getter；其他类型/名称/历史字段一律仍参与 oracle。
+            if (method.getDeclaringClass() == TextSegment.class && name.equals("getLatexMathStyle")
+                    && method.getParameterTypes().length == 0) continue;
             if (method.getParameterTypes().length == 0 && !Modifier.isStatic(method.getModifiers())
                 && !name.equals("getClass") && (name.startsWith("get") || name.startsWith("is"))) {
                 fields.add(name + "=" + encode(method.invoke(value)));

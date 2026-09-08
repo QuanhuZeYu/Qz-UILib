@@ -32,8 +32,8 @@ final class GlyphUploadPlan {
             throw new IllegalArgumentException("glyph generation result/token 不得为 null");
         }
         GlyphRequestToken token = result.getToken();
-        GlyphInfo sourceInfo = result.getGlyphInfo();
-        if (sourceInfo == null || sourceInfo.getCodepoint() != token.getCodepoint()) {
+        GlyphInfo sourceInfo = resultInfo(result);
+        if (!matchesInfo(token, sourceInfo)) {
             throw new IllegalArgumentException("glyph result 的 token 与 glyphInfo 不一致");
         }
         GlyphInfo glyphInfo = copyGlyphInfo(sourceInfo);
@@ -91,14 +91,22 @@ final class GlyphUploadPlan {
     }
 
     GlyphGenerationResult toGenerationResult() {
-        return new GlyphGenerationResult(token, createImage(), glyphInfo);
+        return token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH
+                ? GlyphGenerationResult.forMathGlyph(token, createImage(), glyphInfo)
+                : new GlyphGenerationResult(token, createImage(), glyphInfo);
+    }
+
+    static GlyphInfo resultInfo(GlyphGenerationResult result) {
+        return result.getKind() == GlyphRequestToken.Kind.MATH_GLYPH ? result.getMathGlyphInfo() : result.getGlyphInfo();
+    }
+
+    static boolean matchesInfo(GlyphRequestToken token, GlyphInfo info) {
+        if (token == null || info == null || token.getKind() != info.getKind()) return false;
+        return token.getKind() == GlyphRequestToken.Kind.MATH_GLYPH
+                ? token.getMathGlyphRef().equals(info.getMathGlyphRef()) : token.getCodepoint() == info.getCodepoint();
     }
 
     private static GlyphInfo copyGlyphInfo(GlyphInfo source) {
-        return new GlyphInfo(source.getCodepoint(), source.getWidth(), source.getHeight(), source.getAdvance(),
-                source.getAscent(), source.getDescent(), source.getLeading(), source.getGlyphWidth(),
-                source.getGlyphHeight(), source.getSlotWidth(), source.getSlotHeight(), source.getAtlasBaselineX(),
-                source.getAtlasBaselineY(), source.getLineBaselineY(), source.getBearingX(), source.getBearingY(),
-                source.hasBitmap(), source.isColoredGlyph());
+        return GlyphInfo.copyOf(source);
     }
 }

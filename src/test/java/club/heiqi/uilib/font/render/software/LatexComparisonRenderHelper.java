@@ -42,22 +42,37 @@ final class LatexComparisonRenderHelper {
     }
 
     static Sample render(String source, int size, float scale, Float targetBaseline) {
+        return render(source, size, scale, targetBaseline, 0.0F, null);
+    }
+
+    /** 像素起点分数可显式指定；目标共享基线与固定 Y 分数不能同时指定。 */
+    static Sample render(String source, int size, float scale, Float targetBaseline,
+            float originFractionX, Float originFractionY) {
+        if (!Float.isFinite(originFractionX) || originFractionX < 0 || originFractionX >= 1
+                || originFractionY != null && (!Float.isFinite(originFractionY.floatValue())
+                || originFractionY.floatValue() < 0 || originFractionY.floatValue() >= 1 || targetBaseline != null)) {
+            throw new IllegalArgumentException("Invalid fractional origin/baseline combination");
+        }
         LatexSoftwareRenderKit.Shared shared = LatexSoftwareRenderKit.shared();
         List<TextSegment> segments = shared.service.parseSegments("<latex>" + source + "</latex>",
                 0xFF000000, TextContentMode.RICH_TAGS);
-        LatexSoftwareRenderKit.assembleGlyphs(shared, segments);
+        LatexSoftwareRenderKit.assembleGlyphs(shared, segments, size);
         MathBox box = LatexSoftwareRenderKit.layout(source, size);
         if (box.getGlyphs().isEmpty()) {
             throw new IllegalArgumentException("Comparison sample requires an observable first glyph: " + source);
         }
         Recorder initial = collect(segments, box, size, scale, 0, 0);
         float[] initialBounds = bounds(initial.batch);
-        float x = (float) Math.ceil(PAD - Math.min(0, initialBounds[0]));
+        float x = (float) Math.ceil(PAD - Math.min(0, initialBounds[0])) + originFractionX;
         // First pass chooses an integer baseline; the second pass can share the reference baseline exactly.
         float baseline = targetBaseline == null
                 ? (float) Math.ceil(PAD + initial.baseline - Math.min(0, initialBounds[1]))
                 : targetBaseline.floatValue();
         float y = baseline - initial.baseline;
+        if (originFractionY != null) {
+            y = (float) Math.ceil(y) + originFractionY.floatValue();
+            baseline = initial.baseline + y;
+        }
         Recorder finalRecorder = collect(segments, box, size, scale, x, y);
         float[] b = bounds(finalRecorder.batch);
         if (b[0] < 1 || b[1] < 1 || Math.abs(finalRecorder.baseline - baseline) > 0.01F) {
@@ -102,7 +117,7 @@ final class LatexComparisonRenderHelper {
         LatexSoftwareRenderKit.Shared shared = LatexSoftwareRenderKit.shared();
         Recorder recorder = new Recorder(box.getGlyphs().get(0).getY() * scale);
         recorder.endX = DefaultFontRendererAdapter.getInstance().renderSegmentsToCollector(segments,
-                shared.settings, shared.service, GlyphRuntimeTablesView.snapshot(shared.tables, shared.manager, 1),
+                shared.settings, shared.service, GlyphRuntimeTablesView.snapshot(shared.tables, shared.manager, shared.runtimeVersion),
                 x, y, false, scale, size, recorder);
         if (!Float.isFinite(recorder.baseline)) throw new AssertionError("First glyph baseline unavailable");
         return recorder;
@@ -155,6 +170,21 @@ final class LatexComparisonRenderHelper {
             batch.collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY,
                     slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize,
                     inkWidth, inkHeight, bearingX, bearingY, x, y, charSize, color, italic, glyphFlags, baseCharSize);
+        }
+
+        @Override
+        public void collectBaselineAlignedGlyphClipped(FontType fontType, int pageIndex, int textureId, int textureSize,
+                int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX, int atlasBaselineY,
+                int lineBaselineY, int defaultGlyphSize, int inkWidth, int inkHeight, int bearingX, int bearingY,
+                float x, float y, float charSize, int color, boolean italic, byte glyphFlags, float baseCharSize,
+                float clipLeft, float clipTop, float clipRight, float clipBottom) {
+            if (Float.isNaN(baseline)) {
+                baseline = y + lineBaselineY * (baseCharSize / Math.max(1.0F, defaultGlyphSize)) - firstGlyphOffsetY;
+            }
+            batch.collectBaselineAlignedGlyphClipped(fontType, pageIndex, textureId, textureSize, slotX, slotY,
+                    slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize,
+                    inkWidth, inkHeight, bearingX, bearingY, x, y, charSize, color, italic, glyphFlags, baseCharSize,
+                    clipLeft, clipTop, clipRight, clipBottom);
         }
 
         @Override

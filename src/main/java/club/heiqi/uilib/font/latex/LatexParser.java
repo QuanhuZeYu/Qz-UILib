@@ -229,7 +229,7 @@ public final class LatexParser {
                 return new LatexSpace(((LatexSpace) node).getEmWidth(), style);
             case ACCENT: {
                 LatexAccent accent = (LatexAccent) node;
-                return new LatexAccent(accent.getAccentText(), accent.getBase(), accent.isStretchable(),
+                return new LatexAccent(accent.getAccentText(), accent.getBase(), accent.getAccentMode(),
                         accent.isBelow(), style);
             }
             case LEFT_RIGHT: {
@@ -405,6 +405,12 @@ public final class LatexParser {
         }
         if ("overline".equals(name) || "underline".equals(name)) {
             return parseStretchableAccent("underline".equals(name));
+        }
+        if ("widehat".equals(name) || "widetilde".equals(name)) {
+            LatexNode base = parseSupSubArgument();
+            return base == null ? new LatexAtom("\\" + name, AtomClass.ORD)
+                    : new LatexAccent("widehat".equals(name) ? "\u0302" : "\u0303", base,
+                            LatexAccent.AccentMode.WIDE, false);
         }
         // ---- 重音 ----
         String accent = LatexSymbols.accentText(name);

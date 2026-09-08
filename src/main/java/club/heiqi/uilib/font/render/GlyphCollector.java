@@ -47,6 +47,17 @@ public interface GlyphCollector {
             int lineBaselineY, int defaultGlyphSize, int inkWidth, int inkHeight, int bearingX, int bearingY,
             float x, float y, float charSize, int color, boolean italic, byte glyphFlags, float baseCharSize);
 
+    /** 数学连接区裁片；旧外部实现默认保留未裁片行为，生产实现精确裁剪。 */
+    default void collectBaselineAlignedGlyphClipped(FontType fontType, int pageIndex, int textureId, int textureSize,
+            int slotX, int slotY, int slotWidth, int slotHeight, int atlasBaselineX, int atlasBaselineY,
+            int lineBaselineY, int defaultGlyphSize, int inkWidth, int inkHeight, int bearingX, int bearingY,
+            float x, float y, float charSize, int color, boolean italic, byte glyphFlags, float baseCharSize,
+            float clipLeft, float clipTop, float clipRight, float clipBottom) {
+        collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, inkWidth, inkHeight, bearingX, bearingY,
+                x, y, charSize, color, italic, glyphFlags, baseCharSize);
+    }
+
     /**
      * 收集一个纯色文本装饰线矩形（下划线/删除线/LaTeX 规则线）。
      *

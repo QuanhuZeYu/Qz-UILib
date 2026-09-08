@@ -1,6 +1,9 @@
 package club.heiqi.uilib.font.page;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import club.heiqi.uilib.font.glyph.MathGlyphKey;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.FontRuntimeMetrics;
@@ -32,6 +35,8 @@ public final class GlyphRuntimeTables {
 
     public static final byte GLYPH_FLAG_COLORED = 1;
     public static final byte GLYPH_FLAG_HAS_BITMAP = 2;
+    /** Mathematical tiles draw their core exactly; sampling padding must not expand the quad. */
+    public static final byte GLYPH_FLAG_MATH_CORE = 4;
 
     /**
      * 字形几何就绪代：每写入一组字形 ink/槽位几何 +1。
@@ -42,6 +47,9 @@ public final class GlyphRuntimeTables {
      * 即失效重布局。</p>
      */
     private volatile int inkEpoch;
+
+    // Sparse mathematical identities share the ordinary page arrays and owner lock.
+    final Map<MathGlyphKey, MathGlyphRecord> mathGlyphs = new HashMap<MathGlyphKey, MathGlyphRecord>();
 
     /** @return 当前字形几何就绪代（字形 ink 数据写入次数累计）。 */
     public int getInkEpoch() {
@@ -414,6 +422,7 @@ public final class GlyphRuntimeTables {
     }
 
     private void clearPageReferences() {
+        mathGlyphs.clear();
         Arrays.fill(normalPages, 0, normalPageCount, null);
         Arrays.fill(boldPages, 0, boldPageCount, null);
         normalPageCount = 0;
