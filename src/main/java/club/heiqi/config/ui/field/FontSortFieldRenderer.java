@@ -28,9 +28,9 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * fontSort 专用排序渲染器。
@@ -39,6 +39,21 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * MOVE 预览都只操作 {@link FontSortPresentation} 的 signal；首次成功拖拽、合法索引移动或
  * 显式恢复默认才经 {@link DraftSignalAdapter#onFieldEdit} 提交完整 merged 列表。玩家不能
  * 添加字体、删除字体或改名。</p>
+ *
+ * <p><b>G15/FontSort 外观口径</b>（契约 §4/§4.1/§4.2）：字段卡片表面与 dirty/error 语义色经
+ * {@link FieldShellBinder} 下沉的 FormFieldShell theme-aware 默认路径派生（GROUP 角色），本类不复制；
+ * 行结构为「拖拽把手 + 1-based 索引输入 + 字体名」——把手由 {@code SceneDragReorder}（G12）自持
+ * INDICATOR tint 档与图标前景，筛选框/索引输入框由 {@code SceneTextInput}（G04）自持 INPUT 配方，
+ * 清空按钮由 {@code SceneButton}（G03）自持 BUTTON_STANDARD 配方，滚动条由 {@code SceneScrollbar}
+ * （G07）自持，本类一律只组 Props、不叠加第二层表面/边框/滤镜。字体名行标签与空结果提示是本类
+ * 仅有的两处文本前景写入点，已改经 {@link SceneThemes#foreground(SceneRuntime)} /
+ * {@link SceneThemes#mutedForeground(SceneRuntime)} 主题信号绑定（构建期捕获、effect 内应用，
+ * 无 {@code .get()} 快照，契约 §4「textColor 唯一写入者 = 主题前景绑定」）。{@code listHeight}/
+ * {@code fontLabel}/{@code fontHelper} 是纯 int 布局/排版常量（契约 §4：主题不接管布局；
+ * G15/Support 衔接要点 3），保留 {@code FormTheme} 取值并注依据；喂给 binder 的
+ * {@code ConfigTheme.asFormTheme()} 为兼容占位形参（默认路径不消费，见 FieldShellBinder 类头），
+ * 7 个 Renderer 实例迁移完成后由主代理统一收口删除，本实例不自行摘除。排序事务、拖拽提交、
+ * 索引编辑 authority 协商与 dirty/error 行为零改动。</p>
  */
 public final class FontSortFieldRenderer implements FieldRenderer {
 
@@ -108,6 +123,10 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         rt.bind(draftSignal, value -> Effect.untrack(
                 () -> presentation.resetFromDraft(toDraftList(value))));
 
+        // G15/FontSort 销账说明：theme 仅两处合法用途——① FieldShellBinder.build 的兼容占位实参
+        // （默认路径不消费，卡片表面/dirty/error 语义色走 FormFieldShell theme-aware 派生）；
+        // ② listHeight() 纯 int 控件高度（契约 §4 布局入参，G15/Support 衔接要点 3）。
+        // 旧主题色值（textColor/mutedColor）不再从这里取，行标签与空提示前景改经 SceneThemes 信号。
         FormTheme theme = ConfigTheme.asFormTheme();
         return FieldShellBinder.build(rt, spec, adapter, () -> buildControl(
                 rt, presentation, currentDraft, currentValue, theme),
@@ -151,6 +170,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         root.appendChild(filterBar);
 
         SceneNode stackHost = SceneNode.row();
+        // listHeight 与派生高度是纯 int 布局入参（契约 §4：主题不接管布局；G15/Support 衔接要点 3），非外观写入点
         stackHost.setPreferredHeight(Math.max(0, theme.listHeight() - FILTER_BAR_HEIGHT - ROOT_GAP));
         stackHost.setFillParentHeight(true);
         SceneNode viewport = SceneNode.column();
@@ -165,7 +185,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         viewport.appendChild(rowsContainer);
         Computed<Boolean> noResults = Computed.create(() ->
                 Boolean.valueOf(presentation.filteredSignal().get().isEmpty()));
-        rt.show(viewport, noResults, () -> emptyResult(theme));
+        rt.show(viewport, noResults, () -> emptyResult(rt, theme));
         rt.forEach(rowsContainer, presentation.filteredSignal(), ROW_KEY,
                 row -> buildRow(rt, presentation, currentDraft, currentValue,
                         rowsContainer, viewport, scrollSignal, row, theme));
@@ -175,12 +195,20 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         return root;
     }
 
-    /** 空结果提示是 viewport 内紧凑次要文本，不改变外层固定高度。 */
-    private static SceneNode emptyResult(FormTheme theme) {
+    /**
+     * 空结果提示是 viewport 内紧凑次要文本，不改变外层固定高度。
+     *
+     * <p>G15/FontSort：前景经来源主题 {@code mutedForeground} 信号绑定（构建期在 show 内容
+     * builder 内捕获、effect 内应用，主题切换只重派生不重建节点，契约 §4/§4.1）；字号是排版
+     * 常量，保留 {@code FormTheme} 取值（契约 §4：主题不接管布局）。</p>
+     */
+    private static SceneNode emptyResult(SceneRuntime rt, FormTheme theme) {
         SceneNode node = new SceneNode();
         node.setPreferredHeight(ROW_HEIGHT);
         node.setText("无匹配字体");
-        node.setTextColor(theme.mutedColor());
+        // 次要前景唯一来源 = 来源主题 mutedForeground 信号（替换旧 theme.mutedColor() 静态取色）
+        rt.bind(SceneThemes.mutedForeground(rt), node::setTextColor);
+        // 字号是排版常量（契约 §4：尺寸/布局属性归控件自身，主题不接管布局），保留 FormTheme 取值
         node.setFontSize(theme.fontHelper());
         node.setHitTestable(false);
         return node;
@@ -235,7 +263,10 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         label.setHitTestable(false);
         label.setFlexGrow(1);
         label.setText(row.getValue());
-        label.setTextColor(theme.textColor());
+        // 正文前景唯一来源 = 来源主题 foreground 信号（替换旧 theme.textColor() 静态取色；
+        // 构建期在 forEach 项 builder 内捕获、effect 内应用，契约 §4/§4.1）
+        rt.bind(SceneThemes.foreground(rt), label::setTextColor);
+        // 字号是排版常量（契约 §4：尺寸/布局属性归控件自身，主题不接管布局），保留 FormTheme 取值
         label.setFontSize(theme.fontLabel());
         line.appendChild(label);
 
