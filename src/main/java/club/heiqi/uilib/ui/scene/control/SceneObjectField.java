@@ -15,17 +15,23 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneObjectField —— scene 新栈递归复合对象字段编辑器。
@@ -39,6 +45,15 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * 回调里再次 {@code value.set(...)}——重复 set 属于冗余写入，且若外部不持有 signal 引用，
  * 行为将以控件写入为准。如需在变更后追加副作用（持久化、校验、联动其他 signal），在回调里
  * 读取参数即可，无需回写受控 signal。</p>
+ *
+ * <p><b>外观归属（液态玻璃迁移）</b>：编辑视口（滚动底座）取主题 {@link SceneTheme.Role#GROUP}
+ * 配方，是该节点 background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 的唯一
+ * 写入者；字段行与嵌套容器只是布局节点，默认透明、不装滤镜、不写边框与圆角（露出底座玻璃）。
+ * 展开/折叠按钮取 {@code BUTTON_STANDARD} 配方走同一绑定器，文字前景取配方 foreground；
+ * 标题与字段名取主题 {@code foreground}、类型/空态提示取 {@code mutedForeground}、
+ * 深度与未实现提示取 {@code warningText} 语义色。行内输入框只读复用 {@link SceneTextInput}
+ * 已主题化的 INPUT 表面与前景，本控件不重复绑定。外观随主题重派生，不重建节点，也不触碰
+ * 数据模型、展开状态、草稿与校验语义。</p>
  */
 public final class SceneObjectField {
 
@@ -56,24 +71,14 @@ public final class SceneObjectField {
     private static final int LABEL_WIDTH = 132;
     /** 输入宽度。 */
     private static final int INPUT_WIDTH = 220;
-    /** 输入高度，取自 chrome token。 */
+    /** 输入高度，取自 chrome token（尺寸常量，非颜色语义，主题不接管布局）。 */
     private static final int INPUT_HEIGHT = SceneChromeTokens.INPUT_HEIGHT;
     /** 视口默认高度。 */
     private static final int VIEWPORT_HEIGHT = 220;
-    /** 按钮内边距。 */
+    /** 按钮内边距（布局属性，归控件自身）。 */
     private static final int BUTTON_PADDING = 5;
-    /** 按钮圆角，取自 chrome token。 */
-    private static final int BUTTON_RADIUS = SceneChromeTokens.RADIUS_MD;
-    /** 标题文本色，取自 chrome token。 */
-    private static final int LABEL_COLOR = SceneChromeTokens.TEXT_PRIMARY;
-    /** 次级文本色，取自 chrome token。 */
-    private static final int MUTED_COLOR = SceneChromeTokens.TEXT_SECONDARY;
-    /** 占位提示色，取自 chrome token。 */
-    private static final int NOTICE_COLOR = SceneChromeTokens.WARNING_TEXT;
-    /** 按钮背景色，取自 chrome token（静态背景，无 hover/pressed 态）。 */
-    private static final int BUTTON_BG = SceneChromeTokens.BG_DEFAULT;
-    /** 文本颜色，取自 chrome token。 */
-    private static final int TEXT_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
+    /** 恒真 enabled：编辑视口底座与展开按钮没有禁用语义，表面绑定只走 idle/hovered/pressed 三档。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneObjectField() {
@@ -365,7 +370,7 @@ public final class SceneObjectField {
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
 
-            SceneNode labelNode = textNode(props.label(), LABEL_COLOR);
+            SceneNode labelNode = textNode(rt, props.label(), SceneThemes.foreground(rt));
             rt.show(root, Computed.create(() -> !props.label().isEmpty()), () -> labelNode);
 
             SceneNode viewport = SceneNode.column();
@@ -373,6 +378,16 @@ public final class SceneObjectField {
             viewport.setClipChildren(true);
             viewport.setFillParentHeight(true);
             viewport.setFlexGrow(1);
+
+            // 编辑视口底座：GROUP 角色配方是 background/border/borderWidth/cornerRadius/backdrop/
+            // surfaceElevation 的唯一写入者；enabled 恒真（底座无禁用语义）。
+            // 时序契约：先声明关心 hovered/pressed/focused，Router 的写入才不会被 null 短路。
+            SceneInteractionState viewportInteraction = rt.interactionState(viewport);
+            viewportInteraction.hovered();
+            viewportInteraction.pressed();
+            viewportInteraction.focused();
+            SceneSurfaceBinder.bind(rt, viewport, SceneThemes.surface(rt, SceneTheme.Role.GROUP),
+                    ALWAYS_ENABLED, viewportInteraction);
 
             // stackHost 承载 viewport 原 preferredHeight(VIEWPORT_HEIGHT)，并可选挂滚动条 column。
             // 即使无滚动条也建 stackHost，统一结构路径。
@@ -429,13 +444,14 @@ public final class SceneObjectField {
                                                    SceneNode container, String basePath, int depth) {
 
         if (depth >= props.maxDepth()) {
-            container.appendChild(textNode("嵌套层级超出显示深度，请通过配置文件编辑此字段", NOTICE_COLOR));
+            container.appendChild(textNode(rt, "嵌套层级超出显示深度，请通过配置文件编辑此字段",
+                    warningForeground(rt)));
             return;
         }
 
         Map<String, Object> current = safeMap((Map<String, Object>) navigate(props.value().get(), basePath));
         if (current.isEmpty()) {
-            container.appendChild(textNode("空对象", MUTED_COLOR));
+            container.appendChild(textNode(rt, "空对象", SceneThemes.mutedForeground(rt)));
             return;
         }
 
@@ -448,7 +464,7 @@ public final class SceneObjectField {
             if (fieldType == FieldType.OBJECT) {
                 container.appendChild(buildNestedObjectRow(rt, props, key, path, depth));
             } else if (fieldType == FieldType.LIST) {
-                container.appendChild(buildPlaceholderRow(key, "列表编辑暂未实现"));
+                container.appendChild(buildPlaceholderRow(rt, key, "列表编辑暂未实现"));
             } else {
                 container.appendChild(buildScalarRow(rt, props, key, path, fieldType));
             }
@@ -475,7 +491,7 @@ public final class SceneObjectField {
         header.setGap(CELL_GAP);
         row.appendChild(header);
 
-        ButtonParts toggle = buttonNode("");
+        ButtonParts toggle = buttonNode(rt, "");
         rt.bindComputed(() -> isExpanded(props, path) ? "▾" : "▸",
                 toggle.label()::setText);
         rt.on(toggle.root(), SceneEventType.CLICK, (ev, ctx) -> {
@@ -484,10 +500,10 @@ public final class SceneObjectField {
         });
         header.appendChild(toggle.root());
 
-        SceneNode label = textNode(key, LABEL_COLOR);
+        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
         label.setPreferredWidth(LABEL_WIDTH);
         header.appendChild(label);
-        header.appendChild(textNode("对象", MUTED_COLOR));
+        header.appendChild(textNode(rt, "对象", SceneThemes.mutedForeground(rt)));
 
         rt.show(row, Computed.create(() -> isExpanded(props, path)),
                 () -> buildObjectEditor(rt, props, path, depth + 1));
@@ -510,7 +526,8 @@ public final class SceneObjectField {
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(CELL_GAP);
 
-        SceneNode label = textNode(key, LABEL_COLOR);
+        // 字段名是用户数据文本：前景取主题正文色（随主题重派生），不改文本内容与排序语义。
+        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
         label.setPreferredWidth(LABEL_WIDTH);
         row.appendChild(label);
 
@@ -534,18 +551,19 @@ public final class SceneObjectField {
     /**
      * 构建暂不支持类型的占位行。
      *
+     * @param rt   场景运行时
      * @param key  字段名
      * @param text 占位文本
      * @return 占位行节点
      */
-    private static SceneNode buildPlaceholderRow(String key, String text) {
+    private static SceneNode buildPlaceholderRow(SceneRuntime rt, String key, String text) {
         SceneNode row = SceneNode.row();
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(CELL_GAP);
-        SceneNode label = textNode(key, LABEL_COLOR);
+        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
         label.setPreferredWidth(LABEL_WIDTH);
         row.appendChild(label);
-        row.appendChild(textNode(text, NOTICE_COLOR));
+        row.appendChild(textNode(rt, text, warningForeground(rt)));
         return row;
     }
 
@@ -796,38 +814,79 @@ public final class SceneObjectField {
     }
 
     /**
-     * 创建文本节点。
+     * 创建主题文本节点。
      *
+     * <p>{@code textColor} 唯一写入者为主题语义色信号绑定（构造期捕获来源主题，主题切换只
+     * 重派生不重建节点）；不再接收静态色值。</p>
+     *
+     * @param rt    场景运行时
      * @param text  文本
-     * @param color 文本色
+     * @param color 主题语义前景信号（如 {@link SceneThemes#foreground(SceneRuntime)}）
      * @return 文本节点
      */
-    private static SceneNode textNode(String text, int color) {
+    private static SceneNode textNode(SceneRuntime rt, String text, ReadableSignal<Integer> color) {
         SceneNode node = new SceneNode();
         node.setHitTestable(false);
         node.setText(nullSafe(text));
-        node.setTextColor(color);
+        rt.bind(color, node::setTextColor);
         return node;
     }
 
     /**
-     * 创建按钮节点。
+     * 主题 {@code warningText} 语义前景的只读派生。
      *
+     * <p>{@link SceneThemes} 未提供 warningText 便捷派生，本方法与 {@code SceneToast} 同一口径：
+     * 构造期捕获来源主题信号，初值在非追踪上下文读取，派生期只读该信号，不拼任何静态色值。</p>
+     *
+     * @param rt 场景运行时
+     * @return 警告前景信号
+     */
+    private static ReadableSignal<Integer> warningForeground(SceneRuntime rt) {
+        ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
+        final int[] holder = new int[1];
+        Effect.untrack(() -> holder[0] =
+                Objects.requireNonNull(theme.get(), "theme value").warningText());
+        final int initial = holder[0];
+        return Computed.create(Integer.valueOf(initial), () -> Integer.valueOf(
+                Objects.requireNonNull(theme.get(), "theme value").warningText()));
+    }
+
+    /**
+     * 创建主题按钮节点。
+     *
+     * <p>外观全部归主题：表面取 {@code BUTTON_STANDARD} 角色配方，background/border/
+     * borderWidth/cornerRadius/backdrop/surfaceElevation 由 {@link SceneSurfaceBinder#bind}
+     * 独占；文字前景取配方 foreground（回落库默认正文色）；光标走
+     * {@link SceneControlChrome#bindCursor}。不再静态写背景色/圆角，也不叠加禁用实色绑定。
+     * 内边距与 SHRINK 宽度自适应属布局属性，保持原值不变。</p>
+     *
+     * @param rt   场景运行时
      * @param text 按钮文本
      * @return 按钮节点
      */
-    private static ButtonParts buttonNode(String text) {
+    private static ButtonParts buttonNode(SceneRuntime rt, String text) {
         SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
         button.setPadding(BUTTON_PADDING);
-        button.setCornerRadius(BUTTON_RADIUS);
-        button.setBackgroundColor(BUTTON_BG);
-        button.setCursor(SceneCursor.POINTER);
         button.setWidthSizing(WidthSizing.SHRINK);
 
-        SceneNode label = textNode(text, TEXT_COLOR);
+        SceneNode label = new SceneNode();
+        label.setHitTestable(false);
+        label.setText(nullSafe(text));
         button.appendChild(label);
+
+        ReadableSignal<SceneSurfaceStyle> surface =
+                SceneThemes.surface(rt, SceneTheme.Role.BUTTON_STANDARD);
+        SceneInteractionState interaction = rt.interactionState(button);
+        // 时序契约：构造期声明关心，Router 后续写入才会落到已创建的 signal。
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(rt, button, surface, ALWAYS_ENABLED, interaction);
+        SceneSurfaceBinder.bindForeground(rt, label, surface, SceneThemes.DEFAULT.foreground());
+        SceneControlChrome.bindCursor(rt, button, ALWAYS_ENABLED, SceneCursor.POINTER,
+                SceneCursor.NOT_ALLOWED);
         return new ButtonParts(button, label);
     }
 
