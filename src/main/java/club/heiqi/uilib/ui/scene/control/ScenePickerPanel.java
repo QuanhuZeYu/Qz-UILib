@@ -43,6 +43,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 import club.heiqi.uilib.ui.text.TextEllipsizer;
 
 /**
@@ -65,6 +69,26 @@ import club.heiqi.uilib.ui.text.TextEllipsizer;
  * <p>必须在组件构建作用域（mount builder）内创建：全部 signal / effect / portal 归属当前
  * Owner；面板关闭时 portal 子树卸载，tooltip 与变体浮层一并清理；网格高亮与滚动在数据收缩时
  * 经 owner-scoped effect 回夹。</p>
+ *
+ * <h3>外观归属（液态玻璃迁移，G14 宿主整合，契约 §4.1「PANEL（外）/GROUP（网格）/OVERLAY（浮层）」）</h3>
+ * <p><b>宿主外层卡片</b>恰装一颗 {@link SceneTheme.Role#PANEL} 配方表面（FormPageShell 已验收
+ * PANEL 先例）：background/border/borderWidth/cornerRadius/surfaceElevation/backdrop 六项由
+ * {@link SceneSurfaceBinder} 独占，旧 {@code SceneChromeTokens.applyPanelChrome(root, RADIUS_LG)}
+ * 实色四件套写入者已删除；clip 不属绑定器六项属性，裁剪合同由宿主自持。</p>
+ *
+ * <p><b>表面分层由容器承担、宿主不再包第二层</b>（G14 预裁决 1/2）：中栏外壳原
+ * {@code applyPanelChrome(center, RADIUS_MD)} 实底会包住 SearchResultList 自己的 GROUP 底座，
+ * 构成两层玻璃语义叠加——该实底外壳的表面写入已删除，中栏只剩布局职责（clip 几何合同与
+ * padding/gap 常量保留，契约 §4.2「尺寸/间距常量继续使用」），结果区表面归内容底座一颗。
+ * 底部成员横带同理：原 {@code applyOuterShell} 的边框/圆角表面写入已删除，成员区表面归
+ * MemberGrid 的 GROUP 底座。各 G13 配件走各自已验收配方（左导航 TOOLBAR、信息条 TOOLBAR、
+ * 结果底座 GROUP、成员网格 GROUP、变体浮层 OVERLAY），宿主不复制、不覆写其内部控件样式。</p>
+ *
+ * <p><b>宿主文字</b>取来源主题语义前景：顶栏标题/成员区标题 {@code foreground}，结果统计、
+ * 问题摘要与空态提示 {@code mutedForeground}，错误行 {@code errorText}；禁用一律
+ * {@code disabledForeground}（与 CategoryNavPane 同一派生口径）。<b>物品图像不改色</b>
+ * （契约 §4.1 + §7.3）：候选/成员/变体图标与占位底属渲染协议，归各配件模块的静态值，
+ * 宿主不重染。整树滤镜预算 = 每颗表面各采样一次（见 G14 集成测试的整树 BACKDROP 构成表）。</p>
  */
 public final class ScenePickerPanel {
 
@@ -86,6 +110,8 @@ public final class ScenePickerPanel {
     /** 底部横带 header 行高（含 PAD_MD 上下 padding 与 32 高按钮）。 */
     private static final int MEMBERS_HEADER_HEIGHT = 48;
     private static final OverlayDismissPolicy MAIN_PANEL_POLICY = new OverlayDismissPolicy(true, true, false);
+    /** 恒真 enabled：宿主外层卡片自身没有禁用语义（禁用反馈由内部控件各自表达），与 FormPageShell PANEL 先例同口径。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     private ScenePickerPanel() { }
 
@@ -614,7 +640,19 @@ public final class ScenePickerPanel {
         SceneNode root = SceneNode.column();
         root.setPercentWidth(PANEL_WIDTH_PERCENT);
         root.setPercentHeight(PANEL_HEIGHT_PERCENT);
-        SceneChromeTokens.applyPanelChrome(root, SceneChromeTokens.RADIUS_LG);
+        // 宿主外层恰装一颗 PANEL 配方表面（契约 §4.1「PANEL（外）」，G14 预裁决 2）：
+        // background/border/borderWidth/cornerRadius/surfaceElevation/backdrop 六项归
+        // SceneSurfaceBinder 独占；旧 applyPanelChrome(root, RADIUS_LG) 实色四件套写入者已删除。
+        // 时序契约（FormPageShell PANEL 先例）：构建期声明关心状态，Router 后续写入才会落到
+        // 已创建的 signal。clip 不属绑定器六项属性：保持原外壳裁剪语义，由宿主自持。
+        ReadableSignal<SceneSurfaceStyle> panelSurface =
+                SceneThemes.surface(rt, SceneTheme.Role.PANEL);
+        SceneInteractionState panelInteraction = rt.interactionState(root);
+        panelInteraction.hovered();
+        panelInteraction.pressed();
+        panelInteraction.focused();
+        SceneSurfaceBinder.bind(rt, root, panelSurface, ALWAYS_ENABLED, panelInteraction);
+        root.setClipChildren(true);
         root.setPadding(PANEL_PADDING);
         root.setGap(PANEL_PADDING);
 
@@ -661,8 +699,14 @@ public final class ScenePickerPanel {
         bar.setGap(SceneChromeTokens.GAP_MD);
         bar.setHitTestable(false);
 
+        // 顶栏文字取来源主题语义前景（禁用档与 CategoryNavPane 同一派生口径）；
+        // 顶栏自身不装表面——表面分层由容器承担，卡片 PANEL 一颗在外层根（G14 预裁决 2）。
+        ReadableSignal<Integer> labelForeground = themedForeground(rt, props, false);
+        ReadableSignal<Integer> secondaryForeground = themedForeground(rt, props, true);
+
         SceneNode title = text(props.panelPresentation().panelTitle());
         title.setWidthSizing(WidthSizing.SHRINK);
+        rt.bind(labelForeground, title::setTextColor);
         bar.appendChild(title);
 
         SceneNode input = SceneTextInput.create(rt, SceneTextInput.Props.builder(props.query())
@@ -687,6 +731,7 @@ public final class ScenePickerPanel {
         }
 
         SceneNode summary = text("");
+        rt.bind(secondaryForeground, summary::setTextColor);
         rt.bindText(summary, Computed.create(() -> props.presentation().resultSummary(
                 filtered.get().size())));
         summary.setWidthSizing(WidthSizing.SHRINK);
@@ -694,8 +739,46 @@ public final class ScenePickerPanel {
         return bar;
     }
 
+    /**
+     * 宿主文字的派生前景信号（构造期在来源作用域内解析一次，主题切换只重算、不重建节点）：
+     * 启用取主题 {@code foreground}/次要取 {@code mutedForeground}，禁用一律
+     * {@code disabledForeground}（与 CategoryNavPane/PickerInfoBar 同口径）。
+     *
+     * @param rt     场景运行时
+     * @param props  面板属性（读启用信号）
+     * @param muted  true = 次要信息档（mutedForeground），false = 正文档（foreground）
+     * @return 前景色只读信号
+     */
+    private static ReadableSignal<Integer> themedForeground(SceneRuntime rt, Props props,
+                                                            final boolean muted) {
+        final ReadableSignal<Integer> normal = muted
+                ? SceneThemes.mutedForeground(rt) : SceneThemes.foreground(rt);
+        ReadableSignal<Integer> disabled = SceneThemes.disabledForeground(rt);
+        return () -> Boolean.TRUE.equals(props.enabled().get())
+                ? normal.get() : disabled.get();
+    }
+
+    /**
+     * 错误文本前景信号：构造期捕获来源主题信号，派生期只读该信号的 {@code errorText()}
+     * （SceneToast 已验收口径；SceneThemes 未提供 errorText 便捷派生，不自建色板）。
+     *
+     * @param rt 场景运行时
+     * @return 错误前景色只读信号
+     */
+    private static ReadableSignal<Integer> themeErrorText(SceneRuntime rt) {
+        ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
+        return () -> Integer.valueOf(
+                Objects.requireNonNull(theme.get(), "theme value").errorText());
+    }
+
     /** 左栏：分类导航列表（带线框外壳 + 内嵌滚动视口，选中态高亮、数量徽章、空分类隐藏）。 */
-    /** 中栏：实底圆角 + 1px 外边框外壳包候选列表（SearchResultList）+ 信息条（PickerInfoBar）+ 错误行。 */
+    /**
+     * 中栏：布局壳（不装表面）包候选列表（SearchResultList）+ 信息条（PickerInfoBar）+ 错误行。
+     *
+     * <p>G14 预裁决 1：原 {@code applyPanelChrome(center, RADIUS_MD)} 实底包住 SearchResultList
+     * 自己的 GROUP 底座，构成两层玻璃语义叠加；该表面写入已删除（背景/边框/圆角归零，表面归
+     * 内容底座一颗）。clip 与 padding 属布局合同保留（契约 §4.2「尺寸/间距常量继续使用」）。</p>
+     */
     private static SceneNode centerColumn(SceneRuntime rt, Props props, Runnable closeRequest,
                                           ReadableSignal<List<SearchPickerData.Candidate>> filtered,
                                           ReadableSignal<List<Item>> gridItems,
@@ -713,11 +796,16 @@ public final class ScenePickerPanel {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
         center.setGap(SceneChromeTokens.GAP_SM);
-        SceneChromeTokens.applyPanelChrome(center, SceneChromeTokens.RADIUS_MD);
+        // G14 预裁决 1：中栏实底外壳表面写入已删除（两层玻璃叠加）。外壳不再自绘底色/边框/
+        // 圆角——背景保持默认全透明、不装滤镜，结果区表面归 SearchResultList 的 GROUP 底座一颗；
+        // clip 与 padding 属布局合同保留（原 applyPanelChrome 的裁剪语义与 PAD_SM 内边距不变）。
+        center.setClipChildren(true);
         center.setPadding(SceneChromeTokens.PAD_SM);
 
         SceneNode error = text("");
         error.setHitTestable(false);
+        // 错误行取主题 errorText 语义前景（SceneToast/ObjectField 同口径：经 resolve 消费主题字段）。
+        rt.bind(themeErrorText(rt), error::setTextColor);
         rt.bindText(error, props.error());
         center.appendChild(error);
 
@@ -763,7 +851,12 @@ public final class ScenePickerPanel {
                                           Signal<List<String>> selectedKeys) {
         SceneNode panel = SceneNode.column();
         panel.setPreferredHeight(MEMBERS_PANEL_HEIGHT);
-        SceneChromeTokens.applyOuterShell(panel, SceneChromeTokens.RADIUS_MD);
+        // G14 预裁决 1 同口径：底部横带原 applyOuterShell 的表面写入（边框/圆角/裁剪底语义）
+        // 已删除，成员区表面归 MemberGrid 的 GROUP 底座一颗；clip 属布局合同保留。
+        panel.setClipChildren(true);
+
+        ReadableSignal<Integer> labelForeground = themedForeground(rt, props, false);
+        ReadableSignal<Integer> secondaryForeground = themedForeground(rt, props, true);
 
         SceneNode header = SceneNode.row();
         header.setPreferredHeight(MEMBERS_HEADER_HEIGHT);
@@ -773,11 +866,13 @@ public final class ScenePickerPanel {
         header.setHitTestable(false);
         SceneNode title = text("");
         title.setFlexGrow(1);
+        rt.bind(labelForeground, title::setTextColor);
         rt.bindText(title, Computed.create(() -> props.presentation().currentMembersTitle(
                 safeMembers(props).size())));
         header.appendChild(title);
         SceneNode issues = text("");
         issues.setWidthSizing(WidthSizing.SHRINK);
+        rt.bind(secondaryForeground, issues::setTextColor);
         rt.bindText(issues, Computed.create(() -> props.presentation().memberIssueSummary(
                 memberIssues.get().invalidCount(), memberIssues.get().duplicateMemberIds().size())));
         header.appendChild(issues);
@@ -800,7 +895,7 @@ public final class ScenePickerPanel {
         grid.root().setFlexGrow(1);
         panel.appendChild(grid.root());
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),
-                () -> emptyText(props.presentation().emptyCurrentMembers()));
+                () -> emptyText(rt, props.presentation().emptyCurrentMembers(), secondaryForeground));
         return panel;
     }
 
@@ -1030,9 +1125,12 @@ public final class ScenePickerPanel {
         return node;
     }
 
-    private static SceneNode emptyText(String value) {
+    /** 空态提示：次要前景（muted/disabled 派生档，CategoryNavPane 空态同口径）。 */
+    private static SceneNode emptyText(SceneRuntime rt, String value,
+                                       ReadableSignal<Integer> secondaryForeground) {
         SceneNode node = text(value);
         node.setPadding(SceneChromeTokens.PAD_MD);
+        rt.bind(secondaryForeground, node::setTextColor);
         return node;
     }
 }
