@@ -14,14 +14,17 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.control.SceneGlassButtonStyle;
 import club.heiqi.uilib.ui.scene.control.SceneButtonPrimitive;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
-import club.heiqi.uilib.ui.scene.control.SceneLiquidGlassStyle;
+import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
 import club.heiqi.uilib.ui.scene.control.SceneTooltip;
+import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 
 /**
  * 聊天工具栏内容组件（L3 组件层）：
@@ -47,6 +50,14 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p>全部经 {@link SceneButtonPrimitive} + {@link Signal} + keyed list 渲染；动作只发布语义
  * （{@link ChatAction#run()}），执行失败仅影响当前动作。隐藏动作不占位、禁用动作仍显示。</p>
+ *
+ * <p><b>按钮表面配方（G17/Toolbar 液态玻璃口径）</b>：每颗动作按钮的底色/缘色/四态/圆角/
+ * 边框宽/滤镜/实体高度等表面属性不再走「聊天设置拼装的静态按钮配方」，唯一写入者 =
+ * {@link SceneSurfaceBinder}，配方信号由 {@code ChatToolbarAppearance.recipe} 派生：以当前主题按
+ * 按钮变体对应材质角色（契约 §2.6 映射）的配方为基线，既有聊天玻璃设置（开关/模糊/强度）按
+ * 第一优先级逐项只覆盖「滤镜」字段——主题切换与设置变更都只重派生，节点身份、倍率与布局预算
+ * 不变。位图图标白色协议色按契约 §7.3 保留显式，不被主题染色。公共缩放按钮走
+ * {@code HudToolbarSpec} 的显式旧路径（不订阅主题），本类不触碰。</p>
  */
 public final class ChatToolbar {
 
@@ -156,10 +167,9 @@ public final class ChatToolbar {
         final HudToolbarSide effective = side == null ? HudToolbarSide.DEFAULT : side;
         final boolean horizontal = effective.isHorizontalEdge();
         SceneNode root = horizontal ? SceneNode.row() : SceneNode.column();
-        // 根只负责排列；每颗按钮独立采样背景，按钮间隙直接露出游戏画面。
+        // 根只负责排列；每颗按钮独立采样背景（恰一颗滤镜），按钮间隙直接露出游戏画面。
         root.setHitTestable(true).setGap(6)
                 .setCrossAxisAlign(CrossAxisAlign.CENTER);
-        ReadableSignal<SceneGlassButtonStyle> buttonStyle = ChatToolbarAppearance.style();
         if (horizontal) {
             root.setPreferredHeight(TOOLBAR_HEIGHT_PX).setPadding(1, PADDING_X, 1, PADDING_X);
         } else {
@@ -176,7 +186,7 @@ public final class ChatToolbar {
                         + root.getPaddingLeft() + root.getPaddingRight();
             }, root::setPreferredWidth);
         }
-        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item, buttonStyle));
+        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item));
         return root;
     }
 
@@ -209,8 +219,8 @@ public final class ChatToolbar {
         return items;
     }
 
-    /** 复用按钮交互原语；玻璃外观统一交给专属样式，内容与动作留在工具栏。 */
-    private static SceneNode buildButton(SceneRuntime rt, Item item, ReadableSignal<SceneGlassButtonStyle> baseStyle) {
+    /** 复用按钮交互原语；表面外观走通用主题配方桥（G17/Toolbar），内容与动作留在工具栏。 */
+    private static SceneNode buildButton(SceneRuntime rt, Item item) {
         SceneButtonPrimitive.Result primitive = SceneButtonPrimitive.create(rt,
                 new SceneButtonPrimitive.Props(Signal.create(""), item.enabled, item.onClick));
         SceneNode button = primitive.root();
@@ -224,13 +234,29 @@ public final class ChatToolbar {
                 .setPreferredWidth(ICON_SIZE_PX).setPreferredHeight(ICON_SIZE_PX);
         motionRoot.appendChild(icon);
         button.appendChild(motionRoot);
+        // 位图白色协议色显式保留（契约 §7.3「位图图标不迁移」），不被主题前景接管。
         ChatToolbarIcons.attach(rt, icon, item.icon);
-        ReadableSignal<SceneGlassButtonStyle> style = Computed.create(
-                () -> baseStyle.get().toBuilder().variant(item.variant).build());
-        SceneLiquidGlassStyle.bindButton(rt, button, motionRoot, item.enabled, style);
+        // 默认路径：主题按钮角色配方基线 + 聊天玻璃设置对滤镜字段的局部覆盖；
+        // 构建期（本方法在 forEach 项作用域内执行）解析主题，派生期只重算外观。
+        ReadableSignal<SceneSurfaceStyle> style =
+                ChatToolbarAppearance.recipe(rt, roleOf(item.variant));
+        SceneSurfaceBinder.bind(rt, button, motionRoot, style, item.enabled,
+                rt.interactionState(button));
+        SceneControlChrome.bindCursor(rt, button, item.enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
         // 禁用项仍显示说明；点击/键盘激活由 primitive 的 enabled 信号约束。
         SceneTooltip.attach(rt, SceneTooltip.Props.of(button, Signal.create(item.tooltip)));
         return button;
+    }
+
+    /** 按钮变体 → 材质角色（契约 §2.6 冻结映射，与 SceneButton 默认路径同一口径）。 */
+    private static SceneTheme.Role roleOf(SceneButtonVariant variant) {
+        if (variant == SceneButtonVariant.PRIMARY) {
+            return SceneTheme.Role.BUTTON_PRIMARY;
+        }
+        if (variant == SceneButtonVariant.DANGER) {
+            return SceneTheme.Role.BUTTON_DANGER;
+        }
+        return SceneTheme.Role.BUTTON_STANDARD;
     }
 
     /** 动作异常隔离：单动作失败不影响工具栏与聊天输入。 */
