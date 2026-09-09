@@ -27,7 +27,6 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
-import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
@@ -38,6 +37,9 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 将 ValueSpec 搜索选择器元数据装配为受控场景行触发器与居中 70% {@link ScenePickerPanel}。
@@ -46,13 +48,24 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * （图标 + 主文本 + 副文本），LIST_MEMBERS 行常驻「已配置/无效/重复」摘要与管理按钮。
  * 点击或 Enter 打开受控居中 70% 面板；面板确认后写回并关闭，ESC 先走 onCancel（清 query、
  * 复位列表绑定临时态）再请求关闭，关闭后焦点恢复到行触发器。</p>
+ *
+ * <p><b>G15/Support 外观口径</b>：本类只装配「行触发器 + 摘要」的自有表面——触发器行经
+ * {@link SceneSurfaceBinder} 消费来源主题 INPUT 角色配方（契约 §4.1 Select 触发器行），
+ * 文字前景取 {@link SceneThemes} 的 {@code foreground}/{@code mutedForeground} 语义信号，
+ * 占位图标底取 {@code mutedForeground} 占位口径；面板与搜索配件（{@link ScenePickerPanel}
+ * 及其 G13/G14 内部件）只读复用、不复制样式。旧 {@code SceneControlChrome.bindStandardBorder/
+ * bindSelectableBackground} 接缝与静态色/圆角写入已按契约 §4.2 摘除；主题切换只重派生外观，
+ * query、编解码与选择行为全部不变。</p>
  */
 public final class SearchPickerFieldSupport {
     private static final Logger LOG = LogManager.getLogger("QzUiLib/ConfigUI");
     private static final int TRIGGER_ICON_SIZE = 18;
     private static final int TRIGGER_DETAIL_FONT_SIZE = 12;
     private static final int MANAGE_BUTTON_WIDTH = 96;
-    private static final int PLACEHOLDER_COLOR = 0xFF454B54;
+    /** 图片在场时占位图标底保持透明（无颜色语义，仅「不写占位底色」的字面零值）。 */
+    private static final int ICON_BG_TRANSPARENT = 0x00000000;
+    /** 行触发器表面恒定启用（控件自身无禁用态；面板开关不改触发器可用性）。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     private SearchPickerFieldSupport() { }
 
@@ -268,12 +281,12 @@ public final class SearchPickerFieldSupport {
         SceneNode summary = SceneNode.row();
         summary.setGap(4);
         summary.setFlexGrow(1);
-        SceneNode configured = text("");
+        SceneNode configured = text(rt, "", SceneThemes.foreground(rt));
         rt.bindText(configured, Computed.create(() -> {
             List<SearchPickerData.CurrentMember> members = currentMembers.get();
             return presentation.configuredSummary(members == null ? 0 : members.size());
         }));
-        SceneNode issues = text("");
+        SceneNode issues = text(rt, "", SceneThemes.foreground(rt));
         rt.bindText(issues, Computed.create(() -> {
             List<SearchPickerData.CurrentMember> members = currentMembers.get();
             int[] counts = memberIssueCounts(members);
@@ -406,12 +419,17 @@ public final class SearchPickerFieldSupport {
         trigger.setGap(SceneChromeTokens.GAP_MD);
         trigger.setPadding(SceneChromeTokens.PAD_MD);
         trigger.setCrossAxisAlign(CrossAxisAlign.CENTER);
-        trigger.setBorderWidth(1);
-        trigger.setCornerRadius(SceneChromeTokens.RADIUS_MD);
+        // 行触发器表面（契约 §4.1 Select 触发器口径）：染色/边框/边框宽/圆角/滤镜/浮雕归
+        // SceneSurfaceBinder 独占，配方取来源主题 INPUT 角色；旧 bindStandardBorder /
+        // bindSelectableBackground 与静态 borderWidth/cornerRadius 写入已摘除（§4.2）。
+        // 构建期先声明关心 hover/pressed/focus：Router 对未创建的 signal 直接短路，
+        // 不声明则事件驱动不了配方状态档（与 FormFieldShell 默认路径同构）。
         SceneInteractionState interaction = rt.interactionState(trigger);
-        SceneControlChrome.bindStandardBorder(rt, trigger, Signal.create(Boolean.TRUE), interaction);
-        SceneControlChrome.bindSelectableBackground(rt, trigger, Signal.create(Boolean.TRUE),
-                Signal.create(Boolean.FALSE), interaction);
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(rt, trigger, SceneThemes.surface(rt, SceneTheme.Role.INPUT),
+                ALWAYS_ENABLED, interaction);
 
         if (presenter != null) {
             SceneNode icon = new SceneNode();
@@ -423,23 +441,28 @@ public final class SearchPickerFieldSupport {
             info.setFlexGrow(1);
             info.setGap(2);
             info.setHitTestable(false);
-            SceneNode title = text("");
-            SceneNode detail = text("");
+            SceneNode title = text(rt, "", SceneThemes.foreground(rt));
+            SceneNode detail = text(rt, "", SceneThemes.mutedForeground(rt));
             detail.setFontSize(TRIGGER_DETAIL_FONT_SIZE);
-            detail.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
             info.appendChild(title);
             info.appendChild(detail);
             trigger.appendChild(info);
+            final Signal<Boolean> hasImage = Signal.create(Boolean.FALSE);
             rt.bind(value, current -> {
                 CurrentValuePresenter.Presentation shown = presenter.present(current);
-                icon.setBackgroundColor(shown == null || shown.image() == null
-                        ? PLACEHOLDER_COLOR : SceneChromeTokens.TRANSPARENT);
+                hasImage.set(Boolean.valueOf(shown != null && shown.image() != null));
                 icon.setImageSource(shown == null ? null : shown.image());
                 title.setText(shown == null ? "" : shown.title());
                 detail.setText(shown == null ? "" : shown.summary());
             });
+            // 占位图标底：图片在场保持透明；无图时取主题占位口径（mutedForeground 信号），
+            // 值×主题双输入合成后仍是「backgroundColor 单写入者」，旧静态 PLACEHOLDER_COLOR 已删。
+            ReadableSignal<Integer> placeholderTint = SceneThemes.mutedForeground(rt);
+            rt.bindComputed(() -> Integer.valueOf(Boolean.TRUE.equals(hasImage.get())
+                    ? ICON_BG_TRANSPARENT : placeholderTint.get().intValue()),
+                    icon::setBackgroundColor);
         } else {
-            SceneNode label = text(presentation.title());
+            SceneNode label = text(rt, presentation.title(), SceneThemes.foreground(rt));
             trigger.appendChild(label);
         }
         rt.focusable(trigger);
@@ -496,10 +519,19 @@ public final class SearchPickerFieldSupport {
         return third == null ? "" : third;
     }
 
-    private static SceneNode text(String value) {
+    /**
+     * 创建不可命中的文字节点，前景经语义信号绑定（构建期捕获来源主题，主题切换只重算色值）。
+     *
+     * @param rt    场景运行时
+     * @param value 初始文本（{@code null} 视为空串）
+     * @param color 主题语义前景信号（正文 {@code foreground} / 次要 {@code mutedForeground}）
+     * @return 文字节点
+     */
+    private static SceneNode text(SceneRuntime rt, String value, ReadableSignal<Integer> color) {
         SceneNode node = new SceneNode();
         node.setText(value == null ? "" : value);
         node.setHitTestable(false);
+        rt.bind(color, node::setTextColor);
         return node;
     }
 }

@@ -170,4 +170,24 @@ public class FieldRenderSupportTest {
                 Double.toString(Double.POSITIVE_INFINITY),
                 FieldRenderSupport.formatReadout(Double.POSITIVE_INFINITY));
     }
+
+    // ===== G15/Support 源码守卫 =====
+
+    /** 守卫：本类零外观写入（无主题/chrome/节点引用），非视觉职责保持不变。 */
+    @Test
+    public void sourceGuardStaysNonVisual() throws Exception {
+        String code = FieldShellBinderTest.codeWithoutComments(new String(
+                java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(
+                        "src/main/java/club/heiqi/config/ui/field/FieldRenderSupport.java")),
+                java.nio.charset.StandardCharsets.UTF_8));
+        String[] banned = {
+                "SceneChromeTokens", "SceneControlChrome", "SceneStateColors", "SceneSurface",
+                "SceneNode", "SceneRuntime", "ConfigTheme", "FormTheme", "SceneTheme",
+                "Color", "Backdrop",
+        };
+        for (String token : banned) {
+            Assert.assertFalse("守卫：FieldRenderSupport 代码不得出现外观类型 " + token,
+                    code.contains(token));
+        }
+    }
 }

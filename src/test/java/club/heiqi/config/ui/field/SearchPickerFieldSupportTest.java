@@ -1,5 +1,8 @@
 package club.heiqi.config.ui.field;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -23,15 +26,21 @@ import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 import static org.junit.Assert.*;
 
@@ -754,7 +763,211 @@ public class SearchPickerFieldSupportTest {
         runtime.dispose();
     }
 
+    // ==================== G15/Support：行触发器默认路径 = INPUT 角色配方 ====================
+
+    /** 默认路径（无 Owner → runtime 根回落库默认）：行触发器表面 = INPUT 配方、文字取主题语义信号。 */
+    @Test
+    public void rowTriggerUsesInputRecipeAndThemeForegrounds() {
+        PickerFixture fixture = fixture(statelessCodec((current, selected) -> selected.candidateKey()),
+                Signal.<Object>create("before"), ignored -> { });
+        SceneNode trigger = fixture.trigger;
+        SceneSurfaceStyle input = SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
+
+        assertEquals("行触发器底色 = INPUT 配方 idle tint", input.getIdle().getTint(),
+                trigger.getBackgroundColor());
+        assertEquals("行触发器缘色 = INPUT 配方 idle edge", input.getIdle().getEdge(),
+                trigger.getBorderColor());
+        assertEquals("行触发器圆角 = INPUT 配方圆角", input.getCornerRadius(), trigger.getCornerRadius());
+        assertEquals("行触发器边框宽 = INPUT 配方边框宽", input.getBorderWidth(), trigger.getBorderWidth());
+        assertNotNull("INPUT 配方表面装有滤镜（语义表面采样背景）", trigger.getBackdrop());
+        assertEquals("滤镜材质 = INPUT 配方材质", input.getBackdrop().getEffect().getMaterial(),
+                trigger.getBackdrop().getEffect().getMaterial());
+
+        SceneNode icon = trigger.__getChildren().get(0);
+        SceneNode info = trigger.__getChildren().get(1);
+        SceneNode title = info.__getChildren().get(0);
+        SceneNode detail = info.__getChildren().get(1);
+        assertEquals("主文本前景 = 主题 foreground", SceneThemes.DEFAULT.foreground(), title.getTextColor());
+        assertEquals("副文本前景 = 主题 mutedForeground", SceneThemes.DEFAULT.mutedForeground(),
+                detail.getTextColor());
+        assertEquals("无图占位图标底 = 主题 mutedForeground 占位口径",
+                SceneThemes.DEFAULT.mutedForeground(), icon.getBackgroundColor());
+        assertNotEquals("旧静态占位色 0xFF454B54 不得残留", 0xFF454B54, icon.getBackgroundColor());
+        fixture.dispose();
+    }
+
+    /** 占位图标底随值单写入者翻转：有图=透明、无图=主题占位口径；不引入第二个 backgroundColor 绑定。 */
+    @Test
+    public void iconPlaceholderTintFollowsValueFlipWithoutSecondWriter() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> value = Signal.<Object>create("with-image");
+        Registry registry = new Registry();
+        registry.register(new ValueEditorProvider() {
+            public String id() { return "test:picker"; }
+            public Codec codec() { return statelessCodec((current, selected) -> selected.candidateKey()); }
+            public VisualAdapter visualAdapter() { return SearchPickerFieldSupportTest.visualAdapter(); }
+            public SearchFunction searchFunction() { return (query, max) -> result(); }
+            public SearchPickerPresentation presentation() { return failurePresentation(); }
+            public CurrentValuePresenter currentValuePresenter() { return presentValue ->
+                    new CurrentValuePresenter.Presentation(String.valueOf(presentValue),
+                            "summary-" + presentValue,
+                            "with-image".equals(String.valueOf(presentValue)) ? IMAGE_STUB : null); };
+        });
+        registry.freeze();
+        SceneNode picker = SearchPickerFieldSupport.createControlledIfPresent(runtime, spec(), value,
+                registry, ignored -> { });
+        harness.mountRoot(picker, 640, 420);
+        ReactiveScheduler.get().flush();
+
+        SceneNode icon = picker.__getChildren().get(0).__getChildren().get(0);
+        assertEquals("有图时占位底透明", 0, icon.getBackgroundColor());
+        value.set("plain");
+        ReactiveScheduler.get().flush();
+        assertEquals("值翻到无图后占位底 = 主题 mutedForeground",
+                SceneThemes.DEFAULT.mutedForeground(), icon.getBackgroundColor());
+        runtime.dispose();
+    }
+
+    /** 真实装配（mount + withTheme）：主题切换重派生行触发器表面，面板 query 草稿保留、身份不变、effect 不增。 */
+    @Test
+    public void themeSwitchRepaintsRowTriggerKeepingPanelQueryAndIdentity() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        assertNotEquals("前置：两档 INPUT idle 配方不同（否则切换不传播）",
+                dark.surface(SceneTheme.Role.INPUT).getIdle(),
+                light.surface(SceneTheme.Role.INPUT).getIdle());
+
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        final SceneNode[] holder = new SceneNode[1];
+        MountHandle handle = runtime.mount(new SceneNode(), () -> {
+            SceneThemes.withTheme(pageTheme, () -> holder[0] =
+                    SearchPickerFieldSupport.createControlledIfPresent(runtime, spec(),
+                            Signal.<Object>create("before"),
+                            registry(statelessCodec((current, selected) -> selected.candidateKey())),
+                            ignored -> { }));
+            return holder[0];
+        });
+        runtime.flush();
+        harness.mountRoot(holder[0], 640, 420);
+        SceneNode trigger = holder[0].__getChildren().get(0);
+        assertEquals("深色档触发器底色", dark.surface(SceneTheme.Role.INPUT).getIdle().getTint(),
+                trigger.getBackgroundColor());
+        assertEquals("深色档副文本前景", dark.mutedForeground(),
+                trigger.__getChildren().get(1).__getChildren().get(1).getTextColor());
+
+        harness.click(trigger);
+        runtime.flush();
+        layoutPanel(runtime);
+        SceneNode input = searchInput(panelRoot(runtime));
+        runtime.requestFocus(input);
+        runtime.flush();
+        harness.typeText("draft");
+        runtime.flush();
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+
+        assertEquals("切换后底色 = 浅色 INPUT idle tint",
+                light.surface(SceneTheme.Role.INPUT).getIdle().getTint(), trigger.getBackgroundColor());
+        assertEquals("切换后缘色 = 浅色 INPUT idle edge",
+                light.surface(SceneTheme.Role.INPUT).getIdle().getEdge(), trigger.getBorderColor());
+        assertEquals("切换后副文本前景 = 新主题 mutedForeground", light.mutedForeground(),
+                trigger.__getChildren().get(1).__getChildren().get(1).getTextColor());
+        assertEquals("切换后滤镜材质 = 浅色档材质",
+                light.surface(SceneTheme.Role.INPUT).getBackdrop().getEffect().getMaterial(),
+                trigger.getBackdrop().getEffect().getMaterial());
+        assertEquals("主题切换不丢面板 query 草稿", "draft", textOf(searchInput(panelRoot(runtime))));
+        assertSame("行触发器节点身份不变", trigger, holder[0].__getChildren().get(0));
+        assertEquals("主题切换不新增 effect", effectsBefore, ReactiveTestProbe.registeredEffectCount());
+        handle.dispose();
+        runtime.dispose();
+    }
+
+    /** LIST_MEMBERS 摘要文字同样跟随主题信号：切换只重算色值，节点身份不变。 */
+    @Test
+    public void listMembersSummaryTextsFollowThemeSignals() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Arrays.<Object>asList("raw:x", "raw:y"));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(
+                new SceneSimpleList.ListItem("raw:x"), new SceneSimpleList.ListItem("raw:y")));
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        final SceneNode[] holder = new SceneNode[1];
+        MountHandle handle = runtime.mount(new SceneNode(), () -> {
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SearchPickerFieldSupport
+                    .createListMembersIfPresent(runtime,
+                            ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec(
+                                    "test:picker", 8, SearchPickerSpec.BindingMode.LIST_MEMBERS)),
+                            raw, items, registry(memberCodec()), ignored -> { }));
+            return holder[0];
+        });
+        runtime.flush();
+        SceneNode configured = firstTextNode(holder[0], "Configured 2 items");
+        assertNotNull("摘要仍常驻", configured);
+        assertEquals("摘要前景 = 深色档 foreground", dark.foreground(), configured.getTextColor());
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+        assertEquals("切换后摘要前景 = 浅色档 foreground", light.foreground(), configured.getTextColor());
+        assertSame("切换不重建摘要节点", configured, firstTextNode(holder[0], "Configured 2 items"));
+        assertEquals("切换不新增 effect", effectsBefore, ReactiveTestProbe.registeredEffectCount());
+        handle.dispose();
+        runtime.dispose();
+    }
+
+    // ==================== G15/Support 源码守卫 ====================
+
+    /** 守卫：行触发器表面全部走主题；旧 chrome 接缝与静态色清零，SceneChromeTokens 仅布局常量。 */
+    @Test
+    public void sourceGuardRowSurfaceUsesThemeOnlyAndLegacySeamsRemoved() throws Exception {
+        String code = FieldShellBinderTest.codeWithoutComments(new String(
+                Files.readAllBytes(Paths.get(
+                        "src/main/java/club/heiqi/config/ui/field/SearchPickerFieldSupport.java")),
+                StandardCharsets.UTF_8));
+
+        String[] banned = {
+                "SceneControlChrome", "bindStandardBorder", "bindSelectableBackground",
+                "SceneStateColors", "PLACEHOLDER_COLOR",
+                "SceneChromeTokens.TEXT_SECONDARY", "SceneChromeTokens.TEXT_PRIMARY",
+                "SceneChromeTokens.TRANSPARENT", "SceneChromeTokens.RADIUS_MD",
+                "ConfigTheme", "asFormTheme",
+        };
+        for (String token : banned) {
+            assertFalse("守卫：旧接缝/静态色不得残留 " + token, code.contains(token));
+        }
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile("SceneChromeTokens\\.([A-Z_0-9]+)").matcher(code);
+        while (matcher.find()) {
+            String token = matcher.group(1);
+            assertTrue("守卫：SceneChromeTokens 仅允许布局常量，越权引用 " + token,
+                    "GAP_MD".equals(token) || "PAD_MD".equals(token));
+        }
+        assertTrue("守卫：行触发器表面须走 SceneSurfaceBinder",
+                code.contains("SceneSurfaceBinder.bind("));
+        assertTrue("守卫：行触发器取 INPUT 角色配方", code.contains("SceneTheme.Role.INPUT"));
+    }
+
     // ==================== 夹具与断言助手 ====================
+
+    /** 测试桩图片源：仅对象身份有含义（核心层同样只固化身份）。 */
+    private static final SceneImageSource IMAGE_STUB = new SceneImageSource() { };
+
+    /** 深度优先找第一个持有该文本的节点。 */
+    private static SceneNode firstTextNode(SceneNode node, String expected) {
+        if (expected.equals(node.getText())) return node;
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = firstTextNode(child, expected);
+            if (found != null) return found;
+        }
+        return null;
+    }
 
     private static void assertListBindingDoesNotWrite(ListMemberCodec codec, Object rawMember, boolean stale) {
         Signal<Object> raw = Signal.<Object>create(Collections.singletonList(rawMember));

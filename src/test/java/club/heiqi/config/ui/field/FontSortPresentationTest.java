@@ -269,6 +269,24 @@ public class FontSortPresentationTest {
         Assert.assertEquals("reload presentation 不提交", 0, commits.get());
     }
 
+    /** G15/Support 守卫：本类零外观写入（字体排序呈现模型职责不变），主题/chrome 类型不得出现。 */
+    @Test
+    public void sourceGuardStaysNonVisual() throws Exception {
+        String code = FieldShellBinderTest.codeWithoutComments(new String(
+                java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(
+                        "src/main/java/club/heiqi/config/ui/field/FontSortPresentation.java")),
+                java.nio.charset.StandardCharsets.UTF_8));
+        String[] banned = {
+                "SceneChromeTokens", "SceneControlChrome", "SceneStateColors", "SceneSurface",
+                "SceneNode", "SceneRuntime", "ConfigTheme", "FormTheme", "SceneTheme",
+                "Color", "Backdrop",
+        };
+        for (String token : banned) {
+            Assert.assertFalse("守卫：FontSortPresentation 代码不得出现外观类型 " + token,
+                    code.contains(token));
+        }
+    }
+
     private static FontSortPresentation presentation(AtomicInteger commits,
                                                        AtomicReference<List<String>> submitted) {
         return new FontSortPresentation(
