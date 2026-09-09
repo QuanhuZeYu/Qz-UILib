@@ -13,7 +13,6 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.control.SceneControlChrome;
 import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGridNav;
@@ -29,6 +28,7 @@ import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SearchResultList —— 无上限普通候选网格（搜索选择器的结果列表）。
@@ -49,11 +49,24 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  * 分级为 {@code UNRENDERABLE} 后，对应单元图标回退占位底色（与无图片项同款样式），不再继续
  * 尝试渲染；registryKey（注册名:meta）按注册名拆段对齐条目 key（注册名）。</p>
  *
+ * <h3>外观归属（液态玻璃迁移，G13）</h3>
+ * <p>滚动视口底座沿用 {@link SceneScrollContainer} 默认路径——由 {@code SceneSurfaceBinder}
+ * 独占 background/border/borderWidth/cornerRadius/backdrop/surfaceElevation（主题
+ * {@code GROUP} 角色配方，低干扰内容底座；本控件是被宿主面板内嵌的结果区而非独立浮层，
+ * {@code OVERLAY} 玻璃归宿主浮层根，不在这里叠第二层）。结果单元只做<b>轻量底色覆盖</b>：
+ * 仅写 backgroundColor（选中取主题选区背景 alpha 0x59、hover 取主题 accent alpha 0x1F，
+ * 与 {@code SceneAutocomplete} 候选行同一口径，
+ * 选中强于 hover、不只靠透明度区分；禁用时清空，禁用反馈由文字禁用前景与输入守卫承担），
+ * 单元自身不装滤镜、不写边框圆角。行文字取主题 {@code mutedForeground}（旧
+ * {@code TEXT_SECONDARY} 同值起步）/ {@code disabledForeground}；物品图像/缩略图渲染协议
+ * （占位底色与图位圆角）不改色。</p>
+ *
  * <h3>单元视觉与交互</h3>
- * <p>单元完整复刻 {@link SceneVirtualGrid#cellComponent}：占位底色、icon 尺寸
- * （cellHeight - 2*CELL_PADDING - 有label时(lineHeight+LABEL_GAP)）、label 12px 居中
- * TEXT_SECONDARY、cornerRadius RADIUS_SM、选中态 = item 在完整列表中的下标 == highlighted、
- * CLICK 激活 + 高亮回写，悬停/选中底色走 {@link SceneControlChrome#bindSelectableBackground}。</p>
+ * <p>单元结构复刻 {@link SceneVirtualGrid#cellComponent}：占位底色、icon 尺寸
+ * （cellHeight - 2*CELL_PADDING - 有label时(lineHeight+LABEL_GAP)）、label 12px 居中、
+ * 图位圆角 RADIUS_SM、选中态 = item 在完整列表中的下标 == highlighted（按 key 动态派生，
+ * 数据源更新/重排后选中与 hover 不串项）、CLICK 激活 + 高亮回写；悬停/选中底色为上述
+ * 主题轻量覆盖，不再走 {@code SceneControlChrome.bindSelectableBackground} 旧实色接缝。</p>
  */
 public final class SearchResultList {
 
@@ -63,8 +76,14 @@ public final class SearchResultList {
     public static final int LABEL_FONT_SIZE = 12;
     /** 图标与标签间距。 */
     public static final int LABEL_GAP = 2;
-    /** 无图片项的占位底色（与 SceneVirtualGrid 同色）。 */
+    /** 无图片项的占位底色（与 SceneVirtualGrid 同色，属图像渲染协议，非主题槽位）。 */
     public static final int DEFAULT_PLACEHOLDER_COLOR = 0xFF454B54;
+    /** 结果单元默认底色：全透明，露出底座玻璃（单元不各自采样滤镜）。 */
+    private static final int CELL_BG_TRANSPARENT = 0x00000000;
+    /** 结果单元 hover 覆盖强度：主题 accent 的低透明度轻量覆盖。 */
+    private static final int CELL_HOVER_ALPHA = 0x1F;
+    /** 结果单元选中（高亮）覆盖强度：主题选区背景，明显强于 hover（不只靠透明度区分）。 */
+    private static final int CELL_SELECTED_ALPHA = 0x59;
 
     private SearchResultList() {
     }
@@ -169,8 +188,14 @@ public final class SearchResultList {
         }
 
         // 结构：viewport = [content]（gap=0，行间距由行 marginBottom 承担）。
+        // viewport 底座外观已归 SceneScrollContainer 默认路径的 SceneSurfaceBinder（GROUP 配方）
+        // 独占，本控件不再二次绑定、不给单元各装滤镜。
         SceneNode rowsContainer = sc.content();
         rowsContainer.setHitTestable(false);
+
+        // 主题语义色派生：构建期（来源作用域 Owner 内）解析一次，全部单元共享；
+        // 主题切换只重派生（Computed 按值记忆化），不重建节点。
+        CellPalette palette = new CellPalette(rt);
 
         // 渲染分级回退：订阅注册表，不可渲染项写入 unrenderableKeys → 单元回退占位样式（共享装配）。
         Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(
@@ -181,7 +206,7 @@ public final class SearchResultList {
                 Computed.create(() -> toRows(safeItems(props.items()), effectiveColumns.get().intValue()));
 
         rt.forEach(rowsContainer, rowsSignal, Row::firstIndex,
-                row -> rowComponent(rt, props, row, effectiveColumns, unrenderableKeys));
+                row -> rowComponent(rt, props, row, effectiveColumns, unrenderableKeys, palette));
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -246,7 +271,8 @@ public final class SearchResultList {
     /** 构建一个完整结果行（ROW 容器，行高钉定，行间距经 marginBottom 计入主轴占位）。 */
     private static SceneNode rowComponent(SceneRuntime rt, Props props, Row row,
                                           ReadableSignal<Integer> effectiveColumns,
-                                          ReadableSignal<Set<Object>> unrenderableKeys) {
+                                          ReadableSignal<Set<Object>> unrenderableKeys,
+                                          CellPalette palette) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(props.cellHeight());
         rowNode.setMargin(0, 0, props.gapY(), 0);
@@ -265,26 +291,35 @@ public final class SearchResultList {
             return new ArrayList<SceneVirtualGrid.Item>(items.subList(start, to));
         });
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
-                item -> cellComponent(rt, props, item, unrenderableKeys));
+                item -> cellComponent(rt, props, item, unrenderableKeys, palette));
         return rowNode;
     }
 
-    /** 构建单个结果单元（视觉与交互完整复刻 SceneVirtualGrid.cellComponent）。 */
+    /** 构建单个结果单元（结构复刻 SceneVirtualGrid.cellComponent；外观为主题轻量覆盖）。 */
     private static SceneNode cellComponent(SceneRuntime rt, Props props, SceneVirtualGrid.Item item,
-                                           ReadableSignal<Set<Object>> unrenderableKeys) {
+                                           ReadableSignal<Set<Object>> unrenderableKeys,
+                                           CellPalette palette) {
         SceneNode cell = SceneNode.column();
         cell.setPreferredWidth(props.cellWidth());
         cell.setPreferredHeight(props.cellHeight());
         cell.setClipChildren(true);
         cell.setGap(LABEL_GAP);
         cell.setPadding(CELL_PADDING);
-        cell.setCornerRadius(SceneChromeTokens.RADIUS_SM);
+        // 轻量覆盖口径：单元不写圆角/边框（外观写入槽只剩 backgroundColor），不装滤镜。
         SceneInteractionState interaction = rt.interactionState(cell);
-        // 选中态：item 在完整 items 列表中的下标 == highlighted
+        // 时序契约：构建期声明关心 hovered，Router 后续写入才会落到已创建的 signal。
+        interaction.hovered();
+        // 选中态：item 在完整 items 列表中的下标 == highlighted（按 key 动态派生，
+        // 复用/重绑单元不携带旧项选中态）。
         ReadableSignal<Boolean> selected = Computed.create(() ->
                 Integer.valueOf(itemIndex(safeItems(props.items()), item.key()))
                         .equals(props.highlighted().get()));
-        SceneControlChrome.bindSelectableBackground(rt, cell, props.enabled(), selected, interaction);
+        rt.__bindAnimatedColor(() -> resolveCellBackground(
+                        Boolean.TRUE.equals(props.enabled().get()),
+                        Boolean.TRUE.equals(selected.get()),
+                        Boolean.TRUE.equals(interaction.hovered().get()),
+                        palette.accent.get(), palette.selectionBackground.get()),
+                cell::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
 
         SceneNode icon = new SceneNode();
         icon.setHitTestable(false);
@@ -311,9 +346,13 @@ public final class SearchResultList {
             SceneNode label = new SceneNode();
             label.setHitTestable(false);
             label.setFontSize(LABEL_FONT_SIZE);
-            label.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
+            // 行文字取主题次要前景（旧 TEXT_SECONDARY 同值起步），禁用取禁用前景；
+            // 选中区分由底色承担，不靠文字变色（SceneNavList G09 口径）。
             label.setTextHorizontalAlign(TextHorizontalAlign.CENTER);
             label.setText(item.label());
+            rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
+                    ? palette.mutedForeground.get() : palette.disabledForeground.get(),
+                    label::setTextColor);
             cell.appendChild(label);
         }
 
@@ -329,14 +368,77 @@ public final class SearchResultList {
             }
         });
 
-        // hover 回调：先声明 hovered（懒创建时序契约），再经 effect 回写 item/null
+        // hover 回调：hovered 已在构建期声明（懒创建时序契约），再经 effect 回写 item/null
         if (props.onHoverItem() != null) {
-            ReadableSignal<Boolean> hovered = rt.interactionState(cell).hovered();
-            rt.bind(hovered, h -> props.onHoverItem().accept(
+            rt.bind(interaction.hovered(), h -> props.onHoverItem().accept(
                     Boolean.TRUE.equals(h) ? item : null));
         }
 
         return cell;
+    }
+
+    /**
+     * 解析结果单元底色：禁用清空 &gt; 选中（主题选区背景 0x59）&gt; hover（主题 accent 0x1F）
+     * &gt; 全透明（露出底座玻璃）。
+     *
+     * <p>轻量状态覆盖口径与 {@code SceneAutocomplete} 候选行一致：只做半透明染色，不装滤镜；
+     * 选中强度明显高于 hover，保证选中不只靠透明度与 hover 混淆。禁用时底色清空，
+     * 禁用反馈由文字禁用前景与点击/键盘守卫承担，不伪造可用选中态。</p>
+     *
+     * @param enabled             是否启用
+     * @param selected            是否选中（高亮）
+     * @param hovered             是否指针悬停
+     * @param accent              主题强调色
+     * @param selectionBackground 主题选区背景色
+     * @return 单元背景色 ARGB
+     */
+    private static int resolveCellBackground(boolean enabled, boolean selected, boolean hovered,
+                                             int accent, int selectionBackground) {
+        if (!enabled) {
+            return CELL_BG_TRANSPARENT;
+        }
+        if (selected) {
+            return tint(selectionBackground, CELL_SELECTED_ALPHA);
+        }
+        if (hovered) {
+            return tint(accent, CELL_HOVER_ALPHA);
+        }
+        return CELL_BG_TRANSPARENT;
+    }
+
+    /**
+     * 保留色 RGB、替换 alpha 通道（轻量覆盖用）。
+     *
+     * @param argb  源色
+     * @param alpha 目标 alpha（0..255）
+     * @return 替换 alpha 后的 ARGB
+     */
+    private static int tint(int argb, int alpha) {
+        return (alpha << 24) | (argb & 0x00FFFFFF);
+    }
+
+    /** 单元共享的主题语义色派生集合（构建期在来源作用域内解析一次，主题切换只重派生）。 */
+    private static final class CellPalette {
+        /** 主题强调色（hover 轻量覆盖源）。 */
+        private final ReadableSignal<Integer> accent;
+        /** 主题选区背景（选中轻量覆盖源）。 */
+        private final ReadableSignal<Integer> selectionBackground;
+        /** 主题次要前景（单元标签默认文字色）。 */
+        private final ReadableSignal<Integer> mutedForeground;
+        /** 主题禁用前景（禁用态单元标签文字色）。 */
+        private final ReadableSignal<Integer> disabledForeground;
+
+        /**
+         * 在来源作用域内解析四个语义色派生。
+         *
+         * @param rt 场景运行时
+         */
+        private CellPalette(SceneRuntime rt) {
+            this.accent = SceneThemes.accent(rt);
+            this.selectionBackground = SceneThemes.selectionBackground(rt);
+            this.mutedForeground = SceneThemes.mutedForeground(rt);
+            this.disabledForeground = SceneThemes.disabledForeground(rt);
+        }
     }
 
     /** 可视高度：优先读取已布局的 LayoutBox 高度，否则退回 preferredHeight。 */
