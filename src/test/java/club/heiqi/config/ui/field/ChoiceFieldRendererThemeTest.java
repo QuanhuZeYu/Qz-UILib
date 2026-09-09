@@ -41,8 +41,9 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * 两档 {@code assertNotEquals} 前提 + 真实装配路径）；③ dirty/error、选项值映射与
  * 草稿语义零改动。</p>
  *
- * <p>配套源码守卫钉「非视觉职责」与占位参现状（裁决②：Renderer 期间禁自行摘除 binder 的
- * {@code theme} 兼容占位形参）；控件弹层（OVERLAY）与显式配方覆盖归 G08/G09 控件本体证据。</p>
+ * <p>配套源码守卫钉「非视觉职责」（占位参现状守卫已随 G15/收口同步为「ConfigTheme/asFormTheme
+ * 零出现」计数钉——binder theme 形参与本类两处占位实参均已摘除）；控件弹层（OVERLAY）与显式
+ * 配方覆盖归 G08/G09 控件本体证据。</p>
  */
 public class ChoiceFieldRendererThemeTest {
 
@@ -256,12 +257,12 @@ public class ChoiceFieldRendererThemeTest {
 
     /**
      * 守卫：{@code ChoiceFieldRenderer} 零外观写入、零取色、零旧接缝——所有表面/前景属性写入
-     * API 与静态色字面量禁出现；已迁移控件只经 {@code create(rt, props)} 只读复用；对
-     * {@code ConfigTheme.asFormTheme()} 的引用仅允许为 {@link FieldShellBinder#build} 的兼容
-     * 占位实参（G15/Support 裁决②：默认路径不消费、Renderer 期间禁自行摘参）。
+     * API 与静态色字面量禁出现；已迁移控件只经 {@code create(rt, props)} 只读复用。
      *
-     * <p><b>G15/收口实例同步义务</b>：摘除 binder 占位形参时，须同批把本守卫的占位计数断言与
-     * 两处调用点一并更新，不得只改一侧。</p>
+     * <p><b>G15/收口实例同步（已执行）</b>：binder 的 {@code theme} 兼容占位形参已从
+     * {@link FieldShellBinder#build} 签名删除，本类两处调用点的 {@code ConfigTheme.asFormTheme()}
+     * 占位实参随之摘除——占位计数断言由「恰 2 / ConfigTheme 引用恰 3」同步降为「零出现」。
+     * 新守卫钉死 {@code ConfigTheme} 出现数恰 0（禁再喂显式快照，防整主题快照回潮）。</p>
      */
     @Test
     public void sourceGuardRendererCarriesNoVisualWritesOnlyPlaceholderArgs() throws Exception {
@@ -275,6 +276,7 @@ public class ChoiceFieldRendererThemeTest {
                 "bindStandardBorder", "bindSelectableBackground",
                 "SceneSurfaceBinder", "SceneControlChrome", "SceneStateColors", "SceneChromeTokens",
                 "SceneThemes", "ui.scene.theme", "FormFieldShell", "0x",
+                "ConfigTheme", "asFormTheme", "FormTheme",
         };
         for (String token : banned) {
             Assert.assertFalse("守卫：ChoiceFieldRenderer 代码不得出现 " + token, code.contains(token));
@@ -284,13 +286,11 @@ public class ChoiceFieldRendererThemeTest {
                 1, countOccurrences(code, "SceneSegmented.create(rt, props)"));
         Assert.assertEquals("Select 只经工厂挂载恰 1 处",
                 1, countOccurrences(code, "SceneSelect.create(rt, props)"));
-        // 装配只走 Support binder；theme 实参仅允许占位形态恰 2 处（Segmented/Select 分支各一）
+        // 装配只走 Support binder；G15/收口后 theme 占位实参已全摘，仅存纯 controlFn 重载恰 2 处
         Assert.assertEquals("外壳装配只经 FieldShellBinder 恰 2 处",
                 2, countOccurrences(code, "FieldShellBinder.build(rt, spec, adapter,"));
-        Assert.assertEquals("显式主题只允许 binder 占位实参形态恰 2 处",
-                2, countOccurrences(code, "ConfigTheme.asFormTheme())"));
-        Assert.assertEquals("ConfigTheme 引用总数 = import + 2 占位实参",
-                3, countOccurrences(code, "ConfigTheme"));
+        Assert.assertEquals("G15/收口：theme 兼容占位实参（ConfigTheme.asFormTheme()）计数归零",
+                0, countOccurrences(code, "ConfigTheme.asFormTheme())"));
         // 表面/语义色的写入点在 Support 与控件本体，renderer 不得截胡
         Assert.assertFalse("守卫：不得直接组装 FormFieldShell（装配唯一经 FieldShellBinder）",
                 code.contains("FormPageShell") || code.contains("buildBorderless"));

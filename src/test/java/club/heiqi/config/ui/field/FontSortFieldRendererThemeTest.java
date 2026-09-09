@@ -44,8 +44,10 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * 两档 {@code assertNotEquals} 前提 + 切换后逐项重派生 + 草稿/节点身份/effect 数不动）；
  * ③ 排序事务（keyed 行复用、拖拽/索引提交路径归 integration 既有测试）与 dirty/error 行为零改动。</p>
  *
- * <p>配套源码守卫钉「本类零表面写入、前景唯一来源 = 主题信号」与占位参现状（G15/Support 裁决②：
- * Renderer 期间禁自行摘除 binder 的 {@code theme} 兼容占位形参）；弹层与显式配方覆盖归控件本体证据。</p>
+ * <p>配套源码守卫钉「本类零表面写入、前景唯一来源 = 主题信号」；G15/Support 裁决②的
+ * {@code theme} 兼容占位形参已随 G15/收口实例摘除，守卫同步为「同源常量 defaultDark 恰 3
+ * 计数钉 + ConfigTheme/asFormTheme/theme. 快照反向禁则」（见 {@code sourceGuard...} javadoc）；
+ * 弹层与显式配方覆盖归控件本体证据。</p>
  */
 public class FontSortFieldRendererThemeTest {
 
@@ -347,12 +349,16 @@ public class FontSortFieldRendererThemeTest {
      * 守卫：{@code FontSortFieldRenderer} 零表面/边框/滤镜/浮雕写入、零旧接缝、零静态取色直写——
      * {@code setTextColor(} 直写禁出现，前景只允许 {@code ::setTextColor} 方法引用挂在
      * {@code SceneThemes.foreground(rt)} / {@code SceneThemes.mutedForeground(rt)} 信号上（各恰 1 处）；
-     * 不取角色配方（{@code SceneThemes.surface} 等）、不直接组装 FormFieldShell；
-     * {@code ConfigTheme.asFormTheme()} 只允许 binder 兼容占位 + 本类布局/排版取值，计数钉死。
+     * 不取角色配方（{@code SceneThemes.surface} 等）、不直接组装 FormFieldShell。
      *
-     * <p><b>G15/收口实例同步义务</b>：摘除 binder 占位形参时，须同批把本守卫的占位计数断言
-     * （{@code ConfigTheme} 恰 2 处、{@code asFormTheme()} 恰 1 处）与本类唯一调用点一并更新，
-     * 不得只改一侧；同时 7 个 Renderer 守卫计数（Choice 恰 2、FontSort 恰 1 等）由收口实例统一销账。</p>
+     * <p><b>G15/收口实例同步义务（已执行，CharRule 先例形态）</b>：binder theme 兼容占位形参与
+     * 本类唯一调用点的占位实参已摘除，原「{@code ConfigTheme} 恰 2、{@code asFormTheme()} 恰 1、
+     * {@code theme.listHeight()} 恰 2、{@code theme.fontLabel/fontHelper} 各恰 1」的整主题快照
+     * 计数钉同步翻转——{@code ConfigTheme}/{@code asFormTheme}/{@code theme.}（小写分量直读）
+     * 进禁则封死回潮，布局/排版常量改经 {@code FormTheme.defaultDark()} 构造期直读纯 int，
+     * 计数钉死恰 3 处（listHeight 共用 + fontLabel + fontHelper，禁恢复整主题对象传递）。
+     * 同时 7+1 个 Renderer 守卫计数（Choice 2→0、String 正向钉翻转、SimpleList 同源常量
+     * 计数、CharRule null 占位 1→0 等）已由收口实例统一销账。</p>
      */
     @Test
     public void sourceGuardForegroundOnlyViaThemeSignalsNoSurfaceWritesPlaceholderKept() throws Exception {
@@ -366,8 +372,10 @@ public class FontSortFieldRendererThemeTest {
                 "bindStandardBorder", "bindSelectableBackground",
                 "SceneSurfaceBinder", "SceneControlChrome", "SceneStateColors", "SceneChromeTokens",
                 "SceneThemes.surface", "selectableSurface", "accentSurface",
-                "theme.textColor", "theme.mutedColor", "theme.disabledColor",
+                "theme.listHeight", "theme.fontLabel", "theme.fontHelper", "FormTheme theme",
                 "FormFieldShell", "FormPageShell", "buildBorderless", "0x",
+                // G15/收口：占位实参与整主题快照消费封死回潮
+                "ConfigTheme", "asFormTheme",
         };
         for (String token : banned) {
             Assert.assertFalse("守卫：FontSortFieldRenderer 代码不得出现 " + token, code.contains(token));
@@ -379,18 +387,20 @@ public class FontSortFieldRendererThemeTest {
                 1, countOccurrences(code, "rt.bind(SceneThemes.mutedForeground(rt), node::setTextColor)"));
         Assert.assertEquals("::setTextColor 方法引用总数 = 2 处绑定目标",
                 2, countOccurrences(code, "::setTextColor"));
-        // 装配唯一经 Support binder；theme 实参 = 兼容占位（裁决②），本类只余布局/排版消费
+        // 装配唯一经 Support binder（G15/收口后无 theme 入参，只剩 controlFn + controlHeight）
         Assert.assertEquals("外壳装配只经 FieldShellBinder 恰 1 处",
                 1, countOccurrences(code, "FieldShellBinder.build(rt, spec, adapter,"));
-        Assert.assertEquals("显式主题只允许 asFormTheme() 兼容占位形态恰 1 处",
-                1, countOccurrences(code, "ConfigTheme.asFormTheme()"));
-        Assert.assertEquals("ConfigTheme 引用总数 = import + 1 占位实参",
-                2, countOccurrences(code, "ConfigTheme"));
-        // 布局/排版常量保留（契约 §4 + Support 衔接要点 3），非外观写入点
-        Assert.assertEquals("listHeight 布局入参恰 2 处（binder 高度 + 视口高）",
-                2, countOccurrences(code, "theme.listHeight()"));
-        Assert.assertEquals("fontLabel 排版常量恰 1 处", 1, countOccurrences(code, "theme.fontLabel()"));
-        Assert.assertEquals("fontHelper 排版常量恰 1 处", 1, countOccurrences(code, "theme.fontHelper()"));
+        // 布局/排版常量 = FormTheme.defaultDark() 同源构造期直读，恰 3 处（防恢复整主题快照/对象传递）
+        String flat = code.replaceAll("\\s+", " ");
+        Assert.assertEquals("G15/收口：FormTheme.defaultDark() 同源常量直读恰 3 处"
+                        + "（controlHeight + fontLabel + fontHelper）",
+                3, countOccurrences(flat, "FormTheme.defaultDark()"));
+        Assert.assertEquals("controlHeight 常量直读 listHeight 恰 1 处",
+                1, countOccurrences(flat, "LIST_VIEWPORT_HEIGHT = FormTheme.defaultDark().listHeight()"));
+        Assert.assertEquals("行标签字号常量直读 fontLabel 恰 1 处",
+                1, countOccurrences(flat, "FONT_LABEL_SIZE = FormTheme.defaultDark().fontLabel()"));
+        Assert.assertEquals("空提示字号常量直读 fontHelper 恰 1 处",
+                1, countOccurrences(flat, "FONT_HELPER_SIZE = FormTheme.defaultDark().fontHelper()"));
         // 已迁移控件只读复用：各经工厂挂载，无第二份样式构造
         Assert.assertEquals("TextInput 工厂挂载恰 2 处（筛选框 + 索引输入）",
                 2, countOccurrences(code, "SceneTextInput.create(rt, "));

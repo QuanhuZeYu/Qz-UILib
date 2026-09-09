@@ -216,7 +216,14 @@ public class NumberFieldRendererThemeTest {
 
     // ==================== G15/Number 源码守卫 ====================
 
-    /** 主文件外观写入边界：语义色零静态直写、零旧接缝、零竞争表面；布局常量与占位形参保留。 */
+    /**
+     * 主文件外观写入边界：语义色零静态直写、零旧接缝、零竞争表面；布局/排版纯 int 常量保留。
+     *
+     * <p><b>G15/收口同步义务（已执行）</b>：binder theme 兼容占位形参已从签名删除，本类两处
+     * 占位实参随之摘除——原「asFormTheme() 兼容占位形参保留（禁止提前摘参）」正向钉翻转为
+     * 「ConfigTheme.asFormTheme 零出现」反向钉（防快照回潮）；{@code FIELD_GAP}/{@code FONT_READOUT}
+     * 纯 int 常量正向钉保持。</p>
+     */
     @Test
     public void sourceGuardNoCompetingAppearanceWrites() throws Exception {
         String code = codeWithoutComments(
@@ -232,6 +239,8 @@ public class NumberFieldRendererThemeTest {
                 "setBackdrop", "__setSurfaceElevation",
                 "SceneControlChrome", "SceneStateColors", "SceneChromeTokens", "SceneSurfaceBinder",
                 "SceneThemes.surface", "applyPanelChrome", "FormThemes.",
+                // G15/收口：theme 兼容占位实参已摘，显式旧主题快照封死回潮
+                "asFormTheme", "FormTheme",
         };
         for (String token : banned) {
             Assert.assertFalse("守卫：NumberFieldRenderer 代码不得出现 " + token, code.contains(token));
@@ -241,11 +250,11 @@ public class NumberFieldRendererThemeTest {
                 code.contains("SceneThemes.foreground("));
         Assert.assertTrue("守卫：外壳装配必须收口在 FieldShellBinder.build",
                 code.contains("FieldShellBinder.build("));
-        // 契约 §4 布局常量保留；binder 占位形参由主代理统一收口，本实例不得自行摘除/消费
+        // 契约 §4 布局/排版纯 int 常量保留（G15/收口后本类 ConfigTheme 消费只剩这两处）
         Assert.assertTrue("守卫：FIELD_GAP 布局常量保留", code.contains("ConfigTheme.FIELD_GAP"));
         Assert.assertTrue("守卫：FONT_READOUT 排版常量保留", code.contains("ConfigTheme.FONT_READOUT"));
-        Assert.assertTrue("守卫：asFormTheme() 兼容占位形参保留（禁止提前摘参）",
-                code.contains("ConfigTheme.asFormTheme()"));
+        Assert.assertEquals("G15/收口：ConfigTheme 引用计数 = import + FIELD_GAP + FONT_READOUT 恰 3",
+                3, countOccurrences(code, "ConfigTheme"));
     }
 
     // ==================== 夹具 ====================
@@ -289,5 +298,19 @@ public class NumberFieldRendererThemeTest {
     /** 复用 G15/Support 的包内共享去注释夹具，守卫只审查代码、不误伤 Javadoc 措辞。 */
     private static String codeWithoutComments(String raw) {
         return FieldShellBinderTest.codeWithoutComments(raw);
+    }
+
+    /** 子串计数（G15/收口守卫用；与 ChoiceFieldRendererThemeTest 同款实现，包内私有不可跨类复用）。 */
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int from = 0;
+        while (true) {
+            int idx = haystack.indexOf(needle, from);
+            if (idx < 0) {
+                return count;
+            }
+            count++;
+            from = idx + needle.length();
+        }
     }
 }

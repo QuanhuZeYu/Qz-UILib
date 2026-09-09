@@ -43,13 +43,13 @@ public final class BooleanFieldRenderer implements FieldRenderer {
                 Signal.create(Boolean.TRUE),
                 next -> adapter.onFieldEdit(path, next));
 
-        // G15/Boolean 销账：本渲染器不再向字段壳装配喂显式旧主题快照（原 ConfigTheme.asFormTheme()
-        // 无参调用，契约 §3 显式覆盖语义、G15/Theme 书面警示的 .get() 快照同类残留）。
+        // G15/Boolean 销账 + G15/收口：本渲染器不再向字段壳装配喂显式旧主题快照（原
+        // ConfigTheme.asFormTheme() 无参调用，契约 §3 显式覆盖语义、G15/Theme 书面警示的
+        // .get() 快照同类残留；收口后 binder 已无 theme 形参）。
         // 卡片表面（GROUP 配方）与标题/helper/error/dirty 语义色由 FieldShellBinder（G15/Support）
         // → FormFieldShell theme-aware 默认路径跟随当前来源主题，本文件零外观写入、零竞争绑定；
-        // Toggle 自身外观由 SceneToggle（G05）自持。theme 形参为 binder 的源码兼容占位
-        // （默认路径不消费，传 null 显式声明零消费），7 个 Renderer 实例迁移后由主代理统一收口删除。
+        // Toggle 自身外观由 SceneToggle（G05）自持。
         return FieldShellBinder.build(rt, spec, adapter,
-                SceneToggle.create(rt, props), null);
+                SceneToggle.create(rt, props));
     }
 }

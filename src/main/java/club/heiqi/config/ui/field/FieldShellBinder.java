@@ -5,7 +5,6 @@ import java.util.function.Supplier;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.uilib.ui.scene.form.FormFieldShell;
-import club.heiqi.uilib.ui.scene.form.FormTheme;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -22,17 +21,19 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * FormFieldShell 仍是只吃 {@code String}/{@code ReadableSignal}/{@code Supplier}/{@code FormTheme}
  * 的纯泛型组合层，本 helper 落在适配层避免污染其依赖面。</p>
  *
- * <p>两个重载对偶 {@link FormFieldShell#build} 的两个 <b>theme-aware</b>（不传
- * {@link FormTheme}）重载：单行字段（input / segmented / select / toggle）走来源主题的
- * {@code inputHeight}，多行字段（simple_list / fontSort / characterRule）传显式
- * {@code controlHeight}（布局 int，主题不接管布局）。字段卡片表面与标题/helper/error/dirty
- * 语义色全部跟随当前来源主题（{@code FormFieldShell} 默认路径），主题切换只重派生、不重建节点。</p>
+ * <p>两个重载对偶 {@link FormFieldShell#build} 的两个 <b>theme-aware</b>（不传 FormTheme）重载：
+ * 单行字段（input / segmented / select / toggle）走来源主题的 {@code inputHeight}，多行字段
+ * （simple_list / fontSort / characterRule）传显式 {@code controlHeight}（纯 int 布局入参，由各
+ * Renderer 以 {@code FormTheme.defaultDark()} 同源常量直读提供；契约 §4「主题不接管布局」）。
+ * 字段卡片表面与标题/helper/error/dirty 语义色全部跟随当前来源主题（{@code FormFieldShell}
+ * 默认路径），主题切换只重派生、不重建节点。</p>
  *
- * <p><b>G15/Support 迁移说明</b>：本 helper 原样转发 renderer 调用点的 {@code theme} 形参仅为
- * 源码兼容占位（契约 §4.2 保留旧显式入口、G15 序列中 Renderer 实例尚未摘参），默认路径
- * <b>不再消费</b>该值——既不做 {@code FormFieldShell.build} 的显式 FormTheme 值路径，
- * 也不在任何主题信号上做 {@code .get()} 快照（G15/Theme 书面警示）。待 7 个 Renderer
- * 实例迁移完成后由主代理统一收口删除该形参。</p>
+ * <p><b>G15/收口</b>：本 helper 曾按 G15/Support 裁决②保留 {@code theme} 兼容占位形参
+ * （默认路径早已不消费，Renderer 实例期间禁自行摘参）。8 个 Renderer（含 CharacterRule）全部
+ * 并入后，收口实例已将该形参从两个重载<b>直接删除</b>（4.0 施工期分支，不留 @Deprecated
+ * 缓冲）：装配唯一路径就是 theme-aware 默认路径，本类既不接收整主题对象、也不在任何主题信号
+ * 上做 {@code .get()} 快照（G15/Theme 书面警示）；多行字段高度只经 {@code controlHeight}
+ * 纯 int 入参传递。</p>
  */
 public final class FieldShellBinder {
 
@@ -51,11 +52,10 @@ public final class FieldShellBinder {
      * @param spec      字段元数据（取 path / label / helper）
      * @param adapter   草稿 signal 适配器（取 errorSignal / dirtySignal）
      * @param controlFn 控件构建函数（{@code SceneXxx.create(rt, props)} 产物）
-     * @param theme     <b>兼容占位</b>：默认路径不再消费（见类头 G15/Support 迁移说明）
      * @return 字段卡片节点（已挂载控件）
      */
     public static SceneNode build(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
-                                  Supplier<SceneNode> controlFn, FormTheme theme) {
+                                  Supplier<SceneNode> controlFn) {
         String path = spec.path();
         return FormFieldShell.build(rt,
                 FieldRenderSupport.labelOf(spec), spec.helper(),
@@ -68,19 +68,19 @@ public final class FieldShellBinder {
      * preferredHeight。
      *
      * <p>等价于 {@link FormFieldShell#build} 的 theme-aware 7 参重载。多行字段（SIMPLE_LIST 等）传
-     * {@code theme.listHeight()} 等布局常量——controlHeight 是纯 int 布局入参，主题不接管布局。
-     * 由本 helper 预先把 spec / adapter 拆解为 title / helper / errorSignal / dirtySignal 后下调。</p>
+     * {@code FormTheme.defaultDark().listHeight()} 同源纯 int（G15/收口：本 helper 不再接收
+     * 整主题对象）——controlHeight 是纯 int 布局入参，主题不接管布局。由本 helper 预先把
+     * spec / adapter 拆解为 title / helper / errorSignal / dirtySignal 后下调。</p>
      *
      * @param rt            场景运行时
      * @param spec          字段元数据（取 path / label / helper）
      * @param adapter       草稿 signal 适配器（取 errorSignal / dirtySignal）
      * @param controlFn     控件构建函数（{@code SceneXxx.create(rt, props)} 产物）
-     * @param theme         <b>兼容占位</b>：默认路径不再消费（见类头 G15/Support 迁移说明）
      * @param controlHeight 控件根 preferredHeight；{@code <=0} 时不设，让控件/容器决定
      * @return 字段卡片节点（已挂载控件）
      */
     public static SceneNode build(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
-                                  Supplier<SceneNode> controlFn, FormTheme theme, int controlHeight) {
+                                  Supplier<SceneNode> controlFn, int controlHeight) {
         String path = spec.path();
         return FormFieldShell.build(rt,
                 FieldRenderSupport.labelOf(spec), spec.helper(),

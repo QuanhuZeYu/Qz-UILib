@@ -138,16 +138,15 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
                 CharacterRuleFieldRenderer::projectValues,
                 CharacterRuleFieldRenderer::normalize);
 
-        // G15/CharRule 销账（Support 衔接要点 4，Boolean 先例）：原构造期 ConfigTheme.asFormTheme()
-        // 显式旧主题快照（缓存的 FormTheme.defaultDark() 常量）已拆除——字段壳表面与标题/helper/
-        // error/dirty 语义色由 FieldShellBinder（G15/Support）→ FormFieldShell theme-aware 默认路径
-        // 跟随来源主题重派生，本装配点零 .get() 快照。theme 形参为 binder 的源码兼容占位
-        // （默认路径不消费，传 null 显式声明零消费），待全部 Renderer 实例迁移完成后由主代理统一
-        // 收口删除该形参；controlHeight 是纯 int 布局入参（Support 要点 3 安全口径），换源为
-        // LIST_VIEWPORT_HEIGHT 同源常量（契约 §4.2 主题不接管布局）。
+        // G15/CharRule 销账（Support 衔接要点 4，Boolean 先例）+ G15/收口：原构造期
+        // ConfigTheme.asFormTheme() 显式旧主题快照（缓存的 FormTheme.defaultDark() 常量）与
+        // binder theme 兼容占位实参（曾传 null）均已拆除——字段壳表面与标题/helper/error/dirty
+        // 语义色由 FieldShellBinder（G15/Support）→ FormFieldShell theme-aware 默认路径跟随
+        // 来源主题重派生，本装配点零 .get() 快照、零主题入参。controlHeight 是纯 int 布局入参
+        // （Support 要点 3 安全口径），取 LIST_VIEWPORT_HEIGHT 同源常量（契约 §4.2 主题不接管布局）。
         return FieldShellBinder.build(rt, spec, adapter,
                 () -> buildControl(rt, bridge, path, adapter),
-                null, LIST_VIEWPORT_HEIGHT);
+                LIST_VIEWPORT_HEIGHT);
     }
 
     /**

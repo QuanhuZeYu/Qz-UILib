@@ -313,13 +313,13 @@ public class CharacterRuleFieldRendererThemeTest {
     /**
      * G15/CharRule 销账守卫：本渲染器不得再出现显式旧主题快照、{@code ConfigTheme.ERROR_COLOR}
      * 直引、旧 chrome/静态色接缝或第二套表面绑定；行错误色只经 {@code SceneThemes.resolve}
-     * 派生绑定写入（唯一写入者），装配必经 {@code FieldShellBinder}（theme 占位参恰 1 处
-     * {@code null}），排版/布局常量必经 {@code FormTheme.defaultDark()} 同源取值（恰 2 处，
+     * 派生绑定写入（唯一写入者），装配必经 {@code FieldShellBinder}（G15/收口后无 theme
+     * 入参），排版/布局常量必经 {@code FormTheme.defaultDark()} 同源取值（恰 2 处，
      * 防止恢复整主题对象快照）。已主题化控件只挂载不复制样式；手工最小按钮零表面。
      *
-     * <p><b>收口同步义务（主代理）</b>：7+1 个 Renderer 实例全部并入后收口删除
-     * {@code FieldShellBinder.build} 的 theme 形参时，本文件调用点的 {@code null} 占位实参
-     * （当前恰 1 处）须随收口同步降为 0 处，本守卫届时一并调整。</p>
+     * <p><b>收口同步义务（G15/收口实例，已执行）</b>：{@code FieldShellBinder.build} 的
+     * theme 形参已删除，本文件调用点的 {@code null} 占位实参同步摘除——原「{@code , null,}
+     * 恰 1 处」计数钉按义务降为恰 0 处（保留断言本体作回潮哨兵）。</p>
      */
     @Test
     public void sourceGuardWritesColorsOnlyViaThemeBindings() throws Exception {
@@ -358,8 +358,8 @@ public class CharacterRuleFieldRendererThemeTest {
         }
         // 计数在空白归一后的源码上进行（防换行/缩进排版影响子串匹配）。
         String flat = code.replaceAll("\\s+", " ");
-        Assert.assertEquals("守卫：theme 兼容占位参传 null 恰 1 处（禁再喂显式快照）",
-                1, countOccurrences(flat, ", null,"));
+        Assert.assertEquals("守卫：G15/收口后 theme 占位 null 实参恰 0 处（回潮即红）",
+                0, countOccurrences(flat, ", null,"));
         Assert.assertEquals("守卫：FormTheme.defaultDark() 仅排版/布局同源常量取值恰 2 处"
                         + "（禁恢复整主题快照消费）",
                 2, countOccurrences(flat, "FormTheme.defaultDark()"));

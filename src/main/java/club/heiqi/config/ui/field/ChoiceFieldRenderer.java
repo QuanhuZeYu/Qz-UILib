@@ -7,7 +7,6 @@ import java.util.List;
 import club.heiqi.config.schema.FieldConstraints;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
-import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -53,8 +52,11 @@ public final class ChoiceFieldRenderer implements FieldRenderer {
                     options,
                     Signal.create(Boolean.TRUE),
                     index -> adapter.onFieldEdit(path, options.get(index)));
+            // G15/收口：原 binder theme 兼容占位实参（ConfigTheme.asFormTheme()，默认路径不
+            // 消费）随签名收口摘除——卡片表面与语义色经 FieldShellBinder → FormFieldShell
+            // theme-aware 默认路径跟随来源主题，本类零外观写入。
             return FieldShellBinder.build(rt, spec, adapter,
-                    SceneSegmented.create(rt, props), ConfigTheme.asFormTheme());
+                    SceneSegmented.create(rt, props));
         }
 
         SceneSelect.Props props = new SceneSelect.Props(
@@ -63,6 +65,6 @@ public final class ChoiceFieldRenderer implements FieldRenderer {
                 Signal.create(Boolean.TRUE),
                 index -> adapter.onFieldEdit(path, options.get(index)));
         return FieldShellBinder.build(rt, spec, adapter,
-                SceneSelect.create(rt, props), ConfigTheme.asFormTheme());
+                SceneSelect.create(rt, props));
     }
 }

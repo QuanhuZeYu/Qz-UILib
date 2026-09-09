@@ -42,9 +42,9 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *       {@code assertNotEquals}），且草稿保留、节点身份不变、effect 数不增；</li>
  *   <li>dirty/error 桥不动：经渲染器路径，静默=配方缘色、dirty=accent、error=errorText 可辨；</li>
  *   <li>卸载回收：dispose 后外观绑定 effect 回基线，主题更新不再写入旧节点；</li>
- *   <li>源码守卫：渲染器零外观写入点、零旧接缝、零主题快照，保留
- *       {@code FieldShellBinder.build} 与 {@code ConfigTheme.asFormTheme()} 兼容占位形参
- *       （G15/Support 衔接要点：Renderer 实例期间禁自行摘参，由主代理统一收口）。</li>
+ *   <li>源码守卫：渲染器零外观写入点、零旧接缝、零主题快照；装配钉 {@code FieldShellBinder.build}
+ *       （G15/Support 裁决：binder {@code ConfigTheme.asFormTheme()} 兼容占位实参由主代理统一
+ *       收口——<b>G15/收口已执行</b>，形参与占位实参均摘除，守卫同步为「ConfigTheme 零出现」钉）。</li>
  * </ol>
  */
 public class StringFieldRendererLiquidGlassTest {
@@ -259,9 +259,10 @@ public class StringFieldRendererLiquidGlassTest {
      *
      * <p>禁则涵盖契约 §4 全部外观写入面（set 色/边框/圆角/backdrop、旧 chrome 接缝、
      * 主题快照解引用、显式占位色），同时正向钉住：装配只经 {@link FieldShellBinder.build}、
-     * 控件只经 {@code SceneTextInput.create} 旧工厂（已主题化本体），且
-     * {@code ConfigTheme.asFormTheme()} 兼容占位实参在 Renderer 实例期间保留（G15/Support
-     * 裁决：7 个 Renderer 全并入后由主代理统一收口摘除，期间禁自行摘参）。</p>
+     * 控件只经 {@code SceneTextInput.create} 旧工厂（已主题化本体）。
+     * {@code ConfigTheme.asFormTheme()} 兼容占位实参已随 <b>G15/收口</b>从调用点摘除
+     * （binder theme 形参删除），守卫同步翻转为「ConfigTheme/asFormTheme 零出现」计数钉
+     * （原「Renderer 实例期间必须保留占位实参」正向钉履行收口义务后作废）。</p>
      */
     @Test
     public void sourceGuardRendererStaysNonVisual() throws Exception {
@@ -275,6 +276,8 @@ public class StringFieldRendererLiquidGlassTest {
                 "SceneControlChrome", "SceneStateColors", "SceneChromeTokens",
                 "SceneSurfaceBinder", "SceneThemes.", "FormThemes.", "defaultDark",
                 ".get(", "placeholderColor", "bindStandardBorder", "bindSelectableBackground",
+                // G15/收口：theme 兼容占位实参随签名删除，显式旧主题触点清零并封死回潮
+                "ConfigTheme", "asFormTheme", "FormTheme",
         };
         for (String token : banned) {
             Assert.assertFalse("守卫：StringFieldRenderer 代码不得出现 " + token, code.contains(token));
@@ -285,12 +288,8 @@ public class StringFieldRendererLiquidGlassTest {
                 code.contains("SceneTextInput.create("));
         Assert.assertTrue("守卫：信号收敛应复用 FieldRenderSupport.toStringSignal",
                 code.contains("FieldRenderSupport.toStringSignal("));
-        Assert.assertTrue("守卫：binder 兼容占位实参 ConfigTheme.asFormTheme() 必须原样保留（禁自行摘参）",
-                code.contains("ConfigTheme.asFormTheme()"));
-        String withoutBridgeArg = code.replace("ConfigTheme.asFormTheme()", "")
-                .replaceAll("(?m)^import\\s[^;]+;$", "");
-        Assert.assertFalse("守卫：ConfigTheme 只允许作为 binder 兼容占位实参出现一次（禁取静态色/快照）",
-                withoutBridgeArg.contains("ConfigTheme"));
+        Assert.assertEquals("G15/收口：ConfigTheme 引用计数归零（import 已随占位实参移除）",
+                0, countOccurrences(code, "ConfigTheme"));
     }
 
     // ==================== 夹具 ====================
@@ -328,5 +327,19 @@ public class StringFieldRendererLiquidGlassTest {
             }
         }
         return sb.toString();
+    }
+
+    /** 子串计数（G15/收口守卫用；与 ChoiceFieldRendererThemeTest 同款实现，包内私有不可跨类复用）。 */
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int from = 0;
+        while (true) {
+            int idx = haystack.indexOf(needle, from);
+            if (idx < 0) {
+                return count;
+            }
+            count++;
+            from = idx + needle.length();
+        }
     }
 }
