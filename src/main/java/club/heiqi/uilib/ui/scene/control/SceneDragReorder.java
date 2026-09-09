@@ -22,6 +22,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 import club.heiqi.uilib.util.UiNumbers;
 
 /**
@@ -30,6 +33,13 @@ import club.heiqi.uilib.util.UiNumbers;
  * <p>本类收口列表拖拽排序的把手节点、输入 handler、落点判定与列表移动算法。
  * 控件仍以 signal 作为唯一状态写入入口；拖拽瞬态只保存在 handler 闭包 final 容器中，
  * 不在控件类或本工具类上增加实例状态（守 R1/I11）。</p>
+ *
+ * <p><b>外观契约（全库默认液态玻璃样式 G12/拖拽把手）</b>：把手底色取主题
+ * {@code Role.INDICATOR} 配方的 idle/hovered/pressed tint 档（把手态），图标色取
+ * {@code mutedForeground}（idle）/{@code accent}（hover·拖拽）；两者都经响应式绑定
+ * 派生，主题切换只重算颜色、不重建节点。把手是行内小配件：不装滤镜、不叠玻璃
+ * （不写 backdrop/border/surfaceElevation）；宽度、高度与圆角是布局几何常量，
+ * 不随主题变化。</p>
  */
 public final class SceneDragReorder {
 
@@ -37,12 +47,6 @@ public final class SceneDragReorder {
     private static final int HANDLE_WIDTH = 24;
     /** 拖拽把手图标。 */
     private static final String HANDLE_ICON = "\u2261";
-    /** 拖拽把手 idle 背景色。 */
-    private static final int HANDLE_BG_IDLE = 0x00000000;
-    /** 拖拽把手 hover 背景色。 */
-    private static final int HANDLE_BG_HOVER = SceneChromeTokens.BG_HOVER;
-    /** 拖拽把手 pressed 背景色。 */
-    private static final int HANDLE_BG_PRESSED = SceneChromeTokens.BG_PRESSED;
     /** 拖拽激活阈值，单位像素。 */
     private static final int DRAG_ACTIVATION_THRESHOLD_PX = 5;
     /** 自动滚动边缘触发区域，单位像素。 */
@@ -216,26 +220,32 @@ public final class SceneDragReorder {
         handle.setPreferredHeight(SceneChromeTokens.INPUT_HEIGHT);
         handle.setCornerRadius(SceneChromeTokens.RADIUS_MD);
         handle.setCursor(SceneCursor.GRAB);
-        handle.setBackgroundColor(HANDLE_BG_IDLE);
 
         SceneNode icon = new SceneNode();
         icon.setHitTestable(false);
         icon.setText(HANDLE_ICON);
-        icon.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
         handle.appendChild(icon);
 
         SceneInteractionState interaction = rt.interactionState(handle);
-        rt.bindComputed(() -> {
-            boolean hovered = Boolean.TRUE.equals(interaction.hovered().get());
-            boolean pressed = Boolean.TRUE.equals(interaction.pressed().get());
-            if (pressed) {
-                return HANDLE_BG_PRESSED;
-            }
-            if (hovered) {
-                return HANDLE_BG_HOVER;
-            }
-            return HANDLE_BG_IDLE;
-        }, handle::setBackgroundColor);
+        // 时序契约：构造期声明关心，Router 后续 writeHovered/writePressed 才会落到已创建的 signal。
+        interaction.hovered();
+        interaction.pressed();
+        // 底色消费 INDICATOR 配方的 tint 档（把手态）；图标色取主题语义前景。
+        // 只绑定这两个属性：不装滤镜、不写 border/cornerRadius/surfaceElevation（把手是行内小配件）。
+        ReadableSignal<SceneSurfaceStyle> indicatorSurface = SceneThemes.surface(rt, SceneTheme.Role.INDICATOR);
+        ReadableSignal<Integer> iconIdleColor = SceneThemes.mutedForeground(rt);
+        ReadableSignal<Integer> iconActiveColor = SceneThemes.accent(rt);
+        rt.bindComputed(() -> resolveHandleBackground(
+                        indicatorSurface.get(),
+                        Boolean.TRUE.equals(interaction.pressed().get()),
+                        Boolean.TRUE.equals(interaction.hovered().get())),
+                handle::setBackgroundColor);
+        rt.bindComputed(() -> resolveHandleIconColor(
+                        iconIdleColor.get(),
+                        iconActiveColor.get(),
+                        Boolean.TRUE.equals(interaction.pressed().get()),
+                        Boolean.TRUE.equals(interaction.hovered().get())),
+                icon::setTextColor);
         rt.bind(dragOffsetSig, dy -> draggedRow(handle).setTransform(Transform.translate(0.0f, dy.floatValue())));
 
         rt.on(handle, SceneEventType.POINTER_DOWN, (SceneEvent ev, SceneEventContext ctx) -> {
@@ -402,6 +412,41 @@ public final class SceneDragReorder {
             }
         });
         return handle;
+    }
+
+    /**
+     * 解析把手底色：pressed（拖拽）&gt; hover &gt; idle，全部取主题 {@code INDICATOR}
+     * 配方的对应档 tint（极淡覆盖，不装滤镜）。
+     *
+     * @param surface 当前来源主题的 INDICATOR 配方
+     * @param pressed 是否按下/拖拽中
+     * @param hovered 是否悬停
+     * @return 把手底色 ARGB
+     */
+    private static int resolveHandleBackground(SceneSurfaceStyle surface, boolean pressed, boolean hovered) {
+        if (pressed) {
+            return surface.getPressed().getTint();
+        }
+        if (hovered) {
+            return surface.getHovered().getTint();
+        }
+        return surface.getIdle().getTint();
+    }
+
+    /**
+     * 解析把手图标色：hover/拖拽取主题 {@code accent}，idle 取 {@code mutedForeground}。
+     *
+     * @param idleColor    主题次要前景（idle）
+     * @param activeColor  主题强调色（hover·拖拽）
+     * @param pressed      是否按下/拖拽中
+     * @param hovered      是否悬停
+     * @return 图标色 ARGB
+     */
+    private static int resolveHandleIconColor(int idleColor, int activeColor, boolean pressed, boolean hovered) {
+        if (pressed || hovered) {
+            return activeColor;
+        }
+        return idleColor;
     }
 
     /**
