@@ -399,14 +399,14 @@ public class SceneSegmentedTest {
     /**
      * 默认工厂路径（不传任何样式参数）：底座 background/border/borderWidth/cornerRadius/
      * backdrop/surfaceElevation 全部等于 {@code SceneThemes.DEFAULT.surface(Role.TOOLBAR)}
-     * 的对应值；每段走 INDICATOR 配方（选中 tint 的 RGB 换成强调色、强度 0x59），
-     * 且段不重复安装滤镜（backdrop 为 null，背景由底座统一采样一次）。
+     * 的对应值；每段走 INDICATOR 配方（选中 tint 的 RGB 换成强调色、强度 0x59）
+     * 并保留配方自带的轻滤镜（每段恰好一条 BACKDROP，段内文字不重复采样）。
      */
     @Test
     public void defaultFactoryShouldConsumeToolbarBaseAndIndicatorSelection() {
         doLayout();
 
-        // 底座 = TOOLBAR 配方（导航栏唯一滤镜安装点）
+        // 底座 = TOOLBAR 配方
         Assert.assertEquals("底座染色 = TOOLBAR 配方 idle tint", BASE_IDLE, segRoot.getBackgroundColor());
         Assert.assertEquals("底座圆角 = TOOLBAR 配方圆角",
                 BASE_SURFACE.getCornerRadius(), segRoot.getCornerRadius());

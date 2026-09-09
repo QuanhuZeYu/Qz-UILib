@@ -47,7 +47,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <h3>外观归属：底座 TOOLBAR + 段 INDICATOR 选中配方，唯一写入者是表面绑定器</h3>
  * <p><b>底座</b>（primitive root）走 {@link SceneThemes#surface} 的 {@link SceneTheme.Role#TOOLBAR}
  * 配方：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 全归
- * {@link SceneSurfaceBinder}，整条导航栏只在这一处安装滤镜。旧的静态边框/圆角设值与
+ * {@link SceneSurfaceBinder}。旧的静态边框/圆角设值与
  * {@code SceneControlChrome.bindStandardBorder}/{@code SceneStateColors} 写入者已删除。</p>
  *
  * <p><b>每段</b>走 {@link SceneThemes#selectableSurface} 的 {@link SceneTheme.Role#INDICATOR} 配方：
