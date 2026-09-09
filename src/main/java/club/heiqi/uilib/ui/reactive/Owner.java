@@ -1,7 +1,9 @@
 package club.heiqi.uilib.ui.reactive;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 生命周期作用域（信条三：组件挂载/卸载）。
@@ -21,6 +23,9 @@ public final class Owner {
     private final List<Runnable> cleanups = new ArrayList<>();
     private final Owner parent;
     private boolean disposed = false;
+
+    /** 作用域上下文表（懒创建）：键为调用方自持的标记对象，供子作用域沿父链继承。 */
+    private Map<Object, Object> scopeValues;
 
     /** 创建一个根 Owner（无父作用域）。 */
     public Owner() {
@@ -134,9 +139,86 @@ public final class Owner {
             cleanups.get(i).run();
         }
         cleanups.clear();
+        // 作用域销毁即上下文不可见：清表释放引用（findScope 也已对 disposed 直接返回 null）。
+        if (scopeValues != null) {
+            scopeValues.clear();
+            scopeValues = null;
+        }
         if (parent != null) {
             parent.children.remove(this);
         }
+    }
+
+    /**
+     * 在本作用域写入一个上下文值，供本作用域与子作用域读取。
+     *
+     * <p>键是调用方自持的标记对象（建议 {@code static final} 常量），相等按 {@link Object#equals}；
+     * 值不做拷贝、不做深比较。{@code value} 为 null 表示移除本作用域上的该键，父作用域的值重新可见。
+     * 本作用域已 {@link #dispose()} 时写入无效（作用域已不可见）。</p>
+     *
+     * <p>本能力只提供「值沿 Owner 树继承」这一件事，不建立选择器、优先级合并或样式级联：
+     * 冲突消解由消费方（如主题解析）自行定义。</p>
+     *
+     * @param key   非 null 标记键
+     * @param value 上下文值，null 表示移除
+     */
+    public void setScope(Object key, Object value) {
+        if (key == null) {
+            throw new IllegalArgumentException("key 不可为 null");
+        }
+        if (value == null) {
+            if (scopeValues != null) {
+                scopeValues.remove(key);
+            }
+            return;
+        }
+        if (disposed) {
+            return;
+        }
+        if (scopeValues == null) {
+            scopeValues = new HashMap<Object, Object>();
+        }
+        scopeValues.put(key, value);
+    }
+
+    /**
+     * 沿本作用域到根作用域向上查找首个非 null 上下文值。
+     *
+     * <p>本作用域已 {@link #dispose()} 时返回 null（作用域销毁即上下文不可见）；父链上出现
+     * 已销毁的祖先同样按断链处理。键不存在时返回 null。</p>
+     *
+     * @param key 标记键，null 返回 null
+     * @return 上下文值或 null
+     */
+    public Object findScope(Object key) {
+        if (key == null) {
+            return null;
+        }
+        for (Owner owner = this; owner != null; owner = owner.parent) {
+            if (owner.disposed) {
+                return null;
+            }
+            if (owner.scopeValues != null) {
+                Object value = owner.scopeValues.get(key);
+                if (value != null) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@link #findScope(Object)} 的类型化便捷入口：值类型不匹配时返回 null（不抛异常）。
+     *
+     * @param key  标记键
+     * @param type 期望值类型，null 返回 null
+     * @param <T>  值类型
+     * @return 类型匹配的上下文值，否则 null
+     */
+    public <T> T findScope(Object key, Class<T> type) {
+        Object value = findScope(key);
+        return type != null && type.isInstance(value) ? type.cast(value) : null;
     }
 
     /** 是否已销毁。 */

@@ -17,8 +17,9 @@ import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /** 使用真实宿主输入源封板再 route，避免只有 synthetic KEY_UP 的测试掩盖游戏缺失松键。 */
 public class LwjglButtonKeyboardFeedbackTest {
@@ -60,7 +61,8 @@ public class LwjglButtonKeyboardFeedbackTest {
         SceneInputFrame down = drainAndRoute();
         Assert.assertEquals(1, down.getKeyEvents().size());
         Assert.assertTrue(pressed.get());
-        Assert.assertEquals(SceneChromeTokens.BG_PRESSED, button.getBackgroundColor());
+        Assert.assertEquals(SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_STANDARD)
+                .getPressed().getTint(), button.getBackgroundColor());
         Assert.assertEquals(1, clicks.get());
         Assert.assertTrue("持续按住不合成新 DOWN 或 UP", drainAndRoute().getKeyEvents().isEmpty());
         source.pushKeyTyped((char) 13, 28, reader.nowNanos());
@@ -71,7 +73,8 @@ public class LwjglButtonKeyboardFeedbackTest {
         Assert.assertEquals(1, up.getKeyEvents().size());
         Assert.assertEquals(SceneKeyAction.RELEASED, up.getKeyEvents().get(0).getAction());
         Assert.assertFalse(pressed.get());
-        Assert.assertEquals(SceneChromeTokens.BG_DEFAULT, button.getBackgroundColor());
+        Assert.assertEquals(SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_STANDARD)
+                .getIdle().getTint(), button.getBackgroundColor());
         Assert.assertEquals(2, clicks.get());
         Assert.assertTrue("释放只发一次", drainAndRoute().getKeyEvents().isEmpty());
     }

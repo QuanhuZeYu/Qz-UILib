@@ -29,8 +29,10 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneDialog 独立单元测试：遮罩模态拦截、卡片窗口中心对齐与全屏遮罩、按钮点击/关闭语义、
@@ -443,44 +445,59 @@ public class SceneDialogTest {
                 new SceneDialog.Button("确定", SceneDialog.ButtonKind.PRIMARY, false, null)));
         SceneNode ok = buttonNode(1);
         int[] c = absCenter(ok);
-        Assert.assertEquals("静止态=ACCENT 主色", SceneChromeTokens.ACCENT, ok.getBackgroundColor());
+        Assert.assertEquals("静止态=主题主按钮配方",
+                primarySurface().getIdle().getTint(), ok.getBackgroundColor());
 
         routePointer(ScenePointerAction.MOVE, c[0], c[1]);
-        Assert.assertEquals("悬停切 ACCENT_HOVER", SceneChromeTokens.ACCENT_HOVER, ok.getBackgroundColor());
+        Assert.assertEquals("悬停切主按钮悬停档", primarySurface().getHovered().getTint(), ok.getBackgroundColor());
         Assert.assertEquals("悬停切手型光标", SceneCursor.POINTER, ok.getCursor());
 
         routePointer(ScenePointerAction.BUTTON_DOWN, c[0], c[1]);
-        Assert.assertEquals("按下切 ACCENT_PRESSED", SceneChromeTokens.ACCENT_PRESSED, ok.getBackgroundColor());
+        Assert.assertEquals("按下切主按钮按下档", primarySurface().getPressed().getTint(), ok.getBackgroundColor());
 
         routePointer(ScenePointerAction.BUTTON_UP, c[0], c[1]);
-        Assert.assertEquals("抬起回到悬停档", SceneChromeTokens.ACCENT_HOVER, ok.getBackgroundColor());
+        Assert.assertEquals("抬起回到悬停档", primarySurface().getHovered().getTint(), ok.getBackgroundColor());
 
         routePointer(ScenePointerAction.MOVE, 4, 4); // 移到遮罩上（按钮外）
-        Assert.assertEquals("移开复原静止态", SceneChromeTokens.ACCENT, ok.getBackgroundColor());
+        Assert.assertEquals("移开复原静止态", primarySurface().getIdle().getTint(), ok.getBackgroundColor());
     }
 
-    /** 普通按钮：静止落面板底色、悬停提亮一档（旧实现把 hover 色当静态底色写死）。 */
+    /** 主题按钮角色配方（对话框按钮复用 SceneButton，默认外观由主题提供）。 */
+    private static SceneSurfaceStyle standardSurface() {
+        return SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_STANDARD);
+    }
+
+    private static SceneSurfaceStyle primarySurface() {
+        return SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_PRIMARY);
+    }
+
+    private static SceneSurfaceStyle dangerSurface() {
+        return SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_DANGER);
+    }
+
+    /** 普通按钮：静止落主题标准按钮配方、悬停提亮一档（旧实现把 hover 色当静态底色写死）。 */
     @Test
     public void normalButtonRestsOnStandardBackgroundAndLightensOnHover() {
         openDialog(Arrays.asList(SceneDialog.Button.of("取消", null)));
         SceneNode cancel = buttonNode(0);
-        Assert.assertEquals("静止态=面板底色", SceneChromeTokens.BG_DEFAULT, cancel.getBackgroundColor());
+        Assert.assertEquals("静止态=主题标准按钮配方",
+                standardSurface().getIdle().getTint(), cancel.getBackgroundColor());
         int[] c = absCenter(cancel);
         routePointer(ScenePointerAction.MOVE, c[0], c[1]);
-        Assert.assertEquals("悬停提亮一档", SceneChromeTokens.BG_HOVER, cancel.getBackgroundColor());
+        Assert.assertEquals("悬停提亮一档", standardSurface().getHovered().getTint(), cancel.getBackgroundColor());
     }
 
-    /** 危险按钮：底色收口到共享 token（旧实现私藏一个同名不同值的 DANGER_BG），且同样有悬停档。 */
+    /** 危险按钮：底色来自主题危险按钮角色，且同样有悬停档。 */
     @Test
     public void dangerButtonUsesSharedDangerTokensAndHovers() {
         openDialog(Arrays.asList(
                 new SceneDialog.Button("删除", SceneDialog.ButtonKind.DANGER, false, null)));
         SceneNode danger = buttonNode(0);
-        Assert.assertEquals("危险底走 token", SceneChromeTokens.DANGER_BG, danger.getBackgroundColor());
+        Assert.assertEquals("危险底走主题危险角色", dangerSurface().getIdle().getTint(), danger.getBackgroundColor());
         int[] c = absCenter(danger);
         routePointer(ScenePointerAction.MOVE, c[0], c[1]);
         Assert.assertEquals("危险按钮也有悬停反馈",
-                SceneChromeTokens.DANGER_BG_HOVER, danger.getBackgroundColor());
+                dangerSurface().getHovered().getTint(), danger.getBackgroundColor());
     }
 
     // ==================== 内聚化：不得再自带按钮/文本/调色板 ====================

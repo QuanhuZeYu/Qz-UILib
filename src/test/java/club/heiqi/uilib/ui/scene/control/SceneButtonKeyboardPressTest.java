@@ -18,10 +18,11 @@ import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /** 键盘反馈消费同一个 pressed signal，动作仍按每次 KEY_DOWN 立即触发。 */
 public class SceneButtonKeyboardPressTest {
@@ -66,7 +67,8 @@ public class SceneButtonKeyboardPressTest {
             Assert.assertEquals("DOWN 同步触发动作，无需等松键或 flush", before + 1, clicks.get());
             runtime.flush();
             Assert.assertTrue(pressed.get());
-            Assert.assertEquals(SceneChromeTokens.BG_PRESSED, button.getBackgroundColor());
+            Assert.assertEquals(SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_STANDARD)
+                    .getPressed().getTint(), button.getBackgroundColor());
             route(key(key, SceneKeyAction.REPEATED));
             runtime.flush();
             Assert.assertEquals("重复 KEY_DOWN 保持既有动作次数", before + 2, clicks.get());
@@ -74,7 +76,8 @@ public class SceneButtonKeyboardPressTest {
             route(key(key, SceneKeyAction.RELEASED));
             runtime.flush();
             Assert.assertFalse(pressed.get());
-            Assert.assertEquals(SceneChromeTokens.BG_DEFAULT, button.getBackgroundColor());
+            Assert.assertEquals(SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_STANDARD)
+                    .getIdle().getTint(), button.getBackgroundColor());
             Assert.assertEquals("松键不再触发动作", before + 2, clicks.get());
         }
     }

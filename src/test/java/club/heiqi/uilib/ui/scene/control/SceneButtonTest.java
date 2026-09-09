@@ -25,6 +25,9 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneButton 端到端单元测试 —— 第 0 段地基总验收试金石（8 试金石）。
@@ -65,16 +68,29 @@ public class SceneButtonTest {
     /** 沙箱约束高度 */
     private static final int CANVAS_HEIGHT = 100;
 
-    private static final int BG_ENABLED = SceneChromeTokens.BG_DEFAULT;
-    private static final int BG_HOVER = SceneChromeTokens.BG_HOVER;
-    private static final int BG_PRESSED = SceneChromeTokens.BG_PRESSED;
-    private static final int BG_DISABLED = SceneChromeTokens.BG_DISABLED;
-    private static final int TEXT_ENABLED = SceneChromeTokens.TEXT_PRIMARY;
-    private static final int TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
+    /**
+     * 库默认主题的按钮角色配方：默认工厂路径的外观唯一来源。
+     * 断言取配方值而不是硬编码色号，主题集中调参时本类自动跟随。
+     */
+    private static final SceneSurfaceStyle BUTTON_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_STANDARD);
+    private static final SceneSurfaceStyle PRIMARY_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_PRIMARY);
+    private static final SceneSurfaceStyle DANGER_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_DANGER);
+    private static final int BG_ENABLED = BUTTON_SURFACE.getIdle().getTint();
+    private static final int BG_HOVER = BUTTON_SURFACE.getHovered().getTint();
+    private static final int BG_PRESSED = BUTTON_SURFACE.getPressed().getTint();
+    private static final int BG_DISABLED = BUTTON_SURFACE.getDisabled().getTint();
+    private static final int TEXT_ENABLED = BUTTON_SURFACE.getForeground();
     private static final int PADDING = SceneChromeTokens.PAD_MD;
-    private static final int BUTTON_RADIUS = SceneChromeTokens.RADIUS_MD;
+    private static final int BUTTON_RADIUS = BUTTON_SURFACE.getCornerRadius();
+    /** 禁用态不再重染文字，改用内容整体透明度表达。 */
+    private static final float DISABLED_OPACITY = BUTTON_SURFACE.getDisabledOpacity();
     /** FixedTextMeasurer 每字符固定宽度（与 setUp 注入的 stub 保持一致） */
     private static final int STUB_CHAR_WIDTH = 8;
+    /** 浮点比较容差 */
+    private static final float EPSILON = 0.0001F;
 
     @Before
     public void setUp() {
@@ -238,23 +254,25 @@ public class SceneButtonTest {
     // ==================== 试金石 3：边框 + 胶囊圆角 ====================
 
     /**
-     * 试金石 3：paint plan 含 BORDER 命令且 cornerRadius==RADIUS_MD（标准圆角）。
+     * 试金石 3：默认配方带实体高度，表面走浮雕路径——不再单独发 BORDER 命令，
+     * 边框改由方向性 ROUNDED_BAND 倒角表达；圆角半径取配方 cornerRadius。
      */
     @Test
-    public void paintPlanShouldContainBorderWithCapsuleRadius() {
+    public void paintPlanShouldRenderReliefBorderWithRecipeRadius() {
         doLayout();
         PaintPlan plan = doPaint();
         List<PaintCommand> cmds = plan.getCommands();
 
-        PaintCommand border = firstOfType(cmds, PaintCommandType.BORDER);
-        Assert.assertNotNull("应含 BORDER 命令", border);
-        Assert.assertEquals("标准圆角 cornerRadius==RADIUS_MD", BUTTON_RADIUS, border.getCornerRadius());
-        Assert.assertEquals("边框宽度 1", 1, border.getBorderWidth());
-
-        // 背景命令也应带胶囊圆角
+        Assert.assertEquals("节点圆角来自配方", BUTTON_RADIUS, buttonRoot.getCornerRadius());
         PaintCommand bg = firstOfType(cmds, PaintCommandType.BACKGROUND);
         Assert.assertNotNull("应含 BACKGROUND 命令", bg);
-        Assert.assertEquals("背景同样带标准圆角", BUTTON_RADIUS, bg.getCornerRadius());
+        Assert.assertEquals("浮雕面按厚度内缩一像素后的四角半径",
+                BUTTON_RADIUS - 1, bg.getCornerRadiusTopLeft());
+
+        Assert.assertNull("实体浮雕路径不再单独发 BORDER 命令",
+                firstOfType(cmds, PaintCommandType.BORDER));
+        Assert.assertNotNull("边框由方向性倒角表达",
+                firstOfType(cmds, PaintCommandType.ROUNDED_BAND));
     }
 
     // ==================== 试金石 4：overflow:hidden ====================
@@ -284,26 +302,28 @@ public class SceneButtonTest {
     // ==================== 试金石 5：文本色（非白） ====================
 
     /**
-     * 试金石 5：disabled 态下 TEXT 命令的 TextStyle.color == TEXT_DISABLED（证明文本色可控非写死白）。
+     * 试金石 5：文本色来自配方前景（非写死白）；禁用态不重染文字，改用内容透明度表达
+     * ——textColor 的唯一写入者是 bindForeground，禁用反馈落在 motionRoot 的 opacity。
      */
     @Test
-    public void disabledTextColorShouldBeNonWhite() {
-        // 先确认 enabled 态文本白
+    public void textColorComesFromRecipeAndDisabledDimsContent() {
         labelSignal.set("Btn");
         PaintPlan planEnabled = frame();
         PaintCommand textEnabled = firstOfType(planEnabled.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("enabled 态应有 TEXT 命令", textEnabled);
-        Assert.assertEquals("enabled 文本色白", TEXT_ENABLED, textEnabled.getTextStyle().getColor());
+        Assert.assertEquals("enabled 文本色来自配方前景", TEXT_ENABLED, textEnabled.getTextStyle().getColor());
+        Assert.assertNotEquals("配方前景不得是写死白", 0xFFFFFFFF, TEXT_ENABLED);
+        Assert.assertEquals("启用态内容不透明", 1.0F, labelNode().getOpacity(), EPSILON);
 
-        // 切 disabled
         enabledSignal.set(Boolean.FALSE);
         PaintPlan planDisabled = frame();
         PaintCommand textDisabled = firstOfType(planDisabled.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("disabled 态应有 TEXT 命令", textDisabled);
-        Assert.assertEquals("disabled 文本色应为暗灰（非白）",
-                TEXT_DISABLED, textDisabled.getTextStyle().getColor());
-        Assert.assertNotEquals("disabled 文本色绝不等于白",
-                TEXT_ENABLED, textDisabled.getTextStyle().getColor());
+        Assert.assertEquals("禁用不重染文字", TEXT_ENABLED, textDisabled.getTextStyle().getColor());
+        Assert.assertEquals("禁用用内容透明度表达", DISABLED_OPACITY, labelNode().getOpacity(), EPSILON);
+        PaintCommand opacity = firstOfType(planDisabled.getCommands(), PaintCommandType.PUSH_OPACITY);
+        Assert.assertNotNull("禁用透明度进入合成命令", opacity);
+        Assert.assertEquals(DISABLED_OPACITY, opacity.getOpacity(), EPSILON);
     }
 
     // ==================== 试金石 6：四态背景切换 + 终极断言 R-D1 ====================
@@ -363,7 +383,7 @@ public class SceneButtonTest {
     }
 
     @Test
-    public void configMotionShouldInterpolateStateLayerAtFastDuration() {
+    public void configMotionShouldInterpolateStateLayerAtRecipeDuration() {
         runtime.__enableMotion();
         doLayout();
 
@@ -372,15 +392,15 @@ public class SceneButtonTest {
         Assert.assertEquals("目标变化后尚未采样", BG_ENABLED, buttonRoot.getBackgroundColor());
 
         runtime.__sampleMotion(1_000_000L);
-        runtime.__sampleMotion(46_000_000L);
+        runtime.__sampleMotion(81_000_000L);
         int midpoint = buttonRoot.getBackgroundColor();
-        Assert.assertNotEquals("fast 半程已离开起点", BG_ENABLED, midpoint);
-        Assert.assertNotEquals("fast 半程尚未到终点", BG_DISABLED, midpoint);
+        Assert.assertNotEquals("半程已离开起点", BG_ENABLED, midpoint);
+        Assert.assertNotEquals("半程尚未到终点", BG_DISABLED, midpoint);
         LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
         Assert.assertEquals("state-layer Motion 零重排", 0, result.getRelayoutCount());
 
-        runtime.__sampleMotion(91_000_000L);
-        Assert.assertEquals("fast 90ms 到达 disabled", BG_DISABLED, buttonRoot.getBackgroundColor());
+        runtime.__sampleMotion(BUTTON_SURFACE.getTransitionMillis() * 1_000_000L + 1_000_000L);
+        Assert.assertEquals("配方过渡时长到达 disabled", BG_DISABLED, buttonRoot.getBackgroundColor());
     }
 
     // ==================== 试金石 7：Enter/Space 激活 ====================
@@ -484,18 +504,18 @@ public class SceneButtonTest {
         doLayout();
 
         // 启用态背景 = ACCENT（蓝）
-        Assert.assertEquals("primary 启用背景 ACCENT",
-                SceneChromeTokens.ACCENT, buttonRoot.getBackgroundColor());
-        // 文本色 = TEXT_ON_ACCENT（白）
+        Assert.assertEquals("primary 启用背景取主题 BUTTON_PRIMARY 配方",
+                PRIMARY_SURFACE.getIdle().getTint(), buttonRoot.getBackgroundColor());
+        // 文本色 = 强调底前景（主题语义色）
         PaintPlan plan = doPaint();
         PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertNotNull("primary 应有 TEXT 命令", text);
-        Assert.assertEquals("primary 文本白",
-                SceneChromeTokens.TEXT_ON_ACCENT, text.getTextStyle().getColor());
+        Assert.assertEquals("primary 文本用强调底前景",
+                PRIMARY_SURFACE.getForeground().intValue(), text.getTextStyle().getColor());
     }
 
     /**
-     * 试金石 9b：primary variant disabled 态背景为 BG_DISABLED，文本为 TEXT_DISABLED。
+     * 试金石 9b：primary variant disabled 态背景取配方禁用档，文字不重染、由透明度表达。
      */
     @Test
     public void primaryVariantDisabledUsesDisabledColors() {
@@ -517,20 +537,21 @@ public class SceneButtonTest {
         runtime.flush();
         doLayout();
 
-        Assert.assertEquals("primary disabled 背景 BG_DISABLED",
-                SceneChromeTokens.BG_DISABLED, buttonRoot.getBackgroundColor());
+        Assert.assertEquals("primary disabled 背景取配方禁用档",
+                PRIMARY_SURFACE.getDisabled().getTint(), buttonRoot.getBackgroundColor());
         PaintPlan plan = doPaint();
         PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
-        Assert.assertEquals("primary disabled 文本 TEXT_DISABLED",
-                SceneChromeTokens.TEXT_DISABLED, text.getTextStyle().getColor());
+        Assert.assertEquals("primary disabled 文本仍用配方前景",
+                PRIMARY_SURFACE.getForeground().intValue(), text.getTextStyle().getColor());
+        Assert.assertEquals("禁用用透明度表达", PRIMARY_SURFACE.getDisabledOpacity(),
+                labelNode().getOpacity(), EPSILON);
     }
 
     /**
-     * 试金石 9c：DANGER variant 走 Red 通道四态，文本反白。
+     * 试金石 9c：DANGER variant 走危险通道四态，文本用强调底前景。
      *
-     * <p>该变体是为「对话框危险按钮」补的：历史上对话框自带一份私藏 {@code 0xFFB3261E}，
-     * 与 {@link SceneChromeTokens#DANGER_BG} 同名不同值，且完全没有 disabled/hover 派生 ——
-     * {@code DANGER_BG_DISABLED} 这个 token 因此长期零消费者。收口后三态必须都能被读到。</p>
+     * <p>历史上对话框自带一份私藏 {@code 0xFFB3261E}，与 {@link SceneChromeTokens#DANGER_BG}
+     * 同名不同值且没有 disabled/hover 派生。收口后由主题 BUTTON_DANGER 配方统一提供四态。</p>
      */
     @Test
     public void dangerVariantUsesDangerChannelFourStates() {
@@ -552,17 +573,17 @@ public class SceneButtonTest {
         runtime.flush();
         doLayout();
 
-        Assert.assertEquals("danger 启用背景 DANGER_BG",
-                SceneChromeTokens.DANGER_BG, buttonRoot.getBackgroundColor());
+        Assert.assertEquals("danger 启用背景取主题 BUTTON_DANGER 配方",
+                DANGER_SURFACE.getIdle().getTint(), buttonRoot.getBackgroundColor());
         PaintPlan plan = doPaint();
         PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
-        Assert.assertEquals("danger 文本反白",
-                SceneChromeTokens.TEXT_ON_ACCENT, text.getTextStyle().getColor());
+        Assert.assertEquals("danger 文本用强调底前景",
+                DANGER_SURFACE.getForeground().intValue(), text.getTextStyle().getColor());
 
         enabledSignal.set(Boolean.FALSE);
         runtime.flush();
-        Assert.assertEquals("danger 禁用落 DANGER_BG_DISABLED（该 token 此前无人消费）",
-                SceneChromeTokens.DANGER_BG_DISABLED, buttonRoot.getBackgroundColor());
+        Assert.assertEquals("danger 禁用取配方禁用档",
+                DANGER_SURFACE.getDisabled().getTint(), buttonRoot.getBackgroundColor());
     }
 
     /**
@@ -597,6 +618,83 @@ public class SceneButtonTest {
         runtime.flush();
         Assert.assertEquals("首次 flush 前请求焦点应生效", Boolean.TRUE,
                 runtime.interactionState(buttonRoot).focused().get());
+    }
+
+    // ==================== 试金石 11：显式配方优先 + 旧实色仍可表达 ====================
+
+    /**
+     * 显式配方优先于主题：不传 surface 时取主题按钮角色，传了则完全覆盖（含前景）。
+     */
+    @Test
+    public void explicitSurfaceOverridesThemeRole() {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        labelSignal = Signal.create("Custom");
+        enabledSignal = Signal.create(Boolean.TRUE);
+        clickCount = new AtomicInteger(0);
+
+        SceneSurfaceStyle.StateStyle flat =
+                new SceneSurfaceStyle.StateStyle(0x88112233, 0xFF445566, 0.0F, 0.0F);
+        Signal<SceneSurfaceStyle> surface = Signal.create(SceneSurfaceStyle.builder()
+                .cornerRadius(3)
+                .foreground(0xFF123456)
+                .idle(flat).hovered(flat).pressed(flat).disabled(flat)
+                .build());
+
+        handle = runtime.mount(sceneRoot, SceneButton.create(runtime, new SceneButton.Props(
+                labelSignal, enabledSignal, clickCount::incrementAndGet, SceneButtonVariant.STANDARD, surface)));
+        buttonRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("显式配方圆角覆盖主题", 3, buttonRoot.getCornerRadius());
+        Assert.assertEquals("显式配方染色覆盖主题", 0x88112233, buttonRoot.getBackgroundColor());
+        PaintPlan plan = doPaint();
+        PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertEquals("显式配方前景覆盖主题", 0xFF123456, text.getTextStyle().getColor());
+    }
+
+    /**
+     * 旧实色观感仍可表达：{@code SceneTheme.solidDark()} 下按钮取实色 token 且关闭滤镜，
+     * 证明默认主题化没有吞掉「显式实色外观」的选择。
+     */
+    @Test
+    public void solidDarkThemeStillExpressesLegacyColors() {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        labelSignal = Signal.create("Legacy");
+        enabledSignal = Signal.create(Boolean.TRUE);
+        clickCount = new AtomicInteger(0);
+
+        final Signal<SceneTheme> solid = Signal.create(SceneTheme.solidDark());
+        handle = runtime.mount(sceneRoot, () -> {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(solid, () -> holder[0] = SceneButton.create(runtime, new SceneButton.Props(
+                    labelSignal, enabledSignal, clickCount::incrementAndGet)).get());
+            return holder[0];
+        });
+        buttonRoot = handle.getRoot();
+        runtime.flush();
+        doLayout();
+
+        SceneSurfaceStyle legacy = SceneTheme.solidDark().surface(SceneTheme.Role.BUTTON_STANDARD);
+        Assert.assertEquals("实色档取实色 token", legacy.getIdle().getTint(), buttonRoot.getBackgroundColor());
+        Assert.assertEquals("实色档边框取实色 token", legacy.getIdle().getEdge(), buttonRoot.getBorderColor());
+        Assert.assertNull("实色档关闭滤镜", buttonRoot.getBackdrop());
+        PaintPlan plan = doPaint();
+        PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertEquals("实色档文字取主题正文色",
+                SceneTheme.solidDark().foreground(), text.getTextStyle().getColor());
     }
 }
 

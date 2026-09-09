@@ -1,25 +1,29 @@
 package club.heiqi.uilib.ui.scene.control;
 
 import java.util.Objects;
-import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.render.UiBackdrop;
-import club.heiqi.uilib.ui.render.UiBackdropEffect;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 
 /**
- * 液态玻璃样式绑定器。行为由 SceneButtonPrimitive 提供，外观只消费交互与配方信号。
- * 染色、轮廓、实体厚度与滤镜只影响 paint，内容微移与透明度只影响 composite。
+ * 液态玻璃样式绑定器（按钮配方入口）。
+ *
+ * <p>行为由 SceneButtonPrimitive 提供，外观只消费交互与配方信号。本类保留既有的
+ * {@link SceneGlassButtonStyle} 公共入口与语义（含 {@code backdrop=null} 表示关闭滤镜），
+ * 内部把按钮配方适配为通用 {@link SceneSurfaceStyle} 并委托 {@link SceneSurfaceBinder}——
+ * 全库只有一套表面绑定实现，按钮不再自持第二份动画/滤镜轨道。</p>
+ *
+ * <p>染色、轮廓、实体厚度与滤镜只影响 paint，内容微移与透明度只影响 composite。</p>
  */
 public final class SceneLiquidGlassStyle {
-    private enum State { IDLE, HOVERED, PRESSED, DISABLED }
 
     private SceneLiquidGlassStyle() {}
 
@@ -37,7 +41,7 @@ public final class SceneLiquidGlassStyle {
     /**
      * 将响应式玻璃配方绑定到已有按钮；同一节点只调用一次，替换 style 值即可切换外观。
      *
-     * <p>button 归本绑定管理 background/border/cornerRadius/surfaceElevation/backdrop/cursor。
+     * <p>button 归本绑定管理 background/border/cornerRadius/borderWidth/surfaceElevation/backdrop/cursor。
      * motionRoot 归本绑定管理 transform/opacity，业务内容应挂在其后代，保留自身属性写入权。
      * 不创建承载层、不遍历后代；可选文字前景使用 bindForeground 显式绑定。
      * 所有订阅和动画随当前 Owner 清理；无当前 Owner 时归 runtime 根 Owner。</p>
@@ -55,36 +59,8 @@ public final class SceneLiquidGlassStyle {
             rt.__runRoot(() -> bindButton(rt, button, motionRoot, enabled, style));
             return;
         }
-        ReadableSignal<SceneGlassButtonStyle> recipe = Computed.create(
-                () -> Objects.requireNonNull(style.get(), "style value"));
         SceneInteractionState interaction = rt.interactionState(button);
-        ReadableSignal<State> state = Computed.create(() -> {
-            if (!Boolean.TRUE.equals(enabled.get())) return State.DISABLED;
-            if (Boolean.TRUE.equals(interaction.pressed().get())) return State.PRESSED;
-            if (Boolean.TRUE.equals(interaction.hovered().get())) return State.HOVERED;
-            return State.IDLE;
-        });
-        ReadableSignal<SceneGlassButtonStyle.StateStyle> surface = Computed.create(
-                () -> surface(recipe.get(), state.get()));
-        Supplier<Integer> duration = () -> recipe.get().getTransitionMillis();
-        rt.bindComputed(() -> recipe.get().getBorderWidth(), button::setBorderWidth);
-        rt.bindComputed(() -> recipe.get().getCornerRadius(), button::setCornerRadius);
-        rt.__bindAnimatedColor(() -> surface.get().getTint(), button::setBackgroundColor, duration);
-        rt.__bindAnimatedColor(() -> state.get() != State.DISABLED
-                        && Boolean.TRUE.equals(interaction.focused().get())
-                        ? recipe.get().getFocusEdge() : surface.get().getEdge(), button::setBorderColor, duration);
-        rt.__bindAnimatedFloat(() -> surface.get().getElevation(), button::__setSurfaceElevation, duration);
-        rt.__bindAnimatedFloat(() -> -recipe.get().getContentLift() * surface.get().getElevation(),
-                value -> motionRoot.setTransform(Transform.translate(0.0F, value)), duration);
-        rt.__bindAnimatedFloat(() -> state.get() == State.DISABLED ? recipe.get().getDisabledOpacity() : 1.0F,
-                motionRoot::setOpacity, duration);
-
-        // 两个独立失效来源：材质变化即刻重派生，动画样本只改变当前配方的透镜强度。
-        // 不向信号写每帧样本，不捕获旧材质，也不因配方切换重复创建订阅或动画轨道。
-        // 无初值 Computed 在首次 flush 前尚未求值；构建期不可同步读取 recipe/surface。
-        BackdropBinding backdrop = new BackdropBinding(button);
-        rt.bindComputed(() -> recipe.get().getBackdrop(), backdrop::setBase);
-        rt.__bindAnimatedFloat(() -> surface.get().getLensFactor(), backdrop::setFactor, duration);
+        SceneSurfaceBinder.bind(rt, button, motionRoot, adapt(style), enabled, interaction);
         SceneControlChrome.bindCursor(rt, button, enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
     }
 
@@ -101,40 +77,38 @@ public final class SceneLiquidGlassStyle {
             rt.__runRoot(() -> bindForeground(rt, textNode, style, fallbackColor));
             return;
         }
-        rt.__bindAnimatedColor(() -> {
-            Integer foreground = Objects.requireNonNull(style.get(), "style value").getForeground();
-            return foreground != null ? foreground : fallbackColor;
-        }, textNode::setTextColor, () -> Objects.requireNonNull(style.get(), "style value").getTransitionMillis());
+        SceneSurfaceBinder.bindForeground(rt, textNode, adapt(style), fallbackColor);
     }
 
-    private static SceneGlassButtonStyle.StateStyle surface(SceneGlassButtonStyle style, State state) {
-        switch (state) {
-            case DISABLED: return style.getDisabled();
-            case PRESSED: return style.getPressed();
-            case HOVERED: return style.getHovered();
-            default: return style.getIdle();
-        }
+    /**
+     * 按钮配方 → 通用表面配方的响应式适配。
+     *
+     * <p>无初值 Computed：配方值在首次 flush 前尚未求值，构造期不得解引用
+     * （下游绑定器同样不在构造期读值）。</p>
+     */
+    private static ReadableSignal<SceneSurfaceStyle> adapt(ReadableSignal<SceneGlassButtonStyle> style) {
+        return Computed.create(() -> adapt(Objects.requireNonNull(style.get(), "style value")));
     }
 
-    private static final class BackdropBinding {
-        private final SceneNode button;
-        private UiBackdrop base;
-        private float factor = 1.0F;
+    private static SceneSurfaceStyle adapt(SceneGlassButtonStyle style) {
+        return SceneSurfaceStyle.builder()
+                .backdrop(style.getBackdrop())
+                .cornerRadius(style.getCornerRadius())
+                .borderWidth(style.getBorderWidth())
+                .transitionMillis(style.getTransitionMillis())
+                .focusEdge(style.getFocusEdge())
+                .foreground(style.getForeground())
+                .contentLift(style.getContentLift())
+                .disabledOpacity(style.getDisabledOpacity())
+                .idle(state(style.getIdle()))
+                .hovered(state(style.getHovered()))
+                .pressed(state(style.getPressed()))
+                .disabled(state(style.getDisabled()))
+                .build();
+    }
 
-        private BackdropBinding(SceneNode button) {
-            this.button = button;
-        }
-        private void setBase(UiBackdrop value) { base = value; apply(); }
-        private void setFactor(float value) { factor = value; apply(); }
-        private void apply() {
-            UiBackdropEffect effect = base == null ? null : base.getEffect();
-            if (effect != null && effect.getFamily() == UiBackdropEffect.Family.LIQUID_GLASS) {
-                button.setBackdrop(UiBackdrop.of(
-                        UiBackdropEffect.liquidGlass(effect.getMaterial(), effect.getLensStrength() * factor),
-                        base.getBlurRadius(), base.getSaturation()));
-            } else {
-                button.setBackdrop(base);
-            }
-        }
+    private static SceneSurfaceStyle.StateStyle state(SceneGlassButtonStyle.StateStyle state) {
+        return new SceneSurfaceStyle.StateStyle(
+                state.getTint(), state.getEdge(), state.getElevation(), state.getLensFactor());
     }
 }
