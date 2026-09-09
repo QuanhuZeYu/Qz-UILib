@@ -16,6 +16,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneDialog —— scene 模态对话框。
@@ -30,12 +33,18 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>焦点陷阱零成本：active overlay 存在时 router 的 Tab 环自动限定在栈顶 overlay root 内
  *       （{@code SceneInputRouter.resolveFocusScope}）；打开时焦点落在第一个按钮；</li>
  *   <li>ESC 经 {@link OverlayDismissPolicy#DEFAULT} 请求关闭（回调 onDismiss，由调用方 set visible=false）；</li>
- *   <li>按钮：委托 {@link SceneButton}（行为在 {@code SceneButtonPrimitive}，四态外观在
- *       {@code SceneStateColors}），{@link ButtonKind} 只做 variant 映射；hover/pressed/focus/
+ *   <li>卡片外壳：面板走 {@link SceneSurfaceBinder} + {@link SceneTheme.Role#OVERLAY} 配方，
+ *       绑定器是 background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 的唯一写入者
+ *       （旧 {@code SceneChromeTokens.applyPanelChrome} 静态底色/边框/圆角已删除）；配方在 portal
+ *       内容构建调用栈内解析，来源页面主题经作用域继承，延迟显示与离场中重开同样有效；
+ *       遮罩只负责遮罩色与全屏命中，不叠第二层玻璃；</li>
+ *   <li>按钮：委托 {@link SceneButton}（行为在 {@code SceneButtonPrimitive}，四态外观来自主题
+ *       按钮角色配方），{@link ButtonKind} 只做 variant 映射；hover/pressed/focus/
  *       cursor 与 Enter/Space 全部继承，本类不再自带色值；默认点击后请求关闭，
  *       closesDialog=false 只执行回调；</li>
  *   <li>标题/正文经 {@link SceneLabel} 按<b>卡片内容宽</b>换行（盒宽与换行宽同源，
- *       见 {@link #messageWrapWidthPx()}）；长 URL 这类无空格词由字体层硬切，
+ *       见 {@link #messageWrapWidthPx()}），前景取主题 {@code foreground}/{@code mutedForeground}；
+ *       长 URL 这类无空格词由字体层硬切，
  *       不再以单行 intrinsic 宽度撑出盒子后被裁剪静默吞掉；</li>
  *   <li>命令式便捷 API：{@link #alert} 单按钮确认、{@link #confirm} 双按钮确认（内部管理 visible）。</li>
  * </ul>
@@ -57,10 +66,12 @@ public final class SceneDialog {
     private static final int CARD_GAP = SceneChromeTokens.PAD_MD;
     /** 按钮行间距。 */
     private static final int BUTTON_GAP = 8;
-    /** 遮罩色：80% 不透明暗色（与 modernconfig 遮罩同源观感）。 */
+    /** 遮罩色：80% 不透明暗色（与 modernconfig 遮罩同源观感）；遮罩只负责遮罩，不参与表面绑定。 */
     private static final int SCRIM_ARGB = 0xCC121016;
-    /** 卡片边框宽度，必须与 {@code SceneChromeTokens.applyPanelChrome} 的 1px 外壳一致。 */
+    /** 卡片边框宽度，必须与 {@link SceneTheme.Role#OVERLAY} 配方的 borderWidth 一致（默认主题 1px）。 */
     private static final int CARD_BORDER = 1;
+    /** 恒真 enabled：对话框卡片不是可禁用控件，配方档位只由交互态决定（与 Select 浮层同款口径）。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneDialog() {
@@ -252,6 +263,7 @@ public final class SceneDialog {
         scrim.setCrossAxisAlign(CrossAxisAlign.CENTER);
         // fill 全高：遮罩铺满全屏、卡片垂直居中（MainAxisAlign.CENTER 有盈余可分配）
         scrim.setFillParentHeight(true);
+        // 遮罩只负责遮罩：保持既有遮罩色与全屏拦截命中，不做表面绑定、不叠第二层玻璃。
         scrim.setBackgroundColor(SCRIM_ARGB);
         scrim.setClipChildren(true);
 
@@ -259,13 +271,20 @@ public final class SceneDialog {
         card.setPreferredWidth(CARD_WIDTH);
         card.setPadding(CARD_PADDING);
         card.setGap(CARD_GAP);
-        SceneChromeTokens.applyPanelChrome(card, SceneChromeTokens.RADIUS_MD);
+        card.setClipChildren(true);
+        // 面板外壳：OVERLAY 配方画在卡片根，绑定器独占 background/border/borderWidth/cornerRadius/
+        // backdrop/surfaceElevation（旧 applyPanelChrome 的静态底色/边框/圆角写入者已删除）。
+        // 配方在 portal 内容构建调用栈内解析：延迟显示、离场中重开都继承来源页面主题。
+        // enabled 恒真（卡片不可禁用）；不传 motionRoot —— 出现/退场动画独占卡片 opacity 与位移。
+        SceneSurfaceBinder.bind(rt, card, SceneThemes.surface(rt, SceneTheme.Role.OVERLAY),
+                ALWAYS_ENABLED, rt.interactionState(card));
         scrim.appendChild(card);
 
         // 标题/正文按卡片内容宽换行；换行宽与盒宽同源（见 messageWrapWidthPx）。
+        // 标题取主题正文前景（SceneLabel 默认路径），正文取主题次要前景。
         int wrapWidth = messageWrapWidthPx();
-        mountLabel(rt, card, props.title(), wrapWidth);
-        mountLabel(rt, card, props.message(), wrapWidth);
+        mountLabel(rt, card, props.title(), wrapWidth, null);
+        mountLabel(rt, card, props.message(), wrapWidth, SceneThemes.mutedForeground(rt));
 
         SceneNode buttonRow = SceneNode.row();
         buttonRow.setMainAxisAlign(MainAxisAlign.END);
@@ -321,16 +340,31 @@ public final class SceneDialog {
      * 挂一个按卡片内容宽换行的文本标签。
      *
      * <p>走 {@link SceneLabel} 而非裸 {@code SceneNode.setText}：换行开关（{@code maxTextWidth}）、
-     * 限行、省略号、字号与文本色 token 全在标签控件里，对话框只负责给宽度。</p>
+     * 限行、省略号、字号与前景归属全在标签控件里，对话框只负责给宽度与前景来源。</p>
      *
-     * @param rt        场景运行时
-     * @param card      卡片节点
-     * @param text      文本（可为 null，按空串处理）
-     * @param wrapWidth 换行宽度（= 卡片内容宽）
+     * @param rt         场景运行时
+     * @param card       卡片节点
+     * @param text       文本（可为 null，按空串处理）
+     * @param wrapWidth  换行宽度（= 卡片内容宽）
+     * @param foreground 前景信号；{@code null} = 跟随主题正文前景（{@link SceneLabel} 默认路径），
+     *                   非 null = 该信号成为 {@code textColor} 的唯一动态写入者（正文取次要前景）
      */
-    private static void mountLabel(SceneRuntime rt, SceneNode card, String text, int wrapWidth) {
-        rt.mount(card, SceneLabel.create(rt, SceneLabel.Props.builder(
-                Signal.create(SceneTextUtils.nullSafe(text))).wrapWidth(wrapWidth).build()));
+    private static void mountLabel(SceneRuntime rt, SceneNode card, String text, int wrapWidth,
+                                   ReadableSignal<Integer> foreground) {
+        SceneLabel.Builder builder = SceneLabel.Props
+                .builder(Signal.create(SceneTextUtils.nullSafe(text)))
+                .wrapWidth(wrapWidth);
+        if (foreground != null) {
+            // 显式初值让标签走「显式色」语义：Label 不再自绑一份主题正文前景，本类随后成为
+            // textColor 唯一动态写入者。初值来自带初值的主题派生信号（SceneThemes 构造期已在
+            // 非追踪上下文求值），不是「未求值的 Computed」，不存在构造期解引用 null 的风险。
+            builder.color(foreground.get().intValue());
+        }
+        MountHandle label = rt.mount(card, SceneLabel.create(rt, builder.build()));
+        SceneNode labelNode = label.getRoot();
+        if (foreground != null && labelNode != null) {
+            rt.bind(foreground, labelNode::setTextColor);
+        }
     }
 
     /**
