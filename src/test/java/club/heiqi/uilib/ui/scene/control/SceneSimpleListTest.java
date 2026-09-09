@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -10,7 +11,9 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
@@ -18,15 +21,25 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintFragment;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneSimpleList 端到端单元测试。
  *
- * <p>覆盖受控列表初始渲染、增删编辑、边界限制，以及 draggable 的中线换位、跟手与回滚。</p>
+ * <p>覆盖受控列表初始渲染、增删编辑、边界限制，以及 draggable 的中线换位、跟手与回滚；
+ * 并验证液态玻璃迁移口径：底座走主题 GROUP 配方、行只做 accent 半透明轻量覆盖且不装滤镜、
+ * 标题/按钮文字随主题更新、主题切换不重建节点不丢草稿与滚动偏移、卸载回收绑定。</p>
  */
 public class SceneSimpleListTest {
 
@@ -46,6 +59,8 @@ public class SceneSimpleListTest {
     private MountHandle handle;
     /** 控件根节点。 */
     private SceneNode simpleListRoot;
+    /** 绘制引擎（断言滤镜采样预算与行不装滤镜）。 */
+    private ScenePaintEngine paintEngine;
 
     /** 测试画布宽度。 */
     private static final int CANVAS_WIDTH = 360;
@@ -60,6 +75,7 @@ public class SceneSimpleListTest {
         runtime = harness.getRuntime();
         sceneRoot = new SceneNode();
         changeCount = new AtomicInteger(0);
+        paintEngine = new ScenePaintEngine(new FixedTextMeasurer(8, 16));
     }
 
     /** 清理运行时。 */
@@ -962,5 +978,384 @@ public class SceneSimpleListTest {
                 0, 0, 0, false, false, false, false, 1000L));
         SceneInputFrame frame = fb.drainFrame();
         runtime.route(sceneRoot, frame, 0, 0);
+    }
+
+    // ==================== 液态玻璃迁移：底座 GROUP + 行轻量覆盖 ====================
+
+    /**
+     * 在可切换局部主题作用域内挂载待测控件（主题信号变化只重派生外观，不重建节点）。
+     *
+     * @param pageTheme     页面主题信号
+     * @param initialItems  初始列表
+     * @param maxItems      最大条目数
+     * @param minItems      最小条目数
+     * @param draggable     是否启用拖拽排序
+     * @param showScrollbar 是否建滚动条
+     */
+    private void mountListInTheme(Signal<SceneTheme> pageTheme, List<SceneSimpleList.ListItem> initialItems,
+                                  int maxItems, int minItems, boolean draggable, boolean showScrollbar) {
+        itemsSignal = Signal.create(initialItems);
+        lastChangedItems = null;
+        SceneSimpleList.Props props = SceneSimpleList.Props.builder(itemsSignal)
+                .label("列表")
+                .placeholder("输入条目")
+                .maxItems(maxItems)
+                .minItems(minItems)
+                .draggable(draggable)
+                .showScrollbar(showScrollbar)
+                .onItemsChanged(next -> {
+                    changeCount.incrementAndGet();
+                    lastChangedItems = next;
+                })
+                .build();
+        final SceneNode[] holder = new SceneNode[1];
+        handle = runtime.mount(sceneRoot, () -> {
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SceneSimpleList.create(runtime, props).get());
+            return holder[0];
+        });
+        simpleListRoot = handle.getRoot();
+        runtime.flush();
+    }
+
+    /**
+     * 递归查找第一个文本等于 {@code text} 的节点。
+     *
+     * @param node 子树根
+     * @param text 目标文本
+     * @return 命中节点，未找到返回 null
+     */
+    private SceneNode findText(SceneNode node, String text) {
+        if (text.equals(node.getText())) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findText(child, text);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** @return 控件标题文字节点 */
+    private SceneNode titleLabel() {
+        SceneNode label = findText(simpleListRoot, "列表");
+        if (label == null) {
+            throw new AssertionError("未找到控件标题节点");
+        }
+        return label;
+    }
+
+    /**
+     * 行内所有子节点右缘之外、仍在行盒内的探测点 X（行只在这些区域才成为最深命中目标，
+     * 从而把 hover 写到行自身）。
+     *
+     * @param row 行节点
+     * @return 探测点 X（rootAbs=0,0）
+     */
+    private int rowHoverProbeX(SceneNode row) {
+        AnchorRect rowBox = SceneGeometry.absoluteBox(row, 0, 0);
+        int rightMostChild = rowBox.getX();
+        for (SceneNode child : row.__getChildren()) {
+            AnchorRect childBox = SceneGeometry.absoluteBox(child, 0, 0);
+            rightMostChild = Math.max(rightMostChild, childBox.getX() + childBox.getWidth());
+        }
+        int probe = rowBox.getX() + rowBox.getWidth() - 2;
+        Assert.assertTrue("行右缘应留出子节点之外的空白区供 hover 探测，probe=" + probe
+                + ", rightMostChild=" + rightMostChild, probe >= rightMostChild);
+        return probe;
+    }
+
+    /** 节点自身 PaintFragment 内的 BACKDROP 命令数；无 fragment（无绘制内容）视为 0。 */
+    private static int backdropCount(SceneNode node) {
+        Object cached = node.getCachedPaint();
+        if (!(cached instanceof PaintFragment)) {
+            return 0;
+        }
+        int count = 0;
+        for (PaintCommand command : ((PaintFragment) cached).getCommands()) {
+            if (command.getType() == PaintCommandType.BACKDROP) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** PaintPlan 中指定类型的命令数。 */
+    private static int countType(List<PaintCommand> commands, PaintCommandType type) {
+        int count = 0;
+        for (PaintCommand command : commands) {
+            if (command.getType() == type) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 保留色 RGB、替换 alpha 通道（行轻量覆盖口径）。 */
+    private static int tint(int argb, int alpha) {
+        return (alpha << 24) | (argb & 0x00FFFFFF);
+    }
+
+    /**
+     * 在给定坐标投递 SCROLL 事件（{@code wheelDelta < 0} 向下滚），坐标取行内空白区以避开
+     * 行内输入框自身的滚动语义。
+     */
+    private void scrollAt(int x, int y, int wheelDelta) {
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, x, y, SceneMouseButton.NONE,
+                wheelDelta, 0, 0, false, false, false, false, 1000L));
+        SceneInputFrame frame = fb.drainFrame();
+        runtime.route(sceneRoot, frame, 0, 0);
+        runtime.flush();
+    }
+
+    /**
+     * 默认路径：底座 background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 全部
+     * 等于 {@code SceneThemes.DEFAULT.surface(Role.GROUP)} 的对应值；行默认透明、不装滤镜，
+     * 底座自身恰好一条 BACKDROP（每颗表面只采样一次，行不额外装玻璃）。
+     */
+    @Test
+    public void defaultBaseShouldUseGroupRecipeAndRowsCarryNoBackdrop() {
+        SceneSurfaceStyle group = SceneThemes.DEFAULT.surface(SceneTheme.Role.GROUP);
+        Assert.assertNotNull("前置：GROUP 配方自带滤镜", group.getBackdrop());
+        mountList(items("alpha", "beta"), 0, 0);
+        doFrame();
+
+        SceneNode viewport = listViewport();
+        Assert.assertEquals("底座染色 = GROUP 配方 idle tint",
+                group.getIdle().getTint(), viewport.getBackgroundColor());
+        Assert.assertEquals("底座圆角 = GROUP 配方", group.getCornerRadius(), viewport.getCornerRadius());
+        Assert.assertEquals("底座边框宽 = GROUP 配方", group.getBorderWidth(), viewport.getBorderWidth());
+        Assert.assertEquals("底座缘色 = GROUP 配方 idle edge",
+                group.getIdle().getEdge(), viewport.getBorderColor());
+        Assert.assertEquals("底座实体高度 = GROUP 配方 idle elevation",
+                group.getIdle().getElevation(), viewport.__getSurfaceElevation(), 0.0001F);
+        Assert.assertNotNull("底座默认带液态玻璃滤镜", viewport.getBackdrop());
+        Assert.assertEquals("底座滤镜模糊半径 = 配方",
+                group.getBackdrop().getBlurRadius(), viewport.getBackdrop().getBlurRadius());
+        Assert.assertEquals("底座滤镜材质 = 配方",
+                group.getBackdrop().getEffect().getMaterial(), viewport.getBackdrop().getEffect().getMaterial());
+
+        for (int i = 0; i < 2; i++) {
+            SceneNode row = rowAt(i);
+            Assert.assertNull("行[" + i + "] 不装滤镜", row.getBackdrop());
+            Assert.assertEquals("行[" + i + "] 默认透明", 0, row.getBackgroundColor());
+            Assert.assertEquals("行[" + i + "] 不写边框宽（外观归轻量覆盖）", 0, row.getBorderWidth());
+            Assert.assertEquals("行[" + i + "] 不写圆角", 0, row.getCornerRadius());
+        }
+
+        PaintPlan plan = paintEngine.paint(sceneRoot).getPlan();
+        Assert.assertEquals("底座自身恰好一条 BACKDROP", 1, backdropCount(viewport));
+        for (int i = 0; i < 2; i++) {
+            Assert.assertEquals("行[" + i + "] 自身零 BACKDROP", 0, backdropCount(rowAt(i)));
+        }
+        Assert.assertEquals("整树 BACKDROP = 底座 1 + 每行输入 1 + 每行删除 1 + 添加 1（每颗表面只采样一次）",
+                1 + 2 * 2 + 1, countType(plan.getCommands(), PaintCommandType.BACKDROP));
+    }
+
+    /**
+     * 行轻量状态覆盖：默认透明，hover 取主题 accent 半透明，拖拽把手按下时取更高强度；
+     * 三种状态下行都不装滤镜（{@code getBackdrop() == null}）。
+     */
+    @Test
+    public void rowHoverAndDragShouldUseAccentOverlayWithoutBackdrop() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        mountListInTheme(pageTheme, items("alpha", "beta"), 0, 0, true, false);
+        doFrame();
+
+        SceneNode row = rowAt(0);
+        int probeX = rowHoverProbeX(row);
+        int probeY = centerY(row);
+        Assert.assertEquals("前置：行默认透明", 0, row.getBackgroundColor());
+
+        harness.moveAt(probeX, probeY);
+        runtime.flush();
+        Assert.assertEquals("行 hover = 主题 accent 半透明轻量覆盖",
+                tint(dark.accent(), 0x1F), row.getBackgroundColor());
+        Assert.assertNull("行 hover 也不装滤镜", row.getBackdrop());
+
+        // hover 只由 MOVE 驱动：先移出整行，再验证按下把手时的拖拽态。
+        harness.moveAt(probeX, probeY + CANVAS_HEIGHT + 10);
+        runtime.flush();
+        Assert.assertEquals("指针移出后行背景回落透明", 0, row.getBackgroundColor());
+
+        SceneNode handle = dragHandle(row);
+        harness.pressAt(centerX(handle), centerY(handle));
+        Assert.assertEquals("拖拽把手按下 → 行取 accent 更高强度覆盖",
+                tint(dark.accent(), 0x33), row.getBackgroundColor());
+        Assert.assertNull("拖拽中的行仍不装滤镜", row.getBackdrop());
+        harness.releaseAt(centerX(handle), centerY(handle));
+        Assert.assertEquals("拖拽终止后行回落透明", 0, row.getBackgroundColor());
+    }
+
+    /**
+     * 主题切换：{@code withTheme} 来源主题信号变化 + flush 后底座/行/文字更新，草稿与滚动偏移
+     * 保留、节点身份不变、effect 数不增长（外观重派生不重建节点、不重复订阅）。
+     */
+    @Test
+    public void themeSwitchUpdatesBaseRowAndTextWithoutLosingDraftOrScroll() {
+        List<SceneSimpleList.ListItem> many = new ArrayList<SceneSimpleList.ListItem>();
+        for (int i = 0; i < 20; i++) {
+            many.add(new SceneSimpleList.ListItem("row" + i));
+        }
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        SceneSurfaceStyle darkGroup = dark.surface(SceneTheme.Role.GROUP);
+        SceneSurfaceStyle lightGroup = light.surface(SceneTheme.Role.GROUP);
+        Assert.assertNotEquals("两档 GROUP 配方必须不同，否则切换不传播",
+                darkGroup.getIdle(), lightGroup.getIdle());
+
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        // sceneRoot 需从 Constraints 收到确定高，且控件根需自带确定高（生产由 FormFieldShell 传
+        // theme.listHeight()），viewport 才不会被内容撑大（否则 maxScrollY 恒 0）。
+        sceneRoot.setFillParentHeight(true);
+        mountListInTheme(pageTheme, many, 0, 0, false, false);
+        simpleListRoot.setPreferredHeight(100);
+        doFrame();
+
+        SceneNode viewport = listViewport();
+        SceneNode firstRow = rowAt(0);
+        SceneNode firstInput = textInput(firstRow);
+        SceneNode title = titleLabel();
+        SceneNode addLabel = addButton().__getChildren().get(0);
+        Assert.assertEquals("初始底座 = 深色 GROUP 配方 idle tint",
+                darkGroup.getIdle().getTint(), viewport.getBackgroundColor());
+        Assert.assertEquals("初始标题 = 深色正文前景", dark.foreground(), title.getTextColor());
+        Assert.assertEquals("初始添加按钮文字 = 深色按钮配方前景",
+                dark.surface(SceneTheme.Role.BUTTON_STANDARD).getForeground().intValue(),
+                addLabel.getTextColor());
+
+        // 草稿：编辑第一行（主题切换不得丢）
+        harness.click(firstInput);
+        runtime.flush();
+        harness.typeText("X");
+        runtime.flush();
+        Assert.assertEquals("前置：草稿已写入受控 signal", "row0X", itemsSignal.get().get(0).getValue());
+
+        // 滚动偏移：长列表向下滚，坐标取行内空白区
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+        Assert.assertTrue("前置：长列表可滚动，maxScroll=" + maxScroll, maxScroll > 0);
+        int offset = Math.min(60, maxScroll);
+        AnchorRect viewportBox = SceneGeometry.absoluteBox(viewport, 0, 0);
+        scrollAt(viewportBox.getX() + viewportBox.getWidth() - 2,
+                viewportBox.getY() + viewportBox.getHeight() / 2, -offset);
+        Assert.assertEquals("前置：滚动偏移已应用", offset, viewport.getScrollOffsetY());
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertEquals("底座染色随主题更新", lightGroup.getIdle().getTint(), viewport.getBackgroundColor());
+        Assert.assertEquals("底座圆角随主题更新", lightGroup.getCornerRadius(), viewport.getCornerRadius());
+        Assert.assertEquals("底座缘色随主题更新", lightGroup.getIdle().getEdge(), viewport.getBorderColor());
+        Assert.assertEquals("底座滤镜材质随主题更新",
+                lightGroup.getBackdrop().getEffect().getMaterial(),
+                viewport.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("标题文字随主题更新", light.foreground(), title.getTextColor());
+        Assert.assertEquals("添加按钮文字随主题更新",
+                light.surface(SceneTheme.Role.BUTTON_STANDARD).getForeground().intValue(),
+                addLabel.getTextColor());
+        Assert.assertSame("主题切换不重建 viewport", viewport, listViewport());
+        Assert.assertSame("主题切换不重建行节点", firstRow, rowAt(0));
+        Assert.assertSame("主题切换不重建行内输入", firstInput, textInput(rowAt(0)));
+        Assert.assertEquals("主题切换不丢草稿", "row0X", itemsSignal.get().get(0).getValue());
+        Assert.assertEquals("主题切换保留滚动偏移", offset, viewport.getScrollOffsetY());
+        Assert.assertEquals("主题切换不新增 effect",
+                effectsBefore, ReactiveTestProbe.registeredEffectCount());
+        for (int i = 0; i < 20; i++) {
+            Assert.assertNull("主题切换后行[" + i + "] 仍不装滤镜", rowAt(i).getBackdrop());
+        }
+    }
+
+    /**
+     * 长列表（20+ 行）：底座只装在 viewport 一次，行节点不各装滤镜、不写背景。
+     */
+    @Test
+    public void longListRowsShouldNotInstallBackdrop() {
+        List<SceneSimpleList.ListItem> many = new ArrayList<SceneSimpleList.ListItem>();
+        for (int i = 0; i < 24; i++) {
+            many.add(new SceneSimpleList.ListItem("row" + i));
+        }
+        mountList(many, 0, 0);
+        doFrame();
+
+        SceneNode viewport = listViewport();
+        Assert.assertNotNull("底座只装在 viewport 上", viewport.getBackdrop());
+        List<SceneNode> rows = viewport.__getChildren();
+        Assert.assertEquals("长列表行数 == 数据量", 24, rows.size());
+
+        paintEngine.paint(sceneRoot);
+        Assert.assertEquals("底座自身恰好一条 BACKDROP", 1, backdropCount(viewport));
+        for (int i = 0; i < rows.size(); i++) {
+            SceneNode row = rows.get(i);
+            Assert.assertNull("行[" + i + "] 不得各装背景滤镜", row.getBackdrop());
+            Assert.assertEquals("行[" + i + "] 背景保持透明", 0, row.getBackgroundColor());
+            Assert.assertEquals("行[" + i + "] 自身零 BACKDROP", 0, backdropCount(row));
+        }
+    }
+
+    /**
+     * 内部生成控件只读复用其已主题化外观：滚动条自身不装表面（无滤镜），滑块 idle 取主题次要前景，
+     * 主题切换只重派生；底座 BACKDROP 仍恰好一条（控件不重复绑定内部控件外观）。
+     */
+    @Test
+    public void scrollbarShouldReuseThemedAppearanceWithoutDuplicateBinding() {
+        List<SceneSimpleList.ListItem> many = new ArrayList<SceneSimpleList.ListItem>();
+        for (int i = 0; i < 20; i++) {
+            many.add(new SceneSimpleList.ListItem("row" + i));
+        }
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        sceneRoot.setFillParentHeight(true);
+        mountListInTheme(pageTheme, many, 0, 0, false, true);
+        simpleListRoot.setPreferredHeight(100);
+        doFrame();
+
+        SceneNode viewport = listViewport();
+        SceneNode scrollbarColumn = stackHost().__getChildren().get(1);
+        SceneNode thumb = scrollbarColumn.__getChildren().get(0);
+        Assert.assertNull("滚动条列不装表面（无滤镜）", scrollbarColumn.getBackdrop());
+        Assert.assertNull("滑块不装滤镜（只做状态覆盖）", thumb.getBackdrop());
+        Assert.assertEquals("滑块 idle 取主题次要前景 + 中性 alpha",
+                tint(dark.mutedForeground(), SceneScrollbar.THUMB_IDLE_ALPHA), thumb.getBackgroundColor());
+        paintEngine.paint(sceneRoot);
+        Assert.assertEquals("底座自身仍恰好一条 BACKDROP", 1, backdropCount(viewport));
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+        Assert.assertEquals("滑块随主题重派生",
+                tint(light.mutedForeground(), SceneScrollbar.THUMB_IDLE_ALPHA), thumb.getBackgroundColor());
+        paintEngine.paint(sceneRoot);
+        Assert.assertEquals("主题切换后底座仍恰好一条 BACKDROP", 1, backdropCount(viewport));
+        Assert.assertEquals("主题切换不新增 effect",
+                effectsBefore, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    /**
+     * 卸载后表面绑定 effect 回收，主题更新不再写入旧节点。
+     */
+    @Test
+    public void unmountShouldReleaseSurfaceBindings() {
+        int before = ReactiveTestProbe.registeredEffectCount();
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        mountListInTheme(pageTheme, items("alpha", "beta"), 0, 0, false, false);
+        doFrame();
+        Assert.assertTrue("默认路径应注册响应式外观绑定",
+                ReactiveTestProbe.registeredEffectCount() > before);
+
+        SceneNode viewport = listViewport();
+        int colorBeforeDispose = viewport.getBackgroundColor();
+        handle.dispose();
+        Assert.assertEquals("卸载后外观绑定 effect 应回收",
+                before, ReactiveTestProbe.registeredEffectCount());
+
+        pageTheme.set(SceneTheme.liquidGlassLight());
+        runtime.flush();
+        Assert.assertEquals("卸载后主题更新不再写入旧 viewport",
+                colorBeforeDispose, viewport.getBackgroundColor());
     }
 }

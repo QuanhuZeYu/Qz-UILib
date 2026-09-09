@@ -21,11 +21,16 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneSimpleList —— scene 新栈动态字符串列表编辑器。
@@ -39,6 +44,13 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  * 回调里再次 {@code items.set(...)}——重复 set 属于冗余写入，且若外部不持有 signal 引用，
  * 行为将以控件写入为准。如需在变更后追加副作用（持久化、校验、联动其他 signal），在回调里
  * 读取参数即可，无需回写受控 signal。</p>
+ *
+ * <p><b>外观归属（液态玻璃迁移）</b>：列表底座（viewport）取主题
+ * {@link SceneTheme.Role#GROUP} 配方，是该节点 background/border/borderWidth/cornerRadius/
+ * backdrop/surfaceElevation 的唯一写入者；行默认全透明，只对 hover/pressed/拖拽做主题
+ * accent 系半透明轻量覆盖，行自身不装滤镜（{@code getBackdrop() == null}）。行内输入框、
+ * 滚动条等内部生成控件各自消费其已主题化外观，本控件不重复绑定；标题与操作按钮文字取
+ * 主题语义前景。外观随主题重派生，不重建节点，也不触碰数据模型、校验与拖拽语义。</p>
  */
 public final class SceneSimpleList {
 
@@ -50,26 +62,20 @@ public final class SceneSimpleList {
     private static final int ROW_GAP = 6;
     /** 按钮内边距。 */
     private static final int BUTTON_PADDING = SceneChromeTokens.PAD_MD;
-    /** 圆角。 */
-    private static final int RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 删除按钮固定宽度。 */
     private static final int DELETE_BUTTON_WIDTH = 28;
     /** 行输入框默认宽度。 */
     private static final int INPUT_WIDTH = 240;
     /** 添加按钮固定高度，取自 chrome token。 */
     private static final int ADD_BUTTON_HEIGHT = SceneChromeTokens.BUTTON_HEIGHT;
-    /** 按钮背景色。 */
-    private static final int BUTTON_BG = SceneChromeTokens.BG_DEFAULT;
-    /** 按钮禁用背景色。 */
-    private static final int BUTTON_BG_DISABLED = SceneChromeTokens.BG_DISABLED;
-    /** 删除按钮背景色，取自 chrome token。 */
-    private static final int DELETE_BG = SceneChromeTokens.DANGER_BG;
-    /** 删除按钮禁用背景色，取自 chrome token。 */
-    private static final int DELETE_BG_DISABLED = SceneChromeTokens.DANGER_BG_DISABLED;
-    /** 文本颜色。 */
-    private static final int TEXT_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
-    /** 禁用文本颜色。 */
-    private static final int TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
+    /** 恒真 enabled：列表底座自身没有禁用语义，表面绑定只走 idle/hovered/pressed 三档。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
+    /** 行默认背景：全透明，露出底座玻璃。 */
+    private static final int ROW_BG_TRANSPARENT = 0x00000000;
+    /** 行 hover 覆盖强度（与 ContextMenu / Autocomplete 行同一口径）。 */
+    private static final int ROW_HOVER_ALPHA = 0x1F;
+    /** 行按下/拖拽覆盖强度：明显高于 hover，拖拽中的行不只靠透明度区分。 */
+    private static final int ROW_ACTIVE_ALPHA = 0x33;
     /** 行 id 分配器，用于 keyed 列表稳定身份。 */
     private static final AtomicLong NEXT_ITEM_ID = new AtomicLong(1L);
     /** SimpleList 行 id 读取器。 */
@@ -498,7 +504,8 @@ public final class SceneSimpleList {
             SceneNode labelNode = new SceneNode();
             labelNode.setHitTestable(false);
             labelNode.setText(props.label());
-            labelNode.setTextColor(TEXT_COLOR);
+            // 标题取主题正文前景（构造期捕获来源主题，主题切换只重派生不重建节点）。
+            rt.bind(SceneThemes.foreground(rt), labelNode::setTextColor);
             rt.show(root, Computed.create(() -> !props.label().isEmpty()), () -> labelNode);
 
             SceneNode listViewport = SceneNode.column();
@@ -507,6 +514,16 @@ public final class SceneSimpleList {
             listViewport.setClipChildren(true);
             listViewport.setFillParentHeight(true);
             listViewport.setFlexGrow(1);
+
+            // 列表底座：GROUP 角色配方是 background/border/borderWidth/cornerRadius/backdrop/
+            // surfaceElevation 的唯一写入者；enabled 恒真（底座无禁用语义）。
+            // 时序契约：先声明关心 hovered/pressed/focused，Router 的写入才不会被 null 短路。
+            SceneInteractionState viewportInteraction = rt.interactionState(listViewport);
+            viewportInteraction.hovered();
+            viewportInteraction.pressed();
+            viewportInteraction.focused();
+            SceneSurfaceBinder.bind(rt, listViewport, SceneThemes.surface(rt, SceneTheme.Role.GROUP),
+                    ALWAYS_ENABLED, viewportInteraction);
 
             // stackHost 承载 viewport 原 fillParentHeight 模式，并在 showScrollbar 为 true 时
             // 叠加 SceneScrollbar column。即使无滚动条也建 stackHost，统一结构路径。
@@ -528,7 +545,7 @@ public final class SceneSimpleList {
                     row -> buildRow(rt, props, previewItems, listViewport, scrollSignal, row));
 
             Computed<Boolean> addEnabled = Computed.create(() -> SceneListOps.canAdd(props.items().get(), props.maxItems()));
-            SceneNode addButton = createButton(rt, "添加", BUTTON_BG, 0, addEnabled);
+            SceneNode addButton = createButton(rt, "添加", SceneTheme.Role.BUTTON_STANDARD, 0, addEnabled);
             addButton.setPreferredHeight(ADD_BUTTON_HEIGHT);
             // 与 SceneKeyValueMap 行为对齐：操作按钮进 Tab 焦点环，disabled 时自动退出
             rt.focusable(addButton, addEnabled);
@@ -552,6 +569,10 @@ public final class SceneSimpleList {
      * <p>draggable=true 时行首追加拖拽把手（独立交互单元，承接 POINTER_DOWN 启动拖拽）；
      * 把手内图标 hitTestable=false 穿透到把手（R6）。</p>
      *
+     * <p>行外观只做轻量状态覆盖：默认全透明露出底座玻璃，hover/按下/拖拽取主题 accent 半透明染色；
+     * 行自身不装滤镜、不写边框与圆角，故不与底座争同一属性槽。行内输入框复用
+     * {@link SceneTextInput} 已主题化的 INPUT 表面与前景（含占位 mutedForeground），本控件不重复绑定。</p>
+     *
      * @param rt       场景运行时
      * @param props    SimpleList 输入契约
      * @param viewport 列表视口（拖拽 MOVE 时按其子节点 box 定位目标行）
@@ -565,9 +586,15 @@ public final class SceneSimpleList {
         line.setGap(ROW_GAP);
 
         // draggable=true 时行首渲染拖拽把手（相邻中线插槽换位）
-        if (props.draggable()) {
-            line.appendChild(buildDragHandle(rt, props, previewItems, viewport, scrollSignal, row));
+        SceneNode dragHandle = props.draggable()
+                ? buildDragHandle(rt, props, previewItems, viewport, scrollSignal, row)
+                : null;
+        if (dragHandle != null) {
+            line.appendChild(dragHandle);
         }
+        // 拖拽中的行：把手按下即代表该行进入拖拽（把手是唯一拖拽入口），行只借它的 pressed 态着色，
+        // 不反向写把手状态、不复制拖拽瞬态。
+        bindRowSurface(rt, line, dragHandle == null ? null : rt.interactionState(dragHandle).pressed());
 
         SceneTextInput.Props inputProps = new SceneTextInput.Props(
                 Computed.create(() -> currentItem(props.items().get(), row).getValue()),
@@ -582,7 +609,7 @@ public final class SceneSimpleList {
         line.appendChild(input);
 
         Computed<Boolean> deleteEnabled = Computed.create(() -> SceneListOps.canRemove(props.items().get(), props.minItems()));
-        SceneNode deleteButton = createButton(rt, "×", DELETE_BG, DELETE_BUTTON_WIDTH, deleteEnabled);
+        SceneNode deleteButton = createButton(rt, "×", SceneTheme.Role.BUTTON_DANGER, DELETE_BUTTON_WIDTH, deleteEnabled);
         // 与 SceneKeyValueMap 行为对齐：行内删除按钮进 Tab 焦点环，disabled 时自动退出
         rt.focusable(deleteButton, deleteEnabled);
         rt.on(deleteButton, SceneEventType.CLICK, (ev, ctx) -> {
@@ -594,6 +621,61 @@ public final class SceneSimpleList {
         line.appendChild(deleteButton);
 
         return line;
+    }
+
+    /**
+     * 绑定行背景：默认透明，hover 取主题 accent 半透明轻量覆盖，按下/拖拽取更高强度。
+     *
+     * <p>行只写 {@code backgroundColor} 一个属性，不装滤镜（{@code getBackdrop() == null}）、
+     * 不写边框/圆角，避免与底座竞争同一属性槽；全部取值发生在 effect 体内，构造期不解引用
+     * 未求值的 Computed。</p>
+     *
+     * @param rt       场景运行时
+     * @param row      行根节点
+     * @param dragging 拖拽中信号（把手 pressed），非 draggable 行为 null
+     */
+    private static void bindRowSurface(SceneRuntime rt, SceneNode row, ReadableSignal<Boolean> dragging) {
+        SceneInteractionState interaction = rt.interactionState(row);
+        // 时序契约：构造期声明关心，Router 后续写入才会落到已创建的 signal。
+        interaction.hovered();
+        interaction.pressed();
+        ReadableSignal<Integer> accent = SceneThemes.accent(rt);
+        rt.__bindAnimatedColor(() -> resolveRowBackground(
+                        dragging != null && Boolean.TRUE.equals(dragging.get()),
+                        Boolean.TRUE.equals(interaction.pressed().get()),
+                        Boolean.TRUE.equals(interaction.hovered().get()),
+                        accent.get()),
+                row::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+    }
+
+    /**
+     * 解析行背景色：拖拽/按下 &gt; hover &gt; 全透明（露出底座玻璃）。
+     *
+     * @param dragging 是否拖拽中（把手按下）
+     * @param pressed  是否按下
+     * @param hovered  是否悬停
+     * @param accent   主题强调色
+     * @return 行背景色 ARGB
+     */
+    private static int resolveRowBackground(boolean dragging, boolean pressed, boolean hovered, int accent) {
+        if (dragging || pressed) {
+            return tint(accent, ROW_ACTIVE_ALPHA);
+        }
+        if (hovered) {
+            return tint(accent, ROW_HOVER_ALPHA);
+        }
+        return ROW_BG_TRANSPARENT;
+    }
+
+    /**
+     * 保留色 RGB、替换 alpha 通道（轻量覆盖用）。
+     *
+     * @param argb  源色
+     * @param alpha 目标 alpha（0..255）
+     * @return 替换 alpha 后的 ARGB
+     */
+    private static int tint(int argb, int alpha) {
+        return (alpha << 24) | (argb & 0x00FFFFFF);
     }
 
     /**
@@ -689,20 +771,24 @@ public final class SceneSimpleList {
     /**
      * 创建文本按钮节点。
      *
+     * <p>外观全部归主题：表面取 {@code role} 配方（添加=BUTTON_STANDARD、删除=BUTTON_DANGER），
+     * background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 由
+     * {@link SceneSurfaceBinder#bind} 独占；文字前景取配方 foreground（回落库默认正文色）。
+     * 不再静态写背景色/圆角，也不叠加禁用实色绑定。</p>
+     *
      * @param rt             场景运行时
      * @param text           按钮文本
-     * @param enabledBg      启用背景色
+     * @param role           材质角色（添加=BUTTON_STANDARD、删除=BUTTON_DANGER）
      * @param preferredWidth 固定宽度，0 表示不设置
      * @param enabled        是否启用
      * @return 按钮节点
      */
-    private static SceneNode createButton(SceneRuntime rt, String text, int enabledBg, int preferredWidth,
-                                          ReadableSignal<Boolean> enabled) {
+    private static SceneNode createButton(SceneRuntime rt, String text, SceneTheme.Role role,
+                                          int preferredWidth, ReadableSignal<Boolean> enabled) {
         SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
         button.setPadding(BUTTON_PADDING);
-        button.setCornerRadius(RADIUS);
         if (preferredWidth > 0) {
             button.setPreferredWidth(preferredWidth);
         } else {
@@ -714,22 +800,16 @@ public final class SceneSimpleList {
         label.setText(text);
         button.appendChild(label);
 
-        rt.bind(enabled, value -> button.setBackgroundColor(Boolean.TRUE.equals(value)
-                ? enabledBg
-                : disabledButtonBackground(enabledBg)));
-        rt.bind(enabled, value -> label.setTextColor(Boolean.TRUE.equals(value) ? TEXT_COLOR : TEXT_DISABLED));
+        ReadableSignal<SceneSurfaceStyle> surface = SceneThemes.surface(rt, role);
+        SceneInteractionState interaction = rt.interactionState(button);
+        // 时序契约：构造期声明关心，Router 后续写入才会落到已创建的 signal。
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(rt, button, surface, enabled, interaction);
+        SceneSurfaceBinder.bindForeground(rt, label, surface, SceneThemes.DEFAULT.foreground());
         SceneControlChrome.bindCursor(rt, button, enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
         return button;
-    }
-
-    /**
-     * 计算按钮禁用背景色。
-     *
-     * @param enabledBg 启用背景色
-     * @return 禁用背景色
-     */
-    private static int disabledButtonBackground(int enabledBg) {
-        return enabledBg == DELETE_BG ? DELETE_BG_DISABLED : BUTTON_BG_DISABLED;
     }
 
     /**
