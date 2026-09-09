@@ -326,6 +326,81 @@ public class SceneNavListTest {
         }
     }
 
+    // ==================== 四态优先级与 focus 缘色（契约 §2.5 状态语义） ====================
+
+    /**
+     * 选项表面四态来自 INDICATOR 配方：disabled &gt; pressed &gt; hovered &gt; idle；
+     * focus 只覆盖非禁用态缘色、不改染色。底座同理走 TOOLBAR 配方（其交互态由底座自身承载）。
+     */
+    @Test
+    public void itemSurfaceShouldFollowIndicatorRecipeStatesWithFocusEdge() {
+        Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
+        SceneNode parent = new SceneNode();
+        SceneNode root = mountNav(parent, Signal.create(Integer.valueOf(0)), enabled, null).getRoot();
+        harness.mountRoot(parent, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        SceneNode item = itemNode(root, 1);
+        Assert.assertEquals("idle 染色 = 配方 idle 档", ITEM_UNSELECTED, item.getBackgroundColor());
+        Assert.assertEquals("idle 缘色 = 配方 idle 档", ITEM_SURFACE.getIdle().getEdge(), item.getBorderColor());
+
+        harness.moveTo(item);
+        Assert.assertEquals("hover 取配方 hovered 档", ITEM_SURFACE.getHovered().getTint(), item.getBackgroundColor());
+        Assert.assertNotEquals("hover 有可见变化", ITEM_UNSELECTED, item.getBackgroundColor());
+
+        harness.press(item);
+        Assert.assertEquals("pressed 压过 hovered", ITEM_SURFACE.getPressed().getTint(), item.getBackgroundColor());
+
+        runtime.requestFocus(item);
+        runtime.flush();
+        Assert.assertEquals("focus 不改染色（只改缘色）", ITEM_SURFACE.getPressed().getTint(),
+                item.getBackgroundColor());
+        Assert.assertEquals("focus 缘色取配方 focusEdge", ITEM_SURFACE.getFocusEdge(), item.getBorderColor());
+
+        enabled.set(Boolean.FALSE);
+        runtime.flush();
+        Assert.assertEquals("disabled 压过 pressed", ITEM_DISABLED, item.getBackgroundColor());
+        Assert.assertEquals("禁用态不残留焦点缘色", ITEM_SURFACE.getDisabled().getEdge(), item.getBorderColor());
+
+        harness.release(item);
+        // 指针移出选项：清除 hover，否则恢复启用后状态档仍是 hovered（指针仍压在该项上）
+        harness.moveAt(0, CANVAS_HEIGHT - 1);
+        enabled.set(Boolean.TRUE);
+        runtime.flush();
+        Assert.assertEquals("恢复启用回到 idle 档", ITEM_UNSELECTED, item.getBackgroundColor());
+    }
+
+    // ==================== 关闭滤镜：backdrop == null 时不发 BACKDROP 且底色可读 ====================
+
+    /**
+     * 无滤镜替代档（{@code SceneTheme.withoutBackdrop()}）：全角色 backdrop=null → 整树不发
+     * BACKDROP 命令，底座底色不透明可读，选中项仍靠 tint 区分，文字仍取主题正文色。
+     */
+    @Test
+    public void withoutBackdropThemeShouldEmitNoBackdropCommand() {
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark().withoutBackdrop());
+        SceneNavList.Props props = new SceneNavList.Props(
+                Signal.create(Integer.valueOf(0)), OPTIONS, Signal.create(Boolean.TRUE), idx -> { }, null);
+        SceneNode host = new SceneNode();
+        MountHandle themed = runtime.mount(host, () -> {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SceneNavList.create(runtime, props).get());
+            return holder[0];
+        });
+        runtime.flush();
+        SceneNode root = themed.getRoot();
+        doLayout(root);
+
+        Assert.assertEquals("关闭滤镜档不发 BACKDROP 命令", 0, backdropCount(paintEngine, root));
+        Assert.assertNull("底座无滤镜声明", root.getBackdrop());
+        Assert.assertNull("选项无滤镜声明", itemNode(root, 0).getBackdrop());
+        Assert.assertEquals("无滤镜替代底色不透明可读", 0xFF, alphaOf(root.getBackgroundColor()));
+        Assert.assertEquals("选中项仍靠 tint 区分（强调色系 0x59）", 0x59,
+                alphaOf(itemNode(root, 0).getBackgroundColor()));
+        Assert.assertNotEquals("选中与未选中仍可区分", itemNode(root, 1).getBackgroundColor(),
+                itemNode(root, 0).getBackgroundColor());
+        Assert.assertEquals("文字仍取主题正文色", SceneThemes.DEFAULT.foreground(), labelNode(root, 0).getTextColor());
+    }
+
     // ==================== 主题切换：外观更新、选中项不丢、节点身份不变、effect 不增长 ====================
 
     /**
