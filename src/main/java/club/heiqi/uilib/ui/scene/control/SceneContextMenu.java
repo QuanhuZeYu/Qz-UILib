@@ -7,7 +7,7 @@ import java.util.Objects;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
@@ -19,7 +19,13 @@ import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.runtime.Binding;
+import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneContextMenu —— scene 右键上下文菜单组件。
@@ -32,11 +38,21 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>关闭语义：ESC（router 全局 dismiss）、点击菜单外部、选择菜单项、{@link Handle#close()}；</li>
  *   <li>菜单项：label/enabled/分隔线；↑/↓ 循环高亮（跳过分隔线）、Enter 激活高亮项；
  *       指针 hover 进入菜单项即移动高亮（Enter 激活 hover 项、↑/↓ 从 hover 项继续，移出保留）；</li>
- *   <li>打开即聚焦菜单承接键盘导航；关闭由 Handle 幂等（重复 close 无害）。</li>
+ *   <li>打开即聚焦菜单承接键盘导航；关闭由 Handle 幂等（重复 close 无害），关闭后 portal 作用域一并回收。</li>
  * </ul>
  *
- * <p>样式内置 SceneChromeTokens（BG_DEFAULT 底、SELECTION_BG/SELECTION_TEXT 高亮、TEXT_DISABLED
- * 禁用态、RADIUS_MD 圆角、1px 边框），不拆 primitive/wrapper——菜单无受控状态与 chrome 变体需求。</p>
+ * <h3>外观归属：主题配方是唯一外观来源</h3>
+ * <ul>
+ *   <li>菜单面板：{@link SceneSurfaceBinder} 从 {@link SceneThemes#surface(SceneRuntime,
+ *       SceneTheme.Role) OVERLAY 角色配方}派生 background/border/borderWidth/cornerRadius/
+ *       backdrop/surfaceElevation，不再静态写实色底/边框/圆角。面板承接键盘焦点，缘色随配方
+ *       {@code focusEdge}；</li>
+ *   <li>菜单行：默认全透明露出浮层玻璃，hover/键盘高亮只做主题 accent 系半透明轻量覆盖，
+ *       行内不各自采样滤镜（不调用表面绑定器，{@code getBackdrop() == null}）；文字取主题
+ *       {@code foreground}、禁用取 {@code disabledForeground}；</li>
+ *   <li>分隔线：取浮层配方缘色，随主题更新，不写死实色；</li>
+ *   <li>布局常量继续用 {@link SceneChromeTokens}（主题不接管布局）。</li>
+ * </ul>
  */
 public final class SceneContextMenu {
 
@@ -54,6 +70,14 @@ public final class SceneContextMenu {
     private static final int ITEM_PAD_V = 6;
     /** 分隔线高度（像素）。 */
     private static final int SEPARATOR_HEIGHT = 1;
+    /** 恒真启用信号：菜单浮层不参与 disabled 语义，表面绑定仍需 enabled 通道。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
+    /** 菜单行默认背景（全透明，露出浮层玻璃底；行不各自采样滤镜）。 */
+    private static final int ITEM_BG_TRANSPARENT = 0x00000000;
+    /** 菜单行 hover 覆盖强度：主题 accent 的低透明度轻量覆盖。 */
+    private static final int ITEM_HOVER_ALPHA = 0x1F;
+    /** 菜单行高亮覆盖强度（指针 hover / 键盘 ↑↓ 同一高亮态）：主题选区背景半透明，明显强于 hover。 */
+    private static final int ITEM_HIGHLIGHT_ALPHA = 0x59;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneContextMenu() {
@@ -161,6 +185,7 @@ public final class SceneContextMenu {
         }
 
         final Handle[] handleHolder = {null};
+        final ScenePortalHandle[] portalHolder = {null};
         Signal<Boolean> visible = Signal.create(Boolean.TRUE);
         // 键盘高亮（可导航项序）；null=无高亮（纯鼠标态）
         Signal<Integer> highlighted = Signal.create(null);
@@ -178,13 +203,29 @@ public final class SceneContextMenu {
                 return new AnchorRect(x, y, 1, 1);
             }
         };
-        rt.portalAnchored(visible,
+        portalHolder[0] = rt.portalAnchored(visible,
                 () -> buildMenu(rt, safeItems, navigable, highlighted, closeAction),
                 OverlayDismissPolicy.DEFAULT,
                 closeAction,
                 anchor,
                 Collections.<SceneNode>emptySet(),
                 new AnchoredPortalLayout(MENU_PREFERRED_WIDTH, MENU_MIN_WIDTH, MENU_SAFE_INSET));
+
+        // 关闭后回收 portal 作用域：本组件是一次性浮层（重开即新 open），不回收会让 visible 订阅
+        // 常驻到 runtime.dispose()。卸载仍由 visible 信号驱动（handler 不直接挂卸浮层）：本观察者与
+        // portal 自身 effect 在同一 flush 内按注册顺序执行——先卸载内容，再回收作用域，故关闭时序不变。
+        final Binding[] reclaimer = {null};
+        reclaimer[0] = rt.bind(visible, shown -> {
+            if (Boolean.TRUE.equals(shown)) {
+                return;
+            }
+            if (reclaimer[0] != null) {
+                reclaimer[0].dispose();
+            }
+            if (portalHolder[0] != null) {
+                portalHolder[0].dispose();
+            }
+        });
         return handleHolder[0];
     }
 
@@ -195,11 +236,20 @@ public final class SceneContextMenu {
                                        Signal<Integer> highlighted, Runnable closeAction) {
         SceneNode menu = SceneNode.column();
         menu.setPadding(MENU_PADDING);
-        menu.setBackgroundColor(SceneChromeTokens.BG_DEFAULT);
-        menu.setBorderWidth(1);
-        menu.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
-        menu.setCornerRadius(SceneChromeTokens.RADIUS_MD);
         menu.setClipChildren(true);
+
+        // 浮层表面：OVERLAY 角色配方是面板外观唯一写入者（background/border/borderWidth/cornerRadius/
+        // backdrop/surfaceElevation 全归它）。enabled 恒真：菜单不参与 disabled 语义；配方在 portal
+        // 构建调用栈内取，延迟打开时继承来源主题。面板承接键盘焦点，缘色取配方 focusEdge。
+        SceneInteractionState interaction = rt.interactionState(menu);
+        // 三态必须在 requestFocus 之前显式声明关心：绑定器首次 flush 才读信号，而聚焦写入发生在
+        // 构建期，focused signal 未提前创建时会被 writeFocused 的 null 短路吞掉。
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        ReadableSignal<SceneSurfaceStyle> overlaySurface =
+                SceneThemes.surface(rt, SceneTheme.Role.OVERLAY);
+        SceneSurfaceBinder.bind(rt, menu, overlaySurface, ALWAYS_ENABLED, interaction);
 
         rt.focusable(menu, Signal.create(Boolean.TRUE));
         rt.on(menu, SceneEventType.KEY_DOWN, (ev, ctx) -> {
@@ -223,7 +273,7 @@ public final class SceneContextMenu {
         for (int i = 0; i < items.size(); i++) {
             MenuItem item = items.get(i);
             if (item.separator()) {
-                menu.appendChild(buildSeparator());
+                menu.appendChild(buildSeparator(rt, overlaySurface));
             } else {
                 final int nav = navIndex++;
                 menu.appendChild(buildItem(rt, item, nav, highlighted, closeAction));
@@ -278,6 +328,9 @@ public final class SceneContextMenu {
 
     /**
      * 构建菜单项行（label + 高亮/禁用样式 + 点击激活）。
+     *
+     * <p>行不做表面采样（不调 {@link SceneSurfaceBinder}）：默认全透明露出浮层玻璃底，
+     * 指针 hover / 键盘高亮只做主题 accent 系半透明覆盖，故 {@code getBackdrop() == null}。</p>
      */
     private static SceneNode buildItem(SceneRuntime rt, MenuItem item, int navIndex,
                                        Signal<Integer> highlighted, Runnable closeAction) {
@@ -299,14 +352,20 @@ public final class SceneContextMenu {
             }
         });
 
-        Computed<Boolean> isHighlighted = Computed.create(() ->
-                Boolean.valueOf(highlighted.get() != null && highlighted.get().intValue() == navIndex));
-        rt.bindComputed(() -> Boolean.TRUE.equals(isHighlighted.get())
-                        ? SceneChromeTokens.SELECTION_BG : SceneChromeTokens.BG_DEFAULT,
-                row::setBackgroundColor);
-        rt.bindComputed(() -> !item.enabled() ? SceneChromeTokens.TEXT_DISABLED
-                        : Boolean.TRUE.equals(isHighlighted.get()) ? SceneChromeTokens.SELECTION_TEXT
-                        : SceneChromeTokens.TEXT_PRIMARY,
+        // 行只做轻量状态覆盖：高亮取主题选区背景、hover 取主题 accent，均为半透明染色；
+        // 不逐项采样滤镜，默认透明露出浮层玻璃底。
+        ReadableSignal<Integer> accent = SceneThemes.accent(rt);
+        ReadableSignal<Integer> selectionBackground = SceneThemes.selectionBackground(rt);
+        rt.__bindAnimatedColor(() -> resolveItemBackground(
+                        highlighted.get() != null && highlighted.get().intValue() == navIndex,
+                        Boolean.TRUE.equals(interaction.hovered().get()),
+                        accent.get(), selectionBackground.get()),
+                row::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+
+        // 语义前景：启用取主题正文前景、禁用取主题禁用前景（主题切换自动重算）。
+        ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+        ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+        rt.bindComputed(() -> item.enabled() ? foreground.get() : disabledForeground.get(),
                 label::setTextColor);
 
         rt.on(row, SceneEventType.CLICK, (ev, ctx) -> {
@@ -320,13 +379,44 @@ public final class SceneContextMenu {
     }
 
     /**
-     * 构建分隔线（满宽 1px 边框色）。
+     * 解析菜单行背景：键盘高亮 &gt; hover &gt; 全透明（露出浮层玻璃底）。
+     *
+     * @param highlighted         是否高亮（指针 hover 与键盘 ↑↓ 共用同一高亮态）
+     * @param hovered             是否悬停
+     * @param accent              主题强调色
+     * @param selectionBackground 主题选区背景色
+     * @return ARGB 背景色
      */
-    private static SceneNode buildSeparator() {
+    private static int resolveItemBackground(boolean highlighted, boolean hovered,
+                                             int accent, int selectionBackground) {
+        if (highlighted) {
+            return tint(selectionBackground, ITEM_HIGHLIGHT_ALPHA);
+        }
+        if (hovered) {
+            return tint(accent, ITEM_HOVER_ALPHA);
+        }
+        return ITEM_BG_TRANSPARENT;
+    }
+
+    /**
+     * 保留色 RGB、替换 alpha 通道（轻量覆盖用）。
+     *
+     * @param argb  源色
+     * @param alpha 目标 alpha（0..255）
+     * @return 替换 alpha 后的 ARGB
+     */
+    private static int tint(int argb, int alpha) {
+        return (alpha << 24) | (argb & 0x00FFFFFF);
+    }
+
+    /**
+     * 构建分隔线（满宽 1px，取浮层配方缘色，随主题更新）。
+     */
+    private static SceneNode buildSeparator(SceneRuntime rt, ReadableSignal<SceneSurfaceStyle> overlaySurface) {
         SceneNode separator = new SceneNode();
         separator.setPreferredHeight(SEPARATOR_HEIGHT);
-        separator.setBackgroundColor(SceneChromeTokens.BORDER_DEFAULT);
         separator.setHitTestable(false);
+        rt.bindComputed(() -> overlaySurface.get().getIdle().getEdge(), separator::setBackgroundColor);
         return separator;
     }
 }
