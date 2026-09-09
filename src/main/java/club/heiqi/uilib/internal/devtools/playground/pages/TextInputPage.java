@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 单行文本输入演示页。
@@ -60,7 +61,8 @@ public final class TextInputPage implements PlaygroundPage {
             controlledCard.appendChild(PlaygroundKit.title("受控输入（文本真值由外部 signal 唯一持有）"));
             mountInput(rt, controlledCard, name, null, Integer.MAX_VALUE, SceneInputType.TEXT, "在此输入…", true);
             controlledCard.appendChild(PlaygroundKit.hint("拖选 / Shift+方向键扩展选区；Ctrl+Z/Y 撤销重做；Ctrl+C/X/V 剪贴板；Ctrl+←/→ 词跳转。"));
-            SceneNode readout = PlaygroundKit.text("", PlaygroundKit.MUTED, 12);
+            // 读数文本是普通正文：取来源主题次要前景（构建期捕获，主题切换只重派生颜色）。
+            SceneNode readout = PlaygroundKit.text(rt, "", SceneThemes.mutedForeground(rt), 12);
             controlledCard.appendChild(readout);
             rt.bind(Computed.create(() -> formatReadout("当前文本", name.get())), readout::setText);
 
@@ -76,13 +78,13 @@ public final class TextInputPage implements PlaygroundPage {
 
             typeCard.appendChild(PlaygroundKit.hint("密码输入（显示 ••• 掩码，回调上抛真实值）："));
             mountInput(rt, typeCard, secret, null, Integer.MAX_VALUE, SceneInputType.PASSWORD, "密码", false);
-            SceneNode secretReadout = PlaygroundKit.text("", PlaygroundKit.MUTED, 12);
+            SceneNode secretReadout = PlaygroundKit.text(rt, "", SceneThemes.mutedForeground(rt), 12);
             typeCard.appendChild(secretReadout);
             rt.bind(Computed.create(() -> "真实值：" + secret.get() + "（仅演示掩码，不经安全用途）"), secretReadout::setText);
 
             typeCard.appendChild(PlaygroundKit.hint("数字输入（仅放行 0-9 . - + e E 字符集）："));
             mountInput(rt, typeCard, number, null, Integer.MAX_VALUE, SceneInputType.NUMBER, "数字", false);
-            SceneNode numberReadout = PlaygroundKit.text("", PlaygroundKit.MUTED, 12);
+            SceneNode numberReadout = PlaygroundKit.text(rt, "", SceneThemes.mutedForeground(rt), 12);
             typeCard.appendChild(numberReadout);
             rt.bind(Computed.create(() -> "当前值：" + number.get()), numberReadout::setText);
 

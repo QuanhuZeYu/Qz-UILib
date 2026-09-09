@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneTextArea;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 多行文本输入演示页（soft wrap / Undo / 跨行选区）。
@@ -64,7 +65,8 @@ public final class TextAreaPage implements PlaygroundPage {
             areaCard.appendChild(PlaygroundKit.hint(
                     "soft wrap：超宽行按视口可用宽软换行；↑/↓ 在视觉行间移动、Home/End 视觉行级、"
                     + "拖选/Shift 跨视觉行块状高亮、双击选词/三击选逻辑行。"));
-            SceneNode stats = PlaygroundKit.text("", PlaygroundKit.MUTED, 12);
+            // 统计文本是普通正文：取来源主题次要前景（构建期捕获，主题切换只重派生颜色）。
+            SceneNode stats = PlaygroundKit.text(rt, "", SceneThemes.mutedForeground(rt), 12);
             areaCard.appendChild(stats);
             rt.bind(Computed.create(() -> formatStats(body.get())), stats::setText);
 
