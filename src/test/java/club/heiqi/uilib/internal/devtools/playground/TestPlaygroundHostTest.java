@@ -8,6 +8,8 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
@@ -17,6 +19,10 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * {@link TestPlaygroundHost} 页面状态机与骨架结构测试。
@@ -24,6 +30,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>headless 构造（input=null）+ 真实布局引擎驱动：断言骨架树结构、初始 Home 页、
  * 分段导航切换（单槽替换、旧页析构）、同页 no-op、全部注册页可挂载。
  * 纯视觉/交互细节不在此断言。</p>
+ *
+ * <p>G16/外壳追加：外壳三块表面（root/header/viewport）取对应角色配方、主题切换不重建
+ * 节点且不丢当前页/导航选中、局部 {@code withTheme} 只作用于其作用域内内容、卸载回收绑定。</p>
  */
 public class TestPlaygroundHostTest {
 
@@ -31,6 +40,13 @@ public class TestPlaygroundHostTest {
      *  旧 720 宽在 8 页时贴边、9 页起末页段整体出界导致点击不可达；与既有断言无耦合。 */
     private static final int CANVAS_WIDTH = 1000;
     private static final int CANVAS_HEIGHT = 520;
+
+    /** 库默认主题（宿主 runtime 默认档）：外壳外观断言的唯一来源。 */
+    private static final SceneTheme DARK = SceneThemes.DEFAULT;
+    /** 浅色档：主题切换断言用（与深色档各角色配方/语义色均不同）。 */
+    private static final SceneTheme LIGHT = SceneTheme.liquidGlassLight();
+    /** 浮点比较容差。 */
+    private static final float EPSILON = 0.0001F;
 
     private TestPlaygroundHost host;
 
@@ -313,5 +329,176 @@ public class TestPlaygroundHostTest {
 
         SceneNode after = host.refreshPage();
         Assert.assertNotSame("显式刷新才重建", before, after);
+    }
+
+    // ==================== G16/外壳主题化 ====================
+
+    /** 角色配方取值：断言引用配方而不是硬编码色号，主题集中调参时本类自动跟随。 */
+    private static SceneSurfaceStyle role(SceneTheme theme, SceneTheme.Role role) {
+        return theme.surface(role);
+    }
+
+    /** 表面六属性 = 角色配方（idle 档）：底色/缘色/边框宽/圆角/实体高度/滤镜。 */
+    private static void assertSurfaceRecipe(String where, SceneSurfaceStyle style, SceneNode node) {
+        Assert.assertEquals(where + " 底色 = 角色 idle tint",
+                style.getIdle().getTint(), node.getBackgroundColor());
+        Assert.assertEquals(where + " 边框色 = 角色 idle edge",
+                style.getIdle().getEdge(), node.getBorderColor());
+        Assert.assertEquals(where + " 边框宽 = 角色配方", style.getBorderWidth(), node.getBorderWidth());
+        Assert.assertEquals(where + " 圆角 = 角色配方", style.getCornerRadius(), node.getCornerRadius());
+        Assert.assertEquals(where + " 实体高度 = 角色 idle elevation",
+                style.getIdle().getElevation(), node.__getSurfaceElevation(), EPSILON);
+        Assert.assertNotNull(where + " 配方必须带滤镜", style.getBackdrop());
+        Assert.assertNotNull(where + " 滤镜必须已写入节点", node.getBackdrop());
+        Assert.assertEquals(where + " 滤镜材质 = 角色配方",
+                style.getBackdrop().getEffect().getMaterial(), node.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals(where + " 滤镜模糊半径 = 角色配方",
+                style.getBackdrop().getBlurRadius(), node.getBackdrop().getBlurRadius());
+    }
+
+    /**
+     * 默认工厂路径：外壳 root=PANEL、header=TOOLBAR、viewport=GROUP 的六属性等于对应角色配方；
+     * 顶栏文字取主题语义色；导航底座（SceneSegmented 根，G09 只读复用）仍是 TOOLBAR。
+     */
+    @Test
+    public void shellSurfacesConsumeRoleRecipesByDefault() {
+        host.__getRuntime().flush();
+
+        assertSurfaceRecipe("root", role(DARK, SceneTheme.Role.PANEL), host.__getRoot());
+        assertSurfaceRecipe("header", role(DARK, SceneTheme.Role.TOOLBAR), host.__getHeader());
+        assertSurfaceRecipe("viewport", role(DARK, SceneTheme.Role.GROUP), host.__getViewport());
+
+        // 顶栏文字：主题前景派生（旧静态 TEXT/MUTED 取色已删）。
+        SceneNode title = host.__getHeader().__getChildren().get(0);
+        SceneNode subtitle = host.__getHeader().__getChildren().get(1);
+        Assert.assertEquals("顶栏主标题取主题正文色", DARK.foreground(), title.getTextColor());
+        Assert.assertEquals("顶栏副标题取主题次要色", DARK.mutedForeground(), subtitle.getTextColor());
+
+        // 导航底座：SceneSegmented 根自行绑定 TOOLBAR（G09），宿主 navBar 不再叠第二层玻璃。
+        SceneNode navBase = host.__getNavBar().__getChildren().get(0);
+        Assert.assertEquals("导航底座底色 = TOOLBAR 配方",
+                role(DARK, SceneTheme.Role.TOOLBAR).getIdle().getTint(), navBase.getBackgroundColor());
+        Assert.assertEquals("导航底座圆角 = TOOLBAR 配方",
+                role(DARK, SceneTheme.Role.TOOLBAR).getCornerRadius(), navBase.getCornerRadius());
+        Assert.assertEquals("navBar 自身不装表面（不叠第二层玻璃）", 0, host.__getNavBar().getBackgroundColor());
+
+        // 页面公共构件：真实装配路径（页面工厂 → PlaygroundKit.card）同样取 GROUP 配方。
+        assertSurfaceRecipe("页面卡片（PlaygroundKit.card）", role(DARK, SceneTheme.Role.GROUP),
+                host.__getDisplayedPageRoot().__getChildren().get(0));
+    }
+
+    /**
+     * 主题切换：外壳三块表面随新主题更新，当前页根与导航选中不丢、节点身份不变、
+     * effect 数不增长。
+     */
+    @Test
+    public void themeSwitchUpdatesShellWithoutRebuildOrLosingPageAndNav() {
+        Assert.assertNotEquals("测试前提：深浅 PANEL 配方必须不同",
+                role(DARK, SceneTheme.Role.PANEL), role(LIGHT, SceneTheme.Role.PANEL));
+        Assert.assertNotEquals("测试前提：深浅 TOOLBAR 配方必须不同",
+                role(DARK, SceneTheme.Role.TOOLBAR), role(LIGHT, SceneTheme.Role.TOOLBAR));
+        Assert.assertNotEquals("测试前提：深浅 GROUP 配方必须不同",
+                role(DARK, SceneTheme.Role.GROUP), role(LIGHT, SceneTheme.Role.GROUP));
+        Assert.assertNotEquals("测试前提：深浅正文色必须不同", DARK.foreground(), LIGHT.foreground());
+
+        host.__getRuntime().flush();
+        // 先离开首页：验证主题切换不丢「当前页」与「导航选中」。
+        host.__getActivePageSignal().set(Integer.valueOf(1));
+        host.__getRuntime().flush();
+
+        SceneNode root = host.__getRoot();
+        SceneNode header = host.__getHeader();
+        SceneNode viewport = host.__getViewport();
+        SceneNode navBase = host.__getNavBar().__getChildren().get(0);
+        SceneNode pageRoot = host.__getDisplayedPageRoot();
+        SceneNode selectedSegment = navSegment(1);
+        SceneNode idleSegment = navSegment(0);
+        int effectsBeforeSwitch = ReactiveTestProbe.registeredEffectCount();
+
+        host.__getThemeSignal().set(LIGHT);
+        host.__getRuntime().flush();
+        // 颜色/浮点属性经 Motion 过渡：推进到配方目标值再断言（滤镜材质即刻重派生）。
+        host.__getRuntime().__finishMotionForTest();
+
+        Assert.assertSame("主题切换不重建 root", root, host.__getRoot());
+        Assert.assertSame("主题切换不重建 header", header, host.__getHeader());
+        Assert.assertSame("主题切换不重建 viewport", viewport, host.__getViewport());
+        assertSurfaceRecipe("切换后 root", role(LIGHT, SceneTheme.Role.PANEL), root);
+        assertSurfaceRecipe("切换后 header", role(LIGHT, SceneTheme.Role.TOOLBAR), header);
+        assertSurfaceRecipe("切换后 viewport", role(LIGHT, SceneTheme.Role.GROUP), viewport);
+        Assert.assertEquals("顶栏文字随主题更新", LIGHT.foreground(),
+                host.__getHeader().__getChildren().get(0).getTextColor());
+        Assert.assertEquals("顶栏副标题随主题更新", LIGHT.mutedForeground(),
+                host.__getHeader().__getChildren().get(1).getTextColor());
+
+        Assert.assertSame("主题切换不重建当前页", pageRoot, host.__getDisplayedPageRoot());
+        Assert.assertEquals("导航选中不丢", Integer.valueOf(1), host.__getActivePageSignal().get());
+        Assert.assertSame("主题切换不重建导航底座", navBase, host.__getNavBar().__getChildren().get(0));
+        Assert.assertEquals("导航底座随主题更新",
+                role(LIGHT, SceneTheme.Role.TOOLBAR).getIdle().getTint(), navBase.getBackgroundColor());
+        Assert.assertEquals("未选中段随主题更新",
+                role(LIGHT, SceneTheme.Role.INDICATOR).getIdle().getTint(), idleSegment.getBackgroundColor());
+        Assert.assertNotEquals("选中段与未选中段仍必须可区分（选中不丢）",
+                idleSegment.getBackgroundColor(), selectedSegment.getBackgroundColor());
+        // 页面公共构件在真实装配路径上随主题更新（页面经 Owner 作用域继承 runtime 默认主题）。
+        SceneNode pageCard = pageRoot.__getChildren().get(0);
+        Assert.assertSame("主题切换不重建页面卡片", pageCard, pageRoot.__getChildren().get(0));
+        Assert.assertEquals("页面卡片（PlaygroundKit.card）随主题更新",
+                role(LIGHT, SceneTheme.Role.GROUP).getIdle().getTint(), pageCard.getBackgroundColor());
+        Assert.assertEquals("主题切换不新增订阅", effectsBeforeSwitch,
+                ReactiveTestProbe.registeredEffectCount());
+    }
+
+    /**
+     * 局部主题：{@link SceneThemes#withTheme} 作用域内构建的公共构件（{@code PlaygroundKit.card()}）
+     * 跟随局部主题更新，且不外泄到外壳（外壳取 runtime 默认主题）。
+     */
+    @Test
+    public void withThemeScopedKitCardFollowsLocalThemeWithoutLeakingToShell() {
+        host.__getRuntime().flush();
+        Signal<SceneTheme> localTheme = Signal.create(DARK);
+        SceneNode probeHost = new SceneNode();
+        MountHandle probe = host.__getRuntime().mount(probeHost, () -> {
+            SceneNode box = SceneNode.column();
+            SceneThemes.withTheme(localTheme, () -> box.appendChild(PlaygroundKit.card()));
+            return box;
+        });
+        host.__getRuntime().flush();
+
+        SceneNode card = probe.getRoot().__getChildren().get(0);
+        assertSurfaceRecipe("局部主题下的卡片", role(DARK, SceneTheme.Role.GROUP), card);
+
+        localTheme.set(LIGHT);
+        host.__getRuntime().flush();
+        host.__getRuntime().__finishMotionForTest();
+
+        Assert.assertSame("局部主题切换不重建卡片", card, probe.getRoot().__getChildren().get(0));
+        assertSurfaceRecipe("局部主题切换后的卡片", role(LIGHT, SceneTheme.Role.GROUP), card);
+        Assert.assertEquals("局部主题不外泄到外壳（外壳取 runtime 默认主题）",
+                role(DARK, SceneTheme.Role.PANEL).getIdle().getTint(), host.__getRoot().getBackgroundColor());
+
+        probe.dispose();
+        host.__getRuntime().flush();
+        Assert.assertTrue("探针卸载后挂载点无残留节点", probeHost.__getChildren().isEmpty());
+        Assert.assertEquals("页面单槽不受探针影响", 1, host.__getContent().__getChildren().size());
+    }
+
+    /**
+     * 卸载即回收：宿主销毁后外壳/页面绑定全部退订，effect 数回到构造前基线。
+     */
+    @Test
+    public void disposeReclaimsShellAndPageBindings() {
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+        TestPlaygroundHost probe = new TestPlaygroundHost(null);
+        try {
+            probe.__getRuntime().flush();
+            Assert.assertTrue("外壳与页面绑定应注册响应式工作，baseline=" + baseline
+                            + ", mounted=" + ReactiveTestProbe.registeredEffectCount(),
+                    ReactiveTestProbe.registeredEffectCount() > baseline);
+        } finally {
+            probe.dispose();
+        }
+        Assert.assertEquals("卸载后外壳/页面绑定全部回收",
+                baseline, ReactiveTestProbe.registeredEffectCount());
     }
 }

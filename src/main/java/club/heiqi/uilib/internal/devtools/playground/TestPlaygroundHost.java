@@ -3,31 +3,50 @@ package club.heiqi.uilib.internal.devtools.playground;
 import java.util.ArrayList;
 import java.util.List;
 
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 测试场地 scene 宿主 —— 顶栏 + 分段导航 + 单槽演示页 + 滚动视口。
  *
  * <p>树结构（COLUMN 居中，内容受最大宽约束）：</p>
  * <pre>
- * root (COLUMN, fillParent, crossAxisAlign=CENTER, padding, gap, bg=ROOT_BG)
- *   ├ header                自建标题条（22px 主标题 + 12px 副标题）
+ * root (COLUMN, fillParent, crossAxisAlign=CENTER, padding, gap)  ← PANEL 主题配方
+ *   ├ header                自建标题条（22px 主标题 + 12px 副标题）  ← TOOLBAR 主题配方
  *   ├ navBar                SceneSegmented 分段导航（页清单单选项，受控 selectedIndex）
  *   └ scrollContainer (ROW, fillParentHeight, gap)
- *       ├ viewport (COLUMN, fillParentHeight, flexGrow=1, scrollable, clip) ← 页面内容单槽
+ *       ├ viewport (COLUMN, fillParentHeight, flexGrow=1, scrollable, clip) ← GROUP 主题配方
  *       │   └ content (COLUMN) ← 当前页根挂载点
  *       └ scrollbarColumn        SceneScrollbar（反映 viewport 滚动）
  * </pre>
+ *
+ * <h3>外观归属（G16/外壳）</h3>
+ * <p>外壳三块表面（root/header/viewport）的 background/border/borderWidth/cornerRadius/
+ * backdrop/surfaceElevation 唯一写入者是 {@link SceneSurfaceBinder}，配方取当前来源主题的
+ * PANEL/TOOLBAR/GROUP 角色；旧的静态底色/圆角写入者（{@code PlaygroundKit.ROOT_BG}、
+ * {@code PANEL_BG}、{@code RADIUS_LG}）已删除，仅保留 PAD/GAP 等布局常量（主题不接管布局）。
+ * 顶栏文字取主题 {@code foreground}/{@code mutedForeground}。</p>
+ *
+ * <p>导航底座由 {@link SceneSegmented} 在其根节点上自行绑定 TOOLBAR 配方（G09 已主题化，
+ * 只读复用）；{@code navBar} 只做布局容器，<b>不再叠第二层玻璃</b>。</p>
+ *
+ * <p>主题来源是宿主自己的 runtime 默认主题信号（{@link #__getThemeSignal()}）：外壳在构造期
+ * 解析一次并随信号更新，页面内容经 Owner 作用域继承同一来源；页面内的
+ * {@link SceneThemes#withTheme} 局部覆盖只作用于该作用域内的内容，不外泄到外壳。</p>
  *
  * <h3>页面切换守不变量</h3>
  * <ul>
@@ -52,11 +71,15 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
     private static final int ROOT_GAP = 12;
     /** 副标题字号。 */
     private static final int SUBTITLE_FONT_SIZE = 12;
+    /** 外壳 enabled：外壳表面不可禁用（表面绑定器只关心恒真）。 */
+    private static final ReadableSignal<Boolean> SHELL_ENABLED = () -> Boolean.TRUE;
 
     /** 页面清单（构建期快照，不可变）。 */
     private final List<PlaygroundPage> pages;
     /** 受控导航源：当前页下标（0 起）。 */
     private final Signal<Integer> activePageSignal;
+    /** runtime 默认主题信号：外壳与页面内容共用同一来源，可整体切换。 */
+    private final Signal<SceneTheme> themeSignal;
 
     /** 场景树根节点。 */
     private SceneNode root;
@@ -82,10 +105,19 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         super(input);
         this.pages = PlaygroundPageRegistry.defaultPages();
         this.activePageSignal = Signal.create(Integer.valueOf(0));
+        this.themeSignal = Signal.create(SceneThemes.DEFAULT);
         runtime.__enableMotion();
-        buildShell();
-        runtime.bind(activePageSignal, this::requestPageTransition);
-        mountPage(0);
+        // 主题来源先于建树安装：外壳与页面都从 runtime 根作用域继承同一份主题信号。
+        SceneThemes.install(runtime, themeSignal);
+        // 公共构件（PlaygroundKit.card）没有 rt 形参，由宿主把 runtime 挂上 Owner 链。
+        PlaygroundKit.installRuntime(runtime);
+        // 外壳与首页都在 rootOwner 作用域内构建：构造期没有当前 Owner 时，主题解析与
+        // bindComputed 创建的 Computed/Effect 不归属任何作用域，卸载无法回收（effect 泄漏）。
+        runtime.__runRoot(() -> {
+            buildShell();
+            runtime.bind(activePageSignal, this::requestPageTransition);
+            mountPage(0);
+        });
         // A4c:构造期 flush 已收口——首帧管线 FLUSH 相位即物化本页;测试须自行 flush(见各页测试)。
     }
 
@@ -98,20 +130,25 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         root.setCrossAxisAlign(CrossAxisAlign.CENTER);
         root.setPadding(ROOT_PADDING);
         root.setGap(ROOT_GAP);
-        root.setBackgroundColor(PlaygroundKit.ROOT_BG);
+        // 外壳主面板：PANEL 配方（旧 ROOT_BG 静态底色写入者已删）。
+        bindShellSurface(root, SceneTheme.Role.PANEL);
 
         header = SceneNode.column();
         header.setFillParentWidth(true);
         header.setMaxWidth(CONTENT_MAX_WIDTH);
         header.setGap(2);
         header.setHitTestable(false);
-        header.appendChild(PlaygroundKit.text("Qz UILib 测试场地", PlaygroundKit.TEXT, 22));
-        header.appendChild(PlaygroundKit.text("内部开发调试入口 · 输入命令 /qzuilib test 打开", PlaygroundKit.MUTED,
-                SUBTITLE_FONT_SIZE));
+        // 顶栏文字走主题前景派生（构建期不读值，随主题更新）；旧静态 TEXT/MUTED 取色已删。
+        header.appendChild(PlaygroundKit.text(runtime, "Qz UILib 测试场地",
+                SceneThemes.foreground(runtime), 22));
+        header.appendChild(PlaygroundKit.text(runtime, "内部开发调试入口 · 输入命令 /qzuilib test 打开",
+                SceneThemes.mutedForeground(runtime), SUBTITLE_FONT_SIZE));
         // 固定兄弟高度先验：root（COLUMN）的 grow 求解器要求固定兄弟可先验，容器型兄弟
         // 不设 preferredHeight 会 UNCONSTRAINED 早退 → viewport 高度解耦失败、maxScrollY 恒 0
         // （真机「只能看到样式继承、无法滚动」根因）。header = 标题行高 + gap + 副标题行高。
         header.setPreferredHeight(measurer.lineHeight(22) + header.getGap() + measurer.lineHeight(SUBTITLE_FONT_SIZE));
+        // 顶栏底座：TOOLBAR 配方（与导航底座同角色）。
+        bindShellSurface(header, SceneTheme.Role.TOOLBAR);
         root.appendChild(header);
 
         navBar = SceneNode.row();
@@ -126,6 +163,8 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         SceneSegmented.Props segProps = new SceneSegmented.Props(
                 activePageSignal, titles, Signal.create(Boolean.TRUE),
                 idx -> activePageSignal.set(Integer.valueOf(idx)));
+        // 导航底座 = SceneSegmented 根（G09 已在其根上绑定 TOOLBAR 配方，只读复用）；
+        // navBar 只做布局容器，不在此再叠第二层玻璃。
         runtime.mount(navBar, SceneSegmented.create(runtime, segProps));
         root.appendChild(navBar);
 
@@ -141,8 +180,8 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         viewport.setClipChildren(true);
         viewport.setPadding(SceneChromeTokens.PAD_LG);
         viewport.setGap(SceneChromeTokens.GAP_MD);
-        viewport.setBackgroundColor(PlaygroundKit.PANEL_BG);
-        viewport.setCornerRadius(SceneChromeTokens.RADIUS_LG);
+        // 内容底座：GROUP 配方（旧 PANEL_BG 底色与 RADIUS_LG 圆角静态写入者已删）。
+        bindShellSurface(viewport, SceneTheme.Role.GROUP);
         scrollContainer.appendChild(viewport);
 
         content = SceneNode.column();
@@ -154,6 +193,24 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         SceneScrollbar.Result sb = SceneScrollbar.createDefault(runtime, viewport, scrollSignal);
         scrollContainer.appendChild(sb.column());
         root.appendChild(scrollContainer);
+    }
+
+    /**
+     * 绑定外壳表面：配方从当前来源主题解析（外壳在 rootOwner 作用域内构建，取宿主 runtime
+     * 默认主题），background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 唯一
+     * 写入者是 {@link SceneSurfaceBinder}。
+     *
+     * @param node 外壳节点
+     * @param role 材质角色
+     */
+    private void bindShellSurface(SceneNode node, SceneTheme.Role role) {
+        SceneInteractionState interaction = runtime.interactionState(node);
+        // 时序契约：Router 的 writeHovered/writePressed/writeFocused 对未创建的 signal 短路，
+        // 故在构建期声明关心，保证后续 hover/focus 能驱动配方状态档。
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(runtime, node, SceneThemes.surface(runtime, role), SHELL_ENABLED, interaction);
     }
 
     // ==================== 页面切换 ====================
@@ -267,6 +324,14 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
     /** @return 导航条节点 */
     SceneNode __getNavBar() {
         return navBar;
+    }
+
+    /**
+     * @return runtime 默认主题信号（外壳与页面内容的共同来源）；测试可
+     *     {@code set(另一主题) + flush()} 验证外壳随主题更新而不重建节点
+     */
+    Signal<SceneTheme> __getThemeSignal() {
+        return themeSignal;
     }
 
     /**

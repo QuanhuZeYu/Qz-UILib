@@ -1,18 +1,32 @@
 package club.heiqi.uilib.internal.devtools.playground;
 
+import java.util.Objects;
+
+import club.heiqi.uilib.ui.reactive.Owner;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
- * 测试场地页面通用配色与装配小工具。
+ * 测试场地页面通用装配小工具。
  *
  * <p>只做「构建期一次性建树」的静态装配：返回的节点已设好不可命中、宽度尺寸等静态样式，
  * 动态随状态变化的外观一律由页面在 {@code build} 内用 {@code rt.bind/bindComputed} 派生
  * （守 scene 信条 R3/R4：组件函数只执行一次、外观随状态经 bind 派生）。</p>
+ *
+ * <p><b>公共构件默认消费主题</b>：{@link #card()} 取 {@link SceneTheme.Role#GROUP} 配方，
+ * {@link #button}/{@link #primaryButton} 复用已主题化的 {@link SceneButton}（标准/主操作角色），
+ * 文本前景经 {@link #text(SceneRuntime, String, ReadableSignal, int)} 随主题更新。
+ * 诊断页的显式样本材质与语义色（
+ * {@code text(value, color, fontSize)} 的显式色、页面自建对照面板）保持原样，不被统一刷成主题。</p>
  *
  * <p>本类位于 {@code internal.devtools} 下，属内部调试设施，不构成公共 API 承诺。</p>
  */
@@ -36,7 +50,38 @@ public final class PlaygroundKit {
     /** 页面骨架最大内容宽（UI 像素）。 */
     public static final int MAX_CONTENT_WIDTH = 860;
 
+    /** 常开 enabled 信号：公共构件表面不可禁用（表面绑定器只关心恒真）。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
+
+    /** Owner 作用域键：构建上下文所属 runtime（供无 {@code rt} 形参的公共构件解析主题来源）。 */
+    private static final Object RUNTIME_KEY = new Object();
+
     private PlaygroundKit() {
+    }
+
+    /**
+     * 把 runtime 登记到它自己的根 Owner 作用域。
+     *
+     * <p>{@link #card()} 是页面普遍调用、却无法补 {@code rt} 形参的装配入口（页面清单只读），
+     * 因此由宿主在构造期把 runtime 挂上 Owner 链；页面构建期（mount/show/forEach/portal 的
+     * builder 内）沿父链即可解析到它，从而用同一套 {@link SceneThemes} 解析主题。</p>
+     *
+     * @param rt 场景运行时，不可为 null
+     */
+    static void installRuntime(SceneRuntime rt) {
+        Objects.requireNonNull(rt, "rt");
+        rt.__runRoot(() -> {
+            Owner owner = Owner.current();
+            if (owner != null) {
+                owner.setScope(RUNTIME_KEY, rt);
+            }
+        });
+    }
+
+    /** @return 当前构建上下文所属 runtime；不在任何 Playground 宿主上下文内时为 null */
+    private static SceneRuntime activeRuntime() {
+        Owner owner = Owner.current();
+        return owner == null ? null : owner.findScope(RUNTIME_KEY, SceneRuntime.class);
     }
 
     /**
@@ -63,6 +108,26 @@ public final class PlaygroundKit {
         node.setTextColor(color);
         node.setFontSize(fontSize);
         node.setHitTestable(false);
+        return node;
+    }
+
+    /**
+     * 创建主题前景文本节点（不可命中）：颜色由 {@code color} 信号驱动，构建期不读值，
+     * 主题切换后自动更新（供外壳标题等「跟随主题」文字使用；显式样本色仍走
+     * {@link #text(String, int, int)}）。
+     *
+     * @param rt       场景运行时
+     * @param value    文本
+     * @param color    前景色信号（如 {@link SceneThemes#foreground}/{@link SceneThemes#mutedForeground} 的派生）
+     * @param fontSize 字号（UI 像素）
+     * @return 文本节点
+     */
+    public static SceneNode text(SceneRuntime rt, String value, ReadableSignal<Integer> color, int fontSize) {
+        SceneNode node = new SceneNode();
+        node.setText(value);
+        node.setFontSize(fontSize);
+        node.setHitTestable(false);
+        rt.bindComputed(color::get, node::setTextColor);
         return node;
     }
 
@@ -97,7 +162,16 @@ public final class PlaygroundKit {
     }
 
     /**
-     * 创建标准面板卡片：实底 + 1px 边框 + 圆角 + 内边距 + 纵向间距，宽度填满父轴最大宽。
+     * 创建标准面板卡片：主题 {@link SceneTheme.Role#GROUP} 配方 + 内边距 + 纵向间距，
+     * 宽度填满父轴最大宽。
+     *
+     * <p><b>宿主内（{@link #installRuntime} 已登记）</b>走 {@link SceneSurfaceBinder}：
+     * background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 全由绑定器从 GROUP
+     * 配方派生，主题切换只重派生、不重建节点。卡片自身不是交互单元（交互在子控件上），退出
+     * 「叶命中目标」资格，避免整卡随指针变色；子控件仍可命中。</p>
+     *
+     * <p><b>无宿主上下文</b>时（独立像素夹具、尚未迁移的其他宿主）保留旧静态底色，外观与既有
+     * 断言不变；这类调用方接入 {@link #installRuntime} 后即自动消费主题。</p>
      *
      * @return 卡片根节点（COLUMN）
      */
@@ -107,10 +181,23 @@ public final class PlaygroundKit {
         card.setMaxWidth(MAX_CONTENT_WIDTH);
         card.setPadding(SceneChromeTokens.PAD_LG);
         card.setGap(SceneChromeTokens.GAP_MD);
-        card.setBackgroundColor(PANEL_BG);
-        card.setBorderWidth(1);
-        card.setBorderColor(BORDER);
-        card.setCornerRadius(SceneChromeTokens.RADIUS_MD);
+        card.setHitTestable(false);
+        SceneRuntime rt = activeRuntime();
+        if (rt == null) {
+            card.setBackgroundColor(PANEL_BG);
+            card.setBorderWidth(1);
+            card.setBorderColor(BORDER);
+            card.setCornerRadius(SceneChromeTokens.RADIUS_MD);
+            return card;
+        }
+        SceneInteractionState interaction = rt.interactionState(card);
+        // 时序契约：Router 的 writeHovered/writePressed/writeFocused 对未创建的 signal 短路，
+        // 构建期先声明关心（卡片非命中目标，实际写入恒 FALSE，配方停在 idle 档）。
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(rt, card, SceneThemes.surface(rt, SceneTheme.Role.GROUP),
+                ALWAYS_ENABLED, interaction);
         return card;
     }
 
@@ -150,7 +237,8 @@ public final class PlaygroundKit {
      * 创建并挂载标准按钮（STANDARD 变体）。
      *
      * <p>组件经 {@code rt.mount(parent, ...)} 挂到父节点并返回其根节点（调用一次即完成装配，
-     * 静态样式固化，动态交互走 bind/on）。</p>
+     * 静态样式固化，动态交互走 bind/on）。外观不传配方 → {@link SceneButton} 默认路径取主题
+     * {@link SceneTheme.Role#BUTTON_STANDARD} 角色（四态、前景、滤镜全由表面绑定器派生）。</p>
      *
      * @param rt      场景运行时
      * @param parent  挂载父节点
@@ -165,6 +253,8 @@ public final class PlaygroundKit {
 
     /**
      * 创建并挂载主操作按钮（PRIMARY 变体）。
+     *
+     * <p>外观同 {@link #button}：不传配方 → 主题 {@link SceneTheme.Role#BUTTON_PRIMARY} 角色。</p>
      *
      * @param rt      场景运行时
      * @param parent  挂载父节点
