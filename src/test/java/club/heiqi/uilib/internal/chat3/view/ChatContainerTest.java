@@ -771,9 +771,11 @@ public class ChatContainerTest {
             Assert.assertEquals("描边命令色 = 聊天设置令牌",
                     ChatMarkdownSettings.getContainerBorderArgb(),
                     plan.getCommands().get(borderAt).getColor());
-            for (PaintCommand command : plan.getCommands()) {
-                Assert.assertNotSame("全树无 ROUNDED_BAND 浮雕命令（大面板暗边不回归）",
-                        PaintCommandType.ROUNDED_BAND, command.getType());
+            // 浮雕检查只钉容器外框自身 fragment（父节点自身命令是先序前缀，止于其 BORDER）；
+            // 后代之中的输入条 chrome 在 G17/Input 迁移后合法走浮雕通道（台账裁决②），不在此约束内。
+            for (int i = 0; i <= borderAt; i++) {
+                Assert.assertNotSame("容器外框自身无 ROUNDED_BAND 浮雕命令（大面板暗边不回归）",
+                        PaintCommandType.ROUNDED_BAND, plan.getCommands().get(i).getType());
             }
             Assert.assertEquals("外框 surfaceElevation 保持未绑定默认 -1（普通绘制）",
                     -1.0F, container.__getSurfaceElevation(), 0.0F);
