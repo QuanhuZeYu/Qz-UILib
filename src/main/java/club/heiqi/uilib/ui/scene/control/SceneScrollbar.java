@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneScrollbar —— scene 控件库纵向滚动条控件，叠加在可滚动视口右侧反映滚动位置。
@@ -35,10 +36,24 @@ import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
  *
  * <h3>结构</h3>
  * <pre>
- * column (COLUMN, preferredWidth=hitBandWidth（缺省 barWidth）, fillParentHeight, bg=派生透明/trackColor, clipChildren=true, cornerRadius, hitTestable=true)
+ * column (COLUMN, preferredWidth=hitBandWidth（缺省 barWidth）, fillParentHeight, bg=派生透明/主题轨道 tint/显式 trackColor, clipChildren=true, cornerRadius, hitTestable=true)
  *   └─ thumb (preferredWidth=thumbVisualWidth（缺省 barWidth）, AlignSelf=END 贴右缘, preferredHeight=派生,
- *             bg=派生自定义/默认三态色, cornerRadius, transform.translateY=派生, hitTestable=true)   ← COMPOSITE 级平移，零重排
+ *             bg=派生主题三态色/显式三态色, cornerRadius, transform.translateY=派生, hitTestable=true)   ← COMPOSITE 级平移，零重排
  * </pre>
+ *
+ * <h3>默认配色（主题派生，滚动条不采样背景）</h3>
+ * <p>滚动条没有「表面」——按材质角色映射它不取 {@code SceneSurfaceStyle}，也<b>不给 column/thumb 装
+ * backdrop</b>：滚动条贴在任意内容之上，采样背景会引入额外滤镜开销与玻璃叠加噪声。默认配色改由主题
+ * 语义色派生（主题切换自动重算，不重建节点）：</p>
+ * <ul>
+ *   <li>thumb idle = {@link SceneThemes#mutedForeground} + 中性 alpha（{@link #THUMB_IDLE_ALPHA}）；</li>
+ *   <li>thumb hover = {@link SceneThemes#foreground} + {@link #THUMB_HOVER_ALPHA}（比 idle 更强的反馈）；</li>
+ *   <li>thumb drag = {@link SceneThemes#foreground} + {@link #THUMB_DRAG_ALPHA}（最强反馈）；</li>
+ *   <li>track = {@link SceneThemes#mutedForeground} + {@link #TRACK_TINT_ALPHA}（极淡槽底；无溢出仍全透明）。</li>
+ * </ul>
+ * <p>显式参数（{@code trackColor}/{@code thumbColor}/{@code hoverColor}/{@code dragColor}）优先级更高：
+ * 传具体色值即完全覆盖主题派生（{@link #THEME_COLOR} 哨兵与 {@code hoverColor/dragColor} 的 null 表示
+ * 「跟随主题」）。几何、滚动源、隐藏/显示、悬停与拖动语义与迁移前完全一致。</p>
  *
  * <h3>派生几何算法</h3>
  * <ul>
@@ -103,13 +118,15 @@ public final class SceneScrollbar {
      *                       scrollbar 据此派生 thumb Y，handler 读此值做拖动起点）
      * @param setScrollOffset 滚动偏移写入回调（handler 调用此回调写 scroll state；
      *                       拖动/track page/滚轮 handler 只调此回调，守 I1）
-     * @param trackColor    轨道背景色（ARGB），0 表示透明轨道
-     * @param thumbColor    滑块默认态背景色（ARGB，idle 态）
+     * @param trackColor    轨道背景色（ARGB）；0 表示显式透明轨道；{@link #THEME_COLOR} 表示跟随主题
+     *                      派生极淡 tint（默认，见类文档「默认配色」）
+     * @param thumbColor    滑块默认态背景色（ARGB，idle 态）；{@link #THEME_COLOR} 表示跟随主题派生
+     *                      （默认，mutedForeground + 中性 alpha）
      * @param barWidth      滚动条宽度（像素，建议 6-8）
      * @param minThumbHeight 滑块最小高度（像素，避免内容过多时滑块消失）
      * @param onDragStart 拖动开始回调；接收当前显示 offset，可用于取消尚未完成的平滑滚动，可为 null
-     * @param hoverColor  滑块悬停态背景色（ARGB）；null=沿用 {@link SceneChromeTokens#SCROLLBAR_THUMB_HOVER}
-     * @param dragColor   滑块拖动态背景色（ARGB）；null=沿用 {@link SceneChromeTokens#SCROLLBAR_THUMB_DRAG}
+     * @param hoverColor  滑块悬停态背景色（ARGB）；null=跟随主题派生（foreground + 更高强度）
+     * @param dragColor   滑块拖动态背景色（ARGB）；null=跟随主题派生（foreground + 最高强度）
      * @param hitBandWidth 命中带宽（像素）；0=缺省用 barWidth（column 加宽为隐性命中带，可视滑块贴右缘）
      * @param thumbVisualWidth 滑块可视宽度（像素）；0=缺省用 barWidth
      */
@@ -212,13 +229,30 @@ public final class SceneScrollbar {
         int thumbVisualWidth = props.thumbVisualWidth() > 0 ? props.thumbVisualWidth() : barWidth;
         int radius = Math.max(1, barWidth / 2);
 
+        // ---- 默认配色：主题语义色派生（显式色值完全覆盖主题）----
+        // 构造期捕获来源主题信号（此处 Owner.current() 是来源作用域）；派生期只读这些信号，
+        // 主题切换自动重算、不重建节点。仅在参数是「跟随主题」时才构造派生信号：
+        // 显式色路径零主题依赖，优先级仍是「显式 > 主题」。
+        boolean thumbFollowsTheme = props.thumbColor() == THEME_COLOR;
+        boolean trackFollowsTheme = props.trackColor() == THEME_COLOR;
+        // idle/track 共用同一 mutedForeground 派生（同一主题色只派生一次）。
+        ReadableSignal<Integer> themeMuted = (thumbFollowsTheme || trackFollowsTheme)
+                ? SceneThemes.mutedForeground(rt) : null;
+        // hover/drag 需要更高强度：只在对应显式色为 null 时构造 foreground 派生。
+        ReadableSignal<Integer> themeStrong = (props.hoverColor() == null || props.dragColor() == null)
+                ? SceneThemes.foreground(rt) : null;
+
         // 滚动条列固定占位宽度（命中带宽），overflow 只控制透明度，避免父级 ROW 跨帧重新分类。
         SceneNode column = SceneNode.column();
         column.setPreferredWidth(hitBandWidth);
         column.setFillParentHeight(true);
         column.setClipChildren(true);
-        if (props.trackColor() != 0) {
-            column.setBackgroundColor(props.trackColor());
+        // 首帧色：显式值原样，主题派生值取构造期已求值的派生初值（flush 前即有可读色，不写哨兵）。
+        int initialTrackColor = trackFollowsTheme
+                ? withAlpha(themeMuted.get().intValue(), TRACK_TINT_ALPHA)
+                : props.trackColor();
+        if (initialTrackColor != 0) {
+            column.setBackgroundColor(initialTrackColor);
         }
         column.setCornerRadius(radius);
         column.setHitTestable(true); // M2：column 可命中，注册 SCROLL handler 转发滚轮
@@ -229,7 +263,9 @@ public final class SceneScrollbar {
         SceneNode thumb = new SceneNode();
         thumb.setPreferredWidth(thumbVisualWidth);
         thumb.setPreferredHeight(0); // C5：首帧初始 0，避免首帧闪烁（effect 物化后覆盖）
-        thumb.setBackgroundColor(props.thumbColor());
+        thumb.setBackgroundColor(thumbFollowsTheme
+                ? withAlpha(themeMuted.get().intValue(), THUMB_IDLE_ALPHA)
+                : props.thumbColor());
         thumb.setCornerRadius(radius);
         thumb.setAlignSelf(AlignSelf.END);
         thumb.setHitTestable(true); // B2：thumb 可命中，注册拖动 handler
@@ -291,25 +327,34 @@ public final class SceneScrollbar {
             },
             (Float y) -> thumb.setTransform(Transform.translate(0f, y.floatValue())));
 
-        // ---- PAINT bind：track 颜色随 overflow 显隐 ----
+        // ---- PAINT bind：track 颜色随 overflow 显隐（默认取主题极淡 tint）----
         rt.bindComputed(() -> {
                 rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
                 if (!(cached instanceof LayoutBox)) {
                     return 0x00000000;
                 }
-                return SceneGeometry.maxScrollY(props.viewport()) > 0 ? props.trackColor() : 0x00000000;
+                if (SceneGeometry.maxScrollY(props.viewport()) <= 0) {
+                    return 0x00000000;
+                }
+                return trackFollowsTheme
+                        ? withAlpha(themeMuted.get().intValue(), TRACK_TINT_ALPHA)
+                        : props.trackColor();
             },
             (Integer c) -> column.setBackgroundColor(c.intValue()));
 
-        // ---- PAINT bind：thumb 颜色三态派生（B1 中性灰 + hover/drag 反馈）----
+        // ---- PAINT bind：thumb 颜色三态派生（默认主题派生 + hover/drag 更强反馈）----
         rt.__bindAnimatedColor(() -> {
                 hoveredSignal.get(); // 订阅 hover
                 pressedSignal.get(); // 订阅 pressed
                 rt.layoutDoneSignal().get();
                 Object cached = props.viewport().getCachedLayout();
+                // idle 色：主题派生（mutedForeground + 中性 alpha）或显式色（chat3 传入设计令牌）。
+                int idleColor = thumbFollowsTheme
+                        ? withAlpha(themeMuted.get().intValue(), THUMB_IDLE_ALPHA)
+                        : props.thumbColor();
                 if (!(cached instanceof LayoutBox)) {
-                    return props.thumbColor(); // flush 前兜底
+                    return idleColor; // flush 前兜底
                 }
                 int maxScroll = SceneGeometry.maxScrollY(props.viewport());
                 if (maxScroll <= 0) {
@@ -319,15 +364,13 @@ public final class SceneScrollbar {
                 boolean hovered = Boolean.TRUE.equals(hoveredSignal.get());
                 if (pressed) {
                     return props.dragColor() != null ? props.dragColor().intValue()
-                            : SceneChromeTokens.SCROLLBAR_THUMB_DRAG;
+                            : withAlpha(themeStrong.get().intValue(), THUMB_DRAG_ALPHA);
                 }
                 if (hovered) {
                     return props.hoverColor() != null ? props.hoverColor().intValue()
-                            : SceneChromeTokens.SCROLLBAR_THUMB_HOVER;
+                            : withAlpha(themeStrong.get().intValue(), THUMB_HOVER_ALPHA);
                 }
-                // idle 态回读 Props 注入的默认色(chat3 传入设计令牌 0x40FFFFFF;
-                // createDefault/create 其余调用方传 SCROLLBAR_THUMB_IDLE 本身,零回归)
-                return props.thumbColor();
+                return idleColor;
             },
             thumb::setBackgroundColor,
             SceneChromeTokens.MOTION_FAST_MS);
@@ -475,11 +518,13 @@ public final class SceneScrollbar {
     }
 
     /**
-     * 便捷重载：用默认 track/thumb 颜色 + 默认 bar 宽/最小 thumb 高构造。
+     * 便捷重载：用默认（跟随主题的）track/thumb 颜色 + 默认 bar 宽/最小 thumb 高构造。
      *
      * <p>消除 4 控件/demo 等调用方重复手写 7 参 Props 的样板。
      * 行为与 {@code create(rt, new Props(viewport, scrollSignal, scrollSignal::set,
-     * DEFAULT_TRACK_COLOR, DEFAULT_THUMB_COLOR, DEFAULT_BAR_WIDTH, DEFAULT_MIN_THUMB_HEIGHT))} 完全等价。</p>
+     * DEFAULT_TRACK_COLOR, DEFAULT_THUMB_COLOR, DEFAULT_BAR_WIDTH, DEFAULT_MIN_THUMB_HEIGHT))} 完全等价——
+     * 两个默认色常量都是 {@link #THEME_COLOR} 哨兵，故默认路径的配色由主题派生
+     * （见类文档「默认配色」），主题切换自动更新且不重建节点。</p>
      *
      * @param rt           场景运行时
      * @param viewport     被反映滚动位置的可滚动视口节点（必须已 scrollable，构建期固定引用）
@@ -493,13 +538,22 @@ public final class SceneScrollbar {
     }
 
     /**
-     * 默认滑块颜色（中性灰 idle 态，Slate-400 @ 60%）。
+     * 主题派生哨兵：{@code trackColor}/{@code thumbColor} 传本值表示「颜色跟随主题派生」，
+     * 不表示某个具体颜色。
+     *
+     * <p>取 alpha=0 的不可见值——任何未及处理就把它当颜色写入节点的路径都等同全透明，
+     * 不会出现哨兵色泄漏；显式传 {@code 0}（全透明）仍是「显式透明轨道」，不触发主题派生。
+     * 传其它具体 ARGB 即完全覆盖主题派生（与迁移前「显式参数优先」语义一致）。</p>
      */
-    public static final int DEFAULT_THUMB_COLOR = SceneChromeTokens.SCROLLBAR_THUMB_IDLE;
+    public static final int THEME_COLOR = 0x00000001;
     /**
-     * 默认轨道颜色（半透明白，约 27% 不透明度，在任意底色上微亮可见）。
+     * 默认滑块颜色（跟随主题：idle 取 {@code SceneThemes.mutedForeground} + {@link #THUMB_IDLE_ALPHA}）。
      */
-    public static final int DEFAULT_TRACK_COLOR = 0x44FFFFFF;
+    public static final int DEFAULT_THUMB_COLOR = THEME_COLOR;
+    /**
+     * 默认轨道颜色（跟随主题：{@code SceneThemes.mutedForeground} + {@link #TRACK_TINT_ALPHA} 极淡 tint）。
+     */
+    public static final int DEFAULT_TRACK_COLOR = THEME_COLOR;
     /**
      * 默认滚动条宽度（像素，M2 加宽后 8px，原 4px）。
      */
@@ -508,4 +562,34 @@ public final class SceneScrollbar {
      * 默认滑块最小高度（像素，避免内容过多时滑块缩到不可见）。
      */
     public static final int DEFAULT_MIN_THUMB_HEIGHT = 20;
+
+    /**
+     * 轨道 tint 的中性 alpha（约 14%）：比旧默认 {@code 0x44FFFFFF} 更淡，槽底只做弱提示，
+     * 不喧宾夺主；无溢出时轨道仍全透明。
+     */
+    static final int TRACK_TINT_ALPHA = 0x24;
+    /**
+     * 滑块 idle 态 alpha（约 60%，与旧默认 {@code SCROLLBAR_THUMB_IDLE} 同强度）。
+     */
+    static final int THUMB_IDLE_ALPHA = 0x99;
+    /**
+     * 滑块 hover 态 alpha（约 80%）：比 idle 明显提亮，反馈可感知。
+     */
+    static final int THUMB_HOVER_ALPHA = 0xCC;
+    /**
+     * 滑块拖动态 alpha（100%）：拖动是最强交互态，取主题正文色实心。
+     */
+    static final int THUMB_DRAG_ALPHA = 0xFF;
+
+    /**
+     * 把主题语义色的 RGB 与给定中性 alpha 组合（主题色自带 alpha 不参与，避免叠乘出不可见值）。
+     *
+     * @param argb  主题语义色
+     * @param alpha 目标 alpha（0..255，越界 clamp）
+     * @return 组合后的 ARGB
+     */
+    private static int withAlpha(int argb, int alpha) {
+        int clamped = Math.max(0, Math.min(0xFF, alpha));
+        return (clamped << 24) | (argb & 0x00FFFFFF);
+    }
 }

@@ -8,8 +8,10 @@ import org.junit.Test;
 import java.util.function.Consumer;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
@@ -24,11 +26,13 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneScrollbar 单元测试 —— 验证派生几何算法、失效级别（I4 双轨核对 / COMPOSITE 级零重排）、
- * B1 无溢出隐藏、B2 拖动 + track page、B3 resize 更新、C5 首帧零高、中性灰三态颜色。
+ * B1 无溢出隐藏、B2 拖动 + track page、B3 resize 更新、C5 首帧零高、主题派生默认配色
+ * （idle=mutedForeground+中性 alpha、hover/drag=foreground 更强档）与显式色完全覆盖主题。
  *
  * <p>测试用 {@code runtime.__bridgeLayoutEpoch(layoutEngine.layoutEpoch()) + runtime.flush()} 直接驱动
  * layoutDone observer，再用末次 layout 清理 effect 写入的 selfLayoutDirty。生产 host 会先完成
@@ -109,8 +113,8 @@ public class SceneScrollbarTest {
      *
      * @param viewportHeight 视口高度
      * @param contentHeight 内容高度
-     * @param hoverColor 自定义悬停色（null=沿用 SceneChromeTokens）
-     * @param dragColor 自定义拖拽色（null=沿用 SceneChromeTokens）
+     * @param hoverColor 自定义悬停色（null=跟随主题派生 foreground 档）
+     * @param dragColor 自定义拖拽色（null=跟随主题派生 foreground 档）
      * @param hitBandWidth 命中带宽（0=缺省用 barWidth）
      * @param thumbVisualWidth 滑块可视宽（0=缺省用 barWidth）
      * @return 滚动树构建产物
@@ -211,6 +215,47 @@ public class SceneScrollbarTest {
         return box.getY() + transformY + box.getHeight() / 2f;
     }
 
+    // ==================== 主题派生色期望值（与 SceneScrollbar 内部派生规则同构） ====================
+
+    /** 组合主题语义色 RGB 与中性 alpha（与 SceneScrollbar.withAlpha 规则一致）。 */
+    private static int withAlpha(int argb, int alpha) {
+        return ((alpha & 0xFF) << 24) | (argb & 0x00FFFFFF);
+    }
+
+    /** 主题派生 thumb idle 色：mutedForeground + THUMB_IDLE_ALPHA。 */
+    private static int themeThumbIdle(SceneTheme theme) {
+        return withAlpha(theme.mutedForeground(), SceneScrollbar.THUMB_IDLE_ALPHA);
+    }
+
+    /** 主题派生 thumb hover 色：foreground + THUMB_HOVER_ALPHA。 */
+    private static int themeThumbHover(SceneTheme theme) {
+        return withAlpha(theme.foreground(), SceneScrollbar.THUMB_HOVER_ALPHA);
+    }
+
+    /** 主题派生 thumb drag 色：foreground + THUMB_DRAG_ALPHA。 */
+    private static int themeThumbDrag(SceneTheme theme) {
+        return withAlpha(theme.foreground(), SceneScrollbar.THUMB_DRAG_ALPHA);
+    }
+
+    /** 主题派生 track 色：mutedForeground + TRACK_TINT_ALPHA。 */
+    private static int themeTrack(SceneTheme theme) {
+        return withAlpha(theme.mutedForeground(), SceneScrollbar.TRACK_TINT_ALPHA);
+    }
+
+    /**
+     * 建 viewport（可滚动，高 200）+ content（指定高）并挂到 sceneRoot，返回 scrollSignal。
+     * 供主题派生/回收类测试复用（这些测试自行 mount scrollbar，不走 {@link #build}）。
+     */
+    private Signal<Integer> attachViewport(SceneNode viewport, int contentHeight) {
+        viewport.setScrollable(true);
+        viewport.setPreferredHeight(200);
+        SceneNode content = new SceneNode();
+        content.setPreferredHeight(contentHeight);
+        viewport.appendChild(content);
+        sceneRoot.appendChild(viewport);
+        return SceneScrolls.attach(runtime, viewport);
+    }
+
     // ==================== 验收 1：结构 ====================
 
     @Test
@@ -251,9 +296,10 @@ public class SceneScrollbarTest {
         ScrollSetup setup = build(200, 600);
         SceneScrollbar.Result sb = setup.scrollbar;
         Assert.assertEquals("thumb 宽 = barWidth", BAR_WIDTH, sb.thumb().getPreferredWidth());
-        // B1：默认色改为中性灰 idle（Slate-400 @ 40%），不再是 ACCENT
-        Assert.assertEquals("thumb 默认色 = SCROLLBAR_THUMB_IDLE",
-                SceneChromeTokens.SCROLLBAR_THUMB_IDLE, sb.thumb().getBackgroundColor());
+        // 默认路径（DEFAULT_THUMB_COLOR = THEME_COLOR 哨兵）→ 主题派生 idle 色；
+        // 构造期即用派生初值写节点，flush 前也有可读色（不写哨兵值）。
+        Assert.assertEquals("thumb 默认色 = 主题派生 idle（mutedForeground + 中性 alpha）",
+                themeThumbIdle(SceneThemes.DEFAULT), sb.thumb().getBackgroundColor());
     }
 
     // ==================== 验收 2：派生几何（有溢出） ====================
@@ -385,22 +431,26 @@ public class SceneScrollbarTest {
         Assert.assertEquals("首帧 thumb 初始高=0", 0, setup.scrollbar.thumb().getPreferredHeight());
     }
 
-    // ==================== B1：有溢出 thumb 颜色 = 中性灰 idle ====================
+    // ==================== B1：有溢出 thumb/track 颜色 = 主题派生 ====================
 
     @Test
-    public void overflowThumbColorShouldBeNeutralGray() {
+    public void overflowThumbColorShouldFollowThemeMutedForeground() {
         ScrollSetup setup = build(200, 600);
         doFrame();
-        // 有溢出 + idle 态 → SCROLLBAR_THUMB_IDLE（中性灰）
-        Assert.assertEquals("有溢出 idle thumb 色 = SCROLLBAR_THUMB_IDLE",
-                SceneChromeTokens.SCROLLBAR_THUMB_IDLE,
+        // 有溢出 + idle 态 → 主题派生 idle 色（mutedForeground + 中性 alpha）
+        Assert.assertEquals("有溢出 idle thumb 色 = 主题派生 mutedForeground",
+                themeThumbIdle(SceneThemes.DEFAULT),
                 setup.scrollbar.thumb().getBackgroundColor());
+        // 有溢出 → track 取主题派生极淡 tint（无溢出时才透明）
+        Assert.assertEquals("有溢出 track 色 = 主题派生极淡 tint",
+                themeTrack(SceneThemes.DEFAULT),
+                setup.scrollbar.column().getBackgroundColor());
     }
 
     @Test
     public void customIdleThumbColorAppliesWhenNotHovered() {
         // P1-1 回归:idle 分支必须回读 Props.thumbColor(chat3 注入设计令牌 0x40FFFFFF),
-        // 而非恒返回 SceneChromeTokens.SCROLLBAR_THUMB_IDLE(0x99938F99)
+        // 而非恒返回主题派生 idle 色。显式色完全覆盖主题（守「显式 > 主题」优先级）。
         SceneNode viewport = new SceneNode();
         viewport.setScrollable(true);
         viewport.setPreferredHeight(200);
@@ -418,8 +468,8 @@ public class SceneScrollbarTest {
         doFrame();
         Assert.assertEquals("自定义 idle 色生效(非 hover/pressed 态回读 props)",
                 0x40FFFFFF, sb.thumb().getBackgroundColor());
-        Assert.assertNotEquals("不再恒为 SCROLLBAR_THUMB_IDLE", SceneChromeTokens.SCROLLBAR_THUMB_IDLE,
-                sb.thumb().getBackgroundColor());
+        Assert.assertNotEquals("显式色不再被主题派生覆盖",
+                themeThumbIdle(SceneThemes.DEFAULT), sb.thumb().getBackgroundColor());
     }
 
     // ==================== B1：thumb 颜色三态（hover/pressed） ====================
@@ -428,13 +478,13 @@ public class SceneScrollbarTest {
     public void thumbColorShouldReflectHoverState() {
         ScrollSetup setup = build(200, 600);
         doFrame();
-        // MOVE 到 thumb 中心 → hover=true
+        // MOVE 到 thumb 中心 → hover=true → 主题派生更高强度档（foreground + THUMB_HOVER_ALPHA）
         int x = centerX(setup.scrollbar.thumb());
         int y = centerY(setup.scrollbar.thumb());
         routePointer(ScenePointerAction.MOVE, x, y);
         runtime.flush();
-        Assert.assertEquals("hover thumb 色 = SCROLLBAR_THUMB_HOVER",
-                SceneChromeTokens.SCROLLBAR_THUMB_HOVER,
+        Assert.assertEquals("hover thumb 色 = 主题派生 foreground 更高强度档",
+                themeThumbHover(SceneThemes.DEFAULT),
                 setup.scrollbar.thumb().getBackgroundColor());
     }
 
@@ -447,8 +497,8 @@ public class SceneScrollbarTest {
         int y = centerY(setup.scrollbar.thumb());
         routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
         runtime.flush();
-        Assert.assertEquals("pressed thumb 色 = SCROLLBAR_THUMB_DRAG",
-                SceneChromeTokens.SCROLLBAR_THUMB_DRAG,
+        Assert.assertEquals("pressed thumb 色 = 主题派生 foreground 最高强度档",
+                themeThumbDrag(SceneThemes.DEFAULT),
                 setup.scrollbar.thumb().getBackgroundColor());
     }
 
@@ -1061,7 +1111,7 @@ public class SceneScrollbarTest {
 
     /**
      * T3 验收 b-1：自定义 hover 色。hoverColor=0x66FFFFFF 时，
-     * MOVE 进入 thumb 命中区 → 动画色 bind 输出自定义悬停色（不再走 SceneChromeTokens）。
+     * MOVE 进入 thumb 命中区 → 动画色 bind 输出自定义悬停色（不再走主题派生档）。
      */
     @Test
     public void customHoverColorShouldApplyOnHover() {
@@ -1095,7 +1145,7 @@ public class SceneScrollbarTest {
     /**
      * T3 验收 c：旧默认构造形态冒烟。12 参完整构造传 hover/drag=null、hitBand/visual=0，
      * create 不抛且回退 barWidth 缺省（column/thumb 宽 = barWidth），行为同旧 7 参构造。
-     * （null 色走 SceneChromeTokens 的旧断言已由 hover/pressed 既有测试覆盖。）
+     * （null 色走主题派生的断言已由默认路径/主题切换测试覆盖。）
      */
     @Test
     public void fullConstructorWithNullsShouldDefaultToBarWidth() {
@@ -1106,5 +1156,209 @@ public class SceneScrollbarTest {
                 setup.scrollbar.thumb().getPreferredWidth());
         Assert.assertEquals("thumb AlignSelf 仍为 END（不影响旧视觉）", AlignSelf.END,
                 setup.scrollbar.thumb().getAlignSelf());
+    }
+
+    // ==================== G07：默认工厂路径 = 主题派生配色 ====================
+
+    /**
+     * 默认工厂路径（{@code createDefault} + DEFAULT_* 哨兵）下：有溢出时
+     * thumb idle = 主题派生 mutedForeground+中性 alpha，track = 主题派生极淡 tint。
+     * 无溢出时两者仍全透明（B1 隐藏语义不变，见 noOverflowThumbColorShouldBeTransparent）。
+     */
+    @Test
+    public void defaultFactoryPathShouldDeriveColorsFromTheme() {
+        Assert.assertEquals("DEFAULT_THUMB_COLOR 是主题跟随哨兵",
+                SceneScrollbar.THEME_COLOR, SceneScrollbar.DEFAULT_THUMB_COLOR);
+        Assert.assertEquals("DEFAULT_TRACK_COLOR 是主题跟随哨兵",
+                SceneScrollbar.THEME_COLOR, SceneScrollbar.DEFAULT_TRACK_COLOR);
+
+        SceneNode viewport = new SceneNode();
+        Signal<Integer> scrollSignal = attachViewport(viewport, 600);
+        SceneScrollbar.Result sb = SceneScrollbar.createDefault(runtime, viewport, scrollSignal);
+        sceneRoot.appendChild(sb.column());
+        doFrame();
+
+        Assert.assertEquals("createDefault thumb idle = 主题派生 mutedForeground + 中性 alpha",
+                themeThumbIdle(SceneThemes.DEFAULT), sb.thumb().getBackgroundColor());
+        Assert.assertEquals("createDefault track = 主题派生极淡 tint",
+                themeTrack(SceneThemes.DEFAULT), sb.column().getBackgroundColor());
+    }
+
+    /**
+     * 哨兵与「显式透明」不混淆：trackColor=0 仍是显式透明轨道（不触发主题派生），
+     * thumbColor 传哨兵则跟随主题——chat3 的透明轨道 + 自定义滑块语义不受影响。
+     */
+    @Test
+    public void explicitZeroTrackColorShouldStayTransparent() {
+        SceneNode viewport = new SceneNode();
+        Signal<Integer> scrollSignal = attachViewport(viewport, 600);
+        SceneScrollbar.Props props = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                0, SceneScrollbar.THEME_COLOR, BAR_WIDTH, MIN_THUMB);
+        SceneScrollbar.Result sb = SceneScrollbar.create(runtime, props);
+        sceneRoot.appendChild(sb.column());
+        doFrame();
+
+        Assert.assertEquals("显式 0 轨道保持透明（不派生主题 tint）", 0x00000000,
+                sb.column().getBackgroundColor());
+        Assert.assertEquals("thumb 传哨兵跟随主题", themeThumbIdle(SceneThemes.DEFAULT),
+                sb.thumb().getBackgroundColor());
+    }
+
+    // ==================== G07：显式四色参数完全覆盖主题 ====================
+
+    /**
+     * 显式 trackColor/thumbColor/hoverColor/dragColor 完全覆盖主题：在 withTheme(浅色) 下
+     * 传四个显式色，idle/hover/drag/track 全取显式值，任何主题派生色都不出现。
+     */
+    @Test
+    public void explicitColorsShouldFullyOverrideTheme() {
+        final SceneTheme light = SceneTheme.liquidGlassLight();
+        Signal<SceneTheme> pageTheme = Signal.create(light);
+
+        SceneNode viewport = new SceneNode();
+        Signal<Integer> scrollSignal = attachViewport(viewport, 600);
+
+        final int explicitTrack = 0x11223344;
+        final int explicitThumb = 0x55667788;
+        final int explicitHover = 0x22334455;
+        final int explicitDrag = 0x1A2B3C4D;
+        SceneScrollbar.Props props = new SceneScrollbar.Props(
+                viewport, scrollSignal, scrollSignal::set,
+                explicitTrack, explicitThumb, BAR_WIDTH, MIN_THUMB,
+                null, Integer.valueOf(explicitHover), Integer.valueOf(explicitDrag), 0, 0);
+        MountHandle handle = runtime.mount(sceneRoot, () -> {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SceneScrollbar.create(runtime, props).column());
+            return holder[0];
+        });
+        doFrame();
+
+        SceneNode column = handle.getRoot();
+        SceneNode thumb = column.__getChildren().get(0);
+
+        Assert.assertEquals("显式 trackColor 覆盖主题", explicitTrack, column.getBackgroundColor());
+        Assert.assertEquals("显式 thumbColor（idle）覆盖主题", explicitThumb, thumb.getBackgroundColor());
+        Assert.assertNotEquals("track 不掺主题派生 tint", themeTrack(light), column.getBackgroundColor());
+
+        // hover：显式 hoverColor 生效，主题派生 hover 色不出现
+        int x = centerX(thumb);
+        int y = centerY(thumb);
+        routePointer(ScenePointerAction.MOVE, x, y);
+        runtime.flush();
+        Assert.assertEquals("显式 hoverColor 覆盖主题", explicitHover, thumb.getBackgroundColor());
+        Assert.assertNotEquals("hover 不掺主题派生色", themeThumbHover(light), thumb.getBackgroundColor());
+
+        // drag：pressed 优先于 hover，显式 dragColor 生效
+        routePointer(ScenePointerAction.BUTTON_DOWN, x, y);
+        runtime.flush();
+        Assert.assertEquals("显式 dragColor 覆盖主题（pressed 优先）", explicitDrag,
+                thumb.getBackgroundColor());
+        Assert.assertNotEquals("drag 不掺主题派生色", themeThumbDrag(light), thumb.getBackgroundColor());
+
+        handle.dispose();
+    }
+
+    // ==================== G07：主题切换更新配色且不丢滚动/不重建节点 ====================
+
+    /**
+     * 页面主题信号更新 + flush 后：track/thumb 配色随新主题更新，节点身份不变、
+     * 滚动偏移与 thumb 位置不丢、effect 数不增长；卸载后绑定全部回收。
+     */
+    @Test
+    public void themeSwitchShouldUpdateColorsWithoutRebuildOrScrollLoss() {
+        final SceneTheme dark = SceneTheme.liquidGlassDark();
+        final SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：深/浅主题 mutedForeground 必须不同",
+                dark.mutedForeground(), light.mutedForeground());
+        Assert.assertNotEquals("测试前提：深/浅主题 foreground 必须不同",
+                dark.foreground(), light.foreground());
+
+        SceneNode viewport = new SceneNode();
+        Signal<Integer> scrollSignal = attachViewport(viewport, 600);
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        MountHandle handle = runtime.mount(sceneRoot, () -> {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(pageTheme, () ->
+                    holder[0] = SceneScrollbar.createDefault(runtime, viewport, scrollSignal).column());
+            return holder[0];
+        });
+        doFrame();
+
+        final SceneNode column = handle.getRoot();
+        final SceneNode thumb = column.__getChildren().get(0);
+
+        Assert.assertEquals("初始 thumb 取深色主题派生 idle 色", themeThumbIdle(dark),
+                thumb.getBackgroundColor());
+        Assert.assertEquals("初始 track 取深色主题派生 tint", themeTrack(dark),
+                column.getBackgroundColor());
+
+        // 滚动偏移是外部权威源：先滚到 200，再切主题
+        scrollSignal.set(Integer.valueOf(200));
+        doFrame();
+        float transformBefore = thumb.getTransform().translateY;
+        Assert.assertTrue("前提：滚动后 thumb 已平移", transformBefore > 0f);
+
+        int effectsBeforeSwitch = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertSame("主题切换不重建 column 节点", column, handle.getRoot());
+        Assert.assertSame("主题切换不重建 thumb 节点", thumb, handle.getRoot().__getChildren().get(0));
+        Assert.assertEquals("thumb 随主题更新", themeThumbIdle(light), thumb.getBackgroundColor());
+        Assert.assertEquals("track 随主题更新", themeTrack(light), column.getBackgroundColor());
+        Assert.assertEquals("主题切换不丢滚动偏移", 200, scrollSignal.get().intValue());
+        Assert.assertEquals("主题切换不重置 thumb 位置", transformBefore,
+                thumb.getTransform().translateY, 0.0001f);
+        Assert.assertEquals("主题切换不新增订阅", effectsBeforeSwitch,
+                ReactiveTestProbe.registeredEffectCount());
+
+        handle.dispose();
+        Assert.assertEquals("卸载后回收 scrollbar 全部绑定", baseline,
+                ReactiveTestProbe.registeredEffectCount());
+    }
+
+    // ==================== G07：卸载回收绑定（effect 探针） ====================
+
+    /**
+     * 挂载注册响应式绑定（含主题派生 Computed）、卸载全部回收：
+     * {@code ReactiveTestProbe.registeredEffectCount()} 回到挂载前基线。
+     */
+    @Test
+    public void disposeShouldReclaimAllBindings() {
+        SceneNode viewport = new SceneNode();
+        Signal<Integer> scrollSignal = attachViewport(viewport, 600);
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+
+        MountHandle handle = runtime.mount(sceneRoot, () ->
+                SceneScrollbar.createDefault(runtime, viewport, scrollSignal).column());
+        runtime.flush();
+
+        int mounted = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("挂载应注册响应式绑定（含主题派生），baseline=" + baseline
+                + ", mounted=" + mounted, mounted > baseline);
+
+        handle.dispose();
+        Assert.assertEquals("卸载回收全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    // ==================== G07：滚动条不采样背景（无 backdrop / 无表面高度） ====================
+
+    /**
+     * 滚动条按材质角色映射为「无表面」：column/thumb 都不得装 backdrop，也不得声明
+     * surfaceElevation（不采样背景、不走浮雕路径），避免为滚动条增加滤镜开销。
+     */
+    @Test
+    public void scrollbarShouldNotSampleBackdrop() {
+        ScrollSetup setup = build(200, 600);
+        doFrame();
+        Assert.assertNull("column 不装 backdrop", setup.scrollbar.column().getBackdrop());
+        Assert.assertNull("thumb 不装 backdrop", setup.scrollbar.thumb().getBackdrop());
+        Assert.assertEquals("column 无表面高度（普通绘制）", -1.0f,
+                setup.scrollbar.column().__getSurfaceElevation(), 0.0f);
+        Assert.assertEquals("thumb 无表面高度（普通绘制）", -1.0f,
+                setup.scrollbar.thumb().__getSurfaceElevation(), 0.0f);
     }
 }
