@@ -10,6 +10,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
@@ -24,6 +25,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneRadioGroup 端到端单元测试 —— Phase 4 批 2 多选项单选受控控件（R8）验收。
@@ -31,7 +35,9 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * <p>构造 SceneRuntime + SceneLayoutEngine + ScenePaintEngine 三件套，端到端验证：
  * 受控闭环（点 option 只上抛期望下标、控件零状态不自改 selectedIndex）、
  * 命中穿透（点 circle/dot/label 装饰子节点穿透到所属 option）、四态切换零重排、
- * 键盘激活（Enter/Space）+ disabled 拦截、方向键导航（↑/↓ + 焦点移动）。</p>
+ * 键盘激活（Enter/Space）+ disabled 拦截、方向键导航（↑/↓ + 焦点移动），
+ * 以及主题化外观（circle 走 INDICATOR 选中配方、dot 走强调底前景、label 走主题前景、
+ * 主题切换不重建节点、禁用取禁用档、卸载回收绑定）。</p>
  */
 public class SceneRadioGroupTest {
 
@@ -58,12 +64,24 @@ public class SceneRadioGroupTest {
     private static final int CANVAS_HEIGHT = 200;
     private static final int STUB_CHAR_WIDTH = 8;
 
-    // SceneRadioGroup chrome token 镜像
-    private static final int CIRCLE_UNSEL_ENABLED = SceneChromeTokens.BG_DEFAULT;
-    private static final int CIRCLE_UNSEL_PRESSED = SceneChromeTokens.BG_PRESSED;
-    private static final int CIRCLE_SEL_ENABLED = SceneChromeTokens.ACCENT;
-    private static final int CIRCLE_DISABLED = SceneChromeTokens.BG_DISABLED;
-    private static final int DOT_COLOR = SceneChromeTokens.TEXT_ON_ACCENT;
+    /**
+     * 库默认主题的 INDICATOR 角色配方：circle 默认外观唯一来源。
+     * 断言取配方值而不是硬编码色号，主题集中调参时本类自动跟随。
+     */
+    private static final SceneSurfaceStyle CIRCLE_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.INDICATOR);
+    private static final int CIRCLE_UNSEL_ENABLED = CIRCLE_SURFACE.getIdle().getTint();
+    private static final int CIRCLE_UNSEL_PRESSED = CIRCLE_SURFACE.getPressed().getTint();
+    /**
+     * 选中档：{@code SceneThemes.selectableSurface} 把配方 tint 的 RGB 换成主题强调色、
+     * 保留原 alpha（故选中是色彩语义，不是仅透明度）。
+     */
+    private static final int CIRCLE_SEL_ENABLED = selectedTint(CIRCLE_UNSEL_ENABLED, SceneThemes.DEFAULT.accent());
+    private static final int CIRCLE_DISABLED = CIRCLE_SURFACE.getDisabled().getTint();
+    /** dot 选中标记 = 主题强调底前景色；label 前景 = 主题正文色 / 主题禁用前景色。 */
+    private static final int DOT_COLOR = SceneThemes.DEFAULT.onAccentForeground();
+    private static final int LABEL_ENABLED = SceneThemes.DEFAULT.foreground();
+    private static final int LABEL_DISABLED = SceneThemes.DEFAULT.disabledForeground();
     private static final int DOT_TRANSPARENT = 0x00000000;
 
     private static final List<String> OPTIONS = Arrays.asList("Low", "Mid", "High");
@@ -104,6 +122,19 @@ public class SceneRadioGroupTest {
     }
 
     // ==================== 辅助方法 ====================
+
+    /** 选中配方语义：保留配方 tint 的 alpha，RGB 换成强调色。 */
+    private static int selectedTint(int baseTint, int accent) {
+        return (baseTint & 0xFF000000) | (accent & 0x00FFFFFF);
+    }
+
+    private static int alphaOf(int argb) {
+        return (argb >>> 24) & 0xFF;
+    }
+
+    private static int rgbOf(int argb) {
+        return argb & 0x00FFFFFF;
+    }
 
     private LayoutResult doLayout() {
         return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -344,5 +375,183 @@ public class SceneRadioGroupTest {
         harness.click(circleNode(2));
         Assert.assertEquals("内容区点击仍应触发 onSelect", before + 1, selectCount.get());
         Assert.assertEquals("期望下标 2", Integer.valueOf(2), lastSelectValue);
+    }
+
+    // ==================== 验收 7：默认工厂路径消费主题（INDICATOR 配方 + 语义色） ====================
+
+    /**
+     * 默认工厂路径（不传任何样式参数）：circle 的边框宽/圆角/染色/滤镜/实体高度全部等于
+     * {@code SceneThemes.DEFAULT.surface(Role.INDICATOR)} 的对应值；选中时 tint 的 RGB 换成
+     * 强调色且保留配方 alpha（选中不只靠透明度）；dot 取主题强调底前景色、label 取主题正文色。
+     */
+    @Test
+    public void defaultFactoryShouldConsumeIndicatorRecipeAndThemeForeground() {
+        doLayout();
+
+        Assert.assertEquals("circle 圆角来自 INDICATOR 配方（不再是控件静态常量）",
+                CIRCLE_SURFACE.getCornerRadius(), circleNode(0).getCornerRadius());
+        Assert.assertEquals("circle 边框宽来自配方", CIRCLE_SURFACE.getBorderWidth(), circleNode(0).getBorderWidth());
+        Assert.assertNotNull("circle 默认带液态玻璃滤镜（INDICATOR 配方）", circleNode(0).getBackdrop());
+        Assert.assertEquals("circle backdrop 模糊半径来自配方", CIRCLE_SURFACE.getBackdrop().getBlurRadius(),
+                circleNode(0).getBackdrop().getBlurRadius());
+        Assert.assertEquals("circle 实体高度来自配方 idle 档", CIRCLE_SURFACE.getIdle().getElevation(),
+                circleNode(0).__getSurfaceElevation(), 0.0001F);
+
+        Assert.assertEquals("选中 circle 染色 = 配方 tint 换强调色", CIRCLE_SEL_ENABLED, circleNode(0).getBackgroundColor());
+        Assert.assertEquals("选中 tint 为强调色系", rgbOf(SceneThemes.DEFAULT.accent()),
+                rgbOf(circleNode(0).getBackgroundColor()));
+        Assert.assertEquals("选中保留配方 alpha（同 alpha 不同色，非仅透明度）",
+                alphaOf(CIRCLE_UNSEL_ENABLED), alphaOf(circleNode(0).getBackgroundColor()));
+        Assert.assertNotEquals("选中与未选中必须可区分", CIRCLE_UNSEL_ENABLED, circleNode(0).getBackgroundColor());
+        Assert.assertEquals("未选中 circle 染色 = 配方 idle tint", CIRCLE_UNSEL_ENABLED, circleNode(1).getBackgroundColor());
+
+        Assert.assertEquals("选中 dot = 主题强调底前景色", DOT_COLOR, dotNode(0).getBackgroundColor());
+        Assert.assertEquals("未选中 dot 透明", DOT_TRANSPARENT, dotNode(1).getBackgroundColor());
+        Assert.assertEquals("label 前景 = 主题正文色", LABEL_ENABLED, labelNode(0).getTextColor());
+        Assert.assertEquals("label[1] 前景 = 主题正文色", LABEL_ENABLED, labelNode(1).getTextColor());
+
+        // option 行不参与表面采样：保留静态圆角/边框/padding，不带滤镜
+        Assert.assertEquals("option 行圆角保持静态常量", SceneChromeTokens.RADIUS_LG, optionNode(0).getCornerRadius());
+        Assert.assertEquals("option 行边框保持静态常量", SceneChromeTokens.BORDER_DEFAULT, optionNode(0).getBorderColor());
+        Assert.assertNull("option 行不采样背景滤镜", optionNode(0).getBackdrop());
+    }
+
+    // ==================== 验收 8：禁用态取禁用档与禁用前景 ====================
+
+    /**
+     * 禁用态：circle 取角色配方禁用档，dot 透明（禁用不显示选中标记），label 取主题禁用前景色；
+     * 「选中 + 禁用」仍走禁用档（选中配方不覆盖 disabled 分支），受控值不受影响。
+     */
+    @Test
+    public void disabledShouldUseDisabledRecipeAndDisabledForeground() {
+        doLayout();
+
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("禁用 circle[0] 取配方禁用档", CIRCLE_DISABLED, circleNode(0).getBackgroundColor());
+        Assert.assertEquals("禁用 circle[1] 取配方禁用档", CIRCLE_DISABLED, circleNode(1).getBackgroundColor());
+        Assert.assertEquals("禁用时选中项 dot 也透明（禁用不显示选中标记）",
+                DOT_TRANSPARENT, dotNode(0).getBackgroundColor());
+        Assert.assertEquals("禁用未选中 dot 透明", DOT_TRANSPARENT, dotNode(1).getBackgroundColor());
+        Assert.assertEquals("禁用 label[0] 取主题禁用前景色", LABEL_DISABLED, labelNode(0).getTextColor());
+        Assert.assertEquals("禁用 label[1] 取主题禁用前景色", LABEL_DISABLED, labelNode(1).getTextColor());
+        Assert.assertEquals("禁用不改变受控值", Integer.valueOf(0), selectedSignal.get());
+
+        enabledSignal.set(Boolean.TRUE);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("恢复启用回选中档", CIRCLE_SEL_ENABLED, circleNode(0).getBackgroundColor());
+        Assert.assertEquals("恢复启用 dot 回强调底前景色", DOT_COLOR, dotNode(0).getBackgroundColor());
+        Assert.assertEquals("恢复启用 label 回正文色", LABEL_ENABLED, labelNode(0).getTextColor());
+    }
+
+    // ==================== 验收 9：selectedIndex 仍是唯一权威（互斥） ====================
+
+    /**
+     * selectedIndex 是唯一权威值：外部 set 2 后，只有 option[2] 取选中档，其余 option 全部退选
+     * ——控件不自持任何内部选中态。
+     */
+    @Test
+    public void selectedIndexShouldRemainSingleAuthorityForExclusion() {
+        doLayout();
+
+        selectedSignal.set(Integer.valueOf(2));
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("option[2] 取选中档", CIRCLE_SEL_ENABLED, circleNode(2).getBackgroundColor());
+        Assert.assertEquals("option[0] 退选档", CIRCLE_UNSEL_ENABLED, circleNode(0).getBackgroundColor());
+        Assert.assertEquals("option[1] 退选档", CIRCLE_UNSEL_ENABLED, circleNode(1).getBackgroundColor());
+        Assert.assertEquals("dot[2] 实心", DOT_COLOR, dotNode(2).getBackgroundColor());
+        Assert.assertEquals("dot[0] 透明", DOT_TRANSPARENT, dotNode(0).getBackgroundColor());
+        Assert.assertEquals("dot[1] 透明", DOT_TRANSPARENT, dotNode(1).getBackgroundColor());
+    }
+
+    // ==================== 验收 10：主题切换更新外观且不重建节点 / 不增订阅 ====================
+
+    /**
+     * 页面主题信号更新 + flush 后：circle/dot/label 外观随新主题更新，
+     * 节点身份不变、effect 数不增长；卸载后绑定全部回收。
+     */
+    @Test
+    public void themeSwitchShouldUpdateAppearanceWithoutRebuild() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：深/浅 INDICATOR 配方必须不同",
+                dark.surface(SceneTheme.Role.INDICATOR), light.surface(SceneTheme.Role.INDICATOR));
+
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        SceneRadioGroup.Props props = new SceneRadioGroup.Props(
+                selectedSignal, OPTIONS, enabledSignal, next -> lastSelectValue = next);
+
+        SceneNode host = new SceneNode();
+        MountHandle themed = runtime.mount(host, () -> {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SceneRadioGroup.create(runtime, props).get());
+            return holder[0];
+        });
+        runtime.flush();
+
+        SceneNode themedRoot = themed.getRoot();
+        SceneNode themedOption0 = themedRoot.__getChildren().get(0);
+        SceneNode themedOption1 = themedRoot.__getChildren().get(1);
+        SceneNode themedCircle0 = themedOption0.__getChildren().get(0);
+        SceneNode themedDot0 = themedCircle0.__getChildren().get(0);
+        SceneNode themedLabel0 = themedOption0.__getChildren().get(1);
+        SceneNode themedCircle1 = themedOption1.__getChildren().get(0);
+
+        Assert.assertEquals("初始 circle[1] 取深色配方", dark.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(),
+                themedCircle1.getBackgroundColor());
+        Assert.assertEquals("初始 circle[0] 取深色选中档",
+                selectedTint(dark.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), dark.accent()),
+                themedCircle0.getBackgroundColor());
+        Assert.assertEquals("初始 dot 取深色强调底前景色", dark.onAccentForeground(), themedDot0.getBackgroundColor());
+        Assert.assertEquals("初始 label 取深色正文色", dark.foreground(), themedLabel0.getTextColor());
+
+        int effectsBeforeSwitch = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertSame("主题切换不重建 option[0] 节点", themedOption0, themedRoot.__getChildren().get(0));
+        Assert.assertSame("主题切换不重建 circle 节点", themedCircle1, themedOption1.__getChildren().get(0));
+        Assert.assertSame("主题切换不重建 dot 节点", themedDot0, themedCircle0.__getChildren().get(0));
+        Assert.assertSame("主题切换不重建 label 节点", themedLabel0, themedOption0.__getChildren().get(1));
+        Assert.assertEquals("circle[1] 随主题更新", light.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(),
+                themedCircle1.getBackgroundColor());
+        Assert.assertEquals("circle 圆角随主题更新", light.surface(SceneTheme.Role.INDICATOR).getCornerRadius(),
+                themedCircle1.getCornerRadius());
+        Assert.assertEquals("circle[0] 选中档随主题更新",
+                selectedTint(light.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), light.accent()),
+                themedCircle0.getBackgroundColor());
+        Assert.assertEquals("dot 随主题更新", light.onAccentForeground(), themedDot0.getBackgroundColor());
+        Assert.assertEquals("label 随主题更新", light.foreground(), themedLabel0.getTextColor());
+        Assert.assertEquals("主题切换不新增订阅", effectsBeforeSwitch, ReactiveTestProbe.registeredEffectCount());
+
+        themed.dispose();
+        Assert.assertEquals("卸载后回收该实例全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    // ==================== 验收 11：卸载回收绑定（effect 探针） ====================
+
+    /**
+     * 挂载注册响应式绑定、卸载全部回收：{@code ReactiveTestProbe.registeredEffectCount()}
+     * 回到挂载前基线（守「卸载即回收」纪律）。
+     */
+    @Test
+    public void disposeShouldReclaimAllBindings() {
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+
+        SceneRadioGroup.Props props = new SceneRadioGroup.Props(
+                selectedSignal, OPTIONS, enabledSignal, next -> lastSelectValue = next);
+        MountHandle extra = runtime.mount(sceneRoot, SceneRadioGroup.create(runtime, props));
+        runtime.flush();
+
+        int mounted = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("挂载应注册响应式绑定，baseline=" + baseline + ", mounted=" + mounted,
+                mounted > baseline);
+
+        extra.dispose();
+        Assert.assertEquals("卸载回收全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
     }
 }

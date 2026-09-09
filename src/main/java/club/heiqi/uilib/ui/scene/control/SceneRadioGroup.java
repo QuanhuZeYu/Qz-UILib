@@ -15,7 +15,10 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneRadioGroup —— scene 新栈控件层 Phase 4 批 2 首个迁移控件（单选组，VERTICAL）。
@@ -30,15 +33,28 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <pre>
  * root (COLUMN, crossAxisAlign=START, gap)                  ← 容器，非交互单元
  *   └─ option[i] (ROW + SHRINK 内容宽, crossAxisAlign=CENTER, gap, padding, cornerRadius, borderWidth)  ← 交互单元 hitTestable=true
- *         ├─ circle[i] (16×16, 圆, borderWidth)             ← 装饰 hitTestable=false
- *         │     └─ dot[i] (8×8, 圆)                          ← 装饰 hitTestable=false
+ *         ├─ circle[i] (16×16, INDICATOR 配方: 圆角/边框/四态染色)  ← 装饰 hitTestable=false
+ *         │     └─ dot[i] (8×8, 圆, 选中标记)                ← 装饰 hitTestable=false
  *         └─ label[i] (text)                                ← 装饰 hitTestable=false
  * </pre>
  * <p>option 默认 SHRINK，命中外轮廓收至 circle+gap+label+padding 内容宽，避免 FILL 透明行吞掉父宽。</p>
  *
- * <h3>选中表达：透明背景而非 display:none（纯 PAINT 级零重排）</h3>
- * <p>dot 节点常驻占位，靠 {@code bind(PAINT, selectedIndex==i ? DOT_COLOR : 透明, dot::setBackgroundColor)}
- * 切换显隐，绝不增删节点——保证选中切换帧零重排（I7）。</p>
+ * <h3>选中表达：主题配方染色 + 透明背景而非 display:none（纯 PAINT 级零重排）</h3>
+ * <p>dot 节点常驻占位，靠「选中且启用 → 主题强调底前景色，其余 → 透明」切换显隐，绝不增删节点
+ * ——保证选中切换帧零重排（I7）。circle 的选中染色同样只改 tint，不动几何。</p>
+ *
+ * <h3>外观归属：表面绑定是 circle 的唯一写入者</h3>
+ * <p>circle 的 background / borderColor / borderWidth / cornerRadius / backdrop /
+ * surfaceElevation 全部由 {@link SceneSurfaceBinder} 从选中配方派生——配方来自
+ * {@link SceneThemes#selectableSurface(SceneRuntime, SceneTheme.Role, ReadableSignal)}
+ * 的 INDICATOR 角色：未选中取角色配方，选中态把 tint 的 RGB 换成主题强调色（保留原 alpha，
+ * 故「选中」是色彩语义而非仅透明度），禁用态仍取角色禁用档。控件不再静态设 circle 边框宽/圆角，
+ * 也不再叠加 {@code SceneStateColors.*Background} 与 {@code SceneControlChrome.bindStandardBorder}。</p>
+ *
+ * <p>dot 是控件自持的选中标记：取 {@link SceneThemes#onAccentForeground(SceneRuntime)}，
+ * 未选中/禁用保持透明；label 前景取 {@link SceneThemes#foreground(SceneRuntime)} /
+ * 禁用取 {@link SceneThemes#disabledForeground(SceneRuntime)}。option 行容器不参与表面采样
+ * （避免逐行重复滤镜），仍保留静态 padding / 圆角 / 边框。</p>
  *
  * <h3>契约</h3>
  * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 常量 + 回调 / R3 组件函数只执行一次 /
@@ -48,7 +64,7 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 public final class SceneRadioGroup {
 
     /**
-     * dot 未选中时颜色（全透明，纯 PAINT 切换不重排）
+     * dot 未选中/禁用时颜色（全透明，纯 PAINT 切换不重排）
      */
     private static final int DOT_TRANSPARENT = 0x00000000;
 
@@ -61,9 +77,12 @@ public final class SceneRadioGroup {
      */
     private static final int DOT_SIZE = 8;
     /**
-     * circle/dot 圆角（足够大呈圆）
+     * dot 圆角（像素，足够大使 dot 呈圆）。
+     *
+     * <p>circle 圆角不在此设值：它随表面绑定器从主题 INDICATOR 配方读取（默认档 8px，16×16 下即圆）
+     * ——圆角属于配方，不属控件。</p>
      */
-    private static final int CIRCLE_RADIUS = SceneChromeTokens.RADIUS_PILL;
+    private static final int DOT_RADIUS = SceneChromeTokens.RADIUS_PILL;
     /**
      * 边框宽度（像素）
      */
@@ -132,12 +151,18 @@ public final class SceneRadioGroup {
             result.root().setCrossAxisAlign(CrossAxisAlign.START);
             result.root().setGap(ITEM_GAP);
 
+            // 主题语义色派生在构造期捕获一次（来源作用域），循环内所有选项共享同一派生信号。
+            ReadableSignal<Integer> onAccentForeground = SceneThemes.onAccentForeground(rt);
+            ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+            ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
                 SceneNode option = handle.item();
                 option.setFlexDirection(FlexDirection.ROW);
                 option.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 option.setGap(OPTION_GAP);
                 option.setPadding(OPTION_PADDING);
+                // option 行容器不参与表面采样（避免逐行重复滤镜），保留静态圆角/边框/padding。
                 option.setCornerRadius(OPTION_RADIUS);
                 option.setBorderWidth(BORDER_WIDTH);
                 option.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
@@ -149,16 +174,15 @@ public final class SceneRadioGroup {
                 circle.setMainAxisAlign(MainAxisAlign.CENTER);
                 circle.setPreferredWidth(CIRCLE_SIZE);
                 circle.setPreferredHeight(CIRCLE_SIZE);
-                circle.setCornerRadius(CIRCLE_RADIUS);
-                circle.setBorderWidth(BORDER_WIDTH);
-                circle.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+                // 边框宽/圆角/四态染色/滤镜/实体高度全部由表面绑定器从选中配方派生：
+                // 构造期不再静态设 borderWidth/cornerRadius/borderColor，也不另绑状态色或标准边框。
                 circle.setHitTestable(false);
                 option.appendChild(circle);
 
                 SceneNode dot = new SceneNode();
                 dot.setPreferredWidth(DOT_SIZE);
                 dot.setPreferredHeight(DOT_SIZE);
-                dot.setCornerRadius(CIRCLE_RADIUS);
+                dot.setCornerRadius(DOT_RADIUS);
                 dot.setHitTestable(false);
                 circle.appendChild(dot);
 
@@ -166,14 +190,24 @@ public final class SceneRadioGroup {
 
                 SceneInteractionState interaction = handle.interaction();
 
-                SceneControlChrome.bindSelectableBackground(rt, circle, props.enabled(), handle.selected(), interaction);
-                SceneControlChrome.bindStandardBorder(rt, circle, props.enabled(), interaction);
-                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? SceneChromeTokens.TEXT_ON_ACCENT : DOT_TRANSPARENT,
+                // circle 表面：INDICATOR 角色配方 + selected 派生（选中把 tint RGB 换强调色，禁用取禁用档）。
+                // 唯一外观写入者，独占 background/border/borderWidth/cornerRadius/backdrop/surfaceElevation。
+                ReadableSignal<SceneSurfaceStyle> surface =
+                    SceneThemes.selectableSurface(rt, SceneTheme.Role.INDICATOR, handle.selected());
+                SceneSurfaceBinder.bind(rt, circle, surface, props.enabled(), interaction);
+
+                // dot：启用且选中取主题强调底前景色，其余（未选中/禁用）透明——禁用不显示选中标记，
+                // 显隐切换仍是纯 PAINT 级。
+                rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
+                        && Boolean.TRUE.equals(handle.selected().get())
+                        ? onAccentForeground.get() : DOT_TRANSPARENT,
                     dot::setBackgroundColor);
-                rt.bindComputed(() -> SceneStateColors.standardText(
-                        Boolean.TRUE.equals(props.enabled().get()), false),
+
+                // label 前景：主题正文色，禁用取主题禁用前景色。
+                rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
+                        ? foreground.get() : disabledForeground.get(),
                     handle.label()::setTextColor);
+
                 SceneControlChrome.bindCursor(rt, option, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
