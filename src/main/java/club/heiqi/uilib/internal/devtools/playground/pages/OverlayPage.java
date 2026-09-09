@@ -34,19 +34,16 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <p><b>外观归属（G16/OverlayPage）</b>：本页默认外观统一消费来源主题——卡片与右键演示区容器的
  * 表面（background/border/borderWidth/cornerRadius/backdrop/surfaceElevation）由
- * {@link SceneSurfaceBinder} 独占写入（角色配方由 {@link SceneThemes#surface} 解析），节标题取
- * {@link SceneThemes#foreground}、说明文字与动作日志取 {@link SceneThemes#mutedForeground}；
- * 旧的静态取色（{@code PlaygroundKit.PANEL_BG/BORDER/MUTED} 与
- * {@code SceneChromeTokens.RADIUS_MD}）已删除。Dialog/Toast/ContextMenu 的<b>本体外观仍由各自
+ * {@link SceneSurfaceBinder} 独占写入（角色配方由 {@link SceneThemes#surface} 解析）；节标题与
+ * 说明文字复用公共文本构件 {@link PlaygroundKit#title(String)}/{@link PlaygroundKit#hint(String)}
+ * （宿主内经 {@code installRuntime} 接缝默认跟随来源主题正文/次要前景），动作日志取
+ * {@link SceneThemes#mutedForeground}；旧的静态取色（{@code PlaygroundKit.PANEL_BG/BORDER/MUTED}
+ * 与 {@code SceneChromeTokens.RADIUS_MD}）已删除。Dialog/Toast/ContextMenu 的<b>本体外观仍由各自
  * 已主题化的控件负责</b>，本页只触发演示动作，不复制其样式、也不二次包一层玻璃；布局（内边距/
  * 高度/交叉轴对齐）仍归本页，主题不接管布局。</p>
  */
 public final class OverlayPage implements PlaygroundPage {
 
-    /** 页面节标题字号（与 {@code PlaygroundKit.title} 同口径）。 */
-    private static final int TITLE_FONT_SIZE = 16;
-    /** 说明文字字号（与 {@code PlaygroundKit.hint} 同口径）。 */
-    private static final int HINT_FONT_SIZE = 12;
     /** 常开 enabled 信号：右键演示区容器不参与 disabled 语义（表面绑定器只关心恒真）。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
@@ -79,7 +76,7 @@ public final class OverlayPage implements PlaygroundPage {
 
             // ===== 卡片1：Dialog =====
             SceneNode dialogCard = PlaygroundKit.card();
-            dialogCard.appendChild(title(rt, "Dialog（模态对话框）"));
+            dialogCard.appendChild(PlaygroundKit.title("Dialog（模态对话框）"));
             SceneNode dialogRow = PlaygroundKit.row(8);
             PlaygroundKit.primaryButton(rt, dialogRow, "打开危险操作确认",
                     () -> dialogVisible.set(Boolean.TRUE));
@@ -92,7 +89,7 @@ public final class OverlayPage implements PlaygroundPage {
                     () -> SceneDialog.confirm(rt, "删除确认", "删除后不可恢复，确定继续？",
                             () -> log.set("confirm：确定删除"), () -> log.set("confirm：已取消")));
             dialogCard.appendChild(dialogApiRow);
-            dialogCard.appendChild(hint(rt,
+            dialogCard.appendChild(PlaygroundKit.hint(
                     "模态：全屏遮罩拦截指针、卡片窗口中心对齐、Tab 环限定对话框内、ESC/取消关闭、出现/退场淡入淡出；"
                             + "按钮含 取消 / 再想想（closesDialog=false，只触发回调不关闭）/ 删除（DANGER）。"));
             SceneDialog.Props dialogProps = new SceneDialog.Props(
@@ -115,7 +112,7 @@ public final class OverlayPage implements PlaygroundPage {
 
             // ===== 卡片2：Toast =====
             SceneNode toastCard = PlaygroundKit.card();
-            toastCard.appendChild(title(rt, "Toast（非模态通知，底部堆叠 + 类型化 + 动画）"));
+            toastCard.appendChild(PlaygroundKit.title("Toast（非模态通知，底部堆叠 + 类型化 + 动画）"));
             SceneNode toastRow = PlaygroundKit.row(8);
             PlaygroundKit.button(rt, toastRow, "短 Toast（1.5s）",
                     () -> SceneToast.show(rt, "短通知：1.5 秒后消失", 1_500_000_000L));
@@ -132,13 +129,13 @@ public final class OverlayPage implements PlaygroundPage {
             PlaygroundKit.button(rt, toastTypeRow, "错误",
                     () -> SceneToast.showError(rt, "网络连接失败", 4_000_000_000L));
             toastCard.appendChild(toastTypeRow);
-            toastCard.appendChild(hint(rt,
+            toastCard.appendChild(PlaygroundKit.hint(
                     "快速连点不同按钮：底部堆叠、内容宽度收缩水平居中（不再占满全宽）、出现淡入+上移、"
                             + "到期先淡出再移除、各自按帧时间独立到期（非模态，不拦截指针）。"));
 
             // ===== 卡片3：ContextMenu =====
             SceneNode menuCard = PlaygroundKit.card();
-            menuCard.appendChild(title(rt, "ContextMenu（右键上下文菜单）"));
+            menuCard.appendChild(PlaygroundKit.title("ContextMenu（右键上下文菜单）"));
             SceneNode menuPanel = SceneNode.column();
             menuPanel.setPreferredHeight(48);
             menuPanel.setFillParentWidth(true);
@@ -155,7 +152,7 @@ public final class OverlayPage implements PlaygroundPage {
             regionInteraction.focused();
             SceneSurfaceBinder.bind(rt, menuPanel, SceneThemes.surface(rt, SceneTheme.Role.GROUP),
                     ALWAYS_ENABLED, regionInteraction);
-            menuPanel.appendChild(hint(rt, "在此区域点击右键打开上下文菜单"));
+            menuPanel.appendChild(PlaygroundKit.hint("在此区域点击右键打开上下文菜单"));
             menuCard.appendChild(menuPanel);
             rt.on(menuPanel, SceneEventType.POINTER_DOWN, (event, context) -> {
                 if (event.getButton() != SceneMouseButton.RIGHT) {
@@ -165,7 +162,8 @@ public final class OverlayPage implements PlaygroundPage {
                 int y = context.getRawPointerY() - context.getTreeRootAbsY();
                 SceneContextMenu.open(rt, x, y, buildMenuItems());
             });
-            SceneNode menuLog = PlaygroundKit.text(rt, "", SceneThemes.mutedForeground(rt), HINT_FONT_SIZE);
+            // 动作日志读数：12px 次要前景，取来源主题（与页内其它文字同一主题路径）。
+            SceneNode menuLog = PlaygroundKit.text(rt, "", SceneThemes.mutedForeground(rt), 12);
             menuCard.appendChild(menuLog);
             rt.bind(Computed.create(() -> log.get().isEmpty() ? "动作日志：（暂无，右键面板试试）" : "动作日志：" + log.get()),
                     menuLog::setText);
@@ -175,30 +173,6 @@ public final class OverlayPage implements PlaygroundPage {
             root.appendChild(menuCard);
             return root;
         };
-    }
-
-    /**
-     * 构建页面节标题：字号与 {@code PlaygroundKit.title} 同口径，前景取来源主题正文色
-     * （构建期捕获信号，主题切换自动更新，不重建节点）。
-     *
-     * @param rt    场景运行时
-     * @param value 标题文本
-     * @return 文本节点
-     */
-    private static SceneNode title(SceneRuntime rt, String value) {
-        return PlaygroundKit.text(rt, value, SceneThemes.foreground(rt), TITLE_FONT_SIZE);
-    }
-
-    /**
-     * 构建说明文字：字号与 {@code PlaygroundKit.hint} 同口径，前景取来源主题次要色
-     * （构建期捕获信号，主题切换自动更新，不重建节点）。
-     *
-     * @param rt    场景运行时
-     * @param value 说明文本
-     * @return 文本节点
-     */
-    private static SceneNode hint(SceneRuntime rt, String value) {
-        return PlaygroundKit.text(rt, value, SceneThemes.mutedForeground(rt), HINT_FONT_SIZE);
     }
 
     /**

@@ -163,8 +163,12 @@ public class OverlayPageTest {
         Assert.assertTrue("演示区容器表面必须走表面绑定器（唯一外观写入者）",
                 src.contains("SceneSurfaceBinder.bind("));
         Assert.assertTrue("演示区容器必须取 GROUP 角色配方", src.contains("SceneTheme.Role.GROUP"));
-        Assert.assertTrue("标题必须取主题正文前景", src.contains("SceneThemes.foreground("));
-        Assert.assertTrue("说明/日志必须取主题次要前景", src.contains("SceneThemes.mutedForeground("));
+        Assert.assertTrue("节标题必须复用公共主题文本构件", src.contains("PlaygroundKit.title("));
+        Assert.assertTrue("说明文字必须复用公共主题文本构件", src.contains("PlaygroundKit.hint("));
+        Assert.assertTrue("动作日志必须取主题次要前景", src.contains("SceneThemes.mutedForeground("));
+        Assert.assertFalse("不得页内自建文本助手/字号常量（口径统一归公共构件）",
+                src.contains("TITLE_FONT_SIZE") || src.contains("HINT_FONT_SIZE")
+                        || src.contains("SceneThemes.foreground("));
         Assert.assertFalse("不得残留 PlaygroundKit 静态色常量", src.contains("PlaygroundKit.MUTED")
                 || src.contains("PlaygroundKit.TEXT")
                 || src.contains("PlaygroundKit.BORDER")
