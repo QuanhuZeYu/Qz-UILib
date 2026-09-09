@@ -14,6 +14,11 @@ import org.junit.Test;
  *
  * <p>页骨架的 viewportBg/titleColor 仍物理重复，本测试一并守护；配置页 rootBg 现为
  * 专用半透明世界遮罩，刻意不再与通用 {@link FormTheme#defaultDark()} 对齐。</p>
+ *
+ * <p><b>G15/Theme 后定位</b>：本测试守护的是「显式旧路径」（静态常量与无参
+ * {@link ConfigTheme#asFormTheme()}）的旧语义不被改写；「默认路径」经
+ * {@link ConfigTheme#asFormTheme(club.heiqi.uilib.ui.scene.runtime.SceneRuntime)} 消费
+ * UILib 主题，其逐项映射与主题切换行为见 {@code ConfigThemeTest}。</p>
  */
 public class ConfigThemeAlignmentTest {
 

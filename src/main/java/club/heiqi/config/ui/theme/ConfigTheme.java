@@ -1,18 +1,34 @@
 package club.heiqi.config.ui.theme;
 
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
+import club.heiqi.uilib.ui.scene.form.FormThemes;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 配置页 UI 主题常量收口。
+ * 配置页 UI 主题的「配置包内消费入口」：双路径，与 {@code FormTheme}/{@code FormThemes}
+ * 的 G11 双路径同构。
  *
- * <p>不新立主题引擎，仅委托 {@link SceneChromeTokens} 与本地配色常量，
- * 供 config.ui 包内 {@code ConfigScreen} 与各 {@code FieldRenderer} 共享视觉口径。</p>
+ * <p><b>默认路径</b>（全库液态玻璃外观）：{@link #asFormTheme(SceneRuntime)} 经
+ * {@link FormThemes} 既有桥把当前来源主题（页面 {@code SceneThemes.withTheme} 局部主题 &gt;
+ * runtime 默认主题 &gt; 库默认液态玻璃档）派生为 {@link FormTheme}，主题切换自动重派生；
+ * 页壳语义色同样直接经 {@link club.heiqi.uilib.ui.scene.theme.SceneThemes} 的冻结便捷入口消费。
+ * 本类<b>不是</b>颜色权威：不复制、不改写任何色板，只做配置包内的消费收口。</p>
+ *
+ * <p><b>显式路径</b>（旧语义，完整保留）：本类静态常量与无参 {@link #asFormTheme()} 保持
+ * 「配置包内共享的显式旧主题」语义——固定值、不感知主题切换，供尚未迁移的调用点继续使用
+ * （契约 §4.2：{@code FormTheme}/{@code ConfigTheme} 保留旧显式主题语义；新增默认解析走主题）。
+ * {@code ConfigScreen} 与字段渲染器按 G15 序列在后续实例逐个转入默认路径。</p>
+ *
+ * <p><b>方向纪律</b>：配置包只消费 UILib 主题/模板，不反向成为主题中心——本类不得被
+ * {@code ui.scene.theme}/{@code ui.scene.form} 引用，桥接逻辑一律复用既有
+ * {@link FormThemes}，不新建第二份解析。</p>
  *
  * <p><b>访问说明</b>：概念上仅 config.ui 内部使用；因 Java 跨包访问限制
  * （{@code ConfigScreen} 在 {@code config.ui}，{@code FieldRenderer} 实现在
  * {@code config.ui.field}），常量需跨包可见，故类与常量设为 public。
- * 不属于对外公开 API，后续主题化时可在本类统一收口。</p>
+ * 不属于对外公开 API。</p>
  */
 public final class ConfigTheme {
 
@@ -112,10 +128,34 @@ public final class ConfigTheme {
      * <p>config.ui 是 uilib.form 的适配层，主题 token 仍由本类收口，经此方法转为
      * uilib.form 的 {@link FormTheme} 形态下沉给字段外壳。</p>
      *
-     * @return 深色档 FormTheme 实例
+     * <p><b>显式旧主题</b>：返回缓存的 {@link FormTheme#defaultDark()} 固定值，
+     * <b>不感知主题切换</b>（语义自 G11 前保持原样，未随默认路径迁移而改写）；
+     * 需要跟随主题的默认外观请用 {@link #asFormTheme(SceneRuntime)}。</p>
+     *
+     * @return 深色档 FormTheme 实例（缓存，恒同一对象）
      */
     public static FormTheme asFormTheme() {
         return FORM_THEME;
+    }
+
+    /**
+     * 默认路径：把当前来源 {@code SceneTheme} 经 {@link FormThemes} 既有桥派生为
+     * 配置页消费的 {@link FormTheme} 信号（G15/Theme 新增，全库默认液态玻璃外观）。
+     *
+     * <p>解析优先级与语义色/表面映射口径全部由 {@link FormThemes#resolve(SceneRuntime)}
+     * 单点定义（页面局部主题 &gt; runtime 默认 &gt; 库默认液态玻璃档）；本方法零色板、
+     * 零第二套解析，只是配置包内的消费入口收口。主题切换后信号自动重派生，不重建节点。</p>
+     *
+     * <p><b>构造期调用</b>：与 {@link FormThemes#resolve(SceneRuntime)} 同一纪律——必须在构建期
+     * （{@code mount/show/forEach/portal} 的 builder 内）调用，此时 {@code Owner.current()}
+     * 是来源作用域，局部/页面主题才能被捕获；无 Owner 时经 runtime 根作用域解析并安全回落库默认。
+     * 与无参 {@link #asFormTheme()} 的显式旧路径并存、互不感知。</p>
+     *
+     * @param rt 目标 runtime，不可为 null（null 抛 {@link NullPointerException}，不静默降级）
+     * @return 表单主题只读信号（恒非 null，其值恒非 null）
+     */
+    public static ReadableSignal<FormTheme> asFormTheme(SceneRuntime rt) {
+        return FormThemes.resolve(rt);
     }
 
     /** 纯常量类，禁止实例化 */
