@@ -387,11 +387,13 @@ public final class SceneToast {
             dot.setPreferredHeight(TYPE_DOT_SIZE);
             dot.setCornerRadius(TYPE_DOT_SIZE / 2);
             dot.setHitTestable(false);
-            // 语义色点：类型 → 来源主题语义色。初值构造期读取（信号可安全读），随后随来源主题更新；
-            // 写死色板已删除。
-            dot.setBackgroundColor(typeColor(entry.type(), entry.sourceTheme().get()));
-            rt.bindComputed(() -> Integer.valueOf(typeColor(entry.type(), entry.sourceTheme().get())),
-                    dot::setBackgroundColor);
+            // 语义色点：类型 → 来源主题语义色，取色一律走 SceneThemes 公共派生入口
+            // （G19/P-02 收编；本方法在 withTheme(entry.sourceTheme()) 作用域内构建，
+            // 入口解析到的正是该条消息的来源主题）。初值构造期读取（信号可安全读），
+            // 随后随来源主题更新；写死色板已删除。
+            ReadableSignal<Integer> dotColor = typeColorSignal(rt, entry.type());
+            dot.setBackgroundColor(dotColor.get().intValue());
+            rt.bind(dotColor, dot::setBackgroundColor);
             toast.appendChild(dot);
 
             SceneNode label = new SceneNode();
@@ -425,28 +427,30 @@ public final class SceneToast {
     }
 
     /**
-     * 通知类型对应的主题语义色。
+     * 通知类型对应的主题语义色<b>信号</b>（G19/P-02 收编：类型→槽位的映射是本控件的
+     * 领域逻辑，保留在控件内；取色一律走 {@link SceneThemes} 公共派生入口，不再直读
+     * 主题字段）。必须在 {@link SceneThemes#withTheme} 来源主题作用域内（构建期）调用。
      *
-     * <p>INFO 取次要前景（中性、无强调）；SUCCESS 取主题强调色；WARNING/ERROR 分别取主题
-     * {@code warningText}/{@code errorText}。深色档 accent（{@code 0xFF4F378B}）对深色玻璃底
-     * 仅约 1.5:1，色点可辨性偏弱——这是主题缺少「成功」语义色的缺口，留给 G19 集中校准
-     * （新增 successText 或提亮深色档 accent），本类不自行拼色。</p>
+     * <p>INFO 取次要前景（中性、无强调）；SUCCESS 取 {@link SceneThemes#successText}
+     * （当前委托 accent——主题尚无 success 槽的 G19/P-02 裁决，深色档 accent 对深色玻璃底
+     * 仅约 1.54:1，色点可辨性偏弱，未来增设分量后本入口自动跟随）；WARNING/ERROR 分别取
+     * {@link SceneThemes#warningText}/{@link SceneThemes#errorText}。本类不自行拼色。</p>
      *
-     * @param type  通知类型
-     * @param theme 来源主题
-     * @return 色点 ARGB
+     * @param rt   场景运行时（构造期 Owner 上下文须有效）
+     * @param type 通知类型
+     * @return 色点颜色只读信号
      */
-    private static int typeColor(Type type, SceneTheme theme) {
+    private static ReadableSignal<Integer> typeColorSignal(SceneRuntime rt, Type type) {
         switch (type) {
             case SUCCESS:
-                return theme.accent();
+                return SceneThemes.successText(rt);
             case WARNING:
-                return theme.warningText();
+                return SceneThemes.warningText(rt);
             case ERROR:
-                return theme.errorText();
+                return SceneThemes.errorText(rt);
             case INFO:
             default:
-                return theme.mutedForeground();
+                return SceneThemes.mutedForeground(rt);
         }
     }
 }

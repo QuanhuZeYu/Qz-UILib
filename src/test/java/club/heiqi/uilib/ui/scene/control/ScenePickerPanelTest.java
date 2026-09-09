@@ -1196,10 +1196,43 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("错误行 = 主题 errorText 前景",
                 Integer.valueOf(SceneThemes.DEFAULT.errorText()),
                 Integer.valueOf(errorNode.getTextColor()));
+        // G19/P-02 收编钉：错误行前景 = 公共 SceneThemes.errorText 入口现值（逐位等值）。
+        Assert.assertEquals("错误行前景 = SceneThemes.errorText 公共入口现值",
+                SceneThemes.errorText(rt).get().intValue(), errorNode.getTextColor());
     }
 
-    /** 成员带空态提示 = 主题次要前景（CategoryNavPane 空态同口径）。 */
+    /**
+     * G19/P-02 收编钉（P-04 口径）：错误行色经公共 {@code SceneThemes.errorText} 入口取色，
+     * 换来源主题（深→浅）后重派生、节点不重建；两档 {@code assertNotEquals} 为前提。
+     */
     @Test
+    public void errorRowColorFollowsPublicEntryAcrossThemeSwitch() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：两档 errorText 必须不同",
+                dark.errorText(), light.errorText());
+        Signal<String> query = Signal.create("");
+        Signal<String> error = Signal.create("boom");
+        ThemedPanel t = new ThemedPanel(Props.builder(query,
+                Signal.create(new SearchPickerData.SearchResult(Arrays.asList(candidate("a")))),
+                Signal.create(Boolean.TRUE), query::set, ignored -> { }, visualAdapter())
+                .error(error));
+        t.open();
+
+        SceneNode errorNode = centerColumn(overlayRoot(0)).__getChildren().get(0);
+        Assert.assertEquals("初始错误行 = 深色 errorText",
+                dark.errorText(), errorNode.getTextColor());
+
+        t.pageTheme.set(light);
+        rt.flush();
+
+        Assert.assertEquals("换主题后错误行 = 浅色 errorText（公共入口重派生，不重建节点）",
+                light.errorText(), errorNode.getTextColor());
+        Assert.assertSame("主题切换不重建错误行节点", errorNode,
+                centerColumn(overlayRoot(0)).__getChildren().get(0));
+    }
+
+    /** 成员带空态提示 = 主题次要前景（CategoryNavPane 空态同口径）。 */    @Test
     public void membersEmptyHintUsesMutedForeground() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
         openPanel(f);

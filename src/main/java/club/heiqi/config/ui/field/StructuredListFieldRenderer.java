@@ -193,8 +193,6 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                                    StructuredListModel.IdentityLineage lineage, long key,
                                    String rootPath, ValueSpec.Member member) {
         final String memberName = member.name();
-        // 构造期捕获来源主题：member 行由 buildRow（forEach builder）同步构建，Owner 上下文有效。
-        ReadableSignal<SceneTheme> sourceTheme = SceneThemes.resolve(rt);
         SceneNode wrapper = SceneNode.column();
         wrapper.setGap(2);
         ValueSpec valueSpec = member.spec();
@@ -255,9 +253,9 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         wrapper.appendChild(FormLabeledControl.vertical(rt, member.displayLabel(), member.helper(), editor));
         SceneNode error = new SceneNode();
         error.setHitTestable(false);
-        // error 语义色由来源主题 errorText 经 bindComputed 独占写入（深色档值与旧
-        // ConfigTheme.ERROR_COLOR 0xFFFFB4AB 同源，默认外观不变，换主题自动重派生）。
-        rt.bindComputed(() -> Integer.valueOf(sourceTheme.get().errorText()), error::setTextColor);
+        // error 语义色经 SceneThemes.errorText 公共派生入口独占写入（G19/P-02 收编；深色档值
+        // 与旧 ConfigTheme.ERROR_COLOR 0xFFFFB4AB 同源，默认外观不变，换主题自动重派生）。
+        rt.bind(SceneThemes.errorText(rt), error::setTextColor);
         // ValueSpec validator 会把 List<String> 元素错误写成 members[index]；聚合到 member 行，
         // 同时让 prefix 依赖当前 row index，排序/删除后不会把错误黏在旧位置。
         ReadableSignal<String> errorSignal = adapter.errorSignalForPathAndDescendants(

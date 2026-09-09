@@ -758,19 +758,6 @@ public final class ScenePickerPanel {
                 ? normal.get() : disabled.get();
     }
 
-    /**
-     * 错误文本前景信号：构造期捕获来源主题信号，派生期只读该信号的 {@code errorText()}
-     * （SceneToast 已验收口径；SceneThemes 未提供 errorText 便捷派生，不自建色板）。
-     *
-     * @param rt 场景运行时
-     * @return 错误前景色只读信号
-     */
-    private static ReadableSignal<Integer> themeErrorText(SceneRuntime rt) {
-        ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
-        return () -> Integer.valueOf(
-                Objects.requireNonNull(theme.get(), "theme value").errorText());
-    }
-
     /** 左栏：分类导航列表（带线框外壳 + 内嵌滚动视口，选中态高亮、数量徽章、空分类隐藏）。 */
     /**
      * 中栏：布局壳（不装表面）包候选列表（SearchResultList）+ 信息条（PickerInfoBar）+ 错误行。
@@ -804,8 +791,9 @@ public final class ScenePickerPanel {
 
         SceneNode error = text("");
         error.setHitTestable(false);
-        // 错误行取主题 errorText 语义前景（SceneToast/ObjectField 同口径：经 resolve 消费主题字段）。
-        rt.bind(themeErrorText(rt), error::setTextColor);
+        // 错误行取主题 errorText 语义前景（G19/P-02 收编：经 SceneThemes.errorText 公共入口，
+        // 主题切换自动重派生，不重建节点）。
+        rt.bind(SceneThemes.errorText(rt), error::setTextColor);
         rt.bindText(error, props.error());
         center.appendChild(error);
 

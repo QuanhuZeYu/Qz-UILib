@@ -15,7 +15,6 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.ui.reactive.Computed;
-import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -445,7 +444,7 @@ public final class SceneObjectField {
 
         if (depth >= props.maxDepth()) {
             container.appendChild(textNode(rt, "嵌套层级超出显示深度，请通过配置文件编辑此字段",
-                    warningForeground(rt)));
+                    SceneThemes.warningText(rt)));
             return;
         }
 
@@ -563,7 +562,7 @@ public final class SceneObjectField {
         SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
         label.setPreferredWidth(LABEL_WIDTH);
         row.appendChild(label);
-        row.appendChild(textNode(rt, text, warningForeground(rt)));
+        row.appendChild(textNode(rt, text, SceneThemes.warningText(rt)));
         return row;
     }
 
@@ -830,25 +829,6 @@ public final class SceneObjectField {
         node.setText(nullSafe(text));
         rt.bind(color, node::setTextColor);
         return node;
-    }
-
-    /**
-     * 主题 {@code warningText} 语义前景的只读派生。
-     *
-     * <p>{@link SceneThemes} 未提供 warningText 便捷派生，本方法与 {@code SceneToast} 同一口径：
-     * 构造期捕获来源主题信号，初值在非追踪上下文读取，派生期只读该信号，不拼任何静态色值。</p>
-     *
-     * @param rt 场景运行时
-     * @return 警告前景信号
-     */
-    private static ReadableSignal<Integer> warningForeground(SceneRuntime rt) {
-        ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
-        final int[] holder = new int[1];
-        Effect.untrack(() -> holder[0] =
-                Objects.requireNonNull(theme.get(), "theme value").warningText());
-        final int initial = holder[0];
-        return Computed.create(Integer.valueOf(initial), () -> Integer.valueOf(
-                Objects.requireNonNull(theme.get(), "theme value").warningText()));
     }
 
     /**

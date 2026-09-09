@@ -338,6 +338,55 @@ public class SceneToastTest {
                 SceneThemes.DEFAULT.errorText(), dotOf(toastAt(1)).getBackgroundColor());
     }
 
+    /**
+     * G19/P-02 收编钉：SUCCESS/WARNING/ERROR 三类色点一律经 {@code SceneThemes} 公共语义派生
+     * 入口取色（Type→槽位映射留在控件内）。深色档初始钉公共入口返回值；换 runtime 默认主题后
+     * 三颗色点全部重派生（真实装配 + 两档 assertNotEquals 前提，P-04 口径）。SUCCESS 现值
+     * == accent 是「success 借道 accent」裁决的钉（若未来增设 success 分量，本用例随实现一并改档）。
+     */
+    @Test
+    public void semanticTypeDotsFollowPublicEntriesAcrossThemeSwitch() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：两档 warningText 必须不同",
+                dark.warningText(), light.warningText());
+        Assert.assertNotEquals("测试前提：两档 errorText 必须不同",
+                dark.errorText(), light.errorText());
+        Assert.assertNotEquals("测试前提：两档 accent 必须不同",
+                dark.accent(), light.accent());
+
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        SceneThemes.install(runtime, pageTheme);
+        SceneToast.showSuccess(runtime, "成功");
+        runtime.flush();
+        SceneToast.showWarning(runtime, "警告");
+        runtime.flush();
+        SceneToast.showError(runtime, "错误");
+        runtime.flush();
+        tickAndFlush(ENTER);
+        doLayout();
+
+        Assert.assertEquals("SUCCESS 色点 = 公共 successText 入口现值（accent 借道裁决）",
+                SceneThemes.successText(runtime).get().intValue(),
+                dotOf(toastAt(0)).getBackgroundColor());
+        Assert.assertEquals("WARNING 色点 = 公共 warningText 入口现值",
+                dark.warningText(), dotOf(toastAt(1)).getBackgroundColor());
+        Assert.assertEquals("ERROR 色点 = 公共 errorText 入口现值",
+                dark.errorText(), dotOf(toastAt(2)).getBackgroundColor());
+
+        pageTheme.set(light);
+        runtime.flush();
+        tickAndFlush(ENTER);
+        doLayout();
+
+        Assert.assertEquals("换主题后 SUCCESS 色点 = 浅色 accent",
+                light.accent(), dotOf(toastAt(0)).getBackgroundColor());
+        Assert.assertEquals("换主题后 WARNING 色点 = 浅色 warningText",
+                light.warningText(), dotOf(toastAt(1)).getBackgroundColor());
+        Assert.assertEquals("换主题后 ERROR 色点 = 浅色 errorText",
+                light.errorText(), dotOf(toastAt(2)).getBackgroundColor());
+    }
+
     // ==================== 主题化：默认卡片 = OVERLAY 配方 ====================
 
     /**
