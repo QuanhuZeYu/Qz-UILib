@@ -35,9 +35,14 @@ import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 配置页 UI 骨架，extends {@link AbstractSceneHostWidget}。
@@ -45,17 +50,30 @@ import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
  * <p>Material settings page 结构；section 使用专用 Owner 单槽，并在完整布局发布后执行
  * 标题/字段 presentation shell 的满 opacity 级联进入：</p>
  * <pre>
- * root (COLUMN, centered, fillParentHeight, translucent bg=ROOT_BG)
- *   ├ titleBar        schema.title() + modId
- *   ├ statusSummary   dirty/error 状态
- *   ├ bodyRow         多 section 时固定左侧 navigation + tonal viewport
- *   │   ├ navPane     SceneNavList
- *   │   └ scrollContainer
- *   │       ├ viewport → content → active section Setting Rows
- *   │       └ scrollbarColumn
- *   ├ saveFeedbackBar (按状态懒挂载)
- *   └ actionBar       恢复默认 / 取消 / 保存，底部固定
+ * mask (root: COLUMN, fillParent, translucent bg=ROOT_BG——专用世界遮罩，只负责遮罩)
+ *   └ pageRoot (FormPageShell PANEL 玻璃页壳: COLUMN, centered, fillParentHeight)
+ *       ├ titleBar        schema.title() + modId（主题语义色）
+ *       ├ statusSummary   dirty/error 状态（主题语义色徽标）
+ *       ├ bodyRow         多 section 时固定左侧 navigation + PANEL 玻璃 viewport
+ *       │   ├ navPane     SceneNavList（自身已装 TOOLBAR 底座）
+ *       │   └ scrollContainer
+ *       │       ├ viewport → content → active section Setting Rows
+ *       │       └ scrollbarColumn
+ *       ├ saveFeedbackBar (按状态懒挂载，GROUP 玻璃底座)
+ *       └ actionBar       FormActionBar 默认路径（TOOLBAR 玻璃底座），底部固定
  * </pre>
+ *
+ * <h3>G15/Shell 液态玻璃迁移要点</h3>
+ * <ul>
+ *   <li>页壳/操作条走 theme-aware 无 {@code FormTheme} 参重载：表面（染色/边框/圆角/
+ *       浮雕/滤镜）由 {@link SceneSurfaceBinder} 独占、按来源主题 PANEL/TOOLBAR 配方逐项绑定，
+ *       主题切换只重派生、不重建节点、不丢草稿/分类/滚动。</li>
+ *   <li>语义色经 {@link ConfigTheme#asFormTheme(SceneRuntime)} 默认路径信号派生
+ *       （title/muted/text/error/dirty），不用 {@code .get()} 快照喂显式 build。</li>
+ *   <li>{@code ROOT_BG} 专用世界遮罩与玻璃分层：遮罩是独立外层节点、静态专用语义，
+ *       不装玻璃配方；绘制顺序上先于（位于）玻璃表面，不遮挡玻璃采样。</li>
+ *   <li>状态徽标按契约 §7.3「明确不迁移」保留显式底色/几何，仅状态描边色随主题语义色。</li>
+ * </ul>
  *
  * <h3>项2/3 布局语义</h3>
  * <ul>
@@ -96,6 +114,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     private static final int SECTION_REVEAL_MAX_DELAY_MS = 252;
     /** 配置主视口滚轮平滑收敛时长。 */
     private static final int SCROLL_MOTION_MS = ConfigTheme.MOTION_STANDARD_MS;
+    /** 玻璃底座恒定启用（页壳/反馈条无禁用态），供表面绑定器判定状态档。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     /** 配置管理器，保存事务入口 */
     private final ConfigManager manager;
@@ -108,8 +128,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     /** 恢复默认字段策略，可为 null（全部走默认恢复） */
     private final FieldRestorePolicy restorePolicy;
 
-    /** 场景树根节点 */
+    /** 场景树根节点：专用世界遮罩（静态 {@code ROOT_BG}，只负责遮罩，不装玻璃）。 */
     private SceneNode root;
+    /** {@link FormPageShell} 玻璃页壳根节点（PANEL 配方表面）；root 的唯一子。 */
+    private SceneNode pageRoot;
     /** 滚动视口节点 */
     private SceneNode viewport;
     /** 视口内容容器节点（任一时刻仅一个 live panel） */
@@ -167,6 +189,13 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     /** UI 构造作用域，所有 Computed/Effect 归属此 Owner，dispose 时统一回收 */
     private final Owner uiOwner = new Owner();
 
+    /**
+     * 页壳语义色来源：{@link ConfigTheme#asFormTheme(SceneRuntime)} 默认路径信号
+     * （G15/Theme 交付的桥，构建期在 uiOwner 作用域内解析一次并持有；构造期外只读该信号，
+     * 主题切换自动重派生，不持任何 {@code .get()} 快照）。
+     */
+    private ReadableSignal<FormTheme> formTheme;
+
     /** 最近一次保存结果，供测试探针 */
     private SaveOutcome lastSaveOutcome;
     /** 操作请求经三跳 effect 晚于字段终态收敛执行，避免同帧 UP→Save/Cancel 读取旧 Draft。 */
@@ -218,6 +247,28 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     public ConfigScreen(PlatformInputSource input, ConfigManager manager,
                         DraftSignalAdapter adapter, FieldRendererRegistry registry,
                         FieldRestorePolicy restorePolicy) {
+        this(input, manager, adapter, registry, restorePolicy, null);
+    }
+
+    /**
+     * 携带 runtime 默认主题的构造入口（包内测试接缝，不扩公共 API）。
+     *
+     * <p>{@code runtimeTheme} 非 null 时在页壳树构建前经契约冻结入口
+     * {@link SceneThemes#install(SceneRuntime, ReadableSignal)} 安装为 runtime 默认主题，
+     * 使「主题切换只重派生外观、不丢草稿/分类/滚动」可被确定性验证（P-04 口径要求切换档
+     * 配方值真的不同）。安装的不是第二套解析——恰是契约 §2.4 唯一安装路径；null 时不安装，
+     * 与公共构造器行为一致（回落库默认液态玻璃档）。</p>
+     *
+     * @param input        平台输入源，可为 null（headless 测试）
+     * @param manager      配置管理器
+     * @param adapter      草稿 signal 适配器
+     * @param registry     字段渲染器注册表
+     * @param restorePolicy 恢复默认字段策略，可为 null
+     * @param runtimeTheme runtime 默认主题信号，可为 null（不安装）
+     */
+    ConfigScreen(PlatformInputSource input, ConfigManager manager,
+                 DraftSignalAdapter adapter, FieldRendererRegistry registry,
+                 FieldRestorePolicy restorePolicy, ReadableSignal<SceneTheme> runtimeTheme) {
         super(input);
         if (manager == null) {
             throw new IllegalArgumentException("manager must not be null");
@@ -239,45 +290,58 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         this.registry = registry;
         this.schema = adapter.draft().schema();
         this.restorePolicy = restorePolicy;
+        if (runtimeTheme != null) {
+            SceneThemes.install(runtime, runtimeTheme);
+        }
         runtime.__enableMotion();
 
         // 在 uiOwner 作用域内构造，所有 Computed/Effect 归属 uiOwner，dispose 时统一回收
         uiOwner.run(() -> {
             bindActionPipeline();
 
-            // 用 FormPageShell.build 构建统一口径骨架（root/viewport/scrollContainer），
+            // 页壳语义色的唯一来源：构建期经 G15/Theme 默认路径桥解析一次并持有信号
+            // （禁止 .get() 快照喂显式 build；见 ConfigTheme 类头双路径文档）。
+            this.formTheme = ConfigTheme.asFormTheme(runtime);
+
+            // 用 FormPageShell.build 的 theme-aware 无 FormTheme 参重载构建统一口径骨架
+            // （页壳 root/viewport 表面按来源主题 PANEL 配方由 SceneSurfaceBinder 独占绑定，
+            // 圆角/边框/浮雕/滤镜全部归配方，主题切换只重派生、不重建节点）。
             // attachScroll=false：shell 不建 scrollSignal/scrollbar（ConfigScreen 自建 per-section）。
             // buildTitleBar=false：跳过 shell 标题条构造（shell 的 text 不设字号，无法满足
-            // FONT_TITLE/FONT_SUBTITLE 需求），ConfigScreen 自建 createTitleBar 直接挂 root。
-            // shell 复用通用 FormTheme；配置页 root 随后覆盖为专用半透明遮罩。
-            // 尺寸与其它 tonal surface 统一取 ConfigTheme。
+            // FONT_TITLE/FONT_SUBTITLE 需求），ConfigScreen 自建 createTitleBar 直接挂页壳。
+            // 专用世界遮罩与玻璃分层：遮罩是页壳外层的独立节点（静态 ROOT_BG，不装玻璃），
+            // 绘制顺序先于玻璃 BACKDROP，只负责遮罩、不遮挡玻璃采样（G15 验证条款）。
             FormPageShell.Parts parts = FormPageShell.build(runtime,
                     schema.title(), "modId: " + schema.modId(),
                     ConfigTheme.TITLE_BAR_HEIGHT, ConfigTheme.ROOT_PADDING, ConfigTheme.ROOT_GAP,
-                    14, 14, 10,
-                    false, false, ConfigTheme.asFormTheme());
-            this.root = parts.root();
+                    14, 14,
+                    false, false);
+            this.pageRoot = parts.root();
             this.viewport = parts.viewport();
             this.scrollContainer = parts.scrollContainer();
+            this.root = SceneNode.column();
             root.setBackgroundColor(ConfigTheme.ROOT_BG);
-            root.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            root.setFillParentWidth(true);
+            root.setFillParentHeight(true);
+            pageRoot.setFillParentWidth(true);
+            root.appendChild(pageRoot);
+            pageRoot.setCrossAxisAlign(CrossAxisAlign.CENTER);
             viewport.setCrossAxisAlign(CrossAxisAlign.CENTER);
-            viewport.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_LG);
             scrollContainer.setGap(ConfigTheme.SCROLL_GAP);
 
-            // shell.build 在 buildTitleBar=false 时只挂了 scrollContainer 到 root；ConfigScreen 需特化：
-            // 1) titleBar 字号 shell 不支持 → 自建 createTitleBar 挂 root 首位
+            // shell.build 在 buildTitleBar=false 时只挂了 scrollContainer 到页壳根；ConfigScreen 需特化：
+            // 1) titleBar 字号 shell 不支持 → 自建 createTitleBar 挂页壳首位
             // 2) 多 section 要把 scrollContainer 挂进统一侧栏 bodyRow → 摘下重挂
-            root.removeChild(scrollContainer);
+            pageRoot.removeChild(scrollContainer);
 
             this.titleBar = createTitleBar();
-            root.appendChild(titleBar);
+            pageRoot.appendChild(titleBar);
 
             // 操作条固定在页面底部，保存始终位于视觉终点且不随内容滚动。
             this.actionBar = createActionBar();
 
             this.statusSummary = createStatusSummary();
-            root.appendChild(statusSummary);
+            pageRoot.appendChild(statusSummary);
 
             this.sections = schema.sections();
             this.activeSectionSignal = Signal.create(Integer.valueOf(0));
@@ -303,24 +367,24 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 this.navRoot = createSidebarNav(bodyRow, sections);
                 scrollContainer.setFlexGrow(1);
                 bodyRow.appendChild(scrollContainer);
-                root.appendChild(bodyRow);
+                pageRoot.appendChild(bodyRow);
             } else {
                 // 0 或 1 section：无需导航，直接挂 scrollContainer
                 scrollContainer.setFillParentWidth(true);
                 scrollContainer.setMaxWidth(ConfigTheme.CONTENT_MAX_WIDTH);
-                root.appendChild(scrollContainer);
+                pageRoot.appendChild(scrollContainer);
             }
 
             // S4：save 反馈独立行，rt.show 懒挂载（saveFeedbackSignal 非 NONE 时显示，NONE 时隐藏不占高，守 I7）。
-            // 挂在 scrollContainer 之后（root COLUMN 内）——反馈靠近底部，actionBar 已在顶部，反馈不挤占操作行视觉。
-            rt().show(root,
+            // 挂在 scrollContainer 之后（页壳 COLUMN 内）——反馈靠近底部，actionBar 已在顶部，反馈不挤占操作行视觉。
+            rt().show(pageRoot,
                     Computed.create(() -> {
                         SaveFeedback fb = adapter.saveFeedbackSignal().get();
                         return Boolean.valueOf(fb != null && !fb.isNone());
                     }),
                     this::createSaveFeedbackBar);
 
-            root.appendChild(actionBar);
+            pageRoot.appendChild(actionBar);
 
             // ===== BUG2 修复：per-section scroll state（section 切换不丢失滚动位置）=====
             // 每个 section 独立持有一个 Signal<Integer>，切换 section 时显示源切到对应 signal，
@@ -405,9 +469,11 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * <p>m2：主标题用 {@link ConfigSchema#title()}（人类可读，缺省回退 modId），
      * 副标题显示 modId 技术标识。</p>
      *
-     * <p>注：root/viewport/scrollContainer 骨架由 {@link FormPageShell#build} 统一构建，
-     * titleBar 因字号需求（FONT_TITLE=22/FONT_SUBTITLE=12，shell 的 text 不设字号）保留自建——
-     * 构造期已传 buildTitleBar=false 跳过 shell 标题条构造，此处直接挂自建标题条到 root。</p>
+     * <p>注：pageRoot/viewport/scrollContainer 骨架由 {@link FormPageShell#build} 的 theme-aware
+     * 重载统一构建，titleBar 因字号需求（FONT_TITLE=24/FONT_SUBTITLE=12，shell 的 text 不设字号）
+     * 保留自建——构造期已传 buildTitleBar=false 跳过 shell 标题条构造，此处直接挂自建标题条到
+     * 玻璃页壳；标题/副标题前景经 {@code formTheme} 信号取主题语义色（与 shell 默认路径同映射：
+     * titleColor=foreground、mutedColor=mutedForeground），主题切换只重派生。</p>
      *
      * @return 标题条节点
      */
@@ -418,8 +484,12 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         bar.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
         bar.setGap(2);
         bar.setHitTestable(false);
-        bar.appendChild(text(schema.title(), ConfigTheme.TITLE_COLOR, ConfigTheme.FONT_TITLE));
-        bar.appendChild(text("modId: " + schema.modId(), ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_SUBTITLE));
+        bar.appendChild(text(schema.title(),
+                Computed.create(() -> Integer.valueOf(formTheme.get().titleColor())),
+                ConfigTheme.FONT_TITLE));
+        bar.appendChild(text("modId: " + schema.modId(),
+                Computed.create(() -> Integer.valueOf(formTheme.get().mutedColor())),
+                ConfigTheme.FONT_SUBTITLE));
         return bar;
     }
 
@@ -427,6 +497,11 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * 创建固定状态摘要条：dirty 计数徽标 + error 计数徽标。
      *
      * <p>S4：save 反馈已拆出为独立行（{@link #createSaveFeedbackBar}），不再挤在本行。</p>
+     *
+     * <p>G15/Shell：徽标状态描边经 {@code formTheme} 取主题语义色——dirty 态取
+     * {@code dirtyColor()}（主题 accent）、error 态取 {@code errorColor()}（主题 errorText）、
+     * 静默态取 {@code mutedColor()}；三态在任意主题档下互异可辨（dirty≠error≠静默由
+     * accent/errorText/mutedForeground 的语义分工保证，用例锁值）。</p>
      *
      * @return 状态摘要节点
      */
@@ -445,7 +520,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 }),
                 Computed.create(() -> {
                     int n = safeCount(adapter.dirtyCountSignal().get());
-                    return n > 0 ? ConfigTheme.DIRTY_COLOR : ConfigTheme.OK_COLOR;
+                    FormTheme theme = formTheme.get();
+                    return Integer.valueOf(n > 0 ? theme.dirtyColor() : theme.mutedColor());
                 })));
         // 错误字段计数徽标：「N 项校验错误」/「校验通过」
         row.appendChild(badge(
@@ -455,7 +531,8 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 }),
                 Computed.create(() -> {
                     int n = safeCount(adapter.errorCountSignal().get());
-                    return n > 0 ? ConfigTheme.ERROR_COLOR : ConfigTheme.OK_COLOR;
+                    FormTheme theme = formTheme.get();
+                    return Integer.valueOf(n > 0 ? theme.errorColor() : theme.mutedColor());
                 })));
 
         return row;
@@ -468,6 +545,12 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * <p>requiresReload 冲突时额外挂「丢弃编辑并重新加载」按钮行（组件只建一次，
      * 显隐由 Signal/Computed + rt.show 驱动，守 I1/I3/I9；不自动 reload/merge）。</p>
      *
+     * <p>G15/Shell：内容卡片底座改走主题路径——表面由 {@link SceneSurfaceBinder} 按来源
+     * 主题 {@code GROUP} 配方独占绑定（低干扰内容底座，契约 §4.1），旧的
+     * {@code SURFACE_CONTAINER}/{@code RADIUS_MD} 静态设色删除；反馈文字三态色经
+     * {@code formTheme}：none→mutedColor、error→errorColor、成功→dirtyColor（主题 accent，
+     * 替代旧固定绿 OK_COLOR——主题无 success 槽，叶子实例不自造色板）。</p>
+     *
      * @return save 反馈条节点（condition 为 true 时显示）
      */
     private SceneNode createSaveFeedbackBar() {
@@ -476,31 +559,32 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         col.setHitTestable(true);
         col.setFillParentWidth(true);
         col.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
-        col.setBackgroundColor(ConfigTheme.SURFACE_CONTAINER);
-        col.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_MD);
         col.setPadding(8);
-        // 固定 preferredHeight：作为 root COLUMN 内固定子，未设则 grow 求解器 UNCONSTRAINED 早退。
+        // 固定 preferredHeight：作为页壳 COLUMN 内固定子，未设则 grow 求解器 UNCONSTRAINED 早退。
         // 预留 reload 按钮行高度（即使当前不显示，高度略余可接受；冲突态可完整显示按钮）。
         col.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT + 6 + ConfigTheme.BUTTON_HEIGHT);
+        // GROUP 玻璃底座：染色/边框/圆角/浮雕/滤镜唯一写入者 = 表面绑定器（主题路径）。
+        bindGroupSurface(runtime, col);
 
         SceneNode row = SceneNode.row();
         row.setGap(8);
         row.setHitTestable(false);
         row.setPreferredHeight(ConfigTheme.SAVE_FEEDBACK_HEIGHT);
-        SceneNode feedback = text("", ConfigTheme.MUTED_COLOR, ConfigTheme.FONT_ERROR);
+        SceneNode feedback = text("", Computed.create(() -> {
+                    FormTheme theme = formTheme.get();
+                    SaveFeedback fb = adapter.saveFeedbackSignal().get();
+                    if (fb == null || fb.isNone()) {
+                        return Integer.valueOf(theme.mutedColor());
+                    }
+                    return Integer.valueOf(
+                            fb.isError() ? theme.errorColor() : theme.dirtyColor());
+                }),
+                ConfigTheme.FONT_ERROR);
         runtime.bindComputed(() -> {
                     SaveFeedback fb = adapter.saveFeedbackSignal().get();
                     return fb == null ? "" : fb.message();
                 },
                 feedback::setText);
-        runtime.bindComputed(() -> {
-                    SaveFeedback fb = adapter.saveFeedbackSignal().get();
-                    if (fb == null || fb.isNone()) {
-                        return ConfigTheme.MUTED_COLOR;
-                    }
-                    return fb.isError() ? ConfigTheme.ERROR_COLOR : ConfigTheme.OK_COLOR;
-                },
-                feedback::setTextColor);
         row.appendChild(feedback);
         col.appendChild(row);
 
@@ -772,10 +856,11 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         MountHandle handle = runtime.mount(parent, SceneNavList.create(runtime, props));
         SceneNode nav = handle.getRoot();
         if (nav != null) {
+            // 只做布局：宽度/高度/内边距。表面（background/border/cornerRadius/backdrop/浮雕）
+            // 由已主题化的 SceneNavList 内部 TOOLBAR 配方独占绑定（契约 §4.1），此处不得再静态设色
+            // 竞争同一节点——G15/Shell 删除旧的 SURFACE_CONTAINER/RADIUS_LG 静态写入。
             nav.setPreferredWidth(ConfigTheme.NAV_PANE_WIDTH);
             nav.setFillParentHeight(true);
-            nav.setBackgroundColor(ConfigTheme.SURFACE_CONTAINER);
-            nav.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_LG);
             nav.setPadding(8);
         }
         return nav;
@@ -838,7 +923,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         SceneNode sectionNode = SceneNode.column();
         sectionNode.setGap(ConfigTheme.FIELD_GAP);
         sectionNode.setFillParentWidth(true);
-        SceneNode sectionTitle = text(section.title(), ConfigTheme.TITLE_COLOR, ConfigTheme.FONT_SECTION);
+        SceneNode sectionTitle = text(section.title(),
+                Computed.create(() -> Integer.valueOf(formTheme.get().titleColor())),
+                ConfigTheme.FONT_SECTION);
         sectionNode.appendChild(sectionTitle);
         List<SceneNode> revealTargets = new ArrayList<SceneNode>();
         revealTargets.add(sectionTitle);
@@ -904,12 +991,17 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * 保存在最右末位（主操作落在视线终点）。中间插 flexGrow=1 的 spacer 节点撑开剩余宽度
      * （scene MainAxisAlign 无 SPACE_BETWEEN，用 spacer 方案）。</p>
      *
-     * <p>该固定行位于 root 末尾，save/cancel/restore 始终可见、不随内容滚动。</p>
+     * <p>该固定行位于页壳根末尾，save/cancel/restore 始终可见、不随内容滚动。</p>
+     *
+     * <p>G15/Shell：改用 {@link FormActionBar} 的 theme-aware 无 {@code FormTheme} 参重载
+     * （TOOLBAR 一颗玻璃底座，内部按钮走 BUTTON_STANDARD/PRIMARY 角色），删除旧的
+     * {@code SURFACE_CONTAINER}/{@code RADIUS_LG} 后缀静态设色——表面唯一写入者是
+     * {@code FormActionBar} 内部的 {@link SceneSurfaceBinder}（G11/ActionBar 遗留裁决，本次执行）。
+     * 仅保留布局属性（fillParentWidth/maxWidth/padding/子按钮尺寸）。</p>
      *
      * @return 操作条节点
      */
     private SceneNode createActionBar() {
-        FormTheme theme = ConfigTheme.asFormTheme();
         ReadableSignal<Boolean> cancelEnabled = () -> {
             adapter.isDirtySignal().get();
             return Boolean.valueOf(adapter.draft().isDirtyAny());
@@ -922,7 +1014,6 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 Signal.create(Boolean.TRUE), () -> requestAction(ActionKind.RESTORE),
                 cancelEnabled, () -> requestAction(ActionKind.CANCEL),
                 saveEnabled, () -> requestAction(ActionKind.SAVE),
-                theme,
                 ConfigTheme.ACTION_BAR_HEIGHT, 10,
                 ConfigTheme.BUTTON_WIDTH, ConfigTheme.BUTTON_HEIGHT);
         SceneNode cancelButton = bar.__getChildren().get(2);
@@ -938,10 +1029,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 requestAction(ActionKind.SAVE);
             }
         });
+        // 仅布局：宽度约束与内边距归 caller；表面（background/cornerRadius/…）由 FormActionBar
+        // 内 TOOLBAR 绑定独占，此处不再静态设色。
         bar.setFillParentWidth(true);
         bar.setMaxWidth(ConfigTheme.PAGE_MAX_WIDTH);
-        bar.setBackgroundColor(ConfigTheme.SURFACE_CONTAINER);
-        bar.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_LG);
         bar.setPadding(6);
         return bar;
     }
@@ -1052,13 +1143,21 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建徽标节点。
+     * 创建徽标节点（状态徽标）。
      *
-     * <p>S1：徽标文本用 {@link ConfigTheme#FONT_BADGE} 字号。
-     * M4：文本色固定浅色（TEXT_COLOR），仅边框用状态色，拉开对比度。</p>
+     * <p>S1：徽标文本用 {@link ConfigTheme#FONT_BADGE} 字号。M4：文本与描边对比分工保留，
+     * 但改经主题语义色——文本取 {@code formTheme.textColor()}（正文前景），描边取 caller 传入的
+     * 状态色（dirty/error/静默，见 {@link #createStatusSummary}）。</p>
+     *
+     * <p><b>契约 §7.3「状态徽标明确不迁移」</b>：徽标是状态读数，不装玻璃、不采样背景。
+     * 因此这里<b>保留</b> {@code cornerRadius(999)=胶囊几何}、{@code borderWidth(2)=描边宽度}
+     * 与 {@code READOUT_BG=徽标底色} 三项静态设色——它们是徽标读数的固定视觉，不属表面绑定器
+     * 独占的「玻璃表面」，删除会破坏读数可辨性。可主题化的只有前景/描边语义色，已改走
+     * {@code formTheme} 信号。（{@code READOUT_BG} 与 {@code ROOT_BG} 同为本实例保留项，
+     * 见类头「G15/Shell 液态玻璃迁移要点」与施工报告销账表。）</p>
      *
      * @param label 文案源
-     * @param color 颜色源（用于边框）
+     * @param color 颜色源（用于边框描边）
      * @return 徽标节点
      */
     private SceneNode badge(ReadableSignal<String> label, ReadableSignal<Integer> color) {
@@ -1067,7 +1166,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         node.setPadding(8);
         node.setCornerRadius(999);
         node.setHitTestable(false);
-        SceneNode textNode = text("", ConfigTheme.TEXT_COLOR, ConfigTheme.FONT_BADGE);
+        SceneNode textNode = text("",
+                Computed.create(() -> Integer.valueOf(formTheme.get().textColor())),
+                ConfigTheme.FONT_BADGE);
         node.appendChild(textNode);
         runtime.bind(label, textNode::setText);
         runtime.bind(color, node::setBorderColor);
@@ -1077,31 +1178,39 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     }
 
     /**
-     * 创建文字节点（默认字号）。
-     *
-     * @param value 文本
-     * @param color 颜色
-     * @return 文字节点
-     */
-    private SceneNode text(String value, int color) {
-        return text(value, color, 16);
-    }
-
-    /**
-     * 创建文字节点（指定字号）。
+     * 创建跟随主题的文字节点（前景经 {@code bind} 响应式写入，主题切换自动重派生）。
      *
      * @param value     文本
-     * @param color     颜色
+     * @param color     前景色信号（来源 {@code formTheme} 语义色派生）
      * @param fontSize  字号（UI 像素）
      * @return 文字节点
      */
-    private SceneNode text(String value, int color, int fontSize) {
+    private SceneNode text(String value, ReadableSignal<Integer> color, int fontSize) {
         SceneNode node = new SceneNode();
         node.setText(value);
-        node.setTextColor(color);
         node.setFontSize(fontSize);
         node.setHitTestable(false);
+        runtime.bind(color, node::setTextColor);
         return node;
+    }
+
+    /**
+     * 把来源主题的 GROUP 配方绑到内容卡片底座：染色/边框/圆角/浮雕/滤镜全归表面绑定器。
+     *
+     * <p>GROUP 是低干扰内容底座角色（契约 §4.1）；构建期先声明关心 hover/pressed/focus
+     * （Router 对未创建的 signal 直接短路，不声明则后续事件驱动不了配方状态档），与
+     * {@link FormPageShell}/{@link FormActionBar} 内部绑定同构。绑定器是这些属性的唯一写入者。</p>
+     *
+     * @param rt   场景运行时
+     * @param node 内容卡片底座节点
+     */
+    private static void bindGroupSurface(SceneRuntime rt, SceneNode node) {
+        ReadableSignal<SceneSurfaceStyle> group = SceneThemes.surface(rt, SceneTheme.Role.GROUP);
+        SceneInteractionState interaction = rt.interactionState(node);
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(rt, node, group, ALWAYS_ENABLED, interaction);
     }
 
     // ==================== 测试探针访问器（包级） ====================
@@ -1111,9 +1220,14 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         return runtime;
     }
 
-    /** @return 场景树根节点 */
+    /** @return 场景树根节点（世界遮罩，静态 ROOT_BG） */
     SceneNode __getRoot() {
         return root;
+    }
+
+    /** @return 玻璃页壳根节点（root 唯一子；PANEL 配方表面，标题/视口/操作行的真实父） */
+    SceneNode __getPageRoot() {
+        return pageRoot;
     }
 
     /** @return 滚动视口节点 */
