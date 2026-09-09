@@ -1,8 +1,11 @@
 package club.heiqi.uilib.ui.render;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-import club.heiqi.uilib.ui.render.UiRenderBackend;
+import club.heiqi.uilib.font.layout.TextSegment;
+import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 /** 通用缩放装饰器：把 logical px 恰好一次映射为 framebuffer px（屏幕级宿主边界，如 HUD）。 */
@@ -30,6 +33,31 @@ final class ScaledRenderBackend implements UiRenderBackend {
     public void drawText(String s,int x,int y,int c,boolean shadow){delegate.drawText(s,p(x),p(y),c,shadow);}
     public void drawText(String s,int x,int y,int c,boolean shadow,int font){delegate.drawText(s,p(x),p(y),c,shadow,p(font));}
     public void drawText(String s,int x,int y,int c,boolean shadow,int font,int mode){delegate.drawText(s,p(x),p(y),c,shadow,p(font),mode);}
+    @Override
+    public void drawSegments(List<TextSegment> segments, int x, int y, int fontSizePx) {
+        // 必须显式转发：接口默认实现为空，漏掉后所有非 1:1 HUD 的富文本都会消失。
+        // PaintPlan 可跨帧/投放复用，只在副本上换算段内绝对像素，不能回写 logical 样式。
+        List<TextSegment> converted = null;
+        if (Float.compare(scale, 1F) != 0) {
+            for (int i = 0; i < segments.size(); i++) {
+                TextSegment segment = segments.get(i);
+                TextStyle style = segment.getStyle();
+                if (style.getFontSizePx() > 0 || style.getLetterSpacing() != 0F) {
+                    if (converted == null) converted = new ArrayList<TextSegment>(segments);
+                    TextStyle scaledStyle = style.copy();
+                    // 0 是继承基准字号的哨兵；显式字号即使缩小也不能变成继承。
+                    if (style.getFontSizePx() > 0) {
+                        scaledStyle.setFontSizePx(Math.max(1, p(style.getFontSizePx())));
+                    }
+                    scaledStyle.setLetterSpacing(style.getLetterSpacing() * scale);
+                    converted.set(i, segment.withStyle(scaledStyle));
+                }
+            }
+        }
+        delegate.drawSegments(converted == null ? segments : Collections.unmodifiableList(converted),
+                p(x), p(y), Math.max(1, p(fontSizePx)));
+    }
+
     public void pushGroupOpacity(int l,int t,int r,int b,float opacity){delegate.pushGroupOpacity(p(l),p(t),p(r),p(b),opacity);}
     public void popGroupOpacity(){delegate.popGroupOpacity();}
     public void pushTransform(float x,float y,float d,float sx,float sy,float ox,float oy,int l,int t,int r,int b){delegate.pushTransform(x*scale,y*scale,d,sx,sy,ox,oy,p(l),p(t),p(r),p(b));}
