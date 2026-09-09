@@ -1,6 +1,7 @@
 package club.heiqi.uilib.internal.chat3.view;
 
 import java.util.Map;
+import java.util.Objects;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.render.UiBackdrop;
@@ -8,6 +9,8 @@ import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.input.ChatInputBar;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
 import club.heiqi.uilib.ui.scene.input.SceneEvent;
 import club.heiqi.uilib.ui.scene.input.SceneEventContext;
@@ -20,6 +23,9 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 聊天容器组件(L3 组件层):外框(背景/描边/圆角/clip)+ 滚动消息列表 + 底部输入条。
@@ -27,6 +33,15 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * <p>容器动态尺寸 = 视口宽 × 1/4 × 视口高 × 1/2,由 {@link Result#setViewport(int,int)} 每帧
  * 同步(窗口缩放即时跟随)。消息列表复用 {@link ChatMessageList}(容器形态),输入条复用
  * {@link ChatInputBar}(SceneTextInput)。</p>
+ *
+ * <p><b>外框表面配方（G17/Container 液态玻璃口径）</b>：外框的 滤镜/底色/描边/描边宽/圆角 五项
+ * 不再构造期静态设值，唯一写入者 = {@link #containerRecipeSignal} 派生的配方绑定。配方以通用主题
+ * {@link SceneTheme.Role#PANEL} 档为默认兜底（聊天设置未覆盖的字段随主题），既有聊天玻璃设置
+ * （开关/模糊/强度/玻璃 alpha 档与容器色板令牌）作为局部覆盖按第一优先级逐项覆盖材质字段——
+ * 「设置开=保持既有玻璃观感、设置关=实色令牌逃生舱」语义不变，未新增另一份配置存储。设置变更经
+ * 帧观察 Signal 按值去重（与 chat3.input 的动作外观桥接件同机制）、主题变更经 {@link SceneThemes}
+ * 作用域解析，两者都只重派生：节点身份不变、面板不重建、effect 数不增长。外框保持普通绘制路径
+ * （{@code surfaceElevation} 恒 -1，不进浮雕通道——大面板暗边不回归）。</p>
  */
 public final class ChatContainer {
 
@@ -38,6 +53,139 @@ public final class ChatContainer {
     private static final int CONTENT_PADDING_SIDE_PX = 10;
     /** 容器内容区下内边距(px,设计稿 §2.3/§6.2:下 4,留给滚动条视觉余量)。 */
     private static final int CONTENT_PADDING_BOTTOM_PX = 4;
+    /** 容器外框描边宽度(px,既有静态值；属聊天局部配方覆盖项，主题不改)。 */
+    private static final int CONTAINER_BORDER_WIDTH_PX = 1;
+
+    /**
+     * 聊天玻璃设置的容器面快照（值对象）。
+     *
+     * <p>只覆盖容器面<b>运行时可调</b>的 4 个设置源：开关 / 模糊半径 / 透镜强度 / 玻璃 alpha 档。
+     * 容器底色 RGB、描边色、圆角是 {@link ChatMarkdownSettings} 内无 setter 的进程级令牌，
+     * 不会在运行期变化，不入快照。本类不新增任何配置存储——快照每次现读设置，仅作为
+     * 「设置已变」的按值去重触发器（与 chat3.input 的动作外观桥接件同机制——帧观察 + 按值去重）。</p>
+     */
+    private static final class GlassSnapshot {
+
+        private final boolean enabled;
+        private final int blurRadiusPx;
+        private final float lensStrength;
+        private final int containerAlpha;
+
+        private GlassSnapshot(boolean enabled, int blurRadiusPx, float lensStrength, int containerAlpha) {
+            this.enabled = enabled;
+            this.blurRadiusPx = blurRadiusPx;
+            this.lensStrength = lensStrength;
+            this.containerAlpha = containerAlpha;
+        }
+
+        /** @return 当前聊天玻璃设置的快照（现读 {@link ChatMarkdownSettings}） */
+        private static GlassSnapshot read() {
+            return new GlassSnapshot(ChatMarkdownSettings.isGlassEnabled(),
+                    ChatMarkdownSettings.getGlassBlurRadiusPx(),
+                    ChatMarkdownSettings.getGlassLensStrength(),
+                    ChatMarkdownSettings.getGlassContainerAlpha());
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof GlassSnapshot)) {
+                return false;
+            }
+            GlassSnapshot that = (GlassSnapshot) other;
+            return enabled == that.enabled
+                    && blurRadiusPx == that.blurRadiusPx
+                    && Float.compare(lensStrength, that.lensStrength) == 0
+                    && containerAlpha == that.containerAlpha;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(Boolean.valueOf(enabled), Integer.valueOf(blurRadiusPx),
+                    Float.valueOf(lensStrength), Integer.valueOf(containerAlpha));
+        }
+    }
+
+    /**
+     * 帧观察快照信号：设置变化 → 配方重派生的唯一触发源。
+     *
+     * <p>Signal 按值去重，设置未变的帧不唤醒下游（无变化帧不新增重算，也不新增计时器）。
+     * 静态共享跨 runtime 复用同一份通知——通知里只有设置值，没有节点与 runtime，不会串写。</p>
+     */
+    private static final Signal<GlassSnapshot> OBSERVED_GLASS = Signal.create(GlassSnapshot.read());
+
+    /**
+     * 外框表面配方信号：主题 PANEL 档基线（通用兜底）+ 聊天玻璃设置局部覆盖（第一优先级）。
+     *
+     * <p>构造期捕获主题来源信号（{@link SceneThemes#resolve} 的构建期约定：返回已安装主题信号
+     * 本身或库默认常量，不自建派生单元），返回信号在派生期只读上游：主题切换与设置切换是两个
+     * 独立失效源，任一变化只重算本配方，不重建节点。本方法只落一颗 {@link Computed}（其
+     * recompute 单元由 {@link Result#dispose()} 显式回收，不留 orphan effect）；聊天设置覆盖
+     * <b>不置空</b>主题字段：过渡时长/缘色档/悬停·按下·禁用状态档/前景策略等聊天设置未覆盖的
+     * 字段全部随所属主题的 PANEL 角色配方——这就是「无显式聊天设置时容器用主题档」的落点
+     * （聊天设置自身永远按既有语义表达，见 {@link #chatGlassOverride}）。</p>
+     *
+     * @param rt 宿主场景运行时
+     * @return 配方派生信号（构造期不读值；随 Result.dispose 回收）
+     */
+    private static Computed<SceneSurfaceStyle> containerRecipeSignal(SceneRuntime rt) {
+        final ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
+        return Computed.create(() -> {
+            OBSERVED_GLASS.get(); // 失效源①：聊天设置帧观察（按值去重）
+            SceneTheme source = Objects.requireNonNull(theme.get(), "theme value");
+            return chatGlassOverride(source.surface(SceneTheme.Role.PANEL)); // 失效源②：主题
+        });
+    }
+
+    /**
+     * 旧聊天玻璃设置 → {@link SceneSurfaceStyle} 配方参数的逐项映射（局部覆盖，第一优先级）。
+     *
+     * <p>映射表（旧写入点 → 配方字段）：</p>
+     * <ul>
+     *   <li>{@code isGlassEnabled() + getGlassBlurRadiusPx() + getGlassLensStrength()}
+     *       → {@code backdrop}（开 = DARK_THIN 系液态玻璃按设置模糊/强度；关 = null 显式关闭滤镜）</li>
+     *   <li>{@code getContainerBgArgb()} 的 RGB + {@code getGlassContainerAlpha()}
+     *       → {@code idle.tint}（开 = 令牌 RGB 换玻璃 alpha 档；关 = 令牌实心档，逃生舱语义不变）</li>
+     *   <li>{@code getContainerBorderArgb()} → {@code idle.edge}</li>
+     *   <li>{@code getContainerCornerRadius()} → {@code cornerRadius}（覆盖主题档位）</li>
+     *   <li>既有静态描边宽 1px → {@code borderWidth}</li>
+     * </ul>
+     *
+     * <p>{@code idle.elevation} 保持主题基线值但桥接器<b>不消费</b>（外框 surfaceElevation 恒 -1，
+     * 维持普通绘制 = 既有像素合同）；{@code idle.lensFactor} 置 1.0 表示设置透镜强度直通、
+     * 无二次调制。</p>
+     */
+    private static SceneSurfaceStyle chatGlassOverride(SceneSurfaceStyle base) {
+        boolean glass = ChatMarkdownSettings.isGlassEnabled();
+        UiBackdrop backdrop = glass
+                ? UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
+                        ChatMarkdownSettings.getGlassBlurRadiusPx(), ChatMarkdownSettings.getGlassLensStrength())
+                : null;
+        int containerBg = glass
+                ? (ChatMarkdownSettings.getContainerBgArgb() & 0x00FFFFFF)
+                        | (ChatMarkdownSettings.getGlassContainerAlpha() << 24)
+                : ChatMarkdownSettings.getContainerBgArgb();
+        return base.toBuilder()
+                .backdrop(backdrop)
+                .cornerRadius(ChatMarkdownSettings.getContainerCornerRadius())
+                .borderWidth(CONTAINER_BORDER_WIDTH_PX)
+                .idle(new SceneSurfaceStyle.StateStyle(containerBg,
+                        ChatMarkdownSettings.getContainerBorderArgb(),
+                        base.getIdle().getElevation(), 1.0F))
+                .build();
+    }
+
+    /**
+     * 容器外框表面属性的唯一写入者：按既有普通绘制通道写 滤镜/底色/描边/描边宽/圆角 五项，
+     * 像素合同与迁移前的构造期静态设值一致（不发浮雕/实体厚度命令，不进 BORDER→ROUNDED_BAND
+     * 语义切换——大面板暗边不回归）。
+     */
+    private static void applyContainerSurface(SceneNode node, SceneSurfaceStyle style) {
+        node.setBackdrop(style.getBackdrop());
+        node.setBackgroundColor(style.getIdle().getTint());
+        node.setBorderColor(style.getIdle().getEdge());
+        node.setBorderWidth(style.getBorderWidth());
+        node.setCornerRadius(style.getCornerRadius());
+    }
 
     /** 容器装配结果:外框节点 + 生命周期句柄 + 输入条。 */
     public static final class Result {
@@ -47,6 +195,9 @@ public final class ChatContainer {
         private final Binding scrollBinding;
         private final Binding hintBinding;
         private final InputBinding hintInputBinding;
+        private final Binding settingsBinding;
+        private final Binding surfaceBinding;
+        private final Computed<SceneSurfaceStyle> surfaceRecipe;
         private final ChatScrollbar.Result scrollbar;
         private final ChatInputBar bar;
         private final ChatSceneController controller;
@@ -54,7 +205,8 @@ public final class ChatContainer {
         private final SceneNode barRow;
 
         private Result(SceneNode root, SceneListHandle listHandle, Binding scrollBinding,
-                Binding hintBinding, InputBinding hintInputBinding,
+                Binding hintBinding, InputBinding hintInputBinding, Binding settingsBinding,
+                Binding surfaceBinding, Computed<SceneSurfaceStyle> surfaceRecipe,
                 ChatScrollbar.Result scrollbar, ChatInputBar bar,
                 ChatSceneController controller, SceneNode barRow) {
             this.root = root;
@@ -62,6 +214,9 @@ public final class ChatContainer {
             this.scrollBinding = scrollBinding;
             this.hintBinding = hintBinding;
             this.hintInputBinding = hintInputBinding;
+            this.settingsBinding = settingsBinding;
+            this.surfaceBinding = surfaceBinding;
+            this.surfaceRecipe = surfaceRecipe;
             this.scrollbar = scrollbar;
             this.bar = bar;
             this.controller = controller;
@@ -82,6 +237,16 @@ public final class ChatContainer {
             if (hintInputBinding != null) {
                 hintInputBinding.dispose();
             }
+            if (surfaceBinding != null) {
+                surfaceBinding.dispose();
+            }
+            if (settingsBinding != null) {
+                settingsBinding.dispose();
+            }
+            if (surfaceRecipe != null) {
+                // 配方 Computed 自带 recompute effect，不归 runtime 回收，必须显式注销。
+                surfaceRecipe.dispose();
+            }
             if (scrollbar != null) {
                 scrollbar.dispose();
             }
@@ -93,6 +258,16 @@ public final class ChatContainer {
         /** @return 容器外框节点(动画 transform / 挂载目标) */
         public SceneNode root() {
             return root;
+        }
+
+        /**
+         * 外框表面配方信号（包内测试接缝：断言「主题兜底字段 = 对应 Role 配方、聊天设置字段
+         * = 局部覆盖值」；构造期不读值，首次 flush 后可安全解引用）。
+         *
+         * @return 配方只读信号
+         */
+        ReadableSignal<SceneSurfaceStyle> surfaceRecipe() {
+            return surfaceRecipe;
         }
 
         /** @return 输入条组件(文本/历史/补全) */
@@ -143,25 +318,15 @@ public final class ChatContainer {
      */
     public static Result mount(SceneRuntime rt, ChatSceneController controller,
             Map<SceneNode, ChatLineRecord> registry, String initialText) {
-        // 液态玻璃：容器与气泡同处一个 backdrop 批次，故二者采样的是<strong>同一张世界
-        // 画面</strong>（批次内主层 revision 冻结）——气泡的玻璃不会把容器已糊过的画面
-        // 再糊一层。这正是 iOS 一个 visual effect 层级内共享背景采样的语义，
-        // 层级差靠 alpha 递进表达（容器 0x59 < 气泡 0x8C）。
-        UiBackdrop containerBackdrop = ChatMarkdownSettings.isGlassEnabled()
-                ? UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
-                        ChatMarkdownSettings.getGlassBlurRadiusPx(), ChatMarkdownSettings.getGlassLensStrength())
-                : null;
-        int containerBg = ChatMarkdownSettings.isGlassEnabled()
-                ? (ChatMarkdownSettings.getContainerBgArgb() & 0x00FFFFFF)
-                        | (ChatMarkdownSettings.getGlassContainerAlpha() << 24)
-                : ChatMarkdownSettings.getContainerBgArgb();
+        // 外框表面（G17/Container）：滤镜/底色/描边/描边宽/圆角五项不再构造期静态设值——
+        // 静态色板写入与配方绑定会竞争同一属性槽（施工手册 §1「同一个属性不能留两个绑定」），
+        // 唯一写入者 = 下方 containerRecipeSignal 配方桥，按既有普通绘制通道落值。
+        // 液态玻璃批次语义不变：容器与气泡同处一个 backdrop 批次，二者采样的是<strong>同一张
+        // 世界画面</strong>（批次内主层 revision 冻结）——气泡的玻璃不会把容器已糊过的画面
+        // 再糊一层。这正是 iOS 一个 visual effect 层级内共享背景采样的语义，层级差靠 alpha
+        // 递进表达（容器 0x59 < 气泡 0x73）。
         SceneNode containerNode = SceneNode.column()
                 .setHitTestable(false)
-                .setBackdrop(containerBackdrop)
-                .setBackgroundColor(containerBg)
-                .setBorderColor(ChatMarkdownSettings.getContainerBorderArgb())
-                .setBorderWidth(1)
-                .setCornerRadius(ChatMarkdownSettings.getContainerCornerRadius())
                 // 设计稿 §2.3/§6.2:容器内容区上 10/左右 10/下 4(下留给滚动条视觉余量);
                 // 不再复用 bubblePadding(5,10,5,10)——气泡区自身 padding 不受影响
                 .setPadding(CONTENT_PADDING_TOP_PX,
@@ -169,6 +334,16 @@ public final class ChatContainer {
                         CONTENT_PADDING_BOTTOM_PX,
                         CONTENT_PADDING_SIDE_PX)
                 .setClipChildren(true);
+
+        // 外框配方 = 主题 PANEL 档兜底（聊天设置未覆盖的字段随所属主题）+ 聊天玻璃设置局部
+        // 覆盖（第一优先级：设置开=既有玻璃观感逐项保持，设置关=实色令牌逃生舱语义不变）。
+        Computed<SceneSurfaceStyle> surfaceRecipe = containerRecipeSignal(rt);
+        // 设置观察挂当前挂载作用域（关屏随 Owner/runtime 一并回收）；设置未变的帧快照按值
+        // 去重，不唤醒配方，也不新增计时器。
+        Binding settingsBinding = rt.bind(rt.__frameTimeNanos(),
+                frame -> OBSERVED_GLASS.set(GlassSnapshot.read()));
+        Binding surfaceBinding = rt.bind(surfaceRecipe,
+                style -> applyContainerSurface(containerNode, style));
 
         // ★ 滚动区行(与消息视口同级):[消息视口 flexGrow=1, 滚动条 column 右对齐]
         // 滚动条必须与视口并列(不进 scrollable 视口),否则随内容平移错位。
@@ -340,6 +515,6 @@ public final class ChatContainer {
                 (SceneEvent event, SceneEventContext ctx) -> controller.scrollToBottom());
 
         return new Result(containerNode, listHandle, scrollBinding, hintBinding, hintInputBinding,
-                scrollbar, bar, controller, barRow);
+                settingsBinding, surfaceBinding, surfaceRecipe, scrollbar, bar, controller, barRow);
     }
 }

@@ -12,12 +12,23 @@ import net.minecraft.util.ChatComponentText;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiBackdrop;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * ChatContainer 契约测试(K3 缺陷 F6②):输入条区四周 8px 内边距(设计稿 §2.3/§6.2),
@@ -485,5 +496,353 @@ public class ChatContainerTest {
         int offset = m.listViewport.getScrollOffsetY();
         Assert.assertTrue("巨大 scrollBy 后视口偏移不得为负(无下溢):" + offset, offset >= 0);
         Assert.assertEquals("巨大 scrollBy 后 clamp 到顶部 0", 0, offset);
+    }
+
+    // ==================== G17/Container：默认液态玻璃口径（主题兜底 + 聊天设置局部覆盖） ====================
+
+    /** 挂一条消息的容器并 flush（玻璃配方用例共用装载）。 */
+    private static ChatContainer.Result mountGlassedContainer(SceneRuntime rt,
+            ChatSceneController controller) {
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, 0L));
+        controller.notifyDataChanged();
+        ChatContainer.Result result = ChatContainer.mount(rt, controller,
+                new java.util.IdentityHashMap<SceneNode, ChatLineRecord>(), "");
+        rt.flush();
+        return result;
+    }
+
+    /** 节点子树 PaintPlan 内 BACKDROP 命令数（每颗采样滤镜的表面恰好贡献 1 条）。 */
+    private static int backdropCount(ScenePaintEngine engine, SceneNode node) {
+        PaintPlan plan = engine.paint(node).getPlan();
+        int count = 0;
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.BACKDROP) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int firstIndexOfType(PaintPlan plan, PaintCommandType type) {
+        java.util.List<PaintCommand> commands = plan.getCommands();
+        for (int i = 0; i < commands.size(); i++) {
+            if (commands.get(i).getType() == type) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 用例①+③（主题侧）：聊天设置未覆盖的配方字段 = 所属主题 PANEL 角色档（通用主题兜底，
+     * chat3→theme 方向 import）；主题切换只重派生——节点身份不变、effect 不增长、面板不重建，
+     * 且聊天设置覆盖字段（底色/滤镜/圆角）不随主题改写（局部覆盖第一优先级）。
+     */
+    @Test
+    public void themeSuppliesFieldsChatSettingsDoNotCover() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassLight());
+            SceneThemes.install(rt, pageTheme);
+            ChatContainer.Result result = mountGlassedContainer(rt, controller());
+
+            SceneSurfaceStyle recipe = result.surfaceRecipe().get();
+            SceneSurfaceStyle lightPanel = SceneTheme.liquidGlassLight().surface(SceneTheme.Role.PANEL);
+            Assert.assertNotEquals("测试前提：深浅主题 PANEL 缘色档不同",
+                    SceneTheme.liquidGlassDark().surface(SceneTheme.Role.PANEL).getFocusEdge(),
+                    lightPanel.getFocusEdge());
+            // 主题兜底字段：过渡时长 / 聚焦缘色 / 悬停·按下·禁用状态档 / 内容抬升 / 禁用透明度
+            Assert.assertEquals("过渡时长随主题 PANEL 档",
+                    lightPanel.getTransitionMillis(), recipe.getTransitionMillis());
+            Assert.assertEquals("聚焦缘色随主题 PANEL 档",
+                    lightPanel.getFocusEdge(), recipe.getFocusEdge());
+            Assert.assertEquals("悬停档随主题 PANEL 档", lightPanel.getHovered(), recipe.getHovered());
+            Assert.assertEquals("按下档随主题 PANEL 档", lightPanel.getPressed(), recipe.getPressed());
+            Assert.assertEquals("禁用档随主题 PANEL 档", lightPanel.getDisabled(), recipe.getDisabled());
+            Assert.assertEquals("contentLift 随主题 PANEL 档",
+                    lightPanel.getContentLift(), recipe.getContentLift(), 0.0F);
+            Assert.assertEquals("disabledOpacity 随主题 PANEL 档",
+                    lightPanel.getDisabledOpacity(), recipe.getDisabledOpacity(), 0.0F);
+            // 聊天设置覆盖字段：与主题档可辨（浅色 PANEL 圆角=16，聊天设置=20）
+            Assert.assertEquals("圆角 = 聊天设置局部覆盖",
+                    ChatMarkdownSettings.getContainerCornerRadius(), recipe.getCornerRadius());
+            Assert.assertNotEquals("局部覆盖优先于主题圆角",
+                    lightPanel.getCornerRadius(), recipe.getCornerRadius());
+
+            // 主题更新：只重派生
+            SceneNode container = result.root();
+            SceneNode listRow = container.__getChildren().get(0);
+            int tintBefore = container.getBackgroundColor();
+            int radiusBefore = container.getCornerRadius();
+            UiBackdrop backdropBefore = container.getBackdrop();
+            int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+            pageTheme.set(SceneTheme.liquidGlassDark());
+            rt.flush();
+
+            SceneSurfaceStyle darkPanel = SceneTheme.liquidGlassDark().surface(SceneTheme.Role.PANEL);
+            Assert.assertEquals("主题字段随主题重派生",
+                    darkPanel.getFocusEdge(), result.surfaceRecipe().get().getFocusEdge());
+            Assert.assertEquals(darkPanel.getHovered(), result.surfaceRecipe().get().getHovered());
+            Assert.assertSame("主题切换不重建外框节点", container, result.root());
+            Assert.assertSame("主题切换不重建滚动区行", listRow, result.root().__getChildren().get(0));
+            Assert.assertEquals("聊天覆盖字段（底色）不随主题变", tintBefore, container.getBackgroundColor());
+            Assert.assertEquals("聊天覆盖字段（圆角）不随主题变", radiusBefore, container.getCornerRadius());
+            Assert.assertEquals("聊天覆盖字段（滤镜）不随主题变", backdropBefore, container.getBackdrop());
+            Assert.assertEquals("主题切换不新增订阅",
+                    effectsBefore, ReactiveTestProbe.registeredEffectCount());
+            result.dispose();
+            rt.dispose();
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+        }
+    }
+
+    /**
+     * 用例②：既有聊天玻璃设置 = 局部覆盖（第一优先级），开关两端可辨——开 = 保持既有玻璃观感
+     * （材质字段逐项取设置值而非主题档），关 = 实色令牌逃生舱（配置语义不变，不落主题无滤镜档）。
+     */
+    @Test
+    public void chatGlassSettingsOverrideThemeAtBothSwitchEnds() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            // 装一个与聊天设置材质档完全不同的主题：局部覆盖若失效（优先级写反）当场可辨
+            SceneThemes.install(rt, Signal.create(SceneTheme.liquidGlassLight()));
+            ChatContainer.Result result = mountGlassedContainer(rt, controller());
+            SceneNode container = result.root();
+
+            int expectedOn = (ChatMarkdownSettings.getContainerBgArgb() & 0x00FFFFFF)
+                    | (ChatMarkdownSettings.getGlassContainerAlpha() << 24);
+            UiBackdrop backdrop = container.getBackdrop();
+            Assert.assertNotNull("设置开：外框必须带玻璃", backdrop);
+            Assert.assertTrue("设置开：聊天玻璃仍是 Liquid Glass 家族", backdrop.getEffect().isLiquid());
+            Assert.assertSame("材质 = 聊天设置 DARK_THIN 系（覆盖主题 THIN 档）",
+                    UiGlassMaterial.DARK_THIN, backdrop.getEffect().getMaterial());
+            Assert.assertEquals("模糊半径 = 聊天设置（非主题 PANEL 的 10）",
+                    ChatMarkdownSettings.getGlassBlurRadiusPx(), backdrop.getBlurRadius());
+            Assert.assertEquals("透镜强度 = 聊天设置（非主题 PANEL 的 0.6）",
+                    ChatMarkdownSettings.getGlassLensStrength(),
+                    backdrop.getEffect().getLensStrength(), 0.0001F);
+            Assert.assertEquals("底色 = 令牌 RGB × 玻璃 alpha 档（既有观感逐项保持）",
+                    expectedOn, container.getBackgroundColor());
+            Assert.assertEquals("描边色 = 聊天设置令牌",
+                    ChatMarkdownSettings.getContainerBorderArgb(), container.getBorderColor());
+            Assert.assertEquals("描边宽 = 既有 1px", 1, container.getBorderWidth());
+            Assert.assertEquals("圆角 = 聊天设置（20，覆盖主题的 16）",
+                    ChatMarkdownSettings.getContainerCornerRadius(), container.getCornerRadius());
+            Assert.assertEquals("外框保持普通绘制（不装浮雕 = 大面板暗边不回归）",
+                    -1.0F, container.__getSurfaceElevation(), 0.0F);
+
+            // 稳态帧（设置无变化）：唯一写入者纪律——竞争静态写入者会把半透明档顶回实心令牌
+            rt.__tickFrame(9L);
+            rt.flush();
+            Assert.assertEquals("稳态帧后底色仍为玻璃半透明档（无竞争写入者回写）",
+                    expectedOn, container.getBackgroundColor());
+            Assert.assertNotNull("稳态帧后滤镜声明仍在", container.getBackdrop());
+
+            // 开关另一端：关 = 实色令牌逃生舱（既有断言语义不变）
+            ChatMarkdownSettings.setGlassEnabled(false);
+            rt.__tickFrame(1L);
+            rt.flush();
+            Assert.assertNull("关：不得残留 backdrop 声明", container.getBackdrop());
+            Assert.assertEquals("关：外框回实心令牌底色",
+                    ChatMarkdownSettings.getContainerBgArgb(), container.getBackgroundColor());
+            Assert.assertEquals("关：描边保持令牌",
+                    ChatMarkdownSettings.getContainerBorderArgb(), container.getBorderColor());
+            Assert.assertEquals("关：圆角保持设置",
+                    ChatMarkdownSettings.getContainerCornerRadius(), container.getCornerRadius());
+
+            // 再开：重派生回玻璃档（全程不重建面板）
+            ChatMarkdownSettings.setGlassEnabled(true);
+            rt.__tickFrame(2L);
+            rt.flush();
+            Assert.assertNotNull("再开：玻璃随设置变化重派生", container.getBackdrop());
+            Assert.assertEquals(expectedOn, container.getBackgroundColor());
+            Assert.assertSame("开关全程不重建外框节点", container, result.root());
+            result.dispose();
+            rt.dispose();
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+        }
+    }
+
+    /**
+     * 用例③（设置侧）：自定义玻璃参数变更只重派生——模糊/强度/容器 alpha 逐项可辨地落到外框，
+     * 节点身份不变、effect 不增长、面板不重建；参数还原后同样只重派生。
+     */
+    @Test
+    public void settingsChangeReDerivesPanelSurfaceWithoutRebuild() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        int savedBlur = ChatMarkdownSettings.getGlassBlurRadiusPx();
+        float savedLens = ChatMarkdownSettings.getGlassLensStrength();
+        int savedAlpha = ChatMarkdownSettings.getGlassContainerAlpha();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            ChatContainer.Result result = mountGlassedContainer(rt, controller());
+            SceneNode container = result.root();
+            SceneNode listRow = container.__getChildren().get(0);
+            SceneNode listViewport = listRow.__getChildren().get(0);
+            Assert.assertEquals("默认档模糊 = 设置值", savedBlur, container.getBackdrop().getBlurRadius());
+
+            int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+            ChatMarkdownSettings.setGlassBlurRadiusPx(20);
+            ChatMarkdownSettings.setGlassLensStrength(0.9F);
+            ChatMarkdownSettings.setGlassContainerAlpha(0x30);
+            rt.__tickFrame(1L);
+            rt.flush();
+
+            Assert.assertEquals("自定义模糊逐项落到节点", 20, container.getBackdrop().getBlurRadius());
+            Assert.assertEquals("自定义透镜强度逐项落到节点",
+                    0.9F, container.getBackdrop().getEffect().getLensStrength(), 0.0001F);
+            Assert.assertEquals("自定义玻璃 alpha 逐项落到节点",
+                    0x30, (container.getBackgroundColor() >>> 24) & 0xFF);
+            Assert.assertEquals("RGB 通道仍来自容器底色令牌",
+                    ChatMarkdownSettings.getContainerBgArgb() & 0x00FFFFFF,
+                    container.getBackgroundColor() & 0x00FFFFFF);
+            Assert.assertSame("设置变更不重建外框", container, result.root());
+            Assert.assertSame("设置变更不重建滚动区行", listRow, result.root().__getChildren().get(0));
+            Assert.assertSame("设置变更不重建消息视口", listViewport,
+                    result.root().__getChildren().get(0).__getChildren().get(0));
+            Assert.assertEquals("设置变更不新增订阅",
+                    effectsBefore, ReactiveTestProbe.registeredEffectCount());
+
+            // 还原参数：同样只重派生，且 effect 数仍不增长
+            ChatMarkdownSettings.setGlassBlurRadiusPx(savedBlur);
+            ChatMarkdownSettings.setGlassLensStrength(savedLens);
+            ChatMarkdownSettings.setGlassContainerAlpha(savedAlpha);
+            rt.__tickFrame(2L);
+            rt.flush();
+            Assert.assertEquals(savedBlur, container.getBackdrop().getBlurRadius());
+            Assert.assertEquals(savedAlpha, (container.getBackgroundColor() >>> 24) & 0xFF);
+            Assert.assertEquals("还原参数仍不新增订阅",
+                    effectsBefore, ReactiveTestProbe.registeredEffectCount());
+            result.dispose();
+            rt.dispose();
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+            ChatMarkdownSettings.setGlassBlurRadiusPx(savedBlur);
+            ChatMarkdownSettings.setGlassLensStrength(savedLens);
+            ChatMarkdownSettings.setGlassContainerAlpha(savedAlpha);
+        }
+    }
+
+    /**
+     * 用例④：面板恰一颗滤镜（BACKDROP 在节点底色之前、底色半透明不遮玻璃、BORDER 普通绘制
+     * 通道保持——未切浮雕 ROUNDED_BAND 档），容器自身 chrome 子项零重复采样。
+     */
+    @Test
+    public void panelCarriesExactlyOneFilterAndChromeChildrenSampleNothing() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            ChatSceneController controller = controller();
+            ChatContainer.Result result = mountGlassedContainer(rt, controller);
+            result.setViewport(400, 300);
+            rt.flush();
+            SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
+            layoutEngine.layout(result.root(), new Constraints(400, 300));
+            ScenePaintEngine engine = new ScenePaintEngine(new FixedTextMeasurer(8, 16));
+
+            SceneNode container = result.root();
+            SceneNode listRow = container.__getChildren().get(0);
+            SceneNode listViewport = listRow.__getChildren().get(0);
+            SceneNode scrollbarColumn = listRow.__getChildren().get(1);
+            SceneNode divider = container.__getChildren().get(1);
+            SceneNode barRow = container.__getChildren().get(2);
+
+            // 面板自身恰一颗：其 fragment 最先落图 = BACKDROP → BACKGROUND(半透明) → BORDER
+            Assert.assertNotNull("玻璃开：外框声明滤镜", container.getBackdrop());
+            PaintPlan plan = engine.paint(container).getPlan();
+            int backdropAt = firstIndexOfType(plan, PaintCommandType.BACKDROP);
+            int backgroundAt = firstIndexOfType(plan, PaintCommandType.BACKGROUND);
+            int borderAt = firstIndexOfType(plan, PaintCommandType.BORDER);
+            Assert.assertTrue("首个 BACKDROP 存在", backdropAt >= 0);
+            Assert.assertTrue("BACKDROP 之后才发节点底色（半透明底叠玻璃之上，无不透明底盖）",
+                    backdropAt < backgroundAt);
+            Assert.assertTrue("外框底色保持半透明（玻璃透得出来）",
+                    ((plan.getCommands().get(backgroundAt).getColor() >>> 24) & 0xFF) < 255);
+            Assert.assertTrue("BORDER（普通绘制描边）仍在（未切浮雕档）", borderAt >= 0);
+            Assert.assertEquals("描边命令色 = 聊天设置令牌",
+                    ChatMarkdownSettings.getContainerBorderArgb(),
+                    plan.getCommands().get(borderAt).getColor());
+            for (PaintCommand command : plan.getCommands()) {
+                Assert.assertNotSame("全树无 ROUNDED_BAND 浮雕命令（大面板暗边不回归）",
+                        PaintCommandType.ROUNDED_BAND, command.getType());
+            }
+            Assert.assertEquals("外框 surfaceElevation 保持未绑定默认 -1（普通绘制）",
+                    -1.0F, container.__getSurfaceElevation(), 0.0F);
+
+            // 容器 chrome 子项零重复采样：不声明、不产 BACKDROP 命令
+            Assert.assertNull(listRow.getBackdrop());
+            Assert.assertNull(listViewport.getBackdrop());
+            Assert.assertNull(scrollbarColumn.getBackdrop());
+            Assert.assertNull(divider.getBackdrop());
+            Assert.assertNull(barRow.getBackdrop());
+            Assert.assertEquals("滚动条列零采样", 0, backdropCount(engine, scrollbarColumn));
+            Assert.assertEquals("分隔线零采样", 0, backdropCount(engine, divider));
+            Assert.assertEquals("滚动区行内 BACKDROP 恰为气泡自身既有玻璃（容器不再加层）",
+                    1, backdropCount(engine, listRow));
+            result.dispose();
+            rt.dispose();
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+        }
+    }
+
+    /**
+     * 卸载回收（配方桥三件套）：
+     * ① 配方 Computed 的 recompute 单元随 {@code Result.dispose()} 注销——卸载后聊天设置再变
+     *    （由第二个 runtime 的帧观察发布新快照），旧配方读数必须冻结在卸载时刻；
+     * ② 表面写入绑定注销——卸载后旧外框不被鬼写入（模糊仍是卸载前的设置档，不跟第二轮）；
+     * ③ 每轮「挂载→卸载」的 effect 水位增量恒定——本实例不新增 per-cycle 泄漏（聊天栈其他
+     *    组件的既有水位不在本实例义务内，这里只钉「不再增长」）。
+     */
+    @Test
+    public void disposeReclaimsRecipeAndSettingsBindings() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        int savedBlur = ChatMarkdownSettings.getGlassBlurRadiusPx();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            int before = ReactiveTestProbe.registeredEffectCount();
+            SceneRuntime rt1 = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            ChatContainer.Result result1 = mountGlassedContainer(rt1, controller());
+            Assert.assertTrue("挂载应注册响应式绑定（含配方与设置观察）",
+                    ReactiveTestProbe.registeredEffectCount() > before);
+            SceneNode container1 = result1.root();
+            SceneSurfaceStyle recipeBeforeDispose = result1.surfaceRecipe().get();
+            Assert.assertEquals("卸载前配方 = 当前设置模糊档", savedBlur,
+                    recipeBeforeDispose.getBackdrop().getBlurRadius());
+            result1.dispose();
+            rt1.dispose();
+            int afterFirstCycle = ReactiveTestProbe.registeredEffectCount();
+
+            // 第二轮：先改设置再挂新实例——新观察器会把新快照发布进共享 Signal；
+            // 若旧配方/旧绑定未注销，就会在旧读数与旧节点上复活。
+            ChatMarkdownSettings.setGlassBlurRadiusPx(20);
+            SceneRuntime rt2 = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            ChatContainer.Result result2 = mountGlassedContainer(rt2, controller());
+            rt2.__tickFrame(1L);
+            rt2.flush();
+            Assert.assertEquals("新实例按新设置派生", 20,
+                    result2.root().getBackdrop().getBlurRadius());
+            Assert.assertEquals("卸载后旧配方冻结（recompute 单元已注销）",
+                    recipeBeforeDispose, result1.surfaceRecipe().get());
+            Assert.assertEquals("卸载后旧外框不被鬼写入", savedBlur,
+                    container1.getBackdrop().getBlurRadius());
+            result2.dispose();
+            rt2.dispose();
+            Assert.assertEquals("两轮挂载-卸载水位增量恒定（本实例不新增 per-cycle 泄漏）",
+                    afterFirstCycle - before,
+                    ReactiveTestProbe.registeredEffectCount() - afterFirstCycle);
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+            ChatMarkdownSettings.setGlassBlurRadiusPx(savedBlur);
+        }
     }
 }
