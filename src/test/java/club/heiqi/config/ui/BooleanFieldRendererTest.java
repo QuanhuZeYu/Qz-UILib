@@ -17,6 +17,8 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * {@link BooleanFieldRenderer} 单元测试。
@@ -67,10 +69,10 @@ public class BooleanFieldRendererTest {
         // Toggle root 含 track + label 两子节点
         SceneNode toggle = findToggleRoot(card);
         Assert.assertNotNull("应找到 Toggle 控件", toggle);
-        // draft 初值 false → track off 背景
+        // draft 初值 false → track off 背景（Toggle 默认外观来自主题 INDICATOR 配方 idle 档）
         SceneNode track = toggle.__getChildren().get(0);
         Assert.assertEquals("debug 初值 false → track off 背景",
-                club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.BG_DEFAULT,
+                SceneThemes.DEFAULT.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(),
                 track.getBackgroundColor());
     }
 
