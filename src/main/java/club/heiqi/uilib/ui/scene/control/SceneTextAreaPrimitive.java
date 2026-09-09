@@ -96,8 +96,11 @@ public final class SceneTextAreaPrimitive {
     /**
      * TextArea primitive 输入契约 —— 只包含行为所需数据，不包含样式开关。
      *
-     * <p>颜色 token 由 wrapper 供给（裸值），primitive 内部据此给动态行 caret 与文本节点上色。
-     * 样式颜色不在 primitive 内硬编码，数据流 wrapper→primitive 单向供给。</p>
+     * <p>颜色由 wrapper 供给，两种形态：{@code int} 常量（旧路径的裸值）与可空的
+     * {@link ReadableSignal}&lt;Integer&gt; 语义色信号（主题路径）。信号非 null 时优先于同名
+     * int 常量，且在 effect 派生内读取，因此主题切换自动重算、不重建节点；信号为 null 时
+     * 完全回落同名 int 常量（旧 10 参构造器即此语义）。行文本由内部 forEach 创建、Result
+     * 不暴露行节点，所以只能由 primitive 消费这些信号（契约 §2.8 授权修改本 Props 与颜色解析）。</p>
      *
      * @param value              当前文本（响应式只读，受控源，含 {@code \n} 换行符）
      * @param enabled            是否启用
@@ -109,6 +112,10 @@ public final class SceneTextAreaPrimitive {
      * @param textPlaceholderColor placeholder 文本色（enabled 且空值）
      * @param textDisabledColor  禁用态文本色
      * @param onChange           文本变更回调
+     * @param caretVisibleSignal caret 可见色语义信号；null = 回落 {@code caretVisibleColor}
+     * @param textNormalSignal   正文前景语义信号；null = 回落 {@code textNormalColor}
+     * @param textPlaceholderSignal 占位前景语义信号；null = 回落 {@code textPlaceholderColor}
+     * @param textDisabledSignal 禁用前景语义信号；null = 回落 {@code textDisabledColor}
      */
     @Desugar
     public record Props(
@@ -121,8 +128,31 @@ public final class SceneTextAreaPrimitive {
             int textNormalColor,
             int textPlaceholderColor,
             int textDisabledColor,
-            Consumer<String> onChange
+            Consumer<String> onChange,
+            ReadableSignal<Integer> caretVisibleSignal,
+            ReadableSignal<Integer> textNormalSignal,
+            ReadableSignal<Integer> textPlaceholderSignal,
+            ReadableSignal<Integer> textDisabledSignal
     ) {
+
+        /**
+         * 向后兼容 10 参构造：四个语义色信号为 null，颜色解析完全回落同名 int 常量
+         * （外观与旧版逐像素一致）。
+         */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     int caretVisibleColor,
+                     int textNormalColor,
+                     int textPlaceholderColor,
+                     int textDisabledColor,
+                     Consumer<String> onChange) {
+            this(value, enabled, readOnly, placeholder, maxLength, caretVisibleColor,
+                    textNormalColor, textPlaceholderColor, textDisabledColor, onChange,
+                    null, null, null, null);
+        }
     }
 
     /**
@@ -336,8 +366,7 @@ public final class SceneTextAreaPrimitive {
             typography.bindText(ph);
             ph.setText(SceneTextUtils.nullSafe(placeholder));
             ph.setHitTestable(false);
-            rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
-                            ? props.textPlaceholderColor() : props.textDisabledColor(),
+            rt.bindComputed(() -> resolvePlaceholderColor(props, props.enabled().get()),
                     ph::setTextColor);
             return ph;
         });
@@ -785,12 +814,10 @@ public final class SceneTextAreaPrimitive {
                 Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
         rt.bind(caretAtSelEnd, v -> caretAfter.setPreferredWidth(
                 Boolean.TRUE.equals(v) ? CARET_WIDTH : 0));
-        // 槽位颜色
-        rt.bindComputed(() -> Boolean.TRUE.equals(caretVisible.get()) && Boolean.TRUE.equals(caretAtSelStart.get())
-                        ? props.caretVisibleColor() : CARET_TRANSPARENT,
+        // 槽位颜色：颜色解析优先读语义信号（非 null），再回落 int 常量
+        rt.bindComputed(() -> resolveCaretColor(props, caretVisible.get(), caretAtSelStart.get()),
                 caretBefore::setBackgroundColor);
-        rt.bindComputed(() -> Boolean.TRUE.equals(caretVisible.get()) && Boolean.TRUE.equals(caretAtSelEnd.get())
-                        ? props.caretVisibleColor() : CARET_TRANSPARENT,
+        rt.bindComputed(() -> resolveCaretColor(props, caretVisible.get(), caretAtSelEnd.get()),
                 caretAfter::setBackgroundColor);
 
         return row;
@@ -799,7 +826,10 @@ public final class SceneTextAreaPrimitive {
     /**
      * 解析行内文本色：placeholder 态用 placeholder 色，否则按 enabled 选 normal/disabled。
      *
-     * @param props        输入契约（含三态色 token）
+     * <p>三态色各自优先读同名语义信号（在 effect 派生内读取，建立主题依赖），信号为 null
+     * 时回落同名 int 常量。</p>
+     *
+     * @param props        输入契约（含三态色 int 常量与可空语义信号）
      * @param isPlaceholder 是否处于 placeholder 态
      * @param enabled      是否启用
      * @return 文本色 ARGB
@@ -807,9 +837,59 @@ public final class SceneTextAreaPrimitive {
     private static int resolveTextColor(Props props, Boolean isPlaceholder, Boolean enabled) {
         boolean en = Boolean.TRUE.equals(enabled);
         if (Boolean.TRUE.equals(isPlaceholder)) {
-            return en ? props.textPlaceholderColor() : props.textDisabledColor();
+            return en ? placeholderColor(props) : disabledColor(props);
         }
-        return en ? props.textNormalColor() : props.textDisabledColor();
+        return en ? normalColor(props) : disabledColor(props);
+    }
+
+    /**
+     * 解析 placeholder 容器文本色：enabled 用占位色，否则用禁用色；信号优先于 int 常量。
+     *
+     * @param props   输入契约
+     * @param enabled 是否启用
+     * @return 占位文本色 ARGB
+     */
+    private static int resolvePlaceholderColor(Props props, Boolean enabled) {
+        return Boolean.TRUE.equals(enabled) ? placeholderColor(props) : disabledColor(props);
+    }
+
+    /**
+     * 解析 caret 色：槽位激活且 caret 可见时用 caret 色，否则全透明。
+     *
+     * @param props        输入契约
+     * @param caretVisible caret 是否可见（enabled 且 focused 且闪烁亮相位）
+     * @param slotActive   本槽位是否激活（focus 在本槽侧）
+     * @return caret 背景色 ARGB
+     */
+    private static int resolveCaretColor(Props props, Boolean caretVisible, Boolean slotActive) {
+        if (Boolean.TRUE.equals(caretVisible) && Boolean.TRUE.equals(slotActive)) {
+            return caretColor(props);
+        }
+        return CARET_TRANSPARENT;
+    }
+
+    /** caret 色：信号非 null 优先，否则 int 常量。 */
+    private static int caretColor(Props props) {
+        ReadableSignal<Integer> signal = props.caretVisibleSignal();
+        return signal != null ? signal.get().intValue() : props.caretVisibleColor();
+    }
+
+    /** 正文前景：信号非 null 优先，否则 int 常量。 */
+    private static int normalColor(Props props) {
+        ReadableSignal<Integer> signal = props.textNormalSignal();
+        return signal != null ? signal.get().intValue() : props.textNormalColor();
+    }
+
+    /** 占位前景：信号非 null 优先，否则 int 常量。 */
+    private static int placeholderColor(Props props) {
+        ReadableSignal<Integer> signal = props.textPlaceholderSignal();
+        return signal != null ? signal.get().intValue() : props.textPlaceholderColor();
+    }
+
+    /** 禁用前景：信号非 null 优先，否则 int 常量。 */
+    private static int disabledColor(Props props) {
+        ReadableSignal<Integer> signal = props.textDisabledSignal();
+        return signal != null ? signal.get().intValue() : props.textDisabledColor();
     }
 
     /**
