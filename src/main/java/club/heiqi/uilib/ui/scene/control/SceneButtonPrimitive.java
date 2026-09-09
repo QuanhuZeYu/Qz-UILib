@@ -72,6 +72,8 @@ public final class SceneButtonPrimitive {
         labelNode.setHitTestable(false);
         root.appendChild(labelNode);
 
+        SceneControlTypography typography = SceneControlTypography.attach(rt, root);
+        typography.bindText(labelNode);
         rt.bindText(labelNode, props.label());
 
         SceneInteractionState is = rt.interactionState(root);

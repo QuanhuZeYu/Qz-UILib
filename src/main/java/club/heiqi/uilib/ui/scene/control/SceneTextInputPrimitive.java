@@ -280,14 +280,16 @@ public final class SceneTextInputPrimitive {
         root.setClipChildren(true);
         // 横向滚动地基：宽度钉死为视口宽、子内容宽解耦（内容超宽时裁剪 + scrollOffsetX 平移）
         root.setScrollableX(true);
+        SceneControlTypography typography = SceneControlTypography.attach(rt, root);
 
         SceneNode prefixText = new SceneNode();
         prefixText.setHitTestable(false);
+        typography.bindText(prefixText);
         root.appendChild(prefixText);
 
         SceneNode caret = new SceneNode();
         caret.setPreferredWidth(CARET_WIDTH);
-        caret.setPreferredHeight(rt.lineHeight(caret.getFontSize()));
+        typography.bindCaret(caret);
         caret.setHitTestable(false);
         // 标记为空文本叶：computeWidth 对 text==null 的无文本叶返回 outerWidth（填满父宽），
         // 会把同行 prefix/suffix 推出 row 裁剪区。setText("") 使其走 text.isEmpty() 分支返回 padH=0，
@@ -298,17 +300,19 @@ public final class SceneTextInputPrimitive {
 
         SceneNode highlightText = new SceneNode();
         highlightText.setHitTestable(false);
+        typography.bindText(highlightText);
         root.appendChild(highlightText);
 
         SceneNode caretAfter = new SceneNode();
         caretAfter.setPreferredWidth(0);
-        caretAfter.setPreferredHeight(rt.lineHeight(caretAfter.getFontSize()));
+        typography.bindCaret(caretAfter);
         caretAfter.setHitTestable(false);
         caretAfter.setText("");
         root.appendChild(caretAfter);
 
         SceneNode suffixText = new SceneNode();
         suffixText.setHitTestable(false);
+        typography.bindText(suffixText);
         root.appendChild(suffixText);
 
         SceneInteractionState is = rt.interactionState(root);
@@ -347,33 +351,41 @@ public final class SceneTextInputPrimitive {
         rt.bind(selection, sel -> caretAfter.setPreferredWidth(
                 sel.isActive() && sel.focusCp() == sel.endCp() ? CARET_WIDTH : 0));
 
-        // 横向滚动 caret 跟随：caret X 超出可视内容区时最小滚动（GEOMETRY 级，不重排；
-        // flush 后按已提交几何调整，视口宽稳定不随 caret 变化，读旧布局安全；无信号回环）
-        rt.bind(caretIndex, idx -> {
+        // 仅 caret、显示文本、字体度量或视口变化时跟随。布局通知补齐尚未提交的几何，
+        // 已处理快照不含 layout epoch / scroll offset，避免滚动后的布局把用户强行拉回 caret。
+        final CaretScrollSnapshot[] followed = {null};
+        rt.bind(() -> {
+            rt.layoutDoneSignal().get();
+            SceneControlTypography.Metrics metrics = typography.metrics().get();
+            int caretCp = caretIndex.get().intValue();
+            String display = displayValue(SceneTextUtils.nullSafe(props.value().get()), inputType);
             LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
-            if (rootBox == null) {
+            return rootBox == null ? null : new CaretScrollSnapshot(
+                    caretCp, display, metrics, rootBox.getWidth(),
+                    root.getPaddingLeft(), root.getPaddingRight());
+        }, snapshot -> {
+            // 布局未就绪不记为已处理；后续 layoutDone 会用最新状态重试。
+            if (snapshot == null || snapshot.equals(followed[0])) {
                 return;
             }
-            String value = SceneTextUtils.nullSafe(props.value().get());
-            String display = displayValue(value, inputType);
-            int[] prefixWidths = prefixWidthCache.get(rt, display, root.getFontSize());
-            int caretCp = Math.min(idx.intValue(), prefixWidths.length - 1);
-            int viewStart = root.getPaddingLeft();
-            int viewEnd = rootBox.getWidth() - root.getPaddingRight();
+            int[] prefixWidths = prefixWidthCache.get(rt, snapshot.display(), snapshot.metrics().fontSizePx());
+            int caretCp = Math.max(0, Math.min(snapshot.caretCp(), prefixWidths.length - 1));
+            int viewStart = snapshot.paddingLeft();
+            int viewEnd = snapshot.viewportWidth() - snapshot.paddingRight();
             int caretX = prefixWidths[caretCp] + viewStart;
             int scroll = root.getScrollOffsetX();
             int next = scroll;
-            if (caretX > scroll + viewEnd) {
-                next = caretX - viewEnd;
+            if (caretX + CARET_WIDTH > scroll + viewEnd) {
+                next = caretX + CARET_WIDTH - viewEnd;
             } else if (caretX < scroll + viewStart) {
                 next = caretX - viewStart;
             }
-            // maxScroll 用测量宽闭式（不读子布局）：同 flush 内文本绑定 setText 会先清子
-            // cachedLayout，读子布局在 effect 时序下恒为 none。显示全宽 + caret 1px + 水平 padding。
+            // 文本绑定会清除子布局，用相同度量的整行宽计算滚动范围，无需等待子节点重排。
             int contentWidth = prefixWidths[prefixWidths.length - 1] + CARET_WIDTH
-                    + root.getPaddingLeft() + root.getPaddingRight();
-            int maxScroll = Math.max(0, contentWidth - rootBox.getWidth());
+                    + snapshot.paddingLeft() + snapshot.paddingRight();
+            int maxScroll = Math.max(0, contentWidth - snapshot.viewportWidth());
             next = Math.max(0, Math.min(maxScroll, next));
+            followed[0] = snapshot;
             if (next != scroll) {
                 root.setScrollOffsetX(next);
             }
@@ -401,10 +413,10 @@ public final class SceneTextInputPrimitive {
             }
             String value = SceneTextUtils.nullSafe(props.value().get());
             String display = displayValue(value, inputType);
-            // 坐标系（I12 两层）：effectiveTarget=root，ctx.getLocalPointerX() = raw - absoluteBox(root,treeAbs)
+            // 指针坐标：effectiveTarget=root，ctx.getLocalPointerX() = raw - absoluteBox(root,treeAbs)
             // = root 局部 X（框架每级重算，rootAbs≠0 不再错位）。再减 paddingLeft 得文本区局部。
             int localX = ctx.getLocalPointerX() - root.getPaddingLeft();
-            int fontSizePx = root.getFontSize();
+            int fontSizePx = typography.metrics().get().fontSizePx();
             int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
             int pos = SceneTextGeometry.caretIndexFromX(prefixWidths, localX);
             int clickCount = ev.getClickCount();
@@ -454,7 +466,7 @@ public final class SceneTextInputPrimitive {
             String value = SceneTextUtils.nullSafe(props.value().get());
             String display = displayValue(value, inputType);
             int localX = ctx.getLocalPointerX() - root.getPaddingLeft();
-            int[] prefixWidths = prefixWidthCache.get(rt, display, root.getFontSize());
+            int[] prefixWidths = prefixWidthCache.get(rt, display, typography.metrics().get().fontSizePx());
             int pos = SceneTextGeometry.caretIndexFromX(prefixWidths, localX);
             setSelection.accept(Integer.valueOf(dragAnchor[0]), Integer.valueOf(pos));
         });
@@ -643,6 +655,13 @@ public final class SceneTextInputPrimitive {
 
         return new Result(root, prefixText, caret, highlightText, caretAfter, suffixText,
                 caretIndex, selection, moveCaretToEndOf, caretVisible, isPlaceholder);
+    }
+
+    /** 已完成跟随的语义/视口快照：去重布局重试，保留用户主动滚动。 */
+    @Desugar
+    private record CaretScrollSnapshot(
+            int caretCp, String display, SceneControlTypography.Metrics metrics,
+            int viewportWidth, int paddingLeft, int paddingRight) {
     }
 
     /**
