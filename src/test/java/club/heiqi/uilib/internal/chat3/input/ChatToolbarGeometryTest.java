@@ -203,18 +203,52 @@ public class ChatToolbarGeometryTest {
     }
 
     private void frame(HudPlacement placement) {
-        container.setViewport(W, H);
+        float scale = layer.scaleFactor();
         ChatInputSurface.applyOuterPlacement(layer, W, H, placement, HudInsets.NONE);
+        container.setViewport(W, H, container.root().getPreferredWidth(), container.root().getPreferredHeight());
+        Constraints viewport = new Constraints((int) Math.floor(W / scale), (int) Math.floor(H / scale));
         rt.flush();
-        engine.layout(root, new Constraints(W, H));
+        engine.layout(root, viewport);
         rt.__bridgeLayoutEpoch(engine.layoutEpoch());
         rt.flush();
         // 与生产 pipeline 的 layout-publication settle 同源：嵌套工具栏监听布局完成，
         // 在动作列表变化后发布新 preferred 主轴尺寸，必须同帧再布局才能消费新尺寸。
-        engine.layout(root, new Constraints(W, H));
+        engine.layout(root, viewport);
         rt.__bridgeLayoutEpoch(engine.layoutEpoch());
         rt.flush();
-        engine.layout(root, new Constraints(W, H));
+        engine.layout(root, viewport);
+    }
+
+    @Test
+    public void maximumZoomKeepsRealContainerAndResetButtonInsideViewport() {
+        for (HudToolbarSide side : HudToolbarSide.values()) {
+            tearDown();
+            setUp();
+            mount(side, action("test:one", "测试动作", 1));
+            layer.scale().setPercent(200);
+            frames(3);
+            float scale = layer.scaleFactor();
+            AnchorRect outer = box(layer.root());
+            Assert.assertTrue(side + " 完整外框右边不能溢出", Math.round((outer.getX() + outer.getWidth()) * scale) <= W);
+            Assert.assertTrue(side + " 完整外框底边不能溢出", Math.round(outer.getBottom() * scale) <= H);
+            SceneNode reset = layer.toolbar().__getChildren().get(2);
+            AnchorRect button = box(reset);
+            int x = Math.round((button.getX() + button.getWidth() / 2F) * scale);
+            int y = Math.round((button.getY() + button.getHeight() / 2F) * scale);
+            Assert.assertTrue("复位的物理点击位置必须在屏幕内", x >= 0 && x < W && y >= 0 && y < H);
+            InputFrameBuilder input = new InputFrameBuilder(x, y);
+            for (ScenePointerAction action : new ScenePointerAction[] {
+                    ScenePointerAction.BUTTON_DOWN, ScenePointerAction.BUTTON_UP}) {
+                input.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT, 0, 0, 0,
+                        false, false, false, false, System.nanoTime()));
+                rt.route(root, input.drainFrame().scalePointerCoordinates(1F / scale), 0, 0);
+                rt.flush();
+            }
+            Assert.assertEquals("复位真实点击可达", 100, layer.scale().percent().get().intValue());
+            frames(3);
+            Assert.assertEquals("缩回后内容恢复用户尺寸，不保留上帧钳制",
+                    ChatMarkdownSettings.containerHeightFor(H), container.root().getPreferredHeight());
+        }
     }
 
     private void frames(int count) {

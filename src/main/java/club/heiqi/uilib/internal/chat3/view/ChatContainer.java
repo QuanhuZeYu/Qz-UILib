@@ -110,10 +110,17 @@ public final class ChatContainer {
          *  容器路不再自算镜像式(A3 镜像残留收口);传入前 Math.max(1, width) 视口守卫
          *  原样保持,未知视口(0)时既有语义不变。 */
         public void setViewport(int width, int height) {
-            root.setPreferredWidth(ChatMarkdownSettings.chatWidthFor(Math.max(1, width)));
-            root.setPreferredHeight(ChatMarkdownSettings.containerHeightFor(Math.max(1, height)));
+            setViewport(width, height, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        }
+
+        /** 宿主扣除外接工具栏后给出的内容预算；气泡排版同步使用真实内容宽。 */
+        public void setViewport(int width, int height, int maxContentWidth, int maxContentHeight) {
+            int contentWidth = Math.min(ChatMarkdownSettings.chatWidthFor(Math.max(1, width)), Math.max(1, maxContentWidth));
+            root.setPreferredWidth(contentWidth);
+            root.setPreferredHeight(Math.min(ChatMarkdownSettings.containerHeightFor(Math.max(1, height)),
+                    Math.max(1, maxContentHeight)));
             controller.messageList().setBubbleMaxWidthPx(
-                    ChatSceneController.bubbleMaxWidthPxFor(Math.max(1, width)));
+                    ChatSceneController.bubbleMaxWidthPxForContent(contentWidth));
         }
     }
 

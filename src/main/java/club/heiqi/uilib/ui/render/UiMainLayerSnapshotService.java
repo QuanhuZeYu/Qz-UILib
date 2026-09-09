@@ -454,8 +454,8 @@ public final class UiMainLayerSnapshotService {
         for (FrameSnapshot snapshot : snapshots) {
             if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
                     && snapshot.contentRevision == contentRevision
-                    && snapshot.requestedDownsampleFactor == downsampleFactor && snapshot.blurRadius == blurRadius
-                    && snapshot.textureId != 0) {
+                    && snapshot.sourceTextureId != 0) {
+                // 覆盖统计与 atlas 的原始截图来源一致；最终滤镜缓存仍按 blur/downsample 匹配。
                 coveredTileRegions.add(resolveTileRegion(toSampleRegion(snapshot)));
             }
         }

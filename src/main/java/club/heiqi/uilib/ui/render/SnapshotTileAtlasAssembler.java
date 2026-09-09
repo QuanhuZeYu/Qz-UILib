@@ -87,7 +87,8 @@ final class SnapshotTileAtlasAssembler {
         for (FrameSnapshot snapshot : snapshots) {
             if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
                     && snapshot.contentRevision == contentRevision
-                    && snapshot.requestedDownsampleFactor == downsampleFactor && snapshot.blurRadius == blurRadius
+                    // atlas 读取 sourceTextureId（未滤镜截图），不依赖 blur 或降采样倍率。
+                    // 按滤镜参数拒绝它会在冻结版本的批次中重新采入已绘制的兄弟玻璃。
                     && snapshot.sourceTextureId != 0 && UiMainLayerSnapshotGeometry.containsSampleRegion(
                     toSampleRegion(snapshot), tileSampleRegion)
                     && isBetterContainingSnapshot(sourceSnapshot, snapshot)) {

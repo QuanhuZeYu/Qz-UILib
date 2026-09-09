@@ -200,10 +200,10 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
         frameScale = toolbarLayer.scaleFactor();
         ((ChatScaledInputSource) inputSource).setScale(frameScale);
-        container.setViewport(w, h);
         hostWidth = Math.max(1, w);
         hostHeight = Math.max(1, h);
         applyPlacement(hostWidth, hostHeight);
+        container.setViewport(w, h, container.root().getPreferredWidth(), container.root().getPreferredHeight());
         if ((renderLogCounter++ % 120) == 0) {
             LOG.info("聊天输入屏渲染视口: w={}, h={}, chatWidthFor={}, containerHeightFor={}",
                     Integer.valueOf(w), Integer.valueOf(h),
@@ -297,6 +297,21 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
 
     static void applyOuterPlacement(HudToolbarLayer.Result layer, int viewportWidth, int viewportHeight,
             HudPlacement placement, HudInsets insets, float scale) {
+        int availableWidth = Math.max(1, (int) Math.floor(
+                Math.max(1, viewportWidth - insets.getLeft() - insets.getRight()) / scale));
+        int availableHeight = Math.max(1, (int) Math.floor(
+                Math.max(1, viewportHeight - insets.getTop() - insets.getBottom()) / scale));
+        if (layer.isVisible()) {
+            int reserved = layer.spec().getGap() + layer.spec().getThickness();
+            if (layer.spec().getSide().isHorizontalEdge()) availableHeight -= reserved;
+            else availableWidth -= reserved;
+        }
+        // resolve 的返回盒会缩小尺寸，只有改位置会让尾部工具栏仍排在原始内容之后、落到屏幕外。
+        // 先给工具栏预留 logical px，再把可用尺寸交回 scene 布局；缩回时从用户尺寸重算。
+        layer.content().setPreferredWidth(Math.min(ChatMarkdownSettings.chatWidthFor(Math.max(1, viewportWidth)),
+                Math.max(1, availableWidth)));
+        layer.content().setPreferredHeight(Math.min(ChatMarkdownSettings.containerHeightFor(Math.max(1, viewportHeight)),
+                Math.max(1, availableHeight)));
         AnchorRect rect = HudLayoutResolver.resolve(placement, viewportWidth, viewportHeight,
                 scaledOuterWidth(layer, viewportWidth, scale), scaledOuterHeight(layer, viewportHeight, scale), insets);
         // 节点和输入仍为 logical px，只有宿主边界放大到屏幕。
@@ -315,11 +330,15 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     }
 
     private static int scaledOuterWidth(HudToolbarLayer.Result layer, int width, float scale) {
-        return (int) Math.ceil(layer.logicalOuterWidth(ChatMarkdownSettings.chatWidthFor(Math.max(1, width))) * scale);
+        int contentWidth = layer.content().getPreferredWidth();
+        if (contentWidth <= 0) contentWidth = ChatMarkdownSettings.chatWidthFor(Math.max(1, width));
+        return (int) Math.ceil(layer.logicalOuterWidth(contentWidth) * scale);
     }
 
     private static int scaledOuterHeight(HudToolbarLayer.Result layer, int height, float scale) {
-        return (int) Math.ceil(layer.logicalOuterHeight(ChatMarkdownSettings.containerHeightFor(Math.max(1, height))) * scale);
+        int contentHeight = layer.content().getPreferredHeight();
+        if (contentHeight <= 0) contentHeight = ChatMarkdownSettings.containerHeightFor(Math.max(1, height));
+        return (int) Math.ceil(layer.logicalOuterHeight(contentHeight) * scale);
     }
 
     /** @return 生效放置(用户覆盖优先,否则按注册规格算默认放置 = BOTTOM_LEFT + margin) */

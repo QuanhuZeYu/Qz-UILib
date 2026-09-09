@@ -5,6 +5,7 @@ import java.util.function.Consumer;
 
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
@@ -110,6 +111,11 @@ final class SnapshotFilterPassRenderer {
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_ALPHA_TEST);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
+        // 权重存放在顶点颜色中；继承 GL_REPLACE 会忽略权重，把每个抽头整份相加。
+        // 缩放跨过降采样阈值可暴露此问题；外层 captureSnapshot 的 attrib 保护负责恢复宿主状态。
+        GL11.glTexEnvi(GL11.GL_TEXTURE_ENV, GL11.GL_TEXTURE_ENV_MODE, GL11.GL_MODULATE);
+        GL14.glBlendEquation(GL14.GL_FUNC_ADD);
+        GL11.glColorMask(true, true, true, true);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, inputTextureId);
         if (filterPassRadius <= 0) {
             GL11.glDisable(GL11.GL_BLEND);

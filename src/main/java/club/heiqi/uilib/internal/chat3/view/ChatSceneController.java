@@ -582,8 +582,12 @@ public final class ChatSceneController {
      * @return 气泡最大宽(px)
      */
     static int bubbleMaxWidthPxFor(int hostViewportWidth) {
-        int bubbleContentWidth = Math.max(1, ChatMarkdownSettings.chatWidthFor(
-                hostViewportWidth) - 2 * ChatMarkdownSettings.getBubblePaddingX());
+        return bubbleMaxWidthPxForContent(ChatMarkdownSettings.chatWidthFor(hostViewportWidth));
+    }
+
+    /** 内容框被宿主钳窄时仍复用同一气泡内宽公式。 */
+    static int bubbleMaxWidthPxForContent(int contentWidth) {
+        int bubbleContentWidth = Math.max(1, contentWidth - 2 * ChatMarkdownSettings.getBubblePaddingX());
         return (int) Math.round(bubbleContentWidth
                 * ChatMarkdownSettings.getBubbleMaxWidthRatio());
     }

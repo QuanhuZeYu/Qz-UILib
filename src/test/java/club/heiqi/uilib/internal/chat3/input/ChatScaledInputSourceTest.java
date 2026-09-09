@@ -40,17 +40,44 @@ public class ChatScaledInputSourceTest {
                         harness.mountRoot(root, (int) (1200 / scale), (int) (900 / scale));
                     }
                     AnchorRect box = SceneGeometry.absoluteBox(layer.root(), 0, 0);
-                    Assert.assertEquals(layer.logicalOuterWidth(width), box.getWidth());
+                    Assert.assertEquals(layer.logicalOuterWidth(layer.content().getPreferredWidth()), box.getWidth());
                     Assert.assertTrue("left stays on screen", Math.round(box.getX() * scale) >= 0);
                     Assert.assertTrue("right stays on screen", Math.round((box.getX() + box.getWidth()) * scale) <= 1200);
-                    // 高度超视口时保留既有裁剪语义，只验证顶部没有负向漂移。
+                    // 外框钳制必须落实到内容高度，不能只钳坐标、再让底部工具栏排到屏幕外。
                     Assert.assertTrue("top stays on screen", Math.round(box.getY() * scale) >= 0);
+                    Assert.assertTrue("bottom including toolbar stays on screen",
+                            Math.round((box.getY() + box.getHeight()) * scale) <= 900);
+                    SceneNode reset = layer.toolbar().__getChildren().get(2);
+                    AnchorRect resetBox = SceneGeometry.absoluteBox(reset, 0, 0);
+                    Assert.assertTrue("reset remains visible",
+                            Math.round((resetBox.getX() + resetBox.getWidth()) * scale) <= 1200
+                                    && Math.round(resetBox.getBottom() * scale) <= 900);
+                    layer.scale().setPercent(200);
+                    clickPhysical(harness, layer, reset, scale);
+                    Assert.assertEquals("maximum zoom must remain recoverable",
+                            100, layer.scale().percent().get().intValue());
                 } finally {
                     harness.dispose();
                     ReactiveScheduler.get().reset();
                 }
             }
         }
+    }
+
+    private static void clickPhysical(SceneInteractionHarness harness, HudToolbarLayer.Result layer,
+            SceneNode button, float scale) {
+        AnchorRect box = SceneGeometry.absoluteBox(button, 0, 0);
+        MockPlatformStateReader reader = new MockPlatformStateReader();
+        reader.mouseX = Math.round((box.getX() + box.getWidth() / 2F) * scale);
+        reader.mouseY = Math.round((box.getY() + box.getHeight() / 2F) * scale);
+        ChatScaledInputSource source = new ChatScaledInputSource(reader);
+        source.setExternalPointerMode(true);
+        source.drainFrame();
+        source.setScale(scale);
+        source.pushPointerButton(ScenePointerAction.BUTTON_DOWN, -1, -1, SceneMouseButton.LEFT, 10L);
+        source.pushPointerButton(ScenePointerAction.BUTTON_UP, -1, -1, SceneMouseButton.LEFT, 20L);
+        harness.getRuntime().route(layer.root().__getParent(), source.drainFrame(), 0, 0);
+        harness.getRuntime().flush();
     }
 
     @Test
