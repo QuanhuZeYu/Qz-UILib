@@ -16,7 +16,10 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneNavList —— scene 新栈纵向受控单选导航列表。
@@ -27,11 +30,31 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *
  * <h3>结构</h3>
  * <pre>
- * root (COLUMN, gap)
- *   └─ item[i] (ROW, mainAxisAlign=START, crossAxisAlign=CENTER, padding, cornerRadius, widthSizing=SHRINK)
- *         ├─ indicator[i] (non-hit, scaleY 随 selection 过渡)
+ * root (COLUMN, gap)                                       ← 导航底座，承载 TOOLBAR 表面
+ *   └─ item[i] (ROW, mainAxisAlign=START, crossAxisAlign=CENTER, padding, fillParentWidth)  ← 交互单元
+ *         ├─ indicator[i] (non-hit, scaleY 随 selection 过渡)  ← 选中指示条
  *         └─ label[i] (text, hitTestable=false，selected 时平移 4px)
  * </pre>
+ *
+ * <h3>外观归属：底座 TOOLBAR + 每项 INDICATOR 选中配方，唯一写入者是表面绑定器</h3>
+ * <p><b>底座</b>（primitive root）走 {@link SceneThemes#surface} 的 {@link SceneTheme.Role#TOOLBAR}
+ * 配方：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 全归
+ * {@link SceneSurfaceBinder}。旧的静态边框/圆角设值、{@code SceneStateColors.*Background} 绑定与
+ * {@code SceneControlChrome.bindStandardBorder} 写入者已删除，不再有第二套外观写入者。</p>
+ *
+ * <p><b>每个选项</b>走 {@link SceneThemes#selectableSurface} 的 {@link SceneTheme.Role#INDICATOR}
+ * 配方：未选中保持角色配方的极淡 tint（轻量状态覆盖），选中态把 tint 的 RGB 换成主题强调色、强度取
+ * 主题统一选中强度 {@code 0x59}——<b>选中是色彩语义，不是仅透明度</b>；禁用态仍取角色禁用档。
+ * 选项<b>保留配方自带的轻滤镜</b>（契约 §4.1「导航族选项的滤镜口径（G09 裁决）」）：每个选项恰好
+ * 采样一次自己的背景，不在配方之外叠第二层玻璃，也不把配方 backdrop 置空。</p>
+ *
+ * <p><b>选项文字与选中指示条</b>：启用取 {@link SceneThemes#foreground}，禁用取
+ * {@link SceneThemes#disabledForeground}，删除 {@code SceneStateColors} 取色。选中项不取
+ * {@link SceneThemes#onAccentForeground}——选中项底色是 {@code 0x59} 半透明强调色叠在玻璃之上
+ * 的<b>中间调</b>，不是不透明强调底：{@code onAccentForeground} 在浅色主题下对白字（1.71:1，
+ * 见 SceneTheme.liquidGlassLight 的 {@code 0xFFFFFFFF}）远低于可读阈值，而主题正文色在深/浅两档
+ * 对同一合成底分别为 9.71:1 / 9.08:1（WCAG 相对亮度对比度，实算见测试注释）。选中指示条与标签
+ * 共用同一前景派生（原实现两者同为 {@code TEXT_ON_ACCENT}），选中区分由染色承担，不靠文字变色。</p>
  *
  * <h3>契约</h3>
  * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 常量 + 回调 / R3 组件函数只执行一次 /
@@ -44,8 +67,6 @@ public final class SceneNavList {
     private static final int ITEM_GAP = SceneChromeTokens.GAP_SM;
     /** 项内边距（像素） */
     private static final int ITEM_PADDING = SceneChromeTokens.PAD_MD;
-    /** 项圆角（像素） */
-    private static final int ITEM_RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 选中指示条宽度。 */
     private static final int INDICATOR_WIDTH = 3;
     /** 选中指示条高度。 */
@@ -104,6 +125,21 @@ public final class SceneNavList {
                 result.root().setPreferredHeight(props.preferredHeight());
             }
 
+            // 导航底座：TOOLBAR 角色配方。表面绑定器独占 background/border/borderWidth/cornerRadius/
+            // backdrop/surfaceElevation；构造期不再静态设边框/圆角，也不另绑状态色或标准边框。
+            SceneInteractionState baseInteraction = rt.interactionState(result.root());
+            // 时序契约：Router 的 writeHovered/writePressed/writeFocused 对未创建的 signal 直接
+            // 短路，故在构建期声明关心，保证后续 hover/pressed/focus 能驱动配方状态档。
+            baseInteraction.hovered();
+            baseInteraction.pressed();
+            baseInteraction.focused();
+            SceneSurfaceBinder.bind(rt, result.root(), SceneThemes.surface(rt, SceneTheme.Role.TOOLBAR),
+                    props.enabled(), baseInteraction);
+
+            // 主题语义前景派生在构造期捕获一次（来源作用域），循环内所有选项共享同一派生信号。
+            ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+            ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
                 SceneNode item = handle.item();
                 item.setFlexDirection(FlexDirection.ROW);
@@ -112,32 +148,33 @@ public final class SceneNavList {
                 item.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 item.setGap(SceneChromeTokens.GAP_MD);
                 item.setPadding(ITEM_PADDING);
-                item.setCornerRadius(ITEM_RADIUS);
-                item.setBorderWidth(1);
-                item.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+                // 命中宽度策略不变：导航项填满导航栏宽度（item 全宽可点，非 SHRINK）。
                 item.setFillParentWidth(true);
 
                 SceneNode indicator = new SceneNode();
                 indicator.setPreferredWidth(INDICATOR_WIDTH);
                 indicator.setPreferredHeight(INDICATOR_HEIGHT);
                 indicator.setCornerRadius(INDICATOR_WIDTH);
-                indicator.setBackgroundColor(SceneChromeTokens.TEXT_ON_ACCENT);
                 indicator.setHitTestable(false);
                 item.appendChild(indicator);
                 item.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
 
-                // selection indicator：旧/新 item 的背景各自用 standard Motion 交叉过渡。
-                rt.__bindAnimatedColor(() -> {
-                    boolean enabled = Boolean.TRUE.equals(props.enabled().get());
-                    boolean selected = Boolean.TRUE.equals(handle.selected().get());
-                    boolean hovered = Boolean.TRUE.equals(interaction.hovered().get());
-                    boolean pressed = Boolean.TRUE.equals(interaction.pressed().get());
-                    return selected
-                            ? SceneStateColors.selectedBackground(enabled, hovered, pressed)
-                            : SceneStateColors.standardBackground(enabled, hovered, pressed);
-                }, item::setBackgroundColor, SceneChromeTokens.MOTION_STANDARD_MS);
+                // 选项表面：INDICATOR 角色配方 + selected 派生（选中把 tint RGB 换强调色、强度 0x59，
+                // 禁用仍取角色禁用档）。唯一外观写入者，独占 background/border/borderWidth/
+                // cornerRadius/backdrop/surfaceElevation；保留配方自带的轻滤镜（G09 裁决）。
+                ReadableSignal<SceneSurfaceStyle> surface =
+                    SceneThemes.selectableSurface(rt, SceneTheme.Role.INDICATOR, handle.selected());
+                SceneSurfaceBinder.bind(rt, item, surface, props.enabled(), interaction);
+
+                // 选中指示条与标签共用同一前景派生（启用正文色 / 禁用禁用前景色）。
+                ReadableSignal<Integer> itemForeground = () -> Boolean.TRUE.equals(props.enabled().get())
+                        ? foreground.get() : disabledForeground.get();
+                rt.bind(itemForeground, indicator::setBackgroundColor);
+                rt.bind(itemForeground, handle.label()::setTextColor);
+
+                // selection indicator：旧/新 item 的 scaleY 各自用 standard Motion 交叉过渡。
                 rt.__bindAnimatedFloat(() -> Boolean.TRUE.equals(handle.selected().get()) ? 1.0f : 0.0f,
                         scale -> indicator.setTransform(Transform.scale(1.0f, scale.floatValue())),
                         SceneChromeTokens.MOTION_STANDARD_MS);
@@ -145,13 +182,6 @@ public final class SceneNavList {
                         () -> Boolean.TRUE.equals(handle.selected().get()) ? SELECTED_LABEL_OFFSET_X : 0.0f,
                         offset -> handle.label().setTransform(Transform.translate(offset.floatValue(), 0.0f)),
                         SceneChromeTokens.MOTION_STANDARD_MS);
-                SceneControlChrome.bindStandardBorder(rt, item, props.enabled(), interaction);
-                // 文本色：选中白，未选中次要文本
-                rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
-                        : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get())),
-                    handle.label()::setTextColor,
-                    SceneChromeTokens.MOTION_STANDARD_MS);
                 SceneControlChrome.bindCursor(rt, item, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
