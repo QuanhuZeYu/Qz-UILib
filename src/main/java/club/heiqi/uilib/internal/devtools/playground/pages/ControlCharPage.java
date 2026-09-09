@@ -7,10 +7,9 @@ import club.heiqi.uilib.internal.devtools.playground.PlaygroundPage;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
-import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.paint.TextStyle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 控制字符统一口径演示页 —— Unicode 控制/格式字符的实际解析行为。
@@ -18,6 +17,14 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * <p>覆盖：换行类（NEL/LS/PS/VT/FF/CRLF 折叠）、\t 4 空格列宽、空白家族断词折叠、
  * ZWSP 软断行、软连字符断行补字、变体选择符/组合标记粘合、剥离类静默不可见。
  * 全部口径锚定 {@code font.util.UnicodeTextClassifier}（默认开启，无开关）。</p>
+ *
+ * <p><b>外观归属（G16/ControlCharPage）</b>：样本的基础正文（容器/默认前景，即 {@code §}
+ * 格式码与 {@code <color>} 标签未覆盖片段的颜色）取来源主题 {@link SceneThemes#foreground}——
+ * 静态样本经公共构件 {@code PlaygroundKit.text(rt, ...)} 绑定，{@link SceneLabel} 走契约 §2.7
+ * 主题化默认路径（builder 不调 {@code color(...)}）。字符串内的控制/格式字符
+ * （NEL/LS/PS/VT/FF/ZWSP/软连字符/变体选择符/组合标记/BOM/剥离类）与 {@code §} 原版格式化色
+ * （{@code TEXT_MODE_MINECRAFT_FORMATTED} 协议）都是<b>被测渲染协议的输入数据</b>，逐字保留，
+ * 绝不为「匹配主题」改写（任务单 G16 禁止项）；主题切换只换未着色片段的前景。</p>
  */
 public final class ControlCharPage implements PlaygroundPage {
 
@@ -46,12 +53,12 @@ public final class ControlCharPage implements PlaygroundPage {
             // ===== 卡片1：换行类 =====
             SceneNode newlineCard = PlaygroundKit.card();
             newlineCard.appendChild(PlaygroundKit.title("换行类（统一折叠为换行，CRLF 只算一个）"));
-            newlineCard.appendChild(rawText("裸 \\n：第一行\n第二行", 14));
-            newlineCard.appendChild(rawText("NEL(U+0085)：甲\u0085乙", 14));
-            newlineCard.appendChild(rawText("LS(U+2028)：甲\u2028乙", 14));
-            newlineCard.appendChild(rawText("PS(U+2029)：甲\u2029乙", 14));
-            newlineCard.appendChild(rawText("VT(U+000B)/FF(U+000C)：甲\u000B乙\u000C丙", 14));
-            newlineCard.appendChild(rawText("CRLF：甲\r\n乙（\r\n 折叠为一个换行，不产生空行）", 14));
+            newlineCard.appendChild(rawText(rt, "裸 \\n：第一行\n第二行", 14));
+            newlineCard.appendChild(rawText(rt, "NEL(U+0085)：甲\u0085乙", 14));
+            newlineCard.appendChild(rawText(rt, "LS(U+2028)：甲\u2028乙", 14));
+            newlineCard.appendChild(rawText(rt, "PS(U+2029)：甲\u2029乙", 14));
+            newlineCard.appendChild(rawText(rt, "VT(U+000B)/FF(U+000C)：甲\u000B乙\u000C丙", 14));
+            newlineCard.appendChild(rawText(rt, "CRLF：甲\r\n乙（\r\n 折叠为一个换行，不产生空行）", 14));
             newlineCard.appendChild(PlaygroundKit.hint(
                     "\\n \\r \\v \\f NEL LS PS 全部视作换行；这些字符零宽、不产生字形。"));
             root.appendChild(newlineCard);
@@ -59,9 +66,9 @@ public final class ControlCharPage implements PlaygroundPage {
             // ===== 卡片2：Tab 列宽 =====
             SceneNode tabCard = PlaygroundKit.card();
             tabCard.appendChild(PlaygroundKit.title("制表符（CSS 默认 8 空格列宽）"));
-            tabCard.appendChild(rawText("tab：a\tb", 14));
-            tabCard.appendChild(rawText("空格：a        b", 14));
-            tabCard.appendChild(rawText("混合：一\t二\t三", 14));
+            tabCard.appendChild(rawText(rt, "tab：a\tb", 14));
+            tabCard.appendChild(rawText(rt, "空格：a        b", 14));
+            tabCard.appendChild(rawText(rt, "混合：一\t二\t三", 14));
             tabCard.appendChild(PlaygroundKit.hint(
                     "\\t 按 8 个空格宽度推进（CSS tab-size 默认口径；渲染为空格字形，下划线/高亮按列宽覆盖）。"));
             root.appendChild(tabCard);
@@ -115,8 +122,8 @@ public final class ControlCharPage implements PlaygroundPage {
             // ===== 卡片6：Cc 可见控制字符（CSS3+ 口径） =====
             SceneNode controlCard = PlaygroundKit.card();
             controlCard.appendChild(PlaygroundKit.title("Cc 控制字符（可见 glyph：Control Pictures 映射）"));
-            controlCard.appendChild(rawText("C0 控制：a\u0007b\u0001c（渲染为 ␇␁ 可见符号）", 14));
-            controlCard.appendChild(rawText("DEL(\u007F) 渲染为 ␡；C1(\u0080..\u009F) 渲染为 � 替换符", 14));
+            controlCard.appendChild(rawText(rt, "C0 控制：a\u0007b\u0001c（渲染为 ␇␁ 可见符号）", 14));
+            controlCard.appendChild(rawText(rt, "DEL(\u007F) 渲染为 ␡；C1(\u0080..\u009F) 渲染为 � 替换符", 14));
             controlCard.appendChild(PlaygroundKit.hint(
                     "CSS Text 3/4 口径：Cc 类（除换行族）必须渲染为可见 glyph——C0 映射 Control Pictures 块、"
                     + "DEL 映射 U+2421、C1 映射 U+FFFD；输入过滤仍拦 Cc（编辑语义不变）。"));
@@ -125,9 +132,9 @@ public final class ControlCharPage implements PlaygroundPage {
             // ===== 卡片6b：剥离类（Default_Ignorable） =====
             SceneNode stripCard = PlaygroundKit.card();
             stripCard.appendChild(PlaygroundKit.title("剥离类（Default_Ignorable：静默不可见、零宽）"));
-            stripCard.appendChild(rawText("BOM\uFEFF前缀 + bidi 控制\u202E混入\u202C + WORD JOINER\u2060：全部零宽", 14));
-            stripCard.appendChild(rawText("INVISIBLE SEPARATOR\u2063 / CGJ\u034F / 非字符\uFDD0 同样静默", 14));
-            stripCard.appendChild(rawText("纯剥离：\u2060\u2061\u2062\u2063\u2064\uFEFF（本行除标题外无任何可见内容）", 14));
+            stripCard.appendChild(rawText(rt, "BOM\uFEFF前缀 + bidi 控制\u202E混入\u202C + WORD JOINER\u2060：全部零宽", 14));
+            stripCard.appendChild(rawText(rt, "INVISIBLE SEPARATOR\u2063 / CGJ\u034F / 非字符\uFDD0 同样静默", 14));
+            stripCard.appendChild(rawText(rt, "纯剥离：\u2060\u2061\u2062\u2063\u2064\uFEFF（本行除标题外无任何可见内容）", 14));
             stripCard.appendChild(PlaygroundKit.hint(
                     "Cf 格式字符全集、bidi 方向控制、BOM、WORD JOINER、非字符等：测量零宽、渲染跳过；"
                     + "字符保留在文本流中，文本域前缀宽度与 caret 几何不受影响。"));
@@ -154,11 +161,12 @@ public final class ControlCharPage implements PlaygroundPage {
             // ===== 卡片7：三种内容模式一致性 =====
             SceneNode modeCard = PlaygroundKit.card();
             modeCard.appendChild(PlaygroundKit.title("三种内容模式同口径（RAW / MINECRAFT / RICH）"));
-            modeCard.appendChild(rawText("RAW：甲\u2028乙 + a\tb", 14));
-            SceneNode minecraftLabel = SceneLabel.create(rt, new SceneLabel.Props(
-                    Signal.create("MINECRAFT：§a甲\u2028§a乙 + §aa\t§ab（§ 续传）"),
-                    PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_MINECRAFT_FORMATTED,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false, null)).get();
+            modeCard.appendChild(rawText(rt, "RAW：甲\u2028乙 + a\tb", 14));
+            SceneNode minecraftLabel = SceneLabel.create(rt, SceneLabel.Props
+                    .builder(Signal.create("MINECRAFT：§a甲\u2028§a乙 + §aa\t§ab（§ 续传）"))
+                    .fontSizePx(14)
+                    .contentMode(TextStyle.TEXT_MODE_MINECRAFT_FORMATTED)
+                    .build()).get();
             modeCard.appendChild(minecraftLabel);
             modeCard.appendChild(richLabel(rt, "RICH：<color=#4FC3F7>甲\u2028乙</color> + a\tb", 0));
             modeCard.appendChild(PlaygroundKit.hint(
@@ -168,24 +176,44 @@ public final class ControlCharPage implements PlaygroundPage {
         };
     }
 
-    /** 创建 RAW 模式演示文本节点。 */
-    private static SceneNode rawText(String value, int fontSize) {
-        SceneNode node = PlaygroundKit.text(value, PlaygroundKit.TEXT, fontSize);
+    /**
+     * 创建 RAW 模式演示文本节点。
+     *
+     * <p>基础正文取来源主题前景（主题切换只重派生颜色、不重建节点）；字符串中的控制/格式
+     * 字符是被测渲染协议的输入数据，逐字保留、不为匹配主题改写。</p>
+     */
+    private static SceneNode rawText(SceneRuntime rt, String value, int fontSize) {
+        SceneNode node = PlaygroundKit.text(rt, value, SceneThemes.foreground(rt), fontSize);
         node.setTextContentMode(TextStyle.TEXT_MODE_UILIB_RAW);
         return node;
     }
 
-    /** 创建 RICH 模式 SceneLabel 演示节点（wrap 感知）。 */
+    /**
+     * 创建 RICH 模式 SceneLabel 演示节点（wrap 感知）。
+     *
+     * <p>走契约 §2.7 主题化默认路径（builder 不调 {@code color(...)}）：基础正文跟随主题，
+     * 字符串内标签/控制字符仍由 {@code TEXT_MODE_RICH_TAGS} 按渲染协议解析。</p>
+     */
     private static SceneNode richLabel(SceneRuntime rt, String text, int wrapWidth) {
-        return SceneLabel.create(rt, new SceneLabel.Props(
-                Signal.create(text), PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
-                TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth, 0.0D, 0, 0, false, null)).get();
+        return SceneLabel.create(rt, SceneLabel.Props
+                .builder(Signal.create(text))
+                .fontSizePx(14)
+                .contentMode(TextStyle.TEXT_MODE_RICH_TAGS)
+                .wrapWidth(wrapWidth)
+                .build()).get();
     }
 
-    /** 创建 32px 大字号 RICH 模式演示节点（不换行，组合堆叠目检用）。 */
+    /**
+     * 创建 32px 大字号 RICH 模式演示节点（不换行，组合堆叠目检用）。
+     *
+     * <p>基础正文同 {@link #richLabel} 走主题化默认路径；32px 字号与组合标记序列保持原样。</p>
+     */
     private static SceneNode bigText(SceneRuntime rt, String text, int wrapWidth) {
-        return SceneLabel.create(rt, new SceneLabel.Props(
-                Signal.create(text), PlaygroundKit.TEXT, 32, TextStyle.TEXT_MODE_RICH_TAGS,
-                TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth, 0.0D, 0, 0, false, null)).get();
+        return SceneLabel.create(rt, SceneLabel.Props
+                .builder(Signal.create(text))
+                .fontSizePx(32)
+                .contentMode(TextStyle.TEXT_MODE_RICH_TAGS)
+                .wrapWidth(wrapWidth)
+                .build()).get();
     }
 }

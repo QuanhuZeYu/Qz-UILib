@@ -7,10 +7,9 @@ import club.heiqi.uilib.internal.devtools.playground.PlaygroundPage;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
-import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.paint.TextStyle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 富文本渲染演示页 —— SceneLabel 现代标签语法（color/b/i/u/s/size/br）与容错/换行行为。
@@ -18,6 +17,15 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * <p>覆盖：任意 24 位色与命名色、粗斜下删、任意嵌套与回退、字号混排（同基线）、
  * wrapWidth 自动换行（样式跨行续传）、未知标签/坏属性/未闭合的宽容解析、
  * SceneLabel 组件 signal 驱动的交互切换。</p>
+ *
+ * <p><b>外观归属（G16/RichTextPage）</b>：富文本的<b>容器/默认前景</b>（基础正文色，即标签
+ * 未覆盖片段的颜色）取来源主题正文前景——静态样本经公共构件 {@code PlaygroundKit.text(rt, ...)}
+ * + {@link SceneThemes#foreground} 绑定，{@link SceneLabel} 走其主题化默认路径
+ * （{@code Props.builder} 不调 {@code color(...)} 即跟随主题前景，见契约 §2.7）。
+ * 富文本字符串内标签自带的显式颜色（{@code <color=#...>}、{@code <mark=...>} 等经
+ * {@code TEXT_MODE_RICH_TAGS} 解析）属<b>渲染协议数据</b>，逐字保留、不改写、不与主题色板发生
+ * 关系；本页诊断的正是标签解析与样式续传本身，为「匹配主题」改样本字符串或标签色会摧毁
+ * 演示价值（任务单 G16 禁止项）。</p>
  */
 public final class RichTextPage implements PlaygroundPage {
 
@@ -50,19 +58,19 @@ public final class RichTextPage implements PlaygroundPage {
             // ===== 卡片1：样式标签 =====
             SceneNode styleCard = PlaygroundKit.card();
             styleCard.appendChild(PlaygroundKit.title("样式标签（color / b / i / u / s）"));
-            styleCard.appendChild(richText(
+            styleCard.appendChild(richText(rt,
                     "<color=#FF5533>任意 24 位颜色</color>　<color=gold>命名色</color>　"
                     + "<b>粗体</b> <i>斜体</i> <u>下划线</u> <s>删除线</s>", 15));
-            styleCard.appendChild(richText(
+            styleCard.appendChild(richText(rt,
                     "任意嵌套：<color=#4FC3F7><b>蓝粗<i>蓝粗斜</i></b>回蓝粗</color>　关闭标签后回退父样式", 15));
-            styleCard.appendChild(richText(
+            styleCard.appendChild(richText(rt,
                     "8 位 ARGB：<color=#80FF5533>半透明红</color>（底层背景透出）", 15));
-            styleCard.appendChild(richText(
+            styleCard.appendChild(richText(rt,
                     "行内高亮：<mark>默认黄底</mark>　<mark=#80FF5533>半透明红底</mark>　"
                     + "<mark=#4FC3F7><b>蓝底加粗</b></mark>", 15));
-            styleCard.appendChild(richText(
+            styleCard.appendChild(richText(rt,
                     "上下标：x<sup>2</sup> + y<sub>n</sub>　<size=20>大<sup>号上标</sup></size>（字号缩至 0.75×，基线偏移）", 15));
-            styleCard.appendChild(richText(
+            styleCard.appendChild(richText(rt,
                     "字距：<spacing=4>宽松字距</spacing>　<spacing=-1>紧凑字距</spacing>（advance 追加，换行/裁剪同步感知）", 15));
             styleCard.appendChild(PlaygroundKit.hint(
                     "标签不占测量宽度；§ 原版格式码在富文本模式下不参与解析。"));
@@ -71,32 +79,36 @@ public final class RichTextPage implements PlaygroundPage {
             // ===== 卡片2：字号混排与换行 =====
             SceneNode sizeCard = PlaygroundKit.card();
             sizeCard.appendChild(PlaygroundKit.title("字号混排与自动换行（size / br / wrapWidth）"));
-            sizeCard.appendChild(richText("混排：<size=24>大字</size><size=12>小字</size>共享同一行基线，advance 按各自字号推进", 15));
-            sizeCard.appendChild(richText(
+            sizeCard.appendChild(richText(rt, "混排：<size=24>大字</size><size=12>小字</size>共享同一行基线，advance 按各自字号推进", 15));
+            sizeCard.appendChild(richText(rt,
                     "硬换行：<b>第一行<br>第二行</b>　（br 前后样式续传）", 15));
             SceneNode wrapHint = PlaygroundKit.hint(
                     "下方 SceneLabel 以 wrapWidth=320 自动换行：<color=#4FC3F7>换行切在样式片段中间时，"
                     + "行尾显式闭合、行首自动重开标签，跨行样式续传零特判。</color>");
             sizeCard.appendChild(wrapHint);
-            SceneNode wrapDemo = SceneLabel.create(rt, new SceneLabel.Props(
-                    Signal.create("<color=#4FC3F7>这是一段用于演示自动换行的富文本，"
+            // SceneLabel 走主题化默认路径（契约 §2.7：builder 不调 color(...) = followTheme）：
+            // 基础正文取来源主题前景；字符串内 <color> 标签色仍由渲染协议解析、逐字保留。
+            SceneNode wrapDemo = SceneLabel.create(rt, SceneLabel.Props
+                    .builder(Signal.create("<color=#4FC3F7>这是一段用于演示自动换行的富文本，"
                             + "<b>加粗片段</b>横跨换行边界，样式在换行前后保持一致。</color>"
-                            + "换行宽度 320 像素，标签本身不占任何测量宽度。"),
-                    PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 0, false, null)).get();
+                            + "换行宽度 320 像素，标签本身不占任何测量宽度。"))
+                    .fontSizePx(14)
+                    .contentMode(TextStyle.TEXT_MODE_RICH_TAGS)
+                    .wrapWidth(320)
+                    .build()).get();
             sizeCard.appendChild(wrapDemo);
             root.appendChild(sizeCard);
 
             // ===== 卡片3：宽容解析 =====
             SceneNode toleranceCard = PlaygroundKit.card();
             toleranceCard.appendChild(PlaygroundKit.title("宽容解析（现代组件惯例：宽容失败）"));
-            toleranceCard.appendChild(richText(
+            toleranceCard.appendChild(richText(rt,
                     "未知标签原样保留：<foo>尖括号</foo>按字面输出", 15));
-            toleranceCard.appendChild(richText(
+            toleranceCard.appendChild(richText(rt,
                     "坏属性忽略继承父样式：<color=不是颜色>这段</color>回到默认色；<size=abc>x</size>保持基准字号", 15));
-            toleranceCard.appendChild(richText(
+            toleranceCard.appendChild(richText(rt,
                     "未闭合自动闭合到文本末尾：<b>这段粗体没有闭合标签", 15));
-            toleranceCard.appendChild(richText(
+            toleranceCard.appendChild(richText(rt,
                     "转义实体：&lt;color=red&gt; 会显示为字面尖括号而不是标签", 15));
             root.appendChild(toleranceCard);
 
@@ -113,27 +125,39 @@ public final class RichTextPage implements PlaygroundPage {
             PlaygroundKit.button(rt, ops, "容错", () -> demoText.set(
                     "未知标签 <foo>x</foo> 与坏属性 <color=zzz>y</color> 都按字面/继承处理"));
             liveCard.appendChild(ops);
-            liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
-                    demoText, PlaygroundKit.TEXT, 15, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 320, 0.0D, 0, 0, false, null)).get());
+            liveCard.appendChild(SceneLabel.create(rt, SceneLabel.Props
+                    .builder(demoText)
+                    .fontSizePx(15)
+                    .contentMode(TextStyle.TEXT_MODE_RICH_TAGS)
+                    .wrapWidth(320)
+                    .build()).get());
             liveCard.appendChild(PlaygroundKit.hint(
                     "限行演示（maxLines=2 + ellipsis）：长文最多两行，末行追加省略号"));
-            liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
-                    Signal.create("<color=#4FC3F7>这是一段足够长的富文本，用于演示限行截断："
+            liveCard.appendChild(SceneLabel.create(rt, SceneLabel.Props
+                    .builder(Signal.create("<color=#4FC3F7>这是一段足够长的富文本，用于演示限行截断："
                             + "<b>加粗内容</b>会被截掉一部分，超出两行的部分全部丢弃，"
                             + "末行以省略号收尾，布局高度只按两行计算，"
-                            + "第三行、第四行以及更往后的所有内容都不可见。</color>"),
-                    PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 200, 0.0D, 0, 2, true, null)).get());
+                            + "第三行、第四行以及更往后的所有内容都不可见。</color>"))
+                    .fontSizePx(14)
+                    .contentMode(TextStyle.TEXT_MODE_RICH_TAGS)
+                    .wrapWidth(200)
+                    .maxLines(2)
+                    .ellipsis(true)
+                    .build()).get());
             final Signal<String> linkFeedback = Signal.create("（点击下方链接，回调写入这里）");
-            liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
-                    Signal.create("链接演示：访问 <a=https://github.com>GitHub</a> 或 "
-                            + "<a=https://example.com>示例站</a>（自动下划线，可点击）"),
-                    PlaygroundKit.TEXT, 14, TextStyle.TEXT_MODE_RICH_TAGS,
-                    TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false,
-                    url -> linkFeedback.set("点击了链接：" + url))).get());
-            liveCard.appendChild(SceneLabel.create(rt, new SceneLabel.Props(
-                    linkFeedback, PlaygroundKit.TEXT, 13, TextStyle.TEXT_MODE_UILIB_RAW)).get());
+            liveCard.appendChild(SceneLabel.create(rt, SceneLabel.Props
+                    .builder(Signal.create("链接演示：访问 <a=https://github.com>GitHub</a> 或 "
+                            + "<a=https://example.com>示例站</a>（自动下划线，可点击）"))
+                    .fontSizePx(14)
+                    .contentMode(TextStyle.TEXT_MODE_RICH_TAGS)
+                    .onLinkClick(url -> linkFeedback.set("点击了链接：" + url))
+                    .build()).get());
+            // 链接回调读数是普通正文：同样走主题化默认路径（原始文本模式）。
+            liveCard.appendChild(SceneLabel.create(rt, SceneLabel.Props
+                    .builder(linkFeedback)
+                    .fontSizePx(13)
+                    .contentMode(TextStyle.TEXT_MODE_UILIB_RAW)
+                    .build()).get());
             root.appendChild(liveCard);
             return root;
         };
@@ -142,12 +166,17 @@ public final class RichTextPage implements PlaygroundPage {
     /**
      * 创建富文本模式的静态演示文本节点。
      *
+     * <p>基础正文（默认前景）取来源主题 {@link SceneThemes#foreground}：主题切换只重派生颜色、
+     * 不重建节点。字符串内 {@code <color>/<mark>} 等标签显式色是 {@code TEXT_MODE_RICH_TAGS}
+     * 渲染协议的输入数据，原样保留，不经此路径、也不被主题改写。</p>
+     *
+     * @param rt       场景运行时（解析来源主题）
      * @param value    富文本（含标签）
      * @param fontSize 字号
      * @return 文本节点
      */
-    private static SceneNode richText(String value, int fontSize) {
-        SceneNode node = PlaygroundKit.text(value, PlaygroundKit.TEXT, fontSize);
+    private static SceneNode richText(SceneRuntime rt, String value, int fontSize) {
+        SceneNode node = PlaygroundKit.text(rt, value, SceneThemes.foreground(rt), fontSize);
         node.setTextContentMode(TextStyle.TEXT_MODE_RICH_TAGS);
         return node;
     }
