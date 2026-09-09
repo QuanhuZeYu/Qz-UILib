@@ -6,92 +6,69 @@ import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
- * SceneDataTableEditorChrome —— DataTable 编辑槽（TextInput/Select）与下拉浮层视觉样式收敛器（纯静态工具）。
+ * SceneDataTableEditorChrome —— DataTable 编辑槽（TextInput/Select）与下拉浮层的主题化装配入口。
  *
- * <h3>定位：DataTable 编辑槽壳样式层，对标 Compose TextFieldDefaults</h3>
- * <p>{@link SceneDataTable} 的 TextInput/Select 列编辑槽与 Select 下拉浮层共享一套嵌入式深色槽
- * 专用色板（{@code EDIT_*}/{@code LISTBOX_*}/{@code ITEM_*}）与装配样板（边框圆角、caret/箭头着色、
- * hover/focus 状态色派生、cursor 绑定）。本类把这套样式从 DataTable 主类抽出，收成静态工具方法 +
- * 浮层 chrome 装配器，对标 Jetpack Compose {@code TextFieldDefaults} 静态样式对象范式：
- * 数据模型（Row/Column/Props）留主类守 API 兼容，壳样式层独立收口。</p>
+ * <h3>定位（液态玻璃迁移后）</h3>
+ * <p>{@link SceneDataTable} 的默认路径已改为<b>直接复用</b>已主题化的 {@link SceneTextInput} 与
+ * {@link SceneSelect}（INPUT 表面 + OVERLAY 弹出底座由它们自持），本类不再是默认外观写入者。
+ * 本类保留原有公共签名，作为「自行装配 primitive 的调用方」的兼容入口：所有外观都从主题派生
+ * （{@link SceneSurfaceBinder} 独占 background/border/borderWidth/cornerRadius/backdrop/
+ * surfaceElevation，文字/caret/选区取主题语义色），不再持有任何静态色板常量。</p>
  *
- * <h3>为何放 control 包（守 R12 / I6）</h3>
- * <p>helper 依赖 {@link SceneRuntime}（runtime 层）与 {@link SceneInteractionState}（input 层），
- * 若放 paint 层会破坏宪章不变量 I6「渲染层不出现 signal/组件概念」。control 层本就依赖
- * runtime/input/node/paint/reactive，放此包与同范式的 {@link SceneControlChrome} 同包同范式，
- * 不引入任何新的非法依赖方向。本类只承担「壳样式装配」，不夹 DataTable 的行/列/单元格行为核心，
- * 守 R12。</p>
+ * <h3>属性归属</h3>
+ * <p>表面属性唯一写入者是 {@link SceneSurfaceBinder}；文本前景是 {@code bindComputed} /
+ * {@code bindForeground} 单点绑定；cursor 保持 {@link SceneControlChrome#bindCursor}。
+ * 同一节点只绑定一次，不与任何旧实色绑定竞争。</p>
  *
  * <h3>守 R1（静态工具零实例字段）</h3>
  * <p>类为 {@code public final} + {@code private} 构造器，零实例字段、零静态可变状态。
  * 唯一的成员类 {@link DataTableListboxChrome} 是浮层 chrome 装配器实例（每次 select 列渲染
- * 时按需 new，持有 {@link SceneRuntime} 引用用于注册 PAINT 绑定），不属于工具类自身的实例状态。</p>
+ * 时按需 new，持有 {@link SceneRuntime} 引用用于注册绑定），不属于工具类自身的实例状态。</p>
  *
  * <h3>Boolean 解包</h3>
  * <p>对 signal 值统一用 {@code Boolean.TRUE.equals(x)} 防御性解包，与 DataTable 原编辑槽装配
  * 口径一字不差，行为零变。</p>
  *
  * @see SceneDataTable
+ * @see SceneTextInput
+ * @see SceneSelect
  * @see SceneControlChrome
  */
 public final class SceneDataTableEditorChrome {
 
-    /** 单元格文字颜色。 */
-    private static final int TEXT_COLOR = SceneChromeTokens.DATA_TABLE_TEXT;
-    /** 编辑输入槽默认底色。 */
-    private static final int EDIT_SLOT_BG = SceneChromeTokens.DATA_TABLE_EDIT_SLOT_BG;
-    /** 编辑输入槽 hover/聚焦底色。 */
-    private static final int EDIT_SLOT_BG_HOVER = SceneChromeTokens.DATA_TABLE_EDIT_SLOT_BG_HOVER;
-    /** 编辑输入槽默认边框色。 */
-    private static final int EDIT_BORDER = SceneChromeTokens.DATA_TABLE_EDIT_BORDER;
-    /** 编辑输入槽 hover 边框色。 */
-    private static final int EDIT_BORDER_HOVER = SceneChromeTokens.DATA_TABLE_EDIT_BORDER_HOVER;
-    /** 编辑输入槽聚焦边框色。 */
-    private static final int EDIT_BORDER_FOCUS = SceneChromeTokens.BORDER_FOCUS;
-    /** 编辑输入槽 caret 可见色。 */
-    private static final int EDIT_CARET = SceneChromeTokens.BORDER_FOCUS;
-    /** 编辑输入槽 caret 隐藏色。 */
-    private static final int EDIT_CARET_HIDDEN = SceneChromeTokens.TRANSPARENT;
-    /** 编辑输入槽 placeholder 文本色。 */
-    private static final int EDIT_PLACEHOLDER = SceneChromeTokens.TEXT_DISABLED;
-    /** Select 箭头默认色。 */
-    private static final int EDIT_ARROW = SceneChromeTokens.DATA_TABLE_EDIT_ARROW;
-    /** Select 箭头展开色。 */
-    private static final int EDIT_ARROW_FOCUS = SceneChromeTokens.BORDER_FOCUS;
-    /** 编辑输入槽圆角半径（无 chrome token 对应，暂保留：chip 视觉，depth-2 圆角小于 RADIUS_SM，不强行收口）。 */
-    private static final int EDIT_SLOT_RADIUS = 2;
-    /** 编辑输入槽边框宽度。 */
-    private static final int EDIT_SLOT_BORDER_W = 1;
-    /** 编辑输入槽横向内边距。 */
+    /** 编辑输入槽横向内边距（纯布局，不参与外观归属）。 */
     private static final int EDIT_SLOT_PAD_H = 4;
-    /** 下拉浮层背景色。 */
-    private static final int LISTBOX_BG = SceneChromeTokens.BG_PRESSED;
-    /** 下拉浮层圆角半径。 */
-    private static final int LISTBOX_RADIUS = SceneChromeTokens.RADIUS_MD;
-    /** 下拉浮层边框色。 */
-    private static final int LISTBOX_BORDER = SceneChromeTokens.DATA_TABLE_EDIT_BORDER;
-    /** 下拉选中项背景色。 */
-    private static final int ITEM_BG_SELECTED = SceneChromeTokens.STANDARD_SELECTED;
-    /** 下拉键盘高亮项背景色。 */
-    private static final int ITEM_BG_HIGHLIGHTED = SceneChromeTokens.DATA_TABLE_ITEM_BG_HIGHLIGHTED;
-    /** 下拉 hover 项背景色。 */
-    private static final int ITEM_BG_HOVER = SceneChromeTokens.BG_DEFAULT;
-    /** 下拉默认项背景色。 */
-    private static final int ITEM_BG_DEFAULT = SceneChromeTokens.TRANSPARENT;
-    /** 下拉选项内边距。 */
+    /** 下拉选项内边距（纯布局）。 */
     private static final int ITEM_PADDING = SceneChromeTokens.PAD_MD;
+    /** 不可见态（caret/选区未激活）：全透明，纯 PAINT 切换不重排。 */
+    private static final int TRANSPARENT = SceneChromeTokens.TRANSPARENT;
+    /** 候选行 hover 覆盖强度：主题 accent 的低透明度轻量覆盖（与 SceneSelect 同口径）。 */
+    private static final int ITEM_HOVER_ALPHA = 0x1F;
+    /** 候选行选中覆盖强度：明显强于 hover，选中不只靠透明度区分。 */
+    private static final int ITEM_SELECTED_ALPHA = 0x33;
+    /** 候选行选中且 hover 的覆盖强度：强调色加深。 */
+    private static final int ITEM_SELECTED_HOVER_ALPHA = 0x4C;
+    /** 候选行键盘高亮覆盖强度：主题选区背景的轻量覆盖。 */
+    private static final int ITEM_HIGHLIGHT_ALPHA = 0x59;
+    /** 恒真启用信号：弹出浮层不参与 disabled 语义（禁用时不展开）。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     /** 纯静态工具类，禁止实例化。 */
     private SceneDataTableEditorChrome() {
     }
 
     /**
-     * 装配 DataTable TextInput 编辑槽视觉。
+     * 装配 DataTable TextInput 编辑槽视觉（兼容入口）。
      *
-     * <p>设置边框/圆角/内边距/高度静态属性，并注册 caret 可见性与 hover 态派生的
-     * 背景色、边框色、caret 色、前后缀文本色绑定，最后绑定 TEXT/DEFAULT 光标切换。</p>
+     * <p>布局只设内边距与高度；INPUT 表面（含滤镜、边框、圆角、实体高度）由
+     * {@link SceneSurfaceBinder} 独占；正文/占位/禁用前景与 caret、选区色取主题语义色；
+     * cursor 保持既有绑定。默认路径请直接复用 {@link SceneTextInput}。</p>
      *
      * @param rt            场景运行时
      * @param result        TextInput primitive 创建结果
@@ -101,44 +78,58 @@ public final class SceneDataTableEditorChrome {
     public static void decorateTextInputEditor(SceneRuntime rt, SceneTextInputPrimitive.Result result,
                                                int contentHeight, ReadableSignal<Boolean> enabled) {
         SceneNode root = result.root();
-        root.setBorderWidth(EDIT_SLOT_BORDER_W);
-        root.setCornerRadius(EDIT_SLOT_RADIUS);
         root.setPadding(0, EDIT_SLOT_PAD_H, 0, EDIT_SLOT_PAD_H);
         root.setPreferredHeight(contentHeight);
 
         SceneInteractionState interaction = rt.interactionState(root);
-        rt.bindComputed(() -> resolveEditSlotBackground(result.caretVisible().get(), interaction.hovered().get()),
-                root::setBackgroundColor);
-        rt.bindComputed(() -> resolveEditBorder(result.caretVisible().get(), interaction.hovered().get()),
-                root::setBorderColor);
-        rt.bindComputed(() -> Boolean.TRUE.equals(result.caretVisible().get())
+        // 时序契约：构造期声明关心，Router 后续写入才会落到已创建的 signal。
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        ReadableSignal<SceneSurfaceStyle> surface = SceneThemes.surface(rt, SceneTheme.Role.INPUT);
+        SceneSurfaceBinder.bind(rt, root, surface, enabled, interaction);
+
+        ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+        ReadableSignal<Integer> mutedForeground = SceneThemes.mutedForeground(rt);
+        ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+        rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get(),
+                        foreground.get(), mutedForeground.get(), disabledForeground.get()),
+                result.prefixText()::setTextColor);
+        rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get(),
+                        foreground.get(), mutedForeground.get(), disabledForeground.get()),
+                result.suffixText()::setTextColor);
+
+        // caret 双槽位：focus 在选区哪一端，哪端着色（色值取主题聚焦色）。
+        ReadableSignal<Integer> caretColor = SceneThemes.borderFocus(rt);
+        rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(result.caretVisible().get())
                         && result.selection().get().focusCp() == result.selection().get().startCp()
-                        ? EDIT_CARET : EDIT_CARET_HIDDEN,
-                result.caret()::setBackgroundColor);
-        rt.bindComputed(() -> Boolean.TRUE.equals(result.caretVisible().get())
+                        ? caretColor.get() : TRANSPARENT,
+                result.caret()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+        rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(result.caretVisible().get())
                         && result.selection().get().isActive()
                         && result.selection().get().focusCp() == result.selection().get().endCp()
-                        ? EDIT_CARET : EDIT_CARET_HIDDEN,
-                result.caretAfter()::setBackgroundColor);
+                        ? caretColor.get() : TRANSPARENT,
+                result.caretAfter()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+
+        // 选区高亮：激活即显示（失焦保留选区可见），背景/前景取主题选区语义色。
+        ReadableSignal<Integer> selectionBackground = SceneThemes.selectionBackground(rt);
+        ReadableSignal<Integer> selectionForeground = SceneThemes.selectionForeground(rt);
         rt.bindComputed(() -> Boolean.TRUE.equals(result.selection().get().isActive())
-                        ? SceneChromeTokens.SELECTION_BG : EDIT_CARET_HIDDEN,
+                        ? selectionBackground.get() : TRANSPARENT,
                 result.highlightText()::setBackgroundColor);
         rt.bindComputed(() -> Boolean.TRUE.equals(result.selection().get().isActive())
-                        ? SceneChromeTokens.SELECTION_TEXT
-                        : resolveEditTextColor(result.isPlaceholder().get(), enabled.get()),
+                        ? selectionForeground.get()
+                        : resolveEditTextColor(result.isPlaceholder().get(), enabled.get(),
+                                foreground.get(), mutedForeground.get(), disabledForeground.get()),
                 result.highlightText()::setTextColor);
-        rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get()),
-                result.prefixText()::setTextColor);
-        rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get()),
-                result.suffixText()::setTextColor);
         SceneControlChrome.bindCursor(rt, root, enabled, SceneCursor.TEXT, SceneCursor.DEFAULT);
     }
 
     /**
-     * 装配 DataTable Select 编辑槽视觉。
+     * 装配 DataTable Select 编辑槽视觉（兼容入口）。
      *
-     * <p>设置 trigger 节点的边框/圆角/内边距/高度静态属性，并注册展开+聚焦态派生的
-     * 背景色、边框色、箭头色绑定，按 enabled 切换标签文本色，最后绑定 POINTER/DEFAULT 光标。</p>
+     * <p>布局只设内边距与高度；INPUT 表面由 {@link SceneSurfaceBinder} 独占；选中值文本与箭头
+     * 取主题语义前景；cursor 保持既有绑定。默认路径请直接复用 {@link SceneSelect}。</p>
      *
      * @param rt            场景运行时
      * @param result        Select primitive 创建结果
@@ -148,85 +139,119 @@ public final class SceneDataTableEditorChrome {
     public static void decorateSelectEditor(SceneRuntime rt, SceneSelectPrimitive.Result result,
                                             int contentHeight, ReadableSignal<Boolean> enabled) {
         SceneNode trigger = result.trigger();
-        trigger.setBorderWidth(EDIT_SLOT_BORDER_W);
-        trigger.setCornerRadius(EDIT_SLOT_RADIUS);
         trigger.setPadding(0, EDIT_SLOT_PAD_H, 0, EDIT_SLOT_PAD_H);
         trigger.setPreferredHeight(contentHeight);
 
         SceneInteractionState interaction = rt.interactionState(trigger);
-        rt.bindComputed(() -> resolveEditSlotBackground(selectFocused(result.expanded().get(), interaction.focused().get()),
-                        interaction.hovered().get()),
-                trigger::setBackgroundColor);
-        rt.bindComputed(() -> resolveEditBorder(selectFocused(result.expanded().get(), interaction.focused().get()),
-                        interaction.hovered().get()),
-                trigger::setBorderColor);
-        rt.bind(enabled,
-                e -> result.label().setTextColor(Boolean.TRUE.equals(e) ? TEXT_COLOR : EDIT_PLACEHOLDER));
-        rt.bindComputed(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get()),
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(rt, trigger, SceneThemes.surface(rt, SceneTheme.Role.INPUT),
+                enabled, interaction);
+
+        ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+        ReadableSignal<Integer> mutedForeground = SceneThemes.mutedForeground(rt);
+        ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+        ReadableSignal<Integer> focusEdge = SceneThemes.borderFocus(rt);
+        rt.bindComputed(() -> Boolean.TRUE.equals(enabled.get())
+                        ? foreground.get() : disabledForeground.get(),
+                result.label()::setTextColor);
+        rt.bindComputed(() -> resolveSelectArrowColor(enabled.get(), result.expanded().get(),
+                        mutedForeground.get(), disabledForeground.get(), focusEdge.get()),
                 result.arrow()::setTextColor);
         SceneControlChrome.bindCursor(rt, trigger, enabled, SceneCursor.POINTER, SceneCursor.DEFAULT);
     }
 
     /**
-     * 解析编辑槽底色。
+     * 解析编辑槽底色（兼容纯函数，取库默认主题的 INPUT 配方）。
      *
      * @param focused 是否聚焦或展开
      * @param hovered 是否 hover
      * @return ARGB 底色
      */
     public static int resolveEditSlotBackground(Boolean focused, Boolean hovered) {
-        if (Boolean.TRUE.equals(focused) || Boolean.TRUE.equals(hovered)) {
-            return EDIT_SLOT_BG_HOVER;
-        }
-        return EDIT_SLOT_BG;
+        SceneSurfaceStyle input = SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
+        return Boolean.TRUE.equals(focused) || Boolean.TRUE.equals(hovered)
+                ? input.getHovered().getTint() : input.getIdle().getTint();
     }
 
     /**
-     * 解析编辑槽边框色。
+     * 解析编辑槽边框色（兼容纯函数，取库默认主题的 INPUT 配方与聚焦缘色）。
      *
      * @param focused 是否聚焦或展开
      * @param hovered 是否 hover
      * @return ARGB 边框色
      */
     public static int resolveEditBorder(Boolean focused, Boolean hovered) {
+        SceneSurfaceStyle input = SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
         if (Boolean.TRUE.equals(focused)) {
-            return EDIT_BORDER_FOCUS;
+            return input.getFocusEdge();
         }
-        if (Boolean.TRUE.equals(hovered)) {
-            return EDIT_BORDER_HOVER;
-        }
-        return EDIT_BORDER;
+        return Boolean.TRUE.equals(hovered) ? input.getHovered().getEdge() : input.getIdle().getEdge();
     }
 
     /**
-     * 解析编辑槽文本色。
+     * 解析编辑槽文本色（兼容纯函数，取库默认主题语义色）。
      *
      * @param placeholder 是否 placeholder
      * @param enabled     是否启用
      * @return ARGB 文本色
      */
     public static int resolveEditTextColor(Boolean placeholder, Boolean enabled) {
-        if (!Boolean.TRUE.equals(enabled) || Boolean.TRUE.equals(placeholder)) {
-            return EDIT_PLACEHOLDER;
-        }
-        return TEXT_COLOR;
+        return resolveEditTextColor(placeholder, enabled,
+                SceneThemes.DEFAULT.foreground(),
+                SceneThemes.DEFAULT.mutedForeground(),
+                SceneThemes.DEFAULT.disabledForeground());
     }
 
     /**
-     * 解析 Select 箭头色。
+     * 解析编辑槽文本色（主题语义色版）。
+     *
+     * @param placeholder        是否 placeholder
+     * @param enabled            是否启用
+     * @param foreground         主题正文前景
+     * @param mutedForeground    主题次要/占位前景
+     * @param disabledForeground 主题禁用前景
+     * @return ARGB 文本色
+     */
+    private static int resolveEditTextColor(Boolean placeholder, Boolean enabled,
+                                            int foreground, int mutedForeground, int disabledForeground) {
+        if (!Boolean.TRUE.equals(enabled)) {
+            return disabledForeground;
+        }
+        return Boolean.TRUE.equals(placeholder) ? mutedForeground : foreground;
+    }
+
+    /**
+     * 解析 Select 箭头色（兼容纯函数，取库默认主题语义色）。
      *
      * @param enabled  是否启用
      * @param expanded 是否展开
      * @return ARGB 文本色
      */
     public static int resolveSelectArrowColor(Boolean enabled, Boolean expanded) {
+        return resolveSelectArrowColor(enabled, expanded,
+                SceneThemes.DEFAULT.mutedForeground(),
+                SceneThemes.DEFAULT.disabledForeground(),
+                SceneThemes.DEFAULT.borderFocus());
+    }
+
+    /**
+     * 解析 Select 箭头色（主题语义色版）。
+     *
+     * @param enabled            是否启用
+     * @param expanded           是否展开
+     * @param mutedForeground    主题次要前景
+     * @param disabledForeground 主题禁用前景
+     * @param focusEdge          主题聚焦缘色
+     * @return ARGB 文本色
+     */
+    private static int resolveSelectArrowColor(Boolean enabled, Boolean expanded,
+                                               int mutedForeground, int disabledForeground, int focusEdge) {
         if (!Boolean.TRUE.equals(enabled)) {
-            return EDIT_PLACEHOLDER;
+            return disabledForeground;
         }
-        if (Boolean.TRUE.equals(expanded)) {
-            return EDIT_ARROW_FOCUS;
-        }
-        return EDIT_ARROW;
+        return Boolean.TRUE.equals(expanded) ? focusEdge : mutedForeground;
     }
 
     /**
@@ -241,7 +266,7 @@ public final class SceneDataTableEditorChrome {
     }
 
     /**
-     * 解析下拉选项背景色。
+     * 解析下拉选项背景色（兼容纯函数，取库默认主题强调色与选区背景的轻量覆盖）。
      *
      * @param selected    是否选中
      * @param highlighted 是否键盘高亮
@@ -249,20 +274,47 @@ public final class SceneDataTableEditorChrome {
      * @return ARGB 背景色
      */
     public static int resolveItemBackground(boolean selected, boolean highlighted, Boolean hovered) {
-        if (selected) {
-            return ITEM_BG_SELECTED;
-        }
-        if (highlighted) {
-            return ITEM_BG_HIGHLIGHTED;
-        }
-        if (Boolean.TRUE.equals(hovered)) {
-            return ITEM_BG_HOVER;
-        }
-        return ITEM_BG_DEFAULT;
+        return resolveItemBackground(selected, highlighted, hovered,
+                SceneThemes.DEFAULT.accent(), SceneThemes.DEFAULT.selectionBackground());
     }
 
     /**
-     * 创建 DataTable Select 下拉浮层 chrome 装配器。
+     * 解析下拉选项背景色：键盘高亮 &gt; 选中 &gt; hover &gt; 透明（浮层玻璃底可见）。
+     *
+     * @param selected            是否选中
+     * @param highlighted         是否键盘高亮
+     * @param hovered             是否 hover
+     * @param accent              主题强调色
+     * @param selectionBackground 主题选区背景色
+     * @return ARGB 背景色
+     */
+    private static int resolveItemBackground(boolean selected, boolean highlighted, Boolean hovered,
+                                             int accent, int selectionBackground) {
+        if (highlighted) {
+            return tint(selectionBackground, ITEM_HIGHLIGHT_ALPHA);
+        }
+        if (selected) {
+            return tint(accent, Boolean.TRUE.equals(hovered) ? ITEM_SELECTED_HOVER_ALPHA : ITEM_SELECTED_ALPHA);
+        }
+        if (Boolean.TRUE.equals(hovered)) {
+            return tint(accent, ITEM_HOVER_ALPHA);
+        }
+        return TRANSPARENT;
+    }
+
+    /**
+     * 保留色 RGB、替换 alpha 通道（轻量覆盖用）。
+     *
+     * @param argb  源色
+     * @param alpha 目标 alpha（0..255）
+     * @return 替换 alpha 后的 ARGB
+     */
+    private static int tint(int argb, int alpha) {
+        return (alpha << 24) | (argb & 0x00FFFFFF);
+    }
+
+    /**
+     * 创建 DataTable Select 下拉浮层 chrome 装配器（兼容入口）。
      *
      * @param rt 场景运行时
      * @return 浮层 chrome 装配器实例
@@ -271,9 +323,9 @@ public final class SceneDataTableEditorChrome {
         return new DataTableListboxChrome(rt);
     }
 
-    /** DataTable Select 下拉浮层 chrome 装配器。 */
+    /** DataTable Select 下拉浮层 chrome 装配器（兼容入口；默认路径由 SceneSelect 自持）。 */
     public static final class DataTableListboxChrome implements SceneSelectPrimitive.ListboxChrome {
-        /** 场景运行时，用于注册 PAINT 绑定。 */
+        /** 场景运行时，用于注册主题绑定。 */
         private final SceneRuntime rt;
 
         /**
@@ -287,22 +339,26 @@ public final class SceneDataTableEditorChrome {
 
         @Override
         public void decorateListbox(SceneNode listbox) {
-            listbox.setBackgroundColor(LISTBOX_BG);
-            listbox.setCornerRadius(LISTBOX_RADIUS);
-            listbox.setBorderWidth(EDIT_SLOT_BORDER_W);
-            listbox.setBorderColor(LISTBOX_BORDER);
+            // 弹出底座：OVERLAY 配方画在浮层根（唯一外观写入者），延迟打开时继承来源主题。
+            SceneSurfaceBinder.bind(rt, listbox, SceneThemes.surface(rt, SceneTheme.Role.OVERLAY),
+                    ALWAYS_ENABLED, rt.interactionState(listbox));
         }
 
         @Override
         public void decorateItem(SceneSelectPrimitive.ItemHandle handle) {
             handle.item().setPadding(ITEM_PADDING);
             handle.item().setCursor(SceneCursor.POINTER);
-            rt.bindComputed(() -> resolveItemBackground(
-                            handle.selected().get(),
-                            handle.highlighted().get(),
-                            handle.interaction().hovered().get()),
-                    handle.item()::setBackgroundColor);
-            handle.label().setTextColor(TEXT_COLOR);
+            // 行只做轻量状态覆盖：不逐项采样滤镜，默认透明露出浮层玻璃底。
+            ReadableSignal<Integer> accent = SceneThemes.accent(rt);
+            ReadableSignal<Integer> selectionBackground = SceneThemes.selectionBackground(rt);
+            rt.__bindAnimatedColor(() -> resolveItemBackground(
+                            Boolean.TRUE.equals(handle.selected().get()),
+                            Boolean.TRUE.equals(handle.highlighted().get()),
+                            handle.interaction().hovered().get(),
+                            accent.get(), selectionBackground.get()),
+                    handle.item()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+            ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+            rt.bind(foreground, handle.label()::setTextColor);
         }
     }
 }

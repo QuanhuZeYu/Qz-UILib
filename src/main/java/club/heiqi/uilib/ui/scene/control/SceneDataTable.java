@@ -16,16 +16,33 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.ScenePalette;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneDataTable —— scene 新栈响应式数据表格控件。
  *
  * <p>本阶段只提供 keyed 行复用、固定列宽、固定行高、纵向滚动视口和只读文本列。
  * 后续编辑器列复用相同 {@link CellRenderer} 常驻渲染扩展点接入。</p>
+ *
+ * <h3>外观归属（液态玻璃迁移）</h3>
+ * <ul>
+ *   <li><b>外壳（viewport）</b>：主题 {@link SceneTheme.Role#GROUP} 配方，是该节点
+ *       background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 的唯一写入者。</li>
+ *   <li><b>表头行</b>：主题 {@link SceneTheme.Role#TOOLBAR} 配方（条带式薄玻璃，与底座分层），
+ *       表头文字取主题正文前景。</li>
+ *   <li><b>数据行</b>：只写 {@code backgroundColor} 的轻量交替覆盖（主题 accent 半透明），
+ *       不装滤镜、不写边框与圆角，露出底座玻璃；单元格自身不写任何表面属性。</li>
+ *   <li><b>编辑单元</b>：直接复用已主题化的 {@link SceneTextInput} / {@link SceneSelect}
+ *       （INPUT 表面与 OVERLAY 弹出底座由它们自持），本控件不复制其样式、不再叠第二层玻璃。</li>
+ * </ul>
+ * <p>外观随主题重派生，不重建节点；数据模型、校验、排序与序列化语义零改动。</p>
  */
 public final class SceneDataTable {
 
@@ -35,14 +52,16 @@ public final class SceneDataTable {
     private static final int DEFAULT_ROW_HEIGHT = SceneChromeTokens.ROW_HEIGHT_TABLE;
     /** 单元格内边距（像素）。 */
     private static final int CELL_PADDING = 4;
+    /** 编辑槽横向内边距（像素，纯布局；表面外观归主题绑定器）。 */
+    private static final int EDIT_SLOT_PAD_H = 4;
+    /** 数据行交替覆盖强度：主题 accent 半透明轻量覆盖，与 SimpleList 行同口径。 */
+    private static final int ROW_ALTERNATE_ALPHA = 0x14;
+    /** 数据行无覆盖：全透明，露出底座 GROUP 玻璃。 */
+    private static final int ROW_TRANSPARENT = 0x00000000;
+    /** 恒真 enabled：外壳与表头自身没有禁用语义，表面绑定只走 idle/hovered/pressed 三档。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
     /** 行 id 分配器，用于 keyed 列表稳定身份。 */
     private static final AtomicLong NEXT_ROW_ID = new AtomicLong(1L);
-    /** 表头背景色。 */
-    private static final int HEADER_BG = SceneChromeTokens.BG_DEFAULT;
-    /** 外层背景色。 */
-    private static final int VIEWPORT_BG = SceneChromeTokens.DATA_TABLE_VIEWPORT_BG;
-    /** 单元格文字颜色。 */
-    private static final int TEXT_COLOR = SceneChromeTokens.DATA_TABLE_TEXT;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneDataTable() {
@@ -393,7 +412,8 @@ public final class SceneDataTable {
         public static Column text(String header, int width) {
             return new Column(header, width, false, (rt, ctx) -> {
                 SceneNode label = new SceneNode();
-                label.setTextColor(TEXT_COLOR);
+                // 只读文本取主题正文前景（构造期捕获来源主题，主题切换只重派生不重建节点）。
+                rt.bind(SceneThemes.foreground(rt), label::setTextColor);
                 label.setPreferredHeight(ctx.contentHeight());
                 label.setHitTestable(false);
                 rt.bindText(label, ctx.value());
@@ -404,27 +424,36 @@ public final class SceneDataTable {
         /**
          * 创建 TextInput 可编辑文本列。
          *
+         * <p>编辑单元直接复用已主题化的 {@link SceneTextInput}：INPUT 表面（含滤镜、边框、圆角、
+         * 前景、caret 与选区色）由该控件自持，本列只负责单元格布局（紧凑横向内边距与固定高度），
+         * 不复制其样式、不在其上叠第二层玻璃。</p>
+         *
          * @param header 表头文本
          * @param width  固定列宽
          * @return 可编辑文本输入列定义
          */
         public static Column textInput(String header, int width) {
             return new Column(header, width, true, (rt, ctx) -> {
-                SceneTextInputPrimitive.Result result = SceneTextInputPrimitive.create(rt, new SceneTextInputPrimitive.Props(
+                SceneTextInput.Props inputProps = new SceneTextInput.Props(
                         ctx.value(),
                         ctx.enabled(),
                         ctx.readOnly(),
                         "",
                         Integer.MAX_VALUE,
                         SceneInputType.TEXT,
-                        ctx.onChange()));
-                SceneDataTableEditorChrome.decorateTextInputEditor(rt, result, ctx.contentHeight(), ctx.enabled());
-                return result.root();
+                        ctx.onChange());
+                SceneNode input = SceneTextInput.create(rt, inputProps).get();
+                input.setPadding(0, EDIT_SLOT_PAD_H, 0, EDIT_SLOT_PAD_H);
+                input.setPreferredHeight(ctx.contentHeight());
+                return input;
             });
         }
 
         /**
          * 创建 Select 可编辑选择列。
+         *
+         * <p>编辑单元直接复用已主题化的 {@link SceneSelect}：INPUT 触发器表面与 OVERLAY 弹出
+         * 底座（含候选行轻量状态）由该控件自持，本列只负责单元格布局，不复制其样式。</p>
          *
          * @param header  表头文本
          * @param width   固定列宽
@@ -434,14 +463,15 @@ public final class SceneDataTable {
         public static Column select(String header, int width, List<String> options) {
             List<String> safeOptions = SceneListOps.immutableCopy(options);
             return new Column(header, width, true, (rt, ctx) -> {
-                SceneSelectPrimitive.Result result = SceneSelectPrimitive.create(rt, new SceneSelectPrimitive.Props(
+                SceneSelect.Props selectProps = new SceneSelect.Props(
                         Computed.create(() -> Integer.valueOf(safeOptions.indexOf(ctx.value().get()))),
                         safeOptions,
                         ctx.enabled(),
-                        next -> ctx.onChange().accept(optionValue(safeOptions, next)),
-                        SceneDataTableEditorChrome.createListboxChrome(rt)));
-                SceneDataTableEditorChrome.decorateSelectEditor(rt, result, ctx.contentHeight(), ctx.enabled());
-                return result.trigger();
+                        next -> ctx.onChange().accept(optionValue(safeOptions, next)));
+                SceneNode trigger = SceneSelect.create(rt, selectProps).get();
+                trigger.setPadding(0, EDIT_SLOT_PAD_H, 0, EDIT_SLOT_PAD_H);
+                trigger.setPreferredHeight(ctx.contentHeight());
+                return trigger;
             });
         }
 
@@ -619,9 +649,18 @@ public final class SceneDataTable {
             SceneNode viewport = new SceneNode();
             viewport.setScrollable(true);
             viewport.setClipChildren(true);
-            viewport.setBackgroundColor(VIEWPORT_BG);
             viewport.setFillParentHeight(true);
             viewport.setFlexGrow(1);
+
+            // 外壳：GROUP 角色配方是 background/border/borderWidth/cornerRadius/backdrop/
+            // surfaceElevation 的唯一写入者；enabled 恒真（外壳无禁用语义）。
+            // 时序契约：先声明关心 hovered/pressed/focused，Router 的写入才不会被 null 短路。
+            SceneInteractionState viewportInteraction = rt.interactionState(viewport);
+            viewportInteraction.hovered();
+            viewportInteraction.pressed();
+            viewportInteraction.focused();
+            SceneSurfaceBinder.bind(rt, viewport, SceneThemes.surface(rt, SceneTheme.Role.GROUP),
+                    ALWAYS_ENABLED, viewportInteraction);
 
             // stackHost 承载 viewport 原 preferredHeight(props.viewportHeight())，并可选挂滚动条 column。
             // 即使无滚动条也建 stackHost，统一结构路径。content 两层（header+dataContainer）保持在 viewport 内。
@@ -642,13 +681,16 @@ public final class SceneDataTable {
             SceneNode content = SceneNode.column();
             viewport.appendChild(content);
 
-            content.appendChild(buildHeaderRow(props));
+            content.appendChild(buildHeaderRow(rt, props));
             SceneNode dataContainer = SceneNode.column();
             content.appendChild(dataContainer);
             // 行号/行对象索引缓存：随 rows signal 替换的列表实例失效重建，
             // 把单元格 Computed 内的行查找从 O(n) 线性扫描降到 O(1) 查表（大表防 O(n²)）。
             RowIndexCache indexCache = new RowIndexCache();
-            rt.forEach(dataContainer, props.rows(), Row::getRowId, row -> buildRow(rt, props, row, indexCache));
+            // 主题强调色在来源作用域捕获一次，全部数据行共享同一信号（不为每行新建派生）。
+            ReadableSignal<Integer> accent = SceneThemes.accent(rt);
+            rt.forEach(dataContainer, props.rows(), Row::getRowId,
+                    row -> buildRow(rt, props, row, indexCache, accent));
             return root;
         };
     }
@@ -656,14 +698,25 @@ public final class SceneDataTable {
     /**
      * 构建表头行。
      *
+     * <p>表头是条带式薄玻璃：TOOLBAR 角色配方独占 background/border/borderWidth/cornerRadius/
+     * backdrop/surfaceElevation；表头单元格自身不写表面属性，文字取主题正文前景。</p>
+     *
+     * @param rt    场景运行时
      * @param props DataTable 输入契约
      * @return 表头行节点
      */
-    private static SceneNode buildHeaderRow(Props props) {
+    private static SceneNode buildHeaderRow(SceneRuntime rt, Props props) {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(props.rowHeight());
+        ReadableSignal<SceneSurfaceStyle> headerSurface = SceneThemes.surface(rt, SceneTheme.Role.TOOLBAR);
+        SceneInteractionState interaction = rt.interactionState(row);
+        // 时序契约：构造期声明关心，Router 后续写入才会落到已创建的 signal。
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(rt, row, headerSurface, ALWAYS_ENABLED, interaction);
         for (Column column : props.columns()) {
-            row.appendChild(buildHeaderCell(column, props.rowHeight()));
+            row.appendChild(buildHeaderCell(rt, column, props.rowHeight()));
         }
         return row;
     }
@@ -671,21 +724,22 @@ public final class SceneDataTable {
     /**
      * 构建表头单元格。
      *
+     * @param rt        场景运行时
      * @param column    列定义
      * @param rowHeight 固定行高
      * @return 表头单元格节点
      */
-    private static SceneNode buildHeaderCell(Column column, int rowHeight) {
+    private static SceneNode buildHeaderCell(SceneRuntime rt, Column column, int rowHeight) {
         SceneNode cell = SceneNode.row();
         cell.setPreferredWidth(column.width());
         cell.setPreferredHeight(rowHeight);
         cell.setPadding(CELL_PADDING);
         cell.setClipChildren(true);
-        cell.setBackgroundColor(HEADER_BG);
 
         SceneNode label = new SceneNode();
         label.setText(column.header());
-        label.setTextColor(TEXT_COLOR);
+        // 表头文字取主题正文前景（构造期捕获来源主题，主题切换只重派生）。
+        rt.bind(SceneThemes.foreground(rt), label::setTextColor);
         label.setHitTestable(false);
         cell.appendChild(label);
         return cell;
@@ -694,18 +748,28 @@ public final class SceneDataTable {
     /**
      * 构建数据行。
      *
+     * <p>行只做轻量交替覆盖：默认透明露出底座玻璃，奇数行取主题 accent 半透明染色；
+     * 行自身不装滤镜、不写边框与圆角，不与底座争同一属性槽。</p>
+     *
      * @param rt         场景运行时
      * @param props      DataTable 输入契约
      * @param row        当前行快照
      * @param indexCache 行号/行对象索引缓存（随 rows 列表实例失效重建）
+     * @param accent     主题强调色（来源作用域捕获，全部行共享）
      * @return 数据行节点
      */
-    private static SceneNode buildRow(SceneRuntime rt, Props props, Row row, RowIndexCache indexCache) {
+    private static SceneNode buildRow(SceneRuntime rt, Props props, Row row, RowIndexCache indexCache,
+                                      ReadableSignal<Integer> accent) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(props.rowHeight());
         int rowIndex = indexCache.rowIndex(props.rows().get(), row.getRowId());
+        // 行外观只有一个写入者：backgroundColor 轻量覆盖，无 backdrop/border/cornerRadius/elevation。
+        rt.bindComputed(() -> rowIndex % 2 == 0
+                        ? Integer.valueOf(ROW_TRANSPARENT)
+                        : Integer.valueOf(tint(accent.get(), ROW_ALTERNATE_ALPHA)),
+                rowNode::setBackgroundColor);
         for (int col = 0; col < props.columns().size(); col++) {
-            rowNode.appendChild(buildCell(rt, props, row, col, rowIndex, indexCache));
+            rowNode.appendChild(buildCell(rt, props, row, col, indexCache));
         }
         return rowNode;
     }
@@ -713,15 +777,17 @@ public final class SceneDataTable {
     /**
      * 构建数据单元格。
      *
+     * <p>单元格自身不写任何表面属性（背景由行承担，编辑单元自持 INPUT 表面），
+     * 只保留固定宽高、内边距与裁剪。</p>
+     *
      * @param rt         场景运行时
      * @param props      DataTable 输入契约
      * @param row        当前行快照
      * @param col        列下标
-     * @param rowIndex   初始行下标
      * @param indexCache 行号/行对象索引缓存（随 rows 列表实例失效重建）
      * @return 数据单元格节点
      */
-    private static SceneNode buildCell(SceneRuntime rt, Props props, Row row, int col, int rowIndex,
+    private static SceneNode buildCell(SceneRuntime rt, Props props, Row row, int col,
                                        RowIndexCache indexCache) {
         Column column = props.columns().get(col);
         SceneNode cell = SceneNode.row();
@@ -730,7 +796,6 @@ public final class SceneDataTable {
         cell.setPreferredHeight(props.rowHeight());
         cell.setPadding(CELL_PADDING);
         cell.setClipChildren(true);
-        cell.setBackgroundColor(ScenePalette.rowBg(rowIndex));
 
         ReadableSignal<String> value = Computed.create(() -> indexCache.currentRow(props.rows().get(), row).cellValue(col));
         CellContext ctx = new CellContext(value, next -> {
@@ -871,6 +936,17 @@ public final class SceneDataTable {
             return "";
         }
         return nullSafe(options.get(i));
+    }
+
+    /**
+     * 保留色 RGB、替换 alpha 通道（行轻量覆盖用）。
+     *
+     * @param argb  源色
+     * @param alpha 目标 alpha（0..255）
+     * @return 替换 alpha 后的 ARGB
+     */
+    private static int tint(int argb, int alpha) {
+        return (alpha << 24) | (argb & 0x00FFFFFF);
     }
 
 }
