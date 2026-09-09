@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.paint.TextStyle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.LinkHitRegion;
 import club.heiqi.uilib.ui.scene.text.SceneTextMode;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneLabel —— 通用文本显示组件，纯文本与现代富文本合一。
@@ -41,6 +42,13 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMode;
  * <h3>契约</h3>
  * <p>纯静态工厂 + 无状态（契约 R1）；输入全只读 signal（R2）；组件函数交
  * {@link SceneRuntime#mount} 执行一次（I3）；节点不可命中，不拦截输入。</p>
+ *
+ * <h3>前景归属</h3>
+ * <p>默认路径（未传颜色参数）跟随来源主题的正文前景：构建期捕获
+ * {@link SceneThemes#resolve} 返回的主题信号，派生期只读该信号（见 {@link #bindTextColor}），
+ * 主题切换只重算前景、不重建节点。显式 {@code color} 继续生效且不再订阅主题——包括色值
+ * 恰好等于旧默认色的调用（禁止用 {@code color == TEXT_PRIMARY} 推断调用意图）。
+ * Label 不追加玻璃、不参与表面绑定，{@code textColor} 只有本类一个写入者。</p>
  */
 public final class SceneLabel {
 
@@ -57,21 +65,37 @@ public final class SceneLabel {
      * 文本内容与字形分组。
      *
      * @param text        文本内容（响应式只读；富文本模式可含标签）
-     * @param color       ARGB 文字颜色
+     * @param color       ARGB 文字颜色（{@code followTheme=false} 时为权威显式值；
+     *                    {@code followTheme=true} 时仅作占位，实际前景取当前主题正文色）
      * @param fontSizePx  UI 像素字号
      * @param contentMode 内容模式编码（0=UILIB_RAW / 1=MINECRAFT_FORMATTED / 2=RICH_TAGS，
      *                    锚定 {@link SceneTextMode}）
+     * @param followTheme 是否跟随当前主题前景（true=默认路径；false=显式 color）
      */
     @Desugar
     public record TextSpec(
             ReadableSignal<String> text,
             int color,
             int fontSizePx,
-            int contentMode
+            int contentMode,
+            boolean followTheme
     ) {
-        /** 默认分组：主文本色 + 默认字号 + 原始文本模式。 */
+        /**
+         * 旧 4 参构造器（历史兼容入口）：语义 = 显式 color（{@code followTheme=false}）。
+         *
+         * @param text        文本内容
+         * @param color       显式 ARGB 文字颜色
+         * @param fontSizePx  UI 像素字号
+         * @param contentMode 内容模式编码
+         */
+        public TextSpec(ReadableSignal<String> text, int color, int fontSizePx, int contentMode) {
+            this(text, color, fontSizePx, contentMode, false);
+        }
+
+        /** 默认分组：前景跟随当前主题 + 默认字号 + 原始文本模式（本目标的默认视觉改变）。 */
         public TextSpec(ReadableSignal<String> text) {
-            this(text, SceneChromeTokens.TEXT_PRIMARY, DEFAULT_FONT_SIZE_PX, TextStyle.TEXT_MODE_UILIB_RAW);
+            this(text, SceneChromeTokens.TEXT_PRIMARY, DEFAULT_FONT_SIZE_PX,
+                    TextStyle.TEXT_MODE_UILIB_RAW, true);
         }
     }
 
@@ -134,30 +158,30 @@ public final class SceneLabel {
             AlignSpec alignSpec,
             Consumer<String> onLinkClick
     ) {
-        /** 默认样式：主文本色 + 默认字号 + 原始文本模式 + 左上对齐 + 不换行。 */
+        /** 默认样式：前景跟随当前主题 + 默认字号 + 原始文本模式 + 左上对齐 + 不换行。 */
         public Props(ReadableSignal<String> text) {
             this(new TextSpec(text), LayoutSpec.defaults(), AlignSpec.defaults(), null);
         }
 
-        /** 指定颜色与字号的原始文本标签。 */
+        /** 指定颜色与字号的原始文本标签（显式 color，不跟随主题）。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx) {
             this(text, color, fontSizePx, TextStyle.TEXT_MODE_UILIB_RAW,
                     TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false, null);
         }
 
-        /** 指定颜色、字号与内容模式的标签。 */
+        /** 指定颜色、字号与内容模式的标签（显式 color，不跟随主题）。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx, int contentMode) {
             this(text, color, fontSizePx, contentMode,
                     TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, 0, 0.0D, 0, 0, false, null);
         }
 
-        /** 指定颜色、字号、内容模式与换行宽度的标签。 */
+        /** 指定颜色、字号、内容模式与换行宽度的标签（显式 color，不跟随主题）。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx, int contentMode, int wrapWidth) {
             this(text, color, fontSizePx, contentMode,
                     TextHorizontalAlign.LEFT, TextVerticalAlign.TOP, wrapWidth, 0.0D, 0, 0, false, null);
         }
 
-        /** 全字段平铺构造器（历史兼容入口，委托分组）。 */
+        /** 全字段平铺构造器（历史兼容入口，委托分组；语义 = 显式 color）。 */
         public Props(ReadableSignal<String> text, int color, int fontSizePx, int contentMode,
                 TextHorizontalAlign horizontalAlign, TextVerticalAlign verticalAlign,
                 int wrapWidth, double lineHeightMultiplier, int lineHeightPx,
@@ -238,13 +262,17 @@ public final class SceneLabel {
     /**
      * Props 有界 builder：逐项覆盖默认值，{@link #build()} 一次性产出不可变 {@link Props}。
      *
-     * <p>全部 setter 返回 this 链式调用；未调用的字段取组件默认值（与单参 Props 构造器一致）。</p>
+     * <p>全部 setter 返回 this 链式调用；未调用的字段取组件默认值（与单参 Props 构造器一致）。
+     * 未调用 {@link #color(int)} 时前景跟随当前主题；一旦显式指定颜色即切回显式语义。</p>
      */
     public static final class Builder {
 
         private final ReadableSignal<String> text;
 
         private int color = SceneChromeTokens.TEXT_PRIMARY;
+
+        /** 是否仍跟随主题：未调 {@link #color(int)} 时为 true（与单参 Props 构造器同语义）。 */
+        private boolean followTheme = true;
 
         private int fontSizePx = DEFAULT_FONT_SIZE_PX;
 
@@ -270,9 +298,10 @@ public final class SceneLabel {
             this.text = text;
         }
 
-        /** @param color ARGB 文字颜色 */
+        /** @param color ARGB 文字颜色（显式指定；此后前景不再跟随主题） */
         public Builder color(int color) {
             this.color = color;
+            this.followTheme = false;
             return this;
         }
 
@@ -337,12 +366,12 @@ public final class SceneLabel {
         }
 
         /**
-         * @return 按当前 builder 状态产出的不可变 Props
+         * @return 按当前 builder 状态产出的不可变 Props（未指定 color 时前景跟随主题）
          */
         public Props build() {
-            return new Props(text, color, fontSizePx, contentMode,
-                    horizontalAlign, verticalAlign, wrapWidth, lineHeightMultiplier, lineHeightPx,
-                    maxLines, ellipsis, onLinkClick);
+            return new Props(new TextSpec(text, color, fontSizePx, contentMode, followTheme),
+                    new LayoutSpec(wrapWidth, lineHeightMultiplier, lineHeightPx, maxLines, ellipsis),
+                    new AlignSpec(horizontalAlign, verticalAlign), onLinkClick);
         }
     }
 
@@ -350,9 +379,10 @@ public final class SceneLabel {
      * 工厂：构建标签组件函数。
      *
      * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（I3）：
-     * 只建 SceneNode + 设静态样式 + {@code rt.bindText} 绑定响应式文本。</p>
+     * 只建 SceneNode + 设静态样式 + 前景归属 + {@code rt.bindText} 绑定响应式文本。
+     * 不追加玻璃、不参与表面绑定。</p>
      *
-     * @param rt    场景运行时（提供 bindText）
+     * @param rt    场景运行时（提供 bindText / bindComputed）
      * @param props 标签输入契约
      * @return 组件函数，交 {@code rt.mount(parent, ...)} 挂载
      */
@@ -360,7 +390,7 @@ public final class SceneLabel {
         return () -> {
             SceneNode root = new SceneNode();
             root.setHitTestable(false);
-            root.setTextColor(props.color());
+            bindTextColor(rt, root, props.textSpec());
             root.setFontSize(props.fontSizePx());
             root.setTextMode(SceneTextMode.fromCode(props.contentMode()));
             root.setTextHorizontalAlign(props.horizontalAlign());
@@ -399,6 +429,32 @@ public final class SceneLabel {
             rt.bindText(root, props.text());
             return root;
         };
+    }
+
+    /**
+     * 前景归属：{@code followTheme=true} 时绑定 {@link SceneThemes#foreground} 的主题派生，
+     * 否则静态写入显式 color。
+     *
+     * <p><b>构建期</b>只取共享入口返回的派生信号，不自行解引用未求值的 Computed
+     * （规划 3.1：未提供初值的 Computed 首次 flush 前为 null，不得在构造绑定器时解引用；
+     * {@code SceneThemes.foreground} 已带构造期初值）。前景在首次 flush 物化并写入，
+     * 此后主题信号变化自动重算，不重建节点、不重新调用工厂。</p>
+     *
+     * <p>{@code followTheme=false} 恒返回显式 color，不订阅主题——因此显式传入与旧默认相同的
+     * 色值（{@code SceneChromeTokens.TEXT_PRIMARY}）也保持显式语义，不存在按色值猜调用意图。</p>
+     *
+     * @param rt   场景运行时
+     * @param root 标签根节点
+     * @param spec 文本分组（携带 followTheme 与显式 color）
+     */
+    private static void bindTextColor(SceneRuntime rt, SceneNode root, TextSpec spec) {
+        if (!spec.followTheme()) {
+            root.setTextColor(spec.color());
+            return;
+        }
+        // 主题前景派生统一由 SceneThemes 提供（构造期捕获来源主题、带初值的 Computed，主题切换自动重算），
+        // 本类只负责绑定；followTheme=false 恒返回显式 color，不订阅主题。
+        rt.bind(SceneThemes.foreground(rt), root::setTextColor);
     }
 
     /**

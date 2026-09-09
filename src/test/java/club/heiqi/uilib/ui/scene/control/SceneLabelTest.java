@@ -8,6 +8,8 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -24,9 +26,14 @@ import club.heiqi.uilib.ui.scene.paint.TextStyle;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneLabel 通用文本组件测试：属性装配、富文本模式透传、信号驱动文本更新。
+ *
+ * <p>前景语义（契约 §2.7）：无颜色参数的普通调用跟随来源主题；显式 color 继续生效，
+ * 含色值恰好等于旧 {@link SceneChromeTokens#TEXT_PRIMARY} 的情况。</p>
  */
 public class SceneLabelTest {
 
@@ -63,6 +70,17 @@ public class SceneLabelTest {
         runtime.flush();
     }
 
+    /** 在局部主题作用域内挂载标签：验证来源主题继承与主题信号切换。 */
+    private void mountLabelInTheme(SceneLabel.Props props, ReadableSignal<SceneTheme> theme) {
+        runtime.mount(sceneRoot, () -> {
+            SceneNode host = new SceneNode();
+            SceneThemes.withTheme(theme, () ->
+                    labelRoot = runtime.mount(host, SceneLabel.create(runtime, props)).getRoot());
+            return host;
+        });
+        runtime.flush();
+    }
+
     private PaintPlan frame() {
         runtime.flush();
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -84,7 +102,11 @@ public class SceneLabelTest {
         mountLabel(new SceneLabel.Props(textSignal));
 
         Assert.assertFalse(labelRoot.isHitTestable());
-        Assert.assertEquals(SceneChromeTokens.TEXT_PRIMARY, labelRoot.getTextColor());
+        // 默认路径前景跟随当前主题（库默认为深色液态玻璃档），不再是写死的 TEXT_PRIMARY 静态写入
+        Assert.assertEquals("默认 Label 前景跟随库默认主题",
+                SceneThemes.DEFAULT.foreground(), labelRoot.getTextColor());
+        Assert.assertEquals("库默认正文色与旧默认 token 同值（默认外观数值不变）",
+                SceneChromeTokens.TEXT_PRIMARY, labelRoot.getTextColor());
         Assert.assertEquals(SceneLabel.DEFAULT_FONT_SIZE_PX, labelRoot.getFontSize());
         Assert.assertEquals(TextStyle.TEXT_MODE_UILIB_RAW, labelRoot.getTextContentMode());
         Assert.assertEquals(0, labelRoot.getMaxTextWidth());
@@ -173,6 +195,8 @@ public class SceneLabelTest {
         Assert.assertEquals(single.lineHeightMultiplier(), built.lineHeightMultiplier(), 0.001D);
         Assert.assertEquals(single.maxLines(), built.maxLines());
         Assert.assertEquals(single.ellipsis(), built.ellipsis());
+        Assert.assertEquals("未指定 color 的 builder 与单参构造器同语义（跟随主题）",
+                single.textSpec().followTheme(), built.textSpec().followTheme());
     }
 
     @Test
@@ -222,5 +246,101 @@ public class SceneLabelTest {
 
         Assert.assertEquals(3, labelRoot.getMaxLines());
         Assert.assertTrue(labelRoot.isEllipsis());
+    }
+
+    /** 默认路径（未传颜色参数）前景跟随来源主题；切换深色/浅色/局部主题后更新，且不追加玻璃。 */
+    @Test
+    public void defaultLabelFollowsThemeForeground() {
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        textSignal = Signal.create("theme");
+        mountLabelInTheme(new SceneLabel.Props(textSignal), pageTheme);
+
+        Assert.assertEquals("默认 Label 前景跟随来源主题（深色档）",
+                SceneTheme.liquidGlassDark().foreground(), labelRoot.getTextColor());
+
+        pageTheme.set(SceneTheme.liquidGlassLight());
+        runtime.flush();
+        Assert.assertEquals("切浅色档后前景更新",
+                SceneTheme.liquidGlassLight().foreground(), labelRoot.getTextColor());
+
+        pageTheme.set(SceneTheme.builder().foreground(0xFF00FF00).build());
+        runtime.flush();
+        Assert.assertEquals("局部主题前景覆盖", 0xFF00FF00, labelRoot.getTextColor());
+
+        PaintPlan plan = frame();
+        PaintCommand text = firstTextCommand(plan);
+        Assert.assertNotNull(text);
+        Assert.assertEquals("绘制前景跟随主题", 0xFF00FF00, text.getTextStyle().getColor());
+        Assert.assertEquals("文本不变", "theme", text.getText());
+        Assert.assertEquals("节点结构不变（单节点）", 0, labelRoot.__getChildren().size());
+        Assert.assertNull("Label 不参与表面绑定", labelRoot.getBackdrop());
+        for (PaintCommand command : plan.getCommands()) {
+            Assert.assertNotEquals("Label 不追加玻璃", PaintCommandType.BACKDROP, command.getType());
+        }
+    }
+
+    /** 显式传入与旧默认相同的色值也必须保持显式，不得被主题覆盖。 */
+    @Test
+    public void explicitLegacyDefaultColorStaysExplicitUnderTheme() {
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassLight());
+        textSignal = Signal.create("legacy");
+        mountLabelInTheme(new SceneLabel.Props(textSignal, SceneChromeTokens.TEXT_PRIMARY, 16), pageTheme);
+
+        Assert.assertEquals("显式旧默认色保持显式",
+                SceneChromeTokens.TEXT_PRIMARY, labelRoot.getTextColor());
+
+        pageTheme.set(SceneTheme.builder().foreground(0xFF00FF00).build());
+        runtime.flush();
+        Assert.assertEquals("主题更新不覆盖显式 color",
+                SceneChromeTokens.TEXT_PRIMARY, labelRoot.getTextColor());
+    }
+
+    /** 显式任意颜色保持；富文本内部显式颜色与解析原文不被主题改写。 */
+    @Test
+    public void explicitColorAndRichTextInnerColorStayExplicitUnderTheme() {
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassLight());
+        textSignal = Signal.create("<color=#FF5533>红</color>默认");
+        mountLabelInTheme(new SceneLabel.Props(textSignal, 0xFF00FF00, 16,
+                TextStyle.TEXT_MODE_RICH_TAGS), pageTheme);
+
+        Assert.assertEquals("显式任意色保持", 0xFF00FF00, labelRoot.getTextColor());
+
+        pageTheme.set(SceneTheme.builder().foreground(0xFF0000FF).build());
+        runtime.flush();
+        Assert.assertEquals("主题更新不影响显式 color", 0xFF00FF00, labelRoot.getTextColor());
+
+        PaintCommand text = firstTextCommand(frame());
+        Assert.assertNotNull(text);
+        Assert.assertEquals("富文本原文与内部显式颜色不被改写",
+                "<color=#FF5533>红</color>默认", text.getText());
+        Assert.assertEquals("富文本模式不变",
+                TextStyle.TEXT_MODE_RICH_TAGS, text.getTextStyle().getTextMode());
+        Assert.assertEquals("基线前景仍是显式 color",
+                0xFF00FF00, text.getTextStyle().getColor());
+    }
+
+    /** 卸载回收主题前景绑定，卸载后主题更新不再写入旧节点。 */
+    @Test
+    public void unmountReleasesThemeForegroundBinding() {
+        Signal<SceneTheme> installed = Signal.create(SceneTheme.liquidGlassDark());
+        SceneThemes.install(runtime, installed);
+        textSignal = Signal.create("x");
+        int before = ReactiveTestProbe.registeredEffectCount();
+
+        MountHandle handle = runtime.mount(sceneRoot,
+                SceneLabel.create(runtime, new SceneLabel.Props(textSignal)));
+        labelRoot = handle.getRoot();
+        runtime.flush();
+        Assert.assertTrue("默认 Label 应注册响应式前景绑定",
+                ReactiveTestProbe.registeredEffectCount() > before);
+
+        handle.dispose();
+        Assert.assertEquals("卸载后前景绑定 effect 应回收",
+                before, ReactiveTestProbe.registeredEffectCount());
+
+        installed.set(SceneTheme.liquidGlassLight());
+        runtime.flush();
+        Assert.assertEquals("卸载后主题更新不再写入旧节点",
+                SceneTheme.liquidGlassDark().foreground(), labelRoot.getTextColor());
     }
 }
