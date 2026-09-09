@@ -17,6 +17,9 @@ import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 import club.heiqi.uilib.ui.text.TextEllipsizer;
 
 /**
@@ -30,7 +33,9 @@ import club.heiqi.uilib.ui.text.TextEllipsizer;
  *   <li>文本按 {@code maxWidthPx} 换行（单词超宽走 {@link TextEllipsizer} ellipsis），
  *       {@code maxLines} 截断并省略末行；</li>
  *   <li>不抢焦点、不拦截点击：浮层整树 {@code hitTestable=false}（命中测试穿透到下层），
- *       关闭策略 {@link OverlayDismissPolicy#NONE}（ESC/外部点击/选中均不产生关闭请求）。</li>
+ *       关闭策略 {@link OverlayDismissPolicy#NONE}（ESC/外部点击/选中均不产生关闭请求）；</li>
+ *   <li>外观走主题：浮层根取 {@link SceneTheme.Role#OVERLAY} 配方（{@link SceneThemes#surface}），
+ *       文字取主题正文前景色，主题切换只重派生属性、不重建节点。</li>
  * </ul>
  *
  * <h3>延时机制</h3>
@@ -52,10 +57,14 @@ public final class SceneTooltip {
     public static final int DEFAULT_MAX_LINES = 8;
 
     private static final int FONT_SIZE = 12;
-    private static final int BG = SceneChromeTokens.BG_DEFAULT;
-    private static final int BORDER = SceneChromeTokens.BORDER_DEFAULT;
-    private static final int TEXT_COLOR = SceneChromeTokens.TEXT_SECONDARY;
-    /** 浮层外壳边框宽（与 {@link #content} 里 {@code setBorderWidth(1)} 同源）。 */
+    /** 浮层 enabled 恒真：tooltip 无禁用态（显隐由 hover 延时状态机与 {@link Props#enabled()} 门控）。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
+    /**
+     * 浮层外壳边框预算：盒宽 = 换行宽 + 左右 padding + 左右本值。
+     *
+     * <p>实际边框宽来自 OVERLAY 配方（{@code borderWidth}），本常量只参与 portal 首选宽度计算，
+     * 不写回节点属性——布局口径不随主题改变。</p>
+     */
     private static final int BORDER_WIDTH = 1;
 
     private SceneTooltip() {
@@ -209,17 +218,24 @@ public final class SceneTooltip {
         return props.maxWidthPx() + 2 * SceneChromeTokens.PAD_SM + 2 * BORDER_WIDTH;
     }
 
-    /** 浮层内容：SHRINK 整列，hitTestable=false 全树穿透，行文本经 wrapLines 换行。 */
+    /**
+     * 浮层内容：SHRINK 整列，hitTestable=false 全树穿透，行文本经 wrapLines 换行。
+     *
+     * <p>外观唯一写入者：浮层根走 {@link SceneTheme.Role#OVERLAY} 配方（底色/缘色/圆角/边框/
+     * 浮雕/滤镜全部来自主题），行文本前景取主题正文色。本方法不再静态写底色/边框/圆角，也不设置
+     * 任何可命中的交互单元——tooltip 不得拦截点击。</p>
+     */
     private static SceneNode content(SceneRuntime rt, Props props) {
         SceneNode root = SceneNode.column();
         root.setHitTestable(false);
         root.setWidthSizing(SceneNode.WidthSizing.SHRINK);
-        root.setBackgroundColor(BG);
-        root.setBorderColor(BORDER);
-        root.setBorderWidth(1);
-        root.setCornerRadius(SceneChromeTokens.RADIUS_SM);
         root.setPadding(SceneChromeTokens.PAD_SM);
         root.setGap(2);
+        // 浮层根表面：OVERLAY 配方画在浮层根（唯一外观写入者），配方在 portal 构建调用栈内取，
+        // 延迟显示时继承来源主题（withTheme 作用域）。enabled 恒真：tooltip 的显隐由 hover+延时
+        // 状态机与 Props.enabled 门控，浮层自身不承接禁用态。
+        SceneSurfaceBinder.bind(rt, root, SceneThemes.surface(rt, SceneTheme.Role.OVERLAY),
+                ALWAYS_ENABLED, rt.interactionState(root));
 
         ReadableSignal<List<Line>> lines = Computed.create(() -> {
             List<String> wrapped = TextEllipsizer.wrapLines(
@@ -232,11 +248,12 @@ public final class SceneTooltip {
             }
             return result;
         });
+        ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
         rt.forEach(root, lines, Line::index, line -> {
             SceneNode node = new SceneNode();
             node.setFontSize(FONT_SIZE);
-            node.setTextColor(TEXT_COLOR);
             node.setHitTestable(false);
+            rt.bindComputed(foreground::get, node::setTextColor);
             rt.bindComputed(() -> lineTextAt(lines.get(), line.index()), node::setText);
             return node;
         });
