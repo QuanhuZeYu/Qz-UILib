@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.theme;
 
 import java.util.Objects;
+import java.util.function.ToIntFunction;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
@@ -138,5 +139,140 @@ public final class SceneThemes {
             SceneTheme value = Objects.requireNonNull(theme.get(), "theme value");
             return value.surface(role);
         });
+    }
+
+    /**
+     * 正文前景的只读派生（主题切换自动重算）。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 前景色信号
+     */
+    public static ReadableSignal<Integer> foreground(SceneRuntime rt) {
+        return color(rt, theme -> theme.foreground());
+    }
+
+    /**
+     * 次要/占位前景的只读派生。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 次要前景色信号
+     */
+    public static ReadableSignal<Integer> mutedForeground(SceneRuntime rt) {
+        return color(rt, theme -> theme.mutedForeground());
+    }
+
+    /**
+     * 禁用前景的只读派生。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 禁用前景色信号
+     */
+    public static ReadableSignal<Integer> disabledForeground(SceneRuntime rt) {
+        return color(rt, theme -> theme.disabledForeground());
+    }
+
+    /**
+     * 强调底前景的只读派生。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 强调底前景色信号
+     */
+    public static ReadableSignal<Integer> onAccentForeground(SceneRuntime rt) {
+        return color(rt, theme -> theme.onAccentForeground());
+    }
+
+    /**
+     * 强调色的只读派生。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 强调色信号
+     */
+    public static ReadableSignal<Integer> accent(SceneRuntime rt) {
+        return color(rt, theme -> theme.accent());
+    }
+
+    /**
+     * 聚焦边框色的只读派生。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 聚焦边框色信号
+     */
+    public static ReadableSignal<Integer> borderFocus(SceneRuntime rt) {
+        return color(rt, theme -> theme.borderFocus());
+    }
+
+    /**
+     * 文本选区背景的只读派生。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 选区背景色信号
+     */
+    public static ReadableSignal<Integer> selectionBackground(SceneRuntime rt) {
+        return color(rt, theme -> theme.selectionBackground());
+    }
+
+    /**
+     * 文本选区前景的只读派生。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 选区前景色信号
+     */
+    public static ReadableSignal<Integer> selectionForeground(SceneRuntime rt) {
+        return color(rt, theme -> theme.selectionForeground());
+    }
+
+    /**
+     * 选中/未选中切换的角色配方：未选中用 role 配方，选中态用主题强调色替换 tint 的 RGB
+     * （保留原 alpha 与 edge/elevation/lens/圆角），disabled 仍走 role 的禁用档。
+     *
+     * <p>选中不能只靠透明度区分；本方法让各控件共享同一套选中外观，不各自拼色。</p>
+     *
+     * @param rt       目标 runtime，不可为 null
+     * @param role     材质角色，不可为 null
+     * @param selected 是否选中，不可为 null
+     * @return 配方只读信号
+     */
+    public static ReadableSignal<SceneSurfaceStyle> selectableSurface(SceneRuntime rt, SceneTheme.Role role,
+            ReadableSignal<Boolean> selected) {
+        Objects.requireNonNull(selected, "selected");
+        ReadableSignal<SceneSurfaceStyle> base = surface(rt, role);
+        ReadableSignal<SceneTheme> theme = resolve(rt);
+        final SceneSurfaceStyle[] holder = new SceneSurfaceStyle[1];
+        Effect.untrack(() -> holder[0] = resolveSelectable(
+                Objects.requireNonNull(base.get(), "surface"),
+                Boolean.TRUE.equals(selected.get()),
+                Objects.requireNonNull(theme.get(), "theme value")));
+        return Computed.create(holder[0], () -> resolveSelectable(
+                Objects.requireNonNull(base.get(), "surface"),
+                Boolean.TRUE.equals(selected.get()),
+                Objects.requireNonNull(theme.get(), "theme value")));
+    }
+
+    private static SceneSurfaceStyle resolveSelectable(SceneSurfaceStyle style, boolean selected, SceneTheme theme) {
+        if (!selected) {
+            return style;
+        }
+        return style.toBuilder()
+                .idle(tinted(style.getIdle(), theme.accent()))
+                .hovered(tinted(style.getHovered(), theme.accentHover()))
+                .pressed(tinted(style.getPressed(), theme.accentPressed()))
+                .build();
+    }
+
+    private static SceneSurfaceStyle.StateStyle tinted(SceneSurfaceStyle.StateStyle state, int argb) {
+        int alpha = (state.getTint() >>> 24) & 0xFF;
+        return new SceneSurfaceStyle.StateStyle((alpha << 24) | (argb & 0xFFFFFF),
+                state.getEdge(), state.getElevation(), state.getLensFactor());
+    }
+
+    /** 语义色派生的公共实现：构造期捕获来源主题，初值在非追踪上下文读取。 */
+    private static ReadableSignal<Integer> color(SceneRuntime rt, ToIntFunction<SceneTheme> extractor) {
+        Objects.requireNonNull(extractor, "extractor");
+        ReadableSignal<SceneTheme> theme = resolve(rt);
+        final int[] holder = new int[1];
+        Effect.untrack(() -> holder[0] = extractor.applyAsInt(Objects.requireNonNull(theme.get(), "theme value")));
+        final int initial = holder[0];
+        return Computed.create(Integer.valueOf(initial),
+                () -> Integer.valueOf(extractor.applyAsInt(Objects.requireNonNull(theme.get(), "theme value"))));
     }
 }
