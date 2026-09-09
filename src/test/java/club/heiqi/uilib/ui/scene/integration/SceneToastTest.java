@@ -389,6 +389,44 @@ public class SceneToastTest {
                 alpha(commands.get(backgroundIndex).getColor()) < 0xFF);
     }
 
+    /**
+     * 无滤镜替代档（{@link SceneTheme#withoutBackdrop()}）：来源主题关闭滤镜时卡片不写 backdrop、
+     * tint 不透明可读、恰好零条 BACKDROP，前景与语义色仍取该来源主题（绑定器 backdrop == null
+     * 分支不得残留滤镜或不透明黑底之外的东西）。
+     */
+    @Test
+    public void backdroplessSourceThemeKeepsOpaqueReadableCard() {
+        SceneTheme noBackdrop = SceneTheme.liquidGlassDark().withoutBackdrop();
+        Assert.assertNull("测试前提：无滤镜档 OVERLAY 配方 backdrop 为空",
+                noBackdrop.surface(SceneTheme.Role.OVERLAY).getBackdrop());
+        Assert.assertEquals("测试前提：无滤镜档 idle tint 不透明", 0xFF,
+                alpha(noBackdrop.surface(SceneTheme.Role.OVERLAY).getIdle().getTint()));
+
+        runtime.mount(sceneRoot, () -> {
+            SceneThemes.withTheme(Signal.create(noBackdrop),
+                    () -> SceneToast.show(runtime, "无滤镜", 5_000_000_000L));
+            return new SceneNode();
+        });
+        runtime.flush();
+        tickAndFlush(ENTER);
+        doLayout();
+
+        SceneNode card = firstToast();
+        Assert.assertNull("无滤镜档不写 backdrop", card.getBackdrop());
+        Assert.assertEquals("无滤镜档 tint = 配方不透明底",
+                noBackdrop.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertEquals("无滤镜档文字仍取来源主题正文前景",
+                noBackdrop.foreground(), labelOf(card).getTextColor());
+        Assert.assertEquals("无滤镜档色点仍取来源主题语义色",
+                noBackdrop.mutedForeground(), dotOf(card).getBackgroundColor());
+        paintOverlay();
+        Assert.assertEquals("无滤镜档零 BACKDROP", 0, ownBackdropCount(card));
+        List<PaintCommand> commands = ownCommands(card);
+        int backgroundIndex = indexOfType(commands, PaintCommandType.BACKGROUND);
+        Assert.assertTrue("无滤镜档仍有可读底", backgroundIndex >= 0);
+        Assert.assertEquals("无滤镜档底不透明可读", 0xFF, alpha(commands.get(backgroundIndex).getColor()));
+    }
+
     // ==================== 主题化：每条消息的来源主题 ====================
 
     /**
