@@ -77,6 +77,32 @@ public class SceneInputFrame {
         return keyEvents.isEmpty() && pointerEvents.isEmpty() && textEvents.isEmpty();
     }
 
+    /**
+     * 宿主边界的指针坐标缩放；保留按钮点击计数、键盘、文本、修饰键和事件时间。
+     * 同时转换已排队事件与帧末指针，避免倍率切换时两者分属不同坐标域。
+     *
+     * @param factor 从输入坐标到宿主 logical px 的倍率（正有限数）
+     * @return 不可变坐标副本；倍率为 1 时返回本帧
+     */
+    public SceneInputFrame scalePointerCoordinates(float factor) {
+        if (!(factor > 0F) || Float.isInfinite(factor)) {
+            throw new IllegalArgumentException("pointer scale must be positive and finite");
+        }
+        if (factor == 1F) return this;
+        java.util.ArrayList<ScenePointerEvent> pointers = new java.util.ArrayList<ScenePointerEvent>(pointerEvents.size());
+        for (ScenePointerEvent event : pointerEvents) {
+            pointers.add(new ScenePointerEvent(event.getAction(),
+                    (int) Math.floor(event.getLogicalX() * factor),
+                    (int) Math.floor(event.getLogicalY() * factor), event.getButton(), event.getWheelDelta(),
+                    Math.round(event.getDeltaX() * factor), Math.round(event.getDeltaY() * factor),
+                    event.isControlDown(), event.isShiftDown(), event.isAltDown(), event.isMetaDown(),
+                    event.getClickCount(), event.getTimeNanos()));
+        }
+        return new SceneInputFrame(keyEvents, Collections.unmodifiableList(pointers), textEvents,
+                (int) Math.floor(pointerX * factor), (int) Math.floor(pointerY * factor),
+                controlDown, shiftDown, altDown, metaDown, frameTimeNanos);
+    }
+
     // ==================== getter ====================
 
     /** @return 本帧键盘事件列表（不可变） */

@@ -43,8 +43,10 @@ public final class SceneHudHost {
     private final SceneTextMeasurer measurer;
     private final Map<String, RetainedWindow> retained = new HashMap<String, RetainedWindow>();
     private final HudScaleSetting scaleSetting;
-    /** 最近一帧各窗口的权威放置盒（视口逻辑 px；每帧 render 清空重建）。 */
+    /** 最近一帧各窗口的实际视觉盒（物理 px；与 backend 端点舍入一致）。 */
     private final HashMap<String, AnchorRect> lastPlacements = new HashMap<String, AnchorRect>();
+    private final Map<String, AnchorRect> lastLogicalPlacements = new HashMap<String, AnchorRect>();
+    private final Map<String, Float> lastScales = new HashMap<String, Float>();
     /** 最近一帧安全区（打开态容器与关闭态 HUD 共用同一份安全区事实的对外端口）。 */
     private HudInsets lastSafeInsets = HudInsets.NONE;
 
@@ -70,13 +72,15 @@ public final class SceneHudHost {
 
     /** 在 render 主线程执行一帧：挂载缺失窗口 → 测量 → 四角锚定 → 逐窗口帧循环。 */
     public void render(UiRenderBackend backend, int width, int height, boolean inWorld, boolean screenOpen) {
-        float scale = scaleSetting.get();
-        width = Math.max(1, (int) Math.floor(width / scale));
-        height = Math.max(1, (int) Math.floor(height / scale));
-        backend = backend.scaled(scale);
+        final float globalScale = scaleSetting.get();
         HudInsets safeInsets = registry.avoidanceInsets(this::reportProviderFailure);
+        safeInsets = new HudInsets(Math.round(safeInsets.getLeft() * globalScale),
+                Math.round(safeInsets.getTop() * globalScale), Math.round(safeInsets.getRight() * globalScale),
+                Math.round(safeInsets.getBottom() * globalScale));
         lastSafeInsets = safeInsets;
         lastPlacements.clear();
+        lastLogicalPlacements.clear();
+        lastScales.clear();
         // 外接工具栏注册表版本：本帧与保留窗口建立时的版本不一致 → 该窗口重建（接上/摘掉外接层）
         int toolbarRevision = HudToolbarService.getInstance().revision().get().intValue();
         ArrayList<MeasuredHud> measured = new ArrayList<MeasuredHud>();
@@ -107,22 +111,30 @@ public final class SceneHudHost {
             }
         }
         disposeInactive(registered);
+        // 在任何窗口推进 signal/动画前采样全部倍率，帧中改动下一帧生效。
+        Map<String, Float> frameScales = new HashMap<String, Float>();
+        for (Map.Entry<String, RetainedWindow> item : retained.entrySet()) {
+            frameScales.put(item.getKey(), globalScale * item.getValue().toolbarLayer().scaleFactor());
+        }
         for (HudRegistry.Entry entry : registry.frameEntries()) {
             RetainedWindow window = retained.get(entry.spec.getId());
             if (window == null || !visible.contains(entry.spec.getId())) continue;
-            LayoutBox box = window.measure(width, height);
+            float scale = frameScales.get(entry.spec.getId());
+            int logicalWidth = Math.max(1, (int) Math.floor(width / scale));
+            int logicalHeight = Math.max(1, (int) Math.floor(height / scale));
+            LayoutBox box = window.measure(logicalWidth, logicalHeight);
             // 宿主合同（A2）：空窗 flush 照常、paint 跳过——signal 物化不被跳帧锁死，
             // 下一帧有内容即恢复绘制；投放方因此无须在宿主栈外强制 flush。
             if (window.isEmptyContent()) {
-                window.settleWithoutPaint(width, height);
+                window.settleWithoutPaint(logicalWidth, logicalHeight);
                 continue;
             }
             int minimum = entry.spec.getMinWidth() == 0
                     ? Math.min(HudTokens.NORMAL.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
             int measuredWidth = Math.max(minimum, Math.min(entry.spec.getMaxWidth(), box.getWidth()));
-            measured.add(new MeasuredHud(entry, measuredWidth, box.getHeight()));
+            measured.add(new MeasuredHud(entry, measuredWidth, box.getHeight(), scale));
         }
-        placeAndFrame(backend, measured, width, height, safeInsets, frameTimeNanos);
+        placeAndFrame(backend, measured, width, height, safeInsets, frameTimeNanos, globalScale);
     }
 
     /**
@@ -130,7 +142,7 @@ public final class SceneHudHost {
      * 这里只做排序、offset 累积与帧派发）。
      */
     private void placeAndFrame(UiRenderBackend backend, ArrayList<MeasuredHud> measured,
-            int width, int height, HudInsets safeInsets, long frameTimeNanos) {
+            int width, int height, HudInsets safeInsets, long frameTimeNanos, float globalScale) {
         ArrayList<MeasuredHud> sorted = new ArrayList<MeasuredHud>(measured);
         sorted.sort(Comparator.comparing((MeasuredHud item) -> item.entry.spec.getAnchor())
                 .thenComparingInt(item -> item.entry.spec.getStackOrder())
@@ -143,26 +155,44 @@ public final class SceneHudHost {
             HudPlacement custom = HudLayoutService.getInstance().placement(spec.getId());
             if (custom != null) {
                 RetainedWindow customWindow = retained.get(spec.getId());
-                AnchorRect rect = HudLayoutResolver.resolve(custom, width, height,
+                HudPlacement visualCustom = custom.withOffset(Math.round(custom.getOffsetX() * globalScale),
+                        Math.round(custom.getOffsetY() * globalScale));
+                AnchorRect rect = HudLayoutResolver.resolve(visualCustom, width, height,
                         item.width, item.height, safeInsets);
-                lastPlacements.put(spec.getId(), rect);
-                customWindow.frame(backend, rect.getX(), rect.getY(), rect.getWidth(), rect.getHeight(),
-                        frameTimeNanos);
+                framePlaced(backend, item, customWindow, rect, frameTimeNanos);
                 continue;
             }
             int offset = offsets.containsKey(spec.getAnchor()) ? offsets.get(spec.getAnchor()) : 0;
             SceneAnchorResolver.ResolvedViewport placed = SceneAnchorResolver.resolveViewport(
                     isRight(spec.getAnchor()), isBottom(spec.getAnchor()),
-                    width, height, item.width, item.height, spec.getMargin(),
+                    width, height, item.width, item.height, Math.round(spec.getMargin() * globalScale),
                     safeInsets.getLeft(), safeInsets.getTop(), safeInsets.getRight(), safeInsets.getBottom(),
                     offset);
             RetainedWindow window = retained.get(spec.getId());
-            lastPlacements.put(spec.getId(),
-                    new AnchorRect(placed.getX(), placed.getY(), placed.getWidth(), placed.getHeight()));
-            window.frame(backend, placed.getX(), placed.getY(), placed.getWidth(), placed.getHeight(),
+            framePlaced(backend, item, window,
+                    new AnchorRect(placed.getX(), placed.getY(), placed.getWidth(), placed.getHeight()),
                     frameTimeNanos);
-            offsets.put(spec.getAnchor(), offset + placed.getHeight() + HudTokens.STACK_GAP);
+            offsets.put(spec.getAnchor(), offset + placed.getHeight() + Math.round(HudTokens.STACK_GAP * globalScale));
         }
+    }
+
+    private void framePlaced(UiRenderBackend backend, MeasuredHud item, RetainedWindow window,
+            AnchorRect desired, long frameTimeNanos) {
+        int x = Math.round(desired.getX() / item.scale);
+        int y = Math.round(desired.getY() / item.scale);
+        int width = Math.min(item.logicalWidth, Math.max(1, (int) Math.floor(desired.getWidth() / item.scale)));
+        int height = Math.min(item.logicalHeight, Math.max(1, (int) Math.floor(desired.getHeight() / item.scale)));
+        AnchorRect logical = new AnchorRect(x, y, width, height);
+        int left = Math.round(x * item.scale);
+        int top = Math.round(y * item.scale);
+        String id = item.entry.spec.getId();
+        lastLogicalPlacements.put(id, logical);
+        lastScales.put(id, item.scale);
+        // scaled() 连绝对原点一起转换；不能把视觉原点再次送进后端。
+        lastPlacements.put(id, new AnchorRect(left, top,
+                Math.round((x + width) * item.scale) - left,
+                Math.round((y + height) * item.scale) - top));
+        window.frame(backend.scaled(item.scale), x, y, width, height, frameTimeNanos);
     }
 
     private static boolean isRight(HudAnchor anchor) {
@@ -178,19 +208,38 @@ public final class SceneHudHost {
         final HudRegistry.Entry entry;
         final int width;
         final int height;
-        MeasuredHud(HudRegistry.Entry entry, int width, int height) {
-            this.entry = entry; this.width = Math.max(1, width); this.height = Math.max(1, height);
+        final float scale;
+        final int logicalWidth;
+        final int logicalHeight;
+        MeasuredHud(HudRegistry.Entry entry, int width, int height, float scale) {
+            this.entry = entry;
+            this.scale = scale;
+            this.logicalWidth = Math.max(1, width);
+            this.logicalHeight = Math.max(1, height);
+            this.width = (int) Math.ceil(logicalWidth * scale);
+            this.height = (int) Math.ceil(logicalHeight * scale);
         }
     }
 
     /**
-     * 最近一帧某窗口的权威放置盒（视口逻辑 px），未放置（不可见/空内容/已注销/无 host 帧）时 null。
+     * 最近一帧某窗口的权威放置盒（物理 px），未放置（不可见/空内容/已注销/无 host 帧）时 null。
      *
      * <p>投放方（如 chat3 命中检测）以宿主实际放置为准——含堆叠偏移、安全区与 clamp——
      * 替代自行反推锚点数学的第二事实源。与 render 同为客户端主线程，逐帧重建。</p>
      */
     public AnchorRect currentPlacement(String hudId) {
         return hudId == null ? null : lastPlacements.get(hudId);
+    }
+
+    /** 最近已绘制帧的合成倍率；没有放置时返回单位倍率。 */
+    public float currentScaleFactor(String hudId) {
+        Float scale = lastScales.get(hudId);
+        return scale == null ? 1F : scale;
+    }
+
+    /** 最近已绘制帧传给 pipeline 的逻辑原点与裁剪尺寸。 */
+    public AnchorRect currentLogicalPlacement(String hudId) {
+        return lastLogicalPlacements.get(hudId);
     }
 
     /** @return 最近一帧安全区（未渲染过时 {@link HudInsets#NONE}）；供打开态容器共用同一事实。 */
@@ -203,6 +252,8 @@ public final class SceneHudHost {
         for (RetainedWindow window : retained.values()) window.dispose();
         retained.clear();
         lastPlacements.clear();
+        lastLogicalPlacements.clear();
+        lastScales.clear();
     }
 
     private void disposeInactive(Set<String> active) {

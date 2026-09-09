@@ -384,6 +384,84 @@ public class SceneHudPipelineTest {
                 HudTokens.NORMAL.paddingY * 2 + 16, placement.getHeight());
     }
 
+    @Test public void customPlacementOffsetsKeepGlobalScaleSemantics() {
+        HudRegistry registry = new HudRegistry();
+        registerBody(registry, "custom-global");
+        HudScaleSetting global = new HudScaleSetting();
+        global.set(1.5F);
+        club.heiqi.uilib.ui.hud.api.HudLayoutService layouts =
+                club.heiqi.uilib.ui.hud.api.HudLayoutService.getInstance();
+        layouts.commit("custom-global", club.heiqi.uilib.ui.hud.api.HudPlacement.of(HudAnchor.TOP_LEFT, 20, 30));
+        try {
+            SceneHudHost host = new SceneHudHost(registry, MEASURER, global);
+            host.render(new RecordingRenderBackend(), 800, 600, true, false);
+            assertEquals(Math.round(20 * global.get()), host.currentPlacement("custom-global").getX());
+            assertEquals(Math.round(30 * global.get()), host.currentPlacement("custom-global").getY());
+        } finally {
+            layouts.reset("custom-global");
+        }
+    }
+
+    @Test public void replayMutationCannotChangeAnotherHudScaleMidFrame() {
+        HudRegistry registry = new HudRegistry();
+        registerBody(registry, "first");
+        registerBody(registry, "second");
+        registerTools("second", HudToolbarSide.BOTTOM, 20, 3, Signal.create(Boolean.FALSE));
+        final club.heiqi.uilib.ui.hud.api.HudScaleState scale =
+                HudToolbarService.getInstance().scale("second");
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        RecordingRenderBackend backend = new RecordingRenderBackend() {
+            @Override public void pushClip(int left, int top, int right, int bottom, int radius) {
+                scale.setPercent(150);
+                super.pushClip(left, top, right, bottom, radius);
+            }
+        };
+        host.render(backend, 800, 600, true, false);
+        assertEquals("首窗 replay 修改后窗请求也不得影响本帧", 1F, host.currentScaleFactor("second"), 0F);
+        host.render(new RecordingRenderBackend(), 800, 600, true, false);
+        assertEquals(1.5F, host.currentScaleFactor("second"), 0F);
+    }
+
+    @Test public void perHudScaleComposesAndPublishesActualClipWithDeferredChanges() {
+        HudRegistry registry = new HudRegistry();
+        registerBody(registry, "zoom");
+        registerBody(registry, "plain");
+        registerTools("zoom", HudToolbarSide.BOTTOM, 20, 3, Signal.create(Boolean.FALSE));
+        club.heiqi.uilib.ui.hud.api.HudScaleState scale = HudToolbarService.getInstance().scale("zoom");
+        scale.setPercent(130);
+        HudScaleSetting global = new HudScaleSetting();
+        global.set(1.25F);
+        SceneHudHost host = new SceneHudHost(registry, MEASURER, global);
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        host.render(backend, 800, 600, true, false);
+        float applied = 1.25F * 1.3F;
+        assertEquals(applied, host.currentScaleFactor("zoom"), 0F);
+        assertEquals(1.25F, host.currentScaleFactor("plain"), 0F);
+        club.heiqi.uilib.ui.scene.layout.AnchorRect logical = host.currentLogicalPlacement("zoom");
+        club.heiqi.uilib.ui.scene.layout.AnchorRect visual = host.currentPlacement("zoom");
+        assertEquals(Math.round(logical.getX() * applied), visual.getX());
+        assertEquals(Math.round((logical.getX() + logical.getWidth()) * applied),
+                visual.getX() + visual.getWidth());
+        assertEquals(Math.round((logical.getY() + logical.getHeight()) * applied),
+                visual.getY() + visual.getHeight());
+        assertTrue("外层 clip 与权威视觉盒一致", backend.getCalls().stream().anyMatch(call ->
+                "pushClip".equals(call.methodName()) && call.getInt(0) == visual.getX()
+                        && call.getInt(1) == visual.getY()
+                        && call.getInt(2) == visual.getX() + visual.getWidth()
+                        && call.getInt(3) == visual.getY() + visual.getHeight()));
+        club.heiqi.uilib.ui.scene.layout.AnchorRect plain = host.currentPlacement("plain");
+        assertTrue("同锚点按视觉高度占位", plain.getY() + plain.getHeight() <= visual.getY()
+                || visual.getY() + visual.getHeight() <= plain.getY());
+        scale.setPercent(50);
+        assertEquals("请求变化不改已绘制帧", applied, host.currentScaleFactor("zoom"), 0F);
+        assertSame(visual, host.currentPlacement("zoom"));
+        host.render(new RecordingRenderBackend(), 800, 600, true, false);
+        assertEquals(1.25F * .5F, host.currentScaleFactor("zoom"), 0F);
+        host.clearWorld();
+        assertNull(host.currentLogicalPlacement("zoom"));
+        assertEquals(1F, host.currentScaleFactor("zoom"), 0F);
+    }
+
     @Test public void renderPathDoesNotMutateShellSizingDeclaration() throws Exception {
         String source = new String(Files.readAllBytes(Paths.get("src/main/java/club/heiqi/uilib/client/hud/SceneHudHost.java")),
                 StandardCharsets.UTF_8);

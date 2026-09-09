@@ -2,6 +2,16 @@ package club.heiqi.uilib.ui.hud.api;
 
 import java.util.List;
 
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneButtonPrimitive;
+import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
+import club.heiqi.uilib.ui.scene.control.SceneLiquidGlassStyle;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.render.UiBackdrop;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
+import club.heiqi.uilib.ui.scene.control.SceneTooltip;
+
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -49,6 +59,7 @@ public final class HudToolbarLayer {
     public static final class Result {
 
         private final SceneNode root;
+        private HudScaleState scale;
         private final SceneNode content;
         private final SceneNode toolbar;
         private final HudToolbarSpec spec;
@@ -92,7 +103,7 @@ public final class HudToolbarLayer {
         }
 
         /**
-         * 给定内容盒宽度求外框宽度（可在 layout 之前用于 placement）。
+         * 给定缩放前内容盒宽度求视觉外框宽度（含每 HUD 倍率，向上取整，用于 placement）。
          *
          * <p>水平边（TOP/BOTTOM）：宽度由「内容宽」与「工具栏实测宽」的较大者决定——工具栏
          * 比内容宽时外框必须跟着变宽，否则打开态页面按内容宽 placement，右锚点下整条工具栏
@@ -102,6 +113,11 @@ public final class HudToolbarLayer {
          * @return 外框宽；LEFT/RIGHT 且可见时 = 内容宽 + gap + thickness
          */
         public int outerWidth(int contentWidth) {
+            return scaled(logicalOuterWidth(contentWidth));
+        }
+
+        /** 缩放前外框宽，供宿主布局；内容尺寸参数同为缩放前 logical px。 */
+        public int logicalOuterWidth(int contentWidth) {
             int width = Math.max(1, contentWidth);
             if (spec == null || !isVisible()) {
                 return width;
@@ -113,7 +129,7 @@ public final class HudToolbarLayer {
         }
 
         /**
-         * 给定内容盒高度求外框高度（可在 layout 之前用于 placement）。
+         * 给定缩放前内容盒高度求视觉外框高度（含每 HUD 倍率，向上取整，用于 placement）。
          *
          * <p>竖直边（LEFT/RIGHT）：高度由「内容高」与「工具栏实测高」的较大者决定（竖列
          * 按钮可能比内容高）；工具栏尚未布局时退回内容高，下一帧按实测收敛。</p>
@@ -122,6 +138,11 @@ public final class HudToolbarLayer {
          * @return 外框高；TOP/BOTTOM 且可见时 = 内容高 + gap + thickness
          */
         public int outerHeight(int contentHeight) {
+            return scaled(logicalOuterHeight(contentHeight));
+        }
+
+        /** 缩放前外框高，供宿主布局；内容尺寸参数同为缩放前 logical px。 */
+        public int logicalOuterHeight(int contentHeight) {
             int height = Math.max(1, contentHeight);
             if (spec == null || !isVisible()) {
                 return height;
@@ -132,51 +153,26 @@ public final class HudToolbarLayer {
             return height + spec.getGap() + spec.getThickness();
         }
 
+        /** 每 HUD 倍率；由宿主成对转换绘制、布局约束和输入，scene 内仍使用原始 logical px。 */
+        public float scaleFactor() { return scale == null ? 1.0f : scale.factor(); }
+
+        /** 独立挂载拥有自己的状态；service 挂载共享注册项状态。未注册直通返回 null。 */
+        public HudScaleState scale() { return scale; }
+
+        private int scaled(int extent) {
+            int percent = scale == null ? HudScaleState.DEFAULT_PERCENT : scale.percent().get().intValue();
+            return (int) Math.min(Integer.MAX_VALUE, ((long) extent * percent + 99) / 100);
+        }
+
         /**
-         * 工具栏沿挂载边垂直方向（水平边取宽、竖直边取高）的内在尺寸。
-         *
-         * <p><b>为什么按子项聚合而不是直接读工具栏自身盒</b>：打开态页面用 margin 表达放置
-         * 偏移，而布局引擎会把 marginH 从子的可用宽里扣掉——右锚点/大偏移时工具栏自身盒会被
-         * 父约束夹窄，读它会把"被夹窄的宽度"当成内在宽，放置随之漂移（实测每帧左移一个 margin）。
-         * 工具栏的直接子项（按钮）在自己那一层不受该夹取影响，故按工具栏主轴聚合子项占位 +
-         * gap + padding 得到真实内在尺寸。工具栏主轴方向与请求轴不一致时退回自身盒。</p>
-         *
-         * <p>未布局时返回 0（调用方退回内容尺寸）。只读 cachedLayout，不改树、不打脏。</p>
-         *
-         * @param horizontal true = 取工具栏宽（水平边），false = 取工具栏高（竖直边）
-         * @return 内在外尺寸；未布局时为 0
+         * 工具栏内在主轴尺寸。新增公共工具让 factory 根成为中间组合层，不能只累加它被
+         * 右锚点父约束夹窄的 cachedLayout：那会低估真实动作行并使 placement 永久漂移。
+         * 递归聚合容器、保留显式 preferred 外尺寸和裁剪视口，不把按钮内部标签计成外宽。
          */
         private int measuredExtent(boolean horizontal) {
-            List<SceneNode> children = toolbar.__getChildren();
-            boolean row = toolbar.getFlexDirection() == FlexDirection.ROW;
-            if (!children.isEmpty() && row == horizontal) {
-                int total = 0;
-                int count = 0;
-                for (SceneNode child : children) {
-                    Object childBox = child.getCachedLayout();
-                    if (!(childBox instanceof LayoutBox)) {
-                        total = 0;
-                        count = 0;
-                        break;
-                    }
-                    LayoutBox box = (LayoutBox) childBox;
-                    total += row ? box.getWidth() + child.marginH() : box.getHeight() + child.marginV();
-                    count++;
-                }
-                if (count > 0) {
-                    int gaps = count > 1 ? toolbar.getGap() * (count - 1) : 0;
-                    int padding = row
-                            ? toolbar.getPaddingLeft() + toolbar.getPaddingRight()
-                            : toolbar.getPaddingTop() + toolbar.getPaddingBottom();
-                    return total + gaps + padding;
-                }
-            }
-            Object ownBox = toolbar.getCachedLayout();
-            if (!(ownBox instanceof LayoutBox)) {
-                return 0;
-            }
-            return horizontal ? ((LayoutBox) ownBox).getWidth() : ((LayoutBox) ownBox).getHeight();
+            return intrinsicExtent(toolbar, horizontal, false);
         }
+
     }
 
     /**
@@ -203,6 +199,13 @@ public final class HudToolbarLayer {
      */
     public static Result mount(SceneRuntime rt, HudToolbarSpec spec, SceneNode content,
             HudWindowFactory factory) {
+        return mount(rt, spec, content, factory, new HudScaleState());
+    }
+
+    /** 使用调用方共享的每 HUD 倍率装配；同一 state 可供多个独立 runtime 投放。 */
+    public static Result mount(SceneRuntime rt, HudToolbarSpec spec, SceneNode content,
+            HudWindowFactory factory, HudScaleState scale) {
+        if (scale == null) throw new IllegalArgumentException("scale must not be null");
         if (rt == null) {
             throw new IllegalArgumentException("rt must not be null");
         }
@@ -220,6 +223,7 @@ public final class HudToolbarLayer {
             throw new IllegalStateException("HUD toolbar factory must return a node");
         }
         boolean horizontal = spec.getSide().isHorizontalEdge();
+        if (spec.isScaleControls()) toolbar = withScaleControls(rt, spec, toolbar, scale);
         SceneNode wrapper = horizontal ? SceneNode.column() : SceneNode.row();
         wrapper.setHitTestable(false)
                 .setWidthSizing(SceneNode.WidthSizing.SHRINK)
@@ -238,10 +242,83 @@ public final class HudToolbarLayer {
             wrapper.appendChild(content);
         }
         final Result result = new Result(wrapper, content, toolbar, spec);
+        result.scale = scale;
         // effect 首次执行在 flush 期；先同步一次树状态，避免首帧多挂一层
         applyVisibility(result, Boolean.TRUE.equals(spec.getVisible().get()));
         rt.bind(spec.getVisible(), value -> applyVisibility(result, Boolean.TRUE.equals(value)));
         return result;
+    }
+
+    /** 聚合任意深度的组合容器，不能把约束夹窄的中间容器盒误当成内容内在尺寸。 */
+    private static int intrinsicExtent(SceneNode node, boolean horizontal, boolean honorPreferred) {
+        int preferred = horizontal ? node.getPreferredWidth() : node.getPreferredHeight();
+        if (honorPreferred && preferred > 0) return preferred;
+        List<SceneNode> children = node.__getChildren();
+        if (children.isEmpty() || (honorPreferred && node.isClipChildren())) {
+            Object cached = node.getCachedLayout();
+            return cached instanceof LayoutBox
+                    ? (horizontal ? ((LayoutBox) cached).getWidth() : ((LayoutBox) cached).getHeight()) : 0;
+        }
+        boolean alongMain = (node.getFlexDirection() == FlexDirection.ROW) == horizontal;
+        int extent = 0;
+        for (SceneNode child : children) {
+            int childExtent = intrinsicExtent(child, horizontal, true)
+                    + (horizontal ? child.marginH() : child.marginV());
+            extent = alongMain ? extent + childExtent : Math.max(extent, childExtent);
+        }
+        if (alongMain) extent += Math.max(0, children.size() - 1) * node.getGap();
+        return extent + (horizontal ? node.getPaddingLeft() + node.getPaddingRight()
+                : node.getPaddingTop() + node.getPaddingBottom());
+    }
+
+    private static SceneNode withScaleControls(SceneRuntime rt, HudToolbarSpec spec, SceneNode custom,
+            HudScaleState scale) {
+        boolean horizontal = spec.getSide().isHorizontalEdge();
+        SceneNode toolbar = (horizontal ? SceneNode.row() : SceneNode.column())
+                .setWidthSizing(SceneNode.WidthSizing.SHRINK).setHitTestable(false).setGap(6)
+                .setCrossAxisAlign(CrossAxisAlign.CENTER);
+        // 空容器也是合法工厂输出；显式空文本令空叶收缩为零宽，避免默认 FILL 挤走公共工具。
+        // 后续 forEach 挂入子节点后仍按容器布局，空文本不参与子树尺寸。
+        if (custom.getText() == null && custom.__getChildren().isEmpty()) custom.setText("");
+        if (horizontal) {
+            custom.setWidthSizing(SceneNode.WidthSizing.SHRINK).setPreferredHeight(spec.getThickness());
+
+        } else {
+            custom.setPreferredWidth(spec.getThickness());
+
+        }
+        // 工厂可能使用 rt.forEach，不能把公共按钮追加到其受协调器管理的子列表中。
+        toolbar.appendChild(custom);
+        rt.mount(toolbar, () -> scaleButton(rt, "-", () -> scale.percent().get() > HudScaleState.MIN_PERCENT,
+                scale::zoomOut, spec.getThickness(), () -> "缩小 HUD"));
+        rt.mount(toolbar, () -> scaleButton(rt, "1:1", () -> true, scale::reset,
+                spec.getThickness(), () -> "当前 " + scale.percent().get() + "% · 点击恢复 100%"));
+        rt.mount(toolbar, () -> scaleButton(rt, "+", () -> scale.percent().get() < HudScaleState.MAX_PERCENT,
+                scale::zoomIn, spec.getThickness(), () -> "放大 HUD"));
+        // fixed 子项在约束变化时可以继续复用 layout；组合根必须有确定的内在主轴尺寸，
+        // 否则 SHRINK 会永久保留右锚点首帧被夹窄的盒。布局完成信号负责动态动作列表的后续变化。
+        rt.bindComputed(() -> {
+            rt.layoutDoneSignal().get();
+            return intrinsicExtent(toolbar, horizontal, false);
+        }, value -> {
+            if (horizontal) toolbar.setPreferredWidth(value);
+            else toolbar.setPreferredHeight(value);
+        });
+        return toolbar;
+    }
+
+    private static SceneNode scaleButton(SceneRuntime rt, String label, ReadableSignal<Boolean> enabled,
+            Runnable action, int size, ReadableSignal<String> tooltip) {
+        SceneButtonPrimitive.Result primitive = SceneButtonPrimitive.create(rt,
+                new SceneButtonPrimitive.Props(() -> label, enabled, action));
+        SceneNode button = primitive.root();
+        int buttonSize = Math.min(24, size);
+        button.setPreferredWidth(buttonSize).setPreferredHeight(buttonSize).setPadding(1)
+                .setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        SceneLiquidGlassStyle.bindButton(rt, button, primitive.label(), enabled, SceneButtonVariant.STANDARD,
+                UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN, 6, 1.0f));
+        SceneTooltip.attach(rt, SceneTooltip.Props.of(button, tooltip));
+        return button;
     }
 
     /** 可见性 → 工具栏在树中的挂/摘（只动本层，不触碰内容子树）。 */

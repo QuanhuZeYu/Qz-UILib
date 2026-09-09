@@ -87,6 +87,12 @@ public final class HudToolbarService {
         return entry == null ? null : entry.factory;
     }
 
+    /** 每 HUD 共享倍率；未注册返回 null，注销后再次注册得到默认倍率。 */
+    public synchronized HudScaleState scale(String hudId) {
+        Entry entry = hudId == null ? null : entries.get(hudId);
+        return entry == null ? null : entry.scale;
+    }
+
     /** @return 注册表版本（增删时 +1） */
     public ReadableSignal<Integer> revision() {
         return revision;
@@ -106,7 +112,7 @@ public final class HudToolbarService {
         if (entry == null) {
             return HudToolbarLayer.passthrough(content);
         }
-        return HudToolbarLayer.mount(rt, entry.spec, content, entry.factory);
+        return HudToolbarLayer.mount(rt, entry.spec, content, entry.factory, entry.scale);
     }
 
     /** 清空注册表（测试与整体关闭用）；已返回句柄失效。 */
@@ -137,6 +143,7 @@ public final class HudToolbarService {
     }
 
     private static final class Entry {
+        final HudScaleState scale = new HudScaleState();
         final HudToolbarSpec spec;
         final HudWindowFactory factory;
         Entry(HudToolbarSpec spec, HudWindowFactory factory) {

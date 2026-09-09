@@ -413,6 +413,38 @@ public class ChatSceneControllerTest {
     }
 
     @Test
+    public void hitTestMapsRawPixelsUsingAppliedHudScaleAndLogicalOrigin() {
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> scaled"), 1, T0));
+        controller.notifyDataChanged();
+        controller.setHostViewport(800, 600);
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = build(controller, rt);
+        LAYOUT.layout(root, new Constraints(400));
+        SceneNode message = hudGroups(root).get(0).__getChildren().get(1);
+        final float scale = 1.3F;
+        final AnchorRect logical = new AnchorRect(13, 21, 400, 300);
+        final AnchorRect visual = new AnchorRect(Math.round(logical.getX() * scale),
+                Math.round(logical.getY() * scale),
+                Math.round((logical.getX() + logical.getWidth()) * scale) - Math.round(logical.getX() * scale),
+                Math.round((logical.getY() + logical.getHeight()) * scale) - Math.round(logical.getY() * scale));
+        controller.attachPlacementSource(new ChatHudWindow.HudPlacementSource() {
+            @Override public AnchorRect placement(String id) { return visual; }
+            @Override public AnchorRect logicalPlacement(String id) { return logical; }
+            @Override public float scaleFactor(String id) { return scale; }
+        });
+        AnchorRect messageBox = SceneGeometry.absoluteBox(message, logical.getX(), logical.getY());
+        int x = Math.round((messageBox.getX() + messageBox.getWidth() / 2) * scale);
+        int y = Math.round((messageBox.getY() + messageBox.getHeight() / 2) * scale);
+        IChatComponent hit = controller.hitTest(x, y);
+        Assert.assertNotNull("物理输入只逆映射宿主倍率", hit);
+        Assert.assertEquals("<Bob> scaled", hit.getUnformattedText());
+        Assert.assertNull("实际视觉裁剪右边界不命中", controller.hitTest(
+                visual.getX() + visual.getWidth(), y));
+        Assert.assertNull("实际视觉裁剪左外侧不命中", controller.hitTest(visual.getX() - 1, y));
+    }
+
+    @Test
     public void hudGroupEnterAnimatesOpacityAndTranslateY() {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));

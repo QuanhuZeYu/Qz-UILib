@@ -43,7 +43,19 @@ public final class UiHudRenderListener {
         this.environment = environment;
         // 装配层接线（composition root 在 client）：chat3 命中检测读宿主权威放置盒。
         // internal→client 为禁止方向,故经端口注入而非直引。
-        club.heiqi.uilib.internal.chat3.view.ChatHudWindow.setPlacementSource(host::currentPlacement);
+        club.heiqi.uilib.internal.chat3.view.ChatHudWindow.setPlacementSource(
+                new club.heiqi.uilib.internal.chat3.view.ChatHudWindow.HudPlacementSource() {
+                    @Override
+                    public club.heiqi.uilib.ui.scene.layout.AnchorRect placement(String hudId) {
+                        return host.currentPlacement(hudId);
+                    }
+                    @Override
+                    public float scaleFactor(String hudId) { return host.currentScaleFactor(hudId); }
+                    @Override
+                    public club.heiqi.uilib.ui.scene.layout.AnchorRect logicalPlacement(String hudId) {
+                        return host.currentLogicalPlacement(hudId);
+                    }
+                });
         // 打开态聊天容器与关闭态 HUD 共用同一份安全区事实（规划 P2）。
         club.heiqi.uilib.internal.chat3.view.ChatHudWindow.setSafeAreaSource(host::currentSafeInsets);
         registerDebugHud();

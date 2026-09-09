@@ -50,7 +50,7 @@ public class HudToolbarLayerTest {
     }
 
     private static HudToolbarSpec spec(HudToolbarSide side, Signal<Boolean> visible) {
-        return HudToolbarSpec.builder(side).gap(GAP).thickness(THICKNESS).visible(visible).build();
+        return HudToolbarSpec.builder(side).scaleControls(false).gap(GAP).thickness(THICKNESS).visible(visible).build();
     }
 
     private static void layout(SceneNode root) {

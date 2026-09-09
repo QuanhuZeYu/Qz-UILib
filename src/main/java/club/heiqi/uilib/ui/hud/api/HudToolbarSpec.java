@@ -21,9 +21,9 @@ import club.heiqi.uilib.ui.reactive.Signal;
  *   <li>{@link #getVisible()} 为 false 时不挂载工具栏，外框退化为内容盒。</li>
  * </ul>
  *
- * <p>本类型是候选公共 API（规划《聊天工具栏与HUD布局编辑》P1/P2 增量），首版只描述
- * "挂在哪条边、多厚、留多大间隙、是否可见"；交叉轴对齐、溢出菜单、多工具栏并存留待有
- * 真实需求再扩展。</p>
+ * <p>规格默认在工厂内容后追加公共缩放工具，可通过 {@link Builder#scaleControls(boolean)}
+ * 关闭。缩放状态按 HUD 注册项隔离，在宿主边界成对转换绘制和输入；长度属性仍为缩放前 logical px。
+ * 交叉轴对齐、溢出菜单、多工具栏并存留待有真实需求再扩展。</p>
  */
 public final class HudToolbarSpec {
 
@@ -37,6 +37,7 @@ public final class HudToolbarSpec {
      */
     public static final int DEFAULT_THICKNESS_PX = 28;
 
+    private final boolean scaleControls;
     private final HudToolbarSide side;
     private final int gap;
     private final int thickness;
@@ -50,6 +51,7 @@ public final class HudToolbarSpec {
         if (builder.thickness <= 0) {
             throw new IllegalArgumentException("thickness must be > 0");
         }
+        this.scaleControls = builder.scaleControls;
         this.gap = builder.gap;
         this.thickness = builder.thickness;
         this.visible = Objects.requireNonNull(builder.visible, "visible");
@@ -77,8 +79,12 @@ public final class HudToolbarSpec {
     /** @return 可见性（主线程读取的响应式状态；false = 不挂载、不占外框尺寸） */
     public ReadableSignal<Boolean> getVisible() { return visible; }
 
+    /** 是否追加公共缩放工具（默认 true）；关闭只隐藏工具，不重置倍率。 */
+    public boolean isScaleControls() { return scaleControls; }
+
     /** HUD 工具栏规格 builder。 */
     public static final class Builder {
+        private boolean scaleControls = true;
         private HudToolbarSide side;
         private int gap = DEFAULT_GAP_PX;
         private int thickness = DEFAULT_THICKNESS_PX;
@@ -87,6 +93,9 @@ public final class HudToolbarSpec {
         private Builder(HudToolbarSide side) {
             this.side = side;
         }
+
+        /** 是否追加缩小、倍率复位、放大工具；默认加入。 */
+        public Builder scaleControls(boolean value) { this.scaleControls = value; return this; }
 
         /** 设置挂载边。 */
         public Builder side(HudToolbarSide value) { this.side = value; return this; }

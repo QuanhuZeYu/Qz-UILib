@@ -113,6 +113,42 @@ toolbar.close();
 - 工具栏节点仍是普通 scene 子树，输入命中与作用域由宿主/页面统一管理（HUD 窗口宿主本身无
   输入源）。
 
+### 默认缩放工具
+
+注册工具栏后，公共层默认在调用方工厂内容之后加入「- / 1:1 / +」三个通用 scene 按钮；
+水平边排成一行，竖直边排成一列。减号缩小、加号放大，每次改变 10 个百分点；
+范围为 50%–200%，1:1 恢复 100%，其悬停提示显示当前倍率。达到边界时对应按钮禁用。
+
+只想保留自定义工具时，在规格中设置 `scaleControls(false)`：
+
+```java
+HudToolbarSpec customOnly = HudToolbarSpec.builder()
+        .scaleControls(false)
+        .build();
+
+// 也可在客户端主线程以语义动作控制已注册 HUD，无需拿 scene 节点。
+HudScaleState scale = HudToolbarService.getInstance().scale("example:status");
+if (scale != null) {
+    scale.setPercent(150);
+    scale.reset();
+}
+```
+
+倍率属于 **每个工具栏注册项**，同一 HUD 在被动宿主和打开态聊天页面共享倍率，各次投放仍各建
+自己的 scene 节点。隐藏工具栏或关闭缩放按钮不会重置倍率；未注册工具栏的 HUD 保持 100%。
+状态保留到工具栏注销或服务清空，重新注册及重启使用默认值，不写配置文件。
+缩放动作立即更新状态，宿主在帧开始采样并在下一帧完整生效；它不属于 HUD 位置编辑草稿，
+因此「取消编辑」不回滚倍率，「恢复位置默认」也不重置倍率，倍率复位由 1:1 完成。
+
+缩放作用于内容与整条工具栏，宿主全局 HudScaleSetting 仍是独立的外层倍率。
+公共层继续用 scene / Signal / SceneButton / SceneTooltip 及 PaintCommand 管线；
+缩放仅在宿主边界以 scaled backend 和输入坐标反向换算成对实施，不改字体配置或原版 GUI。
+被动 HUD 宿主不新增输入源，打开聊天时按钮、文本选择和拖动使用 UILib 原有输入路由。
+
+自定义页面接入时，Result.logicalOuterWidth/Height 查询缩放前布局尺寸，outerWidth/Height 查询
+按百分比向上取整后的视觉外框，后者用于锚定、安全区和拖动 clamp。宿主须在一帧内固定倍率，
+用同一倍率缩放绘制/裁剪并反向转换布局约束与输入；仅给节点加 Transform 不满足此契约。
+
 ## 与旧「快照协议」的差异（4.9 起）
 
 旧版 `HudSnapshot/HudLine/HudSpan/HudTone` 行式数据协议已随 4.9 删除（路线 A，一步到位）：

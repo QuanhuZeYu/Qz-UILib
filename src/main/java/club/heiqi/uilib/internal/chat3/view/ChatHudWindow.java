@@ -39,6 +39,10 @@ public final class ChatHudWindow {
     public interface HudPlacementSource {
         /** @return 该 id 最近一帧的放置盒（视口逻辑 px）；未放置时 null */
         AnchorRect placement(String hudId);
+        /** 本帧实际绘制倍率，含宿主倍率；默认保持未缩放接入。 */
+        default float scaleFactor(String hudId) { return 1F; }
+        /** 本帧传给 scene 管线的逻辑放置盒。 */
+        default AnchorRect logicalPlacement(String hudId) { return placement(hudId); }
     }
 
     /**

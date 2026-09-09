@@ -341,7 +341,7 @@ public final class ChatSceneController {
      * {@code GuiChat} 里的 {@code getChatGUI().func_146236_a(Mouse.getX(), Mouse.getY())}
      * —— 传的是 LWJGL raw 窗口像素；原版自身实现第一步就除以 {@code ScaledResolution
      * .getScaleFactor()} 再进它的逻辑布局空间。本覆写<b>不除</b>：比较对象
-     * {@code SceneGeometry.absoluteBox} 本就是物理 px 的 scene 几何，两侧同单位。
+     * {@code SceneGeometry.absoluteBox} 是 HUD 逻辑几何，输入仅按宿主本帧倍率逆映射。
      * <b>不许"顺手补一个 /guiScale"</b> —— 补了正好复现"跨空间坐标出现在判定路径"那条缺陷；
      * 该契约已由 {@code ChatSceneControllerTest} 拿 {@code absoluteBox} 反推坐标钉住。
      * 历史注释把这里标成"逻辑 px,scaled 口径"，与实现相反，是误导源，已改。</p>
@@ -357,11 +357,22 @@ public final class ChatSceneController {
         // 注册表命中(节点相对窗口根)+ 窗口原点平移:宿主权威放置优先,resolver 数学兜底
         int rootAbsX;
         int rootAbsY;
+        float logicalX = x;
+        float logicalY = y;
         ChatHudWindow.HudPlacementSource source = placementSource;
         AnchorRect placed = source == null ? null : source.placement(ChatHudWindow.HUD_ID);
         if (placed != null) {
-            rootAbsX = placed.getX();
-            rootAbsY = placed.getY();
+            // 先按实际视觉 clip 拒绝，再回到同一帧的逻辑空间；不读取新请求倍率。
+            if (x < placed.getX() || y < placed.getY()
+                    || x >= placed.getX() + placed.getWidth()
+                    || y >= placed.getY() + placed.getHeight()) return null;
+            float scale = source.scaleFactor(ChatHudWindow.HUD_ID);
+            AnchorRect logical = source.logicalPlacement(ChatHudWindow.HUD_ID);
+            if (logical == null) return null;
+            rootAbsX = logical.getX();
+            rootAbsY = logical.getY();
+            logicalX = x / scale;
+            logicalY = y / scale;
         } else {
             AnchorRect rootBox = SceneGeometry.absoluteBox(root, 0, 0);
             SceneAnchorResolver.ResolvedViewport resolved = SceneAnchorResolver.resolveViewport(
@@ -377,8 +388,8 @@ public final class ChatSceneController {
                 continue;
             }
             AnchorRect box = SceneGeometry.absoluteBox(node, rootAbsX, rootAbsY);
-            if (x >= box.getX() && x < box.getX() + box.getWidth()
-                    && y >= box.getY() && y < box.getY() + box.getHeight()) {
+            if (logicalX >= box.getX() && logicalX < box.getX() + box.getWidth()
+                    && logicalY >= box.getY() && logicalY < box.getY() + box.getHeight()) {
                 return entry.getValue().getComponent();
             }
         }

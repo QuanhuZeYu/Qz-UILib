@@ -244,7 +244,9 @@ public class ChatToolbarTest {
         rt.flush();
         Assert.assertNotNull(layer.toolbar());
         Assert.assertNotSame("工具栏必须挂在聊天内容盒之外", content, layer.root());
-        assertIconRow(layer.toolbar(), "action");
+        Assert.assertTrue(layer.spec().isScaleControls());
+        Assert.assertEquals("自定义动作组和三颗默认缩放工具", 4, layer.toolbar().__getChildren().size());
+        assertIconRow(layer.toolbar().__getChildren().get(0), "action");
         Assert.assertEquals("外框高 = 内容 + gap + 厚度",
                 100 + spec.getGap() + spec.getThickness(), layer.outerHeight(100));
 

@@ -209,6 +209,12 @@ public class ChatToolbarGeometryTest {
         engine.layout(root, new Constraints(W, H));
         rt.__bridgeLayoutEpoch(engine.layoutEpoch());
         rt.flush();
+        // 与生产 pipeline 的 layout-publication settle 同源：嵌套工具栏监听布局完成，
+        // 在动作列表变化后发布新 preferred 主轴尺寸，必须同帧再布局才能消费新尺寸。
+        engine.layout(root, new Constraints(W, H));
+        rt.__bridgeLayoutEpoch(engine.layoutEpoch());
+        rt.flush();
+        engine.layout(root, new Constraints(W, H));
     }
 
     private void frames(int count) {
@@ -226,14 +232,27 @@ public class ChatToolbarGeometryTest {
                 }).build();
     }
 
+    /** 默认公共层组合自定义动作行和三个缩放按钮；动作 keyed 列表仍在原子树中。 */
+    private SceneNode actionToolbar() {
+        Assert.assertTrue("集成始终开启默认缩放工具", layer.spec().isScaleControls());
+        Assert.assertEquals("自定义动作组与三颗公共工具", 4, layer.toolbar().__getChildren().size());
+        return layer.toolbar().__getChildren().get(0);
+    }
+
+    private List<SceneNode> allButtons() {
+        List<SceneNode> result = new ArrayList<SceneNode>(actionToolbar().__getChildren());
+        result.addAll(layer.toolbar().__getChildren().subList(1, 4));
+        return result;
+    }
+
     /** 普通项按 order/注册序，编辑项固定为完成、取消、恢复当前、恢复全部。 */
     private SceneNode buttonAt(int index) {
-        return layer.toolbar().__getChildren().get(index);
+        return actionToolbar().__getChildren().get(index);
     }
 
     /** 本类普通动作 order 均小于内置编辑项，故编辑项在最后。 */
     private SceneNode editButton() {
-        return buttonAt(layer.toolbar().__getChildren().size() - 1);
+        return buttonAt(actionToolbar().__getChildren().size() - 1);
     }
 
     private static AnchorRect box(SceneNode node) {
@@ -332,8 +351,8 @@ public class ChatToolbarGeometryTest {
         Assert.assertEquals("外框高必须与放置口径一致",
                 ChatInputSurface.outerHeightFor(layer, H), wrapper.getHeight());
 
-        ChatToolbarTest.assertIconRow(layer.toolbar(), "action", "edit");
-        for (SceneNode button : layer.toolbar().__getChildren()) {
+        ChatToolbarTest.assertIconRow(actionToolbar(), "action", "edit");
+        for (SceneNode button : actionToolbar().__getChildren()) {
             assertVisibleInside(button, toolbar, "图标按钮");
             Assert.assertEquals(24, box(button).getWidth());
             Assert.assertEquals(24, box(button).getHeight());
@@ -362,7 +381,7 @@ public class ChatToolbarGeometryTest {
         Assert.assertEquals("点击「编辑 HUD」必须真实命中并发布意图到当前屏", 1, enterEditCount[0]);
         frame();
 
-        ChatToolbarTest.assertIconRow(layer.toolbar(), "finish", "cancel", "reset-current", "reset-all");
+        ChatToolbarTest.assertIconRow(actionToolbar(), "finish", "cancel", "reset-current", "reset-all");
         String[] labels = {"完成", "取消", "恢复当前默认", "恢复全部默认"};
         for (int i = 0; i < labels.length; i++) {
             routePointer(buttonAt(i), ScenePointerAction.MOVE);
@@ -384,7 +403,7 @@ public class ChatToolbarGeometryTest {
         Assert.assertEquals("「完成」回调必须执行", 1, host.finishCount);
         Assert.assertEquals("完成后退出编辑态", Boolean.FALSE, host.editing.get());
         frame();
-        ChatToolbarTest.assertIconRow(layer.toolbar(), "action", "edit");
+        ChatToolbarTest.assertIconRow(actionToolbar(), "action", "edit");
 
         host.editing.set(Boolean.TRUE);
         frame();
@@ -528,14 +547,20 @@ public class ChatToolbarGeometryTest {
         Assert.assertEquals("四边工具栏厚度固定为 28px", 28,
                 side.isHorizontalEdge() ? toolbar.getHeight() : toolbar.getWidth());
         SceneNode previous = null;
-        for (SceneNode button : layer.toolbar().__getChildren()) {
+        for (SceneNode button : allButtons()) {
             AnchorRect current = box(button);
             Assert.assertEquals(24, current.getWidth());
             Assert.assertEquals(24, current.getHeight());
             assertVisibleInside(button, toolbar, "独立玻璃按钮");
             if (previous != null) {
                 AnchorRect before = box(previous);
-                Assert.assertEquals("独立玻璃之间必须有 6px 净空", 6, side.isHorizontalEdge()
+                int expectedGap = 6;
+                if (button == layer.toolbar().__getChildren().get(1)) {
+                    // 自定义动作组保留调用方的尾部内边距；组内按钮仍是 6px 净空。
+                    expectedGap += side.isHorizontalEdge()
+                            ? actionToolbar().getPaddingRight() : actionToolbar().getPaddingBottom();
+                }
+                Assert.assertEquals("组内净空及跨组自定义留白", expectedGap, side.isHorizontalEdge()
                         ? current.getX() - before.getX() - before.getWidth()
                         : current.getY() - before.getBottom());
             }
@@ -552,7 +577,7 @@ public class ChatToolbarGeometryTest {
         PaintFragment rootFragment = (PaintFragment) toolbar.getCachedPaint();
         Assert.assertNotNull(rootFragment);
         Assert.assertEquals("工具栏根 fragment 不绘制连续底座", 0, rootFragment.size());
-        for (SceneNode button : toolbar.__getChildren()) {
+        for (SceneNode button : allButtons()) {
             PaintFragment fragment = (PaintFragment) button.getCachedPaint();
             Assert.assertNotNull(fragment);
             PaintCommand backdrop = null;
@@ -611,7 +636,7 @@ public class ChatToolbarGeometryTest {
     }
 
     private void assertIconsPainted(String... names) {
-        ChatToolbarTest.assertIconRow(layer.toolbar(), names);
+        ChatToolbarTest.assertIconRow(actionToolbar(), names);
         assertIndependentGlassPaint();
         RecordingRenderBackend backend = new RecordingRenderBackend();
         new ScenePaintReplayer().replay(new ScenePaintEngine(MEASURER).paint(root).getPlan(), backend);
@@ -716,7 +741,7 @@ public class ChatToolbarGeometryTest {
                 .order(1).action(() -> calls.add("third")).build();
         mount(HudToolbarSide.BOTTOM, tiedFirst, tiedSecond, later);
         frame();
-        ChatToolbarTest.assertIconRow(layer.toolbar(), "action", "action", "action", "edit");
+        ChatToolbarTest.assertIconRow(actionToolbar(), "action", "action", "action", "edit");
         for (int i = 0; i < 3; i++) {
             clickCenter(buttonAt(i));
         }

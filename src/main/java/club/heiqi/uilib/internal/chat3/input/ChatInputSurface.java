@@ -96,9 +96,11 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     /** 最近一帧宿主视口(logical px;拖动换算与放置解析用)。 */
     private int hostWidth = 1;
     private int hostHeight = 1;
+    /** render 开始采样，整帧的绘制、命中与拖动共用。 */
+    private float frameScale = 1F;
 
     public ChatInputSurface(String initialText) {
-        super(new LwjglInputSource(new LwjglStateReader()));
+        super(new ChatScaledInputSource(new LwjglStateReader()));
         // 宿主负责启用并逐帧采样动画：玻璃按钮过渡与 tooltip 延时共用标准帧管线。
         runtime.__enableMotion();
         this.controller = ChatHudWindow.ensureRegistered();
@@ -196,6 +198,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     /** 每帧同步动态尺寸(视口 1/4 × 1/2)并推进开合动画(设计稿 §4.1);随后走标准帧管线。 */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
+        frameScale = toolbarLayer.scaleFactor();
+        ((ChatScaledInputSource) inputSource).setScale(frameScale);
         container.setViewport(w, h);
         hostWidth = Math.max(1, w);
         hostHeight = Math.max(1, h);
@@ -214,7 +218,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         // 动画施加在外框上：工具栏在内容盒之外，也必须随聊天整体弹入/收起（未注册时外框就是内容根）
         toolbarLayer.root().setTransform(animator.transform(nowMillis));
         toolbarLayer.root().setOpacity(animator.opacity(nowMillis));
-        super.render(w, h, ctx, absX, absY);
+        super.render(Math.max(1, (int) Math.floor(w / frameScale)),
+                Math.max(1, (int) Math.floor(h / frameScale)), ctx.scaled(frameScale),
+                Math.round(absX / frameScale), Math.round(absY / frameScale));
     }
 
     /** 屏幕打开:聚焦输入框 + 同步发送历史(委托输入条)。 */
@@ -271,7 +277,7 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
      */
     private void applyPlacement(int width, int height) {
         applyOuterPlacement(toolbarLayer, width, height, effectivePlacement(),
-                ChatHudWindow.currentSafeInsets());
+                ChatHudWindow.currentSafeInsets(), frameScale);
     }
 
     /**
@@ -286,19 +292,34 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
      */
     static void applyOuterPlacement(HudToolbarLayer.Result layer, int viewportWidth, int viewportHeight,
             HudPlacement placement, HudInsets insets) {
+        applyOuterPlacement(layer, viewportWidth, viewportHeight, placement, insets, layer.scaleFactor());
+    }
+
+    static void applyOuterPlacement(HudToolbarLayer.Result layer, int viewportWidth, int viewportHeight,
+            HudPlacement placement, HudInsets insets, float scale) {
         AnchorRect rect = HudLayoutResolver.resolve(placement, viewportWidth, viewportHeight,
-                outerWidthFor(layer, viewportWidth), outerHeightFor(layer, viewportHeight), insets);
-        layer.root().setMargin(rect.getY(), 0, 0, rect.getX());
+                scaledOuterWidth(layer, viewportWidth, scale), scaledOuterHeight(layer, viewportHeight, scale), insets);
+        // 节点和输入仍为 logical px，只有宿主边界放大到屏幕。
+        layer.root().setMargin((int) Math.floor(rect.getY() / scale), 0, 0,
+                (int) Math.floor(rect.getX() / scale));
     }
 
     /** @return 外框宽 = 内容盒 + 挂载边工具栏（放置与拖动 clamp 共用的唯一口径） */
     static int outerWidthFor(HudToolbarLayer.Result layer, int viewportWidth) {
-        return layer.outerWidth(ChatMarkdownSettings.chatWidthFor(Math.max(1, viewportWidth)));
+        return scaledOuterWidth(layer, viewportWidth, layer.scaleFactor());
     }
 
     /** @return 外框高 = 内容盒 + 挂载边工具栏（放置与拖动 clamp 共用的唯一口径） */
     static int outerHeightFor(HudToolbarLayer.Result layer, int viewportHeight) {
-        return layer.outerHeight(ChatMarkdownSettings.containerHeightFor(Math.max(1, viewportHeight)));
+        return scaledOuterHeight(layer, viewportHeight, layer.scaleFactor());
+    }
+
+    private static int scaledOuterWidth(HudToolbarLayer.Result layer, int width, float scale) {
+        return (int) Math.ceil(layer.logicalOuterWidth(ChatMarkdownSettings.chatWidthFor(Math.max(1, width))) * scale);
+    }
+
+    private static int scaledOuterHeight(HudToolbarLayer.Result layer, int height, float scale) {
+        return (int) Math.ceil(layer.logicalOuterHeight(ChatMarkdownSettings.containerHeightFor(Math.max(1, height))) * scale);
     }
 
     /** @return 生效放置(用户覆盖优先,否则按注册规格算默认放置 = BOTTOM_LEFT + margin) */
@@ -313,8 +334,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
             return;
         }
         dragging[0] = true;
-        dragOrigin[0] = ctx.getRawPointerX();
-        dragOrigin[1] = ctx.getRawPointerY();
+        dragOrigin[0] = Math.round(ctx.getRawPointerX() * frameScale);
+        dragOrigin[1] = Math.round(ctx.getRawPointerY() * frameScale);
         dragOriginHadOverride = layoutService.placement(ChatHudWindow.HUD_ID) != null;
         dragOriginPlacement = effectivePlacement();
         ctx.requestPointerCapture();
@@ -325,13 +346,14 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         if (!dragging[0]) {
             return;
         }
-        int dx = ctx.getRawPointerX() - dragOrigin[0];
-        int dy = ctx.getRawPointerY() - dragOrigin[1];
+        int dx = Math.round(ctx.getRawPointerX() * frameScale) - dragOrigin[0];
+        int dy = Math.round(ctx.getRawPointerY() * frameScale) - dragOrigin[1];
         HudPlacement desired = dragOriginPlacement.translate(dx, dy);
         // clamp 与 applyPlacement 同口径：用外框（内容 + 工具栏），不是裸内容尺寸，
         // 否则拖动到边界时工具栏仍会被推到视口外。
         HudPlacement clamped = HudLayoutResolver.clamp(desired, hostWidth, hostHeight,
-                outerWidthFor(toolbarLayer, hostWidth), outerHeightFor(toolbarLayer, hostHeight),
+                scaledOuterWidth(toolbarLayer, hostWidth, frameScale),
+                scaledOuterHeight(toolbarLayer, hostHeight, frameScale),
                 ChatHudWindow.currentSafeInsets());
         layoutService.setDraft(ChatHudWindow.HUD_ID, clamped);
         ctx.stopPropagation();
