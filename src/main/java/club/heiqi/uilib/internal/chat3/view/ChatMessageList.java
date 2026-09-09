@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
+
+import com.github.bsideup.jabel.Desugar;
 
 import net.minecraft.util.IChatComponent;
 
@@ -35,6 +38,9 @@ import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 消息列表组件(L3 渲染层,唯一消息渲染器):组头(名字+时间)+ 消息气泡(背景/圆角/行段)。
@@ -59,6 +65,18 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * <p>HUD 淡出 = 每条消息的可见显示预算(仅 HUD 实际渲染时按可见时钟消耗,聊天框打开期间
  * 冻结;注入 {@code hudVisible} 后生效);入场动画仅新组(isEnterOnMount)播放,组增长
  * 重建/重挂载不重播。</p>
+ *
+ * <p><b>G17/Bubble 表面接缝(口径同 G17/Input 的 ChatInputChrome)</b>:气泡底色/材质/圆角
+ * =「通用主题 GROUP 角色配方 ⊕ 聊天玻璃设置局部覆盖」——既有聊天设置经
+ * {@link #sampleBubbleLocalStyle()} 单点转译成 {@link BubbleLocalStyle} 局部配方(每个分量
+ * null = 该属性无显式聊天设置、跟随主题),优先级 = 显式聊天设置 &gt; 通用主题默认(契约 §3);
+ * 不新增第二份配置存储,通用主题也不 import chat3(消费方向恒为 chat3→theme)。列表容器
+ * (宿主交入的 {@code listParent})本无底表面:背景由 ChatContainer/ChatHudWindow 宿主承担
+ * (G17/Container 实例范围),本类不为其新增表面。气泡表面属性(backdrop/四角圆角)与底色
+ * 的既有渲染链路(创建播种 + {@link MessageBake} 每帧 hover/淡出重烘)是唯一写入链,值全部
+ * 取自派生配方 {@link BubbleSurface};主题或聊天设置变更经帧采样信号只重派生(同节点改写
+ * 属性并重烘),不重建组树。自己/他人/系统气泡的语义色区分保持(system/markdown 系统行仍无
+ * 气泡表面);消息文本色、markdown 渲染色(横线/CODE 底)、时间戳、链接色不在本接缝内。</p>
  */
 public final class ChatMessageList {
 
@@ -247,6 +265,86 @@ public final class ChatMessageList {
         }
     }
 
+    /** 缘色透明占位(气泡无描边语义,状态缘恒透明;与 G17/Input 同口径)。 */
+    private static final int TRANSPARENT = 0x00000000;
+
+    /**
+     * 聊天气泡的局部覆盖配方(G17/Bubble,口径同 {@code ChatInputChrome.LocalStyle}):既有聊天
+     * 玻璃设置(唯一配置存储,volatile)到通用配方语言的转译。每个分量 null = 该属性无显式
+     * 聊天设置、跟随通用 GROUP 主题配方;{@link #NONE} = 纯主题档(「无局部设置」测试形态,
+     * 生产恒由 {@link #sampleChatBubbleStyle()} 填满)。不新增第二份配置存储。
+     */
+    @Desugar
+    record BubbleLocalStyle(Boolean glassEnabled, Integer blurRadiusPx, Float lensStrength, Integer glassBubbleAlpha,
+            Integer selfArgb, Integer otherArgb, Integer outerCornerRadiusPx, Integer innerCornerRadiusPx) {
+
+        static final BubbleLocalStyle NONE =
+                new BubbleLocalStyle(null, null, null, null, null, null, null, null);
+
+        boolean isNeutral() {
+            return this.equals(NONE);
+        }
+    }
+
+    /**
+     * 气泡表面派生产物:合并后的通用配方(底色/滤镜/外圆角)+ 四角分级的内圆角分量。
+     * 值相等语义(内嵌 {@link SceneSurfaceStyle#equals})让帧采样链路在「设置/主题未变」时
+     * 阻断下游重算——变更只重派生,不重挂 effect、不重建节点。
+     */
+    static final class BubbleSurface {
+
+        private final SceneSurfaceStyle style;
+        private final int innerCornerRadiusPx;
+
+        BubbleSurface(SceneSurfaceStyle style, int innerCornerRadiusPx) {
+            this.style = style;
+            this.innerCornerRadiusPx = innerCornerRadiusPx;
+        }
+
+        SceneSurfaceStyle style() {
+            return style;
+        }
+
+        /** @return 气泡常态底色(聊天设置合成玻璃 alpha 后;含淡出/插值由 bake 链路再加工) */
+        int baseArgb() {
+            return style.getIdle().getTint();
+        }
+
+        /** @return 气泡 hover 底色(既有 3% 白叠加语义,预计算于配方,非主题状态色) */
+        int hoverArgb() {
+            return style.getHovered().getTint();
+        }
+
+        /** @return 聊天玻璃滤镜;null = 显式关闭滤镜(契约 §2.2) */
+        UiBackdrop backdrop() {
+            return style.getBackdrop();
+        }
+
+        /** @return 气泡大圆角(组内分级的外档) */
+        int outerCornerRadiusPx() {
+            return style.getCornerRadius();
+        }
+
+        /** @return 组内相邻消息小圆角(分级内档) */
+        int innerCornerRadiusPx() {
+            return innerCornerRadiusPx;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof BubbleSurface)) {
+                return false;
+            }
+            BubbleSurface that = (BubbleSurface) other;
+            return innerCornerRadiusPx == that.innerCornerRadiusPx && style.equals(that.style);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * style.hashCode() + innerCornerRadiusPx;
+        }
+    }
+
     /** 组级烘焙状态:行段流(正常/hover 两态)+ 气泡底色(正常/hover 两态)+ 组头 + accent 条,一次重写。 */
     private static final class MessageBake {
 
@@ -265,8 +363,9 @@ public final class ChatMessageList {
         private final int quoteBarColor;
         private final boolean[] lineHovered;
         private final boolean[] bubbleHovered;
-        private final int bubbleColor;
-        private final int hoverBubbleColor;
+        /** 两态底色由配方信号供给(G17/Bubble):创建播种初值,主题/设置变更时 {@link #updateSurface} 重派生。 */
+        private int bubbleColor;
+        private int hoverBubbleColor;
         private final boolean system;
 
         /** 气泡 hover 叠加插值时长(ms,设计稿 §4.1:100 easeOutQuad)。 */
@@ -316,6 +415,16 @@ public final class ChatMessageList {
             this.lineAnchorMillis = new long[lineNodes.size()];
             this.bubbleAnchorProgress = new float[messageNodes.size()];
             this.lineAnchorProgress = new float[lineNodes.size()];
+        }
+
+        /**
+         * 配方重派生(G17/Bubble):按新表面值刷新常态/hover 两态底色;调用方负责以当前
+         * 淡出 alpha 重烘({@link #bake(int)})并改写 backdrop/四角圆角——气泡表面没有第二
+         * 条写入链,主题/设置变更不会绕过本方法直写节点。
+         */
+        void updateSurface(SceneSurfaceStyle surface) {
+            this.bubbleColor = surface.getIdle().getTint();
+            this.hoverBubbleColor = surface.getHovered().getTint();
         }
 
         /**
@@ -641,6 +750,29 @@ public final class ChatMessageList {
     private volatile int maxBubbleWidthPx;
 
     /**
+     * 气泡局部配方采样器(G17/Bubble 测试接缝,口径同 G17/Input 的 attach(chatLocalStyle)
+     * 形参):生产恒为 {@link #sampleChatBubbleStyle()};测试注入 null = 「无聊天局部设置」
+     * (气泡回退为纯通用 GROUP 主题配方,「装→= 配方逐项」的事实形态)。不是配置存储,
+     * 不持久任何聊天值。
+     */
+    private Supplier<BubbleLocalStyle> bubbleLocalStyle = ChatMessageList::sampleChatBubbleStyle;
+
+    /** 测试接缝:替换气泡局部配方采样器(null = 纯主题档)。 */
+    void __setBubbleLocalStyle(Supplier<BubbleLocalStyle> sampler) {
+        this.bubbleLocalStyle = sampler;
+    }
+
+    /** 取当前局部配方快照;采样器为 null 或返回 null 时按「无局部设置」(NONE)处理。 */
+    private BubbleLocalStyle sampleBubbleLocalStyle() {
+        Supplier<BubbleLocalStyle> sampler = bubbleLocalStyle;
+        if (sampler == null) {
+            return BubbleLocalStyle.NONE;
+        }
+        BubbleLocalStyle patch = sampler.get();
+        return patch == null ? BubbleLocalStyle.NONE : patch;
+    }
+
+    /**
      * 纯文本形态(无链接度量):不启用 URL 链接化(旧行为)。
      *
      * @param segmentParser 段解析器(生产/测试注入)
@@ -854,26 +986,40 @@ public final class ChatMessageList {
         }
         int baseTextColor = system || markdownSystem
                 ? ChatMarkdownSettings.getSystemTextArgb() : 0xFFFFFFFF;
-        int bubbleColor = selfRight ? ChatMarkdownSettings.getBubbleSelfArgb()
-                : ChatMarkdownSettings.getBubbleOtherArgb();
-        // 液态玻璃（用户裁决 2026-09-02）：气泡本身变半透明磨砂玻璃。
-        // alpha 改在这里是唯一正确落点——bubbleColor 同时喂"创建时 setBackgroundColor"
-        // 与"每帧 bake() 淡入/hover 重烘焙"两条路，改别处会被动画回路下一帧覆盖回实心。
-        // 打底用 DARK 系材质：聊天正文是浅色，白 tint 会把浅色文字一起洗白，黑 tint
-        // 压暗背景才保得住对比度（也是真机"DARK 更有苹果味"的成因）。
-        UiBackdrop bubbleBackdrop = null;
-        if (ChatMarkdownSettings.isGlassEnabled()) {
-            bubbleColor = (bubbleColor & 0x00FFFFFF)
-                    | (ChatMarkdownSettings.getGlassBubbleAlpha() << 24);
-            bubbleBackdrop = UiBackdrop.liquidGlass(UiGlassMaterial.DARK_REGULAR,
-                    ChatMarkdownSettings.getGlassBlurRadiusPx(), ChatMarkdownSettings.getGlassLensStrength());
-        }
-        int hoverBubbleColor = ChatCardComposer.hoveredBubbleColor(bubbleColor);
+        // ==================== G17/Bubble 表面接缝:底色/材质/圆角 = 配方重派生 ====================
+        // 气泡是「聊天面板/气泡/输入」族(契约 §4.1):既有聊天玻璃设置管辖其表面,按 G17/Input
+        // 的 LocalStyle 配方局部覆盖模式表达——通用主题 GROUP 角色配方打底,聊天设置逐分量覆盖
+        // (优先级 = 显式聊天设置 > 主题默认,契约 §3;不新增配置存储)。列表容器(listParent)
+        // 本无底表面:背景由 ChatContainer(容器外框)/ChatHudWindow(HUD 宿主)承担,属
+        // G17/Container 实例范围,本类不为其新增表面。角色取舍:气泡 = 组内容小底座 → GROUP
+        // (低干扰内容底);OVERLAY/PANEL 归属宿主容器,不重复下发到气泡。
+        // 消费方向恒 chat3→theme(通用主题不 import chat3,契约 §4.1);构造期在 forEach 项
+        // builder 的 Owner 作用域内解析主题(builder 执行期 Owner.current() 非 null,契约 §1)。
+        // 系统/markdown 系统行无气泡表面(现状语义 §6.2),不建配方信号、不挂重派生绑定。
+        final boolean hasBubbleSurface = !system && !markdownSystem;
+        ReadableSignal<SceneSurfaceStyle> themedSurface = hasBubbleSurface
+                ? SceneThemes.surface(rt, SceneTheme.Role.GROUP) : null;
+        ReadableSignal<BubbleLocalStyle> localStyle = hasBubbleSurface
+                ? Computed.create(sampleBubbleLocalStyle(), () -> {
+                    // volatile 聊天配置按既有 UI 帧采样(G17/Input 同口径):值相等快照阻断下游。
+                    rt.__frameTimeNanos().get();
+                    return sampleBubbleLocalStyle();
+                }) : null;
+        ReadableSignal<BubbleSurface> bubbleSurface = hasBubbleSurface
+                ? Computed.create(mergeBubbleSurface(themedSurface.get(), localStyle.get(), selfRight),
+                        () -> mergeBubbleSurface(themedSurface.get(), localStyle.get(), selfRight))
+                : null;
+        // 构造期播种:创建即按配方初值写 backdrop/圆角/底色(首 flush 前的几何与着色合同);
+        // 随后 surface 绑定以同源同值幂等重放——同一配方是唯一值源,不构成第二写入者。
+        BubbleSurface initialSurface = bubbleSurface == null ? null : bubbleSurface.get();
+        int bubbleColor = initialSurface == null ? 0 : initialSurface.baseArgb();
+        int hoverBubbleColor = initialSurface == null ? 0 : initialSurface.hoverArgb();
+        UiBackdrop bubbleBackdrop = initialSurface == null ? null : initialSurface.backdrop();
         // 方案A accent(§10 已拍板):仅自己气泡 = row[内容列 + 2px 强调条];他人/classic/系统 = 现状 column
         boolean accent = selfRight && ChatMarkdownSettings.getSelfBubbleStyle()
                 == ChatMarkdownSettings.SelfBubbleStyle.ACCENT;
-        int rLg = ChatMarkdownSettings.getBubbleCornerRadius();
-        int rInner = ChatMarkdownSettings.getBubbleInnerCornerRadiusPx();
+        int rLg = initialSurface == null ? 0 : initialSurface.outerCornerRadiusPx();
+        int rInner = initialSurface == null ? 0 : initialSurface.innerCornerRadiusPx();
         List<SceneNode> messageNodes = new ArrayList<SceneNode>();
         // 与 messageNodes 同序:点击时交出服务端组件(原版语义优先于我们的链接跨度)
         List<IChatComponent> messageComponents = new ArrayList<IChatComponent>();
@@ -1217,6 +1363,22 @@ public final class ChatMessageList {
                 bake.bake(currentAlpha[0]);
             }
         });
+        if (bubbleSurface != null) {
+            // G17/Bubble 重派生绑定(唯一表面写入链,口径同 G17/Input「只重派生、不重建」):
+            // 主题切换或聊天设置变更 → 配方信号值变 → 在同一批节点上改写 backdrop/四角分级
+            // 圆角并按当前淡出 alpha 重烘底色;值相等时 Computed 阻断传播,零写入零重建。
+            // 系统/markdown 系统行无气泡表面 → 本绑定整体不挂(hasBubbleSurface=false)。
+            rt.bind(bubbleSurface, derived -> {
+                bake.updateSurface(derived.style());
+                for (int i = 0; i < messageNodes.size(); i++) {
+                    SceneNode messageNode = messageNodes.get(i);
+                    messageNode.setBackdrop(derived.backdrop());
+                    setGradedCorners(messageNode, cornersFor(messageCount, i, selfRight,
+                            derived.outerCornerRadiusPx(), derived.innerCornerRadiusPx()));
+                }
+                bake.bake(currentAlpha[0]);
+            });
+        }
         if (style.isTtlFade()) {
             // HUD 形态:组出生 enter 动画(设计稿 §4.1 行1)——translateY +8→0 + opacity 0→1,
             // 180ms easeOutCubic,基准 = 组内最新消息到达时刻(wall-clock;组树重建后老组按进度
@@ -1392,6 +1554,87 @@ public final class ChatMessageList {
                 Computed.create(() -> hoverLink.get()),
                 Computed.create(() -> !hoverLink.get().isEmpty()),
                 LINK_TOOLTIP_DELAY_MILLIS, LINK_TOOLTIP_MAX_WIDTH_PX, LINK_TOOLTIP_MAX_LINES, true));
+    }
+
+    /**
+     * 生产局部配方采样(G17/Bubble 唯一读取聊天气泡表面设置处,口径同
+     * {@code ChatInputChrome.sampleChatLocalStyle}):把既有 volatile 聊天设置逐分量转译成
+     * {@link BubbleLocalStyle} 快照。类内其它位置不得再直写这些设置到表面属性。
+     */
+    private static BubbleLocalStyle sampleChatBubbleStyle() {
+        return new BubbleLocalStyle(Boolean.valueOf(ChatMarkdownSettings.isGlassEnabled()),
+                Integer.valueOf(ChatMarkdownSettings.getGlassBlurRadiusPx()),
+                Float.valueOf(ChatMarkdownSettings.getGlassLensStrength()),
+                Integer.valueOf(ChatMarkdownSettings.getGlassBubbleAlpha()),
+                Integer.valueOf(ChatMarkdownSettings.getBubbleSelfArgb()),
+                Integer.valueOf(ChatMarkdownSettings.getBubbleOtherArgb()),
+                Integer.valueOf(ChatMarkdownSettings.getBubbleCornerRadius()),
+                Integer.valueOf(ChatMarkdownSettings.getBubbleInnerCornerRadiusPx()));
+    }
+
+    /**
+     * 通用 GROUP 主题配方 ⊕ 聊天局部覆盖 → 气泡表面(G17/Bubble 唯一合并处):
+     * <ul>
+     * <li>底色:自己/他人语义通道各取设置值(不得刷成同一色;系统行无表面,调用方已隔离);
+     *     玻璃态时把 {@code glassBubbleAlpha} 合入底色 alpha——该合成在配方里做一次,
+     *     同时喂「创建播种」与「每帧 bake 淡出/hover 重烘」两条路,改别处会被动画回路下一帧
+     *     覆盖回实心(用户裁决 2026-09-02 落点口径不变);</li>
+     * <li>材质:聊天玻璃开 = DARK_REGULAR 系 liquid(聊天正文浅色,黑 tint 压背景才保对比,
+     *     白 tint 会把正文一起洗白——也是真机"DARK 更有苹果味"成因);关 = 显式 null
+     *     (backdrop null 语义 = 关滤镜,契约 §2.2);blur/lens 取设置值;</li>
+     * <li>hover 档 = 既有 3% 白叠加(消息交互合同,预计算进配方,非主题状态色);
+     *     pressed/disabled 与 idle 同值(气泡无按压/禁用变色);缘透明、无浮雕;</li>
+     * <li>圆角:外档(大圆角)进配方 {@code cornerRadius},内档(组内相邻小圆角)随
+     *     {@link BubbleSurface} 分量下发——四角分级本身是气泡布局几何(按组内位置选档,
+     *     见 {@link #cornersFor}),主题/binder 的单值圆角表达不了,故分级函数保留在视图,
+     *     半径值一律出自配方。</li>
+     * </ul>
+     * 局部覆盖为帧采样立即派生,motion 不得插值覆盖(同 Input 口径)→ transitionMillis=0。
+     */
+    private static BubbleSurface mergeBubbleSurface(SceneSurfaceStyle themed, BubbleLocalStyle patch,
+            boolean selfRight) {
+        if (patch.isNeutral()) {
+            return new BubbleSurface(themed, themed.getCornerRadius());
+        }
+        SceneSurfaceStyle.Builder builder = themed.toBuilder();
+        builder.transitionMillis(0);
+        if (patch.outerCornerRadiusPx() != null) {
+            builder.cornerRadius(patch.outerCornerRadiusPx().intValue());
+        }
+        if (patch.glassEnabled() != null) {
+            if (Boolean.TRUE.equals(patch.glassEnabled())) {
+                builder.backdrop(chatBubbleGlass(themed, patch));
+            } else {
+                builder.backdrop(null);
+            }
+        }
+        Integer semantic = selfRight ? patch.selfArgb() : patch.otherArgb();
+        if (semantic != null) {
+            int base = semantic.intValue();
+            if (Boolean.TRUE.equals(patch.glassEnabled()) && patch.glassBubbleAlpha() != null) {
+                base = (base & 0x00FFFFFF) | (patch.glassBubbleAlpha().intValue() << 24);
+            }
+            SceneSurfaceStyle.StateStyle flat = new SceneSurfaceStyle.StateStyle(base,
+                    TRANSPARENT, 0.0F, 1.0F);
+            builder.idle(flat)
+                    .hovered(new SceneSurfaceStyle.StateStyle(
+                            ChatCardComposer.hoveredBubbleColor(base), TRANSPARENT, 0.0F, 1.0F))
+                    .pressed(flat)
+                    .disabled(flat);
+        }
+        SceneSurfaceStyle merged = builder.build();
+        int inner = patch.innerCornerRadiusPx() == null
+                ? merged.getCornerRadius() : patch.innerCornerRadiusPx().intValue();
+        return new BubbleSurface(merged, inner);
+    }
+
+    /** 聊天玻璃滤镜:blur/lens 是显式聊天设置;缺省(理论分支)保留主题材质档。 */
+    private static UiBackdrop chatBubbleGlass(SceneSurfaceStyle themed, BubbleLocalStyle patch) {
+        if (patch.blurRadiusPx() == null || patch.lensStrength() == null) {
+            return themed.getBackdrop();
+        }
+        return UiBackdrop.liquidGlass(UiGlassMaterial.DARK_REGULAR,
+                patch.blurRadiusPx().intValue(), patch.lensStrength().floatValue());
     }
 
     /** 把分级四角写入节点(T4a 四角 API)。 */
