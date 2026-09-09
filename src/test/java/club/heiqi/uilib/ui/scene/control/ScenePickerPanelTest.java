@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
@@ -18,11 +20,17 @@ import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPanelPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.GridProps;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Props;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Result;
+import club.heiqi.uilib.ui.scene.control.search.CategoryNavPane;
+import club.heiqi.uilib.ui.scene.control.search.MemberGrid;
+import club.heiqi.uilib.ui.scene.control.search.PickerInfoBar;
+import club.heiqi.uilib.ui.scene.control.search.SearchResultList;
+import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -36,8 +44,17 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintFragment;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * {@link ScenePickerPanel} L3 runtime 集成测试。
@@ -45,15 +62,36 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * <p>覆盖：居中 70% portal 开/关与 ESC 分层；分类列表渲染与切换过滤；候选点击直达 vs 变体浮层两路；
  * 变体勾选/ALL-SELECTED/确认/取消/可拒绝 selectionCommit 保持展开；listMembers 模式成员
  * 增/编辑/一步删除/无效重复徽章/空态；键盘导航与焦点意图；数据收缩回夹；受控开合/分类接线。</p>
+ *
+ * <p>G14 液态玻璃整合新增覆盖：宿主外层恰一颗 PANEL 配方表面（六项逐项）；中栏实底外壳与成员带
+ * 线框外壳的表面写入已删除（surface 归属断言：结果区/成员区表面归各自 GROUP 底座一颗）；整树
+ * BACKDROP 构成表（每颗表面各采样一次，复用行/单元格/遮罩零滤镜）；G13 五配件在真实装配中的
+ * 集成调用证据（与单实例已验收口径逐项一致）；主题切换选择/草稿不丢、节点身份不变、effect
+ * 不增长；物品图像渲染协议不改色（反向钉住）；开关面板/查询行为合同保持；卸载与关闭回收。</p>
  */
 public class ScenePickerPanelTest {
 
     private SceneNode sceneRoot;
     private SceneRuntime rt;
     private SceneLayoutEngine layoutEngine;
+    private ScenePaintEngine paintEngine;
 
     private static final int W = 800;
     private static final int H = 600;
+    private static final float EPSILON = 0.0001F;
+    /** 透明底（轻量行/外壳表面删除/图像协议断言用）。 */
+    private static final int BG_TRANSPARENT = 0x00000000;
+
+    /** 库默认主题配方：默认外观唯一来源，断言引用配方值而非硬编码色号。 */
+    private static final SceneSurfaceStyle PANEL = SceneThemes.DEFAULT.surface(SceneTheme.Role.PANEL);
+    private static final SceneSurfaceStyle TOOLBAR = SceneThemes.DEFAULT.surface(SceneTheme.Role.TOOLBAR);
+    private static final SceneSurfaceStyle INPUT = SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
+    private static final SceneSurfaceStyle GROUP = SceneThemes.DEFAULT.surface(SceneTheme.Role.GROUP);
+    private static final SceneSurfaceStyle OVERLAY = SceneThemes.DEFAULT.surface(SceneTheme.Role.OVERLAY);
+    private static final SceneSurfaceStyle INDICATOR =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.INDICATOR);
+    private static final SceneSurfaceStyle BUTTON_STANDARD =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_STANDARD);
 
     @Before
     public void setUp() {
@@ -61,6 +99,7 @@ public class ScenePickerPanelTest {
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
         rt = new SceneRuntime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
     }
 
@@ -311,12 +350,93 @@ public class ScenePickerPanelTest {
         rt.route(sceneRoot, fb.drainFrame(), 0, 0);
     }
 
+    /**
+     * 把指针移到卡片外的 scrim 角落（清除全部 hover；(0,0) 属 scrim，MOVE 不触发关闭/取消），
+     * 使轻量行断言落在无悬停干扰的纯选中/idle 档。
+     */
+    private void pointerAway() {
+        routePointer(ScenePointerAction.MOVE, 0, 0);
+        rt.flush();
+    }
+
     private int[] centerOf(SceneNode node) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
         if (box.getWidth() <= 0 || box.getHeight() <= 0) {
             throw new IllegalStateException("节点未布局或零尺寸，无法取中心: " + box);
         }
         return new int[]{box.getX() + box.getWidth() / 2, box.getY() + box.getHeight() / 2};
+    }
+
+    // ==================== 通用辅助（G14 外观断言） ====================
+
+    /** 选中轻量档语义：RGB 换源色、alpha = 主题统一选中强度 0x59（selectableSurface 口径）。 */
+    private static int selectedTint(int sourceColor) {
+        return (0x59 << 24) | (sourceColor & 0x00FFFFFF);
+    }
+
+    private static int alphaOf(int argb) {
+        return (argb >>> 24) & 0xFF;
+    }
+
+    private static int rgbOf(int argb) {
+        return argb & 0x00FFFFFF;
+    }
+
+    /** 节点子树 PaintPlan 内的 BACKDROP 命令数（每颗表面恰好采样一次 = 每节点至多 1 条）。 */
+    private int backdropCount(SceneNode root) {
+        PaintPlan plan = paintEngine.paint(root).getPlan();
+        int count = 0;
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.BACKDROP) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 节点自身 PaintFragment 内的 BACKDROP 命令数（须先对含该节点的树执行过 paint）。 */
+    private static int ownBackdropCount(SceneNode node) {
+        Object cached = node.getCachedPaint();
+        Assert.assertTrue("节点应已绘制出自身 fragment", cached instanceof PaintFragment);
+        int count = 0;
+        for (PaintCommand command : ((PaintFragment) cached).getCommands()) {
+            if (command.getType() == PaintCommandType.BACKDROP) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 收集子树内声明了滤镜（backdrop != null）的全部节点（身份集合，构成表用）。 */
+    private static void collectSurfaceNodes(SceneNode node, List<SceneNode> out) {
+        if (node.getBackdrop() != null) {
+            out.add(node);
+        }
+        for (SceneNode child : node.__getChildren()) {
+            collectSurfaceNodes(child, out);
+        }
+    }
+
+    /** 子树内声明滤镜的节点数（与 backdropCount 命令数配对，验证「每颗表面只采样一次、无漏无重」）。 */
+    private static int surfaceNodeCount(SceneNode root) {
+        List<SceneNode> surfaces = new ArrayList<SceneNode>();
+        collectSurfaceNodes(root, surfaces);
+        return surfaces.size();
+    }
+
+    /** 中栏节点 = 卡片 children[1](selectionArea).children[1](center)。 */
+    private SceneNode centerColumn(SceneNode overlayRoot) {
+        return panelCard(overlayRoot).__getChildren().get(1).__getChildren().get(1);
+    }
+
+    /** 顶栏节点 = 卡片 children[0]。 */
+    private SceneNode topBar(SceneNode overlayRoot) {
+        return panelCard(overlayRoot).__getChildren().get(0);
+    }
+
+    /** 左导航节点 = 卡片 children[1](selectionArea).children[0](nav)。 */
+    private SceneNode navPane(SceneNode overlayRoot) {
+        return panelCard(overlayRoot).__getChildren().get(1).__getChildren().get(0);
     }
 
     // ==================== 70% 面板 portal 开/关与 ESC ====================
@@ -734,24 +854,44 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("选择区 = 分类导航 + 中栏", 2, selectionArea.__getChildren().size());
     }
 
+    /**
+     * G14 预裁决 1 落点：左导航底座仍取 TOOLBAR 配方（G13 已验收），中栏实底外壳的表面写入已
+     * 删除——背景/边框/圆角归零、不装滤镜，结果区表面归 SearchResultList 的 GROUP 底座一颗；
+     * clip 与 padding 属布局合同保留。原「中栏 BORDER_DEFAULT / BG_DEFAULT / RADIUS_MD」断言按
+     * 契约 §10.1 更新（改默认外观所致：从宿主实底改为 surface 归属断言）。
+     */
     @Test
-    public void selectionAreaShellsCarryOuterBorders() {
+    public void navKeepsToolbarBaseAndCenterShellSurfaceRemoved() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
         openPanel(f);
-        SceneNode panelRoot = panelCard(overlayRoot(0));
-        SceneNode nav = panelRoot.__getChildren().get(1).__getChildren().get(0);
-        SceneNode center = panelRoot.__getChildren().get(1).__getChildren().get(1);
-        Assert.assertEquals("分类导航外边框 1px", 1, nav.getBorderWidth());
-        Assert.assertEquals("分类导航边框色 = 库默认 TOOLBAR 配方 idle 缘色（G13 迁移授权扩围：改引配方值，非删除断言）",
-                club.heiqi.uilib.ui.scene.theme.SceneThemes.DEFAULT
-                        .surface(club.heiqi.uilib.ui.scene.theme.SceneTheme.Role.TOOLBAR)
-                        .getIdle().getEdge(), nav.getBorderColor());
-        Assert.assertEquals("中栏外边框 1px", 1, center.getBorderWidth());
-        Assert.assertEquals("中栏边框色 BORDER_DEFAULT",
-                SceneChromeTokens.BORDER_DEFAULT, center.getBorderColor());
-        Assert.assertEquals("中栏实底背景 BG_DEFAULT",
-                SceneChromeTokens.BG_DEFAULT, center.getBackgroundColor());
-        Assert.assertEquals("中栏圆角 RADIUS_MD", SceneChromeTokens.RADIUS_MD, center.getCornerRadius());
+        SceneNode overlayRoot = overlayRoot(0);
+        SceneNode nav = navPane(overlayRoot);
+        SceneNode center = centerColumn(overlayRoot);
+
+        Assert.assertEquals("分类导航外边框宽 = TOOLBAR 配方独占", TOOLBAR.getBorderWidth(),
+                nav.getBorderWidth());
+        Assert.assertEquals("分类导航边框色 = 库默认 TOOLBAR 配方 idle 缘色",
+                TOOLBAR.getIdle().getEdge(), nav.getBorderColor());
+        Assert.assertEquals("分类导航背景 = TOOLBAR idle 染色（G13 已验收口径保持）",
+                TOOLBAR.getIdle().getTint(), nav.getBackgroundColor());
+
+        Assert.assertEquals("中栏不再自绘底色（全透明，表面归内容底座）",
+                BG_TRANSPARENT, center.getBackgroundColor());
+        Assert.assertEquals("中栏不再自绘边框", 0, center.getBorderWidth());
+        Assert.assertEquals("中栏不再自绘圆角", 0, center.getCornerRadius());
+        Assert.assertNull("中栏不装滤镜（不给容器叠第二层玻璃）", center.getBackdrop());
+        Assert.assertEquals("中栏不绑定实体高度（-1=普通绘制）", -1.0F,
+                center.__getSurfaceElevation(), EPSILON);
+        Assert.assertTrue("中栏裁剪合同保留（clip 属布局合同）", center.isClipChildren());
+        Assert.assertEquals("中栏内边距布局常量不变", SceneChromeTokens.PAD_SM,
+                center.getPaddingTop());
+
+        // surface 归属：结果区底座（viewport）恰好一颗 GROUP 表面。
+        SceneNode grid = f.result.grid().get();
+        Assert.assertEquals("结果底座背景 = GROUP idle 染色",
+                GROUP.getIdle().getTint(), grid.getBackgroundColor());
+        Assert.assertNotNull("结果底座自带滤镜", grid.getBackdrop());
+        Assert.assertEquals("结果底座自身恰好一条 BACKDROP", 1, backdropCount(grid));
     }
 
     @Test
@@ -953,5 +1093,694 @@ public class ScenePickerPanelTest {
         Assert.assertFalse(open.get().booleanValue());
         Assert.assertEquals(1, closeRequests.get());
         Assert.assertTrue(rt.getOverlayHost().isEmpty());
+    }
+
+    // ==================== G14 液态玻璃整合：宿主表面与外观归属 ====================
+
+    /** 宿主外层：卡片恰装一颗 PANEL 配方表面（六项逐项），clip/padding 布局合同保留。 */
+    @Test
+    public void hostCardBindsPanelRecipeOwnedBySurfaceBinder() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
+        openPanel(f);
+        SceneNode card = panelCard(overlayRoot(0));
+
+        Assert.assertNotNull("前置：PANEL 配方自带滤镜", PANEL.getBackdrop());
+        Assert.assertEquals("卡片背景 = PANEL idle 染色",
+                PANEL.getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertEquals("卡片边框色 = PANEL idle 缘色",
+                PANEL.getIdle().getEdge(), card.getBorderColor());
+        Assert.assertEquals("卡片边框宽 = PANEL 配方独占", PANEL.getBorderWidth(), card.getBorderWidth());
+        Assert.assertEquals("卡片圆角 = PANEL 配方独占（不再静态 RADIUS_LG）",
+                PANEL.getCornerRadius(), card.getCornerRadius());
+        Assert.assertEquals("卡片实体高度 = PANEL idle 档",
+                PANEL.getIdle().getElevation(), card.__getSurfaceElevation(), EPSILON);
+        Assert.assertNotNull("卡片装 PANEL 滤镜（宿主外层恰一颗表面）", card.getBackdrop());
+        Assert.assertEquals("滤镜模糊半径 = 配方",
+                PANEL.getBackdrop().getBlurRadius(), card.getBackdrop().getBlurRadius());
+        Assert.assertEquals("滤镜材质 = 配方", PANEL.getBackdrop().getEffect().getMaterial(),
+                card.getBackdrop().getEffect().getMaterial());
+        Assert.assertTrue("卡片裁剪合同保留（clip 非绑定器六项，宿主自持）", card.isClipChildren());
+        Assert.assertEquals("卡片内边距布局常量不变", SceneChromeTokens.PAD_MD, card.getPaddingTop());
+        Assert.assertEquals("卡片间隙布局常量不变", SceneChromeTokens.PAD_MD, card.getGap());
+
+        Assert.assertNotEquals("不再取旧实色 BG_DEFAULT", SceneChromeTokens.BG_DEFAULT,
+                card.getBackgroundColor());
+        Assert.assertNotEquals("不再取旧 BORDER_DEFAULT", SceneChromeTokens.BORDER_DEFAULT,
+                card.getBorderColor());
+        // 先整树 paint 刷新 fragment 缓存，再核对节点自身只发一条 BACKDROP。
+        Assert.assertEquals("整树（本场景 6 颗表面）", 6, backdropCount(overlayRoot(0)));
+        Assert.assertEquals("卡片自身恰好一条 BACKDROP（每颗表面只采样一次）",
+                1, ownBackdropCount(card));
+    }
+
+    /** 底部成员带：外壳表面写入已删除（surface 归属断言），成员区表面归 MemberGrid GROUP 底座。 */
+    @Test
+    public void membersBandSurfaceBelongsToGridBase() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
+        f.members.set(Arrays.asList(member(0L, "a")));
+        openPanel(f);
+        SceneNode band = membersPanel(overlayRoot(0));
+
+        Assert.assertEquals("成员带不再自绘底色", BG_TRANSPARENT, band.getBackgroundColor());
+        Assert.assertEquals("成员带不再自绘边框", 0, band.getBorderWidth());
+        Assert.assertEquals("成员带不再自绘圆角", 0, band.getCornerRadius());
+        Assert.assertNull("成员带不装滤镜", band.getBackdrop());
+        Assert.assertTrue("成员带裁剪合同保留", band.isClipChildren());
+
+        SceneNode memberViewport = band.__getChildren().get(1).__getChildren().get(0);
+        Assert.assertEquals("成员网格底座 = GROUP idle 染色",
+                GROUP.getIdle().getTint(), memberViewport.getBackgroundColor());
+        Assert.assertNotNull("成员网格底座自带滤镜（表面归内容底座一颗）", memberViewport.getBackdrop());
+        backdropCount(overlayRoot(0));
+        Assert.assertEquals("成员网格底座自身恰好一条 BACKDROP（卡内按钮表面另计）",
+                1, ownBackdropCount(memberViewport));
+
+        SceneNode header = band.__getChildren().get(0);
+        Assert.assertEquals("成员带标题 = 主题正文前景",
+                Integer.valueOf(SceneThemes.DEFAULT.foreground()),
+                Integer.valueOf(header.__getChildren().get(0).getTextColor()));
+        Assert.assertEquals("问题摘要 = 主题次要前景",
+                Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
+                Integer.valueOf(header.__getChildren().get(1).getTextColor()));
+    }
+
+    /** 宿主自持文字与错误行取主题语义前景（正文/次要/错误档），不再停留在节点默认白色。 */
+    @Test
+    public void hostTextsFollowThemeForegrounds() {
+        Signal<String> query = Signal.create("");
+        Signal<String> error = Signal.create("boom");
+        Signal<SearchPickerData.SearchResult> results = Signal.create(
+                new SearchPickerData.SearchResult(Arrays.asList(candidate("a"))));
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        Props props = Props.builder(query, results, Signal.create(Boolean.TRUE),
+                query::set, ignored -> { }, visualAdapter())
+                .open(open).onCloseRequest(() -> open.set(Boolean.FALSE))
+                .error(error).build();
+        Result result = create(rt, props);
+        rt.flush();
+        open.set(Boolean.TRUE);
+        rt.flush();
+        layoutAll();
+        layoutAll();
+
+        SceneNode scrim = overlayRoot(0);
+        SceneNode bar = topBar(scrim);
+        Assert.assertEquals("顶栏标题 = 主题正文前景",
+                Integer.valueOf(SceneThemes.DEFAULT.foreground()),
+                Integer.valueOf(bar.__getChildren().get(0).getTextColor()));
+        Assert.assertEquals("结果统计 = 主题次要前景",
+                Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
+                Integer.valueOf(bar.__getChildren().get(2).getTextColor()));
+        SceneNode errorNode = centerColumn(scrim).__getChildren().get(0);
+        Assert.assertEquals("错误行文本同步", "boom", errorNode.getText());
+        Assert.assertEquals("错误行 = 主题 errorText 前景",
+                Integer.valueOf(SceneThemes.DEFAULT.errorText()),
+                Integer.valueOf(errorNode.getTextColor()));
+    }
+
+    /** 成员带空态提示 = 主题次要前景（CategoryNavPane 空态同口径）。 */
+    @Test
+    public void membersEmptyHintUsesMutedForeground() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
+        openPanel(f);
+        SceneNode empty = membersPanel(overlayRoot(0)).__getChildren().get(2);
+        Assert.assertEquals("空态占位文本合同不变", "No current members", empty.getText());
+        Assert.assertEquals("空态提示 = 主题次要前景",
+                Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
+                Integer.valueOf(empty.getTextColor()));
+    }
+
+    // ==================== G14 整树 BACKDROP 构成表 ====================
+
+    /**
+     * 主面板树构成（SINGLE_VALUE、2 候选、1 分类、无维度、浮层未开）：
+     * 宿主卡片 PANEL 1 + 导航底座 TOOLBAR 1 + 导航视口 GROUP 1 + 搜索框 INPUT 1
+     * + 结果底座 GROUP 1 + 信息条 TOOLBAR 1 = 整树 6 颗，每颗各采样一次；
+     * 复用行/结果单元/遮罩零滤镜；宿主外壳（中栏）零表面。
+     */
+    @Test
+    public void wholeTreeBackdropCompositionMainPanel() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        f.categoryMap.put("a", "cat1");
+        f.categoryMap.put("b", "cat1");
+        f.categories.set(Arrays.asList(new SearchPickerCategories.Category("cat1", "Cat1")));
+        openPanel(f);
+        SceneNode scrim = overlayRoot(0);
+        SceneNode card = panelCard(scrim);
+        SceneNode nav = navPane(scrim);
+        SceneNode navViewport = nav.__getChildren().get(0).__getChildren().get(0);
+        SceneNode searchInput = f.result.firstFocusTarget().get();
+        SceneNode resultViewport = f.result.grid().get();
+        SceneNode infoBar = centerColumn(scrim).__getChildren().get(2);
+
+        Assert.assertEquals("整树声明滤镜的节点 = 6 颗表面", 6, surfaceNodeCount(scrim));
+        Set<SceneNode> surfaces = identitySet(collect(scrim));
+        Assert.assertTrue("含宿主卡片（PANEL）", surfaces.contains(card));
+        Assert.assertTrue("含导航底座（TOOLBAR）", surfaces.contains(nav));
+        Assert.assertTrue("含导航滚动视口（GROUP，G07 容器自持）", surfaces.contains(navViewport));
+        Assert.assertTrue("含搜索输入框（INPUT，SceneTextInput 复用）", surfaces.contains(searchInput));
+        Assert.assertTrue("含结果底座（GROUP）", surfaces.contains(resultViewport));
+        Assert.assertTrue("含信息条（TOOLBAR）", surfaces.contains(infoBar));
+
+        Assert.assertEquals("整树 BACKDROP 命令 = 6（每颗表面各采样一次，无漏无重）",
+                6, backdropCount(scrim));
+        for (SceneNode surface : collect(scrim)) {
+            Assert.assertEquals("单节点至多一条 BACKDROP", 1, ownBackdropCount(surface));
+        }
+        Assert.assertEquals("中栏外壳零 BACKDROP（实底已除，无第二层玻璃）", 0,
+                ownBackdropCount(centerColumn(scrim)));
+        Assert.assertNull("scrim 透明壳不声明滤镜", scrim.getBackdrop());
+        Assert.assertEquals("scrim 无实底", BG_TRANSPARENT, scrim.getBackgroundColor());
+
+        SceneNode navRows = navViewport.__getChildren().get(0);
+        for (SceneNode row : navRows.__getChildren()) {
+            Assert.assertEquals("导航复用行零 BACKDROP", 0, ownBackdropCount(row));
+        }
+        for (int i = 0; i < 2; i++) {
+            SceneNode cell = gridCell(resultViewport, i);
+            Assert.assertEquals("结果单元零 BACKDROP", 0, ownBackdropCount(cell));
+            Assert.assertNull("结果单元不声明滤镜", cell.getBackdrop());
+        }
+    }
+
+    /**
+     * 变体浮层树构成：浮层面板 OVERLAY 1 + 分段底座 TOOLBAR 1 + 两个段 INDICATOR 轻滤镜 2
+     * + 变体表视口 GROUP 1 + 取消/确认按钮 2 = 7 颗；勾选复用行零滤镜；scrim 只负责遮罩。
+     * 主面板树不受浮层影响（仍 6 颗）。
+     */
+    @Test
+    public void wholeTreeBackdropCompositionVariantOverlay() {
+        Fixture f = new Fixture(Arrays.asList(candidateWithVariants("a", "v1", "v2")), false);
+        openPanel(f);
+        click(gridCell(f.result.grid().get(), 0));
+        layoutAll();
+        Assert.assertEquals(2, rt.getOverlayHost().size());
+
+        SceneNode scrim = overlayRoot(0);
+        SceneNode variantCard = scrim.__getChildren().get(0);
+        SceneNode segmented = variantCard.__getChildren().get(1);
+        SceneNode variantViewport = variantCard.__getChildren().get(2).__getChildren().get(0);
+        SceneNode footer = variantCard.__getChildren().get(3);
+
+        Assert.assertEquals("浮层树声明滤镜节点 = 7", 7, surfaceNodeCount(scrim));
+        Set<SceneNode> surfaces = identitySet(collect(scrim));
+        Assert.assertTrue("含浮层面板（OVERLAY，VariantChooser 一颗）", surfaces.contains(variantCard));
+        Assert.assertTrue("含分段底座（TOOLBAR）", surfaces.contains(segmented));
+        Assert.assertTrue("含段 0（INDICATOR 轻滤镜，G09 非虚拟化口径）",
+                surfaces.contains(segmented.__getChildren().get(0)));
+        Assert.assertTrue("含段 1（INDICATOR 轻滤镜）",
+                surfaces.contains(segmented.__getChildren().get(1)));
+        Assert.assertTrue("含变体表视口（GROUP）", surfaces.contains(variantViewport));
+        Assert.assertTrue("含取消按钮（BUTTON_STANDARD，G03 复用）",
+                surfaces.contains(footer.__getChildren().get(0)));
+        Assert.assertTrue("含确认按钮（BUTTON_STANDARD）",
+                surfaces.contains(footer.__getChildren().get(1)));
+        Assert.assertEquals("浮层树 BACKDROP = 7", 7, backdropCount(scrim));
+        Assert.assertNull("变体 scrim 不装玻璃", scrim.getBackdrop());
+        Assert.assertEquals("变体 scrim 保持静态遮罩底（只负责遮罩）", 0xCC000000,
+                scrim.getBackgroundColor());
+        for (SceneNode row : variantViewport.__getChildren().get(0).__getChildren()) {
+            Assert.assertEquals("变体复用行零 BACKDROP", 0, ownBackdropCount(row));
+        }
+        Assert.assertEquals("主面板树不受浮层影响（仍 6 颗）", 6, backdropCount(overlayRoot(1)));
+    }
+
+    private List<SceneNode> collect(SceneNode root) {
+        List<SceneNode> out = new ArrayList<SceneNode>();
+        collectSurfaceNodes(root, out);
+        return out;
+    }
+
+    private static Set<SceneNode> identitySet(List<SceneNode> nodes) {
+        Set<SceneNode> set = Collections.newSetFromMap(
+                new IdentityHashMap<SceneNode, Boolean>());
+        set.addAll(nodes);
+        return set;
+    }
+
+    // ==================== G14 五配件集成调用证据（G13 已验收口径在真实装配中保持） ====================
+
+    /** 集成证据① CategoryNavPane：底座 TOOLBAR 逐项 = 单实例已验收；选中行强调 0x59 轻量档；行零滤镜。 */
+    @Test
+    public void integratedCategoryNavPaneMatchesAcceptedRecipe() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        f.categoryMap.put("a", "cat1");
+        f.categoryMap.put("b", "cat2");
+        f.categories.set(Arrays.asList(new SearchPickerCategories.Category("cat1", "Cat1"),
+                new SearchPickerCategories.Category("cat2", "Cat2")));
+        openPanel(f);
+        SceneNode scrim = overlayRoot(0);
+        SceneNode nav = navPane(scrim);
+
+        Assert.assertEquals("底座背景 = TOOLBAR idle 染色",
+                TOOLBAR.getIdle().getTint(), nav.getBackgroundColor());
+        Assert.assertEquals("底座边框宽 = 配方", TOOLBAR.getBorderWidth(), nav.getBorderWidth());
+        Assert.assertEquals("底座圆角 = 配方", TOOLBAR.getCornerRadius(), nav.getCornerRadius());
+        Assert.assertEquals("底座缘色 = TOOLBAR idle 缘色",
+                TOOLBAR.getIdle().getEdge(), nav.getBorderColor());
+        Assert.assertEquals("底座实体高度 = 配方 idle 档",
+                TOOLBAR.getIdle().getElevation(), nav.__getSurfaceElevation(), EPSILON);
+        Assert.assertNotNull("底座装 TOOLBAR 滤镜", nav.getBackdrop());
+        Assert.assertEquals("底座宽度布局合同不变", CategoryNavPane.NAV_WIDTH, nav.getPreferredWidth());
+
+        SceneNode rows = nav.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
+        Assert.assertEquals("全部 + 两分类", 3, rows.__getChildren().size());
+        SceneNode allRow = rows.__getChildren().get(0);
+        Assert.assertEquals("初始选中「全部」行 = 强调选中档 0x59",
+                selectedTint(SceneThemes.DEFAULT.accent()), allRow.getBackgroundColor());
+        click(rows.__getChildren().get(1));
+        rt.flush();
+        pointerAway();
+        Assert.assertEquals("切换后 cat1 行 = 选中档（cat 行行为合同保持）", "cat1",
+                f.result.currentCategoryKey().get());
+        Assert.assertEquals("切换后 cat1 行 = 选中档",
+                selectedTint(SceneThemes.DEFAULT.accent()),
+                rows.__getChildren().get(1).getBackgroundColor());
+        Assert.assertEquals("全部行退选回 INDICATOR idle 档",
+                INDICATOR.getIdle().getTint(), allRow.getBackgroundColor());
+
+        backdropCount(scrim);
+        for (SceneNode row : rows.__getChildren()) {
+            Assert.assertEquals("行不叠第二层玻璃", 0, ownBackdropCount(row));
+            Assert.assertEquals("行不写边框宽", 0, row.getBorderWidth());
+            Assert.assertEquals("行不写圆角", 0, row.getCornerRadius());
+            Assert.assertEquals("行普通绘制路径", -1.0F, row.__getSurfaceElevation(), EPSILON);
+        }
+        Assert.assertEquals("行标签 = 主题正文前景",
+                Integer.valueOf(SceneThemes.DEFAULT.foreground()),
+                Integer.valueOf(rows.__getChildren().get(0).__getChildren().get(0).getTextColor()));
+        Assert.assertEquals("数量徽章 = 主题次要前景",
+                Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
+                Integer.valueOf(rows.__getChildren().get(0).__getChildren().get(1).getTextColor()));
+    }
+
+    /** 集成证据② SearchResultList：底座 GROUP 逐项；单元轻量覆盖（选中 0x59 选区底）零滤镜。 */
+    @Test
+    public void integratedSearchResultListMatchesAcceptedRecipe() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        f.commitResult[0] = false;
+        openPanel(f);
+        SceneNode vp = f.result.grid().get();
+        Assert.assertEquals("结果底座背景 = GROUP idle 染色",
+                GROUP.getIdle().getTint(), vp.getBackgroundColor());
+        Assert.assertEquals("底座边框宽 = GROUP 配方", GROUP.getBorderWidth(), vp.getBorderWidth());
+        Assert.assertEquals("底座圆角 = GROUP 配方", GROUP.getCornerRadius(), vp.getCornerRadius());
+        Assert.assertEquals("底座缘色 = GROUP idle 缘色",
+                GROUP.getIdle().getEdge(), vp.getBorderColor());
+        Assert.assertEquals("底座实体高度 = GROUP idle",
+                GROUP.getIdle().getElevation(), vp.__getSurfaceElevation(), EPSILON);
+        Assert.assertNotNull("底座默认带液态玻璃滤镜", vp.getBackdrop());
+        Assert.assertEquals("底座自身恰好一条 BACKDROP", 1, backdropCount(vp));
+
+        SceneNode cell0 = gridCell(vp, 0);
+        SceneNode cell1 = gridCell(vp, 1);
+        Assert.assertEquals("默认单元透明（露出底座玻璃）", BG_TRANSPARENT, cell0.getBackgroundColor());
+        click(cell1);
+        rt.flush();
+        Assert.assertEquals("选中单元 = 主题选区背景 0x59 轻量覆盖",
+                selectedTint(SceneThemes.DEFAULT.selectionBackground()), cell1.getBackgroundColor());
+        Assert.assertEquals("未选中单元保持透明", BG_TRANSPARENT, cell0.getBackgroundColor());
+        Assert.assertNull("选中单元仍零滤镜", cell1.getBackdrop());
+        Assert.assertEquals("单元标签 = 主题次要前景",
+                Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
+                Integer.valueOf(cell1.__getChildren().get(1).getTextColor()));
+        Assert.assertEquals("图位圆角属渲染协议",
+                SceneChromeTokens.RADIUS_SM, cell1.__getChildren().get(0).getCornerRadius());
+        Assert.assertEquals("无图占位底色属渲染协议",
+                SearchResultList.DEFAULT_PLACEHOLDER_COLOR,
+                cell1.__getChildren().get(0).getBackgroundColor());
+    }
+
+    /** 集成证据③ PickerInfoBar：TOOLBAR 条逐项；文本次要前景；自身恰一颗 BACKDROP、宿主未包第二层。 */
+    @Test
+    public void integratedPickerInfoBarMatchesAcceptedStrip() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
+        openPanel(f);
+        SceneNode infoBar = centerColumn(overlayRoot(0)).__getChildren().get(2);
+
+        Assert.assertEquals("信息条高度合同不变", PickerInfoBar.INFO_BAR_HEIGHT, infoBar.getPreferredHeight());
+        Assert.assertEquals("信息条背景 = TOOLBAR idle 染色",
+                TOOLBAR.getIdle().getTint(), infoBar.getBackgroundColor());
+        Assert.assertEquals("信息条边框宽 = 配方", TOOLBAR.getBorderWidth(), infoBar.getBorderWidth());
+        Assert.assertEquals("信息条圆角 = 配方", TOOLBAR.getCornerRadius(), infoBar.getCornerRadius());
+        Assert.assertNotNull("信息条装 TOOLBAR 滤镜", infoBar.getBackdrop());
+        Assert.assertEquals("信息条自身恰好一条 BACKDROP", 1, backdropCount(infoBar));
+        Assert.assertEquals("信息条文本 = 主题次要前景",
+                Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
+                Integer.valueOf(infoBar.__getChildren().get(0).getTextColor()));
+        Assert.assertNull("信息条文本不装滤镜", infoBar.__getChildren().get(0).getBackdrop());
+    }
+
+    /** 集成证据④ MemberGrid：底座 GROUP 逐项；单元零表面写入；卡内按钮复用 G03 已主题化 SceneButton。 */
+    @Test
+    public void integratedMemberGridMatchesAcceptedBase() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
+        f.members.set(Arrays.asList(member(0L, "a")));
+        openPanel(f);
+        SceneNode band = membersPanel(overlayRoot(0));
+        SceneNode viewport = band.__getChildren().get(1).__getChildren().get(0);
+
+        Assert.assertEquals("成员网格底座 = GROUP idle 染色",
+                GROUP.getIdle().getTint(), viewport.getBackgroundColor());
+        Assert.assertEquals("底座圆角 = GROUP 配方", GROUP.getCornerRadius(), viewport.getCornerRadius());
+        Assert.assertEquals("底座边框宽 = GROUP 配方", GROUP.getBorderWidth(), viewport.getBorderWidth());
+        Assert.assertEquals("底座缘色 = GROUP idle 缘色",
+                GROUP.getIdle().getEdge(), viewport.getBorderColor());
+        Assert.assertEquals("底座实体高度 = GROUP idle",
+                GROUP.getIdle().getElevation(), viewport.__getSurfaceElevation(), EPSILON);
+        backdropCount(overlayRoot(0));
+        Assert.assertEquals("底座自身恰好一条 BACKDROP（宿主不再包第二层玻璃）",
+                1, ownBackdropCount(viewport));
+
+        SceneNode cell = memberCell(band, 0);
+        Assert.assertEquals("单元零底色", BG_TRANSPARENT, cell.getBackgroundColor());
+        Assert.assertEquals("单元零圆角", 0, cell.getCornerRadius());
+        Assert.assertEquals("单元零边框宽", 0, cell.getBorderWidth());
+        Assert.assertNull("单元零滤镜", cell.getBackdrop());
+        Assert.assertEquals("单元普通绘制路径", -1.0F, cell.__getSurfaceElevation(), EPSILON);
+        Assert.assertEquals("单元主文本 = 主题正文前景",
+                Integer.valueOf(SceneThemes.DEFAULT.foreground()),
+                Integer.valueOf(cell.__getChildren().get(0).__getChildren().get(1).getTextColor()));
+        Assert.assertEquals("单元副文本 = 主题次要前景",
+                Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
+                Integer.valueOf(cell.__getChildren().get(1).getTextColor()));
+        SceneNode edit = rowEdit(cell);
+        Assert.assertEquals("卡内编辑按钮复用 BUTTON_STANDARD 配方（G03 已验收）",
+                BUTTON_STANDARD.getIdle().getTint(), edit.getBackgroundColor());
+        Assert.assertNotNull("按钮滤镜归按钮自身表面（宿主不覆写）", edit.getBackdrop());
+    }
+
+    /** 集成证据⑤ VariantChooser：浮层卡 OVERLAY 逐项；复用行轻量档零滤镜；scrim 只遮罩。 */
+    @Test
+    public void integratedVariantChooserMatchesAcceptedOverlay() {
+        Fixture f = new Fixture(Arrays.asList(candidateWithVariants("a", "v1", "v2")), false);
+        openPanel(f);
+        click(gridCell(f.result.grid().get(), 0));
+        layoutAll();
+        SceneNode scrim = overlayRoot(0);
+        SceneNode card = scrim.__getChildren().get(0);
+
+        Assert.assertEquals("浮层面板背景 = OVERLAY idle 染色",
+                OVERLAY.getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertEquals("面板边框宽 = 配方", OVERLAY.getBorderWidth(), card.getBorderWidth());
+        Assert.assertEquals("面板圆角 = 配方", OVERLAY.getCornerRadius(), card.getCornerRadius());
+        Assert.assertEquals("面板缘色 = OVERLAY idle 缘色",
+                OVERLAY.getIdle().getEdge(), card.getBorderColor());
+        Assert.assertEquals("面板实体高度 = 配方 idle 档",
+                OVERLAY.getIdle().getElevation(), card.__getSurfaceElevation(), EPSILON);
+        backdropCount(scrim);
+        Assert.assertEquals("面板自身恰一颗 BACKDROP（浮层表面一颗，宿主不叠加；内部控件表面另计）",
+                1, ownBackdropCount(card));
+        Assert.assertNull("scrim 不装玻璃", scrim.getBackdrop());
+        Assert.assertEquals("scrim 静态遮罩底不变", 0xCC000000, scrim.getBackgroundColor());
+
+        SceneNode segmented = card.__getChildren().get(1);
+        click(segmented.__getChildren().get(1));
+        rt.flush();
+        SceneNode rows = card.__getChildren().get(2).__getChildren().get(0).__getChildren().get(0);
+        click(rows.__getChildren().get(0));
+        rt.flush();
+        pointerAway();
+        Assert.assertEquals("勾选行为草稿 [v1]（受控行为合同保持）",
+                Collections.singletonList("v1"), f.result.variantKeys().get());
+        Assert.assertEquals("勾选行 = 强调选中档 0x59",
+                selectedTint(SceneThemes.DEFAULT.accent()),
+                rows.__getChildren().get(0).getBackgroundColor());
+        Assert.assertEquals("未勾选行 = INDICATOR idle 档",
+                INDICATOR.getIdle().getTint(), rows.__getChildren().get(1).getBackgroundColor());
+        for (SceneNode row : rows.__getChildren()) {
+            Assert.assertEquals("复用行零滤镜（G13 裁决口径在装配中保持）", 0, backdropCount(row));
+        }
+        Assert.assertEquals("宿主未给浮层再包一层（scrim 贡献 0）",
+                backdropCount(card), backdropCount(scrim));
+    }
+
+    // ==================== G14 主题切换 / 图像协议 / 行为合同 / 回收 ====================
+
+    /** 可切换局部主题作用域下构建的面板：mount + withTheme 来源作用域（portal 内容继承来源主题）。 */
+    private final class ThemedPanel {
+        final Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        final Signal<Boolean> openSignal = Signal.create(Boolean.FALSE);
+        final Signal<String> query = Signal.create("");
+        final List<SearchPickerData.Selection> commits = new ArrayList<SearchPickerData.Selection>();
+        final boolean[] commitResult = {true};
+        final Result result;
+        final MountHandle handle;
+
+        ThemedPanel(Props.Builder builder) {
+            builder.selectionCommit(selection -> {
+                commits.add(selection);
+                return commitResult[0];
+            });
+            builder.open(openSignal).onCloseRequest(() -> openSignal.set(Boolean.FALSE));
+            final Props props = builder.build();
+            final Result[] holder = new Result[1];
+            handle = rt.mount(sceneRoot, () -> {
+                SceneThemes.withTheme(pageTheme,
+                        () -> holder[0] = ScenePickerPanel.create(rt, props));
+                return holder[0].root();
+            });
+            rt.flush();
+            result = holder[0];
+        }
+
+        void open() {
+            openSignal.set(Boolean.TRUE);
+            rt.flush();
+            layoutAll();
+            layoutAll();
+        }
+    }
+
+    /**
+     * 主题切换（深→浅）：宿主 PANEL 与五配件表面各自重派生为新档、选择（高亮 + 选中底色）不丢
+     * 且跟随新主题选区色、节点身份不变、effect 不增长；中栏/成员带外壳仍零表面（实底复活会被本
+     * 用例抓住——P-04 变异检查点）。
+     */
+    @Test
+    public void themeSwitchKeepsSelectionIdentityAndEffects() {
+        Signal<String> query = Signal.create("");
+        Signal<SearchPickerData.SearchResult> results = Signal.create(
+                new SearchPickerData.SearchResult(Arrays.asList(
+                        candidate("a"), candidate("b"), candidate("c"))));
+        ThemedPanel t = new ThemedPanel(Props.builder(query, results,
+                Signal.create(Boolean.TRUE), query::set, ignored -> { }, visualAdapter()));
+        t.commitResult[0] = false;
+        t.open();
+
+        SceneNode scrim = overlayRoot(0);
+        SceneNode card = panelCard(scrim);
+        SceneNode nav = navPane(scrim);
+        SceneNode searchInput = t.result.firstFocusTarget().get();
+        SceneNode infoBar = centerColumn(scrim).__getChildren().get(2);
+        SceneNode vp = t.result.grid().get();
+        SceneNode cell = gridCell(vp, 1);
+        click(cell);
+        Assert.assertEquals("前置：高亮写入 1", Integer.valueOf(1), t.result.gridHighlight().get());
+        Assert.assertEquals("前置：选中单元 = 深色主题选区色 0x59 档",
+                selectedTint(SceneThemes.DEFAULT.selectionBackground()), cell.getBackgroundColor());
+        Assert.assertEquals("前置：卡片 = 深色 PANEL 档",
+                PANEL.getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertEquals("前置：导航底座 = 深色 TOOLBAR 档",
+                TOOLBAR.getIdle().getTint(), nav.getBackgroundColor());
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        t.pageTheme.set(light);
+        rt.flush();
+
+        Assert.assertEquals("卡片背景 = 浅色 PANEL idle 染色（宿主配方重派生）",
+                light.surface(SceneTheme.Role.PANEL).getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertEquals("导航底座 = 浅色 TOOLBAR（配件跟随来源主题，宿主未钉死）",
+                light.surface(SceneTheme.Role.TOOLBAR).getIdle().getTint(), nav.getBackgroundColor());
+        Assert.assertEquals("结果底座 = 浅色 GROUP",
+                light.surface(SceneTheme.Role.GROUP).getIdle().getTint(), vp.getBackgroundColor());
+        Assert.assertEquals("信息条 = 浅色 TOOLBAR",
+                light.surface(SceneTheme.Role.TOOLBAR).getIdle().getTint(), infoBar.getBackgroundColor());
+        Assert.assertEquals("搜索框 = 浅色 INPUT",
+                light.surface(SceneTheme.Role.INPUT).getIdle().getTint(),
+                searchInput.getBackgroundColor());
+        Assert.assertEquals("顶栏标题 = 浅色主题正文前景", Integer.valueOf(light.foreground()),
+                Integer.valueOf(topBar(scrim).__getChildren().get(0).getTextColor()));
+        Assert.assertEquals("结果统计 = 浅色主题次要前景", Integer.valueOf(light.mutedForeground()),
+                Integer.valueOf(topBar(scrim).__getChildren().get(2).getTextColor()));
+
+        Assert.assertEquals("主题切换后高亮不丢", Integer.valueOf(1), t.result.gridHighlight().get());
+        Assert.assertEquals("选中单元重派生为浅色主题选区色（证明非静态回退）",
+                selectedTint(light.selectionBackground()), cell.getBackgroundColor());
+        Assert.assertEquals("中栏仍零表面底色（实底复活会被本断言抓住）",
+                BG_TRANSPARENT, centerColumn(scrim).getBackgroundColor());
+        Assert.assertEquals("中栏仍零边框", 0, centerColumn(scrim).getBorderWidth());
+        Assert.assertNull("结果单元不因主题切换长出滤镜", cell.getBackdrop());
+        Assert.assertSame("卡片节点身份不变", card, panelCard(overlayRoot(0)));
+        Assert.assertSame("选中单元节点身份不变", cell, gridCell(t.result.grid().get(), 1));
+        Assert.assertEquals("主题切换不增长 effect",
+                effectsBefore, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    /** 变体草稿跨主题切换：模式/勾选 key/浮层展开保持，OVERLAY 卡重派生新档、行仍零滤镜。 */
+    @Test
+    public void variantDraftSurvivesThemeSwitch() {
+        Signal<String> query = Signal.create("");
+        Signal<SearchPickerData.SearchResult> results = Signal.create(
+                new SearchPickerData.SearchResult(Arrays.asList(candidateWithVariants("a", "v1", "v2"))));
+        ThemedPanel t = new ThemedPanel(Props.builder(query, results,
+                Signal.create(Boolean.TRUE), query::set, ignored -> { }, visualAdapter()));
+        t.open();
+        click(gridCell(t.result.grid().get(), 0));
+        layoutAll();
+        SceneNode card = overlayRoot(0).__getChildren().get(0);
+        SceneNode segmented = card.__getChildren().get(1);
+        SceneNode rows = card.__getChildren().get(2).__getChildren().get(0).__getChildren().get(0);
+        click(segmented.__getChildren().get(1));
+        rt.flush();
+        click(rows.__getChildren().get(0));
+        pointerAway();
+        Assert.assertEquals("前置：草稿 = [v1]", Collections.singletonList("v1"),
+                t.result.variantKeys().get());
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        t.pageTheme.set(light);
+        rt.flush();
+
+        Assert.assertEquals("主题切换：选择模式不丢", SearchPickerData.SelectionMode.SELECTED,
+                t.result.variantMode().get());
+        Assert.assertEquals("主题切换：勾选草稿不丢", Collections.singletonList("v1"),
+                t.result.variantKeys().get());
+        Assert.assertTrue("主题切换：浮层保持展开", t.result.variantsOpen().get().booleanValue());
+        Assert.assertEquals("面板 = 浅色 OVERLAY idle 染色（重派生不重建）",
+                light.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertSame("面板节点身份不变", card, overlayRoot(0).__getChildren().get(0));
+        Assert.assertEquals("勾选行跟随浅色主题强调 0x59 档",
+                selectedTint(light.accent()), rows.__getChildren().get(0).getBackgroundColor());
+        Assert.assertNull("行切换后仍零滤镜", rows.__getChildren().get(0).getBackdrop());
+        Assert.assertEquals("主题切换不增长 effect",
+                effectsBefore, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    /**
+     * 反向钉住「物品图像不改色」（契约 §4.1/§7.3）：真实装配中，有图单元图片源与透明底、无图
+     * 占位底、图位圆角、无效徽章底跨深→浅逐字节不变；图像节点全程零滤镜。
+     */
+    @Test
+    public void itemImagesKeepRenderProtocolAcrossThemeSwitch() {
+        final SceneImageSource imageA = new SceneImageSource() {
+            @Override
+            public String registryKey() {
+                return "test:a:0";
+            }
+        };
+        VisualAdapter adapter = new VisualAdapter() {
+            @Override
+            public String candidateLabel(SearchPickerData.Candidate candidate) {
+                return candidate.label();
+            }
+
+            @Override
+            public String variantLabel(SearchPickerData.Variant variant) {
+                return variant.label();
+            }
+
+            @Override
+            public SceneImageSource candidateImage(SearchPickerData.Candidate candidate) {
+                return "a".equals(candidate.key()) ? imageA : null;
+            }
+        };
+        Signal<String> query = Signal.create("");
+        Signal<SearchPickerData.SearchResult> results = Signal.create(
+                new SearchPickerData.SearchResult(Arrays.asList(candidate("a"), candidate("b"))));
+        Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(
+                Arrays.asList(member(0L, "a"), malformedMember(1L)));
+        ThemedPanel t = new ThemedPanel(Props.builder(query, results,
+                Signal.create(Boolean.TRUE), query::set, ignored -> { }, adapter)
+                .currentMembers(members, ignored -> { }));
+        t.open();
+
+        SceneNode scrim = overlayRoot(0);
+        SceneNode grid = t.result.grid().get();
+        SceneNode iconWithImage = gridCell(grid, 0).__getChildren().get(0);
+        SceneNode iconPlaceholder = gridCell(grid, 1).__getChildren().get(0);
+        SceneNode band = membersPanel(scrim);
+        SceneNode memberIcon = memberCell(band, 0).__getChildren().get(0).__getChildren().get(0);
+        SceneNode malformedIcon = memberCell(band, 1).__getChildren().get(0).__getChildren().get(0);
+        SceneNode malformedBadge = rowBadge(memberCell(band, 1));
+
+        Assert.assertSame("结果单元有图挂原图片源", imageA, iconWithImage.getImageSource());
+        Assert.assertEquals("有图单元底色透明（不改色）", BG_TRANSPARENT, iconWithImage.getBackgroundColor());
+        Assert.assertEquals("无图结果单元 = 占位底（渲染协议）",
+                SearchResultList.DEFAULT_PLACEHOLDER_COLOR, iconPlaceholder.getBackgroundColor());
+        Assert.assertEquals("图位圆角属协议", SceneChromeTokens.RADIUS_SM, iconPlaceholder.getCornerRadius());
+        Assert.assertSame("成员卡图标挂原图片源", imageA, memberIcon.getImageSource());
+        Assert.assertEquals("无候选成员图标 = MemberGrid 占位底",
+                MemberGrid.PLACEHOLDER_COLOR, malformedIcon.getBackgroundColor());
+        Assert.assertEquals("无效徽章底 = DANGER_BG_SUBTLE（状态徽标协议）",
+                SceneChromeTokens.DANGER_BG_SUBTLE, malformedBadge.getBackgroundColor());
+
+        t.pageTheme.set(SceneTheme.liquidGlassLight());
+        rt.flush();
+
+        Assert.assertSame("主题切换不动图片源", imageA, iconWithImage.getImageSource());
+        Assert.assertEquals("主题切换不重染有图底", BG_TRANSPARENT, iconWithImage.getBackgroundColor());
+        Assert.assertEquals("主题切换不重染占位底",
+                SearchResultList.DEFAULT_PLACEHOLDER_COLOR, iconPlaceholder.getBackgroundColor());
+        Assert.assertEquals("主题切换不重染成员占位底",
+                MemberGrid.PLACEHOLDER_COLOR, malformedIcon.getBackgroundColor());
+        Assert.assertEquals("主题切换不重染徽章底",
+                SceneChromeTokens.DANGER_BG_SUBTLE, malformedBadge.getBackgroundColor());
+        Assert.assertEquals("图位圆角不变", SceneChromeTokens.RADIUS_SM, iconPlaceholder.getCornerRadius());
+        Assert.assertNull("图像节点不因主题装滤镜", iconPlaceholder.getBackdrop());
+        Assert.assertNull("成员图标不装滤镜", malformedIcon.getBackdrop());
+    }
+
+    /** 行为合同（查询路径）：搜索框输入透传 onQuery；结果换代按新 key 渲染、旧单元不残留。 */
+    @Test
+    public void typingInSearchInputPropagatesQueryAndReplacesResults() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        openPanel(f);
+        SceneNode input = f.result.firstFocusTarget().get();
+        Assert.assertSame("首焦点即搜索框", input, rt.getFocusedNode());
+
+        typeText("stone");
+        rt.flush();
+        Assert.assertEquals("搜索框输入透传 onQuery", "stone", f.query.get());
+
+        f.results.set(new SearchPickerData.SearchResult(Arrays.asList(candidate("stone:x"))));
+        rt.flush();
+        layoutAll();
+        SceneNode grid = f.result.grid().get();
+        Assert.assertEquals("结果换代后按新数据渲染", 1, mountedItemCount(grid));
+        // 标签按 64px 单元宽省略号截断（TextEllipsizer 既有合同），核对前缀来自新数据、旧数据不残留。
+        String cellLabel = gridCell(grid, 0).__getChildren().get(1).getText();
+        Assert.assertTrue("换代后单元标签来自新数据（截断后仍含前缀）: " + cellLabel,
+                cellLabel.startsWith("stone:"));
+    }
+
+    /** 开关面板/卸载回收：portal 子树（宿主表面 + 五配件绑定）关闭即回收；句柄 dispose 后回基线。 */
+    @Test
+    public void closeReclaimsPortalTreeAndDisposeReturnsEffectsToBaseline() {
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+        Signal<SearchPickerData.SearchResult> results = Signal.create(
+                new SearchPickerData.SearchResult(Arrays.asList(candidate("a"))));
+        ThemedPanel t = new ThemedPanel(Props.builder(Signal.create(""), results,
+                Signal.create(Boolean.TRUE), ignored -> { }, ignored -> { }, visualAdapter()));
+        int created = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("面板构建登记响应式绑定", created > baseline);
+
+        t.open();
+        int opened = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("打开挂载 portal 子树（宿主表面与配件绑定注册在 portal Owner）",
+                opened > created);
+
+        t.openSignal.set(Boolean.FALSE);
+        rt.flush();
+        Assert.assertEquals("关闭回收 portal 子树全部外观绑定（回到构建基线）",
+                created, ReactiveTestProbe.registeredEffectCount());
+        Assert.assertTrue(rt.getOverlayHost().isEmpty());
+
+        t.handle.dispose();
+        rt.flush();
+        Assert.assertEquals("卸载后 effect 回到基线",
+                baseline, ReactiveTestProbe.registeredEffectCount());
     }
 }
