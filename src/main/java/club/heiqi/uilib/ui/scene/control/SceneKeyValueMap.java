@@ -23,7 +23,10 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 import club.heiqi.uilib.util.UiNumbers;
 
 /**
@@ -38,6 +41,17 @@ import club.heiqi.uilib.util.UiNumbers;
  * 回调里再次 {@code rows.set(...)}——重复 set 属于冗余写入，且若外部不持有 signal 引用，
  * 行为将以控件写入为准。如需在变更后追加副作用（持久化、校验、联动其他 signal），在回调里
  * 读取参数即可，无需回写受控 signal。{@code onRowsChanged} 可为 null，控件会跳过通知。</p>
+ *
+ * <p><b>外观归属（液态玻璃迁移）</b>：列表底座（viewport）取主题
+ * {@link SceneTheme.Role#GROUP} 配方，是该节点 background/border/borderWidth/cornerRadius/
+ * backdrop/surfaceElevation 的唯一写入者（{@link SceneSurfaceBinder#bind}）；行默认全透明，
+ * 只在校验失败时写一次主题 {@code errorText} 系半透明轻量底色覆盖，行自身不装滤镜、不写边框
+ * 与圆角。行内 key/value 输入框只读复用 {@link SceneTextInput} 已主题化的 INPUT 表面与前景，
+ * 类型分段只读复用 {@link SceneSegmented} 的导航族配方；添加/删除按钮取
+ * {@code BUTTON_STANDARD} / {@code BUTTON_DANGER} 角色配方并经 {@link SceneSurfaceBinder#bindForeground}
+ * 绑文字前景，不再保留静态按钮底色与禁用实色文字。标题与表头文字分别取主题
+ * {@code foreground}/{@code mutedForeground}。主题切换只重派生外观，不重建节点、不丢编辑草稿
+ * 与校验状态，也不触碰数据模型、校验规则与增删提交语义。</p>
  */
 public final class SceneKeyValueMap {
 
@@ -67,27 +81,7 @@ public final class SceneKeyValueMap {
      */
     private static final int CELL_GAP = 6;
     /**
-     * 标题文本色，取自 chrome token。
-     */
-    private static final int LABEL_COLOR = SceneChromeTokens.TEXT_PRIMARY;
-    /**
-     * 表头文本色，取自 chrome token。
-     */
-    private static final int HEADER_COLOR = SceneChromeTokens.TEXT_SECONDARY;
-    /**
-     * 按钮文本色，取自 chrome token。
-     */
-    private static final int BUTTON_TEXT = SceneChromeTokens.TEXT_ON_ACCENT;
-    /**
-     * 按钮禁用文本色，取自 chrome token。
-     */
-    private static final int BUTTON_TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
-    /**
-     * 按钮圆角，取自 chrome token。
-     */
-    private static final int BUTTON_RADIUS = SceneChromeTokens.RADIUS_MD;
-    /**
-     * 按钮内边距，取自 chrome token。
+     * 按钮内边距（布局属性，取自 chrome token；外观尺寸常量不受主题接管，契约 §4.2）。
      */
     private static final int BUTTON_PADDING = SceneChromeTokens.PAD_MD;
     /**
@@ -98,6 +92,19 @@ public final class SceneKeyValueMap {
      * key/value 输入宽度。
      */
     private static final int INPUT_WIDTH = 120;
+    /**
+     * 恒真 enabled：列表底座自身没有禁用语义，表面绑定只走 idle/hovered/pressed 三档。
+     */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
+    /**
+     * 行默认背景：全透明，露出底座玻璃。
+     */
+    private static final int ROW_BG_TRANSPARENT = 0x00000000;
+    /**
+     * 校验失败行的弱提示底色 alpha：沿用旧 {@code DANGER_BG_SUBTLE} 的强度档，
+     * RGB 换为主题 {@code errorText}（深色底上可读的错误语义色）。
+     */
+    private static final int ROW_ERROR_ALPHA = 0x22;
 
     /**
      * 纯静态工厂，禁止实例化。
@@ -437,10 +444,11 @@ public final class SceneKeyValueMap {
 
             SceneNode labelNode = new SceneNode();
             labelNode.setText(props.label());
-            labelNode.setTextColor(LABEL_COLOR);
+            // 标题取主题正文前景（构造期捕获来源主题，主题切换只重派生不重建节点）。
+            rt.bind(SceneThemes.foreground(rt), labelNode::setTextColor);
             rt.show(root, Computed.create(() -> !props.label().isEmpty()), () -> labelNode);
 
-            root.appendChild(buildHeader());
+            root.appendChild(buildHeader(rt));
 
             SceneNode viewport = SceneNode.column();
             viewport.setScrollable(true);
@@ -448,6 +456,16 @@ public final class SceneKeyValueMap {
             viewport.setGap(ROW_GAP);
             viewport.setFillParentHeight(true);
             viewport.setFlexGrow(1);
+
+            // 列表底座：GROUP 角色配方是 background/border/borderWidth/cornerRadius/backdrop/
+            // surfaceElevation 的唯一写入者；enabled 恒真（底座无禁用语义）。
+            // 时序契约：先声明关心 hovered/pressed/focused，Router 的写入才不会被 null 短路。
+            SceneInteractionState viewportInteraction = rt.interactionState(viewport);
+            viewportInteraction.hovered();
+            viewportInteraction.pressed();
+            viewportInteraction.focused();
+            SceneSurfaceBinder.bind(rt, viewport, SceneThemes.surface(rt, SceneTheme.Role.GROUP),
+                ALWAYS_ENABLED, viewportInteraction);
 
             // stackHost 承载 viewport 原 preferredHeight(VIEWPORT_HEIGHT_DEFAULT)，并可选挂滚动条 column。
             // header 与 addButton 保持 root 直接子，不进 stackHost。即使无滚动条也建 stackHost，统一结构路径。
@@ -473,7 +491,7 @@ public final class SceneKeyValueMap {
 
             root.appendChild(buildActionButton(rt,
                 Computed.create(() -> SceneListOps.canAdd(props.rows().get(), props.maxRows())),
-                "+ 添加", () -> addRow(props)));
+                "+ 添加", SceneTheme.Role.BUTTON_STANDARD, () -> addRow(props)));
 
             return root;
         };
@@ -482,30 +500,33 @@ public final class SceneKeyValueMap {
     /**
      * 构建表头行。
      *
+     * @param rt 场景运行时
      * @return 表头节点
      */
-    private static SceneNode buildHeader() {
+    private static SceneNode buildHeader(SceneRuntime rt) {
         SceneNode header = SceneNode.row();
         header.setGap(CELL_GAP);
         header.setCrossAxisAlign(CrossAxisAlign.CENTER);
-        appendHeaderCell(header, "Key", INPUT_WIDTH);
-        appendHeaderCell(header, "Value", INPUT_WIDTH);
-        appendHeaderCell(header, "Type", 230);
-        appendHeaderCell(header, "操作", 48);
+        appendHeaderCell(rt, header, "Key", INPUT_WIDTH);
+        appendHeaderCell(rt, header, "Value", INPUT_WIDTH);
+        appendHeaderCell(rt, header, "Type", 230);
+        appendHeaderCell(rt, header, "操作", 48);
         return header;
     }
 
     /**
      * 追加表头单元格。
      *
+     * @param rt     场景运行时
      * @param header 表头行
      * @param text   文本
      * @param width  宽度
      */
-    private static void appendHeaderCell(SceneNode header, String text, int width) {
+    private static void appendHeaderCell(SceneRuntime rt, SceneNode header, String text, int width) {
         SceneNode cell = new SceneNode();
         cell.setText(text);
-        cell.setTextColor(HEADER_COLOR);
+        // 表头取主题次要前景，主题切换只重派生。
+        rt.bind(SceneThemes.mutedForeground(rt), cell::setTextColor);
         cell.setPreferredWidth(width);
         header.appendChild(cell);
     }
@@ -524,9 +545,13 @@ public final class SceneKeyValueMap {
         rowNode.setCrossAxisAlign(CrossAxisAlign.CENTER);
         rowNode.setGap(CELL_GAP);
         rowNode.setPadding(SceneChromeTokens.PAD_SM);
-        rowNode.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-        rt.bindComputed(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId())),
-            invalid -> rowNode.setBackgroundColor(SceneStateColors.errorRowBackground(Boolean.TRUE.equals(invalid))));
+        // 行只做轻量底色覆盖：默认透明露出底座玻璃，校验失败行取主题 errorText 系半透明弱提示；
+        // 只写 backgroundColor 一个属性，不装滤镜、不写边框/圆角，不与底座争属性槽。
+        // 全部取值发生在 effect 体内（构造期不解引用未求值 Computed），主题切换自动重派生。
+        ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
+        rt.bindComputed(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))
+                ? errorRowTint(theme.get()) : ROW_BG_TRANSPARENT,
+            rowNode::setBackgroundColor);
 
         SceneNode keyMount = new SceneNode();
         keyMount.setPreferredWidth(INPUT_WIDTH);
@@ -564,7 +589,7 @@ public final class SceneKeyValueMap {
 
         SceneNode actionButton = buildActionButton(rt,
             Computed.create(() -> SceneListOps.canRemove(props.rows().get(), props.minRows())),
-            "删除", () -> removeRow(props, row.getRowId()));
+            "删除", SceneTheme.Role.BUTTON_DANGER, () -> removeRow(props, row.getRowId()));
         actionButton.setPreferredHeight(INPUT_HEIGHT);
         rowNode.appendChild(actionButton);
         return rowNode;
@@ -573,18 +598,25 @@ public final class SceneKeyValueMap {
     /**
      * 构建动作按钮。
      *
+     * <p>外观全部归主题：表面取 {@code role} 配方（添加=BUTTON_STANDARD、删除=BUTTON_DANGER），
+     * background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 由
+     * {@link SceneSurfaceBinder#bind} 独占；文字前景取配方 foreground（回落库默认正文色），
+     * 禁用反馈由绑定器的 disabled 档表达，不再叠加禁用实色文字绑定。padding/高度等布局属性
+     * 仍由本控件自持。</p>
+     *
      * @param rt      场景运行时
      * @param enabled 是否启用
      * @param text    文本
+     * @param role    材质角色（添加=BUTTON_STANDARD、删除=BUTTON_DANGER）
      * @param action  动作回调
      * @return 按钮节点
      */
-    private static SceneNode buildActionButton(SceneRuntime rt, Computed<Boolean> enabled, String text, Runnable action) {
+    private static SceneNode buildActionButton(SceneRuntime rt, Computed<Boolean> enabled, String text,
+                                               SceneTheme.Role role, Runnable action) {
         SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
         button.setPadding(BUTTON_PADDING);
-        button.setCornerRadius(BUTTON_RADIUS);
         button.setWidthSizing(WidthSizing.SHRINK);
 
         SceneNode label = new SceneNode();
@@ -592,14 +624,14 @@ public final class SceneKeyValueMap {
         label.setText(text);
         button.appendChild(label);
 
+        ReadableSignal<SceneSurfaceStyle> surface = SceneThemes.surface(rt, role);
         SceneInteractionState is = rt.interactionState(button);
-        rt.bindComputed(() -> SceneStateColors.standardBackground(
-                Boolean.TRUE.equals(enabled.get()),
-                Boolean.TRUE.equals(is.hovered().get()),
-                Boolean.TRUE.equals(is.pressed().get())),
-            button::setBackgroundColor);
-        rt.bind(enabled,
-            value -> label.setTextColor(Boolean.TRUE.equals(value) ? BUTTON_TEXT : BUTTON_TEXT_DISABLED));
+        // 时序契约：构造期声明关心，Router 后续写入才会落到已创建的 signal。
+        is.hovered();
+        is.pressed();
+        is.focused();
+        SceneSurfaceBinder.bind(rt, button, surface, enabled, is);
+        SceneSurfaceBinder.bindForeground(rt, label, surface, SceneThemes.DEFAULT.foreground());
         SceneControlChrome.bindCursor(rt, button, enabled, SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
         rt.on(button, SceneEventType.CLICK, (ev, ctx) -> {
             if (Boolean.TRUE.equals(enabled.get())) {
@@ -609,6 +641,16 @@ public final class SceneKeyValueMap {
         });
         rt.focusable(button, enabled);
         return button;
+    }
+
+    /**
+     * 校验失败行的轻量底色：主题 errorText 保留 RGB、替换为弱提示 alpha。
+     *
+     * @param theme 来源主题
+     * @return 错误行底色 ARGB
+     */
+    private static int errorRowTint(SceneTheme theme) {
+        return (ROW_ERROR_ALPHA << 24) | (theme.errorText() & 0x00FFFFFF);
     }
 
     /**

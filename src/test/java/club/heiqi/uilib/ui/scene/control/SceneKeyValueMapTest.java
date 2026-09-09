@@ -14,17 +14,27 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintFragment;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneKeyValueMap 端到端单元测试。
  *
- * <p>覆盖初始 keyed 渲染、增删行、key/value 文本编辑、type 分段切换与 key 校验反馈。</p>
+ * <p>覆盖初始 keyed 渲染、增删行、key/value 文本编辑、type 分段切换与 key 校验反馈；
+ * 并验证液态玻璃迁移口径（G12 通过条件「不只改外壳；实际进入编辑模式也统一」）：底座走主题
+ * GROUP 配方、行只做 errorText 系轻量底色覆盖且不装滤镜、每颗表面只采样一次、编辑单元与按钮
+ * 消费各自角色配方、文字取主题语义前景、主题切换不重建节点不丢草稿与校验状态、卸载回收绑定。</p>
  */
 public class SceneKeyValueMapTest {
 
@@ -32,6 +42,8 @@ public class SceneKeyValueMapTest {
     private static final int CANVAS_WIDTH = 1040;
     /** 画布高度。 */
     private static final int CANVAS_HEIGHT = 320;
+    /** 校验失败行弱提示 alpha（与控件 {@code ROW_ERROR_ALPHA} 同一口径，沿用旧 DANGER_BG_SUBTLE 强度档）。 */
+    private static final int ERROR_ROW_ALPHA = 0x22;
 
     /** 场景根。 */
     private SceneNode sceneRoot;
@@ -51,6 +63,8 @@ public class SceneKeyValueMapTest {
     private MountHandle handle;
     /** 控件根节点。 */
     private SceneNode root;
+    /** 绘制引擎（断言每颗表面只采样一次滤镜、行不装滤镜）。 */
+    private ScenePaintEngine paintEngine;
 
     @Before
     public void setUp() {
@@ -64,18 +78,9 @@ public class SceneKeyValueMapTest {
         rowsChangedCount = new AtomicInteger(0);
         validationCount = new AtomicInteger(0);
         lastValidationError = null;
+        paintEngine = new ScenePaintEngine(new FixedTextMeasurer(8, 16));
 
-        SceneKeyValueMap.Props props = SceneKeyValueMap.Props.builder(rowsSignal)
-                .label("属性")
-                .keyPlaceholder("键")
-                .valuePlaceholder("值")
-                .onRowsChanged(rows -> rowsChangedCount.incrementAndGet())
-                .onValidationError(error -> {
-                    validationCount.incrementAndGet();
-                    lastValidationError = error;
-                })
-                .build();
-        handle = runtime.mount(sceneRoot, SceneKeyValueMap.create(runtime, props));
+        handle = runtime.mount(sceneRoot, SceneKeyValueMap.create(runtime, defaultProps()));
         root = handle.getRoot();
         runtime.flush();
         doLayout();
@@ -270,7 +275,11 @@ public class SceneKeyValueMapTest {
 
         Assert.assertEquals("点号 key 反馈", ValidationErrorType.KEY_CONTAINS_DOT, lastValidationError.getType());
         Assert.assertTrue("校验回调触发", validationCount.get() > 0);
-        Assert.assertEquals("错误行标红", Integer.valueOf(SceneChromeTokens.DANGER_BG_SUBTLE), Integer.valueOf(row(0).getBackgroundColor()));
+        Assert.assertEquals("错误行标红 = 主题 errorText 弱提示底色（轻量覆盖，只写 backgroundColor）",
+                Integer.valueOf(tint(SceneThemes.DEFAULT.errorText(), ERROR_ROW_ALPHA)),
+                Integer.valueOf(row(0).getBackgroundColor()));
+        Assert.assertEquals("未失败行保持透明露出底座", 0, row(1).getBackgroundColor());
+        Assert.assertNull("错误行也不装滤镜", row(0).getBackdrop());
     }
 
     /** minRows 达边界时删除禁用。 */
@@ -365,6 +374,298 @@ public class SceneKeyValueMapTest {
 
         Assert.assertEquals("空列表无行", 0, listViewportWithoutLabel().__getChildren().size());
         Assert.assertEquals("根节点保留添加按钮", "+ 添加", addButtonWithoutLabel().__getChildren().get(0).getText());
+    }
+
+    // ==================== 液态玻璃迁移：底座 GROUP + 行轻量覆盖 + 编辑单元/按钮角色配方 ====================
+
+    /**
+     * 默认路径：底座=GROUP、添加=BUTTON_STANDARD、删除=BUTTON_DANGER、行内 key/value
+     * 输入=INPUT，各表面 background/border/borderWidth/cornerRadius/elevation/backdrop
+     * 材质+模糊逐项等于所选 Role 配方；标题/表头/按钮文字取主题语义前景。
+     */
+    @Test
+    public void defaultSurfacesShouldEqualThemeRoleRecipes() {
+        doLayout();
+
+        SceneSurfaceStyle group = SceneThemes.DEFAULT.surface(SceneTheme.Role.GROUP);
+        SceneSurfaceStyle standard = SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_STANDARD);
+        SceneSurfaceStyle danger = SceneThemes.DEFAULT.surface(SceneTheme.Role.BUTTON_DANGER);
+        SceneSurfaceStyle input = SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
+        Assert.assertNotNull("前置：GROUP 配方自带滤镜", group.getBackdrop());
+        Assert.assertNotNull("前置：DANGER 配方自带滤镜", danger.getBackdrop());
+        Assert.assertNotNull("前置：INPUT 配方自带滤镜", input.getBackdrop());
+
+        assertRecipe("底座", group, listViewport());
+        assertRecipe("添加按钮", standard, addButton());
+        assertRecipe("删除按钮", danger, deleteButton(0));
+        assertRecipe("key 输入单元", input, keyInputRoot(0));
+        assertRecipe("value 输入单元", input, valueInputRoot(1));
+
+        Assert.assertEquals("标题 = 主题正文前景", SceneThemes.DEFAULT.foreground(), titleLabel().getTextColor());
+        Assert.assertEquals("表头 = 主题次要前景", SceneThemes.DEFAULT.mutedForeground(),
+                findText(root, "Key").getTextColor());
+        Assert.assertEquals("添加按钮文字 = BUTTON_STANDARD 配方 foreground",
+                standard.getForeground().intValue(), addButton().__getChildren().get(0).getTextColor());
+        Assert.assertEquals("删除按钮文字 = BUTTON_DANGER 配方 foreground",
+                danger.getForeground().intValue(), deleteButton(0).__getChildren().get(0).getTextColor());
+    }
+
+    /**
+     * 每颗表面只采样一次滤镜：底座恰好一条 BACKDROP；行零颗（不装滤镜、不写圆角/边框宽，
+     * 只做轻量底色覆盖）；输入单元与按钮各自恰好一条（复用已主题化控件，不重复装玻璃）。
+     */
+    @Test
+    public void rowsCarryNoBackdropAndEachSurfaceSamplesOnce() {
+        doLayout();
+        paintEngine.paint(sceneRoot);
+
+        SceneNode viewport = listViewport();
+        Assert.assertEquals("底座自身恰好一条 BACKDROP", 1, backdropCount(viewport));
+        for (int i = 0; i < 2; i++) {
+            SceneNode row = row(i);
+            Assert.assertNull("行[" + i + "] 不装滤镜", row.getBackdrop());
+            Assert.assertEquals("行[" + i + "] 自身零 BACKDROP", 0, backdropCount(row));
+            Assert.assertEquals("行[" + i + "] 不写圆角（外观归轻量覆盖）", 0, row.getCornerRadius());
+            Assert.assertEquals("行[" + i + "] 不写边框宽", 0, row.getBorderWidth());
+            Assert.assertEquals("行[" + i + "] 默认透明露出底座玻璃", 0, row.getBackgroundColor());
+            Assert.assertEquals("行[" + i + "] key 输入恰好一条 BACKDROP", 1, backdropCount(keyInputRoot(i)));
+            Assert.assertEquals("行[" + i + "] value 输入恰好一条 BACKDROP", 1, backdropCount(valueInputRoot(i)));
+            Assert.assertEquals("行[" + i + "] 删除按钮恰好一条 BACKDROP", 1, backdropCount(deleteButton(i)));
+        }
+        Assert.assertEquals("添加按钮恰好一条 BACKDROP", 1, backdropCount(addButton()));
+    }
+
+    /**
+     * 真实进入编辑模式：点击聚焦并输入后，编辑单元外观仍是 INPUT 配方（染色/圆角/边框宽/
+     * elevation/滤镜材质+模糊不变，缘色切到配方 focusEdge），草稿写回受控 rows signal。
+     */
+    @Test
+    public void editModeShouldKeepThemedEditorAppearance() {
+        doLayout();
+        SceneSurfaceStyle input = SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
+        SceneNode editor = keyInputRoot(0);
+
+        focusInput(editor);
+        harness.typeText("X");
+        runtime.flush();
+        Assert.assertEquals("编辑草稿写回受控 rows", "nameX", rowsSignal.get().get(0).getKey());
+
+        // 指针移出画布清除 hover，验证非 hover 档仍是 INPUT 配方
+        harness.moveAt(CANVAS_WIDTH + 20, CANVAS_HEIGHT + 20);
+        runtime.flush();
+
+        Assert.assertEquals("编辑中染色仍 = INPUT 配方 idle tint",
+                input.getIdle().getTint(), editor.getBackgroundColor());
+        Assert.assertEquals("编辑中圆角仍 = INPUT 配方", input.getCornerRadius(), editor.getCornerRadius());
+        Assert.assertEquals("编辑中边框宽仍 = INPUT 配方", input.getBorderWidth(), editor.getBorderWidth());
+        Assert.assertEquals("编辑中实体高度仍 = INPUT 配方 idle elevation",
+                input.getIdle().getElevation(), editor.__getSurfaceElevation(), 0.0001F);
+        Assert.assertEquals("聚焦缘色 = INPUT 配方 focusEdge", input.getFocusEdge(), editor.getBorderColor());
+        Assert.assertNotNull("编辑中仍带 INPUT 滤镜", editor.getBackdrop());
+        Assert.assertEquals("编辑中滤镜材质仍 = INPUT 配方",
+                input.getBackdrop().getEffect().getMaterial(), editor.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("编辑中滤镜模糊仍 = INPUT 配方",
+                input.getBackdrop().getBlurRadius(), editor.getBackdrop().getBlurRadius());
+    }
+
+    /**
+     * 主题切换（withTheme，切换前后 GROUP/errorText 配方值确实不同）：底座、行错误底色、
+     * 编辑单元、标题/表头/按钮文字全部随来源主题重派生；节点身份不变、编辑草稿与校验状态
+     * 与行序保留、effect 数不增长、行仍不装滤镜。
+     */
+    @Test
+    public void themeSwitchShouldUpdateSurfacesWithoutLosingDraftOrValidation() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        SceneSurfaceStyle darkGroup = dark.surface(SceneTheme.Role.GROUP);
+        SceneSurfaceStyle lightGroup = light.surface(SceneTheme.Role.GROUP);
+        Assert.assertNotEquals("两档 GROUP 配方必须不同，否则切换不传播",
+                darkGroup.getIdle(), lightGroup.getIdle());
+        Assert.assertNotEquals("两档 errorText 必须不同", dark.errorText(), light.errorText());
+
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        remountInTheme(pageTheme, defaultProps());
+
+        // 校验失败行：点号 key 经受控 signal 写入（与既有校验用例同路径）
+        List<KeyValueRow> dotRows = new ArrayList<KeyValueRow>(rowsSignal.get());
+        dotRows.set(0, dotRows.get(0).copyWith("user.name", "qz", ValueType.STRING));
+        rowsSignal.set(Collections.unmodifiableList(dotRows));
+        runtime.flush();
+        doLayout();
+
+        // 编辑草稿：在被标记的失败行 key 输入单元继续输入
+        SceneNode editor = keyInputRoot(0);
+        focusInput(editor);
+        harness.typeText("X");
+        runtime.flush();
+        Assert.assertEquals("前置：草稿已写入受控 signal", "user.nameX", rowsSignal.get().get(0).getKey());
+        Assert.assertEquals("前置：校验回调反馈点号 key",
+                ValidationErrorType.KEY_CONTAINS_DOT, lastValidationError.getType());
+        // 指针移出画布清除 hover
+        harness.moveAt(CANVAS_WIDTH + 20, CANVAS_HEIGHT + 20);
+        runtime.flush();
+
+        SceneNode viewport = listViewport();
+        SceneNode firstRow = row(0);
+        Assert.assertEquals("初始底座 = 深色 GROUP idle tint", darkGroup.getIdle().getTint(), viewport.getBackgroundColor());
+        Assert.assertEquals("初始标题 = 深色正文前景", dark.foreground(), titleLabel().getTextColor());
+        Assert.assertEquals("初始表头 = 深色次要前景", dark.mutedForeground(), findText(root, "Key").getTextColor());
+        Assert.assertEquals("初始错误行 = 深色 errorText 弱提示",
+                tint(dark.errorText(), ERROR_ROW_ALPHA), firstRow.getBackgroundColor());
+        Assert.assertEquals("未失败行透明", 0, row(1).getBackgroundColor());
+        Assert.assertEquals("初始编辑单元 = 深色 INPUT idle tint",
+                dark.surface(SceneTheme.Role.INPUT).getIdle().getTint(), editor.getBackgroundColor());
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertEquals("底座染色随主题更新", lightGroup.getIdle().getTint(), viewport.getBackgroundColor());
+        Assert.assertEquals("底座圆角随主题更新", lightGroup.getCornerRadius(), viewport.getCornerRadius());
+        Assert.assertEquals("底座缘色随主题更新", lightGroup.getIdle().getEdge(), viewport.getBorderColor());
+        Assert.assertEquals("底座滤镜材质随主题更新",
+                lightGroup.getBackdrop().getEffect().getMaterial(), viewport.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("标题文字随主题更新", light.foreground(), titleLabel().getTextColor());
+        Assert.assertEquals("表头文字随主题更新", light.mutedForeground(), findText(root, "Key").getTextColor());
+        Assert.assertEquals("编辑单元随主题更新",
+                light.surface(SceneTheme.Role.INPUT).getIdle().getTint(), editor.getBackgroundColor());
+        Assert.assertEquals("添加按钮文字随主题更新",
+                light.surface(SceneTheme.Role.BUTTON_STANDARD).getForeground().intValue(),
+                addButton().__getChildren().get(0).getTextColor());
+        Assert.assertEquals("删除按钮文字随主题更新",
+                light.surface(SceneTheme.Role.BUTTON_DANGER).getForeground().intValue(),
+                deleteButton(0).__getChildren().get(0).getTextColor());
+        Assert.assertEquals("校验状态保留：错误行底色随主题重派生",
+                tint(light.errorText(), ERROR_ROW_ALPHA), firstRow.getBackgroundColor());
+
+        Assert.assertSame("主题切换不重建 viewport", viewport, listViewport());
+        Assert.assertSame("主题切换不重建行节点", firstRow, row(0));
+        Assert.assertSame("主题切换不重建编辑单元", editor, keyInputRoot(0));
+        Assert.assertEquals("主题切换不丢草稿", "user.nameX", rowsSignal.get().get(0).getKey());
+        Assert.assertEquals("主题切换不丢草稿显示", "user.nameX", inputValue(keyInputRoot(0)));
+        Assert.assertEquals("行序不丢：第二行仍是 count", "count", inputValue(keyInputRoot(1)));
+        Assert.assertEquals("校验状态不丢：错误类型仍为点号 key",
+                ValidationErrorType.KEY_CONTAINS_DOT, lastValidationError.getType());
+        Assert.assertNull("切换后行仍不装滤镜", row(0).getBackdrop());
+        Assert.assertEquals("主题切换不新增 effect", effectsBefore, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    /**
+     * 卸载后表面绑定 effect 回收，主题更新不再写入旧节点。
+     */
+    @Test
+    public void unmountShouldReleaseSurfaceBindings() {
+        handle.dispose();
+        runtime.flush();
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        remountInTheme(pageTheme, defaultProps());
+        Assert.assertTrue("默认路径应注册响应式外观绑定",
+                ReactiveTestProbe.registeredEffectCount() > baseline);
+
+        SceneNode viewport = listViewport();
+        int colorBeforeDispose = viewport.getBackgroundColor();
+        handle.dispose();
+        runtime.flush();
+        Assert.assertEquals("卸载后外观绑定 effect 应回收", baseline, ReactiveTestProbe.registeredEffectCount());
+
+        pageTheme.set(SceneTheme.liquidGlassLight());
+        runtime.flush();
+        Assert.assertEquals("卸载后主题更新不再写入旧 viewport",
+                colorBeforeDispose, viewport.getBackgroundColor());
+    }
+
+    /** 默认外观用例共用输入契约（标题 + 占位 + 回调计数）。 */
+    private SceneKeyValueMap.Props defaultProps() {
+        return SceneKeyValueMap.Props.builder(rowsSignal)
+                .label("属性")
+                .keyPlaceholder("键")
+                .valuePlaceholder("值")
+                .onRowsChanged(rows -> rowsChangedCount.incrementAndGet())
+                .onValidationError(error -> {
+                    validationCount.incrementAndGet();
+                    lastValidationError = error;
+                })
+                .build();
+    }
+
+    /**
+     * 在可切换局部主题作用域内重新挂载被测控件（主题信号变化只重派生外观，不重建节点）。
+     */
+    private void remountInTheme(Signal<SceneTheme> pageTheme, SceneKeyValueMap.Props props) {
+        handle.dispose();
+        final SceneNode[] holder = new SceneNode[1];
+        handle = runtime.mount(sceneRoot, () -> {
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SceneKeyValueMap.create(runtime, props).get());
+            return holder[0];
+        });
+        root = handle.getRoot();
+        rowsChangedCount.set(0);
+        validationCount.set(0);
+        lastValidationError = null;
+        runtime.flush();
+        doLayout();
+    }
+
+    /** 控件标题文字节点。 */
+    private SceneNode titleLabel() {
+        SceneNode label = findText(root, "属性");
+        if (label == null) {
+            throw new AssertionError("未找到控件标题节点");
+        }
+        return label;
+    }
+
+    /**
+     * 递归查找第一个文本等于 {@code text} 的节点。
+     */
+    private SceneNode findText(SceneNode node, String text) {
+        if (text.equals(node.getText())) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findText(child, text);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** 节点自身 PaintFragment 内的 BACKDROP 命令数；无 fragment（无绘制内容）视为 0。 */
+    private static int backdropCount(SceneNode node) {
+        Object cached = node.getCachedPaint();
+        if (!(cached instanceof PaintFragment)) {
+            return 0;
+        }
+        int count = 0;
+        for (PaintCommand command : ((PaintFragment) cached).getCommands()) {
+            if (command.getType() == PaintCommandType.BACKDROP) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 保留色 RGB、替换 alpha 通道（行轻量覆盖口径）。 */
+    private static int tint(int argb, int alpha) {
+        return (alpha << 24) | (argb & 0x00FFFFFF);
+    }
+
+    /** 断言节点表面六项逐项等于角色配方（idle 档，未 hover/press/focus）。 */
+    private static void assertRecipe(String name, SceneSurfaceStyle style, SceneNode node) {
+        Assert.assertEquals(name + " 染色 = 配方 idle tint", style.getIdle().getTint(), node.getBackgroundColor());
+        Assert.assertEquals(name + " 缘色 = 配方 idle edge", style.getIdle().getEdge(), node.getBorderColor());
+        Assert.assertEquals(name + " 边框宽 = 配方", style.getBorderWidth(), node.getBorderWidth());
+        Assert.assertEquals(name + " 圆角 = 配方", style.getCornerRadius(), node.getCornerRadius());
+        Assert.assertEquals(name + " 实体高度 = 配方 idle elevation",
+                style.getIdle().getElevation(), node.__getSurfaceElevation(), 0.0001F);
+        Assert.assertNotNull(name + " 默认带液态玻璃滤镜", node.getBackdrop());
+        Assert.assertEquals(name + " 滤镜材质 = 配方",
+                style.getBackdrop().getEffect().getMaterial(), node.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals(name + " 滤镜模糊 = 配方",
+                style.getBackdrop().getBlurRadius(), node.getBackdrop().getBlurRadius());
     }
 
     /** 跑一帧布局（经 harness.mountRoot 刷新路由根 + absoluteBox，供 harness.click 取中心）。 */
