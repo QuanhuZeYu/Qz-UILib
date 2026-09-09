@@ -9,14 +9,20 @@ import java.util.function.Supplier;
 import club.heiqi.uilib.internal.devtools.playground.PlaygroundKit;
 import club.heiqi.uilib.internal.devtools.playground.PlaygroundPage;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneContextMenu;
 import club.heiqi.uilib.ui.scene.control.SceneDialog;
 import club.heiqi.uilib.ui.scene.control.SceneToast;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 浮层演示页（Dialog / Toast / ContextMenu）。
@@ -25,8 +31,21 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 全屏模态遮罩 + 窗口中心卡片 + 出现/退场动画）与 alert/confirm 命令式 API、
  * SceneToast 命令式投递与不同时长堆叠（类型化入口 + 底部居中 + 淡入淡出动画）、
  * SceneContextMenu 右键命令式打开与菜单项启停/分隔线。页面内置动作日志回显所有浮层回调。</p>
+ *
+ * <p><b>外观归属（G16/OverlayPage）</b>：本页默认外观统一消费来源主题——卡片与右键演示区容器的
+ * 表面（background/border/borderWidth/cornerRadius/backdrop/surfaceElevation）由
+ * {@link SceneSurfaceBinder} 独占写入（角色配方由 {@link SceneThemes#surface} 解析）；节标题与
+ * 说明文字复用公共文本构件 {@link PlaygroundKit#title(String)}/{@link PlaygroundKit#hint(String)}
+ * （宿主内经 {@code installRuntime} 接缝默认跟随来源主题正文/次要前景），动作日志取
+ * {@link SceneThemes#mutedForeground}；旧的静态取色（{@code PlaygroundKit.PANEL_BG/BORDER/MUTED}
+ * 与 {@code SceneChromeTokens.RADIUS_MD}）已删除。Dialog/Toast/ContextMenu 的<b>本体外观仍由各自
+ * 已主题化的控件负责</b>，本页只触发演示动作，不复制其样式、也不二次包一层玻璃；布局（内边距/
+ * 高度/交叉轴对齐）仍归本页，主题不接管布局。</p>
  */
 public final class OverlayPage implements PlaygroundPage {
+
+    /** 常开 enabled 信号：右键演示区容器不参与 disabled 语义（表面绑定器只关心恒真）。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     /** 对话框可见性（受控源，onDismiss 回写 false）。 */
     private final Signal<Boolean> dialogVisible = Signal.create(Boolean.FALSE);
@@ -121,11 +140,18 @@ public final class OverlayPage implements PlaygroundPage {
             menuPanel.setPreferredHeight(48);
             menuPanel.setFillParentWidth(true);
             menuPanel.setPadding(10);
-            menuPanel.setBorderWidth(1);
-            menuPanel.setBorderColor(PlaygroundKit.BORDER);
-            menuPanel.setCornerRadius(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.RADIUS_MD);
-            menuPanel.setBackgroundColor(PlaygroundKit.PANEL_BG);
-            menuPanel.setCrossAxisAlign(club.heiqi.uilib.ui.scene.layout.CrossAxisAlign.CENTER);
+            menuPanel.setCrossAxisAlign(CrossAxisAlign.CENTER);
+            // 右键演示区容器的表面（background/border/borderWidth/cornerRadius/backdrop/实体高度）
+            // 唯一写入者是表面绑定器：角色配方取来源主题 GROUP（内容底座，与公共卡片同角色）。
+            // 旧的静态写入者（setBorderWidth(1)/PlaygroundKit.BORDER/RADIUS_MD/PANEL_BG）已删；
+            // 布局（高度/内边距/交叉轴对齐）仍归本页，主题不接管布局。
+            SceneInteractionState regionInteraction = rt.interactionState(menuPanel);
+            // 时序契约：Router 对未创建的 signal 短路，故构建期先声明关心，保证 hover 能驱动配方状态档。
+            regionInteraction.hovered();
+            regionInteraction.pressed();
+            regionInteraction.focused();
+            SceneSurfaceBinder.bind(rt, menuPanel, SceneThemes.surface(rt, SceneTheme.Role.GROUP),
+                    ALWAYS_ENABLED, regionInteraction);
             menuPanel.appendChild(PlaygroundKit.hint("在此区域点击右键打开上下文菜单"));
             menuCard.appendChild(menuPanel);
             rt.on(menuPanel, SceneEventType.POINTER_DOWN, (event, context) -> {
@@ -136,7 +162,8 @@ public final class OverlayPage implements PlaygroundPage {
                 int y = context.getRawPointerY() - context.getTreeRootAbsY();
                 SceneContextMenu.open(rt, x, y, buildMenuItems());
             });
-            SceneNode menuLog = PlaygroundKit.text("", PlaygroundKit.MUTED, 12);
+            // 动作日志读数：12px 次要前景，取来源主题（与页内其它文字同一主题路径）。
+            SceneNode menuLog = PlaygroundKit.text(rt, "", SceneThemes.mutedForeground(rt), 12);
             menuCard.appendChild(menuLog);
             rt.bind(Computed.create(() -> log.get().isEmpty() ? "动作日志：（暂无，右键面板试试）" : "动作日志：" + log.get()),
                     menuLog::setText);
