@@ -79,6 +79,24 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>写回（守 R7：onItemsChanged 内不回 set localItems）：{@code List<ListItem> → List<String>}
  *       调 {@link DraftSignalAdapter#onFieldEdit}</li>
  * </ul>
+ *
+ * <h3>外观归属（G15/SimpleList 迁移后口径）</h3>
+ * <p>本类零直接外观写入（契约 §4「一个属性只有一个写入者」）：</p>
+ * <ul>
+ *   <li>字段卡片表面（background/border/borderWidth/cornerRadius/backdrop/surfaceElevation）与
+ *       标题/helper/error/dirty 语义色经 {@link FieldShellBinder}（G15/Support）→
+ *       {@code FormFieldShell} theme-aware 默认路径消费来源主题（GROUP 角色配方），本类不复制。</li>
+ *   <li>列表底座（viewport GROUP 配方）、行内 {@code SceneTextInput}（INPUT）、添加/删除按钮
+ *       （BUTTON_STANDARD / BUTTON_DANGER）、列表标题前景与行的 accent 轻量状态覆盖，全部由已
+ *       主题化的 {@link SceneSimpleList} 本体（G12）自持——本类只组 Props 消费，不复制样式、
+ *       不给卡片或底座叠第二层表面，行按契约 §4.1 与 G13 裁决保持轻量口径（不各自装滤镜）。</li>
+ *   <li>唯一的 {@code ConfigTheme} 取值是 {@code theme.listHeight()} → {@code controlHeight}
+ *       纯 int 布局入参（契约 §4「padding/尺寸/布局属性归控件自身，主题不接管布局」；G15/Support
+ *       衔接要点 3：{@code theme.listHeight()} 纯 int 路径安全保留），不是喂壳的显式外观值。
+ *       该值同时按 Number 先例原样传给 binder 的源码兼容占位形参（默认路径不消费，
+ *       7 个 Renderer 实例迁移后由主代理统一收口删除，本实例不自行摘除）。</li>
+ * </ul>
+ * <p>列表增删 / 选择 / 拖拽 / 草稿桥 / dirty / error 行为与迁移前零改动。</p>
  */
 public final class SimpleListFieldRenderer implements FieldRenderer {
 
@@ -172,6 +190,8 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
         // D7：renderer 是唯一翻译点。onItemsChanged 把 List<ListItem> → List<String> 写回 draft。
         // 守 R7：控件已 set，只 onFieldEdit（CONTROL_ALREADY_SET），不二次 set localItems。
         // P3：通过 Builder 传 draggable，true 时控件行首渲染拖拽把手（fontSort 形态）。
+        // G15/SimpleList 销账：Props 只含数据与行为入参（标题/占位文案、回调、min/max、draggable），
+        // 无任何样式/色值分量——表面与前景全部归已主题化的 SceneSimpleList 本体（G12）自持。
         SceneSimpleList.Props props = SceneSimpleList.Props.builder(localItems)
                 .label(FieldRenderSupport.labelOf(spec))
                 .placeholder("")
@@ -182,6 +202,13 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
                 .draggable(draggable)
                 .build();
 
+        // G15/SimpleList 销账（本文件唯一 ConfigTheme/FormTheme 触点，两处用途均非外观值）：
+        // ① theme.listHeight() 是 controlHeight 纯 int 布局入参（契约 §4：主题不接管布局；
+        //    G15/Support 衔接要点 3 安全保留），字段自带高度下界，非喂壳旧主题快照；
+        // ② theme 形参为 FieldShellBinder 的源码兼容占位（G15/Support 起默认路径不消费），
+        //    按 Number 先例原样传值、由主代理统一收口，本实例不自行摘除。
+        // 卡片表面（GROUP 配方）与标题/helper/error/dirty 语义色由 binder → FormFieldShell
+        // theme-aware 默认路径跟随来源主题，本类零直接外观写入、零竞争绑定。
         FormTheme theme = ConfigTheme.asFormTheme();
         return FieldShellBinder.build(rt, spec, adapter,
                 SceneSimpleList.create(rt, props), theme, theme.listHeight());
