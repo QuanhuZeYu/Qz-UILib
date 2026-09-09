@@ -1,6 +1,10 @@
 package club.heiqi.uilib.internal.chat3.view;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -8,6 +12,8 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import org.junit.Assert;
 import org.junit.After;
@@ -30,7 +36,10 @@ import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGrouper;
 import club.heiqi.uilib.internal.chat3.viewmodel.SenderColorPalette;
 import club.heiqi.uilib.internal.chat3.viewmodel.MessageGroupModel;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiBackdrop;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
@@ -46,8 +55,15 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * ChatMessageList 契约测试:组 key 唯一性(T1)+ 组头双节点/圆角分级/accent 强调条(T4b,设计稿 §3.3/§6.1)。
@@ -3040,5 +3056,479 @@ public class ChatMessageListTest {
                         + "(int, int) 又成了屏幕坐标命中入口", screenHitApi);
             }
         }
+    }
+
+    // ==================== G17/Bubble:气泡底色/材质/圆角 = 配方局部覆盖接缝 ====================
+
+    /** 玻璃态合成器(与配方唯一合并处同式):把设置 alpha 合入语义底色 RGB 通道。 */
+    private static int compositedAlpha(int argb, int alpha) {
+        return (argb & 0x00FFFFFF) | (alpha << 24);
+    }
+
+    /** 与聊天既有取值全面冲突的通用 GROUP 配方主题:钉「显式聊天设置 > 通用主题」不被刷平。 */
+    private static SceneTheme competingBubbleTheme() {
+        SceneSurfaceStyle themedGroup = SceneSurfaceStyle.builder()
+                .backdrop(UiBackdrop.liquidGlass(UiGlassMaterial.THIN, 20, 0.9F))
+                .cornerRadius(6)
+                .borderWidth(2)
+                .idle(new SceneSurfaceStyle.StateStyle(0xFF403020, 0x66FFFFFF, 0.5F, 0.5F))
+                .hovered(new SceneSurfaceStyle.StateStyle(0xFF463626, 0x80FFFFFF, 1.0F, 0.7F))
+                .pressed(new SceneSurfaceStyle.StateStyle(0xFF3A2C1C, 0x4DFFFFFF, 0.0F, 0.4F))
+                .disabled(new SceneSurfaceStyle.StateStyle(0xFF2A2420, 0x33FFFFFF, 0.35F, 0.3F))
+                .build();
+        return SceneTheme.builder().surface(SceneTheme.Role.GROUP, themedGroup).build();
+    }
+
+    /** 与第一档逐值不同的第二主题:主题切换重派生的可观测载体(配方相等会被记忆化)。 */
+    private static SceneTheme alternateBubbleTheme() {
+        SceneSurfaceStyle themedGroup = SceneSurfaceStyle.builder()
+                .backdrop(UiBackdrop.liquidGlass(UiGlassMaterial.THIN, 21, 0.8F))
+                .cornerRadius(3)
+                .borderWidth(2)
+                .idle(new SceneSurfaceStyle.StateStyle(0xFF102930, 0x66FFFFFF, 0.5F, 0.5F))
+                .hovered(new SceneSurfaceStyle.StateStyle(0xFF183138, 0x80FFFFFF, 1.0F, 0.7F))
+                .pressed(new SceneSurfaceStyle.StateStyle(0xFF0A2128, 0x4DFFFFFF, 0.0F, 0.4F))
+                .disabled(new SceneSurfaceStyle.StateStyle(0xFF202420, 0x33FFFFFF, 0.35F, 0.3F))
+                .build();
+        return SceneTheme.builder().surface(SceneTheme.Role.GROUP, themedGroup).build();
+    }
+
+    /** 组节点的表观气泡/消息节点 = 最后一个子节点(组头在前;系统组无组头时即消息节点)。 */
+    private static SceneNode lastChild(SceneNode group) {
+        List<SceneNode> children = group.__getChildren();
+        return children.get(children.size() - 1);
+    }
+
+    private static int countType(List<PaintCommand> commands, PaintCommandType type) {
+        int count = 0;
+        for (PaintCommand command : commands) {
+            if (command.getType() == type) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int countOccurrences(String source, String needle) {
+        int count = 0;
+        int index = source.indexOf(needle);
+        while (index >= 0) {
+            count++;
+            index = source.indexOf(needle, index + needle.length());
+        }
+        return count;
+    }
+
+    /**
+     * ① 气泡语义色区分保持 + 反向钉住:自己/他人各取聊天设置独立通道(互不相同、均非主题色),
+     * 系统消息无气泡表面;装上全面冲突的通用 GROUP 主题并推进多帧后,底色/圆角/材质仍由聊天
+     * 配方供给(把某语义气泡刷成主题统一色即红;后续帧覆写型竞争绑定也会被钉住)。
+     */
+    @Test
+    public void bubbleSemanticColorsStayDistinctAndUndefeatedByConflictingTheme() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 2, T0 + 60_000L));
+            controller.history().append(new ChatLineRecord(new ChatComponentText("[公告] 维护通知"), 3, T0 + 120_000L));
+            controller.notifyDataChanged();
+            SceneNode root = controller.buildContent(rt);
+            rt.flush();
+            rt.__tickFrame(1L);
+            rt.flush();
+            rt.__tickFrame(2L);
+            rt.flush();
+
+            List<SceneNode> groups = hudGroups(root);
+            Assert.assertEquals("他人/自己/系统三组", 3, groups.size());
+            SceneNode otherBubble = lastChild(groups.get(0));
+            SceneNode selfBubble = lastChild(groups.get(1));
+            SceneNode systemNode = lastChild(groups.get(2));
+
+            int expectedOther = compositedAlpha(ChatMarkdownSettings.getBubbleOtherArgb(),
+                    ChatMarkdownSettings.getGlassBubbleAlpha());
+            int expectedSelf = compositedAlpha(ChatMarkdownSettings.getBubbleSelfArgb(),
+                    ChatMarkdownSettings.getGlassBubbleAlpha());
+            Assert.assertEquals("他人气泡 = 聊天设置 other 通道合成玻璃 alpha(非主题 tint)",
+                    expectedOther, otherBubble.getBackgroundColor());
+            Assert.assertEquals("自己气泡 = 聊天设置 self 通道合成玻璃 alpha(非主题 tint)",
+                    expectedSelf, selfBubble.getBackgroundColor());
+            Assert.assertNotEquals("自己/他人气泡不得刷成同一色", expectedSelf, expectedOther);
+            SceneSurfaceStyle themedGroup = competingBubbleTheme().surface(SceneTheme.Role.GROUP);
+            Assert.assertNotEquals("两语义色均不得等于主题 GROUP tint", themedGroup.getIdle().getTint(), expectedOther);
+            Assert.assertNotEquals(themedGroup.getIdle().getTint(), expectedSelf);
+            Assert.assertEquals("系统消息无气泡底色(现状语义保持)", 0, systemNode.getBackgroundColor());
+            Assert.assertNull("系统消息不得被装玻璃", systemNode.getBackdrop());
+            // 材质/圆角同由聊天配方管辖:主题冲突档为 THIN/20/圆角 6,聊天档为 DARK_REGULAR/8/12。
+            UiBackdrop backdrop = otherBubble.getBackdrop();
+            Assert.assertNotNull("玻璃开启时气泡必须带滤镜", backdrop);
+            Assert.assertEquals(UiGlassMaterial.DARK_REGULAR, backdrop.getEffect().getMaterial());
+            Assert.assertEquals(ChatMarkdownSettings.getGlassBlurRadiusPx(), backdrop.getBlurRadius());
+            assertCorners(otherBubble, 12, 12, 12, 12);
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+        }
+    }
+
+    /**
+     * ①′ 优先级逐分量同框:注入的局部配方只显式设置 自己/他人底色 + 外圆角,玻璃开关/模糊/
+     * 强度/内圆角均缺省 → 滤镜取主题档、颜色与外圆角取聊天档(局部覆盖不是全有全无)。
+     */
+    @Test
+    public void partialChatPatchOverridesThemePerComponent() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        controller.messageList().__setBubbleLocalStyle(new Supplier<ChatMessageList.BubbleLocalStyle>() {
+            @Override
+            public ChatMessageList.BubbleLocalStyle get() {
+                return new ChatMessageList.BubbleLocalStyle(null, null, null, null,
+                        Integer.valueOf(0xEE112233), Integer.valueOf(0xEE445566),
+                        Integer.valueOf(9), null);
+            }
+        });
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+
+        SceneNode bubble = lastChild(hudGroups(root).get(0));
+        SceneSurfaceStyle themedGroup = competingBubbleTheme().surface(SceneTheme.Role.GROUP);
+        Assert.assertEquals("显式聊天底色分量压过主题(玻璃开关缺省 → 不合成 alpha)",
+                0xEE445566, bubble.getBackgroundColor());
+        Assert.assertEquals("显式聊天外圆角压过主题圆角 6", 9, bubble.getCornerRadiusTopLeft());
+        Assert.assertEquals("未管辖分量回主题:滤镜 = 主题 GROUP backdrop",
+                themedGroup.getBackdrop().getBlurRadius(), bubble.getBackdrop().getBlurRadius());
+        Assert.assertEquals(themedGroup.getBackdrop().getEffect().getMaterial(),
+                bubble.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("内圆角缺省 → 跟随配方单值(四角同一外档)", 9, bubble.getCornerRadiusBottomRight());
+    }
+
+    /**
+     * ② 表面归属事实与滤镜计数:列表容器(listParent)本无底表面——背景归 ChatContainer/
+     * ChatHudWindow 宿主(G17/Container 实例),本组件不得为其新增表面;「装」的一侧 =
+     * 纯主题形态下气泡逐项等于 GROUP 配方值、每颗气泡恰 1 条 BACKDROP(无第二层);聊天玻璃
+     * 关闭的一侧 = 整树零 BACKDROP、底色回不透明设计令牌。
+     */
+    @Test
+    public void listContainerCarriesNoSurfaceAndBubbleGlassFollowsRecipeExactlyOnce() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> one"), 1, T0));
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> two"), 2, T0 + 1000));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneNode list = SceneNode.column().setHitTestable(false);
+            Map<SceneNode, ChatLineRecord> registry =
+                    new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
+            SceneListHandle handle = controller.messageList().mount(rt, list,
+                    controller.groupsSignal(), ChatMessageList.Style.container(), registry,
+                    controller.frameMillisSignal());
+            rt.flush();
+            FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
+            new SceneLayoutEngine(measurer).layout(list, new Constraints(400, 300));
+            ScenePaintEngine engine = new ScenePaintEngine(measurer);
+
+            // 列表容器无底表面:不新增背景/滤镜/圆角/边框(归属 Container 宿主实例)。
+            Assert.assertNull("列表容器不得被新增表面", list.getBackdrop());
+            Assert.assertEquals("列表容器零底色", 0, list.getBackgroundColor());
+            Assert.assertEquals("列表容器零圆角", 0, list.getCornerRadius());
+            Assert.assertEquals("列表容器零边框", 0, list.getBorderWidth());
+
+            SceneNode group = list.__getChildren().get(0);
+            SceneNode firstBubble = group.__getChildren().get(1);
+            SceneNode lastBubble = group.__getChildren().get(2);
+            // 「装」侧:气泡逐项 = 聊天配方值 + 每颗恰 1 条 BACKDROP(无第二层滤镜)。
+            int expected = compositedAlpha(ChatMarkdownSettings.getBubbleOtherArgb(),
+                    ChatMarkdownSettings.getGlassBubbleAlpha());
+            Assert.assertEquals(expected, firstBubble.getBackgroundColor());
+            Assert.assertEquals(expected, lastBubble.getBackgroundColor());
+            Assert.assertNotNull(firstBubble.getBackdrop());
+            Assert.assertNotNull(lastBubble.getBackdrop());
+            for (int i = 1; i <= 2; i++) {
+                Assert.assertNull("行子节点不得各自再采样背景(零第二层滤镜)",
+                        group.__getChildren().get(i).__getChildren().get(0).getBackdrop());
+            }
+            PaintPlan plan = engine.paint(list).getPlan();
+            Assert.assertEquals("玻璃开:恰每颗气泡一条 BACKDROP", 2,
+                    countType(plan.getCommands(), PaintCommandType.BACKDROP));
+
+            // 「不装」侧:关玻璃 → 只重派生(同节点),零 BACKDROP、底色回不透明令牌。
+            ChatMarkdownSettings.setGlassEnabled(false);
+            rt.__tickFrame(1L);
+            rt.flush();
+            Assert.assertSame("设置变更不重建组", group, list.__getChildren().get(0));
+            Assert.assertSame("设置变更不重生气泡", firstBubble, list.__getChildren().get(0).__getChildren().get(1));
+            Assert.assertNull(firstBubble.getBackdrop());
+            Assert.assertEquals("关玻璃回实心设计令牌", ChatMarkdownSettings.getBubbleOtherArgb(),
+                    firstBubble.getBackgroundColor());
+            Assert.assertEquals("关玻璃:整树零 BACKDROP", 0,
+                    countType(engine.paint(list).getPlan().getCommands(), PaintCommandType.BACKDROP));
+            handle.dispose();
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+        }
+    }
+
+    /**
+     * ②′ 纯主题形态(测试接缝注入「无聊天局部设置」):气泡表面逐项 = 通用 GROUP 配方,
+     * 且整树每颗气泡恰 1 条 BACKDROP(主题滤镜直通、无第二层)。
+     */
+    @Test
+    public void plainThemeOnlyBubbleMatchesGroupRecipeItemByItem() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        controller.messageList().__setBubbleLocalStyle(null);
+        SceneNode list = SceneNode.column().setHitTestable(false);
+        Map<SceneNode, ChatLineRecord> registry = new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
+        controller.messageList().mount(rt, list, controller.groupsSignal(),
+                ChatMessageList.Style.container(), registry, controller.frameMillisSignal());
+        rt.flush();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
+        new SceneLayoutEngine(measurer).layout(list, new Constraints(400, 300));
+        SceneNode bubble = lastChild(list.__getChildren().get(0));
+        SceneSurfaceStyle themed = competingBubbleTheme().surface(SceneTheme.Role.GROUP);
+        Assert.assertEquals("底色 = 主题 GROUP idle tint", themed.getIdle().getTint(), bubble.getBackgroundColor());
+        Assert.assertEquals("滤镜 = 主题 GROUP backdrop", themed.getBackdrop().getBlurRadius(),
+                bubble.getBackdrop().getBlurRadius());
+        Assert.assertEquals(themed.getBackdrop().getEffect().getMaterial(),
+                bubble.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("圆角 = 主题 GROUP 单值(四角同档)", themed.getCornerRadius(),
+                bubble.getCornerRadiusTopLeft());
+        PaintPlan plan = new ScenePaintEngine(measurer).paint(list).getPlan();
+        Assert.assertEquals("每颗气泡恰一颗滤镜(无第二层)", 1,
+                countType(plan.getCommands(), PaintCommandType.BACKDROP));
+    }
+
+    /**
+     * ③ 主题/聊天设置变更只重派生:节点身份不变、effect 数不增长;聊天形态对主题换值免疫
+     * (优先级聊天 > 主题),设置变更则精确跟值——反向钉「重派生而非重建」。
+     */
+    @Test
+    public void themeAndChatSettingsChangesOnlyRederiveBubbleSurface() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        int savedBlur = ChatMarkdownSettings.getGlassBlurRadiusPx();
+        int savedAlpha = ChatMarkdownSettings.getGlassBubbleAlpha();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            ChatSceneController controller = controller();
+            controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            Signal<SceneTheme> themeSignal = Signal.create(competingBubbleTheme());
+            SceneThemes.install(rt, themeSignal);
+            SceneNode root = controller.buildContent(rt);
+            rt.flush();
+            SceneNode group = hudGroups(root).get(0);
+            SceneNode bubble = lastChild(group);
+            int effectsAfterMount = ReactiveTestProbe.registeredEffectCount();
+
+            // 聊天设置变更 → 同节点重派生:blur 与 alpha 精确跟值。
+            ChatMarkdownSettings.setGlassBlurRadiusPx(17);
+            ChatMarkdownSettings.setGlassBubbleAlpha(0x60);
+            rt.__tickFrame(1L);
+            rt.flush();
+            Assert.assertSame("设置变更不重建组节点", group, hudGroups(root).get(0));
+            Assert.assertSame("设置变更不重生气泡节点", bubble, lastChild(hudGroups(root).get(0)));
+            Assert.assertEquals(17, bubble.getBackdrop().getBlurRadius());
+            Assert.assertEquals(0x60, (bubble.getBackgroundColor() >>> 24) & 0xFF);
+            Assert.assertEquals(compositedAlpha(ChatMarkdownSettings.getBubbleOtherArgb(), 0x60),
+                    bubble.getBackgroundColor());
+
+            // 主题变更(聊天全权管辖)→ 外观不动、effect 不增长;残留按帧竞争绑定会在后续帧
+            // 把主题值刷回来,故多推几帧再断言。
+            themeSignal.set(alternateBubbleTheme());
+            rt.__tickFrame(2L);
+            rt.flush();
+            rt.__tickFrame(3L);
+            rt.flush();
+            Assert.assertSame(bubble, lastChild(hudGroups(root).get(0)));
+            Assert.assertEquals(17, bubble.getBackdrop().getBlurRadius());
+            Assert.assertEquals(compositedAlpha(ChatMarkdownSettings.getBubbleOtherArgb(), 0x60),
+                    bubble.getBackgroundColor());
+            Assert.assertEquals("变更只重派生,不新增订阅", effectsAfterMount,
+                    ReactiveTestProbe.registeredEffectCount());
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+            ChatMarkdownSettings.setGlassBlurRadiusPx(savedBlur);
+            ChatMarkdownSettings.setGlassBubbleAlpha(savedAlpha);
+        }
+    }
+
+    /**
+     * ③′ 纯主题形态的主题切换同样只重派生:节点身份不变、effect 不增长,配方逐项随新主题更新
+     * (证明主题接缝真实存在、不是死代码;与 ③ 的生产形态互补)。
+     */
+    @Test
+    public void themeSwitchRederivesPlainThemeOnlyBubbleToNewRecipe() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        Signal<SceneTheme> themeSignal = Signal.create(competingBubbleTheme());
+        SceneThemes.install(rt, themeSignal);
+        ChatSceneController controller = controller();
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
+        controller.notifyDataChanged();
+        controller.messageList().__setBubbleLocalStyle(null);
+        SceneNode root = controller.buildContent(rt);
+        rt.flush();
+        SceneNode group = hudGroups(root).get(0);
+        SceneNode bubble = lastChild(group);
+        int effectsAfterMount = ReactiveTestProbe.registeredEffectCount();
+
+        themeSignal.set(alternateBubbleTheme());
+        rt.__tickFrame(1L);
+        rt.flush();
+        SceneSurfaceStyle alt = alternateBubbleTheme().surface(SceneTheme.Role.GROUP);
+        Assert.assertSame(group, hudGroups(root).get(0));
+        Assert.assertSame(bubble, lastChild(hudGroups(root).get(0)));
+        Assert.assertEquals(alt.getIdle().getTint(), bubble.getBackgroundColor());
+        Assert.assertEquals(alt.getCornerRadius(), bubble.getCornerRadiusTopLeft());
+        Assert.assertEquals(alt.getBackdrop().getBlurRadius(), bubble.getBackdrop().getBlurRadius());
+        Assert.assertEquals("主题切换不新增订阅", effectsAfterMount,
+                ReactiveTestProbe.registeredEffectCount());
+    }
+
+    /**
+     * ④ 源码守卫:气泡表面值单一来源——玻璃/颜色/圆角设置只在配方采样器读取;滤镜只在配方层
+     * 构造一次;无静态色板与字面量直写;消费方向锁:通用主题包绝不 import internal(反向依赖
+     * 禁止,契约 §2)。
+     */
+    @Test
+    public void bubbleSurfaceValuesAreSingleSourcedAndThemeDependencyIsOneWay() throws Exception {
+        String source = new String(Files.readAllBytes(Paths.get(
+                "src/main/java/club/heiqi/uilib/internal/chat3/view/ChatMessageList.java")),
+                StandardCharsets.UTF_8);
+        Assert.assertEquals("玻璃开关只准配方采样器读一次", 1, countOccurrences(source, "isGlassEnabled()"));
+        Assert.assertEquals("模糊半径只准配方采样器读一次", 1, countOccurrences(source, "getGlassBlurRadiusPx()"));
+        Assert.assertEquals("透镜强度只准配方采样器读一次", 1, countOccurrences(source, "getGlassLensStrength()"));
+        Assert.assertEquals("玻璃 alpha 只准配方采样器读一次", 1, countOccurrences(source, "getGlassBubbleAlpha()"));
+        Assert.assertEquals("自己气泡色只准配方采样器读一次", 1, countOccurrences(source, "getBubbleSelfArgb()"));
+        Assert.assertEquals("他人气泡色只准配方采样器读一次", 1, countOccurrences(source, "getBubbleOtherArgb()"));
+        Assert.assertEquals("大圆角设置只准配方采样器读一次", 1, countOccurrences(source, "getBubbleCornerRadius()"));
+        Assert.assertEquals("内圆角设置只准配方采样器读一次", 1,
+                countOccurrences(source, "getBubbleInnerCornerRadiusPx()"));
+        Assert.assertEquals("滤镜只在配方层构造一次(禁止第二处造玻璃)", 1,
+                countOccurrences(source, "UiBackdrop.liquidGlass("));
+        Assert.assertEquals("底色 alpha 合成只在配方合并处一次", 1,
+                countOccurrences(source, "0x00FFFFFF"));
+        Assert.assertTrue("存在通用主题配方消费接缝", source.contains("SceneThemes.surface("));
+        Assert.assertTrue("表面值统一经配方合并处", source.contains("mergeBubbleSurface("));
+        Assert.assertTrue("气泡表面唯一写入链 = 配方重派生绑定", source.contains("bake.updateSurface("));
+        Assert.assertFalse("不得残留静态色板 SceneStateColors", source.contains("SceneStateColors"));
+        Assert.assertFalse("不得残留 SceneChromeTokens 查表", source.contains("SceneChromeTokens"));
+        Assert.assertFalse("setBackgroundColor 不得带静态字面量", source.contains("setBackgroundColor(0x"));
+        Assert.assertFalse("setCornerRadius 不得绕过配方直读设置",
+                source.contains("setCornerRadius(ChatMarkdownSettings"));
+
+        // 方向锁:theme 包绝不 import internal/chat3(通用主题不感知聊天,契约 §4.1)。
+        try (Stream<Path> walk = Files.walk(Paths.get("src/main/java/club/heiqi/uilib/ui/scene/theme"))) {
+            for (Path file : (Iterable<Path>) walk.filter(p -> p.toString().endsWith(".java"))::iterator) {
+                String themeSource = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+                Assert.assertFalse("通用主题不得 import internal/chat3: " + file,
+                        themeSource.matches("(?s).*import\\s+club\\.heiqi\\.uilib\\.internal\\..*"));
+            }
+        }
+    }
+
+    /**
+     * ⑤ 消息渲染既有合同保持:hover 叠加仍按配方底色 + 3% 白推进(bake 唯一底色写入链,
+     * 配方重派生不与其竞争);markdown CODE 行底色、accent 强调条、引用竖条等语义色不随
+     * 气泡配方/主题变化(越界刷内容色即红)。
+     */
+    @Test
+    public void hoverBakeAndContentSemanticColorsSurviveRecipeSeam() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            ChatSceneController controller = linkController();
+            controller.setHostViewport(400, 300);
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Bob> hello http://a.co"), 1, T0));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
+            SceneNode root = controller.buildContent(rt);
+            rt.flush();
+            new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+            SceneNode bubble = lastChild(hudGroups(root).get(0));
+            int recipeBase = compositedAlpha(ChatMarkdownSettings.getBubbleOtherArgb(),
+                    ChatMarkdownSettings.getGlassBubbleAlpha());
+            Assert.assertEquals(recipeBase, bubble.getBackgroundColor());
+
+            // hover 满程 = 配方底色 3% 白叠加(既有交互合同,数值逐位一致)。
+            AnchorRect box = SceneGeometry.absoluteBox(bubble, 0, 0);
+            movePointer(rt, root, box.getX() + 5, box.getY() + box.getHeight() - 5);
+            controller.tick(T0 + 100L);
+            rt.flush();
+            controller.tick(T0 + 400L);
+            rt.flush();
+            Assert.assertEquals("hover 稳态 = 配方底色 + 3% 白",
+                    ChatCardComposer.hoveredBubbleColor(recipeBase), bubble.getBackgroundColor());
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+        }
+    }
+
+    /** ⑤′ 内容语义色在玻璃 + 冲突主题下逐位不变(CODE 围栏底/accent 条/引用条均非气泡表面)。 */
+    @Test
+    public void contentSemanticColorsStayOutsideBubbleRecipe() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            char tick = (char) 0x60;
+            String fence = String.valueOf(tick) + tick + tick;
+            String nl = String.valueOf((char) 0x0A);
+            ChatSceneController controller = controller();
+            controller.setHostViewport(400, 300);
+            controller.history().append(new ChatLineRecord(new ChatComponentText(
+                    "<Bob> " + fence + nl + "int a = 1;" + nl + fence), 1, T0));
+            controller.history().append(new ChatLineRecord(
+                    new ChatComponentText("<Alex> hi"), 2, T0 + 60_000L));
+            controller.notifyDataChanged();
+            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
+            SceneNode root = controller.buildContent(rt);
+            rt.flush();
+            Assert.assertEquals("玻璃 alpha 合成不得越界进 CODE 行底色(主题/配方都刷不动它)",
+                    ChatMarkdownSettings.getCodeBackgroundArgb(),
+                    findLineNodeWithText(root, "int a = 1;").getBackgroundColor());
+
+            // accent 强调条:自己气泡语义标记,设置色 + 几何圆角,与气泡配方/主题无涉。
+            List<SceneNode> groups = hudGroups(root);
+            SceneNode selfBubble = lastChild(groups.get(groups.size() - 1));
+            SceneNode accentBar = selfBubble.__getChildren().get(1);
+            Assert.assertEquals(ChatMarkdownSettings.getAccentBarSelfArgb(), accentBar.getBackgroundColor());
+            Assert.assertEquals(2, accentBar.getCornerRadius());
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+        }
+    }
+
+    /** 深度优先找首个段流文本含指定内容的行节点(夹具内短消息唯一)。 */
+    private static SceneNode findLineNodeWithText(SceneNode root, String text) {
+        if (root.getSegments() != null) {
+            StringBuilder builder = new StringBuilder();
+            for (TextSegment segment : root.getSegments()) {
+                builder.append(segment.getText());
+            }
+            if (builder.indexOf(text) >= 0) {
+                return root;
+            }
+        }
+        for (SceneNode child : root.__getChildren()) {
+            SceneNode hit = findLineNodeWithText(child, text);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
     }
 }
