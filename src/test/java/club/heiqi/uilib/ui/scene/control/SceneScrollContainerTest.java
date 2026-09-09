@@ -13,8 +13,10 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -22,6 +24,9 @@ import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneScrollContainer 高阶工厂单元测试。
@@ -373,5 +378,257 @@ public class SceneScrollContainerTest {
         Assert.assertEquals("第 0 行应为 z", "z", children.get(0).getText());
         Assert.assertEquals("第 1 行应为 x", "x", children.get(1).getText());
         Assert.assertEquals("第 2 行应为 y", "y", children.get(2).getText());
+    }
+
+    // ==================== 默认底座主题化（G07/ScrollContainer） ====================
+
+    /** 在可切换局部主题作用域内挂载默认滚动容器（无 scrollbar，外观走主题）。 */
+    private MountHandle mountContainerInTheme(Signal<SceneTheme> theme,
+            final SceneScrollContainer.Result[] holder, int padding, int gap,
+            int backgroundColor, int cornerRadius) {
+        return runtime.mount(sceneRoot, () -> {
+            SceneThemes.withTheme(theme, () -> {
+                holder[0] = SceneScrollContainer.create(runtime, new SceneScrollContainer.Props(
+                        padding, gap, backgroundColor, cornerRadius, null));
+            });
+            return holder[0].container();
+        });
+    }
+
+    /** 往 content 里塞 count 个固定高行节点。 */
+    private static void fillRows(SceneNode content, int count, int rowHeight) {
+        for (int i = 0; i < count; i++) {
+            SceneNode child = new SceneNode();
+            child.setPreferredHeight(rowHeight);
+            content.appendChild(child);
+        }
+    }
+
+    /**
+     * 默认工厂路径（不传 backgroundColor/cornerRadius）：viewport 底座取主题 GROUP 配方
+     * （背景/圆角/边框/实体高度/滤镜），container 与 content 不装表面。
+     */
+    @Test
+    public void defaultFactoryPathUsesGroupRecipeSurface() {
+        SceneSurfaceStyle group = SceneThemes.DEFAULT.surface(SceneTheme.Role.GROUP);
+        Assert.assertNotNull("前置：GROUP 配方自带滤镜", group.getBackdrop());
+        final SceneScrollContainer.Result[] holder = new SceneScrollContainer.Result[1];
+        MountHandle handle = mountContainerInTheme(
+                Signal.create(SceneTheme.liquidGlassDark()), holder, 0, 0, 0, 0);
+        runtime.flush();
+
+        SceneNode viewport = holder[0].viewport();
+        Assert.assertEquals("默认背景 = GROUP 配方 idle 染色",
+                group.getIdle().getTint(), viewport.getBackgroundColor());
+        Assert.assertEquals("默认圆角 = GROUP 配方", group.getCornerRadius(), viewport.getCornerRadius());
+        Assert.assertEquals("默认边框色 = GROUP 配方 idle 缘色",
+                group.getIdle().getEdge(), viewport.getBorderColor());
+        Assert.assertEquals("默认边框宽 = GROUP 配方", group.getBorderWidth(), viewport.getBorderWidth());
+        Assert.assertEquals("默认实体高度 = GROUP 配方",
+                group.getIdle().getElevation(), viewport.__getSurfaceElevation(), 0.0001F);
+        Assert.assertNotNull("默认路径应给 viewport 装 GROUP 滤镜", viewport.getBackdrop());
+        Assert.assertEquals("滤镜模糊半径 = 配方", group.getBackdrop().getBlurRadius(),
+                viewport.getBackdrop().getBlurRadius());
+        Assert.assertEquals("滤镜材质 = 配方", group.getBackdrop().getEffect().getMaterial(),
+                viewport.getBackdrop().getEffect().getMaterial());
+        Assert.assertNull("container 根节点不装表面", holder[0].container().getBackdrop());
+        Assert.assertNull("content 不装表面", holder[0].content().getBackdrop());
+        handle.dispose();
+    }
+
+    /**
+     * 显式 backgroundColor/cornerRadius 仍优先：走旧实色路径，不装表面绑定（无滤镜、无双写入者）。
+     */
+    @Test
+    public void explicitChromeOverridesThemeAndSkipsSurfaceBinding() {
+        final int bg = 0xFF224466;
+        final int radius = 9;
+        final SceneScrollContainer.Result[] holder = new SceneScrollContainer.Result[1];
+        MountHandle handle = mountContainerInTheme(
+                Signal.create(SceneTheme.liquidGlassDark()), holder, 0, 0, bg, radius);
+        runtime.flush();
+
+        SceneNode viewport = holder[0].viewport();
+        Assert.assertEquals("显式 backgroundColor 覆盖主题", bg, viewport.getBackgroundColor());
+        Assert.assertEquals("显式 cornerRadius 覆盖主题", radius, viewport.getCornerRadius());
+        Assert.assertNull("显式实色路径不装表面绑定", viewport.getBackdrop());
+        handle.dispose();
+    }
+
+    /**
+     * 只显式传 backgroundColor 时保持旧语义：背景为显式色、圆角仍 0（不补主题圆角、不装绑定）。
+     */
+    @Test
+    public void explicitBackgroundOnlyKeepsLegacyCornerRadius() {
+        final SceneScrollContainer.Result[] holder = new SceneScrollContainer.Result[1];
+        MountHandle handle = mountContainerInTheme(
+                Signal.create(SceneTheme.liquidGlassDark()), holder, 0, 0, 0xFF101418, 0);
+        runtime.flush();
+
+        Assert.assertEquals("显式背景生效", 0xFF101418, holder[0].viewport().getBackgroundColor());
+        Assert.assertEquals("未显式传圆角时保持 0", 0, holder[0].viewport().getCornerRadius());
+        Assert.assertNull("不装表面绑定", holder[0].viewport().getBackdrop());
+        handle.dispose();
+    }
+
+    /**
+     * 主题切换：{@code withTheme} 来源主题信号变化 + flush 后底座更新，滚动偏移、子项布局与
+     * 节点身份不变，effect 数不增长（外观重派生不重建节点、不重复订阅）。
+     */
+    @Test
+    public void themeSwitchUpdatesSurfaceAndKeepsScrollOffsetAndRowLayout() {
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        final SceneScrollContainer.Result[] holder = new SceneScrollContainer.Result[1];
+        MountHandle handle = mountContainerInTheme(pageTheme, holder, 0, 0, 0, 0);
+        fillRows(holder[0].content(), 5, 100);
+        doLayout();
+        runtime.flush();
+
+        SceneNode viewport = holder[0].viewport();
+        SceneNode content = holder[0].content();
+        SceneNode firstRow = content.__getChildren().get(0);
+        int maxScroll = SceneGeometry.maxScrollY(viewport);
+        Assert.assertTrue("前置：内容溢出", maxScroll > 0);
+        int offset = Math.min(120, maxScroll);
+        holder[0].scrollSignal().set(Integer.valueOf(offset));
+        runtime.flush();
+        Assert.assertEquals("前置：滚动偏移已应用", offset, viewport.getScrollOffsetY());
+        LayoutBox rowBox = (LayoutBox) firstRow.getCachedLayout();
+        Assert.assertNotNull("前置：行已布局", rowBox);
+        int rowYBefore = rowBox.getY();
+
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        SceneSurfaceStyle darkGroup = dark.surface(SceneTheme.Role.GROUP);
+        SceneSurfaceStyle lightGroup = light.surface(SceneTheme.Role.GROUP);
+        Assert.assertNotEquals("两个主题的 GROUP 配方必须不同，否则切换不传播",
+                darkGroup.getIdle(), lightGroup.getIdle());
+        Assert.assertEquals("深色档背景", darkGroup.getIdle().getTint(), viewport.getBackgroundColor());
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertEquals("切浅色档背景更新", lightGroup.getIdle().getTint(), viewport.getBackgroundColor());
+        Assert.assertEquals("切浅色档圆角更新", lightGroup.getCornerRadius(), viewport.getCornerRadius());
+        Assert.assertEquals("切浅色档边框更新", lightGroup.getIdle().getEdge(), viewport.getBorderColor());
+        Assert.assertSame("主题切换不重建 viewport",
+                viewport, holder[0].container().__getChildren().get(0));
+        Assert.assertSame("主题切换不重建 content", content, viewport.__getChildren().get(0));
+        Assert.assertSame("主题切换不重建行节点", firstRow, content.__getChildren().get(0));
+        Assert.assertEquals("主题切换保留滚动偏移", offset, viewport.getScrollOffsetY());
+        LayoutBox rowBoxAfter = (LayoutBox) firstRow.getCachedLayout();
+        Assert.assertNotNull(rowBoxAfter);
+        Assert.assertEquals("主题切换不重排行节点", rowYBefore, rowBoxAfter.getY());
+        Assert.assertEquals("主题切换不新增 effect", effectsBefore, ReactiveTestProbe.registeredEffectCount());
+        handle.dispose();
+    }
+
+    /**
+     * 卸载后表面绑定 effect 回收，主题更新不再写入旧节点。
+     */
+    @Test
+    public void unmountReleasesSurfaceBindings() {
+        int before = ReactiveTestProbe.registeredEffectCount();
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        final SceneScrollContainer.Result[] holder = new SceneScrollContainer.Result[1];
+        MountHandle handle = mountContainerInTheme(pageTheme, holder, 0, 0, 0, 0);
+        runtime.flush();
+        Assert.assertTrue("默认路径应注册响应式外观绑定",
+                ReactiveTestProbe.registeredEffectCount() > before);
+
+        SceneNode viewport = holder[0].viewport();
+        int colorBeforeDispose = viewport.getBackgroundColor();
+        handle.dispose();
+        Assert.assertEquals("卸载后外观绑定 effect 应回收",
+                before, ReactiveTestProbe.registeredEffectCount());
+
+        pageTheme.set(SceneTheme.liquidGlassLight());
+        runtime.flush();
+        Assert.assertEquals("卸载后主题更新不再写入旧 viewport",
+                colorBeforeDispose, viewport.getBackgroundColor());
+    }
+
+    /**
+     * 长列表：底座只装在 viewport 一次，行节点不各装滤镜、不写背景。
+     */
+    @Test
+    public void longListRowsDoNotInstallPerRowBackdrop() {
+        List<Row> rows = new ArrayList<Row>();
+        for (int i = 0; i < 20; i++) {
+            rows.add(new Row("row" + i));
+        }
+        Signal<List<Row>> itemsSignal = Signal.create(rows);
+        SceneNode container = SceneScrollContainer.scrollList(runtime, sceneRoot, itemsSignal,
+                row -> {
+                    SceneNode node = new SceneNode();
+                    node.setPreferredHeight(60);
+                    return node;
+                });
+        runtime.flush();
+        doLayout();
+        runtime.flush();
+
+        SceneNode viewport = container.__getChildren().get(0);
+        Assert.assertNotNull("底座只装在 viewport 上", viewport.getBackdrop());
+        SceneNode content = viewport.__getChildren().get(0);
+        List<SceneNode> rowNodes = content.__getChildren();
+        Assert.assertEquals("长列表行数 == 数据量", 20, rowNodes.size());
+        for (SceneNode row : rowNodes) {
+            Assert.assertNull("行节点不得各装背景滤镜", row.getBackdrop());
+            Assert.assertEquals("行节点背景保持透明", 0, row.getBackgroundColor());
+        }
+    }
+
+    /**
+     * 嵌套滚动容器：外层滚动只改外层 viewport 的 GEOMETRY 偏移，内层滚动偏移、内层子项布局
+     * 与两层各自裁剪标志都不变（滚动几何与嵌套 scissor 完全不变）。
+     */
+    @Test
+    public void nestedScrollKeepsInnerOffsetAndLayout() {
+        final SceneScrollContainer.Result[] outer = new SceneScrollContainer.Result[1];
+        final SceneScrollContainer.Result[] inner = new SceneScrollContainer.Result[1];
+        MountHandle handle = runtime.mount(sceneRoot, () -> {
+            outer[0] = SceneScrollContainer.create(runtime,
+                    new SceneScrollContainer.Props(0, 0, 0, 0, null));
+            // 第 0 行承载嵌套滚动容器（行高确定，内层 viewport 才能收到确定高约束）
+            SceneNode nestedRow = SceneNode.column();
+            nestedRow.setPreferredHeight(100);
+            outer[0].content().appendChild(nestedRow);
+            inner[0] = SceneScrollContainer.create(runtime,
+                    new SceneScrollContainer.Props(0, 0, 0, 0, null));
+            nestedRow.appendChild(inner[0].container());
+            fillRows(inner[0].content(), 3, 50);
+            // 其余 4 行普通内容
+            fillRows(outer[0].content(), 4, 100);
+            return outer[0].container();
+        });
+        doLayout();
+        runtime.flush();
+
+        Assert.assertTrue("前置：外层溢出", SceneGeometry.maxScrollY(outer[0].viewport()) > 0);
+        Assert.assertTrue("前置：内层溢出", SceneGeometry.maxScrollY(inner[0].viewport()) > 0);
+        inner[0].scrollSignal().set(Integer.valueOf(30));
+        runtime.flush();
+        Assert.assertEquals("前置：内层偏移已应用", 30, inner[0].viewport().getScrollOffsetY());
+        SceneNode innerRow = inner[0].content().__getChildren().get(0);
+        LayoutBox innerRowBox = (LayoutBox) innerRow.getCachedLayout();
+        Assert.assertNotNull("前置：内层行已布局", innerRowBox);
+        int innerRowYBefore = innerRowBox.getY();
+
+        int outerMax = SceneGeometry.maxScrollY(outer[0].viewport());
+        outer[0].scrollSignal().set(Integer.valueOf(Math.min(150, outerMax)));
+        runtime.flush();
+        doLayout();
+        runtime.flush();
+
+        Assert.assertTrue("外层已滚动", outer[0].viewport().getScrollOffsetY() > 0);
+        Assert.assertEquals("外层滚动不改内层滚动偏移",
+                30, inner[0].viewport().getScrollOffsetY());
+        Assert.assertEquals("外层滚动不重排内层子项",
+                innerRowYBefore, ((LayoutBox) innerRow.getCachedLayout()).getY());
+        Assert.assertTrue("两层 viewport 各自保持裁剪",
+                outer[0].viewport().isClipChildren() && inner[0].viewport().isClipChildren());
+        handle.dispose();
     }
 }

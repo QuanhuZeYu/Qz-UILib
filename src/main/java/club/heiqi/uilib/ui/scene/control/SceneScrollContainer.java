@@ -8,9 +8,13 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneScrollContainer —— 滚动容器高阶工厂，一行建出「viewport + content + 可选 scrollbar」
@@ -24,7 +28,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <h3>结构</h3>
  * <pre>
  * container (ROW, fillParentHeight)
- *   ├─ viewport (COLUMN, fillParentHeight, flexGrow=1, scrollable=true, clipChildren, padding/gap/bg/radius)
+ *   ├─ viewport (COLUMN, fillParentHeight, flexGrow=1, scrollable=true, clipChildren, padding/gap,
+ *   │           背景/圆角：默认跟随主题 GROUP 配方；显式 backgroundColor/cornerRadius 时走实色)
  *   │     └─ content (COLUMN, gap)   ← 调用方挂实际内容到这里
  *   └─ scrollbarColumn (SceneScrollbar, 可选)   ← scrollbarSpec != null 时建
  * </pre>
@@ -43,6 +48,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *   <li><b>I1 signal-first</b>：滚动位置经 scrollSignal 驱动，不命令式写节点。</li>
  *   <li><b>I7 GEOMETRY 级滚动</b>：viewport {@code scrollable=true}，滚动不重排。</li>
  *   <li><b>R1 纯静态工厂</b>：零实例字段，无状态。</li>
+ *   <li><b>外观唯一写入者</b>：默认路径的 background/border/borderWidth/cornerRadius/backdrop/
+ *       surfaceElevation 全归 {@link SceneSurfaceBinder}（GROUP 角色配方）；显式实色路径由静态
+ *       setter 独占，两条路径互斥，同一属性不会有两个绑定竞争。底座只装在 viewport 一次，
+ *       不给 content 的每个子项重复装滤镜。</li>
  * </ul>
  */
 public final class SceneScrollContainer {
@@ -52,6 +61,11 @@ public final class SceneScrollContainer {
      */
     private SceneScrollContainer() {
     }
+
+    /**
+     * 恒真 enabled：滚动容器自身没有禁用语义，表面绑定只走 idle/hovered/pressed 三档。
+     */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     /**
      * 滚动条规格 —— 非 null 时工厂建 scrollbar 并挂到 container 右侧；null 时不建滚动条。
@@ -73,10 +87,14 @@ public final class SceneScrollContainer {
     /**
      * 滚动容器输入契约 —— 纯常量 + 可选滚动条规格（契约 R2 允许常量）。
      *
+     * <p><b>外观优先级</b>：{@code backgroundColor}/{@code cornerRadius} 是显式实色入口，
+     * 一旦任一非缺省值存在即整体走实色路径（显式值优先，缺省分量为 0）；两者都取缺省值时
+     * viewport 跟随主题 {@link SceneTheme.Role#GROUP} 配方（默认液态玻璃底座 + 配方圆角/边框）。</p>
+     *
      * @param padding        viewport 四向内边距（像素，0 = 无内边距）
      * @param gap            viewport 内子节点间距 + content 内子节点间距（像素）
-     * @param backgroundColor viewport 背景色（ARGB），0 表示透明
-     * @param cornerRadius   viewport 圆角（像素，0 = 直角）
+     * @param backgroundColor viewport 显式背景色（ARGB）；0 = 不显式指定，跟随主题 GROUP 配方
+     * @param cornerRadius   viewport 显式圆角（像素，0 = 不显式指定，跟随主题 GROUP 配方）
      * @param scrollbarSpec  滚动条规格；null = 不建滚动条（仅 attach 滚动能力，无可视滚动条）
      */
     @Desugar
@@ -113,7 +131,9 @@ public final class SceneScrollContainer {
      * <ol>
      *   <li>建 container（ROW，fillParentHeight）—— 承载 viewport 与 scrollbar 列；</li>
      *   <li>建 viewport（COLUMN，fillParentHeight，flexGrow=1，setScrollable(true)，clipChildren，
-     *       padding/gap/bg/radius）—— 可滚动视口，高度由 container 分配；</li>
+     *       padding/gap）—— 可滚动视口，高度由 container 分配；</li>
+     *   <li>装外观：未显式传 backgroundColor/cornerRadius 时按 {@link SceneTheme.Role#GROUP} 配方
+     *       绑定表面（默认玻璃底座）；显式值存在时走实色 setter（显式优先）；</li>
      *   <li>建 content（COLUMN，gap）→ appendChild 到 viewport —— 调用方挂实际内容到这里；</li>
      *   <li>{@link SceneScrolls#attach} 附加滚动能力 → scrollSignal；</li>
      *   <li>若 scrollbarSpec != null：{@link SceneScrollbar#create} 建滚动条列 → appendChild 到 container；</li>
@@ -133,7 +153,7 @@ public final class SceneScrollContainer {
         SceneNode container = SceneNode.row();
         container.setFillParentHeight(true);
 
-        // 2. viewport（COLUMN，fillParentHeight，flexGrow=1，scrollable，clipChildren，padding/gap/bg/radius）
+        // 2. viewport（COLUMN，fillParentHeight，flexGrow=1，scrollable，clipChildren，padding/gap）
         SceneNode viewport = SceneNode.column();
         viewport.setFillParentHeight(true);
         viewport.setFlexGrow(1);
@@ -143,11 +163,28 @@ public final class SceneScrollContainer {
             viewport.setPadding(props.padding());
         }
         viewport.setGap(props.gap());
-        if (props.backgroundColor() != 0) {
-            viewport.setBackgroundColor(props.backgroundColor());
-        }
-        if (props.cornerRadius() > 0) {
-            viewport.setCornerRadius(props.cornerRadius());
+
+        // 2b. 外观：两条互斥路径，同一属性永远只有一个写入者。
+        //   · 显式实色（backgroundColor/cornerRadius 任一非缺省）——旧入口语义保持，静态 setter 独占；
+        //   · 默认——跟随主题 GROUP 配方，background/border/borderWidth/cornerRadius/backdrop/
+        //     surfaceElevation 全归表面绑定器，主题切换只重派生、不重建节点。
+        // 底座只装在 viewport 一次；content 与子项各自的外观归自己，容器不替每个子项装滤镜。
+        if (props.backgroundColor() != 0 || props.cornerRadius() > 0) {
+            if (props.backgroundColor() != 0) {
+                viewport.setBackgroundColor(props.backgroundColor());
+            }
+            if (props.cornerRadius() > 0) {
+                viewport.setCornerRadius(props.cornerRadius());
+            }
+        } else {
+            SceneInteractionState interaction = rt.interactionState(viewport);
+            // 时序契约：Router 的 writeHovered/writePressed/writeFocused 对未创建的 signal 直接
+            // 短路，故在构建期声明关心，保证后续 hover/pressed/focus 能驱动配方状态档。
+            interaction.hovered();
+            interaction.pressed();
+            interaction.focused();
+            SceneSurfaceBinder.bind(rt, viewport, SceneThemes.surface(rt, SceneTheme.Role.GROUP),
+                    ALWAYS_ENABLED, interaction);
         }
 
         // 3. content（COLUMN，gap）→ appendChild 到 viewport
@@ -218,14 +255,15 @@ public final class SceneScrollContainer {
      * 带样式的完整形态（暴露 padding/gap/bg/radius，bar 默认）。
      *
      * <p>语义与 {@link #attach(SceneRuntime, SceneNode, Consumer)} 一致，
-     * 仅额外透传 viewport 的 padding/gap/backgroundColor/cornerRadius 四个外观参。</p>
+     * 仅额外透传 viewport 的 padding/gap/backgroundColor/cornerRadius 四个外观参；
+     * 后两者为显式实色覆盖，缺省时该形态跟随主题 GROUP 配方。</p>
      *
      * @param rt                   场景运行时
      * @param parent               容器挂载目标
      * @param padding              viewport 四向内边距（像素，0 = 无内边距）
      * @param gap                  viewport 内 + content 内子节点间距（像素）
-     * @param backgroundColor      viewport 背景色（ARGB），0 表示透明
-     * @param cornerRadius         viewport 圆角（像素，0 = 直角）
+     * @param backgroundColor      viewport 显式背景色（ARGB）；0 = 跟随主题 GROUP 配方
+     * @param cornerRadius         viewport 显式圆角（像素，0 = 跟随主题 GROUP 配方）
      * @param contentBuilder       content 装填回调
      * @return container（已挂到 parent，ROW + flexGrow=1）
      */
@@ -330,8 +368,8 @@ public final class SceneScrollContainer {
      * @param rt              场景运行时
      * @param padding         viewport 四向内边距（像素，0 = 无内边距）
      * @param gap             viewport 内 + content 内子节点间距（像素）
-     * @param backgroundColor viewport 背景色（ARGB），0 表示透明
-     * @param cornerRadius    viewport 圆角（像素，0 = 直角）
+     * @param backgroundColor viewport 显式背景色（ARGB）；0 = 跟随主题 GROUP 配方
+     * @param cornerRadius    viewport 显式圆角（像素，0 = 跟随主题 GROUP 配方）
      * @return 创建结果（container + viewport + content + scrollSignal）
      */
     public static Result createDefault(SceneRuntime rt, int padding, int gap,
