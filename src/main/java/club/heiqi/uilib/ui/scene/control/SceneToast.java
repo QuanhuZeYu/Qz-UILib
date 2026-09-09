@@ -11,13 +11,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneToast —— scene 非模态通知。
@@ -35,6 +38,15 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>内容宽度：条目按内容收缩（{@link SceneNode.WidthSizing#SHRINK}）并在窗口水平居中，
  *       不再占满整行；容器 fillParentHeight 使底部堆叠真正生效；</li>
  *   <li>类型化：{@link Type} 区分 INFO/SUCCESS/WARNING/ERROR，条目带类型色点；</li>
+ *   <li>卡片外观：走 {@link SceneSurfaceBinder} + {@link SceneTheme.Role#OVERLAY} 配方，绑定器是
+ *       background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 的唯一写入者
+ *       （旧 {@code TOAST_BG} 静态底色与 {@code SceneChromeTokens.TEXT_PRIMARY} 取色已删除）；
+ *       文字取来源主题 {@code foreground}，类型色点按语义取主题色；</li>
+ *   <li><b>每条消息的来源主题</b>：{@link #show} 入口捕获 {@link SceneThemes#resolve} 得到的主题
+ *       信号并随消息保存。{@link Host} 经 {@code rt.__runRoot} 挂 root owner，卡片要等浮层可见才
+ *       构建——那时再解析只能得到 runtime 级默认；按消息捕获后，在 {@code withTheme(A)} 作用域内
+ *       投递的消息始终用 A，即使之后 {@code install(rt, B)} 换掉 runtime 默认也不受影响。
+ *       捕获的是主题信号而不是颜色快照，来源主题更新仍会刷新该条消息；</li>
  *   <li>非模态：overlay 整树 hitTestable=false，指针穿透到主树，不拦截输入、无关闭策略。</li>
  * </ul>
  */
@@ -53,18 +65,13 @@ public final class SceneToast {
     private static final int TOAST_PAD_V = 8;
     /** toast 内边距。 */
     private static final int TOAST_PAD_H = 12;
-    /** toast 背景（深色半透明）。 */
-    private static final int TOAST_BG = 0xE6323036;
     /** 类型色点尺寸（px）。 */
     private static final int TYPE_DOT_SIZE = 8;
     /** 类型色点与文本间距。 */
     private static final int TYPE_DOT_GAP = 8;
 
-    /** 类型强调色（INFO：主题强调淡紫；SUCCESS：Material green；WARNING：Amber；ERROR：Material red）。 */
-    private static final int TYPE_COLOR_INFO = 0xFFD0BCFF;
-    private static final int TYPE_COLOR_SUCCESS = 0xFF81C784;
-    private static final int TYPE_COLOR_WARNING = 0xFFFBBF24;
-    private static final int TYPE_COLOR_ERROR = 0xFFE57373;
+    /** 恒真 enabled：通知卡片不是可禁用控件，配方档位只由交互态决定（与 Dialog 同款口径）。 */
+    private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
     /** runtime → Host 弱引用缓存（渲染线程约定单线程访问，加锁防御）。 */
     private static final Map<SceneRuntime, Host> HOSTS = Collections.synchronizedMap(new WeakHashMap<>());
@@ -120,6 +127,10 @@ public final class SceneToast {
     /**
      * 展示一条指定类型与时长（纳秒，≤0 按 1ns 处理）的 toast。
      *
+     * <p>来源主题在<b>本入口</b>捕获：调用处所在的 {@link SceneThemes#withTheme} 作用域（或
+     * runtime 默认）决定这条消息的主题。{@link Host} 挂在 root owner 上，卡片要等浮层可见才
+     * 构建——那时再解析只能得到 runtime 级默认，来源主题会丢。</p>
+     *
      * @param rt            场景运行时
      * @param type          通知类型（null 按 INFO）
      * @param message       通知文本
@@ -130,7 +141,8 @@ public final class SceneToast {
             throw new IllegalArgumentException("rt 不可为 null");
         }
         Type safeType = type == null ? Type.INFO : type;
-        hostFor(rt).show(safeType, SceneTextUtils.nullSafe(message), Math.max(1, durationNanos));
+        ReadableSignal<SceneTheme> sourceTheme = SceneThemes.resolve(rt);
+        hostFor(rt).show(safeType, SceneTextUtils.nullSafe(message), Math.max(1, durationNanos), sourceTheme);
     }
 
     /** 展示一条 INFO toast（默认时长）。 */
@@ -196,14 +208,16 @@ public final class SceneToast {
      * @param createdAtNanos 创建时刻帧时间（纳秒）
      * @param durationNanos  展示时长（纳秒）
      * @param leavingAtNanos 进入退场动画的时刻帧时间（纳秒），0 表示尚未退场
+     * @param sourceTheme    投递时捕获的来源主题信号（该条消息的外观来源，恒非 null）
      */
     @Desugar
     public record Entry(long id, Type type, String message,
-                        long createdAtNanos, long durationNanos, long leavingAtNanos) {
+                        long createdAtNanos, long durationNanos, long leavingAtNanos,
+                        ReadableSignal<SceneTheme> sourceTheme) {
 
-        /** @return 标记在指定时刻进入退场动画的新 Entry（其余字段不变） */
+        /** @return 标记在指定时刻进入退场动画的新 Entry（其余字段不变，来源主题随消息保留） */
         public Entry enteringLeave(long leavingAt) {
-            return new Entry(id, type, message, createdAtNanos, durationNanos, leavingAt);
+            return new Entry(id, type, message, createdAtNanos, durationNanos, leavingAt, sourceTheme);
         }
     }
 
@@ -237,14 +251,29 @@ public final class SceneToast {
         /**
          * 投递一条 toast（追加到堆叠尾部）。
          *
+         * <p>直接经 Host 投递时同样在调用处捕获来源主题；{@link SceneToast#show} 已捕获来源主题的
+         * 调用走下面的重载，不再二次解析。</p>
+         *
          * @param type          通知类型
          * @param message       通知文本
          * @param durationNanos 展示时长（纳秒）
          */
         public void show(Type type, String message, long durationNanos) {
+            show(type, message, durationNanos, SceneThemes.resolve(rt));
+        }
+
+        /**
+         * 投递一条 toast（追加到堆叠尾部），来源主题随消息保存。
+         *
+         * @param type          通知类型
+         * @param message       通知文本
+         * @param durationNanos 展示时长（纳秒）
+         * @param sourceTheme   来源主题信号（show 入口捕获，不可为 null）
+         */
+        void show(Type type, String message, long durationNanos, ReadableSignal<SceneTheme> sourceTheme) {
             List<Entry> next = new ArrayList<>(entries.get());
             next.add(new Entry(idCounter.incrementAndGet(), type, message,
-                    rt.__frameTimeNanos().get().longValue(), durationNanos, 0L));
+                    rt.__frameTimeNanos().get().longValue(), durationNanos, 0L, sourceTheme));
             entries.set(next);
         }
 
@@ -322,33 +351,56 @@ public final class SceneToast {
 
         /**
          * 构建单条 toast 节点（forEach itemComponent，每 key 只调一次）。
+         *
+         * <p>先把该条消息的来源主题装进局部作用域，再构建卡片：{@link SceneThemes#surface} /
+         * {@link SceneThemes#foreground} 等便捷派生都在构建期沿 {@code Owner} 链解析，作用域内解析
+         * 才拿得到这条消息的来源主题。Host 本身挂 root owner，直接解析只会得到 runtime 级默认。</p>
          */
         SceneNode buildToast(Entry entry) {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(entry.sourceTheme(), () -> holder[0] = buildToastCard(entry));
+            return holder[0];
+        }
+
+        /**
+         * 在来源主题作用域内构建通知卡片（row：类型色点 + 文本）。
+         */
+        private SceneNode buildToastCard(Entry entry) {
             SceneNode toast = SceneNode.row();
             // 内容宽度收缩：在 column 容器 STRETCH 下不被拉满，由容器 cross CENTER 水平居中
             toast.setWidthSizing(SceneNode.WidthSizing.SHRINK);
             toast.setCrossAxisAlign(CrossAxisAlign.CENTER);
             toast.setGap(TYPE_DOT_GAP);
             toast.setPadding(TOAST_PAD_V, TOAST_PAD_H, TOAST_PAD_V, TOAST_PAD_H);
-            toast.setCornerRadius(SceneChromeTokens.RADIUS_MD);
-            toast.setBackgroundColor(TOAST_BG);
             toast.setHitTestable(false);
             // 初值与首帧动画一致：挂载 flush 前保持不可见，避免终态闪帧
             toast.setOpacity(0f);
             toast.__setPresentationOffsetY(ENTER_OFFSET_Y);
+            // 通知卡片：OVERLAY 配方画在卡片根，绑定器独占 background/border/borderWidth/cornerRadius/
+            // backdrop/surfaceElevation（旧 TOAST_BG 静态底色与静态圆角写入者已删除）。
+            // enabled 恒真（通知不可禁用）；不传 motionRoot —— 出现/退场动画独占卡片 opacity 与位移。
+            SceneSurfaceBinder.bind(rt, toast, SceneThemes.surface(rt, SceneTheme.Role.OVERLAY),
+                    ALWAYS_ENABLED, rt.interactionState(toast));
 
             SceneNode dot = new SceneNode();
             dot.setPreferredWidth(TYPE_DOT_SIZE);
             dot.setPreferredHeight(TYPE_DOT_SIZE);
             dot.setCornerRadius(TYPE_DOT_SIZE / 2);
-            dot.setBackgroundColor(typeColor(entry.type()));
             dot.setHitTestable(false);
+            // 语义色点：类型 → 来源主题语义色。初值构造期读取（信号可安全读），随后随来源主题更新；
+            // 写死色板已删除。
+            dot.setBackgroundColor(typeColor(entry.type(), entry.sourceTheme().get()));
+            rt.bindComputed(() -> Integer.valueOf(typeColor(entry.type(), entry.sourceTheme().get())),
+                    dot::setBackgroundColor);
             toast.appendChild(dot);
 
             SceneNode label = new SceneNode();
             label.setText(entry.message());
             label.setHitTestable(false);
-            label.setTextColor(SceneChromeTokens.TEXT_PRIMARY);
+            // 文字取来源主题正文前景：显式初值 + 单一动态写入者（不再取 SceneChromeTokens.TEXT_PRIMARY）。
+            ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+            label.setTextColor(foreground.get().intValue());
+            rt.bind(foreground, label::setTextColor);
             toast.appendChild(label);
 
             nodeByEntryId.put(Long.valueOf(entry.id()), toast);
@@ -372,18 +424,29 @@ public final class SceneToast {
         return container;
     }
 
-    /** @return 通知类型对应的强调色 */
-    private static int typeColor(Type type) {
+    /**
+     * 通知类型对应的主题语义色。
+     *
+     * <p>INFO 取次要前景（中性、无强调）；SUCCESS 取主题强调色；WARNING/ERROR 分别取主题
+     * {@code warningText}/{@code errorText}。深色档 accent（{@code 0xFF4F378B}）对深色玻璃底
+     * 仅约 1.5:1，色点可辨性偏弱——这是主题缺少「成功」语义色的缺口，留给 G19 集中校准
+     * （新增 successText 或提亮深色档 accent），本类不自行拼色。</p>
+     *
+     * @param type  通知类型
+     * @param theme 来源主题
+     * @return 色点 ARGB
+     */
+    private static int typeColor(Type type, SceneTheme theme) {
         switch (type) {
             case SUCCESS:
-                return TYPE_COLOR_SUCCESS;
+                return theme.accent();
             case WARNING:
-                return TYPE_COLOR_WARNING;
+                return theme.warningText();
             case ERROR:
-                return TYPE_COLOR_ERROR;
+                return theme.errorText();
             case INFO:
             default:
-                return TYPE_COLOR_INFO;
+                return theme.mutedForeground();
         }
     }
 }
