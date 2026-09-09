@@ -25,6 +25,10 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p><b>公共构件默认消费主题</b>：{@link #card()} 取 {@link SceneTheme.Role#GROUP} 配方，
  * {@link #button}/{@link #primaryButton} 复用已主题化的 {@link SceneButton}（标准/主操作角色），
  * 文本前景经 {@link #text(SceneRuntime, String, ReadableSignal, int)} 随主题更新。
+ * 无 {@code rt} 形参的默认文本构件（{@link #text(String)}/{@link #title}/{@link #hint}/
+ * {@link #strongHint}）经同一 Owner 作用域接缝（{@link #installRuntime}）解析来源主题，
+ * 默认取 {@link SceneThemes#foreground}/{@link SceneThemes#mutedForeground}；不在宿主上下文内时
+ * 回落迁移前的静态 {@link #TEXT}/{@link #MUTED}（独立像素夹具与未接入宿主像素不变）。
  * 诊断页的显式样本材质与语义色（
  * {@code text(value, color, fontSize)} 的显式色、页面自建对照面板）保持原样，不被统一刷成主题。</p>
  *
@@ -85,17 +89,24 @@ public final class PlaygroundKit {
     }
 
     /**
-     * 创建默认样式文本节点（TEXT 色，16px，不可命中）。
+     * 创建默认样式文本节点（16px，不可命中）。
+     *
+     * <p><b>宿主上下文内</b>（{@link #installRuntime} 已登记）取来源主题正文前景
+     * {@link SceneThemes#foreground}，主题切换后自动更新且不重建节点；<b>无宿主上下文</b>时回落
+     * 静态 {@link #TEXT}（外观与迁移前一致）。</p>
      *
      * @param value 文本
      * @return 文本节点
      */
     public static SceneNode text(String value) {
-        return text(value, TEXT, 16);
+        return defaultText(value, 16, false);
     }
 
     /**
      * 创建指定样式文本节点（不可命中）。
+     *
+     * <p><b>显式色重载，语义恒定</b>：颜色就是 {@code color}，不随主题变化，也不受宿主上下文
+     * 影响（诊断样本、刻意色差仍走本重载）。</p>
      *
      * @param value    文本
      * @param color    文本色
@@ -132,33 +143,60 @@ public final class PlaygroundKit {
     }
 
     /**
-     * 页面节标题（16px 主色）。
+     * 页面节标题（16px，宿主内跟随主题正文前景）。
      *
      * @param value 标题文本
      * @return 标题节点
      */
     public static SceneNode title(String value) {
-        return text(value, TEXT, 16);
+        return defaultText(value, 16, false);
     }
 
     /**
-     * 次级说明文本（12px 次要色）。
+     * 次级说明文本（12px，宿主内跟随主题次要前景）。
      *
      * @param value 说明文本
      * @return 说明节点
      */
     public static SceneNode hint(String value) {
-        return text(value, MUTED, 12);
+        return defaultText(value, 12, true);
     }
 
     /**
-     * 强调说明文本（12px 主色）。
+     * 强调说明文本（12px，宿主内跟随主题正文前景）。
      *
      * @param value 说明文本
      * @return 说明节点
      */
     public static SceneNode strongHint(String value) {
-        return text(value, TEXT, 12);
+        return defaultText(value, 12, false);
+    }
+
+    /**
+     * 无 {@code rt} 形参的默认文本构件统一取色路径。
+     *
+     * <p><b>宿主内</b>：沿既有 {@link #RUNTIME_KEY} Owner 作用域接缝解析所属 runtime，再按
+     * {@link SceneThemes#resolve} 取<b>来源主题</b>（局部 {@code withTheme} 优先于 runtime 默认），
+     * 经 {@link #text(SceneRuntime, String, ReadableSignal, int)} 用 {@code bindComputed} 绑定前景：
+     * 构建期不读值、主题切换只重派生不重建节点。</p>
+     *
+     * <p><b>无宿主上下文</b>（{@code Owner.current() == null} 或该作用域未登记 runtime）：回落
+     * {@link #text(String, int, int)} 静态取色，不抛异常、不产生响应式绑定，像素与迁移前一致。</p>
+     *
+     * @param value    文本
+     * @param fontSize 字号（UI 像素）
+     * @param muted    true 取次要前景，false 取正文前景
+     * @return 文本节点
+     */
+    private static SceneNode defaultText(String value, int fontSize, boolean muted) {
+        SceneRuntime rt = activeRuntime();
+        if (rt == null) {
+            return text(value, muted ? MUTED : TEXT, fontSize);
+        }
+        ReadableSignal<Integer> color = muted
+                ? SceneThemes.mutedForeground(rt)
+                : SceneThemes.foreground(rt);
+        return text(rt, value, color, fontSize);
     }
 
     /**
