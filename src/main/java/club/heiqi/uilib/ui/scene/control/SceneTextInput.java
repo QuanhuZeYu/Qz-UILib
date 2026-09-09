@@ -12,15 +12,23 @@ import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneTextInput —— scene 新栈字符级单行受控文本输入框（B1 核心版）。
  *
  * <h3>B1 范围</h3>
  * <p>本版提供字符级 caret、点击定位、方向键/Home/End 移动，以及 TEXT_INPUT、Backspace、Delete
- * 编辑键。暂不提供选区、剪贴板、IME 组合态、caret 闪烁与横向滚动；背景、边框和 caret
- * 颜色在显式启用 Motion 的 runtime 内使用 fast 过渡。</p>
+ * 编辑键（选区、剪贴板、词跳转、caret 闪烁与横向滚动已在后续批次补齐）。</p>
+ *
+ * <h3>外观归属：表面绑定是唯一写入者</h3>
+ * <p>背景/边框/边框宽/圆角/滤镜/实体高度由 {@link SceneSurfaceBinder} 从
+ * {@link SceneThemes#surface(SceneRuntime, SceneTheme.Role) INPUT 角色配方}派生，本控件不再静态
+ * 设色、不再叠加第二套实色动画（守「一个属性只有一个外观写入者」）。正文/占位/禁用前景与
+ * caret、选区色消费主题语义色；显式 {@code placeholderColor} 仍优先。caret 颜色在显式启用
+ * Motion 的 runtime 内使用 fast 过渡，表面过渡时长取配方自身。</p>
  *
  * <h3>受控契约</h3>
  * <p>文本真值仍由外部 {@code value} 唯一持有；控件不缓存 value、不自改 value。内部仅维护
@@ -34,19 +42,12 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *   ├─ caret      (1px 竖线，hitTestable=false)
  *   └─ suffixText (caret 后显示文本，hitTestable=false)
  * </pre>
- *
- * <h3>已知局限</h3>
- * <p>B1 不做横向滚动：root 继续裁剪超出内容，长文本会被裁剪，caret 也可能在可视区域外。</p>
  */
 public final class SceneTextInput {
 
     /** caret 不可见（全透明，纯 PAINT 切换不重排） */
     private static final int CARET_TRANSPARENT = 0x00000000;
 
-    /** 边框宽度（像素） */
-    private static final int BORDER_WIDTH = 1;
-    /** 圆角半径（像素，小圆角） */
-    private static final int CORNER_RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 内边距（像素） */
     private static final int PADDING = SceneChromeTokens.PAD_MD;
     /** 纯静态工厂，禁止实例化。 */
@@ -64,8 +65,8 @@ public final class SceneTextInput {
      * @param maxLength   最大长度，填满后拒绝新增
      * @param inputType   输入类型，控制字符过滤与密码掩码显示
      * @param onChange    文本变更回调，以期望新值真实 String 调用
-     * @param placeholderColor 占位文本色（ARGB）；null = 沿用 {@link SceneStateColors#secondaryText}
-     *                    （向后兼容可选，默认不改变既有行为）
+     * @param placeholderColor 占位文本色（ARGB）；null = 沿用主题 mutedForeground（禁用态用
+     *                    disabledForeground）；显式值优先于主题
      * @param maxLengthUnit 长度口径（{@link MaxLengthUnit#CODEPOINT} 默认；UTF16 按 char 单元，
      *                    与原版 maxStringLength 同口径；向后兼容可选）
      * @param blockChars   块字符集合（每个字符为一项被禁字符；null/空 = 不过滤，向后兼容默认）；
@@ -151,7 +152,7 @@ public final class SceneTextInput {
             private SceneInputType inputType = SceneInputType.TEXT;
             /** 文本变更回调，以期望新值真实 String 调用。 */
             private Consumer<String> onChange;
-            /** 占位文本色（ARGB）；null = 沿用 SceneStateColors.secondaryText。 */
+            /** 占位文本色（ARGB）；null = 沿用主题 mutedForeground（禁用态 disabledForeground）。 */
             private Integer placeholderColor;
             /** 长度上限口径（CODEPOINT 默认 / UTF16 按 char 单元）；向后兼容新增。 */
             private MaxLengthUnit maxLengthUnit = MaxLengthUnit.CODEPOINT;
@@ -234,7 +235,7 @@ public final class SceneTextInput {
             }
 
             /**
-             * 设置占位文本色（可选；null = 沿用 SceneStateColors.secondaryText）。
+             * 设置占位文本色（可选；null = 沿用主题 mutedForeground，禁用态用 disabledForeground）。
              *
              * @param placeholderColor 占位文本色（ARGB）
              * @return 当前 builder
@@ -334,38 +335,56 @@ public final class SceneTextInput {
     }
 
     /**
-     * 挂载通用 chrome（padding/border/圆角、文本色、背景、描边、caret 色、选区高亮、
-     * cursor 与 hitTestable 绑定）——{@link #create} 与 {@link #createHandle} 共享。
+     * 挂载通用 chrome（padding、INPUT 表面、主题语义前景、caret 色、选区高亮、cursor 与
+     * hitTestable 绑定）——{@link #create} 与 {@link #createHandle} 共享。
+     *
+     * <p>构造期只捕获主题信号（{@link SceneThemes#surface} 等必须在 builder 内调用），
+     * 不在构造期解引用未求值的 Computed；一切取值都发生在 effect 体内。</p>
      */
     private static void applyChrome(SceneRuntime rt, Props props, SceneTextInputPrimitive.Result result) {
         SceneNode root = result.root();
         root.setPadding(PADDING);
-        root.setBorderWidth(BORDER_WIDTH);
-        root.setCornerRadius(CORNER_RADIUS);
         SceneInteractionState interaction = rt.interactionState(root);
 
-        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
-                props.placeholderColor()), result.prefixText()::setTextColor);
-        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
-                props.placeholderColor()), result.suffixText()::setTextColor);
+        // 唯一外观写入者：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation
+        // 全归表面绑定，控件不再静态设边框宽/圆角、不再叠加 SceneStateColors 实色绑定。
+        SceneSurfaceBinder.bind(rt, root, SceneThemes.surface(rt, SceneTheme.Role.INPUT),
+                props.enabled(), interaction);
 
-        rt.__bindAnimatedColor(() -> SceneStateColors.inputBackground(
-                        Boolean.TRUE.equals(props.enabled().get())),
-                root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
-        SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
-        // caret 双槽位：focus 在选区哪一端，哪端着色（B2 选区结构）
+        // 语义前景：正文 foreground / 占位 mutedForeground / 禁用 disabledForeground；
+        // 显式 placeholderColor 仍优先（含禁用态，保持既有优先级）。
+        ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+        ReadableSignal<Integer> mutedForeground = SceneThemes.mutedForeground(rt);
+        ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
+                props.placeholderColor(), foreground.get(), mutedForeground.get(), disabledForeground.get()),
+                result.prefixText()::setTextColor);
+        rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
+                props.placeholderColor(), foreground.get(), mutedForeground.get(), disabledForeground.get()),
+                result.suffixText()::setTextColor);
+
+        // caret 双槽位：focus 在选区哪一端，哪端着色（B2 选区结构）；色值取主题聚焦色
+        ReadableSignal<Integer> caretColor = SceneThemes.borderFocus(rt);
         rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get(),
-                        result.selection().get().focusCp() == result.selection().get().startCp()),
+                        result.selection().get().focusCp() == result.selection().get().startCp(),
+                        caretColor.get()),
                 result.caret()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
         rt.__bindAnimatedColor(() -> resolveCaretColor(result.caretVisible().get(),
                         result.selection().get().isActive()
-                                && result.selection().get().focusCp() == result.selection().get().endCp()),
+                                && result.selection().get().focusCp() == result.selection().get().endCp(),
+                        caretColor.get()),
                 result.caretAfter()::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
-        // 选区高亮：激活即显示（失焦保留选区可见），文本色反白
-        rt.bindComputed(() -> resolveHighlightBackground(result.selection().get().isActive()),
+        // 选区高亮：激活即显示（失焦保留选区可见），文本色反白；背景/前景取主题选区语义色
+        ReadableSignal<Integer> selectionBackground = SceneThemes.selectionBackground(rt);
+        ReadableSignal<Integer> selectionForeground = SceneThemes.selectionForeground(rt);
+        rt.bindComputed(() -> resolveHighlightBackground(result.selection().get().isActive(),
+                        selectionBackground.get()),
                 result.highlightText()::setBackgroundColor);
         rt.bindComputed(() -> resolveHighlightTextColor(result.selection().get().isActive(),
-                        result.isPlaceholder().get(), props.enabled().get(), props.placeholderColor()),
+                        selectionForeground.get(),
+                        resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
+                                props.placeholderColor(), foreground.get(), mutedForeground.get(),
+                                disabledForeground.get())),
                 result.highlightText()::setTextColor);
         SceneControlChrome.bindCursor(rt, root, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
         rt.bind(props.enabled(),
@@ -373,19 +392,25 @@ public final class SceneTextInput {
     }
 
     /**
-     * 解析文本色。
+     * 解析文本色（主题语义色版）。
      *
-     * @param placeholder     是否处于 placeholder 状态
-     * @param enabled         是否启用
-     * @param placeholderColor 占位文本色（ARGB）；null = 沿用 SceneStateColors.secondaryText
+     * @param placeholder      是否处于 placeholder 状态
+     * @param enabled          是否启用
+     * @param placeholderColor 显式占位文本色（ARGB）；null = 跟随主题
+     * @param foreground       主题正文前景
+     * @param mutedForeground  主题次要/占位前景
+     * @param disabledForeground 主题禁用前景
      * @return 文本色 ARGB
      */
-    private static int resolveTextColor(Boolean placeholder, Boolean enabled, Integer placeholderColor) {
-        if (Boolean.TRUE.equals(placeholder)) {
-            return placeholderColor != null ? placeholderColor.intValue()
-                    : SceneStateColors.secondaryText(Boolean.TRUE.equals(enabled));
+    private static int resolveTextColor(Boolean placeholder, Boolean enabled, Integer placeholderColor,
+                                        int foreground, int mutedForeground, int disabledForeground) {
+        if (Boolean.TRUE.equals(placeholder) && placeholderColor != null) {
+            return placeholderColor.intValue();
         }
-        return SceneStateColors.standardText(Boolean.TRUE.equals(enabled), false);
+        if (!Boolean.TRUE.equals(enabled)) {
+            return disabledForeground;
+        }
+        return Boolean.TRUE.equals(placeholder) ? mutedForeground : foreground;
     }
 
     /**
@@ -393,42 +418,43 @@ public final class SceneTextInput {
      *
      * @param caretVisible caret 是否可见（enabled 且 focused）
      * @param slotActive   槽位是否激活（focus 在本槽侧）
+     * @param caretColor   主题聚焦色
      * @return caret 背景色 ARGB
      */
-    private static int resolveCaretColor(Boolean caretVisible, boolean slotActive) {
+    private static int resolveCaretColor(Boolean caretVisible, boolean slotActive, int caretColor) {
         if (Boolean.TRUE.equals(caretVisible) && slotActive) {
-            return SceneChromeTokens.BORDER_FOCUS;
+            return caretColor;
         }
         return CARET_TRANSPARENT;
     }
 
     /**
-     * 解析选区高亮背景色：选区激活时显示统一 token，否则全透明（纯 PAINT 切换不重排）。
+     * 解析选区高亮背景色：选区激活时显示主题选区背景，否则全透明（纯 PAINT 切换不重排）。
      *
-     * @param selectionActive 选区是否激活
+     * @param selectionActive    选区是否激活
+     * @param selectionBackground 主题选区背景色
      * @return 高亮背景色 ARGB
      */
-    private static int resolveHighlightBackground(Boolean selectionActive) {
+    private static int resolveHighlightBackground(Boolean selectionActive, int selectionBackground) {
         if (Boolean.TRUE.equals(selectionActive)) {
-            return SceneChromeTokens.SELECTION_BG;
+            return selectionBackground;
         }
         return CARET_TRANSPARENT;
     }
 
     /**
-     * 解析选区高亮文本色：选区激活时反白，否则退回常规文本色。
+     * 解析选区高亮文本色：选区激活时用主题选区前景，否则退回常规文本色。
      *
-     * @param selectionActive 选区是否激活
-     * @param placeholder     是否 placeholder 态
-     * @param enabled         是否启用
-     * @param placeholderColor 占位文本色（ARGB）；null = 沿用 SceneStateColors.secondaryText
+     * @param selectionActive    选区是否激活
+     * @param selectionForeground 主题选区前景色
+     * @param normalTextColor    常规态文本色（主题语义前景解析结果）
      * @return 高亮文本色 ARGB
      */
-    private static int resolveHighlightTextColor(Boolean selectionActive, Boolean placeholder,
-                                                 Boolean enabled, Integer placeholderColor) {
+    private static int resolveHighlightTextColor(Boolean selectionActive, int selectionForeground,
+                                                 int normalTextColor) {
         if (Boolean.TRUE.equals(selectionActive)) {
-            return SceneChromeTokens.SELECTION_TEXT;
+            return selectionForeground;
         }
-        return resolveTextColor(placeholder, enabled, placeholderColor);
+        return normalTextColor;
     }
 }
