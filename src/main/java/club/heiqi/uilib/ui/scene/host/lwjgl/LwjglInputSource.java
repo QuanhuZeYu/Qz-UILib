@@ -1,5 +1,11 @@
 package club.heiqi.uilib.ui.scene.host.lwjgl;
 
+import java.util.EnumSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+
 import club.heiqi.uilib.ui.scene.input.CursorBackend;
 import club.heiqi.uilib.ui.scene.input.CursorBackendProvider;
 import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
@@ -28,8 +34,8 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
  *   <li><b>封板</b>：builder.drainFrame()</li>
  * </ol>
  *
- * <h3>纯指针范围（I3.5）</h3>
- * <p>MOVE / BUTTON_DOWN/UP / SCROLL。键盘/TEXT 推迟 I4。</p>
+ * <h3>键盘与文本</h3>
+ * <p>KEY_DOWN/TEXT 复用宿主回调；已投递 Enter/Space 的 KEY_UP 由非破坏性当前态补齐。</p>
  */
 public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputSource,
         PointerEventInputSource, CursorBackendProvider, ClipboardBackendProvider {
@@ -38,13 +44,15 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
 
     private final PlatformStateReader reader;
     private final InputFrameBuilder builder;
+    /** 只跟踪回调已投递的按钮激活键，不从物理按下态合成额外 KEY_DOWN。 */
+    private final Map<Integer, SceneKey> pendingKeyReleases = new LinkedHashMap<>();
 
     /**
      * 外部文本模式开关（Bug2）。
      *
      * <p>true 表示文本输入已由 lwjgl3ify {@code InputEvents#onTextEvent} 旁路接管
      * （传完整 String，含 IME/补充平面 emoji）：此时 {@link #pushKeyTyped} 不再产 TEXT，
-     * 且字符键不再产 KEY（减噪），控制键仍产 KEY。</p>
+     * 且普通字符键不再产 KEY（减噪），控制键与按钮激活 Space 仍产 KEY。</p>
      *
      * <p>false 表示降级路径：{@link #pushKeyTyped} 走 char 累积，自行组合 surrogate pair。</p>
      */
@@ -97,6 +105,7 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
         boolean meta = reader.meta();
         long now = reader.nowNanos();
         boolean curWindowFocused = reader.windowFocused();
+        pollActivationKeyReleases(curWindowFocused, ctrl, shift, alt, meta, now);
 
         boolean[] curButtons = new boolean[MOUSE_BUTTON_COUNT];
         for (int i = 0; i < MOUSE_BUTTON_COUNT; i++) {
@@ -224,7 +233,29 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
         return builder.drainFrame();
     }
 
-    // ==================== I4b 键盘/文本输入旁路 ====================
+    /** 补齐已投递激活键的松键；短按在同帧保留 DOWN/UP，重复回调只共享一个释放记录。 */
+    private void pollActivationKeyReleases(boolean focused, boolean ctrl, boolean shift,
+                                           boolean alt, boolean meta, long now) {
+        if (pendingKeyReleases.isEmpty()) return;
+        Set<SceneKey> released = EnumSet.noneOf(SceneKey.class);
+        Iterator<Map.Entry<Integer, SceneKey>> it = pendingKeyReleases.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Integer, SceneKey> entry = it.next();
+            if (!focused || !reader.__keyDown(entry.getKey())) {
+                released.add(entry.getValue());
+                it.remove();
+            }
+        }
+        for (SceneKey key : released) {
+            // 同一语义键若仍有已登记的物理键按住，保留反馈直到最后一个释放。
+            if (!pendingKeyReleases.containsValue(key)) {
+                builder.push(RawInputEvent.ofKey(key, SceneKeyAction.RELEASED,
+                        ctrl, shift, alt, meta, RawInputEvent.NATIVE_NONE, RawInputEvent.NATIVE_NONE, now));
+            }
+        }
+    }
+
+    // ==================== 键盘/文本输入旁路 ====================
 
     /**
      * 宿主 keyTyped 回调入口 —— 将键盘按下事件推入 builder 缓冲。
@@ -237,7 +268,7 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      * <ol>
      *   <li>{@link LwjglKeyMapper#map(int)} native→SceneKey</li>
      *   <li>push {@link RawInputEvent#ofKey}（action=PRESSED，mods 从 reader 读当前态）；
-     *       external 模式下字符键跳过 KEY 减噪，控制键仍产 KEY</li>
+     *       external 模式下普通字符键跳过 KEY 减噪，控制键与 Space 仍产 KEY</li>
      *   <li>repeat 不区分（用户拍板 D5-A），全当 KEY_DOWN（action=PRESSED）</li>
      * </ol>
      *
@@ -266,12 +297,15 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
         boolean isCharKey = isPrintable(typedChar) || Character.isSurrogate(typedChar);
 
         // ３）push KEY 事件（action=PRESSED，repeat 不区分）
-        //    external 模式下字符键跳过 KEY 减噪（文本走 onTextEvent），控制键仍产 KEY 保留快捷键/导航
-        if (!(externalTextMode && isCharKey)) {
+        //    external 模式下普通字符键跳过 KEY（文本走 onTextEvent）；Space 保留按钮激活，绝不额外产 TEXT
+        if (!(externalTextMode && isCharKey && key != SceneKey.SPACE)) {
             builder.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED,
                     ctrl, shift, alt, meta,
                     nativeKeyCode, RawInputEvent.NATIVE_NONE,
                     timeNanos));
+            if (key == SceneKey.ENTER || key == SceneKey.SPACE) {
+                pendingKeyReleases.put(nativeKeyCode, key);
+            }
         }
 
         // ４）TEXT 事件分流

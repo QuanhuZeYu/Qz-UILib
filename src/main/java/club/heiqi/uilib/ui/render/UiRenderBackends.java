@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
 /**
  * {@link UiRenderBackend} 的宿主侧能力门面（host 层专用）。
  *
- * <p>{@link UiRenderBackend} 是 scene 抽象层可见的最小出口契约（宪章信条六），刻意不含
+ * <p>{@link UiRenderBackend} 是 scene 抽象层可见的最小出口契约，刻意不含
  * backdrop-filter 等宿主增强能力；{@link UiRenderContext} 在 MC 平台实现上提供这些能力。
  * 宿主层（HUD 壳、屏幕桥、内部 devtools）需要消费增强能力时，统一经本门面向后端的
  * 具体类型查询转发：后端不支持时静默降级，宿主代码不直接接触 GL，也不把增强方法
@@ -31,10 +31,8 @@ public final class UiRenderBackends {
      */
     public static void backdropFilter(UiRenderBackend backend, int left, int top, int right, int bottom,
             int blurRadius, float saturation, int cornerRadius) {
-        if (backend instanceof UiRenderContext) {
-            ((UiRenderContext) backend).drawBackdropFilter(left, top, right, bottom, blurRadius, saturation,
-                    UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, cornerRadius)));
-        }
+        backdropFilter(backend, left, top, right, bottom, blurRadius, saturation, cornerRadius,
+                (UiGlassMaterial) null);
     }
 
     /**
@@ -46,16 +44,14 @@ public final class UiRenderBackends {
      * @param right        右侧坐标
      * @param bottom       底部坐标
      * @param blurRadius   模糊半径像素
-     * @param saturation   饱和度倍率；material 非空时被材质档取代
+     * @param saturation   饱和度倍率；material 非空时作材质 vibrancy 乘子
      * @param cornerRadius 圆角半径
      * @param material     iOS 风格材质档；null 走旧线性饱和度语义
      */
     public static void backdropFilter(UiRenderBackend backend, int left, int top, int right, int bottom,
             int blurRadius, float saturation, int cornerRadius, UiGlassMaterial material) {
-        if (backend instanceof UiRenderContext) {
-            ((UiRenderContext) backend).drawBackdropFilter(left, top, right, bottom, blurRadius, saturation,
-                    UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, cornerRadius)), material);
-        }
+        backdropFilter(backend, left, top, right, bottom, blurRadius, saturation, cornerRadius,
+                UiBackdropEffect.classic(material));
     }
 
     /**

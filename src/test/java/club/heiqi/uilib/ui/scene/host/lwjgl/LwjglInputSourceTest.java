@@ -523,6 +523,7 @@ public class LwjglInputSourceTest {
         reader.advanceTime();
 
         // ENTER (28)，typedChar 通常为 '\r' (0x0D)，不可打印
+        reader.keysDown.add(28); // 本用例覆盖按住时的 DOWN，松键另有端到端回归
         source.pushKeyTyped('\r', 28, reader.nowNanos());
         reader.advanceTime();
 

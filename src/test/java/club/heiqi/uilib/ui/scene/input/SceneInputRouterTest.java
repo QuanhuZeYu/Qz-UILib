@@ -149,6 +149,79 @@ public class SceneInputRouterTest {
         Assert.assertTrue("h2 跑了", log.contains("h2"));
     }
 
+    @Test
+    public void dispatchShouldSkipUnsubscribedHandlersAndDeferNewHandlers() {
+        SceneNode root = buildTwoLayerTree();
+        SceneNode child = root.__getChildren().get(0);
+        List<String> log = new ArrayList<>();
+        InputBinding[] bindings = new InputBinding[2];
+        bindings[0] = router.on(child, SceneEventType.POINTER_MOVE, (evt, ctx) -> {
+            log.add("first");
+            bindings[0].dispose();
+            bindings[1].dispose();
+            router.on(child, SceneEventType.POINTER_MOVE, (next, nextCtx) -> log.add("new"));
+            ctx.stopPropagation();
+        });
+        bindings[1] = router.on(child, SceneEventType.POINTER_MOVE, (evt, ctx) -> log.add("removed"));
+        router.on(child, SceneEventType.POINTER_MOVE, (evt, ctx) -> log.add("survivor"));
+        router.on(root, SceneEventType.POINTER_MOVE, (evt, ctx) -> log.add("root"));
+
+        router.route(root, buildFrame(ScenePointerAction.MOVE, 40, 40, SceneMouseButton.NONE), 0, 0);
+        Assert.assertEquals("跳过已退订项与新增项；stopPropagation 后仍调用同节点存活项",
+                java.util.Arrays.asList("first", "survivor"), log);
+
+        log.clear();
+        router.route(root, buildFrame(ScenePointerAction.MOVE, 40, 40, SceneMouseButton.NONE), 0, 0);
+        Assert.assertEquals("新增 handler 从下个事件开始参与",
+                java.util.Arrays.asList("survivor", "new", "root"), log);
+    }
+
+    @Test
+    public void dispatchShouldKeepDuplicateHandlerRegistrationsIndependent() {
+        SceneNode root = buildTwoLayerTree();
+        SceneNode child = root.__getChildren().get(0);
+        List<String> log = new ArrayList<>();
+        SceneEventHandler shared = (evt, ctx) -> log.add("shared");
+        InputBinding[] bindings = new InputBinding[2];
+        bindings[0] = router.on(child, SceneEventType.POINTER_MOVE, (evt, ctx) -> {
+            bindings[0].dispose();
+            bindings[1].dispose();
+            router.on(child, SceneEventType.POINTER_MOVE, shared);
+        });
+        bindings[1] = router.on(child, SceneEventType.POINTER_MOVE, shared);
+        router.on(child, SceneEventType.POINTER_MOVE, shared);
+
+        router.route(root, buildFrame(ScenePointerAction.MOVE, 40, 40, SceneMouseButton.NONE), 0, 0);
+        Assert.assertEquals("退订旧项再注册同一回调不能复活快照中的旧项",
+                java.util.Collections.singletonList("shared"), log);
+
+        log.clear();
+        router.route(root, buildFrame(ScenePointerAction.MOVE, 40, 40, SceneMouseButton.NONE), 0, 0);
+        Assert.assertEquals("两份存活注册各执行一次",
+                java.util.Arrays.asList("shared", "shared"), log);
+    }
+
+    @Test
+    public void dispatchShouldDeferNewAncestorHandlersUntilNextEvent() {
+        SceneNode root = buildTwoLayerTree();
+        SceneNode child = root.__getChildren().get(0);
+        List<String> log = new ArrayList<>();
+        InputBinding[] binding = new InputBinding[1];
+        binding[0] = router.on(child, SceneEventType.POINTER_MOVE, (evt, ctx) -> {
+            binding[0].dispose();
+            router.on(root, SceneEventType.POINTER_MOVE, (next, nextCtx) -> log.add("new-root"));
+        });
+        router.on(root, SceneEventType.POINTER_MOVE, (evt, ctx) -> log.add("root"));
+
+        router.route(root, buildFrame(ScenePointerAction.MOVE, 40, 40, SceneMouseButton.NONE), 0, 0);
+        Assert.assertEquals("整个 target+bubble 事件共用注册上限",
+                java.util.Collections.singletonList("root"), log);
+
+        log.clear();
+        router.route(root, buildFrame(ScenePointerAction.MOVE, 40, 40, SceneMouseButton.NONE), 0, 0);
+        Assert.assertEquals(java.util.Arrays.asList("root", "new-root"), log);
+    }
+
     // ===== T13：按压捕获 — DOWN 后 MOVE 强制派发到 pressedNode =====
 
     @Test

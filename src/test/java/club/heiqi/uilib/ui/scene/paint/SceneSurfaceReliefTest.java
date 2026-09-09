@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.paint;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.Assert;
@@ -145,6 +146,110 @@ public class SceneSurfaceReliefTest {
                         backend.getCallCount() < 300 * scale);
             }
         }
+    }
+
+    @Test
+    public void defaultBevelKeepsLegacyGeometryAndColors() {
+        List<PaintCommand> bevels = bevels(paint.paint(surface(24, 24).__setSurfaceElevation(0.5F))
+                .getPlan().getCommands());
+        Assert.assertEquals(2, bevels.size());
+        // 独立 Python 验算的原默认宽度 1 输出，锁住几何与原非零 alpha 配方。
+        Assert.assertEquals(PaintCommand.roundedBand(1, 1, 23, 21, new RoundedBand(
+                new int[] {0, 0, 22, 20, 7, 7, 7, 7},
+                new int[] {1, 1, 21, 19, 6, 6, 6, 6}, null,
+                new int[] {0x54FFFFFF, 0x2AFFFFFF, 0x15CEE8FF, 0x26071320})), bevels.get(0));
+        Assert.assertEquals(PaintCommand.roundedBand(2, 2, 22, 20, new RoundedBand(
+                new int[] {0, 0, 20, 18, 6, 6, 6, 6},
+                new int[] {1, 1, 19, 17, 5, 5, 5, 5}, null,
+                new int[] {0x18071320, 0, 0, 0x18071320})), bevels.get(1));
+    }
+
+    @Test
+    public void zeroWidthOrTransparentBorderRemovesOnlyBevelCommands() {
+        SceneNode node = surface(24, 24).__setSurfaceElevation(0.5F);
+        List<PaintCommand> original = paint.paint(node).getPlan().getCommands();
+        List<PaintCommand> withoutBevel = new ArrayList<PaintCommand>(original);
+        Assert.assertEquals(2, bevels(original).size());
+        withoutBevel.removeAll(bevels(original));
+        Assert.assertFalse("厚底、滤镜面、染色及表面渐变必须保留", withoutBevel.isEmpty());
+        node.setBorderWidth(0);
+        Assert.assertEquals(withoutBevel, paint.paint(node).getPlan().getCommands());
+        node.setBorderWidth(3).setBorderColor(0x00ABCDEF);
+        Assert.assertEquals("透明边色不能被最低强度重新点亮",
+                withoutBevel, paint.paint(node).getPlan().getCommands());
+    }
+
+    @Test
+    public void borderWidthChangesActualBandAndReplayCoverageAtEveryScale() {
+        SceneNode node = surface(24, 24).__setSurfaceElevation(0.5F);
+        PaintCommand narrow = bevels(paint.paint(node).getPlan().getCommands()).get(0);
+        node.setBorderWidth(3);
+        PaintCommand wide = bevels(paint.paint(node).getPlan().getCommands()).get(0);
+        Assert.assertArrayEquals(narrow.getRoundedBand().outer(), wide.getRoundedBand().outer());
+        Assert.assertArrayEquals(new int[] {3, 3, 19, 17, 4, 4, 4, 4}, wide.getRoundedBand().inner());
+        for (float scale : new float[] {1.0F, 1.5F, 2.0F, 3.0F}) {
+            RecordingRenderBackend thinReplay = replayBand(narrow, scale);
+            RecordingRenderBackend wideReplay = replayBand(wide, scale);
+            int x = (int) Math.floor(12.5F * scale);
+            int outerY = (int) Math.floor(1.5F * scale);
+            int insetY = (int) Math.floor(3.5F * scale);
+            int centerY = (int) Math.floor(11.5F * scale);
+            Assert.assertTrue(covers(thinReplay, x, outerY));
+            Assert.assertTrue(covers(wideReplay, x, outerY));
+            Assert.assertFalse("1px 倒角不覆盖更深一行", covers(thinReplay, x, insetY));
+            Assert.assertTrue("3px 倒角必须真实覆盖更深一行", covers(wideReplay, x, insetY));
+            Assert.assertFalse("加宽不能填满玻璃中心", covers(wideReplay, x, centerY));
+        }
+    }
+
+    @Test
+    public void enormousBorderWidthIsClampedWithoutOverflowOrFillingTheCenter() {
+        SceneNode node = surface(24, 24).__setSurfaceElevation(0.5F).setBorderWidth(9);
+        List<PaintCommand> clamped = paint.paint(node).getPlan().getCommands();
+        node.setBorderWidth(Integer.MAX_VALUE);
+        Assert.assertEquals(clamped, paint.paint(node).getPlan().getCommands());
+        PaintCommand bevel = bevels(clamped).get(0);
+        Assert.assertArrayEquals(new int[] {9, 9, 13, 11, 0, 0, 0, 0}, bevel.getRoundedBand().inner());
+        Assert.assertFalse(covers(replayBand(bevel, 1.0F), 12, 11));
+        for (int width : new int[] {1, 4, 5, 7, 24}) {
+            for (int height : new int[] {1, 6, 7, 24}) {
+                node = surface(width, height).__setSurfaceElevation(0.5F).setBorderWidth(Integer.MAX_VALUE);
+                for (PaintCommand command : paint.paint(node).getPlan().getCommands()) {
+                    Assert.assertTrue(command.getLeft() >= 0 && command.getTop() >= 0);
+                    Assert.assertTrue(command.getRight() <= width && command.getBottom() <= height);
+                    Assert.assertTrue(command.getLeft() < command.getRight());
+                    Assert.assertTrue(command.getTop() < command.getBottom());
+                    if (command.getRoundedBand() != null && command.getRoundedBand().inner() != null) {
+                        int[] inner = command.getRoundedBand().inner();
+                        Assert.assertTrue(inner[0] < inner[2] && inner[1] < inner[3]);
+                    }
+                }
+            }
+        }
+    }
+
+    private static List<PaintCommand> bevels(List<PaintCommand> commands) {
+        List<PaintCommand> result = new ArrayList<PaintCommand>();
+        for (PaintCommand command : commands) {
+            RoundedBand band = command.getRoundedBand();
+            // 厚底带有盒内 bounds，渐变不挖孔；只选面内倒角及其阴影。
+            if (band != null && band.inner() != null && band.bounds() == null) result.add(command);
+        }
+        return result;
+    }
+
+    private static RecordingRenderBackend replayBand(PaintCommand command, float scale) {
+        RecordingRenderBackend backend = new RecordingRenderBackend();
+        new ScenePaintReplayer().replay(new PaintPlan().addCommand(command), backend.scaled(scale));
+        return backend;
+    }
+
+    private static boolean covers(RecordingRenderBackend backend, int x, int y) {
+        for (RecordingRenderBackend.RenderCall call : backend.getCalls()) {
+            if (call.methodName().equals("fillRect") && call.getInt(0) <= x && x < call.getInt(2)
+                    && call.getInt(1) <= y && y < call.getInt(3) && (call.getInt(4) >>> 24) != 0) return true;
+        }
+        return false;
     }
 
     @Test

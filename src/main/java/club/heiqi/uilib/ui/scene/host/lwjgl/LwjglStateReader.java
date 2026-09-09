@@ -217,6 +217,13 @@ public class LwjglStateReader implements PlatformStateReader {
     }
 
     @Override
+    public boolean __keyDown(int nativeKeyCode) {
+        if (KEYBOARD_CLASS == null) return false;
+        if (!invokeBoolean(KEYBOARD_IS_CREATED, false)) return false;
+        return invokeBoolean(KEYBOARD_IS_KEY_DOWN, false, nativeKeyCode);
+    }
+
+    @Override
     public boolean control() {
         if (KEYBOARD_CLASS == null) return false;
         if (!invokeBoolean(KEYBOARD_IS_CREATED, false)) return false;

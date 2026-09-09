@@ -50,13 +50,17 @@ public class ChatToolbarTest {
     }
 
     static SceneNode assertIconButton(SceneNode button, String name) {
-        Assert.assertEquals("按钮只能有一个图标直接子节点", 1, button.__getChildren().size());
+        Assert.assertEquals("按钮只包含一个内容动画承载层", 1, button.__getChildren().size());
         Assert.assertTrue("按钮不保留文字标签", texts(button).isEmpty());
         Assert.assertEquals(24, button.getPreferredWidth());
         Assert.assertEquals(24, button.getPreferredHeight());
         Assert.assertEquals("每颗按钮保持固定实体轮廓", 8, button.getCornerRadius());
         Assert.assertNull("按钮根不设置变换，表面升降不影响命中", button.getTransform());
-        SceneNode icon = button.__getChildren().get(0);
+        SceneNode motionRoot = button.__getChildren().get(0);
+        Assert.assertEquals(1, motionRoot.__getChildren().size());
+        Assert.assertNotNull("承载层管理样式位移", motionRoot.getTransform());
+        SceneNode icon = motionRoot.__getChildren().get(0);
+        Assert.assertNull("图标自身变换不被玻璃样式占用", icon.getTransform());
         Assert.assertEquals(16, icon.getPreferredWidth());
         Assert.assertEquals(16, icon.getPreferredHeight());
         Assert.assertTrue("图标必须使用 UILib 宿主图片源", icon.getImageSource() instanceof HostImageSource);
@@ -200,6 +204,45 @@ public class ChatToolbarTest {
                 Assert.assertNull("关闭滤镜后每颗按钮释放配方", button.getBackdrop());
                 Assert.assertTrue("关闭滤镜仍保留实体", button.__getSurfaceElevation() >= 0.0F);
             }
+        } finally {
+            ChatMarkdownSettings.setGlassEnabled(savedGlass);
+            ChatMarkdownSettings.setGlassBlurRadiusPx(savedBlur);
+            ChatMarkdownSettings.setGlassLensStrength(savedLens);
+        }
+    }
+
+    @Test
+    public void mountedChatAndPublicButtonsShareLiveGlassSettings() {
+        boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
+        int savedBlur = ChatMarkdownSettings.getGlassBlurRadiusPx();
+        float savedLens = ChatMarkdownSettings.getGlassLensStrength();
+        try {
+            ChatMarkdownSettings.setGlassEnabled(true);
+            ChatMarkdownSettings.setGlassBlurRadiusPx(3);
+            attachedHost = host(Signal.create(Boolean.TRUE));
+            ChatHudWindow.attachToolbarHost(attachedHost);
+            rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            HudToolbarLayer.Result layer = HudToolbarLayer.mount(rt, ChatHudWindow.chatToolbarSpec(),
+                    SceneNode.column().setPreferredWidth(200).setPreferredHeight(100),
+                    runtime -> ChatToolbar.mount(runtime, attachedHost));
+            rt.flush();
+            SceneNode finish = layer.toolbar().__getChildren().get(0).__getChildren().get(0);
+            SceneNode plus = layer.toolbar().__getChildren().get(3);
+            Assert.assertEquals(finish.getBackdrop(), plus.getBackdrop());
+            ChatMarkdownSettings.setGlassEnabled(false);
+            rt.__tickFrame(1L); rt.flush();
+            Assert.assertNull(finish.getBackdrop());
+            Assert.assertNull(plus.getBackdrop());
+            Assert.assertTrue(finish.__getSurfaceElevation() >= 0.0f);
+            ChatMarkdownSettings.setGlassEnabled(true);
+            ChatMarkdownSettings.setGlassBlurRadiusPx(20);
+            ChatMarkdownSettings.setGlassLensStrength(0.4f);
+            rt.__tickFrame(2L); rt.flush();
+            Assert.assertEquals(6, finish.getBackdrop().getBlurRadius());
+            Assert.assertEquals(finish.getBackdrop(), plus.getBackdrop());
+            Assert.assertSame("换材质不重建动作按钮", finish,
+                    layer.toolbar().__getChildren().get(0).__getChildren().get(0));
+            Assert.assertSame("换材质不重建公共按钮", plus, layer.toolbar().__getChildren().get(3));
         } finally {
             ChatMarkdownSettings.setGlassEnabled(savedGlass);
             ChatMarkdownSettings.setGlassBlurRadiusPx(savedBlur);

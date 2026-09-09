@@ -36,6 +36,7 @@ public class MockPlatformStateReader implements PlatformStateReader {
     public long nowNanos;
     /** 窗口焦点状态，测试直接修改 */
     public boolean windowFocused;
+    public final java.util.Set<Integer> keysDown = new java.util.HashSet<>();
 
     public MockPlatformStateReader() {
         this.mouseX = 0;
@@ -111,4 +112,7 @@ public class MockPlatformStateReader implements PlatformStateReader {
 
     @Override
     public boolean windowFocused() { return windowFocused; }
+
+    @Override
+    public boolean __keyDown(int nativeKeyCode) { return keysDown.contains(nativeKeyCode); }
 }

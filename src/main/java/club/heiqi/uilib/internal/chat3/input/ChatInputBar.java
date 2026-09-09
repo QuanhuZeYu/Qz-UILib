@@ -12,34 +12,21 @@ import net.minecraft.network.play.client.C14PacketTabComplete;
 import net.minecraft.util.ChatComponentText;
 import net.minecraftforge.client.ClientCommandHandler;
 
-import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.render.UiBackdrop;
-import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.scene.control.MaxLengthUnit;
-import club.heiqi.uilib.ui.scene.control.SceneTextInput;
+import club.heiqi.uilib.ui.scene.control.SceneInputType;
 import club.heiqi.uilib.ui.scene.control.SceneTextInputPrimitive;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 聊天输入条组件(L3 组件层):复用 UILib {@link SceneTextInput} 的受控输入框,
+ * 聊天输入条组件(L3 组件层):复用 UILib {@link SceneTextInputPrimitive} 的受控输入框,
  * 内聚文本真值、发送历史、历史回显与 Tab 补全。键盘节流(Enter/Up/Down/Tab/PageUp/PageDown)
  * 仍由屏幕壳完成。Tab 补全状态机下沉 {@link ChatCompletionEngine}(idle → awaiting → cycling),
  * 本类只做宿主窄端口适配(网络发包/本地玩家表/候选打印)。
  */
 public final class ChatInputBar implements ChatCompletionEngine.Host {
 
-    /** 输入字号。 */
-    private static final int INPUT_FONT_SIZE = 14;
-    /** 输入框高(px,设计稿 §6.2:输入条区 40 - 四周 8×2 内边距 = 24)。 */
-    private static final int INPUT_HEIGHT_PX = 24;
-    /** 输入框内水平 padding(px,设计稿 §2.3 内边距定值 paddingX=10)。 */
-    private static final int INPUT_PADDING_X_PX = 10;
-    /** 输入框内垂直 padding(px,24 盒高 - font-input 14 行高 20 = 上下各 2)。 */
-    private static final int INPUT_PADDING_Y_PX = 2;
     /** 输入上限(原版 GuiTextField.maxStringLength 口径:100 UTF-16 单元,emoji 占 2 单元)。 */
     static final int MAX_INPUT_LENGTH = 100;
     /** 块字符:§(U+00A7)。原版 ChatAllowedCharacters 拒绝 §,服务器对含 § 消息踢
@@ -52,18 +39,15 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     private final Signal<String> inputText;
     private final ChatSentHistory sentHistory = new ChatSentHistory();
     private final SceneNode inputRoot;
-    /** SceneTextInput 句柄(autocomplete commit 的 caret 对齐窄操作)。 */
-    private final SceneTextInput.Handle inputHandle;
+    /** primitive 结果；直接复用补全 commit 的 caret 对齐窄操作。 */
+    private final SceneTextInputPrimitive.Result inputHandle;
     /** Tab 补全状态机(idle → awaiting → cycling);I5 测试注入口可整体替换为假引擎。 */
     private ChatCompletionEngine completion;
-    /** 聊天输入条描边覆盖绑定(设计稿 §2.1:非 focus 无描边,focus 1px 淡蓝 25%)。 */
-    private final Binding borderBinding;
-    /** 输入底色覆盖绑定(K3 缺陷:F6① SceneTextInput 内部 SceneStateColors.inputBackground
-     *  = 0xFF211F26(实测 33,31,38)覆盖了设计令牌,此处按 bg-input 0xFF1E232A 恒值覆盖)。 */
-    private final Binding backgroundBinding;
+    /** 独立外观作用域，背景/边框各自只有一个绑定写入者。 */
+    private final ChatInputChrome chrome;
 
     /**
-     * @param runtime     宿主场景运行时(SceneTextInput 挂载 + 焦点)
+     * @param runtime     宿主场景运行时(primitive 挂载 + 焦点)
      * @param initialText 预填文本(斜杠键进入时 = "/",可为空)
      */
     public ChatInputBar(SceneRuntime runtime, String initialText) {
@@ -71,66 +55,20 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         // TA:预填(斜杠开屏等)也过块字符过滤,与外置写入入口同源防御
         this.inputText = Signal.create(sanitize(initialText));
         this.completion = new ChatCompletionEngine(this);
-        SceneTextInput.Props props = SceneTextInput.Props.builder(inputText)
-                // 设计稿 §3.2:placeholder「输入消息…」色 text-input-placeholder 0xFF6E757E
-                // (chat3 层窄口覆盖,SceneTextInput 通用 secondaryText 默认值不动)
-                .placeholder("输入消息…")
-                .placeholderColor(Integer.valueOf(ChatMarkdownSettings.getInputPlaceholderArgb()))
-                .maxLength(MAX_INPUT_LENGTH)
-                // 与原版 maxStringLength=100 同口径:UTF-16 单元(emoji 占 2 单元);公共默认 CODEPOINT 不动
-                .maxLengthUnit(MaxLengthUnit.UTF16)
-                // TA:禁 §(U+00A7)——primitive 输入路径逐字符剔除,与 ChatAllowedCharacters 拒绝表对齐
-                .blockChars(BLOCKED_CHARS)
-                .onChange(next -> {
+        SceneTextInputPrimitive.Props props = new SceneTextInputPrimitive.Props(
+                inputText, Signal.create(Boolean.TRUE), Signal.create(Boolean.FALSE),
+                "输入消息…", MAX_INPUT_LENGTH, SceneInputType.TEXT, next -> {
                     inputText.set(next);
                     completion.onTextEdited();
-                })
-                .build();
-        this.inputHandle = SceneTextInput.createHandle(runtime, props);
-        this.inputRoot = inputHandle.component().get();
-        this.inputRoot.setFontSize(INPUT_FONT_SIZE);
-        this.inputRoot.setFillParentWidth(true);
-        // 输入框圆角走 settings（2026-09-02 起按同心规则 = 容器 20 - 内缩 8 = 12，
-        // 不再是设计稿早期的 r-md 8；容器半径再变要同步改 settings 的那个值）
-        this.inputRoot.setCornerRadius(ChatMarkdownSettings.getInputCornerRadiusPx());
-        // K3 缺陷 F6②:输入框高钉 24px(40 - 四周 8×2),内 padding 覆盖通用 PAD_MD=8
-        // 为 (2,10,2,10)——24 盒高下 font-input 14px 行高 20 恰好撑满(设计稿 §6.2/§2.3)
-        this.inputRoot.setPreferredHeight(INPUT_HEIGHT_PX);
-        this.inputRoot.setPadding(INPUT_PADDING_Y_PX, INPUT_PADDING_X_PX, INPUT_PADDING_Y_PX,
-                INPUT_PADDING_X_PX);
-        // K3 缺陷 F6①:输入底色 = 设计令牌 bg-input 0xFF1E232A。SceneTextInput 内部
-        // __bindAnimatedColor(SceneStateColors.inputBackground = BG_PRESSED 0xFF211F26,
-        // 实测 (33,31,38))每帧覆盖背景,此处恒值覆盖绑定(注册晚于控件内部绑定,
-        // 帧末批量提交时覆盖值恒生效,与 borderBinding 同技巧)。
-        // 液态玻璃：输入条底色 alpha 走同一条覆盖绑定（SceneTextInput 内部每帧重烘焙
-        // 背景，只有在这里出半透明值才不会被覆盖回实色），并挂上 backdrop 声明。
-        this.backgroundBinding = runtime.bind(Computed.create(() -> Integer.valueOf(
-                ChatMarkdownSettings.isGlassEnabled()
-                        ? (ChatMarkdownSettings.getInputBackgroundArgb() & 0x00FFFFFF)
-                                | (ChatMarkdownSettings.getGlassInputAlpha() << 24)
-                        : ChatMarkdownSettings.getInputBackgroundArgb())),
-                inputRoot::setBackgroundColor);
-        if (ChatMarkdownSettings.isGlassEnabled()) {
-            inputRoot.setBackdrop(UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
-                    ChatMarkdownSettings.getGlassBlurRadiusPx(), ChatMarkdownSettings.getGlassLensStrength()));
-        }
-        // 设计稿 §2.1:非 focus 无描边(透明),focus 1px 0x406B9BD8(25% 淡蓝)。
-        // SceneTextInput 通用描边(=0xFF938F99 常驻灰紫)不符合聊天设计,此处按交互态覆盖;
-        // 绑定注册晚于控件内部绑定,帧末批量提交时覆盖值恒生效。
-        this.borderBinding = runtime.bind(Computed.create(() -> Integer.valueOf(
-                Boolean.TRUE.equals(runtime.interactionState(inputRoot).focused().get())
-                        ? ChatMarkdownSettings.getInputFocusBorderArgb() : 0x00000000)),
-                inputRoot::setBorderColor);
+                }, MaxLengthUnit.UTF16, BLOCKED_CHARS);
+        this.inputHandle = SceneTextInputPrimitive.create(runtime, props);
+        this.inputRoot = inputHandle.root();
+        this.chrome = ChatInputChrome.attach(runtime, props.enabled(), inputHandle);
     }
 
-    /** 释放描边/底色覆盖绑定(屏幕关闭时由容器统一回收)。 */
+    /** 释放输入外观的全部绑定与动画；重复调用安全，行为作用域仍由宿主回收。 */
     public void dispose() {
-        if (borderBinding != null) {
-            borderBinding.dispose();
-        }
-        if (backgroundBinding != null) {
-            backgroundBinding.dispose();
-        }
+        chrome.dispose();
     }
 
     /** @return 输入框根节点(挂到容器输入行) */

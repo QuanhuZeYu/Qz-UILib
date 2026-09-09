@@ -49,6 +49,39 @@ public class UiBackdropBatchTest {
         assertEquals(6, radii.getBottomLeft());
     }
 
+    /** 旧入口与完整配方入口必须共享同一次 logical -> physical 换算。 */
+    @Test
+    public void legacyOverloadsForwardThroughScaledBackendsWithoutChangingSaturation() {
+        CapturingContext context = new CapturingContext();
+        UiRenderBackend[] backends = {context.scaled(0.5F), context,
+                context.scaled(2.0F), context.scaled(1.5F).scaled(2.0F)};
+        // Python 独立验算，包含非整数坐标取整与嵌套倍率。
+        int[][] expected = {
+                {2, 3, 14, 15, 3, 4, 4, 4, 4},
+                {3, 5, 27, 29, 6, 8, 8, 8, 8},
+                {6, 10, 54, 58, 12, 16, 16, 16, 16},
+                {9, 15, 81, 87, 18, 24, 24, 24, 24}
+        };
+        for (int i = 0; i < backends.length; i++) {
+            context.geometry = null;
+            UiRenderBackends.backdropFilter(backends[i], 3, 5, 27, 29, 6, 0.7F, 8);
+            assertArrayEquals(expected[i], context.geometry);
+            assertEquals(0.7F, context.saturation, 0.0F);
+            assertEquals(UiBackdropEffect.classic(null), context.effect);
+
+            context.geometry = null;
+            UiRenderBackends.backdropFilter(backends[i], 3, 5, 27, 29, 6, 0.7F, 8,
+                    UiGlassMaterial.DARK_THIN);
+            assertArrayEquals(expected[i], context.geometry);
+            assertEquals(0.7F, context.saturation, 0.0F);
+            assertEquals(UiBackdropEffect.classic(UiGlassMaterial.DARK_THIN), context.effect);
+        }
+        UiRenderBackends.backdropFilter(context.scaled(2.0F), 3, 5, 27, 29, 0, 1.0F, -4,
+                (UiGlassMaterial) null);
+        assertArrayEquals(new int[] {6, 10, 54, 58, 0, 0, 0, 0, 0}, context.geometry);
+        assertEquals(UiBackdropEffect.classic(null), context.effect);
+    }
+
     private static final class CapturingContext extends UiRenderContext {
         int[] geometry;
         float saturation;

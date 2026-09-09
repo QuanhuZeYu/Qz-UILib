@@ -8,14 +8,13 @@ import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.api.chat.ChatAction;
 import club.heiqi.uilib.api.chat.ChatActionService;
-import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSide;
 import club.heiqi.uilib.ui.hud.api.HudToolbarSpec;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.render.UiBackdrop;
-import club.heiqi.uilib.ui.render.UiGlassMaterial;
+import club.heiqi.uilib.ui.scene.control.SceneGlassButtonStyle;
 import club.heiqi.uilib.ui.scene.control.SceneButtonPrimitive;
 import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
 import club.heiqi.uilib.ui.scene.control.SceneLiquidGlassStyle;
@@ -148,16 +147,19 @@ public final class ChatToolbar {
      * @return 工具栏根（由外接层挂到内容盒外侧）
      */
     public static SceneNode mount(SceneRuntime rt, final Host host, HudToolbarSide side) {
+        if (Owner.current() == null) {
+            SceneNode[] mounted = new SceneNode[1];
+            rt.__runRoot(() -> mounted[0] = mount(rt, host, side));
+            return mounted[0];
+        }
+        ChatToolbarAppearance.observe(rt);
         final HudToolbarSide effective = side == null ? HudToolbarSide.DEFAULT : side;
         final boolean horizontal = effective.isHorizontalEdge();
         SceneNode root = horizontal ? SceneNode.row() : SceneNode.column();
-        boolean glass = ChatMarkdownSettings.isGlassEnabled();
         // 根只负责排列；每颗按钮独立采样背景，按钮间隙直接露出游戏画面。
         root.setHitTestable(true).setGap(6)
                 .setCrossAxisAlign(CrossAxisAlign.CENTER);
-        UiBackdrop buttonBackdrop = glass ? UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN,
-                Math.min(6, ChatMarkdownSettings.getGlassBlurRadiusPx()),
-                ChatMarkdownSettings.getGlassLensStrength()) : null;
+        ReadableSignal<SceneGlassButtonStyle> buttonStyle = ChatToolbarAppearance.style();
         if (horizontal) {
             root.setPreferredHeight(TOOLBAR_HEIGHT_PX).setPadding(1, PADDING_X, 1, PADDING_X);
         } else {
@@ -174,7 +176,7 @@ public final class ChatToolbar {
                         + root.getPaddingLeft() + root.getPaddingRight();
             }, root::setPreferredWidth);
         }
-        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item, buttonBackdrop));
+        rt.forEach(root, items, item -> item.key, item -> buildButton(rt, item, buttonStyle));
         return root;
     }
 
@@ -208,7 +210,7 @@ public final class ChatToolbar {
     }
 
     /** 复用按钮交互原语；玻璃外观统一交给专属样式，内容与动作留在工具栏。 */
-    private static SceneNode buildButton(SceneRuntime rt, Item item, UiBackdrop backdrop) {
+    private static SceneNode buildButton(SceneRuntime rt, Item item, ReadableSignal<SceneGlassButtonStyle> baseStyle) {
         SceneButtonPrimitive.Result primitive = SceneButtonPrimitive.create(rt,
                 new SceneButtonPrimitive.Props(Signal.create(""), item.enabled, item.onClick));
         SceneNode button = primitive.root();
@@ -218,9 +220,14 @@ public final class ChatToolbar {
                 .setPadding(3);
         SceneNode icon = new SceneNode().setHitTestable(false)
                 .setPreferredWidth(ICON_SIZE_PX).setPreferredHeight(ICON_SIZE_PX);
-        button.appendChild(icon);
+        SceneNode motionRoot = SceneNode.row().setHitTestable(false)
+                .setPreferredWidth(ICON_SIZE_PX).setPreferredHeight(ICON_SIZE_PX);
+        motionRoot.appendChild(icon);
+        button.appendChild(motionRoot);
         ChatToolbarIcons.attach(rt, icon, item.icon);
-        SceneLiquidGlassStyle.bindButton(rt, button, icon, item.enabled, item.variant, backdrop);
+        ReadableSignal<SceneGlassButtonStyle> style = Computed.create(
+                () -> baseStyle.get().toBuilder().variant(item.variant).build());
+        SceneLiquidGlassStyle.bindButton(rt, button, motionRoot, item.enabled, style);
         // 禁用项仍显示说明；点击/键盘激活由 primitive 的 enabled 信号约束。
         SceneTooltip.attach(rt, SceneTooltip.Props.of(button, Signal.create(item.tooltip)));
         return button;

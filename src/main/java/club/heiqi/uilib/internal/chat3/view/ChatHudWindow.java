@@ -3,6 +3,7 @@ package club.heiqi.uilib.internal.chat3.view;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.input.ChatHudEditIntent;
 import club.heiqi.uilib.internal.chat3.input.ChatToolbar;
+import club.heiqi.uilib.internal.chat3.input.ChatToolbarAppearance;
 import club.heiqi.uilib.ui.hud.api.ClientHudService;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
@@ -198,7 +199,8 @@ public final class ChatHudWindow {
         HudToolbarSide side = toolbarSide;
         int thickness = side.isHorizontalEdge()
                 ? HudToolbarSpec.DEFAULT_THICKNESS_PX : ChatToolbar.VERTICAL_THICKNESS_PX;
-        return HudToolbarSpec.builder(side).thickness(thickness).visible(TOOLBAR_VISIBLE).build();
+        return HudToolbarSpec.builder(side).thickness(thickness).visible(TOOLBAR_VISIBLE)
+                .publicButtonStyle(ChatToolbarAppearance.style()).build();
     }
 
     /** @return 当前聊天工具栏挂载边 */

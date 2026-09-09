@@ -71,28 +71,33 @@ vec3 applyVibrancy(vec3 color, float amount) {
     return clamp(gray + (color - gray) * k, 0.0, 1.0);
 }
 
-// 按面板局部坐标所在象限取对应角半径。cornerRadii 顺序：左上、右上、右下、左下
-// （与 ResolvedCornerRadii 一致；uv 的 y 向下，故 y<0.5 为上半）。
-float cornerRadiusAt(vec4 radii, vec2 uv) {
-    float topR = mix(radii.x, radii.y, step(0.5, uv.x));
-    float bottomR = mix(radii.w, radii.z, step(0.5, uv.x));
-    return mix(topR, bottomR, step(0.5, uv.y));
+// xy 为屏幕坐标外法线（y 向下），z 为覆盖率使用的有符号距离。
+// 只在圆弧约束比已有边界更近时替换，保证 mask、折射和缘光使用同一轮廓。
+vec3 applyCornerConstraint(vec3 geometry, vec2 fromCenter, float radius) {
+    float radialLength = length(fromCenter);
+    float distance = radialLength - radius;
+    if (distance > geometry.z)
+        return vec3(fromCenter / max(radialLength, 0.0001), distance);
+    return geometry;
 }
 
 // 半径已由宿主按相邻边长度归一；合法的单个大圆角可以超过短边一半。
-// 对四个角区分别求约束，不能只按中心象限选角，否则不对称圆角 mask 会改变轮廓。
-float roundedPanelDistance(vec2 p, vec2 size, vec4 radii) {
-    vec2 edge = min(p, size - p);
-    float distance = -min(edge.x, edge.y);
+// 四角顺序：左上、右上、右下、左下。每个角区独立判断，不能按中心象限选角。
+// 零圆角直接沿最近直边折射；内切矩形近似在零圆角时会令整块面板的法线消失。
+vec3 roundedPanelGeometry(vec2 p, vec2 size, vec4 radii) {
+    vec3 geometry = vec3(-1.0, 0.0, -p.x);
+    if (p.x - size.x > geometry.z) geometry = vec3(1.0, 0.0, p.x - size.x);
+    if (-p.y > geometry.z) geometry = vec3(0.0, -1.0, -p.y);
+    if (p.y - size.y > geometry.z) geometry = vec3(0.0, 1.0, p.y - size.y);
     if (p.x < radii.x && p.y < radii.x)
-        distance = max(distance, length(p - vec2(radii.x)) - radii.x);
+        geometry = applyCornerConstraint(geometry, p - vec2(radii.x), radii.x);
     if (p.x > size.x - radii.y && p.y < radii.y)
-        distance = max(distance, length(p - vec2(size.x - radii.y, radii.y)) - radii.y);
+        geometry = applyCornerConstraint(geometry, p - vec2(size.x - radii.y, radii.y), radii.y);
     if (p.x > size.x - radii.z && p.y > size.y - radii.z)
-        distance = max(distance, length(p - (size - vec2(radii.z))) - radii.z);
+        geometry = applyCornerConstraint(geometry, p - (size - vec2(radii.z)), radii.z);
     if (p.x < radii.w && p.y > size.y - radii.w)
-        distance = max(distance, length(p - vec2(radii.w, size.y - radii.w)) - radii.w);
-    return distance;
+        geometry = applyCornerConstraint(geometry, p - vec2(radii.w, size.y - radii.w), radii.w);
+    return geometry;
 }
 
 // 廉价 hash 噪声：不用 sin 做 hash（各驱动 sin 实现差异会让噪声分布随硬件变化）。
@@ -120,15 +125,13 @@ void main(void) {
     // 螺旋核未补偿 RMS=0.9294，乘 0.98 后 0.9108，与旧规则核基准 0.91148 差 -0.07%，
     // 保持作者侧 blurRadius 观感口径。该 RMS 由核守卫断言锁定，改核会静默改变模糊
     // 强度，故必须在契约里同步。
-    vec2 radiusStep = texelSize * clamp(blurRadius, 1.0, 128.0) * 0.98;
+    vec2 radiusStep = texelSize * clamp(blurRadius, 0.0, 128.0) * 0.98;
 
     // 面板几何必须先于采样计算：Liquid Glass 的透镜折射要偏置采样坐标。
-    // 覆盖率使用完整四角轮廓；透镜法线仍采用既有的局部内切矩形近似。
+    // 覆盖率、折射和缘光共用完整四角轮廓的距离与解析法线。
     vec2 halfSize = max(panelSizePx * 0.5, vec2(1.0, 1.0));
-    vec2 local = (panelUv - 0.5) * panelSizePx;
-    // 法线近似的内切矩形保持非负；该半径不参与实际覆盖率 mask。
-    float cornerR = min(cornerRadiusAt(cornerRadii, panelUv), min(halfSize.x, halfSize.y));
-    float signedDistance = roundedPanelDistance(panelUv * panelSizePx, panelSizePx, cornerRadii);
+    vec3 panelGeometry = roundedPanelGeometry(panelUv * panelSizePx, panelSizePx, cornerRadii);
+    float signedDistance = panelGeometry.z;
     float edgeDistance = max(-signedDistance, 0.0);
     // 一个最终屏幕像素的覆盖率过渡；不随 HUD 放大成数个 logical 像素的台阶。
     // fwidth 同时适配祖先变换；在任何动态分支/丢弃之前计算导数。
@@ -152,9 +155,8 @@ void main(void) {
 
     // Liquid Glass 边缘折射：圆角矩形像一块有厚度的凸缘玻璃——靠近边缘的
     // 背景被"抽向轮廓外"再压缩进缘带，产生透镜感（官方 Liquid Glass 区别于
-    // 经典磨砂的决定性特征）。做法：SDF 对位置的梯度就是外法线（等于"该点到
-    // 内切矩形的方向"，无需求导数），把全部 13 个抽头的采样中心沿外法线推到
-    // 轮廓外，越贴边推得越远；中心区梯度为零向量，天然不折射。
+    // 经典磨砂的决定性特征）。沿覆盖率轮廓的解析外法线偏移采样中心，
+    // 越贴边推得越远；中心区由 lensBevel 归零，保持平坦。
     // lensShift 是 UV 空间偏移：refraction 以纹理素计（宿主已把作者侧屏幕像素数
     // 除以 downsampleFactor），乘 texelSize 换算到 UV，与 radiusStep 同口径，
     // 屏幕观感不随快照缩放档位跳变。
@@ -175,31 +177,32 @@ void main(void) {
         lensBandPx = min(clamp(lensShortHalf * 0.35, 3.0, 28.0), lensShortHalf * 0.5);
         lensBevel = 1.0 - smoothstep(0.0, lensBandPx, edgeDistance);
         lensBevel = lensBevel * lensBevel;
-        vec2 inner = clamp(local, -(halfSize - vec2(cornerR)), halfSize - vec2(cornerR));
-        vec2 outward = local - inner;
-        float outwardLength = length(outward);
-        if (outwardLength > 0.001) {
-            sdfGradient = outward / outwardLength;
-            lensShift = sdfGradient * lensBevel * refraction * texelSize;
-        }
+        sdfGradient = panelGeometry.xy;
+        // 屏幕 y 向下，快照 V 向上；只在转采样 UV 时翻转 y。
+        // 光向仍用屏幕坐标法线，不能跟随纹理翻转。
+        lensShift = vec2(sdfGradient.x, -sdfGradient.y) * lensBevel * refraction * texelSize;
     }
 
-    vec4 blurred = texture2D(mainTex, texCoord + lensShift) * (161.0 / 1000.0);
+    // 零模糊保留折射/材质，但只采样一次；不得把半径夹到 1 或重复累加同一点。
+    vec4 blurred = texture2D(mainTex, texCoord + lensShift);
+    if (blurRadius > 0.0) {
+        blurred *= (161.0 / 1000.0);
 
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.341, 0.312) * radiusStep) * (139.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.057, -0.651) * radiusStep) * (120.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.487, 0.635) * radiusStep) * (103.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.910, -0.161) * radiusStep) * (89.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.341, 0.312) * radiusStep) * (139.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.057, -0.651) * radiusStep) * (120.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.487, 0.635) * radiusStep) * (103.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.910, -0.161) * radiusStep) * (89.0 / 1000.0);
 
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.871, -0.554) * radiusStep) * (77.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.294, 1.093) * radiusStep) * (66.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.563, -1.084) * radiusStep) * (57.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(1.227, 0.448) * radiusStep) * (49.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.871, -0.554) * radiusStep) * (77.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.294, 1.093) * radiusStep) * (66.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.563, -1.084) * radiusStep) * (57.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(1.227, 0.448) * radiusStep) * (49.0 / 1000.0);
 
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-1.281, 0.529) * radiusStep) * (43.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.619, -1.323) * radiusStep) * (37.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.458, 1.462) * radiusStep) * (32.0 / 1000.0);
-    blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-1.384, -0.802) * radiusStep) * (27.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-1.281, 0.529) * radiusStep) * (43.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.619, -1.323) * radiusStep) * (37.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.458, 1.462) * radiusStep) * (32.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-1.384, -0.802) * radiusStep) * (27.0 / 1000.0);
+    }
 
     vec3 color;
     if (iosMaterial > 0.5) {

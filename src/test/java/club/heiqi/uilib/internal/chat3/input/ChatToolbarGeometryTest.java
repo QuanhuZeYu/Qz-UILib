@@ -482,7 +482,7 @@ public class ChatToolbarGeometryTest {
                 Assert.assertEquals(24, b.getWidth());
                 Assert.assertEquals(24, b.getHeight());
                 assertVisibleInside(button, toolbar, "竖直图标按钮");
-                SceneNode icon = button.__getChildren().get(0);
+                SceneNode icon = button.__getChildren().get(0).__getChildren().get(0);
                 Assert.assertEquals(16, box(icon).getWidth());
                 Assert.assertEquals(16, box(icon).getHeight());
                 assertVisibleInside(icon, b, "图标");
@@ -651,7 +651,8 @@ public class ChatToolbarGeometryTest {
             }
             Assert.assertTrue("采样之后才叠面部染色",
                     fragment.getCommands().indexOf(backdrop) < fragment.getCommands().indexOf(face));
-            PaintFragment iconFragment = (PaintFragment) button.__getChildren().get(0).getCachedPaint();
+            PaintFragment iconFragment = (PaintFragment) button.__getChildren().get(0)
+                    .__getChildren().get(0).getCachedPaint();
             for (PaintCommand command : iconFragment.getCommands()) {
                 Assert.assertNotEquals("图标子节点不能重复采样玻璃", PaintCommandType.BACKDROP, command.getType());
             }

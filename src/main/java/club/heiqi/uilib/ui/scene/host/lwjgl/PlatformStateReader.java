@@ -30,6 +30,11 @@ public interface PlatformStateReader {
      */
     boolean buttonDown(int button);
 
+    /** 内部键盘反馈桥：非破坏性读取已收到 keyTyped 的原生键当前态，不消费键盘队列。 */
+    default boolean __keyDown(int nativeKeyCode) {
+        return false;
+    }
+
     /**
      * 累计滚轮量（非破坏性，不清零）。
      *

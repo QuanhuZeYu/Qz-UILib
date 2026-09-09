@@ -46,6 +46,7 @@ final class SceneSurfaceReliefPainter {
         }
         if (tiny) return;
 
+        // 表面渐变独立于描边宽度；关闭倒角也保留玻璃实体和面内明暗。
         Shape inner = face.inset();
         if (inner == null) return;
         // 面上只有低透明度渐变，中央保持原始玻璃透射。
@@ -59,17 +60,24 @@ final class SceneSurfaceReliefPainter {
         }
 
         int border = node.getBorderColor();
-        int shine = (border >>> 24) == 0 ? 0xEAF6FF : border & 0xFFFFFF;
+        // 零宽或全透明边色只关闭倒角及其内缘阴影，不能被最低高光强度重新点亮。
+        // 大宽度必须留下非空的透射孔洞；先夹宽度再做 inset，避免极大入参溢出。
+        int maxBorderWidth = (Math.min(face.right - face.left, face.bottom - face.top) - 1) / 2;
+        int borderWidth = Math.min(Math.max(0, node.getBorderWidth()), maxBorderWidth);
+        if (borderWidth == 0 || (border >>> 24) == 0) return;
+        Shape bevelInner = face.inset(borderWidth);
+        int shine = border & 0xFFFFFF;
         int strength = Math.round(Math.max(48, Math.min(120, border >>> 24))
                 * (0.75f + 0.25f * elevation));
-        // 外倒角：上沿最亮，左侧次之，底部仅弱反光，右侧压暗；不是均匀白圈。
-        ring(out, face, inner, argb(shine, strength), argb(shine, strength / 2),
+        // 外倒角由 borderWidth 控制；保留一像素内缘阴影，默认宽度 1 与原配方一致。
+        // 上沿最亮，左侧次之，底部仅弱反光，右侧压暗；不是均匀白圈。
+        ring(out, face, bevelInner, argb(shine, strength), argb(shine, strength / 2),
                 argb(0xCEE8FF, strength / 4), argb(0x071320, 38));
-        Shape core = inner.inset();
+        Shape core = bevelInner.inset();
         if (core != null) {
             // 倒角内缘投下细阴影；按下时加深，留下玻璃内凹的反馈。
             int shade = Math.round(30 - 12 * elevation);
-            ring(out, inner, core, argb(0x071320, shade), 0, 0, argb(0x071320, shade));
+            ring(out, bevelInner, core, argb(0x071320, shade), 0, 0, argb(0x071320, shade));
         }
     }
 
@@ -151,9 +159,13 @@ final class SceneSurfaceReliefPainter {
         }
 
         Shape inset() {
-            if (right - left <= 2 || bottom - top <= 2) return null;
-            return new Shape(left + 1, top + 1, right - 1, bottom - 1,
-                    tl - 1, tr - 1, br - 1, bl - 1);
+            return inset(1);
+        }
+
+        Shape inset(int amount) {
+            if (right - left <= amount * 2 || bottom - top <= amount * 2) return null;
+            return new Shape(left + amount, top + amount, right - amount, bottom - amount,
+                    tl - amount, tr - amount, br - amount, bl - amount);
         }
 
         int[] relativeTo(int x, int y) {

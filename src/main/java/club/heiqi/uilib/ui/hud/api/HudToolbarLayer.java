@@ -5,11 +5,9 @@ import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButtonPrimitive;
-import club.heiqi.uilib.ui.scene.control.SceneButtonVariant;
+import club.heiqi.uilib.ui.scene.control.SceneGlassButtonStyle;
 import club.heiqi.uilib.ui.scene.control.SceneLiquidGlassStyle;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
-import club.heiqi.uilib.ui.render.UiBackdrop;
-import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.ui.scene.control.SceneTooltip;
 
 import club.heiqi.uilib.ui.scene.layout.FlexDirection;
@@ -290,11 +288,11 @@ public final class HudToolbarLayer {
         // 工厂可能使用 rt.forEach，不能把公共按钮追加到其受协调器管理的子列表中。
         toolbar.appendChild(custom);
         rt.mount(toolbar, () -> scaleButton(rt, "-", () -> scale.percent().get() > HudScaleState.MIN_PERCENT,
-                scale::zoomOut, spec.getThickness(), () -> "缩小 HUD"));
+                scale::zoomOut, spec.getThickness(), () -> "缩小 HUD", spec.getPublicButtonStyle()));
         rt.mount(toolbar, () -> scaleButton(rt, "1:1", () -> true, scale::reset,
-                spec.getThickness(), () -> "当前 " + scale.percent().get() + "% · 点击恢复 100%"));
+                spec.getThickness(), () -> "当前 " + scale.percent().get() + "% · 点击恢复 100%", spec.getPublicButtonStyle()));
         rt.mount(toolbar, () -> scaleButton(rt, "+", () -> scale.percent().get() < HudScaleState.MAX_PERCENT,
-                scale::zoomIn, spec.getThickness(), () -> "放大 HUD"));
+                scale::zoomIn, spec.getThickness(), () -> "放大 HUD", spec.getPublicButtonStyle()));
         // fixed 子项在约束变化时可以继续复用 layout；组合根必须有确定的内在主轴尺寸，
         // 否则 SHRINK 会永久保留右锚点首帧被夹窄的盒。布局完成信号负责动态动作列表的后续变化。
         rt.bindComputed(() -> {
@@ -308,15 +306,22 @@ public final class HudToolbarLayer {
     }
 
     private static SceneNode scaleButton(SceneRuntime rt, String label, ReadableSignal<Boolean> enabled,
-            Runnable action, int size, ReadableSignal<String> tooltip) {
+            Runnable action, int size, ReadableSignal<String> tooltip,
+            ReadableSignal<SceneGlassButtonStyle> style) {
         SceneButtonPrimitive.Result primitive = SceneButtonPrimitive.create(rt,
                 new SceneButtonPrimitive.Props(() -> label, enabled, action));
         SceneNode button = primitive.root();
         int buttonSize = Math.min(24, size);
         button.setPreferredWidth(buttonSize).setPreferredHeight(buttonSize).setPadding(1)
                 .setWidthSizing(SceneNode.WidthSizing.SHRINK);
-        SceneLiquidGlassStyle.bindButton(rt, button, primitive.label(), enabled, SceneButtonVariant.STANDARD,
-                UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN, 6, 1.0f));
+        // 样式只移动承载层；标签保留自身 transform/opacity 的使用权。
+        SceneNode motionRoot = SceneNode.row().setHitTestable(false)
+                .setWidthSizing(SceneNode.WidthSizing.SHRINK).setCrossAxisAlign(CrossAxisAlign.CENTER);
+        button.removeChild(primitive.label());
+        motionRoot.appendChild(primitive.label());
+        button.appendChild(motionRoot);
+        SceneLiquidGlassStyle.bindButton(rt, button, motionRoot, enabled, style);
+        SceneLiquidGlassStyle.bindForeground(rt, primitive.label(), style, primitive.label().getTextColor());
         SceneTooltip.attach(rt, SceneTooltip.Props.of(button, tooltip));
         return button;
     }

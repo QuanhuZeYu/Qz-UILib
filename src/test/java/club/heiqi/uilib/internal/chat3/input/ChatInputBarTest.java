@@ -18,9 +18,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
- * ChatInputBar 契约测试(K3 缺陷 F6):输入框高 24px(输入条区 40 - 四周 8×2)、
- * 内 padding (2,10,2,10)、底色 = 设计令牌 bg-input 0xFF1E232A(覆盖 SceneTextInput
- * 通用 BG_PRESSED 0xFF211F26)、圆角 8、宽度填满父宽。
+ * ChatInputBar 契约测试：输入框高 24px、内 padding (2,10,2,10)、
+ * 底色 = 设计令牌 bg-input 0xFF1E232A、圆角由 settings 同心规则推导、宽度填满父宽。
+ * 输入行为直接复用 primitive，聊天 chrome 独立装配。
  */
 public class ChatInputBarTest {
 
@@ -432,9 +432,27 @@ public class ChatInputBarTest {
     }
 
     @Test
+    public void disposeStopsAppearanceUpdatesWithoutClearingInput() {
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        try {
+            ChatInputBar bar = new ChatInputBar(rt, "draft");
+            rt.flush();
+            bar.dispose();
+            bar.dispose();
+            ChatMarkdownSettings.setGlassEnabled(true);
+            rt.__tickFrame(1L);
+            rt.flush();
+            Assert.assertNull("dispose 后不再挂载玻璃", bar.root().getBackdrop());
+            Assert.assertEquals(BG_INPUT, bar.root().getBackgroundColor());
+            Assert.assertEquals("draft", bar.inputText().get());
+        } finally {
+            rt.dispose();
+        }
+    }
+
+    @Test
     public void inputBackgroundIsDesignTokenAfterFlush() {
-        // K3 实测 (33,31,38) = SceneTextInput 通用 BG_PRESSED 0xFF211F26;覆盖绑定
-        // (注册晚于控件内部绑定,帧末批量提交)必须把底色钉回设计令牌 (30,35,42)
+        // 聊天 chrome 是底色唯一写入者，flush 后保持设计令牌，不依赖绑定注册次序。
         SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "");
         rt.flush();

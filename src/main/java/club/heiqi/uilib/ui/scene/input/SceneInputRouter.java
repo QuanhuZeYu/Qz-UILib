@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -20,7 +21,7 @@ import java.util.Set;
  *
  * <h3>核心职责</h3>
  * <ul>
- *   <li><b>外挂注册表</b>：{@code Map<SceneNode, EnumMap<SceneEventType, List<SceneEventHandler>>>}
+ *   <li><b>外挂注册表</b>：{@code Map<SceneNode, EnumMap<SceneEventType, List<HandlerRegistration>>>}
  *       —— SceneNode 零字段，handler 全挂路由器。</li>
  *   <li><b>隐式按压捕获</b>：BUTTON_DOWN 记 pressedNode；MOVE/BUTTON_UP 期间
  *       派发目标强制为 pressedNode；BUTTON_UP 后清空。</li>
@@ -45,7 +46,9 @@ public class SceneInputRouter {
      * 外挂 handler 注册表：SceneNode → (事件类型 → handler 列表)。
      * SceneNode 自身无 handler 字段，所有注册挂在路由器。
      */
-    private final Map<SceneNode, EnumMap<SceneEventType, List<SceneEventHandler>>> registry;
+    private final Map<SceneNode, EnumMap<SceneEventType, List<HandlerRegistration>>> registry;
+    /** 单次事件固定注册上限，派发期间新增的 handler 从后续事件开始参与。 */
+    private long handlerRegistrationOrder;
 
     /** 命中测试器（无状态，共享） */
     private final SceneHitTester hitTester;
@@ -57,6 +60,10 @@ public class SceneInputRouter {
     private SceneNode pressedNode;
     /** 隐式按压捕获：当前按下的按钮 */
     private SceneMouseButton pressedButton;
+    /** 仅显式登记的按钮参与键盘 pressed；不从 KEY_DOWN handler 或 focusable 身份推断。 */
+    private final Map<SceneNode, ReadableSignal<Boolean>> keyboardPressButtons = new HashMap<>();
+    private SceneNode keyboardPressedNode;
+    private final Set<SceneKey> keyboardPressedKeys = EnumSet.noneOf(SceneKey.class);
     /** 按压节点所属 overlay；null 表示主树。保留 entry 以便 anchor 变化后重算原点。 */
     private SceneOverlayHost.Entry pressedOverlayEntry;
     /** 显式指针捕获节点（requestPointerCapture 设置，UP 后自动释放） */
@@ -115,7 +122,7 @@ public class SceneInputRouter {
      * @param overlayHost 浮层宿主，可为 null；为 null 或为空时完全退化为主树路由
      */
     public SceneInputRouter(SceneOverlayHost overlayHost) {
-        this.registry = new HashMap<SceneNode, EnumMap<SceneEventType, List<SceneEventHandler>>>();
+        this.registry = new HashMap<SceneNode, EnumMap<SceneEventType, List<HandlerRegistration>>>();
         this.hitTester = new SceneHitTester();
         this.overlayHost = overlayHost;
         this.pressedNode = null;
@@ -146,6 +153,7 @@ public class SceneInputRouter {
     public void route(SceneNode root, SceneInputFrame frame, int rootAbsX, int rootAbsY) {
         if (root == null || frame == null) return;
 
+        boolean cancelled = false;
         for (ScenePointerEvent pe : frame.getPointerEvents()) {
             SceneEventType type = mapActionToType(pe.getAction());
             if (type == null) continue;
@@ -190,6 +198,7 @@ public class SceneInputRouter {
             // CANCEL 目标是 pressedNode/capturedNode，不依赖 hit-test 命中；
             // 提前处理 + continue 确保跳过通用 effectiveTarget dispatch，消除 double-dispatch。
             if (type == SceneEventType.POINTER_CANCEL) {
+                cancelled = true;
                 dispatchPointerCancel(pe, canvasX, canvasY, rootAbsX, rootAbsY);
                 continue; // 跳过通用 effectiveTarget dispatch + DOWN/UP 块
             }
@@ -205,8 +214,12 @@ public class SceneInputRouter {
             }
         }
 
-        // === I4a 键盘/文本分发（指针循环结束之后，先 text 后 key，用户拍板 D4-A） ===
-        dispatchKeyboardAndText(frame, root);
+        // 保持先 pointer、再 text/key 的既有派发顺序；取消帧不留下稍后 KEY_DOWN 建立的反馈。
+        try {
+            dispatchKeyboardAndText(frame, root);
+        } finally {
+            if (cancelled) clearKeyboardPress();
+        }
     }
 
     /**
@@ -252,6 +265,7 @@ public class SceneInputRouter {
                 }
             }
         } finally {
+            clearKeyboardPress();
             clearPointerGestureState();
         }
         rethrowFailure(firstFailure);
@@ -398,9 +412,7 @@ public class SceneInputRouter {
                     pressedNode = hitTarget;
                     pressedButton = pe.getButton();
                     pressedOverlayEntry = hitResult.overlayEntry;
-                    // I3: 记 pressedNode 之后写入 pressed signal
-                    SceneInteractionState st = interactionStates.get(hitTarget);
-                    if (st != null) st.writePressed(true);
+                    publishPressed(hitTarget);
                 }
             }
 
@@ -441,13 +453,9 @@ public class SceneInputRouter {
 
     /** 终态即使 handler 抛错也必须释放隐式按压与显式 capture。 */
     private void clearPointerGestureState() {
-        if (pressedNode != null) {
-            SceneInteractionState state = interactionStates.get(pressedNode);
-            if (state != null) {
-                state.writePressed(false);
-            }
-        }
+        SceneNode oldPressed = pressedNode;
         pressedNode = null;
+        publishPressed(oldPressed);
         pressedButton = null;
         pressedOverlayEntry = null;
         capturedNode = null;
@@ -455,8 +463,58 @@ public class SceneInputRouter {
         lastDownClickCount = 0;
     }
 
+    /** 内部 primitive 注册桥；只授予固定 Enter/Space 反馈行为，不暴露交互状态写入口。 */
+    public InputBinding __registerButtonKeyboardPress(SceneNode node, ReadableSignal<Boolean> enabled) {
+        if (node == null || enabled == null) {
+            throw new IllegalArgumentException("node 与 enabled 均不可为 null");
+        }
+        keyboardPressButtons.put(node, enabled);
+        return new InputBinding(() -> {
+            keyboardPressButtons.remove(node);
+            if (keyboardPressedNode == node) {
+                clearKeyboardPress();
+            }
+        });
+    }
+
+    /** 在 handler 前更新权威状态；handler 引发的失焦/卸载可以立即清理，返回后不会复活。 */
+    private void updateKeyboardPress(SceneNode target, SceneKeyEvent event) {
+        SceneKey key = event.getKey();
+        if (key != SceneKey.ENTER && key != SceneKey.SPACE) return;
+        if (event.getAction() == SceneKeyAction.RELEASED) {
+            if (keyboardPressedKeys.remove(key) && keyboardPressedKeys.isEmpty()) {
+                clearKeyboardPress();
+            }
+            return;
+        }
+        ReadableSignal<Boolean> enabled = keyboardPressButtons.get(target);
+        if (enabled == null || !Boolean.TRUE.equals(enabled.get())) return;
+        if (keyboardPressedNode != target) {
+            clearKeyboardPress();
+            keyboardPressedNode = target;
+        }
+        keyboardPressedKeys.add(key);
+        publishPressed(target);
+    }
+
+    private void clearKeyboardPress() {
+        SceneNode oldPressed = keyboardPressedNode;
+        keyboardPressedNode = null;
+        keyboardPressedKeys.clear();
+        publishPressed(oldPressed);
+    }
+
+    /** 两种输入分别拥有权威状态；释放其中一种不能抹掉另一种的按压反馈。 */
+    private void publishPressed(SceneNode node) {
+        if (node == null) return;
+        SceneInteractionState state = interactionStates.get(node);
+        if (state != null) {
+            state.writePressed(node == pressedNode || node == keyboardPressedNode);
+        }
+    }
+
     /**
-     * I4a 键盘/文本分发（指针循环结束之后，先 text 后 key，用户拍板 D4-A）。
+     * 键盘/文本分发（指针循环结束之后，先 text 后 key）。
      *
      * <p>设置当前帧根节点（供 FocusManager 做 DOM 前序遍历）后，先派发文本事件到焦点节点，
      * 再派发键盘事件；键盘事件含 ESC 优先 dismiss 与 Tab 默认焦点遍历。</p>
@@ -489,6 +547,7 @@ public class SceneInputRouter {
             }
             // ★每事件重读焦点：前一事件 handler 可能 requestFocus 改了焦点
             SceneNode target = focusManager.getFocusedNode();
+            updateKeyboardPress(target, ke);
             SceneEventType type = (ke.getAction() == SceneKeyAction.RELEASED)
                     ? SceneEventType.KEY_UP : SceneEventType.KEY_DOWN;
             boolean tabKeyDown = type == SceneEventType.KEY_DOWN && ke.getKey() == SceneKey.TAB;
@@ -526,6 +585,9 @@ public class SceneInputRouter {
 
     /** 焦点 authority 切换后同步派发；focused signal 仍按原契约延迟到 flush。 */
     private void dispatchFocusChange(SceneNode oldFocus, SceneNode newFocus) {
+        if (oldFocus == keyboardPressedNode) {
+            clearKeyboardPress();
+        }
         Throwable firstFailure = null;
         if (oldFocus != null) {
             try {
@@ -718,16 +780,17 @@ public class SceneInputRouter {
      * 不再向更上层祖先派发（但当前节点已注册的多 handler 仍全部跑完）。</p>
      */
     private void dispatchTargetAndBubble(SceneEvent event, SceneEventContext ctx, SceneNode target) {
+        long registrationLimit = handlerRegistrationOrder;
         // target 阶段
         ctx.setCurrentNode(target);
-        dispatchToNode(event, ctx, target);
+        dispatchToNode(event, ctx, target, registrationLimit);
         if (ctx.isPropagationStopped()) return;
 
         // bubble 阶段：沿父链向上逐级派发
         SceneNode current = target.__getParent();
         while (current != null && !ctx.isPropagationStopped()) {
             ctx.setCurrentNode(current);
-            dispatchToNode(event, ctx, current);
+            dispatchToNode(event, ctx, current, registrationLimit);
             current = current.__getParent();
         }
     }
@@ -735,14 +798,17 @@ public class SceneInputRouter {
     /**
      * 向指定节点派发事件：遍历该节点上注册的该类型所有 handler。
      */
-    private void dispatchToNode(SceneEvent event, SceneEventContext ctx, SceneNode node) {
-        EnumMap<SceneEventType, List<SceneEventHandler>> typeMap = registry.get(node);
+    private void dispatchToNode(SceneEvent event, SceneEventContext ctx, SceneNode node, long registrationLimit) {
+        EnumMap<SceneEventType, List<HandlerRegistration>> typeMap = registry.get(node);
         if (typeMap == null) return;
-        List<SceneEventHandler> handlers = typeMap.get(event.getType());
+        List<HandlerRegistration> handlers = typeMap.get(event.getType());
         if (handlers == null || handlers.isEmpty()) return;
-        // 遍历期间若 handler 调用 stopPropagation，仍跑完当前节点剩余 handler
-        for (SceneEventHandler handler : handlers) {
-            handler.handle(event, ctx);
+        // 同步卸载/退订可修改原列表；快照固定遍历项，active 排除事件中途已退订的项。
+        // stopPropagation 只阻止祖先派发，当前节点其余有效 handler 仍执行。
+        for (HandlerRegistration registration : handlers.toArray(new HandlerRegistration[0])) {
+            if (registration.active && registration.order <= registrationLimit) {
+                registration.handler.handle(event, ctx);
+            }
         }
     }
 
@@ -839,6 +905,18 @@ public class SceneInputRouter {
         }
     }
 
+    /** 每次注册独立拥有身份与存活态，同一 handler 对象可独立注册/退订多次。 */
+    private static final class HandlerRegistration {
+        private final SceneEventHandler handler;
+        private final long order;
+        private boolean active = true;
+
+        private HandlerRegistration(SceneEventHandler handler, long order) {
+            this.handler = handler;
+            this.order = order;
+        }
+    }
+
     // ==================== on() 注册 ====================
 
     /**
@@ -860,31 +938,30 @@ public class SceneInputRouter {
         }
 
         // 注册到外挂表
-        EnumMap<SceneEventType, List<SceneEventHandler>> typeMap = registry.get(node);
+        EnumMap<SceneEventType, List<HandlerRegistration>> typeMap = registry.get(node);
         if (typeMap == null) {
-            typeMap = new EnumMap<SceneEventType, List<SceneEventHandler>>(SceneEventType.class);
+            typeMap = new EnumMap<SceneEventType, List<HandlerRegistration>>(SceneEventType.class);
             registry.put(node, typeMap);
         }
-        final EnumMap<SceneEventType, List<SceneEventHandler>> finalTypeMap = typeMap;
+        final EnumMap<SceneEventType, List<HandlerRegistration>> finalTypeMap = typeMap;
 
-        List<SceneEventHandler> handlers = typeMap.get(type);
+        List<HandlerRegistration> handlers = typeMap.get(type);
         if (handlers == null) {
-            handlers = new ArrayList<SceneEventHandler>();
+            handlers = new ArrayList<HandlerRegistration>();
             typeMap.put(type, handlers);
         }
-        handlers.add(handler);
+        HandlerRegistration registration = new HandlerRegistration(handler, ++handlerRegistrationOrder);
+        handlers.add(registration);
 
         // 退订 Runnable（捕获 final 引用确保编译通过）
         Runnable disposeRunnable = new Runnable() {
-            private boolean disposed = false;
-
             @Override
             public void run() {
-                if (disposed) return;
-                disposed = true;
-                List<SceneEventHandler> list = finalTypeMap.get(type);
+                if (!registration.active) return;
+                registration.active = false;
+                List<HandlerRegistration> list = finalTypeMap.get(type);
                 if (list != null) {
-                    list.remove(handler);
+                    list.remove(registration);
                     if (list.isEmpty()) {
                         finalTypeMap.remove(type);
                     }
@@ -927,7 +1004,13 @@ public class SceneInputRouter {
             interactionStates.put(node, st);
             Owner owner = Owner.current();
             if (owner != null) {
-                owner.onCleanup(() -> interactionStates.remove(node));
+                owner.onCleanup(() -> {
+                    if (keyboardPressedNode == node) {
+                        clearKeyboardPress();
+                    }
+                    SceneInteractionState removed = interactionStates.remove(node);
+                    if (removed != null) removed.writePressed(false);
+                });
             }
         }
         return st;
@@ -1056,9 +1139,9 @@ public class SceneInputRouter {
      * @return 该节点上注册的该类型 handler 数量（测试探针）
      */
     int __handlerCount(SceneNode node, SceneEventType type) {
-        EnumMap<SceneEventType, List<SceneEventHandler>> typeMap = registry.get(node);
+        EnumMap<SceneEventType, List<HandlerRegistration>> typeMap = registry.get(node);
         if (typeMap == null) return 0;
-        List<SceneEventHandler> handlers = typeMap.get(type);
+        List<HandlerRegistration> handlers = typeMap.get(type);
         return handlers == null ? 0 : handlers.size();
     }
 

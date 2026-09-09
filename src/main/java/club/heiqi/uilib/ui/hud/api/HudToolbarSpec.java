@@ -4,6 +4,9 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiBackdrop;
+import club.heiqi.uilib.ui.render.UiGlassMaterial;
+import club.heiqi.uilib.ui.scene.control.SceneGlassButtonStyle;
 
 /**
  * HUD 外接工具栏规格（不可变；长度单位 = UILib logical px）。
@@ -37,6 +40,10 @@ public final class HudToolbarSpec {
      */
     public static final int DEFAULT_THICKNESS_PX = 28;
 
+    private static final SceneGlassButtonStyle DEFAULT_BUTTON_STYLE = SceneGlassButtonStyle.builder()
+            .backdrop(UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN, 6, 1.0f)).build();
+
+    private final ReadableSignal<SceneGlassButtonStyle> publicButtonStyle;
     private final boolean scaleControls;
     private final HudToolbarSide side;
     private final int gap;
@@ -51,6 +58,7 @@ public final class HudToolbarSpec {
         if (builder.thickness <= 0) {
             throw new IllegalArgumentException("thickness must be > 0");
         }
+        this.publicButtonStyle = Objects.requireNonNull(builder.publicButtonStyle, "publicButtonStyle");
         this.scaleControls = builder.scaleControls;
         this.gap = builder.gap;
         this.thickness = builder.thickness;
@@ -82,8 +90,15 @@ public final class HudToolbarSpec {
     /** 是否追加公共缩放工具（默认 true）；关闭只隐藏工具，不重置倍率。 */
     public boolean isScaleControls() { return scaleControls; }
 
+    /**
+     * 公共按钮的响应式外观；仅作用于本层追加的工具，不改写工厂内容。
+     * 配方中的 backdrop 为 null 时关闭滤镜，保留按钮轮廓和交互反馈。
+     */
+    public ReadableSignal<SceneGlassButtonStyle> getPublicButtonStyle() { return publicButtonStyle; }
+
     /** HUD 工具栏规格 builder。 */
     public static final class Builder {
+        private ReadableSignal<SceneGlassButtonStyle> publicButtonStyle = () -> DEFAULT_BUTTON_STYLE;
         private boolean scaleControls = true;
         private HudToolbarSide side;
         private int gap = DEFAULT_GAP_PX;
@@ -108,6 +123,12 @@ public final class HudToolbarSpec {
 
         /** 设置可见性信号（false = 不挂载工具栏，外框退化为内容盒）。 */
         public Builder visible(ReadableSignal<Boolean> value) { this.visible = value; return this; }
+
+        /** 设置公共按钮配方信号；变更不重建工具栏、不重置 HUD 缩放状态。 */
+        public Builder publicButtonStyle(ReadableSignal<SceneGlassButtonStyle> value) {
+            this.publicButtonStyle = Objects.requireNonNull(value, "publicButtonStyle");
+            return this;
+        }
 
         public HudToolbarSpec build() { return new HudToolbarSpec(this); }
     }

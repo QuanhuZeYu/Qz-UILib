@@ -82,6 +82,8 @@ public final class SceneButtonPrimitive {
         // 现象是「requestFocus 调了，focused 却恒 false」。焦点是本 primitive 的职责，
         // 声明就归它，不能让每个 wrapper 各自补一次。
         is.focused();
+        is.pressed();
+        rt.__registerButtonKeyboardPress(root, props.enabled());
 
         rt.focusable(root, props.enabled());
         rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {

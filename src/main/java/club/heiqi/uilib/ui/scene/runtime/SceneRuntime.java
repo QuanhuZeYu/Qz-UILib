@@ -289,7 +289,13 @@ public class SceneRuntime {
      */
     public void __bindAnimatedColor(Supplier<Integer> derivation, Consumer<Integer> applier,
                                     int durationMillis) {
-        if (derivation == null || applier == null) {
+        __bindAnimatedColor(derivation, applier, () -> durationMillis);
+    }
+
+    /** 动态时长与目标一起订阅；重定向复用同一轨道，非正时长立即应用。 */
+    public void __bindAnimatedColor(Supplier<Integer> derivation, Consumer<Integer> applier,
+                                    Supplier<Integer> durationMillis) {
+        if (derivation == null || applier == null || durationMillis == null) {
             throw new IllegalArgumentException("derivation/applier 均不可为 null");
         }
         Object key = new Object();
@@ -298,8 +304,9 @@ public class SceneRuntime {
         targetOwner.onCleanup(() -> motionDriver.remove(key));
         targetOwner.createEffect(() -> {
             Integer target = derivation.get();
+            int duration = Objects.requireNonNull(durationMillis.get(), "durationMillis value");
             if (target != null) {
-                motionDriver.setColorTarget(key, target.intValue(), durationMillis, applier);
+                motionDriver.setColorTarget(key, target.intValue(), duration, applier);
             }
         });
     }
@@ -313,7 +320,13 @@ public class SceneRuntime {
      */
     public void __bindAnimatedFloat(Supplier<Float> derivation, Consumer<Float> applier,
                                     int durationMillis) {
-        if (derivation == null || applier == null) {
+        __bindAnimatedFloat(derivation, applier, () -> durationMillis);
+    }
+
+    /** 动态时长与目标一起订阅；重定向复用同一轨道，非正时长立即应用。 */
+    public void __bindAnimatedFloat(Supplier<Float> derivation, Consumer<Float> applier,
+                                    Supplier<Integer> durationMillis) {
+        if (derivation == null || applier == null || durationMillis == null) {
             throw new IllegalArgumentException("derivation/applier 均不可为 null");
         }
         Object key = new Object();
@@ -322,8 +335,9 @@ public class SceneRuntime {
         targetOwner.onCleanup(() -> motionDriver.remove(key));
         targetOwner.createEffect(() -> {
             Float target = derivation.get();
+            int duration = Objects.requireNonNull(durationMillis.get(), "durationMillis value");
             if (target != null) {
-                motionDriver.setFloatTarget(key, target.floatValue(), durationMillis, applier);
+                motionDriver.setFloatTarget(key, target.floatValue(), duration, applier);
             }
         });
     }
@@ -707,6 +721,14 @@ public class SceneRuntime {
      */
     public SceneInteractionState interactionState(SceneNode node) {
         return inputRouter.interactionState(node);
+    }
+
+    /** 内部 primitive 桥：只登记按钮键盘按压行为，交互真值由 Router 随输入与焦点生命周期维护。 */
+    public void __registerButtonKeyboardPress(SceneNode node, ReadableSignal<Boolean> enabled) {
+        InputBinding binding = inputRouter.__registerButtonKeyboardPress(node, enabled);
+        Owner current = Owner.current();
+        Owner targetOwner = current != null ? current : rootOwner;
+        targetOwner.onCleanup(binding::dispose);
     }
 
     /**

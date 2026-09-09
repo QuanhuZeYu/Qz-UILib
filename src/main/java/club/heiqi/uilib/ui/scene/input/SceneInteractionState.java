@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 
 /**
- * 场景节点交互状态容器 —— I3 交互状态机。
+ * 场景节点交互状态容器 —— Router 管理权威状态，对外只读信号。
  *
  * <h3>核心职责</h3>
  * <p>作为 SceneNode 的交互状态外挂容器，持有 hover/focus/press 三个可选 signal。
@@ -25,7 +25,7 @@ public final class SceneInteractionState {
     /** hover 状态 signal，默认 null = 未声明关心 */
     private Signal<Boolean> hovered;
 
-    /** focus 状态 signal，I4 才真正写，I3 占位暴露 */
+    /** focus 状态 signal，由焦点管理器在权威焦点切换时写入 */
     private Signal<Boolean> focused;
 
     /** press 状态 signal，默认 null = 未声明关心 */
@@ -56,7 +56,7 @@ public final class SceneInteractionState {
     }
 
     /**
-     * 获取 focus 状态的只读 signal（I4 占位）。
+     * 获取 focus 状态的只读 signal。
      *
      * <p><b>⚠ 时序契约</b>：必须在 Router 的 writeFocused 之前调用以声明关心。
      * 若首次调用发生在 focus 事件 dispatch 之后，Router 的 writeFocused 会因 signal
@@ -74,6 +74,9 @@ public final class SceneInteractionState {
 
     /**
      * 获取 press 状态的只读 signal。
+     *
+     * <p>Router 合成指针按压与显式登记按钮的 Enter/Space 按压，两者任一仍按住即为 true。
+     * 键盘按压随松键、失焦、禁用、卸载或输入 CANCEL 清理；不改变按钮动作的派发时机。</p>
      *
      * <p><b>⚠ 时序契约</b>：必须在 Router 的 writePressed 之前调用以声明关心。
      * 若首次调用发生在 DOWN 事件 dispatch 之后，Router 的 writePressed(true) 会因
@@ -129,7 +132,7 @@ public final class SceneInteractionState {
     }
 
     /**
-     * 写入 focus 状态（I4 占位）。
+     * 写入 focus 状态。
      *
      * <p><b>★null 短路硬保证</b>：同 writeHovered。</p>
      *

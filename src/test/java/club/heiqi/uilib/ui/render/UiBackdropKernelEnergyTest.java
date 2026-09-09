@@ -21,7 +21,8 @@ import org.junit.Test;
  * UiHostBackgroundBlurRenderer（除以 totalWeight）都是归一的，
  * 旧核（柔化前）权重和亦为 1.02——证明归一是本意而非风格选择。</p>
  *
- * <p>本测试按源码契约锚定：逐行解析 uiBackdropF.frag 的 texture2D 抽头，
+ * <p>本测试按源码契约锚定：逐行解析 uiBackdropF.frag 的正半径卷积权重，
+ * 包括中心样本的乘数与其余 texture2D 抽头；零半径单次采样不属于卷积核。
  * 提取每抽头权重（形如 (n.0 / d.0) 分式或裸小数），断言抽头数与权重和。
  * 2026-09-01 质感升级把规则核（十字+对角）换成 13 抽头 Poisson 盘以消除大半径
  * 下的方向性拉丝；2026-09-02 散光调优再换成向日葵螺旋核（13 个连续半径 + 黄金角
@@ -30,11 +31,20 @@ import org.junit.Test;
  */
 public class UiBackdropKernelEnergyTest {
 
-    /** 期望抽头数：中心 1 + Poisson 盘内环 4 + 外环 8。 */
+    /** 正半径卷积：中心样本加 12 个向日葵螺旋抽头。 */
     private static final int EXPECTED_TAP_COUNT = 13;
 
-    /** 抽头行标记（每个 texture2D(mainTex, 采样即一个抽头）。 */
-    private static final String TAP_MARKER = "texture2D(mainTex,";
+    /** 正半径卷积的权重行；零半径单次采样不参与此核。 */
+    private static boolean isKernelWeight(String line) {
+        return line.startsWith("blurred *=") || line.startsWith("blurred += texture2D(mainTex,");
+    }
+
+    private static String kernelWeight(String line) {
+        String operator = line.startsWith("blurred *=") ? "*=" : "* ";
+        int start = line.lastIndexOf(operator);
+        assertTrue("抽头行缺少权重乘数: " + line, start >= 0);
+        return line.substring(start + operator.length()).trim();
+    }
 
     /** 磨玻璃 shader 权重和必须为 1（能量守恒），且抽头数锁定为 13。 */
     @Test
@@ -45,14 +55,11 @@ public class UiBackdropKernelEnergyTest {
         int taps = 0;
         for (String rawLine : source.split("\n")) {
             String line = rawLine.trim();
-            int marker = line.indexOf(TAP_MARKER);
-            if (marker < 0) {
+            if (!isKernelWeight(line)) {
                 continue;
             }
             taps++;
-            int star = line.lastIndexOf("* ");
-            assertTrue("抽头行缺少权重乘数: " + line, star > marker);
-            String weight = line.substring(star + 2).trim();
+            String weight = kernelWeight(line);
             if (weight.startsWith("(")) {
                 int slash = weight.indexOf('/');
                 int close = weight.indexOf(')');
@@ -95,13 +102,12 @@ public class UiBackdropKernelEnergyTest {
         double weightSum = 0.0D;
         for (String rawLine : source.split("\n")) {
             String line = rawLine.trim();
-            int marker = line.indexOf(TAP_MARKER);
-            if (marker < 0) {
+            if (!isKernelWeight(line)) {
                 continue;
             }
             double offsetX = 0.0D;
             double offsetY = 0.0D;
-            int vecStart = line.indexOf("vec2(", marker);
+            int vecStart = line.indexOf("vec2(");
             if (vecStart > 0) {
                 int vecEnd = line.indexOf(')', vecStart);
                 String inner = line.substring(vecStart + 5, vecEnd);
@@ -109,8 +115,7 @@ public class UiBackdropKernelEnergyTest {
                 offsetX = Double.parseDouble(inner.substring(0, comma).trim());
                 offsetY = Double.parseDouble(inner.substring(comma + 1).trim());
             }
-            int star = line.lastIndexOf("* ");
-            String weight = line.substring(star + 2).trim();
+            String weight = kernelWeight(line);
             int slash = weight.indexOf("/");
             int close = weight.indexOf(')');
             double w = Double.parseDouble(weight.substring(1, slash).trim())
@@ -136,7 +141,7 @@ public class UiBackdropKernelEnergyTest {
         String line = source.substring(at, end);
         String clampTail = "128.0)";
         int clampEnd = line.indexOf(clampTail);
-        assertTrue("radiusStep 必须以 clamp(blurRadius, 1.0, 128.0) 为基数", clampEnd > 0);
+        assertTrue("radiusStep 必须带 128.0 上限", clampEnd > 0);
         String rest = line.substring(clampEnd + clampTail.length()).trim();
         assertTrue("radiusStep 必须带显式抽头半径补偿系数，实际=" + rest, rest.startsWith("*"));
         return Double.parseDouble(rest.substring(1).trim());

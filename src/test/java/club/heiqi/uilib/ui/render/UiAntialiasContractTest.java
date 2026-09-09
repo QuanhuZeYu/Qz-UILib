@@ -16,7 +16,9 @@ public class UiAntialiasContractTest {
         String shader = read("src/main/resources/shader/uiBackdropF.frag");
         String host = read("src/main/java/club/heiqi/uilib/ui/render/UiBackdropFilterRenderer.java");
         assertTrue(shader.contains("fwidth(signedDistance)"));
-        assertTrue(shader.contains("roundedPanelDistance(panelUv * panelSizePx, panelSizePx, cornerRadii)"));
+        assertTrue(shader.contains("roundedPanelGeometry(panelUv * panelSizePx, panelSizePx, cornerRadii)"));
+        assertTrue(shader.contains("float signedDistance = panelGeometry.z"));
+        assertTrue("法线必须来自同一轮廓", shader.contains("sdfGradient = panelGeometry.xy"));
         assertTrue(host.contains("radii = UiBorderRadiusResolver.scaleToFit("));
         assertTrue(shader.contains("clamp(0.5 - signedDistance / edgeWidth, 0.0, 1.0)"));
         assertTrue(shader.contains("mix(coverage, blurred.a * coverage, sourceAlphaPass)"));
