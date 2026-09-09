@@ -137,9 +137,12 @@ public class SceneToggleTest {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
 
-    /** 选中配方语义：保留配方 tint 的 alpha，RGB 换成强调色。 */
+    /**
+     * 选中配方语义：RGB 换成强调色，alpha 用主题统一选中强度
+     * {@code SceneThemes.SELECTED_TINT_ALPHA}(0x59)——不再沿用角色配方的低 alpha。
+     */
     private static int selectedTint(int baseTint, int accent) {
-        return (baseTint & 0xFF000000) | (accent & 0x00FFFFFF);
+        return (0x59 << 24) | (accent & 0x00FFFFFF);
     }
 
     private static int alphaOf(int argb) {
@@ -415,8 +418,10 @@ public class SceneToggleTest {
 
         Assert.assertEquals("选中 track 染色 = 配方 tint 换强调色", TRACK_ON_ENABLED, trackBackground());
         Assert.assertEquals("选中 tint 为强调色系", rgbOf(SceneThemes.DEFAULT.accent()), rgbOf(trackBackground()));
-        Assert.assertEquals("选中保留配方 alpha（同 alpha 不同色，非仅透明度）",
-                alphaOf(TRACK_OFF_ENABLED), alphaOf(trackBackground()));
+        Assert.assertEquals("选中用主题统一选中强度 0x59",
+                0x59, alphaOf(trackBackground()));
+        Assert.assertTrue("选中强度必须高于未选中档，否则读不出选中",
+                alphaOf(trackBackground()) > alphaOf(TRACK_OFF_ENABLED));
         Assert.assertNotEquals("选中与未选中必须可区分", TRACK_OFF_ENABLED, trackBackground());
         Assert.assertEquals("thumb 在选中态保持强调色", THUMB_ENABLED, thumbNode().getBackgroundColor());
         Assert.assertEquals("选中不改变 label 前景", LABEL_ENABLED, labelNode().getTextColor());

@@ -252,6 +252,30 @@ public final class SceneThemes {
         if (!selected) {
             return style;
         }
+        return accentOf(style, theme);
+    }
+
+    /**
+     * 强调版角色配方：tint 的 RGB 换成主题强调色、alpha 取 {@link #SELECTED_TINT_ALPHA}，
+     * edge/elevation/lens/圆角保持角色配方。
+     *
+     * @param rt   目标 runtime，不可为 null
+     * @param role 材质角色，不可为 null
+     * @return 配方只读信号
+     */
+    public static ReadableSignal<SceneSurfaceStyle> accentSurface(SceneRuntime rt, SceneTheme.Role role) {
+        ReadableSignal<SceneSurfaceStyle> base = surface(rt, role);
+        ReadableSignal<SceneTheme> theme = resolve(rt);
+        final SceneSurfaceStyle[] holder = new SceneSurfaceStyle[1];
+        Effect.untrack(() -> holder[0] = accentOf(
+                Objects.requireNonNull(base.get(), "surface"),
+                Objects.requireNonNull(theme.get(), "theme value")));
+        return Computed.create(holder[0], () -> accentOf(
+                Objects.requireNonNull(base.get(), "surface"),
+                Objects.requireNonNull(theme.get(), "theme value")));
+    }
+
+    private static SceneSurfaceStyle accentOf(SceneSurfaceStyle style, SceneTheme theme) {
         return style.toBuilder()
                 .idle(tinted(style.getIdle(), theme.accent()))
                 .hovered(tinted(style.getHovered(), theme.accentHover()))
@@ -259,9 +283,14 @@ public final class SceneThemes {
                 .build();
     }
 
+    /**
+     * 选中/强调表面的染色强度：角色配方自带的 alpha（如 INDICATOR 的 0x0E≈5.5%）只适合
+     * 未选中态，选中态必须用更高 alpha 才能读出「已选中」，否则只剩色相差。
+     */
+    private static final int SELECTED_TINT_ALPHA = 0x59;
+
     private static SceneSurfaceStyle.StateStyle tinted(SceneSurfaceStyle.StateStyle state, int argb) {
-        int alpha = (state.getTint() >>> 24) & 0xFF;
-        return new SceneSurfaceStyle.StateStyle((alpha << 24) | (argb & 0xFFFFFF),
+        return new SceneSurfaceStyle.StateStyle((SELECTED_TINT_ALPHA << 24) | (argb & 0xFFFFFF),
                 state.getEdge(), state.getElevation(), state.getLensFactor());
     }
 

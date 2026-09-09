@@ -123,9 +123,12 @@ public class SceneRadioGroupTest {
 
     // ==================== 辅助方法 ====================
 
-    /** 选中配方语义：保留配方 tint 的 alpha，RGB 换成强调色。 */
+    /**
+     * 选中配方语义：RGB 换成强调色，alpha 用主题统一选中强度
+     * {@code SceneThemes.SELECTED_TINT_ALPHA}(0x59)——不再沿用角色配方的低 alpha。
+     */
     private static int selectedTint(int baseTint, int accent) {
-        return (baseTint & 0xFF000000) | (accent & 0x00FFFFFF);
+        return (0x59 << 24) | (accent & 0x00FFFFFF);
     }
 
     private static int alphaOf(int argb) {
@@ -400,8 +403,10 @@ public class SceneRadioGroupTest {
         Assert.assertEquals("选中 circle 染色 = 配方 tint 换强调色", CIRCLE_SEL_ENABLED, circleNode(0).getBackgroundColor());
         Assert.assertEquals("选中 tint 为强调色系", rgbOf(SceneThemes.DEFAULT.accent()),
                 rgbOf(circleNode(0).getBackgroundColor()));
-        Assert.assertEquals("选中保留配方 alpha（同 alpha 不同色，非仅透明度）",
-                alphaOf(CIRCLE_UNSEL_ENABLED), alphaOf(circleNode(0).getBackgroundColor()));
+        Assert.assertEquals("选中用主题统一选中强度 0x59",
+                0x59, alphaOf(circleNode(0).getBackgroundColor()));
+        Assert.assertTrue("选中强度必须高于未选中档，否则读不出选中",
+                alphaOf(circleNode(0).getBackgroundColor()) > alphaOf(CIRCLE_UNSEL_ENABLED));
         Assert.assertNotEquals("选中与未选中必须可区分", CIRCLE_UNSEL_ENABLED, circleNode(0).getBackgroundColor());
         Assert.assertEquals("未选中 circle 染色 = 配方 idle tint", CIRCLE_UNSEL_ENABLED, circleNode(1).getBackgroundColor());
 

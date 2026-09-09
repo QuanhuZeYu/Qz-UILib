@@ -159,9 +159,9 @@ public class SceneCheckboxTest {
         return boxNode().getBackgroundColor();
     }
 
-    /** 角色配方 tint 换强调色 RGB、保留原 alpha —— 与 {@code SceneThemes.selectableSurface} 同语义的期望值算法。 */
+    /** 角色配方 tint 换强调色 RGB、alpha 用主题统一选中强度 —— 与 {@code SceneThemes.selectableSurface} 同语义的期望值算法。 */
     private static int accentTinted(int tint, int accent) {
-        return (tint & 0xFF000000) | (accent & 0x00FFFFFF);
+        return (0x59 << 24) | (accent & 0x00FFFFFF);
     }
 
     /** 在 PaintPlan 中按文本内容找 TEXT 命令 */
@@ -255,9 +255,9 @@ public class SceneCheckboxTest {
 
         Assert.assertEquals("box 背景取 INDICATOR 配方 idle tint",
                 INDICATOR_SURFACE.getIdle().getTint(), boxBackground());
-        Assert.assertEquals("box 圆角取配方 cornerRadius（与原 RADIUS_SM 同值）",
+        Assert.assertEquals("box 圆角取配方 cornerRadius（INDICATOR 为胶囊）",
                 INDICATOR_SURFACE.getCornerRadius(), boxNode().getCornerRadius());
-        Assert.assertEquals("box 圆角与原常量一致", SceneChromeTokens.RADIUS_SM, boxNode().getCornerRadius());
+        Assert.assertEquals("box 圆角为胶囊半径", SceneTheme.PILL_RADIUS, boxNode().getCornerRadius());
         Assert.assertEquals("box 边框宽取配方 borderWidth",
                 INDICATOR_SURFACE.getBorderWidth(), boxNode().getBorderWidth());
         Assert.assertEquals("box 边框色取配方 idle edge",
@@ -310,12 +310,14 @@ public class SceneCheckboxTest {
         checkedSignal.set(Boolean.TRUE);
         runtime.flush();
 
-        Assert.assertEquals("选中 tint = 配方 alpha + 主题强调色 RGB",
+        Assert.assertEquals("选中 tint = 主题选中强度 + 强调色 RGB",
                 BOX_CHECKED_ENABLED, boxBackground());
         Assert.assertEquals("选中 tint RGB 走主题强调色",
                 SceneThemes.DEFAULT.accent() & 0x00FFFFFF, boxBackground() & 0x00FFFFFF);
-        Assert.assertEquals("选中保留配方 alpha（不靠透明度区分）",
-                INDICATOR_SURFACE.getIdle().getTint() & 0xFF000000, boxBackground() & 0xFF000000);
+        Assert.assertEquals("选中用主题统一选中强度（高于未选中的低 alpha）",
+                0x59, boxBackground() >>> 24);
+        Assert.assertTrue("选中强度必须高于未选中档，否则读不出选中",
+                (boxBackground() >>> 24) > (INDICATOR_SURFACE.getIdle().getTint() >>> 24));
         Assert.assertNotEquals("选中与未选中必须换色而非只换透明度",
                 INDICATOR_SURFACE.getIdle().getTint() & 0x00FFFFFF, boxBackground() & 0x00FFFFFF);
 

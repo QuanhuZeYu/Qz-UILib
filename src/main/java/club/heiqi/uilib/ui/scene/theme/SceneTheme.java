@@ -56,6 +56,9 @@ public final class SceneTheme {
     /** 无滤镜替代档的禁用底色。 */
     public static final int FALLBACK_BG_DISABLED = 0xFF1D1B20;
 
+    /** 全圆角胶囊半径：小控件（开关轨道、滑块、勾选框、选中指示）的几何语义。 */
+    public static final int PILL_RADIUS = 999;
+
     private final Map<Role, SceneSurfaceStyle> surfaces;
     private final int foreground;
     private final int mutedForeground;
@@ -238,7 +241,7 @@ public final class SceneTheme {
                 0x1FFFFFFF, 0x4DFFFFFF));
         builder.surfaces.put(Role.OVERLAY, lightSurface(UiGlassMaterial.REGULAR, 8, 0.75F, 14,
                 0x3DFFFFFF, 0x73FFFFFF));
-        builder.surfaces.put(Role.INDICATOR, lightSurface(UiGlassMaterial.THIN, 4, 0.50F, 8,
+        builder.surfaces.put(Role.INDICATOR, lightSurface(UiGlassMaterial.THIN, 4, 0.50F, PILL_RADIUS,
                 0x33EADDFF, 0x99FFFFFF));
         builder.surfaces.put(Role.BUTTON_STANDARD, lightSurface(UiGlassMaterial.THIN, 6, 1.0F, 8,
                 0x33FFFFFF, 0x66FFFFFF));
@@ -360,7 +363,7 @@ public final class SceneTheme {
             surfaces.put(Role.INPUT, darkSurface(UiGlassMaterial.DARK_THIN, 4, 0.35F, 10, 0x0A101418, 0x24FFFFFF));
             surfaces.put(Role.GROUP, darkSurface(UiGlassMaterial.DARK_ULTRA_THIN, 4, 0.25F, 12, 0x0C101418, 0x1FFFFFFF));
             surfaces.put(Role.OVERLAY, darkSurface(UiGlassMaterial.DARK_REGULAR, 8, 0.75F, 14, 0x1A101418, 0x2FFFFFFF));
-            surfaces.put(Role.INDICATOR, darkSurface(UiGlassMaterial.DARK_THIN, 4, 0.50F, 8, 0x0EEADDFF, 0x40FFFFFF));
+            surfaces.put(Role.INDICATOR, darkSurface(UiGlassMaterial.DARK_THIN, 4, 0.50F, PILL_RADIUS, 0x0EEADDFF, 0x40FFFFFF));
             surfaces.put(Role.BUTTON_STANDARD, darkSurface(UiGlassMaterial.DARK_THIN, 6, 1.0F, 8, 0x0CEAF7FF, 0x24FFFFFF));
             surfaces.put(Role.BUTTON_PRIMARY, darkSurface(UiGlassMaterial.DARK_THIN, 6, 1.0F, 8, 0x2A0079BE, 0x40FFFFFF));
             surfaces.put(Role.BUTTON_DANGER, darkSurface(UiGlassMaterial.DARK_THIN, 6, 1.0F, 8, 0x2AFF8797, 0x40FFFFFF));
