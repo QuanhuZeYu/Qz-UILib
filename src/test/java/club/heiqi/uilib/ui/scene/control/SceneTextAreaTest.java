@@ -10,7 +10,9 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiBackdrop;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -27,9 +29,16 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneTextArea 基础版端到端单元测试。
@@ -42,6 +51,7 @@ public class SceneTextAreaTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
+    private ScenePaintEngine paintEngine;
     /** 语义化交互注入 harness（typeText 入口）；其 runtime 即上方 runtime 字段。
      *  仅用于单帧文本注入；精确行列点击 clickAt 走白盒回退（精确 localX / 自定义坐标，§7.1判据2）。 */
     private SceneInteractionHarness harness;
@@ -64,16 +74,32 @@ public class SceneTextAreaTest {
 
     private static final String PLACEHOLDER = "输入多行...";
 
-    /** caret 可见色（聚焦态，对标 SceneTextInputTest.CARET_COLOR）。 */
-    private static final int CARET_COLOR = SceneChromeTokens.BORDER_FOCUS;
+    /**
+     * 库默认主题的 INPUT 角色配方：默认工厂路径的表面外观唯一来源。
+     * 断言取配方值而不是硬编码色号，主题集中调参时本类自动跟随。
+     */
+    private static final SceneSurfaceStyle INPUT_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
+    /** 表面四态取值（idle/hover/disabled 染色与 idle 缘色）。 */
+    private static final int BG_ENABLED = INPUT_SURFACE.getIdle().getTint();
+    private static final int BG_HOVER = INPUT_SURFACE.getHovered().getTint();
+    private static final int BG_DISABLED = INPUT_SURFACE.getDisabled().getTint();
+    private static final int BORDER_ENABLED = INPUT_SURFACE.getIdle().getEdge();
+    /** 聚焦缘色来自配方 focusEdge（表面绑定器覆盖缘色），与 caret 的主题聚焦色是两条通道。 */
+    private static final int BORDER_FOCUS = INPUT_SURFACE.getFocusEdge();
+    /** 浮点比较容差。 */
+    private static final float EPSILON = 0.0001F;
+
+    /** caret 可见色（聚焦态）：主题聚焦色，不再是 chrome token。 */
+    private static final int CARET_COLOR = SceneThemes.DEFAULT.borderFocus();
     /** caret 透明色（不可见态）。 */
     private static final int CARET_TRANSPARENT = 0x00000000;
-    /** 正常文本色（对标 SceneButtonTest.TEXT_ENABLED）。 */
-    private static final int TEXT_PRIMARY = SceneChromeTokens.TEXT_PRIMARY;
-    /** placeholder 文本色。 */
-    private static final int TEXT_SECONDARY = SceneChromeTokens.TEXT_SECONDARY;
-    /** 禁用态文本色。 */
-    private static final int TEXT_DISABLED = SceneChromeTokens.TEXT_DISABLED;
+    /** 正常文本色（正文前景）。 */
+    private static final int TEXT_PRIMARY = SceneThemes.DEFAULT.foreground();
+    /** placeholder 文本色（次要前景）。 */
+    private static final int TEXT_SECONDARY = SceneThemes.DEFAULT.mutedForeground();
+    /** 禁用态文本色（禁用前景）。 */
+    private static final int TEXT_DISABLED = SceneThemes.DEFAULT.disabledForeground();
 
     @Before
     public void setUp() {
@@ -82,6 +108,7 @@ public class SceneTextAreaTest {
         harness = SceneInteractionHarness.create(measurer);
         runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
         // 记住路由根（mountRoot 内 layout 此时空树无害；typeText 只用 root route，不依赖 centerOf）
         harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -123,6 +150,74 @@ public class SceneTextAreaTest {
     }
 
     /**
+     * 在可切换的局部主题作用域内挂载 TextArea（{@link SceneThemes#withTheme}）：
+     * 主题信号变化时表面与语义前景/caret 派生更新、节点不重建。
+     */
+    private void mountTextAreaWithTheme(Signal<SceneTheme> theme, String initialValue) {
+        valueSignal = Signal.create(initialValue);
+        enabledSignal = Signal.create(Boolean.TRUE);
+        readOnlySignal = Signal.create(Boolean.FALSE);
+        changeCount = new AtomicInteger(0);
+        lastChangeValue = null;
+
+        SceneTextArea.Props props = new SceneTextArea.Props(
+                valueSignal, enabledSignal, readOnlySignal,
+                PLACEHOLDER, 64, VIEWPORT_HEIGHT,
+                next -> {
+                    changeCount.incrementAndGet();
+                    lastChangeValue = next;
+                });
+        final SceneNode[] holder = new SceneNode[1];
+        handle = runtime.mount(sceneRoot, () -> {
+            SceneThemes.withTheme(theme, () -> holder[0] = SceneTextArea.create(runtime, props).get());
+            return holder[0];
+        });
+        inputRoot = handle.getRoot();
+        runtime.flush();
+    }
+
+    /** 跑一帧 paint，返回 PaintPlan（调用前须先 doLayout）。 */
+    private PaintPlan doPaint() {
+        return paintEngine.paint(sceneRoot).getPlan();
+    }
+
+    /** 在 PaintPlan 中找首个指定类型命令。 */
+    private static PaintCommand firstOfType(List<PaintCommand> cmds, PaintCommandType type) {
+        for (PaintCommand cmd : cmds) {
+            if (cmd.getType() == type) {
+                return cmd;
+            }
+        }
+        return null;
+    }
+
+    /** 统计指定类型命令数。 */
+    private static int countType(List<PaintCommand> cmds, PaintCommandType type) {
+        int count = 0;
+        for (PaintCommand cmd : cmds) {
+            if (cmd.getType() == type) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 索引指定类型首次出现位置。 */
+    private static int indexOfType(List<PaintCommand> cmds, PaintCommandType type) {
+        for (int i = 0; i < cmds.size(); i++) {
+            if (cmds.get(i).getType() == type) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** ARGB 的 alpha 通道。 */
+    private static int alpha(int argb) {
+        return (argb >>> 24) & 0xFF;
+    }
+
+    /**
      * D4：布局 + 桥接 layoutDoneSignal。
      *
      * <p>真机由帧管线在 SETTLE 阶段桥接（SceneFramePipeline）；测试无管线，手动桥接模拟
@@ -148,6 +243,16 @@ public class SceneTextAreaTest {
      */
     private SceneNode placeholderContainerNode() {
         return viewportNode().__getChildren().get(1);
+    }
+
+    /** placeholder 文本节点（placeholderContainer 内文本等于 PLACEHOLDER 的节点；未显示时返回 null）。 */
+    private SceneNode placeholderNode() {
+        for (SceneNode child : placeholderContainerNode().__getChildren()) {
+            if (PLACEHOLDER.equals(child.getText())) {
+                return child;
+            }
+        }
+        return null;
     }
 
     /**
@@ -860,13 +965,14 @@ public class SceneTextAreaTest {
      * 回归锚点：caret 背景色必须按「所在行 + 聚焦」上色，其余情形透明。
      *
      * <p>对标 SceneTextInputTest.placeholderAndCaretVisibilityFollowFocus 的 caret 颜色断言，
-     * 适配 TextArea 多行：caret 只在所在行着 BORDER_FOCUS，非所在行恒透明；失焦时所有行透明。</p>
+     * 适配 TextArea 多行：caret 只在所在行着主题聚焦色（{@code borderFocus()}），非所在行恒透明；
+     * 失焦时所有行透明。</p>
      *
      * <p>覆盖：</p>
      * <ol>
      *   <li>失焦：所有行 caret 背景透明</li>
-     *   <li>聚焦 + caret 在行0：行0 = BORDER_FOCUS，行1/行2 透明</li>
-     *   <li>caret 移到行1：行1 = BORDER_FOCUS，行0/行2 透明</li>
+     *   <li>聚焦 + caret 在行0：行0 = 主题聚焦色，行1/行2 透明</li>
+     *   <li>caret 移到行1：行1 = 主题聚焦色，行0/行2 透明</li>
      *   <li>失焦后：所有行 caret 重新透明</li>
      * </ol>
      */
@@ -905,39 +1011,25 @@ public class SceneTextAreaTest {
     }
 
     /**
-     * 回归锚点：行内文本色（prefix/suffix）与 placeholder 文本色必须按三态着色。
-     *
-     * <p>对标 SceneButtonTest.disabledTextColorShouldBeNonWhite 的文本色断言，适配 TextArea：
-     * normal=TEXT_PRIMARY、placeholder=TEXT_SECONDARY、disabled=TEXT_DISABLED。</p>
-     *
-     * <p>覆盖：</p>
-     * <ol>
-     *   <li>normal 态（非空值 + enabled）：prefix/suffix = TEXT_PRIMARY</li>
-     *   <li>placeholder 态（空值 + enabled + 未聚焦）：placeholder 节点 = TEXT_SECONDARY</li>
-     *   <li>disabled 态（非空值 + disabled）：prefix/suffix = TEXT_DISABLED</li>
-     *   <li>disabled placeholder 态（空值 + disabled）：placeholder 节点 = TEXT_DISABLED</li>
-     * </ol>
-     */
-    /**
      * 回归锚点：行内文本色（prefix/suffix）必须按三态着色。
      *
      * <p>对标 SceneButtonTest.disabledTextColorShouldBeNonWhite 的文本色断言，适配 TextArea：
-     * normal=TEXT_PRIMARY、placeholder=TEXT_SECONDARY、disabled=TEXT_DISABLED。
+     * normal=主题正文前景、placeholder=主题次要前景、disabled=主题禁用前景。
      * 行内 prefix/suffix 文本色由 {@code resolveTextColor(isPlaceholder, enabled)} 三态分支驱动，
-     * 与 placeholder 占位节点共享同一套色 token。</p>
+     * 与 placeholder 占位节点共享同一套主题语义色（经 Props 信号供给 primitive）。</p>
      *
      * <p>注：placeholder 占位节点挂在独立 placeholderContainer（viewport 子节点），
      * 与 forEach 的 content 分离，避免 applyChildReconcile 的 children.clear() 误删
      * show 的 anchor。此处通过行内 prefix/suffix 的 textColor 验证三态色逻辑，
-     * 覆盖 P1-B {@code resolveTextColor} 分支回归；placeholder 节点本身的插入树
+     * 覆盖 {@code resolveTextColor} 分支回归；placeholder 节点本身的插入树
      * 回归由 {@link #placeholderNodeInsertedWhenValueEmpty} 单独覆盖。</p>
      *
      * <p>覆盖：</p>
      * <ol>
-     *   <li>placeholder 态（空值 + enabled + 未聚焦）：prefix/suffix = TEXT_SECONDARY</li>
-     *   <li>normal 态（非空值 + enabled）：prefix/suffix = TEXT_PRIMARY</li>
-     *   <li>disabled 态（非空值 + disabled）：prefix/suffix = TEXT_DISABLED</li>
-     *   <li>disabled placeholder 态（空值 + disabled）：prefix/suffix = TEXT_DISABLED</li>
+     *   <li>placeholder 态（空值 + enabled + 未聚焦）：prefix/suffix = 主题次要前景</li>
+     *   <li>normal 态（非空值 + enabled）：prefix/suffix = 主题正文前景</li>
+     *   <li>disabled 态（非空值 + disabled）：prefix/suffix = 主题禁用前景</li>
+     *   <li>disabled placeholder 态（空值 + disabled）：prefix/suffix = 主题禁用前景</li>
      * </ol>
      */
     @Test
@@ -1005,6 +1097,211 @@ public class SceneTextAreaTest {
                 TEXT_PRIMARY, rowPrefix(0).getTextColor());
         Assert.assertNotEquals("disabled 文本色绝不等于正常态",
                 TEXT_PRIMARY, rowSuffix(0).getTextColor());
+    }
+
+    // ==================== 默认液态玻璃表面与主题语义色（G04/TextArea） ====================
+
+    /**
+     * 默认工厂路径：不传样式参数时，背景/边框/边框宽/圆角/实体高度/滤镜全部等于
+     * {@link SceneThemes#DEFAULT} 的 INPUT 角色配方值；PaintPlan 只采样一次滤镜，
+     * 且滤镜之上不压不透明底盖。视口不再自绘内层实色（透明），root 玻璃是唯一表面。
+     */
+    @Test
+    public void defaultFactoryPathUsesInputRecipeSurfaceAndSamplesBackdropOnce() {
+        mountTextArea("L0\nL1");
+        doLayout();
+
+        Assert.assertEquals("默认 TextArea padding 保持原值", SceneChromeTokens.PAD_MD,
+                inputRoot.getPaddingLeft());
+        Assert.assertEquals("背景 = INPUT 配方 idle 染色", BG_ENABLED, inputRoot.getBackgroundColor());
+        Assert.assertEquals("边框 = INPUT 配方 idle 缘色", BORDER_ENABLED, inputRoot.getBorderColor());
+        Assert.assertEquals("边框宽 = INPUT 配方", INPUT_SURFACE.getBorderWidth(), inputRoot.getBorderWidth());
+        Assert.assertEquals("圆角 = INPUT 配方", INPUT_SURFACE.getCornerRadius(), inputRoot.getCornerRadius());
+        Assert.assertEquals("实体高度 = INPUT 配方", INPUT_SURFACE.getIdle().getElevation(),
+                inputRoot.__getSurfaceElevation(), EPSILON);
+
+        UiBackdrop recipeBackdrop = INPUT_SURFACE.getBackdrop();
+        Assert.assertNotNull("INPUT 配方自带滤镜", recipeBackdrop);
+        UiBackdrop nodeBackdrop = inputRoot.getBackdrop();
+        Assert.assertNotNull("默认工厂路径应写入液态滤镜", nodeBackdrop);
+        Assert.assertEquals("模糊半径 = 配方", recipeBackdrop.getBlurRadius(), nodeBackdrop.getBlurRadius());
+        Assert.assertEquals("材质 = 配方", recipeBackdrop.getEffect().getMaterial(),
+                nodeBackdrop.getEffect().getMaterial());
+        Assert.assertEquals("透镜强度 = 配方 lens × idle lensFactor",
+                recipeBackdrop.getEffect().getLensStrength() * INPUT_SURFACE.getIdle().getLensFactor(),
+                nodeBackdrop.getEffect().getLensStrength(), EPSILON);
+
+        // 视口不再写死 BG_DEFAULT/BG_DISABLED：透明，让 root 的 INPUT 玻璃透出（唯一表面）。
+        Assert.assertEquals("viewport 底色透明（不挡 root 玻璃）", 0,
+                alpha(viewportNode().getBackgroundColor()));
+
+        PaintPlan plan = doPaint();
+        List<PaintCommand> cmds = plan.getCommands();
+        int backdropIndex = indexOfType(cmds, PaintCommandType.BACKDROP);
+        Assert.assertTrue("PaintPlan 应含 BACKDROP", backdropIndex >= 0);
+        Assert.assertEquals("一颗表面只采样一次滤镜", 1, countType(cmds, PaintCommandType.BACKDROP));
+        int backgroundIndex = indexOfType(cmds, PaintCommandType.BACKGROUND);
+        Assert.assertTrue("PaintPlan 应含 BACKGROUND（半透明 tint 叠玻璃之上）", backgroundIndex >= 0);
+        if (backgroundIndex > backdropIndex) {
+            Assert.assertTrue("滤镜之上不得压不透明底盖", alpha(cmds.get(backgroundIndex).getColor()) < 0xFF);
+        }
+    }
+
+    /**
+     * 表面状态来自 INPUT 配方：idle 染色/缘色、focus 只覆盖非禁用态缘色、disabled 压过一切。
+     *
+     * <p>hover 档对本控件不可达：表面绑定读的是 content 的 {@link SceneInteractionState}，
+     * 而指针命中的最深目标恒为行节点（行 hitTestable=true），hover 不写 content。这是既有接线
+     * （B2 把 interaction 挂 content），本实例不改；此处显式钉住该现状，避免误以为 hover 已覆盖。</p>
+     */
+    @Test
+    public void surfaceFollowsInputRecipeStatesWithFocusEdgeAndDisabledPriority() {
+        mountTextArea("L0\nL1");
+        doLayout();
+        Assert.assertEquals("idle 染色来自 INPUT 配方", BG_ENABLED, inputRoot.getBackgroundColor());
+        Assert.assertEquals("idle 缘色来自 INPUT 配方", BORDER_ENABLED, inputRoot.getBorderColor());
+
+        harness.moveTo(contentNode());
+        runtime.flush();
+        Assert.assertEquals("指针悬停 content 不改变染色（命中最深为行，hover 不写 content）",
+                BG_ENABLED, inputRoot.getBackgroundColor());
+
+        runtime.requestFocus(contentNode());
+        runtime.flush();
+        Assert.assertEquals("focus 不改染色（只改缘色）", BG_ENABLED, inputRoot.getBackgroundColor());
+        Assert.assertEquals("focus 缘色取配方 focusEdge", BORDER_FOCUS, inputRoot.getBorderColor());
+
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        Assert.assertEquals("disabled 压过 focus", BG_DISABLED, inputRoot.getBackgroundColor());
+        Assert.assertEquals("disabled 缘色取配方禁用档",
+                INPUT_SURFACE.getDisabled().getEdge(), inputRoot.getBorderColor());
+    }
+
+    /**
+     * 禁用态仍可读：行文本与占位都落主题 disabledForeground（不透明），表面落配方禁用档，
+     * 文本照常进入 PaintPlan。
+     */
+    @Test
+    public void disabledTextAreaStaysReadableThroughThemeDisabledForeground() {
+        mountTextArea("seed");
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("禁用表面取配方禁用档", BG_DISABLED, inputRoot.getBackgroundColor());
+        Assert.assertEquals("禁用行文本取主题禁用前景", TEXT_DISABLED, rowPrefix(0).getTextColor());
+        Assert.assertEquals("禁用行文本取主题禁用前景（suffix）", TEXT_DISABLED,
+                rowSuffix(0).getTextColor());
+        Assert.assertEquals("禁用前景不透明可读", 0xFF, alpha(TEXT_DISABLED));
+
+        PaintPlan plan = doPaint();
+        PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
+        Assert.assertNotNull("禁用态仍绘制文本", text);
+        Assert.assertEquals("PaintPlan 文本色 = 主题禁用前景", TEXT_DISABLED,
+                text.getTextStyle().getColor());
+
+        valueSignal.set("");
+        runtime.flush();
+        doLayout();
+        SceneNode ph = placeholderNode();
+        Assert.assertNotNull("禁用空值仍显示占位", ph);
+        Assert.assertEquals("禁用占位也走禁用前景", TEXT_DISABLED, ph.getTextColor());
+    }
+
+    /**
+     * 主题切换（深色 → 浅色 → 局部自定义）：表面与语义前景/caret 随主题更新，文本、
+     * 滚动位置与受控值不丢，节点身份不变，且不触发 onChange。
+     */
+    @Test
+    public void themeSwitchUpdatesSurfaceForegroundCaretAndScrollWithoutRebuild() {
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        // 12 行 × 16px = 192px > 80px 视口，用于验证滚动位置跨主题切换保持
+        mountTextAreaWithTheme(pageTheme, "L0\nL1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10\nL11");
+        doLayoutAndBridge();
+        runtime.requestFocus(contentNode());
+        runtime.flush();
+        for (int i = 0; i < 9; i++) {
+            routeKeyAndFlush(SceneKey.ARROW_DOWN);
+        }
+        doLayoutAndBridge();
+        int scrollBefore = viewportNode().getScrollOffsetY();
+        Assert.assertTrue("主题切换前应已滚动到非零位置", scrollBefore > 0);
+
+        SceneNode identity = inputRoot;
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        SceneSurfaceStyle lightInput = light.surface(SceneTheme.Role.INPUT);
+
+        Assert.assertEquals("深色档表面染色", dark.surface(SceneTheme.Role.INPUT).getIdle().getTint(),
+                inputRoot.getBackgroundColor());
+        Assert.assertEquals("深色档行文本 = 默认主题正文前景", TEXT_PRIMARY, rowPrefix(0).getTextColor());
+        Assert.assertEquals("深色档 caret = 默认主题聚焦色", dark.borderFocus(),
+                rowCaret(9).getBackgroundColor());
+
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertSame("主题切换不重建节点", identity, inputRoot);
+        Assert.assertEquals("表面染色随主题更新", lightInput.getIdle().getTint(),
+                inputRoot.getBackgroundColor());
+        Assert.assertEquals("聚焦缘色随主题更新（取配方 focusEdge）", lightInput.getFocusEdge(),
+                inputRoot.getBorderColor());
+        Assert.assertEquals("圆角随主题更新", lightInput.getCornerRadius(), inputRoot.getCornerRadius());
+        Assert.assertEquals("行文本随主题更新", light.foreground(), rowPrefix(0).getTextColor());
+        Assert.assertEquals("caret 随主题更新", light.borderFocus(), rowCaret(9).getBackgroundColor());
+        Assert.assertEquals("文本不丢（caret 之前的行整段在 prefix）", "L0", rowPrefix(0).getText());
+        Assert.assertEquals("文本不丢（caret 之后的行整段在 suffix）", "L11", rowSuffix(11).getText());
+        Assert.assertEquals("受控值不丢", "L0\nL1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10\nL11",
+                valueSignal.get());
+        Assert.assertEquals("滚动位置不丢", scrollBefore, viewportNode().getScrollOffsetY());
+        Assert.assertEquals("切主题不触发 onChange", 0, changeCount.get());
+
+        // 局部自定义主题：染色/缘色/圆角/前景/caret 全部切到自定义配方，滤镜关闭
+        SceneSurfaceStyle.StateStyle customFlat =
+                new SceneSurfaceStyle.StateStyle(0x80112233, 0xFF445566, 0.0F, 0.0F);
+        SceneTheme custom = SceneTheme.builder()
+                .foreground(0xFF102030)
+                .mutedForeground(0xFF203040)
+                .disabledForeground(0xFF304050)
+                .borderFocus(0xFF405060)
+                .surface(SceneTheme.Role.INPUT, SceneSurfaceStyle.builder()
+                        .cornerRadius(21)
+                        .focusEdge(0xFF405060)
+                        .idle(customFlat).hovered(customFlat).pressed(customFlat).disabled(customFlat)
+                        .build())
+                .build();
+        pageTheme.set(custom);
+        runtime.flush();
+
+        Assert.assertSame("局部主题切换不重建节点", identity, inputRoot);
+        Assert.assertEquals("自定义染色生效", 0x80112233, inputRoot.getBackgroundColor());
+        Assert.assertEquals("自定义聚焦缘色生效", 0xFF405060, inputRoot.getBorderColor());
+        Assert.assertEquals("自定义圆角生效", 21, inputRoot.getCornerRadius());
+        Assert.assertEquals("自定义正文前景生效", 0xFF102030, rowPrefix(0).getTextColor());
+        Assert.assertEquals("自定义 caret 色生效", 0xFF405060, rowCaret(9).getBackgroundColor());
+        Assert.assertNull("自定义配方关闭滤镜后不再采样", inputRoot.getBackdrop());
+        Assert.assertEquals("自定义主题下滚动位置仍不丢", scrollBefore,
+                viewportNode().getScrollOffsetY());
+
+        // 自定义主题下禁用：行文本落自定义 disabledForeground
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        Assert.assertEquals("自定义主题禁用前景生效", 0xFF304050, rowPrefix(0).getTextColor());
+    }
+
+    /**
+     * 卸载回收：handle.dispose + flush 后，绑定注册的 effect 回到基线。
+     */
+    @Test
+    public void disposeReleasesTextAreaBindings() {
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+        mountTextArea("L0\nL1");
+        Assert.assertTrue("绑定应新增订阅", ReactiveTestProbe.registeredEffectCount() > baseline);
+
+        handle.dispose();
+        runtime.flush();
+        Assert.assertEquals("卸载回收全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
     }
 
     // ==================== 点击前缀宽数组缓存（缓存②）复用/失效 ====================

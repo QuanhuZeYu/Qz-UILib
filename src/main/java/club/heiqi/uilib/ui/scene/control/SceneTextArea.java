@@ -12,7 +12,9 @@ import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneTextArea —— scene 新栈多行受控文本输入框（D4：soft wrap 视觉行模型）。
@@ -29,10 +31,19 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * {@code caretIndex} 与 {@link TextSelection} 两个本地 UI 态（caret≡selection.focus）。
  * 所有写入经 {@code onChange.accept(next)} 上抛。</p>
  *
+ * <h3>外观归属：表面绑定是唯一写入者</h3>
+ * <p>背景/边框/边框宽/圆角/滤镜/实体高度由 {@link SceneSurfaceBinder} 从
+ * {@link SceneThemes#surface(SceneRuntime, SceneTheme.Role) INPUT 角色配方}派生；本控件不再
+ * 静态设边框宽/圆角、不再叠加 {@code SceneStateColors.inputBackground} 与
+ * {@code SceneControlChrome.bindStandardBorder} 第二套写入者。行文本/占位/禁用前景与 caret 色
+ * 由 wrapper 捕获的主题语义色信号供给 primitive（行文本由 primitive 内部 forEach 创建，
+ * Result 不暴露行节点，故只能经 Props 信号消费，契约 §2.8）。视口不再自绘内层底色，
+ * root 玻璃即唯一表面。</p>
+ *
  * <h3>结构</h3>
  * <pre>
- * root (COLUMN, clipChildren=true, focusable, padding, border, cornerRadius)
- *   └─ viewport (COLUMN, scrollable, clipChildren, preferredHeight)
+ * root (COLUMN, clipChildren=true, focusable, padding, INPUT 玻璃表面)
+ *   └─ viewport (COLUMN, scrollable, clipChildren, preferredHeight, 透明)
  *        └─ content (COLUMN) ← forEach 行 + placeholder show
  * </pre>
  */
@@ -41,14 +52,12 @@ public final class SceneTextArea {
     /** 默认视口高度（像素） */
     public static final int DEFAULT_VIEWPORT_HEIGHT = 120;
 
-    /** 边框宽度（像素） */
-    private static final int BORDER_WIDTH = 1;
-    /** 圆角半径（像素） */
-    private static final int CORNER_RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 内边距（像素） */
     private static final int PADDING = SceneChromeTokens.PAD_MD;
     /** 视口内边距（像素） */
     private static final int VIEWPORT_PADDING = SceneChromeTokens.PAD_SM;
+    /** 视口透明底色：不再自绘内层实色，让 root 的 INPUT 玻璃透出（唯一表面）。 */
+    private static final int VIEWPORT_TRANSPARENT = 0x00000000;
 
     /** 纯静态工厂，禁止实例化。 */
     private SceneTextArea() {
@@ -202,35 +211,41 @@ public final class SceneTextArea {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
+            // 构造期捕获主题信号（此时 Owner.current() 是来源作用域）；一切取值都发生在 effect 体内。
+            ReadableSignal<Integer> caretColor = SceneThemes.borderFocus(rt);
+            ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+            ReadableSignal<Integer> mutedForeground = SceneThemes.mutedForeground(rt);
+            ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+
             SceneTextAreaPrimitive.Props primitiveProps = new SceneTextAreaPrimitive.Props(
                     props.value(), props.enabled(), props.readOnly(), props.placeholder(),
                     props.maxLength(),
-                    SceneChromeTokens.BORDER_FOCUS,
-                    SceneChromeTokens.TEXT_PRIMARY,
-                    SceneChromeTokens.TEXT_SECONDARY,
-                    SceneChromeTokens.TEXT_DISABLED,
-                    props.onChange());
+                    // int 色槽仅作旧 10 参路径的兼容回落：四个语义信号恒非 null，故取值永不参与上色。
+                    // 此处读到的是 SceneThemes 带初值的主题派生信号（非「未求值 Computed」）。
+                    initialOf(caretColor), initialOf(foreground),
+                    initialOf(mutedForeground), initialOf(disabledForeground),
+                    props.onChange(),
+                    caretColor, foreground, mutedForeground, disabledForeground);
             SceneTextAreaPrimitive.Result result = SceneTextAreaPrimitive.create(rt, primitiveProps);
             SceneNode root = result.root();
             root.setPadding(PADDING);
-            root.setBorderWidth(BORDER_WIDTH);
-            root.setCornerRadius(CORNER_RADIUS);
 
             SceneNode viewport = result.viewport();
             viewport.setPreferredHeight(props.viewportHeight() > 0 ? props.viewportHeight() : DEFAULT_VIEWPORT_HEIGHT);
             viewport.setPadding(VIEWPORT_PADDING);
+            // 视口不再自绘内层底色（旧 SceneChromeTokens.BG_DEFAULT/BG_DISABLED 已删）：root 的
+            // INPUT 玻璃即唯一表面，内层再叠一层实色会挡死玻璃并形成第二个表面。
+            viewport.setBackgroundColor(VIEWPORT_TRANSPARENT);
 
-            // B2：interaction 挂 content（primitive 已改），focused 写 content，边框 bind 据此派生。
+            // B2：interaction 挂 content（primitive 已改），focused 写 content，表面绑定据此派生 focus 缘色。
             SceneInteractionState interaction = rt.interactionState(result.content());
 
-            // 背景色
-            rt.__bindAnimatedColor(() -> resolveBackgroundColor(props.enabled().get()),
-                    root::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
-            // 边框色（focus border ring）
-            SceneControlChrome.bindStandardBorder(rt, root, props.enabled(), interaction);
-            // viewport 背景用更深一档，营造凹陷感
-            rt.__bindAnimatedColor(() -> resolveViewportBackground(props.enabled().get()),
-                    viewport::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+            // 唯一外观写入者：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation
+            // 全归表面绑定；不再静态设边框宽/圆角、不再叠加 SceneStateColors.inputBackground
+            // 与 SceneControlChrome.bindStandardBorder。
+            SceneSurfaceBinder.bind(rt, root, SceneThemes.surface(rt, SceneTheme.Role.INPUT),
+                    props.enabled(), interaction);
+
             // cursor + hitTestable 跟随 enabled
             // B2：cursor 设到 content（hover 写 content，resolver 读 content.cursor）；root hitTestable 保留控制 padding 区命中。
             SceneNode content = result.content();
@@ -243,21 +258,19 @@ public final class SceneTextArea {
     }
 
     /**
-     * 解析根节点背景色。
+     * 读取主题派生信号的构造期初值，用作 primitive 的 int 兼容回落值。
+     *
+     * <p>{@link SceneThemes} 的语义色派生均以「带初值的 {@link club.heiqi.uilib.ui.reactive.Computed}」
+     * 构造，构造期 {@code get()} 返回该初值而非 null，因此不违反「构造期不解引用未求值 Computed」。
+     * 真正生效的颜色由 primitive 在 effect 派生内读取同名信号决定；主题切换后信号更新，
+     * int 回落值不参与。</p>
+     *
+     * @param signal 主题语义色只读信号
+     * @return 构造期初值；异常情况下（信号值未就绪）回落 0
      */
-    private static int resolveBackgroundColor(Boolean enabled) {
-        return SceneStateColors.inputBackground(Boolean.TRUE.equals(enabled));
-    }
-
-    /**
-     * 解析视口背景色（比 root 更深一档）。
-     */
-    private static int resolveViewportBackground(Boolean enabled) {
-        if (!Boolean.TRUE.equals(enabled)) {
-            return SceneChromeTokens.BG_DISABLED;
-        }
-        // 视口用 BG_DEFAULT（Slate-700），root 用 BG_PRESSED（Slate-800 凹陷）
-        return SceneChromeTokens.BG_DEFAULT;
+    private static int initialOf(ReadableSignal<Integer> signal) {
+        Integer value = signal.get();
+        return value != null ? value.intValue() : 0;
     }
 
 }
