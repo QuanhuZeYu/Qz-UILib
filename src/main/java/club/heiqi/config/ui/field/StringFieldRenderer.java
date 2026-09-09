@@ -2,7 +2,6 @@ package club.heiqi.config.ui.field;
 
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
-import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -45,7 +44,10 @@ public final class StringFieldRenderer implements FieldRenderer {
                 SceneInputType.TEXT,
                 next -> adapter.onFieldEdit(path, next));
 
+        // G15/收口：原 binder theme 兼容占位实参（ConfigTheme.asFormTheme()，默认路径不消费）
+        // 随签名收口摘除；卡片表面/语义色经 FieldShellBinder → FormFieldShell theme-aware
+        // 默认路径，输入框本体归 SceneTextInput（G04）自持。
         return FieldShellBinder.build(rt, spec, adapter,
-                SceneTextInput.create(rt, props), ConfigTheme.asFormTheme());
+                SceneTextInput.create(rt, props));
     }
 }

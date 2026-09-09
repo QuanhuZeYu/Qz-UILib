@@ -311,9 +311,14 @@ public class SimpleListFieldRendererThemeTest {
     /**
      * G15/SimpleList 销账守卫：本渲染器代码内不得出现任何主题/表面/前景直接绑定或旧 chrome 接缝
      * ——表面唯一路径 = {@link FieldShellBinder}（→ FormFieldShell GROUP 主题配方）与已主题化控件
-     * 本体（G12），本类只组 Props 消费；{@code theme.listHeight()} 为契约 §4 纯布局入参、
-     * {@code ConfigTheme.asFormTheme()} 为 binder 兼容占位形参来源（Number 先例，禁止提前摘除），
-     * 均钉死保留。
+     * 本体（G12），本类只组 Props 消费；controlHeight 纯 int 布局入参钉死为
+     * {@code FormTheme.defaultDark().listHeight()} 同源常量直读恰 1 处。
+     *
+     * <p><b>G15/收口同步义务（已执行，CharRule 先例形态）</b>：原「{@code theme.listHeight()} +
+     * {@code ConfigTheme.asFormTheme()} 占位形参来源（禁止提前摘除）均钉死保留」的正向钉按收口
+     * 裁决兑现——整主题快照（{@code ConfigTheme}/{@code asFormTheme}/{@code theme.} 分量直读）
+     * 翻转为反向禁则封死回潮，listHeight 只允许 {@code FormTheme.defaultDark()} 构造期直读纯 int
+     * （恰 1 处计数钉，防恢复整主题对象传递）。</p>
      */
     @Test
     public void sourceGuardRendererHasZeroAppearanceWrites() throws Exception {
@@ -330,21 +335,22 @@ public class SimpleListFieldRendererThemeTest {
                 "setBackgroundColor", "setBorderColor", "setBorderWidth", "setCornerRadius",
                 "setBackdrop", "setTextColor", "setForeground(", "setSurfaceElevation",
                 "__setSurfaceElevation", "__bindAnimatedColor", "__bindAnimatedFloat", "rt.bind",
-                // 静态语义色直写（本文件唯一 ConfigTheme 取值只能是 listHeight 布局入参）
+                // 静态语义色直写
                 "ConfigTheme.TEXT_COLOR", "ConfigTheme.TITLE_COLOR", "ConfigTheme.MUTED_COLOR",
                 "ConfigTheme.ERROR_COLOR", "ConfigTheme.OK_COLOR", "ConfigTheme.DIRTY_COLOR",
                 "ConfigTheme.READOUT_BG", "ConfigTheme.VIEWPORT_BG", "ConfigTheme.SURFACE_CONTAINER",
                 "ConfigTheme.ROOT_BG",
+                // G15/收口：整主题快照消费封死（兼容入口只准 defaultDark 纯 int 分量直读）
+                "ConfigTheme", "asFormTheme", "theme.",
         };
         for (String token : banned) {
             Assert.assertFalse("守卫：SimpleListFieldRenderer 代码不得出现 " + token, code.contains(token));
         }
-        // ConfigTheme 唯一触点 = asFormTheme()（listHeight 布局 + 兼容占位形参），不得扩散到别的取色
-        String withoutBridgeCall = code.replace("ConfigTheme.asFormTheme()", "");
-        Assert.assertFalse("守卫：ConfigTheme 只允许 asFormTheme() 布局/占位用途",
-                withoutBridgeCall.contains("ConfigTheme."));
-        Assert.assertTrue("守卫：listHeight() 纯布局常量保留（契约 §4 / Support 衔接要点 3）",
-                code.contains("theme.listHeight()"));
+        // listHeight 布局入参 = 同源常量构造期直读，恰 1 处（禁恢复整主题快照/对象传递）
+        String flat = code.replaceAll("\\s+", " ");
+        Assert.assertEquals("守卫：FormTheme.defaultDark() 仅 controlHeight 同源常量取值恰 1 处"
+                        + "（契约 §4.2 主题不接管布局；CharRule 先例收口形态）",
+                1, countOccurrences(flat, "FormTheme.defaultDark()"));
         // 装配必经支持层与已主题化控件，不另起路径
         Assert.assertTrue("守卫：字段壳装配必须经 FieldShellBinder（复用 Support helper）",
                 code.contains("FieldShellBinder.build("));
@@ -405,6 +411,20 @@ public class SimpleListFieldRendererThemeTest {
             w.write(content);
         } finally {
             w.close();
+        }
+    }
+
+    /** 子串计数（G15/收口守卫用；与 ChoiceFieldRendererThemeTest 同款实现，包内私有不可跨类复用）。 */
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int from = 0;
+        while (true) {
+            int idx = haystack.indexOf(needle, from);
+            if (idx < 0) {
+                return count;
+            }
+            count++;
+            from = idx + needle.length();
         }
     }
 }

@@ -15,7 +15,6 @@ import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
-import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -56,7 +55,10 @@ public class FieldShellBinderTest {
         authority = Authority.load(new File("nonexistent-binder.yaml"), schema);
         draft = DraftBuffer.from(authority);
         adapter = new DraftSignalAdapter(runtime, draft);
-        theme = ConfigTheme.asFormTheme();
+        // G15/收口：夹具的 theme 字段只作 controlHeight 纯 int 布局源（FormTheme.defaultDark()
+        // 同源常量，与旧 ConfigTheme.asFormTheme() 缓存值逐值相等）——binder 已无 theme 形参，
+        // 本测试不再经兼容入口持整主题对象（兼容入口覆盖归 ConfigThemeTest）。
+        theme = FormTheme.defaultDark();
         ReactiveScheduler.get().flush();
     }
 
@@ -71,8 +73,7 @@ public class FieldShellBinderTest {
     @Test
     public void defaultOverloadReturnsCardWithLabel() throws Exception {
         FieldSpec spec = schema.field("server.host");
-        SceneNode card = FieldShellBinder.build(runtime, spec, adapter,
-                SceneNode::new, theme);
+        SceneNode card = FieldShellBinder.build(runtime, spec, adapter, SceneNode::new);
         runtime.flush();
         Assert.assertNotNull("返回非 null card", card);
         SceneNode header = card.__getChildren().get(0);
@@ -85,7 +86,7 @@ public class FieldShellBinderTest {
     public void explicitControlHeightOverloadReturnsCard() throws Exception {
         FieldSpec spec = schema.field("server.host");
         SceneNode card = FieldShellBinder.build(runtime, spec, adapter,
-                SceneNode::new, theme, theme.listHeight());
+                SceneNode::new, theme.listHeight());
         runtime.flush();
         Assert.assertNotNull("返回非 null card", card);
         Assert.assertEquals("title 仍显示 label", "Host",
@@ -105,7 +106,7 @@ public class FieldShellBinderTest {
         DraftSignalAdapter a = new DraftSignalAdapter(runtime, d);
         ReactiveScheduler.get().flush();
         FieldSpec spec = s.field("a.k");
-        SceneNode card = FieldShellBinder.build(runtime, spec, a, SceneNode::new, theme);
+        SceneNode card = FieldShellBinder.build(runtime, spec, a, SceneNode::new);
         runtime.flush();
         Assert.assertNotNull("空 schema 渲染不崩", card);
         Assert.assertEquals("label null 回退 path", "a.k",
@@ -126,7 +127,7 @@ public class FieldShellBinderTest {
         DraftSignalAdapter a = new DraftSignalAdapter(runtime, d);
         ReactiveScheduler.get().flush();
         FieldSpec spec = s.field("server.host");
-        SceneNode card = FieldShellBinder.build(runtime, spec, a, SceneNode::new, theme);
+        SceneNode card = FieldShellBinder.build(runtime, spec, a, SceneNode::new);
         runtime.flush();
         int borderBefore = card.getBorderColor();
         a.onFieldEdit("server.host", "abc"); // maxLength 违反
@@ -239,7 +240,14 @@ public class FieldShellBinderTest {
 
     // ==================== G15/Support 源码守卫 ====================
 
-    /** binder 零主题快照、零旧接缝：只把 spec/adapter 拆解后转发 theme-aware {@code FormFieldShell.build}。 */
+    /**
+     * binder 零主题快照、零旧接缝：只把 spec/adapter 拆解后转发 theme-aware
+     * {@code FormFieldShell.build}。
+     *
+     * <p><b>G15/收口强化</b>：theme 兼容占位形参已从签名删除，守卫同步钉「FormTheme」
+     * 标识符整体禁出现——类型级封死「回喂整主题对象」的复潮路径（多行高度只允许
+     * controlHeight 纯 int 入参，调用点自带同源常量）。</p>
+     */
     @Test
     public void sourceGuardBinderNeverConsumesExplicitThemeSnapshot() throws Exception {
         String code = codeWithoutComments(
@@ -248,6 +256,7 @@ public class FieldShellBinderTest {
                         StandardCharsets.UTF_8));
         String[] banned = {
                 "ConfigTheme", "asFormTheme", ".get(", "theme.inputHeight",
+                "FormTheme",
                 "SceneChromeTokens", "SceneControlChrome", "SceneStateColors",
         };
         for (String token : banned) {
@@ -264,7 +273,7 @@ public class FieldShellBinderTest {
                                            DraftSignalAdapter a, SceneNode[] holder) {
         return runtime.mount(new SceneNode(), () -> {
             SceneThemes.withTheme(pageTheme, () -> holder[0] = FieldShellBinder.build(
-                    runtime, spec, a, SceneNode::new, theme));
+                    runtime, spec, a, SceneNode::new));
             return holder[0];
         });
     }

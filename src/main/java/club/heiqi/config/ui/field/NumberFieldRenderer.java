@@ -38,9 +38,9 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * {@code SceneThemes}/{@code SceneSurfaceBinder}，本类只组 Props、不再叠第二层表面或边框。
  * slider 读数文本前景取 {@link SceneThemes#foreground(SceneRuntime)} 主题信号（构建期捕获、
  * effect 内应用，无 {@code .get()} 快照）；字号与行间距是布局/排版常量（契约 §4「padding/尺寸/
- * 布局属性归控件自身，主题不接管布局」），保留 {@code ConfigTheme} 取值。喂给 binder 的
- * {@code ConfigTheme.asFormTheme()} 是兼容占位形参（默认路径不消费，见 FieldShellBinder 类头），
- * 待全部 Renderer 实例迁移完成后由主代理统一收口删除，本实例不自行摘除。
+ * 布局属性归控件自身，主题不接管布局」），保留 {@code ConfigTheme} 纯 int 常量取值。
+ * <b>G15/收口</b>：曾喂给 binder 的 {@code ConfigTheme.asFormTheme()} 兼容占位实参已随
+ * FieldShellBinder 的 theme 形参一并删除（默认路径不消费，4.0 施工期不留缓冲）。
  * 数值解析、min/max 钳制、step 量化、滚轮步进与 dirty/error 行为零改动。</p>
  */
 public final class NumberFieldRenderer implements FieldRenderer {
@@ -112,7 +112,8 @@ public final class NumberFieldRenderer implements FieldRenderer {
             return row;
         };
 
-        return FieldShellBinder.build(rt, spec, adapter, control, ConfigTheme.asFormTheme());
+        // G15/收口：原 theme 兼容占位实参（ConfigTheme.asFormTheme()）随 binder 签名收口摘除。
+        return FieldShellBinder.build(rt, spec, adapter, control);
     }
 
     /**
@@ -145,7 +146,8 @@ public final class NumberFieldRenderer implements FieldRenderer {
                     }
                 });
 
+        // G15/收口：原 theme 兼容占位实参（ConfigTheme.asFormTheme()）随 binder 签名收口摘除。
         return FieldShellBinder.build(rt, spec, adapter,
-                SceneTextInput.create(rt, props), ConfigTheme.asFormTheme());
+                SceneTextInput.create(rt, props));
     }
 }

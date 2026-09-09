@@ -10,7 +10,6 @@ import java.util.function.ToLongFunction;
 
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
-import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -50,10 +49,10 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * {@link SceneThemes#mutedForeground(SceneRuntime)} 主题信号绑定（构建期捕获、effect 内应用，
  * 无 {@code .get()} 快照，契约 §4「textColor 唯一写入者 = 主题前景绑定」）。{@code listHeight}/
  * {@code fontLabel}/{@code fontHelper} 是纯 int 布局/排版常量（契约 §4：主题不接管布局；
- * G15/Support 衔接要点 3），保留 {@code FormTheme} 取值并注依据；喂给 binder 的
- * {@code ConfigTheme.asFormTheme()} 为兼容占位形参（默认路径不消费，见 FieldShellBinder 类头），
- * 7 个 Renderer 实例迁移完成后由主代理统一收口删除，本实例不自行摘除。排序事务、拖拽提交、
- * 索引编辑 authority 协商与 dirty/error 行为零改动。</p>
+ * G15/Support 衔接要点 3）。<b>G15/收口</b>：曾喂给 binder 的 {@code ConfigTheme.asFormTheme()}
+ * 兼容占位实参与本类整主题局部快照已随签名收口删除，上述常量换源为
+ * {@code FormTheme.defaultDark()} 同源常量构造期直读纯 int（CharRule 先例，逐值相等，默认渲染
+ * 输出不变）。排序事务、拖拽提交、索引编辑 authority 协商与 dirty/error 行为零改动。</p>
  */
 public final class FontSortFieldRenderer implements FieldRenderer {
 
@@ -69,6 +68,16 @@ public final class FontSortFieldRenderer implements FieldRenderer {
     private static final int ROW_GAP = 6;
     /** 1-based 索引输入固定宽度。 */
     private static final int INDEX_WIDTH = 56;
+    /**
+     * 列表视口高度（controlHeight 纯 int 布局入参 + 派生 stackHost 高度共用，契约 §4.2、
+     * G15/Support 衔接要点 3）：G15/收口换源取 {@code FormTheme.defaultDark().listHeight()}
+     * 同源值（CharRule 先例，与旧 {@code ConfigTheme.asFormTheme().listHeight()} 逐值相等）。
+     */
+    private static final int LIST_VIEWPORT_HEIGHT = FormTheme.defaultDark().listHeight();
+    /** 行标签字号（纯 int 排版常量，契约 §4.2 主题不接管排版）：换源 defaultDark 同源值。 */
+    private static final int FONT_LABEL_SIZE = FormTheme.defaultDark().fontLabel();
+    /** 空提示字号（纯 int 排版常量，契约 §4.2 主题不接管排版）：换源 defaultDark 同源值。 */
+    private static final int FONT_HELPER_SIZE = FormTheme.defaultDark().fontHelper();
     /** 字体行 id 读取器，维持 keyed diff。 */
     private static final ToLongFunction<FontSortPresentation.Row> ROW_ID =
             FontSortPresentation.Row::getId;
@@ -123,21 +132,21 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         rt.bind(draftSignal, value -> Effect.untrack(
                 () -> presentation.resetFromDraft(toDraftList(value))));
 
-        // G15/FontSort 销账说明：theme 仅两处合法用途——① FieldShellBinder.build 的兼容占位实参
-        // （默认路径不消费，卡片表面/dirty/error 语义色走 FormFieldShell theme-aware 派生）；
-        // ② listHeight() 纯 int 控件高度（契约 §4 布局入参，G15/Support 衔接要点 3）。
+        // G15/FontSort 销账 + G15/收口：曾持有的 ConfigTheme.asFormTheme() 整主题快照已拆除——
+        // ① 卡片表面/dirty/error 语义色走 FieldShellBinder → FormFieldShell theme-aware 派生
+        //    （binder 的 theme 兼容占位形参已随收口从签名删除，见 FieldShellBinder 类头）；
+        // ② listHeight 纯 int 控件高度换源为 LIST_VIEWPORT_HEIGHT 同源常量（契约 §4 布局入参，
+        //    G15/Support 衔接要点 3、CharRule 先例）。
         // 旧主题色值（textColor/mutedColor）不再从这里取，行标签与空提示前景改经 SceneThemes 信号。
-        FormTheme theme = ConfigTheme.asFormTheme();
-        return FieldShellBinder.build(rt, spec, adapter, () -> buildControl(
-                rt, presentation, currentDraft, currentValue, theme),
-                theme, theme.listHeight());
+        return FieldShellBinder.build(rt, spec, adapter,
+                () -> buildControl(rt, presentation, currentDraft, currentValue),
+                LIST_VIEWPORT_HEIGHT);
     }
 
     /** 构建稳定高度的筛选栏 + viewport + scrollbar。 */
     private static SceneNode buildControl(SceneRuntime rt, FontSortPresentation presentation,
                                           Supplier<List<String>> currentDraft,
-                                          Supplier<List<String>> currentValue,
-                                          FormTheme theme) {
+                                          Supplier<List<String>> currentValue) {
         SceneNode root = SceneNode.column();
         root.setGap(ROOT_GAP);
 
@@ -170,8 +179,10 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         root.appendChild(filterBar);
 
         SceneNode stackHost = SceneNode.row();
-        // listHeight 与派生高度是纯 int 布局入参（契约 §4：主题不接管布局；G15/Support 衔接要点 3），非外观写入点
-        stackHost.setPreferredHeight(Math.max(0, theme.listHeight() - FILTER_BAR_HEIGHT - ROOT_GAP));
+        // 视口高 = LIST_VIEWPORT_HEIGHT 同源常量派生的纯 int 布局入参（契约 §4：主题不接管布局；
+        // G15/Support 衔接要点 3、CharRule 先例），非外观写入点
+        stackHost.setPreferredHeight(
+                Math.max(0, LIST_VIEWPORT_HEIGHT - FILTER_BAR_HEIGHT - ROOT_GAP));
         stackHost.setFillParentHeight(true);
         SceneNode viewport = SceneNode.column();
         viewport.setScrollable(true);
@@ -185,10 +196,10 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         viewport.appendChild(rowsContainer);
         Computed<Boolean> noResults = Computed.create(() ->
                 Boolean.valueOf(presentation.filteredSignal().get().isEmpty()));
-        rt.show(viewport, noResults, () -> emptyResult(rt, theme));
+        rt.show(viewport, noResults, () -> emptyResult(rt));
         rt.forEach(rowsContainer, presentation.filteredSignal(), ROW_KEY,
                 row -> buildRow(rt, presentation, currentDraft, currentValue,
-                        rowsContainer, viewport, scrollSignal, row, theme));
+                        rowsContainer, viewport, scrollSignal, row));
         stackHost.appendChild(viewport);
         stackHost.appendChild(scrollbar.column());
         root.appendChild(stackHost);
@@ -199,17 +210,17 @@ public final class FontSortFieldRenderer implements FieldRenderer {
      * 空结果提示是 viewport 内紧凑次要文本，不改变外层固定高度。
      *
      * <p>G15/FontSort：前景经来源主题 {@code mutedForeground} 信号绑定（构建期在 show 内容
-     * builder 内捕获、effect 内应用，主题切换只重派生不重建节点，契约 §4/§4.1）；字号是排版
-     * 常量，保留 {@code FormTheme} 取值（契约 §4：主题不接管布局）。</p>
+     * builder 内捕获、effect 内应用，主题切换只重派生不重建节点，契约 §4/§4.1）；字号是
+     * FONT_HELPER_SIZE 同源排版常量（契约 §4：主题不接管布局，G15/收口换源注依据）。</p>
      */
-    private static SceneNode emptyResult(SceneRuntime rt, FormTheme theme) {
+    private static SceneNode emptyResult(SceneRuntime rt) {
         SceneNode node = new SceneNode();
         node.setPreferredHeight(ROW_HEIGHT);
         node.setText("无匹配字体");
         // 次要前景唯一来源 = 来源主题 mutedForeground 信号（替换旧 theme.mutedColor() 静态取色）
         rt.bind(SceneThemes.mutedForeground(rt), node::setTextColor);
-        // 字号是排版常量（契约 §4：尺寸/布局属性归控件自身，主题不接管布局），保留 FormTheme 取值
-        node.setFontSize(theme.fontHelper());
+        // 字号 = FONT_HELPER_SIZE 同源排版常量（契约 §4.2：主题不接管布局；G15/收口换源注依据）
+        node.setFontSize(FONT_HELPER_SIZE);
         node.setHitTestable(false);
         return node;
     }
@@ -220,7 +231,7 @@ public final class FontSortFieldRenderer implements FieldRenderer {
                                       Supplier<List<String>> currentValue,
                                       SceneNode rowViewport, SceneNode scrollViewport,
                                       Signal<Integer> scrollSignal,
-                                      FontSortPresentation.Row row, FormTheme theme) {
+                                      FontSortPresentation.Row row) {
         SceneNode line = SceneNode.row();
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
@@ -266,8 +277,8 @@ public final class FontSortFieldRenderer implements FieldRenderer {
         // 正文前景唯一来源 = 来源主题 foreground 信号（替换旧 theme.textColor() 静态取色；
         // 构建期在 forEach 项 builder 内捕获、effect 内应用，契约 §4/§4.1）
         rt.bind(SceneThemes.foreground(rt), label::setTextColor);
-        // 字号是排版常量（契约 §4：尺寸/布局属性归控件自身，主题不接管布局），保留 FormTheme 取值
-        label.setFontSize(theme.fontLabel());
+        // 字号 = FONT_LABEL_SIZE 同源排版常量（契约 §4.2：主题不接管布局；G15/收口换源注依据）
+        label.setFontSize(FONT_LABEL_SIZE);
         line.appendChild(label);
 
         final boolean[] focusActive = {false};
