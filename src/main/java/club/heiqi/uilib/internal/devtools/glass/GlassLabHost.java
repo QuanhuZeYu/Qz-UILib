@@ -1,6 +1,7 @@
 package club.heiqi.uilib.internal.devtools.glass;
 
 import club.heiqi.uilib.internal.devtools.playground.PlaygroundKit;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiBackdropEffect;
 import club.heiqi.uilib.ui.render.UiGlassMaterial;
@@ -12,11 +13,16 @@ import club.heiqi.uilib.ui.scene.control.SceneSlider;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
@@ -29,6 +35,26 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * tint-fallback）供诊断降级。</p>
  *
  * <p>「暂停玻璃」开关用于 A/B 对比：冻结帧跳过玻璃回贴，直接看采样场原貌。</p>
+ *
+ * <h3>外观归属（G18 外壳迁移）</h3>
+ * <p>采样场面板、探针卡与参数/诊断卡的 background/border/borderWidth/cornerRadius/backdrop/
+ * surfaceElevation 唯一写入者是 {@link SceneSurfaceBinder}，配方取来源主题的 PANEL/GROUP 角色；
+ * 标题/说明/滑杆标签前景经 {@link SceneThemes#foreground}/{@link SceneThemes#mutedForeground}
+ * 与 {@link SceneLabel} 主题跟随路径派生，随主题切换重算、不重建节点。场景根 {@code shell} 的
+ * {@link PlaygroundKit#ROOT_BG} 是<b>全屏不透明（0xFF）诊断承托底</b>——作用同 G15/Shell 的
+ * 世界遮罩（为玻璃采样提供稳定高对比基色，若随主题改透明度会让三档对照基线漂移），故按 §7.3
+ * 「遮罩只负责遮罩」口径保留显式静态、不装玻璃配方。</p>
+ *
+ * <p><b>实验样本保持显式、不受主题影响</b：采样场色带 {@link #SAMPLE_COLORS}、圆角，材质阶梯
+ * {@link #MATERIAL_LADDER}，玻璃 tint/亮边 {@link #GLASS_TINT}/{@link #GLASS_EDGE} 与被滑杆
+ * 驱动的 blur/饱和/透镜/滤镜参数是实验室的被测对象，全部保留显式取值（契约 §7.2「样本区保留
+ * classic/liquid/关闭滤镜对照」），主题更新不覆盖这些显式值。</p>
+ *
+ * <p><b>自建等效接缝</b>：{@code PlaygroundKit.installRuntime} 与 {@code RUNTIME_KEY} 是
+ * playground 包级私有接缝，本宿主（glass 包）无法登记 runtime，故 {@code PlaygroundKit} 无
+ * {@code rt} 形参的构件在此只会走静态回退。外壳因此直接复用 theme 包公开 API
+ * （{@link SceneSurfaceBinder}/{@link SceneThemes}）与 {@code PlaygroundKit} 的公开主题前景
+ * 文本重载装配，不复制 PlaygroundKit 源码、不引入第二真相源。</p>
  */
 public final class GlassLabHost extends AbstractSceneHostWidget {
 
@@ -73,12 +99,25 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
             0xFFF97316, 0xFF06B6D4, 0xFF84CC16, 0xFFEF4444, 0xFF6366F1,
     };
 
+    /** 外壳表面 enabled：外壳/卡片表面不可禁用（表面绑定器只关心恒真）。 */
+    private static final ReadableSignal<Boolean> SHELL_ENABLED = () -> Boolean.TRUE;
+
+    /** runtime 默认主题信号：外壳表面与主题前景文字的共同来源，可整体切换。 */
+    private final Signal<SceneTheme> themeSignal = Signal.create(SceneThemes.DEFAULT);
     /** 根节点。 */
     private final SceneNode root;
+    /** 采样场色带 chip（§7.3 显式材质样本，构建期登记供反向钉断言）。 */
+    private final java.util.List<SceneNode> sampleChips = new java.util.ArrayList<SceneNode>();
     /** 采样场节点（玻璃面板位置以其 SceneGeometry.absoluteBox 绝对盒为基准）。 */
     private SceneNode stage;
     /** 探针玻璃卡节点（卡内顶部玻璃带验证快照含本帧内容）。 */
     private SceneNode probeCard;
+    /** 标题区节点（主/副标题）。 */
+    private SceneNode header;
+    /** 参数台卡片节点。 */
+    private SceneNode controlsCard;
+    /** 诊断卡片节点。 */
+    private SceneNode diagnosticsCard;
     /** 实际渲染路径诊断文本。 */
     private final Signal<String> pathSignal = Signal.create("backdrop 路径: 等待首帧");
     /** 模糊半径（UI 像素，受控源）。 */
@@ -119,8 +158,7 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
      */
     public GlassLabHost(PlatformInputSource input) {
         super(input);
-        runtime.__enableMotion();
-        this.root = buildTree();
+        this.root = buildThemedTree();
     }
 
     /**
@@ -131,8 +169,24 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
      */
     public GlassLabHost(SceneTextMeasurer measurer, PlatformInputSource input) {
         super(measurer, input);
+        this.root = buildThemedTree();
+    }
+
+    /**
+     * 主题接线 + 建树（G16/外壳先例同型）：runtime 默认主题先于建树安装；外壳构建整体包进
+     * {@link SceneRuntime#__runRoot(Runnable)}——构造期没有当前 Owner 时，主题解析与
+     * bindComputed/SceneSurfaceBinder 创建的 Computed/Effect 不归属任何作用域、卸载无法回收
+     * （P-01 effect 泄漏）。
+     *
+     * @return 场景树根节点
+     */
+    private SceneNode buildThemedTree() {
         runtime.__enableMotion();
-        this.root = buildTree();
+        // 主题来源先于建树安装：外壳表面与工具控件都从 runtime 根作用域继承同一份主题信号。
+        SceneThemes.install(runtime, themeSignal);
+        final SceneNode[] holder = new SceneNode[1];
+        runtime.__runRoot(() -> holder[0] = buildTree());
+        return holder[0];
     }
 
     @Override
@@ -236,6 +290,26 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         return stage;
     }
 
+    /** 测试访问器：标题区节点（主/副标题主题前景断言用）。 */
+    SceneNode __getHeader() {
+        return header;
+    }
+
+    /** 测试访问器：探针卡节点（GROUP 配方断言用）。 */
+    SceneNode __getProbeCard() {
+        return probeCard;
+    }
+
+    /** 测试访问器：参数台卡片节点（GROUP 配方断言用）。 */
+    SceneNode __getControlsCard() {
+        return controlsCard;
+    }
+
+    /** 测试访问器：诊断卡片节点（GROUP 配方断言用）。 */
+    SceneNode __getDiagnosticsCard() {
+        return diagnosticsCard;
+    }
+
     /** 测试访问器：暂停玻璃开关（A/B 冻结态受控源）。 */
     Signal<Boolean> __getFrozenSignal() {
         return frozenSignal;
@@ -266,6 +340,20 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         return pathSignal;
     }
 
+    /** 测试访问器：runtime 默认主题信号（G16/外壳同型探针；测试 set(另一主题)+flush 验证外壳随主题更新）。 */
+    Signal<SceneTheme> __getThemeSignal() {
+        return themeSignal;
+    }
+
+    /** 测试访问器：采样场色带 chip 的底色逐值快照（§7.3 显式样本「换主题→不变」反向钉用）。 */
+    int[] __getSampleChipColors() {
+        int[] out = new int[sampleChips.size()];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = sampleChips.get(i).getBackgroundColor();
+        }
+        return out;
+    }
+
     private SceneNode buildTree() {
         SceneNode shell = SceneNode.column();
         shell.setFillParentWidth(true);
@@ -273,6 +361,9 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         shell.setCrossAxisAlign(CrossAxisAlign.CENTER);
         shell.setPadding(12);
         shell.setGap(10);
+        // 场景根保留显式承托底（§7.3 遮罩口径，对照 G15/Shell「遮罩与玻璃分层」裁决）：
+        // 全屏不透明暗底为玻璃面板提供稳定的采样基色，作用同世界遮罩——只负责承托/掩蔽，
+        // 不装玻璃配方；若改为主题半透明表面，三档对照的采样基底会随主题漂移，实验不可比。
         shell.setBackgroundColor(PlaygroundKit.ROOT_BG);
 
         SceneNode column = SceneNode.column();
@@ -280,14 +371,17 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         column.setMaxWidth(CONTENT_MAX_WIDTH);
         column.setGap(10);
 
-        SceneNode header = SceneNode.column();
+        header = SceneNode.column();
         header.setFillParentWidth(true);
         header.setGap(2);
         header.setHitTestable(false);
-        header.appendChild(PlaygroundKit.text("磨玻璃实验室（backdrop-filter）", PlaygroundKit.TEXT, 22));
-        header.appendChild(PlaygroundKit.text(
+        // 主/副标题走公开主题前景构件（PlaygroundKit.text(rt, …) 公共重载）：
+        // 构建期不读值，主题切换只重派生、不重建节点。旧 PlaygroundKit.TEXT/MUTED 静态取色已删。
+        header.appendChild(PlaygroundKit.text(runtime, "磨玻璃实验室（backdrop-filter）",
+                SceneThemes.foreground(runtime), 22));
+        header.appendChild(PlaygroundKit.text(runtime,
                 "玻璃面板采样其下已绘制的 scene 内容；拖动滑杆即时调参，验证仿 iOS 磨玻璃观感",
-                PlaygroundKit.MUTED, 12));
+                SceneThemes.mutedForeground(runtime), 12));
         header.setPreferredHeight(measurer.lineHeight(22) + 2 + measurer.lineHeight(12));
         column.appendChild(header);
 
@@ -306,11 +400,11 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         stage.setGap(8);
         stage.setPadding(10);
         stage.setPreferredHeight(STAGE_HEIGHT);
-        stage.setBackgroundColor(PlaygroundKit.PANEL_BG);
-        stage.setBorderWidth(1);
-        stage.setBorderColor(PlaygroundKit.BORDER);
-        stage.setCornerRadius(14);
-        stage.appendChild(PlaygroundKit.title("采样场（玻璃面板覆盖此区域上半部）"));
+        // 采样场主面板：来源主题 PANEL 配方唯一写入者（旧 PANEL_BG/边框宽/边框色/圆角静态写入者已删；
+        // 布局属性 padding/gap/高度保持不动，主题不接管布局）。
+        bindLabSurface(stage, SceneTheme.Role.PANEL);
+        stage.appendChild(PlaygroundKit.text(runtime,
+                "采样场（玻璃面板覆盖此区域上半部）", SceneThemes.foreground(runtime), 16));
         for (int rowIndex = 0; rowIndex < 2; rowIndex++) {
             SceneNode band = SceneNode.row(6);
             band.setFillParentWidth(true);
@@ -320,28 +414,36 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
                 SceneNode chip = new SceneNode();
                 chip.setFlexGrow(1);
                 chip.setFillParentHeight(true);
+                // §7.3 诊断材质样本保留：高饱和显式色带是玻璃滤镜的被采样对象，
+                // 主题更新不得改样本色（反向钉用例 GlassLabHostThemeTest 逐值锁）。
                 chip.setBackgroundColor(SAMPLE_COLORS[(rowIndex * 5 + i) % SAMPLE_COLORS.length]);
                 chip.setCornerRadius(6);
                 chip.setHitTestable(false);
+                sampleChips.add(chip);
                 band.appendChild(chip);
             }
             stage.appendChild(band);
         }
-        stage.appendChild(PlaygroundKit.hint(
+        stage.appendChild(PlaygroundKit.text(runtime,
                 "模糊正确的判据：色带边界在玻璃下应连续柔化（高斯散开），而不是整体平移或重影；"
-                        + "细密文字应仍可辨形但失去锐度。若玻璃区域出现明显过曝发白，记录为核能量异常。"));
-        stage.appendChild(PlaygroundKit.hint(
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 abcdefghijklmnopqrstuvwxyz 你好世界 磨玻璃测试"));
+                        + "细密文字应仍可辨形但失去锐度。若玻璃区域出现明显过曝发白，记录为核能量异常。",
+                SceneThemes.mutedForeground(runtime), 12));
+        stage.appendChild(PlaygroundKit.text(runtime,
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 abcdefghijklmnopqrstuvwxyz 你好世界 磨玻璃测试",
+                SceneThemes.mutedForeground(runtime), 12));
         return stage;
     }
 
     private SceneNode buildControls() {
-        SceneNode card = PlaygroundKit.card();
-        card.appendChild(PlaygroundKit.title("参数台"));
-        card.appendChild(PlaygroundKit.hint(
-                "材质档非「旧语义」时质感由 shader 合成（vibrancy / tint / 亮边 / 噪点），此时饱和度滑杆是 vibrancy 乘子：100%=配方原值，>100 更艳，<100 更哑"));
-        card.appendChild(PlaygroundKit.hint(
-                "末档 LiquidGlass：在 REGULAR 底材上叠加边缘透镜折射 + 厚度 tint + 随动缘光；拖「液态强度」看缘带弯折，移鼠标看高光沿边缘游走"));
+        controlsCard = buildLabCard();
+        SceneNode card = controlsCard;
+        card.appendChild(PlaygroundKit.text(runtime, "参数台", SceneThemes.foreground(runtime), 16));
+        card.appendChild(PlaygroundKit.text(runtime,
+                "材质档非「旧语义」时质感由 shader 合成（vibrancy / tint / 亮边 / 噪点），此时饱和度滑杆是 vibrancy 乘子：100%=配方原值，>100 更艳，<100 更哑",
+                SceneThemes.mutedForeground(runtime), 12));
+        card.appendChild(PlaygroundKit.text(runtime,
+                "末档 LiquidGlass：在 REGULAR 底材上叠加边缘透镜折射 + 厚度 tint + 随动缘光；拖「液态强度」看缘带弯折，移鼠标看高光沿边缘游走",
+                SceneThemes.mutedForeground(runtime), 12));
         card.appendChild(sliderRow(blurTextSignal, blurSignal, "模糊半径 ", "", 0.0D, BLUR_MAX, 1.0D,
                 value -> String.valueOf(Math.round(value))));
         card.appendChild(sliderRow(saturationTextSignal, saturationSignal, "饱和度 ", "%", 0.0D,
@@ -373,8 +475,10 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         SceneNode row = SceneNode.row(10);
         row.setFillParentWidth(true);
         row.setHitTestable(false);
+        // 滑杆标签走 SceneLabel 主题跟随默认路径（不调 color(…) 即 followTheme=true）：
+        // 前景取来源主题正文色，字号保持 13 不回归。旧显式 PlaygroundKit.TEXT 取色已删。
         SceneNode label = runtime.mount(row, SceneLabel.create(runtime,
-                new SceneLabel.Props(labelText, PlaygroundKit.TEXT, 13))).getRoot();
+                SceneLabel.Props.builder(labelText).fontSizePx(13).build())).getRoot();
         if (label != null) {
             label.setPreferredWidth(120);
         }
@@ -400,24 +504,67 @@ public final class GlassLabHost extends AbstractSceneHostWidget {
         probeCard.setPadding(10);
         probeCard.setGap(4);
         probeCard.setPreferredHeight(PROBE_CARD_HEIGHT);
-        probeCard.setBackgroundColor(PlaygroundKit.PANEL_BG);
-        probeCard.setBorderWidth(1);
-        probeCard.setBorderColor(PlaygroundKit.BORDER);
-        probeCard.setCornerRadius(14);
+        // 探针卡底座：来源主题 GROUP 配方唯一写入者（旧 PANEL_BG/边框/圆角静态写入者已删；
+        // clipChildren/padding/gap/高度是布局与实验裁剪行为，保持不动）。
+        bindLabSurface(probeCard, SceneTheme.Role.GROUP);
         probeCard.setClipChildren(true);
-        probeCard.appendChild(PlaygroundKit.strongHint(
-                "探针玻璃带（卡内顶部 56px）：其下文字必须被采样模糊——若清晰穿透说明快照未含本帧内容"));
-        probeCard.appendChild(PlaygroundKit.hint(
-                "The quick brown fox jumps over the lazy dog 0123456789 混排文本探针"));
+        probeCard.appendChild(PlaygroundKit.text(runtime,
+                "探针玻璃带（卡内顶部 56px）：其下文字必须被采样模糊——若清晰穿透说明快照未含本帧内容",
+                SceneThemes.foreground(runtime), 12));
+        probeCard.appendChild(PlaygroundKit.text(runtime,
+                "The quick brown fox jumps over the lazy dog 0123456789 混排文本探针",
+                SceneThemes.mutedForeground(runtime), 12));
         return probeCard;
     }
 
     private SceneNode buildDiagnostics() {
-        SceneNode card = PlaygroundKit.card();
-        SceneNode pathText = PlaygroundKit.strongHint("");
+        diagnosticsCard = buildLabCard();
+        SceneNode card = diagnosticsCard;
+        SceneNode pathText = PlaygroundKit.text(runtime, "", SceneThemes.foreground(runtime), 12);
         card.appendChild(pathText);
         runtime.bindText(pathText, pathSignal);
         return card;
+    }
+
+    /**
+     * 自建等效接缝（非复制 PlaygroundKit）：创建参数/诊断卡底座布局容器，表面配方由
+     * {@link #bindLabSurface} 交给 {@link SceneSurfaceBinder} 取来源主题 GROUP 角色。
+     *
+     * <p>{@code PlaygroundKit.card()} 的主题路径依赖其包级私有 {@code RUNTIME_KEY} Owner 接缝
+     * （{@code installRuntime} 同为 playground 包级），本 glass 宿主无法登记 runtime，故
+     * {@code PlaygroundKit.card()} 在此只会走「无宿主上下文」静态回退。为避免复制 PlaygroundKit
+     * 源码（双真相源，禁止），这里只复用 theme 包公开 API 装配一张跟随主题的卡片。</p>
+     *
+     * @return 卡片根节点（COLUMN）
+     */
+    private SceneNode buildLabCard() {
+        SceneNode card = SceneNode.column();
+        card.setFillParentWidth(true);
+        card.setMaxWidth(CONTENT_MAX_WIDTH);
+        card.setPadding(SceneChromeTokens.PAD_LG);
+        card.setGap(SceneChromeTokens.GAP_MD);
+        // 卡片非交互单元（交互在子控件上），退出叶命中目标资格，避免整卡随指针变色。
+        card.setHitTestable(false);
+        bindLabSurface(card, SceneTheme.Role.GROUP);
+        return card;
+    }
+
+    /**
+     * 绑定实验室表面：配方从来源主题解析（构建期在 rootOwner 作用域内，取宿主 runtime 默认主题），
+     * background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 唯一写入者是
+     * {@link SceneSurfaceBinder}。
+     *
+     * @param node 表面节点
+     * @param role 材质角色
+     */
+    private void bindLabSurface(SceneNode node, SceneTheme.Role role) {
+        SceneInteractionState interaction = runtime.interactionState(node);
+        // 时序契约：Router 的 writeHovered/writePressed/writeFocused 对未创建的 signal 短路，
+        // 构建期先声明关心（这些容器非命中目标，实际写入恒 FALSE，配方停在 idle 档）。
+        interaction.hovered();
+        interaction.pressed();
+        interaction.focused();
+        SceneSurfaceBinder.bind(runtime, node, SceneThemes.surface(runtime, role), SHELL_ENABLED, interaction);
     }
 
     /** 按序号取材质档；越界、0 与液态档（以 REGULAR 为底，材质位表达在 describeMaterial）返回其底档或 null。 */
