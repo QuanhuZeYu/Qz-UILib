@@ -30,6 +30,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * MemberGrid —— 已选择成员的多列网格（模块化：替代面板内联的单列成员行）。
@@ -41,6 +43,19 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <h3>受控语义</h3>
  * <p>成员列表、问题统计、编辑/删除回调全部受控；本模块只读上抛，不持有业务状态。</p>
+ *
+ * <h3>外观归属（液态玻璃迁移，G13 网格族口径）</h3>
+ * <p>网格底座即 {@link SceneScrollContainer} 工厂的 viewport，background/border/borderWidth/
+ * cornerRadius/backdrop/surfaceElevation 六项已由容器按主题 {@link SceneTheme.Role#GROUP} 配方
+ * 独占（契约 §4.1 网格族「容器 GROUP」），本模块<b>不再</b>对底座二次绑定、也不给单元格装滤镜。
+ * 单元格自身零表面写入（无底色、无边框、无圆角，保持 hitTestable=false 让点击落到卡内按钮）；
+ * 成员卡片上没有选中/hover 交互态，故也没有轻量状态覆盖需要绑定的属性。单元格文字取主题语义
+ * 前景：主文本 {@code foreground}、副文本 {@code mutedForeground}、徽章文字 duplicate 取
+ * {@code warningText}、其余取 {@code foreground}（与 SceneToast / SceneObjectField 同一口径）。
+ * 无效徽章底（{@code DANGER_BG_SUBTLE}）与图标占位底色属于状态徽标 / 物品图像渲染协议
+ *（契约 §7.3「状态徽标、内容图片不迁移」与 §4.1「物品图像不改色」），保持静态、不随主题重染。
+ * 卡内编辑/删除按钮复用已主题化的 {@link SceneButton}，本模块不重复绑定。主题切换只重派生、
+ * 不重建节点，虚拟化式的 keyed 行/单元复用行为不变。</p>
  */
 public final class MemberGrid {
 
@@ -121,6 +136,8 @@ public final class MemberGrid {
         Objects.requireNonNull(props, "props");
 
         // 标准滚动结构 + 可见滚动条：SceneScrollContainer 工厂（默认视觉）。
+        // 缺省显式实色参时，工厂已把 viewport 按主题 GROUP 配方绑定为网格底座（唯一写入者）；
+        // 本模块不再对底座重复绑定，也不给每个单元格装滤镜（契约 §4.1 网格族口径）。
         SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0);
         SceneNode viewport = sc.viewport();
         Signal<Integer> scroll = sc.scrollSignal();
@@ -229,8 +246,11 @@ public final class MemberGrid {
         cell.setClipChildren(true);
         cell.setPadding(CELL_PADDING);
         cell.setGap(2);
-        cell.setCornerRadius(SceneChromeTokens.RADIUS_SM);
+        // 单元格零表面写入：不装滤镜、不写底色/边框/圆角（网格底座六项归容器 GROUP 配方独占）。
         cell.setHitTestable(false);
+        // 构造期捕获来源主题信号（本方法在 forEach 项构建作用域内执行）；派生期只读该信号，
+        // 主题切换只重派生前景，不重建单元节点。
+        ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
 
         // 顶行：图标 + 主文本 + 无效/重复徽章
         SceneNode top = SceneNode.row();
@@ -240,6 +260,8 @@ public final class MemberGrid {
 
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(ICON_SIZE).setPreferredHeight(ICON_SIZE).setHitTestable(false);
+        // 生效图标：不可渲染项回退占位样式。图像渲染协议不改色（契约 §4.1「物品图像不改色」
+        // + §7.3「内容图片不迁移」）：占位底色与透明底均为静态值，不随主题重染。
         ReadableSignal<SceneImageSource> effectiveImage = Computed.create(() -> {
             SearchPickerData.CurrentMember member = currentMember.get();
             if (member.candidate() == null
@@ -257,6 +279,8 @@ public final class MemberGrid {
         SceneNode primary = text("");
         primary.setFlexGrow(1);
         primary.setClipChildren(true);
+        // 主文本取主题正文前景（主题切换只重派生，不重建节点）。
+        rt.bind(SceneThemes.foreground(rt), primary::setTextColor);
         rt.bindText(primary, Computed.create(() -> props.presentation().currentMemberPrimary(
                 currentMember.get())));
         top.appendChild(primary);
@@ -272,19 +296,25 @@ public final class MemberGrid {
         rt.bindText(badge, Computed.create(() -> Boolean.TRUE.equals(malformed.get())
                 ? props.presentation().invalidMemberBadge()
                 : Boolean.TRUE.equals(duplicate.get()) ? props.presentation().duplicateMemberBadge() : ""));
+        // 无效徽章底：状态徽标的静态语义底（契约 §7.3「状态徽标」不迁移，主题无 danger-subtle 字段，
+        // 不自建色板）；徽章底与单元格底色分属两个节点，不触碰单元「零表面写入」口径。
         rt.bindComputed(() -> Boolean.TRUE.equals(malformed.get())
                 ? SceneChromeTokens.DANGER_BG_SUBTLE : SceneChromeTokens.TRANSPARENT,
                 badge::setBackgroundColor);
-        rt.bindComputed(() -> Boolean.TRUE.equals(duplicate.get()) ? SceneChromeTokens.WARNING_TEXT
-                : SceneChromeTokens.TEXT_PRIMARY, badge::setTextColor);
+        // 徽章文字取主题语义前景：duplicate 取 warningText，其余取正文（与 SceneToast/SceneObjectField 同口径）。
+        rt.bindComputed(() -> {
+            SceneTheme source = Objects.requireNonNull(theme.get(), "theme value");
+            return Integer.valueOf(Boolean.TRUE.equals(duplicate.get())
+                    ? source.warningText() : source.foreground());
+        }, badge::setTextColor);
         top.appendChild(badge);
         cell.appendChild(top);
 
-        // 副文本：canonical 摘要
+        // 副文本：canonical 摘要，取主题次要前景。
         SceneNode secondary = text("");
         secondary.setFontSize(FONT_SIZE);
-        secondary.setTextColor(SceneChromeTokens.TEXT_SECONDARY);
         secondary.setClipChildren(true);
+        rt.bind(SceneThemes.mutedForeground(rt), secondary::setTextColor);
         rt.bindText(secondary, Computed.create(() -> props.presentation().currentMemberSecondary(
                 currentMember.get())));
         cell.appendChild(secondary);
