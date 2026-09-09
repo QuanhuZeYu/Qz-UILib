@@ -239,7 +239,45 @@ public class OverlayPageTest {
         host.runtime().flush();
     }
 
-    // ==================== ④ 演示动作保持 ====================
+    // ==================== ④ 无滤镜替代档 ====================
+
+    /**
+     * 关闭滤镜档：切到 {@link SceneTheme#withoutBackdrop()} 后演示区不再写 backdrop，tint 取配方
+     * 不透明替代底色（可读），圆角/边框等几何保持；节点身份不变。
+     */
+    @Test
+    public void withoutBackdropThemeDropsRegionFilterAndKeepsOpaqueTint() {
+        Signal<SceneTheme> pageTheme = Signal.create(DARK);
+        SceneNode container = new SceneNode();
+        MountHandle probe = host.runtime().mount(container, () -> {
+            SceneNode box = SceneNode.column();
+            SceneThemes.withTheme(pageTheme, () -> box.appendChild(new OverlayPage().build(host.runtime()).get()));
+            return box;
+        });
+        host.runtime().flush();
+        SceneNode region = rightClickRegion(cardWithTitle(probe.getRoot().__getChildren().get(0), MENU_TITLE));
+        Assert.assertNotNull("默认档应装滤镜", region.getBackdrop());
+
+        pageTheme.set(DARK.withoutBackdrop());
+        host.runtime().flush();
+        host.runtime().__finishMotionForTest();
+
+        SceneSurfaceStyle noFilter = DARK.withoutBackdrop().surface(SceneTheme.Role.GROUP);
+        Assert.assertNull("关闭滤镜档不得再写 backdrop", region.getBackdrop());
+        Assert.assertEquals("关闭滤镜档底色 = 配方不透明替代", noFilter.getIdle().getTint(),
+                region.getBackgroundColor());
+        Assert.assertEquals("关闭滤镜档 tint 必须不透明可读", 0xFF,
+                (region.getBackgroundColor() >>> 24) & 0xFF);
+        Assert.assertEquals("关闭滤镜档边框色 = 配方缘色", noFilter.getIdle().getEdge(), region.getBorderColor());
+        Assert.assertEquals("关闭滤镜档圆角保持配方", noFilter.getCornerRadius(), region.getCornerRadius());
+        Assert.assertSame("关闭滤镜档不重建演示区容器", region,
+                rightClickRegion(cardWithTitle(probe.getRoot().__getChildren().get(0), MENU_TITLE)));
+
+        probe.dispose();
+        host.runtime().flush();
+    }
+
+    // ==================== ⑤ 演示动作保持 ====================
 
     /** 右键打开菜单、ESC 关闭、菜单项回调写日志：本页交互合同不因换肤改变。 */
     @Test
@@ -265,7 +303,7 @@ public class OverlayPageTest {
                 log.getText().startsWith(LOG_PREFIX + "已复制当前时间："));
     }
 
-    // ==================== ⑤ 卸载回收 ====================
+    // ==================== ⑥ 卸载回收 ====================
 
     /** 页面卸载后外观/前景/日志绑定全部回收，effect 数回到挂载前基线。 */
     @Test
