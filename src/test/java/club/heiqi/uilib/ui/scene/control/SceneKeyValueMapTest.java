@@ -512,6 +512,10 @@ public class SceneKeyValueMapTest {
         Assert.assertEquals("初始表头 = 深色次要前景", dark.mutedForeground(), findText(root, "Key").getTextColor());
         Assert.assertEquals("初始错误行 = 深色 errorText 弱提示",
                 tint(dark.errorText(), ERROR_ROW_ALPHA), firstRow.getBackgroundColor());
+        // G19/P-02 收编钉：底色 RGB 通道 = 公共 errorText 入口现值（控件仅遮 alpha）。
+        Assert.assertEquals("错误行底色 RGB = SceneThemes.errorText 公共入口现值",
+                SceneThemes.errorText(runtime).get().intValue() & 0x00FFFFFF,
+                firstRow.getBackgroundColor() & 0x00FFFFFF);
         Assert.assertEquals("未失败行透明", 0, row(1).getBackgroundColor());
         Assert.assertEquals("初始编辑单元 = 深色 INPUT idle tint",
                 dark.surface(SceneTheme.Role.INPUT).getIdle().getTint(), editor.getBackgroundColor());

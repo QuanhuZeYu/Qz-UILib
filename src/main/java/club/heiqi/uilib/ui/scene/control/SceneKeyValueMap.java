@@ -548,9 +548,10 @@ public final class SceneKeyValueMap {
         // 行只做轻量底色覆盖：默认透明露出底座玻璃，校验失败行取主题 errorText 系半透明弱提示；
         // 只写 backgroundColor 一个属性，不装滤镜、不写边框/圆角，不与底座争属性槽。
         // 全部取值发生在 effect 体内（构造期不解引用未求值 Computed），主题切换自动重派生。
-        ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
+        // G19/P-02 收编：语义色经 SceneThemes.errorText 公共入口取，控件侧只保留弱提示 alpha 遮罩。
+        ReadableSignal<Integer> errorText = SceneThemes.errorText(rt);
         rt.bindComputed(() -> validationStateSignal.get().invalidRowIds().contains(Long.valueOf(row.getRowId()))
-                ? errorRowTint(theme.get()) : ROW_BG_TRANSPARENT,
+                ? errorRowTint(errorText.get()) : ROW_BG_TRANSPARENT,
             rowNode::setBackgroundColor);
 
         SceneNode keyMount = new SceneNode();
@@ -644,13 +645,14 @@ public final class SceneKeyValueMap {
     }
 
     /**
-     * 校验失败行的轻量底色：主题 errorText 保留 RGB、替换为弱提示 alpha。
+     * 校验失败行的轻量底色：主题 errorText（经 {@link SceneThemes#errorText} 公共入口取得）
+     * 保留 RGB、替换为弱提示 alpha。
      *
-     * @param theme 来源主题
+     * @param errorTextArgb 来源主题 errorText 语义色 ARGB
      * @return 错误行底色 ARGB
      */
-    private static int errorRowTint(SceneTheme theme) {
-        return (ROW_ERROR_ALPHA << 24) | (theme.errorText() & 0x00FFFFFF);
+    private static int errorRowTint(int errorTextArgb) {
+        return (ROW_ERROR_ALPHA << 24) | (errorTextArgb & 0x00FFFFFF);
     }
 
     /**

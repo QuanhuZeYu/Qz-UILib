@@ -723,6 +723,55 @@ public class SceneObjectFieldTest {
     }
 
     /**
+     * G19/P-02 收编钉：深度/未实现警告提示经公共 {@code SceneThemes.warningText} 入口取色，
+     * 且消费 runtime 默认主题（{@code install} 路径——与「兜底 runtime」同一链路，非 withTheme
+     * 局部作用域）。初值钉公共入口现值；换 runtime 默认主题后提示色重派生、节点不重建
+     * （P-04：真实装配 + 两档 assertNotEquals 前提）。
+     */
+    @Test
+    public void warningHintConsumesPublicEntryUnderRuntimeTheme() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：两档 warningText 必须不同",
+                dark.warningText(), light.warningText());
+        Signal<SceneTheme> installed = Signal.create(dark);
+        SceneThemes.install(runtime, installed);
+        valueSignal = Signal.create(wideValue());
+        expandedPaths = Signal.create(setOf("database"));
+        lastChangedValue = null;
+        changeCount.set(0);
+        SceneObjectField.Props props = SceneObjectField.Props.builder(valueSignal)
+                .label("对象配置")
+                .expandedPaths(expandedPaths)
+                .maxDepth(5)
+                .onValueChanged(next -> {
+                    changeCount.incrementAndGet();
+                    lastChangedValue = next;
+                })
+                .build();
+        final SceneNode[] holder = new SceneNode[1];
+        handle = runtime.mount(sceneRoot, () -> {
+            holder[0] = SceneObjectField.create(runtime, props).get();
+            return holder[0];
+        });
+        root = handle.getRoot();
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("警告提示 = 公共 warningText 入口现值（runtime 默认档）",
+                SceneThemes.warningText(runtime).get().intValue(),
+                findText(root, "列表编辑暂未实现").getTextColor());
+
+        installed.set(light);
+        runtime.flush();
+
+        Assert.assertEquals("换 runtime 默认主题后提示跟随浅色档 warningText",
+                light.warningText(),
+                findText(root, "列表编辑暂未实现").getTextColor());
+        Assert.assertSame("主题切换不重建控件根节点", root, handle.getRoot());
+    }
+
+    /**
      * 在 {@code withTheme} 局部主题作用域下挂载控件（主题切换/卸载用例入口）。
      *
      * @param pageTheme 页面主题信号

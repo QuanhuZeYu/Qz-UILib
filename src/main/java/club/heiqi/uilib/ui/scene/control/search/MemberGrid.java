@@ -248,9 +248,8 @@ public final class MemberGrid {
         cell.setGap(2);
         // 单元格零表面写入：不装滤镜、不写底色/边框/圆角（网格底座六项归容器 GROUP 配方独占）。
         cell.setHitTestable(false);
-        // 构造期捕获来源主题信号（本方法在 forEach 项构建作用域内执行）；派生期只读该信号，
-        // 主题切换只重派生前景，不重建单元节点。
-        ReadableSignal<SceneTheme> theme = SceneThemes.resolve(rt);
+        // G19/P-02 收编：语义色一律经 SceneThemes 公共派生入口取（构造期在 forEach 项
+        // 作用域内捕获来源主题；派生期主题切换只重派生前景，不重建单元节点）。
 
         // 顶行：图标 + 主文本 + 无效/重复徽章
         SceneNode top = SceneNode.row();
@@ -301,12 +300,12 @@ public final class MemberGrid {
         rt.bindComputed(() -> Boolean.TRUE.equals(malformed.get())
                 ? SceneChromeTokens.DANGER_BG_SUBTLE : SceneChromeTokens.TRANSPARENT,
                 badge::setBackgroundColor);
-        // 徽章文字取主题语义前景：duplicate 取 warningText，其余取正文（与 SceneToast/SceneObjectField 同口径）。
-        rt.bindComputed(() -> {
-            SceneTheme source = Objects.requireNonNull(theme.get(), "theme value");
-            return Integer.valueOf(Boolean.TRUE.equals(duplicate.get())
-                    ? source.warningText() : source.foreground());
-        }, badge::setTextColor);
+        // 徽章文字取主题语义前景：duplicate 取 warningText，其余取正文（与 SceneToast/
+        // SceneObjectField 同口径）。G19/P-02 收编：两分支均经 SceneThemes 公共派生入口取色。
+        ReadableSignal<Integer> badgeWarning = SceneThemes.warningText(rt);
+        ReadableSignal<Integer> badgeNormal = SceneThemes.foreground(rt);
+        rt.bindComputed(() -> Integer.valueOf(Boolean.TRUE.equals(duplicate.get())
+                ? badgeWarning.get() : badgeNormal.get()), badge::setTextColor);
         top.appendChild(badge);
         cell.appendChild(top);
 

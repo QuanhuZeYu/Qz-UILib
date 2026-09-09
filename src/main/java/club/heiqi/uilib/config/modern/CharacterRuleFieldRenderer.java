@@ -29,7 +29,6 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
-import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
@@ -73,9 +72,9 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *       下沉的 {@code FormFieldShell} theme-aware 默认路径消费来源主题（GROUP 配方），本类不复制、
  *       不再向装配喂 {@code ConfigTheme.asFormTheme()} 显式旧主题快照（Support 衔接要点 4）。</li>
  *   <li>行内 parse 错误文本是动态复用行的轻量内容（契约 §4.1 G13 裁决口径）：零行滤镜、不装角色
- *       表面；其语义色由 {@link SceneThemes#resolve} 来源主题的 {@code errorText} 经
- *       {@code rt.bindComputed} 独占重派生（深色档 {@code 0xFFFFB4AB} 与旧
- *       {@code FormTheme.defaultDark().errorColor()} 同源同值，默认外观不变，换主题自动重派生）。</li>
+ *       表面；其语义色由 {@link SceneThemes#errorText} 公共派生入口独占重派生（G19/P-02 收编，
+ *       深色档 {@code 0xFFFFB4AB} 与旧 {@code FormTheme.defaultDark().errorColor()} 同源同值，
+ *       默认外观不变，换主题自动重派生）。</li>
  *   <li>error 字号与列表视口高度是纯 int 排版/布局常量（契约 §4.2「主题不接管布局」、Support
  *       要点 3 安全口径），换源为 {@code FormTheme.defaultDark()} 的同源分量值——与
  *       {@code FormThemes} 默认路径映射同源，非主题快照消费。</li>
@@ -220,8 +219,9 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
                                       String path,
                                       DraftSignalAdapter adapter,
                                       CharacterRuleItem row) {
-        // 构造期捕获来源主题（forEach 的项 builder 内 Owner.current() 是来源作用域的子作用域）。
-        ReadableSignal<SceneTheme> sourceTheme = SceneThemes.resolve(rt);
+        // 构造期捕获来源主题 errorText 公共派生（forEach 项 builder 内 Owner.current() 是
+        // 来源作用域的子作用域；G19/P-02 收编：经 SceneThemes.errorText 入口，不再 resolve+取值）。
+        ReadableSignal<Integer> errorTextColor = SceneThemes.errorText(rt);
         Signal<List<CharacterRuleItem>> localItems = bridge.localItems();
         SceneNode rowRoot = SceneNode.column();
         rowRoot.setGap(ERROR_GAP);
@@ -306,9 +306,10 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
             errNode.setHitTestable(false);
             // G15/CharRule 销账（原 theme.errorColor() 显式快照静态写，StructuredList W5 同法）：
             // 契约 §4 textColor 唯一写入者 = 主题前景绑定，error 语义色由构造期捕获的来源主题
-            // errorText 经 rt.bindComputed 独占重派生（深色档 0xFFFFB4AB 与旧 defaultDark 快照值
-            // 同源同值，默认外观不变；换主题自动重派生，不重建节点）。轻量行零滤镜口径不变。
-            rt.bindComputed(() -> Integer.valueOf(sourceTheme.get().errorText()), errNode::setTextColor);
+            // errorText 独占重派生（深色档 0xFFFFB4AB 与旧 defaultDark 快照值同源同值，默认外观
+            // 不变；换主题自动重派生，不重建节点）。轻量行零滤镜口径不变。
+            // G19/P-02 收编：取色改走 SceneThemes.errorText 公共派生入口（同值）。
+            rt.bind(errorTextColor, errNode::setTextColor);
             // 字号是纯 int 排版常量（契约 §4.2 主题不接管排版；FormThemes 映射同源值），换源注依据。
             errNode.setFontSize(ERROR_FONT_SIZE);
             rt.bind(errMsg, errNode::setText);

@@ -114,6 +114,9 @@ public class StructuredListFieldRendererThemeTest {
                 dark.foreground(), memberForm[0].getTextColor());
         Assert.assertEquals("member error 语义色 = 来源主题 errorText（深色档与旧 ERROR_COLOR 同值）",
                 dark.errorText(), memberForm[1].getTextColor());
+        // G19/P-02 收编钉：error 前景 = 公共 SceneThemes.errorText 入口现值（同 runtime 同主题逐位相等）。
+        Assert.assertEquals("member error 语义色 = SceneThemes.errorText 公共入口现值",
+                SceneThemes.errorText(runtime).get(), Integer.valueOf(memberForm[1].getTextColor()));
 
         SceneNode addButton = addButton(card);
         Assert.assertEquals("操作按钮表面归 SceneButton（G03）自持 = BUTTON_STANDARD idle tint，本类零复制",

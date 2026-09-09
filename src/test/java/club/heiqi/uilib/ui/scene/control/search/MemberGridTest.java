@@ -481,6 +481,9 @@ public class MemberGridTest {
                 0x22EF4444, badge(invalid).getBackgroundColor());
         Assert.assertEquals("正常单元徽章无底", BG_TRANSPARENT, badge(normal).getBackgroundColor());
         Assert.assertEquals("重复徽章文字取 warningText", dark.warningText(), badge(dupA).getTextColor());
+        // G19/P-02 收编钉：duplicate 分支取色经 SceneThemes.warningText 公共入口（逐位等值）。
+        Assert.assertEquals("重复徽章文字 = 公共 warningText 入口现值",
+                SceneThemes.warningText(rt).get().intValue(), badge(dupA).getTextColor());
         Assert.assertEquals("重复徽章文案", presentation.duplicateMemberBadge(), badge(dupA).getText());
         Assert.assertEquals("重复徽章不借无效底", BG_TRANSPARENT, badge(dupA).getBackgroundColor());
         Assert.assertEquals("第二个重复成员同样着色", dark.warningText(), badge(dupB).getTextColor());
@@ -744,6 +747,8 @@ public class MemberGridTest {
                 viewport.getBackdrop().getEffect().getMaterial());
         Assert.assertEquals("主文本随主题更新", light.foreground(), primary(cell0).getTextColor());
         Assert.assertEquals("副文本随主题更新", light.mutedForeground(), secondary(cell0).getTextColor());
+        Assert.assertNotEquals("测试前提：两档 foreground 不同（徽章正文档跟随可证）",
+                dark.foreground(), light.foreground());
         Assert.assertEquals("无效徽章文字随主题回正文档", light.foreground(), badge(cell(1, 0)).getTextColor());
         Assert.assertEquals("无效徽章底不随主题（状态徽标静态语义底）", 0x22EF4444,
                 badge(cell(1, 0)).getBackgroundColor());

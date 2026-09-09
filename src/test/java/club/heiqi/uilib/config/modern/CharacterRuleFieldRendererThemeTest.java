@@ -36,7 +36,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p>本实例的装配边界：字段壳经 {@code FieldShellBinder}（G15/Support）→ {@code FormFieldShell}
  * theme-aware 默认路径消费来源主题（GROUP 配方，surface 归表面绑定器）；行内 parse 错误文本是
  * 动态复用行的轻量内容（契约 §4.1 G13 裁决口径：零行滤镜、不装角色表面），语义色由
- * {@code SceneThemes.resolve} 来源主题 {@code errorText} 经 {@code rt.bindComputed} 独占重派生；
+ * {@code SceneThemes.errorText} 公共派生入口独占重派生（G19/P-02 收编，构造期捕获来源信号）；
  * error 字号与视口高度是纯 int 排版/布局常量（契约 §4.2、Support 要点 3）；「添加/删除」保持
  * 既有手工最小文本按钮（主代理裁决：无底色/无边框/零滤镜结构不重构为 SceneButton）。本测试沿
  * <b>真实渲染器路径</b>（{@code renderer.render → FieldShellBinder.build → FormFieldShell.build
@@ -119,6 +119,9 @@ public class CharacterRuleFieldRendererThemeTest {
         // 行错误色 = 来源主题 errorText（深色档与旧快照值同源同值 → 默认外观不变）
         SceneNode err = errorNodeOf(rowAt(viewportOf(card), 1));
         Assert.assertEquals("行错误色 = 来源主题 errorText", dark.errorText(), err.getTextColor());
+        // G19/P-02 收编钉：控件消费的是公共入口现值（同 runtime 同主题逐位相等）。
+        Assert.assertEquals("行错误色 = SceneThemes.errorText 公共入口现值",
+                SceneThemes.errorText(runtime).get(), Integer.valueOf(err.getTextColor()));
         Assert.assertEquals("error 字号是排版常量，保留 13（契约 §4.2）",
                 EXPECTED_ERROR_FONT_SIZE, err.getFontSize());
         Assert.assertFalse("error 节点不可命中（R6 保持）", err.isHitTestable());
@@ -312,8 +315,9 @@ public class CharacterRuleFieldRendererThemeTest {
 
     /**
      * G15/CharRule 销账守卫：本渲染器不得再出现显式旧主题快照、{@code ConfigTheme.ERROR_COLOR}
-     * 直引、旧 chrome/静态色接缝或第二套表面绑定；行错误色只经 {@code SceneThemes.resolve}
-     * 派生绑定写入（唯一写入者），装配必经 {@code FieldShellBinder}（G15/收口后无 theme
+     * 直引、旧 chrome/静态色接缝或第二套表面绑定；行错误色只经 {@code SceneThemes.errorText}
+     * 公共派生入口绑定写入（唯一写入者，G19/P-02 收编，语义较旧 {@code SceneThemes.resolve}
+     * 口径更强），装配必经 {@code FieldShellBinder}（G15/收口后无 theme
      * 入参），排版/布局常量必经 {@code FormTheme.defaultDark()} 同源取值（恰 2 处，
      * 防止恢复整主题对象快照）。已主题化控件只挂载不复制样式；手工最小按钮零表面。
      *
@@ -343,8 +347,8 @@ public class CharacterRuleFieldRendererThemeTest {
             Assert.assertFalse("守卫：CharacterRuleFieldRenderer 代码不得出现 " + token, code.contains(token));
         }
         String[] required = {
-                "SceneThemes.resolve(",                        // 行错误色必经来源主题解析
-                "rt.bindComputed(",                            // 语义色只经派生绑定写入
+                "SceneThemes.errorText(",                      // 行错误色必经公共语义派生入口（G19/P-02 收编）
+                "rt.bind(errorTextColor,",                     // 语义色只经该派生信号绑定写入（唯一写入者）
                 "FieldShellBinder.build(",                     // 字段壳装配必经 Support helper
                 "SceneCheckbox.create(",                       // 已主题化控件只挂载（G05）
                 "SceneTextInput.create(",                      // G04
