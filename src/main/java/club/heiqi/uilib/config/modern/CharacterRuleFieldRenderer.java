@@ -13,7 +13,6 @@ import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.field.DraftListBridge;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.FieldShellBinder;
-import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.font.config.FontCharacterRule;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -30,6 +29,8 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 字符字体规则（characterFontRules）专用字段渲染器：把 YAML 仍以 simpleList 存储的
@@ -65,6 +66,26 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
  *   <li>I5：{@code forEach} 用带 keyFn 重载（{@code CharacterRuleItem::getId}）。</li>
  *   <li>字体名输入用成品 {@link SceneAutocomplete}（内置 chrome），不再内联 chrome 样板。</li>
  * </ul>
+ *
+ * <h3>外观归属（G15/CharRule 迁移后，契约 §4/§4.1/§4.2）</h3>
+ * <ul>
+ *   <li>字段卡片表面与标题/helper/error/dirty 语义色由 {@link FieldShellBinder}（G15/Support）
+ *       下沉的 {@code FormFieldShell} theme-aware 默认路径消费来源主题（GROUP 配方），本类不复制、
+ *       不再向装配喂 {@code ConfigTheme.asFormTheme()} 显式旧主题快照（Support 衔接要点 4）。</li>
+ *   <li>行内 parse 错误文本是动态复用行的轻量内容（契约 §4.1 G13 裁决口径）：零行滤镜、不装角色
+ *       表面；其语义色由 {@link SceneThemes#resolve} 来源主题的 {@code errorText} 经
+ *       {@code rt.bindComputed} 独占重派生（深色档 {@code 0xFFFFB4AB} 与旧
+ *       {@code FormTheme.defaultDark().errorColor()} 同源同值，默认外观不变，换主题自动重派生）。</li>
+ *   <li>error 字号与列表视口高度是纯 int 排版/布局常量（契约 §4.2「主题不接管布局」、Support
+ *       要点 3 安全口径），换源为 {@code FormTheme.defaultDark()} 的同源分量值——与
+ *       {@code FormThemes} 默认路径映射同源，非主题快照消费。</li>
+ *   <li>行内「添加/删除」保持既有手工最小文本按钮结构（无底色、无边框、零滤镜；主代理裁决：
+ *       改 {@code SceneButton} 会改行几何与命中合同，越出最小改动），见
+ *       {@link #createTextButton} 行内注依据；字段壳与内部已迁移控件（Checkbox/TextInput/
+ *       Autocomplete/Scrollbar）只挂载零加工。</li>
+ *   <li>keyed 行复用合同（{@code CharacterRuleItem#getId}）、草稿事务（{@link DraftListBridge}）、
+ *       无效规则写回与全部合规守护语义零改动。</li>
+ * </ul>
  */
 public final class CharacterRuleFieldRenderer implements FieldRenderer {
 
@@ -84,6 +105,20 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
     private static final int DELETE_BUTTON_WIDTH = 28;
 
     /**
+     * error text 字号（纯 int 排版常量，契约 §4.2 主题不接管字号/布局）：换源取
+     * {@code FormTheme.defaultDark().fontError()} 同源值（{@code FormThemes} 默认路径映射
+     * 同源，Support 要点 3 安全口径），消除旧 {@code asFormTheme()} 快照消费。
+     */
+    private static final int ERROR_FONT_SIZE = FormTheme.defaultDark().fontError();
+
+    /**
+     * 列表视口高度（{@code FieldShellBinder.build} 的 controlHeight 纯 int 布局入参，契约 §4.2、
+     * Support 要点 3）：换源取 {@code FormTheme.defaultDark().listHeight()} 同源值
+     * （与 {@code FormThemes} 映射的 LIST_HEIGHT 同源，220，约 6~7 行可见）。
+     */
+    private static final int LIST_VIEWPORT_HEIGHT = FormTheme.defaultDark().listHeight();
+
+    /**
      * 创建渲染器实例。无实例字段（R1），由 {@code FieldRendererRegistry.registerPath} 覆盖注入。
      */
     public CharacterRuleFieldRenderer() {
@@ -93,7 +128,6 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
     public SceneNode render(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter) {
         final String path = spec.path();
         final ReadableSignal<Object> draftSig = adapter.draftSignal(path);
-        final FormTheme theme = ConfigTheme.asFormTheme();
 
         List<String> initial = toDraftList(draftSig.get());
         // D2：DraftListBridge 统一 localItems + reset 守卫（normalize 策略 + untrack 投影）
@@ -104,26 +138,34 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
                 CharacterRuleFieldRenderer::projectValues,
                 CharacterRuleFieldRenderer::normalize);
 
+        // G15/CharRule 销账（Support 衔接要点 4，Boolean 先例）：原构造期 ConfigTheme.asFormTheme()
+        // 显式旧主题快照（缓存的 FormTheme.defaultDark() 常量）已拆除——字段壳表面与标题/helper/
+        // error/dirty 语义色由 FieldShellBinder（G15/Support）→ FormFieldShell theme-aware 默认路径
+        // 跟随来源主题重派生，本装配点零 .get() 快照。theme 形参为 binder 的源码兼容占位
+        // （默认路径不消费，传 null 显式声明零消费），待全部 Renderer 实例迁移完成后由主代理统一
+        // 收口删除该形参；controlHeight 是纯 int 布局入参（Support 要点 3 安全口径），换源为
+        // LIST_VIEWPORT_HEIGHT 同源常量（契约 §4.2 主题不接管布局）。
         return FieldShellBinder.build(rt, spec, adapter,
-                () -> buildControl(rt, bridge, path, adapter, theme),
-                theme, theme.listHeight());
+                () -> buildControl(rt, bridge, path, adapter),
+                null, LIST_VIEWPORT_HEIGHT);
     }
 
     /**
      * 构建控件根：列表视口（keyed 行树 + 滚动条）+ 添加按钮。
      *
+     * <p>视口与滚动条几何是纯 int 布局参数；{@code SceneScrollbar}（G07）已主题化，只挂载
+     * 零加工（契约 §4.1「Scrollbar 无表面、不采样背景」）。</p>
+     *
      * @param rt      场景运行时
      * @param bridge  草稿列表桥
      * @param path    字段路径
      * @param adapter 草稿 signal 适配器
-     * @param theme   主题 token
      * @return 控件根节点
      */
     private static SceneNode buildControl(SceneRuntime rt,
                                           DraftListBridge<CharacterRuleItem> bridge,
                                           String path,
-                                          DraftSignalAdapter adapter,
-                                          FormTheme theme) {
+                                          DraftSignalAdapter adapter) {
         Signal<List<CharacterRuleItem>> localItems = bridge.localItems();
         SceneNode root = SceneNode.column();
         root.setGap(ROOT_GAP);
@@ -148,7 +190,7 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
         Computed<List<CharacterRuleItem>> itemsComputed =
                 Computed.create(() -> safeItems(localItems.get()));
         rt.forEach(listViewport, itemsComputed, CharacterRuleItem::getId,
-                row -> buildRow(rt, bridge, path, adapter, row, theme));
+                row -> buildRow(rt, bridge, path, adapter, row));
 
         // 添加按钮：new CharacterRuleItem(true, "", "") 分配新 id
         SceneNode addButton = createTextButton(rt, "+ 添加规则", () -> {
@@ -164,20 +206,23 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
     /**
      * 构建单行编辑节点：行根（列）= 输入行（行）+ 行下方错误文本（条件渲染）。
      *
+     * <p>Checkbox/TextInput/Autocomplete（G05/G04）已主题化，只组 Props 挂载零加工；行节点是
+     * 动态复用行，按契约 §4.1（G13 裁决）轻量口径零行滤镜、不装角色表面。</p>
+     *
      * @param rt      场景运行时
      * @param bridge  草稿列表桥
      * @param path    字段路径
      * @param adapter 草稿 signal 适配器
      * @param row     行数据（id 在 keyed diff 复用期间恒定）
-     * @param theme   主题 token
      * @return 行根节点
      */
     private static SceneNode buildRow(SceneRuntime rt,
                                       DraftListBridge<CharacterRuleItem> bridge,
                                       String path,
                                       DraftSignalAdapter adapter,
-                                      CharacterRuleItem row,
-                                      FormTheme theme) {
+                                      CharacterRuleItem row) {
+        // 构造期捕获来源主题（forEach 的项 builder 内 Owner.current() 是来源作用域的子作用域）。
+        ReadableSignal<SceneTheme> sourceTheme = SceneThemes.resolve(rt);
         Signal<List<CharacterRuleItem>> localItems = bridge.localItems();
         SceneNode rowRoot = SceneNode.column();
         rowRoot.setGap(ERROR_GAP);
@@ -260,8 +305,13 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
         rt.show(rowRoot, errNonEmpty, () -> {
             SceneNode errNode = new SceneNode();
             errNode.setHitTestable(false);
-            errNode.setTextColor(theme.errorColor());
-            errNode.setFontSize(theme.fontError());
+            // G15/CharRule 销账（原 theme.errorColor() 显式快照静态写，StructuredList W5 同法）：
+            // 契约 §4 textColor 唯一写入者 = 主题前景绑定，error 语义色由构造期捕获的来源主题
+            // errorText 经 rt.bindComputed 独占重派生（深色档 0xFFFFB4AB 与旧 defaultDark 快照值
+            // 同源同值，默认外观不变；换主题自动重派生，不重建节点）。轻量行零滤镜口径不变。
+            rt.bindComputed(() -> Integer.valueOf(sourceTheme.get().errorText()), errNode::setTextColor);
+            // 字号是纯 int 排版常量（契约 §4.2 主题不接管排版；FormThemes 映射同源值），换源注依据。
+            errNode.setFontSize(ERROR_FONT_SIZE);
             rt.bind(errMsg, errNode::setText);
             return errNode;
         });
@@ -300,6 +350,14 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
     /**
      * 极简文本按钮：SceneNode.row + label + CLICK handler。
      *
+     * <p><b>G15/CharRule 销账（主代理裁决：保持结构，不重构为 SceneButton）</b>：本按钮是
+     * 「文字链」形态的既有手工最小节点——无底色、无边框、零滤镜、不采样背景；改 {@code SceneButton}
+     * 会给行与控件根加出表面/浮雕/内衬，改变行几何与命中合同，越出「最小改动」红线（且 GROUP 配方
+     * 圆角在无底无边节点上产不出可见命令，只会引入双写入者风险）。padding/cornerRadius/cursor
+     * 是几何与命中反馈，属性归属「控件自身」（契约 §4：padding/尺寸/布局属性主题不得改）；
+     * 守卫用例钉「button 节点零底色/零边框/零滤镜 + 几何保留」。label 前景与行内其它裸文本
+     * 同源（节点默认白），迁移前后一致，不新增竞争写入者。</p>
+     *
      * @param rt      场景运行时
      * @param label   按钮文本
      * @param onClick 点击回调
@@ -308,6 +366,8 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
     private static SceneNode createTextButton(SceneRuntime rt, String label, Runnable onClick) {
         SceneNode button = SceneNode.row();
         button.setGap(ROW_GAP);
+        // 以下 padding/cornerRadius/cursor 均为纯几何与命中反馈（契约 §4 控件自身归属），非外观
+        // 表面写入：节点保持零底色/零边框/零 backdrop（G15/CharRule 裁决销账，见方法 javadoc）。
         button.setPadding(6);
         button.setCornerRadius(4);
         button.setCursor(club.heiqi.uilib.ui.scene.input.SceneCursor.POINTER);
