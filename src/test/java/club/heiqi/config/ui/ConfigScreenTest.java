@@ -2,9 +2,16 @@ package club.heiqi.config.ui;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -24,7 +31,10 @@ import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.form.FormTheme;
+import club.heiqi.uilib.ui.scene.form.FormThemes;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
@@ -40,6 +50,10 @@ import club.heiqi.uilib.ui.scene.overlay.OverlayHandle;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * {@link ConfigScreen} 单元测试。
@@ -854,24 +868,28 @@ public class ConfigScreenTest {
     }
 
     /**
-     * actionBar 应在 scrollContainer 外侧并固定为 root 最后一行，不进入滚动容器。
+     * actionBar 应在 scrollContainer 外侧并固定为页壳根最后一行，不进入滚动容器。
+     *
+     * <p>G15/Shell：页壳分层——{@code __getRoot()} 是专用世界遮罩，标题/状态/body/反馈/操作行
+     * 的 COLUMN 结构与迁移前逐条同断言，只是挂在 {@code __getPageRoot()}（PANEL 玻璃页壳）上。
+     * 断言强度不降：首子 titleBar、末子 actionBar、scrollContainer 直接子、actionBar 不入滚动容器。</p>
      */
     @Test
     public void actionBarOutsideScrollContainerAtBottomFixed() throws Exception {
-        SceneNode root = screen.__getRoot();
-        Assert.assertSame("root 第 1 个子是 titleBar",
-                screen.__getTitleBar(), root.__getChildren().get(0));
-        Assert.assertSame("root 最后一个子是底部 actionBar",
-                screen.__getActionBar(), root.__getChildren().get(root.__getChildren().size() - 1));
-        // scrollContainer 是 root 直接子（不限定位置：saveFeedback 的 rt.show anchor 在末位）
+        SceneNode pageRoot = screen.__getPageRoot();
+        Assert.assertSame("页壳第 1 个子是 titleBar",
+                screen.__getTitleBar(), pageRoot.__getChildren().get(0));
+        Assert.assertSame("页壳最后一个子是底部 actionBar",
+                screen.__getActionBar(), pageRoot.__getChildren().get(pageRoot.__getChildren().size() - 1));
+        // scrollContainer 是页壳直接子（不限定位置：saveFeedback 的 rt.show anchor 在末位）
         boolean scrollContainerIsDirectChild = false;
-        for (SceneNode child : root.__getChildren()) {
+        for (SceneNode child : pageRoot.__getChildren()) {
             if (child == screen.__getScrollContainer()) {
                 scrollContainerIsDirectChild = true;
                 break;
             }
         }
-        Assert.assertTrue("scrollContainer 是 root 直接子", scrollContainerIsDirectChild);
+        Assert.assertTrue("scrollContainer 是页壳直接子", scrollContainerIsDirectChild);
         // actionBar 不在 scrollContainer 内
         for (SceneNode child : screen.__getScrollContainer().__getChildren()) {
             Assert.assertNotSame("actionBar 不在 scrollContainer 内", screen.__getActionBar(), child);
@@ -982,10 +1000,10 @@ public class ConfigScreenTest {
         SaveFeedback fb = adapter.saveFeedbackSignal().get();
         Assert.assertNotNull("初始 saveFeedback 非 null", fb);
         Assert.assertTrue("初始 saveFeedback isNone", fb.isNone());
-        // root 子节点：titleBar / actionBar / statusSummary / scrollContainer / [anchor]
+        // 页壳 COLUMN 子节点：titleBar / actionBar / statusSummary / scrollContainer / [anchor]
         // rt.show 的 anchor 常驻（零尺寸），content 不挂载
-        // 无法直接断言 anchor 数量，但可断言 save 反馈不显示：root 中无文本含"已保存"或"保存失败"
-        for (SceneNode child : screen.__getRoot().__getChildren()) {
+        // 无法直接断言 anchor 数量，但可断言 save 反馈不显示：页壳各行无文本含"已保存"或"保存失败"
+        for (SceneNode child : screen.__getPageRoot().__getChildren()) {
             String t = child.getText();
             Assert.assertTrue("NONE 时无 save 反馈文本", t == null || !t.contains("保存"));
         }
@@ -1697,5 +1715,329 @@ public class ConfigScreenTest {
             s.dispose();
             a.dispose();
         }
+    }
+
+    // ==================== G15/Shell 液态玻璃默认路径 ====================
+
+    /** 表面绑定器写入的六项属性逐项等于角色配方（背景/缘色/缘宽/圆角/浮雕/滤镜）。 */
+    private static void assertSurfaceMatchesRoleRecipe(String label, SceneNode node,
+                                                       SceneSurfaceStyle recipe) {
+        Assert.assertEquals(label + " 背景 = 配方 idle 染色",
+                recipe.getIdle().getTint(), node.getBackgroundColor());
+        Assert.assertEquals(label + " 边框色 = 配方 idle 缘色",
+                recipe.getIdle().getEdge(), node.getBorderColor());
+        Assert.assertEquals(label + " 边框宽 = 配方值",
+                recipe.getBorderWidth(), node.getBorderWidth());
+        Assert.assertEquals(label + " 圆角 = 配方值",
+                recipe.getCornerRadius(), node.getCornerRadius());
+        Assert.assertEquals(label + " 浮雕高度 = 配方 idle elevation",
+                recipe.getIdle().getElevation(), node.__getSurfaceElevation(), 0.0001F);
+        Assert.assertNotNull(label + " 装配方滤镜", node.getBackdrop());
+        Assert.assertEquals(label + " 滤镜模糊半径 = 配方值",
+                recipe.getBackdrop().getBlurRadius(), node.getBackdrop().getBlurRadius());
+    }
+
+    /** 收敛外观动画到配方终值（ConfigScreen 启用了 Motion，动画色需 finish 后才等于目标值）。 */
+    private static void settleVisuals(ConfigScreen target) {
+        target.__getRuntime().flush();
+        target.__getRuntime().__finishMotionForTest();
+        target.__getRuntime().flush();
+    }
+
+    /** 递归找第一个文本含指定子串的节点。 */
+    private static SceneNode findNodeContainingText(SceneNode node, String needle) {
+        if (node.getText() != null && node.getText().contains(needle)) {
+            return node;
+        }
+        for (SceneNode child : node.__getChildren()) {
+            SceneNode found = findNodeContainingText(child, needle);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** ① 默认路径：页壳 root/viewport=PANEL、操作条=TOOLBAR，逐项等于各自 Role 配方。 */
+    @Test
+    public void pageShellAndActionBarBindRoleRecipesByDefault() throws Exception {
+        SceneSurfaceStyle panel = SceneThemes.DEFAULT.surface(SceneTheme.Role.PANEL);
+        SceneSurfaceStyle toolbar = SceneThemes.DEFAULT.surface(SceneTheme.Role.TOOLBAR);
+        Assert.assertNotNull("前置：PANEL 配方自带滤镜", panel.getBackdrop());
+        Assert.assertNotNull("前置：TOOLBAR 配方自带滤镜", toolbar.getBackdrop());
+        settleVisuals(screen);
+
+        assertSurfaceMatchesRoleRecipe("玻璃页壳 root", screen.__getPageRoot(), panel);
+        assertSurfaceMatchesRoleRecipe("页壳 viewport", screen.__getViewport(), panel);
+        assertSurfaceMatchesRoleRecipe("操作条（FormActionBar 默认重载）", screen.__getActionBar(), toolbar);
+
+        SceneNode titleNode = screen.__getTitleBar().__getChildren().get(0);
+        SceneNode subtitleNode = screen.__getTitleBar().__getChildren().get(1);
+        Assert.assertEquals("页标题取主题 foreground",
+                SceneThemes.DEFAULT.foreground(), titleNode.getTextColor());
+        Assert.assertEquals("副标题取主题 mutedForeground",
+                SceneThemes.DEFAULT.mutedForeground(), subtitleNode.getTextColor());
+    }
+
+    /** ④ 遮罩保持：ROOT_BG 像素锁、遮罩不装玻璃，且绘制顺序上遮罩先于玻璃 BACKDROP（不挡采样）。 */
+    @Test
+    public void rootMaskKeepsPixelLockAndPaintsBeforeGlassBackdrop() throws Exception {
+        settleVisuals(screen);
+        doLayout();
+
+        SceneNode mask = screen.__getRoot();
+        Assert.assertEquals("配置页 root 遮罩仍是专用 ROOT_BG（不改成玻璃配方）",
+                ConfigTheme.ROOT_BG, mask.getBackgroundColor());
+        Assert.assertNull("遮罩不装玻璃滤镜", mask.getBackdrop());
+        Assert.assertEquals("遮罩不参与表面绑定浮雕（保持未绑定 -1）",
+                -1.0F, mask.__getSurfaceElevation(), 0.0001F);
+
+        PaintPlan plan = screen.getPaintEngine().paint(screen.__getRoot()).getPlan();
+        int maskIndex = -1;
+        int firstBackdropIndex = -1;
+        int commands = 0;
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.BACKGROUND
+                    && maskIndex < 0 && command.getColor() == ConfigTheme.ROOT_BG) {
+                maskIndex = commands;
+            }
+            if (command.getType() == PaintCommandType.BACKDROP && firstBackdropIndex < 0) {
+                firstBackdropIndex = commands;
+            }
+            commands++;
+        }
+        Assert.assertTrue("计划含遮罩 BACKGROUND 命令", maskIndex >= 0);
+        Assert.assertTrue("计划含玻璃采样 BACKDROP 命令（页壳确有滤镜表面）", firstBackdropIndex >= 0);
+        Assert.assertTrue("遮罩先画、玻璃后采样：root 遮罩不挡住玻璃采样",
+                maskIndex < firstBackdropIndex);
+    }
+
+    /** save 反馈条内容底座走 GROUP 配方（不再是 SURFACE_CONTAINER 静态实色）。 */
+    @Test
+    public void saveFeedbackBarBindsGroupRecipe() throws Exception {
+        adapter.onFieldEdit("server.host", "saved.host");
+        screen.__getRuntime().flush();
+        screen.__saveChanges();
+        settleVisuals(screen);
+
+        SceneNode feedbackText = findNodeContainingText(screen.__getPageRoot(), "已保存");
+        Assert.assertNotNull("反馈行已挂载", feedbackText);
+        SceneNode bar = feedbackText.__getParent().__getParent();
+        assertSurfaceMatchesRoleRecipe("save 反馈条", bar,
+                SceneThemes.DEFAULT.surface(SceneTheme.Role.GROUP));
+        Assert.assertNotEquals("反馈条不再是旧实色 SURFACE_CONTAINER",
+                ConfigTheme.SURFACE_CONTAINER, bar.getBackgroundColor());
+    }
+
+    /** ② 主题切换：页壳/操作条/标题/徽标全部重派生；草稿、分类、滚动、节点身份保持；effect 不增长。 */
+    @Test
+    public void themeSwitchRebindsAppearanceAndKeepsDraftSectionScrollIdentity() throws Exception {
+        File file = tempFolder.newFile("config-theme-switch.yaml");
+        write(file, "");
+        ConfigSchema.Builder b = ConfigSchema.builder("themeswitch");
+        SectionSpec.Builder sec0 = b.section("sec0").title("Section 0");
+        for (int f = 0; f < 12; f++) {
+            sec0.string("f" + f).defaultValue("v" + f).label("Field " + f).build();
+        }
+        sec0.endSection();
+        SectionSpec.Builder sec1 = b.section("sec1").title("Section 1");
+        sec1.string("g0").defaultValue("w0").label("G0").build();
+        sec1.endSection();
+        ConfigSchema schema = b.build();
+        ConfigManager mgr = ConfigManager.bootstrap(file, schema);
+        DraftSignalAdapter a = new DraftSignalAdapter(null, mgr.openDraft());
+        Signal<SceneTheme> runtimeTheme = Signal.create(SceneTheme.liquidGlassDark());
+        // P-04 口径前置：两档主题的 PANEL/TOOLBAR 配方值必须真的不同，否则 Computed 记忆化吞掉切换
+        Assert.assertNotEquals("前置：深浅档 PANEL idle 不同",
+                SceneTheme.liquidGlassDark().surface(SceneTheme.Role.PANEL).getIdle(),
+                SceneTheme.liquidGlassLight().surface(SceneTheme.Role.PANEL).getIdle());
+        Assert.assertNotEquals("前置：深浅档 TOOLBAR idle 不同",
+                SceneTheme.liquidGlassDark().surface(SceneTheme.Role.TOOLBAR).getIdle(),
+                SceneTheme.liquidGlassLight().surface(SceneTheme.Role.TOOLBAR).getIdle());
+        ConfigScreen s = new ConfigScreen(null, mgr, a,
+                FieldRendererRegistry.defaultRegistry(), null, runtimeTheme);
+        try {
+            SceneRuntime rt = s.__getRuntime();
+            settleVisuals(s);
+            Assert.assertEquals("前置：页壳深色 PANEL 染色",
+                    SceneTheme.liquidGlassDark().surface(SceneTheme.Role.PANEL).getIdle().getTint(),
+                    s.__getPageRoot().getBackgroundColor());
+
+            // 制造草稿 + 切到 sec1 + 滚动（sec1 短，滚动改用切换前的 sec0 长节保留）
+            a.onFieldEdit("sec0.f3", "dirty.value");
+            rt.flush();
+            s.__getActiveSectionSignal().set(Integer.valueOf(1));
+            rt.flush();
+            s.__getActiveSectionSignal().set(Integer.valueOf(0));
+            s.__doFrameForTest(CANVAS_WIDTH, CANVAS_HEIGHT);
+            rt.__finishMotionForTest();
+            rt.flush();
+            s.__getSetScroll().accept(Integer.valueOf(120));
+            s.__doFrameForTest(CANVAS_WIDTH, CANVAS_HEIGHT);
+            rt.__finishMotionForTest();
+            rt.flush();
+            Assert.assertEquals("前置：滚动偏移到 120", 120, s.__getViewport().getScrollOffsetY());
+
+            SceneNode pageRoot = s.__getPageRoot();
+            SceneNode viewport = s.__getViewport();
+            SceneNode actionBar = s.__getActionBar();
+            SceneNode titleNode = s.__getTitleBar().__getChildren().get(0);
+            SceneNode dirtyBadge = s.__getStatusSummary().__getChildren().get(0);
+            SceneNode livePanel = findActivePanel(s.__getContent());
+            int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+
+            runtimeTheme.set(SceneTheme.liquidGlassLight());
+            settleVisuals(s);
+
+            SceneSurfaceStyle lightPanel =
+                    SceneTheme.liquidGlassLight().surface(SceneTheme.Role.PANEL);
+            SceneSurfaceStyle lightToolbar =
+                    SceneTheme.liquidGlassLight().surface(SceneTheme.Role.TOOLBAR);
+            assertSurfaceMatchesRoleRecipe("切换后页壳 root", pageRoot, lightPanel);
+            assertSurfaceMatchesRoleRecipe("切换后 viewport", viewport, lightPanel);
+            assertSurfaceMatchesRoleRecipe("切换后操作条", actionBar, lightToolbar);
+            Assert.assertEquals("切换后页标题跟随新主题前景",
+                    SceneTheme.liquidGlassLight().foreground(), titleNode.getTextColor());
+            FormTheme lightForm = FormThemes.of(SceneTheme.liquidGlassLight());
+            Assert.assertEquals("切换后 dirty 徽标描边 = 新主题 accent",
+                    lightForm.dirtyColor(), dirtyBadge.getBorderColor());
+            Assert.assertEquals("遮罩 ROOT_BG 不随主题变化（专用世界遮罩）",
+                    ConfigTheme.ROOT_BG, s.__getRoot().getBackgroundColor());
+
+            // 节点身份与业务状态：外观重派生不重建、不丢草稿/分类/滚动
+            Assert.assertSame("页壳 root 节点身份不变", pageRoot, s.__getPageRoot());
+            Assert.assertSame("viewport 节点身份不变", viewport, s.__getViewport());
+            Assert.assertSame("操作条节点身份不变", actionBar, s.__getActionBar());
+            Assert.assertSame("标题文字节点身份不变", titleNode, s.__getTitleBar().__getChildren().get(0));
+            Assert.assertSame("live section panel 未重建", livePanel, findActivePanel(s.__getContent()));
+            Assert.assertEquals("草稿值不丢", "dirty.value", a.draftSignal("sec0.f3").get());
+            Assert.assertTrue("dirty 态不丢", a.draft().isDirtyAny());
+            Assert.assertEquals("dirtyCount 不丢", Integer.valueOf(1), a.dirtyCountSignal().get());
+            Assert.assertEquals("分类保持", 0, s.__getDisplayedSectionIndex());
+            Assert.assertEquals("滚动偏移保持", 120, s.__getViewport().getScrollOffsetY());
+            Assert.assertEquals("主题切换只重派生，不新增订阅",
+                    effectsBefore, ReactiveTestProbe.registeredEffectCount());
+        } finally {
+            s.dispose();
+            a.dispose();
+        }
+    }
+
+    /** ③ dirty/error 语义可辨：徽标描边取主题语义色且三态互异；反馈文字错误/成功色可辨。 */
+    @Test
+    public void dirtyAndErrorSemanticsStayDistinctViaThemeSignals() throws Exception {
+        settleVisuals(screen);
+        FormTheme darkForm = FormThemes.of(SceneThemes.DEFAULT);
+        Assert.assertNotEquals("前置：dirty(accent) ≠ error(errorText)",
+                darkForm.dirtyColor(), darkForm.errorColor());
+        Assert.assertNotEquals("前置：静默(muted) ≠ dirty(accent)",
+                darkForm.mutedColor(), darkForm.dirtyColor());
+        Assert.assertNotEquals("前置：静默(muted) ≠ error(errorText)",
+                darkForm.mutedColor(), darkForm.errorColor());
+
+        SceneNode dirtyBadge = screen.__getStatusSummary().__getChildren().get(0);
+        SceneNode errorBadge = screen.__getStatusSummary().__getChildren().get(1);
+        Assert.assertEquals("静默态徽标描边 = 主题 mutedColor",
+                darkForm.mutedColor(), dirtyBadge.getBorderColor());
+        Assert.assertEquals("静默态徽标描边 = 主题 mutedColor",
+                darkForm.mutedColor(), errorBadge.getBorderColor());
+
+        // dirty：1 项未保存 → accent 描边
+        adapter.onFieldEdit("server.host", "valid.host");
+        settleVisuals(screen);
+        Assert.assertEquals("dirty 徽标描边 = 主题 accent（dirtyColor）",
+                darkForm.dirtyColor(), dirtyBadge.getBorderColor());
+        Assert.assertEquals("error 徽标保持静默色",
+                darkForm.mutedColor(), errorBadge.getBorderColor());
+        Assert.assertEquals("徽标文字取主题正文色",
+                darkForm.textColor(), dirtyBadge.__getChildren().get(0).getTextColor());
+
+        // error：1 项校验错误 → errorText 描边，与 dirty 同时可辨
+        adapter.onFieldEdit("server.port", 99999.0);
+        settleVisuals(screen);
+        Assert.assertEquals("error 徽标描边 = 主题 errorText（errorColor）",
+                darkForm.errorColor(), errorBadge.getBorderColor());
+        Assert.assertEquals("dirty 徽标仍为 accent，不被 error 覆盖",
+                darkForm.dirtyColor(), dirtyBadge.getBorderColor());
+
+        // save 反馈：失败=errorColor，成功=dirtyColor（主题无 success 槽，见类头销账说明）
+        screen.__saveChanges();
+        settleVisuals(screen);
+        SceneNode failText = findNodeContainingText(screen.__getPageRoot(), "保存失败");
+        Assert.assertNotNull("失败反馈已显示", failText);
+        Assert.assertEquals("失败反馈文字 = errorColor",
+                darkForm.errorColor(), failText.getTextColor());
+    }
+
+    /** ⑤ 源码守卫：ConfigScreen 不再残留 ConfigTheme 静态取色（遮罩/徽标保留项除外）与旧设色写入。 */
+    @Test
+    public void sourceGuardNoStaticColorReadsOutsideAllowList() throws Exception {
+        String raw = new String(Files.readAllBytes(
+                Paths.get("src/main/java/club/heiqi/config/ui/ConfigScreen.java")),
+                StandardCharsets.UTF_8).replace("\r\n", "\n");
+
+        // 1) 禁止的语义/表面静态取色：一律不得再出现
+        String[] bannedColorTokens = {
+                "ConfigTheme.TITLE_COLOR", "ConfigTheme.TEXT_COLOR", "ConfigTheme.MUTED_COLOR",
+                "ConfigTheme.ERROR_COLOR", "ConfigTheme.OK_COLOR", "ConfigTheme.DIRTY_COLOR",
+                "ConfigTheme.VIEWPORT_BG", "ConfigTheme.SURFACE_CONTAINER",
+                "ConfigTheme.SURFACE_CONTAINER_HIGH",
+        };
+        for (String token : bannedColorTokens) {
+            Assert.assertFalse("守卫：静态语义色取用已清除 " + token, raw.contains(token));
+        }
+        // 2) 显式旧快照路径禁止：无参 asFormTheme() 与 .get() 快照喂 build（G15/Theme 书面警示）
+        Assert.assertFalse("守卫：不得用无参显式 asFormTheme() 快照", raw.contains("asFormTheme()"));
+        Assert.assertFalse("守卫：不得 asFormTheme(rt).get() 快照喂显式 build",
+                raw.contains("asFormTheme(runtime).get()"));
+
+        // 3) 保留白名单：逐 token 校验（布局/字号/动效常量 + 遮罩/徽标两项专用色）
+        Set<String> allowed = new HashSet<String>(Arrays.asList(
+                "MOTION_EMPHASIZED_MS", "MOTION_STANDARD_MS",
+                "TITLE_BAR_HEIGHT", "ROOT_PADDING", "ROOT_GAP", "SCROLL_GAP",
+                "PAGE_MAX_WIDTH", "CONTENT_MAX_WIDTH", "FIELD_GAP",
+                "STATUS_HEIGHT", "SAVE_FEEDBACK_HEIGHT", "BUTTON_HEIGHT", "BUTTON_WIDTH",
+                "NAV_PANE_WIDTH", "ACTION_BAR_HEIGHT",
+                "FONT_TITLE", "FONT_SUBTITLE", "FONT_SECTION", "FONT_ERROR", "FONT_BADGE",
+                // 保留色（报告销账）：ROOT_BG=专用世界遮罩（§7.2 遮罩只负责遮罩）；
+                // READOUT_BG=状态徽标底色（§7.3 状态徽标明确不迁移）
+                "ROOT_BG", "READOUT_BG",
+                // 默认路径桥方法名（ConfigTheme.asFormTheme(rt)，非取色）
+                "asFormTheme"));
+        Matcher matcher = Pattern.compile("ConfigTheme\\.([A-Za-z_]+)").matcher(raw);
+        Set<String> used = new HashSet<String>();
+        while (matcher.find()) {
+            used.add(matcher.group(1));
+        }
+        Assert.assertFalse("守卫：至少保留遮罩常量引用", used.isEmpty());
+        // 反模式守卫：显式 asFormTheme 快照喂 build 会让 used 含 asFormTheme 却同时命中 .get() 禁令；
+        // 真正默认路径只用一次 asFormTheme(rt) 取信号（无 .get() 跟随其后）。
+        Assert.assertFalse("守卫：默认路径禁止 asFormTheme(...).get() 快照喂显式 build（G15/Theme 警示）",
+                raw.contains("asFormTheme(runtime).get()") || raw.contains("asFormTheme(runtime).get ("));
+        for (String token : used) {
+            Assert.assertTrue("守卫：ConfigTheme." + token + " 不属于「布局常量 + 遮罩/徽标保留色」白名单",
+                    allowed.contains(token));
+        }
+
+        // 4) 静态设色残留计数（销账口径）：遮罩 1 + 徽标 1 = 2；圆角/边框宽仅徽标各 1
+        Assert.assertEquals("守卫：setBackgroundColor 残留 = 遮罩 + 徽标", 2,
+                countOccurrences(raw, ".setBackgroundColor("));
+        Assert.assertEquals("守卫：setCornerRadius( 残留 = 徽标胶囊 999", 1,
+                countOccurrences(raw, ".setCornerRadius("));
+        Assert.assertEquals("守卫：setBorderWidth( 残留 = 徽标描边 2", 1,
+                countOccurrences(raw, ".setBorderWidth("));
+        Assert.assertEquals("守卫：SceneChromeTokens 取色引用清零（尺寸经 ConfigTheme 转引，§4.2）", 0,
+                countOccurrences(raw, "SceneChromeTokens"));
+    }
+
+    /** 统计子串出现次数（源码守卫用）。 */
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) >= 0) {
+            count++;
+            idx += needle.length();
+        }
+        return count;
     }
 }
