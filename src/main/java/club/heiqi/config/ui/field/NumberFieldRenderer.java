@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.control.SceneSlider;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * NUMBER 字段渲染器：按 {@link WidgetSpec} 声明分发——
@@ -30,6 +31,17 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * onChange 把 String parse 为 Double 写回
  * （parse 失败时存原始 String，让 DraftBuffer 校验报"不是有效数字"）。
  * 外壳装配经 {@link FieldShellBinder#build} 收口，标题回退经 {@link FieldRenderSupport#labelOf}。</p>
+ *
+ * <p><b>G15/Number 外观口径</b>（契约 §4/§4.1/§4.2）：字段卡片表面与 dirty/error 语义色由
+ * {@link FieldShellBinder} 下沉的 FormFieldShell theme-aware 路径派生（GROUP 角色），本类不复制；
+ * {@code SceneSlider}（G06）与 {@code SceneTextInput}（G04）控件本体已默认消费
+ * {@code SceneThemes}/{@code SceneSurfaceBinder}，本类只组 Props、不再叠第二层表面或边框。
+ * slider 读数文本前景取 {@link SceneThemes#foreground(SceneRuntime)} 主题信号（构建期捕获、
+ * effect 内应用，无 {@code .get()} 快照）；字号与行间距是布局/排版常量（契约 §4「padding/尺寸/
+ * 布局属性归控件自身，主题不接管布局」），保留 {@code ConfigTheme} 取值。喂给 binder 的
+ * {@code ConfigTheme.asFormTheme()} 是兼容占位形参（默认路径不消费，见 FieldShellBinder 类头），
+ * 待全部 Renderer 实例迁移完成后由主代理统一收口删除，本实例不自行摘除。
+ * 数值解析、min/max 钳制、step 量化、滚轮步进与 dirty/error 行为零改动。</p>
  */
 public final class NumberFieldRenderer implements FieldRenderer {
 
@@ -80,6 +92,7 @@ public final class NumberFieldRenderer implements FieldRenderer {
         // M1：slider + 读数文本 ROW 包装
         Supplier<SceneNode> control = () -> {
             SceneNode row = SceneNode.row();
+            // 间距为布局常量（契约 §4：主题不接管布局），非外观写入点，保留 ConfigTheme 取值
             row.setGap(ConfigTheme.FIELD_GAP);
             row.setCrossAxisAlign(CrossAxisAlign.CENTER);
             // slider 子树（mount 后由 SceneSlider.create 产出）
@@ -87,7 +100,10 @@ public final class NumberFieldRenderer implements FieldRenderer {
             row.appendChild(sliderRoot);
             // 读数文本：bind 到 numValue，显示当前值（整数显示去 .0）
             SceneNode readout = new SceneNode();
-            readout.setTextColor(ConfigTheme.TEXT_COLOR);
+            // 前景取来源主题 foreground 信号（契约 §4 textColor 唯一写入者 = 主题前景绑定；
+            // 构建期捕获信号、effect 内应用，无构造期 .get() 快照，替换旧静态 TEXT_COLOR）
+            rt.bind(SceneThemes.foreground(rt), readout::setTextColor);
+            // 字号是排版/布局常量（契约 §4：尺寸/布局属性归控件自身，主题不接管布局），保留 ConfigTheme 取值
             readout.setFontSize(ConfigTheme.FONT_READOUT);
             readout.setHitTestable(false);
             rt.bindComputed(() -> FieldRenderSupport.formatReadout(numValue.get()),
