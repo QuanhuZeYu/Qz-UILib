@@ -8,6 +8,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
@@ -26,6 +27,9 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneSlider 端到端单元测试 —— Phase 4 批 3 受控连续滑块控件验收。
@@ -34,7 +38,9 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * 受控连续闭环（拖拽 committing=false 预览、释放 committing=true 提交）、
  * draggingValue 瞬态接管 + 松手回落外部 value（R7 受控命门）、值↔像素映射、
  * step 量化、键盘步进（←/→/Home/End/PageUp/PageDown）、disabled 阻断、
- * 命中穿透（点 fill/thumb 装饰子节点穿透到 root）。</p>
+ * 命中穿透（点 fill/thumb 装饰子节点穿透到 root），
+ * 以及主题化外观（track 走 INPUT 角色配方、thumb 走 INDICATOR 强调配方且 tint RGB=主题 accent、
+ * fill 取主题 accent/禁用前景色、拖动中切主题不回写值且不重置 capture、禁用档可读、卸载回收绑定）。</p>
  *
  * <h3>测试沙箱 pipeline（对照 SceneToggleTest）</h3>
  * <pre>
@@ -89,6 +95,29 @@ public class SceneSliderTest {
     private static final double STEP = 5.0D;
     private static final double EPS = 1e-9D;
 
+    /**
+     * 库默认主题的角色配方：track/thumb 默认外观唯一来源。
+     * 断言取配方值而不是硬编码色号，主题集中调参时本类自动跟随。
+     */
+    private static final SceneSurfaceStyle TRACK_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
+    private static final SceneSurfaceStyle THUMB_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.INDICATOR);
+    /** track 染色：启用取 INPUT idle 档，禁用取 INPUT 禁用档。 */
+    private static final int TRACK_IDLE = TRACK_SURFACE.getIdle().getTint();
+    private static final int TRACK_DISABLED = TRACK_SURFACE.getDisabled().getTint();
+    /** fill 底色：启用取主题强调色，禁用取主题禁用前景色。 */
+    private static final int FILL_ENABLED = SceneThemes.DEFAULT.accent();
+    private static final int FILL_DISABLED = SceneThemes.DEFAULT.disabledForeground();
+    /**
+     * thumb 强调配方：idle/pressed 的 tint RGB 换成主题强调色、alpha 用统一强调强度
+     * {@code 0x59}；禁用档仍走角色配方（不染色）。
+     */
+    private static final int ACCENT_TINT_ALPHA = 0x59;
+    private static final int THUMB_ACCENT_IDLE = accentTint(SceneThemes.DEFAULT.accent());
+    private static final int THUMB_ACCENT_PRESSED = accentTint(SceneThemes.DEFAULT.accentPressed());
+    private static final int THUMB_DISABLED = THUMB_SURFACE.getDisabled().getTint();
+
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
@@ -138,6 +167,57 @@ public class SceneSliderTest {
 
     private void doLayout() {
         layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+    }
+
+    /** 节点相对场景根的绝对 x（沿父链累加各级 LayoutBox.x，与 route 的 rootAbs=0 同系）。 */
+    private static int absX(SceneNode node) {
+        return absAlong(node, true);
+    }
+
+    /** 节点相对场景根的绝对 y。 */
+    private static int absY(SceneNode node) {
+        return absAlong(node, false);
+    }
+
+    private static int absAlong(SceneNode node, boolean horizontal) {
+        int sum = 0;
+        SceneNode cur = node;
+        while (cur != null) {
+            Object cached = cur.getCachedLayout();
+            if (cached instanceof LayoutBox) {
+                sum += horizontal ? ((LayoutBox) cached).getX() : ((LayoutBox) cached).getY();
+            }
+            cur = cur.__getParent();
+        }
+        return sum;
+    }
+
+    /** 节点布局高（未 layout 时回退 0）。 */
+    private static int heightOf(SceneNode node) {
+        Object cached = node.getCachedLayout();
+        return cached instanceof LayoutBox ? ((LayoutBox) cached).getHeight() : 0;
+    }
+
+    /** 节点在父内布局 x（未 layout 时回退 0）。 */
+    private static int xOf(SceneNode node) {
+        Object cached = node.getCachedLayout();
+        return cached instanceof LayoutBox ? ((LayoutBox) cached).getX() : 0;
+    }
+
+    /**
+     * {@code SceneThemes.accentSurface} 的染色语义：RGB 换成主题强调色、alpha 用统一强调强度
+     * {@link #ACCENT_TINT_ALPHA}（edge/elevation/lens/圆角保持角色配方）。
+     */
+    private static int accentTint(int accentArgb) {
+        return (ACCENT_TINT_ALPHA << 24) | (accentArgb & 0x00FFFFFF);
+    }
+
+    private static int alphaOf(int argb) {
+        return (argb >>> 24) & 0xFF;
+    }
+
+    private static int rgbOf(int argb) {
+        return argb & 0x00FFFFFF;
     }
 
     /** track 子节点（root 第一个孩子） */
@@ -706,5 +786,221 @@ public class SceneSliderTest {
         runtime.flush();
         Assert.assertEquals("rootAbs≠0 时 UP 提交末值 75", 75.0D, lastChangeValue, EPS);
         Assert.assertTrue("UP 是提交 committing=true", lastCommitting);
+    }
+
+    // ==================== 验收 13：默认工厂路径消费主题（INPUT 轨道 + 强调 thumb + accent 进度） ====================
+
+    /**
+     * 默认工厂路径（不传任何样式参数）：track 的边框宽/圆角/染色/滤镜/实体高度全部等于
+     * {@code SceneThemes.DEFAULT.surface(Role.INPUT)} 的对应值；fill 底色取主题 accent；
+     * thumb 圆角/滤镜来自 {@code Role.INDICATOR} 配方，tint RGB 等于主题 accent 且保留统一强调
+     * 强度——数值、布局与交互语义不受影响（本测试只断言外观来源）。
+     */
+    @Test
+    public void defaultFactoryShouldConsumeInputTrackAndAccentThumbRecipe() {
+        doLayout();
+
+        Assert.assertEquals("track 圆角来自 INPUT 配方（不再是控件静态常量）",
+                TRACK_SURFACE.getCornerRadius(), trackNode().getCornerRadius());
+        Assert.assertEquals("track 边框宽来自配方", TRACK_SURFACE.getBorderWidth(), trackNode().getBorderWidth());
+        Assert.assertNotNull("track 默认带液态玻璃滤镜（INPUT 配方）", trackNode().getBackdrop());
+        Assert.assertEquals("track backdrop 模糊半径来自配方", TRACK_SURFACE.getBackdrop().getBlurRadius(),
+                trackNode().getBackdrop().getBlurRadius());
+        Assert.assertEquals("track 实体高度来自配方 idle 档", TRACK_SURFACE.getIdle().getElevation(),
+                trackNode().__getSurfaceElevation(), 0.0001F);
+        Assert.assertEquals("track 染色 = INPUT 配方 idle tint", TRACK_IDLE, trackNode().getBackgroundColor());
+
+        Assert.assertEquals("fill 底色 = 主题强调色", FILL_ENABLED, fillNode().getBackgroundColor());
+        Assert.assertNotEquals("fill 不再取旧的实色进度常量", TRACK_IDLE, fillNode().getBackgroundColor());
+
+        Assert.assertEquals("thumb 圆角来自 INDICATOR 配方", THUMB_SURFACE.getCornerRadius(),
+                thumbNode().getCornerRadius());
+        Assert.assertNotNull("thumb 默认带液态玻璃滤镜（INDICATOR 配方）", thumbNode().getBackdrop());
+        Assert.assertEquals("thumb 强调 tint = 主题 accent + 统一强调强度",
+                THUMB_ACCENT_IDLE, thumbNode().getBackgroundColor());
+        Assert.assertEquals("thumb tint RGB = 主题 accent RGB",
+                rgbOf(SceneThemes.DEFAULT.accent()), rgbOf(thumbNode().getBackgroundColor()));
+        Assert.assertEquals("thumb 强调强度高于轨道 idle 档，可读出滑块位置",
+                ACCENT_TINT_ALPHA, alphaOf(thumbNode().getBackgroundColor()));
+        Assert.assertNotEquals("thumb 不再沿用轨道色", TRACK_IDLE, thumbNode().getBackgroundColor());
+    }
+
+    // ==================== 验收 14：禁用态三部件取主题禁用档且可读 ====================
+
+    /**
+     * 禁用态：track 取 INPUT 配方禁用档、thumb 取 INDICATOR 配方禁用档（强调配方不覆盖禁用分支）、
+     * fill 取主题禁用前景色；三部件仍有可见染色（可读，不是全透明消失），且与启用档可区分。
+     * 受控值不受禁用影响。
+     */
+    @Test
+    public void disabledShouldUseDisabledRecipeAndDisabledForeground() {
+        doLayout();
+
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("禁用 track 取 INPUT 配方禁用档", TRACK_DISABLED, trackNode().getBackgroundColor());
+        Assert.assertEquals("禁用 fill 取主题禁用前景色", FILL_DISABLED, fillNode().getBackgroundColor());
+        Assert.assertEquals("禁用 thumb 取 INDICATOR 配方禁用档（强调配方不覆盖禁用分支）",
+                THUMB_DISABLED, thumbNode().getBackgroundColor());
+        Assert.assertTrue("禁用 track 仍有可见染色（可读）", alphaOf(trackNode().getBackgroundColor()) > 0);
+        Assert.assertTrue("禁用 thumb 仍有可见染色（可读）", alphaOf(thumbNode().getBackgroundColor()) > 0);
+        Assert.assertEquals("禁用 fill 用不透明的主题禁用前景色", 0xFF, alphaOf(fillNode().getBackgroundColor()));
+        Assert.assertNotEquals("禁用档必须与启用档可区分", TRACK_IDLE, trackNode().getBackgroundColor());
+        Assert.assertNotEquals("禁用 thumb 必须与启用档可区分", THUMB_ACCENT_IDLE, thumbNode().getBackgroundColor());
+        Assert.assertEquals("禁用不改变受控值", 0.0D, valueSignal.get(), EPS);
+
+        enabledSignal.set(Boolean.TRUE);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("恢复启用 track 回 idle 档", TRACK_IDLE, trackNode().getBackgroundColor());
+        Assert.assertEquals("恢复启用 fill 回强调色", FILL_ENABLED, fillNode().getBackgroundColor());
+        Assert.assertEquals("恢复启用 thumb 回强调 idle 档", THUMB_ACCENT_IDLE, thumbNode().getBackgroundColor());
+    }
+
+    // ==================== 验收 15：withTheme 切换更新三部件且拖动状态/capture 不丢 ====================
+
+    /**
+     * 拖动中切换页面主题：三部件外观随新主题更新、节点身份不变、effect 数不增长；
+     * 受控值不被回写、拖拽渲染态不重置（thumb 位置不变）、pointer capture 不被重置
+     * （track 之外的 MOVE 仍强制投递并按 ratio clamp 出值）；卸载后绑定全部回收。
+     */
+    @Test
+    public void themeSwitchDuringDragShouldUpdateChromeWithoutLosingValueOrCapture() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：深/浅 INPUT 配方必须不同",
+                dark.surface(SceneTheme.Role.INPUT), light.surface(SceneTheme.Role.INPUT));
+        Assert.assertNotEquals("测试前提：深/浅 INDICATOR 配方必须不同",
+                dark.surface(SceneTheme.Role.INDICATOR), light.surface(SceneTheme.Role.INDICATOR));
+
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        SceneSlider.Props themedProps = new SceneSlider.Props(
+                valueSignal, enabledSignal, MIN, MAX, STEP,
+                (value, committing) -> {
+                    changeCount.incrementAndGet();
+                    lastChangeValue = value;
+                    lastCommitting = committing;
+                    if (committing) {
+                        commitCount.incrementAndGet();
+                    } else {
+                        previewCount.incrementAndGet();
+                    }
+                });
+
+        MountHandle themed = runtime.mount(sceneRoot, () -> {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SceneSlider.create(runtime, themedProps).get());
+            return holder[0];
+        });
+        runtime.flush();
+        doLayout();
+
+        SceneNode themedRoot = themed.getRoot();
+        SceneNode themedTrack = themedRoot.__getChildren().get(0);
+        SceneNode themedFill = themedTrack.__getChildren().get(0);
+        SceneNode themedThumb = themedTrack.__getChildren().get(1);
+
+        Assert.assertEquals("初始 track 取深色 INPUT idle 档",
+                dark.surface(SceneTheme.Role.INPUT).getIdle().getTint(), themedTrack.getBackgroundColor());
+        Assert.assertEquals("初始 fill 取深色 accent", dark.accent(), themedFill.getBackgroundColor());
+        Assert.assertEquals("初始 thumb 取深色强调 idle 档", accentTint(dark.accent()),
+                themedThumb.getBackgroundColor());
+
+        // 开始拖拽：DOWN 命中 track 中点 → capture 建立 + pressed 生效 + 预览值 50
+        int left = absX(themedTrack);
+        int cy = absY(themedTrack) + heightOf(themedTrack) / 2;
+
+        // 前置自检：无 capture 时 track 之外的 MOVE 不投递——为后面的 capture 存活断言提供对照，
+        // 否则「track 外 MOVE 仍触发 onChange」可能被误读为普通命中。
+        int previewsBeforeBaselineMove = previewCount.get();
+        routePointer(ScenePointerAction.MOVE, left + TRACK_WIDTH + 50, cy);
+        runtime.flush();
+        Assert.assertEquals("前置自检：无 capture 时 track 外 MOVE 不投递",
+                previewsBeforeBaselineMove, previewCount.get());
+
+        routePointer(ScenePointerAction.BUTTON_DOWN, left + TRACK_WIDTH / 2, cy);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("DOWN 触发一次预览", 1, previewCount.get());
+        Assert.assertEquals("DOWN 命中中点 value=50", 50.0D, lastChangeValue, EPS);
+
+        // MOVE 到 3/4 处：拖拽态接管（外部 value 始终不回写）
+        routePointer(ScenePointerAction.MOVE, left + TRACK_WIDTH * 3 / 4, cy);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("MOVE 到 3/4 value=75", 75.0D, lastChangeValue, EPS);
+        Assert.assertEquals("拖拽期外部受控值未被回写", 0.0D, valueSignal.get(), EPS);
+        Assert.assertEquals("拖拽期 track 取 INPUT pressed 档",
+                dark.surface(SceneTheme.Role.INPUT).getPressed().getTint(), themedTrack.getBackgroundColor());
+        Assert.assertEquals("拖拽期 thumb 取 INDICATOR pressed 强调档", accentTint(dark.accentPressed()),
+                themedThumb.getBackgroundColor());
+        int thumbXBeforeSwitch = xOf(themedThumb);
+
+        int effectsBeforeSwitch = ReactiveTestProbe.registeredEffectCount();
+
+        // 拖拽中切主题：外观更新，但数值 / 拖拽态 / capture / 节点身份全部保持
+        pageTheme.set(light);
+        runtime.flush();
+        doLayout();
+
+        Assert.assertSame("主题切换不重建 root 节点", themedRoot, themed.getRoot());
+        Assert.assertSame("主题切换不重建 track 节点", themedTrack, themedRoot.__getChildren().get(0));
+        Assert.assertSame("主题切换不重建 fill 节点", themedFill, themedTrack.__getChildren().get(0));
+        Assert.assertSame("主题切换不重建 thumb 节点", themedThumb, themedTrack.__getChildren().get(1));
+        Assert.assertEquals("track 随主题更新（保持 pressed 档）",
+                light.surface(SceneTheme.Role.INPUT).getPressed().getTint(), themedTrack.getBackgroundColor());
+        Assert.assertEquals("fill 随主题更新", light.accent(), themedFill.getBackgroundColor());
+        Assert.assertEquals("thumb 随主题更新（pressed 强调档）", accentTint(light.accentPressed()),
+                themedThumb.getBackgroundColor());
+        Assert.assertEquals("切主题不回写受控值", 0.0D, valueSignal.get(), EPS);
+        Assert.assertEquals("切主题不重置拖拽渲染态（thumb 位置不变）", thumbXBeforeSwitch, xOf(themedThumb));
+        Assert.assertEquals("主题切换不新增订阅", effectsBeforeSwitch, ReactiveTestProbe.registeredEffectCount());
+
+        // capture 未被重置：track 之外的 MOVE 仍强制投递到 track，ratio clamp 到 1 → 100
+        int previewsBeforeOutsideMove = previewCount.get();
+        routePointer(ScenePointerAction.MOVE, left + TRACK_WIDTH + 50, cy);
+        runtime.flush();
+        Assert.assertEquals("切主题后 pointer capture 仍生效（track 外 MOVE 仍投递）",
+                previewsBeforeOutsideMove + 1, previewCount.get());
+        Assert.assertEquals("track 外 MOVE ratio clamp 到 max", MAX, lastChangeValue, EPS);
+
+        // UP 提交：末值仍按事件坐标当场算（不读 draggingValue）
+        routePointer(ScenePointerAction.BUTTON_UP, left + TRACK_WIDTH + 50, cy);
+        runtime.flush();
+        Assert.assertEquals("UP 触发一次提交", 1, commitCount.get());
+        Assert.assertTrue("UP 是提交 committing=true", lastCommitting);
+        Assert.assertEquals("UP 提交 clamp 后末值 100", MAX, lastChangeValue, EPS);
+        Assert.assertEquals("全程未回写受控值（控件零内部受控状态）", 0.0D, valueSignal.get(), EPS);
+
+        themed.dispose();
+        Assert.assertEquals("卸载后回收该实例全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    // ==================== 验收 16：卸载回收绑定（effect 探针） ====================
+
+    /**
+     * 挂载注册响应式绑定、卸载全部回收：{@code ReactiveTestProbe.registeredEffectCount()}
+     * 回到挂载前基线（守「卸载即回收」纪律；主题化后 track/thumb 两个表面绑定 + fill 取色
+     * 派生都必须归 Owner）。
+     */
+    @Test
+    public void disposeShouldReclaimAllBindings() {
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+
+        SceneSlider.Props props = new SceneSlider.Props(
+                valueSignal, enabledSignal, MIN, MAX, STEP,
+                (value, committing) -> { });
+        MountHandle extra = runtime.mount(sceneRoot, SceneSlider.create(runtime, props));
+        runtime.flush();
+
+        int mounted = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("挂载应注册响应式绑定，baseline=" + baseline + ", mounted=" + mounted,
+                mounted > baseline);
+
+        extra.dispose();
+        Assert.assertEquals("卸载回收全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
     }
 }

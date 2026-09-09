@@ -11,7 +11,10 @@ import club.heiqi.uilib.ui.scene.input.SceneCursor;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneSlider —— scene 新栈控件层 Phase 4 批 3 迁移控件（水平连续数值滑块）。
@@ -35,8 +38,8 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <h3>结构</h3>
  * <pre>
  * root (ROW, crossAxisAlign=CENTER, 装饰穿透 hitTestable=false)
- *   └─ track (ROW, crossAxisAlign=CENTER, preferredWidth=200, 圆角, 交互单元 hitTestable=true)  ← 绑 interactionState
- *         ├─ fillBox (叶, preferredWidth 动态=round(W*progress)-thumb/2, 装饰穿透)  ← 进度填充
+ *   └─ track (ROW, crossAxisAlign=CENTER, preferredWidth=200, 交互单元 hitTestable=true)  ← 绑 interactionState
+ *         ├─ fillBox (叶, preferredWidth 动态=round(W*progress)-thumb/2, 装饰穿透)  ← 进度填充（accent 实色）
  *         └─ thumb   (叶, THUMB_SIZE 圆, 装饰穿透)                                  ← 紧随 fill 推到 progress 位置
  * </pre>
  * <p>track 是交互单元（{@code setHitTestable(true)}），root/fill/thumb 全部 {@code setHitTestable(false)}
@@ -45,6 +48,9 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整、
  * setPreferredWidth(0) 触发 fill 陷阱（0=不约束=回退 fill 父宽），三重约束下无法用 margin 精确定位
  * thumb 中心到 round(W*progress) 且 progress=0 时 thumb 中心=0。故回退当前近似方案，不阻塞缺陷 D 修复。</p>
+ * <p><b>外观归属</b>：track 由 INPUT 角色配方、thumb 由 INDICATOR 强调配方经
+ * {@link SceneSurfaceBinder} 独占写入（圆角/边框/滤镜/实体高度全来自配方），fillBox 底色取主题
+ * {@code accent}/{@code disabledForeground}；控件自身只保留尺寸、间距与 fill 圆角这类非颜色几何。</p>
  *
  * <h3>拖拽手势（pointerCapture，committing 双语义，缺陷 D 根治后）</h3>
  * <ul>
@@ -65,11 +71,13 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  */
 public final class SceneSlider {
 
-    /** track 圆角（足够大呈胶囊） */
-    private static final int SLIDER_RADIUS = SceneChromeTokens.RADIUS_PILL;
-
-    /** focus ring 边框宽度（像素） */
-    private static final int BORDER_WIDTH = 1;
+    /**
+     * fillBox 圆角（足够大呈胶囊）。
+     *
+     * <p>只服务进度填充条这一处几何：track/thumb 的圆角由各自表面配方的
+     * {@code cornerRadius} 提供，不再共用本常量。</p>
+     */
+    private static final int FILL_RADIUS = SceneChromeTokens.RADIUS_PILL;
 
     /** track 固定宽度（像素，值↔像素映射的分母，与旧栈固定尺寸范式一致） */
     private static final int TRACK_WIDTH = 200;
@@ -222,9 +230,18 @@ public final class SceneSlider {
      * 工厂：构建 Slider 组件函数。
      *
      * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：
-     * 建树 + 设静态属性 + 体内创建瞬态 {@code draggingValue} signal（被 handler 闭包捕获，
+     * 建树 + 设静态尺寸 + 体内创建瞬态 {@code draggingValue} signal（被 handler 闭包捕获，
      * 归 Owner 作用域，非控件类字段守 R1）。动态外观全落 {@code bind(computed(...))}，
      * 拖拽/键盘交互只经 {@code draggingValue.set} 或 {@code onChange} 回调（R4/R5/R7）。</p>
+     *
+     * <p><b>主题化</b>：track 走 {@link SceneThemes#surface} 的 INPUT 角色配方（凹陷轨道），
+     * thumb 走 {@link SceneThemes#accentSurface} 的 INDICATOR 强调配方，两者由
+     * {@link SceneSurfaceBinder} 独占 background/border/borderWidth/cornerRadius/backdrop/
+     * surfaceElevation——不再静态设值，也不再叠加 {@code SceneStateColors} 与
+     * {@code SceneControlChrome.bindStandardBorder} 的第二外观写入者；fillBox 底色取
+     * {@link SceneThemes#accent}（禁用取 {@link SceneThemes#disabledForeground}）。
+     * thumb 的 {@code motionRoot} 显式传 null：数值定位由 primitive 的布局（fill 宽度 + thumb
+     * 紧随）驱动，绑定器不得写其 transform/opacity。</p>
      *
      * @param rt    场景运行时
      * @param props Slider 输入契约
@@ -242,34 +259,41 @@ public final class SceneSlider {
 
             SceneNode track = result.track();
             track.setPreferredWidth(TRACK_WIDTH);
-            track.setCornerRadius(SLIDER_RADIUS);
-            track.setBorderWidth(BORDER_WIDTH);
-            track.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+            // track 的边框宽/边框色/圆角/染色/滤镜/实体高度全部由表面绑定器从 INPUT 配方派生
+            // （构造期不再静态设 borderWidth/cornerRadius/borderColor，也不另绑状态色或标准边框）。
 
             SceneNode fillBox = result.fillBox();
             fillBox.setPreferredHeight(FILL_HEIGHT);
-            fillBox.setCornerRadius(SLIDER_RADIUS);
+            // 进度条是控件自持几何（不参与表面采样）：圆角保持静态常量。
+            fillBox.setCornerRadius(FILL_RADIUS);
 
             SceneNode thumb = result.thumb();
             thumb.setPreferredWidth(THUMB_SIZE);
             thumb.setPreferredHeight(THUMB_SIZE);
-            thumb.setCornerRadius(SLIDER_RADIUS);
+            // thumb 的圆角来自 INDICATOR 强调配方；不再静态设圆角或三态实色绑定。
 
+            // 进度宽度仍由数值驱动（布局语义不变，仅取色改为主题）。
             rt.bindComputed(() -> computeFillWidth(result.progress().get(), TRACK_WIDTH, THUMB_SIZE),
                     fillBox::setPreferredWidth);
-            rt.bindComputed(() -> SceneStateColors.standardBackground(
-                            Boolean.TRUE.equals(props.enabled().get()), false, false),
-                    track::setBackgroundColor);
+
+            // 进度填充底色：启用取主题强调色，禁用取主题禁用前景色（不再取 SceneChromeTokens 实色）。
+            ReadableSignal<Integer> accent = SceneThemes.accent(rt);
+            ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
             rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
-                            ? SceneChromeTokens.ACCENT_PROGRESS
-                            : SceneChromeTokens.BG_DISABLED,
+                            ? accent.get()
+                            : disabledForeground.get(),
                     fillBox::setBackgroundColor);
-            SceneControlChrome.bindStandardBorder(rt, track, props.enabled(), interaction);
-            rt.__bindAnimatedColor(() -> SceneStateColors.thumbBackground(
-                            Boolean.TRUE.equals(props.enabled().get()),
-                            Boolean.TRUE.equals(interaction.hovered().get()),
-                            Boolean.TRUE.equals(interaction.pressed().get())),
-                    thumb::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
+
+            // track 表面：INPUT 角色配方（轨道凹陷），禁用走角色禁用档。唯一外观写入者。
+            ReadableSignal<SceneSurfaceStyle> trackSurface = SceneThemes.surface(rt, SceneTheme.Role.INPUT);
+            SceneSurfaceBinder.bind(rt, track, trackSurface, props.enabled(), interaction);
+
+            // thumb 表面：INDICATOR 强调配方（tint RGB=主题 accent）；motionRoot=null，
+            // 数值定位的 transform 仍归 primitive，绑定器不得触碰。
+            ReadableSignal<SceneSurfaceStyle> thumbSurface =
+                    SceneThemes.accentSurface(rt, SceneTheme.Role.INDICATOR);
+            SceneSurfaceBinder.bind(rt, thumb, null, thumbSurface, props.enabled(), interaction);
+
             // B2：interaction 挂 track（primitive 已改），hover/pressed/focused 写 track。
             // cursor 也设到 track（SceneCursorResolver 读 hoveredNode=track 的 cursor 属性）。
             SceneControlChrome.bindCursor(rt, track, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
