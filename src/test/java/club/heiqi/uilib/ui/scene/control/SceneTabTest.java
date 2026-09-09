@@ -787,7 +787,58 @@ public class SceneTabTest {
         Assert.assertEquals("卸载回收全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
     }
 
-    // ==================== 验收 14：Props 同长同序契约运行期校验（P1-D） ====================
+    // ==================== 验收 14：关闭滤镜档（withoutBackdrop）仍可读 ====================
+
+    /**
+     * 无滤镜替代档：{@code SceneTheme.withoutBackdrop()} 下底座/项 backdrop 全为 null、PaintPlan 零
+     * BACKDROP，tint 换为不透明替代底色（可读），选中项仍是强调色系、文字仍按对比度择色。
+     */
+    @Test
+    public void withoutBackdropThemeShouldDropBackdropsAndKeepReadableTints() {
+        SceneTheme noFilter = SceneTheme.liquidGlassDark().withoutBackdrop();
+        Assert.assertNull("前提：无滤镜档 TOOLBAR 无 backdrop",
+                noFilter.surface(SceneTheme.Role.TOOLBAR).getBackdrop());
+        Assert.assertNull("前提：无滤镜档 INDICATOR 无 backdrop",
+                noFilter.surface(SceneTheme.Role.INDICATOR).getBackdrop());
+
+        Signal<SceneTheme> pageTheme = Signal.create(noFilter);
+        List<Supplier<SceneNode>> panels = Arrays.<Supplier<SceneNode>>asList(
+                () -> new SceneNode(), () -> new SceneNode(), () -> new SceneNode());
+        SceneTab.Props props = new SceneTab.Props(activeSignal, LABELS, panels, enabledSignal, next -> { });
+        MountHandle mounted = runtime.mount(new SceneNode(), () -> {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SceneTab.create(runtime, props).get());
+            return holder[0];
+        });
+        runtime.flush();
+
+        SceneNode root = mounted.getRoot();
+        SceneNode bar = root.__getChildren().get(0);
+        SceneNode item0 = bar.__getChildren().get(0);
+        SceneNode item1 = bar.__getChildren().get(1);
+        SceneNode label0 = item0.__getChildren().get(0);
+
+        Assert.assertNull("关滤镜：底座不装 backdrop", bar.getBackdrop());
+        Assert.assertNull("关滤镜：tab 项不装 backdrop", item1.getBackdrop());
+        Assert.assertEquals("关滤镜：底座 tint = 不透明替代底色",
+                noFilter.surface(SceneTheme.Role.TOOLBAR).getIdle().getTint(), bar.getBackgroundColor());
+        Assert.assertEquals("关滤镜：未选中项 tint = 不透明替代底色",
+                noFilter.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), item1.getBackgroundColor());
+        Assert.assertEquals("关滤镜：选中项仍是强调色系（0x59 叠不透明底）",
+                selectedTint(noFilter.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), noFilter.accent()),
+                item0.getBackgroundColor());
+        Assert.assertEquals("关滤镜：选中文字仍按对比度择色",
+                expectedSelectedLabel(noFilter.surface(SceneTheme.Role.INDICATOR),
+                        noFilter.surface(SceneTheme.Role.TOOLBAR), noFilter.accent(),
+                        noFilter.onAccentForeground(), noFilter.foreground()),
+                label0.getTextColor());
+
+        layoutEngine.layout(root, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        Assert.assertEquals("关滤镜：整树零 BACKDROP", 0,
+                countType(doPaint(root).getCommands(), PaintCommandType.BACKDROP));
+    }
+
+    // ==================== 验收 15：Props 同长同序契约运行期校验（P1-D） ====================
 
     /**
      * P1-D 修复验收：tabLabels 与 tabPanels 长度不匹配时，Props 构造期 fail-fast
@@ -848,7 +899,7 @@ public class SceneTabTest {
         new SceneTab.Props(active, Arrays.asList(), Arrays.asList(), enabled, onActivate);
     }
 
-    // ==================== 验收 15：fillContentPanel=true 父高传导（打通 4 处断裂点） ====================
+    // ==================== 验收 16：fillContentPanel=true 父高传导（打通 4 处断裂点） ====================
 
     /**
      * fill 传导核心：fillContentPanel=true 时，root/tabBar/contentPanel 三处静态配置打通，
@@ -871,7 +922,7 @@ public class SceneTabTest {
         LayoutAssertions.assertHeight(s.panelRefs[0], expectedContentH);
     }
 
-    // ==================== 验收 16：fillContentPanel=false 向后兼容（shrink） ====================
+    // ==================== 验收 17：fillContentPanel=false 向后兼容（shrink） ====================
 
     /**
      * 向后兼容：fillContentPanel=false（5 参重载默认值）时，contentPanel 按内容自然高 shrink，
@@ -886,7 +937,7 @@ public class SceneTabTest {
         LayoutAssertions.assertHeight(s.panelRefs[0], FILL_PANEL_NATURAL_H);
     }
 
-    // ==================== 验收 17：fill 模式切页 contentPanel 高零重排 ====================
+    // ==================== 验收 18：fill 模式切页 contentPanel 高零重排 ====================
 
     /**
      * fill 模式切页稳定：contentPanel 高由父分配决定，与活动页内容自然高无关。
