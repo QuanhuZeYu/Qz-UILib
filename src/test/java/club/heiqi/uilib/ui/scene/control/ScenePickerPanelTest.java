@@ -742,8 +742,10 @@ public class ScenePickerPanelTest {
         SceneNode nav = panelRoot.__getChildren().get(1).__getChildren().get(0);
         SceneNode center = panelRoot.__getChildren().get(1).__getChildren().get(1);
         Assert.assertEquals("分类导航外边框 1px", 1, nav.getBorderWidth());
-        Assert.assertEquals("分类导航边框色 BORDER_DEFAULT",
-                SceneChromeTokens.BORDER_DEFAULT, nav.getBorderColor());
+        Assert.assertEquals("分类导航边框色 = 库默认 TOOLBAR 配方 idle 缘色（G13 迁移授权扩围：改引配方值，非删除断言）",
+                club.heiqi.uilib.ui.scene.theme.SceneThemes.DEFAULT
+                        .surface(club.heiqi.uilib.ui.scene.theme.SceneTheme.Role.TOOLBAR)
+                        .getIdle().getEdge(), nav.getBorderColor());
         Assert.assertEquals("中栏外边框 1px", 1, center.getBorderWidth());
         Assert.assertEquals("中栏边框色 BORDER_DEFAULT",
                 SceneChromeTokens.BORDER_DEFAULT, center.getBorderColor());
