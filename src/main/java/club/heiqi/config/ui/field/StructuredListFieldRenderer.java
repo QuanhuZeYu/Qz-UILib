@@ -8,7 +8,6 @@ import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.CurrentValuePresenter;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
-import club.heiqi.config.ui.theme.ConfigTheme;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -25,7 +24,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.form.FormFieldShell;
 import club.heiqi.uilib.ui.scene.form.FormLabeledControl;
-import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +38,18 @@ import java.util.Map;
  * {@link DraftSignalAdapter#onFieldEdit} 写回。排序采用明确的上移/下移命令，避免把拖拽瞬态
  * 引入配置 core；增删、String/Number/Boolean/Choice、List&lt;String&gt; 及 List&lt;Choice&gt;
  * 成员均可编辑。</p>
+ *
+ * <p><b>外观归属（G15/StructuredList 迁移后）</b>：字段壳经 {@code FormFieldShell.buildBorderless}
+ * 的 theme-aware 无边框重载跟随来源主题（无边框模板保持无边框，契约 §4.1 FormFieldShell 行）；
+ * 行卡是动态复用行，按契约 §4.1（G13 裁决）轻量口径只做主题缘色派生——零行滤镜、不装角色
+ * 表面配方、不调表面绑定器；行缘色 / member error 语义色由
+ * {@link SceneThemes#resolve} 来源主题的 {@code borderDefault}/{@code errorText} 经
+ * {@code rt.bindComputed} 独占写入（深色档两值与旧 {@code SceneChromeTokens.BORDER_DEFAULT}/
+ * {@code ConfigTheme.ERROR_COLOR} 同源，默认外观不变，换主题自动重派生）；member 标签行经
+ * {@code FormLabeledControl.vertical(rt, ...)} 主题感知重载取正文/次要前景（G11）。布局与几何
+ * 纯 int（GAP/PAD/边框宽/圆角/视口高度）保留，主题不接管布局（契约 §4.2）。SimpleList/Checkbox/
+ * Button/TextInput/Toggle/Segmented/Select 等已迁移控件外观由控件自持，本类只挂载不复制样式。
+ * 草稿事务、增删排序、dirty/error、保存/撤销/重置语义零改动。</p>
  */
 public final class StructuredListFieldRenderer implements FieldRenderer {
     private static final int ROW_GAP = 5;
@@ -78,11 +90,15 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
             }
         });
 
-        // 控件树必须在 FieldShellBinder 的 mount owner 内构建，使按钮、forEach 和 bind 的
-        // 输入/响应式绑定随字段外壳一起拥有正确生命周期。
+        // 控件树必须在字段壳（FormFieldShell 内部 rt.mount）的 mount owner 内构建，使按钮、
+        // forEach 和 bind 的输入/响应式绑定随字段外壳一起拥有正确生命周期。
+        // G15/StructuredList 销账（Support 衔接要点 4）：原显式路径喂无参 asFormTheme()（缓存的
+        // FormTheme.defaultDark() 常量，契约 §3 显式覆盖语义）切到 FormFieldShell 已存在的
+        // theme-aware 无边框重载——helper 语义色/状态点随来源主题重派生，不做任何 .get() 快照，
+        // 也不给主题信号喂第二套写入者；无边框模板保持无边框（契约 §4.1）。
         return FormFieldShell.buildBorderless(rt, FieldRenderSupport.labelOf(spec), spec.helper(),
                 adapter.errorSignal(path), adapter.dirtySignal(path),
-                () -> buildControl(rt, spec, adapter, rows, objectSpec, lineage), ConfigTheme.asFormTheme());
+                () -> buildControl(rt, spec, adapter, rows, objectSpec, lineage));
     }
 
     private SceneNode buildControl(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter,
@@ -122,12 +138,18 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                                 Signal<Long> newlyAddedKey,
                                 StructuredListModel.Row row) {
         String path = spec.path();
+        // 构造期捕获来源主题（forEach 的项 builder 内 Owner.current() 是来源作用域的子作用域）。
+        ReadableSignal<SceneTheme> sourceTheme = SceneThemes.resolve(rt);
         SceneNode root = SceneNode.column();
         root.setGap(MEMBER_GAP);
         root.setPadding(6);
         root.setBorderWidth(1);
-        root.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
         root.setCornerRadius(4);
+        // 动态复用行轻量口径（契约 §4.1 G13 裁决）：不装滤镜、不装角色表面，唯一外观写入点是
+        // 缘色——由来源主题 borderDefault 经 bindComputed 独占重派生（深色档值与旧
+        // SceneChromeTokens.BORDER_DEFAULT 同源，默认外观不变）。边框宽/圆角是纯 int 几何，
+        // 主题不接管布局（契约 §4.2「尺寸/间距常量继续使用」）。
+        rt.bindComputed(() -> Integer.valueOf(sourceTheme.get().borderDefault()), root::setBorderColor);
         Signal<Boolean> userExpanded = Signal.create(Boolean.valueOf(indexOf(rows.get(), row.key()) == 0
                 || newlyAddedKey.get().longValue() == row.key()));
         ReadableSignal<String> rowError = adapter.errorSignalForPathAndDescendants(
@@ -171,6 +193,8 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                                    StructuredListModel.IdentityLineage lineage, long key,
                                    String rootPath, ValueSpec.Member member) {
         final String memberName = member.name();
+        // 构造期捕获来源主题：member 行由 buildRow（forEach builder）同步构建，Owner 上下文有效。
+        ReadableSignal<SceneTheme> sourceTheme = SceneThemes.resolve(rt);
         SceneNode wrapper = SceneNode.column();
         wrapper.setGap(2);
         ValueSpec valueSpec = member.spec();
@@ -226,10 +250,14 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
             editor = picker != null ? picker
                     : buildScalar(rt, adapter, rows, lineage, key, rootPath, member);
         }
-        wrapper.appendChild(FormLabeledControl.vertical(member.displayLabel(), member.helper(), editor));
+        // G15/StructuredList 额外授权行：旧三参显式静态路径切到 theme-aware 重载（G11 已交付），
+        // member 标签取来源主题正文前景、helper 取次要前景，结构/布局/命中语义完全一致。
+        wrapper.appendChild(FormLabeledControl.vertical(rt, member.displayLabel(), member.helper(), editor));
         SceneNode error = new SceneNode();
-        error.setTextColor(ConfigTheme.ERROR_COLOR);
         error.setHitTestable(false);
+        // error 语义色由来源主题 errorText 经 bindComputed 独占写入（深色档值与旧
+        // ConfigTheme.ERROR_COLOR 0xFFFFB4AB 同源，默认外观不变，换主题自动重派生）。
+        rt.bindComputed(() -> Integer.valueOf(sourceTheme.get().errorText()), error::setTextColor);
         // ValueSpec validator 会把 List<String> 元素错误写成 members[index]；聚合到 member 行，
         // 同时让 prefix 依赖当前 row index，排序/删除后不会把错误黏在旧位置。
         ReadableSignal<String> errorSignal = adapter.errorSignalForPathAndDescendants(
