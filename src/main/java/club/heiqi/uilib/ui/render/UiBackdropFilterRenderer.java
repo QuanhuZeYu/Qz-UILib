@@ -332,8 +332,8 @@ final class UiBackdropFilterRenderer {
                 ? Math.min(6.0F + 40.0F * effect.getLensStrength(), panelShortHalfPx * 0.8F) : 0.0F;
         BACKDROP_SHADER_PROGRAM.setUniformF("refraction",
                 refractionPx / (float) snapshotDownsampleFactor);
-        // 厚度 tint 同步加强（50% 处 0.225 -> 0.31）：小面板上折射位移被尺寸上限压住后，
-        // "边缘更厚、吃色更多"这条线索要承担更多辨识度。
+        // 厚度 tint 是基础材质吸收率的相对增量，由 shader 乘 materialTint.a；
+        // 不作为独立深色蒙层，否则大面板的宽折射带会呈现黑框。
         BACKDROP_SHADER_PROGRAM.setUniformF("edgeTint", liquid ? 0.14F + 0.34F * effect.getLensStrength() : 0.0F);
         BACKDROP_SHADER_PROGRAM.setUniform2f("lightDir", lightDirX, lightDirY);
         if (material == null) {

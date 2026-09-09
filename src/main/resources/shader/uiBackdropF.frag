@@ -218,14 +218,14 @@ void main(void) {
         float tintLuma = dot(materialTint.rgb, vec3(0.2126, 0.7152, 0.0722));
         float backdropLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
         float whiteGate = mix(1.0, smoothstep(0.05, 0.55, backdropLuma), step(0.5, tintLuma));
-        // 厚度 tint：真实玻璃边缘更厚、吃色更多——edgeTint 沿缘带递增蒙层（经典档
-        // edgeTint=0，逐项恒等）。但它必须同样受背景亮度门控：吸收型变暗只在亮背景上
-        // 成立（光程长、吃掉得多），暗背景上再叠近黑 tint 只是把缘带糊成一条脏黑边。
-        // 真机实测（2026-09-02 容器左缘）暗 23 个单位、亮边仅 2~4 个单位，用户反馈
-        // "没有光泽、黑黑的"即此。玻璃缘的第一线索永远是镜面高光，吸收是次要线索。
+        // 厚度 tint 是基础材质吸收率的相对增量，不能作为独立 alpha 直接叠加。
+        // 薄深色大面板的折射带很宽，独立深色蒙层会把整圈染成黑框；
+        // 小按钮的倒角高光会掩盖它，不能只用按钮验收面板材质。
+        // 背景亮度门控继续保护暗部；中心 lensBevel=0、经典档 edgeTint=0 均保持原色。
         float thicknessGate = smoothstep(0.15, 0.55, backdropLuma);
+        float thicknessAlpha = materialTint.a * edgeTint * lensBevel * thicknessGate;
         color = mix(color, materialTint.rgb,
-                clamp((materialTint.a + edgeTint * lensBevel * thicknessGate) * whiteGate, 0.0, 1.0));
+                clamp((materialTint.a + thicknessAlpha) * whiteGate, 0.0, 1.0));
         // 亮度补偿同受门控：不门控的话 tint 不抬黑场、lift 却抬，灰底照样被洗白。
         color = color + materialLift * whiteGate;
     } else {

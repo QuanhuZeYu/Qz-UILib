@@ -86,7 +86,9 @@ public class UiBackdropShaderSyntaxTest {
         assertTrue("白 tint 必须按背景亮度门控（whiteGate），否则暗背景洗灰",
                 code.indexOf("whiteGate") >= 0);
         assertTrue("材质合成必须引用门控后的 tint",
-                code.indexOf("materialTint.a + edgeTint * lensBevel * thicknessGate) * whiteGate") >= 0);
+                code.indexOf("materialTint.a + thicknessAlpha) * whiteGate") >= 0);
+        assertTrue("缘带只能增加基础材质的相对吸收率，独立 alpha 会把薄玻璃大面板染成黑框",
+                code.indexOf("thicknessAlpha = materialTint.a * edgeTint * lensBevel * thicknessGate") >= 0);
         assertTrue("缘带厚度变暗必须受背景亮度门控（暗背景上叠近黑 tint 只会糊出脏黑边）",
                 code.indexOf("thicknessGate = smoothstep") >= 0);
     }
