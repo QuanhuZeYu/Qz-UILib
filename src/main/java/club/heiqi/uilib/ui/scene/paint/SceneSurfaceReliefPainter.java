@@ -6,11 +6,11 @@ import club.heiqi.uilib.ui.render.UiBackdrop;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
- * 盒内玻璃浮雕，只生成既有 PaintCommand，不改变布局、内容或交互坐标。
+ * 盒内玻璃浮雕，不改变布局、内容或交互坐标。
  *
- * <p>圆角条带直接解出每行的安全跨度；fragment 内不能放 CLIP：其边界命令不随
- * translatedBy 平移，scissor 也不跟随祖先顶点变换。所有光影均为可平移的背景几何。
- * 厚底用面外条带，不用不透明底盖；边缘也不依赖 backend 的固定宽度 BORDER。</p>
+ * <p>条带携带解析圆角、挖空与盒内裁限，backend 换算物理像素后才求覆盖率。
+ * 不在 logical px 按行取整，否则 HUD 放大会连同圆角阶梯一起放大。
+ * 厚底仍为面外条带，中央透明；不使用不透明底盖或 fragment CLIP。</p>
  */
 final class SceneSurfaceReliefPainter {
 
@@ -50,11 +50,11 @@ final class SceneSurfaceReliefPainter {
         if (inner == null) return;
         // 面上只有低透明度渐变，中央保持原始玻璃透射。
         for (int y = inner.top; y < Math.min(inner.bottom, inner.top + 4); y++) {
-            row(out, inner.leftAt(y), y, inner.rightAt(y),
+            band(out, inner, null, null, y, y + 1,
                     argb(0xFFFFFF, (4 - (y - inner.top)) * 5));
         }
         for (int y = Math.max(inner.top + 4, inner.bottom - 3); y < inner.bottom; y++) {
-            row(out, inner.leftAt(y), y, inner.rightAt(y),
+            band(out, inner, null, null, y, y + 1,
                     argb(0x071320, (y - (inner.bottom - 3) + 1) * 4));
         }
 
@@ -76,57 +76,38 @@ final class SceneSurfaceReliefPainter {
     /** 仅画 outer 减去 face 的可见部分，阴影从不超出原盒。 */
     private static void outside(List<PaintCommand> out, Shape outer, Shape face, Shape bounds,
             int firstRow, int color) {
-        for (int y = Math.max(outer.top, firstRow); y < outer.bottom; y++) {
-            int left = Math.max(outer.leftAt(y), bounds.leftAt(y));
-            int right = Math.min(outer.rightAt(y), bounds.rightAt(y));
-            if (y < face.top || y >= face.bottom) {
-                row(out, left, y, right, color);
-            } else {
-                row(out, left, y, Math.min(right, face.leftAt(y)), color);
-                row(out, Math.max(left, face.rightAt(y)), y, right, color);
-            }
-        }
+        band(out, outer, face, bounds, firstRow, outer.bottom, color);
     }
 
     private static void ring(List<PaintCommand> out, Shape outer, Shape inner,
             int topColor, int leftColor, int bottomColor, int rightColor) {
-        // 覆盖常用圆角的完整弧段；每端最多十二行，避免大尺寸表面逐行扫描。
-        int topRows = Math.max(3, Math.min(12, Math.max(outer.tl, outer.tr)));
-        int bottomRows = Math.max(2, Math.min(12, Math.max(outer.bl, outer.br)));
-        for (int band = 0; band < 2; band++) {
-            int start = band == 0 ? outer.top : Math.max(outer.top + topRows, outer.bottom - bottomRows);
-            int end = band == 0 ? Math.min(outer.bottom, outer.top + topRows) : outer.bottom;
-            for (int y = start; y < end; y++) {
-                int left = outer.leftAt(y);
-                int right = outer.rightAt(y);
-                if (y < inner.top) {
-                    row(out, left, y, right, topColor);
-                } else if (y >= inner.bottom) {
-                    row(out, left, y, right, bottomColor);
-                } else {
-                    row(out, left, y, Math.min(right, inner.leftAt(y)), leftColor);
-                    row(out, Math.max(left, inner.rightAt(y)), y, right, rightColor);
-                }
-            }
-        }
-        rect(out, outer.left, outer.top + Math.max(topRows, outer.tl), inner.left,
-                outer.bottom - Math.max(bottomRows, outer.bl), leftColor);
-        rect(out, inner.right, outer.top + Math.max(topRows, outer.tr), outer.right,
-                outer.bottom - Math.max(bottomRows, outer.br), rightColor);
+        band(out, outer, inner, null, outer.top, outer.bottom,
+                new int[] {topColor, leftColor, bottomColor, rightColor});
     }
 
     private static int argb(int rgb, int alpha) {
         return (alpha << 24) | (rgb & 0xFFFFFF);
     }
 
-    private static void row(List<PaintCommand> out, int left, int y, int right, int color) {
-        rect(out, left, y, right, y + 1, color);
+    private static void band(List<PaintCommand> out, Shape outer, Shape inner, Shape bounds,
+            int top, int bottom, int color) {
+        band(out, outer, inner, bounds, top, bottom, new int[] {color, color, color, color});
     }
 
-    private static void rect(List<PaintCommand> out, int left, int top, int right, int bottom, int color) {
-        if (left < right && top < bottom && (color >>> 24) != 0) {
-            out.add(PaintCommand.background(left, top, right, bottom, color));
+    private static void band(List<PaintCommand> out, Shape outer, Shape inner, Shape bounds,
+            int top, int bottom, int[] colors) {
+        int left = bounds == null ? outer.left : Math.max(outer.left, bounds.left);
+        int right = bounds == null ? outer.right : Math.min(outer.right, bounds.right);
+        top = Math.max(top, outer.top);
+        bottom = Math.min(bottom, outer.bottom);
+        if (bounds != null) {
+            top = Math.max(top, bounds.top);
+            bottom = Math.min(bottom, bounds.bottom);
         }
+        if (left >= right || top >= bottom) return;
+        out.add(PaintCommand.roundedBand(left, top, right, bottom,
+                new RoundedBand(outer.relativeTo(left, top), inner == null ? null : inner.relativeTo(left, top),
+                        bounds == null ? null : bounds.relativeTo(left, top), colors)));
     }
 
     /** 每个角限制到短边一半；嵌套面半径随 inset 缩小。 */
@@ -175,19 +156,8 @@ final class SceneSurfaceReliefPainter {
                     tl - 1, tr - 1, br - 1, bl - 1);
         }
 
-        int leftAt(int y) {
-            return left + Math.max(cornerInset(tl, y - top), cornerInset(bl, bottom - y - 1));
-        }
-
-        int rightAt(int y) {
-            return right - Math.max(cornerInset(tr, y - top), cornerInset(br, bottom - y - 1));
-        }
-
-        // 取整行距圆心最远的边，向内取整；条带的四角都在解析圆弧内。
-        private static int cornerInset(int radius, int row) {
-            if (radius <= 0 || row >= radius) return 0;
-            double distance = radius - row;
-            return (int) Math.ceil(radius - Math.sqrt((double) radius * radius - distance * distance));
+        int[] relativeTo(int x, int y) {
+            return new int[] {left - x, top - y, right - x, bottom - y, tl, tr, br, bl};
         }
     }
 }

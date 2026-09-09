@@ -154,11 +154,14 @@ final class UiBackdropFilterRenderer {
             return "snapshot-unavailable: " + snapshotService.getLastFailureDetail();
         }
 
-        context.pushClip(left, top, right, bottom, cornerRadii);
+        // Shader 用连续覆盖率裁出圆角；自身 stencil 会把半透明弧边再次硬切掉。
+        // 矩形约束仍与祖先 scissor/stencil 求交，固定管线回退另加圆角裁剪。
+        context.pushClip(left, top, right, bottom, 0);
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
         boolean drewBackdrop = false;
+        boolean fixedPipelineClip = false;
         try {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.getTextureId());
@@ -166,14 +169,21 @@ final class UiBackdropFilterRenderer {
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glDisable(GL11.GL_ALPHA_TEST);
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-            GL11.glDisable(GL11.GL_BLEND);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL14.glBlendEquation(GL14.GL_FUNC_ADD);
+            // 直接修改主层时保留已有 alpha；读取父 FBO 写入独立透明层时必须建立覆盖率，
+            // 否则会留下 RGB 非零/alpha 为零的像素，回贴时变成加色。RGB 始终按覆盖率混合。
+            boolean isolatedLayer = backdropReadFramebufferId >= 0;
+            GL11.glColorMask(true, true, true, true);
+            GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                    GL11.GL_ZERO, isolatedLayer ? GL11.GL_ONE_MINUS_SRC_ALPHA : GL11.GL_ONE);
 
             float[] lightDir = resolveLightDirection(context, left, top, right, bottom);
             if (drawBackdropTextureWithShader(left, top, right, bottom, snapshot.getSampleLeft(),
                     snapshot.getSampleTop(), snapshot.getWidth(), snapshot.getHeight(), snapshot.getTextureWidth(),
                     snapshot.getTextureHeight(), snapshot.getDownsampleFactor(), blurRadius, saturation,
                     context.getBackdropBlurPolicy(), snapshot, effect, cornerRadii,
-                    lightDir[0], lightDir[1])) {
+                    lightDir[0], lightDir[1], isolatedLayer)) {
                 drewBackdrop = true;
                 return null;
             }
@@ -187,6 +197,9 @@ final class UiBackdropFilterRenderer {
                 return "shader-and-blur-unavailable";
             }
 
+            context.pushClip(left, top, right, bottom, cornerRadii);
+            fixedPipelineClip = true;
+            GL11.glDisable(GL11.GL_BLEND);
             drawBackdropTextureQuad(left, top, right, bottom, snapshot.getSampleLeft(), snapshot.getSampleTop(),
                     snapshot.getWidth(), snapshot.getHeight(), 0.0F, 0.0F);
             GL11.glEnable(GL11.GL_BLEND);
@@ -209,6 +222,7 @@ final class UiBackdropFilterRenderer {
             drewBackdrop = true;
             return null;
         } finally {
+            if (fixedPipelineClip) context.popClip();
             GL20.glUseProgram(previousProgram);
             GL13.glActiveTexture(previousActiveTexture);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
@@ -225,7 +239,8 @@ final class UiBackdropFilterRenderer {
             int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
             int downsampleFactor, int blurRadius, float saturation, BackdropBlurPolicy backdropBlurPolicy,
             MainLayerSnapshot snapshot, UiBackdropEffect effect,
-            UiBorderRadiusResolver.ResolvedCornerRadii panelCornerRadii, float lightDirX, float lightDirY) {
+            UiBorderRadiusResolver.ResolvedCornerRadii panelCornerRadii, float lightDirX, float lightDirY,
+            boolean isolatedLayer) {
         BackdropBlurConfig config = BackdropBlurConfig.getInstance();
         BackdropBlurPolicy policy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
                 : backdropBlurPolicy;
@@ -240,6 +255,7 @@ final class UiBackdropFilterRenderer {
         }
         BACKDROP_SHADER_PROGRAM.bind();
         BACKDROP_SHADER_PROGRAM.setUniformI("mainTex", 0);
+        BACKDROP_SHADER_PROGRAM.setUniformF("sourceAlphaPass", 0.0F);
         BACKDROP_SHADER_PROGRAM.setUniform2f("texelSize", 1.0F / (float) textureWidth, 1.0F / (float) textureHeight);
         BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius,
                 downsampleFactor, policy));
@@ -249,8 +265,9 @@ final class UiBackdropFilterRenderer {
         BACKDROP_SHADER_PROGRAM.setUniform2f("panelSizePx", (float) Math.max(1, right - left),
                 (float) Math.max(1, bottom - top));
         // 四角半径（左上/右上/右下/左下），供 SDF 圆角亮边使用；与 panelSizePx 同一像素空间。
-        UiBorderRadiusResolver.ResolvedCornerRadii radii = panelCornerRadii == null
-                ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : panelCornerRadii;
+        UiBorderRadiusResolver.ResolvedCornerRadii radii = UiBorderRadiusResolver.scaleToFit(
+                panelCornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : panelCornerRadii,
+                Math.max(1, right - left), Math.max(1, bottom - top));
         BACKDROP_SHADER_PROGRAM.setUniform4f("cornerRadii", (float) radii.getTopLeft(),
                 (float) radii.getTopRight(), (float) radii.getBottomRight(), (float) radii.getBottomLeft());
         // 面板短边半宽（屏幕像素）：给折射位移做尺寸上限，见 applyMaterialUniforms。
@@ -259,6 +276,17 @@ final class UiBackdropFilterRenderer {
                 Math.max(1, downsampleFactor), panelShortHalfPx);
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
+        if (isolatedLayer) {
+            // 首遍 RGB = src * coverage + dst * (1-coverage)，alpha 仅衰减旧目标。
+            // 第二遍只累加 sampleAlpha * coverage；保留旧 replacement 在透明父层/非空子层
+            // 的语义。不能让 sampleAlpha 参与首遍 RGB 混合，也不能把 RGB 送进加法混合。
+            GL11.glColorMask(false, false, false, true);
+            GL14.glBlendFuncSeparate(GL11.GL_ZERO, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE);
+            BACKDROP_SHADER_PROGRAM.setUniformF("sourceAlphaPass", 1.0F);
+            drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
+                    0.0F, 0.0F);
+            GL11.glColorMask(true, true, true, true);
+        }
         BACKDROP_SHADER_PROGRAM.unbind();
         UiGlassMaterial material = effect == null ? null : effect.getMaterial();
         recordPath(BackdropFilterRenderPath.SHADER, "blur=" + blurRadius + ", saturation="

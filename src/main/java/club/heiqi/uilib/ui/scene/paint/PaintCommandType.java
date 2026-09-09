@@ -161,7 +161,10 @@ public enum PaintCommandType {
      * 命中测试由控件层（如 SceneLabel 的 CLICK handler）读 fragment 内本命令完成。
      * 与 TEXT 命令同批产出、同生命周期（随 fragment 复用/失效），保证命中区域与视觉一致。</p>
      */
-    LINK_REGION
+    LINK_REGION,
+
+    /** 内部圆角带：连续外形、挖空和裁限在 backend 边界才求像素覆盖率。 */
+    ROUNDED_BAND
 
     // 预留扩展（本切片不实现，仅作占位注释）：
     // skew    - 倾斜变换（方案甲不实现）

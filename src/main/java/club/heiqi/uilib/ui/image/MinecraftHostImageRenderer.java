@@ -222,8 +222,20 @@ interface DynamicImageTextureAccess {
 final class MinecraftDynamicImageTextureAccess implements DynamicImageTextureAccess {
     @Override
     public ResourceLocation create(String key, BufferedImage image) {
-        return Minecraft.getMinecraft().getTextureManager()
-                .getDynamicTextureLocation(key, new DynamicTexture(image));
+        int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        try {
+            DynamicTexture texture = new DynamicTexture(image);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture.getGlTextureId());
+            // DynamicTexture 上传默认使用最近邻，HUD 的非整数缩放会把图标曲边采成阶梯。
+            // 只配置本 renderer 拥有的完整位图；资源纹理/图集仍由其资源采样设置管理。
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+            return Minecraft.getMinecraft().getTextureManager().getDynamicTextureLocation(key, texture);
+        } finally {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
+        }
     }
 
     @Override

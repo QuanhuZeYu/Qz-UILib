@@ -112,7 +112,11 @@ public final class UiRenderBackends {
         context.drawBackdropFilter(px(left, scale), px(top, scale), px(right, scale), px(bottom, scale),
                 px(backdrop.getBlurRadius(), scale), backdrop.getSaturation(),
                 cornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0)
-                        : cornerRadii.scale(scale), backdrop.getEffect());
+                        // ResolvedCornerRadii.scale 只用于 scaleToFit 收缩；宿主放大必须逐角换算。
+                        : UiBorderRadiusResolver.ResolvedCornerRadii.of(
+                                px(cornerRadii.getTopLeft(), scale), px(cornerRadii.getTopRight(), scale),
+                                px(cornerRadii.getBottomRight(), scale), px(cornerRadii.getBottomLeft(), scale)),
+                backdrop.getEffect());
     }
 
     /**
@@ -171,6 +175,29 @@ public final class UiRenderBackends {
             current = scaled.delegate();
         }
         return product;
+    }
+
+    /**
+     * 内部 paint replay 桥接，不作为业务绘制 API：各形状为相对命令原点的
+     * {left, top, right, bottom, tl, tr, br, bl}，颜色顺序为上、左、下、右。
+     * outer 减 inner 后与 bounds 及命令盒求交；null inner/bounds 表示不挖空/不附加裁限。
+     * 只在此 backend 边界换算坐标，避免先在 logical px 栅格化再放大。
+     */
+    public static void __roundedBand(UiRenderBackend backend, int left, int top, int right, int bottom,
+            int[] outer, int[] inner, int[] bounds, int[] colors) {
+        float scale = 1.0F;
+        UiRenderBackend target = backend;
+        while (target instanceof ScaledRenderBackend) {
+            ScaledRenderBackend scaled = (ScaledRenderBackend) target;
+            scale *= scaled.scale();
+            target = scaled.delegate();
+        }
+        if (target instanceof UiRenderContext) {
+            UiContextGlHelpers.drawRoundedBandBatch((UiRenderContext) target, left, top, right, bottom,
+                    outer, inner, bounds, colors, scale);
+        } else if (target != null) {
+            UiRoundedBandRasterizer.draw(target, left, top, right, bottom, outer, inner, bounds, colors, scale);
+        }
     }
 
     private static int px(int logical, float scale) {

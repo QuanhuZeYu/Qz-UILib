@@ -101,7 +101,8 @@ public class SceneSurfaceReliefTest {
                     for (PaintCommand command : commands) {
                         Assert.assertTrue(command.getType() == PaintCommandType.BACKGROUND
                                 || command.getType() == PaintCommandType.BACKDROP
-                                || command.getType() == PaintCommandType.BORDER);
+                                || command.getType() == PaintCommandType.BORDER
+                                || command.getType() == PaintCommandType.ROUNDED_BAND);
                         Assert.assertTrue(command.getLeft() >= 0 && command.getTop() >= 0);
                         Assert.assertTrue(command.getRight() <= width && command.getBottom() <= height);
                         Assert.assertTrue(command.getRight() > command.getLeft());
@@ -115,6 +116,63 @@ public class SceneSurfaceReliefTest {
                     Assert.assertEquals("染色只叠一次", 1, tintCount);
                 }
             }
+        }
+    }
+
+    @Test
+    public void replayKeepsTransparentCenterAndDirectionalEdgesAtEveryScale() {
+        for (float scale : new float[] {1.0F, 1.5F, 2.0F, 3.0F}) {
+            for (float elevation : new float[] {0.0F, 0.5F, 1.0F}) {
+                SceneNode node = surface(24, 24).__setSurfaceElevation(elevation);
+                PaintPlan decorations = new PaintPlan();
+                for (PaintCommand command : paint.paint(node).getPlan().getCommands()) {
+                    if (command.getType() == PaintCommandType.ROUNDED_BAND) decorations.addCommand(command);
+                }
+                RecordingRenderBackend backend = new RecordingRenderBackend();
+                new ScenePaintReplayer().replay(decorations, backend.scaled(scale));
+                int extent = Math.round(24 * scale);
+                int center = extent / 2;
+                for (RecordingRenderBackend.RenderCall call : backend.getCalls()) {
+                    Assert.assertTrue(call.getInt(0) >= 0 && call.getInt(1) >= 0);
+                    Assert.assertTrue(call.getInt(2) <= extent && call.getInt(3) <= extent);
+                    Assert.assertFalse("中心必须保持玻璃透射，不得用底盖填孔",
+                            call.getInt(0) <= center && call.getInt(2) > center
+                                    && call.getInt(1) <= center && call.getInt(3) > center);
+                }
+                System.out.println("RELIEF_CALLS scale=" + scale + " elevation=" + elevation
+                        + " calls=" + backend.getCallCount());
+                Assert.assertTrue("最多按物理边沿增长，不能逐像素输出整个面积",
+                        backend.getCallCount() < 300 * scale);
+            }
+        }
+    }
+
+    @Test
+    public void descriptorIsDefensiveAndParticipatesInValueIdentityAndTranslation() {
+        int[] outer = {0, 0, 24, 24, 8, 8, 8, 8};
+        int[] colors = {0x80FFFFFF, 0x40FFFFFF, 0x20FFFFFF, 0x20071320};
+        RoundedBand value = new RoundedBand(outer, null, null, colors);
+        RoundedBand equal = new RoundedBand(outer, null, null, colors);
+        PaintCommand command = PaintCommand.roundedBand(0, 0, 24, 24, value);
+        PaintCommand equivalent = PaintCommand.roundedBand(0, 0, 24, 24, equal);
+        Assert.assertEquals(command, equivalent);
+        Assert.assertEquals(command.hashCode(), equivalent.hashCode());
+        outer[4] = 0;
+        colors[0] = 0;
+        value.outer()[4] = 0;
+        value.colors()[0] = 0;
+        Assert.assertEquals(equal, value);
+        Assert.assertNotEquals(command,
+                PaintCommand.roundedBand(0, 0, 24, 24, new RoundedBand(outer, null, null, colors)));
+        Assert.assertSame(value, command.translatedBy(31, 47).getRoundedBand());
+        RecordingRenderBackend shifted = new RecordingRenderBackend();
+        RecordingRenderBackend offset = new RecordingRenderBackend();
+        new ScenePaintReplayer().replay(new PaintPlan().addCommand(command.translatedBy(31, 47)),
+                shifted.scaled(2.0F));
+        new ScenePaintReplayer().replay(new PaintPlan().addCommand(command), offset.scaled(2.0F), 31, 47);
+        Assert.assertEquals(shifted.getCallCount(), offset.getCallCount());
+        for (int i = 0; i < shifted.getCallCount(); i++) {
+            Assert.assertArrayEquals(shifted.getCall(i).args(), offset.getCall(i).args());
         }
     }
 

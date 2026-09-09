@@ -134,6 +134,14 @@ public class ScenePaintReplayer {
     private void replayCommand(PaintCommand cmd, UiRenderBackend ctx, int offsetX, int offsetY,
             Deque<Scope> openScopes) {
         switch (cmd.getType()) {
+            case ROUNDED_BAND: {
+                RoundedBand band = cmd.getRoundedBand();
+                club.heiqi.uilib.ui.render.UiRenderBackends.__roundedBand(ctx,
+                        cmd.getLeft() + offsetX, cmd.getTop() + offsetY,
+                        cmd.getRight() + offsetX, cmd.getBottom() + offsetY,
+                        band.outer(), band.inner(), band.bounds(), band.colors());
+                break;
+            }
             case BACKDROP: {
                 // 声明式玻璃：坐标与 fragment 偏移同域（logical px），换算与 scaled 穿透
                 // 由门面统一负责——replayer 不碰 GL、不猜后端类型（宪章信条六）。

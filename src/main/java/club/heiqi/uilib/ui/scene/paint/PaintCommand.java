@@ -49,6 +49,9 @@ public final class PaintCommand {
     /** 命令类型 */
     private final PaintCommandType type;
 
+    /** 包内圆角带描述；不暴露新的业务构造 API。 */
+    private final RoundedBand roundedBand;
+
     // === 几何（相对所属节点局部原点的坐标，组装期叠加 offset 得绝对坐标） ===
 
     /** 左边界（像素，相对节点局部原点） */
@@ -170,6 +173,22 @@ public final class PaintCommand {
                          int cornerRadiusTopLeft, int cornerRadiusTopRight,
                          int cornerRadiusBottomRight, int cornerRadiusBottomLeft,
                          club.heiqi.uilib.ui.render.UiBackdrop backdrop) {
+        this(type, left, top, right, bottom, color, text, textStyle, linkUrl, imageSource, opacity,
+                cornerRadius, borderWidth, translateX, translateY, rotateDegrees, scaleX, scaleY,
+                originXRatio, originYRatio, segments, cornerRadiusTopLeft, cornerRadiusTopRight,
+                cornerRadiusBottomRight, cornerRadiusBottomLeft, backdrop, null);
+    }
+
+    private PaintCommand(PaintCommandType type, int left, int top, int right, int bottom,
+                          int color, String text, TextStyle textStyle, String linkUrl,
+                          SceneImageSource imageSource, float opacity,
+                         int cornerRadius, int borderWidth,
+                         float translateX, float translateY, float rotateDegrees,
+                         float scaleX, float scaleY,
+                         float originXRatio, float originYRatio, List<TextSegment> segments,
+                         int cornerRadiusTopLeft, int cornerRadiusTopRight,
+                         int cornerRadiusBottomRight, int cornerRadiusBottomLeft,
+                         club.heiqi.uilib.ui.render.UiBackdrop backdrop, RoundedBand roundedBand) {
         this.type = Objects.requireNonNull(type, "type");
         this.left = left;
         this.top = top;
@@ -197,7 +216,17 @@ public final class PaintCommand {
         this.originXRatio = originXRatio;
         this.originYRatio = originYRatio;
         this.backdrop = backdrop;
+        this.roundedBand = roundedBand;
     }
+
+    static PaintCommand roundedBand(int left, int top, int right, int bottom, RoundedBand band) {
+        return new PaintCommand(PaintCommandType.ROUNDED_BAND, left, top, right, bottom,
+                0, null, null, null, null, 1.0f, 0, 0,
+                0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 0.5f, null,
+                -1, -1, -1, -1, null, Objects.requireNonNull(band, "band"));
+    }
+
+    RoundedBand getRoundedBand() { return roundedBand; }
 
     // ========== 静态工厂方法 ==========
 
@@ -766,7 +795,7 @@ public final class PaintCommand {
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
                 segments,
                 cornerRadiusTopLeft, cornerRadiusTopRight,
-                cornerRadiusBottomRight, cornerRadiusBottomLeft, backdrop);
+                cornerRadiusBottomRight, cornerRadiusBottomLeft, backdrop, roundedBand);
     }
 
     // ========== equals / hashCode / toString ==========
@@ -805,7 +834,8 @@ public final class PaintCommand {
                 && Float.compare(scaleY, other.scaleY) == 0
                 && Float.compare(originXRatio, other.originXRatio) == 0
                 && Float.compare(originYRatio, other.originYRatio) == 0
-                && Objects.equals(backdrop, other.backdrop);
+                && Objects.equals(backdrop, other.backdrop)
+                && Objects.equals(roundedBand, other.roundedBand);
     }
 
     @Override
@@ -816,7 +846,7 @@ public final class PaintCommand {
                 cornerRadius, cornerRadiusTopLeft, cornerRadiusTopRight,
                 cornerRadiusBottomRight, cornerRadiusBottomLeft, borderWidth,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio,
-                backdrop);
+                backdrop, roundedBand);
     }
 
     @Override

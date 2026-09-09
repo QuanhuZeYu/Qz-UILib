@@ -366,34 +366,42 @@ public class SceneLiquidGlassStyleTest {
     }
 
     private static void assertDirectionalRelief(PaintPlan plan, PaintCommand face) {
-        PaintCommand top = null;
-        PaintCommand bottom = null;
+        Integer top = null;
+        Integer bottom = null;
         boolean darkBase = false;
         int centerX = (face.getLeft() + face.getRight()) / 2;
+        // 验证实际 replay 输出，不能把旧的逐行 BACKGROUND 实现当作行为契约。
         for (PaintCommand command : plan.getCommands()) {
-            if (command.getType() != PaintCommandType.BACKGROUND || command == face) continue;
-            if (plan.getCommands().indexOf(command) < plan.getCommands().indexOf(face)) {
-                if (command.getTop() >= face.getBottom() && alpha(command.getColor()) > 0) {
-                    int rgb = command.getColor() & 0xFFFFFF;
-                    darkBase |= ((rgb >> 16) & 0xFF) < 128
-                            && ((rgb >> 8) & 0xFF) < 128 && (rgb & 0xFF) < 128;
+            if (command.getType() != PaintCommandType.ROUNDED_BAND) continue;
+            club.heiqi.uilib.ui.scene.paint.RecordingRenderBackend backend =
+                    new club.heiqi.uilib.ui.scene.paint.RecordingRenderBackend();
+            new club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer().replay(
+                    new PaintPlan().addCommand(command), backend);
+            for (club.heiqi.uilib.ui.scene.paint.RecordingRenderBackend.RenderCall call : backend.getCalls()) {
+                int color = call.getInt(4);
+                if (plan.getCommands().indexOf(command) < plan.getCommands().indexOf(face)) {
+                    if (call.getInt(1) >= face.getBottom() && alpha(color) > 0) {
+                        int rgb = color & 0xFFFFFF;
+                        darkBase |= ((rgb >> 16) & 0xFF) < 128
+                                && ((rgb >> 8) & 0xFF) < 128 && (rgb & 0xFF) < 128;
+                    }
+                    continue;
                 }
-                continue;
-            }
-            if (command.getLeft() > centerX || command.getRight() <= centerX) continue;
-            if (command.getTop() == face.getTop() && command.getBottom() == face.getTop() + 1) {
-                Assert.assertNull("上倒角只绘制一次中央高光", top);
-                top = command;
-            }
-            if (command.getTop() == face.getBottom() - 1 && command.getBottom() == face.getBottom()) {
-                Assert.assertNull("下倒角只绘制一次中央反光", bottom);
-                bottom = command;
+                if (call.getInt(0) > centerX || call.getInt(2) <= centerX) continue;
+                if (call.getInt(1) == face.getTop() && call.getInt(3) == face.getTop() + 1) {
+                    Assert.assertNull("上倒角只绘制一次中央高光", top);
+                    top = color;
+                }
+                if (call.getInt(1) == face.getBottom() - 1 && call.getInt(3) == face.getBottom()) {
+                    Assert.assertNull("下倒角只绘制一次中央反光", bottom);
+                    bottom = color;
+                }
             }
         }
         Assert.assertTrue("玻璃面下方必须有可见暗色厚底或接触阴影", darkBase);
         Assert.assertNotNull("上倒角高光进入真实绘制", top);
         Assert.assertNotNull("下倒角弱反光进入真实绘制", bottom);
-        Assert.assertTrue("定向边缘上亮下弱，不能退回均匀描边", alpha(top.getColor()) > alpha(bottom.getColor()));
+        Assert.assertTrue("定向边缘上亮下弱，不能退回均匀描边", alpha(top) > alpha(bottom));
     }
 
     private static final class Appearance {
@@ -505,7 +513,8 @@ public class SceneLiquidGlassStyleTest {
                 if (command.getType() == PaintCommandType.BACKDROP) backdropCount++;
                 if (command.getType() == PaintCommandType.BACKGROUND
                         || command.getType() == PaintCommandType.BORDER
-                        || command.getType() == PaintCommandType.BACKDROP) {
+                        || command.getType() == PaintCommandType.BACKDROP
+                        || command.getType() == PaintCommandType.ROUNDED_BAND) {
                     Assert.assertTrue("面部、厚底和投影全部保留在固定按钮盒内",
                             command.getLeft() >= bounds.getX() && command.getTop() >= bounds.getY()
                                     && command.getRight() <= bounds.getX() + bounds.getWidth()

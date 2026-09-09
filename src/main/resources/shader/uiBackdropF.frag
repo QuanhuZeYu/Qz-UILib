@@ -33,6 +33,7 @@ uniform sampler2D mainTex;
 uniform vec2 texelSize;
 uniform float blurRadius;
 uniform float saturation;
+uniform float sourceAlphaPass;
 uniform float iosMaterial;
 uniform float vibrancy;
 uniform vec4 materialTint;
@@ -78,6 +79,22 @@ float cornerRadiusAt(vec4 radii, vec2 uv) {
     return mix(topR, bottomR, step(0.5, uv.y));
 }
 
+// 半径已由宿主按相邻边长度归一；合法的单个大圆角可以超过短边一半。
+// 对四个角区分别求约束，不能只按中心象限选角，否则不对称圆角 mask 会改变轮廓。
+float roundedPanelDistance(vec2 p, vec2 size, vec4 radii) {
+    vec2 edge = min(p, size - p);
+    float distance = -min(edge.x, edge.y);
+    if (p.x < radii.x && p.y < radii.x)
+        distance = max(distance, length(p - vec2(radii.x)) - radii.x);
+    if (p.x > size.x - radii.y && p.y < radii.y)
+        distance = max(distance, length(p - vec2(size.x - radii.y, radii.y)) - radii.y);
+    if (p.x > size.x - radii.z && p.y > size.y - radii.z)
+        distance = max(distance, length(p - (size - vec2(radii.z))) - radii.z);
+    if (p.x < radii.w && p.y > size.y - radii.w)
+        distance = max(distance, length(p - vec2(radii.w, size.y - radii.w)) - radii.w);
+    return distance;
+}
+
 // 廉价 hash 噪声：不用 sin 做 hash（各驱动 sin 实现差异会让噪声分布随硬件变化）。
 float hashNoise(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -106,15 +123,17 @@ void main(void) {
     vec2 radiusStep = texelSize * clamp(blurRadius, 1.0, 128.0) * 0.98;
 
     // 面板几何必须先于采样计算：Liquid Glass 的透镜折射要偏置采样坐标。
-    // 到"圆角矩形边界"的带符号距离（inigo-quirk 的 rounded-box SDF，约 10 ALU）。
+    // 覆盖率使用完整四角轮廓；透镜法线仍采用既有的局部内切矩形近似。
     vec2 halfSize = max(panelSizePx * 0.5, vec2(1.0, 1.0));
     vec2 local = (panelUv - 0.5) * panelSizePx;
-    // 半径夹到短半轴内：宿主不保证已 scaleToFit，半径超过短半轴时 halfSize-cornerR
-    //  变负、SDF 几何失效乱贴亮边，故在 shader 侧兜底。
+    // 法线近似的内切矩形保持非负；该半径不参与实际覆盖率 mask。
     float cornerR = min(cornerRadiusAt(cornerRadii, panelUv), min(halfSize.x, halfSize.y));
-    vec2 q = abs(local) - (halfSize - vec2(cornerR));
-    float signedDistance = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - cornerR;
+    float signedDistance = roundedPanelDistance(panelUv * panelSizePx, panelSizePx, cornerRadii);
     float edgeDistance = max(-signedDistance, 0.0);
+    // 一个最终屏幕像素的覆盖率过渡；不随 HUD 放大成数个 logical 像素的台阶。
+    // fwidth 同时适配祖先变换；在任何动态分支/丢弃之前计算导数。
+    float edgeWidth = max(fwidth(signedDistance), 0.0001);
+    float coverage = clamp(0.5 - signedDistance / edgeWidth, 0.0, 1.0);
 
     // 按像素旋转整个采样盘：固定核在大半径下会让每个像素呈现同一套"星星点点"，
     // 叠加起来读作塑料感/蜡感。给每个像素一个确定性的盘旋转角，把结构化伪影打散成
@@ -257,5 +276,7 @@ void main(void) {
         color = clamp(color + n * noiseAmount, 0.0, 1.0);
     }
 
-    gl_FragColor = vec4(clamp(color, 0.0, 1.0), blurred.a);
+    // 首遍 coverage 控制 RGB 替换；独立层第二遍只补写原快照 alpha，RGB 写掩码关闭。
+    float outputAlpha = mix(coverage, blurred.a * coverage, sourceAlphaPass);
+    gl_FragColor = vec4(clamp(color, 0.0, 1.0), outputAlpha);
 }

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.render;
 
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -7,6 +9,7 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver.ResolvedCornerRadii;
 
 /**
  * backdrop 批次（兄弟玻璃共享同一份背景采样）契约测试。
@@ -18,6 +21,53 @@ import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
  * 捕获压成 1 次。</p>
  */
 public class UiBackdropBatchTest {
+
+    @Test
+    public void declarativeBackdropScalesAllCornersWithItsPhysicalBox() {
+        CapturingContext context = new CapturingContext();
+        UiBackdrop backdrop = UiBackdrop.liquidGlass(UiGlassMaterial.DARK_THIN, 6, 0.8F);
+        ResolvedCornerRadii radii = ResolvedCornerRadii.of(8, 4, 0, 6);
+        UiRenderBackend[] backends = {context.scaled(0.5F), context,
+                context.scaled(2.0F), context.scaled(1.5F).scaled(2.0F)};
+        // Python 独立验算的 box、blur、四角物理值；覆盖缩小、原值、放大及嵌套链。
+        int[][] expected = {
+                {2, 3, 14, 15, 3, 4, 2, 0, 3},
+                {3, 5, 27, 29, 6, 8, 4, 0, 6},
+                {6, 10, 54, 58, 12, 16, 8, 0, 12},
+                {9, 15, 81, 87, 18, 24, 12, 0, 18}
+        };
+        for (int i = 0; i < backends.length; i++) {
+            UiRenderBackends.backdropFilter(backends[i], 3, 5, 27, 29, backdrop, radii);
+            assertArrayEquals(expected[i], context.geometry);
+            // liquidGlass 的第三参是 lensStrength；saturation 使用配方默认值。
+            assertEquals(1.0F, context.saturation, 0.0F);
+            assertSame(backdrop.getEffect(), context.effect);
+        }
+        assertEquals("命令的logical半径不能回写", 8, radii.getTopLeft());
+        assertEquals(4, radii.getTopRight());
+        assertEquals(0, radii.getBottomRight());
+        assertEquals(6, radii.getBottomLeft());
+    }
+
+    private static final class CapturingContext extends UiRenderContext {
+        int[] geometry;
+        float saturation;
+        UiBackdropEffect effect;
+
+        CapturingContext() {
+            super(320, 240, 0, 0, 0.0F, new PaintContextCompositor(),
+                    new UiMainLayerSnapshotService(), UiRuntimeAdapters.empty());
+        }
+
+        @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius,
+                float saturation, ResolvedCornerRadii radii, UiBackdropEffect effect) {
+            geometry = new int[] {left, top, right, bottom, blurRadius,
+                    radii.getTopLeft(), radii.getTopRight(), radii.getBottomRight(), radii.getBottomLeft()};
+            this.saturation = saturation;
+            this.effect = effect;
+        }
+    }
 
     private static UiRenderContext newContext() {
         return new UiRenderContext(320, 240, 0, 0, 0.0F, new PaintContextCompositor(),
