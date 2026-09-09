@@ -176,6 +176,34 @@ public class MarkdownPageContentTest {
         }
     }
 
+    /**
+     * G16/MarkdownPage（含本 L3）：BACKGROUND 节点底色/圆角恒等于 {@code PaintCommand} 数据色——
+     * 契约 §7.3「markdown 样本」保留显式的搬运合同钉（表头/边框/围栏衬底色由 L2 样式表登记项解析，
+     * 本类与主题色板零关联；配合 {@code MarkdownPageTest} 的反向钉住证明不被主题接管）。
+     */
+    @Test
+    public void backgroundNodePropsAreTransportedFromCommandsNotPalette() {
+        MarkdownCountingMetrics metrics = new MarkdownCountingMetrics();
+        MarkdownPainter.ContentLayout plan = cache(SOURCE).layout(metrics, 180, 14, 1);
+        List<SceneNode> nodes = MarkdownPageContent.nodes(plan, metrics);
+        List<PaintCommand> visible = new ArrayList<PaintCommand>();
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() != PaintCommandType.LINK_REGION) visible.add(command);
+        }
+        Assert.assertEquals(visible.size(), nodes.size());
+        int backgrounds = 0;
+        for (int i = 0; i < visible.size(); i++) {
+            PaintCommand command = visible.get(i);
+            if (command.getType() != PaintCommandType.BACKGROUND) continue;
+            backgrounds++;
+            Assert.assertEquals("BACKGROUND 节点底色恒为命令数据色（L107 搬运合同）",
+                    command.getColor(), nodes.get(i).getBackgroundColor());
+            Assert.assertEquals("BACKGROUND 节点圆角恒为命令几何",
+                    command.getCornerRadius(), nodes.get(i).getCornerRadius());
+        }
+        Assert.assertTrue("含表格样本必须真实产生数据驱动底色（断言不空转）", backgrounds > 0);
+    }
+
     @org.junit.AfterClass
     public static void release() { LatexSoftwareRenderKit.resetShared(); }
 }

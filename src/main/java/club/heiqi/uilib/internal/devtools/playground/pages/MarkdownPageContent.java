@@ -19,7 +19,16 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextVerticalAlign;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 
-/** 页面私有 L3：源与样式在构造时冻结；像素计划仅随宽、字号、度量服务或纪元变化重建。 */
+/** 页面私有 L3：源与样式在构造时冻结；像素计划仅随宽、字号、度量服务或纪元变化重建。
+ *
+ * <p><b>外观归属（G16/MarkdownPage 同页实例）</b>：本类不引用任何主题/公共色板常量，只做
+ * {@code PaintCommand} 搬运——{@link #nodes} 里 BACKGROUND 节点的底色与圆角恒等于 L2 从
+ * {@code MarkdownStyleTable} 登记项（chat3 出货口径的表头 {@code 0x18FFFFFF}、边框/装饰
+ * {@code 0x40FFFFFF}、围栏衬底 {@code 0x26FFFFFF} 等）解析出的<b>数据驱动色</b>，随被展示的
+ * markdown 内容而定。按契约 §7.3「markdown/LaTeX 样本」不迁移清单刻意保留显式：主题切换既
+ * 不改命令计划也不改搬运结果，由 {@code MarkdownPageTest} 反向钉住、{@code MarkdownPageContentTest}
+ * 钉住「节点底色恒为命令色」的搬运合同。</p>
+ */
 final class MarkdownPageContent {
     private final MarkdownDocument.LayoutContent content;
     private TextLayoutService cachedMeasurer;
@@ -104,6 +113,8 @@ final class MarkdownPageContent {
             int height = Math.max(1, command.getBottom() - command.getTop());
             switch (command.getType()) {
                 case BACKGROUND:
+                    // 保留显式（契约 §7.3 markdown 样本）：只搬运 L2 数据驱动色（样式表登记项解析进
+                    // 命令），本类与主题色板零关联；主题切换不得改变此处输出（MarkdownPageTest 反向钉住）。
                     node.setBackgroundColor(command.getColor()).setCornerRadius(command.getCornerRadius());
                     break;
                 case SEGMENTS:

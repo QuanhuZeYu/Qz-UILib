@@ -47,6 +47,31 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * headless 见 {@code MarkdownSoftwareRenderTest} 与 {@code MarkdownTableSoftwareRenderTest}，
  * 观感与手感仍由真机验收。
  * 滚动由 {@link TestPlaygroundHost} 视口统一提供（与其它页同构，不自建滚动容器）。</p>
+ *
+ * <p><b>外观归属（G16/MarkdownPage）</b>：卡片标题与说明全部复用公共文本构件
+ * {@link PlaygroundKit#title(String)}/{@link PlaygroundKit#hint(String)}、卡片底座复用
+ * {@link PlaygroundKit#card()}——宿主上下文内默认跟随来源主题（G16/公共构件实例已迁移，
+ * 本页不改 {@code PlaygroundKit}），刻意不回退静态取色。页内保留的显式颜色全部是
+ * <b>markdown 渲染协议样本</b>（契约 §7.3「markdown/LaTeX 样本」不迁移清单），逐处说明：
+ * <ul>
+ *   <li>{@code sampleCard}/{@code tableCard} 的 {@code base.setColor(PlaygroundKit.TEXT)} 是
+ *       <b>markdown 正文渲染默认色</b>：{@code base} 经 {@code MarkdownDocument.toLayoutLines}/
+ *       {@code toLayoutContent} 传入 L1 内联解析（{@code MarkdownInlineParser.parse(markdown,
+ *       baseStyle)}），未加标签的正文段逐字吃该色作为渲染像素——为「匹配主题」改它即改写
+ *       markdown 渲染输出，摧毁 {@code MarkdownSoftwareRenderTest} 目检基线（任务单 G16 禁止项），
+ *       故与 LatexPage 公式正文同理刻意保留显式，由 {@code MarkdownPageTest} 反向钉住不被主题接管。
+ *       它不是页面 chrome 容器前景：chrome（标题/说明）不经过这里。</li>
+ *   <li>围栏块底色 {@code head.getBackgroundArgb()}、引用竖条与真横线色
+ *       {@code line.getAccentArgb()}（含 {@code Unit.accentArgb} 搬运）是由被展示的 markdown
+ *       内容 + {@code MarkdownStyleTable} 登记项（chat3 出货口径）解析出的<b>数据驱动色</b>，
+ *       同属渲染协议样本，逐处保留、不与主题色板发生关系；{@code MarkdownPageContent} 的
+ *       {@code PaintCommand} 底色搬运同理（见该类的归属注记）。</li>
+ *   <li>{@code QUOTE_BAR_WIDTH_PX}/{@code QUOTE_BAR_RADIUS_PX}/{@code QUOTE_GAP_PX}/
+ *       {@code CODE_BG_PAD_PX} 与 {@code WRAP_WIDTH_PX} 是几何/布局常量，按契约 §4.2
+ *       「尺寸/间距常量继续使用、主题不接管布局」保留。</li>
+ * </ul>
+ * 字号（{@code BASE_FONT_PX} 与各标题/说明字号）与 markdown 解析、换行、分组、表格宽度算法
+ * 全部不变。</p>
  */
 public final class MarkdownPage implements PlaygroundPage {
 
@@ -56,7 +81,8 @@ public final class MarkdownPage implements PlaygroundPage {
     /** 演示段流的换行宽（UI 像素），与 LatexPage 混排行同值，避免长行横向溢出宿主视口。 */
     private static final int WRAP_WIDTH_PX = 600;
 
-    /** M7 演示几何常量（与 chat3 设计稿同源：竖条 2 + 间隙 6、code 底色内衬 3）。 */
+    /** M7 演示几何常量（与 chat3 设计稿同源：竖条 2 + 间隙 6、code 底色内衬 3）。
+     *  均为几何/布局常量：契约 §4.2 主题不接管布局，G16 迁移原样保留。 */
     private static final int QUOTE_BAR_WIDTH_PX = 2;
     private static final int QUOTE_BAR_RADIUS_PX = 1;
     private static final int QUOTE_GAP_PX = 6;
@@ -121,6 +147,8 @@ public final class MarkdownPage implements PlaygroundPage {
         MarkdownStyleTable styles = MarkdownStyleTable.defaults();
         styles.setDefaultFontSizePx(BASE_FONT_PX);
         TextStyle base = new TextStyle();
+        // 保留显式（契约 §7.3 markdown 样本）：base 色经 L1 内联解析成为表格正文段的渲染像素默认色，
+        // 非 chrome 容器前景；主题接管即改写 markdown 渲染输出（任务单 G16 禁止项），口径同 sampleCard。
         base.setColor(PlaygroundKit.TEXT);
         String source = "表格前的说明。\n\n"
                 + "| 项目 | 说明 | 数量 |\n| :--- | :---: | ---: |\n"
@@ -152,6 +180,9 @@ public final class MarkdownPage implements PlaygroundPage {
                 - head.getQuoteLevel() * head.getIndentStepPx());
         SceneNode block = SceneNode.column(0)
                 .setHitTestable(false)
+                // 保留显式（契约 §7.3 markdown 样本）：底色是 L2 从 MarkdownStyleTable 登记项
+                // （chat3 出货口径 code 衬底）解析进本行数据对象的块底色，随被展示的 markdown
+                // 内容变化，属渲染协议样本，不随主题切换。
                 .setBackgroundColor(head.getBackgroundArgb())
                 .setPadding(0, CODE_BG_PAD_PX, 0, CODE_BG_PAD_PX + listExtra);
         for (int k = from; k <= to; k++) {
@@ -241,6 +272,9 @@ public final class MarkdownPage implements PlaygroundPage {
                 .setHitTestable(false)
                 .setPreferredWidth(QUOTE_BAR_WIDTH_PX)
                 .setFillParentHeight(true)
+                // 保留显式（契约 §7.3 markdown 样本）：accentArgb 是第一趟从该行 L2 数据对象搬运的
+                // 引用块装饰色（MarkdownStyleTable 登记项解析所得），属渲染协议样本，不随主题切换；
+                // QUOTE_BAR_RADIUS_PX 为几何常量（契约 §4.2 主题不接管布局）。
                 .setBackgroundColor(units.get(from).accentArgb)
                 .setCornerRadius(QUOTE_BAR_RADIUS_PX));
         quoteRow.appendChild(inner);
@@ -270,6 +304,9 @@ public final class MarkdownPage implements PlaygroundPage {
         // M7 方案乙：真横线取代字面 dash（既有旋钮）；本页走块身份行接缝
         styles.setThematicBreakText("");
         TextStyle base = new TextStyle();
+        // 保留显式（契约 §7.3 markdown 样本）：本行文本的基础前景是 markdown 正文渲染默认色
+        // （L1 把 base 铺进未加样式段的 TextSegment 色通道，直接决定出字像素），刻意不被主题接管；
+        // 卡片标题/说明等 chrome 文字走 PlaygroundKit.title/hint 主题路径，与这里无关。
         base.setColor(PlaygroundKit.TEXT);
         List<MarkdownLayoutLine> lines = MarkdownPainter.wrapLayoutLines(
                 MarkdownDocument.parse(sample[2]).toLayoutLines(styles, base),
@@ -301,6 +338,8 @@ public final class MarkdownPage implements PlaygroundPage {
                 lineNode = new SceneNode()
                         .setHitTestable(false)
                         .setPreferredHeight(Math.max(1, line.getRuleThicknessPx()))
+                        // 保留显式（契约 §7.3 markdown 样本）：横线色与引用竖条共用该行 L2 数据对象的
+                        // 装饰色（样式表登记项解析），属渲染协议样本，不随主题切换。
                         .setBackgroundColor(line.getAccentArgb())
                         .setPreferredWidth(Math.max(1, WRAP_WIDTH_PX - line.getLeftInsetPx()))
                         .setMargin(2, 0, 2, 0);
