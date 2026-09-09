@@ -9,6 +9,8 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
@@ -20,10 +22,15 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneCheckbox 端到端单元测试 —— Phase 4 批 1 受控双向控件验收。
@@ -32,6 +39,12 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * 受控双向闭环（点击只调 onChange 交还期望新值、控件零内部状态不自翻转）、
  * 命中穿透（点装饰子节点穿透到 root）、四态切换零重排（R-D 终极反证）、
  * 键盘激活（Enter/Space）。</p>
+ *
+ * <p><b>外观语义（G05 默认选中配方与主题前景）</b>：box 背景/边框/圆角/滤镜/浮雕高度来自
+ * {@link SceneThemes#selectableSurface} 的 {@link SceneTheme.Role#INDICATOR} 角色配方
+ * （未选中取角色配方、选中态换主题强调色 tint），勾选标记取
+ * {@link SceneThemes#onAccentForeground}、label 前景取 {@link SceneThemes#foreground}/
+ * {@link SceneThemes#disabledForeground}。外观断言一律取配方/主题值，集中调参时本类自动跟随。</p>
  *
  * <h3>测试沙箱 pipeline（对照 SceneButtonTest）</h3>
  * <pre>
@@ -66,11 +79,17 @@ public class SceneCheckboxTest {
     private static final int CANVAS_WIDTH = 200;
     private static final int CANVAS_HEIGHT = 100;
 
-    private static final int BOX_UNCHECKED_ENABLED = SceneChromeTokens.BG_DEFAULT;
-    private static final int BOX_UNCHECKED_HOVER = SceneChromeTokens.BG_HOVER;
-    private static final int BOX_UNCHECKED_PRESSED = SceneChromeTokens.BG_PRESSED;
-    private static final int BOX_CHECKED_ENABLED = SceneChromeTokens.ACCENT;
-    private static final int BOX_DISABLED = SceneChromeTokens.BG_DISABLED;
+    /** 库默认主题的 INDICATOR 角色配方：默认工厂路径的外观唯一来源。 */
+    private static final SceneSurfaceStyle INDICATOR_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.INDICATOR);
+    private static final int BOX_UNCHECKED_ENABLED = INDICATOR_SURFACE.getIdle().getTint();
+    private static final int BOX_UNCHECKED_HOVER = INDICATOR_SURFACE.getHovered().getTint();
+    private static final int BOX_UNCHECKED_PRESSED = INDICATOR_SURFACE.getPressed().getTint();
+    private static final int BOX_DISABLED = INDICATOR_SURFACE.getDisabled().getTint();
+    /** 选中态 tint = 角色配方 tint 的 alpha + 主题强调色 RGB（{@code selectableSurface} 的换色语义）。 */
+    private static final int BOX_CHECKED_ENABLED =
+            accentTinted(BOX_UNCHECKED_ENABLED, SceneThemes.DEFAULT.accent());
+    private static final int CHECK_MARK_TRANSPARENT = 0x00000000;
     private static final int STUB_CHAR_WIDTH = 8;
 
     @Before
@@ -130,9 +149,80 @@ public class SceneCheckboxTest {
         return checkboxRoot.__getChildren().get(1);
     }
 
+    /** 勾选标记子节点（box 唯一孩子，常驻透明节点） */
+    private SceneNode checkMarkNode() {
+        return boxNode().__getChildren().get(0);
+    }
+
     /** box 当前背景色 */
     private int boxBackground() {
         return boxNode().getBackgroundColor();
+    }
+
+    /** 角色配方 tint 换强调色 RGB、保留原 alpha —— 与 {@code SceneThemes.selectableSurface} 同语义的期望值算法。 */
+    private static int accentTinted(int tint, int accent) {
+        return (tint & 0xFF000000) | (accent & 0x00FFFFFF);
+    }
+
+    /** 在 PaintPlan 中按文本内容找 TEXT 命令 */
+    private static PaintCommand textCommand(PaintPlan plan, String text) {
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT && text.equals(command.getText())) {
+                return command;
+            }
+        }
+        return null;
+    }
+
+    /** 在 PaintPlan 中找首个指定类型命令 */
+    private static PaintCommand firstOfType(PaintPlan plan, PaintCommandType type) {
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == type) {
+                return command;
+            }
+        }
+        return null;
+    }
+
+    /** 统计指定类型命令数 */
+    private static int countType(PaintPlan plan, PaintCommandType type) {
+        int count = 0;
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == type) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 在局部主题作用域内重建 checkbox：验证来源主题继承与主题信号切换（重建 runtime 隔离默认主题）。 */
+    private void remountInTheme(ReadableSignal<SceneTheme> theme) {
+        runtime.dispose();
+        ReactiveScheduler.get().reset();
+        runtime = new SceneRuntime();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
+        layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
+        sceneRoot = new SceneNode();
+        checkedSignal = Signal.create(Boolean.FALSE);
+        labelSignal = Signal.create("Sound");
+        enabledSignal = Signal.create(Boolean.TRUE);
+        changeCount = new AtomicInteger(0);
+        lastChangeValue = null;
+
+        SceneCheckbox.Props props = new SceneCheckbox.Props(
+                checkedSignal, labelSignal, enabledSignal,
+                next -> {
+                    changeCount.incrementAndGet();
+                    lastChangeValue = next;
+                });
+        handle = runtime.mount(sceneRoot, () -> {
+            SceneNode page = new SceneNode();
+            SceneThemes.withTheme(theme, () ->
+                    checkboxRoot = runtime.mount(page, SceneCheckbox.create(runtime, props)).getRoot());
+            return page;
+        });
+        runtime.flush();
     }
 
     @Test
@@ -149,8 +239,212 @@ public class SceneCheckboxTest {
         Assert.assertNotEquals("standard Motion 半程不得停在起点", BOX_UNCHECKED_ENABLED, midpoint);
         Assert.assertNotEquals("standard Motion 半程不得提前到终点", BOX_CHECKED_ENABLED, midpoint);
 
-        runtime.__sampleMotion(161_000_000L);
-        Assert.assertEquals("standard 160ms 到达选中背景", BOX_CHECKED_ENABLED, boxBackground());
+        runtime.__sampleMotion(INDICATOR_SURFACE.getTransitionMillis() * 1_000_000L + 1_000_000L);
+        Assert.assertEquals("配方过渡时长到达选中背景", BOX_CHECKED_ENABLED, boxBackground());
+    }
+
+    // ==================== 验收 0：默认工厂路径 + 选中配方 + 主题前景 ====================
+
+    /**
+     * 默认工厂路径（不传任何样式参数）：box 属性等于 {@code SceneThemes.DEFAULT.surface(INDICATOR)}
+     * 的对应值；label 取主题正文色；未选中勾号透明。
+     */
+    @Test
+    public void defaultFactoryBoxFollowsIndicatorRecipeAndLabelFollowsThemeForeground() {
+        doLayout();
+
+        Assert.assertEquals("box 背景取 INDICATOR 配方 idle tint",
+                INDICATOR_SURFACE.getIdle().getTint(), boxBackground());
+        Assert.assertEquals("box 圆角取配方 cornerRadius（与原 RADIUS_SM 同值）",
+                INDICATOR_SURFACE.getCornerRadius(), boxNode().getCornerRadius());
+        Assert.assertEquals("box 圆角与原常量一致", SceneChromeTokens.RADIUS_SM, boxNode().getCornerRadius());
+        Assert.assertEquals("box 边框宽取配方 borderWidth",
+                INDICATOR_SURFACE.getBorderWidth(), boxNode().getBorderWidth());
+        Assert.assertEquals("box 边框色取配方 idle edge",
+                INDICATOR_SURFACE.getIdle().getEdge(), boxNode().getBorderColor());
+        // 滤镜声明 + 动画样本合成：材质/模糊取配方，透镜强度 = 配方 lens × 当前状态 lensFactor。
+        Assert.assertNotNull("box 滤镜跟随配方（非关闭滤镜）", boxNode().getBackdrop());
+        Assert.assertEquals("box 滤镜模糊半径取配方",
+                INDICATOR_SURFACE.getBackdrop().getBlurRadius(), boxNode().getBackdrop().getBlurRadius());
+        Assert.assertEquals("box 滤镜材质取配方",
+                INDICATOR_SURFACE.getBackdrop().getEffect().getMaterial(),
+                boxNode().getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("box 透镜强度 = 配方 lens × idle lensFactor",
+                INDICATOR_SURFACE.getBackdrop().getEffect().getLensStrength()
+                        * INDICATOR_SURFACE.getIdle().getLensFactor(),
+                boxNode().getBackdrop().getEffect().getLensStrength(), 0.0001F);
+        Assert.assertEquals("未选中勾号透明", CHECK_MARK_TRANSPARENT, checkMarkNode().getTextColor());
+        Assert.assertEquals("label 前景取主题正文色",
+                SceneThemes.DEFAULT.foreground(), labelNode().getTextColor());
+
+        PaintPlan plan = doPaint();
+        // 配方 idle elevation > 0 → 走浮雕路径：无独立 BORDER 命令，边框由方向性 ROUNDED_BAND 表达。
+        // 16px 小盒的面短边仅 12px，浮雕圆角 = 配方圆角内缩 1px 后再按面短边一半夹取（6px）。
+        PaintCommand boxBackground = firstOfType(plan, PaintCommandType.BACKGROUND);
+        Assert.assertNotNull("box 应产出 BACKGROUND 命令", boxBackground);
+        Assert.assertTrue("浮雕面圆角为配方圆角内缩 1px 后按面短边一半夹取",
+                boxBackground.getCornerRadiusTopLeft() > 0
+                        && boxBackground.getCornerRadiusTopLeft()
+                                <= INDICATOR_SURFACE.getCornerRadius() - 1);
+        Assert.assertEquals("实体浮雕路径不再单独发 BORDER 命令", 0,
+                countType(plan, PaintCommandType.BORDER));
+        Assert.assertTrue("边框由方向性倒角表达",
+                countType(plan, PaintCommandType.ROUNDED_BAND) > 0);
+        PaintCommand markText = textCommand(plan, "✓");
+        Assert.assertNotNull("勾号节点应产出 TEXT 命令", markText);
+        Assert.assertEquals("未选中勾号在绘制计划里透明", CHECK_MARK_TRANSPARENT,
+                markText.getTextStyle().getColor());
+        PaintCommand labelText = textCommand(plan, "Sound");
+        Assert.assertNotNull("label 应产出 TEXT 命令", labelText);
+        Assert.assertEquals("绘制计划 label 取主题正文色",
+                SceneThemes.DEFAULT.foreground(), labelText.getTextStyle().getColor());
+    }
+
+    /**
+     * 选中态：tint 换主题强调色 RGB、保留配方 alpha（选中不能只靠透明度区分），
+     * 勾选标记取强调底前景；圆角/边框宽/滤镜等非染色分量保持角色配方。
+     */
+    @Test
+    public void checkedBoxUsesAccentTintAndAccentForegroundMark() {
+        doLayout();
+        checkedSignal.set(Boolean.TRUE);
+        runtime.flush();
+
+        Assert.assertEquals("选中 tint = 配方 alpha + 主题强调色 RGB",
+                BOX_CHECKED_ENABLED, boxBackground());
+        Assert.assertEquals("选中 tint RGB 走主题强调色",
+                SceneThemes.DEFAULT.accent() & 0x00FFFFFF, boxBackground() & 0x00FFFFFF);
+        Assert.assertEquals("选中保留配方 alpha（不靠透明度区分）",
+                INDICATOR_SURFACE.getIdle().getTint() & 0xFF000000, boxBackground() & 0xFF000000);
+        Assert.assertNotEquals("选中与未选中必须换色而非只换透明度",
+                INDICATOR_SURFACE.getIdle().getTint() & 0x00FFFFFF, boxBackground() & 0x00FFFFFF);
+
+        Assert.assertEquals("选中不换角色配方圆角",
+                INDICATOR_SURFACE.getCornerRadius(), boxNode().getCornerRadius());
+        Assert.assertEquals("选中不换角色配方边框宽",
+                INDICATOR_SURFACE.getBorderWidth(), boxNode().getBorderWidth());
+        Assert.assertEquals("选中不换角色配方滤镜材质",
+                INDICATOR_SURFACE.getBackdrop().getEffect().getMaterial(),
+                boxNode().getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("选中不换角色配方透镜强度",
+                INDICATOR_SURFACE.getBackdrop().getEffect().getLensStrength()
+                        * INDICATOR_SURFACE.getIdle().getLensFactor(),
+                boxNode().getBackdrop().getEffect().getLensStrength(), 0.0001F);
+
+        Assert.assertEquals("选中勾号取主题强调底前景",
+                SceneThemes.DEFAULT.onAccentForeground(), checkMarkNode().getTextColor());
+        PaintPlan plan = doPaint();
+        PaintCommand markText = textCommand(plan, "✓");
+        Assert.assertNotNull(markText);
+        Assert.assertEquals("绘制计划勾号取主题强调底前景",
+                SceneThemes.DEFAULT.onAccentForeground(), markText.getTextStyle().getColor());
+    }
+
+    /**
+     * 禁用态：box 走 INDICATOR 配方禁用档（背景/边框），label 取主题禁用前景；恢复启用后回主题正文色。
+     */
+    @Test
+    public void disabledUsesRecipeDisabledTierAndDisabledForeground() {
+        doLayout();
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+
+        Assert.assertEquals("禁用 box 背景取配方禁用档",
+                INDICATOR_SURFACE.getDisabled().getTint(), boxBackground());
+        Assert.assertEquals("禁用 box 边框取配方禁用档",
+                INDICATOR_SURFACE.getDisabled().getEdge(), boxNode().getBorderColor());
+        Assert.assertEquals("禁用 label 取主题禁用前景",
+                SceneThemes.DEFAULT.disabledForeground(), labelNode().getTextColor());
+
+        PaintPlan plan = doPaint();
+        PaintCommand labelText = textCommand(plan, "Sound");
+        Assert.assertNotNull(labelText);
+        Assert.assertEquals("绘制计划 label 取主题禁用前景",
+                SceneThemes.DEFAULT.disabledForeground(), labelText.getTextStyle().getColor());
+
+        enabledSignal.set(Boolean.TRUE);
+        runtime.flush();
+        Assert.assertEquals("恢复启用后 box 回角色配方 idle 档",
+                INDICATOR_SURFACE.getIdle().getTint(), boxBackground());
+        Assert.assertEquals("恢复启用后 label 回主题正文色",
+                SceneThemes.DEFAULT.foreground(), labelNode().getTextColor());
+    }
+
+    /**
+     * 主题切换：{@code withTheme} 来源主题信号变化 + flush 后 box/勾号/label 外观更新，
+     * 节点身份不变、effect 数不增长（外观重算不重建节点、不重复订阅）。
+     */
+    @Test
+    public void themeSwitchUpdatesBoxMarkAndLabelWithoutRebuildingNodes() {
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        remountInTheme(pageTheme);
+        checkedSignal.set(Boolean.TRUE);
+        runtime.flush();
+
+        SceneNode box = boxNode();
+        SceneNode mark = checkMarkNode();
+        SceneNode label = labelNode();
+
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        SceneSurfaceStyle darkIndicator = dark.surface(SceneTheme.Role.INDICATOR);
+        SceneSurfaceStyle lightIndicator = light.surface(SceneTheme.Role.INDICATOR);
+        Assert.assertNotEquals("两个主题的 INDICATOR 配方必须不同，否则切换不传播",
+                darkIndicator.getIdle(), lightIndicator.getIdle());
+
+        Assert.assertEquals("深色档选中 box tint",
+                accentTinted(darkIndicator.getIdle().getTint(), dark.accent()), box.getBackgroundColor());
+        Assert.assertEquals("深色档勾号取强调底前景", dark.onAccentForeground(), mark.getTextColor());
+        Assert.assertEquals("深色档 label 前景", dark.foreground(), label.getTextColor());
+
+        int effectsBefore = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertEquals("切浅色档 box tint 更新",
+                accentTinted(lightIndicator.getIdle().getTint(), light.accent()), box.getBackgroundColor());
+        Assert.assertEquals("切浅色档 box 边框更新", lightIndicator.getIdle().getEdge(), box.getBorderColor());
+        Assert.assertEquals("切浅色档勾号更新", light.onAccentForeground(), mark.getTextColor());
+        Assert.assertEquals("切浅色档 label 前景更新", light.foreground(), label.getTextColor());
+
+        Assert.assertSame("主题切换不重建 box", box, checkboxRoot.__getChildren().get(0));
+        Assert.assertSame("主题切换不重建勾号", mark, boxNode().__getChildren().get(0));
+        Assert.assertSame("主题切换不重建 label", label, checkboxRoot.__getChildren().get(1));
+        Assert.assertEquals("主题切换不新增 effect", effectsBefore, ReactiveTestProbe.registeredEffectCount());
+
+        doLayout();
+        PaintPlan plan = doPaint();
+        PaintCommand markText = textCommand(plan, "✓");
+        PaintCommand labelText = textCommand(plan, "Sound");
+        Assert.assertNotNull(markText);
+        Assert.assertNotNull(labelText);
+        Assert.assertEquals("绘制计划勾号跟随新主题", light.onAccentForeground(), markText.getTextStyle().getColor());
+        Assert.assertEquals("绘制计划 label 跟随新主题", light.foreground(), labelText.getTextStyle().getColor());
+    }
+
+    /** 卸载后表面/前景/勾号 effect 全部回收，checked/enabled 更新不再写入旧节点。 */
+    @Test
+    public void unmountReleasesSurfaceAndForegroundBindings() {
+        int before = ReactiveTestProbe.registeredEffectCount();
+        Signal<Boolean> extraChecked = Signal.create(Boolean.FALSE);
+        Signal<Boolean> extraEnabled = Signal.create(Boolean.TRUE);
+        MountHandle extra = runtime.mount(sceneRoot, SceneCheckbox.create(runtime, new SceneCheckbox.Props(
+                extraChecked, Signal.create("Extra"), extraEnabled, next -> { })));
+        runtime.flush();
+        Assert.assertTrue("Checkbox 默认路径应注册响应式外观绑定",
+                ReactiveTestProbe.registeredEffectCount() > before);
+
+        SceneNode extraBox = extra.getRoot().__getChildren().get(0);
+        int colorBeforeDispose = extraBox.getBackgroundColor();
+        extra.dispose();
+        Assert.assertEquals("卸载后外观绑定 effect 应回收",
+                before, ReactiveTestProbe.registeredEffectCount());
+
+        extraChecked.set(Boolean.TRUE);
+        extraEnabled.set(Boolean.FALSE);
+        runtime.flush();
+        Assert.assertEquals("卸载后 checked/enabled 更新不再写入旧 box",
+                colorBeforeDispose, extraBox.getBackgroundColor());
     }
 
     // ==================== 验收 1：受控双向闭环（点击不自翻转，只上抛期望新值） ====================

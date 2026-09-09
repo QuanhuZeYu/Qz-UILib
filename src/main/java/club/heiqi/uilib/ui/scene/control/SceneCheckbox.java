@@ -14,7 +14,10 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneCheckbox —— scene 新栈控件层 Phase 4 批 1 首个真实迁移控件。
@@ -31,6 +34,15 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * + label 子节点（文本，装饰穿透 hitTestable=false）。
  * root 默认 SHRINK，命中外轮廓收至 box+gap+label 内容宽，避免 FILL 透明根吞掉父行整宽。</p>
  *
+ * <h3>外观归属：配方是唯一写入者</h3>
+ * <p>box 表面由 {@link SceneSurfaceBinder} 从 {@link SceneThemes#selectableSurface} 的角色配方
+ * （{@link SceneTheme.Role#INDICATOR}）派生：未选中取角色配方、选中态换主题强调色 tint，四态优先级
+ * disabled &gt; pressed &gt; hovered &gt; idle 由绑定器统一决定。background/border/borderWidth/
+ * cornerRadius/backdrop/surfaceElevation 均归表面绑定；勾选标记取
+ * {@link SceneThemes#onAccentForeground}、label 前景取 {@link SceneThemes#foreground}/
+ * {@link SceneThemes#disabledForeground}。本控件不再静态设色、不叠加第二套实色动画
+ * （守「一个属性只有一个外观写入者」）。{@code checked} 仍是唯一权威值，控件不自行翻转。</p>
+ *
  * <h3>契约</h3>
  * <p>纯静态工厂 + 私有构造，无实例字段（R1）。Props 全只读 signal + 回调（R2）。
  * {@link #create} 返回 {@code Supplier<SceneNode>} 只执行一次（R3）。动态外观全走
@@ -39,17 +51,13 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  */
 public final class SceneCheckbox {
 
-    /** 勾号文本，节点常驻，靠颜色透明/白色切换显隐。 */
+    /** 勾号文本，节点常驻，靠颜色透明/强调底前景切换显隐。 */
     private static final String CHECK_MARK_TEXT = "✓";
     /** 透明色，用于未勾选时隐藏勾号。 */
     private static final int CHECK_MARK_TRANSPARENT = 0x00000000;
 
     /** box 固定边长（像素） */
     private static final int BOX_SIZE = 16;
-    /** box 边框宽度（像素） */
-    private static final int BORDER_WIDTH = 1;
-    /** box 圆角（像素，小圆角） */
-    private static final int BOX_RADIUS = SceneChromeTokens.RADIUS_SM;
     /** root 行内间距（box 与 label 之间，像素） */
     private static final int GAP = SceneChromeTokens.GAP_MD;
 
@@ -78,8 +86,8 @@ public final class SceneCheckbox {
      * 工厂：构建 Checkbox 组件函数。
      *
      * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：建树 + 设静态属性 +
-     * {@code rt.bind/bindText/on/focusable}，动态外观全落 {@code bind(computed(...))}，
-     * 交互只经 {@code on} 调 {@code onChange}（R4/R5/R7）。</p>
+     * {@code rt.bind/bindText/on/focusable}，动态外观全落主题配方派生，交互只经 {@code on}
+     * 调 {@code onChange}（R4/R5/R7）。</p>
      *
      * @param rt    场景运行时
      * @param props Checkbox 输入契约
@@ -98,8 +106,6 @@ public final class SceneCheckbox {
             SceneNode box = result.indicator();
             box.setPreferredWidth(BOX_SIZE);
             box.setPreferredHeight(BOX_SIZE);
-            box.setBorderWidth(BORDER_WIDTH);
-            box.setCornerRadius(BOX_RADIUS);
             box.setFlexDirection(FlexDirection.ROW);
             box.setCrossAxisAlign(CrossAxisAlign.CENTER);
             box.setMainAxisAlign(MainAxisAlign.CENTER);
@@ -110,15 +116,23 @@ public final class SceneCheckbox {
             checkMark.setHitTestable(false);
             box.appendChild(checkMark);
 
-            //    box 背景：checked × 四态优先级 disabled > pressed > hover > default
-            SceneControlChrome.bindSelectableBackground(rt, box, props.enabled(), props.checked(), interaction);
-            SceneControlChrome.bindStandardBorder(rt, box, props.enabled(), interaction);
+            // box 表面：选中/未选中共享 INDICATOR 角色配方（选中态只换强调色 tint，不靠透明度区分），
+            // 圆角/边框宽/边框色/滤镜/浮雕高度全归表面绑定器；本控件不再静态设值、不再叠加实色动画。
+            ReadableSignal<SceneSurfaceStyle> surface =
+                    SceneThemes.selectableSurface(rt, SceneTheme.Role.INDICATOR, props.checked());
+            SceneSurfaceBinder.bind(rt, box, surface, props.enabled(), interaction);
+
+            // 勾选标记：选中取主题强调底前景，未选中保持透明（节点常驻，结构不变）。
+            ReadableSignal<Integer> onAccentForeground = SceneThemes.onAccentForeground(rt);
             rt.bindComputed(() -> Boolean.TRUE.equals(props.checked().get())
-                            ? SceneChromeTokens.TEXT_ON_ACCENT : CHECK_MARK_TRANSPARENT,
+                            ? onAccentForeground.get() : CHECK_MARK_TRANSPARENT,
                     checkMark::setTextColor);
 
-            rt.bindComputed(() -> SceneStateColors.standardText(
-                            Boolean.TRUE.equals(props.enabled().get()), false),
+            // label 前景：启用取主题正文色，禁用取主题禁用色（不再走 SceneStateColors 静态取色）。
+            ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+            ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+            rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
+                            ? foreground.get() : disabledForeground.get(),
                     result.labelNode()::setTextColor);
 
             // cursor 声明式附着：enabled 指针手型、disabled 禁止符号
