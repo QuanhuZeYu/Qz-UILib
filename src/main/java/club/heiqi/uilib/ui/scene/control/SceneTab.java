@@ -15,7 +15,10 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneTab —— scene 新栈控件层 Phase 4 批 4 标签页控件（N 选 1 受控头 + 单内容区切换）。
@@ -37,11 +40,27 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  * <pre>
  * root (COLUMN, gap)
  *   ├─ tabBar (ROW, crossAxisAlign=STRETCH, gap)            ← 照 SceneSegmented R8 范式
- *   │     └─ tabSeg[i] (ROW, main/cross=CENTER, padding, cornerRadius, preferredWidth)  ← 交互单元 hitTestable=true
+ *   │     └─ tabSeg[i] (ROW, main/cross=CENTER, padding, preferredWidth)  ← 交互单元 hitTestable=true
  *   │           └─ label[i] (text)                          ← 装饰 hitTestable=false
  *   └─ contentPanel (COLUMN, 单内容区容器)                   ← N 个 show 各自挂内容到此（tabBar 的兄弟）
  *           └─ anchor[i] × N + 当前页内容（由 show 引擎管理）
  * </pre>
+ *
+ * <h3>外观归属：主题配方是唯一外观写入者</h3>
+ * <p>导航条底座取 {@link SceneTheme.Role#TOOLBAR} 配方，每个 tab 项取
+ * {@link SceneThemes#selectableSurface(SceneRuntime, SceneTheme.Role, ReadableSignal)} 的
+ * {@link SceneTheme.Role#INDICATOR} 配方（选中把 tint 的 RGB 换成主题强调色、alpha 用统一选中
+ * 强度 0x59，故「选中」是色彩语义而非仅透明度；禁用仍走角色禁用档）。两者的
+ * background / border / borderWidth / cornerRadius / backdrop / surfaceElevation 全归
+ * {@link SceneSurfaceBinder} 独占——控件不再静态设圆角/边框，也不再叠加
+ * {@code SceneControlChrome.bindSelectableBackground/bindStandardBorder} 与
+ * {@code SceneStateColors} 取色（同一属性留两个写入者会按执行顺序互相覆盖）。</p>
+ *
+ * <p>每项只调用一次表面绑定，项内不嵌套第二层玻璃节点（配方自带滤镜按「一颗表面只采样一次」
+ * 生效）；内容区面板保持透明、不装表面，避免第二层玻璃挡死导航条底座。选中项文字在
+ * {@link SceneThemes#onAccentForeground(SceneRuntime)} 与 {@link SceneThemes#foreground(SceneRuntime)}
+ * 之间按对比度择一（见 {@link #selectedForeground}），未选中取正文色，禁用取
+ * {@link SceneThemes#disabledForeground(SceneRuntime)}。</p>
  *
  * <h3>父高传导（fill 选项，默认关）</h3>
  * <p>默认 {@code fillContentPanel=false}：contentPanel 按各页内容自然高 shrink，整控件随内容长高。
@@ -71,8 +90,6 @@ public final class SceneTab {
     private static final int TAB_WIDTH = 72;
     /** 段内边距（像素） */
     private static final int TAB_PADDING = SceneChromeTokens.PAD_LG;
-    /** 段圆角（像素） */
-    private static final int TAB_RADIUS = SceneChromeTokens.RADIUS_MD;
     /** 各段之间的横向间距（像素） */
     private static final int TAB_GAP = SceneChromeTokens.GAP_SM;
     /** tabBar 与 contentPanel 之间的纵向间距（像素） */
@@ -211,39 +228,59 @@ public final class SceneTab {
             }
             root.appendChild(tabBar);
 
+            // 导航条底座：TOOLBAR 角色配方是唯一外观写入者（独占 background/border/borderWidth/
+            // cornerRadius/backdrop/surfaceElevation）。构造期捕获来源主题信号，effect 内不 resolve。
+            ReadableSignal<SceneSurfaceStyle> barSurface = SceneThemes.surface(rt, SceneTheme.Role.TOOLBAR);
+            SceneSurfaceBinder.bind(rt, tabBar, barSurface, props.enabled(), rt.interactionState(tabBar));
+
+            // 主题语义色派生在构造期捕获一次（此时 Owner.current() 是来源作用域），循环内所有 tab 项共享。
+            ReadableSignal<Integer> onAccentForeground = SceneThemes.onAccentForeground(rt);
+            ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+            ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
-                // tabSeg[i]：交互单元（hitTestable 默认 true），ROW + 主/交叉轴 CENTER + 固定段宽
+                // tabSeg[i]：交互单元（hitTestable 默认 true），ROW + 主/交叉轴 CENTER + 固定段宽。
+                // 圆角/边框宽/边框色/染色/滤镜/实体高度全由表面绑定器从 INDICATOR 选中配方派生：
+                // 构造期不再静态 setCornerRadius/setBorderWidth/setBorderColor（同一属性只留一个写入者）。
                 SceneNode tabSeg = handle.item();
                 tabSeg.setFlexDirection(FlexDirection.ROW);
                 tabSeg.setMainAxisAlign(MainAxisAlign.CENTER);
                 tabSeg.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 tabSeg.setPadding(TAB_PADDING);
-                tabSeg.setCornerRadius(TAB_RADIUS);
                 tabSeg.setPreferredWidth(TAB_WIDTH);
-                tabSeg.setBorderWidth(1);
-                tabSeg.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
 
                 // label[i]：段内纯文本装饰子节点，命中穿透到段（契约 R6）
                 tabSeg.appendChild(handle.label());
 
+                // tab 项表面：INDICATOR 角色配方 + selected 派生。选中只替换 tint 的 RGB（保留 0x59 alpha，
+                // 故选中不只靠透明度区分），edge/elevation/lens/圆角保持角色配方，禁用仍走角色禁用档。
+                // 每项一次绑定，项内不嵌套第二层玻璃节点（配方自带滤镜一颗表面只采样一次）。
+                ReadableSignal<SceneSurfaceStyle> surface =
+                        SceneThemes.selectableSurface(rt, SceneTheme.Role.INDICATOR, handle.selected());
                 SceneInteractionState interaction = handle.interaction();
+                SceneSurfaceBinder.bind(rt, tabSeg, surface, props.enabled(), interaction);
 
-                // ③ 动态外观全走 bind（契约 R4）
-                //    tab 段背景：enabled × activeIndex==i × hovered × pressed
-                SceneControlChrome.bindSelectableBackground(rt, tabSeg, props.enabled(), handle.selected(), interaction);
-                SceneControlChrome.bindStandardBorder(rt, tabSeg, props.enabled(), interaction);
-
-                // label 文本色：活动白、非活动次要文本（照契约 bind activeIndex==i）
-                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
-                                ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
-                                : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get())),
-                        handle.label()::setTextColor);
+                // label 文本色：禁用取主题禁用前景色；选中在「强调底前景」与「正文色」间按对比度择一
+                // （选中 tint 只有 0x59 半透明，实际底色是强调 tint 叠在导航条 TOOLBAR 基础 tint 之上）；
+                // 未选中取主题正文色。
+                rt.bindComputed(() -> {
+                    if (!Boolean.TRUE.equals(props.enabled().get())) {
+                        return disabledForeground.get();
+                    }
+                    if (Boolean.TRUE.equals(handle.selected().get())) {
+                        return selectedForeground(surface.get().getIdle().getTint(),
+                                barSurface.get().getIdle().getTint(),
+                                onAccentForeground.get(), foreground.get());
+                    }
+                    return foreground.get();
+                }, handle.label()::setTextColor);
 
                 // cursor 声明式附着：enabled 指针手型、disabled 禁止符号（挂在交互单元 tabSeg 上）
                 SceneControlChrome.bindCursor(rt, tabSeg, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
-            // contentPanel：单内容区容器，作 root 下 tabBar 的兄弟；N 个 show 各自把内容挂到此
+            // contentPanel：单内容区容器，作 root 下 tabBar 的兄弟；N 个 show 各自把内容挂到此。
+            // 保持透明（不装表面）：底座玻璃已由 tabBar 承担，内容区再装一层会挡死底座。
             SceneNode contentPanel = SceneNode.column();
             // 断裂点②（fill 传导）：contentPanel 自身 fill，从 root 拿确定高约束下传给各页内容。
             // fill 门槛（SizingCalculator）：setFillParentHeight(true) 只有收到确定高约束才生效，
@@ -251,8 +288,6 @@ public final class SceneTab {
             if (props.fillContentPanel()) {
                 contentPanel.setFillParentHeight(true);
             }
-            contentPanel.setBackgroundColor(SceneChromeTokens.BG_PRESSED);
-            contentPanel.setCornerRadius(SceneChromeTokens.RADIUS_LG);
             root.appendChild(contentPanel);
 
             // ⑤ 内容区 N 选 1（契约 R10）：对每页 i 调一次独立 show，condition 用 handle.selected()
@@ -266,5 +301,76 @@ public final class SceneTab {
 
             return root;
         };
+    }
+
+    // ==================== 选中项文字对比度择色 ====================
+
+    /**
+     * 选中项文字前景：在主题「强调底前景」与「正文色」之间取与选中底色对比度更高者。
+     *
+     * <p><b>为何不能只按纯强调色判定</b>：选中 tint 只有 0x59 半透明（{@code SceneThemes} 统一
+     * 选中强度），实际底色是「强调 tint 叠在导航条 TOOLBAR 基础 tint 之上」；若拿纯强调色算对比度，
+     * 浅色主题会选出白色文字（纯强调色上 6.44:1），而它叠在浅色玻璃上只剩 2.66:1，读不出来。
+     * 故先按 alpha 合成近似底色，再算 WCAG 对比度择一。</p>
+     *
+     * @param selectedTint       选中项实际写入的 tint（0x59 半透明强调色，来自 INDICATOR 选中配方）
+     * @param barTint            导航条 TOOLBAR 配方 idle tint（选中项的紧邻底色）
+     * @param onAccentForeground 主题强调底前景色候选
+     * @param foreground         主题正文色候选
+     * @return 对比度更高的候选色（相等时取 onAccentForeground）
+     */
+    private static int selectedForeground(int selectedTint, int barTint,
+            int onAccentForeground, int foreground) {
+        int background = over(selectedTint, barTint);
+        return contrastRatio(background, onAccentForeground) >= contrastRatio(background, foreground)
+                ? onAccentForeground : foreground;
+    }
+
+    /**
+     * alpha「over」合成：source 叠在 base 上，base 半透明时按其 alpha 折算覆盖率。
+     *
+     * <p>结果按不透明处理——只用于文字对比度判定，不写回任何节点属性。</p>
+     *
+     * @param source 上层色（ARGB）
+     * @param base   下层色（ARGB）
+     * @return 近似不透明合成色（ARGB）
+     */
+    private static int over(int source, int base) {
+        int sourceAlpha = (source >>> 24) & 0xFF;
+        int baseAlpha = (base >>> 24) & 0xFF;
+        int restAlpha = (0xFF - sourceAlpha) * baseAlpha / 0xFF;
+        int outAlpha = sourceAlpha + restAlpha;
+        if (outAlpha == 0) {
+            return 0;
+        }
+        int out = 0xFF000000;
+        for (int shift = 16; shift >= 0; shift -= 8) {
+            int value = (((source >>> shift) & 0xFF) * sourceAlpha
+                    + ((base >>> shift) & 0xFF) * restAlpha) / outAlpha;
+            out |= Math.max(0, Math.min(0xFF, value)) << shift;
+        }
+        return out;
+    }
+
+    /** WCAG 相对对比度：(L亮 + 0.05) / (L暗 + 0.05)。 */
+    private static double contrastRatio(int first, int second) {
+        double firstLuminance = relativeLuminance(first);
+        double secondLuminance = relativeLuminance(second);
+        double brighter = Math.max(firstLuminance, secondLuminance);
+        double darker = Math.min(firstLuminance, secondLuminance);
+        return (brighter + 0.05) / (darker + 0.05);
+    }
+
+    /** WCAG 相对亮度（sRGB 线性化后加权，忽略 alpha）。 */
+    private static double relativeLuminance(int argb) {
+        return 0.2126 * linearize((argb >>> 16) & 0xFF)
+                + 0.7152 * linearize((argb >>> 8) & 0xFF)
+                + 0.0722 * linearize(argb & 0xFF);
+    }
+
+    /** sRGB 通道线性化。 */
+    private static double linearize(int channel) {
+        double value = channel / 255.0;
+        return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
     }
 }
