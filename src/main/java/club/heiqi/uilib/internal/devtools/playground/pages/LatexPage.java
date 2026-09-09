@@ -23,6 +23,16 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * maxHeight 挤出宿主可视区导致后半卡片不可达）。共 12 张测试卡：8 张主题卡
  * （与 LatexShowcaseFormulas 分组同源）+ 嵌套边界压力卡 + 全量公式目检 A/B（22 条）
  * + 混排行内基准卡，供真机逐卡验收。</p>
+ *
+ * <p><b>外观归属（G16/LatexPage）</b>：卡内公式外的节标题与说明全部复用公共文本构件
+ * {@link PlaygroundKit#title(String)}/{@link PlaygroundKit#hint(String)}——宿主上下文内默认跟随
+ * 来源主题正文/次要前景（G16/公共构件实例已迁移，本页不改 {@code PlaygroundKit}）。
+ * {@link #formulaCard} 内 {@code SceneLabel} 的基础前景是<b>公式正文默认色</b>：LaTeX 公式像素
+ * 继承外层前景（卡片 8「颜色继承」演示的正是该链路），属契约 §7.3「markdown/LaTeX 样本」
+ * 不迁移清单——为「匹配主题」改基础色即改公式渲染像素，摧毁目检基线（任务单 G16 禁止项），
+ * 故刻意保留显式 {@code PlaygroundKit.TEXT}，由 {@code LatexPageTest} 反向钉住不被主题接管。
+ * {@code SceneChromeTokens.PAD_LG} 是间距常量（非颜色），按契约 §4.2「尺寸/间距常量继续使用」
+ * 保留，主题不接管布局。</p>
  */
 public final class LatexPage implements PlaygroundPage {
 
@@ -63,6 +73,7 @@ public final class LatexPage implements PlaygroundPage {
             SceneNode shell = SceneNode.column();
             shell.setFillParentWidth(true);
             shell.setGap(10);
+            // SceneChromeTokens.PAD_LG：间距常量（非颜色），契约 §4.2 允许继续使用；主题不接管布局。
             shell.setPadding(SceneChromeTokens.PAD_LG);
 
             // ===== 卡片1：公式速览（32px 大字号目检） =====
@@ -134,6 +145,12 @@ public final class LatexPage implements PlaygroundPage {
 
     /**
      * 公式卡：标题 + 逐行公式（big=true 纯公式大字目检；false 为混排文本行，超宽自动换行）。
+     *
+     * <p><b>保留的显式样本（契约 §7.3「markdown/LaTeX 样本」）</b>：行的基础前景显式取
+     * {@code PlaygroundKit.TEXT}——该值同时是公式正文默认色（LaTeX 渲染像素继承外层前景，
+     * 卡片 8「颜色继承」演示此链路），刻意不被主题接管：主题切换改公式像素会使
+     * headless 目检基线（build/reports/latex-compare）失真。卡内公式外的标题/说明文字
+     * 经公共构件跟随来源主题（见类注释「外观归属」）。</p>
      *
      * @param lines 行文本：big=true 时为纯 LaTeX 源码，否则为可含 {@code <latex>} 的富文本
      */
