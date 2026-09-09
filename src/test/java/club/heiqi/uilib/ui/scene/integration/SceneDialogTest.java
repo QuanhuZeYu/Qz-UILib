@@ -11,9 +11,11 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.SceneDialog;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
@@ -29,6 +31,10 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintFragment;
+import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
@@ -47,6 +53,7 @@ public class SceneDialogTest {
     private SceneNode sceneRoot;
     private SceneRuntime runtime;
     private SceneLayoutEngine layoutEngine;
+    private ScenePaintEngine paintEngine;
     private SceneInteractionHarness harness;
 
     private Signal<Boolean> visible;
@@ -67,6 +74,7 @@ public class SceneDialogTest {
         harness = SceneInteractionHarness.create(measurer);
         runtime = harness.getRuntime();
         layoutEngine = new SceneLayoutEngine(measurer);
+        paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
         harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
         visible = Signal.create(Boolean.TRUE);
@@ -174,6 +182,75 @@ public class SceneDialogTest {
                 false, false, false, false, 0, 0, 1000L));
         runtime.route(sceneRoot, fb.drainFrame(), 0, 0);
         runtime.flush();
+    }
+
+    /** 构造对话框输入契约：onDismiss 记 dismissed 并把可见性写回调用方信号。 */
+    private SceneDialog.Props dialogProps(Signal<Boolean> visibleSignal,
+                                          List<SceneDialog.Button> buttons) {
+        return new SceneDialog.Props(visibleSignal, "确认操作", "确定继续吗？", buttons, () -> {
+            dismissed.set(true);
+            visibleSignal.set(Boolean.FALSE);
+        });
+    }
+
+    /** 双按钮（取消 + 主操作确定），回调写入 log。 */
+    private List<SceneDialog.Button> twoButtons() {
+        return Arrays.asList(
+                SceneDialog.Button.of("取消", () -> log.add("cancel")),
+                new SceneDialog.Button("确定", SceneDialog.ButtonKind.PRIMARY, true, () -> log.add("confirm")));
+    }
+
+    /**
+     * 在可切换的局部主题作用域内创建受控对话框（{@link SceneThemes#withTheme}）：
+     * portal 内容构建期在来源作用域的子作用域内执行，因此继承该主题。
+     *
+     * @param theme 页面主题信号
+     * @param props 对话框契约
+     * @return 承载对话框的页面挂载句柄（dispose 时一并回收 portal 与绑定）
+     */
+    private MountHandle mountThemedDialog(Signal<SceneTheme> theme, SceneDialog.Props props) {
+        MountHandle page = runtime.mount(sceneRoot, () -> {
+            SceneThemes.withTheme(theme, () -> handle = SceneDialog.create(runtime, props));
+            return new SceneNode();
+        });
+        runtime.flush();
+        return page;
+    }
+
+    /** 绘制当前浮层整棵子树，让每个节点的自身 PaintFragment 就位。 */
+    private void paintOverlay() {
+        paintEngine.paint(overlayRoot());
+    }
+
+    /** 节点自身 PaintFragment 的命令流；未绘制出 fragment 时断言失败。 */
+    private static List<PaintCommand> ownCommands(SceneNode node) {
+        Object cached = node.getCachedPaint();
+        Assert.assertTrue("节点应已绘制出自身 fragment", cached instanceof PaintFragment);
+        return ((PaintFragment) cached).getCommands();
+    }
+
+    /** 节点自身 PaintFragment 内的 BACKDROP 命令数（不含后代）。 */
+    private static int ownBackdropCount(SceneNode node) {
+        int count = 0;
+        for (PaintCommand command : ownCommands(node)) {
+            if (command.getType() == PaintCommandType.BACKDROP) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int indexOfType(List<PaintCommand> commands, PaintCommandType type) {
+        for (int i = 0; i < commands.size(); i++) {
+            if (commands.get(i).getType() == type) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int alpha(int argb) {
+        return (argb >>> 24) & 0xFF;
     }
 
     // ==================== 挂载与结构 ====================
@@ -500,17 +577,274 @@ public class SceneDialogTest {
                 dangerSurface().getHovered().getTint(), danger.getBackgroundColor());
     }
 
+    // ==================== 主题化：默认配方与遮罩口径 ====================
+
+    /** 库默认主题的 OVERLAY 角色配方：对话框面板默认外观唯一来源。 */
+    private static SceneSurfaceStyle overlaySurface() {
+        return SceneThemes.DEFAULT.surface(SceneTheme.Role.OVERLAY);
+    }
+
+    /**
+     * 默认工厂路径：面板 = OVERLAY 配方（染色/缘色/边框宽/圆角/实体高度/滤镜全来自配方），
+     * 自身恰好一条 BACKDROP 且滤镜之上是半透明 tint（无不透明底盖）；遮罩只负责遮罩色与命中、
+     * 不叠第二层玻璃；标题/正文各零 BACKDROP、前景取主题正文/次要前景。
+     */
+    @Test
+    public void defaultPanelUsesOverlayRecipeWithSingleBackdropAndScrimStaysMaskOnly() {
+        openDialog(Arrays.asList(SceneDialog.Button.of("关闭", null)));
+        SceneNode scrim = overlayRoot();
+        SceneNode card = cardNode();
+        SceneSurfaceStyle overlay = overlaySurface();
+
+        Assert.assertEquals("面板背景 = OVERLAY 配方 idle 染色",
+                overlay.getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertEquals("面板缘色 = OVERLAY 配方 idle 缘色",
+                overlay.getIdle().getEdge(), card.getBorderColor());
+        Assert.assertEquals("面板边框宽 = OVERLAY 配方", overlay.getBorderWidth(), card.getBorderWidth());
+        Assert.assertEquals("面板圆角 = OVERLAY 配方", overlay.getCornerRadius(), card.getCornerRadius());
+        Assert.assertEquals("面板实体高度 = OVERLAY 配方", overlay.getIdle().getElevation(),
+                card.__getSurfaceElevation(), 0.0001f);
+        Assert.assertNotNull("面板应写入 OVERLAY 配方滤镜", card.getBackdrop());
+        Assert.assertEquals("面板材质 = OVERLAY 配方", overlay.getBackdrop().getEffect().getMaterial(),
+                card.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("面板模糊半径 = OVERLAY 配方", overlay.getBackdrop().getBlurRadius(),
+                card.getBackdrop().getBlurRadius());
+
+        Assert.assertEquals("标题前景 = 主题正文前景", SceneThemes.DEFAULT.foreground(),
+                card.__getChildren().get(0).getTextColor());
+        Assert.assertEquals("正文前景 = 主题次要前景", SceneThemes.DEFAULT.mutedForeground(),
+                card.__getChildren().get(1).getTextColor());
+
+        // 遮罩只负责遮罩：保持既有遮罩色与全屏命中，不参与表面绑定
+        Assert.assertNull("遮罩不得挂滤镜（不叠第二层玻璃）", scrim.getBackdrop());
+        Assert.assertEquals("遮罩保持既有 80% 暗色", 0xCC, alpha(scrim.getBackgroundColor()));
+
+        paintOverlay();
+        Assert.assertEquals("面板自身恰好一条 BACKDROP", 1, ownBackdropCount(card));
+        Assert.assertEquals("遮罩自身零 BACKDROP", 0, ownBackdropCount(scrim));
+        List<PaintCommand> commands = ownCommands(card);
+        int backdropIndex = indexOfType(commands, PaintCommandType.BACKDROP);
+        int backgroundIndex = indexOfType(commands, PaintCommandType.BACKGROUND);
+        Assert.assertTrue("BACKDROP 必须先于 BACKGROUND",
+                backdropIndex >= 0 && backgroundIndex > backdropIndex);
+        Assert.assertTrue("滤镜之上不得压不透明底盖",
+                alpha(commands.get(backgroundIndex).getColor()) < 0xFF);
+        Assert.assertEquals("标题零 BACKDROP（内容不各自采样玻璃）",
+                0, ownBackdropCount(card.__getChildren().get(0)));
+        Assert.assertEquals("正文零 BACKDROP（内容不各自采样玻璃）",
+                0, ownBackdropCount(card.__getChildren().get(1)));
+    }
+
+    // ==================== 主题化：切换 / 延迟显示 / 离场中重开 / 回收 ====================
+
+    /**
+     * 打开中切主题：面板与标题/正文随主题更新，按钮/焦点/命中不丢，节点身份不变、effect 数不增长。
+     */
+    @Test
+    public void themeSwitchWhileOpenUpdatesPanelAndKeepsButtonsFocusAndHit() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：深/浅 OVERLAY 配方必须不同",
+                dark.surface(SceneTheme.Role.OVERLAY), light.surface(SceneTheme.Role.OVERLAY));
+        Assert.assertNotEquals("测试前提：深/浅正文前景必须不同",
+                Integer.valueOf(dark.foreground()), Integer.valueOf(light.foreground()));
+        Assert.assertNotEquals("测试前提：深/浅次要前景必须不同",
+                Integer.valueOf(dark.mutedForeground()), Integer.valueOf(light.mutedForeground()));
+
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        mountThemedDialog(pageTheme, dialogProps(visible, twoButtons()));
+        tickAndFlush(1_000_000_000L);
+        doLayout();
+
+        SceneNode card = cardNode();
+        SceneNode cancel = buttonNode(0);
+        Assert.assertEquals("深色面板 = 深色 OVERLAY idle 染色",
+                dark.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertEquals("深色标题 = 深色正文前景", dark.foreground(),
+                card.__getChildren().get(0).getTextColor());
+        Assert.assertEquals("深色正文 = 深色次要前景", dark.mutedForeground(),
+                card.__getChildren().get(1).getTextColor());
+        Assert.assertSame("打开聚焦首按钮", cancel, runtime.getFocusedNode());
+
+        int effectsBeforeSwitch = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+        doLayout();
+
+        Assert.assertSame("切主题不重建面板根", card, cardNode());
+        Assert.assertSame("切主题不重建按钮", cancel, buttonNode(0));
+        Assert.assertEquals("面板随主题更新", light.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(),
+                card.getBackgroundColor());
+        Assert.assertEquals("面板缘色随主题更新", light.surface(SceneTheme.Role.OVERLAY).getIdle().getEdge(),
+                card.getBorderColor());
+        Assert.assertEquals("面板材质随主题更新",
+                light.surface(SceneTheme.Role.OVERLAY).getBackdrop().getEffect().getMaterial(),
+                card.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("标题随主题更新", light.foreground(),
+                card.__getChildren().get(0).getTextColor());
+        Assert.assertEquals("正文随主题更新", light.mutedForeground(),
+                card.__getChildren().get(1).getTextColor());
+        Assert.assertSame("焦点不丢", cancel, runtime.getFocusedNode());
+        Assert.assertEquals("切主题不新增订阅", effectsBeforeSwitch,
+                ReactiveTestProbe.registeredEffectCount());
+
+        // 命中不丢：切主题后点次按钮仍触发回调并请求关闭
+        int[] c = absCenter(buttonNode(1));
+        pressAndReleaseAt(c[0], c[1]);
+        Assert.assertEquals("切主题后按钮命中仍有效", Arrays.asList("confirm"), log);
+        Assert.assertTrue("切主题后点击仍请求关闭", dismissed.get());
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("退场完成卸载", 0, overlaySize());
+    }
+
+    /**
+     * 延迟显示仍取来源主题：构建期 visible=false（浮层未建）→ 切主题 → 置 true，
+     * 面板/文字取构建期捕获的来源主题信号当前值，焦点与命中不丢。
+     */
+    @Test
+    public void delayedDisplayUsesSourceThemeCapturedAtCreate() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        Signal<Boolean> pageVisible = Signal.create(Boolean.FALSE);
+        mountThemedDialog(pageTheme, dialogProps(pageVisible, twoButtons()));
+        Assert.assertEquals("初始不可见不构建浮层", 0, overlaySize());
+
+        pageTheme.set(light);
+        runtime.flush();
+
+        pageVisible.set(Boolean.TRUE);
+        runtime.flush();
+        tickAndFlush(1_000_000_000L);
+        doLayout();
+
+        Assert.assertEquals("延迟显示后挂载浮层", 1, overlaySize());
+        SceneNode card = cardNode();
+        Assert.assertEquals("延迟显示面板取来源主题 OVERLAY 染色",
+                light.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(), card.getBackgroundColor());
+        Assert.assertEquals("延迟显示面板缘色取来源主题",
+                light.surface(SceneTheme.Role.OVERLAY).getIdle().getEdge(), card.getBorderColor());
+        Assert.assertEquals("延迟显示标题取来源主题正文前景", light.foreground(),
+                card.__getChildren().get(0).getTextColor());
+        Assert.assertEquals("延迟显示正文取来源主题次要前景", light.mutedForeground(),
+                card.__getChildren().get(1).getTextColor());
+        Assert.assertEquals("延迟显示聚焦首按钮", true,
+                runtime.interactionState(buttonNode(0)).focused().get());
+
+        // 显示后切主题：面板随主题更新、节点身份与焦点不丢、订阅不增长
+        SceneNode cardAfterShow = cardNode();
+        SceneNode firstButton = buttonNode(0);
+        int effectsAfterShow = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(dark);
+        runtime.flush();
+        doLayout();
+        Assert.assertSame("显示后切主题不重建面板", cardAfterShow, cardNode());
+        Assert.assertSame("显示后切主题不重建按钮", firstButton, buttonNode(0));
+        Assert.assertEquals("显示后面板随主题更新",
+                dark.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(), cardNode().getBackgroundColor());
+        Assert.assertEquals("显示后标题随主题更新", dark.foreground(),
+                cardNode().__getChildren().get(0).getTextColor());
+        Assert.assertEquals("显示后正文随主题更新", dark.mutedForeground(),
+                cardNode().__getChildren().get(1).getTextColor());
+        Assert.assertSame("显示后焦点不丢", firstButton, runtime.getFocusedNode());
+        Assert.assertEquals("显示后切主题不新增订阅", effectsAfterShow,
+                ReactiveTestProbe.registeredEffectCount());
+
+        int[] c = absCenter(buttonNode(1));
+        pressAndReleaseAt(c[0], c[1]);
+        Assert.assertEquals("延迟显示后命中仍有效", Arrays.asList("confirm"), log);
+        Assert.assertTrue("延迟显示后点击仍请求关闭", dismissed.get());
+    }
+
+    /**
+     * 离场中重开：退场半程切主题并重新置 true（取消退场、重放淡入），面板仍是同一节点
+     * 且取来源主题当前值，焦点/命中不丢。
+     */
+    @Test
+    public void reopenDuringLeaveKeepsSourceThemeAndNodeIdentity() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        mountThemedDialog(pageTheme, dialogProps(visible, twoButtons()));
+        tickAndFlush(1_000_000_000L);
+        doLayout();
+        SceneNode cardBefore = cardNode();
+        Assert.assertEquals("初始面板 = 深色 OVERLAY 染色",
+                dark.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(), cardBefore.getBackgroundColor());
+
+        visible.set(Boolean.FALSE);
+        runtime.flush();
+        tickAndFlush(1_000_000_000L + LEAVE / 2);
+        Assert.assertEquals("离场半程仍挂载", 1, overlaySize());
+
+        pageTheme.set(light);
+        runtime.flush();
+        doLayout();
+        Assert.assertSame("离场中切主题不重建面板", cardBefore, cardNode());
+        Assert.assertEquals("离场中面板随主题更新",
+                light.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(), cardNode().getBackgroundColor());
+
+        visible.set(Boolean.TRUE);
+        runtime.flush();
+        Assert.assertEquals("离场中重开仍是一个浮层", 1, overlaySize());
+        Assert.assertSame("重开不重建面板节点", cardBefore, cardNode());
+        Assert.assertEquals("重开取来源主题 OVERLAY 染色",
+                light.surface(SceneTheme.Role.OVERLAY).getIdle().getTint(), cardNode().getBackgroundColor());
+        Assert.assertEquals("重开取来源主题缘色",
+                light.surface(SceneTheme.Role.OVERLAY).getIdle().getEdge(), cardNode().getBorderColor());
+        Assert.assertEquals("重开正文取来源主题次要前景", light.mutedForeground(),
+                cardNode().__getChildren().get(1).getTextColor());
+        Assert.assertEquals("重放淡入：焦点仍在首按钮", true,
+                runtime.interactionState(buttonNode(0)).focused().get());
+
+        tickAndFlush(2_000_000_000L); // 重放淡入完成
+        Assert.assertEquals("重放淡入完成后面板可见", 1f, cardNode().getOpacity(), 0.001f);
+        doLayout();
+        int[] c = absCenter(buttonNode(1));
+        pressAndReleaseAt(c[0], c[1]);
+        Assert.assertEquals("重开后命中仍有效", Arrays.asList("confirm"), log);
+        Assert.assertTrue("重开后点击仍请求关闭", dismissed.get());
+    }
+
+    /**
+     * 卸载回收：退场完成即回收浮层内全部绑定（面板/文字/动画），承载页面卸载后回到挂载前基线。
+     */
+    @Test
+    public void closeReclaimsOverlayBindingsAndPageDisposeReturnsToBaseline() {
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+        MountHandle page = mountThemedDialog(Signal.create(SceneTheme.liquidGlassDark()),
+                dialogProps(visible, twoButtons()));
+        tickAndFlush(1_000_000_000L);
+        doLayout();
+        Assert.assertEquals("对话框已挂载", 1, overlaySize());
+        int openEffects = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("挂载应注册响应式绑定", openEffects > baseline);
+
+        visible.set(Boolean.FALSE);
+        runtime.flush();
+        tickAndFlush(1_000_000_000L + LEAVE);
+        Assert.assertEquals("退场完成卸载", 0, overlaySize());
+        int closedEffects = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("关闭回收浮层内绑定", closedEffects < openEffects);
+
+        page.dispose();
+        runtime.flush();
+        Assert.assertEquals("承载页面卸载后回到基线", baseline, ReactiveTestProbe.registeredEffectCount());
+    }
+
     // ==================== 内聚化：不得再自带按钮/文本/调色板 ====================
 
     /**
      * 源码守卫：对话框必须把按钮行为、文本换行、面板外壳委托给既有权威。
      *
      * <p>本类历史上自带一份 {@code rt.on(CLICK/KEY_DOWN)}、一份静态配色、一份私藏 DANGER_BG，
-     * 与 {@code SceneButtonPrimitive}/{@code SceneStateColors} 并行演化，结果四态反馈整个缺失。
-     * 结构用例只证明"现在能用"，证明不了"没退回手搓"——这条按签名粒度钉住委托关系。</p>
+     * 与 {@code SceneButtonPrimitive}/{@code SceneStateColors} 并行演化，结果四态反馈整个缺失；
+     * 面板外壳也曾由 {@code SceneChromeTokens.applyPanelChrome} 静态写底色/边框/圆角，与主题配方
+     * 形成两个外观写入者。结构用例只证明"现在能用"，证明不了"没退回手搓"——这条按签名粒度钉住
+     * 委托关系与唯一写入者。</p>
      */
     @Test
-    public void dialogMustDelegateButtonAndTextToControlAuthorities() throws Exception {
+    public void dialogMustDelegateButtonTextAndPanelShellToControlAuthorities() throws Exception {
         java.nio.file.Path path = java.nio.file.Paths.get(
                 "src/main/java/club/heiqi/uilib/ui/scene/control/SceneDialog.java");
         String raw = new String(java.nio.file.Files.readAllBytes(path),
@@ -528,7 +862,12 @@ public class SceneDialogTest {
                 src.contains("SceneEventType"));
         Assert.assertTrue("按钮必须委托 SceneButton", src.contains("SceneButton.create("));
         Assert.assertTrue("标题/正文必须委托 SceneLabel", src.contains("SceneLabel.create("));
-        Assert.assertTrue("卡片外壳必须走 applyPanelChrome", src.contains("applyPanelChrome("));
+        Assert.assertTrue("面板外壳必须走表面绑定器（唯一外观写入者）",
+                src.contains("SceneSurfaceBinder.bind("));
+        Assert.assertTrue("面板必须取 OVERLAY 角色配方",
+                src.contains("SceneTheme.Role.OVERLAY"));
+        Assert.assertFalse("旧静态面板外壳写入者必须删除",
+                src.contains("applyPanelChrome("));
         Assert.assertFalse("本类不得再自带 0xFF 色值（调色板归 token）", src.contains("0xFF"));
     }
 }
