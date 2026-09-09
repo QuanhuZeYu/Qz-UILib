@@ -15,7 +15,10 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneSegmented —— scene 新栈控件层 Phase 4 批 2 分段单选控件（水平段式）。
@@ -27,8 +30,8 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *
  * <h3>结构</h3>
  * <pre>
- * root (ROW, crossAxisAlign=STRETCH, gap)
- *   └─ segment[i] (ROW, mainAxisAlign=CENTER, crossAxisAlign=CENTER, padding, cornerRadius, preferredWidth=固定段宽)  ← 交互单元 hitTestable=true
+ * root (ROW, crossAxisAlign=STRETCH, gap)                  ← 导航底座，承载 TOOLBAR 表面
+ *   └─ segment[i] (ROW, mainAxisAlign=CENTER, crossAxisAlign=CENTER, padding, preferredWidth=固定段宽)  ← 交互单元 hitTestable=true
  *         └─ label[i] (text)   ← 装饰 hitTestable=false
  * </pre>
  *
@@ -40,6 +43,28 @@ import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
  *       preferredWidth（LAYOUT 级属性），构建期一次性写入，不引入每段脏标记瀑布（守 I7）。</li>
  *   <li><b>R6 段穿透权威落地</b>：段本身 hitTestable=true，段内 label 文字 hitTestable=false 穿透到所属段。</li>
  * </ul>
+ *
+ * <h3>外观归属：底座 TOOLBAR + 段 INDICATOR 选中配方，唯一写入者是表面绑定器</h3>
+ * <p><b>底座</b>（primitive root）走 {@link SceneThemes#surface} 的 {@link SceneTheme.Role#TOOLBAR}
+ * 配方：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 全归
+ * {@link SceneSurfaceBinder}，整条导航栏只在这一处安装滤镜。旧的静态边框/圆角设值与
+ * {@code SceneControlChrome.bindStandardBorder}/{@code SceneStateColors} 写入者已删除。</p>
+ *
+ * <p><b>每段</b>走 {@link SceneThemes#selectableSurface} 的 {@link SceneTheme.Role#INDICATOR} 配方：
+ * 未选中保持角色配方的极淡 tint（轻量状态覆盖），选中态把 tint 的 RGB 换成主题强调色、强度取
+ * 主题统一选中强度 {@code 0x59}——<b>选中是色彩语义，不是仅透明度</b>；禁用态仍走角色禁用档。
+ * 段<b>保留配方自带的轻滤镜</b>（与 G05 选中族 RadioGroup circle / Checkbox box / Toggle track
+ * 同口径，每段恰好一条 BACKDROP，见契约 §4.1「导航族选项的滤镜口径（G09 裁决）」）；
+ * 「不给每个子项重复安装滤镜」的语义是<b>不得在配方之外再叠第二层玻璃、也不得让段内文字或内容
+ * 各自采样背景</b>，不是把选项配方的 backdrop 置空。</p>
+ *
+ * <p><b>段文字</b>：启用取 {@link SceneThemes#foreground}，禁用取
+ * {@link SceneThemes#disabledForeground}，删除 {@code SceneStateColors} 取色。选中项不使用
+ * {@link SceneThemes#onAccentForeground}——选中段是叠在 TOOLBAR 玻璃上的 {@code 0x59} 半透明
+ * 强调染色而非不透明强调底，合成底色仍由玻璃主导；{@code onAccentForeground} 是给不透明强调底
+ * （如 RadioGroup 的 dot 标记）用的，浅色主题下它在浅紫合成底上对比度不足（约 1.7:1），而主题
+ * 正文色正是主题作者保证在自身玻璃上可读的正文色（契约 §4.1 给 Segmented 的前景映射同为
+ * {@code foreground}）。选中区分由染色承担，不靠文字变色。</p>
  *
  * <h3>契约</h3>
  * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 常量 + 回调 / R3 组件函数只执行一次 /
@@ -54,10 +79,6 @@ public final class SceneSegmented {
      * 因 uilib 不能反向依赖 config 模块，此处仅以文字引用全限定名，不 import。
      */
     private static final int SEGMENT_PADDING = SceneChromeTokens.PAD_LG;
-    /**
-     * 段圆角（像素）
-     */
-    private static final int SEGMENT_RADIUS = SceneChromeTokens.RADIUS_MD;
     /**
      * 各段之间的横向间距（像素）
      */
@@ -121,31 +142,53 @@ public final class SceneSegmented {
             result.root().setPreferredHeight(
                     rt.lineHeight(SEG_LABEL_FONT_SIZE) + 2 * SEGMENT_PADDING);
 
+            // 导航底座：TOOLBAR 角色配方。表面绑定器独占 background/border/borderWidth/
+            // cornerRadius/backdrop/surfaceElevation；构造期不再静态设边框/圆角，
+            // 也不另绑状态色或标准边框。
+            SceneInteractionState baseInteraction = rt.interactionState(result.root());
+            // 时序契约：Router 的 writeHovered/writePressed/writeFocused 对未创建的 signal 直接
+            // 短路，故在构建期声明关心，保证后续 hover/pressed/focus 能驱动配方状态档。
+            baseInteraction.hovered();
+            baseInteraction.pressed();
+            baseInteraction.focused();
+            SceneSurfaceBinder.bind(rt, result.root(), SceneThemes.surface(rt, SceneTheme.Role.TOOLBAR),
+                    props.enabled(), baseInteraction);
+
+            // 主题语义前景派生在构造期捕获一次（来源作用域），循环内所有段共享同一派生信号。
+            ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
+            ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
                 SceneNode segment = handle.item();
                 segment.setFlexDirection(FlexDirection.ROW);
                 segment.setMainAxisAlign(MainAxisAlign.CENTER);
                 segment.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 segment.setPadding(SEGMENT_PADDING);
-                segment.setCornerRadius(SEGMENT_RADIUS);
                 // 段宽按标题文本自适应：构建期一次性测量（options 固定，守 R2/I7），
                 // 段宽 = 文本宽 + 2*内边距，短标题不留白、长标题不截断。测量值固化进
                 // preferredWidth（LAYOUT 级属性），构建期一次性写入，运行期不再重测。
                 String title = props.options().get(handle.index());
                 int textWidth = rt.measureTextWidth(title, SEG_LABEL_FONT_SIZE);
                 segment.setPreferredWidth(textWidth + 2 * SEGMENT_PADDING);
-                segment.setBorderWidth(1);
-                segment.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
                 segment.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
 
-                SceneControlChrome.bindSelectableBackground(rt, segment, props.enabled(), handle.selected(), interaction);
-                SceneControlChrome.bindStandardBorder(rt, segment, props.enabled(), interaction);
-                rt.bindComputed(() -> Boolean.TRUE.equals(handle.selected().get())
-                        ? SceneStateColors.standardText(Boolean.TRUE.equals(props.enabled().get()), true)
-                        : SceneStateColors.secondaryText(Boolean.TRUE.equals(props.enabled().get())),
+                // 选中指示：INDICATOR 角色配方 + selected 派生（选中把 tint RGB 换强调色、
+                // 强度 0x59，禁用仍取角色禁用档）。唯一外观写入者，独占 background/border/
+                // borderWidth/cornerRadius/backdrop/surfaceElevation。
+                // 滤镜口径（G09 裁决）：段保留配方自带的轻滤镜，与 G05 选中族同口径；
+                // 「不重复安装滤镜」指不得在配方之外再叠第二层玻璃，也不给段内文字采样背景。
+                ReadableSignal<SceneSurfaceStyle> surface =
+                    SceneThemes.selectableSurface(rt, SceneTheme.Role.INDICATOR, handle.selected());
+                SceneSurfaceBinder.bind(rt, segment, surface, props.enabled(), interaction);
+
+                // 段文字：启用取主题正文色（选中/未选中同色，见类注释对比度说明），
+                // 禁用取主题禁用前景色；删除 SceneStateColors 取色。
+                rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
+                        ? foreground.get() : disabledForeground.get(),
                     handle.label()::setTextColor);
+
                 SceneControlChrome.bindCursor(rt, segment, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 

@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * {@link ChoiceFieldRenderer} 单元测试。
@@ -90,11 +91,12 @@ public class ChoiceFieldRendererTest {
         FieldSpec spec = schema.field("server.mode");
         SceneNode card = renderer.render(runtime, spec, adapter);
         runtime.flush();
-        // draft 初值 "online" → selectedIndex=0 → 第 0 个 segment 选中（ACCENT 背景）
+        // draft 初值 "online" → selectedIndex=0 → 第 0 个 segment 选中（强调色系 tint + 0x59 强度）
         SceneNode seg = findSegmentedRoot(card);
         SceneNode first = seg.__getChildren().get(0);
-        Assert.assertEquals("selectedIndex=0 → 首段选中背景",
-                club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.ACCENT,
+        int accent = SceneThemes.DEFAULT.accent();
+        Assert.assertEquals("selectedIndex=0 → 首段选中 tint = 强调色系 + 0x59 强度",
+                (0x59 << 24) | (accent & 0x00FFFFFF),
                 first.getBackgroundColor());
     }
 

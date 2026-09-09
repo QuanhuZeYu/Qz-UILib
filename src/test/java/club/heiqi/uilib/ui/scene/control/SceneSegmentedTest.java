@@ -10,31 +10,37 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.UiBackdrop;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LayoutResult;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
+import club.heiqi.uilib.ui.scene.paint.PaintFragment;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneSegmented 端到端单元测试 —— Phase 4 批 2 分段单选受控控件（R8）验收。
  *
  * <p>端到端验证：受控闭环（点段只上抛期望下标、控件零状态不自改）、
  * R6 段穿透权威验证（点段内 label 文字穿透到所属段进 pressed）、四态切换零重排、
- * 键盘激活（Enter/Space）+ disabled 拦截、方向键导航（←/→ + 焦点移动）。</p>
- *
- * <p>交互注入已迁 {@link SceneInteractionHarness}：click/press/release/pressKey 取代
- * 自建 routePointer/routeKey/clickCenter。Segmented 树无 scrollable 祖先，
- * {@code SceneGeometry.absoluteBox(node,0,0)} 与原父链累加 absCenter 等价，
- * harness.centerOf 可直接命中段内 label 穿透到段。relayoutCount 断言仍由用例侧
- * {@code doLayout()} 驱动，harness 不接管 layout。</p>
+ * 键盘激活（Enter/Space）+ disabled 拦截、方向键导航（←/→ + 焦点移动），
+ * 以及主题化外观（底座走 TOOLBAR 配方、段走 INDICATOR 选中配方并保留配方自带轻滤镜
+ * （每段恰好一条 BACKDROP）、选中 tint 为强调色系且强度 0x59、文字走主题正文/禁用前景色、
+ * hover/focus 走配方状态档、主题切换不重建节点且选中项不丢、卸载回收绑定）。</p>
  */
 public class SceneSegmentedTest {
 
@@ -57,12 +63,35 @@ public class SceneSegmentedTest {
     private static final int CANVAS_HEIGHT = 100;
     private static final int STUB_CHAR_WIDTH = 8;
 
-    // SceneSegmented chrome token 镜像
-    private static final int SEG_UNSEL_ENABLED = SceneChromeTokens.BG_DEFAULT;
-    private static final int SEG_UNSEL_PRESSED = SceneChromeTokens.BG_PRESSED;
-    private static final int SEG_SEL_ENABLED = SceneChromeTokens.ACCENT;
-    private static final int SEG_SEL_PRESSED = SceneChromeTokens.ACCENT_PRESSED;
-    private static final int SEG_DISABLED = SceneChromeTokens.BG_DISABLED;
+    /**
+     * 库默认主题的 TOOLBAR 角色配方：导航底座默认外观唯一来源。
+     * 断言取配方值而不是硬编码色号，主题集中调参时本类自动跟随。
+     */
+    private static final SceneSurfaceStyle BASE_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.TOOLBAR);
+    /**
+     * 库默认主题的 INDICATOR 角色配方：段选中指示默认外观唯一来源。
+     */
+    private static final SceneSurfaceStyle SEG_SURFACE =
+            SceneThemes.DEFAULT.surface(SceneTheme.Role.INDICATOR);
+
+    private static final int BASE_IDLE = BASE_SURFACE.getIdle().getTint();
+    private static final int BASE_HOVERED = BASE_SURFACE.getHovered().getTint();
+    private static final int BASE_DISABLED = BASE_SURFACE.getDisabled().getTint();
+
+    private static final int SEG_UNSEL_ENABLED = SEG_SURFACE.getIdle().getTint();
+    private static final int SEG_UNSEL_HOVERED = SEG_SURFACE.getHovered().getTint();
+    private static final int SEG_UNSEL_PRESSED = SEG_SURFACE.getPressed().getTint();
+    /**
+     * 选中档：{@code SceneThemes.selectableSurface} 把配方 tint 的 RGB 换成主题强调色、
+     * 保留原 alpha（故选中是色彩语义，不是仅透明度）。
+     */
+    private static final int SEG_SEL_ENABLED = selectedTint(SEG_UNSEL_ENABLED, SceneThemes.DEFAULT.accent());
+    private static final int SEG_DISABLED = SEG_SURFACE.getDisabled().getTint();
+
+    /** 段文字：启用取主题正文色，禁用取主题禁用前景色（选中/未选中同色，见实现类对比度说明）。 */
+    private static final int LABEL_ENABLED = SceneThemes.DEFAULT.foreground();
+    private static final int LABEL_DISABLED = SceneThemes.DEFAULT.disabledForeground();
 
     private static final List<String> OPTIONS = Arrays.asList("Day", "Week", "Month");
 
@@ -104,6 +133,22 @@ public class SceneSegmentedTest {
 
     // ==================== 辅助方法 ====================
 
+    /**
+     * 选中配方语义：RGB 换成强调色，alpha 用主题统一选中强度
+     * {@code SceneThemes.SELECTED_TINT_ALPHA}(0x59)——不再沿用角色配方的低 alpha。
+     */
+    private static int selectedTint(int baseTint, int accent) {
+        return (0x59 << 24) | (accent & 0x00FFFFFF);
+    }
+
+    private static int alphaOf(int argb) {
+        return (argb >>> 24) & 0xFF;
+    }
+
+    private static int rgbOf(int argb) {
+        return argb & 0x00FFFFFF;
+    }
+
     private LayoutResult doLayout() {
         return layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
     }
@@ -120,6 +165,38 @@ public class SceneSegmentedTest {
 
     private int segBackground(int i) {
         return segmentNode(i).getBackgroundColor();
+    }
+
+    /**
+     * 底座 hover 探测点 X：落在底座盒内、且在所有段右缘之外（段只做轻量覆盖，
+     * 底座空白区才是底座自身的命中区）。
+     */
+    private int baseHoverProbeX() {
+        LayoutBox rootBox = (LayoutBox) segRoot.getCachedLayout();
+        int rightMostSegment = 0;
+        for (SceneNode segment : segRoot.__getChildren()) {
+            LayoutBox box = (LayoutBox) segment.getCachedLayout();
+            rightMostSegment = Math.max(rightMostSegment, box.getX() + box.getWidth());
+        }
+        int probe = rootBox.getX() + rootBox.getWidth() - 2;
+        Assert.assertTrue("底座右缘应留出段外空白区供 hover 探测，probe=" + probe
+                + ", rightMostSegment=" + rightMostSegment, probe >= rightMostSegment);
+        return probe;
+    }
+
+    /** 节点自身 PaintFragment 内的 BACKDROP 命令数；无 fragment 返回 -1。 */
+    private static int backdropCount(SceneNode node) {
+        Object cached = node.getCachedPaint();
+        if (!(cached instanceof PaintFragment)) {
+            return -1;
+        }
+        int count = 0;
+        for (PaintCommand command : ((PaintFragment) cached).getCommands()) {
+            if (command.getType() == PaintCommandType.BACKDROP) {
+                count++;
+            }
+        }
+        return count;
     }
 
     // ==================== 验收 1：受控闭环 ====================
@@ -315,5 +392,250 @@ public class SceneSegmentedTest {
         runtime.flush();
         harness.pressKey(SceneKey.ARROW_LEFT);
         Assert.assertEquals("← 首段边界裁剪仍 0", Integer.valueOf(0), lastSelectValue);
+    }
+
+    // ==================== 验收 8：默认工厂路径消费主题（底座 TOOLBAR + 段 INDICATOR） ====================
+
+    /**
+     * 默认工厂路径（不传任何样式参数）：底座 background/border/borderWidth/cornerRadius/
+     * backdrop/surfaceElevation 全部等于 {@code SceneThemes.DEFAULT.surface(Role.TOOLBAR)}
+     * 的对应值；每段走 INDICATOR 配方（选中 tint 的 RGB 换成强调色、强度 0x59），
+     * 且段不重复安装滤镜（backdrop 为 null，背景由底座统一采样一次）。
+     */
+    @Test
+    public void defaultFactoryShouldConsumeToolbarBaseAndIndicatorSelection() {
+        doLayout();
+
+        // 底座 = TOOLBAR 配方（导航栏唯一滤镜安装点）
+        Assert.assertEquals("底座染色 = TOOLBAR 配方 idle tint", BASE_IDLE, segRoot.getBackgroundColor());
+        Assert.assertEquals("底座圆角 = TOOLBAR 配方圆角",
+                BASE_SURFACE.getCornerRadius(), segRoot.getCornerRadius());
+        Assert.assertEquals("底座边框宽 = TOOLBAR 配方",
+                BASE_SURFACE.getBorderWidth(), segRoot.getBorderWidth());
+        Assert.assertEquals("底座缘色 = TOOLBAR 配方 idle edge",
+                BASE_SURFACE.getIdle().getEdge(), segRoot.getBorderColor());
+        Assert.assertEquals("底座实体高度 = TOOLBAR 配方 idle elevation",
+                BASE_SURFACE.getIdle().getElevation(), segRoot.__getSurfaceElevation(), 0.0001F);
+        Assert.assertNotNull("底座默认带液态玻璃滤镜", segRoot.getBackdrop());
+        Assert.assertEquals("底座滤镜模糊半径来自 TOOLBAR 配方",
+                BASE_SURFACE.getBackdrop().getBlurRadius(), segRoot.getBackdrop().getBlurRadius());
+
+        // 段 = INDICATOR 配方，保留配方自带的轻滤镜（G09 裁决：与 G05 选中族同口径）
+        UiBackdrop recipeBackdrop = SEG_SURFACE.getBackdrop();
+        Assert.assertNotNull("测试前提：INDICATOR 配方自带轻滤镜", recipeBackdrop);
+        for (int i = 0; i < OPTIONS.size(); i++) {
+            Assert.assertEquals("段[" + i + "] 圆角来自 INDICATOR 配方",
+                    SEG_SURFACE.getCornerRadius(), segmentNode(i).getCornerRadius());
+            Assert.assertEquals("段[" + i + "] 边框宽来自 INDICATOR 配方",
+                    SEG_SURFACE.getBorderWidth(), segmentNode(i).getBorderWidth());
+            UiBackdrop segmentBackdrop = segmentNode(i).getBackdrop();
+            Assert.assertNotNull("段[" + i + "] 保留配方自带轻滤镜", segmentBackdrop);
+            Assert.assertEquals("段[" + i + "] 滤镜模糊半径 = INDICATOR 配方",
+                    recipeBackdrop.getBlurRadius(), segmentBackdrop.getBlurRadius());
+            Assert.assertEquals("段[" + i + "] 滤镜材质 = INDICATOR 配方",
+                    recipeBackdrop.getEffect().getMaterial(), segmentBackdrop.getEffect().getMaterial());
+        }
+
+        // 选中段 = 强调色系 + 主题统一选中强度 0x59（选中不能只靠透明度区分）
+        int selected = segBackground(0);
+        Assert.assertEquals("选中段染色 = 配方 tint 换强调色", SEG_SEL_ENABLED, selected);
+        Assert.assertEquals("选中段 tint 为强调色系", rgbOf(SceneThemes.DEFAULT.accent()), rgbOf(selected));
+        Assert.assertEquals("选中用主题统一选中强度 0x59", 0x59, alphaOf(selected));
+        Assert.assertTrue("选中强度必须高于未选中档，否则读不出选中",
+                alphaOf(selected) > alphaOf(SEG_UNSEL_ENABLED));
+        Assert.assertNotEquals("选中与未选中必须可区分", SEG_UNSEL_ENABLED, selected);
+        Assert.assertEquals("未选中段染色 = INDICATOR 配方 idle tint",
+                SEG_UNSEL_ENABLED, segBackground(1));
+
+        // 段文字 = 主题正文色（选中/未选中同色，选中区分由染色承担）
+        Assert.assertEquals("段[0] 文字 = 主题正文色", LABEL_ENABLED, labelNode(0).getTextColor());
+        Assert.assertEquals("段[1] 文字 = 主题正文色", LABEL_ENABLED, labelNode(1).getTextColor());
+    }
+
+    // ==================== 验收 9：hover / focus 走配方状态档且零重排 ====================
+
+    /**
+     * hover 染色取角色配方 hovered 档、聚焦缘色取配方 focusEdge、底座 hover 取 TOOLBAR
+     * hovered 档，全部纯 PAINT 级零重排。
+     */
+    @Test
+    public void hoverAndFocusShouldFollowRecipeWithoutRelayout() {
+        LayoutResult result = doLayout();
+
+        // ① 段 hover：染色取 INDICATOR 配方 hovered 档，零重排
+        harness.moveTo(segmentNode(1));
+        result = doLayout();
+        Assert.assertEquals("段[1] hover 染色取配方 hovered 档", SEG_UNSEL_HOVERED, segBackground(1));
+        Assert.assertEquals("R-D: 段 hover 零重排", 0, result.getRelayoutCount());
+
+        // ② 聚焦：缘色取配方 focusEdge（非禁用态），零重排
+        runtime.requestFocus(segmentNode(1));
+        runtime.flush();
+        result = doLayout();
+        Assert.assertEquals("段[1] 聚焦缘色 = 配方 focusEdge",
+                SEG_SURFACE.getFocusEdge(), segmentNode(1).getBorderColor());
+        Assert.assertEquals("R-D: 聚焦缘色零重排", 0, result.getRelayoutCount());
+
+        // ③ 底座 hover：指针落在段外空白区 → 底座取 TOOLBAR 配方 hovered 档，零重排
+        LayoutBox rootBox = (LayoutBox) segRoot.getCachedLayout();
+        harness.moveAt(baseHoverProbeX(), rootBox.getY() + rootBox.getHeight() / 2);
+        result = doLayout();
+        Assert.assertEquals("底座 hover 染色取 TOOLBAR 配方 hovered 档",
+                BASE_HOVERED, segRoot.getBackgroundColor());
+        Assert.assertEquals("R-D: 底座 hover 零重排", 0, result.getRelayoutCount());
+
+        // ④ 移出整条导航栏：底座回 idle 档，零重排
+        harness.moveAt(0, rootBox.getY() + rootBox.getHeight() + 1);
+        result = doLayout();
+        Assert.assertEquals("移出后底座回 TOOLBAR idle 档", BASE_IDLE, segRoot.getBackgroundColor());
+        Assert.assertEquals("R-D: 移出零重排", 0, result.getRelayoutCount());
+    }
+
+    // ==================== 验收 10：禁用态取禁用档与禁用前景 ====================
+
+    /**
+     * 禁用态：底座取 TOOLBAR 禁用档、段取 INDICATOR 禁用档（选中段同样退到禁用档）、
+     * 文字取主题禁用前景色且不透明可读；「选中 + 禁用」不覆盖 disabled 分支，受控值不受影响。
+     */
+    @Test
+    public void disabledShouldUseDisabledRecipeAndDisabledForeground() {
+        doLayout();
+
+        enabledSignal.set(Boolean.FALSE);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("禁用底座取 TOOLBAR 配方禁用档", BASE_DISABLED, segRoot.getBackgroundColor());
+        Assert.assertEquals("禁用段[0]（原选中）取 INDICATOR 禁用档", SEG_DISABLED, segBackground(0));
+        Assert.assertEquals("禁用段[1] 取 INDICATOR 禁用档", SEG_DISABLED, segBackground(1));
+        Assert.assertEquals("禁用文字取主题禁用前景色", LABEL_DISABLED, labelNode(0).getTextColor());
+        Assert.assertEquals("禁用文字不透明可读", 0xFF, alphaOf(LABEL_DISABLED));
+        Assert.assertTrue("禁用段仍有可见染色（可读，不是全透明消失）", alphaOf(SEG_DISABLED) > 0);
+        Assert.assertNotEquals("禁用文字色与禁用染色必须可区分", SEG_DISABLED, LABEL_DISABLED);
+        Assert.assertEquals("禁用不改变受控值", Integer.valueOf(0), selectedSignal.get());
+
+        enabledSignal.set(Boolean.TRUE);
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("恢复启用底座回 TOOLBAR idle 档", BASE_IDLE, segRoot.getBackgroundColor());
+        Assert.assertEquals("恢复启用回选中档", SEG_SEL_ENABLED, segBackground(0));
+        Assert.assertEquals("恢复启用文字回正文色", LABEL_ENABLED, labelNode(0).getTextColor());
+    }
+
+    // ==================== 验收 11：主题切换更新外观且不重建节点 / 不增订阅 ====================
+
+    /**
+     * 页面主题信号更新 + flush 后：底座/段/文字外观随新主题更新，选中项不丢，
+     * 节点身份不变、effect 数不增长；卸载后绑定全部回收。
+     */
+    @Test
+    public void themeSwitchShouldUpdateAppearanceWithoutRebuild() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：深/浅 TOOLBAR 配方必须不同",
+                dark.surface(SceneTheme.Role.TOOLBAR), light.surface(SceneTheme.Role.TOOLBAR));
+        Assert.assertNotEquals("测试前提：深/浅 INDICATOR 配方必须不同",
+                dark.surface(SceneTheme.Role.INDICATOR), light.surface(SceneTheme.Role.INDICATOR));
+        Assert.assertNotEquals("测试前提：深/浅正文色必须不同", dark.foreground(), light.foreground());
+
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        Signal<Integer> themedSelected = Signal.create(Integer.valueOf(1));
+        SceneSegmented.Props props = new SceneSegmented.Props(
+                themedSelected, OPTIONS, enabledSignal, next -> lastSelectValue = next);
+
+        SceneNode host = new SceneNode();
+        MountHandle themed = runtime.mount(host, () -> {
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(pageTheme, () -> holder[0] = SceneSegmented.create(runtime, props).get());
+            return holder[0];
+        });
+        runtime.flush();
+
+        SceneNode themedRoot = themed.getRoot();
+        SceneNode themedSeg0 = themedRoot.__getChildren().get(0);
+        SceneNode themedSeg1 = themedRoot.__getChildren().get(1);
+        SceneNode themedLabel1 = themedSeg1.__getChildren().get(0);
+
+        Assert.assertEquals("初始底座取深色 TOOLBAR 配方",
+                dark.surface(SceneTheme.Role.TOOLBAR).getIdle().getTint(), themedRoot.getBackgroundColor());
+        Assert.assertEquals("初始段[0] 未选中档",
+                dark.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), themedSeg0.getBackgroundColor());
+        Assert.assertEquals("初始段[1] 选中档（selectedIndex=1）",
+                selectedTint(dark.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), dark.accent()),
+                themedSeg1.getBackgroundColor());
+        Assert.assertEquals("初始文字取深色正文色", dark.foreground(), themedLabel1.getTextColor());
+
+        int effectsBeforeSwitch = ReactiveTestProbe.registeredEffectCount();
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertSame("主题切换不重建底座节点", themedRoot, themed.getRoot());
+        Assert.assertSame("主题切换不重建段节点", themedSeg1, themedRoot.__getChildren().get(1));
+        Assert.assertSame("主题切换不重建文字节点", themedLabel1, themedSeg1.__getChildren().get(0));
+        Assert.assertEquals("底座随主题更新",
+                light.surface(SceneTheme.Role.TOOLBAR).getIdle().getTint(), themedRoot.getBackgroundColor());
+        Assert.assertEquals("底座圆角随主题更新",
+                light.surface(SceneTheme.Role.TOOLBAR).getCornerRadius(), themedRoot.getCornerRadius());
+        Assert.assertEquals("底座滤镜材质随主题更新",
+                light.surface(SceneTheme.Role.TOOLBAR).getBackdrop().getEffect().getMaterial(),
+                themedRoot.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("段[0] 随主题更新",
+                light.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), themedSeg0.getBackgroundColor());
+        Assert.assertEquals("段滤镜材质随主题更新",
+                light.surface(SceneTheme.Role.INDICATOR).getBackdrop().getEffect().getMaterial(),
+                themedSeg0.getBackdrop().getEffect().getMaterial());
+        Assert.assertEquals("选中项仍是段[1] 且随主题更新",
+                selectedTint(light.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), light.accent()),
+                themedSeg1.getBackgroundColor());
+        Assert.assertEquals("文字随主题更新", light.foreground(), themedLabel1.getTextColor());
+        Assert.assertEquals("切主题不丢选中项", Integer.valueOf(1), themedSelected.get());
+        Assert.assertEquals("主题切换不新增订阅", effectsBeforeSwitch, ReactiveTestProbe.registeredEffectCount());
+
+        themed.dispose();
+        Assert.assertEquals("卸载后回收该实例全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    // ==================== 验收 12：卸载回收绑定（effect 探针） ====================
+
+    /**
+     * 挂载注册响应式绑定、卸载全部回收：{@code ReactiveTestProbe.registeredEffectCount()}
+     * 回到挂载前基线（守「卸载即回收」纪律）。
+     */
+    @Test
+    public void disposeShouldReclaimAllBindings() {
+        int baseline = ReactiveTestProbe.registeredEffectCount();
+
+        SceneSegmented.Props props = new SceneSegmented.Props(
+                selectedSignal, OPTIONS, enabledSignal, next -> lastSelectValue = next);
+        MountHandle extra = runtime.mount(sceneRoot, SceneSegmented.create(runtime, props));
+        runtime.flush();
+
+        int mounted = ReactiveTestProbe.registeredEffectCount();
+        Assert.assertTrue("挂载应注册响应式绑定，baseline=" + baseline + ", mounted=" + mounted,
+                mounted > baseline);
+
+        extra.dispose();
+        Assert.assertEquals("卸载回收全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    // ==================== 验收 13：每颗表面恰好采样一次背景（不重复安装滤镜） ====================
+
+    /**
+     * 滤镜口径（G09 裁决，契约 §4.1）：导航族选项保留配方自带的轻滤镜，与 G05 选中族
+     * （RadioGroup circle / Checkbox box / Toggle track）一致；「不给每个子项重复安装滤镜」
+     * 的语义是不得在配方之外再叠第二层玻璃、也不得让段内文字各自采样背景。
+     * 故底座与每段各自恰好一条 BACKDROP，段内 label 的 PaintFragment 内 0 条。
+     */
+    @Test
+    public void eachSurfaceShouldSampleBackdropExactlyOnce() {
+        doLayout();
+        paintEngine.paint(sceneRoot);
+
+        Assert.assertEquals("底座恰好一条 BACKDROP", 1, backdropCount(segRoot));
+        for (int i = 0; i < OPTIONS.size(); i++) {
+            Assert.assertEquals("段[" + i + "] 恰好一条 BACKDROP（配方自带轻滤镜，不叠第二层玻璃）",
+                    1, backdropCount(segmentNode(i)));
+            Assert.assertEquals("段[" + i + "] 内文字不重复采样玻璃", 0, backdropCount(labelNode(i)));
+        }
     }
 }
