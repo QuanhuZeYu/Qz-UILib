@@ -41,6 +41,10 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * （尤其首次 flush 之后）再静态写同一属性即违反契约 §4「属性归属表」，表现为主题切换被覆盖、交互时
  * 属性值反复。元素级轻量槽（caret/thumb/dot/scrim 等）不受此约束——它们写的是控件独占子节点，
  * 不与配方争同一节点。</p>
+ *
+ * <p><b>浮雕豁免</b>：配方的 {@link SceneSurfaceStyle#isReliefDisabled()} 为 true 时，本绑定对
+ * {@code surfaceElevation} 恒写 -1（普通绘制），不消费四态 elevation。其余属性照常独占——
+ * 豁免只针对浮雕通道，不改变写入权归属。</p>
  */
 public final class SceneSurfaceBinder {
 
@@ -109,7 +113,11 @@ public final class SceneSurfaceBinder {
                         && Boolean.TRUE.equals(interaction.focused().get())
                         ? recipe.get().getFocusEdge() : surface.get().getEdge(),
                 node::setBorderColor, duration);
-        rt.__bindAnimatedFloat(() -> surface.get().getElevation(), node::__setSurfaceElevation, duration);
+        // 浮雕豁免位（P-05）：配方声明不走浮雕通道时恒写 -1（普通绘制路径），不消费 StateStyle.elevation。
+        // 短路求值使 reliefDisabled=true 的配方不建立对 surface 的 elevation 依赖，状态变化不触发本 effect。
+        rt.__bindAnimatedFloat(
+                () -> recipe.get().isReliefDisabled() ? -1.0F : surface.get().getElevation(),
+                node::__setSurfaceElevation, duration);
 
         if (motionRoot != null) {
             rt.__bindAnimatedFloat(() -> -recipe.get().getContentLift() * surface.get().getElevation(),
