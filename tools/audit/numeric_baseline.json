@@ -1,0 +1,100 @@
+{
+  "note": "数值基准：由 auditA_v25_full.py 现输出校验。任何数值变更必须先改脚本输出再改基准，禁止直接改基准。",
+  "generatedAt": "2026-09-10",
+  "baselineCommit": "a18c4ebc",
+  "floats": [
+    {
+      "key": "fg dark",
+      "value": 8.84,
+      "doc": "审计包 §7 主表 / §4.4 正文"
+    },
+    {
+      "key": "muted dark",
+      "value": 6.7,
+      "doc": "审计包 §7 主表"
+    },
+    {
+      "key": "errorText dark",
+      "value": 6.72,
+      "doc": "审计包 §7 主表"
+    },
+    {
+      "key": "warningText dark",
+      "value": 6.84,
+      "doc": "审计包 §7 主表"
+    },
+    {
+      "key": "danger dark",
+      "value": 1.14,
+      "doc": "审计包 §4.4 禁文本判据"
+    },
+    {
+      "key": "danger light",
+      "value": 1.15,
+      "doc": "审计包 §4.4 禁文本判据"
+    },
+    {
+      "key": "disabled dark",
+      "value": 2.51,
+      "doc": "审计包 §4.4 豁免口径"
+    },
+    {
+      "key": "disabled light",
+      "value": 2.73,
+      "doc": "审计包 §4.4 豁免口径"
+    },
+    {
+      "key": "accent dark",
+      "value": 1.22,
+      "doc": "审计包 §7 主表"
+    },
+    {
+      "key": "accent light",
+      "value": 1.16,
+      "doc": "审计包 §7 主表"
+    },
+    {
+      "key": "fg light",
+      "value": 2.28,
+      "doc": "审计包 §7 主表（light 档对 M1 为模型 artifact）"
+    }
+  ],
+  "hex": [
+    {
+      "key": "M1 dark 底",
+      "value": "#3A3940"
+    },
+    {
+      "key": "M1 light 底",
+      "value": "#555459"
+    },
+    {
+      "key": "虚拟化 idle",
+      "value": "#3A3940"
+    },
+    {
+      "key": "虚拟化 hover",
+      "value": "#525157"
+    },
+    {
+      "key": "虚拟化 selected",
+      "value": "#34304E"
+    },
+    {
+      "key": "M2 纯白 darkPANEL",
+      "value": "#FDFEFF"
+    },
+    {
+      "key": "M2 纯白 lightPANEL",
+      "value": "#FFFFFF"
+    },
+    {
+      "key": "M2 纯黑 darkPANEL",
+      "value": "#121314"
+    },
+    {
+      "key": "M2 纯黑 lightPANEL",
+      "value": "#333333"
+    }
+  ]
+}
