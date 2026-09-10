@@ -217,6 +217,43 @@ public class SceneDialogTest {
         return page;
     }
 
+    // ==================== 浮层字号：ScenePortalHandle.fontSize ====================
+
+    /**
+     * 浮层字号：{@link ScenePortalHandle#fontSize(int)} 驱动对话框标题与正文的绘制字号。
+     *
+     * <p>不设字号时保持节点默认 16；设 24 后标题与正文一并跟随——字号真值在浮层内容根节点，
+     * 由浮层实现负责派生到自绘文字。证据取自绘制产物，不读节点属性。</p>
+     */
+    @Test
+    public void portalFontSizeDrivesTitleAndMessage() {
+        openDialog(Arrays.<SceneDialog.Button>asList());
+        Assert.assertEquals("缺省标题字号", 16, paintedFontSize("确认操作"));
+        Assert.assertEquals("缺省正文字号", 16, paintedFontSize("确定继续吗？"));
+
+        handle.fontSize(24);
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("设字号后标题跟随", 24, paintedFontSize("确认操作"));
+        Assert.assertEquals("设字号后正文跟随", 24, paintedFontSize("确定继续吗？"));
+    }
+
+    /**
+     * 绘制产物中文本等于 {@code text} 的 TEXT 命令字号。
+     *
+     * @param text 期望文本
+     * @return 绘制字号（UI 像素）
+     */
+    private int paintedFontSize(String text) {
+        for (PaintCommand command : paintEngine.paint(overlayRoot()).getPlan().getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT && text.equals(command.getText())) {
+                return command.getTextStyle().getFontSize();
+            }
+        }
+        throw new AssertionError("绘制产物中未找到文本：" + text);
+    }
+
     /** 绘制当前浮层整棵子树，让每个节点的自身 PaintFragment 就位。 */
     private void paintOverlay() {
         paintEngine.paint(overlayRoot());

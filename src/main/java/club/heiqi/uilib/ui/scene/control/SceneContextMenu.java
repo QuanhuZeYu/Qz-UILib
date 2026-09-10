@@ -139,9 +139,41 @@ public final class SceneContextMenu {
     public static final class Handle {
         private final Runnable closeAction;
         private boolean open = true;
+        /** 本菜单的 portal 句柄；{@link #open} 内回填，字号入口委托给它。 */
+        private ScenePortalHandle portal;
 
         private Handle(Runnable closeAction) {
             this.closeAction = closeAction;
+        }
+
+        /** 回填 portal 句柄（open 内 portalAnchored 返回后调用一次）。 */
+        private void attachPortal(ScenePortalHandle portal) {
+            this.portal = portal;
+        }
+
+        /**
+         * 设置菜单文字字号（构建期定值）。
+         *
+         * <p>菜单是浮层：没有挂载时就存在的控件根，入口在句柄上，与 {@code MountHandle.fontSize} 对称。
+         * 未设置时菜单项文字沿用节点默认字号。</p>
+         *
+         * @param fontSizePx UI 像素字号
+         * @return 本句柄（链式）
+         */
+        public Handle fontSize(int fontSizePx) {
+            portal.fontSize(fontSizePx);
+            return this;
+        }
+
+        /**
+         * 设置菜单文字字号（运行时可调）。
+         *
+         * @param fontSize UI 像素字号信号；null = 不指定
+         * @return 本句柄（链式）
+         */
+        public Handle fontSize(ReadableSignal<Integer> fontSize) {
+            portal.fontSize(fontSize);
+            return this;
         }
 
         /**
@@ -203,8 +235,13 @@ public final class SceneContextMenu {
                 return new AnchorRect(x, y, 1, 1);
             }
         };
+        // 浮层字号：句柄在 portalAnchored 返回后才存在，而内容构建可能同步发生，故用惰性包装读句柄的字号源。
+        final ReadableSignal<Integer> fontSize = () -> {
+            ScenePortalHandle portal = portalHolder[0];
+            return portal == null ? null : portal.__fontSize().get();
+        };
         portalHolder[0] = rt.portalAnchored(visible,
-                () -> buildMenu(rt, safeItems, navigable, highlighted, closeAction),
+                () -> buildMenu(rt, safeItems, navigable, highlighted, closeAction, fontSize),
                 OverlayDismissPolicy.DEFAULT,
                 closeAction,
                 anchor,
@@ -226,6 +263,7 @@ public final class SceneContextMenu {
                 portalHolder[0].dispose();
             }
         });
+        handleHolder[0].attachPortal(portalHolder[0]);
         return handleHolder[0];
     }
 
@@ -233,7 +271,8 @@ public final class SceneContextMenu {
      * 构建菜单 overlay root。
      */
     private static SceneNode buildMenu(SceneRuntime rt, List<MenuItem> items, List<Integer> navigable,
-                                       Signal<Integer> highlighted, Runnable closeAction) {
+                                       Signal<Integer> highlighted, Runnable closeAction,
+                                       ReadableSignal<Integer> fontSize) {
         SceneNode menu = SceneNode.column();
         menu.setPadding(MENU_PADDING);
         menu.setClipChildren(true);
@@ -276,7 +315,7 @@ public final class SceneContextMenu {
                 menu.appendChild(buildSeparator(rt, overlaySurface));
             } else {
                 final int nav = navIndex++;
-                menu.appendChild(buildItem(rt, item, nav, highlighted, closeAction));
+                menu.appendChild(buildItem(rt, item, nav, highlighted, closeAction, fontSize));
             }
         }
         // 打开即聚焦菜单，承接 ↑/↓/Enter 键盘导航（ESC 由 router 全局 dismiss 处理）
@@ -333,12 +372,15 @@ public final class SceneContextMenu {
      * 指针 hover / 键盘高亮只做主题 accent 系半透明覆盖，故 {@code getBackdrop() == null}。</p>
      */
     private static SceneNode buildItem(SceneRuntime rt, MenuItem item, int navIndex,
-                                       Signal<Integer> highlighted, Runnable closeAction) {
+                                       Signal<Integer> highlighted, Runnable closeAction,
+                                       ReadableSignal<Integer> fontSize) {
         SceneNode row = SceneNode.row();
         row.setPadding(ITEM_PAD_V, ITEM_PAD_H, ITEM_PAD_V, ITEM_PAD_H);
 
         SceneNode label = new SceneNode();
         label.setText(item.label());
+        // 菜单项文字跟随浮层字号（真值在浮层内容根节点）；未指定时不写，保持节点默认字号。
+        SceneControlTypography.applyFontSize(rt, label, fontSize);
         label.setHitTestable(false);
         row.appendChild(label);
 

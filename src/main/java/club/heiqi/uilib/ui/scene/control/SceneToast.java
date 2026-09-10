@@ -186,6 +186,45 @@ public final class SceneToast {
     }
 
     /**
+     * 设置该 runtime 的通知文字字号（构建期定值）。
+     *
+     * <p>通知是 runtime 级的服务而非控件实例：它由 {@link #show} 命令式投递，调用方拿不到控件根，
+     * 也没有 {@code MountHandle}（见 {@code 契约 §4「控件字号入口」}）。因此字号入口按 runtime 给出，
+     * 设置一次对随后投递的所有通知生效；不设置时沿用节点默认字号。</p>
+     *
+     * @param rt         场景运行时
+     * @param fontSizePx UI 像素字号
+     */
+    public static void defaultFontSize(SceneRuntime rt, int fontSizePx) {
+        hostFor(rt).fontSizePx.set(Integer.valueOf(fontSizePx));
+    }
+
+    /**
+     * 设置该 runtime 的通知文字字号（运行时可调）。
+     *
+     * <p>信号变化时已投递与随后投递的通知都跟随；信号为 null 时不写，通知保持既有字号。</p>
+     *
+     * @param rt       场景运行时
+     * @param fontSize UI 像素字号信号；null = 不指定
+     */
+    public static void defaultFontSize(SceneRuntime rt, ReadableSignal<Integer> fontSize) {
+        if (fontSize == null) {
+            return;
+        }
+        Host host = hostFor(rt);
+        Integer initial = fontSize.get();
+        if (initial != null) {
+            host.fontSizePx.set(initial);
+        }
+        // 通知服务与 runtime 同寿，绑在 root owner（与 Host 其它资源一致）。
+        rt.__runRoot(() -> rt.bind(fontSize, next -> {
+            if (next != null) {
+                host.fontSizePx.set(next);
+            }
+        }));
+    }
+
+    /**
      * 获取（或创建）指定 runtime 的 toast host。
      */
     private static Host hostFor(SceneRuntime rt) {
@@ -233,6 +272,8 @@ public final class SceneToast {
         private final AtomicLong idCounter = new AtomicLong();
         /** entry id → toast 节点（条目移除时显式清理，避免弱引用装箱语义不可靠）。 */
         private final Map<Long, SceneNode> nodeByEntryId = Collections.synchronizedMap(new HashMap<>());
+        /** 通知文字字号（UI 像素）；null = 未指定，沿用节点默认字号。由 {@link #defaultFontSize} 写入。 */
+        private final Signal<Integer> fontSizePx = Signal.create(null);
 
         private Host(SceneRuntime rt) {
             this.rt = rt;
@@ -398,6 +439,8 @@ public final class SceneToast {
 
             SceneNode label = new SceneNode();
             label.setText(entry.message());
+            // 通知文字跟随 runtime 级字号（未指定时不写，保持节点默认字号）。
+            SceneControlTypography.applyFontSize(rt, label, fontSizePx);
             label.setHitTestable(false);
             // 文字取来源主题正文前景：显式初值 + 单一动态写入者（不再取 SceneChromeTokens.TEXT_PRIMARY）。
             ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);

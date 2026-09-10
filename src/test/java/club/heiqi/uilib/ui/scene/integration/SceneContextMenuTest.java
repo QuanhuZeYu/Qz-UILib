@@ -175,6 +175,41 @@ public class SceneContextMenuTest {
         return new int[] {ax + b.getWidth() / 2, ay + b.getHeight() / 2};
     }
 
+    // ==================== 浮层字号：SceneContextMenu.Handle.fontSize ====================
+
+    /**
+     * 浮层字号：{@link SceneContextMenu.Handle#fontSize(int)} 驱动菜单项文字的绘制字号。
+     *
+     * <p>不设字号时保持节点默认 16；设 24 后所有菜单项一并跟随。证据取自绘制产物，不读节点属性。</p>
+     */
+    @Test
+    public void handleFontSizeDrivesItemLabels() {
+        SceneContextMenu.Handle menu = openAt(10, 10, threeItems());
+        Assert.assertEquals("缺省菜单项字号", 16, paintedFontSize("复制"));
+
+        menu.fontSize(24);
+        runtime.flush();
+        doLayout();
+
+        Assert.assertEquals("设字号后菜单项跟随", 24, paintedFontSize("复制"));
+        Assert.assertEquals("设字号后其它菜单项一并跟随", 24, paintedFontSize("删除"));
+    }
+
+    /**
+     * 绘制产物中文本等于 {@code text} 的 TEXT 命令字号。
+     *
+     * @param text 期望文本
+     * @return 绘制字号（UI 像素）
+     */
+    private int paintedFontSize(String text) {
+        for (PaintCommand command : paintEngine.paint(overlayRoot()).getPlan().getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT && text.equals(command.getText())) {
+                return command.getTextStyle().getFontSize();
+            }
+        }
+        throw new AssertionError("绘制产物中未找到文本：" + text);
+    }
+
     /** 在携带局部主题的挂载作用域内打开菜单（portal 内容继承来源主题）。 */
     private SceneContextMenu.Handle openAtWithTheme(Signal<SceneTheme> pageTheme,
                                                     List<SceneContextMenu.MenuItem> items) {

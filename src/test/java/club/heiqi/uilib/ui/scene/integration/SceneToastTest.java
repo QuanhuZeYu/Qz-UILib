@@ -655,6 +655,49 @@ public class SceneToastTest {
                 ReactiveTestProbe.registeredEffectCount() < hostOnly);
     }
 
+    // ==================== 浮层字号：SceneToast.defaultFontSize ====================
+
+    /**
+     * 通知字号：runtime 级入口 {@link SceneToast#defaultFontSize(SceneRuntime, int)} 驱动消息文字的
+     * 绘制字号——通知是 runtime 级服务（无控件实例、无句柄），故入口按 runtime 给出。
+     *
+     * <p>不设字号时保持节点默认 16；设 24 后投递的通知文字跟随 24。卡片由 portal 懒建，
+     * 每步都先 flush + tick 一帧再取节点；证据取自文字节点自身的 PaintFragment（绘制产物
+     * TEXT 命令的 {@code getTextStyle().getFontSize()}），不读节点属性。</p>
+     */
+    @Test
+    public void defaultFontSizeDrivesMessageLabelPaintedFontSize() {
+        SceneToast.show(runtime, "通知", 5_000_000_000L);
+        runtime.flush();
+        tickAndFlush(ENTER); // 卡片懒建：先 tick/flush 一帧让卡片与文字节点就位
+        doLayout();
+        paintOverlay();
+        Assert.assertEquals("缺省通知文字 = 节点默认 16", 16,
+                paintedFontSize(labelOf(toastAt(0))));
+
+        SceneToast.defaultFontSize(runtime, 24);
+        runtime.flush();
+        tickAndFlush(ENTER * 2);
+        SceneToast.show(runtime, "放大", 5_000_000_000L);
+        runtime.flush();
+        tickAndFlush(ENTER * 3);
+        doLayout();
+        paintOverlay();
+        Assert.assertEquals("两条堆叠", 2, toastContainer().__getChildren().size());
+        Assert.assertEquals("设 24 后投递的通知文字跟随", 24,
+                paintedFontSize(labelOf(toastAt(1))));
+    }
+
+    /** 文字节点自身绘制产物中 TEXT 命令的字号（绘制产物证据；未产出 TEXT 命令即断言失败）。 */
+    private static int paintedFontSize(SceneNode label) {
+        for (PaintCommand command : ownCommands(label)) {
+            if (command.getType() == PaintCommandType.TEXT) {
+                return command.getTextStyle().getFontSize();
+            }
+        }
+        throw new AssertionError("文字节点未产出 TEXT 绘制命令");
+    }
+
     // ==================== 内聚化：不得再自带调色板 ====================
 
     /**
