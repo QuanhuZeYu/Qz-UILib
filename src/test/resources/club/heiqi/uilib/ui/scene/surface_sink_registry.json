@@ -1,0 +1,612 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-10",
+  "entries": [
+    {
+      "file": "club/heiqi/config/ui/ConfigScreen.java",
+      "owner": "node",
+      "property": "setBackgroundColor",
+      "category": "binder",
+      "lines": [
+        1176
+      ],
+      "note": "node.setBackgroundColor(ConfigTheme.READOUT_BG);"
+    },
+    {
+      "file": "club/heiqi/config/ui/ConfigScreen.java",
+      "owner": "root",
+      "property": "setBackgroundColor",
+      "category": "binder-delegated",
+      "lines": [
+        323
+      ],
+      "note": "页面根节点静态设底 ConfigTheme.ROOT_BG；group 等表面走 SceneSurfaceBinder.bind，根自身不进配方通道"
+    },
+    {
+      "file": "club/heiqi/config/ui/ConfigScreen.java",
+      "owner": "textNode",
+      "property": "setBorderColor",
+      "category": "binder-delegated",
+      "lines": [
+        1174
+      ],
+      "note": "运行时 bind(color, node::setBorderColor) 写徽标边框；节点为徽标独占，独占节点单写者"
+    },
+    {
+      "file": "club/heiqi/config/ui/field/SearchPickerFieldSupport.java",
+      "owner": "icon",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        463
+      ],
+      "note": "icon::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/config/ui/field/StructuredListFieldRenderer.java",
+      "owner": "root",
+      "property": "setBorderColor",
+      "category": "binder-delegated",
+      "lines": [
+        152
+      ],
+      "note": "rt.bindComputed 派生 sourceTheme.borderDefault() 写行根边框；独占节点单写入者"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/chat3/view/ChatContainer.java",
+      "owner": "node",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        184
+      ],
+      "note": "node.setBackgroundColor(style.getIdle().getTint());"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/chat3/view/ChatContainer.java",
+      "owner": "node",
+      "property": "setBorderColor",
+      "category": "light-slot",
+      "lines": [
+        185
+      ],
+      "note": "node.setBorderColor(style.getIdle().getEdge());"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/chat3/view/ChatMarkdownContent.java",
+      "owner": "node",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        141
+      ],
+      "note": "node.setBackgroundColor(command.getColor()).setCornerRadius(command.getCornerRadius());"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/chat3/view/ChatMessageList.java",
+      "owner": "accentBar",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        448
+      ],
+      "note": "accentBar.setBackgroundColor("
+    },
+    {
+      "file": "club/heiqi/uilib/internal/chat3/view/ChatMessageList.java",
+      "owner": "lineNode",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        1247
+      ],
+      "note": "lineNode.setBackgroundColor(rendered.backgroundArgb());"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/chat3/view/ChatMessageList.java",
+      "owner": "messageNode",
+      "property": "setBackgroundColor",
+      "category": "designed-static",
+      "lines": [
+        1081
+      ],
+      "note": "气泡底色构造期静态写入；后续由 PAINT 级 bake(alpha) 动画在同一 writer 内重烘焙（L444 为批量同源版本）"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/chat3/view/ChatMessageList.java",
+      "owner": "quoteBar",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        452
+      ],
+      "note": "quoteBar.setBackgroundColor("
+    },
+    {
+      "file": "club/heiqi/uilib/internal/devtools/glass/GlassLabHost.java",
+      "owner": "chip",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        419
+      ],
+      "note": "chip.setBackgroundColor(SAMPLE_COLORS[(rowIndex * 5 + i) % SAMPLE_COLORS.length]);"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/devtools/glass/GlassLabHost.java",
+      "owner": "shell",
+      "property": "setBackgroundColor",
+      "category": "designed-static",
+      "lines": [
+        367
+      ],
+      "note": "GlassLab 页根静态垫底 PlaygroundKit.ROOT_BG；非生产控件表面"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/devtools/playground/PlaygroundKit.java",
+      "owner": "card",
+      "property": "setBackgroundColor",
+      "category": "binder",
+      "lines": [
+        225
+      ],
+      "note": "card.setBackgroundColor(PANEL_BG);"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/devtools/playground/PlaygroundKit.java",
+      "owner": "card",
+      "property": "setBorderColor",
+      "category": "binder",
+      "lines": [
+        227
+      ],
+      "note": "card.setBorderColor(BORDER);"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/devtools/playground/pages/MarkdownPageContent.java",
+      "owner": "node",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        118
+      ],
+      "note": "node.setBackgroundColor(command.getColor()).setCornerRadius(command.getCornerRadius());"
+    },
+    {
+      "file": "club/heiqi/uilib/internal/devtools/playground/pages/ReactivePage.java",
+      "owner": "node",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        160
+      ],
+      "note": "node.setBackgroundColor(color);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneBreadcrumb.java",
+      "owner": "segBtn",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        200
+      ],
+      "note": "分段按钮行底色走 rt.__bindAnimatedColor 轻量通道，segBtn 为分段独占节点"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneContextMenu.java",
+      "owner": "row",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        363
+      ],
+      "note": "row::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneContextMenu.java",
+      "owner": "separator",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        419
+      ],
+      "note": "rt.bindComputed(() -> overlaySurface.get().getIdle().getEdge(), separator::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneControlChrome.java",
+      "owner": "node",
+      "property": "setBackgroundColor",
+      "category": "compat-exempt",
+      "lines": [
+        131
+      ],
+      "note": "}, node::setBackgroundColor, SceneChromeTokens.MOTION_STANDARD_MS);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneControlChrome.java",
+      "owner": "node",
+      "property": "setBorderColor",
+      "category": "compat-exempt",
+      "lines": [
+        69
+      ],
+      "note": "node::setBorderColor,"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneDataTable.java",
+      "owner": "rowNode",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        770
+      ],
+      "note": "rowNode::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneDialog.java",
+      "owner": "scrim",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        267
+      ],
+      "note": "scrim.setBackgroundColor(SCRIM_ARGB);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneDragReorder.java",
+      "owner": "handle",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        242
+      ],
+      "note": "handle::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneKeyValueMap.java",
+      "owner": "rowNode",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        555
+      ],
+      "note": "rowNode::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneNavList.java",
+      "owner": "indicator",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        174
+      ],
+      "note": "rt.bind(itemForeground, indicator::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneRadioGroup.java",
+      "owner": "dot",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        204
+      ],
+      "note": "dot::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneRadioGroup.java",
+      "owner": "option",
+      "property": "setBorderColor",
+      "category": "designed-static",
+      "lines": [
+        168
+      ],
+      "note": "G05 验收时代码+测试双固化：选项行边框 BORDER_DEFAULT 与主题同值（契约 §7.3 补录在册）"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneScrollContainer.java",
+      "owner": "viewport",
+      "property": "setBackgroundColor",
+      "category": "binder",
+      "lines": [
+        174
+      ],
+      "note": "viewport.setBackgroundColor(props.backgroundColor());"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneScrollbar.java",
+      "owner": "column",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        255,
+        344
+      ],
+      "note": "轨道底色：构造期初值 + bind 主题跟随（同一 writer），track 为滚动条独占子节点"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneScrollbar.java",
+      "owner": "thumb",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        266,
+        375
+      ],
+      "note": "thumb.setBackgroundColor(thumbFollowsTheme"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneSimpleList.java",
+      "owner": "row",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        648
+      ],
+      "note": "row::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneSlider.java",
+      "owner": "fillBox",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        285
+      ],
+      "note": "fillBox::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneTextArea.java",
+      "owner": "viewport",
+      "property": "setBackgroundColor",
+      "category": "designed-static",
+      "lines": [
+        238
+      ],
+      "note": "视口透明契约 VIEWPORT_TRANSPARENT，非材质写入"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneTextAreaPrimitive.java",
+      "owner": "caretAfter",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        821
+      ],
+      "note": "caretAfter::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneTextAreaPrimitive.java",
+      "owner": "caretBefore",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        819
+      ],
+      "note": "caretBefore::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneTextAreaPrimitive.java",
+      "owner": "highlight",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        793
+      ],
+      "note": "highlight::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneToast.java",
+      "owner": "dot",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        395,
+        396
+      ],
+      "note": "dot.setBackgroundColor(dotColor.get().intValue());"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneToggle.java",
+      "owner": "thumb",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        157
+      ],
+      "note": "thumb::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneVirtualGrid.java",
+      "owner": "cell",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        456
+      ],
+      "note": "cell::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/SceneVirtualGrid.java",
+      "owner": "icon",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        468
+      ],
+      "note": "icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/CategoryNavPane.java",
+      "owner": "rowNode",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        217
+      ],
+      "note": "rowNode::setBackgroundColor,"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/MemberGrid.java",
+      "owner": "badge",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        302
+      ],
+      "note": "badge::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/MemberGrid.java",
+      "owner": "icon",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        273
+      ],
+      "note": "icon.setBackgroundColor(src == null ? PLACEHOLDER_COLOR : SceneChromeTokens.TRANSPARENT);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/SearchResultList.java",
+      "owner": "cell",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        322
+      ],
+      "note": "cell::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/SearchResultList.java",
+      "owner": "icon",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        340
+      ],
+      "note": "icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/VariantChooser.java",
+      "owner": "icon",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        382
+      ],
+      "note": "icon.setBackgroundColor(src == null ? PLACEHOLDER_COLOR : SceneChromeTokens.TRANSPARENT);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/VariantChooser.java",
+      "owner": "indicator",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        401
+      ],
+      "note": "indicator::setBackgroundColor);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/VariantChooser.java",
+      "owner": "rowNode",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        432
+      ],
+      "note": "rowNode::setBackgroundColor,"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/control/search/VariantChooser.java",
+      "owner": "scrim",
+      "property": "setBackgroundColor",
+      "category": "light-slot",
+      "lines": [
+        220
+      ],
+      "note": "scrim.setBackgroundColor(OVERLAY_SCRIM);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/form/FormFieldShell.java",
+      "owner": "card",
+      "property": "setBackgroundColor",
+      "category": "binder",
+      "lines": [
+        252,
+        262
+      ],
+      "note": "card.setBackgroundColor(tokens.cardBg());"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/form/FormFieldShell.java",
+      "owner": "card",
+      "property": "setBorderColor",
+      "category": "binder",
+      "lines": [
+        256,
+        267
+      ],
+      "note": "card::setBorderColor, SceneChromeTokens.MOTION_STANDARD_MS);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/form/FormPageShell.java",
+      "owner": "root",
+      "property": "setBackgroundColor",
+      "category": "designed-static",
+      "lines": [
+        316
+      ],
+      "note": "表单页根静态底色 theme.rootBg()，页面壳设计底色"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/form/FormPageShell.java",
+      "owner": "viewport",
+      "property": "setBackgroundColor",
+      "category": "designed-static",
+      "lines": [
+        317
+      ],
+      "note": "表单页视口底色 theme.viewportBg()，页面壳设计底色"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/paint/SceneChromeTokens.java",
+      "owner": "node",
+      "property": "setBackgroundColor",
+      "category": "compat-exempt",
+      "lines": [
+        21
+      ],
+      "note": "node.setBackgroundColor(BG_DEFAULT);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/paint/SceneChromeTokens.java",
+      "owner": "node",
+      "property": "setBorderColor",
+      "category": "compat-exempt",
+      "lines": [
+        33
+      ],
+      "note": "node.setBorderColor(BORDER_DEFAULT);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/theme/SceneSurfaceBinder.java",
+      "owner": "node",
+      "property": "setBackgroundColor",
+      "category": "binder",
+      "lines": [
+        100
+      ],
+      "note": "rt.__bindAnimatedColor(() -> surface.get().getTint(), node::setBackgroundColor, duration);"
+    },
+    {
+      "file": "club/heiqi/uilib/ui/scene/theme/SceneSurfaceBinder.java",
+      "owner": "node",
+      "property": "setBorderColor",
+      "category": "binder",
+      "lines": [
+        104
+      ],
+      "note": "node::setBorderColor, duration);"
+    }
+  ],
+  "note": "surface sink 注册表：新增 sink 必须登记，未登记即测试红灯。类别口径见 tools/audit/surface_sink_ownership.py。比对键 = file + owner + property；lines 仅为追溯线索。"
+}
