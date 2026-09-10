@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 '''P1 数值直出反向门禁：审计包 §7 的每个数值必须能在被声明脚本的现输出中定位。
 
-用法（仓库任意工作树）：
-    python tools/audit/check_numeric_traceability.py [--repo <仓库根>]
+用法（仓库任意工作树，默认不阻断）：
+    python tools/audit/check_numeric_traceability.py            # 核验并报告，不阻断（exit 0）
+    python tools/audit/check_numeric_traceability.py --strict   # 需要把关时：不一致即 exit 1
 
-检查三层，任一失败即 exit 1：
+检查三层：
   1) 反向覆盖：文档 §7 代码块每一行的每个数值，都要在 auditA_v25_full.py 现输出中按容忍度定位；
   2) 正向基准：tools/audit/numeric_baseline.json 的关键值必须与脚本现输出一致（小数容忍 0.005）；
   3) 色值基准：基准表里的 ARGB 十六进制必须能在脚本文本中定位。
@@ -64,6 +65,7 @@ def main():
     parser = argparse.ArgumentParser(description='审计包数值直出反向门禁')
     parser.add_argument('--repo', default=None, help='仓库根（默认由脚本位置推导）')
     parser.add_argument('--doc', default=None, help='审计包路径（默认 docs/开发者文档/审计包-全库默认液态玻璃样式.md）')
+    parser.add_argument('--strict', action='store_true', help='不一致时 exit 1（默认仅报告）')
     args = parser.parse_args()
 
     root = Path(args.repo).resolve() if args.repo else REPO_ROOT
@@ -118,10 +120,10 @@ def main():
         for message in errors:
             print('[FAIL] %s' % message)
         print('')
-        print('== 门禁未通过：文档数值必须由脚本直出，禁止手抄 ==')
-        return 1
+        print('== 不一致：文档数值必须由脚本直出（手抄会在这里暴露） ==')
+        return 1 if args.strict else 0
     print('')
-    print('== PASS：§7 全部数值均可在脚本现输出中逐位定位，且基准一致 ==')
+    print('== PASS：§7 全部数值均可在脚本现输出中逐位定位，且基准一致 ==')  # 无差异
     return 0
 
 

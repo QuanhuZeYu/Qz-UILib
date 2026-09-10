@@ -1,35 +1,34 @@
 # -*- coding: utf-8 -*-
-'''P2 surface sink 归属扫描器：枚举 src/main 的 surface 写入点并按类别给出初判。
+'''surface sink 按需扫描工具（P2 减负版：无常驻守护、无注册表、零维护）。
+
+定位：纯诊断工具。用来回答「全库现在有哪些 surface 写入者、分别落在什么形态上」，
+不参与提交阻断，也不维护任何清单文件。
 
 用法（仓库任意工作树）：
-    python tools/audit/surface_sink_ownership.py --summary   # 分类统计 + 明细
-    python tools/audit/surface_sink_ownership.py --emit      # 打印注册表 JSON（人工判类后落盘）
+    python tools/audit/surface_sink_ownership.py --summary
+    python tools/audit/surface_sink_ownership.py --summary --category review-required
+    python tools/audit/surface_sink_ownership.py --summary --sinks 20
 
-类别（注册制口径，新 sink 必须先登记）：
+判类为启发式初判，仅供人工阅读：
     binder            —— 该节点由 SceneSurfaceBinder 独占表面（同文件可见 bind 调用）
-    binder-delegated  —— 节点静态设底 + 绑定通道（binder 后写覆盖静态值）
+    binder-delegated  —— 节点静态设底 + 绑定通道
     designed-static   —— 设计上的一次性静态底色（不进主题通道）
     light-slot        —— 元素级轻量通道：caret/thumb/dot/scrim/行覆写等独占子节点
     compat-exempt     —— 兼容入口本体（SceneControlChrome / SceneStateColors / SceneChromeTokens）
-    review-required   —— 未登记且无法判定，必须人工归类后才能进注册表
-
-纪律：注册表是判类的权威；本工具对已登记条目只回显登记类别，只对未登记条目给启发式初判。
+    review-required   —— 启发式未命中，建议人工瞄一眼
 '''
 
 import argparse
 import io
-import json
 import os
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from repo_paths import MAIN_JAVA, TEST_RESOURCES  # noqa: E402
+from repo_paths import MAIN_JAVA  # noqa: E402
 
 SINKS = ('setBackgroundColor', 'setBorderColor')
-REGISTRY_PATH = TEST_RESOURCES / 'club' / 'heiqi' / 'uilib' / 'ui' / 'scene' / 'surface_sink_registry.json'
-KEY_TEMPLATE = '%s | %s.%s'
 CALL_RE = re.compile(r'([A-Za-z_$][A-Za-z0-9_$.]*)\s*\.\s*(setBackgroundColor|setBorderColor)\s*\(')
 MREF_RE = re.compile(r'([A-Za-z_$][A-Za-z0-9_$.]*)\s*::\s*(setBackgroundColor|setBorderColor)\b')
 LIGHT_SLOT_TOKENS = ('caret', 'thumb', 'dot', 'scrim', 'bar', 'Bar', 'indicator', 'badge', 'icon', 'chip',
@@ -45,7 +44,6 @@ def java_files():
 
 
 def binder_nodes(text):
-    '''同文件出现过的 binder 目标节点名（SceneSurfaceBinder.bind / binder.bind 的第二参数）。'''
     names = set()
     for match in re.finditer(r'SceneSurfaceBinder\.bind\(\s*[A-Za-z_$][A-Za-z0-9_$.]*\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)', text):
         names.add(match.group(1))
@@ -114,51 +112,18 @@ def scan():
     return registry
 
 
-def registry_categories():
-    '''已登记条目的判类（注册表是权威）：key = file | owner | property。'''
-    if not REGISTRY_PATH.is_file():
-        return {}
-    data = json.loads(io.open(str(REGISTRY_PATH), encoding='utf-8').read())
-    table = {}
-    for entry in data.get('entries', []):
-        table[KEY_TEMPLATE % (entry['file'], entry['owner'], entry['property'])] = entry
-    return table
-
-
-def apply_registry_categories(registry):
-    '''已登记条目沿用登记判类；未登记条目保留启发式初判（待人工归类）。'''
-    table = registry_categories()
-    known = unknown = 0
-    for entry in registry:
-        key = KEY_TEMPLATE % (entry['file'], entry['owner'], entry['property'])
-        if key in table:
-            entry['category'] = table[key]['category']
-            entry['note'] = table[key].get('note', entry['note'])
-            known += 1
-        else:
-            unknown += 1
-    return known, unknown
-
-
 def main():
-    parser = argparse.ArgumentParser(description='surface sink 归属扫描')
-    parser.add_argument('--emit', action='store_true')
+    parser = argparse.ArgumentParser(description='surface sink 按需扫描（诊断工具，不阻断）')
     parser.add_argument('--summary', action='store_true')
     parser.add_argument('--sinks', type=int, default=0)
     parser.add_argument('--category', default=None)
     args = parser.parse_args()
     registry = scan()
-    known, unknown = apply_registry_categories(registry)
-    if args.emit:
-        print(json.dumps({'version': 1, 'generatedAt': '2026-09-10', 'entries': registry},
-                         ensure_ascii=False, indent=2))
-        return 0
     counts = {}
     for entry in registry:
         counts[entry['category']] = counts.get(entry['category'], 0) + 1
-    print('== surface sink 归属扫描（src/main） ==')
-    print('条目=%d | 写入行=%d | 已登记=%d | 未登记=%d'
-          % (len(registry), sum(len(e['lines']) for e in registry), known, unknown))
+    print('== surface sink 扫描（src/main，诊断用，无清单） ==')
+    print('条目=%d | 写入行=%d' % (len(registry), sum(len(e['lines']) for e in registry)))
     for category in sorted(counts, key=lambda c: -counts[c]):
         print('  %-18s %d' % (category, counts[category]))
     show = [e for e in registry if args.category is None or e['category'] == args.category]
