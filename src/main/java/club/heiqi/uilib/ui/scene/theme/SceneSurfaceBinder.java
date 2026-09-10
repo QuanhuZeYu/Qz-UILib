@@ -93,6 +93,10 @@ public final class SceneSurfaceBinder {
             return;
         }
 
+        // 绑定释放（Owner/Binding dispose）时归还写入权：清接管标记，公开 setter 重新可写。
+        // 没有绑定器在写就不该拒绝应用侧写——dispose 之后静态写是合法用法。
+        rt.__onCleanup(() -> node.__releaseSurfaceOwnership());
+
         // 无初值：配方值在首次 flush 前尚未求值，构造期不得解引用（规划 3.1 既往缺陷）。
         ReadableSignal<SceneSurfaceStyle> recipe = Computed.create(
                 () -> Objects.requireNonNull(style.get(), "style value"));
@@ -106,13 +110,15 @@ public final class SceneSurfaceBinder {
                 () -> surface(recipe.get(), state.get()));
         Supplier<Integer> duration = () -> recipe.get().getTransitionMillis();
 
-        rt.bindComputed(() -> recipe.get().getBorderWidth(), node::setBorderWidth);
-        rt.bindComputed(() -> recipe.get().getCornerRadius(), node::setCornerRadius);
-        rt.__bindAnimatedColor(() -> surface.get().getTint(), node::setBackgroundColor, duration);
+        // 全部经 __write* 内部通道写：公开 setter 在接管后拒绝应用侧静态写（契约 §4 的运行期
+        // 保障），绑定器自身必须绕过守卫——否则首个 effect 就会拦住自己（G20 第 3 步）。
+        rt.bindComputed(() -> recipe.get().getBorderWidth(), node::__writeBorderWidth);
+        rt.bindComputed(() -> recipe.get().getCornerRadius(), node::__writeCornerRadius);
+        rt.__bindAnimatedColor(() -> surface.get().getTint(), node::__writeBackgroundColor, duration);
         rt.__bindAnimatedColor(() -> state.get() != State.DISABLED
                         && Boolean.TRUE.equals(interaction.focused().get())
                         ? recipe.get().getFocusEdge() : surface.get().getEdge(),
-                node::setBorderColor, duration);
+                node::__writeBorderColor, duration);
         // 浮雕豁免位（P-05）：配方声明不走浮雕通道时恒写 -1（普通绘制路径），不消费 StateStyle.elevation。
         // 短路求值使 reliefDisabled=true 的配方不建立对 surface 的 elevation 依赖，状态变化不触发本 effect。
         rt.__bindAnimatedFloat(
@@ -188,11 +194,11 @@ public final class SceneSurfaceBinder {
         private void apply() {
             UiBackdropEffect effect = base == null ? null : base.getEffect();
             if (effect != null && effect.getFamily() == UiBackdropEffect.Family.LIQUID_GLASS) {
-                node.setBackdrop(UiBackdrop.of(
+                node.__writeBackdrop(UiBackdrop.of(
                         UiBackdropEffect.liquidGlass(effect.getMaterial(), effect.getLensStrength() * factor),
                         base.getBlurRadius(), base.getSaturation()));
             } else {
-                node.setBackdrop(base);
+                node.__writeBackdrop(base);
             }
         }
     }

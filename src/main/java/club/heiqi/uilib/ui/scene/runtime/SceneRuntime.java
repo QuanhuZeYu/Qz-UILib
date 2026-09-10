@@ -414,6 +414,23 @@ public class SceneRuntime {
         rootOwner.run(action);
     }
 
+    /**
+     * internal 桥：按 effect 归属规则注册清理回调。
+     *
+     * <p>当前处于 Owner 作用域内则挂该作用域（随组件卸载触发），否则挂 rootOwner（由
+     * {@link #dispose()} 触发）——与 {@link #bind} 的归属判定完全一致。供需要在绑定释放时
+     * 归还资源的绑定器使用（如 {@code SceneSurfaceBinder} 归还表面写入权）。</p>
+     *
+     * @param cleanup 清理动作（不可为 null）
+     */
+    public void __onCleanup(Runnable cleanup) {
+        if (cleanup == null) {
+            throw new IllegalArgumentException("cleanup 不可为 null");
+        }
+        Owner current = Owner.current();
+        (current != null ? current : rootOwner).onCleanup(cleanup);
+    }
+
     // ==================== 帧时间桥 ====================
 
     /** 帧时间 signal：宿主每帧经 {@link #__tickFrame(long)} 更新（caret 闪烁等按帧时间驱动的 UI 消费） */

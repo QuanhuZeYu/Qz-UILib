@@ -709,6 +709,25 @@ public class SceneNode {
 
     /** @see ScenePaintProps#backgroundColor */
     public SceneNode setBackgroundColor(int backgroundColor) {
+        requireSurfaceWritable("backgroundColor");
+        return applyBackgroundColor(backgroundColor);
+    }
+
+    /**
+     * 绑定器专用写入通道：写底色并置位表面写入权标记。
+     *
+     * <p>双下划线表示 internal bridge，业务与应用代码不得调用——绕过公开 setter 的接管守卫
+     * 会让「一个属性只有一个写入者」失去运行期保障（契约 §4）。</p>
+     *
+     * @param backgroundColor ARGB
+     * @return this（链式）
+     */
+    public SceneNode __writeBackgroundColor(int backgroundColor) {
+        paintProps.surfaceOwned = true;
+        return applyBackgroundColor(backgroundColor);
+    }
+
+    private SceneNode applyBackgroundColor(int backgroundColor) {
         if (paintProps.backgroundColor == backgroundColor) return this;
         paintProps.backgroundColor = backgroundColor;
         markSelfPaint();
@@ -744,6 +763,23 @@ public class SceneNode {
      * @param backdrop 滤镜声明；null 关闭
      */
     public SceneNode setBackdrop(UiBackdrop backdrop) {
+        requireSurfaceWritable("backdrop");
+        return applyBackdrop(backdrop);
+    }
+
+    /**
+     * 绑定器专用写入通道：写滤镜声明并置位表面写入权标记（internal bridge，同
+     * {@link #__writeBackgroundColor(int)}）。
+     *
+     * @param backdrop 滤镜声明；null 关闭
+     * @return this（链式）
+     */
+    public SceneNode __writeBackdrop(UiBackdrop backdrop) {
+        paintProps.surfaceOwned = true;
+        return applyBackdrop(backdrop);
+    }
+
+    private SceneNode applyBackdrop(UiBackdrop backdrop) {
         if (paintProps.backdrop == backdrop
                 || (paintProps.backdrop != null && paintProps.backdrop.equals(backdrop))) {
             return this;
@@ -1095,8 +1131,57 @@ public class SceneNode {
 
     // ==================== 绘制属性访问器（PAINT 级） ====================
 
+    /**
+     * 表面写入权守卫：节点被绑定器接管后，公开 setter 拒绝应用侧静态写。
+     *
+     * <p>接管标记由绑定器的 {@code __write*} 通道置位（首次写入时），因此 bind 之后、
+     * 首次 flush 之前的构造期播种仍然合法——见契约 §4「属性归属表」。</p>
+     *
+     * @param property 属性名（用于诊断消息）
+     */
+    private void requireSurfaceWritable(String property) {
+        if (!paintProps.surfaceOwned) {
+            return;
+        }
+        throw new IllegalStateException("表面属性（" + property + "）已被 SceneSurfaceBinder 接管："
+                + "bind 之后静态写同一属性违反契约 §4「属性归属表」；"
+                + "构造期初值应在 bind 之前设置，运行期改值请改配方。节点=" + surfaceDiagnostic());
+    }
+
+    /** @return 节点诊断串（错误消息用；文本节点带 text 便于定位） */
+    private String surfaceDiagnostic() {
+        String text = getText();
+        return "SceneNode#" + Integer.toHexString(hashCode())
+                + (text == null || text.isEmpty() ? "" : "(text=" + text + ")");
+    }
+
+    /**
+     * 释放表面写入权（绑定器清理回调）：清除接管标记，公开 setter 重新可写。
+     *
+     * <p>绑定释放后写入权归还应用侧——没有绑定器在写，就不该继续拒绝应用侧写；这与
+     * 「一个属性只有一个写入者」一致。绑定器经 {@code SceneRuntime.__onCleanup} 注册本回调，
+     * Owner/Binding 释放时自动触发。双下划线表示 internal bridge，业务代码不得调用。</p>
+     *
+     * @return this（链式）
+     */
+    public SceneNode __releaseSurfaceOwnership() {
+        paintProps.surfaceOwned = false;
+        return this;
+    }
+
     /** @see ScenePaintProps#borderColor */
     public SceneNode setBorderColor(int borderColor) {
+        requireSurfaceWritable("borderColor");
+        return applyBorderColor(borderColor);
+    }
+
+    /** 绑定器专用写入通道：写缘色并置位接管标记（internal bridge）。 */
+    public SceneNode __writeBorderColor(int borderColor) {
+        paintProps.surfaceOwned = true;
+        return applyBorderColor(borderColor);
+    }
+
+    private SceneNode applyBorderColor(int borderColor) {
         if (paintProps.borderColor == borderColor) return this;
         paintProps.borderColor = borderColor;
         markSelfPaint();
@@ -1108,6 +1193,17 @@ public class SceneNode {
 
     /** @see ScenePaintProps#borderWidth */
     public SceneNode setBorderWidth(int borderWidth) {
+        requireSurfaceWritable("borderWidth");
+        return applyBorderWidth(borderWidth);
+    }
+
+    /** 绑定器专用写入通道：写描边宽并置位接管标记（internal bridge）。 */
+    public SceneNode __writeBorderWidth(int borderWidth) {
+        paintProps.surfaceOwned = true;
+        return applyBorderWidth(borderWidth);
+    }
+
+    private SceneNode applyBorderWidth(int borderWidth) {
         if (paintProps.borderWidth == borderWidth) return this;
         paintProps.borderWidth = borderWidth;
         markSelfPaint();
@@ -1119,6 +1215,17 @@ public class SceneNode {
 
     /** @see ScenePaintProps#cornerRadius */
     public SceneNode setCornerRadius(int cornerRadius) {
+        requireSurfaceWritable("cornerRadius");
+        return applyUniformCornerRadius(cornerRadius);
+    }
+
+    /** 绑定器专用写入通道：写 uniform 圆角并置位接管标记（internal bridge）。 */
+    public SceneNode __writeCornerRadius(int cornerRadius) {
+        paintProps.surfaceOwned = true;
+        return applyUniformCornerRadius(cornerRadius);
+    }
+
+    private SceneNode applyUniformCornerRadius(int cornerRadius) {
         if (paintProps.cornerRadius == cornerRadius && !paintProps.isPerCorner()) return this;
         // uniform 语义：后设置者生效，清除先前可能的 per-corner 设置
         paintProps.cornerRadius = cornerRadius;
@@ -1147,6 +1254,17 @@ public class SceneNode {
      * @return this（链式）
      */
     public SceneNode setCornerRadius(int topLeft, int topRight, int bottomRight, int bottomLeft) {
+        requireSurfaceWritable("cornerRadius");
+        return applyPerCornerRadius(topLeft, topRight, bottomRight, bottomLeft);
+    }
+
+    /** 绑定器专用写入通道：写四角圆角并置位接管标记（internal bridge）。 */
+    public SceneNode __writeCornerRadius(int topLeft, int topRight, int bottomRight, int bottomLeft) {
+        paintProps.surfaceOwned = true;
+        return applyPerCornerRadius(topLeft, topRight, bottomRight, bottomLeft);
+    }
+
+    private SceneNode applyPerCornerRadius(int topLeft, int topRight, int bottomRight, int bottomLeft) {
         if (topLeft < 0 || topRight < 0 || bottomRight < 0 || bottomLeft < 0) {
             throw new IllegalArgumentException(
                     "四角圆角必须 >=0（topLeft=" + topLeft + ", topRight=" + topRight
