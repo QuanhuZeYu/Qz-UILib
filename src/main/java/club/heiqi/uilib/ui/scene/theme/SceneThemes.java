@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.theme;
 
 import java.util.Objects;
 import java.util.function.ToIntFunction;
+import java.util.function.UnaryOperator;
 
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
@@ -369,6 +370,35 @@ public final class SceneThemes {
         return Computed.create(holder[0], () -> accentOf(
                 Objects.requireNonNull(base.get(), "surface"),
                 Objects.requireNonNull(theme.get(), "theme value")));
+    }
+
+    /**
+     * 角色配方的字段级派生：以当前来源主题的某角色配方为基线，经 {@code override} 变换后作为新配方。
+     * 用于「主题基线 + 局部覆盖」——消费方只改自己管辖的字段，其余属性仍随主题。
+     *
+     * <p>必须在构建期调用（同 {@link #surface}）：构造期捕获来源主题信号并注入初值，派生期只读上游。</p>
+     *
+     * <p><b>{@code override} 必须是纯函数</b>：它在派生 effect 内执行，内部读到的任何信号都会自动
+     * 注册为失效源——这正是「业务设置变化」与「主题变化」能作为两个独立失效源共存的原因。读信号
+     * 之外的外部可变状态会让重算时机不可预测；这类取值应先包成 {@link ReadableSignal} 再在函数内读。</p>
+     *
+     * <p>返回 {@link Computed} 而非 {@link ReadableSignal}：{@code Computed} 是其子类型，调用方按
+     * {@code ReadableSignal} 消费不受影响，同时保留 {@link Computed#dispose()}，供自持 {@link Owner}
+     * 作用域的场景显式回收 recompute 单元。</p>
+     *
+     * @param rt       目标 runtime，不可为 null
+     * @param role     材质角色，不可为 null
+     * @param override 基线的字段级变换，不可为 null 且必须为纯函数
+     * @return 派生配方信号（构造期已注入初值）
+     */
+    public static Computed<SceneSurfaceStyle> derivedSurface(SceneRuntime rt, SceneTheme.Role role,
+            UnaryOperator<SceneSurfaceStyle> override) {
+        Objects.requireNonNull(override, "override");
+        ReadableSignal<SceneSurfaceStyle> base = surface(rt, role);
+        final SceneSurfaceStyle[] holder = new SceneSurfaceStyle[1];
+        // 初值在非追踪上下文读取：避免在 effect 体内调用时把主题登记成外层 effect 的依赖（同 surface）。
+        Effect.untrack(() -> holder[0] = override.apply(Objects.requireNonNull(base.get(), "surface")));
+        return Computed.create(holder[0], () -> override.apply(Objects.requireNonNull(base.get(), "surface")));
     }
 
     private static SceneSurfaceStyle accentOf(SceneSurfaceStyle style, SceneTheme theme) {

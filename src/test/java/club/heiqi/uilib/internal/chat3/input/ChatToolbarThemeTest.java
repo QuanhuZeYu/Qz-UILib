@@ -370,8 +370,8 @@ public class ChatToolbarThemeTest {
         String appearanceSource = new String(Files.readAllBytes(Paths.get(
                 "src/main/java/club/heiqi/uilib/internal/chat3/input/ChatToolbarAppearance.java")),
                 StandardCharsets.UTF_8);
-        Assert.assertTrue("默认路径基线来自通用主题接缝",
-                appearanceSource.contains("SceneThemes.surface("));
+        Assert.assertTrue("默认路径基线来自通用主题接缝（字段级派生入口）",
+                appearanceSource.contains("SceneThemes.derivedSurface("));
         int styleStart = appearanceSource.indexOf("STYLE =");
         int ctorStart = appearanceSource.indexOf("private ChatToolbarAppearance()");
         int recipeStart = appearanceSource.indexOf("static ReadableSignal<SceneSurfaceStyle> recipe");

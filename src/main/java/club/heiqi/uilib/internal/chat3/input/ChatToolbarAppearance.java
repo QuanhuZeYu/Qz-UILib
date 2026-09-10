@@ -1,7 +1,6 @@
 package club.heiqi.uilib.internal.chat3.input;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
-import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiBackdrop;
@@ -18,7 +17,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p><b>双路径（G17/Toolbar 液态玻璃口径，契约 §3 优先级 + §7.3「HUD 工具栏保持显式配方与
  * 缩放语义」）</b>：</p>
  * <ul>
- *   <li><b>默认路径</b>（{@link #recipe}）——聊天动作按钮跟随当前主题（{@link SceneThemes#surface}
+ *   <li><b>默认路径</b>（{@link #recipe}）——聊天动作按钮跟随当前主题（{@link SceneThemes#derivedSurface}
  *       按按钮材质角色给出基线）；既有聊天玻璃设置（开关/模糊/强度）按第一优先级<b>逐项只覆盖
  *       「滤镜」这一个字段</b>：设置开 = DARK_THIN 系玻璃按设置模糊/强度，设置关 = {@code null}
  *       显式关闭滤镜（契约 §2.2）；底色/缘色/四态/圆角/边框宽/过渡等设置未管辖的字段全部随所属
@@ -55,9 +54,9 @@ public final class ChatToolbarAppearance {
      * 默认路径动作按钮配方：主题按钮角色配方为基线 + 聊天玻璃设置对「滤镜」字段的逐项局部覆盖。
      *
      * <p>必须在构建期调用（{@code forEach} 项 builder 内，此时 {@code Owner.current()} 是项作用域）：
-     * 构造期经 {@link SceneThemes#surface} 捕获来源主题信号，派生期只读上游——契约 §10「构造期
-     * 捕获主题、派生期不依赖 Owner 上下文」纪律。无初值 {@link Computed}：绑定器构造期不解引用，
-     * 首次 flush 求值；其 recompute 单元自动归属当前 Owner（施工手册 §3「卸载即回收」），
+     * 构造期经 {@link SceneThemes#derivedSurface} 捕获来源主题信号，派生期只读上游——契约 §10
+     * 「构造期捕获主题、派生期不依赖 Owner 上下文」纪律。派生入口注入构造期初值，绑定器构造期
+     * 仍不解引用（首次 flush 求值）；其 recompute 单元自动归属当前 Owner（施工手册 §3「卸载即回收」），
      * 按钮项随 keyed 列表卸载时一并回收，不留 orphan effect。主题与设置任一失效源变化都只
      * 重派生本配方：节点身份不变、不重建按钮、不改倍率/布局预算（契约 §4.1 HUD 工具栏行）。</p>
      *
@@ -66,11 +65,10 @@ public final class ChatToolbarAppearance {
      * @return 表面配方信号（滤镜字段恒为聊天设置值，其余字段随主题）
      */
     static ReadableSignal<SceneSurfaceStyle> recipe(SceneRuntime rt, SceneTheme.Role role) {
-        final ReadableSignal<SceneSurfaceStyle> themed = SceneThemes.surface(rt, role);
-        return Computed.create(() -> {
+        return SceneThemes.derivedSurface(rt, role, style -> {
             OBSERVED_BACKDROP.get(); // 失效源①：聊天玻璃设置帧观察（按值去重）
-            // 失效源②：主题；聊天设置只管滤镜字段，其余属性由主题角色配方供给。
-            return themed.get().toBuilder().backdrop(readBackdrop()).build();
+            // 失效源②（主题）由 derivedSurface 的基线提供；聊天设置只管滤镜字段，其余属性随主题。
+            return style.toBuilder().backdrop(readBackdrop()).build();
         });
     }
 
