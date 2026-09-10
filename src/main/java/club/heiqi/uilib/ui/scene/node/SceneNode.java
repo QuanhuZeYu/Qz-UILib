@@ -693,7 +693,21 @@ public class SceneNode {
     /** @return 当前悬停命中的链接 URL；null 表示无悬停链接 */
     public String getActiveLinkUrl() { return activeLinkUrl; }
 
-    /** 设置字号；变化时标 LAYOUT + PAINT。 */
+    /**
+     * 设置字号；变化时标 LAYOUT + PAINT。
+     *
+     * <p><b>控件字号入口（对本节点及其控件内文字生效）</b>：字号是节点的 LAYOUT+PAINT 属性，
+     * 与 padding/尺寸同类，不属于主题通道。控件的 wrapper 节点是「控件内文字」的字号真值——
+     * 控件自己画的文字（内部 label / caret / 文本度量）跟随它的字号，业务方 appendChild 进来的
+     * 子控件是独立控件、各自管理（不做子树继承）。因此调控件内文字大小就是设控件根的这一个
+     * 属性：{@code rt.mount(parent, SceneButton.create(rt, props)).getRoot().setFontSize(14)}。</p>
+     *
+     * <p>控件若额外提供 {@code Props.fontSize} 一类构建期入口，写的是同一个 root 属性，
+     * 不存在第二套真值。</p>
+     *
+     * @param fontSizePx UI 像素字号
+     * @return 本节点（链式）
+     */
     public SceneNode setFontSize(int fontSizePx) {
         if (this.fontSizePx == fontSizePx) return this;
         this.fontSizePx = fontSizePx;

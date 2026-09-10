@@ -150,16 +150,22 @@ public final class SceneSegmented {
                 props.onSelect(),
                 SceneSingleSelectPrimitive.Orientation.HORIZONTAL);
             SceneSingleSelectPrimitive.Result result = SceneSingleSelectPrimitive.create(rt, primitiveProps);
-            result.root().setCrossAxisAlign(CrossAxisAlign.STRETCH);
-            result.root().setGap(SEG_GAP);
+            SceneNode root = result.root();
+            root.setCrossAxisAlign(CrossAxisAlign.STRETCH);
+            root.setGap(SEG_GAP);
+            // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）：先定值（未指定回落
+            // SEG_LABEL_FONT_SIZE），再 attach typography——其字号 Computed 以最终值为初值，
+            // 标签首帧即正确，不必等 layoutDone 后纠正。
+            final int labelFontSize = SceneControlTypography.fontSizeOrDefault(
+                    props.fontSize(), SEG_LABEL_FONT_SIZE);
+            root.setFontSize(labelFontSize);
+            SceneControlTypography typography = SceneControlTypography.attach(rt, root);
+            SceneControlTypography.applyFontSize(rt, root, props.fontSize());
             // 内置默认高：段自然高 = 标签行高 + 2 * 段内边距（与 ConfigScreen 原手动算口径同源）。
             // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
             // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退，grow 兄弟收不到分配高。
             // 内置后调用方无需再手动设高（YAGNI：本轮不开 prop 覆盖）。
-            // 标签字号入口：段宽与条高都按字号测量，故构建期先取有效字号（未指定回落常量）。
-            final int labelFontSize = SceneControlTypography.fontSizeOrDefault(
-                    props.fontSize(), SEG_LABEL_FONT_SIZE);
-            result.root().setPreferredHeight(rt.lineHeight(labelFontSize) + 2 * SEGMENT_PADDING);
+            root.setPreferredHeight(rt.lineHeight(labelFontSize) + 2 * SEGMENT_PADDING);
 
             // 导航底座：TOOLBAR 角色配方。表面绑定器独占 background/border/borderWidth/
             // cornerRadius/backdrop/surfaceElevation；构造期不再静态设边框/圆角，
@@ -189,7 +195,7 @@ public final class SceneSegmented {
                 String title = props.options().get(handle.index());
                 int textWidth = rt.measureTextWidth(title, labelFontSize);
                 segment.setPreferredWidth(textWidth + 2 * SEGMENT_PADDING);
-                handle.label().setFontSize(labelFontSize);
+                typography.bindText(handle.label());
                 segment.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
@@ -212,25 +218,25 @@ public final class SceneSegmented {
                 SceneControlChrome.bindCursor(rt, segment, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
-            // 运行期改字号：标签字号与「按字号测出来的几何」必须同时重算，否则段宽/条高会留在旧字号上。
-            // 不传字号时不建立任何绑定，构建期尺寸即最终尺寸（视觉零变化）。
-            if (props.fontSize() != null) {
-                final List<SceneSingleSelectPrimitive.ItemHandle> items = result.items();
-                final List<String> options = props.options();
-                final SceneNode base = result.root();
-                rt.bind(props.fontSize(), value -> {
-                    int fontSize = SceneControlTypography.fontSizeOrDefault(value, SEG_LABEL_FONT_SIZE);
-                    base.setPreferredHeight(rt.lineHeight(fontSize) + 2 * SEGMENT_PADDING);
-                    for (int i = 0; i < items.size(); i++) {
-                        SceneSingleSelectPrimitive.ItemHandle handle = items.get(i);
-                        handle.label().setFontSize(fontSize);
-                        handle.item().setPreferredWidth(
-                                rt.measureTextWidth(options.get(i), fontSize) + 2 * SEGMENT_PADDING);
-                    }
-                });
-            }
+            // 段宽/条高从 root 字号派生：字号真的变了才重算（同值早退，避免与布局形成反馈环）。
+            // 无条件建立——外部直接 root.setFontSize 也要让几何跟上，root 是唯一真值。
+            final List<SceneSingleSelectPrimitive.ItemHandle> items = result.items();
+            final List<String> options = props.options();
+            final int[] appliedFontSize = {labelFontSize};
+            rt.bind(rt.layoutDoneSignal(), epoch -> {
+                int fontSize = root.getFontSize();
+                if (fontSize == appliedFontSize[0]) {
+                    return;
+                }
+                appliedFontSize[0] = fontSize;
+                root.setPreferredHeight(rt.lineHeight(fontSize) + 2 * SEGMENT_PADDING);
+                for (int i = 0; i < items.size(); i++) {
+                    items.get(i).item().setPreferredWidth(
+                            rt.measureTextWidth(options.get(i), fontSize) + 2 * SEGMENT_PADDING);
+                }
+            });
 
-            return result.root();
+            return root;
         };
     }
 }

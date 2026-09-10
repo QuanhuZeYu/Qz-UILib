@@ -222,12 +222,17 @@ public final class SceneTab {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
-            // 标签字号入口：构建期先取有效字号（未指定回落 TAB_LABEL_FONT_SIZE）。
+            // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）：未指定时回落
+            // TAB_LABEL_FONT_SIZE。
             final int labelFontSize = SceneControlTypography.fontSizeOrDefault(
                     props.fontSize(), TAB_LABEL_FONT_SIZE);
             // ① 建树一次（无副作用，I3）—— 纵向容器：tabBar 在上、contentPanel 在下
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
+            // 先定值再 attach：typography 的字号 Computed 以最终值为初值，标签首帧即正确。
+            root.setFontSize(labelFontSize);
+            SceneControlTypography typography = SceneControlTypography.attach(rt, root);
+            SceneControlTypography.applyFontSize(rt, root, props.fontSize());
             // 断裂点①（fill 传导）：root 自身 fill，否则在父眼里是"固定容器子"，
             // priorKnownChildHeight 命中容器分支返回 UNCONSTRAINED，父放弃向 root 分配 grow 高。
             // 读 fillContentPanel 常量做静态配置（构建期一次性，非 signal 订阅，守 R3）。
@@ -279,7 +284,7 @@ public final class SceneTab {
                 tabSeg.setPreferredWidth(TAB_WIDTH);
 
                 // label[i]：段内纯文本装饰子节点，命中穿透到段（契约 R6）
-                handle.label().setFontSize(labelFontSize);
+                typography.bindText(handle.label());
                 tabSeg.appendChild(handle.label());
 
                 // tab 项表面：INDICATOR 角色配方 + selected 派生。选中只替换 tint 的 RGB（保留 0x59 alpha，
@@ -329,20 +334,20 @@ public final class SceneTab {
                 rt.show(contentPanel, items.get(idx).selected(), panels.get(idx));
             }
 
-            // 运行期改字号：标签字号与「按字号算出来的条高」必须同时重算。非 fill 模式的条高由内容
-            // 自然高决定，随标签行高自动变化，无需重算。不传字号时不建立任何绑定（视觉零变化）。
-            if (props.fontSize() != null) {
-                final boolean fillContentPanel = props.fillContentPanel();
-                rt.bind(props.fontSize(), value -> {
-                    int fontSize = SceneControlTypography.fontSizeOrDefault(value, TAB_LABEL_FONT_SIZE);
-                    for (SceneSingleSelectPrimitive.ItemHandle handle : items) {
-                        handle.label().setFontSize(fontSize);
-                    }
-                    if (fillContentPanel) {
-                        tabBar.setPreferredHeight(rt.lineHeight(fontSize) + 2 * TAB_PADDING);
-                    }
-                });
-            }
+            // 条高从 root 字号派生：只有 fill 模式的条高是显式 preferredHeight（非 fill 模式由内容
+            // 自然高决定，随标签行高自动变化）。同值早退，避免与布局形成反馈环。
+            final boolean fillContentPanel = props.fillContentPanel();
+            final int[] appliedFontSize = {labelFontSize};
+            rt.bind(rt.layoutDoneSignal(), epoch -> {
+                int fontSize = root.getFontSize();
+                if (fontSize == appliedFontSize[0]) {
+                    return;
+                }
+                appliedFontSize[0] = fontSize;
+                if (fillContentPanel) {
+                    tabBar.setPreferredHeight(rt.lineHeight(fontSize) + 2 * TAB_PADDING);
+                }
+            });
 
             return root;
         };

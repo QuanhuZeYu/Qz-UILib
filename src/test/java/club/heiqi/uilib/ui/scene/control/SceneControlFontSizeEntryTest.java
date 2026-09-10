@@ -128,6 +128,53 @@ public class SceneControlFontSizeEntryTest {
     }
 
     /**
+     * root 是字号唯一真值：绕过所有 Props 入口、直接设控件根字号，控件内文字同样跟随。
+     *
+     * <p>这条钉住「控件字号入口 = 设控件根的 SceneNode 属性」（与 padding/尺寸同类），
+     * 控件若另给构建期入口，写的是同一个 root，不存在第二套真值。</p>
+     */
+    @Test
+    public void rootFontSizeIsTheSingleSourceOfTruthForEveryControl() {
+        for (Control control : Control.values()) {
+            Fixture fixture = fixture();
+            fixture.mountDefault(control);
+            fixture.frame();
+            assertPaintedFontSize(fixture, DEFAULT_FONT_SIZE);
+            fixture.mount.getRoot().setFontSize(24);
+            fixture.frame();
+            assertPaintedFontSize(fixture, 24);
+        }
+    }
+
+    /** 直接设 root 字号时，Segmented 按字号算出来的几何也要跟上（段宽与条高）。 */
+    @Test
+    public void segmentedGeometryFollowsRootFontSizeSetDirectly() {
+        Fixture fixture = fixture();
+        fixture.mountDefault(Control.SEGMENTED);
+        fixture.frame();
+        assertSegmentWidths(fixture, DEFAULT_FONT_SIZE);
+        fixture.mount.getRoot().setFontSize(20);
+        fixture.frame();
+        assertPaintedFontSize(fixture, 20);
+        assertSegmentWidths(fixture, 20);
+        assertSegmentedBarHeight(fixture, 20);
+    }
+
+    /** 直接设 root 字号时，fill 模式 Tab 的显式条高也要跟上。 */
+    @Test
+    public void tabBarHeightFollowsRootFontSizeSetDirectly() {
+        Fixture fixture = fixture();
+        fixture.mountTabFill(null);
+        fixture.frame();
+        SceneNode tabBar = fixture.mount.getRoot().__getChildren().get(0);
+        fixture.mount.getRoot().setFontSize(28);
+        fixture.frame();
+        assertPaintedFontSize(fixture, 28);
+        Assert.assertEquals("直接设 root 字号后条高必须重算",
+                lineHeight(28) + 2 * SceneChromeTokens.PAD_LG, tabBar.getPreferredHeight());
+    }
+
+    /**
      * 字号参与几何的控件（Segmented）：段宽 = 按字号测出的文本宽 + 2*内边距。
      *
      * <p>构建期定值与运行期信号都必须重算段宽——只改标签字号不改段宽会让文字溢出或留白。</p>
