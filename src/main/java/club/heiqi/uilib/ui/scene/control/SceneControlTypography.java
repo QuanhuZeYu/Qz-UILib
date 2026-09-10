@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -30,9 +32,35 @@ final class SceneControlTypography {
         this.rt = rt;
         this.root = root;
         this.owner = Owner.current();
-        // 纯文本控件只需传播字号；默认 SceneRuntime 可由外部布局/绘制引擎提供度量，
-        // Button 挂载不应因此新增对 runtime 度量器的要求。
-        this.fontSize = Computed.create(Integer.valueOf(root.getFontSize()), () -> {
+        this.fontSize = fontSizeOf(rt, root);
+    }
+
+    /**
+     * 控件根字号的只读信号：追踪布局纪元后重读 root 字号。
+     *
+     * <p>给「文字节点建在辅助方法里、拿不到本实例」的控件用——把这条信号当参数传下去，
+     * 各文字节点用 {@link #applyFontSize} 绑定即可，不必逐层传递本实例。</p>
+     *
+     * <p>必须在 Owner 作用域内调用（{@link Computed} 归属该作用域）。</p>
+     *
+     * @param rt   场景运行时
+     * @param root 控件根节点（字号真值所在）
+     * @return 根字号只读信号
+     */
+    static ReadableSignal<Integer> fontSizeOf(SceneRuntime rt, SceneNode root) {
+        if (Owner.current() != null) {
+            return createFontSize(rt, root);
+        }
+        // 在 mount 回调之外调用控件工厂时（如 portal 型控件的 create 方法体）与 rt.bind 一样
+        // 归 runtime 根 Owner，避免独立 Computed 泄漏。
+        AtomicReference<ReadableSignal<Integer>> holder = new AtomicReference<ReadableSignal<Integer>>();
+        rt.__runRoot(() -> holder.set(createFontSize(rt, root)));
+        return holder.get();
+    }
+
+    /** 纯文本控件只需传播字号；默认 SceneRuntime 可由外部布局/绘制引擎提供度量，挂载不应因此新增对度量器的要求。 */
+    private static ReadableSignal<Integer> createFontSize(SceneRuntime rt, SceneNode root) {
+        return Computed.create(Integer.valueOf(root.getFontSize()), () -> {
             rt.layoutDoneSignal().get();
             return Integer.valueOf(root.getFontSize());
         });
@@ -49,7 +77,12 @@ final class SceneControlTypography {
     }
 
     /**
-     * 控件级字号入口：把编写者给定的字号写到 root（构建期播种 + 运行期绑定）。
+     * 内部绑定工具：把「控件根字号」信号绑到节点（构建期播种当前值 + 运行期绑定）。
+     *
+     * <p><b>编写者入口不在这里</b>——公开入口是
+     * {@link club.heiqi.uilib.ui.scene.runtime.MountHandle#fontSize(int)} /
+     * {@link club.heiqi.uilib.ui.scene.runtime.MountHandle#fontSize(ReadableSignal)}（或直接
+     * {@code root.setFontSize(n)}）。本方法供**控件内部**把控件根字号传播到自绘文字节点。</p>
      *
      * <p>root 是本类的唯一字号真值，本方法只写 root；文本叶、caret 与度量仍走
      * {@link #bindText}/{@link #bindCaret} 的既有通道，不另开传播路径。</p>

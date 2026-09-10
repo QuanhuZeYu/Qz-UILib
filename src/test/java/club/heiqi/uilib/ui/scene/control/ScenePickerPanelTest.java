@@ -81,6 +81,8 @@ public class ScenePickerPanelTest {
     private static final float EPSILON = 0.0001F;
     /** 透明底（轻量行/外壳表面删除/图像协议断言用）。 */
     private static final int BG_TRANSPARENT = 0x00000000;
+    /** {@link SceneNode} 默认字号：不设字号时控件内文字必须保持的值（视觉零变化约束）。 */
+    private static final int DEFAULT_FONT_SIZE = 16;
 
     /** 库默认主题配方：默认外观唯一来源，断言引用配方值而非硬编码色号。 */
     private static final SceneSurfaceStyle PANEL = SceneThemes.DEFAULT.surface(SceneTheme.Role.PANEL);
@@ -1241,6 +1243,111 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("空态提示 = 主题次要前景",
                 Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
                 Integer.valueOf(empty.getTextColor()));
+    }
+
+    // ==================== 控件根字号：宿主六处内建文字跟随 ====================
+
+    /**
+     * 宿主六处内建文字跟随控件根字号（字号真值 = {@code Result.root}，也就是编写者 mount 后拿到的节点）：
+     * 不设字号时保持 {@link SceneNode} 默认 16，{@link MountHandle#fontSize(int)} 后推进一帧即生效。
+     *
+     * <p>证据取自绘制产物——各宿主文字节点自身 fragment 内 TEXT 命令的
+     * {@code getTextStyle().getFontSize()}（与 {@code hostTextsFollowThemeForegrounds} 互补：
+     * 那里钉取色走节点属性，这里钉绘制字号走 fragment），不读节点属性代替绘制结果。</p>
+     *
+     * <p>两处分状态断言的原因：问题摘要在零问题（invalid=0 / duplicate=0）时文本是空串，
+     * 空串不产 TEXT 命令，故先置入无效成员再断言；空态提示只在成员为空时挂载，故它在成员清空的那段断言。</p>
+     */
+    @Test
+    public void hostTextFontSizeFollowsPanelRootAcrossEveryHostText() {
+        Signal<String> query = Signal.create("");
+        Signal<String> error = Signal.create("boom");
+        Signal<List<SearchPickerData.CurrentMember>> members =
+                Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList());
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        Props props = Props.builder(query,
+                Signal.create(new SearchPickerData.SearchResult(Arrays.asList(candidate("a")))),
+                Signal.create(Boolean.TRUE), query::set, ignored -> { }, visualAdapter())
+                .open(open).onCloseRequest(() -> open.set(Boolean.FALSE))
+                .error(error)
+                .currentMembers(members, ignored -> { })
+                .build();
+        // 推荐写法挂载：MountHandle.getRoot() 就是 Result.root（字号真值所在），编写者对它设字号即可。
+        Result[] holder = new Result[1];
+        MountHandle handle = rt.mount(sceneRoot, () -> {
+            holder[0] = ScenePickerPanel.create(rt, props);
+            return holder[0].root();
+        });
+        open.set(Boolean.TRUE);
+        rt.flush();
+        layoutAll();
+        layoutAll();
+
+        SceneNode scrim = overlayRoot(0);
+
+        // ① 缺省不设字号：已出文字的五处宿主文字绘制字号 = 节点默认 16（空态提示见 ④）。
+        paintEngine.paint(scrim);
+        assertPaintedFontSize("顶栏标题", topBar(scrim).__getChildren().get(0), DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("结果统计", topBar(scrim).__getChildren().get(2), DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("错误行", centerColumn(scrim).__getChildren().get(0), DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("成员区标题",
+                membersPanel(scrim).__getChildren().get(0).__getChildren().get(0), DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("空态提示", membersPanel(scrim).__getChildren().get(2), DEFAULT_FONT_SIZE);
+
+        // ② 问题摘要：零问题时是空串（无 TEXT 命令），置入无效成员后才有可断言的绘制产物。
+        members.set(Arrays.asList(malformedMember(0L)));
+        rt.flush();
+        layoutAll();
+        layoutAll();
+        SceneNode issues = membersPanel(scrim).__getChildren().get(0).__getChildren().get(1);
+        Assert.assertFalse("前置：问题摘要应有文案", issues.getText().isEmpty());
+        paintEngine.paint(scrim);
+        assertPaintedFontSize("问题摘要", issues, DEFAULT_FONT_SIZE);
+
+        // ③ 字号生效：handle.fontSize(24) → 推进一帧 → 在场五处宿主文字绘制字号 = 24。
+        handle.fontSize(24);
+        layoutAll();
+        layoutAll();
+        paintEngine.paint(scrim);
+        assertPaintedFontSize("顶栏标题", topBar(scrim).__getChildren().get(0), 24);
+        assertPaintedFontSize("结果统计", topBar(scrim).__getChildren().get(2), 24);
+        assertPaintedFontSize("错误行", centerColumn(scrim).__getChildren().get(0), 24);
+        assertPaintedFontSize("成员区标题",
+                membersPanel(scrim).__getChildren().get(0).__getChildren().get(0), 24);
+        assertPaintedFontSize("问题摘要",
+                membersPanel(scrim).__getChildren().get(0).__getChildren().get(1), 24);
+        // 字号真值确实落在 MountHandle.getRoot()（= Result.root）这个节点上。
+        Assert.assertSame("MountHandle.getRoot() 即 Result.root（字号真值所在）",
+                holder[0].root(), handle.getRoot());
+        Assert.assertEquals("控件根字号 = 句柄写入值", 24, handle.getRoot().getFontSize());
+
+        // ④ 空态提示跟随：成员清空后空态提示重新挂载（按当前字号播种），绘制字号 = 24。
+        members.set(Collections.<SearchPickerData.CurrentMember>emptyList());
+        rt.flush();
+        layoutAll();
+        layoutAll();
+        SceneNode hint = membersPanel(scrim).__getChildren().get(2);
+        Assert.assertEquals("空态占位文本合同不变", "No current members", hint.getText());
+        paintEngine.paint(scrim);
+        assertPaintedFontSize("空态提示", hint, 24);
+    }
+
+    /** 断言某宿主文字节点绘制出的 TEXT 字号（绘制产物证据；须先对该节点所在树执行过 paint）。 */
+    private static void assertPaintedFontSize(String name, SceneNode node, int fontSize) {
+        Assert.assertEquals(name + " 绘制字号（取自自身 fragment 的 TEXT 命令）",
+                fontSize, ownPaintedFontSize(node));
+    }
+
+    /** 节点自身绘制片段内的 TEXT 字号（与 {@link #ownBackdropCount} 同款：先整树 paint 再读缓存 fragment）。 */
+    private static int ownPaintedFontSize(SceneNode node) {
+        Object cached = node.getCachedPaint();
+        Assert.assertTrue("宿主文字节点应已绘制出自身 fragment", cached instanceof PaintFragment);
+        for (PaintCommand command : ((PaintFragment) cached).getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT) {
+                return command.getTextStyle().getFontSize();
+            }
+        }
+        throw new AssertionError("宿主文字节点未绘制出 TEXT 命令：" + node.getText());
     }
 
     // ==================== G14 整树 BACKDROP 构成表 ====================

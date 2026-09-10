@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintFragment;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
@@ -578,6 +579,54 @@ public class SceneKeyValueMapTest {
         runtime.flush();
         Assert.assertEquals("卸载后主题更新不再写入旧 viewport",
                 colorBeforeDispose, viewport.getBackgroundColor());
+    }
+
+    // ==================== 字号传播：控件内文字跟随控件根字号 ====================
+
+    /**
+     * 控件内文字（标题 / 表头 / 动作按钮）跟随控件根字号：不设字号时绘制产物仍是节点默认 16，
+     * {@code handle.fontSize(24)} 后同帧绘制为 24。
+     *
+     * <p>证据取自绘制产物（{@link PaintPlan} 的 TEXT 命令 {@code getTextStyle().getFontSize()}），
+     * 不读节点属性——字号若只写到 root 而未派生到文字节点，本用例必须红。行内 key/value 输入与类型
+     * 分段是独立子控件，按「不做子树继承」口径不随本控件字号，故只断言本控件自产文字。</p>
+     */
+    @Test
+    public void builtInTextShouldFollowRootFontSize() {
+        String[] builtInTexts = {"属性", "Key", "Value", "Type", "操作", "+ 添加", "删除"};
+        assertPaintedFontSizes(builtInTexts, 16);
+
+        handle.fontSize(24);
+        runtime.flush();
+        // 宿主口径（与生产帧管线同序）：先 layout，再桥接 layout 纪元，字号派生才在 flush 内落到文字节点。
+        // harness 未暴露内部布局引擎 epoch，测试侧按「一帧布局 = 一档纪元」手工推进。
+        doLayout();
+        runtime.__setLayoutDoneEpoch(1);
+        runtime.flush();
+        doLayout();
+        runtime.flush();
+
+        assertPaintedFontSizes(builtInTexts, 24);
+    }
+
+    /**
+     * 断言本控件自产文字在绘制产物中的字号：逐片段取值，并保证期望文本确实绘制出来。
+     *
+     * @param texts    期望绘制的控件内文字
+     * @param expected 期望字号（= 控件根字号）
+     */
+    private void assertPaintedFontSizes(String[] texts, int expected) {
+        List<String> expectedTexts = Arrays.asList(texts);
+        List<String> missing = new ArrayList<String>(expectedTexts);
+        for (PaintCommand command : paintEngine.paint(sceneRoot).getPlan().getCommands()) {
+            if (command.getType() != PaintCommandType.TEXT || !expectedTexts.contains(command.getText())) {
+                continue;
+            }
+            Assert.assertEquals("片段 '" + command.getText() + "' 字号应 = 控件根字号",
+                    expected, command.getTextStyle().getFontSize());
+            missing.remove(command.getText());
+        }
+        Assert.assertTrue("控件内文字未绘制出来：" + missing, missing.isEmpty());
     }
 
     /** 默认外观用例共用输入契约（标题 + 占位 + 回调计数）。 */

@@ -771,6 +771,55 @@ public class SceneObjectFieldTest {
         Assert.assertSame("主题切换不重建控件根节点", root, handle.getRoot());
     }
 
+    // ==================== 字号传播：控件内文字跟随控件根字号 ====================
+
+    /**
+     * 控件内文字（标题 / 字段名 / 类型提示 / 展开字形）跟随控件根字号：不设字号时绘制产物仍是节点
+     * 默认 16，{@code handle.fontSize(24)} 后同帧绘制为 24。
+     *
+     * <p>证据取自绘制产物（{@link PaintPlan} 的 TEXT 命令 {@code getTextStyle().getFontSize()}），
+     * 不读节点属性——字号若只写到 root 而未派生到文字节点，本用例必须红。标量行编辑单元是独立子控件
+     * （{@link SceneTextInput}），按「不做子树继承」口径不随本控件字号，故只断言本控件自产文字。</p>
+     */
+    @Test
+    public void builtInTextShouldFollowRootFontSize() {
+        mountObject(sampleValue(), setOf("database"), 5);
+        String[] builtInTexts = {"对象", "count", "database", "enabled", "name", "host", "port", "▾"};
+        assertPaintedFontSizes(builtInTexts, 16);
+
+        handle.fontSize(24);
+        runtime.flush();
+        // 宿主口径（与生产帧管线同序）：先 layout，再桥接 layout 纪元，字号派生才在 flush 内落到文字节点。
+        // harness 未暴露内部布局引擎 epoch，测试侧按「一帧布局 = 一档纪元」手工推进。
+        doLayout();
+        runtime.__setLayoutDoneEpoch(1);
+        runtime.flush();
+        doLayout();
+        runtime.flush();
+
+        assertPaintedFontSizes(builtInTexts, 24);
+    }
+
+    /**
+     * 断言本控件自产文字在绘制产物中的字号：逐片段取值，并保证期望文本确实绘制出来。
+     *
+     * @param texts    期望绘制的控件内文字
+     * @param expected 期望字号（= 控件根字号）
+     */
+    private void assertPaintedFontSizes(String[] texts, int expected) {
+        List<String> expectedTexts = Arrays.asList(texts);
+        Set<String> missing = new LinkedHashSet<String>(expectedTexts);
+        for (PaintCommand command : paintEngine.paint(sceneRoot).getPlan().getCommands()) {
+            if (command.getType() != PaintCommandType.TEXT || !expectedTexts.contains(command.getText())) {
+                continue;
+            }
+            Assert.assertEquals("片段 '" + command.getText() + "' 字号应 = 控件根字号",
+                    expected, command.getTextStyle().getFontSize());
+            missing.remove(command.getText());
+        }
+        Assert.assertTrue("控件内文字未绘制出来：" + missing, missing.isEmpty());
+    }
+
     /**
      * 在 {@code withTheme} 局部主题作用域下挂载控件（主题切换/卸载用例入口）。
      *

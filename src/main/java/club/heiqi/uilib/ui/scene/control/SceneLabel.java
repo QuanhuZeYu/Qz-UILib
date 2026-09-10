@@ -71,6 +71,7 @@ public final class SceneLabel {
      * @param contentMode 内容模式编码（0=UILIB_RAW / 1=MINECRAFT_FORMATTED / 2=RICH_TAGS，
      *                    锚定 {@link SceneTextMode}）
      * @param followTheme 是否跟随当前主题前景（true=默认路径；false=显式 color）
+     * @param fontSize    运行时可调字号信号（UI 像素）；null = 用 {@code fontSizePx} 定值
      */
     @Desugar
     public record TextSpec(
@@ -78,8 +79,23 @@ public final class SceneLabel {
             int color,
             int fontSizePx,
             int contentMode,
-            boolean followTheme
+            boolean followTheme,
+            ReadableSignal<Integer> fontSize
     ) {
+        /**
+         * 旧 5 参构造器（历史兼容入口）：字号只有构建期定值，无运行时信号。
+         *
+         * @param text        文本内容
+         * @param color       ARGB 文字颜色
+         * @param fontSizePx  UI 像素字号
+         * @param contentMode 内容模式编码
+         * @param followTheme 是否跟随当前主题前景
+         */
+        public TextSpec(ReadableSignal<String> text, int color, int fontSizePx, int contentMode,
+                boolean followTheme) {
+            this(text, color, fontSizePx, contentMode, followTheme, null);
+        }
+
         /**
          * 旧 4 参构造器（历史兼容入口）：语义 = 显式 color（{@code followTheme=false}）。
          *
@@ -89,13 +105,13 @@ public final class SceneLabel {
          * @param contentMode 内容模式编码
          */
         public TextSpec(ReadableSignal<String> text, int color, int fontSizePx, int contentMode) {
-            this(text, color, fontSizePx, contentMode, false);
+            this(text, color, fontSizePx, contentMode, false, null);
         }
 
         /** 默认分组：前景跟随当前主题 + 默认字号 + 原始文本模式（本目标的默认视觉改变）。 */
         public TextSpec(ReadableSignal<String> text) {
             this(text, SceneChromeTokens.TEXT_PRIMARY, DEFAULT_FONT_SIZE_PX,
-                    TextStyle.TEXT_MODE_UILIB_RAW, true);
+                    TextStyle.TEXT_MODE_UILIB_RAW, true, null);
         }
     }
 
@@ -208,6 +224,11 @@ public final class SceneLabel {
             return textSpec.fontSizePx();
         }
 
+        /** @return 运行时可调字号信号；null = 只有构建期定值 */
+        public ReadableSignal<Integer> fontSize() {
+            return textSpec.fontSize();
+        }
+
         /** @return 内容模式编码（锚定 {@link SceneTextMode}） */
         public int contentMode() {
             return textSpec.contentMode();
@@ -276,6 +297,9 @@ public final class SceneLabel {
 
         private int fontSizePx = DEFAULT_FONT_SIZE_PX;
 
+        /** 运行时可调字号信号；null = 用 {@link #fontSizePx} 定值。 */
+        private ReadableSignal<Integer> fontSize = null;
+
         private int contentMode = TextStyle.TEXT_MODE_UILIB_RAW;
 
         private TextHorizontalAlign horizontalAlign = TextHorizontalAlign.LEFT;
@@ -308,6 +332,20 @@ public final class SceneLabel {
         /** @param fontSizePx UI 像素字号 */
         public Builder fontSizePx(int fontSizePx) {
             this.fontSizePx = fontSizePx;
+            return this;
+        }
+
+        /**
+         * 运行时可调字号：信号变化时标签文字与按字号算出来的几何同帧跟随。
+         *
+         * <p>与 {@link #fontSizePx(int)} 写的是同一个 root 字号（标签根的 SceneNode 属性），
+         * 两者同时给出时以本信号为准。</p>
+         *
+         * @param fontSize UI 像素字号信号；null = 不指定
+         * @return 当前 builder
+         */
+        public Builder fontSize(ReadableSignal<Integer> fontSize) {
+            this.fontSize = fontSize;
             return this;
         }
 
@@ -369,7 +407,7 @@ public final class SceneLabel {
          * @return 按当前 builder 状态产出的不可变 Props（未指定 color 时前景跟随主题）
          */
         public Props build() {
-            return new Props(new TextSpec(text, color, fontSizePx, contentMode, followTheme),
+            return new Props(new TextSpec(text, color, fontSizePx, contentMode, followTheme, fontSize),
                     new LayoutSpec(wrapWidth, lineHeightMultiplier, lineHeightPx, maxLines, ellipsis),
                     new AlignSpec(horizontalAlign, verticalAlign), onLinkClick);
         }
@@ -392,6 +430,8 @@ public final class SceneLabel {
             root.setHitTestable(false);
             bindTextColor(rt, root, props.textSpec());
             root.setFontSize(props.fontSizePx());
+            // 运行时可调字号：写的是同一个 root（root 是标签字号的唯一真值）。
+            SceneControlTypography.applyFontSize(rt, root, props.fontSize());
             root.setTextMode(SceneTextMode.fromCode(props.contentMode()));
             root.setTextHorizontalAlign(props.horizontalAlign());
             root.setTextVerticalAlign(props.verticalAlign());

@@ -128,6 +128,40 @@ public class SceneControlFontSizeEntryTest {
     }
 
     /**
+     * 统一入口：{@link MountHandle#fontSize(int)} 对任何控件都生效——编写者不必知道控件内部结构，
+     * 十六个控件写法相同（这是「字号是节点属性、在基类做一次」的口径）。
+     */
+    @Test
+    public void mountHandleFontSizeCoversEveryControl() {
+        for (Control control : Control.values()) {
+            Fixture fixture = fixture();
+            fixture.mountDefault(control);
+            fixture.frame();
+            assertPaintedFontSize(fixture, DEFAULT_FONT_SIZE);
+            fixture.mount.fontSize(26);
+            fixture.frame();
+            assertPaintedFontSize(fixture, 26);
+        }
+    }
+
+    /** 统一入口的运行时可调形态：句柄上接信号，变化同帧生效且随组件卸载退订。 */
+    @Test
+    public void mountHandleFontSizeSignalDrivesRuntimeChange() {
+        for (Control control : Control.values()) {
+            Fixture fixture = fixture();
+            fixture.mountDefault(control);
+            fixture.frame();
+            Signal<Integer> fontSize = Signal.create(Integer.valueOf(18));
+            fixture.mount.fontSize(fontSize);
+            fixture.frame();
+            assertPaintedFontSize(fixture, 18);
+            fontSize.set(Integer.valueOf(30));
+            fixture.frame();
+            assertPaintedFontSize(fixture, 30);
+        }
+    }
+
+    /**
      * root 是字号唯一真值：绕过所有 Props 入口、直接设控件根字号，控件内文字同样跟随。
      *
      * <p>这条钉住「控件字号入口 = 设控件根的 SceneNode 属性」（与 padding/尺寸同类），
@@ -242,6 +276,45 @@ public class SceneControlFontSizeEntryTest {
                 lineHeight(28) + 2 * SceneChromeTokens.PAD_LG, tabBar.getPreferredHeight());
     }
 
+    /**
+     * Tab 段宽 = max(最小宽 72, 文本宽 + 2*内边距)：短标签保持等宽节奏，长标签随字号变宽。
+     *
+     * <p>这是 ③ 类「显式尺寸与字号无关」的收口——调大字号不再被固定段宽截断。</p>
+     */
+    @Test
+    public void tabSegmentWidthFollowsFontSize() {
+        Fixture small = fixture();
+        small.mountPx(Control.TAB, DEFAULT_FONT_SIZE);
+        small.frame();
+        // 度量器口径：文本宽 = 码点数 * 字号 / 2。字号 16 时最长标签也只有 64，全部落在最小宽上。
+        assertTabSegmentWidths(small, DEFAULT_FONT_SIZE);
+
+        Fixture large = fixture();
+        large.mountPx(Control.TAB, 32);
+        large.frame();
+        assertTabSegmentWidths(large, 32);
+        // 大字号下必须真的测到「长标签撑开」，否则本用例失去意义。
+        List<SceneNode> segments = large.mount.getRoot().__getChildren().get(0).__getChildren();
+        Assert.assertTrue("大字号下应有段宽超过最小宽",
+                segments.get(2).getPreferredWidth() > TAB_MIN_WIDTH);
+    }
+
+    /** {@code SceneTab.TAB_WIDTH}：段最小宽（控件内私有常量，此处按其语义断言）。 */
+    private static final int TAB_MIN_WIDTH = 72;
+
+    private static void assertTabSegmentWidths(Fixture fixture, int fontSize) {
+        SceneNode tabBar = fixture.mount.getRoot().__getChildren().get(0);
+        List<SceneNode> segments = tabBar.__getChildren();
+        Assert.assertEquals("段数应与标签数一致", TAB_LABELS.size(), segments.size());
+        for (int i = 0; i < segments.size(); i++) {
+            String title = TAB_LABELS.get(i);
+            int textWidth = title.codePointCount(0, title.length()) * fontSize / 2;
+            int expected = Math.max(TAB_MIN_WIDTH, textWidth + 2 * SceneChromeTokens.PAD_LG);
+            Assert.assertEquals("段[" + i + "] 宽（文本宽 " + textWidth + "，字号 " + fontSize + "）",
+                    expected, segments.get(i).getPreferredWidth());
+        }
+    }
+
     private static void assertSegmentWidths(Fixture fixture, int fontSize) {
         List<SceneNode> segments = fixture.mount.getRoot().__getChildren();
         Assert.assertEquals("段数应与标签数一致", TAB_LABELS.size(), segments.size());
@@ -300,7 +373,7 @@ public class SceneControlFontSizeEntryTest {
         return result;
     }
 
-    private enum Control { BUTTON, INPUT, AREA, SEGMENTED, TAB }
+    private enum Control { BUTTON, INPUT, AREA, SEGMENTED, TAB, LABEL }
 
     /** 度量随字号变化：字号没传到绘制上时断言必须失败。 */
     private static final class FontMeasurer implements SceneTextMeasurer {
@@ -422,6 +495,16 @@ public class SceneControlFontSizeEntryTest {
                     component = SceneTab.create(runtime, new SceneTab.Props(
                             selected, TAB_LABELS, TAB_PANELS, enabled, index -> { }, false,
                             sizeSignal(fontSizePx, fontSize)));
+                    break;
+                case LABEL:
+                    SceneLabel.Builder labelBuilder = SceneLabel.Props.builder(value);
+                    if (fontSizePx != null) {
+                        labelBuilder.fontSizePx(fontSizePx.intValue());
+                    }
+                    if (fontSize != null) {
+                        labelBuilder.fontSize(fontSize);
+                    }
+                    component = SceneLabel.create(runtime, labelBuilder.build());
                     break;
                 default:
                     throw new AssertionError(kind);

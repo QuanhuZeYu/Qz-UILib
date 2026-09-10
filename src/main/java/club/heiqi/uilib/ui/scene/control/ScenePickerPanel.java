@@ -490,6 +490,12 @@ public final class ScenePickerPanel {
     public static Result create(SceneRuntime rt, Props props) {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
+        // 宿主树锚点节点就是 Result.root（编写者 mount 后拿到的节点）：控件内文字跟随它的字号。
+        // 提前建节点，供 portal 内容构建时把字号信号一路传下去（编写者 rt.mount(...).fontSize(n)
+        // 或直接 root.setFontSize(n)）。
+        SceneNode root = new SceneNode();
+        root.setHitTestable(false);
+        ReadableSignal<Integer> fontSize = SceneControlTypography.fontSizeOf(rt, root);
         Signal<Boolean> openInternal = props.open() == null ? Signal.create(Boolean.FALSE) : null;
         ReadableSignal<Boolean> open = props.open() != null ? props.open() : openInternal;
         Runnable closeSignal = () -> {
@@ -567,7 +573,7 @@ public final class ScenePickerPanel {
         rt.portal(open, () -> mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
                 memberIssues, categoryKey, categoryWriter, gridHighlight,
                 addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
-                gridViewportHolder, variantsOpen, activeCandidate, mode, selectedKeys),
+                gridViewportHolder, variantsOpen, activeCandidate, mode, selectedKeys, fontSize),
                 MAIN_PANEL_POLICY,
                 () -> {
                     if (Boolean.TRUE.equals(variantsOpen.get())) {
@@ -598,8 +604,6 @@ public final class ScenePickerPanel {
             if (!clamped.equals(gridHighlight.get())) gridHighlight.set(clamped);
         });
 
-        SceneNode root = new SceneNode();
-        root.setHitTestable(false);
         return new Result(root, openInternal, open, variantsOpen,
                 () -> searchFocusTarget[0], () -> gridViewportHolder[0], categoryKey, gridHighlight,
                 mode, selectedKeys, activeCandidate);
@@ -623,7 +627,8 @@ public final class ScenePickerPanel {
                                        Signal<Boolean> variantsOpen,
                                        Signal<SearchPickerData.Candidate> activeCandidate,
                                        Signal<SearchPickerData.SelectionMode> mode,
-                                       Signal<List<String>> selectedKeys) {
+                                       Signal<List<String>> selectedKeys,
+                                       ReadableSignal<Integer> fontSize) {
         SceneNode scrim = SceneNode.column();
         scrim.setFillParentWidth(true);
         scrim.setFillParentHeight(true);
@@ -657,7 +662,7 @@ public final class ScenePickerPanel {
         root.setGap(PANEL_PADDING);
 
         root.appendChild(topBar(rt, props, filtered, gridItems, gridHighlight,
-                addingMember, editingMember, focusIntent, searchFocusTarget));
+                addingMember, editingMember, focusIntent, searchFocusTarget, fontSize));
 
         // 上容器：选择功能（左分类导航 | 中候选列表 + 信息条），flexGrow 占满剩余高度。
         SceneNode selectionArea = SceneNode.row();
@@ -671,14 +676,14 @@ public final class ScenePickerPanel {
         selectionArea.appendChild(centerColumn(rt, props, closeRequest, filtered, gridItems,
                 gridHighlight, gridFocusTarget, gridViewportHolder, hoveredItem,
                 variantsOpen, activeCandidate, mode, selectedKeys,
-                addingMember, editingMember, focusIntent));
+                addingMember, editingMember, focusIntent, fontSize));
         root.appendChild(selectionArea);
 
         // 下容器：已选择编辑（仅 listMembers 挂全宽底部横带）。
         if (props.listMembers()) {
             root.appendChild(membersPanel(rt, props, memberIssues, gridHighlight,
                     addingMember, editingMember, focusIntent, variantsOpen,
-                    activeCandidate, mode, selectedKeys));
+                    activeCandidate, mode, selectedKeys, fontSize));
         }
         scrim.appendChild(root);
         return scrim;
@@ -692,7 +697,8 @@ public final class ScenePickerPanel {
                                     Signal<Boolean> addingMember,
                                     Signal<Boolean> editingMember,
                                     Signal<FocusIntent> focusIntent,
-                                    SceneNode[] searchFocusTarget) {
+                                    SceneNode[] searchFocusTarget,
+                                    ReadableSignal<Integer> fontSize) {
         SceneNode bar = SceneNode.row();
         bar.setPreferredHeight(TOP_BAR_HEIGHT);
         bar.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -704,7 +710,7 @@ public final class ScenePickerPanel {
         ReadableSignal<Integer> labelForeground = themedForeground(rt, props, false);
         ReadableSignal<Integer> secondaryForeground = themedForeground(rt, props, true);
 
-        SceneNode title = text(props.panelPresentation().panelTitle());
+        SceneNode title = text(rt, props.panelPresentation().panelTitle(), fontSize);
         title.setWidthSizing(WidthSizing.SHRINK);
         rt.bind(labelForeground, title::setTextColor);
         bar.appendChild(title);
@@ -730,7 +736,7 @@ public final class ScenePickerPanel {
             bar.appendChild(segmented);
         }
 
-        SceneNode summary = text("");
+        SceneNode summary = text(rt, "", fontSize);
         rt.bind(secondaryForeground, summary::setTextColor);
         rt.bindText(summary, Computed.create(() -> props.presentation().resultSummary(
                 filtered.get().size())));
@@ -779,7 +785,8 @@ public final class ScenePickerPanel {
                                           Signal<List<String>> selectedKeys,
                                           Signal<Boolean> addingMember,
                                           Signal<Boolean> editingMember,
-                                          Signal<FocusIntent> focusIntent) {
+                                          Signal<FocusIntent> focusIntent,
+                                          ReadableSignal<Integer> fontSize) {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
         center.setGap(SceneChromeTokens.GAP_SM);
@@ -789,7 +796,7 @@ public final class ScenePickerPanel {
         center.setClipChildren(true);
         center.setPadding(SceneChromeTokens.PAD_SM);
 
-        SceneNode error = text("");
+        SceneNode error = text(rt, "", fontSize);
         error.setHitTestable(false);
         // 错误行取主题 errorText 语义前景（G19/P-02 收编：经 SceneThemes.errorText 公共入口，
         // 主题切换自动重派生，不重建节点）。
@@ -836,7 +843,8 @@ public final class ScenePickerPanel {
                                           Signal<Boolean> variantsOpen,
                                           Signal<SearchPickerData.Candidate> activeCandidate,
                                           Signal<SearchPickerData.SelectionMode> mode,
-                                          Signal<List<String>> selectedKeys) {
+                                          Signal<List<String>> selectedKeys,
+                                          ReadableSignal<Integer> fontSize) {
         SceneNode panel = SceneNode.column();
         panel.setPreferredHeight(MEMBERS_PANEL_HEIGHT);
         // G14 预裁决 1 同口径：底部横带原 applyOuterShell 的表面写入（边框/圆角/裁剪底语义）
@@ -852,13 +860,13 @@ public final class ScenePickerPanel {
         header.setCrossAxisAlign(CrossAxisAlign.CENTER);
         header.setGap(SceneChromeTokens.GAP_MD);
         header.setHitTestable(false);
-        SceneNode title = text("");
+        SceneNode title = text(rt, "", fontSize);
         title.setFlexGrow(1);
         rt.bind(labelForeground, title::setTextColor);
         rt.bindText(title, Computed.create(() -> props.presentation().currentMembersTitle(
                 safeMembers(props).size())));
         header.appendChild(title);
-        SceneNode issues = text("");
+        SceneNode issues = text(rt, "", fontSize);
         issues.setWidthSizing(WidthSizing.SHRINK);
         rt.bind(secondaryForeground, issues::setTextColor);
         rt.bindText(issues, Computed.create(() -> props.presentation().memberIssueSummary(
@@ -883,7 +891,8 @@ public final class ScenePickerPanel {
         grid.root().setFlexGrow(1);
         panel.appendChild(grid.root());
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),
-                () -> emptyText(rt, props.presentation().emptyCurrentMembers(), secondaryForeground));
+                () -> emptyText(rt, props.presentation().emptyCurrentMembers(), fontSize,
+                        secondaryForeground));
         return panel;
     }
 
@@ -1106,17 +1115,19 @@ public final class ScenePickerPanel {
         return Collections.unmodifiableList(new ArrayList<String>(keys));
     }
 
-    private static SceneNode text(String value) {
+    private static SceneNode text(SceneRuntime rt, String value, ReadableSignal<Integer> fontSize) {
         SceneNode node = new SceneNode();
         node.setText(value == null ? "" : value);
         node.setHitTestable(false);
+        // 控件内文字跟随控件根字号：信号为 null 时不写，节点保持默认 16（不传字号的老调用方零变化）。
+        SceneControlTypography.applyFontSize(rt, node, fontSize);
         return node;
     }
 
     /** 空态提示：次要前景（muted/disabled 派生档，CategoryNavPane 空态同口径）。 */
-    private static SceneNode emptyText(SceneRuntime rt, String value,
+    private static SceneNode emptyText(SceneRuntime rt, String value, ReadableSignal<Integer> fontSize,
                                        ReadableSignal<Integer> secondaryForeground) {
-        SceneNode node = text(value);
+        SceneNode node = text(rt, value, fontSize);
         node.setPadding(SceneChromeTokens.PAD_MD);
         rt.bind(secondaryForeground, node::setTextColor);
         return node;

@@ -86,7 +86,11 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  */
 public final class SceneTab {
 
-    /** 固定段宽（像素，scene 无 flex-grow 的等宽退让） */
+    /**
+     * 段最小宽（像素）。段宽按标签文本测量后取 {@code max(本值, 文本宽 + 2*内边距)}：
+     * 短标签保持等宽节奏，长标签不再被固定宽截断（③ 类「显式尺寸与字号无关」的收口——
+     * 字号调大时段宽跟着长，不会出现文字变了框没变）。
+     */
     private static final int TAB_WIDTH = 72;
     /** 段内边距（像素） */
     private static final int TAB_PADDING = SceneChromeTokens.PAD_LG;
@@ -281,7 +285,8 @@ public final class SceneTab {
                 tabSeg.setMainAxisAlign(MainAxisAlign.CENTER);
                 tabSeg.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 tabSeg.setPadding(TAB_PADDING);
-                tabSeg.setPreferredWidth(TAB_WIDTH);
+                // 段宽按标签测量（TAB_WIDTH 作最小宽）：字号参与测量，故构建期与运行期同一口径。
+                tabSeg.setPreferredWidth(tabWidth(rt, props.tabLabels().get(handle.index()), labelFontSize));
 
                 // label[i]：段内纯文本装饰子节点，命中穿透到段（契约 R6）
                 typography.bindText(handle.label());
@@ -347,6 +352,10 @@ public final class SceneTab {
                 if (fillContentPanel) {
                     tabBar.setPreferredHeight(rt.lineHeight(fontSize) + 2 * TAB_PADDING);
                 }
+                for (int i = 0; i < items.size(); i++) {
+                    items.get(i).item().setPreferredWidth(
+                            tabWidth(rt, props.tabLabels().get(i), fontSize));
+                }
             });
 
             return root;
@@ -400,6 +409,21 @@ public final class SceneTab {
             out |= Math.max(0, Math.min(0xFF, value)) << shift;
         }
         return out;
+    }
+
+    /**
+     * 段宽 = max(最小宽, 按字号测出的标签文本宽 + 2*内边距)。
+     *
+     * <p>构建期与运行期共用同一口径；字号变化时由段宽重算保证文字与框同步。</p>
+     *
+     * @param rt           场景运行时（提供文本度量）
+     * @param label        标签文本
+     * @param labelFontSize 标签字号（UI 像素）
+     * @return 段宽（像素）
+     */
+    private static int tabWidth(SceneRuntime rt, String label, int labelFontSize) {
+        int textWidth = rt.measureTextWidth(label, labelFontSize);
+        return Math.max(TAB_WIDTH, textWidth + 2 * TAB_PADDING);
     }
 
     /** WCAG 相对对比度：(L亮 + 0.05) / (L暗 + 0.05)。 */

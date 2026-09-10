@@ -441,14 +441,18 @@ public final class SceneKeyValueMap {
         return () -> {
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
+            // 控件内文字跟随 root 字号（编写者用 rt.mount(...).fontSize(n) 或 root.setFontSize(n)）。
+            // 表头与动作按钮的文字节点建在辅助方法里，字号源作为参数往下传。
+            ReadableSignal<Integer> fontSize = SceneControlTypography.fontSizeOf(rt, root);
 
             SceneNode labelNode = new SceneNode();
             labelNode.setText(props.label());
+            SceneControlTypography.applyFontSize(rt, labelNode, fontSize);
             // 标题取主题正文前景（构造期捕获来源主题，主题切换只重派生不重建节点）。
             rt.bind(SceneThemes.foreground(rt), labelNode::setTextColor);
             rt.show(root, Computed.create(() -> !props.label().isEmpty()), () -> labelNode);
 
-            root.appendChild(buildHeader(rt));
+            root.appendChild(buildHeader(rt, fontSize));
 
             SceneNode viewport = SceneNode.column();
             viewport.setScrollable(true);
@@ -487,11 +491,11 @@ public final class SceneKeyValueMap {
             rt.bind(validationStateSignal, state -> notifyValidation(props, state));
 
             rt.forEach(viewport, props.rows(), KeyValueRow::getRowId,
-                row -> buildRow(rt, props, row, validationStateSignal));
+                row -> buildRow(rt, props, row, validationStateSignal, fontSize));
 
             root.appendChild(buildActionButton(rt,
                 Computed.create(() -> SceneListOps.canAdd(props.rows().get(), props.maxRows())),
-                "+ 添加", SceneTheme.Role.BUTTON_STANDARD, () -> addRow(props)));
+                "+ 添加", SceneTheme.Role.BUTTON_STANDARD, () -> addRow(props), fontSize));
 
             return root;
         };
@@ -501,16 +505,17 @@ public final class SceneKeyValueMap {
      * 构建表头行。
      *
      * @param rt 场景运行时
+     * @param fontSize 控件根字号信号（表头文字跟随 root）
      * @return 表头节点
      */
-    private static SceneNode buildHeader(SceneRuntime rt) {
+    private static SceneNode buildHeader(SceneRuntime rt, ReadableSignal<Integer> fontSize) {
         SceneNode header = SceneNode.row();
         header.setGap(CELL_GAP);
         header.setCrossAxisAlign(CrossAxisAlign.CENTER);
-        appendHeaderCell(rt, header, "Key", INPUT_WIDTH);
-        appendHeaderCell(rt, header, "Value", INPUT_WIDTH);
-        appendHeaderCell(rt, header, "Type", 230);
-        appendHeaderCell(rt, header, "操作", 48);
+        appendHeaderCell(rt, header, "Key", INPUT_WIDTH, fontSize);
+        appendHeaderCell(rt, header, "Value", INPUT_WIDTH, fontSize);
+        appendHeaderCell(rt, header, "Type", 230, fontSize);
+        appendHeaderCell(rt, header, "操作", 48, fontSize);
         return header;
     }
 
@@ -521,10 +526,13 @@ public final class SceneKeyValueMap {
      * @param header 表头行
      * @param text   文本
      * @param width  宽度
+     * @param fontSize 控件根字号信号（表头文字跟随 root）
      */
-    private static void appendHeaderCell(SceneRuntime rt, SceneNode header, String text, int width) {
+    private static void appendHeaderCell(SceneRuntime rt, SceneNode header, String text, int width,
+                                         ReadableSignal<Integer> fontSize) {
         SceneNode cell = new SceneNode();
         cell.setText(text);
+        SceneControlTypography.applyFontSize(rt, cell, fontSize);
         // 表头取主题次要前景，主题切换只重派生。
         rt.bind(SceneThemes.mutedForeground(rt), cell::setTextColor);
         cell.setPreferredWidth(width);
@@ -537,10 +545,12 @@ public final class SceneKeyValueMap {
      * @param rt    场景运行时
      * @param props 输入契约
      * @param row   当前行快照
+     * @param fontSize 控件根字号信号（行内文字跟随 root）
      * @return 行节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, KeyValueRow row,
-                                      Computed<SceneKeyValueMapValidation.ValidationState> validationStateSignal) {
+                                      Computed<SceneKeyValueMapValidation.ValidationState> validationStateSignal,
+                                      ReadableSignal<Integer> fontSize) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setCrossAxisAlign(CrossAxisAlign.CENTER);
         rowNode.setGap(CELL_GAP);
@@ -590,7 +600,7 @@ public final class SceneKeyValueMap {
 
         SceneNode actionButton = buildActionButton(rt,
             Computed.create(() -> SceneListOps.canRemove(props.rows().get(), props.minRows())),
-            "删除", SceneTheme.Role.BUTTON_DANGER, () -> removeRow(props, row.getRowId()));
+            "删除", SceneTheme.Role.BUTTON_DANGER, () -> removeRow(props, row.getRowId()), fontSize);
         actionButton.setPreferredHeight(INPUT_HEIGHT);
         rowNode.appendChild(actionButton);
         return rowNode;
@@ -610,10 +620,12 @@ public final class SceneKeyValueMap {
      * @param text    文本
      * @param role    材质角色（添加=BUTTON_STANDARD、删除=BUTTON_DANGER）
      * @param action  动作回调
+     * @param fontSize 控件根字号信号（按钮文字跟随 root）
      * @return 按钮节点
      */
     private static SceneNode buildActionButton(SceneRuntime rt, Computed<Boolean> enabled, String text,
-                                               SceneTheme.Role role, Runnable action) {
+                                               SceneTheme.Role role, Runnable action,
+                                               ReadableSignal<Integer> fontSize) {
         SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -623,6 +635,7 @@ public final class SceneKeyValueMap {
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
         label.setText(text);
+        SceneControlTypography.applyFontSize(rt, label, fontSize);
         button.appendChild(label);
 
         ReadableSignal<SceneSurfaceStyle> surface = SceneThemes.surface(rt, role);

@@ -771,6 +771,66 @@ public class SceneDataTableTest {
                 SceneThemes.DEFAULT.foreground(), root.__getChildren().get(0).getTextColor());
     }
 
+    /**
+     * 表头与单元格文字跟随控件根字号（字号真值在控件根节点）：缺省未设字号时仍是节点默认 16；
+     * {@code handle.fontSize(24)} 后同一条通道把二者一起调到 24。
+     *
+     * <p>证据取自绘制产物（paint plan 里 TEXT 命令的 {@code TextStyle.fontSize}），不是节点属性回读。</p>
+     */
+    @Test
+    public void paintedTextShouldFollowControlFontSize() {
+        frameWithLayoutEpoch();
+        assertPaintedFontSize(16, "名称", "石头");
+
+        handle.fontSize(24);
+        runtime.flush();
+        frameWithLayoutEpoch();
+
+        assertPaintedFontSize(24, "名称", "石头");
+    }
+
+    /**
+     * 跑一帧 host 口径的帧：layout → 桥接 layout epoch → flush（帧管线在 SETTLE 阶段桥接，
+     * 本类裸用独立 layoutEngine 需显式补这一步），末尾再 layout 一次让新字号下的盒子就位。
+     */
+    private void frameWithLayoutEpoch() {
+        doLayout();
+        runtime.__setLayoutDoneEpoch(layoutEngine.layoutEpoch());
+        runtime.flush();
+        doLayout();
+    }
+
+    /**
+     * 从绘制产物取文本字号证据。
+     *
+     * @param expected 期望字号（UI 像素）
+     * @param texts    期望出现的文本
+     */
+    private void assertPaintedFontSize(int expected, String... texts) {
+        PaintPlan plan = paintEngine.paint(sceneRoot).getPlan();
+        for (String text : texts) {
+            PaintCommand command = paintedText(plan, text);
+            Assert.assertEquals("绘制产物文本 '" + text + "' 的字号",
+                    expected, command.getTextStyle().getFontSize());
+        }
+    }
+
+    /**
+     * 绘制产物中文本等于 {@code text} 的 TEXT 命令。
+     *
+     * @param plan 绘制计划
+     * @param text 文本
+     * @return 命中命令
+     */
+    private static PaintCommand paintedText(PaintPlan plan, String text) {
+        for (PaintCommand command : plan.getCommands()) {
+            if (command.getType() == PaintCommandType.TEXT && text.equals(command.getText())) {
+                return command;
+            }
+        }
+        throw new AssertionError("绘制产物中未找到文本：" + text);
+    }
+
     /** 跑一帧布局。 */
     private LayoutResult doLayout() {
         LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
