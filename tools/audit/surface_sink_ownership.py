@@ -28,6 +28,36 @@ from repo_paths import MAIN_JAVA, TEST_RESOURCES  # noqa: E402
 SINKS = ('setBackgroundColor', 'setBorderColor')
 CALL_RE = re.compile(r'([A-Za-z_$][A-Za-z0-9_$.]*)\s*\.\s*(setBackgroundColor|setBorderColor)\s*\(')
 MREF_RE = re.compile(r'([A-Za-z_$][A-Za-z0-9_$.]*)\s*::\s*(setBackgroundColor|setBorderColor)\b')
+# -*- coding: utf-8 -*-
+'''P2 surface sink 归属扫描器：枚举 src/main 的 surface 写入点并按类别给出初判。
+
+用法：
+    python tools/audit/surface_sink_ownership.py --emit      # 打印注册表 JSON（人工审查后落盘）
+    python tools/audit/surface_sink_ownership.py --summary   # 分类统计 + 明细
+
+类别（注册制口径，新 sink 必须先登记）：
+    binder            —— 该节点由 SceneSurfaceBinder 独占表面（同文件/同函数可见 bind 调用）
+    binder-delegated  —— 节点静态设底 + binder 绑定（binder 后写覆盖静态值）
+    designed-static   —— 设计上的一次性静态底色（无 binder 参与）
+    light-slot        —— 元素级轻量通道：caret/thumb/dot/scrim/行覆写等独占子节点
+    compat-exempt     —— 兼容入口本体（SceneControlChrome / SceneStateColors / SceneChromeTokens）
+    review-required   —— 扫描器无法判定，必须人工归类后才能进注册表
+'''
+
+import argparse
+import io
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from repo_paths import MAIN_JAVA, TEST_RESOURCES  # noqa: E402
+
+SINKS = ('setBackgroundColor', 'setBorderColor')
+CALL_RE = re.compile(r'([A-Za-z_$][A-Za-z0-9_$.]*)\s*\.\s*(setBackgroundColor|setBorderColor)\s*\(')
+MREF_RE = re.compile(r'([A-Za-z_$][A-Za-z0-9_$.]*)\s*::\s*(setBackgroundColor|setBorderColor)\b')
 OWNER_PATTERNS = (
     re.compile(r'(?:for|foreach)\s*\(\s*(?:final\s+)?SceneNode\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*:'),
     re.compile(r'SceneNode\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[=;)]'),
@@ -50,13 +80,7 @@ def java_files():
                 yield Path(dirpath) / name
 
 
-def owner_of(lines, index):
-    for cursor in range(index - 1, max(-1, index - 60), -1):
-        for pattern in OWNER_PATTERNS:
-            match = pattern.search(lines[cursor])
-            if match:
-                return match.group(1), cursor + 1
-    return '', 0
+
 
 
 def binder_nodes(text):
@@ -97,6 +121,8 @@ def scan():
             stripped = line.strip()
             if stripped.startswith('*') or stripped.startswith('//') or stripped.startswith('/*'):
                 continue
+            # owner 契约（与 SurfaceSinkOwnershipRegistryTest 一致）：最近一次调用匹配的接收者；
+            # 仅当接收者是泛化名(node/result/target)时，回退到向上查找的声明 owner。
             matches = list(CALL_RE.finditer(line))
             if matches:
                 match = matches[-1]
@@ -107,10 +133,7 @@ def scan():
                 if match is None:
                     continue
                 owner, owner_line, property_name = match.group(1), index + 1, match.group(2)
-                if owner in ('node', 'result', 'target'):
-                    found, found_line = owner_of(lines, index)
-                    if found:
-                        owner, owner_line = found, found_line
+            # 确定性 owner 契约：owner = 字面接收者，不做向上猜声明（与 Java 守护测试一致）。
             entries.append({'file': relative, 'owner': owner, 'property': property_name,
                             'line': index + 1, 'snippet': stripped[:100]})
     merged = {}
