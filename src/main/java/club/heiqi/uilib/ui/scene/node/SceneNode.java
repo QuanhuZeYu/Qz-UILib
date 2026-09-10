@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
+import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.ui.render.UiBackdrop;
 import club.heiqi.uilib.ui.scene.control.SceneListOps;
@@ -126,9 +127,16 @@ public class SceneNode {
     /** 绘制结果缓存，无效时为 null */
     Object cachedPaint;
 
+    /** 行计划缓存未记录字号键（旧单参写入路径）。 */
+    private static final int TEXT_PLAN_KEY_UNKNOWN = Integer.MIN_VALUE;
+
     /** 文本行计划缓存（布局引擎写入、绘制引擎消费，同 cachedLayout 生命周期；
      *  <b>强类型</b>：拆行/clamp/行高/链接区域一次性产物的权威副本，审查报告 §8 B2-4）。 */
     private club.heiqi.uilib.ui.scene.text.TextLinePlan cachedTextPlan;
+
+    /** 行计划缓存构建时的字号键（S1 新增）；{@link #TEXT_PLAN_KEY_UNKNOWN} = 未记录。
+     *  行计划与字号强耦合：字号变化而未作废行计划 ⇒ 文字变大框不变（绘制复用陈旧行高）。 */
+    private int cachedTextPlanFontSize = TEXT_PLAN_KEY_UNKNOWN;
 
     /** 链接命中区域缓存（绘制引擎投影写入、控件层命中测试读取，同 cachedPaint 生命周期；
      *  <b>强类型</b>：命中数据正式化载体，审查报告 §8 B2-5）。 */
@@ -167,14 +175,42 @@ public class SceneNode {
     /** 布局/滚动属性值容器。去重与脏标记仍由 SceneNode setter 负责。 */
     private final SceneLayoutProps layoutProps = new SceneLayoutProps();
 
+    // ==================== 字号：四层真值 + 单一解析器（S1 机制层，静默待命） ====================
+    //
+    // 四层优先级（自上而下第一命中）：
+    //   层 1 显式值 explicitFontSize  -> 层 2 作用域 fontScope -> 层 3 环境默认（可缺席）
+    //   -> 层 4a 控件自有回落 fallbackFontSize -> 层 4b 框架常量 DEFAULT_FONT_SIZE_PX
+    // 层 1 与层 2 在**同一趟父链**上同权重就近竞争（CSS 继承计算值 / Qt 传播 / WPF Inherited 取有效值）。
+    // 解析出口再乘环境倍率 fontScale()（正交倍率层，参与布局）。
+    //
+    // S1 阶段本组槽与解析器**没有任何调用方**（除装配点写环境引用）：旧通道并存、行为零变化；
+    // 消费点切换在 S3，接线删除在 S4。
+
     /**
-     * 字号（UI 像素），默认 16。
+     * 层 1：本节点显式字号（UI 逻辑像素）；{@code null} = 未声明。
      *
-     * <p>默认 16 保零回归（原绘制层 fontSize hack 的默认值即 16）。字号既影响布局
-     * 几何（文本叶 shrink-to-fit 宽度与行高），又影响绘制输出（TEXT 命令 fontSize），
-     * 故 {@link #setFontSize} 与 {@link #setText} 同级，标 LAYOUT+PAINT。</p>
+     * <p>与层 2 同权重参与父链就近竞争，因此**会被整棵子树继承**。
+     * 默认值 {@link FontSizeLimits#DEFAULT_FONT_SIZE_PX} 保零回归。</p>
      */
-    private int fontSizePx = 16;
+    private Integer explicitFontSize;
+
+    /** 层 2：本节点作用域默认字号声明（**值语义**，信号只在入口层处理）；{@code null} = 未声明。 */
+    private Integer fontScope;
+
+    /** 层 4a：本节点登记的控件自有回落字号；{@code null} = 未登记（落到层 4b 常量）。不参与就近竞争。 */
+    private Integer fallbackFontSize;
+
+    /** 层 3 入口：树根环境持有者（由宿主装配唯一口径写入）；{@code null} = 本节点不在任何 runtime 树上。 */
+    private SceneFontEnvironment fontEnvironment;
+
+    /** 解析缓存：值。 */
+    private int resolvedFontSize;
+    /** 解析缓存：来源。 */
+    private FontSource resolvedFontSource = FontSource.UNRESOLVED;
+    /** 解析缓存：环境代；与当前环境 epoch 不等即作废重算。 */
+    private long resolvedAtFontEpoch = Long.MIN_VALUE;
+    /** 解析缓存：是否有效（写侧失效把它置 false）。 */
+    private boolean fontResolved;
 
     /** 富文本段流（SEGMENTS 绘制命令载体）；null=未设置。
      *  与 textProps.text 互斥（绘制引擎段流优先）。仅标 PAINT：布局几何由
@@ -466,10 +502,44 @@ public class SceneNode {
     /** @return 文本行计划缓存，可能为 null（布局后写入） */
     public club.heiqi.uilib.ui.scene.text.TextLinePlan getCachedTextPlan() { return cachedTextPlan; }
 
-    /** @param cachedTextPlan 文本行计划缓存值（布局引擎写入） */
+    /** @param cachedTextPlan 文本行计划缓存值（布局引擎写入）；不记录字号键（键未知 = 键控读取按命中处理） */
     public SceneNode setCachedTextPlan(club.heiqi.uilib.ui.scene.text.TextLinePlan cachedTextPlan) {
         this.cachedTextPlan = cachedTextPlan;
+        this.cachedTextPlanFontSize = TEXT_PLAN_KEY_UNKNOWN;
         return this;
+    }
+
+    /**
+     * 写入行计划缓存并记录其构建字号（S1 新增入口，S3 消费点切换后启用）。
+     *
+     * @param cachedTextPlan 文本行计划缓存值；null = 作废
+     * @param fontSizePx     构建该行计划时使用的字号（UI 逻辑像素）
+     * @return 本节点（链式）
+     */
+    public SceneNode setCachedTextPlan(club.heiqi.uilib.ui.scene.text.TextLinePlan cachedTextPlan,
+                                       int fontSizePx) {
+        this.cachedTextPlan = cachedTextPlan;
+        this.cachedTextPlanFontSize = cachedTextPlan == null ? TEXT_PLAN_KEY_UNKNOWN : fontSizePx;
+        return this;
+    }
+
+    /**
+     * 键控读取行计划缓存：只在「缓存存在且键未知或键匹配」时返回缓存。
+     *
+     * <p>键不匹配返回 null，调用方按「无缓存」重建 —— 这是纵深防御（写侧漏标时同帧自愈），
+     * 不改变 {@link #getCachedTextPlan()} 的既有语义。</p>
+     *
+     * @param fontSizePx 当前生效字号（UI 逻辑像素）
+     * @return 可复用的行计划；null = 需重建
+     */
+    public club.heiqi.uilib.ui.scene.text.TextLinePlan getCachedTextPlan(int fontSizePx) {
+        if (cachedTextPlan == null) {
+            return null;
+        }
+        if (cachedTextPlanFontSize == TEXT_PLAN_KEY_UNKNOWN || cachedTextPlanFontSize == fontSizePx) {
+            return cachedTextPlan;
+        }
+        return null;
     }
 
     /** @return 链接命中区域缓存，可能为 null（绘制后写入） */
@@ -696,29 +766,301 @@ public class SceneNode {
     /**
      * 设置字号；变化时标 LAYOUT + PAINT。
      *
-     * <p><b>控件字号入口（对本节点及其控件内文字生效）</b>：字号是节点的 LAYOUT+PAINT 属性，
-     * 与 padding/尺寸同类，不属于主题通道。控件的 wrapper 节点是「控件内文字」的字号真值——
-     * 控件自己画的文字（内部 label / caret / 文本度量）跟随它的字号，业务方 appendChild 进来的
-     * 子控件是独立控件、各自管理（不做子树继承）。因此调控件内文字大小就是设控件根的这一个
-     * 属性：{@code rt.mount(parent, SceneButton.create(rt, props)).getRoot().setFontSize(14)}。</p>
+     * <p><b>层级定位（四层真值机制）</b>：本方法写的是<b>层 1 显式值</b> —— 它与层 2 作用域声明
+     * 在<b>同一趟父链</b>上同权重就近竞争（本节点的显式值压过祖先作用域，祖先作用域压过更远祖先
+     * 的显式值），因此<b>会被整棵子树继承</b>。这是相对改造前的语义扩展（旧口径「不做子树继承」），
+     * 由本类的 {@link #effectiveFontSize()} 统一解析；S1 阶段 {@link #getFontSize()} 维持旧语义、
+     * 机制静默待命。</p>
      *
-     * <p>控件若额外提供 {@code Props.fontSize} 一类构建期入口，写的是同一个 root 属性，
-     * 不存在第二套真值。</p>
+     * <p><b>用途分工</b>：对外字号入口写层 2（{@link #setFontScope(int)}）；本方法供控件实现内部
+     * 声明「不该跟随作用域的固定号」（装饰字符、徽标、勾选标记），或业务显式钉死某个数。</p>
      *
-     * @param fontSizePx UI 像素字号
+     * <p>控件若额外提供 {@code Props.fontSize} 一类构建期入口，写的是同一个槽，不存在第二套真值。</p>
+     *
+     * @param fontSizePx UI 逻辑像素字号
      * @return 本节点（链式）
      */
     public SceneNode setFontSize(int fontSizePx) {
-        if (this.fontSizePx == fontSizePx) return this;
-        this.fontSizePx = fontSizePx;
+        // 同值早退：口径与改造前逐位一致（未声明时按框架默认值比较，保证 setFontSize(16) 仍然早退）。
+        if (explicitFontSize == null
+                ? FontSizeLimits.DEFAULT_FONT_SIZE_PX == fontSizePx
+                : explicitFontSize.intValue() == fontSizePx) {
+            return this;
+        }
+        explicitFontSize = Integer.valueOf(fontSizePx);
+        fontResolved = false;                 // 作废本节点解析缓存（S1 无可观察效应）
+        // S1 零变化：保留既有「只标自身 LAYOUT+PAINT」语义。
+        // S3 消费点切换后，本方法改为 invalidateFontSubtree()（整棵子树向下失效），
+        // 届时本节点自身的脏标由该原语统一打出。
         markSelfLayout();
         markSelfPaint();
         return this;
     }
 
-    /** @return 当前字号（UI 像素），默认 16 */
+    /**
+     * @return 当前字号（UI 逻辑像素），默认 {@value FontSizeLimits#DEFAULT_FONT_SIZE_PX}。
+     *
+     * <p><b>S1 语义维持现状</b>：返回「显式声明值，未声明时为框架默认」。
+     * S3 起语义切换为主流水位 —— 返回解析后的<b>生效值</b>（{@link #effectiveFontSize()}），
+     * 与 Qt {@code QWidget::font()}、WPF {@code Control.FontSize}（值继承后）、
+     * CSS {@code getComputedStyle().fontSize} 一致；需要原始显式值用 {@link #getExplicitFontSize()}。</p>
+     */
     public int getFontSize() {
-        return fontSizePx;
+        return explicitFontSize == null
+                ? FontSizeLimits.DEFAULT_FONT_SIZE_PX
+                : explicitFontSize.intValue();
+    }
+
+    // ==================== 字号：四层真值机制（S1 新增，静默待命） ====================
+
+    /**
+     * 解析本节点<b>生效字号</b>（UI 逻辑像素）—— 全库唯一的字号读取器。
+     *
+     * <p>逐层优先级（自上而下第一命中）：</p>
+     * <ol>
+     *   <li>层 1 显式值：沿父链找第一个 {@code explicitFontSize != null}；</li>
+     *   <li>层 2 作用域：同一条父链上找第一个非 null 的 {@code fontScope}；</li>
+     *   <li>层 3 环境默认：父链上第一个 {@code fontEnvironment} 的
+     *       {@link SceneFontEnvironment#runtimeDefaultFontSize()}，
+     *       <b>返回 null 视为层 3 缺席</b>，继续下探；</li>
+     *   <li>层 4a 控件回落：父链上第一个非 null 的 {@code fallbackFontSize}；</li>
+     *   <li>层 4b 框架常量：{@link FontSizeLimits#DEFAULT_FONT_SIZE_PX}
+     *       （来源 {@link FontSource#UNRESOLVED}）。</li>
+     * </ol>
+     *
+     * <p>层 1 与层 2 在<b>同一趟父链</b>上同权重就近竞争，不是「先全链找层 1 再全链找层 2」。
+     * 解析出口乘环境倍率（正交倍率层）并归一到域内，结果参与布局。</p>
+     *
+     * <p>缓存：按环境 epoch 作代；祖先声明变化由写侧向下失效（{@link #invalidateFontSubtree()}）保证作废。
+     * 成本：命中缓存 O(1)，未命中 O(深度)。</p>
+     *
+     * @return 生效字号（UI 逻辑像素）
+     */
+    public int effectiveFontSize() {
+        SceneFontEnvironment env = resolveFontEnvironment();
+        long epoch = env == null ? Long.MIN_VALUE : env.fontEpoch();
+        if (fontResolved && resolvedAtFontEpoch == epoch) {
+            return resolvedFontSize;
+        }
+        int declared = resolveDeclaredFontSize();
+        float scale = env == null ? 1.0f : env.fontScale();
+        resolvedFontSize = FontSizeLimits.clampFontSize(Math.round(declared * scale));
+        resolvedAtFontEpoch = epoch;
+        fontResolved = true;
+        return resolvedFontSize;
+    }
+
+    /**
+     * @return 生效字号的来源（保证先完成一次解析）。
+     * @see FontSource
+     */
+    public FontSource fontSizeSource() {
+        effectiveFontSize();
+        return resolvedFontSource;
+    }
+
+    /** @return 本节点显式声明字号；{@code null} = 未声明（不代表生效字号）。 */
+    public Integer getExplicitFontSize() {
+        return explicitFontSize;
+    }
+
+    /** @return 本节点登记的自有回落字号；{@code null} = 未登记。 */
+    public Integer getFallbackFontSize() {
+        return fallbackFontSize;
+    }
+
+    /**
+     * 层 2：声明本子树的作用域默认字号（<b>值语义</b>）。
+     *
+     * <p>公开入口收 int 而不是信号：节点侧若收下活信号却不订阅，就是「存而不订阅」的静默 no-op。
+     * 信号只在入口层处理 —— 由 {@code FontSizeBinding}（ui.scene.runtime）持有唯一 effect，
+     * 值变化时重新调用本方法。SceneNode 由此<b>不依赖 ui.reactive</b>，保持纯数据模型。</p>
+     *
+     * <p>写入即同步失效：本方法返回时，受影响子树的 LAYOUT+PAINT 脏标与行计划作废已完成。</p>
+     *
+     * @param fontSizePx 本子树作用域默认字号（UI 逻辑像素）
+     * @return 本节点（链式）
+     * @throws IllegalArgumentException 越界（合法区间由 {@link FontSizeLimits} 唯一定义）
+     */
+    public SceneNode setFontScope(int fontSizePx) {
+        int valid = FontSizeLimits.requireValidFontSize(fontSizePx);
+        if (fontScope != null && fontScope.intValue() == valid) {
+            return this;
+        }
+        fontScope = Integer.valueOf(valid);
+        invalidateFontSubtree();
+        return this;
+    }
+
+    /**
+     * 清除本节点的<b>作用域声明</b>，使本节点与后代回落到更远祖先 / 环境默认 / 自有回落值。
+     *
+     * <p><b>语义是「回落继承」，不是「切断继承」</b>：本方法只删掉本节点自己的层 2 声明，
+     * 解析随后继续沿父链上溯 —— 对本来就无声明（或声明值在更远祖先）的节点可能是 no-op，
+     * 对层 1 显式值没有影响。需要「不被祖先作用域影响」时正确做法是<b>在该处重新声明一层</b>
+     * （层 1 或层 2）—— 与 CSS 的 initial/unset、Flutter 的 inherit:false 同为「重新声明」
+     * 而非「取消继承」。</p>
+     *
+     * @return 本节点（链式）
+     */
+    public SceneNode resetFontScope() {
+        if (fontScope == null) {
+            return this;
+        }
+        fontScope = null;
+        invalidateFontSubtree();
+        return this;
+    }
+
+    /**
+     * 清除本节点的<b>层 1 显式值</b>，使本节点与后代回落到下一层（作用域 / 环境默认 / 自有回落 / 常量）。
+     *
+     * <p>与 {@link #setFontSize(int)} 成对：控件内部固定号在作用域出现时若要重新跟随，
+     * 用它撤回自己的显式声明。</p>
+     *
+     * @return 本节点（链式）
+     */
+    public SceneNode clearExplicitFontSize() {
+        if (explicitFontSize == null) {
+            return this;
+        }
+        explicitFontSize = null;
+        invalidateFontSubtree();
+        return this;
+    }
+
+    /**
+     * 层 4a：登记本节点及其后代的<b>控件自有回落字号</b>。
+     *
+     * <p>只在层 1/2/3 全链未命中时生效 —— 所以页面级作用域照样盖得住它。控件把内部私有常量
+     * （12/13/16）从层 1 降级到这里，即得到「未指定时的回落值」语义，又不再阻断作用域继承。</p>
+     *
+     * @param fontSizePx UI 逻辑像素字号
+     * @return 本节点（链式）
+     * @throws IllegalArgumentException 越界（合法区间由 {@link FontSizeLimits} 唯一定义）
+     */
+    public SceneNode setFallbackFontSize(int fontSizePx) {
+        int valid = FontSizeLimits.requireValidFontSize(fontSizePx);
+        if (fallbackFontSize != null && fallbackFontSize.intValue() == valid) {
+            return this;
+        }
+        fallbackFontSize = Integer.valueOf(valid);
+        invalidateFontSubtree();
+        return this;
+    }
+
+    /**
+     * 挂载边界写入：第 3 层环境持有者（宿主装配唯一口径的内部通道，业务不调用）。
+     *
+     * @param environment 环境持有者；null = 解除（回到未装配态）
+     */
+    public void __setFontEnvironment(SceneFontEnvironment environment) {
+        if (fontEnvironment == environment) {
+            return;
+        }
+        fontEnvironment = environment;
+        invalidateFontSubtree();
+    }
+
+    /** @return 内部探针：本节点是否已持有字号解析缓存（供测试/守卫断言反例结构）。 */
+    public boolean __isFontResolved() {
+        return fontResolved;
+    }
+
+    /** @return 本节点自持的字号环境引用（不含父链继承）；null = 本节点自身未持有。 */
+    public SceneFontEnvironment __getFontEnvironment() {
+        return fontEnvironment;
+    }
+
+    /** 内部通道：供 runtime 在环境变更时广播向下失效。 */
+    public void __invalidateFontSubtree() {
+        invalidateFontSubtree();
+    }
+
+    /**
+     * 向下失效：本节点及其受影响后代重新解析字号，把 LAYOUT+PAINT 打到「解析值真的变了」的节点上。
+     *
+     * <p><b>全库唯一的向下递归标脏原语</b> —— 「脏标记只向上冒泡」信条的<b>唯一显式例外</b>。
+     * 理由：字号是<b>继承型属性</b>，语义上等价于「整棵受影响子树的输入同时变化」，
+     * 与 text/尺寸这类「自身属性」不同类；既有 epoch 失效链只覆盖「上一帧测量过的文本叶」，
+     * 无法表达「未测量的中间容器 + 行计划缓存」同步作废。</p>
+     *
+     * <p><b>剪枝不变式</b>：剪枝仅在「本节点此前已解析过、且本次重解析的值未变」时成立 ——
+     * 此时以本节点为最近声明点（或无声明点）的整棵子树解析值都不变。反过来，
+     * <b>「本节点从未解析过」绝不能作为剪枝条件</b>：容器节点从不被读字号，其 {@code fontResolved}
+     * 恒为 false，而子文本叶早已解析并各自持有 cachedLayout / cachedTextPlan —— 若在此早退，
+     * 运行期改字号就会静默无效（布局引擎的干净子树跳过只认 cachedLayout 与双标记，
+     * 认不出「叶缓存与祖先声明脱钩」）。这是<b>常态而非边角</b>。</p>
+     *
+     * <p>触发面：本类的字号声明 setter、结构变更（appendChild/insertBefore/removeChild/
+     * applyChildReconcile）、环境写入、runtime 环境广播、入口 effect 值变化。
+     * 运行期帧循环绝不调用本方法。</p>
+     *
+     * <p><b>S1 阶段接线范围</b>：本原语已实现并被「新增的」声明 setter、{@link #__setFontEnvironment}
+     * 与 runtime 环境广播调用。<b>结构变更路径（appendChild/insertBefore/removeChild/
+     * applyChildReconcile 对子节点调本方法）与 reparent 环境清理留到 S3</b> —— 因为
+     * {@link #setFontSize(int)} 在 S1 仍维持「只标自身」的旧语义，此时接入结构路径会引入
+     * 额外的向下脏标，破坏 S1「行为零变化」门。S3 消费点切换后二者一并接入。</p>
+     */
+    private void invalidateFontSubtree() {
+        boolean hadCache = fontResolved;
+        int previous = resolvedFontSize;
+        fontResolved = false;                      // 先作废本节点解析缓存（无论此前是否解析过）
+        if (hadCache) {
+            int current = effectiveFontSize();     // 父链自上而下：父的缓存已在本方法之前更新
+            if (previous == current) {
+                return;                            // 剪枝：已解析且值未变 ⇒ 整棵子树不受影响
+            }
+            markSelfLayout();
+            markSelfPaint();
+            setCachedTextPlan(null);               // 行计划与字号强耦合，必须同步作废
+        }
+        // hadCache == false：本节点自身从未解析（容器常态），没有「本节点的」脏标可打，
+        // 但**必须继续下潜** —— 子节点可能已解析且持有独立缓存。
+        List<SceneNode> kids = children;
+        for (int i = 0, size = kids.size(); i < size; i++) {
+            kids.get(i).invalidateFontSubtree();
+        }
+    }
+
+    /** @return 树根环境持有者（沿父链上溯遇到的第一个）；null = 未装配树。 */
+    private SceneFontEnvironment resolveFontEnvironment() {
+        for (SceneNode n = this; n != null; n = n.parent) {
+            if (n.fontEnvironment != null) {
+                return n.fontEnvironment;
+            }
+        }
+        return null;
+    }
+
+    /** 纯解析（除 {@code resolvedFontSource} 外无副作用），不乘倍率。 */
+    private int resolveDeclaredFontSize() {
+        for (SceneNode n = this; n != null; n = n.parent) {
+            if (n.explicitFontSize != null) {
+                resolvedFontSource = FontSource.EXPLICIT;
+                return n.explicitFontSize.intValue();
+            }
+            if (n.fontScope != null) {
+                resolvedFontSource = FontSource.SCOPE;
+                return n.fontScope.intValue();
+            }
+        }
+        SceneFontEnvironment env = resolveFontEnvironment();
+        if (env != null) {
+            Integer runtimeDefault = env.runtimeDefaultFontSize();   // 可缺席
+            if (runtimeDefault != null) {
+                resolvedFontSource = FontSource.ENVIRONMENT;
+                return runtimeDefault.intValue();
+            }
+        }
+        for (SceneNode n = this; n != null; n = n.parent) {
+            if (n.fallbackFontSize != null) {
+                resolvedFontSource = FontSource.NODE_DEFAULT;
+                return n.fallbackFontSize.intValue();
+            }
+        }
+        resolvedFontSource = FontSource.UNRESOLVED;
+        return FontSizeLimits.DEFAULT_FONT_SIZE_PX;
     }
 
     /** @see ScenePaintProps#backgroundColor */

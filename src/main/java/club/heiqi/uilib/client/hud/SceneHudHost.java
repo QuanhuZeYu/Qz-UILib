@@ -331,6 +331,11 @@ public final class SceneHudHost {
             toolbarRevision = HudToolbarService.getInstance().revision().get().intValue();
             root.appendChild(layer.root());
             content = contentRoot;
+            // 字号环境写入（装配点 P12）：本窗口自建 runtime（SceneHostAssembly.assemble :301-303），
+            // 建树路径不经 SceneRuntime.mount，必须在此把外框根交给 runtime。
+            // 覆盖范围 = 外壳 + 工厂内容 + 外接工具栏层整棵树：工具栏 wrapper/content 是 root 的
+            // 后代，沿父链继承；工具栏内的缩放宽按钮另经 HudToolbarLayer 的 rt.mount 写入。
+            SceneHostAssembly.attachTree(runtime, root);
         }
 
         /** 测量（含外壳）：layout 后返回外壳盒。 */
@@ -374,7 +379,12 @@ public final class SceneHudHost {
                     new club.heiqi.uilib.ui.scene.layout.AnchorRect(0, 0, width, height));
         }
 
-        void dispose() { runtime.dispose(); }
+        void dispose() {
+            // 摘除环境根登记并清掉树根的环境引用（RC-10）：环境引用随树根装配设置，
+            // 卸载时成对摘除，避免跨 runtime 陈旧。
+            SceneHostAssembly.detachTree(runtime, root);
+            runtime.dispose();
+        }
 
         SceneNode root() { return root; }
     }

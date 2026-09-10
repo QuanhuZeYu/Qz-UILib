@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.host;
 
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
@@ -46,6 +47,50 @@ public final class SceneHostAssembly {
         SceneFramePipeline pipeline = new SceneFramePipeline(runtime, layoutEngine, paintEngine,
                 replayer, measurer, inputSource);
         return new Bundle(measurer, runtime, layoutEngine, paintEngine, replayer, pipeline);
+    }
+
+    /**
+     * 宿主装配的<b>唯一口径</b>：把一棵已构建的树交给指定 runtime
+     * （写树根字号环境引用 + 登记环境根，供层 3 默认字号与解析出口倍率层使用）。
+     *
+     * <p>为什么必须走这一处：宿主的建树路径不止 mount —— HUD 虚拟窗口在
+     * {@code SceneHudHost.RetainedWindow} 里自建 runtime、直接建 shell 并
+     * {@code root.appendChild(layer.root())} 后交给 {@code layoutEngine.layout(...)}，
+     * 完全不经过 {@code SceneRuntime.mount}。若把环境写入散落在各宿主，
+     * 「新宿主漏挂环境」将无法被守卫枚举；收敛到本方法后，守卫只需钉
+     * 「除 SceneHostAssembly 外不得直接调 SceneNode.__setFontEnvironment」
+     * 加「各装配路径必须出现 attachTree」。</p>
+     *
+     * <p>环境引用随<b>树根装配</b>设置（不随节点构造设置）：摘除即父链断开、环境自然失效；
+     * 重挂由新宿主的本方法重设或沿新父链继承，故不存在跨 runtime 陈旧。</p>
+     *
+     * @param runtime 目标 runtime，不可为 null
+     * @param root    已构建的树根；null = no-op
+     * @throws IllegalArgumentException runtime 为 null
+     */
+    public static void attachTree(SceneRuntime runtime, SceneNode root) {
+        if (runtime == null) {
+            throw new IllegalArgumentException("runtime must not be null");
+        }
+        runtime.__adoptFontEnvironmentRoot(root);
+    }
+
+    /**
+     * 摘除环境根登记（宿主卸载时调用，与 {@link #attachTree} 成对）。
+     *
+     * @param runtime 目标 runtime；null = no-op
+     * @param root    已卸载的树根；null = no-op
+     */
+    public static void detachTree(SceneRuntime runtime, SceneNode root) {
+        if (runtime == null || root == null) {
+            return;
+        }
+        runtime.__releaseFontEnvironmentRoot(root);
+        // 清掉树根的环境引用：后代沿父链只看树根，因此清一处即整树脱离该 runtime，
+        // 杜绝「已卸载的树仍指向旧 runtime」的跨 runtime 陈旧。
+        if (root.__getFontEnvironment() == runtime) {
+            root.__setFontEnvironment(null);
+        }
     }
 
     /** 装配产物：五件套 + 共用 measurer，全部不可变。 */

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -26,7 +27,9 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneInputRouter;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
+import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
+import club.heiqi.uilib.ui.scene.node.SceneFontEnvironment;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
@@ -53,7 +56,7 @@ import club.heiqi.uilib.util.UiNumbers;
  *   <li><b>dispose</b>：递归销毁整棵 Owner 作用域树，回收所有 effect 订阅，并强制恢复已绑定平台光标。</li>
  * </ul>
  */
-public class SceneRuntime {
+public class SceneRuntime implements SceneFontEnvironment {
 
     /** 根 Owner 作用域：所有 mount/bind 最终归属的根，dispose 时全量清理。 */
     private final Owner rootOwner;
@@ -86,6 +89,24 @@ public class SceneRuntime {
 
     /** 上一次桥接到的 layout 纪元，用于比对决定是否 set layoutDoneSignal（去重）。 */
     private int lastBridgedLayoutEpoch = 0;
+
+    // ==================== 字号环境（层 3 默认 + 解析出口倍率层） ====================
+
+    /** 层 3 runtime 默认字号；<b>null = 未声明（层 3 缺席）</b>，解析继续下探层 4。 */
+    private Integer defaultFontSizePx;
+
+    /** 解析出口的用户缩放倍率，1.0 = 不缩放。 */
+    private float fontScale = 1.0f;
+
+    /** 环境版本号：默认字号与倍率任一变化即递增（节点解析缓存的缓存代）。 */
+    private long fontEpoch;
+
+    /** 已登记环境根（宿主装配时写入环境的树根）；恒等语义，随宿主卸载摘除。 */
+    private final Set<SceneNode> fontEnvironmentRoots =
+            Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
+
+    /** 默认字号信号桥的唯一 effect（幂等替换，不叠加）。 */
+    private Effect defaultFontSizeEffect;
 
     /** 创建一个新的场景运行时实例。 */
     public SceneRuntime() {
@@ -134,6 +155,178 @@ public class SceneRuntime {
         return requireTextMeasurer().epoch();
     }
 
+    // ==================== 字号环境实现（SceneFontEnvironment） ====================
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p><b>null = 本 runtime 未声明默认字号（层 3 缺席）</b>，解析继续下探层 4
+     * （控件自有回落值 → 框架常量）。不用常驻初值代替「未声明」—— 否则控件登记的回落值永不生效。</p>
+     */
+    @Override
+    public Integer runtimeDefaultFontSize() {
+        return defaultFontSizePx;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public float fontScale() {
+        return fontScale;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public long fontEpoch() {
+        return fontEpoch;
+    }
+
+    /**
+     * 设置 runtime 默认字号（层 3）；未调用过即为「未声明」。
+     *
+     * @param fontSizePx UI 逻辑像素字号
+     * @throws IllegalArgumentException 越界（合法区间由 {@link FontSizeLimits} 唯一定义）
+     */
+    public void setDefaultFontSize(int fontSizePx) {
+        int valid = FontSizeLimits.requireValidFontSize(fontSizePx);
+        if (defaultFontSizePx != null && defaultFontSizePx.intValue() == valid) {
+            return;
+        }
+        disposeDefaultFontSizeEffect();
+        defaultFontSizePx = Integer.valueOf(valid);
+        broadcastFontEnvironmentChange();
+    }
+
+    /**
+     * 设置 runtime 默认字号（运行期信号；幂等替换，不叠加 effect）。
+     *
+     * <p>参数 null = 完全 no-op（既不建绑定也不清除既有声明）；信号值 null = 该声明缺失，
+     * 层 3 回落为「未声明」。</p>
+     *
+     * @param fontSize 字号信号；null = no-op
+     */
+    public void setDefaultFontSize(ReadableSignal<Integer> fontSize) {
+        if (fontSize == null) {
+            return;
+        }
+        disposeDefaultFontSizeEffect();
+        applyDefaultFontSize(fontSize.get());
+        defaultFontSizeEffect = rootOwner.createEffect(() -> applyDefaultFontSize(fontSize.get()));
+    }
+
+    /** @return 当前 runtime 默认字号；null = 未声明（层 3 缺席）。 */
+    public Integer getDefaultFontSize() {
+        return defaultFontSizePx;
+    }
+
+    /**
+     * 清除 runtime 默认字号声明（层 3 回到「未声明」，解析落层 4）。
+     */
+    public void clearDefaultFontSize() {
+        disposeDefaultFontSizeEffect();
+        if (defaultFontSizePx == null) {
+            return;
+        }
+        defaultFontSizePx = null;
+        broadcastFontEnvironmentChange();
+    }
+
+    /**
+     * 设置解析出口的用户缩放倍率（正交倍率层，参与布局）。
+     *
+     * <p>倍率变化不在任何节点的声明里，因此不能靠子树失效：必须走环境变更广播
+     * （epoch++ + 对所有已登记环境根做向下失效）。</p>
+     *
+     * @param scale 缩放倍率，须为有限正数；1.0 = 不缩放
+     * @throws IllegalArgumentException 非有限或 &le; 0
+     */
+    public void setFontScale(float scale) {
+        if (!Float.isFinite(scale) || scale <= 0f) {
+            throw new IllegalArgumentException("fontScale 必须为有限正数: " + scale);
+        }
+        if (Float.compare(fontScale, scale) == 0) {
+            return;
+        }
+        fontScale = scale;
+        broadcastFontEnvironmentChange();
+    }
+
+    /** @return 当前用户缩放倍率。 */
+    public float getFontScale() {
+        return fontScale;
+    }
+
+    /**
+     * 宿主装配唯一口径：把一棵已构建的树交给本 runtime（写树根环境引用 + 登记环境根）。
+     *
+     * <p>由 {@code SceneHostAssembly.attachTree(SceneRuntime, SceneNode)} 委托调用；
+     * 覆盖 mount / portalAnchored / show / HUD 窗口自建 runtime 等装配路径。
+     * 环境引用随<b>树根装配</b>设置，不随节点构造设置 —— 摘除即父链断开、环境自然失效。</p>
+     *
+     * @param root 已构建的树根；null = no-op
+     */
+    public void __adoptFontEnvironmentRoot(SceneNode root) {
+        if (root == null) {
+            return;
+        }
+        root.__setFontEnvironment(this);
+        fontEnvironmentRoots.add(root);
+    }
+
+    /**
+     * 摘除环境根登记（宿主卸载时调用，避免登记集合泄漏）。
+     *
+     * @param root 已卸载的树根；null = no-op
+     */
+    public void __releaseFontEnvironmentRoot(SceneNode root) {
+        if (root == null) {
+            return;
+        }
+        fontEnvironmentRoots.remove(root);
+    }
+
+    /** @return 当前已登记的环境根数量（测试探针）。 */
+    public int __getFontEnvironmentRootCount() {
+        return fontEnvironmentRoots.size();
+    }
+
+    /** 环境变更广播：epoch++ 并对所有已登记环境根做向下失效。 */
+    private void broadcastFontEnvironmentChange() {
+        fontEpoch++;
+        for (SceneNode root : fontEnvironmentRoots) {
+            root.__invalidateFontSubtree();
+        }
+    }
+
+    /**
+     * 信号路径写默认字号：null = 该声明缺失（层 3 回到未声明）。
+     *
+     * <p>注意：此处<b>不释放 effect</b> —— 信号流可能随后再次送出值，绑定必须保留；
+     * 显式解绑走 {@link #clearDefaultFontSize()}。</p>
+     */
+    private void applyDefaultFontSize(Integer value) {
+        if (value == null) {
+            if (defaultFontSizePx != null) {
+                defaultFontSizePx = null;
+                broadcastFontEnvironmentChange();
+            }
+            return;
+        }
+        int valid = FontSizeLimits.clampFontSize(value.intValue());
+        if (defaultFontSizePx != null && defaultFontSizePx.intValue() == valid) {
+            return;
+        }
+        defaultFontSizePx = Integer.valueOf(valid);
+        broadcastFontEnvironmentChange();
+    }
+
+    /** 释放默认字号信号桥（幂等）。 */
+    private void disposeDefaultFontSizeEffect() {
+        if (defaultFontSizeEffect != null) {
+            defaultFontSizeEffect.dispose();
+            defaultFontSizeEffect = null;
+        }
+    }
+
     /**
      * 获取已注入的文本度量端口，未注入时快速失败。
      *
@@ -170,6 +363,7 @@ public class SceneRuntime {
                 SceneNode root = builder.get();
                 if (root != null) {
                     parent.appendChild(root);
+                    __adoptFontEnvironmentRoot(root);   // 层 3 环境写入（装配点 P11）
                     rootHolder[0] = root;
                 }
             });
@@ -184,6 +378,7 @@ public class SceneRuntime {
             SceneNode root = rootHolder[0];
             if (root != null) {
                 parent.removeChild(root);
+                __releaseFontEnvironmentRoot(root);   // 摘除登记，避免环境根集合泄漏
             }
         });
         return new MountHandle(childOwner, rootHolder[0]);
@@ -579,8 +774,17 @@ public class SceneRuntime {
         // append 到 parent 标记内容的声明顺序位置。
         SceneNode anchor = new SceneNode();
         parent.appendChild(anchor);
+        // 装配点 P14：show 的内容根在构建后写入环境引用（内容根随 parent 继承，此处显式兜底，
+        // 保证 parent 尚未装配时内容树也能获得本 runtime 的环境）。包装不改 renderer 语义。
+        Supplier<SceneNode> contentWithEnvironment = () -> {
+            SceneNode contentRoot = content.get();
+            if (contentRoot != null) {
+                __adoptFontEnvironmentRoot(contentRoot);
+            }
+            return contentRoot;
+        };
         SceneConditionalRenderer renderer =
-                new SceneConditionalRenderer(parent, anchor, content, condOwner);
+                new SceneConditionalRenderer(parent, anchor, contentWithEnvironment, condOwner);
         // effect 只订阅 condition（唯一追踪点）；update 内的内容构建/卸载包在 untrack 内（守 I5）。
         condOwner.run(() -> Effect.create(() -> {
             boolean visible = Boolean.TRUE.equals(condition.get());
@@ -1055,6 +1259,9 @@ public class SceneRuntime {
         /** 当前浮层注册句柄，随 contentOwner cleanup 摘除。 */
         private OverlayHandle overlayHandle;
 
+        /** 当前浮层内容根（装配点 P13 写入环境 + 卸载时摘除登记）。 */
+        private SceneNode contentRoot;
+
         private ScenePortalRenderer(Supplier<SceneNode> content,
                                     Owner portalOwner,
                                     OverlayDismissPolicy dismissPolicy,
@@ -1100,6 +1307,8 @@ public class SceneRuntime {
                 owner.dispose();
                 throw failure;
             }
+            contentRoot = holder[0];
+            __adoptFontEnvironmentRoot(contentRoot);   // 层 3 环境写入（装配点 P13）
             OverlayHandle handle = overlayHost.register(holder[0], dismissPolicy, dismissRequest, anchorProvider,
                     protectedNodes, anchoredLayout);
             owner.onCleanup(handle::dispose);
@@ -1112,6 +1321,8 @@ public class SceneRuntime {
             if (contentOwner == null) {
                 return;
             }
+            __releaseFontEnvironmentRoot(contentRoot);   // 摘除登记（内容根随浮层卸载）
+            contentRoot = null;
             contentOwner.dispose();
             contentOwner = null;
             overlayHandle = null;
