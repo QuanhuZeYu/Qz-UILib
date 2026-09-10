@@ -72,6 +72,8 @@ public final class SceneLabel {
      *                    锚定 {@link SceneTextMode}）
      * @param followTheme 是否跟随当前主题前景（true=默认路径；false=显式 color）
      * @param fontSize    运行时可调字号信号（UI 像素）；null = 用 {@code fontSizePx} 定值
+     * @param fontSizeExplicit 调用方是否**显式指定**过字号：true 写层 1 显式值；
+     *                    false = 未指定（{@code fontSizePx} 只是回落值），不写声明、交给继承
      */
     @Desugar
     public record TextSpec(
@@ -80,7 +82,8 @@ public final class SceneLabel {
             int fontSizePx,
             int contentMode,
             boolean followTheme,
-            ReadableSignal<Integer> fontSize
+            ReadableSignal<Integer> fontSize,
+            boolean fontSizeExplicit
     ) {
         /**
          * 旧 5 参构造器（历史兼容入口）：字号只有构建期定值，无运行时信号。
@@ -93,7 +96,7 @@ public final class SceneLabel {
          */
         public TextSpec(ReadableSignal<String> text, int color, int fontSizePx, int contentMode,
                 boolean followTheme) {
-            this(text, color, fontSizePx, contentMode, followTheme, null);
+            this(text, color, fontSizePx, contentMode, followTheme, null, true);
         }
 
         /**
@@ -105,13 +108,19 @@ public final class SceneLabel {
          * @param contentMode 内容模式编码
          */
         public TextSpec(ReadableSignal<String> text, int color, int fontSizePx, int contentMode) {
-            this(text, color, fontSizePx, contentMode, false, null);
+            this(text, color, fontSizePx, contentMode, false, null, true);
         }
 
-        /** 默认分组：前景跟随当前主题 + 默认字号 + 原始文本模式（本目标的默认视觉改变）。 */
+        /**
+         * 默认分组：前景跟随当前主题 + 默认字号 + 原始文本模式（本目标的默认视觉改变）。
+         *
+         * <p><b>未显式指定字号</b>（{@code fontSizeExplicit = false}）：{@code fontSizePx} 只是
+         * 「无人声明时的回落值」，{@link SceneLabel#create} 不写层 1，标签沿父链继承最近声明
+         * （层 2 作用域 / 环境默认），从而不被自身默认值遮蔽。</p>
+         */
         public TextSpec(ReadableSignal<String> text) {
             this(text, SceneChromeTokens.TEXT_PRIMARY, DEFAULT_FONT_SIZE_PX,
-                    TextStyle.TEXT_MODE_UILIB_RAW, true, null);
+                    TextStyle.TEXT_MODE_UILIB_RAW, true, null, false);
         }
     }
 
@@ -219,9 +228,14 @@ public final class SceneLabel {
             return textSpec.color();
         }
 
-        /** @return UI 像素字号 */
+        /** @return UI 像素字号（未显式指定时为回落值 {@value SceneLabel#DEFAULT_FONT_SIZE_PX}） */
         public int fontSizePx() {
             return textSpec.fontSizePx();
+        }
+
+        /** @return 调用方是否显式指定过字号（false = 不写层 1，交给继承） */
+        public boolean fontSizeExplicit() {
+            return textSpec.fontSizeExplicit();
         }
 
         /** @return 运行时可调字号信号；null = 只有构建期定值 */
@@ -296,6 +310,8 @@ public final class SceneLabel {
         private boolean followTheme = true;
 
         private int fontSizePx = DEFAULT_FONT_SIZE_PX;
+        /** 是否显式指定过字号；false = 写回落值但不写层 1 声明（交给继承）。 */
+        private boolean fontSizeExplicit;
 
         /** 运行时可调字号信号；null = 用 {@link #fontSizePx} 定值。 */
         private ReadableSignal<Integer> fontSize = null;
@@ -332,6 +348,7 @@ public final class SceneLabel {
         /** @param fontSizePx UI 像素字号 */
         public Builder fontSizePx(int fontSizePx) {
             this.fontSizePx = fontSizePx;
+            this.fontSizeExplicit = true;
             return this;
         }
 
@@ -346,6 +363,7 @@ public final class SceneLabel {
          */
         public Builder fontSize(ReadableSignal<Integer> fontSize) {
             this.fontSize = fontSize;
+            this.fontSizeExplicit = fontSize != null;
             return this;
         }
 
@@ -407,7 +425,8 @@ public final class SceneLabel {
          * @return 按当前 builder 状态产出的不可变 Props（未指定 color 时前景跟随主题）
          */
         public Props build() {
-            return new Props(new TextSpec(text, color, fontSizePx, contentMode, followTheme, fontSize),
+            return new Props(new TextSpec(text, color, fontSizePx, contentMode, followTheme, fontSize,
+                    fontSizeExplicit),
                     new LayoutSpec(wrapWidth, lineHeightMultiplier, lineHeightPx, maxLines, ellipsis),
                     new AlignSpec(horizontalAlign, verticalAlign), onLinkClick);
         }
@@ -429,7 +448,11 @@ public final class SceneLabel {
             SceneNode root = new SceneNode();
             root.setHitTestable(false);
             bindTextColor(rt, root, props.textSpec());
-            root.setFontSize(props.fontSizePx());
+            // 层 1 显式值只在调用方**显式指定**字号时写：默认 16 是「无人声明时的回落值」，
+            // 不能当成显式声明（否则遮蔽层 2 作用域声明，句柄入口对 Label 失效）。
+            if (props.fontSizeExplicit()) {
+                root.setFontSize(props.fontSizePx());
+            }
             // 运行时可调字号：写的是同一个 root（root 是标签字号的唯一真值）。
             SceneControlTypography.applyFontSize(rt, root, props.fontSize());
             root.setTextMode(SceneTextMode.fromCode(props.contentMode()));

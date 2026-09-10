@@ -203,8 +203,10 @@ public class SceneNode {
     /** 层 3 入口：树根环境持有者（由宿主装配唯一口径写入）；{@code null} = 本节点不在任何 runtime 树上。 */
     private SceneFontEnvironment fontEnvironment;
 
-    /** 解析缓存：值。 */
+    /** 解析缓存：值（生效值，已乘用户倍率）。 */
     private int resolvedFontSize;
+    /** 解析缓存：声明值（未乘用户倍率）——传播给子节点时必须用它，否则重复缩放。 */
+    private int resolvedDeclaredFontSize;
     /** 解析缓存：来源。 */
     private FontSource resolvedFontSource = FontSource.UNRESOLVED;
     /** 解析缓存：环境代；与当前环境 epoch 不等即作废重算。 */
@@ -779,36 +781,35 @@ public class SceneNode {
      *
      * @param fontSizePx UI 逻辑像素字号
      * @return 本节点（链式）
+     * @throws IllegalArgumentException 越界（合法区间由 {@link FontSizeLimits} 唯一定义）
      */
     public SceneNode setFontSize(int fontSizePx) {
-        // 同值早退：口径与改造前逐位一致（未声明时按框架默认值比较，保证 setFontSize(16) 仍然早退）。
-        if (explicitFontSize == null
-                ? FontSizeLimits.DEFAULT_FONT_SIZE_PX == fontSizePx
-                : explicitFontSize.intValue() == fontSizePx) {
+        int valid = FontSizeLimits.requireValidFontSize(fontSizePx);
+        // 同值早退只认「已声明的显式值」：未声明节点写 16 也必须构成声明，
+        // 否则「显式 16 切断祖先继承」（D-3 在需要切断的节点声明一层）无法落地。
+        if (explicitFontSize != null && explicitFontSize.intValue() == valid) {
             return this;
         }
-        explicitFontSize = Integer.valueOf(fontSizePx);
-        fontResolved = false;                 // 作废本节点解析缓存（S1 无可观察效应）
-        // S1 零变化：保留既有「只标自身 LAYOUT+PAINT」语义。
-        // S3 消费点切换后，本方法改为 invalidateFontSubtree()（整棵子树向下失效），
-        // 届时本节点自身的脏标由该原语统一打出。
-        markSelfLayout();
-        markSelfPaint();
+        explicitFontSize = Integer.valueOf(valid);
+        // 层 1 是继承型声明：本节点无条件标 self LAYOUT+PAINT，后代替值剪枝（见 onFontDeclarationChanged）。
+        onFontDeclarationChanged();
         return this;
     }
 
     /**
-     * @return 当前字号（UI 逻辑像素），默认 {@value FontSizeLimits#DEFAULT_FONT_SIZE_PX}。
+     * @return 当前生效字号（UI 逻辑像素），默认 {@value FontSizeLimits#DEFAULT_FONT_SIZE_PX}。
      *
-     * <p><b>S1 语义维持现状</b>：返回「显式声明值，未声明时为框架默认」。
-     * S3 起语义切换为主流水位 —— 返回解析后的<b>生效值</b>（{@link #effectiveFontSize()}），
-     * 与 Qt {@code QWidget::font()}、WPF {@code Control.FontSize}（值继承后）、
-     * CSS {@code getComputedStyle().fontSize} 一致；需要原始显式值用 {@link #getExplicitFontSize()}。</p>
+     * <p><b>语义 = 生效值</b>（{@link #effectiveFontSize()}）：沿父链就近竞争解析出的最终值，
+     * 已含用户倍率，参与布局与绘制。与 Qt {@code QWidget::font()}、WPF {@code Control.FontSize}
+     * （值继承后）、CSS {@code getComputedStyle().fontSize} 一致；需要<b>本节点原始显式值</b>用
+     * {@link #getExplicitFontSize()}，需要<b>来源</b>用 {@link #fontSizeSource()}。</p>
+     *
+     * <p><b>消费点唯一口径</b>：{@code SizingCalculator}（叶宽/行高）、{@code ConstraintResolver}（先验宽）、
+     * {@code ScenePaintEngine}（TEXT/SEGMENTS 命令）与本类内全部字号读取一律走本方法，
+     * 因此声明变化与倍率变化对布局、绘制同时生效。</p>
      */
     public int getFontSize() {
-        return explicitFontSize == null
-                ? FontSizeLimits.DEFAULT_FONT_SIZE_PX
-                : explicitFontSize.intValue();
+        return effectiveFontSize();
     }
 
     // ==================== 字号：四层真值机制（S1 新增，静默待命） ====================
@@ -843,6 +844,7 @@ public class SceneNode {
             return resolvedFontSize;
         }
         int declared = resolveDeclaredFontSize();
+        resolvedDeclaredFontSize = declared;
         float scale = env == null ? 1.0f : env.fontScale();
         resolvedFontSize = FontSizeLimits.clampFontSize(Math.round(declared * scale));
         resolvedAtFontEpoch = epoch;
@@ -862,6 +864,18 @@ public class SceneNode {
     /** @return 本节点显式声明字号；{@code null} = 未声明（不代表生效字号）。 */
     public Integer getExplicitFontSize() {
         return explicitFontSize;
+    }
+
+    /**
+     * @return 本节点解析出的<b>声明值</b>（沿父链就近竞争的命中值，<b>不含</b>用户倍率）。
+     *
+     * <p>与 {@link #getFontSize()}（= 生效值，已乘倍率）成对：把「本节点的字号」再传播给别的节点时，
+     * 必须传播<b>声明值</b>——若传播已乘倍率的生效值，接收节点会在自己的解析出口再乘一次，
+     * 形成重复缩放（旧通道 {@code SceneControlTypography} 的 {@code bindText} 即此路径）。</p>
+     */
+    public int declaredFontSize() {
+        effectiveFontSize();     // 保证缓存新鲜（同时解析出 resolvedDeclaredFontSize）
+        return resolvedDeclaredFontSize;
     }
 
     /** @return 本节点登记的自有回落字号；{@code null} = 未登记。 */
@@ -888,7 +902,7 @@ public class SceneNode {
             return this;
         }
         fontScope = Integer.valueOf(valid);
-        invalidateFontSubtree();
+        onFontDeclarationChanged();
         return this;
     }
 
@@ -908,7 +922,7 @@ public class SceneNode {
             return this;
         }
         fontScope = null;
-        invalidateFontSubtree();
+        onFontDeclarationChanged();
         return this;
     }
 
@@ -925,7 +939,7 @@ public class SceneNode {
             return this;
         }
         explicitFontSize = null;
-        invalidateFontSubtree();
+        onFontDeclarationChanged();
         return this;
     }
 
@@ -945,7 +959,7 @@ public class SceneNode {
             return this;
         }
         fallbackFontSize = Integer.valueOf(valid);
-        invalidateFontSubtree();
+        onFontDeclarationChanged();
         return this;
     }
 
@@ -996,11 +1010,14 @@ public class SceneNode {
      * applyChildReconcile）、环境写入、runtime 环境广播、入口 effect 值变化。
      * 运行期帧循环绝不调用本方法。</p>
      *
-     * <p><b>S1 阶段接线范围</b>：本原语已实现并被「新增的」声明 setter、{@link #__setFontEnvironment}
-     * 与 runtime 环境广播调用。<b>结构变更路径（appendChild/insertBefore/removeChild/
-     * applyChildReconcile 对子节点调本方法）与 reparent 环境清理留到 S3</b> —— 因为
-     * {@link #setFontSize(int)} 在 S1 仍维持「只标自身」的旧语义，此时接入结构路径会引入
-     * 额外的向下脏标，破坏 S1「行为零变化」门。S3 消费点切换后二者一并接入。</p>
+     * <p><b>接线范围（S2 现状）</b>：本原语被 {@link #__setFontEnvironment} 与 runtime 环境广播调用
+     * （“本节点声明未变、只是继承到的值变了”路径，允许对本节点做值变剪枝）；
+     * 声明 setter 走 {@link #onFontDeclarationChanged()}（本节点无条件标脏 + 后代替值剪枝）。</p>
+     *
+     * <p><b>仍未接入</b>：结构变更路径（appendChild/insertBefore/removeChild/applyChildReconcile
+     * 对子节点调本方法）与 reparent 环境清理 —— 它们只影响「已解析过的节点被移入新父链」的边角
+     * （新建节点入树时 {@code fontResolved} 为 false，首帧必然重新解析），故不在 S2 范围；
+     * 由后续批次按 RC-10 收口。</p>
      */
     private void invalidateFontSubtree() {
         boolean hadCache = fontResolved;
@@ -1017,6 +1034,30 @@ public class SceneNode {
         }
         // hadCache == false：本节点自身从未解析（容器常态），没有「本节点的」脏标可打，
         // 但**必须继续下潜** —— 子节点可能已解析且持有独立缓存。
+        invalidateFontDescendants();
+    }
+
+    /**
+     * <b>声明变更路径（脏标契约，不得被缓存剪枝吃掉）</b>：本节点的字号声明真的发生变化时，
+     * <b>无条件</b>标 self LAYOUT + PAINT 并作废行计划 —— 这是属性 setter 的既有失效契约
+     * （{@code InvalidationLevelMatrixTest} 是对应矩阵钉）。
+     *
+     * <p>「值变剪枝」只作用于<b>后代</b>（{@link #invalidateFontDescendants()}）：祖先声明变化时，
+     * 若某后代重解析后的值与旧值相同，则该后代及其子树无需重排。</p>
+     *
+     * <p>与 {@link #invalidateFontSubtree()} 的分工：后者用于「本节点声明未变、只是继承到的值变了」
+     * 的路径（环境写入 / runtime 广播），因此允许对本节点也做值变剪枝。</p>
+     */
+    private void onFontDeclarationChanged() {
+        fontResolved = false;
+        markSelfLayout();
+        markSelfPaint();
+        setCachedTextPlan(null);                   // 行计划与字号强耦合，必须同步作废
+        invalidateFontDescendants();
+    }
+
+    /** 后代失效（带值变剪枝）：每个子节点按「已解析且值未变」剪枝，否则继续下潜。 */
+    private void invalidateFontDescendants() {
         List<SceneNode> kids = children;
         for (int i = 0, size = kids.size(); i < size; i++) {
             kids.get(i).invalidateFontSubtree();

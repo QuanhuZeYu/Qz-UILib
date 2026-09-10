@@ -10,9 +10,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import com.github.bsideup.jabel.Desugar;
 
+import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -192,11 +194,17 @@ public final class SceneToast {
      * 也没有 {@code MountHandle}（见 {@code 契约 §4「控件字号入口」}）。因此字号入口按 runtime 给出，
      * 设置一次对随后投递的所有通知生效；不设置时沿用节点默认字号。</p>
      *
+     * <p>入口语义（契约 §4）：写 Host 的<b>单一声明槽</b>（不叠加 effect），同步生效；
+     * 已投递与随后投递的通知都跟随。越界抛 {@link IllegalArgumentException}。</p>
+     *
      * @param rt         场景运行时
-     * @param fontSizePx UI 像素字号
+     * @param fontSizePx UI 逻辑像素字号；越界抛 {@link IllegalArgumentException}
+     * @throws IllegalArgumentException 字号越界（合法区间见 {@link FontSizeLimits}）
+     * @throws IllegalStateException    该 runtime 已 dispose
      */
     public static void defaultFontSize(SceneRuntime rt, int fontSizePx) {
-        hostFor(rt).fontSizePx.set(Integer.valueOf(fontSizePx));
+        requireRuntimeAlive(rt);
+        hostFor(rt).setFontSize(fontSizePx);
     }
 
     /**
@@ -204,24 +212,45 @@ public final class SceneToast {
      *
      * <p>信号变化时已投递与随后投递的通知都跟随；信号为 null 时不写，通知保持既有字号。</p>
      *
+     * <p>入口语义（契约 §4）：参数 {@code null} = 完全不指定（no-op，不动既有声明与订阅）；
+     * 信号值 {@code null} = 该声明缺失（回落下一层）；越界值钳制到域内并计数（effect 体不可 fail-fast）。
+     * 重复调用为<b>替换语义</b>：先释放旧 effect 再建唯一 effect，本入口至多 1 个绑定。</p>
+     *
      * @param rt       场景运行时
-     * @param fontSize UI 像素字号信号；null = 不指定
+     * @param fontSize UI 逻辑像素字号信号；null = 不指定
+     * @throws IllegalStateException 该 runtime 已 dispose
      */
     public static void defaultFontSize(SceneRuntime rt, ReadableSignal<Integer> fontSize) {
-        if (fontSize == null) {
-            return;
+        requireRuntimeAlive(rt);
+        hostFor(rt).bindFontSize(fontSize);
+    }
+
+    /**
+     * 撤回该 runtime 的通知字号声明（幂等）：通知文字回落下一层（runtime 默认 / 节点默认）。
+     *
+     * @param rt 场景运行时
+     * @throws IllegalStateException 该 runtime 已 dispose
+     */
+    public static void clearDefaultFontSize(SceneRuntime rt) {
+        requireRuntimeAlive(rt);
+        Host host;
+        synchronized (HOSTS) {
+            host = HOSTS.get(rt);
         }
-        Host host = hostFor(rt);
-        Integer initial = fontSize.get();
-        if (initial != null) {
-            host.fontSizePx.set(initial);
+        if (host == null) {
+            return;                      // 从未投递过通知：无声明可清，不因清理动作创建 Host
         }
-        // 通知服务与 runtime 同寿，绑在 root owner（与 Host 其它资源一致）。
-        rt.__runRoot(() -> rt.bind(fontSize, next -> {
-            if (next != null) {
-                host.fontSizePx.set(next);
-            }
-        }));
+        host.clearFontSize();
+    }
+
+    /** R8：runtime 为空或已销毁时写入口快速失败（不再静默 no-op 或创建游离 Host）。 */
+    private static void requireRuntimeAlive(SceneRuntime rt) {
+        if (rt == null) {
+            throw new IllegalArgumentException("rt 不可为 null");
+        }
+        if (rt.isDisposed()) {
+            throw new IllegalStateException("SceneRuntime 已 dispose：SceneToast.defaultFontSize 不可调用");
+        }
     }
 
     /**
@@ -272,8 +301,14 @@ public final class SceneToast {
         private final AtomicLong idCounter = new AtomicLong();
         /** entry id → toast 节点（条目移除时显式清理，避免弱引用装箱语义不可靠）。 */
         private final Map<Long, SceneNode> nodeByEntryId = Collections.synchronizedMap(new HashMap<>());
-        /** 通知文字字号（UI 像素）；null = 未指定，沿用节点默认字号。由 {@link #defaultFontSize} 写入。 */
-        private final Signal<Integer> fontSizePx = Signal.create(null);
+        /** 通知文字字号声明（UI 逻辑像素）；null = 未指定，跟随下一层（runtime 默认 / 节点默认）。 */
+        private Integer declaredFontSize;
+        /** 本入口唯一的信号绑定（幂等替换，不叠加）。 */
+        private Binding fontBinding;
+        /** 当前 toast 容器根（内容懒建），层 2 声明落点。 */
+        private SceneNode fontContainerRoot;
+        /** 信号路径因越界被钳制的次数（诊断与守卫用）。 */
+        private int clampedFontSizeSignalCount;
 
         private Host(SceneRuntime rt) {
             this.rt = rt;
@@ -286,7 +321,104 @@ public final class SceneToast {
                         null,
                         null);
                 rt.bind(rt.__frameTimeNanos(), now -> tick(now.longValue()));
+                // runtime 级资源回收：runtime 销毁时从 HOSTS 摘除本 Host，避免静态表长期驻留
+                // （HOSTS 是 WeakHashMap 但 Host 强引用 key=rt，弱键永远不会被回收）。
+                rt.__onCleanup(() -> {
+                    synchronized (HOSTS) {
+                        HOSTS.remove(rt);
+                    }
+                });
             });
+        }
+
+        /**
+         * 层 2 声明落点：toast 容器根（内容懒建，由 {@code buildToastContainer} 回填）。
+         *
+         * <p>容器根持声明后，卡片与文字节点沿父链继承；容器重建（一轮通知清空后再来）时
+         * 自动补落当前声明。</p>
+         *
+         * @param root 新的容器根；null = 内容已卸载（声明保留，下次补落）
+         */
+        void __onContainerRoot(SceneNode root) {
+            this.fontContainerRoot = root;
+            if (root != null && declaredFontSize != null) {
+                root.setFontScope(declaredFontSize.intValue());
+            }
+        }
+
+        /** 构建期定值入口：同步写声明 + 释放旧信号订阅（后写者胜出）。 */
+        void setFontSize(int fontSizePx) {
+            requireAlive();
+            int valid = FontSizeLimits.requireValidFontSize(fontSizePx);
+            disposeFontBinding();
+            applyDeclaredFontSize(Integer.valueOf(valid));
+        }
+
+        /** 运行期信号入口：参数 null = 完全 no-op；幂等替换，至多 1 个 effect。 */
+        void bindFontSize(ReadableSignal<Integer> fontSize) {
+            requireAlive();
+            if (fontSize == null) {
+                return;
+            }
+            disposeFontBinding();
+            applySignalFontSize(fontSize.get());
+            // 通知服务与 runtime 同寿，绑在 root owner（与 Host 其它资源一致）。
+            rt.__runRoot(() -> fontBinding = rt.bind(fontSize, this::applySignalFontSize));
+        }
+
+        /** 清除声明（幂等）：释放订阅 + 目标回落下一层。 */
+        void clearFontSize() {
+            requireAlive();
+            disposeFontBinding();
+            declaredFontSize = null;
+            if (fontContainerRoot != null) {
+                fontContainerRoot.resetFontScope();
+            }
+        }
+
+        /** @return 信号路径因越界被钳制的次数（诊断 / 守卫探针）。 */
+        public int clampedFontSizeSignalCount() {
+            return clampedFontSizeSignalCount;
+        }
+
+        /** 信号路径写值：null = 声明缺失（回落）；越界钳制 + 计数（不得 fail-fast）。 */
+        private void applySignalFontSize(Integer value) {
+            if (value == null) {
+                declaredFontSize = null;
+                if (fontContainerRoot != null) {
+                    fontContainerRoot.resetFontScope();
+                }
+                return;
+            }
+            int raw = value.intValue();
+            int valid = FontSizeLimits.clampFontSize(raw);
+            if (valid != raw) {
+                clampedFontSizeSignalCount++;
+            }
+            applyDeclaredFontSize(Integer.valueOf(valid));
+        }
+
+        /** 声明生效：写容器根层 2 声明（容器尚未构建时记下，构建时补落）。 */
+        private void applyDeclaredFontSize(Integer value) {
+            declaredFontSize = value;
+            if (fontContainerRoot != null && value != null) {
+                fontContainerRoot.setFontScope(value.intValue());
+            }
+        }
+
+        /** 释放信号绑定（幂等）。 */
+        private void disposeFontBinding() {
+            if (fontBinding != null) {
+                fontBinding.dispose();
+                fontBinding = null;
+            }
+        }
+
+        /** R8：runtime 已销毁时写入口快速失败。 */
+        private void requireAlive() {
+            if (rt.isDisposed()) {
+                throw new IllegalStateException("SceneRuntime 已 dispose：SceneToast.defaultFontSize 不可调用");
+            }
         }
 
         /**
@@ -439,8 +571,8 @@ public final class SceneToast {
 
             SceneNode label = new SceneNode();
             label.setText(entry.message());
-            // 通知文字跟随 runtime 级字号（未指定时不写，保持节点默认字号）。
-            SceneControlTypography.applyFontSize(rt, label, fontSizePx);
+            // 通知文字跟随 Host 的字号声明：真值在 toast 容器根的层 2 槽（见 __onContainerRoot），
+            // 卡片与文字节点不写自身声明 ⇒ 沿父链继承。
             label.setHitTestable(false);
             // 文字取来源主题正文前景：显式初值 + 单一动态写入者（不再取 SceneChromeTokens.TEXT_PRIMARY）。
             ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
@@ -464,6 +596,8 @@ public final class SceneToast {
         container.setCrossAxisAlign(CrossAxisAlign.CENTER);
         container.setHitTestable(false);
         container.setClipChildren(true);
+        // 字号声明的层 2 落点 = 容器根（内容懒建；容器重建时自动补落当前声明）。
+        host.__onContainerRoot(container);
         rt.forEach(container, host.entries, entry -> Long.valueOf(entry.id()),
                 host::buildToast);
         return container;

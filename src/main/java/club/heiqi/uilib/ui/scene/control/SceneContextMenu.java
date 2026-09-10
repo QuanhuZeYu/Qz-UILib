@@ -161,7 +161,7 @@ public final class SceneContextMenu {
          * @return 本句柄（链式）
          */
         public Handle fontSize(int fontSizePx) {
-            portal.fontSize(fontSizePx);
+            portal().fontSize(fontSizePx);
             return this;
         }
 
@@ -172,7 +172,7 @@ public final class SceneContextMenu {
          * @return 本句柄（链式）
          */
         public Handle fontSize(ReadableSignal<Integer> fontSize) {
-            portal.fontSize(fontSize);
+            portal().fontSize(fontSize);
             return this;
         }
 
@@ -192,6 +192,14 @@ public final class SceneContextMenu {
 
         private void markClosed() {
             open = false;
+        }
+
+        /** @return 委托的本菜单 portal 句柄（facade 不自持第二套声明） */
+        private ScenePortalHandle portal() {
+            if (portal == null) {
+                throw new IllegalStateException("SceneContextMenu.Handle 尚未绑定 portal（open 未完成）");
+            }
+            return portal;
         }
     }
 
@@ -235,13 +243,10 @@ public final class SceneContextMenu {
                 return new AnchorRect(x, y, 1, 1);
             }
         };
-        // 浮层字号：句柄在 portalAnchored 返回后才存在，而内容构建可能同步发生，故用惰性包装读句柄的字号源。
-        final ReadableSignal<Integer> fontSize = () -> {
-            ScenePortalHandle portal = portalHolder[0];
-            return portal == null ? null : portal.__fontSize().get();
-        };
+        // 浮层字号：真值落点 = 内容根（menu）。内容懒建完成后由 ScenePortalRenderer 经
+        // handle.__onContentRoot(root) 把层 2 声明写到内容根，菜单项文字沿父链继承。
         portalHolder[0] = rt.portalAnchored(visible,
-                () -> buildMenu(rt, safeItems, navigable, highlighted, closeAction, fontSize),
+                () -> buildMenu(rt, safeItems, navigable, highlighted, closeAction),
                 OverlayDismissPolicy.DEFAULT,
                 closeAction,
                 anchor,
@@ -271,8 +276,7 @@ public final class SceneContextMenu {
      * 构建菜单 overlay root。
      */
     private static SceneNode buildMenu(SceneRuntime rt, List<MenuItem> items, List<Integer> navigable,
-                                       Signal<Integer> highlighted, Runnable closeAction,
-                                       ReadableSignal<Integer> fontSize) {
+                                       Signal<Integer> highlighted, Runnable closeAction) {
         SceneNode menu = SceneNode.column();
         menu.setPadding(MENU_PADDING);
         menu.setClipChildren(true);
@@ -315,7 +319,7 @@ public final class SceneContextMenu {
                 menu.appendChild(buildSeparator(rt, overlaySurface));
             } else {
                 final int nav = navIndex++;
-                menu.appendChild(buildItem(rt, item, nav, highlighted, closeAction, fontSize));
+                menu.appendChild(buildItem(rt, item, nav, highlighted, closeAction));
             }
         }
         // 打开即聚焦菜单，承接 ↑/↓/Enter 键盘导航（ESC 由 router 全局 dismiss 处理）
@@ -372,15 +376,13 @@ public final class SceneContextMenu {
      * 指针 hover / 键盘高亮只做主题 accent 系半透明覆盖，故 {@code getBackdrop() == null}。</p>
      */
     private static SceneNode buildItem(SceneRuntime rt, MenuItem item, int navIndex,
-                                       Signal<Integer> highlighted, Runnable closeAction,
-                                       ReadableSignal<Integer> fontSize) {
+                                       Signal<Integer> highlighted, Runnable closeAction) {
         SceneNode row = SceneNode.row();
         row.setPadding(ITEM_PAD_V, ITEM_PAD_H, ITEM_PAD_V, ITEM_PAD_H);
 
         SceneNode label = new SceneNode();
         label.setText(item.label());
-        // 菜单项文字跟随浮层字号（真值在浮层内容根节点）；未指定时不写，保持节点默认字号。
-        SceneControlTypography.applyFontSize(rt, label, fontSize);
+        // 菜单项文字跟随浮层字号：真值在浮层内容根（menu 的层 2 声明），本节点不写声明 ⇒ 继承。
         label.setHitTestable(false);
         row.appendChild(label);
 

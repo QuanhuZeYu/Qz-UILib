@@ -16,6 +16,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.input.mock.MockPlatformInputSource;
@@ -90,7 +91,6 @@ public class ControlFontRuntimeGuardTest {
 
     /** 防回退：已接线控件必须一直跟随句柄字号（当前预期绿）。 */
     @Test
-    @Ignore("S3 转正：已接线控件不再混排（SceneSimpleList 行内编辑器等全部跟随；实测 {24,16}）；对应 P1-5；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void wiredControlsFollowScopeFontSize() {
         for (String name : WIRED) {
             InlineMounter mounter = INLINE.get(name);
@@ -101,42 +101,36 @@ public class ControlFontRuntimeGuardTest {
 
     /** P0-1：Checkbox 标签必须跟随控件字号（勾选标记按豁免单独处理）。 */
     @Test
-    @Ignore("S3 转正：SceneCheckbox 标签绘制字号 == 控件字号（勾选标记走豁免）；对应 P0-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void checkboxLabelFollowsScopeFontSize() {
         assertFollowsScope("SceneCheckbox", INLINE.get("SceneCheckbox"));
     }
 
     /** P0-1：Toggle 标签必须跟随控件字号。 */
     @Test
-    @Ignore("S3 转正：SceneToggle 标签绘制字号 == 控件字号；对应 P0-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void toggleLabelFollowsScopeFontSize() {
         assertFollowsScope("SceneToggle", INLINE.get("SceneToggle"));
     }
 
     /** P0-1：RadioGroup 各选项标签必须跟随控件字号。 */
     @Test
-    @Ignore("S3 转正：SceneRadioGroup 各选项标签绘制字号 == 控件字号；对应 P0-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void radioGroupLabelsFollowScopeFontSize() {
         assertFollowsScope("SceneRadioGroup", INLINE.get("SceneRadioGroup"));
     }
 
     /** P0-1：NavList 各导航项标签必须跟随控件字号。 */
     @Test
-    @Ignore("S3 转正：SceneNavList 各项标签绘制字号 == 控件字号；对应 P0-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void navListItemsFollowScopeFontSize() {
         assertFollowsScope("SceneNavList", INLINE.get("SceneNavList"));
     }
 
     /** P0-1：Select 触发器值文本必须跟随控件字号（下拉项随展开路径另测）。 */
     @Test
-    @Ignore("S3 转正：SceneSelect 触发值/箭头绘制字号 == 控件字号；对应 P0-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void selectTriggerValueFollowsScopeFontSize() {
         assertFollowsScope("SceneSelect", INLINE.get("SceneSelect"));
     }
 
     /** 同一控件内不得出现两套字号：挂载式全清单的绘制字号集合必须单值。 */
     @Test
-    @Ignore("S3 转正：全清单控件绘制字号集合单值 == 控件字号（实测 SimpleList/KeyValueMap {24,16} + 未接线 5 控件 [16]）；对应 P0-1/P1-5；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void everyInlineControlPaintsSingleResolvedFontSize() {
         StringBuilder mixed = new StringBuilder();
         for (Map.Entry<String, InlineMounter> entry : INLINE.entrySet()) {
@@ -156,7 +150,6 @@ public class ControlFontRuntimeGuardTest {
 
     /** P0-1：Dialog 内标题/正文/按钮必须与浮层句柄字号一致（当前按钮为 16）。 */
     @Test
-    @Ignore("S2 转正：Dialog 内标题/正文/按钮绘制字号集合单值 == 浮层句柄字号（浮层真值归位到内容根）；对应 P0-1/P1-4（报告 C2）；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void dialogWordsAreConsistentWithHandleFontSize() {
         Fixture fixture = fixture();
         final ScenePortalHandle[] portal = new ScenePortalHandle[1];
@@ -206,7 +199,6 @@ public class ControlFontRuntimeGuardTest {
 
     /** 浮层族单值：Dialog/ContextMenu/Toast 三者的绘制字号集合都必须单值。 */
     @Test
-    @Ignore("S2 转正：Dialog/ContextMenu/Toast 三浮层各自绘制字号集合单值等于其入口字号；对应 P0-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void overlayFamilyPaintsSingleResolvedFontSize() {
         StringBuilder mixed = new StringBuilder();
         mixed.append(checkDialogFontSet());
@@ -244,9 +236,30 @@ public class ControlFontRuntimeGuardTest {
                 "", silent.toString());
     }
 
+    /** P1-1：runtime 级默认字号重复设置不得累积 effect（裁决 4 过渡态：单槽单绑定、幂等）。 */
+    @Test
+    public void toastDefaultFontSizeTenCallsDoNotAccumulateEffects() {
+        Fixture fixture = fixture();
+        Signal<Integer> size = Signal.create(Integer.valueOf(16));
+        // 首次调用允许 Host 初始化的固有效应；只钉「重复调用是否累积」。
+        SceneToast.defaultFontSize(fixture.runtime, size);
+        fixture.runtime.flush();
+        int afterFirst = ReactiveTestProbe.registeredEffectCount();
+        for (int i = 0; i < 10; i++) {
+            SceneToast.defaultFontSize(fixture.runtime, size);
+        }
+        fixture.runtime.flush();
+        int delta = ReactiveTestProbe.registeredEffectCount() - afterFirst;
+        Assert.assertTrue("重复设置默认字号不得累积 effect（10 次重复实测增量 " + delta + "）", delta <= 1);
+        size.set(Integer.valueOf(SCOPE_PX));
+        fixture.runtime.flush();
+        SceneToast.show(fixture.runtime, "通知", 5_000_000_000L);
+        fixture.frameOverlay();
+        assertPaintedSizes("SceneToast", fixture, SCOPE_PX);
+    }
+
     /** 装饰字面值保持独立：勾选标记/把手不被强拉成控件字号，但必须登记豁免。 */
     @Test
-    @Ignore("S3 转正：SceneCheckbox 非豁免文字全部跟随字号、勾选标记仍被绘制且登记豁免；对应 P0-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void decoratedGlyphsStayExemptAndRegistered() {
         Fixture fixture = fixture();
         MountHandle handle = INLINE.get("SceneCheckbox").mount(fixture.runtime, fixture.parent);
@@ -257,8 +270,8 @@ public class ControlFontRuntimeGuardTest {
             if (ControlTextInventoryTest.EXEMPT_TEXTS.containsKey(command.getText())) {
                 continue;
             }
-            Assert.fail("SceneCheckbox 的非豁免文字未跟随字号：" + command.getText()
-                    + "=" + command.getTextStyle().getFontSize());
+            Assert.assertEquals("SceneCheckbox 的非豁免文字必须跟随字号：" + command.getText(),
+                    SCOPE_PX, command.getTextStyle().getFontSize());
         }
         Assert.assertTrue("勾选标记必须被绘制（豁免不能变成空头支票）",
                 fixture.paintedTexts.contains("\u2713"));

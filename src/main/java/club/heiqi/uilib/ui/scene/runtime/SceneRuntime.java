@@ -95,8 +95,8 @@ public class SceneRuntime implements SceneFontEnvironment {
     /** 层 3 runtime 默认字号；<b>null = 未声明（层 3 缺席）</b>，解析继续下探层 4。 */
     private Integer defaultFontSizePx;
 
-    /** 解析出口的用户缩放倍率，1.0 = 不缩放。 */
-    private float fontScale = 1.0f;
+    /** 解析出口的用户缩放倍率（整型百分比，100 = 不缩放）；域见 {@link #FONT_SCALE_MIN_PERCENT}..{@link #FONT_SCALE_MAX_PERCENT}。 */
+    private int fontScalePercent = FONT_SCALE_NONE_PERCENT;
 
     /** 环境版本号：默认字号与倍率任一变化即递增（节点解析缓存的缓存代）。 */
     private long fontEpoch;
@@ -107,6 +107,19 @@ public class SceneRuntime implements SceneFontEnvironment {
 
     /** 默认字号信号桥的唯一 effect（幂等替换，不叠加）。 */
     private Effect defaultFontSizeEffect;
+
+    /** 倍率信号桥的唯一 effect（幂等替换，不叠加）。 */
+    private Effect fontScaleEffect;
+
+    /** 倍率信号路径因越界被钳制的次数（诊断与守卫用）。 */
+    private int clampedFontScaleFromSignalCount;
+
+    /** 不缩放百分比（100%）。 */
+    public static final int FONT_SCALE_NONE_PERCENT = 100;
+    /** 用户级字号缩放下限（100% = 允许缩小方向的缺口，见方案 §2.7）。 */
+    public static final int FONT_SCALE_MIN_PERCENT = 100;
+    /** 用户级字号缩放上限（200%），与 HUD 显示缩放档位同一水位。 */
+    public static final int FONT_SCALE_MAX_PERCENT = 200;
 
     /** 创建一个新的场景运行时实例。 */
     public SceneRuntime() {
@@ -171,7 +184,7 @@ public class SceneRuntime implements SceneFontEnvironment {
     /** {@inheritDoc} */
     @Override
     public float fontScale() {
-        return fontScale;
+        return fontScalePercent / 100f;
     }
 
     /** {@inheritDoc} */
@@ -187,6 +200,7 @@ public class SceneRuntime implements SceneFontEnvironment {
      * @throws IllegalArgumentException 越界（合法区间由 {@link FontSizeLimits} 唯一定义）
      */
     public void setDefaultFontSize(int fontSizePx) {
+        requireAlive();
         int valid = FontSizeLimits.requireValidFontSize(fontSizePx);
         if (defaultFontSizePx != null && defaultFontSizePx.intValue() == valid) {
             return;
@@ -205,6 +219,7 @@ public class SceneRuntime implements SceneFontEnvironment {
      * @param fontSize 字号信号；null = no-op
      */
     public void setDefaultFontSize(ReadableSignal<Integer> fontSize) {
+        requireAlive();
         if (fontSize == null) {
             return;
         }
@@ -222,6 +237,7 @@ public class SceneRuntime implements SceneFontEnvironment {
      * 清除 runtime 默认字号声明（层 3 回到「未声明」，解析落层 4）。
      */
     public void clearDefaultFontSize() {
+        requireAlive();
         disposeDefaultFontSizeEffect();
         if (defaultFontSizePx == null) {
             return;
@@ -231,28 +247,100 @@ public class SceneRuntime implements SceneFontEnvironment {
     }
 
     /**
-     * 设置解析出口的用户缩放倍率（正交倍率层，参与布局）。
+     * 设置解析出口的用户缩放倍率（正交倍率层，参与布局）——构建期定值，同步生效。
      *
-     * <p>倍率变化不在任何节点的声明里，因此不能靠子树失效：必须走环境变更广播
-     * （epoch++ + 对所有已登记环境根做向下失效）。</p>
+     * <p><b>整型百分比</b>（100 = 不缩放），域 {@code [100, 200]}：守「logical px 单一事实」，
+     * 解析出口用整数算术 {@code (declared × percent + 50) / 100} 等价取整（rc_resolve_sim 验算
+     * 与浮点实现零不一致）。倍率变化不在任何节点的声明里，因此不能靠子树失效：必须走环境变更广播
+     * （{@code fontEpoch++} + 对所有已登记环境根做向下失效）。</p>
      *
-     * @param scale 缩放倍率，须为有限正数；1.0 = 不缩放
-     * @throws IllegalArgumentException 非有限或 &le; 0
+     * <p>本入口会释放此前 {@link #setFontScale(ReadableSignal)} 建立的信号订阅（后写者胜出）。</p>
+     *
+     * @param percent 缩放百分比，100..200
+     * @throws IllegalArgumentException 越界
+     * @throws IllegalStateException    本 runtime 已 {@link #dispose()}
      */
-    public void setFontScale(float scale) {
-        if (!Float.isFinite(scale) || scale <= 0f) {
-            throw new IllegalArgumentException("fontScale 必须为有限正数: " + scale);
-        }
-        if (Float.compare(fontScale, scale) == 0) {
+    public void setFontScale(int percent) {
+        requireAlive();
+        applyFontScalePercent(requireValidFontScalePercent(percent));
+    }
+
+    /**
+     * 设置解析出口的用户缩放倍率（运行期信号；幂等替换，不叠加 effect）。
+     *
+     * <p>参数 {@code null} = 完全 no-op（既不建绑定也不清除既有声明）；信号值 {@code null} = 该声明
+     * 缺失，等价于 100%（不缩放）；越界值钳制到域内并计数（effect 体内不得 fail-fast）。</p>
+     *
+     * @param percent 缩放百分比信号；null = no-op
+     * @throws IllegalStateException 本 runtime 已 {@link #dispose()}
+     */
+    public void setFontScale(ReadableSignal<Integer> percent) {
+        requireAlive();
+        if (percent == null) {
             return;
         }
-        fontScale = scale;
+        disposeFontScaleEffect();
+        applyFontScaleFromSignal(percent.get());
+        fontScaleEffect = rootOwner.createEffect(() -> applyFontScaleFromSignal(percent.get()));
+    }
+
+    /** @return 当前用户缩放百分比（100 = 不缩放）。 */
+    public int getFontScalePercent() {
+        return fontScalePercent;
+    }
+
+    /** @return 倍率信号路径因越界被钳制的次数（诊断 / 守卫探针）。 */
+    public int __getClampedFontScaleFromSignalCount() {
+        return clampedFontScaleFromSignalCount;
+    }
+
+    /** 清除倍率声明：回到 100%（不缩放），并释放信号订阅。 */
+    public void clearFontScale() {
+        requireAlive();
+        disposeFontScaleEffect();
+        applyFontScalePercent(FONT_SCALE_NONE_PERCENT);
+    }
+
+    /** 校验百分比域：调用点越界直接失败（不静默钳制）。 */
+    private static int requireValidFontScalePercent(int percent) {
+        if (percent < FONT_SCALE_MIN_PERCENT || percent > FONT_SCALE_MAX_PERCENT) {
+            throw new IllegalArgumentException("fontScale 百分比越界: " + percent
+                    + "，合法区间 [" + FONT_SCALE_MIN_PERCENT + ", " + FONT_SCALE_MAX_PERCENT + "]");
+        }
+        return percent;
+    }
+
+    /** 百分比生效（去重后广播）。 */
+    private void applyFontScalePercent(int percent) {
+        if (fontScalePercent == percent) {
+            return;
+        }
+        fontScalePercent = percent;
         broadcastFontEnvironmentChange();
     }
 
-    /** @return 当前用户缩放倍率。 */
-    public float getFontScale() {
-        return fontScale;
+    /**
+     * 信号路径写倍率：null = 该声明缺失（回到 100%）；越界钳制 + 计数（不得 fail-fast）。
+     */
+    private void applyFontScaleFromSignal(Integer value) {
+        if (value == null) {
+            applyFontScalePercent(FONT_SCALE_NONE_PERCENT);
+            return;
+        }
+        int raw = value.intValue();
+        int clamped = Math.max(FONT_SCALE_MIN_PERCENT, Math.min(FONT_SCALE_MAX_PERCENT, raw));
+        if (clamped != raw) {
+            clampedFontScaleFromSignalCount++;
+        }
+        applyFontScalePercent(clamped);
+    }
+
+    /** 释放倍率信号桥（幂等）。 */
+    private void disposeFontScaleEffect() {
+        if (fontScaleEffect != null) {
+            fontScaleEffect.dispose();
+            fontScaleEffect = null;
+        }
     }
 
     /**
@@ -287,6 +375,18 @@ public class SceneRuntime implements SceneFontEnvironment {
     /** @return 当前已登记的环境根数量（测试探针）。 */
     public int __getFontEnvironmentRootCount() {
         return fontEnvironmentRoots.size();
+    }
+
+    /** @return 本 runtime 是否已 {@link #dispose()}。 */
+    public boolean isDisposed() {
+        return rootOwner.isDisposed();
+    }
+
+    /** R8：已释放 runtime 上的字号写入口快速失败（不再静默 no-op / 静默丢弃）。 */
+    private void requireAlive() {
+        if (rootOwner.isDisposed()) {
+            throw new IllegalStateException("SceneRuntime 已 dispose：字号环境入口不可调用");
+        }
     }
 
     /** 环境变更广播：epoch++ 并对所有已登记环境根做向下失效。 */
@@ -905,12 +1005,16 @@ public class SceneRuntime implements SceneFontEnvironment {
         Owner portalOwner = (current != null ? current : rootOwner).createChild();
         ScenePortalRenderer renderer = new ScenePortalRenderer(content, portalOwner, dismissPolicy, dismissRequest,
                 anchorProvider, protectedNodes, anchoredLayout);
+        // 字号真值落点 = 浮层内容根：句柄建立后把「内容挂/卸」边界回填给 renderer，
+        // 内容懒建时经 handle.__onContentRoot(root) 把层 2 声明写到内容根（P0-1 修法）。
+        ScenePortalHandle portalHandle = new ScenePortalHandle(portalOwner);
+        renderer.setContentRootListener(portalHandle::__onContentRoot);
         portalOwner.run(() -> Effect.create(() -> {
             boolean shouldShow = Boolean.TRUE.equals(visible.get());
             Effect.untrack(() -> renderer.update(shouldShow));
         }));
         portalOwner.onCleanup(renderer::disposeMounted);
-        return new ScenePortalHandle(portalOwner);
+        return portalHandle;
     }
 
     /**
@@ -1262,6 +1366,9 @@ public class SceneRuntime implements SceneFontEnvironment {
         /** 当前浮层内容根（装配点 P13 写入环境 + 卸载时摘除登记）。 */
         private SceneNode contentRoot;
 
+        /** 内容根边界回调（字号入口把层 2 声明落到内容根）；由 portalAnchored 在句柄建立后回填。 */
+        private Consumer<SceneNode> contentRootListener;
+
         private ScenePortalRenderer(Supplier<SceneNode> content,
                                     Owner portalOwner,
                                     OverlayDismissPolicy dismissPolicy,
@@ -1278,6 +1385,15 @@ public class SceneRuntime implements SceneFontEnvironment {
                     ? Collections.emptySet()
                     : Collections.unmodifiableSet(new HashSet<>(protectedNodes));
             this.anchoredLayout = anchoredLayout == null ? AnchoredPortalLayout.DEFAULT : anchoredLayout;
+        }
+
+        /**
+         * 回填内容根边界监听（portalAnchored 在句柄建立后调用一次）。
+         *
+         * @param listener 监听器；null = 不监听
+         */
+        private void setContentRootListener(Consumer<SceneNode> listener) {
+            this.contentRootListener = listener;
         }
 
         /**
@@ -1309,11 +1425,19 @@ public class SceneRuntime implements SceneFontEnvironment {
             }
             contentRoot = holder[0];
             __adoptFontEnvironmentRoot(contentRoot);   // 层 3 环境写入（装配点 P13）
+            notifyContentRoot(contentRoot);            // 层 2 声明落到内容根（字号入口真值归位）
             OverlayHandle handle = overlayHost.register(holder[0], dismissPolicy, dismissRequest, anchorProvider,
                     protectedNodes, anchoredLayout);
             owner.onCleanup(handle::dispose);
             contentOwner = owner;
             overlayHandle = handle;
+        }
+
+        /** 通知内容根边界（挂载=新根；卸载=null）。 */
+        private void notifyContentRoot(SceneNode root) {
+            if (contentRootListener != null) {
+                contentRootListener.accept(root);
+            }
         }
 
         /** 卸载当前浮层并清理其子 Owner。 */
@@ -1322,6 +1446,7 @@ public class SceneRuntime implements SceneFontEnvironment {
                 return;
             }
             __releaseFontEnvironmentRoot(contentRoot);   // 摘除登记（内容根随浮层卸载）
+            notifyContentRoot(null);                     // 内容卸载：清目标引用（声明保留在句柄）
             contentRoot = null;
             contentOwner.dispose();
             contentOwner = null;

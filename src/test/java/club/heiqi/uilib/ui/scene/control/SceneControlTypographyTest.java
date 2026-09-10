@@ -410,16 +410,32 @@ public class SceneControlTypographyTest {
             fixture.mount(control, control == Control.AREA ? LONG_TEXT : "abc", 16, 560);
             fixture.frame();
             List<SceneNode> detached = textLeaves(fixture.control);
+            // 卸载前记录旧通道推送到各文字节点的层 1 声明快照（退订的可证伪锚点）。
+            List<Integer> explicitBeforeUnmount = new ArrayList<Integer>();
+            for (SceneNode leaf : detached) {
+                explicitBeforeUnmount.add(leaf.getExplicitFontSize());
+            }
             Assert.assertTrue("控件挂载应注册响应式工作", registeredEffectCount() > before);
             fixture.closeControl();
             Assert.assertEquals("mount Owner 应释放包括 typography 在内的全部 effect", before,
                     registeredEffectCount());
             fixture.control.setFontSize(32);
             fixture.value.set("changed after unmount");
-            fixture.frame();
+            LayoutResult afterUnmount = fixture.frame();
             Assert.assertEquals("空树没有控件文字", "", paintedText(fixture));
-            for (SceneNode leaf : detached) {
-                Assert.assertEquals("卸载的文字不能继续接收根字号", 16, leaf.getFontSize());
+            // 「退订 + 已摘除」的可证伪表达：卸载后旧通道不得再向文字节点推送层 1 声明
+            // （effect 泄漏时会把根的新字号推下去，本断言即红）；且卸载子树不再进入场景帧。
+            for (int i = 0; i < detached.size(); i++) {
+                SceneNode leaf = detached.get(i);
+                Assert.assertEquals("卸载后旧通道不得再推送字号声明（typography effect 已退订）",
+                        explicitBeforeUnmount.get(i), leaf.getExplicitFontSize());
+                Assert.assertFalse("已卸载节点不得进入场景帧的重排集合",
+                        afterUnmount.getRelayoutedNodes().contains(leaf)
+                                || afterUnmount.getConstraintRelayoutedNodes().contains(leaf));
+                // 卸载不变量：文字节点保留旧通道在挂载期写下的层 1 声明（16），
+                // 不再接收根字号变化 —— 若 typography effect 泄漏，把根的新字号 32 推下来即红。
+                Assert.assertEquals("卸载的文字不能继续接收根字号（声明已定 + effect 已退订）",
+                        16, leaf.getFontSize());
             }
         }
     }

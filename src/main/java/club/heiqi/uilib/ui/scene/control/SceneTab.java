@@ -226,17 +226,21 @@ public final class SceneTab {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
-            // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）：未指定时回落
-            // TAB_LABEL_FONT_SIZE。
+            // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）。
+            // 未指定（props.fontSize() == null）时**不写层 1 默认值**：TAB_LABEL_FONT_SIZE 只是
+            // 「无人声明时的回落值」，写成显式声明会遮蔽层 2 作用域（句柄入口对本控件失效）。
+            final ReadableSignal<Integer> configuredFontSize = props.fontSize();
             final int labelFontSize = SceneControlTypography.fontSizeOrDefault(
-                    props.fontSize(), TAB_LABEL_FONT_SIZE);
+                    configuredFontSize, TAB_LABEL_FONT_SIZE);
             // ① 建树一次（无副作用，I3）—— 纵向容器：tabBar 在上、contentPanel 在下
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
-            // 先定值再 attach：typography 的字号 Computed 以最终值为初值，标签首帧即正确。
-            root.setFontSize(labelFontSize);
+            // 显式指定时先定值再 attach：typography 的字号 Computed 以最终值为初值，标签首帧即正确。
+            if (configuredFontSize != null) {
+                root.setFontSize(labelFontSize);
+            }
             SceneControlTypography typography = SceneControlTypography.attach(rt, root);
-            SceneControlTypography.applyFontSize(rt, root, props.fontSize());
+            SceneControlTypography.applyFontSize(rt, root, configuredFontSize);
             // 断裂点①（fill 传导）：root 自身 fill，否则在父眼里是"固定容器子"，
             // priorKnownChildHeight 命中容器分支返回 UNCONSTRAINED，父放弃向 root 分配 grow 高。
             // 读 fillContentPanel 常量做静态配置（构建期一次性，非 signal 订阅，守 R3）。

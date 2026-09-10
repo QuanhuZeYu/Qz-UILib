@@ -92,7 +92,8 @@ public final class PickerInfoBar {
         SceneSurfaceBinder.bind(rt, bar, surface, ALWAYS_ENABLED, interaction);
 
         SceneNode label = new SceneNode();
-        label.setFontSize(FONT_SIZE);
+        // 私有常量降级为层 4a 回落值（有声明时跟随作用域，无声明时仍落 12）。
+        label.setFallbackFontSize(FONT_SIZE);
         label.setHitTestable(false);
         // 文本次要前景跟随来源主题（mutedForeground 派生，主题切换只重算色值、不重建节点）。
         rt.bind(SceneThemes.mutedForeground(rt), label::setTextColor);

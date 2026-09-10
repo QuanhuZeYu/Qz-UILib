@@ -177,14 +177,11 @@ public final class SceneDialog {
                 }
             }
         });
-        // 浮层字号：句柄在 portalAnchored 返回后才存在，而内容构建可能同步发生，故用惰性包装读句柄的字号源。
-        final ScenePortalHandle[] portalHolder = {null};
-        final ReadableSignal<Integer> fontSize = () -> {
-            ScenePortalHandle portal = portalHolder[0];
-            return portal == null ? null : portal.__fontSize().get();
-        };
-        portalHolder[0] = rt.portalAnchored(mounted,
-                () -> buildDialog(rt, props, mounted, leavingSinceNanos, mountedAtNanos, fontSize),
+        // 浮层字号：真值落点 = 内容根（scrim）。内容懒建完成后由 ScenePortalRenderer 经
+        // handle.__onContentRoot(root) 把层 2 声明写到内容根，标题/正文/按钮一律沿父链继承
+        // （含 alert/confirm 命令式路径）——不再有"惰性包装读句柄信号"的侧信道。
+        return rt.portalAnchored(mounted,
+                () -> buildDialog(rt, props, mounted, leavingSinceNanos, mountedAtNanos),
                 OverlayDismissPolicy.DEFAULT,
                 () -> {
                     if (props.onDismiss() != null) {
@@ -192,7 +189,6 @@ public final class SceneDialog {
                     }
                 },
                 null);
-        return portalHolder[0];
     }
 
     /**
@@ -264,8 +260,7 @@ public final class SceneDialog {
     private static SceneNode buildDialog(SceneRuntime rt, Props props,
                                          Signal<Boolean> mounted,
                                          ReadableSignal<Long> leavingSinceNanos,
-                                         long[] mountedAtNanos,
-                                         ReadableSignal<Integer> fontSize) {
+                                         long[] mountedAtNanos) {
         SceneNode scrim = SceneNode.column();
         scrim.setMainAxisAlign(MainAxisAlign.CENTER);
         scrim.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -291,8 +286,8 @@ public final class SceneDialog {
         // 标题/正文按卡片内容宽换行；换行宽与盒宽同源（见 messageWrapWidthPx）。
         // 标题取主题正文前景（SceneLabel 默认路径），正文取主题次要前景。
         int wrapWidth = messageWrapWidthPx();
-        mountLabel(rt, card, props.title(), wrapWidth, null, fontSize);
-        mountLabel(rt, card, props.message(), wrapWidth, SceneThemes.mutedForeground(rt), fontSize);
+        mountLabel(rt, card, props.title(), wrapWidth, null);
+        mountLabel(rt, card, props.message(), wrapWidth, SceneThemes.mutedForeground(rt));
 
         SceneNode buttonRow = SceneNode.row();
         buttonRow.setMainAxisAlign(MainAxisAlign.END);
@@ -358,12 +353,11 @@ public final class SceneDialog {
      *                   非 null = 该信号成为 {@code textColor} 的唯一动态写入者（正文取次要前景）
      */
     private static void mountLabel(SceneRuntime rt, SceneNode card, String text, int wrapWidth,
-                                   ReadableSignal<Integer> foreground, ReadableSignal<Integer> fontSize) {
+                                   ReadableSignal<Integer> foreground) {
         SceneLabel.Builder builder = SceneLabel.Props
                 .builder(Signal.create(SceneTextUtils.nullSafe(text)))
                 .wrapWidth(wrapWidth);
-        // 标题/正文跟随浮层字号（真值在浮层内容根节点）；未指定时不写，标签保持默认字号。
-        builder.fontSize(fontSize);
+        // 标题/正文跟随浮层字号：真值在浮层内容根（scrim 的层 2 声明），标签不写自身声明 ⇒ 继承。
         if (foreground != null) {
             // 显式初值让标签走「显式色」语义：Label 不再自绑一份主题正文前景，本类随后成为
             // textColor 唯一动态写入者。初值来自带初值的主题派生信号（SceneThemes 构造期已在

@@ -291,7 +291,7 @@ public final class MemberGrid {
                         && props.issues().get().duplicateMemberIds().contains(Long.valueOf(memberId))));
         SceneNode badge = text("");
         badge.setWidthSizing(WidthSizing.SHRINK);
-        badge.setFontSize(FONT_SIZE);
+        badge.setFallbackFontSize(FONT_SIZE);
         rt.bindText(badge, Computed.create(() -> Boolean.TRUE.equals(malformed.get())
                 ? props.presentation().invalidMemberBadge()
                 : Boolean.TRUE.equals(duplicate.get()) ? props.presentation().duplicateMemberBadge() : ""));
@@ -311,7 +311,7 @@ public final class MemberGrid {
 
         // 副文本：canonical 摘要，取主题次要前景。
         SceneNode secondary = text("");
-        secondary.setFontSize(FONT_SIZE);
+        secondary.setFallbackFontSize(FONT_SIZE);
         secondary.setClipChildren(true);
         rt.bind(SceneThemes.mutedForeground(rt), secondary::setTextColor);
         rt.bindText(secondary, Computed.create(() -> props.presentation().currentMemberSecondary(

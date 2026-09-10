@@ -4,7 +4,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
  * 受控浮层 portal 句柄。
@@ -21,15 +21,26 @@ import club.heiqi.uilib.ui.reactive.Signal;
  * handle.fontSize(14);            // 构建期
  * handle.fontSize(sizeSignal);    // 运行时可调
  * }</pre>
- * <p>字号是浮层内容根节点的 {@code SceneNode} 属性（与 padding/尺寸同类，不进主题通道）；内容里的自绘文字
- * 与按字号算出来的几何由各浮层实现负责跟随。信号为 null 或值为 null 时内容沿用节点默认字号。</p>
+ *
+ * <p><b>真值落点 = 浮层内容根节点</b>：内容懒建完成后，{@code ScenePortalRenderer} 经
+ * {@link #__onContentRoot(SceneNode)} 把层 2 声明写到内容根（{@link SceneNode#setFontScope(int)}）；
+ * 内容里的自绘文字与按字号算出的几何沿父链继承，无需逐点接线。内容卸载时回调 {@code null}，
+ * 声明留在句柄里，下次打开自动补落。</p>
+ *
+ * <p>入口语义与 {@link MountHandle} 完全一致：唯一 effect + 幂等替换、{@code int} 同步且释放旧订阅、
+ * {@code signal} 同步播种、参数 {@code null} 为 no-op；{@link #dispose()} 之后写入口抛
+ * {@link IllegalStateException}。</p>
  */
 public final class ScenePortalHandle {
 
     /** portal 生命周期根作用域。 */
     private final Owner portalOwner;
-    /** 浮层内容字号（UI 像素）；null = 未指定，内容沿用节点默认字号。 */
-    private final Signal<Integer> fontSizePx = Signal.create(null);
+
+    /** 本入口唯一的声明绑定（唯一 effect + 幂等替换）。 */
+    private final FontSizeBinding fontBinding;
+
+    /** 当前浮层内容根；null = 尚未构建（声明已记下，内容出现时补落）。 */
+    private SceneNode contentRoot;
 
     /**
      * 构造 portal 句柄。
@@ -38,51 +49,59 @@ public final class ScenePortalHandle {
      */
     ScenePortalHandle(Owner portalOwner) {
         this.portalOwner = Objects.requireNonNull(portalOwner, "portalOwner");
+        this.fontBinding = new FontSizeBinding(portalOwner, () -> contentRoot);
     }
 
     /**
-     * 设置浮层内容字号（构建期定值）。
+     * 设置浮层内容字号（构建期定值，同步生效）。
      *
-     * @param fontSizePx UI 像素字号
+     * @param fontSizePx UI 逻辑像素字号；越界抛 {@link IllegalArgumentException}
      * @return 本句柄（链式）
+     * @throws IllegalArgumentException 字号越界（合法区间见 FontSizeLimits）
+     * @throws IllegalStateException    本句柄已 {@link #dispose()}
      */
     public ScenePortalHandle fontSize(int fontSizePx) {
-        this.fontSizePx.set(Integer.valueOf(fontSizePx));
+        requireAlive();
+        fontBinding.set(fontSizePx);
         return this;
     }
 
     /**
-     * 设置浮层内容字号（运行时可调）。
+     * 设置浮层内容字号（运行时可调；幂等替换，不叠加 effect）。
      *
-     * <p>桥接到本句柄的字号信号后，内容里的文字随信号变化；信号为 null 时不写，内容保持既有字号。</p>
-     *
-     * @param fontSize UI 像素字号信号；null = 不指定
+     * @param fontSize UI 逻辑像素字号信号；null = 不指定
      * @return 本句柄（链式）
+     * @throws IllegalStateException 本句柄已 {@link #dispose()}
      */
     public ScenePortalHandle fontSize(ReadableSignal<Integer> fontSize) {
-        if (fontSize == null) {
-            return this;
-        }
-        Integer initial = fontSize.get();
-        if (initial != null) {
-            fontSizePx.set(initial);
-        }
-        portalOwner.createEffect(() -> {
-            Integer next = fontSize.get();
-            if (next != null) {
-                fontSizePx.set(next);
-            }
-        });
+        requireAlive();
+        fontBinding.bind(fontSize);
         return this;
     }
 
     /**
-     * 内部通道：浮层内容构建时读取字号源（未指定时为 null，内容沿用节点默认字号）。
+     * 撤回本句柄的字号声明（幂等）：内容根回落更远祖先 / runtime 默认 / 自有回落值。
      *
-     * @return 浮层字号只读信号
+     * @return 本句柄（链式）
+     * @throws IllegalStateException 本句柄已 {@link #dispose()}
      */
-    public ReadableSignal<Integer> __fontSize() {
-        return fontSizePx;
+    public ScenePortalHandle clearFontSize() {
+        requireAlive();
+        fontBinding.clear();
+        return this;
+    }
+
+    /**
+     * 内部通道：浮层内容构建边界回调（由 {@code ScenePortalRenderer} 在内容挂/卸时调用一次）。
+     *
+     * <p>内容出现时把已记下的层 2 声明补落到新内容根；内容卸载时清空目标引用（声明保留，
+     * 下次打开补落）。双下划线表示 internal bridge，业务不调用。</p>
+     *
+     * @param root 新的内容根；null = 内容已卸载
+     */
+    void __onContentRoot(SceneNode root) {
+        this.contentRoot = root;
+        fontBinding.retarget(root);
     }
 
     /** 停止 portal 响应并移除当前浮层。 */
@@ -93,5 +112,13 @@ public final class ScenePortalHandle {
     /** @return portal 是否已释放 */
     public boolean isDisposed() {
         return portalOwner.isDisposed();
+    }
+
+    /** R8：已释放句柄上的写入口快速失败。 */
+    private void requireAlive() {
+        if (portalOwner.isDisposed()) {
+            throw new IllegalStateException(
+                    "ScenePortalHandle 已 dispose：fontSize/clearFontSize 不可调用");
+        }
     }
 }

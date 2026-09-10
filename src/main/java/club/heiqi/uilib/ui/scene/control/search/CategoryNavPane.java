@@ -174,14 +174,16 @@ public final class CategoryNavPane {
 
         SceneNode label = new SceneNode();
         label.setFlexGrow(1);
-        label.setFontSize(FONT_SIZE);
+        // 私有常量降级为层 4a 回落值（有声明时跟随作用域，无声明时仍落 12）。
+        label.setFallbackFontSize(FONT_SIZE);
         label.setHitTestable(false);
         label.setText(row.label());
         rt.bind(labelForeground, label::setTextColor);
         rowNode.appendChild(label);
 
         SceneNode badge = new SceneNode();
-        badge.setFontSize(FONT_SIZE);
+        // 计数徽标：与行标签同一默认字号口径，同样降级为层 4a 回落值。
+        badge.setFallbackFontSize(FONT_SIZE);
         badge.setHitTestable(false);
         badge.setText(String.valueOf(row.count()));
         rt.bind(secondaryForeground, badge::setTextColor);
@@ -238,7 +240,7 @@ public final class CategoryNavPane {
         SceneNode node = new SceneNode();
         node.setText(value == null || value.isEmpty() ? DEFAULT_EMPTY_LABEL : value);
         node.setPadding(SceneChromeTokens.PAD_MD);
-        node.setFontSize(FONT_SIZE);
+        node.setFallbackFontSize(FONT_SIZE);
         node.setHitTestable(false);
         rt.bind(secondaryForeground, node::setTextColor);
         return node;

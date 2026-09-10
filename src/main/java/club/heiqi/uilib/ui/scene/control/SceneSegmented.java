@@ -153,14 +153,18 @@ public final class SceneSegmented {
             SceneNode root = result.root();
             root.setCrossAxisAlign(CrossAxisAlign.STRETCH);
             root.setGap(SEG_GAP);
-            // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）：先定值（未指定回落
-            // SEG_LABEL_FONT_SIZE），再 attach typography——其字号 Computed 以最终值为初值，
-            // 标签首帧即正确，不必等 layoutDone 后纠正。
+            // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）。
+            // 未指定（props.fontSize() == null）时**不写层 1 默认值**：SEG_LABEL_FONT_SIZE 只是
+            // 「无人声明时的回落值」，写成显式声明会遮蔽层 2 作用域（句柄入口对本控件失效）；
+            // 显式指定时先定值再 attach——typography 的字号 Computed 以最终值为初值，标签首帧即正确。
+            final ReadableSignal<Integer> configuredFontSize = props.fontSize();
             final int labelFontSize = SceneControlTypography.fontSizeOrDefault(
-                    props.fontSize(), SEG_LABEL_FONT_SIZE);
-            root.setFontSize(labelFontSize);
+                    configuredFontSize, SEG_LABEL_FONT_SIZE);
+            if (configuredFontSize != null) {
+                root.setFontSize(labelFontSize);
+            }
             SceneControlTypography typography = SceneControlTypography.attach(rt, root);
-            SceneControlTypography.applyFontSize(rt, root, props.fontSize());
+            SceneControlTypography.applyFontSize(rt, root, configuredFontSize);
             // 内置默认高：段自然高 = 标签行高 + 2 * 段内边距（与 ConfigScreen 原手动算口径同源）。
             // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
             // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退，grow 兄弟收不到分配高。

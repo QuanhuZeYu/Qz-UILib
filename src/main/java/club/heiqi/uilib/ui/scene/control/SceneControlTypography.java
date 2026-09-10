@@ -58,11 +58,17 @@ final class SceneControlTypography {
         return holder.get();
     }
 
-    /** 纯文本控件只需传播字号；默认 SceneRuntime 可由外部布局/绘制引擎提供度量，挂载不应因此新增对度量器的要求。 */
+    /**
+     * 纯文本控件只需传播字号；默认 SceneRuntime 可由外部布局/绘制引擎提供度量，挂载不应因此新增对度量器的要求。
+     *
+     * <p><b>读的是「声明值」而不是「生效值」</b>（{@link SceneNode#declaredFontSize()}）：本信号会被
+     * {@link #bindText}/{@link #bindCaret} 写进文字/光标节点当<b>层 1 显式声明</b>，若读已乘用户倍率的
+     * 生效值，接收节点会在自己的解析出口再乘一次倍率（2×2=4× 重复缩放）。倍率只在各节点解析出口生效一次。</p>
+     */
     private static ReadableSignal<Integer> createFontSize(SceneRuntime rt, SceneNode root) {
-        return Computed.create(Integer.valueOf(root.getFontSize()), () -> {
+        return Computed.create(Integer.valueOf(root.declaredFontSize()), () -> {
             rt.layoutDoneSignal().get();
-            return Integer.valueOf(root.getFontSize());
+            return Integer.valueOf(root.declaredFontSize());
         });
     }
 
@@ -163,7 +169,9 @@ final class SceneControlTypography {
     }
 
     private static Metrics sample(SceneRuntime rt, SceneNode root) {
-        int fontSizePx = root.getFontSize();
-        return new Metrics(fontSizePx, rt.lineHeight(fontSizePx), rt.textMeasureEpoch());
+        // 字号取「声明值」（写给 caret 节点当声明，倍率在其解析出口生效一次）；
+        // 行高取「生效值」——caret 盒高必须反映真实渲染尺寸（已含用户倍率）。
+        int declaredFontSizePx = root.declaredFontSize();
+        return new Metrics(declaredFontSizePx, rt.lineHeight(root.effectiveFontSize()), rt.textMeasureEpoch());
     }
 }

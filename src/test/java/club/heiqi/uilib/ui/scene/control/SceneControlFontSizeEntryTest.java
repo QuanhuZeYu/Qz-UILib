@@ -45,6 +45,8 @@ public class SceneControlFontSizeEntryTest {
     private static final String BUTTON_LABEL = "Button";
     private static final String INPUT_TEXT = "abcdef";
     private static final String CHILD_TEXT = "child";
+    /** 显式声明一层以切断继承的子节点文本。 */
+    private static final String ISOLATED_TEXT = "isolated";
     /** 分段/页签共用标签集（长度 3，便于逐段断言宽度）。 */
     private static final List<String> TAB_LABELS = Arrays.asList("Day", "Week", "Month");
     /** 页签内容构建器：与标签同长同序，各页一个空 panel。 */
@@ -111,20 +113,32 @@ public class SceneControlFontSizeEntryTest {
     }
 
     /**
-     * 作用域边界：控件字号只覆盖自己画的文字，业务方塞进来的子控件是独立控件。
+     * 作用域边界（S2/S3 新语义，取代旧「不做子树继承」裁定）：<b>字号随节点树沿父链就近竞争</b>——
+     * 业务方 {@code appendChild} 进来的子节点默认继承最近声明；需要「不被祖先作用域影响」时，
+     * 在该子节点<b>显式声明一层</b>（层 1 显式值或层 2 作用域），而不是「取消继承」。
      *
-     * <p>与「不做子树继承」的裁定同源：父容器改字号不得改掉子控件的字号。</p>
+     * <p>两半都必须能证伪：改坏继承 ⇒ 第一半红；改坏「同节点声明优先于祖先」⇒ 第二半红。</p>
      */
     @Test
-    public void controlFontSizeDoesNotLeakIntoBusinessChild() {
+    public void businessChildInheritsParentScopeUnlessExplicitlyDeclared() {
         Fixture fixture = fixture();
         fixture.mountPx(Control.BUTTON, 28);
-        SceneNode child = new SceneNode();
-        child.setText(CHILD_TEXT);
-        fixture.mount.getRoot().appendChild(child);
+
+        SceneNode inherited = new SceneNode();
+        inherited.setText(CHILD_TEXT);
+        fixture.mount.getRoot().appendChild(inherited);
+
+        SceneNode isolated = new SceneNode();
+        isolated.setText(ISOLATED_TEXT);
+        // 显式声明一层（层 1）⇒ 该子树不再跟随祖先声明。
+        // 钉住「显式即声明」：未声明节点写 16 也必须构成声明（旧「按框架默认值同值早退」语义已删除）。
+        isolated.setFontSize(DEFAULT_FONT_SIZE);
+        fixture.mount.getRoot().appendChild(isolated);
+
         fixture.frame();
         assertPaintedFontSize(fixture, BUTTON_LABEL, 28);
-        assertPaintedFontSize(fixture, CHILD_TEXT, DEFAULT_FONT_SIZE);
+        assertPaintedFontSize(fixture, CHILD_TEXT, 28);                    // 继承生效
+        assertPaintedFontSize(fixture, ISOLATED_TEXT, DEFAULT_FONT_SIZE);  // 显式声明可切断
     }
 
     /**

@@ -473,7 +473,8 @@ public final class SceneVirtualGrid {
         if (item.label() != null) {
             SceneNode label = new SceneNode();
             label.setHitTestable(false);
-            label.setFontSize(LABEL_FONT_SIZE);
+            // 私有常量降级为层 4a 回落值（有作用域/环境默认时跟随，无声明时仍落 12）。
+            label.setFallbackFontSize(LABEL_FONT_SIZE);
             // 行文字取主题次要前景（旧 TEXT_SECONDARY 同值起步），禁用取禁用前景；
             // 选中区分由底色承担，不靠文字变色（G09/SearchResultList 口径）。
             label.setTextHorizontalAlign(TextHorizontalAlign.CENTER);

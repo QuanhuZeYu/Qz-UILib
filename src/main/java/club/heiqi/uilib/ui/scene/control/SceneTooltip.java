@@ -251,7 +251,9 @@ public final class SceneTooltip {
         ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
         rt.forEach(root, lines, Line::index, line -> {
             SceneNode node = new SceneNode();
-            node.setFontSize(FONT_SIZE);
+            // 私有常量降级为层 4a 回落值（「未指定时的回落」语义）：有作用域/环境默认时跟随，
+            // 无声明时仍落 12 —— 默认路径零视觉变化，且不再阻断继承。
+            node.setFallbackFontSize(FONT_SIZE);
             node.setHitTestable(false);
             rt.bindComputed(foreground::get, node::setTextColor);
             rt.bindComputed(() -> lineTextAt(lines.get(), line.index()), node::setText);
