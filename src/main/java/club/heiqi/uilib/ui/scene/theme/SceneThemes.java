@@ -202,6 +202,30 @@ public final class SceneThemes {
     }
 
     /**
+     * 默认边框色的只读派生。
+     *
+     * <p>与 {@link #borderFocus} 配套：需要「非聚焦态也跟随主题」的边框消费点用它，
+     * 不要静态取 {@code SceneChromeTokens.BORDER_DEFAULT}——后者与深色档同值，
+     * 在浅色档下不会跟随。</p>
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 默认边框色信号
+     */
+    public static ReadableSignal<Integer> borderDefault(SceneRuntime rt) {
+        return color(rt, theme -> theme.borderDefault());
+    }
+
+    /**
+     * 禁用边框色的只读派生。
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 禁用边框色信号
+     */
+    public static ReadableSignal<Integer> borderDisabled(SceneRuntime rt) {
+        return color(rt, theme -> theme.borderDisabled());
+    }
+
+    /**
      * 文本选区背景的只读派生。
      *
      * @param rt 目标 runtime，不可为 null

@@ -1291,6 +1291,45 @@ public class SceneTextAreaTest {
     }
 
     /**
+     * 选区高亮两色取自主题 {@code selectionBackground/selectionForeground}（契约 §2.8）：
+     * primitive 不再直接取 {@code SceneChromeTokens.SELECTION_*}。
+     *
+     * <p>深色档两值与旧静态 token 同值，无法区分「走主题」与「走回落」；故必须切到浅色档
+     * 才能证伪静态回落路径——这正是本用例存在的理由。</p>
+     */
+    @Test
+    public void selectionHighlightColorsFollowThemeNotStaticTokens() {
+        Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
+        mountTextAreaWithTheme(pageTheme, "abcdefghij");
+        doLayoutAndBridge();
+        runtime.requestFocus(contentNode());
+
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT);              // caret=2
+        routeKeyAndFlush(SceneKey.ARROW_RIGHT, false, true); // Shift+RIGHT → 选区 [2,3)
+        doLayoutAndBridge();
+        Assert.assertEquals("前置：选区已建立（行0 highlight 拿到选中字符）", "c",
+                rowHighlight(0).getText());
+
+        Assert.assertEquals("深色档选区背景 = 主题槽（与旧 token 同值，此档不可证伪）",
+                SceneThemes.DEFAULT.selectionBackground(), rowHighlight(0).getBackgroundColor());
+
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：两档选区背景必须互异",
+                SceneThemes.DEFAULT.selectionBackground(), light.selectionBackground());
+        Assert.assertNotEquals("测试前提：两档选区前景必须互异",
+                SceneThemes.DEFAULT.selectionForeground(), light.selectionForeground());
+
+        pageTheme.set(light);
+        runtime.flush();
+
+        Assert.assertEquals("选区背景随主题更新（非静态回落）", light.selectionBackground(),
+                rowHighlight(0).getBackgroundColor());
+        Assert.assertEquals("选区前景随主题更新（非静态回落）", light.selectionForeground(),
+                rowHighlight(0).getTextColor());
+    }
+
+    /**
      * 卸载回收：handle.dispose + flush 后，绑定注册的 effect 回到基线。
      */
     @Test

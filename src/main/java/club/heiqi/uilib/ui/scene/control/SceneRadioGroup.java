@@ -155,6 +155,7 @@ public final class SceneRadioGroup {
             ReadableSignal<Integer> onAccentForeground = SceneThemes.onAccentForeground(rt);
             ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
             ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+            ReadableSignal<Integer> borderDefault = SceneThemes.borderDefault(rt);
 
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
                 SceneNode option = handle.item();
@@ -162,10 +163,12 @@ public final class SceneRadioGroup {
                 option.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 option.setGap(OPTION_GAP);
                 option.setPadding(OPTION_PADDING);
-                // option 行容器不参与表面采样（避免逐行重复滤镜），保留静态圆角/边框/padding。
+                // option 行容器不参与表面采样（避免逐行重复滤镜），保留静态圆角/边框宽/padding；
+                // 边框色改绑主题 borderDefault——不再静态取 SceneChromeTokens.BORDER_DEFAULT
+                // （该值与深色档同值，浅色档下不会跟随）。
                 option.setCornerRadius(OPTION_RADIUS);
                 option.setBorderWidth(BORDER_WIDTH);
-                option.setBorderColor(SceneChromeTokens.BORDER_DEFAULT);
+                rt.bind(borderDefault, option::setBorderColor);
                 // 宽度收缩到内容：命中外轮廓收至 circle+gap+label+padding，避免 FILL 透明行吞父宽
                 option.setWidthSizing(SceneNode.WidthSizing.SHRINK);
 

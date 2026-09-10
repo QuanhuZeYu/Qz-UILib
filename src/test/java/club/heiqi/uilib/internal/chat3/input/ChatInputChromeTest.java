@@ -30,7 +30,6 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
@@ -129,12 +128,14 @@ public class ChatInputChromeTest {
         Assert.assertEquals(ChatMarkdownSettings.getInputFocusBorderArgb(), input.root().getBorderColor());
         Assert.assertEquals(SceneChromeTokens.BORDER_FOCUS, input.caret().getBackgroundColor());
         harness.typeText("abc");
-        Assert.assertEquals(SceneStateColors.standardText(true, false), input.prefixText().getTextColor());
+        Assert.assertEquals("正文前景 = 主题 foreground", SceneThemes.DEFAULT.foreground(),
+                input.prefixText().getTextColor());
         enabled.set(Boolean.FALSE);
         harness.flush();
         Assert.assertEquals(SceneCursor.NOT_ALLOWED, input.root().getCursor());
         Assert.assertFalse(input.root().isHitTestable());
-        Assert.assertEquals(SceneStateColors.standardText(false, false), input.prefixText().getTextColor());
+        Assert.assertEquals("禁用前景 = 主题 disabledForeground", SceneThemes.DEFAULT.disabledForeground(),
+                input.prefixText().getTextColor());
         Assert.assertEquals(0, input.caret().getBackgroundColor());
         Assert.assertEquals(ChatMarkdownSettings.getInputBackgroundArgb(), input.root().getBackgroundColor());
     }

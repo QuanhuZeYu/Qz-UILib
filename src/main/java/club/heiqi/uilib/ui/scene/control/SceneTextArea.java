@@ -216,16 +216,20 @@ public final class SceneTextArea {
             ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
             ReadableSignal<Integer> mutedForeground = SceneThemes.mutedForeground(rt);
             ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
+            // 选区两色与单行输入/自动补全/下拉列表同源（契约 §2.8：不得直接取 SceneChromeTokens.SELECTION_*）。
+            ReadableSignal<Integer> selectionBackground = SceneThemes.selectionBackground(rt);
+            ReadableSignal<Integer> selectionForeground = SceneThemes.selectionForeground(rt);
 
             SceneTextAreaPrimitive.Props primitiveProps = new SceneTextAreaPrimitive.Props(
                     props.value(), props.enabled(), props.readOnly(), props.placeholder(),
                     props.maxLength(),
-                    // int 色槽仅作旧 10 参路径的兼容回落：四个语义信号恒非 null，故取值永不参与上色。
+                    // int 色槽仅作旧构造路径的兼容回落：六个语义信号恒非 null，故取值永不参与上色。
                     // 此处读到的是 SceneThemes 带初值的主题派生信号（非「未求值 Computed」）。
                     initialOf(caretColor), initialOf(foreground),
                     initialOf(mutedForeground), initialOf(disabledForeground),
                     props.onChange(),
-                    caretColor, foreground, mutedForeground, disabledForeground);
+                    caretColor, foreground, mutedForeground, disabledForeground,
+                    selectionBackground, selectionForeground);
             SceneTextAreaPrimitive.Result result = SceneTextAreaPrimitive.create(rt, primitiveProps);
             SceneNode root = result.root();
             root.setPadding(PADDING);

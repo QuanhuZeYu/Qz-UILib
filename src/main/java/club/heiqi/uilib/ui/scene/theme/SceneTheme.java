@@ -156,13 +156,21 @@ public final class SceneTheme {
     public int warningText() { return warningText; }
 
     /**
-     * 全角色关闭滤镜的可读替代档：backdrop 全为 null，tint 换为不透明底色，
-     * 边框、圆角、前景与状态色保持同一套。
+     * 以本主题当前值为起点的构建器：全部语义色与九份角色配方按现值预置，可逐项覆盖。
      *
-     * @return 无滤镜主题
+     * <p><b>与 {@link #builder()} 的区别</b>：{@code builder()} 恒以深色液态玻璃档为起点，
+     * 本方法以「本实例的现值」为起点。因此从 {@link #liquidGlassLight()}、{@link #solidDark()}
+     * 或 {@link #withoutBackdrop()} 的派生结果构造变体时，只需覆盖要改的字段，
+     * 不必逐项抄写全部语义色与角色配方。</p>
+     *
+     * <p>返回的构建器与本实例无耦合：改动不回写本主题（值对象不可变）。</p>
+     *
+     * @return 预置了本主题全部字段的构建器
      */
-    public SceneTheme withoutBackdrop() {
-        Builder builder = builder();
+    public Builder toBuilder() {
+        Builder builder = new Builder();
+        builder.surfaces.clear();
+        builder.surfaces.putAll(surfaces);
         builder.foreground = foreground;
         builder.mutedForeground = mutedForeground;
         builder.disabledForeground = disabledForeground;
@@ -178,6 +186,17 @@ public final class SceneTheme {
         builder.danger = danger;
         builder.errorText = errorText;
         builder.warningText = warningText;
+        return builder;
+    }
+
+    /**
+     * 全角色关闭滤镜的可读替代档：backdrop 全为 null，tint 换为不透明底色，
+     * 边框、圆角、前景与状态色保持同一套。
+     *
+     * @return 无滤镜主题
+     */
+    public SceneTheme withoutBackdrop() {
+        Builder builder = toBuilder();
         for (Map.Entry<Role, SceneSurfaceStyle> entry : surfaces.entrySet()) {
             builder.surfaces.put(entry.getKey(), opaque(entry.getKey(), entry.getValue()));
         }

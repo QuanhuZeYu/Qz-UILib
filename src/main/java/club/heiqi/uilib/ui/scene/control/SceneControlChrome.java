@@ -19,7 +19,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * <h3>为何放 control 包而非 paint 包（守 I6）</h3>
  * <p>helper 依赖 {@link SceneRuntime}（runtime 层）与 {@link SceneInteractionState}（input 层），
  * 若放 paint 层会破坏宪章不变量 I6「渲染层不出现 signal/组件概念」——paint 层只允许纯静态
- * 查表（如 {@code SceneStateColors}），不允许反向依赖 runtime/input。control 层本就依赖
+ * 查表（如 {@code SceneChromeTokens}），不允许反向依赖 runtime/input。control 层本就依赖
  * runtime/input/node/paint/reactive，放此包不引入任何新的非法依赖方向。</p>
  *
  * <h3>守 R4 / I4 / I1</h3>

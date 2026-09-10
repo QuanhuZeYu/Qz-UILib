@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
@@ -69,9 +69,11 @@ public class SceneAutocompletePrimitiveIntegrationTest {
     private static final int CANVAS_WIDTH = 240;
     private static final int CANVAS_HEIGHT = 160;
     private static final int STUB_CHAR_WIDTH = 8;
-    private static final int ITEM_BG_DEFAULT = SceneStateColors.listItemBackground(true, false, false, false);
-    private static final int ITEM_BG_HOVERED = SceneStateColors.listItemBackground(true, false, false, true);
-    private static final int ITEM_BG_HIGHLIGHTED = SceneStateColors.listItemBackground(true, false, true, false);
+    // 本用例的 chrome 装饰钩子自持静态色（不参与主题），期望值直接取 SceneChromeTokens 同名档：
+    // 旧 SceneStateColors.listItemBackground 查表已随类删除，等价展开为「透明 / BG_HOVER / BG_DEFAULT」。
+    private static final int ITEM_BG_DEFAULT = SceneChromeTokens.TRANSPARENT;
+    private static final int ITEM_BG_HOVERED = SceneChromeTokens.BG_HOVER;
+    private static final int ITEM_BG_HIGHLIGHTED = SceneChromeTokens.BG_DEFAULT;
 
     private static final List<String> CANDIDATES = Arrays.asList(
             "Arial", "Arial Black", "Calibri", "Cambria", "Consolas");
@@ -245,11 +247,14 @@ public class SceneAutocompletePrimitiveIntegrationTest {
 
         @Override
         public void decorateItem(SceneAutocompletePrimitive.ItemHandle handle) {
-            rt.bindComputed(() -> SceneStateColors.listItemBackground(
-                            true, false,
-                            Boolean.TRUE.equals(handle.highlighted().get()),
-                            Boolean.TRUE.equals(handle.interaction().hovered().get())),
-                    handle.item()::setBackgroundColor);
+            rt.bindComputed(() -> {
+                if (Boolean.TRUE.equals(handle.highlighted().get())) {
+                    return Integer.valueOf(SceneChromeTokens.BG_DEFAULT);
+                }
+                return Boolean.TRUE.equals(handle.interaction().hovered().get())
+                        ? Integer.valueOf(SceneChromeTokens.BG_HOVER)
+                        : Integer.valueOf(SceneChromeTokens.TRANSPARENT);
+            }, handle.item()::setBackgroundColor);
         }
     }
 

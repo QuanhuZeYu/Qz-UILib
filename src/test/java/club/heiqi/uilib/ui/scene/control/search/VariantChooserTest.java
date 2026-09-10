@@ -32,7 +32,6 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
-import club.heiqi.uilib.ui.scene.paint.SceneStateColors;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
@@ -580,13 +579,8 @@ public class VariantChooserTest {
             Assert.assertNull("行内圆点不采样背景", dotOf(row).getBackdrop());
         }
 
-        // 旧接缝 SceneControlChrome.bindSelectableBackground / SceneStateColors 不再被默认路径调用
-        Assert.assertNotEquals("选中不再取旧 SceneStateColors.selectedBackground 档",
-                SceneStateColors.selectedBackground(true, false, false),
-                rowV1.getBackgroundColor());
-        Assert.assertNotEquals("未选中不再取旧 SceneStateColors.standardBackground 档",
-                SceneStateColors.standardBackground(true, false, false),
-                rowV2.getBackgroundColor());
+        // 旧接缝 SceneControlChrome.bindSelectableBackground / SceneStateColors 已随类删除而消失：
+        // 「不再取旧静态档」此后由编译期保证（引用不存在的类无法通过编译），运行期无对照物可断言。
 
         // 勾选圆点：启用+选中取主题强调底前景，未选中透明露出面板玻璃底
         Assert.assertEquals("选中行圆点 = onAccentForeground", DOT_ON,

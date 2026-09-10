@@ -85,6 +85,36 @@ public class SceneThemeTest {
         Assert.assertNotEquals(left, different);
     }
 
+    /**
+     * {@link SceneTheme#toBuilder()}：以本实例现值为起点派生，可从任一内置档（含非默认档与
+     * {@code withoutBackdrop} 派生档）出发只改目标字段，不必逐项抄写全部语义色与角色配方。
+     */
+    @Test
+    public void toBuilderDerivesFromAnyExistingTier() {
+        for (SceneTheme base : new SceneTheme[] {
+                SceneTheme.liquidGlassDark(), SceneTheme.liquidGlassLight(), SceneTheme.solidDark(),
+                SceneTheme.liquidGlassDark().withoutBackdrop() }) {
+            Assert.assertEquals("toBuilder 空派生必须值相等：" + base, base, base.toBuilder().build());
+            Assert.assertEquals("toBuilder 空派生 hashCode 相等：" + base,
+                    base.hashCode(), base.toBuilder().build().hashCode());
+        }
+
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        SceneTheme derived = light.toBuilder().accent(0xFF00BFA5).build();
+        Assert.assertEquals("只改目标字段", 0xFF00BFA5, derived.accent());
+        Assert.assertEquals("未改语义色保持浅色档值", light.foreground(), derived.foreground());
+        Assert.assertEquals("未改边框色保持浅色档值", light.borderDefault(), derived.borderDefault());
+        Assert.assertEquals("未改选区色保持浅色档值",
+                light.selectionBackground(), derived.selectionBackground());
+        for (SceneTheme.Role role : SceneTheme.Role.values()) {
+            Assert.assertEquals("未改角色配方保持浅色档值：" + role,
+                    light.surface(role), derived.surface(role));
+        }
+        Assert.assertNotEquals("派生结果与基准可区分", light, derived);
+        Assert.assertEquals("基准实例不被派生改动影响（值对象不可变）",
+                SceneTheme.liquidGlassLight().accent(), light.accent());
+    }
+
     private static void assertIllegalArgument(Runnable action) {
         try {
             action.run();

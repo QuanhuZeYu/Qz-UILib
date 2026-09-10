@@ -116,6 +116,10 @@ public final class SceneTextAreaPrimitive {
      * @param textNormalSignal   正文前景语义信号；null = 回落 {@code textNormalColor}
      * @param textPlaceholderSignal 占位前景语义信号；null = 回落 {@code textPlaceholderColor}
      * @param textDisabledSignal 禁用前景语义信号；null = 回落 {@code textDisabledColor}
+     * @param selectionBackgroundSignal 选区高亮背景语义信号（主题 {@code selectionBackground()}）；
+     *        null = 回落 {@link SceneChromeTokens#SELECTION_BG}（旧 14/10 参构造路径兼容）
+     * @param selectionForegroundSignal 选区高亮前景语义信号（主题 {@code selectionForeground()}）；
+     *        null = 回落 {@link SceneChromeTokens#SELECTION_TEXT}（旧 14/10 参构造路径兼容）
      */
     @Desugar
     public record Props(
@@ -132,11 +136,13 @@ public final class SceneTextAreaPrimitive {
             ReadableSignal<Integer> caretVisibleSignal,
             ReadableSignal<Integer> textNormalSignal,
             ReadableSignal<Integer> textPlaceholderSignal,
-            ReadableSignal<Integer> textDisabledSignal
+            ReadableSignal<Integer> textDisabledSignal,
+            ReadableSignal<Integer> selectionBackgroundSignal,
+            ReadableSignal<Integer> selectionForegroundSignal
     ) {
 
         /**
-         * 向后兼容 10 参构造：四个语义色信号为 null，颜色解析完全回落同名 int 常量
+         * 向后兼容 10 参构造：六个语义色信号为 null，颜色解析完全回落同名 int 常量
          * （外观与旧版逐像素一致）。
          */
         public Props(ReadableSignal<String> value,
@@ -151,7 +157,32 @@ public final class SceneTextAreaPrimitive {
                      Consumer<String> onChange) {
             this(value, enabled, readOnly, placeholder, maxLength, caretVisibleColor,
                     textNormalColor, textPlaceholderColor, textDisabledColor, onChange,
-                    null, null, null, null);
+                    null, null, null, null, null, null);
+        }
+
+        /**
+         * 向后兼容 14 参构造：不含选区语义信号，选区两色回落
+         * {@link SceneChromeTokens#SELECTION_BG}/{@link SceneChromeTokens#SELECTION_TEXT}
+         * （旧版选区外观逐像素一致）。主题路径请用全参构造传入选区信号。
+         */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     int caretVisibleColor,
+                     int textNormalColor,
+                     int textPlaceholderColor,
+                     int textDisabledColor,
+                     Consumer<String> onChange,
+                     ReadableSignal<Integer> caretVisibleSignal,
+                     ReadableSignal<Integer> textNormalSignal,
+                     ReadableSignal<Integer> textPlaceholderSignal,
+                     ReadableSignal<Integer> textDisabledSignal) {
+            this(value, enabled, readOnly, placeholder, maxLength, caretVisibleColor,
+                    textNormalColor, textPlaceholderColor, textDisabledColor, onChange,
+                    caretVisibleSignal, textNormalSignal, textPlaceholderSignal, textDisabledSignal,
+                    null, null);
         }
     }
 
@@ -784,12 +815,14 @@ public final class SceneTextAreaPrimitive {
         rt.bindComputed(() -> resolveTextColor(props, isPlaceholder.get(), props.enabled().get()),
                 suffix::setTextColor);
         // 选区高亮：激活时反白文本 + 统一高亮背景（失焦保留选区可见）
+        // 选区两色走语义信号（主题 selectionForeground/selectionBackground），与单行输入、
+        // 自动补全、下拉列表同一来源；信号为 null 时才回落静态 token（旧构造路径兼容）。
         rt.bindComputed(() -> Boolean.TRUE.equals(selection.get().isActive())
-                        ? SceneChromeTokens.SELECTION_TEXT
+                        ? selectionForegroundColor(props)
                         : resolveTextColor(props, isPlaceholder.get(), props.enabled().get()),
                 highlight::setTextColor);
         rt.bindComputed(() -> Boolean.TRUE.equals(selection.get().isActive())
-                        ? SceneChromeTokens.SELECTION_BG : CARET_TRANSPARENT,
+                        ? selectionBackgroundColor(props) : CARET_TRANSPARENT,
                 highlight::setBackgroundColor);
 
         // caret 是否在本视觉行：抽单个 Computed 复用（key 现查视觉行号 + caret 唯一归属）
@@ -872,6 +905,32 @@ public final class SceneTextAreaPrimitive {
     private static int caretColor(Props props) {
         ReadableSignal<Integer> signal = props.caretVisibleSignal();
         return signal != null ? signal.get().intValue() : props.caretVisibleColor();
+    }
+
+    /**
+     * 选区高亮背景色：信号非 null 优先（主题 {@code selectionBackground()}），否则回落
+     * {@link SceneChromeTokens#SELECTION_BG}（旧构造路径）。
+     *
+     * <p>与其它语义色同构：信号在 effect 派生内读取，建立主题依赖，主题切换自动重算。</p>
+     *
+     * @param props 输入契约
+     * @return 选区高亮背景色 ARGB
+     */
+    private static int selectionBackgroundColor(Props props) {
+        ReadableSignal<Integer> signal = props.selectionBackgroundSignal();
+        return signal != null ? signal.get().intValue() : SceneChromeTokens.SELECTION_BG;
+    }
+
+    /**
+     * 选区高亮前景色：信号非 null 优先（主题 {@code selectionForeground()}），否则回落
+     * {@link SceneChromeTokens#SELECTION_TEXT}（旧构造路径）。
+     *
+     * @param props 输入契约
+     * @return 选区高亮前景色 ARGB
+     */
+    private static int selectionForegroundColor(Props props) {
+        ReadableSignal<Integer> signal = props.selectionForegroundSignal();
+        return signal != null ? signal.get().intValue() : SceneChromeTokens.SELECTION_TEXT;
     }
 
     /** 正文前景：信号非 null 优先，否则 int 常量。 */

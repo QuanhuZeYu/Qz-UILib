@@ -200,4 +200,43 @@ public class SceneThemesSemanticColorTest {
         Assert.assertNotEquals("success 借道的两档值互异（证明真实跟随主题）",
                 Integer.valueOf(dark.accent()), captured.success.get());
     }
+
+    /**
+     * 边框语义色派生入口（{@link SceneThemes#borderDefault}/{@link SceneThemes#borderDisabled}）：
+     * 补齐 {@code borderFocus} 之外的其余两态，使「非聚焦边框也跟随主题」有公共派生入口，
+     * 消费点不必静态取 {@code SceneChromeTokens.BORDER_DEFAULT}——后者与深色档同值，
+     * 浅色档下不会跟随（SceneRadioGroup option 行即此前的实例）。
+     */
+    @Test
+    public void borderEntriesFollowThemeAcrossTiers() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Assert.assertNotEquals("测试前提：两档 borderDefault 必须互异",
+                dark.borderDefault(), light.borderDefault());
+        Assert.assertNotEquals("测试前提：两档 borderDisabled 必须互异",
+                dark.borderDisabled(), light.borderDisabled());
+
+        SceneRuntime rt = new SceneRuntime();
+        Signal<SceneTheme> page = Signal.create(dark);
+        final ReadableSignal<Integer>[] holder = new ReadableSignal[2];
+        rt.mount(new SceneNode(), () -> {
+            SceneThemes.withTheme(page, () -> {
+                holder[0] = SceneThemes.borderDefault(rt);
+                holder[1] = SceneThemes.borderDisabled(rt);
+            });
+            return new SceneNode();
+        });
+
+        Assert.assertEquals("构造期初值 = 深色档 borderDefault",
+                Integer.valueOf(dark.borderDefault()), holder[0].get());
+        Assert.assertEquals("构造期初值 = 深色档 borderDisabled",
+                Integer.valueOf(dark.borderDisabled()), holder[1].get());
+
+        page.set(light);
+        rt.flush();
+        Assert.assertEquals("borderDefault 随主题切换",
+                Integer.valueOf(light.borderDefault()), holder[0].get());
+        Assert.assertEquals("borderDisabled 随主题切换",
+                Integer.valueOf(light.borderDisabled()), holder[1].get());
+    }
 }
