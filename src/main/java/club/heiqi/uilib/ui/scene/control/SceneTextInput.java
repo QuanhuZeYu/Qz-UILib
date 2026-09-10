@@ -72,6 +72,7 @@ public final class SceneTextInput {
      * @param blockChars   块字符集合（每个字符为一项被禁字符；null/空 = 不过滤，向后兼容默认）；
      *                    键入/TEXT_INPUT/粘贴统一逐字符剔除，语义与原版 ChatAllowedCharacters
      *                    拒绝表一致（默认空集 = 既有行为零变化）
+     * @param fontSize  控件内文字字号（UI 像素，响应式）；null = 不指定，沿用节点默认字号
      */
     @Desugar
     public record Props(
@@ -84,7 +85,8 @@ public final class SceneTextInput {
             Consumer<String> onChange,
             Integer placeholderColor,
             MaxLengthUnit maxLengthUnit,
-            String blockChars
+            String blockChars,
+            ReadableSignal<Integer> fontSize
     ) {
 
         /** 向后兼容 7 参构造：placeholderColor = null、maxLengthUnit = CODEPOINT、blockChars = null（行为与旧版一致）。 */
@@ -123,7 +125,22 @@ public final class SceneTextInput {
                      Integer placeholderColor,
                      MaxLengthUnit maxLengthUnit) {
             this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange,
-                    placeholderColor, maxLengthUnit, null);
+                    placeholderColor, maxLengthUnit, null, null);
+        }
+
+        /** 向后兼容 10 参构造：fontSize = null（沿用节点默认字号，既有行为零变化）。 */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     SceneInputType inputType,
+                     Consumer<String> onChange,
+                     Integer placeholderColor,
+                     MaxLengthUnit maxLengthUnit,
+                     String blockChars) {
+            this(value, enabled, readOnly, placeholder, maxLength, inputType, onChange,
+                    placeholderColor, maxLengthUnit, blockChars, null);
         }
 
         /**
@@ -158,6 +175,8 @@ public final class SceneTextInput {
             private MaxLengthUnit maxLengthUnit = MaxLengthUnit.CODEPOINT;
             /** 块字符集合（null/空 = 不过滤）；向后兼容新增。 */
             private String blockChars;
+            /** 控件内文字字号；null = 不指定，沿用节点默认字号。 */
+            private ReadableSignal<Integer> fontSize;
 
             /**
              * 创建构建器。
@@ -272,6 +291,33 @@ public final class SceneTextInput {
             }
 
             /**
+             * 设置控件内文字字号（构建期定值）。
+             *
+             * <p>只影响本控件自己画的文字（文本 / placeholder / caret / 度量）；业务方塞进来的
+             * 子控件是独立控件，不受影响。</p>
+             *
+             * @param fontSizePx UI 像素字号
+             * @return 当前 builder
+             */
+            public Builder fontSizePx(int fontSizePx) {
+                this.fontSize = Signal.create(Integer.valueOf(fontSizePx));
+                return this;
+            }
+
+            /**
+             * 设置控件内文字字号（运行时可调）。
+             *
+             * <p>信号变化时文字、caret 与文本度量在同帧内跟随，无需调用方手动标脏。</p>
+             *
+             * @param fontSize UI 像素字号信号；null = 不指定
+             * @return 当前 builder
+             */
+            public Builder fontSize(ReadableSignal<Integer> fontSize) {
+                this.fontSize = fontSize;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props 实例
@@ -282,7 +328,7 @@ public final class SceneTextInput {
                     throw new IllegalArgumentException("onChange must not be null");
                 }
                 return new Props(value, enabled, readOnly, placeholder, maxLength, inputType,
-                        onChange, placeholderColor, maxLengthUnit, blockChars);
+                        onChange, placeholderColor, maxLengthUnit, blockChars, fontSize);
             }
         }
     }
@@ -344,6 +390,8 @@ public final class SceneTextInput {
     private static void applyChrome(SceneRuntime rt, Props props, SceneTextInputPrimitive.Result result) {
         SceneNode root = result.root();
         root.setPadding(PADDING);
+        // 控件级字号：只写 root，文本/placeholder/caret/度量由 primitive 内的 typography 通道跟随。
+        SceneControlTypography.applyFontSize(rt, root, props.fontSize());
         SceneInteractionState interaction = rt.interactionState(root);
 
         // 唯一外观写入者：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation

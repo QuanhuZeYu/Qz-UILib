@@ -73,6 +73,7 @@ public final class SceneTextArea {
      * @param maxLength   最大码点数
      * @param viewportHeight 视口固定高度（像素），非正时用默认值
      * @param onChange    文本变更回调
+     * @param fontSize    控件内文字字号（UI 像素，响应式）；null = 不指定，沿用节点默认字号
      */
     @Desugar
     public record Props(
@@ -82,8 +83,20 @@ public final class SceneTextArea {
             String placeholder,
             int maxLength,
             int viewportHeight,
-            Consumer<String> onChange
+            Consumer<String> onChange,
+            ReadableSignal<Integer> fontSize
     ) {
+
+        /** 向后兼容 7 参构造：fontSize = null（沿用节点默认字号，既有行为零变化）。 */
+        public Props(ReadableSignal<String> value,
+                     ReadableSignal<Boolean> enabled,
+                     ReadableSignal<Boolean> readOnly,
+                     String placeholder,
+                     int maxLength,
+                     int viewportHeight,
+                     Consumer<String> onChange) {
+            this(value, enabled, readOnly, placeholder, maxLength, viewportHeight, onChange, null);
+        }
 
         /**
          * 创建 Props builder。
@@ -111,6 +124,8 @@ public final class SceneTextArea {
             private int viewportHeight = DEFAULT_VIEWPORT_HEIGHT;
             /** 文本变更回调。 */
             private Consumer<String> onChange;
+            /** 控件内文字字号；null = 不指定，沿用节点默认字号。 */
+            private ReadableSignal<Integer> fontSize;
 
             /**
              * 创建构建器。
@@ -188,6 +203,33 @@ public final class SceneTextArea {
             }
 
             /**
+             * 设置控件内文字字号（构建期定值）。
+             *
+             * <p>只影响本控件自己画的文字（文本 / placeholder / caret / 换行度量）；业务方塞进来的
+             * 子控件是独立控件，不受影响。</p>
+             *
+             * @param fontSizePx UI 像素字号
+             * @return 当前 builder
+             */
+            public Builder fontSizePx(int fontSizePx) {
+                this.fontSize = Signal.create(Integer.valueOf(fontSizePx));
+                return this;
+            }
+
+            /**
+             * 设置控件内文字字号（运行时可调）。
+             *
+             * <p>信号变化时文字、caret 与换行度量在同帧内跟随，无需调用方手动标脏。</p>
+             *
+             * @param fontSize UI 像素字号信号；null = 不指定
+             * @return 当前 builder
+             */
+            public Builder fontSize(ReadableSignal<Integer> fontSize) {
+                this.fontSize = fontSize;
+                return this;
+            }
+
+            /**
              * 构建 Props。
              *
              * @return Props 实例
@@ -197,7 +239,8 @@ public final class SceneTextArea {
                 if (onChange == null) {
                     throw new IllegalArgumentException("onChange must not be null");
                 }
-                return new Props(value, enabled, readOnly, placeholder, maxLength, viewportHeight, onChange);
+                return new Props(value, enabled, readOnly, placeholder, maxLength, viewportHeight, onChange,
+                        fontSize);
             }
         }
     }
@@ -233,6 +276,8 @@ public final class SceneTextArea {
             SceneTextAreaPrimitive.Result result = SceneTextAreaPrimitive.create(rt, primitiveProps);
             SceneNode root = result.root();
             root.setPadding(PADDING);
+            // 控件级字号：只写 root，文本/placeholder/caret/换行度量由 primitive 内的 typography 通道跟随。
+            SceneControlTypography.applyFontSize(rt, root, props.fontSize());
 
             SceneNode viewport = result.viewport();
             viewport.setPreferredHeight(props.viewportHeight() > 0 ? props.viewportHeight() : DEFAULT_VIEWPORT_HEIGHT);

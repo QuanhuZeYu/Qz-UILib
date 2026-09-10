@@ -48,6 +48,35 @@ final class SceneControlTypography {
         return result[0];
     }
 
+    /**
+     * 控件级字号入口：把编写者给定的字号写到 root（构建期播种 + 运行期绑定）。
+     *
+     * <p>root 是本类的唯一字号真值，本方法只写 root；文本叶、caret 与度量仍走
+     * {@link #bindText}/{@link #bindCaret} 的既有通道，不另开传播路径。</p>
+     *
+     * <p>播种保证首帧就取到编写者给的字号，不依赖第一轮布局完成后的重算；
+     * 信号为 null（未指定）或值为 null 时一律不写 root，节点保持自身默认字号——
+     * 不传字号的老调用方视觉零变化。</p>
+     *
+     * @param rt       场景运行时
+     * @param root     控件根节点（字号真值所在）
+     * @param fontSize 字号信号（UI 像素）；null = 不指定
+     */
+    static void applyFontSize(SceneRuntime rt, SceneNode root, ReadableSignal<Integer> fontSize) {
+        if (fontSize == null) {
+            return;
+        }
+        Integer initial = fontSize.get();
+        if (initial != null) {
+            root.setFontSize(initial.intValue());
+        }
+        rt.bind(fontSize, current -> {
+            if (current != null) {
+                root.setFontSize(current.intValue());
+            }
+        });
+    }
+
     ReadableSignal<Metrics> metrics() {
         if (metrics == null) {
             // 首次请求可能来自动态行；共享度量源必须归 attach 的 Owner，不能随该行卸载。
