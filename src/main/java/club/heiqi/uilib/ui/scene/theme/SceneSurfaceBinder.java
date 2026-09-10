@@ -34,13 +34,14 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p><b>无滤镜替代</b>：{@code backdrop == null} 时不写 backdrop，只写配方自身的 tint/edge/
  * elevation；配方作者负责让 tint 可读（见 {@link SceneTheme#withoutBackdrop()}）。</p>
- */
+
  *
  * <p><b>接管语义</b>：本绑定对目标节点的 backgroundColor / borderColor / borderWidth / cornerRadius /
  * backdrop / surfaceElevation 行使独占写入。调用方只允许在 bind 之前设置这些属性的初值；bind 之后
  * （尤其首次 flush 之后）再静态写同一属性即违反契约 §4「属性归属表」，表现为主题切换被覆盖、交互时
  * 属性值反复。元素级轻量槽（caret/thumb/dot/scrim 等）不受此约束——它们写的是控件独占子节点，
  * 不与配方争同一节点。</p>
+ */
 public final class SceneSurfaceBinder {
 
     private enum State { IDLE, HOVERED, PRESSED, DISABLED }
