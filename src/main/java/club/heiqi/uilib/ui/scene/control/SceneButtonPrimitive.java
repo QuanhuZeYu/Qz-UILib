@@ -10,6 +10,8 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneButtonPrimitive —— 无样式按钮交互行为核心。
@@ -72,7 +74,8 @@ public final class SceneButtonPrimitive {
         labelNode.setHitTestable(false);
         root.appendChild(labelNode);
 
-        SceneControlTypography typography = SceneControlTypography.attach(rt, root);
+        SceneControlTypography typography = SceneControlTypography.attach(rt, root,
+                SceneThemes.fontSize(rt, SceneTheme.FontSlot.BASE));
         typography.bindText(labelNode);
         rt.bindText(labelNode, props.label());
 

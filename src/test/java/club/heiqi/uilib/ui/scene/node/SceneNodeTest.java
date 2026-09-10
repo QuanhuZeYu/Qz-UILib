@@ -1068,4 +1068,37 @@ public class SceneNodeTest {
         both.setScrollable(true);
         Assert.assertTrue("clipChildren+scrollable 是裁剪窗口", both.isClipWindow());
     }
+
+    // ==================== 字号归属：显式 setter vs 主题供值通道 ====================
+
+    /**
+     * 排版度量主题通道的字号归属：公开 {@link SceneNode#setFontSize} 置「已显式设置」标记，
+     * 主题通道 {@link SceneNode#__writeThemeFontSize} <b>不置</b>——主题只在控件尚未自己设过字号时供值。
+     *
+     * <p>标记必须能区分「从未设置过」与「显式设成默认值 16」：两者按值不可区分，标记是唯一判据，
+     * 故等值写入也必须置位（在短路之前）。</p>
+     */
+    @Test
+    public void themeFontSizeChannelDoesNotClaimExplicitOwnership() {
+        SceneNode node = new SceneNode();
+        Assert.assertFalse("新节点未显式设置过字号", node.isFontSizeExplicit());
+        Assert.assertEquals("默认字号 16", 16, node.getFontSize());
+
+        node.__writeThemeFontSize(20);
+        Assert.assertEquals("主题通道可写字号", 20, node.getFontSize());
+        Assert.assertFalse("主题供值不算显式设置", node.isFontSizeExplicit());
+
+        node.setFontSize(24);
+        Assert.assertTrue("公开 setter 置显式标记", node.isFontSizeExplicit());
+        Assert.assertEquals("公开 setter 写字号", 24, node.getFontSize());
+
+        SceneNode sameAsDefault = new SceneNode();
+        sameAsDefault.setFontSize(16);
+        Assert.assertTrue("显式写入等于默认值的字号同样置位（在等值短路之前置位）",
+                sameAsDefault.isFontSizeExplicit());
+
+        SceneNode themedThenSame = new SceneNode();
+        themedThenSame.__writeThemeFontSize(16);
+        Assert.assertFalse("主题写默认值仍是「未显式」", themedThenSame.isFontSizeExplicit());
+    }
 }

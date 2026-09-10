@@ -176,6 +176,15 @@ public class SceneNode {
      */
     private int fontSizePx = 16;
 
+    /**
+     * 字号是否已被公开 setter 显式设置过。
+     *
+     * <p>主题供值通道 {@link #__writeThemeFontSize} 只在未显式时为节点写字号：
+     * 「控件自己定的字号」优先于「主题供的字号」，与表面配方的显式优先同口径。
+     * 与表面接管标记一样只置位、不自动复位。</p>
+     */
+    private boolean fontSizeExplicit;
+
     /** 富文本段流（SEGMENTS 绘制命令载体）；null=未设置。
      *  与 textProps.text 互斥（绘制引擎段流优先）。仅标 PAINT：布局几何由
      *  preferredWidth/Height 显式提供（宽度度量走 font 层，业务布局缓存承担）。 */
@@ -693,8 +702,14 @@ public class SceneNode {
     /** @return 当前悬停命中的链接 URL；null 表示无悬停链接 */
     public String getActiveLinkUrl() { return activeLinkUrl; }
 
-    /** 设置字号；变化时标 LAYOUT + PAINT。 */
+    /**
+     * 设置字号；变化时标 LAYOUT + PAINT，并置「已显式设置」标记——此后主题字号不再覆盖本节点。
+     *
+     * <p>标记在等值短路<b>之前</b>置位：即使写入的字号与当前值相同，也算「控件自己表过态」。
+     * 这是它与「从未设置过」唯一可区分的方式（字号默认值 16 与显式设 16 无法按值区分）。</p>
+     */
     public SceneNode setFontSize(int fontSizePx) {
+        fontSizeExplicit = true;
         if (this.fontSizePx == fontSizePx) return this;
         this.fontSizePx = fontSizePx;
         markSelfLayout();
@@ -705,6 +720,29 @@ public class SceneNode {
     /** @return 当前字号（UI 像素），默认 16 */
     public int getFontSize() {
         return fontSizePx;
+    }
+
+    /** @return 字号是否被公开 setter 显式设置过（主题字号只在未显式时供值） */
+    public boolean isFontSizeExplicit() {
+        return fontSizeExplicit;
+    }
+
+    /**
+     * 排版度量主题通道：按主题供值写字号，<b>不置</b>「已显式设置」标记。
+     *
+     * <p>与 {@code __write*} 表面通道同构——主题是供值方，节点自己的显式写入优先；
+     * 标记一旦被 {@link #setFontSize} 置位，{@code SceneControlTypography} 即停止经本通道写入。
+     * 本方法只保证不改标记，是否写入由消费方判定。</p>
+     *
+     * @param fontSizePx 主题供的字号（UI 像素）
+     * @return this
+     */
+    public SceneNode __writeThemeFontSize(int fontSizePx) {
+        if (this.fontSizePx == fontSizePx) return this;
+        this.fontSizePx = fontSizePx;
+        markSelfLayout();
+        markSelfPaint();
+        return this;
     }
 
     /** @see ScenePaintProps#backgroundColor */
