@@ -25,4 +25,4 @@
 - `SurfaceSinkOwnershipRegistryTest` + `surface_sink_registry.json`（注册制守护，60 条目 / 18KB）：
   退役原因 = 维护税与实际收益不匹配（近 60 个提交仅 4 个触碰 sink，其中多数还是合法新增；
   39/60 条目属永远合法的 `light-slot`），且外审取消后其「对外证明」价值归零。
-  真正的架构不变量（node 级单写者）改用**运行期探针**守护，见 `SceneSurfaceBinderTest` 的双写检查。
+  代价如实记录：node 级单写者此后**没有自动化守护**——它依赖 binder 契约 + 代码审查 + `SceneSurfaceBinderTest`（8 个 @Test 覆盖绑定/优先级/更新/卸载语义，但不检测双写）。需要时用 `surface_sink_ownership.py` 人工巡检。
