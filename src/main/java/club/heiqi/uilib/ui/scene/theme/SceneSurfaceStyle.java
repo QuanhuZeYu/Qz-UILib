@@ -18,6 +18,12 @@ import club.heiqi.uilib.ui.render.UiBackdrop;
  *
  * <p>四态按 disabled &gt; pressed &gt; hovered &gt; idle 选择；focus 只覆盖非禁用态的缘色。
  * {@code foreground} 是可选前景令牌（null = 本配方不管理前景，由调用方决定）。</p>
+ *
+ * <p><b>浮雕豁免（P-05）</b>：{@code reliefDisabled} 为 true 时绑定器不消费
+ * {@link StateStyle#getElevation()}，恒把节点 {@code surfaceElevation} 写为 -1（普通绘制路径）。
+ * 这是给「大面板不得进浮雕通道」这类已知例外提供的<b>显式声明位</b>，不是后门：它只关浮雕通道，
+ * 不放弃写入权——backgroundColor / border / cornerRadius / backdrop 仍归绑定器独占。
+ * 默认 false 保持既有行为。</p>
  */
 public final class SceneSurfaceStyle {
 
@@ -33,6 +39,7 @@ public final class SceneSurfaceStyle {
     private final float disabledOpacity;
     private final int transitionMillis;
     private final Integer foreground;
+    private final boolean reliefDisabled;
 
     private SceneSurfaceStyle(Builder builder) {
         backdrop = builder.backdrop;
@@ -47,6 +54,7 @@ public final class SceneSurfaceStyle {
         disabledOpacity = unit(builder.disabledOpacity, "disabledOpacity");
         transitionMillis = nonNegative(builder.transitionMillis, "transitionMillis");
         foreground = builder.foreground;
+        reliefDisabled = builder.reliefDisabled;
     }
 
     /** @return 新 builder（默认值见 {@link Builder} 字段初始化） */
@@ -65,6 +73,8 @@ public final class SceneSurfaceStyle {
     public int getFocusEdge() { return focusEdge; }
     /** @return 可选前景令牌（ARGB）；null 表示本配方不管理前景 */
     public Integer getForeground() { return foreground; }
+    /** @return 是否禁用浮雕通道（true = 绑定器恒写 surfaceElevation -1，走普通绘制；见类文档「浮雕豁免」） */
+    public boolean isReliefDisabled() { return reliefDisabled; }
     /** @return 按压时内容上移量（&gt;= 0） */
     public float getContentLift() { return contentLift; }
     /** @return 禁用态内容不透明度 [0,1] */
@@ -144,6 +154,7 @@ public final class SceneSurfaceStyle {
         private float disabledOpacity = 0.35F;
         private int transitionMillis = 160;
         private Integer foreground;
+        private boolean reliefDisabled;
 
         private Builder() {}
         private Builder(SceneSurfaceStyle style) {
@@ -159,6 +170,7 @@ public final class SceneSurfaceStyle {
             disabledOpacity = style.disabledOpacity;
             transitionMillis = style.transitionMillis;
             foreground = style.foreground;
+            reliefDisabled = style.reliefDisabled;
         }
 
         /** @param value 滤镜声明；null 表示显式关闭滤镜 */
@@ -174,6 +186,8 @@ public final class SceneSurfaceStyle {
         public Builder disabledOpacity(float value) { disabledOpacity = value; return this; }
         public Builder transitionMillis(int value) { transitionMillis = value; return this; }
         public Builder foreground(Integer value) { foreground = value; return this; }
+        /** @param value true = 禁用浮雕通道（绑定器不写 surfaceElevation）；默认 false 保持既有行为 */
+        public Builder reliefDisabled(boolean value) { reliefDisabled = value; return this; }
 
         /** @return 不可变配方 */
         public SceneSurfaceStyle build() { return new SceneSurfaceStyle(this); }
@@ -205,12 +219,13 @@ public final class SceneSurfaceStyle {
                 && Objects.equals(pressed, that.pressed) && Objects.equals(disabled, that.disabled)
                 && focusEdge == that.focusEdge && Float.compare(contentLift, that.contentLift) == 0
                 && Float.compare(disabledOpacity, that.disabledOpacity) == 0
-                && transitionMillis == that.transitionMillis && Objects.equals(foreground, that.foreground);
+                && transitionMillis == that.transitionMillis && Objects.equals(foreground, that.foreground)
+                && reliefDisabled == that.reliefDisabled;
     }
     @Override
     public int hashCode() {
         return Objects.hash(backdrop, cornerRadius, borderWidth, idle, hovered, pressed, disabled,
-                focusEdge, contentLift, disabledOpacity, transitionMillis, foreground);
+                focusEdge, contentLift, disabledOpacity, transitionMillis, foreground, reliefDisabled);
     }
     @Override
     public String toString() {

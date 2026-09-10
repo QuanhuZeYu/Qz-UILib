@@ -538,6 +538,10 @@ public class ChatContainerTest {
      * 用例①+③（主题侧）：聊天设置未覆盖的配方字段 = 所属主题 PANEL 角色档（通用主题兜底，
      * chat3→theme 方向 import）；主题切换只重派生——节点身份不变、effect 不增长、面板不重建，
      * 且聊天设置覆盖字段（底色/滤镜/圆角）不随主题改写（局部覆盖第一优先级）。
+     *
+     * <p>G20 收敛：外框改为「静态表面」表达——过渡时长与三个非 idle 状态档不再扮演主题兜底字段
+     * （迁移前由「绕开绑定器、只写 idle」隐式表达，现由四态同值 + 零过渡显式表达），本用例改为
+     * 断言其恒定值；其余主题兜底字段（聚焦缘色 / 内容抬升 / 禁用透明度）断言语义不变。</p>
      */
     @Test
     public void themeSuppliesFieldsChatSettingsDoNotCover() {
@@ -554,18 +558,22 @@ public class ChatContainerTest {
             Assert.assertNotEquals("测试前提：深浅主题 PANEL 缘色档不同",
                     SceneTheme.liquidGlassDark().surface(SceneTheme.Role.PANEL).getFocusEdge(),
                     lightPanel.getFocusEdge());
-            // 主题兜底字段：过渡时长 / 聚焦缘色 / 悬停·按下·禁用状态档 / 内容抬升 / 禁用透明度
-            Assert.assertEquals("过渡时长随主题 PANEL 档",
-                    lightPanel.getTransitionMillis(), recipe.getTransitionMillis());
+            // 主题兜底字段：聚焦缘色 / 内容抬升 / 禁用透明度（配方仍以 PANEL 档兜底）
             Assert.assertEquals("聚焦缘色随主题 PANEL 档",
                     lightPanel.getFocusEdge(), recipe.getFocusEdge());
-            Assert.assertEquals("悬停档随主题 PANEL 档", lightPanel.getHovered(), recipe.getHovered());
-            Assert.assertEquals("按下档随主题 PANEL 档", lightPanel.getPressed(), recipe.getPressed());
-            Assert.assertEquals("禁用档随主题 PANEL 档", lightPanel.getDisabled(), recipe.getDisabled());
             Assert.assertEquals("contentLift 随主题 PANEL 档",
                     lightPanel.getContentLift(), recipe.getContentLift(), 0.0F);
             Assert.assertEquals("disabledOpacity 随主题 PANEL 档",
                     lightPanel.getDisabledOpacity(), recipe.getDisabledOpacity(), 0.0F);
+            // G20/P-05 静态表面：容器不可命中（hitTestable=false），交互态本就不激活；四态同值 +
+            // 零过渡使配方输出恒定，与迁移前「绕开绑定器、只写 idle」的普通绘制通道逐值等价。
+            Assert.assertEquals("静态表面：过渡时长恒 0（等价迁移前普通绘制通道）",
+                    0, recipe.getTransitionMillis());
+            Assert.assertEquals("静态表面：悬停档 = idle 档", recipe.getIdle(), recipe.getHovered());
+            Assert.assertEquals("静态表面：按下档 = idle 档", recipe.getIdle(), recipe.getPressed());
+            Assert.assertEquals("静态表面：禁用档 = idle 档", recipe.getIdle(), recipe.getDisabled());
+            Assert.assertTrue("P-05：浮雕豁免位在配方上显式声明（不再是绕开绑定器的隐式例外）",
+                    recipe.isReliefDisabled());
             // 聊天设置覆盖字段：与主题档可辨（浅色 PANEL 圆角=16，聊天设置=20）
             Assert.assertEquals("圆角 = 聊天设置局部覆盖",
                     ChatMarkdownSettings.getContainerCornerRadius(), recipe.getCornerRadius());
@@ -585,7 +593,10 @@ public class ChatContainerTest {
             SceneSurfaceStyle darkPanel = SceneTheme.liquidGlassDark().surface(SceneTheme.Role.PANEL);
             Assert.assertEquals("主题字段随主题重派生",
                     darkPanel.getFocusEdge(), result.surfaceRecipe().get().getFocusEdge());
-            Assert.assertEquals(darkPanel.getHovered(), result.surfaceRecipe().get().getHovered());
+            SceneSurfaceStyle rederived = result.surfaceRecipe().get();
+            Assert.assertTrue("静态表面 + 浮雕豁免在主题重派生后保持", rederived.isReliefDisabled());
+            Assert.assertEquals("静态表面：重派生后悬停档仍 = idle 档",
+                    rederived.getIdle(), rederived.getHovered());
             Assert.assertSame("主题切换不重建外框节点", container, result.root());
             Assert.assertSame("主题切换不重建滚动区行", listRow, result.root().__getChildren().get(0));
             Assert.assertEquals("聊天覆盖字段（底色）不随主题变", tintBefore, container.getBackgroundColor());

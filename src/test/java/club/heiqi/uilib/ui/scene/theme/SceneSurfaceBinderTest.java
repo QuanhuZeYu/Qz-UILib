@@ -30,7 +30,8 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * 通用表面绑定器契约测试。
  *
  * <p>覆盖：配方→属性写入、四态优先级、focus 缘色、关闭滤镜不发 BACKDROP 且底色可读、
- * 配方更新只改属性不重建、卸载回收绑定、前景回落、液态配方只采样一次背景。</p>
+ * 配方更新只改属性不重建、卸载回收绑定、前景回落、液态配方只采样一次背景、浮雕豁免位（P-05）
+ * 与静态表面表达（四态同值 + 零过渡，ChatContainer 迁移路径）。</p>
  */
 public class SceneSurfaceBinderTest {
 
@@ -201,6 +202,107 @@ public class SceneSurfaceBinderTest {
         f.style.set(opaque());
         f.rt.flush();
         Assert.assertEquals("切换为关闭滤镜后不再采样", 0, backdropCount(f.sceneRoot));
+    }
+
+    /**
+     * 浮雕豁免位（P-05）：配方声明 {@code reliefDisabled} 时绑定器不消费四态 elevation，
+     * 恒把节点 {@code surfaceElevation} 写 -1（普通绘制路径）；其余五项照常独占写入——
+     * 豁免只关浮雕通道，不改变写入权归属。
+     */
+    @Test
+    public void reliefDisabledKeepsElevationOffWithoutYieldingOtherAttributes() {
+        SceneSurfaceStyle exempt = liquid().toBuilder()
+                .idle(new SceneSurfaceStyle.StateStyle(0x40112233, 0x80334455, 0.8F, 1.0F))
+                .reliefDisabled(true)
+                .build();
+        Fixture f = new Fixture(exempt);
+
+        Assert.assertTrue("豁免只关通道、不改配方数据（elevation 仍在配方里 > 0）",
+                exempt.getIdle().getElevation() > 0.0F);
+        Assert.assertEquals("豁免：节点不进浮雕通道", -1.0F, f.node.__getSurfaceElevation(), EPSILON);
+        Assert.assertEquals("豁免不影响底色独占写入",
+                exempt.getIdle().getTint(), f.node.getBackgroundColor());
+        Assert.assertEquals("豁免不影响缘色独占写入",
+                exempt.getIdle().getEdge(), f.node.getBorderColor());
+        Assert.assertEquals("豁免不影响圆角独占写入", 10, f.node.getCornerRadius());
+        Assert.assertEquals("豁免不影响描边宽独占写入",
+                exempt.getBorderWidth(), f.node.getBorderWidth());
+        Assert.assertNotNull("豁免不影响滤镜独占写入", f.node.getBackdrop());
+        Assert.assertEquals("豁免配方仍恰好采样一次背景", 1, backdropCount(f.sceneRoot));
+    }
+
+    /** 豁免位默认关闭：既有控件的浮雕写入行为一个字节都不变（防止豁免位写反成默认开）。 */
+    @Test
+    public void reliefDisabledIsOffByDefaultAndNonExemptKeepsElevation() {
+        Assert.assertFalse("默认不豁免", liquid().isReliefDisabled());
+
+        SceneSurfaceStyle normal = liquid().toBuilder()
+                .idle(new SceneSurfaceStyle.StateStyle(0x40112233, 0x80334455, 0.8F, 1.0F))
+                .build();
+        Fixture f = new Fixture(normal);
+        Assert.assertEquals("非豁免：四态 elevation 照常写入",
+                0.8F, f.node.__getSurfaceElevation(), EPSILON);
+    }
+
+    /**
+     * 静态表面表达（ChatContainer 迁移路径）：四态同值 + 过渡时长 0 时，交互态进入悬停/按下/禁用
+     * 都不改变任何表面输出——与迁移前「绕开绑定器、只写一次 idle」的普通绘制通道逐值等价。
+     * 本用例是「静态表面」语义的守卫：配方若退回四态异值，悬停断言当场变红。
+     *
+     * <p>缘色有<b>第五条</b>路径：绑定器在 {@code focused} 时改用配方级 {@code focusEdge}（不属于四态）。
+     * ChatContainer 不可命中也不可聚焦，该路径恒不激活，故生产配方无需拉平；本用例为验证「静态表面」
+     * 的完整形态，显式把 focusEdge 也拉平到缘色。</p>
+     */
+    @Test
+    public void staticSurfaceRecipeIgnoresInteractionStateChanges() {
+        SceneSurfaceStyle.StateStyle flat =
+                new SceneSurfaceStyle.StateStyle(0x40112233, 0x80334455, 0.0F, 1.0F);
+        SceneSurfaceStyle stat = liquid().toBuilder()
+                .idle(flat).hovered(flat).pressed(flat).disabled(flat)
+                .focusEdge(flat.getEdge())
+                .transitionMillis(0)
+                .reliefDisabled(true)
+                .build();
+        Fixture f = new Fixture(stat);
+        int tintIdle = f.node.getBackgroundColor();
+        int edgeIdle = f.node.getBorderColor();
+        Assert.assertEquals("前置：静态表面本就不进浮雕通道",
+                -1.0F, f.node.__getSurfaceElevation(), EPSILON);
+
+        f.harness.moveTo(f.node);
+        f.rt.flush();
+        Assert.assertEquals("静态表面：悬停态底色不变", tintIdle, f.node.getBackgroundColor());
+        Assert.assertEquals("静态表面：悬停态缘色不变", edgeIdle, f.node.getBorderColor());
+
+        f.harness.press(f.node);
+        f.rt.flush();
+        Assert.assertEquals("静态表面：按下态底色不变", tintIdle, f.node.getBackgroundColor());
+        Assert.assertEquals("静态表面：按下态缘色不变", edgeIdle, f.node.getBorderColor());
+        Assert.assertEquals("静态表面：按下态浮雕仍关闭",
+                -1.0F, f.node.__getSurfaceElevation(), EPSILON);
+        f.harness.release(f.node);
+
+        f.enabled.set(Boolean.FALSE);
+        f.rt.flush();
+        Assert.assertEquals("静态表面：禁用态底色不变", tintIdle, f.node.getBackgroundColor());
+        Assert.assertEquals("静态表面：禁用态缘色不变", edgeIdle, f.node.getBorderColor());
+    }
+
+    /**
+     * 豁免位参与配方等值判定：Computed 按值去重，若该位不进 equals，
+     * 两个豁免状态不同的配方会被判等，下游绑定不重算——豁免形同虚设。
+     */
+    @Test
+    public void reliefFlagParticipatesInRecipeEquality() {
+        SceneSurfaceStyle base = liquid();
+        Assert.assertNotEquals("浮雕豁免位参与配方等值判定",
+                base, base.toBuilder().reliefDisabled(true).build());
+        Assert.assertEquals("同豁免状态重建相等",
+                base.toBuilder().reliefDisabled(true).build(),
+                base.toBuilder().reliefDisabled(true).build());
+        Assert.assertEquals("豁免状态不改变同值配方的 hashCode",
+                base.toBuilder().reliefDisabled(true).build().hashCode(),
+                base.toBuilder().reliefDisabled(true).build().hashCode());
     }
 
     private final class Fixture {

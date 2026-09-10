@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.render.UiGlassMaterial;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.input.ChatInputBar;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.input.InputBinding;
@@ -23,6 +24,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.Binding;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
@@ -35,13 +37,18 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * {@link ChatInputBar}(SceneTextInput)。</p>
  *
  * <p><b>外框表面配方（G17/Container 液态玻璃口径）</b>：外框的 滤镜/底色/描边/描边宽/圆角 五项
- * 不再构造期静态设值，唯一写入者 = {@link #containerRecipeSignal} 派生的配方绑定。配方以通用主题
- * {@link SceneTheme.Role#PANEL} 档为默认兜底（聊天设置未覆盖的字段随主题），既有聊天玻璃设置
- * （开关/模糊/强度/玻璃 alpha 档与容器色板令牌）作为局部覆盖按第一优先级逐项覆盖材质字段——
- * 「设置开=保持既有玻璃观感、设置关=实色令牌逃生舱」语义不变，未新增另一份配置存储。设置变更经
- * 帧观察 Signal 按值去重（与 chat3.input 的动作外观桥接件同机制）、主题变更经 {@link SceneThemes}
- * 作用域解析，两者都只重派生：节点身份不变、面板不重建、effect 数不增长。外框保持普通绘制路径
- * （{@code surfaceElevation} 恒 -1，不进浮雕通道——大面板暗边不回归）。</p>
+ * 不再构造期静态设值，唯一写入者 = {@link SceneSurfaceBinder}（G20 起统一走通用表面绑定器）。
+ * 配方以通用主题 {@link SceneTheme.Role#PANEL} 档为默认兜底（聊天设置未覆盖的字段随主题），
+ * 既有聊天玻璃设置（开关/模糊/强度/玻璃 alpha 档与容器色板令牌）作为局部覆盖按第一优先级逐项
+ * 覆盖材质字段——「设置开=保持既有玻璃观感、设置关=实色令牌逃生舱」语义不变，未新增另一份配置
+ * 存储。设置变更经帧观察 Signal 按值去重（与 chat3.input 的动作外观桥接件同机制）、主题变更经
+ * {@link SceneThemes} 作用域解析，两者都只重派生：节点身份不变、面板不重建、effect 数不增长。</p>
+ *
+ * <p><b>静态表面 + 浮雕豁免（P-05 落点）</b>：大面板不进浮雕通道的既有观感由配方上的
+ * {@code reliefDisabled} 显式声明（{@code surfaceElevation} 恒 -1），不再是「绕开绑定器自己写」
+ * 的隐式例外；配方四态同值 + 过渡时长 0 表达「静态表面」语义（容器不可命中，交互态本就不变），
+ * 与迁移前的普通绘制通道逐值等价。绑定挂本组件自持的 {@link Owner} 作用域，随 {@link Result#dispose()}
+ * 连同动画轨道一次性回收。</p>
  */
 public final class ChatContainer {
 
@@ -113,6 +120,9 @@ public final class ChatContainer {
      */
     private static final Signal<GlassSnapshot> OBSERVED_GLASS = Signal.create(GlassSnapshot.read());
 
+    /** 容器无禁用语义（不可命中也不可聚焦）：外框表面绑定恒启用，交互态取值恒定。 */
+    private static final ReadableSignal<Boolean> SURFACE_ENABLED = Signal.create(Boolean.TRUE);
+
     /**
      * 外框表面配方信号：主题 PANEL 档基线（通用兜底）+ 聊天玻璃设置局部覆盖（第一优先级）。
      *
@@ -164,27 +174,23 @@ public final class ChatContainer {
                 ? (ChatMarkdownSettings.getContainerBgArgb() & 0x00FFFFFF)
                         | (ChatMarkdownSettings.getGlassContainerAlpha() << 24)
                 : ChatMarkdownSettings.getContainerBgArgb();
+        // 静态表面：四态同值使交互态派生的结果恒定（容器 setHitTestable(false)，状态本就不变）；
+        // 过渡时长 0 让绑定器的动画写退化为立即应用，与迁移前的普通绘制通道逐值等价。
+        SceneSurfaceStyle.StateStyle surface = new SceneSurfaceStyle.StateStyle(containerBg,
+                ChatMarkdownSettings.getContainerBorderArgb(),
+                base.getIdle().getElevation(), 1.0F);
         return base.toBuilder()
                 .backdrop(backdrop)
                 .cornerRadius(ChatMarkdownSettings.getContainerCornerRadius())
                 .borderWidth(CONTAINER_BORDER_WIDTH_PX)
-                .idle(new SceneSurfaceStyle.StateStyle(containerBg,
-                        ChatMarkdownSettings.getContainerBorderArgb(),
-                        base.getIdle().getElevation(), 1.0F))
+                .idle(surface)
+                .hovered(surface)
+                .pressed(surface)
+                .disabled(surface)
+                .transitionMillis(0)
+                // P-05：大面板暗边不回归——声明式关闭浮雕通道，不再靠「绕开绑定器」实现。
+                .reliefDisabled(true)
                 .build();
-    }
-
-    /**
-     * 容器外框表面属性的唯一写入者：按既有普通绘制通道写 滤镜/底色/描边/描边宽/圆角 五项，
-     * 像素合同与迁移前的构造期静态设值一致（不发浮雕/实体厚度命令，不进 BORDER→ROUNDED_BAND
-     * 语义切换——大面板暗边不回归）。
-     */
-    private static void applyContainerSurface(SceneNode node, SceneSurfaceStyle style) {
-        node.setBackdrop(style.getBackdrop());
-        node.setBackgroundColor(style.getIdle().getTint());
-        node.setBorderColor(style.getIdle().getEdge());
-        node.setBorderWidth(style.getBorderWidth());
-        node.setCornerRadius(style.getCornerRadius());
     }
 
     /** 容器装配结果:外框节点 + 生命周期句柄 + 输入条。 */
@@ -196,7 +202,7 @@ public final class ChatContainer {
         private final Binding hintBinding;
         private final InputBinding hintInputBinding;
         private final Binding settingsBinding;
-        private final Binding surfaceBinding;
+        private final Owner surfaceScope;
         private final Computed<SceneSurfaceStyle> surfaceRecipe;
         private final ChatScrollbar.Result scrollbar;
         private final ChatInputBar bar;
@@ -206,7 +212,7 @@ public final class ChatContainer {
 
         private Result(SceneNode root, SceneListHandle listHandle, Binding scrollBinding,
                 Binding hintBinding, InputBinding hintInputBinding, Binding settingsBinding,
-                Binding surfaceBinding, Computed<SceneSurfaceStyle> surfaceRecipe,
+                Owner surfaceScope, Computed<SceneSurfaceStyle> surfaceRecipe,
                 ChatScrollbar.Result scrollbar, ChatInputBar bar,
                 ChatSceneController controller, SceneNode barRow) {
             this.root = root;
@@ -215,7 +221,7 @@ public final class ChatContainer {
             this.hintBinding = hintBinding;
             this.hintInputBinding = hintInputBinding;
             this.settingsBinding = settingsBinding;
-            this.surfaceBinding = surfaceBinding;
+            this.surfaceScope = surfaceScope;
             this.surfaceRecipe = surfaceRecipe;
             this.scrollbar = scrollbar;
             this.bar = bar;
@@ -237,8 +243,9 @@ public final class ChatContainer {
             if (hintInputBinding != null) {
                 hintInputBinding.dispose();
             }
-            if (surfaceBinding != null) {
-                surfaceBinding.dispose();
+            if (surfaceScope != null) {
+                // 表面绑定及其动画轨道在本作用域内建立，一次性回收（含 motionDriver.remove）。
+                surfaceScope.dispose();
             }
             if (settingsBinding != null) {
                 settingsBinding.dispose();
@@ -320,7 +327,7 @@ public final class ChatContainer {
             Map<SceneNode, ChatLineRecord> registry, String initialText) {
         // 外框表面（G17/Container）：滤镜/底色/描边/描边宽/圆角五项不再构造期静态设值——
         // 静态色板写入与配方绑定会竞争同一属性槽（施工手册 §1「同一个属性不能留两个绑定」），
-        // 唯一写入者 = 下方 containerRecipeSignal 配方桥，按既有普通绘制通道落值。
+        // 唯一写入者 = containerRecipeSignal 配方 + 通用表面绑定器（见下方 surfaceScope）。
         // 液态玻璃批次语义不变：容器与气泡同处一个 backdrop 批次，二者采样的是<strong>同一张
         // 世界画面</strong>（批次内主层 revision 冻结）——气泡的玻璃不会把容器已糊过的画面
         // 再糊一层。这正是 iOS 一个 visual effect 层级内共享背景采样的语义，层级差靠 alpha
@@ -342,8 +349,12 @@ public final class ChatContainer {
         // 去重，不唤醒配方，也不新增计时器。
         Binding settingsBinding = rt.bind(rt.__frameTimeNanos(),
                 frame -> OBSERVED_GLASS.set(GlassSnapshot.read()));
-        Binding surfaceBinding = rt.bind(surfaceRecipe,
-                style -> applyContainerSurface(containerNode, style));
+        // 外框绑定统一走通用表面绑定器（G20）：配方已声明浮雕豁免 + 静态表面，
+        // 不再是「绕开绑定器自持写入」的隐式例外。mount 发生在屏幕构造期（无外层 Owner），
+        // 故用自持 Owner 作用域承接绑定与动画轨道，由 Result.dispose() 回收。
+        Owner surfaceScope = new Owner();
+        surfaceScope.run(() -> SceneSurfaceBinder.bind(rt, containerNode, surfaceRecipe,
+                SURFACE_ENABLED, rt.interactionState(containerNode)));
 
         // ★ 滚动区行(与消息视口同级):[消息视口 flexGrow=1, 滚动条 column 右对齐]
         // 滚动条必须与视口并列(不进 scrollable 视口),否则随内容平移错位。
@@ -515,6 +526,6 @@ public final class ChatContainer {
                 (SceneEvent event, SceneEventContext ctx) -> controller.scrollToBottom());
 
         return new Result(containerNode, listHandle, scrollBinding, hintBinding, hintInputBinding,
-                settingsBinding, surfaceBinding, surfaceRecipe, scrollbar, bar, controller, barRow);
+                settingsBinding, surfaceScope, surfaceRecipe, scrollbar, bar, controller, barRow);
     }
 }
