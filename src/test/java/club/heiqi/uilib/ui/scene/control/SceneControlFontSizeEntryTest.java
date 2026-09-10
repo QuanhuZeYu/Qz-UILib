@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -20,6 +21,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
 import club.heiqi.uilib.ui.scene.paint.PaintResult;
 import club.heiqi.uilib.ui.scene.paint.RecordingRenderBackend;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintReplayer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
@@ -43,6 +45,11 @@ public class SceneControlFontSizeEntryTest {
     private static final String BUTTON_LABEL = "Button";
     private static final String INPUT_TEXT = "abcdef";
     private static final String CHILD_TEXT = "child";
+    /** 分段/页签共用标签集（长度 3，便于逐段断言宽度）。 */
+    private static final List<String> TAB_LABELS = Arrays.asList("Day", "Week", "Month");
+    /** 页签内容构建器：与标签同长同序，各页一个空 panel。 */
+    private static final List<Supplier<SceneNode>> TAB_PANELS = Arrays.<Supplier<SceneNode>>asList(
+            () -> new SceneNode(), () -> new SceneNode(), () -> new SceneNode());
     private static final Runnable NOOP = new Runnable() {
         @Override
         public void run() {
@@ -120,6 +127,96 @@ public class SceneControlFontSizeEntryTest {
         assertPaintedFontSize(fixture, CHILD_TEXT, DEFAULT_FONT_SIZE);
     }
 
+    /**
+     * 字号参与几何的控件（Segmented）：段宽 = 按字号测出的文本宽 + 2*内边距。
+     *
+     * <p>构建期定值与运行期信号都必须重算段宽——只改标签字号不改段宽会让文字溢出或留白。</p>
+     */
+    @Test
+    public void segmentedSegmentWidthFollowsConfiguredAndRuntimeFontSize() {
+        Fixture built = fixture();
+        built.mountPx(Control.SEGMENTED, 24);
+        built.frame();
+        assertPaintedFontSize(built, 24);
+        assertSegmentWidths(built, 24);
+
+        Fixture runtime = fixture();
+        Signal<Integer> fontSize = Signal.create(Integer.valueOf(DEFAULT_FONT_SIZE));
+        runtime.mountSignal(Control.SEGMENTED, fontSize);
+        runtime.frame();
+        assertSegmentWidths(runtime, DEFAULT_FONT_SIZE);
+        fontSize.set(Integer.valueOf(12));
+        runtime.frame();
+        assertPaintedFontSize(runtime, 12);
+        assertSegmentWidths(runtime, 12);
+    }
+
+    /** Segmented 条高同样按字号算：root.preferredHeight = lineHeight(字号) + 2*内边距。 */
+    @Test
+    public void segmentedBarHeightFollowsRuntimeFontSize() {
+        Fixture fixture = fixture();
+        Signal<Integer> fontSize = Signal.create(Integer.valueOf(DEFAULT_FONT_SIZE));
+        fixture.mountSignal(Control.SEGMENTED, fontSize);
+        fixture.frame();
+        assertSegmentedBarHeight(fixture, DEFAULT_FONT_SIZE);
+        fontSize.set(Integer.valueOf(28));
+        fixture.frame();
+        assertSegmentedBarHeight(fixture, 28);
+    }
+
+    /** 页签标签字号：默认（非 fill）模式条高按内容自然高收缩，标签字号仍须跟随。 */
+    @Test
+    public void tabLabelFontSizeFollowsRuntimeSignal() {
+        Fixture fixture = fixture();
+        Signal<Integer> fontSize = Signal.create(Integer.valueOf(DEFAULT_FONT_SIZE));
+        fixture.mountSignal(Control.TAB, fontSize);
+        fixture.frame();
+        assertPaintedFontSize(fixture, DEFAULT_FONT_SIZE);
+        fontSize.set(Integer.valueOf(24));
+        fixture.frame();
+        assertPaintedFontSize(fixture, 24);
+    }
+
+    /** fill 模式页签：条高是显式 preferredHeight，必须随字号重算，否则标签会溢出导航条。 */
+    @Test
+    public void tabBarHeightFollowsRuntimeFontSizeInFillMode() {
+        Fixture fixture = fixture();
+        Signal<Integer> fontSize = Signal.create(Integer.valueOf(DEFAULT_FONT_SIZE));
+        fixture.mountTabFill(fontSize);
+        fixture.frame();
+        SceneNode tabBar = fixture.mount.getRoot().__getChildren().get(0);
+        Assert.assertEquals("fill 模式条高 = lineHeight(16) + 2*内边距",
+                lineHeight(DEFAULT_FONT_SIZE) + 2 * SceneChromeTokens.PAD_LG,
+                tabBar.getPreferredHeight());
+        fontSize.set(Integer.valueOf(28));
+        fixture.frame();
+        assertPaintedFontSize(fixture, 28);
+        Assert.assertEquals("字号变化后条高必须重算",
+                lineHeight(28) + 2 * SceneChromeTokens.PAD_LG, tabBar.getPreferredHeight());
+    }
+
+    private static void assertSegmentWidths(Fixture fixture, int fontSize) {
+        List<SceneNode> segments = fixture.mount.getRoot().__getChildren();
+        Assert.assertEquals("段数应与标签数一致", TAB_LABELS.size(), segments.size());
+        for (int i = 0; i < segments.size(); i++) {
+            String title = TAB_LABELS.get(i);
+            int textWidth = title.codePointCount(0, title.length()) * fontSize / 2;
+            Assert.assertEquals("段[" + i + "]宽 = 按字号 " + fontSize + " 测出的文本宽 + 2*内边距",
+                    textWidth + 2 * SceneChromeTokens.PAD_LG, segments.get(i).getPreferredWidth());
+        }
+    }
+
+    private static void assertSegmentedBarHeight(Fixture fixture, int fontSize) {
+        Assert.assertEquals("条高 = lineHeight(" + fontSize + ") + 2*内边距",
+                lineHeight(fontSize) + 2 * SceneChromeTokens.PAD_LG,
+                fixture.mount.getRoot().getPreferredHeight());
+    }
+
+    /** 夹具内 FontMeasurer 的行高口径：与字号同值。 */
+    private static int lineHeight(int fontSizePx) {
+        return fontSizePx;
+    }
+
     private Fixture fixture() {
         Fixture fixture = new Fixture();
         fixtures.add(fixture);
@@ -156,7 +253,7 @@ public class SceneControlFontSizeEntryTest {
         return result;
     }
 
-    private enum Control { BUTTON, INPUT, AREA }
+    private enum Control { BUTTON, INPUT, AREA, SEGMENTED, TAB }
 
     /** 度量随字号变化：字号没传到绘制上时断言必须失败。 */
     private static final class FontMeasurer implements SceneTextMeasurer {
@@ -205,6 +302,8 @@ public class SceneControlFontSizeEntryTest {
         final MockPlatformInputSource input;
         final int width = 240;
         final int height = 640;
+        final Signal<Integer> selected = Signal.create(Integer.valueOf(0));
+        final Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
         Signal<String> value;
         MountHandle mount;
 
@@ -267,10 +366,36 @@ public class SceneControlFontSizeEntryTest {
                     }
                     component = SceneTextArea.create(runtime, areaBuilder.build());
                     break;
+                case SEGMENTED:
+                    component = SceneSegmented.create(runtime, new SceneSegmented.Props(
+                            selected, TAB_LABELS, enabled, index -> { },
+                            sizeSignal(fontSizePx, fontSize)));
+                    break;
+                case TAB:
+                    component = SceneTab.create(runtime, new SceneTab.Props(
+                            selected, TAB_LABELS, TAB_PANELS, enabled, index -> { }, false,
+                            sizeSignal(fontSizePx, fontSize)));
+                    break;
                 default:
                     throw new AssertionError(kind);
             }
+            doMount(component);
+        }
+
+        /** fill 模式页签：条高是显式 preferredHeight，必须随字号重算。 */
+        void mountTabFill(ReadableSignal<Integer> fontSize) {
+            doMount(SceneTab.create(runtime, new SceneTab.Props(
+                    selected, TAB_LABELS, TAB_PANELS, enabled, index -> { }, true, fontSize)));
+        }
+
+        private void doMount(Supplier<SceneNode> component) {
             mount = runtime.mount(scene, component);
+        }
+
+        /** Segmented/Tab 无 Builder：构建期定值包成常量信号，与信号路径走同一入口。 */
+        private static ReadableSignal<Integer> sizeSignal(Integer fontSizePx,
+                ReadableSignal<Integer> fontSize) {
+            return fontSizePx != null ? Signal.create(fontSizePx) : fontSize;
         }
 
         void frame() {

@@ -85,6 +85,7 @@ public final class SceneSegmented {
     private static final int SEG_GAP = SceneChromeTokens.GAP_SM;
     /**
      * 段标签默认字号（UI 像素），与 {@link SceneNode} 默认 fontSize 对齐，用于构建期文本宽度测量。
+     * <p>调用方可用 {@link Props#fontSize()} 覆盖；本常量是未指定时的回落值，也是与下游对齐的基准。
      * <p>维护约束：修改此值需同步 club.heiqi.config.ui.theme.ConfigTheme.NAV_TAB_FONT_SIZE。
      * 因 uilib 不能反向依赖 config 模块，此处仅以文字引用全限定名，不 import。
      */
@@ -103,14 +104,30 @@ public final class SceneSegmented {
      * @param options       段文本列表（构建期固定常量，R2 允许常量）
      * @param enabled       是否启用（响应式只读），false 时禁用点击/键盘并切灰态
      * @param onSelect      选择回调，激活某段时以该段下标调用，由外部 set 回 selectedIndex signal
+     * @param fontSize      段标签字号（UI 像素，响应式）；null = 不指定，沿用
+     *                      {@link #SEG_LABEL_FONT_SIZE}
      */
     @Desugar
     public record Props(
         ReadableSignal<Integer> selectedIndex,
         List<String> options,
         ReadableSignal<Boolean> enabled,
-        Consumer<Integer> onSelect
+        Consumer<Integer> onSelect,
+        ReadableSignal<Integer> fontSize
     ) {
+
+        /**
+         * 兼容四参构造器：字号不指定（沿用 {@link #SEG_LABEL_FONT_SIZE}）。
+         *
+         * @param selectedIndex 当前选中段下标
+         * @param options       段文本列表
+         * @param enabled       是否启用
+         * @param onSelect      选择回调
+         */
+        public Props(ReadableSignal<Integer> selectedIndex, List<String> options,
+                ReadableSignal<Boolean> enabled, Consumer<Integer> onSelect) {
+            this(selectedIndex, options, enabled, onSelect, null);
+        }
     }
 
     /**
@@ -139,8 +156,10 @@ public final class SceneSegmented {
             // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
             // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退，grow 兄弟收不到分配高。
             // 内置后调用方无需再手动设高（YAGNI：本轮不开 prop 覆盖）。
-            result.root().setPreferredHeight(
-                    rt.lineHeight(SEG_LABEL_FONT_SIZE) + 2 * SEGMENT_PADDING);
+            // 标签字号入口：段宽与条高都按字号测量，故构建期先取有效字号（未指定回落常量）。
+            final int labelFontSize = SceneControlTypography.fontSizeOrDefault(
+                    props.fontSize(), SEG_LABEL_FONT_SIZE);
+            result.root().setPreferredHeight(rt.lineHeight(labelFontSize) + 2 * SEGMENT_PADDING);
 
             // 导航底座：TOOLBAR 角色配方。表面绑定器独占 background/border/borderWidth/
             // cornerRadius/backdrop/surfaceElevation；构造期不再静态设边框/圆角，
@@ -168,8 +187,9 @@ public final class SceneSegmented {
                 // 段宽 = 文本宽 + 2*内边距，短标题不留白、长标题不截断。测量值固化进
                 // preferredWidth（LAYOUT 级属性），构建期一次性写入，运行期不再重测。
                 String title = props.options().get(handle.index());
-                int textWidth = rt.measureTextWidth(title, SEG_LABEL_FONT_SIZE);
+                int textWidth = rt.measureTextWidth(title, labelFontSize);
                 segment.setPreferredWidth(textWidth + 2 * SEGMENT_PADDING);
+                handle.label().setFontSize(labelFontSize);
                 segment.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
@@ -190,6 +210,24 @@ public final class SceneSegmented {
                     handle.label()::setTextColor);
 
                 SceneControlChrome.bindCursor(rt, segment, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
+            }
+
+            // 运行期改字号：标签字号与「按字号测出来的几何」必须同时重算，否则段宽/条高会留在旧字号上。
+            // 不传字号时不建立任何绑定，构建期尺寸即最终尺寸（视觉零变化）。
+            if (props.fontSize() != null) {
+                final List<SceneSingleSelectPrimitive.ItemHandle> items = result.items();
+                final List<String> options = props.options();
+                final SceneNode base = result.root();
+                rt.bind(props.fontSize(), value -> {
+                    int fontSize = SceneControlTypography.fontSizeOrDefault(value, SEG_LABEL_FONT_SIZE);
+                    base.setPreferredHeight(rt.lineHeight(fontSize) + 2 * SEGMENT_PADDING);
+                    for (int i = 0; i < items.size(); i++) {
+                        SceneSingleSelectPrimitive.ItemHandle handle = items.get(i);
+                        handle.label().setFontSize(fontSize);
+                        handle.item().setPreferredWidth(
+                                rt.measureTextWidth(options.get(i), fontSize) + 2 * SEGMENT_PADDING);
+                    }
+                });
             }
 
             return result.root();

@@ -62,6 +62,31 @@ final class SceneControlTypography {
      * @param root     控件根节点（字号真值所在）
      * @param fontSize 字号信号（UI 像素）；null = 不指定
      */
+    /**
+     * 构建期取有效字号：未指定（信号为 null 或值为 null）时回落控件内部默认值。
+     *
+     * <p>给不走 {@link #applyFontSize} 的控件用——它们的字号参与几何测量（段宽、条高），
+     * 必须在建树时就知道字号才能算出正确的构建期尺寸。</p>
+     *
+     * @param fontSize 字号信号；null = 未指定
+     * @param fallback 未指定时的内部默认字号
+     * @return 有效字号（UI 像素）
+     */
+    static int fontSizeOrDefault(ReadableSignal<Integer> fontSize, int fallback) {
+        return fontSizeOrDefault(fontSize == null ? null : fontSize.get(), fallback);
+    }
+
+    /**
+     * 取有效字号：值缺失时回落控件内部默认值（运行期 applier 用同一口径，避免两处不一致）。
+     *
+     * @param fontSize 字号值；null = 未指定
+     * @param fallback 未指定时的内部默认字号
+     * @return 有效字号（UI 像素）
+     */
+    static int fontSizeOrDefault(Integer fontSize, int fallback) {
+        return fontSize == null ? fallback : fontSize.intValue();
+    }
+
     static void applyFontSize(SceneRuntime rt, SceneNode root, ReadableSignal<Integer> fontSize) {
         if (fontSize == null) {
             return;
