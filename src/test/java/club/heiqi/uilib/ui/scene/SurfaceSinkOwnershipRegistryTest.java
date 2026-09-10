@@ -43,19 +43,6 @@ public class SurfaceSinkOwnershipRegistryTest {
     private static final Pattern FIELD_CATEGORY = Pattern.compile("\"category\"\\s*:\\s*\"([^\"]+)\"");
     private static final Pattern CALL = Pattern.compile("([A-Za-z_$][A-Za-z0-9_$.]*)\\s*\\.\\s*(setBackgroundColor|setBorderColor)\\s*\\(");
     private static final Pattern METHOD_REFERENCE = Pattern.compile("([A-Za-z_$][A-Za-z0-9_$.]*)\\s*::\\s*(setBackgroundColor|setBorderColor)\\b");
-    private static final Pattern OWNER_FOR_LOOP = Pattern.compile("for\\s*\\(\\s*(?:final\\s+)?SceneNode\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*:");
-    private static final Pattern OWNER_DECLARATION = Pattern.compile("SceneNode\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*[=;)]");
-    private static final Pattern OWNER_CONSTRUCTOR = Pattern.compile("([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*new\\s+SceneNode");
-    private static final Pattern OWNER_FACTORY = Pattern.compile("([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*SceneNode\\.[A-Za-z]+");
-    private static final Pattern OWNER_SCROLL = Pattern.compile("([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*sc\\.[A-Za-z]+\\(");
-    private static final Pattern OWNER_CONTROL = Pattern.compile("([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*Scene[A-Za-z]+\\.create");
-    private static final Pattern OWNER_TEXT = Pattern.compile("([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*[A-Za-z_$][A-Za-z0-9_$.]*\\.(?:label|icon|text)\\(");
-    private static final Pattern OWNER_PARAMETER = Pattern.compile("\\(\\s*(?:final\\s+)?SceneNode\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*[,)]");
-    private static final Pattern[] OWNER_PATTERNS = {
-        OWNER_FOR_LOOP, OWNER_DECLARATION, OWNER_CONSTRUCTOR, OWNER_FACTORY,
-        OWNER_SCROLL, OWNER_CONTROL, OWNER_TEXT, OWNER_PARAMETER,
-    };
-
     private static final Set<String> ALLOWED_CATEGORIES = new LinkedHashSet<String>();
     static {
         Collections.addAll(ALLOWED_CATEGORIES, "binder", "binder-delegated", "designed-static",
@@ -181,31 +168,14 @@ public class SurfaceSinkOwnershipRegistryTest {
                     if (!reference.find()) {
                         continue;
                     }
+                    // 确定性 owner 契约：owner 就是字面接收者。方法引用写作 node::setXxx 时，
+                    // owner 记为 node 本身，不做「向上猜声明」的启发式（那会让同一行有两种解释）。
                     owner = reference.group(1);
                     property = reference.group(2);
-                    if ("node".equals(owner) || "result".equals(owner) || "target".equals(owner)) {
-                        String found = findOwner(lines, index);
-                        if (found != null) {
-                            owner = found;
-                        }
-                    }
                 }
                 keys.add(key(relative, owner, property));
             }
         }
-    }
-
-    private static String findOwner(String[] lines, int index) {
-        int floor = Math.max(-1, index - 60);
-        for (int cursor = index - 1; cursor > floor; cursor--) {
-            for (Pattern pattern : OWNER_PATTERNS) {
-                Matcher matcher = pattern.matcher(lines[cursor]);
-                if (matcher.find()) {
-                    return matcher.group(1);
-                }
-            }
-        }
-        return null;
     }
 
     private static String key(String file, String owner, String property) {

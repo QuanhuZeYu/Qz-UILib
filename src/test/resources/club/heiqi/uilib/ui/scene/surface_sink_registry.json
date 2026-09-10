@@ -6,11 +6,21 @@
       "file": "club/heiqi/config/ui/ConfigScreen.java",
       "owner": "node",
       "property": "setBackgroundColor",
-      "category": "binder",
+      "category": "binder-delegated",
       "lines": [
         1176
       ],
-      "note": "node.setBackgroundColor(ConfigTheme.READOUT_BG);"
+      "note": "徽标节点静态设底（读出口底色）；徽标为独占节点，单写入者"
+    },
+    {
+      "file": "club/heiqi/config/ui/ConfigScreen.java",
+      "owner": "node",
+      "property": "setBorderColor",
+      "category": "binder-delegated",
+      "lines": [
+        1174
+      ],
+      "note": "同一徽标边框走 runtime.bind(color, node::setBorderColor) 主题跟随；owner 记为方法引用的字面接收者"
     },
     {
       "file": "club/heiqi/config/ui/ConfigScreen.java",
@@ -21,16 +31,6 @@
         323
       ],
       "note": "页面根节点静态设底 ConfigTheme.ROOT_BG；group 等表面走 SceneSurfaceBinder.bind，根自身不进配方通道"
-    },
-    {
-      "file": "club/heiqi/config/ui/ConfigScreen.java",
-      "owner": "textNode",
-      "property": "setBorderColor",
-      "category": "binder-delegated",
-      "lines": [
-        1174
-      ],
-      "note": "运行时 bind(color, node::setBorderColor) 写徽标边框；节点为徽标独占，独占节点单写者"
     },
     {
       "file": "club/heiqi/config/ui/field/SearchPickerFieldSupport.java",
