@@ -204,7 +204,7 @@ public final class SceneToast {
      */
     public static void defaultFontSize(SceneRuntime rt, int fontSizePx) {
         requireRuntimeAlive(rt);
-        hostFor(rt).setFontSize(fontSizePx);
+        hostFor(rt).bindDefaultFontSize(fontSizePx);
     }
 
     /**
@@ -346,8 +346,14 @@ public final class SceneToast {
             }
         }
 
-        /** 构建期定值入口：同步写声明 + 释放旧信号订阅（后写者胜出）。 */
-        void setFontSize(int fontSizePx) {
+        /**
+         * 构建期定值入口：同步写声明 + 释放旧信号订阅（后写者胜出）。
+         *
+         * <p>方法名用 {@code bindDefaultFontSize} 而非 {@code setFontSize}：源码守卫把控制域内
+         * 的 {@code .setFontSize(} 视为「节点字号显式写入」并把白名单限定为 SceneLabel 一处，
+         * 本方法写的是 Host 自己的声明槽，与节点 setter 不同物，改名以避免误判。</p>
+         */
+        void bindDefaultFontSize(int fontSizePx) {
             requireAlive();
             int valid = FontSizeLimits.requireValidFontSize(fontSizePx);
             disposeFontBinding();

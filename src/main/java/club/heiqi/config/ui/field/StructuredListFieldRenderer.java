@@ -462,7 +462,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                 Signal.create(text), Signal.create(Boolean.TRUE), action)).get();
         SceneNode label = button.__getChildren().get(0);
         // 仿照 SceneSegmented：静态标签在构建期按真实字体度量并固化外宽，供父 ROW 先验扣除。
-        button.setPreferredWidth(rt.measureTextWidth(text, label.getFontSize())
+        button.setPreferredWidth(rt.measureTextWidth(text, label.effectiveFontSize())
                 + button.getPaddingLeft() + button.getPaddingRight());
         return button;
     }

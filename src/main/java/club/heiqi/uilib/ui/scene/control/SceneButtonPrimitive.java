@@ -72,8 +72,7 @@ public final class SceneButtonPrimitive {
         labelNode.setHitTestable(false);
         root.appendChild(labelNode);
 
-        SceneControlTypography typography = SceneControlTypography.attach(rt, root);
-        typography.bindText(labelNode);
+        // 标签文字字号沿父链继承控件根的层 2 声明（不再逐点接线），此处只绑定文本内容。
         rt.bindText(labelNode, props.label());
 
         SceneInteractionState is = rt.interactionState(root);

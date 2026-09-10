@@ -267,7 +267,7 @@ class ConstraintResolver {
             // 文本叶：测量各行最大宽 + padH；wrap 节点内容宽即 maxTextWidth。空文本视作 0 宽。
             int wrapWidth = child.getMaxTextWidth();
             int textW = text.isEmpty() ? 0
-                    : (wrapWidth > 0 ? wrapWidth : sizing.measureMaxLineWidth(text, child.getFontSize()));
+                    : (wrapWidth > 0 ? wrapWidth : sizing.measureMaxLineWidth(text, child.effectiveFontSize()));
             int natural = textW + padH;
             return clampToMaxWidth(child, natural);
         }

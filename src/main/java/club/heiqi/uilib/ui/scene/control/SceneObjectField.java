@@ -368,11 +368,9 @@ public final class SceneObjectField {
         return () -> {
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
-            // 控件内文字跟随 root 字号（编写者用 rt.mount(...).fontSize(n) 或 root.setFontSize(n)）。
-            // 文字节点全部建在辅助方法里，字号源作为参数一路往下传。
-            ReadableSignal<Integer> fontSize = SceneControlTypography.fontSizeOf(rt, root);
-
-            SceneNode labelNode = textNode(rt, props.label(), SceneThemes.foreground(rt), fontSize);
+            // 控件内文字跟随 root 字号：文字节点全部是 root 的后代，沿父链继承层 2 声明，
+            // 不再需要把字号信号逐层传进辅助方法。
+            SceneNode labelNode = textNode(rt, props.label(), SceneThemes.foreground(rt));
             rt.show(root, Computed.create(() -> !props.label().isEmpty()), () -> labelNode);
 
             SceneNode viewport = SceneNode.column();
@@ -407,7 +405,7 @@ public final class SceneObjectField {
 
             root.appendChild(stackHost);
 
-            SceneNode editor = buildObjectEditor(rt, props, "", 0, fontSize);
+            SceneNode editor = buildObjectEditor(rt, props, "", 0);
             viewport.appendChild(editor);
             return root;
         };
@@ -420,18 +418,16 @@ public final class SceneObjectField {
      * @param props     输入契约
      * @param basePath  当前路径
      * @param depth     当前深度
-     * @param fontSize 控件根字号信号（文字节点跟随 root）
      * @return 对象编辑器节点
      */
     private static SceneNode buildObjectEditor(SceneRuntime rt, Props props,
-                                               String basePath, int depth,
-                                               ReadableSignal<Integer> fontSize) {
+                                               String basePath, int depth) {
         SceneNode container = SceneNode.column();
         container.setGap(ROW_GAP);
         if (depth > 0) {
             container.setPadding(0, 0, 0, INDENT);
         }
-        appendObjectEditorChildren(rt, props, container, basePath, depth, fontSize);
+        appendObjectEditorChildren(rt, props, container, basePath, depth);
         return container;
     }
 
@@ -443,21 +439,19 @@ public final class SceneObjectField {
      * @param container     目标容器
      * @param basePath      当前路径
      * @param depth         当前深度
-     * @param fontSize 控件根字号信号（文字节点跟随 root）
      */
     private static void appendObjectEditorChildren(SceneRuntime rt, Props props,
-                                                   SceneNode container, String basePath, int depth,
-                                                   ReadableSignal<Integer> fontSize) {
+                                                   SceneNode container, String basePath, int depth) {
 
         if (depth >= props.maxDepth()) {
             container.appendChild(textNode(rt, "嵌套层级超出显示深度，请通过配置文件编辑此字段",
-                    SceneThemes.warningText(rt), fontSize));
+                    SceneThemes.warningText(rt)));
             return;
         }
 
         Map<String, Object> current = safeMap((Map<String, Object>) navigate(props.value().get(), basePath));
         if (current.isEmpty()) {
-            container.appendChild(textNode(rt, "空对象", SceneThemes.mutedForeground(rt), fontSize));
+            container.appendChild(textNode(rt, "空对象", SceneThemes.mutedForeground(rt)));
             return;
         }
 
@@ -468,11 +462,11 @@ public final class SceneObjectField {
             FieldType fieldType = inferType(fieldValue);
             String path = joinPath(basePath, key);
             if (fieldType == FieldType.OBJECT) {
-                container.appendChild(buildNestedObjectRow(rt, props, key, path, depth, fontSize));
+                container.appendChild(buildNestedObjectRow(rt, props, key, path, depth));
             } else if (fieldType == FieldType.LIST) {
-                container.appendChild(buildPlaceholderRow(rt, key, "列表编辑暂未实现", fontSize));
+                container.appendChild(buildPlaceholderRow(rt, key, "列表编辑暂未实现"));
             } else {
-                container.appendChild(buildScalarRow(rt, props, key, path, fieldType, fontSize));
+                container.appendChild(buildScalarRow(rt, props, key, path, fieldType));
             }
         }
     }
@@ -485,12 +479,10 @@ public final class SceneObjectField {
      * @param key           字段名
      * @param path          字段路径
      * @param depth         当前深度
-     * @param fontSize 控件根字号信号（文字节点跟随 root）
      * @return 嵌套对象行节点
      */
     private static SceneNode buildNestedObjectRow(SceneRuntime rt, Props props,
-                                                  String key, String path, int depth,
-                                                  ReadableSignal<Integer> fontSize) {
+                                                  String key, String path, int depth) {
         SceneNode row = SceneNode.column();
         row.setGap(ROW_GAP);
 
@@ -499,7 +491,7 @@ public final class SceneObjectField {
         header.setGap(CELL_GAP);
         row.appendChild(header);
 
-        ButtonParts toggle = buttonNode(rt, "", fontSize);
+        ButtonParts toggle = buttonNode(rt, "");
         rt.bindComputed(() -> isExpanded(props, path) ? "▾" : "▸",
                 toggle.label()::setText);
         rt.on(toggle.root(), SceneEventType.CLICK, (ev, ctx) -> {
@@ -508,13 +500,13 @@ public final class SceneObjectField {
         });
         header.appendChild(toggle.root());
 
-        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt), fontSize);
+        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
         label.setPreferredWidth(LABEL_WIDTH);
         header.appendChild(label);
-        header.appendChild(textNode(rt, "对象", SceneThemes.mutedForeground(rt), fontSize));
+        header.appendChild(textNode(rt, "对象", SceneThemes.mutedForeground(rt)));
 
         rt.show(row, Computed.create(() -> isExpanded(props, path)),
-                () -> buildObjectEditor(rt, props, path, depth + 1, fontSize));
+                () -> buildObjectEditor(rt, props, path, depth + 1));
         return row;
     }
 
@@ -526,18 +518,16 @@ public final class SceneObjectField {
      * @param key         字段名
      * @param path        字段路径
      * @param fieldType   字段类型
-     * @param fontSize 控件根字号信号（文字节点跟随 root）
      * @return 标量字段行节点
      */
     private static SceneNode buildScalarRow(SceneRuntime rt, Props props,
-                                            String key, String path, FieldType fieldType,
-                                            ReadableSignal<Integer> fontSize) {
+                                            String key, String path, FieldType fieldType) {
         SceneNode row = SceneNode.row();
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(CELL_GAP);
 
         // 字段名是用户数据文本：前景取主题正文色（随主题重派生），不改文本内容与排序语义。
-        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt), fontSize);
+        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
         label.setPreferredWidth(LABEL_WIDTH);
         row.appendChild(label);
 
@@ -564,18 +554,16 @@ public final class SceneObjectField {
      * @param rt   场景运行时
      * @param key  字段名
      * @param text 占位文本
-     * @param fontSize 控件根字号信号（文字节点跟随 root）
      * @return 占位行节点
      */
-    private static SceneNode buildPlaceholderRow(SceneRuntime rt, String key, String text,
-                                                 ReadableSignal<Integer> fontSize) {
+    private static SceneNode buildPlaceholderRow(SceneRuntime rt, String key, String text) {
         SceneNode row = SceneNode.row();
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(CELL_GAP);
-        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt), fontSize);
+        SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
         label.setPreferredWidth(LABEL_WIDTH);
         row.appendChild(label);
-        row.appendChild(textNode(rt, text, SceneThemes.warningText(rt), fontSize));
+        row.appendChild(textNode(rt, text, SceneThemes.warningText(rt)));
         return row;
     }
 
@@ -834,15 +822,12 @@ public final class SceneObjectField {
      * @param rt    场景运行时
      * @param text  文本
      * @param color 主题语义前景信号（如 {@link SceneThemes#foreground(SceneRuntime)}）
-     * @param fontSize 控件根字号信号（文字节点跟随 root）
      * @return 文本节点
      */
-    private static SceneNode textNode(SceneRuntime rt, String text, ReadableSignal<Integer> color,
-                                      ReadableSignal<Integer> fontSize) {
+    private static SceneNode textNode(SceneRuntime rt, String text, ReadableSignal<Integer> color) {
         SceneNode node = new SceneNode();
         node.setHitTestable(false);
         node.setText(nullSafe(text));
-        SceneControlTypography.applyFontSize(rt, node, fontSize);
         rt.bind(color, node::setTextColor);
         return node;
     }
@@ -858,11 +843,9 @@ public final class SceneObjectField {
      *
      * @param rt   场景运行时
      * @param text 按钮文本
-     * @param fontSize 控件根字号信号（按钮文字跟随 root）
      * @return 按钮节点
      */
-    private static ButtonParts buttonNode(SceneRuntime rt, String text,
-                                          ReadableSignal<Integer> fontSize) {
+    private static ButtonParts buttonNode(SceneRuntime rt, String text) {
         SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -872,8 +855,7 @@ public final class SceneObjectField {
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
         label.setText(nullSafe(text));
-        // 按钮文字（展开/折叠状态字形 ▾/▸）同样是本控件绘制的文字节点，随 root 字号缩放。
-        SceneControlTypography.applyFontSize(rt, label, fontSize);
+        // 按钮文字（展开/折叠状态字形 ▾/▸）是 button 的后代，沿父链继承控件根字号。
         button.appendChild(label);
 
         ReadableSignal<SceneSurfaceStyle> surface =

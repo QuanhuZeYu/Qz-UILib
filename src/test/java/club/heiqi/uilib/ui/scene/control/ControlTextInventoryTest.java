@@ -61,6 +61,13 @@ public class ControlTextInventoryTest {
     /** wrapper → 承载其文字的 primitive（防止「清单里有控件、实现里找不到文字来源」）。 */
     public static final Map<String, String> DELEGATED_TEXT = delegatedText();
 
+    /**
+     * 文字创建点识别口径（S4 后）：文件内出现 setText( / ::setText / bindText( / SceneLabel
+     * 即视为「该文件自己创建文字」。注意 bindText( 既覆盖旧的包私有通道调用，也覆盖仍存在的
+     * 公共绑定 SceneRuntime.bindText（例：SceneSingleSelectPrimitive:132），故它仍是有效信号；
+     * 但**wrapper 的文字来源以 {@link #DELEGATED_TEXT} 载体登记表为准**——Segmented/Tab 这类
+     * 「不自建文字、由 primitive 创建 label 后 append」的控件，必须登记载体而不是靠字面命中。
+     */
     private static final Pattern TEXT_SITE = Pattern.compile(
             "\\.setText\\(|::setText(?![A-Za-z])|\\.bindText\\(|\\bSceneLabel\\b");
 
@@ -92,6 +99,12 @@ public class ControlTextInventoryTest {
         map.put("SceneToggle", "SceneToggleablePrimitive.java");
         map.put("SceneRadioGroup", "SceneSingleSelectPrimitive.java");
         map.put("SceneNavList", "SceneSingleSelectPrimitive.java");
+        // S4 事实（台账「S4 记录」）：Segmented/Tab 不自建文字。段/页签 label 由
+        // SceneSingleSelectPrimitive 创建（:130 new SceneNode() / :132 rt.bindText），
+        // 由 wrapper append（SceneSegmented:211、SceneTab:305）；字号经父链继承 ——
+        // 运行期实测 eff=24 / explicit=null / fontSizeSource=SCOPE。
+        map.put("SceneSegmented", "SceneSingleSelectPrimitive.java");
+        map.put("SceneTab", "SceneSingleSelectPrimitive.java");
         map.put("SceneSelect", "SceneSelectPrimitive.java");
         map.put("SceneAutocomplete", "SceneAutocompletePrimitive.java");
         return map;

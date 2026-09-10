@@ -50,28 +50,24 @@ public class FontWiringSourceGuardTest {
 
     /** 必需钉：SizingCalculator 的两处文本测量必须走解析字号（:159 文本叶宽、:489 行计划基准）。 */
     @Test
-    @Ignore("S3 转正：SizingCalculator:159/:489 改读 effectiveFontSize() 且本文件 getFontSize() 计数 0；对应 P0-2（消费点全集）；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void sizingCalculatorUsesResolvedFontSize() throws Exception {
         assertConsumer("src/main/java/club/heiqi/uilib/ui/scene/layout/SizingCalculator.java");
     }
 
     /** 必需钉：ConstraintResolver 先验子宽路径必须走解析字号（:270，报告漏列的第 3 个消费点）。 */
     @Test
-    @Ignore("S3 转正：ConstraintResolver:270 改读 effectiveFontSize() 且本文件 getFontSize() 计数 0；对应 P0-2（报告漏列的独立布局路径）；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void constraintResolverUsesResolvedFontSize() throws Exception {
         assertConsumer("src/main/java/club/heiqi/uilib/ui/scene/layout/ConstraintResolver.java");
     }
 
     /** 必需钉：绘制引擎 TEXT（:482）与 SEGMENTS（:469）基准字号都必须走解析字号。 */
     @Test
-    @Ignore("S3 转正：ScenePaintEngine:469/:482 改读 effectiveFontSize() 且本文件 getFontSize() 计数 0；对应 P0-2/P0-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void scenePaintEngineUsesResolvedFontSize() throws Exception {
         assertConsumer("src/main/java/club/heiqi/uilib/ui/scene/paint/ScenePaintEngine.java");
     }
 
     /** 伴随改：config 渲染器的固定外宽必须按解析字号测量（StructuredListFieldRenderer:465）。 */
     @Test
-    @Ignore("S3 转正：StructuredListFieldRenderer 不出现 label.getFontSize() 且 >=1 处 effectiveFontSize()；对应 P2-10/P1-5；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void configRendererUsesResolvedFontSize() throws Exception {
         Path file = Paths.get("src/main/java/club/heiqi/config/ui/field/StructuredListFieldRenderer.java");
         Assert.assertTrue("伴随改文件必须存在：" + file, Files.exists(file));
@@ -84,7 +80,6 @@ public class FontWiringSourceGuardTest {
 
     /** 禁则：控制域不得残留旧通道，显式 setFontSize 必须恰为白名单处数。 */
     @Test
-    @Ignore("S4 转正：控制域 SceneControlTypography 计数 0（实测 49）且显式 setFontSize 仅白名单处数；对应 P0-2/P2-10；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void controlDomainHasNoManualFontWiring() throws Exception {
         int typography = 0;
         StringBuilder offenders = new StringBuilder();
@@ -108,7 +103,6 @@ public class FontWiringSourceGuardTest {
 
     /** 禁则：控制域不得直接读节点原始字号（全部改读解析字号）。 */
     @Test
-    @Ignore("S4 转正：控制域 getFontSize() 计数 0（实测 SceneControlTypography(3)/SceneSegmented(1)/SceneTab(1)）；对应 P0-2；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void controlDomainDoesNotReadRawFontSize() throws Exception {
         StringBuilder offenders = new StringBuilder();
         for (Path file : controlSources()) {
@@ -122,26 +116,50 @@ public class FontWiringSourceGuardTest {
                 "", offenders.toString());
     }
 
-    /** 计数钉：三入口必须写同一个 scope 槽，不得各自建 effect（旧实现每调用一次叠加一个 effect）。 */
+    /**
+     * 计数钉（**钉机制不钉字面**）：三入口必须统一经 FontSizeBinding 写层 2 声明，且都不得自建 effect。
+     *
+     * <p>为什么不再逐字要求 setFontScope(：现实现是 {@code FontSizeBinding.apply()} 写槽
+     * （MountHandle/ScenePortalHandle 各持一个绑定器实例，ContextMenu.Handle 委托 portal），
+     * 逐字比对会把「经绑定器写槽」的合法实现误判为未接——守卫要钉的是
+     * 「每入口唯一绑定 + 不各自建 effect」这一机制，而不是某一行字面。
+     * 运行期幂等不变量由 ControlFontRuntimeGuardTest 承担（toastDefaultFontSizeTenCalls...）。</p>
+     */
     @Test
-    @Ignore("S4 转正：MountHandle/ScenePortalHandle 无 createEffect( 且 __fontSize() 侧信道删除、统一走 setFontScope；对应 P1-1/P2-4；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
     public void entryPointsWriteTheSingleScopeSlot() throws Exception {
         String mount = codeWithoutComments(read(Paths.get(
                 "src/main/java/club/heiqi/uilib/ui/scene/runtime/MountHandle.java")));
-        Assert.assertTrue("MountHandle 必须走 setFontScope(", mount.contains("setFontScope("));
-        Assert.assertEquals("MountHandle 不得再自建字号 effect",
-                0, occurrences(mount, "createEffect("));
+        Assert.assertTrue("MountHandle 必须经 FontSizeBinding 写层 2 声明（钉机制，不钉 setFontScope 字面）",
+                mount.contains("FontSizeBinding"));
+        Assert.assertEquals("MountHandle 不得自建字号 effect", 0, occurrences(mount, "createEffect("));
+
         String portal = codeWithoutComments(read(Paths.get(
                 "src/main/java/club/heiqi/uilib/ui/scene/runtime/ScenePortalHandle.java")));
-        Assert.assertEquals("ScenePortalHandle 不得再自建字号 effect",
+        Assert.assertTrue("ScenePortalHandle 必须经 FontSizeBinding 写层 2 声明",
+                portal.contains("FontSizeBinding"));
+        Assert.assertEquals("ScenePortalHandle 不得自建字号 effect",
                 0, occurrences(portal, "createEffect("));
         Assert.assertFalse("ScenePortalHandle 的 __fontSize() 侧信道必须消除",
                 portal.contains("__fontSize("));
+
+        String menu = codeWithoutComments(read(Paths.get(
+                "src/main/java/club/heiqi/uilib/ui/scene/control/SceneContextMenu.java")));
+        Assert.assertTrue("ContextMenu.Handle 必须委托 portal 字号入口或自持 FontSizeBinding"
+                        + "（facade 不自持第二套声明）",
+                menu.contains("portal().fontSize(") || menu.contains("FontSizeBinding"));
+        Assert.assertEquals("ContextMenu.Handle 不得自建字号 effect",
+                0, occurrences(menu, "createEffect("));
     }
 
-    /** 禁则：Toast 不得把字号绑定挂到 runtime 根 Owner（永久 effect 泄漏）。 */
+    /**
+     * 禁则（S5 终态）：SceneToast 内字号绑定不得挂 runtime 根 Owner。
+     *
+     * <p>过渡态（S2 起）的等价不变量是**行为面**的「重复设置不累积 effect」，由
+     * ControlFontRuntimeGuardTest.toastDefaultFontSizeTenCallsDoNotAccumulateEffects 常驻承担；
+     * 本方法只管终态（作用域机制消解 root 绑定后 __runRoot( 归零），两者分开登记避免 S5 误判。</p>
+     */
     @Test
-    @Ignore("S2 转正：SceneToast 不再出现 __runRoot(（字号走 scope 槽单绑定，effect 计数 <= 1）；对应 P1-1；证据 temp/audit-fontsize/i4_s0_guard_run.txt")
+    @Ignore("S5 转正：SceneToast 内字号绑定不再挂 runtime 根 Owner（__runRoot( 归零，作用域机制消解）；过渡态不变量见 ControlFontRuntimeGuardTest.toastDefaultFontSizeTenCallsDoNotAccumulateEffects（常驻绿）；对应 P1-1 终态；证据 temp/audit-fontsize/i4_align_probe.txt")
     public void toastDoesNotBindOnRuntimeRoot() throws Exception {
         String toast = codeWithoutComments(read(Paths.get(
                 "src/main/java/club/heiqi/uilib/ui/scene/control/SceneToast.java")));

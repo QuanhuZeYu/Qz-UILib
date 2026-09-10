@@ -230,8 +230,22 @@ public final class SceneButton {
             SceneNode root = result.root();
             SceneInteractionState interaction = result.interaction();
             root.setPadding(PADDING);
-            // 控件级字号：只写 root，文本叶/caret/度量由 primitive 内的 typography 通道跟随。
-            SceneControlTypography.applyFontSize(rt, root, props.fontSize());
+            // 控件级字号入口：Props.fontSize() 写控件根的层 2 声明（与句柄入口同一槽，后写者胜出）；
+            // 控件内文字沿父链继承，不再逐点接线；值 null = 该声明缺失（回落下一层）。
+            final ReadableSignal<Integer> configuredFontSize = props.fontSize();
+            if (configuredFontSize != null) {
+                Integer initialFontSize = configuredFontSize.get();
+                if (initialFontSize != null) {
+                    root.setFontScope(initialFontSize.intValue());
+                }
+                rt.bind(configuredFontSize, current -> {
+                    if (current == null) {
+                        root.resetFontScope();
+                    } else {
+                        root.setFontScope(current.intValue());
+                    }
+                });
+            }
 
             final SceneButtonVariant variant = props.variant() == null
                     ? SceneButtonVariant.STANDARD : props.variant();

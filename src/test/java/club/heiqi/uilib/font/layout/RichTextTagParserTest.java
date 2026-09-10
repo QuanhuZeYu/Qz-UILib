@@ -122,9 +122,9 @@ public class RichTextTagParserTest {
     public void shouldParseAndClampSize() {
         Assert.assertEquals(32, RichTextTagParser.parse("<size=32>x</size>", baseStyle())
                 .get(0).getStyle().getFontSizePx());
-        Assert.assertEquals(RichTextTagParser.MAX_FONT_SIZE_PX,
+        Assert.assertEquals(FontSizeLimits.MAX_FONT_SIZE_PX,
                 RichTextTagParser.parse("<size=9999>x</size>", baseStyle()).get(0).getStyle().getFontSizePx());
-        Assert.assertEquals(RichTextTagParser.MIN_FONT_SIZE_PX,
+        Assert.assertEquals(FontSizeLimits.MIN_FONT_SIZE_PX,
                 RichTextTagParser.parse("<size=-5>x</size>", baseStyle()).get(0).getStyle().getFontSizePx());
         Assert.assertEquals(0, RichTextTagParser.parse("<size=abc>x</size>", baseStyle())
                 .get(0).getStyle().getFontSizePx());

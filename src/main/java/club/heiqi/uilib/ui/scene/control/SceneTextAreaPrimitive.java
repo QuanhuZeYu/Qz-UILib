@@ -323,7 +323,6 @@ public final class SceneTextAreaPrimitive {
 
         SceneNode root = SceneNode.column();
         root.setClipChildren(true);
-        SceneControlTypography typography = SceneControlTypography.attach(rt, root);
 
         SceneNode viewport = SceneNode.column();
         viewport.setScrollable(true);
@@ -372,11 +371,13 @@ public final class SceneTextAreaPrimitive {
                         && !Boolean.TRUE.equals(is.focused().get())));
 
         // 字号、文本和宽度只在此处生成视觉布局。行 key、行内切片及命中均读此快照，
-        // 避免根字号生成 key、默认行字号再次切片导致漏绘。Metrics 自带字体纪元失效。
+        // 避免根字号生成 key、默认行字号再次切片导致漏绘。字号 / 行高 / 字体纪元随快照一并携带。
+        // 度量直接读节点自身解析值（继承 + 用户倍率），不再经任何中间通道。
         ReadableSignal<VisualLayoutSnapshot> visualLayout = Computed.create(
-                visualModel.compute(props.value().get(), 0, typography.metrics().get()),
+                visualModel.compute(props.value().get(), 0,
+                        root.effectiveFontSize(), rt.lineHeight(root.effectiveFontSize()), rt.textMeasureEpoch()),
                 () -> visualModel.compute(props.value().get(), availableWidthSignal.get().intValue(),
-                        typography.metrics().get()));
+                        root.effectiveFontSize(), rt.lineHeight(root.effectiveFontSize()), rt.textMeasureEpoch()));
         Computed<List<Integer>> visualKeys = Computed.create(() -> {
             List<VisualLineLayout> vlines = visualLayout.get().lines();
             List<Integer> keys = new ArrayList<>(vlines.size());
@@ -389,12 +390,11 @@ public final class SceneTextAreaPrimitive {
         // 按视觉行渲染（key=visualStartIndex；行内段/槽位按 key 现查视觉行号，视觉行重排自动跟随）
         rt.forEach(content, visualKeys, key -> key,
                 key -> buildVisualRow(rt, props, selection, caretVisible, isPlaceholder,
-                        typography, visualLayout, key));
+                        visualLayout, key));
 
         // placeholder：value 空且未聚焦时显示单行占位文本
         rt.show(placeholderContainer, isPlaceholder, () -> {
             SceneNode ph = new SceneNode();
-            typography.bindText(ph);
             ph.setText(SceneTextUtils.nullSafe(placeholder));
             ph.setHitTestable(false);
             rt.bindComputed(() -> resolvePlaceholderColor(props, props.enabled().get()),
@@ -421,7 +421,7 @@ public final class SceneTextAreaPrimitive {
             }
             VisualLayoutSnapshot layout = target.layout();
             int row = VisualLineModel.visualRowOfCaret(layout.lines(), layout.value(), target.caretIndex());
-            int lineH = layout.metrics().lineHeightPx();
+            int lineH = layout.lineHeightPx();
             int caretTop = target.paddingTop() + row * lineH;
             int caretBottom = caretTop + lineH;
             int scroll = scrollSignal.get().intValue();
@@ -737,7 +737,6 @@ public final class SceneTextAreaPrimitive {
      * @param selection    选区 signal
      * @param caretVisible caret 是否可见（enabled 且 focused）
      * @param isPlaceholder 当前是否处于 placeholder 态
-     * @param typography 控件内部字号与行高度量
      * @param visualLayout 文本、行列表与度量的共享快照
      * @param keyChar      本视觉行的 key（起始 char 索引，稳定）
      * @return 视觉行根节点
@@ -746,7 +745,6 @@ public final class SceneTextAreaPrimitive {
                                             ReadableSignal<TextSelection> selection,
                                             ReadableSignal<Boolean> caretVisible,
                                             ReadableSignal<Boolean> isPlaceholder,
-                                            SceneControlTypography typography,
                                             ReadableSignal<VisualLayoutSnapshot> visualLayout,
                                             Integer keyChar) {
         SceneNode row = SceneNode.row();
@@ -755,32 +753,29 @@ public final class SceneTextAreaPrimitive {
         row.setClipChildren(true);
 
         SceneNode prefix = new SceneNode();
-        typography.bindText(prefix);
         prefix.setHitTestable(false);
         row.appendChild(prefix);
 
         SceneNode caretBefore = new SceneNode();
         caretBefore.setPreferredWidth(CARET_WIDTH);
-        typography.bindCaret(caretBefore);
+        bindCaretHeight(rt, caretBefore);
         caretBefore.setHitTestable(false);
         // 空文本叶兜底：宽 0 时真正归零不撑满行（与 TextInput 五节点同款防撑满 bug）
         caretBefore.setText("");
         row.appendChild(caretBefore);
 
         SceneNode highlight = new SceneNode();
-        typography.bindText(highlight);
         highlight.setHitTestable(false);
         row.appendChild(highlight);
 
         SceneNode caretAfter = new SceneNode();
         caretAfter.setPreferredWidth(0);
-        typography.bindCaret(caretAfter);
+        bindCaretHeight(rt, caretAfter);
         caretAfter.setHitTestable(false);
         caretAfter.setText("");
         row.appendChild(caretAfter);
 
         SceneNode suffix = new SceneNode();
-        typography.bindText(suffix);
         suffix.setHitTestable(false);
         row.appendChild(suffix);
 
@@ -1013,7 +1008,7 @@ public final class SceneTextAreaPrimitive {
             return 0;
         }
         return VisualLineModel.caretCpFromPointer(layout.lines(), layout.value(),
-                ctx.getLocalPointerX(), ctx.getLocalPointerY(), layout.metrics().lineHeightPx());
+                ctx.getLocalPointerX(), ctx.getLocalPointerY(), layout.lineHeightPx());
     }
 
     // ==================== 编辑操作 ====================
@@ -1045,9 +1040,30 @@ public final class SceneTextAreaPrimitive {
 
     // ==================== 视觉行模型（D4） ====================
 
-    /** 同一次布局依据及其结果，供行结构、绘制和输入共同读取。 */
+    /**
+     * caret 槽高度跟随生效字号。
+     *
+     * <p>字号由继承承担（caret 是视觉行的后代，不再写入显式字号）；caret 是空文本叶，
+     * 高度需要显式给出，且必须随字号变化刷新 —— 在每次布局纪元后按本节点解析出的
+     * 生效字号重算行高。</p>
+     *
+     * @param rt    场景运行时（提供行高度量）
+     * @param caret caret 槽节点
+     */
+    private static void bindCaretHeight(SceneRuntime rt, SceneNode caret) {
+        caret.setPreferredHeight(rt.lineHeight(caret.effectiveFontSize()));
+        rt.bind(rt.layoutDoneSignal(), epoch ->
+                caret.setPreferredHeight(rt.lineHeight(caret.effectiveFontSize())));
+    }
+
+    /**
+     * 同一次布局依据及其结果，供行结构、绘制和输入共同读取。
+     *
+     * <p>字号 / 行高 / 字体纪元直接随快照携带（不再经中间通道类型）：字号取控件根生效字号，
+     * 行高与纪元由它派生，三者同源保证「换行边界、命中几何、caret 行高」不会各说各话。</p>
+     */
     @Desugar
-    private record VisualLayoutSnapshot(String value, SceneControlTypography.Metrics metrics,
+    private record VisualLayoutSnapshot(String value, int fontSizePx, int lineHeightPx, int measureEpoch,
                                         List<VisualLineLayout> lines) {
     }
 
@@ -1101,11 +1117,13 @@ public final class SceneTextAreaPrimitive {
          *
          * @param value          当前文本（可为 null，内部 nullSafe）
          * @param availableWidth 文本内容盒可用宽度；{@code <=0} 视为不限宽（不软换行）
-         * @param metrics        字号、行高及字体纪元的同一快照
+         * @param fontSizePx     本次测量字号（控件根生效字号）
+         * @param lineHeightPx   本次行高（由 fontSizePx 派生）
+         * @param measureEpoch   字体度量纪元
          * @return 共享视觉布局，内部列表复用既有引擎缓存
          */
         private VisualLayoutSnapshot compute(String value, int availableWidth,
-                                              SceneControlTypography.Metrics metrics) {
+                                              int fontSizePx, int lineHeightPx, int measureEpoch) {
             String safe = SceneTextUtils.nullSafe(value);
             if (cachedLogicalLines == null || !safe.equals(cachedValue)) {
                 cachedLogicalLines = buildLogicalLines(safe);
@@ -1113,13 +1131,14 @@ public final class SceneTextAreaPrimitive {
             }
             // 引擎按行高/字体纪元缓存，但相同行高并不代表相同字宽。
             // 字号改变时只失效本控件持有的布局缓存，防止复用旧换行边界。
-            if (measureFontSize != metrics.fontSizePx()) {
+            if (measureFontSize != fontSizePx) {
                 engine.invalidate();
-                measureFontSize = metrics.fontSizePx();
+                measureFontSize = fontSizePx;
             }
             List<VisualLineLayout> lines = engine.layout(cachedLogicalLines, availableWidth,
-                    metrics.measureEpoch(), metrics.lineHeightPx(), true, measure);
-            return new VisualLayoutSnapshot(safe, metrics, Collections.unmodifiableList(lines));
+                    measureEpoch, lineHeightPx, true, measure);
+            return new VisualLayoutSnapshot(safe, fontSizePx, lineHeightPx, measureEpoch,
+                    Collections.unmodifiableList(lines));
         }
 
         /**

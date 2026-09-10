@@ -35,7 +35,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <ul>
  *   <li>{@code <color=#FF5533>} / {@code <color=red>} 颜色（6/8 位 hex 或 CSS 16 基础色名）</li>
  *   <li>{@code <b>} {@code <i>} {@code <u>} {@code <s>} 粗体/斜体/下划线/删除线</li>
- *   <li>{@code <size=N>} 绝对像素字号（1..256）；{@code <br>} 硬换行</li>
+ *   <li>{@code <size=N>} 绝对像素字号（{@link club.heiqi.uilib.font.layout.FontSizeLimits#MIN_FONT_SIZE_PX}..{@link club.heiqi.uilib.font.layout.FontSizeLimits#MAX_FONT_SIZE_PX}）；{@code <br>} 硬换行</li>
  *   <li>任意嵌套、样式继承父级；转义实体 {@code &lt;} {@code &gt;} {@code &amp;}</li>
  * </ul>
  *
@@ -448,13 +448,28 @@ public final class SceneLabel {
             SceneNode root = new SceneNode();
             root.setHitTestable(false);
             bindTextColor(rt, root, props.textSpec());
-            // 层 1 显式值只在调用方**显式指定**字号时写：默认 16 是「无人声明时的回落值」，
-            // 不能当成显式声明（否则遮蔽层 2 作用域声明，句柄入口对 Label 失效）。
-            if (props.fontSizeExplicit()) {
+            // 层 1 显式值只在调用方**显式指定定值**（且未同时给运行期信号）时写：
+            // 默认 16 是「无人声明时的回落值」，不能当成显式声明（否则遮蔽层 2 声明）；
+            // 同时给信号时以信号为准（层 2），避免层 1 的 16 把信号压死。
+            if (props.fontSizeExplicit() && props.fontSize() == null) {
                 root.setFontSize(props.fontSizePx());
             }
-            // 运行时可调字号：写的是同一个 root（root 是标签字号的唯一真值）。
-            SceneControlTypography.applyFontSize(rt, root, props.fontSize());
+            // 控件级字号入口：Props.fontSize() 写控件根的层 2 声明（与句柄入口同一槽，后写者胜出）；
+            // 控件内文字沿父链继承，不再逐点接线；值 null = 该声明缺失（回落下一层）。
+            final ReadableSignal<Integer> configuredFontSize = props.fontSize();
+            if (configuredFontSize != null) {
+                Integer initialFontSize = configuredFontSize.get();
+                if (initialFontSize != null) {
+                    root.setFontScope(initialFontSize.intValue());
+                }
+                rt.bind(configuredFontSize, current -> {
+                    if (current == null) {
+                        root.resetFontScope();
+                    } else {
+                        root.setFontScope(current.intValue());
+                    }
+                });
+            }
             root.setTextMode(SceneTextMode.fromCode(props.contentMode()));
             root.setTextHorizontalAlign(props.horizontalAlign());
             root.setTextVerticalAlign(props.verticalAlign());

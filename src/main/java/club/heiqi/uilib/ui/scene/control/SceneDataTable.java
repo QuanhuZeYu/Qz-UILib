@@ -417,8 +417,7 @@ public final class SceneDataTable {
                 label.setPreferredHeight(ctx.contentHeight());
                 label.setHitTestable(false);
                 rt.bindText(label, ctx.value());
-                // 只读文本跟随控件根字号（与表头同一真值，真值在控件根节点）。
-                SceneControlTypography.applyFontSize(rt, label, ctx.fontSize());
+                // 只读文本跟随控件根字号：label 是控件根的后代，沿父链继承层 2 声明。
                 return label;
             });
         }
@@ -543,8 +542,6 @@ public final class SceneDataTable {
         private final ReadableSignal<Boolean> enabled;
         /** 单元格只读信号（来自控件级 readOnly，仅 TextInput 列使用）。 */
         private final ReadableSignal<Boolean> readOnly;
-        /** 控件根字号只读信号（内建文本列 label 跟随；null = 未指定）。 */
-        private final ReadableSignal<Integer> fontSize;
 
         /**
          * 创建单元格上下文（兼容旧签名，enabled 默认 true、readOnly 默认 false）。
@@ -555,7 +552,7 @@ public final class SceneDataTable {
          * @param contentHeight 单元格内容可用高度
          */
         public CellContext(ReadableSignal<String> value, Consumer<String> onChange, boolean editable, int contentHeight) {
-            this(value, onChange, editable, contentHeight, null, null, null);
+            this(value, onChange, editable, contentHeight, null, null);
         }
 
         /**
@@ -570,23 +567,6 @@ public final class SceneDataTable {
          */
         public CellContext(ReadableSignal<String> value, Consumer<String> onChange, boolean editable,
                            int contentHeight, ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly) {
-            this(value, onChange, editable, contentHeight, enabled, readOnly, null);
-        }
-
-        /**
-         * 创建单元格上下文并注入控件根字号信号（包私有：内建文本列 label 读取，公共 API 不变）。
-         *
-         * @param value         当前单元格值
-         * @param onChange      提交回调
-         * @param editable      是否可编辑
-         * @param contentHeight 单元格内容可用高度
-         * @param enabled       单元格启用信号，null 时默认恒为 true
-         * @param readOnly      单元格只读信号，null 时默认恒为 false
-         * @param fontSize      控件根字号只读信号，null 时表示未指定
-         */
-        CellContext(ReadableSignal<String> value, Consumer<String> onChange, boolean editable,
-                    int contentHeight, ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly,
-                    ReadableSignal<Integer> fontSize) {
             if (value == null || onChange == null) {
                 throw new IllegalArgumentException("value/onChange must not be null");
             }
@@ -596,7 +576,6 @@ public final class SceneDataTable {
             this.contentHeight = Math.max(0, contentHeight);
             this.enabled = enabled == null ? Signal.create(Boolean.TRUE) : enabled;
             this.readOnly = readOnly == null ? Signal.create(Boolean.FALSE) : readOnly;
-            this.fontSize = fontSize;
         }
 
         /**
@@ -653,14 +632,6 @@ public final class SceneDataTable {
             return readOnly;
         }
 
-        /**
-         * 获取控件根字号只读信号（内建文本列 label 使用，包私有）。
-         *
-         * @return 控件根字号只读信号；null = 未指定
-         */
-        ReadableSignal<Integer> fontSize() {
-            return fontSize;
-        }
     }
 
     /**
@@ -676,9 +647,8 @@ public final class SceneDataTable {
         }
         return () -> {
             SceneNode root = SceneNode.column();
-            // 控件内文字跟随 root 字号（编写者用 rt.mount(...).fontSize(n) 或 root.setFontSize(n)）。
-            // 表头与单元格 label 建在辅助方法/渲染器里，字号源作为参数一路传下去。
-            ReadableSignal<Integer> fontSize = SceneControlTypography.fontSizeOf(rt, root);
+            // 控件内文字跟随 root 字号：表头与单元格 label 都是 root 的后代，沿父链继承层 2 声明，
+            // 不再需要把字号信号传进辅助方法与渲染器。
 
             SceneNode viewport = new SceneNode();
             viewport.setScrollable(true);
@@ -715,7 +685,7 @@ public final class SceneDataTable {
             SceneNode content = SceneNode.column();
             viewport.appendChild(content);
 
-            content.appendChild(buildHeaderRow(rt, props, fontSize));
+            content.appendChild(buildHeaderRow(rt, props));
             SceneNode dataContainer = SceneNode.column();
             content.appendChild(dataContainer);
             // 行号/行对象索引缓存：随 rows signal 替换的列表实例失效重建，
@@ -724,7 +694,7 @@ public final class SceneDataTable {
             // 主题强调色在来源作用域捕获一次，全部数据行共享同一信号（不为每行新建派生）。
             ReadableSignal<Integer> accent = SceneThemes.accent(rt);
             rt.forEach(dataContainer, props.rows(), Row::getRowId,
-                    row -> buildRow(rt, props, row, indexCache, accent, fontSize));
+                    row -> buildRow(rt, props, row, indexCache, accent));
             return root;
         };
     }
@@ -737,10 +707,9 @@ public final class SceneDataTable {
      *
      * @param rt    场景运行时
      * @param props DataTable 输入契约
-     * @param fontSize 控件根字号只读信号（表头文字跟随）
      * @return 表头行节点
      */
-    private static SceneNode buildHeaderRow(SceneRuntime rt, Props props, ReadableSignal<Integer> fontSize) {
+    private static SceneNode buildHeaderRow(SceneRuntime rt, Props props) {
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(props.rowHeight());
         ReadableSignal<SceneSurfaceStyle> headerSurface = SceneThemes.surface(rt, SceneTheme.Role.TOOLBAR);
@@ -751,7 +720,7 @@ public final class SceneDataTable {
         interaction.focused();
         SceneSurfaceBinder.bind(rt, row, headerSurface, ALWAYS_ENABLED, interaction);
         for (Column column : props.columns()) {
-            row.appendChild(buildHeaderCell(rt, column, props.rowHeight(), fontSize));
+            row.appendChild(buildHeaderCell(rt, column, props.rowHeight()));
         }
         return row;
     }
@@ -762,11 +731,9 @@ public final class SceneDataTable {
      * @param rt        场景运行时
      * @param column    列定义
      * @param rowHeight 固定行高
-     * @param fontSize  控件根字号只读信号（表头文字跟随）
      * @return 表头单元格节点
      */
-    private static SceneNode buildHeaderCell(SceneRuntime rt, Column column, int rowHeight,
-                                             ReadableSignal<Integer> fontSize) {
+    private static SceneNode buildHeaderCell(SceneRuntime rt, Column column, int rowHeight) {
         SceneNode cell = SceneNode.row();
         cell.setPreferredWidth(column.width());
         cell.setPreferredHeight(rowHeight);
@@ -775,8 +742,6 @@ public final class SceneDataTable {
 
         SceneNode label = new SceneNode();
         label.setText(column.header());
-        // 表头文字跟随控件根字号（字号真值在控件根节点）。
-        SceneControlTypography.applyFontSize(rt, label, fontSize);
         // 表头文字取主题正文前景（构造期捕获来源主题，主题切换只重派生）。
         rt.bind(SceneThemes.foreground(rt), label::setTextColor);
         label.setHitTestable(false);
@@ -795,11 +760,10 @@ public final class SceneDataTable {
      * @param row        当前行快照
      * @param indexCache 行号/行对象索引缓存（随 rows 列表实例失效重建）
      * @param accent     主题强调色（来源作用域捕获，全部行共享）
-     * @param fontSize   控件根字号只读信号（单元格文字跟随）
      * @return 数据行节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, Row row, RowIndexCache indexCache,
-                                      ReadableSignal<Integer> accent, ReadableSignal<Integer> fontSize) {
+                                      ReadableSignal<Integer> accent) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(props.rowHeight());
         int rowIndex = indexCache.rowIndex(props.rows().get(), row.getRowId());
@@ -809,7 +773,7 @@ public final class SceneDataTable {
                         : Integer.valueOf(tint(accent.get(), ROW_ALTERNATE_ALPHA)),
                 rowNode::setBackgroundColor);
         for (int col = 0; col < props.columns().size(); col++) {
-            rowNode.appendChild(buildCell(rt, props, row, col, indexCache, fontSize));
+            rowNode.appendChild(buildCell(rt, props, row, col, indexCache));
         }
         return rowNode;
     }
@@ -825,11 +789,10 @@ public final class SceneDataTable {
      * @param row        当前行快照
      * @param col        列下标
      * @param indexCache 行号/行对象索引缓存（随 rows 列表实例失效重建）
-     * @param fontSize   控件根字号只读信号（内建文本列 label 跟随）
      * @return 数据单元格节点
      */
     private static SceneNode buildCell(SceneRuntime rt, Props props, Row row, int col,
-                                       RowIndexCache indexCache, ReadableSignal<Integer> fontSize) {
+                                       RowIndexCache indexCache) {
         Column column = props.columns().get(col);
         SceneNode cell = SceneNode.row();
         cell.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -843,7 +806,7 @@ public final class SceneDataTable {
             Row updated = indexCache.currentRow(props.rows().get(), row).withCell(col, next);
             List<Row> newRows = updateRowInList(props.rows().get(), row.getRowId(), updated);
             props.rows().set(newRows);
-        }, column.editable(), props.rowHeight() - 2 * CELL_PADDING, props.enabled(), props.readOnly(), fontSize);
+        }, column.editable(), props.rowHeight() - 2 * CELL_PADDING, props.enabled(), props.readOnly());
         SceneNode child = column.renderer().render(rt, ctx);
         if (child != null) {
             cell.appendChild(child);

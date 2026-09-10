@@ -22,7 +22,7 @@ import club.heiqi.uilib.util.UiNumbers;
  *   <li>{@code <b>} 粗体、{@code <i>} 斜体、{@code <u>} 下划线、{@code <s>} 删除线</li>
  *   <li>{@code <mark>} 行内高亮（默认 {@code #FFEB3B}，可 {@code <mark=#RRGGBB>} 自定义背景色）</li>
  *   <li>{@code <sup>} 上标、{@code <sub>} 下标（字号缩至 0.75×，基线抬升/下沉，互斥）</li>
- *   <li>{@code <size=N>} 绝对像素字号（{@value #MIN_FONT_SIZE_PX}..{@value #MAX_FONT_SIZE_PX}，越界截断）</li>
+ *   <li>{@code <size=N>} 绝对像素字号（{@link FontSizeLimits#MIN_FONT_SIZE_PX}..{@link FontSizeLimits#MAX_FONT_SIZE_PX}，越界截断）</li>
  *   <li>{@code <spacing=N>} 字符间距（UI 像素，可为负，越界截断到 -64..64）</li>
  *   <li>{@code <a=URL>} 链接（自动下划线；{@code <a href=URL>} 与 {@code <a href="URL">} 亦可）</li>
  *   <li>{@code <latex math-style="display">} 公式；另接受 text/script/scriptscript，缺省或未知值为 text</li>
@@ -47,10 +47,7 @@ import club.heiqi.uilib.util.UiNumbers;
  */
 public final class RichTextTagParser {
 
-    /** 解析器接受的最大像素字号。 */
-    public static final int MAX_FONT_SIZE_PX = 256;
-    /** 解析器接受的最小像素字号。 */
-    public static final int MIN_FONT_SIZE_PX = 1;
+    // 字号域边界已收口到 FontSizeLimits（全库唯一定义点）：解析器、节点字号 setter 与缩放出口共用。
     /** {@code <mark>} 无值时的默认高亮背景色（Material Yellow 500）。 */
     public static final int DEFAULT_MARK_COLOR = 0xFFFFEB3B;
 
@@ -490,7 +487,7 @@ public final class RichTextTagParser {
         }
         try {
             int size = Integer.parseInt(value.trim());
-            return Integer.valueOf(Math.max(MIN_FONT_SIZE_PX, Math.min(MAX_FONT_SIZE_PX, size)));
+            return Integer.valueOf(FontSizeLimits.clampFontSize(size));
         } catch (NumberFormatException ignored) {
             return null;
         }

@@ -132,9 +132,8 @@ public final class SceneBreadcrumb {
             SceneNode root = SceneNode.row();
             root.setCrossAxisAlign(CrossAxisAlign.CENTER);
             root.setGap(ROOT_GAP);
-            // 控件内文字跟随 root 字号（编写者用 rt.mount(...).fontSize(n) 或 root.setFontSize(n)）。
-            SceneControlTypography typography = SceneControlTypography.attach(rt, root);
-
+            // 控件内文字跟随 root 字号：分隔符与段标签都是 root 的后代，沿父链继承层 2 声明
+            // （编写者用 rt.mount(...).fontSize(n) / root.setFontScope(n)），无需逐点接线。
             final List<Segment> segments = props.segments();
             final int count = segments.size();
 
@@ -154,7 +153,6 @@ public final class SceneBreadcrumb {
                     SceneNode separator = new SceneNode();
                     separator.setHitTestable(false);
                     separator.setText(SEPARATOR_TEXT);
-                    typography.bindText(separator);
                     root.appendChild(separator);
                     // 分隔符取主题次要前景；绑定而非静态设色，主题切换自动更新。
                     rt.bind(separatorColor, separator::setTextColor);
@@ -172,7 +170,6 @@ public final class SceneBreadcrumb {
                 SceneNode labelNode = new SceneNode();
                 labelNode.setHitTestable(false);
                 labelNode.setText(seg.label());
-                typography.bindText(labelNode);
                 segBtn.appendChild(labelNode);
 
                 // ② 段各取自己的 interactionState（契约 R5）

@@ -156,7 +156,7 @@ class SizingCalculator {
         int wrapWidth = node.getMaxTextWidth();
         int intrinsicWidth = wrapWidth > 0
                 ? wrapWidth + padH
-                : measureMaxLineWidth(text, node.getFontSize()) + padH;
+                : measureMaxLineWidth(text, node.effectiveFontSize()) + padH;
         // 记录该叶为本帧测量过的文本节点，供 epoch 失效链向上冒泡使用；
         // 同时写节点级 epoch 快照，供下一帧入口节点级比对（与 lastConstraints 同构）。
         measuredTextNodes.add(node);
@@ -486,7 +486,7 @@ class SizingCalculator {
         }
         // 一次性行计划（审查报告 §8 B2-4）：拆行 + clamp + 逐行行高 + 链接区域在布局阶段
         // 一次产出并缓存于节点，绘制阶段消费；本方法只取行块总高。
-        TextLinePlan plan = TextLinePlan.build(measurer, text, node.getFontSize(), node.getMaxTextWidth(),
+        TextLinePlan plan = TextLinePlan.build(measurer, text, node.effectiveFontSize(), node.getMaxTextWidth(),
                 node.getTextMode(), node.getMaxLines(), node.isEllipsis(), node::resolveLineHeight);
         node.setCachedTextPlan(plan);
         return plan.getTotalHeight();

@@ -154,17 +154,26 @@ public final class SceneSegmented {
             root.setCrossAxisAlign(CrossAxisAlign.STRETCH);
             root.setGap(SEG_GAP);
             // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）。
-            // 未指定（props.fontSize() == null）时**不写层 1 默认值**：SEG_LABEL_FONT_SIZE 只是
-            // 「无人声明时的回落值」，写成显式声明会遮蔽层 2 作用域（句柄入口对本控件失效）；
-            // 显式指定时先定值再 attach——typography 的字号 Computed 以最终值为初值，标签首帧即正确。
+            // Props.fontSize() 写 root 的层 2 声明（与句柄入口同一槽，后写者胜出）；
+            // 未指定时 SEG_LABEL_FONT_SIZE 只作构建期几何的初值，不写成声明（否则遮蔽层 2 声明）。
+            // 段标签是 root 的后代，沿父链继承，不再逐点接线。
             final ReadableSignal<Integer> configuredFontSize = props.fontSize();
-            final int labelFontSize = SceneControlTypography.fontSizeOrDefault(
-                    configuredFontSize, SEG_LABEL_FONT_SIZE);
+            final Integer configuredFontSizeValue =
+                    configuredFontSize == null ? null : configuredFontSize.get();
+            final int labelFontSize = configuredFontSizeValue == null
+                    ? SEG_LABEL_FONT_SIZE : configuredFontSizeValue.intValue();
             if (configuredFontSize != null) {
-                root.setFontSize(labelFontSize);
+                if (configuredFontSizeValue != null) {
+                    root.setFontScope(configuredFontSizeValue.intValue());
+                }
+                rt.bind(configuredFontSize, current -> {
+                    if (current == null) {
+                        root.resetFontScope();
+                    } else {
+                        root.setFontScope(current.intValue());
+                    }
+                });
             }
-            SceneControlTypography typography = SceneControlTypography.attach(rt, root);
-            SceneControlTypography.applyFontSize(rt, root, configuredFontSize);
             // 内置默认高：段自然高 = 标签行高 + 2 * 段内边距（与 ConfigScreen 原手动算口径同源）。
             // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
             // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退，grow 兄弟收不到分配高。
@@ -199,7 +208,6 @@ public final class SceneSegmented {
                 String title = props.options().get(handle.index());
                 int textWidth = rt.measureTextWidth(title, labelFontSize);
                 segment.setPreferredWidth(textWidth + 2 * SEGMENT_PADDING);
-                typography.bindText(handle.label());
                 segment.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
@@ -222,13 +230,14 @@ public final class SceneSegmented {
                 SceneControlChrome.bindCursor(rt, segment, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
 
-            // 段宽/条高从 root 字号派生：字号真的变了才重算（同值早退，避免与布局形成反馈环）。
-            // 无条件建立——外部直接 root.setFontSize 也要让几何跟上，root 是唯一真值。
+            // 段宽/条高从 root 生效字号派生：字号真的变了才重算（同值早退，避免与布局形成反馈环）。
+            // 无条件建立——外部声明（句柄 / 作用域 / 环境默认）变化也要让几何跟上，root 是唯一真值。
+            // （S5 由 setFontSizeMetric 接管后删除本段手写重算。）
             final List<SceneSingleSelectPrimitive.ItemHandle> items = result.items();
             final List<String> options = props.options();
             final int[] appliedFontSize = {labelFontSize};
             rt.bind(rt.layoutDoneSignal(), epoch -> {
-                int fontSize = root.getFontSize();
+                int fontSize = root.effectiveFontSize();
                 if (fontSize == appliedFontSize[0]) {
                     return;
                 }

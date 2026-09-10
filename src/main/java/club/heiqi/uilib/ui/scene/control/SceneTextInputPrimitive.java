@@ -280,16 +280,14 @@ public final class SceneTextInputPrimitive {
         root.setClipChildren(true);
         // 横向滚动地基：宽度钉死为视口宽、子内容宽解耦（内容超宽时裁剪 + scrollOffsetX 平移）
         root.setScrollableX(true);
-        SceneControlTypography typography = SceneControlTypography.attach(rt, root);
 
         SceneNode prefixText = new SceneNode();
         prefixText.setHitTestable(false);
-        typography.bindText(prefixText);
         root.appendChild(prefixText);
 
         SceneNode caret = new SceneNode();
         caret.setPreferredWidth(CARET_WIDTH);
-        typography.bindCaret(caret);
+        bindCaretHeight(rt, caret);
         caret.setHitTestable(false);
         // 标记为空文本叶：computeWidth 对 text==null 的无文本叶返回 outerWidth（填满父宽），
         // 会把同行 prefix/suffix 推出 row 裁剪区。setText("") 使其走 text.isEmpty() 分支返回 padH=0，
@@ -300,19 +298,17 @@ public final class SceneTextInputPrimitive {
 
         SceneNode highlightText = new SceneNode();
         highlightText.setHitTestable(false);
-        typography.bindText(highlightText);
         root.appendChild(highlightText);
 
         SceneNode caretAfter = new SceneNode();
         caretAfter.setPreferredWidth(0);
-        typography.bindCaret(caretAfter);
+        bindCaretHeight(rt, caretAfter);
         caretAfter.setHitTestable(false);
         caretAfter.setText("");
         root.appendChild(caretAfter);
 
         SceneNode suffixText = new SceneNode();
         suffixText.setHitTestable(false);
-        typography.bindText(suffixText);
         root.appendChild(suffixText);
 
         SceneInteractionState is = rt.interactionState(root);
@@ -356,19 +352,22 @@ public final class SceneTextInputPrimitive {
         final CaretScrollSnapshot[] followed = {null};
         rt.bind(() -> {
             rt.layoutDoneSignal().get();
-            SceneControlTypography.Metrics metrics = typography.metrics().get();
+            // 度量直接读节点自身解析值：字号 = 本节点生效字号（继承 + 倍率），行高与纪元随之派生。
+            int fontSizePx = root.effectiveFontSize();
+            int lineHeightPx = rt.lineHeight(fontSizePx);
+            int measureEpoch = rt.textMeasureEpoch();
             int caretCp = caretIndex.get().intValue();
             String display = displayValue(SceneTextUtils.nullSafe(props.value().get()), inputType);
             LayoutBox rootBox = (LayoutBox) root.getCachedLayout();
             return rootBox == null ? null : new CaretScrollSnapshot(
-                    caretCp, display, metrics, rootBox.getWidth(),
+                    caretCp, display, fontSizePx, lineHeightPx, measureEpoch, rootBox.getWidth(),
                     root.getPaddingLeft(), root.getPaddingRight());
         }, snapshot -> {
             // 布局未就绪不记为已处理；后续 layoutDone 会用最新状态重试。
             if (snapshot == null || snapshot.equals(followed[0])) {
                 return;
             }
-            int[] prefixWidths = prefixWidthCache.get(rt, snapshot.display(), snapshot.metrics().fontSizePx());
+            int[] prefixWidths = prefixWidthCache.get(rt, snapshot.display(), snapshot.fontSizePx());
             int caretCp = Math.max(0, Math.min(snapshot.caretCp(), prefixWidths.length - 1));
             int viewStart = snapshot.paddingLeft();
             int viewEnd = snapshot.viewportWidth() - snapshot.paddingRight();
@@ -416,7 +415,7 @@ public final class SceneTextInputPrimitive {
             // 指针坐标：effectiveTarget=root，ctx.getLocalPointerX() = raw - absoluteBox(root,treeAbs)
             // = root 局部 X（框架每级重算，rootAbs≠0 不再错位）。再减 paddingLeft 得文本区局部。
             int localX = ctx.getLocalPointerX() - root.getPaddingLeft();
-            int fontSizePx = typography.metrics().get().fontSizePx();
+            int fontSizePx = root.effectiveFontSize();
             int[] prefixWidths = prefixWidthCache.get(rt, display, fontSizePx);
             int pos = SceneTextGeometry.caretIndexFromX(prefixWidths, localX);
             int clickCount = ev.getClickCount();
@@ -466,7 +465,7 @@ public final class SceneTextInputPrimitive {
             String value = SceneTextUtils.nullSafe(props.value().get());
             String display = displayValue(value, inputType);
             int localX = ctx.getLocalPointerX() - root.getPaddingLeft();
-            int[] prefixWidths = prefixWidthCache.get(rt, display, typography.metrics().get().fontSizePx());
+            int[] prefixWidths = prefixWidthCache.get(rt, display, root.effectiveFontSize());
             int pos = SceneTextGeometry.caretIndexFromX(prefixWidths, localX);
             setSelection.accept(Integer.valueOf(dragAnchor[0]), Integer.valueOf(pos));
         });
@@ -657,10 +656,26 @@ public final class SceneTextInputPrimitive {
                 caretIndex, selection, moveCaretToEndOf, caretVisible, isPlaceholder);
     }
 
+    /**
+     * caret 槽高度跟随生效字号。
+     *
+     * <p>字号由继承承担（caret 是控件根的后代，不再写入显式字号）；caret 是空文本叶，
+     * 高度需要显式给出，且必须随字号变化刷新 —— 在每次布局纪元后按本节点解析出的
+     * 生效字号重算行高。</p>
+     *
+     * @param rt    场景运行时（提供行高度量）
+     * @param caret caret 槽节点
+     */
+    private static void bindCaretHeight(SceneRuntime rt, SceneNode caret) {
+        caret.setPreferredHeight(rt.lineHeight(caret.effectiveFontSize()));
+        rt.bind(rt.layoutDoneSignal(), epoch ->
+                caret.setPreferredHeight(rt.lineHeight(caret.effectiveFontSize())));
+    }
+
     /** 已完成跟随的语义/视口快照：去重布局重试，保留用户主动滚动。 */
     @Desugar
     private record CaretScrollSnapshot(
-            int caretCp, String display, SceneControlTypography.Metrics metrics,
+            int caretCp, String display, int fontSizePx, int lineHeightPx, int measureEpoch,
             int viewportWidth, int paddingLeft, int paddingRight) {
     }
 

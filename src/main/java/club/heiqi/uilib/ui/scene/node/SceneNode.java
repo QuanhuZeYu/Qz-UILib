@@ -869,9 +869,9 @@ public class SceneNode {
     /**
      * @return 本节点解析出的<b>声明值</b>（沿父链就近竞争的命中值，<b>不含</b>用户倍率）。
      *
-     * <p>与 {@link #getFontSize()}（= 生效值，已乘倍率）成对：把「本节点的字号」再传播给别的节点时，
-     * 必须传播<b>声明值</b>——若传播已乘倍率的生效值，接收节点会在自己的解析出口再乘一次，
-     * 形成重复缩放（旧通道 {@code SceneControlTypography} 的 {@code bindText} 即此路径）。</p>
+     * <p>与 {@link #getFontSize()}（= 生效值，已乘倍率）成对：需要把「本节点的字号」写成别的节点
+     * 的声明时，必须写<b>声明值</b>——写已乘倍率的生效值会让接收节点在自己的解析出口再乘一次，
+     * 形成重复缩放。</p>
      */
     public int declaredFontSize() {
         effectiveFontSize();     // 保证缓存新鲜（同时解析出 resolvedDeclaredFontSize）

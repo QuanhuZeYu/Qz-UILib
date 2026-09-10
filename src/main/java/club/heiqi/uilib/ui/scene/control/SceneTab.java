@@ -227,20 +227,29 @@ public final class SceneTab {
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
             // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）。
-            // 未指定（props.fontSize() == null）时**不写层 1 默认值**：TAB_LABEL_FONT_SIZE 只是
-            // 「无人声明时的回落值」，写成显式声明会遮蔽层 2 作用域（句柄入口对本控件失效）。
+            // Props.fontSize() 写 root 的层 2 声明（与句柄入口同一槽，后写者胜出）；
+            // 未指定时 TAB_LABEL_FONT_SIZE 只作构建期几何的初值，不写成声明（否则遮蔽层 2 声明）。
+            // 页签标签是 root 的后代，沿父链继承，不再逐点接线。
             final ReadableSignal<Integer> configuredFontSize = props.fontSize();
-            final int labelFontSize = SceneControlTypography.fontSizeOrDefault(
-                    configuredFontSize, TAB_LABEL_FONT_SIZE);
+            final Integer configuredFontSizeValue =
+                    configuredFontSize == null ? null : configuredFontSize.get();
+            final int labelFontSize = configuredFontSizeValue == null
+                    ? TAB_LABEL_FONT_SIZE : configuredFontSizeValue.intValue();
             // ① 建树一次（无副作用，I3）—— 纵向容器：tabBar 在上、contentPanel 在下
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
-            // 显式指定时先定值再 attach：typography 的字号 Computed 以最终值为初值，标签首帧即正确。
             if (configuredFontSize != null) {
-                root.setFontSize(labelFontSize);
+                if (configuredFontSizeValue != null) {
+                    root.setFontScope(configuredFontSizeValue.intValue());
+                }
+                rt.bind(configuredFontSize, current -> {
+                    if (current == null) {
+                        root.resetFontScope();
+                    } else {
+                        root.setFontScope(current.intValue());
+                    }
+                });
             }
-            SceneControlTypography typography = SceneControlTypography.attach(rt, root);
-            SceneControlTypography.applyFontSize(rt, root, configuredFontSize);
             // 断裂点①（fill 传导）：root 自身 fill，否则在父眼里是"固定容器子"，
             // priorKnownChildHeight 命中容器分支返回 UNCONSTRAINED，父放弃向 root 分配 grow 高。
             // 读 fillContentPanel 常量做静态配置（构建期一次性，非 signal 订阅，守 R3）。
@@ -292,8 +301,7 @@ public final class SceneTab {
                 // 段宽按标签测量（TAB_WIDTH 作最小宽）：字号参与测量，故构建期与运行期同一口径。
                 tabSeg.setPreferredWidth(tabWidth(rt, props.tabLabels().get(handle.index()), labelFontSize));
 
-                // label[i]：段内纯文本装饰子节点，命中穿透到段（契约 R6）
-                typography.bindText(handle.label());
+                // label[i]：段内纯文本装饰子节点，命中穿透到段（契约 R6）；字号沿父链继承。
                 tabSeg.appendChild(handle.label());
 
                 // tab 项表面：INDICATOR 角色配方 + selected 派生。选中只替换 tint 的 RGB（保留 0x59 alpha，
@@ -343,12 +351,13 @@ public final class SceneTab {
                 rt.show(contentPanel, items.get(idx).selected(), panels.get(idx));
             }
 
-            // 条高从 root 字号派生：只有 fill 模式的条高是显式 preferredHeight（非 fill 模式由内容
+            // 条高从 root 生效字号派生：只有 fill 模式的条高是显式 preferredHeight（非 fill 模式由内容
             // 自然高决定，随标签行高自动变化）。同值早退，避免与布局形成反馈环。
+            // （S5 由 setFontSizeMetric 接管后删除本段手写重算。）
             final boolean fillContentPanel = props.fillContentPanel();
             final int[] appliedFontSize = {labelFontSize};
             rt.bind(rt.layoutDoneSignal(), epoch -> {
-                int fontSize = root.getFontSize();
+                int fontSize = root.effectiveFontSize();
                 if (fontSize == appliedFontSize[0]) {
                     return;
                 }

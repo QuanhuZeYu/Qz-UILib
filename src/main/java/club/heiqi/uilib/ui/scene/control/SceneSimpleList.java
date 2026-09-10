@@ -500,15 +500,11 @@ public final class SceneSimpleList {
 
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
-            // 控件内文字跟随 root 字号（编写者用 rt.mount(...).fontSize(n) 或 root.setFontSize(n)）。
-            SceneControlTypography typography = SceneControlTypography.attach(rt, root);
-            // 按钮文字建在 createButton 辅助方法里，拿不到 typography 实例，用只读信号一路传下去。
-            ReadableSignal<Integer> fontSize = SceneControlTypography.fontSizeOf(rt, root);
-
+            // 控件内文字跟随 root 字号：标题与行内按钮文字都是 root 的后代，沿父链继承层 2 声明，
+            // 不再需要把字号信号逐层传进辅助方法。
             SceneNode labelNode = new SceneNode();
             labelNode.setHitTestable(false);
             labelNode.setText(props.label());
-            typography.bindText(labelNode);
             // 标题取主题正文前景（构造期捕获来源主题，主题切换只重派生不重建节点）。
             rt.bind(SceneThemes.foreground(rt), labelNode::setTextColor);
             rt.show(root, Computed.create(() -> !props.label().isEmpty()), () -> labelNode);
@@ -547,10 +543,10 @@ public final class SceneSimpleList {
             root.appendChild(stackHost);
 
             rt.forEach(listViewport, rowItems, ListItem::getId,
-                    row -> buildRow(rt, props, previewItems, listViewport, scrollSignal, row, fontSize));
+                    row -> buildRow(rt, props, previewItems, listViewport, scrollSignal, row));
 
             Computed<Boolean> addEnabled = Computed.create(() -> SceneListOps.canAdd(props.items().get(), props.maxItems()));
-            SceneNode addButton = createButton(rt, "添加", SceneTheme.Role.BUTTON_STANDARD, 0, addEnabled, fontSize);
+            SceneNode addButton = createButton(rt, "添加", SceneTheme.Role.BUTTON_STANDARD, 0, addEnabled);
             addButton.setPreferredHeight(ADD_BUTTON_HEIGHT);
             // 与 SceneKeyValueMap 行为对齐：操作按钮进 Tab 焦点环，disabled 时自动退出
             rt.focusable(addButton, addEnabled);
@@ -582,12 +578,10 @@ public final class SceneSimpleList {
      * @param props    SimpleList 输入契约
      * @param viewport 列表视口（拖拽 MOVE 时按其子节点 box 定位目标行）
      * @param row      行数据
-     * @param fontSize 控件根字号只读信号（行内按钮文字跟随）
      * @return 行根节点
      */
     private static SceneNode buildRow(SceneRuntime rt, Props props, Signal<List<ListItem>> previewItems,
-                                      SceneNode viewport, Signal<Integer> scrollSignal, ListItem row,
-                                      ReadableSignal<Integer> fontSize) {
+                                      SceneNode viewport, Signal<Integer> scrollSignal, ListItem row) {
         SceneNode line = SceneNode.row();
         line.setCrossAxisAlign(CrossAxisAlign.CENTER);
         line.setGap(ROW_GAP);
@@ -616,8 +610,7 @@ public final class SceneSimpleList {
         line.appendChild(input);
 
         Computed<Boolean> deleteEnabled = Computed.create(() -> SceneListOps.canRemove(props.items().get(), props.minItems()));
-        SceneNode deleteButton = createButton(rt, "×", SceneTheme.Role.BUTTON_DANGER, DELETE_BUTTON_WIDTH, deleteEnabled,
-                fontSize);
+        SceneNode deleteButton = createButton(rt, "×", SceneTheme.Role.BUTTON_DANGER, DELETE_BUTTON_WIDTH, deleteEnabled);
         // 与 SceneKeyValueMap 行为对齐：行内删除按钮进 Tab 焦点环，disabled 时自动退出
         rt.focusable(deleteButton, deleteEnabled);
         rt.on(deleteButton, SceneEventType.CLICK, (ev, ctx) -> {
@@ -789,12 +782,10 @@ public final class SceneSimpleList {
      * @param role           材质角色（添加=BUTTON_STANDARD、删除=BUTTON_DANGER）
      * @param preferredWidth 固定宽度，0 表示不设置
      * @param enabled        是否启用
-     * @param fontSize       控件根字号只读信号（按钮文字跟随；null = 不指定）
      * @return 按钮节点
      */
     private static SceneNode createButton(SceneRuntime rt, String text, SceneTheme.Role role,
-                                          int preferredWidth, ReadableSignal<Boolean> enabled,
-                                          ReadableSignal<Integer> fontSize) {
+                                          int preferredWidth, ReadableSignal<Boolean> enabled) {
         SceneNode button = SceneNode.row();
         button.setMainAxisAlign(MainAxisAlign.CENTER);
         button.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -808,8 +799,6 @@ public final class SceneSimpleList {
         SceneNode label = new SceneNode();
         label.setHitTestable(false);
         label.setText(text);
-        // 按钮文字跟随控件根字号（与标题同一真值）。
-        SceneControlTypography.applyFontSize(rt, label, fontSize);
         button.appendChild(label);
 
         ReadableSignal<SceneSurfaceStyle> surface = SceneThemes.surface(rt, role);

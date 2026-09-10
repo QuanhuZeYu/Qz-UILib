@@ -462,11 +462,11 @@ public class ScenePaintEngine {
             out.add(PaintCommand.image(imageSource, left, top, right, bottom));
         }
 
-        // 富文本段流 → SEGMENTS 命令（与 TEXT 互斥、段流优先；基准字号取 node.getFontSize()，
+        // 富文本段流 → SEGMENTS 命令（与 TEXT 互斥、段流优先；基准字号取 node.effectiveFontSize()，
         // 顶部对齐语义与 TEXT 完全同口径 calculateTextTop，水平恒 paddingLeft 贴左）。
         java.util.List<club.heiqi.uilib.font.layout.TextSegment> segments = node.getSegments();
         if (segments != null && !segments.isEmpty()) {
-            int segmentsFontSize = node.getFontSize();
+            int segmentsFontSize = node.effectiveFontSize();
             int segmentsTop = calculateTextTop(node, box, segmentsFontSize);
             out.add(PaintCommand.segments(segments, node.getPaddingLeft(), segmentsTop, segmentsFontSize));
             return;
@@ -479,7 +479,7 @@ public class ScenePaintEngine {
         // 防御（paint 先于 layout）时本地构建（不缓存）；每行一条 TEXT 命令。
         String text = node.getText();
         if (text != null && !text.isEmpty()) {
-            int fontSize = node.getFontSize();
+            int fontSize = node.effectiveFontSize();
             SceneTextMode textMode = node.getTextMode();
             int wrapWidth = node.getMaxTextWidth();
             TextLinePlan plan = node.getCachedTextPlan();
