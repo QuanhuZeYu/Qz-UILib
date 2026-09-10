@@ -11,6 +11,15 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  */
 final class ScenePaintProps {
 
+    /**
+     * 表面写入权标记：{@code SceneSurfaceBinder} 首次写入本节点表面属性后置位。
+     *
+     * <p>置位后公开 setter（backgroundColor / borderColor / borderWidth / cornerRadius /
+     * backdrop / surfaceElevation）拒绝写入，只有绑定器的 {@code __write*} 通道可以继续写。
+     * 运行期语义见契约 §4「属性归属表」。</p>
+     */
+    boolean surfaceOwned;
+
     /** 背景颜色（ARGB），默认 0（透明） */
     int backgroundColor;
 
