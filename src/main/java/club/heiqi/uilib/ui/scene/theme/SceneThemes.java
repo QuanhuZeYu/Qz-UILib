@@ -319,6 +319,44 @@ public final class SceneThemes {
     }
 
     /**
+     * 当前来源主题下某字体槽位的字号派生（主题切换自动重算，不重建节点）。
+     *
+     * <p>与语义色派生同形状：构造期捕获来源主题信号，初值在非追踪上下文读取，派生期只读该信号。
+     * 消费方按用途取槽（见 {@link SceneTheme.FontSlot}），不自行定数值。</p>
+     *
+     * <p><b>这是唯一的排版度量主题通道</b>：字号影响布局几何与绘制输出，属契约 §4 单列的
+     * 「排版度量」行——主题可经本入口接管字号，但不得接管 padding、尺寸等几何布局属性。</p>
+     *
+     * @param rt   目标 runtime，不可为 null
+     * @param slot 字体槽位，不可为 null
+     * @return 字号信号（UI 像素，恒 &gt; 0）
+     */
+    public static ReadableSignal<Integer> fontSize(SceneRuntime rt, SceneTheme.FontSlot slot) {
+        Objects.requireNonNull(slot, "slot");
+        return color(rt, theme -> theme.fontSize(slot));
+    }
+
+    /**
+     * 当前来源主题的主题级行距倍数派生（主题切换自动重算）。
+     *
+     * <p>值为 {@code 0} 表示本主题不接管行距，消费方保持自动行高；非 0 时按
+     * {@code ceil(自动行高 × 倍数)} 生效（交由 {@code SceneNode#setLineHeightMultiplier} 解释，
+     * 本入口不做第二套算术）。与 {@link #fontSize} 同属契约 §4 的「排版度量」行。</p>
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 行距倍数信号（有限且 &gt;= 0）
+     */
+    public static ReadableSignal<Double> lineHeightMultiplier(SceneRuntime rt) {
+        ReadableSignal<SceneTheme> theme = resolve(rt);
+        final double[] holder = new double[1];
+        Effect.untrack(() -> holder[0] = Objects.requireNonNull(theme.get(), "theme value")
+                .lineHeightMultiplier());
+        final double initial = holder[0];
+        return Computed.create(Double.valueOf(initial), () -> Double.valueOf(
+                Objects.requireNonNull(theme.get(), "theme value").lineHeightMultiplier()));
+    }
+
+    /**
      * 选中/未选中切换的角色配方：未选中用 role 配方，选中态用主题强调色替换 tint 的 RGB
      * （保留原 alpha 与 edge/elevation/lens/圆角），disabled 仍走 role 的禁用档。
      *
