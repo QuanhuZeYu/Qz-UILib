@@ -29,6 +29,7 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
@@ -200,8 +201,13 @@ public final class VariantChooser {
             prevShown[0] = shown;
         });
 
-        rt.portal(showSignal, () -> buildOverlay(rt, props, variantQuery),
+        // 浮层内容建在 portal 树里，与宿主树锚点（anchor）不同树 → 用 portal 入口把「anchor 的
+        // 字号声明」落到内容根（内容根持声明，内嵌 Segmented/TextInput 与文字沿父链继承）；
+        // 每个布局纪元重新断言当前声明，同值去重。
+        ScenePortalHandle overlayPortal = rt.portal(showSignal, () -> buildOverlay(rt, props, variantQuery),
                 OverlayDismissPolicy.NONE, props.onCancel());
+        overlayPortal.fontSize(anchor.declaredFontSize());
+        rt.bind(rt.layoutDoneSignal(), epoch -> overlayPortal.fontSize(anchor.declaredFontSize()));
 
         return anchor;
     }

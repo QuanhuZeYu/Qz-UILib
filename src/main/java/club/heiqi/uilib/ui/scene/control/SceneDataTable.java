@@ -43,6 +43,13 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *       （INPUT 表面与 OVERLAY 弹出底座由它们自持），本控件不复制其样式、不再叠第二层玻璃。</li>
  * </ul>
  * <p>外观随主题重派生，不重建节点；数据模型、校验、排序与序列化语义零改动。</p>
+ *
+ * <h3>溢出策略（INV-GEO-4「不得静默截断」）</h3>
+ * <p>列宽是<b>结构轨道</b>（跨行对齐，不随字号变）。表头与内建只读单元格的文字因此声明
+ * {@code maxTextWidth = 列宽 - 2*CELL_PADDING} + {@code maxLines=1} + {@code ellipsis=true}：
+ * 文字超宽时以 {@code ...} 可见截断，而不是被 {@code clipChildren(true)} 静默裁掉。
+ * 行高是<b>外尺寸下限</b>（见 {@link Props}），字号变大时行高随叶自然行高自动变高；
+ * 内联编辑器是横向滚动视口（{@code scrollableX + scrollOffsetX}），属自带溢出策略。</p>
  */
 public final class SceneDataTable {
 
@@ -74,7 +81,14 @@ public final class SceneDataTable {
         private final Signal<List<Row>> rows;
         /** 列定义列表。 */
         private final List<Column> columns;
-        /** 固定行高。 */
+        /**
+         * 最小行高（外尺寸下限，UI 逻辑像素）。
+         *
+         * <p>行高的实际值 = {@code max(rowHeight, lineHeight(生效字号) + 2*CELL_PADDING)}：
+         * 布局引擎把 {@code preferredHeight} 当<b>外尺寸下限</b>与内容自然高取 max
+         * （SizingCalculator「容器/叶：自然外高与 preferredHeight 取 max」），叶自然高用生效字号算，
+         * 因此调大字号时行高自动变高、不会裁字；本值只保证小字号下的最小行高（表格节奏）。</p>
+         */
         private final int rowHeight;
         /** 视口固定高度。 */
         private final int viewportHeight;
@@ -93,7 +107,7 @@ public final class SceneDataTable {
          *
          * @param rows                   受控行数据源
          * @param columns                列定义列表
-         * @param rowHeight              固定行高，非正时使用默认值
+         * @param rowHeight              最小行高，非正时使用默认值
          * @param viewportHeight         视口固定高度，非正时使用默认值
          * @param enabled                控件级启用信号，null 时默认恒为 true
          * @param readOnly               控件级只读信号，null 时默认恒为 false
@@ -417,6 +431,12 @@ public final class SceneDataTable {
                 label.setPreferredHeight(ctx.contentHeight());
                 label.setHitTestable(false);
                 rt.bindText(label, ctx.value());
+                // 溢出策略：列宽是结构轨道（不随字号变），文字超宽必须可见省略而不是被单元格裁剪。
+                // wrapWidth 取槽位内框宽（列宽 - 2*CELL_PADDING，由 buildCell 注入）+ 单行 + 省略号：
+                // SceneLineClamp 仅在「换行后行数 > maxLines」时加省略号，故三者必须同时声明。
+                label.setMaxTextWidth(ctx.contentWidth());
+                label.setMaxLines(1);
+                label.setEllipsis(true);
                 // 只读文本跟随控件根字号：label 是控件根的后代，沿父链继承层 2 声明。
                 return label;
             });
@@ -536,8 +556,10 @@ public final class SceneDataTable {
         private final Consumer<String> onChange;
         /** 是否可编辑。 */
         private final boolean editable;
-        /** 单元格内容可用高度。 */
+        /** 单元格内容可用高度（外尺寸下限口径，见 {@link SceneDataTable.Props#rowHeight()}）。 */
         private final int contentHeight;
+        /** 单元格内容可用宽度（列宽 - 2*CELL_PADDING）；0 = 未知（旧签名构造器）。 */
+        private final int contentWidth;
         /** 单元格启用信号（来自控件级 enabled），控制编辑器 enabled 态。 */
         private final ReadableSignal<Boolean> enabled;
         /** 单元格只读信号（来自控件级 readOnly，仅 TextInput 列使用）。 */
@@ -567,6 +589,23 @@ public final class SceneDataTable {
          */
         public CellContext(ReadableSignal<String> value, Consumer<String> onChange, boolean editable,
                            int contentHeight, ReadableSignal<Boolean> enabled, ReadableSignal<Boolean> readOnly) {
+            this(value, onChange, editable, contentHeight, 0, enabled, readOnly);
+        }
+
+        /**
+         * 创建单元格上下文并注入槽位内框宽（包私有：由 {@code buildCell} 用列宽推导，公共 API 不变）。
+         *
+         * @param value         当前单元格值
+         * @param onChange      提交回调
+         * @param editable      是否可编辑
+         * @param contentHeight 内容可用高度（下限口径）
+         * @param contentWidth  内容可用宽度（列宽 - 2*CELL_PADDING）；0 = 未知
+         * @param enabled       单元格启用信号，null 时默认恒为 true
+         * @param readOnly      单元格只读信号，null 时默认恒为 false
+         */
+        CellContext(ReadableSignal<String> value, Consumer<String> onChange, boolean editable,
+                    int contentHeight, int contentWidth, ReadableSignal<Boolean> enabled,
+                    ReadableSignal<Boolean> readOnly) {
             if (value == null || onChange == null) {
                 throw new IllegalArgumentException("value/onChange must not be null");
             }
@@ -574,6 +613,7 @@ public final class SceneDataTable {
             this.onChange = onChange;
             this.editable = editable;
             this.contentHeight = Math.max(0, contentHeight);
+            this.contentWidth = Math.max(0, contentWidth);
             this.enabled = enabled == null ? Signal.create(Boolean.TRUE) : enabled;
             this.readOnly = readOnly == null ? Signal.create(Boolean.FALSE) : readOnly;
         }
@@ -612,6 +652,17 @@ public final class SceneDataTable {
          */
         public int contentHeight() {
             return contentHeight;
+        }
+
+        /**
+         * 获取单元格内容可用宽度（= 列宽 - 2*CELL_PADDING；0 = 构造器未提供）。
+         *
+         * <p>自定义渲染器用它给文字叶声明换行/省略宽度：固定轨道 + 无溢出策略 = 静默截断。</p>
+         *
+         * @return 内容可用宽度（UI 逻辑像素）
+         */
+        public int contentWidth() {
+            return contentWidth;
         }
 
         /**
@@ -745,6 +796,10 @@ public final class SceneDataTable {
         // 表头文字取主题正文前景（构造期捕获来源主题，主题切换只重派生）。
         rt.bind(SceneThemes.foreground(rt), label::setTextColor);
         label.setHitTestable(false);
+        // 溢出策略与只读单元格同口径：表头槽位同样是固定轨道，超宽必须看到省略号。
+        label.setMaxTextWidth(Math.max(1, column.width() - 2 * CELL_PADDING));
+        label.setMaxLines(1);
+        label.setEllipsis(true);
         cell.appendChild(label);
         return cell;
     }
@@ -806,7 +861,8 @@ public final class SceneDataTable {
             Row updated = indexCache.currentRow(props.rows().get(), row).withCell(col, next);
             List<Row> newRows = updateRowInList(props.rows().get(), row.getRowId(), updated);
             props.rows().set(newRows);
-        }, column.editable(), props.rowHeight() - 2 * CELL_PADDING, props.enabled(), props.readOnly());
+        }, column.editable(), props.rowHeight() - 2 * CELL_PADDING,
+                Math.max(0, column.width() - 2 * CELL_PADDING), props.enabled(), props.readOnly());
         SceneNode child = column.renderer().render(rt, ctx);
         if (child != null) {
             cell.appendChild(child);

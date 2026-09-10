@@ -529,6 +529,11 @@ public final class SceneKeyValueMap {
         // 表头取主题次要前景，主题切换只重派生。
         rt.bind(SceneThemes.mutedForeground(rt), cell::setTextColor);
         cell.setPreferredWidth(width);
+        // 溢出策略（INV-GEO-4）：槽宽是结构轨道（与 input/type 列对齐，不随字号变），
+        // 文字超宽必须可见省略——本单元格无 clipChildren，不声明省略就会压到相邻列上。
+        cell.setMaxTextWidth(Math.max(1, width));
+        cell.setMaxLines(1);
+        cell.setEllipsis(true);
         header.appendChild(cell);
     }
 

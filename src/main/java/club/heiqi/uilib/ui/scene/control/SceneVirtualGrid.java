@@ -35,6 +35,19 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * spacer 高度由窗口数学推导，使布局引擎算出的内容总高恒等于 {@code totalRows * stride}，
  * {@code SceneGeometry.maxScrollY} 全程正确，{@link SceneScrolls} 的滚轮 clamp 无需特判。</p>
  *
+ * <h3>单元轨道与字号（S5 已登记限制）</h3>
+ * <p>{@link Props#cellHeight()} 是<b>调用方给定的固定轨道高</b>，虚拟化 stride
+ * （{@code cellHeight + gapY}）、spacer 高度、视口闭式与滚动/窗口数学全部由它推导 ——
+ * 该值属公共语义，<b>不随生效字号变化</b>。单元内的图位高会按标签行高（生效字号）让位
+ * （见 {@code bindIconHeight}），因此只要满足</p>
+ * <pre>cellHeight &gt;= lineHeight(生效字号) + LABEL_GAP + 1(图位最小) + 2*CELL_PADDING</pre>
+ * <p>单元就恰好被内容填满、不裁字、spacer 数学不破。默认配置（cellHeight=64）在 200% 字号
+ * （16 → 32）下恰好满足：32 + 2 + 22 + 8 = 64。</p>
+ * <p><b>限制（不得沉默）</b>：若字号大到超出上式，单元会按内容自然高变大，而 stride 仍按调用方的
+ * {@code cellHeight} 推导 → 相邻行间距不再等于 stride。此形态下控件<b>优先保证不裁字</b>（标签行高完整），
+ * 越界可由 {@code cellBox.getHeight() > Props.cellHeight()} 检测；调用方应抬高 {@code cellHeight} 或限制字号。
+ * 把轨道高也做成字号派生的 metric 会改变 stride 的公共语义，本轮不做（见 improve-3 §8）。</p>
+ *
  * <h3>滚动驱动窗口</h3>
  * <p>滚动唯一权威是 {@link SceneScrolls#attach} 返回的 scrollSignal（GEOMETRY 级滚动不重排）；
  * 窗口首行由 {@code floor(scroll / stride)} 派生（Computed），数据收缩时经 owner 作用域 effect
@@ -428,6 +441,36 @@ public final class SceneVirtualGrid {
         return rowNode;
     }
 
+    /**
+     * 图位剩余高 = 单元轨道高 - 上下内边距 - （有标签时）标签行高 + 标签间距；至少 1px。
+     *
+     * <p><b>为什么必须用生效字号</b>：标签行高随字号变（用户倍率/作用域声明同样参与），
+     * 用构建期常量 {@code LABEL_FONT_SIZE} 算出来的图位会在字号变大后与标签重叠。
+     * 图位是单元的「剩余空间」承担者：标签行高变多少，图位就减多少。</p>
+     *
+     * <p><b>为什么要在布局纪元后重算</b>：字号声明可在运行期变化（句柄 / 作用域 / 环境默认 / 用户倍率），
+     * 构建期只拿得到标签的层 4a 回落值；每次布局纪元后按当前生效字号重算，{@code preferredHeight}
+     * 同值早退保证不产生脏标记抖动。（S5 后续由 {@code setFontSizeMetric} 改声明式。）</p>
+     *
+     * @param rt    场景运行时（提供行高度量）
+     * @param props 网格输入契约（单元轨道高）
+     * @param icon  图位节点（写 preferredHeight）
+     * @param label 标签节点；null = 该项无标签
+     */
+    private static void bindIconHeight(SceneRuntime rt, Props props, SceneNode icon, SceneNode label) {
+        int available = props.cellHeight() - CELL_PADDING * 2;
+        if (label != null) {
+            available -= rt.lineHeight(label.effectiveFontSize()) + LABEL_GAP;
+        }
+        icon.setPreferredHeight(Math.max(1, available));
+        rt.bind(rt.layoutDoneSignal(), epoch -> {
+            int next = props.cellHeight() - CELL_PADDING * 2;
+            if (label != null) {
+                next -= rt.lineHeight(label.effectiveFontSize()) + LABEL_GAP;
+            }
+            icon.setPreferredHeight(Math.max(1, next));
+        });
+    }
     /** 构建单个网格单元（§4.1 复用行轻量口径：外观写入槽只剩 backgroundColor，主题选区/hover 档派生）。 */
     private static SceneNode cellComponent(SceneRuntime rt, Props props, Item item,
                                            ReadableSignal<Integer> displayHighlight,
@@ -455,23 +498,10 @@ public final class SceneVirtualGrid {
                         palette.accent.get(), palette.selectionBackground.get()),
                 cell::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
 
-        SceneNode icon = new SceneNode();
-        icon.setHitTestable(false);
-        int lineHeight = rt.lineHeight(LABEL_FONT_SIZE);
-        int iconHeight = Math.max(1, props.cellHeight() - CELL_PADDING * 2
-                - (item.label() != null ? lineHeight + LABEL_GAP : 0));
-        icon.setPreferredWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
-        icon.setPreferredHeight(iconHeight);
-        // 图位圆角与占位底色属物品图像渲染协议（契约 §4.1「物品图像不改色」+ §7.3）：保持静态值。
-        icon.setCornerRadius(SceneChromeTokens.RADIUS_SM);
-        rt.bindComputed(() -> imageAt(safeItems(props.items()), item.key()), src -> {
-            icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
-            icon.setImageSource(src);
-        });
-        cell.appendChild(icon);
-
+        // 标签先建：图位剩余高要按「标签生效字号的行高」扣减，必须先拿到标签节点。
+        SceneNode label = null;
         if (item.label() != null) {
-            SceneNode label = new SceneNode();
+            label = new SceneNode();
             label.setHitTestable(false);
             // 私有常量降级为层 4a 回落值（有作用域/环境默认时跟随，无声明时仍落 12）。
             label.setFallbackFontSize(LABEL_FONT_SIZE);
@@ -482,6 +512,25 @@ public final class SceneVirtualGrid {
                     ? palette.mutedForeground.get() : palette.disabledForeground.get(),
                     label::setTextColor);
             rt.bindComputed(() -> labelAt(safeItems(props.items()), item.key()), label::setText);
+            // 溢出策略（INV-GEO-4）：单元轨道由虚拟化 stride 固定，文字超宽必须可见省略，
+            // 否则被 cell 的 clipChildren(true) 静默裁掉。
+            label.setMaxTextWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
+            label.setMaxLines(1);
+            label.setEllipsis(true);
+        }
+
+        SceneNode icon = new SceneNode();
+        icon.setHitTestable(false);
+        icon.setPreferredWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
+        bindIconHeight(rt, props, icon, label);
+        // 图位圆角与占位底色属物品图像渲染协议（契约 §4.1「物品图像不改色」+ §7.3）：保持静态值。
+        icon.setCornerRadius(SceneChromeTokens.RADIUS_SM);
+        rt.bindComputed(() -> imageAt(safeItems(props.items()), item.key()), src -> {
+            icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
+            icon.setImageSource(src);
+        });
+        cell.appendChild(icon);
+        if (label != null) {
             cell.appendChild(label);
         }
 

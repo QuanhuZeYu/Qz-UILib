@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.IntFunction;
+import java.util.function.IntSupplier;
 
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -39,9 +40,19 @@ final class ChatMarkdownContent {
         }
     }
 
-    static Result create(SceneRuntime rt, int heightBudget, boolean interactive,
+    /**
+     * @param rt                 场景运行时
+     * @param heightBudget       高度预算（<b>每次刷新求值</b>：用户倍率变化时预算同步放大，RC-06）
+     * @param interactive        是否启用滚动/命中
+     * @param declaredFontSizePx 内容的<b>设计字号</b>（节点层 1 声明；渲染尺寸由解析出口 ×倍率 得到。
+     *                           管线烘焙仍用有效字号——声明与几何分离，避免重复缩放）
+     * @param layouts            按可用宽产出渲染计划（内部用有效字号烘焙：换行/行高/块宽全随倍率）
+     * @param decorateLeaf       叶子装饰回调（链接命中区等）
+     * @return 内容视图结果
+     */
+    static Result create(SceneRuntime rt, IntSupplier heightBudget, boolean interactive, int declaredFontSizePx,
             IntFunction<ChatMarkdownPipeline.RenderedContent> layouts, BiConsumer<SceneNode, PaintCommand> decorateLeaf) {
-        int budget = Math.max(1, heightBudget);
+        int budget = Math.max(1, heightBudget.getAsInt());
         SceneNode root = SceneNode.column(0).setFillParentWidth(true).setHitTestable(false);
         SceneNode row = SceneNode.row(0).setFillParentWidth(true).setPreferredHeight(budget)
                 .setHitTestable(false);
@@ -99,7 +110,7 @@ final class ChatMarkdownContent {
         }
         Signal<List<ChatMarkdownPipeline.PaintLeaf>> leaves = Signal.create(Collections.emptyList());
         rt.forEach(body, leaves, leaf -> leaf, leaf -> {
-            SceneNode node = node(leaf);
+            SceneNode node = node(leaf, declaredFontSizePx);
             if (interactive && decorateLeaf != null) decorateLeaf.accept(node, leaf.command);
             return node;
         });
@@ -111,7 +122,9 @@ final class ChatMarkdownContent {
             if (published[0] == plan) return;
             published[0] = plan;
             body.setPreferredWidth(Math.max(1, plan.width)).setPreferredHeight(Math.max(1, plan.height));
-            row.setPreferredHeight(Math.min(budget, Math.max(1, plan.height)));
+            // 预算每次刷新重取：倍率变化时 HUD 高度上限同步放大，不把内容压回旧盒高。
+            int currentBudget = Math.max(1, heightBudget.getAsInt());
+            row.setPreferredHeight(Math.min(currentBudget, Math.max(1, plan.height)));
             leaves.set(plan.leaves);
         };
         rt.bind(rt.layoutDoneSignal(), done -> {
@@ -132,7 +145,7 @@ final class ChatMarkdownContent {
         return new Result(root, viewport, body, x, y);
     }
 
-    static SceneNode node(ChatMarkdownPipeline.PaintLeaf leaf) {
+    static SceneNode node(ChatMarkdownPipeline.PaintLeaf leaf, int declaredFontSizePx) {
         PaintCommand command = leaf.command;
         SceneNode node = new SceneNode().setHitTestable(false)
                 .setPreferredWidth(leaf.width).setPreferredHeight(leaf.height);
@@ -141,7 +154,9 @@ final class ChatMarkdownContent {
                 node.setBackgroundColor(command.getColor()).setCornerRadius(command.getCornerRadius());
                 break;
             case SEGMENTS:
-                node.setSegments(command.getSegments()).setFontSize(command.getTextStyle().getFontSize())
+                // 声明 = 设计字号（渲染尺寸由解析出口 ×倍率 得到）；宽度/高度/边距来自
+                // 管线按「有效字号」烘焙的 leaf 几何 ⇒ 文字与框同步随倍率变化（RC-06）。
+                node.setSegments(command.getSegments()).setFontSize(declaredFontSizePx)
                         .setTextVerticalAlign(TextVerticalAlign.TOP);
                 break;
             case LINK_REGION:

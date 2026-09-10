@@ -151,6 +151,11 @@ public final class ChatSceneController {
     /** 系统消息行切分器(font-system 12px 口径,K3 三轮)。 */
     private ChatLineLayouter systemLayouter;
     private ChatCardComposer composer;
+    /** 两个切分器当前采用的有效字号（设计值 × 用户倍率）；与当前有效值不等即重建（RC-06）。 */
+    private int layouterFontPx = -1;
+    private int systemLayouterFontPx = -1;
+    /** 已应用的 scene 字号环境代；变化 ⇒ 切分器重建 + 结构版本 +1（RC-06）。 */
+    private long appliedFontEpoch = Long.MIN_VALUE;
     private ChatMessageList messageList;
 
     /** 结构版本(消息/滚动/设置变化 +1,驱动组列表与树重建)。 */
@@ -302,8 +307,21 @@ public final class ChatSceneController {
 
     /** @return 容器可视行数(func_146232_i 用,近似 = 容器高/行高) */
     public int visibleLineCount() {
+        // RC-06：可视行数按「有效行高」算（倍率变化 ⇒ 每屏行数变少），与滚动投影同源。
         return Math.max(1, ChatMarkdownSettings.containerHeightFor(hostViewportHeight)
-                / ChatMarkdownSettings.getChatLineHeightPx());
+                / ChatFontMetrics.chatLineHeightPx(runtime));
+    }
+
+    /**
+     * @return 气泡正文在<b>当前用户倍率</b>下的有效行高 px（含倍率，随 {@link SceneRuntime#fontEpoch()}
+     *         变化；倍率改一次、值改一次，无需宿主轮询）。
+     *
+     * <p>宿主原生聊天框的预留高度必须用本值：{@code ChatCore.chatLineHeight()}（{@code func_146244_h}）
+     * 委派到此，否则用户 150% 倍率下 scene 画 27 的行高、宿主仍按设计值 18 预留 ⇒ 真机裁切/重叠
+     * （RC-06 闭合必需，公共面已在 {@code MarkdownPublicSurfaceGuardTest} 登记 26→27）。</p>
+     */
+    public int effectiveChatLineHeightPx() {
+        return ChatFontMetrics.chatLineHeightPx(runtime);
     }
 
     /** @return 聊天高度(func_146246_g 用,容器高,随视口动态) */
@@ -411,6 +429,18 @@ public final class ChatSceneController {
         if (dataDirty) {
             dataDirty = false;
             contentVersion.set(Integer.valueOf(contentVersion.get().intValue() + 1));
+        }
+        // RC-06：用户倍率（scene 字号环境代）变化 ⇒ 行切分器按新「有效字号」重建并 bump 结构版本，
+        // 使系统/纯文本行的断行点随字号重排（只改行框高会让长行仍按旧字号断行、右缘溢出）。
+        if (runtime != null) {
+            long fontEpoch = runtime.fontEpoch();
+            if (appliedFontEpoch == Long.MIN_VALUE) {
+                appliedFontEpoch = fontEpoch;
+            } else if (fontEpoch != appliedFontEpoch) {
+                appliedFontEpoch = fontEpoch;
+                composer = null;
+                contentVersion.set(Integer.valueOf(contentVersion.get().intValue() + 1));
+            }
         }
         DisplayStateMachine.Phase phase = machine.tick(nowMillis,
                 ChatMarkdownSettings.getCollapseAnimMillis(), ChatMarkdownSettings.getPopAnimMillis(),
@@ -866,14 +896,16 @@ public final class ChatSceneController {
         }
         smooth.setTarget(target, nowMillis);
         float display = smooth.displayLines(nowMillis);
-        return Integer.valueOf(Math.round(display * ChatMarkdownSettings.getChatLineHeightPx()));
+        // RC-06：行域 → px 投影用有效行高，与 ChatContainer 的 px → 行反折算严格互逆。
+        return Integer.valueOf(Math.round(display * ChatFontMetrics.chatLineHeightPx(runtime)));
     }
 
     /**
      * @return 贴底跟随阈值(行):36px 阈值按行粒度换算 = ceil(36 / 行高);行高 18 → 2 行。
      */
-    private static int nearBottomLineThreshold() {
-        int lineHeight = Math.max(1, ChatMarkdownSettings.getChatLineHeightPx());
+    private int nearBottomLineThreshold() {
+        // 36px 阈值是「设计 px」常量，行高随倍率变 ⇒ 阈值行数随之变化（同一视觉距离）。
+        int lineHeight = Math.max(1, ChatFontMetrics.chatLineHeightPx(runtime));
         return (int) Math.ceil(36.0D / lineHeight);
     }
 
@@ -1126,11 +1158,12 @@ public final class ChatSceneController {
         // C8:MARKDOWN_LEFT 同族(无壳无组头、字族 font-system),「行数×行高」同式。
         boolean system = group.getAlignment() == MessageGroupModel.Alignment.SYSTEM_CENTER
                 || group.getAlignment() == MessageGroupModel.Alignment.MARKDOWN_LEFT;
-        int lineHeight = system ? ChatMarkdownSettings.getSystemLineHeightPx()
-                : ChatMarkdownSettings.getChatLineHeightPx();
+        // RC-06：估算与渲染同式 ⇒ 行高/组头行高都按「有效值」算（倍率下估算不漂移）。
+        int lineHeight = system ? ChatFontMetrics.systemLineHeightPx(runtime)
+                : ChatFontMetrics.chatLineHeightPx(runtime);
         int paddingY = ChatMarkdownSettings.getBubblePaddingY();
         // K3 四轮:组头按实际渲染行高 16 计(原按字号 12 计每组低估 4px)
-        int headerRowHeight = ChatMarkdownSettings.getChatHeaderRowHeightPx();
+        int headerRowHeight = ChatFontMetrics.scalePx(runtime, ChatMarkdownSettings.getChatHeaderRowHeightPx());
         int innerGap = ChatMarkdownSettings.getGroupInnerGapPx();
         int lines = 0;
         int messageCount = 0;
@@ -1180,13 +1213,14 @@ public final class ChatSceneController {
      * &gt; 行高×1.6 时按 0.85 缩放重排(段字号落点,布局/测量/渲染全链路同源);
      * 缩放后仍超限保持缩放结果(截断+省略号按行高上限 clamp 降级,渲染层无公式盒裁剪通道)。
      */
-    private static ChatMessageList.SegmentPostProcessor latexLineHeightConstraint() {
+    private ChatMessageList.SegmentPostProcessor latexLineHeightConstraint() {
         final TextLayoutService service = FontService.getInstance().getTextLayoutService();
         return new ChatMessageList.SegmentPostProcessor() {
             @Override
             public List<TextSegment> postProcess(List<TextSegment> segments, int baseFontSizePx) {
+                // RC-06：约束上限 = 有效行高（渲染行框同源），baseFontSizePx 由调用方传有效字号。
                 return service.applyLatexLineHeightConstraint(segments, baseFontSizePx,
-                        ChatMarkdownSettings.getChatLineHeightPx(),
+                        ChatFontMetrics.chatLineHeightPx(runtime),
                         ChatMarkdownSettings.getLatexMaxLineHeightFactor(),
                         ChatMarkdownSettings.getLatexShrinkFactor());
             }
@@ -1237,23 +1271,39 @@ public final class ChatSceneController {
         return current;
     }
 
-    /** 懒取合成器(依赖布局器)。 */
+    /**
+     * 懒取合成器(依赖布局器)。
+     *
+     * <p>RC-06：切分器按<b>有效字号</b>（设计值 × 用户倍率）构造，并以有效字号为缓存键 ——
+     * 倍率变化时用新字号重建切分器，行断点与渲染字号同源，不再出现「文字放大、断行按旧字号」。</p>
+     */
     private ChatCardComposer composer() {
+        int chatPx = effectiveChatFontPx();
+        int systemPx = effectiveSystemFontPx();
         ChatCardComposer current = composer;
-        if (current == null) {
-            synchronized (this) {
-                current = composer;
-                if (current == null) {
-                    if (layouter == null) {
-                        layouter = new ChatLineLayouter(measure, ChatMarkdownSettings.getChatFontSizePx());
-                        systemLayouter = new ChatLineLayouter(measure,
-                                ChatMarkdownSettings.getSystemFontSizePx());
-                    }
-                    current = new ChatCardComposer(layouter, systemLayouter);
-                    composer = current;
-                }
-            }
+        if (current != null && layouterFontPx == chatPx && systemLayouterFontPx == systemPx) {
+            return current;
         }
-        return current;
+        synchronized (this) {
+            if (composer != null && layouterFontPx == chatPx && systemLayouterFontPx == systemPx) {
+                return composer;
+            }
+            layouter = new ChatLineLayouter(measure, chatPx);
+            systemLayouter = new ChatLineLayouter(measure, systemPx);
+            composer = new ChatCardComposer(layouter, systemLayouter);
+            layouterFontPx = chatPx;
+            systemLayouterFontPx = systemPx;
+            return composer;
+        }
+    }
+
+    /** @return 气泡正文的有效字号（设计值 × 用户倍率）。 */
+    private int effectiveChatFontPx() {
+        return ChatFontMetrics.scalePx(runtime, ChatMarkdownSettings.getChatFontSizePx());
+    }
+
+    /** @return 系统消息的有效字号（设计值 × 用户倍率）。 */
+    private int effectiveSystemFontPx() {
+        return ChatFontMetrics.scalePx(runtime, ChatMarkdownSettings.getSystemFontSizePx());
     }
 }

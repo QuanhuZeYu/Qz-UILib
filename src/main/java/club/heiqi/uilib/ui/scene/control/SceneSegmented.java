@@ -31,16 +31,17 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <h3>结构</h3>
  * <pre>
  * root (ROW, crossAxisAlign=STRETCH, gap)                  ← 导航底座，承载 TOOLBAR 表面
- *   └─ segment[i] (ROW, mainAxisAlign=CENTER, crossAxisAlign=CENTER, padding, preferredWidth=固定段宽)  ← 交互单元 hitTestable=true
+ *   └─ segment[i] (ROW, mainAxisAlign=CENTER, crossAxisAlign=CENTER, padding,
+ *                   SHRINK + setFontSizeMetric(preferredWidth = 文本宽 + 2*PAD))  ← 交互单元 hitTestable=true
  *         └─ label[i] (text)   ← 装饰 hitTestable=false
  * </pre>
  *
  * <h3>设计要点</h3>
  * <ul>
  *   <li><b>不复用 SceneButton</b>：它是试金石不是积木，嵌套会让交互态归属混乱，直接建段节点。</li>
- *   <li><b>段宽按标题文本自适应</b>：构建期一次性测量每段标题文本宽度（options 构建期固定，守 R2），
- *       段宽 = 文本宽 + 2*SEGMENT_PADDING，短标题不留白、长标题不截断。测量值固化进
- *       preferredWidth（LAYOUT 级属性），构建期一次性写入，不引入每段脏标记瀑布（守 I7）。</li>
+ *   <li><b>段宽按标题文本自适应</b>：段 = SHRINK 容器，宽度 = 标签文本宽（布局阶段按<b>生效字号</b>测量）
+ *       + 2*SEGMENT_PADDING，短标题不留白、长标题不截断。字号变化经向下失效 + 布局重算承担，
+ *       不固化构建期测量值、不手写 layoutDone 重算（S5 收口）。</li>
  *   <li><b>R6 段穿透权威落地</b>：段本身 hitTestable=true，段内 label 文字 hitTestable=false 穿透到所属段。</li>
  * </ul>
  *
@@ -84,7 +85,8 @@ public final class SceneSegmented {
      */
     private static final int SEG_GAP = SceneChromeTokens.GAP_SM;
     /**
-     * 段标签默认字号（UI 像素），与 {@link SceneNode} 默认 fontSize 对齐，用于构建期文本宽度测量。
+     * 段标签默认字号（UI 像素），与 {@link SceneNode} 默认 fontSize 对齐：登记为 root 的层 4a 回落值
+     * （数值与框架层 4b 默认同值，不遮蔽层 1/2/3 声明）。
      * <p>调用方可用 {@link Props#fontSize()} 覆盖；本常量是未指定时的回落值，也是与下游对齐的基准。
      * <p>维护约束：修改此值需同步 club.heiqi.config.ui.theme.ConfigTheme.NAV_TAB_FONT_SIZE。
      * 因 uilib 不能反向依赖 config 模块，此处仅以文字引用全限定名，不 import。
@@ -155,13 +157,14 @@ public final class SceneSegmented {
             root.setGap(SEG_GAP);
             // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）。
             // Props.fontSize() 写 root 的层 2 声明（与句柄入口同一槽，后写者胜出）；
-            // 未指定时 SEG_LABEL_FONT_SIZE 只作构建期几何的初值，不写成声明（否则遮蔽层 2 声明）。
+            // 未指定时不写层 2 声明：回落值走层 4a（见下方 setFallbackFontSize），不遮蔽句柄/作用域。
             // 段标签是 root 的后代，沿父链继承，不再逐点接线。
             final ReadableSignal<Integer> configuredFontSize = props.fontSize();
             final Integer configuredFontSizeValue =
                     configuredFontSize == null ? null : configuredFontSize.get();
-            final int labelFontSize = configuredFontSizeValue == null
-                    ? SEG_LABEL_FONT_SIZE : configuredFontSizeValue.intValue();
+            // 层 4a 回落值：数值与框架层 4b 默认同值（16），本控件自持以表达「未声明时落 16」；
+            // 层 1/2/3 均优先于它，故不遮蔽句柄 / 作用域 / 环境默认。
+            root.setFallbackFontSize(SEG_LABEL_FONT_SIZE);
             if (configuredFontSize != null) {
                 if (configuredFontSizeValue != null) {
                     root.setFontScope(configuredFontSizeValue.intValue());
@@ -178,7 +181,11 @@ public final class SceneSegmented {
             // 容器型固定子须显式设 preferredHeight，否则 ConstraintResolver.computeColumnGrowHeights
             // 命中 priorKnownChildHeight 容器分支返回 UNCONSTRAINED 早退，grow 兄弟收不到分配高。
             // 内置后调用方无需再手动设高（YAGNI：本轮不开 prop 覆盖）。
-            root.setPreferredHeight(rt.lineHeight(labelFontSize) + 2 * SEGMENT_PADDING);
+            //
+            // 条高由字号派生（S5 收口）：setFontSizeMetric 登记即按当前生效字号算一次，
+            // 其后仅在「生效字号变化」时由框架重算（同字号去重），不再手写 layoutDone 重算 effect。
+            root.setFontSizeMetric((node, fontSizePx) ->
+                    node.setPreferredHeight(rt.lineHeight(fontSizePx) + 2 * SEGMENT_PADDING));
 
             // 导航底座：TOOLBAR 角色配方。表面绑定器独占 background/border/borderWidth/
             // cornerRadius/backdrop/surfaceElevation；构造期不再静态设边框/圆角，
@@ -202,12 +209,18 @@ public final class SceneSegmented {
                 segment.setMainAxisAlign(MainAxisAlign.CENTER);
                 segment.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 segment.setPadding(SEGMENT_PADDING);
-                // 段宽按标题文本自适应：构建期一次性测量（options 固定，守 R2/I7），
-                // 段宽 = 文本宽 + 2*内边距，短标题不留白、长标题不截断。测量值固化进
-                // preferredWidth（LAYOUT 级属性），构建期一次性写入，运行期不再重测。
-                String title = props.options().get(handle.index());
-                int textWidth = rt.measureTextWidth(title, labelFontSize);
-                segment.setPreferredWidth(textWidth + 2 * SEGMENT_PADDING);
+                // 段宽 = 标签文本宽 + 2*内边距，由字号派生声明给出（S5 收口）：
+                // setFontSizeMetric 登记即按当前生效字号算一次，其后字号变化由框架重算 —— 不再手写
+                // layoutDone effect，也不再靠「构建期一次性测量」。
+                //
+                // 为什么仍要显式声明 preferredWidth（而不是纯 SHRINK 靠标签自然宽）：标签文本由 primitive
+                // 经 rt.bindText 绑定，首帧布局可能早于响应式落值（实测首帧 label.getText()==null）——
+                // 此时文本叶退化为主轴填满，SHRINK 段会被算成整条宽并把后续段推离画布（命中盒失效）。
+                // 段宽取 options（构建期常量）测量，与标签文本时序解耦，首帧即正确。
+                final String title = props.options().get(handle.index());
+                segment.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+                segment.setFontSizeMetric((node, fontSizePx) -> node.setPreferredWidth(
+                        rt.measureTextWidth(title, fontSizePx) + 2 * SEGMENT_PADDING));
                 segment.appendChild(handle.label());
 
                 SceneInteractionState interaction = handle.interaction();
@@ -229,25 +242,6 @@ public final class SceneSegmented {
 
                 SceneControlChrome.bindCursor(rt, segment, props.enabled(), SceneCursor.POINTER, SceneCursor.NOT_ALLOWED);
             }
-
-            // 段宽/条高从 root 生效字号派生：字号真的变了才重算（同值早退，避免与布局形成反馈环）。
-            // 无条件建立——外部声明（句柄 / 作用域 / 环境默认）变化也要让几何跟上，root 是唯一真值。
-            // （S5 由 setFontSizeMetric 接管后删除本段手写重算。）
-            final List<SceneSingleSelectPrimitive.ItemHandle> items = result.items();
-            final List<String> options = props.options();
-            final int[] appliedFontSize = {labelFontSize};
-            rt.bind(rt.layoutDoneSignal(), epoch -> {
-                int fontSize = root.effectiveFontSize();
-                if (fontSize == appliedFontSize[0]) {
-                    return;
-                }
-                appliedFontSize[0] = fontSize;
-                root.setPreferredHeight(rt.lineHeight(fontSize) + 2 * SEGMENT_PADDING);
-                for (int i = 0; i < items.size(); i++) {
-                    items.get(i).item().setPreferredWidth(
-                            rt.measureTextWidth(options.get(i), fontSize) + 2 * SEGMENT_PADDING);
-                }
-            });
 
             return root;
         };

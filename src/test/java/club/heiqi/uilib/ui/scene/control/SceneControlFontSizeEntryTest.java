@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.input.mock.MockPlatformInputSource;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -310,7 +311,7 @@ public class SceneControlFontSizeEntryTest {
         // 大字号下必须真的测到「长标签撑开」，否则本用例失去意义。
         List<SceneNode> segments = large.mount.getRoot().__getChildren().get(0).__getChildren();
         Assert.assertTrue("大字号下应有段宽超过最小宽",
-                segments.get(2).getPreferredWidth() > TAB_MIN_WIDTH);
+                ((LayoutBox) segments.get(2).getCachedLayout()).getWidth() > TAB_MIN_WIDTH);
     }
 
     /** {@code SceneTab.TAB_WIDTH}：段最小宽（控件内私有常量，此处按其语义断言）。 */
@@ -324,8 +325,9 @@ public class SceneControlFontSizeEntryTest {
             String title = TAB_LABELS.get(i);
             int textWidth = title.codePointCount(0, title.length()) * fontSize / 2;
             int expected = Math.max(TAB_MIN_WIDTH, textWidth + 2 * SceneChromeTokens.PAD_LG);
+            // S5 收口：段宽改 SHRINK 派生（布局阶段按生效字号测自然宽），断言改读 LayoutBox。
             Assert.assertEquals("段[" + i + "] 宽（文本宽 " + textWidth + "，字号 " + fontSize + "）",
-                    expected, segments.get(i).getPreferredWidth());
+                    expected, ((LayoutBox) segments.get(i).getCachedLayout()).getWidth());
         }
     }
 
@@ -336,7 +338,8 @@ public class SceneControlFontSizeEntryTest {
             String title = TAB_LABELS.get(i);
             int textWidth = title.codePointCount(0, title.length()) * fontSize / 2;
             Assert.assertEquals("段[" + i + "]宽 = 按字号 " + fontSize + " 测出的文本宽 + 2*内边距",
-                    textWidth + 2 * SceneChromeTokens.PAD_LG, segments.get(i).getPreferredWidth());
+                    textWidth + 2 * SceneChromeTokens.PAD_LG,
+                    ((LayoutBox) segments.get(i).getCachedLayout()).getWidth());
         }
     }
 

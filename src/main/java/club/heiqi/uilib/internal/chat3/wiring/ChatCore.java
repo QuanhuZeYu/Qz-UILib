@@ -3,7 +3,6 @@ package club.heiqi.uilib.internal.chat3.wiring;
 import net.minecraft.util.IChatComponent;
 
 import club.heiqi.uilib.api.chat.ChatAccess;
-import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 
 /**
@@ -115,8 +114,14 @@ public final class ChatCore {
         return controller.chatHeight();
     }
 
-    /** 行高 px(func_146244_h)。 */
+    /**
+     * 行高 px(func_146244_h)。
+     *
+     * <p>RC-06：宿主口径 = scene 行框口径（设计值 × 用户倍率），委派
+     * {@link ChatSceneController#effectiveChatLineHeightPx()}——宿主按本值预留高度，
+     * 150% 倍率下与 scene 实际行高一致，不再出现「宿主按 18 预留、scene 画 27」的裁切。</p>
+     */
     public float chatLineHeight() {
-        return (float) ChatMarkdownSettings.getChatLineHeightPx();
+        return (float) controller.effectiveChatLineHeightPx();
     }
 }

@@ -30,6 +30,7 @@ import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.internal.chat3.ChatMarkdownSettings;
 import club.heiqi.uilib.internal.chat3.data.ChatHistory;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
+import club.heiqi.uilib.internal.chat3.wiring.ChatCore;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatCardComposer.ComposedGroup;
 import club.heiqi.uilib.internal.chat3.viewmodel.ChatLineLayouter;
@@ -1213,6 +1214,87 @@ public class ChatMessageListTest {
         }
         Assert.assertTrue("普通系统行走 § 路: " + text,
                 text.contains("[公告] 维护通知"));
+    }
+
+    // ==================== S5-3（task-21）RC-06：用户倍率贯通 chat3 段流 ====================
+
+    /**
+     * RC-06 可证伪断言（同一棵树、同一批节点，100% → 150%）：正文有效字号、行框高与气泡高必须同步变大，
+     * 而节点<b>层1 声明</b>恒为设计值（倍率只在 scene 解析出口生效一次，不得写回声明造成 2×2 重复缩放）。
+     */
+    @Test
+    public void fontScaleScalesBodyFontLineHeightAndBubbleHeight() {
+        ChatSceneController controller = controller();
+        controller.setHostViewport(400, 300);
+        controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, T0));
+        controller.notifyDataChanged();
+        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneNode root = controller.buildContent(rt);
+        // 生产同路：HUD 窗口树由 SceneHudHost.RetainedWindow 经 SceneHostAssembly.attachTree
+        // 交给本窗口 runtime（ChatHudWindow 注册的工厂即 buildContent）——字号环境自此生效。
+        club.heiqi.uilib.ui.scene.host.SceneHostAssembly.attachTree(rt, root);
+        controller.tick(T0);
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+
+        SceneNode bubbleBefore = hudGroups(root).get(0).__getChildren().get(1);
+        SceneNode lineBefore = hudLineNodesOfFirstGroup(root).get(0);
+        int bubbleHeightBefore = ((LayoutBox) bubbleBefore.getCachedLayout()).getHeight();
+        int lineHeightBefore = ((LayoutBox) lineBefore.getCachedLayout()).getHeight();
+        int effectiveBefore = lineBefore.effectiveFontSize();
+        Integer explicitBefore = lineBefore.getExplicitFontSize();
+        Assert.assertNotNull("行节点必须显式声明字号（层1 = 设计值）", explicitBefore);
+        Assert.assertEquals("层1 声明 = 设计值（倍率不得写回声明）",
+                ChatMarkdownSettings.getChatFontSizePx(), explicitBefore.intValue());
+        Assert.assertEquals("100% 有效字号 = 设计值", explicitBefore.intValue(), effectiveBefore);
+        Assert.assertEquals("100% 行框高 = 设计行高",
+                ChatMarkdownSettings.getChatLineHeightPx(), lineHeightBefore);
+        // 宿主行高口径（func_146244_h）在 100% 下必须等于 scene 行框高（倍率改动前取样）
+        ChatCore core = new ChatCore(controller);
+        float hostLineHeightBefore = core.chatLineHeight();
+        Assert.assertEquals("宿主行高口径 = scene 行框高（100%）",
+                (float) lineHeightBefore, hostLineHeightBefore, 0.001F);
+
+        rt.setFontScale(150);
+        controller.tick(T0 + 1000L);
+        rt.__tickFrame(1L);   // 逐行几何复算走帧效应（rt.__frameTimeNanos 绑定）
+        rt.flush();
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+
+        SceneNode bubbleAfter = hudGroups(root).get(0).__getChildren().get(1);
+        SceneNode lineAfter = hudLineNodesOfFirstGroup(root).get(0);
+        int bubbleHeightAfter = ((LayoutBox) bubbleAfter.getCachedLayout()).getHeight();
+        int lineHeightAfter = ((LayoutBox) lineAfter.getCachedLayout()).getHeight();
+        int effectiveAfter = lineAfter.effectiveFontSize();
+        Integer explicitAfter = lineAfter.getExplicitFontSize();
+
+        Assert.assertEquals("层1 声明仍 = 设计值（倍率只在解析出口生效一次，避免 2×2 重复缩放）",
+                Integer.valueOf(explicitBefore.intValue()),
+                explicitAfter == null ? null : Integer.valueOf(explicitAfter.intValue()));
+        Assert.assertEquals("150% 有效字号 = round(设计字号 × 1.5)",
+                Math.round(ChatMarkdownSettings.getChatFontSizePx() * 1.5F), effectiveAfter);
+        Assert.assertEquals("150% 行框高 = round(设计行高 × 1.5)",
+                Math.round(ChatMarkdownSettings.getChatLineHeightPx() * 1.5F), lineHeightAfter);
+        Assert.assertTrue("有效字号必须变大（" + effectiveBefore + " → " + effectiveAfter + "）",
+                effectiveAfter > effectiveBefore);
+        Assert.assertTrue("行框高必须变大（" + lineHeightBefore + " → " + lineHeightAfter + "）",
+                lineHeightAfter > lineHeightBefore);
+        Assert.assertEquals("气泡高按行高增量同步变大（"
+                        + bubbleHeightBefore + " → " + bubbleHeightAfter + "）",
+                bubbleHeightBefore + (lineHeightAfter - lineHeightBefore), bubbleHeightAfter);
+        // 宿主行高口径必须与 scene 行框同值：否则真机按设计值预留、scene 画放大后的行高
+        // ⇒ 150% 下裁切/重叠（RC-06 闭合点；ChatCore → effectiveChatLineHeightPx）。
+        Assert.assertEquals("宿主行高口径 = scene 行框高（150%）",
+                (float) lineHeightAfter, core.chatLineHeight(), 0.001F);
+        System.out.println("[S5-3][RC-06] 设计字号=" + ChatMarkdownSettings.getChatFontSizePx()
+                + " 设计行高=" + ChatMarkdownSettings.getChatLineHeightPx()
+                + " | 100%: 有效字号=" + effectiveBefore + " 行框高=" + lineHeightBefore
+                + " 气泡高=" + bubbleHeightBefore
+                + " | 150%: 有效字号=" + effectiveAfter + " 行框高=" + lineHeightAfter
+                + " 气泡高=" + bubbleHeightAfter
+                + " | 层1声明=" + explicitBefore + "->" + explicitAfter
+                + " | 宿主行高口径=" + hostLineHeightBefore + "->" + core.chatLineHeight()
+                + "（=scene 行框高 100%/150%）");
     }
 
     /** root → 组节点气泡的行节点列表(HUD 树,单消息他人组)。 */

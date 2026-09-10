@@ -9,6 +9,7 @@ import com.github.bsideup.jabel.Desugar;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
@@ -209,12 +210,18 @@ public final class SceneSelectPrimitive {
         });
 
         AnchorProvider anchorProvider = AnchorProvider.forNode(trigger);
-        rt.portalAnchored(
+        // listbox 建在 portal 树里，与 trigger 不同树 → 父链继承覆盖不到：
+        // 用 portal 入口把「trigger 的字号声明」落到内容根（内容根持声明，项标签沿父链继承）。
+        // 读声明值（不读生效值）避免用户倍率在接收节点重复生效；每个布局纪元重新断言当前声明，
+        // 值未变时入口内部去重，不产生新订阅。
+        ScenePortalHandle listboxPortal = rt.portalAnchored(
                 expanded,
                 () -> buildListbox(rt, props, expanded, highlightedIndex),
                 OverlayDismissPolicy.DEFAULT,
                 () -> collapse(expanded, highlightedIndex),
                 anchorProvider);
+        listboxPortal.fontSize(trigger.declaredFontSize());
+        rt.bind(rt.layoutDoneSignal(), epoch -> listboxPortal.fontSize(trigger.declaredFontSize()));
 
         return new Result(trigger, label, arrow, expanded, highlightedIndex);
     }

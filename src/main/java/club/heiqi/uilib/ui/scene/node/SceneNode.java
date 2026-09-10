@@ -214,6 +214,26 @@ public class SceneNode {
     /** 解析缓存：是否有效（写侧失效把它置 false）。 */
     private boolean fontResolved;
 
+    /**
+     * 宽轴下限（UI 逻辑像素），0 = 无下限。
+     *
+     * <p>与 {@code preferredWidth} 的分工：preferredWidth 是<b>目标宽</b>（SHRINK 容器上会被内容宽取代），
+     * minWidth 是<b>收缩不得越过的下限</b>。二者关系为
+     * {@code effectiveWidth = max(minWidth, clamp(naturalOrPreferred, maxWidth))} —— 语义同 CSS
+     * {@code min-width} 与 {@code width} 的关系。</p>
+     *
+     * <p><b>clamp 接入点（S5 已落地）</b>：① {@code SizingCalculator.clampWidth}（computeWidth
+     * 全部非 preferredWidth 出口）；② {@code FlexLayouter} 的 STRETCH 改写分支（父容器改写子宽
+     * 时同样保下限）。{@code preferredWidth > 0} 的显式钉死分支不参与 min/max 钳制（既有约定：
+     * 显式钉死优先级最高）。归一：{@code <=0} 表示无下限；与 maxWidth 矛盾时<b>下限优先</b>。</p>
+     */
+    private int minWidth;
+
+    /** 几何派生声明（{@code null} = 未登记）；字号变化时按当前生效字号重算几何槽。 */
+    private FontSizeMetric fontSizeMetric;
+    /** 上次应用几何派生声明时使用的生效字号；{@code Integer.MIN_VALUE} = 从未应用。 */
+    private int fontSizeMetricAppliedPx = Integer.MIN_VALUE;
+
     /** 富文本段流（SEGMENTS 绘制命令载体）；null=未设置。
      *  与 textProps.text 互斥（绘制引擎段流优先）。仅标 PAINT：布局几何由
      *  preferredWidth/Height 显式提供（宽度度量走 font 层，业务布局缓存承担）。 */
@@ -976,6 +996,81 @@ public class SceneNode {
         invalidateFontSubtree();
     }
 
+    /**
+     * 几何派生声明：告诉节点「本节点的某些布局槽是<b>由字号派生</b>的」。
+     *
+     * <p>登记后，节点在<b>生效字号发生变化</b>时（含首次登记）用当前生效字号调用一次
+     * {@code metric}，由它写入派生几何（通常只写 {@link #setPreferredWidth(int)} /
+     * {@link #setPreferredHeight(int)} / {@link #setMinWidth(int)}）。控件因此不必再手写
+     * {@code rt.bind(rt.layoutDoneSignal(), ...)} 重算 —— 字号真值仍然只有一条解析链，
+     * 本接口<b>只声明派生关系，不承载任何字号值</b>（不引入第二套真值）。</p>
+     *
+     * <p>回调触发点：① 本方法登记时立即一次；② {@link #setFontSize}/{@link #setFontScope}/
+     * {@link #clearExplicitFontSize}/{@link #resetFontScope}/{@link #setFallbackFontSize} 等声明
+     * 变化；③ 继承到的字号变化（环境写入 / runtime 默认或倍率广播 / 祖先声明变化向下传播）。
+     * 同一字号值重复触发会被去重（{@code fontSizeMetricAppliedPx}）。</p>
+     *
+     * <p>回调内写布局槽会自动标 LAYOUT（走既有 setter 契约），无需返回值。</p>
+     *
+     * <p><b>同周期生效保证</b>：回调在当前失效周期内<b>同步</b>执行（声明变化路径
+     * {@code onFontDeclarationChanged} 与继承变化路径 {@code invalidateFontSubtree} 都在标脏后
+     * 立即调用），而布局读取发生在之后的布局阶段 —— 因此回调里写的 {@code minWidth} /
+     * {@code preferredWidth} 在本帧布局就已被 {@code SizingCalculator.clampWidth} 读到，
+     * 不会出现「回调改了 minWidth 但本帧 clamp 用旧值」。</p>
+     *
+     * @param metric 派生回调；{@code null} = 取消登记（节点不再响应字号变化重算几何）
+     * @return 本节点（链式）
+     */
+    public SceneNode setFontSizeMetric(FontSizeMetric metric) {
+        this.fontSizeMetric = metric;
+        this.fontSizeMetricAppliedPx = Integer.MIN_VALUE;   // 重新登记 → 允许按当前字号再算一次
+        applyFontSizeMetric();
+        return this;
+    }
+
+    /** @return 是否已登记几何派生声明 */
+    public boolean hasFontSizeMetric() {
+        return fontSizeMetric != null;
+    }
+
+    /** @return 上次应用几何派生声明时使用的生效字号；{@code Integer.MIN_VALUE} = 尚未应用。 */
+    public int __getFontSizeMetricAppliedPx() {
+        return fontSizeMetricAppliedPx;
+    }
+
+    /**
+     * 按当前生效字号应用几何派生声明（同字号去重）。
+     *
+     * <p>由字号失效路径调用；未登记时为 O(1) 空操作。</p>
+     */
+    private void applyFontSizeMetric() {
+        FontSizeMetric metric = fontSizeMetric;
+        if (metric == null) {
+            return;
+        }
+        int px = effectiveFontSize();
+        if (fontSizeMetricAppliedPx == px) {
+            return;
+        }
+        fontSizeMetricAppliedPx = px;
+        metric.apply(this, px);
+    }
+
+    /**
+     * 几何派生回调：把「生效字号」映射为该节点的派生布局槽。
+     *
+     * <p>实现约定：只写派生布局属性（preferredWidth/Height、minWidth 等），
+     * <b>不得</b>回写字号（否则形成反馈环）。调用发生在字号失效路径内，本节点此时已标脏。</p>
+     */
+    @FunctionalInterface
+    public interface FontSizeMetric {
+        /**
+         * @param node        声明所属节点
+         * @param fontSizePx  当前生效字号（UI 逻辑像素，已含用户倍率）
+         */
+        void apply(SceneNode node, int fontSizePx);
+    }
+
     /** @return 内部探针：本节点是否已持有字号解析缓存（供测试/守卫断言反例结构）。 */
     public boolean __isFontResolved() {
         return fontResolved;
@@ -1032,6 +1127,10 @@ public class SceneNode {
             markSelfPaint();
             setCachedTextPlan(null);               // 行计划与字号强耦合，必须同步作废
         }
+        // 几何派生声明刷新必须发生在两种分支：hadCache==false 的容器（从不被读字号的常态）
+        // 同样要按当前生效字号重算派生几何；未登记 metric 时只是一次 null 检查（O(1)）。
+        // 值变剪枝（上面的 return）已保证「值未变」时不需要重算。
+        applyFontSizeMetric();
         // hadCache == false：本节点自身从未解析（容器常态），没有「本节点的」脏标可打，
         // 但**必须继续下潜** —— 子节点可能已解析且持有独立缓存。
         invalidateFontDescendants();
@@ -1053,6 +1152,7 @@ public class SceneNode {
         markSelfLayout();
         markSelfPaint();
         setCachedTextPlan(null);                   // 行计划与字号强耦合，必须同步作废
+        applyFontSizeMetric();                     // 几何派生槽随生效字号重算
         invalidateFontDescendants();
     }
 
@@ -1325,6 +1425,33 @@ public class SceneNode {
 
     /** @see SceneLayoutProps#maxWidth */
     public int getMaxWidth() { return layoutProps.maxWidth; }
+
+    /**
+     * 设置宽轴下限（UI 逻辑像素），0 = 无下限；变化时标 LAYOUT。
+     *
+     * <p>与 {@link #setPreferredWidth(int)} 的分工见 {@link #getMinWidth()}。归一：负值按 0
+     * （= 无下限）处理，不做上界钳制（与 maxWidth 组合的矛盾由引擎按「下限优先」处理）。</p>
+     *
+     * <p><b>可证伪断言</b>（宽度下限是否真的进了布局）：对短内容节点（如 {@code setText("x")}
+     * 的文本叶，无 preferredWidth）设 {@code setMinWidth(72)} → 跑一轮 layout →
+     * {@code ((LayoutBox) node.getCachedLayout()).getWidth() == 72}；随后 {@code setMinWidth(0)}
+     * 再跑一轮 layout → 回到自然宽（{@code < 72}）。若 clamp 未接入，第一条断言读到自然宽而红。</p>
+     *
+     * @param minWidth 宽轴下限；{@code <=0} 表示无下限
+     * @return 本节点（链式）
+     */
+    public SceneNode setMinWidth(int minWidth) {
+        int normalized = Math.max(0, minWidth);
+        if (this.minWidth == normalized) return this;
+        this.minWidth = normalized;
+        markSelfLayout();
+        return this;
+    }
+
+    /**
+     * @return 宽轴下限；0 = 无下限
+     */
+    public int getMinWidth() { return minWidth; }
 
     /** @see SceneLayoutProps#percentHeight */
     public SceneNode setPercentHeight(int percentHeight) {

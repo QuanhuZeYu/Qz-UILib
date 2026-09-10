@@ -109,7 +109,7 @@ public class ChatMarkdownContentTest {
         ChatMarkdownContent.Result[] content = {null};
         int[] epoch = {1};
         rt.mount(root, () -> {
-            content[0] = ChatMarkdownContent.create(rt, 40, true,
+            content[0] = ChatMarkdownContent.create(rt, () -> 40, true, 14,
                     width -> pipeline.layoutContent(SOURCE, -1, width, 14, null, metrics, epoch[0]), (node, command) -> {});
             return content[0].root;
         });
@@ -150,7 +150,7 @@ public class ChatMarkdownContentTest {
         SceneNode root = SceneNode.column();
         ChatMarkdownContent.Result[] content = {null};
         rt.mount(root, () -> {
-            content[0] = ChatMarkdownContent.create(rt, 30, false,
+            content[0] = ChatMarkdownContent.create(rt, () -> 30, false, 14,
                     width -> pipeline.layoutContent(SOURCE, -1, width, 14, null, metrics, 1),
                     (node, command) -> fail("HUD 不装链接输入"));
             return content[0].root;
@@ -173,7 +173,7 @@ public class ChatMarkdownContentTest {
                 java.util.Collections.emptyList(), 100, 20);
         ChatMarkdownContent.Result[] content = {null};
         rt.mount(root, () -> {
-            content[0] = ChatMarkdownContent.create(rt, 40, true,
+            content[0] = ChatMarkdownContent.create(rt, () -> 40, true, 14,
                     width -> width < 300 ? wide : small, (node, command) -> {});
             return content[0].root;
         });
@@ -210,7 +210,7 @@ public class ChatMarkdownContentTest {
             AtomicInteger layouts = new AtomicInteger();
             ChatMarkdownContent.Result[] content = {null};
             club.heiqi.uilib.ui.scene.runtime.MountHandle mounted = rt.mount(root, () -> {
-                content[0] = ChatMarkdownContent.create(rt, 40, true, width -> {
+                content[0] = ChatMarkdownContent.create(rt, () -> 40, true, 14, width -> {
                     layouts.incrementAndGet();
                     return plan;
                 }, (node, command) -> {});
@@ -254,7 +254,7 @@ public class ChatMarkdownContentTest {
                 java.util.Collections.emptyList(), 100, 20);
         ChatMarkdownContent.Result[] content = {null};
         rt.mount(root, () -> {
-            content[0] = ChatMarkdownContent.create(rt, 40, true,
+            content[0] = ChatMarkdownContent.create(rt, () -> 40, true, 14,
                     width -> width < 300 ? wide : small, (node, command) -> {});
             return content[0].root;
         });

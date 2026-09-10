@@ -55,6 +55,8 @@ public class ControlFontRuntimeGuardTest {
     private static final int SCOPE_PX = 24;
     private static final int CANVAS_WIDTH = 1280;
     private static final int CANVAS_HEIGHT = 960;
+    /** 帧护栏预算：连续推进的帧数（每帧推一次字号信号，强制 layoutDoneSignal 推进）。 */
+    private static final int FRAME_BUDGET = 8;
     private static final String[] LABELS = {"One", "Two", "Three"};
     private static final List<String> OPTIONS = Arrays.asList("Low", "Mid", "High");
     private static final Runnable NOOP = new Runnable() {
@@ -256,6 +258,39 @@ public class ControlFontRuntimeGuardTest {
         SceneToast.show(fixture.runtime, "通知", 5_000_000_000L);
         fixture.frameOverlay();
         assertPaintedSizes("SceneToast", fixture, SCOPE_PX);
+    }
+
+    /**
+     * S5 运行期护栏：连续 N 帧 layoutDoneSignal 推进不得增长入口控件 Owner 上的 effect。
+     *
+     * <p>防的是「每帧重断言/每帧重绑定」退化成每帧叠订阅：帧推进本身（含字号信号每帧变化）
+     * 只应驱动既有绑定的重算，不得新建 effect。预热两档字号让懒建内容先物化，再测 8 帧净增量。</p>
+     */
+    @Test
+    public void framesDoNotAccumulateEffectsOnEntryControlOwner() {
+        StringBuilder leaking = new StringBuilder();
+        for (Map.Entry<String, InlineMounter> entry : INLINE.entrySet()) {
+            Fixture fixture = fixture();
+            MountHandle handle = entry.getValue().mount(fixture.runtime, fixture.parent);
+            Signal<Integer> size = Signal.create(Integer.valueOf(16));
+            handle.fontSize(size);
+            fixture.frame();
+            size.set(Integer.valueOf(20));
+            fixture.frame();
+            size.set(Integer.valueOf(24));
+            fixture.frame();
+            int before = ReactiveTestProbe.registeredEffectCount();
+            for (int i = 0; i < FRAME_BUDGET; i++) {
+                size.set(Integer.valueOf(i % 2 == 0 ? 28 : 24));
+                fixture.frame();
+            }
+            int after = ReactiveTestProbe.registeredEffectCount();
+            if (after - before > 0) {
+                leaking.append(entry.getKey()).append("(+").append(after - before).append(") ");
+            }
+        }
+        Assert.assertEquals("连续帧推进不得增长 effect（每帧重断言 = 每帧叠订阅）",
+                "", leaking.toString());
     }
 
     /** 装饰字面值保持独立：勾选标记/把手不被强拉成控件字号，但必须登记豁免。 */

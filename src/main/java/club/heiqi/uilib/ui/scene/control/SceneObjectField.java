@@ -66,7 +66,12 @@ public final class SceneObjectField {
     private static final int CELL_GAP = 6;
     /** 缩进宽度。 */
     private static final int INDENT = 14;
-    /** 标签宽度。 */
+    /**
+     * 标签轨道宽（结构尺寸，与输入列跨行对齐，不随字号变；UI 逻辑像素）。
+     *
+     * <p>文字溢出由 {@code maxTextWidth = LABEL_WIDTH + maxLines=1 + ellipsis} 承担（见
+     * {@code applyLabelTrack}）：固定轨道 + 无溢出策略 = 长字段名压到输入框上。</p>
+     */
     private static final int LABEL_WIDTH = 132;
     /** 输入宽度。 */
     private static final int INPUT_WIDTH = 220;
@@ -501,7 +506,7 @@ public final class SceneObjectField {
         header.appendChild(toggle.root());
 
         SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
-        label.setPreferredWidth(LABEL_WIDTH);
+        applyLabelTrack(label);
         header.appendChild(label);
         header.appendChild(textNode(rt, "对象", SceneThemes.mutedForeground(rt)));
 
@@ -528,7 +533,7 @@ public final class SceneObjectField {
 
         // 字段名是用户数据文本：前景取主题正文色（随主题重派生），不改文本内容与排序语义。
         SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
-        label.setPreferredWidth(LABEL_WIDTH);
+        applyLabelTrack(label);
         row.appendChild(label);
 
         SceneInputType inputType = fieldType == FieldType.NUMBER ? SceneInputType.NUMBER : SceneInputType.TEXT;
@@ -561,7 +566,7 @@ public final class SceneObjectField {
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(CELL_GAP);
         SceneNode label = textNode(rt, key, SceneThemes.foreground(rt));
-        label.setPreferredWidth(LABEL_WIDTH);
+        applyLabelTrack(label);
         row.appendChild(label);
         row.appendChild(textNode(rt, text, SceneThemes.warningText(rt)));
         return row;
@@ -824,6 +829,21 @@ public final class SceneObjectField {
      * @param color 主题语义前景信号（如 {@link SceneThemes#foreground(SceneRuntime)}）
      * @return 文本节点
      */
+    /**
+     * 字段名轨道：固定宽（结构轨道，跨行对齐、不随字号变）+ 单行省略溢出策略。
+     *
+     * <p>溢出策略（INV-GEO-4）：槽宽固定时不声明省略，长字段名会直接压到输入框上——
+     * 与「文字变了框没变是缺陷」同源；声明 {@code maxTextWidth + maxLines=1 + ellipsis} 后
+     * 超长字段名以 {@code ...} 可见截断，字号变大时行高随叶自然行高变高。</p>
+     *
+     * @param label 标签节点（{@link #textNode} 产物）
+     */
+    private static void applyLabelTrack(SceneNode label) {
+        label.setPreferredWidth(LABEL_WIDTH);
+        label.setMaxTextWidth(LABEL_WIDTH);
+        label.setMaxLines(1);
+        label.setEllipsis(true);
+    }
     private static SceneNode textNode(SceneRuntime rt, String text, ReadableSignal<Integer> color) {
         SceneNode node = new SceneNode();
         node.setHitTestable(false);

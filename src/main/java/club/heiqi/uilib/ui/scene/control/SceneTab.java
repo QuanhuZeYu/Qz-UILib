@@ -130,8 +130,9 @@ public final class SceneTab {
      *                         调用方需自行让各页内容 panel {@code setFillParentHeight(true)} 才能真正吃到父高。
      *                         默认 {@code false}（走 5 参重载）保持旧行为：contentPanel 按内容自然高 shrink。</p>
      * @param fontSize         页签标签字号（UI 像素，响应式）；null = 不指定，沿用
-     *                         {@link #TAB_LABEL_FONT_SIZE}。注意页签宽度是固定 {@link #TAB_WIDTH}，
-     *                         调大字号前请确认标签文本在固定宽内仍可容纳。
+     *                         {@link #TAB_LABEL_FONT_SIZE}。页签宽度 = 标签文本宽 + 2*内边距
+     *                         （SHRINK 派生，随字号同步变化），{@link #TAB_WIDTH} 是<b>最小段宽</b>
+     *                         （短标签保持等宽节奏，长标签不会截断）。
      */
     @Desugar
     public record Props(
@@ -233,11 +234,11 @@ public final class SceneTab {
             final ReadableSignal<Integer> configuredFontSize = props.fontSize();
             final Integer configuredFontSizeValue =
                     configuredFontSize == null ? null : configuredFontSize.get();
-            final int labelFontSize = configuredFontSizeValue == null
-                    ? TAB_LABEL_FONT_SIZE : configuredFontSizeValue.intValue();
             // ① 建树一次（无副作用，I3）—— 纵向容器：tabBar 在上、contentPanel 在下
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
+            // 层 4a 回落值：数值与框架层 4b 默认同值（16），层 1/2/3 均优先于它。
+            root.setFallbackFontSize(TAB_LABEL_FONT_SIZE);
             if (configuredFontSize != null) {
                 if (configuredFontSizeValue != null) {
                     root.setFontScope(configuredFontSizeValue.intValue());
@@ -274,8 +275,11 @@ public final class SceneTab {
             // 导致 computeColumnGrowHeights 早退、root 放弃向 contentPanel 分配 grow 高（fill 失效）。
             // 照 SceneSegmented#create 内置默认高口径补 preferredHeight = 标签行高 + 2*段内边距。
             // 非 fill 模式不设（保持旧行为，tabBar 按内容自然高 shrink）。
+            // S5 收口：条高由字号派生，setFontSizeMetric 登记即算一次、其后仅在生效字号变化时重算
+            // （同字号去重），不再手写 layoutDone 重算 effect。
             if (props.fillContentPanel()) {
-                tabBar.setPreferredHeight(rt.lineHeight(labelFontSize) + 2 * TAB_PADDING);
+                tabBar.setFontSizeMetric((node, fontSizePx) ->
+                        node.setPreferredHeight(rt.lineHeight(fontSizePx) + 2 * TAB_PADDING));
             }
             root.appendChild(tabBar);
 
@@ -290,7 +294,7 @@ public final class SceneTab {
             ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
 
             for (SceneSingleSelectPrimitive.ItemHandle handle : result.items()) {
-                // tabSeg[i]：交互单元（hitTestable 默认 true），ROW + 主/交叉轴 CENTER + 固定段宽。
+                // tabSeg[i]：交互单元（hitTestable 默认 true），ROW + 主/交叉轴 CENTER + SHRINK 段宽。
                 // 圆角/边框宽/边框色/染色/滤镜/实体高度全由表面绑定器从 INDICATOR 选中配方派生：
                 // 构造期不再静态 setCornerRadius/setBorderWidth/setBorderColor（同一属性只留一个写入者）。
                 SceneNode tabSeg = handle.item();
@@ -298,8 +302,15 @@ public final class SceneTab {
                 tabSeg.setMainAxisAlign(MainAxisAlign.CENTER);
                 tabSeg.setCrossAxisAlign(CrossAxisAlign.CENTER);
                 tabSeg.setPadding(TAB_PADDING);
-                // 段宽按标签测量（TAB_WIDTH 作最小宽）：字号参与测量，故构建期与运行期同一口径。
-                tabSeg.setPreferredWidth(tabWidth(rt, props.tabLabels().get(handle.index()), labelFontSize));
+                // 段宽 = max(TAB_WIDTH, 标签文本宽 + 2*内边距)，由字号派生声明给出（S5 收口）：
+                // TAB_WIDTH 既作 setMinWidth 声明（下限语义），也写进派生值（显式 preferredWidth 分支
+                // 不参与 min/max 钳制，下限必须在值里表达）；标签文本取构建期常量表，
+                // 与 primitive 的 rt.bindText 落值时序解耦，首帧即正确。
+                final String title = props.tabLabels().get(handle.index());
+                tabSeg.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+                tabSeg.setMinWidth(TAB_WIDTH);
+                tabSeg.setFontSizeMetric((node, fontSizePx) -> node.setPreferredWidth(
+                        Math.max(TAB_WIDTH, rt.measureTextWidth(title, fontSizePx) + 2 * TAB_PADDING)));
 
                 // label[i]：段内纯文本装饰子节点，命中穿透到段（契约 R6）；字号沿父链继承。
                 tabSeg.appendChild(handle.label());
@@ -350,26 +361,6 @@ public final class SceneTab {
             for (int idx = 0; idx < panels.size(); idx++) {
                 rt.show(contentPanel, items.get(idx).selected(), panels.get(idx));
             }
-
-            // 条高从 root 生效字号派生：只有 fill 模式的条高是显式 preferredHeight（非 fill 模式由内容
-            // 自然高决定，随标签行高自动变化）。同值早退，避免与布局形成反馈环。
-            // （S5 由 setFontSizeMetric 接管后删除本段手写重算。）
-            final boolean fillContentPanel = props.fillContentPanel();
-            final int[] appliedFontSize = {labelFontSize};
-            rt.bind(rt.layoutDoneSignal(), epoch -> {
-                int fontSize = root.effectiveFontSize();
-                if (fontSize == appliedFontSize[0]) {
-                    return;
-                }
-                appliedFontSize[0] = fontSize;
-                if (fillContentPanel) {
-                    tabBar.setPreferredHeight(rt.lineHeight(fontSize) + 2 * TAB_PADDING);
-                }
-                for (int i = 0; i < items.size(); i++) {
-                    items.get(i).item().setPreferredWidth(
-                            tabWidth(rt, props.tabLabels().get(i), fontSize));
-                }
-            });
 
             return root;
         };
@@ -422,21 +413,6 @@ public final class SceneTab {
             out |= Math.max(0, Math.min(0xFF, value)) << shift;
         }
         return out;
-    }
-
-    /**
-     * 段宽 = max(最小宽, 按字号测出的标签文本宽 + 2*内边距)。
-     *
-     * <p>构建期与运行期共用同一口径；字号变化时由段宽重算保证文字与框同步。</p>
-     *
-     * @param rt           场景运行时（提供文本度量）
-     * @param label        标签文本
-     * @param labelFontSize 标签字号（UI 像素）
-     * @return 段宽（像素）
-     */
-    private static int tabWidth(SceneRuntime rt, String label, int labelFontSize) {
-        int textWidth = rt.measureTextWidth(label, labelFontSize);
-        return Math.max(TAB_WIDTH, textWidth + 2 * TAB_PADDING);
     }
 
     /** WCAG 相对对比度：(L亮 + 0.05) / (L暗 + 0.05)。 */

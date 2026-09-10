@@ -895,10 +895,14 @@ public final class ChatMessageList {
         boolean selfRight = group.getAlignment() == MessageGroupModel.Alignment.SELF_RIGHT;
         // K3 三轮:系统消息独立字号/行高(font-system 12/16,设计稿 §2.2/§3.4),
         // 不再沿用 body 13/18;行段宽与链接命中区度量随之同源(12px 口径)
-        int fontSize = system || markdownSystem ? ChatMarkdownSettings.getSystemFontSizePx()
+        // RC-06：声明口径 = 设计字号（节点层 1 声明；倍率在解析出口作用一次，避免重复缩放）；
+        // 几何口径 = 设计值 × 用户倍率（换行/行高/段宽/气泡几何全部用它），否则倍率下「文字放大、行框不变」。
+        final int declaredFontSize = system || markdownSystem ? ChatMarkdownSettings.getSystemFontSizePx()
                 : ChatMarkdownSettings.getChatFontSizePx();
-        int lineHeight = system || markdownSystem ? ChatMarkdownSettings.getSystemLineHeightPx()
+        final int declaredLineHeight = system || markdownSystem ? ChatMarkdownSettings.getSystemLineHeightPx()
                 : ChatMarkdownSettings.getChatLineHeightPx();
+        int fontSize = ChatFontMetrics.scalePx(rt, declaredFontSize);
+        int lineHeight = ChatFontMetrics.scalePx(rt, declaredLineHeight);
         int paddingX = ChatMarkdownSettings.getBubblePaddingX();
         int paddingY = ChatMarkdownSettings.getBubblePaddingY();
         AlignSelf align;
@@ -955,11 +959,11 @@ public final class ChatMessageList {
                         // K3 真机修复:组头文本节点缺 preferredHeight → 行高塌为 0(文本被气泡
                         // 背景覆盖的"幽影");段流节点不走文本度量,布局几何必须显式钉高
                         // (设计稿 §3.3:组头一行高 16)
-                        .setPreferredHeight(HEADER_ROW_HEIGHT_PX);
+                        .setPreferredHeight(ChatFontMetrics.scalePx(rt, HEADER_ROW_HEIGHT_PX));
                 // K3 缺陷 2:段流节点无文本 → 布局宽 = fill 全宽,把 SHRINK 组头/组顶回全宽;
                 // 注入度量时钉段流实宽(度量未注入的纯文本形态保持旧行为)
                 float nameWidth = segmentsWidth(headerNameBase, segmentMeasurer,
-                        ChatMarkdownSettings.getNameFontSizePx());
+                        ChatFontMetrics.scalePx(rt, ChatMarkdownSettings.getNameFontSizePx()));
                 if (nameWidth >= 0.0F) {
                     nameNode.setPreferredWidth(Math.max(1, (int) Math.ceil(nameWidth)));
                 }
@@ -974,9 +978,9 @@ public final class ChatMessageList {
                         .setSegments(headerTimeBase)
                         .setTextVerticalAlign(TextVerticalAlign.CENTER)
                         // 与名字节点同因(段流节点无文本度量):钉 16px 保组头行不塌(K3 缺陷 1)
-                        .setPreferredHeight(HEADER_ROW_HEIGHT_PX);
+                        .setPreferredHeight(ChatFontMetrics.scalePx(rt, HEADER_ROW_HEIGHT_PX));
                 float timeWidth = segmentsWidth(headerTimeBase, segmentMeasurer,
-                        ChatMarkdownSettings.getTimestampFontSizePx());
+                        ChatFontMetrics.scalePx(rt, ChatMarkdownSettings.getTimestampFontSizePx()));
                 if (timeWidth >= 0.0F) {
                     timeNode.setPreferredWidth(Math.max(1, (int) Math.ceil(timeWidth)));
                 }
@@ -1021,6 +1025,9 @@ public final class ChatMessageList {
         int rLg = initialSurface == null ? 0 : initialSurface.outerCornerRadiusPx();
         int rInner = initialSurface == null ? 0 : initialSurface.innerCornerRadiusPx();
         List<SceneNode> messageNodes = new ArrayList<SceneNode>();
+        // RC-06：倍率变化（scene fontEpoch++）后，已建行节点要按「新有效字号」重算行框高/宽。
+        // 每个行节点登记一个重算闭包，本组末尾用<b>一个</b>帧时间 effect 统一驱动（不逐节点建 effect）。
+        final List<Runnable> geometryReappliers = new ArrayList<Runnable>();
         // 与 messageNodes 同序:点击时交出服务端组件(原版语义优先于我们的链接跨度)
         List<IChatComponent> messageComponents = new ArrayList<IChatComponent>();
         List<SceneNode> accentBars = new ArrayList<SceneNode>();
@@ -1097,7 +1104,8 @@ public final class ChatMessageList {
                 // 表格显式消息及 display 数学内容复用同一滚动宿主；普通消息保留历史行路。
                 messageNode.setFillParentWidth(true).setWidthSizing(SceneNode.WidthSizing.FILL);
                 ChatMarkdownContent.Result content = ChatMarkdownContent.create(rt,
-                        ChatCardComposer.HUD_MAX_LINES * lineHeight, !style.isTtlFade(),
+                        () -> ChatFontMetrics.scalePx(rt, ChatCardComposer.HUD_MAX_LINES * declaredLineHeight),
+                        !style.isTtlFade(), declaredFontSize,
                         width -> markdown.layoutContent(message.getDisplayText(),
                                 baseTextColor, width, fontSize, segmentPostProcessor),
                         (node, command) -> attachContentLink(rt, node, command, message.getRecord().getComponent(), frameMillis));
@@ -1159,7 +1167,7 @@ public final class ChatMessageList {
                     // 但保留 URL 原 § 格式色(LinkifyMode.PRESERVE)、不强制 0xFF7AB8F5;
                     // 系统消息不套 markdown 排版规则(§3.5 仅作用于气泡内)。
                     segments = parseCached(renderLine, lineBaseColor,
-                            segmentMeasurer == null ? LinkifyMode.NONE : LinkifyMode.PRESERVE);
+                            segmentMeasurer == null ? LinkifyMode.NONE : LinkifyMode.PRESERVE, fontSize);
                     // —— 跨显示行 URL 续链:上一行末尾是未闭合 URL 且本行是词内硬断续行 ——
                     String chainRun = null;
                     if (continuesWord && urlChain.open()) {
@@ -1182,7 +1190,7 @@ public final class ChatMessageList {
                             // 续链行的段流是链上叠加产物,不在 hoverCached 的 key 空间里,
                             // 必须由最终段流现推(hoverLinkify 只改色与下划线,零副作用)
                             hover = chainRun == null
-                                    ? hoverCached(renderLine, lineBaseColor, LinkifyMode.PRESERVE)
+                                    ? hoverCached(renderLine, lineBaseColor, LinkifyMode.PRESERVE, fontSize)
                                     : ChatUrlLinkifier.hoverLinkify(segments,
                                             ChatMarkdownSettings.getLinkHoverArgb());
                         }
@@ -1228,7 +1236,7 @@ public final class ChatMessageList {
                 // 下方，单行气泡看起来贴底。四处段流节点(组头名/时间/块公式/正文行)同因。
                 SceneNode lineNode = new SceneNode()
                         .setHitTestable(false)
-                        .setFontSize(fontSize)
+                        .setFontSize(declaredFontSize)   // 设计值声明；渲染尺寸由解析出口 ×倍率 得到
                         .setSegments(segments)
                         .setTextVerticalAlign(TextVerticalAlign.CENTER)
                         .setPreferredHeight(Math.max(1, lineHeight));
@@ -1295,6 +1303,56 @@ public final class ChatMessageList {
                     int padSideX = codeLine ? CODE_BG_SIDE_PAD_PX : 0;
                     lineNode.setPadding(0, padSideX, 0, padSideX + listExtra);
                 }
+                // RC-06 反应式几何：倍率变化后按新有效字号重算本行行框高与行宽（换行/列宽同口径）。
+                final SceneNode nodeForReapply = lineNode;
+                final int builtFontSize = fontSize;
+                final List<TextSegment> segmentsForReapply = segments;
+                final ChatMarkdownPipeline.RenderedLine renderedForReapply = rendered;
+                final boolean ruleLineForReapply = ruleLine;
+                final boolean codeLineForReapply = codeLine;
+                final int quoteLevelForReapply = quoteLevel;
+                final int listExtraForReapply = listExtra;
+                final int wrapWidthForReapply = message.getWrapWidthPx();
+                geometryReappliers.add(() -> {
+                    int effFontSize = ChatFontMetrics.scalePx(rt, declaredFontSize);
+                    int effLineHeight = ChatFontMetrics.scalePx(rt, declaredLineHeight);
+                    if (effFontSize == builtFontSize && effLineHeight == lineHeight) {
+                        return;
+                    }
+                    nodeForReapply.setPreferredHeight(ruleLineForReapply
+                            ? Math.max(1, renderedForReapply == null ? 1 : renderedForReapply.ruleThicknessPx())
+                            : Math.max(1, effLineHeight));
+                    if (segmentMeasurer == null) {
+                        return;
+                    }
+                    int width;
+                    if (ruleLineForReapply && renderedForReapply != null) {
+                        int roomy = maxBubbleWidthPx > 0
+                                ? maxBubbleWidthPx - 2 * paddingX : wrapWidthForReapply;
+                        width = Math.max(1, roomy - quoteLevelForReapply
+                                * renderedForReapply.indentStepPx() - listExtraForReapply);
+                    } else {
+                        width = Math.max(1,
+                                (int) Math.ceil(segmentsWidth(segmentsForReapply, segmentMeasurer, effFontSize)));
+                        if (codeLineForReapply && renderedForReapply != null
+                                && renderedForReapply.blockContentWidthPx() > 0) {
+                            // 块内统一宽随字号等比放大（管线按旧有效字号烘焙，此处按尺寸比换算）。
+                            double ratio = builtFontSize <= 0 ? 1.0D : (double) effFontSize / (double) builtFontSize;
+                            width = Math.max(width, Math.max(1,
+                                    (int) Math.round(renderedForReapply.blockContentWidthPx() * ratio)
+                                            + 2 * CODE_BG_SIDE_PAD_PX));
+                        }
+                        if (maxBubbleWidthPx > 0 && !system && !markdownSystem) {
+                            int reserve = (accent ? ACCENT_BAR_WIDTH_PX : 0)
+                                    + quoteLevelForReapply
+                                            * (renderedForReapply == null ? 0 : renderedForReapply.indentStepPx())
+                                    + listExtraForReapply;
+                            width = Math.min(width,
+                                    Math.max(1, maxBubbleWidthPx - 2 * paddingX - reserve));
+                        }
+                    }
+                    nodeForReapply.setPreferredWidth(Math.max(1, width));
+                });
                 // T8 设计稿 §5.4(验收 22):HUD 形态行节点携带 maxLines=8 + 省略号语义;
                 // 实际行数截断:气泡路在 ChatMarkdownPipeline.clampHudLines(L2 视觉行 8 行 +
                 // 末行省略号),系统路在 ChatCardComposer(displayLines 上限);此处为节点级
@@ -1501,6 +1559,21 @@ public final class ChatMessageList {
                         LINK_TOOLTIP_MAX_LINES, true));
             }
         }
+        // RC-06：一个帧时间 effect 驱动本组全部行几何重算 —— 仅在 scene 字号环境代变化时执行，
+        // 干净帧只做一次 long 比较（与 ChatMarkdownContent 的逐帧 refresh 同款纪律）。
+        if (!geometryReappliers.isEmpty()) {
+            final long[] appliedFontEpoch = {rt.fontEpoch()};
+            rt.bind(rt.__frameTimeNanos(), frame -> {
+                long epoch = rt.fontEpoch();
+                if (epoch == appliedFontEpoch[0]) {
+                    return;
+                }
+                appliedFontEpoch[0] = epoch;
+                for (int i = 0; i < geometryReappliers.size(); i++) {
+                    geometryReappliers.get(i).run();
+                }
+            });
+        }
         return groupNode;
     }
 
@@ -1700,8 +1773,11 @@ public final class ChatMessageList {
      * 链接化仍恒在 code 语义之后(段流里 codeSpan 位先于 linkify 存在;该顺序曾防 URL 扫描
      * 吞掉成对反引号标记——同理由 L1 行内解析器在 linkify 之前消费定界符承接)。</p>
      */
-    private List<TextSegment> parseCached(String text, int baseColor, LinkifyMode mode) {
-        String key = text + '@' + baseColor + (mode == LinkifyMode.PRESERVE ? '~' : '!');
+    private List<TextSegment> parseCached(String text, int baseColor, LinkifyMode mode,
+            int baseFontSizePx) {
+        // RC-06：LaTeX 行高约束吃「基准字号」⇒ 段缓存 key 并入有效基准字号（倍率变化不得命中旧段流）。
+        String key = text + '@' + baseColor + (mode == LinkifyMode.PRESERVE ? '~' : '!')
+                + '#' + baseFontSizePx;
         List<TextSegment> hit = segmentCache.get(key);
         if (hit != null) {
             return hit;
@@ -1711,7 +1787,7 @@ public final class ChatMessageList {
         // 之前执行——latex 段是原子段,变换均透传,顺序无实质差异;
         // 生产注入 TextLayoutService.applyLatexLineHeightConstraint,测试注入替身/关闭。
         if (segmentPostProcessor != null) {
-            segments = segmentPostProcessor.postProcess(segments, ChatMarkdownSettings.getChatFontSizePx());
+            segments = segmentPostProcessor.postProcess(segments, baseFontSizePx);
         }
         if (segmentMeasurer != null && mode != LinkifyMode.NONE) {
             segments = ChatUrlLinkifier.linkifyPreserveColor(segments);
@@ -1722,14 +1798,16 @@ public final class ChatMessageList {
 
     /** hover 段流缓存(text@baseColor@mode → 链接段换 hover 色 + 下划线;PRESERVE 模式下
      *  常态保留 § 原色,hover 提亮 + 下划线是命中反馈,与气泡一致)。 */
-    private List<TextSegment> hoverCached(String text, int baseColor, LinkifyMode mode) {
-        String key = text + '@' + baseColor + (mode == LinkifyMode.PRESERVE ? '~' : '@');
+    private List<TextSegment> hoverCached(String text, int baseColor, LinkifyMode mode,
+            int baseFontSizePx) {
+        String key = text + '@' + baseColor + (mode == LinkifyMode.PRESERVE ? '~' : '@')
+                + '#' + baseFontSizePx;
         List<TextSegment> hit = hoverSegmentCache.get(key);
         if (hit != null) {
             return hit;
         }
         List<TextSegment> hover = ChatUrlLinkifier.hoverLinkify(
-                parseCached(text, baseColor, mode), ChatMarkdownSettings.getLinkHoverArgb());
+                parseCached(text, baseColor, mode, baseFontSizePx), ChatMarkdownSettings.getLinkHoverArgb());
         hoverSegmentCache.put(key, hover);
         return hover;
     }

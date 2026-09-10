@@ -158,6 +158,11 @@ public class SceneSegmentedTest {
         return segRoot.__getChildren().get(i);
     }
 
+    /** segment[i] 的布局盒（SHRINK 派生段宽后，宽度断言统一读 LayoutBox）。 */
+    private LayoutBox segmentBox(int i) {
+        return (LayoutBox) segmentNode(i).getCachedLayout();
+    }
+
     /** segment[i] 的 label 节点（segment 第一个孩子） */
     private SceneNode labelNode(int i) {
         return segmentNode(i).__getChildren().get(0);
@@ -320,23 +325,25 @@ public class SceneSegmentedTest {
 
     /**
      * 段宽应按其标题文本宽度自适应：短标题段窄、长标题段宽，
-     * 段宽 = 文本宽（每字符 STUB_CHAR_WIDTH）+ 2*SEGMENT_PADDING（PAD_LG=10）。
+     * 段宽 = 文本宽（每字符 STUB_CHAR_WIDTH）+ 2*SEGMENT_PADDING（PAD_LG=12）。
      *
-     * <p>构建期一次性测量固化进 preferredWidth，不引入每段脏标记瀑布（守 I7）。</p>
+     * <p>S5 收口：段 = SHRINK 容器，宽度由布局阶段按生效字号测出的自然宽派生，
+     * 不再写 preferredWidth，故断言读 LayoutBox（既有 preferredWidth 口径已废弃）。</p>
      */
     @Test
     public void segmentWidthShouldAdaptToTitleText() {
-        // OPTIONS = ["Day"(3), "Week"(4), "Month"(5)]，charWidth=8，PAD_LG=10
+        // OPTIONS = ["Day"(3), "Week"(4), "Month"(5)]，charWidth=8，PAD_LG=12
+        doLayout();
         int pad = SceneChromeTokens.PAD_LG;
-        Assert.assertEquals("段[0] 'Day' 宽 = 3*8 + 2*10 = 44",
-                3 * STUB_CHAR_WIDTH + 2 * pad, segmentNode(0).getPreferredWidth());
-        Assert.assertEquals("段[1] 'Week' 宽 = 4*8 + 2*10 = 52",
-                4 * STUB_CHAR_WIDTH + 2 * pad, segmentNode(1).getPreferredWidth());
-        Assert.assertEquals("段[2] 'Month' 宽 = 5*8 + 2*10 = 60",
-                5 * STUB_CHAR_WIDTH + 2 * pad, segmentNode(2).getPreferredWidth());
+        Assert.assertEquals("段[0] 'Day' 宽 = 3*8 + 2*12 = 48",
+                3 * STUB_CHAR_WIDTH + 2 * pad, segmentBox(0).getWidth());
+        Assert.assertEquals("段[1] 'Week' 宽 = 4*8 + 2*12 = 56",
+                4 * STUB_CHAR_WIDTH + 2 * pad, segmentBox(1).getWidth());
+        Assert.assertEquals("段[2] 'Month' 宽 = 5*8 + 2*12 = 64",
+                5 * STUB_CHAR_WIDTH + 2 * pad, segmentBox(2).getWidth());
         // 短标题段窄于长标题段，不留白
         Assert.assertTrue("短标题段窄于长标题段",
-                segmentNode(0).getPreferredWidth() < segmentNode(2).getPreferredWidth());
+                segmentBox(0).getWidth() < segmentBox(2).getWidth());
     }
 
     // ==================== 验收 7：内置默认高（preferredHeight） ====================

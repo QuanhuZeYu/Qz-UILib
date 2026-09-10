@@ -242,6 +242,12 @@ class FlexLayouter {
                         if (maxW > 0 && finalCrossSize > maxW) {
                             finalCrossSize = maxW;
                         }
+                        // minWidth 下界：STRETCH 是父容器对子宽的<b>改写</b>，改写结果同样不得低于
+                        // 子声明的宽轴下限（下限优先于上界，口径同 SizingCalculator.clampWidth）。
+                        int minW = child.getMinWidth();
+                        if (minW > finalCrossSize) {
+                            finalCrossSize = minW;
+                        }
                     }
                     break;
             }

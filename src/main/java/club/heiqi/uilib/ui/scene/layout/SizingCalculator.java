@@ -168,11 +168,17 @@ class SizingCalculator {
     }
 
     /**
-     * 宽度 clamp：maxWidth &gt; 0 时取 {@code min(w, maxWidth)}，否则原值返回。
+     * 宽度 clamp：先按 maxWidth 取上界，再按 minWidth 取下界。
+     *
+     * <p>公式（与 {@link SceneNode#setMinWidth(int)} 的 javadoc 同源）：
+     * {@code effectiveWidth = max(minWidth, clamp(naturalOrPreferred, maxWidth))}，
+     * 即 0 值表示「该侧无约束」，两侧都为零时原值返回。归一：{@code minWidth <= 0} 无下限、
+     * {@code maxWidth <= 0} 无上界；两者矛盾（{@code minWidth > maxWidth}）时<b>下限优先</b>
+     * ——与 preferredWidth 不被 maxWidth 压低的既有取舍同口径（下限/目标不被上界抑制）。</p>
      *
      * <p>仅用于 computeWidth 非 preferredWidth 分支出口。preferredWidth 显式钉死分支
-     * 不 clamp（优先级最高）。maxWidth 是外尺寸上界（含 padding），与 computeWidth
-     * 返回值口径一致。</p>
+     * 不参与 min/max 钳制（优先级最高，既有约定）。maxWidth/minWidth 均为<b>外尺寸</b>
+     * （含 padding），与 computeWidth 返回值口径一致。</p>
      *
      * @param node 节点
      * @param w    待 clamp 的宽度（外尺寸，含 padding）
@@ -180,7 +186,9 @@ class SizingCalculator {
      */
     private static int clampWidth(SceneNode node, int w) {
         int max = node.getMaxWidth();
-        return max > 0 ? Math.min(w, max) : w;
+        int clamped = max > 0 ? Math.min(w, max) : w;
+        int min = node.getMinWidth();
+        return min > 0 ? Math.max(clamped, min) : clamped;
     }
 
     /**

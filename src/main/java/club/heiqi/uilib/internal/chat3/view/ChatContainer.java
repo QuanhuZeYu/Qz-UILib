@@ -435,7 +435,8 @@ public final class ChatContainer {
         // 滚轮/回底/贴底路径不经此折算:scrollBy 直接以「行」写权威,无 px 往返,天然无折损。
         // 注意:非整数 display 时互逆不成立,但只有滚轮平滑插值期 display 非整,且该期无人
         // 经 setScrollOffset 回写行域(权威 = SmoothScroller 行目标)→ 折算冲突不存在。
-        final int lineHeight = Math.max(1, ChatMarkdownSettings.getChatLineHeightPx());
+        // RC-06：px ↔ 行折算必须用「有效行高」（= 滚动投影行高），否则倍率下拖动位置漂移。
+        final int lineHeight = Math.max(1, ChatFontMetrics.chatLineHeightPx(rt));
         ChatScrollbar.Result scrollbar = ChatScrollbar.create(rt, listViewport, viewportScrollPx,
                 offset -> {
                     // scene px(已由 SceneScrollbar clamp 到 [0, maxScrollY])→ 聊天行(自底部向上);

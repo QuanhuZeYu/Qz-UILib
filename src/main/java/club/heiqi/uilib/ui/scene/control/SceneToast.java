@@ -12,6 +12,7 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.Binding;
@@ -30,7 +31,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <h3>能力</h3>
  * <ul>
  *   <li>{@link #show} 命令式投递：按 runtime 弱引用缓存单例 {@link Host}，多次 show 堆叠在
- *       屏幕底部（后到在下）；portal/到期绑定经 {@code rt.__runRoot} 挂 root owner，
+ *       屏幕底部（后到在下）；portal/到期绑定经 Host 自有根作用域 {@code hostOwner}，
  *       页面切换不中断通知服务；</li>
  *   <li>自动消失：帧时间（{@code runtime.__frameTimeNanos()}）驱动到期（真机每帧 tick，
  *       测试以 {@code __tickFrame} 驱动），默认 {@value #DEFAULT_DURATION_NANOS} 纳秒；
@@ -45,7 +46,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *       （旧 {@code TOAST_BG} 静态底色与 {@code SceneChromeTokens.TEXT_PRIMARY} 取色已删除）；
  *       文字取来源主题 {@code foreground}，类型色点按语义取主题色；</li>
  *   <li><b>每条消息的来源主题</b>：{@link #show} 入口捕获 {@link SceneThemes#resolve} 得到的主题
- *       信号并随消息保存。{@link Host} 经 {@code rt.__runRoot} 挂 root owner，卡片要等浮层可见才
+ *       信号并随消息保存。{@link Host} 经自有根作用域挂载，卡片要等浮层可见才
  *       构建——那时再解析只能得到 runtime 级默认；按消息捕获后，在 {@code withTheme(A)} 作用域内
  *       投递的消息始终用 A，即使之后 {@code install(rt, B)} 换掉 runtime 默认也不受影响。
  *       捕获的是主题信号而不是颜色快照，来源主题更新仍会刷新该条消息；</li>
@@ -310,10 +311,28 @@ public final class SceneToast {
         /** 信号路径因越界被钳制的次数（诊断与守卫用）。 */
         private int clampedFontSizeSignalCount;
 
+        /**
+         * 通知服务自有根作用域：与 runtime 同寿，但<b>不再借用 runtime 根 Owner</b>。
+         *
+         * <p>字号绑定、portal、到期绑定全部挂在这里：页面切换不中断通知服务，
+         * runtime 销毁时经 {@code rt.__onCleanup(hostOwner::dispose)} 一次性回收
+         * （连带影响：源码守卫 {@code toastDoesNotBindOnRuntimeRoot} 要求的
+         * {@code __runRoot(} 计数归零）。</p>
+         */
+        private final Owner hostOwner = new Owner();
+
         private Host(SceneRuntime rt) {
             this.rt = rt;
-            // runtime 级资源挂 root owner：页面切换不中断通知服务（portal/到期绑定与 runtime 同寿）
-            rt.__runRoot(() -> {
+            // runtime 级资源回收：runtime 销毁 → 回收本 Host 作用域（其中的 effect/portal/绑定），
+            // 并从 HOSTS 摘除本 Host，避免静态表长期驻留（HOSTS 是 WeakHashMap 但 Host 强引用
+            // key=rt，弱键永远不会被回收）。
+            rt.__onCleanup(() -> {
+                hostOwner.dispose();
+                synchronized (HOSTS) {
+                    HOSTS.remove(rt);
+                }
+            });
+            hostOwner.run(() -> {
                 rt.portalAnchored(
                         Computed.create(() -> Boolean.valueOf(!entries.get().isEmpty())),
                         () -> buildToastContainer(rt, this),
@@ -321,13 +340,6 @@ public final class SceneToast {
                         null,
                         null);
                 rt.bind(rt.__frameTimeNanos(), now -> tick(now.longValue()));
-                // runtime 级资源回收：runtime 销毁时从 HOSTS 摘除本 Host，避免静态表长期驻留
-                // （HOSTS 是 WeakHashMap 但 Host 强引用 key=rt，弱键永远不会被回收）。
-                rt.__onCleanup(() -> {
-                    synchronized (HOSTS) {
-                        HOSTS.remove(rt);
-                    }
-                });
             });
         }
 
@@ -368,8 +380,8 @@ public final class SceneToast {
             }
             disposeFontBinding();
             applySignalFontSize(fontSize.get());
-            // 通知服务与 runtime 同寿，绑在 root owner（与 Host 其它资源一致）。
-            rt.__runRoot(() -> fontBinding = rt.bind(fontSize, this::applySignalFontSize));
+            // 通知服务与 runtime 同寿：绑在 Host 自有根作用域（hostOwner），由 runtime 销毁时统一回收。
+            hostOwner.run(() -> fontBinding = rt.bind(fontSize, this::applySignalFontSize));
         }
 
         /** 清除声明（幂等）：释放订阅 + 目标回落下一层。 */

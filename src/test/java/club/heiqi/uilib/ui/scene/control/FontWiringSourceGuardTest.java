@@ -159,7 +159,6 @@ public class FontWiringSourceGuardTest {
      * 本方法只管终态（作用域机制消解 root 绑定后 __runRoot( 归零），两者分开登记避免 S5 误判。</p>
      */
     @Test
-    @Ignore("S5 转正：SceneToast 内字号绑定不再挂 runtime 根 Owner（__runRoot( 归零，作用域机制消解）；过渡态不变量见 ControlFontRuntimeGuardTest.toastDefaultFontSizeTenCallsDoNotAccumulateEffects（常驻绿）；对应 P1-1 终态；证据 temp/audit-fontsize/i4_align_probe.txt")
     public void toastDoesNotBindOnRuntimeRoot() throws Exception {
         String toast = codeWithoutComments(read(Paths.get(
                 "src/main/java/club/heiqi/uilib/ui/scene/control/SceneToast.java")));

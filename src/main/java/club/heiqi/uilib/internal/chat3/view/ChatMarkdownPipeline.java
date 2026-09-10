@@ -378,7 +378,7 @@ final class ChatMarkdownPipeline {
         // 「一处用原文、一处用结构内容」的双轨在结构上不存在（key 与 parse 同源同值，
         // 单一真相）。baseColor 与配色代指纹同在 key 上 ⇒ 同 key ⇒ 同一语义输入。
         String text = messageText == null ? "" : messageText;
-        List<MarkdownLayoutLine> logical = logicalCached(text, baseColor, postProcessor);
+        List<MarkdownLayoutLine> logical = logicalCached(text, baseColor, postProcessor, fontSizePx);
         int epoch = DefaultTextMeasureService.getInstance().getEpoch();
         String key = cacheKey(text, baseColor) + '#' + maxWidthPx + '#' + fontSizePx + '#' + epoch
                 + (wrapOverride == null ? "" : "#w");
@@ -426,8 +426,10 @@ final class ChatMarkdownPipeline {
      * {@link #cacheKey}）。</p>
      */
     private List<MarkdownLayoutLine> logicalCached(String text, int baseColor,
-            ChatMessageList.SegmentPostProcessor postProcessor) {
-        String key = cacheKey(text, baseColor) + (postProcessor == null ? "" : "#p");
+            ChatMessageList.SegmentPostProcessor postProcessor, int fontSizePx) {
+        // RC-06：后处理（LaTeX 行高约束）吃基准字号 ⇒ 字号必须并入逻辑行缓存 key；
+        // 否则 150% 下同一 text 命中 100% 的旧逻辑行，公式缩放判定与渲染字号脱钩。
+        String key = cacheKey(text, baseColor) + (postProcessor == null ? "" : "#p" + fontSizePx);
         List<MarkdownLayoutLine> hit = logicalCache.get(key);
         if (hit != null) {
             return hit;
@@ -443,7 +445,7 @@ final class ChatMarkdownPipeline {
             MarkdownLayoutLine line = logical.get(i);
             List<TextSegment> segments = line.getSegments();
             if (postProcessor != null && !segments.isEmpty()) {
-                segments = postProcessor.postProcess(segments, ChatMarkdownSettings.getChatFontSizePx());
+                segments = postProcessor.postProcess(segments, fontSizePx);
             }
             segments = ChatUrlLinkifier.linkify(segments, ChatMarkdownSettings.getLinkArgb());
             processed.add(line.withSegments(segments));
@@ -456,7 +458,8 @@ final class ChatMarkdownPipeline {
 
     /** 测试工厂：消息本体 → 逻辑行（生产同路同缓存；chat3 markdown 入口的直读缝）。 */
     synchronized List<MarkdownLayoutLine> logicalForTest(String messageText, int baseColor) {
-        return logicalCached(messageText == null ? "" : messageText, baseColor, null);
+        return logicalCached(messageText == null ? "" : messageText, baseColor, null,
+                ChatMarkdownSettings.getChatFontSizePx());
     }
 
     /** markdown 行 → RenderedLine 视图（块模型/L1 类型到此为止，不再外传）。 */

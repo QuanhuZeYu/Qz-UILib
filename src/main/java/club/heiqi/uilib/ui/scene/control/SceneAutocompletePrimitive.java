@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneListHandle;
+import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
@@ -437,13 +438,17 @@ public final class SceneAutocompletePrimitive {
 
         // 5) portal 挂载（R11 核心）：expanded 独立 Signal 驱动挂卸，dismissRequest 统一 collapse（I1/I11）
         AnchorProvider anchor = AnchorProvider.forNode(root);
-        rt.portalAnchored(
+        // 候选 listbox 建在 portal 树里，与输入框根不同树 → 用 portal 入口把「root 的字号声明」
+        // 落到内容根（内容根持声明，候选行沿父链继承）；每个布局纪元重新断言，同值去重。
+        ScenePortalHandle listboxPortal = rt.portalAnchored(
                 expanded,
                 () -> buildListbox(rt, props, filtered, highlightedNormalized, expanded, highlightedIndex,
                         onSelectResolved, textInput.moveCaretToEndOf()),
                 OverlayDismissPolicy.DEFAULT,
                 () -> collapse(expanded, highlightedIndex),
                 anchor);
+        listboxPortal.fontSize(root.declaredFontSize());
+        rt.bind(rt.layoutDoneSignal(), epoch -> listboxPortal.fontSize(root.declaredFontSize()));
 
         return new Result(root, textInput, expanded, filtered, highlightedNormalized);
     }

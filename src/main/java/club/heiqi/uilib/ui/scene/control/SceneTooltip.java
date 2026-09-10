@@ -11,11 +11,13 @@ import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.node.FontSource;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.AnchoredPortalLayout;
 import club.heiqi.uilib.ui.scene.overlay.AnchorProvider;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
@@ -186,12 +188,25 @@ public final class SceneTooltip {
         // 与策略驱动关闭共用同一受控收口，避免浮层残留。
         // AnchoredPortalLayout(preferredWidth=maxWidth)：tooltip 按内容宽布局（至多 maxWidth），
         // 而非默认的触发器等宽（会把多行文本压成单元格宽度）。
-        rt.portalAnchored(visible, () -> content(rt, props), OverlayDismissPolicy.NONE,
+        // 浮层内容建在 portal 树里，与目标节点不同树 → 用 portal 入口把「目标节点的字号声明」
+        // 落到内容根（内容根持声明，行节点沿父链继承）。换行测量（content 内的 wrapLines）与
+        // 绘制字号因此同源：都取 target.declaredFontSize()，盒宽 = 换行宽 + padding + 边框才成立。
+        // 正文字号 = 目标节点链上的**字号声明**（只读投影；null = 链上没有任何声明）。
+        // 声明值变化才产出新值，下游（portal 入口与换行测量的 Computed）只在真正变化时重算。
+        // 无声明时不写 scope：行节点层 4a 回落 FONT_SIZE(12) —— tooltip 的既有默认观感保持不变。
+        ReadableSignal<Integer> bodyFontSize = Computed.create(declaredFontOrNull(props.target()), () -> {
+            rt.layoutDoneSignal().get();
+            return declaredFontOrNull(props.target());
+        });
+        ScenePortalHandle tooltipPortal = rt.portalAnchored(visible,
+                () -> content(rt, props, bodyFontSize),
+                OverlayDismissPolicy.NONE,
                 () -> {
                     dismissed[0] = true;
                     visible.set(Boolean.FALSE);
                 }, AnchorProvider.forNode(props.target()),
                 null, new AnchoredPortalLayout(portalPreferredWidthPx(props), 0, 8));
+        tooltipPortal.fontSize(bodyFontSize);
 
         owner.onCleanup(() -> {
             armed[0] = false;
@@ -225,7 +240,7 @@ public final class SceneTooltip {
      * 浮雕/滤镜全部来自主题），行文本前景取主题正文色。本方法不再静态写底色/边框/圆角，也不设置
      * 任何可命中的交互单元——tooltip 不得拦截点击。</p>
      */
-    private static SceneNode content(SceneRuntime rt, Props props) {
+    private static SceneNode content(SceneRuntime rt, Props props, ReadableSignal<Integer> bodyFontSize) {
         SceneNode root = SceneNode.column();
         root.setHitTestable(false);
         root.setWidthSizing(SceneNode.WidthSizing.SHRINK);
@@ -238,8 +253,14 @@ public final class SceneTooltip {
                 ALWAYS_ENABLED, rt.interactionState(root));
 
         ReadableSignal<List<Line>> lines = Computed.create(() -> {
+            // 测量字号必须与渲染字号同源（内容根 scope = 目标节点声明；无声明则同为层 4a 的 12），
+            // 否则换行边界与绘制字号各说各话：盒宽按小字号算、文字按大字号画 → 内容压过边框。
+            // bodyFontSize 已按值去重，只有字号真的变化（或文本变化）才重新换行。
+            Integer declaredFontSizePx = bodyFontSize.get();
+            int bodyFontSizePx = declaredFontSizePx == null
+                    ? FONT_SIZE : declaredFontSizePx.intValue();
             List<String> wrapped = TextEllipsizer.wrapLines(
-                    s -> rt.measureTextWidth(s, FONT_SIZE),
+                    s -> rt.measureTextWidth(s, bodyFontSizePx),
                     props.text().get(), props.maxWidthPx(), props.maxLines(),
                     props.breakLongWords());
             List<Line> result = new ArrayList<>(wrapped.size());
@@ -251,8 +272,8 @@ public final class SceneTooltip {
         ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
         rt.forEach(root, lines, Line::index, line -> {
             SceneNode node = new SceneNode();
-            // 私有常量降级为层 4a 回落值（「未指定时的回落」语义）：有作用域/环境默认时跟随，
-            // 无声明时仍落 12 —— 默认路径零视觉变化，且不再阻断继承。
+            // 内容根已由 portal 入口写入目标节点的字号声明，行节点沿父链继承；
+            // FONT_SIZE 降级为层 4a 回落值：仅当目标节点链上完全没有声明时兜底 12。
             node.setFallbackFontSize(FONT_SIZE);
             node.setHitTestable(false);
             rt.bindComputed(foreground::get, node::setTextColor);
@@ -260,6 +281,26 @@ public final class SceneTooltip {
             return node;
         });
         return root;
+    }
+
+    /**
+     * 目标节点链上的字号<b>声明</b>；{@code null} = 链上没有任何声明（只落到回落值/框架常量）。
+     *
+     * <p>区分「声明」与「解析结果」是本方法存在的唯一理由：{@link SceneNode#declaredFontSize()}
+     * 在无声明时返回框架常量 16，无法表达「没声明」，会让 tooltip 的层 4a 回落值（12）永远失效。
+     * 依据 {@link SceneNode#fontSizeSource()}：EXPLICIT / SCOPE / ENVIRONMENT 视为有声明
+     * （层 1/2/3），NODE_DEFAULT / UNRESOLVED 视为无声明（只有回落值或常量）。</p>
+     *
+     * @param target 目标节点
+     * @return 声明字号；null = 无声明
+     */
+    private static Integer declaredFontOrNull(SceneNode target) {
+        FontSource source = target.fontSizeSource();
+        if (source == FontSource.EXPLICIT || source == FontSource.SCOPE
+                || source == FontSource.ENVIRONMENT) {
+            return Integer.valueOf(target.declaredFontSize());
+        }
+        return null;
     }
 
     /** 行节点复用后按下标重新派生文本（keyed forEach 复用行时保持新鲜）。 */

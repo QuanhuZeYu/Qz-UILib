@@ -40,6 +40,14 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * {@code SceneGeometry.maxScrollY} 恒正确（内容高 = 实际挂载行高）。
  * 大数据量（如「全部」分类数千方块）会全量挂载，性能取舍由调用方接受。</p>
  *
+ * <h3>单元轨道与字号（S5 ③ 收口，与 SceneVirtualGrid 的差异点）</h3>
+ * <p>{@link Props#cellHeight()} 是<b>轨道高下限</b>：实际轨道高 = max(cellHeight,
+ * {@code lineHeight(生效字号) + LABEL_GAP + 1(图位最小) + 2*CELL_PADDING})，由控件根的
+ * {@code setFontSizeMetric} 随字号重算，行高 / 单元高 / 图位高统一读同一信号。因此字号放大
+ * 不会裁标签（本控件不做行级虚拟化，内容高变化由滚动与自动回夹承担）。</p>
+ * <p>对照：{@link SceneVirtualGrid} 的 stride 参与 spacer 与窗口数学（公共语义），轨道高仍为
+ * 调用方固定值，其字号限制在该类 javadoc 登记。</p>
+ *
  * <h3>滚动条</h3>
  * <p>根节点 = {@link SceneScrollContainer} 工厂产出（container 行 = viewport + 右侧滚动条列），
  * 默认滚动条视觉复用 {@link SceneScrollContainer#defaultScrollbarSpec()}。</p>
@@ -160,6 +168,17 @@ public final class SearchResultList {
         Signal<Integer> scrollSignal = sc.scrollSignal();
         SceneNode stackHost = sc.container();
 
+        // 单元轨道高（S5 ③ 收口）：以调用方 cellHeight 为下限，随生效字号抬升到
+        // 「图位最小 + 标签行高 + 标签间距 + 上下内边距」，避免大字号下标签被单元裁切。
+        // 本控件不做行级虚拟化（全量挂载、滚动承担高度），故轨道高可以随字号变；
+        // 行/单元 preferredHeight 与图位高统一读本信号。
+        // 层 4a 回落值：与单元标签的回落值同源（12），使控件根解析出的生效字号与标签一致——
+        // 否则未声明字号时根的层 4b 默认 16 会让轨道按 16 算（默认几何漂移）。层 1/2/3 均优先于它。
+        stackHost.setFallbackFontSize(LABEL_FONT_SIZE);
+        final Signal<Integer> trackHeight = Signal.create(Integer.valueOf(props.cellHeight()));
+        stackHost.setFontSizeMetric((node, fontSizePx) ->
+                trackHeight.set(Integer.valueOf(minTrackHeightFor(rt, props, fontSizePx))));
+
         // 数据收缩/视口变化回夹：布局完成后把 scroll 夹回 maxScrollY（非虚拟化，maxScrollY 随内容高即时变化）。
         rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
             int max = SceneGeometry.maxScrollY(viewport);
@@ -206,7 +225,7 @@ public final class SearchResultList {
                 Computed.create(() -> toRows(safeItems(props.items()), effectiveColumns.get().intValue()));
 
         rt.forEach(rowsContainer, rowsSignal, Row::firstIndex,
-                row -> rowComponent(rt, props, row, effectiveColumns, unrenderableKeys, palette));
+                row -> rowComponent(rt, props, row, effectiveColumns, unrenderableKeys, palette, trackHeight));
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -238,7 +257,7 @@ public final class SearchResultList {
 
             // 自动滚动到目标行：target = rowIndex*(cellHeight+gapY) - 可视高度/2，clamp 到 [0, maxScrollY]
             int rowIndex = next / cols;
-            int stride = props.cellHeight() + props.gapY();
+            int stride = trackHeight.get().intValue() + props.gapY();
             int viewportH = visibleHeight(viewport);
             int target = rowIndex * stride - viewportH / 2;
             int maxScroll = SceneGeometry.maxScrollY(viewport);
@@ -272,9 +291,12 @@ public final class SearchResultList {
     private static SceneNode rowComponent(SceneRuntime rt, Props props, Row row,
                                           ReadableSignal<Integer> effectiveColumns,
                                           ReadableSignal<Set<Object>> unrenderableKeys,
-                                          CellPalette palette) {
+                                          CellPalette palette,
+                                          ReadableSignal<Integer> trackHeight) {
         SceneNode rowNode = SceneNode.row();
-        rowNode.setPreferredHeight(props.cellHeight());
+        rowNode.setPreferredHeight(trackHeight.get().intValue());
+        // 轨道高随生效字号变 → 行高跟着变（本控件不做虚拟化，内容高变化由滚动承担）。
+        rt.bind(trackHeight, h -> rowNode.setPreferredHeight(h.intValue()));
         rowNode.setMargin(0, 0, props.gapY(), 0);
         rowNode.setGap(props.gapX());
         rowNode.setHitTestable(false);
@@ -291,17 +313,55 @@ public final class SearchResultList {
             return new ArrayList<SceneVirtualGrid.Item>(items.subList(start, to));
         });
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
-                item -> cellComponent(rt, props, item, unrenderableKeys, palette));
+                item -> cellComponent(rt, props, item, unrenderableKeys, palette, trackHeight));
         return rowNode;
     }
 
+    /**
+     * 图位剩余高 = 单元轨道高 - 上下内边距 - （有标签时）标签行高 + 标签间距；至少 1px。
+     *
+     * <p><b>为什么必须用生效字号</b>：标签行高随字号变（用户倍率/作用域声明同样参与），
+     * 用构建期常量 {@code LABEL_FONT_SIZE} 算出的图位会在字号变大后与标签重叠；
+     * 图位是单元的「剩余空间」承担者，标签行高变多少、图位就减多少。</p>
+     *
+     * <p>轨道高由 {@code setFontSizeMetric} 随字号重算并写入 {@code trackHeight} 信号，
+     * 本方法只订阅该信号（不再手写 layoutDone 重算 effect）。</p>
+     *
+     * @param rt          场景运行时（提供行高度量）
+     * @param icon        图位节点（写 preferredHeight）
+     * @param label       标签节点；null = 该项无标签
+     * @param trackHeight 单元轨道高信号（随生效字号重算）
+     */
+    private static void bindIconHeight(SceneRuntime rt, SceneNode icon, SceneNode label,
+                                       ReadableSignal<Integer> trackHeight) {
+        rt.bind(trackHeight, height -> icon.setPreferredHeight(
+                iconHeightFor(rt, height.intValue(), label)));
+        icon.setPreferredHeight(iconHeightFor(rt, trackHeight.get().intValue(), label));
+    }
+
+    /** 图位高 = 轨道高 - 2*内边距 -（有标签时）标签行高 + 间距；至少 1px。 */
+    private static int iconHeightFor(SceneRuntime rt, int trackHeightPx, SceneNode label) {
+        int available = trackHeightPx - CELL_PADDING * 2;
+        if (label != null) {
+            available -= rt.lineHeight(label.effectiveFontSize()) + LABEL_GAP;
+        }
+        return Math.max(1, available);
+    }
+
+    /** 轨道高下限：调用方 cellHeight 与「图位最小 + 标签行高 + 间距 + 内边距」取大。 */
+    private static int minTrackHeightFor(SceneRuntime rt, Props props, int fontSizePx) {
+        return Math.max(props.cellHeight(),
+                rt.lineHeight(fontSizePx) + LABEL_GAP + 1 + CELL_PADDING * 2);
+    }
     /** 构建单个结果单元（结构复刻 SceneVirtualGrid.cellComponent；外观为主题轻量覆盖）。 */
     private static SceneNode cellComponent(SceneRuntime rt, Props props, SceneVirtualGrid.Item item,
                                            ReadableSignal<Set<Object>> unrenderableKeys,
-                                           CellPalette palette) {
+                                           CellPalette palette,
+                                           ReadableSignal<Integer> trackHeight) {
         SceneNode cell = SceneNode.column();
         cell.setPreferredWidth(props.cellWidth());
-        cell.setPreferredHeight(props.cellHeight());
+        cell.setPreferredHeight(trackHeight.get().intValue());
+        rt.bind(trackHeight, h -> cell.setPreferredHeight(h.intValue()));
         cell.setClipChildren(true);
         cell.setGap(LABEL_GAP);
         cell.setPadding(CELL_PADDING);
@@ -321,13 +381,31 @@ public final class SearchResultList {
                         palette.accent.get(), palette.selectionBackground.get()),
                 cell::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
 
+        // 标签先建：图位剩余高要按「标签生效字号的行高」扣减，必须先拿到标签节点。
+        SceneNode label = null;
+        if (item.label() != null) {
+            label = new SceneNode();
+            label.setHitTestable(false);
+            // 私有常量降级为层 4a 回落值（有声明时跟随作用域，无声明时仍落 12）。
+            label.setFallbackFontSize(LABEL_FONT_SIZE);
+            // 行文字取主题次要前景（旧 TEXT_SECONDARY 同值起步），禁用取禁用前景；
+            // 选中区分由底色承担，不靠文字变色（SceneNavList G09 口径）。
+            label.setTextHorizontalAlign(TextHorizontalAlign.CENTER);
+            label.setText(item.label());
+            rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
+                    ? palette.mutedForeground.get() : palette.disabledForeground.get(),
+                    label::setTextColor);
+            // 溢出策略（INV-GEO-4）：单元轨道由虚拟化 stride 固定，文字超宽必须可见省略，
+            // 否则被 cell 的 clipChildren(true) 静默裁掉。
+            label.setMaxTextWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
+            label.setMaxLines(1);
+            label.setEllipsis(true);
+        }
+
         SceneNode icon = new SceneNode();
         icon.setHitTestable(false);
-        int lineHeight = rt.lineHeight(LABEL_FONT_SIZE);
-        int iconHeight = Math.max(1, props.cellHeight() - CELL_PADDING * 2
-                - (item.label() != null ? lineHeight + LABEL_GAP : 0));
         icon.setPreferredWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
-        icon.setPreferredHeight(iconHeight);
+        bindIconHeight(rt, icon, label, trackHeight);
         icon.setCornerRadius(SceneChromeTokens.RADIUS_SM);
         // 生效图标：不可渲染项回退占位底色（null 图片），其余从实时数据源派生（含渲染分级变化）。
         ReadableSignal<SceneImageSource> effectiveImage = Computed.create(() -> {
@@ -341,19 +419,7 @@ public final class SearchResultList {
             icon.setImageSource(src);
         });
         cell.appendChild(icon);
-
-        if (item.label() != null) {
-            SceneNode label = new SceneNode();
-            label.setHitTestable(false);
-            // 私有常量降级为层 4a 回落值（有声明时跟随作用域，无声明时仍落 12）。
-            label.setFallbackFontSize(LABEL_FONT_SIZE);
-            // 行文字取主题次要前景（旧 TEXT_SECONDARY 同值起步），禁用取禁用前景；
-            // 选中区分由底色承担，不靠文字变色（SceneNavList G09 口径）。
-            label.setTextHorizontalAlign(TextHorizontalAlign.CENTER);
-            label.setText(item.label());
-            rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
-                    ? palette.mutedForeground.get() : palette.disabledForeground.get(),
-                    label::setTextColor);
+        if (label != null) {
             cell.appendChild(label);
         }
 

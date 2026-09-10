@@ -48,7 +48,8 @@ import org.junit.Test;
  *       （C3b3 +getHeadingLevel()：19→20，全成员尺）</td></tr>
  *   <tr><td>{@code MarkdownStyleTable}</td><td>19</td><td>18</td><td>1</td><td>0</td></tr>
  *   <tr><td>{@code ChatMessageList}</td><td>9</td><td>5</td><td>4</td><td>0</td></tr>
- *   <tr><td>{@code ChatSceneController}</td><td>26</td><td>22</td><td>4</td><td>0</td></tr>
+ *   <tr><td>{@code ChatSceneController}</td><td>27</td><td>23</td><td>4</td><td>0
+ *       （RC-06 +{@code effectiveChatLineHeightPx()} 宿主行高读端：26→27，全成员尺）</td></tr>
  *   <tr><td>{@code ChatMarkdownPipeline}</td><td>0</td><td>0</td><td>0</td><td>0（类本身非 public）</td></tr>
  *   <tr><td>{@code MarkdownTableModel}</td><td>4</td><td>4</td><td>0</td><td>0</td></tr>
  *   <tr><td>{@code MarkdownDocument}</td><td>10</td><td>10（T1 +toTableModels；T2 +toLayoutContent）</td><td>0</td><td>0</td></tr>
@@ -151,9 +152,17 @@ public class MarkdownPublicSurfaceGuardTest {
     private static final int MESSAGE_LIST_CONSTRUCTORS = 4;
     private static final int MESSAGE_LIST_FIELDS = 0;
 
-    /** {@code ChatSceneController} = 26（22 方法 + 4 构造器 + 0 字段）。 */
-    private static final int SCENE_CONTROLLER_TOTAL = 26;
-    private static final int SCENE_CONTROLLER_METHODS = 22;
+    /**
+     * {@code ChatSceneController} = 27（23 方法 + 4 构造器 + 0 字段）。
+     *
+     * <p><b>26 → 27 登记（RC-06 闭合必需）</b>：+ 读端 {@code effectiveChatLineHeightPx()}
+     * （chat 正文在当前用户倍率下的有效行高）。宿主原生聊天框按本值预留高度
+     * （{@code ChatCore.chatLineHeight()} → {@code func_146244_h}）；若仍返回设计值 18，
+     * 用户 150% 倍率下 scene 画 27 行高而宿主按 18 预留 ⇒ 真机裁切/重叠。该读端带倍率、
+     * 随 {@code SceneRuntime#fontEpoch()} 变化，是 scene 与宿主行高口径的唯一对齐点。</p>
+     */
+    private static final int SCENE_CONTROLLER_TOTAL = 27;
+    private static final int SCENE_CONTROLLER_METHODS = 23;
     private static final int SCENE_CONTROLLER_CONSTRUCTORS = 4;
     private static final int SCENE_CONTROLLER_FIELDS = 0;
 
@@ -204,9 +213,9 @@ public class MarkdownPublicSurfaceGuardTest {
                 MESSAGE_LIST_CONSTRUCTORS, MESSAGE_LIST_FIELDS);
     }
 
-    /** {@code ChatSceneController} 锚定 26 = 22 方法 + 4 构造器。 */
+    /** {@code ChatSceneController} 锚定 27 = 23 方法 + 4 构造器（RC-06 +effectiveChatLineHeightPx）。 */
     @Test
-    public void chatSceneControllerPublicSurfaceIsAnchoredAt26() {
+    public void chatSceneControllerPublicSurfaceIsAnchoredAt27() {
         assertSurface(publicSurface(load(SCENE_CONTROLLER)), SCENE_CONTROLLER_TOTAL,
                 SCENE_CONTROLLER_METHODS, SCENE_CONTROLLER_CONSTRUCTORS, SCENE_CONTROLLER_FIELDS);
     }
