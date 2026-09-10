@@ -43,31 +43,6 @@ public final class SceneTheme {
         BUTTON_DANGER
     }
 
-    /**
-     * 字体槽位：语义用途 → 字号（UI 像素）。
-     *
-     * <p>消费方按用途取槽，不自行定数值。槽位是<b>语义划分而非数值划分</b>：{@link #BASE} 与
-     * {@link #LABEL} 默认同为 16，正如既有 token {@code FONT_LABEL} 与 {@code FONT_BUTTON} 同值。
-     * 七档默认值由既有静态字号 token 去重而来（6 个数值分布在 7 个语义槽），见
-     * {@link SceneTheme#defaultFontSizes()}；契约 §2.3 冻结该分量。</p>
-     */
-    public enum FontSlot {
-        /** 页面/区块标题。 */
-        TITLE,
-        /** 分组小节标题。 */
-        SECTION,
-        /** 正文基准字号：未显式声明字号的控件默认取本槽。 */
-        BASE,
-        /** 表单标签、按钮文字、导航项等「控件自带文字」。 */
-        LABEL,
-        /** 数值读数（配置项当前值一类）。 */
-        READOUT,
-        /** 辅助说明、错误提示等次级文本。 */
-        HELPER,
-        /** 徽章、角标等最小号文本。 */
-        CAPTION
-    }
-
     /** 无滤镜替代档的默认不透明底色（面板/工具栏/浮层/按钮）。 */
     public static final int FALLBACK_BG = 0xFF2B2930;
     /** 无滤镜替代档的输入表面底色。 */
@@ -83,14 +58,6 @@ public final class SceneTheme {
 
     /** 全圆角胶囊半径：小控件（开关轨道、滑块、勾选框、选中指示）的几何语义。 */
     public static final int PILL_RADIUS = 999;
-
-    /**
-     * 主题级行距倍数默认值：{@code 0} = 不接管，各控件保持自动行高。
-     *
-     * <p>取 0 而非某个倍数，是「默认外观零变化」的要求：既有控件都不设主题行距，
-     * 只有显式调用 {@code setLineHeightMultiplier} 的调用点才有行距语义。</p>
-     */
-    private static final double DEFAULT_LINE_HEIGHT_MULTIPLIER = 0.0D;
 
     private final Map<Role, SceneSurfaceStyle> surfaces;
     private final int foreground;
@@ -108,8 +75,6 @@ public final class SceneTheme {
     private final int danger;
     private final int errorText;
     private final int warningText;
-    private final Map<FontSlot, Integer> fontSizes;
-    private final double lineHeightMultiplier;
 
     private SceneTheme(Builder builder) {
         EnumMap<Role, SceneSurfaceStyle> copy = new EnumMap<Role, SceneSurfaceStyle>(Role.class);
@@ -144,8 +109,6 @@ public final class SceneTheme {
         danger = builder.danger;
         errorText = builder.errorText;
         warningText = builder.warningText;
-        fontSizes = copyFontSizes(builder.fontSizes);
-        lineHeightMultiplier = builder.lineHeightMultiplier;
     }
 
     /** @return 新 builder（默认取深色液态玻璃档） */
@@ -160,26 +123,6 @@ public final class SceneTheme {
     public SceneSurfaceStyle surface(Role role) {
         return surfaces.get(Objects.requireNonNull(role, "role"));
     }
-
-    /**
-     * 某字体槽位的字号。
-     *
-     * @param slot 字体槽位，不可为 null
-     * @return 字号（UI 像素，恒 &gt; 0）
-     */
-    public int fontSize(FontSlot slot) {
-        return fontSizes.get(Objects.requireNonNull(slot, "slot")).intValue();
-    }
-
-    /**
-     * 主题级行距倍数。
-     *
-     * <p>{@code 0} 表示<b>本主题不接管行距</b>，消费方保持自动行高——这是默认档的取值，
-     * 也是「主题未表态」与「主题要求单倍行距」的唯一区分方式（后者写 {@code 1.0}）。</p>
-     *
-     * @return 行距倍数（有限且 &gt;= 0）
-     */
-    public double lineHeightMultiplier() { return lineHeightMultiplier; }
 
     /** @return 正文前景（ARGB） */
     public int foreground() { return foreground; }
@@ -243,9 +186,6 @@ public final class SceneTheme {
         builder.danger = danger;
         builder.errorText = errorText;
         builder.warningText = warningText;
-        builder.fontSizes.clear();
-        builder.fontSizes.putAll(fontSizes);
-        builder.lineHeightMultiplier = lineHeightMultiplier;
         return builder;
     }
 
@@ -284,46 +224,6 @@ public final class SceneTheme {
 
     private static SceneSurfaceStyle withDefaultForeground(SceneSurfaceStyle style, int foreground) {
         return style.getForeground() != null ? style : style.toBuilder().foreground(foreground).build();
-    }
-
-    /**
-     * 各槽位的库默认字号（UI 像素）：{@code TITLE 24 / SECTION 18 / BASE 16 / LABEL 16 /
-     * READOUT 14 / HELPER 13 / CAPTION 12}。
-     *
-     * <p>逐值等于既有静态 token（{@code ConfigTheme} 的九档字号、{@code SceneNode} 的默认字号
-     * 16、{@code SceneLabel.DEFAULT_FONT_SIZE_PX}），是本通道「默认外观零变化」的唯一凭据；
-     * 改本表等于改默认外观，须走契约 §5 校准。</p>
-     *
-     * @return 预填全部槽位的默认字号表
-     */
-    private static EnumMap<FontSlot, Integer> defaultFontSizes() {
-        EnumMap<FontSlot, Integer> map = new EnumMap<FontSlot, Integer>(FontSlot.class);
-        map.put(FontSlot.TITLE, Integer.valueOf(24));
-        map.put(FontSlot.SECTION, Integer.valueOf(18));
-        map.put(FontSlot.BASE, Integer.valueOf(16));
-        map.put(FontSlot.LABEL, Integer.valueOf(16));
-        map.put(FontSlot.READOUT, Integer.valueOf(14));
-        map.put(FontSlot.HELPER, Integer.valueOf(13));
-        map.put(FontSlot.CAPTION, Integer.valueOf(12));
-        return map;
-    }
-
-    /** 拷贝并校验字号表：槽位齐备、每档为正；返回不可变表。 */
-    private static Map<FontSlot, Integer> copyFontSizes(Map<FontSlot, Integer> source) {
-        EnumMap<FontSlot, Integer> copy = new EnumMap<FontSlot, Integer>(FontSlot.class);
-        for (Map.Entry<FontSlot, Integer> entry : source.entrySet()) {
-            Integer px = Objects.requireNonNull(entry.getValue(), "fontSize " + entry.getKey());
-            if (px.intValue() <= 0) {
-                throw new IllegalArgumentException("字号必须为正: " + entry.getKey() + "=" + px);
-            }
-            copy.put(entry.getKey(), px);
-        }
-        for (FontSlot slot : FontSlot.values()) {
-            if (!copy.containsKey(slot)) {
-                throw new IllegalArgumentException("缺少字号槽: " + slot);
-            }
-        }
-        return Collections.unmodifiableMap(copy);
     }
 
     /** 库默认：深色液态玻璃档（本目标默认外观）。 */
@@ -474,8 +374,6 @@ public final class SceneTheme {
         private int danger = 0xFF7F1D1D;
         private int errorText = 0xFFFFB4AB;
         private int warningText = 0xFFFBBF24;
-        private final EnumMap<FontSlot, Integer> fontSizes = defaultFontSizes();
-        private double lineHeightMultiplier = DEFAULT_LINE_HEIGHT_MULTIPLIER;
 
         private Builder() {
             // 默认深色液态玻璃角色配方：builder() 与各静态工厂共用同一套起点。
@@ -511,37 +409,6 @@ public final class SceneTheme {
         public Builder errorText(int value) { errorText = value; return this; }
         public Builder warningText(int value) { warningText = value; return this; }
 
-        /**
-         * 覆盖某槽位的字号。
-         *
-         * @param slot 字体槽位，不可为 null
-         * @param px   字号（UI 像素），必须为正
-         * @return 本构建器
-         */
-        public Builder fontSize(FontSlot slot, int px) {
-            Objects.requireNonNull(slot, "slot");
-            if (px <= 0) {
-                throw new IllegalArgumentException("字号必须为正: " + slot + "=" + px);
-            }
-            fontSizes.put(slot, Integer.valueOf(px));
-            return this;
-        }
-
-        /**
-         * 覆盖主题级行距倍数。
-         *
-         * @param value 行距倍数，{@code 0} = 不接管（自动行高）；必须有限且 &gt;= 0
-         * @return 本构建器
-         */
-        public Builder lineHeightMultiplier(double value) {
-            if (!(value >= 0.0D) || Double.isInfinite(value)) {
-                throw new IllegalArgumentException("行距倍数必须为有限非负数: " + value);
-            }
-            // 归一 -0.0 → 0.0：值对象里「不接管」只允许一个表示，否则 equals 会区分两者。
-            lineHeightMultiplier = value == 0.0D ? 0.0D : value;
-            return this;
-        }
-
         /** @return 不可变主题 */
         public SceneTheme build() { return new SceneTheme(this); }
     }
@@ -560,15 +427,13 @@ public final class SceneTheme {
                 && borderDefault == that.borderDefault && borderFocus == that.borderFocus
                 && borderDisabled == that.borderDisabled && danger == that.danger
                 && errorText == that.errorText && warningText == that.warningText
-                && Double.compare(lineHeightMultiplier, that.lineHeightMultiplier) == 0
-                && surfaces.equals(that.surfaces) && fontSizes.equals(that.fontSizes);
+                && surfaces.equals(that.surfaces);
     }
     @Override
     public int hashCode() {
         return Objects.hash(surfaces, foreground, mutedForeground, disabledForeground, onAccentForeground,
                 accent, accentHover, accentPressed, selectionBackground, selectionForeground,
-                borderDefault, borderFocus, borderDisabled, danger, errorText, warningText,
-                fontSizes, Double.valueOf(lineHeightMultiplier));
+                borderDefault, borderFocus, borderDisabled, danger, errorText, warningText);
     }
     @Override
     public String toString() {

@@ -24,8 +24,6 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.theme.SceneTheme;
-import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
@@ -325,8 +323,7 @@ public final class SceneTextAreaPrimitive {
 
         SceneNode root = SceneNode.column();
         root.setClipChildren(true);
-        SceneControlTypography typography = SceneControlTypography.attach(rt, root,
-                SceneThemes.fontSize(rt, SceneTheme.FontSlot.BASE));
+        SceneControlTypography typography = SceneControlTypography.attach(rt, root);
 
         SceneNode viewport = SceneNode.column();
         viewport.setScrollable(true);

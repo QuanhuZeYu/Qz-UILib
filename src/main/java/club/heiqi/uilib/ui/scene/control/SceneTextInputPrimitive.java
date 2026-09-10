@@ -24,8 +24,6 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.theme.SceneTheme;
-import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * SceneTextInputPrimitive —— 无样式单行受控文本输入行为核心（B2：带选区）。
@@ -282,8 +280,7 @@ public final class SceneTextInputPrimitive {
         root.setClipChildren(true);
         // 横向滚动地基：宽度钉死为视口宽、子内容宽解耦（内容超宽时裁剪 + scrollOffsetX 平移）
         root.setScrollableX(true);
-        SceneControlTypography typography = SceneControlTypography.attach(rt, root,
-                SceneThemes.fontSize(rt, SceneTheme.FontSlot.BASE));
+        SceneControlTypography typography = SceneControlTypography.attach(rt, root);
 
         SceneNode prefixText = new SceneNode();
         prefixText.setHitTestable(false);
