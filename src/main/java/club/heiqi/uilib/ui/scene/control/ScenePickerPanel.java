@@ -1196,10 +1196,17 @@ public final class ScenePickerPanel {
 
         // 挂载前预算宽（ADR §3.4 判据①）：面板盒几何链已在挂载前算得结果区内宽，
         // 网格因此首帧即正确列数，不存在「1 列挂载 N 行 → 收敛重建」的收敛帧（ST-01）。
+        // 两个度量投影<b>必须注入同步初值</b>（{@link Computed#create(Object, java.util.function.Supplier)}）：
+        // 面板内容是在 portal 打开的那一次 flush 内构建的，而下游 {@code SearchResultList.create}
+        // 紧接着<b>同步</b>读一次投影 —— 若初值为 null（{@code Computed.create(Supplier)} 的默认），
+        // 它会永久落到回退分支：列数按 {@code GridProps.cellWidth} 推算、图位边长 0，且此后不再订阅
+        // 度量通道（P5 §1.2「单一 GridMetrics 快照」在结果网格上静默失效；面板盒/顶栏/信息条/行预算
+        // 仍派生正确，故现象隐蔽）。注入同步初值即框架为「下游 applier 首帧前不得收到 null」给出的标准解法。
         ReadableSignal<Integer> widthBudget = viewportSizing
-                ? Computed.create(() -> Integer.valueOf(metrics.get().panel().listWidthPx())) : null;
+                ? Computed.create(Integer.valueOf(metrics.get().panel().listWidthPx()),
+                        () -> Integer.valueOf(metrics.get().panel().listWidthPx())) : null;
         ReadableSignal<GridMetrics> gridMetrics = viewportSizing
-                ? Computed.create(() -> metrics.get().grid()) : null;
+                ? Computed.create(metrics.get().grid(), () -> metrics.get().grid()) : null;
         // 已配置候选键集合（T5 UX-18 / P4 偏差 D-P4-3）：SPI 路径不再排除「已在当前规则中」的候选，
         // 因此该状态必须在结果单元（圆点标记）与信息条（标记文案）上可区分。键口径 = 成员 selection 的
         // candidateKey —— 与结果单元 key（= 候选 key）同域，不做任何拆键/拼键。

@@ -92,8 +92,11 @@ public class PickerDensityPanelWiringTest {
     @Test
     public void unwiredSourceKeepsAutoAndMatchesP5Derivation() {
         SceneNode panel = mountAndOpenPanel();
+        PickerMetrics expected = oracle(PickerDensityPreference.AUTO);
         Assert.assertEquals("未接线必须落 AUTO 解析出的档位（1920x1080 → 标准档）",
-                densityStatus(oracle(PickerDensityPreference.AUTO)), densityStatusText(panel));
+                densityStatus(expected), densityStatusText(panel));
+        Assert.assertEquals("未接线列数必须与 AUTO 派生逐值一致",
+                expected.grid().columns(), mountedColumns(panel));
     }
 
     /** 显式接线的 AUTO 与未接线不可区分（同一 AUTO 派生口径）。 */
@@ -173,8 +176,35 @@ public class PickerDensityPanelWiringTest {
         assertTierAdopted(panel, PickerDensityPreference.COMPACT, "compact");
 
         applyConfigured("bogus");
+        PickerMetrics expected = oracle(PickerDensityPreference.AUTO);
         Assert.assertEquals("非法档位必须回落 AUTO 解析出的档位",
-                densityStatus(oracle(PickerDensityPreference.AUTO)), densityStatusText(panel));
+                densityStatus(expected), densityStatusText(panel));
+        Assert.assertEquals("非法档位必须回落 AUTO 的几何", expected.grid().columns(), mountedColumns(panel));
+    }
+
+    // ==================== 回归钉子：结果网格必须吃 P5 派生度量 ====================
+
+    /**
+     * 结果网格的列数必须等于 P5 派生度量的列数（三档逐值对拍）。
+     *
+     * <p>这条钉子的由来：面板内容是在 portal 打开的那一次 flush 内构建的，下游
+     * {@code SearchResultList.create} 紧接着<b>同步</b>读一次度量投影；若投影是
+     * {@code Computed.create(Supplier)}（首帧 flush 前 {@code get()} 恒为 null），网格会永久落到
+     * 回退分支 —— 列数按 {@code GridProps.cellWidth} 推算、图位边长 0、此后不再订阅度量通道。
+     * 现象极隐蔽：面板盒 / 顶栏 / 信息条 / 行预算都按密度派生正确，唯独网格不吃密度。</p>
+     */
+    @Test
+    public void resultGridColumnsComeFromDerivedMetrics() {
+        installProductionSource();
+        SceneNode panel = mountAndOpenPanel();
+        PickerDensityPreference[] tiers = {PickerDensityPreference.COMPACT,
+                PickerDensityPreference.STANDARD, PickerDensityPreference.ROOMY};
+        for (PickerDensityPreference tier : tiers) {
+            applyConfigured(tier.name().toLowerCase(java.util.Locale.ROOT));
+            PickerMetrics expected = oracle(tier);
+            Assert.assertEquals("网格列数必须等于派生度量列数（tier=" + tier + "）",
+                    expected.grid().columns(), mountedColumns(panel));
+        }
     }
 
     // ==================== 面板装配与观测助手 ====================
@@ -191,11 +221,14 @@ public class PickerDensityPanelWiringTest {
         layoutAll();
     }
 
-    /** 写配置 + 帧末生效，然后断言面板采用的档位（同一条装配链，不重开面板）。 */
+    /** 写配置 + 帧末生效，然后断言面板采用的档位与实测列数（同一条装配链，不重开面板）。 */
     private void assertTierAdopted(SceneNode panel, PickerDensityPreference preference, String configuredName) {
         applyConfigured(configuredName);
+        PickerMetrics expected = oracle(preference);
         Assert.assertEquals("配置 " + configuredName + " → 面板生效档位",
-                densityStatus(oracle(preference)), densityStatusText(panel));
+                densityStatus(expected), densityStatusText(panel));
+        Assert.assertEquals("配置 " + configuredName + " → 面板实测列数",
+                expected.grid().columns(), mountedColumns(panel));
     }
 
     /** P5 派生内核 oracle（同一逻辑盒 / 字号倍率 / 无成员带），读数是面板侧唯一真值来源。 */
@@ -206,6 +239,28 @@ public class PickerDensityPanelWiringTest {
     /** 生效档位文案（面板左导航状态行）。 */
     private static String densityStatus(PickerMetrics metrics) {
         return "Density " + metrics.density().name();
+    }
+
+    /**
+     * 挂载后实测：结果网格首行单元数 = 面板实际采用的列数。
+     *
+     * <p>这是几何证据：档位必须真的走到结果网格，而不只是被 Props 收下。度量通道的回归见
+     * {@link #resultGridColumnsComeFromDerivedMetrics()}。</p>
+     */
+    private static int mountedColumns(SceneNode panel) {
+        SceneNode rowsContainer = rowsContainer(panel);
+        Assert.assertFalse("首行必须有单元（候选数不足会让本断言假绿）",
+                rowsContainer.__getChildren().isEmpty());
+        return rowsContainer.__getChildren().get(0).__getChildren().size();
+    }
+
+    /** 结构定位（同 {@code SearchPickerPanelWiringTest} 的既有口径）：
+     *  中栏 children = [错误行, 空态占位, stackHost, 信息条]；stackHost[0] = viewport；
+     *  viewport[0] = content；content = [topSpacer, rowsContainer, bottomSpacer]。 */
+    private static SceneNode rowsContainer(SceneNode panel) {
+        SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1)
+                .__getChildren().get(2).__getChildren().get(0);
+        return viewport.__getChildren().get(0).__getChildren().get(1);
     }
 
     /** 从面板子树里读回生效档位文案。 */
