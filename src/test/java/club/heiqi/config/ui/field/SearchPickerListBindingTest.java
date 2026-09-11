@@ -88,6 +88,58 @@ public class SearchPickerListBindingTest {
         assertFalse("无 tombstone 时再撤销为空操作", binding.restoreRemoved(second.getId()));
     }
 
+    /**
+     * E5（P5 §5.5）：一次会话内连续删除 10 项 —— tombstone 恒为 1 条（新删除替换旧的，无累积）、
+     * 陈旧 id 撤销被拒、最近一次撤销按原序原值恢复、撤销后释放。
+     *
+     * <p>有界性判据来自结构而非计数：宿主只持有一个 {@code removed} 槽位，每一步都必须满足
+     * 「hasRemoved() == true 且 removedMemberId() == 刚删的 id」——任何累积实现都会在陈旧 id 撤销时暴露。</p>
+     */
+    @Test
+    public void tenConsecutiveRemovalsKeepExactlyOneTombstone() {
+        ArrayList<Object> initialRaw = new ArrayList<Object>();
+        ArrayList<SceneSimpleList.ListItem> initialItems = new ArrayList<SceneSimpleList.ListItem>();
+        for (int index = 0; index < 12; index++) {
+            initialRaw.add("m" + index + ":x");
+            initialItems.add(new SceneSimpleList.ListItem("m" + index + ":x"));
+        }
+        Signal<Object> raw = Signal.<Object>create(initialRaw);
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(initialItems);
+        SearchPickerListBinding binding = binding(raw, items, raw::set);
+
+        long firstRemovedId = initialItems.get(0).getId();
+        long lastRemovedId = -1L;
+        for (int step = 0; step < 10; step++) {
+            long id = items.get().get(0).getId();
+            assertTrue("第 " + (step + 1) + " 次删除必须成功", binding.remove(id));
+            // Signal 写是帧末批处理：按生产帧边界 flush 后再读，观察值才是权威值。
+            ReactiveScheduler.get().flush();
+            lastRemovedId = id;
+            assertTrue("任意时刻必须持有可撤销删除", binding.hasRemoved());
+            assertEquals("tombstone 恒为最近一次删除（至多 1 条）", id, binding.removedMemberId());
+            assertEquals("每次删除原始值恰好减一", 11 - step, ((List<?>) raw.get()).size());
+            assertTrue("删除必须按序移除首项", !((List<?>) raw.get()).contains("m" + step + ":x"));
+        }
+
+        assertFalse("陈旧 id 的撤销必须被拒（证明无累积 tombstone）",
+                binding.restoreRemoved(firstRemovedId));
+        assertEquals("被拒的撤销不得改变 tombstone", lastRemovedId, binding.removedMemberId());
+        assertTrue("最近一次删除可撤销", binding.restoreRemoved(lastRemovedId));
+        ReactiveScheduler.get().flush();
+        assertEquals("撤销后原始值回到 3 项（10 删 + 1 撤销）", 3, ((List<?>) raw.get()).size());
+        // 10 次删除依次移除 m0..m9：最近一次删除 = m9（原下标 0），撤销必须按原下标插回首位。
+        assertEquals("撤销按原下标插回（最近删除项回到首位）", "m9:x", ((List<?>) raw.get()).get(0));
+        assertFalse("撤销后 tombstone 释放", binding.hasRemoved());
+        assertEquals("释放后探针回落 -1", -1L, binding.removedMemberId());
+
+        assertTrue("再删一次（第 11 次）：tombstone 被新删除替换", binding.remove(items.get().get(0).getId()));
+        ReactiveScheduler.get().flush();
+        int sizeBeforeDiscard = ((List<?>) raw.get()).size();
+        binding.discardRemoved();
+        assertFalse("窗口到期/关闭丢弃后 tombstone 释放", binding.hasRemoved());
+        assertEquals("丢弃不得改变配置值（丢弃只丢撤销能力）", sizeBeforeDiscard, ((List<?>) raw.get()).size());
+    }
+
     /** malformed 成员无需 decode 即可按稳定 id 删除。 */
     @Test
     public void removesMalformedMemberWithoutDecoding() {

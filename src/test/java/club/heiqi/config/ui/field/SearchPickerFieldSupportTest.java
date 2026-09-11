@@ -841,6 +841,100 @@ public class SearchPickerFieldSupportTest {
         runtime.dispose();
     }
 
+    /**
+     * E5（P5 §5.5）：面板侧连续删除 10 项的专项守卫。
+     *
+     * <p>不变量：① 每次删除即时生效（原始值同步减一）；② 成员带挂载卡片集合恒等于剩余成员集合
+     * —— 被删成员不得留下孤儿卡片、剩余成员必须全部在挂载集合内；③ 撤销条只描述最近一次删除
+     * 且恒可见（甲形态），撤销后立即退场（零占位）；④ 陈旧项没有第二条恢复入口（只有一个撤销按钮）。</p>
+     */
+    @Test
+    public void tenConsecutiveRemovalsLeaveNoOrphanCardsAndSingleUndoOffer() {
+        final int initial = 12;
+        final int deletions = 10;
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        ArrayList<Object> initialRaw = new ArrayList<Object>();
+        ArrayList<SceneSimpleList.ListItem> initialItems = new ArrayList<SceneSimpleList.ListItem>();
+        ArrayList<SearchPickerData.Candidate> candidates = new ArrayList<SearchPickerData.Candidate>();
+        for (int index = 0; index < initial; index++) {
+            initialRaw.add("m" + index + ":x");
+            initialItems.add(new SceneSimpleList.ListItem("m" + index + ":x"));
+            candidates.add(candidate("m" + index));
+        }
+        Signal<Object> raw = Signal.<Object>create(initialRaw);
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(initialItems);
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), (query, max) -> new SearchPickerData.SearchResult(candidates)),
+                published -> raw.set(published));
+        harness.mountRoot(picker, 640, 420);
+        ReactiveScheduler.get().flush();
+        harness.mountRoot(picker, 640, 420);
+        harness.click(picker.__getChildren().get(0).__getChildren().get(0));
+        ReactiveScheduler.get().flush();
+        SceneNode panel = panelRoot(runtime);
+        layoutPanel(runtime);
+        assertEquals("打开时应挂载 12 张成员卡片", initial, memberCellCount(panel));
+
+        for (int step = 0; step < deletions; step++) {
+            // 键盘路径删除（与 C6 同一路径）：TAB 走到首张卡片的「删除」按钮 → ENTER。
+            SceneNode removeButton = memberAction(memberCell(panel, 0), 1);
+            int guard = 0;
+            while (runtime.getFocusedNode() != removeButton && guard++ < 64) {
+                harness.pressKey(SceneKey.TAB);
+                ReactiveScheduler.get().flush();
+                layoutPanel(runtime);
+                removeButton = memberAction(memberCell(panel, 0), 1);
+            }
+            assertSame("第 " + (step + 1) + " 次删除前必须能聚焦首张卡片的删除按钮",
+                    removeButton, runtime.getFocusedNode());
+            harness.pressKey(SceneKey.ENTER);
+            ReactiveScheduler.get().flush();
+            layoutPanel(runtime);
+            int remaining = initial - step - 1;
+            assertEquals("第 " + (step + 1) + " 次删除后卡片数 = 剩余成员数",
+                    remaining, memberCellCount(panel));
+            assertEquals("第 " + (step + 1) + " 次删除后原始值 = 剩余成员数",
+                    remaining, ((List<?>) raw.get()).size());
+            List<String> cardTexts = texts(memberRows(panel));
+            assertFalse("被删成员不得留下孤儿卡片: " + cardTexts,
+                    cardTexts.contains("m" + step + ":label"));
+            assertTrue("剩余成员必须全部仍在挂载集合内: " + cardTexts,
+                    cardTexts.contains("m" + (initial - 1) + ":label"));
+            SceneNode toast = undoToastRow(panel);
+            assertTrue("撤销条必须可见（甲形态：删除即生效 + 5s 内可撤销）",
+                    toast.getPreferredHeight() > 0);
+            assertTrue("撤销条只描述最近一次删除: " + textOf(toast),
+                    textOf(toast).contains("m" + step));
+        }
+        assertEquals("十次删除后剩余 2 张卡片", 2, memberCellCount(panel));
+        assertEquals("原始值同步为剩余 2 项", 2, ((List<?>) raw.get()).size());
+
+        // 唯一撤销入口 = 撤销条按钮：恢复最近一次删除；陈旧项没有第二条入口。
+        SceneNode toast = undoToastRow(panel);
+        assertEquals("撤销条 = [文案, 撤销按钮]", 2, toast.__getChildren().size());
+        SceneNode undoButton = toast.__getChildren().get(1);
+        int undoGuard = 0;
+        while (runtime.getFocusedNode() != undoButton && undoGuard++ < 64) {
+            harness.pressKey(SceneKey.TAB);
+            ReactiveScheduler.get().flush();
+            layoutPanel(runtime);
+            undoButton = undoToastRow(panel).__getChildren().get(1);
+        }
+        assertSame("撤销按钮必须键盘可达", undoButton, runtime.getFocusedNode());
+        harness.pressKey(SceneKey.ENTER);
+        ReactiveScheduler.get().flush();
+        layoutPanel(runtime);
+        assertEquals("撤销最近一次删除后回到 3 张卡片", 3, memberCellCount(panel));
+        assertTrue("恢复的必须是最近一次删除的成员: " + texts(memberRows(panel)),
+                texts(memberRows(panel)).contains("m" + (deletions - 1) + ":label"));
+        assertEquals("恢复后原始值回到 3 项", 3, ((List<?>) raw.get()).size());
+        assertEquals("撤销后撤销条退场（零占位）", 0, undoToastRow(panel).getPreferredHeight());
+        runtime.dispose();
+    }
+
     // ==================== 变体搜索接线 ====================
 
     /** SINGLE_VALUE：点击带变体候选打开变体浮层，无条件渲染变体搜索输入且 query 过滤变体列表。 */
@@ -1409,6 +1503,12 @@ public class SearchPickerFieldSupportTest {
             index -= rowNode.__getChildren().size();
         }
         throw new IllegalStateException("member cell index out of mounted grid: " + index);
+    }
+
+    /** 撤销条行 = 成员带末尾子节点（P5 §5.5 甲形态：结构上追加在成员带末尾）。 */
+    private static SceneNode undoToastRow(SceneNode panel) {
+        List<SceneNode> band = panel.__getChildren().get(2).__getChildren();
+        return band.get(band.size() - 1);
     }
 
     /** 已挂载成员卡片总数。 */
