@@ -57,6 +57,7 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
+import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
@@ -735,7 +736,8 @@ public final class ScenePickerPanel {
                     draft -> commitSelection(props, closeRequest, variantsOpen, activeCandidate,
                             gridHighlight, addingMember, editingMember,
                             focusIntent, () -> props.selectionCommit().test(draft)),
-                    () -> closeVariants(variantsOpen, activeCandidate, focusIntent)));
+                    () -> closeVariants(variantsOpen, activeCandidate, focusIntent),
+                    props.presentation(), props.panelPresentation()));
 
             // 网格高亮回夹（数据收缩/分类切换后夹到合法范围）：关闭时高亮已由 open bind 重置为 -1，
             // 关闭态无需回夹，故随内容 Owner 建/释放（ADR §4.1）。高亮按 totalItems 夹取（O(1)，
@@ -827,23 +829,31 @@ public final class ScenePickerPanel {
         root.setGap(PANEL_PADDING);
 
         root.appendChild(topBar(rt, props, feed, gridHighlight, searchFocusTarget, metrics,
-                viewportSizing));
+                viewportSizing, closeRequest, variantsOpen, activeCandidate,
+                addingMember, editingMember, focusIntent));
 
         // 上容器：选择功能（左分类导航 | 中候选列表 + 信息条），flexGrow 占满剩余高度。
         SceneNode selectionArea = SceneNode.row();
         selectionArea.setFlexGrow(1);
         selectionArea.setGap(PANEL_PADDING);
+        // 左栏文案（U-P5-1）：浏览分类标题 + 密度状态（生效档位，随派生即时更新）——
+        // 由导航配件自身承载（它是行内的单一节点，宿主不再包一层组合列：那会破坏
+        // fillParentHeight 的高度契约，实测导致结果区命中失效）。
+        ReadableSignal<String> densityStatus = Computed.create(
+                () -> props.panelPresentation().densityLabel()
+                        + " " + metrics.get().density().name());
         selectionArea.appendChild(CategoryNavPane.create(rt, new CategoryNavPane.Props(
                 feed.categoryRows(), categoryKey, props.enabled(), categoryWriter,
                 props.panelPresentation().emptyCategory(),
                 viewportSizing
                         ? Computed.create(() -> Integer.valueOf(metrics.get().panel().navWidthPx()))
-                        : null)));
+                        : null,
+                props.panelPresentation().categoryDimensionTitle(), densityStatus)));
         // 悬停项：驱动信息条文本（悬浮 tooltip 已被固定信息条取代）。
         Signal<SceneVirtualGrid.Item> hoveredItem = Signal.create(null);
         selectionArea.appendChild(centerColumn(rt, props, closeRequest, feed,
-                gridHighlight, gridFocusTarget, gridViewportHolder, windowModelHolder, hoveredItem,
-                variantsOpen, activeCandidate, mode, selectedKeys,
+                categoryKey, gridHighlight, gridFocusTarget, gridViewportHolder, windowModelHolder,
+                hoveredItem, variantsOpen, activeCandidate, mode, selectedKeys,
                 addingMember, editingMember, focusIntent, metrics, viewportSizing));
         root.appendChild(selectionArea);
 
@@ -862,7 +872,13 @@ public final class ScenePickerPanel {
                                     Signal<Integer> gridHighlight,
                                     SceneNode[] searchFocusTarget,
                                     ReadableSignal<PickerMetrics> metrics,
-                                    boolean viewportSizing) {
+                                    boolean viewportSizing,
+                                    Runnable closeRequest,
+                                    Signal<Boolean> variantsOpen,
+                                    Signal<SearchPickerData.Candidate> activeCandidate,
+                                    Signal<Boolean> addingMember,
+                                    Signal<Boolean> editingMember,
+                                    Signal<FocusIntent> focusIntent) {
         SceneNode bar = SceneNode.row();
         if (viewportSizing) {
             bar.setPreferredHeight(metrics.get().panel().headerHeightPx());
@@ -916,11 +932,21 @@ public final class ScenePickerPanel {
         rt.bindText(summary, Computed.create(() -> {
             String base = props.presentation().resultSummary(
                     feed.totalItems().get().intValue());
+            // 截断省略落顶栏统计行右侧（P5 §3.3），文案走注入键 truncated（U-P5-1）。
             return feed.truncated().get().booleanValue()
-                    ? base + "  ·  " + props.panelPresentation().truncatedResults() : base;
+                    ? base + "  ·  " + props.presentation().truncated() : base;
         }));
         summary.setWidthSizing(WidthSizing.SHRINK);
         bar.appendChild(summary);
+
+        // 关闭按钮（U-P5-1：presentation.close 的真实显示位）——与 ESC 同一路径（cancelPanel:
+        // 先 onCancel 再请求受控关闭），不新增第二套关闭语义。
+        SceneNode close = SceneButton.create(rt, new SceneButton.Props(
+                Signal.create(props.panelPresentation().close()), props.enabled(),
+                () -> cancelPanel(props, closeRequest, variantsOpen, activeCandidate,
+                        gridHighlight, addingMember, editingMember, focusIntent))).get();
+        close.setWidthSizing(WidthSizing.SHRINK);
+        bar.appendChild(close);
         return bar;
     }
 
@@ -943,7 +969,8 @@ public final class ScenePickerPanel {
                 ? normal.get() : disabled.get();
     }
 
-    /** 左栏：分类导航列表（带线框外壳 + 内嵌滚动视口，选中态高亮、数量徽章、空分类隐藏）。 */
+
+
     /**
      * 中栏：布局壳（不装表面）包候选列表（SearchResultList）+ 信息条（PickerInfoBar）+ 错误行。
      *
@@ -953,6 +980,7 @@ public final class ScenePickerPanel {
      */
     private static SceneNode centerColumn(SceneRuntime rt, Props props, Runnable closeRequest,
                                           Feed feed,
+                                          ReadableSignal<String> categoryKey,
                                           Signal<Integer> gridHighlight,
                                           SceneNode[] gridFocusTarget,
                                           SceneNode[] gridViewportHolder,
@@ -998,6 +1026,36 @@ public final class ScenePickerPanel {
         rt.bind(metrics, m -> Effect.untrack(() -> error.setPreferredHeight(
                 safeString(props.error().get()).isEmpty() ? 0 : m.grid().lineHeightPx())));
         center.appendChild(error);
+
+        // 宿主文字前景（空态/横幅与顶栏、成员区同口径：禁用档统一走 disabledForeground）。
+        ReadableSignal<Integer> secondaryForeground = themedForeground(rt, props, true);
+        // 结果区空态（P5 §3.3 / ADR §1.5 三态严格区分，禁止用「列表长度为 0」代替）：
+        //   搜索 lane 无命中 -> emptySearchResults；浏览 lane + 分类过滤为 0 -> emptyCategoryResults；
+        //   其余（空查询且无任何候选）-> empty。文案为空即零高（不占垂直空间），列表结构不动。
+        ReadableSignal<String> emptyState = Computed.create(() -> {
+            if (feed.totalItems().get().intValue() > 0) {
+                return "";
+            }
+            if (!safeString(props.query().get()).isEmpty()) {
+                return props.presentation().emptySearchResults();
+            }
+            if (!safeString(categoryKey.get()).isEmpty()) {
+                return props.presentation().emptyCategoryResults();
+            }
+            return props.presentation().empty();
+        });
+
+        // 结构用「节点常驻 + 空串零高」而非 rt.show 挂载：中心列的子下标是既有宿主与集成测试
+        // 定位结果区/信息条的契约（D-P5-4 同一理由），条件挂载会随状态改变兄弟下标。
+        // 位置在列表之上（结果区状态行），信息条仍恒为第 3 子（下标稳定）。
+        SceneNode emptyHint = text(rt, "");
+        emptyHint.setTextHorizontalAlign(TextHorizontalAlign.CENTER);
+        rt.bind(secondaryForeground, emptyHint::setTextColor);
+        rt.bindText(emptyHint, emptyState);
+        rt.bindComputed(() -> Integer.valueOf(safeString(emptyState.get()).isEmpty()
+                        ? 0 : rt.lineHeight(emptyHint.effectiveFontSize())),
+                emptyHint::setPreferredHeight);
+        center.appendChild(emptyHint);
 
         // 挂载前预算宽（ADR §3.4 判据①）：面板盒几何链已在挂载前算得结果区内宽，
         // 网格因此首帧即正确列数，不存在「1 列挂载 N 行 → 收敛重建」的收敛帧（ST-01）。
@@ -1049,15 +1107,32 @@ public final class ScenePickerPanel {
         center.appendChild(list.root());
         windowModelHolder.set(list.windowModel());
 
+        // 网格焦点投影（信息条键盘态提示的失效通道）：焦点是 Router 权威状态的按需投影，
+        // 必须在任何 requestFocus 写入前声明关心（与 SceneContextMenu 同一时序契约）。
+        ReadableSignal<Boolean> gridFocused = rt.interactionState(list.viewport()).focused();
+
         // 信息条（常驻、内容永不空 —— 偏差 D-P5-2 与 P5 §3.3「不允许空条」）：
         //   悬停 -> 单行「label · ID: key」（稳定 ID 必须可见，修 T5 UX-11 的两行被裁）；
-        //   空闲 -> 操作提示 hoverHint（不再是一条空条）。
+        //   空闲 -> 「搜索结果 (N)」+ 状态提示（截断 > 键盘 > 滚动 > 悬停操作提示）。
         // 单行形态同时是 Q2 的取法：竖向只占 round(fs*2)，不会为第二行再抬高度。
         ReadableSignal<String> infoText = Computed.create(() -> {
             SceneVirtualGrid.Item item = hoveredItem.get();
             String prefix = props.panelPresentation().tooltipPrefix();
             if (item == null) {
-                return props.panelPresentation().hoverHint();
+                // 空闲态 = 「搜索结果 (N)」+ 单一状态提示，提示按优先级取一条：
+                //   截断（被搜索上限裁剪是最需要知道的事实）> 键盘（网格持有焦点）> 滚动余量 > 悬停操作提示。
+                String hint;
+                if (feed.truncated().get().booleanValue()) {
+                    hint = props.panelPresentation().truncatedResults();
+                } else if (Boolean.TRUE.equals(gridFocused.get())) {
+                    hint = props.panelPresentation().keyboardHint();
+                } else if (scrollable(windowModelHolder)) {
+                    hint = props.panelPresentation().scrollHint();
+                } else {
+                    hint = props.panelPresentation().hoverHint();
+                }
+                return props.presentation().searchResultsTitle(feed.totalItems().get().intValue())
+                        + "  ·  " + hint;
             }
             // O(1)：标签随 Item 携带（渲染层负责省略号），不再对 filtered 全表反查。
             String label = item.label() == null ? String.valueOf(item.key()) : item.label();
@@ -1129,8 +1204,38 @@ public final class ScenePickerPanel {
         rt.bindText(issues, Computed.create(() -> props.presentation().memberIssueSummary(
                 memberIssues.get().invalidCount(), memberIssues.get().duplicateMemberIds().size())));
         header.appendChild(issues);
-        // 无「添加」按钮：点击上方候选即隐式新增（armed/unarmed 语义已并入 prepare 逻辑）。
+        // 显式「添加」入口（U-P5-1：presentation.addMember 的真实显示位）：此前只有「点击上方候选
+        // 即隐式新增」的隐式语义，用户看不到如何进入新增模式；显式按钮与隐式路径共用同一 arm 逻辑
+        // （beginAdd 是单点），不引入第二套新增语义。
+        SceneNode addButton = SceneButton.create(rt, new SceneButton.Props(
+                Signal.create(props.panelPresentation().addMember()), props.enabled(),
+                () -> {
+                    beginAdd(props, addingMember, editingMember);
+                    focusIntent.set(FocusIntent.GRID);
+                })).get();
+        addButton.setWidthSizing(WidthSizing.SHRINK);
+        header.appendChild(addButton);
         panel.appendChild(header);
+
+        // 模式横幅（U-P5-1：memberAddingBanner / memberEditingBanner 的真实显示位）：
+        // 新增/编辑模式各有可见说明（此前只是内部布尔态）；非模式态不挂载 ⇒ 零占位、不挤结果区。
+        ReadableSignal<String> bannerText = Computed.create(() -> {
+            if (Boolean.TRUE.equals(editingMember.get())) {
+                return props.panelPresentation().memberEditingBanner(editingMemberName(props));
+            }
+            if (Boolean.TRUE.equals(addingMember.get())) {
+                return props.panelPresentation().memberAddingBanner();
+            }
+            return "";
+        });
+        // 与结果区空态同口径：节点常驻 + 空串零高（避免条件挂载移动兄弟下标）。
+        SceneNode banner = text(rt, "");
+        rt.bind(secondaryForeground, banner::setTextColor);
+        rt.bindText(banner, bannerText);
+        rt.bindComputed(() -> Integer.valueOf(safeString(bannerText.get()).isEmpty()
+                        ? 0 : rt.lineHeight(banner.effectiveFontSize())),
+                banner::setPreferredHeight);
+        panel.appendChild(banner);
 
         // 已选择成员：多列网格 + 可见滚动条（MemberGrid 模块，替代旧单列行）。
         ReadableSignal<List<SearchPickerData.CurrentMember>> members =
@@ -1524,6 +1629,22 @@ public final class ScenePickerPanel {
         });
     }
 
+    /**
+     * 结果区是否仍有滚动余量（信息条 scrollHint 的触发条件）。
+     *
+     * <p>读结果列表的窗口模型观察面（{@code maxScrollPx > 0}），不新造第二份滚动事实；
+     * 窗口模型在关闭时被置空，故对 null 保守返回 false。</p>
+     */
+    private static boolean scrollable(
+            AtomicReference<ReadableSignal<SceneGridWindow.WindowModel>> holder) {
+        ReadableSignal<SceneGridWindow.WindowModel> signal = holder.get();
+        if (signal == null) {
+            return false;
+        }
+        SceneGridWindow.WindowModel model = signal.get();
+        return model != null && model.maxScrollPx() > 0;
+    }
+
     /** 建立「源版本 → 本次求值」依赖（无版本信号时为 no-op）。 */
     private static void readVersion(Props props) {
         ReadableSignal<PickerSourceVersion> version = props.sourceVersion();
@@ -1565,6 +1686,25 @@ public final class ScenePickerPanel {
     private static List<SearchPickerCategories.Category> safeCategories(Props props) {
         List<SearchPickerCategories.Category> value = props.categories().get();
         return value == null ? Collections.<SearchPickerCategories.Category>emptyList() : value;
+    }
+
+    /**
+     * 编辑态横幅的成员展示名：按受控 {@code currentSelection} 的候选键在当前成员里定位
+     * （编辑目标由宿主的 binding 持有，面板不复制该状态）；定位不到时返回空串（横幅仍显示前缀）。
+     */
+    private static String editingMemberName(Props props) {
+        SearchPickerData.Selection selection = props.currentSelection().get();
+        if (selection == null) {
+            return "";
+        }
+        for (SearchPickerData.CurrentMember member : safeMembers(props)) {
+            SearchPickerData.Selection memberSelection = member.selection();
+            if (memberSelection != null
+                    && selection.candidateKey().equals(memberSelection.candidateKey())) {
+                return props.presentation().currentMemberPrimary(member);
+            }
+        }
+        return "";
     }
 
     private static SearchPickerData.CurrentMember memberById(

@@ -2,7 +2,14 @@ package club.heiqi.config.ui.editor;
 
 import java.util.Objects;
 
-/** 搜索选择器的不可变领域文案快照。 */
+/**
+ * 搜索选择器的不可变领域文案快照。
+ *
+ * <p><b>已删除成员</b>：{@code currentMember(CurrentMember)}（P5 U-P5-1）——真死键（无注入、无消费者），
+ * 删除依据 = ADR V2.4 对 A-24/A-25 的显式放行；已登记进 P6「明确删除」清单，
+ * 与 {@code ItemRenderFallbackKeys.splitRegistryKey}（ADR D-10）同批在 changelog 通报。
+ * 成员文案继续由 {@code currentMemberPrimary/Secondary} 承载。</p>
+ */
 public final class SearchPickerPresentation {
     /** 结果摘要格式化器。 */
     public interface ResultSummaryFormatter {
@@ -37,6 +44,9 @@ public final class SearchPickerPresentation {
     private final String advancedRaw;
     private final String emptyCurrentMembers;
     private final String emptySearchResults;
+    private final String emptyCategoryResults;
+    private final String emptyVariants;
+    private final String modeReadOnlyHint;
     private final String edit;
     private final String remove;
     private final String errorSeverity;
@@ -73,6 +83,9 @@ public final class SearchPickerPresentation {
         advancedRaw = required(builder.advancedRaw, "advancedRaw");
         emptyCurrentMembers = required(builder.emptyCurrentMembers, "emptyCurrentMembers");
         emptySearchResults = required(builder.emptySearchResults, "emptySearchResults");
+        emptyCategoryResults = required(builder.emptyCategoryResults, "emptyCategoryResults");
+        emptyVariants = required(builder.emptyVariants, "emptyVariants");
+        modeReadOnlyHint = required(builder.modeReadOnlyHint, "modeReadOnlyHint");
         edit = required(builder.edit, "edit");
         remove = required(builder.remove, "remove");
         errorSeverity = required(builder.errorSeverity, "errorSeverity");
@@ -134,16 +147,26 @@ public final class SearchPickerPresentation {
     /** @return 高级 raw 编辑入口文案 */ public String advancedRaw() { return advancedRaw; }
     /** @return 当前成员空态文案 */ public String emptyCurrentMembers() { return emptyCurrentMembers; }
     /** @return 搜索结果空态文案 */ public String emptySearchResults() { return emptySearchResults; }
+
+    /**
+     * @return 分类浏览空态文案（ADR §1.5 三态之一：{@code browse} + 分类过滤后 0 项）
+     *
+     * <p>与 {@link SearchPickerPanelPresentation#emptyCategory()}（分类栏自身无可用分类）语义不同，
+     * 不得互相替代。</p>
+     */
+    public String emptyCategoryResults() { return emptyCategoryResults; }
+
+    /** @return 变体浮层空态文案（候选存在但当前筛选无匹配变体） */
+    public String emptyVariants() { return emptyVariants; }
+
+    /** @return 变体浮层「全部状态」模式（只读）提示文案 */
+    public String modeReadOnlyHint() { return modeReadOnlyHint; }
     /** @return 编辑成员动作文案 */ public String edit() { return edit; }
     /** @return 删除成员动作文案 */ public String remove() { return remove; }
     /** @return malformed 成员的通用紧凑 badge 文案 */
     public String invalidMemberBadge() { return errorSeverity + "/" + invalidIssue; }
     /** @return duplicate 成员的通用紧凑 badge 文案 */
     public String duplicateMemberBadge() { return warningSeverity + "/" + duplicateIssue; }
-    /** @return 当前列表成员的展示文案 */
-    public String currentMember(SearchPickerData.CurrentMember member) {
-        return currentMemberPrimary(member);
-    }
     /** @return 当前列表成员第一行的主展示文案 */
     public String currentMemberPrimary(SearchPickerData.CurrentMember member) {
         return required(currentMemberPrimaryFormatter.format(Objects.requireNonNull(member, "member")),
@@ -185,6 +208,9 @@ public final class SearchPickerPresentation {
         private String advancedRaw = "Advanced: edit raw values";
         private String emptyCurrentMembers = "No current members";
         private String emptySearchResults = "No matching results";
+        private String emptyCategoryResults = "No items in this category";
+        private String emptyVariants = "No matching variants";
+        private String modeReadOnlyHint = "Switch to \"Selected\" to pick variants";
         private String edit = "Edit";
         private String remove = "Remove";
         private String errorSeverity = "Error";
@@ -236,6 +262,12 @@ public final class SearchPickerPresentation {
         public Builder emptyCurrentMembers(String value) { emptyCurrentMembers = value; return this; }
         /** 设置搜索结果空态文案。 */
         public Builder emptySearchResults(String value) { emptySearchResults = value; return this; }
+        /** 设置分类浏览空态文案（ADR §1.5 三态之一）。 */
+        public Builder emptyCategoryResults(String value) { emptyCategoryResults = value; return this; }
+        /** 设置变体浮层空态文案。 */
+        public Builder emptyVariants(String value) { emptyVariants = value; return this; }
+        /** 设置变体浮层只读模式提示文案。 */
+        public Builder modeReadOnlyHint(String value) { modeReadOnlyHint = value; return this; }
         /** 设置编辑成员动作文案。 */ public Builder edit(String value) { edit = value; return this; }
         /** 设置删除成员动作文案。 */ public Builder remove(String value) { remove = value; return this; }
         /** 设置 malformed badge 的错误级别文案。 */

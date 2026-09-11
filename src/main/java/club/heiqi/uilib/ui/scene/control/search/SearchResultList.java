@@ -29,6 +29,7 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
@@ -115,6 +116,8 @@ public final class SearchResultList {
     private static final int MARKER_MIN_PX = 3;
     /** 「已配置」标记圆点的边长上界（逻辑 px）。 */
     private static final int MARKER_MAX_PX = 8;
+    /** 「已配置」标记圆点距图位右上角的固定内缩（逻辑 px；纯视觉内缩，不参与布局派生）。 */
+    private static final int MARKER_INSET_PX = 1;
 
     private SearchResultList() {
     }
@@ -929,14 +932,9 @@ public final class SearchResultList {
                     label::setTextColor);
             // 溢出策略（INV-GEO-4）：单元轨道由虚拟化 stride 固定，文字超宽必须可见省略，
             // 否则被 cell 的 clipChildren(true) 静默裁掉。
-            // 文案宽预算 = 单元内宽 −（已配置时）标记与间距占位：标记不得把标签挤成不可读。
             rt.bindComputed(() -> Integer.valueOf(Math.max(1,
                             geometry.cellWidthPx().get().intValue()
-                                    - 2 * geometry.paddingPx().get().intValue()
-                                    - (Boolean.TRUE.equals(configured.get())
-                                            ? markerSide.get().intValue()
-                                                    + geometry.labelGapPx().get().intValue()
-                                            : 0))),
+                                    - 2 * geometry.paddingPx().get().intValue())),
                     label::setMaxTextWidth);
             label.setMaxLines(1);
             label.setEllipsis(true);
@@ -980,22 +978,18 @@ public final class SearchResultList {
             icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
             icon.setImageSource(src);
         });
-        // 标签行：标签（占满剩余宽、居中省略）+ 已配置圆点（未命中时宽度与 margin 均为 0 ⇒ 零占位）。
-        SceneNode labelRow = SceneNode.row();
-        labelRow.setHitTestable(false);
-        labelRow.setCrossAxisAlign(CrossAxisAlign.CENTER);
-        labelRow.setGap(0);
+        // 「已配置」圆点挂在**图位右上角**（不是新的一行/一列）：单元结构保持 [icon, label]，
+        // 既不占标签行宽度、也不动轨道高与既有取节点路径；未命中时宽高与 margin 全 0（零占位）。
         SceneNode marker = SceneNode.column();
         marker.setHitTestable(false);
         marker.setCornerRadius(SceneChromeTokens.RADIUS_PILL);
-        marker.setBackgroundColor(palette.accent.get());
         rt.bind(palette.accent, marker::setBackgroundColor);
         rt.bind(configured, isConfigured -> Effect.untrack(() -> {
             int side = Boolean.TRUE.equals(isConfigured) ? markerSide.get().intValue() : 0;
             marker.setPreferredWidth(side);
             marker.setPreferredHeight(side);
-            marker.setMargin(0, 0, 0, Boolean.TRUE.equals(isConfigured)
-                    ? geometry.labelGapPx().get().intValue() : 0);
+            marker.setMargin(Boolean.TRUE.equals(isConfigured) ? MARKER_INSET_PX : 0,
+                    Boolean.TRUE.equals(isConfigured) ? MARKER_INSET_PX : 0, 0, 0);
         }));
         rt.bind(markerSide, side -> Effect.untrack(() -> {
             if (Boolean.TRUE.equals(configured.get())) {
@@ -1003,13 +997,13 @@ public final class SearchResultList {
                 marker.setPreferredHeight(side.intValue());
             }
         }));
+        icon.setMainAxisAlign(MainAxisAlign.END);
+        icon.setCrossAxisAlign(CrossAxisAlign.START);
+        icon.appendChild(marker);
         cell.appendChild(icon);
         if (label != null) {
-            label.setFlexGrow(1);
-            labelRow.appendChild(label);
+            cell.appendChild(label);
         }
-        labelRow.appendChild(marker);
-        cell.appendChild(labelRow);
 
         rt.on(cell, SceneEventType.CLICK, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {

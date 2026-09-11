@@ -319,6 +319,7 @@ public class SearchPickerFieldSupportTest {
                 multiDimensionProvider());
         fixture.openPanel();
         SceneNode panel = panelRoot(fixture.runtime);
+        // 顶栏 = [标题, 输入, 分段, 统计, 关闭]（维度标题在左导航栏头部）
         SceneNode segmented = panel.__getChildren().get(0).__getChildren().get(2);
         assertTrue("顶栏应渲染维度分段控件", containsText(segmented, "Tabs"));
         assertTrue("顶栏应渲染维度分段控件", containsText(segmented, "Mods"));
@@ -378,6 +379,7 @@ public class SearchPickerFieldSupportTest {
         ReactiveScheduler.get().flush();
         SceneNode panel = panelRoot(runtime);
         layoutPanel(runtime);
+        // 顶栏 = [标题, 输入, 分段, 统计, 关闭]（维度标题在左导航栏头部）
         SceneNode segmented = panel.__getChildren().get(0).__getChildren().get(2);
         assertTrue("LIST_MEMBERS 面板应渲染维度分段", containsText(segmented, "Mods"));
         assertEquals("维度 0 分类导航为全部 + 2 行", 3,
@@ -706,7 +708,7 @@ public class SearchPickerFieldSupportTest {
         assertEquals("带变体候选应叠加打开变体浮层", 2, fixture.runtime.getOverlayHost().size());
         SceneNode card = variantCard(fixture.runtime);
         assertEquals("变体卡片应包含 header/search/segmented/list/footer",
-                5, card.__getChildren().size());
+                7, card.__getChildren().size());
         SceneNode list = card.__getChildren().get(3);
         assertTrue("打开时应展示全部变体", containsText(list, "Alpha"));
         assertTrue("打开时应展示全部变体", containsText(list, "Beta"));
@@ -749,7 +751,7 @@ public class SearchPickerFieldSupportTest {
         assertEquals("编辑带变体成员应叠加打开变体浮层", 2, runtime.getOverlayHost().size());
         SceneNode card = variantCard(runtime);
         assertEquals("变体卡片应包含 header/search/segmented/list/footer",
-                5, card.__getChildren().size());
+                7, card.__getChildren().size());
         SceneNode list = card.__getChildren().get(3);
         assertTrue("打开时应展示全部变体", containsText(list, "Alpha"));
         assertTrue("打开时应展示全部变体", containsText(list, "Beta"));
@@ -1163,7 +1165,8 @@ public class SearchPickerFieldSupportTest {
                 Signal.<Object>create("before"), ignored -> { }, (query, max) -> result(), provider);
         fixture.openPanel();
         SceneNode topBar = panelRoot(fixture.runtime).__getChildren().get(0);
-        assertEquals("无维度切换时顶栏只含标题/搜索/统计", 3, topBar.__getChildren().size());
+        // 顶栏 = [标题, 输入, 统计, 关闭]（无维度切换时不渲染维度分段）
+        assertEquals("无维度切换时顶栏 = 标题/搜索/统计/关闭", 4, topBar.__getChildren().size());
         fixture.dispose();
     }
 
@@ -1229,14 +1232,15 @@ public class SearchPickerFieldSupportTest {
     /** 分类导航 = 卡片 selectionArea.children[0]；本方法返回其内部滚动视口
      *（nav 外壳 → stackHost → viewport）。 */
     private static SceneNode categoryNav(SceneNode panel) {
+        // nav = [分类维度标题, 滚动容器, 密度状态行]；本方法返回滚动视口（其 children[0] = 行容器）。
         return panel.__getChildren().get(1).__getChildren().get(0)
-                .__getChildren().get(0).__getChildren().get(0);
+                .__getChildren().get(1).__getChildren().get(0);
     }
 
-    /** 结果列表 viewport：中栏 children = [error, stackHost, infoBar]，stackHost.children[0] = viewport。 */
+    /** 结果列表 viewport：中栏 children = [error, 空态占位, stackHost, infoBar]，stackHost.children[0] = viewport。 */
     private static SceneNode gridViewport(SceneNode panel) {
         return panel.__getChildren().get(1).__getChildren().get(1)
-                .__getChildren().get(1).__getChildren().get(0);
+                .__getChildren().get(2).__getChildren().get(0);
     }
 
     private static SceneNode searchInput(SceneNode panel) {
@@ -1247,9 +1251,9 @@ public class SearchPickerFieldSupportTest {
         return panel.__getChildren().get(1).__getChildren().get(1).__getChildren().get(0);
     }
 
-    /** 成员网格内容：membersPanel[1]=gridRoot → [0]=viewport → [0]=content。 */
+    /** 成员网格内容：membersPanel = [header, 模式横幅, gridRoot, 空态(show), anchor]；gridRoot[0]=viewport → [0]=content。 */
     private static SceneNode memberRows(SceneNode panel) {
-        return panel.__getChildren().get(2).__getChildren().get(1)
+        return panel.__getChildren().get(2).__getChildren().get(2)
                 .__getChildren().get(0).__getChildren().get(0);
     }
 

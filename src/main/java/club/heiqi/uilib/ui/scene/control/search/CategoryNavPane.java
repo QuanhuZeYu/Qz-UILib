@@ -80,7 +80,9 @@ public final class CategoryNavPane {
             ReadableSignal<Boolean> enabled,
             Consumer<String> onSelect,
             String emptyLabel,
-            ReadableSignal<Integer> widthPx) {
+            ReadableSignal<Integer> widthPx,
+            String title,
+            ReadableSignal<String> statusText) {
 
         /** 显式校验构造器：rows / categoryKey / enabled / onSelect 非 null。 */
         public Props {
@@ -88,6 +90,23 @@ public final class CategoryNavPane {
             Objects.requireNonNull(categoryKey, "categoryKey");
             Objects.requireNonNull(enabled, "enabled");
             Objects.requireNonNull(onSelect, "onSelect");
+        }
+
+        /**
+         * 旧 6 参形态（P5 兼容，纯加法保留）：无标题与状态行。
+         *
+         * @param rows        分类行
+         * @param categoryKey 当前分类 key
+         * @param enabled     是否启用
+         * @param onSelect    选择回调
+         * @param emptyLabel  空态文案
+         * @param widthPx     派生宽度信号（可 null）
+         */
+        public Props(ReadableSignal<? extends List<ScenePickerPanelNav.CategoryRow>> rows,
+                     ReadableSignal<String> categoryKey, ReadableSignal<Boolean> enabled,
+                     Consumer<String> onSelect, String emptyLabel,
+                     ReadableSignal<Integer> widthPx) {
+            this(rows, categoryKey, enabled, onSelect, emptyLabel, widthPx, null, null);
         }
 
         /**
@@ -161,7 +180,28 @@ public final class CategoryNavPane {
         SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0);
         SceneNode viewport = sc.viewport();
         viewport.setHitTestable(false);
+
+        // 标题 / 状态行（U-P5-1）：由导航配件自持，避免宿主再包一层组合列
+        //（导航根是 fillParentHeight 的列，外层再包列会破坏高度契约）。
+        // 非空才挂载 ⇒ 未提供文案的调用方（含既有测试装置）结构零变化。
+        boolean hasHeader = props.title() != null && !props.title().isEmpty();
+        if (hasHeader) {
+            SceneNode header = navText(rt, props.title(), foreground, secondaryForeground, false,
+                    props.widthPx());
+            nav.appendChild(header);
+        }
         nav.appendChild(sc.container());
+        if (props.statusText() != null) {
+            SceneNode status = navText(rt, "", foreground, secondaryForeground, true,
+                    props.widthPx());
+            rt.bindText(status, props.statusText());
+            nav.appendChild(status);
+        }
+        if (hasHeader || props.statusText() != null) {
+            // 滚动区让出标题/状态行后占满剩余高度（不再 fillParentHeight 抢占整列）。
+            sc.container().setFillParentHeight(false);
+            sc.container().setFlexGrow(1);
+        }
 
         SceneNode rows = sc.content();
         rows.setHitTestable(false);
@@ -174,6 +214,37 @@ public final class CategoryNavPane {
                 () -> emptyLabel(rt, props.emptyLabel(), secondaryForeground));
 
         return nav;
+    }
+
+    /**
+     * 导航栏标题/状态行文字（单行省略、宽度随导航宽，不参与命中）。
+     *
+     * @param rt               场景运行时
+     * @param value            初始文本（状态行传空串，由 bindText 驱动）
+     * @param foreground       正文档前景（标题用）
+     * @param secondaryForeground 次要档前景（状态行用）
+     * @param muted            是否用次要档
+     * @return 文字节点
+     */
+    private static SceneNode navText(SceneRuntime rt, String value,
+                                     ReadableSignal<Integer> foreground,
+                                     ReadableSignal<Integer> secondaryForeground, boolean muted,
+                                     ReadableSignal<Integer> widthPx) {
+        SceneNode node = new SceneNode();
+        node.setText(value);
+        node.setHitTestable(false);
+        node.setFallbackFontSize(FONT_SIZE);
+        node.setMaxLines(1);
+        node.setEllipsis(true);
+        rt.bind(muted ? secondaryForeground : foreground, node::setTextColor);
+        // 文案宽预算 = 导航宽 - 左右内边距（与导航宽同源；未给派生宽度时用常量兜底）。
+        ReadableSignal<Integer> width = widthPx == null
+                ? () -> Integer.valueOf(NAV_WIDTH) : widthPx;
+        rt.bindComputed(() -> Integer.valueOf(Math.max(1,
+                        width.get().intValue() - 2 * SceneChromeTokens.PAD_MD)),
+                node::setMaxTextWidth);
+        node.setPreferredHeight(rt.lineHeight(FONT_SIZE) + 2 * SceneChromeTokens.PAD_SM);
+        return node;
     }
 
     /** 单分类行：INDICATOR 轻量选中覆盖 + 标签(flexGrow) + 数量徽章，点击回调 onSelect。 */

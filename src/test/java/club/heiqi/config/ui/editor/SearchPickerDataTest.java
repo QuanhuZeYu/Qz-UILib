@@ -152,8 +152,10 @@ public class SearchPickerDataTest {
         assertNull(malformed.selection());
         assertNull(malformed.candidate());
         assertFalse(malformed.enumerated());
+        // P5 U-P5-1：真死键 currentMember(CurrentMember) 已删除（ADR V2.4 显式放行、登记 P6 删除清单），
+        // 断言改指其继任者 currentMemberPrimary（同一 formatter，语义不降级）。
         assertEquals("Unable to read this value",
-                SearchPickerPresentation.defaultEnglish().currentMember(malformed));
+                SearchPickerPresentation.defaultEnglish().currentMemberPrimary(malformed));
         try {
             new SearchPickerData.CurrentMember(0L, null, candidate("same", "Same"), true);
             fail("expected invalid enumerated member");
@@ -169,7 +171,7 @@ public class SearchPickerDataTest {
                 .currentMemberFormatter(value -> value.memberId() + ":" + value.selection().candidateKey())
                 .build();
         assertEquals("Configured", presentation.currentMembersTitle());
-        assertEquals("7:missing", presentation.currentMember(member));
+        // 旧 currentMember() 别名已删除（P5 U-P5-1）；断言只保留其继任者（同一 formatter）。
         assertEquals("7:missing", presentation.currentMemberPrimary(member));
         assertEquals("", presentation.currentMemberSecondary(member));
     }
@@ -180,7 +182,7 @@ public class SearchPickerDataTest {
                 new SearchPickerData.Selection("missing", (String) null), null, false);
         SearchPickerPresentation legacy = SearchPickerPresentation.builder()
                 .currentMemberFormatter(value -> "legacy:" + value.memberId()).build();
-        assertEquals("legacy:7", legacy.currentMember(member));
+        // 旧 formatter setter 继续映射第一行（currentMember() 别名已删除，见 P5 U-P5-1）。
         assertEquals("legacy:7", legacy.currentMemberPrimary(member));
         assertEquals("", legacy.currentMemberSecondary(member));
 
@@ -188,7 +190,7 @@ public class SearchPickerDataTest {
                 .currentMemberPrimaryFormatter(value -> "primary:" + value.memberId())
                 .currentMemberSecondaryFormatter(value -> "secondary:" + value.selection().candidateKey())
                 .build();
-        assertEquals("primary:7", twoLines.currentMember(member));
+        assertEquals("primary:7", twoLines.currentMemberPrimary(member));
         assertEquals("secondary:missing", twoLines.currentMemberSecondary(member));
     }
 

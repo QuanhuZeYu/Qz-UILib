@@ -12,6 +12,8 @@ import java.util.function.Consumer;
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.config.ui.editor.SearchPickerData;
+import club.heiqi.config.ui.editor.SearchPickerPanelPresentation;
+import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
@@ -107,9 +109,6 @@ public final class VariantChooser {
     private static final int OVERLAY_SCRIM = 0xCC000000;
     /** 无图占位底色（与 SceneVirtualGrid 占位同色）：物品图像渲染协议静态值，不随主题重染。 */
     private static final int PLACEHOLDER_COLOR = 0xFF454B54;
-    /** ALL / SELECTED 分段文案（对齐 SearchPickerPresentation 默认英文文案）。 */
-    private static final List<String> SEGMENT_LABELS =
-            Arrays.asList("All", "Selected");
     /** 恒真 enabled：浮层面板自身没有禁用语义（禁用由内部控件各自表达），外观走 idle 档。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
@@ -123,7 +122,7 @@ public final class VariantChooser {
      * @param open          浮层开合只读信号（外壳持有，本模块不写）
      * @param candidate     当前候选（可能为 null，须有变体才展示）
      * @param enabled       是否启用
-     * @param title         面板标题（null → "选择变体"）
+     * @param title         面板标题（null → {@link SearchPickerPanelPresentation#variantPanelTitle()}）
      * @param visualAdapter 视觉适配器（图/文案来源）
      * @param mode          选择模式受控信号（只读）
      * @param onModeChange  模式回写回调（外壳写入自己持有的 signal）
@@ -131,6 +130,8 @@ public final class VariantChooser {
      * @param onKeysChange  已选 key 回写回调（外壳写入自己持有的 signal）
      * @param onCommit      提交回调（Selection 上抛）
      * @param onCancel      取消回调
+     * @param presentation  领域文案（分段标签/按钮/空态/只读提示；非 null）
+     * @param panelPresentation 面板扩展文案（搜索占位/返回按钮；非 null）
      */
     @Desugar
     public record Props(
@@ -145,7 +146,33 @@ public final class VariantChooser {
             ReadableSignal<List<String>> selectedKeys,
             Consumer<List<String>> onKeysChange,
             Consumer<SearchPickerData.Selection> onCommit,
-            Runnable onCancel) {
+            Runnable onCancel,
+            SearchPickerPresentation presentation,
+            SearchPickerPanelPresentation panelPresentation) {
+
+        /**
+         * 旧 12 参形态（P5 兼容，纯加法保留）：文案取默认英文快照。
+         *
+         * <p><b>不推荐用于生产</b>：默认快照不携带注入文案，会让浮层回落到硬编码默认值
+         * （U-P5-1 之前的形态）。生产装配一律传 presentation/panelPresentation。</p>
+         */
+        public Props(ReadableSignal<Boolean> open,
+                     ReadableSignal<SearchPickerData.Candidate> candidate,
+                     ReadableSignal<Boolean> enabled,
+                     boolean variantSearchEnabled,
+                     String title,
+                     VisualAdapter visualAdapter,
+                     ReadableSignal<SearchPickerData.SelectionMode> mode,
+                     Consumer<SearchPickerData.SelectionMode> onModeChange,
+                     ReadableSignal<List<String>> selectedKeys,
+                     Consumer<List<String>> onKeysChange,
+                     Consumer<SearchPickerData.Selection> onCommit,
+                     Runnable onCancel) {
+            this(open, candidate, enabled, variantSearchEnabled, title, visualAdapter, mode,
+                    onModeChange, selectedKeys, onKeysChange, onCommit, onCancel,
+                    SearchPickerPresentation.defaultEnglish(),
+                    SearchPickerPanelPresentation.defaultEnglish());
+        }
 
         /** 显式校验构造器。 */
         public Props {
@@ -159,11 +186,13 @@ public final class VariantChooser {
             Objects.requireNonNull(onKeysChange, "onKeysChange");
             Objects.requireNonNull(onCommit, "onCommit");
             Objects.requireNonNull(onCancel, "onCancel");
+            Objects.requireNonNull(presentation, "presentation");
+            Objects.requireNonNull(panelPresentation, "panelPresentation");
         }
 
-        /** @return 面板标题（null → 默认「选择变体」）。 */
+        /** @return 面板标题（null → 注入的变体浮层标题）。 */
         public String effectiveTitle() {
-            return title == null ? "选择变体" : title;
+            return title == null ? panelPresentation.variantPanelTitle() : title;
         }
     }
 
@@ -283,13 +312,20 @@ public final class VariantChooser {
             return candidate == null ? "" : props.visualAdapter().candidateLabel(candidate);
         }));
         header.appendChild(candidateLabel);
+        // 返回按钮（U-P5-1：presentation.back 的真实显示位）——与 ESC 同路径（只回调 onCancel，
+        // 由外壳决定退回主面板），不新增第二套关闭语义。
+        SceneNode back = SceneButton.create(rt, new SceneButton.Props(
+                Signal.create(props.panelPresentation().back()), props.enabled(),
+                () -> props.onCancel().run())).get();
+        back.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        header.appendChild(back);
         card.appendChild(header);
 
         // 查询输入（前缀匹配、大小写不敏感，绑定内部 variantQuery；打开后由模块请求焦点）
         if (props.variantSearchEnabled()) {
             SceneNode search = SceneTextInput.create(rt, SceneTextInput.Props.builder(variantQuery)
                     .enabled(props.enabled())
-                    .placeholder("搜索变体")
+                    .placeholder(props.panelPresentation().variantSearchPlaceholder())
                     .onChange(variantQuery::set).build()).get();
             card.appendChild(search);
             // 浮层首次挂载时请求聚焦查询输入（buildOverlay 每次可见挂载执行一次）。
@@ -299,7 +335,7 @@ public final class VariantChooser {
         // 模式切换分段（受控：selectedIndex 由 mode.ordinal() 派生，选择回写 onModeChange）
         SceneNode segmented = SceneSegmented.create(rt, new SceneSegmented.Props(
                 Computed.create(() -> Integer.valueOf(props.mode().get().ordinal())),
-                SEGMENT_LABELS,
+                Arrays.asList(props.presentation().all(), props.presentation().selected()),
                 props.enabled(),
                 index -> props.onModeChange().accept(
                         SearchPickerData.SelectionMode.values()[index.intValue()]))).get();
@@ -324,17 +360,50 @@ public final class VariantChooser {
         listHost.setPreferredHeight(VARIANT_LIST_HEIGHT);
         card.appendChild(listHost);
 
+        // 只读提示（U-P5-1：presentation.modeReadOnlyHint 的真实显示位）——ALL 模式下列表点击
+        // 无副作用（只读展示），必须有可见说明；SELECTED 模式文案为空且零占位（preferredHeight=0），
+        // 不占垂直空间、不制造空文本节点命令。
+        SceneNode readOnlyHint = text(props.presentation().modeReadOnlyHint());
+        readOnlyHint.setHitTestable(false);
+        rt.bind(secondaryForeground, readOnlyHint::setTextColor);
+        rt.bindComputed(() -> props.mode().get() == SearchPickerData.SelectionMode.ALL
+                        ? props.presentation().modeReadOnlyHint() : "",
+                readOnlyHint::setText);
+        rt.bindComputed(() -> Integer.valueOf(
+                        props.mode().get() == SearchPickerData.SelectionMode.ALL
+                                ? rt.lineHeight(readOnlyHint.effectiveFontSize()) : 0),
+                readOnlyHint::setPreferredHeight);
+        rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() ->
+                readOnlyHint.setPreferredHeight(
+                        props.mode().get() == SearchPickerData.SelectionMode.ALL
+                                ? rt.lineHeight(readOnlyHint.effectiveFontSize()) : 0)));
+        card.appendChild(readOnlyHint);
+
+        // 空态（U-P5-1：presentation.emptyVariants 的真实显示位）——候选存在但筛选无匹配时给出说明。
+        // 节点常驻 + 无匹配时零高（不用 rt.show：条件挂载会随状态移动 footer 等兄弟下标）。
+        SceneNode emptyVariants = text("");
+        emptyVariants.setHitTestable(false);
+        rt.bind(secondaryForeground, emptyVariants::setTextColor);
+        rt.bindComputed(() -> shownVariants.get().isEmpty()
+                        ? props.presentation().emptyVariants() : "",
+                emptyVariants::setText);
+        rt.bindComputed(() -> Integer.valueOf(shownVariants.get().isEmpty()
+                        ? rt.lineHeight(emptyVariants.effectiveFontSize()) : 0),
+                emptyVariants::setPreferredHeight);
+        card.appendChild(emptyVariants);
+
         // 底部操作：取消 / 确认（只回调，不写 open）
         SceneNode footer = SceneNode.row();
         footer.setGap(SceneChromeTokens.GAP_MD);
         footer.setMainAxisAlign(MainAxisAlign.END);
         footer.setHitTestable(false);
-        SceneNode back = SceneButton.create(rt, new SceneButton.Props(
-                Signal.create("取消"), props.enabled(), () -> props.onCancel().run())).get();
-        back.setWidthSizing(SceneNode.WidthSizing.SHRINK);
-        footer.appendChild(back);
+        SceneNode cancel = SceneButton.create(rt, new SceneButton.Props(
+                Signal.create(props.presentation().cancel()), props.enabled(),
+                () -> props.onCancel().run())).get();
+        cancel.setWidthSizing(SceneNode.WidthSizing.SHRINK);
+        footer.appendChild(cancel);
         SceneNode confirm = SceneButton.create(rt, new SceneButton.Props(
-                Signal.create("确认"),
+                Signal.create(props.presentation().confirm()),
                 Computed.create(() -> Boolean.valueOf(canConfirm(
                         props.mode().get(), props.selectedKeys().get()))),
                 () -> {

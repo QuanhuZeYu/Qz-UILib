@@ -264,14 +264,14 @@ public class VariantChooserTest {
         return card().__getChildren().get(3).__getChildren().get(0).__getChildren().get(0);
     }
 
-    /** 确认按钮 = footer children[1]。 */
+    /** 确认按钮 = footer children[1]（卡片 children = [header, search, segmented, listHost, 只读提示, 空态, footer]）。 */
     private SceneNode confirmButton() {
-        return card().__getChildren().get(4).__getChildren().get(1);
+        return card().__getChildren().get(6).__getChildren().get(1);
     }
 
     /** 取消按钮 = footer children[0]。 */
     private SceneNode cancelButton() {
-        return card().__getChildren().get(4).__getChildren().get(0);
+        return card().__getChildren().get(6).__getChildren().get(0);
     }
 
     /** 标题节点 = header children[0]。 */

@@ -18,6 +18,7 @@ import org.junit.Test;
 import club.heiqi.config.ui.editor.SearchPickerCategories;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPanelPresentation;
+import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
@@ -130,6 +131,7 @@ public class ScenePickerPanelTest {
         final AtomicInteger beginAdds = new AtomicInteger();
         final AtomicInteger closeRequests = new AtomicInteger();
         final boolean[] commitResult = {true};
+        final Props props;
         final Result result;
 
         Fixture(List<SearchPickerData.Candidate> initialCandidates, boolean listMembers) {
@@ -167,7 +169,18 @@ public class ScenePickerPanelTest {
             builder.categories(categories);
             builder.categoryOf(categoryMap::get);
             builder.variantSearchEnabled(variantSearchEnabled);
-            result = create(rt, builder.build());
+            props = builder.build();
+            result = create(rt, props);
+        }
+
+        /** @return 生效面板扩展文案（断言注入文案用，不复制字符串字面量） */
+        SearchPickerPanelPresentation panelPresentation() {
+            return props.panelPresentation();
+        }
+
+        /** @return 生效领域文案（断言注入文案用） */
+        SearchPickerPresentation presentation() {
+            return props.presentation();
         }
     }
 
@@ -260,14 +273,9 @@ public class ScenePickerPanelTest {
         return viewport.__getChildren().get(0).__getChildren().get(1);
     }
 
-    /**
-     * 结果单元的标签节点。
-     *
-     * <p>单元结构 = {@code column[icon, labelRow[row[label, marker]]]}（P5 U-P5-2 起：
-     * labelRow 承载「已配置」圆点的零占位槽位）。</p>
-     */
+    /** 结果单元的标签节点（第 1 子；「已配置」圆点挂在图位内部，不改单元结构）。 */
     private static SceneNode cellLabelNode(SceneNode cell) {
-        return cell.__getChildren().get(1).__getChildren().get(0);
+        return cell.__getChildren().get(1);
     }
 
     /** 窗口内列表单元（按行序平铺）。 */
@@ -330,9 +338,13 @@ public class ScenePickerPanelTest {
         return cell.__getChildren().get(2).__getChildren().get(1);
     }
 
-    /** 成员网格内容：membersPanel = [header, gridRoot]；gridRoot(container) = [viewport, scrollbar]；viewport = [content]。 */
+    /**
+     * 成员网格内容：membersPanel = [header, 模式横幅, gridRoot, 空态(show), anchor]。
+     *
+     * <p>gridRoot(container) = [viewport, scrollbar]；viewport = [content]。</p>
+     */
     private static SceneNode memberRows(SceneNode membersPanel) {
-        return membersPanel.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
+        return membersPanel.__getChildren().get(2).__getChildren().get(0).__getChildren().get(0);
     }
 
     /** 第 index 个成员卡片（跨行平铺）。 */
@@ -454,9 +466,25 @@ public class ScenePickerPanelTest {
         return panelCard(overlayRoot).__getChildren().get(0);
     }
 
-    /** 左导航节点 = 卡片 children[1](selectionArea).children[0](nav)。 */
+    /**
+     * 左导航节点 = 卡片 children[1](selectionArea).children[0](nav)。
+     *
+     * <p>U-P5-1 起导航自带标题/状态行：nav = [分类维度标题, 滚动容器, 密度状态行]，
+     * 行内容在 {@code children[1](container).children[0](viewport).children[0](content)}。</p>
+     */
     private SceneNode navPane(SceneNode overlayRoot) {
         return panelCard(overlayRoot).__getChildren().get(1).__getChildren().get(0);
+    }
+
+    /** 导航滚动视口的行容器（nav = [标题, 容器, 状态行]）。 */
+    private static SceneNode navRows(SceneNode nav) {
+        return nav.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
+    }
+
+    /** 顶栏统计节点（顶栏 = [标题, 输入, (维度标题,) (分段,) 密度状态, 统计, 关闭]；统计恒为倒数第 2 子）。 */
+    private SceneNode topBarSummary(SceneNode overlayRoot) {
+        List<SceneNode> children = topBar(overlayRoot).__getChildren();
+        return children.get(children.size() - 2);
     }
 
     // ==================== 70% 面板 portal 开/关与 ESC ====================
@@ -503,7 +531,7 @@ public class ScenePickerPanelTest {
 
         SceneNode panelRoot = panelCard(overlayRoot(0));
         SceneNode nav = panelRoot.__getChildren().get(1).__getChildren().get(0);
-        SceneNode navRows = nav.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
+        SceneNode navRows = navRows(nav);
         Assert.assertEquals("全部 + 两个非空分类", 3, navRows.__getChildren().size());
 
         SceneNode grid = f.result.grid().get();
@@ -530,7 +558,7 @@ public class ScenePickerPanelTest {
         f.categories.set(Arrays.asList(new SearchPickerCategories.Category("cat1", "Tabs")));
         openPanel(f);
         SceneNode nav = panelCard(overlayRoot(0)).__getChildren().get(1).__getChildren().get(0);
-        SceneNode navRows = nav.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
+        SceneNode navRows = navRows(nav);
         Assert.assertEquals("空分类隐藏，仅剩全部行", 1, navRows.__getChildren().size());
     }
 
@@ -582,7 +610,7 @@ public class ScenePickerPanelTest {
         SceneNode segmented = card.__getChildren().get(1);
         // 变体列表视口 = children[2](listHost).children[0](viewport).children[0](content)
         SceneNode list = variantRows(card, 2);
-        SceneNode footer = card.__getChildren().get(3);
+        SceneNode footer = card.__getChildren().get(5);
         SceneNode confirm = footer.__getChildren().get(1);
         Assert.assertEquals("变体列表初始全量显示", 2, list.__getChildren().size());
 
@@ -633,11 +661,113 @@ public class ScenePickerPanelTest {
         click(gridCell(f.result.grid().get(), 0));
         layoutAll();
         SceneNode card = overlayRoot(0).__getChildren().get(0);
-        SceneNode footer = card.__getChildren().get(3);
+        SceneNode footer = card.__getChildren().get(5);
         click(footer.__getChildren().get(0));
         Assert.assertFalse(f.result.variantsOpen().get().booleanValue());
         Assert.assertTrue(f.result.open().get().booleanValue());
         Assert.assertEquals(0, f.cancels.get());
+    }
+
+    /**
+     * 变体浮层文案全部走注入键（U-P5-1）：分段/按钮/搜索占位/返回 + ALL 模式只读提示 + 空态。
+     */
+    @Test
+    public void variantOverlayShowsInjectedCopyReadOnlyHintAndEmptyState() {
+        Fixture f = new Fixture(Arrays.asList(candidateWithVariants("a", "oak", "spruce")),
+                false, true, 3);
+        openPanel(f);
+        click(gridCell(f.result.grid().get(), 0));
+        layoutAll();
+
+        SceneNode card = overlayRoot(0).__getChildren().get(0);
+        String all = collectText(card);
+        Assert.assertTrue("分段标签经注入（all）: " + all, all.contains(f.presentation().all()));
+        Assert.assertTrue("分段标签经注入（selected）: " + all, all.contains(f.presentation().selected()));
+        Assert.assertTrue("取消按钮经注入: " + all, all.contains(f.presentation().cancel()));
+        Assert.assertTrue("确认按钮经注入: " + all, all.contains(f.presentation().confirm()));
+        Assert.assertTrue("返回按钮经注入: " + all, all.contains(f.panelPresentation().back()));
+        Assert.assertTrue("ALL 模式只读提示可见: " + all,
+                all.contains(f.presentation().modeReadOnlyHint()));
+        SceneNode readOnlyHint = card.__getChildren().get(4);
+        Assert.assertTrue("ALL 模式只读提示占一行", readOnlyHint.getPreferredHeight() > 0);
+
+        // 切到 SELECTED：只读提示零占位（不制造空文本行）
+        click(card.__getChildren().get(2).__getChildren().get(1));
+        rt.flush();
+        Assert.assertEquals("SELECTED 模式只读提示零占位", 0, readOnlyHint.getPreferredHeight());
+
+        // 筛选无匹配：空态文案经注入且占一行
+        SceneNode search = card.__getChildren().get(1);
+        rt.requestFocus(search);
+        rt.flush();
+        typeText("zzz");
+        rt.flush();
+        layoutAll();
+        SceneNode emptyVariants = card.__getChildren().get(5);
+        Assert.assertEquals("无匹配变体 -> 注入的空态文案",
+                f.presentation().emptyVariants(), emptyVariants.getText());
+        Assert.assertTrue("空态占一行", emptyVariants.getPreferredHeight() > 0);
+    }
+
+    /** 结果区空态三态严格区分（ADR §1.5）：empty / emptySearchResults / emptyCategoryResults。 */
+    @Test
+    public void resultEmptyStateDistinguishesBrowseSearchAndCategory() {
+        // ① 浏览 lane 且无任何候选 -> empty
+        Fixture none = new Fixture(Collections.<SearchPickerData.Candidate>emptyList(), false);
+        openPanel(none);
+        Assert.assertTrue("无候选 -> presentation.empty",
+                collectText(centerColumn(overlayRoot(0))).contains(none.presentation().empty()));
+
+        // ② 搜索 lane 无命中 -> emptySearchResults
+        Fixture searched = new Fixture(Collections.<SearchPickerData.Candidate>emptyList(), false);
+        openPanel(searched);
+        searched.query.set("stone");
+        rt.flush();
+        layoutAll();
+        Assert.assertTrue("搜索无命中 -> presentation.emptySearchResults",
+                collectText(centerColumn(overlayRoot(0)))
+                        .contains(searched.presentation().emptySearchResults()));
+
+        // ③ 浏览 lane + 分类过滤为 0 -> emptyCategoryResults（受控分类键）
+        none.openSignal.set(Boolean.FALSE);
+        searched.openSignal.set(Boolean.FALSE);
+        rt.flush();
+        layoutAll();
+        Signal<String> categoryKey = Signal.create("cat1");
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        Props props = Props.builder(Signal.create(""),
+                Signal.create(SearchPickerData.SearchResult.empty()),
+                Signal.create(Boolean.TRUE), ignored -> { }, ignored -> { }, visualAdapter())
+                .open(open)
+                .onCloseRequest(() -> open.set(Boolean.FALSE))
+                .currentCategoryKey(categoryKey, categoryKey::set)
+                .grid(GridProps.of(4, 64, 64, 8, 8, 3))
+                .build();
+        create(rt, props);
+        open.set(Boolean.TRUE);
+        rt.flush();
+        layoutAll();
+        layoutAll();
+        Assert.assertTrue("分类过滤为 0 -> presentation.emptyCategoryResults",
+                collectText(centerColumn(overlayRoot(0)))
+                        .contains(props.presentation().emptyCategoryResults()));
+    }
+
+    /** 顶栏关闭按钮走与 ESC 相同的取消路径（单一路径，不新增第二套关闭语义）。 */
+    @Test
+    public void topBarCloseButtonCancelsThroughSinglePath() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
+        openPanel(f);
+        SceneNode bar = topBar(overlayRoot(0));
+        List<SceneNode> children = bar.__getChildren();
+        SceneNode close = children.get(children.size() - 1);
+        Assert.assertTrue("顶栏关闭按钮文案经注入: " + collectText(close),
+                collectText(close).contains(f.panelPresentation().close()));
+        click(close);
+        rt.flush();
+        Assert.assertEquals("关闭按钮走 onCancel（与 ESC 同路径）", 1, f.cancels.get());
+        Assert.assertEquals("关闭按钮请求受控关闭", 1, f.closeRequests.get());
+        Assert.assertTrue("面板已关闭", rt.getOverlayHost().isEmpty());
     }
 
     @Test
@@ -819,7 +949,7 @@ public class ScenePickerPanelTest {
         SceneNode card = overlayRoot(0).__getChildren().get(0);
         SceneNode segmented = card.__getChildren().get(1);
         SceneNode list = variantRows(card, 2);
-        SceneNode footer = card.__getChildren().get(3);
+        SceneNode footer = card.__getChildren().get(5);
         click(segmented.__getChildren().get(1));
         rt.flush();
         click(list.__getChildren().get(0));
@@ -832,18 +962,34 @@ public class ScenePickerPanelTest {
         Assert.assertTrue("隐式武装 + 重新武装", f.beginAdds.get() >= 2);
     }
 
+    /**
+     * 成员区空态 + 显式「添加」入口（U-P5-1 接线：presentation.addMember 之前是零消费者死键）。
+     *
+     * <p>隐式路径（点击候选即新增）保持不变；显式按钮只是把同一 arm 逻辑（beginAdd）暴露出来，
+     * 不引入第二套新增语义。</p>
+     */
     @Test
-    public void listMembersEmptyStateShowsHintWithoutAddButton() {
+    public void listMembersEmptyStateShowsHintWithExplicitAddEntry() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
         openPanel(f);
         SceneNode membersPanel = membersPanel(overlayRoot(0));
-        // panel children = [header, rows, emptyContent(show), anchor]
-        Assert.assertEquals("空态占位文本", "No current members",
-                membersPanel.__getChildren().get(2).getText());
-
-        // 头栏只剩标题与问题摘要（「添加」按钮已移除，点击上方候选即新增）
+        // panel children = [header, 模式横幅, grid, emptyContent(show), anchor]
         SceneNode header = membersPanel.__getChildren().get(0);
-        Assert.assertEquals("头栏无添加按钮", 2, header.__getChildren().size());
+        Assert.assertEquals("空态占位文本", "No current members",
+                membersPanel.__getChildren().get(3).getText());
+
+        // 头栏 = 标题 + 问题摘要 + 显式「添加」按钮（文案经 presentation 注入）
+        Assert.assertEquals("头栏 = 标题 + 摘要 + 添加入口", 3, header.__getChildren().size());
+        SceneNode addButton = header.__getChildren().get(2);
+        Assert.assertEquals("添加入口文案经 Presentation 注入",
+                f.panelPresentation().addMember(), collectText(addButton));
+
+        // 按钮与隐式路径共用 beginAdd：点击后进入新增模式并出现新增横幅
+        click(addButton);
+        rt.flush();
+        Assert.assertEquals("显式添加按钮武装新增（一次 beginAdd）", 1, f.beginAdds.get());
+        Assert.assertEquals("新增模式横幅可见", f.panelPresentation().memberAddingBanner(),
+                membersPanel.__getChildren().get(1).getText());
     }
 
     @Test
@@ -1050,12 +1196,17 @@ public class ScenePickerPanelTest {
 
         SceneNode scrim = overlayRoot(0);
         SceneNode topBar = panelCard(scrim).__getChildren().get(0);
-        Assert.assertTrue("截断真值 -> 顶栏统计行出现截断提示（P5 §3.3）",
-                collectText(topBar).contains(props.panelPresentation().truncatedResults()));
+        Assert.assertTrue("截断真值 -> 顶栏统计行出现截断提示（P5 §3.3，注入键 truncated）",
+                collectText(topBar).contains(props.presentation().truncated()));
 
-        SceneNode infoBar = centerColumn(scrim).__getChildren().get(2);
-        Assert.assertEquals("无悬停 -> 信息条显示操作提示（不允许空条）",
-                props.panelPresentation().hoverHint(), collectText(infoBar));
+        // 空闲态信息条 = 「搜索结果 (N)」+ 状态提示（U-P5-1：searchResultsTitle/hoverHint 同时可见）
+        SceneNode infoBar = centerColumn(scrim).__getChildren().get(3);
+        String idle = collectText(infoBar);
+        Assert.assertTrue("无悬停 -> 信息条含搜索结果标题: " + idle,
+                idle.contains(props.presentation().searchResultsTitle(1)));
+        // 本装置结果被截断 ⇒ 空闲提示优先显示截断说明（hoverHint 由非截断装置覆盖）
+        Assert.assertTrue("无悬停 -> 信息条含截断提示（不允许空条）: " + idle,
+                idle.contains(props.panelPresentation().truncatedResults()));
 
         SceneNode grid = result.grid().get();
         int[] center = centerOf(gridCell(grid, 0));
@@ -1196,12 +1347,12 @@ public class ScenePickerPanelTest {
         SceneNode panelRoot = panelCard(overlayRoot(0));
         // 分类切换经受控回调写回外部信号
         SceneNode nav = panelRoot.__getChildren().get(1).__getChildren().get(0);
-        click(nav.__getChildren().get(0).__getChildren().get(0)
-                .__getChildren().get(0).__getChildren().get(1));
+        click(navRows(nav).__getChildren().get(1));
         Assert.assertEquals("cat1", categoryKey.get());
 
         // 维度切换经受控回调写回外部信号
         SceneNode topBar = panelRoot.__getChildren().get(0);
+        // 顶栏 = [标题, 输入, 分段, 统计, 关闭]
         SceneNode segmented = topBar.__getChildren().get(2);
         click(segmented.__getChildren().get(1));
         Assert.assertEquals(Integer.valueOf(1), dimensionIndex.get());
@@ -1246,7 +1397,7 @@ public class ScenePickerPanelTest {
         Assert.assertNotEquals("不再取旧 BORDER_DEFAULT", SceneChromeTokens.BORDER_DEFAULT,
                 card.getBorderColor());
         // 先整树 paint 刷新 fragment 缓存，再核对节点自身只发一条 BACKDROP。
-        Assert.assertEquals("整树（本场景 6 颗表面）", 6, backdropCount(overlayRoot(0)));
+        Assert.assertEquals("整树（本场景 7 颗表面：新增顶栏关闭按钮）", 7, backdropCount(overlayRoot(0)));
         Assert.assertEquals("卡片自身恰好一条 BACKDROP（每颗表面只采样一次）",
                 1, ownBackdropCount(card));
     }
@@ -1265,7 +1416,7 @@ public class ScenePickerPanelTest {
         Assert.assertNull("成员带不装滤镜", band.getBackdrop());
         Assert.assertTrue("成员带裁剪合同保留", band.isClipChildren());
 
-        SceneNode memberViewport = band.__getChildren().get(1).__getChildren().get(0);
+        SceneNode memberViewport = band.__getChildren().get(2).__getChildren().get(0);
         Assert.assertEquals("成员网格底座 = GROUP idle 染色",
                 GROUP.getIdle().getTint(), memberViewport.getBackgroundColor());
         Assert.assertNotNull("成员网格底座自带滤镜（表面归内容底座一颗）", memberViewport.getBackdrop());
@@ -1308,7 +1459,7 @@ public class ScenePickerPanelTest {
                 Integer.valueOf(bar.__getChildren().get(0).getTextColor()));
         Assert.assertEquals("结果统计 = 主题次要前景",
                 Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
-                Integer.valueOf(bar.__getChildren().get(2).getTextColor()));
+                Integer.valueOf(topBarSummary(scrim).getTextColor()));
         SceneNode errorNode = centerColumn(scrim).__getChildren().get(0);
         Assert.assertEquals("错误行文本同步", "boom", errorNode.getText());
         Assert.assertEquals("错误行 = 主题 errorText 前景",
@@ -1354,7 +1505,7 @@ public class ScenePickerPanelTest {
     public void membersEmptyHintUsesMutedForeground() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
         openPanel(f);
-        SceneNode empty = membersPanel(overlayRoot(0)).__getChildren().get(2);
+        SceneNode empty = membersPanel(overlayRoot(0)).__getChildren().get(3);
         Assert.assertEquals("空态占位文本合同不变", "No current members", empty.getText());
         Assert.assertEquals("空态提示 = 主题次要前景",
                 Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
@@ -1404,11 +1555,11 @@ public class ScenePickerPanelTest {
         // ① 缺省不设字号：已出文字的五处宿主文字绘制字号 = 节点默认 16（空态提示见 ④）。
         paintEngine.paint(scrim);
         assertPaintedFontSize("顶栏标题", topBar(scrim).__getChildren().get(0), DEFAULT_FONT_SIZE);
-        assertPaintedFontSize("结果统计", topBar(scrim).__getChildren().get(2), DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("结果统计", topBarSummary(scrim), DEFAULT_FONT_SIZE);
         assertPaintedFontSize("错误行", centerColumn(scrim).__getChildren().get(0), DEFAULT_FONT_SIZE);
         assertPaintedFontSize("成员区标题",
                 membersPanel(scrim).__getChildren().get(0).__getChildren().get(0), DEFAULT_FONT_SIZE);
-        assertPaintedFontSize("空态提示", membersPanel(scrim).__getChildren().get(2), DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("空态提示", membersPanel(scrim).__getChildren().get(3), DEFAULT_FONT_SIZE);
 
         // ② 问题摘要：零问题时是空串（无 TEXT 命令），置入无效成员后才有可断言的绘制产物。
         members.set(Arrays.asList(malformedMember(0L)));
@@ -1426,7 +1577,7 @@ public class ScenePickerPanelTest {
         layoutAll();
         paintEngine.paint(scrim);
         assertPaintedFontSize("顶栏标题", topBar(scrim).__getChildren().get(0), 24);
-        assertPaintedFontSize("结果统计", topBar(scrim).__getChildren().get(2), 24);
+        assertPaintedFontSize("结果统计", topBarSummary(scrim), 24);
         assertPaintedFontSize("错误行", centerColumn(scrim).__getChildren().get(0), 24);
         assertPaintedFontSize("成员区标题",
                 membersPanel(scrim).__getChildren().get(0).__getChildren().get(0), 24);
@@ -1442,7 +1593,7 @@ public class ScenePickerPanelTest {
         rt.flush();
         layoutAll();
         layoutAll();
-        SceneNode hint = membersPanel(scrim).__getChildren().get(2);
+        SceneNode hint = membersPanel(scrim).__getChildren().get(3);
         Assert.assertEquals("空态占位文本合同不变", "No current members", hint.getText());
         paintEngine.paint(scrim);
         assertPaintedFontSize("空态提示", hint, 24);
@@ -1484,12 +1635,12 @@ public class ScenePickerPanelTest {
         SceneNode scrim = overlayRoot(0);
         SceneNode card = panelCard(scrim);
         SceneNode nav = navPane(scrim);
-        SceneNode navViewport = nav.__getChildren().get(0).__getChildren().get(0);
+        SceneNode navViewport = nav.__getChildren().get(1).__getChildren().get(0);
         SceneNode searchInput = f.result.firstFocusTarget().get();
         SceneNode resultViewport = f.result.grid().get();
-        SceneNode infoBar = centerColumn(scrim).__getChildren().get(2);
+        SceneNode infoBar = centerColumn(scrim).__getChildren().get(3);
 
-        Assert.assertEquals("整树声明滤镜的节点 = 6 颗表面", 6, surfaceNodeCount(scrim));
+        Assert.assertEquals("整树声明滤镜的节点 = 7 颗表面（新增顶栏关闭按钮）", 7, surfaceNodeCount(scrim));
         Set<SceneNode> surfaces = identitySet(collect(scrim));
         Assert.assertTrue("含宿主卡片（PANEL）", surfaces.contains(card));
         Assert.assertTrue("含导航底座（TOOLBAR）", surfaces.contains(nav));
@@ -1498,8 +1649,8 @@ public class ScenePickerPanelTest {
         Assert.assertTrue("含结果底座（GROUP）", surfaces.contains(resultViewport));
         Assert.assertTrue("含信息条（TOOLBAR）", surfaces.contains(infoBar));
 
-        Assert.assertEquals("整树 BACKDROP 命令 = 6（每颗表面各采样一次，无漏无重）",
-                6, backdropCount(scrim));
+        Assert.assertEquals("整树 BACKDROP 命令 = 7（每颗表面各采样一次，无漏无重）",
+                7, backdropCount(scrim));
         for (SceneNode surface : collect(scrim)) {
             Assert.assertEquals("单节点至多一条 BACKDROP", 1, ownBackdropCount(surface));
         }
@@ -1536,9 +1687,9 @@ public class ScenePickerPanelTest {
         SceneNode variantCard = scrim.__getChildren().get(0);
         SceneNode segmented = variantCard.__getChildren().get(1);
         SceneNode variantViewport = variantCard.__getChildren().get(2).__getChildren().get(0);
-        SceneNode footer = variantCard.__getChildren().get(3);
+        SceneNode footer = variantCard.__getChildren().get(5);
 
-        Assert.assertEquals("浮层树声明滤镜节点 = 7", 7, surfaceNodeCount(scrim));
+        Assert.assertEquals("浮层树声明滤镜节点 = 8（新增浮层返回按钮）", 8, surfaceNodeCount(scrim));
         Set<SceneNode> surfaces = identitySet(collect(scrim));
         Assert.assertTrue("含浮层面板（OVERLAY，VariantChooser 一颗）", surfaces.contains(variantCard));
         Assert.assertTrue("含分段底座（TOOLBAR）", surfaces.contains(segmented));
@@ -1551,14 +1702,14 @@ public class ScenePickerPanelTest {
                 surfaces.contains(footer.__getChildren().get(0)));
         Assert.assertTrue("含确认按钮（BUTTON_STANDARD）",
                 surfaces.contains(footer.__getChildren().get(1)));
-        Assert.assertEquals("浮层树 BACKDROP = 7", 7, backdropCount(scrim));
+        Assert.assertEquals("浮层树 BACKDROP = 8", 8, backdropCount(scrim));
         Assert.assertNull("变体 scrim 不装玻璃", scrim.getBackdrop());
         Assert.assertEquals("变体 scrim 保持静态遮罩底（只负责遮罩）", 0xCC000000,
                 scrim.getBackgroundColor());
         for (SceneNode row : variantViewport.__getChildren().get(0).__getChildren()) {
             Assert.assertEquals("变体复用行零 BACKDROP", 0, ownBackdropCount(row));
         }
-        Assert.assertEquals("主面板树不受浮层影响（仍 6 颗）", 6, backdropCount(overlayRoot(1)));
+        Assert.assertEquals("主面板树不受浮层影响（仍 7 颗，含顶栏关闭按钮）", 7, backdropCount(overlayRoot(1)));
     }
 
     private List<SceneNode> collect(SceneNode root) {
@@ -1599,7 +1750,8 @@ public class ScenePickerPanelTest {
         Assert.assertNotNull("底座装 TOOLBAR 滤镜", nav.getBackdrop());
         Assert.assertEquals("底座宽度布局合同不变", CategoryNavPane.NAV_WIDTH, nav.getPreferredWidth());
 
-        SceneNode rows = nav.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
+        // nav = [分类维度标题, 滚动容器, 密度状态行]
+        SceneNode rows = nav.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
         Assert.assertEquals("全部 + 两分类", 3, rows.__getChildren().size());
         SceneNode allRow = rows.__getChildren().get(0);
         Assert.assertEquals("初始选中「全部」行 = 强调选中档 0x59",
@@ -1672,7 +1824,7 @@ public class ScenePickerPanelTest {
     public void integratedPickerInfoBarMatchesAcceptedStrip() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
         openPanel(f);
-        SceneNode infoBar = centerColumn(overlayRoot(0)).__getChildren().get(2);
+        SceneNode infoBar = centerColumn(overlayRoot(0)).__getChildren().get(3);
 
         Assert.assertEquals("信息条高度合同不变", PickerInfoBar.INFO_BAR_HEIGHT, infoBar.getPreferredHeight());
         Assert.assertEquals("信息条背景 = TOOLBAR idle 染色",
@@ -1694,7 +1846,7 @@ public class ScenePickerPanelTest {
         f.members.set(Arrays.asList(member(0L, "a")));
         openPanel(f);
         SceneNode band = membersPanel(overlayRoot(0));
-        SceneNode viewport = band.__getChildren().get(1).__getChildren().get(0);
+        SceneNode viewport = band.__getChildren().get(2).__getChildren().get(0);
 
         Assert.assertEquals("成员网格底座 = GROUP idle 染色",
                 GROUP.getIdle().getTint(), viewport.getBackgroundColor());
@@ -1828,7 +1980,7 @@ public class ScenePickerPanelTest {
         SceneNode card = panelCard(scrim);
         SceneNode nav = navPane(scrim);
         SceneNode searchInput = t.result.firstFocusTarget().get();
-        SceneNode infoBar = centerColumn(scrim).__getChildren().get(2);
+        SceneNode infoBar = centerColumn(scrim).__getChildren().get(3);
         SceneNode vp = t.result.grid().get();
         SceneNode cell = gridCell(vp, 1);
         click(cell);
@@ -1859,7 +2011,7 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("顶栏标题 = 浅色主题正文前景", Integer.valueOf(light.foreground()),
                 Integer.valueOf(topBar(scrim).__getChildren().get(0).getTextColor()));
         Assert.assertEquals("结果统计 = 浅色主题次要前景", Integer.valueOf(light.mutedForeground()),
-                Integer.valueOf(topBar(scrim).__getChildren().get(2).getTextColor()));
+                        Integer.valueOf(topBarSummary(scrim).getTextColor()));
 
         Assert.assertEquals("主题切换后高亮不丢", Integer.valueOf(1), t.result.gridHighlight().get());
         Assert.assertEquals("选中单元重派生为浅色主题选区色（证明非静态回退）",
@@ -2058,7 +2210,7 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("小盒面板宽 = 逻辑盒宽 - 2*margin", W - 16, card.getWidth());
         Assert.assertEquals("小盒面板高 = 逻辑盒高 - 2*margin", H - 16, card.getHeight());
         Assert.assertEquals("小盒信息条不占位（P5 §1.5.3）", 0,
-                centerColumn(overlayRoot(0)).__getChildren().get(2).getPreferredHeight());
+                centerColumn(overlayRoot(0)).__getChildren().get(3).getPreferredHeight());
     }
 
     /**
@@ -2133,10 +2285,13 @@ public class ScenePickerPanelTest {
     public void infoBarIsNeverEmptyAndShowsStableIdOnHover() {
         Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
         openPanel(f);
-        SceneNode infoBar = centerColumn(overlayRoot(0)).__getChildren().get(2);
+        SceneNode infoBar = centerColumn(overlayRoot(0)).__getChildren().get(3);
         SceneNode label = infoBar.__getChildren().get(0);
-        Assert.assertEquals("空闲态 = 操作提示（不允许空条）",
-                SearchPickerPanelPresentation.defaultEnglish().hoverHint(), label.getText());
+        // 空闲态 = 「搜索结果 (N)」+ 状态提示（U-P5-1 接线；两段均经 Presentation 注入）
+        Assert.assertTrue("空闲态含搜索结果标题（不允许空条）: " + label.getText(),
+                label.getText().contains(f.presentation().searchResultsTitle(1)));
+        Assert.assertTrue("空闲态含操作提示（不允许空条）: " + label.getText(),
+                label.getText().contains(f.panelPresentation().hoverHint()));
         Assert.assertEquals("信息条恒为单行省略（P5 §3.3）", 1, label.getMaxLines());
         Assert.assertTrue("信息条开启省略号", label.isEllipsis());
         Assert.assertEquals("悬停前信息条高 = 派生值（fs=12 -> 24）",

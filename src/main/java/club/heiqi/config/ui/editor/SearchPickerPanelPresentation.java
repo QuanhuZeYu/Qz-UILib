@@ -31,6 +31,11 @@ public final class SearchPickerPanelPresentation {
     private final String hoverHint;
     private final String infoBarIdPattern;
     private final String alreadyConfiguredBadge;
+    private final String memberAddingBanner;
+    private final String memberEditingBanner;
+    private final String keyboardHint;
+    private final String scrollHint;
+    private final String densityLabel;
 
     private SearchPickerPanelPresentation(Builder builder) {
         panelTitle = required(builder.panelTitle, "panelTitle");
@@ -48,6 +53,11 @@ public final class SearchPickerPanelPresentation {
         hoverHint = required(builder.hoverHint, "hoverHint");
         infoBarIdPattern = required(builder.infoBarIdPattern, "infoBarIdPattern");
         alreadyConfiguredBadge = required(builder.alreadyConfiguredBadge, "alreadyConfiguredBadge");
+        memberAddingBanner = required(builder.memberAddingBanner, "memberAddingBanner");
+        memberEditingBanner = required(builder.memberEditingBanner, "memberEditingBanner");
+        keyboardHint = required(builder.keyboardHint, "keyboardHint");
+        scrollHint = required(builder.scrollHint, "scrollHint");
+        densityLabel = required(builder.densityLabel, "densityLabel");
     }
 
     /** @return 默认英文扩展文案 */
@@ -91,6 +101,28 @@ public final class SearchPickerPanelPresentation {
      * {@code configuredKeys} 分量）。SPI 路径下点击仍走既有激活语义（不做静默丢弃）。</p>
      */
     public String alreadyConfiguredBadge() { return alreadyConfiguredBadge; }
+
+    /** @return 成员区「新增模式」横幅文案（点击候选即添加、Esc 结束） */
+    public String memberAddingBanner() { return memberAddingBanner; }
+
+    /**
+     * 成员区「编辑模式」横幅文案（{@code {name}} 会替换为成员展示名）。
+     *
+     * @param name 正在编辑的成员展示名（可为 null，按空串处理）
+     * @return 横幅文案
+     */
+    public String memberEditingBanner(String name) {
+        return memberEditingBanner.replace("{name}", name == null ? "" : name);
+    }
+
+    /** @return 信息条键盘态提示（网格持有焦点时替代 hover 提示） */
+    public String keyboardHint() { return keyboardHint; }
+
+    /** @return 信息条滚动提示（结果区仍有未显示的滚动余量时） */
+    public String scrollHint() { return scrollHint; }
+
+    /** @return 密度档位标签（与生效密度名拼成状态文本，见 CategoryNavPane 底部状态行） */
+    public String densityLabel() { return densityLabel; }
 
     /**
      * 信息条悬停态单行文案：{@code <label> · <id>}（P5 §3.3 / Q2 单行取法）。
@@ -139,6 +171,11 @@ public final class SearchPickerPanelPresentation {
         private String hoverHint = "Hover a result to see its full name and ID";
         private String infoBarIdPattern = "{label} · {id}";
         private String alreadyConfiguredBadge = "In group";
+        private String memberAddingBanner = "Click items to keep adding (Esc to finish)";
+        private String memberEditingBanner = "Editing: {name}";
+        private String keyboardHint = "Arrow keys to move, Enter to activate";
+        private String scrollHint = "Scroll for more results";
+        private String densityLabel = "Density";
 
         /** 设置全屏面板标题。 */
         public Builder panelTitle(String value) { panelTitle = value; return this; }
@@ -177,6 +214,21 @@ public final class SearchPickerPanelPresentation {
         public Builder alreadyConfiguredBadge(String value) {
             alreadyConfiguredBadge = value; return this;
         }
+
+        /** 设置成员区新增模式横幅文案。 */
+        public Builder memberAddingBanner(String value) { memberAddingBanner = value; return this; }
+
+        /** 设置成员区编辑模式横幅文案（占位符 {name}）。 */
+        public Builder memberEditingBanner(String value) { memberEditingBanner = value; return this; }
+
+        /** 设置信息条键盘态提示文案。 */
+        public Builder keyboardHint(String value) { keyboardHint = value; return this; }
+
+        /** 设置信息条滚动提示文案。 */
+        public Builder scrollHint(String value) { scrollHint = value; return this; }
+
+        /** 设置密度档位标签文案。 */
+        public Builder densityLabel(String value) { densityLabel = value; return this; }
 
         /** 构建不可变扩展文案。 */
         public SearchPickerPanelPresentation build() { return new SearchPickerPanelPresentation(this); }

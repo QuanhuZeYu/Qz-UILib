@@ -167,13 +167,13 @@ public class SearchPickerPanelWiringTest {
         layoutAll();
         SceneNode panel = panelRoot();
         SceneNode membersPanel = panel.__getChildren().get(2);
-        // 成员网格：gridRoot[1] → viewport[0] → content[0] → 行节点 → 卡片（跨行平铺计数）
-        SceneNode rows = membersPanel.__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
+        // 成员网格：membersPanel = [header, 模式横幅, gridRoot, ...]；gridRoot[0] → viewport[0] → content[0] → 行节点
+        SceneNode rows = membersPanel.__getChildren().get(2).__getChildren().get(0).__getChildren().get(0);
         int memberCards = 0;
         for (SceneNode rowNode : rows.__getChildren()) memberCards += rowNode.__getChildren().size();
         Assert.assertEquals("底部横带应渲染一个当前成员卡片", 1, memberCards);
 
-        // 「添加」按钮已移除：直接点击上方候选即隐式新增
+        // 隐式新增路径保持：直接点击上方候选即新增（显式「添加」按钮走同一 arm 逻辑，见 ScenePickerPanelTest）
         click(gridCell(panel, 0));
         Assert.assertEquals("点击候选直接新增成员", Arrays.asList("raw:a", "picked:"), raw.get());
         Assert.assertEquals("新增成功后面板保持展开重新武装", 1, rt.getOverlayHost().size());
@@ -202,10 +202,10 @@ public class SearchPickerPanelWiringTest {
         return rt.getOverlayHost().bottomFirst().get(0).getRoot().__getChildren().get(0);
     }
 
-    /** 结果列表单元：中栏 children = [error, stackHost, infoBar]，stackHost.children[0] = viewport。 */
+    /** 结果列表单元：中栏 children = [error, 空态占位, stackHost, infoBar]，stackHost.children[0] = viewport。 */
     private static SceneNode gridCell(SceneNode panel, int index) {
         SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1)
-                .__getChildren().get(1).__getChildren().get(0);
+                .__getChildren().get(2).__getChildren().get(0);
         // 窗口化后 viewport = [content]，content = [topSpacer, rowsContainer, bottomSpacer]
         SceneNode rowsContainer = viewport.__getChildren().get(0).__getChildren().get(1);
         for (SceneNode row : rowsContainer.__getChildren()) {

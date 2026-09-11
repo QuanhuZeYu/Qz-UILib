@@ -331,20 +331,14 @@ public class ScenePickerPanelSpiWindowTest {
         return labels;
     }
 
-    /**
-     * 单元标签文本。
-     *
-     * <p>单元结构 = {@code column[icon, labelRow[row[label, marker]]]}（P5 U-P5-2 起）：
-     * labelRow 承载「已配置」圆点的零占位槽位，标签是它的一号子节点。</p>
-     */
+    /** 单元标签文本（单元结构 = column[icon, label]，圆点挂在图位内部）。 */
     private static String cellLabel(SceneNode cell) {
-        return cell.__getChildren().get(1).__getChildren().get(0).getText();
+        return cell.__getChildren().get(1).getText();
     }
 
-    /** 「已配置」标记圆点（labelRow 的最后一个子节点）。 */
+    /** 「已配置」标记圆点（图位节点的唯一子节点）。 */
     private static SceneNode markerOf(SceneNode cell) {
-        List<SceneNode> row = cell.__getChildren().get(1).__getChildren();
-        return row.get(row.size() - 1);
+        return cell.__getChildren().get(0).__getChildren().get(0);
     }
 
     private static SceneNode cellByKey(SceneNode viewport, String key) {

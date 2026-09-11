@@ -1128,14 +1128,9 @@ public class SearchResultListTest {
         return cell.__getChildren().get(0);
     }
 
-    /**
-     * 单元内标签节点。
-     *
-     * <p>单元结构 = {@code column[icon, labelRow[row[label, marker]]]}（P5 U-P5-2 起：
-     * labelRow 承载「已配置」圆点的零占位槽位）；夹具项全部带 label，故标签恒存在。</p>
-     */
+    /** 单元内标签节点（第 1 子，夹具项全部带 label）。 */
     private static SceneNode labelOf(SceneNode cell) {
-        return cell.__getChildren().get(1).__getChildren().get(0);
+        return cell.__getChildren().get(1);
     }
 
     /** 节点自身 PaintFragment 内的 BACKDROP 命令数；无 fragment（无绘制内容）视为 0。 */

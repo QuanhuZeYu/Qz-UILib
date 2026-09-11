@@ -537,8 +537,8 @@ public class StructuredListFieldRendererTest {
         SceneNode panel = panelRoot();
         layoutPanel(panel, 1000, 700);
         layoutPanel(panel, 1000, 700);
-        // 成员网格内容：membersPanel[1]=gridRoot → [0]=viewport → [0]=content
-        SceneNode memberRows = panel.__getChildren().get(2).__getChildren().get(1)
+        // 成员网格内容：membersPanel = [header, 模式横幅, gridRoot, ...]；gridRoot[0] → viewport[0] → content[0]
+        SceneNode memberRows = panel.__getChildren().get(2).__getChildren().get(2)
                 .__getChildren().get(0).__getChildren().get(0);
         harness.click(memberAction(memberCell(memberRows, 1), 0));
         runtime.flush();
@@ -701,7 +701,7 @@ public class StructuredListFieldRendererTest {
         layoutPanel(panel, 1000, 700);
         // 第二帧布局：首帧 layoutDone 后列数推导/回夹可能改写网格结构，再布局一次收敛（对齐面板测试约定）。
         layoutPanel(panel, 1000, 700);
-        return panel.__getChildren().get(2).__getChildren().get(1)
+        return panel.__getChildren().get(2).__getChildren().get(2)
                 .__getChildren().get(0).__getChildren().get(0);
     }
 
@@ -959,10 +959,10 @@ public class StructuredListFieldRendererTest {
         runtime.flush();
     }
 
-    /** 结果列表单元：中栏 children = [error, stackHost, infoBar]，stackHost.children[0] = viewport。 */
+    /** 结果列表单元：中栏 children = [error, 空态占位, stackHost, infoBar]，stackHost.children[0] = viewport。 */
     private static SceneNode gridCell(SceneNode panel, int index) {
         SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1)
-                .__getChildren().get(1).__getChildren().get(0);
+                .__getChildren().get(2).__getChildren().get(0);
         // 窗口化后 viewport = [content]，content = [topSpacer, rowsContainer, bottomSpacer]
         SceneNode rowsContainer = viewport.__getChildren().get(0).__getChildren().get(1);
         for (SceneNode row : rowsContainer.__getChildren()) {
