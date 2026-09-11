@@ -970,6 +970,43 @@ public class ScenePickerPanelTest {
                 rowsContainer.__getChildren().get(0).__getChildren().size());
     }
 
+    /**
+     * P3/T-6：结果已由查询层按分类过滤（SPI 路径）时，面板侧不得再过滤一次——
+     * 否则窗口切片被过滤两次、totalItems 与结果计数失真。
+     */
+    @Test
+    public void resultsCategoryFilteredSkipsPanelSideFiltering() {
+        ArrayList<SearchPickerData.Candidate> candidates = new ArrayList<SearchPickerData.Candidate>();
+        candidates.add(candidate("a"));
+        candidates.add(candidate("b"));
+        candidates.add(candidate("c"));
+        Signal<String> categoryKey = Signal.create("cat1");
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        Props props = Props.builder(Signal.create(""),
+                Signal.create(new SearchPickerData.SearchResult(candidates)),
+                Signal.create(Boolean.TRUE), ignored -> { }, ignored -> { }, visualAdapter())
+                .open(open)
+                .onCloseRequest(() -> open.set(Boolean.FALSE))
+                .grid(GridProps.of(0, 64, 64, 8, 8, 3))
+                .categoryOf(key -> "c".equals(key) ? "cat2" : "cat1")
+                .currentCategoryKey(categoryKey, categoryKey::set)
+                .resultsCategoryFiltered(true)
+                .build();
+        Result result = ScenePickerPanel.create(rt, props);
+        sceneRoot.appendChild(result.root());
+        rt.flush();
+
+        open.set(Boolean.TRUE);
+        rt.flush();
+        layoutAll();
+        layoutAll();
+
+        SceneNode grid = result.grid().get();
+        Assert.assertNotNull(grid);
+        Assert.assertEquals("查询层已按分类过滤 → 面板不得再过滤（3 个候选全部挂载）",
+                3, mountedItemCount(grid));
+    }
+
     // ==================== 键盘导航与焦点意图 ====================
 
     @Test

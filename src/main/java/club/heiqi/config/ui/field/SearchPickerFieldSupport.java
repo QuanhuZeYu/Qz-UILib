@@ -132,9 +132,11 @@ public final class SearchPickerFieldSupport {
         // 数据源路径探测（纯加法）：实现 SPI 且给出惰性 source 时走查询式路径；否则保持旧全量路径（T-1）。
         PickerCandidateSource source = candidateSourceOf(provider);
         int searchMaxItems = searchWindowOf(pickerSpec, provider);
+        CategoryQueryState categoryState = new CategoryQueryState();
         Computed<SearchPickerData.SearchResult> results = source == null
                 ? legacySearchResults(provider, pickerSpec, presentation, query, searchError)
-                : sourceSearchResults(rt, source, searchMaxItems, pickerSpec, presentation, query, searchError);
+                : sourceSearchResults(rt, source, searchMaxItems, pickerSpec, presentation, query,
+                        searchError, categoryState);
         Signal<Boolean> open = Signal.create(Boolean.FALSE);
         ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, results,
                 Signal.create(Boolean.TRUE),
@@ -167,8 +169,10 @@ public final class SearchPickerFieldSupport {
                 .onCloseRequest(() -> open.set(Boolean.FALSE))
                 .onCancel(() -> {
                     query.set(""); decodeError.set(""); searchError.set(""); encodeError.set("");
-                });
-        wireCategories(panelBuilder, provider);
+                })
+                // SPI 路径下分类过滤归查询层（PickerQuery.categoryDimension/categoryKey）：面板侧关闭二次过滤（T-6）。
+                .resultsCategoryFiltered(source != null);
+        wireCategories(panelBuilder, provider, categoryState);
         ScenePickerPanel.Props props = panelBuilder.build();
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
 
@@ -206,9 +210,11 @@ public final class SearchPickerFieldSupport {
         // 数据源路径探测（同 SINGLE_VALUE；T-1 回退保留）。
         PickerCandidateSource source = candidateSourceOf(provider);
         int searchMaxItems = searchWindowOf(pickerSpec, provider);
+        CategoryQueryState categoryState = new CategoryQueryState();
         Computed<SearchPickerData.SearchResult> queryResults = source == null
                 ? legacySearchResults(provider, pickerSpec, presentation, query, searchError)
-                : sourceSearchResults(rt, source, searchMaxItems, pickerSpec, presentation, query, searchError);
+                : sourceSearchResults(rt, source, searchMaxItems, pickerSpec, presentation, query,
+                        searchError, categoryState);
         SearchPickerListBinding binding = new SearchPickerListBinding(value, items,
                 (ListMemberCodec) provider.codec(), onChange);
         Computed<List<SearchPickerData.CurrentMember>> decodedMembers = Computed.create(
@@ -255,8 +261,9 @@ public final class SearchPickerFieldSupport {
                     query.set(""); searchError.set(""); encodeError.set("");
                 })
                 .open(open)
-                .onCloseRequest(() -> open.set(Boolean.FALSE));
-        wireCategories(panelBuilder, provider);
+                .onCloseRequest(() -> open.set(Boolean.FALSE))
+                .resultsCategoryFiltered(source != null);
+        wireCategories(panelBuilder, provider, categoryState);
         ScenePickerPanel.Props props = panelBuilder.build();
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
 
@@ -438,14 +445,17 @@ public final class SearchPickerFieldSupport {
      */
     private static Computed<SearchPickerData.SearchResult> sourceSearchResults(
             SceneRuntime rt, PickerCandidateSource source, int searchMaxItems, SearchPickerSpec pickerSpec,
-            SearchPickerPresentation presentation, ReadableSignal<String> query, Signal<String> searchError) {
+            SearchPickerPresentation presentation, ReadableSignal<String> query, Signal<String> searchError,
+            CategoryQueryState categoryState) {
         PickerRevisionBridge bridge = PickerRevisionBridge.forSource(source);
         bridge.bindTo(rt);
         return Computed.create(() -> {
             bridge.versionSignal().get(); // 源版本变化 → 本次求值重算（A3：UILib 拉版本号 + 合成 Signal）
             try {
+                // 查询条件携带分类维度/键：分类过滤是 source 的职责（ADR §1.7 D-12），
+                // 面板侧 filterByCategory 在 SPI 路径关闭（resultsCategoryFiltered），避免二次过滤。
                 SearchPickerData.SearchResult searched = querySource(source,
-                        PickerQuery.text(query.get(), 0, null), searchMaxItems);
+                        queryFor(query.get(), categoryState), searchMaxItems);
                 if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
                         presentation.searchError(), null);
                 searchError.set("");
@@ -543,15 +553,26 @@ public final class SearchPickerFieldSupport {
      * 受控维度下标与受控当前分类 key，分类列表与分类器按当前维度重派生，切换维度时分类 key
      * 复位为「全部」；单维度/无分组保持静态透传（不传 dimension/currentCategoryKey，行为不变）。
      */
-    private static void wireCategories(ScenePickerPanel.Props.Builder builder, ValueEditorProvider provider) {
-        if (!(provider instanceof CategorizedValueEditorProvider)
-                || ((CategorizedValueEditorProvider) provider).categoryDimensionCount() <= 1) {
+    private static void wireCategories(ScenePickerPanel.Props.Builder builder, ValueEditorProvider provider,
+                                       CategoryQueryState state) {
+        if (!(provider instanceof CategorizedValueEditorProvider)) {
             builder.categories(categoriesOf(provider)).categoryOf(categoryOf(provider));
             return;
         }
         CategorizedValueEditorProvider categorized = (CategorizedValueEditorProvider) provider;
+        if (categorized.categoryDimensionCount() <= 1) {
+            // 单维度：分类列表/分类器静态透传，但分类键仍受控注入——查询层据此携带 categoryKey
+            // （PickerQuery.categoryDimension/categoryKey），面板侧不再二次过滤（T-6）。
+            Signal<String> singleCategoryKey = Signal.create(null);
+            state.categoryKey = singleCategoryKey;
+            builder.currentCategoryKey(singleCategoryKey, singleCategoryKey::set);
+            builder.categories(categoriesOf(provider)).categoryOf(categoryOf(provider));
+            return;
+        }
         Signal<Integer> dimensionIndex = Signal.create(Integer.valueOf(0));
         Signal<String> currentCategoryKey = Signal.create(null);
+        state.dimension = dimensionIndex;
+        state.categoryKey = currentCategoryKey;
         Computed<List<SearchPickerCategories.Category>> categories = Computed.create(() ->
                 SearchPickerCategories.immutableCopy(categorized.categories(dimensionIndex.get().intValue())));
         Computed<Function<String, String>> categoryOf = Computed.create(() ->
@@ -563,6 +584,43 @@ public final class SearchPickerFieldSupport {
         builder.currentCategoryKey(currentCategoryKey, currentCategoryKey::set);
         builder.categories(categories);
         builder.categoryOf(candidateKey -> categoryOf.get().apply(candidateKey));
+    }
+
+    /**
+     * 分类查询状态：字段侧持有的受控维度/分类键读入口（由 {@link #wireCategories} 注入，面板写入）。
+     *
+     * <p>未注入（provider 无分组，或注入发生在首次求值之后）时读默认值：维度 0、分类键 null
+     * （= 不过滤），与旧全量路径语义一致。</p>
+     */
+    static final class CategoryQueryState {
+        /** 受控分类维度信号；null = 未注入（按维度 0）。包内可见：装配端注入 + 单测直接锚定。 */
+        ReadableSignal<Integer> dimension;
+        /** 受控分类键信号；null = 未注入（不做分类过滤）。 */
+        ReadableSignal<String> categoryKey;
+    }
+
+    /**
+     * 按当前查询文本 + 分类维度/键构造查询条件（包内可见以便单测直接锚定注入）。
+     *
+     * @param rawText 原始查询文本（可为 null；归一化由 PickerQuery 负责）
+     * @param state   分类查询状态（非 null）
+     * @return 查询条件值类型
+     */
+    static PickerQuery queryFor(String rawText, CategoryQueryState state) {
+        return PickerQuery.text(rawText, dimensionOf(state), categoryKeyOf(state));
+    }
+
+    /** 当前分类维度（未注入 = 0）。 */
+    private static int dimensionOf(CategoryQueryState state) {
+        ReadableSignal<Integer> dimension = state.dimension;
+        Integer value = dimension == null ? null : dimension.get();
+        return value == null ? 0 : Math.max(0, value.intValue());
+    }
+
+    /** 当前分类键（未注入/null = 不做分类过滤）。 */
+    private static String categoryKeyOf(CategoryQueryState state) {
+        ReadableSignal<String> key = state.categoryKey;
+        return key == null ? null : key.get();
     }
 
     /**

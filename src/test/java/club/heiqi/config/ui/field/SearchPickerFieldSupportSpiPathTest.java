@@ -21,6 +21,8 @@ import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
 
 /**
  * 字段侧 SPI 路径测试：查询式求值（browse 无上限 / 搜索 lane 上限与截断真值）、exact 成员解析、
@@ -107,6 +109,38 @@ public class SearchPickerFieldSupportSpiPathTest {
                 source, PickerQuery.browse(0, null), SEARCH_MAX_ITEMS);
 
         Assert.assertEquals("首项胜去重", 4, result.candidates().size());
+    }
+
+    /**
+     * P3/T-6：查询条件携带受控分类维度/键——分类过滤是 source 的职责，面板侧 filterByCategory 在
+     * SPI 路径关闭（避免对窗口切片二次过滤使 totalItems 失真）。
+     */
+    @Test
+    public void queryForInjectsControlledCategoryDimensionAndKey() {
+        SearchPickerFieldSupport.CategoryQueryState state = new SearchPickerFieldSupport.CategoryQueryState();
+        // 未注入（无分组 provider / 注入前）：维度 0、分类键 null（= 不做分类过滤）——与旧路径同语义
+        PickerQuery plain = SearchPickerFieldSupport.queryFor(" Stone ", state);
+        Assert.assertEquals(0, plain.categoryDimension());
+        Assert.assertTrue("未注入分类键 = 不做分类过滤（null 折叠为空串）", plain.categoryKey().isEmpty());
+        Assert.assertEquals("归一化由 PickerQuery 负责", "stone", plain.normalizedText());
+
+        Signal<Integer> dimension = Signal.create(Integer.valueOf(1));
+        Signal<String> categoryKey = Signal.create("cat1");
+        state.dimension = dimension;
+        state.categoryKey = categoryKey;
+        PickerQuery filtered = SearchPickerFieldSupport.queryFor("", state);
+        Assert.assertTrue("空文本 = 浏览 lane（无上限）", filtered.isBrowse());
+        Assert.assertEquals(1, filtered.categoryDimension());
+        Assert.assertEquals("cat1", filtered.categoryKey());
+
+        categoryKey.set("cat2");
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("分类切换立即反映到查询条件", "cat2",
+                SearchPickerFieldSupport.queryFor("", state).categoryKey());
+        dimension.set(Integer.valueOf(-5));
+        ReactiveScheduler.get().flush();
+        Assert.assertEquals("负维度收敛为 0（PickerQuery 拒绝负维度）",
+                0, SearchPickerFieldSupport.queryFor("", state).categoryDimension());
     }
 
     /** 成员解析走 exact：每个唯一 key 恰好一次，未命中保留 unknown（enumerated=false）。 */

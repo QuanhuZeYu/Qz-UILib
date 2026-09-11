@@ -178,6 +178,8 @@ public final class ScenePickerPanel {
         private final Consumer<Integer> onDimensionChange;
         private final GridProps grid;
         private final boolean variantSearchEnabled;
+        /** 结果是否已在查询层按分类过滤（SPI 路径）：true 时面板侧不再二次过滤（ADR §1.7 D-12/T-6）。 */
+        private final boolean resultsCategoryFiltered;
 
         /**
          * 创建受控居中 70% picker 面板属性（保留旧组件六参必填语义）。
@@ -218,6 +220,7 @@ public final class ScenePickerPanel {
             this.onDimensionChange = ignored -> { };
             this.grid = GridProps.DEFAULT;
             this.variantSearchEnabled = false;
+            this.resultsCategoryFiltered = false;
         }
 
         private Props(Builder builder) {
@@ -245,6 +248,7 @@ public final class ScenePickerPanel {
             onDimensionChange = builder.onDimensionChange;
             grid = builder.grid;
             variantSearchEnabled = builder.variantSearchEnabled;
+            resultsCategoryFiltered = builder.resultsCategoryFiltered;
         }
 
         /** 创建保留旧六参必填项的 builder。 */
@@ -310,6 +314,8 @@ public final class ScenePickerPanel {
         public GridProps grid() { return grid; }
         /** @return 是否启用变体搜索输入 */
         public boolean variantSearchEnabled() { return variantSearchEnabled; }
+        /** @return 结果是否已在查询层按分类过滤（true 时面板侧不做 filterByCategory，避免二次过滤） */
+        public boolean resultsCategoryFiltered() { return resultsCategoryFiltered; }
 
         /** 全屏 picker 面板可选属性 builder。 */
         public static final class Builder {
@@ -343,6 +349,7 @@ public final class ScenePickerPanel {
             private Consumer<Integer> onDimensionChange = ignored -> { };
             private GridProps grid = GridProps.DEFAULT;
             private boolean variantSearchEnabled;
+            private boolean resultsCategoryFiltered;
 
             private Builder(ReadableSignal<String> query, ReadableSignal<SearchPickerData.SearchResult> results,
                             ReadableSignal<Boolean> enabled, Consumer<String> onQuery,
@@ -447,6 +454,17 @@ public final class ScenePickerPanel {
             /** 启用变体浮层内的变体搜索输入。 */
             public Builder variantSearchEnabled(boolean value) { variantSearchEnabled = value; return this; }
 
+            /**
+             * 声明结果已由查询层按分类过滤（SPI 路径 / ADR §1.7 D-12 T-6）：面板侧不再二次过滤。
+             *
+             * <p>新 SPI 路径下分类过滤是 source 的职责（{@code PickerQuery.categoryDimension/categoryKey}），
+             * 面板再过滤一次会让窗口切片与 totalItems/计数失真；旧 provider（未实现 SPI）保持 false，
+             * 面板侧 filterByCategory 照旧（T-6 保留期）。</p>
+             */
+            public Builder resultsCategoryFiltered(boolean value) {
+                resultsCategoryFiltered = value; return this;
+            }
+
             /** 构建不可变属性。 */
             public Props build() { return new Props(this); }
         }
@@ -527,9 +545,15 @@ public final class ScenePickerPanel {
 
         ReadableSignal<MemberIssues> memberIssues = Computed.create(() ->
                 ScenePickerPanelNav.analyzeMemberIssues(safeMembers(props)));
-        ReadableSignal<List<SearchPickerData.Candidate>> filtered = Computed.create(() ->
-                ScenePickerPanelNav.filterByCategory(safeResults(props).candidates(),
-                        categoryKey.get(), props.categoryOf()));
+        ReadableSignal<List<SearchPickerData.Candidate>> filtered = Computed.create(() -> {
+            List<SearchPickerData.Candidate> candidates = safeResults(props).candidates();
+            // SPI 路径：分类过滤已在查询层完成（PickerQuery.categoryDimension/categoryKey），
+            // 面板侧禁止二次过滤（否则窗口切片被过滤两次、totalItems 与计数失真）——ADR §1.7 D-12/T-6。
+            if (props.resultsCategoryFiltered()) {
+                return candidates;
+            }
+            return ScenePickerPanelNav.filterByCategory(candidates, categoryKey.get(), props.categoryOf());
+        });
         ReadableSignal<List<Item>> gridItems = Computed.create(() -> {
             long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
             List<SearchPickerData.Candidate> candidates = filtered.get();
