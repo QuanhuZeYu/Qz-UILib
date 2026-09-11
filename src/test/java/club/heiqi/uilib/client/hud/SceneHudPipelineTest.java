@@ -462,6 +462,22 @@ public class SceneHudPipelineTest {
         assertEquals(1F, host.currentScaleFactor("zoom"), 0F);
     }
 
+    /** 缩放是 HUD 自身能力：未注册外接工具栏的 HUD 同样按统一倍率缩放（不再恒为 1.0）。 */
+    @Test public void unifiedScaleAppliesWithoutToolbarRegistration() {
+        HudRegistry registry = new HudRegistry();
+        registerBody(registry, "bare");
+        HudToolbarService.getInstance().scale("bare").setPercent(150);
+        SceneHudHost host = new SceneHudHost(registry, MEASURER);
+        host.render(new RecordingRenderBackend(), 800, 600, true, false);
+        assertEquals("未注册外接工具栏的 HUD 也必须按统一倍率缩放",
+                1.5F, host.currentScaleFactor("bare"), 0F);
+        club.heiqi.uilib.ui.scene.layout.AnchorRect logical = host.currentLogicalPlacement("bare");
+        club.heiqi.uilib.ui.scene.layout.AnchorRect visual = host.currentPlacement("bare");
+        assertEquals(Math.round(logical.getX() * 1.5F), visual.getX());
+        assertEquals(Math.round(logical.getY() * 1.5F), visual.getY());
+        assertEquals(Math.round(logical.getWidth() * 1.5F), visual.getWidth());
+    }
+
     @Test public void renderPathDoesNotMutateShellSizingDeclaration() throws Exception {
         String source = new String(Files.readAllBytes(Paths.get("src/main/java/club/heiqi/uilib/client/hud/SceneHudHost.java")),
                 StandardCharsets.UTF_8);

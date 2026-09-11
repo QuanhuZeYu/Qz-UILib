@@ -3,7 +3,12 @@ package club.heiqi.uilib.ui.hud.api;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 
-/** 单个 HUD 注册生命周期内的缩放状态；客户端主线程使用，不改变宿主全局倍率或持久配置。 */
+/**
+ * 单个 HUD 的统一缩放状态（独立于外接工具栏注册）；客户端主线程使用，不改变宿主全局倍率或持久配置。
+ *
+ * <p>由 {@code HudScaleRegistry} 按 hudId 持有，{@code HudToolbarService.scale(String)} 是公开
+ * 读取入口；关闭态宿主、打开态聊天屏与编辑态预览浮层共用同一实例，倍率口径只有一处真相。</p>
+ */
 public final class HudScaleState {
     public static final int MIN_PERCENT = 50;
     public static final int MAX_PERCENT = 200;

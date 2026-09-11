@@ -30,8 +30,12 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * 聊天屏编辑态 HUD 预览浮层契约：非编辑态零注册、每目标一个浮层且按注册顺序装配、
- * 放置走 {@link club.heiqi.uilib.ui.hud.api.HudLayoutResolver}（外框含工具栏 gap + 厚度）、
+ * 放置走 {@link club.heiqi.uilib.ui.hud.api.HudLayoutResolver}（外框含编辑态统一缩放行的 gap + 厚度）、
  * 左键命中拖动写草稿（clamp 到视口）、Esc 手势回滚、提交/取消语义。
+ *
+ * <p><b>缩放入口</b>：每个预览都带 - / 1:1 / + 三个按钮（读写统一缩放状态），与下游是否声明
+ * {@code HudEditTarget.getToolbarSpec()}、是否注册 {@code HudToolbarService} 无关；
+ * 声明了自定义工具时它作为内层挂上，且不再重复追加缩放按钮。
  *
  * <p>浮层布局在生产里由帧管线按全屏约束完成（{@code anchorProvider = null}），测试用
  * {@link SceneLayoutEngine} 复刻同一约束，保证命中与几何断言走真实布局盒。</p>
@@ -46,6 +50,8 @@ public class ChatHudEditPreviewsTest {
     private static final int CONTENT_H = 60;
     private static final int TOOLBAR_GAP = 4;
     private static final int TOOLBAR_THICKNESS = 28;
+    /** 无自定义工具时的预览外框逻辑高 = 内容 + 统一缩放行 (gap + thickness)。 */
+    private static final int PREVIEW_OUTER_H = CONTENT_H + TOOLBAR_GAP + TOOLBAR_THICKNESS;
 
     private SceneInteractionHarness harness;
     private SceneLayoutEngine layoutEngine;
@@ -93,11 +99,23 @@ public class ChatHudEditPreviewsTest {
         }
     }
 
-    /** 无 toolbarSpec 时浮层根的唯一子节点就是预览内容根（passthrough）。 */
-    private static SceneNode previewContent(SceneOverlayHost.Entry entry) {
+    /** 预览外框 = 浮层根的唯一子节点（统一缩放行恒为其尾部孩子）。 */
+    private static SceneNode previewOuter(SceneOverlayHost.Entry entry) {
         List<SceneNode> children = entry.getRoot().__getChildren();
         Assert.assertEquals("浮层根只承载预览外框一个子节点", 1, children.size());
         return children.get(0);
+    }
+
+    /** 预览内容根 = 预览外框的首个孩子（自定义工具在内层外框里，不占内容位）。 */
+    private static SceneNode previewContent(SceneOverlayHost.Entry entry) {
+        List<SceneNode> children = previewOuter(entry).__getChildren();
+        Assert.assertEquals("预览外框 = 内容 + 统一缩放行", 2, children.size());
+        return children.get(0);
+    }
+
+    /** 预览统一缩放行（- / 1:1 / +）。 */
+    private static SceneNode previewScaleRow(SceneOverlayHost.Entry entry) {
+        return previewOuter(entry).__getChildren().get(1);
     }
 
     private static AnchorRect box(SceneNode node) {
@@ -192,20 +210,20 @@ public class ChatHudEditPreviewsTest {
 
             AnchorRect expected = club.heiqi.uilib.ui.hud.api.HudLayoutResolver.resolve(
                     HudPlacement.defaultOf(HudAnchor.BOTTOM_LEFT, HudEditTarget.DEFAULT_MARGIN_PX),
-                    VIEW_W, VIEW_H, CONTENT_W, CONTENT_H, HudInsets.NONE);
-            AnchorRect actual = box(previewContent(rt.getOverlayHost().bottomFirst().get(0)));
+                    VIEW_W, VIEW_H, CONTENT_W, PREVIEW_OUTER_H, HudInsets.NONE);
+            AnchorRect actual = box(previewOuter(rt.getOverlayHost().bottomFirst().get(0)));
             // AnchorRect 无 equals（identity 语义），逐字段断言
             Assert.assertEquals("预览位置 X = 解析器给出的盒", expected.getX(), actual.getX());
             Assert.assertEquals("预览位置 Y = 解析器给出的盒", expected.getY(), actual.getY());
             Assert.assertEquals("预览宽 = 外框宽", expected.getWidth(), actual.getWidth());
-            Assert.assertEquals("预览高 = 外框高", expected.getHeight(), actual.getHeight());
-            Assert.assertEquals(VIEW_H - HudEditTarget.DEFAULT_MARGIN_PX - CONTENT_H, actual.getY());
+            Assert.assertEquals("预览高 = 外框高（含统一缩放行）", expected.getHeight(), actual.getHeight());
+            Assert.assertEquals(VIEW_H - HudEditTarget.DEFAULT_MARGIN_PX - PREVIEW_OUTER_H, actual.getY());
 
             // 提交后的用户覆盖参与下一帧放置
             HudLayoutService.getInstance().commit(HUD_ID, HudPlacement.of(HudAnchor.TOP_LEFT, 30, 20));
             previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
             layoutOverlays(rt);
-            AnchorRect moved = box(previewContent(rt.getOverlayHost().bottomFirst().get(0)));
+            AnchorRect moved = box(previewOuter(rt.getOverlayHost().bottomFirst().get(0)));
             Assert.assertEquals(30, moved.getX());
             Assert.assertEquals(20, moved.getY());
         } finally {
@@ -232,12 +250,13 @@ public class ChatHudEditPreviewsTest {
             Assert.assertTrue("按下预览内容即开始拖动", previews.isDragging());
 
             // 拖到视口右上极限之外：偏移收敛进 [0, 可用尺寸 - 外框尺寸]。
-            // 下锚点量的是「底边距视口底部」：向左上拖 = 偏移增大，故上极限 = 视口高 - 内容高。
+            // 下锚点量的是「底边距视口底部」：向左上拖 = 偏移增大，故上极限 = 视口高 - 外框高
+            // （外框含统一缩放行的 gap + thickness）。
             harness.moveAt(VIEW_W - 10, 5);
             HudPlacement drafted = layout.placement(HUD_ID);
             Assert.assertNotNull("拖动必须写草稿", drafted);
             Assert.assertEquals(VIEW_W - CONTENT_W, drafted.getOffsetX());
-            Assert.assertEquals(VIEW_H - CONTENT_H, drafted.getOffsetY());
+            Assert.assertEquals(VIEW_H - PREVIEW_OUTER_H, drafted.getOffsetY());
 
             harness.releaseAt(VIEW_W - 10, 5);
             Assert.assertFalse("抬起结束手势", previews.isDragging());
@@ -288,14 +307,14 @@ public class ChatHudEditPreviewsTest {
         }
     }
 
+    /**
+     * 无 toolbarSpec / 无工具栏注册也必须有统一缩放入口：- / 1:1 / + 三个按钮计入外框，
+     * 且与放置、拖动 clamp 同口径。
+     */
     @Test
-    public void previewOuterBoxIncludesToolbarGapAndThickness() {
+    public void unifiedScaleRowParticipatesInOuterBoxAndClamp() {
         SceneRuntime rt = harness.getRuntime();
-        HudToolbarSpec spec = HudToolbarSpec.builder()
-                .scaleControls(false).gap(TOOLBAR_GAP).thickness(TOOLBAR_THICKNESS).build();
-        HudToolbarService.getInstance().register(HUD_ID, spec,
-                r -> SceneNode.row().setPreferredWidth(60));
-        HudRegistration registration = HudEditService.getInstance().register(target(HUD_ID, CONTENT_W, spec));
+        HudRegistration registration = HudEditService.getInstance().register(target(HUD_ID, CONTENT_W, null));
         ChatHudEditPreviews previews = new ChatHudEditPreviews(rt);
         try {
             previews.setSessionActive(true);
@@ -303,27 +322,121 @@ public class ChatHudEditPreviewsTest {
             layoutOverlays(rt);
 
             SceneOverlayHost.Entry entry = rt.getOverlayHost().bottomFirst().get(0);
-            SceneNode outer = entry.getRoot().__getChildren().get(0);
-            List<SceneNode> outerChildren = outer.__getChildren();
-            Assert.assertEquals("外框 = 内容 + 工具栏", 2, outerChildren.size());
-            SceneNode content = outerChildren.get(0);
-            SceneNode toolbar = outerChildren.get(1);
+            List<SceneNode> outerChildren = previewOuter(entry).__getChildren();
+            Assert.assertEquals("预览外框 = 内容 + 统一缩放行", 2, outerChildren.size());
+            SceneNode scaleRow = outerChildren.get(1);
+            Assert.assertEquals("统一缩放行 = 空自定义占位 + - / 1:1 / +",
+                    4, scaleRow.__getChildren().size());
 
-            int outerHeight = CONTENT_H + TOOLBAR_GAP + TOOLBAR_THICKNESS;
-            AnchorRect contentBox = box(content);
-            AnchorRect toolbarBox = box(toolbar);
+            AnchorRect contentBox = box(outerChildren.get(0));
+            AnchorRect scaleRowBox = box(scaleRow);
+            AnchorRect expected = club.heiqi.uilib.ui.hud.api.HudLayoutResolver.resolve(
+                    HudPlacement.defaultOf(HudAnchor.BOTTOM_LEFT, HudEditTarget.DEFAULT_MARGIN_PX),
+                    VIEW_W, VIEW_H, CONTENT_W, PREVIEW_OUTER_H, HudInsets.NONE);
+            Assert.assertEquals("缩放行厚度计入放置：内容顶部 = 外框顶部",
+                    expected.getY(), contentBox.getY());
+            Assert.assertEquals("缩放行紧贴内容下方留 gap",
+                    contentBox.getY() + contentBox.getHeight() + TOOLBAR_GAP, scaleRowBox.getY());
+            Assert.assertEquals(expected.getY() + PREVIEW_OUTER_H,
+                    scaleRowBox.getY() + scaleRowBox.getHeight());
+
+            // clamp 口径与放置同源：下锚点向上拖到极限 = 视口高 - 外框高（缩放行厚度计入外框）
+            HudLayoutService layout = HudLayoutService.getInstance();
+            layout.beginEdit();
+            harness.pressAt(contentBox.getX() + 5, contentBox.getY() + 5);
+            harness.moveAt(VIEW_W - 1, 0);
+            harness.releaseAt(VIEW_W - 1, 0);
+            HudPlacement drafted = layout.placement(HUD_ID);
+            Assert.assertNotNull(drafted);
+            Assert.assertEquals(VIEW_W - CONTENT_W, drafted.getOffsetX());
+            Assert.assertEquals(VIEW_H - PREVIEW_OUTER_H, drafted.getOffsetY());
+        } finally {
+            previews.dispose();
+            registration.close();
+            layoutCancel();
+        }
+    }
+
+    /** 编辑态缩放入口写统一缩放状态；外框尺寸与 clamp 随倍率同口径变化。 */
+    @Test
+    public void scaleButtonsDriveUnifiedStateAndClampUsesScaledOuterBox() {
+        SceneRuntime rt = harness.getRuntime();
+        HudRegistration registration = HudEditService.getInstance().register(target(HUD_ID, CONTENT_W, null));
+        ChatHudEditPreviews previews = new ChatHudEditPreviews(rt);
+        try {
+            previews.setSessionActive(true);
+            previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
+            layoutOverlays(rt);
+
+            SceneOverlayHost.Entry entry = rt.getOverlayHost().bottomFirst().get(0);
+            SceneNode plus = previewScaleRow(entry).__getChildren().get(3);
+            Assert.assertEquals(100,
+                    HudToolbarService.getInstance().scale(HUD_ID).percent().get().intValue());
+            harness.click(plus);
+            Assert.assertEquals("编辑态缩放入口写统一缩放状态（宿主/打开态读同一份）",
+                    110, HudToolbarService.getInstance().scale(HUD_ID).percent().get().intValue());
+
+            // 放置与 clamp 同口径：倍率变化后上极限 = 视口高 - ceil(外框高 × 倍率)
+            previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
+            layoutOverlays(rt);
+            HudLayoutService layout = HudLayoutService.getInstance();
+            layout.beginEdit();
+            AnchorRect contentBox = box(previewContent(rt.getOverlayHost().bottomFirst().get(0)));
+            harness.pressAt(contentBox.getX() + 5, contentBox.getY() + 5);
+            harness.moveAt(VIEW_W - 1, 0);
+            harness.releaseAt(VIEW_W - 1, 0);
+            HudPlacement drafted = layout.placement(HUD_ID);
+            Assert.assertNotNull(drafted);
+            // 右/上极限同口径：外框尺寸按统一倍率换算
+            Assert.assertEquals(VIEW_W - (int) Math.ceil(CONTENT_W * 1.1F), drafted.getOffsetX());
+            Assert.assertEquals(VIEW_H - (int) Math.ceil(PREVIEW_OUTER_H * 1.1F), drafted.getOffsetY());
+        } finally {
+            previews.dispose();
+            registration.close();
+            layoutCancel();
+        }
+    }
+
+    /** 下游 toolbarSpec 保留为「可选额外自定义工具」：作为内层挂上，且不重复追加缩放入口。 */
+    @Test
+    public void optionalCustomToolbarStacksInsideUnifiedScaleRow() {
+        SceneRuntime rt = harness.getRuntime();
+        HudToolbarSpec spec = HudToolbarSpec.builder()
+                .scaleControls(true).gap(TOOLBAR_GAP).thickness(TOOLBAR_THICKNESS).build();
+        HudToolbarService.getInstance().register(HUD_ID, spec,
+                r -> SceneNode.row().setPreferredWidth(60));
+        HudRegistration registration = HudEditService.getInstance().register(target(HUD_ID, CONTENT_W, spec));
+        ChatHudEditPreviews previews = new ChatHudEditPreviews(rt);
+        try {
+            previews.setSessionActive(true);
+            // 两轮 frame+layout：内层外框首帧尚未实测，外框尺寸要等实测收敛后再定位（生产每帧都在跑）
+            previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
+            layoutOverlays(rt);
+            previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
+            layoutOverlays(rt);
+
+            SceneOverlayHost.Entry entry = rt.getOverlayHost().bottomFirst().get(0);
+            List<SceneNode> outerChildren = previewOuter(entry).__getChildren();
+            Assert.assertEquals("外层 = 内层外框 + 统一缩放行", 2, outerChildren.size());
+            Assert.assertEquals("统一缩放行 = 空自定义占位 + - / 1:1 / +",
+                    4, outerChildren.get(1).__getChildren().size());
+
+            List<SceneNode> innerChildren = outerChildren.get(0).__getChildren();
+            Assert.assertEquals("内层 = 内容 + 下游自定义工具", 2, innerChildren.size());
+            Assert.assertEquals("下游工具栏不再追加缩放按钮（缩放入口唯一）",
+                    0, innerChildren.get(1).__getChildren().size());
+
+            // 两层厚度都计入放置与 clamp：外框高 = 内容 + 2 × (gap + thickness)
+            int outerHeight = CONTENT_H + 2 * (TOOLBAR_GAP + TOOLBAR_THICKNESS);
             AnchorRect expected = club.heiqi.uilib.ui.hud.api.HudLayoutResolver.resolve(
                     HudPlacement.defaultOf(HudAnchor.BOTTOM_LEFT, HudEditTarget.DEFAULT_MARGIN_PX),
                     VIEW_W, VIEW_H, CONTENT_W, outerHeight, HudInsets.NONE);
-            Assert.assertEquals("工具栏厚度计入放置：内容顶部 = 外框顶部",
-                    expected.getY(), contentBox.getY());
-            Assert.assertEquals("工具栏紧贴内容下方留 gap",
-                    contentBox.getY() + contentBox.getHeight() + TOOLBAR_GAP, toolbarBox.getY());
-            Assert.assertEquals(expected.getY() + outerHeight, toolbarBox.getY() + toolbarBox.getHeight());
+            SceneNode content = innerChildren.get(0);
+            Assert.assertEquals(expected.getY(), box(content).getY());
 
-            // clamp 口径与放置同源：下锚点向上拖到极限 = 视口高 - 外框高（工具栏厚度计入外框）
             HudLayoutService layout = HudLayoutService.getInstance();
             layout.beginEdit();
+            AnchorRect contentBox = box(content);
             harness.pressAt(contentBox.getX() + 5, contentBox.getY() + 5);
             harness.moveAt(VIEW_W - 1, 0);
             harness.releaseAt(VIEW_W - 1, 0);

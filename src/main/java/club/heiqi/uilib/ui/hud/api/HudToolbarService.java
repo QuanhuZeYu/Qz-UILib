@@ -23,7 +23,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   <li>同一 hudId 重复注册明确拒绝（不静默覆盖）；注册与注销限客户端主线程；</li>
  *   <li>跨宿主生命周期保持注册，宿主每帧按 {@link #revision()} 判断是否需要重建已保留窗口；</li>
  *   <li>工厂只在装配时调用一次，返回 null 视为装配失败（由调用方隔离）；</li>
- *   <li>工具栏可见性属于规格的 {@link HudToolbarSpec#getVisible()}，注册表不做二次可见性判断。</li>
+ *   <li>工具栏可见性属于规格的 {@link HudToolbarSpec#getVisible()}，注册表不做二次可见性判断；</li>
+ *   <li><b>缩放不属于工具栏</b>：每 HUD 倍率由统一缩放注册表（{@link #scale(String)}）持有，
+ *       未注册外接工具栏的 HUD 同样拥有自己的倍率；工具栏注册与注销不重置倍率。</li>
  * </ul>
  */
 public final class HudToolbarService {
@@ -87,10 +89,18 @@ public final class HudToolbarService {
         return entry == null ? null : entry.factory;
     }
 
-    /** 每 HUD 共享倍率；未注册返回 null，注销后再次注册得到默认倍率。 */
+    /**
+     * 每 HUD 统一缩放状态（惰性创建，限客户端主线程读取与写入）。
+     *
+     * <p>缩放是 HUD 自身能力，**不依赖外接工具栏注册**：未注册工具栏的 HUD 同样拿到自己的
+     * 倍率，宿主与打开态/编辑态页面读同一份状态。注册或注销工具栏都不会重置倍率
+     * （倍率生命周期独立于工具栏）；整体清理见 {@link #clear()}。</p>
+     *
+     * @param hudId 目标 HUD id
+     * @return 该 HUD 的统一缩放状态；hudId 为 null/空白时返回 null
+     */
     public synchronized HudScaleState scale(String hudId) {
-        Entry entry = hudId == null ? null : entries.get(hudId);
-        return entry == null ? null : entry.scale;
+        return HudScaleRegistry.getInstance().get(hudId);
     }
 
     /** @return 注册表版本（增删时 +1） */
@@ -112,11 +122,13 @@ public final class HudToolbarService {
         if (entry == null) {
             return HudToolbarLayer.passthrough(content);
         }
-        return HudToolbarLayer.mount(rt, entry.spec, content, entry.factory, entry.scale);
+        return HudToolbarLayer.mount(rt, entry.spec, content, entry.factory,
+                HudScaleRegistry.getInstance().get(hudId));
     }
 
-    /** 清空注册表（测试与整体关闭用）；已返回句柄失效。 */
+    /** 清空工具栏注册表与统一缩放状态（测试与整体关闭用）；已返回句柄失效。 */
     public synchronized void clear() {
+        HudScaleRegistry.getInstance().clear();
         if (entries.isEmpty()) {
             return;
         }
@@ -143,7 +155,6 @@ public final class HudToolbarService {
     }
 
     private static final class Entry {
-        final HudScaleState scale = new HudScaleState();
         final HudToolbarSpec spec;
         final HudWindowFactory factory;
         Entry(HudToolbarSpec spec, HudWindowFactory factory) {

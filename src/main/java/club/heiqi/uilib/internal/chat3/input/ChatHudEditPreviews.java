@@ -36,8 +36,14 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 装配一个预览：内容由 {@link HudEditTarget#getPreviewFactory()} 构建（与 HUD 窗口工厂同契约），
  * 位置取 {@link HudLayoutService#placement(String)}，无用户覆盖时退回
  * {@link HudEditTarget#getDefaultPlacement()}。放置与拖动 clamp 共用同一份外框尺寸
- * （外接工具栏的 gap + thickness 计入外框），口径与 {@link ChatInputSurface#applyOuterPlacement}
- * 相同——否则拖到边界时工具栏会被推出视口。</p>
+ * （编辑态统一缩放行的 gap + thickness 计入外框，并按该 HUD 的统一倍率换算），口径与
+ * {@link ChatInputSurface#applyOuterPlacement} 相同——否则拖到边界时工具栏会被推出视口。</p>
+ *
+ * <p><b>缩放入口属于编辑态</b>：每个预览统一装配 - / 1:1 / + 三个按钮，读写
+ * {@link HudToolbarService#scale(String)} 的统一缩放状态——下游不声明
+ * {@link HudEditTarget#getToolbarSpec()}、不注册 {@link HudToolbarService} 也能调节缩放，
+ * 不再需要为了拿到倍率而塞一个空槽工具栏。非编辑态（关闭态 HUD）不挂任何缩放控件，
+ * 缩放只按统一倍率呈现；{@code getToolbarSpec()} 保留为可选的额外自定义工具。</p>
  *
  * <h3>为什么每个目标一个浮层根</h3>
  * <p>scene 布局是 flex 流式布局，没有绝对定位原语：同层兄弟会按主轴顺序累加位置。浮层根走
@@ -177,44 +183,87 @@ final class ChatHudEditPreviews {
         if (content == null) {
             throw new IllegalStateException("HUD preview factory must return a node: " + hudId);
         }
-        HudToolbarLayer.Result layer = mountLayer(target, content);
+        List<SceneNode> toolbars = new ArrayList<SceneNode>(2);
+        HudToolbarLayer.Result layer = mountLayer(target, content, toolbars);
         SceneNode overlayRoot = SceneNode.column().setHitTestable(false).setFillParentHeight(true);
         overlayRoot.appendChild(layer.root());
         OverlayHandle handle = rt.getOverlayHost().register(overlayRoot, OverlayDismissPolicy.NONE, null);
         Preview preview = new Preview(target, overlayRoot, layer, handle);
-        // 拖动只挂在预览内容根上：工具栏按钮/空白按下在此停止冒泡，缩放按钮不被拖动夺走 gesture
-        // （与 ChatInputSurface 对聊天外框工具栏的既有处理同口径）。
+        // 拖动只挂在预览内容根上：工具栏（统一缩放入口与可选自定义工具）按钮/空白按下在此停止冒泡，
+        // 缩放按钮不被拖动夺走 gesture（与 ChatInputSurface 对聊天外框工具栏的既有处理同口径）。
         rt.on(layer.content(), SceneEventType.POINTER_DOWN, (event, ctx) -> onDown(preview, event, ctx));
         rt.on(layer.content(), SceneEventType.POINTER_MOVE, (event, ctx) -> onMove(preview, event, ctx));
         rt.on(layer.content(), SceneEventType.POINTER_UP, (event, ctx) -> onUp(preview, event, ctx));
         rt.on(layer.content(), SceneEventType.POINTER_CANCEL, (event, ctx) -> onCancel(preview, event, ctx));
-        SceneNode toolbarNode = layer.toolbar();
-        if (toolbarNode != null) {
-            rt.on(toolbarNode, SceneEventType.POINTER_DOWN, (event, ctx) -> ctx.stopPropagation());
+        for (SceneNode toolbar : toolbars) {
+            rt.on(toolbar, SceneEventType.POINTER_DOWN, (event, ctx) -> ctx.stopPropagation());
         }
         return preview;
     }
 
     /**
-     * 预览外接工具栏：{@link HudEditTarget#getToolbarSpec()} 决定是否装配，工具栏工厂与倍率取
-     * {@link HudToolbarService} 同一 hudId 的注册项（未注册工具栏时退化为纯内容预览）。
+     * 预览外框装配：<b>编辑态统一提供缩放入口</b>（- / 1:1 / +，读统一缩放状态），因此下游不声明
+     * {@link HudEditTarget#getToolbarSpec()}、不注册 {@link HudToolbarService} 也照样能调缩放。
+     *
+     * <p>{@link HudEditTarget#getToolbarSpec()} 保留为「可选的额外自定义工具」：声明且该 hudId 已
+     * 注册工具栏工厂时，下游工具栏作为内层挂上（其 {@code scaleControls} 一律关闭，缩放入口唯一）；
+     * 未注册工厂时只装配统一缩放入口。</p>
+     *
+     * @param target   编辑目标
+     * @param content  预览内容根
+     * @param toolbars 输出参数：本次装配出的全部工具栏节点（调用方据此拦截按下事件）
+     * @return 最外层预览外框（放置 / clamp 口径的权威尺寸来源）
      */
-    private HudToolbarLayer.Result mountLayer(HudEditTarget target, SceneNode content) {
-        HudToolbarSpec spec = target.getToolbarSpec();
-        if (spec == null) {
-            return HudToolbarLayer.passthrough(content);
-        }
+    private HudToolbarLayer.Result mountLayer(HudEditTarget target, SceneNode content,
+            List<SceneNode> toolbars) {
+        final String hudId = target.getHudId();
         HudToolbarService service = HudToolbarService.getInstance();
-        HudWindowFactory factory = service.factory(target.getHudId());
-        if (factory == null) {
-            LOG.warn("HUD 编辑预览声明了工具栏规格但未注册外接工具栏工厂，退化为无工具栏预览: id={}",
-                    target.getHudId());
-            return HudToolbarLayer.passthrough(content);
+        HudScaleState unified = service.scale(hudId);
+        HudToolbarSpec customSpec = target.getToolbarSpec();
+        HudWindowFactory customFactory = customSpec == null ? null : service.factory(hudId);
+
+        HudToolbarLayer.Result base;
+        if (customSpec != null && customFactory != null) {
+            base = HudToolbarLayer.mount(rt, withoutScaleControls(customSpec), content, customFactory, unified);
+            toolbars.add(base.toolbar());
+        } else {
+            if (customSpec != null) {
+                LOG.warn("HUD 编辑预览声明了自定义工具栏规格但未注册外接工具栏工厂，仅装配统一缩放入口: id={}",
+                        hudId);
+            }
+            base = HudToolbarLayer.passthrough(content);
         }
-        HudScaleState shared = service.scale(target.getHudId());
-        return shared == null
-                ? HudToolbarLayer.mount(rt, spec, content, factory)
-                : HudToolbarLayer.mount(rt, spec, content, factory, shared);
+        // 统一缩放入口恒为最外层：即便下游没给任何工具栏规格，预览也一定带 - / 1:1 / +。
+        HudToolbarLayer.Result layer = HudToolbarLayer.mount(rt, scaleRowSpec(customSpec),
+                base.root(), rt -> SceneNode.row(), unified);
+        toolbars.add(layer.toolbar());
+        return layer;
+    }
+
+    /** 复制下游规格并关闭 scaleControls：缩放入口统一由外层提供，避免出现两个缩放行。 */
+    private static HudToolbarSpec withoutScaleControls(HudToolbarSpec spec) {
+        return HudToolbarSpec.builder(spec.getSide())
+                .scaleControls(false)
+                .gap(spec.getGap())
+                .thickness(spec.getThickness())
+                .visible(spec.getVisible())
+                .publicButtonStyle(spec.getPublicButtonStyle())
+                .build();
+    }
+
+    /** 统一缩放行规格：始终追加 - / 1:1 / +；按钮样式沿用下游配方（若有）以保持外观一致。 */
+    private static HudToolbarSpec scaleRowSpec(HudToolbarSpec customSpec) {
+        HudToolbarSpec.Builder builder = HudToolbarSpec.builder().scaleControls(true);
+        if (customSpec != null) {
+            builder.publicButtonStyle(customSpec.getPublicButtonStyle());
+        }
+        return builder.build();
+    }
+
+    /** @return 该 HUD 的统一缩放倍率（与宿主 / 打开态聊天屏读同一份状态；无状态时 1.0） */
+    private static float unifiedFactor(String hudId) {
+        HudScaleState state = HudToolbarService.getInstance().scale(hudId);
+        return state == null ? 1.0F : state.factor();
     }
 
     private void unloadAll() {
@@ -248,12 +297,16 @@ final class ChatHudEditPreviews {
         return placement != null ? placement : preview.target.getDefaultPlacement();
     }
 
+    /** 外框宽（屏幕像素）= 外框 logical 宽 × 宿主绘制倍率 × 该 HUD 统一倍率（与 clamp 同口径）。 */
     private int outerWidth(Preview preview) {
-        return (int) Math.ceil(preview.layer.logicalOuterWidth(contentExtent(preview.layer.content(), true)) * scale);
+        return (int) Math.ceil(preview.layer.logicalOuterWidth(contentExtent(preview.layer.content(), true))
+                * scale * unifiedFactor(preview.hudId));
     }
 
+    /** 外框高（屏幕像素）= 外框 logical 高 × 宿主绘制倍率 × 该 HUD 统一倍率（与 clamp 同口径）。 */
     private int outerHeight(Preview preview) {
-        return (int) Math.ceil(preview.layer.logicalOuterHeight(contentExtent(preview.layer.content(), false)) * scale);
+        return (int) Math.ceil(preview.layer.logicalOuterHeight(contentExtent(preview.layer.content(), false))
+                * scale * unifiedFactor(preview.hudId));
     }
 
     /** 内容盒尺寸（logical px）：优先上一帧实测布局，首帧退回内容自身声明，最后退回最小值。 */

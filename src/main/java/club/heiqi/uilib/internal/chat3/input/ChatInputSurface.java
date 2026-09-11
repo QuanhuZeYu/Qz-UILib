@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
 import club.heiqi.uilib.ui.hud.api.HudLayoutService;
 import club.heiqi.uilib.ui.hud.api.HudPlacement;
+import club.heiqi.uilib.ui.hud.api.HudScaleState;
 import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
 import club.heiqi.uilib.ui.hud.api.HudToolbarService;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -212,10 +213,17 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         return root;
     }
 
+    /** @return 聊天 HUD 的统一缩放倍率(与 SceneHudHost 读同一份状态;无状态时 1.0) */
+    private static float unifiedScaleFactor() {
+        HudScaleState state = HudToolbarService.getInstance().scale(ChatHudWindow.HUD_ID);
+        return state == null ? 1.0F : state.factor();
+    }
+
     /** 每帧同步动态尺寸(视口 1/4 × 1/2)并推进开合动画(设计稿 §4.1);随后走标准帧管线。 */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        frameScale = toolbarLayer.scaleFactor();
+        // 倍率真值 = 统一缩放状态(宿主/打开态/编辑预览同源);工具栏层只负责装配,不承载倍率。
+        frameScale = unifiedScaleFactor();
         ((ChatScaledInputSource) inputSource).setScale(frameScale);
         hostWidth = Math.max(1, w);
         hostHeight = Math.max(1, h);

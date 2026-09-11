@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
 import club.heiqi.uilib.ui.hud.api.HudLayoutService;
 import club.heiqi.uilib.ui.hud.api.HudPlacement;
+import club.heiqi.uilib.ui.hud.api.HudScaleState;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
 import club.heiqi.uilib.ui.hud.api.HudToolbarService;
@@ -112,9 +113,11 @@ public final class SceneHudHost {
         }
         disposeInactive(registered);
         // 在任何窗口推进 signal/动画前采样全部倍率，帧中改动下一帧生效。
+        // 倍率真值 = 统一缩放状态（HUD 自身能力）：不再取工具栏层的挂载倍率，
+        // 未注册外接工具栏的 HUD 同样按统一倍率缩放。
         Map<String, Float> frameScales = new HashMap<String, Float>();
         for (Map.Entry<String, RetainedWindow> item : retained.entrySet()) {
-            frameScales.put(item.getKey(), globalScale * item.getValue().toolbarLayer().scaleFactor());
+            frameScales.put(item.getKey(), globalScale * unifiedScaleFactor(item.getKey()));
         }
         for (HudRegistry.Entry entry : registry.frameEntries()) {
             RetainedWindow window = retained.get(entry.spec.getId());
@@ -135,6 +138,15 @@ public final class SceneHudHost {
             measured.add(new MeasuredHud(entry, measuredWidth, box.getHeight(), scale));
         }
         placeAndFrame(backend, measured, width, height, safeInsets, frameTimeNanos, globalScale);
+    }
+
+    /**
+     * 该 HUD 的统一缩放倍率：读 {@link HudToolbarService#scale(String)}（惰性创建），
+     * 与打开态聊天屏、编辑态预览浮层同源；未注册外接工具栏的 HUD 不再恒为 1.0。
+     */
+    private static float unifiedScaleFactor(String hudId) {
+        HudScaleState state = HudToolbarService.getInstance().scale(hudId);
+        return state == null ? 1.0F : state.factor();
     }
 
     /**

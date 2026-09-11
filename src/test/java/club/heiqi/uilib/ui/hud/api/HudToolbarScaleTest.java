@@ -70,7 +70,11 @@ public class HudToolbarScaleTest {
         Assert.assertEquals(1.0f, state.factor(), 0.0f);
     }
 
-    @Test public void registrationsIsolateStateAndShareAcrossOccurrences() {
+    /**
+     * 统一缩放状态：每 HUD 一份、跨投放共享、未注册外接工具栏也有，且生命周期独立于工具栏注册
+     * （注销不重置倍率，重新注册延续同一份状态）。
+     */
+    @Test public void unifiedScaleIsPerHudAndSurvivesToolbarLifecycle() {
         HudToolbarService service = HudToolbarService.getInstance();
         HudToolbarSpec spec = HudToolbarSpec.builder().build();
         HudRegistration registration = service.register("test:a", spec, rt -> custom());
@@ -81,13 +85,21 @@ public class HudToolbarScaleTest {
             HudToolbarLayer.Result a = service.mountLayer(first, "test:a", content());
             HudToolbarLayer.Result b = service.mountLayer(second, "test:a", content());
             service.scale("test:a").setPercent(150);
-            Assert.assertSame(a.scale(), b.scale());
+            Assert.assertSame("同一 HUD 的多次投放共享统一状态", a.scale(), b.scale());
             Assert.assertEquals(1.5f, b.scaleFactor(), 0.0f);
             Assert.assertEquals(1.0f, service.scale("test:b").factor(), 0.0f);
+
+            // 缩放是 HUD 自身能力：未注册外接工具栏的 HUD 也能拿到独立状态（宿主据此缩放）
+            Assert.assertNotNull("未注册工具栏也能获得统一缩放状态", service.scale("test:unregistered"));
+            Assert.assertEquals(1.0f, service.scale("test:unregistered").factor(), 0.0f);
+            Assert.assertNotSame(service.scale("test:a"), service.scale("test:unregistered"));
+
+            // 生命周期独立于工具栏注册：注销不重置倍率，重新注册延续同一份状态
             registration.close();
-            Assert.assertNull(service.scale("test:a"));
+            Assert.assertNotNull("注销工具栏不得重置统一缩放状态", service.scale("test:a"));
+            Assert.assertEquals(1.5f, service.scale("test:a").factor(), 0.0f);
             service.register("test:a", spec, rt -> custom());
-            Assert.assertEquals(1.0f, service.scale("test:a").factor(), 0.0f);
+            Assert.assertEquals(1.5f, service.scale("test:a").factor(), 0.0f);
         } finally {
             first.dispose(); second.dispose();
         }

@@ -13,6 +13,9 @@
 - 公开 HUD 编辑契约 `ui.hud.api.HudEditTarget` / `ui.hud.api.HudEditService`：第三方 Mod 注册可编辑 HUD 目标（预览内容工厂 + 默认放置 + 可选外接工具栏规格），`requestEdit(hudId)` 发布「进入编辑并聚焦该目标」意图，由当前打开的聊天输入屏消费（无活动聊天屏时静默丢弃，不排队、不抛异常）；`revision()` 在目标增删时 +1 驱动宿主重建预览，`focus()` / `isEditing()` 暴露会话状态，重复 hudId 注册明确拒绝、注销句柄幂等
 - 聊天输入屏编辑态支持任意已注册 HUD 目标：每个目标一个预览浮层（内容 + 可选外接工具栏），位置走 `HudLayoutResolver`（外框含工具栏 gap + thickness），左键命中拖动写 `HudLayoutService` 草稿并按外框尺寸 clamp，Esc 拖动中优先回滚手势，保存/取消/恢复当前（聚焦目标）/恢复全部沿用既有工具栏按钮语义；非编辑态不注册浮层、不拦截输入（零开销），`qzuilib:chat3` 自身编辑路径零回归
 
+- HUD 缩放内聚化：每 HUD 倍率从外接工具栏注册项提升为统一缩放状态（`HudToolbarService.scale(hudId)` 惰性创建、独立于工具栏注册，注销工具栏不重置倍率），`SceneHudHost` 与打开态聊天屏不再取工具栏层的挂载倍率——未注册外接工具栏的 HUD 同样按统一倍率缩放（此前恒 1.0，Miner HUD 因此调不了缩放）
+- 缩放入口移入编辑态：聊天屏编辑子模式为每个可编辑目标统一装配 - / 1:1 / +（`HudEditTarget.getToolbarSpec()` 降级为可选额外自定义工具，为 null 不再意味着没有缩放），非编辑态不挂缩放控件；预览外框与拖动 clamp 按统一倍率换算，口径与放置一致
+
 ## [4.9.0] - 2026-09-11
 
 ### 新增
