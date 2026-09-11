@@ -89,7 +89,7 @@ public class ScenePaintEngine {
         int regeneratedFragmentCount = 0;
         PaintPlan plan = new PaintPlan();
         if (root != null) {
-            regeneratedFragmentCount = paintNode(root, plan, 0, 0);
+            regeneratedFragmentCount = paintNode(root, plan, 0, 0, null);
         }
         return new PaintResult(plan, regeneratedFragmentCount);
     }
@@ -127,9 +127,11 @@ public class ScenePaintEngine {
      * @param plan    共享绘制计划，所有命令直接写入此 plan
      * @param offsetX 从 root 到当前节点父的累积 X 偏移
      * @param offsetY 从 root 到当前节点父的累积 Y 偏移
+     * @param ancestorClip 有效祖先裁剪矩形（各祖先 clip window 绝对盒的交集）；null = 无祖先裁剪
      * @return 本子树重新生成的 fragment 数（含后代）
      */
-    private int paintNode(SceneNode node, PaintPlan plan, int offsetX, int offsetY) {
+    private int paintNode(SceneNode node, PaintPlan plan, int offsetX, int offsetY,
+                          ClipRect ancestorClip) {
         int regenerated = 0;
         // 计算本节点的绘制绝对坐标：LayoutBox 保持终态，internal reveal offset 只在 paint 几何叠加。
         LayoutBox box = (LayoutBox) node.getCachedLayout();
@@ -162,6 +164,20 @@ public class ScenePaintEngine {
         // box==null（节点未布局）时不开 group：零面积离屏层无意义，且与「无布局节点跳过」语义对齐
         float opacity = node.getOpacity();
         boolean needGroup = box != null && opacity < 1.0f - OPACITY_EPSILON;
+
+        // ==== P1-4 L3：裁剪窗口子树剔除（保守版，粒度只到 clip window 子树） ====
+        // 判据三条同时成立才剔除：
+        //   ① 本节点是裁剪窗口（isClipWindow）：其自身命令与全部后代都被本窗口的 CLIP 包住；
+        //   ② 无 transform：transform（尤其 needLayer 的离屏图层回贴）会把「已被祖先裁掉的内容」
+        //      经图层平移回可见区，剔除会掉画面，故有 transform 一律继续下降；
+        //   ③ 本窗口绝对盒与「有效祖先裁剪矩形」无交集：本子树任何像素都落在祖先 scissor 之外。
+        // 渲染层 CLIP 栈与父层求交（ClipStack.push），故 ③ 成立时该子树在改前也是整片被裁掉、
+        // 一个像素都不落帧缓冲——剔除后帧缓冲逐像素不变，且不清脏标记（回到可见区按脏标记重发射）。
+        if (box != null && needClip && !needTransform && ancestorClip != null
+                && !ancestorClip.intersects(nodeAbsX, nodeAbsY,
+                        nodeAbsX + box.getWidth(), nodeAbsY + box.getHeight())) {
+            return regenerated;
+        }
 
         // ==== P10/P10b：子树内容包围盒（只读预遍历，布局盒并集） ====
         // 离屏层虽全屏分配，pop 回贴却只用 PUSH 命令携带的区域做 UV 采样窗口——区域钉死节点
@@ -261,10 +277,16 @@ public class ScenePaintEngine {
         int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
         // ★ 横向滚动偏移注入（与纵向对称）：scrollOffsetX != 0 时后代整体左移显示
         int childOffsetX = SceneGeometry.childXBase(node, nodeAbsX);
+        // 本节点的裁剪窗口（若有）收紧传给后代的有效裁剪矩形：子树的可见性判定必须对
+        // 「全部祖先裁剪窗口」取交，而不是只看最近一层。
+        ClipRect childClip = needClip
+                ? ClipRect.intersect(ancestorClip, nodeAbsX, nodeAbsY,
+                        nodeAbsX + box.getWidth(), nodeAbsY + box.getHeight())
+                : ancestorClip;
         List<SceneNode> children = node.__getChildren();
         for (int i = 0; i < children.size(); i++) {
             SceneNode child = children.get(i);
-            regenerated += paintNode(child, plan, childOffsetX, childOffsetY);
+            regenerated += paintNode(child, plan, childOffsetX, childOffsetY, childClip);
         }
 
         // ==== 子树命令全部产出后，先闭合裁剪作用域（与 CLIP_PUSH 严格配对，内层先关） ====
@@ -363,7 +385,63 @@ public class ScenePaintEngine {
     }
 
     /**
+     * 有效裁剪矩形（绝对屏幕坐标，左闭右开语义按「无交集」判定使用）。
+     *
+     * <p>由各祖先 clip window 的绝对盒逐层求交得到；P1-4 L3 只用它回答一个问题：
+     * 「以某 clip window 为根的子树是否整片落在可见裁剪区之外」。</p>
+     */
+    private static final class ClipRect {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+
+        private ClipRect(int left, int top, int right, int bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+        }
+
+        /**
+         * 与一层裁剪窗口求交。
+         *
+         * @param ancestor 祖先有效裁剪矩形，null = 尚无裁剪
+         * @param left     本层裁剪窗口左边界（绝对）
+         * @param top      本层裁剪窗口上边界（绝对）
+         * @param right    本层裁剪窗口右边界（绝对）
+         * @param bottom   本层裁剪窗口下边界（绝对）
+         * @return 求交后的有效裁剪矩形（null 入参时即本层矩形）
+         */
+        static ClipRect intersect(ClipRect ancestor, int left, int top, int right, int bottom) {
+            if (ancestor == null) {
+                return new ClipRect(left, top, right, bottom);
+            }
+            return new ClipRect(Math.max(ancestor.left, left), Math.max(ancestor.top, top),
+                    Math.min(ancestor.right, right), Math.min(ancestor.bottom, bottom));
+        }
+
+        /**
+         * 本矩形与给定绝对盒是否有交集（空/退化矩形恒无交集）。
+         *
+         * @param boxLeft   盒左边界
+         * @param boxTop    盒上边界
+         * @param boxRight  盒右边界
+         * @param boxBottom 盒下边界
+         * @return true 表示存在至少一个像素的交集
+         */
+        boolean intersects(int boxLeft, int boxTop, int boxRight, int boxBottom) {
+            return boxRight > left && boxLeft < right && boxBottom > top && boxTop < bottom;
+        }
+    }
+
+    /**
      * 子树内容包围盒（绝对屏幕坐标，left/top/right/bottom）。
+     *
+     * <p><b>与 L3 剔除的关系（刻意保守）</b>：本包围盒是 group opacity / transform layer 的
+     * 回贴 UV 窗口，<b>大一圈永远安全、小一圈会把可见内容裁掉</b>，故这里不做剔除，
+     * 被 L3 跳过的子树仍计入包围盒。</p>
      */
     private static final class ContentBounds {
 

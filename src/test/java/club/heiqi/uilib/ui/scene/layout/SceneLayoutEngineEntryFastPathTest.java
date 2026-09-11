@@ -65,6 +65,35 @@ public class SceneLayoutEngineEntryFastPathTest {
         Assert.assertEquals("同 epoch 的下一批必须回到零遍历", 0, engine.__lastSweepEntryCount());
     }
 
+    /**
+     * L0 等价性：干净批走共享零变化结果，且完全不触碰树的 cachedLayout 引用。
+     *
+     * <p>L0 的判据是引擎自己的跳过闸门 {@code canSkipClean}——三闸门全过时完整路径也只会
+     * 「刷新约束快照 + 整棵跳过」，故快路径与完整路径的产出必须逐位相同（relayoutCount 0、
+     * 两集合为空、所有 cachedLayout 引用不变）。</p>
+     */
+    @Test
+    public void cleanBatchReturnsSharedZeroChangeResultWithoutTouchingCaches() {
+        SceneNode root = new SceneNode();
+        SceneNode label = new SceneNode();
+        label.setText("hello");
+        root.appendChild(label);
+        Constraints constraints = new Constraints(200);
+        engine.layout(root, constraints);
+        Object boxBefore = label.getCachedLayout();
+
+        LayoutResult firstClean = engine.layout(root, constraints);
+        LayoutResult secondClean = engine.layout(root, constraints);
+
+        Assert.assertEquals("干净批零重算", 0, firstClean.getRelayoutCount());
+        Assert.assertTrue("干净批无被迫重算节点", firstClean.getConstraintRelayoutedNodes().isEmpty());
+        Assert.assertTrue("干净批无重算节点集合", firstClean.getRelayoutedNodes().isEmpty());
+        Assert.assertSame("干净批必须复用共享零变化结果（不新建 LayoutResult 与探针集合）",
+                firstClean, secondClean);
+        Assert.assertSame("L0 快路径不得改写任何 cachedLayout 引用",
+                boxBefore, label.getCachedLayout());
+    }
+
     /** 快路径前提正证：稳态期间新增的文本叶打的是当前 epoch 戳，后续 epoch 变化仍能传导。 */
     @Test
     public void leafAddedDuringFastPathIsStampedWithCurrentEpoch() {

@@ -340,11 +340,6 @@ public class SceneLayoutEngine {
      * @return layout 产出的不可变结果，携带 I7/I8 测试探针
      */
     public LayoutResult layout(SceneNode root, Constraints rootConstraints) {
-        // 局部累加器（per-call 探针，替代实例字段）
-        int[] relayoutCount = {0};
-        Set<SceneNode> relayoutedNodes = new HashSet<>();
-        Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
-
         // ==================== 入口序列（顺序即语义） ====================
         // 0) 登记布局根（有界 LRU）→ 1) 结构变更剪枝 → 2) epoch 失效链 → 3) 约束感知。
         //
@@ -389,6 +384,22 @@ public class SceneLayoutEngine {
         }
         lastRootConstraints = rootConstraints;
 
+        // ★ P1-4 L0：全树干净快路径（零分配、零递归、零分配探针集合）。
+        // 判据直接复用引擎自己的跳过闸门 canSkipClean —— 三闸门全过意味着 layoutInternal(root, c)
+        // 必然走「整棵跳过」分支：刷新约束快照后回传 CLEAN，产出 relayoutCount==0 且两集合为空。
+        // 故此处可以 O(1) 返回共享的零变化结果：不建 3 个探针集合、不建 LayoutResult、不下潜。
+        // 批计数照旧自增（每批都算一批），变更纪元不自增（无几何变化），语义与走完整路径逐位等价。
+        if (canSkipClean(root, rootConstraints).canSkip()) {
+            root.__setLastConstraints(rootConstraints);
+            layoutEpoch++;
+            return NO_CHANGE_RESULT;
+        }
+
+        // 局部累加器（per-call 探针，替代实例字段）——只有真要走布局的批才分配（L0 的意义所在）
+        int[] relayoutCount = {0};
+        Set<SceneNode> relayoutedNodes = new HashSet<>();
+        Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
+
         // 串行路径：直接调 layoutInternal（2.2 形态，无 fork-join）
         layoutInternal(root, rootConstraints, relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
 
@@ -400,6 +411,16 @@ public class SceneLayoutEngine {
         }
         return result;
     }
+
+    /**
+     * 零几何变化的共享结果（L0 快路径返回值）。
+     *
+     * <p>{@link LayoutResult} 是不可变交付物，两个集合均为不可修改空视图，故可安全共享：
+     * 调用方只读（{@code getRelayoutCount()} / {@code contains(...)}）。</p>
+     */
+    private static final LayoutResult NO_CHANGE_RESULT =
+            new LayoutResult(0, java.util.Collections.<SceneNode>emptySet(),
+                    java.util.Collections.<SceneNode>emptySet());
 
     // ==================== P1-1：文本叶登记表生命周期 ====================
 
