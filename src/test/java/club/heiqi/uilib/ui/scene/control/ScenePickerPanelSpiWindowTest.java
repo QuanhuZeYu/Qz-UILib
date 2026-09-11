@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -152,7 +153,7 @@ public class ScenePickerPanelSpiWindowTest {
         f.openPanel();
 
         SceneNode cell = gridCell(f.viewport(), 2);
-        String key = cell.__getChildren().get(1).getText();
+        String key = cellLabel(cell);
         click(cell);
         rt.flush();
 
@@ -243,6 +244,56 @@ public class ScenePickerPanelSpiWindowTest {
         Assert.assertTrue("面板调用点必须经 PickerSourceGuard.requireMainThread 断言", checks[0] > 0);
     }
 
+    // ==================== 已配置候选：可见 + 可区分 + 点击语义（T5 UX-18 / D-P4-3） ====================
+
+    /**
+     * SPI 路径不排除「已配置成员」候选（修 P4 偏差 D-P4-3 的可见回归），且该状态必须可区分：
+     * 单元侧圆点（形态）+ 信息条文案（语义，经 Presentation 注入）；点击仍走既有激活语义
+     * （不静默丢弃、不引入第二套提交路径）。
+     */
+    @Test
+    public void configuredCandidatesStayVisibleMarkedAndActivateNormally() {
+        FakeSource source = new FakeSource(5000);
+        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        f.configureMember("k2");
+        f.openPanel();
+
+        Assert.assertTrue("已配置候选不得从结果中消失: " + cellLabels(f), cellLabels(f).contains("k2"));
+        Assert.assertTrue("未配置候选照常可见: " + cellLabels(f), cellLabels(f).contains("k1"));
+
+        SceneNode configuredCell = cellByKey(f.viewport(), "k2");
+        SceneNode plainCell = cellByKey(f.viewport(), "k1");
+        Assert.assertTrue("已配置单元必须挂可见标记", markerOf(configuredCell).getPreferredWidth() > 0);
+        Assert.assertEquals("未配置单元不得占用标记宽度（零占位）",
+                0, markerOf(plainCell).getPreferredWidth());
+
+        // 信息条语义：悬停已配置候选 → 追加「已配置」文案；悬停未配置候选 → 不追加。
+        hover(configuredCell);
+        Assert.assertTrue("信息条必须标注已配置（文案经 Presentation）: " + allText(f.panelRoot()),
+                allText(f.panelRoot()).contains(f.panelPresentation().alreadyConfiguredBadge()));
+        hover(plainCell);
+        Assert.assertFalse("未配置候选不得出现已配置标记: " + allText(f.panelRoot()),
+                allText(f.panelRoot()).contains(f.panelPresentation().alreadyConfiguredBadge()));
+
+        // 点击语义明确：与未配置候选同一条激活路径（提交该单元候选键），不做静默丢弃。
+        click(configuredCell);
+        rt.flush();
+        Assert.assertEquals("点击已配置候选必须仍走激活路径（一次提交）", 1, f.commits.size());
+        Assert.assertEquals("k2", f.commits.get(0).candidateKey());
+    }
+
+    /** 悬停一个已布局单元：先声明 hover 关心（时序契约），再路由指针 MOVE。 */
+    private void hover(SceneNode node) {
+        rt.interactionState(node).hovered();
+        int[] center = centerOf(node);
+        InputFrameBuilder fb = new InputFrameBuilder(center[0], center[1]);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, center[0], center[1],
+                SceneMouseButton.NONE, 0, 0, 0, false, false, false, false, 1000L));
+        rt.route(sceneRoot, fb.drainFrame(), 0, 0);
+        rt.flush();
+        layoutAll();
+    }
+
     // ==================== 宿主帧驱动 ====================
 
     private void layoutAll() {
@@ -274,10 +325,35 @@ public class ScenePickerPanelSpiWindowTest {
         List<String> labels = new ArrayList<String>();
         for (SceneNode row : rowsContainer(viewport).__getChildren()) {
             for (SceneNode cell : row.__getChildren()) {
-                labels.add(cell.__getChildren().get(1).getText());
+                labels.add(cellLabel(cell));
             }
         }
         return labels;
+    }
+
+    /**
+     * 单元标签文本。
+     *
+     * <p>单元结构 = {@code column[icon, labelRow[row[label, marker]]]}（P5 U-P5-2 起）：
+     * labelRow 承载「已配置」圆点的零占位槽位，标签是它的一号子节点。</p>
+     */
+    private static String cellLabel(SceneNode cell) {
+        return cell.__getChildren().get(1).__getChildren().get(0).getText();
+    }
+
+    /** 「已配置」标记圆点（labelRow 的最后一个子节点）。 */
+    private static SceneNode markerOf(SceneNode cell) {
+        List<SceneNode> row = cell.__getChildren().get(1).__getChildren();
+        return row.get(row.size() - 1);
+    }
+
+    private static SceneNode cellByKey(SceneNode viewport, String key) {
+        for (SceneNode row : rowsContainer(viewport).__getChildren()) {
+            for (SceneNode cell : row.__getChildren()) {
+                if (key.equals(cellLabel(cell))) return cell;
+            }
+        }
+        throw new IllegalStateException("cell not mounted for key: " + key);
     }
 
     private static SceneNode rowsContainer(SceneNode viewport) {
@@ -343,6 +419,8 @@ public class ScenePickerPanelSpiWindowTest {
         final Signal<Integer> dimension = Signal.create(Integer.valueOf(0));
         final Signal<String> categoryKey = Signal.create(null);
         final Signal<PickerSourceVersion> version = Signal.create(PickerSourceVersion.initial());
+        final Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(
+                Collections.<SearchPickerData.CurrentMember>emptyList());
         final List<SearchPickerData.Selection> commits = new ArrayList<SearchPickerData.Selection>();
         final Result result;
         private final club.heiqi.config.ui.editor.SearchPickerPanelPresentation panelPresentation;
@@ -357,11 +435,19 @@ public class ScenePickerPanelSpiWindowTest {
                     .open(open)
                     .onCloseRequest(() -> open.set(Boolean.FALSE))
                     .grid(GridProps.of(COLUMNS, 64, 64, 8, 8, 3))
+                    .currentMembers(members, memberId -> { })
                     .candidateSource(source, searchMaxItems, sourceQuery, version)
                     .build();
             panelPresentation = props.panelPresentation();
             result = ScenePickerPanel.create(rt, props);
             sceneRoot.appendChild(result.root());
+        }
+
+        /** 把某个候选键标成「已在当前规则中」（成员 selection 非 null 即视为已配置）。 */
+        void configureMember(String candidateKey) {
+            members.set(Arrays.asList(new SearchPickerData.CurrentMember(0L,
+                    new SearchPickerData.Selection(candidateKey, SearchPickerData.SelectionMode.ALL,
+                            Collections.<String>emptyList()), null, false)));
         }
 
         void openPanel() {

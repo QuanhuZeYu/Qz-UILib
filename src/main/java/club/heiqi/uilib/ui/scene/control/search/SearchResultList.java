@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -104,6 +105,16 @@ public final class SearchResultList {
      * 失效条件（速度回落即回 1）与上界（≤2），否则属无界动态。
      */
     private static final int OVERSCAN_ROWS = 1;
+    /**
+     * 「已配置」标记圆点的边长下界（逻辑 px）。
+     *
+     * <p>边长本身由同一份 {@code GridMetrics} 的 {@code paddingPx} 派生（见 {@code cellComponent}），
+     * 这里只登记可读性夹取边界 —— 与 {@code PickerDensityTokens} 的比例常量同口径：
+     * 不携带任何"某分辨率下的确定尺寸"。</p>
+     */
+    private static final int MARKER_MIN_PX = 3;
+    /** 「已配置」标记圆点的边长上界（逻辑 px）。 */
+    private static final int MARKER_MAX_PX = 8;
 
     private SearchResultList() {
     }
@@ -140,6 +151,9 @@ public final class SearchResultList {
      *                          搜索 lane = min(matchCount, maxItems)」）必须经本信号进入窗口数学——
      *                          窗口 Computed 依赖它，总量变化即重派生 totalRows/maxScrollPx 并重新拉片。
      *                          与 {@code totalItems} 同时给出时以本信号为准
+     * @param configuredKeys    已配置候选键集合（可为 null = 不做「已配置」标记）：SPI 路径不再排除
+     *                          已在当前规则中的候选（P4 偏差 D-P4-3），该状态必须在结果单元上可区分
+     *                          （T5 UX-18）—— 命中键的单元挂一颗主题强调色圆点，无额外布局占位
      */
     @Desugar
     public record Props(
@@ -156,9 +170,48 @@ public final class SearchResultList {
             int visibleRows,
             ReadableSignal<Integer> availableWidth,
             ReadableSignal<Integer> totalItemsSignal,
-            ReadableSignal<GridMetrics> metrics) {
+            ReadableSignal<GridMetrics> metrics,
+            ReadableSignal<Set<String>> configuredKeys) {
 
         /** 未提供总量时的哨兵：窗口数学取 {@code items.size()}（全量数据源形态）。 */
+        /**
+         * 旧 18 参形态（P5 兼容，纯加法保留）：无「已配置」标记通道。
+         *
+         * @param items             数据源
+         * @param columns           列数
+         * @param cellWidth         单元宽
+         * @param cellHeight        单元高下限
+         * @param gapX              列间距
+         * @param gapY              行间距
+         * @param enabled           是否启用
+         * @param onActivate        激活回调
+         * @param highlighted       受控高亮
+         * @param onHighlightChange 高亮回写
+         * @param onHoverItem       hover 回调
+         * @param pageProvider      窗口切片生产者
+         * @param totalItems        数据总项数
+         * @param windowOffset      窗口偏移校验位
+         * @param visibleRows       预算可视行数
+         * @param availableWidth    预算可用宽
+         * @param totalItemsSignal  动态总量通道
+         * @param metrics           P5 派生度量快照
+         */
+        public Props(ReadableSignal<? extends List<SceneVirtualGrid.Item>> items,
+                     int columns, int cellWidth, int cellHeight, int gapX, int gapY,
+                     ReadableSignal<Boolean> enabled,
+                     Consumer<SceneVirtualGrid.Item> onActivate,
+                     ReadableSignal<Integer> highlighted,
+                     Consumer<Integer> onHighlightChange,
+                     Consumer<SceneVirtualGrid.Item> onHoverItem,
+                     PageProvider pageProvider, int totalItems, int windowOffset, int visibleRows,
+                     ReadableSignal<Integer> availableWidth,
+                     ReadableSignal<Integer> totalItemsSignal,
+                     ReadableSignal<GridMetrics> metrics) {
+            this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
+                    onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
+                    visibleRows, availableWidth, totalItemsSignal, metrics, null);
+        }
+
         public static final int UNSPECIFIED_TOTAL_ITEMS = -1;
         /** 默认预算可视行数（与 {@code ScenePickerPanel.GridProps.DEFAULT} 对齐）。 */
         public static final int DEFAULT_VISIBLE_ROWS = 5;
@@ -196,7 +249,7 @@ public final class SearchResultList {
                      ReadableSignal<Integer> totalItemsSignal) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
-                    visibleRows, availableWidth, totalItemsSignal, null);
+                    visibleRows, availableWidth, totalItemsSignal, null, null);
         }
 
         /**
@@ -230,7 +283,7 @@ public final class SearchResultList {
                      ReadableSignal<Integer> availableWidth) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
-                    visibleRows, availableWidth, null, null);
+                    visibleRows, availableWidth, null, null, null);
         }
 
         /**
@@ -257,7 +310,7 @@ public final class SearchResultList {
                      Consumer<SceneVirtualGrid.Item> onHoverItem) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, null, UNSPECIFIED_TOTAL_ITEMS, 0,
-                    DEFAULT_VISIBLE_ROWS, null, null, null);
+                    DEFAULT_VISIBLE_ROWS, null, null, null, null);
         }
 
         /** 显式校验构造器。 */
@@ -844,6 +897,22 @@ public final class SearchResultList {
                         palette.accent.get(), palette.selectionBackground.get()),
                 cell::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
 
+        // 「已配置」标记（T5 UX-18 / P4 偏差 D-P4-3）：SPI 路径不再排除已在当前规则中的候选，
+        // 因此该状态必须在结果单元上可区分 —— 命中键的单元在标签行右端挂一颗主题强调色圆点
+        // （无文字、不引 i18n、不额外占行）；完整语义由信息条文案承担（见 ScenePickerPanel）。
+        final ReadableSignal<Boolean> configured = Computed.create(() -> {
+            ReadableSignal<Set<String>> keysSignal = props.configuredKeys();
+            if (keysSignal == null) {
+                return Boolean.FALSE;
+            }
+            Set<String> keys = keysSignal.get();
+            return Boolean.valueOf(keys != null && keys.contains(String.valueOf(item.key())));
+        });
+        // 标记边长与内边距同源（同一个 GridMetrics 快照的 paddingPx 派生），不引入第二个尺寸真值。
+        final ReadableSignal<Integer> markerSide = Computed.create(() -> Integer.valueOf(
+                Math.max(MARKER_MIN_PX, Math.min(MARKER_MAX_PX,
+                        geometry.paddingPx().get().intValue()))));
+
         // 标签先建：图位剩余高要按「标签生效字号的行高」扣减，必须先拿到标签节点。
         SceneNode label = null;
         if (item.label() != null) {
@@ -860,9 +929,14 @@ public final class SearchResultList {
                     label::setTextColor);
             // 溢出策略（INV-GEO-4）：单元轨道由虚拟化 stride 固定，文字超宽必须可见省略，
             // 否则被 cell 的 clipChildren(true) 静默裁掉。
+            // 文案宽预算 = 单元内宽 −（已配置时）标记与间距占位：标记不得把标签挤成不可读。
             rt.bindComputed(() -> Integer.valueOf(Math.max(1,
                             geometry.cellWidthPx().get().intValue()
-                                    - 2 * geometry.paddingPx().get().intValue())),
+                                    - 2 * geometry.paddingPx().get().intValue()
+                                    - (Boolean.TRUE.equals(configured.get())
+                                            ? markerSide.get().intValue()
+                                                    + geometry.labelGapPx().get().intValue()
+                                            : 0))),
                     label::setMaxTextWidth);
             label.setMaxLines(1);
             label.setEllipsis(true);
@@ -906,10 +980,36 @@ public final class SearchResultList {
             icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
             icon.setImageSource(src);
         });
+        // 标签行：标签（占满剩余宽、居中省略）+ 已配置圆点（未命中时宽度与 margin 均为 0 ⇒ 零占位）。
+        SceneNode labelRow = SceneNode.row();
+        labelRow.setHitTestable(false);
+        labelRow.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        labelRow.setGap(0);
+        SceneNode marker = SceneNode.column();
+        marker.setHitTestable(false);
+        marker.setCornerRadius(SceneChromeTokens.RADIUS_PILL);
+        marker.setBackgroundColor(palette.accent.get());
+        rt.bind(palette.accent, marker::setBackgroundColor);
+        rt.bind(configured, isConfigured -> Effect.untrack(() -> {
+            int side = Boolean.TRUE.equals(isConfigured) ? markerSide.get().intValue() : 0;
+            marker.setPreferredWidth(side);
+            marker.setPreferredHeight(side);
+            marker.setMargin(0, 0, 0, Boolean.TRUE.equals(isConfigured)
+                    ? geometry.labelGapPx().get().intValue() : 0);
+        }));
+        rt.bind(markerSide, side -> Effect.untrack(() -> {
+            if (Boolean.TRUE.equals(configured.get())) {
+                marker.setPreferredWidth(side.intValue());
+                marker.setPreferredHeight(side.intValue());
+            }
+        }));
         cell.appendChild(icon);
         if (label != null) {
-            cell.appendChild(label);
+            label.setFlexGrow(1);
+            labelRow.appendChild(label);
         }
+        labelRow.appendChild(marker);
+        cell.appendChild(labelRow);
 
         rt.on(cell, SceneEventType.CLICK, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) {

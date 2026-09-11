@@ -30,6 +30,7 @@ public final class SearchPickerPanelPresentation {
     private final String truncatedResults;
     private final String hoverHint;
     private final String infoBarIdPattern;
+    private final String alreadyConfiguredBadge;
 
     private SearchPickerPanelPresentation(Builder builder) {
         panelTitle = required(builder.panelTitle, "panelTitle");
@@ -46,6 +47,7 @@ public final class SearchPickerPanelPresentation {
         truncatedResults = required(builder.truncatedResults, "truncatedResults");
         hoverHint = required(builder.hoverHint, "hoverHint");
         infoBarIdPattern = required(builder.infoBarIdPattern, "infoBarIdPattern");
+        alreadyConfiguredBadge = required(builder.alreadyConfiguredBadge, "alreadyConfiguredBadge");
     }
 
     /** @return 默认英文扩展文案 */
@@ -80,6 +82,15 @@ public final class SearchPickerPanelPresentation {
 
     /** @return 信息条空闲态的操作提示（P5 §3.3：不允许空条） */
     public String hoverHint() { return hoverHint; }
+
+    /**
+     * @return 「已配置」候选标记文案（T5 UX-18 / D-P4-3）
+     *
+     * <p>SPI 路径不再排除「已在当前规则中的候选」，结果单元必须能区分出这一状态：
+     * 单元挂一颗主题强调色圆点，信息条追加本文案（形态见 {@code SearchResultList} 的
+     * {@code configuredKeys} 分量）。SPI 路径下点击仍走既有激活语义（不做静默丢弃）。</p>
+     */
+    public String alreadyConfiguredBadge() { return alreadyConfiguredBadge; }
 
     /**
      * 信息条悬停态单行文案：{@code <label> · <id>}（P5 §3.3 / Q2 单行取法）。
@@ -127,6 +138,7 @@ public final class SearchPickerPanelPresentation {
         private String truncatedResults = "Results truncated — refine your search";
         private String hoverHint = "Hover a result to see its full name and ID";
         private String infoBarIdPattern = "{label} · {id}";
+        private String alreadyConfiguredBadge = "In group";
 
         /** 设置全屏面板标题。 */
         public Builder panelTitle(String value) { panelTitle = value; return this; }
@@ -160,6 +172,11 @@ public final class SearchPickerPanelPresentation {
 
         /** 设置信息条悬停态单行模板（占位符 {label} / {id}）。 */
         public Builder infoBarIdPattern(String value) { infoBarIdPattern = value; return this; }
+
+        /** 设置「已配置」候选标记文案（T5 UX-18）。 */
+        public Builder alreadyConfiguredBadge(String value) {
+            alreadyConfiguredBadge = value; return this;
+        }
 
         /** 构建不可变扩展文案。 */
         public SearchPickerPanelPresentation build() { return new SearchPickerPanelPresentation(this); }

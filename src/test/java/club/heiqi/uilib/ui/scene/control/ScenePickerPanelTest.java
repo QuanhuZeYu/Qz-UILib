@@ -260,6 +260,16 @@ public class ScenePickerPanelTest {
         return viewport.__getChildren().get(0).__getChildren().get(1);
     }
 
+    /**
+     * 结果单元的标签节点。
+     *
+     * <p>单元结构 = {@code column[icon, labelRow[row[label, marker]]]}（P5 U-P5-2 起：
+     * labelRow 承载「已配置」圆点的零占位槽位）。</p>
+     */
+    private static SceneNode cellLabelNode(SceneNode cell) {
+        return cell.__getChildren().get(1).__getChildren().get(0);
+    }
+
     /** 窗口内列表单元（按行序平铺）。 */
     private SceneNode gridCell(SceneNode viewport, int index) {
         SceneNode rowsContainer = gridRows(viewport);
@@ -1649,7 +1659,7 @@ public class ScenePickerPanelTest {
         Assert.assertNull("选中单元仍零滤镜", cell1.getBackdrop());
         Assert.assertEquals("单元标签 = 主题次要前景",
                 Integer.valueOf(SceneThemes.DEFAULT.mutedForeground()),
-                Integer.valueOf(cell1.__getChildren().get(1).getTextColor()));
+                Integer.valueOf(cellLabelNode(cell1).getTextColor()));
         Assert.assertEquals("图位圆角属渲染协议",
                 SceneChromeTokens.RADIUS_SM, cell1.__getChildren().get(0).getCornerRadius());
         Assert.assertEquals("无图占位底色属渲染协议",
@@ -1997,7 +2007,7 @@ public class ScenePickerPanelTest {
         SceneNode grid = f.result.grid().get();
         Assert.assertEquals("结果换代后按新数据渲染", 1, mountedItemCount(grid));
         // 标签按 64px 单元宽省略号截断（TextEllipsizer 既有合同），核对前缀来自新数据、旧数据不残留。
-        String cellLabel = gridCell(grid, 0).__getChildren().get(1).getText();
+        String cellLabel = cellLabelNode(gridCell(grid, 0)).getText();
         Assert.assertTrue("换代后单元标签来自新数据（截断后仍含前缀）: " + cellLabel,
                 cellLabel.startsWith("stone:"));
     }

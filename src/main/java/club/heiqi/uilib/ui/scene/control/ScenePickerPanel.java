@@ -3,7 +3,9 @@ package club.heiqi.uilib.ui.scene.control;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -1003,6 +1005,23 @@ public final class ScenePickerPanel {
                 ? Computed.create(() -> Integer.valueOf(metrics.get().panel().listWidthPx())) : null;
         ReadableSignal<GridMetrics> gridMetrics = viewportSizing
                 ? Computed.create(() -> metrics.get().grid()) : null;
+        // 已配置候选键集合（T5 UX-18 / P4 偏差 D-P4-3）：SPI 路径不再排除「已在当前规则中」的候选，
+        // 因此该状态必须在结果单元（圆点标记）与信息条（标记文案）上可区分。键口径 = 成员 selection 的
+        // candidateKey —— 与结果单元 key（= 候选 key）同域，不做任何拆键/拼键。
+        ReadableSignal<Set<String>> configuredKeys = Computed.create(() -> {
+            List<SearchPickerData.CurrentMember> members = safeMembers(props);
+            if (members.isEmpty()) {
+                return Collections.<String>emptySet();
+            }
+            Set<String> keys = new HashSet<String>(members.size() * 2);
+            for (SearchPickerData.CurrentMember member : members) {
+                SearchPickerData.Selection selection = member.selection();
+                if (selection != null) {
+                    keys.add(selection.candidateKey());
+                }
+            }
+            return Collections.unmodifiableSet(keys);
+        });
         SearchResultList.Result list = SearchResultList.create(rt, new SearchResultList.Props(
                 feed.listItems(), props.grid().columns(), props.grid().cellWidth(), props.grid().cellHeight(),
                 props.grid().gapX(), props.grid().gapY(),
@@ -1021,7 +1040,7 @@ public final class ScenePickerPanel {
                 // 布局后仍以实际视口高度为权威。
                 viewportSizing ? Math.max(1, metrics.get().visibleRows())
                         : props.grid().visibleRows(),
-                widthBudget, feed.totalItems(), gridMetrics));
+                widthBudget, feed.totalItems(), gridMetrics, configuredKeys));
         // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
         //（scrollable 子节点不能走 flexGrow 分配，模块内已对 root 设置）。
         gridViewportHolder[0] = list.viewport();
@@ -1043,8 +1062,13 @@ public final class ScenePickerPanel {
             // O(1)：标签随 Item 携带（渲染层负责省略号），不再对 filtered 全表反查。
             String label = item.label() == null ? String.valueOf(item.key()) : item.label();
             String stableKey = String.valueOf(item.key());
-            return props.panelPresentation().infoBarIdLabel(label,
+            String text = props.panelPresentation().infoBarIdLabel(label,
                     prefix.isEmpty() ? stableKey : prefix + stableKey);
+            // 已配置标记（T5 UX-18）：单元侧是圆点（形态），信息条侧是文案（语义）；
+            // 点击行为保持既有激活语义（不做静默丢弃，见 activateCandidate 的契约说明）。
+            return configuredKeys.get().contains(stableKey)
+                    ? text + "  ·  " + props.panelPresentation().alreadyConfiguredBadge()
+                    : text;
         });
         SceneNode infoBar = PickerInfoBar.create(rt, new PickerInfoBar.Props(infoText, props.enabled()));
         if (viewportSizing) {
@@ -1185,6 +1209,12 @@ public final class ScenePickerPanel {
      * <p>候选本体经数据面解析（ADR §3.8 Q12 第 10 行）：SPI 路径 = {@code source.exact(key)} 的
      * O(1) 定位，旧路径 = 过滤后列表线性查（该路径下列表就是全集）。切片路径下不再对「窗口切片」
      * 线性扫描——那既找不到本体，也会随滚动位置失真。</p>
+     *
+     * <p><b>「已配置」候选的点击契约（T5 UX-18 / P4 偏差 D-P4-3）</b>：SPI 路径不再从结果里排除
+     * 已在当前规则中的候选，点击这类候选与点击未配置候选<b>走完全相同的路径</b>（无变体直达提交、
+     * 有变体开浮层），<b>不做静默丢弃</b>——重复由成员问题的「重复」徽章如实呈现（F3/F4 口径），
+     * 「已配置」状态则由结果单元圆点与信息条文案提前告知。若将来要改成「点击即移除」一类语义，
+     * 必须同时改本方法与信息条文案，并补守卫测试。</p>
      */
     private static void activateCandidate(Object key, Props props, Runnable closeRequest,
                                           Feed feed,
