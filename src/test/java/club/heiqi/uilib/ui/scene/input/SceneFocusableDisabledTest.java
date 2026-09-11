@@ -206,4 +206,42 @@ public class SceneFocusableDisabledTest {
 
         Assert.assertSame("点击 enabled 的 b 应聚焦 b", b, router.__getFocusedNode());
     }
+
+    // 6：内容折叠子树退出 Tab 环（折叠 = 子树不可见 ⇒ 不可聚焦），解折叠后原位恢复
+    @Test
+    public void collapsedSubtreeLeavesTabRing() {
+        SceneNode root = new SceneNode();
+        SceneNode before = new SceneNode();
+        SceneNode container = new SceneNode();
+        SceneNode inside = new SceneNode();
+        SceneNode after = new SceneNode();
+        container.appendChild(inside);
+        root.appendChild(before);
+        root.appendChild(container);
+        root.appendChild(after);
+
+        runtime.focusable(before, Signal.create(Boolean.TRUE));
+        runtime.focusable(inside, Signal.create(Boolean.TRUE));
+        runtime.focusable(after, Signal.create(Boolean.TRUE));
+        runtime.flush();
+        Assert.assertTrue("前置：inside 已注册", router.__isFocusable(inside));
+
+        container.setCollapsed(true);
+        fm.setRoot(root);
+
+        // DOM 前序：before, inside, after；inside 在折叠子树内 → Tab 环 [before, after]
+        fm.focusNext();
+        Assert.assertSame("折叠子树被跳过 → 首个为 before", before, router.__getFocusedNode());
+        fm.focusNext();
+        Assert.assertSame("折叠子树被跳过 → 下一个为 after（不落在 inside）", after, router.__getFocusedNode());
+        fm.focusNext();
+        Assert.assertSame("循环回 before", before, router.__getFocusedNode());
+        fm.focusPrevious();
+        Assert.assertSame("Shift+Tab 同样跳过折叠子树", after, router.__getFocusedNode());
+
+        // 解折叠：inside 原位回到 Tab 环（DOM 前序 [before, inside, after]；当前焦点 after 的上一个是 inside）
+        container.setCollapsed(false);
+        fm.focusPrevious();
+        Assert.assertSame("解折叠后 inside 回到 DOM 前序位置", inside, router.__getFocusedNode());
+    }
 }

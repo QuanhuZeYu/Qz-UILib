@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.layout;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -129,7 +130,11 @@ class SizingCalculator {
         }
 
         int outerWidth = constraints.getAvailableWidth();
-        List<SceneNode> children = node.__getChildren();
+        // ★ 内容折叠（纯加法，默认 false 时逐值不变）：折叠节点的子树与自身文本均不参与尺寸推导，
+        //   故此处按「无子无文本」处理 —— 与「子树挂摘」形态逐值等价，且使
+        //   ConstraintResolver 的先验尺寸恒可知（U-P5-17 grow 先验闸门根除点之一）。
+        List<SceneNode> children = node.isCollapsed()
+                ? Collections.<SceneNode>emptyList() : node.__getChildren();
         if (!children.isEmpty()) {
             if (node.getWidthSizing() == SceneNode.WidthSizing.SHRINK && allowChildCacheForShrink) {
                 return clampWidth(node, computeShrinkContainerWidth(node, outerWidth));
@@ -138,7 +143,7 @@ class SizingCalculator {
             return clampWidth(node, outerWidth);
         }
 
-        String text = node.getText();
+        String text = node.isCollapsed() ? null : node.getText();
         int padH = node.getPaddingLeft() + node.getPaddingRight();
         if (text == null) {
             // 无文本叶节点：保留装饰/矩形语义，宽=可用宽
@@ -428,7 +433,10 @@ class SizingCalculator {
      */
     private int computeContentHeight(SceneNode node) {
         int padV = node.getPaddingTop() + node.getPaddingBottom();
-        List<SceneNode> children = node.__getChildren();
+        // ★ 内容折叠（纯加法，默认 false 时逐值不变）：与 computeWidth 同口径 ——
+        //   折叠节点按「无子无文本」的空内容叶计算（padding 计入，preferredHeight 仍作下限）。
+        List<SceneNode> children = node.isCollapsed()
+                ? Collections.<SceneNode>emptyList() : node.__getChildren();
         if (!children.isEmpty()) {
             boolean row = node.getFlexDirection() == FlexDirection.ROW;
             if (row) {
@@ -470,7 +478,8 @@ class SizingCalculator {
         }
 
         // 叶节点：文本高度（wrap 感知：拆行后逐行行高求和；否则行数 × 行高）；无文本 → 高度为 0
-        int textHeight = leafTextHeight(node);
+        // 折叠节点的自身文本同属「内容」，一并折叠为 0（不登记测量、不产出文本行计划）。
+        int textHeight = node.isCollapsed() ? 0 : leafTextHeight(node);
         // 自然外高（文本高 + padV）与 preferredHeight（外尺寸下限）取 max，padV 不重复加
         int naturalLeaf = textHeight + padV;
         return node.getPreferredHeight() > 0

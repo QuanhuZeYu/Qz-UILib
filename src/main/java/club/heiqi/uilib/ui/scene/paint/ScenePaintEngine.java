@@ -283,7 +283,10 @@ public class ScenePaintEngine {
                 ? ClipRect.intersect(ancestorClip, nodeAbsX, nodeAbsY,
                         nodeAbsX + box.getWidth(), nodeAbsY + box.getHeight())
                 : ancestorClip;
-        List<SceneNode> children = node.__getChildren();
+        // ★ 内容折叠（纯加法，默认 false 时零参与）：折叠节点的子树不参与绘制 ——
+        //   子树不产任何命令（不可见），本节点自身仍照常出命令（零内容叶盒）。
+        List<SceneNode> children = node.isCollapsed()
+                ? java.util.Collections.<SceneNode>emptyList() : node.__getChildren();
         for (int i = 0; i < children.size(); i++) {
             SceneNode child = children.get(i);
             regenerated += paintNode(child, plan, childOffsetX, childOffsetY, childClip);
@@ -349,7 +352,9 @@ public class ScenePaintEngine {
         }
         int childOffsetY = SceneGeometry.childYBase(node, nodeAbsY);
         int childOffsetX = SceneGeometry.childXBase(node, nodeAbsX);
-        List<SceneNode> children = node.__getChildren();
+        // ★ 内容折叠：与主遍历同口径剪枝（包围盒不得含不可见子树，否则 transform 层区域偏大）。
+        List<SceneNode> children = node.isCollapsed()
+                ? java.util.Collections.<SceneNode>emptyList() : node.__getChildren();
         for (int i = 0; i < children.size(); i++) {
             ContentBounds childBounds = subtreeContentBounds(children.get(i), childOffsetX, childOffsetY);
             if (childBounds != null) {

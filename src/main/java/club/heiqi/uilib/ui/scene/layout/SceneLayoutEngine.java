@@ -670,7 +670,10 @@ public class SceneLayoutEngine {
         boolean cleanSelf = node.getCachedLayout() != null
                 && !node.__isSelfLayoutDirty()
                 && !node.__isDescendantLayoutDirty();
-        List<SceneNode> kids = node.__getChildren();
+        // ★ 内容折叠（纯加法，默认 false 时零参与）：折叠节点的尺寸不由子树决定（子树已退出布局域），
+        //   故按叶节点口径做跳过判定（补宽度消费判定），避免对不可见的子树反复下潜。
+        List<SceneNode> kids = node.isCollapsed()
+                ? java.util.Collections.<SceneNode>emptyList() : node.__getChildren();
         boolean constraintsChanged = !Objects.equals(constraints, prev);
         boolean selfConsumesConstraint;
         if (kids.isEmpty()) {
@@ -733,6 +736,13 @@ public class SceneLayoutEngine {
     private boolean layoutChildren(SceneNode node, Constraints constraints,
                                    int[] relayoutCount, Set<SceneNode> relayoutedNodes,
                                    Set<SceneNode> constraintRelayoutedNodes) {
+        // ★ 内容折叠（纯加法，默认 false 时零参与）：折叠节点的子树退出布局域 —— 不下潜、不递归。
+        //   子树的布局缓存已在 setCollapsed 时整体作废并保持脏，解折叠时随本节点重算整体重算，
+        //   故此处跳过不会留下陈旧盒子。子树内的脏标记不会污染祖先干净判定：
+        //   本节点自身在 layoutInternal 出口照常 clearLayoutDirty()（清自身 self + descendant 路标）。
+        if (node.isCollapsed()) {
+            return false;
+        }
         List<SceneNode> children = node.__getChildren();
         if (children.isEmpty()) {
             return false;

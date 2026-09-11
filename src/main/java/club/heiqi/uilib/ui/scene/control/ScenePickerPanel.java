@@ -1457,18 +1457,21 @@ public final class ScenePickerPanel {
         // 撤销条（P5 §5.5 E1 甲形态：删除即生效 + 5s 内可撤销；至多 1 条、到期/关闭即释放）。
         // 结构上追加在成员带末尾：不移动既有子节点下标；无 tombstone 时整行零高。
         //
-        // ★ 子内容按可见性挂摘（而不是「行常驻 + 两个子节点常驻」）—— 成员带「高度有界 + 带内滚动」
-        //   的前提条件，U-P5-15 的根因修复：
+        // ★ 内容折叠声明（U-P5-17 根除「grow 先验闸门」）—— 成员带「高度有界 + 带内滚动」的前提条件：
         //   ConstraintResolver.computeColumnGrowHeights 为 COLUMN 容器分配 grow 高度前，要求每个
-        //   固定兄弟的先验高可知；而「有子节点的容器 + preferredHeight == 0」先验不可知
+        //   固定兄弟的先验高可知；而「有子节点的容器 + preferredHeight == 0」按旧口径先验不可知
         //   （容器内容撑大无法先验，见 ConstraintResolver.priorKnownChildHeight）⇒ 该容器一出现，
         //   整条 grow 分配即被放弃（运行期 WARN「COLUMN 容器 grow 分配放弃：固定兄弟高度无法先验」），
         //   成员网格容器（flexGrow=1 + fillParentHeight）回退 shrink-to-fit ⇒ viewport 被内容撑大、
         //   SceneGeometry.maxScrollY == 0 ⇒ 成员带高度变成内容高、面板高度溢出宿主逻辑盒，
         //   超出宿主可见区的成员卡片指针不可达（键盘路径不受影响，故此前只在指针侧暴露）。
-        //   隐藏态撤销条若常驻 label+按钮两个子节点，正好命中这条路径（实测：成员带 3140px /
-        //   maxScrollY=0；挂摘后同夹具 264px / maxScrollY>0）。
-        //   隐藏态零子 ⇒ 该行是叶子，先验高恒为 0（可知），grow 分配恢复正常。
+        //   第五轮曾用「按可见性挂摘子内容」消除触发条件（U-P5-15 临时形态）；本轮改为<b>声明式</b>：
+        //   SceneNode.setCollapsed(true) 声明「本行内容退出布局域」—— 行按零内容叶参与父流
+        //   （子树与自身文本都不参与尺寸推导，先验高与内容高同口径）⇒ 先验恒可知，闸门不必松动。
+        //   子控件常驻（结构稳定，无挂摘）：折叠期不参与布局/绘制/命中/焦点，撤销按钮 enabled 信号
+        //   仍为 undoVisible（隐藏期既不在 Tab 环也不可命中）。
+        //   等价性由测试逐值钉死（两种形态布局结果一致）：
+        //   CollapsedLayoutEquivalenceTest#collapseDeclarationMatchesDetachFormValueByValue。
         //   对外口径不变：撤销条行仍是成员带末位子节点，隐藏态 preferredHeight 仍为 0（零占位）。
         SceneNode toastRow = SceneNode.row();
         toastRow.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -1495,20 +1498,12 @@ public final class ScenePickerPanel {
         rt.bindComputed(() -> Integer.valueOf(Boolean.TRUE.equals(undoVisible.get())
                         ? rt.lineHeight(toastLabel.effectiveFontSize()) : 0),
                 toastRow::setPreferredHeight);
-        // 挂摘式显隐（与 ChatInputBar「↓ N 条新消息」提示同款口径：可选内容不进常驻结构）：
-        // 可见 → 依次挂 label + 撤销按钮（按钮 enabled 信号即 undoVisible，隐藏期既不在树内也不在 Tab 环）；
-        // 不可见 → 两子节点摘除，行退化为零高叶子。
-        rt.bind(undoVisible, visible -> Effect.untrack(() -> {
-            if (Boolean.TRUE.equals(visible)) {
-                if (toastLabel.__getParent() == null) {
-                    toastRow.appendChild(toastLabel);
-                    toastRow.appendChild(undoButton);
-                }
-            } else if (toastLabel.__getParent() != null) {
-                toastRow.removeChild(toastLabel);
-                toastRow.removeChild(undoButton);
-            }
-        }));
+        // 折叠式显隐（声明式，替代第五轮的挂摘形态）：不可见 → setCollapsed(true)，子树退出布局/
+        // 绘制/命中/焦点四面，行退化为零高叶；可见 → setCollapsed(false)，子控件随行整体重算
+        // （折叠期子树保持脏态，无「解折叠补标脏」第二通道）。
+        // 幂等：setCollapsed 值未变即短路，信号重复发同值不产生失效。
+        rt.bind(undoVisible, visible -> Effect.untrack(
+                () -> toastRow.setCollapsed(!Boolean.TRUE.equals(visible))));
         panel.appendChild(toastRow);
         return panel;
     }

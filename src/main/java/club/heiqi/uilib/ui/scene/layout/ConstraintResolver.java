@@ -27,6 +27,14 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 *       在子节点布局前估算容器/固定兄弟的先验高度，供 COLUMN grow 子权重分配求解。</li>
  * </ul>
  *
+ * <h3>U-P5-17「grow 先验闸门」根除（内容折叠声明）</h3>
+ * <p>闸门现象：同级存在 grow 子、且某固定兄弟是「有子容器 + preferredHeight == 0」时，
+ * 先验高不可知 ⇒ 整条 grow 分配放弃（运行期 WARN）⇒ 下游回退 shrink-to-fit。根除方式不是放宽
+ * 闸门（放宽会动摇「先验必须可知」这条正确性前提），而是给固定兄弟一条<b>声明的</b>可知通道：
+ * {@link SceneNode#setCollapsed(boolean)} 声明「本节点内容退出布局域」，其先验高与内容高同为零内容叶
+ * 口径（SizingCalculator 同口径计算实际盒），先验与实际由此<b>由构造一致</b>，闸门无需松动。
+ * 声明默认关闭，未声明节点逐位不变。</p>
+ *
  * <h3>铁律：严禁读子 cachedLayout</h3>
  * <p>本类所有方法只读节点属性 + 约束（度量一律经 {@link SizingCalculator} 单点），
  * <b>绝不读取任何子节点的 cachedLayout</b>，避免父子布局循环依赖（与原主引擎内联时的铁律逐位等价）。
@@ -223,12 +231,15 @@ class ConstraintResolver {
             // preferredHeight 是外尺寸下限，maxHeight 不会压低它（矛盾时下限优先），不 clamp。
             return child.getPreferredHeight();
         }
-        if (!child.__getChildren().isEmpty()) {
+        // ★ U-P5-17 根除点（内容折叠声明，纯加法）：折叠节点的子树不参与尺寸推导
+        //   （SizingCalculator 同口径），故其先验高恒可知 —— 走下方零内容叶口径，
+        //   绝不因「有子容器」落回 UNCONSTRAINED。声明未开启的节点逐位不变。
+        if (!child.isCollapsed() && !child.__getChildren().isEmpty()) {
             // 容器先验高不可知，maxHeight 在 computeHeight 出口 clamp，不在先验阶段处理。
             return Constraints.UNCONSTRAINED;
         }
         int padV = child.getPaddingTop() + child.getPaddingBottom();
-        String text = child.getText();
+        String text = child.isCollapsed() ? null : child.getText();
         if (text != null) {
             // wrap 感知：maxTextWidth>0 时拆行后逐行行高求和（与 SizingCalculator 同口径）
             int natural = sizing.leafTextHeight(child) + padV;
@@ -257,12 +268,14 @@ class ConstraintResolver {
             // preferredWidth 是外尺寸下限，maxWidth 不会压低它（矛盾时下限优先），不 clamp。
             return child.getPreferredWidth();
         }
-        if (!child.__getChildren().isEmpty()) {
+        // ★ 对称于 priorKnownChildHeight 的 U-P5-17 根除点（ROW 主轴孪生陷阱）：
+        //   折叠节点先验宽恒可知（零内容叶口径），有子容器不再落回 UNCONSTRAINED。
+        if (!child.isCollapsed() && !child.__getChildren().isEmpty()) {
             // 容器先验宽不可知（SHRINK 容器需读子 cache，违反先验铁律），maxWidth 在 computeWidth 出口 clamp。
             return Constraints.UNCONSTRAINED;
         }
         int padH = child.getPaddingLeft() + child.getPaddingRight();
-        String text = child.getText();
+        String text = child.isCollapsed() ? null : child.getText();
         if (text != null) {
             // 文本叶：测量各行最大宽 + padH；wrap 节点内容宽即 maxTextWidth。空文本视作 0 宽。
             int wrapWidth = child.getMaxTextWidth();

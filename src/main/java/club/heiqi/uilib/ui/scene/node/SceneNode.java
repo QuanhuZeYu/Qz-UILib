@@ -1948,6 +1948,56 @@ public class SceneNode {
     /** @see SceneLayoutProps#scrollableX */
     public boolean isScrollableX() { return layoutProps.scrollableX; }
 
+    // ==================== 内容折叠声明（LAYOUT 级，纯加法） ====================
+
+    /**
+     * 声明/解除「内容折叠」——本节点内容退出布局域，自身按零内容叶留在父流中。
+     *
+     * <p>语义唯一权威见 {@link SceneLayoutProps#collapsed}。此处只负责失效通道：</p>
+     * <ul>
+     *   <li>折叠（{@code true}）：先作废整棵子树的布局缓存（盒子清空 + 保持脏），
+     *       再标自身布局脏（向上冒泡）。语义 = 子树在布局/绘制/命中/焦点四面同时退出，
+     *       且折叠期间子树零布局成本；</li>
+     *   <li>解折叠（{@code false}）：只标自身布局脏 —— 子树在折叠期保持脏态，
+     *       随本次自身重算立即整体重算，无需第二通道。</li>
+     * </ul>
+     *
+     * <p><b>纯加法保证</b>：默认 false 的节点在本方法的唯一影响面上零参与
+     * （布局四面的折叠判定全部以 {@link #isCollapsed()} 为闸门，false 时与既有路径逐位等价）。</p>
+     *
+     * @param collapsed 是否折叠
+     * @return this（链式）
+     */
+    public SceneNode setCollapsed(boolean collapsed) {
+        if (layoutProps.collapsed == collapsed) return this;
+        layoutProps.collapsed = collapsed;
+        if (collapsed) {
+            // 折叠：子树整体退出布局域 ⇒ 逐后代作废布局缓存（markSelfLayout 幂等 + 冒泡短路，
+            // 已脏后代零重复成本）。折叠期间子树不再被布局访问，故脏标记保持到解折叠。
+            markDescendantsLayoutDirty();
+        }
+        markSelfLayout();
+        return this;
+    }
+
+    /** @see SceneLayoutProps#collapsed */
+    public boolean isCollapsed() { return layoutProps.collapsed; }
+
+    /**
+     * 递归作废整棵后代的布局缓存（仅 {@link #setCollapsed(boolean)} 使用）。
+     *
+     * <p>语义 = 每个后代各调一次 {@link #markSelfLayout()}：盒子清空 + 自身标脏 + 向上冒泡。
+     * 冒泡在遇到已点亮的祖先路标处短路，故重复标记与深链冒泡都不会放大成本；
+     * 本方法<b>不</b>改动 paint/composite/geometry 标记（折叠只改布局域参与度）。</p>
+     */
+    private void markDescendantsLayoutDirty() {
+        for (int i = 0; i < children.size(); i++) {
+            SceneNode child = children.get(i);
+            child.markSelfLayout();
+            child.markDescendantsLayoutDirty();
+        }
+    }
+
     /** @return 是否为 paint 与 hit-test 共用的裁剪窗口 */
     public boolean isClipWindow() { return paintProps.clipChildren || layoutProps.scrollable; }
 

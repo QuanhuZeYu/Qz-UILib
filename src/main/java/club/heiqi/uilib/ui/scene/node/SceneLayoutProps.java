@@ -228,6 +228,31 @@ final class SceneLayoutProps {
     int scrollOffsetX;
 
     /**
+     * 内容折叠声明，默认 false（纯加法：未声明的节点在布局/绘制/命中/焦点四面逐值不变）。
+     *
+     * <p><b>失效级别：LAYOUT（布局级）。</b>SceneNode#setCollapsed 去重后标自身布局脏，
+     * 折叠时一并作废整棵子树的布局缓存。</p>
+     *
+     * <h3>语义（唯一权威，实现见 SizingCalculator/ConstraintResolver/SceneLayoutEngine）</h3>
+     * <p>折叠 = 本节点<b>内容</b>退出布局域，自身仍按「零内容叶」留在父流中：</p>
+     * <ul>
+     *   <li><b>尺寸推导</b>：子树与自身文本均不参与（{@code computeWidth}/{@code computeContentHeight}
+     *       按「无子无文本」处理）⇒ 尺寸 = 零内容叶口径（padding 计入，preferred 仍作下限，
+     *       fill/grow/percent 照旧生效）。与「子树挂摘」形态逐值等价。</li>
+     *   <li><b>先验尺寸</b>：{@code ConstraintResolver.priorKnownChildHeight/Width} 对该节点返回
+     *       零内容叶口径值（preferred 或 padding），<b>恒可知</b> —— 这是 U-P5-17
+     *       「grow 先验闸门」的根除点：有子容器不再落回 UNCONSTRAINED。</li>
+     *   <li><b>子树退出</b>：不参与布局下潜（SceneLayoutEngine 不再递归折叠节点的子节点）、
+     *       不参与绘制（ScenePaintEngine 两道循环跳过）、不参与命中与焦点环
+     *       （SceneHitTester / FocusManager 跳过）。</li>
+     * </ul>
+     *
+     * <p><b>失效通道</b>：折叠瞬间作废整棵子树布局缓存（盒子清空且保持脏）——折叠期间子树
+     * 零布局成本，解折叠时因仍处于脏态而立即整体重算，不需要额外的「解折叠补标脏」通道。</p>
+     */
+    boolean collapsed;
+
+    /**
      * 是否为可横向滚动的视口容器，默认 false。
      *
      * <p><b>失效级别：LAYOUT（布局级）。</b>SceneNode#setScrollableX 去重后调 SceneNode#markSelfLayout()。</p>

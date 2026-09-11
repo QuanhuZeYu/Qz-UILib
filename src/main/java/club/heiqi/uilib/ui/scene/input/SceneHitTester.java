@@ -99,7 +99,10 @@ public class SceneHitTester {
         }
 
         // 深度优先子节点：从尾到头遍历（后添加 = 更高 z-order）
-        List<SceneNode> children = node.__getChildren();
+        // ★ 内容折叠（纯加法，默认 false 时零参与）：折叠节点的子树不参与命中遍历，
+        //   本节点自身仍是叶命中候选（沿下方 isHitTestable 判定），「内容折叠」语义自洽。
+        List<SceneNode> children = node.isCollapsed()
+                ? Collections.<SceneNode>emptyList() : node.__getChildren();
         int childAbsYBase = SceneGeometry.childYBase(node, absY);
         int childAbsXBase = SceneGeometry.childXBase(node, absX);
         boolean childHasClip = hasClip;

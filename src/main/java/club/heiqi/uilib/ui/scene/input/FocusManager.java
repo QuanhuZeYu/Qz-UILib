@@ -356,6 +356,11 @@ public class FocusManager {
         if (focusables.contains(node)) {
             result.add(node);
         }
+        // ★ 内容折叠（纯加法，默认 false 时零参与）：折叠节点的子树不进入 Tab 环
+        //   （子树不可见即不可聚焦）；本节点自身的注册状态不变。
+        if (node.isCollapsed()) {
+            return;
+        }
         // 再递归子节点
         for (SceneNode child : node.__getChildren()) {
             collectFocusablesPreOrder(child, result);

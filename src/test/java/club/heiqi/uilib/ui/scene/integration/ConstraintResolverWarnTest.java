@@ -154,6 +154,47 @@ public class ConstraintResolverWarnTest {
     }
 
     /**
+     * 场景 4（U-P5-17 守卫）：固定兄弟是「有子容器 + preferredHeight == 0」，但<b>已声明内容折叠</b>
+     * → 先验高恒可知（零内容叶口径，见 {@code SceneNode.setCollapsed}）⇒ grow 分配照常进行。
+     *
+     * <p>断言三点：0 条 WARN；grow 子拿到分配高（200，而非 shrink-to-fit 的 0）；
+     * 折叠兄弟自身零占位（高 0，子树不参与）。变异检查：删掉 {@code setCollapsed(true)}
+     * 一行，本用例当场红在 WARN ≥ 1 且 grow 子高 0≠200 —— 场景 2 是同一陷阱的未声明锚。</p>
+     */
+    @Test
+    public void collapsedSiblingKeepsGrowAllocationWithoutWarn() {
+        sceneRoot.setFlexDirection(FlexDirection.COLUMN);
+
+        SceneNode container = SceneNode.column();
+        container.setPreferredHeight(200);
+        sceneRoot.appendChild(container);
+
+        // 固定兄弟：有子容器 + 零 preferredHeight，但声明折叠 ⇒ 先验高 = 0（可知）
+        SceneNode collapsedSibling = SceneNode.column();
+        SceneNode grandChild = new SceneNode();
+        grandChild.setPreferredHeight(30);
+        collapsedSibling.appendChild(grandChild);
+        collapsedSibling.setCollapsed(true);
+        container.appendChild(collapsedSibling);
+
+        SceneNode growChild = new SceneNode();
+        growChild.setFlexGrow(1);
+        container.appendChild(growChild);
+
+        appender.clear();
+        LayoutResult result = layoutEngine.layout(sceneRoot, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+
+        Assert.assertEquals("折叠声明下不应打 grow 分配放弃 WARN", 0, appender.warnCount());
+        Assert.assertEquals("grow 子应拿到完整分配高（200）",
+                200, ((club.heiqi.uilib.ui.scene.layout.LayoutBox) growChild.getCachedLayout()).getHeight());
+        Assert.assertEquals("折叠兄弟零占位",
+                0, ((club.heiqi.uilib.ui.scene.layout.LayoutBox) collapsedSibling.getCachedLayout()).getHeight());
+        Assert.assertNull("折叠子树不参与布局",
+                grandChild.getCachedLayout());
+        Assert.assertTrue("grow 子应因自身脏被重算", result.getRelayoutedNodes().contains(growChild));
+    }
+
+    /**
      * 场景 3：无 grow 子（纯固定子）→ 早退是正常 shrink 路径，不应打 WARN。
      */
     @Test

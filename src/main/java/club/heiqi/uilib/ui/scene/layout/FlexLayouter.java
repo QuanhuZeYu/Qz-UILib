@@ -132,7 +132,11 @@ class FlexLayouter {
         int gap = node.getGap();
         int innerWidth = Math.max(0, outerWidth - padLeft - padRight);
 
-        List<SceneNode> children = node.__getChildren();
+        // ★ 内容折叠（纯加法，默认 false 时零参与）：折叠节点的子树已退出布局域
+        //   （盒子在 setCollapsed 时清空、且布局引擎不再下潜），此处按「无子」定位 ——
+        //   折叠节点自身盒 = 零内容叶口径（与「子树挂摘」形态逐值等价）。
+        List<SceneNode> children = node.isCollapsed()
+                ? java.util.Collections.<SceneNode>emptyList() : node.__getChildren();
 
         // ===== 步骤 B：可用空间（主轴汇总 + 主轴起点 + 交叉轴可用） =====
         // 汇总主轴总尺寸（含子 marginMain 占用）：Σ(childMain + childMarginMain) + gap
