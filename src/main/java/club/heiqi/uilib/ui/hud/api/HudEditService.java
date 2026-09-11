@@ -26,7 +26,10 @@ import club.heiqi.uilib.ui.reactive.Signal;
  *   <li>{@link #requestEdit(String)} 只发布「进入编辑并聚焦该目标」意图，由当前打开的聊天屏
  *       消费；无活动编辑宿主时静默丢弃（不排队、不抛异常、不改变 {@link #isEditing()})；</li>
  *   <li>{@link #focus()} / {@link #isEditing()} 以编辑宿主为真值：无宿主时分别为 null / false；</li>
- *   <li>聊天屏关闭时摘除宿主，旧屏关闭不得顶掉新屏（{@link #detachHost} 按身份判定）。</li>
+ *   <li>聊天屏关闭时摘除宿主，旧屏关闭不得顶掉新屏（{@link #detachHost} 按身份判定）；</li>
+ *   <li>宿主绑定不随 {@link #clear()} 复位（clear 只清目标注册表）：测试隔离需成对
+ *       {@link #detachHost(Host)} + {@link #clear()}，否则上一个用例注入的宿主会让
+ *       「无宿主时静默丢弃」的断言失效，且用例结果与执行顺序相关。</li>
  * </ul>
  *
  * <p><b>宿主端口（{@link Host}）</b>属于 UILib 内部接线：由聊天输入屏实现并由其打开/关闭

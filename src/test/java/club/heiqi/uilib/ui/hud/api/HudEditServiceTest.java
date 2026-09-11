@@ -1,9 +1,14 @@
 package club.heiqi.uilib.ui.hud.api;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -13,7 +18,16 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * 公开 HUD 编辑契约：目标值对象校验、注册表语义（重复拒绝 / 幂等注销 / 版本 / 注册顺序）、
  * requestEdit 无活动宿主时静默、宿主端口（isEditing / focus）委托与身份判定、clear 边界。
+ *
+ * <p><b>测试隔离</b>：宿主绑定不随 {@link HudEditService#clear()} 复位（clear 只清目标注册表）。
+ * 本类注入过宿主，故 {@code tearDown} 必须成对摘除注入过的宿主再清注册表——否则同 JVM 的
+ * 「无宿主时静默丢弃」用例会因残留宿主而失败，且结果与用例执行顺序相关。</p>
+ *
+ * <p>用例顺序固定为名字升序：这样 {@code hostPortCarriesIntentEditingAndFocus}（注入宿主）必然
+ * 先于 {@code requestEditWithoutHostIsSilentlyDropped}（要求无宿主）执行，把「清理缺失」暴露成
+ * 确定性失败，而不是依赖运行时顺序碰运气。</p>
  */
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class HudEditServiceTest {
 
     private static final String HUD_ID = "qzuilib:test_edit";
@@ -45,20 +59,37 @@ public class HudEditServiceTest {
         }
     }
 
+    /** 本用例注入过的宿主（tearDown 统一摘除：清理幂等且与用例执行顺序无关）。 */
+    private final List<HudEditService.Host> attachedHosts = new ArrayList<HudEditService.Host>();
+
     @Before
     public void setUp() {
+        attachedHosts.clear();
         HudEditService.getInstance().clear();
         ReactiveScheduler.get().reset();
     }
 
     @After
     public void tearDown() {
+        // 宿主绑定不随 clear() 复位：先逆序摘除本用例注入过的宿主（detachHost 按身份判定，
+        // 非当前宿主 / 重复调用均无副作用），再清注册表；两级清理都幂等。
+        for (int i = attachedHosts.size() - 1; i >= 0; i--) {
+            HudEditService.getInstance().detachHost(attachedHosts.get(i));
+        }
+        attachedHosts.clear();
         HudEditService.getInstance().clear();
         ReactiveScheduler.get().reset();
     }
 
     private static HudEditTarget target(String hudId) {
         return HudEditTarget.builder(hudId).previewFactory(rt -> SceneNode.row()).build();
+    }
+
+    /** 注入宿主并登记到 tearDown 清理列表（测试隔离：attach 必须成对 detach）。 */
+    private StubHost injectHost(StubHost host) {
+        HudEditService.getInstance().attachHost(host);
+        attachedHosts.add(host);
+        return host;
     }
 
     @Test
@@ -156,8 +187,7 @@ public class HudEditServiceTest {
     @Test
     public void hostPortCarriesIntentEditingAndFocus() {
         HudEditService service = HudEditService.getInstance();
-        StubHost host = new StubHost();
-        service.attachHost(host);
+        StubHost host = injectHost(new StubHost());
         Assert.assertFalse("宿主未进入编辑时 isEditing 为假", service.isEditing());
         Assert.assertSame(host.focus, service.focus());
 
@@ -174,8 +204,7 @@ public class HudEditServiceTest {
 
         // detachHost 只摘同身份宿主：旧屏关闭不得顶掉新屏
         int hostEnters = host.enterCount;
-        StubHost other = new StubHost();
-        service.attachHost(other);
+        StubHost other = injectHost(new StubHost());
         service.detachHost(host);
         Assert.assertFalse(service.isEditing());
         service.requestEdit(OTHER_ID);
@@ -183,6 +212,7 @@ public class HudEditServiceTest {
         Assert.assertEquals("旧宿主被摘除后不再收到意图", hostEnters, host.enterCount);
 
         service.detachHost(other);
+        service.detachHost(other); // 重复摘除幂等（tearDown 清理路径复用同一调用）
         service.requestEdit(HUD_ID);
         Assert.assertEquals("摘除后意图静默丢弃", 1, other.enterCount);
         Assert.assertFalse(service.isEditing());
@@ -192,8 +222,7 @@ public class HudEditServiceTest {
     @Test
     public void clearOnlyClearsRegistryAndKeepsHostBinding() {
         HudEditService service = HudEditService.getInstance();
-        StubHost host = new StubHost();
-        service.attachHost(host);
+        StubHost host = injectHost(new StubHost());
         service.register(target(HUD_ID));
         service.clear();
         Assert.assertFalse(service.hasTarget(HUD_ID));
