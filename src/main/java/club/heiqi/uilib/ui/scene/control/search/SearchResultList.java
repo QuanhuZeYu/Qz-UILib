@@ -301,9 +301,9 @@ public final class SearchResultList {
         stackHost.setFontSizeMetric((node, fontSizePx) ->
                 trackHeight.set(Integer.valueOf(minTrackHeightFor(rt, props, fontSizePx))));
 
-        // 行步长（stride）唯一派生：轨道高 + 行间距。行高 / spacer / maxScrollPx / 滚动定位全部读它。
+        // 行步长（stride）唯一派生：GridMetrics（轨道高 + 行间距）。行高 / spacer / maxScrollPx / 滚动定位全部读它。
         ReadableSignal<Integer> stridePx = Computed.create(() ->
-                Integer.valueOf(Math.max(1, trackHeight.get().intValue() + props.gapY())));
+                Integer.valueOf(GridMetrics.stridePxOf(trackHeight.get().intValue(), props.gapY())));
 
         // 视口高度：布局完成后重读（同值早退）。未布局时为 0 —— 窗口数学退回预算行数，
         // 首帧挂载量因此有界（≤ 预算行数 + overscan），与数据规模 N 无关。
@@ -411,6 +411,54 @@ public final class SearchResultList {
         });
         ReadableSignal<SceneGridWindow.WindowModel> windowModelSignal =
                 Computed.create(() -> window.get().model());
+
+        // stride 变化（字号/密度令牌）→ 以「锚点行 + 行内偏移」重映射 scroll，视图不跳（P3 §3.3）。
+        // 仅在 stride 值变化时执行（同值早退）；越界由回夹 effect 按新 maxScrollPx 处理。
+        // 基线在首次 effect 执行时登记（不在构建期立即求值 Computed：Computed 惰性，构建期 get() 无值）。
+        final int[] lastStride = { -1 };
+        rt.bind(stridePx, stride -> Effect.untrack(() -> {
+            int next = Math.max(1, stride == null ? 1 : stride.intValue());
+            int previous = lastStride[0];
+            if (previous < 0) {
+                lastStride[0] = next;
+                return;
+            }
+            if (next == previous) {
+                return;
+            }
+            // 锚点行由「当前 scroll ÷ 旧 stride」反推：stride 变化会先让窗口重算，
+            // 此时 windowModel 已是新 stride 的窗口，直接读它会把锚点行算错。
+            int scrollNow = Math.max(0, scrollSignal.get().intValue());
+            int oldStride = Math.max(1, previous);
+            int anchorRow = scrollNow / oldStride;
+            int intra = scrollNow - anchorRow * oldStride;
+            lastStride[0] = next;
+            int remapped = SceneGridWindow.scrollForAnchor(anchorRow, intra, next);
+            if (remapped != scrollSignal.get().intValue()) {
+                scrollSignal.set(Integer.valueOf(remapped));
+            }
+        }));
+
+        // 列数变化（窗口/密度）→ 以「条目下标」为锚点重映射，当前首项不跳；同样只在值变化时执行。
+        final int[] lastColumns = { effectiveColumns.get().intValue() };
+        rt.bind(effectiveColumns, columns -> Effect.untrack(() -> {
+            int next = Math.max(1, columns.intValue());
+            int previous = Math.max(1, lastColumns[0]);
+            if (next == previous) {
+                return;
+            }
+            // 同理用「当前 scroll ÷ stride」反推旧首行与条目锚点（windowModel 已按新列数重算）。
+            int stride = Math.max(1, stridePx.get().intValue());
+            int scrollNow = Math.max(0, scrollSignal.get().intValue());
+            int oldRow = scrollNow / stride;
+            int anchorIndex = oldRow * previous;
+            int intra = scrollNow - oldRow * stride;
+            lastColumns[0] = next;
+            int remapped = (anchorIndex / next) * stride + Math.min(intra, stride - 1);
+            if (remapped != scrollSignal.get().intValue()) {
+                scrollSignal.set(Integer.valueOf(remapped));
+            }
+        }));
 
         // 垫片高度：spacer 高之和 + 挂载行高 = totalRows*stride（内容总高守恒）。
         rt.bindComputed(() -> Integer.valueOf(window.get().model().topSpacerPx()),
@@ -588,10 +636,15 @@ public final class SearchResultList {
         return Math.max(1, available);
     }
 
-    /** 轨道高下限：调用方 cellHeight 与「图位最小 + 标签行高 + 间距 + 内边距」取大。 */
+    /**
+     * 轨道高下限：调用方 cellHeight 与「图位最小 + 标签行高 + 间距 + 内边距」取大。
+     *
+     * <p>派生唯一落在 {@link GridMetrics}：字号 / 密度令牌 / 内边距口径的换源只改那一处
+     * （P5 §2.1 派生链；P5 令牌落地前取标准档常量）。</p>
+     */
     private static int minTrackHeightFor(SceneRuntime rt, Props props, int fontSizePx) {
-        return Math.max(props.cellHeight(),
-                rt.lineHeight(fontSizePx) + LABEL_GAP + 1 + CELL_PADDING * 2);
+        return GridMetrics.derive(rt, fontSizePx, props.cellHeight(), CELL_PADDING, LABEL_GAP,
+                props.gapY()).trackHeightPx();
     }
     /** 构建单个结果单元（结构复刻 SceneVirtualGrid.cellComponent；外观为主题轻量覆盖）。 */
     private static SceneNode cellComponent(SceneRuntime rt, Props props, SceneVirtualGrid.Item item,

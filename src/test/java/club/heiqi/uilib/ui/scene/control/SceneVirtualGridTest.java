@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Props;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Result;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.WindowModel;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
@@ -255,6 +256,32 @@ public class SceneVirtualGridTest {
         Assert.assertEquals(0, f.rowsContainer().__getChildren().size());
         Assert.assertEquals(0, model.maxScrollPx());
         Assert.assertEquals(0, f.result.scrollSignal().get().intValue());
+    }
+
+    /**
+     * ADR §3.3 守卫：SceneVirtualGrid 的 stride 本轮<b>不做</b>动态化——轨道高与窗口数学不随字号变化
+     * （公共语义冻结；动态 stride 只落在 SearchResultList，其字号跟随由
+     * {@code SceneFontOverflowGeometryTest} 与 {@code SearchResultListTest} 锚定）。
+     */
+    @Test
+    public void virtualGridStrideUnchangedByFontScale() {
+        VisualFixture f = new VisualFixture(items(20));
+        WindowModel before = f.result.windowModel().get();
+        int rowHeightBefore = ((LayoutBox) f.row(0).getCachedLayout()).getHeight();
+        int cellHeightBefore = ((LayoutBox) f.cell(0, 0).getCachedLayout()).getHeight();
+
+        f.vp().setFontScope(32);
+        rt.flush();
+        layoutAndBridge();
+
+        Assert.assertEquals("字号放大不得改变行高（stride 公共语义冻结）",
+                rowHeightBefore, ((LayoutBox) f.row(0).getCachedLayout()).getHeight());
+        Assert.assertEquals("字号放大不得改变单元高",
+                cellHeightBefore, ((LayoutBox) f.cell(0, 0).getCachedLayout()).getHeight());
+        WindowModel after = f.result.windowModel().get();
+        Assert.assertEquals("窗口首行不变", before.windowStartRow(), after.windowStartRow());
+        Assert.assertEquals("窗口数学输出（maxScrollPx）不变", before.maxScrollPx(), after.maxScrollPx());
+        Assert.assertEquals(before.mountedRows(), after.mountedRows());
     }
 
     // ==================== 索引化（O(1) 查表，ADR §3.8 Q12） ====================

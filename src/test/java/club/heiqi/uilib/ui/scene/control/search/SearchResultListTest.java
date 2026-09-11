@@ -31,6 +31,7 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
@@ -580,6 +581,133 @@ public class SearchResultListTest {
         @Override
         public int size() {
             return delegate.size();
+        }
+    }
+
+    // ==================== 动态 stride 与滚动锚点（M3 / ADR §3.3） ====================
+
+    /**
+     * stride 随字号单调增（GridMetrics 派生链）；字号变化时以「锚点行 + 行内偏移」重映射 scroll，
+     * 视图不跳：锚点行不变、行内偏移保持在同一行内（仅在 stride 值变化时执行）。
+     */
+    @Test
+    public void strideChangeRemapsScrollAnchorWithoutJump() {
+        // 行高随字号线性变化（FixedTextMeasurer 行高固定，测不出派生链），故本用例用局部 runtime。
+        SceneTextMeasurer measurer = new FontScaledMeasurer();
+        SceneRuntime localRt = new SceneRuntime(measurer);
+        SceneLayoutEngine localEngine = new SceneLayoutEngine(measurer);
+        SceneNode localRoot = new SceneNode();
+        final int smallCell = 24;
+        Signal<List<Item>> itemsSignal = Signal.create(items(200));
+        Signal<Integer> highlightSignal = Signal.create(Integer.valueOf(-1));
+        Signal<Boolean> enabledSignal = Signal.create(Boolean.TRUE);
+        SearchResultList.Result[] holder = new SearchResultList.Result[1];
+        try {
+            localRt.mount(localRoot, () -> {
+                SceneNode wrapper = new SceneNode();
+                wrapper.setPreferredHeight(200);
+                holder[0] = SearchResultList.create(localRt, new SearchResultList.Props(
+                        itemsSignal, COLUMNS, CELL_W, smallCell, GAP_X, GAP_Y, enabledSignal,
+                        item -> { }, highlightSignal, highlightSignal::set, null,
+                        null, SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0,
+                        SearchResultList.Props.DEFAULT_VISIBLE_ROWS, null));
+                wrapper.appendChild(holder[0].root());
+                return wrapper;
+            });
+            localRt.flush();
+            layoutOnce(localEngine, localRt, localRoot);
+            layoutOnce(localEngine, localRt, localRoot);
+
+            SceneNode viewport = holder[0].viewport();
+            SceneNode rows = viewport.__getChildren().get(0).__getChildren().get(1);
+            int strideBefore = rowHeight(rows) + GAP_Y;
+            Assert.assertTrue("轨道 ≥ 调用方 cellHeight 下限", rowHeight(rows) >= smallCell);
+            Assert.assertEquals("GridMetrics：cellHeight=24 时轨道 = max(24, lineH(12)+2+1+8=23) = 24",
+                    24, rowHeight(rows));
+
+            scrollBy(viewport, localRoot, localRt, -3 * strideBefore);
+            layoutOnce(localEngine, localRt, localRoot);
+            int anchorRow = holder[0].windowModel().get().windowStartRow();
+            Assert.assertEquals("滚到第 3 行", 3, anchorRow);
+            int intra = viewport.getScrollOffsetY() - anchorRow * strideBefore;
+
+            holder[0].root().setFontScope(32);
+            localRt.flush();
+            layoutOnce(localEngine, localRt, localRoot);
+            layoutOnce(localEngine, localRt, localRoot);
+
+            int strideAfter = rowHeight(rows) + GAP_Y;
+            Assert.assertTrue("字号放大后 stride 单调增（stride=" + strideBefore + " → " + strideAfter + "）",
+                    strideAfter > strideBefore);
+            int scrollAfter = viewport.getScrollOffsetY();
+            Assert.assertTrue("锚点行不被重置：scroll=" + scrollAfter + " ≥ " + anchorRow * strideAfter,
+                    scrollAfter >= anchorRow * strideAfter);
+            Assert.assertTrue("行内偏移保持在同一行内：scroll=" + scrollAfter + " < "
+                            + (anchorRow + 1) * strideAfter,
+                    scrollAfter < (anchorRow + 1) * strideAfter);
+            Assert.assertEquals("行内偏移经 scrollForAnchor 保持", Math.min(intra, strideAfter - 1),
+                    scrollAfter - anchorRow * strideAfter);
+        } finally {
+            localRt.dispose();
+        }
+    }
+
+    private static void layoutOnce(SceneLayoutEngine engine, SceneRuntime runtime, SceneNode root) {
+        engine.layout(root, new Constraints(CANVAS_WIDTH, CANVAS_HEIGHT));
+        runtime.__bridgeLayoutEpoch(engine.layoutEpoch());
+        runtime.flush();
+    }
+
+    private static int rowHeight(SceneNode rowsContainer) {
+        return ((LayoutBox) rowsContainer.__getChildren().get(0).getCachedLayout()).getHeight();
+    }
+
+    private static void scrollBy(SceneNode viewport, SceneNode root, SceneRuntime runtime, int wheelDelta) {
+        AnchorRect box = SceneGeometry.absoluteBox(viewport, 0, 0);
+        int x = box.getX() + box.getWidth() / 2;
+        int y = box.getY() + box.getHeight() / 2;
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.SCROLL, x, y, SceneMouseButton.NONE,
+                wheelDelta, 0, 0, false, false, false, false, 1000L));
+        runtime.route(root, fb.drainFrame(), 0, 0);
+        runtime.flush();
+    }
+
+    /** 行高 = 字号（确定性度量）：用于锚点重映射用例的字号 → stride 派生链。 */
+    private static final class FontScaledMeasurer implements SceneTextMeasurer {
+        @Override
+        public int measureWidth(String text, int fontSizePx) {
+            return (text == null ? 0 : text.length()) * 8;
+        }
+
+        @Override
+        public int lineHeight(int fontSizePx) {
+            return Math.max(1, fontSizePx);
+        }
+
+        @Override
+        public int ascent(int fontSizePx) {
+            return Math.max(1, fontSizePx * 3 / 4);
+        }
+
+        @Override
+        public int descent(int fontSizePx) {
+            return Math.max(1, fontSizePx / 4);
+        }
+
+        @Override
+        public int lineGap(int fontSizePx) {
+            return 0;
+        }
+
+        @Override
+        public int epoch() {
+            return 0;
+        }
+
+        @Override
+        public List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
+            return java.util.Collections.singletonList(text == null ? "" : text);
         }
     }
 
