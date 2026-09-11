@@ -91,6 +91,40 @@ public class SceneHitTesterTest {
         Assert.assertSame("命中 root", root, chain.get(0));
     }
 
+    /**
+     * U-P5-15 语义钉子：<b>没有布局盒的容器，其整棵子树（含可命中的后代）都不参与命中</b>。
+     *
+     * <p>为什么必须如此：{@code cachedLayout} 是节点唯一的位置/尺寸事实；缺失时既不知道子树原点、
+     * 也不知道子树尺寸，任何「继续下潜」都只能凭空造坐标。故命中测试的正确行为是整棵跳过 ——
+     * 缺失盒子是<b>挂载发生在布局之后</b>的过渡态（生产帧管线在 PAINT 前断言无未布局脏，
+     * 见 SceneFramePipeline），不是命中测试的健壮性缺陷。</p>
+     *
+     * <p>本用例把该语义（含反例：补上盒子后同一坐标立即可达）钉死，防止「让命中测试穿透无盒容器」
+     * 之类的改法静默改变语义。</p>
+     */
+    @Test
+    public void boxlessContainerSkipsItsHitTestableDescendantsAsAWhole() {
+        SceneNode root = new SceneNode();
+        SceneNode container = new SceneNode();
+        SceneNode leaf = new SceneNode();
+        container.appendChild(leaf);
+        root.appendChild(container);
+
+        root.setCachedLayout(new LayoutBox(0, 0, 100, 100));
+        // container 无布局盒（挂载后尚未布局）；leaf 自己「有」盒子也不得被命中。
+        leaf.setCachedLayout(new LayoutBox(10, 10, 20, 20));
+
+        List<SceneNode> skipped = tester.hitTest(root, 20, 20, 0, 0);
+        Assert.assertEquals("无盒容器整棵子树跳过：链只到 root", 1, skipped.size());
+        Assert.assertSame("命中 root", root, skipped.get(0));
+
+        // 反例（正锚）：补上容器盒子后，同一坐标必须命中叶子（证明上面的空结果来自盒子缺失）。
+        container.setCachedLayout(new LayoutBox(0, 0, 100, 100));
+        List<SceneNode> hit = tester.hitTest(root, 20, 20, 0, 0);
+        Assert.assertEquals("补盒后链 = [root, container, leaf]", 3, hit.size());
+        Assert.assertSame("最深目标为 leaf", leaf, hit.get(2));
+    }
+
     // ===== T5：rootAbsX/Y 平移 =====
 
     /**

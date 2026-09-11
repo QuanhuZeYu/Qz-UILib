@@ -265,6 +265,26 @@ public class ScenePickerPanelTest {
         return panelCard(panelRoot).__getChildren().get(2);
     }
 
+    /**
+     * 生产形态布局：宿主已发布逻辑盒（{@code logicalW×logicalH}），overlay 按同一逻辑盒收敛一趟。
+     *
+     * <p>与 {@link #layoutAll()} 的差别只在 overlay 约束来源：派生尺寸（P5 §1.2）由逻辑盒决定，
+     * 故生产形态必须按逻辑盒布局 overlay，否则读到的是小盒降级几何。</p>
+     */
+    private void layoutOverlayAtLogicalBox(int logicalW, int logicalH) {
+        layoutEngine.layout(sceneRoot, new Constraints(W, H));
+        for (SceneOverlayHost.Entry entry : rt.getOverlayHost().bottomFirst()) {
+            layoutEngine.layout(entry.getRoot(), new Constraints(logicalW, logicalH));
+        }
+        rt.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+        rt.flush();
+    }
+
+    /** 成员网格视口：成员带 children[2](gridRoot 容器).children[0](viewport)。 */
+    private static SceneNode memberViewport(SceneNode membersPanel) {
+        return membersPanel.__getChildren().get(2).__getChildren().get(0);
+    }
+
     /** 按指定视口高重新布局面板 overlay 并桥接 layout epoch。 */
     private void layoutOverlayWithHeight(int height) {
         layoutEngine.layout(overlayRoot(0), new Constraints(W, height));
@@ -759,6 +779,89 @@ public class ScenePickerPanelTest {
         Assert.assertTrue("分类过滤为 0 -> presentation.emptyCategoryResults",
                 collectText(centerColumn(overlayRoot(0)))
                         .contains(props.presentation().emptyCategoryResults()));
+    }
+
+    /**
+     * U-P5-15（第四轮）：成员带在「隐藏态撤销条」下必须<b>高度有界 + 带内可滚动</b>，
+     * 超宽成员卡片才可能被指针点到。
+     *
+     * <p><b>根因（实测定位）</b>：撤销条原为「行常驻 + label/按钮常驻」，隐藏态该行是
+     * 「有子节点且 preferredHeight == 0」的容器 —— ConstraintResolver 的 COLUMN grow 分配要求
+     * 固定兄弟先验高可知，而「有子容器且无 preferredHeight」先验不可知（容器内容撑大无法先验），
+     * 于是整条 grow 分配被放弃（运行期 WARN「固定兄弟高度无法先验」），成员网格容器
+     * （flexGrow=1 + fillParentHeight）回退 shrink-to-fit ⇒ viewport 被内容撑大
+     * （maxScrollY == 0）、成员带高度变成内容高、面板溢出宿主逻辑盒，超出可见区的卡片指针不可达
+     * （键盘路径不受影响）。修复 = 撤销条子内容按可见性挂摘（隐藏态零子 ⇒ 叶子先验高 0 恒可知）。</p>
+     *
+     * <p><b>本用例钉住的不变量</b>：① 成员带布局盒高 == 派生 preferredHeight（不被内容撑大）；
+     * ② 成员带 viewport 的 maxScrollY &gt; 0（带内滚动生效）；③ 面板高不溢出宿主逻辑盒；
+     * ④ 收敛布局后每个成员行容器都有布局盒（无盒子树不参与命中，见
+     * SceneHitTesterTest#boxlessContainerSkipsItsHitTestableDescendantsAsAWhole）；
+     * ⑤ 滚到底后末位成员的「删除」按钮指针可达（点击落到该成员）。</p>
+     */
+    @Test
+    public void memberBandStaysBoundedScrollableAndPointerReachable() {
+        rt.__setViewportLogicalBox(1920, 1080);
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
+        // 30 项：在 1920×1080 派生列数下必然超过「最多 2 行」的成员带（超宽成员带形态）。
+        final int total = 30;
+        List<SearchPickerData.CurrentMember> members = new ArrayList<SearchPickerData.CurrentMember>();
+        for (int i = 0; i < total; i++) {
+            members.add(member(100L + i, "m" + i));
+        }
+        f.members.set(members);
+        f.openSignal.set(Boolean.TRUE);
+        rt.flush();
+        // 生产帧管线的 SETTLE 收敛：flush 期间挂载的节点在下一趟布局取得布局盒。
+        layoutOverlayAtLogicalBox(1920, 1080);
+        layoutOverlayAtLogicalBox(1920, 1080);
+
+        SceneNode band = membersPanel(overlayRoot(0));
+        LayoutBox bandBox = (LayoutBox) band.getCachedLayout();
+        Assert.assertNotNull("成员带必须已布局", bandBox);
+        SceneNode memberViewport = memberViewport(band);
+        int contentHeight = ((LayoutBox) memberRows(band).getCachedLayout()).getHeight();
+        int bandHeight = bandBox.getHeight();
+        Assert.assertTrue("成员带不是内容高（内容溢出交给带内滚动）：band="
+                        + bandHeight + " content=" + contentHeight,
+                contentHeight > bandHeight);
+        Assert.assertTrue("成员带必须可滚动（maxScrollY > 0）",
+                SceneGeometry.maxScrollY(memberViewport) > 0);
+        Assert.assertEquals("全部成员挂载（无虚拟化）", total, memberCellCount(band));
+
+        LayoutBox cardBox = (LayoutBox) panelCard(overlayRoot(0)).getCachedLayout();
+        Assert.assertNotNull("面板卡片必须已布局", cardBox);
+        Assert.assertTrue("面板高不得溢出宿主逻辑盒：card=" + cardBox.getHeight(),
+                cardBox.getHeight() <= 1080);
+
+        for (SceneNode rowNode : memberRows(band).__getChildren()) {
+            Assert.assertTrue("收敛后每个成员行容器都必须有布局盒",
+                    rowNode.getCachedLayout() instanceof LayoutBox);
+        }
+
+        // 成员数翻倍：成员带高必须<b>与成员数无关</b>（派生值），只有可滚动余量增长。
+        int scrollBefore = SceneGeometry.maxScrollY(memberViewport);
+        List<SearchPickerData.CurrentMember> doubled = new ArrayList<SearchPickerData.CurrentMember>();
+        for (int i = 0; i < total * 2; i++) {
+            doubled.add(member(100L + i, "m" + i));
+        }
+        f.members.set(doubled);
+        rt.flush();
+        layoutOverlayAtLogicalBox(1920, 1080);
+        layoutOverlayAtLogicalBox(1920, 1080);
+        Assert.assertEquals("成员带高与成员数无关（恒为派生值）",
+                bandHeight, ((LayoutBox) band.getCachedLayout()).getHeight());
+        Assert.assertTrue("成员数翻倍后滚动余量增大",
+                SceneGeometry.maxScrollY(memberViewport) > scrollBefore);
+
+        // 滚到底：末位成员卡片进入可见区 → 指针点击其「删除」按钮 → 宿主收到该成员删除。
+        int last = total * 2 - 1;
+        routeScrollAt(memberViewport, -1_000_000);
+        rt.flush();
+        layoutOverlayAtLogicalBox(1920, 1080);
+        click(rowRemove(memberCell(band, last)));
+        Assert.assertEquals("超宽成员带的末位卡片必须指针可达（点击落在该成员）",
+                Arrays.asList(Long.valueOf(100L + last)), f.removeCalls);
     }
 
     // ==================== 防误删闸口（P5 §5.5 E1/E3/E4 甲形态） ====================
