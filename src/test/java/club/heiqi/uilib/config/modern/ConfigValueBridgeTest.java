@@ -17,6 +17,8 @@ import club.heiqi.config.runtime.SaveOutcome;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.scene.control.search.PickerDensityPreference;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -156,6 +158,10 @@ public class ConfigValueBridgeTest {
         // 同步 last* 私有快照：恢复 public 后若不重跑 onConfigReload，
         // 下一批测试看到的 last* 仍指向本批改过的值（另两个夹具已如此，本轮补齐）
         FontConfig.onConfigReload();
+        // 密度偏好是进程级信号（非 Config/FontConfig 字段）：同样必须复位，
+        // 否则本类写进信号的档位会漂到后续 UI 测试（帧末口径，故补一次 flush）。
+        PickerDensityPreferences.resetForTest();
+        ReactiveScheduler.get().flush();
     }
 
     /**
@@ -348,6 +354,44 @@ public class ConfigValueBridgeTest {
         assertEquals(0, FontConfig.fontSort.length);
         assertNotNull("characterFontRules null 守卫应转空数组", FontConfig.characterFontRules);
         assertEquals(0, FontConfig.characterFontRules.length);
+    }
+
+    /**
+     * 密度偏好（{@code general.pickerDensity}）不是静态字段，而是进程级信号：Bridge 把配置值
+     * 回灌进 {@link PickerDensityPreferences#signal()}；非法值（手改配置，绕过 UI 提交校验）
+     * 回落 AUTO 且不崩。这条链路正是「用户改档位 → 无需重开面板即生效」的中间段。
+     */
+    @Test
+    public void pickerDensityBridgedIntoProcessSignal() throws Exception {
+        File file = tempFolder.newFile("qzuilib-picker-density.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("general.pickerDensity", "compact");
+        SaveOutcome outcome = manager.save(draft);
+        assertTrue("合法档位必须可保存: " + outcome.status(), outcome.isSuccess());
+        // 上一行的 save 已把值落 Authority；重新 bootstrap 走"磁盘值 → 权威源"的完整读回路径
+        ConfigManager persisted = ConfigManager.bootstrap(file, schema);
+        assertEquals("compact", persisted.authority()
+                .getString(PickerDensityPreferences.CONFIG_PATH));
+
+        ConfigValueBridge.applyFromAuthority(persisted.authority());
+        ReactiveScheduler.get().flush();     // 帧末口径（守 I9）
+        assertEquals("Bridge 必须把配置档位回灌进进程级信号", PickerDensityPreference.COMPACT,
+                PickerDensityPreferences.signal().get());
+
+        // 手改配置写非法档位（UI 提交路径会拒绝，磁盘可以出现）→ 回落 AUTO，不抛
+        java.io.FileWriter writer = new java.io.FileWriter(file);
+        try {
+            writer.write("general:\n  pickerDensity: bogus\n");
+        } finally {
+            writer.close();
+        }
+        ConfigValueBridge.applyFromAuthority(ConfigManager.bootstrap(file, schema).authority());
+        ReactiveScheduler.get().flush();
+        assertEquals("非法档位必须回落 AUTO", PickerDensityPreference.AUTO,
+                PickerDensityPreferences.signal().get());
     }
 
     /**

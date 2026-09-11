@@ -5,6 +5,7 @@ import java.io.File;
 import club.heiqi.config.ConfigException;
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.schema.ConfigSchema;
+import club.heiqi.config.ui.field.PickerDensityPreferenceSource;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.config.FontConfig;
@@ -95,6 +96,10 @@ public final class ModernConfigBootstrap {
      */
     public static void bootstrapAndApply(File configFile) {
         MyMod.LOG.info("新栈配置启动加载开始: {}", configFile.getAbsolutePath());
+        // 装配期接线（P5 §1.4 能力空洞补齐的 UILib 侧落点）：把配置驱动的进程级密度偏好信号
+        // 接进通用装配层。安装先于 bootstrap 且与成败无关 —— 配置缺失/解析失败时信号停在
+        // AUTO（= 现状档），面板行为与未接线逐值一致，不会让 UI 起不来。
+        PickerDensityPreferenceSource.install(PickerDensityPreferences.signal());
         final ConfigSchema schema = QzUiLibModernSchema.create();
         final ConfigManager manager;
         try {

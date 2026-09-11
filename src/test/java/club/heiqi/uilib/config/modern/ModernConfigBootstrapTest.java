@@ -14,6 +14,8 @@ import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.runtime.SaveOutcome;
 import club.heiqi.config.schema.ConfigSchema;
+import club.heiqi.config.ui.field.PickerDensityPreferenceSource;
+import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.config.FontConfig;
@@ -157,6 +159,11 @@ public class ModernConfigBootstrapTest {
         // 同步 last* 私有快照到恢复后的 public 值（bootstrapAndApply 末段会触发
         // onConfigReload 更新 last*，@After 恢复 public 后需重新同步 last*，防跨测试漂移——同 C2 P2）
         FontConfig.onConfigReload();
+        // bootstrapAndApply 还会安装密度偏好源并把配置值写进进程级信号（非 Config/FontConfig 字段，
+        // 不在上面两份清单内）：同样要撤线 + 复位，否则会漂到后续 UI 测试。
+        PickerDensityPreferenceSource.release();
+        PickerDensityPreferences.resetForTest();
+        ReactiveScheduler.get().flush();
     }
 
     /**

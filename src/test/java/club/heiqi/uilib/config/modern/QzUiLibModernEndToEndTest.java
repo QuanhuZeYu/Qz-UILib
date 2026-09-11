@@ -63,6 +63,8 @@ public class QzUiLibModernEndToEndTest {
         assertFalse(manager.authority().getBool("general.uiDebug"));
         assertFalse(manager.authority().getBool("general.fontRuntimeDebug"));
         assertEquals("vanilla", manager.authority().getString("general.netTransport"));
+        assertEquals("pickerDensity（P5 三档密度入口）默认 auto = 现状档",
+                "auto", manager.authority().getString("general.pickerDensity"));
         // fontSystem
         assertEquals(3.0, manager.authority().getNumber("fontSystem.lerpMode"), 0.0);
         assertEquals(2.0, manager.authority().getNumber("fontSystem.aaMode"), 0.0);
@@ -166,6 +168,12 @@ public class QzUiLibModernEndToEndTest {
         SaveOutcome outcome = manager.save(draft);
         assertEquals(SaveOutcome.Status.INVALID, outcome.status());
         assertEquals("vanilla", manager.authority().getString("general.netTransport"));
+
+        // 同一条 CHOICE 校验闸门同样守住密度档位：非法档位不得落盘（UI 提交路径）
+        DraftBuffer densityDraft = manager.openDraft();
+        densityDraft.setDraft("general.pickerDensity", "tiny");
+        assertEquals(SaveOutcome.Status.INVALID, manager.save(densityDraft).status());
+        assertEquals("auto", manager.authority().getString("general.pickerDensity"));
     }
 
     /**
@@ -302,7 +310,10 @@ public class QzUiLibModernEndToEndTest {
 
     /**
      * Schema 结构完整性：三个 section 全部存在，字段数符合预期
-     * （general 4 + fontSystem 18 + fontSizeSetting 2 = 24）。
+     * （general 5 + fontSystem 18 + fontSizeSetting 2 = 25）。
+     *
+     * <p>general 由 4 → 5：新增 {@code pickerDensity}（P5 三档密度的用户入口，纯加法，
+     * 默认 auto = 现状档）。</p>
      */
     @Test
     public void schemaHasExpectedSectionsAndFieldCount() {
@@ -312,9 +323,10 @@ public class QzUiLibModernEndToEndTest {
         assertEquals("general", schema.sections().get(0).name());
         assertEquals("fontSystem", schema.sections().get(1).name());
         assertEquals("fontSizeSetting", schema.sections().get(2).name());
-        // 总字段数：general 4 + fontSystem 18 + fontSizeSetting 2 = 24
-        // （fontSystem 含 fontSort / characterFontRules 两个 SIMPLE_LIST 字段）
-        assertEquals(24, schema.allFields().size());
+        // 总字段数：general 5 + fontSystem 18 + fontSizeSetting 2 = 25
+        // （fontSystem 含 fontSort / characterFontRules 两个 SIMPLE_LIST 字段；
+        //   general 的 pickerDensity 是本轮新增的选择器密度档位入口）
+        assertEquals(25, schema.allFields().size());
     }
 
     // ===== range 上界边界回归测试 =====

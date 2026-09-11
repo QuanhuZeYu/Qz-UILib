@@ -51,6 +51,10 @@ public final class QzUiLibModernSchema {
                         .label("fontRuntimeDebug").helper("是否启用字体运行时高频诊断日志；默认关闭").build()
                     .choice("netTransport").options("vanilla", "forge").defaultValue("vanilla")
                         .label("netTransport").helper("网络传输适配器：vanilla 默认 early mixin 路径，forge 仅兼容排障").build()
+                    .choice("pickerDensity").options("auto", "compact", "standard", "roomy").defaultValue("auto")
+                        .label("pickerDensity").helper("选择器面板密度档位：auto 自动求解（默认，不低于现状）；"
+                                + "compact 紧凑 / standard 标准 / roomy 宽松为显式覆盖，三档同样受不低于现状约束。"
+                                + "改档位即时生效，无需重开配置页或选择器。").build()
                 .endSection()
                 .section("fontSystem")
                     .title("Font System")
