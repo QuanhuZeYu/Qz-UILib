@@ -1,8 +1,12 @@
 package club.heiqi.uilib.internal.font;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import club.heiqi.uilib.MyMod;
@@ -22,15 +26,28 @@ public final class PlayerNameTagRenderCoordinator {
 
     static final String ANGELICA_MOD_ID = "angelica";
     /**
-     * 精确匹配的受支持 Angelica 版本。
+     * 精确匹配的受支持 Angelica 版本集合（GTNH 2.9.0-beta-2 的 2.1.50 与 2.9.0-beta-3 的 2.2.10）。
      *
      * <p>精确匹配是防止 ABI 漂移的保护：回放围栏直接绑定 Angelica 侧的渲染 phase 与 entity/item 捕获
      * 状态访问器，任何未复核的版本都必须 fail-open 回即时绘制。上游 ABI 类名只出现在 angelica 包的
-     * 可选围栏实现里，通用路径不引用（契约守卫钉死）。2.2.10 起单参 {@code setCurrentEntity(int)} 收为
-     * private，围栏改用同期新增的配对入口 {@code setCurrentEntityAndItem(int, int)}；因此回放围栏只对
-     * 2.2.10 开放。</p>
+     * 可选围栏实现里，通用路径不引用（契约守卫钉死）。两档版本对应同一围栏的两条恢复入口：2.1.50 走
+     * "先 entity、后 item"的两段式；2.2.10 把单参恢复入口收为 private 并新增配对入口，围栏改走配对调用；
+     * 具体分派由 {@code internal.font.angelica} 包的围栏按 public 方法契约在运行期解析。</p>
      */
-    static final String SUPPORTED_ANGELICA_VERSION = "2.2.10";
+    static final Set<String> SUPPORTED_ANGELICA_VERSIONS = Collections.unmodifiableSet(
+            new LinkedHashSet<String>(Arrays.asList("2.1.50", "2.2.10")));
+
+    /** 受支持版本集合的可读文案，仅用于降级告警。 */
+    private static String describeSupportedVersions() {
+        StringBuilder builder = new StringBuilder();
+        for (String version : SUPPORTED_ANGELICA_VERSIONS) {
+            if (builder.length() > 0) {
+                builder.append(" / ");
+            }
+            builder.append(version);
+        }
+        return builder.toString();
+    }
 
     private static volatile boolean angelicaReplayGuardInstalled;
 
@@ -289,8 +306,8 @@ public final class PlayerNameTagRenderCoordinator {
             if (!environment.present) {
                 return true;
             }
-            if (!SUPPORTED_ANGELICA_VERSION.equals(environment.version)) {
-                warnOnce("玩家标签延后仅支持 Angelica " + SUPPORTED_ANGELICA_VERSION
+            if (!SUPPORTED_ANGELICA_VERSIONS.contains(environment.version)) {
+                warnOnce("玩家标签延后仅支持 Angelica " + describeSupportedVersions()
                         + "，当前版本为 " + String.valueOf(environment.version) + "，已保持即时绘制");
                 return false;
             }

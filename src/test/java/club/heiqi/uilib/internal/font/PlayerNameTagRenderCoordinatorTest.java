@@ -166,10 +166,12 @@ public class PlayerNameTagRenderCoordinatorTest {
         Assert.assertEquals(0, coordinator.scopeDepth());
     }
 
-    /** 无 Angelica 不要求可选围栏；精确 2.2.10 且握手完成时允许捕获。 */
+    /** 无 Angelica 不要求可选围栏；两档受支持版本（2.1.50 / 2.2.10）且握手完成时都允许捕获。 */
     @Test
     public void compatibilityAllowsAbsentOrExactGuardedAngelica() {
         Assert.assertTrue(policy(AngelicaEnvironment.absent(), false, new ArrayList<String>()).permitsCapture());
+        Assert.assertTrue(policy(
+                AngelicaEnvironment.present("2.1.50"), true, new ArrayList<String>()).permitsCapture());
         Assert.assertTrue(policy(
                 AngelicaEnvironment.present("2.2.10"), true, new ArrayList<String>()).permitsCapture());
     }
@@ -178,17 +180,18 @@ public class PlayerNameTagRenderCoordinatorTest {
     @Test
     public void compatibilityRejectsUnknownVersionOrMissingGuardOnce() {
         List<String> unknownWarnings = new ArrayList<String>();
-        // 旧基线 2.1.50（setCurrentEntity 仍为 public、且无配对 API）在 beta-3 上属于不受支持版本。
-        CompatibilityPolicy unknown = policy(AngelicaEnvironment.present("2.1.50"), true, unknownWarnings);
+        // 比受支持版本更新的未复核版本 fail-open，保持精确匹配哲学。
+        CompatibilityPolicy unknown = policy(AngelicaEnvironment.present("2.2.11"), true, unknownWarnings);
         Assert.assertFalse(unknown.permitsCapture());
         Assert.assertFalse(unknown.permitsCapture());
         Assert.assertEquals(1, unknownWarnings.size());
 
-        List<String> laterWarnings = new ArrayList<String>();
-        // 比受支持版本更新的未复核版本同样 fail-open，保持精确匹配哲学。
-        CompatibilityPolicy later = policy(AngelicaEnvironment.present("2.2.11"), true, laterWarnings);
-        Assert.assertFalse(later.permitsCapture());
-        Assert.assertEquals(1, laterWarnings.size());
+        List<String> legacyAdjacentWarnings = new ArrayList<String>();
+        // 2.1.50 前后的未复核版本同样 fail-open，不因"同 minor"被放行。
+        CompatibilityPolicy legacyAdjacent = policy(
+                AngelicaEnvironment.present("2.1.51"), true, legacyAdjacentWarnings);
+        Assert.assertFalse(legacyAdjacent.permitsCapture());
+        Assert.assertEquals(1, legacyAdjacentWarnings.size());
 
         List<String> guardWarnings = new ArrayList<String>();
         CompatibilityPolicy missingGuard = policy(AngelicaEnvironment.present("2.2.10"), false, guardWarnings);

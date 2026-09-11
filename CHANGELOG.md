@@ -58,7 +58,7 @@
 ### 兼容性
 
 - 开发依赖基线适配 GTNH `2.9.0-beta-3`（Angelica 2.2.10 / GTNHLib 0.11.46 / lwjgl3ify 3.0.31 / Hodgepodge 2.7.196 / GT5-Unofficial 5.09.54.133 / NewHorizonsCoreMod 2.9.61 / Et-Futurum-Requiem 2.6.58-GTNH）
-- Angelica 标签延后路径随基线改为仅支持精确版本 `2.2.10`：2.2.10 起 `CapturedRenderingState#setCurrentEntity(int)` 由 public 收为 private，回放围栏改用同期新增的配对入口 `setCurrentEntityAndItem(int,int)`；旧基线 `2.1.50`（GTNH 2.9.0-beta-2）属未复核版本，版本门不通过即降级为原调用点即时绘制（不崩溃、不报错）
+- Angelica 标签延后路径同时支持两档基线：`2.1.50`（GTNH 2.9.0-beta-2）与 `2.2.10`（GTNH 2.9.0-beta-3）。两版 `CapturedRenderingState` 的 public 恢复入口互斥——2.1.50 走 `setCurrentEntity(int)` + `setCurrentRenderedItem(int)` 两段式（前者会隐式清零 item，顺序不可颠倒），2.2.10 把单参入口收为 private 并新增配对入口 `setCurrentEntityAndItem(int,int)`；围栏按 public 方法契约在运行期解析分派，同一份 jar 在两种整合包上都启用标签延后。未复核的其它版本（如 `2.1.51` / `2.2.11`）仍按版本集合 fail-open 降级为即时绘制
 - `GlAttribDepth` 的 attrib 栈深度读取改为优先 `GLStateManager#getAttribDepth()`（2.2.10 把 `attribDepth` 字段迁至 `GLContextState`，旧私有字段反射失效），旧版字段反射保留为回退路径，两个入口都缺失时仍按既有语义降级为 no-op
 
 ## [4.8.0] - 2026-08-17

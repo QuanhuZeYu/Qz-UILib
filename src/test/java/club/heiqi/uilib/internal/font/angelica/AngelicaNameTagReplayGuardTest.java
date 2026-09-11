@@ -7,9 +7,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 
-/** Angelica 标签回放 phase 与 entity/item 状态生命周期测试（2.2.10 配对恢复 ABI）。 */
+/** Angelica 标签回放 phase、entity/item 生命周期与双版本恢复入口分派测试。 */
 public class AngelicaNameTagReplayGuardTest {
 
     /** 正常批次进入 entities phase，并经配对 API 恢复合法旧 entity=-1 / item=37。 */
@@ -129,6 +130,87 @@ public class AngelicaNameTagReplayGuardTest {
         Assert.assertEquals(Arrays.asList("phase", "phase"), state.events);
     }
 
+    /** 2.2.10 形态：只有配对入口 → 解析为 paired 且只走一次配对调用。 */
+    @Test
+    public void recoveryDispatchPrefersPairedContract() {
+        AngelicaNameTagReplayGuard.RecoveryDispatch dispatch =
+                AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(PairedState.class);
+
+        Assert.assertTrue(dispatch.isUsable());
+        PairedState state = new PairedState();
+        dispatch.restore(state, 91, 92);
+        Assert.assertEquals(Arrays.asList("entity-item:91:92"), state.events);
+    }
+
+    /** 2.1.50 形态：无配对入口、两个单参入口均为 public → 先 entity、后 item。 */
+    @Test
+    public void recoveryDispatchFallsBackToTwoStepContract() {
+        AngelicaNameTagReplayGuard.RecoveryDispatch dispatch =
+                AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(LegacyState.class);
+
+        Assert.assertTrue(dispatch.isUsable());
+        LegacyState state = new LegacyState();
+        dispatch.restore(state, 14, 38);
+        Assert.assertEquals(Arrays.asList("entity:14", "item:38"), state.events);
+    }
+
+    /** 2.2.10 兜底形态：单参入口为 private 且无配对入口 → 只认 public 契约，判定不可用。 */
+    @Test
+    public void recoveryDispatchIgnoresNonPublicSingleArgumentContract() {
+        AngelicaNameTagReplayGuard.RecoveryDispatch dispatch =
+                AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(PrivateEntityState.class);
+
+        Assert.assertFalse(dispatch.isUsable());
+    }
+
+    /** 契约与 null owner 都不可用：restore 必须抛出而非静默。 */
+    @Test
+    public void recoveryDispatchRejectsMissingContract() {
+        AngelicaNameTagReplayGuard.RecoveryDispatch dispatch =
+                AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(EmptyState.class);
+
+        Assert.assertFalse(dispatch.isUsable());
+        Assert.assertFalse(AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(null).isUsable());
+        try {
+            dispatch.restore(new EmptyState(), 1, 2);
+            Assert.fail("不可用分派不得静默恢复");
+        } catch (IllegalStateException expected) {
+            Assert.assertTrue(expected.getMessage().contains("not usable"));
+        }
+    }
+
+    /** 无 Angelica 运行时的生产入口安全网：只执行批次、不进 phase 围栏、不抛错。 */
+    @Test
+    public void productionEntryFallsBackToImmediateRunWhenRecoveryIsUnavailable() {
+        Assume.assumeFalse("测试 JVM 具备 Angelica 运行时，跳过无 Angelica 的安全网分支",
+                angelicaRuntimePresent());
+
+        final AtomicInteger runs = new AtomicInteger();
+        AngelicaNameTagReplayGuard.runGuarded(new Runnable() {
+            @Override
+            public void run() {
+                runs.incrementAndGet();
+            }
+        });
+
+        Assert.assertEquals(1, runs.get());
+    }
+
+    /** 按类名探测 Angelica 运行时；测试编译面不含上游类型，故只能用字符串。 */
+    private static boolean angelicaRuntimePresent() {
+        try {
+            Class.forName("net.coderbot.iris.uniforms.CapturedRenderingState", false,
+                    AngelicaNameTagReplayGuardTest.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException exception) {
+            return false;
+        } catch (LinkageError error) {
+            return false;
+        } catch (SecurityException exception) {
+            return false;
+        }
+    }
+
     private static AngelicaNameTagReplayGuard.WarningSink noOpWarning() {
         return new AngelicaNameTagReplayGuard.WarningSink() {
             @Override
@@ -191,4 +273,46 @@ public class AngelicaNameTagReplayGuardTest {
             item = itemId;
         }
     }
+
+    /** 2.2.10 形态假 owner：只有配对入口。 */
+    public static final class PairedState {
+
+        private final List<String> events = new ArrayList<String>();
+
+        public void setCurrentEntityAndItem(int entityId, int itemId) {
+            events.add("entity-item:" + entityId + ":" + itemId);
+        }
+    }
+
+    /** 2.1.50 形态假 owner：两个单参入口都是 public。 */
+    public static final class LegacyState {
+
+        private final List<String> events = new ArrayList<String>();
+
+        public void setCurrentEntity(int entityId) {
+            events.add("entity:" + entityId);
+        }
+
+        public void setCurrentRenderedItem(int itemId) {
+            events.add("item:" + itemId);
+        }
+    }
+
+    /** 2.2.10 兜底形态假 owner：单参 entity 入口为 private，且没有配对入口。 */
+    public static final class PrivateEntityState {
+
+        private final List<String> events = new ArrayList<String>();
+
+        public void setCurrentRenderedItem(int itemId) {
+            events.add("item:" + itemId);
+        }
+
+        @SuppressWarnings("unused")
+        private void setCurrentEntity(int entityId) {
+            events.add("entity:" + entityId);
+        }
+    }
+
+    /** 两版契约都不具备的假 owner。 */
+    public static final class EmptyState {}
 }
