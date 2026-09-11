@@ -58,7 +58,7 @@ public class PickerSourceCallSiteGuardTest {
         List<String> seen = new ArrayList<String>();
         for (Path file : mainSources()) {
             String code = codeWithoutComments(read(file));
-            if (code.contains(".page(") || code.contains(".matchCount(") || code.contains(".exact(")) {
+            if (touchesCandidateSource(code)) {
                 String name = file.getFileName().toString();
                 seen.add(name);
                 if (!QUERY_CALL_SITES.containsKey(name)) {
@@ -69,6 +69,23 @@ public class PickerSourceCallSiteGuardTest {
         Assert.assertEquals("白名单必须恰为已登记调用点（新增即红，须显式登记并说明理由）",
                 new ArrayList<String>(QUERY_CALL_SITES.keySet()), seen);
         Assert.assertEquals("出现未登记的查询调用点", new ArrayList<String>(), offenders);
+    }
+
+    /**
+     * 是否<strong>直接</strong>触及候选源查询面：文件内出现 {@code PickerCandidateSource} 类型
+     * 且出现 {@code .page(}/{@code .matchCount(}/{@code .exact(} 之一。
+     *
+     * <p>P3 修订（窗口化内核）：{@code SearchResultList} 新增的 {@code WindowRequest/WindowPage/PageProvider}
+     * 是<strong>控件与宿主之间的窗口切片回调</strong>（{@code props.pageProvider().page(req)}），既不持有也不
+     * 调用 {@code PickerCandidateSource}（控件层依赖方向不允许）；旧判定把任何 {@code .page(} 回调都算作
+     * 候选源调用点，会把「窗口 Computed 的消费形态」误判为未登记调用点。收窄到「同文件确实引用候选源类型」
+     * 既保住白名单强度（真正的候选源调用仍必须登记），又不误伤 UI 侧回调。</p>
+     */
+    private static boolean touchesCandidateSource(String code) {
+        if (!code.contains("PickerCandidateSource")) {
+            return false;
+        }
+        return code.contains(".page(") || code.contains(".matchCount(") || code.contains(".exact(");
     }
 
     /** 正锚 + 白名单：版本读取与环境下行只出现在桥内。 */

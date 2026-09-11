@@ -252,21 +252,29 @@ public class ScenePickerPanelTest {
         rt.flush();
     }
 
-    /** 列表单元：viewport children[0] = rowsContainer，单元按行序平铺。 */
+    /**
+     * 行容器：窗口化后 viewport = [content]，content = [topSpacer, rowsContainer, bottomSpacer]。
+     * 仅改 fixture 取节点路径，不放宽任何断言（ADR §9.1）。
+     */
+    private static SceneNode gridRows(SceneNode viewport) {
+        return viewport.__getChildren().get(0).__getChildren().get(1);
+    }
+
+    /** 窗口内列表单元（按行序平铺）。 */
     private SceneNode gridCell(SceneNode viewport, int index) {
-        SceneNode rowsContainer = viewport.__getChildren().get(0);
+        SceneNode rowsContainer = gridRows(viewport);
         for (SceneNode row : rowsContainer.__getChildren()) {
             if (index < row.__getChildren().size()) {
                 return row.__getChildren().get(index);
             }
             index -= row.__getChildren().size();
         }
-        throw new IllegalStateException("cell index out of mounted list: " + index);
+        throw new IllegalStateException("cell index out of mounted window: " + index);
     }
 
-    /** 列表已挂载单元数（非虚拟化 = 全部项）。 */
+    /** 窗口内已挂载单元数（∝ 可视量，与数据规模 N 无关）。 */
     private int mountedItemCount(SceneNode viewport) {
-        SceneNode rowsContainer = viewport.__getChildren().get(0);
+        SceneNode rowsContainer = gridRows(viewport);
         int count = 0;
         for (SceneNode row : rowsContainer.__getChildren()) {
             count += row.__getChildren().size();
@@ -957,7 +965,7 @@ public class ScenePickerPanelTest {
         Assert.assertNotNull(viewportBox);
         int expected = SceneVirtualGridNav.deriveColumns(viewportBox.getWidth(), 64, 8);
         Assert.assertTrue("70% 面板中栏至少容纳 4 列", expected >= 4);
-        SceneNode rowsContainer = grid.__getChildren().get(0);
+        SceneNode rowsContainer = gridRows(grid);
         Assert.assertEquals("首行单元数 = 自动推导列数", expected,
                 rowsContainer.__getChildren().get(0).__getChildren().size());
     }

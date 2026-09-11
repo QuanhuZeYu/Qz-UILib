@@ -392,7 +392,9 @@ public class SceneFontOverflowGeometryTest {
             rt.flush();
             frame(engine, rt, sceneRoot);
 
-            SceneNode row = result.viewport().__getChildren().get(0).__getChildren().get(0);
+            // 窗口化后 viewport = [content]，content = [topSpacer, rowsContainer, bottomSpacer]
+            SceneNode row = result.viewport().__getChildren().get(0).__getChildren().get(1)
+                    .__getChildren().get(0);
             SceneNode cell = row.__getChildren().get(0);
             SceneNode icon = cell.__getChildren().get(0);
             SceneNode label = cell.__getChildren().get(1);

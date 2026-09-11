@@ -12,8 +12,10 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.control.SceneGridWindow;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Item;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
@@ -140,13 +142,31 @@ public class SearchResultListTest {
          * @param pageTheme   来源主题信号；非 null 时经 {@code SceneThemes.withTheme} 构建
          */
         Fixture(List<Item> sourceItems, int columns, Signal<SceneTheme> pageTheme) {
+            this(sourceItems, columns, pageTheme, null,
+                    SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS,
+                    SearchResultList.Props.DEFAULT_VISIBLE_ROWS, null);
+        }
+
+        /**
+         * @param sourceItems    初始数据源（pageProvider 形态下可为空列表）
+         * @param columns        列数（&lt;=0 自动推导）
+         * @param pageTheme      来源主题信号；非 null 时经 {@code SceneThemes.withTheme} 构建
+         * @param pageProvider   窗口切片生产者；null = 走 items 全量自切片
+         * @param totalItems     数据总项数（UNSPECIFIED_TOTAL_ITEMS = 取 items.size()）
+         * @param visibleRows    预算可视行数（未布局时生效）
+         * @param availableWidth 预算可用宽信号（null = 布局后按 cachedLayout 推算）
+         */
+        Fixture(List<Item> sourceItems, int columns, Signal<SceneTheme> pageTheme,
+                SearchResultList.PageProvider pageProvider, int totalItems, int visibleRows,
+                ReadableSignal<Integer> availableWidth) {
             this.itemsSignal = Signal.create(sourceItems);
             this.highlightSignal = Signal.create(Integer.valueOf(-1));
             this.enabledSignal = Signal.create(Boolean.TRUE);
             SearchResultList.Props props = new SearchResultList.Props(
                     itemsSignal, columns, CELL_W, CELL_H, GAP_X, GAP_Y,
                     enabledSignal, item -> activated.add(item.key()), highlightSignal,
-                    highlightSignal::set, item -> hovered.add(item));
+                    highlightSignal::set, item -> hovered.add(item),
+                    pageProvider, totalItems, 0, visibleRows, availableWidth);
             // 在 mount 作用域内构建，建立 Owner（确保 bind/forEach/on/监听器归属并随组件回收）。
             // scrollable viewport 需要确定高的父链（生产环境由面板卡片提供），测试夹具包固定高宿主。
             SearchResultList.Result[] holder = new SearchResultList.Result[1];
@@ -165,6 +185,9 @@ public class SearchResultListTest {
             this.result = holder[0];
             rt.flush();
             layoutAndBridge();
+            // 窗口化的收敛拍：首拍 layout 前窗口按「预算可视行数」挂载，layout 后 viewportHeightPx 更新，
+            // 窗口收敛到实际视口行数；夹具立即再布局一拍，使后续交互操作在收敛几何上进行（不放宽断言）。
+            layoutAndBridge();
         }
 
         SceneNode root() {
@@ -175,9 +198,19 @@ public class SearchResultListTest {
             return result.viewport();
         }
 
-        /** 行列表容器（viewport 唯一子节点，keyed reconcile 的目标容器）。 */
-        SceneNode rowsContainer() {
+        /** 窗口模型只读观察面（宿主/测试回读当前窗口）。 */
+        SceneGridWindow.WindowModel windowModel() {
+            return result.windowModel().get();
+        }
+
+        /** 内容容器（viewport 唯一子节点）。 */
+        SceneNode content() {
             return vp().__getChildren().get(0);
+        }
+
+        /** 行列表容器（content 第 2 子 = [topSpacer, rowsContainer, bottomSpacer]）。 */
+        SceneNode rowsContainer() {
+            return content().__getChildren().get(1);
         }
 
         /** 第 rowIndex 行。 */
@@ -193,15 +226,29 @@ public class SearchResultListTest {
 
     // ==================== 全量行挂载与滚动条结构 ====================
 
+    /**
+     * 「无上限」语义改写为窗口语义（ADR §9.1：保留无上限断言、只改挂载量断言，不得删除）。
+     *
+     * <p>旧断言「挂载 125 行（全量）」改为「挂载 visibleRows + overscan 行」；数据总规模断言
+     * （totalItems / totalRows / 可滚动）保留 —— 虚拟化只裁剪挂载，不裁剪数据范围，
+     * 用户仍可一路滚到底、无「加载更多」。</p>
+     */
     @Test
-    public void mountsAllRowsWithoutCap() {
+    public void mountsWindowRowsWithoutCap() {
         Fixture f = new Fixture(500);
         SceneNode vp = f.vp();
         Assert.assertTrue("viewport 可滚动", vp.isScrollable());
-        // 500 项 / 4 列 = 125 行全量挂载（无上限、无虚拟化）
-        Assert.assertEquals(125, f.rowsContainer().__getChildren().size());
-        // viewport 唯一子节点 = rowsContainer（无溢出提示/锚点）
+        // 无上限语义保留：数据总规模不受窗口裁剪（500 项 / 4 列 = 125 行）
+        SceneGridWindow.WindowModel model = f.windowModel();
+        Assert.assertEquals(500, model.totalItems());
+        Assert.assertEquals(125, model.totalRows());
+        // 挂载量 = 生效可视行数 + overscan（不再是 125 行全量挂载）
+        Assert.assertEquals(Math.min(model.visibleRows() + 1, model.totalRows()), model.mountedRows());
+        Assert.assertEquals("窗口行数 = 实际挂载行数", model.mountedRows(),
+                f.rowsContainer().__getChildren().size());
+        // 结构：viewport 唯一子 = content；content = [topSpacer, rowsContainer, bottomSpacer]
         Assert.assertEquals(1, vp.__getChildren().size());
+        Assert.assertEquals(3, f.content().__getChildren().size());
         // 首行含 4 个单元
         Assert.assertEquals(4, f.row(0).__getChildren().size());
     }
@@ -325,9 +372,9 @@ public class SearchResultListTest {
         SceneNode root = rt.mount(sceneRoot, () -> SearchResultList.create(rt, props).root()).getRoot();
         rt.flush();
         layoutAndBridge();
-        // 20 项 / 5 列 = 4 行；首行含 5 个单元
+        // 20 项 / 5 列 = 4 行（窗口 6 行 > 4 行 → 全挂）；首行含 5 个单元
         SceneNode viewport = root.__getChildren().get(0);
-        SceneNode rowsContainer = viewport.__getChildren().get(0);
+        SceneNode rowsContainer = viewport.__getChildren().get(0).__getChildren().get(1);
         Assert.assertEquals("按推导列数拆 4 行", 4, rowsContainer.__getChildren().size());
         Assert.assertEquals("首行 5 个单元", 5, rowsContainer.__getChildren().get(0)
                 .__getChildren().size());
@@ -341,13 +388,15 @@ public class SearchResultListTest {
         Fixture f = new Fixture(500);
         SceneNode vp = f.vp();
         layoutAndBridge();
-        int rows = 125;
-        // 内容底边：125 行（行高 + marginBottom）
-        int contentHeight = rows * (CELL_H + GAP_Y);
+        SceneGridWindow.WindowModel model = f.windowModel();
         int viewportH = ((LayoutBox) vp.getCachedLayout()).getHeight();
         Assert.assertEquals("viewport 高度 = 包装 200", 200, viewportH);
-        Assert.assertTrue("maxScrollY 非负", contentHeight - viewportH >= 0);
-        Assert.assertEquals(contentHeight - viewportH, SceneGeometry.maxScrollY(vp));
+        // 内容总高 = totalRows * stride（spacer 数学）；闭式与滚动条取"内容高"的唯一入口同源。
+        int expected = model.totalRows() * STRIDE - viewportH;
+        Assert.assertTrue("maxScrollY 非负", expected >= 0);
+        Assert.assertEquals("windowModel.maxScrollPx = 闭式", expected, model.maxScrollPx());
+        Assert.assertEquals("SceneGeometry.maxScrollY 与窗口模型闭式一致",
+                model.maxScrollPx(), SceneGeometry.maxScrollY(vp));
     }
 
     @Test
@@ -362,6 +411,130 @@ public class SearchResultListTest {
         rt.flush();
         layoutAndBridge();
         Assert.assertEquals(25 * STRIDE - 200, f.vp().getScrollOffsetY());
+    }
+
+    // ==================== 窗口化（ADR §3.2 / A-13 / A-14） ====================
+
+    /**
+     * 挂载量有界：N=4988（≈ 真实方块规模）时挂载行 ≤ 可视行 + overscan，挂载单元 = 行 × 列数。
+     * 这是「帧成本 ∝ 可视量」的直接证据面（配合 picker.list.rows / list.totalRows / list.cells 计数）。
+     */
+    @Test
+    public void windowMountedRowsBoundedByVisiblePlusOverscanForHugeData() {
+        Fixture f = new Fixture(4988);
+        SceneGridWindow.WindowModel model = f.windowModel();
+        Assert.assertEquals(4988, model.totalItems());
+        Assert.assertEquals(1247, model.totalRows());
+        Assert.assertTrue("挂载 ≤ 可视 + overscan", model.mountedRows() <= model.visibleRows() + 1);
+        Assert.assertEquals(model.mountedRows(), f.rowsContainer().__getChildren().size());
+        int mountedCells = 0;
+        for (SceneNode row : f.rowsContainer().__getChildren()) {
+            mountedCells += row.__getChildren().size();
+        }
+        Assert.assertEquals("挂载单元 = 挂载行 × 列数（与 N 无关）",
+                model.mountedRows() * COLUMNS, mountedCells);
+    }
+
+    /** 无上限浏览：滚到最大偏移后窗口贴住末行、末项完整可见（不存在 cap / 分页 / 加载更多）。 */
+    @Test
+    public void noCapMeansLastItemReachableAfterScrollingToBottom() {
+        Fixture f = new Fixture(4988);
+        int maxScroll = f.windowModel().maxScrollPx();
+        routeScrollAt(f.vp(), -1000000);
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertEquals("滚到底 = windowModel.maxScrollPx", maxScroll, f.vp().getScrollOffsetY());
+        SceneGridWindow.WindowModel model = f.windowModel();
+        Assert.assertEquals("窗口贴住末行", model.totalRows(),
+                model.windowStartRow() + model.mountedRows());
+        SceneNode lastRow = f.rowsContainer().__getChildren().get(model.mountedRows() - 1);
+        SceneNode lastCell = lastRow.__getChildren().get(lastRow.__getChildren().size() - 1);
+        Assert.assertEquals("末项完整可见", "item4987", labelOf(lastCell).getText());
+    }
+
+    /**
+     * pageProvider 形态：offset/limit 由控件按 WindowModel 产出（inv-W1/W3），totalRows 由
+     * Props.totalItems 派生（inv-W4），滚动后控件重新请求新窗口切片。
+     */
+    @Test
+    public void pageProviderReceivesControlProducedOffsetAndWindowSlice() {
+        List<SearchResultList.WindowRequest> requests = new ArrayList<>();
+        SearchResultList.PageProvider provider = request -> {
+            requests.add(request);
+            return new SearchResultList.WindowPage(items(request.limit()), 4988);
+        };
+        Fixture f = new Fixture(new ArrayList<Item>(), COLUMNS, null, provider, 4988, 5, null);
+        SceneGridWindow.WindowModel model = f.windowModel();
+        Assert.assertEquals("totalItems 来自 Props（不依赖切片长度）", 4988, model.totalItems());
+        Assert.assertEquals("inv-W4：totalRows 由 totalItems 派生", 1247, model.totalRows());
+        SearchResultList.WindowRequest first = requests.get(requests.size() - 1);
+        Assert.assertEquals("inv-W1：offset == windowStartRow * columns",
+                model.windowStartRow() * model.columns(), first.offset());
+        Assert.assertEquals("inv-W3：offset 按整行对齐", 0, first.offset() % model.columns());
+        Assert.assertEquals("limit = 挂载行数 * 列数", model.mountedRows() * model.columns(),
+                first.limit());
+        Assert.assertEquals(model.mountedRows(), f.rowsContainer().__getChildren().size());
+
+        routeScrollAt(f.vp(), -100000);
+        rt.flush();
+        layoutAndBridge();
+        SceneGridWindow.WindowModel scrolled = f.windowModel();
+        SearchResultList.WindowRequest last = requests.get(requests.size() - 1);
+        Assert.assertTrue("滚动后窗口首行推进", scrolled.windowStartRow() > 0);
+        Assert.assertEquals("滚动后 offset 跟随窗口首行",
+                scrolled.windowStartRow() * scrolled.columns(), last.offset());
+    }
+
+    /**
+     * 首帧（create 后第一次 layout 前）挂载量由预算可视行数决定：挂载 = min(预算 + overscan, totalRows)，
+     * 与 N 无关（未布局时视口高视为 0，窗口数学退回预算行数）。
+     */
+    @Test
+    public void firstFrameMountsBoundedRowsBeforeLayout() {
+        Signal<List<Item>> itemsSignal = Signal.create(items(4988));
+        Signal<Integer> highlightSignal = Signal.create(Integer.valueOf(-1));
+        Signal<Boolean> enabledSignal = Signal.create(Boolean.TRUE);
+        SearchResultList.Result[] holder = new SearchResultList.Result[1];
+        rt.mount(sceneRoot, () -> {
+            holder[0] = SearchResultList.create(rt, new SearchResultList.Props(
+                    itemsSignal, COLUMNS, CELL_W, CELL_H, GAP_X, GAP_Y, enabledSignal,
+                    item -> { }, highlightSignal, highlightSignal::set, null,
+                    null, SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0, 2, null));
+            return holder[0].root();
+        });
+        rt.flush();
+        SceneGridWindow.WindowModel model = holder[0].windowModel().get();
+        Assert.assertEquals("未布局时用预算可视行数", 2, model.visibleRows());
+        Assert.assertEquals("首帧挂载 = 预算 + overscan", 3, model.mountedRows());
+        Assert.assertEquals(3, holder[0].viewport().__getChildren().get(0)
+                .__getChildren().get(1).__getChildren().size());
+        Assert.assertTrue("首帧挂载量与 N 无关", model.mountedRows() <= 3);
+    }
+
+    /**
+     * availableWidth 预算信号：挂载前即给出正确列数（无列数收敛帧），返回节点后也不再依赖
+     * 「初值 1 → 首个 layoutDone 后收敛」路径。
+     */
+    @Test
+    public void availableWidthBudgetYieldsColumnsBeforeLayout() {
+        Signal<Integer> budget = Signal.create(Integer.valueOf(392));
+        Signal<List<Item>> itemsSignal = Signal.create(items(20));
+        Signal<Integer> highlightSignal = Signal.create(Integer.valueOf(-1));
+        Signal<Boolean> enabledSignal = Signal.create(Boolean.TRUE);
+        SearchResultList.Result[] holder = new SearchResultList.Result[1];
+        rt.mount(sceneRoot, () -> {
+            holder[0] = SearchResultList.create(rt, new SearchResultList.Props(
+                    itemsSignal, 0, CELL_W, CELL_H, GAP_X, GAP_Y, enabledSignal,
+                    item -> { }, highlightSignal, highlightSignal::set, null,
+                    null, SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0, 5, budget));
+            return holder[0].root();
+        });
+        rt.flush();
+        SceneGridWindow.WindowModel model = holder[0].windowModel().get();
+        // (392 + 8) / (64 + 8) = 5 列；20 项 / 5 列 = 4 行（预算 5 行 > 4 行 → 全挂）
+        Assert.assertEquals("预算即列数（无收敛帧）", 5, model.columns());
+        Assert.assertEquals(4, model.totalRows());
+        Assert.assertEquals(4, model.mountedRows());
     }
 
     // ==================== 索引化（O(1) 查表，ADR §3.8 Q12） ====================

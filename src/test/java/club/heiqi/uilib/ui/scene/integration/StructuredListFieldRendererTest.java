@@ -963,7 +963,8 @@ public class StructuredListFieldRendererTest {
     private static SceneNode gridCell(SceneNode panel, int index) {
         SceneNode viewport = panel.__getChildren().get(1).__getChildren().get(1)
                 .__getChildren().get(1).__getChildren().get(0);
-        SceneNode rowsContainer = viewport.__getChildren().get(0);
+        // 窗口化后 viewport = [content]，content = [topSpacer, rowsContainer, bottomSpacer]
+        SceneNode rowsContainer = viewport.__getChildren().get(0).__getChildren().get(1);
         for (SceneNode row : rowsContainer.__getChildren()) {
             if (index < row.__getChildren().size()) return row.__getChildren().get(index);
             index -= row.__getChildren().size();

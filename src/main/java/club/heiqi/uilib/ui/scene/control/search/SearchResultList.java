@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneGridSnapshot;
+import club.heiqi.uilib.ui.scene.control.SceneGridWindow;
 import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGridNav;
@@ -96,6 +97,12 @@ public final class SearchResultList {
     private static final int CELL_HOVER_ALPHA = 0x1F;
     /** 结果单元选中（高亮）覆盖强度：主题选区背景，明显强于 hover（不只靠透明度区分）。 */
     private static final int CELL_SELECTED_ALPHA = 0x59;
+    /**
+     * 额外挂载行数（overscan）：v1 固定 1（与 {@link SceneVirtualGrid} 现值一致），
+     * 由 {@link SceneGridWindow#compute} 参数化。「滚动速度感知的 1-2 行」启用前必须写明
+     * 失效条件（速度回落即回 1）与上界（≤2），否则属无界动态。
+     */
+    private static final int OVERSCAN_ROWS = 1;
 
     private SearchResultList() {
     }
@@ -103,17 +110,30 @@ public final class SearchResultList {
     /**
      * 结果列表输入契约（不可变）。
      *
-     * @param items             数据源（非 null；List 值变更经 keyed reconcile 最小重建）
-     * @param columns           列数；&lt;=0 时按 viewport 可用宽度自动推算（同 SceneVirtualGrid）
+     * <p><b>窗口化（ADR §3.2）</b>：未提供 {@link #pageProvider()} 时 {@link #items()} 是
+     * <b>全量只读数据源</b>（v1 默认形态；{@link #totalItems()} = -1 时总项数取 {@code items.size()}）；
+     * 提供 {@link #pageProvider()} 时数据由控件按窗口模型向宿主<strong>拉取切片</strong>，
+     * {@link #items()} 可为空列表。窗口数学（含 offset）只在控件内部发生。</p>
+     *
+     * @param items             数据源（非 null；未提供 pageProvider 时为全量只读数据源）
+     * @param columns           列数；&lt;=0 时按可用宽度推算（availableWidth 预算优先，其次布局后 cachedLayout）
      * @param cellWidth         单元宽（UI 像素，&gt;0）
-     * @param cellHeight        单元高（UI 像素，&gt;0）
+     * @param cellHeight        单元高下限（UI 像素，&gt;0；实际轨道高随生效字号抬升）
      * @param gapX              列间距（&gt;=0）
      * @param gapY              行间距（&gt;=0）
      * @param enabled           是否启用（禁用时不响应点击/键盘）
      * @param onActivate        点击/回车激活回调（非 null）
-     * @param highlighted       受控高亮下标信号（非 null；下标 = item 在完整列表中的下标）
+     * @param highlighted       受控高亮下标信号（非 null；全局下标）
      * @param onHighlightChange 高亮回写回调（非 null）
      * @param onHoverItem       单元 hover 回调（可为 null = 不回调；hover 时传 item、移出时传 null）
+     * @param pageProvider      窗口切片生产者（可为 null = 走 items 全量自切片；主线程、纯拉取、无异步）
+     * @param totalItems        数据总项数（全局规模）；{@link #UNSPECIFIED_TOTAL_ITEMS} = 取 items.size()
+     * @param windowOffset      窗口切片全局起点的契约校验位（默认 0）：非 0 时必须等于
+     *                          {@code windowStartRow * columns}（inv-W1），否则立即失败——宿主不得自算窗口
+     * @param visibleRows       视口未布局时的预算可视行数（&gt;=1）：决定首帧挂载量上界；
+     *                          布局后以实际视口高度派生的行数为权威
+     * @param availableWidth    预算可用宽信号（可为 null = 布局后按 cachedLayout 推算列数；
+     *                          非 null 时首帧即正确列数，不再有收敛帧）
      */
     @Desugar
     public record Props(
@@ -123,7 +143,44 @@ public final class SearchResultList {
             Consumer<SceneVirtualGrid.Item> onActivate,
             ReadableSignal<Integer> highlighted,
             Consumer<Integer> onHighlightChange,
-            Consumer<SceneVirtualGrid.Item> onHoverItem) {
+            Consumer<SceneVirtualGrid.Item> onHoverItem,
+            PageProvider pageProvider,
+            int totalItems,
+            int windowOffset,
+            int visibleRows,
+            ReadableSignal<Integer> availableWidth) {
+
+        /** 未提供总量时的哨兵：窗口数学取 {@code items.size()}（全量数据源形态）。 */
+        public static final int UNSPECIFIED_TOTAL_ITEMS = -1;
+        /** 默认预算可视行数（与 {@code ScenePickerPanel.GridProps.DEFAULT} 对齐）。 */
+        public static final int DEFAULT_VISIBLE_ROWS = 5;
+
+        /**
+         * 旧 11 参形态（T-2 兼容）：全量 items + 默认窗口字段。
+         *
+         * @param items             全量数据源
+         * @param columns           列数
+         * @param cellWidth         单元宽
+         * @param cellHeight        单元高下限
+         * @param gapX              列间距
+         * @param gapY              行间距
+         * @param enabled           是否启用
+         * @param onActivate        激活回调
+         * @param highlighted       受控高亮
+         * @param onHighlightChange 高亮回写
+         * @param onHoverItem       hover 回调
+         */
+        public Props(ReadableSignal<? extends List<SceneVirtualGrid.Item>> items,
+                     int columns, int cellWidth, int cellHeight, int gapX, int gapY,
+                     ReadableSignal<Boolean> enabled,
+                     Consumer<SceneVirtualGrid.Item> onActivate,
+                     ReadableSignal<Integer> highlighted,
+                     Consumer<Integer> onHighlightChange,
+                     Consumer<SceneVirtualGrid.Item> onHoverItem) {
+            this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
+                    onHighlightChange, onHoverItem, null, UNSPECIFIED_TOTAL_ITEMS, 0,
+                    DEFAULT_VISIBLE_ROWS, null);
+        }
 
         /** 显式校验构造器。 */
         public Props {
@@ -141,17 +198,78 @@ public final class SearchResultList {
             if (gapX < 0 || gapY < 0) {
                 throw new IllegalArgumentException("gap 不可为负数");
             }
+            if (totalItems < 0 && totalItems != UNSPECIFIED_TOTAL_ITEMS) {
+                throw new IllegalArgumentException(
+                        "totalItems 必须 >= 0 或为 UNSPECIFIED_TOTAL_ITEMS(-1)");
+            }
+            if (windowOffset < 0) {
+                throw new IllegalArgumentException("windowOffset 不可为负数");
+            }
+            if (visibleRows < 1) {
+                throw new IllegalArgumentException("visibleRows 必须 >= 1");
+            }
         }
     }
 
     /**
      * 创建结果。
      *
-     * @param root     根节点 = stackHost 行（viewport + 滚动条列），挂到宿主布局树
-     * @param viewport 可滚动视口（焦点/滚动语义所在节点）
+     * @param root        根节点 = stackHost 行（viewport + 滚动条列），挂到宿主布局树
+     * @param viewport    可滚动视口（焦点/滚动语义所在节点）
+     * @param windowModel 窗口模型只读观察面（宿主/测试回读；不参与窗口数学）
      */
     @Desugar
-    public record Result(SceneNode root, SceneNode viewport) {
+    public record Result(SceneNode root, SceneNode viewport,
+                         ReadableSignal<SceneGridWindow.WindowModel> windowModel) {
+    }
+
+    /**
+     * 窗口请求：{@code offset/limit} 由控件按 {@link SceneGridWindow.WindowModel} 产出。
+     *
+     * <p>宿主不得自行推导 offset（{@code windowStartRow * columns} 是第二份窗口数学，ADR §3.2 明令禁止）。</p>
+     *
+     * @param offset 全局起始下标（= {@code windowStartRow * columns}）
+     * @param limit  期望项数（= 挂载行数 * 列数）
+     */
+    @Desugar
+    public record WindowRequest(int offset, int limit) {
+
+        /** 校验：负偏移/负长度属宿主缺陷，立即失败。 */
+        public WindowRequest {
+            if (offset < 0 || limit < 0) {
+                throw new IllegalArgumentException("offset/limit 不可为负");
+            }
+        }
+    }
+
+    /**
+     * 窗口切片：{@code items.size() == min(limit, totalItems - offset)}。
+     *
+     * @param items      窗口项（非 null；可为空列表）
+     * @param totalItems 数据总项数（全局规模，不受窗口裁剪影响）
+     */
+    @Desugar
+    public record WindowPage(List<SceneVirtualGrid.Item> items, int totalItems) {
+
+        /** 防御性：items 非 null、总量非负。 */
+        public WindowPage {
+            items = items == null ? Collections.<SceneVirtualGrid.Item>emptyList() : items;
+            if (totalItems < 0) {
+                throw new IllegalArgumentException("totalItems 不可为负");
+            }
+        }
+    }
+
+    /** 窗口切片生产者：纯拉取、主线程、无 Signal、无异步（ADR §3.2）。 */
+    public interface PageProvider {
+
+        /**
+         * 取窗口切片。
+         *
+         * @param request 窗口请求（非 null；offset/limit 由控件产出）
+         * @return 窗口切片（非 null）
+         */
+        WindowPage page(WindowRequest request);
     }
 
     /**
@@ -183,38 +301,70 @@ public final class SearchResultList {
         stackHost.setFontSizeMetric((node, fontSizePx) ->
                 trackHeight.set(Integer.valueOf(minTrackHeightFor(rt, props, fontSizePx))));
 
-        // 数据收缩/视口变化回夹：布局完成后把 scroll 夹回 maxScrollY（非虚拟化，maxScrollY 随内容高即时变化）。
+        // 行步长（stride）唯一派生：轨道高 + 行间距。行高 / spacer / maxScrollPx / 滚动定位全部读它。
+        ReadableSignal<Integer> stridePx = Computed.create(() ->
+                Integer.valueOf(Math.max(1, trackHeight.get().intValue() + props.gapY())));
+
+        // 视口高度：布局完成后重读（同值早退）。未布局时为 0 —— 窗口数学退回预算行数，
+        // 首帧挂载量因此有界（≤ 预算行数 + overscan），与数据规模 N 无关。
+        Signal<Integer> viewportHeightPx = Signal.create(Integer.valueOf(0));
         rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
-            int max = SceneGeometry.maxScrollY(viewport);
-            int clamped = Math.max(0, Math.min(max, scrollSignal.get().intValue()));
-            if (clamped != scrollSignal.get().intValue()) {
-                scrollSignal.set(Integer.valueOf(clamped));
+            int height = visibleHeight(viewport);
+            if (height != viewportHeightPx.get().intValue()) {
+                viewportHeightPx.set(Integer.valueOf(height));
             }
         }));
 
-        // 生效列数：columns <= 0 时按 viewport 可用宽度自动推导（布局完成后读 cachedLayout 宽）。
+        // 生效列数：availableWidth 预算优先（首帧即正确列数、无收敛帧），
+        // 未提供预算时退回「布局完成后按 cachedLayout 宽推算」（ADR §3.4）。
         Signal<Integer> effectiveColumns =
                 Signal.create(Integer.valueOf(Math.max(1, props.columns())));
         if (props.columns() <= 0) {
-            rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
-                Object cached = viewport.getCachedLayout();
-                if (!(cached instanceof LayoutBox)) {
-                    return;
-                }
-                int innerWidth = ((LayoutBox) cached).getWidth();
-                int derived = SceneVirtualGridNav.deriveColumns(innerWidth,
-                        props.cellWidth(), props.gapX());
-                if (derived != effectiveColumns.get().intValue()) {
-                    effectiveColumns.set(Integer.valueOf(derived));
-                }
-            }));
+            ReadableSignal<Integer> widthBudget = props.availableWidth();
+            if (widthBudget != null) {
+                rt.bindComputed(() -> {
+                    Integer budget = widthBudget.get();
+                    int innerWidth = budget == null ? 0 : budget.intValue();
+                    return Integer.valueOf(SceneVirtualGridNav.deriveColumns(innerWidth,
+                            props.cellWidth(), props.gapX()));
+                }, derived -> {
+                    if (derived.intValue() != effectiveColumns.get().intValue()) {
+                        effectiveColumns.set(derived);
+                    }
+                });
+            } else {
+                rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
+                    Object cached = viewport.getCachedLayout();
+                    if (!(cached instanceof LayoutBox)) {
+                        return;
+                    }
+                    int innerWidth = ((LayoutBox) cached).getWidth();
+                    int derived = SceneVirtualGridNav.deriveColumns(innerWidth,
+                            props.cellWidth(), props.gapX());
+                    if (derived != effectiveColumns.get().intValue()) {
+                        effectiveColumns.set(Integer.valueOf(derived));
+                    }
+                }));
+            }
         }
 
-        // 结构：viewport = [content]（gap=0，行间距由行 marginBottom 承担）。
-        // viewport 底座外观已归 SceneScrollContainer 默认路径的 SceneSurfaceBinder（GROUP 配方）
-        // 独占，本控件不再二次绑定、不给单元各装滤镜。
-        SceneNode rowsContainer = sc.content();
+        // 结构：viewport = [content]，content = [topSpacer, rowsContainer, bottomSpacer]。
+        // content 三子高之和恒等于 totalRows*stride（spacer 数学），因此
+        // SceneGeometry.maxScrollY(viewport) 与 windowModel.maxScrollPx 闭式同源 —— 滚动条零改动。
+        // viewport 底座外观归 SceneScrollContainer 默认路径的 SceneSurfaceBinder（GROUP 配方）独占，
+        // 本控件不二次绑定、不给行/单元各装滤镜。
+        SceneNode content = sc.content();
+        // 内容层不参与命中：命中必须落到单元（行层同样 hitTestable=false），
+        // 否则高度巨大的 content 会吞掉全部指针事件（窗口化前的 content 即 rowsContainer，同款设置）。
+        content.setHitTestable(false);
+        SceneNode topSpacer = new SceneNode();
+        SceneNode rowsContainer = SceneNode.column();
+        rowsContainer.setGap(0);
         rowsContainer.setHitTestable(false);
+        SceneNode bottomSpacer = new SceneNode();
+        content.appendChild(topSpacer);
+        content.appendChild(rowsContainer);
+        content.appendChild(bottomSpacer);
 
         // 主题语义色派生：构建期（来源作用域 Owner 内）解析一次，全部单元共享；
         // 主题切换只重派生（Computed 按值记忆化），不重建节点。
@@ -224,21 +374,63 @@ public final class SearchResultList {
         // 键空间 = 候选域键（选择器图标源覆写 registryKey() 的返回值）：本列表项 key 即候选 key，
         // 与 PickerIconKey.candidate(key) 同值 ⇒ 恒等映射，无需拆键（拆键是历史缺陷，已删除）。
         Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(registryKey -> registryKey);
-        // 数据快照与索引同源：一次 O(N) 建表，此后单元选中态/图标/点击回写全部 O(1) 查表；
-        // 挂载期与数据变化期的解析成本不再随数据规模线性退化（旧形态每单元按 key 线性反查全表）。
-        ReadableSignal<SceneGridSnapshot> snapshot = Computed.create(() ->
-                SceneGridSnapshot.of(safeItems(props.items())));
-        // 全量行模型：items 全部项按生效列数分行（无上限、无截断）。
-        // 行键用该行首项在完整列表中的下标（稳定唯一）。
-        ReadableSignal<List<Row>> rowsSignal = Computed.create(() -> {
-            List<Row> rows = toRows(snapshot.get().items(), effectiveColumns.get().intValue());
-            recordListModel(rows.size(), visibleRowCount(viewport, trackHeight.get().intValue(), props.gapY()));
-            return rows;
+
+        // 窗口模型 + 窗口切片：一个 Computed 派生「窗口模型 + 同源快照（items + index）」，
+        // 全量数据源时在内部切片，pageProvider 形态时向宿主拉取切片（offset 由控件产出）。
+        ReadableSignal<WindowData> window = Computed.create(() -> {
+            List<SceneVirtualGrid.Item> source = safeItems(props.items());
+            int totalItems = props.totalItems() >= 0 ? props.totalItems() : source.size();
+            int columns = Math.max(1, effectiveColumns.get().intValue());
+            int stride = Math.max(1, stridePx.get().intValue());
+            int viewportH = viewportHeightPx.get().intValue();
+            int actualRows = SceneGridWindow.visibleRowsForViewport(viewportH, stride);
+            int visibleRows = actualRows > 0 ? actualRows : Math.max(1, props.visibleRows());
+            int mathViewportH = actualRows > 0
+                    ? viewportH
+                    : SceneGridWindow.viewportHeight(visibleRows, trackHeight.get().intValue(),
+                            props.gapY());
+            SceneGridWindow.WindowModel model = SceneGridWindow.compute(totalItems, columns,
+                    visibleRows, OVERSCAN_ROWS, stride, scrollSignal.get().intValue(), mathViewportH);
+
+            int declaredOffset = Math.max(0, props.windowOffset());
+            if (declaredOffset > 0 && declaredOffset != model.windowOffset()) {
+                throw new IllegalStateException("inv-W1: Props.windowOffset(" + declaredOffset
+                        + ") 必须等于 windowStartRow*columns(" + model.windowOffset()
+                        + ")；宿主不得自算窗口偏移（ADR §3.2）");
+            }
+            List<SceneVirtualGrid.Item> slice;
+            if (props.pageProvider() != null) {
+                WindowPage page = props.pageProvider().page(new WindowRequest(model.windowOffset(),
+                        model.mountedRows() * columns));
+                slice = page == null ? Collections.<SceneVirtualGrid.Item>emptyList() : page.items();
+            } else {
+                slice = windowSlice(source, model.windowOffset(), model.mountedRows() * columns);
+            }
+            recordListModel(model.totalRows(), model.visibleRows());
+            return new WindowData(model, SceneGridSnapshot.of(slice, model.windowOffset()));
+        });
+        ReadableSignal<SceneGridWindow.WindowModel> windowModelSignal =
+                Computed.create(() -> window.get().model());
+
+        // 垫片高度：spacer 高之和 + 挂载行高 = totalRows*stride（内容总高守恒）。
+        rt.bindComputed(() -> Integer.valueOf(window.get().model().topSpacerPx()),
+                topSpacer::setPreferredHeight);
+        rt.bindComputed(() -> Integer.valueOf(window.get().model().bottomSpacerPx()),
+                bottomSpacer::setPreferredHeight);
+        // 滚动回夹：数据收缩 / 视口变化后把 scroll 夹回窗口模型给出的 maxScrollPx（与 maxScrollY 同源）。
+        rt.bindComputed(() -> Integer.valueOf(Math.max(0, Math.min(
+                window.get().model().maxScrollPx(), scrollSignal.get().intValue()))), clamped -> {
+            if (!clamped.equals(scrollSignal.get())) {
+                scrollSignal.set(clamped);
+            }
         });
 
-        rt.forEach(rowsContainer, rowsSignal, Row::firstIndex,
-                row -> rowComponent(rt, props, row, snapshot, effectiveColumns, unrenderableKeys,
-                        palette, trackHeight));
+        // 行模型 = 窗口行区间（行键 = 首项全局下标；前插/删除时整窗重建成本 ≤ 可见行数）。
+        ReadableSignal<List<SceneGridWindow.RowRange>> rowsSignal =
+                Computed.create(() -> window.get().model().rows());
+        rt.forEach(rowsContainer, rowsSignal, SceneGridWindow.RowRange::firstIndex,
+                row -> rowComponent(rt, props, row, window, unrenderableKeys, palette,
+                        trackHeight, stridePx));
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -246,88 +438,121 @@ public final class SearchResultList {
                 return;
             }
             SceneKey key = ev.getKey();
+            WindowData data = window.get();
+            SceneGridWindow.WindowModel model = data.model();
             int current = props.highlighted().get().intValue();
+            int columns = Math.max(1, model.columns());
 
-            // ENTER 激活当前高亮项
+            // ENTER 激活当前高亮项：按全局下标从当前快照取项（O(1)）。
+            // 高亮不在窗口内时不激活——外部/键盘高亮变化已触发居中滚动，下一帧即进入窗口。
             if (key == SceneKey.ENTER) {
-                List<SceneVirtualGrid.Item> items = safeItems(props.items());
-                if (current >= 0 && current < items.size()) {
+                SceneVirtualGrid.Item item = data.snapshot().index().itemAtGlobal(current);
+                if (item != null) {
                     ctx.stopPropagation();
-                    props.onActivate().accept(items.get(current));
+                    props.onActivate().accept(item);
                 }
                 return;
             }
 
-            // ARROW_* 四向导航（全部项范围内）
-            int cols = Math.max(1, effectiveColumns.get().intValue());
-            int total = safeItems(props.items()).size();
-            int next = SceneVirtualGridNav.navigate(current, key, cols, total);
+            // ARROW_* 四向导航（全局项范围内，语义由 SceneVirtualGridNav 锚定）
+            int next = SceneVirtualGridNav.navigate(current, key, columns, model.totalItems());
             if (next < 0 || next == current) {
                 return;
             }
             ctx.stopPropagation();
             props.onHighlightChange().accept(Integer.valueOf(next));
 
-            // 自动滚动到目标行：target = rowIndex*(cellHeight+gapY) - 可视高度/2，clamp 到 [0, maxScrollY]
-            int rowIndex = next / cols;
-            int stride = trackHeight.get().intValue() + props.gapY();
-            int viewportH = visibleHeight(viewport);
-            int target = rowIndex * stride - viewportH / 2;
-            int maxScroll = SceneGeometry.maxScrollY(viewport);
-            int clamped = Math.max(0, Math.min(maxScroll, target));
-            if (clamped != scrollSignal.get().intValue()) {
-                scrollSignal.set(Integer.valueOf(clamped));
-            }
+            // 自动滚动到目标行（保持既定居中语义）：target = row*stride - 视口高/2，clamp 到 maxScrollPx
+            scrollToRow(next / columns, model, scrollSignal, stridePx, viewportHeightPx);
         });
 
-        return new Result(stackHost, viewport);
+        // 外部高亮变化 → 居中滚动（ADR §3.8 #5）。仅高亮值变化时执行：同值早退 + 回调内不追加上游依赖，
+        // 用户手动滚动不会被"重新居中"打断（内部滚动只改 scrollSignal，高亮值不变）。
+        final int[] lastCenteredHighlight = { Integer.MIN_VALUE };
+        rt.bind(props.highlighted(), highlighted -> Effect.untrack(() -> {
+            int index = highlighted == null ? -1 : highlighted.intValue();
+            if (index == lastCenteredHighlight[0]) {
+                return;
+            }
+            lastCenteredHighlight[0] = index;
+            SceneGridWindow.WindowModel model = window.get().model();
+            if (index < 0 || model.totalItems() <= 0) {
+                return;
+            }
+            int columns = Math.max(1, model.columns());
+            int row = Math.min(index, model.totalItems() - 1) / columns;
+            scrollToRow(row, model, scrollSignal, stridePx, viewportHeightPx);
+        }));
+
+        return new Result(stackHost, viewport, windowModelSignal);
     }
 
-    /** 全量行（非虚拟化行模型，全部项分行）。 */
-    @Desugar
-    public record Row(int firstIndex, List<SceneVirtualGrid.Item> items) {
-    }
-
-    private static List<Row> toRows(List<SceneVirtualGrid.Item> items, int cols) {
-        cols = Math.max(1, cols);
-        int rowCount = items.size() <= 0 ? 0 : (items.size() + cols - 1) / cols;
-        List<Row> rows = new ArrayList<>(rowCount);
-        for (int i = 0; i < rowCount; i++) {
-            int firstIndex = i * cols;
-            int to = Math.min(items.size(), firstIndex + cols);
-            rows.add(new Row(firstIndex, new ArrayList<>(items.subList(firstIndex, to))));
+    /** 滚动居中到目标行：{@code row*stride - 视口高/2}，clamp 到窗口模型的 maxScrollPx。 */
+    private static void scrollToRow(int row, SceneGridWindow.WindowModel model,
+                                    Signal<Integer> scrollSignal, ReadableSignal<Integer> stridePx,
+                                    ReadableSignal<Integer> viewportHeightPx) {
+        int stride = Math.max(1, stridePx.get().intValue());
+        int target = Math.max(0, row) * stride - Math.max(0, viewportHeightPx.get().intValue()) / 2;
+        int clamped = Math.max(0, Math.min(model.maxScrollPx(), target));
+        if (clamped != scrollSignal.get().intValue()) {
+            scrollSignal.set(Integer.valueOf(clamped));
         }
-        return rows;
     }
 
-    /** 构建一个完整结果行（ROW 容器，行高钉定，行间距经 marginBottom 计入主轴占位）。 */
-    private static SceneNode rowComponent(SceneRuntime rt, Props props, Row row,
-                                          ReadableSignal<SceneGridSnapshot> snapshot,
-                                          ReadableSignal<Integer> effectiveColumns,
+    /** 一次窗口求值的完整产物：窗口模型 + 同源快照（items 与 index 来自同一份切片）。 */
+    @Desugar
+    private record WindowData(SceneGridWindow.WindowModel model, SceneGridSnapshot snapshot) {
+    }
+
+    /** 从全量数据源截取窗口切片（入参为全局坐标）。 */
+    private static List<SceneVirtualGrid.Item> windowSlice(List<SceneVirtualGrid.Item> source,
+                                                           int from, int count) {
+        int start = Math.max(0, Math.min(from, source.size()));
+        int end = Math.max(start, Math.min(source.size(), start + Math.max(0, count)));
+        return start >= end
+                ? Collections.<SceneVirtualGrid.Item>emptyList()
+                : new ArrayList<SceneVirtualGrid.Item>(source.subList(start, end));
+    }
+
+    /**
+     * 构建一个窗口行（ROW 容器，行高钉定，行间距经 marginBottom 计入主轴占位）。
+     *
+     * <p>行键 = 首项全局下标（v1 保守策略，与 {@link SceneVirtualGrid} 一致）；行内容按
+     * 「全局下标 - windowOffset」映射到窗口切片的局部区间，保证行数据与索引同源。</p>
+     */
+    private static SceneNode rowComponent(SceneRuntime rt, Props props,
+                                          SceneGridWindow.RowRange row,
+                                          ReadableSignal<WindowData> window,
                                           ReadableSignal<Set<Object>> unrenderableKeys,
                                           CellPalette palette,
-                                          ReadableSignal<Integer> trackHeight) {
+                                          ReadableSignal<Integer> trackHeight,
+                                          ReadableSignal<Integer> stridePx) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(trackHeight.get().intValue());
-        // 轨道高随生效字号变 → 行高跟着变（本控件不做虚拟化，内容高变化由滚动承担）。
-        rt.bind(trackHeight, h -> rowNode.setPreferredHeight(h.intValue()));
+        // 轨道高随生效字号变 → 行高跟着变；spacer 数学读同一 stride 信号，内容总高守恒。
+        rt.bind(trackHeight, height -> rowNode.setPreferredHeight(height.intValue()));
         rowNode.setMargin(0, 0, props.gapY(), 0);
         rowNode.setGap(props.gapX());
         rowNode.setHitTestable(false);
-        // 行节点按 firstIndex 复用后，行内容必须从实时数据源 + 实时列数派生
-        //（避免复用行吃到创建时的陈旧快照——旧虚拟网格的同款陷阱）。
+        // 行节点按首项全局下标复用后，行内容仍须从实时窗口快照派生（避免复用行吃到陈旧切片）。
         ReadableSignal<List<SceneVirtualGrid.Item>> rowItems = Computed.create(() -> {
-            List<SceneVirtualGrid.Item> items = snapshot.get().items();
-            int cols = Math.max(1, effectiveColumns.get().intValue());
-            int start = row.firstIndex();
-            if (start < 0 || start >= items.size()) {
+            WindowData data = window.get();
+            int localStart = row.firstIndex() - data.model().windowOffset();
+            if (localStart < 0 || localStart >= data.snapshot().size()) {
                 return Collections.<SceneVirtualGrid.Item>emptyList();
             }
-            int to = Math.min(items.size(), start + cols);
-            return new ArrayList<SceneVirtualGrid.Item>(items.subList(start, to));
+            // 行宽读**当前**窗口模型的列数，而不是构建期捕获的 RowRange.count：
+            // 行按首项下标复用（keyed reconcile），列数收敛（1 → N）时复用行必须跟着变宽。
+            int count = Math.min(Math.max(1, data.model().columns()),
+                    data.snapshot().size() - localStart);
+            return count <= 0
+                    ? Collections.<SceneVirtualGrid.Item>emptyList()
+                    : new ArrayList<SceneVirtualGrid.Item>(
+                            data.snapshot().items().subList(localStart, localStart + count));
         });
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
-                item -> cellComponent(rt, props, item, snapshot, unrenderableKeys, palette, trackHeight));
+                item -> cellComponent(rt, props, item, window, unrenderableKeys, palette,
+                        trackHeight, stridePx));
         recordMountedRow();
         return rowNode;
     }
@@ -370,10 +595,11 @@ public final class SearchResultList {
     }
     /** 构建单个结果单元（结构复刻 SceneVirtualGrid.cellComponent；外观为主题轻量覆盖）。 */
     private static SceneNode cellComponent(SceneRuntime rt, Props props, SceneVirtualGrid.Item item,
-                                           ReadableSignal<SceneGridSnapshot> snapshot,
+                                           ReadableSignal<WindowData> window,
                                            ReadableSignal<Set<Object>> unrenderableKeys,
                                            CellPalette palette,
-                                           ReadableSignal<Integer> trackHeight) {
+                                           ReadableSignal<Integer> trackHeight,
+                                           ReadableSignal<Integer> stridePx) {
         long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
         SceneNode cell = SceneNode.column();
         cell.setPreferredWidth(props.cellWidth());
@@ -389,7 +615,7 @@ public final class SearchResultList {
         // 选中态：item 在完整 items 列表中的下标 == highlighted（按 key 动态派生，
         // 复用/重绑单元不携带旧项选中态）。
         ReadableSignal<Boolean> selected = Computed.create(() ->
-                Integer.valueOf(snapshot.get().index().indexOf(item.key()))
+                Integer.valueOf(window.get().snapshot().index().indexOf(item.key()))
                         .equals(props.highlighted().get()));
         rt.__bindAnimatedColor(() -> resolveCellBackground(
                         Boolean.TRUE.equals(props.enabled().get()),
@@ -431,7 +657,7 @@ public final class SearchResultList {
             }
             // 索引 O(1) 取当前快照项：单元节点按 key 复用（每 key 只建一次），
             // 构建期捕获的 item 实例可能是旧代 ⇒ 图标源按快照实时解析，不读陈旧快照。
-            SceneVirtualGrid.Item live = snapshot.get().index().itemAt(item.key());
+            SceneVirtualGrid.Item live = window.get().snapshot().index().itemAt(item.key());
             return live == null ? item.image() : live.image();
         });
         rt.bind(effectiveImage, src -> {
@@ -449,7 +675,7 @@ public final class SearchResultList {
             }
             ctx.stopPropagation();
             props.onActivate().accept(item);
-            int index = snapshot.get().index().indexOf(item.key());
+            int index = window.get().snapshot().index().indexOf(item.key());
             if (index >= 0) {
                 props.onHighlightChange().accept(Integer.valueOf(index));
             }
@@ -529,20 +755,6 @@ public final class SearchResultList {
         }
     }
 
-    /**
-     * 可视行数 = 视口高度 / 行步长（向上取整至少 1 行）；视口未布局时返回 0。
-     *
-     * <p>与挂载行数配对，用于在 P3 窗口化前后直接读出"挂载了多少行 / 实际能看到多少行"。</p>
-     */
-    private static int visibleRowCount(SceneNode viewport, int trackHeight, int gapY) {
-        int height = visibleHeight(viewport);
-        if (height <= 0) {
-            return 0;
-        }
-        int stride = Math.max(1, trackHeight + gapY);
-        return Math.max(1, (height + stride - 1) / stride);
-    }
-
     /** 可视高度：优先读取已布局的 LayoutBox 高度，否则退回 preferredHeight。 */
     private static int visibleHeight(SceneNode vp) {
         Object cached = vp.getCachedLayout();
@@ -564,17 +776,21 @@ public final class SearchResultList {
     // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================
 
     /**
-     * 记录一次行模型派生的规模。
+     * 记录一次窗口派生的规模（ADR §6.2 口径冻结）。
      *
-     * <p>{@code mountedRows} 为本次派生的行数（当前实现非虚拟化，等于全量行数）；
-     * {@code visibleRows} 由视口高度与轨道高派生。两者配对即可在 P3 窗口化后直接读出虚拟化比例。</p>
+     * <p>{@code picker.list.totalRows} = 数据总行数（由 {@code Props.totalItems} 派生，**不是**挂载行数）；
+     * {@code picker.list.visibleRows} = 由视口高度与 stride 派生的可视行数；挂载行数由
+     * {@code picker.list.rows} 单独累计。三者即虚拟化比例的完整证据。</p>
+     *
+     * @param totalRows   数据总行数
+     * @param visibleRows 生效可视行数
      */
-    private static void recordListModel(int mountedRows, int visibleRows) {
+    private static void recordListModel(int totalRows, int visibleRows) {
         if (!Config.useDebug) {
             return;
         }
         UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
-        monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_TOTAL_ROWS, mountedRows);
+        monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_TOTAL_ROWS, totalRows);
         monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_VISIBLE_ROWS, visibleRows);
     }
 
