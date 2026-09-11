@@ -155,12 +155,49 @@ public final class SearchResultList {
             int windowOffset,
             int visibleRows,
             ReadableSignal<Integer> availableWidth,
-            ReadableSignal<Integer> totalItemsSignal) {
+            ReadableSignal<Integer> totalItemsSignal,
+            ReadableSignal<GridMetrics> metrics) {
 
         /** 未提供总量时的哨兵：窗口数学取 {@code items.size()}（全量数据源形态）。 */
         public static final int UNSPECIFIED_TOTAL_ITEMS = -1;
         /** 默认预算可视行数（与 {@code ScenePickerPanel.GridProps.DEFAULT} 对齐）。 */
         public static final int DEFAULT_VISIBLE_ROWS = 5;
+
+        /**
+         * 旧 17 参形态（P4 兼容，纯加法保留）：无 P5 派生度量通道。
+         *
+         * @param items             数据源
+         * @param columns           列数
+         * @param cellWidth         单元宽
+         * @param cellHeight        单元高下限
+         * @param gapX              列间距
+         * @param gapY              行间距
+         * @param enabled           是否启用
+         * @param onActivate        激活回调
+         * @param highlighted       受控高亮
+         * @param onHighlightChange 高亮回写
+         * @param onHoverItem       hover 回调
+         * @param pageProvider      窗口切片生产者
+         * @param totalItems        数据总项数
+         * @param windowOffset      窗口偏移校验位
+         * @param visibleRows       预算可视行数
+         * @param availableWidth    预算可用宽
+         * @param totalItemsSignal  动态总量通道
+         */
+        public Props(ReadableSignal<? extends List<SceneVirtualGrid.Item>> items,
+                     int columns, int cellWidth, int cellHeight, int gapX, int gapY,
+                     ReadableSignal<Boolean> enabled,
+                     Consumer<SceneVirtualGrid.Item> onActivate,
+                     ReadableSignal<Integer> highlighted,
+                     Consumer<Integer> onHighlightChange,
+                     Consumer<SceneVirtualGrid.Item> onHoverItem,
+                     PageProvider pageProvider, int totalItems, int windowOffset, int visibleRows,
+                     ReadableSignal<Integer> availableWidth,
+                     ReadableSignal<Integer> totalItemsSignal) {
+            this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
+                    onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
+                    visibleRows, availableWidth, totalItemsSignal, null);
+        }
 
         /**
          * 旧 16 参形态（P3 兼容，纯加法保留）：静态总量、无动态总量通道。
@@ -193,7 +230,7 @@ public final class SearchResultList {
                      ReadableSignal<Integer> availableWidth) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
-                    visibleRows, availableWidth, null);
+                    visibleRows, availableWidth, null, null);
         }
 
         /**
@@ -220,7 +257,7 @@ public final class SearchResultList {
                      Consumer<SceneVirtualGrid.Item> onHoverItem) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, null, UNSPECIFIED_TOTAL_ITEMS, 0,
-                    DEFAULT_VISIBLE_ROWS, null, null);
+                    DEFAULT_VISIBLE_ROWS, null, null, null);
         }
 
         /** 显式校验构造器。 */
@@ -337,14 +374,43 @@ public final class SearchResultList {
         // 行/单元 preferredHeight 与图位高统一读本信号。
         // 层 4a 回落值：与单元标签的回落值同源（12），使控件根解析出的生效字号与标签一致——
         // 否则未声明字号时根的层 4b 默认 16 会让轨道按 16 算（默认几何漂移）。层 1/2/3 均优先于它。
+        // P5 派生度量通道（非 null = 面板已按「逻辑盒 + 字号 + 密度」派生好唯一快照）：
+        // 四个几何信号全部从同一份 GridMetrics 取初值并随其变化整体重写 —— 这就是 I-4 的
+        // 「单一 GridMetrics 快照」：轨道高/图位边长/内边距/间距/列数不存在第二个真值来源。
+        final ReadableSignal<GridMetrics> metricsSignal = props.metrics();
+        GridMetrics initialMetrics = metricsSignal == null ? null : metricsSignal.get();
         stackHost.setFallbackFontSize(LABEL_FONT_SIZE);
-        final Signal<Integer> trackHeight = Signal.create(Integer.valueOf(props.cellHeight()));
-        stackHost.setFontSizeMetric((node, fontSizePx) ->
-                trackHeight.set(Integer.valueOf(minTrackHeightFor(rt, props, fontSizePx))));
+        final Signal<Integer> trackHeight = Signal.create(Integer.valueOf(
+                initialMetrics != null ? initialMetrics.trackHeightPx() : props.cellHeight()));
+        final Signal<Integer> cellPadding = Signal.create(Integer.valueOf(
+                initialMetrics != null ? initialMetrics.paddingPx() : CELL_PADDING));
+        final Signal<Integer> labelGap = Signal.create(Integer.valueOf(
+                initialMetrics != null ? initialMetrics.labelGapPx() : LABEL_GAP));
+        final Signal<Integer> iconSide = Signal.create(Integer.valueOf(
+                initialMetrics != null ? initialMetrics.iconSidePx() : 0));
+        final Signal<Integer> cellGap = Signal.create(Integer.valueOf(
+                initialMetrics != null ? initialMetrics.gapY() : props.gapY()));
+        final Signal<Integer> cellWidth = Signal.create(Integer.valueOf(
+                initialMetrics != null ? initialMetrics.cellWidthPx() : props.cellWidth()));
+        if (initialMetrics != null) {
+            rt.bind(metricsSignal, m -> Effect.untrack(() -> {
+                setIfChanged(trackHeight, m.trackHeightPx());
+                setIfChanged(cellPadding, m.paddingPx());
+                setIfChanged(labelGap, m.labelGapPx());
+                setIfChanged(iconSide, m.iconSidePx());
+                setIfChanged(cellGap, m.gapY());
+                setIfChanged(cellWidth, m.cellWidthPx());
+            }));
+        } else {
+            // 旧路径：轨道高由控件根的字号度量回调抬升（cellHeight 为下限）。
+            stackHost.setFontSizeMetric((node, fontSizePx) ->
+                    trackHeight.set(Integer.valueOf(minTrackHeightFor(rt, props, fontSizePx))));
+        }
 
         // 行步长（stride）唯一派生：GridMetrics（轨道高 + 行间距）。行高 / spacer / maxScrollPx / 滚动定位全部读它。
-        ReadableSignal<Integer> stridePx = Computed.create(() ->
-                Integer.valueOf(GridMetrics.stridePxOf(trackHeight.get().intValue(), props.gapY())));
+        ReadableSignal<Integer> stridePx = Computed.create(() -> Integer.valueOf(
+                GridMetrics.stridePxOf(trackHeight.get().intValue(),
+                        cellGap.get().intValue())));
 
         // 视口高度：布局完成后重读（同值早退）。未布局时为 0 —— 窗口数学退回预算行数，
         // 首帧挂载量因此有界（≤ 预算行数 + overscan），与数据规模 N 无关。
@@ -358,9 +424,16 @@ public final class SearchResultList {
 
         // 生效列数：availableWidth 预算优先（首帧即正确列数、无收敛帧），
         // 未提供预算时退回「布局完成后按 cachedLayout 宽推算」（ADR §3.4）。
+        // 列数优先级（P5）：派生度量 > 显式 columns > availableWidth 预算 > 布局后 cachedLayout。
+        // 度量通道存在时列数由 PickerMetrics 用「面板盒 - 导航 - 内边距」预算在<b>挂载前</b>算好，
+        // 因此首帧列数 == 稳态列数，不存在「1 列挂载 N 行 → 收敛重建」的收敛帧（ADR §3.4 判据①）。
         Signal<Integer> effectiveColumns =
-                Signal.create(Integer.valueOf(Math.max(1, props.columns())));
-        if (props.columns() <= 0) {
+                Signal.create(Integer.valueOf(Math.max(1,
+                        initialMetrics != null ? initialMetrics.columns() : props.columns())));
+        if (initialMetrics != null) {
+            rt.bind(metricsSignal, m -> Effect.untrack(
+                    () -> setIfChanged(effectiveColumns, Math.max(1, m.columns()))));
+        } else if (props.columns() <= 0) {
             ReadableSignal<Integer> widthBudget = props.availableWidth();
             if (widthBudget != null) {
                 rt.bindComputed(() -> {
@@ -539,7 +612,8 @@ public final class SearchResultList {
                 Computed.create(() -> window.get().model().rows());
         rt.forEach(rowsContainer, rowsSignal, SceneGridWindow.RowRange::firstIndex,
                 row -> rowComponent(rt, props, row, window, unrenderableKeys, palette,
-                        trackHeight, stridePx, hoveredKey));
+                        trackHeight, stridePx, hoveredKey,
+                        new CellGeometry(cellPadding, labelGap, iconSide, cellGap, cellWidth)));
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -613,6 +687,31 @@ public final class SearchResultList {
     private record WindowData(SceneGridWindow.WindowModel model, SceneGridSnapshot snapshot) {
     }
 
+    /**
+     * 单元几何信号组 —— {@code GridMetrics} 单一快照在单元层的五项投影。
+     *
+     * <p>五个信号由 {@code create()} 从同一份 {@link GridMetrics} 初始化并随之整体重写；
+     * 单元/行只订阅它们，<b>不得</b>再读 {@code Props} 的静态几何（那是第二个真值来源，I-4）。</p>
+     *
+     * @param paddingPx  单元内边距
+     * @param labelGapPx 图标与标签间距
+     * @param iconSidePx 图位边长（{@code 0} = 旧路径，图位吃轨道剩余空间）
+     * @param gapPx      行/列间距（同一个值）
+     * @param cellWidthPx 单元宽
+     */
+    @Desugar
+    private record CellGeometry(ReadableSignal<Integer> paddingPx, ReadableSignal<Integer> labelGapPx,
+                                ReadableSignal<Integer> iconSidePx, ReadableSignal<Integer> gapPx,
+                                ReadableSignal<Integer> cellWidthPx) {
+    }
+
+    /** 同值早退写信号（几何信号全部走这里，避免同值 set 触发无谓重算）。 */
+    private static void setIfChanged(Signal<Integer> signal, int value) {
+        if (signal.get().intValue() != value) {
+            signal.set(Integer.valueOf(value));
+        }
+    }
+
     /** 从全量数据源截取窗口切片（入参为全局坐标）。 */
     private static List<SceneVirtualGrid.Item> windowSlice(List<SceneVirtualGrid.Item> source,
                                                            int from, int count) {
@@ -636,13 +735,20 @@ public final class SearchResultList {
                                           CellPalette palette,
                                           ReadableSignal<Integer> trackHeight,
                                           ReadableSignal<Integer> stridePx,
-                                          Signal<Object> hoveredKey) {
+                                          Signal<Object> hoveredKey,
+                                          CellGeometry geometry) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(trackHeight.get().intValue());
         // 轨道高随生效字号变 → 行高跟着变；spacer 数学读同一 stride 信号，内容总高守恒。
         rt.bind(trackHeight, height -> rowNode.setPreferredHeight(height.intValue()));
-        rowNode.setMargin(0, 0, props.gapY(), 0);
-        rowNode.setGap(props.gapX());
+        // 行间距与列间距同源（I-4）：两者都取度量快照的 gap，绝不再读 Props 的静态值，
+        // 否则 stride 用新 gap、行 margin 用旧 gap，内容总高与 maxScrollPx 立即漂移。
+        rt.bind(geometry.gapPx(), gap -> Effect.untrack(() -> {
+            rowNode.setMargin(0, 0, gap.intValue(), 0);
+            rowNode.setGap(gap.intValue());
+        }));
+        rowNode.setMargin(0, 0, geometry.gapPx().get().intValue(), 0);
+        rowNode.setGap(geometry.gapPx().get().intValue());
         rowNode.setHitTestable(false);
         // 行节点按首项全局下标复用后，行内容仍须从实时窗口快照派生（避免复用行吃到陈旧切片）。
         ReadableSignal<List<SceneVirtualGrid.Item>> rowItems = Computed.create(() -> {
@@ -662,7 +768,7 @@ public final class SearchResultList {
         });
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
                 item -> cellComponent(rt, props, item, window, unrenderableKeys, palette,
-                        trackHeight, stridePx, hoveredKey));
+                        trackHeight, stridePx, hoveredKey, geometry));
         recordMountedRow();
         return rowNode;
     }
@@ -682,18 +788,12 @@ public final class SearchResultList {
      * @param label       标签节点；null = 该项无标签
      * @param trackHeight 单元轨道高信号（随生效字号重算）
      */
-    private static void bindIconHeight(SceneRuntime rt, SceneNode icon, SceneNode label,
-                                       ReadableSignal<Integer> trackHeight) {
-        rt.bind(trackHeight, height -> icon.setPreferredHeight(
-                iconHeightFor(rt, height.intValue(), label)));
-        icon.setPreferredHeight(iconHeightFor(rt, trackHeight.get().intValue(), label));
-    }
-
-    /** 图位高 = 轨道高 - 2*内边距 -（有标签时）标签行高 + 间距；至少 1px。 */
-    private static int iconHeightFor(SceneRuntime rt, int trackHeightPx, SceneNode label) {
-        int available = trackHeightPx - CELL_PADDING * 2;
+    /** 图位高 = 轨道高 - 2*内边距 -（有标签时）标签行高 + 间距；至少 1px（旧路径口径）。 */
+    private static int iconHeightFor(SceneRuntime rt, int trackHeightPx, SceneNode label,
+                                     int paddingPx, int labelGapPx) {
+        int available = trackHeightPx - paddingPx * 2;
         if (label != null) {
-            available -= rt.lineHeight(label.effectiveFontSize()) + LABEL_GAP;
+            available -= rt.lineHeight(label.effectiveFontSize()) + labelGapPx;
         }
         return Math.max(1, available);
     }
@@ -715,15 +815,19 @@ public final class SearchResultList {
                                            CellPalette palette,
                                            ReadableSignal<Integer> trackHeight,
                                            ReadableSignal<Integer> stridePx,
-                                           Signal<Object> hoveredKey) {
+                                           Signal<Object> hoveredKey,
+                                           CellGeometry geometry) {
         long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
         SceneNode cell = SceneNode.column();
-        cell.setPreferredWidth(props.cellWidth());
+        cell.setPreferredWidth(geometry.cellWidthPx().get().intValue());
+        rt.bind(geometry.cellWidthPx(), w -> cell.setPreferredWidth(w.intValue()));
         cell.setPreferredHeight(trackHeight.get().intValue());
         rt.bind(trackHeight, h -> cell.setPreferredHeight(h.intValue()));
         cell.setClipChildren(true);
-        cell.setGap(LABEL_GAP);
-        cell.setPadding(CELL_PADDING);
+        cell.setGap(geometry.labelGapPx().get().intValue());
+        rt.bind(geometry.labelGapPx(), g -> cell.setGap(g.intValue()));
+        cell.setPadding(geometry.paddingPx().get().intValue());
+        rt.bind(geometry.paddingPx(), p -> cell.setPadding(p.intValue()));
         // 轻量覆盖口径：单元不写圆角/边框（外观写入槽只剩 backgroundColor），不装滤镜。
         SceneInteractionState interaction = rt.interactionState(cell);
         // 时序契约：构建期声明关心 hovered，Router 后续写入才会落到已创建的 signal。
@@ -756,15 +860,37 @@ public final class SearchResultList {
                     label::setTextColor);
             // 溢出策略（INV-GEO-4）：单元轨道由虚拟化 stride 固定，文字超宽必须可见省略，
             // 否则被 cell 的 clipChildren(true) 静默裁掉。
-            label.setMaxTextWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
+            rt.bindComputed(() -> Integer.valueOf(Math.max(1,
+                            geometry.cellWidthPx().get().intValue()
+                                    - 2 * geometry.paddingPx().get().intValue())),
+                    label::setMaxTextWidth);
             label.setMaxLines(1);
             label.setEllipsis(true);
         }
 
+        // 图位高派生的 lambda 需要 effectively-final 引用（label 在分支里赋值，不能直接捕获）。
+        final SceneNode labelRef = label;
         SceneNode icon = new SceneNode();
         icon.setHitTestable(false);
-        icon.setPreferredWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
-        bindIconHeight(rt, icon, label, trackHeight);
+        // I-1 图标正方形：P5 派生路径下图位是<B>正方形</B>且边长 = density.icon × k，
+        // 不再用 max(cellWidth - 2*pad) × (轨道剩余高) 的矩形让 ITEM_ICON 走 min(w,h) 兜底
+        // （那正是现状「图位 56x39 → 图标实际 39」的成因，T5 UX-15）。
+        // 旧路径（iconSidePx == 0）保持原「图位吃剩余空间」语义，兼容旧调用方。
+        rt.bindComputed(() -> {
+            int side = geometry.iconSidePx().get().intValue();
+            return Integer.valueOf(side > 0 ? side
+                    : Math.max(1, geometry.cellWidthPx().get().intValue()
+                            - 2 * geometry.paddingPx().get().intValue()));
+        }, icon::setPreferredWidth);
+        rt.bindComputed(() -> {
+            int side = geometry.iconSidePx().get().intValue();
+            if (side > 0) {
+                return Integer.valueOf(side);
+            }
+            return Integer.valueOf(iconHeightFor(rt, trackHeight.get().intValue(), labelRef,
+                    geometry.paddingPx().get().intValue(),
+                    geometry.labelGapPx().get().intValue()));
+        }, icon::setPreferredHeight);
         icon.setCornerRadius(SceneChromeTokens.RADIUS_SM);
         // 生效图标：不可渲染项回退占位底色（null 图片），其余从实时数据源派生（含渲染分级变化）。
         ReadableSignal<SceneImageSource> effectiveImage = Computed.create(() -> {

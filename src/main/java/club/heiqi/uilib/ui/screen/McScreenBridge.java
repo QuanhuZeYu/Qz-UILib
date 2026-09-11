@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.host.lwjgl.SceneLwjgl3ifyTextBridge;
 import club.heiqi.uilib.ui.scene.host.lwjgl.SceneTextBridgeLifecycle;
+import club.heiqi.uilib.ui.scene.layout.LogicalBox;
 
 /**
  * Minecraft GuiScreen 到平台无关 scene 渲染面的桥接外壳。
@@ -151,6 +152,14 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
         int pointerX = mouseX * scaleFactor;
         int pointerY = mouseY * scaleFactor;
 
+        // 逻辑盒合成(P5 §1.1.1):这是全仓<B>唯一</B>允许接触 GUI Scale 的位置 ——
+        // nativeBox + guiScale -> logicalBox,此后 layout/paint/裁剪/输入共享 logical px 事实
+        // (AGENTS.md:28)。默认 policy A(uiScaleHost=1)下 logicalBox == nativeBox,行为零变化;
+        // policy B(折算)给出可复算实现,启用属宿主边界行为变更,需用户确认(P5 §7-Q1 / X-3)。
+        LogicalBox logicalBox = HostViewportScale.compose(nativeWidth, nativeHeight, scaleFactor);
+        int logicalWidth = logicalBox.widthPx();
+        int logicalHeight = logicalBox.heightPx();
+
         // 常开首帧诊断:一次采集四种分辨率来源,真机一次定位坐标系问题(非 DEBUG 也打印)
         if (!firstFrameLogged) {
             logFirstFrameDiagnostics(minecraft, mouseX, mouseY, nativeWidth, nativeHeight);
@@ -178,7 +187,8 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
                     UiRenderContext context = UiHostRenderSupport.createRenderContext(nativeWidth, nativeHeight,
                             pointerX, pointerY, partialTicks, paintContextCompositor, mainLayerSnapshotService,
                             runtimeAdapters);
-                    surface.render(nativeWidth, nativeHeight, context, 0, 0);
+                    // 渲染面按<B>逻辑盒</B>驱动:scene 坐标空间 = logical px,与指针换算同源成对。
+                    surface.render(logicalWidth, logicalHeight, context, 0, 0);
                 } catch (RuntimeException renderError) {
                     if (DEBUG) {
                         LOG.error("[" + screenLabel + "] surface.render 抛 RuntimeException（新壳渲染失败，将重抛冒泡）",

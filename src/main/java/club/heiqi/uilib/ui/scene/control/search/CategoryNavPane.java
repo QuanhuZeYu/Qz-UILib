@@ -79,7 +79,8 @@ public final class CategoryNavPane {
             ReadableSignal<String> categoryKey,
             ReadableSignal<Boolean> enabled,
             Consumer<String> onSelect,
-            String emptyLabel) {
+            String emptyLabel,
+            ReadableSignal<Integer> widthPx) {
 
         /** 显式校验构造器：rows / categoryKey / enabled / onSelect 非 null。 */
         public Props {
@@ -87,6 +88,21 @@ public final class CategoryNavPane {
             Objects.requireNonNull(categoryKey, "categoryKey");
             Objects.requireNonNull(enabled, "enabled");
             Objects.requireNonNull(onSelect, "onSelect");
+        }
+
+        /**
+         * 旧 5 参形态（P5 兼容，纯加法保留）：导航宽取 {@link #NAV_WIDTH} 常量。
+         *
+         * @param rows        分类行
+         * @param categoryKey 当前分类 key
+         * @param enabled     是否启用
+         * @param onSelect    选择回调
+         * @param emptyLabel  空态文案
+         */
+        public Props(ReadableSignal<? extends List<ScenePickerPanelNav.CategoryRow>> rows,
+                     ReadableSignal<String> categoryKey, ReadableSignal<Boolean> enabled,
+                     Consumer<String> onSelect, String emptyLabel) {
+            this(rows, categoryKey, enabled, onSelect, emptyLabel, null);
         }
     }
 
@@ -102,7 +118,18 @@ public final class CategoryNavPane {
         Objects.requireNonNull(props, "props");
 
         SceneNode nav = SceneNode.column();
-        nav.setPreferredWidth(NAV_WIDTH);
+        // 导航宽由 P5 派生度量给（clamp(round(逻辑盒宽 * 0.13), 96, 188)）；未提供信号时回落常量。
+        // 读值 null 安全：派生信号可能是「尚未求值的 Computed」（Computed 惰性，构建期 get() 无值），
+        // 此时先用常量挂载，首次 flush 后由 bind 写入派生值。
+        Integer derivedWidth = props.widthPx() == null ? null : props.widthPx().get();
+        nav.setPreferredWidth(derivedWidth == null ? NAV_WIDTH : derivedWidth.intValue());
+        if (props.widthPx() != null) {
+            rt.bind(props.widthPx(), width -> {
+                if (width != null) {
+                    nav.setPreferredWidth(width.intValue());
+                }
+            });
+        }
         nav.setFillParentHeight(true);
 
         // 底座：TOOLBAR 角色配方（导航族口径）。绑定器独占 background/border/borderWidth/

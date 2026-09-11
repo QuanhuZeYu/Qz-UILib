@@ -38,7 +38,11 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav.MemberIssues;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Item;
 import club.heiqi.uilib.ui.scene.control.search.CategoryNavPane;
 import club.heiqi.uilib.ui.scene.control.search.MemberGrid;
+import club.heiqi.uilib.ui.scene.control.search.GridMetrics;
+import club.heiqi.uilib.ui.scene.control.search.PickerDensityPreference;
+import club.heiqi.uilib.ui.scene.control.search.PickerDensityTokens;
 import club.heiqi.uilib.ui.scene.control.search.PickerInfoBar;
+import club.heiqi.uilib.ui.scene.control.search.PickerMetrics;
 import club.heiqi.uilib.ui.scene.control.search.SearchResultList;
 import club.heiqi.uilib.ui.scene.control.search.VariantChooser;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
@@ -46,6 +50,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.LogicalBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -122,14 +127,25 @@ public final class ScenePickerPanel {
     private enum FocusIntent { NONE, SEARCH_INPUT, GRID, VARIANTS }
 
     private static final int PANEL_PADDING = SceneChromeTokens.PAD_MD;
-    private static final int PANEL_WIDTH_PERCENT = 70;
-    private static final int PANEL_HEIGHT_PERCENT = 70;
     private static final int SEARCH_INPUT_WIDTH_PERCENT = 35;
-    private static final int TOP_BAR_HEIGHT = 48;
-    /** 已选择编辑底部横带高：header 48 + 两行成员卡片（96×2 + gap 8）。 */
-    private static final int MEMBERS_PANEL_HEIGHT = 248;
-    /** 底部横带 header 行高（含 PAD_MD 上下 padding 与 32 高按钮）。 */
-    private static final int MEMBERS_HEADER_HEIGHT = 48;
+    /**
+     * 无宿主逻辑盒时的面板百分比回退（P5 偏差 D-P5-3）。
+     *
+     * <p>生产宿主（{@code McScreenBridge} → {@code AbstractSceneHostWidget.render}）每帧发布逻辑盒，
+     * 因此派生尺寸路径在生产上恒生效。只有自建 {@link SceneRuntime} 而不发布逻辑盒的装置
+     * （历史集成测试直接布局一个固定画布）会走到这里 —— 那种装置里"视口"不是一个已知事实，
+     * 派生链没有输入，只能沿用容器百分比合同。</p>
+     *
+     * <p><b>删除条件与时机</b>：当全部 UILib 测试装置改为发布逻辑盒后删除本回退与
+     * {@link #viewportSizing} 分支（P6 收口时随测试装置改造一并清理）。</p>
+     */
+    private static final int PANEL_WIDTH_PERCENT_FALLBACK = 70;
+    /** 无宿主逻辑盒时的面板高度百分比回退（同 {@link #PANEL_WIDTH_PERCENT_FALLBACK}）。 */
+    private static final int PANEL_HEIGHT_PERCENT_FALLBACK = 70;
+    /** 无宿主逻辑盒时的顶栏高回退（P5 前的固定值）。 */
+    private static final int TOP_BAR_HEIGHT_FALLBACK = 48;
+    /** 无宿主逻辑盒时的成员带高回退（P5 前的固定值）。 */
+    private static final int MEMBERS_PANEL_HEIGHT_FALLBACK = 248;
     private static final OverlayDismissPolicy MAIN_PANEL_POLICY = new OverlayDismissPolicy(true, true, false);
     /** 恒真 enabled：宿主外层卡片自身没有禁用语义（禁用反馈由内部控件各自表达），与 FormPageShell PANEL 先例同口径。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
@@ -206,6 +222,13 @@ public final class ScenePickerPanel {
         private final ReadableSignal<PickerQuery> sourceQuery;
         /** 候选源版本信号（装配层的 {@code PickerRevisionBridge}）：变化即重查（可为 null = 不订阅）。 */
         private final ReadableSignal<PickerSourceVersion> sourceVersion;
+        /**
+         * 密度档位用户偏好信号（P5 §1.4 / Q5；可为 null = {@link PickerDensityPreference#AUTO}）。
+         *
+         * <p>是<b>动态注入</b>面：配置页改档位只重派生几何、不重建面板（Q5「提供手动覆盖入口」的
+         * UILib 侧落点；Miner 只负责把偏好喂进这个信号）。</p>
+         */
+        private final ReadableSignal<PickerDensityPreference> densityPreference;
 
         /**
          * 创建受控居中 70% picker 面板属性（保留旧组件六参必填语义）。
@@ -251,6 +274,7 @@ public final class ScenePickerPanel {
             this.searchMaxItems = CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS;
             this.sourceQuery = null;
             this.sourceVersion = null;
+            this.densityPreference = null;
         }
 
         private Props(Builder builder) {
@@ -283,6 +307,7 @@ public final class ScenePickerPanel {
             searchMaxItems = builder.searchMaxItems;
             sourceQuery = builder.sourceQuery;
             sourceVersion = builder.sourceVersion;
+            densityPreference = builder.densityPreference;
             if (candidateSource != null && sourceQuery == null) {
                 throw new IllegalArgumentException("candidateSource 非 null 时必须提供 sourceQuery（面板自建窗口切片）");
             }
@@ -364,6 +389,8 @@ public final class ScenePickerPanel {
         public ReadableSignal<PickerQuery> sourceQuery() { return sourceQuery; }
         /** @return 候选源版本信号（可为 null = 不订阅版本变化） */
         public ReadableSignal<PickerSourceVersion> sourceVersion() { return sourceVersion; }
+        /** @return 密度档位用户偏好信号（可为 null = AUTO） */
+        public ReadableSignal<PickerDensityPreference> densityPreference() { return densityPreference; }
 
         /** 全屏 picker 面板可选属性 builder。 */
         public static final class Builder {
@@ -396,6 +423,7 @@ public final class ScenePickerPanel {
             private ReadableSignal<Integer> dimensionIndex;
             private Consumer<Integer> onDimensionChange = ignored -> { };
             private GridProps grid = GridProps.DEFAULT;
+            private ReadableSignal<PickerDensityPreference> densityPreference;
             private boolean variantSearchEnabled;
             private boolean resultsCategoryFiltered;
             private PickerCandidateSource candidateSource;
@@ -498,9 +526,23 @@ public final class ScenePickerPanel {
                 return this;
             }
 
-            /** 设置中栏网格布局参数。 */
+            /** 设置中栏网格布局参数（P5 起仅作为「无派生度量通道」时的兼容缺省）。 */
             public Builder grid(GridProps value) {
                 grid = Objects.requireNonNull(value, "grid"); return this;
+            }
+
+            /**
+             * 设置密度档位用户偏好信号（P5 §1.4；null = AUTO）。
+             *
+             * <p>Q5 的「提供手动覆盖入口」在 UILib 侧的落点：偏好是<b>信号</b>而非构造期常量，
+             * 改档位只重派生几何、不重建面板（也无需关闭重开）。</p>
+             *
+             * @param value 偏好信号（可为 null = AUTO）
+             * @return this
+             */
+            public Builder densityPreference(ReadableSignal<PickerDensityPreference> value) {
+                densityPreference = value;
+                return this;
             }
 
             /** 启用变体浮层内的变体搜索输入。 */
@@ -668,10 +710,17 @@ public final class ScenePickerPanel {
             //   SPI 路径 = 面板自建 pageProvider 闭包按窗口切片拉取，面板不持有候选全集（ADR §3.2）。
             Feed feed = props.candidateSource() == null ? legacyFeed(props, categoryKey) : sourceFeed(props);
 
+            // P5 派生度量（三分量：逻辑盒 + 字号倍率 + 密度偏好）：在内容 Owner 内创建 ⇒
+            // 关闭即随 disposeMounted() 释放，不做跨开合常驻；打开时算一次、之后只在三个输入
+            // 变化时重派生（无静态快照，P5 I-6）。
+            ReadableSignal<PickerMetrics> metrics = createMetrics(rt, props);
+            // 视口尺寸事实是否可用（见 PANEL_WIDTH_PERCENT_FALLBACK 的偏差说明）。
+            boolean viewportSizing = rt.logicalBox().get().isPresent();
             SceneNode content = mainPanel(rt, props, closeRequest, feed,
                     memberIssues, categoryKey, categoryWriter, gridHighlight,
                     addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
-                    gridViewportHolder, windowModelHolder, variantsOpen, activeCandidate, mode, selectedKeys);
+                    gridViewportHolder, windowModelHolder, variantsOpen, activeCandidate, mode,
+                    selectedKeys, metrics, viewportSizing);
             recordPhase(UiPerfMarkers.PHASE_PICKER_OPEN_MAIN, startedAtNanos);
 
             // 变体选择浮层（模块化）：mode/selectedKeys 受控，草稿查询在模块内部。
@@ -733,7 +782,9 @@ public final class ScenePickerPanel {
                                        Signal<Boolean> variantsOpen,
                                        Signal<SearchPickerData.Candidate> activeCandidate,
                                        Signal<SearchPickerData.SelectionMode> mode,
-                                       Signal<List<String>> selectedKeys) {
+                                       Signal<List<String>> selectedKeys,
+                                       ReadableSignal<PickerMetrics> metrics,
+                                       boolean viewportSizing) {
         SceneNode scrim = SceneNode.column();
         scrim.setFillParentWidth(true);
         scrim.setFillParentHeight(true);
@@ -748,8 +799,15 @@ public final class ScenePickerPanel {
         });
 
         SceneNode root = SceneNode.column();
-        root.setPercentWidth(PANEL_WIDTH_PERCENT);
-        root.setPercentHeight(PANEL_HEIGHT_PERCENT);
+        // P5 §1.2：面板盒不再是裸 70% 百分比，而是「逻辑盒 + 字号 + 密度」派生出来的确定尺寸
+        // （比例取自 70/78/84/92 阶梯，小盒满屏；由 PickerMetrics 在支配约束下求解）。
+        // 用逻辑 px 而非百分比，是因为列数预算必须在挂载前算得出来（ADR §3.4 判据① 无收敛帧）。
+        if (viewportSizing) {
+            applyPanelBox(rt, root, metrics);
+        } else {
+            root.setPercentWidth(PANEL_WIDTH_PERCENT_FALLBACK);
+            root.setPercentHeight(PANEL_HEIGHT_PERCENT_FALLBACK);
+        }
         // 宿主外层恰装一颗 PANEL 配方表面（契约 §4.1「PANEL（外）」，G14 预裁决 2）：
         // background/border/borderWidth/cornerRadius/surfaceElevation/backdrop 六项归
         // SceneSurfaceBinder 独占；旧 applyPanelChrome(root, RADIUS_LG) 实色四件套写入者已删除。
@@ -766,7 +824,8 @@ public final class ScenePickerPanel {
         root.setPadding(PANEL_PADDING);
         root.setGap(PANEL_PADDING);
 
-        root.appendChild(topBar(rt, props, feed, gridHighlight, searchFocusTarget));
+        root.appendChild(topBar(rt, props, feed, gridHighlight, searchFocusTarget, metrics,
+                viewportSizing));
 
         // 上容器：选择功能（左分类导航 | 中候选列表 + 信息条），flexGrow 占满剩余高度。
         SceneNode selectionArea = SceneNode.row();
@@ -774,20 +833,23 @@ public final class ScenePickerPanel {
         selectionArea.setGap(PANEL_PADDING);
         selectionArea.appendChild(CategoryNavPane.create(rt, new CategoryNavPane.Props(
                 feed.categoryRows(), categoryKey, props.enabled(), categoryWriter,
-                props.panelPresentation().emptyCategory())));
+                props.panelPresentation().emptyCategory(),
+                viewportSizing
+                        ? Computed.create(() -> Integer.valueOf(metrics.get().panel().navWidthPx()))
+                        : null)));
         // 悬停项：驱动信息条文本（悬浮 tooltip 已被固定信息条取代）。
         Signal<SceneVirtualGrid.Item> hoveredItem = Signal.create(null);
         selectionArea.appendChild(centerColumn(rt, props, closeRequest, feed,
                 gridHighlight, gridFocusTarget, gridViewportHolder, windowModelHolder, hoveredItem,
                 variantsOpen, activeCandidate, mode, selectedKeys,
-                addingMember, editingMember, focusIntent));
+                addingMember, editingMember, focusIntent, metrics, viewportSizing));
         root.appendChild(selectionArea);
 
         // 下容器：已选择编辑（仅 listMembers 挂全宽底部横带）。
         if (props.listMembers()) {
             root.appendChild(membersPanel(rt, props, memberIssues, gridHighlight,
                     addingMember, editingMember, focusIntent, variantsOpen,
-                    activeCandidate, mode, selectedKeys));
+                    activeCandidate, mode, selectedKeys, metrics, viewportSizing));
         }
         scrim.appendChild(root);
         return scrim;
@@ -796,9 +858,17 @@ public final class ScenePickerPanel {
     /** 顶栏：标题 + 搜索输入 + 分类维度分段 + 结果统计。 */
     private static SceneNode topBar(SceneRuntime rt, Props props, Feed feed,
                                     Signal<Integer> gridHighlight,
-                                    SceneNode[] searchFocusTarget) {
+                                    SceneNode[] searchFocusTarget,
+                                    ReadableSignal<PickerMetrics> metrics,
+                                    boolean viewportSizing) {
         SceneNode bar = SceneNode.row();
-        bar.setPreferredHeight(TOP_BAR_HEIGHT);
+        if (viewportSizing) {
+            bar.setPreferredHeight(metrics.get().panel().headerHeightPx());
+            rt.bind(metrics, m -> Effect.untrack(
+                    () -> bar.setPreferredHeight(m.panel().headerHeightPx())));
+        } else {
+            bar.setPreferredHeight(TOP_BAR_HEIGHT_FALLBACK);
+        }
         bar.setCrossAxisAlign(CrossAxisAlign.CENTER);
         bar.setGap(SceneChromeTokens.GAP_MD);
         bar.setHitTestable(false);
@@ -838,8 +908,15 @@ public final class ScenePickerPanel {
         rt.bind(secondaryForeground, summary::setTextColor);
         // 结果统计 = 当前查询总量（SPI 路径 = source.size()/min(matchCount,maxItems)；旧路径 = 过滤后候选数），
         // 不再读"全表长度"——切片路径下全表根本不存在（ADR §3.5 高亮回夹同口径）。
-        rt.bindText(summary, Computed.create(() -> props.presentation().resultSummary(
-                feed.totalItems().get().intValue())));
+        // 统计行 = 「N 个结果」+ 同一行右侧的截断提示（P5 §3.3「与统计同行」）。
+        // 截断真值来自数据面（SPI 路径 = matchCount > searchMaxItems 的本地判定；旧路径 =
+        // results.truncated()），恒 false 时不追加任何字符（不显示空段）。
+        rt.bindText(summary, Computed.create(() -> {
+            String base = props.presentation().resultSummary(
+                    feed.totalItems().get().intValue());
+            return feed.truncated().get().booleanValue()
+                    ? base + "  ·  " + props.panelPresentation().truncatedResults() : base;
+        }));
         summary.setWidthSizing(WidthSizing.SHRINK);
         bar.appendChild(summary);
         return bar;
@@ -885,7 +962,9 @@ public final class ScenePickerPanel {
                                           Signal<List<String>> selectedKeys,
                                           Signal<Boolean> addingMember,
                                           Signal<Boolean> editingMember,
-                                          Signal<FocusIntent> focusIntent) {
+                                          Signal<FocusIntent> focusIntent,
+                                          ReadableSignal<PickerMetrics> metrics,
+                                          boolean viewportSizing) {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
         center.setGap(SceneChromeTokens.GAP_SM);
@@ -895,14 +974,35 @@ public final class ScenePickerPanel {
         center.setClipChildren(true);
         center.setPadding(SceneChromeTokens.PAD_SM);
 
+        // 错误行：<b>仅非空时挂载</b>（P5 §3.3）。现状空串也占一行高 ⇒ 结果区常态少一行；
+        // 改为条件挂载后，出现错误时结果区自动让位（rt.show 的挂载/卸载即高度让位），
+        // 消失即回收节点。错误行取主题 errorText 语义前景（G19/P-02 收编：经
+        // SceneThemes.errorText 公共入口，主题切换自动重派生，不重建节点）。
+        // 错误行：<b>非空才占位</b>（P5 §3.3）。现状空串也占一行高 ⇒ 结果区常态少一行。
+        // 偏离说明（D-P5-4）：规格写「仅非空时挂载」，本实现取「条件占位」—— 节点常驻、
+        // 空串时 preferredHeight = 0（不占一行、空文本也不产生命令），非空时取一行行高。
+        // 不卸载节点的理由是结构性的：中心列的子下标是既有宿主与集成测试定位结果区的契约
+        // （rt.show 会把内容插在 anchor 之后，卸载/挂载会整体移动兄弟下标 —— 实测会让
+        // 「宿主变矮后列表收缩」与按子下标取网格的两类用例错位）。可见效果与规格一致：
+        // 空错误态不消耗任何垂直空间。
         SceneNode error = text(rt, "");
         error.setHitTestable(false);
         // 错误行取主题 errorText 语义前景（G19/P-02 收编：经 SceneThemes.errorText 公共入口，
         // 主题切换自动重派生，不重建节点）。
         rt.bind(SceneThemes.errorText(rt), error::setTextColor);
         rt.bindText(error, props.error());
+        rt.bind(props.error(), value -> Effect.untrack(() -> error.setPreferredHeight(
+                safeString(value).isEmpty() ? 0 : metrics.get().grid().lineHeightPx())));
+        rt.bind(metrics, m -> Effect.untrack(() -> error.setPreferredHeight(
+                safeString(props.error().get()).isEmpty() ? 0 : m.grid().lineHeightPx())));
         center.appendChild(error);
 
+        // 挂载前预算宽（ADR §3.4 判据①）：面板盒几何链已在挂载前算得结果区内宽，
+        // 网格因此首帧即正确列数，不存在「1 列挂载 N 行 → 收敛重建」的收敛帧（ST-01）。
+        ReadableSignal<Integer> widthBudget = viewportSizing
+                ? Computed.create(() -> Integer.valueOf(metrics.get().panel().listWidthPx())) : null;
+        ReadableSignal<GridMetrics> gridMetrics = viewportSizing
+                ? Computed.create(() -> metrics.get().grid()) : null;
         SearchResultList.Result list = SearchResultList.create(rt, new SearchResultList.Props(
                 feed.listItems(), props.grid().columns(), props.grid().cellWidth(), props.grid().cellHeight(),
                 props.grid().gapX(), props.grid().gapY(),
@@ -917,9 +1017,11 @@ public final class ScenePickerPanel {
                 feed.pageProvider(),
                 // 旧路径传 -1 = 取 items.size()；SPI 路径经动态总量信号给（见 totalItemsSignal）。
                 SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0,
-                // GridProps.visibleRows 由此生效：视口未布局时作为首帧挂载预算（布局后以实际视口高度为权威）。
-                props.grid().visibleRows(), null,
-                feed.totalItems()));
+                // 可视行数预算：优先用 P5 派生的可视行数（与结果区高/stride 同源），
+                // 布局后仍以实际视口高度为权威。
+                viewportSizing ? Math.max(1, metrics.get().visibleRows())
+                        : props.grid().visibleRows(),
+                widthBudget, feed.totalItems(), gridMetrics));
         // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
         //（scrollable 子节点不能走 flexGrow 分配，模块内已对 root 设置）。
         gridViewportHolder[0] = list.viewport();
@@ -928,21 +1030,29 @@ public final class ScenePickerPanel {
         center.appendChild(list.root());
         windowModelHolder.set(list.windowModel());
 
-        // 固定信息条：悬停项完整 label + 稳定 key（悬浮 tooltip 的替代物，无浮层生命周期）。
+        // 信息条（常驻、内容永不空 —— 偏差 D-P5-2 与 P5 §3.3「不允许空条」）：
+        //   悬停 -> 单行「label · ID: key」（稳定 ID 必须可见，修 T5 UX-11 的两行被裁）；
+        //   空闲 -> 操作提示 hoverHint（不再是一条空条）。
+        // 单行形态同时是 Q2 的取法：竖向只占 round(fs*2)，不会为第二行再抬高度。
         ReadableSignal<String> infoText = Computed.create(() -> {
             SceneVirtualGrid.Item item = hoveredItem.get();
-            if (item != null) {
-                // O(1)：标签随 Item 携带（渲染层负责省略号），不再对 filtered 全表反查。
-                String label = item.label() == null ? String.valueOf(item.key()) : item.label();
-                String stableKey = String.valueOf(item.key());
-                String prefix = props.panelPresentation().tooltipPrefix();
-                return prefix.isEmpty() ? label + "\n" + stableKey : label + "\n" + prefix + stableKey;
+            String prefix = props.panelPresentation().tooltipPrefix();
+            if (item == null) {
+                return props.panelPresentation().hoverHint();
             }
-            // 无悬停时承担「结果被搜索上限截断」的常驻提示（P5 §3.3：限量必须渲染提示）：
-            // 截断真值来自数据面（SPI 路径 = matchCount > searchMaxItems 的本地判定；旧路径 = results.truncated()）。
-            return feed.truncated().get().booleanValue() ? props.panelPresentation().truncatedResults() : "";
+            // O(1)：标签随 Item 携带（渲染层负责省略号），不再对 filtered 全表反查。
+            String label = item.label() == null ? String.valueOf(item.key()) : item.label();
+            String stableKey = String.valueOf(item.key());
+            return props.panelPresentation().infoBarIdLabel(label,
+                    prefix.isEmpty() ? stableKey : prefix + stableKey);
         });
-        center.appendChild(PickerInfoBar.create(rt, new PickerInfoBar.Props(infoText, props.enabled())));
+        SceneNode infoBar = PickerInfoBar.create(rt, new PickerInfoBar.Props(infoText, props.enabled()));
+        if (viewportSizing) {
+            infoBar.setPreferredHeight(metrics.get().panel().infoBarHeightPx());
+            rt.bind(metrics, m -> Effect.untrack(
+                    () -> infoBar.setPreferredHeight(m.panel().infoBarHeightPx())));
+        }
+        center.appendChild(infoBar);
         return center;
     }
 
@@ -956,9 +1066,19 @@ public final class ScenePickerPanel {
                                           Signal<Boolean> variantsOpen,
                                           Signal<SearchPickerData.Candidate> activeCandidate,
                                           Signal<SearchPickerData.SelectionMode> mode,
-                                          Signal<List<String>> selectedKeys) {
+                                          Signal<List<String>> selectedKeys,
+                                          ReadableSignal<PickerMetrics> metrics,
+                                          boolean viewportSizing) {
         SceneNode panel = SceneNode.column();
-        panel.setPreferredHeight(MEMBERS_PANEL_HEIGHT);
+        // 成员带高度由 PickerMetrics 派生（空态折叠为一行提示、有成员时最多 2 行 + header），
+        // 不再是固定 248：720p 下现状 248 占面板 49% 会把结果区压到 1 行（T5 UX-01）。
+        if (viewportSizing) {
+            panel.setPreferredHeight(metrics.get().panel().membersHeightPx());
+            rt.bind(metrics, m -> Effect.untrack(
+                    () -> panel.setPreferredHeight(m.panel().membersHeightPx())));
+        } else {
+            panel.setPreferredHeight(MEMBERS_PANEL_HEIGHT_FALLBACK);
+        }
         // G14 预裁决 1 同口径：底部横带原 applyOuterShell 的表面写入（边框/圆角/裁剪底语义）
         // 已删除，成员区表面归 MemberGrid 的 GROUP 底座一颗；clip 属布局合同保留。
         panel.setClipChildren(true);
@@ -967,7 +1087,8 @@ public final class ScenePickerPanel {
         ReadableSignal<Integer> secondaryForeground = themedForeground(rt, props, true);
 
         SceneNode header = SceneNode.row();
-        header.setPreferredHeight(MEMBERS_HEADER_HEIGHT);
+        header.setPreferredHeight(viewportSizing
+                ? metrics.get().panel().headerHeightPx() : TOP_BAR_HEIGHT_FALLBACK);
         header.setPadding(SceneChromeTokens.PAD_MD);
         header.setCrossAxisAlign(CrossAxisAlign.CENTER);
         header.setGap(SceneChromeTokens.GAP_MD);
@@ -1454,6 +1575,91 @@ public final class ScenePickerPanel {
         AtomicReference<ReadableSignal<Integer>> holder = new AtomicReference<ReadableSignal<Integer>>();
         rt.__runRoot(() -> holder.set(createAnchorFontSize(rt, anchor)));
         return holder.get();
+    }
+
+    /**
+     * 把派生面板盒写到宿主外层卡片（P5 §1.2）。
+     *
+     * <p>尺寸用<b>逻辑 px</b>：百分比在挂载前无法回答"结果区有多宽"，而列数预算必须在挂载前
+     * 拿到（ADR §3.4 判据①）。窗口缩放时 {@code metrics} 重派生 → 卡片尺寸即时跟随。</p>
+     *
+     * @param rt      场景运行时
+     * @param root    宿主外层卡片
+     * @param metrics 派生度量信号
+     */
+    private static void applyPanelBox(SceneRuntime rt, SceneNode root,
+                                      ReadableSignal<PickerMetrics> metrics) {
+        root.setPreferredWidth(metrics.get().panel().widthPx());
+        root.setPreferredHeight(metrics.get().panel().heightPx());
+        rt.bind(metrics, m -> Effect.untrack(() -> {
+            root.setPreferredWidth(m.panel().widthPx());
+            root.setPreferredHeight(m.panel().heightPx());
+        }));
+    }
+
+    /**
+     * 创建 P5 派生度量信号（三分量：逻辑盒 + 字号倍率 + 密度偏好）。
+     *
+     * <p>形态是「Signal 持初值 + effect 只在派生输入变化时重写」：初值在挂载前<b>同步</b>算好，
+     * 因此首帧几何（面板尺寸/列数/可视行数）就是稳态值，不存在收敛帧；之后的失效通道是三条 ——
+     * {@link SceneRuntime#logicalBox()}（窗口缩放）、{@link SceneRuntime#fontEpochSignal()}（字号
+     * 倍率/默认字号变化）、密度偏好信号与成员数信号（用户改档位 / 成员增减）。</p>
+     *
+     * <p>用「输入等价」而非对象相等做同值早退：{@code PickerMetrics} 是按输入确定性派生的值对象，
+     * 输入不变则结果逐值相同，无需为它实现 {@code equals}。</p>
+     *
+     * @param rt    场景运行时
+     * @param props 面板属性
+     * @return 派生度量只读信号（非 null）
+     */
+    private static ReadableSignal<PickerMetrics> createMetrics(SceneRuntime rt, Props props) {
+        ReadableSignal<PickerDensityPreference> preference = props.densityPreference();
+        LogicalBox initialBox = rt.logicalBox().get();
+        Signal<PickerMetrics> metrics = Signal.create(PickerMetrics.derive(rt,
+                initialBox.widthPx(), initialBox.heightPx(), rt.getFontScalePercent(),
+                preference == null ? PickerDensityPreference.AUTO : preference.get(),
+                memberRowsFor(props)));
+        rt.bindComputed(() -> {
+            LogicalBox box = rt.logicalBox().get();
+            rt.fontEpochSignal().get();
+            PickerDensityPreference pref = preference == null
+                    ? PickerDensityPreference.AUTO : preference.get();
+            return PickerMetrics.derive(rt, box.widthPx(), box.heightPx(),
+                    rt.getFontScalePercent(), pref, memberRowsFor(props));
+        }, derived -> Effect.untrack(() -> {
+            if (!sameDerivation(metrics.get(), derived)) {
+                metrics.set(derived);
+            }
+        }));
+        return metrics;
+    }
+
+    /** 派生输入等价判定（输入相同 ⇒ 派生结果逐值相同）。 */
+    private static boolean sameDerivation(PickerMetrics a, PickerMetrics b) {
+        return a.logicalWidthPx() == b.logicalWidthPx()
+                && a.logicalHeightPx() == b.logicalHeightPx()
+                && a.fontSizePx() == b.fontSizePx()
+                && a.preference() == b.preference()
+                && a.membersRows() == b.membersRows();
+    }
+
+    /**
+     * 成员行数预算（P5 §1.2）：无成员带 = -1（不占高）、无成员 = 0（折叠为一行提示）、
+     * 有成员 = 最多 2 行（超出由 MemberGrid 内部滚动，成员带不再随成员数无界长高）。
+     *
+     * @param props 面板属性
+     * @return 成员行数预算
+     */
+    private static int memberRowsFor(Props props) {
+        if (!props.listMembers()) {
+            return -1;
+        }
+        return safeMembers(props).isEmpty() ? 0 : PickerDensityTokens.MEMBER_ROWS_MAX;
+    }
+
+    /** null 安全字符串（空串兜底）。 */
+    private static String safeString(String value) {
+        return value == null ? "" : value;
     }
 
     /** 声明值的响应式投影：布局纪元变化即重读（同值由 Computed 记忆化去重）。 */

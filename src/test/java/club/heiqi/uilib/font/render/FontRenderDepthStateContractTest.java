@@ -44,8 +44,10 @@ public class FontRenderDepthStateContractTest {
                 hostMethod.contains("GL11.glDisable(GL11.GL_DEPTH_TEST);"));
 
         assertPreparesBeforeReplay(HUD_ENTRY, "private void renderHudFrame(", "host.render(context,");
+        // P5 §1.1.1：渲染面改由逻辑盒驱动（policy A 下与原生盒同值），回放标记随之更新；
+        // 断言不变：主 UI 状态必须在内容回放之前建立。
         assertPreparesBeforeReplay(MC_SCREEN_ENTRY, "public void drawScreen(",
-                "surface.render(nativeWidth, nativeHeight, context, 0, 0)");
+                "surface.render(logicalWidth, logicalHeight, context, 0, 0)");
     }
 
     /** 断言指定 UI 入口在主内容回放前建立 host 状态。 */

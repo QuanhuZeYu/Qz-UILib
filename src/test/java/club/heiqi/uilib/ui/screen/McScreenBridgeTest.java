@@ -27,8 +27,13 @@ public class McScreenBridgeTest {
         Assert.assertTrue("渲染上下文工厂必须继续收到完整 framebuffer 高度与指针坐标",
                 bridge.contains("UiHostRenderSupport.createRenderContext(nativeWidth, nativeHeight,")
                         && bridge.contains("pointerX, pointerY, partialTicks"));
-        Assert.assertTrue("通用 host 必须把完整 framebuffer 高度交给 surface",
-                bridge.contains("surface.render(nativeWidth, nativeHeight, context, 0, 0)"));
+        // P5 §1.1.1：宿主边界把 nativeBox + GUI Scale 合成为 logicalBox，渲染面按<B>逻辑盒</B>驱动。
+        // 断言不降级：policy A（默认）下逻辑盒恒等于原生盒，等价于旧的「完整 framebuffer 高度」；
+        // 同时必须存在唯一的合成点调用（GUI Scale 只允许在这里被接触）。
+        Assert.assertTrue("宿主边界必须经唯一合成点把 nativeBox + GUI Scale 折成逻辑盒",
+                bridge.contains("HostViewportScale.compose(nativeWidth, nativeHeight, scaleFactor)"));
+        Assert.assertTrue("通用 host 必须把完整逻辑盒交给 surface",
+                bridge.contains("surface.render(logicalWidth, logicalHeight, context, 0, 0)"));
         Assert.assertTrue("ModernConfigScreen 必须直接使用原 surface，不得裁掉底部世界",
                 modernConfig.contains("super(parentScreen, surface)")
                         && !modernConfig.contains("ViewportSurface")

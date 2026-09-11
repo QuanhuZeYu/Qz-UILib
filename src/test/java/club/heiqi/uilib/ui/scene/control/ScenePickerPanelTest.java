@@ -1008,8 +1008,13 @@ public class ScenePickerPanelTest {
     }
 
     /**
-     * M4：信息条 O(1) 读 item.label()（完整标签，省略由渲染层承担）+ 稳定 key；
-     * 无悬停时承担「结果被搜索上限截断」的常驻提示（P5 §3.4 D4 / §3.3，A-06 文案面）。
+     * M4（P5 改写）：信息条 O(1) 读 {@code item.label()}（完整标签，省略由渲染层承担）+ 稳定 key，
+     * 且为<b>单行</b>形态（稳定 ID 必须可见，修 T5 UX-11）；截断提示按 P5 §3.3 迁到<b>顶栏统计行</b>
+     * （「与统计同行」），信息条在无悬停时显示操作提示而不是截断文案。
+     *
+     * <p>改写理由：P5 §3.3 把截断收敛到顶栏统计行、把空闲信息条收敛为操作提示，
+     * 原断言（无悬停 -> 信息条出现截断文案）与新语义冲突。断言不降级：截断文案仍必须有可见落点
+     * （改在顶栏断言），稳定 key 仍必须可见（改在悬停态断言）。</p>
      */
     @Test
     public void infoBarReadsFullLabelAndShowsTruncationHint() {
@@ -1034,9 +1039,13 @@ public class ScenePickerPanelTest {
         layoutAll();
 
         SceneNode scrim = overlayRoot(0);
+        SceneNode topBar = panelCard(scrim).__getChildren().get(0);
+        Assert.assertTrue("截断真值 -> 顶栏统计行出现截断提示（P5 §3.3）",
+                collectText(topBar).contains(props.panelPresentation().truncatedResults()));
+
         SceneNode infoBar = centerColumn(scrim).__getChildren().get(2);
-        Assert.assertTrue("无悬停 + 截断 → 常驻截断提示",
-                collectText(infoBar).contains(props.panelPresentation().truncatedResults()));
+        Assert.assertEquals("无悬停 -> 信息条显示操作提示（不允许空条）",
+                props.panelPresentation().hoverHint(), collectText(infoBar));
 
         SceneNode grid = result.grid().get();
         int[] center = centerOf(gridCell(grid, 0));
@@ -2019,5 +2028,108 @@ public class ScenePickerPanelTest {
         rt.flush();
         Assert.assertEquals("卸载后 effect 回到基线",
                 baseline, ReactiveTestProbe.registeredEffectCount());
+    }
+
+    // ==================== P5 派生尺寸 / 密度（三分量） ====================
+
+    /**
+     * P5 §1.1：宿主发布逻辑盒后，面板几何由「逻辑盒 + 字号 + 密度」派生，不再是裸 70%。
+     *
+     * <p>本装置画布 800×600 属<b>小盒降级</b>（&lt;1280×720）：面板 100%（满屏留 8px 边距）、
+     * 强制紧凑档、信息条不占位 —— 三条都是 §1.5.3 的强制项。</p>
+     */
+    @Test
+    public void derivedSizingUsesHostLogicalBoxAndDegradesInSmallBox() {
+        rt.__setViewportLogicalBox(W, H);
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        openPanel(f);
+        LayoutBox card = (LayoutBox) panelCard(overlayRoot(0)).getCachedLayout();
+        Assert.assertNotNull("派生尺寸路径下卡片必须已布局", card);
+        Assert.assertEquals("小盒面板宽 = 逻辑盒宽 - 2*margin", W - 16, card.getWidth());
+        Assert.assertEquals("小盒面板高 = 逻辑盒高 - 2*margin", H - 16, card.getHeight());
+        Assert.assertEquals("小盒信息条不占位（P5 §1.5.3）", 0,
+                centerColumn(overlayRoot(0)).__getChildren().get(2).getPreferredHeight());
+    }
+
+    /**
+     * P5 §1.1 / ADR §3.4 判据①：结果网格列数在<b>挂载前</b>由面板盒预算算好 ——
+     * 首帧列数 == 稳态列数，不存在「1 列挂载 N 行 → 收敛重建」的收敛帧（T5 ST-01）。
+     */
+    @Test
+    public void preLayoutBudgetGivesSteadyStateColumnsOnFirstLayout() {
+        rt.__setViewportLogicalBox(1920, 1080);
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        f.openSignal.set(Boolean.TRUE);
+        rt.flush();
+        // 只跑一次布局 + 一次 flush：这就是「首帧」。
+        layoutEngine.layout(sceneRoot, new Constraints(W, H));
+        for (SceneOverlayHost.Entry entry : rt.getOverlayHost().bottomFirst()) {
+            layoutEngine.layout(entry.getRoot(), new Constraints(1920, 1080));
+        }
+        rt.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+        rt.flush();
+        SceneGridWindow.WindowModel first = f.result.windowModel().get();
+        Assert.assertNotNull("首帧即应有窗口模型", first);
+        // 收敛帧的特征是首帧列数 == 1；预算路径下必须直接落在稳态列数（> 1）。
+        Assert.assertTrue("首帧列数必须是预算列数（非 1 的收敛值），实际 " + first.columns(),
+                first.columns() > 1);
+        // 再布局若干次：列数不得再变（没有收敛过程）。
+        layoutAll();
+        layoutAll();
+        Assert.assertEquals("后续帧列数不变（无收敛帧）", first.columns(),
+                f.result.windowModel().get().columns());
+        Assert.assertEquals("行数不变", first.totalRows(), f.result.windowModel().get().totalRows());
+    }
+
+    /**
+     * P5 H1/H2：逻辑盒与字号倍率是<b>运行期</b>失效通道 —— 变化即重派生几何，无需关闭重开。
+     */
+    @Test
+    public void logicalBoxAndFontScaleChangesRederiveGeometryLive() {
+        rt.__setViewportLogicalBox(W, H);
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        openPanel(f);
+        LayoutBox small = (LayoutBox) panelCard(overlayRoot(0)).getCachedLayout();
+        Assert.assertEquals(W - 16, small.getWidth());
+
+        // 窗口放大到 1920×1080：离开小盒降级，面板按 70% 阶梯（1344×756）。
+        rt.__setViewportLogicalBox(1920, 1080);
+        rt.flush();
+        layoutAll();
+        LayoutBox large = (LayoutBox) panelCard(overlayRoot(0)).getCachedLayout();
+        Assert.assertEquals("逻辑盒变化 -> 面板宽即时重派生", 1344, large.getWidth());
+        Assert.assertEquals("逻辑盒变化 -> 面板高即时重派生", 756, large.getHeight());
+
+        // 字号倍率 150%：字号进入派生链（顶栏高 = clamp(round(fs*3.67), 36, 64)，fs 12->18 时 44->64）。
+        int headerBefore = panelCard(overlayRoot(0)).__getChildren().get(0).getPreferredHeight();
+        Assert.assertEquals("前置：fs=12 顶栏高 44", 44, headerBefore);
+        rt.setFontScale(150);
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("字号倍率变化 -> 顶栏高即时重派生（fs=18 -> 64）", 64,
+                panelCard(overlayRoot(0)).__getChildren().get(0).getPreferredHeight());
+        Assert.assertNotNull("字号倍率变化后窗口模型仍可用", f.result.windowModel().get());
+        rt.setFontScale(100);
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("倍率回退 -> 顶栏高回 44", 44,
+                panelCard(overlayRoot(0)).__getChildren().get(0).getPreferredHeight());
+    }
+
+    /**
+     * P5 §3.3：信息条内容永不空 —— 空闲态显示操作提示，悬停态显示「label · ID」（单行）。
+     */
+    @Test
+    public void infoBarIsNeverEmptyAndShowsStableIdOnHover() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
+        openPanel(f);
+        SceneNode infoBar = centerColumn(overlayRoot(0)).__getChildren().get(2);
+        SceneNode label = infoBar.__getChildren().get(0);
+        Assert.assertEquals("空闲态 = 操作提示（不允许空条）",
+                SearchPickerPanelPresentation.defaultEnglish().hoverHint(), label.getText());
+        Assert.assertEquals("信息条恒为单行省略（P5 §3.3）", 1, label.getMaxLines());
+        Assert.assertTrue("信息条开启省略号", label.isEllipsis());
+        Assert.assertEquals("悬停前信息条高 = 派生值（fs=12 -> 24）",
+                PickerInfoBar.INFO_BAR_HEIGHT, infoBar.getPreferredHeight());
     }
 }

@@ -126,8 +126,10 @@ public class ScenePickerPanelSpiWindowTest {
         Assert.assertTrue("搜索 lane 必须统计真实命中数", source.matchCountCalls >= 1);
         Assert.assertTrue("请求量不得超过搜索上限：" + source.lastPageLimit,
                 source.lastPageLimit <= SEARCH_MAX_ITEMS);
-        Assert.assertTrue("截断必须明示（信息条文案）：" + allText(centerColumn(f.panelRoot())),
-                allText(centerColumn(f.panelRoot()))
+        // P5 §3.3：截断提示落在<b>顶栏统计行右侧</b>（「与统计同行」），不再占用信息条。
+        // 断言不降级：截断文案仍必须有可见落点。
+        Assert.assertTrue("截断必须明示（顶栏统计行）：" + allText(f.panelRoot()),
+                allText(f.panelRoot())
                         .contains(f.panelPresentation().truncatedResults()));
 
         source.textHits = 10;
@@ -136,7 +138,7 @@ public class ScenePickerPanelSpiWindowTest {
         layoutAll();
         Assert.assertEquals("命中数低于上限时总量 = 命中数", 10, windowModel(f).totalItems());
         Assert.assertFalse("未截断时不得出现截断提示",
-                allText(centerColumn(f.panelRoot()))
+                allText(f.panelRoot())
                         .contains(f.panelPresentation().truncatedResults()));
     }
 

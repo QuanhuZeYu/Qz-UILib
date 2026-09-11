@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInputFrame;
 import club.heiqi.uilib.ui.scene.input.SceneInputRouter;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
+import club.heiqi.uilib.ui.scene.layout.LogicalBox;
 import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.ui.scene.node.Invalidation;
 import club.heiqi.uilib.ui.scene.node.SceneFontEnvironment;
@@ -105,6 +106,20 @@ public class SceneRuntime implements SceneFontEnvironment {
 
     /** 环境版本号：默认字号与倍率任一变化即递增（节点解析缓存的缓存代）。 */
     private long fontEpoch;
+
+    /**
+     * 字号环境版本的可订阅投影（P5）：{@code fontEpoch} 本身是窄读口（{@link #fontEpoch()}），
+     * 不可订阅。面板/控件的「字号派生几何」需要一条<b>失效通道</b>才能在倍率变化时重派生，
+     * 本信号即该通道（与 {@code fontEpoch++} 同步抬升，同值去重）。
+     */
+    private final Signal<Long> fontEpochSignal = Signal.create(Long.valueOf(0L));
+
+    /**
+     * 宿主视口逻辑盒（P5 §1.1）：由宿主边界经 {@link #__setViewportLogicalBox} 写入，
+     * 内部闭环只读本信号。初值 {@link LogicalBox#EMPTY}（未渲染过 = 无尺寸事实）。
+     */
+    private final Signal<LogicalBox> logicalBoxSignal =
+            Signal.create(LogicalBox.EMPTY);
 
     /** 已登记环境根（宿主装配时写入环境的树根）；恒等语义，随宿主卸载摘除。 */
     private final Set<SceneNode> fontEnvironmentRoots =
@@ -394,9 +409,10 @@ public class SceneRuntime implements SceneFontEnvironment {
         }
     }
 
-    /** 环境变更广播：epoch++ 并对所有已登记环境根做向下失效。 */
+    /** 环境变更广播：epoch++（含可订阅投影）并对所有已登记环境根做向下失效。 */
     private void broadcastFontEnvironmentChange() {
         fontEpoch++;
+        fontEpochSignal.set(Long.valueOf(fontEpoch));
         for (SceneNode root : fontEnvironmentRoots) {
             root.__invalidateFontSubtree();
         }
@@ -1259,6 +1275,40 @@ public class SceneRuntime implements SceneFontEnvironment {
      */
     public ReadableSignal<Integer> layoutDoneSignal() {
         return layoutDoneSignal;
+    }
+
+    // ==================== 宿主视口逻辑盒（P5 §1.1 三分量） ====================
+
+    /**
+     * @return 字号环境版本 signal（只读）：用户倍率/默认字号任一变化即抬升，
+     *         是「字号派生几何」的失效通道（P5 §4.3 铁律 5）
+     */
+    public ReadableSignal<Long> fontEpochSignal() {
+        return fontEpochSignal;
+    }
+
+    /**
+     * @return 宿主视口逻辑盒 signal（只读）：site 坐标空间的唯一尺寸事实，
+     *         初值 {@link LogicalBox#EMPTY}（宿主尚未渲染过）
+     */
+    public ReadableSignal<LogicalBox> logicalBox() {
+        return logicalBoxSignal;
+    }
+
+    /**
+     * 宿主边界写入入口：合成后的逻辑盒（<b>不含</b> GUI Scale —— 折算已在宿主边界完成）。
+     *
+     * <p>只允许宿主渲染入口（{@code ui/scene/host} 与 {@code ui/screen} 的宿主装配）调用；
+     * 内部控件只读 {@link #logicalBox()}。同值写入被 Signal 去重，窗口拖动不会重复触发重派生。</p>
+     *
+     * @param widthPx  逻辑宽（&lt;0 收敛到 0）
+     * @param heightPx 逻辑高（&lt;0 收敛到 0）
+     */
+    public void __setViewportLogicalBox(int widthPx, int heightPx) {
+        LogicalBox next = new LogicalBox(widthPx, heightPx);
+        if (!next.equals(logicalBoxSignal.get())) {
+            logicalBoxSignal.set(next);
+        }
     }
 
     /**

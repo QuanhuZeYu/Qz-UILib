@@ -28,6 +28,8 @@ public final class SearchPickerPanelPresentation {
     private final String close;
     private final String addMember;
     private final String truncatedResults;
+    private final String hoverHint;
+    private final String infoBarIdPattern;
 
     private SearchPickerPanelPresentation(Builder builder) {
         panelTitle = required(builder.panelTitle, "panelTitle");
@@ -42,6 +44,8 @@ public final class SearchPickerPanelPresentation {
         close = required(builder.close, "close");
         addMember = required(builder.addMember, "addMember");
         truncatedResults = required(builder.truncatedResults, "truncatedResults");
+        hoverHint = required(builder.hoverHint, "hoverHint");
+        infoBarIdPattern = required(builder.infoBarIdPattern, "infoBarIdPattern");
     }
 
     /** @return 默认英文扩展文案 */
@@ -71,8 +75,26 @@ public final class SearchPickerPanelPresentation {
     public String close() { return close; }
     /** @return 当前成员区新增按钮文案 */
     public String addMember() { return addMember; }
-    /** @return 结果被搜索上限截断时的提示文案（无悬停项时常驻信息条） */
+    /** @return 结果被搜索上限截断时的提示文案（与顶栏统计同行） */
     public String truncatedResults() { return truncatedResults; }
+
+    /** @return 信息条空闲态的操作提示（P5 §3.3：不允许空条） */
+    public String hoverHint() { return hoverHint; }
+
+    /**
+     * 信息条悬停态单行文案：{@code <label> · <id>}（P5 §3.3 / Q2 单行取法）。
+     *
+     * <p>用 {@code {label}} / {@code {id}} 两个占位符而不是在控件里拼字符串：拼接形态属文案，
+     * 应可被注入方完全控制（中文语境可能想用「名称：X（ID：Y）」这类排布）。</p>
+     *
+     * @param label 候选完整标签
+     * @param id    稳定 ID（可能已含 {@link #tooltipPrefix()} 前缀）
+     * @return 单行信息条文案
+     */
+    public String infoBarIdLabel(String label, String id) {
+        return infoBarIdPattern.replace("{label}", label == null ? "" : label)
+                .replace("{id}", id == null ? "" : id);
+    }
 
     private static String required(String value, String name) {
         if (value == null) throw new IllegalArgumentException(name + " must not be null");
@@ -103,6 +125,8 @@ public final class SearchPickerPanelPresentation {
         private String close = "Close";
         private String addMember = "Add";
         private String truncatedResults = "Results truncated — refine your search";
+        private String hoverHint = "Hover a result to see its full name and ID";
+        private String infoBarIdPattern = "{label} · {id}";
 
         /** 设置全屏面板标题。 */
         public Builder panelTitle(String value) { panelTitle = value; return this; }
@@ -130,6 +154,12 @@ public final class SearchPickerPanelPresentation {
         public Builder addMember(String value) { addMember = value; return this; }
         /** 设置结果截断提示文案（P5 §3.3：限量必须渲染提示）。 */
         public Builder truncatedResults(String value) { truncatedResults = value; return this; }
+
+        /** 设置信息条空闲态操作提示（P5 §3.3：不允许空条）。 */
+        public Builder hoverHint(String value) { hoverHint = value; return this; }
+
+        /** 设置信息条悬停态单行模板（占位符 {label} / {id}）。 */
+        public Builder infoBarIdPattern(String value) { infoBarIdPattern = value; return this; }
 
         /** 构建不可变扩展文案。 */
         public SearchPickerPanelPresentation build() { return new SearchPickerPanelPresentation(this); }

@@ -130,6 +130,9 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
             runtime.__tickFrame(frameTimeNanos);
             w = Math.max(0, w);
             h = Math.max(0, h);
+            // 宿主边界：把本帧的逻辑盒写入 runtime（P5 §1.1）。写入在布局之前，
+            // 因此同帧的「布局前预算」（列数/面板尺寸）读到的是本帧尺寸，不产生收敛帧。
+            runtime.__setViewportLogicalBox(w, h);
             SceneNode root = getRoot();
             // 一帧 16 步时序协议全部委托帧管线（阶段 1 序列容器，行为与旧 render 1:1 对拍）。
             this.lastLayoutResult = pipeline.run(root, w, h, ctx, absX, absY, frameTimeNanos);
