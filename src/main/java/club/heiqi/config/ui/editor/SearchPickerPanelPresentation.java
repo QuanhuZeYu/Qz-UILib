@@ -36,6 +36,8 @@ public final class SearchPickerPanelPresentation {
     private final String keyboardHint;
     private final String scrollHint;
     private final String densityLabel;
+    private final String removedToast;
+    private final String undoAction;
 
     private SearchPickerPanelPresentation(Builder builder) {
         panelTitle = required(builder.panelTitle, "panelTitle");
@@ -58,6 +60,8 @@ public final class SearchPickerPanelPresentation {
         keyboardHint = required(builder.keyboardHint, "keyboardHint");
         scrollHint = required(builder.scrollHint, "scrollHint");
         densityLabel = required(builder.densityLabel, "densityLabel");
+        removedToast = required(builder.removedToast, "removedToast");
+        undoAction = required(builder.undoAction, "undoAction");
     }
 
     /** @return 默认英文扩展文案 */
@@ -125,6 +129,17 @@ public final class SearchPickerPanelPresentation {
     public String densityLabel() { return densityLabel; }
 
     /**
+     * @param name 被删除成员的展示名（可为 null，按空串处理）
+     * @return 删除后的撤销条文案（占位符 {@code {name}}）
+     */
+    public String removedToast(String name) {
+        return removedToast.replace("{name}", name == null ? "" : name);
+    }
+
+    /** @return 撤销动作文案（撤销条按钮） */
+    public String undoAction() { return undoAction; }
+
+    /**
      * 信息条悬停态单行文案：{@code <label> · <id>}（P5 §3.3 / Q2 单行取法）。
      *
      * <p>用 {@code {label}} / {@code {id}} 两个占位符而不是在控件里拼字符串：拼接形态属文案，
@@ -176,6 +191,8 @@ public final class SearchPickerPanelPresentation {
         private String keyboardHint = "Arrow keys to move, Enter to activate";
         private String scrollHint = "Scroll for more results";
         private String densityLabel = "Density";
+        private String removedToast = "Removed {name}";
+        private String undoAction = "Undo";
 
         /** 设置全屏面板标题。 */
         public Builder panelTitle(String value) { panelTitle = value; return this; }
@@ -229,6 +246,12 @@ public final class SearchPickerPanelPresentation {
 
         /** 设置密度档位标签文案。 */
         public Builder densityLabel(String value) { densityLabel = value; return this; }
+
+        /** 设置删除撤销条文案（占位符 {name}）。 */
+        public Builder removedToast(String value) { removedToast = value; return this; }
+
+        /** 设置撤销动作文案。 */
+        public Builder undoAction(String value) { undoAction = value; return this; }
 
         /** 构建不可变扩展文案。 */
         public SearchPickerPanelPresentation build() { return new SearchPickerPanelPresentation(this); }

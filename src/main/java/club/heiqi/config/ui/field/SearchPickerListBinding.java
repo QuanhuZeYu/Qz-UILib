@@ -26,6 +26,13 @@ public final class SearchPickerListBinding {
     private final ListMemberCodec codec;
     private final Consumer<Object> onChange;
     private final Signal<Long> editingId = Signal.create(null);
+    /**
+     * 唯一 tombstone（P5 §5.5 E1/E3）：最近一次删除的原始槽位，供「5s 撤销」原序原值恢复。
+     *
+     * <p><b>有界</b>：至多 1 条，新的删除直接替换旧的；<b>可释放</b>：{@link #restoreRemoved(long)}
+     * 与 {@link #discardRemoved()} 都会清空；<b>不跨屏</b>：随行绑定对象释放。</p>
+     */
+    private RemovedMember removed;
 
     /** 创建列表成员绑定。 */
     public SearchPickerListBinding(ReadableSignal<Object> rawValue,
@@ -148,6 +155,9 @@ public final class SearchPickerListBinding {
         if (raw == null || raw.size() != currentItems.size()) return false;
         int index = indexOf(currentItems, memberId);
         if (index < 0) return false;
+        // 删除前登记 tombstone（原序原值）：撤销要恢复「原顺序与原始值」，
+        // 重建时不能再靠文本猜槽位（重复 raw 场景下会错位）。
+        RemovedMember candidate = new RemovedMember(memberId, index, raw.get(index), currentItems.get(index));
         ArrayList<Object> next = new ArrayList<Object>(raw);
         next.remove(index);
         ArrayList<SceneSimpleList.ListItem> nextItems = new ArrayList<SceneSimpleList.ListItem>(currentItems);
@@ -157,10 +167,83 @@ public final class SearchPickerListBinding {
             items.set(Collections.unmodifiableList(nextItems));
             Long target = editingId.get();
             if (target != null && target.longValue() == memberId) editingId.set(null);
+            removed = candidate;
             return true;
         } catch (RuntimeException exception) {
             return false;
         }
+    }
+
+    /** @return 是否持有可撤销的删除（诊断/测试探针） */
+    public boolean hasRemoved() {
+        return removed != null;
+    }
+
+    /** @return 最近一次删除的成员 id（无 tombstone 时 -1） */
+    public long removedMemberId() {
+        return removed == null ? -1L : removed.memberId();
+    }
+
+    /**
+     * 撤销最近一次删除：把原始 raw 与派生 item 按<b>原下标</b>插回（越界时夹到表尾）。
+     *
+     * <p>事务语义与 {@link #confirm} 一致：只在提交回调正常返回后清 tombstone 并推进派生 items；
+     * 回调拒绝（抛异常）时 tombstone 保留，可由调用方重试或丢弃。</p>
+     *
+     * @param memberId 期望撤销的成员 id（与 tombstone 不符时拒绝，防陈旧撤销）
+     * @return 是否成功恢复
+     */
+    public boolean restoreRemoved(long memberId) {
+        if (removed == null || removed.memberId() != memberId) {
+            return false;
+        }
+        List<?> raw = rawList();
+        List<SceneSimpleList.ListItem> currentItems = safeItems();
+        if (raw == null || raw.size() != currentItems.size()) {
+            return false;
+        }
+        int index = Math.max(0, Math.min(removed.index(), raw.size()));
+        ArrayList<Object> next = new ArrayList<Object>(raw);
+        next.add(index, removed.raw());
+        ArrayList<SceneSimpleList.ListItem> nextItems =
+                new ArrayList<SceneSimpleList.ListItem>(currentItems);
+        nextItems.add(index, removed.item());
+        try {
+            onChange.accept(Collections.unmodifiableList(next));
+            items.set(Collections.unmodifiableList(nextItems));
+            removed = null;
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    /** 丢弃 tombstone（撤销窗口到期 / 面板关闭）：不改变配置值。 */
+    public void discardRemoved() {
+        removed = null;
+    }
+
+    /** 删除 tombstone：原槽位（下标 + 原始 raw + 派生 item + 成员 id）。 */
+    private static final class RemovedMember {
+        private final long memberId;
+        private final int index;
+        private final Object raw;
+        private final SceneSimpleList.ListItem item;
+
+        private RemovedMember(long memberId, int index, Object raw, SceneSimpleList.ListItem item) {
+            this.memberId = memberId;
+            this.index = index;
+            this.raw = raw;
+            this.item = item;
+        }
+
+        private long memberId() { return memberId; }
+
+        private int index() { return index; }
+
+        private Object raw() { return raw; }
+
+        private SceneSimpleList.ListItem item() { return item; }
     }
 
     private SearchPickerData.Selection decode(Object raw) {

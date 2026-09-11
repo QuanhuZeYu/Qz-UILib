@@ -166,6 +166,8 @@ public final class PickerDensityTokens {
     public static final int PANEL_LEAVE_MS = 160;
     /** 面板入场位移（逻辑 px）。 */
     public static final int PANEL_ENTER_OFFSET_Y = 8;
+    /** 删除撤销窗口（ms）：P5 §5.5 E1/E3「≤5s、至多 1 条 tombstone」的唯一时间常量。 */
+    public static final int REMOVE_UNDO_WINDOW_MS = 5000;
 
     // ==================== 现状基线（仅支配性对照，禁止参与布局） ====================
 

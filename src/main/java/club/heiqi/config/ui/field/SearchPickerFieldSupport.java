@@ -279,6 +279,10 @@ public final class SearchPickerFieldSupport {
                     return true;
                 })
                 .onBeginAdd(binding::add)
+                // 删除撤销闸口（P5 §5.5 E1/E3 甲形态）：删除即生效 + 5s 撤销条。
+                // 宿主持有唯一 tombstone（原下标 + 原始 raw），撤销按原序原值插回；
+                // 窗口到期/面板关闭/被新删除替换时由面板回调释放。
+                .onRestoreCurrent(binding::restoreRemoved, binding::discardRemoved)
                 .onCancel(() -> {
                     binding.cancel();
                     query.set(""); searchError.set(""); encodeError.set("");

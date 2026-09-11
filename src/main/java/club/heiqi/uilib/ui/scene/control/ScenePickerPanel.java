@@ -243,6 +243,14 @@ public final class ScenePickerPanel {
          * UILib 侧落点；Miner 只负责把偏好喂进这个信号）。</p>
          */
         private final ReadableSignal<PickerDensityPreference> densityPreference;
+        /**
+         * 撤销最近一次删除的可拒绝提交边界（P5 §5.5 E1；默认恒 false = 不支持撤销）。
+         *
+         * <p>入参 = 被删成员的稳定 id（陈旧撤销由宿主侧 tombstone 校验拒绝）。</p>
+         */
+        private final LongPredicate onRestoreCurrent;
+        /** tombstone 释放回调（撤销窗口到期 / 面板关闭 / 已被新删除替换时调用）。 */
+        private final Runnable onDiscardRemoved;
 
         /**
          * 创建受控居中 70% picker 面板属性（保留旧组件六参必填语义）。
@@ -289,6 +297,8 @@ public final class ScenePickerPanel {
             this.sourceQuery = null;
             this.sourceVersion = null;
             this.densityPreference = null;
+            this.onRestoreCurrent = ignored -> false;
+            this.onDiscardRemoved = () -> { };
         }
 
         private Props(Builder builder) {
@@ -322,6 +332,8 @@ public final class ScenePickerPanel {
             sourceQuery = builder.sourceQuery;
             sourceVersion = builder.sourceVersion;
             densityPreference = builder.densityPreference;
+            onRestoreCurrent = builder.onRestoreCurrent;
+            onDiscardRemoved = builder.onDiscardRemoved;
             if (candidateSource != null && sourceQuery == null) {
                 throw new IllegalArgumentException("candidateSource 非 null 时必须提供 sourceQuery（面板自建窗口切片）");
             }
@@ -405,6 +417,10 @@ public final class ScenePickerPanel {
         public ReadableSignal<PickerSourceVersion> sourceVersion() { return sourceVersion; }
         /** @return 密度档位用户偏好信号（可为 null = AUTO） */
         public ReadableSignal<PickerDensityPreference> densityPreference() { return densityPreference; }
+        /** @return 撤销删除的可拒绝提交边界 */
+        public LongPredicate onRestoreCurrent() { return onRestoreCurrent; }
+        /** @return tombstone 释放回调 */
+        public Runnable onDiscardRemoved() { return onDiscardRemoved; }
 
         /** 全屏 picker 面板可选属性 builder。 */
         public static final class Builder {
@@ -438,6 +454,8 @@ public final class ScenePickerPanel {
             private Consumer<Integer> onDimensionChange = ignored -> { };
             private GridProps grid = GridProps.DEFAULT;
             private ReadableSignal<PickerDensityPreference> densityPreference;
+            private LongPredicate onRestoreCurrent = ignored -> false;
+            private Runnable onDiscardRemoved = () -> { };
             private boolean variantSearchEnabled;
             private boolean resultsCategoryFiltered;
             private PickerCandidateSource candidateSource;
@@ -559,6 +577,19 @@ public final class ScenePickerPanel {
                 return this;
             }
 
+            /**
+             * 设置「撤销删除」的可拒绝提交边界与 tombstone 释放回调（P5 §5.5 甲形态）。
+             *
+             * @param onRestore 撤销提交边界（入参 = 成员 id；返回 false = 宿主拒绝，面板保持现状）
+             * @param onDiscard 释放回调（窗口到期/关闭/被替换时调用，宿主据此清自己的 tombstone）
+             * @return 本 builder
+             */
+            public Builder onRestoreCurrent(LongPredicate onRestore, Runnable onDiscard) {
+                onRestoreCurrent = Objects.requireNonNull(onRestore, "onRestore");
+                onDiscardRemoved = Objects.requireNonNull(onDiscard, "onDiscard");
+                return this;
+            }
+
             /** 启用变体浮层内的变体搜索输入。 */
             public Builder variantSearchEnabled(boolean value) { variantSearchEnabled = value; return this; }
 
@@ -668,6 +699,8 @@ public final class ScenePickerPanel {
         Signal<SearchPickerData.SelectionMode> mode = Signal.create(SearchPickerData.SelectionMode.ALL);
         Signal<List<String>> selectedKeys = Signal.create(Collections.<String>emptyList());
         Signal<Integer> gridHighlight = Signal.create(Integer.valueOf(-1));
+        // 删除撤销闸口（P5 §5.5 E1/E3 甲形态：删除即生效 + 5s 撤销条，至多 1 条 tombstone）。
+        Signal<Tombstone> tombstone = Signal.create(null);
         Signal<Boolean> addingMember = Signal.create(Boolean.FALSE);
         Signal<Boolean> editingMember = Signal.create(Boolean.FALSE);
         Signal<FocusIntent> focusIntent = Signal.create(FocusIntent.NONE);
@@ -694,6 +727,11 @@ public final class ScenePickerPanel {
                 gridHighlight.set(Integer.valueOf(-1));
                 focusIntent.set(FocusIntent.SEARCH_INPUT);
             } else {
+                // 关闭即释放 tombone（宿主侧缓存一并交还，避免跨开合残留一个原始值）。
+                if (tombstone.get() != null) {
+                    tombstone.set(null);
+                    props.onDiscardRemoved().run();
+                }
                 addingMember.set(Boolean.FALSE);
                 editingMember.set(Boolean.FALSE);
                 variantsOpen.set(Boolean.FALSE);
@@ -728,13 +766,24 @@ public final class ScenePickerPanel {
             // 关闭即随 disposeMounted() 释放，不做跨开合常驻；打开时算一次、之后只在三个输入
             // 变化时重派生（无静态快照，P5 I-6）。
             ReadableSignal<PickerMetrics> metrics = createMetrics(rt, props);
+            // 撤销条可见性投影（内容 Owner 内 ⇒ 关闭即释放；空串/无 tombstone 时零占位）。
+            ReadableSignal<Boolean> undoVisible = Computed.create(() ->
+                    Boolean.valueOf(tombstone.get() != null));
             // 视口尺寸事实是否可用（见 PANEL_WIDTH_PERCENT_FALLBACK 的偏差说明）。
             boolean viewportSizing = rt.logicalBox().get().isPresent();
             SceneNode content = mainPanel(rt, props, closeRequest, feed,
                     memberIssues, categoryKey, categoryWriter, gridHighlight,
                     addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
                     gridViewportHolder, windowModelHolder, variantsOpen, activeCandidate, mode,
-                    selectedKeys, metrics, viewportSizing);
+                    selectedKeys, metrics, viewportSizing, tombstone, undoVisible);
+            // 撤销窗口到期（≤5s）：帧时间信号驱动，O(1)；无 tombstone 时首个判断即返回。
+            rt.bind(rt.__frameTimeNanos(), nanos -> Effect.untrack(() -> {
+                Tombstone current = tombstone.get();
+                if (current != null && nanos.longValue() >= current.deadlineNanos()) {
+                    tombstone.set(null);
+                    props.onDiscardRemoved().run();
+                }
+            }));
             recordPhase(UiPerfMarkers.PHASE_PICKER_OPEN_MAIN, startedAtNanos);
 
             // 变体选择浮层（模块化）：mode/selectedKeys 受控，草稿查询在模块内部。
@@ -802,7 +851,9 @@ public final class ScenePickerPanel {
                                        Signal<SearchPickerData.SelectionMode> mode,
                                        Signal<List<String>> selectedKeys,
                                        ReadableSignal<PickerMetrics> metrics,
-                                       boolean viewportSizing) {
+                                       boolean viewportSizing,
+                                       Signal<Tombstone> tombstone,
+                                       ReadableSignal<Boolean> undoVisible) {
         SceneNode scrim = SceneNode.column();
         scrim.setFillParentWidth(true);
         scrim.setFillParentHeight(true);
@@ -881,7 +932,8 @@ public final class ScenePickerPanel {
         if (props.listMembers()) {
             root.appendChild(membersPanel(rt, props, memberIssues, gridHighlight,
                     addingMember, editingMember, focusIntent, variantsOpen,
-                    activeCandidate, mode, selectedKeys, metrics, viewportSizing));
+                    activeCandidate, mode, selectedKeys, metrics, viewportSizing,
+                    tombstone, undoVisible));
         }
         scrim.appendChild(root);
         return scrim;
@@ -1204,7 +1256,9 @@ public final class ScenePickerPanel {
                                           Signal<SearchPickerData.SelectionMode> mode,
                                           Signal<List<String>> selectedKeys,
                                           ReadableSignal<PickerMetrics> metrics,
-                                          boolean viewportSizing) {
+                                          boolean viewportSizing,
+                                          Signal<Tombstone> tombstone,
+                                          ReadableSignal<Boolean> undoVisible) {
         SceneNode panel = SceneNode.column();
         // 成员带高度由 PickerMetrics 派生（空态折叠为一行提示、有成员时最多 2 行 + header），
         // 不再是固定 248：720p 下现状 248 占面板 49% 会把结果区压到 1 行（T5 UX-01）。
@@ -1283,8 +1337,8 @@ public final class ScenePickerPanel {
                 memberId -> editMember(props, memberId, addingMember,
                         editingMember, focusIntent, variantsOpen, activeCandidate, mode, selectedKeys,
                         gridHighlight),
-                memberId -> removeMember(props, memberId, addingMember, editingMember,
-                        variantsOpen, activeCandidate, gridHighlight, focusIntent),
+                memberId -> removeMember(rt, props, memberId, addingMember, editingMember,
+                        variantsOpen, activeCandidate, gridHighlight, focusIntent, tombstone),
                 // 卡尺寸兼容位：有度量通道时内部按字号派生（P5 §2.5），此处只作旧口径兜底。
                 MemberGrid.DEFAULT_CELL_WIDTH, MemberGrid.DEFAULT_CELL_HEIGHT,
                 MemberGrid.DEFAULT_GAP_X, MemberGrid.DEFAULT_GAP_Y,
@@ -1294,6 +1348,35 @@ public final class ScenePickerPanel {
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),
                 () -> emptyText(rt, props.presentation().emptyCurrentMembers(),
                         secondaryForeground));
+
+        // 撤销条（P5 §5.5 E1 甲形态：删除即生效 + 5s 内可撤销；至多 1 条、到期/关闭即释放）。
+        // 结构上追加在成员带末尾：不移动既有两个子节点下标；无 tombstone 时整行零高。
+        SceneNode toastRow = SceneNode.row();
+        toastRow.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        toastRow.setGap(SceneChromeTokens.GAP_SM);
+        toastRow.setPadding(0, SceneChromeTokens.PAD_MD, 0, SceneChromeTokens.PAD_MD);
+        toastRow.setClipChildren(true);
+        toastRow.setHitTestable(false);
+        ReadableSignal<String> toastText = Computed.create(() -> {
+            Tombstone current = tombstone.get();
+            return current == null ? "" : props.panelPresentation().removedToast(current.name());
+        });
+        SceneNode toastLabel = text(rt, "");
+        toastLabel.setFlexGrow(1);
+        toastLabel.setMaxLines(1);
+        toastLabel.setEllipsis(true);
+        rt.bind(secondaryForeground, toastLabel::setTextColor);
+        rt.bindText(toastLabel, toastText);
+        toastRow.appendChild(toastLabel);
+        SceneNode undoButton = SceneButton.create(rt, new SceneButton.Props(
+                Signal.create(props.panelPresentation().undoAction()), undoVisible,
+                () -> undoRemove(props, tombstone))).get();
+        undoButton.setWidthSizing(WidthSizing.SHRINK);
+        toastRow.appendChild(undoButton);
+        rt.bindComputed(() -> Integer.valueOf(Boolean.TRUE.equals(undoVisible.get())
+                        ? rt.lineHeight(toastLabel.effectiveFontSize()) : 0),
+                toastRow::setPreferredHeight);
+        panel.appendChild(toastRow);
         return panel;
     }
 
@@ -1301,14 +1384,22 @@ public final class ScenePickerPanel {
      * 删除成员（MemberGrid 回调）：宿主提交成功后才清理面板临时态（武装/编辑/变体浮层/
      * 网格高亮/焦点意图），与 finishSelection/cancelPanel 的收尾集合对齐；宿主拒绝时零推进。
      */
-    private static boolean removeMember(Props props, long memberId,
+    private static boolean removeMember(SceneRuntime rt, Props props, long memberId,
                                         Signal<Boolean> addingMember, Signal<Boolean> editingMember,
                                         Signal<Boolean> variantsOpen,
                                         Signal<SearchPickerData.Candidate> activeCandidate,
-                                        Signal<Integer> gridHighlight, Signal<FocusIntent> focusIntent) {
+                                        Signal<Integer> gridHighlight, Signal<FocusIntent> focusIntent,
+                                        Signal<Tombstone> tombstone) {
+        // 删除前抓展示名（删除成功后成员已不在列表里，名字取不到）。
+        SearchPickerData.CurrentMember member = memberById(props, memberId, null);
+        String name = member == null ? "" : props.presentation().currentMemberPrimary(member);
         if (!props.onRemoveCurrent().test(memberId)) {
             return false;
         }
+        // 闸口：删除即生效 + 5s 撤销窗口（至多 1 条 —— 新删除直接替换旧 tombstone）。
+        tombstone.set(new Tombstone(memberId, name,
+                rt.__frameTimeNanos().get().longValue()
+                        + PickerDensityTokens.REMOVE_UNDO_WINDOW_MS * 1_000_000L));
         addingMember.set(Boolean.FALSE);
         editingMember.set(Boolean.FALSE);
         variantsOpen.set(Boolean.FALSE);
@@ -1317,6 +1408,26 @@ public final class ScenePickerPanel {
         focusIntent.set(FocusIntent.GRID);
         return true;
     }
+
+    /**
+     * 撤销最近一次删除（E1）：走宿主的可拒绝提交边界，成功后释放 tombstone；
+     * 宿主拒绝时保留 tombstone（用户可重试，窗口到期自然释放）。
+     */
+    private static void undoRemove(Props props, Signal<Tombstone> tombstone) {
+        Tombstone current = tombstone.get();
+        if (current == null) {
+            return;
+        }
+        if (!props.onRestoreCurrent().test(current.memberId())) {
+            return;
+        }
+        tombstone.set(null);
+        props.onDiscardRemoved().run();
+    }
+
+    /** 删除 tombstone（原值恢复用；展示名用于撤销条文案）。 */
+    @Desugar
+    private record Tombstone(long memberId, String name, long deadlineNanos) { }
 
     /**
      * 编辑成员（MemberGrid 回调）：进入编辑态；带变体的成员预开变体浮层，否则引导回网格。

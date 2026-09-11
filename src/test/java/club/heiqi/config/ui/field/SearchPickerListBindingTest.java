@@ -55,6 +55,39 @@ public class SearchPickerListBindingTest {
         } catch (UnsupportedOperationException expected) { }
     }
 
+    /**
+     * E1/E3（P5 §5.5）：删除后撤销必须<b>原顺序、原值</b>插回 —— 重复 raw 场景下
+     * 不能靠文本重新定位槽位（那是新的错误来源），直接按 tombstone 的下标插回。
+     */
+    @Test
+    public void undoRestoresRemovedMemberAtOriginalIndexAndValue() {
+        Signal<Object> raw = Signal.<Object>create(Arrays.<Object>asList("same:x", "same:x", "tail:y"));
+        SceneSimpleList.ListItem first = new SceneSimpleList.ListItem("same:x");
+        SceneSimpleList.ListItem second = new SceneSimpleList.ListItem("same:x");
+        SceneSimpleList.ListItem tail = new SceneSimpleList.ListItem("tail:y");
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(first, second, tail));
+        AtomicReference<List<?>> published = new AtomicReference<List<?>>();
+        SearchPickerListBinding binding = binding(raw, items, value -> {
+            raw.set(value);
+            published.set((List<?>) value);
+        });
+
+        assertTrue(binding.remove(second.getId()));
+        ReactiveScheduler.get().flush();
+        assertTrue("删除后持有唯一 tombstone", binding.hasRemoved());
+        assertEquals("tombstone 记录被删成员 id", second.getId(), binding.removedMemberId());
+        assertEquals(Arrays.asList("same:x", "tail:y"), published.get());
+
+        assertFalse("陈旧 id 的撤销必须被拒绝（防误恢复）", binding.restoreRemoved(first.getId()));
+        assertTrue("按原下标与原值插回", binding.restoreRemoved(second.getId()));
+        ReactiveScheduler.get().flush();
+        assertEquals("原顺序恢复（中位元素回到中位）", Arrays.asList("same:x", "same:x", "tail:y"),
+                published.get());
+        assertSame("恢复的是同一个派生 item 身份", second, items.get().get(1));
+        assertFalse("撤销后 tombstone 释放（至多 1 条）", binding.hasRemoved());
+        assertFalse("无 tombstone 时再撤销为空操作", binding.restoreRemoved(second.getId()));
+    }
+
     /** malformed 成员无需 decode 即可按稳定 id 删除。 */
     @Test
     public void removesMalformedMemberWithoutDecoding() {

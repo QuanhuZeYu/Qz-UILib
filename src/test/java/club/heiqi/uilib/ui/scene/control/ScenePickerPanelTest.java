@@ -127,6 +127,9 @@ public class ScenePickerPanelTest {
         final List<SearchPickerData.Selection> commits = new ArrayList<SearchPickerData.Selection>();
         final List<Long> edits = new ArrayList<Long>();
         final List<Long> removeCalls = new ArrayList<Long>();
+        final List<Long> restoreCalls = new ArrayList<Long>();
+        final AtomicInteger discardCalls = new AtomicInteger();
+        final boolean[] removeResult = {true};
         final AtomicInteger cancels = new AtomicInteger();
         final AtomicInteger beginAdds = new AtomicInteger();
         final AtomicInteger closeRequests = new AtomicInteger();
@@ -156,8 +159,12 @@ public class ScenePickerPanelTest {
             });
             builder.onRemoveCurrent(memberId -> {
                 removeCalls.add(Long.valueOf(memberId));
-                return true;
+                return removeResult[0];
             });
+            builder.onRestoreCurrent(memberId -> {
+                restoreCalls.add(Long.valueOf(memberId));
+                return true;
+            }, discardCalls::incrementAndGet);
             builder.onBeginAdd(beginAdds::incrementAndGet);
             builder.onCancel(cancels::incrementAndGet);
             builder.open(openSignal);
@@ -752,6 +759,84 @@ public class ScenePickerPanelTest {
         Assert.assertTrue("分类过滤为 0 -> presentation.emptyCategoryResults",
                 collectText(centerColumn(overlayRoot(0)))
                         .contains(props.presentation().emptyCategoryResults()));
+    }
+
+    // ==================== 防误删闸口（P5 §5.5 E1/E3/E4 甲形态） ====================
+
+    /** 删除 tombstone 行 = 成员带末尾的撤销条（无 tombstone 时零高）。 */
+    private static SceneNode toastRow(SceneNode membersPanel) {
+        List<SceneNode> children = membersPanel.__getChildren();
+        return children.get(children.size() - 1);
+    }
+
+    /**
+     * E1/E3：删除即生效 + 撤销条（含成员名与撤销按钮）+ 点击撤销恢复；至多 1 条
+     * （新删除替换旧 tombstone）；窗口到期自动释放。
+     */
+    @Test
+    public void removeShowsUndoToastAndUndoRestoresThenExpiryReleases() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
+        f.members.set(Arrays.asList(member(7L, "a")));
+        openPanel(f);
+        SceneNode band = membersPanel(overlayRoot(0));
+        SceneNode toast = toastRow(band);
+        Assert.assertEquals("无 tombstone 时撤销条零高", 0, toast.getPreferredHeight());
+
+        click(rowRemove(memberCell(band, 0)));
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("删除即生效（宿主已收到删除）", Arrays.asList(Long.valueOf(7L)), f.removeCalls);
+        Assert.assertEquals("撤销条占一行", 1, toast.getPreferredHeight() > 0 ? 1 : 0);
+        Assert.assertTrue("撤销条含成员名: " + collectText(toast),
+                collectText(toast).contains(f.panelPresentation().removedToast("a:label")));
+        SceneNode undo = toast.__getChildren().get(1);
+        Assert.assertTrue("撤销按钮文案经 Presentation: " + collectText(undo),
+                collectText(undo).contains(f.panelPresentation().undoAction()));
+
+        click(undo);
+        rt.flush();
+        Assert.assertEquals("点击撤销走宿主恢复边界", Arrays.asList(Long.valueOf(7L)), f.restoreCalls);
+        Assert.assertEquals("撤销成功后 tombstone 释放（面板侧）", 0, toast.getPreferredHeight());
+        Assert.assertEquals("撤销成功后通知宿主持久 tombstone 已释放", 1, f.discardCalls.get());
+
+        // 至多 1 条：再次删除 → 仍只有一行，且文案是新删除的那条
+        click(rowRemove(memberCell(band, 0)));
+        rt.flush();
+        layoutAll();
+        Assert.assertTrue("新删除替换旧 tombstone（仍至多 1 条）", toast.getPreferredHeight() > 0);
+        Assert.assertEquals("撤销条仍只显示一条文案",
+                1, countOccurrences(collectText(band), f.panelPresentation().removedToast("a:label")));
+
+        // 5s 窗口到期：帧时间推进后自动释放
+        rt.__tickFrame(rt.__frameTimeNanos().get().longValue() + 6_000_000_000L);
+        rt.flush();
+        Assert.assertEquals("到期后撤销条归零（≤5s 有界）", 0, toast.getPreferredHeight());
+        Assert.assertTrue("到期释放通知宿主", f.discardCalls.get() >= 2);
+    }
+
+    /** E4：宿主拒绝删除时零变化（无 tombstone、无撤销条）。 */
+    @Test
+    public void rejectedRemoveKeepsEverythingUnchanged() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), true);
+        f.members.set(Arrays.asList(member(7L, "a")));
+        f.removeResult[0] = false;
+        openPanel(f);
+        SceneNode band = membersPanel(overlayRoot(0));
+        click(rowRemove(memberCell(band, 0)));
+        rt.flush();
+        Assert.assertEquals("宿主拒绝删除（零推进）", Arrays.asList(Long.valueOf(7L)), f.removeCalls);
+        Assert.assertEquals("拒绝时不得出现撤销条", 0, toastRow(band).getPreferredHeight());
+        Assert.assertTrue("拒绝时不通知释放", f.discardCalls.get() == 0);
+    }
+
+    private static int countOccurrences(String text, String needle) {
+        int count = 0;
+        int index = text.indexOf(needle);
+        while (index >= 0) {
+            count++;
+            index = text.indexOf(needle, index + needle.length());
+        }
+        return count;
     }
 
     /** 顶栏关闭按钮走与 ESC 相同的取消路径（单一路径，不新增第二套关闭语义）。 */
