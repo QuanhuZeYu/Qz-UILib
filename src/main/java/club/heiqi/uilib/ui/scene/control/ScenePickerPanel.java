@@ -49,6 +49,8 @@ import club.heiqi.uilib.ui.scene.control.search.SearchResultList;
 import club.heiqi.uilib.ui.scene.control.search.VariantChooser;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -150,7 +152,15 @@ public final class ScenePickerPanel {
     private static final int TOP_BAR_HEIGHT_FALLBACK = 48;
     /** 无宿主逻辑盒时的成员带高回退（P5 前的固定值）。 */
     private static final int MEMBERS_PANEL_HEIGHT_FALLBACK = 248;
-    private static final OverlayDismissPolicy MAIN_PANEL_POLICY = new OverlayDismissPolicy(true, true, false);
+    /**
+     * 主面板关闭策略：ESC 请求关闭；<b>外部点击不由 policy 触发</b>（P5 A6 单一路径）。
+     *
+     * <p>理由（实测）：主面板的 overlay 根就是全屏 scrim，"点外部"在 Router 的判据里仍然是
+     * "命中了 overlay 根"（{@code hitTest(entry.getRoot()).isEmpty() == false}），policy 根本
+     * 拿不到外部点击意图 —— 外部点击的检测只能由 scrim 自己的命中回调承担。因此这里关掉
+     * policy 的外部点击分支，避免「policy + scrim」两套触发并存（T5 UX-12 的双触发/漏触发）。</p>
+     */
+    private static final OverlayDismissPolicy MAIN_PANEL_POLICY = new OverlayDismissPolicy(true, false, false);
     /** 恒真 enabled：宿主外层卡片自身没有禁用语义（禁用反馈由内部控件各自表达），与 FormPageShell PANEL 先例同口径。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
@@ -798,12 +808,17 @@ public final class ScenePickerPanel {
         scrim.setFillParentHeight(true);
         scrim.setMainAxisAlign(MainAxisAlign.CENTER);
         scrim.setCrossAxisAlign(CrossAxisAlign.CENTER);
-        // 透明壳作为叶命中目标兜底：卡片外按下只关闭面板，不透传到下方配置页。
+        // 透明壳是外部点击的<b>唯一</b>检测点（卡片外按下：关闭 + 吞掉事件不透传到下方配置页）。
+        // 幂等：同一次挂载内只请求一次关闭（快速连点 5 次也只有 1 次 onCancel/closeRequest）；
+        // 标志随内容 Owner 建/释放，关闭即回收，无跨开合残留。
+        final boolean[] outsideDismissed = { false };
         rt.on(scrim, SceneEventType.POINTER_DOWN, (ev, ctx) -> {
             if (ev.getTarget() != scrim) return;
+            ctx.stopPropagation();
+            if (outsideDismissed[0]) return;
+            outsideDismissed[0] = true;
             cancelPanel(props, closeRequest, variantsOpen, activeCandidate,
                     gridHighlight, addingMember, editingMember, focusIntent);
-            ctx.stopPropagation();
         });
 
         SceneNode root = SceneNode.column();
@@ -913,6 +928,17 @@ public final class ScenePickerPanel {
                     gridHighlight.set(Integer.valueOf(-1));
                 }).build()).get();
         input.setPercentWidth(SEARCH_INPUT_WIDTH_PERCENT);
+        // C3（P5 §5.3）：搜索框 ↓ 进入结果网格并高亮首项（焦点意图单点消费 + 高亮回写）。
+        rt.on(input, SceneEventType.KEY_DOWN, (ev, ctx) -> {
+            if (!Boolean.TRUE.equals(props.enabled().get())
+                    || ev.getKeyAction() != SceneKeyAction.PRESSED
+                    || ev.getKey() != SceneKey.ARROW_DOWN) {
+                return;
+            }
+            ctx.stopPropagation();
+            gridHighlight.set(Integer.valueOf(0));
+            focusIntent.set(FocusIntent.GRID);
+        });
         searchFocusTarget[0] = input;
         bar.appendChild(input);
 
@@ -1103,7 +1129,9 @@ public final class ScenePickerPanel {
                 // 布局后仍以实际视口高度为权威。
                 viewportSizing ? Math.max(1, metrics.get().visibleRows())
                         : props.grid().visibleRows(),
-                widthBudget, feed.totalItems(), gridMetrics, configuredKeys));
+                widthBudget, feed.totalItems(), gridMetrics, configuredKeys,
+                // C3：网格首行 ↑ 回搜索框（焦点意图单点消费，不直接写焦点）
+                () -> focusIntent.set(FocusIntent.SEARCH_INPUT)));
         // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
         //（scrollable 子节点不能走 flexGrow 分配，模块内已对 root 设置）。
         gridViewportHolder[0] = list.viewport();
@@ -1121,7 +1149,11 @@ public final class ScenePickerPanel {
         //   空闲 -> 「搜索结果 (N)」+ 状态提示（截断 > 键盘 > 滚动 > 悬停操作提示）。
         // 单行形态同时是 Q2 的取法：竖向只占 round(fs*2)，不会为第二行再抬高度。
         ReadableSignal<String> infoText = Computed.create(() -> {
+            // D3（P5 §5.4）：键盘高亮与指针悬停同权 —— 悬停优先，空闲时回落到当前高亮项。
             SceneVirtualGrid.Item item = hoveredItem.get();
+            if (item == null) {
+                item = list.highlightedItem() == null ? null : list.highlightedItem().get();
+            }
             String prefix = props.panelPresentation().tooltipPrefix();
             if (item == null) {
                 // 空闲态 = 「搜索结果 (N)」+ 单一状态提示，提示按优先级取一条：

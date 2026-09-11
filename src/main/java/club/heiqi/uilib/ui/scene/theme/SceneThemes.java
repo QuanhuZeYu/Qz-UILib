@@ -262,6 +262,19 @@ public final class SceneThemes {
     }
 
     /**
+     * 警告级「弱底」语义槽的只读派生（P5 §4.2 C：重复成员徽章底）。
+     *
+     * <p>与危险家族的 {@code DANGER_BG_SUBTLE} 同构造口径（低 alpha 叠加），但走主题角色配方，
+     * 因此主题切换即时重派生；<b>不得</b>退回 {@code SceneChromeTokens} 静态色板。</p>
+     *
+     * @param rt 目标 runtime，不可为 null
+     * @return 警告弱底色信号
+     */
+    public static ReadableSignal<Integer> warningSubtle(SceneRuntime rt) {
+        return color(rt, theme -> theme.warningSubtle());
+    }
+
+    /**
      * 错误文本前景的只读派生（G19/P-02 收编：KeyValueMap 的构造期 resolve + effect 内
      * 取值等规避写法全部改走本入口）。
      *

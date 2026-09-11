@@ -18,6 +18,8 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav.CategoryRow;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
@@ -182,6 +184,48 @@ public class CategoryNavPaneTest {
     private void layoutAll() {
         layoutEngine.layout(sceneRoot, new Constraints(W, H));
         rt.__bridgeLayoutEpoch(layoutEngine.layoutEpoch());
+        rt.flush();
+    }
+
+    /**
+     * C4（P5 §5.3）：分类导航键盘化 —— 行可聚焦、↑↓ 移焦点、HOME/END 首末、ENTER 切换。
+     *
+     * <p>切换走与点击同一个 onSelect 单点（selects 记录），焦点只在导航行之间移动。</p>
+     */
+    @Test
+    public void keyboardNavigatesRowsAndSelectsWithEnter() {
+        SceneNode nav = mountPane(Arrays.asList(
+                CategoryRow.allRow("全部", 3),
+                CategoryRow.categoryRow("cat1", "cat1", 2),
+                CategoryRow.categoryRow("cat2", "cat2", 1)), "暂无分类");
+
+        rt.requestFocus(rowAt(nav, 0));
+        rt.flush();
+        Assert.assertSame("行可聚焦（首焦点）", rowAt(nav, 0), rt.getFocusedNode());
+
+        pressKey(SceneKey.ARROW_DOWN);
+        Assert.assertSame("↓ 移到下一行", rowAt(nav, 1), rt.getFocusedNode());
+        pressKey(SceneKey.END);
+        Assert.assertSame("END 到末行", rowAt(nav, 2), rt.getFocusedNode());
+        pressKey(SceneKey.ARROW_DOWN);
+        Assert.assertSame("末行 ↓ 不越界", rowAt(nav, 2), rt.getFocusedNode());
+        pressKey(SceneKey.HOME);
+        Assert.assertSame("HOME 回首行", rowAt(nav, 0), rt.getFocusedNode());
+        pressKey(SceneKey.ARROW_UP);
+        Assert.assertSame("首行 ↑ 不越界", rowAt(nav, 0), rt.getFocusedNode());
+
+        pressKey(SceneKey.ENTER);
+        Assert.assertEquals("ENTER 切换分类（与点击同一 onSelect）",
+                Arrays.asList((String) null), selects);
+        Assert.assertTrue("全部行选中态生效",
+                categoryKey.get() == null || categoryKey.get().isEmpty());
+    }
+
+    /** 在焦点节点上注入一次按键（PRESSED）。 */
+    private void pressKey(SceneKey key) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofKey(key, SceneKeyAction.PRESSED, false, false, false, false, 0, 0, 1000L));
+        rt.route(sceneRoot, fb.drainFrame(), 0, 0);
         rt.flush();
     }
 

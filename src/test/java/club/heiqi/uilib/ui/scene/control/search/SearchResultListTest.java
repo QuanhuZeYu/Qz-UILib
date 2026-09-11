@@ -329,6 +329,56 @@ public class SearchResultListTest {
         Assert.assertEquals(Integer.valueOf(96), f.highlightSignal.get());
     }
 
+    /** C2（P5 §5.3）：PAGE_UP/PAGE_DOWN 整页翻、HOME/END 首末项，边界不越。 */
+    @Test
+    public void pageHomeEndKeysMoveHighlightWithinGlobalBounds() {
+        Fixture f = new Fixture(200);
+        layoutAndBridge();
+        rt.requestFocus(f.vp());
+        SceneGridWindow.WindowModel model = f.windowModel();
+        int page = Math.max(1, model.visibleRows()) * Math.max(1, model.columns());
+        Assert.assertTrue("前置：可视页 < 总量（否则翻页退化）", page < 200);
+
+        pressKey(SceneKey.END);
+        Assert.assertEquals("END -> 末项", Integer.valueOf(199), f.highlightSignal.get());
+        pressKey(SceneKey.HOME);
+        Assert.assertEquals("HOME -> 首项", Integer.valueOf(0), f.highlightSignal.get());
+        pressKey(SceneKey.PAGE_DOWN);
+        Assert.assertEquals("PAGE_DOWN -> 前进一页", Integer.valueOf(page), f.highlightSignal.get());
+        pressKey(SceneKey.PAGE_UP);
+        Assert.assertEquals("PAGE_UP -> 回退一页", Integer.valueOf(0), f.highlightSignal.get());
+        pressKey(SceneKey.PAGE_UP);
+        Assert.assertEquals("首页 PAGE_UP 不越界", Integer.valueOf(0), f.highlightSignal.get());
+        pressKey(SceneKey.END);
+        pressKey(SceneKey.PAGE_DOWN);
+        Assert.assertEquals("末页 PAGE_DOWN 不越界", Integer.valueOf(199), f.highlightSignal.get());
+    }
+
+    /** G4（P5 §5.7）：滚轮停下后滚动偏移吸附到整行（行不被拦腰裁切），且不越过 maxScroll。 */
+    @Test
+    public void wheelScrollSnapsOffsetToWholeRows() {
+        Fixture f = new Fixture(200);
+        layoutAndBridge();
+        SceneNode rows = f.rowsContainer();
+        routeScrollAt(f.vp(), -120);
+        layoutAndBridge();
+        int scroll = f.vp().getScrollOffsetY();
+        Assert.assertTrue("一次滚轮必须真的滚动: " + scroll, scroll > 0);
+        Assert.assertTrue("滚轮后仍不大于 maxScroll", scroll <= f.windowModel().maxScrollPx());
+        if (rows.__getChildren().size() >= 2) {
+            int stride = SceneGeometry.absoluteBox(rows.__getChildren().get(1), 0, 0).getY()
+                    - SceneGeometry.absoluteBox(rows.__getChildren().get(0), 0, 0).getY();
+            Assert.assertTrue("前置：行距为正: " + stride, stride > 0);
+            Assert.assertEquals("偏移吸附整行（stride 的整数倍）", 0, scroll % stride);
+        }
+
+        // 滚到底：吸附不得越过 maxScrollPx（可滚到底、末项完整可见，G1 不被破坏）
+        routeScrollAt(f.vp(), -1_000_000);
+        layoutAndBridge();
+        Assert.assertEquals("底部取 maxScrollPx（不为吸附牺牲可达性）",
+                f.windowModel().maxScrollPx(), f.vp().getScrollOffsetY());
+    }
+
     @Test
     public void enterActivatesHighlighted() {
         Fixture f = new Fixture(100);

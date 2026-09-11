@@ -41,6 +41,7 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
+import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
@@ -486,7 +487,11 @@ public class MemberGridTest {
         Assert.assertEquals("重复徽章文字 = 公共 warningText 入口现值",
                 SceneThemes.warningText(rt).get().intValue(), badge(dupA).getTextColor());
         Assert.assertEquals("重复徽章文案", presentation.duplicateMemberBadge(), badge(dupA).getText());
-        Assert.assertEquals("重复徽章不借无效底", BG_TRANSPARENT, badge(dupA).getBackgroundColor());
+        // F1（P5 §5.6）：重复徽章 = 警告级弱底（主题 warningSubtle），不是无效底、也不再是裸文本。
+        Assert.assertEquals("重复徽章底 = 主题 warningSubtle",
+                SceneThemes.warningSubtle(rt).get().intValue(), badge(dupA).getBackgroundColor());
+        Assert.assertNotEquals("重复徽章不借无效底", SceneChromeTokens.DANGER_BG_SUBTLE,
+                badge(dupA).getBackgroundColor());
         Assert.assertEquals("第二个重复成员同样着色", dark.warningText(), badge(dupB).getTextColor());
     }
 
@@ -545,6 +550,36 @@ public class MemberGridTest {
         Assert.assertNull("占位图标不装滤镜", brokenIcon.getBackdrop());
     }
 
+    // ==================== 徽章视觉（P5 F1/F2/F5） ====================
+
+    /**
+     * F1/F5：重复徽章 = 主题 warningSubtle 弱底（新增语义槽，随主题重派生）、无效徽章 =
+     * DANGER_BG_SUBTLE；两者文案经 Presentation；徽章单行省略且宽度有上限（不溢出卡片）。
+     */
+    @Test
+    public void memberBadgesUseSeveritySubtleBackgroundsAndNeverOverflow() {
+        mount(Arrays.asList(member(1L, "test:x"), member(2L, "test:x"), malformed(3L)));
+        SceneNode duplicated = badge(cell(0, 0));
+        SceneNode invalid = badge(cell(2, 0));
+
+        Assert.assertEquals("重复徽章底 = 主题 warningSubtle（F1，P5 §4.2 C）",
+                SceneThemes.warningSubtle(rt).get().intValue(), duplicated.getBackgroundColor());
+        Assert.assertNotEquals("警告弱底 ≠ 危险弱底（两级可区分）",
+                SceneChromeTokens.DANGER_BG_SUBTLE, duplicated.getBackgroundColor());
+        Assert.assertEquals("无效徽章底 = DANGER_BG_SUBTLE", SceneChromeTokens.DANGER_BG_SUBTLE,
+                invalid.getBackgroundColor());
+        Assert.assertEquals("重复徽章文案经 Presentation",
+                SearchPickerPresentation.defaultEnglish().duplicateMemberBadge(), duplicated.getText());
+        Assert.assertEquals("无效徽章文案经 Presentation",
+                SearchPickerPresentation.defaultEnglish().invalidMemberBadge(), invalid.getText());
+
+        Assert.assertEquals("徽章单行", 1, duplicated.getMaxLines());
+        Assert.assertTrue("徽章开启省略号", duplicated.isEllipsis());
+        Assert.assertTrue("徽章宽度受限（卡宽 - 图标 - 内边距）", duplicated.getMaxTextWidth() > 0);
+        Assert.assertEquals("徽章圆角 = RADIUS_SM", SceneChromeTokens.RADIUS_SM,
+                duplicated.getCornerRadius());
+    }
+
     // ==================== ③ 复用重绑不串态 ====================
 
     /**
@@ -587,8 +622,10 @@ public class MemberGridTest {
 
         // 再换代：双双正常且同 key → 重复态（文字 warning 档）；无效徽章底不得残留。
         updateMembers(Arrays.asList(member(1L, "test:x"), member(2L, "test:x")));
-        Assert.assertEquals("A 无效态不残留进重复代", BG_TRANSPARENT, badge(cellA).getBackgroundColor());
-        Assert.assertEquals("B 无效态不残留进重复代", BG_TRANSPARENT, badge(cellB).getBackgroundColor());
+        Assert.assertEquals("A 无效态不残留进重复代（换为警告级弱底）",
+                SceneThemes.warningSubtle(rt).get().intValue(), badge(cellA).getBackgroundColor());
+        Assert.assertEquals("B 无效态不残留进重复代（换为警告级弱底）",
+                SceneThemes.warningSubtle(rt).get().intValue(), badge(cellB).getBackgroundColor());
         Assert.assertEquals("重复徽章文字 = warningText", SceneThemes.DEFAULT.warningText(),
                 badge(cellA).getTextColor());
         Assert.assertEquals("重复徽章文字 = warningText", SceneThemes.DEFAULT.warningText(),

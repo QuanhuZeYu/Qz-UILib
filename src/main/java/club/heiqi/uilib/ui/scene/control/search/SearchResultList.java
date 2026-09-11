@@ -180,7 +180,8 @@ public final class SearchResultList {
             ReadableSignal<Integer> availableWidth,
             ReadableSignal<Integer> totalItemsSignal,
             ReadableSignal<GridMetrics> metrics,
-            ReadableSignal<Set<String>> configuredKeys) {
+            ReadableSignal<Set<String>> configuredKeys,
+            Runnable onExitUp) {
 
         /** 未提供总量时的哨兵：窗口数学取 {@code items.size()}（全量数据源形态）。 */
         /**
@@ -218,7 +219,47 @@ public final class SearchResultList {
                      ReadableSignal<GridMetrics> metrics) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
-                    visibleRows, availableWidth, totalItemsSignal, metrics, null);
+                    visibleRows, availableWidth, totalItemsSignal, metrics, null, null);
+        }
+
+        /**
+         * 旧 19 参形态（P5 兼容，纯加法保留）：无「↑ 退回上层控件」通道。
+         *
+         * @param items             数据源
+         * @param columns           列数
+         * @param cellWidth         单元宽
+         * @param cellHeight        单元高下限
+         * @param gapX              列间距
+         * @param gapY              行间距
+         * @param enabled           是否启用
+         * @param onActivate        激活回调
+         * @param highlighted       受控高亮
+         * @param onHighlightChange 高亮回写
+         * @param onHoverItem       hover 回调
+         * @param pageProvider      窗口切片生产者
+         * @param totalItems        数据总项数
+         * @param windowOffset      窗口偏移校验位
+         * @param visibleRows       预算可视行数
+         * @param availableWidth    预算可用宽
+         * @param totalItemsSignal  动态总量通道
+         * @param metrics           P5 派生度量快照
+         * @param configuredKeys    已配置候选键集合
+         */
+        public Props(ReadableSignal<? extends List<SceneVirtualGrid.Item>> items,
+                     int columns, int cellWidth, int cellHeight, int gapX, int gapY,
+                     ReadableSignal<Boolean> enabled,
+                     Consumer<SceneVirtualGrid.Item> onActivate,
+                     ReadableSignal<Integer> highlighted,
+                     Consumer<Integer> onHighlightChange,
+                     Consumer<SceneVirtualGrid.Item> onHoverItem,
+                     PageProvider pageProvider, int totalItems, int windowOffset, int visibleRows,
+                     ReadableSignal<Integer> availableWidth,
+                     ReadableSignal<Integer> totalItemsSignal,
+                     ReadableSignal<GridMetrics> metrics,
+                     ReadableSignal<Set<String>> configuredKeys) {
+            this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
+                    onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
+                    visibleRows, availableWidth, totalItemsSignal, metrics, configuredKeys, null);
         }
 
         public static final int UNSPECIFIED_TOTAL_ITEMS = -1;
@@ -258,7 +299,7 @@ public final class SearchResultList {
                      ReadableSignal<Integer> totalItemsSignal) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
-                    visibleRows, availableWidth, totalItemsSignal, null, null);
+                    visibleRows, availableWidth, totalItemsSignal, null, null, null);
         }
 
         /**
@@ -292,7 +333,7 @@ public final class SearchResultList {
                      ReadableSignal<Integer> availableWidth) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
-                    visibleRows, availableWidth, null, null, null);
+                    visibleRows, availableWidth, null, null, null, null);
         }
 
         /**
@@ -319,7 +360,7 @@ public final class SearchResultList {
                      Consumer<SceneVirtualGrid.Item> onHoverItem) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, null, UNSPECIFIED_TOTAL_ITEMS, 0,
-                    DEFAULT_VISIBLE_ROWS, null, null, null, null);
+                    DEFAULT_VISIBLE_ROWS, null, null, null, null, null);
         }
 
         /** 显式校验构造器。 */
@@ -360,7 +401,20 @@ public final class SearchResultList {
      */
     @Desugar
     public record Result(SceneNode root, SceneNode viewport,
-                         ReadableSignal<SceneGridWindow.WindowModel> windowModel) {
+                         ReadableSignal<SceneGridWindow.WindowModel> windowModel,
+                         ReadableSignal<SceneVirtualGrid.Item> highlightedItem) {
+
+        /**
+         * 旧 3 参形态（P5 兼容，纯加法保留）：无键盘高亮项观察面。
+         *
+         * @param root        根节点
+         * @param viewport    可滚动视口
+         * @param windowModel 窗口模型观察面
+         */
+        public Result(SceneNode root, SceneNode viewport,
+                      ReadableSignal<SceneGridWindow.WindowModel> windowModel) {
+            this(root, viewport, windowModel, null);
+        }
     }
 
     /**
@@ -658,6 +712,40 @@ public final class SearchResultList {
             }
         });
 
+        // G4（P5 §5.7）：滚动停止后行不被拦腰裁切 —— 滚轮/拖动结束把偏移吸附到 stride 整数倍。
+        // 只在 SCROLL 事件上吸附（键盘导航的居中定位、外部高亮滚动不受影响：ADR A-10 的
+        // 「定位语义 = 居中」保持原样）；吸附目标超过 maxScrollPx 时取 maxScrollPx（保证
+        // 可滚到底、末项完整可见，G1 不被破坏）。
+        // 滚轮/拖动只置「待吸附」标志：框架的滚轮 handler 与我们在同一节点上，注册顺序不保证，
+        // 直接读偏移可能取到更新前的值（实测 120px 步长吸附失败）。改为在下一帧布局完成时吸附，
+        // 既拿到最终偏移，也天然合并连续滚动（≤1 帧内偏移未对齐，肉眼不可见）。
+        final boolean[] snapPending = { false };
+        rt.on(viewport, SceneEventType.SCROLL, (ev, ctx) -> {
+            snapPending[0] = true;
+        });
+        rt.on(viewport, SceneEventType.POINTER_UP, (ev, ctx) -> {
+            snapPending[0] = true;
+        });
+        rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
+            if (!snapPending[0]) {
+                return;
+            }
+            snapPending[0] = false;
+            int stride = Math.max(1, stridePx.get().intValue());
+            int max = window.get().model().maxScrollPx();
+            int current = scrollSignal.get().intValue();
+            int snapped = (int) Math.round((double) current / stride) * stride;
+            if (current > max - Math.max(1, stride / 2)) {
+                // 底部锚定：已贴底时取 maxScrollPx，吸附不得牺牲「可滚到底 / 末项完整可见」（G1）。
+                snapped = max;
+            } else if (snapped > max) {
+                snapped = max;
+            }
+            if (snapped != current) {
+                scrollSignal.set(Integer.valueOf(snapped));
+            }
+        }));
+
         // 控件级 hoveredKey：单元 hover 写 key、单元卸载时清同 key（虚拟化下「hover 移出」事件可能随节点
         // 卸载一起消失），onHoverItem 由该 key 经索引 O(1) 解析 → 信息条不残留已卸载/已换代的项。
         Signal<Object> hoveredKey = Signal.<Object>create(null);
@@ -699,6 +787,45 @@ public final class SearchResultList {
                 return;
             }
 
+            // PAGE_UP / PAGE_DOWN：整页翻（可视行数 × 列数）；HOME / END：首项 / 末项
+            // （P5 §5.3 C2：SceneKey 已定义、网格此前未消费）。无高亮时 PAGE_DOWN 进首项、
+            // PAGE_UP 进末项（与 ARROW 的「无高亮进 0」语义一致）。
+            if (key == SceneKey.HOME || key == SceneKey.END
+                    || key == SceneKey.PAGE_UP || key == SceneKey.PAGE_DOWN) {
+                int total = model.totalItems();
+                if (total <= 0) {
+                    return;
+                }
+                int target;
+                if (key == SceneKey.HOME) {
+                    target = 0;
+                } else if (key == SceneKey.END) {
+                    target = total - 1;
+                } else {
+                    int page = Math.max(1, model.visibleRows()) * columns;
+                    boolean down = key == SceneKey.PAGE_DOWN;
+                    target = current < 0 ? (down ? 0 : total - 1)
+                            : (down ? current + page : current - page);
+                }
+                target = Math.max(0, Math.min(total - 1, target));
+                if (target == current) {
+                    return;
+                }
+                ctx.stopPropagation();
+                props.onHighlightChange().accept(Integer.valueOf(target));
+                scrollToRow(target / columns, model, scrollSignal, stridePx, viewportHeightPx);
+                return;
+            }
+
+            // ARROW_UP 在首行：退回上层控件（P5 §5.3 C3「网格中按 ↑ 回搜索框」）。
+            // 只在「无高亮或首行」时触发，避免打断网格内正常的跨行导航。
+            if (key == SceneKey.ARROW_UP && props.onExitUp() != null
+                    && (current < 0 || current < columns)) {
+                ctx.stopPropagation();
+                props.onExitUp().run();
+                return;
+            }
+
             // ARROW_* 四向导航（全局项范围内，语义由 SceneVirtualGridNav 锚定）
             int next = SceneVirtualGridNav.navigate(current, key, columns, model.totalItems());
             if (next < 0 || next == current) {
@@ -729,7 +856,17 @@ public final class SearchResultList {
             scrollToRow(row, model, scrollSignal, stridePx, viewportHeightPx);
         }));
 
-        return new Result(stackHost, viewport, windowModelSignal);
+        // D3（P5 §5.4）：键盘高亮项观察面 —— 与 hover 不同源，信息条据此在无指针悬停时
+        // 也能显示「当前高亮项」的 label/ID（O(1)：按全局下标从同源快照取项）。
+        ReadableSignal<SceneVirtualGrid.Item> highlightedItem = Computed.create(() -> {
+            int index = props.highlighted().get().intValue();
+            if (index < 0) {
+                return null;
+            }
+            return window.get().snapshot().index().itemAtGlobal(index);
+        });
+
+        return new Result(stackHost, viewport, windowModelSignal, highlightedItem);
     }
 
     /** 滚动居中到目标行：{@code row*stride - 视口高/2}，clamp 到窗口模型的 maxScrollPx。 */

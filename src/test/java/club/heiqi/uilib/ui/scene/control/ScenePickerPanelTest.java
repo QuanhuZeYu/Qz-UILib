@@ -771,6 +771,61 @@ public class ScenePickerPanelTest {
         Assert.assertTrue("面板已关闭", rt.getOverlayHost().isEmpty());
     }
 
+    // ==================== 交互收口（P5 C3 / D3 / A6） ====================
+
+    /** C3（P5 §5.3）：搜索框 ↓ 进网格并高亮首项；网格首行 ↑ 回搜索框。 */
+    @Test
+    public void arrowDownFromSearchEntersGridAndArrowUpReturns() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        openPanel(f);
+        SceneNode input = f.result.firstFocusTarget().get();
+        Assert.assertSame("前置：首焦点 = 搜索框", input, rt.getFocusedNode());
+
+        pressKey(SceneKey.ARROW_DOWN);
+        rt.flush();
+        Assert.assertEquals("搜索框 ↓ 高亮首项", Integer.valueOf(0), f.result.gridHighlight().get());
+        Assert.assertSame("↓ 后焦点进入网格", f.result.grid().get(), rt.getFocusedNode());
+
+        layoutAll();
+        pressKey(SceneKey.ARROW_UP);
+        rt.flush();
+        Assert.assertSame("网格首行 ↑ 回搜索框", input, rt.getFocusedNode());
+        Assert.assertEquals("回搜索框不改变高亮", Integer.valueOf(0), f.result.gridHighlight().get());
+    }
+
+    /** D3（P5 §5.4）：键盘移动高亮时信息条同步（不需指针悬停）。 */
+    @Test
+    public void keyboardHighlightDrivesInfoBarWithoutPointerHover() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a"), candidate("b")), false);
+        openPanel(f);
+        SceneNode infoBar = centerColumn(overlayRoot(0)).__getChildren().get(3);
+        Assert.assertFalse("前置：空闲态不含候选 label",
+                collectText(infoBar).contains("a:label"));
+
+        rt.requestFocus(f.result.grid().get());
+        rt.flush();
+        pressKey(SceneKey.ARROW_DOWN);
+        rt.flush();
+        Assert.assertEquals("键盘高亮首项", Integer.valueOf(0), f.result.gridHighlight().get());
+        Assert.assertTrue("键盘高亮项进入信息条（label + 稳定 ID）: " + collectText(infoBar),
+                collectText(infoBar).contains("a:label") && collectText(infoBar).contains("a"));
+    }
+
+    /** A6（P5 §5.1）：外部点击单一关闭路径 + 幂等（连点 5 次只取消一次）。 */
+    @Test
+    public void outsideClickClosesThroughSingleIdempotentPath() {
+        Fixture f = new Fixture(Arrays.asList(candidate("a")), false);
+        openPanel(f);
+        for (int i = 0; i < 5; i++) {
+            routePointer(ScenePointerAction.BUTTON_DOWN, 2, 2);
+            routePointer(ScenePointerAction.BUTTON_UP, 2, 2);
+        }
+        rt.flush();
+        Assert.assertEquals("外部点击只触发一次 onCancel（单一关闭路径）", 1, f.cancels.get());
+        Assert.assertEquals("只请求一次受控关闭（幂等）", 1, f.closeRequests.get());
+        Assert.assertTrue("面板已关闭", rt.getOverlayHost().isEmpty());
+    }
+
     @Test
     public void variantSearchFiltersVariantList() {
         Fixture f = new Fixture(Arrays.asList(candidateWithVariants("a", "oak", "spruce", "birch")),

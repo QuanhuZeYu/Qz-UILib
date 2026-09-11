@@ -13,7 +13,13 @@ import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.reactive.Effect;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -231,7 +237,8 @@ public final class CategoryNavPane {
         // 行高由生效字号派生（P5 §2.5：clamp(round(fs*2.67), 24, 36)）；未提供度量通道时
         // 保留旧常量（既有调用方零变化）。字号与行高经同一份 PickerMetrics，不存在第二真值。
         rt.forEach(rows, props.rows(), ScenePickerPanelNav.CategoryRow::identityKey,
-                row -> categoryRow(rt, props, row, labelForeground, secondaryForeground));
+                row -> categoryRow(rt, props, row, labelForeground, secondaryForeground,
+                        viewport, sc.scrollSignal()));
 
         rt.show(viewport,
                 Computed.create(() -> Boolean.valueOf(props.rows().get().isEmpty())),
@@ -272,10 +279,44 @@ public final class CategoryNavPane {
     }
 
     /** 单分类行：INDICATOR 轻量选中覆盖 + 标签(flexGrow) + 数量徽章，点击回调 onSelect。 */
+    /**
+     * 键盘导航的滚动可见性：焦点行超出导航视口时按最小位移滚动（不改变居中语义、
+     * 不引入第二份滚动事实 —— 复用视口自身的 scroll signal 与 {@code maxScrollY}）。
+     *
+     * @param target       目标行
+     * @param viewport     导航滚动视口（可为 null）
+     * @param scrollSignal 视口滚动偏移信号（可为 null = 不做滚动）
+     */
+    private static void scrollIntoView(SceneNode target, SceneNode viewport, Signal<Integer> scrollSignal) {
+        if (viewport == null || scrollSignal == null) {
+            return;
+        }
+        AnchorRect targetBox = SceneGeometry.absoluteBox(target, 0, 0);
+        AnchorRect viewportBox = SceneGeometry.absoluteBox(viewport, 0, 0);
+        int delta = 0;
+        if (targetBox.getY() < viewportBox.getY()) {
+            delta = targetBox.getY() - viewportBox.getY();
+        } else if (targetBox.getY() + targetBox.getHeight()
+                > viewportBox.getY() + viewportBox.getHeight()) {
+            delta = targetBox.getY() + targetBox.getHeight()
+                    - (viewportBox.getY() + viewportBox.getHeight());
+        }
+        if (delta == 0) {
+            return;
+        }
+        int max = SceneGeometry.maxScrollY(viewport);
+        int next = Math.max(0, Math.min(max, scrollSignal.get().intValue() + delta));
+        if (next != scrollSignal.get().intValue()) {
+            scrollSignal.set(Integer.valueOf(next));
+        }
+    }
+
     private static SceneNode categoryRow(SceneRuntime rt, Props props,
                                          ScenePickerPanelNav.CategoryRow row,
                                          ReadableSignal<Integer> labelForeground,
-                                         ReadableSignal<Integer> secondaryForeground) {
+                                         ReadableSignal<Integer> secondaryForeground,
+                                         SceneNode viewport,
+                                         Signal<Integer> scrollSignal) {
         SceneNode rowNode = SceneNode.row();
         ReadableSignal<PickerMetrics> metrics = props.metrics();
         rowNode.setPreferredHeight(metrics == null ? ROW_HEIGHT
@@ -321,6 +362,45 @@ public final class CategoryNavPane {
             if (!Boolean.TRUE.equals(props.enabled().get())) return;
             props.onSelect().accept(row.all() ? null : row.key());
             ctx.stopPropagation();
+        });
+
+        // C4（P5 §5.3）：分类导航键盘化 —— 行可聚焦，↑↓ 移焦点、HOME/END 首末、ENTER/SPACE 切换。
+        // 焦点只在行之间移动（不跨出导航列），切换走与点击同一个 onSelect 单点。
+        rt.focusable(rowNode, props.enabled());
+        rt.on(rowNode, SceneEventType.KEY_DOWN, (ev, ctx) -> {
+            if (!Boolean.TRUE.equals(props.enabled().get())
+                    || ev.getKeyAction() != SceneKeyAction.PRESSED) {
+                return;
+            }
+            SceneKey key = ev.getKey();
+            if (key == SceneKey.ENTER || key == SceneKey.SPACE) {
+                ctx.stopPropagation();
+                props.onSelect().accept(row.all() ? null : row.key());
+                return;
+            }
+            boolean up = key == SceneKey.ARROW_UP;
+            boolean down = key == SceneKey.ARROW_DOWN;
+            boolean home = key == SceneKey.HOME;
+            boolean end = key == SceneKey.END;
+            if (!up && !down && !home && !end) {
+                return;
+            }
+            SceneNode parent = rowNode.__getParent();
+            if (parent == null) {
+                return;
+            }
+            List<SceneNode> siblings = parent.__getChildren();
+            int index = siblings.indexOf(rowNode);
+            if (index < 0 || siblings.isEmpty()) {
+                return;
+            }
+            int next = home ? 0
+                    : end ? siblings.size() - 1
+                            : Math.max(0, Math.min(siblings.size() - 1, index + (down ? 1 : -1)));
+            ctx.stopPropagation();
+            SceneNode target = siblings.get(next);
+            rt.requestFocus(target);
+            scrollIntoView(target, viewport, scrollSignal);
         });
 
         return rowNode;

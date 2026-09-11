@@ -299,6 +299,11 @@ public final class MemberGrid {
         return rowNode;
     }
 
+    /** @return 生效字号（有度量通道时取派生字号，否则回落卡内文本回落值） */
+    private static int metricsFontSize(Props props) {
+        return props.metrics() == null ? FONT_SIZE : props.metrics().get().fontSizePx();
+    }
+
     /** 按 memberId 在实时列表中定位下标。 */
     private static int indexOfMember(List<SearchPickerData.CurrentMember> members, long memberId) {
         for (int i = 0; i < members.size(); i++) {
@@ -390,13 +395,25 @@ public final class MemberGrid {
         SceneNode badge = text("");
         badge.setWidthSizing(WidthSizing.SHRINK);
         badge.setFallbackFontSize(FONT_SIZE);
+        // F5（P5 §5.6）：徽章不受字号档影响地溢出卡片 —— 单行省略 + 宽度上限
+        // （卡宽 − 图标 − 内边距 − 间距），字号放大时截断而不是把卡片撑破。
+        badge.setMaxLines(1);
+        badge.setEllipsis(true);
+        badge.setMaxTextWidth(Math.max(1, props.effectiveCellWidth() - props.effectiveIconSide()
+                - 2 * props.effectivePadding() - SceneChromeTokens.GAP_SM));
+        // 徽章内边距/圆角随字号派生（P5 §3.3 分类徽章同口径）。
+        badge.setPadding(PickerChrome.badgePadding(metricsFontSize(props)));
+        badge.setCornerRadius(SceneChromeTokens.RADIUS_SM);
         rt.bindText(badge, Computed.create(() -> Boolean.TRUE.equals(malformed.get())
                 ? props.presentation().invalidMemberBadge()
                 : Boolean.TRUE.equals(duplicate.get()) ? props.presentation().duplicateMemberBadge() : ""));
-        // 无效徽章底：状态徽标的静态语义底（契约 §7.3「状态徽标」不迁移，主题无 danger-subtle 字段，
-        // 不自建色板）；徽章底与单元格底色分属两个节点，不触碰单元「零表面写入」口径。
-        rt.bindComputed(() -> Boolean.TRUE.equals(malformed.get())
-                ? SceneChromeTokens.DANGER_BG_SUBTLE : SceneChromeTokens.TRANSPARENT,
+        // F1（P5 §5.6）：无效成员 = 错误级底色（DANGER_BG_SUBTLE 协议弱底）；
+        // 重复成员 = 警告级底色，走主题语义槽 SceneThemes.warningSubtle（P5 §4.2 C：不得进静态色板）。
+        ReadableSignal<Integer> warningSubtle = SceneThemes.warningSubtle(rt);
+        rt.bindComputed(() -> Integer.valueOf(
+                        Boolean.TRUE.equals(malformed.get()) ? SceneChromeTokens.DANGER_BG_SUBTLE
+                                : Boolean.TRUE.equals(duplicate.get()) ? warningSubtle.get()
+                                        : SceneChromeTokens.TRANSPARENT),
                 badge::setBackgroundColor);
         // 徽章文字取主题语义前景：duplicate 取 warningText，其余取正文（与 SceneToast/
         // SceneObjectField 同口径）。G19/P-02 收编：两分支均经 SceneThemes 公共派生入口取色。

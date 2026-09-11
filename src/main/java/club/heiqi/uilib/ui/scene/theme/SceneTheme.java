@@ -75,6 +75,7 @@ public final class SceneTheme {
     private final int danger;
     private final int errorText;
     private final int warningText;
+    private final int warningSubtle;
 
     private SceneTheme(Builder builder) {
         EnumMap<Role, SceneSurfaceStyle> copy = new EnumMap<Role, SceneSurfaceStyle>(Role.class);
@@ -109,6 +110,7 @@ public final class SceneTheme {
         danger = builder.danger;
         errorText = builder.errorText;
         warningText = builder.warningText;
+        warningSubtle = builder.warningSubtle;
     }
 
     /** @return 新 builder（默认取深色液态玻璃档） */
@@ -156,6 +158,14 @@ public final class SceneTheme {
     public int warningText() { return warningText; }
 
     /**
+     * @return 警告级「弱底」语义槽（ARGB，重复成员徽章底等）
+     *
+     * <p>P5 §4.2 C：重复徽章的底必须走主题角色配方（不得进 {@code SceneChromeTokens} 静态色板），
+     * 否则主题切换不会重派生。与危险家族的 {@code DANGER_BG_SUBTLE} 同构造口径（低 alpha 叠加）。</p>
+     */
+    public int warningSubtle() { return warningSubtle; }
+
+    /**
      * 以本主题当前值为起点的构建器：全部语义色与九份角色配方按现值预置，可逐项覆盖。
      *
      * <p><b>与 {@link #builder()} 的区别</b>：{@code builder()} 恒以深色液态玻璃档为起点，
@@ -186,6 +196,7 @@ public final class SceneTheme {
         builder.danger = danger;
         builder.errorText = errorText;
         builder.warningText = warningText;
+        builder.warningSubtle = warningSubtle;
         return builder;
     }
 
@@ -249,6 +260,7 @@ public final class SceneTheme {
         builder.danger = 0xFFB3261E;
         builder.errorText = 0xFF8C1D18;
         builder.warningText = 0xFF8B5000;
+        builder.warningSubtle = 0x22B45309;
 
         builder.surfaces.put(Role.PANEL, lightSurface(UiGlassMaterial.THIN, 10, 0.60F, 16,
                 0x33FFFFFF, 0x66FFFFFF));
@@ -289,6 +301,7 @@ public final class SceneTheme {
         builder.danger = 0xFF7F1D1D;
         builder.errorText = 0xFFFFB4AB;
         builder.warningText = 0xFFFBBF24;
+        builder.warningSubtle = 0x22FBBF24;
         for (Role role : Role.values()) {
             builder.surfaces.put(role, solidSurface(role));
         }
@@ -374,6 +387,7 @@ public final class SceneTheme {
         private int danger = 0xFF7F1D1D;
         private int errorText = 0xFFFFB4AB;
         private int warningText = 0xFFFBBF24;
+        private int warningSubtle = 0x22FBBF24;
 
         private Builder() {
             // 默认深色液态玻璃角色配方：builder() 与各静态工厂共用同一套起点。
@@ -409,6 +423,9 @@ public final class SceneTheme {
         public Builder errorText(int value) { errorText = value; return this; }
         public Builder warningText(int value) { warningText = value; return this; }
 
+        /** 设置警告级弱底语义槽（重复徽章底等）。 */
+        public Builder warningSubtle(int value) { warningSubtle = value; return this; }
+
         /** @return 不可变主题 */
         public SceneTheme build() { return new SceneTheme(this); }
     }
@@ -427,13 +444,15 @@ public final class SceneTheme {
                 && borderDefault == that.borderDefault && borderFocus == that.borderFocus
                 && borderDisabled == that.borderDisabled && danger == that.danger
                 && errorText == that.errorText && warningText == that.warningText
+                && warningSubtle == that.warningSubtle
                 && surfaces.equals(that.surfaces);
     }
     @Override
     public int hashCode() {
         return Objects.hash(surfaces, foreground, mutedForeground, disabledForeground, onAccentForeground,
                 accent, accentHover, accentPressed, selectionBackground, selectionForeground,
-                borderDefault, borderFocus, borderDisabled, danger, errorText, warningText);
+                borderDefault, borderFocus, borderDisabled, danger, errorText, warningText,
+                warningSubtle);
     }
     @Override
     public String toString() {
