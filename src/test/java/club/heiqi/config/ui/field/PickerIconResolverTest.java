@@ -103,6 +103,30 @@ public class PickerIconResolverTest {
         Assert.assertNotNull("释放后仍可用", resolver.candidateImage(candidate("a")));
     }
 
+    /**
+     * P6/U-B1：屏级释放链上的 release 可重复调用（幂等），且释放后再次取图标必须重建缓存
+     * （「释放后再次打开可重建」，SPI/缓存契约：释放不进坏态）。
+     */
+    @Test
+    public void repeatedReleaseIsIdempotentAndRebuildsCacheOnNextRequest() {
+        CountingIconSource iconSource = new CountingIconSource();
+        PickerIconResolver resolver = new PickerIconResolver(new DelegateAdapter(), iconSource);
+        resolver.candidateImage(candidate("a"));
+        long createdAfterFirstFill = resolver.cache().createdCount();
+        Assert.assertEquals("首次取值：图标源调用 1 次", 1, iconSource.candidateCalls);
+
+        resolver.release();
+        resolver.release();
+
+        Assert.assertEquals("重复释放幂等：缓存仍为空", 0, resolver.cache().candidateSize());
+        Assert.assertEquals("重复释放不新建图标源", 1, iconSource.candidateCalls);
+
+        Assert.assertNotNull("释放后再次打开仍可用", resolver.candidateImage(candidate("a")));
+        Assert.assertEquals("重建后缓存恰 1 条", 1, resolver.cache().candidateSize());
+        Assert.assertEquals("重建 = 图标源再调用一次", 2, iconSource.candidateCalls);
+        Assert.assertEquals("重建生成新的图标源实例", createdAfterFirstFill + 1, resolver.cache().createdCount());
+    }
+
     /** 未实现 SPI 或无图标源时 of() 返回 null（保持原适配器，零行为变化）。 */
     @Test
     public void ofReturnsNullWithoutIconSource() {

@@ -44,6 +44,31 @@ public class PickerSourceGuardWiringTest {
                 code.contains("ItemRenderTierRegistry.invalidateAll(\"client_disconnect\")"));
     }
 
+    /**
+     * 候选源释放的装配期接线（P4 遗漏项 U-B1 闭合；P6 补充轮）。
+     *
+     * <p>① <b>会话级</b>：断连路径必须请求候选源释放，且必须先派发到客户端主线程队列 ——
+     * 断连事件在网络线程触发，而 SPI 全方法只允许客户端主线程（ADR A-01）；
+     * ② <b>屏级</b>：图标缓存的释放必须挂当前 Owner 作用域（随屏关闭触发），
+     * 与候选源的会话级释放分层，互不混用。</p>
+     */
+    @Test
+    public void candidateSourceReleaseIsWiredToDisconnectAndIconCacheToScreenScope() throws Exception {
+        String clientProxy = codeWithoutComments(
+                read(Paths.get("src/main/java/club/heiqi/uilib/ClientProxy.java")));
+        Assert.assertTrue("断连路径必须释放候选源（否则 release() 在生产路径上无调用点）",
+                clientProxy.contains("PickerSourceLifecycle.releaseAll(\"client_disconnect\")"));
+        Assert.assertTrue("断连事件在网络线程：释放必须先派发到客户端主线程队列",
+                clientProxy.contains("MainThreadDispatcher.getInstance().enqueue(NetSide.CLIENT"));
+
+        String fieldSupport = codeWithoutComments(
+                read(Paths.get("src/main/java/club/heiqi/config/ui/field/SearchPickerFieldSupport.java")));
+        Assert.assertTrue("字段侧必须把源登记进会话账本（唯一登记点）",
+                fieldSupport.contains("PickerSourceLifecycle.track(source)"));
+        Assert.assertTrue("图标缓存释放必须挂当前 Owner 作用域（屏级释放链，随屏关闭触发）",
+                fieldSupport.contains("rt.__onCleanup(resolver::release)"));
+    }
+
     /** 反向断言：全 main 源码只有 ResourceReloadService 一处注册 reload listener（统一失效总线）。 */
     @Test
     public void reloadListenerIsRegisteredFromExactlyOnePlace() throws Exception {

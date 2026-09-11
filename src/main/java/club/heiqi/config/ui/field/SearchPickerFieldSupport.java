@@ -422,12 +422,21 @@ public final class SearchPickerFieldSupport {
         return resolver;
     }
 
-    /** @return 惰性候选源；provider 未实现 SPI 或返回 null 时为 null（⇒ 旧全量路径） */
+    /**
+     * @return 惰性候选源；provider 未实现 SPI 或返回 null 时为 null（⇒ 旧全量路径）
+     *
+     * <p>顺带把源登记进 {@link PickerSourceLifecycle} 的会话账本（客户端断连 / 退出世界时统一
+     * {@code release()}）。登记点是这里而不是 {@code Registry#register}：后者发生在装配更早的步骤，
+     * 但「UILib 真正拿到 source 引用」的唯一点是字段侧接线；登记为 O(1) 弱引用写入，不触碰候选数据、
+     * 不改变注册期「零候选读取」语义（A-05）。</p>
+     */
     private static PickerCandidateSource candidateSourceOf(ValueEditorProvider provider) {
         if (!(provider instanceof CandidateSourceValueEditorProvider)) {
             return null;
         }
-        return ((CandidateSourceValueEditorProvider) provider).candidateSource();
+        PickerCandidateSource source = ((CandidateSourceValueEditorProvider) provider).candidateSource();
+        PickerSourceLifecycle.track(source);
+        return source;
     }
 
     /**

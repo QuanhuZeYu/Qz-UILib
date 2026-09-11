@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,10 @@ public class PickerSourceCallSiteGuardTest {
 
     /** 允许出现 version()/onEnvironmentChanged() 的文件。 */
     private static final Map<String, String> REVISION_CALL_SITES = revisionCallSites();
+
+    /** 允许出现候选源 .release() 的文件（唯一会话释放点 = 账本；屏级 release 走图标缓存自身）。 */
+    private static final List<String> RELEASE_CALL_SITES =
+            Collections.singletonList("PickerSourceLifecycle.java");
 
     private static Map<String, String> queryCallSites() {
         Map<String, String> map = new LinkedHashMap<String, String>();
@@ -110,6 +115,35 @@ public class PickerSourceCallSiteGuardTest {
         Assert.assertEquals("出现未登记的版本通道调用点", new ArrayList<String>(), offenders);
     }
 
+    /**
+     * 白名单：候选源 {@code release()} 的生产调用点必须<b>恰为会话账本</b>
+     * （{@link PickerSourceLifecycle}）。
+     *
+     * <p>SPI javadoc 明示 {@code release()} 是「客户端断开 / 世界退出路径」且<b>不在每次关屏调用</b>；
+     * 若关屏路径（面板内容 Owner / 字段行 Owner）也接一条释放，进程级常驻源会在每次关闭选择器时
+     * 丢掉分片与清单快照（重开即全量重建）。这条负向白名单把「释放点唯一」钉成源码事实。</p>
+     *
+     * <p>注意扫描口径：只统计<b>同时</b>引用 {@code PickerCandidateSource} 与出现 {@code .release()}
+     * 的文件 —— {@code PickerIconResolver} / {@code PickerIconCache} 的 {@code release()} 是屏级图标缓存
+     * 自身的释放（不同对象、不同生命周期），不涉及候选源类型，故不在本白名单范围内。</p>
+     */
+    @Test
+    public void candidateSourceReleaseAppearsOnlyAtTheSessionLifecycleLedger() throws Exception {
+        List<String> seen = new ArrayList<String>();
+        for (Path file : mainSources()) {
+            String name = file.getFileName().toString();
+            if ("PickerCandidateSource.java".equals(name)) {
+                continue;                                  // 接口自身的 release() 声明
+            }
+            String code = codeWithoutComments(read(file));
+            if (code.contains("PickerCandidateSource") && code.contains(".release()")) {
+                seen.add(name);
+            }
+        }
+        Assert.assertEquals("候选源 release() 调用点必须恰为会话账本（新增即红，须显式登记并说明理由）",
+                RELEASE_CALL_SITES, seen);
+    }
+
     /** 反向断言：调用点不得处于线程/执行器上下文，且必须携带运行期线程断言。 */
     @Test
     public void callSitesAreNotInThreadContextsAndCarryRuntimeAssertion() throws Exception {
@@ -118,6 +152,7 @@ public class PickerSourceCallSiteGuardTest {
                 "ThreadPoolExecutor", "ForkJoinPool", ".submit(");
         List<String> callSiteFiles = new ArrayList<String>(QUERY_CALL_SITES.keySet());
         callSiteFiles.addAll(REVISION_CALL_SITES.keySet());
+        callSiteFiles.addAll(RELEASE_CALL_SITES);
         for (String name : callSiteFiles) {
             Path file = findMainSource(name);
             String code = codeWithoutComments(read(file));

@@ -1,6 +1,7 @@
 package club.heiqi.uilib;
 
 import club.heiqi.config.ui.field.PickerSourceGuard;
+import club.heiqi.config.ui.field.PickerSourceLifecycle;
 import club.heiqi.uilib.client.FontRenderTickListener;
 import club.heiqi.uilib.client.MinecraftMainThreadOracle;
 import club.heiqi.uilib.client.UiHudRenderListener;
@@ -12,6 +13,8 @@ import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
 import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.client.NetStoreUiBridge;
+import club.heiqi.uilib.net.core.MainThreadDispatcher;
+import club.heiqi.uilib.net.transport.NetSide;
 import club.heiqi.uilib.resource.ResourceReloadService;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
@@ -94,11 +97,24 @@ public class ClientProxy extends CommonProxy {
             MyMod.LOG.warn("网络层断连清理异常", exception);
         }
         try {
-            // 世界退出/断连：分级结论与跨世界旧图标不再有效（与候选源 release() 同批语义；
-            // 候选源本身是 Miner 侧进程级单例，其 release 由 P2-B 接入同一条断连路径）。
+            // 世界退出/断连：分级结论与跨世界旧图标不再有效（与候选源 release() 同批语义）。
             ItemRenderTierRegistry.invalidateAll("client_disconnect");
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("渲染分级表失效异常", exception);
+        }
+        try {
+            // 候选源 SPI 的会话级释放点（SPI javadoc：客户端断开 / 世界退出；**不在关屏调用**）。
+            // 本事件在网络线程触发，而 SPI 全方法只允许客户端主线程（ADR A-01）⇒ 先派发到客户端主线程
+            // 队列，由 ClientTickEvent（ForgeMainThreadDispatcherBridge）排空后再释放；
+            // 排空通道在断连后照常运行（主菜单也 tick），故释放不会被漏掉。
+            MainThreadDispatcher.getInstance().enqueue(NetSide.CLIENT, new Runnable() {
+                @Override
+                public void run() {
+                    PickerSourceLifecycle.releaseAll("client_disconnect");
+                }
+            });
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("候选源会话释放派发异常", exception);
         }
     }
 

@@ -43,12 +43,14 @@ public class SearchPickerFieldSupportSpiPathTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         PickerSourceGuard.__resetForTests();
+        PickerSourceLifecycle.__resetForTests();
     }
 
     @After
     public void tearDown() {
         ReactiveScheduler.get().reset();
         PickerSourceGuard.__resetForTests();
+        PickerSourceLifecycle.__resetForTests();
     }
 
     /**
@@ -167,6 +169,39 @@ public class SearchPickerFieldSupportSpiPathTest {
         Assert.assertEquals("装配层传入的搜索窗口被收进注册快照", 128, registered.searchMaxItems());
     }
 
+    /**
+     * 会话释放账本的<b>接线</b>守卫（U-B1 闭合）：登记点必须是真实字段侧接线
+     * （{@code SearchPickerFieldSupport#candidateSourceOf}），断连路径的
+     * {@code PickerSourceLifecycle.releaseAll} 才能释放到生产的源 —— 而不是只有测试自己登记过的源。
+     */
+    @Test
+    public void fieldWiringRegistersSourceSoSessionReleaseReachesIt() {
+        FakeSource source = new FakeSource(3);
+        Registry registry = new Registry();
+        registry.register(spiProvider("test:spi", source), 64);
+        registry.freeze();
+        SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        try {
+            Signal<Object> value = Signal.<Object>create("k1");
+            runtime.mount(new SceneNode(), () -> SearchPickerFieldSupport.createControlledIfPresent(
+                    runtime, ValueSpec.string().withWidget(new SearchPickerSpec("test:spi", 8)),
+                    value, registry, value::set));
+            runtime.flush();
+
+            Assert.assertEquals("字段侧接线必须把源登记进会话账本（无登记 = release 永不被调用）",
+                    1, PickerSourceLifecycle.trackedCount());
+            Assert.assertEquals("登记不得触碰候选（注册期零读取语义不因账本改变）", 0, source.sizeCalls);
+        } finally {
+            runtime.dispose();
+        }
+
+        Assert.assertEquals("关屏（屏级 Owner 释放）不得释放进程级常驻源 —— SPI javadoc：不在每次关屏调用",
+                0, source.releaseCalls);
+        Assert.assertEquals("会话释放必须命中经真实接线登记的源",
+                1, PickerSourceLifecycle.releaseAll("client_disconnect"));
+        Assert.assertEquals("release 恰一次", 1, source.releaseCalls);
+    }
+
     /** 未传窗口时沿用 provider 自报值；非法窗口立即失败。 */
     @Test
     public void registrationUsesProviderValueAndRejectsIllegalWindow() {
@@ -258,6 +293,7 @@ public class SearchPickerFieldSupportSpiPathTest {
         private int pageCalls;
         private int matchCountCalls;
         private int exactCalls;
+        private int releaseCalls;
         private int lastPageOffset = -1;
         private int lastPageLimit = -1;
         private boolean duplicateFirst;
@@ -324,6 +360,11 @@ public class SearchPickerFieldSupportSpiPathTest {
         @Override
         public List<SearchPickerCategories.Category> categories(int dimension) {
             return Collections.emptyList();
+        }
+
+        @Override
+        public void release() {
+            releaseCalls++;
         }
 
         private static SearchPickerData.Candidate candidate(String key) {
