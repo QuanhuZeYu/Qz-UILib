@@ -512,7 +512,7 @@ public class VariantChooserTest {
 
         // scrim 只负责遮罩：静态半透明底、零玻璃（契约 §4.1「遮罩只负责遮罩」）
         Assert.assertNull("scrim 不声明 backdrop", scrim.getBackdrop());
-        Assert.assertEquals("scrim 保持遮罩语义静态底", 0xCC000000, scrim.getBackgroundColor());
+        Assert.assertEquals("scrim = 场景遮罩统一值（P5 U-P5-3 收敛）", 0xCC121016, scrim.getBackgroundColor());
         Assert.assertEquals("scrim 自身不新增 BACKDROP 采样（面板表面那颗挂在 card 上）",
                 backdropCount(paintEngine, card), backdropCount(paintEngine, scrim));
         Assert.assertTrue("面板裁剪保持（clip 非绑定器属性，组件自持）", card.isClipChildren());

@@ -9,6 +9,7 @@ import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.CurrentValuePresenter;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
@@ -19,6 +20,7 @@ import club.heiqi.uilib.ui.scene.control.SceneSegmented;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
 import club.heiqi.uilib.ui.scene.control.SceneTextInput;
 import club.heiqi.uilib.ui.scene.control.SceneToggle;
+import club.heiqi.uilib.ui.scene.control.search.PickerChrome;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -52,10 +54,19 @@ import java.util.Map;
  * 草稿事务、增删排序、dirty/error、保存/撤销/重置语义零改动。</p>
  */
 public final class StructuredListFieldRenderer implements FieldRenderer {
+    /** 行间距：规格 §4.1 未要求该项派生（只要求文字/图标派生），保持既有间距常量。 */
     private static final int ROW_GAP = 5;
+    /** 成员间距：同上，保持既有间距常量。 */
     private static final int MEMBER_GAP = 4;
-    private static final int PRESENTATION_IMAGE_SIZE = 18;
-    private static final int HEADER_TITLE_MAX_WIDTH = 260;
+    /**
+     * 展示图边长下限（逻辑 px）。
+     *
+     * <p>P5 §2.5：实际边长 = {@code round(生效字号 * 1.5)}（与触发器图标同源口径），
+     * 此处只登记可读性下限；字号变化经 layoutDone 重派生。</p>
+     */
+    private static final int PRESENTATION_IMAGE_MIN_PX = PickerChrome.triggerIconSide(11);
+    /** 标题槽最大宽占可用宽比例（%）：由布局宽派生，替代 260 硬编码（P5 §4.1）。 */
+    private static final int HEADER_TITLE_WIDTH_PERCENT = 40;
     private final Registry editorRegistry;
 
     /** 使用冻结空 editor registry 创建 renderer。 */
@@ -162,7 +173,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         SceneNode titleSlot = SceneNode.row();
         titleSlot.setFlexGrow(1);
         titleSlot.setWidthSizing(SceneNode.WidthSizing.SHRINK);
-        titleSlot.setMaxWidth(HEADER_TITLE_MAX_WIDTH);
+        bindTitleMaxWidth(rt, header, titleSlot);
         titleSlot.setClipChildren(true);
         SceneNode title = headerTitle(StructuredListModel.rowHeader(
                 rows.get(), row.key(), objectSpec.identityMember()));
@@ -281,8 +292,7 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
         SceneNode summary = SceneNode.column();
         summary.setGap(2);
         SceneNode image = new SceneNode();
-        image.setPreferredWidth(PRESENTATION_IMAGE_SIZE);
-        image.setPreferredHeight(PRESENTATION_IMAGE_SIZE);
+        bindPresentationImageSize(rt, image);
         image.setHitTestable(false);
         SceneNode title = label("");
         SceneNode detail = label("");
@@ -447,6 +457,40 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     private static Object parseNumber(String value) {
         try { return Double.valueOf(Double.parseDouble(value)); }
         catch (NumberFormatException e) { return value; }
+    }
+
+    /**
+     * 展示图边长绑定：{@code max(下限, round(生效字号 * 1.5))}（P5 §2.5 同源口径）。
+     *
+     * @param rt    场景运行时
+     * @param image 展示图节点
+     */
+    private static void bindPresentationImageSize(SceneRuntime rt, SceneNode image) {
+        rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
+            int side = Math.max(PRESENTATION_IMAGE_MIN_PX,
+                    PickerChrome.triggerIconSide(image.effectiveFontSize()));
+            image.setPreferredWidth(side);
+            image.setPreferredHeight(side);
+        }));
+    }
+
+    /**
+     * 标题槽最大宽绑定：取容器可用宽的 {@value #HEADER_TITLE_WIDTH_PERCENT}%（P5 §4.1：
+     * 用可用宽百分比替代 260 硬编码）。首帧布局后按 cachedLayout 宽写入，窗口缩放/字号变化重派生。
+     *
+     * @param rt    场景运行时
+     * @param host  承载节点（提供可用宽）
+     * @param slot  标题槽（写 maxWidth）
+     */
+    private static void bindTitleMaxWidth(SceneRuntime rt, SceneNode host, SceneNode slot) {
+        rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
+            Object cached = host.getCachedLayout();
+            if (!(cached instanceof club.heiqi.uilib.ui.scene.layout.LayoutBox)) {
+                return;
+            }
+            int width = ((club.heiqi.uilib.ui.scene.layout.LayoutBox) cached).getWidth();
+            slot.setMaxWidth(Math.max(1, Math.round(width * HEADER_TITLE_WIDTH_PERCENT / 100.0F)));
+        }));
     }
 
     private static SceneNode label(String text) {

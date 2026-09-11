@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
@@ -77,8 +78,8 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  */
 public final class SceneVirtualGrid {
 
-    /** 无图片项的占位底色（与旧版搜索选择器图标占位同色；属图像渲染协议，非主题槽位）。 */
-    public static final int DEFAULT_PLACEHOLDER_COLOR = 0xFF454B54;
+    /** 无图片项的占位底色（属图像渲染协议，非主题槽位；集中定义处 = {@link SceneRenderProtocolTokens}）。 */
+    public static final int DEFAULT_PLACEHOLDER_COLOR = SceneRenderProtocolTokens.IMAGE_PLACEHOLDER_ARGB;
 
     private static final int LABEL_FONT_SIZE = 12;
     private static final int CELL_PADDING = 4;

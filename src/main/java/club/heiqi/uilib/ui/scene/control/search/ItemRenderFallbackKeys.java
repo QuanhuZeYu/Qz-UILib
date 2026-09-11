@@ -8,9 +8,14 @@ import java.util.function.Function;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
+import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * ItemRenderFallbackKeys —— 物品图标不可渲染回退键集合的共享装配。
@@ -68,5 +73,25 @@ public final class ItemRenderFallbackKeys {
             owner.onCleanup(() -> ItemRenderTierRegistry.removeListener(listener));
         }
         return unrenderableKeys;
+    }
+
+    /**
+     * UNRENDERABLE 状态底色 —— <b>主题派生</b>令牌（ADR §5.4 / A-19 边界）。
+     *
+     * <p>与「无图」协议色（{@link SceneRenderProtocolTokens#IMAGE_PLACEHOLDER_ARGB}，静态不随主题）
+     * 是两种可区分状态：本令牌色相取自主题 {@code errorText}，主题切换即时重派生（Computed 记忆化，
+     * 不重建节点），并叠加固定 alpha 以保持与图标内容的对比。</p>
+     *
+     * <p><b>禁止</b>把「无图」协议色改成主题派生，也<b>禁止</b>把本令牌写死为协议色 ——
+     * 两条边界由 {@code ScenePickerRenderStateTest} 的令牌不等断言与主题切换断言钉住。</p>
+     *
+     * @param rt 场景运行时（提供主题作用域）
+     * @return UNRENDERABLE 底色只读信号（ARGB）
+     */
+    public static ReadableSignal<Integer> unrenderableTint(SceneRuntime rt) {
+        final ReadableSignal<Integer> errorText = SceneThemes.errorText(rt);
+        return Computed.create(() -> Integer.valueOf(
+                (SceneRenderProtocolTokens.UNRENDERABLE_TINT_ALPHA << 24)
+                        | (errorText.get().intValue() & 0x00FFFFFF)));
     }
 }

@@ -130,7 +130,8 @@ public final class ScenePickerPanel {
     private enum FocusIntent { NONE, SEARCH_INPUT, GRID, VARIANTS }
 
     private static final int PANEL_PADDING = SceneChromeTokens.PAD_MD;
-    private static final int SEARCH_INPUT_WIDTH_PERCENT = 35;
+    /** 搜索输入框宽度占顶栏比例（%）：比例常量收口在 {@link PickerDensityTokens}（P5 §4.3 条 2）。 */
+    private static final int SEARCH_INPUT_WIDTH_PERCENT = PickerDensityTokens.SEARCH_INPUT_WIDTH_PERCENT;
     /**
      * 无宿主逻辑盒时的面板百分比回退（P5 偏差 D-P5-3）。
      *
@@ -737,7 +738,10 @@ public final class ScenePickerPanel {
                             gridHighlight, addingMember, editingMember,
                             focusIntent, () -> props.selectionCommit().test(draft)),
                     () -> closeVariants(variantsOpen, activeCandidate, focusIntent),
-                    props.presentation(), props.panelPresentation()));
+                    props.presentation(), props.panelPresentation(),
+                    // 派生卡/行/列表尺寸只在宿主发布逻辑盒后生效（D-P5-3 同口径：
+                    // 无视口事实时派生盒宽退化为 1px，会把浮层压成零尺寸）。
+                    viewportSizing ? metrics : null));
 
             // 网格高亮回夹（数据收缩/分类切换后夹到合法范围）：关闭时高亮已由 open bind 重置为 -1，
             // 关闭态无需回夹，故随内容 Owner 建/释放（ADR §4.1）。高亮按 totalItems 夹取（O(1)，
@@ -848,7 +852,8 @@ public final class ScenePickerPanel {
                 viewportSizing
                         ? Computed.create(() -> Integer.valueOf(metrics.get().panel().navWidthPx()))
                         : null,
-                props.panelPresentation().categoryDimensionTitle(), densityStatus)));
+                props.panelPresentation().categoryDimensionTitle(), densityStatus,
+                viewportSizing ? metrics : null)));
         // 悬停项：驱动信息条文本（悬浮 tooltip 已被固定信息条取代）。
         Signal<SceneVirtualGrid.Item> hoveredItem = Signal.create(null);
         selectionArea.appendChild(centerColumn(rt, props, closeRequest, feed,
@@ -1248,8 +1253,10 @@ public final class ScenePickerPanel {
                         gridHighlight),
                 memberId -> removeMember(props, memberId, addingMember, editingMember,
                         variantsOpen, activeCandidate, gridHighlight, focusIntent),
+                // 卡尺寸兼容位：有度量通道时内部按字号派生（P5 §2.5），此处只作旧口径兜底。
                 MemberGrid.DEFAULT_CELL_WIDTH, MemberGrid.DEFAULT_CELL_HEIGHT,
-                MemberGrid.DEFAULT_GAP_X, MemberGrid.DEFAULT_GAP_Y));
+                MemberGrid.DEFAULT_GAP_X, MemberGrid.DEFAULT_GAP_Y,
+                viewportSizing ? metrics : null));
         grid.root().setFlexGrow(1);
         panel.appendChild(grid.root());
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),

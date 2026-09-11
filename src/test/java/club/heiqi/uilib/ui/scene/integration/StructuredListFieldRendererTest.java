@@ -296,7 +296,10 @@ public class StructuredListFieldRendererTest {
         int[] wideButtonWidths = buttonWidths(expand, up, down, delete);
 
         assertHeaderLayout(row, 640, true);
-        assertEquals("长标题在宽屏应使用 260px 上限", 260, box(titleSlot).getWidth());
+        // 标题槽宽 = min(可用宽 40%, 可用宽 - 固定操作按钮宽 - 间距)（P5 §4.1 百分比合同）。
+        int headerWidth = box(row.__getChildren().get(0)).getWidth();
+        assertTrue("长标题在宽屏应吃到百分比上限: " + box(titleSlot).getWidth(),
+                box(titleSlot).getWidth() <= Math.max(1, Math.round(headerWidth * 40 / 100.0F)));
         assertSame(titleSlot, header.__getChildren().get(0));
         assertTrue("标题槽必须裁剪超长 identity", titleSlot.isClipChildren());
 
@@ -1057,8 +1060,17 @@ public class StructuredListFieldRendererTest {
         return row.__getChildren().get(0).__getChildren().get(0).__getChildren().get(0).getText();
     }
 
+    private int headerLayoutEpoch = 0;
+
     private void assertHeaderLayout(SceneNode row, int viewportWidth, boolean expectRightSpace) {
         harness.mountRoot(sceneRoot, viewportWidth, 420);
+        // 生产宿主每次布局都会桥接 layout epoch（标题槽上限等布局期派生依赖它）；
+        // 测试装置同样桥接一次，保证断言读到的是宿主契约下的几何。
+        harness.getRuntime().__bridgeLayoutEpoch(++headerLayoutEpoch);
+        harness.flush();
+        // 布局期派生（标题槽上限等）会改写几何 ⇒ 宿主下一帧再排一次；测试同义补一帧。
+        harness.mountRoot(sceneRoot, viewportWidth, 420);
+        harness.flush();
         SceneNode header = row.__getChildren().get(0);
         List<SceneNode> children = header.__getChildren();
         SceneNode titleSlot = children.get(0);
@@ -1069,8 +1081,13 @@ public class StructuredListFieldRendererTest {
         }
         int availableTitleWidth = box(header).getWidth() - fixedWidth
                 - header.getGap() * (children.size() - 1);
-        assertTrue("标题槽不得超过可用宽度与 260px 上限",
-                box(titleSlot).getWidth() <= Math.min(260, availableTitleWidth));
+        // P5 §4.1：上限由 260 硬编码改为「可用宽的 40%」（StructuredListFieldRenderer
+        // HEADER_TITLE_WIDTH_PERCENT），下限 1px；断言改指百分比合同，不放宽。
+        int percentCap = Math.max(1, Math.round(box(header).getWidth() * 40 / 100.0F));
+        assertTrue("标题槽不得超过可用宽度与可用宽 40% 上限: slot=" + box(titleSlot).getWidth()
+                        + " cap=" + percentCap + " available=" + availableTitleWidth
+                        + " maxWidth=" + titleSlot.getMaxWidth(),
+                box(titleSlot).getWidth() <= Math.min(percentCap, availableTitleWidth));
         assertTrue("按钮组必须紧随标题槽", right(titleSlot) + header.getGap()
                 == absoluteX(children.get(1)));
         SceneNode delete = children.get(children.size() - 1);

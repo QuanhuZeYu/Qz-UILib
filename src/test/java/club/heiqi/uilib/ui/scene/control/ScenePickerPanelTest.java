@@ -694,6 +694,7 @@ public class ScenePickerPanelTest {
         // 切到 SELECTED：只读提示零占位（不制造空文本行）
         click(card.__getChildren().get(2).__getChildren().get(1));
         rt.flush();
+        layoutAll();
         Assert.assertEquals("SELECTED 模式只读提示零占位", 0, readOnlyHint.getPreferredHeight());
 
         // 筛选无匹配：空态文案经注入且占一行
@@ -1704,7 +1705,7 @@ public class ScenePickerPanelTest {
                 surfaces.contains(footer.__getChildren().get(1)));
         Assert.assertEquals("浮层树 BACKDROP = 8", 8, backdropCount(scrim));
         Assert.assertNull("变体 scrim 不装玻璃", scrim.getBackdrop());
-        Assert.assertEquals("变体 scrim 保持静态遮罩底（只负责遮罩）", 0xCC000000,
+        Assert.assertEquals("变体 scrim = 场景遮罩统一值（P5 U-P5-3 收敛，只负责遮罩）", 0xCC121016,
                 scrim.getBackgroundColor());
         for (SceneNode row : variantViewport.__getChildren().get(0).__getChildren()) {
             Assert.assertEquals("变体复用行零 BACKDROP", 0, ownBackdropCount(row));
@@ -1900,7 +1901,7 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("面板自身恰一颗 BACKDROP（浮层表面一颗，宿主不叠加；内部控件表面另计）",
                 1, ownBackdropCount(card));
         Assert.assertNull("scrim 不装玻璃", scrim.getBackdrop());
-        Assert.assertEquals("scrim 静态遮罩底不变", 0xCC000000, scrim.getBackgroundColor());
+        Assert.assertEquals("scrim = 场景遮罩统一值（P5 U-P5-3 收敛）", 0xCC121016, scrim.getBackgroundColor());
 
         SceneNode segmented = card.__getChildren().get(1);
         click(segmented.__getChildren().get(1));

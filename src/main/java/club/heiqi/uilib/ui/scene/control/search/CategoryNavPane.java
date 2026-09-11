@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav;
 import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -82,7 +83,8 @@ public final class CategoryNavPane {
             String emptyLabel,
             ReadableSignal<Integer> widthPx,
             String title,
-            ReadableSignal<String> statusText) {
+            ReadableSignal<String> statusText,
+            ReadableSignal<PickerMetrics> metrics) {
 
         /** 显式校验构造器：rows / categoryKey / enabled / onSelect 非 null。 */
         public Props {
@@ -106,7 +108,27 @@ public final class CategoryNavPane {
                      ReadableSignal<String> categoryKey, ReadableSignal<Boolean> enabled,
                      Consumer<String> onSelect, String emptyLabel,
                      ReadableSignal<Integer> widthPx) {
-            this(rows, categoryKey, enabled, onSelect, emptyLabel, widthPx, null, null);
+            this(rows, categoryKey, enabled, onSelect, emptyLabel, widthPx, null, null, null);
+        }
+
+        /**
+         * 6 参 + 文案形态（P5 兼容，纯加法保留）：行高仍取 {@link #ROW_HEIGHT} 常量。
+         *
+         * @param rows         分类行
+         * @param categoryKey  当前分类 key
+         * @param enabled      是否启用
+         * @param onSelect     选择回调
+         * @param emptyLabel   空态文案
+         * @param widthPx      派生宽度信号（可 null）
+         * @param title        栏标题（可 null/空 = 不渲染）
+         * @param statusText   状态行文案信号（可 null = 不渲染）
+         */
+        public Props(ReadableSignal<? extends List<ScenePickerPanelNav.CategoryRow>> rows,
+                     ReadableSignal<String> categoryKey, ReadableSignal<Boolean> enabled,
+                     Consumer<String> onSelect, String emptyLabel,
+                     ReadableSignal<Integer> widthPx, String title,
+                     ReadableSignal<String> statusText) {
+            this(rows, categoryKey, enabled, onSelect, emptyLabel, widthPx, title, statusText, null);
         }
 
         /**
@@ -206,6 +228,8 @@ public final class CategoryNavPane {
         SceneNode rows = sc.content();
         rows.setHitTestable(false);
 
+        // 行高由生效字号派生（P5 §2.5：clamp(round(fs*2.67), 24, 36)）；未提供度量通道时
+        // 保留旧常量（既有调用方零变化）。字号与行高经同一份 PickerMetrics，不存在第二真值。
         rt.forEach(rows, props.rows(), ScenePickerPanelNav.CategoryRow::identityKey,
                 row -> categoryRow(rt, props, row, labelForeground, secondaryForeground));
 
@@ -253,7 +277,13 @@ public final class CategoryNavPane {
                                          ReadableSignal<Integer> labelForeground,
                                          ReadableSignal<Integer> secondaryForeground) {
         SceneNode rowNode = SceneNode.row();
-        rowNode.setPreferredHeight(ROW_HEIGHT);
+        ReadableSignal<PickerMetrics> metrics = props.metrics();
+        rowNode.setPreferredHeight(metrics == null ? ROW_HEIGHT
+                : PickerChrome.navRowHeight(metrics.get().fontSizePx()));
+        if (metrics != null) {
+            rt.bind(metrics, m -> Effect.untrack(() ->
+                    rowNode.setPreferredHeight(PickerChrome.navRowHeight(m.fontSizePx()))));
+        }
         rowNode.setCrossAxisAlign(CrossAxisAlign.CENTER);
         rowNode.setGap(SceneChromeTokens.GAP_SM);
         rowNode.setPadding(0, SceneChromeTokens.PAD_MD, 0, SceneChromeTokens.PAD_MD);

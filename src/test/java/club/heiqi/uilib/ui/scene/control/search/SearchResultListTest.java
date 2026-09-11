@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.control.SceneGridWindow;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid.Item;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
+import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
@@ -818,8 +819,14 @@ public class SearchResultListTest {
         ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
         rt.flush();
         SceneNode brokenIcon = f.cell(0, 0).__getChildren().get(0);
-        Assert.assertEquals("不可渲染项回退占位底色", SearchResultList.DEFAULT_PLACEHOLDER_COLOR,
+        // ADR A-19：UNRENDERABLE = 主题派生状态色（≠「无图」静态协议色），两态可区分。
+        // 期望值用同一公式现算（Computed 惰性，直接 get() 可能尚无值）。
+        int expectedUnrenderable = (SceneRenderProtocolTokens.UNRENDERABLE_TINT_ALPHA << 24)
+                | (SceneThemes.errorText(rt).get().intValue() & 0x00FFFFFF);
+        Assert.assertEquals("不可渲染项 = 主题派生状态色", expectedUnrenderable,
                 brokenIcon.getBackgroundColor());
+        Assert.assertNotEquals("两态可区分：UNRENDERABLE ≠「无图」协议色",
+                SearchResultList.DEFAULT_PLACEHOLDER_COLOR, brokenIcon.getBackgroundColor());
         Assert.assertNull("不可渲染项不再挂图片源", brokenIcon.getImageSource());
         // 未标记条目保持原图片源
         SceneNode okIcon = f.cell(0, 1).__getChildren().get(0);

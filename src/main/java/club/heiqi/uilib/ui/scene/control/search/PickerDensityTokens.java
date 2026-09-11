@@ -100,6 +100,53 @@ public final class PickerDensityTokens {
     /** cellW 宽度下限的实测字符样本（4 字符实测宽；度量口径同源，见 P5 I-5）。 */
     public static final String CELL_WIDTH_SAMPLE = "MMMM";
 
+    // ==================== 面板内其它随字号缩放的元素（P5 §2.5） ====================
+
+    /** 搜索输入框宽度占顶栏比例（%）：挂载前预算的一部分，不随字号变。 */
+    public static final int SEARCH_INPUT_WIDTH_PERCENT = 35;
+    /** 成员卡宽比例（× 字号）。 */
+    public static final double MEMBER_CARD_WIDTH_RATIO = 16.0;
+    /** 成员卡宽下限（逻辑 px）。 */
+    public static final int MEMBER_CARD_WIDTH_MIN = 176;
+    /** 成员卡宽上限（逻辑 px）。 */
+    public static final int MEMBER_CARD_WIDTH_MAX = 232;
+    /** 成员卡图标比例（× 字号）。 */
+    public static final double MEMBER_ICON_RATIO = 2.0;
+    /** 变体行高比例（× 字号）。 */
+    public static final double VARIANT_ROW_RATIO = 2.67;
+    /** 变体行高下限（逻辑 px）。 */
+    public static final int VARIANT_ROW_MIN = 26;
+    /** 变体行高上限（逻辑 px）。 */
+    public static final int VARIANT_ROW_MAX = 40;
+    /** 变体图标比例（× 字号）。 */
+    public static final double VARIANT_ICON_RATIO = 1.5;
+    /** 变体列表视口高比例（× 字号）。 */
+    public static final double VARIANT_LIST_RATIO = 12.0;
+    /** 变体列表视口高下限（逻辑 px）。 */
+    public static final int VARIANT_LIST_MIN = 180;
+    /** 变体列表视口高上限（逻辑 px）。 */
+    public static final int VARIANT_LIST_MAX = 320;
+    /** 变体卡宽比例（× 面板宽；上限见 {@link #VARIANT_CARD_MAX}，防小盒溢出）。 */
+    public static final double VARIANT_CARD_RATIO = 0.42;
+    /** 变体卡宽上限（逻辑 px）。 */
+    public static final int VARIANT_CARD_MAX = 520;
+    /** 分类导航行高比例（× 字号）。 */
+    public static final double NAV_ROW_RATIO = 2.67;
+    /** 分类导航行高下限（逻辑 px）。 */
+    public static final int NAV_ROW_MIN = 24;
+    /** 分类导航行高上限（逻辑 px）。 */
+    public static final int NAV_ROW_MAX = 36;
+    /** 徽章内边距除数（fs / 3）。 */
+    public static final double BADGE_PAD_DIVISOR = 3.0;
+    /** 触发器图标比例（× 字号）。 */
+    public static final double TRIGGER_ICON_RATIO = 1.5;
+    /** 滚动条宽比例（× 字号）。 */
+    public static final double SCROLLBAR_WIDTH_RATIO = 0.5;
+    /** 滚动条宽下限（逻辑 px）。 */
+    public static final int SCROLLBAR_WIDTH_MIN = 6;
+    /** 滚动条宽上限（逻辑 px）。 */
+    public static final int SCROLLBAR_WIDTH_MAX = 10;
+
     // ==================== auto 求解（P5 §1.4） ====================
 
     /** 图标等比缩放阶梯 {@code k}（只缩图标与间距派生量，不缩字号）。 */

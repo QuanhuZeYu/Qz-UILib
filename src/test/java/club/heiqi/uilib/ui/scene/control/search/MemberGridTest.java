@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
+import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
@@ -522,18 +523,24 @@ public class MemberGridTest {
                     ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
         }
         rt.flush();
-        Assert.assertEquals("不可渲染项回退占位底色", MemberGrid.PLACEHOLDER_COLOR,
-                brokenIcon.getBackgroundColor());
+        // ADR A-19：UNRENDERABLE = 主题派生状态色（≠「无图」静态协议色）。
+        int unrenderableBefore = brokenIcon.getBackgroundColor();
+        // 期望值用同一公式现算（Computed 惰性，直接 get() 可能尚无值）。
+        int expectedUnrenderable = (SceneRenderProtocolTokens.UNRENDERABLE_TINT_ALPHA << 24)
+                | (SceneThemes.errorText(rt).get().intValue() & 0x00FFFFFF);
+        Assert.assertEquals("不可渲染项 = 主题派生状态色", expectedUnrenderable, unrenderableBefore);
+        Assert.assertNotEquals("两态可区分：UNRENDERABLE ≠「无图」协议色",
+                MemberGrid.PLACEHOLDER_COLOR, unrenderableBefore);
         Assert.assertNull("不可渲染项不再挂图片源", brokenIcon.getImageSource());
 
         pageTheme.set(SceneTheme.liquidGlassLight());
         rt.flush();
         Assert.assertSame("主题切换不动图片源", okImage, okIcon.getImageSource());
         Assert.assertEquals("主题切换不重染有图底", BG_TRANSPARENT, okIcon.getBackgroundColor());
-        Assert.assertEquals("主题切换不重染占位底", MemberGrid.PLACEHOLDER_COLOR,
-                brokenIcon.getBackgroundColor());
-        Assert.assertEquals("主题切换不重染无候选占位底", MemberGrid.PLACEHOLDER_COLOR,
-                noCandidateIcon.getBackgroundColor());
+        Assert.assertNotEquals("主题切换重派生 UNRENDERABLE 状态色（主题派生令牌）",
+                unrenderableBefore, brokenIcon.getBackgroundColor());
+        Assert.assertEquals("主题切换不重染「无图」协议占位底（R-04 边界）",
+                MemberGrid.PLACEHOLDER_COLOR, noCandidateIcon.getBackgroundColor());
         Assert.assertNull("图标不装滤镜", okIcon.getBackdrop());
         Assert.assertNull("占位图标不装滤镜", brokenIcon.getBackdrop());
     }

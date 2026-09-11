@@ -34,6 +34,7 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
 import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
@@ -105,10 +106,14 @@ public final class VariantChooser {
     private static final int VARIANT_ROW_HEIGHT = 34;
     /** 变体图标尺寸（像素）。 */
     private static final int VARIANT_ICON_SIZE = 18;
-    /** 全屏遮罩底色（半透明黑）：遮罩语义静态值，只负责遮罩、不装玻璃（契约 §4.1）。 */
-    private static final int OVERLAY_SCRIM = 0xCC000000;
-    /** 无图占位底色（与 SceneVirtualGrid 占位同色）：物品图像渲染协议静态值，不随主题重染。 */
-    private static final int PLACEHOLDER_COLOR = 0xFF454B54;
+    /**
+     * 全屏遮罩底色：与 {@code SceneDialog} 收敛为同一枚（P5 U-P5-3，协议集中定义）。
+     *
+     * <p>遮罩只负责遮罩、不装玻璃（契约 §4.1）。</p>
+     */
+    private static final int OVERLAY_SCRIM = SceneRenderProtocolTokens.SCRIM_ARGB;
+    /** 无图占位底色：图像渲染协议静态值，不随主题重染（集中定义）。 */
+    private static final int PLACEHOLDER_COLOR = SceneRenderProtocolTokens.IMAGE_PLACEHOLDER_ARGB;
     /** 恒真 enabled：浮层面板自身没有禁用语义（禁用由内部控件各自表达），外观走 idle 档。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
 
@@ -148,7 +153,8 @@ public final class VariantChooser {
             Consumer<SearchPickerData.Selection> onCommit,
             Runnable onCancel,
             SearchPickerPresentation presentation,
-            SearchPickerPanelPresentation panelPresentation) {
+            SearchPickerPanelPresentation panelPresentation,
+            ReadableSignal<PickerMetrics> metrics) {
 
         /**
          * 旧 12 参形态（P5 兼容，纯加法保留）：文案取默认英文快照。
@@ -171,7 +177,64 @@ public final class VariantChooser {
             this(open, candidate, enabled, variantSearchEnabled, title, visualAdapter, mode,
                     onModeChange, selectedKeys, onKeysChange, onCommit, onCancel,
                     SearchPickerPresentation.defaultEnglish(),
-                    SearchPickerPanelPresentation.defaultEnglish());
+                    SearchPickerPanelPresentation.defaultEnglish(), null);
+        }
+
+        /**
+         * 旧 14 参形态（P5 兼容，纯加法保留）：卡/行/图标沿用 P5 前常量。
+         *
+         * @param open               浮层开合
+         * @param candidate          当前候选
+         * @param enabled            是否启用
+         * @param variantSearchEnabled 是否启用搜索
+         * @param title              标题
+         * @param visualAdapter      视觉适配器
+         * @param mode               选择模式
+         * @param onModeChange       模式回写
+         * @param selectedKeys       已选 key
+         * @param onKeysChange       已选回写
+         * @param onCommit           提交回调
+         * @param onCancel           取消回调
+         * @param presentation       领域文案
+         * @param panelPresentation  面板扩展文案
+         */
+        public Props(ReadableSignal<Boolean> open,
+                     ReadableSignal<SearchPickerData.Candidate> candidate,
+                     ReadableSignal<Boolean> enabled, boolean variantSearchEnabled, String title,
+                     VisualAdapter visualAdapter,
+                     ReadableSignal<SearchPickerData.SelectionMode> mode,
+                     Consumer<SearchPickerData.SelectionMode> onModeChange,
+                     ReadableSignal<List<String>> selectedKeys, Consumer<List<String>> onKeysChange,
+                     Consumer<SearchPickerData.Selection> onCommit, Runnable onCancel,
+                     SearchPickerPresentation presentation,
+                     SearchPickerPanelPresentation panelPresentation) {
+            this(open, candidate, enabled, variantSearchEnabled, title, visualAdapter, mode,
+                    onModeChange, selectedKeys, onKeysChange, onCommit, onCancel, presentation,
+                    panelPresentation, null);
+        }
+
+        /** @return 卡宽（有度量通道时 {@code min(round(panelW*0.42), 520)}，否则旧常量） */
+        public int effectiveCardWidth() {
+            return metrics == null ? VARIANT_CARD_WIDTH
+                    : PickerChrome.variantCardWidth(metrics.get().panel().widthPx());
+        }
+
+        /** @return 列表视口高（有度量通道时 {@code clamp(round(fs*12),180,320)}，否则旧常量） */
+        public int effectiveListHeight() {
+            return metrics == null ? VARIANT_LIST_HEIGHT
+                    : PickerChrome.variantListHeight(metrics.get().fontSizePx());
+        }
+
+        /** @return 行高（有度量通道时 {@code clamp(round(fs*2.67),26,40)}，否则旧常量） */
+        public int effectiveRowHeight() {
+            return metrics == null ? VARIANT_ROW_HEIGHT
+                    : PickerChrome.variantRowHeight(metrics.get().fontSizePx());
+        }
+
+        /** @return 图标边长（有度量通道时 {@code round(fs*1.5)}，否则旧常量） */
+        public int effectiveIconSide() {
+            return metrics == null ? VARIANT_ICON_SIZE
+                    : PickerChrome.variantIconSide(metrics.get().fontSizePx());
         }
 
         /** 显式校验构造器。 */
@@ -265,7 +328,7 @@ public final class VariantChooser {
         scrim.setPadding(SceneChromeTokens.PAD_MD);
 
         SceneNode card = SceneNode.column();
-        card.setPreferredWidth(VARIANT_CARD_WIDTH);
+        card.setPreferredWidth(props.effectiveCardWidth());
         // 浮层面板：OVERLAY 角色配方是面板外观唯一写入者（background/border/borderWidth/
         // cornerRadius/backdrop/surfaceElevation 六项独占，面板自身恰装一颗滤镜）；
         // 旧 SceneChromeTokens.applyPanelChrome 实色四件套写入者已删除。
@@ -357,7 +420,7 @@ public final class VariantChooser {
                         labelForeground, onAccentForeground));
 
         SceneNode listHost = sc.container();
-        listHost.setPreferredHeight(VARIANT_LIST_HEIGHT);
+        listHost.setPreferredHeight(props.effectiveListHeight());
         card.appendChild(listHost);
 
         // 只读提示（U-P5-1：presentation.modeReadOnlyHint 的真实显示位）——ALL 模式下列表点击
@@ -434,7 +497,7 @@ public final class VariantChooser {
                                         ReadableSignal<Integer> onAccentForeground) {
         recordVariantRow();
         SceneNode row = SceneNode.row();
-        row.setPreferredHeight(VARIANT_ROW_HEIGHT);
+        row.setPreferredHeight(props.effectiveRowHeight());
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(SceneChromeTokens.GAP_MD);
         row.setPadding(SceneChromeTokens.PAD_MD);
@@ -454,7 +517,7 @@ public final class VariantChooser {
         // 图标：无图或已分级不可渲染 → 占位底色（与结果列表同款回退语义，随分级变更响应式更新）。
         // 图像渲染协议不改色（契约 §4.1「物品图像不改色」）：占位底/透明底为静态值、不随主题重染。
         SceneNode icon = new SceneNode();
-        icon.setPreferredWidth(VARIANT_ICON_SIZE).setPreferredHeight(VARIANT_ICON_SIZE)
+        icon.setPreferredWidth(props.effectiveIconSide()).setPreferredHeight(props.effectiveIconSide())
                 .setHitTestable(false);
         ReadableSignal<SceneImageSource> effectiveImage = Computed.create(() -> {
             if (unrenderableKeys.get().contains(variant.key())) {
@@ -462,10 +525,19 @@ public final class VariantChooser {
             }
             return props.visualAdapter().variantImage(variant);
         });
-        rt.bind(effectiveImage, src -> {
-            icon.setBackgroundColor(src == null ? PLACEHOLDER_COLOR : SceneChromeTokens.TRANSPARENT);
-            icon.setImageSource(src);
-        });
+        // 两态可区分（ADR A-19）：UNRENDERABLE = 主题派生状态色；「无图」= 静态协议占位色。
+        ReadableSignal<Boolean> unrenderable = Computed.create(() ->
+                Boolean.valueOf(unrenderableKeys.get().contains(variant.key())));
+        ReadableSignal<Integer> unrenderableTint = ItemRenderFallbackKeys.unrenderableTint(rt);
+        rt.bindComputed(() -> {
+            if (Boolean.TRUE.equals(unrenderable.get())) {
+                return unrenderableTint.get();
+            }
+            return effectiveImage.get() == null
+                    ? Integer.valueOf(PLACEHOLDER_COLOR)
+                    : Integer.valueOf(SceneChromeTokens.TRANSPARENT);
+        }, icon::setBackgroundColor);
+        rt.bind(effectiveImage, icon::setImageSource);
         row.appendChild(icon);
 
         // label：主题正文前景（禁用取 disabledForeground，经构造期捕获的派生信号）。

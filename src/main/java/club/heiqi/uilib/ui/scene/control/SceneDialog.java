@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.OverlayDismissPolicy;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -66,8 +67,12 @@ public final class SceneDialog {
     private static final int CARD_GAP = SceneChromeTokens.PAD_MD;
     /** 按钮行间距。 */
     private static final int BUTTON_GAP = 8;
-    /** 遮罩色：80% 不透明暗色（与 modernconfig 遮罩同源观感）；遮罩只负责遮罩，不参与表面绑定。 */
-    private static final int SCRIM_ARGB = 0xCC121016;
+    /**
+     * 遮罩色：场景遮罩统一值（P5 U-P5-3 起与变体浮层共用 {@link SceneRenderProtocolTokens#SCRIM_ARGB}）。
+     *
+     * <p>遮罩只负责遮罩，不参与表面绑定（不装玻璃、不进六项属性）。</p>
+     */
+    private static final int SCRIM_ARGB = SceneRenderProtocolTokens.SCRIM_ARGB;
     /** 卡片边框宽度，必须与 {@link SceneTheme.Role#OVERLAY} 配方的 borderWidth 一致（默认主题 1px）。 */
     private static final int CARD_BORDER = 1;
     /** 恒真 enabled：对话框卡片不是可禁用控件，配方档位只由交互态决定（与 Select 浮层同款口径）。 */

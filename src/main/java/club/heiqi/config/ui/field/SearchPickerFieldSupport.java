@@ -27,11 +27,13 @@ import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel;
 import club.heiqi.uilib.ui.scene.control.SceneSimpleList;
+import club.heiqi.uilib.ui.scene.control.search.PickerChrome;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -39,6 +41,7 @@ import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
@@ -62,11 +65,16 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  */
 public final class SearchPickerFieldSupport {
     private static final Logger LOG = LogManager.getLogger("QzUiLib/ConfigUI");
-    private static final int TRIGGER_ICON_SIZE = 18;
-    private static final int TRIGGER_DETAIL_FONT_SIZE = 12;
-    private static final int MANAGE_BUTTON_WIDTH = 96;
+    /**
+     * 触发器图标边长下限（逻辑 px）。
+     *
+     * <p>P5 §2.5：图标边长 = {@code round(fs*1.5)}，此处只登记"可读性下限"夹取边界；
+     * 实际值在 {@link #bindTriggerIconSize} 里按节点生效字号派生（字号变化即时重派生）。</p>
+     */
+    private static final int TRIGGER_ICON_MIN_PX = PickerChrome.triggerIconSide(11);
     /** 图片在场时占位图标底保持透明（无颜色语义，仅「不写占位底色」的字面零值）。 */
-    private static final int ICON_BG_TRANSPARENT = 0x00000000;
+    /** 图标底透明：取协议令牌表的透明值（同值双写已消除，P5 U-P5-3；非主题槽位）。 */
+    private static final int ICON_BG_TRANSPARENT = SceneRenderProtocolTokens.TRANSPARENT_ARGB;
     /** 行触发器表面恒定启用（控件自身无禁用态；面板开关不改触发器可用性）。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
     /**
@@ -291,7 +299,8 @@ public final class SearchPickerFieldSupport {
                 Signal.create(presentation.manage()), Signal.create(Boolean.TRUE),
                 () -> open.set(Boolean.TRUE))).get();
         manage.setWidthSizing(SceneNode.WidthSizing.SHRINK);
-        manage.setPreferredWidth(MANAGE_BUTTON_WIDTH);
+        // 管理按钮宽 = 文本实测宽 + 内边距（SHRINK 由控件自算，不再有 96 硬编码；P5 §4.1）。
+        manage.setWidthSizing(SceneNode.WidthSizing.SHRINK);
         management.appendChild(manage);
         SceneNode summary = SceneNode.row();
         summary.setGap(4);
@@ -631,17 +640,18 @@ public final class SearchPickerFieldSupport {
 
         if (presenter != null) {
             SceneNode icon = new SceneNode();
-            icon.setPreferredWidth(TRIGGER_ICON_SIZE);
-            icon.setPreferredHeight(TRIGGER_ICON_SIZE);
             icon.setHitTestable(false);
+            // 图标边长 = round(生效字号 * 1.5)（P5 §2.5）：字号变化经 layoutDone 重派生，
+            // 不再有 18px 硬编码；下限由 TRIGGER_ICON_MIN_PX 夹取。
+            bindTriggerIconSize(rt, icon);
             trigger.appendChild(icon);
             SceneNode info = SceneNode.column();
             info.setFlexGrow(1);
             info.setGap(2);
             info.setHitTestable(false);
             SceneNode title = text(rt, "", SceneThemes.foreground(rt));
+            // 副文本字号随触发器（继承声明），不再有独立的 12px 常量（P5 §2.5「去掉 TRIGGER_DETAIL_FONT_SIZE」）。
             SceneNode detail = text(rt, "", SceneThemes.mutedForeground(rt));
-            detail.setFontSize(TRIGGER_DETAIL_FONT_SIZE);
             info.appendChild(title);
             info.appendChild(detail);
             trigger.appendChild(info);
@@ -725,6 +735,21 @@ public final class SearchPickerFieldSupport {
      * @param color 主题语义前景信号（正文 {@code foreground} / 次要 {@code mutedForeground}）
      * @return 文字节点
      */
+    /**
+     * 触发器图标边长绑定：{@code max(TRIGGER_ICON_MIN_PX, round(生效字号 * 1.5))}。
+     *
+     * <p>用「布局纪元 + 节点自身生效字号」这一既有派生口径（与字号声明/倍率的失效通道同源），
+     * 不新造第二套字号事实；首帧即按声明值算好。</p>
+     */
+    private static void bindTriggerIconSize(SceneRuntime rt, SceneNode icon) {
+        rt.bind(rt.layoutDoneSignal(), epoch -> Effect.untrack(() -> {
+            int side = Math.max(TRIGGER_ICON_MIN_PX,
+                    PickerChrome.triggerIconSide(icon.effectiveFontSize()));
+            icon.setPreferredWidth(side);
+            icon.setPreferredHeight(side);
+        }));
+    }
+
     private static SceneNode text(SceneRuntime rt, String value, ReadableSignal<Integer> color) {
         SceneNode node = new SceneNode();
         node.setText(value == null ? "" : value);

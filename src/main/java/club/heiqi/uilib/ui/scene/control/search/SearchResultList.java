@@ -34,6 +34,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
+import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.SceneScrolls;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
@@ -92,14 +93,19 @@ public final class SearchResultList {
     public static final int LABEL_FONT_SIZE = 12;
     /** 图标与标签间距。 */
     public static final int LABEL_GAP = 2;
-    /** 无图片项的占位底色（与 SceneVirtualGrid 同色，属图像渲染协议，非主题槽位）。 */
-    public static final int DEFAULT_PLACEHOLDER_COLOR = 0xFF454B54;
+    /**
+     * 无图片项的占位底色（属图像渲染协议，非主题槽位）。
+     *
+     * <p>集中定义处 = {@link SceneRenderProtocolTokens}（P5 U-P5-3）；本常量保留为公共兼容别名，
+     * 值不变、语义不变。</p>
+     */
+    public static final int DEFAULT_PLACEHOLDER_COLOR = SceneRenderProtocolTokens.IMAGE_PLACEHOLDER_ARGB;
     /** 结果单元默认底色：全透明，露出底座玻璃（单元不各自采样滤镜）。 */
-    private static final int CELL_BG_TRANSPARENT = 0x00000000;
-    /** 结果单元 hover 覆盖强度：主题 accent 的低透明度轻量覆盖。 */
-    private static final int CELL_HOVER_ALPHA = 0x1F;
+    private static final int CELL_BG_TRANSPARENT = SceneRenderProtocolTokens.TRANSPARENT_ARGB;
+    /** 结果单元 hover 覆盖强度：主题 accent 的低透明度轻量覆盖（协议集中定义）。 */
+    private static final int CELL_HOVER_ALPHA = SceneRenderProtocolTokens.CELL_HOVER_ALPHA;
     /** 结果单元选中（高亮）覆盖强度：主题选区背景，明显强于 hover（不只靠透明度区分）。 */
-    private static final int CELL_SELECTED_ALPHA = 0x59;
+    private static final int CELL_SELECTED_ALPHA = SceneRenderProtocolTokens.CELL_SELECTED_ALPHA;
     /**
      * 额外挂载行数（overscan）：v1 固定 1（与 {@link SceneVirtualGrid} 现值一致），
      * 由 {@link SceneGridWindow#compute} 参数化。「滚动速度感知的 1-2 行」启用前必须写明
@@ -974,10 +980,19 @@ public final class SearchResultList {
             SceneVirtualGrid.Item live = window.get().snapshot().index().itemAt(item.key());
             return live == null ? item.image() : live.image();
         });
-        rt.bind(effectiveImage, src -> {
-            icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
-            icon.setImageSource(src);
-        });
+        // 两态可区分（ADR A-19）：UNRENDERABLE = 主题派生状态色；「无图」= 静态协议占位色。
+        ReadableSignal<Boolean> unrenderable = Computed.create(() ->
+                Boolean.valueOf(unrenderableKeys.get().contains(item.key())));
+        ReadableSignal<Integer> unrenderableTint = ItemRenderFallbackKeys.unrenderableTint(rt);
+        rt.bindComputed(() -> {
+            if (Boolean.TRUE.equals(unrenderable.get())) {
+                return unrenderableTint.get();
+            }
+            return effectiveImage.get() == null
+                    ? Integer.valueOf(DEFAULT_PLACEHOLDER_COLOR)
+                    : Integer.valueOf(SceneRenderProtocolTokens.TRANSPARENT_ARGB);
+        }, icon::setBackgroundColor);
+        rt.bind(effectiveImage, icon::setImageSource);
         // 「已配置」圆点挂在**图位右上角**（不是新的一行/一列）：单元结构保持 [icon, label]，
         // 既不占标签行宽度、也不动轨道高与既有取节点路径；未命中时宽高与 margin 全 0（零占位）。
         SceneNode marker = SceneNode.column();
