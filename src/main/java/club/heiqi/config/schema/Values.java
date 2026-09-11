@@ -19,7 +19,16 @@ public final class Values {
         if (spec == null) throw new IllegalArgumentException("spec must not be null");
         return spec.withWidget(widget);
     }
-    /** @return 搜索选择器 widget 元数据 */
+    /**
+     * 创建搜索选择器 widget 元数据（搜索 lane 窗口上限取默认 {@link SearchPickerSpec#DEFAULT_MAX_ITEMS}）。
+     *
+     * @param editorId namespaced editor id
+     * @return 搜索选择器 widget 元数据
+     */
+    public static SearchPickerSpec searchPicker(String editorId) {
+        return new SearchPickerSpec(editorId, SearchPickerSpec.DEFAULT_MAX_ITEMS);
+    }
+    /** @return 搜索选择器 widget 元数据（maxItems = 搜索 lane 窗口上限） */
     public static SearchPickerSpec searchPicker(String editorId, int maxItems) {
         return new SearchPickerSpec(editorId, maxItems);
     }

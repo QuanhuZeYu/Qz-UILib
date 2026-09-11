@@ -14,6 +14,25 @@ public final class Registry {
 
     /** 注册 provider；空 id、重复 id 或冻结后注册均立即失败。 */
     public void register(ValueEditorProvider provider) {
+        register(provider, -1);
+    }
+
+    /**
+     * 注册 provider 并把装配层的搜索 lane 窗口上限收进注册快照。
+     *
+     * <p>取值链：{@code SearchPickerSpec.maxItems()}（唯一真值来源）→ {@link #register(ValueEditorProvider, int)}
+     * → {@link CandidateSourceValueEditorProvider#searchMaxItems()} → 装配层构造查询上限。传 {@code -1}
+     * 表示「不覆盖」：注册快照沿用 provider 自报值（{@code CandidateSourceValueEditorProvider} 缺省 64）。
+     * <b>只收 1 个 int，不复制任何候选数据</b>——注册期冻结的必须始终是惰性 source 的引用。</p>
+     *
+     * @param provider        value editor provider
+     * @param searchMaxItems  搜索 lane 窗口上限；-1 = 不覆盖
+     * @throws IllegalArgumentException searchMaxItems 为 0 或负数（-1 除外）
+     */
+    public void register(ValueEditorProvider provider, int searchMaxItems) {
+        if (searchMaxItems != -1 && searchMaxItems < 1) {
+            throw new IllegalArgumentException("searchMaxItems must be positive or -1: " + searchMaxItems);
+        }
         if (frozen) throw new IllegalStateException("value editor registry is frozen");
         if (provider == null) throw new IllegalArgumentException("provider must not be null");
         String id = provider.id();
@@ -44,9 +63,23 @@ public final class Registry {
                         : dimension -> Collections.<SearchPickerCategories.Category>emptyList();
         BiFunction<Integer, String, String> categoryOfByDimension = provider instanceof CategorizedValueEditorProvider
                 ? ((CategorizedValueEditorProvider) provider)::categoryOf : null;
+        // 惰性候选源：只固化「引用 + 1 个 int」，禁止在注册期复制候选数据（注册期冻结语义）。
+        CandidateSourceValueEditorProvider candidateSourceProvider =
+                provider instanceof CandidateSourceValueEditorProvider
+                        ? (CandidateSourceValueEditorProvider) provider : null;
+        PickerCandidateSource candidateSource = candidateSourceProvider == null
+                ? null : candidateSourceProvider.candidateSource();
+        PickerIconSource iconSource = candidateSourceProvider == null ? null : candidateSourceProvider.iconSource();
+        int effectiveMaxItems = searchMaxItems != -1 ? searchMaxItems
+                : (candidateSourceProvider == null
+                        ? CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS
+                        : candidateSourceProvider.searchMaxItems());
+        if (effectiveMaxItems < 1) {
+            throw new IllegalArgumentException("searchMaxItems must be positive: " + effectiveMaxItems);
+        }
         providers.put(id, new RegisteredProvider(id, codec, visualAdapter, searchFunction, presentation,
                 panelPresentation, currentValuePresenter, categories, categoryOf, categoryDimensionCount,
-                categoriesByDimension, categoryOfByDimension));
+                categoriesByDimension, categoryOfByDimension, candidateSource, effectiveMaxItems, iconSource));
     }
 
     /** 冻结 registry；可重复调用。 */
@@ -62,7 +95,8 @@ public final class Registry {
 
 
     /** 注册时固化的 provider 快照，避免冻结后重新读取原 provider 的可变属性。 */
-    private static final class RegisteredProvider implements CategorizedValueEditorProvider {
+    private static final class RegisteredProvider implements CategorizedValueEditorProvider,
+            CandidateSourceValueEditorProvider {
         private final String id;
         private final Codec codec;
         private final VisualAdapter visualAdapter;
@@ -75,6 +109,9 @@ public final class Registry {
         private final int categoryDimensionCount;
         private final IntFunction<java.util.List<SearchPickerCategories.Category>> categoriesByDimension;
         private final BiFunction<Integer, String, String> categoryOfByDimension;
+        private final PickerCandidateSource candidateSource;
+        private final int searchMaxItems;
+        private final PickerIconSource iconSource;
 
         private RegisteredProvider(String id, Codec codec, VisualAdapter visualAdapter, SearchFunction searchFunction,
                                    SearchPickerPresentation presentation,
@@ -83,7 +120,9 @@ public final class Registry {
                                    java.util.List<SearchPickerCategories.Category> categories,
                                    Function<String, String> categoryOf, int categoryDimensionCount,
                                    IntFunction<java.util.List<SearchPickerCategories.Category>> categoriesByDimension,
-                                   BiFunction<Integer, String, String> categoryOfByDimension) {
+                                   BiFunction<Integer, String, String> categoryOfByDimension,
+                                   PickerCandidateSource candidateSource, int searchMaxItems,
+                                   PickerIconSource iconSource) {
             this.id = id;
             this.codec = codec;
             this.visualAdapter = visualAdapter;
@@ -96,6 +135,9 @@ public final class Registry {
             this.categoryDimensionCount = categoryDimensionCount;
             this.categoriesByDimension = categoriesByDimension;
             this.categoryOfByDimension = categoryOfByDimension;
+            this.candidateSource = candidateSource;
+            this.searchMaxItems = searchMaxItems;
+            this.iconSource = iconSource;
         }
 
         /** {@inheritDoc} */
@@ -131,5 +173,11 @@ public final class Registry {
             return categoryOfByDimension == null ? null
                     : categoryOfByDimension.apply(Integer.valueOf(dimension), candidateKey);
         }
+        /** {@inheritDoc} */
+        public PickerCandidateSource candidateSource() { return candidateSource; }
+        /** {@inheritDoc} */
+        public int searchMaxItems() { return searchMaxItems; }
+        /** {@inheritDoc} */
+        public PickerIconSource iconSource() { return iconSource; }
     }
 }

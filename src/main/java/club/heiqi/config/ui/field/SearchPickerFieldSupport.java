@@ -15,9 +15,12 @@ import org.apache.logging.log4j.Logger;
 
 import club.heiqi.config.schema.SearchPickerSpec;
 import club.heiqi.config.schema.ValueSpec;
+import club.heiqi.config.ui.editor.CandidateSourceValueEditorProvider;
 import club.heiqi.config.ui.editor.CategorizedValueEditorProvider;
 import club.heiqi.config.ui.editor.CurrentValuePresenter;
 import club.heiqi.config.ui.editor.ListMemberCodec;
+import club.heiqi.config.ui.editor.PickerCandidateSource;
+import club.heiqi.config.ui.editor.PickerQuery;
 import club.heiqi.config.ui.editor.Registry;
 import club.heiqi.config.ui.editor.SearchPickerCategories;
 import club.heiqi.config.ui.editor.SearchPickerData;
@@ -126,18 +129,12 @@ public final class SearchPickerFieldSupport {
             return firstError(encodeError.get(), searchError.get(), decodeError.get());
         });
         Signal<String> query = Signal.create("");
-        Computed<SearchPickerData.SearchResult> results = Computed.create(() -> {
-            try {
-                SearchPickerData.SearchResult searched = provider.searchFunction().search(query.get(), Integer.MAX_VALUE);
-                if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
-                        presentation.searchError(), null);
-                searchError.set("");
-                return searched;
-            } catch (RuntimeException exception) {
-                fail(searchError, pickerSpec.editorId(), "search", presentation.searchError(), exception);
-                return SearchPickerData.SearchResult.empty();
-            }
-        });
+        // 数据源路径探测（纯加法）：实现 SPI 且给出惰性 source 时走查询式路径；否则保持旧全量路径（T-1）。
+        PickerCandidateSource source = candidateSourceOf(provider);
+        int searchMaxItems = searchWindowOf(pickerSpec, provider);
+        Computed<SearchPickerData.SearchResult> results = source == null
+                ? legacySearchResults(provider, pickerSpec, presentation, query, searchError)
+                : sourceSearchResults(rt, source, searchMaxItems, pickerSpec, presentation, query, searchError);
         Signal<Boolean> open = Signal.create(Boolean.FALSE);
         ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, results,
                 Signal.create(Boolean.TRUE),
@@ -206,24 +203,19 @@ public final class SearchPickerFieldSupport {
         Signal<String> searchError = Signal.create("");
         Signal<String> encodeError = Signal.create("");
         Computed<String> error = Computed.create(() -> firstError(encodeError.get(), searchError.get(), ""));
-        Computed<SearchPickerData.SearchResult> queryResults = Computed.create(() -> {
-            try {
-                SearchPickerData.SearchResult searched = provider.searchFunction().search(query.get(), Integer.MAX_VALUE);
-                if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
-                        presentation.searchError(), null);
-                searchError.set("");
-                return searched;
-            } catch (RuntimeException exception) {
-                fail(searchError, pickerSpec.editorId(), "search", presentation.searchError(), exception);
-                return SearchPickerData.SearchResult.empty();
-            }
-        });
+        // 数据源路径探测（同 SINGLE_VALUE；T-1 回退保留）。
+        PickerCandidateSource source = candidateSourceOf(provider);
+        int searchMaxItems = searchWindowOf(pickerSpec, provider);
+        Computed<SearchPickerData.SearchResult> queryResults = source == null
+                ? legacySearchResults(provider, pickerSpec, presentation, query, searchError)
+                : sourceSearchResults(rt, source, searchMaxItems, pickerSpec, presentation, query, searchError);
         SearchPickerListBinding binding = new SearchPickerListBinding(value, items,
                 (ListMemberCodec) provider.codec(), onChange);
         Computed<List<SearchPickerData.CurrentMember>> decodedMembers = Computed.create(
                 () -> binding.currentMembers(SearchPickerData.SearchResult.empty()));
-        Computed<List<SearchPickerData.CurrentMember>> currentMembers = Computed.create(() ->
-                resolveCurrentMembers(decodedMembers.get(), provider.searchFunction()));
+        Computed<List<SearchPickerData.CurrentMember>> currentMembers = source == null
+                ? Computed.create(() -> resolveCurrentMembers(decodedMembers.get(), provider.searchFunction()))
+                : Computed.create(() -> resolveCurrentMembers(decodedMembers.get(), source));
         Computed<SearchPickerData.SearchResult> addableResults = Computed.create(() ->
                 excludeSelectedCandidates(queryResults.get(), currentMembers.get()));
         Computed<SearchPickerData.Selection> currentSelection = Computed.create(binding::currentSelection);
@@ -303,6 +295,8 @@ public final class SearchPickerFieldSupport {
 
     /**
      * 按每个唯一 candidate key 独立精确解析当前成员；失败只保留 unknown，不污染 query 搜索错误。
+     *
+     * <p><b>旧路径（T-1 回退）</b>：每个唯一 key 一次完整 {@code searchFunction.search(key, MAX_VALUE)}。</p>
      */
     private static List<SearchPickerData.CurrentMember> resolveCurrentMembers(
             List<SearchPickerData.CurrentMember> decoded,
@@ -327,6 +321,44 @@ public final class SearchPickerFieldSupport {
                 // 单个当前成员解析失败是合法 unknown，不得覆盖 query 搜索错误或阻断其它成员。
             }
         }
+        return resolvedMembers(decoded, exactCandidates);
+    }
+
+    /**
+     * 按每个唯一 candidate key 独立精确解析当前成员（<b>惰性候选源路径</b>）。
+     *
+     * <p>每个唯一 key 至多一次 {@link PickerCandidateSource#exact(String)}（O(1) 定位 + 至多一次分片物化），
+     * 取代「每个 key 一次 O(N) 全表搜索」。失败只保留 unknown，不污染 query 搜索错误。</p>
+     *
+     * @param decoded 已解码成员
+     * @param source  惰性候选源
+     * @return 解析后的成员快照
+     */
+    static List<SearchPickerData.CurrentMember> resolveCurrentMembers(
+            List<SearchPickerData.CurrentMember> decoded, PickerCandidateSource source) {
+        Map<String, SearchPickerData.Candidate> exactCandidates =
+                new HashMap<String, SearchPickerData.Candidate>();
+        Set<String> searchedKeys = new HashSet<String>();
+        for (SearchPickerData.CurrentMember member : decoded) {
+            SearchPickerData.Selection selection = member.selection();
+            if (selection == null || !searchedKeys.add(selection.candidateKey())) continue;
+            try {
+                PickerSourceGuard.requireMainThread("exact");
+                SearchPickerData.Candidate candidate = source.exact(selection.candidateKey());
+                if (candidate != null && candidate.key().equals(selection.candidateKey())) {
+                    exactCandidates.put(selection.candidateKey(), candidate);
+                }
+            } catch (RuntimeException ignored) {
+                // 单个当前成员解析失败是合法 unknown（含 SPI 抛出的线程断言/宿主异常）。
+            }
+        }
+        return resolvedMembers(decoded, exactCandidates);
+    }
+
+    /** 用「key → 候选」结果表重建成员快照（两条路径共享尾部，保证 unknown 语义一致）。 */
+    private static List<SearchPickerData.CurrentMember> resolvedMembers(
+            List<SearchPickerData.CurrentMember> decoded,
+            Map<String, SearchPickerData.Candidate> exactCandidates) {
         ArrayList<SearchPickerData.CurrentMember> resolved =
                 new ArrayList<SearchPickerData.CurrentMember>(decoded.size());
         for (SearchPickerData.CurrentMember member : decoded) {
@@ -337,6 +369,118 @@ public final class SearchPickerFieldSupport {
                     candidate, candidate != null));
         }
         return java.util.Collections.unmodifiableList(resolved);
+    }
+
+    // ==================== 候选源 SPI 接线（探测式；旧路径零改动保留为 T-1） ====================
+
+    /** @return 惰性候选源；provider 未实现 SPI 或返回 null 时为 null（⇒ 旧全量路径） */
+    private static PickerCandidateSource candidateSourceOf(ValueEditorProvider provider) {
+        if (!(provider instanceof CandidateSourceValueEditorProvider)) {
+            return null;
+        }
+        return ((CandidateSourceValueEditorProvider) provider).candidateSource();
+    }
+
+    /**
+     * 搜索 lane 窗口上限：<b>唯一真值来源 = {@code SearchPickerSpec.maxItems()}</b>；
+     * SPI 的 {@link CandidateSourceValueEditorProvider#searchMaxItems()} 只作镜像，漂移时告警不改判（以 spec 为准）。
+     */
+    private static int searchWindowOf(SearchPickerSpec pickerSpec, ValueEditorProvider provider) {
+        int specMaxItems = pickerSpec.maxItems();
+        if (provider instanceof CandidateSourceValueEditorProvider) {
+            int mirror = ((CandidateSourceValueEditorProvider) provider).searchMaxItems();
+            if (mirror != specMaxItems) {
+                LOG.warn("[QzUiLib/ConfigUI] searchMaxItems 与 SearchPickerSpec.maxItems() 不一致（以 spec 为准）："
+                        + "editorId={}, spec={}, spi={}", pickerSpec.editorId(), Integer.valueOf(specMaxItems),
+                        Integer.valueOf(mirror));
+            }
+        }
+        return specMaxItems;
+    }
+
+    /** 旧路径搜索结果（全量，{@code truncated} 恒 false）：T-1 回退，行为与接线前逐字一致。 */
+    private static Computed<SearchPickerData.SearchResult> legacySearchResults(
+            ValueEditorProvider provider, SearchPickerSpec pickerSpec, SearchPickerPresentation presentation,
+            ReadableSignal<String> query, Signal<String> searchError) {
+        return Computed.create(() -> {
+            try {
+                SearchPickerData.SearchResult searched =
+                        provider.searchFunction().search(query.get(), Integer.MAX_VALUE);
+                if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
+                        presentation.searchError(), null);
+                searchError.set("");
+                return searched;
+            } catch (RuntimeException exception) {
+                fail(searchError, pickerSpec.editorId(), "search", presentation.searchError(), exception);
+                return SearchPickerData.SearchResult.empty();
+            }
+        });
+    }
+
+    /**
+     * 惰性候选源搜索结果：browse lane 无上限全量；搜索 lane 受 {@code searchMaxItems} 上限并透传截断。
+     *
+     * <p>依赖 = query 信号 + 源版本信号：源版本变化（语言/资源/注册表）经
+     * {@link PickerRevisionBridge} 合成为 signal 后自动重算，无需逐帧门控。</p>
+     */
+    private static Computed<SearchPickerData.SearchResult> sourceSearchResults(
+            SceneRuntime rt, PickerCandidateSource source, int searchMaxItems, SearchPickerSpec pickerSpec,
+            SearchPickerPresentation presentation, ReadableSignal<String> query, Signal<String> searchError) {
+        PickerRevisionBridge bridge = PickerRevisionBridge.forSource(source);
+        bridge.bindTo(rt);
+        return Computed.create(() -> {
+            bridge.versionSignal().get(); // 源版本变化 → 本次求值重算（A3：UILib 拉版本号 + 合成 Signal）
+            try {
+                SearchPickerData.SearchResult searched = querySource(source,
+                        PickerQuery.text(query.get(), 0, null), searchMaxItems);
+                if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
+                        presentation.searchError(), null);
+                searchError.set("");
+                return searched;
+            } catch (RuntimeException exception) {
+                fail(searchError, pickerSpec.editorId(), "search", presentation.searchError(), exception);
+                return SearchPickerData.SearchResult.empty();
+            }
+        });
+    }
+
+    /**
+     * 候选源查询求值（纯函数式适配，包内可见以便单测直接锚定）。
+     *
+     * <ul>
+     *   <li><b>浏览 lane</b>（{@link PickerQuery#isBrowse()}）：无上限——{@code total = size()}，
+     *       一次 {@code page(query, 0, total)}，{@code truncated = false}；</li>
+     *   <li><b>搜索 lane</b>：{@code hits = matchCount(query)}，窗口 = {@code min(hits, searchMaxItems)}，
+     *       {@code truncated = hits > searchMaxItems}（截断真值透传，取代旧「预算被丢弃」形态）；</li>
+     *   <li>入口经 {@link PickerSourceGuard} 断言客户端主线程（fail-fast，不返回空数据）。</li>
+     * </ul>
+     *
+     * @param source         惰性候选源（非 null）
+     * @param query          查询条件（非 null）
+     * @param searchMaxItems 搜索 lane 窗口上限（正数）
+     * @return 结果快照（含截断真值）
+     */
+    static SearchPickerData.SearchResult querySource(PickerCandidateSource source, PickerQuery query,
+                                                     int searchMaxItems) {
+        if (source == null) throw new IllegalArgumentException("source must not be null");
+        if (query == null) throw new IllegalArgumentException("query must not be null");
+        if (searchMaxItems < 1) throw new IllegalArgumentException("searchMaxItems must be positive");
+        if (query.isBrowse()) {
+            PickerSourceGuard.requireMainThread("size");
+            int total = Math.max(0, source.size());
+            PickerSourceGuard.requireMainThread("page");
+            List<SearchPickerData.Candidate> all = source.page(query, 0, total);
+            return SearchPickerData.SearchResult.of(
+                    all == null ? Collections.<SearchPickerData.Candidate>emptyList() : all, false);
+        }
+        PickerSourceGuard.requireMainThread("matchCount");
+        int hits = Math.max(0, source.matchCount(query));
+        int window = Math.min(hits, searchMaxItems);
+        PickerSourceGuard.requireMainThread("page");
+        List<SearchPickerData.Candidate> slice = source.page(query, 0, window);
+        return SearchPickerData.SearchResult.of(
+                slice == null ? Collections.<SearchPickerData.Candidate>emptyList() : slice,
+                hits > searchMaxItems);
     }
 
     /** 按精确 candidate key 排除合法当前成员；malformed 成员不参与过滤。 */

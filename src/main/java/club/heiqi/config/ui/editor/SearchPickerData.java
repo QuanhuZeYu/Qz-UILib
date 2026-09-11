@@ -175,15 +175,21 @@ public final class SearchPickerData {
          * @param candidates 原始候选
          */
         public SearchResult(List<Candidate> candidates) {
-            if (candidates == null) throw new IllegalArgumentException("candidates must not be null");
-            Map<String, Candidate> unique = new LinkedHashMap<String, Candidate>();
-            for (Candidate candidate : candidates) {
-                if (candidate == null) throw new IllegalArgumentException("candidate must not be null");
-                if (unique.containsKey(candidate.key())) continue;
-                unique.put(candidate.key(), copyCandidate(candidate));
-            }
-            this.candidates = Collections.unmodifiableList(new ArrayList<Candidate>(unique.values()));
-            this.truncated = false;
+            this(candidates, false);
+        }
+
+        /**
+         * 创建携带真实截断标志的结果快照（候选域键去重，首项胜）。
+         *
+         * <p>截断语义由**查询结果**承载：调用方按 {@code matchCount(query) > searchMaxItems} 判定后传入，
+         * 取代旧的「预算参数在 UILib 侧被丢弃、truncated 恒 false」形态（过渡态 T-3 的目标语义）。</p>
+         *
+         * @param candidates 原始候选
+         * @param truncated  是否因上限被截断
+         * @return 去重后的结果快照
+         */
+        public static SearchResult of(List<Candidate> candidates, boolean truncated) {
+            return new SearchResult(candidates, truncated);
         }
 
         /** @return 不含候选且未截断的共享空结果 */
@@ -213,7 +219,14 @@ public final class SearchPickerData {
         }
 
         private SearchResult(List<Candidate> candidates, boolean truncated) {
-            this.candidates = candidates;
+            if (candidates == null) throw new IllegalArgumentException("candidates must not be null");
+            Map<String, Candidate> unique = new LinkedHashMap<String, Candidate>();
+            for (Candidate candidate : candidates) {
+                if (candidate == null) throw new IllegalArgumentException("candidate must not be null");
+                if (unique.containsKey(candidate.key())) continue;
+                unique.put(candidate.key(), copyCandidate(candidate));
+            }
+            this.candidates = Collections.unmodifiableList(new ArrayList<Candidate>(unique.values()));
             this.truncated = truncated;
         }
 

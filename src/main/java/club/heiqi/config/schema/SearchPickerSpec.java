@@ -5,6 +5,9 @@ public final class SearchPickerSpec implements WidgetSpec {
     /** picker 与配置值的绑定粒度。 */
     public enum BindingMode { SINGLE_VALUE, LIST_MEMBERS }
 
+    /** 搜索 lane 窗口上限的默认值（浏览 lane 不受此上限约束）。 */
+    public static final int DEFAULT_MAX_ITEMS = 64;
+
     private final String editorId;
     private final int maxItems;
     private final BindingMode bindingMode;
@@ -13,7 +16,9 @@ public final class SearchPickerSpec implements WidgetSpec {
      * 创建搜索选择器描述。
      *
      * @param editorId namespaced editor id，格式为 namespace:path
-     * @param maxItems 兼容提示值，必须为正；搜索返回完整结果
+     * @param maxItems <b>搜索 lane 窗口上限</b>（唯一真值来源；由 UILib 装配层读取并作为查询上限传入，
+     *                 截断经 {@code SearchPickerData.SearchResult#truncated()} 透传到信息条）；
+     *                 必须为正。浏览 lane（空查询）不受此上限约束
      */
     public SearchPickerSpec(String editorId, int maxItems) {
         this(editorId, maxItems, BindingMode.SINGLE_VALUE);
@@ -23,7 +28,7 @@ public final class SearchPickerSpec implements WidgetSpec {
      * 创建指定绑定粒度的搜索选择器描述。
      *
      * @param editorId namespaced editor id，格式为 namespace:path
-     * @param maxItems 兼容提示值，必须为正；搜索返回完整结果
+     * @param maxItems 搜索 lane 窗口上限（唯一真值来源），必须为正
      * @param bindingMode 配置值绑定粒度
      */
     public SearchPickerSpec(String editorId, int maxItems, BindingMode bindingMode) {
@@ -44,7 +49,9 @@ public final class SearchPickerSpec implements WidgetSpec {
     /** @return namespaced editor id */
     public String editorId() { return editorId; }
 
-    /** @return 单次结果上限 */
+    /**
+     * @return 搜索 lane 窗口上限（由装配层读取并作为查询上限传入；浏览 lane 不受其约束）
+     */
     public int maxItems() { return maxItems; }
 
     /** @return picker 与配置值的绑定粒度 */
