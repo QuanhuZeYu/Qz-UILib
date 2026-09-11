@@ -19,6 +19,16 @@ import java.util.function.Supplier;
  * {@link #create(Object, Supplier)} 注入非 null 初值，使 flush 前读取即可获得有意义占位，
  * 避免下游 applier 在首帧前收到 null。需在 flush 后读取才能拿到派生函数算出的真实值。</p>
  *
+ * <p><b>陷阱（务必避免）</b>：在<b>同步构建路径</b>里读 {@code create(Supplier)} 的投影是有害的——
+ * 典型形态是「某棵子树在一次 flush 内构建、其下游控件紧接着同步 {@code get()} 一次并把结果存下来」：
+ * 此时拿到 {@code null} 初值，而下游往往此后再不读该投影 ⇒ 派生值从此「永不生效」且不订阅上游，
+ * 且失败是静默的（同一面板的其它部分可能一切正常，只有这一条链死掉）。选择工厂的判据是
+ * <b>下游是否会在同一次 flush 内同步消费</b>：会 → 用 {@link #create(Object, Supplier)} 注入与该派生
+ * 语义一致的同步初值；不会（只在帧循环里读）→ {@code create(Supplier)} 即可。
+ * 实例：选块器 P6-D3（结果网格因该形态丢失 P5 密度派生度量，实测列数/图标尺寸长期停在回退分支）；
+ * 复发守卫 = {@code ScenePickerPanelTest#preLayoutBudgetGivesSteadyStateColumnsOnFirstLayout}
+ * （已收紧为「首帧列数 == 派生 oracle」）。</p>
+ *
  * @param <T> 派生值类型
  */
 public final class Computed<T> implements ReadableSignal<T> {
