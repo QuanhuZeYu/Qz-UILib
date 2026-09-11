@@ -667,6 +667,28 @@ public final class ScenePickerPanel {
             ReadableSignal<List<String>> variantKeys,
             ReadableSignal<SearchPickerData.Candidate> activeCandidate,
             Supplier<SceneGridWindow.WindowModel> windowModel) {
+
+        /**
+         * 旧 11 参形态（兼容面保留，ADR A-24/A-25「零静默破坏」）：无窗口模型观察面。
+         *
+         * <p>P4 增补第 12 参后，旧签名一度遗失；此处以委托形式恢复，保证外部调用方源码与
+         * 二进制兼容（{@code windowModel} 观察面为 {@code null}，消费者须容忍无观察面形态）。</p>
+         */
+        public Result(
+                SceneNode root,
+                Signal<Boolean> openSignal,
+                ReadableSignal<Boolean> open,
+                ReadableSignal<Boolean> variantsOpen,
+                Supplier<SceneNode> firstFocusTarget,
+                Supplier<SceneNode> grid,
+                ReadableSignal<String> currentCategoryKey,
+                ReadableSignal<Integer> gridHighlight,
+                ReadableSignal<SearchPickerData.SelectionMode> variantMode,
+                ReadableSignal<List<String>> variantKeys,
+                ReadableSignal<SearchPickerData.Candidate> activeCandidate) {
+            this(root, openSignal, open, variantsOpen, firstFocusTarget, grid, currentCategoryKey,
+                    gridHighlight, variantMode, variantKeys, activeCandidate, null);
+        }
     }
 
     /**

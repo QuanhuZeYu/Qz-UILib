@@ -415,6 +415,19 @@ public final class SearchResultList {
                       ReadableSignal<SceneGridWindow.WindowModel> windowModel) {
             this(root, viewport, windowModel, null);
         }
+
+        /**
+         * 旧 2 参形态（兼容面保留，ADR A-24/A-25「零静默破坏」）：无窗口模型、无高亮观察面。
+         *
+         * <p>4.9.1 起的公共构造器签名，P3 窗口化后一度遗失；此处以委托形式恢复，保证外部
+         * 调用方源码与二进制兼容（观察面为 {@code null}，消费者须容忍无观察面的历史形态）。</p>
+         *
+         * @param root     根节点
+         * @param viewport 可滚动视口
+         */
+        public Result(SceneNode root, SceneNode viewport) {
+            this(root, viewport, null, null);
+        }
     }
 
     /**
