@@ -187,7 +187,10 @@ public final class SearchPickerFieldSupport {
                     query.set(""); decodeError.set(""); searchError.set(""); encodeError.set("");
                 })
                 // SPI 路径下分类过滤归查询层（PickerQuery.categoryDimension/categoryKey）：面板侧关闭二次过滤（T-6）。
-                .resultsCategoryFiltered(source != null);
+                .resultsCategoryFiltered(source != null)
+                // 密度档位（P5 §1.4）：装配层接线缝提供的进程级偏好源；未接线 = null = 面板按 AUTO，
+                // 与接线前逐值一致。偏好是信号而非构造期常量 ⇒ 改档位只重派生几何、不重建面板。
+                .densityPreference(PickerDensityPreferenceSource.installed());
         wireRevisionAndQuery(rt, panelBuilder, source, searchMaxItems, query, categoryState);
         wireCategories(panelBuilder, provider, categoryState);
         ScenePickerPanel.Props props = panelBuilder.build();
@@ -289,7 +292,9 @@ public final class SearchPickerFieldSupport {
                 })
                 .open(open)
                 .onCloseRequest(() -> open.set(Boolean.FALSE))
-                .resultsCategoryFiltered(source != null);
+                .resultsCategoryFiltered(source != null)
+                // 密度档位（P5 §1.4）：与 SINGLE_VALUE 路径同源同缝（未接线 = AUTO）。
+                .densityPreference(PickerDensityPreferenceSource.installed());
         wireRevisionAndQuery(rt, panelBuilder, source, searchMaxItems, query, categoryState);
         wireCategories(panelBuilder, provider, categoryState);
         ScenePickerPanel.Props props = panelBuilder.build();
