@@ -148,6 +148,10 @@ public final class SceneTextInputPrimitive {
      *                         value signal flush 前同步对齐 caret，不暴露 caretIndex 写权限
      * @param caretVisible  caret 是否可见（enabled 且 focused）
      * @param isPlaceholder 当前是否处于空值且有 placeholder 的状态
+     * @param placeholderText <b>独立占位层</b>（P5 A3）：占位文本不再占用 prefix/caret 槽位，
+     *                       空值且有 placeholder 时恒显示（聚焦与否都在）；节点位于 caret 之后，
+     *                       与 caret 零重叠（不遮挡 caret）。消费方需为其挂占位前景绑定
+     *                       （未挂时回落节点默认文本色）。
      */
     @Desugar
     public record Result(
@@ -161,8 +165,23 @@ public final class SceneTextInputPrimitive {
             ReadableSignal<TextSelection> selection,
             Consumer<String> moveCaretToEndOf,
             ReadableSignal<Boolean> caretVisible,
-            ReadableSignal<Boolean> isPlaceholder
+            ReadableSignal<Boolean> isPlaceholder,
+            SceneNode placeholderText
     ) {
+
+        /**
+         * 旧 11 参形态（P5 兼容，纯加法保留）：无占位层句柄（{@code placeholderText = null}）。
+         *
+         * <p>占位层节点由 {@link #create} 恒定创建；本重载只服务二进制兼容，
+         * 消费方取用前须按 {@code null}（无句柄）安全处理。</p>
+         */
+        public Result(SceneNode root, SceneNode prefixText, SceneNode caret, SceneNode highlightText,
+                      SceneNode caretAfter, SceneNode suffixText, ReadableSignal<Integer> caretIndex,
+                      ReadableSignal<TextSelection> selection, Consumer<String> moveCaretToEndOf,
+                      ReadableSignal<Boolean> caretVisible, ReadableSignal<Boolean> isPlaceholder) {
+            this(root, prefixText, caret, highlightText, caretAfter, suffixText, caretIndex,
+                    selection, moveCaretToEndOf, caretVisible, isPlaceholder, null);
+        }
     }
 
     /**
@@ -311,6 +330,13 @@ public final class SceneTextInputPrimitive {
         suffixText.setHitTestable(false);
         root.appendChild(suffixText);
 
+        // 独立占位层（P5 A3，修「聚焦即隐藏」）：占位不再是 prefix 的别名形态，而是 caret 之后的
+        // 独立兄弟节点 —— 空值且有 placeholder 时恒显示（聚焦/失焦一致），横向起点 = caret 之后，
+        // 与 caret 零重叠（不遮挡光标），也不改变 prefix/highlight/suffix 的既有语义。
+        SceneNode placeholderText = new SceneNode();
+        placeholderText.setHitTestable(false);
+        root.appendChild(placeholderText);
+
         SceneInteractionState is = rt.interactionState(root);
         // focus 是 Router 权威状态的按需投影，必须在任何 requestFocus 写入前声明。
         // 显式缓存同一只读 signal，避免首次 portal 挂载时 Computed 尚未求值而漏掉 focused=true。
@@ -331,8 +357,12 @@ public final class SceneTextInputPrimitive {
                 () -> Boolean.valueOf(SceneTextUtils.nullSafe(props.value().get()).isEmpty() && !SceneTextUtils.nullSafe(placeholder).isEmpty()));
 
         rt.bindComputed(() -> prefixDisplayText(
-                        props.value().get(), focused.get(), placeholder, inputType, selection.get().startCp()),
+                        props.value().get(), inputType, selection.get().startCp()),
                 prefixText::setText);
+        // 占位层文本 = 空值且有 placeholder 时的占位文案（与聚焦无关；失焦/聚焦同一形态）。
+        rt.bindComputed(() -> Boolean.TRUE.equals(isPlaceholder.get())
+                        ? SceneTextUtils.nullSafe(placeholder) : "",
+                placeholderText::setText);
         rt.bindComputed(() -> highlightDisplayText(
                         props.value().get(), focused.get(), inputType,
                         selection.get().startCp(), selection.get().endCp()),
@@ -653,7 +683,7 @@ public final class SceneTextInputPrimitive {
         });
 
         return new Result(root, prefixText, caret, highlightText, caretAfter, suffixText,
-                caretIndex, selection, moveCaretToEndOf, caretVisible, isPlaceholder);
+                caretIndex, selection, moveCaretToEndOf, caretVisible, isPlaceholder, placeholderText);
     }
 
     /**
@@ -744,18 +774,18 @@ public final class SceneTextInputPrimitive {
     /**
      * 计算 caret/选区前显示文本。
      *
-     * @param value       真实值
-     * @param focused     是否聚焦
-     * @param placeholder 占位文本
-     * @param inputType   输入类型
-     * @param selStart    选区起点码点索引
+     * <p>占位不再参与本函数（P5 A3）：prefix 只表示 caret 之前的真实文本，
+     * 空值时恒为空串（占位由独立占位层承担，见 {@code placeholderText}）。</p>
+     *
+     * @param value     真实值
+     * @param inputType 输入类型
+     * @param selStart  选区起点码点索引
      * @return prefix 显示文本
      */
-    private static String prefixDisplayText(String value, Boolean focused, String placeholder,
-                                            SceneInputType inputType, int selStart) {
+    private static String prefixDisplayText(String value, SceneInputType inputType, int selStart) {
         String v = SceneTextUtils.nullSafe(value);
         if (v.isEmpty()) {
-            return Boolean.TRUE.equals(focused) ? "" : SceneTextUtils.nullSafe(placeholder);
+            return "";
         }
         int start = SceneTextGeometry.clampCaretIndex(v, Integer.valueOf(selStart));
         if (inputType == SceneInputType.PASSWORD) {

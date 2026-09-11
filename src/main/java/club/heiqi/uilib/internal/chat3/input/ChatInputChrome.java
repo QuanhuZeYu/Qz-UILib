@@ -136,6 +136,10 @@ final class ChatInputChrome {
         });
         rt.bind(textColor, input.prefixText()::setTextColor);
         rt.bind(textColor, input.suffixText()::setTextColor);
+        // 独立占位层前景（P5 A3）：占位态色与正文同源（显式聊天占位设置 > 主题 mutedForeground）。
+        if (input.placeholderText() != null) {
+            rt.bind(textColor, input.placeholderText()::setTextColor);
+        }
         // 选区/caret 色消费主题 selectionBackground/selectionForeground/borderFocus（契约 §2.8）。
         rt.bindComputed(() -> input.selection().get().isActive()
                 ? selectionBackground.get() : TRANSPARENT, input.highlightText()::setBackgroundColor);

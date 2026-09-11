@@ -98,6 +98,12 @@ public final class SceneDataTableEditorChrome {
         rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get(),
                         foreground.get(), mutedForeground.get(), disabledForeground.get()),
                 result.suffixText()::setTextColor);
+        // 独立占位层前景（P5 A3）：与占位态正文同一条解析链。
+        if (result.placeholderText() != null) {
+            rt.bindComputed(() -> resolveEditTextColor(result.isPlaceholder().get(), enabled.get(),
+                            foreground.get(), mutedForeground.get(), disabledForeground.get()),
+                    result.placeholderText()::setTextColor);
+        }
 
         // caret 双槽位：focus 在选区哪一端，哪端着色（色值取主题聚焦色）。
         ReadableSignal<Integer> caretColor = SceneThemes.borderFocus(rt);

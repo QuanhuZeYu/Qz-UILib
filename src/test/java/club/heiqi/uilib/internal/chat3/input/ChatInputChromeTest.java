@@ -117,8 +117,10 @@ public class ChatInputChromeTest {
     @Test
     public void focusAndDisabledChromeKeepOriginalColorsAndCursor() {
         mount();
-        Assert.assertEquals("输入消息…", input.prefixText().getText());
-        Assert.assertEquals(ChatMarkdownSettings.getInputPlaceholderArgb(), input.prefixText().getTextColor());
+        // P5 A3：占位文本落在独立占位层（不再占用 prefix 槽位），色仍取聊天显式占位设置。
+        Assert.assertEquals("输入消息…", input.placeholderText().getText());
+        Assert.assertEquals(ChatMarkdownSettings.getInputPlaceholderArgb(),
+                input.placeholderText().getTextColor());
         Assert.assertEquals(SceneCursor.TEXT, input.root().getCursor());
         Assert.assertEquals(1, input.root().getBorderWidth());
         Assert.assertEquals(0, input.root().getBorderColor());

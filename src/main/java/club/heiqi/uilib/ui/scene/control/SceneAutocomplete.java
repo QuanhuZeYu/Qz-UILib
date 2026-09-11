@@ -254,6 +254,12 @@ public final class SceneAutocomplete {
         rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
                         foreground.get(), mutedForeground.get(), disabledForeground.get()),
                 result.suffixText()::setTextColor);
+        // 独立占位层前景（P5 A3）：与占位态正文同一条解析链。
+        if (result.placeholderText() != null) {
+            rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
+                            foreground.get(), mutedForeground.get(), disabledForeground.get()),
+                    result.placeholderText()::setTextColor);
+        }
 
         // caret 双槽位：focus 在选区哪一端，哪端着色（B2 选区结构）；色值取主题聚焦色
         ReadableSignal<Integer> caretColor = SceneThemes.borderFocus(rt);

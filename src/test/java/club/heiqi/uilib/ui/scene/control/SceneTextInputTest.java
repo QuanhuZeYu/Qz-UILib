@@ -221,6 +221,11 @@ public class SceneTextInputTest {
         return inputRoot.__getChildren().get(4);
     }
 
+    /** 独立占位层（P5 A3）：caret 之后的第 6 个子节点。 */
+    private SceneNode placeholderNode() {
+        return inputRoot.__getChildren().get(5);
+    }
+
     private LayoutBox rootBox() {
         return (LayoutBox) inputRoot.getCachedLayout();
     }
@@ -580,8 +585,9 @@ public class SceneTextInputTest {
 
         valueSignal.set("");
         runtime.flush();
-        Assert.assertEquals("禁用空值仍显示占位", PLACEHOLDER, prefixNode().getText());
-        Assert.assertEquals("禁用占位也走禁用前景", TEXT_DISABLED, prefixNode().getTextColor());
+        Assert.assertEquals("禁用空值仍显示占位", PLACEHOLDER, placeholderNode().getText());
+        Assert.assertEquals("禁用占位也走禁用前景", TEXT_DISABLED, placeholderNode().getTextColor());
+        Assert.assertEquals("占位不再占用 prefix 槽位", "", prefixNode().getText());
     }
 
     /**
@@ -684,16 +690,16 @@ public class SceneTextInputTest {
         mountInputWithTheme(pageTheme, "", "输入消息…", Integer.valueOf(explicit));
         doLayout();
 
-        Assert.assertEquals("未聚焦空值显示占位", "输入消息…", prefixNode().getText());
-        Assert.assertEquals("深色档下显式占位色生效", explicit, prefixNode().getTextColor());
+        Assert.assertEquals("空值显示占位（独立占位层）", "输入消息…", placeholderNode().getText());
+        Assert.assertEquals("深色档下显式占位色生效", explicit, placeholderNode().getTextColor());
         Assert.assertNotEquals("显式占位色不得等于主题 mutedForeground",
-                SceneTheme.liquidGlassDark().mutedForeground(), prefixNode().getTextColor());
+                SceneTheme.liquidGlassDark().mutedForeground(), placeholderNode().getTextColor());
 
         pageTheme.set(SceneTheme.liquidGlassLight());
         runtime.flush();
-        Assert.assertEquals("浅色档下仍保持显式占位色", explicit, prefixNode().getTextColor());
+        Assert.assertEquals("浅色档下仍保持显式占位色", explicit, placeholderNode().getTextColor());
         Assert.assertNotEquals("浅色档主题 mutedForeground 不得覆盖显式值",
-                SceneTheme.liquidGlassLight().mutedForeground(), prefixNode().getTextColor());
+                SceneTheme.liquidGlassLight().mutedForeground(), placeholderNode().getTextColor());
     }
 
     /**
@@ -1132,32 +1138,55 @@ public class SceneTextInputTest {
         handle = runtime.mount(sceneRoot, SceneTextInput.create(runtime, props));
         inputRoot = handle.getRoot();
         runtime.flush();
-        Assert.assertEquals("未聚焦空值显示 placeholder", "输入消息…", prefixNode().getText());
-        Assert.assertEquals("自定义 placeholder 色生效", 0xFF6E757E, prefixNode().getTextColor());
+        Assert.assertEquals("空值显示 placeholder", "输入消息…", placeholderNode().getText());
+        Assert.assertEquals("自定义 placeholder 色生效", 0xFF6E757E, placeholderNode().getTextColor());
     }
 
     @Test
     public void placeholderColorDefaultsToThemeMutedForegroundWhenAbsent() {
         // 7 参构造(placeholderColor=null)沿用主题 mutedForeground（默认档值与旧 secondaryText 同源）
         mountTextInput();
-        Assert.assertEquals("缺省沿用主题 mutedForeground", TEXT_MUTED, prefixNode().getTextColor());
+        Assert.assertEquals("缺省沿用主题 mutedForeground", TEXT_MUTED, placeholderNode().getTextColor());
     }
 
+    /**
+     * P5 A3（修「聚焦即隐藏」）：占位层与 caret 槽位解耦 —— 空值且有 placeholder 时，
+     * 失焦与聚焦都显示占位，且占位不与 caret 重叠（占位盒起点 ≥ caret 盒右缘），
+     * caret 恒落在文本原点（左 padding）。
+     */
     @Test
-    public void placeholderAndCaretVisibilityFollowFocus() {
+    public void placeholderStaysVisibleOnFocusWithoutOccludingCaret() {
         mountTextInput();
         doLayout();
-        Assert.assertEquals("失焦空值显示 placeholder", PLACEHOLDER, prefixNode().getText());
+        Assert.assertEquals("失焦空值显示 placeholder（独立占位层）", PLACEHOLDER,
+                placeholderNode().getText());
+        Assert.assertEquals("失焦 prefix 不再承载占位", "", prefixNode().getText());
         Assert.assertEquals("失焦 caret 透明", CARET_TRANSPARENT, caretNode().getBackgroundColor());
+        LayoutBox blurredPlaceholder = (LayoutBox) placeholderNode().getCachedLayout();
+        Assert.assertTrue("失焦占位层非零宽: " + blurredPlaceholder, blurredPlaceholder.getWidth() > 0);
 
         runtime.requestFocus(inputRoot);
         runtime.flush();
         doLayout();
+        Assert.assertEquals("聚焦空值仍显示占位（A3 核心）", PLACEHOLDER, placeholderNode().getText());
         Assert.assertEquals("聚焦空值 prefix 清空", "", prefixNode().getText());
         Assert.assertEquals("聚焦空值 prefix 宽度为 0", 0,
                 ((LayoutBox) prefixNode().getCachedLayout()).getWidth());
-        Assert.assertEquals("聚焦空值 caret 位于左 padding", PADDING, caretBox().getX());
+        Assert.assertEquals("聚焦空值 caret 位于左 padding（文本原点）", PADDING, caretBox().getX());
         Assert.assertEquals("聚焦 caret 可见", CARET_COLOR, caretNode().getBackgroundColor());
+        LayoutBox placeholderBox = (LayoutBox) placeholderNode().getCachedLayout();
+        Assert.assertTrue("聚焦占位层非零宽: " + placeholderBox, placeholderBox.getWidth() > 0);
+        Assert.assertTrue("占位不得遮挡 caret（占位起点 ≥ caret 右缘）: placeholder=" + placeholderBox
+                        + " caret=" + caretBox(),
+                placeholderBox.getX() >= caretBox().getX() + caretBox().getWidth());
+
+        // 输入后占位退场、正文回到 prefix（既有语义不变）。
+        valueSignal.set("ab");
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("有值时占位层清空", "", placeholderNode().getText());
+        Assert.assertEquals("有值时正文回到文本槽位（caret 在原点 ⇒ prefix 空 + suffix 全量）",
+                "ab", prefixNode().getText() + suffixNode().getText());
     }
 
     /** 首次 effect flush 前请求焦点时，权威焦点、投影 signal、边框与 caret 必须同步。 */

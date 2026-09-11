@@ -134,12 +134,13 @@ public class PlaygroundTextInputPageTest {
     /**
      * 读取受控输入框当前显示的全部文本。
      *
-     * <p>五节点结构（prefix/caret/highlight/caretAfter/suffix）下，真实文本 = prefix + highlight
-     * + suffix 三叶拼接（caret 两槽为空文本，只负责分割显示位置，拼接不丢字）。</p>
+     * <p>结构 = 文本槽位五节点（prefix/caret/highlight/caretAfter/suffix）+ P5 A3 独立占位层（第 6 子）；
+     * 真实文本 = prefix + highlight + suffix 三叶拼接（caret 两槽为空文本，只负责分割显示位置，
+     * 拼接不丢字），占位层不参与真实文本。</p>
      */
     private static String displayedText(SceneNode inputRoot) {
-        Assert.assertEquals("TextInput 应为五节点结构（prefix/caret/highlight/caretAfter/suffix）",
-                5, inputRoot.__getChildren().size());
+        Assert.assertEquals("TextInput 应为文本槽位五节点 + 独立占位层（共 6 子）",
+                6, inputRoot.__getChildren().size());
         String prefix = inputRoot.__getChildren().get(0).getText();
         String highlight = inputRoot.__getChildren().get(2).getText();
         String suffix = inputRoot.__getChildren().get(4).getText();

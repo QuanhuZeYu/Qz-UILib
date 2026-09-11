@@ -160,8 +160,8 @@ public class NumberFieldRendererWidgetTest {
     private SceneNode findTextInputRoot(SceneNode card) {
         for (int i = 1; i < card.__getChildren().size(); i++) {
             SceneNode c = card.__getChildren().get(i);
-            // B2 五节点结构：prefix/caret/highlight/caretAfter/suffix
-            if (c.__getChildren().size() == 5) {
+            // B2 文本槽位五节点 + P5 A3 独立占位层（共 6 子）
+            if (c.__getChildren().size() == 6) {
                 return c;
             }
         }

@@ -302,7 +302,9 @@ public class SceneDataTableTest {
                 Collections.singletonList(SceneDataTable.Column.textInput("名称", 120)));
 
         SceneNode input = dataInput(0, 0);
-        Assert.assertEquals("TextInput root 应包含 prefix/caret/highlight/caretAfter/suffix 五个子节点", 5, input.__getChildren().size());
+        // P5 A3：文本槽位五个子节点 + 独立占位层（新增第 6 子，占位不再占用 prefix 槽位）。
+        Assert.assertEquals("TextInput root 应包含 prefix/caret/highlight/caretAfter/suffix + 占位层六个子节点",
+                6, input.__getChildren().size());
         Assert.assertTrue("TextInput root 应可命中以接收输入", input.isHitTestable());
         Assert.assertEquals("DataTable TextInput 应使用输入槽横向 padding", 4, input.getPaddingLeft());
         Assert.assertEquals("DataTable TextInput 表面边框宽 = INPUT 配方", INPUT.getBorderWidth(), input.getBorderWidth());

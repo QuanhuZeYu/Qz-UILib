@@ -49,8 +49,8 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  */
 public class StringFieldRendererLiquidGlassTest {
 
-    /** B2 五节点结构：prefix/caret/highlight/caretAfter/suffix（与既有渲染器测试同判据）。 */
-    private static final int TEXT_INPUT_CHILD_COUNT = 5;
+    /** B2 文本槽位五节点 + P5 A3 独立占位层（共 6 子）；与既有渲染器测试同判据。 */
+    private static final int TEXT_INPUT_CHILD_COUNT = 6;
 
     private SceneRuntime runtime;
     private ConfigSchema schema;

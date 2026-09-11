@@ -424,6 +424,13 @@ public final class SceneTextInput {
         rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
                 props.placeholderColor(), foreground.get(), mutedForeground.get(), disabledForeground.get()),
                 result.suffixText()::setTextColor);
+        // 独立占位层前景（P5 A3）：与占位态同一解析链（显式 placeholderColor > 主题 mutedForeground > 禁用前景）。
+        if (result.placeholderText() != null) {
+            rt.bindComputed(() -> resolveTextColor(result.isPlaceholder().get(), props.enabled().get(),
+                            props.placeholderColor(), foreground.get(), mutedForeground.get(),
+                            disabledForeground.get()),
+                    result.placeholderText()::setTextColor);
+        }
 
         // caret 双槽位：focus 在选区哪一端，哪端着色（B2 选区结构）；色值取主题聚焦色
         ReadableSignal<Integer> caretColor = SceneThemes.borderFocus(rt);

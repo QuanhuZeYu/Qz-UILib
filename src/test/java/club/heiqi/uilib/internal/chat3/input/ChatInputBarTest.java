@@ -211,12 +211,12 @@ public class ChatInputBarTest {
         ChatInputBar bar = new ChatInputBar(rt, "");
         rt.flush();
         SceneNode root = bar.root();
-        // SceneTextInputPrimitive 结构:第一个子节点 = prefixText(空值未聚焦时显示 placeholder)
-        SceneNode prefix = root.__getChildren().get(0);
-        Assert.assertEquals("placeholder 文案「输入消息…」(设计稿 §3.2)", "输入消息…", prefix.getText());
+        // SceneTextInputPrimitive 结构(P5 A3): 第 6 子 = 独立占位层（空值恒显示,与聚焦无关）
+        SceneNode placeholder = root.__getChildren().get(5);
+        Assert.assertEquals("placeholder 文案「输入消息…」(设计稿 §3.2)", "输入消息…", placeholder.getText());
         Assert.assertEquals("placeholder 色 = text-input-placeholder 0xFF6E757E",
-                ChatMarkdownSettings.getInputPlaceholderArgb(), prefix.getTextColor());
-        Assert.assertEquals("设计令牌定值 0xFF6E757E", 0xFF6E757E, prefix.getTextColor());
+                ChatMarkdownSettings.getInputPlaceholderArgb(), placeholder.getTextColor());
+        Assert.assertEquals("设计令牌定值 0xFF6E757E", 0xFF6E757E, placeholder.getTextColor());
     }
 
     // ==================== TA:§(U+00A7) 输入过滤(服务器踢非法字符防御) ====================

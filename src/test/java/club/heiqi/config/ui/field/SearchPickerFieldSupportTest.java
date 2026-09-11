@@ -1450,7 +1450,15 @@ public class SearchPickerFieldSupportTest {
         }
 
         private String searchText() {
-            return textOf(searchInput(panelRoot(runtime)));
+            // P5 A3：占位层是独立第 6 子节点，真实文本只由 prefix/highlight/suffix 三叶承载
+            //（旧形态下占位混在 prefix 里，会把「空 query」读成占位文案）。
+            SceneNode input = searchInput(panelRoot(runtime));
+            StringBuilder text = new StringBuilder();
+            for (int index : new int[] { 0, 2, 4 }) {
+                String part = input.__getChildren().get(index).getText();
+                if (part != null) text.append(part);
+            }
+            return text.toString();
         }
 
         private String errorText() {
