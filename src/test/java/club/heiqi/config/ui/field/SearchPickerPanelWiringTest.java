@@ -181,7 +181,9 @@ public class SearchPickerPanelWiringTest {
 
         pressKey(SceneKey.ESCAPE);
         Assert.assertTrue("ESC 应关闭面板", rt.getOverlayHost().isEmpty());
-        Assert.assertSame("关闭后焦点应恢复到管理按钮", manage, rt.getFocusedNode());
+        // A5/A1：关闭后焦点回触发器 —— 行触发器为焦点宿主，管理按钮是行内子命中。
+        Assert.assertSame("关闭后焦点应恢复到行触发器", management, rt.getFocusedNode());
+        Assert.assertSame("行触发器内保持管理按钮子命中", manage, management.__getChildren().get(0));
         Assert.assertEquals("ESC 的 onCancel 必须复位编辑目标且零写", Arrays.asList("raw:a", "picked:"), raw.get());
     }
 

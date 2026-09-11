@@ -296,9 +296,20 @@ public final class SearchPickerFieldSupport {
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
 
         SceneNode root = SceneNode.column();
+        // A1：LIST_MEMBERS 的「整行」就是触发器（与 SINGLE_VALUE 行同构）——行可聚焦、可点击、Enter 同效；
+        // 行内「管理」按钮保留自身命中与自身表面（嵌套表面：行 INPUT 配方 + 按钮自身配方），
+        // 点击按钮时 CLICK 冒泡到行只做一次同值 open 写入（Signal 同值去重 ⇒ 不会双开）。
         SceneNode management = SceneNode.row();
         management.setGap(SceneChromeTokens.GAP_MD);
+        management.setPadding(SceneChromeTokens.PAD_MD);
         management.setCrossAxisAlign(CrossAxisAlign.CENTER);
+        // 交互状态先声明关心再绑定：Router 对未创建的 signal 短路，不声明则事件驱动不了配方状态档。
+        SceneInteractionState managementInteraction = rt.interactionState(management);
+        managementInteraction.hovered();
+        managementInteraction.pressed();
+        managementInteraction.focused();
+        SceneSurfaceBinder.bind(rt, management, SceneThemes.surface(rt, SceneTheme.Role.INPUT),
+                ALWAYS_ENABLED, managementInteraction);
         SceneNode manage = SceneButton.create(rt, new SceneButton.Props(
                 Signal.create(presentation.manage()), Signal.create(Boolean.TRUE),
                 () -> open.set(Boolean.TRUE))).get();
@@ -323,9 +334,24 @@ public final class SearchPickerFieldSupport {
         summary.appendChild(configured);
         summary.appendChild(issues);
         management.appendChild(summary);
+        // 整行命中：点击行内任意非按钮区域（摘要/间隙）与 Enter 均打开面板；
+        // stopPropagation 只截断向祖先（宿主表单行）的冒泡，不影响行内按钮已完成的自身响应。
+        rt.focusable(management);
+        rt.on(management, SceneEventType.CLICK, (ev, ctx) -> {
+            open.set(Boolean.TRUE);
+            ctx.stopPropagation();
+        });
+        rt.on(management, SceneEventType.KEY_DOWN, (ev, ctx) -> {
+            if (ev.getKeyAction() == SceneKeyAction.PRESSED && !ev.isRepeat()
+                    && ev.getKey() == SceneKey.ENTER) {
+                open.set(Boolean.TRUE);
+                ctx.stopPropagation();
+            }
+        });
         root.appendChild(management);
         root.appendChild(panel.root());
-        restoreFocusOnClose(rt, open, manage);
+        // 关闭后焦点回行触发器（A5：触发器/管理入口；行内按钮是同一触发器的子命中）。
+        restoreFocusOnClose(rt, open, management);
         return root;
     }
 

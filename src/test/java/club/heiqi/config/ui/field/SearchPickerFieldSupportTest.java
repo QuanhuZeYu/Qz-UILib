@@ -543,7 +543,63 @@ public class SearchPickerFieldSupportTest {
         harness.pressKey(SceneKey.ESCAPE);
         ReactiveScheduler.get().flush();
         assertTrue("ESC 后应关闭面板", runtime.getOverlayHost().isEmpty());
-        assertSame("关闭后焦点应恢复到管理按钮", manage, runtime.getFocusedNode());
+        // A5：关闭后焦点回触发器 —— A1 起「整行」即触发器，行内管理按钮是其子命中（同一入口）。
+        assertSame("关闭后焦点应恢复到行触发器", management, runtime.getFocusedNode());
+        assertSame("行触发器内保持管理按钮子命中", manage, management.__getChildren().get(0));
+        runtime.dispose();
+    }
+
+    /**
+     * A1（P5 §5.1）：LIST_MEMBERS 触发器<b>整行</b>可点、可聚焦、Enter 同效，且不破坏行内既有命中
+     * —— 点击行内「管理」按钮时命中链最深 focusable 仍是按钮本身（行未吞掉子命中），
+     * 点击按钮只走一次打开（同值 open 写入幂等）。
+     */
+    @Test
+    public void listMembersTriggerWholeRowIsClickableAndKeepsManageButtonHit() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(Arrays.<Object>asList("raw:x", "raw:y"));
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(
+                new SceneSimpleList.ListItem("raw:x"), new SceneSimpleList.ListItem("raw:y")));
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), (query, max) -> result()), ignored -> { });
+        harness.mountRoot(picker, 640, 420);
+        ReactiveScheduler.get().flush();
+        // 第二拍布局：摘要文本由 flush 后的绑定写入，需要再布局一次才拿到非零盒（与生产每帧 layout 同构）。
+        harness.mountRoot(picker, 640, 420);
+        SceneNode management = picker.__getChildren().get(0);
+        SceneNode manage = management.__getChildren().get(0);
+        SceneNode summary = management.__getChildren().get(1);
+
+        // 整行命中：DOWN 帧指针焦点落到行触发器（行在焦点环内），UP 帧合成 CLICK 打开面板。
+        assertTrue("起始应无浮层", runtime.getOverlayHost().isEmpty());
+        harness.press(summary);
+        assertSame("行可聚焦：DOWN 帧指针焦点落到行触发器", management, runtime.getFocusedNode());
+        assertTrue("DOWN 帧不得提前打开面板", runtime.getOverlayHost().isEmpty());
+        harness.release(summary);
+        assertEquals("点击摘要区域应打开面板", 1, runtime.getOverlayHost().size());
+
+        harness.pressKey(SceneKey.ESCAPE);
+        ReactiveScheduler.get().flush();
+        assertTrue("ESC 后应关闭面板", runtime.getOverlayHost().isEmpty());
+        assertSame("关闭后焦点留在行触发器", management, runtime.getFocusedNode());
+
+        // 行内按钮命中不被行吞掉：按钮中心 DOWN 帧的最深 focusable 仍是按钮自身。
+        runtime.requestFocus(management);
+        harness.press(manage);
+        assertSame("行内按钮保留自身命中（未被行吞掉）", manage, runtime.getFocusedNode());
+        harness.release(manage);
+        assertEquals("管理按钮仍可点开面板", 1, runtime.getOverlayHost().size());
+        harness.pressKey(SceneKey.ESCAPE);
+        ReactiveScheduler.get().flush();
+
+        // Enter 同效：行持有焦点时 ENTER 打开（与 SINGLE_VALUE 行触发器同一契约）。
+        runtime.requestFocus(management);
+        ReactiveScheduler.get().flush();
+        harness.pressKey(SceneKey.ENTER);
+        assertEquals("行触发器 ENTER 应打开面板", 1, runtime.getOverlayHost().size());
         runtime.dispose();
     }
 
