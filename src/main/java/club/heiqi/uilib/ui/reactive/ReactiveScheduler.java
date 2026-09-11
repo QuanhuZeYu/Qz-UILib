@@ -17,6 +17,11 @@ import java.util.Objects;
  *
  * <p>I9 保证：一帧内多次写入合并为一次刷新，不逐次触发重排。</p>
  *
+ * <p><b>P1-3 每帧分配</b>：一次 {@code flush} 的写入快照、事务累积表与 effect 扫描快照全部走
+ * 实例 scratch（{@code clear()} 后 {@code putAll/addAll} 复用，容量有界不缩），且
+ * {@code dirtyEffectCount == 0} 时 O(1) 跳过整轮 effect 扫描——E≈2 万时这是每帧最大的一笔分配与空转。
+ * 跳过的是「无工作的扫描」，effect 的注册/注销与不动点语义逐位不变。</p>
+ *
  * <p><b>信条四（中央事务）</b>：每次 {@link #flush()} 把本帧所有 signal 写入合并为一个原子事务记入
  * {@link TransactionLog}（默认开启的有界环形缓冲）。这换来：① 批处理（已有）；② {@link #undo()}/{@link #redo()}
  * 游标时间旅行；③ 单一审计路径——日志永远能回答「谁、何时、因何改了它」。</p>
@@ -37,6 +42,35 @@ public final class ReactiveScheduler {
      * 这样「同帧 set 到中间值再 set 回帧初值」也能被正确吸收为「无净变化」。</p>
      */
     private final LinkedHashMap<Signal<?>, Object> pendingWrites = new LinkedHashMap<>();
+
+    /**
+     * 一帧一事务的累积 scratch（跨 flush 复用，<b>禁止每帧新建</b>）。
+     *
+     * <p>{@code firstBefore} 保留每个 signal 本帧<b>首见</b>的帧初值（putIfAbsent），
+     * {@code lastAfter} 覆盖式留下最后一轮的终值；循环结束后统一提交为一条事务（守 I9）。
+     * 生命期只在一次 flush / applyAndRerun 内，两端 clear。</p>
+     */
+    private final Map<Signal<?>, Object> firstBefore = new LinkedHashMap<>();
+    private final Map<Signal<?>, Object> lastAfter = new LinkedHashMap<>();
+
+    /** drain 的 {@link #pendingWrites} 快照 scratch（跨轮复用，替代每轮 new LinkedHashMap）。 */
+    private final Map<Signal<?>, Object> pendingSnapshot = new LinkedHashMap<>();
+
+    /** 单轮 sweep 的 effect 快照 scratch（跨轮复用，替代每轮 new ArrayList）。 */
+    private final List<Effect> sweepSnapshot = new ArrayList<>();
+
+    /**
+     * 登记表内处于 dirty 的 effect 数（早退判据）。
+     *
+     * <p><b>不变量</b>：恒等于 {@code {e in effects : e.isDirty()}} 的势。维护点只有三处
+     * ——注册（{@link #registerEffect}）、dirty 翻转（{@link Effect#markDirty()} 与
+     * {@link Effect#run()}）、注销（{@link #unregisterEffect}），且都要求 effect 处于
+     * 「已登记」状态，故 {@code reset()} 与事后 dispose 的交叠不会把计数带偏。
+     * 计数为 0 即「无脏 effect」⇒ 可安全跳过整轮扫描（守 I2/I9：跳过的是「无工作的扫描」，
+     * 不是 effect 的注册或注销）。</p>
+     */
+    private int dirtyEffectCount;
+
     /** 已注册的 effect 列表（注册顺序即粗略拓扑序）。 */
     private final List<Effect> effects = new ArrayList<>();
     /** 中央事务日志（信条四：审计 + 时间旅行）。 */
@@ -44,6 +78,9 @@ public final class ReactiveScheduler {
     /** 下一次 flush 提交事务时附带的标签（一次性，提交后清空）。 */
     private String pendingLabel = null;
     private boolean flushing = false;
+
+    /** 最近一轮 sweep 实际扫描的 effect 数（探针：早退命中时为 0）。 */
+    private int lastSweepScannedCount;
 
     /** 单次 flush 双通道交替到不动点的最大迭代轮数，超过判为 effect 循环依赖（防死循环）。 */
     private static final int MAX_FLUSH_PASSES = 1000;
@@ -63,8 +100,55 @@ public final class ReactiveScheduler {
         pendingWrites.put(signal, value);
     }
 
-    void registerEffect(Effect e) { effects.add(e); }
-    void unregisterEffect(Effect e) { effects.remove(e); }
+    /**
+     * 登记 effect（dirty 计数同步在此完成：新 effect 的 dirty 初值为 true）。
+     *
+     * @param e 待登记 effect
+     */
+    void registerEffect(Effect e) {
+        if (!e.__markRegistered()) {
+            return;                                  // 已在册（防御：同一 effect 不重复计数）
+        }
+        effects.add(e);
+        if (e.isDirty()) {
+            dirtyEffectCount++;
+        }
+    }
+
+    /**
+     * 注销 effect（只做列表移除；dirty 计数由 {@link Effect#dispose()} 在清 dirty 时同步回收）。
+     *
+     * <p>{@link #reset()} 之后的迟到 dispose 不会再动计数（{@code __markRegistered()} 返回 false）。</p>
+     *
+     * @param e 待注销 effect
+     */
+    void unregisterEffect(Effect e) {
+        if (e.__markUnregistered()) {
+            effects.remove(e);
+        }
+    }
+
+    /** effect 由 clean 变 dirty（仅登记在册者会调用）：早退计数 +1。 */
+    void __effectBecameDirty() {
+        dirtyEffectCount++;
+    }
+
+    /** effect 由 dirty 变 clean（仅登记在册者会调用）：早退计数 -1（下限钳 0）。 */
+    void __effectBecameClean() {
+        if (dirtyEffectCount > 0) {
+            dirtyEffectCount--;
+        }
+    }
+
+    /** @return 登记表内处于 dirty 的 effect 数（探针：不变量断言用） */
+    int __dirtyEffectCount() {
+        return dirtyEffectCount;
+    }
+
+    /** @return 最近一轮 sweep 实际扫描的 effect 数（0 = 早退命中，未扫描任何 effect） */
+    int __lastSweepScannedCount() {
+        return lastSweepScannedCount;
+    }
 
     /**
      * 当前已注册（未 dispose）的 effect 数量。<b>仅供测试探针</b>断言 Owner 回收是否泄漏，
@@ -96,7 +180,7 @@ public final class ReactiveScheduler {
      *
      * <p>每一轮迭代执行两步：</p>
      * <ol>
-     *   <li>{@link #drainPendingWrites(Map, Map)}：快照并清空 {@link #pendingWrites}，对每个 signal
+     *   <li>{@link #drainPendingWrites()}：快照并清空 {@link #pendingWrites}，对每个 signal
      *       对比「当前现值」与「待应用值」，仅净变化才 {@link Signal#applyAndNotify}（apply + 标脏订阅者），
      *       并把本帧首次出现的 before 累积到 {@code firstBefore}、本帧覆盖性 after 累积到 {@code lastAfter}
      *       （多轮合并，守 I9 一帧一事务）</li>
@@ -114,7 +198,7 @@ public final class ReactiveScheduler {
      *
      * <p><b>一帧一事务</b>（守 I9）：多轮 drain 的净变化在 {@code firstBefore}/{@code lastAfter} 中累积，
      * 循环结束统一提交为<b>一个</b> {@link TransactionLog} 条目；同一 signal 跨多轮 set 中间值再回帧初值
-     * 的抖动会被 {@link #commitTransaction(Map, Map)} 的相等去重吸收为「无净变化、不入日志」。
+     * 的抖动会被 {@link #commitTransaction()} 的相等去重吸收为「无净变化、不入日志」。
      * {@link Computed} 的派生值不入日志（其值可由源 signal 重放后自动重算）。日志关闭时本段零额外开销。</p>
      *
      * <p><b>历史</b>：原实现把 flush 分两阶段——阶段1 一次性 drain 后清空 {@link #pendingWrites}、阶段2 只
@@ -130,9 +214,10 @@ public final class ReactiveScheduler {
         if (flushing) return;
         flushing = true;
         try {
-            // 一帧一个事务：firstBefore/lastAfter 跨多轮 drain 累积，循环结束后统一合并提交（守 I9）
-            Map<Signal<?>, Object> firstBefore = new LinkedHashMap<>();
-            Map<Signal<?>, Object> lastAfter = new LinkedHashMap<>();
+            // 一帧一个事务：firstBefore/lastAfter 是实例 scratch（跨 flush 复用，禁止每帧新建），
+            // 跨多轮 drain 累积，循环结束后统一合并提交（守 I9）。
+            firstBefore.clear();
+            lastAfter.clear();
             int pass = 0;
             while (true) {
                 if (++pass > MAX_FLUSH_PASSES) {
@@ -140,12 +225,14 @@ public final class ReactiveScheduler {
                             "响应式 flush 超过 " + MAX_FLUSH_PASSES + " 轮仍未收敛，疑似 effect 循环依赖");
                 }
                 // 两个通道分别赋值后再合判，勿写 `drain() || sweep()`——短路会跳过 sweep
-                boolean applied = drainPendingWrites(firstBefore, lastAfter);
+                boolean applied = drainPendingWrites();
                 boolean ranAny = runDirtyEffectsOneSweep();
                 if (!applied && !ranAny) break;       // 双通道均无进展 = 不动点
             }
-            commitTransaction(firstBefore, lastAfter);
+            commitTransaction();
         } finally {
+            firstBefore.clear();
+            lastAfter.clear();
             flushing = false;
         }
     }
@@ -159,16 +246,18 @@ public final class ReactiveScheduler {
      * 「本帧开始时的现值」（firstBefore）与「本帧最后一轮的终值」（lastAfter），净变化为零的不入事务——
      * 这就是原阶段1 「set 中间值再回帧初值」抖动去重能力在多轮版本下的等价物。</p>
      *
-     * @param firstBefore 跨轮累积的「首次进入队列前的现值」表（调用方传入，本方法 putIfAbsent 写入）
-     * @param lastAfter   跨轮累积的「最近一次 apply 的终值」表（调用方传入，本方法 覆盖写入）
      * @return 本轮是否发生 apply（存在净变化）
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private boolean drainPendingWrites(Map<Signal<?>, Object> firstBefore, Map<Signal<?>, Object> lastAfter) {
+    private boolean drainPendingWrites() {
         if (pendingWrites.isEmpty()) {
             return false;
         }
-        Map<Signal<?>, Object> snapshot = new LinkedHashMap<>(pendingWrites);
+        // 快照 scratch（跨轮复用）：本轮要遍历的写入集合与「effect 内新写入」的 pendingWrites
+        // 必须分离，故先整体搬进 scratch 再清空 pendingWrites（语义与原 new LinkedHashMap 快照逐位等价）。
+        Map<Signal<?>, Object> snapshot = pendingSnapshot;
+        snapshot.clear();
+        snapshot.putAll(pendingWrites);
         pendingWrites.clear();
         boolean applied = false;
         for (Map.Entry<Signal<?>, Object> e : snapshot.entrySet()) {
@@ -194,8 +283,19 @@ public final class ReactiveScheduler {
      * @return 本轮是否跑过任一 effect
      */
     private boolean runDirtyEffectsOneSweep() {
+        // 早退：计数为 0 即无脏 effect，O(1) 跳过整轮扫描（E≈2 万时这是每帧最大的一笔空转）。
+        if (dirtyEffectCount == 0) {
+            lastSweepScannedCount = 0;
+            return false;
+        }
+        // 快照 scratch（跨轮复用）：本轮登记/注销的 effect 不得影响本轮遍历范围
+        // （新建 effect 在下一轮被纳入——与原 new ArrayList<>(effects) 快照语义一致）。
+        sweepSnapshot.clear();
+        sweepSnapshot.addAll(effects);
+        lastSweepScannedCount = sweepSnapshot.size();
         boolean ranAny = false;
-        for (Effect e : new ArrayList<>(effects)) {
+        for (int i = 0; i < sweepSnapshot.size(); i++) {
+            Effect e = sweepSnapshot.get(i);
             if (e.isDirty()) {
                 e.run();
                 ranAny = true;
@@ -209,7 +309,7 @@ public final class ReactiveScheduler {
      * 仅记真正发生净变化的源 signal。日志关闭时本方法零额外开销，仅清空一次性 label。
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private void commitTransaction(Map<Signal<?>, Object> firstBefore, Map<Signal<?>, Object> lastAfter) {
+    private void commitTransaction() {
         if (!log.isEnabled()) {
             pendingLabel = null;
             return;
@@ -273,21 +373,23 @@ public final class ReactiveScheduler {
             }
             // 双通道交替到不动点：事务直接 apply 可能触发 effect，effect 内 set 进 pendingWrites
             // 仍能在本次 applyAndRerun 内同帧 drain 生效（与 flush 同款契约）
-            Map<Signal<?>, Object> firstBefore = new LinkedHashMap<>();
-            Map<Signal<?>, Object> lastAfter = new LinkedHashMap<>();
+            firstBefore.clear();
+            lastAfter.clear();
             int pass = 0;
             while (true) {
                 if (++pass > MAX_FLUSH_PASSES) {
                     throw new IllegalStateException(
                             "响应式 applyAndRerun 超过 " + MAX_FLUSH_PASSES + " 轮仍未收敛，疑似 effect 循环依赖");
                 }
-                boolean applied = drainPendingWrites(firstBefore, lastAfter);
+                boolean applied = drainPendingWrites();
                 boolean ranAny = runDirtyEffectsOneSweep();
                 if (!applied && !ranAny) break;
             }
             // undo/redo 本身不产生新事务：effect 内 set 产生的累积净变化不提交日志
             pendingLabel = null;
         } finally {
+            firstBefore.clear();
+            lastAfter.clear();
             flushing = false;
         }
     }
@@ -296,8 +398,18 @@ public final class ReactiveScheduler {
      * 重置所有状态（仅用于单元测试的 setUp/tearDown）。
      */
     public void reset() {
-        pendingWrites.clear();
+        // 先解除在册标记：此后迟到的 dispose 不得再回改 dirtyEffectCount（计数不变量）
+        for (int i = 0; i < effects.size(); i++) {
+            effects.get(i).__markUnregistered();
+        }
         effects.clear();
+        dirtyEffectCount = 0;
+        lastSweepScannedCount = 0;
+        pendingWrites.clear();
+        pendingSnapshot.clear();
+        firstBefore.clear();
+        lastAfter.clear();
+        sweepSnapshot.clear();
         log.resetForTest();
         pendingLabel = null;
         flushing = false;

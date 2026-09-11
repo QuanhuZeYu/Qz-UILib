@@ -89,12 +89,7 @@ public class ScenePaintReplayer {
             return;
         }
         List<String> visibleTexts = new ArrayList<String>();
-        for (PaintCommand command : plan.getCommands()) {
-            if (command.getType() == PaintCommandType.TEXT && command.getTextStyle() != null
-                    && command.getText() != null && !command.getText().isEmpty()) {
-                visibleTexts.add(command.getText());
-            }
-        }
+        collectVisibleTexts(plan, visibleTexts);
         if (!visibleTexts.isEmpty()) {
             ctx.publishTextDemand(Collections.unmodifiableList(visibleTexts));
         }
@@ -104,9 +99,7 @@ public class ScenePaintReplayer {
         club.heiqi.uilib.ui.render.UiRenderBackends.beginBackdropBatch(ctx);
         try {
             try {
-                for (PaintCommand cmd : plan.getCommands()) {
-                    replayCommand(cmd, ctx, offsetX, offsetY, openScopes);
-                }
+                replaySlots(plan, ctx, offsetX, offsetY, openScopes);
             } catch (RuntimeException exception) {
                 IllegalStateException cleanupFailure = unwind(ctx, openScopes, exception);
                 if (cleanupFailure != null) throw cleanupFailure;
@@ -120,6 +113,66 @@ public class ScenePaintReplayer {
             // 批次必须无条件收尾：中途抛异常若漏掉 end，冻结的 revision 会让后续帧
             // 永远看不到新内容（玻璃停在旧背景上）。
             club.heiqi.uilib.ui.render.UiRenderBackends.endBackdropBatch(ctx);
+        }
+    }
+
+    /**
+     * 顺序消费计划条目（P1-3）：单命令直接回放；「片段 + 偏移」条目在回放期把片段偏移
+     * 叠加到屏幕偏移上，<b>不再逐条重建 PaintCommand</b>。
+     *
+     * <p>与旧路径（组装期 {@code translatedBy} 出绝对坐标命令，再整体叠加屏幕偏移）逐像素等价：
+     * 片段内每条命令的平移量由 {@link PaintCommand#fragmentTranslationX(int)} /
+     * {@link PaintCommand#fragmentTranslationY(int)} 给出，语义与 {@code translatedBy} 完全一致
+     * （零偏移与作用域边界命令均豁免）。</p>
+     *
+     * @param plan    Display List
+     * @param ctx     渲染上下文
+     * @param offsetX 计划级屏幕 X 偏移
+     * @param offsetY 计划级屏幕 Y 偏移
+     * @param openScopes 作用域配对栈（异常回滚用）
+     */
+    private void replaySlots(PaintPlan plan, UiRenderBackend ctx, int offsetX, int offsetY,
+            Deque<Scope> openScopes) {
+        List<Object> slots = plan.__slots();
+        for (int i = 0; i < slots.size(); i++) {
+            Object slot = slots.get(i);
+            if (slot instanceof PaintCommand) {
+                replayCommand((PaintCommand) slot, ctx, offsetX, offsetY, openScopes);
+            } else {
+                PaintPlan.FragmentSlot fragmentSlot = (PaintPlan.FragmentSlot) slot;
+                List<PaintCommand> commands = fragmentSlot.fragment.getCommands();
+                for (int j = 0; j < commands.size(); j++) {
+                    PaintCommand cmd = commands.get(j);
+                    replayCommand(cmd, ctx,
+                            offsetX + cmd.fragmentTranslationX(fragmentSlot.offsetX),
+                            offsetY + cmd.fragmentTranslationY(fragmentSlot.offsetY),
+                            openScopes);
+                }
+            }
+        }
+    }
+
+    /** 收集计划内全部非空 TEXT 命令的文本（顺序与回放一致），供文本需求预发布。 */
+    private static void collectVisibleTexts(PaintPlan plan, List<String> out) {
+        List<Object> slots = plan.__slots();
+        for (int i = 0; i < slots.size(); i++) {
+            Object slot = slots.get(i);
+            if (slot instanceof PaintCommand) {
+                addVisibleText((PaintCommand) slot, out);
+            } else {
+                List<PaintCommand> commands = ((PaintPlan.FragmentSlot) slot).fragment.getCommands();
+                for (int j = 0; j < commands.size(); j++) {
+                    addVisibleText(commands.get(j), out);
+                }
+            }
+        }
+    }
+
+    /** 单条命令的文本需求收集（与旧内联判定逐字一致）。 */
+    private static void addVisibleText(PaintCommand command, List<String> out) {
+        if (command.getType() == PaintCommandType.TEXT && command.getTextStyle() != null
+                && command.getText() != null && !command.getText().isEmpty()) {
+            out.add(command.getText());
         }
     }
 

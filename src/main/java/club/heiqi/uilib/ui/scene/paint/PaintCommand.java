@@ -781,11 +781,7 @@ public final class PaintCommand {
         }
         // 合成/裁剪/变换边界命令（PUSH/POP_OPACITY、CLIP_PUSH/CLIP_POP、PUSH/POP_TRANSFORM）由绘制引擎
         // 递归骨架直接产出绝对坐标，绝不经 fragment 相对坐标通路二次平移；防御性返回自身。
-        if (type == PaintCommandType.PUSH_OPACITY || type == PaintCommandType.POP_OPACITY
-                || type == PaintCommandType.CLIP_PUSH || type == PaintCommandType.CLIP_POP
-                || type == PaintCommandType.PUSH_TRANSFORM || type == PaintCommandType.POP_TRANSFORM
-                || type == PaintCommandType.PUSH_TRANSFORM_LAYER
-                || type == PaintCommandType.POP_TRANSFORM_LAYER) {
+        if (isScopeBoundaryCommand()) {
             return this;
         }
         // backdrop 必须随命令平移透传：BACKDROP 与 BACKGROUND 同属节点局部坐标通路，
@@ -796,6 +792,39 @@ public final class PaintCommand {
                 segments,
                 cornerRadiusTopLeft, cornerRadiusTopRight,
                 cornerRadiusBottomRight, cornerRadiusBottomLeft, backdrop, roundedBand);
+    }
+
+    /**
+     * 片段通路下的有效 X 平移量（P1-3：平移在 replay 期叠加，不再逐条重建命令）。
+     *
+     * <p>语义与 {@link #translatedBy(int, int)} 严格一致：零偏移恒 0；作用域边界命令
+     * （由递归骨架直接产出绝对坐标）豁免平移。回放器用本方法算出每条命令的真实偏移，
+     * 结果与「先 translatedBy 再按计划偏移回放」逐像素等价。</p>
+     *
+     * @param dx 片段的绝对 X 偏移
+     * @return 本命令应叠加的 X 平移量
+     */
+    int fragmentTranslationX(int dx) {
+        return dx == 0 || isScopeBoundaryCommand() ? 0 : dx;
+    }
+
+    /**
+     * 片段通路下的有效 Y 平移量（与 {@link #fragmentTranslationX(int)} 对称）。
+     *
+     * @param dy 片段的绝对 Y 偏移
+     * @return 本命令应叠加的 Y 平移量
+     */
+    int fragmentTranslationY(int dy) {
+        return dy == 0 || isScopeBoundaryCommand() ? 0 : dy;
+    }
+
+    /** @return 是否为「递归骨架直接产出绝对坐标」的作用域边界命令（绝不参与片段平移） */
+    private boolean isScopeBoundaryCommand() {
+        return type == PaintCommandType.PUSH_OPACITY || type == PaintCommandType.POP_OPACITY
+                || type == PaintCommandType.CLIP_PUSH || type == PaintCommandType.CLIP_POP
+                || type == PaintCommandType.PUSH_TRANSFORM || type == PaintCommandType.POP_TRANSFORM
+                || type == PaintCommandType.PUSH_TRANSFORM_LAYER
+                || type == PaintCommandType.POP_TRANSFORM_LAYER;
     }
 
     // ========== equals / hashCode / toString ==========

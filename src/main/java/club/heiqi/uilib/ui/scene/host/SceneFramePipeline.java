@@ -20,7 +20,6 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
-import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintResult;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintEngine;
@@ -454,7 +453,8 @@ public final class SceneFramePipeline {
         PaintPlan wrapped = new PaintPlan().addClipPush(state.windowClip.getX(), state.windowClip.getY(),
                 state.windowClip.getX() + state.windowClip.getWidth(),
                 state.windowClip.getY() + state.windowClip.getHeight(), 0);
-        for (PaintCommand command : plan.getCommands()) wrapped.addCommand(command);
+        // P1-3：按条目整片追加（保留「片段 + 偏移」形态），不再物化为绝对命令后逐条复制。
+        wrapped.addPlan(plan);
         wrapped.addClipPop();
         return wrapped;
     }

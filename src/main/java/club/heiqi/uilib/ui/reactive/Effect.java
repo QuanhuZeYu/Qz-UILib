@@ -17,6 +17,15 @@ public final class Effect {
     private boolean dirty = true;
     private boolean disposed = false;
 
+    /**
+     * 本 effect 当前是否登记在调度器的 effect 表内（P1-3 dirty 计数不变量的锚）。
+     *
+     * <p>调度器的 {@code dirtyEffectCount} 只在「已登记」的 effect 上增减，故
+     * {@code reset()} 之后再 dispose / markDirty 的迟到调用不会把计数带偏——
+     * 计数偏低会让早退跳过真脏的 effect（正确性事故），必须有结构性防线。</p>
+     */
+    private boolean registered;
+
     Effect(Runnable body) {
         this.body = body;
         // 自动归属：若处于某 Owner 作用域内（如组件 mount 期），attach 到当前 owner，
@@ -56,9 +65,15 @@ public final class Effect {
         }
     }
 
-    /** 由 signal 在值变化时调用，标记本 effect 需要重跑。 */
+    /** 由 signal 在值变化时调用，标记本 effect 需要重跑（clean→dirty 时同步调度器早退计数）。 */
     void markDirty() {
-        if (!disposed) dirty = true;
+        if (disposed || dirty) {
+            return;
+        }
+        dirty = true;
+        if (registered) {
+            ReactiveScheduler.get().__effectBecameDirty();
+        }
     }
 
     /** 由 {@link Signal#get()} 在追踪期间调用，登记依赖关系。 */
@@ -71,6 +86,9 @@ public final class Effect {
     void run() {
         if (disposed || !dirty) return;
         dirty = false;
+        if (registered) {
+            ReactiveScheduler.get().__effectBecameClean();
+        }
         // 取消旧订阅，防止订阅泄漏
         for (Signal<?> dep : dependencies) dep.subscribers.remove(this);
         dependencies.clear();
@@ -86,7 +104,14 @@ public final class Effect {
     public void dispose() {
         if (disposed) return;
         disposed = true;
-        dirty = false; // 已释放的 effect 无待跑工作；避免其残留在调度器列表里被不动点循环误判为脏
+        if (dirty) {
+            // 已释放的 effect 无待跑工作；避免其残留在调度器列表里被不动点循环误判为脏。
+            // 同步回收早退计数（仅登记在册者计入过）。
+            dirty = false;
+            if (registered) {
+                ReactiveScheduler.get().__effectBecameClean();
+            }
+        }
         for (Signal<?> dep : dependencies) dep.subscribers.remove(this);
         dependencies.clear();
         ReactiveScheduler.get().unregisterEffect(this);
@@ -94,4 +119,33 @@ public final class Effect {
 
     public boolean isDirty() { return dirty; }
     public boolean isDisposed() { return disposed; }
+
+    /** @return 本 effect 是否登记在调度器 effect 表内（P1-3 计数探针） */
+    boolean isRegistered() { return registered; }
+
+    /**
+     * 由调度器在登记时调用（幂等）。
+     *
+     * @return 本次是否由「未在册」翻转为「在册」（false = 已在册，调用方不得重复计数）
+     */
+    boolean __markRegistered() {
+        if (registered) {
+            return false;
+        }
+        registered = true;
+        return true;
+    }
+
+    /**
+     * 由调度器在注销/重置时调用（幂等）。
+     *
+     * @return 本次是否由「在册」翻转为「未在册」（false = 本就不在册）
+     */
+    boolean __markUnregistered() {
+        if (!registered) {
+            return false;
+        }
+        registered = false;
+        return true;
+    }
 }

@@ -29,34 +29,74 @@ import java.util.Objects;
  */
 public final class PaintPlan {
 
-    /** 扁平化的有序绘制命令列表 */
-    private final List<PaintCommand> commands;
+    /**
+     * 有序条目序列：每个元素是 {@link PaintCommand}（绝对坐标的单命令，含全部作用域边界命令）
+     * 或 {@link FragmentSlot}（片段 + 绝对偏移）。
+     *
+     * <p><b>P1-3</b>：片段不再在组装期逐命令 {@code translatedBy}（N 个节点 ≈ 2N 个新命令对象/帧），
+     * 而是整片入表、把平移推迟到 replay。条目数 = 节点数（而不是命令数），组装期分配随之降一个量级。</p>
+     */
+    private final List<Object> slots;
+
+    /**
+     * {@link #getCommands()} 的物化结果（懒建缓存）；任何写入后置 {@code null} 失效。
+     *
+     * <p>公开读取面（测试与诊断按值消费绝对坐标命令）语义逐位不变：物化时对片段内每条命令
+     * 调 {@link PaintCommand#translatedBy(int, int)}，与旧组装期行为完全一致。</p>
+     */
+    private List<PaintCommand> materialized;
+
+    /** 命令总条数（写入口增量维护；片段按其命令数计入），使 {@link #size()} 保持 O(1) 且零分配。 */
+    private int commandCount;
 
     /**
      * 创建空的绘制计划。
      */
     public PaintPlan() {
-        this.commands = new ArrayList<>();
+        this.slots = new ArrayList<>();
     }
 
     /**
-     * 追加单条绘制命令。
+     * 追加单条绘制命令（坐标已是绝对屏幕坐标）。
      *
      * @param command 绘制命令
      * @return 当前计划（支持链式调用）
      */
     public PaintPlan addCommand(PaintCommand command) {
         Objects.requireNonNull(command, "command");
-        commands.add(command);
+        slots.add(command);
+        commandCount++;
+        materialized = null;
+        return this;
+    }
+
+    /**
+     * 把另一个计划的全部条目追加到本计划末尾（保留「片段 + 偏移」形态，不物化命令）。
+     *
+     * <p>用途：宿主级包装计划（如窗口裁剪盒）需要在不重建绝对命令的前提下前后插入边界命令。
+     * 纯加法，不改变任何既有语义。</p>
+     *
+     * @param source 源计划（非 null；等于自身时原样返回）
+     * @return 当前计划（支持链式调用）
+     */
+    public PaintPlan addPlan(PaintPlan source) {
+        Objects.requireNonNull(source, "source");
+        if (source == this) {
+            return this;
+        }
+        slots.addAll(source.slots);
+        commandCount += source.commandCount;
+        materialized = null;
         return this;
     }
 
     /**
      * 追加一个节点绘制片段的所有命令，叠加绝对偏移后存入命令序列。
      *
-     * <p>fragment 内的命令存储相对节点局部原点的坐标（方案 A），
-     * 本方法将每条命令通过 {@link PaintCommand#translatedBy(int, int)}
-     * 叠加 (offsetX, offsetY) 后得到最终屏幕绝对坐标。</p>
+     * <p>fragment 内的命令存储相对节点局部原点的坐标（方案 A）：<b>P1-3 起本方法只登记
+     * 「片段 + 偏移」条目，平移推迟到 {@code ScenePaintReplayer} 回放时叠加</b>
+     * （回放器已支持逐命令偏移），组装期不再逐命令 new PaintCommand。对外语义不变：
+     * {@link #getCommands()} 仍返回叠加偏移后的绝对坐标命令，回放结果逐像素等价。</p>
      *
      * @param fragment 节点绘制片段（命令为相对坐标）
      * @param offsetX  节点在屏幕上的绝对 X 偏移
@@ -65,9 +105,9 @@ public final class PaintPlan {
      */
     public PaintPlan addFragment(PaintFragment fragment, int offsetX, int offsetY) {
         Objects.requireNonNull(fragment, "fragment");
-        for (PaintCommand cmd : fragment.getCommands()) {
-            commands.add(cmd.translatedBy(offsetX, offsetY));
-        }
+        slots.add(new FragmentSlot(fragment, offsetX, offsetY));
+        commandCount += fragment.size();
+        materialized = null;
         return this;
     }
 
@@ -100,7 +140,7 @@ public final class PaintPlan {
      * @return 当前计划（支持链式调用）
      */
     public PaintPlan addPushOpacity(int left, int top, int right, int bottom, float opacity) {
-        commands.add(PaintCommand.pushOpacity(left, top, right, bottom, opacity));
+        addCommand(PaintCommand.pushOpacity(left, top, right, bottom, opacity));
         return this;
     }
 
@@ -110,7 +150,7 @@ public final class PaintPlan {
      * @return 当前计划（支持链式调用）
      */
     public PaintPlan addPopOpacity() {
-        commands.add(PaintCommand.popOpacity());
+        addCommand(PaintCommand.popOpacity());
         return this;
     }
 
@@ -129,7 +169,7 @@ public final class PaintPlan {
      * @return 当前计划（支持链式调用）
      */
     public PaintPlan addClipPush(int left, int top, int right, int bottom, int cornerRadius) {
-        commands.add(PaintCommand.clipPush(left, top, right, bottom, cornerRadius));
+        addCommand(PaintCommand.clipPush(left, top, right, bottom, cornerRadius));
         return this;
     }
 
@@ -139,7 +179,7 @@ public final class PaintPlan {
      * @return 当前计划（支持链式调用）
      */
     public PaintPlan addClipPop() {
-        commands.add(PaintCommand.clipPop());
+        addCommand(PaintCommand.clipPop());
         return this;
     }
 
@@ -167,7 +207,7 @@ public final class PaintPlan {
                                       float translateX, float translateY, float rotateDegrees,
                                       float scaleX, float scaleY,
                                       float originXRatio, float originYRatio) {
-        commands.add(PaintCommand.pushTransform(left, top, right, bottom,
+        addCommand(PaintCommand.pushTransform(left, top, right, bottom,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio));
         return this;
     }
@@ -178,7 +218,7 @@ public final class PaintPlan {
      * @return 当前计划（支持链式调用）
      */
     public PaintPlan addPopTransform() {
-        commands.add(PaintCommand.popTransform());
+        addCommand(PaintCommand.popTransform());
         return this;
     }
 
@@ -209,7 +249,7 @@ public final class PaintPlan {
                                            float translateX, float translateY, float rotateDegrees,
                                            float scaleX, float scaleY,
                                            float originXRatio, float originYRatio) {
-        commands.add(PaintCommand.pushTransformLayer(left, top, right, bottom,
+        addCommand(PaintCommand.pushTransformLayer(left, top, right, bottom,
                 translateX, translateY, rotateDegrees, scaleX, scaleY, originXRatio, originYRatio));
         return this;
     }
@@ -220,40 +260,95 @@ public final class PaintPlan {
      * @return 当前计划（支持链式调用）
      */
     public PaintPlan addPopTransformLayer() {
-        commands.add(PaintCommand.popTransformLayer());
+        addCommand(PaintCommand.popTransformLayer());
         return this;
     }
 
     /**
-     * 返回扁平化的、供回放器顺序消费的命令序列。
+     * 返回扁平化的、供回放器顺序消费的命令序列（绝对屏幕坐标）。
      *
      * <p>渲染层只认识这个列表，每条命令自身就是绘制操作的完整描述，
      * 无需反查任何上游概念。</p>
      *
+     * <p>P1-3：片段条目在此<b>按需物化</b>（叠加偏移得到绝对坐标），结果按计划实例缓存，
+     * 任何写入后失效。回放路径不走本方法（它直接消费条目，见 {@code ScenePaintReplayer}），
+     * 故每帧稳态不产生这份物化分配。</p>
+     *
      * @return 不可变命令列表
      */
     public List<PaintCommand> getCommands() {
-        return Collections.unmodifiableList(commands);
+        if (materialized == null) {
+            List<PaintCommand> flat = new ArrayList<PaintCommand>(commandCount);
+            for (int i = 0; i < slots.size(); i++) {
+                Object slot = slots.get(i);
+                if (slot instanceof PaintCommand) {
+                    flat.add((PaintCommand) slot);
+                } else {
+                    FragmentSlot fragmentSlot = (FragmentSlot) slot;
+                    List<PaintCommand> commands = fragmentSlot.fragment.getCommands();
+                    for (int j = 0; j < commands.size(); j++) {
+                        flat.add(commands.get(j).translatedBy(fragmentSlot.offsetX, fragmentSlot.offsetY));
+                    }
+                }
+            }
+            materialized = Collections.unmodifiableList(flat);
+        }
+        return materialized;
     }
 
     /**
-     * 返回命令总条数。
+     * 返回命令总条数（片段按其命令数计入）。
      *
      * @return 命令数量
      */
     public int size() {
-        return commands.size();
+        return commandCount;
     }
 
     /**
      * 清空所有命令。
      */
     public void clear() {
-        commands.clear();
+        slots.clear();
+        commandCount = 0;
+        materialized = null;
+    }
+
+    /**
+     * 条目序列（包内视图，回放器按「单命令 / 片段+偏移」分派消费；不做防御性拷贝）。
+     *
+     * @return 条目列表（元素为 {@link PaintCommand} 或 {@link FragmentSlot}）
+     */
+    List<Object> __slots() {
+        return slots;
     }
 
     @Override
     public String toString() {
-        return "PaintPlan{size=" + commands.size() + "}";
+        return "PaintPlan{commands=" + commandCount + ", entries=" + slots.size() + "}";
+    }
+
+    /**
+     * 「片段 + 绝对偏移」条目：把片段内每条命令的平移推迟到 replay。
+     *
+     * <p>片段自身按节点缓存跨帧复用，偏移是每帧的绝对位置，二者在此解耦——
+     * 这正是原 {@code translatedBy} 每帧重建命令所付出的分配被消除的原因。</p>
+     */
+    static final class FragmentSlot {
+
+        /** 节点绘制片段（命令为节点局部坐标）。 */
+        final PaintFragment fragment;
+
+        /** 节点在屏幕上的绝对 X 偏移。 */
+        final int offsetX;
+
+        /** 节点在屏幕上的绝对 Y 偏移。 */
+        final int offsetY;
+
+        FragmentSlot(PaintFragment fragment, int offsetX, int offsetY) {
+            this.fragment = fragment;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+        }
     }
 }
