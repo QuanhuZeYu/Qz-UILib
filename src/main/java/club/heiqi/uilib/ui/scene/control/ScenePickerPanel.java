@@ -15,11 +15,16 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.github.bsideup.jabel.Desugar;
 
+import club.heiqi.config.ui.editor.CandidateSourceValueEditorProvider;
+import club.heiqi.config.ui.editor.PickerCandidateSource;
+import club.heiqi.config.ui.editor.PickerQuery;
+import club.heiqi.config.ui.editor.PickerSourceVersion;
 import club.heiqi.config.ui.editor.SearchPickerCategories;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPanelPresentation;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
+import club.heiqi.config.ui.field.PickerSourceGuard;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
@@ -177,6 +182,17 @@ public final class ScenePickerPanel {
         private final boolean variantSearchEnabled;
         /** 结果是否已在查询层按分类过滤（SPI 路径）：true 时面板侧不再二次过滤（ADR §1.7 D-12/T-6）。 */
         private final boolean resultsCategoryFiltered;
+        /**
+         * 惰性候选源（SPI 路径，ADR §3.2）：非 null 时面板<b>不持有候选全集</b>，
+         * 改在内容 Owner 内自建 {@code pageProvider} 闭包按窗口切片拉取；null = 旧全量结果信号路径（T-1）。
+         */
+        private final PickerCandidateSource candidateSource;
+        /** 搜索 lane 窗口上限（取值链 = {@code SearchPickerSpec.maxItems()}，由装配层注入）。 */
+        private final int searchMaxItems;
+        /** 当前查询条件信号（归一化 {@link PickerQuery}，装配层受控注入）；SPI 路径必填。 */
+        private final ReadableSignal<PickerQuery> sourceQuery;
+        /** 候选源版本信号（装配层的 {@code PickerRevisionBridge}）：变化即重查（可为 null = 不订阅）。 */
+        private final ReadableSignal<PickerSourceVersion> sourceVersion;
 
         /**
          * 创建受控居中 70% picker 面板属性（保留旧组件六参必填语义）。
@@ -218,6 +234,10 @@ public final class ScenePickerPanel {
             this.grid = GridProps.DEFAULT;
             this.variantSearchEnabled = false;
             this.resultsCategoryFiltered = false;
+            this.candidateSource = null;
+            this.searchMaxItems = CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS;
+            this.sourceQuery = null;
+            this.sourceVersion = null;
         }
 
         private Props(Builder builder) {
@@ -246,6 +266,16 @@ public final class ScenePickerPanel {
             grid = builder.grid;
             variantSearchEnabled = builder.variantSearchEnabled;
             resultsCategoryFiltered = builder.resultsCategoryFiltered;
+            candidateSource = builder.candidateSource;
+            searchMaxItems = builder.searchMaxItems;
+            sourceQuery = builder.sourceQuery;
+            sourceVersion = builder.sourceVersion;
+            if (candidateSource != null && sourceQuery == null) {
+                throw new IllegalArgumentException("candidateSource 非 null 时必须提供 sourceQuery（面板自建窗口切片）");
+            }
+            if (candidateSource != null && searchMaxItems < 1) {
+                throw new IllegalArgumentException("searchMaxItems 必须为正数");
+            }
         }
 
         /** 创建保留旧六参必填项的 builder。 */
@@ -313,6 +343,14 @@ public final class ScenePickerPanel {
         public boolean variantSearchEnabled() { return variantSearchEnabled; }
         /** @return 结果是否已在查询层按分类过滤（true 时面板侧不做 filterByCategory，避免二次过滤） */
         public boolean resultsCategoryFiltered() { return resultsCategoryFiltered; }
+        /** @return 惰性候选源；null = 旧全量结果信号路径 */
+        public PickerCandidateSource candidateSource() { return candidateSource; }
+        /** @return 搜索 lane 窗口上限 */
+        public int searchMaxItems() { return searchMaxItems; }
+        /** @return 受控查询条件信号；SPI 路径必填 */
+        public ReadableSignal<PickerQuery> sourceQuery() { return sourceQuery; }
+        /** @return 候选源版本信号（可为 null = 不订阅版本变化） */
+        public ReadableSignal<PickerSourceVersion> sourceVersion() { return sourceVersion; }
 
         /** 全屏 picker 面板可选属性 builder。 */
         public static final class Builder {
@@ -347,6 +385,10 @@ public final class ScenePickerPanel {
             private GridProps grid = GridProps.DEFAULT;
             private boolean variantSearchEnabled;
             private boolean resultsCategoryFiltered;
+            private PickerCandidateSource candidateSource;
+            private int searchMaxItems = CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS;
+            private ReadableSignal<PickerQuery> sourceQuery;
+            private ReadableSignal<PickerSourceVersion> sourceVersion;
 
             private Builder(ReadableSignal<String> query, ReadableSignal<SearchPickerData.SearchResult> results,
                             ReadableSignal<Boolean> enabled, Consumer<String> onQuery,
@@ -452,14 +494,40 @@ public final class ScenePickerPanel {
             public Builder variantSearchEnabled(boolean value) { variantSearchEnabled = value; return this; }
 
             /**
-             * 声明结果已由查询层按分类过滤（SPI 路径 / ADR §1.7 D-12 T-6）：面板侧不再二次过滤。
+             * 声明结果信号已由查询层按分类过滤（ADR §1.7 D-12 T-6）：面板侧不再二次过滤。
              *
-             * <p>新 SPI 路径下分类过滤是 source 的职责（{@code PickerQuery.categoryDimension/categoryKey}），
-             * 面板再过滤一次会让窗口切片与 totalItems/计数失真；旧 provider（未实现 SPI）保持 false，
-             * 面板侧 filterByCategory 照旧（T-6 保留期）。</p>
+             * <p>只作用于**结果信号路径**（未接 {@link #candidateSource}）：上层若自行按分类过滤后再喂
+             * {@code Props.results()}，置 true 可避免面板二次过滤。接了候选源的 SPI 路径不使用
+             * {@code Props.results()}（切片由面板 pageProvider 拉取），本标志在该路径无效；
+             * 旧 provider（未实现 SPI）保持 false，面板侧 filterByCategory 照旧（T-6 保留期）。</p>
              */
             public Builder resultsCategoryFiltered(boolean value) {
                 resultsCategoryFiltered = value; return this;
+            }
+
+            /**
+             * 接入惰性候选源（SPI 路径，ADR §3.2）。
+             *
+             * <p>面板在内容 Owner 内自建 {@code pageProvider} 闭包：持有查询条件信号 + 候选源引用 +
+             * 搜索窗口上限，按控件产出的 {@link SearchResultList.WindowRequest} 调
+             * {@code source.page(query, offset, limit)}；总量 = 浏览 lane 的 {@code size()} 或
+             * 搜索 lane 的 {@code min(matchCount, searchMaxItems)}。{@code Props.results()} 在
+             * 本路径下不参与列表渲染。</p>
+             *
+             * @param source        惰性候选源（非 null）
+             * @param searchMaxItems 搜索 lane 窗口上限（&gt;0；取值链 = SearchPickerSpec.maxItems()）
+             * @param query         受控查询条件信号（非 null）
+             * @param version       候选源版本信号（可为 null = 不订阅版本变化）
+             * @return 本 builder
+             */
+            public Builder candidateSource(PickerCandidateSource source, int searchMaxItems,
+                                           ReadableSignal<PickerQuery> query,
+                                           ReadableSignal<PickerSourceVersion> version) {
+                candidateSource = Objects.requireNonNull(source, "candidateSource");
+                this.searchMaxItems = searchMaxItems;
+                sourceQuery = Objects.requireNonNull(query, "sourceQuery");
+                sourceVersion = version;
+                return this;
             }
 
             /** 构建不可变属性。 */
@@ -481,6 +549,9 @@ public final class ScenePickerPanel {
      * @param variantMode        变体草稿选择模式只读信号
      * @param variantKeys        变体草稿已选 key 只读信号
      * @param activeCandidate    变体草稿候选只读信号
+     * @param windowModel        当前结果列表窗口模型只读观察面（P4 增补：宿主/测试回读
+     *                           {@code totalItems/totalRows/windowStartRow/mountedRows}；
+     *                           面板关闭时为 null。不参与窗口数学，窗口数学只在列表控件内）
      */
     @Desugar
     public record Result(
@@ -494,7 +565,8 @@ public final class ScenePickerPanel {
             ReadableSignal<Integer> gridHighlight,
             ReadableSignal<SearchPickerData.SelectionMode> variantMode,
             ReadableSignal<List<String>> variantKeys,
-            ReadableSignal<SearchPickerData.Candidate> activeCandidate) {
+            ReadableSignal<SearchPickerData.Candidate> activeCandidate,
+            Supplier<SceneGridWindow.WindowModel> windowModel) {
     }
 
     /**
@@ -539,6 +611,9 @@ public final class ScenePickerPanel {
         SceneNode[] gridFocusTarget = new SceneNode[1];
         SceneNode[] variantFocusTarget = new SceneNode[1];
         SceneNode[] gridViewportHolder = new SceneNode[1];
+        // 结果列表窗口模型只读观察面：内容构建时登记列表的 windowModel 信号，关闭时置空。
+        AtomicReference<ReadableSignal<SceneGridWindow.WindowModel>> windowModelHolder =
+                new AtomicReference<ReadableSignal<SceneGridWindow.WindowModel>>();
 
         // 候选相关内容（memberIssues/filtered/gridItems/categoryRows/clampHighlight/VariantChooser）
         // 一律在 portal 内容 Owner 内创建（见下方 rt.portal 的 builder），随 SceneRuntime.disposeMounted()
@@ -560,6 +635,7 @@ public final class ScenePickerPanel {
                 gridFocusTarget[0] = null;
                 variantFocusTarget[0] = null;
                 gridViewportHolder[0] = null;
+                windowModelHolder.set(null);
             }
         });
 
@@ -574,45 +650,15 @@ public final class ScenePickerPanel {
             // 「面板关闭但结果信号变化」继续触发派生；移入内容 Owner 后关闭即随 disposeMounted() 停止。
             ReadableSignal<MemberIssues> memberIssues = Computed.create(() ->
                     ScenePickerPanelNav.analyzeMemberIssues(safeMembers(props)));
-            ReadableSignal<List<SearchPickerData.Candidate>> filtered = Computed.create(() -> {
-                List<SearchPickerData.Candidate> candidates = safeResults(props).candidates();
-                // SPI 路径：分类过滤已在查询层完成（PickerQuery.categoryDimension/categoryKey），
-                // 面板侧禁止二次过滤（否则窗口切片被过滤两次、totalItems 与计数失真）——ADR §1.7 D-12/T-6。
-                if (props.resultsCategoryFiltered()) {
-                    return candidates;
-                }
-                return ScenePickerPanelNav.filterByCategory(candidates, categoryKey.get(), props.categoryOf());
-            });
-            ReadableSignal<List<Item>> gridItems = Computed.create(() -> {
-                long gridStartedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
-                List<SearchPickerData.Candidate> candidates = filtered.get();
-                ArrayList<Item> items = new ArrayList<Item>(candidates.size());
-                for (SearchPickerData.Candidate candidate : candidates) {
-                    // 标签保留完整文本：省略由渲染层承担（结果单元已 setMaxTextWidth + setEllipsis）。
-                    // 信息条因此可读 item.label() 拿到全名（P5 §5.4 D4），且不再对 filtered 全表反查（O(1)）。
-                    String label = props.visualAdapter().candidateLabel(candidate);
-                    SceneImageSource image = null;
-                    try {
-                        image = props.visualAdapter().candidateImage(candidate);
-                    } catch (RuntimeException exception) {
-                        // 单个候选的图片源创建失败：降级无图占位，不中断整张网格。
-                    } catch (LinkageError error) {
-                        // 同上（可选宿主类型链接失败）。
-                    }
-                    items.add(new Item(candidate.key(), image, label));
-                }
-                recordGridTransform(gridStartedAtNanos, candidates.size(), items.size());
-                return items;
-            });
-            ReadableSignal<List<CategoryRow>> categoryRows = Computed.create(() ->
-                    ScenePickerPanelNav.categoryRows(safeCategories(props),
-                            safeResults(props).candidates(), props.categoryOf(),
-                            props.panelPresentation().allCategoryLabel()));
+            // 数据面二选一（构建期分支，非逐帧门控）：
+            //   旧路径（无候选源，T-1）= 结果信号自带候选全集，面板侧过滤 + 全量项派生；
+            //   SPI 路径 = 面板自建 pageProvider 闭包按窗口切片拉取，面板不持有候选全集（ADR §3.2）。
+            Feed feed = props.candidateSource() == null ? legacyFeed(props, categoryKey) : sourceFeed(props);
 
-            SceneNode content = mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
+            SceneNode content = mainPanel(rt, props, closeRequest, feed,
                     memberIssues, categoryKey, categoryWriter, gridHighlight,
                     addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
-                    gridViewportHolder, variantsOpen, activeCandidate, mode, selectedKeys);
+                    gridViewportHolder, windowModelHolder, variantsOpen, activeCandidate, mode, selectedKeys);
             recordPhase(UiPerfMarkers.PHASE_PICKER_OPEN_MAIN, startedAtNanos);
 
             // 变体选择浮层（模块化）：mode/selectedKeys 受控，草稿查询在模块内部。
@@ -628,9 +674,10 @@ public final class ScenePickerPanel {
                     () -> closeVariants(variantsOpen, activeCandidate, focusIntent)));
 
             // 网格高亮回夹（数据收缩/分类切换后夹到合法范围）：关闭时高亮已由 open bind 重置为 -1，
-            // 关闭态无需回夹，故随内容 Owner 建/释放（ADR §4.1）。
+            // 关闭态无需回夹，故随内容 Owner 建/释放（ADR §4.1）。高亮按 totalItems 夹取（O(1)，
+            // 不再读全表长度；SPI 路径下窗口切片给不出全局规模）。
             rt.bindComputed(() -> Integer.valueOf(ScenePickerPanelNav.clampHighlight(
-                    gridHighlight.get().intValue(), gridItems.get().size())), clamped -> {
+                    gridHighlight.get().intValue(), feed.totalItems().get().intValue())), clamped -> {
                 if (!clamped.equals(gridHighlight.get())) gridHighlight.set(clamped);
             });
             return content;
@@ -651,14 +698,14 @@ public final class ScenePickerPanel {
 
         return new Result(root, openInternal, open, variantsOpen,
                 () -> searchFocusTarget[0], () -> gridViewportHolder[0], categoryKey, gridHighlight,
-                mode, selectedKeys, activeCandidate);
+                mode, selectedKeys, activeCandidate, () -> {
+                    ReadableSignal<SceneGridWindow.WindowModel> signal = windowModelHolder.get();
+                    return signal == null ? null : signal.get();
+                });
     }
 
     /** 构建主面板内容：全屏透明命中穿透壳 + 居中 70% 卡片。 */
-    private static SceneNode mainPanel(SceneRuntime rt, Props props, Runnable closeRequest,
-                                       ReadableSignal<List<SearchPickerData.Candidate>> filtered,
-                                       ReadableSignal<List<Item>> gridItems,
-                                       ReadableSignal<List<CategoryRow>> categoryRows,
+    private static SceneNode mainPanel(SceneRuntime rt, Props props, Runnable closeRequest, Feed feed,
                                        ReadableSignal<MemberIssues> memberIssues,
                                        ReadableSignal<String> categoryKey,
                                        Consumer<String> categoryWriter,
@@ -669,6 +716,7 @@ public final class ScenePickerPanel {
                                        SceneNode[] searchFocusTarget,
                                        SceneNode[] gridFocusTarget,
                                        SceneNode[] gridViewportHolder,
+                                       AtomicReference<ReadableSignal<SceneGridWindow.WindowModel>> windowModelHolder,
                                        Signal<Boolean> variantsOpen,
                                        Signal<SearchPickerData.Candidate> activeCandidate,
                                        Signal<SearchPickerData.SelectionMode> mode,
@@ -705,20 +753,19 @@ public final class ScenePickerPanel {
         root.setPadding(PANEL_PADDING);
         root.setGap(PANEL_PADDING);
 
-        root.appendChild(topBar(rt, props, filtered, gridItems, gridHighlight,
-                addingMember, editingMember, focusIntent, searchFocusTarget));
+        root.appendChild(topBar(rt, props, feed, gridHighlight, searchFocusTarget));
 
         // 上容器：选择功能（左分类导航 | 中候选列表 + 信息条），flexGrow 占满剩余高度。
         SceneNode selectionArea = SceneNode.row();
         selectionArea.setFlexGrow(1);
         selectionArea.setGap(PANEL_PADDING);
         selectionArea.appendChild(CategoryNavPane.create(rt, new CategoryNavPane.Props(
-                categoryRows, categoryKey, props.enabled(), categoryWriter,
+                feed.categoryRows(), categoryKey, props.enabled(), categoryWriter,
                 props.panelPresentation().emptyCategory())));
         // 悬停项：驱动信息条文本（悬浮 tooltip 已被固定信息条取代）。
         Signal<SceneVirtualGrid.Item> hoveredItem = Signal.create(null);
-        selectionArea.appendChild(centerColumn(rt, props, closeRequest, filtered, gridItems,
-                gridHighlight, gridFocusTarget, gridViewportHolder, hoveredItem,
+        selectionArea.appendChild(centerColumn(rt, props, closeRequest, feed,
+                gridHighlight, gridFocusTarget, gridViewportHolder, windowModelHolder, hoveredItem,
                 variantsOpen, activeCandidate, mode, selectedKeys,
                 addingMember, editingMember, focusIntent));
         root.appendChild(selectionArea);
@@ -734,13 +781,8 @@ public final class ScenePickerPanel {
     }
 
     /** 顶栏：标题 + 搜索输入 + 分类维度分段 + 结果统计。 */
-    private static SceneNode topBar(SceneRuntime rt, Props props,
-                                    ReadableSignal<List<SearchPickerData.Candidate>> filtered,
-                                    ReadableSignal<List<Item>> gridItems,
+    private static SceneNode topBar(SceneRuntime rt, Props props, Feed feed,
                                     Signal<Integer> gridHighlight,
-                                    Signal<Boolean> addingMember,
-                                    Signal<Boolean> editingMember,
-                                    Signal<FocusIntent> focusIntent,
                                     SceneNode[] searchFocusTarget) {
         SceneNode bar = SceneNode.row();
         bar.setPreferredHeight(TOP_BAR_HEIGHT);
@@ -781,8 +823,10 @@ public final class ScenePickerPanel {
 
         SceneNode summary = text(rt, "");
         rt.bind(secondaryForeground, summary::setTextColor);
+        // 结果统计 = 当前查询总量（SPI 路径 = source.size()/min(matchCount,maxItems)；旧路径 = 过滤后候选数），
+        // 不再读"全表长度"——切片路径下全表根本不存在（ADR §3.5 高亮回夹同口径）。
         rt.bindText(summary, Computed.create(() -> props.presentation().resultSummary(
-                filtered.get().size())));
+                feed.totalItems().get().intValue())));
         summary.setWidthSizing(WidthSizing.SHRINK);
         bar.appendChild(summary);
         return bar;
@@ -816,11 +860,11 @@ public final class ScenePickerPanel {
      * 内容底座一颗）。clip 与 padding 属布局合同保留（契约 §4.2「尺寸/间距常量继续使用」）。</p>
      */
     private static SceneNode centerColumn(SceneRuntime rt, Props props, Runnable closeRequest,
-                                          ReadableSignal<List<SearchPickerData.Candidate>> filtered,
-                                          ReadableSignal<List<Item>> gridItems,
+                                          Feed feed,
                                           Signal<Integer> gridHighlight,
                                           SceneNode[] gridFocusTarget,
                                           SceneNode[] gridViewportHolder,
+                                          AtomicReference<ReadableSignal<SceneGridWindow.WindowModel>> windowModelHolder,
                                           Signal<SceneVirtualGrid.Item> hoveredItem,
                                           Signal<Boolean> variantsOpen,
                                           Signal<SearchPickerData.Candidate> activeCandidate,
@@ -847,24 +891,29 @@ public final class ScenePickerPanel {
         center.appendChild(error);
 
         SearchResultList.Result list = SearchResultList.create(rt, new SearchResultList.Props(
-                gridItems, props.grid().columns(), props.grid().cellWidth(), props.grid().cellHeight(),
+                feed.listItems(), props.grid().columns(), props.grid().cellWidth(), props.grid().cellHeight(),
                 props.grid().gapX(), props.grid().gapY(),
                 props.enabled(),
-                item -> activateCandidate(item.key(), props, closeRequest, filtered, variantsOpen,
+                item -> activateCandidate(item.key(), props, closeRequest, feed, variantsOpen,
                         activeCandidate, mode, selectedKeys, gridHighlight,
                         addingMember, editingMember, focusIntent),
                 gridHighlight, gridHighlight::set,
                 hoveredItem::set,
+                // 窗口切片生产者（ADR §3.2）：SPI 路径 = 面板自建闭包按控件产出的 WindowRequest 拉片，
+                // 旧路径 = null（控件对全量 items 自切片）。offset/limit 由控件产出，宿主/面板都不自算窗口。
+                feed.pageProvider(),
+                // 旧路径传 -1 = 取 items.size()；SPI 路径经动态总量信号给（见 totalItemsSignal）。
+                SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0,
                 // GridProps.visibleRows 由此生效：视口未布局时作为首帧挂载预算（布局后以实际视口高度为权威）。
-                // totalItems 传 -1 = 取 items.size()（面板当前仍持全量 gridItems；pageProvider 形态留待面板惰性化）。
-                null, SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0,
-                props.grid().visibleRows(), null));
+                props.grid().visibleRows(), null,
+                feed.totalItems()));
         // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
         //（scrollable 子节点不能走 flexGrow 分配，模块内已对 root 设置）。
         gridViewportHolder[0] = list.viewport();
         gridFocusTarget[0] = list.viewport();
         rt.focusable(list.viewport(), props.enabled());
         center.appendChild(list.root());
+        windowModelHolder.set(list.windowModel());
 
         // 固定信息条：悬停项完整 label + 稳定 key（悬浮 tooltip 的替代物，无浮层生命周期）。
         ReadableSignal<String> infoText = Computed.create(() -> {
@@ -876,8 +925,9 @@ public final class ScenePickerPanel {
                 String prefix = props.panelPresentation().tooltipPrefix();
                 return prefix.isEmpty() ? label + "\n" + stableKey : label + "\n" + prefix + stableKey;
             }
-            // 无悬停时承担「结果被搜索上限截断」的常驻提示（P5 §3.3：限量必须渲染提示）。
-            return safeResults(props).truncated() ? props.panelPresentation().truncatedResults() : "";
+            // 无悬停时承担「结果被搜索上限截断」的常驻提示（P5 §3.3：限量必须渲染提示）：
+            // 截断真值来自数据面（SPI 路径 = matchCount > searchMaxItems 的本地判定；旧路径 = results.truncated()）。
+            return feed.truncated().get().booleanValue() ? props.panelPresentation().truncatedResults() : "";
         });
         center.appendChild(PickerInfoBar.create(rt, new PickerInfoBar.Props(infoText, props.enabled())));
         return center;
@@ -995,9 +1045,15 @@ public final class ScenePickerPanel {
         }
     }
 
-    /** 点击/ENTER 激活候选：无变体直达 selectionCommit，有变体开变体浮层。 */
+    /**
+     * 点击/ENTER 激活候选：无变体直达 selectionCommit，有变体开变体浮层。
+     *
+     * <p>候选本体经数据面解析（ADR §3.8 Q12 第 10 行）：SPI 路径 = {@code source.exact(key)} 的
+     * O(1) 定位，旧路径 = 过滤后列表线性查（该路径下列表就是全集）。切片路径下不再对「窗口切片」
+     * 线性扫描——那既找不到本体，也会随滚动位置失真。</p>
+     */
     private static void activateCandidate(Object key, Props props, Runnable closeRequest,
-                                          ReadableSignal<List<SearchPickerData.Candidate>> filtered,
+                                          Feed feed,
                                           Signal<Boolean> variantsOpen,
                                           Signal<SearchPickerData.Candidate> activeCandidate,
                                           Signal<SearchPickerData.SelectionMode> mode,
@@ -1006,7 +1062,7 @@ public final class ScenePickerPanel {
                                           Signal<Boolean> addingMember,
                                           Signal<Boolean> editingMember,
                                           Signal<FocusIntent> focusIntent) {
-        SearchPickerData.Candidate candidate = candidateByKey(filtered.get(), key);
+        SearchPickerData.Candidate candidate = feed.resolver().apply(key);
         if (candidate == null) return;
         if (candidate.variants().isEmpty()) {
             // 无变体直达提交：listMembers 未武装（非新增/非编辑）时点击即隐式新增。
@@ -1151,6 +1207,165 @@ public final class ScenePickerPanel {
             return;
         }
         UiPerformanceMonitor.getInstance().recordPhase(phaseName, System.nanoTime() - startedAtNanos);
+    }
+
+    // ==================== 数据面（候选相关派生的唯一出口） ====================
+
+    /**
+     * 面板数据面：候选相关派生的统一出口（两条路径各自构造，节点构建只读本抽象）。
+     *
+     * <p>生命周期 = 内容 Owner（每次 {@code open=true} 重建、关闭即释放），故字段是「每次挂载一份」
+     * 的容器；实现不得跨挂载复用。</p>
+     */
+    private static final class Feed {
+        /** 旧路径：全量项信号；SPI 路径：恒空（切片只经 {@link #pageProvider} 给）。 */
+        private ReadableSignal<List<Item>> listItems;
+        /** SPI 路径：窗口切片生产者；旧路径 null（控件对全量 items 自切片）。 */
+        private SearchResultList.PageProvider pageProvider;
+        /** 当前查询总量（SPI = {@code size()} / {@code min(matchCount,maxItems)}；旧路径 = 过滤后候选数）。 */
+        private ReadableSignal<Integer> totalItems;
+        /** 结果是否被搜索上限截断（信息条常驻提示）。 */
+        private ReadableSignal<Boolean> truncated;
+        /** 分类导航行（旧路径由候选列表动态计数；SPI 路径取 {@code source.categories(dimension)}）。 */
+        private ReadableSignal<List<CategoryRow>> categoryRows;
+        /** 候选本体解析（激活路径；SPI = {@code source.exact(key)}，旧路径 = 过滤后列表精确查）。 */
+        private Function<Object, SearchPickerData.Candidate> resolver;
+
+        private ReadableSignal<List<Item>> listItems() { return listItems; }
+        private SearchResultList.PageProvider pageProvider() { return pageProvider; }
+        private ReadableSignal<Integer> totalItems() { return totalItems; }
+        private ReadableSignal<Boolean> truncated() { return truncated; }
+        private ReadableSignal<List<CategoryRow>> categoryRows() { return categoryRows; }
+        private Function<Object, SearchPickerData.Candidate> resolver() { return resolver; }
+    }
+
+    /** SPI 路径的 items 占位：窗口切片只经 {@code pageProvider} 给，此信号恒空且零分配。 */
+    private static final ReadableSignal<List<Item>> NO_ITEMS = Collections::emptyList;
+
+    /** SPI lane 视图：一次求值给出「查询条件 + 总量 + 截断真值」（O(1) 或一次 matchCount）。 */
+    @Desugar
+    private record LaneView(PickerQuery query, int totalItems, boolean truncated) { }
+
+    /**
+     * 旧路径数据面（无候选源，T-1 回退）：结果信号自带候选全集，面板侧过滤 + 全量项派生。
+     *
+     * <p>分类过滤仅在旧路径发生（ADR §1.7 D-12/T-6）；{@code resultsCategoryFiltered} 供
+     * 「上层已按分类过滤的全量结果信号」形态跳过面板二次过滤。</p>
+     */
+    private static Feed legacyFeed(Props props, ReadableSignal<String> categoryKey) {
+        ReadableSignal<List<SearchPickerData.Candidate>> filtered = Computed.create(() -> {
+            List<SearchPickerData.Candidate> candidates = safeResults(props).candidates();
+            if (props.resultsCategoryFiltered()) {
+                return candidates;
+            }
+            return ScenePickerPanelNav.filterByCategory(candidates, categoryKey.get(), props.categoryOf());
+        });
+        ReadableSignal<List<Item>> gridItems = Computed.create(() -> {
+            long gridStartedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            List<SearchPickerData.Candidate> candidates = filtered.get();
+            List<Item> items = toItems(props, candidates);
+            recordGridTransform(gridStartedAtNanos, candidates.size(), items.size());
+            return items;
+        });
+        Feed feed = new Feed();
+        feed.listItems = gridItems;
+        feed.pageProvider = null;
+        feed.totalItems = () -> Integer.valueOf(gridItems.get().size());
+        feed.truncated = () -> Boolean.valueOf(safeResults(props).truncated());
+        feed.categoryRows = Computed.create(() -> ScenePickerPanelNav.categoryRows(safeCategories(props),
+                safeResults(props).candidates(), props.categoryOf(),
+                props.panelPresentation().allCategoryLabel()));
+        feed.resolver = key -> candidateByKey(filtered.get(), key);
+        return feed;
+    }
+
+    /**
+     * SPI 路径数据面（ADR §3.2「唯一实现」）：持有查询条件信号 + 候选源引用 + 搜索窗口上限，
+     * 按控件产出的 {@link SearchResultList.WindowRequest} 拉取窗口切片 —— 面板<b>不持有候选全集</b>。
+     *
+     * <p>总量与截断都来自同一次 lane 求值（浏览 lane = {@code size()}、无上限；搜索 lane =
+     * {@code min(matchCount, searchMaxItems)} + {@code truncated = hits > maxItems}）。</p>
+     */
+    private static Feed sourceFeed(Props props) {
+        final PickerCandidateSource source = props.candidateSource();
+        final ReadableSignal<LaneView> lane = laneView(props);
+        Feed feed = new Feed();
+        feed.listItems = NO_ITEMS;
+        feed.totalItems = Computed.create(() -> Integer.valueOf(lane.get().totalItems()));
+        feed.truncated = Computed.create(() -> Boolean.valueOf(lane.get().truncated()));
+        feed.categoryRows = Computed.create(() -> {
+            readVersion(props);
+            PickerQuery query = lane.get().query();
+            PickerSourceGuard.requireMainThread("categories");
+            return ScenePickerPanelNav.categoryRowsFromSource(
+                    source.categories(query.categoryDimension()), lane.get().totalItems(),
+                    props.panelPresentation().allCategoryLabel());
+        });
+        feed.pageProvider = request -> {
+            LaneView view = lane.get();
+            int offset = Math.max(0, request.offset());
+            int limit = Math.max(0, Math.min(request.limit(), view.totalItems() - offset));
+            long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            PickerSourceGuard.requireMainThread("page");
+            List<SearchPickerData.Candidate> candidates = source.page(view.query(), offset, limit);
+            List<Item> items = toItems(props,
+                    candidates == null ? Collections.<SearchPickerData.Candidate>emptyList() : candidates);
+            recordGridTransform(startedAtNanos, view.totalItems(), items.size());
+            return new SearchResultList.WindowPage(items, view.totalItems());
+        };
+        feed.resolver = key -> {
+            PickerSourceGuard.requireMainThread("exact");
+            return source.exact(String.valueOf(key));
+        };
+        return feed;
+    }
+
+    /**
+     * 当前查询的 lane 视图（SPI 路径唯一查询求值点）。
+     *
+     * <p>依赖 = 查询条件信号 + 源版本信号。版本信号是**依赖而非逐帧判断**：语言/资源/注册表变化经
+     * 装配层 {@code PickerRevisionBridge} 合成为 Signal 后自动重算（ADR §2.4 的「UILib 拉版本号」）。</p>
+     */
+    private static ReadableSignal<LaneView> laneView(Props props) {
+        final PickerCandidateSource source = props.candidateSource();
+        final int searchMaxItems = props.searchMaxItems();
+        return Computed.create(() -> {
+            readVersion(props);
+            PickerQuery query = props.sourceQuery().get();
+            if (query.isBrowse()) {
+                PickerSourceGuard.requireMainThread("size");
+                return new LaneView(query, Math.max(0, source.size()), false);
+            }
+            PickerSourceGuard.requireMainThread("matchCount");
+            int hits = Math.max(0, source.matchCount(query));
+            return new LaneView(query, Math.min(hits, searchMaxItems), hits > searchMaxItems);
+        });
+    }
+
+    /** 建立「源版本 → 本次求值」依赖（无版本信号时为 no-op）。 */
+    private static void readVersion(Props props) {
+        ReadableSignal<PickerSourceVersion> version = props.sourceVersion();
+        if (version != null) {
+            version.get();
+        }
+    }
+
+    /** 候选 → 网格项：标签保留完整文本（省略归渲染层），单候选图标源失败降级无图占位。 */
+    private static List<Item> toItems(Props props, List<SearchPickerData.Candidate> candidates) {
+        ArrayList<Item> items = new ArrayList<Item>(candidates.size());
+        for (SearchPickerData.Candidate candidate : candidates) {
+            String label = props.visualAdapter().candidateLabel(candidate);
+            SceneImageSource image = null;
+            try {
+                image = props.visualAdapter().candidateImage(candidate);
+            } catch (RuntimeException exception) {
+                // 单个候选的图片源创建失败：降级无图占位，不中断整张网格。
+            } catch (LinkageError error) {
+                // 同上（可选宿主类型链接失败）。
+            }
+            items.add(new Item(candidate.key(), image, label));
+        }
+        return items;
     }
 
     // ==================== 纯读取助手 ====================

@@ -131,6 +131,35 @@ public final class ScenePickerPanelNav {
         return Collections.unmodifiableList(rows);
     }
 
+    /**
+     * 派生分类导航行（<b>惰性候选源路径</b>，ADR §1.7 D-4）：计数直接取 {@code source.categories(dimension)}
+     * 的 {@link SearchPickerCategories.Category#count()}，<b>不</b>重扫候选（面板此路径不持有候选全集）。
+     *
+     * <ul>
+     *   <li>计数 0 = 该分类无候选 ⇒ 隐藏（与旧路径「动态 0 且静态未知/0 ⇒ 隐藏」同口径）；</li>
+     *   <li>计数 -1 = 未知 ⇒ 同样隐藏（旧路径对未知静态计数同处置；不冒充 0 计数展示）；</li>
+     *   <li>「全部」行计数 = 当前查询总量（由调用方给出，= source.size() 或 min(matchCount, maxItems)）。</li>
+     * </ul>
+     *
+     * @param categories 源给出的分类行（可空/null）
+     * @param allCount   当前查询总量（&gt;=0）
+     * @param allLabel   「全部」行文案
+     * @return 不可变导航行快照
+     */
+    static List<CategoryRow> categoryRowsFromSource(List<SearchPickerCategories.Category> categories,
+                                                   int allCount, String allLabel) {
+        ArrayList<CategoryRow> rows = new ArrayList<CategoryRow>();
+        rows.add(CategoryRow.allRow(allLabel, Math.max(0, allCount)));
+        if (categories == null) {
+            return Collections.unmodifiableList(rows);
+        }
+        for (SearchPickerCategories.Category category : categories) {
+            if (category == null || category.count() <= 0) continue;
+            rows.add(CategoryRow.categoryRow(category.key(), category.label(), category.count()));
+        }
+        return Collections.unmodifiableList(rows);
+    }
+
     /** 勾选/取消一个变体 key。 */
     static List<String> toggleVariant(List<String> keys, String key) {
         ArrayList<String> next = new ArrayList<String>(keys);

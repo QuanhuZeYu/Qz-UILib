@@ -487,6 +487,60 @@ public class SearchResultListTest {
     }
 
     /**
+     * 动态总量通道（P4 增补，ADR §3.2 的「totalItems = lane == browse ? size() : min(matchCount, maxItems)」）：
+     * 惰性候选源的查询总量随后端查询变化，静态 {@code int totalItems} 无法表达 ⇒ 经
+     * {@code Props.totalItemsSignal} 进入窗口数学；信号变化必须重派生 totalRows/maxScrollPx 并重拉切片。
+     */
+    @Test
+    public void dynamicTotalItemsSignalDrivesWindowMathAndRefetchesSlice() {
+        final List<SearchResultList.WindowRequest> requests = new ArrayList<>();
+        SearchResultList.PageProvider provider = request -> {
+            requests.add(request);
+            int total = 4988;
+            int available = Math.max(0, total - request.offset());
+            List<Item> page = new ArrayList<>();
+            for (int index = 0; index < Math.min(request.limit(), available); index++) {
+                page.add(item(index));
+            }
+            return new SearchResultList.WindowPage(page, total);
+        };
+        Signal<Integer> total = Signal.create(Integer.valueOf(4988));
+        Signal<List<Item>> empty = Signal.create(new ArrayList<Item>());
+        Signal<Integer> highlight = Signal.create(Integer.valueOf(-1));
+        Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
+        SearchResultList.Result[] holder = new SearchResultList.Result[1];
+        rt.mount(sceneRoot, () -> {
+            holder[0] = SearchResultList.create(rt, new SearchResultList.Props(
+                    empty, COLUMNS, CELL_W, CELL_H, GAP_X, GAP_Y, enabled,
+                    item -> { }, highlight, highlight::set, null,
+                    provider, SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0, 5, null, total));
+            return holder[0].root();
+        });
+        rt.flush();
+        layoutAndBridge();
+        layoutAndBridge();
+
+        SceneGridWindow.WindowModel model = holder[0].windowModel().get();
+        Assert.assertEquals("动态信号是唯一总量来源（覆盖静态哨兵）", 4988, model.totalItems());
+        Assert.assertEquals("inv-W4：totalRows 由动态总量派生", 1247, model.totalRows());
+        Assert.assertEquals("挂载量与 N 无关", Math.min(model.visibleRows() + 1, model.totalRows()),
+                model.mountedRows());
+        int requestsBefore = requests.size();
+        Assert.assertTrue("窗口切片必须由控件拉取", requestsBefore > 0);
+
+        // 查询切换：总量 4988 → 12（搜索 lane 上限场景）——窗口数学与切片必须随之重派生。
+        total.set(Integer.valueOf(12));
+        rt.flush();
+        layoutAndBridge();
+        SceneGridWindow.WindowModel narrowed = holder[0].windowModel().get();
+        Assert.assertEquals("总量信号变化必须重派生窗口数学", 12, narrowed.totalItems());
+        Assert.assertEquals("totalRows 随之收缩", 3, narrowed.totalRows());
+        Assert.assertEquals("全部 12 项落在窗口内（无「加载更多」）", 12, narrowed.mountedRows() * COLUMNS);
+        Assert.assertTrue("总量变化必须重新拉取窗口切片", requests.size() > requestsBefore);
+        Assert.assertEquals("收缩后窗口起点回到 0", 0, requests.get(requests.size() - 1).offset());
+    }
+
+    /**
      * 首帧（create 后第一次 layout 前）挂载量由预算可视行数决定：挂载 = min(预算 + overscan, totalRows)，
      * 与 N 无关（未布局时视口高视为 0，窗口数学退回预算行数）。
      */

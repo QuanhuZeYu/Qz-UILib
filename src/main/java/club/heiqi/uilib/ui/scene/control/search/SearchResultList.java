@@ -135,6 +135,11 @@ public final class SearchResultList {
      *                          布局后以实际视口高度派生的行数为权威
      * @param availableWidth    预算可用宽信号（可为 null = 布局后按 cachedLayout 推算列数；
      *                          非 null 时首帧即正确列数，不再有收敛帧）
+     * @param totalItemsSignal  <b>动态总量通道</b>（P4 增补；可为 null = 用 {@code totalItems} 静态值）：
+     *                          总量随查询/数据源变化的形态（如惰性候选源「浏览 lane = size() /
+     *                          搜索 lane = min(matchCount, maxItems)」）必须经本信号进入窗口数学——
+     *                          窗口 Computed 依赖它，总量变化即重派生 totalRows/maxScrollPx 并重新拉片。
+     *                          与 {@code totalItems} 同时给出时以本信号为准
      */
     @Desugar
     public record Props(
@@ -149,12 +154,47 @@ public final class SearchResultList {
             int totalItems,
             int windowOffset,
             int visibleRows,
-            ReadableSignal<Integer> availableWidth) {
+            ReadableSignal<Integer> availableWidth,
+            ReadableSignal<Integer> totalItemsSignal) {
 
         /** 未提供总量时的哨兵：窗口数学取 {@code items.size()}（全量数据源形态）。 */
         public static final int UNSPECIFIED_TOTAL_ITEMS = -1;
         /** 默认预算可视行数（与 {@code ScenePickerPanel.GridProps.DEFAULT} 对齐）。 */
         public static final int DEFAULT_VISIBLE_ROWS = 5;
+
+        /**
+         * 旧 16 参形态（P3 兼容，纯加法保留）：静态总量、无动态总量通道。
+         *
+         * @param items             数据源
+         * @param columns           列数
+         * @param cellWidth         单元宽
+         * @param cellHeight        单元高下限
+         * @param gapX              列间距
+         * @param gapY              行间距
+         * @param enabled           是否启用
+         * @param onActivate        激活回调
+         * @param highlighted       受控高亮
+         * @param onHighlightChange 高亮回写
+         * @param onHoverItem       hover 回调
+         * @param pageProvider      窗口切片生产者
+         * @param totalItems        数据总项数（静态）
+         * @param windowOffset      窗口偏移校验位
+         * @param visibleRows       预算可视行数
+         * @param availableWidth    预算可用宽
+         */
+        public Props(ReadableSignal<? extends List<SceneVirtualGrid.Item>> items,
+                     int columns, int cellWidth, int cellHeight, int gapX, int gapY,
+                     ReadableSignal<Boolean> enabled,
+                     Consumer<SceneVirtualGrid.Item> onActivate,
+                     ReadableSignal<Integer> highlighted,
+                     Consumer<Integer> onHighlightChange,
+                     Consumer<SceneVirtualGrid.Item> onHoverItem,
+                     PageProvider pageProvider, int totalItems, int windowOffset, int visibleRows,
+                     ReadableSignal<Integer> availableWidth) {
+            this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
+                    onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
+                    visibleRows, availableWidth, null);
+        }
 
         /**
          * 旧 11 参形态（T-2 兼容）：全量 items + 默认窗口字段。
@@ -180,7 +220,7 @@ public final class SearchResultList {
                      Consumer<SceneVirtualGrid.Item> onHoverItem) {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, null, UNSPECIFIED_TOTAL_ITEMS, 0,
-                    DEFAULT_VISIBLE_ROWS, null);
+                    DEFAULT_VISIBLE_ROWS, null, null);
         }
 
         /** 显式校验构造器。 */
@@ -380,7 +420,16 @@ public final class SearchResultList {
         // 全量数据源时在内部切片，pageProvider 形态时向宿主拉取切片（offset 由控件产出）。
         ReadableSignal<WindowData> window = Computed.create(() -> {
             List<SceneVirtualGrid.Item> source = safeItems(props.items());
-            int totalItems = props.totalItems() >= 0 ? props.totalItems() : source.size();
+            // 总量解析顺序：动态信号（P4）> 静态字段 > items.size()（T-2 全量形态）。
+            // 动态信号是窗口 Computed 的依赖 ⇒ 后端查询总量变化即重派生 totalRows/maxScrollPx 并重拉切片。
+            ReadableSignal<Integer> totalSignal = props.totalItemsSignal();
+            int totalItems;
+            if (totalSignal != null) {
+                Integer dynamic = totalSignal.get();
+                totalItems = dynamic == null ? 0 : Math.max(0, dynamic.intValue());
+            } else {
+                totalItems = props.totalItems() >= 0 ? props.totalItems() : source.size();
+            }
             int columns = Math.max(1, effectiveColumns.get().intValue());
             int stride = Math.max(1, stridePx.get().intValue());
             int viewportH = viewportHeightPx.get().intValue();

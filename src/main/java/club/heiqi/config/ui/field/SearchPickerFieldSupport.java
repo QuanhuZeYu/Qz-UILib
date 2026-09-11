@@ -69,6 +69,13 @@ public final class SearchPickerFieldSupport {
     private static final int ICON_BG_TRANSPARENT = 0x00000000;
     /** 行触发器表面恒定启用（控件自身无禁用态；面板开关不改触发器可用性）。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
+    /**
+     * SPI 路径的兼容结果入参（P4）：候选切片、总量与截断全部归面板的 {@code pageProvider} 闭包
+     * （ADR §3.2「唯一实现 = ScenePickerPanel」），字段侧不再物化候选；本信号恒为空结果、零物化，
+     * 面板在 SPI 路径不读它（T-1 旧路径才消费 {@code Props.results()}）。
+     */
+    private static final ReadableSignal<SearchPickerData.SearchResult> NO_RESULTS =
+            SearchPickerData.SearchResult::empty;
 
     private SearchPickerFieldSupport() { }
 
@@ -129,15 +136,16 @@ public final class SearchPickerFieldSupport {
             return firstError(encodeError.get(), searchError.get(), decodeError.get());
         });
         Signal<String> query = Signal.create("");
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
         // 数据源路径探测（纯加法）：实现 SPI 且给出惰性 source 时走查询式路径；否则保持旧全量路径（T-1）。
         PickerCandidateSource source = candidateSourceOf(provider);
         int searchMaxItems = searchWindowOf(pickerSpec, provider);
         CategoryQueryState categoryState = new CategoryQueryState();
-        Computed<SearchPickerData.SearchResult> results = source == null
-                ? legacySearchResults(provider, pickerSpec, presentation, query, searchError)
-                : sourceSearchResults(rt, source, searchMaxItems, pickerSpec, presentation, query,
-                        searchError, categoryState);
-        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        // 旧路径：结果 Computed 以 open 为信号级前置条件（关闭时不求值，ADR §4.1）；
+        // SPI 路径：字段侧零候选物化，results 只是兼容入参。
+        ReadableSignal<SearchPickerData.SearchResult> results = source == null
+                ? legacySearchResults(provider, pickerSpec, presentation, query, searchError, open)
+                : NO_RESULTS;
         ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, results,
                 Signal.create(Boolean.TRUE),
                 next -> {
@@ -172,6 +180,7 @@ public final class SearchPickerFieldSupport {
                 })
                 // SPI 路径下分类过滤归查询层（PickerQuery.categoryDimension/categoryKey）：面板侧关闭二次过滤（T-6）。
                 .resultsCategoryFiltered(source != null);
+        wireRevisionAndQuery(rt, panelBuilder, source, searchMaxItems, query, categoryState);
         wireCategories(panelBuilder, provider, categoryState);
         ScenePickerPanel.Props props = panelBuilder.build();
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
@@ -207,14 +216,11 @@ public final class SearchPickerFieldSupport {
         Signal<String> searchError = Signal.create("");
         Signal<String> encodeError = Signal.create("");
         Computed<String> error = Computed.create(() -> firstError(encodeError.get(), searchError.get(), ""));
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
         // 数据源路径探测（同 SINGLE_VALUE；T-1 回退保留）。
         PickerCandidateSource source = candidateSourceOf(provider);
         int searchMaxItems = searchWindowOf(pickerSpec, provider);
         CategoryQueryState categoryState = new CategoryQueryState();
-        Computed<SearchPickerData.SearchResult> queryResults = source == null
-                ? legacySearchResults(provider, pickerSpec, presentation, query, searchError)
-                : sourceSearchResults(rt, source, searchMaxItems, pickerSpec, presentation, query,
-                        searchError, categoryState);
         SearchPickerListBinding binding = new SearchPickerListBinding(value, items,
                 (ListMemberCodec) provider.codec(), onChange);
         Computed<List<SearchPickerData.CurrentMember>> decodedMembers = Computed.create(
@@ -222,11 +228,20 @@ public final class SearchPickerFieldSupport {
         Computed<List<SearchPickerData.CurrentMember>> currentMembers = source == null
                 ? Computed.create(() -> resolveCurrentMembers(decodedMembers.get(), provider.searchFunction()))
                 : Computed.create(() -> resolveCurrentMembers(decodedMembers.get(), source));
-        Computed<SearchPickerData.SearchResult> addableResults = Computed.create(() ->
-                excludeSelectedCandidates(queryResults.get(), currentMembers.get()));
+        // 旧路径：排除已配置候选（全量结果形态可表达集合差）；SPI 路径：窗口切片是全局序列的连续区间，
+        // 对切片做集合差会让「全局下标 ↔ 项」错位（高亮/ENTER/滚动位置失真），故 SPI 路径不再排除
+        // 已配置项（候选本体仍可经 exact 解析）——见 P4 实现记录的偏差 D-P4-3。
+        ReadableSignal<SearchPickerData.SearchResult> panelResults;
+        if (source == null) {
+            Computed<SearchPickerData.SearchResult> queryResults = legacySearchResults(provider, pickerSpec,
+                    presentation, query, searchError, open);
+            panelResults = Computed.create(() ->
+                    excludeSelectedCandidates(queryResults.get(), currentMembers.get()));
+        } else {
+            panelResults = NO_RESULTS;
+        }
         Computed<SearchPickerData.Selection> currentSelection = Computed.create(binding::currentSelection);
-        Signal<Boolean> open = Signal.create(Boolean.FALSE);
-        ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, addableResults,
+        ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, panelResults,
                 Signal.create(Boolean.TRUE),
                 next -> { searchError.set(""); encodeError.set(""); query.set(next); },
                 selection -> { }, visualAdapterOf(rt, provider))
@@ -263,6 +278,7 @@ public final class SearchPickerFieldSupport {
                 .open(open)
                 .onCloseRequest(() -> open.set(Boolean.FALSE))
                 .resultsCategoryFiltered(source != null);
+        wireRevisionAndQuery(rt, panelBuilder, source, searchMaxItems, query, categoryState);
         wireCategories(panelBuilder, provider, categoryState);
         ScenePickerPanel.Props props = panelBuilder.build();
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
@@ -418,11 +434,19 @@ public final class SearchPickerFieldSupport {
         return specMaxItems;
     }
 
-    /** 旧路径搜索结果（全量，{@code truncated} 恒 false）：T-1 回退，行为与接线前逐字一致。 */
+    /**
+     * 旧路径搜索结果（全量，{@code truncated} 恒 false）：T-1 回退。
+     *
+     * <p><b>signal 级 open 前置</b>（ADR §4.1）：面板关闭时返回共享空结果、不调用 searchFunction ——
+     * 关闭状态下的查询变化不再触发一次全表搜索。这是「订阅 open」而不是逐帧 if 门控。</p>
+     */
     private static Computed<SearchPickerData.SearchResult> legacySearchResults(
             ValueEditorProvider provider, SearchPickerSpec pickerSpec, SearchPickerPresentation presentation,
-            ReadableSignal<String> query, Signal<String> searchError) {
+            ReadableSignal<String> query, Signal<String> searchError, ReadableSignal<Boolean> open) {
         return Computed.create(() -> {
+            if (!Boolean.TRUE.equals(open.get())) {
+                return SearchPickerData.SearchResult.empty();
+            }
             try {
                 SearchPickerData.SearchResult searched =
                         provider.searchFunction().search(query.get(), Integer.MAX_VALUE);
@@ -438,72 +462,31 @@ public final class SearchPickerFieldSupport {
     }
 
     /**
-     * 惰性候选源搜索结果：browse lane 无上限全量；搜索 lane 受 {@code searchMaxItems} 上限并透传截断。
+     * SPI 路径接线（ADR §3.2「唯一实现 = ScenePickerPanel」）：把惰性源、搜索窗口上限、
+     * <b>查询条件信号</b>与源版本信号交给面板；窗口切片的拉取、总量与截断判定全部在面板内容 Owner 内完成。
      *
-     * <p>依赖 = query 信号 + 源版本信号：源版本变化（语言/资源/注册表）经
-     * {@link PickerRevisionBridge} 合成为 signal 后自动重算，无需逐帧门控。</p>
+     * <p>版本通道：桥（推环境代际 + 拉三段版本）在字段侧建立并挂宿主帧信号，其
+     * {@code versionSignal()} 作为面板 lane 求值的依赖（语言/资源/注册表变化 → 自动重查，无逐帧 if）。
+     * 查询条件由字段侧唯一构造（{@link #queryFor(String, CategoryQueryState)} 消费受控维度/分类键），
+     * 面板不重复推导维度语义。</p>
+     *
+     * @param rt             场景运行时
+     * @param builder        面板 builder
+     * @param source         惰性候选源；null = 旧路径，不接线
+     * @param searchMaxItems 搜索 lane 窗口上限（取值链唯一真值 = spec）
+     * @param query          原始查询文本信号
+     * @param categoryState  分类查询状态（wireCategories 注入受控维度/分类键）
      */
-    private static Computed<SearchPickerData.SearchResult> sourceSearchResults(
-            SceneRuntime rt, PickerCandidateSource source, int searchMaxItems, SearchPickerSpec pickerSpec,
-            SearchPickerPresentation presentation, ReadableSignal<String> query, Signal<String> searchError,
-            CategoryQueryState categoryState) {
+    private static void wireRevisionAndQuery(SceneRuntime rt, ScenePickerPanel.Props.Builder builder,
+                                             PickerCandidateSource source, int searchMaxItems,
+                                             ReadableSignal<String> query, CategoryQueryState categoryState) {
+        if (source == null) {
+            return;
+        }
         PickerRevisionBridge bridge = PickerRevisionBridge.forSource(source);
         bridge.bindTo(rt);
-        return Computed.create(() -> {
-            bridge.versionSignal().get(); // 源版本变化 → 本次求值重算（A3：UILib 拉版本号 + 合成 Signal）
-            try {
-                // 查询条件携带分类维度/键：分类过滤是 source 的职责（ADR §1.7 D-12），
-                // 面板侧 filterByCategory 在 SPI 路径关闭（resultsCategoryFiltered），避免二次过滤。
-                SearchPickerData.SearchResult searched = querySource(source,
-                        queryFor(query.get(), categoryState), searchMaxItems);
-                if (searched == null) return fail(searchError, pickerSpec.editorId(), "search",
-                        presentation.searchError(), null);
-                searchError.set("");
-                return searched;
-            } catch (RuntimeException exception) {
-                fail(searchError, pickerSpec.editorId(), "search", presentation.searchError(), exception);
-                return SearchPickerData.SearchResult.empty();
-            }
-        });
-    }
-
-    /**
-     * 候选源查询求值（纯函数式适配，包内可见以便单测直接锚定）。
-     *
-     * <ul>
-     *   <li><b>浏览 lane</b>（{@link PickerQuery#isBrowse()}）：无上限——{@code total = size()}，
-     *       一次 {@code page(query, 0, total)}，{@code truncated = false}；</li>
-     *   <li><b>搜索 lane</b>：{@code hits = matchCount(query)}，窗口 = {@code min(hits, searchMaxItems)}，
-     *       {@code truncated = hits > searchMaxItems}（截断真值透传，取代旧「预算被丢弃」形态）；</li>
-     *   <li>入口经 {@link PickerSourceGuard} 断言客户端主线程（fail-fast，不返回空数据）。</li>
-     * </ul>
-     *
-     * @param source         惰性候选源（非 null）
-     * @param query          查询条件（非 null）
-     * @param searchMaxItems 搜索 lane 窗口上限（正数）
-     * @return 结果快照（含截断真值）
-     */
-    static SearchPickerData.SearchResult querySource(PickerCandidateSource source, PickerQuery query,
-                                                     int searchMaxItems) {
-        if (source == null) throw new IllegalArgumentException("source must not be null");
-        if (query == null) throw new IllegalArgumentException("query must not be null");
-        if (searchMaxItems < 1) throw new IllegalArgumentException("searchMaxItems must be positive");
-        if (query.isBrowse()) {
-            PickerSourceGuard.requireMainThread("size");
-            int total = Math.max(0, source.size());
-            PickerSourceGuard.requireMainThread("page");
-            List<SearchPickerData.Candidate> all = source.page(query, 0, total);
-            return SearchPickerData.SearchResult.of(
-                    all == null ? Collections.<SearchPickerData.Candidate>emptyList() : all, false);
-        }
-        PickerSourceGuard.requireMainThread("matchCount");
-        int hits = Math.max(0, source.matchCount(query));
-        int window = Math.min(hits, searchMaxItems);
-        PickerSourceGuard.requireMainThread("page");
-        List<SearchPickerData.Candidate> slice = source.page(query, 0, window);
-        return SearchPickerData.SearchResult.of(
-                slice == null ? Collections.<SearchPickerData.Candidate>emptyList() : slice,
-                hits > searchMaxItems);
+        Computed<PickerQuery> sourceQuery = Computed.create(() -> queryFor(query.get(), categoryState));
+        builder.candidateSource(source, searchMaxItems, sourceQuery, bridge.versionSignal());
     }
 
     /** 按精确 candidate key 排除合法当前成员；malformed 成员不参与过滤。 */

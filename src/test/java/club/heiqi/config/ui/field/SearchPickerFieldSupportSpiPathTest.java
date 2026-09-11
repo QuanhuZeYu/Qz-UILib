@@ -11,6 +11,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import club.heiqi.config.schema.SearchPickerSpec;
+import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.ui.editor.CandidateSourceValueEditorProvider;
 import club.heiqi.config.ui.editor.Codec;
 import club.heiqi.config.ui.editor.PickerCandidateSource;
@@ -23,6 +24,9 @@ import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
  * 字段侧 SPI 路径测试：查询式求值（browse 无上限 / 搜索 lane 上限与截断真值）、exact 成员解析、
@@ -47,68 +51,34 @@ public class SearchPickerFieldSupportSpiPathTest {
         PickerSourceGuard.__resetForTests();
     }
 
-    /** 浏览 lane 无上限：page 覆盖全部条目、truncated 恒 false（不得引入 cap/分页）。 */
+    /**
+     * 字段侧 SPI 路径「不打开不花钱」（ADR §4.1/§4.2）：接通惰性源并创建面板后，
+     * 字段侧不得读取任何候选（size/matchCount/page）——候选读取只发生在面板打开后的窗口求值。
+     *
+     * <p>P4 前形态：字段侧结果 Computed 在装配期即按查询求值（空查询 = 全量分片物化），
+     * 本断言即该形态的变异检查点。</p>
+     */
     @Test
-    public void browseLaneIsUnbounded() {
-        FakeSource source = new FakeSource(500);
-        SearchPickerData.SearchResult result = SearchPickerFieldSupport.querySource(
-                source, PickerQuery.browse(0, null), SEARCH_MAX_ITEMS);
+    public void spiPickerCreationTouchesNoCandidateSourceBeforeOpen() {
+        final FakeSource source = new FakeSource(5000);
+        Registry registry = new Registry();
+        registry.register(spiProvider("test:spi", source), 64);
+        registry.freeze();
+        SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        try {
+            Signal<Object> value = Signal.<Object>create("k1");
+            runtime.mount(new SceneNode(), () -> SearchPickerFieldSupport.createControlledIfPresent(
+                    runtime, ValueSpec.string().withWidget(new SearchPickerSpec("test:spi", 8)),
+                    value, registry, value::set));
+            runtime.flush();
+            runtime.flush();
 
-        Assert.assertEquals("浏览 lane 必须返回全量", 500, result.candidates().size());
-        Assert.assertFalse("浏览 lane 不得截断", result.truncated());
-        Assert.assertEquals("size() 恰好读一次（O(1) 清单长度）", 1, source.sizeCalls);
-        Assert.assertEquals("page 只调用一次且带全量窗口", 1, source.pageCalls);
-        Assert.assertEquals(0, source.lastPageOffset);
-        Assert.assertEquals(500, source.lastPageLimit);
-        Assert.assertEquals("浏览 lane 不得调用 matchCount", 0, source.matchCountCalls);
-    }
-
-    /** 搜索 lane：命中数超过上限 → 窗口截到上限 + truncated 真值透传。 */
-    @Test
-    public void searchLaneCarriesTruncationTruth() {
-        FakeSource source = new FakeSource(200);
-        SearchPickerData.SearchResult result = SearchPickerFieldSupport.querySource(
-                source, PickerQuery.text("k", 0, null), SEARCH_MAX_ITEMS);
-
-        Assert.assertEquals(SEARCH_MAX_ITEMS, result.candidates().size());
-        Assert.assertTrue("matchCount > 上限必须透传 truncated", result.truncated());
-        Assert.assertEquals(SEARCH_MAX_ITEMS, source.lastPageLimit);
-        Assert.assertEquals(1, source.matchCountCalls);
-    }
-
-    /** 搜索 lane：命中数不超过上限 → 不截断，窗口 = 命中数。 */
-    @Test
-    public void searchLaneBelowLimitIsNotTruncated() {
-        FakeSource source = new FakeSource(10);
-        SearchPickerData.SearchResult result = SearchPickerFieldSupport.querySource(
-                source, PickerQuery.text("k", 0, null), SEARCH_MAX_ITEMS);
-
-        Assert.assertEquals(10, result.candidates().size());
-        Assert.assertFalse(result.truncated());
-        Assert.assertEquals(10, source.lastPageLimit);
-    }
-
-    /** 命中 0：空结果、不截断、page 窗口为 0（越界安全）。 */
-    @Test
-    public void emptySearchResultIsNotTruncated() {
-        FakeSource source = new FakeSource(0);
-        SearchPickerData.SearchResult result = SearchPickerFieldSupport.querySource(
-                source, PickerQuery.text("zzz", 0, null), SEARCH_MAX_ITEMS);
-
-        Assert.assertEquals(0, result.candidates().size());
-        Assert.assertFalse(result.truncated());
-        Assert.assertEquals(0, source.lastPageLimit);
-    }
-
-    /** 分片重复 key 由结果快照去重（首项胜），窗口计数不因重复而失真。 */
-    @Test
-    public void duplicateKeysAreDeduplicated() {
-        FakeSource source = new FakeSource(4);
-        source.duplicateFirst = true;
-        SearchPickerData.SearchResult result = SearchPickerFieldSupport.querySource(
-                source, PickerQuery.browse(0, null), SEARCH_MAX_ITEMS);
-
-        Assert.assertEquals("首项胜去重", 4, result.candidates().size());
+            Assert.assertEquals("装配/关闭态不得读取清单长度", 0, source.sizeCalls);
+            Assert.assertEquals("装配/关闭态不得统计命中", 0, source.matchCountCalls);
+            Assert.assertEquals("装配/关闭态不得物化分片", 0, source.pageCalls);
+        } finally {
+            runtime.dispose();
+        }
     }
 
     /**
@@ -177,39 +147,6 @@ public class SearchPickerFieldSupportSpiPathTest {
         Assert.assertTrue(resolved.get(0).enumerated());
         Assert.assertFalse(resolved.get(1).enumerated());
         Assert.assertTrue(resolved.get(2).enumerated());
-    }
-
-    /** 线程断言在新调用点生效：非主线程调用 fail-fast（不返回空数据、不触碰数据源）。 */
-    @Test
-    public void guardFailsFastAtQueryCallSites() throws Exception {
-        PickerSourceGuard.__installThreadOracleForTests(new PickerSourceGuard.ThreadOracle() {
-            @Override
-            public boolean isMainThread() {
-                return false;
-            }
-
-            @Override
-            public String describe() {
-                return "always-false";
-            }
-        });
-        final FakeSource source = new FakeSource(10);
-        final Throwable[] captured = new Throwable[1];
-        Thread worker = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    SearchPickerFieldSupport.querySource(source, PickerQuery.browse(0, null), SEARCH_MAX_ITEMS);
-                } catch (Throwable error) {
-                    captured[0] = error;
-                }
-            }
-        }, "spi-worker");
-        worker.start();
-        worker.join();
-
-        Assert.assertTrue("querySource 必须在调用前断言主线程", captured[0] instanceof IllegalStateException);
-        Assert.assertEquals("fail-fast 时不得触碰数据源", 0, source.pageCalls);
     }
 
     /** 注册期只固化「引用 + 一个 int」：register 不触发任何候选读取（A-05 的 UILib 侧证据）。 */

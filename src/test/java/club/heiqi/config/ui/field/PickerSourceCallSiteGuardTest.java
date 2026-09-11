@@ -41,7 +41,9 @@ public class PickerSourceCallSiteGuardTest {
 
     private static Map<String, String> queryCallSites() {
         Map<String, String> map = new LinkedHashMap<String, String>();
-        map.put("SearchPickerFieldSupport.java", "字段侧唯一查询入口：querySource（page/matchCount）与成员解析（exact）");
+        map.put("SearchPickerFieldSupport.java", "字段侧成员解析（exact）与查询条件构造");
+        map.put("ScenePickerPanel.java", "面板内容 Owner 内的窗口切片消费者（ADR §3.2：pageProvider 闭包 = "
+                + "size/matchCount/page/exact 的唯一窗口求值点；P4 从字段侧迁入）");
         return map;
     }
 
