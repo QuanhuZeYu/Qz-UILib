@@ -66,9 +66,17 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p>以旧版内联搜索选择器为功能语义基准（SINGLE_VALUE 与 LIST_MEMBERS 两模式、
  * 可拒绝的 selectionCommit、稳定 memberId、无效/重复徽章、变体 ALL/SELECTED 语义、ESC 分层、
  * 焦点意图），重塑为居中 70% 卡片上下分区布局：顶栏（搜索 + 分类维度分段 + 结果统计）、上容器选择区
- * （左分类导航 | 中 SearchResultList 无上限候选列表，列数随可用宽度自适应）、
- * 下容器已选择编辑（仅 listMembers 的全宽底部横带，当前规则列表）。面板本身不持有业务状态——
- * 开合、query、结果、当前分类、当前成员全部受控。</p>
+ * （左分类导航 | 中 SearchResultList 窗口化候选列表：浏览 lane 数据范围无上限、挂载量 ∝ 可视量，
+ * 列数随可用宽度自适应）、下容器已选择编辑（仅 listMembers 的全宽底部横带，当前规则列表）。
+ * 面板本身不持有业务状态——开合、query、结果、当前分类、当前成员全部受控。</p>
+ *
+ * <h3>数据面（两条路径，构建期分支、非逐帧门控）</h3>
+ * <p>① <b>结果信号路径</b>（{@code Props.candidateSource} == null，T-1 回退）：{@code Props.results()}
+ * 自带候选全集，面板侧按分类过滤后派生全量项。② <b>惰性候选源路径</b>（ADR §3.2）：面板在内容 Owner
+ * 内自建 {@code pageProvider} 闭包，按控件产出的 {@code WindowRequest} 调
+ * {@code PickerCandidateSource.page(query, offset, limit)}；总量 = 浏览 lane 的 {@code size()} /
+ * 搜索 lane 的 {@code min(matchCount, searchMaxItems)}；激活经 {@code exact(key)} O(1) 定位。
+ * 两条路径共用同一套节点构建（{@link Feed} 是唯一数据出口）。</p>
  *
  * <h3>ESC 分层</h3>
  * <p>主面板 portal 与变体浮层 portal 独立注册；{@code SceneInputRouter} 的 ESC 优先请求栈顶
@@ -76,9 +84,14 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * （经 {@code onCloseRequest} 上抛，由外部把受控 {@code open} 置 false）。</p>
  *
  * <h3>生命周期</h3>
- * <p>必须在组件构建作用域（mount builder）内创建：全部 signal / effect / portal 归属当前
- * Owner；面板关闭时 portal 子树卸载，tooltip 与变体浮层一并清理；网格高亮与滚动在数据收缩时
- * 经 owner-scoped effect 回夹。</p>
+ * <p>必须在组件构建作用域（mount builder）内创建：全部 signal / effect / portal 归属当前 Owner；
+ * 面板关闭时 portal 子树卸载，tooltip 与变体浮层一并清理；网格高亮与滚动在数据收缩时经
+ * owner-scoped effect 回夹。</p>
+ *
+ * <p><b>关闭即停算（ADR §4.1/§4.3）</b>：候选相关派生（{@link Feed} 与其 lane 视图、分类行、
+ * 成员问题、回夹、变体浮层）全部在 {@code rt.portal(open, ...)} 的<b>内容 Owner</b> 内创建，
+ * 关闭即随 {@code SceneRuntime.disposeMounted()} 递归 dispose —— 停止语义由 owner 作用域与订阅边界
+ * 保证，<b>不得</b>用 {@code if(!open)} 逐帧门控（本类不含任何以 open 为条件的求值分支）。</p>
  *
  * <h3>外观归属（液态玻璃迁移，G14 宿主整合，契约 §4.1「PANEL（外）/GROUP（网格）/OVERLAY（浮层）」）</h3>
  * <p><b>宿主外层卡片</b>恰装一颗 {@link SceneTheme.Role#PANEL} 配方表面（FormPageShell 已验收
@@ -1177,14 +1190,16 @@ public final class ScenePickerPanel {
     // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================
 
     /**
-     * 记录一次网格派生（结果信号 → 网格项列表）的规模与耗时。
+     * 记录一次候选窗口派生的规模与耗时（SPI 路径每次 pageProvider 拉片、旧路径每次全量项派生各记一次）。
      *
-     * <p>这是"全量挂载"成本的直接观测量：{@code candidateCount} 为空查询下的全量浏览规模、
-     * {@code itemCount} 为实际参与挂载的项数。采样关闭时本方法在第一道判断即返回。</p>
+     * <p>口径与 ADR §6.2 一致：{@code candidateCount} = 本次查询看到的候选总规模
+     * （浏览 lane = {@code source.size()}；搜索 lane = 真实命中数 {@code matchCount}，不受窗口上限影响），
+     * {@code itemCount} = 本次实际参与挂载的项数 —— 二者之比即虚拟化比例。
+     * 采样关闭时本方法在第一道判断即返回。</p>
      *
      * @param startedAtNanos 起始时间戳；0 表示采样关闭（调用方已按 Config.useDebug 取值）
-     * @param candidateCount 本次派生看到的候选总数
-     * @param itemCount 本次派生产出的网格项数
+     * @param candidateCount 本次查询的候选总规模（不受窗口上限裁剪）
+     * @param itemCount 本次派生产出的网格项数（挂载窗口大小）
      */
     private static void recordGridTransform(long startedAtNanos, int candidateCount, int itemCount) {
         if (startedAtNanos == 0L) {
@@ -1242,9 +1257,16 @@ public final class ScenePickerPanel {
     /** SPI 路径的 items 占位：窗口切片只经 {@code pageProvider} 给，此信号恒空且零分配。 */
     private static final ReadableSignal<List<Item>> NO_ITEMS = Collections::emptyList;
 
-    /** SPI lane 视图：一次求值给出「查询条件 + 总量 + 截断真值」（O(1) 或一次 matchCount）。 */
+    /**
+     * SPI lane 视图：一次求值给出「查询条件 + 候选规模 + 窗口总量 + 截断真值」
+     * （O(1) 或一次 matchCount）。
+     *
+     * <p>{@code candidateCount} = 本次查询看到的候选总规模（浏览 lane = {@code size()}、
+     * 搜索 lane = 真实命中数），是 {@code picker.candidates} 的口径（ADR §6.2）；
+     * {@code totalItems} = 窗口数学的总量（搜索 lane 被 {@code searchMaxItems} 截到上限）。</p>
+     */
     @Desugar
-    private record LaneView(PickerQuery query, int totalItems, boolean truncated) { }
+    private record LaneView(PickerQuery query, int candidateCount, int totalItems, boolean truncated) { }
 
     /**
      * 旧路径数据面（无候选源，T-1 回退）：结果信号自带候选全集，面板侧过滤 + 全量项派生。
@@ -1310,7 +1332,7 @@ public final class ScenePickerPanel {
             List<SearchPickerData.Candidate> candidates = source.page(view.query(), offset, limit);
             List<Item> items = toItems(props,
                     candidates == null ? Collections.<SearchPickerData.Candidate>emptyList() : candidates);
-            recordGridTransform(startedAtNanos, view.totalItems(), items.size());
+            recordGridTransform(startedAtNanos, view.candidateCount(), items.size());
             return new SearchResultList.WindowPage(items, view.totalItems());
         };
         feed.resolver = key -> {
@@ -1334,11 +1356,13 @@ public final class ScenePickerPanel {
             PickerQuery query = props.sourceQuery().get();
             if (query.isBrowse()) {
                 PickerSourceGuard.requireMainThread("size");
-                return new LaneView(query, Math.max(0, source.size()), false);
+                int total = Math.max(0, source.size());
+                // 浏览 lane 无上限：候选规模 = 窗口总量 = size()，不存在 cap/分页。
+                return new LaneView(query, total, total, false);
             }
             PickerSourceGuard.requireMainThread("matchCount");
             int hits = Math.max(0, source.matchCount(query));
-            return new LaneView(query, Math.min(hits, searchMaxItems), hits > searchMaxItems);
+            return new LaneView(query, hits, Math.min(hits, searchMaxItems), hits > searchMaxItems);
         });
     }
 

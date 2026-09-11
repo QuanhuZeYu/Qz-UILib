@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -187,6 +190,67 @@ public class ScenePickerPanelLifecycleTest {
                 1, openNodeCounts.size());
         Assert.assertTrue("打开态节点数必须大于关闭态（隐藏面板真实挂载）",
                 openNodeCounts.iterator().next().longValue() > closedNodes);
+    }
+
+    // ==================== A-15 源码守卫 ====================
+
+    /**
+     * 源码守卫（ADR §7 A-15）：面板**不得**以 open 作为求值门控 —— 「关闭即停算」只能来自
+     * owner 作用域（{@code rt.portal} 内容 Owner）与订阅边界。
+     *
+     * <p>先剥注释再扫（类注释里就写着「禁止 if(!open) 逐帧门控」，不剥会把规矩本身当成违规）；
+     * 再用正锚钉住「open 确实交给了 portal/状态机」，避免否定断言在改错文件时真空真。</p>
+     */
+    @Test
+    public void panelSourceHasNoOpenGatedEvaluation() throws Exception {
+        String code = codeWithoutComments(new String(Files.readAllBytes(Paths.get(
+                "src/main/java/club/heiqi/uilib/ui/scene/control/ScenePickerPanel.java")),
+                StandardCharsets.UTF_8));
+        Assert.assertTrue("正锚：open 必须交给 portal 与状态机",
+                code.contains("rt.portal(open") && code.contains("rt.bind(open"));
+        Assert.assertFalse("面板不得用 open 做逐帧/逐次求值门控（ADR §4.3）",
+                code.contains("open.get()") || code.contains("!open")
+                        || code.contains("Boolean.TRUE.equals(open)"));
+    }
+
+    /** 剥离注释（源码守卫只对真实代码生效；与 PickerSourceCallSiteGuardTest 同法）。 */
+    private static String codeWithoutComments(String source) {
+        StringBuilder out = new StringBuilder(source.length());
+        int index = 0;
+        int length = source.length();
+        while (index < length) {
+            char current = source.charAt(index);
+            if (current == '/' && index + 1 < length && source.charAt(index + 1) == '/') {
+                while (index < length && source.charAt(index) != '\n') index++;
+            } else if (current == '/' && index + 1 < length && source.charAt(index + 1) == '*') {
+                index += 2;
+                while (index + 1 < length && !(source.charAt(index) == '*' && source.charAt(index + 1) == '/')) {
+                    index++;
+                }
+                index += 2;
+            } else if (current == '"') {
+                out.append(current);
+                index++;
+                while (index < length && source.charAt(index) != '"') {
+                    if (source.charAt(index) == '\\') {
+                        out.append(source.charAt(index));
+                        index++;
+                    }
+                    if (index < length) {
+                        out.append(source.charAt(index));
+                        index++;
+                    }
+                }
+                if (index < length) {
+                    out.append(source.charAt(index));
+                    index++;
+                }
+            } else {
+                out.append(current);
+                index++;
+            }
+        }
+        return out.toString();
     }
 
     // ==================== 宿主帧驱动 ====================
