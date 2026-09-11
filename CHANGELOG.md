@@ -15,11 +15,14 @@
 
 - HUD 缩放内聚化：每 HUD 倍率从外接工具栏注册项提升为统一缩放状态（`HudToolbarService.scale(hudId)` 惰性创建、独立于工具栏注册，注销工具栏不重置倍率），`SceneHudHost` 与打开态聊天屏不再取工具栏层的挂载倍率——未注册外接工具栏的 HUD 同样按统一倍率缩放（此前恒 1.0，Miner HUD 因此调不了缩放）
 - 缩放入口移入编辑态：聊天屏编辑子模式为每个可编辑目标统一装配 - / 1:1 / +（`HudEditTarget.getToolbarSpec()` 降级为可选额外自定义工具，为 null 不再意味着没有缩放），非编辑态不挂缩放控件；预览外框与拖动 clamp 按统一倍率换算，口径与放置一致
+- HUD 布局与缩放持久化端口：位置不落绝对坐标，改落「四角锚点 + 该轴行程百分比（分母 = 可用空间 − 内容物理盒，与 `HudLayoutResolver.clamp` 可行区间逐点同源）+ 缩放百分比」的 `schemaVersion=1` 文本；新增公共 `ui.hud.api.HudLayoutStore`（宿主只实现 `String load()` / `void save(String)` 两个纯文本 IO 方法，不解析 schema、不做坐标数学）、`HudLayoutMetrics`（每帧度量值对象）与 `HudLayoutPersistence`（`install` / `uninstall` / `isInstalled` 窄入口），`HudLayoutService` 新增 `attachStore` / `detachStore` / `hasStore` / `reload` / `save` / `observe`；编辑提交按内容盒中心自动选最近角锚点（平局取 LEFT/TOP，重锚定不改变可见盒），宿主每帧 `observe(metrics)` 后视口/内容变化按百分比跟随；缩放与位置同一条记录、同一次落盘（缩放变更先置脏、下一次 observe 合并写一次），损坏或未知 `schemaVersion` 降级为默认布局且本次会话不自动写回
+- 持久化显式接线且默认零变化：未安装端口 / 未上报度量时 `observe` 首行 volatile 直返、提交与重置保持既有内存语义（不自动改锚、不写盘）；`save` 由 UILib 在提交或缩放变更后调用，宿主不需要 flush
 
 ### 修复
 
 - 编辑态 HUD 预览的缩放不再形同虚设：预览浮层此前只把自身倍率用于 placement/clamp 盒、实绘仍跟随聊天屏倍率，点 - / 1:1 / + 看不到尺寸变化（左/上锚点目标连位置都不动）；现在预览按自身统一倍率渲染与命中（新增 overlay 相对渲染倍率，帧管线与输入路由按同一倍率换算），点按立即生效
 - 聊天框（`qzuilib:chat3`）倍率不再串扰其它 HUD：此前编辑态所有预览浮层与聊天屏共用一个绘制倍率，调大聊天框会把每个 HUD 预览一起缩放；现在聊天屏倍率只作用于聊天屏自身
+- 缩放后 tooltip / 锚定浮层位置错：`SceneFramePipeline.layoutOverlays` 锚定分支此前把 `AnchorProvider.forNode` 返回的「触发节点所在树局部盒」直接当宿主局部盒参与锚点解析，触发节点位于相对倍率 s != 1 的 overlay（HUD 编辑预览的 - / 1:1 / + 按钮）内时缺一次坐标换算（s > 1 偏左上、s < 1 偏右下，偏差随触发坐标线性放大）；现在先经 `toHostLogicalBox` 换算到宿主逻辑空间（`宿主逻辑 = round(overlay 逻辑 × s) + overlay 锚点偏移`，取整与回放/输入路由同口径），主树触发、s == 1 且无锚点偏移、矩形探针（`getNode() == null`）与未挂载节点原样返回（零分配零乘除）；无公共 API 变更
 
 ## [4.9.0] - 2026-09-11
 

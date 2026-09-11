@@ -17,11 +17,23 @@ public final class HudScaleState {
 
     private int value = DEFAULT_PERCENT;
     private final Signal<Integer> changed = Signal.create(DEFAULT_PERCENT);
+    /** 百分比实际变化时的回调（持久化脏标记；null = 无监听、零开销）。 */
+    private final Runnable changeListener;
     // 同帧多次点击必须累计；通知延迟到 flush，读取始终返回最新请求值。
     private final ReadableSignal<Integer> percent = () -> {
         changed.get();
         return Integer.valueOf(value);
     };
+
+    /** 无监听构造（独立状态与测试用）。 */
+    public HudScaleState() {
+        this(null);
+    }
+
+    /** 包内构造：百分比实际变化时回调（统一缩放注册表用于持久化脏标记）。 */
+    HudScaleState(Runnable changeListener) {
+        this.changeListener = changeListener;
+    }
 
     public ReadableSignal<Integer> percent() { return percent; }
     public float factor() { return percent.get().intValue() / 100.0f; }
@@ -32,6 +44,10 @@ public final class HudScaleState {
         if (next == value) return;
         value = next;
         changed.set(Integer.valueOf(value));
+        Runnable listener = changeListener;
+        if (listener != null) {
+            listener.run();
+        }
     }
     public void zoomOut() { setPercent(value - STEP_PERCENT); }
     public void zoomIn() { setPercent(value + STEP_PERCENT); }

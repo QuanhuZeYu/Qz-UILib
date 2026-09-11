@@ -21,6 +21,7 @@ import club.heiqi.uilib.internal.chat3.view.ChatSurfaceAnimator;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudEditService;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
+import club.heiqi.uilib.ui.hud.api.HudLayoutMetrics;
 import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
 import club.heiqi.uilib.ui.hud.api.HudLayoutService;
 import club.heiqi.uilib.ui.hud.api.HudPlacement;
@@ -314,6 +315,12 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     private void applyPlacement(int width, int height) {
         applyOuterPlacement(toolbarLayer, width, height, effectivePlacement(),
                 ChatHudWindow.currentSafeInsets(), frameScale);
+        // 持久化度量上报（task-11 接线，仅新增本调用）：applyOuterPlacement 已更新本帧 preferred 尺寸，
+        // 度量与其中 resolve 实参逐项一致；未挂 HudLayoutStore 时 observe 快速返回，零行为变化。
+        HudLayoutService.getInstance().observe(ChatHudWindow.HUD_ID, HudLayoutMetrics.of(width, height,
+                scaledOuterWidth(toolbarLayer, width, frameScale),
+                scaledOuterHeight(toolbarLayer, height, frameScale),
+                ChatHudWindow.currentSafeInsets()));
     }
 
     /**

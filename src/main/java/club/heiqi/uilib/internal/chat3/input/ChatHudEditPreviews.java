@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import club.heiqi.uilib.ui.hud.api.HudEditService;
 import club.heiqi.uilib.ui.hud.api.HudEditTarget;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
+import club.heiqi.uilib.ui.hud.api.HudLayoutMetrics;
 import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
 import club.heiqi.uilib.ui.hud.api.HudLayoutService;
 import club.heiqi.uilib.ui.hud.api.HudPlacement;
@@ -309,6 +310,10 @@ final class ChatHudEditPreviews {
 
     /** 每帧把权威放置解析为预览浮层的 margin（物理盒 → overlay 逻辑 px，与 clamp 同口径）。 */
     private void applyPlacement(Preview preview) {
+        // 持久化度量上报（task-11 接线，仅新增本调用）：与下方 resolve/clamp 同口径（外框含工具栏）；
+        // 未挂 HudLayoutStore 时 observe 在同步块外快速返回，零额外开销、零行为变化。
+        layoutService.observe(preview.hudId, HudLayoutMetrics.of(viewportWidth, viewportHeight,
+                outerWidth(preview), outerHeight(preview), insets));
         AnchorRect rect = HudLayoutResolver.resolve(effectivePlacement(preview),
                 viewportWidth, viewportHeight, outerWidth(preview), outerHeight(preview), insets);
         // 节点与输入是 overlay 逻辑 px（= 该 HUD 物理 px / target）：margin 除以自身倍率，

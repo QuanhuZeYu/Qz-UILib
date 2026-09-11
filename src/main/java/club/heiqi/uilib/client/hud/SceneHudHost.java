@@ -3,6 +3,7 @@ package club.heiqi.uilib.client.hud;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
+import club.heiqi.uilib.ui.hud.api.HudLayoutMetrics;
 import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
 import club.heiqi.uilib.ui.hud.api.HudLayoutService;
 import club.heiqi.uilib.ui.hud.api.HudPlacement;
@@ -162,6 +163,11 @@ public final class SceneHudHost {
         EnumMap<HudAnchor, Integer> offsets = new EnumMap<HudAnchor, Integer>(HudAnchor.class);
         for (MeasuredHud item : sorted) {
             HudSpec spec = item.entry.spec;
+            // 持久化度量上报（task-11 接线，仅新增本调用）：度量与下方 resolve 实参逐项一致；
+            // 未挂 HudLayoutStore 时 observe 在同步块外快速返回，零额外开销、零行为变化。
+            HudLayoutService.getInstance().observe(spec.getId(),
+                    HudLayoutMetrics.of(width, height, item.width, item.height, safeInsets)
+                            .offsetScale(globalScale));
             // 用户布局覆盖（会话内）：走统一解析数学，并脱离默认堆叠（不参与 offset 累积）。
             // 无覆盖时保持原四角锚定 + 同锚点堆叠，既有行为零回归。
             HudPlacement custom = HudLayoutService.getInstance().placement(spec.getId());

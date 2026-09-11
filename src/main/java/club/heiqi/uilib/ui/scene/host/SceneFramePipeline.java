@@ -402,6 +402,10 @@ public final class SceneFramePipeline {
     /**
      * 布局当前 active overlay roots，并清理已移除 overlay 的专用布局引擎。
      *
+     * <p>锚定浮层的触发盒先经 {@link #toHostLogicalBox} 换算到宿主逻辑空间，再与宿主 w/h 一起
+     * 参与锚点解析 —— 触发节点位于 s != 1 的 overlay 树内时，探针返回的是该 overlay 的逻辑坐标
+     * （= 宿主逻辑 ÷ s），不换算会让浮层物理位置随 s 错位。</p>
+     *
      * @param w 宿主宽度
      * @param h 宿主高度
      */
@@ -412,7 +416,10 @@ public final class SceneFramePipeline {
             return;
         }
         IdentityHashMap<SceneNode, Boolean> activeRoots = new IdentityHashMap<SceneNode, Boolean>();
-        for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
+        List<SceneOverlayHost.Entry> entries = runtime.getOverlayHost().bottomFirst();
+        // 触发盒换算（见 #toHostLogicalBox）：只有存在锚定浮层时才需要 root → entry 映射。
+        IdentityHashMap<SceneNode, SceneOverlayHost.Entry> entryByRoot = null;
+        for (SceneOverlayHost.Entry entry : entries) {
             SceneNode overlayRoot = entry.getRoot();
             Constraints constraints;
             SceneLayoutEngine engine = overlayLayoutEngines.get(overlayRoot);
@@ -421,7 +428,13 @@ public final class SceneFramePipeline {
                 overlayLayoutEngines.put(overlayRoot, engine);
             }
             if (entry.getAnchorProvider() != null) {
-                AnchorRect triggerBox = entry.getAnchorProvider().get();
+                if (entryByRoot == null) {
+                    entryByRoot = overlayEntryByRoot(entries);
+                }
+                // 触发节点可能不在主树（例如 HUD 编辑预览 overlay 内的缩放按钮）：探针返回的是
+                // 触发节点所在树的局部盒，必须换算到宿主逻辑空间后才能与宿主 w/h 一起解析。
+                AnchorRect triggerBox = toHostLogicalBox(entry.getAnchorProvider().get(),
+                        entry.getAnchorProvider().getNode(), entryByRoot);
                 int targetWidth = SceneAnchorResolver.resolveWidth(triggerBox, w, entry.getAnchoredLayout());
                 engine.layout(overlayRoot, new Constraints(targetWidth, Constraints.UNCONSTRAINED));
                 LayoutBox firstBox = (LayoutBox) overlayRoot.getCachedLayout();
@@ -451,6 +464,66 @@ public final class SceneFramePipeline {
         }
         overlayLayoutEngines.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));
         overlayLayoutResults.entrySet().removeIf(entry -> !activeRoots.containsKey(entry.getKey()));
+    }
+
+    /**
+     * 把锚点探针返回的触发盒换算到宿主逻辑空间。
+     *
+     * <p>{@code AnchorProvider.forNode} 返回的是触发节点<b>所在树</b>坐标系下的绝对盒；触发节点位于
+     * 某个 overlay 树内时，该空间与宿主逻辑空间相差「该 overlay 的相对倍率 s」与「该 overlay 的
+     * 锚点偏移」：宿主逻辑 = overlay 逻辑 × s + overlay 偏移（物理 = 宿主逻辑 × 宿主倍率）。
+     * 锚定浮层自身 s 恒为 1.0F（{@code SceneOverlayHost.Entry.setRelativeScale} 拒绝锚定浮层），
+     * 其锚点解析与回放都发生在宿主逻辑空间，跨树触发盒必须先换算，否则浮层随 s 错位
+     * （s &gt; 1 偏左上、s &lt; 1 偏右下，偏差随触发坐标线性放大）。</p>
+     *
+     * <p>零噪音路径：主树触发、s == 1.0F 且无锚点偏移的触发、矩形探针（{@code getNode() == null}，
+     * 按契约已是宿主局部坐标）、触发节点未挂在任何已注册 overlay 上（离树/陈旧盒）均原样返回，
+     * 不做任何乘除与取值。</p>
+     *
+     * @param box          锚点探针返回的触发盒
+     * @param trigger      触发节点，可为 null（矩形探针）
+     * @param entryByRoot  overlay root → entry 快照（IdentityHashMap，按节点身份匹配）
+     * @return 宿主逻辑空间下的触发盒
+     */
+    private AnchorRect toHostLogicalBox(AnchorRect box, SceneNode trigger,
+                                        IdentityHashMap<SceneNode, SceneOverlayHost.Entry> entryByRoot) {
+        if (box == null || trigger == null) {
+            return box;
+        }
+        SceneNode top = trigger;
+        while (top.__getParent() != null) {
+            top = top.__getParent();
+        }
+        if (top == state.root) {
+            return box;
+        }
+        SceneOverlayHost.Entry owner = entryByRoot.get(top);
+        if (owner == null) {
+            return box;
+        }
+        float relativeScale = owner.getRelativeScale();
+        int shiftX = owner.getAnchorX();
+        int shiftY = owner.getAnchorY();
+        if (Float.compare(relativeScale, 1F) == 0 && shiftX == 0 && shiftY == 0) {
+            return box;
+        }
+        // 取整口径与 phaseReplay / SceneInputRouter 的 overlay 换算一致（先换算再回放）。
+        return new AnchorRect(
+                Math.round(box.getX() * relativeScale) + shiftX,
+                Math.round(box.getY() * relativeScale) + shiftY,
+                Math.round(box.getWidth() * relativeScale),
+                Math.round(box.getHeight() * relativeScale));
+    }
+
+    /** overlay root → entry 快照（按节点身份），供 {@link #toHostLogicalBox} 定位触发节点所属浮层。 */
+    private static IdentityHashMap<SceneNode, SceneOverlayHost.Entry> overlayEntryByRoot(
+            List<SceneOverlayHost.Entry> entries) {
+        IdentityHashMap<SceneNode, SceneOverlayHost.Entry> byRoot =
+                new IdentityHashMap<SceneNode, SceneOverlayHost.Entry>();
+        for (SceneOverlayHost.Entry entry : entries) {
+            byRoot.put(entry.getRoot(), entry);
+        }
+        return byRoot;
     }
 
     /**

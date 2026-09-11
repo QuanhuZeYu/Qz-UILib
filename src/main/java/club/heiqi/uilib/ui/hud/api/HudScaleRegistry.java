@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.hud.api;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -19,6 +21,8 @@ final class HudScaleRegistry {
     private static final HudScaleRegistry INSTANCE = new HudScaleRegistry();
 
     private final Map<String, HudScaleState> states = new LinkedHashMap<String, HudScaleState>();
+    /** 百分比变更回调（持久化端口挂载时安装；null = 无监听、零开销）。 */
+    private volatile Runnable changeSink;
 
     private HudScaleRegistry() {
     }
@@ -40,10 +44,39 @@ final class HudScaleRegistry {
         }
         HudScaleState state = states.get(hudId);
         if (state == null) {
-            state = new HudScaleState();
+            state = new HudScaleState(this::notifyChange);
             states.put(hudId, state);
         }
         return state;
+    }
+
+    /**
+     * 安装/清除百分比变更回调（持久化端口挂载/卸载时调用；null = 零开销）。
+     *
+     * <p>回调在 {@link HudScaleState#setPercent(int)} 实际改变数值后同步触发，实现只做 O(1) 的
+     * 脏标记，不做 IO。</p>
+     *
+     * @param sink 回调；null = 卸载
+     */
+    void setChangeSink(Runnable sink) {
+        this.changeSink = sink;
+    }
+
+    /** @return 已创建状态的 hudId 快照（注册顺序）；不触发惰性创建 */
+    synchronized List<String> ids() {
+        return new ArrayList<String>(states.keySet());
+    }
+
+    /** 非创建式读取（持久化快照不能因为读百分比而新建状态）。 */
+    synchronized HudScaleState peek(String hudId) {
+        return hudId == null ? null : states.get(hudId);
+    }
+
+    private void notifyChange() {
+        Runnable sink = changeSink;
+        if (sink != null) {
+            sink.run();
+        }
     }
 
     /** 移除单项（某个 HUD 生命周期结束时清理；不影响其它 HUD 的倍率）。 */

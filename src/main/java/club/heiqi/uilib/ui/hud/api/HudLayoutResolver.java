@@ -74,6 +74,83 @@ public final class HudLayoutResolver {
                 clampInt(placement.getOffsetY(), 0, maxY));
     }
 
+    /**
+     * 该轴可拖动行程（百分比分母）：{@code max(0, 可用空间 - 内容盒)}，与 {@link #clamp} 的
+     * 可行上界 {@code max(0, available - max(1, content))} 逐点相等——于是
+     * {@code fraction ∈ [0,1]} 与 {@code offset ∈ [0, travelSpan]} 严格双向对应，
+     * {@code fraction = 0} 贴锚点侧安全边、{@code fraction = 1} 贴对侧安全边、
+     * 内容超出可用空间时行程为 0（位置自由度为零）。
+     *
+     * @param viewportExtent 视口该轴尺寸
+     * @param contentExtent  内容该轴物理尺寸
+     * @param safeLeading    安全区锚点侧插入（X 用 left、Y 用 top）
+     * @param safeTrailing   安全区对侧插入（X 用 right、Y 用 bottom）
+     * @return 行程（恒 ≥ 0）
+     */
+    static int travelSpan(int viewportExtent, int contentExtent, int safeLeading, int safeTrailing) {
+        int available = Math.max(1, viewportExtent - safeLeading - safeTrailing);
+        int box = clampInt(contentExtent, 1, available);
+        return Math.max(0, available - box);
+    }
+
+    /**
+     * 内容盒中心所在象限 → 最近角锚点（提交编辑时决定锚定方式）。
+     *
+     * <p>规则：{@code cx <= 安全区中线 → LEFT，否则 RIGHT}；{@code cy <= 中线 → TOP，否则 BOTTOM}。
+     * 平局（中心恰在中线）取 LEFT/TOP，该规则与「四角欧氏距离最近 + 按
+     * {@link HudAnchor} 声明序平局优先」完全等价（含退化视口；Python 穷举验证）。</p>
+     *
+     * @param box          已解析内容盒
+     * @param viewportWidth  视口宽
+     * @param viewportHeight 视口高
+     * @param safeInsets   安全区
+     * @return 最近角锚点
+     */
+    static HudAnchor nearestAnchor(AnchorRect box, int viewportWidth, int viewportHeight,
+            HudInsets safeInsets) {
+        if (box == null) throw new IllegalArgumentException("box must not be null");
+        if (safeInsets == null) throw new IllegalArgumentException("safeInsets must not be null");
+        int availableWidth = Math.max(1, viewportWidth - safeInsets.getLeft() - safeInsets.getRight());
+        int availableHeight = Math.max(1, viewportHeight - safeInsets.getTop() - safeInsets.getBottom());
+        int centerX2 = 2 * box.getX() + box.getWidth();
+        int centerY2 = 2 * box.getY() + box.getHeight();
+        boolean left = centerX2 <= 2 * safeInsets.getLeft() + availableWidth;
+        boolean top = centerY2 <= 2 * safeInsets.getTop() + availableHeight;
+        if (top) {
+            return left ? HudAnchor.TOP_LEFT : HudAnchor.TOP_RIGHT;
+        }
+        return left ? HudAnchor.BOTTOM_LEFT : HudAnchor.BOTTOM_RIGHT;
+    }
+
+    /**
+     * {@link #resolve} 的逆换算：把已解析盒转换为指定锚点下的放置（整数精确，不重复解析数学）。
+     *
+     * <p>与 {@link #resolve} 严格互逆：对任意已解析盒，{@code resolve(anchored(...))} 逐位等于原盒
+     * （Python 穷举验证）。返回偏移为解析空间量，允许越界（调用方按 {@link #clamp} 收敛或编码百分比）。</p>
+     *
+     * @param anchor         目标锚点
+     * @param box            已解析盒
+     * @param viewportWidth  视口宽
+     * @param viewportHeight 视口高
+     * @param safeInsets     安全区
+     * @return 目标锚点下的放置
+     */
+    static HudPlacement anchored(HudAnchor anchor, AnchorRect box, int viewportWidth, int viewportHeight,
+            HudInsets safeInsets) {
+        if (anchor == null) throw new IllegalArgumentException("anchor must not be null");
+        if (box == null) throw new IllegalArgumentException("box must not be null");
+        if (safeInsets == null) throw new IllegalArgumentException("safeInsets must not be null");
+        boolean right = anchor == HudAnchor.TOP_RIGHT || anchor == HudAnchor.BOTTOM_RIGHT;
+        boolean bottom = anchor == HudAnchor.BOTTOM_LEFT || anchor == HudAnchor.BOTTOM_RIGHT;
+        int offsetX = right
+                ? viewportWidth - safeInsets.getRight() - box.getX() - box.getWidth()
+                : box.getX() - safeInsets.getLeft();
+        int offsetY = bottom
+                ? viewportHeight - safeInsets.getBottom() - box.getY() - box.getHeight()
+                : box.getY() - safeInsets.getTop();
+        return HudPlacement.of(anchor, offsetX, offsetY);
+    }
+
     private static int clampInt(int value, int min, int max) {
         return value < min ? min : (value > max ? max : value);
     }
