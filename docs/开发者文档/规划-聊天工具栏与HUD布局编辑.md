@@ -153,6 +153,36 @@
 - **未完成（仍属 P3）**：位置与工具栏边位的跨重启持久化、同一 HUD 多工具栏、溢出「更多」菜单、
   交叉轴对齐自定义、竖直边条宽按标签实测自适应（当前为固定预算，超长第三方标签会被按钮裁剪）。
 
+## 实施记录：公开 HUD 编辑契约（2026-09-11 增量）
+
+缺口：拖动编辑交互此前只存在于 `internal/chat3/input/ChatInputSurface`，且硬编码 `qzuilib:chat3`，
+第三方 HUD 拿不到编辑能力。本轮把它提升为公开契约，chat3 自身成为首个消费方的同时保持零回归。
+
+- **公共 API（`ui/hud/api`）**：`HudEditTarget`（不可变值对象：hudId + 预览内容工厂 + 默认放置 +
+  可选外接工具栏规格）与 `HudEditService`（注册表 + 编辑意图：`register / hasTarget / target /
+  targets / revision / requestEdit / focus / isEditing / clear`）。注册表语义与 `HudToolbarService`
+  同风格：`synchronized`、`LinkedHashMap` 保序、重复 id 拒绝、幂等 `HudRegistration`、`Signal` 版本 +1。
+- **宿主端口（契约补充 #1）**：`HudEditService.Host`（`requestEnterEdit(String)` / `isEditing()` /
+  `focus()`）+ `attachHost` / `detachHost`。`requestEdit` 只发布意图，由**当前打开**的聊天屏消费；
+  无宿主时静默丢弃（不排队、不抛异常、`isEditing()` 不变）；`detachHost` 按身份判定避免旧屏顶掉新屏；
+  `clear()` 只清注册表、不动宿主绑定。
+- **聊天屏编辑态通用化**：`ChatHudEditPreviews`（internal）为每个已注册目标装配一个预览浮层。scene
+  布局没有绝对定位原语（flex 同层兄弟按主轴累加），故每个目标一个 `SceneOverlayHost` 浮层根：宿主对
+  `anchorProvider = null` 的浮层按全屏约束布局，根内只有「预览外框」一个子节点，因此 `margin` 就是
+  精确的视口坐标；浮层根 `hitTestable = false`，未命中预览内容的指针继续穿透到下一条浮层与主树
+  （`SceneInputRouter.hitTestWithOverlays` 既有语义），预览不吞输入。
+- **放置与拖动同口径**：预览位置 = `placement(hudId)`（无覆盖 → `getDefaultPlacement()`）经
+  `HudLayoutResolver.resolve`；拖动写 `setDraft(hudId, clamp(...))`，clamp 与放置都用
+  `HudToolbarLayer.logicalOuterWidth/Height`（内容 + 工具栏 gap + thickness），与既有
+  `applyOuterPlacement` 同源；首帧内容未布局时退回内容声明尺寸，下一帧按实测收敛。
+- **会话语义沿用**：进入编辑调 `HudLayoutService.beginEdit()`（一次会话覆盖所有目标）；Esc 在拖动中
+  先回滚手势、无手势时取消会话；保存/取消/恢复当前/恢复全部沿用 `ChatToolbar` 编辑态按钮语义，
+  「恢复当前」作用于 `focus()` 指向的 hudId（chat3 内置入口聚焦 `qzuilib:chat3`，第三方
+  `requestEdit(hudId)` 聚焦自己）。非编辑态不注册浮层、不挂事件（零开销）。
+- **测试**：`HudEditServiceTest`（值对象校验 / 重复拒绝 / 幂等注销 / 版本与顺序 / 无宿主静默 /
+  宿主端口委托与身份判定 / clear 边界）、`ChatHudEditPreviewsTest`（非编辑态零注册 / 每目标一个浮层
+  且按注册顺序 / 放置走解析器 / 拖动草稿 + clamp 边界 / Esc 回滚 / 外框含工具栏厚度的 clamp 口径）。
+
 ## 实施批准边界
 
 本轮只新增规划文档，没有冻结或修改公共 API、配置兼容承诺或输入主权规范。用户已授权路线规划。后续代码涉及公共 API 与持久化合同，按仓库 `AGENTS.md`“公共 API、配置持久数据……需要改变时，先说明明确后果并取得用户确认”执行；P0 应将本草案收敛为明确接口差异后再取得实施确认，不把规划授权解释为全部 API 已定案。

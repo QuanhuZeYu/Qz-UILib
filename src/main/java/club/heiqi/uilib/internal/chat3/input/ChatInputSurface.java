@@ -19,6 +19,7 @@ import club.heiqi.uilib.internal.chat3.view.ChatHudWindow;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 import club.heiqi.uilib.internal.chat3.view.ChatSurfaceAnimator;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
+import club.heiqi.uilib.ui.hud.api.HudEditService;
 import club.heiqi.uilib.ui.hud.api.HudInsets;
 import club.heiqi.uilib.ui.hud.api.HudLayoutResolver;
 import club.heiqi.uilib.ui.hud.api.HudLayoutService;
@@ -51,7 +52,7 @@ import club.heiqi.uilib.ui.scene.runtime.ScenePortalHandle;
  * (关屏 displayGuiScreen 会销毁本 surface,不能在 render 栈内执行)。</p>
  */
 public final class ChatInputSurface extends AbstractSceneHostWidget
-        implements ChatToolbar.Host, ChatHudEditIntent.Sink {
+        implements ChatToolbar.Host, ChatHudEditIntent.Sink, HudEditService.Host {
 
     private static final Logger LOG = LogManager.getLogger("QzUILib Chat3Input");
 
@@ -74,11 +75,21 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     private final HudLayoutService layoutService = HudLayoutService.getInstance();
     /** 编辑子模式信号(工具栏行切换 + 拖动启停 + 输入暂停)。 */
     private final Signal<Boolean> editing = Signal.create(Boolean.FALSE);
-    /** 「恢复当前默认」可用性(草稿或已提交覆盖存在时为真)。 */
+    /**
+     * 当前聚焦的编辑目标(进入编辑时 = 触发者;退出编辑清空)。
+     *
+     * <p>聚焦只决定「恢复当前默认」作用于哪个 hudId:chat3 内置入口聚焦
+     * {@link ChatHudWindow#HUD_ID},第三方经 {@code HudEditService.requestEdit(hudId)} 聚焦自己。
+     * 空 = 非编辑态,读取方回退既有 chat3 语义(零回归)。</p>
+     */
+    private final Signal<String> editFocus = Signal.create(null);
+    /** 编辑目标预览浮层(每目标一个 overlay 浮层;非编辑态不注册、零开销)。 */
+    private final ChatHudEditPreviews previews;
+    /** 「恢复当前默认」可用性(聚焦目标存在草稿或已提交覆盖时为真;无聚焦回退 chat3)。 */
     private final ReadableSignal<Boolean> canResetCurrent = Computed.create(() -> {
         layoutService.revision().get();
-        return Boolean.valueOf(layoutService.hasDraftOverride(ChatHudWindow.HUD_ID)
-                || layoutService.hasCommittedOverride(ChatHudWindow.HUD_ID));
+        return Boolean.valueOf(layoutService.hasDraftOverride(focusedHudId())
+                || layoutService.hasCommittedOverride(focusedHudId()));
     });
     /** 「恢复全部默认」可用性(存在任一已提交覆盖时为真)。 */
     private final ReadableSignal<Boolean> canResetAll = Computed.create(() -> {
@@ -150,6 +161,12 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         runtime.on(container.barRow(), SceneEventType.POINTER_DOWN,
                 (event, ctx) -> ctx.stopPropagation());
 
+        // 公开编辑契约接线(规划 P3 增量):注册表增删驱动预览重建,编辑开关驱动预览挂载/卸载;
+        // 非编辑态零注册。宿主在构造期注入(同一时刻只有当前打开的聊天屏是宿主)。
+        previews = new ChatHudEditPreviews(runtime);
+        runtime.bind(editing, value -> previews.setSessionActive(Boolean.TRUE.equals(value)));
+        runtime.bind(HudEditService.getInstance().revision(), value -> previews.refreshTargets());
+        HudEditService.getInstance().attachHost(this);
         ChatHudEditIntent.attach(this);
 
         // 滚轮滚动聊天历史(vanilla ±7/Shift±1 语义)。
@@ -203,6 +220,8 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         hostWidth = Math.max(1, w);
         hostHeight = Math.max(1, h);
         applyPlacement(hostWidth, hostHeight);
+        // 编辑态预览浮层:与聊天外框同一帧口径(放置解析用屏幕像素,节点 margin 用 logical px)。
+        previews.frame(hostWidth, hostHeight, frameScale, ChatHudWindow.currentSafeInsets());
         container.setViewport(w, h, container.root().getPreferredWidth(), container.root().getPreferredHeight());
         if ((renderLogCounter++ % 120) == 0) {
             LOG.info("聊天输入屏渲染视口: w={}, h={}, chatWidthFor={}, containerHeightFor={}",
@@ -231,6 +250,10 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     /** 屏幕关闭:取消未完成编辑会话并释放容器句柄(列表 + 滚动绑定)。 */
     public void onClosed() {
         ChatHudEditIntent.detach(this);
+        // 公开编辑契约:摘除宿主(按身份)并整体卸载预览浮层;焦点清空,不复用到下一屏。
+        HudEditService.getInstance().detachHost(this);
+        previews.dispose();
+        editFocus.set(null);
         // 解绑工具栏宿主并置不可见：关闭态 HUD 形态不显示工具栏（规划 P1 语义）。
         ChatHudWindow.detachToolbarHost(this);
         if (Boolean.TRUE.equals(editing.get())) {
@@ -259,6 +282,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
     public boolean handleEscape() {
         if (!Boolean.TRUE.equals(editing.get())) {
             return false;
+        }
+        if (previews.cancelDrag()) {
+            return true; // 预览拖动中:先取消当前手势并回到按下前位置(不退出编辑会话)
         }
         if (dragging[0]) {
             endDrag(true);
@@ -452,6 +478,7 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         endDrag(false);
         layoutService.commitEdit();
         editing.set(Boolean.FALSE);
+        editFocus.set(null);
         restoreInputFocus();
     }
 
@@ -463,12 +490,14 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         endDrag(true);
         layoutService.cancelEdit();
         editing.set(Boolean.FALSE);
+        editFocus.set(null);
         restoreInputFocus();
     }
 
     @Override
     public void resetCurrent() {
-        layoutService.resetDraft(ChatHudWindow.HUD_ID);
+        // 公开契约:重置当前 = 聚焦目标;无聚焦回退 chat3 自身(内置入口的既有语义)。
+        layoutService.resetDraft(focusedHudId());
     }
 
     @Override
@@ -478,13 +507,48 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
 
     // ==================== ChatHudEditIntent.Sink ====================
 
+    /** chat3 内置「编辑 HUD」入口:进入编辑并聚焦聊天 HUD 自身(既有语义零回归)。 */
     @Override
     public void requestEnterEdit() {
+        editFocus.set(ChatHudWindow.HUD_ID);
+        enterEditMode();
+    }
+
+    // ==================== HudEditService.Host ====================
+
+    /**
+     * 第三方编辑入口(公开契约):进入编辑并聚焦该目标。
+     *
+     * <p>首次进入调用 {@link HudLayoutService#beginEdit()}(一次会话覆盖所有目标);
+     * 已编辑时只切换聚焦,不重置本次会话草稿。</p>
+     */
+    @Override
+    public void requestEnterEdit(String hudId) {
+        if (hudId == null || hudId.trim().isEmpty()) {
+            return;
+        }
+        editFocus.set(hudId);
+        enterEditMode();
+    }
+
+    @Override
+    public ReadableSignal<String> focus() {
+        return editFocus;
+    }
+
+    /** 进入编辑子模式(首次 = 开始草稿会话;已编辑 = 幂等)。 */
+    private void enterEditMode() {
         if (Boolean.TRUE.equals(editing.get())) {
             return;
         }
         layoutService.beginEdit();
         editing.set(Boolean.TRUE);
+    }
+
+    /** @return 聚焦目标;非编辑态/未聚焦回退 chat3 自身(既有「恢复当前默认」语义)。 */
+    private String focusedHudId() {
+        String focused = editFocus.get();
+        return focused == null ? ChatHudWindow.HUD_ID : focused;
     }
 
     /**
