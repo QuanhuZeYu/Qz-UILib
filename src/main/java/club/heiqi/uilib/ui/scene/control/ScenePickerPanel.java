@@ -48,6 +48,7 @@ import club.heiqi.uilib.ui.scene.control.search.PickerMetrics;
 import club.heiqi.uilib.ui.scene.control.search.SearchResultList;
 import club.heiqi.uilib.ui.scene.control.search.VariantChooser;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
 import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
@@ -725,6 +726,10 @@ public final class ScenePickerPanel {
         Signal<Tombstone> tombstone = Signal.create(null);
         // 徽章 hover 原因（D5）：成员卡徽章 hover 的成员快照（null = 无徽章 hover）；随内容 Owner 释放。
         Signal<SearchPickerData.CurrentMember> hoveredMember = Signal.create(null);
+        // D4（P5 §5.4 可选项）：信息条点击复制的反馈态 —— 最近复制的稳定 ID + 反馈窗口截止（帧时间纳秒）。
+        // 窗口 ≤ PickerDensityTokens.INFO_COPY_WINDOW_MS，关闭/到期即释放（两信号回到空态，无跨开合残留）。
+        Signal<String> copiedId = Signal.create("");
+        Signal<Long> copyFeedbackUntil = Signal.create(Long.valueOf(0L));
         Signal<Boolean> addingMember = Signal.create(Boolean.FALSE);
         Signal<Boolean> editingMember = Signal.create(Boolean.FALSE);
         Signal<FocusIntent> focusIntent = Signal.create(FocusIntent.NONE);
@@ -767,6 +772,9 @@ public final class ScenePickerPanel {
                 variantFocusTarget[0] = null;
                 gridViewportHolder[0] = null;
                 windowModelHolder.set(null);
+                // D4 反馈态随关闭释放（幂等：无反馈时两次同值写入在帧末去重，零成本）。
+                copiedId.set("");
+                copyFeedbackUntil.set(Long.valueOf(0L));
             }
         });
 
@@ -799,7 +807,8 @@ public final class ScenePickerPanel {
                     memberIssues, categoryKey, categoryWriter, gridHighlight,
                     addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
                     gridViewportHolder, windowModelHolder, variantsOpen, activeCandidate, mode,
-                    selectedKeys, metrics, viewportSizing, tombstone, undoVisible, hoveredMember);
+                    selectedKeys, metrics, viewportSizing, tombstone, undoVisible, hoveredMember,
+                    copiedId, copyFeedbackUntil);
             // 撤销窗口到期（≤5s）：帧时间信号驱动，O(1)；无 tombstone 时首个判断即返回。
             rt.bind(rt.__frameTimeNanos(), nanos -> Effect.untrack(() -> {
                 Tombstone current = tombstone.get();
@@ -857,6 +866,19 @@ public final class ScenePickerPanel {
                 });
     }
 
+    /**
+     * 信息条视图（D4）：单点派生「显示文案 + 可复制稳定 ID」。
+     *
+     * <p>把「文案」与「复制载荷」放进同一次派生，是为了让优先级链（徽章原因 > 悬停项 > 键盘高亮 >
+     * 空闲提示）只有一份实现 —— 复制通道读的永远是当前真正显示的那条视图的载荷，
+     * 不存在「显示 A、复制 B」的第二套判定。</p>
+     *
+     * @param text   信息条显示文案
+     * @param copyId 可复制稳定 ID；空串 = 当前视图无可复制项（点击零操作）
+     */
+    @Desugar
+    private record InfoBarView(String text, String copyId) { }
+
     /** 构建主面板内容：全屏透明命中穿透壳 + 居中 70% 卡片。 */
     private static SceneNode mainPanel(SceneRuntime rt, Props props, Runnable closeRequest, Feed feed,
                                        ReadableSignal<MemberIssues> memberIssues,
@@ -878,7 +900,9 @@ public final class ScenePickerPanel {
                                        boolean viewportSizing,
                                        Signal<Tombstone> tombstone,
                                        ReadableSignal<Boolean> undoVisible,
-                                       Signal<SearchPickerData.CurrentMember> hoveredMember) {
+                                       Signal<SearchPickerData.CurrentMember> hoveredMember,
+                                       Signal<String> copiedId,
+                                       Signal<Long> copyFeedbackUntil) {
         SceneNode scrim = SceneNode.column();
         scrim.setFillParentWidth(true);
         scrim.setFillParentHeight(true);
@@ -951,7 +975,7 @@ public final class ScenePickerPanel {
                 categoryKey, gridHighlight, gridFocusTarget, gridViewportHolder, windowModelHolder,
                 hoveredItem, variantsOpen, activeCandidate, mode, selectedKeys,
                 addingMember, editingMember, focusIntent, metrics, viewportSizing,
-                memberIssues, hoveredMember));
+                memberIssues, hoveredMember, copiedId, copyFeedbackUntil));
         root.appendChild(selectionArea);
 
         // 下容器：已选择编辑（仅 listMembers 挂全宽底部横带）。
@@ -1105,7 +1129,9 @@ public final class ScenePickerPanel {
                                           ReadableSignal<PickerMetrics> metrics,
                                           boolean viewportSizing,
                                           ReadableSignal<MemberIssues> memberIssues,
-                                          Signal<SearchPickerData.CurrentMember> hoveredMember) {
+                                          Signal<SearchPickerData.CurrentMember> hoveredMember,
+                                          Signal<String> copiedId,
+                                          Signal<Long> copyFeedbackUntil) {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
         center.setGap(SceneChromeTokens.GAP_SM);
@@ -1228,14 +1254,16 @@ public final class ScenePickerPanel {
         //   悬停 -> 单行「label · ID: key」（稳定 ID 必须可见，修 T5 UX-11 的两行被裁）；
         //   空闲 -> 「搜索结果 (N)」+ 状态提示（截断 > 键盘 > 滚动 > 悬停操作提示）。
         // 单行形态同时是 Q2 的取法：竖向只占 round(fs*2)，不会为第二行再抬高度。
-        ReadableSignal<String> infoText = Computed.create(() -> {
+        ReadableSignal<InfoBarView> baseView = Computed.create(() -> {
             // D5（P5 §5.4）：成员徽章 hover 的原因解释优先级最高（标题栏之外唯一语义出口），
             // 原因文案（严重级/问题/稳定 ID/原始 raw）全部经 Presentation 注入，不在面板内拼字面量。
             SearchPickerData.CurrentMember hovered = hoveredMember.get();
             if (hovered != null) {
                 String reason = memberIssueReason(props, memberIssues, hovered);
                 if (!reason.isEmpty()) {
-                    return reason;
+                    // 原因态展示的是成员域 ID（成员 id / 候选 key），与结果候选域不是同一可复制项：
+                    // 该态下复制通道无载荷（点击零操作，不产生假反馈）。
+                    return new InfoBarView(reason, "");
                 }
             }
             // D3（P5 §5.4）：键盘高亮与指针悬停同权 —— 悬停优先，空闲时回落到当前高亮项。
@@ -1257,8 +1285,8 @@ public final class ScenePickerPanel {
                 } else {
                     hint = props.panelPresentation().hoverHint();
                 }
-                return props.presentation().searchResultsTitle(feed.totalItems().get().intValue())
-                        + "  ·  " + hint;
+                return new InfoBarView(props.presentation().searchResultsTitle(
+                        feed.totalItems().get().intValue()) + "  ·  " + hint, "");
             }
             // O(1)：标签随 Item 携带（渲染层负责省略号），不再对 filtered 全表反查。
             String label = item.label() == null ? String.valueOf(item.key()) : item.label();
@@ -1267,11 +1295,41 @@ public final class ScenePickerPanel {
                     prefix.isEmpty() ? stableKey : prefix + stableKey);
             // 已配置标记（T5 UX-18）：单元侧是圆点（形态），信息条侧是文案（语义）；
             // 点击行为保持既有激活语义（不做静默丢弃，见 activateCandidate 的契约说明）。
-            return configuredKeys.get().contains(stableKey)
+            String shown = configuredKeys.get().contains(stableKey)
                     ? text + "  ·  " + props.panelPresentation().alreadyConfiguredBadge()
                     : text;
+            // D4（P5 §5.4 可选项）：可复制载荷 = 该候选的稳定 ID（信息条上唯一「读得到但敲不出」的值）。
+            return new InfoBarView(shown, stableKey);
         });
-        SceneNode infoBar = PickerInfoBar.create(rt, new PickerInfoBar.Props(infoText, props.enabled()));
+        // D4 反馈窗口：只有「窗口内且有已复制 ID」这一帧分支读帧时间 ⇒ 常规态整链不随帧重算；
+        // 窗口外直接返回 baseView 的同值实例（Computed 记忆化按 equals 判定 ⇒ 下游零通知）。
+        ReadableSignal<InfoBarView> infoView = Computed.create(() -> {
+            long now = rt.__frameTimeNanos().get().longValue();
+            String copied = copiedId.get();
+            if (!copied.isEmpty() && now < copyFeedbackUntil.get().longValue()) {
+                return new InfoBarView(props.panelPresentation().infoBarCopied(copied), copied);
+            }
+            return baseView.get();
+        });
+        ReadableSignal<String> infoText = Computed.create(() -> infoView.get().text());
+        // 点击复制（D4）：载荷为空 = 零操作；无剪贴板端口 = 静默降级（不崩、不假报成功）；
+        // 有载荷才写剪贴板并开反馈窗口（重复点击刷新同一窗口 ⇒ 幂等，不累积第二条反馈）。
+        Runnable onCopy = () -> {
+            String payload = infoView.get().copyId();
+            if (payload.isEmpty() || !Boolean.TRUE.equals(props.enabled().get())) {
+                return;
+            }
+            ClipboardBackend clipboard = rt.getClipboardBackend();
+            if (clipboard == null) {
+                return;
+            }
+            clipboard.setClipboardText(payload);
+            copiedId.set(payload);
+            copyFeedbackUntil.set(Long.valueOf(rt.__frameTimeNanos().get().longValue()
+                    + PickerDensityTokens.INFO_COPY_WINDOW_MS * 1_000_000L));
+        };
+        SceneNode infoBar = PickerInfoBar.create(rt, new PickerInfoBar.Props(infoText, props.enabled()),
+                onCopy);
         if (viewportSizing) {
             infoBar.setPreferredHeight(metrics.get().panel().infoBarHeightPx());
             rt.bind(metrics, m -> Effect.untrack(

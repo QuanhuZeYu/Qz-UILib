@@ -30,6 +30,7 @@ public final class SearchPickerPanelPresentation {
     private final String truncatedResults;
     private final String hoverHint;
     private final String infoBarIdPattern;
+    private final String infoBarCopiedPattern;
     private final String alreadyConfiguredBadge;
     private final String memberAddingBanner;
     private final String memberEditingBanner;
@@ -54,6 +55,7 @@ public final class SearchPickerPanelPresentation {
         truncatedResults = required(builder.truncatedResults, "truncatedResults");
         hoverHint = required(builder.hoverHint, "hoverHint");
         infoBarIdPattern = required(builder.infoBarIdPattern, "infoBarIdPattern");
+        infoBarCopiedPattern = required(builder.infoBarCopiedPattern, "infoBarCopiedPattern");
         alreadyConfiguredBadge = required(builder.alreadyConfiguredBadge, "alreadyConfiguredBadge");
         memberAddingBanner = required(builder.memberAddingBanner, "memberAddingBanner");
         memberEditingBanner = required(builder.memberEditingBanner, "memberEditingBanner");
@@ -154,6 +156,20 @@ public final class SearchPickerPanelPresentation {
                 .replace("{id}", id == null ? "" : id);
     }
 
+    /**
+     * 信息条「已复制稳定 ID」反馈文案（P5 §5.4 D4：点击信息条复制候选稳定 ID 的第 2 条注入文案）。
+     *
+     * <p>与 {@link #infoBarIdLabel(String, String)} 同一口径：拼接形态属文案，由注入方完全控制
+     * （占位符 {@code {id}}）。反馈窗口 ≤ {@link club.heiqi.uilib.ui.scene.control.search.PickerDensityTokens#INFO_COPY_WINDOW_MS}
+     * 毫秒，到期回落常规信息条文案。</p>
+     *
+     * @param id 已写入系统剪贴板的稳定 ID（可为 null，按空串处理）
+     * @return 反馈文案
+     */
+    public String infoBarCopied(String id) {
+        return infoBarCopiedPattern.replace("{id}", id == null ? "" : id);
+    }
+
     private static String required(String value, String name) {
         if (value == null) throw new IllegalArgumentException(name + " must not be null");
         return value;
@@ -185,6 +201,7 @@ public final class SearchPickerPanelPresentation {
         private String truncatedResults = "Results truncated — refine your search";
         private String hoverHint = "Hover a result to see its full name and ID";
         private String infoBarIdPattern = "{label} · {id}";
+        private String infoBarCopiedPattern = "Copied ID: {id}";
         private String alreadyConfiguredBadge = "In group";
         private String memberAddingBanner = "Click items to keep adding (Esc to finish)";
         private String memberEditingBanner = "Editing: {name}";
@@ -226,6 +243,9 @@ public final class SearchPickerPanelPresentation {
 
         /** 设置信息条悬停态单行模板（占位符 {label} / {id}）。 */
         public Builder infoBarIdPattern(String value) { infoBarIdPattern = value; return this; }
+
+        /** 设置信息条「已复制」反馈模板（占位符 {id}；P5 §5.4 D4）。 */
+        public Builder infoBarCopiedPattern(String value) { infoBarCopiedPattern = value; return this; }
 
         /** 设置「已配置」候选标记文案（T5 UX-18）。 */
         public Builder alreadyConfiguredBadge(String value) {

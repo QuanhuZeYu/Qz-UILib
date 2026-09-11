@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.scene.control.SceneGridWindow;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.GridProps;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Props;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Result;
+import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -365,6 +366,127 @@ public class ScenePickerPanelSpiWindowTest {
                 allText(panel).contains(f.presentation().searchResultsTitle()));
     }
 
+    // ==================== 信息条点击复制稳定 ID（D4） ====================
+
+    /**
+     * D4（P5 §5.4 可选项「点击复制 ID」）：点信息条命中面 → 写 UILib 剪贴板端口的内容是
+     * <b>候选稳定 ID</b>（不是展示标签）；反馈文案经 {@link club.heiqi.config.ui.editor.SearchPickerPanelPresentation}
+     * 注入；窗口 ≤ {@link club.heiqi.ui.scene.control.search.PickerDensityTokens#INFO_COPY_WINDOW_MS} 且
+     * 到期即回落常规文案；重复点击只刷新同一窗口（幂等，不累积第二条反馈）。
+     */
+    @Test
+    public void infoBarClickCopiesStableIdWithBoundedInjectedFeedback() {
+        FakeSource source = new FakeSource(20);
+        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        ClipboardStub clipboard = new ClipboardStub();
+        rt.bindClipboard(clipboard);
+        f.openPanel();
+
+        hover(cellByKey(f.viewport(), "k1"));
+        String idLabel = infoBarText(f.panelRoot());
+        Assert.assertTrue("前置：信息条应显示候选稳定 ID: " + idLabel, idLabel.contains("k1"));
+        Assert.assertNull("前置：点击前不得有剪贴板写入", clipboard.lastText);
+
+        click(infoBar(f.panelRoot()));
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("复制内容 = 候选稳定 ID（不是标签）", "k1", clipboard.lastText);
+        Assert.assertEquals("反馈文案经 Presentation 注入",
+                f.panelPresentation().infoBarCopied("k1"), infoBarText(f.panelRoot()));
+
+        // 重复点击幂等：同一 ID 反复点，剪贴板内容不变、条体仍只有一条反馈文案（不累积）。
+        for (int i = 0; i < 3; i++) {
+            click(infoBar(f.panelRoot()));
+        }
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("重复点击不追加剪贴板内容", "k1", clipboard.lastText);
+        Assert.assertEquals("重复点击不累积第二条反馈", 1,
+                countOccurrences(allText(infoBar(f.panelRoot())), "k1"));
+
+        // 有界（≤2s）：帧时间推进越过窗口 → 反馈释放，回落常规信息条文案。
+        rt.__tickFrame(rt.__frameTimeNanos().get().longValue() + 2_100_000_000L);
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("窗口到期回落常规文案（反馈有界且可释放）", idLabel,
+                infoBarText(f.panelRoot()));
+    }
+
+    /** D4 降级：未绑定剪贴板端口（ClipboardBackendProvider 为 false 分支）时点击静默降级，不崩不假报成功。 */
+    @Test
+    public void infoBarClickWithoutClipboardPortDegradesSilently() {
+        FakeSource source = new FakeSource(20);
+        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        f.openPanel();
+        hover(cellByKey(f.viewport(), "k1"));
+        String before = infoBarText(f.panelRoot());
+
+        click(infoBar(f.panelRoot()));
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("无剪贴板端口：不得给出「已复制」假反馈", before, infoBarText(f.panelRoot()));
+        Assert.assertEquals("无剪贴板端口：面板不得被点崩或关闭", 1, rt.getOverlayHost().size());
+        Assert.assertEquals("无剪贴板端口：不得请求关闭", 0, f.closeRequests.get());
+
+        // 绑定端口后同一命中面立即可用（降级只影响当次，不留禁用态）。
+        ClipboardStub clipboard = new ClipboardStub();
+        rt.bindClipboard(clipboard);
+        click(infoBar(f.panelRoot()));
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("绑定端口后复制生效", "k1", clipboard.lastText);
+    }
+
+    /** D4 零载荷：信息条空闲态（无可复制 ID）点击零操作 —— 不写剪贴板、不给反馈。 */
+    @Test
+    public void infoBarClickWithoutCopyPayloadIsNoOp() {
+        FakeSource source = new FakeSource(20);
+        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        ClipboardStub clipboard = new ClipboardStub();
+        rt.bindClipboard(clipboard);
+        f.openPanel();
+        moveAway();
+        String idle = infoBarText(f.panelRoot());
+        Assert.assertFalse("前置：空闲态不得含候选稳定 ID: " + idle, idle.contains("k1"));
+
+        click(infoBar(f.panelRoot()));
+        rt.flush();
+        layoutAll();
+        Assert.assertNull("空闲态点击不得写剪贴板", clipboard.lastText);
+        Assert.assertEquals("空闲态点击不得改写信息条文案", idle, infoBarText(f.panelRoot()));
+    }
+
+    /**
+     * D4 × A6 同区守卫：信息条命中面（面板内）与 scrim 外部点击（面板外）互不吞并 ——
+     * ① 点信息条触发复制但<b>不</b>请求关闭（不得被外部点击逻辑吃掉）；
+     * ② 面板外连点 5 次仍只有 1 次关闭请求（A6 单一关闭路径 + 幂等，未被复制面破坏）。
+     */
+    @Test
+    public void infoBarCopyClickIsNotAnOutsideClickAndScrimStillDismissesOnce() {
+        FakeSource source = new FakeSource(20);
+        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        ClipboardStub clipboard = new ClipboardStub();
+        rt.bindClipboard(clipboard);
+        f.openPanel();
+        hover(cellByKey(f.viewport(), "k1"));
+
+        click(infoBar(f.panelRoot()));
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("点信息条必须完成复制（不被外部点击逻辑吞掉）", "k1", clipboard.lastText);
+        Assert.assertEquals("点信息条不得请求关闭", 0, f.closeRequests.get());
+        Assert.assertEquals("点信息条后面板仍挂载", 1, rt.getOverlayHost().size());
+
+        // 面板外（卡片外、scrim 上）连点 5 次：同一次挂载内只允许 1 次关闭请求。
+        for (int i = 0; i < 5; i++) {
+            clickAt(2, 2);
+        }
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("外部点击仍单点关闭且幂等（A6 未被复制面破坏）", 1, f.closeRequests.get());
+        Assert.assertTrue("关闭请求后面板卸载", rt.getOverlayHost().isEmpty());
+    }
+
     // ==================== Tab 环闭合（A7） ====================
 
     /**
@@ -506,6 +628,17 @@ public class ScenePickerPanelSpiWindowTest {
         return builder.toString();
     }
 
+    /** 文案出现次数（幂等断言用：重复点击不得累积第二条反馈）。 */
+    private static int countOccurrences(String text, String needle) {
+        int count = 0;
+        int index = text.indexOf(needle);
+        while (index >= 0) {
+            count++;
+            index = text.indexOf(needle, index + needle.length());
+        }
+        return count;
+    }
+
     private static void collectText(SceneNode node, StringBuilder out) {
         if (node.getText() != null && !node.getText().isEmpty()) out.append(node.getText()).append('\n');
         for (SceneNode child : node.__getChildren()) collectText(child, out);
@@ -562,6 +695,26 @@ public class ScenePickerPanelSpiWindowTest {
                 .__getChildren().get(0).__getChildren().get(0);
     }
 
+    /** 信息条 = 中栏第 4 子（[错误行, 空态占位, 结果列表, 信息条]）；条体唯一文本叶 = 第 1 子。 */
+    private static SceneNode infoBar(SceneNode panel) {
+        return centerColumn(panel).__getChildren().get(3);
+    }
+
+    /** 信息条当前显示文案（唯一文本叶）。 */
+    private static String infoBarText(SceneNode panel) {
+        return infoBar(panel).__getChildren().get(0).getText();
+    }
+
+    /** 在坐标 (x,y) 做一次未 flush 的 DOWN+UP 点击（用于面板外/连点场景）。 */
+    private void clickAt(int x, int y) {
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y,
+                SceneMouseButton.LEFT, 0, 0, 0, false, false, false, false, 1001L));
+        rt.route(sceneRoot, fb.drainFrame(), 0, 0);
+    }
+
     private void click(SceneNode node) {
         int[] center = centerOf(node);
         InputFrameBuilder fb = new InputFrameBuilder(center[0], center[1]);
@@ -601,6 +754,9 @@ public class ScenePickerPanelSpiWindowTest {
         final Signal<List<SearchPickerData.CurrentMember>> members = Signal.create(
                 Collections.<SearchPickerData.CurrentMember>emptyList());
         final List<SearchPickerData.Selection> commits = new ArrayList<SearchPickerData.Selection>();
+        /** 受控关闭请求计数（A6 幂等断言：快速连点只允许 1 次）。 */
+        final java.util.concurrent.atomic.AtomicInteger closeRequests =
+                new java.util.concurrent.atomic.AtomicInteger();
         final Result result;
         private final club.heiqi.config.ui.editor.SearchPickerPanelPresentation panelPresentation;
         private final club.heiqi.config.ui.editor.SearchPickerPresentation presentation;
@@ -613,7 +769,10 @@ public class ScenePickerPanelSpiWindowTest {
             Props props = Props.builder(query, Signal.create(SearchPickerData.SearchResult.empty()),
                     Signal.create(Boolean.TRUE), query::set, commits::add, visualAdapter())
                     .open(open)
-                    .onCloseRequest(() -> open.set(Boolean.FALSE))
+                    .onCloseRequest(() -> {
+                        closeRequests.incrementAndGet();
+                        open.set(Boolean.FALSE);
+                    })
                     .grid(GridProps.of(COLUMNS, 64, 64, 8, 8, 3))
                     .currentMembers(members, memberId -> { })
                     .candidateSource(source, searchMaxItems, sourceQuery, version)
@@ -667,6 +826,21 @@ public class ScenePickerPanelSpiWindowTest {
                 return variant.label();
             }
         };
+    }
+
+    /** 剪贴板端口替身：只记录最近一次写入（null = 从未写入）。 */
+    private static final class ClipboardStub implements ClipboardBackend {
+        private String lastText;
+
+        @Override
+        public String getClipboardText() {
+            return lastText;
+        }
+
+        @Override
+        public void setClipboardText(String text) {
+            lastText = text;
+        }
     }
 
     /** 内存候选源替身：记录调用次数与最近一次 page 窗口；浏览 lane 总量 = total，搜索 lane 命中 = textHits。 */

@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
@@ -26,11 +27,20 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * {@link SceneSurfaceBinder} 独占，消费来源主题 {@link SceneTheme.Role#TOOLBAR} 配方
  * （条带类容器取 FormActionBar 已验收先例；GROUP 是网格/内容底座口径，不适用）。
  * 文本取主题 {@code mutedForeground} 语义前景（旧 {@code TEXT_SECONDARY} 的迁移落点，
- * 与 MemberGrid 副文本同口径）。{@code hitTestable(false)} 纯展示：hover/pressed/focus
- * 永不触发，不预声明交互信号、不绑定 motionRoot。信息条常驻隐式启用（与迁移前一致，
+ * 与 MemberGrid 副文本同口径）。无复制通道时 {@code hitTestable(false)} 纯展示：hover/pressed/focus
+ * 永不触发，不预声明交互信号、不绑定 motionRoot（有复制通道时的差别见下节）。信息条常驻隐式启用（与迁移前一致，
  * {@link Props#enabled()} 仅保留宿主统一接线），故表面绑定恒传启用信号。
  * 内边距/固定高为布局常量（契约 §4.2「尺寸/间距常量继续使用」）。主题切换只重派生外观，
  * 不重建节点；全部绑定注册在 create() 调用者 Owner 作用域内，卸载随组件回收。</p>
+ *
+ * <h3>可选「点击复制」通道（P5 §5.4 D4）</h3>
+ * <p>{@link #create(SceneRuntime, Props, Runnable)} 传入非 null 的 {@code onCopy} 时，条体成为
+ * <b>可命中面</b>（{@code hitTestable(true)} + 构建期声明 hover/pressed/focused 三态，表面按同一
+ * TOOLBAR 配方状态档重派生），CLICK 目标恒为条体自身（内部文本叶仍 {@code hitTestable(false)}）。
+ * 两个形态的差别只在这一处：不传 {@code onCopy} 时行为与迁移前逐位一致（纯展示、不参与命中）。
+ * 命中面本身不承担「点击是否算面板外点击」的判定 —— 该判定由面板 scrim 的
+ * 「命中目标 == scrim 自身」单点闸门承担（见 ScenePickerPanel），故点条体既触发复制、又不会被
+ * 外部点击关闭逻辑吞掉。</p>
  *
  * <h3>语义</h3>
  * <ul>
@@ -76,6 +86,27 @@ public final class PickerInfoBar {
      * @return 信息条根节点
      */
     public static SceneNode create(SceneRuntime rt, Props props) {
+        return create(rt, props, null);
+    }
+
+    /**
+     * 创建信息条，可选「点击复制」通道（P5 §5.4 D4）。
+     *
+     * <p>{@code onCopy != null} 时条体成为可命中面：CLICK 命中目标必须是条体自身（内部文本叶
+     * 保持 {@code hitTestable(false)}，故命中不会落在文本上），命中即调 {@code onCopy.run()}。
+     * 回调语义（复制什么、写不写剪贴板、有无反馈窗口）全部由调用方决定 —— 本组件不认识剪贴板，
+     * 也不拼任何文案（守「文案经 Presentation、剪贴板经 runtime 端口」两条边界）。</p>
+     *
+     * <p>交互态在构建期声明关心（Router 对未创建的 signal 写入短路，时序契约同其它控件），
+     * 使 hover/pressed 能驱动 TOOLBAR 配方的状态档；不传 {@code onCopy} 时仍为纯展示条体
+     * （{@code hitTestable(false)}、三态恒 idle），行为与旧入口逐位一致。</p>
+     *
+     * @param rt     场景运行时
+     * @param props  信息条属性
+     * @param onCopy 点击条体的回调；null = 无复制通道（纯展示）
+     * @return 信息条根节点
+     */
+    public static SceneNode create(SceneRuntime rt, Props props, Runnable onCopy) {
         Objects.requireNonNull(rt, "rt");
         Objects.requireNonNull(props, "props");
 
@@ -83,12 +114,24 @@ public final class PickerInfoBar {
         bar.setPreferredHeight(INFO_BAR_HEIGHT);
         bar.setPadding(SceneChromeTokens.PAD_SM, 0, SceneChromeTokens.PAD_SM, 0);
         bar.setClipChildren(true);
-        bar.setHitTestable(false);
+        bar.setHitTestable(onCopy != null);
 
         // 条带表面：六项外观归表面绑定器独占（TOOLBAR 配方，构建期捕获来源主题）。
-        // hitTestable(false) 纯展示，恒启用 + 交互态恒 idle，不叠第二层玻璃。
+        // 无复制通道时 hitTestable(false) 纯展示，恒启用 + 交互态恒 idle，不叠第二层玻璃。
         ReadableSignal<SceneSurfaceStyle> surface = SceneThemes.surface(rt, SceneTheme.Role.TOOLBAR);
         SceneInteractionState interaction = rt.interactionState(bar);
+        if (onCopy != null) {
+            interaction.hovered();
+            interaction.pressed();
+            interaction.focused();
+            rt.on(bar, SceneEventType.CLICK, (ev, ctx) -> {
+                // 命中目标恒为条体自身（文本叶不可命中）；非条体命中不触发复制。
+                if (ev.getTarget() != bar) {
+                    return;
+                }
+                onCopy.run();
+            });
+        }
         SceneSurfaceBinder.bind(rt, bar, surface, ALWAYS_ENABLED, interaction);
 
         SceneNode label = new SceneNode();

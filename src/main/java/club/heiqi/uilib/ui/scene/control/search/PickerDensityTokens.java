@@ -168,6 +168,13 @@ public final class PickerDensityTokens {
     public static final int PANEL_ENTER_OFFSET_Y = 8;
     /** 删除撤销窗口（ms）：P5 §5.5 E1/E3「≤5s、至多 1 条 tombstone」的唯一时间常量。 */
     public static final int REMOVE_UNDO_WINDOW_MS = 5000;
+    /**
+     * 信息条「已复制」反馈窗口（ms）：P5 §5.4 D4 可选项（点击复制稳定 ID）。
+     *
+     * <p>唯一时间常量，帧时间驱动；窗口到期即释放复制态（≤2s，用户要求的上界）。
+     * 重复点击只刷新同一窗口（幂等，不累积第二条反馈）。</p>
+     */
+    public static final int INFO_COPY_WINDOW_MS = 2000;
 
     // ==================== 现状基线（仅支配性对照，禁止参与布局） ====================
 
