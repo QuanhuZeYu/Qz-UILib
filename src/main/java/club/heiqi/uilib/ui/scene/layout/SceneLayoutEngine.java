@@ -288,19 +288,44 @@ public class SceneLayoutEngine {
     private Constraints lastRootConstraints;
 
     /**
-     * layout 纪元（单调递增计数器，B3/C4 layoutDoneSignal 桥接依据）。
+     * layout <b>批计数</b>（单调递增，每次 {@link #layout} 调用末尾自增）。
      *
-     * <p>每次 {@link #layout} 调用末尾自增。宿主经 {@code runtime.__bridgeLayoutEpoch(epoch)} 桥接（内部比对 {@code lastBridgedLayoutEpoch} 去重），
-     * 使订阅方（如 SceneScrollbar 派生几何）能在<b>同帧</b> flush 内读到最新 LayoutBox——
-     * 零滞后路径（守 I6：layout 层只持 int epoch，signal 在 runtime 桥接）。</p>
+     * <p><b>语义边界（P1-2 拆分，改前必读）</b>：本计数只回答「本引擎跑过第几批布局」，
+     * <b>不</b>表示几何有变化——宿主每帧固定两批 + settle 批次，故零几何变化的干净帧也会 +2。
+     * 需要「几何真变化才发布」时一律用 {@link #layoutChangeEpoch()}（layoutDoneSignal 桥接
+     * 已改指后者）。保留本名与本语义：既有调用方（测试里的两批断言、诊断）按「批」读它。</p>
      */
     private int layoutEpoch = 0;
 
     /**
-     * @return 当前 layout 纪元（每次 layout 调用后自增），供宿主桥接 layoutDoneSignal
+     * 布局<b>变更纪元</b>（单调递增，仅在本批确有几何变化时自增）。
+     *
+     * <p>bump 判据 = 本批 {@link LayoutResult} 的 {@code relayoutCount > 0}
+     * 或 {@code constraintRelayoutedNodes} 非空，即「至少有一个节点因自身布局输入变化
+     * 或被变化后的约束逼着重算了盒子」。论证：{@code layoutInternal} 只在
+     * {@code selfDirty || anyChildGeometryChanged || constraintForcesSelf} 时重算盒子与重排子节点，
+     * 故三探针全零 ⇒ 全树 {@code cachedLayout} 与批前逐字段相同（充分性由
+     * {@code SceneLayoutEngineTest} 的 relayoutCount 家族 + {@code SceneLayoutChangeEpochTest} 背书）。</p>
+     *
+     * <p><b>不是「画面已更新」</b>：presentation offset / scroll offset（{@code markGeometryDirty}）
+     * 与 transform/opacity（{@code markComposite}）只改绘制，不改布局，因此本纪元不动——
+     * 这是正确语义（它们有各自的绘制通道），消费方不得用它当「重绘信号」。</p>
+     */
+    private int layoutChangeEpoch = 0;
+
+    /**
+     * @return 当前 layout 批计数（每次 layout 调用后自增；<b>不</b>代表几何变化，见字段说明）
      */
     public int layoutEpoch() {
         return layoutEpoch;
+    }
+
+    /**
+     * @return 当前布局变更纪元（仅真实几何变化时自增）；宿主经
+     *         {@code runtime.__setLayoutDoneEpoch(...)} 桥接 layoutDoneSignal
+     */
+    public int layoutChangeEpoch() {
+        return layoutChangeEpoch;
     }
 
     /**
@@ -368,8 +393,11 @@ public class SceneLayoutEngine {
         layoutInternal(root, rootConstraints, relayoutCount, relayoutedNodes, constraintRelayoutedNodes);
 
         LayoutResult result = new LayoutResult(relayoutCount[0], relayoutedNodes, constraintRelayoutedNodes);
-        // B3/C4：layout 末尾自增纪元，供宿主桥接 layoutDoneSignal（零滞后路径）
+        // 批计数无条件自增（既有语义），变更纪元只在真有几何变化时自增（P1-2）。
         layoutEpoch++;
+        if (relayoutCount[0] > 0 || !constraintRelayoutedNodes.isEmpty()) {
+            layoutChangeEpoch++;
+        }
         return result;
     }
 

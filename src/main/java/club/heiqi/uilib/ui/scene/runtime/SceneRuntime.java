@@ -77,17 +77,22 @@ public class SceneRuntime implements SceneFontEnvironment {
     private final SceneMotionDriver motionDriver = new SceneMotionDriver();
 
     /**
-     * layout 完成 signal（只读）：host 在 post-flush 主树与 overlay 完成布局后通过
-     * {@link #__bridgeLayoutEpoch(int)} 桥接最终主树 epoch，订阅方据此在同帧 flush 内
-     * 重跑 effect 读取同一 publication batch 的最新 LayoutBox。
+     * layout 发布 signal（只读）：host 在 post-flush 主树与 overlay 完成布局后，经
+     * {@link #__setLayoutDoneEpoch(int)} 桥接「主树 + overlay 的布局变更纪元聚合值」，
+     * 订阅方据此在同帧 flush 内重跑 effect 读取同一 publication batch 的最新 LayoutBox。
      *
-     * <p>层间通信：引擎 epoch（纯 int）→ runtime signal。signal 归 runtime 持有与 set，
-     * epoch 仍归引擎持有（守 I6：layout 层只持 int epoch，不持 signal）。
+     * <p><b>语义（P1-2 起）</b>：该 signal 表示「布局已收敛并发布了新的一版几何」，
+     * <b>零几何变化的帧不变更</b>（改前桥接的是 layout 批计数，每帧固定 +2 ⇒ 每帧必然发布）。
+     * 明确不是「画面已更新」：presentation offset / scroll / transform / opacity 只改绘制，
+     * 走各自通道，不发布本 signal。</p>
+     *
+     * <p>层间通信：引擎纪元（纯 int）→ runtime signal。signal 归 runtime 持有与 set，
+     * 纪元仍归引擎持有（守 I6：layout 层只持 int epoch，不持 signal）。
      * Computed 记忆化 + setter 去重保证干净帧零开销（守 I7）。</p>
      */
     private final Signal<Integer> layoutDoneSignal = Signal.create(Integer.valueOf(0));
 
-    /** 上一次桥接到的 layout 纪元，用于比对决定是否 set layoutDoneSignal（去重）。 */
+    /** 上一次桥接到的发布版本（布局变更纪元聚合值），用于比对决定是否 set（去重）。 */
     private int lastBridgedLayoutEpoch = 0;
 
     // ==================== 字号环境（层 3 默认 + 解析出口倍率层） ====================
@@ -1257,13 +1262,14 @@ public class SceneRuntime implements SceneFontEnvironment {
     }
 
     /**
-     * 管线写入入口（阶段 2-3）：传入最终 publication batch 对应的主树 epoch，变化时 bump（去重）。
+     * 管线写入入口（阶段 2-3）：传入最终 publication batch 对应的「布局变更纪元聚合值」，
+     * 变化时 bump（去重）。P1-2 起该值只在本帧确有几何变化时才前进（见 layoutDoneSignal 说明）。
      *
-     * <p>层间通信：引擎 epoch → runtime signal；写入所有权归帧管线
+     * <p>层间通信：引擎纪元 → runtime signal；写入所有权归帧管线
      * （{@code SceneFramePipeline} 的 SETTLE 阶段），overlay 由管线在本调用前完成布局。
      * runtime 只保留 signal 持有与去重实现，不再承担「何时桥接」的调度职责。</p>
      *
-     * @param epoch 引擎当前 layout 纪元
+     * @param epoch 主树 + 各 overlay 布局引擎的变更纪元聚合值
      */
     public void __setLayoutDoneEpoch(int epoch) {
         if (epoch != lastBridgedLayoutEpoch) {
@@ -1273,7 +1279,7 @@ public class SceneRuntime implements SceneFontEnvironment {
     }
 
     /**
-     * @param epoch 引擎当前 layout 纪元
+     * @param epoch 布局发布版本（测试/旧调用方手工驱动用）
      * @deprecated 阶段 2-3：写入所有权已移交帧管线（见 {@link #__setLayoutDoneEpoch}）；
      *             本方法仅保留兼容测试与旧调用方，不再被帧管线调用。
      */

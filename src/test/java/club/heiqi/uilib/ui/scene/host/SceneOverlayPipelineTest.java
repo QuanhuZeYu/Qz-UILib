@@ -131,6 +131,10 @@ public class SceneOverlayPipelineTest {
                 observed.__isSelfLayoutDirty());
     }
 
+    /**
+     * 干净帧：批计数照旧 +2（两批 host batch 意图不变），但<b>布局变更纪元不变</b>——
+     * 零几何变化的帧不得发布 layoutDoneSignal（P1-2 拆双断言）。
+     */
     @Test
     public void cleanOverlayShouldOnlyLayoutInTheTwoHostBatches() {
         Signal<Boolean> visible = Signal.create(Boolean.TRUE);
@@ -140,11 +144,14 @@ public class SceneOverlayPipelineTest {
         SceneLayoutEngine overlayEngine = host.__getOverlayLayoutEngine(overlay);
         Assert.assertNotNull(overlayEngine);
         int beforeCleanFrame = overlayEngine.layoutEpoch();
+        int beforeCleanChange = overlayEngine.layoutChangeEpoch();
 
         host.render(200, 120, backend, 0, 0);
 
         Assert.assertEquals("clean overlay 只参与 pre-flush 与 post-flush 两个 host batch",
                 beforeCleanFrame + 2, overlayEngine.layoutEpoch());
+        Assert.assertEquals("clean overlay 无几何变化 ⇒ 变更纪元不得步进（零变化帧不发布）",
+                beforeCleanChange, overlayEngine.layoutChangeEpoch());
     }
 
     /** overlay 不在主树 clip 作用域内回放，可跨主树 scrollable/clip 容器可见。 */

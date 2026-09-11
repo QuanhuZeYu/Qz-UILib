@@ -193,7 +193,7 @@ public class SceneRuntimeMotionTest {
             layout.layout(parent, new Constraints(200, 100));
             Assert.assertFalse("位移期间不得命中真实字段控件",
                     new SceneHitTester().hitTest(parent, 1, 1, 0, 0).contains(firstControl));
-            runtime.__bridgeLayoutEpoch(layout.layoutEpoch());
+            runtime.__bridgeLayoutEpoch(layout.layoutChangeEpoch());
             runtime.flush();
             Assert.assertEquals(3, runtime.__activeMotionCountForTest());
 
@@ -272,7 +272,7 @@ public class SceneRuntimeMotionTest {
             runtime.flush();
             SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer());
             layout.layout(parent, new Constraints(200, 100));
-            runtime.__bridgeLayoutEpoch(layout.layoutEpoch());
+            runtime.__bridgeLayoutEpoch(layout.layoutChangeEpoch());
             runtime.flush();
             Assert.assertEquals(1, runtime.__activeMotionCountForTest());
 
@@ -307,7 +307,7 @@ public class SceneRuntimeMotionTest {
             Assert.assertFalse(target.__isHitTestSubtreeEnabled());
             SceneLayoutEngine layout = new SceneLayoutEngine(new FixedTextMeasurer());
             layout.layout(parent, new Constraints(200, 100));
-            runtime.__bridgeLayoutEpoch(layout.layoutEpoch());
+            runtime.__bridgeLayoutEpoch(layout.layoutChangeEpoch());
             runtime.flush();
             Assert.assertEquals(1, runtime.__activeMotionCountForTest());
 

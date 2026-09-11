@@ -86,14 +86,21 @@ public class SceneFramePipelineTest {
                 EXPECTED_ORDER, fx.pipeline.lastTrace());
     }
 
-    /** run 必须产出主树 LayoutResult，且 settle 内完成 layoutDoneSignal 的 epoch 桥接。 */
+    /**
+     * run 必须产出主树 LayoutResult，且 settle 内完成 layoutDoneSignal 的桥接。
+     *
+     * <p>P1-2：桥接值语义从「layout 批计数」改为「布局变更纪元聚合」（无 overlay 时 = 主树变更纪元）。
+     * 首帧空树根 cachedLayout==null ⇒ 必有几何变化 ⇒ 变更纪元为 1。</p>
+     */
     @Test
     public void runProducesLayoutResultAndBridgesLayoutEpoch() {
         Fixture fx = fixture();
         LayoutResult result = fx.run(200, 120);
         Assert.assertNotNull("run 后必须有主树 LayoutResult", result);
-        Assert.assertEquals("layoutDoneSignal 必须桥接到最终 layout epoch",
-                Integer.valueOf(fx.layoutEngine.layoutEpoch()),
+        Assert.assertEquals("首帧必有一次真实几何变化（空树根无 cachedLayout）",
+                1, fx.layoutEngine.layoutChangeEpoch());
+        Assert.assertEquals("layoutDoneSignal 必须桥接到最终布局变更纪元",
+                Integer.valueOf(fx.layoutEngine.layoutChangeEpoch()),
                 fx.runtime.layoutDoneSignal().get());
     }
 

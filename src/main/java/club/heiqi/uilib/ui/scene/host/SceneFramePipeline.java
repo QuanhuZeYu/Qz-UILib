@@ -408,7 +408,10 @@ public final class SceneFramePipeline {
         for (int pass = 0; pass < MAX_LAYOUT_OBSERVER_SETTLE_PASSES; pass++) {
             settleState.passes = pass + 1;
             // 阶段 2-3：epoch → signal 桥接的唯一调用点收进管线（写入所有权归管线）。
-            runtime.__setLayoutDoneEpoch(layoutEngine.layoutEpoch());
+            // P1-2：桥接值从「layout 批计数」改为「主树 + 各 overlay 的布局变更纪元聚合」——
+            // 零几何变化的帧不再发布，几何派生订阅点（scrollbar thumb / 列表滚动范围 / 门户字号）
+            // 不再每帧空转。批计数语义仍由 SceneLayoutEngine.layoutEpoch() 单独保留。
+            runtime.__setLayoutDoneEpoch(aggregateLayoutChangeEpoch());
             pipelineFlush("frame.settle-pass-" + (pass + 1));
             if (!hasPendingLayoutWork(root)) {
                 return;
@@ -419,6 +422,28 @@ public final class SceneFramePipeline {
         // 循环超限退出：显式记录「下帧必跑」——现状靠脏标记存活隐式延续，
         // 本标志使协议可观测，为后续 SETTLE 短路/策略化（阶段 3）铺路。
         settleState.deferredToNextFrame = true;
+    }
+
+    /**
+     * 主树 + 全部 active overlay 布局引擎的「变更纪元」聚合值（P1-2 的发布版本）。
+     *
+     * <p><b>为什么必须聚合</b>：overlay 由 {@link #layoutOverlays} 在各自引擎里布局，
+     * 主引擎的纪元永不含它。只桥主引擎会让「仅 overlay 变化」的帧不发布，
+     * overlay 内的字号/几何派生订阅（如 VariantChooser 的门户字号）会漏刷。</p>
+     *
+     * <p><b>为什么用求和而不是 max</b>：求和是<b>单调可加</b>的——任一引擎真变化必使总和严格增大，
+     * 故任何一次真实几何变化都不会被吞掉。{@code max} 不成立：主树纪元涨到 100 而 overlay 从 0 变到 1 时
+     * {@code max(100,1)=100} 与上一帧相同 ⇒ overlay 变化被静默丢弃。overlay 增删会让总和变化一次
+     * （多发布一次，方向安全）；纪元各自为 int，实际规模下不会回绕。</p>
+     *
+     * @return 聚合发布版本（仅当某个引擎真有几何变化时才变化）
+     */
+    private int aggregateLayoutChangeEpoch() {
+        int total = layoutEngine.layoutChangeEpoch();
+        for (SceneLayoutEngine overlayEngine : overlayLayoutEngines.values()) {
+            total += overlayEngine.layoutChangeEpoch();
+        }
+        return total;
     }
 
     /** 屏幕级虚拟窗口：整帧回放前以放置盒硬裁剪（窗口局部坐标），普通宿主原样返回。 */
