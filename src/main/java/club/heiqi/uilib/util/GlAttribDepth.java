@@ -1,6 +1,8 @@
 package club.heiqi.uilib.util;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
@@ -14,12 +16,18 @@ import org.lwjgl.opengl.GL11;
  * UILib 在自身状态边界（图标 scope / 字体守卫 / 屏幕帧）读取真实深度，
  * 把边界内第三方多压入的深度按量弹出，避免泄漏跨帧累积。</p>
  *
- * <p>Angelica 不可用时所有方法静默降级为 no-op（返回 -1）。</p>
+ * <p>深度入口按"新→旧"解析：优先 {@code GLStateManager.getAttribDepth()}（2.1.x 起即为 public static，
+ * 且 2.2.10 把 attribDepth 由 GLStateManager 静态字段迁至 GLContextState 后仍由该访问器暴露），
+ * 其次回退旧版 {@code private static int attribDepth} 字段反射。Angelica 不可用或两个入口都缺失时
+ * 所有方法静默降级为 no-op（返回 -1）。</p>
  */
 public final class GlAttribDepth {
 
     private static final Logger LOG = LogManager.getLogger("QzUILib/GlAttribDepth");
 
+    /** 新版入口：{@code public static int GLStateManager.getAttribDepth()}。 */
+    private static Method depthMethod;
+    /** 旧版入口：{@code private static int GLStateManager.attribDepth}。 */
     private static Field depthField;
     private static boolean initFailed;
     /** 降级只 WARN 一次：本工具处于每帧调用路径，重复告警会刷屏。 */
@@ -35,13 +43,13 @@ public final class GlAttribDepth {
             return -1;
         }
         try {
-            return depthField().getInt(null);
+            return readAttribDepth();
         } catch (Throwable throwable) {
             // 原为静默 return -1；改为首次 WARN 留痕（对齐 5d-D5 assertClientThread 先例），
             // 语义不变：Angelica 缺席/反射失败时降级 no-op。
             if (!readWarned) {
                 readWarned = true;
-                LOG.warn("Angelica GLStateManager.attribDepth 不可读，attrib 过量弹出保护降级为 no-op：{}",
+                LOG.warn("Angelica attrib 栈深度不可读，attrib 过量弹出保护降级为 no-op：{}",
                         throwable.toString());
             }
             return -1;
@@ -73,21 +81,51 @@ public final class GlAttribDepth {
         }
     }
 
-    private static Field depthField() throws Exception {
-        if (depthField == null) {
-            Class<?> glsm = Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager");
-            for (Field field : glsm.getDeclaredFields()) {
-                if ("attribDepth".equals(field.getName()) && field.getType() == int.class) {
-                    field.setAccessible(true);
-                    depthField = field;
-                    break;
-                }
+    /** 读取 Angelica 侧 attrib 栈深度；优先 public 访问器，回退旧版私有字段。 */
+    private static int readAttribDepth() throws Exception {
+        resolveDepthAccessor();
+        if (initFailed) {
+            return -1;
+        }
+        Method method = depthMethod;
+        if (method != null) {
+            Object value = method.invoke(null);
+            return value instanceof Number ? ((Number) value).intValue() : -1;
+        }
+        return depthField.getInt(null);
+    }
+
+    /**
+     * 解析并缓存深度读取入口（每个进程一次）。
+     *
+     * <p>Angelica 2.2.10 把 {@code attribDepth} 从 GLStateManager 静态字段迁移到 GLContextState，
+     * 旧字段反射必然失败；而 {@code getAttribDepth()} 在 2.1.32 / 2.1.43 / 2.1.50 / 2.2.10 中均为
+     * {@code public static int}，2.1.x 返回 GLStateManager.attribDepth、2.2.10 返回
+     * GLContextState.attribDepth，语义同为 attrib 栈深度。</p>
+     */
+    private static synchronized void resolveDepthAccessor() throws ClassNotFoundException {
+        if (depthMethod != null || depthField != null || initFailed) {
+            return;
+        }
+        Class<?> glsm = Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager");
+        try {
+            Method accessor = glsm.getMethod("getAttribDepth");
+            if (accessor.getReturnType() == int.class && Modifier.isStatic(accessor.getModifiers())) {
+                depthMethod = accessor;
+                return;
             }
-            if (depthField == null) {
-                initFailed = true;
-                throw new IllegalStateException("attribDepth field not found");
+        } catch (NoSuchMethodException ignored) {
+            // 无访问器的旧版继续走字段反射。
+        }
+        for (Field field : glsm.getDeclaredFields()) {
+            if ("attribDepth".equals(field.getName()) && field.getType() == int.class) {
+                field.setAccessible(true);
+                depthField = field;
+                return;
             }
         }
-        return depthField;
+        initFailed = true;
+        LOG.warn("Angelica 未提供可读的 attrib 栈深度入口（getAttribDepth()/attribDepth 均缺失），"
+                + "attrib 过量弹出保护降级为 no-op");
     }
 }

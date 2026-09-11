@@ -26,6 +26,9 @@
 >    `dependencies.gradle`（elytraModpackVersion 区段注释 + Angelica 2.1.32 直接坐标）。
 >    背景：GitHub 性能下降致 raw.githubusercontent 429，elytra-conventions 插件每次构建联网拉
 >    manifest 炸配置阶段。绕行后构建通道全通。**GitHub 恢复后由用户决定还原**（文件内有注释标记）。
+>    **现状标注（2026-09-11）**：上述未提交状态已还原——`build.gradle.kts:6` 的 elytra-conventions 插件已启用，
+>    `dependencies.gradle:37-55` 已恢复为 `gtnhdev` 间接取值（无 Angelica 2.1.32 直接坐标）；现行开发依赖基线见
+>    `dependencies.gradle:38`。以上第 1 条为历史交接记录，保留不改写。
 > 2. **构建命令**：绕行期间须 `gradlew build -x verifyRunClasspathIsolation`
 >    （该检查依赖被注释的 lwjgl3ify）。配置缓存已生效，后续构建不联网。
 > 3. **构建脚本**：`D:\Code\MC\Qz工作站\temp\uilib_build.py` 当前即「全量 build -x 隔离检查」版。

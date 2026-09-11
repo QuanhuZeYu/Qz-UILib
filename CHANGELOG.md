@@ -55,6 +55,12 @@
 - 移除 scene 演示测试台（`internal/devtools/pages` 31 文件与 `/qzuilib test`、`/qzuilib scene_test` 子命令）；保留 `/qzuilib modernconfig` 配置页调试入口与网络自检三件套
 - 清理 13 份与代码脱节的架构/规格文档（旧 document 栈教程与已作废规格），重写 9 份（架构图 00/01/08、稳定 API 清单、项目定位等）
 
+### 兼容性
+
+- 开发依赖基线适配 GTNH `2.9.0-beta-3`（Angelica 2.2.10 / GTNHLib 0.11.46 / lwjgl3ify 3.0.31 / Hodgepodge 2.7.196 / GT5-Unofficial 5.09.54.133 / NewHorizonsCoreMod 2.9.61 / Et-Futurum-Requiem 2.6.58-GTNH）
+- Angelica 标签延后路径随基线改为仅支持精确版本 `2.2.10`：2.2.10 起 `CapturedRenderingState#setCurrentEntity(int)` 由 public 收为 private，回放围栏改用同期新增的配对入口 `setCurrentEntityAndItem(int,int)`；旧基线 `2.1.50`（GTNH 2.9.0-beta-2）属未复核版本，版本门不通过即降级为原调用点即时绘制（不崩溃、不报错）
+- `GlAttribDepth` 的 attrib 栈深度读取改为优先 `GLStateManager#getAttribDepth()`（2.2.10 把 `attribDepth` 字段迁至 `GLContextState`，旧私有字段反射失效），旧版字段反射保留为回退路径，两个入口都缺失时仍按既有语义降级为 no-op
+
 ## [4.8.0] - 2026-08-17
 
 ### 新增

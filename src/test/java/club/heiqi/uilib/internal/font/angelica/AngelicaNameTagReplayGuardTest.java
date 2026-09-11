@@ -9,12 +9,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Assert;
 import org.junit.Test;
 
-/** Angelica 标签回放 phase 与 entity/item 状态生命周期测试。 */
+/** Angelica 标签回放 phase 与 entity/item 状态生命周期测试（2.2.10 配对恢复 ABI）。 */
 public class AngelicaNameTagReplayGuardTest {
 
-    /** 正常批次进入 entities phase，并按 entity、item 顺序恢复合法旧 entity=-1。 */
+    /** 正常批次进入 entities phase，并经配对 API 恢复合法旧 entity=-1 / item=37。 */
     @Test
-    public void normalBatchRestoresEntityThenItem() {
+    public void normalBatchRestoresEntityAndItem() {
         final FakeStateAccess state = new FakeStateAccess(true, -1, 37);
         boolean replayed = AngelicaNameTagReplayGuard.runGuarded(
                 new Runnable() {
@@ -34,7 +34,7 @@ public class AngelicaNameTagReplayGuardTest {
         Assert.assertEquals(37, state.item);
         Assert.assertTrue(state.phaseNone);
         Assert.assertEquals(Arrays.asList(
-                "phase", "get-entity", "get-item", "begin", "batch", "end", "entity:-1", "item:37"),
+                "phase", "get-entity", "get-item", "begin", "batch", "end", "entity-item:-1:37"),
                 state.events);
     }
 
@@ -67,11 +67,11 @@ public class AngelicaNameTagReplayGuardTest {
         Assert.assertEquals(38, state.item);
         Assert.assertTrue(state.phaseNone);
         Assert.assertEquals(Arrays.asList(
-                "phase", "get-entity", "get-item", "begin", "batch", "end", "entity:14", "item:38"),
+                "phase", "get-entity", "get-item", "begin", "batch", "end", "entity-item:14:38"),
                 state.events);
     }
 
-    /** endEntities 自身异常也不得阻止 entity/item 恢复。 */
+    /** endEntities 自身异常也不得阻止 entity/item 配对恢复。 */
     @Test
     public void endFailureStillRestoresEntityAndItem() {
         final FakeStateAccess state = new FakeStateAccess(true, 7, 41);
@@ -98,8 +98,7 @@ public class AngelicaNameTagReplayGuardTest {
 
         Assert.assertEquals(7, state.entity);
         Assert.assertEquals(41, state.item);
-        Assert.assertEquals("entity:7", state.events.get(state.events.size() - 2));
-        Assert.assertEquals("item:41", state.events.get(state.events.size() - 1));
+        Assert.assertEquals("entity-item:7:41", state.events.get(state.events.size() - 1));
     }
 
     /** 非 NONE phase 不执行批次、不改状态，并在重复命中时只告警一次。 */
@@ -137,7 +136,7 @@ public class AngelicaNameTagReplayGuardTest {
         };
     }
 
-    /** 模拟 setCurrentEntity 会把 item ID 清零的 Angelica 状态。 */
+    /** 模拟 Angelica 2.2.10 的 entity/item 配对状态。 */
     private static final class FakeStateAccess implements AngelicaNameTagReplayGuard.StateAccess {
 
         private final List<String> events = new ArrayList<String>();
@@ -186,15 +185,9 @@ public class AngelicaNameTagReplayGuardTest {
         }
 
         @Override
-        public void setCurrentEntity(int entityId) {
-            events.add("entity:" + entityId);
+        public void setCurrentEntityAndItem(int entityId, int itemId) {
+            events.add("entity-item:" + entityId + ":" + itemId);
             entity = entityId;
-            item = 0;
-        }
-
-        @Override
-        public void setCurrentItem(int itemId) {
-            events.add("item:" + itemId);
             item = itemId;
         }
     }

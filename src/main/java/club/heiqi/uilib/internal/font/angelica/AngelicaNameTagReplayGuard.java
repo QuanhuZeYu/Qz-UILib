@@ -8,10 +8,15 @@ import net.coderbot.iris.pipeline.WorldRenderingPhase;
 import net.coderbot.iris.uniforms.CapturedRenderingState;
 
 /**
- * Angelica 2.1.50 玩家标签批次回放围栏。
+ * Angelica 2.2.10 玩家标签批次回放围栏。
  *
- * <p>围栏只从 {@code NONE} phase 建立临时 {@code ENTITIES} phase，并按 entity、item
- * 的顺序恢复捕获状态，避免 {@code setCurrentEntity} 对 item ID 的隐式清零污染调用方。</p>
+ * <p>围栏只从 {@code NONE} phase 建立临时 {@code ENTITIES} phase；回放结束后经 2.2.10 的
+ * {@code CapturedRenderingState#setCurrentEntityAndItem(int, int)} 一次性恢复 entity/item 配对状态。</p>
+ *
+ * <p>沿革：2.1.50 只提供 {@code setCurrentEntity(int)} / {@code setCurrentRenderedItem(int)}，且前者会
+ * 隐式把 item ID 清零，旧实现只能"先 entity 后 item"两次调用绕开该副作用；2.2.10 把
+ * {@code setCurrentEntity(int)} 收为 private 并新增配对 API，配对恢复即该语义的正解，也不再依赖两次
+ * 调用之间的顺序假设。</p>
  */
 public final class AngelicaNameTagReplayGuard {
 
@@ -67,11 +72,7 @@ public final class AngelicaNameTagReplayGuard {
                     state.endEntities();
                 }
             } finally {
-                try {
-                    state.setCurrentEntity(previousEntity);
-                } finally {
-                    state.setCurrentItem(previousItem);
-                }
+                state.setCurrentEntityAndItem(previousEntity, previousItem);
             }
         }
     }
@@ -89,9 +90,7 @@ public final class AngelicaNameTagReplayGuard {
 
         void endEntities();
 
-        void setCurrentEntity(int entityId);
-
-        void setCurrentItem(int itemId);
+        void setCurrentEntityAndItem(int entityId, int itemId);
     }
 
     /** 非法 phase 的单次告警出口。 */
@@ -100,7 +99,7 @@ public final class AngelicaNameTagReplayGuard {
         void warn();
     }
 
-    /** 直接绑定 Angelica 2.1.50 ABI 的生产访问器。 */
+    /** 直接绑定 Angelica 2.2.10 ABI 的生产访问器。 */
     private static final class ProductionStateAccess implements StateAccess {
 
         private static final ProductionStateAccess INSTANCE = new ProductionStateAccess();
@@ -131,13 +130,9 @@ public final class AngelicaNameTagReplayGuard {
         }
 
         @Override
-        public void setCurrentEntity(int entityId) {
-            CapturedRenderingState.INSTANCE.setCurrentEntity(entityId);
-        }
-
-        @Override
-        public void setCurrentItem(int itemId) {
-            CapturedRenderingState.INSTANCE.setCurrentRenderedItem(itemId);
+        public void setCurrentEntityAndItem(int entityId, int itemId) {
+            // 2.2.10 起 setCurrentEntity(int) 为 private，配对 API 是唯一 public 的 entity/item 恢复入口。
+            CapturedRenderingState.INSTANCE.setCurrentEntityAndItem(entityId, itemId);
         }
     }
 }

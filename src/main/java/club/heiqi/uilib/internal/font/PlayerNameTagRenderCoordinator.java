@@ -21,7 +21,16 @@ import net.minecraft.client.renderer.OpenGlHelper;
 public final class PlayerNameTagRenderCoordinator {
 
     static final String ANGELICA_MOD_ID = "angelica";
-    static final String SUPPORTED_ANGELICA_VERSION = "2.1.50";
+    /**
+     * 精确匹配的受支持 Angelica 版本。
+     *
+     * <p>精确匹配是防止 ABI 漂移的保护：回放围栏直接绑定 Angelica 侧的渲染 phase 与 entity/item 捕获
+     * 状态访问器，任何未复核的版本都必须 fail-open 回即时绘制。上游 ABI 类名只出现在 angelica 包的
+     * 可选围栏实现里，通用路径不引用（契约守卫钉死）。2.2.10 起单参 {@code setCurrentEntity(int)} 收为
+     * private，围栏改用同期新增的配对入口 {@code setCurrentEntityAndItem(int, int)}；因此回放围栏只对
+     * 2.2.10 开放。</p>
+     */
+    static final String SUPPORTED_ANGELICA_VERSION = "2.2.10";
 
     private static volatile boolean angelicaReplayGuardInstalled;
 

@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** 为 coordinator 的唯一批次调用点安装 Angelica 2.1.50 回放围栏。 */
+/** 为 coordinator 的唯一批次调用点安装 Angelica 2.2.10 回放围栏。 */
 @Mixin(value = PlayerNameTagRenderCoordinator.class, remap = false)
 public abstract class MixinAngelicaPlayerNameTagReplay {
 

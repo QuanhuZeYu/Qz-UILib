@@ -166,25 +166,32 @@ public class PlayerNameTagRenderCoordinatorTest {
         Assert.assertEquals(0, coordinator.scopeDepth());
     }
 
-    /** 无 Angelica 不要求可选围栏；精确 2.1.50 且握手完成时允许捕获。 */
+    /** 无 Angelica 不要求可选围栏；精确 2.2.10 且握手完成时允许捕获。 */
     @Test
     public void compatibilityAllowsAbsentOrExactGuardedAngelica() {
         Assert.assertTrue(policy(AngelicaEnvironment.absent(), false, new ArrayList<String>()).permitsCapture());
         Assert.assertTrue(policy(
-                AngelicaEnvironment.present("2.1.50"), true, new ArrayList<String>()).permitsCapture());
+                AngelicaEnvironment.present("2.2.10"), true, new ArrayList<String>()).permitsCapture());
     }
 
     /** 未知版本与缺失握手均 fail-open，且每个策略实例只告警一次。 */
     @Test
     public void compatibilityRejectsUnknownVersionOrMissingGuardOnce() {
         List<String> unknownWarnings = new ArrayList<String>();
-        CompatibilityPolicy unknown = policy(AngelicaEnvironment.present("2.1.51"), true, unknownWarnings);
+        // 旧基线 2.1.50（setCurrentEntity 仍为 public、且无配对 API）在 beta-3 上属于不受支持版本。
+        CompatibilityPolicy unknown = policy(AngelicaEnvironment.present("2.1.50"), true, unknownWarnings);
         Assert.assertFalse(unknown.permitsCapture());
         Assert.assertFalse(unknown.permitsCapture());
         Assert.assertEquals(1, unknownWarnings.size());
 
+        List<String> laterWarnings = new ArrayList<String>();
+        // 比受支持版本更新的未复核版本同样 fail-open，保持精确匹配哲学。
+        CompatibilityPolicy later = policy(AngelicaEnvironment.present("2.2.11"), true, laterWarnings);
+        Assert.assertFalse(later.permitsCapture());
+        Assert.assertEquals(1, laterWarnings.size());
+
         List<String> guardWarnings = new ArrayList<String>();
-        CompatibilityPolicy missingGuard = policy(AngelicaEnvironment.present("2.1.50"), false, guardWarnings);
+        CompatibilityPolicy missingGuard = policy(AngelicaEnvironment.present("2.2.10"), false, guardWarnings);
         Assert.assertFalse(missingGuard.permitsCapture());
         Assert.assertFalse(missingGuard.permitsCapture());
         Assert.assertEquals(1, guardWarnings.size());
