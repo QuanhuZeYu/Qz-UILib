@@ -1,14 +1,18 @@
 package club.heiqi.uilib;
 
+import club.heiqi.config.ui.field.PickerSourceGuard;
 import club.heiqi.uilib.client.FontRenderTickListener;
+import club.heiqi.uilib.client.MinecraftMainThreadOracle;
 import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
 import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.i18n.LanguageEpochService;
 import club.heiqi.uilib.internal.chat3.input.ChatInputOpenListener;
 import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
 import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.client.NetStoreUiBridge;
+import club.heiqi.uilib.resource.ResourceReloadService;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.input.UiInputService;
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -41,6 +45,13 @@ public class ClientProxy extends CommonProxy {
         FontService.getInstance().initialize();
         MyMod.LOG.info("字体系统已启用：{}", FontService.getInstance().isInitialized());
         UiInputService.getInstance().initialize();
+        // 候选源 SPI 的线程契约：装配期注入客户端判定源，生产路径恒有判定源；未安装时守卫降级放行，
+        // 「装配期是否安装」由 PickerSourceGuardWiringTest 的源码守卫钉死（不靠运行时行为）。
+        PickerSourceGuard.installThreadOracle(new MinecraftMainThreadOracle());
+        // 资源/语言代际通道：进程单例挂到客户端资源管理器。1.7.10 注册即同步回调一次，
+        // 故 resourceEpoch 立即从 0 变 1（初始态可见）。字体 reload 通道保持不动，二者不合并。
+        ResourceReloadService.getInstance().registerToClient();
+        LanguageEpochService.getInstance().install();
         NetStoreUiBridge.getInstance().initialize();
         DevToolsClientBootstrap.registerClientDevTools();
         // 运行时自检端点集属于 devtools：唯一驱动者是客户端命令（DevToolsClientBootstrap 注册的
