@@ -38,11 +38,16 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 成员带折叠为提示行、信息条不占位、导航宽 {@code min(0.18*W, ...)}。
  * 小盒下<b>不承诺</b> 75 项（几何不成立），只承诺「支配现状 + 全部内容可滚动可达」。</p>
  *
- * <h3>信息条占位口径（P5 §1.2）</h3>
- * <p>密度预算按「无悬停」态计算（{@code info = 0}）：信息条改为 hover 才占位，
- * 空闲态的操作提示与截断提示并入驻顶栏统计行（P5 §3.3 明列的二者之一），
- * 因此空闲态不浪费 24px 垂直空间。这一口径与规格脚本
- * {@code temp/p5_density_spec.py} 的 {@code p5_layout(hover_info=False)} 逐值一致。</p>
+ * <h3>信息条占位口径（P5 §1.2，偏差 D-P5-2）</h3>
+ * <p>规格给出两个可选形态（「hover 才占位」或「并入 header 第二行」）。本实现取<b>常驻占位</b>，
+ * 高度 {@code round(fs*2)} 随字号派生、内容永不空（悬停 -> {@code label · ID: key}；
+ * 空闲 -> 操作提示 {@code hoverHint}），理由是一条可复现的缺陷：hover 才占位会让「信息条出现」
+ * 与「结果区收缩 24px」互相驱动 —— 指针下的单元被顶走 -> hover 丢失 -> 信息条消失 ->
+ * 单元落回指针下 -> hover 恢复 -> <b>闪烁环</b>。常驻占位把该环从结构上消除，代价是 24px。
+ * 代价已量化：该口径下 1080p auto = 100 项（现状 75，仍 +33%），8 视口 × 3 字号支配失败点 0
+ * （复算脚本 {@code temp/p5_model_check.py} 的「常驻占位」模型；A1-A8 断言见
+ * {@code PickerMetricsTest}）。截断提示按规格 §3.3 落在顶栏统计行右侧（与统计同行），
+ * 不占用信息条。</p>
  */
 public final class PickerMetrics {
 
@@ -55,6 +60,7 @@ public final class PickerMetrics {
      * @param headerHeightPx  顶栏高
      * @param navWidthPx      左导航宽
      * @param membersHeightPx 成员带高（{@code 0} = 无成员带）
+     * @param infoBarHeightPx 信息条高（小盒降级为 {@code 0}）
      * @param listWidthPx     结果区可用内宽（列数派生的输入）
      * @param listHeightPx    结果区可用内高（可视行数派生的输入）
      * @param membersCollapsed 成员带是否折叠为提示行
@@ -62,7 +68,8 @@ public final class PickerMetrics {
      */
     @Desugar
     public record PanelBox(int widthPx, int heightPx, int ratioPercent, int headerHeightPx,
-                           int navWidthPx, int membersHeightPx, int listWidthPx, int listHeightPx,
+                           int navWidthPx, int membersHeightPx, int infoBarHeightPx,
+                           int listWidthPx, int listHeightPx,
                            boolean membersCollapsed, boolean smallBox) {
     }
 
@@ -304,10 +311,13 @@ public final class PickerMetrics {
                     PickerDensityTokens.MEMBER_GAP_MIN, PickerDensityTokens.MEMBER_GAP_MAX);
             members = rows * cardH + (rows - 1) * memberGap + header;
         }
-        // 信息条按「无悬停」态预算（P5 §1.2：hover 才占位）。
+        // 信息条：常驻占位（高度随字号派生），内容永不空（悬停 -> label·ID；空闲 -> 操作提示）。
+        // 小盒降级下不占位（P5 §1.5.3「信息条不占位」）。
+        int info = smallBox ? 0
+                : Math.max(1, GridMetrics.roundHalfEven(fontSizePx * PickerDensityTokens.INFO_BAR_RATIO));
         int listW = iw - nav - pad - pad2;
-        int listH = ih - header - pad - members - pad - pad2;
-        return new PanelBox(pw, ph, ratioPercent, header, nav, members, listW,
+        int listH = ih - header - pad - members - pad - info - pad2;
+        return new PanelBox(pw, ph, ratioPercent, header, nav, members, info, listW,
                 Math.max(0, listH), effectiveRows == 0, smallBox);
     }
 

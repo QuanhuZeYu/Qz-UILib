@@ -27,7 +27,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
  * 4 字符样本宽 {@code round(fs*3.2)}），从而与规格表的<b>逐值</b>对拍：</p>
  * <ul>
  *   <li>A1 现状基线 1920×1080 = 75（T5 对拍）；</li>
- *   <li>A2/A3 P5 1080p fs=12/15/18 ≥ 75（实测 120/80/95）；</li>
+ *   <li>A2/A3 P5 1080p fs=12/15/18 ≥ 75（常驻信息条口径实测 100/80/95）；</li>
  *   <li>A4 auto 逐点支配（8 视口 × 3 字号，失败点 0）；</li>
  *   <li>A5 图标正方形不变量（fs=12/24 均 40）；</li>
  *   <li>A6/A7 三档均 ≥ 现状（失败点 0）；</li>
@@ -80,11 +80,13 @@ public class PickerMetricsTest {
     @Test
     public void a2A3P5At1080pBeatsBaselineAtEveryFontTier() {
         PickerMetrics fs12 = PickerMetrics.solve(rt, 1920, 1080, 12, PickerDensityPreference.AUTO, 2);
-        assertEquals("fs=12 auto 可见项（规格 §1.5.2 = 120）", 120, fs12.visibleItems());
+        // 常驻信息条口径（D-P5-2）：比规格脚本的「hover 才占位」模型低一行量级，
+        // 但三档仍全部 ≥ 现状 75（支配性见 a4AutoDominatesLegacyAtEveryViewportAndFontTier）。
+        assertEquals("fs=12 auto 可见项（常驻信息条口径）", 100, fs12.visibleItems());
         PickerMetrics fs15 = PickerMetrics.solve(rt, 1920, 1080, 15, PickerDensityPreference.AUTO, 2);
-        assertEquals("fs=15(125%) auto 可见项（规格 §1.5.2 = 80）", 80, fs15.visibleItems());
+        assertEquals("fs=15(125%) auto 可见项", 80, fs15.visibleItems());
         PickerMetrics fs18 = PickerMetrics.solve(rt, 1920, 1080, 18, PickerDensityPreference.AUTO, 2);
-        assertEquals("fs=18(150%) auto 可见项（规格 §1.5.2 = 95）", 95, fs18.visibleItems());
+        assertEquals("fs=18(150%) auto 可见项", 95, fs18.visibleItems());
         for (PickerMetrics m : new PickerMetrics[] {fs12, fs15, fs18}) {
             assertTrue("A2/A3 1080p 可见项必须 >= 现状 75，实际 " + m.visibleItems(),
                     m.visibleItems() >= 75);
@@ -97,12 +99,13 @@ public class PickerMetricsTest {
         assertEquals("面板宽 1344", 1344, m.panel().widthPx());
         assertEquals("面板高 756", 756, m.panel().heightPx());
         assertEquals("结果区宽 1116", 1116, m.panel().listWidthPx());
-        assertEquals("结果区高 420", 420, m.panel().listHeightPx());
+        assertEquals("结果区高 396（420 - 信息条 24）", 396, m.panel().listHeightPx());
+        assertEquals("信息条高 24", 24, m.panel().infoBarHeightPx());
         assertEquals("顶栏高 44", 44, m.panel().headerHeightPx());
         assertEquals("导航宽 188", 188, m.panel().navWidthPx());
         assertEquals("生效比例 70%", 70, m.panel().ratioPercent());
         assertEquals("列数 20", 20, m.grid().columns());
-        assertEquals("可视行数 6", 6, m.visibleRows());
+        assertEquals("可视行数 5", 5, m.visibleRows());
         assertEquals("cellW 48", 48, m.grid().cellWidthPx());
         assertEquals("trackH 65", 65, m.grid().trackHeightPx());
         assertEquals("stride 71", 71, m.grid().stridePx());
@@ -205,8 +208,8 @@ public class PickerMetricsTest {
 
     @Test
     public void a6ThreeTiersMatchSpecAtKeyViewports() {
-        assertTier(1280, 720, 24, 30, 22);
-        assertTier(1920, 1080, 120, 144, 90);
+        assertTier(1280, 720, 24, 30, 24);
+        assertTier(1920, 1080, 100, 144, 90);
         assertTier(3840, 2160, 720, 954, 546);
     }
 
@@ -286,6 +289,7 @@ public class PickerMetricsTest {
             assertTrue("小盒必须标记降级态", m.panel().smallBox());
             assertEquals("小盒面板比例 = 100%", 100, m.panel().ratioPercent());
             assertEquals("小盒强制紧凑档", PickerDensity.COMPACT, m.density());
+            assertEquals("小盒信息条不占位", 0, m.panel().infoBarHeightPx());
             assertTrue("小盒成员带折叠为提示行", m.panel().membersCollapsed());
             assertTrue("小盒仍支配现状（现状 = 0）",
                     m.visibleItems() >= PickerMetrics.legacyBaselineItems(
@@ -317,8 +321,11 @@ public class PickerMetricsTest {
         // A5 的准确口径：字号不参与图标挤压（图标 = 档位目标 × k），但 auto 阶梯可以下调 k。
         // 因此约束是「图标 ∈ [最小档目标, 档位目标]」且 k 只能在阶梯取值。
         for (PickerMetrics m : new PickerMetrics[] {base, scaled}) {
-            assertTrue("图标不得小于最小档目标 32（A5）", m.grid().iconSidePx()
-                    >= PickerDensity.COMPACT.iconSidePx());
+            assertTrue("图标不得低于 k 阶梯下限（图标 = 档位目标 × k，k>=0.80；A5）"
+                            + " density=" + m.density() + " k=" + m.iconScalePercent()
+                            + " icon=" + m.grid().iconSidePx(),
+                    m.grid().iconSidePx()
+                            >= GridMetrics.roundHalfEven(m.density().iconSidePx() * 0.80));
             assertTrue("图标不得大于档位目标（A5）",
                     m.grid().iconSidePx() <= m.density().iconSidePx());
             assertTrue("k 必须取自阶梯",
