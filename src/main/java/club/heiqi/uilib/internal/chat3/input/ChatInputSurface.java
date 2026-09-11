@@ -228,7 +228,9 @@ public final class ChatInputSurface extends AbstractSceneHostWidget
         hostWidth = Math.max(1, w);
         hostHeight = Math.max(1, h);
         applyPlacement(hostWidth, hostHeight);
-        // 编辑态预览浮层:与聊天外框同一帧口径(放置解析用屏幕像素,节点 margin 用 logical px)。
+        // 编辑态预览浮层:与聊天外框同一帧口径(放置解析用屏幕像素,节点 margin 用 overlay 逻辑 px)。
+        // 预览自身倍率经 overlay 相对倍率(target / frameScale)在帧管线与输入路由内施加,
+        // 因此聊天屏倍率只作用于聊天屏自身,不再缩放其它 HUD 预览。
         previews.frame(hostWidth, hostHeight, frameScale, ChatHudWindow.currentSafeInsets());
         container.setViewport(w, h, container.root().getPreferredWidth(), container.root().getPreferredHeight());
         if ((renderLogCounter++ % 120) == 0) {

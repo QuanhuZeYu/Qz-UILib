@@ -30,6 +30,21 @@ public final class OverlayHandle {
         host.remove(entry);
     }
 
+    /**
+     * 转发设置 entry 的相对渲染倍率。
+     *
+     * <p>句柄已失效（{@link #dispose()} 之后）时静默 no-op：entry 已摘除、不再参与帧内布局 /
+     * 绘制 / 命中，迟到的写入没有意义，也不应把错误抛给调用方的清理路径。</p>
+     *
+     * @param relativeScale 附加渲染倍率，1.0F 表示跟随宿主
+     */
+    public void setRelativeScale(float relativeScale) {
+        if (disposed) {
+            return;
+        }
+        entry.setRelativeScale(relativeScale);
+    }
+
     /** @return 当前句柄是否已释放 */
     public boolean isDisposed() {
         return disposed;

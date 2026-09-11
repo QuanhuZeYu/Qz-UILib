@@ -92,10 +92,26 @@ public class ChatHudEditPreviewsTest {
         return builder.build();
     }
 
-    /** 复刻生产帧管线对无锚点浮层的全屏约束布局。 */
+    /** 复刻生产帧管线对无锚点浮层的全屏约束布局（s == 1.0F 短路，与帧管线逐位等价）。 */
     private void layoutOverlays(SceneRuntime rt) {
+        layoutOverlays(rt, VIEW_W, VIEW_H);
+    }
+
+    /**
+     * 复刻生产帧管线对无锚点浮层的全屏约束布局：s != 1.0F 时约束按 {@code round(画布逻辑 / s)}
+     * 收敛（= 宿主物理视口 / 该 HUD 自身倍率），与 {@code SceneFramePipeline#layoutOverlays} 同口径。
+     *
+     * @param rt      运行时
+     * @param canvasW 画布逻辑视口宽（= 宿主物理宽 / hostScale）
+     * @param canvasH 画布逻辑视口高
+     */
+    private void layoutOverlays(SceneRuntime rt, int canvasW, int canvasH) {
         for (SceneOverlayHost.Entry entry : rt.getOverlayHost().bottomFirst()) {
-            layoutEngine.layout(entry.getRoot(), new Constraints(VIEW_W, VIEW_H));
+            float s = entry.getRelativeScale();
+            Constraints constraints = Float.compare(s, 1F) == 0
+                    ? new Constraints(canvasW, canvasH)
+                    : new Constraints(Math.max(1, Math.round(canvasW / s)), Math.max(1, Math.round(canvasH / s)));
+            layoutEngine.layout(entry.getRoot(), constraints);
         }
     }
 
@@ -120,6 +136,24 @@ public class ChatHudEditPreviewsTest {
 
     private static AnchorRect box(SceneNode node) {
         return SceneGeometry.absoluteBox(node, 0, 0);
+    }
+
+    /** 画布逻辑尺寸 = 宿主物理尺寸 / hostScale（与 {@code ChatInputSurface.render} 的 floor(w / frameScale) 同口径）。 */
+    private static int canvasLogical(int physicalExtent, float hostScale) {
+        return Math.max(1, (int) Math.floor(physicalExtent / hostScale));
+    }
+
+    /**
+     * overlay 逻辑坐标 → 画布逻辑坐标（× s）：指针注入必须用画布逻辑空间，
+     * 路由按该 entry 的 s 换算回 overlay 逻辑空间后再命中。
+     */
+    private static int canvasCoord(int overlayLogical, SceneOverlayHost.Entry entry) {
+        return Math.round(overlayLogical * entry.getRelativeScale());
+    }
+
+    /** 实绘物理宽 = overlay 逻辑盒宽 × hostScale × s（s 取 entry 当帧值）。 */
+    private static float paintedWidth(SceneOverlayHost.Entry entry, float hostScale) {
+        return box(previewOuter(entry)).getWidth() * hostScale * entry.getRelativeScale();
     }
 
     @Test
@@ -381,13 +415,14 @@ public class ChatHudEditPreviewsTest {
             layoutOverlays(rt);
             HudLayoutService layout = HudLayoutService.getInstance();
             layout.beginEdit();
-            AnchorRect contentBox = box(previewContent(rt.getOverlayHost().bottomFirst().get(0)));
-            harness.pressAt(contentBox.getX() + 5, contentBox.getY() + 5);
+            // s = 1.1：指针注入必须换算到画布逻辑空间（路由按 s 换算回 overlay 逻辑空间再命中）
+            AnchorRect contentBox = box(previewContent(entry));
+            harness.pressAt(canvasCoord(contentBox.getX() + 5, entry), canvasCoord(contentBox.getY() + 5, entry));
             harness.moveAt(VIEW_W - 1, 0);
             harness.releaseAt(VIEW_W - 1, 0);
             HudPlacement drafted = layout.placement(HUD_ID);
             Assert.assertNotNull(drafted);
-            // 右/上极限同口径：外框尺寸按统一倍率换算
+            // 右/上极限同口径：外框尺寸按统一倍率换算（物理 px）
             Assert.assertEquals(VIEW_W - (int) Math.ceil(CONTENT_W * 1.1F), drafted.getOffsetX());
             Assert.assertEquals(VIEW_H - (int) Math.ceil(PREVIEW_OUTER_H * 1.1F), drafted.getOffsetY());
         } finally {
@@ -444,6 +479,177 @@ public class ChatHudEditPreviewsTest {
             Assert.assertNotNull(drafted);
             Assert.assertEquals(VIEW_W - CONTENT_W, drafted.getOffsetX());
             Assert.assertEquals(VIEW_H - outerHeight, drafted.getOffsetY());
+        } finally {
+            previews.dispose();
+            registration.close();
+            layoutCancel();
+        }
+    }
+
+    /**
+     * C1/C4/C8/C9：每帧写入的相对倍率 = 该 HUD 自身统一倍率 / 宿主绘制倍率；
+     * 任一 HUD 调倍率或聊天屏倍率变化都只影响自己的 s（同帧生效）。
+     */
+    @Test
+    public void relativeScaleTracksOwnTargetOverHostScale() {
+        SceneRuntime rt = harness.getRuntime();
+        HudRegistration first = HudEditService.getInstance().register(target(HUD_ID, CONTENT_W, null));
+        HudRegistration second = HudEditService.getInstance().register(target(OTHER_ID, 40, null));
+        ChatHudEditPreviews previews = new ChatHudEditPreviews(rt);
+        try {
+            previews.setSessionActive(true);
+            previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
+            List<SceneOverlayHost.Entry> entries = rt.getOverlayHost().bottomFirst();
+            Assert.assertEquals("默认 target = hostScale 时 s = 1.0（既有 overlay 口径不变）",
+                    1.0F, entries.get(0).getRelativeScale(), 1E-6F);
+            Assert.assertEquals(1.0F, entries.get(1).getRelativeScale(), 1E-6F);
+
+            // 只调 HUD_ID：自己的 s = 1.1，邻居仍 1.0（零串扰）
+            HudToolbarService.getInstance().scale(HUD_ID).setPercent(110);
+            previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
+            Assert.assertEquals("s = 自身倍率 / 宿主倍率", 1.1F, entries.get(0).getRelativeScale(), 1E-6F);
+            Assert.assertEquals("其它 HUD 预览零串扰", 1.0F, entries.get(1).getRelativeScale(), 1E-6F);
+
+            // 聊天屏倍率 1.25：两个预览各自按 target / hostScale 重算（当帧生效）
+            previews.frame(250, 188, 1.25F, HudInsets.NONE);
+            Assert.assertEquals("聊天屏倍率只改变自身换算口径", 1.1F / 1.25F,
+                    entries.get(0).getRelativeScale(), 1E-6F);
+            Assert.assertEquals(1.0F / 1.25F, entries.get(1).getRelativeScale(), 1E-6F);
+        } finally {
+            previews.dispose();
+            first.close();
+            second.close();
+        }
+    }
+
+    /**
+     * C1/C4：预览实绘物理尺寸 = 预览逻辑外框 × 自身统一倍率，与聊天屏倍率无关。
+     *
+     * <p>实绘 = overlay 逻辑盒 × hostScale × s，而 s = target / hostScale ⇒ 恒等于逻辑盒 × target。
+     * 用例在两种宿主倍率下按帧管线口径复刻 overlay 约束，再对「逻辑盒 × hostScale × s」断言。</p>
+     */
+    @Test
+    public void paintedSizeFollowsOwnTargetAcrossHostScales() {
+        SceneRuntime rt = harness.getRuntime();
+        HudRegistration first = HudEditService.getInstance().register(target(HUD_ID, CONTENT_W, null));
+        HudRegistration second = HudEditService.getInstance().register(target(OTHER_ID, 40, null));
+        ChatHudEditPreviews previews = new ChatHudEditPreviews(rt);
+        try {
+            HudToolbarService.getInstance().scale(HUD_ID).setPercent(110);
+            previews.setSessionActive(true);
+
+            // hostScale = 1.0（物理视口 200×150）
+            previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
+            layoutOverlays(rt);
+            List<SceneOverlayHost.Entry> entries = rt.getOverlayHost().bottomFirst();
+            float ownLogicalAt100 = box(previewOuter(entries.get(0))).getWidth();
+            float otherLogicalAt100 = box(previewOuter(entries.get(1))).getWidth();
+            float ownAt100 = paintedWidth(entries.get(0), 1F);
+            float otherAt100 = paintedWidth(entries.get(1), 1F);
+            Assert.assertEquals("实绘宽 = 逻辑外框 × 自身 1.1",
+                    Math.ceil(ownLogicalAt100 * 1.1F), ownAt100, 1.0);
+            // 邻居逻辑外框 = max(内容 40, 统一缩放行实测宽)，故按逻辑外框断言而非内容宽
+            Assert.assertEquals("邻居 target 100%：实绘宽 = 逻辑外框宽",
+                    otherLogicalAt100, otherAt100, 1.0);
+
+            // 聊天屏倍率 1.25（物理 250×188，画布逻辑仍 200×150）：各自实绘尺寸都不变（C4）
+            previews.frame(250, 188, 1.25F, HudInsets.NONE);
+            layoutOverlays(rt, canvasLogical(250, 1.25F), canvasLogical(188, 1.25F));
+            Assert.assertEquals("画布逻辑视口不随聊天屏倍率变化", VIEW_W, canvasLogical(250, 1.25F));
+            Assert.assertEquals("自身实绘尺寸不随聊天屏倍率变化", ownAt100, paintedWidth(entries.get(0), 1.25F), 0.5);
+            Assert.assertEquals("其它预览实绘尺寸同样不变", otherAt100, paintedWidth(entries.get(1), 1.25F), 0.5);
+        } finally {
+            previews.dispose();
+            first.close();
+            second.close();
+        }
+    }
+
+    /**
+     * C2/C8：聊天屏倍率变化后命中仍与视觉 1:1 对齐——指针按画布逻辑坐标注入，
+     * 缩放按钮的命中区域 = 其物理位置 / hostScale（路由按 s 换算回 overlay 逻辑空间）。
+     */
+    @Test
+    public void hitStaysAlignedWithPaintedPreviewAcrossHostScale() {
+        SceneRuntime rt = harness.getRuntime();
+        HudRegistration registration = HudEditService.getInstance().register(target(HUD_ID, CONTENT_W, null));
+        ChatHudEditPreviews previews = new ChatHudEditPreviews(rt);
+        try {
+            HudToolbarService.getInstance().scale(HUD_ID).setPercent(110);
+            previews.setSessionActive(true);
+            previews.frame(250, 188, 1.25F, HudInsets.NONE);
+            layoutOverlays(rt, canvasLogical(250, 1.25F), canvasLogical(188, 1.25F));
+
+            SceneOverlayHost.Entry entry = rt.getOverlayHost().bottomFirst().get(0);
+            Assert.assertEquals("hostScale = 1.25 时 s = 1.1 / 1.25",
+                    1.1F / 1.25F, entry.getRelativeScale(), 1E-6F);
+            SceneNode plus = previewScaleRow(entry).__getChildren().get(3);
+            AnchorRect plusBox = box(plus);
+            int cx = canvasCoord(plusBox.getX() + plusBox.getWidth() / 2, entry);
+            int cy = canvasCoord(plusBox.getY() + plusBox.getHeight() / 2, entry);
+            harness.clickAt(cx, cy);
+            Assert.assertEquals("按视觉位置注入的点击必须命中 + 按钮（110% → 120%）",
+                    120, HudToolbarService.getInstance().scale(HUD_ID).percent().get().intValue());
+            // 命中回算落在按钮盒内（容差 ≤ target px；按钮盒本身远大于 1px，容差按规格 §5 放宽）
+            Assert.assertTrue("命中点回算必须落在按钮内",
+                    Math.abs(Math.round(cx / entry.getRelativeScale()) - (plusBox.getX() + plusBox.getWidth() / 2)) <= 1);
+
+            // 预览物理盒之外必须穿透到主树，且不得改动缩放状态
+            final int[] mainHits = new int[1];
+            rt.on(mainRoot, SceneEventType.POINTER_DOWN, (event, ctx) -> mainHits[0]++);
+            harness.clickAt(VIEW_W - 1, 4);
+            Assert.assertEquals("预览物理盒之外应穿透到主树", 1, mainHits[0]);
+            Assert.assertEquals("穿透点击不得改动缩放状态", 120,
+                    HudToolbarService.getInstance().scale(HUD_ID).percent().get().intValue());
+        } finally {
+            previews.dispose();
+            registration.close();
+        }
+    }
+
+    /**
+     * C2/C3：拖动增量按 target 乘数换算（事件坐标已被路由换算到 overlay 逻辑空间），
+     * 放置盒与 clamp 同用物理口径。
+     *
+     * <p>用 target 125% / hostScale 1.0（s = 1.25）让「物理位移 = 画布位移 × hostScale」的
+     * 断言不受注入取整干扰；若乘数仍是 hostScale（旧口径），增量会退化为画布位移。</p>
+     */
+    @Test
+    public void dragDeltaUsesTargetMultiplierAndClampUsesPhysicalBox() {
+        SceneRuntime rt = harness.getRuntime();
+        HudRegistration registration = HudEditService.getInstance().register(target(HUD_ID, CONTENT_W, null));
+        ChatHudEditPreviews previews = new ChatHudEditPreviews(rt);
+        try {
+            HudLayoutService layout = HudLayoutService.getInstance();
+            HudToolbarService.getInstance().scale(HUD_ID).setPercent(125);
+            layout.beginEdit();
+            previews.setSessionActive(true);
+            previews.frame(VIEW_W, VIEW_H, 1F, HudInsets.NONE);
+            layoutOverlays(rt);
+
+            SceneOverlayHost.Entry entry = rt.getOverlayHost().bottomFirst().get(0);
+            AnchorRect contentBox = box(previewContent(entry));
+            int downX = canvasCoord(contentBox.getX() + 5, entry);
+            int downY = canvasCoord(contentBox.getY() + 5, entry);
+            harness.pressAt(downX, downY);
+            Assert.assertTrue("按下预览内容即开始拖动", previews.isDragging());
+
+            // 小幅平移：物理位移 = 画布位移（hostScale = 1），BOTTOM_LEFT 下 Y 偏移反号
+            int moveX = downX + 10;
+            int moveY = downY - 10;
+            harness.moveAt(moveX, moveY);
+            HudPlacement drafted = layout.placement(HUD_ID);
+            Assert.assertNotNull("拖动必须写草稿", drafted);
+            Assert.assertEquals("拖动增量 = 物理位移（target 乘数）",
+                    HudEditTarget.DEFAULT_MARGIN_PX + (moveX - downX), drafted.getOffsetX(), 1.25);
+            Assert.assertEquals(HudEditTarget.DEFAULT_MARGIN_PX - (moveY - downY), drafted.getOffsetY(), 1.25);
+
+            // clamp 用物理口径：右/上极限 = 物理视口 - ceil(外框 × target)
+            harness.moveAt(VIEW_W - 1, 0);
+            HudPlacement clamped = layout.placement(HUD_ID);
+            Assert.assertEquals(VIEW_W - (int) Math.ceil(CONTENT_W * 1.25F), clamped.getOffsetX());
+            Assert.assertEquals(VIEW_H - (int) Math.ceil(PREVIEW_OUTER_H * 1.25F), clamped.getOffsetY());
+            harness.releaseAt(VIEW_W - 1, 0);
         } finally {
             previews.dispose();
             registration.close();

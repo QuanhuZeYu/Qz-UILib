@@ -152,6 +152,8 @@ public final class SceneOverlayHost {
         private final AnchorProvider anchorProvider;
         private final AnchoredPortalLayout anchoredLayout;
         private final Set<SceneNode> protectedNodes;
+        /** 相对宿主 ctx 的附加渲染倍率；1.0F = 跟随宿主（默认，既有行为）。 */
+        private float relativeScale = 1.0F;
         private int anchorX;
         private int anchorY;
 
@@ -204,6 +206,33 @@ public final class SceneOverlayHost {
         /** @return 浮层 root 在 host 局部坐标系下的 Y 偏移 */
         public int getAnchorY() {
             return anchorY;
+        }
+
+        /**
+         * @return 该浮层相对宿主 ctx 的附加渲染倍率；1.0F = 跟随宿主（既有行为，默认）
+         */
+        public float getRelativeScale() {
+            return relativeScale;
+        }
+
+        /**
+         * 设置附加渲染倍率。
+         *
+         * <p>约束：必须为有限正数（&gt; 0F）；NaN / Infinity / &lt;= 0 抛 {@link IllegalArgumentException}。
+         * 仅允许 {@code anchorProvider == null} 的全屏浮层设置；锚定浮层的几何由锚点解析决定，
+         * 不参与相对倍率换算，设置时抛 {@link IllegalStateException}。</p>
+         *
+         * @param relativeScale 附加渲染倍率，1.0F 表示跟随宿主
+         */
+        public void setRelativeScale(float relativeScale) {
+            if (Float.isNaN(relativeScale) || Float.isInfinite(relativeScale) || relativeScale <= 0F) {
+                throw new IllegalArgumentException("relativeScale 必须为有限正数，实际为 " + relativeScale);
+            }
+            if (anchorProvider != null) {
+                throw new IllegalStateException(
+                        "锚定浮层不支持 relativeScale（仅 anchorProvider == null 的全屏浮层可设置）");
+            }
+            this.relativeScale = relativeScale;
         }
 
         /** 设置浮层 root 在 host 局部坐标系下的 X 偏移。 */

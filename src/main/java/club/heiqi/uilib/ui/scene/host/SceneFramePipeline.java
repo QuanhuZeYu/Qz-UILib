@@ -327,8 +327,18 @@ public final class SceneFramePipeline {
         replayer.replay(replayPlan(state.paintResult.getPlan()), state.ctx, state.absX, state.absY);
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
             PaintResult overlayResult = paintEngine.paint(entry.getRoot());
-            replayer.replay(overlayResult.getPlan(), state.ctx,
-                    state.absX + entry.getAnchorX(), state.absY + entry.getAnchorY());
+            // overlay 相对倍率 s：物理尺寸 = 逻辑尺寸 × 宿主倍率 × s，故回放后端按 s 放大、
+            // 回放原点按 s 收缩（同一 s、同一 Math.round 取整，与 router 命中口径一致）。
+            // s == 1.0F 保持原路径：不包 scaled(1)，零新增对象与行为噪音。
+            float relativeScale = entry.getRelativeScale();
+            if (Float.compare(relativeScale, 1F) == 0) {
+                replayer.replay(overlayResult.getPlan(), state.ctx,
+                        state.absX + entry.getAnchorX(), state.absY + entry.getAnchorY());
+            } else {
+                replayer.replay(overlayResult.getPlan(), state.ctx.scaled(relativeScale),
+                        Math.round((state.absX + entry.getAnchorX()) / relativeScale),
+                        Math.round((state.absY + entry.getAnchorY()) / relativeScale));
+            }
         }
     }
 
@@ -424,7 +434,17 @@ public final class SceneFramePipeline {
             } else {
                 entry.setAnchorX(0);
                 entry.setAnchorY(0);
-                constraints = new Constraints(w, h);
+                // overlay 相对倍率 s：渲染侧按 s 放大，布局视口必须同步按 s 收缩，
+                // overlay 逻辑视口 = 宿主逻辑宽高 / s（物理视口不变）。
+                // s == 1.0F 走原约束路径（逐位等价，不做多余换算）。
+                float relativeScale = entry.getRelativeScale();
+                if (Float.compare(relativeScale, 1F) == 0) {
+                    constraints = new Constraints(w, h);
+                } else {
+                    constraints = new Constraints(
+                            Math.max(1, Math.round(w / relativeScale)),
+                            Math.max(1, Math.round(h / relativeScale)));
+                }
             }
             activeRoots.put(overlayRoot, Boolean.TRUE);
             overlayLayoutResults.put(overlayRoot, engine.layout(overlayRoot, constraints));

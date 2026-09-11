@@ -72,7 +72,13 @@ final class ChatHudEditPreviews {
     /** 最近一帧宿主视口（屏幕像素；放置解析与拖动 clamp 共用）。 */
     private int viewportWidth = 1;
     private int viewportHeight = 1;
-    /** 最近一帧绘制倍率（宿主边界成对换算：输入 × 倍率 = 屏幕像素，节点坐标 / 倍率 = logical）。 */
+    /**
+     * 最近一帧宿主绘制倍率（hostScale）：输入 × 倍率 = 屏幕像素，节点坐标 / 倍率 = logical。
+     *
+     * <p>预览自身的实绘倍率不在此处：每个预览按 {@code target / hostScale} 写 overlay 相对倍率，
+     * 由帧管线与输入路由在同一坐标空间内施加（见 {@link #applyRelativeScale}），因此预览只随
+     * 自身统一倍率变化，聊天屏倍率不再串扰其它 HUD。</p>
+     */
     private float scale = 1F;
     /** 最近一帧宿主安全区。 */
     private HudInsets insets = HudInsets.NONE;
@@ -121,6 +127,9 @@ final class ChatHudEditPreviews {
      * 在帧管线内物化。首帧内容尚未布局时退回内容自身声明尺寸，下一帧按实测收敛
      * （与 {@link HudToolbarLayer} 的工具栏实测口径同思路）。</p>
      *
+     * <p>同一帧内先写每个预览的 overlay 相对倍率（{@link #applyRelativeScale}），再写 margin：
+     * 帧管线与输入路由在本帧读到同一份 s，倍率变化当帧生效。</p>
+     *
      * @param viewportWidth  宿主视口宽（屏幕像素）
      * @param viewportHeight 宿主视口高（屏幕像素）
      * @param scale          本帧绘制倍率
@@ -132,6 +141,7 @@ final class ChatHudEditPreviews {
         this.scale = scale > 0F ? scale : 1F;
         this.insets = insets == null ? HudInsets.NONE : insets;
         for (Preview preview : previews) {
+            applyRelativeScale(preview);
             applyPlacement(preview);
         }
     }
@@ -282,13 +292,30 @@ final class ChatHudEditPreviews {
 
     // ==================== 放置与拖动 ====================
 
-    /** 每帧把权威放置解析为预览浮层的 margin（与聊天外框 applyOuterPlacement 同口径）。 */
+    /**
+     * 每帧把该预览的 overlay 相对倍率写进句柄：{@code s = target / hostScale}。
+     *
+     * <p>overlay 层面只认相对倍率：物理实绘 = overlay 逻辑尺寸 × hostScale × s = 逻辑尺寸 × target，
+     * 于是「预览缩放自身」与「聊天屏倍率不串扰」同时成立。非有限或 ≤ 0 的比值不写，保持 entry
+     * 默认 1.0F（{@link #scale} 已收敛为有限正数，此处只作防御）。</p>
+     */
+    private void applyRelativeScale(Preview preview) {
+        float relative = unifiedFactor(preview.hudId) / scale;
+        if (Float.isNaN(relative) || Float.isInfinite(relative) || relative <= 0F) {
+            return;
+        }
+        preview.handle.setRelativeScale(relative);
+    }
+
+    /** 每帧把权威放置解析为预览浮层的 margin（物理盒 → overlay 逻辑 px，与 clamp 同口径）。 */
     private void applyPlacement(Preview preview) {
         AnchorRect rect = HudLayoutResolver.resolve(effectivePlacement(preview),
                 viewportWidth, viewportHeight, outerWidth(preview), outerHeight(preview), insets);
-        // 节点与输入仍是 logical px：宿主边界成对换算，浮层根按全屏约束布局。
-        preview.layer.root().setMargin((int) Math.floor(rect.getY() / scale), 0, 0,
-                (int) Math.floor(rect.getX() / scale));
+        // 节点与输入是 overlay 逻辑 px（= 该 HUD 物理 px / target）：margin 除以自身倍率，
+        // 不是宿主倍率——overlay 的实绘倍率已由相对倍率承担。
+        float target = unifiedFactor(preview.hudId);
+        preview.layer.root().setMargin((int) Math.floor(rect.getY() / target), 0, 0,
+                (int) Math.floor(rect.getX() / target));
     }
 
     /** 生效放置：用户布局（编辑中 = 草稿）优先，否则目标的默认放置。 */
@@ -297,16 +324,16 @@ final class ChatHudEditPreviews {
         return placement != null ? placement : preview.target.getDefaultPlacement();
     }
 
-    /** 外框宽（屏幕像素）= 外框 logical 宽 × 宿主绘制倍率 × 该 HUD 统一倍率（与 clamp 同口径）。 */
+    /** 外框宽（物理像素）= 外框 logical 宽 × 该 HUD 统一倍率（与 clamp 同口径）。 */
     private int outerWidth(Preview preview) {
         return (int) Math.ceil(preview.layer.logicalOuterWidth(contentExtent(preview.layer.content(), true))
-                * scale * unifiedFactor(preview.hudId));
+                * unifiedFactor(preview.hudId));
     }
 
-    /** 外框高（屏幕像素）= 外框 logical 高 × 宿主绘制倍率 × 该 HUD 统一倍率（与 clamp 同口径）。 */
+    /** 外框高（物理像素）= 外框 logical 高 × 该 HUD 统一倍率（与 clamp 同口径）。 */
     private int outerHeight(Preview preview) {
         return (int) Math.ceil(preview.layer.logicalOuterHeight(contentExtent(preview.layer.content(), false))
-                * scale * unifiedFactor(preview.hudId));
+                * unifiedFactor(preview.hudId));
     }
 
     /** 内容盒尺寸（logical px）：优先上一帧实测布局，首帧退回内容自身声明，最后退回最小值。 */
@@ -329,8 +356,11 @@ final class ChatHudEditPreviews {
         preview.dragging = true;
         dragging = preview;
         // 与聊天外框拖动同源：增量必须用 raw 指针（容器本身随动，局部坐标不可作增量基准）。
-        preview.originX = Math.round(ctx.getRawPointerX() * scale);
-        preview.originY = Math.round(ctx.getRawPointerY() * scale);
+        // raw 指针已被路由按 overlay 相对倍率换算到 overlay 逻辑空间：× target（不是 hostScale）
+        // 得到物理 px，与放置 / clamp 的物理口径一致。
+        float target = unifiedFactor(preview.hudId);
+        preview.originX = Math.round(ctx.getRawPointerX() * target);
+        preview.originY = Math.round(ctx.getRawPointerY() * target);
         preview.originHadOverride = layoutService.placement(preview.hudId) != null;
         preview.originPlacement = effectivePlacement(preview);
         ctx.requestPointerCapture();
@@ -341,8 +371,9 @@ final class ChatHudEditPreviews {
         if (dragging != preview) {
             return;
         }
-        int dx = Math.round(ctx.getRawPointerX() * scale) - preview.originX;
-        int dy = Math.round(ctx.getRawPointerY() * scale) - preview.originY;
+        float target = unifiedFactor(preview.hudId);
+        int dx = Math.round(ctx.getRawPointerX() * target) - preview.originX;
+        int dy = Math.round(ctx.getRawPointerY() * target) - preview.originY;
         HudPlacement desired = preview.originPlacement.translate(dx, dy);
         // clamp 与 applyPlacement 同口径：用外框（内容 + 工具栏 gap/thickness），不是裸内容尺寸，
         // 否则拖到边界时工具栏仍会被推到视口外。

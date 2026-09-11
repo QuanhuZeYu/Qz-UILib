@@ -279,14 +279,18 @@ public class SceneInputRouter {
                                          int canvasY,
                                          int rootAbsX,
                                          int rootAbsY) {
-        SceneEvent event = new SceneEvent(SceneEventType.POINTER_CANCEL, target, canvasX, canvasY,
+        // CANCEL 按其所属 overlay 的 s 换算（与主体 dispatch 同一口径）。
+        float scale = overlayEntry == null ? 1.0F : overlayEntry.getRelativeScale();
+        int dispatchX = toOverlay(canvasX, scale);
+        int dispatchY = toOverlay(canvasY, scale);
+        SceneEvent event = new SceneEvent(SceneEventType.POINTER_CANCEL, target, dispatchX, dispatchY,
                 pe.getButton(), pe.getWheelDelta(),
                 pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                 0, // clickCount：CANCEL 恒 0
                 pe.getTimeNanos());
-        SceneEventContext context = new SceneEventContext(this, target, canvasX, canvasY,
-                resolveTreeAbsX(overlayEntry, rootAbsX),
-                resolveTreeAbsY(overlayEntry, rootAbsY));
+        SceneEventContext context = new SceneEventContext(this, target, dispatchX, dispatchY,
+                resolveTreeAbsX(overlayEntry, rootAbsX, scale),
+                resolveTreeAbsY(overlayEntry, rootAbsY, scale));
         dispatchTargetAndBubble(event, context, target);
     }
 
@@ -389,9 +393,14 @@ public class SceneInputRouter {
                 : (effectiveTarget == pressedNode
                         && (type == SceneEventType.POINTER_MOVE || type == SceneEventType.POINTER_UP)
                         ? pressedOverlayEntry : hitResult.overlayEntry);
-        int treeAbsX = resolveTreeAbsX(effectiveOverlayEntry, rootAbsX);
-        int treeAbsY = resolveTreeAbsY(effectiveOverlayEntry, rootAbsY);
-        SceneEvent event = new SceneEvent(type, effectiveTarget, canvasX, canvasY,
+        // effective overlay 决定坐标空间：显式 capture / 隐式 pressedNode / 原始命中，三者的
+        // entry 来源与现状一致；事件坐标按该 entry 的 s 换算到 overlay 坐标空间，s == 1.0F 恒等。
+        float effectiveScale = effectiveOverlayEntry == null ? 1.0F : effectiveOverlayEntry.getRelativeScale();
+        int dispatchX = toOverlay(canvasX, effectiveScale);
+        int dispatchY = toOverlay(canvasY, effectiveScale);
+        int treeAbsX = resolveTreeAbsX(effectiveOverlayEntry, rootAbsX, effectiveScale);
+        int treeAbsY = resolveTreeAbsY(effectiveOverlayEntry, rootAbsY, effectiveScale);
+        SceneEvent event = new SceneEvent(type, effectiveTarget, dispatchX, dispatchY,
                 pe.getButton(), pe.getWheelDelta(),
                 pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                 pe.getClickCount(),
@@ -400,7 +409,7 @@ public class SceneInputRouter {
         try {
             // 派发：target → bubble（CANCEL 已在 route 专属块中 continue，永不触达此处）
             SceneEventContext ctx = new SceneEventContext(this, effectiveTarget,
-                    canvasX, canvasY, treeAbsX, treeAbsY);
+                    dispatchX, dispatchY, treeAbsX, treeAbsY);
             dispatchTargetAndBubble(event, ctx, effectiveTarget);
 
             // === 按压捕获状态更新 ===
@@ -428,18 +437,21 @@ public class SceneInputRouter {
                         // LCA 必落在 pressed 与 released 的共同子树内——要么同在 overlay 内，
                         // 要么同在主树内；跨 overlay/主树（不同 paint root）时 LCA=null 不合成（浮层卸载场景正确）。
                         // 故 clickTarget 的 overlay 归属恒等于 hitTarget 的 overlay 归属，可直接复用 hitResult。
-                        int clickTreeAbsX = hitResult.overlayEntry != null
-                                ? rootAbsX + hitResult.overlayEntry.getAnchorX() : rootAbsX;
-                        int clickTreeAbsY = hitResult.overlayEntry != null
-                                ? rootAbsY + hitResult.overlayEntry.getAnchorY() : rootAbsY;
+                        // CLICK 与其所属 overlay 的主体 dispatch 同口径换算（LCA 归属见上注）。
+                        float clickScale = hitResult.overlayEntry == null
+                                ? 1.0F : hitResult.overlayEntry.getRelativeScale();
+                        int clickCanvasX = toOverlay(canvasX, clickScale);
+                        int clickCanvasY = toOverlay(canvasY, clickScale);
+                        int clickTreeAbsX = resolveTreeAbsX(hitResult.overlayEntry, rootAbsX, clickScale);
+                        int clickTreeAbsY = resolveTreeAbsY(hitResult.overlayEntry, rootAbsY, clickScale);
                         SceneEvent clickEvent = new SceneEvent(SceneEventType.CLICK, clickTarget,
-                                canvasX, canvasY,
+                                clickCanvasX, clickCanvasY,
                                 pe.getButton(), 0, // wheelDelta=0 for CLICK
                                 pe.isControlDown(), pe.isShiftDown(), pe.isAltDown(), pe.isMetaDown(),
                                 lastDownClickCount, // CLICK 透传触发它的 DOWN 点击计数（双击打开等场景）
                                 pe.getTimeNanos());
                         SceneEventContext clickCtx = new SceneEventContext(this, clickTarget,
-                                canvasX, canvasY, clickTreeAbsX, clickTreeAbsY);
+                                clickCanvasX, clickCanvasY, clickTreeAbsX, clickTreeAbsY);
                         dispatchTargetAndBubble(clickEvent, clickCtx, clickTarget);
                     }
                 }
@@ -813,13 +825,33 @@ public class SceneInputRouter {
     }
 
     /**
+     * 把画布逻辑坐标换算到指定 overlay 的坐标空间（÷ s）。
+     *
+     * <p>s == 1.0F 原样返回，保持既有 overlay 路径逐位等价；s != 1.0F 统一用
+     * {@link Math#round(float)}，与渲染侧（pipeline 布局约束与回放原点）同函数同取整——
+     * 一处 round 一处 ceil 会让命中与实绘错位。</p>
+     *
+     * @param value 画布逻辑坐标（或画布逻辑偏移量）
+     * @param scale 该 overlay 的相对倍率 s（1.0F = 跟随宿主）
+     */
+    private static int toOverlay(int value, float scale) {
+        return Float.compare(scale, 1F) == 0 ? value : Math.round(value / scale);
+    }
+
+    /**
      * 执行 overlay 优先命中；overlay host 为空或 root 缺布局时自动退回主树。
+     *
+     * <p>每个 entry 用自身 s 把画布逻辑坐标换算到该 overlay 的坐标空间后再命中；
+     * s == 1.0F 时换算为恒等，行为与既有实现逐位一致。</p>
      */
     private HitResult hitTestWithOverlays(SceneNode root, int canvasX, int canvasY, int rootAbsX, int rootAbsY) {
         if (overlayHost != null && !overlayHost.isEmpty()) {
             for (SceneOverlayHost.Entry entry : overlayHost.topFirst()) {
-                List<SceneNode> overlayChain = hitTester.hitTest(entry.getRoot(), canvasX, canvasY,
-                        rootAbsX + entry.getAnchorX(), rootAbsY + entry.getAnchorY());
+                float scale = entry.getRelativeScale();
+                List<SceneNode> overlayChain = hitTester.hitTest(entry.getRoot(),
+                        toOverlay(canvasX, scale), toOverlay(canvasY, scale),
+                        toOverlay(rootAbsX + entry.getAnchorX(), scale),
+                        toOverlay(rootAbsY + entry.getAnchorY(), scale));
                 if (!overlayChain.isEmpty()) {
                     return new HitResult(overlayChain, entry);
                 }
@@ -828,13 +860,18 @@ public class SceneInputRouter {
         return new HitResult(hitTester.hitTest(root, canvasX, canvasY, rootAbsX, rootAbsY), null);
     }
 
-    /** 将 occurrence placement 与当前 overlay anchor 合成为派发树绝对原点。 */
-    private static int resolveTreeAbsX(SceneOverlayHost.Entry entry, int rootAbsX) {
-        return entry == null ? rootAbsX : rootAbsX + entry.getAnchorX();
+    /**
+     * 将 occurrence placement 与当前 overlay anchor 合成为派发树绝对原点。
+     *
+     * <p>overlay 命中时同一按 s 换算（overlay 坐标空间 = 画布逻辑 ÷ s）；主树 entry == null
+     * 与 s == 1.0F 时换算恒等，保持既有路径逐位一致。</p>
+     */
+    private static int resolveTreeAbsX(SceneOverlayHost.Entry entry, int rootAbsX, float scale) {
+        return entry == null ? rootAbsX : toOverlay(rootAbsX + entry.getAnchorX(), scale);
     }
 
-    private static int resolveTreeAbsY(SceneOverlayHost.Entry entry, int rootAbsY) {
-        return entry == null ? rootAbsY : rootAbsY + entry.getAnchorY();
+    private static int resolveTreeAbsY(SceneOverlayHost.Entry entry, int rootAbsY, float scale) {
+        return entry == null ? rootAbsY : toOverlay(rootAbsY + entry.getAnchorY(), scale);
     }
 
     /** 捕获时锁定节点所属 paint root；entry 即使随后摘除仍保留最后一个有效 anchor。 */
@@ -866,9 +903,13 @@ public class SceneInputRouter {
             if (!entry.getDismissPolicy().isDismissOnOutsidePointerDown()) {
                 continue;
             }
+            // 与 overlay 优先命中共用同一换算：命中链在 overlay 自己坐标空间内判定，
+            // protectedNodes 仍是链身份比对，无需坐标。
+            float scale = entry.getRelativeScale();
             boolean outside = entry != hitEntry
-                    && hitTester.hitTest(entry.getRoot(), canvasX, canvasY,
-                    rootAbsX + entry.getAnchorX(), rootAbsY + entry.getAnchorY()).isEmpty()
+                    && hitTester.hitTest(entry.getRoot(), toOverlay(canvasX, scale), toOverlay(canvasY, scale),
+                    toOverlay(rootAbsX + entry.getAnchorX(), scale),
+                    toOverlay(rootAbsY + entry.getAnchorY(), scale)).isEmpty()
                     && Collections.disjoint(hitChain, entry.getProtectedNodes());
             if (outside) {
                 entry.requestDismiss();
