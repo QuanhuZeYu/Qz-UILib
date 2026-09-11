@@ -157,6 +157,44 @@ public class MemberGridTest {
         layoutAndBridge();
     }
 
+    /** 带徽章 hover 通道的挂载（D5）：只在提供通道时徽章接线，其余与非 hover 形态一致。 */
+    private void mountWithHover(List<SearchPickerData.CurrentMember> initial,
+                                java.util.function.Consumer<SearchPickerData.CurrentMember> onHover) {
+        membersSignal = Signal.create(initial);
+        enabledSignal = Signal.create(Boolean.TRUE);
+        issuesSignal = Signal.create(issuesOf(initial));
+        final MemberGrid.Props props = new MemberGrid.Props(membersSignal, enabledSignal,
+                SearchPickerPresentation.defaultEnglish(), visualAdapter(), issuesSignal,
+                edited::add, id -> {
+                    removed.add(id);
+                    return Boolean.TRUE;
+                },
+                CELL_W, CELL_H, GAP_X, GAP_Y, null, onHover);
+        final MemberGrid.Result[] holder = new MemberGrid.Result[1];
+        handle = rt.mount(sceneRoot, () -> {
+            SceneNode wrapper = new SceneNode();
+            wrapper.setPreferredHeight(WRAPPER_HEIGHT);
+            holder[0] = MemberGrid.create(rt, props);
+            wrapper.appendChild(holder[0].root());
+            return wrapper;
+        });
+        result = holder[0];
+        rt.flush();
+        layoutAndBridge();
+    }
+
+    /** 指针移动到节点中心（inside=true）或画布角落（inside=false，用于 hover 移出）。 */
+    private void movePointer(SceneNode node, boolean inside) {
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        int x = inside ? box.getX() + box.getWidth() / 2 : 1;
+        int y = inside ? box.getY() + box.getHeight() / 2 : 1;
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, x, y, SceneMouseButton.NONE,
+                0, 0, 0, false, false, false, false, 1000L));
+        rt.route(sceneRoot, fb.drainFrame(), 0, 0);
+        rt.flush();
+    }
+
     /** 受控换代：成员与问题统计同步更新（与生产接线一致，issues 由同一列表分析得出）。 */
     private void updateMembers(List<SearchPickerData.CurrentMember> next) {
         membersSignal.set(next);
@@ -251,6 +289,43 @@ public class MemberGridTest {
 
     private SceneNode row(int rowIndex) {
         return rowsContainer().__getChildren().get(rowIndex);
+    }
+
+    /**
+     * D5（P5 §5.4）：徽章 hover 上报当前成员、移出上报 null；通道可选（未提供时不接线）。
+     *
+     * <p>可命中的只有徽章本身（卡片/行保持 hitTestable=false，点击仍穿透到卡内按钮）；
+     * 无问题成员的徽章文本为空 —— 空文本叶宽度为 0，不存在可命中的 hover 目标。</p>
+     */
+    @Test
+    public void badgeHoverReportsMemberThroughOptionalChannel() {
+        java.util.ArrayList<SearchPickerData.CurrentMember> hovered =
+                new java.util.ArrayList<SearchPickerData.CurrentMember>();
+        mountWithHover(Arrays.asList(member(0L, "a", "Alpha"),
+                new SearchPickerData.CurrentMember(1L, null, null, false)), hovered::add);
+
+        SceneNode normalBadge = badge(cell(0, 0));
+        SceneNode invalidBadge = badge(cell(1, 0));
+        Assert.assertTrue("徽章必须可命中（hover 原因通道前提）", invalidBadge.isHitTestable());
+        Assert.assertEquals("无问题成员徽章文本为空", "", normalBadge.getText());
+        Assert.assertTrue("卡片行保持不可命中（点击仍穿透到卡内按钮）",
+                !cell(0, 0).isHitTestable());
+
+        movePointer(invalidBadge, true);
+        Assert.assertNotNull("徽章 hover 必须上报成员", last(hovered));
+        Assert.assertEquals("上报的必须是该徽章所属成员", 1L, last(hovered).memberId());
+        int afterEnter = hovered.size();
+        movePointer(invalidBadge, true);
+        Assert.assertEquals("同一目标重复移动不得重复上报（hover 状态同值去重）",
+                afterEnter, hovered.size());
+
+        movePointer(invalidBadge, false);
+        Assert.assertNull("徽章移出必须上报 null（清原因）", last(hovered));
+    }
+
+    /** @return 末次 hover 上报值（无上报返回 null） */
+    private static SearchPickerData.CurrentMember last(List<SearchPickerData.CurrentMember> reports) {
+        return reports.isEmpty() ? null : reports.get(reports.size() - 1);
     }
 
     private SceneNode cell(int rowIndex, int colIndex) {

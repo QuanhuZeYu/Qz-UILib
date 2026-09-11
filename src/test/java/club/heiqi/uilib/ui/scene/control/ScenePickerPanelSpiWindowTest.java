@@ -284,6 +284,27 @@ public class ScenePickerPanelSpiWindowTest {
         Assert.assertEquals("k2", f.commits.get(0).candidateKey());
     }
 
+    /** 指针移到面板外角落（hover 移出）。 */
+    private void moveAway() {
+        InputFrameBuilder fb = new InputFrameBuilder(1, 1);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.MOVE, 1, 1,
+                SceneMouseButton.NONE, 0, 0, 0, false, false, false, false, 1001L));
+        rt.route(sceneRoot, fb.drainFrame(), 0, 0);
+        rt.flush();
+        layoutAll();
+    }
+
+    /** 成员卡徽章：cell 顶行 = [icon, primary, badge]（跨行平铺取第 index 张卡）。 */
+    private static SceneNode memberBadge(SceneNode panel, int index) {
+        for (SceneNode row : memberRows(panel).__getChildren()) {
+            if (index < row.__getChildren().size()) {
+                return row.__getChildren().get(index).__getChildren().get(0).__getChildren().get(2);
+            }
+            index -= row.__getChildren().size();
+        }
+        throw new IllegalStateException("member cell index out of mounted grid: " + index);
+    }
+
     /** 悬停一个已布局单元：先声明 hover 关心（时序契约），再路由指针 MOVE。 */
     private void hover(SceneNode node) {
         rt.interactionState(node).hovered();
@@ -294,6 +315,54 @@ public class ScenePickerPanelSpiWindowTest {
         rt.route(sceneRoot, fb.drainFrame(), 0, 0);
         rt.flush();
         layoutAll();
+    }
+
+    // ==================== 徽章 hover 原因（D5） ====================
+
+    /**
+     * D5（P5 §5.4）：悬停成员徽章 → 信息条给出原因（严重级 + 问题 + 稳定 ID），文案全部经
+     * Presentation 注入；移出后回到空闲提示（不留原因文案）。
+     *
+     * <p>默认英文档模板定值为 {@code {severity} · {issue} · ID: {id}}：无效成员 ID = {@code #memberId}
+     * （raw 无法解析为候选选择），重复成员 ID = 候选 key；raw 展示文本为空时不追加尾巴。</p>
+     */
+    @Test
+    public void memberBadgeHoverExplainsIssueThroughPresentation() {
+        FakeSource source = new FakeSource(20);
+        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        f.members.set(Arrays.asList(
+                new SearchPickerData.CurrentMember(0L, null, null, false),
+                new SearchPickerData.CurrentMember(1L,
+                        new SearchPickerData.Selection("k2", SearchPickerData.SelectionMode.ALL,
+                                Collections.<String>emptyList()), null, false),
+                new SearchPickerData.CurrentMember(2L,
+                        new SearchPickerData.Selection("k2", SearchPickerData.SelectionMode.ALL,
+                                Collections.<String>emptyList()), null, false)));
+        f.openPanel();
+        SceneNode panel = f.panelRoot();
+
+        String invalidReason = f.presentation().memberIssueReason(
+                f.presentation().errorSeverity(), f.presentation().invalidIssue(), "#0", "");
+        Assert.assertEquals("默认英文档原因模板定值", "Error · Invalid · ID: #0", invalidReason);
+        String duplicateReason = f.presentation().memberIssueReason(
+                f.presentation().warningSeverity(), f.presentation().duplicateIssue(), "k2", "");
+        Assert.assertEquals("默认英文档重复原因模板定值", "Warning · Duplicate · ID: k2", duplicateReason);
+
+        hover(memberBadge(panel, 0));
+        Assert.assertTrue("无效徽章 hover 必须给出原因（经 Presentation）: " + allText(panel),
+                allText(panel).contains(invalidReason));
+        hover(memberBadge(panel, 1));
+        Assert.assertTrue("重复徽章 hover 必须给出原因（经 Presentation）: " + allText(panel),
+                allText(panel).contains(duplicateReason));
+        Assert.assertFalse("原因必须按当前 hover 成员切换，不得残留上一条: " + allText(panel),
+                allText(panel).contains(invalidReason));
+
+        // 移出徽章：原因为空 ⇒ 信息条回落空闲提示（不留原因文案）。
+        moveAway();
+        Assert.assertFalse("移出后不得残留原因文案: " + allText(panel),
+                allText(panel).contains(duplicateReason));
+        Assert.assertTrue("移出后应回到空闲提示: " + allText(panel),
+                allText(panel).contains(f.presentation().searchResultsTitle()));
     }
 
     // ==================== Tab 环闭合（A7） ====================
@@ -484,10 +553,13 @@ public class ScenePickerPanelSpiWindowTest {
                 .__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
     }
 
-    /** 成员带卡片行容器：membersPanel = [header, 模式横幅, gridRoot, 空态, 撤销条]。 */
+    /**
+     * 成员带卡片行容器：membersPanel = [header, 模式横幅, gridRoot, 空态, 撤销条]；
+     * gridRoot = [viewport, 滚动条]，viewport[0] = 行容器（行即容器子节点，与 MemberGridTest 同路径）。
+     */
     private static SceneNode memberRows(SceneNode panel) {
         return panel.__getChildren().get(2).__getChildren().get(2)
-                .__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
+                .__getChildren().get(0).__getChildren().get(0);
     }
 
     private void click(SceneNode node) {
@@ -531,6 +603,7 @@ public class ScenePickerPanelSpiWindowTest {
         final List<SearchPickerData.Selection> commits = new ArrayList<SearchPickerData.Selection>();
         final Result result;
         private final club.heiqi.config.ui.editor.SearchPickerPanelPresentation panelPresentation;
+        private final club.heiqi.config.ui.editor.SearchPickerPresentation presentation;
 
         SpiFixture(PickerCandidateSource source, int searchMaxItems) {
             Signal<Integer> dimensionSignal = dimension;
@@ -546,6 +619,7 @@ public class ScenePickerPanelSpiWindowTest {
                     .candidateSource(source, searchMaxItems, sourceQuery, version)
                     .build();
             panelPresentation = props.panelPresentation();
+            presentation = props.presentation();
             result = ScenePickerPanel.create(rt, props);
             sceneRoot.appendChild(result.root());
         }
@@ -574,6 +648,10 @@ public class ScenePickerPanelSpiWindowTest {
 
         club.heiqi.config.ui.editor.SearchPickerPanelPresentation panelPresentation() {
             return panelPresentation;
+        }
+
+        club.heiqi.config.ui.editor.SearchPickerPresentation presentation() {
+            return presentation;
         }
     }
 

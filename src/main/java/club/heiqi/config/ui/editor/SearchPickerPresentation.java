@@ -53,6 +53,7 @@ public final class SearchPickerPresentation {
     private final String invalidIssue;
     private final String warningSeverity;
     private final String duplicateIssue;
+    private final String memberIssueReasonPattern;
     private final CurrentMemberFormatter currentMemberPrimaryFormatter;
     private final CurrentMemberFormatter currentMemberSecondaryFormatter;
     private final ResultSummaryFormatter resultSummaryFormatter;
@@ -92,6 +93,7 @@ public final class SearchPickerPresentation {
         invalidIssue = required(builder.invalidIssue, "invalidIssue");
         warningSeverity = required(builder.warningSeverity, "warningSeverity");
         duplicateIssue = required(builder.duplicateIssue, "duplicateIssue");
+        memberIssueReasonPattern = required(builder.memberIssueReasonPattern, "memberIssueReasonPattern");
         currentMemberPrimaryFormatter = Objects.requireNonNull(
                 builder.currentMemberPrimaryFormatter, "currentMemberPrimaryFormatter");
         currentMemberSecondaryFormatter = Objects.requireNonNull(
@@ -167,6 +169,36 @@ public final class SearchPickerPresentation {
     public String invalidMemberBadge() { return errorSeverity + "/" + invalidIssue; }
     /** @return duplicate 成员的通用紧凑 badge 文案 */
     public String duplicateMemberBadge() { return warningSeverity + "/" + duplicateIssue; }
+    /** @return 错误级严重度文案（徽章 hover 原因复用） */
+    public String errorSeverity() { return errorSeverity; }
+    /** @return 无效问题文案（徽章 hover 原因复用） */
+    public String invalidIssue() { return invalidIssue; }
+    /** @return 警告级严重度文案（徽章 hover 原因复用） */
+    public String warningSeverity() { return warningSeverity; }
+    /** @return 重复问题文案（徽章 hover 原因复用） */
+    public String duplicateIssue() { return duplicateIssue; }
+
+    /**
+     * 成员徽章 hover 原因（P5 §5.4 D5）：无效/重复的判定 + 稳定 ID + 原始 raw。
+     *
+     * <p>文案模板与三个分量全部经 Presentation 注入（{@code {severity}}/{@code {issue}}/{@code {id}} 占位符）；
+     * {@code raw} 非空时追加在末尾（raw 的展示口径 = 成员副文本，见 {@link #currentMemberSecondary}，
+     * 因此「原始 raw」不另立第二份数据来源）。</p>
+     *
+     * @param severity 严重级（错误级/警告级，取 {@link #errorSeverity()}/{@link #warningSeverity()}）
+     * @param issue    问题文案（取 {@link #invalidIssue()}/{@link #duplicateIssue()}）
+     * @param stableId 稳定 ID（合法成员 = 候选 key；无效成员 = {@code #memberId}）
+     * @param raw      原始 raw 展示文本（可为 null/空 = 不追加）
+     * @return 徽章原因文案
+     */
+    public String memberIssueReason(String severity, String issue, String stableId, String raw) {
+        String text = required(memberIssueReasonPattern, "memberIssueReasonPattern")
+                .replace("{severity}", required(severity, "severity"))
+                .replace("{issue}", required(issue, "issue"))
+                .replace("{id}", required(stableId, "stableId"));
+        String detail = raw == null ? "" : raw;
+        return detail.isEmpty() ? text : text + " · " + detail;
+    }
     /** @return 当前列表成员第一行的主展示文案 */
     public String currentMemberPrimary(SearchPickerData.CurrentMember member) {
         return required(currentMemberPrimaryFormatter.format(Objects.requireNonNull(member, "member")),
@@ -217,6 +249,7 @@ public final class SearchPickerPresentation {
         private String invalidIssue = "Invalid";
         private String warningSeverity = "Warning";
         private String duplicateIssue = "Duplicate";
+        private String memberIssueReasonPattern = "{severity} · {issue} · ID: {id}";
         private CurrentMemberFormatter currentMemberPrimaryFormatter = member -> {
             if (member.selection() == null) return "Unable to read this value";
             return member.enumerated() ? member.candidate().label() : member.selection().candidateKey();
@@ -278,6 +311,10 @@ public final class SearchPickerPresentation {
         public Builder warningSeverity(String value) { warningSeverity = value; return this; }
         /** 设置 duplicate badge 的重复状态文案。 */
         public Builder duplicateIssue(String value) { duplicateIssue = value; return this; }
+        /** 设置成员徽章 hover 原因模板（{severity}/{issue}/{id} 占位符；raw 非空时追加末尾）。 */
+        public Builder memberIssueReasonPattern(String value) {
+            memberIssueReasonPattern = value; return this;
+        }
         /** 设置当前列表成员第一行格式化器；保留旧 API 名称。 */
         public Builder currentMemberFormatter(CurrentMemberFormatter value) {
             currentMemberPrimaryFormatter = value; return this;

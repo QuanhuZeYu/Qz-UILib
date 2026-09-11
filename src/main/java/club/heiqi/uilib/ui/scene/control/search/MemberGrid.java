@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanelNav.MemberIssues;
 import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGridNav;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
+import club.heiqi.uilib.ui.scene.input.SceneInteractionState;
 import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
@@ -100,7 +101,40 @@ public final class MemberGrid {
             int cellHeight,
             int gapX,
             int gapY,
-            ReadableSignal<PickerMetrics> metrics) {
+            ReadableSignal<PickerMetrics> metrics,
+            Consumer<SearchPickerData.CurrentMember> onHoverMember) {
+
+        /**
+         * 旧 12 参形态（P5 兼容，纯加法保留）：无徽章 hover 原因通道。
+         *
+         * @param members       成员信号
+         * @param enabled       是否启用
+         * @param presentation  文案
+         * @param visualAdapter 视觉适配器
+         * @param issues        成员问题
+         * @param onEdit        编辑回调
+         * @param onRemove      删除回调
+         * @param cellWidth     单元宽
+         * @param cellHeight    单元高
+         * @param gapX          列间距
+         * @param gapY          行间距
+         * @param metrics       P5 派生度量（可为 null）
+         */
+        public Props(ReadableSignal<List<SearchPickerData.CurrentMember>> members,
+                     ReadableSignal<Boolean> enabled,
+                     SearchPickerPresentation presentation,
+                     VisualAdapter visualAdapter,
+                     ReadableSignal<MemberIssues> issues,
+                     Consumer<Long> onEdit,
+                     LongPredicate onRemove,
+                     int cellWidth, int cellHeight, int gapX, int gapY,
+                     ReadableSignal<PickerMetrics> metrics) {
+            this(members, enabled, presentation, visualAdapter, issues, onEdit, onRemove,
+                    cellWidth, cellHeight, gapX, gapY, metrics, null);
+        }
+
+        /** @return 徽章 hover 回调（null = 不提供原因通道；hover 进入传成员、移出传 null） */
+        public Consumer<SearchPickerData.CurrentMember> onHoverMember() { return onHoverMember; }
 
         /**
          * 旧 11 参形态（P5 兼容，纯加法保留）：卡尺寸取调用方传入的确定值。
@@ -126,7 +160,7 @@ public final class MemberGrid {
                      LongPredicate onRemove,
                      int cellWidth, int cellHeight, int gapX, int gapY) {
             this(members, enabled, presentation, visualAdapter, issues, onEdit, onRemove,
-                    cellWidth, cellHeight, gapX, gapY, null);
+                    cellWidth, cellHeight, gapX, gapY, null, null);
         }
 
         /** @return P5 派生度量（null = 沿用调用方传入的确定尺寸，P5 前口径） */
@@ -395,6 +429,15 @@ public final class MemberGrid {
         SceneNode badge = text("");
         badge.setWidthSizing(WidthSizing.SHRINK);
         badge.setFallbackFontSize(FONT_SIZE);
+        // D5（P5 §5.4）：徽章 hover 说明原因 —— 只有徽章本身可命中（卡片/行仍 hitTestable=false，
+        // 点击继续穿透到卡内按钮）；空徽章宽度为 0 ⇒ 不会命中也无原因可讲。
+        if (props.onHoverMember() != null) {
+            badge.setHitTestable(true);
+            SceneInteractionState badgeInteraction = rt.interactionState(badge);
+            badgeInteraction.hovered();
+            rt.bind(badgeInteraction.hovered(), hovered -> Effect.untrack(() ->
+                    props.onHoverMember().accept(Boolean.TRUE.equals(hovered) ? currentMember.get() : null)));
+        }
         // F5（P5 §5.6）：徽章不受字号档影响地溢出卡片 —— 单行省略 + 宽度上限
         // （卡宽 − 图标 − 内边距 − 间距），字号放大时截断而不是把卡片撑破。
         badge.setMaxLines(1);

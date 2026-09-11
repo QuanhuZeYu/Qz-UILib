@@ -723,6 +723,8 @@ public final class ScenePickerPanel {
         Signal<Integer> gridHighlight = Signal.create(Integer.valueOf(-1));
         // 删除撤销闸口（P5 §5.5 E1/E3 甲形态：删除即生效 + 5s 撤销条，至多 1 条 tombstone）。
         Signal<Tombstone> tombstone = Signal.create(null);
+        // 徽章 hover 原因（D5）：成员卡徽章 hover 的成员快照（null = 无徽章 hover）；随内容 Owner 释放。
+        Signal<SearchPickerData.CurrentMember> hoveredMember = Signal.create(null);
         Signal<Boolean> addingMember = Signal.create(Boolean.FALSE);
         Signal<Boolean> editingMember = Signal.create(Boolean.FALSE);
         Signal<FocusIntent> focusIntent = Signal.create(FocusIntent.NONE);
@@ -797,7 +799,7 @@ public final class ScenePickerPanel {
                     memberIssues, categoryKey, categoryWriter, gridHighlight,
                     addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
                     gridViewportHolder, windowModelHolder, variantsOpen, activeCandidate, mode,
-                    selectedKeys, metrics, viewportSizing, tombstone, undoVisible);
+                    selectedKeys, metrics, viewportSizing, tombstone, undoVisible, hoveredMember);
             // 撤销窗口到期（≤5s）：帧时间信号驱动，O(1)；无 tombstone 时首个判断即返回。
             rt.bind(rt.__frameTimeNanos(), nanos -> Effect.untrack(() -> {
                 Tombstone current = tombstone.get();
@@ -875,7 +877,8 @@ public final class ScenePickerPanel {
                                        ReadableSignal<PickerMetrics> metrics,
                                        boolean viewportSizing,
                                        Signal<Tombstone> tombstone,
-                                       ReadableSignal<Boolean> undoVisible) {
+                                       ReadableSignal<Boolean> undoVisible,
+                                       Signal<SearchPickerData.CurrentMember> hoveredMember) {
         SceneNode scrim = SceneNode.column();
         scrim.setFillParentWidth(true);
         scrim.setFillParentHeight(true);
@@ -947,7 +950,8 @@ public final class ScenePickerPanel {
         selectionArea.appendChild(centerColumn(rt, props, closeRequest, feed,
                 categoryKey, gridHighlight, gridFocusTarget, gridViewportHolder, windowModelHolder,
                 hoveredItem, variantsOpen, activeCandidate, mode, selectedKeys,
-                addingMember, editingMember, focusIntent, metrics, viewportSizing));
+                addingMember, editingMember, focusIntent, metrics, viewportSizing,
+                memberIssues, hoveredMember));
         root.appendChild(selectionArea);
 
         // 下容器：已选择编辑（仅 listMembers 挂全宽底部横带）。
@@ -955,7 +959,7 @@ public final class ScenePickerPanel {
             root.appendChild(membersPanel(rt, props, memberIssues, gridHighlight,
                     addingMember, editingMember, focusIntent, variantsOpen,
                     activeCandidate, mode, selectedKeys, metrics, viewportSizing,
-                    tombstone, undoVisible));
+                    tombstone, undoVisible, hoveredMember));
         }
         scrim.appendChild(root);
         return scrim;
@@ -1099,7 +1103,9 @@ public final class ScenePickerPanel {
                                           Signal<Boolean> editingMember,
                                           Signal<FocusIntent> focusIntent,
                                           ReadableSignal<PickerMetrics> metrics,
-                                          boolean viewportSizing) {
+                                          boolean viewportSizing,
+                                          ReadableSignal<MemberIssues> memberIssues,
+                                          Signal<SearchPickerData.CurrentMember> hoveredMember) {
         SceneNode center = SceneNode.column();
         center.setFlexGrow(1);
         center.setGap(SceneChromeTokens.GAP_SM);
@@ -1223,6 +1229,15 @@ public final class ScenePickerPanel {
         //   空闲 -> 「搜索结果 (N)」+ 状态提示（截断 > 键盘 > 滚动 > 悬停操作提示）。
         // 单行形态同时是 Q2 的取法：竖向只占 round(fs*2)，不会为第二行再抬高度。
         ReadableSignal<String> infoText = Computed.create(() -> {
+            // D5（P5 §5.4）：成员徽章 hover 的原因解释优先级最高（标题栏之外唯一语义出口），
+            // 原因文案（严重级/问题/稳定 ID/原始 raw）全部经 Presentation 注入，不在面板内拼字面量。
+            SearchPickerData.CurrentMember hovered = hoveredMember.get();
+            if (hovered != null) {
+                String reason = memberIssueReason(props, memberIssues, hovered);
+                if (!reason.isEmpty()) {
+                    return reason;
+                }
+            }
             // D3（P5 §5.4）：键盘高亮与指针悬停同权 —— 悬停优先，空闲时回落到当前高亮项。
             SceneVirtualGrid.Item item = hoveredItem.get();
             if (item == null) {
@@ -1280,7 +1295,8 @@ public final class ScenePickerPanel {
                                           ReadableSignal<PickerMetrics> metrics,
                                           boolean viewportSizing,
                                           Signal<Tombstone> tombstone,
-                                          ReadableSignal<Boolean> undoVisible) {
+                                          ReadableSignal<Boolean> undoVisible,
+                                          Signal<SearchPickerData.CurrentMember> hoveredMember) {
         SceneNode panel = SceneNode.column();
         // 成员带高度由 PickerMetrics 派生（空态折叠为一行提示、有成员时最多 2 行 + header），
         // 不再是固定 248：720p 下现状 248 占面板 49% 会把结果区压到 1 行（T5 UX-01）。
@@ -1364,7 +1380,9 @@ public final class ScenePickerPanel {
                 // 卡尺寸兼容位：有度量通道时内部按字号派生（P5 §2.5），此处只作旧口径兜底。
                 MemberGrid.DEFAULT_CELL_WIDTH, MemberGrid.DEFAULT_CELL_HEIGHT,
                 MemberGrid.DEFAULT_GAP_X, MemberGrid.DEFAULT_GAP_Y,
-                viewportSizing ? metrics : null));
+                viewportSizing ? metrics : null,
+                // D5：徽章 hover 原因通道（hover 进入给成员、移出给 null），信息条据此解释原因。
+                hoveredMember::set));
         grid.root().setFlexGrow(1);
         panel.appendChild(grid.root());
         rt.show(panel, Computed.create(() -> Boolean.valueOf(members.get().isEmpty())),
@@ -1450,6 +1468,32 @@ public final class ScenePickerPanel {
     /** 删除 tombstone（原值恢复用；展示名用于撤销条文案）。 */
     @Desugar
     private record Tombstone(long memberId, String name, long deadlineNanos) { }
+
+    /**
+     * 成员徽章 hover 原因（P5 §5.4 D5）：无效/重复判定 → Presentation 注入的原因文案。
+     *
+     * <p>稳定 ID 口径：合法成员 = 候选 key；无效成员 = {@code #memberId}（其 raw 无法解析为候选选择）。
+     * 原始 raw 经成员副文本口径（{@link SearchPickerPresentation#currentMemberSecondary}）携带 ——
+     * 该文本本身就是「原始 raw 的展示形态」，不另立第二份 raw 数据来源。</p>
+     *
+     * @return 原因文案；该成员当前没有徽章（既非无效也非重复）时返回空串（信息条回落既有优先级）
+     */
+    private static String memberIssueReason(Props props, ReadableSignal<MemberIssues> memberIssues,
+                                            SearchPickerData.CurrentMember member) {
+        boolean invalid = member.selection() == null;
+        boolean duplicate = !invalid && memberIssues.get().duplicateMemberIds()
+                .contains(Long.valueOf(member.memberId()));
+        if (!invalid && !duplicate) {
+            return "";
+        }
+        String severity = invalid ? props.presentation().errorSeverity()
+                : props.presentation().warningSeverity();
+        String issue = invalid ? props.presentation().invalidIssue()
+                : props.presentation().duplicateIssue();
+        String stableId = invalid ? "#" + member.memberId() : member.selection().candidateKey();
+        return props.presentation().memberIssueReason(severity, issue, stableId,
+                props.presentation().currentMemberSecondary(member));
+    }
 
     /**
      * 编辑成员（MemberGrid 回调）：进入编辑态；带变体的成员预开变体浮层，否则引导回网格。
