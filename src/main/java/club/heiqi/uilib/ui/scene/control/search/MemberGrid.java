@@ -169,8 +169,9 @@ public final class MemberGrid {
         }));
 
         // 渲染分级回退：不可渲染图标回退占位样式（与结果列表同款共享装配）。
-        Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(
-                registryKey -> candidateKeyForRegistryKey(safeMembers(props.members()), registryKey));
+        // 键空间 = 候选域键：成员选择携带的变体 key 本身即 "candidateKey@meta"
+        // （PickerIconKey.variant 的返回值）；无 meta 的成员按候选级键（PickerIconKey.candidate）判定。
+        Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(registryKey -> registryKey);
 
         ReadableSignal<List<Row>> rowsSignal = Computed.create(() ->
                 toRows(safeMembers(props.members()), Math.max(1, effectiveColumns.get().intValue())));
@@ -267,8 +268,7 @@ public final class MemberGrid {
         // + §7.3「内容图片不迁移」）：占位底色与透明底均为静态值，不随主题重染。
         ReadableSignal<SceneImageSource> effectiveImage = Computed.create(() -> {
             SearchPickerData.CurrentMember member = currentMember.get();
-            if (member.candidate() == null
-                    || unrenderableKeys.get().contains(member.candidate().key())) {
+            if (member.candidate() == null || isMemberUnrenderable(member, unrenderableKeys.get())) {
                 return null;
             }
             return props.visualAdapter().candidateImage(member.candidate());
@@ -342,19 +342,34 @@ public final class MemberGrid {
         return cell;
     }
 
-    /** 按 registryKey（注册名:meta）反查候选 key（注册名）。 */
-    private static Object candidateKeyForRegistryKey(
-            List<SearchPickerData.CurrentMember> members, String registryKey) {
-        String[] parts = ItemRenderFallbackKeys.splitRegistryKey(registryKey);
-        if (parts == null) {
-            return null;
+    /**
+     * 成员整体不可渲染判定（键空间 = 候选域键，见 {@code ItemRenderFallbackKeys}）：
+     * ALL（候选整体）看 {@code PickerIconKey.candidate(key)}；单选变体看该变体键
+     * （{@code candidateKey@meta}，即成员选择里携带的变体 key）；多选变体 = 全部键都不可渲染才算整体不可渲染。
+     *
+     * @param member         当前成员快照
+     * @param unrenderable   已分级不可渲染键集合
+     * @return 是否应回退占位样式
+     */
+    private static boolean isMemberUnrenderable(SearchPickerData.CurrentMember member,
+                                                Set<Object> unrenderable) {
+        SearchPickerData.Selection selection = member.selection();
+        if (selection == null || member.candidate() == null || unrenderable == null) {
+            return false;
         }
-        for (SearchPickerData.CurrentMember member : members) {
-            if (member.candidate() != null && parts[0].equals(member.candidate().key())) {
-                return member.candidate().key();
+        if (selection.mode() == SearchPickerData.SelectionMode.ALL) {
+            return unrenderable.contains(PickerIconKey.candidate(member.candidate().key()));
+        }
+        List<String> keys = selection.variantKeys();
+        if (keys.isEmpty()) {
+            return false;
+        }
+        for (String key : keys) {
+            if (!unrenderable.contains(key)) {
+                return false;
             }
         }
-        return null;
+        return true;
     }
 
     private static List<SearchPickerData.CurrentMember> safeMembers(

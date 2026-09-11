@@ -220,8 +220,9 @@ public final class SearchResultList {
         CellPalette palette = new CellPalette(rt);
 
         // 渲染分级回退：订阅注册表，不可渲染项写入 unrenderableKeys → 单元回退占位样式（共享装配）。
-        Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(
-                registryKey -> itemKeyForRegistryKey(safeItems(props.items()), registryKey));
+        // 键空间 = 候选域键（选择器图标源覆写 registryKey() 的返回值）：本列表项 key 即候选 key，
+        // 与 PickerIconKey.candidate(key) 同值 ⇒ 恒等映射，无需拆键（拆键是历史缺陷，已删除）。
+        Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(registryKey -> registryKey);
         // 全量行模型：items 全部项按生效列数分行（无上限、无截断）。
         // 行键用该行首项在完整列表中的下标（稳定唯一）。
         ReadableSignal<List<Row>> rowsSignal = Computed.create(() -> {
@@ -541,22 +542,6 @@ public final class SearchResultList {
             }
         }
         return Math.max(0, vp.getPreferredHeight());
-    }
-
-    /**
-     * 按 registryKey 反查条目 key（registryKey = 注册名:meta，条目 key = 注册名，拆末段冒号对齐）。
-     */
-    private static Object itemKeyForRegistryKey(List<SceneVirtualGrid.Item> items, String registryKey) {
-        String[] parts = ItemRenderFallbackKeys.splitRegistryKey(registryKey);
-        if (parts == null) {
-            return null;
-        }
-        for (SceneVirtualGrid.Item item : items) {
-            if (parts[0].equals(item.key())) {
-                return item.key();
-            }
-        }
-        return null;
     }
 
     private static List<SceneVirtualGrid.Item> safeItems(

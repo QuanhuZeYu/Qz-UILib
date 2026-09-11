@@ -310,8 +310,9 @@ public final class VariantChooser {
         SceneNode list = sc.viewport();
         list.setHitTestable(false);
         // 渲染分级回退：已分级不可渲染的变体回退占位样式（与结果列表同款共享装配）。
-        Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(
-                VariantChooser::variantKeyForRegistryKey);
+        // 键空间 = 候选域键：变体条目 key 本身即 "candidateKey@meta"（PickerIconKey.variant 的返回值）
+        // ⇒ 恒等映射；旧的「拆冒号再拼 @」形态已删除（对候选域键是错解析）。
+        Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(registryKey -> registryKey);
 
         ReadableSignal<List<SearchPickerData.Variant>> shownVariants = Computed.create(() ->
                 displayVariants(safeCandidate(props), props.selectedKeys().get(), variantQuery.get()));
@@ -459,12 +460,6 @@ public final class VariantChooser {
             return recipe.getHovered().getTint();
         }
         return recipe.getIdle().getTint();
-    }
-
-    /** registryKey（注册名:meta）→ 变体 key（注册名@meta）；非法返回 null。 */
-    static Object variantKeyForRegistryKey(String registryKey) {
-        String[] parts = ItemRenderFallbackKeys.splitRegistryKey(registryKey);
-        return parts == null ? null : parts[0] + "@" + parts[1];
     }
 
     /** 勾选/取消一个变体 key（含则移除，否则加入）。 */

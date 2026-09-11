@@ -18,6 +18,16 @@ import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
  * <p>把「订阅 {@link ItemRenderTierRegistry} → UNRENDERABLE 分级 → 增量写入回退键集合 →
  * owner 清理」样板收敛为单点：结果列表与变体列表共用同一语义（已分级不可渲染的条目回退占位样式，
  * 不再尝试渲染）。</p>
+ *
+ * <h3>键空间（唯一：候选域键，不做任何字符串拆分）</h3>
+ * <p>分级键 = 选择器图标源覆写 {@code SceneImageSource#registryKey()} 返回的
+ * {@link PickerIconKey} 值（候选级 {@code candidateKey} / 变体级 {@code candidateKey@meta}），
+ * 消费端把该值<b>原样</b>当条目 key 使用：调用形态恒为
+ * {@code ItemRenderFallbackKeys.track(registryKey -> registryKey)}。</p>
+ *
+ * <p><b>为什么禁止拆键</b>：候选域键里 {@code minecraft:stone} 是<b>整体</b>（无 meta），
+ * 按冒号拆分会把方块名当 meta、拼出的键与候选 key 永不相等 ⇒ 回退集合恒空、UNRENDERABLE 静默失效
+ * （历史缺陷 S-1 的翻版）。旧 helper {@code splitRegistryKey} 已按契约删除，无替代者。</p>
  */
 public final class ItemRenderFallbackKeys {
 
@@ -58,24 +68,5 @@ public final class ItemRenderFallbackKeys {
             owner.onCleanup(() -> ItemRenderTierRegistry.removeListener(listener));
         }
         return unrenderableKeys;
-    }
-
-    /**
-     * 拆分级注册键 {@code 注册名:meta}（如 {@code minecraft:stone:0}）为 {"注册名", "meta"}。
-     *
-     * <p>注册名本身含一个冒号（modid:name），meta 在最后一个冒号之后；非法形态返回 null。</p>
-     *
-     * @param registryKey 分级注册键
-     * @return 两段数组，或非法时 null
-     */
-    public static String[] splitRegistryKey(String registryKey) {
-        if (registryKey == null) {
-            return null;
-        }
-        int separator = registryKey.lastIndexOf(':');
-        if (separator <= 0 || separator == registryKey.length() - 1) {
-            return null;
-        }
-        return new String[] { registryKey.substring(0, separator), registryKey.substring(separator + 1) };
     }
 }

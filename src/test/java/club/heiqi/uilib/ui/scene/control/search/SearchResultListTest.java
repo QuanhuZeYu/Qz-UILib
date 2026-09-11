@@ -367,27 +367,28 @@ public class SearchResultListTest {
 
     @Test
     public void unrenderableItemFallsBackToPlaceholderStyle() {
-        // registryKey 契约 = 注册名:meta（如 modid:name:0），条目 key = 注册名（如 modid:name）。
+        // 键空间契约（P2-A 分级键统一后）= 候选域键：图标源覆写 registryKey() 返回
+        // PickerIconKey.candidate(候选 key)（本列表项 key 即候选 key），消费端恒等映射、不拆键。
         SceneImageSource brokenImage = new SceneImageSource() {
             @Override
             public String registryKey() {
-                return "test:broken:0";
+                return PickerIconKey.candidate("test:broken");
             }
         };
         SceneImageSource okImage = new SceneImageSource() {
             @Override
             public String registryKey() {
-                return "test:ok:0";
+                return PickerIconKey.candidate("test:ok");
             }
         };
         List<Item> source = new ArrayList<>();
         source.add(new Item("test:broken", brokenImage, "broken"));
         source.add(new Item("test:ok", okImage, "ok"));
         Fixture f = new Fixture(source, COLUMNS);
-        // 平台渲染层把 test:broken:0 分级为不可渲染（三次异常）→ 监听器回写 → 单元回退
-        ItemRenderTierRegistry.classify("test:broken:0", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
-        ItemRenderTierRegistry.classify("test:broken:0", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
-        ItemRenderTierRegistry.classify("test:broken:0", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        // 平台渲染层把候选域键 test:broken 分级为不可渲染（三次异常）→ 监听器回写 → 单元回退
+        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
+        ItemRenderTierRegistry.classify("test:broken", ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
         rt.flush();
         SceneNode brokenIcon = f.cell(0, 0).__getChildren().get(0);
         Assert.assertEquals("不可渲染项回退占位底色", SearchResultList.DEFAULT_PLACEHOLDER_COLOR,

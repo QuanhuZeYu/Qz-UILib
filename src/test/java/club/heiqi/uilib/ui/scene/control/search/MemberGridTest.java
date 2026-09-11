@@ -497,8 +497,9 @@ public class MemberGridTest {
      */
     @Test
     public void imageProtocolKeepsColorAcrossThemeSwitch() {
-        SceneImageSource okImage = image("test:ok:0");
-        SceneImageSource brokenImage = image("test:broken:0");
+        // 键空间 = 候选域键（成员为 ALL 选择 → PickerIconKey.candidate(候选 key)）。
+        SceneImageSource okImage = image(PickerIconKey.candidate("test:ok"));
+        SceneImageSource brokenImage = image(PickerIconKey.candidate("test:broken"));
         imagesByCandidateKey.put("test:ok", okImage);
         imagesByCandidateKey.put("test:broken", brokenImage);
         Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassDark());
@@ -517,7 +518,7 @@ public class MemberGridTest {
 
         // 渲染分级回退：三次 EXCEPTION → UNRENDERABLE → 回退占位（协议行为保持）。
         for (int i = 0; i < 3; i++) {
-            ItemRenderTierRegistry.classify("test:broken:0",
+            ItemRenderTierRegistry.classify(PickerIconKey.candidate("test:broken"),
                     ItemRenderTierRegistry.Outcome.EXCEPTION, "boom");
         }
         rt.flush();

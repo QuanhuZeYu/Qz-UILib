@@ -141,7 +141,7 @@ public final class SearchPickerFieldSupport {
                 next -> {
                     decodeError.set(""); searchError.set(""); encodeError.set(""); query.set(next);
                 },
-                selection -> { }, provider.visualAdapter())
+                selection -> { }, visualAdapterOf(rt, provider))
                 .selectionCommit(selection -> {
                     try {
                         Object encoded = provider.codec().encode(value.get(), selection);
@@ -223,7 +223,7 @@ public final class SearchPickerFieldSupport {
         ScenePickerPanel.Props.Builder panelBuilder = ScenePickerPanel.Props.builder(query, addableResults,
                 Signal.create(Boolean.TRUE),
                 next -> { searchError.set(""); encodeError.set(""); query.set(next); },
-                selection -> { }, provider.visualAdapter())
+                selection -> { }, visualAdapterOf(rt, provider))
                 .selectionCommit(selection -> {
                     Long target = binding.editingId().get();
                     boolean adding = target != null && target.longValue() < 0L;
@@ -372,6 +372,19 @@ public final class SearchPickerFieldSupport {
     }
 
     // ==================== 候选源 SPI 接线（探测式；旧路径零改动保留为 T-1） ====================
+
+    /**
+     * 面板展示适配器：provider 给出图标源（SPI）时接上 UILib 有界图标缓存（纯加法），
+     * 否则原样使用 provider 自己的适配器；缓存释放挂到当前 Owner 作用域（屏级释放链）。
+     */
+    private static club.heiqi.config.ui.editor.VisualAdapter visualAdapterOf(SceneRuntime rt, ValueEditorProvider provider) {
+        PickerIconResolver resolver = PickerIconResolver.of(provider);
+        if (resolver == null) {
+            return provider.visualAdapter();
+        }
+        rt.__onCleanup(resolver::release);
+        return resolver;
+    }
 
     /** @return 惰性候选源；provider 未实现 SPI 或返回 null 时为 null（⇒ 旧全量路径） */
     private static PickerCandidateSource candidateSourceOf(ValueEditorProvider provider) {
