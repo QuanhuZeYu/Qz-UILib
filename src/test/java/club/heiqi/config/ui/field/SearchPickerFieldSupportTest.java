@@ -3,6 +3,7 @@ package club.heiqi.config.ui.field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -600,6 +601,94 @@ public class SearchPickerFieldSupportTest {
         ReactiveScheduler.get().flush();
         harness.pressKey(SceneKey.ENTER);
         assertEquals("行触发器 ENTER 应打开面板", 1, runtime.getOverlayHost().size());
+        runtime.dispose();
+    }
+
+    /**
+     * C6（P5 §5.3）：键盘全路径端到端守卫（<b>零指针事件</b>）。
+     *
+     * <p>路径：行触发器持焦 → ENTER 开面板（搜索框获焦）→ ↓ 进结果网格并高亮首项 →
+     * ENTER 逐项提交（listMembers 新增成功后重新武装并回网格焦点）→ 连续新增 3 个 →
+     * TAB 环走到成员「删除」按钮 → ENTER 删除 1 个 → 撤销条出现。全程不注入任何指针事件。</p>
+     */
+    @Test
+    public void keyboardOnlyFlowAddsThreeMembersAndRemovesOne() {
+        SceneInteractionHarness harness = SceneInteractionHarness.create(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = harness.getRuntime();
+        Signal<Object> raw = Signal.<Object>create(new java.util.ArrayList<Object>());
+        Signal<List<SceneSimpleList.ListItem>> items = Signal.create(
+                new java.util.ArrayList<SceneSimpleList.ListItem>());
+        ValueEditorProvider.SearchFunction search = (query, max) -> new SearchPickerData.SearchResult(Arrays.asList(
+                candidate("alpha"), candidate("beta"), candidate("gamma"), candidate("delta")));
+        // 受控写回：raw 与 items 同步（生产形态；丢弃回调会让键盘提交无处落地）。
+        java.util.function.Consumer<Object> onChange = published -> {
+            raw.set(published);
+            ArrayList<SceneSimpleList.ListItem> next = new ArrayList<SceneSimpleList.ListItem>();
+            if (published instanceof List) {
+                for (Object value : (List<?>) published) {
+                    next.add(new SceneSimpleList.ListItem(String.valueOf(value)));
+                }
+            }
+            items.set(next);
+        };
+        SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                        SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
+                registry(memberCodec(), search), onChange);
+        harness.mountRoot(picker, 640, 420);
+        ReactiveScheduler.get().flush();
+        harness.mountRoot(picker, 640, 420);
+        SceneNode management = picker.__getChildren().get(0);
+
+        // ① 键盘打开（A1 入口）：行触发器持焦 + ENTER。
+        runtime.requestFocus(management);
+        ReactiveScheduler.get().flush();
+        harness.pressKey(SceneKey.ENTER);
+        ReactiveScheduler.get().flush();
+        assertEquals("ENTER 应打开面板", 1, runtime.getOverlayHost().size());
+        SceneNode panel = panelRoot(runtime);
+        layoutPanel(runtime);
+        assertSame("面板打开后搜索框获焦（A3/C3 起点）", searchInput(panel), runtime.getFocusedNode());
+
+        // ② ↓ 进网格 + ENTER 新增 ×3：每次成功后重建武装并回网格焦点（零鼠标）。
+        for (int index = 0; index < 3; index++) {
+            harness.pressKey(SceneKey.ARROW_DOWN);
+            ReactiveScheduler.get().flush();
+            layoutPanel(runtime);
+            assertSame("↓ 后焦点应进入结果网格（C3）", gridViewport(panel), runtime.getFocusedNode());
+            harness.pressKey(SceneKey.ENTER);
+            ReactiveScheduler.get().flush();
+            layoutPanel(runtime);
+            assertEquals("第 " + (index + 1) + " 次 ENTER 必须落地一个成员", index + 1, items.get().size());
+            assertEquals("键盘提交不得产生错误行", "", errorText(panel).getText());
+        }
+        assertEquals("键盘路径应新增 3 个成员", 3, items.get().size());
+        assertEquals("成员带应挂载 3 张卡片", 3, memberCellCount(panel));
+        assertEquals("三个成员必须是三个不同候选（同 key 不得重复提交）",
+                Arrays.asList("alpha:", "beta:", "gamma:"), raw.get());
+
+        // ③ TAB 环走到成员「删除」按钮（键盘可达），ENTER 删除 1 个。
+        SceneNode removeButton = memberAction(memberCell(panel, 0), 1);
+        int guard = 0;
+        while (runtime.getFocusedNode() != removeButton && guard++ < 64) {
+            harness.pressKey(SceneKey.TAB);
+            ReactiveScheduler.get().flush();
+            layoutPanel(runtime);
+            removeButton = memberAction(memberCell(panel, 0), 1);
+        }
+        assertSame("成员删除按钮必须在 Tab 环内键盘可达", removeButton, runtime.getFocusedNode());
+        harness.pressKey(SceneKey.ENTER);
+        ReactiveScheduler.get().flush();
+        layoutPanel(runtime);
+        assertEquals("键盘删除应生效（3 → 2）", 2, items.get().size());
+        assertEquals("删除后成员带应剩 2 张卡片", 2, memberCellCount(panel));
+        assertEquals("删除必须落在被选中的那个成员", Arrays.asList("beta:", "gamma:"), raw.get());
+        // 撤销条是成员带<b>末尾</b>追加的结构（不移动既有子节点下标），故按末位定位。
+        SceneNode membersBand = panel.__getChildren().get(2);
+        SceneNode toastRow = membersBand.__getChildren().get(membersBand.__getChildren().size() - 1);
+        assertTrue("删除后应出现撤销条（甲形态：删除即生效 + 5s 撤销）: " + textOf(toastRow),
+                toastRow.getPreferredHeight() > 0);
+        assertTrue("撤销条应给出被删成员的展示名: " + textOf(toastRow), textOf(toastRow).contains("alpha"));
         runtime.dispose();
     }
 
