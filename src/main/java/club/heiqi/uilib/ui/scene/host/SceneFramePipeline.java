@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 
+import club.heiqi.uilib.Config;
+import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
@@ -72,7 +74,24 @@ public final class SceneFramePipeline {
         /** paint：只读生成自包含不可变 PaintPlan。 */
         PAINT,
         /** replay：主树 + overlay bottom-first 回放。 */
-        REPLAY
+        REPLAY;
+
+        /**
+         * 采样审计名（{@code frame.<常量名>}），在枚举初始化期<b>一次性</b>生成。
+         *
+         * <p>必须是常量而非每次调用拼接：{@link UiPerformanceMonitor#recordPhase} 位于每帧热路径，
+         * 逐帧字符串拼接会产生无意义的临时对象，并破坏 {@code debug=false} 的零分配承诺。</p>
+         */
+        private final String auditName;
+
+        FramePhase() {
+            this.auditName = "frame." + name();
+        }
+
+        /** @return 采样审计名常量（禁止调用方再拼接） */
+        String auditName() {
+            return auditName;
+        }
     }
 
     /** 单阶段推进结果（阶段 1 仅 PROCEED；SKIPPED 预留给阶段 2 单步驱动）。 */
@@ -321,12 +340,21 @@ public final class SceneFramePipeline {
         state.paintResult = paintEngine.paint(state.root);
     }
 
-    /** REPLAY：主树 + overlay bottom-first 各自独立 replay。 */
+    /** REPLAY：主树 + overlay bottom-first 各自独立 replay，并（仅采样开启时）统计帧级绘制规模。 */
     private void phaseReplay() {
         trace(FramePhase.REPLAY);
+        boolean sampling = Config.useDebug;
+        int overlayCount = 0;
+        int commandCount = state.paintResult.getPlan().size();
+        int nodeCount = sampling ? countNodes(state.root) : 0;
         replayer.replay(replayPlan(state.paintResult.getPlan()), state.ctx, state.absX, state.absY);
         for (SceneOverlayHost.Entry entry : runtime.getOverlayHost().bottomFirst()) {
             PaintResult overlayResult = paintEngine.paint(entry.getRoot());
+            overlayCount++;
+            commandCount += overlayResult.getPlan().size();
+            if (sampling) {
+                nodeCount += countNodes(entry.getRoot());
+            }
             // overlay 相对倍率 s：物理尺寸 = 逻辑尺寸 × 宿主倍率 × s，故回放后端按 s 放大、
             // 回放原点按 s 收缩（同一 s、同一 Math.round 取整，与 router 命中口径一致）。
             // s == 1.0F 保持原路径：不包 scaled(1)，零新增对象与行为噪音。
@@ -340,6 +368,33 @@ public final class SceneFramePipeline {
                         Math.round((state.absY + entry.getAnchorY()) / relativeScale));
             }
         }
+        if (sampling) {
+            UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
+            monitor.recordCounter(UiPerfMarkers.COUNTER_FRAME_NODES, nodeCount);
+            monitor.recordCounter(UiPerfMarkers.COUNTER_FRAME_COMMANDS, commandCount);
+            monitor.recordCounter(UiPerfMarkers.COUNTER_FRAME_OVERLAYS, overlayCount);
+        }
+    }
+
+    /**
+     * 递归统计子树节点数（含自身）。
+     *
+     * <p>只在采样开启时调用（调用方以 {@link Config#useDebug} 门控），其成本与已开启的采样
+     * 同阶，不进入 {@code debug=false} 路径。</p>
+     *
+     * @param root 子树根
+     * @return 节点总数
+     */
+    private static int countNodes(SceneNode root) {
+        if (root == null) {
+            return 0;
+        }
+        int total = 1;
+        java.util.List<SceneNode> children = root.__getChildren();
+        for (int index = 0; index < children.size(); index++) {
+            total += countNodes(children.get(index));
+        }
+        return total;
     }
 
     // ==================== 搬移自 AbstractSceneHostWidget 的辅助逻辑 ====================
@@ -737,10 +792,10 @@ public final class SceneFramePipeline {
         }
     }
 
-    /** 记录阶段耗时到性能监控（无采样会话时零开销）。 */
+    /** 记录阶段耗时到性能监控（无采样会话时零开销；阶段名取枚举内的一次性常量，不做逐帧拼接）。 */
     private void recordPhase(FramePhase phase, long nanos) {
         if (nanos > 0L) {
-            UiPerformanceMonitor.getInstance().recordPhase("frame." + phase.name(), nanos);
+            UiPerformanceMonitor.getInstance().recordPhase(phase.auditName(), nanos);
         }
     }
 

@@ -20,6 +20,9 @@ import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPanelPresentation;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
+import club.heiqi.uilib.Config;
+import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -528,6 +531,7 @@ public final class ScenePickerPanel {
                 ScenePickerPanelNav.filterByCategory(safeResults(props).candidates(),
                         categoryKey.get(), props.categoryOf()));
         ReadableSignal<List<Item>> gridItems = Computed.create(() -> {
+            long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
             List<SearchPickerData.Candidate> candidates = filtered.get();
             ArrayList<Item> items = new ArrayList<Item>(candidates.size());
             for (SearchPickerData.Candidate candidate : candidates) {
@@ -545,6 +549,7 @@ public final class ScenePickerPanel {
                 }
                 items.add(new Item(candidate.key(), image, label));
             }
+            recordGridTransform(startedAtNanos, candidates.size(), items.size());
             return items;
         });
         ReadableSignal<List<CategoryRow>> categoryRows = Computed.create(() ->
@@ -575,10 +580,15 @@ public final class ScenePickerPanel {
         // 面板内容与控件根不同树 → 用 portal 入口把「控件根声明」落到内容根（内容根持声明，
         // 顶部/中栏/成员区/空态等全部宿主文字再沿父链继承）；与 Dialog/ContextMenu 的浮层
         // 真值归位是同一机制：声明落在内容根，而不是逐节点写字号。
-        ScenePortalHandle panelPortal = rt.portal(open, () -> mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
-                memberIssues, categoryKey, categoryWriter, gridHighlight,
-                addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
-                gridViewportHolder, variantsOpen, activeCandidate, mode, selectedKeys),
+        ScenePortalHandle panelPortal = rt.portal(open, () -> {
+            long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            SceneNode content = mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
+                    memberIssues, categoryKey, categoryWriter, gridHighlight,
+                    addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
+                    gridViewportHolder, variantsOpen, activeCandidate, mode, selectedKeys);
+            recordPhase(UiPerfMarkers.PHASE_PICKER_OPEN_MAIN, startedAtNanos);
+            return content;
+        },
                 MAIN_PANEL_POLICY,
                 () -> {
                     if (Boolean.TRUE.equals(variantsOpen.get())) {
@@ -1069,6 +1079,41 @@ public final class ScenePickerPanel {
             else if (value == FocusIntent.VARIANTS) target = variants[0];
             if (target != null && rt.requestFocus(target)) intent.set(FocusIntent.NONE);
         });
+    }
+
+    // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================
+
+    /**
+     * 记录一次网格派生（结果信号 → 网格项列表）的规模与耗时。
+     *
+     * <p>这是"全量挂载"成本的直接观测量：{@code candidateCount} 为空查询下的全量浏览规模、
+     * {@code itemCount} 为实际参与挂载的项数。采样关闭时本方法在第一道判断即返回。</p>
+     *
+     * @param startedAtNanos 起始时间戳；0 表示采样关闭（调用方已按 Config.useDebug 取值）
+     * @param candidateCount 本次派生看到的候选总数
+     * @param itemCount 本次派生产出的网格项数
+     */
+    private static void recordGridTransform(long startedAtNanos, int candidateCount, int itemCount) {
+        if (startedAtNanos == 0L) {
+            return;
+        }
+        UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
+        monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_CANDIDATES, candidateCount);
+        monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_RESULTS, itemCount);
+        monitor.recordPhase(UiPerfMarkers.PHASE_PICKER_GRID_TRANSFORM, System.nanoTime() - startedAtNanos);
+    }
+
+    /**
+     * 记录一个已完成的阶段耗时。
+     *
+     * @param phaseName 阶段名常量
+     * @param startedAtNanos 起始时间戳；0 表示采样关闭（此时不做任何观测动作）
+     */
+    private static void recordPhase(String phaseName, long startedAtNanos) {
+        if (startedAtNanos == 0L) {
+            return;
+        }
+        UiPerformanceMonitor.getInstance().recordPhase(phaseName, System.nanoTime() - startedAtNanos);
     }
 
     // ==================== 纯读取助手 ====================

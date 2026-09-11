@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.host;
 
 import club.heiqi.uilib.ui.diagnostic.FrameRateProbe;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.UiSurface;
@@ -47,6 +48,14 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
 
     /** 帧管线序列容器：一帧时序协议的显式载体（阶段 1 序列容器，行为与旧 render 1:1 对拍）。 */
     private final SceneFramePipeline pipeline;
+
+    /**
+     * 采样界面名：宿主类简名，<b>构造期解析一次</b>。
+     *
+     * <p>不能在每帧 {@code render} 里调 {@code getClass().getSimpleName()}——那会在热路径上
+     * 逐帧产生临时字符串，破坏 {@code debug=false} 的零分配承诺。匿名子类简名为空时回落全限定名。</p>
+     */
+    private final String hostLabel = resolveHostLabel();
 
     /**
      * 最近一帧主树最终 layout 的结果（有效探针引用）。
@@ -107,16 +116,36 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
      */
     @Override
     public void render(int w, int h, UiRenderBackend ctx, int absX, int absY) {
-        // host 每帧只采一次单调时间，帧率探针与 Motion 共用同一个 timestamp；
-        // tick 保留在宿主（子类覆写 render 不调 super 则 tick 不执行——子类责任，基类尽力默认采集）。
-        long frameTimeNanos = System.nanoTime();
-        frameProbe.tick(frameTimeNanos);
-        runtime.__tickFrame(frameTimeNanos);
-        w = Math.max(0, w);
-        h = Math.max(0, h);
-        SceneNode root = getRoot();
-        // 一帧 16 步时序协议全部委托帧管线（阶段 1 序列容器，行为与旧 render 1:1 对拍）。
-        this.lastLayoutResult = pipeline.run(root, w, h, ctx, absX, absY, frameTimeNanos);
+        // 采样会话：本方法覆盖全部 scene 控件宿主（屏幕宿主与其子类、聊天输入面、测试/玻璃场地）。
+        // 子类覆写只会调 super.render（已核实 GlassLabHost:207 与 ChatInputSurface:225 均如此），
+        // 故此处是唯一挂点；嵌套帧（如聊天输入面被 HUD 路径间接触发）由 monitor 的线程内深度保护，
+        // 不会重复计数。finishFrame 必须在 finally：渲染异常路径同样结算，不把会话泄漏在 ThreadLocal。
+        UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
+        monitor.beginFrame(hostLabel, Math.max(0, w), Math.max(0, h), Math.max(0, w), Math.max(0, h));
+        try {
+            // host 每帧只采一次单调时间，帧率探针与 Motion 共用同一个 timestamp；
+            // tick 保留在宿主（子类覆写 render 不调 super 则 tick 不执行——子类责任，基类尽力默认采集）。
+            long frameTimeNanos = System.nanoTime();
+            frameProbe.tick(frameTimeNanos);
+            runtime.__tickFrame(frameTimeNanos);
+            w = Math.max(0, w);
+            h = Math.max(0, h);
+            SceneNode root = getRoot();
+            // 一帧 16 步时序协议全部委托帧管线（阶段 1 序列容器，行为与旧 render 1:1 对拍）。
+            this.lastLayoutResult = pipeline.run(root, w, h, ctx, absX, absY, frameTimeNanos);
+        } finally {
+            monitor.finishFrame();
+        }
+    }
+
+    /**
+     * 解析采样界面名（构造期一次）。
+     *
+     * @return 宿主类简名；匿名/局部类简名为空时回落全限定名
+     */
+    private String resolveHostLabel() {
+        String simpleName = getClass().getSimpleName();
+        return simpleName == null || simpleName.isEmpty() ? getClass().getName() : simpleName;
     }
 
     /**

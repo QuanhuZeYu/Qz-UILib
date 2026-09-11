@@ -33,7 +33,8 @@ public class UiRuntimeStats {
             0L,
             "",
             0,
-            0);
+            0,
+            "");
 
     private final String screenName;
     private final int guiWidth;
@@ -61,6 +62,7 @@ public class UiRuntimeStats {
     private final String phaseSummary;
     private final int slowFrameCount;
     private final int sampledFrameCount;
+    private final String counterSummary;
 
     /**
      * 创建运行时统计快照。
@@ -92,6 +94,12 @@ public class UiRuntimeStats {
      * @param slowFrameCount 滚动窗口慢帧数量
      * @param sampledFrameCount 滚动窗口采样帧数
      */
+    /**
+     * 创建运行时统计快照（兼容重载：无计数摘要）。
+     *
+     * <p>保留旧 26 参签名以避免破坏既有调用方；内部委托到含 {@code counterSummary} 的重载，
+     * 摘要为空串。新代码应优先使用含计数摘要的重载。</p>
+     */
     public UiRuntimeStats(
             String screenName,
             int guiWidth,
@@ -119,6 +127,52 @@ public class UiRuntimeStats {
             String phaseSummary,
             int slowFrameCount,
             int sampledFrameCount) {
+        this(screenName, guiWidth, guiHeight, nativeWidth, nativeHeight, frameTimeNanos,
+                averageFrameTimeNanos, maxFrameTimeNanos, averageFps, renderTimeNanos,
+                averageRenderTimeNanos, presentTimeNanos, mouseEventCount, keyEventCount,
+                textEventCount, inputRoutingTimeNanos, hitTestVisitCount, widgetRenderCount,
+                maxWidgetDepth, slowestWidgetSelfClassName, slowestWidgetSelfTimeNanos,
+                slowestWidgetTotalClassName, slowestWidgetTotalTimeNanos, phaseSummary,
+                slowFrameCount, sampledFrameCount, "");
+    }
+
+    /**
+     * 创建运行时统计快照（含计数摘要）。
+     *
+     * <p>计数摘要来自 {@link UiPerformanceMonitor#recordCounter(String, long)}，
+     * 格式 {@code name=total/max×samples}：{@code total} 为帧内累加值、{@code max} 为单次峰值、
+     * {@code samples} 为记录次数。名按字典序排列，便于解析脚本稳定取数。</p>
+     *
+     * @param counterSummary 当前帧计数摘要（{@code name=total/max×samples}，{@code ；} 分隔）
+     */
+    public UiRuntimeStats(
+            String screenName,
+            int guiWidth,
+            int guiHeight,
+            int nativeWidth,
+            int nativeHeight,
+            long frameTimeNanos,
+            long averageFrameTimeNanos,
+            long maxFrameTimeNanos,
+            double averageFps,
+            long renderTimeNanos,
+            long averageRenderTimeNanos,
+            long presentTimeNanos,
+            int mouseEventCount,
+            int keyEventCount,
+            int textEventCount,
+            long inputRoutingTimeNanos,
+            long hitTestVisitCount,
+            int widgetRenderCount,
+            int maxWidgetDepth,
+            String slowestWidgetSelfClassName,
+            long slowestWidgetSelfTimeNanos,
+            String slowestWidgetTotalClassName,
+            long slowestWidgetTotalTimeNanos,
+            String phaseSummary,
+            int slowFrameCount,
+            int sampledFrameCount,
+            String counterSummary) {
         this.screenName = screenName;
         this.guiWidth = guiWidth;
         this.guiHeight = guiHeight;
@@ -145,6 +199,7 @@ public class UiRuntimeStats {
         this.phaseSummary = phaseSummary;
         this.slowFrameCount = slowFrameCount;
         this.sampledFrameCount = sampledFrameCount;
+        this.counterSummary = counterSummary == null ? "" : counterSummary;
     }
 
     /**
@@ -260,6 +315,15 @@ public class UiRuntimeStats {
         return sampledFrameCount;
     }
 
+    /**
+     * 获取当前帧计数摘要（{@code name=total/max×samples}，{@code ；} 分隔并按名排序）。
+     *
+     * @return 计数摘要；无计数时为空串
+     */
+    public String getCounterSummary() {
+        return counterSummary;
+    }
+
     public double getFrameTimeMs() {
         return nanosToMs(frameTimeNanos);
     }
@@ -304,7 +368,7 @@ public class UiRuntimeStats {
     public String toString() {
         return String.format(
                 Locale.ROOT,
-                "frame=%.2fms(avg=%.2fms,max=%.2fms,fps=%.1f), render=%.2fms(avg=%.2fms), present=%.2fms, input=%.2fms, events=%d/%d/%d, hitTests=%d, widgets=%d, depth=%d, slowWidgetSelf=%s %.2fms, slowWidgetTotal=%s %.2fms, phases=%s, slowFrames=%d/%d, viewport=%dx%d(gui)/%dx%d(native)",
+                "frame=%.2fms(avg=%.2fms,max=%.2fms,fps=%.1f), render=%.2fms(avg=%.2fms), present=%.2fms, input=%.2fms, events=%d/%d/%d, hitTests=%d, widgets=%d, depth=%d, slowWidgetSelf=%s %.2fms, slowWidgetTotal=%s %.2fms, phases=%s, counters=%s, slowFrames=%d/%d, viewport=%dx%d(gui)/%dx%d(native)",
                 Double.valueOf(getFrameTimeMs()),
                 Double.valueOf(getAverageFrameTimeMs()),
                 Double.valueOf(getMaxFrameTimeMs()),
@@ -324,6 +388,7 @@ public class UiRuntimeStats {
                 slowestWidgetTotalClassName == null || slowestWidgetTotalClassName.isEmpty() ? "<none>" : slowestWidgetTotalClassName,
                 Double.valueOf(getSlowestWidgetTotalTimeMs()),
                 phaseSummary == null || phaseSummary.isEmpty() ? "<none>" : phaseSummary,
+                counterSummary == null || counterSummary.isEmpty() ? "<none>" : counterSummary,
                 Integer.valueOf(slowFrameCount),
                 Integer.valueOf(sampledFrameCount),
                 Integer.valueOf(guiWidth),

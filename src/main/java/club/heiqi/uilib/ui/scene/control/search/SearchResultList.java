@@ -9,6 +9,9 @@ import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
 
+import club.heiqi.uilib.Config;
+import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -221,8 +224,11 @@ public final class SearchResultList {
                 registryKey -> itemKeyForRegistryKey(safeItems(props.items()), registryKey));
         // 全量行模型：items 全部项按生效列数分行（无上限、无截断）。
         // 行键用该行首项在完整列表中的下标（稳定唯一）。
-        ReadableSignal<List<Row>> rowsSignal =
-                Computed.create(() -> toRows(safeItems(props.items()), effectiveColumns.get().intValue()));
+        ReadableSignal<List<Row>> rowsSignal = Computed.create(() -> {
+            List<Row> rows = toRows(safeItems(props.items()), effectiveColumns.get().intValue());
+            recordListModel(rows.size(), visibleRowCount(viewport, trackHeight.get().intValue(), props.gapY()));
+            return rows;
+        });
 
         rt.forEach(rowsContainer, rowsSignal, Row::firstIndex,
                 row -> rowComponent(rt, props, row, effectiveColumns, unrenderableKeys, palette, trackHeight));
@@ -314,6 +320,7 @@ public final class SearchResultList {
         });
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
                 item -> cellComponent(rt, props, item, unrenderableKeys, palette, trackHeight));
+        recordMountedRow();
         return rowNode;
     }
 
@@ -358,6 +365,7 @@ public final class SearchResultList {
                                            ReadableSignal<Set<Object>> unrenderableKeys,
                                            CellPalette palette,
                                            ReadableSignal<Integer> trackHeight) {
+        long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
         SceneNode cell = SceneNode.column();
         cell.setPreferredWidth(props.cellWidth());
         cell.setPreferredHeight(trackHeight.get().intValue());
@@ -441,6 +449,7 @@ public final class SearchResultList {
                     Boolean.TRUE.equals(h) ? item : null));
         }
 
+        recordCellMount(startedAtNanos);
         return cell;
     }
 
@@ -508,6 +517,20 @@ public final class SearchResultList {
         }
     }
 
+    /**
+     * 可视行数 = 视口高度 / 行步长（向上取整至少 1 行）；视口未布局时返回 0。
+     *
+     * <p>与挂载行数配对，用于在 P3 窗口化前后直接读出"挂载了多少行 / 实际能看到多少行"。</p>
+     */
+    private static int visibleRowCount(SceneNode viewport, int trackHeight, int gapY) {
+        int height = visibleHeight(viewport);
+        if (height <= 0) {
+            return 0;
+        }
+        int stride = Math.max(1, trackHeight + gapY);
+        return Math.max(1, (height + stride - 1) / stride);
+    }
+
     /** 可视高度：优先读取已布局的 LayoutBox 高度，否则退回 preferredHeight。 */
     private static int visibleHeight(SceneNode vp) {
         Object cached = vp.getCachedLayout();
@@ -545,18 +568,74 @@ public final class SearchResultList {
     private static SceneImageSource imageAt(List<SceneVirtualGrid.Item> items, Object key) {
         for (SceneVirtualGrid.Item item : items) {
             if (item.key().equals(key)) {
+                // 命中位置即比较次数下界（线性反查）；这是"每单元 O(N)"退化的直接证据。
+                recordLookupComparisons(items.size());
                 return item.image();
             }
         }
+        recordLookupComparisons(items.size());
         return null;
     }
 
     private static int itemIndex(List<SceneVirtualGrid.Item> items, Object key) {
         for (int i = 0; i < items.size(); i++) {
             if (items.get(i).key().equals(key)) {
+                recordLookupComparisons(i + 1);
                 return i;
             }
         }
+        recordLookupComparisons(items.size());
         return -1;
+    }
+
+    // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================
+
+    /**
+     * 记录一次行模型派生的规模。
+     *
+     * <p>{@code mountedRows} 为本次派生的行数（当前实现非虚拟化，等于全量行数）；
+     * {@code visibleRows} 由视口高度与轨道高派生。两者配对即可在 P3 窗口化后直接读出虚拟化比例。</p>
+     */
+    private static void recordListModel(int mountedRows, int visibleRows) {
+        if (!Config.useDebug) {
+            return;
+        }
+        UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
+        monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_TOTAL_ROWS, mountedRows);
+        monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_VISIBLE_ROWS, visibleRows);
+    }
+
+    /** 累计一个已挂载的结果行。 */
+    private static void recordMountedRow() {
+        if (!Config.useDebug) {
+            return;
+        }
+        UiPerformanceMonitor.getInstance().recordCounter(UiPerfMarkers.COUNTER_PICKER_LIST_ROWS, 1L);
+    }
+
+    /** 累计一个单元的构建耗时与数量（startedAtNanos 为 0 表示采样关闭）。 */
+    private static void recordCellMount(long startedAtNanos) {
+        if (startedAtNanos == 0L) {
+            return;
+        }
+        UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
+        monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_LIST_CELLS, 1L);
+        monitor.recordPhase(UiPerfMarkers.PHASE_PICKER_LIST_MOUNT, System.nanoTime() - startedAtNanos);
+    }
+
+    /**
+     * 累计一次线性反查的比较次数。
+     *
+     * <p>计数口径：{@code itemIndex} 取「命中下标 + 1」或表长（未命中）；
+     * {@code imageAt} 取表长（其 for-each 循环不持有下标，命中位置不单独取出——口径偏保守但恒为正）。</p>
+     *
+     * @param comparisons 本次线性反查发生的比较次数
+     */
+    private static void recordLookupComparisons(int comparisons) {
+        if (!Config.useDebug || comparisons <= 0) {
+            return;
+        }
+        UiPerformanceMonitor.getInstance()
+                .recordCounter(UiPerfMarkers.COUNTER_PICKER_LOOKUP_COMPARISONS, comparisons);
     }
 }

@@ -10,6 +10,7 @@ import club.heiqi.uilib.client.hud.SceneHudHost;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
@@ -25,6 +26,14 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 /** 唯一 Forge HUD render bridge；不取消事件，不承载业务布局。 */
 public final class UiHudRenderListener {
     private static final HudGlStateGuard HUD_GL_STATE_GUARD = new HudGlStateGuard();
+
+    /**
+     * HUD 帧的采样界面名。
+     *
+     * <p>HUD 不是 GuiScreen，故用固定名；它与屏幕宿主的类名各成一组，二者的帧时间历史互不覆盖
+     * （见 {@link UiPerformanceMonitor} 的按界面分组历史）。</p>
+     */
+    private static final String HUD_SAMPLE_SCREEN = "hud";
     private final ClientHudServiceImpl service = ClientHudServiceImpl.getInstance();
     private final SceneHudHost host = new SceneHudHost(service);
     private final PaintContextCompositor compositor = new PaintContextCompositor();
@@ -105,35 +114,52 @@ public final class UiHudRenderListener {
         HUD_GL_STATE_GUARD.run(() -> renderHudFrame(event, minecraft, viewport, width, height));
     }
 
-    /** 在已捕获入口状态的围栏内完成一整帧 HUD 业务与清理。 */
+    /**
+     * 在已捕获入口状态的围栏内完成一整帧 HUD 业务与清理。
+     *
+     * <p><b>采样会话位置（踩坑）</b>：本类的 HUD 帧围栏调用形态被源码结构门禁
+     * {@code UiHudRenderListenerGlFenceTest} 按<b>字面计数</b>钉死——围栏 token 在源码中必须恰好出现
+     * 一次、且先于本方法声明。故：①采样 begin/finish 不得包在围栏外层，也不得在本类的注释里复述
+     * 该 token（复述同样会被计入，实测直接红）；②必须置于本方法内，用 try/finally 包住整个帧体与
+     * 末尾重抛路径——否则异常路径会把会话泄漏在 ThreadLocal。</p>
+     */
     private void renderHudFrame(RenderGameOverlayEvent.Post event, Minecraft minecraft,
             HudViewportMetrics viewport, int width, int height) {
-        // A8：值变才写——每帧无条件 set 会向全局调度器持续入队同值 pendingWrite。
-        String screenName = currentScreenName();
-        if (!screenName.equals(debugScreenName.get())) {
-            debugScreenName.set(screenName);
-        }
-        GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glLoadIdentity();
-        GL11.glOrtho(0, width, height, 0, -1000, 1000);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glLoadIdentity();
-        Throwable frameFailure = null;
+        // 采样会话：HUD 与屏幕宿主是同帧内两条独立帧入口，各自成对 begin/finish；若某 HUD 窗口
+        // 内容间接驱动了控件宿主，嵌套由 monitor 的线程内重入深度保护，不重复计数。
+        // try/finally 包住整个帧体：两句清理与末尾重抛路径都必须经过 finishFrame，不把会话泄漏在 ThreadLocal。
+        UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
+        monitor.beginFrame(HUD_SAMPLE_SCREEN, width, height, width, height);
         try {
-            UiHostRenderSupport.prepareMainUiRenderState();
-            compositor.beginFrame(); snapshots.beginFrame();
-            UiRenderContext context = UiHostRenderSupport.createRenderContext(width, height, 0, 0,
-                    event.partialTicks, compositor, snapshots, UiRuntimeAdapters.empty());
-            host.render(context, viewport, minecraft.theWorld != null, minecraft.currentScreen != null);
-        } catch (RuntimeException failure) {
-            frameFailure = failure;
-        } catch (Error failure) {
-            frameFailure = failure;
+            // A8：值变才写——每帧无条件 set 会向全局调度器持续入队同值 pendingWrite。
+            String screenName = currentScreenName();
+            if (!screenName.equals(debugScreenName.get())) {
+                debugScreenName.set(screenName);
+            }
+            GL11.glMatrixMode(GL11.GL_PROJECTION); GL11.glLoadIdentity();
+            GL11.glOrtho(0, width, height, 0, -1000, 1000);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glLoadIdentity();
+            Throwable frameFailure = null;
+            try {
+                UiHostRenderSupport.prepareMainUiRenderState();
+                compositor.beginFrame(); snapshots.beginFrame();
+                UiRenderContext context = UiHostRenderSupport.createRenderContext(width, height, 0, 0,
+                        event.partialTicks, compositor, snapshots, UiRuntimeAdapters.empty());
+                host.render(context, viewport, minecraft.theWorld != null, minecraft.currentScreen != null);
+            } catch (RuntimeException failure) {
+                frameFailure = failure;
+            } catch (Error failure) {
+                frameFailure = failure;
+            }
+            Throwable cleanupFailure = finishHudFrame();
+            if (cleanupFailure != null) {
+                if (frameFailure != null) cleanupFailure.addSuppressed(frameFailure);
+                throwUnchecked(cleanupFailure);
+            }
+            if (frameFailure != null) throwUnchecked(frameFailure);
+        } finally {
+            monitor.finishFrame();
         }
-        Throwable cleanupFailure = finishHudFrame();
-        if (cleanupFailure != null) {
-            if (frameFailure != null) cleanupFailure.addSuppressed(frameFailure);
-            throwUnchecked(cleanupFailure);
-        }
-        if (frameFailure != null) throwUnchecked(frameFailure);
     }
 
     /** 两个帧清理互不短路，后续失败作为 suppressed 保留。 */

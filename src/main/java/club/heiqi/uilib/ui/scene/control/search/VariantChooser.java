@@ -13,6 +13,9 @@ import com.github.bsideup.jabel.Desugar;
 
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.VisualAdapter;
+import club.heiqi.uilib.Config;
+import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -204,8 +207,12 @@ public final class VariantChooser {
         // 浮层内容建在 portal 树里，与宿主树锚点（anchor）不同树 → 用 portal 入口把「anchor 的
         // 字号声明」落到内容根（内容根持声明，内嵌 Segmented/TextInput 与文字沿父链继承）；
         // 每个布局纪元重新断言当前声明，同值去重。
-        ScenePortalHandle overlayPortal = rt.portal(showSignal, () -> buildOverlay(rt, props, variantQuery),
-                OverlayDismissPolicy.NONE, props.onCancel());
+        ScenePortalHandle overlayPortal = rt.portal(showSignal, () -> {
+            long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            SceneNode overlay = buildOverlay(rt, props, variantQuery);
+            recordOpenVariant(startedAtNanos);
+            return overlay;
+        }, OverlayDismissPolicy.NONE, props.onCancel());
         overlayPortal.fontSize(anchor.declaredFontSize());
         rt.bind(rt.layoutDoneSignal(), epoch -> overlayPortal.fontSize(anchor.declaredFontSize()));
 
@@ -355,6 +362,7 @@ public final class VariantChooser {
                                         ReadableSignal<Set<Object>> unrenderableKeys,
                                         ReadableSignal<Integer> labelForeground,
                                         ReadableSignal<Integer> onAccentForeground) {
+        recordVariantRow();
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(VARIANT_ROW_HEIGHT);
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -501,6 +509,25 @@ public final class VariantChooser {
     private static boolean canConfirm(SearchPickerData.SelectionMode mode, List<String> keys) {
         if (mode == SearchPickerData.SelectionMode.SELECTED) return !keys.isEmpty();
         return true;
+    }
+
+    // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================
+
+    /** 记录一次变体浮层内容构建耗时（startedAtNanos 为 0 表示采样关闭）。 */
+    private static void recordOpenVariant(long startedAtNanos) {
+        if (startedAtNanos == 0L) {
+            return;
+        }
+        UiPerformanceMonitor.getInstance()
+                .recordPhase(UiPerfMarkers.PHASE_PICKER_OPEN_VARIANT, System.nanoTime() - startedAtNanos);
+    }
+
+    /** 累计一个已挂载的变体行。 */
+    private static void recordVariantRow() {
+        if (!Config.useDebug) {
+            return;
+        }
+        UiPerformanceMonitor.getInstance().recordCounter(UiPerfMarkers.COUNTER_PICKER_VARIANT_ROWS, 1L);
     }
 
     private static SearchPickerData.Candidate safeCandidate(Props props) {
