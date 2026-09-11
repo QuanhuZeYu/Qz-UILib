@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneGridSnapshot;
 import club.heiqi.uilib.ui.scene.control.SceneScrollContainer;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGrid;
 import club.heiqi.uilib.ui.scene.control.SceneVirtualGridNav;
@@ -223,16 +224,21 @@ public final class SearchResultList {
         // 键空间 = 候选域键（选择器图标源覆写 registryKey() 的返回值）：本列表项 key 即候选 key，
         // 与 PickerIconKey.candidate(key) 同值 ⇒ 恒等映射，无需拆键（拆键是历史缺陷，已删除）。
         Signal<Set<Object>> unrenderableKeys = ItemRenderFallbackKeys.track(registryKey -> registryKey);
+        // 数据快照与索引同源：一次 O(N) 建表，此后单元选中态/图标/点击回写全部 O(1) 查表；
+        // 挂载期与数据变化期的解析成本不再随数据规模线性退化（旧形态每单元按 key 线性反查全表）。
+        ReadableSignal<SceneGridSnapshot> snapshot = Computed.create(() ->
+                SceneGridSnapshot.of(safeItems(props.items())));
         // 全量行模型：items 全部项按生效列数分行（无上限、无截断）。
         // 行键用该行首项在完整列表中的下标（稳定唯一）。
         ReadableSignal<List<Row>> rowsSignal = Computed.create(() -> {
-            List<Row> rows = toRows(safeItems(props.items()), effectiveColumns.get().intValue());
+            List<Row> rows = toRows(snapshot.get().items(), effectiveColumns.get().intValue());
             recordListModel(rows.size(), visibleRowCount(viewport, trackHeight.get().intValue(), props.gapY()));
             return rows;
         });
 
         rt.forEach(rowsContainer, rowsSignal, Row::firstIndex,
-                row -> rowComponent(rt, props, row, effectiveColumns, unrenderableKeys, palette, trackHeight));
+                row -> rowComponent(rt, props, row, snapshot, effectiveColumns, unrenderableKeys,
+                        palette, trackHeight));
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -296,6 +302,7 @@ public final class SearchResultList {
 
     /** 构建一个完整结果行（ROW 容器，行高钉定，行间距经 marginBottom 计入主轴占位）。 */
     private static SceneNode rowComponent(SceneRuntime rt, Props props, Row row,
+                                          ReadableSignal<SceneGridSnapshot> snapshot,
                                           ReadableSignal<Integer> effectiveColumns,
                                           ReadableSignal<Set<Object>> unrenderableKeys,
                                           CellPalette palette,
@@ -310,7 +317,7 @@ public final class SearchResultList {
         // 行节点按 firstIndex 复用后，行内容必须从实时数据源 + 实时列数派生
         //（避免复用行吃到创建时的陈旧快照——旧虚拟网格的同款陷阱）。
         ReadableSignal<List<SceneVirtualGrid.Item>> rowItems = Computed.create(() -> {
-            List<SceneVirtualGrid.Item> items = safeItems(props.items());
+            List<SceneVirtualGrid.Item> items = snapshot.get().items();
             int cols = Math.max(1, effectiveColumns.get().intValue());
             int start = row.firstIndex();
             if (start < 0 || start >= items.size()) {
@@ -320,7 +327,7 @@ public final class SearchResultList {
             return new ArrayList<SceneVirtualGrid.Item>(items.subList(start, to));
         });
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
-                item -> cellComponent(rt, props, item, unrenderableKeys, palette, trackHeight));
+                item -> cellComponent(rt, props, item, snapshot, unrenderableKeys, palette, trackHeight));
         recordMountedRow();
         return rowNode;
     }
@@ -363,6 +370,7 @@ public final class SearchResultList {
     }
     /** 构建单个结果单元（结构复刻 SceneVirtualGrid.cellComponent；外观为主题轻量覆盖）。 */
     private static SceneNode cellComponent(SceneRuntime rt, Props props, SceneVirtualGrid.Item item,
+                                           ReadableSignal<SceneGridSnapshot> snapshot,
                                            ReadableSignal<Set<Object>> unrenderableKeys,
                                            CellPalette palette,
                                            ReadableSignal<Integer> trackHeight) {
@@ -381,7 +389,7 @@ public final class SearchResultList {
         // 选中态：item 在完整 items 列表中的下标 == highlighted（按 key 动态派生，
         // 复用/重绑单元不携带旧项选中态）。
         ReadableSignal<Boolean> selected = Computed.create(() ->
-                Integer.valueOf(itemIndex(safeItems(props.items()), item.key()))
+                Integer.valueOf(snapshot.get().index().indexOf(item.key()))
                         .equals(props.highlighted().get()));
         rt.__bindAnimatedColor(() -> resolveCellBackground(
                         Boolean.TRUE.equals(props.enabled().get()),
@@ -421,7 +429,10 @@ public final class SearchResultList {
             if (unrenderableKeys.get().contains(item.key())) {
                 return null;
             }
-            return imageAt(safeItems(props.items()), item.key());
+            // 索引 O(1) 取当前快照项：单元节点按 key 复用（每 key 只建一次），
+            // 构建期捕获的 item 实例可能是旧代 ⇒ 图标源按快照实时解析，不读陈旧快照。
+            SceneVirtualGrid.Item live = snapshot.get().index().itemAt(item.key());
+            return live == null ? item.image() : live.image();
         });
         rt.bind(effectiveImage, src -> {
             icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
@@ -438,7 +449,7 @@ public final class SearchResultList {
             }
             ctx.stopPropagation();
             props.onActivate().accept(item);
-            int index = itemIndex(safeItems(props.items()), item.key());
+            int index = snapshot.get().index().indexOf(item.key());
             if (index >= 0) {
                 props.onHighlightChange().accept(Integer.valueOf(index));
             }
@@ -550,29 +561,6 @@ public final class SearchResultList {
         return items == null ? Collections.<SceneVirtualGrid.Item>emptyList() : items;
     }
 
-    private static SceneImageSource imageAt(List<SceneVirtualGrid.Item> items, Object key) {
-        for (SceneVirtualGrid.Item item : items) {
-            if (item.key().equals(key)) {
-                // 命中位置即比较次数下界（线性反查）；这是"每单元 O(N)"退化的直接证据。
-                recordLookupComparisons(items.size());
-                return item.image();
-            }
-        }
-        recordLookupComparisons(items.size());
-        return null;
-    }
-
-    private static int itemIndex(List<SceneVirtualGrid.Item> items, Object key) {
-        for (int i = 0; i < items.size(); i++) {
-            if (items.get(i).key().equals(key)) {
-                recordLookupComparisons(i + 1);
-                return i;
-            }
-        }
-        recordLookupComparisons(items.size());
-        return -1;
-    }
-
     // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================
 
     /**
@@ -608,19 +596,4 @@ public final class SearchResultList {
         monitor.recordPhase(UiPerfMarkers.PHASE_PICKER_LIST_MOUNT, System.nanoTime() - startedAtNanos);
     }
 
-    /**
-     * 累计一次线性反查的比较次数。
-     *
-     * <p>计数口径：{@code itemIndex} 取「命中下标 + 1」或表长（未命中）；
-     * {@code imageAt} 取表长（其 for-each 循环不持有下标，命中位置不单独取出——口径偏保守但恒为正）。</p>
-     *
-     * @param comparisons 本次线性反查发生的比较次数
-     */
-    private static void recordLookupComparisons(int comparisons) {
-        if (!Config.useDebug || comparisons <= 0) {
-            return;
-        }
-        UiPerformanceMonitor.getInstance()
-                .recordCounter(UiPerfMarkers.COUNTER_PICKER_LOOKUP_COMPARISONS, comparisons);
-    }
 }

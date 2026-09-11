@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -254,6 +255,46 @@ public class SceneVirtualGridTest {
         Assert.assertEquals(0, f.rowsContainer().__getChildren().size());
         Assert.assertEquals(0, model.maxScrollPx());
         Assert.assertEquals(0, f.result.scrollSignal().get().intValue());
+    }
+
+    // ==================== 索引化（O(1) 查表，ADR §3.8 Q12） ====================
+
+    /**
+     * 索引化结构判据（ADR §3.8/R-12）：选中态派生按 key O(1) 查表，挂载完成后对数据源零
+     * {@code get} 调用。旧形态每次高亮变化对每个挂载单元线性反查全表。
+     */
+    @Test
+    public void indexLookupsDoNotScanItemsDuringHighlightDerivation() {
+        CountingList source = new CountingList(items(500));
+        VisualFixture f = new VisualFixture(source);
+        source.gets = 0;
+        f.highlightSignal.set(Integer.valueOf(0));
+        rt.flush();
+        Assert.assertEquals("高亮派生不得触碰数据源", 0, source.gets);
+        f.highlightSignal.set(Integer.valueOf(37));
+        rt.flush();
+        Assert.assertEquals("重设高亮不得触碰数据源", 0, source.gets);
+    }
+
+    /** 计数列表：记录 {@code get} 调用次数，用于「索引查询不触碰数据源」的结构判据。 */
+    private static final class CountingList extends AbstractList<Item> {
+        private final List<Item> delegate;
+        private int gets;
+
+        private CountingList(List<Item> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Item get(int index) {
+            gets++;
+            return delegate.get(index);
+        }
+
+        @Override
+        public int size() {
+            return delegate.size();
+        }
     }
 
     // ==================== 交互 ====================

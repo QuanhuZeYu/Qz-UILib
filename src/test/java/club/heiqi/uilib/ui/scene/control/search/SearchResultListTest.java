@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
+import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -361,6 +362,52 @@ public class SearchResultListTest {
         rt.flush();
         layoutAndBridge();
         Assert.assertEquals(25 * STRIDE - 200, f.vp().getScrollOffsetY());
+    }
+
+    // ==================== 索引化（O(1) 查表，ADR §3.8 Q12） ====================
+
+    /**
+     * 索引化结构判据（ADR §3.8/R-12）：选中态派生与点击回写按 key O(1) 查表，
+     * 挂载完成后对数据源零 {@code get} 调用。
+     *
+     * <p>旧形态每次高亮变化都会对每个已挂载单元线性反查全表（N=500 → 每单元 O(N) 比较）；
+     * 索引化后该成本与 N 无关（建表只随数据快照变化发生一次）。</p>
+     */
+    @Test
+    public void indexLookupsDoNotScanItemsDuringHighlightAndClick() {
+        CountingList source = new CountingList(items(500));
+        Fixture f = new Fixture(source, COLUMNS);
+        source.gets = 0;
+        f.highlightSignal.set(Integer.valueOf(0));
+        rt.flush();
+        Assert.assertEquals("高亮派生不得触碰数据源", 0, source.gets);
+        f.highlightSignal.set(Integer.valueOf(7));
+        rt.flush();
+        Assert.assertEquals("重设高亮不得触碰数据源", 0, source.gets);
+        click(f.cell(0, 1));
+        Assert.assertEquals("点击回写不得触碰数据源", 0, source.gets);
+        Assert.assertEquals(Integer.valueOf(1), f.highlightSignal.get());
+    }
+
+    /** 计数列表：记录 {@code get} 调用次数，用于「索引查询不触碰数据源」的结构判据。 */
+    private static final class CountingList extends AbstractList<Item> {
+        private final List<Item> delegate;
+        private int gets;
+
+        private CountingList(List<Item> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Item get(int index) {
+            gets++;
+            return delegate.get(index);
+        }
+
+        @Override
+        public int size() {
+            return delegate.size();
+        }
     }
 
     // ==================== 渲染分级回退 ====================

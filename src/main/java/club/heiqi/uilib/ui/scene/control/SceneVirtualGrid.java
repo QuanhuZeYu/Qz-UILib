@@ -316,6 +316,10 @@ public final class SceneVirtualGrid {
         // 主题切换只重派生（Computed 按值记忆化），不重建节点。
         CellPalette palette = new CellPalette(rt);
 
+        // 数据快照与索引同源：单元选中态/标签/图标/点击回写全部 O(1) 查表（旧形态每单元线性反查全表）。
+        ReadableSignal<SceneGridSnapshot> snapshot = Computed.create(() ->
+                SceneGridSnapshot.of(safeItems(props.items())));
+
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
         Signal<Integer> highlight = Signal.create(Integer.valueOf(-1));
         Signal<Integer> columns = Signal.create(Integer.valueOf(Math.max(1, props.columns())));
@@ -389,7 +393,8 @@ public final class SceneVirtualGrid {
         ReadableSignal<List<WindowRow>> rowsSignal =
                 Computed.create(() -> windowModel.get().rows());
         rt.forEach(rowsContainer, rowsSignal, WindowRow::firstIndex,
-                row -> rowComponent(rt, props, row, columns, displayHighlight, highlightWriter, palette));
+                row -> rowComponent(rt, props, row, snapshot, columns, displayHighlight,
+                        highlightWriter, palette));
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -424,6 +429,7 @@ public final class SceneVirtualGrid {
 
     /** 构建一个完整网格行（ROW 容器，行高钉定，行间距经 marginBottom 计入主轴占位；行层纯布局、零外观写入）。 */
     private static SceneNode rowComponent(SceneRuntime rt, Props props, WindowRow row,
+                                          ReadableSignal<SceneGridSnapshot> snapshot,
                                           ReadableSignal<Integer> columns,
                                           ReadableSignal<Integer> displayHighlight,
                                           Consumer<Integer> highlightWriter,
@@ -435,9 +441,9 @@ public final class SceneVirtualGrid {
         rowNode.setHitTestable(false);
         // 行节点按 firstIndex 复用后，单元内容仍须从实时数据源派生（避免复用行吃到陈旧快照）
         ReadableSignal<List<Item>> rowItems = Computed.create(() ->
-                rowAt(row.firstIndex(), safeItems(props.items()), columns.get().intValue()));
+                rowAt(row.firstIndex(), snapshot.get().items(), columns.get().intValue()));
         rt.forEach(rowNode, rowItems, Item::key,
-                item -> cellComponent(rt, props, item, displayHighlight, highlightWriter, palette));
+                item -> cellComponent(rt, props, item, snapshot, displayHighlight, highlightWriter, palette));
         return rowNode;
     }
 
@@ -473,6 +479,7 @@ public final class SceneVirtualGrid {
     }
     /** 构建单个网格单元（§4.1 复用行轻量口径：外观写入槽只剩 backgroundColor，主题选区/hover 档派生）。 */
     private static SceneNode cellComponent(SceneRuntime rt, Props props, Item item,
+                                           ReadableSignal<SceneGridSnapshot> snapshot,
                                            ReadableSignal<Integer> displayHighlight,
                                            Consumer<Integer> highlightWriter,
                                            CellPalette palette) {
@@ -489,7 +496,7 @@ public final class SceneVirtualGrid {
         interaction.hovered();
         // 选中态按 key 从实时数据源派生：回收/重绑单元不携带旧项选中态，也不残留旧底色。
         ReadableSignal<Boolean> selected = Computed.create(() ->
-                Integer.valueOf(itemIndex(safeItems(props.items()), item.key()))
+                Integer.valueOf(snapshot.get().index().indexOf(item.key()))
                         .equals(displayHighlight.get()));
         rt.__bindAnimatedColor(() -> resolveCellBackground(
                         Boolean.TRUE.equals(props.enabled().get()),
@@ -511,7 +518,11 @@ public final class SceneVirtualGrid {
             rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
                     ? palette.mutedForeground.get() : palette.disabledForeground.get(),
                     label::setTextColor);
-            rt.bindComputed(() -> labelAt(safeItems(props.items()), item.key()), label::setText);
+            // 标签按快照实时解析：单元节点按 key 复用（每 key 只建一次），构建期捕获的 item 实例可能陈旧。
+            rt.bindComputed(() -> {
+                Item live = snapshot.get().index().itemAt(item.key());
+                return live == null || live.label() == null ? "" : live.label();
+            }, label::setText);
             // 溢出策略（INV-GEO-4）：单元轨道由虚拟化 stride 固定，文字超宽必须可见省略，
             // 否则被 cell 的 clipChildren(true) 静默裁掉。
             label.setMaxTextWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
@@ -525,7 +536,10 @@ public final class SceneVirtualGrid {
         bindIconHeight(rt, props, icon, label);
         // 图位圆角与占位底色属物品图像渲染协议（契约 §4.1「物品图像不改色」+ §7.3）：保持静态值。
         icon.setCornerRadius(SceneChromeTokens.RADIUS_SM);
-        rt.bindComputed(() -> imageAt(safeItems(props.items()), item.key()), src -> {
+        rt.bindComputed(() -> {
+            Item live = snapshot.get().index().itemAt(item.key());
+            return live == null ? null : live.image();
+        }, src -> {
             icon.setBackgroundColor(src == null ? DEFAULT_PLACEHOLDER_COLOR : 0x00000000);
             icon.setImageSource(src);
         });
@@ -540,7 +554,7 @@ public final class SceneVirtualGrid {
             }
             ctx.stopPropagation();
             props.onActivate().accept(item);
-            int index = itemIndex(safeItems(props.items()), item.key());
+            int index = snapshot.get().index().indexOf(item.key());
             if (index >= 0) {
                 highlightWriter.accept(Integer.valueOf(index));
             }
@@ -637,30 +651,4 @@ public final class SceneVirtualGrid {
         return from < to ? new ArrayList<>(items.subList(from, to)) : java.util.Collections.<Item>emptyList();
     }
 
-    private static int itemIndex(List<Item> items, Object key) {
-        for (int i = 0; i < items.size(); i++) {
-            if (items.get(i).key().equals(key)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static SceneImageSource imageAt(List<Item> items, Object key) {
-        for (Item item : items) {
-            if (item.key().equals(key)) {
-                return item.image();
-            }
-        }
-        return null;
-    }
-
-    private static String labelAt(List<Item> items, Object key) {
-        for (Item item : items) {
-            if (item.key().equals(key)) {
-                return item.label() == null ? "" : item.label();
-            }
-        }
-        return "";
-    }
 }
