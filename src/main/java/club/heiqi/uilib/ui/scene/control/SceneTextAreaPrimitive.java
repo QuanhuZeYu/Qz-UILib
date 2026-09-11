@@ -49,14 +49,20 @@ import club.heiqi.uilib.ui.text.layout.VisualLineLayout;
  * <pre>
  * root (COLUMN, clipChildren=true, focusable, padding)
  *   └─ viewport (COLUMN, scrollable=true, clipChildren=true, preferredHeight)
- *        ├─ content (COLUMN)  ← forEach 视觉行（独占，不与 show 共享）
- *        │    └─ row0 (ROW) → prefix + caretBefore + highlight + caretAfter + suffix
- *        │    └─ row1 (ROW) → ...
- *        └─ placeholderContainer (COLUMN)  ← show placeholder（独立容器）
+ *        └─ content (COLUMN)  ← forEach 视觉行（独占，不与 show 共享）
+ *             └─ row0 (ROW) → prefix + caretBefore + highlight + caretAfter + suffix
+ *                             + placeholderText（独立占位层，仅第一行；文本叶，空串即零宽）
+ *             └─ row1 (ROW) → ...（无占位层）
  * </pre>
  * <p>每视觉行常驻五节点；caret 双槽位仅在「caret 所在视觉行 + focus 所在端」宽 1px 着色，
  * 其余行/槽位宽 0 透明。highlight 显示本视觉行选中段（跨行选区中间整行自然全段高亮，
- * 形成块状视觉）。</p>
+ * 形成块状视觉）。第一视觉行额外挂一颗占位文本叶（第 6 子），其余行保持五节点。</p>
+ *
+ * <h3>占位口径（与单行输入控件统一）</h3>
+ * <p>占位显示条件 = <b>空值且有占位文案</b>，与聚焦无关（聚焦且空仍显示）；占位层是位于 caret 之后、
+ * 与真实文本同一视觉行的独立文本叶 ⇒ 落点即文本原点且不遮挡 caret，非占位态文本为空串 ⇒ 零宽零占位。
+ * 旧口径（聚焦即隐藏 + 占位挂在 viewport 之下另起一行）是历史遗留：其回归锚点钉的是 forEach/show 的
+ * anchor 机制（placeholder 曾被 applyChildReconcile 误删），并非「多行占位应当与单行不同」的设计选择。</p>
  *
  * <h3>D4 soft wrap 视觉行模型</h3>
  * <ul>
@@ -195,7 +201,7 @@ public final class SceneTextAreaPrimitive {
      * @param root          根节点
      * @param viewport      滚动视口节点
      * @param content       行内容容器节点（forEach 独占）
-     * @param placeholderContainer placeholder 容器节点（show 独占，与 content 分离）
+     * @param placeholderContainer 占位层节点（历史命名，现为独立占位文本叶；挂载在第一视觉行内、caret 之后）
      * @param scrollSignal  纵向滚动位置 signal（可观察/编程式滚动）
      * @param caretIndex    caret 全局码点索引 signal（=selection.focus 投影）
      * @param selection     选区状态 signal（本地 UI 态，anchor/focus 全局码点索引）
@@ -333,10 +339,16 @@ public final class SceneTextAreaPrimitive {
         content.setHitTestable(true); // B2：content 为交互单元，命中 content → handler 触发 + focused 写 content
         viewport.appendChild(content);
 
-        // placeholder 独立容器：与 content 分离，避免 forEach 的 applyChildReconcile
-        // 在 children.clear() 时误删 show 同步 append 到 content 的 anchor（已知 bug）。
-        SceneNode placeholderContainer = SceneNode.column();
-        viewport.appendChild(placeholderContainer);
+        // 占位层（A3 口径统一，与单行 SceneTextInputPrimitive 同形）：一颗<b>独立文本叶</b>，
+        // 挂在第一视觉行内、caret 之后（见 buildVisualRow）—— 占位因此落在文本原点（caret 之后），
+        // 既不再另起一行（旧形态挂在 viewport 之下、被 content 顶到第 2 行），也不与 caret 盒区间重叠。
+        //
+        // 为什么是文本叶而不是容器：ROW 容器给非 grow 子的宽度约束是「整行内宽」，而容器无法按内容
+        // 收缩（SHRINK 容器需读子 cache，违反先验铁律）⇒ 容器会从 caret 之后撑满整行、越出行右缘
+        // （行子不得越出行容器是既有不变量，见 PlaygroundButtonRowLayoutTest 全页面判据）。
+        // 文本叶的宽度 = 实测文本宽：占位态恰好占位、非占位态文本为空串 ⇒ 宽度 0（零占位、不越界）。
+        SceneNode placeholderText = new SceneNode();
+        placeholderText.setHitTestable(false);
 
         // D4 可用宽桥接：布局完成纪元 → 测 viewport 内容区宽（盒宽 - 左右 padding），变化才写入。
         // 两趟收敛：首帧可用宽未知按 0 不换行，桥接后重算视觉行再布局；真机帧管线自带 settle，
@@ -365,10 +377,14 @@ public final class SceneTextAreaPrimitive {
                 () -> Boolean.valueOf(Boolean.TRUE.equals(props.enabled().get())
                         && Boolean.TRUE.equals(is.focused().get())
                         && Boolean.TRUE.equals(blinkOn.get())));
+        // 占位态 = 空值且有占位文案（<b>与聚焦无关</b>）。
+        // 口径统一（第四轮，与单行 SceneTextInputPrimitive 的 A3 落点一致）：聚焦且空仍显示占位，
+        // 且占位不遮挡 caret —— 见下方「占位层挂进第一视觉行、位于 caret 之后」的结构安排。
+        // 旧口径（聚焦即隐藏）是历史遗留：其回归锚点钉的是 forEach/show 的 anchor 机制
+        // （placeholder 曾被 applyChildReconcile 误删），不是「多行占位应当不同」的设计选择。
         ReadableSignal<Boolean> isPlaceholder = Computed.create(
                 () -> Boolean.valueOf(SceneTextUtils.nullSafe(props.value().get()).isEmpty()
-                        && !SceneTextUtils.nullSafe(placeholder).isEmpty()
-                        && !Boolean.TRUE.equals(is.focused().get())));
+                        && !SceneTextUtils.nullSafe(placeholder).isEmpty()));
 
         // 字号、文本和宽度只在此处生成视觉布局。行 key、行内切片及命中均读此快照，
         // 避免根字号生成 key、默认行字号再次切片导致漏绘。字号 / 行高 / 字体纪元随快照一并携带。
@@ -390,17 +406,14 @@ public final class SceneTextAreaPrimitive {
         // 按视觉行渲染（key=visualStartIndex；行内段/槽位按 key 现查视觉行号，视觉行重排自动跟随）
         rt.forEach(content, visualKeys, key -> key,
                 key -> buildVisualRow(rt, props, selection, caretVisible, isPlaceholder,
-                        visualLayout, key));
+                        visualLayout, key, placeholderText));
 
-        // placeholder：value 空且未聚焦时显示单行占位文本
-        rt.show(placeholderContainer, isPlaceholder, () -> {
-            SceneNode ph = new SceneNode();
-            ph.setText(SceneTextUtils.nullSafe(placeholder));
-            ph.setHitTestable(false);
-            rt.bindComputed(() -> resolvePlaceholderColor(props, props.enabled().get()),
-                    ph::setTextColor);
-            return ph;
-        });
+        // 占位层文本/前景：空且有占位文案时显示占位文案（与聚焦无关），否则空串（叶宽 0、零占位）。
+        rt.bindComputed(() -> Boolean.TRUE.equals(isPlaceholder.get())
+                        ? SceneTextUtils.nullSafe(placeholder) : "",
+                placeholderText::setText);
+        rt.bindComputed(() -> resolvePlaceholderColor(props, props.enabled().get()),
+                placeholderText::setTextColor);
 
         // 纵向滚动
         Signal<Integer> scrollSignal = SceneScrolls.attach(rt, viewport);
@@ -721,7 +734,7 @@ public final class SceneTextAreaPrimitive {
             }
         });
 
-        return new Result(root, viewport, content, placeholderContainer, scrollSignal,
+        return new Result(root, viewport, content, placeholderText, scrollSignal,
                 caretIndex, selection, caretVisible, isPlaceholder);
     }
 
@@ -739,6 +752,7 @@ public final class SceneTextAreaPrimitive {
      * @param isPlaceholder 当前是否处于 placeholder 态
      * @param visualLayout 文本、行列表与度量的共享快照
      * @param keyChar      本视觉行的 key（起始 char 索引，稳定）
+     * @param placeholderText 占位文本叶（只挂到第一视觉行：key==0 恒存在）
      * @return 视觉行根节点
      */
     private static SceneNode buildVisualRow(SceneRuntime rt, Props props,
@@ -746,7 +760,8 @@ public final class SceneTextAreaPrimitive {
                                             ReadableSignal<Boolean> caretVisible,
                                             ReadableSignal<Boolean> isPlaceholder,
                                             ReadableSignal<VisualLayoutSnapshot> visualLayout,
-                                            Integer keyChar) {
+                                            Integer keyChar,
+                                            SceneNode placeholderText) {
         SceneNode row = SceneNode.row();
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(ROW_GAP);
@@ -778,6 +793,14 @@ public final class SceneTextAreaPrimitive {
         SceneNode suffix = new SceneNode();
         suffix.setHitTestable(false);
         row.appendChild(suffix);
+
+        // 占位层（结构第 6 子，仅第一视觉行；A3 同口径的「独立占位层」）：
+        // 位于 caret 之后 ⇒ 占位盒起点 = caret 盒右缘（零重叠，不遮挡 caret），
+        // 且与真实文本同一行 ⇒ 占位落点就是文本原点（旧形态挂在 viewport 之下，会落在第 2 行）。
+        // 前 5 个标准槽位下标（0..4）不变，既有结构探针与行内切片读取不受影响。
+        if (keyChar.intValue() == 0) {
+            row.appendChild(placeholderText);
+        }
 
         // 视觉行内 prefix：选区前段 [视觉行首, selStart)
         rt.bindComputed(() -> {

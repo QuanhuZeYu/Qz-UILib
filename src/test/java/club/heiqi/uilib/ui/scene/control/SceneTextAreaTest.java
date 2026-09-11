@@ -238,32 +238,33 @@ public class SceneTextAreaTest {
     }
 
     /**
-     * placeholder 独立容器：viewport 的第 1 个子节点（content 之后的兄弟节点）。
-     * show 的 anchor 与 placeholder 文本节点挂在此容器，不与 forEach 的 content 共享。
+     * placeholder 占位层节点：<b>第一视觉行的第 6 个子节点</b>（五节点之后的独立占位文本叶）。
+     *
+     * <p>占位层位于 caret 之后 ⇒ 占位落在文本原点且不遮挡 caret；非占位态文本为空串
+     * （叶宽 0、零占位）。第四轮前它是挂在 viewport 之下的 show 容器，会另起一行 —— 现有形态
+     * 与单行输入控件的 A3 落点一致（见 {@link #placeholderStaysVisibleOnFocusWithoutOccludingCaret}）。</p>
      */
     private SceneNode placeholderContainerNode() {
-        return viewportNode().__getChildren().get(1);
+        SceneNode row = rowNode(0);
+        return row.__getChildren().get(row.__getChildren().size() - 1);
     }
 
-    /** placeholder 文本节点（placeholderContainer 内文本等于 PLACEHOLDER 的节点；未显示时返回 null）。 */
+    /** placeholder 文本叶：文本等于 PLACEHOLDER 时返回该节点；非占位态（空串）返回 null。 */
     private SceneNode placeholderNode() {
-        for (SceneNode child : placeholderContainerNode().__getChildren()) {
-            if (PLACEHOLDER.equals(child.getText())) {
-                return child;
-            }
-        }
-        return null;
+        SceneNode leaf = placeholderContainerNode();
+        return PLACEHOLDER.equals(leaf.getText()) ? leaf : null;
     }
 
     /**
-     * 收集所有行节点（ROW 且有 5 个子节点 prefix/caretBefore/highlight/caretAfter/suffix，B6 五节点）。
+     * 收集所有行节点（ROW：B6 五节点 prefix/caretBefore/highlight/caretAfter/suffix，
+     * 第一视觉行额外挂第 6 个占位层）。
      * content 现为 forEach 独占容器，只含行节点；anchor 与 placeholder 文本节点
      * 位于独立 placeholderContainer，不再混入 content。
      */
     private List<SceneNode> rowNodes() {
         List<SceneNode> rows = new ArrayList<>();
         for (SceneNode child : contentNode().__getChildren()) {
-            if (child.__getChildren().size() == 5) {
+            if (child.__getChildren().size() >= 5) {
                 rows.add(child);
             }
         }
@@ -583,52 +584,70 @@ public class SceneTextAreaTest {
     }
 
     /**
-     * 回归锚点：placeholder 节点必须真正插入树（修复 forEach/show 共享 content 时
+     * 回归锚点：placeholder 层必须真正插入树并携带占位文案（修复 forEach/show 共享 content 时
      * anchor 被 applyChildReconcile 误删导致 placeholder 无法插入树的 bug）。
      *
-     * <p>修复后 show 挂在独立 placeholderContainer 上，空值未聚焦时 placeholder
-     * 文本节点应出现在 placeholderContainer 的 children 中（anchor 之外多一个文本节点）。</p>
+     * <p>第四轮起占位层是挂在第一视觉行内的独立文本叶（不再走 show/anchor），锚点的原始意图
+     * 「占位真的在树里、且不被 forEach 的 reconcile 清掉」由本用例原样保留并加强：断言占位层
+     * 就在第一视觉行的子节点列表里、文本为占位文案，且非占位态退化为空串（零宽零占位）。</p>
      */
     @Test
     public void placeholderNodeInsertedWhenValueEmpty() {
         mountTextArea("");
         doLayout();
         runtime.flush();
-        SceneNode phc = placeholderContainerNode();
-        // placeholderContainer 至少含 show 的 anchor；isPlaceholder=true 时还应含 placeholder 文本节点
-        Assert.assertTrue("placeholderContainer 应含 anchor + placeholder 文本节点",
-                phc.__getChildren().size() >= 2);
-        // 找出 placeholder 文本节点（非 anchor，文本等于 PLACEHOLDER）
-        SceneNode phNode = null;
-        for (SceneNode child : phc.__getChildren()) {
-            if (PLACEHOLDER.equals(child.getText())) {
-                phNode = child;
-                break;
-            }
-        }
-        Assert.assertNotNull("placeholder 文本节点应插入树", phNode);
-        Assert.assertEquals("placeholder 文本内容", PLACEHOLDER, phNode.getText());
+        SceneNode placeholderLayer = placeholderContainerNode();
+        Assert.assertTrue("占位层必须是第一视觉行的子节点",
+                rowNode(0).__getChildren().contains(placeholderLayer));
+        Assert.assertEquals("占位层文本内容", PLACEHOLDER, placeholderLayer.getText());
+        Assert.assertSame("placeholderNode() 应解析到同一占位层", placeholderLayer, placeholderNode());
+        Assert.assertFalse("占位层不参与命中", placeholderLayer.isHitTestable());
+
+        valueSignal.set("x");
+        runtime.flush();
+        doLayout();
+        Assert.assertEquals("非占位态占位层退化为空串（零宽零占位）", "", placeholderContainerNode().getText());
+        Assert.assertNull("非占位态 placeholderNode() 返回 null", placeholderNode());
     }
 
     /**
-     * 回归锚点：聚焦时 isPlaceholder 变 false，show 卸载 placeholder 文本节点，
-     * placeholderContainer 只剩 anchor（零尺寸占位）。
+     * 回归锚点（第四轮口径改写，原始意图保留）：聚焦且空<b>仍显示</b>占位，且占位不遮挡 caret。
+     *
+     * <p>原用例钉「聚焦即隐藏」（{@code placeholderNodeRemovedWhenFocused}）；第四轮核实该口径属历史遗留
+     * 而非设计选择 —— primitive javadoc 未给出任何「多行占位应当不同」的理由，锚点本身的理由是
+     * forEach/show 的 anchor 机制（placeholder 曾被 applyChildReconcile 误删），故与单行输入控件的
+     * A3 口径统一。改写后的断言不放宽：除「聚焦后占位仍在树内」外，新增「占位盒起点 ≥ caret 盒右缘」
+     * 与「占位与 caret 同处第一视觉行（旧形态会另起第 2 行）」两条硬断言。</p>
      */
     @Test
-    public void placeholderNodeRemovedWhenFocused() {
+    public void placeholderStaysVisibleOnFocusWithoutOccludingCaret() {
         mountTextArea("");
         doLayout();
         runtime.flush();
-        // 聚焦 → isPlaceholder=false → show 卸载 placeholder 文本节点
+        SceneNode phUnfocused = placeholderNode();
+        Assert.assertNotNull("空值未聚焦应显示占位", phUnfocused);
+        int unfocusedLeft = absoluteX(phUnfocused);
+        int unfocusedTop = absoluteY(phUnfocused);
+
         runtime.requestFocus(contentNode());
         runtime.flush();
         doLayout();
-        SceneNode phc = placeholderContainerNode();
-        // 只剩 anchor 一个节点
-        Assert.assertEquals("聚焦后 placeholderContainer 只剩 anchor", 1, phc.__getChildren().size());
-        for (SceneNode child : phc.__getChildren()) {
-            Assert.assertNull("聚焦后不应有 placeholder 文本节点", child.getText());
-        }
+        SceneNode ph = placeholderNode();
+        Assert.assertNotNull("聚焦且空仍显示占位（与单行输入控件同口径）", ph);
+        Assert.assertEquals("占位文本内容", PLACEHOLDER, ph.getText());
+        SceneNode caret = rowCaret(0);
+        LayoutBox caretBox = (LayoutBox) caret.getCachedLayout();
+        LayoutBox placeholderBox = (LayoutBox) ph.getCachedLayout();
+        Assert.assertNotNull("聚焦后 caret 必须已布局", caretBox);
+        Assert.assertNotNull("聚焦后占位必须已布局", placeholderBox);
+        int caretRight = absoluteX(caret) + caretBox.getWidth();
+        Assert.assertTrue("占位不得遮挡 caret（占位盒起点 ≥ caret 盒右缘）：caretRight=" + caretRight
+                        + " placeholderLeft=" + absoluteX(ph),
+                absoluteX(ph) >= caretRight);
+        Assert.assertEquals("占位与 caret 同处第一视觉行（不再另起一行）",
+                absoluteY(caret), absoluteY(ph));
+        Assert.assertEquals("失焦/聚焦占位横向位置一致", unfocusedLeft, absoluteX(ph));
+        Assert.assertEquals("失焦/聚焦占位纵向位置一致", unfocusedTop, absoluteY(ph));
     }
 
     @Test
@@ -1018,7 +1037,7 @@ public class SceneTextAreaTest {
      * 行内 prefix/suffix 文本色由 {@code resolveTextColor(isPlaceholder, enabled)} 三态分支驱动，
      * 与 placeholder 占位节点共享同一套主题语义色（经 Props 信号供给 primitive）。</p>
      *
-     * <p>注：placeholder 占位节点挂在独立 placeholderContainer（viewport 子节点），
+     * <p>注：placeholder 占位节点挂在独立 placeholderContainer（第一视觉行内的第 6 子），
      * 与 forEach 的 content 分离，避免 applyChildReconcile 的 children.clear() 误删
      * show 的 anchor。此处通过行内 prefix/suffix 的 textColor 验证三态色逻辑，
      * 覆盖 {@code resolveTextColor} 分支回归；placeholder 节点本身的插入树

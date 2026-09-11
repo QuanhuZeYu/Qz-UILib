@@ -44,8 +44,11 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <pre>
  * root (COLUMN, clipChildren=true, focusable, padding, INPUT 玻璃表面)
  *   └─ viewport (COLUMN, scrollable, clipChildren, preferredHeight, 透明)
- *        └─ content (COLUMN) ← forEach 行 + placeholder show
+ *        └─ content (COLUMN) ← forEach 视觉行
+ *             └─ row0 = 五节点 + placeholder 占位层（独立容器，show 独占；仅第一行）
  * </pre>
+ * <p>占位口径与单行输入控件统一：空值且有占位文案即显示（与聚焦无关），占位层位于 caret 之后
+ * ⇒ 落点即文本原点且不遮挡 caret（第四轮；旧形态聚焦即隐藏且占位另起一行）。</p>
  */
 public final class SceneTextArea {
 
