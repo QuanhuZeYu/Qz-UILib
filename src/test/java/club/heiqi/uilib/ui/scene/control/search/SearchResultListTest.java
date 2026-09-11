@@ -584,6 +584,31 @@ public class SearchResultListTest {
         }
     }
 
+    // ==================== 悬停清理（M4 / ADR §3.5） ====================
+
+    /**
+     * M4：单元卸载时清控件级 hoveredKey——虚拟化滑动窗口后不再有「hover 移出」事件，
+     * 必须由卸载清理回写 null，否则信息条残留已卸载项。
+     */
+    @Test
+    public void hoverKeyIsClearedWhenHoveredCellUnmounts() {
+        Fixture f = new Fixture(500);
+        SceneNode cell = f.cell(0, 0);
+        rt.interactionState(cell).hovered();
+        int[] c = centerOf(cell);
+        routePointer(ScenePointerAction.MOVE, c[0], c[1]);
+        Assert.assertEquals("前置：hover 命中第 0 项", Integer.valueOf(0),
+                f.hovered.get(f.hovered.size() - 1).key());
+
+        // 滚到远端：第 0 行随窗口滑动被卸载（指针未移动，没有「hover 移出」事件）
+        routeScrollAt(f.vp(), -100000);
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertNotSame("第 0 行确已卸载", cell, f.rowsContainer().__getChildren().get(0));
+        Assert.assertNull("单元卸载后 hoveredKey 被清空（onHoverItem(null)）",
+                f.hovered.get(f.hovered.size() - 1));
+    }
+
     // ==================== 动态 stride 与滚动锚点（M3 / ADR §3.3） ====================
 
     /**

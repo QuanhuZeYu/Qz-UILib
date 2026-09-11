@@ -27,6 +27,7 @@ public final class SearchPickerPanelPresentation {
     private final String back;
     private final String close;
     private final String addMember;
+    private final String truncatedResults;
 
     private SearchPickerPanelPresentation(Builder builder) {
         panelTitle = required(builder.panelTitle, "panelTitle");
@@ -40,6 +41,7 @@ public final class SearchPickerPanelPresentation {
         back = required(builder.back, "back");
         close = required(builder.close, "close");
         addMember = required(builder.addMember, "addMember");
+        truncatedResults = required(builder.truncatedResults, "truncatedResults");
     }
 
     /** @return 默认英文扩展文案 */
@@ -69,6 +71,8 @@ public final class SearchPickerPanelPresentation {
     public String close() { return close; }
     /** @return 当前成员区新增按钮文案 */
     public String addMember() { return addMember; }
+    /** @return 结果被搜索上限截断时的提示文案（无悬停项时常驻信息条） */
+    public String truncatedResults() { return truncatedResults; }
 
     private static String required(String value, String name) {
         if (value == null) throw new IllegalArgumentException(name + " must not be null");
@@ -98,6 +102,7 @@ public final class SearchPickerPanelPresentation {
         private String back = "Back";
         private String close = "Close";
         private String addMember = "Add";
+        private String truncatedResults = "Results truncated — refine your search";
 
         /** 设置全屏面板标题。 */
         public Builder panelTitle(String value) { panelTitle = value; return this; }
@@ -123,6 +128,8 @@ public final class SearchPickerPanelPresentation {
         public Builder close(String value) { close = value; return this; }
         /** 设置当前成员区新增按钮文案。 */
         public Builder addMember(String value) { addMember = value; return this; }
+        /** 设置结果截断提示文案（P5 §3.3：限量必须渲染提示）。 */
+        public Builder truncatedResults(String value) { truncatedResults = value; return this; }
 
         /** 构建不可变扩展文案。 */
         public SearchPickerPanelPresentation build() { return new SearchPickerPanelPresentation(this); }

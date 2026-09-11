@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
+import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneGridSnapshot;
@@ -473,12 +474,23 @@ public final class SearchResultList {
             }
         });
 
+        // 控件级 hoveredKey：单元 hover 写 key、单元卸载时清同 key（虚拟化下「hover 移出」事件可能随节点
+        // 卸载一起消失），onHoverItem 由该 key 经索引 O(1) 解析 → 信息条不残留已卸载/已换代的项。
+        Signal<Object> hoveredKey = Signal.<Object>create(null);
+        if (props.onHoverItem() != null) {
+            rt.bind(hoveredKey, key -> Effect.untrack(() -> {
+                SceneVirtualGrid.Item hovered = key == null
+                        ? null : window.get().snapshot().index().itemAt(key);
+                props.onHoverItem().accept(hovered);
+            }));
+        }
+
         // 行模型 = 窗口行区间（行键 = 首项全局下标；前插/删除时整窗重建成本 ≤ 可见行数）。
         ReadableSignal<List<SceneGridWindow.RowRange>> rowsSignal =
                 Computed.create(() -> window.get().model().rows());
         rt.forEach(rowsContainer, rowsSignal, SceneGridWindow.RowRange::firstIndex,
                 row -> rowComponent(rt, props, row, window, unrenderableKeys, palette,
-                        trackHeight, stridePx));
+                        trackHeight, stridePx, hoveredKey));
 
         rt.on(viewport, SceneEventType.KEY_DOWN, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())
@@ -574,7 +586,8 @@ public final class SearchResultList {
                                           ReadableSignal<Set<Object>> unrenderableKeys,
                                           CellPalette palette,
                                           ReadableSignal<Integer> trackHeight,
-                                          ReadableSignal<Integer> stridePx) {
+                                          ReadableSignal<Integer> stridePx,
+                                          Signal<Object> hoveredKey) {
         SceneNode rowNode = SceneNode.row();
         rowNode.setPreferredHeight(trackHeight.get().intValue());
         // 轨道高随生效字号变 → 行高跟着变；spacer 数学读同一 stride 信号，内容总高守恒。
@@ -600,7 +613,7 @@ public final class SearchResultList {
         });
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
                 item -> cellComponent(rt, props, item, window, unrenderableKeys, palette,
-                        trackHeight, stridePx));
+                        trackHeight, stridePx, hoveredKey));
         recordMountedRow();
         return rowNode;
     }
@@ -652,7 +665,8 @@ public final class SearchResultList {
                                            ReadableSignal<Set<Object>> unrenderableKeys,
                                            CellPalette palette,
                                            ReadableSignal<Integer> trackHeight,
-                                           ReadableSignal<Integer> stridePx) {
+                                           ReadableSignal<Integer> stridePx,
+                                           Signal<Object> hoveredKey) {
         long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
         SceneNode cell = SceneNode.column();
         cell.setPreferredWidth(props.cellWidth());
@@ -734,10 +748,24 @@ public final class SearchResultList {
             }
         });
 
-        // hover 回调：hovered 已在构建期声明（懒创建时序契约），再经 effect 回写 item/null
+        // hover：写控件级 hoveredKey（不直接回调）——回调由 key 统一解析，且卸载时能清同 key。
         if (props.onHoverItem() != null) {
-            rt.bind(interaction.hovered(), h -> props.onHoverItem().accept(
-                    Boolean.TRUE.equals(h) ? item : null));
+            rt.bind(interaction.hovered(), hovered -> {
+                if (Boolean.TRUE.equals(hovered)) {
+                    hoveredKey.set(item.key());
+                } else if (item.key().equals(hoveredKey.get())) {
+                    hoveredKey.set(null);
+                }
+            });
+            // 单元卸载（滚动窗口滑动 / 数据换代）时不再有「hover 移出」事件：显式清同 key 防信息条残留。
+            Owner owner = Owner.current();
+            if (owner != null) {
+                owner.onCleanup(() -> {
+                    if (item.key().equals(hoveredKey.get())) {
+                        hoveredKey.set(null);
+                    }
+                });
+            }
         }
 
         recordCellMount(startedAtNanos);

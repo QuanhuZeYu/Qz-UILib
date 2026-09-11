@@ -1007,6 +1007,58 @@ public class ScenePickerPanelTest {
                 3, mountedItemCount(grid));
     }
 
+    /**
+     * M4：信息条 O(1) 读 item.label()（完整标签，省略由渲染层承担）+ 稳定 key；
+     * 无悬停时承担「结果被搜索上限截断」的常驻提示（P5 §3.4 D4 / §3.3，A-06 文案面）。
+     */
+    @Test
+    public void infoBarReadsFullLabelAndShowsTruncationHint() {
+        final String longLabel = "a-very-long-candidate-label-well-beyond-the-64px-cell-width";
+        ArrayList<SearchPickerData.Candidate> candidates = new ArrayList<SearchPickerData.Candidate>();
+        candidates.add(new SearchPickerData.Candidate("long:key", longLabel,
+                Collections.<SearchPickerData.Variant>emptyList()));
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        Props props = Props.builder(Signal.create(""),
+                Signal.create(SearchPickerData.SearchResult.of(candidates, true)),
+                Signal.create(Boolean.TRUE), ignored -> { }, ignored -> { }, visualAdapter())
+                .open(open)
+                .onCloseRequest(() -> open.set(Boolean.FALSE))
+                .grid(GridProps.of(0, 64, 64, 8, 8, 3))
+                .build();
+        Result result = ScenePickerPanel.create(rt, props);
+        sceneRoot.appendChild(result.root());
+        rt.flush();
+        open.set(Boolean.TRUE);
+        rt.flush();
+        layoutAll();
+        layoutAll();
+
+        SceneNode scrim = overlayRoot(0);
+        SceneNode infoBar = centerColumn(scrim).__getChildren().get(2);
+        Assert.assertTrue("无悬停 + 截断 → 常驻截断提示",
+                collectText(infoBar).contains(props.panelPresentation().truncatedResults()));
+
+        SceneNode grid = result.grid().get();
+        int[] center = centerOf(gridCell(grid, 0));
+        routePointer(ScenePointerAction.MOVE, center[0], center[1]);
+        rt.flush();
+        String shown = collectText(infoBar);
+        Assert.assertTrue("信息条读完整标签（面板不预省略）: " + shown, shown.contains(longLabel));
+        Assert.assertTrue("信息条含稳定 key: " + shown, shown.contains("long:key"));
+    }
+
+    /** 递归收集子树文本（信息条内部文本节点定位用）。 */
+    private static String collectText(SceneNode node) {
+        StringBuilder out = new StringBuilder();
+        if (node.getText() != null) {
+            out.append(node.getText());
+        }
+        for (SceneNode child : node.__getChildren()) {
+            out.append(collectText(child));
+        }
+        return out.toString();
+    }
+
     // ==================== 键盘导航与焦点意图 ====================
 
     @Test

@@ -53,7 +53,6 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
-import club.heiqi.uilib.ui.text.TextEllipsizer;
 
 /**
  * ScenePickerPanel —— 创造物品栏式 70% 居中 picker 面板（通用、平台无关、受控）。
@@ -104,8 +103,6 @@ public final class ScenePickerPanel {
     /** portal 生命周期之间可回放的焦点意图。 */
     private enum FocusIntent { NONE, SEARCH_INPUT, GRID, VARIANTS }
 
-    private static final int LABEL_FONT_SIZE = 12;
-    private static final int CELL_LABEL_PADDING = 8;
     private static final int PANEL_PADDING = SceneChromeTokens.PAD_MD;
     private static final int PANEL_WIDTH_PERCENT = 70;
     private static final int PANEL_HEIGHT_PERCENT = 70;
@@ -559,10 +556,9 @@ public final class ScenePickerPanel {
             List<SearchPickerData.Candidate> candidates = filtered.get();
             ArrayList<Item> items = new ArrayList<Item>(candidates.size());
             for (SearchPickerData.Candidate candidate : candidates) {
-                String label = TextEllipsizer.ellipsize(
-                        t -> rt.measureTextWidth(t, LABEL_FONT_SIZE),
-                        props.visualAdapter().candidateLabel(candidate),
-                        Math.max(0, props.grid().cellWidth() - CELL_LABEL_PADDING));
+                // 标签保留完整文本：省略由渲染层承担（结果单元已 setMaxTextWidth + setEllipsis）。
+                // 信息条因此可读 item.label() 拿到全名（P5 §5.4 D4），且不再对 filtered 全表反查（O(1)）。
+                String label = props.visualAdapter().candidateLabel(candidate);
                 SceneImageSource image = null;
                 try {
                     image = props.visualAdapter().candidateImage(candidate);
@@ -849,7 +845,11 @@ public final class ScenePickerPanel {
                         activeCandidate, mode, selectedKeys, gridHighlight,
                         addingMember, editingMember, focusIntent),
                 gridHighlight, gridHighlight::set,
-                hoveredItem::set));
+                hoveredItem::set,
+                // GridProps.visibleRows 由此生效：视口未布局时作为首帧挂载预算（布局后以实际视口高度为权威）。
+                // totalItems 传 -1 = 取 items.size()（面板当前仍持全量 gridItems；pageProvider 形态留待面板惰性化）。
+                null, SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0,
+                props.grid().visibleRows(), null));
         // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
         //（scrollable 子节点不能走 flexGrow 分配，模块内已对 root 设置）。
         gridViewportHolder[0] = list.viewport();
@@ -860,11 +860,15 @@ public final class ScenePickerPanel {
         // 固定信息条：悬停项完整 label + 稳定 key（悬浮 tooltip 的替代物，无浮层生命周期）。
         ReadableSignal<String> infoText = Computed.create(() -> {
             SceneVirtualGrid.Item item = hoveredItem.get();
-            if (item == null) return "";
-            String label = fullLabelAt(filtered.get(), item.key());
-            String stableKey = String.valueOf(item.key());
-            String prefix = props.panelPresentation().tooltipPrefix();
-            return prefix.isEmpty() ? label + "\n" + stableKey : label + "\n" + prefix + stableKey;
+            if (item != null) {
+                // O(1)：标签随 Item 携带（渲染层负责省略号），不再对 filtered 全表反查。
+                String label = item.label() == null ? String.valueOf(item.key()) : item.label();
+                String stableKey = String.valueOf(item.key());
+                String prefix = props.panelPresentation().tooltipPrefix();
+                return prefix.isEmpty() ? label + "\n" + stableKey : label + "\n" + prefix + stableKey;
+            }
+            // 无悬停时承担「结果被搜索上限截断」的常驻提示（P5 §3.3：限量必须渲染提示）。
+            return safeResults(props).truncated() ? props.panelPresentation().truncatedResults() : "";
         });
         center.appendChild(PickerInfoBar.create(rt, new PickerInfoBar.Props(infoText, props.enabled())));
         return center;
@@ -1172,14 +1176,6 @@ public final class ScenePickerPanel {
             if (candidate.key().equals(target)) return candidate;
         }
         return null;
-    }
-
-    private static String fullLabelAt(List<SearchPickerData.Candidate> candidates, Object key) {
-        String target = String.valueOf(key);
-        for (SearchPickerData.Candidate candidate : candidates) {
-            if (candidate.key().equals(target)) return candidate.label();
-        }
-        return target;
     }
 
     /**
