@@ -28,6 +28,8 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Props;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Result;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
 import club.heiqi.uilib.ui.scene.input.RawInputEvent;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
@@ -294,6 +296,69 @@ public class ScenePickerPanelSpiWindowTest {
         layoutAll();
     }
 
+    // ==================== Tab 环闭合（A7） ====================
+
+    /**
+     * A7（P5 §5.1）：Tab 环闭合守卫。
+     *
+     * <p>不变量：① Tab 环严格限制在面板 overlay 子树内 —— 宿主侧可聚焦节点（即便存在）永不进入环；
+     * ② 一个完整环恰好访问面板内每个 focusable 一次（无跳过、无死循环），第 K 次后回到起点；
+     * ③ 环内必须包含判据点名的四类落点：搜索框 → 分类导航行 → 结果网格 → 成员操作按钮；
+     * ④ Shift+Tab 为同环逆序（一环之前 = 环尾）。</p>
+     */
+    @Test
+    public void tabRingStaysInsidePanelAndCoversSearchNavGridAndMembers() {
+        FakeSource source = new FakeSource(20);
+        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        f.configureMember("k2");
+        f.configureMember("k3");
+        f.openPanel();
+
+        // 宿主侧可聚焦节点（面板外）：Tab 环不得把它吞进来（不逃逸到宿主）。
+        SceneNode hostTrigger = new SceneNode();
+        hostTrigger.setPreferredHeight(20);
+        sceneRoot.appendChild(hostTrigger);
+        rt.focusable(hostTrigger);
+        layoutAll();
+
+        SceneNode overlayRoot = rt.getOverlayHost().bottomFirst().get(0).getRoot();
+        SceneNode start = rt.getFocusedNode();
+        Assert.assertNotNull("面板打开后必须有首焦点", start);
+        Assert.assertSame("面板打开首焦点 = 搜索框", searchInputRoot(f.panelRoot()), start);
+
+        ArrayList<SceneNode> cycle = new ArrayList<SceneNode>();
+        cycle.add(start);
+        for (int guard = 0; guard < 64; guard++) {
+            pressTab(false);
+            SceneNode next = rt.getFocusedNode();
+            Assert.assertNotNull("Tab 后焦点不得为空", next);
+            Assert.assertNotSame("Tab 环不得逃逸到宿主可聚焦节点", hostTrigger, next);
+            Assert.assertTrue("Tab 环必须留在面板 overlay 子树内: " + describe(next),
+                    isWithin(next, overlayRoot));
+            if (next == start) {
+                break;
+            }
+            Assert.assertFalse("Tab 环内不得重复访问同一节点（无跳过/无死循环）: " + describe(next),
+                    cycle.contains(next));
+            cycle.add(next);
+        }
+        Assert.assertSame("Tab 环必须闭合（回到起点）", start, rt.getFocusedNode());
+        Assert.assertTrue("环长必须 > 1（搜索→导航→网格→成员）", cycle.size() > 1);
+        Assert.assertTrue("环内必须包含结果网格（C1/C2 落点）", cycle.contains(f.viewport()));
+        Assert.assertTrue("环内必须包含分类导航行（C4 落点）",
+                containsWithin(cycle, categoryNavRows(f.panelRoot())));
+        Assert.assertTrue("环内必须包含搜索输入（A3/C3 落点）",
+                containsWithin(cycle, searchInputRoot(f.panelRoot())));
+        Assert.assertTrue("环内必须包含成员操作按钮（成员带落点）",
+                containsWithin(cycle, memberRows(f.panelRoot())));
+
+        // Shift+Tab 逆序：起点反向一步 = 环尾；再正向一步回到起点。
+        pressTab(true);
+        Assert.assertSame("Shift+Tab 逆序回到环尾", cycle.get(cycle.size() - 1), rt.getFocusedNode());
+        pressTab(false);
+        Assert.assertSame("正向再一步回到起点", start, rt.getFocusedNode());
+    }
+
     // ==================== 宿主帧驱动 ====================
 
     private void layoutAll() {
@@ -375,6 +440,54 @@ public class ScenePickerPanelSpiWindowTest {
     private static void collectText(SceneNode node, StringBuilder out) {
         if (node.getText() != null && !node.getText().isEmpty()) out.append(node.getText()).append('\n');
         for (SceneNode child : node.__getChildren()) collectText(child, out);
+    }
+
+    /** Tab / Shift+Tab 一帧：经 Router 默认焦点遍历（focusScope = 栈顶 overlay）。 */
+    private void pressTab(boolean shift) {
+        InputFrameBuilder fb = new InputFrameBuilder(0, 0);
+        fb.push(RawInputEvent.ofKey(SceneKey.TAB, SceneKeyAction.PRESSED,
+                false, shift, false, false, 0, 0, 1000L));
+        rt.route(sceneRoot, fb.drainFrame(), 0, 0);
+        rt.flush();
+        layoutAll();
+    }
+
+    /** @return 节点是否位于 scope 子树内（含自身；父链遍历，不依赖 focusable 注册表） */
+    private static boolean isWithin(SceneNode node, SceneNode scope) {
+        for (SceneNode current = node; current != null; current = current.__getParent()) {
+            if (current == scope) return true;
+        }
+        return false;
+    }
+
+    /** @return 环内是否存在落在 scope 子树内的落点 */
+    private static boolean containsWithin(List<SceneNode> cycle, SceneNode scope) {
+        for (SceneNode node : cycle) {
+            if (isWithin(node, scope)) return true;
+        }
+        return false;
+    }
+
+    private static String describe(SceneNode node) {
+        return node == null ? "null" : (node.getText() == null || node.getText().isEmpty()
+                ? node.toString() : node.getText());
+    }
+
+    /** 面板顶栏 = [标题, 搜索输入, (维度分段), 统计, 关闭]。 */
+    private static SceneNode searchInputRoot(SceneNode panel) {
+        return panel.__getChildren().get(0).__getChildren().get(1);
+    }
+
+    /** 左栏分类导航行容器：中栏 = [导航列, 结果列]；导航列 = [维度标题, 滚动容器, 状态行]。 */
+    private static SceneNode categoryNavRows(SceneNode panel) {
+        return panel.__getChildren().get(1).__getChildren().get(0)
+                .__getChildren().get(1).__getChildren().get(0).__getChildren().get(0);
+    }
+
+    /** 成员带卡片行容器：membersPanel = [header, 模式横幅, gridRoot, 空态, 撤销条]。 */
+    private static SceneNode memberRows(SceneNode panel) {
+        return panel.__getChildren().get(2).__getChildren().get(2)
+                .__getChildren().get(0).__getChildren().get(0).__getChildren().get(0);
     }
 
     private void click(SceneNode node) {
