@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [4.9.1] - 2026-09-11
+
 ### 新增
 
 - 公开 HUD 编辑契约 `ui.hud.api.HudEditTarget` / `ui.hud.api.HudEditService`：第三方 Mod 注册可编辑 HUD 目标（预览内容工厂 + 默认放置 + 可选外接工具栏规格），`requestEdit(hudId)` 发布「进入编辑并聚焦该目标」意图，由当前打开的聊天输入屏消费（无活动聊天屏时静默丢弃，不排队、不抛异常）；`revision()` 在目标增删时 +1 驱动宿主重建预览，`focus()` / `isEditing()` 暴露会话状态，重复 hudId 注册明确拒绝、注销句柄幂等
