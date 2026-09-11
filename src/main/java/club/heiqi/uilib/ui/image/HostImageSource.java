@@ -39,10 +39,18 @@ public final class HostImageSource implements SceneImageSource {
     private final int regionV;
     private final int regionWidth;
     private final int regionHeight;
+    /**
+     * 显式渲染分级注册键（可空）。
+     *
+     * <p>{@code null} 表示沿用「物品注册名:meta」自算口径；非 {@code null} 时 {@link #registryKey()}
+     * 直接返回该键。用途：候选域键与物品域键不同的消费者（选择器候选/变体）需要按候选 key 直接分级
+     * （ADR §5.1 / Z-2、Z-3）；本类为 final 且渲染入口只认本类型，故只能由显式键工厂提供接缝。</p>
+     */
+    private final String explicitRegistryKey;
 
     private HostImageSource(Kind kind, ItemStack itemIconStack, ResourceLocation texture, BufferedImage bufferedImage,
             String imageKey, int textureWidth, int textureHeight, int regionU, int regionV, int regionWidth,
-            int regionHeight) {
+            int regionHeight, String explicitRegistryKey) {
         this.kind = Objects.requireNonNull(kind, "kind");
         this.itemIconStack = itemIconStack;
         this.texture = texture;
@@ -54,6 +62,9 @@ public final class HostImageSource implements SceneImageSource {
         this.regionV = Math.max(0, regionV);
         this.regionWidth = Math.max(1, regionWidth);
         this.regionHeight = Math.max(1, regionHeight);
+        this.explicitRegistryKey = explicitRegistryKey == null || explicitRegistryKey.trim().isEmpty()
+                ? null
+                : explicitRegistryKey.trim();
     }
 
     /**
@@ -69,11 +80,29 @@ public final class HostImageSource implements SceneImageSource {
      * @return 静态物品图标源
      */
     public static HostImageSource itemIcon(ItemStack itemStack) {
+        return itemIcon(itemStack, null);
+    }
+
+    /**
+     * 创建生命周期内固定的物品图标源，并显式指定渲染分级注册键。
+     *
+     * <p>与 {@link #itemIcon(ItemStack)} 的唯一差别是分级键：{@code explicitRegistryKey} 非空时
+     * {@link #registryKey()} 直接返回它，不再按「物品注册名:meta」自算。这解决「候选域键 ≠ 物品域键」
+     * （方块注册名 vs 物品注册名 + meta）时回退集合命中不了、meta 粒度丢失的问题（ADR §5.1 的 S-1 根因）。</p>
+     *
+     * <p>渲染语义完全不变：本类仍是 final，渲染入口仍按 {@code instanceof HostImageSource} 分派，
+     * 快照语义（创建时 {@link ItemStack#copy()}）与图像内容不随键变化。</p>
+     *
+     * @param itemStack 要在创建时复制的物品
+     * @param explicitRegistryKey 显式分级键；{@code null} 或空白表示沿用自算口径
+     * @return 静态物品图标源
+     */
+    public static HostImageSource itemIcon(ItemStack itemStack, String explicitRegistryKey) {
         if (itemStack == null || itemStack.getItem() == null) {
             throw new IllegalArgumentException("itemStack must contain an item");
         }
         HostImageSource source = new HostImageSource(Kind.ITEM_ICON, itemStack.copy(), null, null, null,
-                16, 16, 0, 0, 16, 16);
+                16, 16, 0, 0, 16, 16, explicitRegistryKey);
         if (Config.useDebug) {
             UiPerformanceMonitor.getInstance().recordCounter(UiPerfMarkers.COUNTER_IMAGE_ICON_CREATED, 1L);
         }
@@ -114,7 +143,7 @@ public final class HostImageSource implements SceneImageSource {
             throw new IllegalArgumentException("texture region size must be positive");
         }
         return new HostImageSource(Kind.TEXTURE, null, resolvedTexture, null, null, textureWidth, textureHeight,
-                regionU, regionV, regionWidth, regionHeight);
+                regionU, regionV, regionWidth, regionHeight, null);
     }
 
     /**
@@ -134,7 +163,7 @@ public final class HostImageSource implements SceneImageSource {
                 : imageKey.trim();
         return new HostImageSource(Kind.BUFFERED_IMAGE, null, null, resolvedImage, resolvedImageKey,
                 resolvedImage.getWidth(), resolvedImage.getHeight(), 0, 0, resolvedImage.getWidth(),
-                resolvedImage.getHeight());
+                resolvedImage.getHeight(), null);
     }
 
     public Kind getKind() {
@@ -194,6 +223,9 @@ public final class HostImageSource implements SceneImageSource {
      */
     @Override
     public String registryKey() {
+        if (explicitRegistryKey != null) {
+            return explicitRegistryKey;
+        }
         if (kind != Kind.ITEM_ICON || itemIconStack == null) {
             return null;
         }
