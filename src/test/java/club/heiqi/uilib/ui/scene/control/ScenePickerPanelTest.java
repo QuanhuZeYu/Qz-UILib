@@ -29,7 +29,9 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Props;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Result;
 import club.heiqi.uilib.ui.scene.control.search.CategoryNavPane;
 import club.heiqi.uilib.ui.scene.control.search.MemberGrid;
+import club.heiqi.uilib.ui.scene.control.search.PickerDensityPreference;
 import club.heiqi.uilib.ui.scene.control.search.PickerInfoBar;
+import club.heiqi.uilib.ui.scene.control.search.PickerMetrics;
 import club.heiqi.uilib.ui.scene.control.search.SearchResultList;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 import club.heiqi.uilib.ui.scene.input.InputFrameBuilder;
@@ -2479,6 +2481,13 @@ public class ScenePickerPanelTest {
         // 收敛帧的特征是首帧列数 == 1；预算路径下必须直接落在稳态列数（> 1）。
         Assert.assertTrue("首帧列数必须是预算列数（非 1 的收敛值），实际 " + first.columns(),
                 first.columns() > 1);
+        // 强断言（U-P6D-2 收紧）：首帧列数必须**等于 P5 派生 oracle**。原来的「> 1」弱断言正是漏掉
+        // 「Computed 初值 pitfall ⇒ 网格永久回退分支、不吃密度」的口子（P6-D3 修复）：回退分支恰好给出
+        // 15 列（> 1），弱断言照样通过。此处以同源 oracle 钉死度量通道必须活着。
+        int oracleColumns = PickerMetrics.derive(rt, 1920, 1080, rt.getFontScalePercent(),
+                PickerDensityPreference.AUTO, -1).grid().columns();
+        Assert.assertEquals("首帧列数必须等于派生 oracle（防度量通道再次断链）", oracleColumns,
+                first.columns());
         // 再布局若干次：列数不得再变（没有收敛过程）。
         layoutAll();
         layoutAll();
