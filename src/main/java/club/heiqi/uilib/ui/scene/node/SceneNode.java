@@ -77,6 +77,28 @@ public class SceneNode {
 
     // ==================== 树关系 ====================
 
+    /**
+     * 全进程树结构版本号：任一挂载/卸载/重排操作（{@link #appendChild}、{@link #removeChild}、
+     * {@link #insertBefore}、{@link #applyChildReconcile}）自增 1。
+     *
+     * <p><b>用途</b>：布局引擎的文本叶登记表需要「结构变更触发的一次确定性剪枝」——
+     * 引擎与 runtime 之间零引用（不新增反向依赖），故由节点侧暴露一个 O(1) 变更信号，
+     * 由 {@code SceneLayoutEngine.layout} 入口比对。语义是<b>保守触发源</b>：跨 runtime /
+     * 跨引擎的无关结构变更只会让某个引擎多跑一次剪枝，绝不漏跑（漏跑 = 已卸载子树的
+     * 文本叶永久驻留）。</p>
+     *
+     * <p><b>跨包可见性说明</b>：场景布局引擎在 {@code ui.scene.layout} 包，本类在
+     * {@code ui.scene.node} 包，「包私有」跨包不可达，故计数器本体 {@code private static}、
+     * 读取口沿用本仓既有的 {@code __} 内部桥命名约定（与 {@link #__getLastMeasuredEpoch()}
+     * 同例），不构成公共兼容承诺。不提供写入口：只有本类的四个结构方法能推进它。</p>
+     */
+    private static long structureVersion;
+
+    /** @return 全进程树结构版本号（{@code __} 内部桥；仅结构方法推进，任何人不得写入） */
+    public static long __structureVersion() {
+        return structureVersion;
+    }
+
     /** 父节点，根节点为 null */
     SceneNode parent;
 
@@ -298,6 +320,7 @@ public class SceneNode {
         children.add(child);
         child.parent = this;
         markSelfLayout();
+        structureVersion++;
     }
 
     /** 移除子节点；只标本容器布局脏，不递归标后代。 */
@@ -306,6 +329,7 @@ public class SceneNode {
         if (children.remove(child)) {
             child.parent = null;
             markSelfLayout();
+            structureVersion++;
         }
     }
 
@@ -323,6 +347,7 @@ public class SceneNode {
         children.add(idx, child);
         child.parent = this;
         markSelfLayout();
+        structureVersion++;
     }
 
     /**
@@ -359,6 +384,9 @@ public class SceneNode {
         // 4. 容器自身因子序列变化标脏一次（只标自己 + 向上冒泡）
         //    绝不递归标记任何子节点或后代
         markSelfLayout();
+        // 结构版本推进：即使子序列内容在值上等价，也保守触发布局引擎的文本叶登记表剪枝
+        // （剪枝是幂等 + O(1) 触发，宁可多跑一次也不漏跑，见 structureVersion 字段说明）。
+        structureVersion++;
     }
 
     // ==================== 核心失效方法 ====================

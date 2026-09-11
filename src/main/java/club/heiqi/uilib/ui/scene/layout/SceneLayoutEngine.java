@@ -1,7 +1,10 @@
 package club.heiqi.uilib.ui.scene.layout;
 
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,9 +52,26 @@ import com.github.bsideup.jabel.Desugar;
  * 干净子树文本不更新（P0 命门）。入口冒泡点亮 descendantLayoutDirty，使干净中间层
  * 下沉到文本叶自查点。</p>
  *
- * <p><b>measuredTextNodes 持续累积，不在入口清空。</b>与原机制语义等价（原机制只在
+ * <p><b>measuredTextNodes 保有界强引用登记表。</b>与原机制语义等价（原机制只在
  * epoch 变化帧清空+重填，平时保留累积清单）。若每帧清空，会因 I7 干净跳过导致干净
  * 文本叶不走 computeWidth、不重填，下一帧 measuredTextNodes 丢失这些节点，失效链断裂。</p>
+ *
+ * <p><b>三条不变量（P1-1）</b>：</p>
+ * <ul>
+ *   <li><b>索引完备性</b>：凡「已附着且可能被布局短路跳过」的文本叶必须在表内，
+ *       使 measurer epoch 变化能传导（不得为省内存牺牲这条）。</li>
+ *   <li><b>有界性</b>：顶层祖先已与任何已知布局根断开的节点必须被确定性剪枝；
+ *       「面板开合 20 次」后条目数回到基线。</li>
+ *   <li><b>确定性</b>：剪枝不依赖 GC 时机，同一输入序列产生同一表内容。</li>
+ * </ul>
+ *
+ * <p><b>生命周期机制</b>：登记表仍是强引用身份集合（{@link SceneNode} 不重写
+ * equals/hashCode 是硬前提），但清理点从「不存在」变为三处可判定位置——① 结构版本变化
+ * 触发的确定性剪枝（{@link SceneNode#__structureVersion()}）；② 已知布局根 LRU
+ * （容量 {@link #MAX_KNOWN_ROOTS}，多根/overlay 复用场景防误剪）；③ measurer epoch
+ * 入口快路径（epoch 未变时零遍历）。剪枝对「断开子树的路径」调用
+ * {@link SceneNode#markSelfLayout()} 作废缓存，故被重挂载的子树必然重算并重新登记，
+ * 索引完备性在摘除—重挂载往返后自愈。</p>
  */
 public class SceneLayoutEngine {
 
@@ -132,8 +152,59 @@ public class SceneLayoutEngine {
      * <p><b>阶段 4.1：注入 SizingCalculator</b>。本 Set 仍由主引擎拥有（layout 入口
      * 遍历它做 epoch 比对），但 {@link SizingCalculator#computeWidth} 内的 add 登记
      * 动作通过构造器注入的同一引用完成，语义与原主引擎内联时逐位等价（I7/I8）。</p>
+     *
+     * <p><b>阶段 P1-1：有界 + 可剪枝</b>。原先「只增不减」使保留 1 个文本叶即经
+     * {@code parent} 链钉住整棵已卸载子树（连 cachedLayout/cachedPaint/TextLinePlan 一起常驻），
+     * 且每批 layout 付 |集合| 次遍历。现在集合由三条不变量的机制维护（见类 Javadoc）：
+     * 结构版本变化 → {@link #pruneDetachedTextNodes()}；epoch 未变 → 零遍历快路径。
+     * 剪枝只移除「顶层祖先不在 {@link #knownRoots} 内」的节点，任何仍挂在已知根下的
+     * 文本叶一律保留（索引完备性优先）。</p>
      */
     private final Set<SceneNode> measuredTextNodes = ConcurrentHashMap.newKeySet();
+
+    /**
+     * 已知布局根 LRU 容量：{@link #layout} 每批登记本次根，剪枝据此区分「仍挂载」与「已断开」。
+     *
+     * <p>8 覆盖主树 1 + 并发 overlay（overlay 引擎各自只服务一个 root，见
+     * {@code SceneFramePipeline.layoutOverlays}），并给测试/多根复用留余量。淘汰旧根后，
+     * 其断开子树的文本叶会在下一次剪枝被清除。</p>
+     */
+    private static final int MAX_KNOWN_ROOTS = 8;
+
+    /**
+     * 已知布局根（访问序 LRU，容量 {@link #MAX_KNOWN_ROOTS}）。
+     *
+     * <p>{@link LinkedHashMap} 默认用 equals/hashCode 定位桶，而 {@link SceneNode} 明令禁止
+     * 重写 equals/hashCode（见 SceneNode 类注释），故键定位即引用相等，与登记表的身份语义一致。
+     * 持强引用是有意的：<b>有界</b>（≤8 个根）且随引擎生命周期结束释放；它保证「同一引擎
+     * 先后 layout rootA/rootB 时，rootA 的文本叶不会被 rootB 的剪枝误删」。</p>
+     */
+    private final Map<SceneNode, Boolean> knownRoots = new LinkedHashMap<SceneNode, Boolean>(16, 0.75F, true) {
+
+        /** 访问序 LRU：超出容量即淘汰最久未布局的根。 */
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<SceneNode, Boolean> eldest) {
+            return size() > MAX_KNOWN_ROOTS;
+        }
+    };
+
+    /**
+     * 上一次已扫描过失效链的 measurer epoch（入口快路径判据）。
+     *
+     * <p>{@link Integer#MIN_VALUE} = 尚未扫描过任何批次，保证首个 layout 必扫一次
+     * （此时登记表必为空，扫描零成本）。</p>
+     */
+    private int lastSweptMeasurerEpoch = Integer.MIN_VALUE;
+
+    /**
+     * 上一次已做过剪枝的树结构版本号（{@link SceneNode#__structureVersion()} 快照）。
+     *
+     * <p>初值取构造时刻的版本：此前发生的结构变更与本引擎的登记表无关（表尚为空）。</p>
+     */
+    private long lastSweptStructureVersion = SceneNode.__structureVersion();
+
+    /** 最近一批 epoch 扫描实际遍历的登记表条目数（探针：快路径命中时必须为 0）。 */
+    private int lastSweepEntryCount;
 
     // ==================== 阶段 2.2 并行前置：信号 record ====================
     //
@@ -249,28 +320,41 @@ public class SceneLayoutEngine {
         Set<SceneNode> relayoutedNodes = new HashSet<>();
         Set<SceneNode> constraintRelayoutedNodes = new java.util.LinkedHashSet<>();
 
-        // epoch 失效链：遍历上一帧测量过的文本叶，做节点级 epoch 比对。
-        // 比对不成立的节点 markSelfLayout()（只向上冒泡，O(文本节点数)，严禁向下递归 I7）。
-        // detached 节点冒泡到 null parent 无害。
+        // ==================== 入口序列（顺序即语义） ====================
+        // 0) 登记布局根（有界 LRU）→ 1) 结构变更剪枝 → 2) epoch 失效链 → 3) 约束感知。
         //
-        // ★ P0 命门：此入口遍历前冒泡不可删除。若删掉只靠遍历时自查，干净子树
+        // ★ P0 命门：epoch 失效链的「入口冒泡」不可删除。若删掉只靠遍历时自查，干净子树
         //   （selfLayoutDirty==false && descendantLayoutDirty==false）会在 layoutInternal
         //   入口被整棵跳过，永远到不了文本叶的自查点，导致字体 reload 后干净子树文本不更新。
         //   入口冒泡点亮 descendantLayoutDirty，使干净中间层下沉到文本叶自查点。
         //
-        // epoch 未变时所有节点比对成立（lastMeasuredEpoch == epoch），零标脏，无性能损失。
-        // 不再持 lastMeasureEpoch，epoch 比对权威下放到节点（与 lastConstraints 同构）。
-        //
         // ★ 不清空 measuredTextNodes：与原机制语义等价。原机制只在 epoch 变化帧清空+重填
-        //   （if 保护），平时保留累积清单。新机制若每帧清空，会因 I7 干净跳过导致干净文本叶
-        //   不走 computeWidth、不重填，下一帧 measuredTextNodes 丢失这些节点，失效链断裂。
-        //   故 measuredTextNodes 持续累积所有曾被测量的文本叶，文本叶测量时幂等 add。
-        //   detached 节点累积无害（冒泡到 null parent 无害，ConcurrentHashMap.newKeySet() 不会无限增长）。
+        //   （if 保护），平时保留累积清单。若每批清空，会因 I7 干净跳过导致干净文本叶
+        //   不走 computeWidth、不重填，下一批登记表丢失这些节点，失效链断裂。
+        //   登记表改由「结构变更剪枝 + 已知根 LRU + 有界强引用」维持有界性（P1-1 三不变量）。
+
+        // ★ P1-1 入口 0：登记本次布局根（有界 LRU），使剪枝能区分「仍挂载」与「已断开」。
+        registerKnownRoot(root);
+
+        // ★ P1-1 入口 2：结构版本变化 → 确定性剪枝。
+        // 触发面 = appendChild/removeChild/insertBefore/applyChildReconcile（SceneNode 侧 static 版本号）。
+        // 引擎与 runtime 零引用（不新增反向依赖），故用 O(1) 的全局版本号做保守触发源。
+        long structure = SceneNode.__structureVersion();
+        if (structure != lastSweptStructureVersion) {
+            lastSweptStructureVersion = structure;
+            pruneDetachedTextNodes();
+        }
+
+        // ★ P1-1 入口 3：measurer epoch 快路径（把每批的登记表账降为 0）。
+        // 正确性依据：SizingCalculator 每次 add 用「当时」的 measurer.epoch() 打戳，
+        // 故入口 epoch 与上次扫描后记录值相同时，表内不可能存在 stale 成员
+        // （新成员打的是当前 epoch）。因此「每 epoch 变化扫一次」与「每批都扫」语义等价。
         int epoch = measurer.epoch();
-        for (SceneNode textNode : measuredTextNodes) {
-            if (textNode.__getLastMeasuredEpoch() != epoch) {
-                textNode.markSelfLayout();
-            }
+        if (epoch != lastSweptMeasurerEpoch) {
+            lastSweptMeasurerEpoch = epoch;
+            sweepStaleTextNodes(epoch);
+        } else {
+            lastSweepEntryCount = 0;
         }
 
         // 约束变化感知：约束变化时只标 root 自己 selfLayoutDirty，
@@ -287,6 +371,119 @@ public class SceneLayoutEngine {
         // B3/C4：layout 末尾自增纪元，供宿主桥接 layoutDoneSignal（零滞后路径）
         layoutEpoch++;
         return result;
+    }
+
+    // ==================== P1-1：文本叶登记表生命周期 ====================
+
+    /**
+     * measurer epoch 失效链扫描：对「上次测量 epoch 不等于当前 epoch」的文本叶
+     * {@code markSelfLayout()}（只向上冒泡，绝不向下递归标脏）。
+     *
+     * <p>入口快路径保证本方法每个 epoch 值只跑一次（见 {@link #layout}），
+     * 语义与原「每批都扫」逐位等价：epoch 未变时所有节点比对成立，本就零标脏。</p>
+     *
+     * @param epoch 当前 measurer epoch
+     */
+    private void sweepStaleTextNodes(int epoch) {
+        int scanned = 0;
+        for (SceneNode textNode : measuredTextNodes) {
+            scanned++;
+            if (textNode.__getLastMeasuredEpoch() != epoch) {
+                textNode.markSelfLayout();
+            }
+        }
+        lastSweepEntryCount = scanned;
+    }
+
+    /**
+     * 确定性剪枝：移除「顶层祖先已不是任何已知布局根」的登记项，并作废该断开子树的布局缓存。
+     *
+     * <p>判定完全由树结构与 {@link #knownRoots} 决定，不依赖 GC、不依赖引用队列，
+     * 同一输入序列必得同一表内容（可测）。对每个条目向上走 {@code __getParent()} 到顶：
+     * 顶层节点在 {@link #knownRoots} 内 → 仍挂载，保留；否则整条链已断开 → 移除。</p>
+     *
+     * <p><b>为什么移除前必须作废路径缓存</b>：被移除的文本叶不再参与 epoch 失效链，
+     * 若它所在子树日后被重挂载，I7 的「干净子树整棵跳过」会让它永远不被重新测量
+     * （cachedLayout 非空 + 双标记 false），索引完备性会静默失守。沿 叶→顶 的路径逐个
+     * {@link SceneNode#markSelfLayout()} 后，重挂载时该路径上每个节点都不满足跳过条件，
+     * 布局必然下潜到文本叶 → 重新测量 → 重新登记，失效链自愈。</p>
+     *
+     * <p>代价：O(|表| × 深度)，仅在结构变更的那一批发生；稳态打字/滚动不触发
+     * （{@code SceneKeyedListReconciler} 只在子序列真正不同时才提交 reconcile）。</p>
+     *
+     * @return 本次移除的条目数（探针与测试用）
+     */
+    private int pruneDetachedTextNodes() {
+        if (measuredTextNodes.isEmpty()) {
+            return 0;
+        }
+        int removed = 0;
+        for (Iterator<SceneNode> it = measuredTextNodes.iterator(); it.hasNext();) {
+            SceneNode textNode = it.next();
+            if (knownRoots.containsKey(topAncestor(textNode))) {
+                continue;                       // 仍挂在某个已知布局根下：保留（索引完备性优先）
+            }
+            invalidateDetachedPath(textNode);
+            it.remove();
+            removed++;
+        }
+        return removed;
+    }
+
+    /** 沿父链走到顶（根节点自身无父，返回自身）。 */
+    private static SceneNode topAncestor(SceneNode node) {
+        SceneNode top = node;
+        while (top.__getParent() != null) {
+            top = top.__getParent();
+        }
+        return top;
+    }
+
+    /**
+     * 作废「已断开子树」内 叶→顶层根 路径上每个节点的布局缓存。
+     *
+     * <p>{@code markSelfLayout()} 幂等（已脏则直接返回），且冒泡在顶层（parent==null）自然终止，
+     * 不会触及任何仍挂载的节点。副作用仅限已断开子树，故对在挂载中的树零影响。</p>
+     */
+    private static void invalidateDetachedPath(SceneNode node) {
+        SceneNode current = node;
+        while (current != null) {
+            current.markSelfLayout();
+            current = current.__getParent();
+        }
+    }
+
+    /** 登记本次布局根（访问序 LRU，容量 {@link #MAX_KNOWN_ROOTS}，重复登记只更新访问序）。 */
+    private void registerKnownRoot(SceneNode root) {
+        if (root != null) {
+            knownRoots.put(root, Boolean.TRUE);
+        }
+    }
+
+    // ==================== P1-1 测试探针（包内可见，无公共 API 变化） ====================
+
+    /** @return 当前文本叶登记表条目数（生命周期不变量断言用） */
+    int __measuredTextNodeCount() {
+        return measuredTextNodes.size();
+    }
+
+    /**
+     * 直接跑一次剪枝（测试用）：不依赖「恰好发生结构变更」，使确定性断言可独立驱动。
+     *
+     * @return 本次移除的条目数
+     */
+    int __pruneDetachedEntryCountForTest() {
+        return pruneDetachedTextNodes();
+    }
+
+    /** @return 最近一批 epoch 扫描实际遍历的条目数（快路径命中时为 0） */
+    int __lastSweepEntryCount() {
+        return lastSweepEntryCount;
+    }
+
+    /** @return 当前已知布局根数量（有界性断言用，恒 ≤ {@link #MAX_KNOWN_ROOTS}） */
+    int __knownRootCount() {
+        return knownRoots.size();
     }
 
     // ==================== 内部递归 ====================
