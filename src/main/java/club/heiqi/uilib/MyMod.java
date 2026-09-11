@@ -15,7 +15,7 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
         version = Tags.VERSION,
         name = "Qz UILib",
         acceptedMinecraftVersions = "[1.7.10]",
-        acceptableRemoteVersions = "[4.8.0,4.9.0)",
+        acceptableRemoteVersions = "[4.9.0,4.10.0)",
         guiFactory = MyMod.GUI_FACTORY)
 public class MyMod {
 

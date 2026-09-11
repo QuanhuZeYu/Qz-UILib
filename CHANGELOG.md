@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-09-11
+
 ### 新增
 
 - scene 文本输入底层能力补齐（P0/P1）：TextInput/TextArea 框选（双击选词、三击选行、跨行拖选、Shift 扩展）、剪贴板（Ctrl+C/X/V，ClipboardBackend 平台接口 + LWJGL 反射降级链）、词跳转（Ctrl+←/→、Ctrl+Backspace/Delete）、caret 闪烁（帧时间驱动 530/430ms 相位）、Ctrl+Home/End 文首尾、TextInput 横向滚动与 caret 跟随（scrollableX 布局地基）、TextArea caret 纵向跟随
@@ -22,6 +24,12 @@
 - 启动侧判定唯一权威 `club.heiqi.uilib.util.LaunchSide`：客户端 / 专用服务端 / 未知三态，只有明确读到 SERVER 才算服务端（非 FML 宿主读到 null，未知不等于服务端）。字体渲染门禁与网络主线程门禁共用它，不再各写一份侧别判断
 - 字体运行时新增静态判据 `FontService.isRenderRuntimeSupportedOnThisSide()`（本启动侧是否引导渲染骨架；静态，问它不创建单例）与 `FontService.requestReloadIfRenderRuntimeReady(String)`（侧别判据先于单例的配置 reload 入口）；`FontRuntimeSettings.isRepresentable(field, value)` 把"字体运行时能表示什么配置"做成公开判据，字段名只认 `FIELD_*` 常量
 
+- 控件字号统一入口：挂载式控件 `rt.mount(parent, Xxx.create(rt, props)).fontSize(int|signal)`、浮层 `ScenePortalHandle.fontSize` / `SceneContextMenu.Handle.fontSize` / `SceneToast.defaultFontSize`、页级 `SceneRuntime.setDefaultFontSize`，控件内建文字自动跟随
+- 字号声明式继承：`SceneNode.setFontSize` 写显式声明，按父链就近竞争解析为四层真值（层 1 显式值 / 层 2 作用域 / 层 3 环境默认 / 层 4 回落），声明被整棵子树继承；`clearExplicitFontSize` 清本节点声明、`resetFontScope` 回落继承；`getFontSize` 返回生效值、`getExplicitFontSize` 返回本节点自有显式声明（无声明时为空，沿父链解析出的声明值用 `declaredFontSize()`）
+- 用户字号倍率：`SceneRuntime.setFontScale(100..200)` 在解析出口统一放大（生效字号 = clamp(round(声明值 x 倍率), 1, 256)），布局与绘制同源读取，几何随字号同步派生
+- 字号几何派生原语：`SceneNode.setFontSizeMetric(FontSizeMetric)`（登记即算一次，仅在声明/继承/倍率变化时重算并按字号去重）与 `setMinWidth`；Segmented 段宽/条高、Tab 最小段宽（max(72, 文本宽+2*PAD)）、search 行高与单元高、DataTable 行高改由字号派生，不再手写监听
+- 受限槽位文本溢出策略：DataTable 表头与只读单元格、KeyValueMap 表头、ObjectField 标签槽补 `setMaxTextWidth + setMaxLines(1) + setEllipsis`；单元格新增 `CellContext.contentWidth()` 供自定义渲染器
+
 ### 变更
 
 - scene 宿主一帧时序协议重构为显式帧管线 `SceneFramePipeline`：11 个命名阶段顺序契约、settle 跨帧状态显式化（DEFERRED 标志）、flush 单点收拢带事务审计标签、epoch 桥接写入所有权归管线、PAINT 前置断言与 flush 预算护栏（行为等价重构，提交 7cfbebe1…cce3bff4）
@@ -33,6 +41,8 @@
 - 字符页装箱从 shelf packing 替换为 STB 同款 skyline bottom-left 紧密排列：slot 优先放入天际线最低处（混合字号下消除行高浪费，页面积占用下降）；slotGap 并入占位尺寸抬升天际线、页边缘不强制 gap；reservation 回退改为天际线快照恢复（仅尾部回退语义不变）；生成侧/上传管线/渲染 UV 均无改动
 - 字体渲染热路径逐 glyph 调用消除（P2-F）：GlyphRuntimeTablesView 构造时冻结帧级页表快照（各页纹理 ID/边长，无效页记 0），draw 与 demand 判定改读快照 getter（零 FontRuntimeAccess call），旧逐页 call 方法保留为兼容入口
 - 字体 atlas 参数化收口：字符 slot ink 留白可配置（`FontConfig.glyphInkPadding`，默认 8 不变，0..32 截断，变化触发运行时重载）；atlas 页边长系数可配置（`FontConfig.atlasTextureScale`，默认 64 保持 4096 几何，捕获进 generation 语义）；`FontRuntimeStats.slotsPerPage` 口径改为各页最大已分配槽位数（`GlyphPageManager.getMaxCommittedSlotsPerPage`，紧密排列下网格预算已失真）
+
+- 全库字号读取收敛为 `SceneNode.effectiveFontSize()` 单点：删除旧通道 `SceneControlTypography` 与 42 处手工接线（用户裁定字号是控件属性、不做主题维度；主题字号 2a/2b 往返已回退）
 
 ### 修复
 
@@ -50,12 +60,21 @@
 - 进入世界后界面文字不出现：launchIntegratedServer 服务端等待循环与 loadWorld chunk 渲染器构建期间渲染帧完全停摆，帧驱动上传静默；世界加载上传泵恢复窗口期上传
 - Forge 加载界面（Splash）字体接管断链：Splash 独立 GL 上下文且无渲染循环，主管线纹理/着色器不跨上下文；未捕获阶段按需泵送上传 + 主渲染线程捕获时检测异上下文 GL 活动并全量重建（字符页 reset、批渲染器/着色器置空惰性重建）
 
+- 弹出面板（portal 树）字号断链：`ScenePickerPanel` 内容树不在控件 root 子树内，「root 写声明后代继承」在 portal 处断链致面板标题退回默认字号；改为在 portal 内容根补同一份声明
+- Segmented / Tab 首帧零宽致布局溢出：段宽曾依赖首次布局后才落值的文本信号，首帧量到 0 宽被主轴撑满（860px）并溢出画布、点击落空；改为构建期按常量文本派生段宽
+- 用户倍率与旧通道重复缩放：chat3/markdown 段流此前「节点层写设计值 + 几何再乘倍率」二次放大；统一为几何读生效值、缓存 key 并入有效字号
+
 ### 移除
 
 - 移除 scene 演示测试台（`internal/devtools/pages` 31 文件与 `/qzuilib test`、`/qzuilib scene_test` 子命令）；保留 `/qzuilib modernconfig` 配置页调试入口与网络自检三件套
 - 清理 13 份与代码脱节的架构/规格文档（旧 document 栈教程与已作废规格），重写 9 份（架构图 00/01/08、稳定 API 清单、项目定位等）
 
 ### 兼容性
+
+- 字号语义变化（相对 4.8.0）：`SceneNode.getFontSize()` 由「本节点字段原值」改为「生效值」（含父链继承与用户倍率），需要本节点自有显式声明用 `getExplicitFontSize()`（可空）、沿父链解析出的声明值用 `declaredFontSize()`；`setFontSize` 增加范围校验（越界抛 `IllegalArgumentException`，4.8.0 无域校验），同值早退只认已声明的显式值
+- 字号继承语义扩展：旧口径「不做子树继承」作废，声明会被整棵子树继承；没有「取消继承」原语（`clearFontScope` 不存在），隔离靠子节点重新声明一层
+- search 4 个 public 字号常量值未变（12）但语义由「显式字号」降级为「层 4 回落值」（`setFontSize` -> `setFallbackFontSize`），属行为变化
+- FML 远端版本范围固定为 `[4.9.0,4.10.0)`：已发布旧 `4.8.0` 携带 `[4.8.0,4.9.0)` 会拒绝正式 `4.9.0`，混合双端需要协调升级
 
 - 开发依赖基线适配 GTNH `2.9.0-beta-3`（Angelica 2.2.10 / GTNHLib 0.11.46 / lwjgl3ify 3.0.31 / Hodgepodge 2.7.196 / GT5-Unofficial 5.09.54.133 / NewHorizonsCoreMod 2.9.61 / Et-Futurum-Requiem 2.6.58-GTNH）
 - Angelica 标签延后路径同时支持两档基线：`2.1.50`（GTNH 2.9.0-beta-2）与 `2.2.10`（GTNH 2.9.0-beta-3）。两版 `CapturedRenderingState` 的 public 恢复入口互斥——2.1.50 走 `setCurrentEntity(int)` + `setCurrentRenderedItem(int)` 两段式（前者会隐式清零 item，顺序不可颠倒），2.2.10 把单参入口收为 private 并新增配对入口 `setCurrentEntityAndItem(int,int)`；围栏按 public 方法契约在运行期解析分派，同一份 jar 在两种整合包上都启用标签延后。未复核的其它版本（如 `2.1.51` / `2.2.11`）仍按版本集合 fail-open 降级为即时绘制
