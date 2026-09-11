@@ -38,6 +38,10 @@ public class PickerSourceGuardWiringTest {
                 code.contains("ResourceReloadService.getInstance().registerToClient()"));
         Assert.assertTrue("客户端引导必须安装语言代际通道",
                 code.contains("LanguageEpochService.getInstance().install()"));
+        Assert.assertTrue("资源重载必须同时使分级表失效（旧 UNRENDERABLE 不得驻留）",
+                code.contains("ItemRenderTierRegistry.invalidateAll(\"resource_reload\")"));
+        Assert.assertTrue("客户端断连必须使分级表失效（跨世界旧图标结论不驻留）",
+                code.contains("ItemRenderTierRegistry.invalidateAll(\"client_disconnect\")"));
     }
 
     /** 反向断言：全 main 源码只有 ResourceReloadService 一处注册 reload listener（统一失效总线）。 */

@@ -14,6 +14,7 @@ import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.client.NetStoreUiBridge;
 import club.heiqi.uilib.resource.ResourceReloadService;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
+import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
 import club.heiqi.uilib.ui.input.UiInputService;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
@@ -50,6 +51,8 @@ public class ClientProxy extends CommonProxy {
         PickerSourceGuard.installThreadOracle(new MinecraftMainThreadOracle());
         // 资源/语言代际通道：进程单例挂到客户端资源管理器。1.7.10 注册即同步回调一次，
         // 故 resourceEpoch 立即从 0 变 1（初始态可见）。字体 reload 通道保持不动，二者不合并。
+        // 分级表失效挂在同一条总线上（资源包换图后旧 UNRENDERABLE 不得驻留，改走一次代际广播）。
+        ResourceReloadService.getInstance().addListener(epoch -> ItemRenderTierRegistry.invalidateAll("resource_reload"));
         ResourceReloadService.getInstance().registerToClient();
         LanguageEpochService.getInstance().install();
         NetStoreUiBridge.getInstance().initialize();
@@ -89,6 +92,13 @@ public class ClientProxy extends CommonProxy {
             NetService.getInstance().onClientDisconnected();
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("网络层断连清理异常", exception);
+        }
+        try {
+            // 世界退出/断连：分级结论与跨世界旧图标不再有效（与候选源 release() 同批语义；
+            // 候选源本身是 Miner 侧进程级单例，其 release 由 P2-B 接入同一条断连路径）。
+            ItemRenderTierRegistry.invalidateAll("client_disconnect");
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("渲染分级表失效异常", exception);
         }
     }
 
