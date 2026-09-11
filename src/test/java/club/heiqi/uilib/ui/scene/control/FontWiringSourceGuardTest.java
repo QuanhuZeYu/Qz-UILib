@@ -32,6 +32,25 @@ public class FontWiringSourceGuardTest {
 
     private static final Map<String, Integer> ALLOWED_EXPLICIT_WRITES = allowedExplicitWrites();
 
+    /** by-design 滚动视口 / 单行短文本边界：clip+text 同现但无需槽位溢出策略（按文件登记，恰 11）。 */
+    private static final Map<String, String> OVERFLOW_SCROLL_WHITELIST = overflowScrollWhitelist();
+
+    private static Map<String, String> overflowScrollWhitelist() {
+        Map<String, String> map = new LinkedHashMap<String, String>();
+        map.put("SceneTextInputPrimitive.java", "横向滚动视口自带溢出出口");
+        map.put("SceneTextAreaPrimitive.java", "纵横滚动视口自带溢出出口");
+        map.put("SceneAutocompletePrimitive.java", "候选下拉为滚动视口，行文本由 listbox 承载");
+        map.put("SceneSelectPrimitive.java", "下拉列表为滚动视口");
+        map.put("SceneSimpleList.java", "列表视口 + 行内编辑器自带横向滚动");
+        map.put("CategoryNavPane.java", "分类导航为滚动视口");
+        map.put("MemberGrid.java", "成员网格为滚动视口");
+        map.put("VariantChooser.java", "变体列表为滚动视口");
+        map.put("SceneContextMenu.java", "面板 clip 仅防越界；菜单项为单行短文本（边界登记，见台账 §九）");
+        map.put("SceneToast.java", "卡片 clip 仅防越界；通知消息为单行短文本（边界登记，见台账 §九）");
+        map.put("ScenePickerPanel.java", "面板 clip 仅防越界；顶栏/统计由父布局约束（边界登记，见台账 §九）");
+        return map;
+    }
+
     private static Map<String, Integer> consumerFiles() {
         Map<String, Integer> map = new LinkedHashMap<String, Integer>();
         map.put("src/main/java/club/heiqi/uilib/ui/scene/layout/SizingCalculator.java", Integer.valueOf(2));
@@ -149,6 +168,60 @@ public class FontWiringSourceGuardTest {
                 menu.contains("portal().fontSize(") || menu.contains("FontSizeBinding"));
         Assert.assertEquals("ContextMenu.Handle 不得自建字号 effect",
                 0, occurrences(menu, "createEffect("));
+    }
+
+    /**
+     * 溢出策略并轨（守卫 2 / improve-3 G-A）：clip 且含文本的文件必须显式声明溢出策略。
+     *
+     * <p>口径（可复跑 i4_scan_overflow.py）：control/** 内 setClipChildren(true) 处 32 / 文件 21，
+     * 与 .setText( 同现 **15 文件**；其中 4 文件已有 setMaxTextWidth/setMaxLines/setEllipsis，
+     * 余 11 文件按「by-design 滚动视口 / 单行短文本边界」逐条登记白名单（**恰 11**，禁止通配）。</p>
+     */
+    @Test
+    public void overflowPolicyDeclaredNextToClip() throws Exception {
+        List<String> offenders = new ArrayList<String>();
+        List<String> seen = new ArrayList<String>();
+        for (Path file : controlSources()) {
+            String name = file.getFileName().toString();
+            String code = codeWithoutComments(read(file));
+            if (!code.contains(".setClipChildren(true)") || !code.contains(".setText(")) {
+                continue;
+            }
+            seen.add(name);
+            boolean policy = code.contains(".setMaxTextWidth(") || code.contains(".setEllipsis(")
+                    || code.contains(".setMaxLines(");
+            if (!policy && !OVERFLOW_SCROLL_WHITELIST.containsKey(name)) {
+                offenders.add(name);
+            }
+        }
+        Assert.assertEquals("clip+文本同现文件必须恰 15 个（处 32 / 文件 21 / 同现 15）",
+                15, seen.size());
+        Assert.assertEquals("溢出策略白名单必须恰 11 个文件", 11, OVERFLOW_SCROLL_WHITELIST.size());
+        for (Map.Entry<String, String> entry : OVERFLOW_SCROLL_WHITELIST.entrySet()) {
+            Assert.assertFalse("白名单必须写明理由：" + entry.getKey(),
+                    entry.getValue() == null || entry.getValue().isEmpty());
+            Assert.assertTrue("白名单文件必须真在 clip+文本同现集合内：" + entry.getKey(),
+                    seen.contains(entry.getKey()));
+        }
+        Assert.assertEquals("clip 且含文本的文件必须声明溢出策略或命中白名单（不得静默截断）："
+                + offenders, 0, offenders.size());
+    }
+
+    /** 裁决 3：字号域上限必须只有一处定义（FontSizeLimits），消费方引用常量而非再写字面量。 */
+    @Test
+    public void fontSizeLimitIsDeclaredOnce() throws Exception {
+        String limits = codeWithoutComments(read(Paths.get(
+                "src/main/java/club/heiqi/uilib/font/layout/FontSizeLimits.java")));
+        Assert.assertEquals("FontSizeLimits 必须是 256 字面量的唯一宿主",
+                1, occurrences(limits, "= 256"));
+        for (String path : new String[]{
+                "src/main/java/club/heiqi/uilib/ui/scene/node/SceneNode.java",
+                "src/main/java/club/heiqi/uilib/font/layout/RichTextTagParser.java"}) {
+            String code = codeWithoutComments(read(Paths.get(path)));
+            Assert.assertTrue(path + " 必须引用 FontSizeLimits 常量", code.contains("FontSizeLimits"));
+            Assert.assertEquals(path + " 不得再写字号上限字面量",
+                    0, occurrences(code, "256"));
+        }
     }
 
     /**

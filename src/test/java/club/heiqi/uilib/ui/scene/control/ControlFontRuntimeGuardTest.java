@@ -17,6 +17,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
+import club.heiqi.uilib.ui.scene.control.search.PickerInfoBar;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.input.mock.MockPlatformInputSource;
@@ -72,7 +73,7 @@ public class ControlFontRuntimeGuardTest {
             "SceneSegmented", "SceneTab", "SceneSimpleList", "SceneDataTable", "SceneKeyValueMap",
             "SceneObjectField"));
 
-    private static final Map<String, InlineMounter> INLINE = inlineMounters();
+    static final Map<String, InlineMounter> INLINE = inlineMounters();
     private static final Set<String> PENDING = pending();
     private static final Set<String> OVERLAY = overlayControls();
 
@@ -238,6 +239,30 @@ public class ControlFontRuntimeGuardTest {
                 "", silent.toString());
     }
 
+    /** P1-1/MountHandle：同一句柄重复接信号不得累积 effect（后绑定替换前绑定）。 */
+    @Test
+    public void mountHandleFontSizeSignalIsIdempotentAndReplaces() {
+        Fixture fixture = fixture();
+        MountHandle handle = INLINE.get("SceneLabel").mount(fixture.runtime, fixture.parent);
+        Signal<Integer> first = Signal.create(Integer.valueOf(16));
+        handle.fontSize(first);
+        fixture.frame();
+        int afterFirst = ReactiveTestProbe.registeredEffectCount();
+        Signal<Integer> second = Signal.create(Integer.valueOf(18));
+        handle.fontSize(second);
+        handle.fontSize(second);
+        fixture.frame();
+        int delta = ReactiveTestProbe.registeredEffectCount() - afterFirst;
+        Assert.assertTrue("重复接字号信号不得累积 effect（实测增量 " + delta + "）", delta <= 1);
+
+        first.set(Integer.valueOf(40));
+        fixture.frame();
+        assertPaintedSizes("SceneLabel(旧信号已解绑)", fixture, 18);
+        second.set(Integer.valueOf(SCOPE_PX));
+        fixture.frame();
+        assertPaintedSizes("SceneLabel(新信号)", fixture, SCOPE_PX);
+    }
+
     /** P1-1：runtime 级默认字号重复设置不得累积 effect（裁决 4 过渡态：单槽单绑定、幂等）。 */
     @Test
     public void toastDefaultFontSizeTenCallsDoNotAccumulateEffects() {
@@ -393,7 +418,7 @@ public class ControlFontRuntimeGuardTest {
         MountHandle mount(SceneRuntime rt, SceneNode parent);
     }
 
-    private static Map<String, InlineMounter> inlineMounters() {
+    static Map<String, InlineMounter> inlineMounters() {
         Map<String, InlineMounter> map = new LinkedHashMap<String, InlineMounter>();
         map.put("SceneLabel", new InlineMounter() {
             public MountHandle mount(SceneRuntime rt, SceneNode parent) {
@@ -475,6 +500,36 @@ public class ControlFontRuntimeGuardTest {
                         SceneKeyValueMap.Props.builder(rows).label("属性").build()));
             }
         });
+        map.put("PickerInfoBar", new InlineMounter() {
+            public MountHandle mount(SceneRuntime rt, SceneNode parent) {
+                Signal<String> text = Signal.create("信息条");
+                Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
+                return rt.mount(parent, new Supplier<SceneNode>() {
+                    public SceneNode get() {
+                        return PickerInfoBar.create(rt, new PickerInfoBar.Props(text, enabled));
+                    }
+                });
+            }
+        });
+        map.put("SceneVirtualGrid", new InlineMounter() {
+            public MountHandle mount(SceneRuntime rt, SceneNode parent) {
+                Signal<List<SceneVirtualGrid.Item>> items = Signal.create(
+                        Arrays.<SceneVirtualGrid.Item>asList(
+                                new SceneVirtualGrid.Item(Integer.valueOf(1), null, "item1"),
+                                new SceneVirtualGrid.Item(Integer.valueOf(2), null, "item2"),
+                                new SceneVirtualGrid.Item(Integer.valueOf(3), null, "item3")));
+                final SceneVirtualGrid.Props props = SceneVirtualGrid.Props.of(items, 3, 64, 64, 8, 8,
+                        Integer.valueOf(2), Signal.create(Boolean.TRUE), item -> { });
+                return rt.mount(parent, new Supplier<SceneNode>() {
+                    public SceneNode get() {
+                        SceneNode wrapper = SceneNode.column();
+                        wrapper.setPreferredHeight(2 * 64 + 8);
+                        wrapper.appendChild(SceneVirtualGrid.create(rt, props).root());
+                        return wrapper;
+                    }
+                });
+            }
+        });
         map.put("SceneObjectField", new InlineMounter() {
             public MountHandle mount(SceneRuntime rt, SceneNode parent) {
                 Signal<Map<String, Object>> value = Signal.create(new LinkedHashMap<String, Object>());
@@ -521,18 +576,34 @@ public class ControlFontRuntimeGuardTest {
     }
 
     /**
-     * 待挂载控件（S0 登记，非「已覆盖」）：每一项都必须写明未挂载的具体原因与转正条件。
+     * 本线不做清单（S6 裁决，非「已覆盖」）：每一项都必须写明无法在本线构造夹具的具体原因。
      *
-     * <p>S3 前随对应 API/夹具落地而迁入 INLINE 或专属用例，迁出后本集合必须缩小，
-     * 由 runtimeRegistryMatchesInventory 保证覆盖总数不缩水。</p>
+     * <p>S6 已把 PickerInfoBar、SceneVirtualGrid 迁入 {@link #INLINE}（简单 Props，照既有模式补齐）；
+     * 余下 7 项因「懒建浮层 / 跨包多信号装配 / 测试内私有记录类型」无法在本线低成本构造，
+     * 经 Lead 口径登记为不做，并用 {@link #pendingListIsPinnedAndDocumented} 计数钉死（恰 7）。</p>
      */
     private static Set<String> pending() {
         return new LinkedHashSet<String>(Arrays.asList(
-                // 无字号入口（P1-1，attach 返回 void）：S2 补入口后迁入 INLINE
+                // 内容在延迟/悬停后的 portal 内，需要输入时序夹具
                 "SceneTooltip",
-                // 需 SearchPickerData / VisualAdapter / 宿主面板装配（跨包夹具），S3 随 search 收口补挂载
-                "ScenePickerPanel", "SceneVirtualGrid", "SceneAutocomplete",
-                "CategoryNavPane", "MemberGrid", "PickerInfoBar", "SearchResultList", "VariantChooser"));
+                // 需 SearchPickerData / SearchPickerPresentation / VisualAdapter 多信号装配（跨包夹具）
+                "ScenePickerPanel", "MemberGrid", "VariantChooser",
+                // 12 参 Props + 候选行在懒建下拉浮层内（需打开交互序列）
+                "SceneAutocomplete",
+                // 夹具使用测试内私有 row/item 记录类型，跨包重建成本高
+                "CategoryNavPane", "SearchResultList"));
+    }
+
+    /** 计数钉：本线不做清单必须恰 7 项（新增/删除都必须显式改此处，禁止沉默遗漏）。 */
+    @Test
+    public void pendingListIsPinnedAndDocumented() {
+        Assert.assertEquals("本线不做清单必须恰 7 项（见台账 §四）", 7, PENDING.size());
+        for (String name : PENDING) {
+            Assert.assertTrue("不做项必须仍属内建文字控件清单：" + name,
+                    ControlTextInventoryTest.TEXT_CONTROLS.contains(name));
+            Assert.assertFalse("已挂载控件不得出现在不做清单：" + name, INLINE.containsKey(name));
+            Assert.assertFalse("浮层族不得出现在不做清单：" + name, OVERLAY.contains(name));
+        }
     }
 
     private static Set<String> overlayControls() {

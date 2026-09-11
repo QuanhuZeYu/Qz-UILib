@@ -13,19 +13,24 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * 并回收 overlay builder 内注册的 bind/on/effect；重复调用安全。</p>
  *
  * <h3>浮层字号入口</h3>
- * <p>portal 与挂载式控件不同：它没有在挂载时就存在的控件根，内容由 {@code visible} 驱动懒建。因此字号入口
- * 放在句柄上（{@link #fontSize(int)} / {@link #fontSize(ReadableSignal)}），与
- * {@link MountHandle#fontSize(int)} 对称——编写者写法一致：</p>
+ * <p>portal 没有在挂载时就存在的控件根（内容由 {@code visible} 驱动懒建），因此字号入口落在句柄上
+ * （{@link #fontSize(int)} / {@link #fontSize(ReadableSignal)}），与 {@link MountHandle#fontSize(int)}
+ * 对称——编写者写法一致（口径也一致：<b>同一条父链解析链，不是第二套真值</b>）：</p>
  * <pre>{@code
  * ScenePortalHandle handle = SceneDialog.create(rt, props);
  * handle.fontSize(14);            // 构建期
  * handle.fontSize(sizeSignal);    // 运行时可调
  * }</pre>
  *
- * <p><b>真值落点 = 浮层内容根节点</b>：内容懒建完成后，{@code ScenePortalRenderer} 经
- * {@link #__onContentRoot(SceneNode)} 把层 2 声明写到内容根（{@link SceneNode#setFontScope(int)}）；
- * 内容里的自绘文字与按字号算出的几何沿父链继承，无需逐点接线。内容卸载时回调 {@code null}，
- * 声明留在句柄里，下次打开自动补落。</p>
+ * <p><b>声明落点 = 浮层内容根节点的层 2</b>：内容懒建完成后，{@code ScenePortalRenderer} 经
+ * {@link #__onContentRoot(SceneNode)} 把声明写到内容根（{@link SceneNode#setFontScope(int)}，
+ * 不是层 1 显式值）；内容里的自绘文字与按字号算出的几何（{@code setFontSizeMetric}）沿父链继承/重算，
+ * 无需逐点接线。内容卸载时回调 {@code null}，声明留在句柄里（{@code FontSizeBinding} 的目标可重定向），
+ * 下次打开自动补落。</p>
+ *
+ * <p><b>不存在独立浮层通道</b>：入口对象只持一个 {@code FontSizeBinding}（唯一 effect + 幂等替换），
+ * 内部通道 {@code __fontSize}（旧侧信道）已删除（改由 {@link #__onContentRoot(SceneNode)} +
+ * {@code FontSizeBinding.retarget} 在挂载边界补落；源码守卫钉住其不得回归）。</p>
  *
  * <p>入口语义与 {@link MountHandle} 完全一致：唯一 effect + 幂等替换、{@code int} 同步且释放旧订阅、
  * {@code signal} 同步播种、参数 {@code null} 为 no-op；{@link #dispose()} 之后写入口抛

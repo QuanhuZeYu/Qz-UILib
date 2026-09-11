@@ -177,10 +177,12 @@ public class SceneControlFontSizeEntryTest {
     }
 
     /**
-     * root 是字号唯一真值：绕过所有 Props 入口、直接设控件根字号，控件内文字同样跟随。
+     * root 是字号唯一声明点：绕过所有 Props 入口、直接设控件根字号，控件内文字同样跟随。
      *
-     * <p>这条钉住「控件字号入口 = 设控件根的 SceneNode 属性」（与 padding/尺寸同类），
-     * 控件若另给构建期入口，写的是同一个 root，不存在第二套真值。</p>
+     * <p>现口径（S5 起）：入口写的是控件根的**层 2 声明**（{@code setFontScope}）；唯一取值点是
+     * {@code effectiveFontSize()}（= {@code getFontSize()}，已含用户倍率），沿父链就近竞争解析
+     * （显式值 &gt; 最近作用域 &gt; runtime/环境默认 &gt; 节点回落）。控件若另给构建期入口，
+     * 写的仍是同一个 root 声明，不存在第二套真值。</p>
      */
     @Test
     public void rootFontSizeIsTheSingleSourceOfTruthForEveryControl() {

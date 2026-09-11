@@ -192,11 +192,14 @@ public final class SceneToast {
      * 设置该 runtime 的通知文字字号（构建期定值）。
      *
      * <p>通知是 runtime 级的服务而非控件实例：它由 {@link #show} 命令式投递，调用方拿不到控件根，
-     * 也没有 {@code MountHandle}（见 {@code 契约 §4「控件字号入口」}）。因此字号入口按 runtime 给出，
-     * 设置一次对随后投递的所有通知生效；不设置时沿用节点默认字号。</p>
+     * 也没有 {@code MountHandle}（见 {@code 契约 §4「控件字号入口」}），因此入口按 runtime 给出。
+     * 写的是<b>通知容器根的层 2 声明</b>（{@link SceneNode#setFontScope(int)}；容器懒建、通知清空后
+     * 声明保留、下次构建自动补落）——容器存活期间<b>在屏（已投递）与随后投递的通知都跟随</b>：
+     * 层 2 是活继承，不是投递时快照。不设置时回落下一层（runtime 默认 / 节点默认 16）。</p>
      *
-     * <p>入口语义（契约 §4）：写 Host 的<b>单一声明槽</b>（不叠加 effect），同步生效；
-     * 已投递与随后投递的通知都跟随。越界抛 {@link IllegalArgumentException}。</p>
+     * <p>入口语义（契约 §4 R1/R2/R6/R8）：Host 持<b>单一声明槽</b>——至多 1 个绑定，重复调用为
+     * <b>替换语义</b>（后写者胜出、旧订阅释放），{@code int} 重载同步生效、不依赖 flush；
+     * 越界抛 {@link IllegalArgumentException}，runtime 已 dispose 抛 {@link IllegalStateException}。</p>
      *
      * @param rt         场景运行时
      * @param fontSizePx UI 逻辑像素字号；越界抛 {@link IllegalArgumentException}
@@ -211,7 +214,8 @@ public final class SceneToast {
     /**
      * 设置该 runtime 的通知文字字号（运行时可调）。
      *
-     * <p>信号变化时已投递与随后投递的通知都跟随；信号为 null 时不写，通知保持既有字号。</p>
+     * <p>信号变化对<b>在屏（已投递）与随后投递</b>的通知都生效（与 {@link #defaultFontSize(SceneRuntime, int)}
+     * 同一落点：容器根的层 2 声明）；参数为 null 时不写，通知保持既有字号。</p>
      *
      * <p>入口语义（契约 §4）：参数 {@code null} = 完全不指定（no-op，不动既有声明与订阅）；
      * 信号值 {@code null} = 该声明缺失（回落下一层）；越界值钳制到域内并计数（effect 体不可 fail-fast）。
