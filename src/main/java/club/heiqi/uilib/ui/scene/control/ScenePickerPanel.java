@@ -1234,17 +1234,29 @@ public final class ScenePickerPanel {
      */
     private static final class Feed {
         /** 旧路径：全量项信号；SPI 路径：恒空（切片只经 {@link #pageProvider} 给）。 */
-        private ReadableSignal<List<Item>> listItems;
+        private final ReadableSignal<List<Item>> listItems;
         /** SPI 路径：窗口切片生产者；旧路径 null（控件对全量 items 自切片）。 */
-        private SearchResultList.PageProvider pageProvider;
+        private final SearchResultList.PageProvider pageProvider;
         /** 当前查询总量（SPI = {@code size()} / {@code min(matchCount,maxItems)}；旧路径 = 过滤后候选数）。 */
-        private ReadableSignal<Integer> totalItems;
+        private final ReadableSignal<Integer> totalItems;
         /** 结果是否被搜索上限截断（信息条常驻提示）。 */
-        private ReadableSignal<Boolean> truncated;
+        private final ReadableSignal<Boolean> truncated;
         /** 分类导航行（旧路径由候选列表动态计数；SPI 路径取 {@code source.categories(dimension)}）。 */
-        private ReadableSignal<List<CategoryRow>> categoryRows;
+        private final ReadableSignal<List<CategoryRow>> categoryRows;
         /** 候选本体解析（激活路径；SPI = {@code source.exact(key)}，旧路径 = 过滤后列表精确查）。 */
-        private Function<Object, SearchPickerData.Candidate> resolver;
+        private final Function<Object, SearchPickerData.Candidate> resolver;
+
+        private Feed(ReadableSignal<List<Item>> listItems, SearchResultList.PageProvider pageProvider,
+                     ReadableSignal<Integer> totalItems, ReadableSignal<Boolean> truncated,
+                     ReadableSignal<List<CategoryRow>> categoryRows,
+                     Function<Object, SearchPickerData.Candidate> resolver) {
+            this.listItems = listItems;
+            this.pageProvider = pageProvider;
+            this.totalItems = totalItems;
+            this.truncated = truncated;
+            this.categoryRows = categoryRows;
+            this.resolver = resolver;
+        }
 
         private ReadableSignal<List<Item>> listItems() { return listItems; }
         private SearchResultList.PageProvider pageProvider() { return pageProvider; }
@@ -1289,16 +1301,13 @@ public final class ScenePickerPanel {
             recordGridTransform(gridStartedAtNanos, candidates.size(), items.size());
             return items;
         });
-        Feed feed = new Feed();
-        feed.listItems = gridItems;
-        feed.pageProvider = null;
-        feed.totalItems = () -> Integer.valueOf(gridItems.get().size());
-        feed.truncated = () -> Boolean.valueOf(safeResults(props).truncated());
-        feed.categoryRows = Computed.create(() -> ScenePickerPanelNav.categoryRows(safeCategories(props),
-                safeResults(props).candidates(), props.categoryOf(),
-                props.panelPresentation().allCategoryLabel()));
-        feed.resolver = key -> candidateByKey(filtered.get(), key);
-        return feed;
+        return new Feed(gridItems, null,
+                () -> Integer.valueOf(gridItems.get().size()),
+                () -> Boolean.valueOf(safeResults(props).truncated()),
+                Computed.create(() -> ScenePickerPanelNav.categoryRows(safeCategories(props),
+                        safeResults(props).candidates(), props.categoryOf(),
+                        props.panelPresentation().allCategoryLabel())),
+                key -> candidateByKey(filtered.get(), key));
     }
 
     /**
@@ -1311,19 +1320,7 @@ public final class ScenePickerPanel {
     private static Feed sourceFeed(Props props) {
         final PickerCandidateSource source = props.candidateSource();
         final ReadableSignal<LaneView> lane = laneView(props);
-        Feed feed = new Feed();
-        feed.listItems = NO_ITEMS;
-        feed.totalItems = Computed.create(() -> Integer.valueOf(lane.get().totalItems()));
-        feed.truncated = Computed.create(() -> Boolean.valueOf(lane.get().truncated()));
-        feed.categoryRows = Computed.create(() -> {
-            readVersion(props);
-            PickerQuery query = lane.get().query();
-            PickerSourceGuard.requireMainThread("categories");
-            return ScenePickerPanelNav.categoryRowsFromSource(
-                    source.categories(query.categoryDimension()), lane.get().totalItems(),
-                    props.panelPresentation().allCategoryLabel());
-        });
-        feed.pageProvider = request -> {
+        SearchResultList.PageProvider pageProvider = request -> {
             LaneView view = lane.get();
             int offset = Math.max(0, request.offset());
             int limit = Math.max(0, Math.min(request.limit(), view.totalItems() - offset));
@@ -1335,11 +1332,21 @@ public final class ScenePickerPanel {
             recordGridTransform(startedAtNanos, view.candidateCount(), items.size());
             return new SearchResultList.WindowPage(items, view.totalItems());
         };
-        feed.resolver = key -> {
-            PickerSourceGuard.requireMainThread("exact");
-            return source.exact(String.valueOf(key));
-        };
-        return feed;
+        return new Feed(NO_ITEMS, pageProvider,
+                Computed.create(() -> Integer.valueOf(lane.get().totalItems())),
+                Computed.create(() -> Boolean.valueOf(lane.get().truncated())),
+                Computed.create(() -> {
+                    readVersion(props);
+                    PickerQuery query = lane.get().query();
+                    PickerSourceGuard.requireMainThread("categories");
+                    return ScenePickerPanelNav.categoryRowsFromSource(
+                            source.categories(query.categoryDimension()), lane.get().totalItems(),
+                            props.panelPresentation().allCategoryLabel());
+                }),
+                key -> {
+                    PickerSourceGuard.requireMainThread("exact");
+                    return source.exact(String.valueOf(key));
+                });
     }
 
     /**
