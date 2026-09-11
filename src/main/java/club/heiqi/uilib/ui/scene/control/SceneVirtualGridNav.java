@@ -17,7 +17,11 @@ public final class SceneVirtualGridNav {
     private SceneVirtualGridNav() {
     }
 
-    /** 数据项数换算总行数；空列表为 0 行。 */
+    /**
+     * 数据项数换算总行数；空列表为 0 行。
+     *
+     * <p>只服务<b>导航边界</b>（末行判断）；窗口数学的行数由 {@link SceneGridWindow#compute} 唯一产出。</p>
+     */
     static int totalRows(int size, int columns) {
         int cols = Math.max(1, columns);
         return size <= 0 ? 0 : (size + cols - 1) / cols;

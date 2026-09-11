@@ -339,25 +339,24 @@ public final class SceneVirtualGrid {
             }));
         }
 
+        // 窗口数学切共享内核（唯一实现 = SceneGridWindow.compute）：本控件只把内核结果映射为自己的
+        // 公共 WindowModel 形状（columns/totalItems/totalRows/windowStartRow/mountedRows/maxStartRow/
+        // maxScrollPx/rows），字段与可见行为逐项不变——SceneVirtualGridTest 全绿即等价性证书。
         ReadableSignal<WindowModel> windowModel = Computed.create(() -> {
             List<Item> items = safeItems(props.items());
             int cols = Math.max(1, columns.get().intValue());
-            int totalItems = items.size();
-            int totalRows = SceneVirtualGridNav.totalRows(totalItems, cols);
             int effectiveRows = visibleRows == null ? props.visibleRows() : visibleRows.get().intValue();
-            int maxStartRow = Math.max(0, totalRows - effectiveRows);
-            int scroll = scrollSignal.get().intValue();
-            int ws = SceneVirtualGridNav.windowStartRowForScroll(scroll, stride, maxStartRow);
-            int mounted = Math.min(effectiveRows + OVERSCAN_ROWS, totalRows - ws);
-            int maxScrollPx = Math.max(0, totalRows * stride - viewportHeight(props, effectiveRows));
-            List<WindowRow> rows = new ArrayList<>(Math.max(0, mounted));
-            for (int i = 0; i < mounted; i++) {
-                int firstIndex = (ws + i) * cols;
-                int to = Math.min(totalItems, firstIndex + cols);
-                rows.add(new WindowRow(firstIndex, new ArrayList<>(items.subList(firstIndex, to))));
+            SceneGridWindow.WindowModel model = SceneGridWindow.compute(items.size(), cols,
+                    effectiveRows, OVERSCAN_ROWS, stride, scrollSignal.get().intValue(),
+                    viewportHeight(props, effectiveRows));
+            List<WindowRow> rows = new ArrayList<>(Math.max(0, model.mountedRows()));
+            for (SceneGridWindow.RowRange range : model.rows()) {
+                rows.add(new WindowRow(range.firstIndex(),
+                        new ArrayList<>(items.subList(range.firstIndex(), range.endIndex()))));
             }
-            return new WindowModel(cols, totalItems, totalRows, ws, mounted, maxStartRow,
-                    maxScrollPx, rows);
+            return new WindowModel(model.columns(), model.totalItems(), model.totalRows(),
+                    model.windowStartRow(), model.mountedRows(), model.maxStartRow(),
+                    model.maxScrollPx(), rows);
         });
 
         // 结构：viewport = [topSpacer, rowsContainer, bottomSpacer]（gap=0，行间距由行 marginBottom 承担）

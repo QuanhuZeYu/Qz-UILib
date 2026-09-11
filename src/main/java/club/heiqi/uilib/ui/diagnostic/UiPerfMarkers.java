@@ -35,9 +35,6 @@ package club.heiqi.uilib.ui.diagnostic;
  *       <td>数据总行数（与挂载行数分离，用于证明虚拟化比例）。</td></tr>
  *   <tr><td>{@link #COUNTER_PICKER_LIST_CELLS}</td><td>计数</td>
  *       <td>挂载单元数（= 节点数的主要来源）。</td></tr>
- *   <tr><td>{@link #COUNTER_PICKER_LOOKUP_COMPARISONS}</td><td>计数</td>
- *       <td>单元内按 key 线性反查的比较次数。这是"每单元 O(N) 反查"退化的直接证据，
- *       改索引查表后应显著下降。</td></tr>
  *   <tr><td>{@link #COUNTER_PICKER_ICON_CREATED}</td><td>计数</td>
  *       <td>新建图标源次数（每次 = 一次物品栈拷贝 + 一个图片源对象）。</td></tr>
  *   <tr><td>{@link #COUNTER_PICKER_ICON_CACHED}</td><td>计数</td>
@@ -100,9 +97,6 @@ public final class UiPerfMarkers {
 
     /** 计数：由视口高度与轨道高派生的可视行数（与挂载行数配对即可证明虚拟化比例）。 */
     public static final String COUNTER_PICKER_VISIBLE_ROWS = "picker.list.visibleRows";
-
-    /** 计数：单元内按 key 线性反查的比较次数。 */
-    public static final String COUNTER_PICKER_LOOKUP_COMPARISONS = "picker.lookup.comparisons";
 
     /** 计数：新建图标源次数。 */
     public static final String COUNTER_PICKER_ICON_CREATED = "picker.icon.created";
