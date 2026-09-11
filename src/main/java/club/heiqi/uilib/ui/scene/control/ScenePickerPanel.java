@@ -540,42 +540,9 @@ public final class ScenePickerPanel {
         SceneNode[] variantFocusTarget = new SceneNode[1];
         SceneNode[] gridViewportHolder = new SceneNode[1];
 
-        ReadableSignal<MemberIssues> memberIssues = Computed.create(() ->
-                ScenePickerPanelNav.analyzeMemberIssues(safeMembers(props)));
-        ReadableSignal<List<SearchPickerData.Candidate>> filtered = Computed.create(() -> {
-            List<SearchPickerData.Candidate> candidates = safeResults(props).candidates();
-            // SPI 路径：分类过滤已在查询层完成（PickerQuery.categoryDimension/categoryKey），
-            // 面板侧禁止二次过滤（否则窗口切片被过滤两次、totalItems 与计数失真）——ADR §1.7 D-12/T-6。
-            if (props.resultsCategoryFiltered()) {
-                return candidates;
-            }
-            return ScenePickerPanelNav.filterByCategory(candidates, categoryKey.get(), props.categoryOf());
-        });
-        ReadableSignal<List<Item>> gridItems = Computed.create(() -> {
-            long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
-            List<SearchPickerData.Candidate> candidates = filtered.get();
-            ArrayList<Item> items = new ArrayList<Item>(candidates.size());
-            for (SearchPickerData.Candidate candidate : candidates) {
-                // 标签保留完整文本：省略由渲染层承担（结果单元已 setMaxTextWidth + setEllipsis）。
-                // 信息条因此可读 item.label() 拿到全名（P5 §5.4 D4），且不再对 filtered 全表反查（O(1)）。
-                String label = props.visualAdapter().candidateLabel(candidate);
-                SceneImageSource image = null;
-                try {
-                    image = props.visualAdapter().candidateImage(candidate);
-                } catch (RuntimeException exception) {
-                    // 单个候选的图片源创建失败：降级无图占位，不中断整张网格。
-                } catch (LinkageError error) {
-                    // 同上（可选宿主类型链接失败）。
-                }
-                items.add(new Item(candidate.key(), image, label));
-            }
-            recordGridTransform(startedAtNanos, candidates.size(), items.size());
-            return items;
-        });
-        ReadableSignal<List<CategoryRow>> categoryRows = Computed.create(() ->
-                ScenePickerPanelNav.categoryRows(safeCategories(props),
-                        safeResults(props).candidates(), props.categoryOf(),
-                        props.panelPresentation().allCategoryLabel()));
+        // 候选相关内容（memberIssues/filtered/gridItems/categoryRows/clampHighlight/VariantChooser）
+        // 一律在 portal 内容 Owner 内创建（见下方 rt.portal 的 builder），随 SceneRuntime.disposeMounted()
+        // 一并停止重算 —— 「关闭即停算」由 owner 作用域保证，禁止 if(!open) 逐帧门控（ADR §4.1/§4.3）。
 
         // 开合状态机：打开时清焦点意图并引导首焦点；关闭时清理全部临时态与陈旧节点引用。
         rt.bind(open, o -> {
@@ -602,11 +569,70 @@ public final class ScenePickerPanel {
         // 真值归位是同一机制：声明落在内容根，而不是逐节点写字号。
         ScenePortalHandle panelPortal = rt.portal(open, () -> {
             long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            // ==================== 内容 Owner（每次 open=true 重建，关闭即 dispose） ====================
+            // 全部候选相关派生在此创建：Computed 是 effect 驱动（上游变化即重算），放在 create 期会让
+            // 「面板关闭但结果信号变化」继续触发派生；移入内容 Owner 后关闭即随 disposeMounted() 停止。
+            ReadableSignal<MemberIssues> memberIssues = Computed.create(() ->
+                    ScenePickerPanelNav.analyzeMemberIssues(safeMembers(props)));
+            ReadableSignal<List<SearchPickerData.Candidate>> filtered = Computed.create(() -> {
+                List<SearchPickerData.Candidate> candidates = safeResults(props).candidates();
+                // SPI 路径：分类过滤已在查询层完成（PickerQuery.categoryDimension/categoryKey），
+                // 面板侧禁止二次过滤（否则窗口切片被过滤两次、totalItems 与计数失真）——ADR §1.7 D-12/T-6。
+                if (props.resultsCategoryFiltered()) {
+                    return candidates;
+                }
+                return ScenePickerPanelNav.filterByCategory(candidates, categoryKey.get(), props.categoryOf());
+            });
+            ReadableSignal<List<Item>> gridItems = Computed.create(() -> {
+                long gridStartedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+                List<SearchPickerData.Candidate> candidates = filtered.get();
+                ArrayList<Item> items = new ArrayList<Item>(candidates.size());
+                for (SearchPickerData.Candidate candidate : candidates) {
+                    // 标签保留完整文本：省略由渲染层承担（结果单元已 setMaxTextWidth + setEllipsis）。
+                    // 信息条因此可读 item.label() 拿到全名（P5 §5.4 D4），且不再对 filtered 全表反查（O(1)）。
+                    String label = props.visualAdapter().candidateLabel(candidate);
+                    SceneImageSource image = null;
+                    try {
+                        image = props.visualAdapter().candidateImage(candidate);
+                    } catch (RuntimeException exception) {
+                        // 单个候选的图片源创建失败：降级无图占位，不中断整张网格。
+                    } catch (LinkageError error) {
+                        // 同上（可选宿主类型链接失败）。
+                    }
+                    items.add(new Item(candidate.key(), image, label));
+                }
+                recordGridTransform(gridStartedAtNanos, candidates.size(), items.size());
+                return items;
+            });
+            ReadableSignal<List<CategoryRow>> categoryRows = Computed.create(() ->
+                    ScenePickerPanelNav.categoryRows(safeCategories(props),
+                            safeResults(props).candidates(), props.categoryOf(),
+                            props.panelPresentation().allCategoryLabel()));
+
             SceneNode content = mainPanel(rt, props, closeRequest, filtered, gridItems, categoryRows,
                     memberIssues, categoryKey, categoryWriter, gridHighlight,
                     addingMember, editingMember, focusIntent, searchFocusTarget, gridFocusTarget,
                     gridViewportHolder, variantsOpen, activeCandidate, mode, selectedKeys);
             recordPhase(UiPerfMarkers.PHASE_PICKER_OPEN_MAIN, startedAtNanos);
+
+            // 变体选择浮层（模块化）：mode/selectedKeys 受控，草稿查询在模块内部。
+            // 建在内容 Owner 内 ⇒ 其字号/布局订阅与分级监听随面板关闭一并停止（ADR §4.3）。
+            VariantChooser.create(rt, new VariantChooser.Props(
+                    variantsOpen, activeCandidate, props.enabled(),
+                    props.variantSearchEnabled(),
+                    props.panelPresentation().variantPanelTitle(), props.visualAdapter(),
+                    mode, mode::set, selectedKeys, selectedKeys::set,
+                    draft -> commitSelection(props, closeRequest, variantsOpen, activeCandidate,
+                            gridHighlight, addingMember, editingMember,
+                            focusIntent, () -> props.selectionCommit().test(draft)),
+                    () -> closeVariants(variantsOpen, activeCandidate, focusIntent)));
+
+            // 网格高亮回夹（数据收缩/分类切换后夹到合法范围）：关闭时高亮已由 open bind 重置为 -1，
+            // 关闭态无需回夹，故随内容 Owner 建/释放（ADR §4.1）。
+            rt.bindComputed(() -> Integer.valueOf(ScenePickerPanelNav.clampHighlight(
+                    gridHighlight.get().intValue(), gridItems.get().size())), clamped -> {
+                if (!clamped.equals(gridHighlight.get())) gridHighlight.set(clamped);
+            });
             return content;
         },
                 MAIN_PANEL_POLICY,
@@ -620,25 +646,8 @@ public final class ScenePickerPanel {
                 });
         panelPortal.fontSize(anchorFontSizeSignal(rt, root));
 
-        // 变体选择浮层（模块化）：mode/selectedKeys 受控，草稿查询在模块内部。
-        VariantChooser.create(rt, new VariantChooser.Props(
-                variantsOpen, activeCandidate, props.enabled(),
-                props.variantSearchEnabled(),
-                props.panelPresentation().variantPanelTitle(), props.visualAdapter(),
-                mode, mode::set, selectedKeys, selectedKeys::set,
-                draft -> commitSelection(props, closeRequest, variantsOpen, activeCandidate,
-                        gridHighlight, addingMember, editingMember,
-                        focusIntent, () -> props.selectionCommit().test(draft)),
-                () -> closeVariants(variantsOpen, activeCandidate, focusIntent)));
-
-        // 焦点意图消费（在 portal effect 之后创建：面板挂载完成后才请求权威焦点）。
+        // 焦点意图消费（只消费 focusIntent/focus 目标数组，O(1)，ADR §4.1 明确保留在 create）。
         bindFocusIntent(rt, focusIntent, searchFocusTarget, gridFocusTarget, variantFocusTarget);
-
-        // 网格高亮回夹（数据收缩/分类切换后夹到合法范围）。
-        rt.bindComputed(() -> Integer.valueOf(ScenePickerPanelNav.clampHighlight(
-                gridHighlight.get().intValue(), gridItems.get().size())), clamped -> {
-            if (!clamped.equals(gridHighlight.get())) gridHighlight.set(clamped);
-        });
 
         return new Result(root, openInternal, open, variantsOpen,
                 () -> searchFocusTarget[0], () -> gridViewportHolder[0], categoryKey, gridHighlight,

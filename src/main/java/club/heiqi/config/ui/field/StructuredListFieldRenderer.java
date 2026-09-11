@@ -179,12 +179,19 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                  StructuredListModel.remove(rows.get(), row.key()))));
         root.appendChild(header);
 
-        SceneNode members = SceneNode.column();
-        members.setGap(MEMBER_GAP);
-        members.setPadding(0, 0, 0, 10);
-        for (ValueSpec.Member member : objectSpec.members().values())
-            members.appendChild(buildMember(rt, adapter, rows, lineage, row.key(), path, member));
-        rt.show(root, expanded, () -> members);
+        // 折叠态零成本（ADR §4.1 R-11）：成员编辑器构建必须在 rt.show 的 supplier 内发生 ——
+        // 旧形态先循环 buildMember(...) 再把「已建好的节点」交给 supplier，惰性通道形同虚设：
+        // 折叠行也会构建全部成员控件（含 picker 面板与成员订阅）。show 在 owner.run 内调用 supplier，
+        // 故成员构建期登记的 signal/effect 归属本次挂载的子 Owner，折叠时随 owner dispose 一并回收
+        // （与 SceneConditionalRenderer 的「supplier 仅 true 时调用」先例同源）。
+        rt.show(root, expanded, () -> {
+            SceneNode members = SceneNode.column();
+            members.setGap(MEMBER_GAP);
+            members.setPadding(0, 0, 0, 10);
+            for (ValueSpec.Member member : objectSpec.members().values())
+                members.appendChild(buildMember(rt, adapter, rows, lineage, row.key(), path, member));
+            return members;
+        });
         return root;
     }
 
