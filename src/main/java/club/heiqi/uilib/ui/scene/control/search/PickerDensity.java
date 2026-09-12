@@ -47,7 +47,7 @@ public enum PickerDensity {
      * {@code @return} 基准字号（逻辑 px；再乘用户字号倍率并夹取到字号域）
      *
      * <p><b>现行语义 = 宿主未声明字号时的默认面板声明值</b>（{@code ScenePickerPanel} 的
-     * {@code resolvePanelDeclaredFontSize}）；宿主字号链上出现显式声明（层 1/2/3）时该档位
+     * {@code resolvePanelDeclaredFont}）；宿主字号链上出现显式声明（层 1/2/3）时该档位
      * 字号不参与派生 —— 字号真值唯一来自字号链，档位不得成为第二真值。</p>
      */
     public int baseFontPx() {

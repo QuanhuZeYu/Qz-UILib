@@ -15,6 +15,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -277,7 +278,10 @@ public class PickerMetricsTest {
 
     @Test
     public void a7AutoKeepsSafetyMarginWhenPossible() {
-        // 5% 安全裕度：达标解必须 >= ceil(hard*1.05)（不可达时退回第一个满足 hard 的解）。
+        // 硬红线：每个观测点都必须 >= hard。5% 软裕度不是硬约束 —— 标签可读宽度预算生效后，
+        // 预算只在"连 hard 都达不到"时才让路（见 LABEL_BUDGET_DEGRADE_STEPS），故贴线点
+        // （1080p/fs18 = 77 < soft 79）会停在 ≥ hard 且 < soft：这是"可读优先"的有意取舍。
+        // 该用例因此断言硬红线与 soft 口径本身，不断言 soft 必然可达。
         for (int[] viewport : VIEWPORTS) {
             for (int fs : FONT_SIZES) {
                 PickerMetrics m = PickerMetrics.solve(rt, viewport[0], viewport[1], fs,
@@ -317,7 +321,11 @@ public class PickerMetricsTest {
                 assertTrue(tag + " cellW 必须 >= 标签预算",
                         g.cellWidthPx() >= g.labelBudgetPx());
                 int slot = g.cellWidthPx() - 2 * g.paddingPx();
-                assertEquals(tag + " 槽宽 = 预算净宽", g.labelBudgetPx() - 2 * g.paddingPx(), slot);
+                int budgetSlot = g.labelBudgetPx() - 2 * g.paddingPx();
+                // cellW 取三项下界的 max ⇒ 槽宽只能保证"≥ 预算净宽"（图标/样本更宽时由它们主导）；
+                // 断言等值会在合法的降级档（预算小于图标宽）上误报，故这里是单向不等式。
+                assertTrue(tag + " 槽宽不得小于预算净宽（slot=" + slot + " budget=" + budgetSlot + "）",
+                        slot >= budgetSlot);
                 int ellipsis = rt.measureTextWidth("...", fs);
                 assertTrue(tag + " 槽内必须放得下 >=2 个全角字符 + 省略号（槽=" + slot
                                 + " 省略号=" + ellipsis + " fs=" + fs + "）",
@@ -358,9 +366,45 @@ public class PickerMetricsTest {
         assertEquals("声明 12 × 150% = 18", 18, PickerMetrics.fontSizeFor(12, 150));
         assertEquals("宿主声明 20 时面板跟随 20（不是档位基准 12）",
                 20, PickerMetrics.fontSizeFor(20, 100));
-        assertEquals("夹取到字号下限 11", 11, PickerMetrics.fontSizeFor(12, 90));
+        assertEquals("声明 6 被归一到字号下限 11", 11, PickerMetrics.fontSizeFor(6, 100));
         assertEquals("默认面板声明字号 = 标准档基准", PickerDensity.STANDARD.baseFontPx(),
                 PickerMetrics.defaultPanelDeclaredFontPx());
+        assertEquals("面板声明归一到域上限：30 → 24", PickerDensityTokens.FONT_CEIL,
+                PickerMetrics.clampPanelDeclaredFontPx(30));
+        assertEquals("面板声明归一到域下限：6 → 11", PickerDensityTokens.FONT_FLOOR,
+                PickerMetrics.clampPanelDeclaredFontPx(6));
+    }
+
+    /**
+     * 字体真值同源 oracle：{@code fontSizeFor} 在<b>字号域内</b>必须与渲染出口逐值相等。
+     *
+     * <p>渲染出口 = {@code SceneNode.effectiveFontSize()} 的
+     * {@code FontSizeLimits.clampFontSize(Math.round(declared * pct/100f))}；派生侧若改取整模式
+     * （{@code Math.rint} 与 {@code Math.round} 在半值平局上不同）或改域，就会出现"文字按 17 画、
+     * 几何按 16 算"的分叉。域外（渲染值 &lt; FONT_FLOOR 或 &gt; FONT_CEIL）由本控件域夹取，
+     * 断言的是夹取结果本身。</p>
+     */
+    @Test
+    public void fontSizeForMatchesRendererExitInsideFontDomain() {
+        int inside = 0;
+        for (int declared = 1; declared <= 40; declared++) {
+            for (int pct = 100; pct <= 200; pct += 5) {
+                int rendered = FontSizeLimits.clampFontSize(Math.round(declared * (pct / 100f)));
+                int derived = PickerMetrics.fontSizeFor(declared, pct);
+                String tag = "declared=" + declared + " pct=" + pct;
+                if (rendered < PickerDensityTokens.FONT_FLOOR) {
+                    assertEquals(tag + " 渲染值低于控件域下限 ⇒ 夹到下限",
+                            PickerDensityTokens.FONT_FLOOR, derived);
+                } else if (rendered > PickerDensityTokens.FONT_CEIL) {
+                    assertEquals(tag + " 渲染值高于控件域上限 ⇒ 夹到上限",
+                            PickerDensityTokens.FONT_CEIL, derived);
+                } else {
+                    assertEquals(tag + " 域内必须与渲染出口逐值相等", rendered, derived);
+                    inside++;
+                }
+            }
+        }
+        assertTrue("域内同源样本必须足够多（否则守卫空转）", inside > 100);
     }
 
     // ==================== A8 小盒降级 ====================

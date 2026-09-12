@@ -8,12 +8,12 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <h3>派生链（P5 §2.1）</h3>
  * <pre>
- *   fs       = clamp(round(declaredBase * fontPct/100), FONT_FLOOR, FONT_CEIL)     // PickerMetrics
+ *   fs       = clamp(渲染出口同式(声明值 × 倍率), FONT_FLOOR, FONT_CEIL)          // PickerMetrics
  *   pad      = clamp(round(fs / 3), 2, 6)
  *   labelGap = max(1, round(fs / 6))
  *   lineH    = rt.lineHeight(fs)                        // 字体服务真值（ascent+descent+lineGap）
  *   iconSide = max(ICON_MIN, round(density.icon * k))
- *   labelW   = 2*pad + round(fs * density.labelBudgetEm)                // 标签可读宽度下界（新增）
+ *   labelW   = 2*pad + round(fs * LABEL_BUDGET_EM * degrade)            // 标签可读宽度下界（新增）
  *   cellW    = max(iconSide + 2*pad, rt.measureTextWidth("MMMM", fs), labelW)  // I-3/I-5 同源度量
  *   trackH   = max(cellHeight 下限, iconSide + 2*pad + lineH + labelGap)  // I-2 标签不裁切
  *   gap      = clamp(round(fs / 2), 3, 10)

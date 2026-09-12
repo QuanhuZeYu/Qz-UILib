@@ -101,7 +101,7 @@ public final class PickerDensityTokens {
      * cellW 宽度下限的实测字符样本（4 字符实测宽；度量口径同源，见 P5 I-5）。
      *
      * <p>语义 = {@code cellW >= 实测 4 字符宽} 的"防零宽"下界（I-3 原始语义）。标签的
-     * <b>可读宽度</b>由 {@link PickerDensity#labelBudgetEm()} 表达并同样取 {@code max}，
+     * <b>可读宽度</b>由 {@link #LABEL_BUDGET_EM} 表达并同样取 {@code max}，
      * 两者都是 cellW 的下界分量、不互相替代。</p>
      */
     public static final String CELL_WIDTH_SAMPLE = "MMMM";
@@ -113,7 +113,12 @@ public final class PickerDensityTokens {
      * 对半角字符约 1.8 倍 —— 因此本项<b>不假定字符集/语言</b>，只声明"给标签多少空间"。
      * {@link GridMetrics} 把它换算成像素并作为 {@code cellWidth} 的下界之一；空间不足时由
      * {@link PickerMetrics} 按 {@link #LABEL_BUDGET_DEGRADE_STEPS} 逐级让路，最末档让到 0
-     * （= 退回"cellW 只由图标与样本宽决定"的既有口径），故不会比"没有预算"更差。</p>
+     * （= 退回"cellW 只由图标与样本宽决定"的既有口径）。</p>
+     *
+     * <p><b>边界（勿过度承诺）</b>：末档 0 只保证"<i>硬红线</i>（可见项 ≥ 现状基线）在任何
+     * 逻辑盒/字号下仍成立"；「可读宽度 vs 密度」的取舍本身仍会让部分观测点的可见项低于
+     * "加预算之前"（那是本轮有意的产品取舍：字读得清 > 一屏多几个格子），也不保证 5% 的
+     * 软目标裕度 —— 预算只有在连 hard 都达不到时才让路。</p>
      */
     public static final double LABEL_BUDGET_EM = 7.5;
 
@@ -124,8 +129,9 @@ public final class PickerDensityTokens {
      * 可见项下限"时才降一档；最末档 {@code 0.0} = <b>关闭预算</b>，即退回到"cellW 只由图标与
      * 样本宽决定"的既有行为。</p>
      *
-     * <p>末档必须存在且为 0：它保证"加了标签预算"在任何逻辑盒/字号下都<b>不可能比加之前更差</b> ——
-     * 空间不够时求解器自动让路，红线（可见项数不低于现状）在任何一格都不需要靠人裁量维持。</p>
+     * <p>末档必须存在且为 0：它保证"加了标签预算"在任何逻辑盒/字号下都不会让<b>可见项硬红线
+     * （不低于现状基线）</b>失守 —— 连 hard 都达不到时求解器自动让到无预算口径，
+     * 这条红线不需要靠人裁量维持。</p>
      */
     public static final double[] LABEL_BUDGET_DEGRADE_STEPS = {1.00, 0.85, 0.70, 0.55, 0.40, 0.0};
 

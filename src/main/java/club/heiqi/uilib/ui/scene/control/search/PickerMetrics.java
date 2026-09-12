@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.control.search;
 
 import com.github.bsideup.jabel.Desugar;
 
+import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
@@ -12,19 +13,19 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   [宿主边界 · 唯一允许接触 GUI Scale 的位置]
  *     logicalBox = hostCompose(nativeBox, guiScale)        // 见 HostViewportScale
  *   [面板内部 · 禁止读 GUI Scale / 禁止假定分辨率]
- *     fontPct = runtime.getFontScalePercent()              // 用户字号倍率（运行期可变）
+ *     panelFontSize = 面板内容根字号链的生效字号（声明值 × 用户倍率；运行期可变）
  *     density = 用户偏好（AUTO/COMPACT/STANDARD/ROOMY）     // 运行期可变
- *     metrics = PickerMetrics.derive(rt, logicalBox, fontPct, density, membersRows)
+ *     metrics = PickerMetrics.derive(rt, logicalBox, panelFontSize, density, membersRows)
  * </pre>
  * <p>本类<b>不接收</b> GUI Scale、不接收物理分辨率、不缓存跨帧结果 —— 三个输入任一变化即重派生
  * （P5 I-6「无静态快照」）。</p>
  *
  * <h3>auto 求解（P5 §1.4 + 标签宽度预算，规范性）</h3>
  * <pre>
- *   hard = max(现状可见量(logicalBox), 12)      // 支配性目标（红线 R1/R2）
- *   soft = ceil(hard * 1.05)                    // 5% 安全裕度，拒绝贴线通过
- *   for degrade in [1.00,.85,.70,.55]:          // 标签可读宽度预算从大到小（外层）
- *     em = max(3.0, density.labelBudgetEm * degrade)
+ *   hard = max(现状可见量(logicalBox), 12)      // 支配性硬目标（红线 R1/R2）
+ *   soft = ceil(hard * 1.05)                    // 5% 安全裕度（基准参数下可达时保持）
+ *   for degrade in [1.00,.85,.70,.55,.40,0.0]:  // 标签可读宽度预算从大到小（最外层）
+ *     em = LABEL_BUDGET_EM * degrade            // 末档 0 = 关闭预算
  *     for ratio in [70,78,84,92]:               // 面板从小到大
  *       for density in [standard, compact]:     // 图标从大到小
  *         for k in [1.00,.95,.90,.85,.80]:      // 图标等比缩小（字号不缩）
@@ -32,11 +33,11 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *     该预算下存在 visible >= hard 的组合 → 采用（预算不再降）
  *   全部预算都不满足 hard → 取可见量最大的组合
  * </pre>
- * <p><b>预算为何在最外层</b>：标签能读几个字是用户直接感知的信息量，可见量下限是红线；
- * 两者冲突时先满足红线（降预算），不满足红线时就不可能给出更大预算 —— 顺序即优先级。</p>
- * <p>被选中的组合同时决定：面板比例、密度档、{@code k}、网格几何、列数与可视行数。
- * 「面板能长到 92%」与「成员带可折叠」两级阶梯必须实装，否则 1080p + 字号 150% 会贴线
- * （实测：无 5% 裕度时裕度仅 +1，加裕度后 +4）。</p>
+ * <p><b>预算为何在最外层</b>：标签能读几个字是用户直接感知的信息量，可见量硬红线是底线；
+ * 两者冲突时先保红线（降预算），红线都保不住时就不可能给出更大预算 —— 顺序即优先级。
+ * 代价是 <b>5% 软裕度可能让位</b>：贴线点（如 1080p/字号 150%）会停在「≥ hard 但 &lt; soft」，
+ * 这是有意的产品取舍，由 {@code PickerMetricsTest.a7AutoKeepsSafetyMarginWhenPossible} 明示口径。</p>
+ * <p>被选中的组合同时决定：面板比例、密度档、{@code k}、网格几何、列数与可视行数。</p>
  *
  * <h3>小盒降级（P5 §1.5.3）</h3>
  * <p>逻辑盒 &lt; 1280×720 时强制：面板 100%（满屏留 {@code PANEL_MARGIN}）、紧凑档、
@@ -80,7 +81,6 @@ public final class PickerMetrics {
 
     private final int logicalWidthPx;
     private final int logicalHeightPx;
-    private final int fontPct;
     private final int fontSizePx;
     private final int membersRows;
     private final int hardTargetItems;
@@ -93,14 +93,13 @@ public final class PickerMetrics {
     private final GridMetrics grid;
     private final PanelBox panel;
 
-    private PickerMetrics(int logicalWidthPx, int logicalHeightPx, int fontPct, int fontSizePx,
+    private PickerMetrics(int logicalWidthPx, int logicalHeightPx, int fontSizePx,
                           int membersRows, int hardTargetItems, int softTargetItems,
                           PickerDensityPreference preference, PickerDensity density,
                           int iconScalePercent, int visibleRows, int visibleItems,
                           GridMetrics grid, PanelBox panel) {
         this.logicalWidthPx = logicalWidthPx;
         this.logicalHeightPx = logicalHeightPx;
-        this.fontPct = fontPct;
         this.fontSizePx = fontSizePx;
         this.membersRows = membersRows;
         this.hardTargetItems = hardTargetItems;
@@ -215,7 +214,7 @@ public final class PickerMetrics {
                         int rows = box.listHeightPx() > 0
                                 ? (box.listHeightPx() + gap) / grid.stridePx() : 0;
                         int visible = grid.columns() * rows;
-                        PickerMetrics candidate = new PickerMetrics(w, h, 100, fs, membersRows,
+                        PickerMetrics candidate = new PickerMetrics(w, h, fs, membersRows,
                                 hard, soft, pref, density, iconScalePercent, rows, visible, grid, box);
                         if (tierBest == null || visible > tierBest.visibleItems) {
                             tierBest = candidate;
@@ -256,8 +255,28 @@ public final class PickerMetrics {
     public static int fontSizeFor(int declaredFontSizePx, int fontScalePercent) {
         int declared = Math.max(1, declaredFontSizePx);
         int pct = Math.max(1, fontScalePercent);
-        int scaled = GridMetrics.roundHalfEven(declared * pct / 100.0);
-        return clamp(scaled, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
+        // ① 先与渲染出口逐值同式：float 乘法 → Math.round → FontSizeLimits 夹取
+        //    （SceneNode.effectiveFontSize() 的解析出口；取整模式必须一致，否则半值平局会差 1px）；
+        // ② 再夹到本控件的字号域：派生链只在 [FONT_FLOOR, FONT_CEIL] 内有定义。
+        int rendered = FontSizeLimits.clampFontSize(Math.round(declared * (pct / 100f)));
+        return clamp(rendered, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
+    }
+
+    /**
+     * 把面板内容根的<b>声明</b>字号夹取到本控件字号域（{@code [FONT_FLOOR, FONT_CEIL]}）。
+     *
+     * <p>写入 portal 内容根的必须是域内值：内容节点在解析出口只会按 {@link FontSizeLimits} 的
+     * {@code [1,256]} 夹取，而派生链只在 {@code [11,24]} 内有定义。不先归一会让"宿主声明 30"
+     * 这类输入产生"渲染 30 / 几何 24"的分叉；归一到域内后，任何
+     * {@code 声明值 × 倍率 ≤ FONT_CEIL} 的输入都逐值同源（超出上限的倍率组合仍由
+     * {@link #fontSizeFor} 夹到 {@code FONT_CEIL}，属已登记的域外差异）。</p>
+     *
+     * @param declaredFontSizePx 面板内容根的声明字号（未乘倍率；&lt;1 按 1）
+     * @return 域内声明字号
+     */
+    public static int clampPanelDeclaredFontPx(int declaredFontSizePx) {
+        return clamp(Math.max(1, declaredFontSizePx),
+                PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
     }
 
     /**
@@ -374,8 +393,7 @@ public final class PickerMetrics {
     /** @return 逻辑盒高 */
     public int logicalHeightPx() { return logicalHeightPx; }
 
-    /** @return 字号倍率（%） */
-    public int fontPct() { return fontPct; }
+
 
     /** @return 生效字号 */
     public int fontSizePx() { return fontSizePx; }

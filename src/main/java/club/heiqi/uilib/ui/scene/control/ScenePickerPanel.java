@@ -2086,19 +2086,23 @@ public final class ScenePickerPanel {
      * 1 个汉字 + 省略号（用户症状「每个物品只显示第一个字」）。</p>
      *
      * <p>层 1/2/3 命中时说明宿主（配置屏/宿主字号线）确实声明了字号，面板跟随它是正确的继承语义；
-     * 落到层 4a/4b 则说明"没有人声明"，此时面板该用自己的默认值而不是框架兜底常量。</p>
+     * 落到层 4a/4b 则说明"没有人声明"，此时面板该用自己的默认值而不是框架兜底常量。
+     * <b>层 4a（{@code NODE_DEFAULT}）不算声明</b>：它是"某个控件给自己的回落值"，不是宿主对
+     * 子树的字号要求 —— 否则宿主随手给某个祖先登记的回落值会静默改掉整个面板的字号与几何。</p>
      *
-     * @param rt     场景运行时
+     * <p>返回值再经 {@link PickerMetrics#clampPanelDeclaredFontPx(int)} 归一到本控件字号域，
+     * 使"写进 portal 的声明值"与"派生链的输入域"一致。</p>
+     *
      * @param anchor 控件根（Result.root）
-     * @return 面板声明字号（未乘用户倍率；逻辑 px）
+     * @return 面板声明字号（未乘用户倍率；已归一到 [FONT_FLOOR, FONT_CEIL]）
      */
-    private static int resolvePanelDeclaredFont(SceneNode anchor) {
+    static int resolvePanelDeclaredFont(SceneNode anchor) {
         FontSource source = anchor.fontSizeSource();
-        if (source == FontSource.EXPLICIT || source == FontSource.SCOPE
-                || source == FontSource.ENVIRONMENT) {
-            return anchor.declaredFontSize();
-        }
-        return PickerMetrics.defaultPanelDeclaredFontPx();
+        int declared = source == FontSource.EXPLICIT || source == FontSource.SCOPE
+                || source == FontSource.ENVIRONMENT
+                ? anchor.declaredFontSize()
+                : PickerMetrics.defaultPanelDeclaredFontPx();
+        return PickerMetrics.clampPanelDeclaredFontPx(declared);
     }
 
     /**

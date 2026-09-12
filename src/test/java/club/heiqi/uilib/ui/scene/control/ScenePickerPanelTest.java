@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Result;
 import club.heiqi.uilib.ui.scene.control.search.CategoryNavPane;
 import club.heiqi.uilib.ui.scene.control.search.MemberGrid;
 import club.heiqi.uilib.ui.scene.control.search.PickerDensityPreference;
+import club.heiqi.uilib.ui.scene.control.search.PickerDensityTokens;
 import club.heiqi.uilib.ui.scene.control.search.PickerInfoBar;
 import club.heiqi.uilib.ui.scene.control.search.PickerMetrics;
 import club.heiqi.uilib.ui.scene.control.search.SearchResultList;
@@ -1853,6 +1854,64 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("空态占位文本合同不变", "No current members", hint.getText());
         paintEngine.paint(scrim);
         assertPaintedFontSize("空态提示", hint, 24);
+    }
+
+    /**
+     * 面板字号声明解析：宿主显式声明跟随、层 4a 不算声明、声明值归一到控件字号域。
+     *
+     * <p>钉住三件事：① 未挂树 + 无声明 ⇒ 档位基准字号（不是框架兜底 16）；② 祖先/自身登记的
+     * 层 4a 回落值（{@code NODE_DEFAULT}）<b>不是</b>宿主声明，不得改面板字号；③ 层 2 声明跟随，
+     * 且越界值被夹到 {@code [FONT_FLOOR, FONT_CEIL]}（与派生链同域）。</p>
+     */
+    @Test
+    public void panelDeclaredFontFollowsHostDeclarationAndIgnoresNodeFallback() {
+        SceneNode anchor = new SceneNode();
+        Assert.assertEquals("未挂树 + 无声明 ⇒ 档位基准字号",
+                PickerMetrics.defaultPanelDeclaredFontPx(),
+                ScenePickerPanel.resolvePanelDeclaredFont(anchor));
+        anchor.setFallbackFontSize(18);
+        Assert.assertEquals("层 4a 不是宿主声明，不得改变面板字号",
+                PickerMetrics.defaultPanelDeclaredFontPx(),
+                ScenePickerPanel.resolvePanelDeclaredFont(anchor));
+        anchor.setFontScope(20);
+        Assert.assertEquals("层 2 声明必须被跟随", 20,
+                ScenePickerPanel.resolvePanelDeclaredFont(anchor));
+        anchor.setFontScope(30);
+        Assert.assertEquals("声明值归一到控件字号域上限", PickerDensityTokens.FONT_CEIL,
+                ScenePickerPanel.resolvePanelDeclaredFont(anchor));
+    }
+
+    /**
+     * 用户字号倍率对面板内容<b>只乘一次</b>：写进 portal 的必须是"声明值"，不是"生效值"。
+     *
+     * <p>若把生效值（12 × 150% = 18）当声明写进内容根，内容节点会在自己的解析出口再乘一次倍率
+     * ⇒ 真渲染 27（几何仍按 18 算）—— 典型"二次缩放"分叉，且只查几何（顶栏高 = clamp(fs*3.67)）
+     * 是查不出来的（fs=18 与 fs=24 的顶栏高都被夹到 64）。本用例直接断言绘制字号。</p>
+     */
+    @Test
+    public void panelFontScaleAppliesExactlyOnce() {
+        rt.__setViewportLogicalBox(1920, 1080);
+        Signal<String> query = Signal.create("");
+        Signal<List<SearchPickerData.CurrentMember>> members =
+                Signal.create(Collections.<SearchPickerData.CurrentMember>emptyList());
+        Signal<Boolean> open = Signal.create(Boolean.FALSE);
+        Props props = Props.builder(query,
+                Signal.create(new SearchPickerData.SearchResult(Arrays.asList(candidate("a")))),
+                Signal.create(Boolean.TRUE), query::set, ignored -> { }, visualAdapter())
+                .open(open).onCloseRequest(() -> open.set(Boolean.FALSE))
+                .currentMembers(members, ignored -> { })
+                .build();
+        rt.mount(sceneRoot, () -> ScenePickerPanel.create(rt, props).root());
+        rt.setFontScale(150);
+        open.set(Boolean.TRUE);
+        rt.flush();
+        layoutAll();
+        layoutAll();
+        SceneNode scrim = overlayRoot(0);
+        paintEngine.paint(scrim);
+        assertPaintedFontSize("顶栏标题（倍率 150%：声明 12 × 1.5 = 18，不是 18 × 1.5 = 27）",
+                topBar(scrim).__getChildren().get(0), 18);
+        rt.setFontScale(100);
     }
 
     /** 断言某宿主文字节点绘制出的 TEXT 字号（绘制产物证据；须先对该节点所在树执行过 paint）。 */
