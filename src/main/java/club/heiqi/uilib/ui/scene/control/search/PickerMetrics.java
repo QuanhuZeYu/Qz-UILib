@@ -19,16 +19,21 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * <p>本类<b>不接收</b> GUI Scale、不接收物理分辨率、不缓存跨帧结果 —— 三个输入任一变化即重派生
  * （P5 I-6「无静态快照」）。</p>
  *
- * <h3>auto 求解（P5 §1.4，规范性）</h3>
+ * <h3>auto 求解（P5 §1.4 + 标签宽度预算，规范性）</h3>
  * <pre>
  *   hard = max(现状可见量(logicalBox), 12)      // 支配性目标（红线 R1/R2）
  *   soft = ceil(hard * 1.05)                    // 5% 安全裕度，拒绝贴线通过
- *   for ratio in [70,78,84,92]:                 // 面板从小到大
- *     for density in [standard, compact]:       // 图标从大到小
- *       for k in [1.00,.95,.90,.85,.80]:        // 图标等比缩小（字号不缩）
- *         if visible >= soft: return 该组合
- *   返回第一个满足 hard 的组合；都不满足 → 取可见量最大的组合
+ *   for degrade in [1.00,.85,.70,.55]:          // 标签可读宽度预算从大到小（外层）
+ *     em = max(3.0, density.labelBudgetEm * degrade)
+ *     for ratio in [70,78,84,92]:               // 面板从小到大
+ *       for density in [standard, compact]:     // 图标从大到小
+ *         for k in [1.00,.95,.90,.85,.80]:      // 图标等比缩小（字号不缩）
+ *           if visible >= soft: return 该组合
+ *     该预算下存在 visible >= hard 的组合 → 采用（预算不再降）
+ *   全部预算都不满足 hard → 取可见量最大的组合
  * </pre>
+ * <p><b>预算为何在最外层</b>：标签能读几个字是用户直接感知的信息量，可见量下限是红线；
+ * 两者冲突时先满足红线（降预算），不满足红线时就不可能给出更大预算 —— 顺序即优先级。</p>
  * <p>被选中的组合同时决定：面板比例、密度档、{@code k}、网格几何、列数与可视行数。
  * 「面板能长到 92%」与「成员带可折叠」两级阶梯必须实装，否则 1080p + 字号 150% 会贴线
  * （实测：无 5% 裕度时裕度仅 +1，加裕度后 +4）。</p>
@@ -112,34 +117,49 @@ public final class PickerMetrics {
     // ==================== 入口 ====================
 
     /**
-     * 生产入口：由「逻辑盒 + 字号倍率 + 密度偏好 + 成员行数」派生全部几何。
+     * 生产入口：由「逻辑盒 + 面板生效字号 + 密度偏好 + 成员行数」派生全部几何。
      *
-     * @param rt             场景运行时（提供行高与文本宽度量；非 null）
-     * @param logicalWidthPx 逻辑盒宽（宿主边界已折算；&lt;1 按 1）
+     * <p>字号入参是<b>面板内容根真正生效的字号</b>（{@code SceneNode.effectiveFontSize()}，已乘用户倍率），
+     * 不是倍率百分比也不是档位基准字号 —— 派生链与渲染链共用同一个字号真值，宽度/行高/间距才不会
+     * 按一个字号算、文字按另一个字号画。</p>
+     *
+     * @param rt              场景运行时（提供行高与文本宽度量；非 null）
+     * @param logicalWidthPx  逻辑盒宽（宿主边界已折算；&lt;1 按 1）
      * @param logicalHeightPx 逻辑盒高（宿主边界已折算；&lt;1 按 1）
-     * @param fontPct        用户字号倍率（百分比；&lt;1 按 1）
-     * @param preference     密度偏好（null 按 {@link PickerDensityPreference#AUTO}）
-     * @param membersRows    成员行数：{@code >=0} 表示有成员带（0 = 折叠提示行），{@code <0} = 无成员带
+     * @param panelFontSizePx 面板生效字号（夹取到字号域）
+     * @param preference      密度偏好（null 按 {@link PickerDensityPreference#AUTO}）
+     * @param membersRows     成员行数：{@code >=0} 表示有成员带（0 = 折叠提示行），{@code <0} = 无成员带
      * @return 不可变度量快照（非 null）
      */
     public static PickerMetrics derive(SceneRuntime rt, int logicalWidthPx, int logicalHeightPx,
-                                       int fontPct, PickerDensityPreference preference,
+                                       int panelFontSizePx, PickerDensityPreference preference,
                                        int membersRows) {
-        PickerDensityPreference pref = preference == null
-                ? PickerDensityPreference.AUTO : preference;
-        // 自动档的字号基准取标准档（P5 §1.3：标准档 = 与既有字号线一致的标准态）。
-        PickerDensity fontDensity = pref.explicitDensity(PickerDensity.STANDARD);
-        int fs = fontSizeFor(fontPct, fontDensity);
-        return solve(rt, logicalWidthPx, logicalHeightPx, fs, pref, membersRows);
+        return solve(rt, logicalWidthPx, logicalHeightPx,
+                clamp(panelFontSizePx, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL),
+                preference, membersRows);
+    }
+
+    /**
+     * 面板声明字号的默认值来源：宿主字号链未声明字号时用档位基准字号（{@link PickerDensity#STANDARD}，
+     * P5 §1.3「标准档 = 与既有字号线一致的标准态」）。
+     *
+     * <p>{@code ScenePickerPanel} 用它计算"面板内容根的声明字号"，再经
+     * {@link #fontSizeFor(int, int)} 得到与 {@code SceneNode.effectiveFontSize()} 逐值同源的生效字号 ——
+     * 派生链与渲染链不再各算一套。</p>
+     *
+     * @return 默认面板声明字号（未乘用户倍率；逻辑 px）
+     */
+    public static int defaultPanelDeclaredFontPx() {
+        return PickerDensity.STANDARD.baseFontPx();
     }
 
     /**
      * 规格对拍入口（与 {@code temp/p5_density_spec.py} 的 {@code p5_layout(W,H,fs,pref)} 同参数化）：
-     * 字号<b>显式给出</b>，不再乘档位基准字号。
+     * 字号<b>显式给出</b>，不再乘任何倍率。
      *
-     * <p>存在的唯一理由是让密度证明可在 Java 侧逐值复算（A1-A8）：规格脚本按
-     * {@code fs = clamp(round(12 * pct/100))} 传入字号，与档位基准字号无关。生产路径请用
-     * {@link #derive}（档位基准字号参与字号派生）。</p>
+     * <p>与 {@link #derive} 的唯一差别是"字号从哪来"：本入口由调用方（测试/规格脚本）给出 fs，
+     * {@code derive} 由面板内容根的字号链给出。求解本体（含标签可读宽度预算与降级阶梯）两入口共用，
+     * 不存在两套几何。</p>
      *
      * @param rt              场景运行时（非 null）
      * @param logicalWidthPx  逻辑盒宽
@@ -173,49 +193,70 @@ public final class PickerMetrics {
                 ? new int[] {PickerDensityTokens.PANEL_RATIO_SMALL}
                 : PickerDensityTokens.PANEL_RATIO_STEPS;
 
-        PickerMetrics best = null;
-        PickerMetrics firstOk = null;
-        for (int ratio : ratios) {
-            for (PickerDensity density : order) {
-                for (double scale : PickerDensityTokens.ICON_SCALE_STEPS) {
-                    int iconScalePercent = GridMetrics.roundHalfEven(scale * 100.0);
-                    PanelBox box = derivePanel(w, h, fs, scale, membersRows, small, ratio);
-                    GridMetrics grid = GridMetrics.deriveDensity(rt, fs, density.iconSidePx(),
-                            iconScalePercent, 0, box.listWidthPx());
-                    int gap = grid.gapY();
-                    int rows = box.listHeightPx() > 0
-                            ? (box.listHeightPx() + gap) / grid.stridePx() : 0;
-                    int visible = grid.columns() * rows;
-                    PickerMetrics candidate = new PickerMetrics(w, h, 100, fs, membersRows,
-                            hard, soft, pref, density, iconScalePercent, rows, visible, grid, box);
-                    if (best == null || visible > best.visibleItems) {
-                        best = candidate;
-                    }
-                    if (firstOk == null && visible >= hard) {
-                        firstOk = candidate;
-                    }
-                    if (visible >= soft) {
-                        return candidate;
+        PickerMetrics fallback = null;
+        // 标签可读宽度预算的降级阶梯（最外层）：从档位预算开始求解，只有当该预算下
+        // 「任何面板比例 / 档位 / k 组合」都达不到可见项下限（hard = 现状基线）时才降一档。
+        // 于是「可见量不低于现状」是硬约束、标签宽度是其余空间里的最大可给量 —— 二者在同一条
+        // 派生里同时成立，不需要第二个真值，也不靠调用方传"该显示几个字"。
+        for (double degrade : PickerDensityTokens.LABEL_BUDGET_DEGRADE_STEPS) {
+            PickerMetrics tierBest = null;
+            PickerMetrics tierFirstOk = null;
+            for (int ratio : ratios) {
+                for (PickerDensity density : order) {
+                    // 末档 degrade == 0 = 关闭预算（退回既有 cellW 口径），见 LABEL_BUDGET_DEGRADE_STEPS。
+                    double labelBudgetEm = degrade <= 0.0
+                            ? 0.0 : PickerDensityTokens.LABEL_BUDGET_EM * degrade;
+                    for (double scale : PickerDensityTokens.ICON_SCALE_STEPS) {
+                        int iconScalePercent = GridMetrics.roundHalfEven(scale * 100.0);
+                        PanelBox box = derivePanel(w, h, fs, scale, membersRows, small, ratio);
+                        GridMetrics grid = GridMetrics.deriveDensity(rt, fs, density.iconSidePx(),
+                                iconScalePercent, 0, box.listWidthPx(), labelBudgetEm);
+                        int gap = grid.gapY();
+                        int rows = box.listHeightPx() > 0
+                                ? (box.listHeightPx() + gap) / grid.stridePx() : 0;
+                        int visible = grid.columns() * rows;
+                        PickerMetrics candidate = new PickerMetrics(w, h, 100, fs, membersRows,
+                                hard, soft, pref, density, iconScalePercent, rows, visible, grid, box);
+                        if (tierBest == null || visible > tierBest.visibleItems) {
+                            tierBest = candidate;
+                        }
+                        if (tierFirstOk == null && visible >= hard) {
+                            tierFirstOk = candidate;
+                        }
+                        if (visible >= soft) {
+                            return candidate;
+                        }
                     }
                 }
             }
+            if (tierFirstOk != null) {
+                return tierFirstOk;
+            }
+            // 该预算下达不到可见项下限：降一档预算再试；同时留全局最优作为兜底。
+            if (fallback == null || tierBest.visibleItems > fallback.visibleItems) {
+                fallback = tierBest;
+            }
         }
-        return firstOk != null ? firstOk : best;
+        return fallback;
     }
 
     // ==================== 纯派生助手（可单测、无副作用） ====================
 
     /**
-     * 字号派生：{@code clamp(round(base * fontPct/100), FONT_FLOOR, FONT_CEIL)}。
+     * 字号派生：{@code clamp(round(declared * fontScalePercent/100), FONT_FLOOR, FONT_CEIL)}。
      *
-     * @param fontPct 用户字号倍率（百分比；&lt;1 按 1）
-     * @param density 档位（null 按标准档）
+     * <p>与 {@code SceneNode.effectiveFontSize()} 的解析出口同式（声明值 × 环境倍率，再夹取到域内）：
+     * 面板派生用的字号必须与内容根真正渲染的字号逐值相同，否则宽度/行高/间距会按一个字号算、
+     * 文字按另一个字号画（「几何 12 / 渲染 16」的分叉即 P7 遗留 L1）。</p>
+     *
+     * @param declaredFontSizePx 面板内容根的<b>声明</b>字号（未乘倍率；&lt;1 按 1）
+     * @param fontScalePercent   用户字号倍率（百分比；&lt;1 按 1）
      * @return 生效字号（逻辑 px）
      */
-    public static int fontSizeFor(int fontPct, PickerDensity density) {
-        PickerDensity d = density == null ? PickerDensity.STANDARD : density;
-        int pct = Math.max(1, fontPct);
-        int scaled = GridMetrics.roundHalfEven(d.baseFontPx() * pct / 100.0);
+    public static int fontSizeFor(int declaredFontSizePx, int fontScalePercent) {
+        int declared = Math.max(1, declaredFontSizePx);
+        int pct = Math.max(1, fontScalePercent);
+        int scaled = GridMetrics.roundHalfEven(declared * pct / 100.0);
         return clamp(scaled, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
     }
 

@@ -86,6 +86,15 @@ public class ScenePickerPanelTest {
     private static final int BG_TRANSPARENT = 0x00000000;
     /** {@link SceneNode} 默认字号：不设字号时控件内文字必须保持的值（视觉零变化约束）。 */
     private static final int DEFAULT_FONT_SIZE = 16;
+    /**
+     * 面板内容根的默认<b>声明</b>字号：宿主字号链未声明字号时，picker 面板用档位基准字号
+     * （{@link PickerMetrics#defaultPanelDeclaredFontPx()}）而不是框架兜底常量 16。
+     *
+     * <p>理由：面板几何（cellW / trackH / 间距 / 列数）按档位基准字号派生，若内容根继承框架兜底 16，
+     * 同一面板里"宽度按 12 算、文字按 16 画"，标签槽被压到 40px 只放得下 1 个汉字
+     * （用户症状「每个物品只显示第一个字」）。字号真值必须与派生链同源。</p>
+     */
+    private static final int PANEL_DEFAULT_FONT_SIZE = PickerMetrics.defaultPanelDeclaredFontPx();
 
     /** 库默认主题配方：默认外观唯一来源，断言引用配方值而非硬编码色号。 */
     private static final SceneSurfaceStyle PANEL = SceneThemes.DEFAULT.surface(SceneTheme.Role.PANEL);
@@ -1798,14 +1807,15 @@ public class ScenePickerPanelTest {
 
         SceneNode scrim = overlayRoot(0);
 
-        // ① 缺省不设字号：已出文字的五处宿主文字绘制字号 = 节点默认 16（空态提示见 ④）。
+        // ① 缺省不设字号：已出文字的五处宿主文字绘制字号 = 面板默认声明字号（档位基准 12，
+        //    不是框架兜底 16）—— 派生几何与渲染字号同源是本轮修复的核心（空态提示见 ④）。
         paintEngine.paint(scrim);
-        assertPaintedFontSize("顶栏标题", topBar(scrim).__getChildren().get(0), DEFAULT_FONT_SIZE);
-        assertPaintedFontSize("结果统计", topBarSummary(scrim), DEFAULT_FONT_SIZE);
-        assertPaintedFontSize("错误行", centerColumn(scrim).__getChildren().get(0), DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("顶栏标题", topBar(scrim).__getChildren().get(0), PANEL_DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("结果统计", topBarSummary(scrim), PANEL_DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("错误行", centerColumn(scrim).__getChildren().get(0), PANEL_DEFAULT_FONT_SIZE);
         assertPaintedFontSize("成员区标题",
-                membersPanel(scrim).__getChildren().get(0).__getChildren().get(0), DEFAULT_FONT_SIZE);
-        assertPaintedFontSize("空态提示", membersPanel(scrim).__getChildren().get(3), DEFAULT_FONT_SIZE);
+                membersPanel(scrim).__getChildren().get(0).__getChildren().get(0), PANEL_DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("空态提示", membersPanel(scrim).__getChildren().get(3), PANEL_DEFAULT_FONT_SIZE);
 
         // ② 问题摘要：零问题时是空串（无 TEXT 命令），置入无效成员后才有可断言的绘制产物。
         members.set(Arrays.asList(malformedMember(0L)));
@@ -1815,7 +1825,7 @@ public class ScenePickerPanelTest {
         SceneNode issues = membersPanel(scrim).__getChildren().get(0).__getChildren().get(1);
         Assert.assertFalse("前置：问题摘要应有文案", issues.getText().isEmpty());
         paintEngine.paint(scrim);
-        assertPaintedFontSize("问题摘要", issues, DEFAULT_FONT_SIZE);
+        assertPaintedFontSize("问题摘要", issues, PANEL_DEFAULT_FONT_SIZE);
 
         // ③ 字号生效：handle.fontSize(24) → 推进一帧 → 在场五处宿主文字绘制字号 = 24。
         handle.fontSize(24);
@@ -2523,7 +2533,9 @@ public class ScenePickerPanelTest {
         // 强断言（U-P6D-2 收紧）：首帧列数必须**等于 P5 派生 oracle**。原来的「> 1」弱断言正是漏掉
         // 「Computed 初值 pitfall ⇒ 网格永久回退分支、不吃密度」的口子（P6-D3 修复）：回退分支恰好给出
         // 15 列（> 1），弱断言照样通过。此处以同源 oracle 钉死度量通道必须活着。
-        int oracleColumns = PickerMetrics.derive(rt, 1920, 1080, rt.getFontScalePercent(),
+        int oracleColumns = PickerMetrics.derive(rt, 1920, 1080,
+                PickerMetrics.fontSizeFor(PickerMetrics.defaultPanelDeclaredFontPx(),
+                        rt.getFontScalePercent()),
                 PickerDensityPreference.AUTO, -1).grid().columns();
         Assert.assertEquals("首帧列数必须等于派生 oracle（防度量通道再次断链）", oracleColumns,
                 first.columns());

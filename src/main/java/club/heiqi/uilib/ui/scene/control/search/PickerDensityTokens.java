@@ -97,8 +97,37 @@ public final class PickerDensityTokens {
     public static final int CELL_GAP_MIN = 3;
     /** 列/行间距上限（逻辑 px）。 */
     public static final int CELL_GAP_MAX = 10;
-    /** cellW 宽度下限的实测字符样本（4 字符实测宽；度量口径同源，见 P5 I-5）。 */
+    /**
+     * cellW 宽度下限的实测字符样本（4 字符实测宽；度量口径同源，见 P5 I-5）。
+     *
+     * <p>语义 = {@code cellW >= 实测 4 字符宽} 的"防零宽"下界（I-3 原始语义）。标签的
+     * <b>可读宽度</b>由 {@link PickerDensity#labelBudgetEm()} 表达并同样取 {@code max}，
+     * 两者都是 cellW 的下界分量、不互相替代。</p>
+     */
     public static final String CELL_WIDTH_SAMPLE = "MMMM";
+
+    /**
+     * 标签可读宽度预算（单位 = <b>标签字号</b>的倍数，即 em）。
+     *
+     * <p>语义 = "标签槽应能容纳的字符宽度"，以字号为单位表达：对全角字符约等于可读字符数，
+     * 对半角字符约 1.8 倍 —— 因此本项<b>不假定字符集/语言</b>，只声明"给标签多少空间"。
+     * {@link GridMetrics} 把它换算成像素并作为 {@code cellWidth} 的下界之一；空间不足时由
+     * {@link PickerMetrics} 按 {@link #LABEL_BUDGET_DEGRADE_STEPS} 逐级让路，最末档让到 0
+     * （= 退回"cellW 只由图标与样本宽决定"的既有口径），故不会比"没有预算"更差。</p>
+     */
+    public static final double LABEL_BUDGET_EM = 7.5;
+
+    /**
+     * 标签可读宽度预算的降级阶梯（乘以 {@link #LABEL_BUDGET_EM}）。
+     *
+     * <p>降级顺序即数组顺序：先试最大预算，只有"该预算下任何面板比例/档位/k 组合都无法达到
+     * 可见项下限"时才降一档；最末档 {@code 0.0} = <b>关闭预算</b>，即退回到"cellW 只由图标与
+     * 样本宽决定"的既有行为。</p>
+     *
+     * <p>末档必须存在且为 0：它保证"加了标签预算"在任何逻辑盒/字号下都<b>不可能比加之前更差</b> ——
+     * 空间不够时求解器自动让路，红线（可见项数不低于现状）在任何一格都不需要靠人裁量维持。</p>
+     */
+    public static final double[] LABEL_BUDGET_DEGRADE_STEPS = {1.00, 0.85, 0.70, 0.55, 0.40, 0.0};
 
     // ==================== 面板内其它随字号缩放的元素（P5 §2.5） ====================
 

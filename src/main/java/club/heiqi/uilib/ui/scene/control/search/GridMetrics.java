@@ -13,7 +13,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   labelGap = max(1, round(fs / 6))
  *   lineH    = rt.lineHeight(fs)                        // 字体服务真值（ascent+descent+lineGap）
  *   iconSide = max(ICON_MIN, round(density.icon * k))
- *   cellW    = max(iconSide + 2*pad, rt.measureTextWidth("MMMM", fs))   // I-3/I-5 同源度量
+ *   labelW   = 2*pad + round(fs * density.labelBudgetEm)                // 标签可读宽度下界（新增）
+ *   cellW    = max(iconSide + 2*pad, rt.measureTextWidth("MMMM", fs), labelW)  // I-3/I-5 同源度量
  *   trackH   = max(cellHeight 下限, iconSide + 2*pad + lineH + labelGap)  // I-2 标签不裁切
  *   gap      = clamp(round(fs / 2), 3, 10)
  *   stride   = trackH + gap
@@ -53,6 +54,7 @@ public final class GridMetrics {
     private final int labelGapPx;
     private final int iconSidePx;
     private final int cellWidthPx;
+    private final int labelBudgetPx;
     private final int trackHeightPx;
     private final int gapX;
     private final int gapY;
@@ -60,14 +62,15 @@ public final class GridMetrics {
     private final int columns;
 
     private GridMetrics(int fontSizePx, int lineHeightPx, int paddingPx, int labelGapPx,
-                        int iconSidePx, int cellWidthPx, int trackHeightPx, int gapX, int gapY,
-                        int stridePx, int columns) {
+                        int iconSidePx, int cellWidthPx, int labelBudgetPx, int trackHeightPx,
+                        int gapX, int gapY, int stridePx, int columns) {
         this.fontSizePx = fontSizePx;
         this.lineHeightPx = lineHeightPx;
         this.paddingPx = paddingPx;
         this.labelGapPx = labelGapPx;
         this.iconSidePx = iconSidePx;
         this.cellWidthPx = cellWidthPx;
+        this.labelBudgetPx = labelBudgetPx;
         this.trackHeightPx = trackHeightPx;
         this.gapX = gapX;
         this.gapY = gapY;
@@ -98,7 +101,7 @@ public final class GridMetrics {
         int contentFloor = lineHeight + gap + MIN_ICON_SIDE_PX + 2 * pad;
         int trackHeight = Math.max(Math.max(1, cellHeightFloorPx), contentFloor);
         int rowGap = Math.max(0, gapY);
-        return new GridMetrics(fs, lineHeight, pad, gap, iconSide, iconSide + 2 * pad, trackHeight,
+        return new GridMetrics(fs, lineHeight, pad, gap, iconSide, iconSide + 2 * pad, 0, trackHeight,
                 rowGap, rowGap, trackHeight + rowGap, 1);
     }
 
@@ -116,6 +119,35 @@ public final class GridMetrics {
     public static GridMetrics deriveDensity(SceneRuntime rt, int fontSizePx, int iconTargetPx,
                                             int iconScalePercent, int cellHeightFloorPx,
                                             int innerWidthPx) {
+        return deriveDensity(rt, fontSizePx, iconTargetPx, iconScalePercent, cellHeightFloorPx,
+                innerWidthPx, 0.0);
+    }
+
+    /**
+     * 密度派生（含标签可读宽度预算）：在 {@link #deriveDensity(SceneRuntime, int, int, int, int, int)}
+     * 的 cellW 下界集合上追加「标签槽容得下 {@code labelBudgetEm} 个字号宽」这一项。
+     *
+     * <p><b>为什么标签宽度必须进 cellW 派生</b>：cellW 原本只由"图标 + 内边距"与"4 字符样本"取大，
+     * 标准档下恒为 {@code iconSide + 2*pad}（=48），标签槽被压在 40px；而标签按面板字号渲染，
+     * 中文名（全角字符宽 ≈ 字号）在 40px 里只剩 1 个字 + 省略号 —— 「每个物品只显示第一个字」
+     * 的结构性成因。本项把"标签应有多少空间"变成派生链的一等输入，且以 <b>em</b> 表达
+     * （不假定字符集/语言，只随字号缩放）。</p>
+     *
+     * <p>本项是 <b>cellW 的下界之一</b>（与 I-3 的"防零宽"下界取 max，不互相替代）；宽度变大带来的
+     * 列数下降由 {@link PickerMetrics} 的求解与预算降级阶梯吸收。</p>
+     *
+     * @param rt                 场景运行时（提供行高与文本宽度量；非 null）
+     * @param fontSizePx         生效字号（夹取到 [1, ∞)）
+     * @param iconTargetPx       档位图标目标边长（&lt;1 按 1）
+     * @param iconScalePercent   {@code k} 的百分比形式（100 = 不缩；&lt;1 按 1）
+     * @param cellHeightFloorPx  调用方轨道高下限（&lt;1 按 1）
+     * @param innerWidthPx       可用内宽（&lt;=0 时列数退化为 1）
+     * @param labelBudgetEm      标签可读宽度预算（em；&lt;=0 = 不启用，行为与六参重载一致）
+     * @return 度量快照（非 null；{@code columns} 已按 {@link #columnsFor} 派生）
+     */
+    public static GridMetrics deriveDensity(SceneRuntime rt, int fontSizePx, int iconTargetPx,
+                                            int iconScalePercent, int cellHeightFloorPx,
+                                            int innerWidthPx, double labelBudgetEm) {
         int fs = Math.max(1, fontSizePx);
         int pad = clamp(roundHalfEven(fs / PickerDensityTokens.CELL_PAD_DIVISOR),
                 PickerDensityTokens.CELL_PAD_MIN, PickerDensityTokens.CELL_PAD_MAX);
@@ -125,15 +157,37 @@ public final class GridMetrics {
         int iconSide = Math.max(PickerDensityTokens.ICON_MIN,
                 roundHalfEven(Math.max(1, iconTargetPx) * iconScalePercent / 100.0));
         int measured = rt.measureTextWidth(PickerDensityTokens.CELL_WIDTH_SAMPLE, fs);
-        int cellWidth = Math.max(iconSide + 2 * pad, measured);
+        int labelBudget = labelBudgetPx(fs, pad, labelBudgetEm);
+        int cellWidth = Math.max(Math.max(iconSide + 2 * pad, measured), labelBudget);
         // I-2：轨道高恒 >= 图标 + 上下 padding + 标签行 + 间距 —— 字号放大只抬轨道高，不回缩图标。
         int contentFloor = contentFloorPx(iconSide, pad, labelGap, lineHeight);
         int trackHeight = Math.max(Math.max(1, cellHeightFloorPx), contentFloor);
         int gap = clamp(roundHalfEven(fs * PickerDensityTokens.CELL_GAP_RATIO),
                 PickerDensityTokens.CELL_GAP_MIN, PickerDensityTokens.CELL_GAP_MAX);
         int columns = columnsFor(innerWidthPx, cellWidth, gap);
-        return new GridMetrics(fs, lineHeight, pad, labelGap, iconSide, cellWidth, trackHeight,
-                gap, gap, trackHeight + gap, columns);
+        return new GridMetrics(fs, lineHeight, pad, labelGap, iconSide, cellWidth, labelBudget,
+                trackHeight, gap, gap, trackHeight + gap, columns);
+    }
+
+    /**
+     * 标签可读宽度下界（像素；{@code labelBudgetEm <= 0} 返回 0 = 未启用）：
+     * {@code 2*padding + round(fontSizePx * em)}。
+     *
+     * <p>换算成"槽宽 + 两侧内边距"的单元总宽口径，与 {@code cellWidthPx} 同域，故可直接参与
+     * {@code max}；标签节点能用的净宽 = 返回值 − 2*padding（{@code SearchResultList} 的
+     * {@code maxTextWidth} 同口径）。</p>
+     *
+     * @param fontSizePx 标签生效字号（&lt;1 按 1）
+     * @param paddingPx  单元内边距（&lt;0 按 0）
+     * @param labelBudgetEm 预算（em）
+     * @return 单元总宽口径的标签下界（0 = 未启用）
+     */
+    public static int labelBudgetPx(int fontSizePx, int paddingPx, double labelBudgetEm) {
+        if (!(labelBudgetEm > 0.0)) {
+            return 0;
+        }
+        return 2 * Math.max(0, paddingPx)
+                + Math.max(0, roundHalfEven(Math.max(1, fontSizePx) * labelBudgetEm));
     }
 
     /**
@@ -214,9 +268,14 @@ public final class GridMetrics {
         return iconSidePx;
     }
 
-    /** @return 单元宽（{@code max(iconSide + 2*pad, 实测样本宽)}） */
+    /** @return 单元宽（{@code max(iconSide + 2*pad, 实测样本宽, 标签可读宽度下界)}） */
     public int cellWidthPx() {
         return cellWidthPx;
+    }
+
+    /** @return 标签可读宽度下界（单元总宽口径；{@code 0} = 未启用） */
+    public int labelBudgetPx() {
+        return labelBudgetPx;
     }
 
     /** @return 轨道高（行高/单元高/图位高的共同来源） */
@@ -255,6 +314,6 @@ public final class GridMetrics {
         int cols = Math.max(1, newColumns);
         return cols == columns ? this
                 : new GridMetrics(fontSizePx, lineHeightPx, paddingPx, labelGapPx, iconSidePx,
-                        cellWidthPx, trackHeightPx, gapX, gapY, stridePx, cols);
+                        cellWidthPx, labelBudgetPx, trackHeightPx, gapX, gapY, stridePx, cols);
     }
 }

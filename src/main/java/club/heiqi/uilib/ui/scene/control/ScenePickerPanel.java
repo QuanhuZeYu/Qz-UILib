@@ -58,6 +58,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.LogicalBox;
 import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.node.FontSource;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.node.TextHorizontalAlign;
@@ -711,6 +712,11 @@ public final class ScenePickerPanel {
         // 父链继承覆盖不到，必须把「本节点的字号声明」接到 portal 内容根（见 anchorFontSizeSignal）。
         SceneNode root = new SceneNode();
         root.setHitTestable(false);
+        // 面板字号声明（唯一真值）：宿主字号链上有显式声明（层 1/2/3）就用它，否则用档位基准字号
+        // （宿主未声明时锚点会落到框架常量 16，那不是面板该继承的"默认"—— 面板的默认是档位基准 12）。
+        // 同一个信号实例喂两个消费点：① portal 内容根的层 2 声明（= 真正渲染的字号）；
+        // ② 度量派生的字号输入（= 几何算的字号）。两处同源，几何与文字不再各算一套。
+        ReadableSignal<Integer> panelDeclaredFont = panelDeclaredFontSignal(rt, root);
         Signal<Boolean> openInternal = props.open() == null ? Signal.create(Boolean.FALSE) : null;
         ReadableSignal<Boolean> open = props.open() != null ? props.open() : openInternal;
         Runnable closeSignal = () -> {
@@ -797,7 +803,7 @@ public final class ScenePickerPanel {
             // P5 派生度量（三分量：逻辑盒 + 字号倍率 + 密度偏好）：在内容 Owner 内创建 ⇒
             // 关闭即随 disposeMounted() 释放，不做跨开合常驻；打开时算一次、之后只在三个输入
             // 变化时重派生（无静态快照，P5 I-6）。
-            ReadableSignal<PickerMetrics> metrics = createMetrics(rt, props);
+            ReadableSignal<PickerMetrics> metrics = createMetrics(rt, props, panelDeclaredFont);
             // 撤销条可见性投影（内容 Owner 内 ⇒ 关闭即释放；空串/无 tombstone 时零占位）。
             ReadableSignal<Boolean> undoVisible = Computed.create(() ->
                     Boolean.valueOf(tombstone.get() != null));
@@ -853,7 +859,7 @@ public final class ScenePickerPanel {
                     cancelPanel(props, closeRequest, variantsOpen, activeCandidate,
                             gridHighlight, addingMember, editingMember, focusIntent);
                 });
-        panelPortal.fontSize(anchorFontSizeSignal(rt, root));
+        panelPortal.fontSize(panelDeclaredFont);
 
         // 焦点意图消费（只消费 focusIntent/focus 目标数组，O(1)，ADR §4.1 明确保留在 create）。
         bindFocusIntent(rt, focusIntent, searchFocusTarget, gridFocusTarget, variantFocusTarget);
@@ -2060,14 +2066,39 @@ public final class ScenePickerPanel {
      * @param anchor 控件根（字号真值所在）
      * @return 控件根声明的只读信号
      */
-    private static ReadableSignal<Integer> anchorFontSizeSignal(SceneRuntime rt, SceneNode anchor) {
+    private static ReadableSignal<Integer> panelDeclaredFontSignal(SceneRuntime rt, SceneNode anchor) {
         if (Owner.current() != null) {
-            return createAnchorFontSize(rt, anchor);
+            return createPanelDeclaredFont(rt, anchor);
         }
         // 在 mount 回调之外调用控件工厂时（如直接构造）与 rt.bind 一样归 runtime 根 Owner，避免独立 Computed 泄漏。
         AtomicReference<ReadableSignal<Integer>> holder = new AtomicReference<ReadableSignal<Integer>>();
-        rt.__runRoot(() -> holder.set(createAnchorFontSize(rt, anchor)));
+        rt.__runRoot(() -> holder.set(createPanelDeclaredFont(rt, anchor)));
         return holder.get();
+    }
+
+    /**
+     * 解析面板内容根的<b>声明</b>字号：宿主字号链上的显式声明优先，未声明时用档位基准字号。
+     *
+     * <p><b>为什么不能直接继承锚点解析值</b>：锚点在 {@link #create} 期还没挂树，字号解析会落到
+     * 层 4b 框架常量（{@code FontSizeLimits.DEFAULT_FONT_SIZE_PX} = 16），把它写进 portal 内容根
+     * 就等于"面板默认字号 = 16"；而 P5 的整套几何按档位基准字号（标准档 12）派生
+     * —— 同一面板里宽度/行高按 12 算、文字按 16 画，标签槽 40px 在 16px 字号下只放得下
+     * 1 个汉字 + 省略号（用户症状「每个物品只显示第一个字」）。</p>
+     *
+     * <p>层 1/2/3 命中时说明宿主（配置屏/宿主字号线）确实声明了字号，面板跟随它是正确的继承语义；
+     * 落到层 4a/4b 则说明"没有人声明"，此时面板该用自己的默认值而不是框架兜底常量。</p>
+     *
+     * @param rt     场景运行时
+     * @param anchor 控件根（Result.root）
+     * @return 面板声明字号（未乘用户倍率；逻辑 px）
+     */
+    private static int resolvePanelDeclaredFont(SceneNode anchor) {
+        FontSource source = anchor.fontSizeSource();
+        if (source == FontSource.EXPLICIT || source == FontSource.SCOPE
+                || source == FontSource.ENVIRONMENT) {
+            return anchor.declaredFontSize();
+        }
+        return PickerMetrics.defaultPanelDeclaredFontPx();
     }
 
     /**
@@ -2105,11 +2136,13 @@ public final class ScenePickerPanel {
      * @param props 面板属性
      * @return 派生度量只读信号（非 null）
      */
-    private static ReadableSignal<PickerMetrics> createMetrics(SceneRuntime rt, Props props) {
+    private static ReadableSignal<PickerMetrics> createMetrics(SceneRuntime rt, Props props,
+                                                              ReadableSignal<Integer> panelDeclaredFont) {
         ReadableSignal<PickerDensityPreference> preference = props.densityPreference();
         LogicalBox initialBox = rt.logicalBox().get();
         Signal<PickerMetrics> metrics = Signal.create(PickerMetrics.derive(rt,
-                initialBox.widthPx(), initialBox.heightPx(), rt.getFontScalePercent(),
+                initialBox.widthPx(), initialBox.heightPx(),
+                panelFontSizePx(panelDeclaredFont, rt),
                 preference == null ? PickerDensityPreference.AUTO : preference.get(),
                 memberRowsFor(props)));
         rt.bindComputed(() -> {
@@ -2117,14 +2150,33 @@ public final class ScenePickerPanel {
             rt.fontEpochSignal().get();
             PickerDensityPreference pref = preference == null
                     ? PickerDensityPreference.AUTO : preference.get();
+            // 字号真值 = 面板内容根的「声明值 × 环境倍率」，与 SceneNode.effectiveFontSize() 的解析
+            // 出口同式（见 PickerMetrics.fontSizeFor）：派生几何与真正渲染的文字字号逐值相同。
+            // panelDeclaredFont 参与订阅 ⇒ 宿主改字号声明时几何随之重派生。
             return PickerMetrics.derive(rt, box.widthPx(), box.heightPx(),
-                    rt.getFontScalePercent(), pref, memberRowsFor(props));
+                    panelFontSizePx(panelDeclaredFont, rt), pref, memberRowsFor(props));
         }, derived -> Effect.untrack(() -> {
             if (!sameDerivation(metrics.get(), derived)) {
                 metrics.set(derived);
             }
         }));
         return metrics;
+    }
+
+    /**
+     * 面板生效字号 = 面板声明字号 × 环境倍率（与 {@code SceneNode.effectiveFontSize()} 的解析出口同式）。
+     *
+     * <p>声明值经 {@code anchor} 的父链解析得到（{@link #resolvePanelDeclaredFont}），倍率取
+     * {@link SceneRuntime#getFontScalePercent()}；两者相乘再夹取到字号域，因此派生几何消费的字号
+     * 与内容根真正渲染的字号逐值相同。</p>
+     *
+     * @param panelDeclaredFont 面板声明字号投影（非 null）
+     * @param rt                场景运行时
+     * @return 生效字号（逻辑 px）
+     */
+    private static int panelFontSizePx(ReadableSignal<Integer> panelDeclaredFont, SceneRuntime rt) {
+        return PickerMetrics.fontSizeFor(panelDeclaredFont.get().intValue(),
+                rt.getFontScalePercent());
     }
 
     /** 派生输入等价判定（输入相同 ⇒ 派生结果逐值相同）。 */
@@ -2155,11 +2207,11 @@ public final class ScenePickerPanel {
         return value == null ? "" : value;
     }
 
-    /** 声明值的响应式投影：布局纪元变化即重读（同值由 Computed 记忆化去重）。 */
-    private static ReadableSignal<Integer> createAnchorFontSize(SceneRuntime rt, SceneNode anchor) {
-        return Computed.create(Integer.valueOf(anchor.declaredFontSize()), () -> {
+    /** 面板声明字号的响应式投影：布局纪元变化即重读（同值由 Computed 记忆化去重）。 */
+    private static ReadableSignal<Integer> createPanelDeclaredFont(SceneRuntime rt, SceneNode anchor) {
+        return Computed.create(Integer.valueOf(resolvePanelDeclaredFont(anchor)), () -> {
             rt.layoutDoneSignal().get();
-            return Integer.valueOf(anchor.declaredFontSize());
+            return Integer.valueOf(resolvePanelDeclaredFont(anchor));
         });
     }
 

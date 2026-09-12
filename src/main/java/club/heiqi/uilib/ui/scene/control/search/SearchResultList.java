@@ -89,8 +89,14 @@ public final class SearchResultList {
 
     /** 单元内边距。 */
     public static final int CELL_PADDING = 4;
-    /** 单元标签字号。 */
-    public static final int LABEL_FONT_SIZE = 12;
+    /**
+     * 单元标签字号（层 4a 控件自有回落值）。
+     *
+     * <p>取档位基准字号（{@link PickerDensity#STANDARD}）而不是写字面量：面板实际字号由
+     * {@code ScenePickerPanel} 的面板声明字号决定（宿主未声明时同为档位基准字号），本常量只在
+     * "控件脱离面板单独使用"时兜底 —— 两者同源，不构成第二个字号真值。</p>
+     */
+    public static final int LABEL_FONT_SIZE = PickerDensity.STANDARD.baseFontPx();
     /** 图标与标签间距。 */
     public static final int LABEL_GAP = 2;
     /**
@@ -1069,6 +1075,9 @@ public final class SearchResultList {
         cell.setPreferredHeight(trackHeight.get().intValue());
         rt.bind(trackHeight, h -> cell.setPreferredHeight(h.intValue()));
         cell.setClipChildren(true);
+        // 交叉轴居中：cellW 现在可能由「标签可读宽度预算」主导（比图标宽得多），图标居中
+        // 才与下方居中的标签对齐；STRETCH 会让窄图标贴左、整格的视觉重心偏左。
+        cell.setCrossAxisAlign(CrossAxisAlign.CENTER);
         cell.setGap(geometry.labelGapPx().get().intValue());
         rt.bind(geometry.labelGapPx(), g -> cell.setGap(g.intValue()));
         cell.setPadding(geometry.paddingPx().get().intValue());

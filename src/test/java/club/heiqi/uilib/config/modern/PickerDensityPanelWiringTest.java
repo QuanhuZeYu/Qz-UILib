@@ -120,16 +120,22 @@ public class PickerDensityPanelWiringTest {
         assertTierAdopted(panel, PickerDensityPreference.ROOMY, "roomy");
     }
 
-    /** 反空跑：参考视口下三档派生的几何必须互不相同（否则上面的"采用对应档"是空断言）。 */
+    /**
+     * 反空跑：参考视口下三档派生的几何必须可区分（否则上面的"采用对应档"是空断言）。
+     *
+     * <p>判据 = <b>图标边长</b>而不是列数：标签可读宽度预算已统一到全局令牌（不随档位变），
+     * cellW 因此被同一份预算主导 ⇒ 1080p 下三档列数相同；档位的可区分性落在图标边长上
+     * （紧凑 32 / 标准 40 / 宽松 48 的档位目标，再经 k 阶梯下调）。</p>
+     */
     @Test
     public void tiersAreDistinguishableAtReferenceViewport() {
-        int compact = oracle(PickerDensityPreference.COMPACT).grid().columns();
-        int standard = oracle(PickerDensityPreference.STANDARD).grid().columns();
-        int roomy = oracle(PickerDensityPreference.ROOMY).grid().columns();
-        Assert.assertTrue("紧凑档列数必须多于标准档（compact=" + compact + ", standard=" + standard + "）",
-                compact > standard);
-        Assert.assertTrue("宽松档列数必须少于标准档（standard=" + standard + ", roomy=" + roomy + "）",
-                standard > roomy);
+        int compact = oracle(PickerDensityPreference.COMPACT).grid().iconSidePx();
+        int standard = oracle(PickerDensityPreference.STANDARD).grid().iconSidePx();
+        int roomy = oracle(PickerDensityPreference.ROOMY).grid().iconSidePx();
+        Assert.assertTrue("紧凑档图标必须小于标准档（compact=" + compact + ", standard=" + standard + "）",
+                compact < standard);
+        Assert.assertTrue("宽松档图标必须大于紧凑档（roomy=" + roomy + ", compact=" + compact + "）",
+                roomy > compact);
     }
 
     // ==================== ③ 改配置无需重开面板 ====================
@@ -231,9 +237,17 @@ public class PickerDensityPanelWiringTest {
                 expected.grid().columns(), mountedColumns(panel));
     }
 
-    /** P5 派生内核 oracle（同一逻辑盒 / 字号倍率 / 无成员带），读数是面板侧唯一真值来源。 */
+    /**
+     * P5 派生内核 oracle（同一逻辑盒 / 面板生效字号 / 无成员带），读数是面板侧唯一真值来源。
+     *
+     * <p>生效字号按面板的默认声明口径算（宿主未声明字号 ⇒ 档位基准字号 × 用户倍率），
+     * 与 {@code ScenePickerPanel} 内部的字号解析同式。</p>
+     */
     private PickerMetrics oracle(PickerDensityPreference preference) {
-        return PickerMetrics.derive(rt, W, H, rt.getFontScalePercent(), preference, -1);
+        return PickerMetrics.derive(rt, W, H,
+                PickerMetrics.fontSizeFor(PickerMetrics.defaultPanelDeclaredFontPx(),
+                        rt.getFontScalePercent()),
+                preference, -1);
     }
 
     /** 生效档位文案（面板左导航状态行）。 */

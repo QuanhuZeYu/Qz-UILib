@@ -82,11 +82,13 @@ public class PickerMetricsTest {
         PickerMetrics fs12 = PickerMetrics.solve(rt, 1920, 1080, 12, PickerDensityPreference.AUTO, 2);
         // 常驻信息条口径（D-P5-2）：比规格脚本的「hover 才占位」模型低一行量级，
         // 但三档仍全部 ≥ 现状 75（支配性见 a4AutoDominatesLegacyAtEveryViewportAndFontTier）。
-        assertEquals("fs=12 auto 可见项（常驻信息条口径）", 100, fs12.visibleItems());
+        // 加入标签可读宽度预算（LABEL_BUDGET_EM）后的快照：cellW 由标签预算主导，列数下降，
+        // 可见项从 100/80/95 变为 84/88/77 —— 三档仍全部 >= 现状 75（下方红线断言）。
+        assertEquals("fs=12 auto 可见项（常驻信息条口径）", 84, fs12.visibleItems());
         PickerMetrics fs15 = PickerMetrics.solve(rt, 1920, 1080, 15, PickerDensityPreference.AUTO, 2);
-        assertEquals("fs=15(125%) auto 可见项", 80, fs15.visibleItems());
+        assertEquals("fs=15(125%) auto 可见项", 88, fs15.visibleItems());
         PickerMetrics fs18 = PickerMetrics.solve(rt, 1920, 1080, 18, PickerDensityPreference.AUTO, 2);
-        assertEquals("fs=18(150%) auto 可见项", 95, fs18.visibleItems());
+        assertEquals("fs=18(150%) auto 可见项", 77, fs18.visibleItems());
         for (PickerMetrics m : new PickerMetrics[] {fs12, fs15, fs18}) {
             assertTrue("A2/A3 1080p 可见项必须 >= 现状 75，实际 " + m.visibleItems(),
                     m.visibleItems() >= 75);
@@ -96,22 +98,26 @@ public class PickerMetricsTest {
     @Test
     public void a2AutoAt1080pMatchesSpecDetail() {
         PickerMetrics m = PickerMetrics.solve(rt, 1920, 1080, 12, PickerDensityPreference.AUTO, 2);
-        assertEquals("面板宽 1344", 1344, m.panel().widthPx());
-        assertEquals("面板高 756", 756, m.panel().heightPx());
-        assertEquals("结果区宽 1116", 1116, m.panel().listWidthPx());
-        assertEquals("结果区高 396（420 - 信息条 24）", 396, m.panel().listHeightPx());
+        assertEquals("面板宽 1498（比例阶梯升到 78% 以吸收标签预算的列数代价）", 1498, m.panel().widthPx());
+        assertEquals("面板高 842", 842, m.panel().heightPx());
+        assertEquals("结果区宽 1270", 1270, m.panel().listWidthPx());
+        assertEquals("结果区高 482", 482, m.panel().listHeightPx());
         assertEquals("信息条高 24", 24, m.panel().infoBarHeightPx());
         assertEquals("顶栏高 44", 44, m.panel().headerHeightPx());
         assertEquals("导航宽 188", 188, m.panel().navWidthPx());
-        assertEquals("生效比例 70%", 70, m.panel().ratioPercent());
-        assertEquals("列数 20", 20, m.grid().columns());
-        assertEquals("可视行数 5", 5, m.visibleRows());
-        assertEquals("cellW 48", 48, m.grid().cellWidthPx());
-        assertEquals("trackH 65", 65, m.grid().trackHeightPx());
-        assertEquals("stride 71", 71, m.grid().stridePx());
-        assertEquals("icon 40", 40, m.grid().iconSidePx());
+        assertEquals("生效比例 78%", 78, m.panel().ratioPercent());
+        assertEquals("列数 12", 12, m.grid().columns());
+        assertEquals("可视行数 7", 7, m.visibleRows());
+        // cellW = 标签可读宽度预算主导（2*pad + round(fs*7.5) = 8 + 90 = 98 > icon+2*pad = 48）。
+        assertEquals("cellW 98", 98, m.grid().cellWidthPx());
+        assertEquals("标签预算 98", 98, m.grid().labelBudgetPx());
+        assertEquals("标签净宽 90（= cellW - 2*pad）", 90,
+                m.grid().cellWidthPx() - 2 * m.grid().paddingPx());
+        assertEquals("trackH 63", 63, m.grid().trackHeightPx());
+        assertEquals("stride 69", 69, m.grid().stridePx());
+        assertEquals("icon 38（auto 阶梯下调一档 k 保可见量）", 38, m.grid().iconSidePx());
         assertEquals("gap 6", 6, m.grid().gapY());
-        assertEquals("k=1.00", 100, m.iconScalePercent());
+        assertEquals("k=95", 95, m.iconScalePercent());
         assertEquals("密度档 standard", PickerDensity.STANDARD, m.density());
     }
 
@@ -140,12 +146,13 @@ public class PickerMetricsTest {
 
     @Test
     public void a4ThinnestMarginMatchesSpec() {
-        // 规格 §1.5.2「最薄裕度 +4」：1366x768 / 字号 150% / 现状 20 -> P5 24。
+        // 最薄裕度点：1366x768 / 字号 150% / 现状 20。加入标签预算后该点只余 +1 裕度
+        // （标签宽度优先于密度，预算一直给到贴线为止）—— 红线仍是"具支配性"，只是余量变薄。
         int baseline = PickerMetrics.legacyBaselineItems(1366, 768);
         PickerMetrics m = PickerMetrics.solve(rt, 1366, 768, 18, PickerDensityPreference.AUTO, 2);
         assertEquals(20, baseline);
-        assertEquals(24, m.visibleItems());
-        assertEquals("最薄裕度 +4", 4, m.visibleItems() - baseline);
+        assertEquals(21, m.visibleItems());
+        assertEquals("最薄裕度 +1（仍 >= 0）", 1, m.visibleItems() - baseline);
     }
 
     // ==================== A5 图标与不变量 ====================
@@ -208,9 +215,12 @@ public class PickerMetricsTest {
 
     @Test
     public void a6ThreeTiersMatchSpecAtKeyViewports() {
-        assertTier(1280, 720, 24, 30, 24);
-        assertTier(1920, 1080, 100, 144, 90);
-        assertTier(3840, 2160, 720, 954, 546);
+        // 标签可读宽度预算统一（不随档位变）后，档位差异体现在图标边长与轨道高，不再体现在列数上：
+        // 列数由同一份 cellW 主导 ⇒ 1080p 及以下三档列数相同、可见项相同；4K 下图标/步长差异
+        // 才重新分出可见项差。三档各自都仍 >= 现状基线（a7 逐点支配另测）。
+        assertTier(1280, 720, 12, 12, 12);
+        assertTier(1920, 1080, 84, 84, 84);
+        assertTier(3840, 2160, 520, 546, 532);
     }
 
     private void assertTier(int w, int h, int standard, int compact, int roomy) {
@@ -231,7 +241,7 @@ public class PickerMetricsTest {
         for (int[] viewport : VIEWPORTS) {
             int baseline = PickerMetrics.legacyBaselineItems(viewport[0], viewport[1]);
             for (PickerDensityPreference tier : tiers) {
-                int fs = PickerMetrics.fontSizeFor(100, tier.explicitDensity(PickerDensity.STANDARD));
+                int fs = tier.explicitDensity(PickerDensity.STANDARD).baseFontPx();
                 int visible = PickerMetrics.solve(rt, viewport[0], viewport[1], fs, tier, 2)
                         .visibleItems();
                 if (visible < baseline) {
@@ -242,12 +252,16 @@ public class PickerMetricsTest {
             }
         }
         assertEquals("A6/A7 三档必须全部支配现状：" + failures, 0, failures.length());
-        // 档位基准字号：紧凑 11 / 标准 12 / 宽松 13（P5 §1.3）。
-        assertEquals(11, PickerMetrics.fontSizeFor(100, PickerDensity.COMPACT));
-        assertEquals(12, PickerMetrics.fontSizeFor(100, PickerDensity.STANDARD));
-        assertEquals(13, PickerMetrics.fontSizeFor(100, PickerDensity.ROOMY));
-        assertEquals("字号 125% 标准档 = 15", 15, PickerMetrics.fontSizeFor(125, PickerDensity.STANDARD));
-        assertEquals("字号 150% 标准档 = 18", 18, PickerMetrics.fontSizeFor(150, PickerDensity.STANDARD));
+        // 档位基准字号：紧凑 11 / 标准 12 / 宽松 13（P5 §1.3）——现语义是"宿主未声明字号时的
+        // 面板默认声明值"，生效字号 = 声明值 × 用户倍率（与 SceneNode.effectiveFontSize() 同式）。
+        assertEquals(11, PickerDensity.COMPACT.baseFontPx());
+        assertEquals(12, PickerDensity.STANDARD.baseFontPx());
+        assertEquals(13, PickerDensity.ROOMY.baseFontPx());
+        assertEquals("默认面板声明字号 = 标准档基准", 12, PickerMetrics.defaultPanelDeclaredFontPx());
+        assertEquals("字号 125% 标准档 = 15", 15,
+                PickerMetrics.fontSizeFor(PickerDensity.STANDARD.baseFontPx(), 125));
+        assertEquals("字号 150% 标准档 = 18", 18,
+                PickerMetrics.fontSizeFor(PickerDensity.STANDARD.baseFontPx(), 150));
     }
 
     @Test
@@ -277,14 +291,70 @@ public class PickerMetricsTest {
         }
     }
 
+    // ==================== 标签可读宽度预算（本次改动的主守卫） ====================
+
+    /**
+     * 标签槽必须容得下"可读的"全角字符数，且预算生效时 cellW 不得把它压回去。
+     *
+     * <p>这条守卫直面用户症状「每个物品只显示第一个字」：只要 {@code labelBudgetPx > 0}
+     * （预算未被降级阶梯让光），槽宽 {@code cellW - 2*pad} 就必须等于预算净宽，且减去省略号后
+     * 仍放得下 <b>至少 2 个全角字符</b>（预算下限 3.0em = 3 个字宽，留 0.75em 给 "..."）。
+     * 预算为 0 时表示该观测点连红线都难保、求解器已按阶梯让路（退回既有口径），不做断言。</p>
+     */
+    @Test
+    public void labelBudgetNeverLetsCellWidthStarveTheLabel() {
+        int checked = 0;
+        for (int[] viewport : VIEWPORTS) {
+            for (int fs : FONT_SIZES) {
+                PickerMetrics m = PickerMetrics.solve(rt, viewport[0], viewport[1], fs,
+                        PickerDensityPreference.AUTO, 2);
+                GridMetrics g = m.grid();
+                if (g.labelBudgetPx() <= 0) {
+                    continue;
+                }
+                checked++;
+                String tag = viewport[0] + "x" + viewport[1] + "/fs=" + fs;
+                assertTrue(tag + " cellW 必须 >= 标签预算",
+                        g.cellWidthPx() >= g.labelBudgetPx());
+                int slot = g.cellWidthPx() - 2 * g.paddingPx();
+                assertEquals(tag + " 槽宽 = 预算净宽", g.labelBudgetPx() - 2 * g.paddingPx(), slot);
+                int ellipsis = rt.measureTextWidth("...", fs);
+                assertTrue(tag + " 槽内必须放得下 >=2 个全角字符 + 省略号（槽=" + slot
+                                + " 省略号=" + ellipsis + " fs=" + fs + "）",
+                        slot - ellipsis >= 2 * fs);
+            }
+        }
+        assertTrue("至少要有观测点真正吃到了标签预算（否则本守卫是空断言）", checked > 0);
+    }
+
+    /**
+     * 字号真值同源：生效字号 = 面板声明字号 × 用户倍率（与 {@code SceneNode.effectiveFontSize()} 同式）。
+     *
+     * <p>钉住"派生链消费的字号就是渲染链画出来的字号"：宿主显式声明多少，面板就派多少；
+     * 未声明时由 {@link PickerMetrics#defaultPanelDeclaredFontPx()} 给默认值。</p>
+     */
+    @Test
+    public void fontSizeFollowsDeclaredValueAndScaleOnly() {
+        assertEquals("声明 12 × 100% = 12", 12, PickerMetrics.fontSizeFor(12, 100));
+        assertEquals("声明 12 × 125% = 15", 15, PickerMetrics.fontSizeFor(12, 125));
+        assertEquals("声明 12 × 150% = 18", 18, PickerMetrics.fontSizeFor(12, 150));
+        assertEquals("宿主声明 20 时面板跟随 20（不是档位基准 12）",
+                20, PickerMetrics.fontSizeFor(20, 100));
+        assertEquals("夹取到字号下限 11", 11, PickerMetrics.fontSizeFor(12, 90));
+        assertEquals("默认面板声明字号 = 标准档基准", PickerDensity.STANDARD.baseFontPx(),
+                PickerMetrics.defaultPanelDeclaredFontPx());
+    }
+
     // ==================== A8 小盒降级 ====================
 
     @Test
     public void a8SmallBoxDegradesAndStillDominates() {
         PickerMetrics box960 = PickerMetrics.solve(rt, 960, 540, 12, PickerDensityPreference.AUTO, 2);
-        assertEquals("960x540 小盒可见项（规格 §1.5.3 = 102）", 102, box960.visibleItems());
+        // 小盒的"支配现状"基线为 0（现状几何在小盒下不成立，见 legacyBaselineItems），故标签预算
+        // 可以在小盒里放开用：可见项 102 -> 42 是格子变宽的代价，换取标签槽 90px（约 6 个全角字）。
+        assertEquals("960x540 小盒可见项", 42, box960.visibleItems());
         PickerMetrics box640 = PickerMetrics.solve(rt, 640, 360, 12, PickerDensityPreference.AUTO, 2);
-        assertEquals("640x360 小盒可见项（规格 §1.5.3 = 30）", 30, box640.visibleItems());
+        assertEquals("640x360 小盒可见项", 12, box640.visibleItems());
         for (PickerMetrics m : new PickerMetrics[] {box960, box640}) {
             assertTrue("小盒必须标记降级态", m.panel().smallBox());
             assertEquals("小盒面板比例 = 100%", 100, m.panel().ratioPercent());
@@ -308,9 +378,11 @@ public class PickerMetricsTest {
 
     @Test
     public void fontScalePercentDrivesEveryGeometryComponent() {
-        PickerMetrics base = PickerMetrics.derive(rt, 1920, 1080, 100,
+        PickerMetrics base = PickerMetrics.derive(rt, 1920, 1080,
+                PickerMetrics.fontSizeFor(PickerMetrics.defaultPanelDeclaredFontPx(), 100),
                 PickerDensityPreference.AUTO, 2);
-        PickerMetrics scaled = PickerMetrics.derive(rt, 1920, 1080, 150,
+        PickerMetrics scaled = PickerMetrics.derive(rt, 1920, 1080,
+                PickerMetrics.fontSizeFor(PickerMetrics.defaultPanelDeclaredFontPx(), 150),
                 PickerDensityPreference.AUTO, 2);
         assertEquals("100% -> fs 12", 12, base.fontSizePx());
         assertEquals("150% -> fs 18", 18, scaled.fontSizePx());
@@ -381,13 +453,19 @@ public class PickerMetricsTest {
                 PickerDensityPreference.COMPACT, 2);
         PickerMetrics roomy = PickerMetrics.solve(rt, 1920, 1080, 12,
                 PickerDensityPreference.ROOMY, 2);
+        // 档位语义 = 图标密度（标签预算已统一到 LABEL_BUDGET_EM，不再随档位变）：紧凑档图标最小、
+        // 宽松档图标最大即为可区分；可见项数在 1080p 下三档相同（同一 cellW ⇒ 同列数），
+        // 故"可见量递减"不再是档位的判据，改为断言"两档各自仍支配现状"。
         assertEquals("紧凑档图标 32", 32, compact.grid().iconSidePx());
-        assertEquals("宽松档图标 48", 48, roomy.grid().iconSidePx());
-        assertTrue("紧凑档可见量 > 宽松档", compact.visibleItems() > roomy.visibleItems());
-        assertEquals("紧凑档字号基准 11", 11, PickerMetrics
-                .derive(rt, 1920, 1080, 100, PickerDensityPreference.COMPACT, 2).fontSizePx());
-        assertEquals("宽松档字号基准 13", 13, PickerMetrics
-                .derive(rt, 1920, 1080, 100, PickerDensityPreference.ROOMY, 2).fontSizePx());
+        assertTrue("宽松档图标必须大于紧凑档（实际 " + roomy.grid().iconSidePx() + "）",
+                roomy.grid().iconSidePx() > compact.grid().iconSidePx());
+        int baseline1080 = PickerMetrics.legacyBaselineItems(1920, 1080);
+        assertTrue("紧凑档仍支配现状", compact.visibleItems() >= baseline1080);
+        assertTrue("宽松档仍支配现状", roomy.visibleItems() >= baseline1080);
+        assertEquals("紧凑档字号基准 11", 11,
+                PickerMetrics.fontSizeFor(PickerDensity.COMPACT.baseFontPx(), 100));
+        assertEquals("宽松档字号基准 13", 13,
+                PickerMetrics.fontSizeFor(PickerDensity.ROOMY.baseFontPx(), 100));
     }
 
     @Test
@@ -457,16 +535,31 @@ public class PickerMetricsTest {
     }
 
     /**
-     * 规格脚本度量替身：{@code lineHeight(fs) = round(fs*1.25)}、4 字符样本宽 {@code round(fs*3.2)}。
+     * 规格脚本度量替身：{@code lineHeight(fs) = round(fs*1.25)}、4 字符样本宽 {@code round(fs*3.2)}，
+     * <b>外加全角（CJK）宽度模型</b>。
      *
-     * <p>这两个式子是 {@code temp/p5_density_spec.py} 的验算模型（脚本自述"仅验算用；
+     * <p>前两个式子是 {@code temp/p5_density_spec.py} 的验算模型（脚本自述"仅验算用；
      * 实现取 rt.lineHeight(fs)"）。用同一模型才能与规格表的数字逐值对拍；
      * 真实字体的度量由生产 {@link club.heiqi.uilib.ui.scene.TextMeasureServiceSceneAdapter} 提供。</p>
+     *
+     * <p><b>为什么必须补 CJK 宽度</b>：原实现按 {@code length} 一刀切（{@code len>=4 ⇒ fs*3.2}），
+     * 与字符内容无关 —— 那样"标签可读宽度预算按全角字数表达"的任何 bug 在 Java 侧都不可观测
+     * （把样本换成中文而长度不变时测试全绿、真机 cellW 翻倍）。CJK 码点按 {@code 1.0*fs}
+     * （全角约等于字号）、其余按 {@code 0.5*fs} 计，使"槽里放得下几个汉字"成为可断言事实。</p>
      */
     private static final class SpecMeasurer implements SceneTextMeasurer {
         @Override
         public int measureWidth(String text, int fontSizePx) {
             int len = text == null ? 0 : text.length();
+            int wide = 0;
+            for (int i = 0; i < len; i++) {
+                if (text.charAt(i) > 0x2E80) {
+                    wide++;
+                }
+            }
+            if (wide > 0) {
+                return GridMetrics.roundHalfEven(fontSizePx * (wide + (len - wide) * 0.5));
+            }
             if (len >= 4) {
                 return GridMetrics.roundHalfEven(fontSizePx * 3.2);
             }
