@@ -131,8 +131,13 @@ public final class ScenePickerPanel {
     /** 面板可视阶段（观察用）。 */
     public enum State { CLOSED, MAIN, VARIANTS }
 
-    /** portal 生命周期之间可回放的焦点意图。 */
-    private enum FocusIntent { NONE, SEARCH_INPUT, GRID, VARIANTS }
+    /**
+     * portal 生命周期之间可回放的焦点意图。
+     *
+     * <p>包内可见（非 public API）：仅为了包内回归测试能直接驱动
+     * {@link #bindFocusIntent} 的消费语义（意图早于目标就绪的时序缺口无法从公开入口确定复现）。</p>
+     */
+    enum FocusIntent { NONE, SEARCH_INPUT, GRID, VARIANTS }
 
     private static final int PANEL_PADDING = SceneChromeTokens.PAD_MD;
     /** 搜索输入框宽度占顶栏比例（%）：比例常量收口在 {@link PickerDensityTokens}（P5 §4.3 条 2）。 */
@@ -805,9 +810,12 @@ public final class ScenePickerPanel {
                 ? props.currentCategoryKey() : categoryInternal;
         Consumer<String> categoryWriter = props.currentCategoryKey() != null
                 ? props.onCategoryChange() : categoryInternal::set;
-        SceneNode[] searchFocusTarget = new SceneNode[1];
-        SceneNode[] gridFocusTarget = new SceneNode[1];
-        SceneNode[] variantFocusTarget = new SceneNode[1];
+        // 焦点目标用 Signal 而非单元素数组：焦点意图的消费条件是「意图 ≠ NONE」与「目标已就绪」
+        // 的<b>双依赖</b>，目标晚到必须能自动补一次消费（数组没有变更通道，绑定只认意图变化 ⇒
+        // 意图早于内容构建时会永久丢焦点）。见 bindFocusIntent。
+        Signal<SceneNode> searchFocusTarget = Signal.create(null);
+        Signal<SceneNode> gridFocusTarget = Signal.create(null);
+        Signal<SceneNode> variantFocusTarget = Signal.create(null);
         SceneNode[] gridViewportHolder = new SceneNode[1];
         // 结果列表窗口模型只读观察面：内容构建时登记列表的 windowModel 信号，关闭时置空。
         AtomicReference<ReadableSignal<SceneGridWindow.WindowModel>> windowModelHolder =
@@ -834,9 +842,9 @@ public final class ScenePickerPanel {
                 activeCandidate.set(null);
                 gridHighlight.set(Integer.valueOf(-1));
                 focusIntent.set(FocusIntent.NONE);
-                searchFocusTarget[0] = null;
-                gridFocusTarget[0] = null;
-                variantFocusTarget[0] = null;
+                searchFocusTarget.set(null);
+                gridFocusTarget.set(null);
+                variantFocusTarget.set(null);
                 gridViewportHolder[0] = null;
                 windowModelHolder.set(null);
                 // D4 反馈态随关闭释放（幂等：无反馈时两次同值写入在帧末去重，零成本）。
@@ -933,7 +941,7 @@ public final class ScenePickerPanel {
         bindFocusIntent(rt, focusIntent, searchFocusTarget, gridFocusTarget, variantFocusTarget);
 
         return new Result(root, openInternal, open, variantsOpen,
-                () -> searchFocusTarget[0], () -> gridViewportHolder[0], categoryKey, gridHighlight,
+                () -> searchFocusTarget.get(), () -> gridViewportHolder[0], categoryKey, gridHighlight,
                 mode, selectedKeys, activeCandidate, () -> {
                     ReadableSignal<SceneGridWindow.WindowModel> signal = windowModelHolder.get();
                     return signal == null ? null : signal.get();
@@ -962,8 +970,8 @@ public final class ScenePickerPanel {
                                        Signal<Boolean> addingMember,
                                        Signal<Boolean> editingMember,
                                        Signal<FocusIntent> focusIntent,
-                                       SceneNode[] searchFocusTarget,
-                                       SceneNode[] gridFocusTarget,
+                                       Signal<SceneNode> searchFocusTarget,
+                                       Signal<SceneNode> gridFocusTarget,
                                        SceneNode[] gridViewportHolder,
                                        AtomicReference<ReadableSignal<SceneGridWindow.WindowModel>> windowModelHolder,
                                        Signal<Boolean> variantsOpen,
@@ -1066,7 +1074,7 @@ public final class ScenePickerPanel {
     /** 顶栏：标题 + 搜索输入 + 分类维度分段 + 结果统计。 */
     private static SceneNode topBar(SceneRuntime rt, Props props, Feed feed,
                                     Signal<Integer> gridHighlight,
-                                    SceneNode[] searchFocusTarget,
+                                    Signal<SceneNode> searchFocusTarget,
                                     ReadableSignal<PickerMetrics> metrics,
                                     boolean viewportSizing,
                                     Runnable closeRequest,
@@ -1115,7 +1123,7 @@ public final class ScenePickerPanel {
             gridHighlight.set(Integer.valueOf(0));
             focusIntent.set(FocusIntent.GRID);
         });
-        searchFocusTarget[0] = input;
+        searchFocusTarget.set(input);
         bar.appendChild(input);
 
         if (!props.panelPresentation().categoryDimensions().isEmpty() && props.dimensionIndex() != null) {
@@ -1190,7 +1198,7 @@ public final class ScenePickerPanel {
                                           Feed feed,
                                           ReadableSignal<String> categoryKey,
                                           Signal<Integer> gridHighlight,
-                                          SceneNode[] gridFocusTarget,
+                                          Signal<SceneNode> gridFocusTarget,
                                           SceneNode[] gridViewportHolder,
                                           AtomicReference<ReadableSignal<SceneGridWindow.WindowModel>> windowModelHolder,
                                           Signal<SceneVirtualGrid.Item> hoveredItem,
@@ -1324,7 +1332,7 @@ public final class ScenePickerPanel {
         // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
         //（scrollable 子节点不能走 flexGrow 分配，模块内已对 root 设置）。
         gridViewportHolder[0] = list.viewport();
-        gridFocusTarget[0] = list.viewport();
+        gridFocusTarget.set(list.viewport());
         rt.focusable(list.viewport(), props.enabled());
         center.appendChild(list.root());
         windowModelHolder.set(list.windowModel());
@@ -1895,15 +1903,54 @@ public final class ScenePickerPanel {
         props.onBeginAdd().run();
     }
 
-    private static void bindFocusIntent(SceneRuntime rt, Signal<FocusIntent> intent,
-                                        SceneNode[] search, SceneNode[] grid, SceneNode[] variants) {
-        rt.bind(intent, value -> {
-            SceneNode target = null;
-            if (value == FocusIntent.SEARCH_INPUT) target = search[0];
-            else if (value == FocusIntent.GRID) target = grid[0];
-            else if (value == FocusIntent.VARIANTS) target = variants[0];
-            if (target != null && rt.requestFocus(target)) intent.set(FocusIntent.NONE);
-        });
+    /**
+     * 焦点意图消费（面板内单点，不暴露公开 API）。
+     *
+     * <h3>双依赖消费（时序缺口加固）</h3>
+     * <p>消费条件是两件事同时成立：<b>意图 ≠ NONE</b> 且 <b>该意图对应的目标已就绪</b>。
+     * 二者都进同一次 {@code Computed} 派生，故任一变化都会重估：目标晚到（内容构建晚于打开边沿）
+     * 时自动补一次消费，不再依赖「意图变化」这一个触发点。</p>
+     *
+     * <p>历史形态（单元素 {@code SceneNode[]} + 只绑意图）存在永久丢焦缺口：意图置位时目标仍为
+     * null ⇒ 既不消费也不清 NONE，此后目标写入不触发任何 effect ⇒ 本次打开永久没有焦点。
+     * 本 harness 时序下内容构建与意图写在同一帧 flush 内（顺序恰好有利）而未复现，但没有防御。</p>
+     *
+     * <p>无副作用扩展：意图为 NONE 时派生恒为 null（与目标就绪与否无关），故目标信号变化不会
+     * 引发任何聚焦行为；只有"待消费意图 + 目标就绪"才写焦点。</p>
+     *
+     * @param rt       场景运行时
+     * @param intent   焦点意图信号（消费后置回 NONE）
+     * @param search   搜索输入框目标（就绪信号）
+     * @param grid     结果网格 viewport 目标（就绪信号）
+     * @param variants 变体浮层目标（就绪信号；当前无写入者，保持既有"不产生焦点"语义）
+     */
+    static void bindFocusIntent(SceneRuntime rt, Signal<FocusIntent> intent,
+                                ReadableSignal<SceneNode> search,
+                                ReadableSignal<SceneNode> grid,
+                                ReadableSignal<SceneNode> variants) {
+        rt.bindComputed(() -> resolveFocusTarget(intent.get(), search.get(), grid.get(), variants.get()),
+                target -> {
+                    if (target != null && rt.requestFocus(target)) {
+                        intent.set(FocusIntent.NONE);
+                    }
+                });
+    }
+
+    /**
+     * 把「意图 + 三个目标就绪信号」解析为本次应聚焦的节点。
+     *
+     * @param value    当前焦点意图
+     * @param search   搜索输入框目标（可能未就绪 = null）
+     * @param grid     结果网格 viewport 目标（可能未就绪 = null）
+     * @param variants 变体浮层目标（可能未就绪 = null）
+     * @return 待聚焦节点；意图为 NONE 或目标未就绪时返回 null（不消费意图，等目标到达再估）
+     */
+    private static SceneNode resolveFocusTarget(FocusIntent value, SceneNode search,
+                                                SceneNode grid, SceneNode variants) {
+        if (value == FocusIntent.SEARCH_INPUT) return search;
+        if (value == FocusIntent.GRID) return grid;
+        if (value == FocusIntent.VARIANTS) return variants;
+        return null;
     }
 
     // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================

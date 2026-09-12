@@ -20,6 +20,10 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyAction;
 import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
+import club.heiqi.uilib.util.LogThrottle;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * LWJGL 输入源 —— 方案 C 当前态差分，implements {@link PlatformInputSource}。
@@ -36,11 +40,54 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
  *
  * <h3>键盘与文本</h3>
  * <p>KEY_DOWN/TEXT 复用宿主回调；已投递 Enter/Space 的 KEY_UP 由非破坏性当前态补齐。</p>
+ *
+ * <h3>真机文本通道诊断（零行为变更）</h3>
+ * <p>external 模式（lwjgl3ify {@code onTextEvent} 接管）不在本仓自动化测试覆盖内
+ * （run 任务 classpath 已移除 lwjgl3ify），真机"输入框打不进字"只能靠日志定案。本类在
+ * <b>不改输入行为</b>的前提下补两条互相印证的观测：</p>
+ * <ol>
+ *   <li>{@link #pushKeyTyped} 在 external 模式下按契约吞掉字符时告警（限流）——暴露
+ *       「external=true 但 lwjgl3ify 事件不来」；</li>
+ *   <li>{@link #pushText} 收到外部文本时 info（限流）——证明桥的另一端真的通了。</li>
+ * </ol>
+ * <p>吞字计数达到 {@link #EXTERNAL_TEXT_STARVATION_CHARS} 且外部文本仍为 0 条时，追加一条
+ * "致命组合"告警（每轮 external 会话至多一条）。</p>
  */
 public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputSource,
         PointerEventInputSource, CursorBackendProvider, ClipboardBackendProvider {
 
     private static final int MOUSE_BUTTON_COUNT = 5; // LEFT=0, RIGHT=1, MIDDLE=2, BUTTON_4=3, BUTTON_5=4
+
+    /** 真机文本通道诊断日志（与 McScreenBridge 的状态日志同一前缀，便于一次 grep 全链路）。 */
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/LwjglInputSource");
+
+    /**
+     * 「external 模式吞字符」告警限流：每 2 秒窗口最多 2 条。
+     *
+     * <p>连打时首两条立刻可见，之后每个窗口补一条并带上被折叠次数——故障现场不静默，
+     * 正常路径也不会随击键数线性刷屏。上限 = 2 条 / 2s = 1 条/s。</p>
+     */
+    private final LogThrottle externalSwallowThrottle = new LogThrottle(2, 2000);
+
+    /**
+     * 「收到外部文本」日志限流：每 5 秒窗口最多 1 条。
+     *
+     * <p>外部文本到达是链路正锚（证明 onTextEvent → 桥 → pushText 通了），必须默认可见，
+     * 但不必逐条打印：上限 = 1 条 / 5s，每条自带累计条数与折叠次数。</p>
+     */
+    private final LogThrottle externalTextArrivalThrottle = new LogThrottle(1, 5000);
+
+    /** 致命组合阈值：external 会话内被吞字符达到此数且外部文本仍是 0 条即上报。 */
+    private static final long EXTERNAL_TEXT_STARVATION_CHARS = 20L;
+
+    /** 本轮 external 会话被按契约吞掉的字符数（模式切换时清零，不参与任何输入行为）。 */
+    private long externalSwallowedChars;
+
+    /** 本轮 external 会话收到的外部文本条数（模式切换时清零，不参与任何输入行为）。 */
+    private long externalReceivedTexts;
+
+    /** 本轮 external 会话的「吞字但零文本到达」致命组合是否已上报（至多一条）。 */
+    private boolean externalStarvationReported;
 
     private final PlatformStateReader reader;
     private final InputFrameBuilder builder;
@@ -284,6 +331,8 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      * @param timeNanos     事件时间戳（纳秒），通常传 {@code System.nanoTime()}
      */
     public void pushKeyTyped(char typedChar, int nativeKeyCode, long timeNanos) {
+        // 真机诊断挂点：external 模式下此处既不产 KEY（字符键减噪）也不产 TEXT，
+        // 是「按键有反应但字符不出现」的唯一现场，必须留下可判读的痕迹。
         // １）native→SceneKey 映射
         SceneKey key = LwjglKeyMapper.map(nativeKeyCode);
 
@@ -310,7 +359,12 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
 
         // ４）TEXT 事件分流
         if (externalTextMode) {
-            // external 模式：文本完全交给 lwjgl3ify onTextEvent → pushText，此处不产 TEXT
+            // external 模式：文本完全交给 lwjgl3ify onTextEvent → pushText，此处不产 TEXT。
+            // 真机诊断：SPACE 仍产 KEY（按钮激活语义），不算"吞字符"，故排除；
+            // 其余字符键在这里既无 KEY 也无 TEXT，只可能是外部桥来补。
+            if (isCharKey && key != SceneKey.SPACE) {
+                reportExternalSwallowedChar(typedChar, nativeKeyCode, key, timeNanos);
+            }
             return;
         }
 
@@ -349,8 +403,65 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      */
     public void pushText(String text, long timeNanos) {
         if (text != null && !text.isEmpty()) {
+            externalReceivedTexts++;
+            if (externalTextArrivalThrottle.allow(timeNanos)) {
+                // 只记录长度与计数，不记录用户输入内容（配置 GUI 的搜索文本无诊断价值）。
+                LOG.info("[文本通道] 收到 lwjgl3ify 外部文本: len={}, external={}, 本轮累计 {} 条（本窗口折叠 {} 次）"
+                                + " ⇒ 桥的外侧（onTextEvent → pushText）通畅",
+                        Integer.valueOf(text.length()), Boolean.valueOf(externalTextMode),
+                        Long.valueOf(externalReceivedTexts),
+                        Long.valueOf(externalTextArrivalThrottle.suppressedSinceLastLog()));
+            }
             builder.push(RawInputEvent.ofText(text, timeNanos));
         }
+    }
+
+    /**
+     * external 模式下字符被按契约吞掉的限流告警（真机诊断，零行为变更）。
+     *
+     * <p>触发条件：{@code externalTextMode == true} 且本次 {@code pushKeyTyped} 收到可打印字符
+     * （或 surrogate 半体）且语义键不是 SPACE —— 正是"既不产 KEY 也不产 TEXT"的那一类。
+     * 频率上限：{@code externalSwallowThrottle} = 2 条 / 2s。</p>
+     *
+     * <p>附带"致命组合"上报：本轮 external 会话吞字 ≥ {@value #EXTERNAL_TEXT_STARVATION_CHARS}
+     * 且外部文本 0 条 ⇒ 说明 lwjgl3ify 的 onTextEvent 根本没投递，字符不可能进入任何控件
+     * （每轮会话至多一条，模式切换清零后重新计数）。</p>
+     *
+     * @param typedChar     MC keyTyped 传来的字符
+     * @param nativeKeyCode LWJGL 原生键码
+     * @param key           映射后的语义键
+     * @param timeNanos     事件时间戳（限流窗口基准）
+     */
+    private void reportExternalSwallowedChar(char typedChar, int nativeKeyCode, SceneKey key, long timeNanos) {
+        externalSwallowedChars++;
+        if (externalSwallowThrottle.allow(timeNanos)) {
+            LOG.warn("[文本通道] external 模式吞字符（不产 TEXT 也不产 KEY）: typedChar={} (U+{}), nativeKey={}, SceneKey={};"
+                            + " 本轮已吞 {} 个字符、收到外部文本 {} 条（本窗口折叠 {} 次）"
+                            + " —— 若整段操作没有任何「收到 lwjgl3ify 外部文本」日志，即 onTextEvent 未投递",
+                    describeChar(typedChar), Integer.toHexString(typedChar),
+                    Integer.valueOf(nativeKeyCode), key,
+                    Long.valueOf(externalSwallowedChars), Long.valueOf(externalReceivedTexts),
+                    Long.valueOf(externalSwallowThrottle.suppressedSinceLastLog()));
+        }
+        if (!externalStarvationReported && externalReceivedTexts == 0L
+                && externalSwallowedChars >= EXTERNAL_TEXT_STARVATION_CHARS) {
+            externalStarvationReported = true;
+            LOG.warn("[文本通道] 致命组合: external=true 已吞掉 {} 个字符，lwjgl3ify onTextEvent 一次都没到达"
+                            + "（pushText 0 条）⇒ 文本输入链路断裂，任何输入框都不可能收到字符；"
+                            + "请对照同一次界面的文本桥注册日志与 initGui 状态日志判断监听器是否真的装上",
+                    Long.valueOf(externalSwallowedChars));
+        }
+    }
+
+    /** 字符的可读描述（控制字符与代理项半体不打进日志正文，避免日志里出现不可读字形）。 */
+    private static String describeChar(char typedChar) {
+        if (Character.isISOControl(typedChar)) {
+            return "(控制字符)";
+        }
+        if (Character.isSurrogate(typedChar)) {
+            return "(代理项半体)";
+        }
+        return "'" + typedChar + "'";
     }
 
     /**
@@ -362,6 +473,13 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      * @param external true=外部 onTextEvent 接管文本；false=降级 char 路径
      */
     public void setExternalTextMode(boolean external) {
+        if (this.externalTextMode != external) {
+            // 新一轮 external 会话：清零上一轮的吞字/到达计数与"致命组合"上报标记，
+            // 使每次真机操作各自可判（纯诊断状态，不参与任何输入行为）。
+            externalSwallowedChars = 0L;
+            externalReceivedTexts = 0L;
+            externalStarvationReported = false;
+        }
         this.externalTextMode = external;
         this.pendingHighSurrogate = 0;
     }

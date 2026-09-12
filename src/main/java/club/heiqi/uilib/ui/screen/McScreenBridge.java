@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.screen;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
@@ -70,6 +71,57 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
     /** 文本桥注册状态与宿主 external mode 的生命周期协调器。 */
     private final SceneTextBridgeLifecycle textBridgeLifecycle = new SceneTextBridgeLifecycle();
 
+    /**
+     * lwjgl3ify 文本桥可用性探测结果（类加载期一次；{@code isAvailable} 只做 {@code initialize=false}
+     * 的反射探测，无副作用、不触发类初始化）。
+     */
+    private static final boolean LWJGL3IFY_TEXT_BRIDGE_AVAILABLE = SceneLwjgl3ifyTextBridge.isAvailable();
+
+    /**
+     * 上一次上报的文本通道状态签名：首开必报一条，之后仅在状态变化时报。
+     *
+     * <p>与 {@link #logFirstFrameDiagnostics} 同属「常开一次性真机诊断」：真机复现输入类故障时
+     * 必须能从日志读出走的是 external（lwjgl3ify 文本桥）还是 char 降级路径，而重复开合界面 /
+     * 窗口 resize 会反复触发 initGui，故用签名去重保证正常路径不刷屏。</p>
+     */
+    private static final AtomicReference<String> LAST_TEXT_CHANNEL_SIGNATURE =
+            new AtomicReference<String>();
+
+    /** 文本桥注册/注销窄接口：initGui 与 onGuiClosed 共用同一实例，不再各建一份匿名类。 */
+    private final SceneTextBridgeLifecycle.Registration textBridgeRegistration =
+            new SceneTextBridgeLifecycle.Registration() {
+                @Override
+                public boolean register() {
+                    return textBridge.register();
+                }
+
+                @Override
+                public void unregister() {
+                    textBridge.unregister();
+                }
+            };
+
+    /**
+     * external 文本模式写入口：先记录「实际写入 surface 的值」再转发。
+     *
+     * <p>真机诊断要求「lifecycle 判定」与「输入源实际收到的值」可对照——只报 {@code isActive()}
+     * 无法排除"协调器认为已启用、输入源却没收到 true"这类分裂。记录本身零行为变更。</p>
+     */
+    private final SceneTextBridgeLifecycle.Mode textBridgeMode = new SceneTextBridgeLifecycle.Mode() {
+        @Override
+        public void setExternalTextMode(boolean external) {
+            lastExternalTextModeWrite = Boolean.valueOf(external);
+            externalTextModeWriteCount++;
+            surface.setExternalTextMode(external);
+        }
+    };
+
+    /** 最近一次真正写入 surface 的 external 文本模式值（null = 本实例从未写入）。 */
+    private Boolean lastExternalTextModeWrite;
+
+    /** external 文本模式写入口被调用次数（initGui 幂等重写与关闭复位都计入）。 */
+    private int externalTextModeWriteCount;
+
     /** 当前壳的诊断标签（实际子类简名，区分三个 demo）。 */
     private final String screenLabel;
 
@@ -116,22 +168,56 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
         // 按钮事件改走 MC 回调（事件驱动，不丢边沿），poll 停产 button 边沿避免 double-dispatch。
         surface.setExternalPointerMode(true);
         // 文本桥由通用宿主统一拥有；不可用或注册失败时保持 char 降级路径。
-        textBridgeLifecycle.init(new SceneTextBridgeLifecycle.Registration() {
-            @Override
-            public boolean register() {
-                return textBridge.register();
-            }
+        boolean registered = textBridgeLifecycle.init(textBridgeRegistration, textBridgeMode);
+        logTextChannelState(registered);
+    }
 
-            @Override
-            public void unregister() {
-                textBridge.unregister();
-            }
-        }, new SceneTextBridgeLifecycle.Mode() {
-            @Override
-            public void setExternalTextMode(boolean external) {
-                surface.setExternalTextMode(external);
-            }
-        });
+    /**
+     * 上报文本通道最终状态（真机一次性诊断，零行为变更）。
+     *
+     * <p>一条日志即可回答真机「所有输入框打不进字」时最关键的问句：本次界面走的是 external
+     * 文本桥还是 MC char 降级路径，以及 external 模式是否真的写进了输入源。级别按"是否异常"选：</p>
+     * <ul>
+     *   <li>{@code isActive && 实际写入 true} → info（external 路径生效，正常）；</li>
+     *   <li>lwjgl3ify 不在 classpath（探测 false）→ info（降级路径是正常配置，不是告警）；</li>
+     *   <li>lwjgl3ify 在场但 external 未生效 → warn（注册失败/模式未写入，才是异常）。</li>
+     * </ul>
+     *
+     * <p>频率：状态签名变化才打（首开必打一条），重复 initGui/resize 只落 debug。</p>
+     *
+     * @param registered {@code textBridgeLifecycle.init} 的返回：文本桥注册事务是否成功
+     */
+    private void logTextChannelState(boolean registered) {
+        boolean active = textBridgeLifecycle.isActive();
+        boolean externalWritten = lastExternalTextModeWrite != null
+                && lastExternalTextModeWrite.booleanValue();
+        String signature = LWJGL3IFY_TEXT_BRIDGE_AVAILABLE + "/" + registered + "/"
+                + active + "/" + externalWritten;
+        if (signature.equals(LAST_TEXT_CHANNEL_SIGNATURE.getAndSet(signature))) {
+            LOG.debug("[文本通道] initGui 状态未变（重复 initGui/resize），签名={}", signature);
+            return;
+        }
+        if (active != externalWritten) {
+            // 分裂态：协调器与输入源对「是否 external」判断不一致，属框架不一致，必须可见。
+            LOG.warn("[文本通道] external 文本模式状态分裂: lifecycle.isActive={}, 实际写入 surface={}",
+                    Boolean.valueOf(active), lastExternalTextModeWrite);
+        }
+        String state = "isAvailable=" + LWJGL3IFY_TEXT_BRIDGE_AVAILABLE
+                + ", register=" + (registered ? "成功" : "失败")
+                + ", lifecycle.isActive=" + active
+                + ", surface.externalTextMode=" + (lastExternalTextModeWrite == null
+                        ? "未写入" : externalWritten + "（累计写入 " + externalTextModeWriteCount + " 次）");
+        if (active && externalWritten) {
+            LOG.info("[文本通道] initGui {}: {} ⇒ external 路径生效：字符只由 lwjgl3ify onTextEvent 投递，"
+                    + "pushKeyTyped 的 char 按契约不产 TEXT", screenLabel, state);
+        } else if (!LWJGL3IFY_TEXT_BRIDGE_AVAILABLE) {
+            LOG.info("[文本通道] initGui {}: {} ⇒ 本环境无 lwjgl3ify，走 MC keyTyped char 降级路径（正常配置）",
+                    screenLabel, state);
+        } else {
+            LOG.warn("[文本通道] initGui {} 异常: {} ⇒ lwjgl3ify 在 classpath 上但 external 文本模式未生效，"
+                    + "本次界面走 MC keyTyped char 降级路径；若仍打不进字，问题不在文本桥",
+                    screenLabel, state);
+        }
     }
 
     @Override
@@ -342,22 +428,7 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
             }
         } finally {
             try {
-                textBridgeLifecycle.close(new SceneTextBridgeLifecycle.Registration() {
-                    @Override
-                    public boolean register() {
-                        return textBridge.register();
-                    }
-
-                    @Override
-                    public void unregister() {
-                        textBridge.unregister();
-                    }
-                }, new SceneTextBridgeLifecycle.Mode() {
-                    @Override
-                    public void setExternalTextMode(boolean external) {
-                        surface.setExternalTextMode(external);
-                    }
-                });
+                textBridgeLifecycle.close(textBridgeRegistration, textBridgeMode);
             } finally {
                 try {
                     // 文本桥注销失败或 surface.dispose 抛异常时也必须回到降级模式。

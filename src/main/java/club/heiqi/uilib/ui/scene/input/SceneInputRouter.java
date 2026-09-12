@@ -1,11 +1,5 @@
 package club.heiqi.uilib.ui.scene.input;
 
-import club.heiqi.uilib.ui.reactive.Owner;
-import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.reactive.Signal;
-import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -15,6 +9,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import club.heiqi.uilib.ui.reactive.Owner;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
+import club.heiqi.uilib.util.LogThrottle;
 
 /**
  * 场景输入路由器 —— I2 路由主入口 + I4a 键盘/焦点路由。
@@ -39,6 +43,16 @@ import java.util.Set;
  * <h3>零标脏硬不变量</h3>
  * <p>route 过程中绝不调用任何 node.setXxx()/markXxx()/appendChild/removeChild，
  * hit-test 的绝对坐标仅在遍历时临时累加绝不回写（I7/I11）。</p>
+ *
+ * <h3>真机文本通道诊断（零行为变更）</h3>
+ * <p>TEXT_INPUT 是平台文本通道的终点：事件已到达路由器却无人接收时，现象与"事件根本没来"
+ * 完全一样（输入框无反应）。故本类在文本分发入口补三条互斥观测（限流，仅读注册表与焦点真值，
+ * 不碰任何 setter，不扩 I11）：</p>
+ * <ul>
+ *   <li>无焦点目标 → warn（限流）：事件到了，但焦点为空；</li>
+ *   <li>有焦点但冒泡链上无 TEXT_INPUT handler → warn（限流）：事件到了但没有控件接受；</li>
+ *   <li>正常投递 → info（限流）：给出实际投递目标，作为链路正锚。</li>
+ * </ul>
  */
 public class SceneInputRouter {
 
@@ -55,6 +69,15 @@ public class SceneInputRouter {
 
     /** 可选浮层宿主：存在时指针命中先按 top-first 检查 overlay roots。 */
     private final SceneOverlayHost overlayHost;
+
+    /** 真机文本通道诊断日志（与 McScreenBridge/输入源同一前缀，便于一次 grep 全链路）。 */
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/SceneInputRouter");
+
+    /** TEXT_INPUT 无接收者告警限流：每 5 秒窗口最多 2 条（首两条即时可见，之后每窗口补一条）。 */
+    private final LogThrottle textNoReceiverThrottle = new LogThrottle(2, 5000);
+
+    /** TEXT_INPUT 成功投递日志限流：每 5 秒窗口最多 1 条（链路正锚，默认级别可见但不刷屏）。 */
+    private final LogThrottle textDeliveryThrottle = new LogThrottle(1, 5000);
 
     /** 隐式按压捕获：当前按下的节点 */
     private SceneNode pressedNode;
@@ -544,7 +567,19 @@ public class SceneInputRouter {
         // 文本分发（先于 key）
         for (SceneTextEvent te : frame.getTextEvents()) {
             SceneNode focusTarget = focusManager.getFocusedNode();
-            if (focusTarget == null) continue; // 无焦点丢弃
+            if (focusTarget == null) {
+                // 真机诊断：事件已到达路由器（平台文本通道通畅）却没有焦点目标 —— 与"事件没来"
+                // 现象完全相同，必须留痕区分（限流告警，见 textNoReceiverThrottle）。
+                reportTextWithoutReceiver(te, null);
+                continue; // 无焦点丢弃
+            }
+            // 只读注册表判定接收者（不新增任何 setter 调用，不扩 I11）：TEXT_INPUT handler 可挂在
+            // 焦点目标自身或任一祖先（bubble 阶段派发），故沿父链查 active handler。
+            if (hasTextInputReceiver(focusTarget)) {
+                reportTextDelivery(te, focusTarget);
+            } else {
+                reportTextWithoutReceiver(te, focusTarget);
+            }
             SceneEvent ev = SceneEvent.ofText(SceneEventType.TEXT_INPUT, focusTarget,
                     te.getText(), te.getTimeNanos());
             SceneEventContext ctx = new SceneEventContext(this, focusTarget, 0, 0, 0, 0);
@@ -593,6 +628,96 @@ public class SceneInputRouter {
                 }
             }
         }
+    }
+
+    /**
+     * 判定焦点目标是否真能收到 TEXT_INPUT：沿自身 → 祖先链查注册表中 active 的 TEXT_INPUT handler
+     * （与 {@link #dispatchTargetAndBubble} 的 target + bubble 两阶段同一口径）。
+     *
+     * <p>纯只读，无副作用，不改派发结果——仅为诊断提供"事件到了有没有人接"的判据。</p>
+     *
+     * @param target 焦点目标节点
+     * @return true 表示该目标的 target+bubble 链上至少有一个 active 的 TEXT_INPUT handler
+     */
+    private boolean hasTextInputReceiver(SceneNode target) {
+        for (SceneNode node = target; node != null; node = node.__getParent()) {
+            EnumMap<SceneEventType, List<HandlerRegistration>> typeMap = registry.get(node);
+            if (typeMap == null) {
+                continue;
+            }
+            List<HandlerRegistration> handlers = typeMap.get(SceneEventType.TEXT_INPUT);
+            if (handlers == null || handlers.isEmpty()) {
+                continue;
+            }
+            for (HandlerRegistration registration : handlers) {
+                if (registration.active) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * TEXT_INPUT 无接收者限流告警（真机诊断，零行为变更）。
+     *
+     * <p>触发条件：本帧文本事件到达且（焦点为 null 或焦点链上无 TEXT_INPUT handler）。
+     * 频率上限 = {@code 2 条 / 5s}；每条自带累计条数与折叠次数。</p>
+     *
+     * @param te          文本事件
+     * @param focusTarget 当前焦点目标（null = 无焦点）
+     */
+    private void reportTextWithoutReceiver(SceneTextEvent te, SceneNode focusTarget) {
+        if (!textNoReceiverThrottle.allow(te.getTimeNanos())) {
+            return;
+        }
+        long suppressed = textNoReceiverThrottle.suppressedSinceLastLog();
+        if (focusTarget == null) {
+            LOG.warn("[文本通道] TEXT_INPUT 丢弃：当前无焦点目标（text.len={}, 累计 {} 条, 折叠 {} 次）"
+                            + " ⇒ 文本事件已到达路由器，缺的是焦点，不是平台文本通道",
+                    Integer.valueOf(textLength(te)),
+                    Long.valueOf(textNoReceiverThrottle.total()), Long.valueOf(suppressed));
+        } else {
+            LOG.warn("[文本通道] TEXT_INPUT 丢弃：焦点目标 {} 及其祖先链上没有 TEXT_INPUT handler"
+                            + "（text.len={}, 累计 {} 条, 折叠 {} 次）⇒ 事件到了但没有控件接受它",
+                    describeNode(focusTarget), Integer.valueOf(textLength(te)),
+                    Long.valueOf(textNoReceiverThrottle.total()), Long.valueOf(suppressed));
+        }
+    }
+
+    /**
+     * TEXT_INPUT 成功投递限流日志（真机诊断，零行为变更）。
+     *
+     * <p>触发条件：文本事件到达且有接收者。频率上限 = {@code 1 条 / 5s}；本条是"文本真的进了控件"
+     * 的正锚，与 {@code pushText} 到达日志配合即可定位链路断点。</p>
+     *
+     * @param te          文本事件
+     * @param focusTarget 实际投递目标（焦点节点）
+     */
+    private void reportTextDelivery(SceneTextEvent te, SceneNode focusTarget) {
+        if (!textDeliveryThrottle.allow(te.getTimeNanos())) {
+            return;
+        }
+        LOG.info("[文本通道] TEXT_INPUT 投递: 目标={}（text.len={}, 累计投递 {} 条, 折叠 {} 次）",
+                describeNode(focusTarget), Integer.valueOf(textLength(te)),
+                Long.valueOf(textDeliveryThrottle.total()),
+                Long.valueOf(textDeliveryThrottle.suppressedSinceLastLog()));
+    }
+
+    /** 文本长度（诊断日志用；text 契约上非 null，此处仍防御，确保日志路径永不抛异常）。 */
+    private static int textLength(SceneTextEvent te) {
+        String text = te.getText();
+        return text == null ? 0 : text.length();
+    }
+
+    /** 节点的日志标识（类型 + 身份哈希，便于与控件侧日志对照，无需 toString 契约）。 */
+    private static String describeNode(SceneNode node) {
+        if (node == null) {
+            return "null";
+        }
+        String type = node.getClass().getSimpleName();
+        return (type == null || type.isEmpty() ? "(匿名节点)" : type)
+                + "@" + Integer.toHexString(System.identityHashCode(node));
     }
 
     /** 焦点 authority 切换后同步派发；focused signal 仍按原契约延迟到 flush。 */

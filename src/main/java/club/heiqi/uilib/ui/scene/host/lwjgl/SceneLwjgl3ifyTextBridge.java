@@ -14,6 +14,17 @@ import java.util.function.Consumer;
  *
  * <p>本类是适配层中唯一允许反射 lwjgl3ify 的文本入口。注册与 SDL 文本输入启停组成一个
  * 可回滚事务；任何失败均保留尚未完成的清理步骤，供后续注销重试。</p>
+ *
+ * <h3>真机诊断（零行为变更）</h3>
+ * <p>external 文本通道（lwjgl3ify {@code InputEvents.onTextEvent}）在本仓的自动化测试里被
+ * {@code addon.late.gradle} 从 run 任务 classpath 移除，<b>不在测试覆盖内</b>；真机"所有输入框
+ * 打不进字"这类故障只能靠一次真机复现的日志定案。故本类把注册事务结果与反射面缺失提到
+ * {@code info}/{@code warn} 级各打一条（正常路径每条消息只打一次，不刷屏）：</p>
+ * <ul>
+ *   <li>注册成功 → info 一条（证明 external 模式确实接管）；</li>
+ *   <li>反射面不匹配（缺方法）→ warn 一条（版本漂移第一现场，提示比对 api jar）；</li>
+ *   <li>注册事务异常 → warn 一条带异常（证明回落 char 降级路径）。</li>
+ * </ul>
  */
 public final class SceneLwjgl3ifyTextBridge {
 
@@ -29,6 +40,10 @@ public final class SceneLwjgl3ifyTextBridge {
     private State state = State.IDLE;
     private boolean endPending;
     private boolean removePending;
+    /** 注册成功日志是否已上报（每实例一次，正常路径不刷屏）。 */
+    private boolean successReported;
+    /** 反射面不匹配日志是否已上报（每实例一次）。 */
+    private boolean faceMismatchReported;
 
     /** 创建使用真实反射的文本桥。 */
     public SceneLwjgl3ifyTextBridge(Consumer<String> textSink) {
@@ -75,6 +90,7 @@ public final class SceneLwjgl3ifyTextBridge {
         try {
             RegistrationPlan prepared = preparePlan();
             if (prepared == null) {
+                logFaceMismatchOnce();
                 return false;
             }
             plan = prepared;
@@ -86,12 +102,40 @@ public final class SceneLwjgl3ifyTextBridge {
             state = State.BEGIN_ATTEMPTED;
             reflection.invokeStatic(prepared.beginMethod);
             state = State.ACTIVE;
+            logRegisteredOnce(prepared);
             return true;
         } catch (ReflectiveOperationException | SecurityException | IllegalArgumentException | LinkageError e) {
-            LOG.debug("UILib scene 文本桥注册事务失败，开始回滚", e);
+            // 真机"文本输入打不进字"的第一现场：注册失败 ⇒ external 模式不会启用，
+            // 宿主回落 MC char 降级路径。原为 debug 级（真机默认日志级别看不到），提到 warn。
+            LOG.warn("[文本通道] lwjgl3ify 文本桥注册事务失败，已回滚 ⇒ 本次界面回退 MC char 降级路径；"
+                            + "失败类型={}，原因={}",
+                    e.getClass().getName(), String.valueOf(e.getMessage()), e);
             rollback();
             return false;
         }
+    }
+
+    /** 注册成功一次性上报：真机据此确认 external 文本模式确实接管。 */
+    private void logRegisteredOnce(RegistrationPlan registered) {
+        if (successReported) {
+            return;
+        }
+        successReported = true;
+        LOG.info("[文本通道] lwjgl3ify 文本桥注册成功: InputEvents={}, 监听器={}, beginTextInput(启动 SDL 文本输入) 已调用"
+                        + " ⇒ external 文本模式接管：此后 pushKeyTyped 的字符不再产 TEXT，文本只由 onTextEvent 投递",
+                INPUT_EVENTS_CLASS_NAME, registered.addMethod.getName());
+    }
+
+    /** 反射面不匹配一次性告警：lwjgl3ify 版本漂移（改名/移除）的第一现场。 */
+    private void logFaceMismatchOnce() {
+        if (faceMismatchReported) {
+            return;
+        }
+        faceMismatchReported = true;
+        LOG.warn("[文本通道] lwjgl3ify 输入 API 反射面不匹配: {} 上缺少 beginTextInput/endTextInput "
+                        + "或 add+remove[Weak]KeyboardListener ⇒ 不注册，回退 MC char 降级路径；"
+                        + "本类按 lwjgl3ify 3.0.x InputEvents 契约反射，版本变更时请比对 api jar",
+                INPUT_EVENTS_CLASS_NAME);
     }
 
     /** 注销监听器并停止 SDL 文本输入；失败步骤保留到下次调用重试。 */
@@ -132,7 +176,7 @@ public final class SceneLwjgl3ifyTextBridge {
                 reflection.invokeStatic(plan.endMethod);
                 endPending = false;
             } catch (ReflectiveOperationException | SecurityException | IllegalArgumentException | LinkageError e) {
-                LOG.debug("UILib scene 文本桥 endTextInput 清理失败，保留重试", e);
+                LOG.warn("[文本通道] lwjgl3ify endTextInput 清理失败（保留待下次重试）", e);
             }
         }
         if (removePending) {
@@ -140,7 +184,7 @@ public final class SceneLwjgl3ifyTextBridge {
                 reflection.invokeStatic(plan.removeMethod, plan.listener);
                 removePending = false;
             } catch (ReflectiveOperationException | SecurityException | IllegalArgumentException | LinkageError e) {
-                LOG.debug("UILib scene 文本桥 listener 清理失败，保留重试", e);
+                LOG.warn("[文本通道] lwjgl3ify 监听器清理失败（保留待下次重试）——未摘除的监听器会让下一次注册事务失败", e);
             }
         }
         if (!endPending && !removePending) {
