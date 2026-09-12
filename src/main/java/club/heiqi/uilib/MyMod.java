@@ -15,7 +15,12 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
         version = Tags.VERSION,
         name = "Qz UILib",
         acceptedMinecraftVersions = "[1.7.10]",
-        acceptableRemoteVersions = "[4.9.0,4.10.0)",
+        // 远端版本协商（契约见 FmlRemoteVersionCompatibilityContractTest）：区间必须包含当前
+        // Tags.VERSION，否则 FML 判定「mod 拒绝自身版本」——集成服务器在进入世界的握手阶段
+        // Rejecting connection CLIENT 后卸载全部维度（症状：无法进入世界）。
+        // 注意「显式空串」不是开发期形态：它构成空区间并拒绝一切（含自身）；精确版本相等只属于
+        // 整条属性不写的形态。上界与 Miner 侧 required-after:qz_uilib@[4.9.1,5.0.0) 成对升级。
+        acceptableRemoteVersions = "[4.9.0,5.0.0)",
         guiFactory = MyMod.GUI_FACTORY)
 public class MyMod {
 
