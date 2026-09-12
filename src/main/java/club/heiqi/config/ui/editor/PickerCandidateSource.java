@@ -69,8 +69,21 @@ public interface PickerCandidateSource {
     }
 
     /**
-     * 命中总数（越界安全）：浏览 lane 恒等于 {@link #size()}；搜索 lane 返回<b>真实命中数</b>
-     * （可大于装配层的 {@code searchMaxItems} 上限，截断由调用方按 {@code matchCount > maxItems} 判定）。
+     * 命中总数（越界安全）= <b>当前查询可见的候选规模</b>：
+     *
+     * <ul>
+     *   <li>浏览 lane <b>无分类收窄</b>（{@link PickerQuery#isBrowse()} 且
+     *       {@code !hasCategoryFilter()}）：恒等于 {@link #size()}（清单恒等序）；</li>
+     *   <li>浏览 lane <b>带分类过滤</b>：该分类的命中数（清单序<b>子序列</b>的规模，即
+     *       {@code page(同一 query, 0, size())} 的返回条数）；</li>
+     *   <li>搜索 lane：返回<b>真实命中数</b>（可大于装配层的 {@code searchMaxItems} 上限，
+     *       截断由调用方按 {@code matchCount > maxItems} 判定）。</li>
+     * </ul>
+     *
+     * <p>分类 key 参与命中序，实现不得忽略 {@link PickerQuery#hasCategoryFilter()} 而一律回
+     * {@link #size()} —— 那会让 UILib 的窗口数学（总量 / 滚动上限 / 统计行 / 导航「全部」行）按未过滤
+     * 规模计算，与 {@link #page} 返回的过滤切片错位；不实现分类过滤的源必须让 {@code matchCount} 与
+     * {@code page} 同口径（两者一致即可，口径本身由源决定）。</p>
      *
      * @param query 查询条件（非 null）
      * @return 命中总数

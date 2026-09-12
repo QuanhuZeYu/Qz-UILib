@@ -1,6 +1,9 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -42,13 +45,26 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * {@link SceneSurfaceBinder} 独占；旧 {@code SceneChromeTokens.applyPanelChrome} 静态四件套写入者
  * 已删除。clipChildren 不属于绑定器六项属性，仍由本组件自持（保持原外壳裁剪语义）。</p>
  *
- * <p><b>每一行</b>消费 {@link SceneThemes#selectableSurface} 的 {@link SceneTheme.Role#INDICATOR}
- * 配方状态档：未选中取角色极淡 idle tint，hover/pressed 取角色对应档，选中把 tint RGB 换成主题
- * 强调色（强度取主题统一选中强度，选中是色彩语义、不只靠透明度），禁用仍走角色禁用档
- * （优先级 disabled &gt; pressed &gt; hovered &gt; idle，契约 §2.5）。行只做<b>只写
- * {@code backgroundColor} 一个属性的轻量覆盖</b>（与 SimpleList/DataTable 轻量行同构）：
- * 行不装滤镜、不写边框/圆角/实体高度，故虚拟化重绑时行状态全部由该行自己的信号重派生，
- * 不与底座竞争属性槽，也不给整树新增 BACKDROP 采样。</p>
+ * <p><b>每一行是真正的 pill 行</b>：消费 {@link SceneThemes#selectableSurface} 的
+ * {@link SceneTheme.Role#INDICATOR} 配方状态档（未选中取角色极淡 idle tint，hover/pressed 取角色
+ * 对应档，选中把 tint RGB 换成主题强调色、强度取主题统一选中强度，禁用仍走角色禁用档；
+ * 优先级 disabled &gt; pressed &gt; hovered &gt; idle，契约 §2.5），再经本地字段级覆盖得到行配方
+ * （见 {@link #rowSurface}）。行有真实形状：圆角/描边取角色配方（PILL_RADIUS / 1px，渲染层按
+ * 盒子夹取，见渲染层 {@code UiRoundedRectGeometry.clampCornerRadius}），左右内缩与行间间距由
+ * 生效字号派生（{@link PickerChrome#navRowInset} / {@link PickerChrome#navRowGap}）。
+ * 属性归属：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 六项由
+ * {@link SceneSurfaceBinder} 独占——与底座走同一条「配方 → 属性」通道；{@code backdrop} 显式关闭 ⇒
+ * <b>行仍是零 BACKDROP 采样</b>（整族滤镜只由导航底座那一颗承担），{@code reliefDisabled} 让行恒走
+ * 普通绘制路径（不消费四态 elevation）。虚拟化重绑时行状态全部由该行自己的信号重派生，
+ * 不与底座竞争属性槽。</p>
+ *
+ * <p><b>hover/pressed 可见度（量化口径）</b>：角色配方的 hover tint 只比 idle 高 {@code 0x06}、
+ * pressed 甚至比 idle 更淡，在「满宽 + 无圆角 + 无描边」的旧形态下几乎读不出。本组件不做全局
+ * 主题调参（超出本控件范围），只把 tint 强度步进放大为 {@code +0x18}（hover）/ {@code +0x2C}
+ * （pressed），缘色沿用主题 hovered（{@code 0x40 → 0x80}，2×）/ pressed 档（回落 = 「按下去」）。
+ * 同屏可辨判据：hover − idle tint Δalpha ≥ {@code 0x12}（≥7.1pp）、缘 Δalpha ≥ {@code 0x40}；
+ * pressed − hovered tint Δalpha ≥ {@code 0x10} 且缘色反向回落。选中行<b>不覆盖</b>：选中已是
+ * 0x59 强调填充，色彩语义本身足够区分（{@link SceneThemes#selectableSurface} 原档保持不变）。</p>
  *
  * <p><b>文字</b>：行标签启用取 {@link SceneThemes#foreground}（选中行同色，不取
  * {@code onAccentForeground}——选中底是叠在玻璃上的半透明染色中间调，参照已验收 SceneNavList
@@ -75,6 +91,21 @@ public final class CategoryNavPane {
 
     /** 恒真 enabled：底座自身没有禁用语义，外观只走 idle/hovered/pressed 三档。 */
     private static final ReadableSignal<Boolean> ALWAYS_ENABLED = () -> Boolean.TRUE;
+
+    /**
+     * hover 态 tint 强度步进（相对<b>主题 idle alpha</b> 的增量，单位 = alpha 0..255）。
+     *
+     * <p>不是颜色值：行配方在派生期读主题当前 idle alpha 再叠加本增量，故主题换档（深/浅/无滤镜）
+     * 时行跟着变，无需第二份失效通道。失效条件：只有「本控件外观阶梯重新调参」时才改这个数
+     * （届时 CategoryNavPaneTest 的量化判据同步更新）；它不随字号/密度/主题变化。</p>
+     */
+    private static final int NAV_ROW_HOVER_TINT_STEP = 0x18;
+
+    /**
+     * pressed 态 tint 强度步进（相对主题 idle alpha 的增量）：主题 pressed 档比 idle <b>更淡</b>
+     * （不会读成「按下去」），本地改为明显强于 hovered 的填充，配合缘色回落表达按下。失效条件同上。
+     */
+    private static final int NAV_ROW_PRESS_TINT_STEP = 0x2C;
 
     /** 纯静态组件工厂，禁止实例化。 */
     private CategoryNavPane() { }
@@ -204,6 +235,10 @@ public final class CategoryNavPane {
         ReadableSignal<Integer> secondaryForeground = () -> Boolean.TRUE.equals(props.enabled().get())
                 ? mutedForeground.get() : disabledForeground.get();
 
+        // 行内缩（pill 左右留白）：同一个派生量同时喂给行 margin 与标题/状态行/空态 padding，
+        // 文案与行标签左对齐不靠第二份魔数；有度量通道时随生效字号重派生。
+        ReadableSignal<Integer> rowInset = rowInsetSignal(props.metrics());
+
         // 标准滚动结构走 SceneScrollContainer 工厂（默认滚动条视觉），不再手写样板。
         // P5 第六轮 U-P5-13：滚动条宽度接密度/字号派生（缺度量通道 ⇒ null ⇒ 常量缺省，逐值不变）。
         SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0,
@@ -217,13 +252,13 @@ public final class CategoryNavPane {
         boolean hasHeader = props.title() != null && !props.title().isEmpty();
         if (hasHeader) {
             SceneNode header = navText(rt, props.title(), foreground, secondaryForeground, false,
-                    props.widthPx());
+                    props.widthPx(), rowInset);
             nav.appendChild(header);
         }
         nav.appendChild(sc.container());
         if (props.statusText() != null) {
             SceneNode status = navText(rt, "", foreground, secondaryForeground, true,
-                    props.widthPx());
+                    props.widthPx(), rowInset);
             rt.bindText(status, props.statusText());
             nav.appendChild(status);
         }
@@ -238,13 +273,17 @@ public final class CategoryNavPane {
 
         // 行高由生效字号派生（P5 §2.5：clamp(round(fs*2.67), 24, 36)）；未提供度量通道时
         // 保留旧常量（既有调用方零变化）。字号与行高经同一份 PickerMetrics，不存在第二真值。
+        // 行键 → 当前行快照 的响应式索引：行节点按 identityKey 复用（keyed reconcile），行内文本必须按
+        // <b>当前</b>行快照解析 —— 否则同一行键的 count/label 换代刷不上屏（构建期 row 是旧代）。
+        // rows 换代时 O(rows) 建一次索引、行内查找 O(1)；不可变 Map 按值记忆化 ⇒ 内容不变不向下游传播。
+        ReadableSignal<Map<String, ScenePickerPanelNav.CategoryRow>> rowIndex = rowIndex(props);
         rt.forEach(rows, props.rows(), ScenePickerPanelNav.CategoryRow::identityKey,
-                row -> categoryRow(rt, props, row, labelForeground, secondaryForeground,
+                row -> categoryRow(rt, props, row, rowIndex, labelForeground, secondaryForeground,
                         viewport, sc.scrollSignal()));
 
         rt.show(viewport,
                 Computed.create(() -> Boolean.valueOf(props.rows().get().isEmpty())),
-                () -> emptyLabel(rt, props.emptyLabel(), secondaryForeground));
+                () -> emptyLabel(rt, props.emptyLabel(), secondaryForeground, rowInset));
 
         return nav;
     }
@@ -257,12 +296,14 @@ public final class CategoryNavPane {
      * @param foreground       正文档前景（标题用）
      * @param secondaryForeground 次要档前景（状态行用）
      * @param muted            是否用次要档
+     * @param insetPx          pill 行内缩派生信号（标题/状态行沿用同一内缩 ⇒ 与行标签左对齐）
      * @return 文字节点
      */
     private static SceneNode navText(SceneRuntime rt, String value,
                                      ReadableSignal<Integer> foreground,
                                      ReadableSignal<Integer> secondaryForeground, boolean muted,
-                                     ReadableSignal<Integer> widthPx) {
+                                     ReadableSignal<Integer> widthPx,
+                                     ReadableSignal<Integer> insetPx) {
         SceneNode node = new SceneNode();
         node.setText(value);
         node.setHitTestable(false);
@@ -270,17 +311,26 @@ public final class CategoryNavPane {
         node.setMaxLines(1);
         node.setEllipsis(true);
         rt.bind(muted ? secondaryForeground : foreground, node::setTextColor);
-        // 文案宽预算 = 导航宽 - 左右内边距（与导航宽同源；未给派生宽度时用常量兜底）。
+        // 文案宽预算 = 导航宽 - 左右内边距 - 行内缩（与导航宽同源；未给派生宽度时用常量兜底）。
         ReadableSignal<Integer> width = widthPx == null
                 ? () -> Integer.valueOf(NAV_WIDTH) : widthPx;
         rt.bindComputed(() -> Integer.valueOf(Math.max(1,
-                        width.get().intValue() - 2 * SceneChromeTokens.PAD_MD)),
+                        width.get().intValue() - 2 * (SceneChromeTokens.PAD_MD
+                                + insetPx.get().intValue()))),
                 node::setMaxTextWidth);
+        // 左右留白 = 行内缩 + 行内文本内边距 ⇒ 标题/状态行文案与行标签同一 x 起点（对齐只此一份真值）。
+        applyTextInset(node, insetPx.get().intValue());
+        rt.bind(insetPx, inset -> Effect.untrack(() -> applyTextInset(node, inset.intValue())));
         node.setPreferredHeight(rt.lineHeight(FONT_SIZE) + 2 * SceneChromeTokens.PAD_SM);
         return node;
     }
 
-    /** 单分类行：INDICATOR 轻量选中覆盖 + 标签(flexGrow) + 数量徽章，点击回调 onSelect。 */
+    /** 文本节点的内缩留白：左右同值（与 pill 行内缩同一派生量），垂直沿用既有语义。 */
+    private static void applyTextInset(SceneNode node, int insetPx) {
+        int horizontal = SceneChromeTokens.PAD_MD + Math.max(0, insetPx);
+        node.setPadding(0, horizontal, 0, horizontal);
+    }
+
     /**
      * 键盘导航的滚动可见性：焦点行超出导航视口时按最小位移滚动（不改变居中语义、
      * 不引入第二份滚动事实 —— 复用视口自身的 scroll signal 与 {@code maxScrollY}）。
@@ -313,19 +363,53 @@ public final class CategoryNavPane {
         }
     }
 
+    /**
+     * 行键 → 当前行快照 的响应式索引（{@code identityKey} → {@link ScenePickerPanelNav.CategoryRow}）。
+     *
+     * <p>行节点按行键复用（keyed reconcile 的既有语义），行内文本不能读构建期快照；本索引是
+     * 「当前行内容」的唯一读取口：rows 换代时 O(rows) 建一次，行内查找 O(1)。返回不可变 Map ⇒
+     * 内容相同即 {@link Computed} 按值记忆化，不向下游传播、不触任何节点写入。</p>
+     */
+    private static ReadableSignal<Map<String, ScenePickerPanelNav.CategoryRow>> rowIndex(Props props) {
+        return Computed.create(() -> {
+            List<ScenePickerPanelNav.CategoryRow> current = props.rows().get();
+            Map<String, ScenePickerPanelNav.CategoryRow> index =
+                    new LinkedHashMap<String, ScenePickerPanelNav.CategoryRow>(
+                            Math.max(4, current.size() * 2));
+            for (ScenePickerPanelNav.CategoryRow row : current) {
+                index.put(row.identityKey(), row);
+            }
+            return Collections.unmodifiableMap(index);
+        });
+    }
+
+    /** 行内文本投影（标签 + 徽章计数文本）：值语义 ⇒ 内容不变即记忆化，不写节点。 */
+    @Desugar
+    private record RowText(String label, String countText) { }
+
+    /**
+     * 单分类行（pill）：INDICATOR 派生表面（{@link #bindRowSurface}）+ 标签(flexGrow) + 数量徽章，
+     * 点击回调 onSelect；行几何（行高/内缩/行间间距）由生效字号派生。
+     */
     private static SceneNode categoryRow(SceneRuntime rt, Props props,
                                          ScenePickerPanelNav.CategoryRow row,
+                                         ReadableSignal<Map<String, ScenePickerPanelNav.CategoryRow>> rowIndex,
                                          ReadableSignal<Integer> labelForeground,
                                          ReadableSignal<Integer> secondaryForeground,
                                          SceneNode viewport,
                                          Signal<Integer> scrollSignal) {
         SceneNode rowNode = SceneNode.row();
         ReadableSignal<PickerMetrics> metrics = props.metrics();
-        rowNode.setPreferredHeight(metrics == null ? ROW_HEIGHT
-                : PickerChrome.navRowHeight(metrics.get().fontSizePx()));
+        // 行高 / 内缩 / 行间间距同源派生：同一份 PickerMetrics 字号，缺度量通道时回落组件常量口径。
+        int fontSizePx = metrics == null ? FONT_SIZE : metrics.get().fontSizePx();
+        rowNode.setPreferredHeight(metrics == null ? ROW_HEIGHT : PickerChrome.navRowHeight(fontSizePx));
+        applyPillGeometry(rowNode, fontSizePx);
         if (metrics != null) {
-            rt.bind(metrics, m -> Effect.untrack(() ->
-                    rowNode.setPreferredHeight(PickerChrome.navRowHeight(m.fontSizePx()))));
+            rt.bind(metrics, m -> Effect.untrack(() -> {
+                int fs = m.fontSizePx();
+                rowNode.setPreferredHeight(PickerChrome.navRowHeight(fs));
+                applyPillGeometry(rowNode, fs);
+            }));
         }
         rowNode.setCrossAxisAlign(CrossAxisAlign.CENTER);
         rowNode.setGap(SceneChromeTokens.GAP_SM);
@@ -341,13 +425,14 @@ public final class CategoryNavPane {
             boolean currentAll = current == null || current.isEmpty();
             return Boolean.valueOf(row.all() ? currentAll : row.key().equals(current));
         });
-        bindRowTint(rt, props.enabled(), selected, interaction, rowNode);
+        bindRowSurface(rt, props.enabled(), selected, interaction, rowNode);
 
         SceneNode label = new SceneNode();
         label.setFlexGrow(1);
         // 私有常量降级为层 4a 回落值（有声明时跟随作用域，无声明时仍落 12）。
         label.setFallbackFontSize(FONT_SIZE);
         label.setHitTestable(false);
+        // 构建期初值（首帧前同步读也有值）；真正的内容由下方 RowText 投影按当前行快照驱动。
         label.setText(row.label());
         rt.bind(labelForeground, label::setTextColor);
         rowNode.appendChild(label);
@@ -359,6 +444,21 @@ public final class CategoryNavPane {
         badge.setText(String.valueOf(row.count()));
         rt.bind(secondaryForeground, badge::setTextColor);
         rowNode.appendChild(badge);
+
+        // 标签 + 徽章按「当前行快照」实时解析：行节点按 identityKey 复用，构建期 row 在行键不变而
+        // count/label 换代时是旧代 —— 只读构建期快照会把旧文案永久留在屏上（与 SearchResultList
+        // 单元标签同族）。单个 RowText 投影 + 单个绑定：值语义记录按值记忆化 ⇒ 内容不变时零节点写入
+        // （SceneNode.setText 亦同值早退）；无命中键（行正在被回收）回落构建期快照，文本永不为 null、
+        // 也不残留上一项的文案。
+        ReadableSignal<RowText> rowText = Computed.create(() -> {
+            ScenePickerPanelNav.CategoryRow live = rowIndex.get().get(row.identityKey());
+            ScenePickerPanelNav.CategoryRow current = live == null ? row : live;
+            return new RowText(current.label(), String.valueOf(current.count()));
+        });
+        rt.bind(rowText, text -> {
+            label.setText(text.label());
+            badge.setText(text.countText());
+        });
 
         rt.on(rowNode, SceneEventType.CLICK, (ev, ctx) -> {
             if (!Boolean.TRUE.equals(props.enabled().get())) return;
@@ -408,51 +508,112 @@ public final class CategoryNavPane {
         return rowNode;
     }
 
+    /** pill 行几何：左右内缩（不贴栏边）+ 行间纵向间距（相邻 pill 不粘连），全部由生效字号派生。 */
+    private static void applyPillGeometry(SceneNode rowNode, int fontSizePx) {
+        int inset = PickerChrome.navRowInset(fontSizePx);
+        rowNode.setMargin(0, inset, PickerChrome.navRowGap(fontSizePx), inset);
+    }
+
     /**
-     * 绑定行背景：消费 {@link SceneThemes#selectableSurface}(INDICATOR, selected) 配方的状态档，
-     * 按契约 §2.5 优先级 disabled &gt; pressed &gt; hovered &gt; idle 取 tint，只写
-     * {@code backgroundColor} 一个属性。
-     *
-     * <p>行不装滤镜、不写边框/圆角/实体高度（保持普通绘制路径，{@code __getSurfaceElevation()}
-     * 恒为 -1），虚拟化重绑时选中/hover/禁用均由各行自己的信号重派生，不残留上一项状态。
-     * 全部取值发生在 effect 体内，构造期不解引用未求值的 Computed。</p>
+     * 行内缩派生信号：有度量通道时随生效字号重派生（字号倍率 / 密度档变化 ⇒ 内缩跟着变），
+     * 否则按组件回落字号取常量缺省（与 {@link #ROW_HEIGHT} 同源的旧口径）。
      */
-    private static void bindRowTint(SceneRuntime rt, ReadableSignal<Boolean> enabled,
-                                    ReadableSignal<Boolean> selected,
-                                    SceneInteractionState interaction, SceneNode rowNode) {
-        ReadableSignal<SceneSurfaceStyle> recipe =
+    private static ReadableSignal<Integer> rowInsetSignal(ReadableSignal<PickerMetrics> metrics) {
+        if (metrics == null) {
+            return () -> Integer.valueOf(PickerChrome.navRowInset(FONT_SIZE));
+        }
+        return Computed.create(Integer.valueOf(PickerChrome.navRowInset(metrics.get().fontSizePx())),
+                () -> Integer.valueOf(PickerChrome.navRowInset(metrics.get().fontSizePx())));
+    }
+
+    /**
+     * 绑定行表面：{@link SceneThemes#selectableSurface}(INDICATOR, selected) 提供「主题基线 +
+     * 选中语义」，再经 {@link #rowSurface} 做字段级覆盖（只在非选中档放大 tint 步进、关滤镜、关浮雕），
+     * 最后交给 {@link SceneSurfaceBinder} 独占六项写入 —— 行与底座共用同一条「配方 → 属性」通道，
+     * 行的状态优先级（disabled &gt; pressed &gt; hovered &gt; idle）由绑定器按契约 §2.5 执行。
+     *
+     * <p><b>为什么不是 {@code SceneThemes.derivedSurface}</b>：derivedSurface 从 {@code surface(role)}
+     * 起算，拿不到 {@code selectableSurface} 的「选中 = 主题 accent 0x59」语义；而选中强度
+     * {@code SELECTED_TINT_ALPHA} 是主题私有真值，自带一份等于复制主题。故本组件保持
+     * 「selectableSurface + 局部纯函数覆盖（{@code Computed}）」的组合：两条失效源（主题、选中信号）
+     * 都由 Computed 承担，覆盖函数本身无状态。</p>
+     */
+    private static void bindRowSurface(SceneRuntime rt, ReadableSignal<Boolean> enabled,
+                                       ReadableSignal<Boolean> selected,
+                                       SceneInteractionState interaction, SceneNode rowNode) {
+        ReadableSignal<SceneSurfaceStyle> selectable =
                 SceneThemes.selectableSurface(rt, SceneTheme.Role.INDICATOR, selected);
-        rt.__bindAnimatedColor(() -> rowTint(recipe.get(),
-                        Boolean.TRUE.equals(enabled.get()),
-                        Boolean.TRUE.equals(interaction.pressed().get()),
-                        Boolean.TRUE.equals(interaction.hovered().get())),
-                rowNode::setBackgroundColor,
-                () -> recipe.get().getTransitionMillis());
+        SceneSurfaceStyle initial = rowSurface(selectable.get(), Boolean.TRUE.equals(selected.get()));
+        ReadableSignal<SceneSurfaceStyle> recipe = Computed.create(initial,
+                () -> rowSurface(selectable.get(), Boolean.TRUE.equals(selected.get())));
+        SceneSurfaceBinder.bind(rt, rowNode, recipe, enabled, interaction);
     }
 
-    /** 行状态档：disabled &gt; pressed &gt; hovered &gt; idle，全部取 INDICATOR 配方档。 */
-    private static int rowTint(SceneSurfaceStyle recipe, boolean enabled, boolean pressed, boolean hovered) {
-        if (!enabled) {
-            return recipe.getDisabled().getTint();
+    /**
+     * 行配方 = 主题基线 + 本地字段级覆盖（纯函数，可在派生 effect 内执行）。
+     *
+     * <ul>
+     *   <li>{@code backdrop(null)}：行不装滤镜 ⇒ <b>零新增 BACKDROP 采样</b>（行 tint 直接叠在
+     *       底座玻璃上；无滤镜档下底座本身不透明可读）；</li>
+     *   <li>{@code reliefDisabled(true)}：恒走普通绘制路径（不消费四态 elevation）；</li>
+     *   <li>非选中档只改 hovered/pressed 的 tint 强度（缘色、elevation、lens 全取主题对应档）；</li>
+     *   <li>选中档<b>原样保留</b> selectableSurface 的四个状态档（0x59 强调语义不经本方法改写）。</li>
+     * </ul>
+     */
+    private static SceneSurfaceStyle rowSurface(SceneSurfaceStyle base, boolean selected) {
+        SceneSurfaceStyle.Builder builder = base.toBuilder()
+                .backdrop(null)
+                .reliefDisabled(true);
+        if (!selected) {
+            builder.hovered(steppedTint(base.getIdle(), base.getHovered(), NAV_ROW_HOVER_TINT_STEP))
+                    .pressed(steppedTint(base.getIdle(), base.getPressed(), NAV_ROW_PRESS_TINT_STEP));
         }
-        if (pressed) {
-            return recipe.getPressed().getTint();
-        }
-        if (hovered) {
-            return recipe.getHovered().getTint();
-        }
-        return recipe.getIdle().getTint();
+        return builder.build();
     }
 
-    /** 空分类提示节点：emptyLabel 或兜底文案；次要前景（muted，禁用取 disabledForeground）经主题派生。 */
+    /**
+     * 状态档 tint 步进：取主题对应档的 RGB / 缘 / elevation / lens，只把 tint alpha 换成
+     * {@code 主题 idle alpha + 增量}。主题换档 ⇒ 派生期重算（本方法读的是主题当前基线，不是快照）。
+     */
+    private static SceneSurfaceStyle.StateStyle steppedTint(SceneSurfaceStyle.StateStyle idle,
+                                                            SceneSurfaceStyle.StateStyle target,
+                                                            int alphaStep) {
+        return new SceneSurfaceStyle.StateStyle(
+                withAlpha(target.getTint(), alphaOf(idle.getTint()) + alphaStep),
+                target.getEdge(), target.getElevation(), target.getLensFactor());
+    }
+
+    /** 保留色 RGB、替换 alpha（0..255 夹取）。强度调整统一经此，控件内不出现色字面量。 */
+    private static int withAlpha(int argb, int alpha) {
+        return (Math.max(0, Math.min(0xFF, alpha)) << 24) | (argb & 0x00FFFFFF);
+    }
+
+    /** 取 alpha 通道。 */
+    private static int alphaOf(int argb) {
+        return (argb >>> 24) & 0xFF;
+    }
+
+    /** 空态/提示留白：垂直沿用既有 PAD_MD，左右 = 行内缩 + 文本内边距（与行标签同一 x 起点）。 */
+    private static void applyEmptyInset(SceneNode node, int insetPx) {
+        int horizontal = SceneChromeTokens.PAD_MD + Math.max(0, insetPx);
+        node.setPadding(SceneChromeTokens.PAD_MD, horizontal, SceneChromeTokens.PAD_MD, horizontal);
+    }
+
+    /**
+     * 空分类提示节点：emptyLabel 或兜底文案；次要前景（muted，禁用取 disabledForeground）经主题派生。
+     * 左右留白与行标签同源（pill 内缩 + 行内文本内边距），空态与有行状态不跳位。
+     */
     private static SceneNode emptyLabel(SceneRuntime rt, String value,
-                                        ReadableSignal<Integer> secondaryForeground) {
+                                        ReadableSignal<Integer> secondaryForeground,
+                                        ReadableSignal<Integer> insetPx) {
         SceneNode node = new SceneNode();
         node.setText(value == null || value.isEmpty() ? DEFAULT_EMPTY_LABEL : value);
-        node.setPadding(SceneChromeTokens.PAD_MD);
         node.setFallbackFontSize(FONT_SIZE);
         node.setHitTestable(false);
         rt.bind(secondaryForeground, node::setTextColor);
+        int inset = insetPx.get().intValue();
+        applyEmptyInset(node, inset);
+        rt.bind(insetPx, next -> Effect.untrack(() -> applyEmptyInset(node, next.intValue())));
         return node;
     }
 }

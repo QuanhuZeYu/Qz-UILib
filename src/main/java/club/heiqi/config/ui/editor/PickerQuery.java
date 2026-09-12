@@ -8,7 +8,9 @@ import java.util.Objects;
  *
  * <p>契约出处：{@code team/P0-ADR-契约与测量.md} §1.2/§1.5。两条 lane：</p>
  * <ul>
- *   <li>{@link #browse(int, String)}：文本为空 = 分类浏览 lane（无上限，{@code matchCount} = {@code size()}）；</li>
+ *   <li>{@link #browse(int, String)}：文本为空 = 分类浏览 lane（无上限）；{@code matchCount} =
+ *       <b>无分类收窄</b>（{@link #hasCategoryFilter()} == false）时 {@code size()}，<b>带分类过滤</b>时
+ *       该分类命中数（清单序子序列规模）；</li>
  *   <li>{@link #text(String, int, String)}：非空文本 = 搜索 lane（上限由装配层 {@code searchMaxItems} 决定）。</li>
  * </ul>
  *

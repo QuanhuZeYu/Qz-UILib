@@ -29,6 +29,7 @@ import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Props;
 import club.heiqi.uilib.ui.scene.control.ScenePickerPanel.Result;
 import club.heiqi.uilib.ui.scene.control.search.CategoryNavPane;
 import club.heiqi.uilib.ui.scene.control.search.MemberGrid;
+import club.heiqi.uilib.ui.scene.control.search.PickerChrome;
 import club.heiqi.uilib.ui.scene.control.search.PickerDensityPreference;
 import club.heiqi.uilib.ui.scene.control.search.PickerDensityTokens;
 import club.heiqi.uilib.ui.scene.control.search.PickerInfoBar;
@@ -2085,8 +2086,11 @@ public class ScenePickerPanelTest {
         backdropCount(scrim);
         for (SceneNode row : rows.__getChildren()) {
             Assert.assertEquals("行不叠第二层玻璃", 0, ownBackdropCount(row));
-            Assert.assertEquals("行不写边框宽", 0, row.getBorderWidth());
-            Assert.assertEquals("行不写圆角", 0, row.getCornerRadius());
+            // T2 基线重定：分类行升级为 pill（表面归 SceneSurfaceBinder 独占）——描边宽/圆角取
+            // INDICATOR 配方真值；滤镜预算（零 BACKDROP）与绘制路径（elevation -1）口径不变。
+            Assert.assertEquals("行描边宽 = INDICATOR 配方", INDICATOR.getBorderWidth(), row.getBorderWidth());
+            Assert.assertEquals("行圆角 = INDICATOR 配方真值（几何由渲染层夹到半高）",
+                    INDICATOR.getCornerRadius(), row.getCornerRadius());
             Assert.assertEquals("行普通绘制路径", -1.0F, row.__getSurfaceElevation(), EPSILON);
         }
         Assert.assertEquals("行标签 = 主题正文前景",
@@ -2177,8 +2181,12 @@ public class ScenePickerPanelTest {
 
         SceneNode cell = memberCell(band, 0);
         Assert.assertEquals("单元零底色", BG_TRANSPARENT, cell.getBackgroundColor());
-        Assert.assertEquals("单元零圆角", 0, cell.getCornerRadius());
-        Assert.assertEquals("单元零边框宽", 0, cell.getBorderWidth());
+        // T2 基线重定：单元格 = 成员卡悬停面（圆角随生效字号派生、1px 描边）；静息底色仍全透明。
+        Assert.assertEquals("单元圆角 = 生效字号派生（memberCardRadius）",
+                PickerChrome.memberCardRadius(PickerMetrics.fontSizeFor(
+                        PickerMetrics.defaultPanelDeclaredFontPx(), rt.getFontScalePercent())),
+                cell.getCornerRadius());
+        Assert.assertEquals("单元描边宽 = 1（悬停缘色可见的轮廓）", 1, cell.getBorderWidth());
         Assert.assertNull("单元零滤镜", cell.getBackdrop());
         Assert.assertEquals("单元普通绘制路径", -1.0F, cell.__getSurfaceElevation(), EPSILON);
         Assert.assertEquals("单元主文本 = 主题正文前景",

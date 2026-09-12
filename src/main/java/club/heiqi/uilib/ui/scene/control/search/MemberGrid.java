@@ -35,6 +35,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode.WidthSizing;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
+import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
@@ -49,14 +51,19 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <h3>受控语义</h3>
  * <p>成员列表、问题统计、编辑/删除回调全部受控；本模块只读上抛，不持有业务状态。</p>
  *
- * <h3>外观归属（液态玻璃迁移，G13 网格族口径）</h3>
+ * <h3>外观归属（液态玻璃迁移，G13 网格族口径 + T2 卡面）</h3>
  * <p>网格底座即 {@link SceneScrollContainer} 工厂的 viewport，background/border/borderWidth/
- * cornerRadius/backdrop/surfaceElevation 六项已由容器按主题 {@link SceneTheme.Role#GROUP} 配方
- * 独占（契约 §4.1 网格族「容器 GROUP」），本模块<b>不再</b>对底座二次绑定、也不给单元格装滤镜。
- * 单元格自身零表面写入（无底色、无边框、无圆角，保持 hitTestable=false 让点击落到卡内按钮）；
- * 成员卡片上没有选中/hover 交互态，故也没有轻量状态覆盖需要绑定的属性。单元格文字取主题语义
- * 前景：主文本 {@code foreground}、副文本 {@code mutedForeground}、徽章文字 duplicate 取
- * {@code warningText}、其余取 {@code foreground}（与 SceneToast / SceneObjectField 同一口径）。
+ * cornerRadius/backdrop/surfaceElevation 六项由容器按主题 {@link SceneTheme.Role#GROUP} 配方
+ * 独占（契约 §4.1 网格族「容器 GROUP」），本模块<b>不再</b>对底座二次绑定。
+ * <b>成员卡自身是悬停面</b>：单元格的六项同样归 {@code SceneSurfaceBinder} 独占，配方经
+ * 「主题 INDICATOR 基线 + 局部覆盖」派生（{@code backdrop(null)} ⇒ 零新增 BACKDROP 采样、
+ * {@code reliefDisabled} ⇒ 普通绘制路径、圆角随字号派生）：静息/禁用全透明（观感与「零表面」
+ * 时期逐值一致），悬停浮现低强度 tint + 主题 hovered 缘色 —— 卡片这才有可读的 hover 反馈。
+ * 卡片文字取主题语义前景：主文本 {@code foreground}、副文本 {@code mutedForeground}、徽章文字
+ * duplicate 取 {@code warningText}、其余取 {@code foreground}（与 SceneToast / SceneObjectField
+ * 同一口径）。命中：单元格 hitTestable=true（Router 只把 hover 写给最深命中节点），子节点优先 ⇒
+ * 卡内按钮/徽章仍是点击与 hover 的第一目标，CLICK 沿命中链冒泡，卡体不吞事件。</p>
+ * <p>
  * 无效徽章底（{@code DANGER_BG_SUBTLE}）与图标占位底色属于状态徽标 / 物品图像渲染协议
  *（契约 §7.3「状态徽标、内容图片不迁移」与 §4.1「物品图像不改色」），保持静态、不随主题重染。
  * 卡内编辑/删除按钮复用已主题化的 {@link SceneButton}，本模块不重复绑定。主题切换只重派生、
@@ -371,8 +378,23 @@ public final class MemberGrid {
         cell.setClipChildren(true);
         cell.setPadding(props.effectivePadding());
         cell.setGap(2);
-        // 单元格零表面写入：不装滤镜、不写底色/边框/圆角（网格底座六项归容器 GROUP 配方独占）。
-        cell.setHitTestable(false);
+        // 卡片表面（T2）：单元格自身是卡的唯一表面写入者，六项归 SceneSurfaceBinder 独占；
+        // 卡内文本/图标/按钮都是后代，不与其争属性槽。
+        // 命中：卡片必须可命中才能拿到 hover（Router 只把 hover 写给最深命中节点）；
+        // 子节点优先 ⇒ 卡内按钮/徽章仍是点击与 hover 的第一目标，卡体命中卡自身，
+        // CLICK 仍沿命中链冒泡到面板级处理器（不吞事件）。
+        cell.setHitTestable(true);
+        SceneInteractionState cardInteraction = rt.interactionState(cell);
+        // 时序契约：构造期声明关心 hovered/pressed，Router 后续写入才会落到已创建的 signal。
+        cardInteraction.hovered();
+        cardInteraction.pressed();
+        // 主题 INDICATOR 基线 + 局部覆盖（{@link #cardSurface}）：圆角随生效字号重派生（字号倍率/
+        // 密度档变化 ⇒ 卡面跟着变），主题切换重派生；两处失效都由 derivedSurface 的 Computed 承担。
+        ReadableSignal<PickerMetrics> cardMetrics = props.metrics();
+        ReadableSignal<SceneSurfaceStyle> cardRecipe = SceneThemes.derivedSurface(rt,
+                SceneTheme.Role.INDICATOR,
+                base -> cardSurface(base, cardMetrics == null ? FONT_SIZE : cardMetrics.get().fontSizePx()));
+        SceneSurfaceBinder.bind(rt, cell, cardRecipe, props.enabled(), cardInteraction);
         // G19/P-02 收编：语义色一律经 SceneThemes 公共派生入口取（构造期在 forEach 项
         // 作用域内捕获来源主题；派生期主题切换只重派生前景，不重建单元节点）。
 
@@ -532,6 +554,55 @@ public final class MemberGrid {
             ReadableSignal<? extends List<SearchPickerData.CurrentMember>> signal) {
         List<SearchPickerData.CurrentMember> members = signal.get();
         return members == null ? Collections.<SearchPickerData.CurrentMember>emptyList() : members;
+    }
+
+    // ==================== 卡片表面（T2 悬停面） ====================
+
+    /**
+     * 卡片表面配方：主题 {@link SceneTheme.Role#INDICATOR} 基线 + 局部覆盖。
+     *
+     * <p><b>静息不变</b>：idle / disabled 两档全透明 ⇒ 未悬停时卡片观感与「零表面」时期逐值一致，
+     * 只有悬停才浮现卡面（不让静息态凭空多出一层底色）。<b>悬停可辨</b>：tint 强度取协议令牌
+     * {@link SceneRenderProtocolTokens#CELL_HOVER_ALPHA}（与结果单元同一强度，选择器内跨控件一致），
+     * 缘色取主题 INDICATOR hovered 档（0x40 → 0x80，2×，另加 1px 描边本身的可读轮廓），
+     * 圆角由生效字号派生（{@link PickerChrome#memberCardRadius}）。<b>不做滤镜</b>：
+     * {@code backdrop(null)} ⇒ 零新增 BACKDROP 采样；{@code reliefDisabled} ⇒ 恒走普通绘制路径
+     * （elevation 恒 -1）。<b>pressed 与 hovered 同值</b>：卡体不是动作面（点击由卡内按钮承担），
+     * 不伪造可点击反馈，也不让按压瞬间把悬停面闪掉。</p>
+     *
+     * <p>纯函数：在 {@code derivedSurface} 的派生 effect 内执行，圆角读的是生效字号信号本身
+     * （字号/密度变化重派生，不是构造期快照），主题切换同样重派生。</p>
+     *
+     * @param base       主题 INDICATOR 配方基线
+     * @param fontSizePx 生效字号（逻辑 px）
+     * @return 卡片配方
+     */
+    private static SceneSurfaceStyle cardSurface(SceneSurfaceStyle base, int fontSizePx) {
+        SceneSurfaceStyle.StateStyle active = base.getHovered();
+        SceneSurfaceStyle.StateStyle hovered = new SceneSurfaceStyle.StateStyle(
+                withAlpha(active.getTint(), SceneRenderProtocolTokens.CELL_HOVER_ALPHA),
+                active.getEdge(), active.getElevation(), active.getLensFactor());
+        return base.toBuilder()
+                .backdrop(null)
+                .reliefDisabled(true)
+                .cornerRadius(PickerChrome.memberCardRadius(fontSizePx))
+                .borderWidth(1)
+                .idle(transparent(base.getIdle()))
+                .hovered(hovered)
+                .pressed(hovered)
+                .disabled(transparent(base.getDisabled()))
+                .build();
+    }
+
+    /** 全透明档：静息/禁用不浮现卡面（保留原 elevation/lens 值，本配方已声明浮雕豁免故不参与绘制）。 */
+    private static SceneSurfaceStyle.StateStyle transparent(SceneSurfaceStyle.StateStyle state) {
+        return new SceneSurfaceStyle.StateStyle(SceneChromeTokens.TRANSPARENT,
+                SceneChromeTokens.TRANSPARENT, state.getElevation(), state.getLensFactor());
+    }
+
+    /** 保留色 RGB、替换 alpha（0..255 夹取）。hover 强度统一取协议令牌，控件内不出现色字面量。 */
+    private static int withAlpha(int argb, int alpha) {
+        return (Math.max(0, Math.min(0xFF, alpha)) << 24) | (argb & 0x00FFFFFF);
     }
 
     // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================

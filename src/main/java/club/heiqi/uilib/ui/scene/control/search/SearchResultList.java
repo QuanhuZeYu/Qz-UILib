@@ -166,6 +166,13 @@ public final class SearchResultList {
      *                          搜索 lane = min(matchCount, maxItems)」）必须经本信号进入窗口数学——
      *                          窗口 Computed 依赖它，总量变化即重派生 totalRows/maxScrollPx 并重新拉片。
      *                          与 {@code totalItems} 同时给出时以本信号为准
+     * @param sliceRevision     <b>切片修订通道</b>（P4 增补·纯加法；可为 null = 不订阅）：窗口 Computed
+     *                          依赖它，<b>值变化即重取切片</b>（总量与几何都可能没变）。用途 = 查询条件 /
+     *                          数据代际这类「修订」：分类切换后命中数持平、语言与资源包代际变化后标签
+     *                          整体作废 —— 总量按 {@link Integer} 值记忆化，一条总量通道表达不了这种变化，
+     *                          缺本通道时切片会停在旧内容上。值类型应在「一切影响切片内容的输入变化」时
+     *                          按 {@link Objects#equals} 判不等（典型 = 查询条件 + 源版本的不可变快照）；
+     *                          只关心查询时可直接传查询信号
      * @param configuredKeys    已配置候选键集合（可为 null = 不做「已配置」标记）：SPI 路径不再排除
      *                          已在当前规则中的候选（P4 偏差 D-P4-3），该状态必须在结果单元上可区分
      *                          （T5 UX-18）—— 命中键的单元挂一颗主题强调色圆点，无额外布局占位
@@ -185,6 +192,7 @@ public final class SearchResultList {
             int visibleRows,
             ReadableSignal<Integer> availableWidth,
             ReadableSignal<Integer> totalItemsSignal,
+            ReadableSignal<?> sliceRevision,
             ReadableSignal<GridMetrics> metrics,
             ReadableSignal<Set<String>> configuredKeys,
             Runnable onExitUp) {
@@ -226,6 +234,49 @@ public final class SearchResultList {
             this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
                     onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
                     visibleRows, availableWidth, totalItemsSignal, metrics, null, null);
+        }
+
+        /**
+         * 旧 20 参形态（P4 增补·纯加法保留）：无「切片修订」通道（= 切片重取只看总量/几何变化）。
+         *
+         * @param items             数据源
+         * @param columns           列数
+         * @param cellWidth         单元宽
+         * @param cellHeight        单元高下限
+         * @param gapX              列间距
+         * @param gapY              行间距
+         * @param enabled           是否启用
+         * @param onActivate        激活回调
+         * @param highlighted       受控高亮
+         * @param onHighlightChange 高亮回写
+         * @param onHoverItem       hover 回调
+         * @param pageProvider      窗口切片生产者
+         * @param totalItems        数据总项数
+         * @param windowOffset      窗口偏移校验位
+         * @param visibleRows       预算可视行数
+         * @param availableWidth    预算可用宽
+         * @param totalItemsSignal  动态总量通道
+         * @param metrics           P5 派生度量快照
+         * @param configuredKeys    已配置候选键集合
+         * @param onExitUp          「↑ 退回上层控件」通道
+         */
+        public Props(ReadableSignal<? extends List<SceneVirtualGrid.Item>> items,
+                     int columns, int cellWidth, int cellHeight, int gapX, int gapY,
+                     ReadableSignal<Boolean> enabled,
+                     Consumer<SceneVirtualGrid.Item> onActivate,
+                     ReadableSignal<Integer> highlighted,
+                     Consumer<Integer> onHighlightChange,
+                     Consumer<SceneVirtualGrid.Item> onHoverItem,
+                     PageProvider pageProvider, int totalItems, int windowOffset, int visibleRows,
+                     ReadableSignal<Integer> availableWidth,
+                     ReadableSignal<Integer> totalItemsSignal,
+                     ReadableSignal<GridMetrics> metrics,
+                     ReadableSignal<Set<String>> configuredKeys,
+                     Runnable onExitUp) {
+            this(items, columns, cellWidth, cellHeight, gapX, gapY, enabled, onActivate, highlighted,
+                    onHighlightChange, onHoverItem, pageProvider, totalItems, windowOffset,
+                    visibleRows, availableWidth, totalItemsSignal, null, metrics, configuredKeys,
+                    onExitUp);
         }
 
         /**
@@ -641,6 +692,9 @@ public final class SearchResultList {
         // 窗口模型 + 窗口切片：一个 Computed 派生「窗口模型 + 同源快照（items + index）」，
         // 全量数据源时在内部切片，pageProvider 形态时向宿主拉取切片（offset 由控件产出）。
         ReadableSignal<WindowData> window = Computed.create(() -> {
+            // 切片修订通道先行入依赖（无通道时 no-op）：查询/数据代际变化即使总量与几何都不变，
+            // 也必须重取切片——「总量变化」不足以表达查询条件/数据修订（见 Props#sliceRevision）。
+            readSliceRevision(props);
             List<SceneVirtualGrid.Item> source = safeItems(props.items());
             // 总量解析顺序：动态信号（P4）> 静态字段 > items.size()（T-2 全量形态）。
             // 动态信号是窗口 Computed 的依赖 ⇒ 后端查询总量变化即重派生 totalRows/maxScrollPx 并重拉切片。
@@ -937,6 +991,19 @@ public final class SearchResultList {
                                 ReadableSignal<Integer> cellWidthPx) {
     }
 
+    /**
+     * 建立「切片修订 → 本次窗口求值」的依赖（无修订通道时为 no-op）。
+     *
+     * <p>只登记依赖、不消费值：值本身不参与窗口数学，它的作用是让「总量与几何都没变、
+     * 但切片内容变了」的修订（分类命中数持平、语言代际变化）也能使窗口 Computed 重跑。</p>
+     */
+    private static void readSliceRevision(Props props) {
+        ReadableSignal<?> revision = props.sliceRevision();
+        if (revision != null) {
+            revision.get();
+        }
+    }
+
     /** 同值早退写信号（几何信号全部走这里，避免同值 set 触发无谓重算）。 */
     private static void setIfChanged(Signal<Integer> signal, int value) {
         if (signal.get().intValue() != value) {
@@ -1125,6 +1192,14 @@ public final class SearchResultList {
             // 选中区分由底色承担，不靠文字变色（SceneNavList G09 口径）。
             label.setTextHorizontalAlign(TextHorizontalAlign.CENTER);
             label.setText(item.label());
+            // 标签按<b>当前快照</b>实时解析（与图标同一口径）：单元节点按 key 复用（keyed reconcile），
+            // 语言/资源包代际变化后同 key 项的标签文本会变，构建期捕获的 item 是旧代
+            // —— 只读构建期 {@code item.label()} 会把旧代文本永久留在屏幕上（图标侧已有同一修法）。
+            rt.bindComputed(() -> {
+                SceneVirtualGrid.Item live = window.get().snapshot().index().itemAt(item.key());
+                String text = live == null ? item.label() : live.label();
+                return text == null ? "" : text;
+            }, label::setText);
             rt.bindComputed(() -> Boolean.TRUE.equals(props.enabled().get())
                     ? palette.mutedForeground.get() : palette.disabledForeground.get(),
                     label::setTextColor);

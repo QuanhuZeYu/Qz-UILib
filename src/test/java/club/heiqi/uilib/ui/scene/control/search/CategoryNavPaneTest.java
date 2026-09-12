@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
+import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -49,8 +50,10 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *   <li>底座 = {@code TOOLBAR} 配方，六项（background/border/borderWidth/cornerRadius/backdrop/
  *       surfaceElevation）由 {@code SceneSurfaceBinder} 独占；旧 {@code applyPanelChrome}
  *       实色四件套不再出现。</li>
- *   <li>行 = {@code selectableSurface(INDICATOR, selected)} 的<b>轻量状态覆盖</b>（只写背景色）：
- *       选中/悬停/禁用三态取配方档，<b>行零 BACKDROP、行不装滤镜</b>（底座恰好新增 1 颗采样）。</li>
+ *   <li>行 = <b>pill 行</b>：{@code selectableSurface(INDICATOR, selected)} 为主题基线，
+ *       本地只放大非选中档的 tint 步进（hover +0x18 / pressed +0x2C）并关滤镜/关浮雕；形状
+ *       （圆角 + 1px 描边）取角色配方，左右内缩与行间间距由生效字号派生；<b>行零 BACKDROP</b>
+ *       （底座恰好新增 1 颗采样）。状态档量化判据见 {@link #rowStatesAreQuantifiablyDistinctFromIdle}。</li>
  *   <li>复用/重绑不串状态：换 key 重建的行不带上一项的选中/hover 残留；同 key 换位节点身份不变、
  *       选中跟随 key。</li>
  *   <li>文字取主题 {@code foreground}/{@code mutedForeground}，禁用取 {@code disabledForeground}。</li>
@@ -83,11 +86,23 @@ public class CategoryNavPaneTest {
             SceneThemes.DEFAULT.surface(SceneTheme.Role.TOOLBAR);
     private static final SceneSurfaceStyle INDICATOR =
             SceneThemes.DEFAULT.surface(SceneTheme.Role.INDICATOR);
-    /** 行三档：未选中/hover/pressed 取 INDICATOR 配方档。 */
+    /**
+     * 行 hover/pressed 的 tint 强度步进（单位 alpha）：与 {@code CategoryNavPane} 同一口径
+     * （本地覆盖，不是全局主题配方；步进叠加在<b>主题 idle alpha</b> 上 ⇒ 主题换档时测试自动跟随）。
+     */
+    private static final int ROW_HOVER_TINT_STEP = 0x18;
+    private static final int ROW_PRESS_TINT_STEP = 0x2C;
+    /** 行三档：idle/disabled 取角色原档；hover/pressed = 主题 idle alpha + 步进（RGB 取主题对应档）。 */
     private static final int ROW_IDLE = INDICATOR.getIdle().getTint();
-    private static final int ROW_HOVER = INDICATOR.getHovered().getTint();
-    private static final int ROW_PRESSED = INDICATOR.getPressed().getTint();
     private static final int ROW_DISABLED = INDICATOR.getDisabled().getTint();
+    private static final int ROW_HOVER = withAlpha(INDICATOR.getHovered().getTint(),
+            alphaOf(ROW_IDLE) + ROW_HOVER_TINT_STEP);
+    private static final int ROW_PRESSED = withAlpha(INDICATOR.getPressed().getTint(),
+            alphaOf(ROW_IDLE) + ROW_PRESS_TINT_STEP);
+    /** 行缘色三档：本地不覆盖缘色，hover/pressed 取主题对应档（idle 缘 = 静息轮廓）。 */
+    private static final int ROW_IDLE_EDGE = INDICATOR.getIdle().getEdge();
+    private static final int ROW_HOVER_EDGE = INDICATOR.getHovered().getEdge();
+    private static final int ROW_PRESSED_EDGE = INDICATOR.getPressed().getEdge();
     /** 选中档：tint RGB 换主题强调色、强度取主题统一选中强度 0x59（选中不只靠透明度）。 */
     private static final int ROW_SELECTED = selectedTint(SceneThemes.DEFAULT.accent());
     private static final int ROW_SELECTED_HOVER = selectedTint(SceneThemes.DEFAULT.accentHover());
@@ -142,6 +157,11 @@ public class CategoryNavPaneTest {
         return argb & 0x00FFFFFF;
     }
 
+    /** 保留色 RGB、替换 alpha（与实现同一助手语义，测试侧独立表达避免自证）。 */
+    private static int withAlpha(int argb, int alpha) {
+        return ((alpha & 0xFF) << 24) | (argb & 0x00FFFFFF);
+    }
+
     /** 节点子树内的 BACKDROP 命令数（每颗采样滤镜的表面恰好 1 条）。 */
     private static int backdropCount(ScenePaintEngine engine, SceneNode node) {
         PaintPlan plan = engine.paint(node).getPlan();
@@ -179,6 +199,24 @@ public class CategoryNavPaneTest {
         rt.flush();
         layoutAll();
         return lastHandle;
+    }
+
+    /** 带 P5 度量通道的挂载：行高/内缩/行间距全部由生效字号派生（字号变化走同一节点重派生）。 */
+    private SceneNode mountWithMetrics(Signal<PickerMetrics> metrics, List<CategoryRow> initial) {
+        rows.set(initial);
+        lastHandle = rt.mount(sceneRoot, () -> {
+            SceneNode wrapper = new SceneNode();
+            wrapper.setPreferredHeight(300);
+            final SceneNode[] holder = new SceneNode[1];
+            SceneThemes.withTheme(Signal.create(SceneTheme.liquidGlassDark()), () -> holder[0] =
+                    CategoryNavPane.create(rt, new CategoryNavPane.Props(rows, categoryKey, enabled,
+                            selects::add, "暂无分类", null, null, null, metrics)));
+            wrapper.appendChild(holder[0]);
+            return wrapper;
+        });
+        rt.flush();
+        layoutAll();
+        return lastHandle.getRoot().__getChildren().get(0);
     }
 
     private void layoutAll() {
@@ -315,7 +353,7 @@ public class CategoryNavPaneTest {
         Assert.assertEquals("点击全部行回传 null", Arrays.asList("cat1", null), selects);
     }
 
-    // ==================== 选中态（INDICATOR 轻量档，取代旧 SceneStateColors） ====================
+    // ==================== 选中态（INDICATOR 选中语义：强调色 + 0x59，取代旧 SceneStateColors） ====================
 
     @Test
     public void selectedBackgroundTracksCategoryKey() {
@@ -428,15 +466,16 @@ public class CategoryNavPaneTest {
             Assert.assertNull("行[" + i + "] 不声明 backdrop", row.getBackdrop());
             Assert.assertNull("行内标签不采样背景", labelAt(nav, i).getBackdrop());
             Assert.assertNull("行内徽章不采样背景", badgeAt(nav, i).getBackdrop());
-            // 轻量覆盖只写背景色：不与底座争其它属性槽（保持普通绘制路径）
-            Assert.assertEquals("行[" + i + "] 不写边框宽", 0, row.getBorderWidth());
-            Assert.assertEquals("行[" + i + "] 不写圆角", 0, row.getCornerRadius());
+            // 行表面归绑定器独占：形状取角色配方（pill 圆角 + 1px 描边），但零滤镜、不进浮雕通道。
+            Assert.assertEquals("行[" + i + "] 描边宽 = 角色配方", INDICATOR.getBorderWidth(), row.getBorderWidth());
+            Assert.assertEquals("行[" + i + "] 圆角 = 角色配方（pill）",
+                    INDICATOR.getCornerRadius(), row.getCornerRadius());
             Assert.assertEquals("行[" + i + "] 不绑定实体高度（-1=普通绘制）", -1.0F,
                     row.__getSurfaceElevation(), EPSILON);
         }
     }
 
-    // ==================== 行三态：INDICATOR 轻量档（选中/悬停/禁用） ====================
+    // ==================== 行三态：主题基线 + 本地步进（选中/悬停/禁用） ====================
 
     @Test
     public void rowStatesFollowIndicatorLightweightTiers() {
@@ -449,13 +488,15 @@ public class CategoryNavPaneTest {
         Assert.assertEquals("未选中 idle = 配方 idle 档", ROW_IDLE, cat2.getBackgroundColor());
 
         pointerAt(nav, 1, ScenePointerAction.MOVE);
-        Assert.assertEquals("hover = 配方 hovered 档", ROW_HOVER, cat2.getBackgroundColor());
+        Assert.assertEquals("hover = 主题基线 + 本地步进（主题 idle alpha + 0x18）",
+                ROW_HOVER, cat2.getBackgroundColor());
         Assert.assertNotEquals("hover 有可见变化", ROW_IDLE, cat2.getBackgroundColor());
 
         pointerAt(nav, 1, ScenePointerAction.BUTTON_DOWN);
-        Assert.assertEquals("pressed 压过 hovered = 配方 pressed 档", ROW_PRESSED, cat2.getBackgroundColor());
+        Assert.assertEquals("pressed 压过 hovered = 主题基线 + 本地步进（主题 idle alpha + 0x2C）",
+                ROW_PRESSED, cat2.getBackgroundColor());
         pointerAt(nav, 1, ScenePointerAction.BUTTON_UP);
-        Assert.assertEquals("释放回 hovered 档", ROW_HOVER, cat2.getBackgroundColor());
+        Assert.assertEquals("释放回 hover 档（主题基线 + 本地步进）", ROW_HOVER, cat2.getBackgroundColor());
         pointerAway();
         Assert.assertEquals("移开回 idle 档", ROW_IDLE, cat2.getBackgroundColor());
 
@@ -481,7 +522,8 @@ public class CategoryNavPaneTest {
                 ROW_SELECTED_HOVER, cat1.getBackgroundColor());
         Assert.assertEquals("恢复启用：cat2 无 hover 回 idle 档", ROW_IDLE, cat2.getBackgroundColor());
         pointerAt(nav, 1, ScenePointerAction.MOVE);
-        Assert.assertEquals("MOVE 帧转移 hover：cat2 进 hovered 档", ROW_HOVER, cat2.getBackgroundColor());
+        Assert.assertEquals("MOVE 帧转移 hover：cat2 进 hover 档（主题基线 + 本地步进）",
+                ROW_HOVER, cat2.getBackgroundColor());
         Assert.assertEquals("cat1 退 hover 后仍保持选中档", ROW_SELECTED, cat1.getBackgroundColor());
         pointerAway();
         Assert.assertEquals("指针移开：cat2 回 idle 档", ROW_IDLE, cat2.getBackgroundColor());
@@ -664,6 +706,287 @@ public class CategoryNavPaneTest {
                 allRow.getBackgroundColor());
         Assert.assertEquals("文字仍取主题正文色", SceneThemes.DEFAULT.foreground(),
                 labelAt(nav, 2).getTextColor());
+    }
+
+    // ==================== T2：pill 形状与状态档量化 ====================
+
+    /** pill 形状：圆角/描边取角色配方；左右内缩与行间间距由生效字号派生（旧口径：满宽矩形色块）。 */
+    @Test
+    public void pillRowsCarryRecipeShapeAndFontDerivedInsets() {
+        SceneNode nav = mountPane(threeCategories(), null);
+        int inset = PickerChrome.navRowInset(CategoryNavPane.FONT_SIZE);
+        int gap = PickerChrome.navRowGap(CategoryNavPane.FONT_SIZE);
+        Assert.assertTrue("前置：内缩必须 > 0（pill 不贴栏边）", inset > 0);
+        Assert.assertTrue("前置：行间距必须 > 0（相邻 pill 不粘连）", gap > 0);
+        // 节点属性 = 配方真值（INDICATOR 配方的 PILL_RADIUS 999）；实际几何由渲染层夹取：
+        // UiRoundedRectGeometry.clampCornerRadius(:221-223) = max(0, min(radius, min(w, h) / 2))
+        // ⇒ 行高 32 时圆角被夹到 16，即完整胶囊。断言节点属性为 999 是钉「配方真值」，
+        // 不表示真机上画 999px 圆角（勿误读）。
+        Assert.assertTrue("前置：pill 圆角必须远大于行高（配方真值 999，渲染层夹到半高 = 完整胶囊）",
+                INDICATOR.getCornerRadius() > PickerChrome.navRowHeight(CategoryNavPane.FONT_SIZE));
+        for (int i = 0; i < 3; i++) {
+            SceneNode row = rowAt(nav, i);
+            Assert.assertEquals("行[" + i + "] 圆角 = 角色配方真值（几何由渲染层夹到半高）",
+                    INDICATOR.getCornerRadius(), row.getCornerRadius());
+            Assert.assertEquals("行[" + i + "] 描边宽 = 角色配方", INDICATOR.getBorderWidth(), row.getBorderWidth());
+            Assert.assertEquals("行[" + i + "] 左内缩 = 字号派生", inset, row.getMarginLeft());
+            Assert.assertEquals("行[" + i + "] 右内缩 = 字号派生", inset, row.getMarginRight());
+            Assert.assertEquals("行[" + i + "] 行间间距 = 字号派生", gap, row.getMarginBottom());
+            Assert.assertEquals("行[" + i + "] 静息缘色 = 主题 idle 档", ROW_IDLE_EDGE, row.getBorderColor());
+        }
+        // 内容合同不变：标签(第 0 孩)/计数徽章(第 1 孩) 仍在行内，垂直居中由 CrossAxisAlign.CENTER 承担。
+        Assert.assertEquals("行标签仍是行首孩子", "分类一", labelAt(nav, 0).getText());
+        Assert.assertEquals("数量徽章仍是行第二个孩子", "3", badgeAt(nav, 0).getText());
+    }
+
+    /** 状态档量化：hover/pressed 与 idle 同屏可辨（tint 与缘色双通道，不是「感觉更明显」）。 */
+    @Test
+    public void rowStatesAreQuantifiablyDistinctFromIdle() {
+        SceneNode nav = mountPane(threeCategories(), null);
+        SceneNode row = rowAt(nav, 1);
+        int idleTint = row.getBackgroundColor();
+        int idleEdge = row.getBorderColor();
+        Assert.assertEquals("静息 tint = 角色 idle 档", ROW_IDLE, idleTint);
+        Assert.assertEquals("静息缘色 = 角色 idle 缘", ROW_IDLE_EDGE, idleEdge);
+
+        pointerAt(nav, 1, ScenePointerAction.MOVE);
+        int hoverTint = row.getBackgroundColor();
+        int hoverEdge = row.getBorderColor();
+        Assert.assertEquals("hover tint = 主题 idle alpha + 步进", ROW_HOVER, hoverTint);
+        Assert.assertEquals("hover 缘色 = 主题 hovered 档", ROW_HOVER_EDGE, hoverEdge);
+        Assert.assertTrue("hover − idle tint Δalpha ≥ 0x12（≥7.1pp）",
+                alphaOf(hoverTint) - alphaOf(idleTint) >= 0x12);
+        Assert.assertTrue("hover − idle 缘色 Δalpha ≥ 0x40（≥2×）",
+                alphaOf(hoverEdge) - alphaOf(idleEdge) >= 0x40);
+        Assert.assertTrue("本地 hover 步进必须 > 主题原生步进(+6)",
+                alphaOf(hoverTint) - alphaOf(idleTint) > 6);
+
+        pointerAt(nav, 1, ScenePointerAction.BUTTON_DOWN);
+        int pressTint = row.getBackgroundColor();
+        int pressEdge = row.getBorderColor();
+        Assert.assertEquals("pressed tint = 主题 idle alpha + 步进", ROW_PRESSED, pressTint);
+        Assert.assertTrue("pressed − hovered tint Δalpha ≥ 0x10（填充更深）",
+                alphaOf(pressTint) - alphaOf(hoverTint) >= 0x10);
+        // 行可聚焦：POINTER_DOWN 的隐式聚焦（SceneInputRouter「隐式聚焦」块：命中链里最深的
+        // focusable）让行同时进入 focused；绑定器按契约把「非禁用 + focused」的缘色切到主题聚焦缘
+        // （SceneSurfaceBinder:118-121）。故鼠标按下时可见缘色 = focusEdge，而 tint 仍取 pressed 档
+        // —— 按压依然与 hover 可辨（填充更深 + 缘色换色相），但不是「rim 变暗」。
+        Assert.assertEquals("按下即聚焦：缘色 = 主题聚焦缘（绑定器 focus 覆盖语义）",
+                INDICATOR.getFocusEdge(), pressEdge);
+        Assert.assertNotEquals("聚焦缘 ≠ hovered 缘（按下与悬停在同屏可辨）",
+                ROW_HOVER_EDGE, pressEdge);
+
+        // 配方层缘色阶梯（运行时被 focusEdge 覆盖，故在配方真值上钉住设计意图）：
+        // pressed 缘比 hovered 缘更暗 = 「按下去 rim 回落」；这条不被 focusEdge 掩盖。
+        Assert.assertTrue("配方缘色阶梯：pressed 缘比 hovered 缘更暗",
+                alphaOf(ROW_PRESSED_EDGE) < alphaOf(ROW_HOVER_EDGE));
+        Assert.assertTrue("配方缘色阶梯：hovered 缘比 idle 缘更亮（hover 轮廓可读）",
+                alphaOf(ROW_HOVER_EDGE) > alphaOf(ROW_IDLE_EDGE));
+
+        pointerAt(nav, 1, ScenePointerAction.BUTTON_UP);
+        pointerAway();
+        Assert.assertEquals("移开回 idle tint（焦点不吞 tint 档）", ROW_IDLE, row.getBackgroundColor());
+        Assert.assertEquals("焦点行移开指针后仍显聚焦缘（焦点线索不丢）",
+                INDICATOR.getFocusEdge(), row.getBorderColor());
+
+        // 失焦（点击树外 ⇒ Router 隐式 clearFocus，权威焦点只经 Router 改写，本控件不直写）后缘色回状态档。
+        clickAt(W - 2, H - 2);
+        Assert.assertEquals("失焦后缘色回 idle 档", ROW_IDLE_EDGE, row.getBorderColor());
+    }
+
+    /** 动态化：生效字号变化后行高/内缩/行间距在同一节点上重派生（不重建行、不改配方形状）。 */
+    @Test
+    public void rowGeometryReDerivesFromMetricsWithoutRebuild() {
+        Signal<PickerMetrics> metrics = Signal.create(PickerMetrics.solve(rt, W, H, 12, null, 2));
+        SceneNode nav = mountWithMetrics(metrics, threeCategories());
+        SceneNode row = rowAt(nav, 0);
+        Assert.assertEquals("初始内缩 = 字号派生(12)",
+                PickerChrome.navRowInset(12), row.getMarginLeft());
+        Assert.assertEquals("初始行高 = 字号派生(12)",
+                PickerChrome.navRowHeight(12), row.getPreferredHeight());
+
+        metrics.set(PickerMetrics.solve(rt, W, H, 20, null, 2));
+        rt.flush();
+        layoutAll();
+        Assert.assertSame("字号变化不重建行节点", row, rowAt(nav, 0));
+        Assert.assertEquals("内缩重派生", PickerChrome.navRowInset(20), row.getMarginLeft());
+        Assert.assertEquals("行间距重派生", PickerChrome.navRowGap(20), row.getMarginBottom());
+        Assert.assertEquals("行高重派生", PickerChrome.navRowHeight(20), row.getPreferredHeight());
+        Assert.assertTrue("两档内缩必须不同（否则本用例失去意义）",
+                PickerChrome.navRowInset(20) != PickerChrome.navRowInset(12));
+        Assert.assertTrue("两档行高必须不同（否则本用例失去意义）",
+                PickerChrome.navRowHeight(20) != PickerChrome.navRowHeight(12));
+        Assert.assertEquals("pill 形状仍取角色配方（字号变化不改配方）",
+                INDICATOR.getCornerRadius(), row.getCornerRadius());
+    }
+
+    /**
+     * pill 几何是<b>布局</b>而非只改绘制：内缩/行间间距走行节点 margin（LayoutBox 收缩），
+     * 行的命中盒 = 视觉 pill 盒 —— 不存在「看着是 pill 却点不到边缘」或反向的隐形命中区。
+     * 判据：pill 左边缘内 1px 命中该行；内缩 gutter（pill 之外、视口之内）不命中任何行。
+     */
+    @Test
+    public void pillHitRegionMatchesItsVisualBounds() {
+        SceneNode nav = mountPane(threeCategories(), null);
+        SceneNode row = rowAt(nav, 1);
+        AnchorRect box = SceneGeometry.absoluteBox(row, 0, 0);
+        int inset = row.getMarginLeft();
+        Assert.assertTrue("前置：行确实内缩（否则本用例失去意义）", inset > 0);
+
+        // gutter：x 在视口内、pill 左边缘之外（保证在视觉 pill 之外，且远离 1px 描边）
+        clickAt(box.getX() - Math.max(1, inset / 2), box.getY() + box.getHeight() / 2);
+        Assert.assertTrue("pill 之外的 gutter 不命中任何行（无隐形命中区）", selects.isEmpty());
+
+        // pill 边缘内 1px：命中该行（命中盒与视觉盒同一 LayoutBox）
+        clickAt(box.getX() + 1, box.getY() + box.getHeight() / 2);
+        Assert.assertEquals("pill 边缘命中该行（视觉与命中一致）",
+                Collections.singletonList("cat2"), selects);
+    }
+
+    /** 在画布绝对坐标处注入一次完整点击（DOWN + UP）。 */
+    private void clickAt(int x, int y) {
+        InputFrameBuilder fb = new InputFrameBuilder(x, y);
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_DOWN, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1000L));
+        fb.push(RawInputEvent.ofPointer(ScenePointerAction.BUTTON_UP, x, y, SceneMouseButton.LEFT,
+                0, 0, 0, false, false, false, false, 1001L));
+        rt.route(sceneRoot, fb.drainFrame(), 0, 0);
+        rt.flush();
+    }
+
+    /**
+     * 键盘导航 + 最小位移滚动在内缩/行间距引入后仍正确：焦点行不得滚出视口、位移不得算错。
+     *
+     * <p>既有 {@link #keyboardNavigatesRowsAndSelectsWithEnter} 只覆盖焦点移动（3 行不滚动），
+     * 本用例用 20 行（内容超出 300px 宿主）覆盖 {@code scrollIntoView} 的最小位移路径。</p>
+     */
+    @Test
+    public void keyboardFocusStaysVisibleWithPillGeometry() {
+        List<CategoryRow> many = new ArrayList<CategoryRow>();
+        many.add(CategoryRow.allRow("全部", 20));
+        for (int i = 0; i < 19; i++) {
+            many.add(CategoryRow.categoryRow("cat" + i, "分类" + i, i));
+        }
+        SceneNode nav = mountPane(many, null);
+        SceneNode viewport = nav.__getChildren().get(0).__getChildren().get(0);
+        Assert.assertTrue("前置：内容超出视口（滚动可发生）", SceneGeometry.maxScrollY(viewport) > 0);
+
+        SceneNode first = rowAt(nav, 0);
+        SceneNode last = rowAt(nav, many.size() - 1);
+        rt.requestFocus(first);
+        rt.flush();
+        Assert.assertSame("首行可聚焦", first, rt.getFocusedNode());
+
+        pressKey(SceneKey.END);
+        layoutAll();
+        Assert.assertSame("END 到末行", last, rt.getFocusedNode());
+        Assert.assertTrue("末行焦点触发最小位移滚动（偏移 > 0 且不超过 maxScrollY）",
+                viewport.getScrollOffsetY() > 0
+                        && viewport.getScrollOffsetY() <= SceneGeometry.maxScrollY(viewport));
+        AnchorRect viewportBox = SceneGeometry.absoluteBox(viewport, 0, 0);
+        AnchorRect lastBox = SceneGeometry.absoluteBox(last, 0, 0);
+        Assert.assertTrue("焦点行顶边不越视口上界", lastBox.getY() >= viewportBox.getY());
+        Assert.assertTrue("焦点行底边不越视口下界",
+                lastBox.getY() + lastBox.getHeight() <= viewportBox.getY() + viewportBox.getHeight());
+
+        pressKey(SceneKey.HOME);
+        layoutAll();
+        Assert.assertSame("HOME 回首行", first, rt.getFocusedNode());
+        Assert.assertEquals("回首行滚回顶部（最小位移而非居中）", 0, viewport.getScrollOffsetY());
+        AnchorRect firstBox = SceneGeometry.absoluteBox(first, 0, 0);
+        Assert.assertTrue("首行焦点完整可见", firstBox.getY() >= viewportBox.getY()
+                && firstBox.getY() + firstBox.getHeight() <= viewportBox.getY() + viewportBox.getHeight());
+    }
+
+    // ==================== 行内容换代（keyed 复用吃构建期文本） ====================
+
+    /**
+     * 行键不变而 label/count 换代 ⇒ 文本必须刷新，且**节点不重建、行键不变**（零结构变化）。
+     *
+     * <p>缺陷锚定：行节点由 {@code forEach} 按 {@code identityKey} 复用，行内标签/徽章一度只写构建期
+     * 快照 ⇒ 同一行键的换代（「全部」行随查询总量变化、分类行随清单/语言代际重建）永远刷不上屏。
+     * 修复前本用例红：标签/徽章停在换代前的文本。</p>
+     */
+    @Test
+    public void rowTextsFollowCurrentSnapshotForSameRowKey() {
+        List<CategoryRow> first = threeCategories();
+        SceneNode nav = mountPane(first, "暂无分类");
+        SceneNode rowBefore = rowAt(nav, 0);
+        Assert.assertEquals("前置：旧标签", "分类一", labelAt(nav, 0).getText());
+        Assert.assertEquals("前置：旧计数", "3", badgeAt(nav, 0).getText());
+        Assert.assertEquals("前置：「全部」计数", "8", badgeAt(nav, 2).getText());
+
+        // 同一行键换代：cat1 的 label/count 变、「全部」计数变、cat2 保持不变。
+        rows.set(Arrays.asList(
+                CategoryRow.categoryRow("cat1", "分类一·改", 42),
+                first.get(1),
+                CategoryRow.allRow("全部", 999)));
+        rt.flush();
+        layoutAll();
+
+        Assert.assertSame("行键不变 ⇒ 节点复用、结构零变化", rowBefore, rowAt(nav, 0));
+        Assert.assertEquals("同键换代：标签刷新", "分类一·改", labelAt(nav, 0).getText());
+        Assert.assertEquals("同键换代：徽章刷新", "42", badgeAt(nav, 0).getText());
+        Assert.assertEquals("同键换代：「全部」行计数刷新", "999", badgeAt(nav, 2).getText());
+        Assert.assertEquals("未换代的行不串改：cat2 计数保持", "5", badgeAt(nav, 1).getText());
+        Assert.assertEquals("未换代的行不串改：cat2 标签保持", "分类二", labelAt(nav, 1).getText());
+    }
+
+    /**
+     * 静默帧（rows 不变）不得重读行列表、不得触发节点重写：索引必须是<b>响应式派生</b>
+     * （换代才 O(rows) 一次、行内 O(1)），行内文本投影按值记忆化。
+     *
+     * <p>观测面：行列表读取计数（构造期快照会随每次读取变化）+ <b>几何变更纪元</b>
+     * （{@link SceneLayoutEngine#layoutChangeEpoch()}：只有真几何变化才前进；{@code layoutEpoch()}
+     * 每批都自增，不适用于本判据）+ 徽章绘制缓存身份。三者任一被静默帧推动，即为
+     * 「每帧重建索引 / 每帧重写节点」。</p>
+     */
+    @Test
+    public void unchangedFrameDoesNotRereadRowsOrRewriteTexts() {
+        CountingRows counting = new CountingRows(threeCategories());
+        SceneNode nav = mountPane(counting, "暂无分类");
+        // 收敛：先让 paint 自身的首批失效（绘制缓存建立/呈现偏移落位）过去，再取静默帧基线。
+        layoutAll();
+        paintEngine.paint(nav);
+        layoutAll();
+        layoutAll();
+        int reads = counting.reads;
+        int changeEpoch = layoutEngine.layoutChangeEpoch();
+        Object cachedPaint = badgeAt(nav, 0).getCachedPaint();
+        Assert.assertNotNull("前置：绘制缓存已生成", cachedPaint);
+
+        rt.flush();
+        layoutAll();
+
+        Assert.assertEquals("静默帧不得重读行列表（索引必须响应式派生，不得每帧重建）",
+                reads, counting.reads);
+        Assert.assertEquals("静默帧不得触发几何失效", changeEpoch, layoutEngine.layoutChangeEpoch());
+        Assert.assertSame("静默帧不得重写节点（绘制缓存身份保持）",
+                cachedPaint, badgeAt(nav, 0).getCachedPaint());
+        Assert.assertEquals("文本保持", "分类一", labelAt(nav, 0).getText());
+        Assert.assertEquals("徽章保持", "3", badgeAt(nav, 0).getText());
+    }
+
+    /** 记录 {@code get}/{@code size} 读取次数的行列表（索引重建探测）。 */
+    private static final class CountingRows extends AbstractList<CategoryRow> {
+        private final List<CategoryRow> delegate;
+        private int reads;
+
+        private CountingRows(List<CategoryRow> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public CategoryRow get(int index) {
+            reads++;
+            return delegate.get(index);
+        }
+
+        @Override
+        public int size() {
+            reads++;
+            return delegate.size();
+        }
     }
 
     // ==================== 卸载回收 ====================

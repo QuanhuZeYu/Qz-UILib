@@ -49,10 +49,12 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * {@link MemberGrid} 单元测试（G13 网格族液态玻璃迁移 + 行为回归）。
  *
  * <p><b>外观口径</b>：网格底座 = {@code SceneScrollContainer} 工厂 viewport，六项表面由主题
- * GROUP 配方独占、恰好一条 BACKDROP；单元格零表面写入（无底色/边框/圆角/滤镜、零 BACKDROP、
- * elevation 保持 -1）；主文本 {@code foreground}、副文本 {@code mutedForeground}、徽章文字
- * duplicate 取 {@code warningText}；无效徽章底与图标占位底为图像/状态徽标协议静态值，不随主题
- * 重染。主题切换只重派生：节点身份不变、effect 数不增长；卸载回收全部绑定。</p>
+ * GROUP 配方独占、恰好一条 BACKDROP；成员卡自身 = 主题 INDICATOR 派生的<b>悬停面</b>
+ * （静息/禁用全透明 ⇒ 观感与「零表面」时期逐值一致；悬停浮现协议强度 tint + 主题 hovered 缘色；
+ * 圆角随生效字号派生；{@code backdrop=null} ⇒ 零 BACKDROP、{@code reliefDisabled} ⇒ elevation 恒 -1）；
+ * 主文本 {@code foreground}、副文本 {@code mutedForeground}、徽章文字 duplicate 取
+ * {@code warningText}；无效徽章底与图标占位底为图像/状态徽标协议静态值，不随主题重染。
+ * 主题切换只重派生：节点身份不变、effect 数不增长；卸载回收全部绑定。</p>
  *
  * <p><b>行为回归</b>：keyed 行/单元复用（数据更新不重建节点、数据收缩回收订阅、列数重排）、
  * 重绑不串态（同 id 节点值换代后徽章/图像/文字全部复位，不残留上一代状态）、编辑/删除回调
@@ -183,6 +185,31 @@ public class MemberGridTest {
         layoutAndBridge();
     }
 
+    /** 带 P5 度量通道的挂载：卡片圆角等几何由生效字号派生（字号变化走同一节点重派生）。 */
+    private void mountWithMetrics(Signal<PickerMetrics> metrics, List<SearchPickerData.CurrentMember> initial) {
+        membersSignal = Signal.create(initial);
+        enabledSignal = Signal.create(Boolean.TRUE);
+        issuesSignal = Signal.create(issuesOf(initial));
+        final MemberGrid.Props props = new MemberGrid.Props(membersSignal, enabledSignal,
+                SearchPickerPresentation.defaultEnglish(), visualAdapter(), issuesSignal,
+                edited::add, id -> {
+                    removed.add(id);
+                    return Boolean.TRUE;
+                },
+                CELL_W, CELL_H, GAP_X, GAP_Y, metrics, null);
+        final MemberGrid.Result[] holder = new MemberGrid.Result[1];
+        handle = rt.mount(sceneRoot, () -> {
+            SceneNode wrapper = new SceneNode();
+            wrapper.setPreferredHeight(WRAPPER_HEIGHT);
+            holder[0] = MemberGrid.create(rt, props);
+            wrapper.appendChild(holder[0].root());
+            return wrapper;
+        });
+        result = holder[0];
+        rt.flush();
+        layoutAndBridge();
+    }
+
     /** 指针移动到节点中心（inside=true）或画布角落（inside=false，用于 hover 移出）。 */
     private void movePointer(SceneNode node, boolean inside) {
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
@@ -294,8 +321,9 @@ public class MemberGridTest {
     /**
      * D5（P5 §5.4）：徽章 hover 上报当前成员、移出上报 null；通道可选（未提供时不接线）。
      *
-     * <p>可命中的只有徽章本身（卡片/行保持 hitTestable=false，点击仍穿透到卡内按钮）；
-     * 无问题成员的徽章文本为空 —— 空文本叶宽度为 0，不存在可命中的 hover 目标。</p>
+     * <p>命中优先级：徽章/按钮等子节点先于卡片（深度优先、子节点优先），所以徽章 hover 通道
+     * 不被卡片的 hover 面抢走；卡片自身可命中仅用于卡片 hover 反馈（无问题成员的徽章文本为空
+     * —— 空文本叶宽度为 0，不存在可命中的 hover 目标）。</p>
      */
     @Test
     public void badgeHoverReportsMemberThroughOptionalChannel() {
@@ -308,8 +336,8 @@ public class MemberGridTest {
         SceneNode invalidBadge = badge(cell(1, 0));
         Assert.assertTrue("徽章必须可命中（hover 原因通道前提）", invalidBadge.isHitTestable());
         Assert.assertEquals("无问题成员徽章文本为空", "", normalBadge.getText());
-        Assert.assertTrue("卡片行保持不可命中（点击仍穿透到卡内按钮）",
-                !cell(0, 0).isHitTestable());
+        Assert.assertTrue("卡片可命中（卡片 hover 反馈面；子节点优先 ⇒ 按钮/徽章仍是第一目标）",
+                cell(0, 0).isHitTestable());
 
         movePointer(invalidBadge, true);
         Assert.assertNotNull("徽章 hover 必须上报成员", last(hovered));
@@ -430,8 +458,9 @@ public class MemberGridTest {
 
     /**
      * 网格底座（scroll viewport）= 主题 GROUP 配方逐项（background/border/borderWidth/
-     * cornerRadius/backdrop/surfaceElevation），恰好一条 BACKDROP；行与单元格零表面写入、
-     * 零滤镜（每颗表面只采样一次）。
+     * cornerRadius/backdrop/surfaceElevation），恰好一条 BACKDROP；行零表面写入、零滤镜；
+     * 单元格（成员卡）自持悬停面 —— 静息全透明、1px 描边、圆角随字号派生、零滤镜
+     * （每颗表面只采样一次）。方法名沿用旧「单元格零表面」口径，语义已随 T2 卡面更新。
      */
     @Test
     public void containerBaseUsesGroupRecipeAndCellsCarryNoSurface() {
@@ -464,11 +493,13 @@ public class MemberGridTest {
             for (int c = 0; c < row.__getChildren().size(); c++) {
                 SceneNode cell = row.__getChildren().get(c);
                 cells++;
-                Assert.assertNull("单元 不装滤镜", cell.getBackdrop());
-                Assert.assertEquals("单元 零表面写入：无底色", 0, cell.getBackgroundColor());
-                Assert.assertEquals("单元 零表面写入：不写圆角", 0, cell.getCornerRadius());
-                Assert.assertEquals("单元 零表面写入：不写边框宽", 0, cell.getBorderWidth());
-                Assert.assertEquals("单元未绑定表面，elevation 保持 -1", -1.0F,
+                Assert.assertNull("卡片 不装滤镜", cell.getBackdrop());
+                Assert.assertEquals("卡片静息底全透明（零表面时期的静息观感逐值保持）",
+                        BG_TRANSPARENT, cell.getBackgroundColor());
+                Assert.assertEquals("卡片圆角 = 生效字号派生（T2 卡面）",
+                        PickerChrome.memberCardRadius(MemberGrid.FONT_SIZE), cell.getCornerRadius());
+                Assert.assertEquals("卡片描边宽 = 1（悬停缘色可见的轮廓）", 1, cell.getBorderWidth());
+                Assert.assertEquals("卡片浮雕豁免，elevation 保持 -1", -1.0F,
                         cell.__getSurfaceElevation(), 0.0001F);
                 Assert.assertNull("图标不装滤镜", icon(cell).getBackdrop());
                 Assert.assertEquals("图标自身零 BACKDROP", 0, backdropCount(icon(cell)));
@@ -498,9 +529,9 @@ public class MemberGridTest {
     // ==================== ② 三态底色口径（单元格无状态写入、禁用走按钮配方档） ====================
 
     /**
-     * 底色口径：成员卡片没有选中/悬停交互态（cell/row hitTestable=false 让点击穿透到卡内按钮），
-     * 单元格任何数据状态下底色恒透明；禁用态由卡内按钮配方 disabled 档表达（背景取禁用 tint、
-     * 文字不重染），单元格自身不受影响。
+     * 底色口径：禁用态由卡内按钮配方 disabled 档表达（背景取禁用 tint、文字不重染），单元格自身
+     * 不受影响 —— 所以「禁用后单元格仍零底色写入」依旧成立；卡片的悬停面只覆盖 hovered/pressed
+     * （见 {@link #cardHoverSurfaceAppearsOnlyWhileHovered}），静息/禁用两档全透明。
      */
     @Test
     public void cellsStayTransparentAndDisabledStateLivesOnButtons() {
@@ -828,6 +859,86 @@ public class MemberGridTest {
         updateMembers(Collections.singletonList(member(1L, "test:a")));
         Assert.assertEquals("收缩后偏移回夹到新 maxScrollY",
                 Math.max(0, SceneGeometry.maxScrollY(viewport())), viewport().getScrollOffsetY());
+    }
+
+    // ==================== T2：卡片悬停面（hover 反馈） ====================
+
+    /**
+     * 卡片 hover 面：静息全透明 → 悬停浮现协议强度 tint + 主题 hovered 缘色 → 移开复原；
+     * 全程零 BACKDROP 采样（{@code backdrop=null}）；悬停强度与结果单元同协议令牌；主题切换重派生
+     * tint 色相而节点不重建；禁用态悬停不浮现；卡片可命中不夺卡内按钮的点击。
+     */
+    @Test
+    public void cardHoverSurfaceAppearsOnlyWhileHovered() {
+        SceneTheme dark = SceneTheme.liquidGlassDark();
+        SceneTheme light = SceneTheme.liquidGlassLight();
+        Signal<SceneTheme> pageTheme = Signal.create(dark);
+        mountInTheme(pageTheme, Arrays.asList(member(1L, "test:a"), member(2L, "test:b")),
+                CELL_W, CELL_H, GAP_X, GAP_Y);
+        SceneNode card = cell(0, 0);
+        Assert.assertEquals("前置：静息卡面全透明", BG_TRANSPARENT, card.getBackgroundColor());
+        repaint();
+        int backdropsIdle = countType();
+
+        // 悬停目标取卡内图标（图标 hitTestable=false ⇒ 最深命中 = 卡片本身，避开卡内按钮）。
+        movePointer(icon(card), true);
+        int hovered = card.getBackgroundColor();
+        Assert.assertNotEquals("悬停必须浮现卡面（同屏可见变化）", BG_TRANSPARENT, hovered);
+        Assert.assertEquals("悬停 tint 强度 = 协议令牌 CELL_HOVER_ALPHA（与结果单元同强度）",
+                SceneRenderProtocolTokens.CELL_HOVER_ALPHA, (hovered >>> 24) & 0xFF);
+        Assert.assertEquals("悬停 tint 色相 = 主题 INDICATOR hovered 档",
+                dark.surface(SceneTheme.Role.INDICATOR).getHovered().getTint() & 0x00FFFFFF,
+                hovered & 0x00FFFFFF);
+        Assert.assertEquals("悬停缘色 = 主题 INDICATOR hovered 档",
+                dark.surface(SceneTheme.Role.INDICATOR).getHovered().getEdge(), card.getBorderColor());
+        repaint();
+        Assert.assertEquals("卡面不新增 BACKDROP 采样", backdropsIdle, countType());
+        Assert.assertEquals("卡片自身零 BACKDROP", 0, backdropCount(card));
+        Assert.assertNull("卡片不声明 backdrop", card.getBackdrop());
+
+        // 命中优先级证据：卡片可命中后，卡内按钮仍是点击第一目标（子节点优先）。
+        click(editButton(card));
+        Assert.assertEquals("卡片可命中不夺按钮点击", Arrays.asList(Long.valueOf(1L)), edited);
+
+        // 主题切换：卡面跟着重派生（仍处于悬停态），节点身份不变。
+        pageTheme.set(light);
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertSame("主题切换不重建卡片", card, cell(0, 0));
+        Assert.assertEquals("悬停 tint 色相随主题重派生",
+                light.surface(SceneTheme.Role.INDICATOR).getHovered().getTint() & 0x00FFFFFF,
+                card.getBackgroundColor() & 0x00FFFFFF);
+        Assert.assertEquals("悬停强度仍是协议令牌", SceneRenderProtocolTokens.CELL_HOVER_ALPHA,
+                (card.getBackgroundColor() >>> 24) & 0xFF);
+
+        // 移开指针（画布角落，卡片之外）→ 回静息透明。
+        routePointer(ScenePointerAction.MOVE, CANVAS_WIDTH - 2, CANVAS_HEIGHT - 2);
+        Assert.assertEquals("移开回静息透明", BG_TRANSPARENT, card.getBackgroundColor());
+
+        // 禁用：悬停也不浮现（不伪造可用反馈）。
+        enabledSignal.set(Boolean.FALSE);
+        rt.flush();
+        movePointer(icon(card), true);
+        Assert.assertEquals("禁用态悬停卡面保持透明", BG_TRANSPARENT, card.getBackgroundColor());
+    }
+
+    /** 动态化：生效字号变化后卡片圆角在同一节点上重派生（不重建卡片）。 */
+    @Test
+    public void cardCornerRadiusFollowsFontMetricsWithoutRebuild() {
+        Signal<PickerMetrics> metrics = Signal.create(
+                PickerMetrics.solve(rt, CANVAS_WIDTH, CANVAS_HEIGHT, 12, null, 2));
+        mountWithMetrics(metrics, Arrays.asList(member(1L, "test:a")));
+        SceneNode card = cell(0, 0);
+        Assert.assertEquals("fs=12 卡圆角 = 派生", PickerChrome.memberCardRadius(12), card.getCornerRadius());
+
+        metrics.set(PickerMetrics.solve(rt, CANVAS_WIDTH, CANVAS_HEIGHT, 20, null, 2));
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertSame("字号变化不重建卡片", card, cell(0, 0));
+        Assert.assertEquals("卡圆角随生效字号重派生",
+                PickerChrome.memberCardRadius(20), card.getCornerRadius());
+        Assert.assertTrue("两档圆角必须不同（否则本用例失去意义）",
+                PickerChrome.memberCardRadius(20) != PickerChrome.memberCardRadius(12));
     }
 
     // ==================== ④ 主题切换只重派生 + ⑤ 卸载回收 ====================

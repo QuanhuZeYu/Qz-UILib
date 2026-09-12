@@ -72,6 +72,24 @@ public final class PickerChrome {
                 PickerDensityTokens.NAV_ROW_MIN, PickerDensityTokens.NAV_ROW_MAX);
     }
 
+    /** @param fontSizePx 生效字号 @return 分类导航 pill 行左右内缩（{@code clamp(round(fs*0.5), 3, 8)}） */
+    public static int navRowInset(int fontSizePx) {
+        return clamp(GridMetrics.roundHalfEven(fs(fontSizePx) * PickerDensityTokens.NAV_ROW_INSET_RATIO),
+                PickerDensityTokens.NAV_ROW_INSET_MIN, PickerDensityTokens.NAV_ROW_INSET_MAX);
+    }
+
+    /** @param fontSizePx 生效字号 @return 分类导航 pill 行行间纵向间距（{@code clamp(round(fs*0.25), 2, 6)}） */
+    public static int navRowGap(int fontSizePx) {
+        return clamp(GridMetrics.roundHalfEven(fs(fontSizePx) * PickerDensityTokens.NAV_ROW_GAP_RATIO),
+                PickerDensityTokens.NAV_ROW_GAP_MIN, PickerDensityTokens.NAV_ROW_GAP_MAX);
+    }
+
+    /** @param fontSizePx 生效字号 @return 成员卡圆角（{@code clamp(round(fs*0.67), 6, 14)}） */
+    public static int memberCardRadius(int fontSizePx) {
+        return clamp(GridMetrics.roundHalfEven(fs(fontSizePx) * PickerDensityTokens.MEMBER_CARD_RADIUS_RATIO),
+                PickerDensityTokens.MEMBER_CARD_RADIUS_MIN, PickerDensityTokens.MEMBER_CARD_RADIUS_MAX);
+    }
+
     /** @param fontSizePx 生效字号 @return 徽章内边距（{@code round(fs/3)}） */
     public static int badgePadding(int fontSizePx) {
         return Math.max(1, GridMetrics.roundHalfEven(fs(fontSizePx) / PickerDensityTokens.BADGE_PAD_DIVISOR));

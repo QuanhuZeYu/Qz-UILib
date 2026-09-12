@@ -171,6 +171,24 @@ public final class PickerDensityTokens {
     public static final int NAV_ROW_MIN = 24;
     /** 分类导航行高上限（逻辑 px）。 */
     public static final int NAV_ROW_MAX = 36;
+    /** 分类导航 pill 行左右内缩比例（× 字号）：行不贴栏边，露出栏底。 */
+    public static final double NAV_ROW_INSET_RATIO = 0.5;
+    /** 分类导航 pill 行左右内缩下限（逻辑 px）。 */
+    public static final int NAV_ROW_INSET_MIN = 3;
+    /** 分类导航 pill 行左右内缩上限（逻辑 px）。 */
+    public static final int NAV_ROW_INSET_MAX = 8;
+    /** 分类导航 pill 行行间纵向间距比例（× 字号）：相邻 pill 不粘连。 */
+    public static final double NAV_ROW_GAP_RATIO = 0.25;
+    /** 分类导航 pill 行行间纵向间距下限（逻辑 px）。 */
+    public static final int NAV_ROW_GAP_MIN = 2;
+    /** 分类导航 pill 行行间纵向间距上限（逻辑 px）。 */
+    public static final int NAV_ROW_GAP_MAX = 6;
+    /** 成员卡圆角比例（× 字号）：卡面与导航 pill 同族但不做全圆角。 */
+    public static final double MEMBER_CARD_RADIUS_RATIO = 0.67;
+    /** 成员卡圆角下限（逻辑 px）。 */
+    public static final int MEMBER_CARD_RADIUS_MIN = 6;
+    /** 成员卡圆角上限（逻辑 px）。 */
+    public static final int MEMBER_CARD_RADIUS_MAX = 14;
     /** 徽章内边距除数（fs / 3）。 */
     public static final double BADGE_PAD_DIVISOR = 3.0;
     /** 触发器图标比例（× 字号）。 */

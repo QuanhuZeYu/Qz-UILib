@@ -45,7 +45,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 面板页窗口切片生产装配（P3 交接 U-1 / ADR §3.2「唯一实现 = ScenePickerPanel」）。
  *
  * <p>覆盖：面板自建 {@code pageProvider} 闭包按<b>控件产出的</b>窗口请求向 {@link PickerCandidateSource}
- * 拉片；总量 = 浏览 lane 的 {@code size()} / 搜索 lane 的 {@code min(matchCount, maxItems)}；
+ * 拉片；总量 = 浏览 lane 的命中数（<b>无分类收窄</b> = {@code size()}，<b>带分类过滤</b> = 该分类
+ * 命中数（清单序子序列规模））/ 搜索 lane 的 {@code min(matchCount, maxItems)}；
  * 截断真值进入信息条；激活走 {@code exact(key)} 免全表回查；关闭后不再触碰候选源、重开恢复；
  * 源版本信号变化（语言/资源/注册表代际）触发重查；调用点携带运行期主线程断言。</p>
  */

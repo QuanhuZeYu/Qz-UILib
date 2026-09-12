@@ -86,8 +86,9 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p>① <b>结果信号路径</b>（{@code Props.candidateSource} == null，T-1 回退）：{@code Props.results()}
  * 自带候选全集，面板侧按分类过滤后派生全量项。② <b>惰性候选源路径</b>（ADR §3.2）：面板在内容 Owner
  * 内自建 {@code pageProvider} 闭包，按控件产出的 {@code WindowRequest} 调
- * {@code PickerCandidateSource.page(query, offset, limit)}；总量 = 浏览 lane 的 {@code size()} /
- * 搜索 lane 的 {@code min(matchCount, searchMaxItems)}；激活经 {@code exact(key)} O(1) 定位。
+ * {@code PickerCandidateSource.page(query, offset, limit)}；总量 = 浏览 lane 的命中数（无分类收窄即
+ * {@code size()}，带分类过滤 = 该分类命中数）/ 搜索 lane 的 {@code min(matchCount, searchMaxItems)}；
+ * 切片重取由「查询条件 + 源版本」修订快照驱动；激活经 {@code exact(key)} O(1) 定位。
  * 两条路径共用同一套节点构建（{@link Feed} 是唯一数据出口）。</p>
  *
  * <h3>ESC 分层</h3>
@@ -612,9 +613,10 @@ public final class ScenePickerPanel {
              *
              * <p>面板在内容 Owner 内自建 {@code pageProvider} 闭包：持有查询条件信号 + 候选源引用 +
              * 搜索窗口上限，按控件产出的 {@link SearchResultList.WindowRequest} 调
-             * {@code source.page(query, offset, limit)}；总量 = 浏览 lane 的 {@code size()} 或
-             * 搜索 lane 的 {@code min(matchCount, searchMaxItems)}。{@code Props.results()} 在
-             * 本路径下不参与列表渲染。</p>
+             * {@code source.page(query, offset, limit)}；总量 = 浏览 lane 的命中数（无分类收窄即
+             * {@code size()}）或搜索 lane 的 {@code min(matchCount, searchMaxItems)}；
+             * 切片重取由「查询条件 + 源版本」的修订快照驱动（总量持平也重取）。{@code Props.results()}
+             * 在本路径下不参与列表渲染。</p>
              *
              * @param source        惰性候选源（非 null）
              * @param searchMaxItems 搜索 lane 窗口上限（&gt;0；取值链 = SearchPickerSpec.maxItems()）
@@ -1063,7 +1065,8 @@ public final class ScenePickerPanel {
 
         SceneNode summary = text(rt, "");
         rt.bind(secondaryForeground, summary::setTextColor);
-        // 结果统计 = 当前查询总量（SPI 路径 = source.size()/min(matchCount,maxItems)；旧路径 = 过滤后候选数），
+        // 结果统计 = 当前查询总量（SPI 路径 = 浏览 lane 命中数（无分类收窄 = size()、带分类过滤 =
+        // matchCount）/ 搜索 lane = min(matchCount,maxItems)；旧路径 = 过滤后候选数），
         // 不再读"全表长度"——切片路径下全表根本不存在（ADR §3.5 高亮回夹同口径）。
         // 统计行 = 「N 个结果」+ 同一行右侧的截断提示（P5 §3.3「与统计同行」）。
         // 截断真值来自数据面（SPI 路径 = matchCount > searchMaxItems 的本地判定；旧路径 =
@@ -1248,7 +1251,8 @@ public final class ScenePickerPanel {
                 // 布局后仍以实际视口高度为权威。
                 viewportSizing ? Math.max(1, metrics.get().visibleRows())
                         : props.grid().visibleRows(),
-                widthBudget, feed.totalItems(), gridMetrics, configuredKeys,
+                // 窗口数学的两个通道：总量（规模）+ 切片修订（内容失效来源）；两者同源于 lane/源版本。
+                widthBudget, feed.totalItems(), feed.sliceRevision(), gridMetrics, configuredKeys,
                 // C3：网格首行 ↑ 回搜索框（焦点意图单点消费，不直接写焦点）
                 () -> focusIntent.set(FocusIntent.SEARCH_INPUT)));
         // root = stackHost（viewport + 右侧滚动条），fillParentHeight 占满中栏剩余高度
@@ -1778,7 +1782,8 @@ public final class ScenePickerPanel {
      * 记录一次候选窗口派生的规模与耗时（SPI 路径每次 pageProvider 拉片、旧路径每次全量项派生各记一次）。
      *
      * <p>口径与 ADR §6.2 一致：{@code candidateCount} = 本次查询看到的候选总规模
-     * （浏览 lane = {@code source.size()}；搜索 lane = 真实命中数 {@code matchCount}，不受窗口上限影响），
+     * （无分类收窄的浏览 lane = {@code source.size()}，带分类过滤 = 该分类命中数；搜索 lane = 真实命中数
+     * {@code matchCount}，不受窗口上限影响），
      * {@code itemCount} = 本次实际参与挂载的项数 —— 二者之比即虚拟化比例。
      * 采样关闭时本方法在第一道判断即返回。</p>
      *
@@ -1822,7 +1827,10 @@ public final class ScenePickerPanel {
         private final ReadableSignal<List<Item>> listItems;
         /** SPI 路径：窗口切片生产者；旧路径 null（控件对全量 items 自切片）。 */
         private final SearchResultList.PageProvider pageProvider;
-        /** 当前查询总量（SPI = {@code size()} / {@code min(matchCount,maxItems)}；旧路径 = 过滤后候选数）。 */
+        /**
+         * 当前查询的窗口总量（SPI = 浏览 lane 命中数（无收窄即 {@code size()}）/ 搜索 lane
+         * {@code min(matchCount,maxItems)}；旧路径 = 过滤后候选数）。
+         */
         private final ReadableSignal<Integer> totalItems;
         /** 结果是否被搜索上限截断（信息条常驻提示）。 */
         private final ReadableSignal<Boolean> truncated;
@@ -1830,17 +1838,24 @@ public final class ScenePickerPanel {
         private final ReadableSignal<List<CategoryRow>> categoryRows;
         /** 候选本体解析（激活路径；SPI = {@code source.exact(key)}，旧路径 = 过滤后列表精确查）。 */
         private final Function<Object, SearchPickerData.Candidate> resolver;
+        /**
+         * 切片修订通道（SPI = {@link SliceRevision} 快照；旧路径 = null）：切片内容变化的失效来源
+         * ——旧路径的 {@code listItems} 自带内容变化，无需第二条通道。
+         */
+        private final ReadableSignal<?> sliceRevision;
 
         private Feed(ReadableSignal<List<Item>> listItems, SearchResultList.PageProvider pageProvider,
                      ReadableSignal<Integer> totalItems, ReadableSignal<Boolean> truncated,
                      ReadableSignal<List<CategoryRow>> categoryRows,
-                     Function<Object, SearchPickerData.Candidate> resolver) {
+                     Function<Object, SearchPickerData.Candidate> resolver,
+                     ReadableSignal<?> sliceRevision) {
             this.listItems = listItems;
             this.pageProvider = pageProvider;
             this.totalItems = totalItems;
             this.truncated = truncated;
             this.categoryRows = categoryRows;
             this.resolver = resolver;
+            this.sliceRevision = sliceRevision;
         }
 
         private ReadableSignal<List<Item>> listItems() { return listItems; }
@@ -1849,21 +1864,43 @@ public final class ScenePickerPanel {
         private ReadableSignal<Boolean> truncated() { return truncated; }
         private ReadableSignal<List<CategoryRow>> categoryRows() { return categoryRows; }
         private Function<Object, SearchPickerData.Candidate> resolver() { return resolver; }
+        private ReadableSignal<?> sliceRevision() { return sliceRevision; }
     }
 
     /** SPI 路径的 items 占位：窗口切片只经 {@code pageProvider} 给，此信号恒空且零分配。 */
     private static final ReadableSignal<List<Item>> NO_ITEMS = Collections::emptyList;
 
     /**
-     * SPI lane 视图：一次求值给出「查询条件 + 候选规模 + 窗口总量 + 截断真值」
-     * （O(1) 或一次 matchCount）。
+     * SPI lane 视图：一次求值给出「查询条件 + 候选规模 + 窗口总量 + 截断真值 + 「全部」行口径」。
      *
-     * <p>{@code candidateCount} = 本次查询看到的候选总规模（浏览 lane = {@code size()}、
-     * 搜索 lane = 真实命中数），是 {@code picker.candidates} 的口径（ADR §6.2）；
-     * {@code totalItems} = 窗口数学的总量（搜索 lane 被 {@code searchMaxItems} 截到上限）。</p>
+     * <p>{@code candidateCount} = 本次查询看到的候选总规模（无分类收窄的浏览 lane = {@code size()}，
+     * 其余 = {@code matchCount(query)}），是 {@code picker.candidates} 的口径（ADR §6.2）；
+     * {@code totalItems} = 窗口数学的总量（浏览 lane 无上限 = 命中数；搜索 lane 被
+     * {@code searchMaxItems} 截到上限）；{@code allRowCount} = 分类导航「全部」行的计数口径 ——
+     * 「全部」= 该行对应的候选规模：浏览 lane = 未收窄的清单规模 {@code size()}（该行语义 = 取消分类
+     * 过滤，故不随过滤变化；带分类过滤时被选中分类的命中数由该分类行自己的 {@code count} 表达），
+     * 搜索 lane = <b>真实命中数（不受 {@code searchMaxItems} 影响）</b>。导航徽章与各分类行的
+     * {@code count}（{@code source.categories(dimension)} 的真实候选规模）同源——窗口上限与截断不参与
+     * 导航徽章，截断语义由 {@code truncated} 通道单独表达。</p>
      */
     @Desugar
-    private record LaneView(PickerQuery query, int candidateCount, int totalItems, boolean truncated) { }
+    private record LaneView(PickerQuery query, int candidateCount, int totalItems, boolean truncated,
+                            int allRowCount) { }
+
+    /**
+     * 窗口切片的修订快照（{@link SearchResultList.Props#sliceRevision} 的通道值）。
+     *
+     * <p>字段 = 一切影响切片<b>内容</b>的输入：查询条件（含分类 key/维度）+ 候选源版本
+     * （清单/名称/图标三段代际）。取值为不可变记录 ⇒ 逐字段值相等即「切片可复用」，
+     * 任一变化即值不等 ⇒ 窗口 Computed 重取切片。</p>
+     *
+     * <p>为什么不复用 lane 的总量：总量是 {@code int}，分类切换后命中数可能相同、
+     * 语言代际变化完全不改规模 —— 值记忆化（{@code Computed} 语义）会让下游静默跳过重取。</p>
+     *
+     * <p>{@code version} 可为 null（装配层未提供版本信号 = 不订阅版本变化）。</p>
+     */
+    @Desugar
+    private record SliceRevision(PickerQuery query, PickerSourceVersion version) { }
 
     /**
      * 旧路径数据面（无候选源，T-1 回退）：结果信号自带候选全集，面板侧过滤 + 全量项派生。
@@ -1892,19 +1929,29 @@ public final class ScenePickerPanel {
                 Computed.create(() -> ScenePickerPanelNav.categoryRows(safeCategories(props),
                         safeResults(props).candidates(), props.categoryOf(),
                         props.panelPresentation().allCategoryLabel())),
-                key -> candidateByKey(filtered.get(), key));
+                key -> candidateByKey(filtered.get(), key),
+                null);
     }
 
     /**
      * SPI 路径数据面（ADR §3.2「唯一实现」）：持有查询条件信号 + 候选源引用 + 搜索窗口上限，
      * 按控件产出的 {@link SearchResultList.WindowRequest} 拉取窗口切片 —— 面板<b>不持有候选全集</b>。
      *
-     * <p>总量与截断都来自同一次 lane 求值（浏览 lane = {@code size()}、无上限；搜索 lane =
-     * {@code min(matchCount, searchMaxItems)} + {@code truncated = hits > maxItems}）。</p>
+     * <p>总量与截断都来自同一次 lane 求值（浏览 lane = 命中数（无分类收窄即 {@code size()}），无上限；
+     * 搜索 lane = {@code min(matchCount, searchMaxItems)} + {@code truncated = hits > maxItems}）。</p>
+     *
+     * <p>切片重取由「{@link SliceRevision 修订快照}」驱动而非「总量变化」：修订 = 查询条件 + 源版本的
+     * 值快照，任一变化即使总量持平也重新拉片（分类切换命中数相同、语言代际变化后标签作废等）。</p>
      */
     private static Feed sourceFeed(Props props) {
         final PickerCandidateSource source = props.candidateSource();
         final ReadableSignal<LaneView> lane = laneView(props);
+        final ReadableSignal<PickerSourceVersion> sourceVersion = props.sourceVersion();
+        // 切片修订通道（纯加法）：影响切片内容的全部输入的值快照 —— 查询条件 + 源版本。
+        // 依赖直接挂在 sourceQuery/version 上（不复用 lane）：lane 的窗口总量按值记忆化，
+        // 「总量不变」的修订会在那一层被吞掉，正是本通道要补的失效路径。
+        final ReadableSignal<SliceRevision> sliceRevision = Computed.create(() -> new SliceRevision(
+                props.sourceQuery().get(), sourceVersion == null ? null : sourceVersion.get()));
         SearchResultList.PageProvider pageProvider = request -> {
             LaneView view = lane.get();
             int offset = Math.max(0, request.offset());
@@ -1925,13 +1972,14 @@ public final class ScenePickerPanel {
                     PickerQuery query = lane.get().query();
                     PickerSourceGuard.requireMainThread("categories");
                     return ScenePickerPanelNav.categoryRowsFromSource(
-                            source.categories(query.categoryDimension()), lane.get().totalItems(),
+                            source.categories(query.categoryDimension()), lane.get().allRowCount(),
                             props.panelPresentation().allCategoryLabel());
                 }),
                 key -> {
                     PickerSourceGuard.requireMainThread("exact");
                     return source.exact(String.valueOf(key));
-                });
+                },
+                sliceRevision);
     }
 
     /**
@@ -1948,14 +1996,23 @@ public final class ScenePickerPanel {
             PickerQuery query = props.sourceQuery().get();
             if (query.isBrowse()) {
                 PickerSourceGuard.requireMainThread("size");
-                int total = Math.max(0, source.size());
-                // 浏览 lane 无上限：候选规模 = 窗口总量 = size()，不存在 cap/分页。
-                return new LaneView(query, total, total, false);
+                // 「全部」行口径 = 未收窄的清单规模（取消分类过滤能看到的量），O(1)。
+                int all = Math.max(0, source.size());
+                // 无分类收窄 = 清单恒等序：命中数即清单规模（一次 size()，不建命中序）。
+                // 有分类收窄 = 命中序是清单序的子序列，规模必须取真实命中数而非清单规模。
+                int hits = query.hasCategoryFilter() ? hitsOf(source, query) : all;
+                // 浏览 lane 无上限：候选规模 = 窗口总量，不存在 cap/分页。
+                return new LaneView(query, hits, hits, false, all);
             }
-            PickerSourceGuard.requireMainThread("matchCount");
-            int hits = Math.max(0, source.matchCount(query));
-            return new LaneView(query, hits, Math.min(hits, searchMaxItems), hits > searchMaxItems);
+            int hits = hitsOf(source, query);
+            return new LaneView(query, hits, Math.min(hits, searchMaxItems), hits > searchMaxItems, hits);
         });
+    }
+
+    /** 命中数读取（主线程断言 + 越界安全），两条 lane 共用。 */
+    private static int hitsOf(PickerCandidateSource source, PickerQuery query) {
+        PickerSourceGuard.requireMainThread("matchCount");
+        return Math.max(0, source.matchCount(query));
     }
 
     /**

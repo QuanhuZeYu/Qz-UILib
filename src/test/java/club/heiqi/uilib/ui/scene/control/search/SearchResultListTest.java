@@ -592,6 +592,71 @@ public class SearchResultListTest {
     }
 
     /**
+     * 切片修订通道（P4 增补·纯加法）：<b>总量与几何都不变</b>时，修订信号变化也必须重取切片。
+     *
+     * <p>用途 = 查询条件 / 数据代际这类「修订」：分类切换后命中数持平、语言与资源包代际变化后
+     * 标签整体作废 —— 总量通道按 {@code Integer} 值记忆化，表达不了这种变化；缺本通道时切片会停在
+     * 旧内容上（屏幕上仍是旧代标签）。本用例同时钉住单元标签「按当前快照实时解析」：同 key 项的
+     * 标签换代必须随重取刷上屏（构建期捕获的 item 是旧代）。</p>
+     */
+    @Test
+    public void sliceRevisionSignalRefetchesPageWhileTotalStaysUnchanged() {
+        final List<SearchResultList.WindowRequest> requests = new ArrayList<>();
+        final int[] generation = { 0 };
+        SearchResultList.PageProvider provider = request -> {
+            requests.add(request);
+            List<Item> page = new ArrayList<>();
+            for (int index = 0; index < request.limit(); index++) {
+                int key = request.offset() + index;
+                page.add(new Item(Integer.valueOf(key), null, "g" + generation[0] + "-" + key));
+            }
+            return new SearchResultList.WindowPage(page, 500);
+        };
+        Signal<Integer> total = Signal.create(Integer.valueOf(500));
+        Signal<Integer> revision = Signal.create(Integer.valueOf(0));
+        Signal<List<Item>> empty = Signal.create(new ArrayList<Item>());
+        Signal<Integer> highlight = Signal.create(Integer.valueOf(-1));
+        Signal<Boolean> enabled = Signal.create(Boolean.TRUE);
+        SearchResultList.Result[] holder = new SearchResultList.Result[1];
+        rt.mount(sceneRoot, () -> {
+            holder[0] = SearchResultList.create(rt, new SearchResultList.Props(
+                    empty, COLUMNS, CELL_W, CELL_H, GAP_X, GAP_Y, enabled,
+                    item -> { }, highlight, highlight::set, null,
+                    provider, SearchResultList.Props.UNSPECIFIED_TOTAL_ITEMS, 0, 5, null, total,
+                    revision, null, null, null));
+            return holder[0].root();
+        });
+        rt.flush();
+        layoutAndBridge();
+        layoutAndBridge();
+
+        SceneNode viewport = holder[0].viewport();
+        SceneNode rows = viewport.__getChildren().get(0).__getChildren().get(1);
+        Assert.assertEquals("前置：总量来自总量通道", 500, holder[0].windowModel().get().totalItems());
+        Assert.assertEquals("前置：首行首项取第 0 代标签", "g0-0",
+                labelOf(rows.__getChildren().get(0).__getChildren().get(0)).getText());
+        int requestsBefore = requests.size();
+        Assert.assertTrue("窗口切片必须由控件拉取", requestsBefore > 0);
+
+        // 对照组（灵敏度自证）：修订与总量都不动的帧不得重取切片。
+        rt.flush();
+        layoutAndBridge();
+        Assert.assertEquals("无修订帧不得重取切片", requestsBefore, requests.size());
+
+        // 只推进修订（总量、几何、滚动都不动）：切片必须重取，标签必须换代。
+        generation[0] = 1;
+        revision.set(Integer.valueOf(1));
+        rt.flush();
+        layoutAndBridge();
+
+        Assert.assertEquals("修订通道不得改动总量", 500, holder[0].windowModel().get().totalItems());
+        Assert.assertTrue("总量不变时修订变化必须重取切片：" + requests.size(),
+                requests.size() > requestsBefore);
+        Assert.assertEquals("同 key 单元标签必须随快照换代（旧代文本不得驻留）", "g1-0",
+                labelOf(rows.__getChildren().get(0).__getChildren().get(0)).getText());
+    }
+
+    /**
      * 首帧（create 后第一次 layout 前）挂载量由预算可视行数决定：挂载 = min(预算 + overscan, totalRows)，
      * 与 N 无关（未布局时视口高视为 0，窗口数学退回预算行数）。
      */
