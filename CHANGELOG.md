@@ -6,6 +6,51 @@
 
 ## [Unreleased]
 
+## [5.0.0] - 待定
+
+> 状态：**待发布**（版本闸门与 tag 未执行，日期待定），全文见 [.changelogs/5.0.0.md](.changelogs/5.0.0.md)。本版为 major：相对 4.9.1 有 3 项明确删除，与 4.9.x 不承诺混用、需成对升级。
+
+### 新增
+
+- 查询式只读候选源 SPI：`config.ui.editor` 新增 `PickerCandidateSource`（`size()` / 三段 `version()` / `matchCount(PickerQuery)` / `page(PickerQuery, offset, limit)` / `exact(key)` / `categories(dimension)` / `release()`）、`PickerQuery`、`PickerSourceVersion`、`PickerEnvironment`、`CandidateSourceValueEditorProvider`、`PickerIconSource`；全部入口限客户端主线程，非主线程 fail-fast（`config.ui.field.PickerSourceGuard` + `$ThreadOracle`）
+- 四代际失效通道：`PickerGeneration` / `PickerRevisionBridge` 汇成 SPI 可读 revision，`ResourceReloadService`（+ `$Listener`，资源重载广播）、`LanguageEpochService`（语言纪元）、`MinecraftMainThreadOracle`（主线程判定真源）
+- 分级键与图标缓存唯一真源：`PickerIconKey`（候选域键生成处）、`PickerIconResolver`（屏级缓存，`release()` 幂等）、`PickerIconCache`（有界 512 活跃 + 1024 tombstone）、`ItemRenderTierRegistry.invalidateAll(String)` / `tierGeneration()` / `size()` / `tombstoneSize()` + `$Listener.onInvalidated(String)`
+- 窗口化内核：`ui.scene.control.SceneGridWindow`（窗口数学唯一实现，含 `$WindowModel` / `$RowRange`）、`SceneItemIndex`（key → 全局下标 O(1)）、`SceneGridSnapshot`；`SearchResultList` 与 `SceneVirtualGrid` 共用
+- 尺寸 / 密度 / 主题派生：`ui.screen.HostViewportScale`（逻辑盒边界，GUI Scale 只在 host 边界成对换算）、`ui.scene.layout.LogicalBox`、`PickerDensity`（`compact32`/`standard40`/`roomy48`）、`PickerDensityPreference` / `PickerDensityPreferences` / `PickerDensityPreferenceSource`（`general.pickerDensity` 通路）、`PickerDensityTokens`、`PickerMetrics`（+ `$PanelBox`）、`PickerChrome`、`GridMetrics`、`SceneRenderProtocolTokens`（非主题静态协议色唯一集中处）、主题语义槽 `SceneTheme.warningSubtle` / `SceneThemes.warningSubtle`
+- 会话释放账本 `config.ui.field.PickerSourceLifecycle`：`track(source)` + `releaseAll(reason)` 唯一释放点，接在客户端断连路径（退出世界清候选源缓存）
+- 诊断设施：`ui.diagnostic.UiPerfMarkers`（标记名唯一常量表）、`UiPerformanceMonitor.recordCounter(String, long)` / `MAX_SCREEN_HISTORIES`、`UiRuntimeStats.getCounterSummary()`
+- 框架新增公共面：`SceneNode.setCollapsed(boolean)` / `isCollapsed()`（内容折叠声明，折叠子树在布局/绘制/命中/焦点四面退出）、`SceneScrollbar$Props` / `SceneScrollContainer$ScrollbarSpec` 新增 `barWidthSignal`（滚动条宽度动态派生）、`SceneScrollContainer.defaultScrollbarSpec(ReadableSignal)` / `createDefault(..., ReadableSignal)`、`PickerChrome.scrollbarWidthSignal` / `scrollbarWidthSignalOf`、`SceneLayoutEngine.layoutChangeEpoch()`、`PaintPlan.addPlan(PaintPlan)`、`SceneRuntime.logicalBox()` / `fontEpochSignal()`、`HostImageSource.itemIcon(ItemStack, String explicitRegistryKey)`、`SearchPickerSpec.DEFAULT_MAX_ITEMS`、`Values.searchPicker(String)`、`Registry.register(ValueEditorProvider, int)`、`ItemRenderFallbackKeys.unrenderableTint(SceneRuntime)`
+- 面板与控件接线：`SearchResultList.Props` 新增 `pageProvider` / `totalItems` / `windowOffset` / `availableWidth` / `visibleRows` / `totalItemsSignal` / `metrics` / `configuredKeys` / `onExitUp`，`Result` 新增 `windowModel()` / `highlightedItem()`；`ScenePickerPanel.Props` 新增 `candidateSource()` / `searchMaxItems()` / `sourceQuery()` / `sourceVersion()` / `densityPreference()` / `onRestoreCurrent()` / `onDiscardRemoved()`
+- 交互收口：整页翻页 / 首末项 / 搜索框与网格双向跳转 / 分类导航键盘可聚焦、外部点击 scrim 单一检测点（同挂载幂等）、删除即生效 + 5s 撤销条（至多 1 条 tombstone）、信息条常驻占位 + 点击复制稳定 ID
+
+### 变更
+
+- **`SearchPickerSpec.maxItems()` 语义反转为「搜索 lane 窗口上限」**（原 javadoc 自述「兼容提示值」且在主干无生产消费者）：取值链 `maxItems()` → `Registry.register(provider, int)` → `Props.searchMaxItems()`，`truncated = matchCount(query) > maxItems`，**默认 64**；索引层 65 硬夹删除（旧裂缝：注释 64 + 截断探针 / 实现 65 / 调用方 `Integer.MAX_VALUE`）
+- `SearchResultList.Props.items()` 由「全量数据」变为「**窗口切片**」：挂载量与绘制命令数与数据规模 N 无关；新增 `pageProvider`（窗口切片拉取）与 `totalItemsSignal`（动态总量），宿主不得自行推导窗口偏移，`Result.windowModel()` 为窗口状态唯一回读通道
+- 面板生命周期：全部候选派生计算移入内容 Owner、随关闭释放（旧行为是关闭仍在算）；`StructuredListFieldRenderer` 折叠态改惰性构建；常驻范围为同屏 open 开合之间 + 候选源进程级常驻（跨屏不成立）
+- 密度档位经 `Props.densityPreference` 注入，切换无需重建面板（auto 阶梯只降不升）；picker 家族不再有硬编码 6/8 位色值与布局常量；1080p auto 档可见项 75 → 100
+- `layoutDoneSignal` / `__setLayoutDoneEpoch` 语义边界改述为「布局发布」（零几何变化帧不变更），批计数仍由 `layoutEpoch()` 承担
+- 已配置候选语义：SPI 路径不再排除「已配置成员」，改为结果单元右上角主题色圆点标记 + 信息条徽章（依赖旧「排除」行为的下游需同步移除）
+- 计数口径：`picker.lookup.comparisons` 退役（删除线性查找助手后恒 0，替代判据为结构判据）；`picker.list.totalRows` / `rows` / `cells` 重定义为数据总行数 / 挂载行数 / 挂载单元数
+- `SceneScrollbar$Props` / `SceneScrollContainer$ScrollbarSpec` 的 record canonical 扩展（12→13 参 / 4→5 参，**旧签名以显式构造器保留**），`equals/hashCode/toString` 语义纳入新组件
+- 新增 15 个 Presentation 注入键（不注入回落英文默认值；`infoBarCopiedPattern` 为 Round 4 追加）：`truncatedResults` / `hoverHint` / `keyboardHint` / `scrollHint` / `densityLabel` / `memberAddingBanner` / `memberEditingBanner` / `removedToast` / `undoAction` / `alreadyConfiguredBadge` / `infoBarIdPattern` / `infoBarCopiedPattern`（以上 `SearchPickerPanelPresentation`）、`emptyVariants` / `modeReadOnlyHint` / `emptyCategoryResults`（以上 `SearchPickerPresentation`）
+
+### 修复
+
+- 结果网格丢失 P5 派生度量（`e9e20097`）：`ScenePickerPanel` 用 `Computed.create(Supplier)` 投影 `widthBudget`/`gridMetrics`，内容在 portal 打开的那次 flush 内构建、下游同步读一次 ⇒ 初值恒 null ⇒ 永久落回退分支（1080p 实测 15 列 / 64px 格 / 图标边长 0，oracle 为 20 列 / 48px / 40px）；两投影改 `Computed.create(同步初值, 派生)`，并把握缺陷的「首帧列数 > 1」弱断言改为与 P5 同源 oracle 相等
+- 超宽成员带（`35c55a35`）：隐藏态撤销条「有子容器 + `preferredHeight == 0`」使 `ConstraintResolver` 对固定兄弟的先验高不可知 ⇒ 同级 grow 分配整条放弃 ⇒ 成员带 3140px、面板 3652px 溢出；改为内容折叠声明后成员带 3140→248、`maxScrollY` 0→408、面板 3652→760
+- 多行输入框占位与单行统一（`3529ac85`）：聚焦且空仍显示、不遮挡 caret、落点回文本原点
+- 列表行触发器整行可点（A1）、单行输入控件独立占位层（A3）
+- 成员带高度有界 + 带内可滚动；信息条点击复制稳定 ID（≤2s 有界反馈）
+- 框架正确性与性能（P1）：`measuredTextNodes` 登记表生命周期收口（结构版本号 + 确定性剪枝 + 已知根 LRU + 入口 epoch 快路径，修复反复挂载/卸载后条目只增不减）；`layoutEpoch` 语义拆分（干净帧不再误发布几何纪元，overlay 变更按求和聚合不漏发）；每帧分配优化（`ReactiveScheduler` scratch 化 + dirty effect 计数早退、`PaintPlan` 条目序列 + `getCommands()` 按需物化，`getCommands()` 返回值与回放调用序列逐位不变）；静止帧剔除 L0+L3（干净批 O(1) 快路径、视口外 clip 子树整棵剔除，保守优先且不清脏标记）
+
+### 移除
+
+- **`club.heiqi.uilib.ui.scene.control.search.SearchResultList$Row`**（公共嵌套 record，整类删除）：窗口化后行区间由 `SceneGridWindow.RowRange`（`firstIndex()` / `count()`）承载；持有它的宿主即「第二份窗口数学」的载体。无生产消费者。ADR §10 V2.6(1)
+- **`club.heiqi.config.ui.editor.SearchPickerPresentation.currentMember(SearchPickerData$CurrentMember)`**（公共实例方法）：真死键（无注入、无消费者），成员文案由 `currentMemberPrimary(member)` / `currentMemberSecondary(member)` 承载。ADR §10 V2.4
+- **`club.heiqi.uilib.ui.scene.control.search.ItemRenderFallbackKeys.splitRegistryKey(String)`**（公共静态方法，无替代者）：按最后一个冒号切分会把方块名当 meta，使回退集合恒空、UNRENDERABLE 静默失效；分级键统一为候选域键后解析端不复存在。ADR §1.7 D-10 / §10 Z-3
+- 计数常量与写入者 `picker.lookup.comparisons`（见「变更」）
+
 ## [4.9.1] - 2026-09-11
 
 ### 新增
