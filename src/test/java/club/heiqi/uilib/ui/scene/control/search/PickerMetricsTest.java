@@ -328,6 +328,24 @@ public class PickerMetricsTest {
     }
 
     /**
+     * 降级阶梯的末档必须是 0（关闭预算）：这是"加了标签预算在任何逻辑盒/字号下都不可能比加之前更差"
+     * 的结构保证 —— 最坏也只退回既有 cellW 口径，红线因此不需要靠人裁量维持。
+     */
+    @Test
+    public void labelBudgetLadderEndsAtZeroSoItCanNeverBeWorseThanNoBudget() {
+        double[] steps = PickerDensityTokens.LABEL_BUDGET_DEGRADE_STEPS;
+        assertTrue("阶梯必须非空", steps.length > 0);
+        assertEquals("首档必须为 1.00（优先给最大预算）", 1.0, steps[0], 0.0);
+        assertEquals("末档必须为 0（关闭预算 = 退回既有口径）", 0.0, steps[steps.length - 1], 0.0);
+        for (int i = 1; i < steps.length; i++) {
+            assertTrue("阶梯必须严格递减（" + steps[i - 1] + " -> " + steps[i] + "）",
+                    steps[i] < steps[i - 1]);
+        }
+        assertTrue("全局预算令牌必须为正（否则本机制空转）",
+                PickerDensityTokens.LABEL_BUDGET_EM > 0.0);
+    }
+
+    /**
      * 字号真值同源：生效字号 = 面板声明字号 × 用户倍率（与 {@code SceneNode.effectiveFontSize()} 同式）。
      *
      * <p>钉住"派生链消费的字号就是渲染链画出来的字号"：宿主显式声明多少，面板就派多少；
