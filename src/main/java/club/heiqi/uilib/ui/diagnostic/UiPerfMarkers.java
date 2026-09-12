@@ -49,6 +49,14 @@ package club.heiqi.uilib.ui.diagnostic;
  *       <td>本帧绘制计划命令条数。</td></tr>
  *   <tr><td>{@link #COUNTER_FRAME_OVERLAYS}</td><td>计数</td>
  *       <td>本帧回放的 overlay 数量。</td></tr>
+ *   <tr><td>{@link #COUNTER_FRAME_BACKDROP_SURFACES}</td><td>计数</td>
+ *       <td>本帧进入 shader 路径的玻璃表面数（短路/裁剪/降级不计）。</td></tr>
+ *   <tr><td>{@link #COUNTER_FRAME_BACKDROP_AREA_PX}</td><td>计数</td>
+ *       <td>本帧玻璃面积（屏幕像素累加），与表面数配对给出真实规模。</td></tr>
+ *   <tr><td>{@link #COUNTER_FRAME_BACKDROP_CAPTURES}</td><td>计数</td>
+ *       <td>本帧主层快照真实捕获次数（复用命中不计）。</td></tr>
+ *   <tr><td>{@link #COUNTER_FRAME_BACKDROP_TAPS}</td><td>计数</td>
+ *       <td>本帧采样次数估计值 = 玻璃面积 × 档位抽头预算（full/eco A/B 用）。</td></tr>
  * </table>
  */
 public final class UiPerfMarkers {
@@ -63,6 +71,35 @@ public final class UiPerfMarkers {
 
     /** 计数：本帧回放的 overlay 数量。 */
     public static final String COUNTER_FRAME_OVERLAYS = "frame.overlays";
+
+    // ==================== 背景滤镜（磨玻璃） ====================
+
+    /**
+     * 计数：本帧进入 shader 路径的背景滤镜表面数。
+     *
+     * <p>口径 = 真正走到 shader 并完成绘制的表面；被页面策略/档位短路、被裁剪盒短路、
+     * 降级到固定管线或 tint 兜底的表面都不计。与 {@link #COUNTER_FRAME_BACKDROP_AREA_PX}
+     * 配对即可看出「玻璃表面数 × 平均面积」的真实规模。</p>
+     */
+    public static final String COUNTER_FRAME_BACKDROP_SURFACES = "frame.backdrop.surfaces";
+
+    /** 计数：本帧进入 shader 路径的玻璃面积（屏幕像素，逐表面 l×h 累加）。 */
+    public static final String COUNTER_FRAME_BACKDROP_AREA_PX = "frame.backdrop.areaPx";
+
+    /** 计数：本帧主层快照的真实捕获次数（同帧复用/atlas 命中不计），用于证明快照复用效率。 */
+    public static final String COUNTER_FRAME_BACKDROP_CAPTURES = "frame.backdrop.captures";
+
+    /**
+     * 计数：本帧玻璃采样次数估计值（= Σ 名义面积 × 当前档位抽头预算 × 绘制遍数）。
+     *
+     * <p>口径（2026-09-12 冻结）：面积取名义矩形面积（不按 clip 缩减），遍数取该表面实际
+     * draw 次数——{@code isolatedLayer}（读取父 FBO 写入独立透明层）需要两遍 draw，
+     * 故遍数=2，其余=1；漏计第二遍会把独立层的采样量低估一半。</p>
+     *
+     * <p>不是精确的 texture2D 次数（同一像素在不同分支下抽头数不同），而是给 full/eco 档位
+     * A/B 用的量级指标：同比变化即采样预算变化。见 {@link club.heiqi.uilib.ui.render.BackdropQuality}。</p>
+     */
+    public static final String COUNTER_FRAME_BACKDROP_TAPS = "frame.backdrop.taps";
 
     // ==================== 选择器・阶段 ====================
 

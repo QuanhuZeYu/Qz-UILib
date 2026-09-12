@@ -232,13 +232,23 @@ public final class BackdropBlurPolicy {
      * 解析当前页面背景模糊总开关是否启用。
      *
      * <p>{@link BackdropBlurConfig} 没有元素级与宿主级共享的全局总开关；该字段仅作为页面级强制开关。
-     * 未声明时表示页面不额外禁用背景模糊，具体宿主、shader 与 fallback 开关仍继承全局配置。</p>
+     * 语义分两层：显式声明时以页面策略为准（页面级是比进程级档位更强的意图声明，不得被档位覆盖）；
+     * 未声明时由进程级档位 {@link BackdropQualityService#current()} 决定——
+     * {@link BackdropQuality#OFF} 关闭整条玻璃链，其余档位保持启用（具体宿主、shader 与 fallback
+     * 开关继续继承全局配置）。</p>
+     *
+     * <p>档位读取走 {@link BackdropQualityService#current()}（volatile 直读，零分配、不建立依赖追踪）；
+     * 需要随档位重派生的订阅方走 {@link BackdropQualityService#quality()}。默认档 FULL 下本方法的
+     * 返回值与引入档位前逐值一致（此前为 {@code enabled == null || enabled}）。</p>
      *
      * @param config 全局默认配置，保留参数以便与其它解析方法保持一致
      * @return 页面级总开关是否启用
      */
     public boolean resolveEnabled(BackdropBlurConfig config) {
-        return enabled == null || enabled.booleanValue();
+        if (enabled != null) {
+            return enabled.booleanValue();
+        }
+        return BackdropQualityService.getInstance().current() != BackdropQuality.OFF;
     }
 
     /**

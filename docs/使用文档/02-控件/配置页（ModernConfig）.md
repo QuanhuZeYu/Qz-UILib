@@ -283,3 +283,29 @@ Values.widget(
 - `LIST_MEMBERS` 不会静默回退到整值 `Codec`；provider codec 未实现 `ListMemberCodec` 时字段构建 fail-fast。编码异常、null、非字符串结果或确认前目标已删除时均零写。
 
 以上自动化交互与布局回归已通过；消费仓仍需实机确认 portal 尺寸、滚动、焦点与领域文案，当前不视为实机验收完成。
+
+## 背景滤镜档位与真机统计（`general.backdropQuality`）
+
+液态玻璃的模糊滤镜是配置页里最贵的一项 GPU 工作（每帧玻璃面积可达 1.76–2.53 屏、每像素 13 次采样）。UILib 配置页为此提供三档设置：
+
+| 档位 | 语义 | 成本 |
+|---|---|---|
+| `full`（默认） | 与引入档位前逐像素一致：13 抽头液态玻璃 | 基准（现状） |
+| `eco` | 9 抽头变体：片元采样约 −31%，观感轻微变化 | 省电，适合笔记本 / 低端 GPU |
+| `solid` | 玻璃链路整体早退，主题回落到实色替代底（`SceneTheme.withoutBackdrop()`） | 玻璃 GPU 成本 → 0 |
+
+- 档位**不是** `Config` 静态字段，而是进程级信号 `club.heiqi.uilib.ui.render.BackdropQualityService`：`general.backdropQuality` 经 `ConfigValueBridge.applyGeneral` 唯一回灌；保存后**下一帧生效**，无需重开配置页或页面。
+- 已构建页面按档位**自动重派生**外观（主题配方信号），不重建节点；`SceneThemes.DEFAULT` 常量恒为液态玻璃，需要跟随档位的调用方走 `SceneThemes.resolve` / `surface` 系入口；热路径读档位用 `BackdropQualityService.getInstance().current()`。
+- 手改 `config/qzuilib-modern.yaml` 时三档都写裸词即可；**不要**写 `off` / `on` / `yes` 这类 YAML 1.1 布尔词（会被解析成布尔值，bootstrap 严格类型校验直接失败，配置页打不开——第三档原定名 `off` 正因此改名 `solid`）。
+
+### 如何读真机统计（full / eco / solid A/B）
+
+1. 配置页打开 `general.useDebug`（默认关；开启后才会建采样会话，关闭时渲染热路径零新增分配）；
+2. 复现你关心的页面（配置页 / Font System 页），保持若干秒；
+3. 看 `logs/latest.log` 中每秒一条的 `UI 运行统计[ConfigScreen]: ...`，其中含 `fps` 与 `counters=`，玻璃相关键：
+   - `frame.backdrop.surfaces`：本帧进入 shader 路径的表面数；
+   - `frame.backdrop.areaPx`：本帧玻璃面积（像素）；
+   - `frame.backdrop.captures`：本帧快照捕获次数（正常应远小于帧数）；
+   - `frame.backdrop.taps`：`areaPx × 抽头数` 的估计值（full 13 / eco 9）；
+4. 逐档对比同一页面、同一停留时长下的 `fps` 与 `frame.backdrop.*`；`solid` 档这些计数应为 0。
+

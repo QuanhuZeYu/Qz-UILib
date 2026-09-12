@@ -9,12 +9,14 @@ import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.ui.render.BackdropQualityService;
 import club.heiqi.uilib.util.UiNumbers;
 
 /**
  * 值回灌抽象：从新栈 {@link Authority} 全量拉值回灌 Config + FontConfig 静态字段，
- * 并把非静态字段形态的 UI 偏好（{@code general.pickerDensity}）回灌进进程级偏好信号
- * {@link PickerDensityPreferences}。
+ * 并把非静态字段形态的进程级偏好回灌进各自信号载体：
+ * {@code general.pickerDensity} → {@link PickerDensityPreferences}、
+ * {@code general.backdropQuality} → {@link BackdropQualityService}。
  *
  * <p>解决阶段 C P0 缺口：新栈 {@code ConfigManager} 保存后值只落 Authority Map + YAML，
  * 从不写 {@code FontConfig.xxx} / {@code Config.xxx} 静态字段；而运行时读取者
@@ -95,12 +97,12 @@ public final class ConfigValueBridge {
 
         // characterRuleSet 是 private，Bridge 喂完 characterFontRules 后委托 FontConfig 刷新派生态
         FontConfig.refreshDerivedRuleSet();
-        MyMod.LOG.debug("Bridge 回灌完成: Config 4 + FontConfig 20 字段 + 密度偏好信号 1");
+        MyMod.LOG.debug("Bridge 回灌完成: Config 4 + FontConfig 20 字段 + 进程级偏好信号 2（pickerDensity / backdropQuality）");
     }
 
     /**
      * 回灌 general section（Config.useDebug / uiDebug / fontRuntimeDebug / netTransport
-     * + 密度偏好信号 {@link PickerDensityPreferences}）。
+     * + 进程级偏好信号 {@link PickerDensityPreferences} / {@link BackdropQualityService}）。
      *
      * @param authority 权威源
      */
@@ -113,6 +115,11 @@ public final class ConfigValueBridge {
         // 保存 / 磁盘热更 / 配置页 initial apply 三条既有通道都经本方法回灌，无需重开面板。
         // 值非法（手改配置/缺键）时由 PickerDensityPreferences 回落 auto（= 现状档）并留 WARN。
         PickerDensityPreferences.applyConfigured(authority.getString(PickerDensityPreferences.CONFIG_PATH));
+        // 背景滤镜档位同理不是静态字段：渲染层不得反向依赖配置层，本档位唯一的运行时权威是
+        // BackdropQualityService 的进程级信号（默认 full = 现状液态玻璃，观感零变化），
+        // 主题层与渲染层都经该信号动态解析。值非法（手改配置 / 缺键）由 service 回落 FULL 并留 WARN。
+        BackdropQualityService.getInstance().applyConfigured(
+                authority.getString(BackdropQualityService.CONFIG_PATH));
     }
 
     /**

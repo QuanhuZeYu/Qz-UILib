@@ -8,6 +8,8 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.render.BackdropQuality;
+import club.heiqi.uilib.ui.render.BackdropQualityService;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
@@ -22,7 +24,13 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 浮层重开都天然继承来源主题，无需在运行时里额外传参。</p>
  *
  * <p><b>独立 runtime 隔离</b>：runtime 默认主题安装在各自 {@code rootOwner} 的作用域上，
- * 两个 runtime 互不可见；库默认用只读常量信号，任何调用方都无法写入它。</p>
+ * 两个 runtime 互不可见；库默认用只读信号，任何调用方都无法写入它。</p>
+ *
+ * <p><b>库默认主题 = 背景滤镜档位感知</b>：第三级「UILib 默认液态玻璃主题」按
+ * {@code general.backdropQuality} 动态解析——{@code solid} 档回落
+ * {@link SceneTheme#withoutBackdrop()} 实色替代，其余档位为液态玻璃；切换档位只重派生配方，
+ * 不重建节点、不换 runtime。{@link #DEFAULT} 是显式消费者（{@code SceneThemes.DEFAULT}）的语义锚，
+ * 恒为液态玻璃、不随档位变化：需要跟随档位的调用方走 {@link #resolve} / {@link #surface} 系入口。</p>
  *
  * <p><b>构造期解析约定</b>：{@link #resolve} 与 {@link #surface} 依赖调用时的
  * {@link Owner#current()}，必须在构建期（mount/show/forEach/portal 的 builder 内）调用。
@@ -34,14 +42,41 @@ public final class SceneThemes {
     /** 作用域上下文键：只在本类内使用，避免与其他模块的键冲突。 */
     private static final Object THEME_KEY = new Object();
 
-    /** 库默认主题（深色液态玻璃档）。 */
+    /**
+     * 库默认主题（深色液态玻璃档）。显式消费者（{@code SceneThemes.DEFAULT}）的语义锚：
+     * 恒为液态玻璃，不随背景滤镜档位变化；档位感知的库默认见 {@link #DEFAULT_THEME}。
+     */
     public static final SceneTheme DEFAULT = SceneTheme.liquidGlassDark();
 
-    /** 库默认只读信号：任何调用方都无法写入，杜绝跨 runtime 串色。 */
+    /**
+     * 关闭背景滤镜档位（{@code general.backdropQuality=solid}）时的库默认主题：
+     * {@link SceneTheme#withoutBackdrop()} 实色替代（库内既有能力，全角色 backdrop 为 null、
+     * tint 换不透明底，语义色与圆角边框不变）。
+     *
+     * <p>声明必须早于 {@link #DEFAULT_THEME}：后者是匿名信号，构造期不解引用，但类初始化
+     * 顺序一旦倒置就会在首次读档位时拿到 null。</p>
+     */
+    private static final SceneTheme DEFAULT_NO_BACKDROP = SceneTheme.liquidGlassDark().withoutBackdrop();
+
+    /**
+     * 库默认只读信号：任何调用方都无法写入，杜绝跨 runtime 串色。
+     *
+     * <p><b>按背景滤镜档位动态解析</b>：{@code solid} 档读回 {@link #DEFAULT_NO_BACKDROP}，
+     * 其余档位回到 {@link #DEFAULT}。{@code get()} 内读的是
+     * {@link BackdropQualityService#quality()} 的进程级信号——在响应式上下文里读取会自动登记
+     * 依赖，故已构建页面的配方派生（{@link #surface} / {@link #derivedSurface} / {@link #color}）
+     * 在档位切换后由帧末 flush 自动重派生，<b>不重建节点</b>；构造期在
+     * {@link Effect#untrack} 里取初值时不登记依赖（同 {@link #surface} 既有语义）。</p>
+     *
+     * <p>两个返回值都是进程级不可变值对象，故下游 {@link Computed} 的记忆化只在档位真的
+     * 跨过「关闭」边界时传播。</p>
+     */
     private static final ReadableSignal<SceneTheme> DEFAULT_THEME = new ReadableSignal<SceneTheme>() {
         @Override
         public SceneTheme get() {
-            return DEFAULT;
+            return BackdropQualityService.getInstance().quality().get() == BackdropQuality.OFF
+                    ? DEFAULT_NO_BACKDROP
+                    : DEFAULT;
         }
     };
 

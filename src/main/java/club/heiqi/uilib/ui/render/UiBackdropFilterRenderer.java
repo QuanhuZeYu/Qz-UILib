@@ -6,6 +6,8 @@ import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
 
 import club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.util.UiNumbers;
 
 /**
@@ -20,7 +22,8 @@ import club.heiqi.uilib.util.UiNumbers;
  */
 final class UiBackdropFilterRenderer {
 
-    private static final UiBackdropShaderProgram BACKDROP_SHADER_PROGRAM = new UiBackdropShaderProgram();
+    /** 诊断关闭时 detail 的占位常量：引用同一常量，不付出任何字符串构造。 */
+    private static final String DIAGNOSTICS_DISABLED_DETAIL = "diagnostics-disabled";
 
     private static final float[][] UI_BACKDROP_BLUR_SAMPLES = new float[][] {
             { -1.0F, 0.0F, 0.18F },
@@ -119,6 +122,13 @@ final class UiBackdropFilterRenderer {
             recordPath(BackdropFilterRenderPath.NONE, "skipped");
             return;
         }
+        // W2 可见性短路：表面矩形与当前 clip 盒无像素级交集时，后续 scissor/stencil 必然把它整块裁掉，
+        // 取快照、设 uniform、draw 全是白费（大半径玻璃表面常常整块滚出滚动视口）。
+        // 放置位置刻意在既有短路之后：策略关闭/几何退化两条路径的 recordPath 语义保持原样。
+        if (!isVisibleInCurrentClip(context, left, top, right, bottom)) {
+            recordPath(BackdropFilterRenderPath.NONE, "clipped");
+            return;
+        }
         String pendingFallbackDetail = drawCurrentUiBackdropFilter(context, left, top, right, bottom, blurRadius,
                 saturation, cornerRadii, effect);
         if (pendingFallbackDetail == null) {
@@ -151,7 +161,7 @@ final class UiBackdropFilterRenderer {
                 backdropReadFramebufferId, context.getMainLayerContentRevisionForDiagnostics(), sampleRegion,
                 blurRadius);
         if (snapshot == null) {
-            return "snapshot-unavailable: " + snapshotService.getLastFailureDetail();
+            return snapshotUnavailableDetail(snapshotService);
         }
 
         // Shader 用连续覆盖率裁出圆角；自身 stencil 会把半透明弧边再次硬切掉。
@@ -216,9 +226,7 @@ final class UiBackdropFilterRenderer {
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             // 固定管线逐 quad 叠加无法表达 vibrancy/亮边/噪点，材质档在此降级为"仅模糊"。
             recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
-                    "shader-unavailable, samples=" + sampleCount
-                            + (effect == null ? "" : ", effect-degraded(no-vibrancy)")
-                            + ", snapshot=" + formatSnapshotState(snapshot));
+                    fixedPipelinePathDetail(sampleCount, effect, snapshot));
             drewBackdrop = true;
             return null;
         } finally {
@@ -248,31 +256,34 @@ final class UiBackdropFilterRenderer {
             recordPath(BackdropFilterRenderPath.FIXED_PIPELINE, "shader disabled by config");
             return false;
         }
-        if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
-            recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
-                    "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
+        // 抽头预算来自进程级档位（volatile 直读：零分配、不建立依赖追踪、不触发主题重派生）。
+        // 同一预算永远拿到同一程序实例，故本调用不会新建 GL program。
+        int tapBudget = BackdropQualityService.getInstance().current().tapBudget();
+        UiBackdropShaderProgram program = UiBackdropShaderProgram.programFor(tapBudget);
+        if (!program.ensureInitialized()) {
+            recordPath(BackdropFilterRenderPath.FIXED_PIPELINE, shaderUnavailableDetail(program));
             return false;
         }
-        BACKDROP_SHADER_PROGRAM.bind();
-        BACKDROP_SHADER_PROGRAM.setUniformI("mainTex", 0);
-        BACKDROP_SHADER_PROGRAM.setUniformF("sourceAlphaPass", 0.0F);
-        BACKDROP_SHADER_PROGRAM.setUniform2f("texelSize", 1.0F / (float) textureWidth, 1.0F / (float) textureHeight);
-        BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius,
+        program.bind();
+        program.setUniformI("mainTex", 0);
+        program.setUniformF("sourceAlphaPass", 0.0F);
+        program.setUniform2f("texelSize", 1.0F / (float) textureWidth, 1.0F / (float) textureHeight);
+        program.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius,
                 downsampleFactor, policy));
-        BACKDROP_SHADER_PROGRAM.setUniformF("saturation", Math.max(0.0F, saturation));
+        program.setUniformF("saturation", Math.max(0.0F, saturation));
         // 面板局部坐标基准：模型空间原点是面板左上角，减去后 GUI scale 自然约掉。
-        BACKDROP_SHADER_PROGRAM.setUniform2f("panelOrigin", (float) left, (float) top);
-        BACKDROP_SHADER_PROGRAM.setUniform2f("panelSizePx", (float) Math.max(1, right - left),
+        program.setUniform2f("panelOrigin", (float) left, (float) top);
+        program.setUniform2f("panelSizePx", (float) Math.max(1, right - left),
                 (float) Math.max(1, bottom - top));
         // 四角半径（左上/右上/右下/左下），供 SDF 圆角亮边使用；与 panelSizePx 同一像素空间。
         UiBorderRadiusResolver.ResolvedCornerRadii radii = UiBorderRadiusResolver.scaleToFit(
                 panelCornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : panelCornerRadii,
                 Math.max(1, right - left), Math.max(1, bottom - top));
-        BACKDROP_SHADER_PROGRAM.setUniform4f("cornerRadii", (float) radii.getTopLeft(),
+        program.setUniform4f("cornerRadii", (float) radii.getTopLeft(),
                 (float) radii.getTopRight(), (float) radii.getBottomRight(), (float) radii.getBottomLeft());
         // 面板短边半宽（屏幕像素）：给折射位移做尺寸上限，见 applyMaterialUniforms。
         float panelShortHalfPx = Math.min(Math.max(1, right - left), Math.max(1, bottom - top)) * 0.5F;
-        applyMaterialUniforms(effect, saturation, lightDirX, lightDirY,
+        applyMaterialUniforms(program, effect, saturation, lightDirX, lightDirY,
                 Math.max(1, downsampleFactor), panelShortHalfPx);
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
@@ -282,17 +293,14 @@ final class UiBackdropFilterRenderer {
             // 的语义。不能让 sampleAlpha 参与首遍 RGB 混合，也不能把 RGB 送进加法混合。
             GL11.glColorMask(false, false, false, true);
             GL14.glBlendFuncSeparate(GL11.GL_ZERO, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE);
-            BACKDROP_SHADER_PROGRAM.setUniformF("sourceAlphaPass", 1.0F);
+            program.setUniformF("sourceAlphaPass", 1.0F);
             drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                     0.0F, 0.0F);
             GL11.glColorMask(true, true, true, true);
         }
-        BACKDROP_SHADER_PROGRAM.unbind();
-        UiGlassMaterial material = effect == null ? null : effect.getMaterial();
-        recordPath(BackdropFilterRenderPath.SHADER, "blur=" + blurRadius + ", saturation="
-                + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation)))
-                + (effect == null ? "" : ", " + describeEffect(effect, material))
-                + ", snapshot=" + formatSnapshotState(snapshot));
+        program.unbind();
+        recordShaderSurfaceCounters(left, top, right, bottom, tapBudget, isolatedLayer);
+        recordPath(BackdropFilterRenderPath.SHADER, shaderPathDetail(blurRadius, saturation, effect, snapshot));
         return true;
     }
 
@@ -311,16 +319,18 @@ final class UiBackdropFilterRenderer {
      * 不设 1.0 下限：低于 1 在 shader 里是"按亮度加权去饱和"的合法哑光玻璃观感，
      * 强行夹住反而会让整段低区间变成等值的死区。</p>
      *
+     * @param program 目标着色器程序（按档位抽头预算选定；同一预算永远是同一实例）
      * @param material 材质档，可为 null
      * @param saturationMultiplier 旧语义的线性饱和度乘子，或材质档的 vibrancy 倍率
      * @param panelShortHalfPx 面板短边半宽（屏幕像素）：折射位移的尺寸上限来源，见方法体注释
      */
-    private static void applyMaterialUniforms(UiBackdropEffect effect, float saturationMultiplier,
-            float lightDirX, float lightDirY, int snapshotDownsampleFactor, float panelShortHalfPx) {
+    private static void applyMaterialUniforms(UiBackdropShaderProgram program, UiBackdropEffect effect,
+            float saturationMultiplier, float lightDirX, float lightDirY, int snapshotDownsampleFactor,
+            float panelShortHalfPx) {
         UiGlassMaterial material = effect == null ? null : effect.getMaterial();
         boolean liquid = effect != null && effect.isLiquid();
         // 液态三参数在所有路径显式赋值（含 null/经典），缺省留 0 依赖"恰好为 0"不可读。
-        BACKDROP_SHADER_PROGRAM.setUniformF("liquidGlass", liquid ? 1.0F : 0.0F);
+        program.setUniformF("liquidGlass", liquid ? 1.0F : 0.0F);
         // 作者侧屏幕像素 -> 纹理素（与 blurRadius 同口径换算）。下限不是 0：液态档一旦
         // 启用就必须肉眼可辨，原 2~12 区间在低强度段几乎无感，拉满也只有轻微弯折，
         // 用户会误判成"Liquid Glass 没生效"。斜率同时从 27 提到 40（50% 强度处 16.5 -> 26px）。
@@ -330,31 +340,31 @@ final class UiBackdropFilterRenderer {
         // 的内容拽进来，边缘糊成一条脏带而不是鼓起的透镜缘。大面板不受约束。
         float refractionPx = liquid
                 ? Math.min(6.0F + 40.0F * effect.getLensStrength(), panelShortHalfPx * 0.8F) : 0.0F;
-        BACKDROP_SHADER_PROGRAM.setUniformF("refraction",
+        program.setUniformF("refraction",
                 refractionPx / (float) snapshotDownsampleFactor);
         // 厚度 tint 是基础材质吸收率的相对增量，由 shader 乘 materialTint.a；
         // 不作为独立深色蒙层，否则大面板的宽折射带会呈现黑框。
-        BACKDROP_SHADER_PROGRAM.setUniformF("edgeTint", liquid ? 0.14F + 0.34F * effect.getLensStrength() : 0.0F);
-        BACKDROP_SHADER_PROGRAM.setUniform2f("lightDir", lightDirX, lightDirY);
+        program.setUniformF("edgeTint", liquid ? 0.14F + 0.34F * effect.getLensStrength() : 0.0F);
+        program.setUniform2f("lightDir", lightDirX, lightDirY);
         if (material == null) {
-            BACKDROP_SHADER_PROGRAM.setUniformF("iosMaterial", 0.0F);
-            BACKDROP_SHADER_PROGRAM.setUniformF("vibrancy", 1.0F);
-            BACKDROP_SHADER_PROGRAM.setUniform4f("materialTint", 1.0F, 1.0F, 1.0F, 0.0F);
-            BACKDROP_SHADER_PROGRAM.setUniform3f("materialLift", 0.0F, 0.0F, 0.0F);
-            BACKDROP_SHADER_PROGRAM.setUniformF("edgeHighlight", 0.0F);
-            BACKDROP_SHADER_PROGRAM.setUniformF("innerLightTop", 0.0F);
-            BACKDROP_SHADER_PROGRAM.setUniformF("innerShadowBottom", 0.0F);
-            BACKDROP_SHADER_PROGRAM.setUniformF("noiseAmount", 0.0F);
+            program.setUniformF("iosMaterial", 0.0F);
+            program.setUniformF("vibrancy", 1.0F);
+            program.setUniform4f("materialTint", 1.0F, 1.0F, 1.0F, 0.0F);
+            program.setUniform3f("materialLift", 0.0F, 0.0F, 0.0F);
+            program.setUniformF("edgeHighlight", 0.0F);
+            program.setUniformF("innerLightTop", 0.0F);
+            program.setUniformF("innerShadowBottom", 0.0F);
+            program.setUniformF("noiseAmount", 0.0F);
             // 旧语义：保持升级前的规则十字核行为，不做按像素旋转，逐像素可复现。
-            BACKDROP_SHADER_PROGRAM.setUniformF("kernelJitter", 0.0F);
+            program.setUniformF("kernelJitter", 0.0F);
             return;
         }
-        BACKDROP_SHADER_PROGRAM.setUniformF("iosMaterial", 1.0F);
-        BACKDROP_SHADER_PROGRAM.setUniformF("vibrancy", material.getVibrancy()
+        program.setUniformF("iosMaterial", 1.0F);
+        program.setUniformF("vibrancy", material.getVibrancy()
                 * Math.max(0.0F, saturationMultiplier));
-        BACKDROP_SHADER_PROGRAM.setUniform4f("materialTint", material.getTintRed(), material.getTintGreen(),
+        program.setUniform4f("materialTint", material.getTintRed(), material.getTintGreen(),
                 material.getTintBlue(), material.getTintAlpha());
-        BACKDROP_SHADER_PROGRAM.setUniform3f("materialLift", material.getLuminanceLift(),
+        program.setUniform3f("materialLift", material.getLuminanceLift(),
                 material.getLuminanceLift(), material.getLuminanceLift());
         // 液态档的镜面增益。上一版取 ×(1+3.6s)（50% 处 ×2.8）把峰值推到 +103/255、
         // 且压在 2px 宽的环带上，结果就是真机反馈的「边缘生硬」（1px 内 42->145、
@@ -362,13 +372,13 @@ final class UiBackdropFilterRenderer {
         // 光泽改由 shader 侧的**环带宽度 + 峰值内移 + 对向次高光**承担——
         // 参考 WebGlass：specular-strength 0.65 配 specular-width 0.25，软来自分布
         // 而不是来自更高的峰值。经典档恒 1.0 倍，严格不受影响。
-        BACKDROP_SHADER_PROGRAM.setUniformF("edgeHighlight", material.getEdgeHighlight()
+        program.setUniformF("edgeHighlight", material.getEdgeHighlight()
                 * (liquid ? 1.0F + 1.4F * effect.getLensStrength() : 1.0F));
-        BACKDROP_SHADER_PROGRAM.setUniformF("innerLightTop", material.getInnerLightTop());
-        BACKDROP_SHADER_PROGRAM.setUniformF("innerShadowBottom", material.getInnerShadowBottom());
-        BACKDROP_SHADER_PROGRAM.setUniformF("noiseAmount", material.getNoiseAmount());
+        program.setUniformF("innerLightTop", material.getInnerLightTop());
+        program.setUniformF("innerShadowBottom", material.getInnerShadowBottom());
+        program.setUniformF("noiseAmount", material.getNoiseAmount());
         // 材质档启用按像素旋转采样盘：消除固定核的"蜡感"，且不含时间项故静止画面不闪烁。
-        BACKDROP_SHADER_PROGRAM.setUniformF("kernelJitter", 1.0F);
+        program.setUniformF("kernelJitter", 1.0F);
     }
 
     private static void drawBackdropTextureQuad(int left, int top, int right, int bottom, int sampleLeft, int sampleTop,
@@ -397,11 +407,10 @@ final class UiBackdropFilterRenderer {
         BackdropBlurConfig config = BackdropBlurConfig.getInstance();
         BackdropBlurPolicy policy = context.getBackdropBlurPolicy();
         if (!policy.resolveTintFallbackEnabled(config)) {
-            recordPath(BackdropFilterRenderPath.NONE, "tint-fallback-disabled: " + fallbackDetail);
+            recordPath(BackdropFilterRenderPath.NONE, tintFallbackDisabledDetail(fallbackDetail));
             return;
         }
-        recordPath(BackdropFilterRenderPath.TINT_FALLBACK,
-                fallbackDetail + (effect == null ? "" : ", " + describeEffect(effect, material)));
+        recordPath(BackdropFilterRenderPath.TINT_FALLBACK, tintFallbackDetail(fallbackDetail, effect));
         if (material != null) {
             // 材质档自带 tint 蒙层：降级时直接用它做纯色玻璃，保证 shader
             // 可用与否的两类机器看到的玻璃底色一致（模糊没了，但材质色与亮边还在）。
@@ -424,6 +433,114 @@ final class UiBackdropFilterRenderer {
     private static void recordPath(BackdropFilterRenderPath renderPath, String detail) {
         lastRenderPath = renderPath == null ? BackdropFilterRenderPath.NONE : renderPath;
         lastDetail = detail == null ? "" : detail;
+    }
+
+    /**
+     * W2 可见性事实来源：表面矩形是否与当前 clip 盒有像素级交集。
+     *
+     * <p>无上下文时（理论上只出现在测试/异常路径）不具备裁剪事实，一律按可见处理——
+     * 短路只允许由"确实被裁掉"这一事实触发，不能由"不知道"触发。语义见
+     * {@link UiRenderContext#intersectsCurrentClip(int, int, int, int)}。</p>
+     */
+    private static boolean isVisibleInCurrentClip(UiRenderContext context, int left, int top, int right,
+            int bottom) {
+        return context == null || context.intersectsCurrentClip(left, top, right, bottom);
+    }
+
+    /** W3 诊断门控：默认开启 ⇒ 默认行为与引入门控前逐字符一致。 */
+    private static boolean diagnosticsEnabled() {
+        return BackdropBlurConfig.getInstance().getDiagnosticsEnabled();
+    }
+
+    /**
+     * shader 路径成功后的 detail：诊断关闭时不构造（detail 是每表面每帧的纯诊断成本，
+     * 与采样正确性无关）。{@code lastRenderPath} 仍照旧恒写，既有路径断言不受影响。
+     *
+     * <p>下面这组 detail 构造器包内可见，仅为让离线测试能钉住 W3 门控
+     * （与本包 {@code resolveBackdropShaderRadius} 同法）：门控发生在字符串拼接之前，
+     * GL 路径无法在无 GL 环境下端到端验证。</p>
+     */
+    static String shaderPathDetail(int blurRadius, float saturation, UiBackdropEffect effect,
+            MainLayerSnapshot snapshot) {
+        if (!diagnosticsEnabled()) {
+            return DIAGNOSTICS_DISABLED_DETAIL;
+        }
+        UiGlassMaterial material = effect == null ? null : effect.getMaterial();
+        return "blur=" + blurRadius + ", saturation="
+                + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation)))
+                + (effect == null ? "" : ", " + describeEffect(effect, material))
+                + ", snapshot=" + formatSnapshotState(snapshot);
+    }
+
+    /** 固定管线降级的 detail（诊断关闭时不构造，含 snapshot 状态串）。 */
+    static String fixedPipelinePathDetail(int sampleCount, UiBackdropEffect effect,
+            MainLayerSnapshot snapshot) {
+        if (!diagnosticsEnabled()) {
+            return DIAGNOSTICS_DISABLED_DETAIL;
+        }
+        return "shader-unavailable, samples=" + sampleCount
+                + (effect == null ? "" : ", effect-degraded(no-vibrancy)")
+                + ", snapshot=" + formatSnapshotState(snapshot);
+    }
+
+    /** tint 兜底的 detail（诊断关闭时不构造，含效果描述）。 */
+    static String tintFallbackDetail(String fallbackDetail, UiBackdropEffect effect) {
+        if (!diagnosticsEnabled()) {
+            return DIAGNOSTICS_DISABLED_DETAIL;
+        }
+        UiGlassMaterial material = effect == null ? null : effect.getMaterial();
+        return fallbackDetail + (effect == null ? "" : ", " + describeEffect(effect, material));
+    }
+
+    /** tint 兜底被禁用的 detail（诊断关闭时不构造）。 */
+    static String tintFallbackDisabledDetail(String fallbackDetail) {
+        if (!diagnosticsEnabled()) {
+            return DIAGNOSTICS_DISABLED_DETAIL;
+        }
+        return "tint-fallback-disabled: " + fallbackDetail;
+    }
+
+    /** 快照不可用的 detail（快照失败会持续多帧，构造成本按帧发生）。 */
+    static String snapshotUnavailableDetail(UiMainLayerSnapshotService snapshotService) {
+        if (!diagnosticsEnabled()) {
+            return DIAGNOSTICS_DISABLED_DETAIL;
+        }
+        return "snapshot-unavailable: " + snapshotService.getLastFailureDetail();
+    }
+
+    /** 着色器不可用的 detail（程序不可用时每个表面每帧都会走到这里）。 */
+    static String shaderUnavailableDetail(UiBackdropShaderProgram program) {
+        if (!diagnosticsEnabled()) {
+            return DIAGNOSTICS_DISABLED_DETAIL;
+        }
+        return "shader unavailable: " + program.getLastFailureMessage();
+    }
+
+    /**
+     * 玻璃规模计数器：只在真正走完 shader 绘制后累加。
+     *
+     * <p>口径（Lead 2026-09-12 冻结，覆盖设计文档 §3 原表述）：</p>
+     * <ul>
+     *   <li>{@code surfaces}：本帧实际进入 shader 路径的表面数——被 W2 裁剪短路、被策略/档位
+     *       短路、降级到固定管线或 tint 兜底的都不计，isolatedLayer 的第二遍 draw 也不重复计；</li>
+     *   <li>{@code areaPx}：上述表面的<b>名义矩形面积</b>之和（不按 clip 缩减、不乘遍数）；</li>
+     *   <li>{@code taps}：Σ 面积 × 抽头预算 × 遍数（isolatedLayer 为独立透明层，需要两遍
+     *       draw，故遍数=2；否则 1）。计第二遍是硬要求——漏掉会把独立层的采样量低估一半。</li>
+     * </ul>
+     *
+     * <p>{@code UiPerformanceMonitor.recordCounter} 自带 {@code Config.useDebug} 第一道门控
+     * （关闭时只读一次静态布尔即返回、不分配），故这里不再重复判断；本方法自身只做
+     * int/long 运算，热路径零分配。{@code taps} 是估计值（同像素在不同分支下抽头数不同，
+     * 且边缘覆盖率不改变 draw 遍数），用于 full/eco 档位 A/B 的量级对比。</p>
+     */
+    private static void recordShaderSurfaceCounters(int left, int top, int right, int bottom, int tapBudget,
+            boolean isolatedLayer) {
+        long areaPx = (long) Math.max(0, right - left) * (long) Math.max(0, bottom - top);
+        long passes = isolatedLayer ? 2L : 1L;
+        UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
+        monitor.recordCounter(UiPerfMarkers.COUNTER_FRAME_BACKDROP_SURFACES, 1L);
+        monitor.recordCounter(UiPerfMarkers.COUNTER_FRAME_BACKDROP_AREA_PX, areaPx);
+        monitor.recordCounter(UiPerfMarkers.COUNTER_FRAME_BACKDROP_TAPS, areaPx * (long) tapBudget * passes);
     }
 
     private static int resolveBackdropSampleStep(int blurRadius) {

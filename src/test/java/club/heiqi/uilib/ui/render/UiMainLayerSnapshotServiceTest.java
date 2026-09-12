@@ -1,5 +1,10 @@
 package club.heiqi.uilib.ui.render;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 
 import org.junit.Assert;
@@ -7,6 +12,9 @@ import org.junit.Test;
 
 /**
  * `UiMainLayerSnapshotService` 的纯几何契约测试。
+ *
+ * <p>2026-09-12 W1 起还包含"无读 mip 免除"的判定契约：ds==1 时纹理没有 minify 消费者，
+ * 不得生成 mip 链，MIN_FILTER 保持 LINEAR。</p>
  */
 public class UiMainLayerSnapshotServiceTest {
 
@@ -284,5 +292,58 @@ public class UiMainLayerSnapshotServiceTest {
         Assert.assertEquals(3, UiMainLayerSnapshotService.resolveFilterPassRadius(33, 2));
         Assert.assertEquals(2, UiMainLayerSnapshotService.resolveFilterPassRadius(36, 4));
         Assert.assertEquals(8, UiMainLayerSnapshotService.resolveFilterPassRadius(200, 4));
+    }
+
+    /**
+     * W1 判定：只有降采样 pass 会 minify 读取 mip 链，故 ds&gt;1 才必须生成 mip；
+     * ds==1（含"请求 &gt;1 但尺寸太小被回落成 1"）时没有 minify 消费者。
+     */
+    @Test
+    public void shouldRequireMipmapOnlyWhenDownsamplePassRuns() {
+        Assert.assertFalse("ds==1 无 minify 消费者，不得生成 mip",
+                UiMainLayerSnapshotService.requiresMipmapForDownsample(1));
+        Assert.assertTrue(UiMainLayerSnapshotService.requiresMipmapForDownsample(2));
+        Assert.assertTrue(UiMainLayerSnapshotService.requiresMipmapForDownsample(4));
+    }
+
+    /**
+     * W1 源码契约：{@code captureSnapshot} 里的 glGenerateMipmap 与 MIN_FILTER=MIPMAP_LINEAR
+     * 必须落在 {@code requiresMipmapForDownsample(downsampleFactor)} 守卫之内。
+     *
+     * <p>纯判定函数正确、但 GL 调用没被它守住是这类优化最典型的"改了等于没改"：
+     * 每帧每张快照仍会重建整条 mip 链。这里按源码位置钉死。</p>
+     */
+    @Test
+    public void shouldGateMipmapGenerationBehindTheDownsampleDecision() throws IOException {
+        String source = new String(Files.readAllBytes(resolveSource(
+                "src/main/java/club/heiqi/uilib/ui/render/UiMainLayerSnapshotService.java")),
+                StandardCharsets.UTF_8);
+
+        int guard = source.indexOf("if (requiresMipmapForDownsample(downsampleFactor))");
+        int guardEnd = guard < 0 ? -1 : source.indexOf('}', guard);
+        int mipmap = source.indexOf("glGenerateMipmap");
+        int mipmapFilter = source.indexOf("GL11.GL_LINEAR_MIPMAP_LINEAR");
+
+        Assert.assertTrue("必须存在 ds>1 守卫", guard >= 0);
+        Assert.assertTrue("glGenerateMipmap 必须在守卫之内", mipmap > guard && mipmap < guardEnd);
+        Assert.assertTrue("MIN_FILTER=MIPMAP_LINEAR 必须在守卫之内（否则 ds==1 会把 LINEAR 覆盖掉）",
+                mipmapFilter > guard && mipmapFilter < guardEnd);
+    }
+
+    /** 兼容不同 Gradle 测试工作目录：优先根目录相对路径，必要时向上查找。 */
+    private static Path resolveSource(String relativePath) {
+        Path direct = Paths.get(relativePath);
+        if (Files.isRegularFile(direct)) {
+            return direct;
+        }
+        Path dir = Paths.get("").toAbsolutePath();
+        while (dir != null) {
+            Path candidate = dir.resolve(relativePath);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            dir = dir.getParent();
+        }
+        throw new IllegalStateException("找不到 " + relativePath);
     }
 }

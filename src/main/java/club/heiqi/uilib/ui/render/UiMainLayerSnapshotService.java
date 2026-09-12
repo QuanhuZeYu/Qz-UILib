@@ -11,6 +11,9 @@ import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
+import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
+
 /**
  * 当前 UI 主层的同帧快照服务。
  *
@@ -532,10 +535,19 @@ public final class UiMainLayerSnapshotService {
                 GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleRegion.getLeft(),
                         resolveCopySourceY(screenHeight, sampleRegion), width, height);
             }
-            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
-
+            // W1 无读 mip 不生成：ds==1 时该纹理只被玻璃着色器按 1:1 放大采样
+            // （texelSize 与片元 UV 同尺度，shader 无 textureLod/texture2Dbias），mip 链没有任何消费者；
+            // 只有降采样 pass 会以 MIN_FILTER=MIPMAP_LINEAR 沿 mip 链 minify 读取（见 SnapshotFilterPassRenderer）。
+            // 故 mip 生成与 MIN_FILTER 切换必须与降采样判定同源、且在降采样之前完成——顺序与语义都不变，
+            // 只是去掉"没有消费者"的那部分。此处绑定的纹理刚经 configureLinearTexture() 配成 LINEAR/CLAMP，
+            // 跳过即保持 LINEAR，不会残留上一次捕获留下的 MIPMAP_LINEAR（每次捕获都会重设 LINEAR）。
             int downsampleFactor = resolveEffectiveDownsampleFactor(width, height, requestedDownsampleFactor);
+            if (requiresMipmapForDownsample(downsampleFactor)) {
+                GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER,
+                        GL11.GL_LINEAR_MIPMAP_LINEAR);
+            }
+
             snapshot.textureId = snapshot.sourceTextureId;
             snapshot.textureWidth = width;
             snapshot.textureHeight = height;
@@ -565,6 +577,9 @@ public final class UiMainLayerSnapshotService {
             snapshot.contentRevision = contentRevision;
             snapshot.capturedFrameId = frameId;
             snapshot.activeUseCount = 1;
+            // 真实捕获计数（同帧复用/atlas 命中不走这里），用于证明快照复用效率。
+            UiPerformanceMonitor.getInstance()
+                    .recordCounter(UiPerfMarkers.COUNTER_FRAME_BACKDROP_CAPTURES, 1L);
             return true;
         } catch (RuntimeException exception) {
             disableForCurrentFrame("snapshot-copy-failed: " + exception.getClass().getSimpleName());
@@ -637,6 +652,24 @@ public final class UiMainLayerSnapshotService {
             return requestedReadFramebufferId;
         }
         return GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+    }
+
+    /**
+     * 本次捕获是否需要为降采样 pass 生成 mip 链（静态判定，便于离线测试钉住）。
+     *
+     * <p>唯一的 mip 消费者是降采样 pass 的 minify 采样：{@code SnapshotFilterPassRenderer.renderFilterPass}
+     * 把 source 纹理按目标尺寸缩小绘制，此时采样器按 {@code MIN_FILTER=MIPMAP_LINEAR} 选 mip 层。
+     * {@code effectiveDownsampleFactor == 1} 表示"不缩小"（目标尺寸 ≥ 源尺寸），pass 不会运行，
+     * 因此 mip 链无人读，生成它是纯浪费——大快照上 {@code glGenerateMipmap} 要重建整条链。</p>
+     *
+     * <p>判定输入必须是 {@link #resolveEffectiveDownsampleFactor(int, int, int)} 的结果而不是请求值：
+     * 请求值可能 &gt;1 而实际因尺寸太小回落到 1，此时同样没有 minify 消费者。</p>
+     *
+     * @param effectiveDownsampleFactor 生效降采样倍率（≥1）
+     * @return 是否必须生成 mip 链
+     */
+    static boolean requiresMipmapForDownsample(int effectiveDownsampleFactor) {
+        return effectiveDownsampleFactor > 1;
     }
 
     private static int resolveEffectiveDownsampleFactor(int width, int height, int requestedDownsampleFactor) {

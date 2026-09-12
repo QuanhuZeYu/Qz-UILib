@@ -55,6 +55,13 @@ public final class QzUiLibModernSchema {
                         .label("pickerDensity").helper("选择器面板密度档位：auto 自动求解（默认，不低于现状）；"
                                 + "compact 紧凑 / standard 标准 / roomy 宽松为显式覆盖，三档同样受不低于现状约束。"
                                 + "改档位即时生效，无需重开配置页或选择器。").build()
+                    .choice("backdropQuality").options("full", "eco", "solid").defaultValue("full")
+                        .label("backdropQuality").helper("背景滤镜（液态玻璃模糊）档位："
+                                + "full 完整＝现状液态玻璃（默认，观感零变化）；"
+                                + "eco 省电＝减少模糊核采样抽头数（片元采样约 −31%，观感轻微变化）；"
+                                + "solid 关闭＝玻璃链路整体早退，页面改用实色替代底（GPU 成本归零，观感变为实色）。"
+                                + "笔记本 / 低端 GPU 建议 eco 或 solid。"
+                                + "改档位即时生效：已构建页面自动重派生外观，无需重开配置页或页面。").build()
                 .endSection()
                 .section("fontSystem")
                     .title("Font System")

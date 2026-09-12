@@ -1,9 +1,17 @@
 #version 120
 
+// 抽头预算：宿主 UiBackdropShaderProgram 在 #version 之后注入 #define UIB_TAP_BUDGET <13|9>，
+// 下方抽头段按 #if UIB_TAP_BUDGET >= 13 选段（13 = 完整档，逐字节保留引入档位前的抽头代码；
+// 9 = 省电档，向日葵螺旋 9 抽头变体）。本 #ifndef 默认块不是给宿主准备的，而是保证资源被
+// 单独编译/离线检查时仍是完整档 13；宿主注入的 define 永远先于它，故不改变注入语义。
+#ifndef UIB_TAP_BUDGET
+#define UIB_TAP_BUDGET 13
+#endif
+
 // UI 磨玻璃材质着色器。
 //
 // 质感分层（对齐 iOS UIVisualEffectView 的材质构成，顺序不可交换）：
-//   1) 模糊：13 抽头向日葵螺旋核（连续半径，消散光）
+//   1) 模糊：向日葵螺旋核（连续半径，消散光）；抽头数由 UIB_TAP_BUDGET 选段（13 完整档 / 9 省电档）
 //   2) vibrancy：亮度域保护式饱和提升（不是线性乘饱和度）
 //   3) 材质蒙层 tint：白/深色半透明叠加（在色彩校正之后）
 //   4) 亮度偏置 lift + 边缘亮边 + 内侧上缘柔光 / 下缘暗带
@@ -186,6 +194,15 @@ void main(void) {
     // 零模糊保留折射/材质，但只采样一次；不得把半径夹到 1 或重复累加同一点。
     vec4 blurred = texture2D(mainTex, texCoord + lensShift);
     if (blurRadius > 0.0) {
+        // 抽头段按 UIB_TAP_BUDGET 选段（define 由宿主注入在 #version 之后）：
+        //   13 档 = 引入档位前逐字节同一段向日葵螺旋 13 抽头代码，权重和 1000/1000；
+        //    9 档 = 变体核（中心 + 8，r=sqrt(i/8)*1.6、黄金角 2.39996，权重同为整数 /1000）。
+        // 9 档口径：权重和仍精确为 1000/1000（亮度保持契约不变）；最远抽头 1.6001 步 vs 13 档
+        // 1.5996 步（覆盖半径同量级）；加权 RMS 半径 0.9288 vs 0.9295，乘 radiusStep 的 0.98
+        // 抽头半径补偿后等效模糊强度偏差 -0.07%（仍是同一强度的模糊，只是抽头更少）；
+        // 片元采样次数 9/13 = -30.8%。两段权重/半径由 UiBackdropKernelEnergyTest 钉住，
+        // 数值出处 = temp/perf-impl-render/kernel-9tap.py（Python 复算）+ kernel-9tap.json。
+#if UIB_TAP_BUDGET >= 13
         blurred *= (161.0 / 1000.0);
 
         blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.341, 0.312) * radiusStep) * (139.0 / 1000.0);
@@ -202,6 +219,19 @@ void main(void) {
         blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.619, -1.323) * radiusStep) * (37.0 / 1000.0);
         blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.458, 1.462) * radiusStep) * (32.0 / 1000.0);
         blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-1.384, -0.802) * radiusStep) * (27.0 / 1000.0);
+#else
+        blurred *= (221.0 / 1000.0);
+
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.417, 0.382) * radiusStep) * (180.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.070, -0.797) * radiusStep) * (146.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(0.596, 0.778) * radiusStep) * (119.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-1.114, -0.197) * radiusStep) * (97.0 / 1000.0);
+
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(1.067, -0.679) * radiusStep) * (79.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.360, 1.338) * radiusStep) * (64.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(-0.690, -1.328) * radiusStep) * (52.0 / 1000.0);
+        blurred += texture2D(mainTex, texCoord + lensShift + kernelBasis * vec2(1.503, 0.549) * radiusStep) * (42.0 / 1000.0);
+#endif
     }
 
     vec3 color;

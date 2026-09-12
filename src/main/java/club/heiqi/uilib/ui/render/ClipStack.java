@@ -334,6 +334,38 @@ final class ClipStack {
     }
 
     /**
+     * 判断给定 UI 矩形是否与当前有效裁剪盒相交（只读、零分配）。
+     *
+     * <p>每帧每个玻璃表面都会问一次，故<strong>不得</strong>走 {@link #copySnapshot()} 或
+     * {@link #peekClipRectForTest()}（两者都要分配）。栈顶 {@code clipRect} 在 {@link #push} 时
+     * 已与父层（首层还与宿主 scissor）求交，因此它就是当前的有效裁剪盒。</p>
+     *
+     * <p>栈空时返回 {@code true}：此时不存在 UI 层裁剪盒，宿主基线 scissor 是外部事实，
+     * 本判定不消费它（保守处理 = 保持引入可见性短路前的行为）。圆角裁剪也无需在此展开——
+     * 矩形无交集必然与圆角区域无交集，有交集时本方法不短路、后续逐像素行为不变。</p>
+     *
+     * <p>边缘相接（{@code right == clip[0]} 等）判为不相交：零宽交集不含任何像素。
+     * 裁剪盒自身退化（零宽或零高，例如滚动视口完全收起）时同样返回 {@code false}——
+     * 此时 GL scissor 的宽高为 0，任何表面都不会落屏。</p>
+     *
+     * @param left 左边界
+     * @param top 上边界
+     * @param right 右边界
+     * @param bottom 下边界
+     * @return 是否与当前有效裁剪盒有像素级交集
+     */
+    boolean intersectsCurrentClip(int left, int top, int right, int bottom) {
+        if (entries.isEmpty()) {
+            return true;
+        }
+        int[] clip = entries.peek().clipRect;
+        if (clip[2] <= clip[0] || clip[3] <= clip[1]) {
+            return false;
+        }
+        return right > clip[0] && left < clip[2] && bottom > clip[1] && top < clip[3];
+    }
+
+    /**
      * 查看栈顶裁剪矩形（测试钩子）；栈空返回 {@code null}。
      *
      * @return 栈顶 {@code [L,T,R,B]} 副本

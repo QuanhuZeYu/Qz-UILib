@@ -18,6 +18,8 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
+import club.heiqi.uilib.ui.render.BackdropQuality;
+import club.heiqi.uilib.ui.render.BackdropQualityService;
 import club.heiqi.uilib.ui.scene.control.search.PickerDensityPreference;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -158,9 +160,10 @@ public class ConfigValueBridgeTest {
         // 同步 last* 私有快照：恢复 public 后若不重跑 onConfigReload，
         // 下一批测试看到的 last* 仍指向本批改过的值（另两个夹具已如此，本轮补齐）
         FontConfig.onConfigReload();
-        // 密度偏好是进程级信号（非 Config/FontConfig 字段）：同样必须复位，
+        // 密度偏好与背景滤镜档位都是进程级信号（非 Config/FontConfig 字段）：同样必须复位，
         // 否则本类写进信号的档位会漂到后续 UI 测试（帧末口径，故补一次 flush）。
         PickerDensityPreferences.resetForTest();
+        BackdropQualityService.getInstance().applyConfigured("full");
         ReactiveScheduler.get().flush();
     }
 
@@ -392,6 +395,38 @@ public class ConfigValueBridgeTest {
         ReactiveScheduler.get().flush();
         assertEquals("非法档位必须回落 AUTO", PickerDensityPreference.AUTO,
                 PickerDensityPreferences.signal().get());
+    }
+
+    /**
+     * 背景滤镜档位（{@code general.backdropQuality}）与密度偏好同形：不是静态字段，
+     * 而是进程级信号——Bridge 把配置值回灌进 {@link BackdropQualityService}。
+     * 这条链路正是「用户改档位 → 无需重开页面即生效」的中间段；
+     * 默认（空配置）必须是 full = 现状液态玻璃，观感零变化。
+     */
+    @Test
+    public void backdropQualityBridgedIntoProcessSignal() throws Exception {
+        File file = tempFolder.newFile("qzuilib-backdrop-quality.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("general.backdropQuality", "solid");
+        SaveOutcome outcome = manager.save(draft);
+        assertTrue("合法档位必须可保存: " + outcome.status(), outcome.isSuccess());
+        // save 已把值落 Authority；重新 bootstrap 走"磁盘值 → 权威源"的完整读回路径
+        ConfigManager persisted = ConfigManager.bootstrap(file, schema);
+        assertEquals("solid", persisted.authority().getString(BackdropQualityService.CONFIG_PATH));
+
+        ConfigValueBridge.applyFromAuthority(persisted.authority());
+        ReactiveScheduler.get().flush();     // 帧末口径（守 I9）
+        assertEquals("Bridge 必须把配置档位回灌进进程级信号", BackdropQuality.OFF,
+                BackdropQualityService.getInstance().current());
+
+        // 空配置（缺键）→ schema 默认 full：观感零变化
+        ConfigValueBridge.applyFromAuthority(bootstrapEmpty());
+        ReactiveScheduler.get().flush();
+        assertEquals("空配置必须回落 full（= 现状液态玻璃）", BackdropQuality.FULL,
+                BackdropQualityService.getInstance().current());
     }
 
     /**

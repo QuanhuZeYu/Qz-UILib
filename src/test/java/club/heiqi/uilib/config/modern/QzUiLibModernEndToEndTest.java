@@ -65,6 +65,8 @@ public class QzUiLibModernEndToEndTest {
         assertEquals("vanilla", manager.authority().getString("general.netTransport"));
         assertEquals("pickerDensity（P5 三档密度入口）默认 auto = 现状档",
                 "auto", manager.authority().getString("general.pickerDensity"));
+        assertEquals("backdropQuality（背景滤镜档位）默认 full = 现状液态玻璃",
+                "full", manager.authority().getString("general.backdropQuality"));
         // fontSystem
         assertEquals(3.0, manager.authority().getNumber("fontSystem.lerpMode"), 0.0);
         assertEquals(2.0, manager.authority().getNumber("fontSystem.aaMode"), 0.0);
@@ -310,10 +312,11 @@ public class QzUiLibModernEndToEndTest {
 
     /**
      * Schema 结构完整性：三个 section 全部存在，字段数符合预期
-     * （general 5 + fontSystem 18 + fontSizeSetting 2 = 25）。
+     * （general 6 + fontSystem 18 + fontSizeSetting 2 = 26）。
      *
      * <p>general 由 4 → 5：新增 {@code pickerDensity}（P5 三档密度的用户入口，纯加法，
-     * 默认 auto = 现状档）。</p>
+     * 默认 auto = 现状档）；再由 5 → 6：新增 {@code backdropQuality}（背景滤镜档位入口，
+     * 纯加法，默认 full = 现状液态玻璃，观感零变化）。</p>
      */
     @Test
     public void schemaHasExpectedSectionsAndFieldCount() {
@@ -323,10 +326,10 @@ public class QzUiLibModernEndToEndTest {
         assertEquals("general", schema.sections().get(0).name());
         assertEquals("fontSystem", schema.sections().get(1).name());
         assertEquals("fontSizeSetting", schema.sections().get(2).name());
-        // 总字段数：general 5 + fontSystem 18 + fontSizeSetting 2 = 25
+        // 总字段数：general 6 + fontSystem 18 + fontSizeSetting 2 = 26
         // （fontSystem 含 fontSort / characterFontRules 两个 SIMPLE_LIST 字段；
-        //   general 的 pickerDensity 是本轮新增的选择器密度档位入口）
-        assertEquals(25, schema.allFields().size());
+        //   general 的 pickerDensity / backdropQuality 是增量新增的两个档位入口）
+        assertEquals(26, schema.allFields().size());
     }
 
     // ===== range 上界边界回归测试 =====

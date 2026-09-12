@@ -1319,6 +1319,24 @@ public class UiRenderContext implements UiRenderBackend {
         applyCurrentClip();
     }
 
+    /**
+     * 判断给定 UI 矩形是否与当前有效裁剪盒相交（只读、零分配、不改 GL 状态）。
+     *
+     * <p>供 {@code UiBackdropFilterRenderer} 做可见性短路：完全落在裁剪盒外的玻璃表面不会被任何
+     * 像素采样到，可以在取快照/设 uniform/绘制之前整链早退。栈空时返回 {@code true}
+     * （无 UI 裁剪约束），故该判定只可能让"本来一个像素都不会落屏"的表面提前退出，
+     * 有交集的表面路径逐像素不变。语义细节见 {@link ClipStack#intersectsCurrentClip(int, int, int, int)}。</p>
+     *
+     * @param left 左边界
+     * @param top 上边界
+     * @param right 右边界
+     * @param bottom 下边界
+     * @return 是否与当前有效裁剪盒有像素级交集
+     */
+    boolean intersectsCurrentClip(int left, int top, int right, int bottom) {
+        return clipStack.intersectsCurrentClip(left, top, right, bottom);
+    }
+
     private ClipSnapshot copyCurrentClipSnapshot() {
         return clipStack.copySnapshot();
     }
