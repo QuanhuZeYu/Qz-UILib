@@ -216,6 +216,14 @@ public final class ScenePickerPanel {
         private final Runnable onBeginAdd;
         private final Runnable onCancel;
         private final boolean listMembers;
+        /**
+         * 成员编辑态请求信号（成员编辑态公开入口；null = 未接线 = 无编辑请求）。
+         *
+         * <p>值 = 目标成员的稳定 id，由宿主写入、面板只读；生效时机（打开边沿 / 打开期间变化）、
+         * 提交语义与非法 id 行为见 {@link Builder#memberEditRequest(ReadableSignal)}——
+         * 那条 javadoc 是唯一语义母本，此处不复制。</p>
+         */
+        private final ReadableSignal<Long> memberEditRequest;
         private final ReadableSignal<Boolean> open;
         private final Runnable onCloseRequest;
         private final ReadableSignal<List<SearchPickerCategories.Category>> categories;
@@ -284,6 +292,7 @@ public final class ScenePickerPanel {
             this.onBeginAdd = () -> { };
             this.onCancel = () -> { };
             this.listMembers = false;
+            this.memberEditRequest = null;
             this.open = null;
             this.onCloseRequest = null;
             this.categories = Signal.create(Collections.<SearchPickerCategories.Category>emptyList());
@@ -319,6 +328,7 @@ public final class ScenePickerPanel {
             onBeginAdd = builder.onBeginAdd;
             onCancel = builder.onCancel;
             listMembers = builder.listMembers;
+            memberEditRequest = builder.memberEditRequest;
             open = builder.open;
             onCloseRequest = builder.onCloseRequest;
             categories = builder.categories;
@@ -388,6 +398,8 @@ public final class ScenePickerPanel {
         public Runnable onCancel() { return onCancel; }
         /** @return 是否 LIST_MEMBERS 模式 */
         public boolean listMembers() { return listMembers; }
+        /** @return 成员编辑态请求信号；null = 未接线（零订阅零行为，与接线前逐值一致） */
+        public ReadableSignal<Long> memberEditRequest() { return memberEditRequest; }
         /** @return 受控开合信号；null 表示内部自管 */
         public ReadableSignal<Boolean> open() { return open; }
         /** @return 面板请求关闭上抛回调；null 时内部形态自关 */
@@ -446,6 +458,7 @@ public final class ScenePickerPanel {
             private Runnable onBeginAdd = () -> { };
             private Runnable onCancel = () -> { };
             private boolean listMembers;
+            private ReadableSignal<Long> memberEditRequest;
             private ReadableSignal<Boolean> open;
             private Runnable onCloseRequest;
             private ReadableSignal<List<SearchPickerCategories.Category>> categories =
@@ -519,6 +532,52 @@ public final class ScenePickerPanel {
                 currentMembers = Objects.requireNonNull(value, "currentMembers");
                 onEditCurrent = Objects.requireNonNull(onEdit, "onEditCurrent");
                 listMembers = true;
+                return this;
+            }
+
+            /**
+             * 设置成员编辑态请求信号：以既有成员为初值进入编辑态（宿主侧「点成员 [编辑]」的公开入口）。
+             *
+             * <p>本入口不新建任何状态机与通路：命中后走的就是成员卡 [编辑] 点击的同一实现
+             * （私有 editMember + 宿主的 onEditCurrent 回调），仅把「谁来发起」从面板内点击扩展为
+             * 宿主信号。因此不存在「删除 + 重新添加」的替代路径，也不会出现两份编辑态真值。</p>
+             *
+             * <p><b>初值语义</b>：值 = 目标成员的稳定 id（{@link SearchPickerData.CurrentMember#memberId()}），
+             * 初值取该成员在当前 {@code currentMembers} 里的<b>目标态</b>——候选本体、选择模式与变体 key；
+             * 带变体的成员与点击其卡片 [编辑] 一样，直接预开变体浮层并恢复其模式与已选 key，
+             * 无变体成员则把焦点意图给到结果网格。</p>
+             *
+             * <p><b>生效时机</b>：① <b>打开边沿</b>——{@code open} 变为 true 的那一帧按当时的请求值生效一次
+             * （宿主可在同一帧先写请求再写 open，也可以反过来：帧末批处理合并后按打开边沿生效，同值重复请求
+             * 同样能再次进入编辑态，宿主无需为「再次编辑同一成员」复位信号）；② <b>打开期间请求值变化</b>
+             * ——立即切换编辑目标；③ <b>关闭期间请求值变化</b>——不生效（面板关闭即无订阅，下次打开按当时
+             * 的请求值生效）。
+             * 值置回 {@code null} 或沿用旧值不推进面板状态：已建立的编辑态只由「提交 / ESC 或 dismiss / 关闭」
+             * 三条既有路径收尾，本信号不是第四条清理通道。</p>
+             *
+             * <p><b>提交语义（原位替换 vs 追加）</b>：面板不写成员数据，提交仍走唯一原子边界
+             * {@code selectionCommit}。进入编辑态后 {@code editingMember} 为 true，会抑制
+             * 「点击候选即隐式新增」的武装，故宿主拿到的草稿就是<b>编辑目标上的草稿</b>；
+             * 原位替换还是追加由宿主决定（宿主已从 {@code onEditCurrent} 收到目标 id，
+             * 最终是否落地仍由 selectionCommit 返回值裁决）。提交成功后<b>不重新武装</b>、
+             * 直接请求关闭，与点击成员卡 [编辑] 后的提交逐值一致。</p>
+             *
+             * <p><b>取消语义</b>：ESC / dismiss / 外部点击走既有取消路径——先 {@code onCancel}
+             * 再请求关闭，面板不改成员数据、不回写请求信号；下次打开是否仍为编辑态只取决于
+             * 宿主写入的请求值。</p>
+             *
+             * <p><b>非法 memberId 行为</b>：值在 {@code currentMembers} 里找不到同 id 成员时
+             * （含成员列表为空、未启用成员列表、成员已被删除）为<b>无操作</b>：不进入编辑态、
+             * 不改变任何临时态、不触发 {@code onEditCurrent}，面板也不回写请求信号
+             * （宿主可自行回读成员列表判定，本入口不引入错误码通道）。</p>
+             *
+             * <p>不调用本方法 = 未接线：零订阅零行为，与接线前逐值一致。</p>
+             *
+             * @param value 成员编辑态请求信号；null = 未接线（不产生任何编辑态推进）
+             * @return 本 builder
+             */
+            public Builder memberEditRequest(ReadableSignal<Long> value) {
+                memberEditRequest = value;
                 return this;
             }
 
@@ -850,6 +909,13 @@ public final class ScenePickerPanel {
                     gridHighlight.get().intValue(), feed.totalItems().get().intValue())), clamped -> {
                 if (!clamped.equals(gridHighlight.get())) gridHighlight.set(clamped);
             });
+
+            // 成员编辑态公开入口（宿主写请求信号 → 以既有成员为初值进入编辑态）的接线：请求消费效应
+            // 挂在内容 Owner 内 ⇒ 订阅边界即开合边界（关闭即停算，不做逐帧/逐次 open 门控）；
+            // 内容 Owner 每次打开重建 ⇒ 本效应的首次执行就是「打开边沿」，按当时的请求值生效一次。
+            // 推进走既有 editMember 单点通路（与成员卡 [编辑] 点击同一实现，不另起并行状态机）。
+            bindMemberEditRequest(rt, props, addingMember, editingMember, focusIntent,
+                    variantsOpen, activeCandidate, mode, selectedKeys, gridHighlight);
             return content;
         },
                 MAIN_PANEL_POLICY,
@@ -1635,10 +1701,74 @@ public final class ScenePickerPanel {
             variantsOpen.set(Boolean.TRUE);
             focusIntent.set(FocusIntent.VARIANTS);
         } else {
+            // 目标成员无变体：确保变体浮层收起。既有鼠标路径下「浮层开着点成员卡 [编辑]」不可达
+            // （浮层遮挡面板），而宿主可经成员编辑态请求在浮层打开时换目标 ⇒ 状态一致性由本单点保证
+            // （浮层开着而候选已清是非法中间态）。
+            variantsOpen.set(Boolean.FALSE);
             activeCandidate.set(null);
             gridHighlight.set(Integer.valueOf(-1));
             focusIntent.set(FocusIntent.GRID);
         }
+    }
+
+    /**
+     * 成员编辑态公开入口（宿主写请求信号）的接线：请求消费效应建在内容 Owner 内、推进走
+     * {@link #editMember} 单点通路。
+     *
+     * <p>订阅边界即开合边界：内容 Owner 每次面板打开时重建、关闭即 dispose，于是
+     * ① 打开帧的首次执行 = 「打开边沿」——按当时的请求值生效一次（宿主同帧写「请求 + open」由帧末
+     * 批处理合并保证此处读到新值；同值重复请求也能随新的打开边沿再次生效，宿主无需复位信号）；
+     * ② 打开期间请求值变化 = 效应重跑，立即换编辑目标；
+     * ③ 关闭期间请求值变化 = 无订阅、零成本、零行为。
+     * 全程不读 open 做门控——「关闭即停算」由 owner 作用域给出，与面板其余派生同一条规矩。</p>
+     *
+     * <p>推进与读值都包在 {@link Effect#untrack} 内：本 effect 只订阅请求信号本身，不把
+     * {@code currentMembers}/{@code focusIntent} 的读取混进依赖集——否则成员列表每次变化都会反向
+     * 重入编辑态，等于给编辑态加了一条第二失效源（且会在提交写回成员列表后立刻覆盖收尾状态）。</p>
+     *
+     * <p>未接线（{@code Props.memberEditRequest() == null}）时不注册任何 effect。</p>
+     */
+    private static void bindMemberEditRequest(SceneRuntime rt, Props props,
+                                              Signal<Boolean> addingMember, Signal<Boolean> editingMember,
+                                              Signal<FocusIntent> focusIntent,
+                                              Signal<Boolean> variantsOpen,
+                                              Signal<SearchPickerData.Candidate> activeCandidate,
+                                              Signal<SearchPickerData.SelectionMode> mode,
+                                              Signal<List<String>> selectedKeys,
+                                              Signal<Integer> gridHighlight) {
+        ReadableSignal<Long> request = props.memberEditRequest();
+        if (request == null) {
+            return;
+        }
+        // 值置回 null 或沿用旧值都不推进面板状态：已建立的编辑态只由「提交 / 取消 / 关闭」三条既有
+        // 路径收尾，本信号不是第四条清理通道。
+        rt.bind(request, requested -> Effect.untrack(() -> applyMemberEditRequest(props, requested,
+                addingMember, editingMember, focusIntent, variantsOpen, activeCandidate, mode,
+                selectedKeys, gridHighlight)));
+    }
+
+    /**
+     * 应用一次成员编辑态请求：命中成员才走 {@link #editMember}；非法 id（含成员列表为空）为无操作
+     * ——不进入编辑态、不触发 {@code onEditCurrent}，也不改写宿主信号。
+     */
+    private static void applyMemberEditRequest(Props props, Long requested,
+                                                Signal<Boolean> addingMember,
+                                                Signal<Boolean> editingMember,
+                                                Signal<FocusIntent> focusIntent,
+                                                Signal<Boolean> variantsOpen,
+                                                Signal<SearchPickerData.Candidate> activeCandidate,
+                                                Signal<SearchPickerData.SelectionMode> mode,
+                                                Signal<List<String>> selectedKeys,
+                                                Signal<Integer> gridHighlight) {
+        if (requested == null) {
+            return;
+        }
+        long memberId = requested.longValue();
+        if (memberById(props, memberId, null) == null) {
+            return;
+        }
+        editMember(props, memberId, addingMember, editingMember, focusIntent, variantsOpen,
+                activeCandidate, mode, selectedKeys, gridHighlight);
     }
 
     /**
