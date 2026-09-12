@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
+import club.heiqi.uilib.ui.reactive.Computed;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+
 /**
  * PickerChrome —— 选择器"面板内其它随字号缩放的元素"的<strong>唯一派生实现</strong>（P5 §2.5）。
  *
@@ -83,6 +86,44 @@ public final class PickerChrome {
     public static int scrollbarWidth(int fontSizePx) {
         return clamp(GridMetrics.roundHalfEven(fs(fontSizePx) * PickerDensityTokens.SCROLLBAR_WIDTH_RATIO),
                 PickerDensityTokens.SCROLLBAR_WIDTH_MIN, PickerDensityTokens.SCROLLBAR_WIDTH_MAX);
+    }
+
+    /**
+     * 滚动条宽度信号（P5 第六轮 U-P5-13 收口：滚动条宽度的密度/字号动态派生）。
+     *
+     * <p>把生效字号派生链（{@link #scrollbarWidth(int)}）包成信号供
+     * {@link club.heiqi.uilib.ui.scene.control.SceneScrollbar} 消费：字号倍率或密度档变化
+     * ⇒ PickerMetrics 重派生 ⇒ 本投影变化 ⇒ 滚动条只重派生几何（不重建控件）。</p>
+     *
+     * <p><b>工厂判据（U-P6D-3 陷阱）</b>：{@code SceneScrollbar.create} 会在同一次 flush 内同步读一次
+     * 投影用于首帧几何，故必须用 {@link Computed#create(Object, java.util.function.Supplier)}
+     * 注入与派生语义一致的同步初值 —— 用 {@code create(Supplier)} 会让首帧拿到 null 初值、
+     * 宽度停在常量档（静默失效）。</p>
+     *
+     * @param metrics 派生度量信号；null = 无度量通道 ⇒ 返回 null（调用方走常量缺省，逐值不变）
+     * @return 宽度信号（初值 = 当前字号的派生值）
+     */
+    public static ReadableSignal<Integer> scrollbarWidthSignal(ReadableSignal<PickerMetrics> metrics) {
+        if (metrics == null) {
+            return null;
+        }
+        return Computed.create(Integer.valueOf(scrollbarWidth(metrics.get().fontSizePx())),
+                () -> Integer.valueOf(scrollbarWidth(metrics.get().fontSizePx())));
+    }
+
+    /**
+     * 滚动条宽度信号（{@link GridMetrics} 通道重载，语义见
+     * {@link #scrollbarWidthSignal(ReadableSignal)}）。
+     *
+     * @param metrics 网格度量信号；null = 无度量通道 ⇒ 返回 null（常量缺省）
+     * @return 宽度信号（初值 = 当前字号的派生值）
+     */
+    public static ReadableSignal<Integer> scrollbarWidthSignalOf(ReadableSignal<GridMetrics> metrics) {
+        if (metrics == null) {
+            return null;
+        }
+        return Computed.create(Integer.valueOf(scrollbarWidth(metrics.get().fontSizePx())),
+                () -> Integer.valueOf(scrollbarWidth(metrics.get().fontSizePx())));
     }
 
     private static int fs(int fontSizePx) {

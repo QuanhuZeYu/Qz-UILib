@@ -72,16 +72,30 @@ public final class SceneScrollContainer {
      *
      * @param trackColor           轨道背景色（ARGB），0 表示透明轨道
      * @param thumbColor           滑块背景色（ARGB）
-     * @param barWidth             滚动条宽度（像素，建议 6-8）
+     * @param barWidth             滚动条宽度常量（像素，建议 6-8）；{@code barWidthSignal} 缺省时生效
      * @param minThumbHeight       滑块最小高度（像素，避免内容过多时滑块消失）
+     * @param barWidthSignal       滚动条宽度信号（可派生，如按字号/密度派生）；null = 用常量
+     *                             {@code barWidth}（逐值不变）。见 {@link SceneScrollbar.Props#barWidthSignal()}
      */
     @Desugar
     public record ScrollbarSpec(
         int trackColor,
         int thumbColor,
         int barWidth,
-        int minThumbHeight
+        int minThumbHeight,
+        ReadableSignal<Integer> barWidthSignal
     ) {
+        /**
+         * 保留 4 参旧 canonical 签名（宽度信号缺省，逐值不变）——P5 第六轮 U-P5-13 纯加法。
+         *
+         * @param trackColor     轨道背景色（ARGB）
+         * @param thumbColor     滑块背景色（ARGB）
+         * @param barWidth       滚动条宽度常量（像素）
+         * @param minThumbHeight 滑块最小高度（像素）
+         */
+        public ScrollbarSpec(int trackColor, int thumbColor, int barWidth, int minThumbHeight) {
+            this(trackColor, thumbColor, barWidth, minThumbHeight, null);
+        }
     }
 
     /**
@@ -204,7 +218,8 @@ public final class SceneScrollContainer {
             SceneScrollbar.Props sbProps = new SceneScrollbar.Props(
                     viewport, scrollSignal, scrollSignal::set,
                     spec.trackColor(), spec.thumbColor(),
-                    spec.barWidth(), spec.minThumbHeight());
+                    spec.barWidth(), spec.minThumbHeight(), null, null, null, 0, 0,
+                    spec.barWidthSignal());
             SceneScrollbar.Result sb = SceneScrollbar.create(rt, sbProps);
             container.appendChild(sb.column());
         }
@@ -362,6 +377,27 @@ public final class SceneScrollContainer {
     }
 
     /**
+     * 默认滚动条规格 + 宽度信号（P5 第六轮 U-P5-13 装配入口）：颜色/最小 thumb 高仍取默认常量，
+     * 宽度改由信号派生（缺省值 ≤0/null 时回退 {@link SceneScrollbar#DEFAULT_BAR_WIDTH}）。
+     *
+     * <p>装配判据（U-P6D-3）：{@link SceneScrollbar#create} 会在<b>同一次 flush 内同步读一次</b>该信号
+     * 用于首帧几何 —— 调用方构造派生信号时必须用
+     * {@code Computed.create(初值, 派生)} 注入与派生语义一致的同步初值，不得用
+     * {@code Computed.create(派生)}（否则首帧拿到 null 初值 ⇒ 宽度停在常量档）。</p>
+     *
+     * @param barWidthSignal 滚动条宽度信号（可派生）；null = 完全等价于 {@link #defaultScrollbarSpec()}
+     * @return 默认滚动条规格（宽度源为信号）
+     */
+    public static ScrollbarSpec defaultScrollbarSpec(ReadableSignal<Integer> barWidthSignal) {
+        return new ScrollbarSpec(
+                SceneScrollbar.DEFAULT_TRACK_COLOR,
+                SceneScrollbar.DEFAULT_THUMB_COLOR,
+                SceneScrollbar.DEFAULT_BAR_WIDTH,
+                SceneScrollbar.DEFAULT_MIN_THUMB_HEIGHT,
+                barWidthSignal);
+    }
+
+    /**
      * 默认滚动条视觉的完整形态：等价 {@code create(rt, new Props(padding, gap, backgroundColor,
      * cornerRadius, defaultScrollbarSpec()))}，返回完整 Result 供调用方取 viewport/content/scrollSignal。
      *
@@ -376,5 +412,28 @@ public final class SceneScrollContainer {
             int backgroundColor, int cornerRadius) {
         return create(rt, new Props(padding, gap, backgroundColor, cornerRadius,
                 defaultScrollbarSpec()));
+    }
+
+    /**
+     * 默认滚动条视觉 + 宽度信号（P5 第六轮 U-P5-13）：等价
+     * {@code create(rt, new Props(padding, gap, backgroundColor, cornerRadius,
+     * defaultScrollbarSpec(barWidthSignal)))}。
+     *
+     * <p>选择器（picker）各滚动区按字号/密度派生宽度时走本入口；{@code barWidthSignal == null}
+     * 时与四参重载逐值等价（纯加法）。派生信号的工厂判据见
+     * {@link #defaultScrollbarSpec(ReadableSignal)}。</p>
+     *
+     * @param rt              场景运行时
+     * @param padding         viewport 四向内边距（像素，0 = 无内边距）
+     * @param gap             viewport 内 + content 内子节点间距（像素）
+     * @param backgroundColor viewport 显式背景色（ARGB）；0 = 跟随主题 GROUP 配方
+     * @param cornerRadius    viewport 显式圆角（像素，0 = 跟随主题 GROUP 配方）
+     * @param barWidthSignal 滚动条宽度信号（可派生）；null = 与四参重载逐值等价
+     * @return 创建结果（container + viewport + content + scrollSignal）
+     */
+    public static Result createDefault(SceneRuntime rt, int padding, int gap,
+            int backgroundColor, int cornerRadius, ReadableSignal<Integer> barWidthSignal) {
+        return create(rt, new Props(padding, gap, backgroundColor, cornerRadius,
+                defaultScrollbarSpec(barWidthSignal)));
     }
 }

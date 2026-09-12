@@ -405,7 +405,9 @@ public final class VariantChooser {
         card.appendChild(segmented);
 
         // 勾选列表：标准滚动结构走 SceneScrollContainer 工厂（默认滚动条视觉），不再手写样板。
-        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0);
+        // P5 第六轮 U-P5-13：滚动条宽度接密度/字号派生（缺度量通道 ⇒ null ⇒ 常量缺省，逐值不变）。
+        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0,
+                PickerChrome.scrollbarWidthSignal(props.metrics()));
         SceneNode list = sc.viewport();
         list.setHitTestable(false);
         // 渲染分级回退：已分级不可渲染的变体回退占位样式（与结果列表同款共享装配）。

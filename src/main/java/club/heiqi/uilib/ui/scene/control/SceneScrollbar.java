@@ -4,6 +4,7 @@ import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
 
+import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -36,7 +37,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <h3>结构</h3>
  * <pre>
- * column (COLUMN, preferredWidth=hitBandWidth（缺省 barWidth）, fillParentHeight, bg=派生透明/主题轨道 tint/显式 trackColor, clipChildren=true, cornerRadius, hitTestable=true)
+ * column (COLUMN, preferredWidth=hitBandWidth（缺省 barWidth，宽度信号可派生）, fillParentHeight, bg=派生透明/主题轨道 tint/显式 trackColor, clipChildren=true, cornerRadius, hitTestable=true)
  *   └─ thumb (preferredWidth=thumbVisualWidth（缺省 barWidth）, AlignSelf=END 贴右缘, preferredHeight=派生,
  *             bg=派生主题三态色/显式三态色, cornerRadius, transform.translateY=派生, hitTestable=true)   ← COMPOSITE 级平移，零重排
  * </pre>
@@ -62,6 +63,16 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *   <li><b>thumb Y</b> = (trackHeight - thumbHeight) * (scrollOffset / maxScroll)，浮点中间量防截断，无溢出时为 0。</li>
  *   <li><b>column 宽</b>恒为 hitBandWidth（0 缺省=barWidth）；无溢出时 track/thumb 透明，避免跨帧宽度变化扰动父级 ROW 求解。</li>
  * </ul>
+ *
+ * <h3>宽度信号（P5 第六轮 U-P5-13：滚动条宽度动态派生）</h3>
+ * <p>{@link Props#barWidthSignal()} 是可选宽度源：<b>缺省（null）= 常量 {@code barWidth}，逐值不变</b>；
+ * 非 null 时取信号当前值（值 ≤ 0 / null 回退常量，避免零宽不可命中）。信号变化时只<b>重派生几何</b>
+ * —— column 命中带宽（column 的 preferredWidth 即指针可达面）、thumb 可视宽、两处圆角
+ * （半径 = 宽度/2 同源）—— 不重建控件、不重置滚动位置、不新增订阅（一个 create 一条 effect，I3）。
+ * 显式 {@code hitBandWidth}/{@code thumbVisualWidth} 覆盖仍优先于信号（与 create 期同口径）。</p>
+ * <p>命中面与拖动/track 判定<b>不缓存宽度</b>：拖动公式读节点盒与 transform、track page 读
+ * column 局部指针 Y，故宽度变化后两者天然同步，无需第二失效通道。装配点（
+ * {@link SceneScrollContainer} 默认创建路径、picker 各滚动区）按需接入字号/密度派生。</p>
  *
  * <h3>失效级别（守 I7 / I4 双轨核对）</h3>
  * <ul>
@@ -129,6 +140,9 @@ public final class SceneScrollbar {
      * @param dragColor   滑块拖动态背景色（ARGB）；null=跟随主题派生（foreground + 最高强度）
      * @param hitBandWidth 命中带宽（像素）；0=缺省用 barWidth（column 加宽为隐性命中带，可视滑块贴右缘）
      * @param thumbVisualWidth 滑块可视宽度（像素）；0=缺省用 barWidth
+     * @param barWidthSignal 宽度信号（像素，可派生，如按字号/密度派生）；null 或值 ≤ 0 = 缺省用常量
+     *                       {@code barWidth}（逐值不变）。信号变化时只重派生几何（column 命中带宽 /
+     *                       thumb 可视宽 / 圆角），不重建控件，见类文档「宽度信号」。
      */
     @Desugar
     public record Props(
@@ -143,8 +157,32 @@ public final class SceneScrollbar {
         Integer hoverColor,
         Integer dragColor,
         int hitBandWidth,
-        int thumbVisualWidth
+        int thumbVisualWidth,
+        ReadableSignal<Integer> barWidthSignal
     ) {
+        /**
+         * 保留 12 参旧 canonical 签名（宽度信号缺省 = 常量 {@code barWidth}，逐值不变）。
+         *
+         * <p>P5 第六轮 U-P5-13（滚动条宽度动态派生）为纯加法：既有调用方源码零改动，
+         * 行为与「barWidthSignal == null」完全一致。</p>
+         */
+        public Props(SceneNode viewport,
+                     ReadableSignal<Integer> scrollOffsetSignal,
+                     Consumer<Integer> setScrollOffset,
+                     int trackColor,
+                     int thumbColor,
+                     int barWidth,
+                     int minThumbHeight,
+                     Consumer<Integer> onDragStart,
+                     Integer hoverColor,
+                     Integer dragColor,
+                     int hitBandWidth,
+                     int thumbVisualWidth) {
+            this(viewport, scrollOffsetSignal, setScrollOffset, trackColor, thumbColor,
+                    barWidth, minThumbHeight, onDragStart, hoverColor, dragColor,
+                    hitBandWidth, thumbVisualWidth, null);
+        }
+
         /** 保留无需拖动接管回调的常用构造形态。 */
         public Props(SceneNode viewport,
                      ReadableSignal<Integer> scrollOffsetSignal,
@@ -221,11 +259,13 @@ public final class SceneScrollbar {
      * @return 创建结果（column + thumb 节点引用）
      */
     public static Result create(SceneRuntime rt, Props props) {
-        int barWidth = props.barWidth();
+        // 宽度权威源：声明了宽度信号 ⇒ 取信号当前值（≤0/null 回退常量）；否则常量（逐值不变）。
+        ReadableSignal<Integer> barWidthSignal = props.barWidthSignal();
+        int barWidth = resolveBarWidth(barWidthSignal, props.barWidth());
         // 命中带宽：0 = 缺省用 barWidth（旧行为）；非 0 时 column 加宽为隐性命中带，
-        // 可视滑块贴右缘（thumb AlignSelf.END），命中带向左扩出。
+        // 可视滑块贴右缘（thumb AlignSelf.END），命中带向左扩出。显式覆盖优先于宽度信号。
         int hitBandWidth = props.hitBandWidth() > 0 ? props.hitBandWidth() : barWidth;
-        // 可视滑块宽：0 = 缺省用 barWidth（旧行为）。
+        // 可视滑块宽：0 = 缺省用 barWidth（旧行为）。显式覆盖优先于宽度信号。
         int thumbVisualWidth = props.thumbVisualWidth() > 0 ? props.thumbVisualWidth() : barWidth;
         int radius = Math.max(1, barWidth / 2);
 
@@ -514,7 +554,42 @@ public final class SceneScrollbar {
         rt.on(column, SceneEventType.POINTER_UP, dragUpHandler);
         rt.on(column, SceneEventType.POINTER_CANCEL, dragCancelHandler);
 
+        // ---- LAYOUT bind：宽度信号派生（P5 第六轮 U-P5-13，滚动条宽度动态化）----
+        // 只重派生几何，不重建控件：写入 column 命中带宽（column 的 preferredWidth 即指针可达面）、
+        // thumb 可视宽、两处圆角（半径 = barWidth/2 与宽度同源）。拖动/track 判定不缓存宽度
+        // （handler 每次读节点盒与 transform），故宽度变化后命中面与拖动判定天然同步。
+        // 有界：一个 create 只建一条 effect（I3：create 只跑一次），信号重复变化不新增订阅。
+        // 显式 hitBandWidth/thumbVisualWidth 覆盖优先（与 create 期同口径），不被信号抹掉。
+        if (barWidthSignal != null) {
+            rt.bind(barWidthSignal, w -> Effect.untrack(() -> {
+                int derived = resolveBarWidth(barWidthSignal, props.barWidth());
+                column.setPreferredWidth(props.hitBandWidth() > 0 ? props.hitBandWidth() : derived);
+                thumb.setPreferredWidth(props.thumbVisualWidth() > 0 ? props.thumbVisualWidth() : derived);
+                int derivedRadius = Math.max(1, derived / 2);
+                column.setCornerRadius(derivedRadius);
+                thumb.setCornerRadius(derivedRadius);
+            }));
+        }
+
         return new Result(column, thumb);
+    }
+
+    /**
+     * 解析生效滚动条宽度：信号缺省（null）或值 ≤ 0/null 时回退常量 {@code fallback}。
+     *
+     * <p>「0 = 缺省」与 {@code hitBandWidth}/{@code thumbVisualWidth} 的既有缺省约定同口径；
+     * 信号存在但读数不可用时同样回退常量，避免出现零宽滚动条（不可命中、不可拖动）。</p>
+     *
+     * @param signal   宽度信号，可为 null
+     * @param fallback 常量宽度（{@link Props#barWidth()}）
+     * @return 生效宽度（像素）
+     */
+    private static int resolveBarWidth(ReadableSignal<Integer> signal, int fallback) {
+        if (signal == null) {
+            return fallback;
+        }
+        Integer declared = signal.get();
+        return declared != null && declared.intValue() > 0 ? declared.intValue() : fallback;
     }
 
     /**

@@ -237,7 +237,9 @@ public final class MemberGrid {
         // 标准滚动结构 + 可见滚动条：SceneScrollContainer 工厂（默认视觉）。
         // 缺省显式实色参时，工厂已把 viewport 按主题 GROUP 配方绑定为网格底座（唯一写入者）；
         // 本模块不再对底座重复绑定，也不给每个单元格装滤镜（契约 §4.1 网格族口径）。
-        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0);
+        // P5 第六轮 U-P5-13：滚动条宽度接密度/字号派生（缺度量通道 ⇒ null ⇒ 常量缺省，逐值不变）。
+        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0,
+                PickerChrome.scrollbarWidthSignal(props.metrics()));
         SceneNode viewport = sc.viewport();
         Signal<Integer> scroll = sc.scrollSignal();
 

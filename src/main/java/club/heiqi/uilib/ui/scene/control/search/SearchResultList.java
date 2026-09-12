@@ -492,7 +492,9 @@ public final class SearchResultList {
         Objects.requireNonNull(props, "props");
 
         // 标准滚动结构走 SceneScrollContainer 工厂（默认滚动条视觉），不再手写 viewport+attach+scrollbar 样板。
-        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0);
+        // P5 第六轮 U-P5-13：滚动条宽度接密度/字号派生（缺度量通道 ⇒ null ⇒ 常量缺省，逐值不变）。
+        SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0,
+                PickerChrome.scrollbarWidthSignalOf(props.metrics()));
         SceneNode viewport = sc.viewport();
         Signal<Integer> scrollSignal = sc.scrollSignal();
         SceneNode stackHost = sc.container();
