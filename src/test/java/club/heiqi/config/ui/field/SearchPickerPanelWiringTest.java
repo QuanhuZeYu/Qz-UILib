@@ -93,7 +93,7 @@ public class SearchPickerPanelWiringTest {
         SceneNode[] pickerHolder = new SceneNode[1];
         mountHandle = rt.mount(sceneRoot, () -> {
             pickerHolder[0] = SearchPickerFieldSupport.createControlledIfPresent(rt,
-                    ValueSpec.string().withWidget(new SearchPickerSpec("test:picker", 8)),
+                    ValueSpec.string().withWidget(new SearchPickerSpec("test:picker")),
                     value, registry, value::set);
             return pickerHolder[0];
         });
@@ -150,7 +150,7 @@ public class SearchPickerPanelWiringTest {
         SceneNode[] pickerHolder = new SceneNode[1];
         mountHandle = rt.mount(sceneRoot, () -> {
             pickerHolder[0] = SearchPickerFieldSupport.createListMembersIfPresent(rt,
-                    ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                    ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                             SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                     registry, onChange);
             return pickerHolder[0];

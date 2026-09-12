@@ -147,7 +147,6 @@ public final class SearchPickerFieldSupport {
         Signal<Boolean> open = Signal.create(Boolean.FALSE);
         // 数据源路径探测（纯加法）：实现 SPI 且给出惰性 source 时走查询式路径；否则保持旧全量路径（T-1）。
         PickerCandidateSource source = candidateSourceOf(provider);
-        int searchMaxItems = searchWindowOf(pickerSpec, provider);
         CategoryQueryState categoryState = new CategoryQueryState();
         // 旧路径：结果 Computed 以 open 为信号级前置条件（关闭时不求值，ADR §4.1）；
         // SPI 路径：字段侧零候选物化，results 只是兼容入参。
@@ -191,7 +190,7 @@ public final class SearchPickerFieldSupport {
                 // 密度档位（P5 §1.4）：装配层接线缝提供的进程级偏好源；未接线 = null = 面板按 AUTO，
                 // 与接线前逐值一致。偏好是信号而非构造期常量 ⇒ 改档位只重派生几何、不重建面板。
                 .densityPreference(PickerDensityPreferenceSource.installed());
-        wireRevisionAndQuery(rt, panelBuilder, source, searchMaxItems, query, categoryState);
+        wireRevisionAndQuery(rt, panelBuilder, source, query, categoryState);
         wireCategories(panelBuilder, provider, categoryState);
         ScenePickerPanel.Props props = panelBuilder.build();
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
@@ -230,7 +229,6 @@ public final class SearchPickerFieldSupport {
         Signal<Boolean> open = Signal.create(Boolean.FALSE);
         // 数据源路径探测（同 SINGLE_VALUE；T-1 回退保留）。
         PickerCandidateSource source = candidateSourceOf(provider);
-        int searchMaxItems = searchWindowOf(pickerSpec, provider);
         CategoryQueryState categoryState = new CategoryQueryState();
         SearchPickerListBinding binding = new SearchPickerListBinding(value, items,
                 (ListMemberCodec) provider.codec(), onChange);
@@ -295,7 +293,7 @@ public final class SearchPickerFieldSupport {
                 .resultsCategoryFiltered(source != null)
                 // 密度档位（P5 §1.4）：与 SINGLE_VALUE 路径同源同缝（未接线 = AUTO）。
                 .densityPreference(PickerDensityPreferenceSource.installed());
-        wireRevisionAndQuery(rt, panelBuilder, source, searchMaxItems, query, categoryState);
+        wireRevisionAndQuery(rt, panelBuilder, source, query, categoryState);
         wireCategories(panelBuilder, provider, categoryState);
         ScenePickerPanel.Props props = panelBuilder.build();
         ScenePickerPanel.Result panel = ScenePickerPanel.create(rt, props);
@@ -471,23 +469,6 @@ public final class SearchPickerFieldSupport {
     }
 
     /**
-     * 搜索 lane 窗口上限：<b>唯一真值来源 = {@code SearchPickerSpec.maxItems()}</b>；
-     * SPI 的 {@link CandidateSourceValueEditorProvider#searchMaxItems()} 只作镜像，漂移时告警不改判（以 spec 为准）。
-     */
-    private static int searchWindowOf(SearchPickerSpec pickerSpec, ValueEditorProvider provider) {
-        int specMaxItems = pickerSpec.maxItems();
-        if (provider instanceof CandidateSourceValueEditorProvider) {
-            int mirror = ((CandidateSourceValueEditorProvider) provider).searchMaxItems();
-            if (mirror != specMaxItems) {
-                LOG.warn("[QzUiLib/ConfigUI] searchMaxItems 与 SearchPickerSpec.maxItems() 不一致（以 spec 为准）："
-                        + "editorId={}, spec={}, spi={}", pickerSpec.editorId(), Integer.valueOf(specMaxItems),
-                        Integer.valueOf(mirror));
-            }
-        }
-        return specMaxItems;
-    }
-
-    /**
      * 旧路径搜索结果（全量，{@code truncated} 恒 false）：T-1 回退。
      *
      * <p><b>signal 级 open 前置</b>（ADR §4.1）：面板关闭时返回共享空结果、不调用 searchFunction ——
@@ -515,8 +496,9 @@ public final class SearchPickerFieldSupport {
     }
 
     /**
-     * SPI 路径接线（ADR §3.2「唯一实现 = ScenePickerPanel」）：把惰性源、搜索窗口上限、
-     * <b>查询条件信号</b>与源版本信号交给面板；窗口切片的拉取、总量与截断判定全部在面板内容 Owner 内完成。
+     * SPI 路径接线（ADR §3.2「唯一实现 = ScenePickerPanel」）：把惰性源、
+     * <b>查询条件信号</b>与源版本信号交给面板；窗口切片的拉取与总量判定全部在面板内容 Owner 内完成
+     * （搜索 lane 窗口总量 = 真实命中数，无窗口上限）。
      *
      * <p>版本通道：桥（推环境代际 + 拉三段版本）在字段侧建立并挂宿主帧信号，其
      * {@code versionSignal()} 作为面板 lane 求值的依赖（语言/资源/注册表变化 → 自动重查，无逐帧 if）。
@@ -526,12 +508,11 @@ public final class SearchPickerFieldSupport {
      * @param rt             场景运行时
      * @param builder        面板 builder
      * @param source         惰性候选源；null = 旧路径，不接线
-     * @param searchMaxItems 搜索 lane 窗口上限（取值链唯一真值 = spec）
      * @param query          原始查询文本信号
      * @param categoryState  分类查询状态（wireCategories 注入受控维度/分类键）
      */
     private static void wireRevisionAndQuery(SceneRuntime rt, ScenePickerPanel.Props.Builder builder,
-                                             PickerCandidateSource source, int searchMaxItems,
+                                             PickerCandidateSource source,
                                              ReadableSignal<String> query, CategoryQueryState categoryState) {
         if (source == null) {
             return;
@@ -539,7 +520,7 @@ public final class SearchPickerFieldSupport {
         PickerRevisionBridge bridge = PickerRevisionBridge.forSource(source);
         bridge.bindTo(rt);
         Computed<PickerQuery> sourceQuery = Computed.create(() -> queryFor(query.get(), categoryState));
-        builder.candidateSource(source, searchMaxItems, sourceQuery, bridge.versionSignal());
+        builder.candidateSource(source, sourceQuery, bridge.versionSignal());
     }
 
     /** 按精确 candidate key 排除合法当前成员；malformed 成员不参与过滤。 */

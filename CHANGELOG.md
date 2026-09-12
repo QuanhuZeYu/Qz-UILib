@@ -8,7 +8,7 @@
 
 ## [5.0.0] - 待定
 
-> 状态：**待发布**（版本闸门与 tag 未执行，日期待定），全文见 [.changelogs/5.0.0.md](.changelogs/5.0.0.md)。本版为 major：相对 4.9.1 有 3 项明确删除，与 4.9.x 不承诺混用、需成对升级。
+> 状态：**待发布**（版本闸门与 tag 未执行，日期待定），全文见 [.changelogs/5.0.0.md](.changelogs/5.0.0.md)。本版为 major：相对 4.9.1 有 **8 项**明确删除（1 个公共类 + 7 个公共成员，其中 5 个成员来自本轮 A 方案撤回），与 4.9.x 不承诺混用、需成对升级；另有 5 组（6 个公共成员）5.0.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入对 4.9.1 的删除，逐项登记见「移除」）。
 
 ### 新增
 
@@ -19,13 +19,13 @@
 - 尺寸 / 密度 / 主题派生：`ui.screen.HostViewportScale`（逻辑盒边界，GUI Scale 只在 host 边界成对换算）、`ui.scene.layout.LogicalBox`、`PickerDensity`（`compact32`/`standard40`/`roomy48`）、`PickerDensityPreference` / `PickerDensityPreferences` / `PickerDensityPreferenceSource`（`general.pickerDensity` 通路）、`PickerDensityTokens`、`PickerMetrics`（+ `$PanelBox`）、`PickerChrome`、`GridMetrics`、`SceneRenderProtocolTokens`（非主题静态协议色唯一集中处）、主题语义槽 `SceneTheme.warningSubtle` / `SceneThemes.warningSubtle`
 - 会话释放账本 `config.ui.field.PickerSourceLifecycle`：`track(source)` + `releaseAll(reason)` 唯一释放点，接在客户端断连路径（退出世界清候选源缓存）
 - 诊断设施：`ui.diagnostic.UiPerfMarkers`（标记名唯一常量表）、`UiPerformanceMonitor.recordCounter(String, long)` / `MAX_SCREEN_HISTORIES`、`UiRuntimeStats.getCounterSummary()`
-- 框架新增公共面：`SceneNode.setCollapsed(boolean)` / `isCollapsed()`（内容折叠声明，折叠子树在布局/绘制/命中/焦点四面退出）、`SceneScrollbar$Props` / `SceneScrollContainer$ScrollbarSpec` 新增 `barWidthSignal`（滚动条宽度动态派生）、`SceneScrollContainer.defaultScrollbarSpec(ReadableSignal)` / `createDefault(..., ReadableSignal)`、`PickerChrome.scrollbarWidthSignal` / `scrollbarWidthSignalOf`、`SceneLayoutEngine.layoutChangeEpoch()`、`PaintPlan.addPlan(PaintPlan)`、`SceneRuntime.logicalBox()` / `fontEpochSignal()`、`HostImageSource.itemIcon(ItemStack, String explicitRegistryKey)`、`SearchPickerSpec.DEFAULT_MAX_ITEMS`、`Values.searchPicker(String)`、`Registry.register(ValueEditorProvider, int)`、`ItemRenderFallbackKeys.unrenderableTint(SceneRuntime)`
-- 面板与控件接线：`SearchResultList.Props` 新增 `pageProvider` / `totalItems` / `windowOffset` / `availableWidth` / `visibleRows` / `totalItemsSignal` / `metrics` / `configuredKeys` / `onExitUp`，`Result` 新增 `windowModel()` / `highlightedItem()`；`ScenePickerPanel.Props` 新增 `candidateSource()` / `searchMaxItems()` / `sourceQuery()` / `sourceVersion()` / `densityPreference()` / `onRestoreCurrent()` / `onDiscardRemoved()`
+- 框架新增公共面：`SceneNode.setCollapsed(boolean)` / `isCollapsed()`（内容折叠声明，折叠子树在布局/绘制/命中/焦点四面退出）、`SceneScrollbar$Props` / `SceneScrollContainer$ScrollbarSpec` 新增 `barWidthSignal`（滚动条宽度动态派生）、`SceneScrollContainer.defaultScrollbarSpec(ReadableSignal)` / `createDefault(..., ReadableSignal)`、`PickerChrome.scrollbarWidthSignal` / `scrollbarWidthSignalOf`、`SceneLayoutEngine.layoutChangeEpoch()`、`PaintPlan.addPlan(PaintPlan)`、`SceneRuntime.logicalBox()` / `fontEpochSignal()`、`HostImageSource.itemIcon(ItemStack, String explicitRegistryKey)`、`Values.searchPicker(String)` / `Values.searchPicker(String, SearchPickerSpec.BindingMode)`、`ItemRenderFallbackKeys.unrenderableTint(SceneRuntime)`
+- 面板与控件接线：`SearchResultList.Props` 新增 `pageProvider` / `totalItems` / `windowOffset` / `availableWidth` / `visibleRows` / `totalItemsSignal` / `metrics` / `configuredKeys` / `onExitUp`，`Result` 新增 `windowModel()` / `highlightedItem()`；`ScenePickerPanel.Props` 新增 `candidateSource()` / `sourceQuery()` / `sourceVersion()` / `densityPreference()` / `onRestoreCurrent()` / `onDiscardRemoved()`
 - 交互收口：整页翻页 / 首末项 / 搜索框与网格双向跳转 / 分类导航键盘可聚焦、外部点击 scrim 单一检测点（同挂载幂等）、删除即生效 + 5s 撤销条（至多 1 条 tombstone）、信息条常驻占位 + 点击复制稳定 ID
 
 ### 变更
 
-- **`SearchPickerSpec.maxItems()` 语义反转为「搜索 lane 窗口上限」**（原 javadoc 自述「兼容提示值」且在主干无生产消费者）：取值链 `maxItems()` → `Registry.register(provider, int)` → `Props.searchMaxItems()`，`truncated = matchCount(query) > maxItems`，**默认 64**；索引层 65 硬夹删除（旧裂缝：注释 64 + 截断探针 / 实现 65 / 调用方 `Integer.MAX_VALUE`）
+- **~~`SearchPickerSpec.maxItems()` 语义反转为「搜索 lane 窗口上限」~~ 该反转已撤回（A 方案，发布前撤回）**：搜索 lane **不再有窗口上限**——窗口总量 = 候选源真实命中数（`matchCount(query)`），可见性 = 按窗口几何的**惰性分页**（`pageProvider` 按 `WindowRequest(offset, limit)` 拉片，单次物化量 ∝ 窗口行数 × 列数，与命中总数 N 无关），SPI 路径 `truncated` 恒 false（截断通道保留给旧全量结果路径，信息条优先级不变）。上限概念整链移除：`SearchPickerSpec.maxItems()` / `DEFAULT_MAX_ITEMS`、`Values.searchPicker(id,int[,mode])`、`Registry.register(provider,int)`、`CandidateSourceValueEditorProvider.searchMaxItems()` / `DEFAULT_SEARCH_MAX_ITEMS`、`ScenePickerPanel.Props.searchMaxItems()` 与 Builder 的 int 形参（逐项登记见「移除」）。修订出处：ADR **§0-R 修订 R-02**（原 R-06「maxItems=64 为真契约」裁决作废）
 - `SearchResultList.Props.items()` 由「全量数据」变为「**窗口切片**」：挂载量与绘制命令数与数据规模 N 无关；新增 `pageProvider`（窗口切片拉取）与 `totalItemsSignal`（动态总量），宿主不得自行推导窗口偏移，`Result.windowModel()` 为窗口状态唯一回读通道
 - 面板生命周期：全部候选派生计算移入内容 Owner、随关闭释放（旧行为是关闭仍在算）；`StructuredListFieldRenderer` 折叠态改惰性构建；常驻范围为同屏 open 开合之间 + 候选源进程级常驻（跨屏不成立）
 - 密度档位经 `Props.densityPreference` 注入，切换无需重建面板（auto 阶梯只降不升）；picker 家族不再有硬编码 6/8 位色值与布局常量；1080p auto 档可见项 75 → 100
@@ -49,6 +49,16 @@
 - **`club.heiqi.uilib.ui.scene.control.search.SearchResultList$Row`**（公共嵌套 record，整类删除）：窗口化后行区间由 `SceneGridWindow.RowRange`（`firstIndex()` / `count()`）承载；持有它的宿主即「第二份窗口数学」的载体。无生产消费者。ADR §10 V2.6(1)
 - **`club.heiqi.config.ui.editor.SearchPickerPresentation.currentMember(SearchPickerData$CurrentMember)`**（公共实例方法）：真死键（无注入、无消费者），成员文案由 `currentMemberPrimary(member)` / `currentMemberSecondary(member)` 承载。ADR §10 V2.4
 - **`club.heiqi.uilib.ui.scene.control.search.ItemRenderFallbackKeys.splitRegistryKey(String)`**（公共静态方法，无替代者）：按最后一个冒号切分会把方块名当 meta，使回退集合恒空、UNRENDERABLE 静默失效；分级键统一为候选域键后解析端不复存在。ADR §1.7 D-10 / §10 Z-3
+- **【本轮 A 方案撤回新增，相对 4.9.1 的真实删除】`club.heiqi.config.schema.SearchPickerSpec.maxItems()`**（公共实例方法）：搜索 lane 不再有窗口上限，窗口总量 = 候选源 `matchCount(query)`；需展示规模请读 `ScenePickerPanel$Result.windowModel().totalItems()`（窗口状态唯一回读通道）。判据：ADR §7 A-24/A-25（显式登记后的删除允许）；出处：ADR §0-R 修订 R-02
+- **【本轮 A 方案撤回新增】`SearchPickerSpec(String editorId, int maxItems)` / `SearchPickerSpec(String editorId, int maxItems, BindingMode bindingMode)`**（两个公共构造器）：替代者 = `SearchPickerSpec(String editorId)` / `SearchPickerSpec(String editorId, BindingMode bindingMode)`；widget 元数据不再携带窗口上限
+- **【本轮 A 方案撤回新增】`Values.searchPicker(String editorId, int maxItems)` / `Values.searchPicker(String editorId, int maxItems, BindingMode bindingMode)`**（两个公共静态方法）：替代者 = `Values.searchPicker(String editorId)` / `Values.searchPicker(String editorId, BindingMode bindingMode)`
+- **【发布前撤回，不计入对 4.9.1 的删除】5.0.0 开发期新增面（5 组 / 6 个公共成员，从未随任何版本发布，登记备查）**：
+  - `SearchPickerSpec.DEFAULT_MAX_ITEMS`（静态常量）→ 上限概念移除，无替代者；
+  - `Registry.register(ValueEditorProvider, int)` → 回到单参 `Registry.register(ValueEditorProvider)`（与 4.9.1 同形）；
+  - `CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS` / `searchMaxItems()` → SPI 只剩 `candidateSource()` / `iconSource()`；
+  - `ScenePickerPanel$Props.searchMaxItems()` → 无替代者（总量读 `Result.windowModel().totalItems()`）；
+  - `ScenePickerPanel$Props$Builder.candidateSource(PickerCandidateSource, int, ReadableSignal, ReadableSignal)` 旧形态 → 替代者 = 三参 `candidateSource(source, query, version)`
+- 本轮登记口径小结：相对 4.9.1 的真实删除 = 上列前 3 项 + 本轮新增 3 组（5 个成员），合计 **1 个公共类 + 7 个公共成员**；javap 门禁须按最终制品重跑并回填（见 [.changelogs/5.0.0.md](.changelogs/5.0.0.md)「验证边界」）
 - 计数常量与写入者 `picker.lookup.comparisons`（见「变更」）
 
 ## [4.9.1] - 2026-09-11

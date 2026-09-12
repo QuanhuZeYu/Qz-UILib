@@ -101,7 +101,6 @@ public class PickerSourceContractTest {
         };
         assertEquals(null, defaults.candidateSource());
         assertEquals(null, defaults.iconSource());
-        assertEquals(64, defaults.searchMaxItems());
     }
 
     private static final class StubSource implements PickerCandidateSource {

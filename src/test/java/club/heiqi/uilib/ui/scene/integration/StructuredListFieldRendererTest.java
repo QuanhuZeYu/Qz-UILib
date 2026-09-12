@@ -508,7 +508,7 @@ public class StructuredListFieldRendererTest {
                 .structuredList("rules", Values.objectWithIdentity("id",
                         Values.member("id", Values.string()),
                         Values.member("members", Values.widget(Values.list(Values.string()),
-                                Values.searchPicker("test:list-members", 8,
+                                Values.searchPicker("test:list-members",
                                         SearchPickerSpec.BindingMode.LIST_MEMBERS)))))
                 .build().endSection().build();
         File file = File.createTempFile("structured-list-members-picker-", ".yaml");
@@ -685,7 +685,7 @@ public class StructuredListFieldRendererTest {
                 .structuredList("rules", Values.objectWithIdentity("id",
                         Values.member("id", Values.string()),
                         Values.member("members", Values.widget(Values.list(Values.string()),
-                                Values.searchPicker("test:list-members", 8,
+                                Values.searchPicker("test:list-members",
                                         SearchPickerSpec.BindingMode.LIST_MEMBERS)))))
                 .build().endSection().build();
         File file = File.createTempFile("structured-list-duplicate-delete-", ".yaml");
@@ -813,7 +813,7 @@ public class StructuredListFieldRendererTest {
                 .structuredList("rules", Values.objectWithIdentity("id",
                         Values.member("id", Values.string()),
                         Values.member("members", Values.widget(Values.list(Values.string()),
-                                Values.searchPicker("test:list-picker", 8)))))
+                                Values.searchPicker("test:list-picker")))))
                 .build().endSection().build();
         File file = File.createTempFile("structured-picker-renderer-test-", ".yaml");
         write(file, yaml);
@@ -835,7 +835,7 @@ public class StructuredListFieldRendererTest {
                 .structuredList("rules", Values.objectWithIdentity("id",
                         Values.member("id", Values.string()),
                         Values.member("members", Values.widget(Values.list(Values.string()),
-                                Values.searchPicker("test:list-picker", 8)))))
+                                Values.searchPicker("test:list-picker")))))
                 .build().endSection().build();
         File file = File.createTempFile("structured-picker-presentation-test-", ".yaml");
         write(file, yaml);

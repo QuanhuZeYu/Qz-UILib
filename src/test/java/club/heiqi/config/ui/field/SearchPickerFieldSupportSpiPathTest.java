@@ -37,8 +37,6 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  */
 public class SearchPickerFieldSupportSpiPathTest {
 
-    private static final int SEARCH_MAX_ITEMS = 64;
-
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
@@ -64,13 +62,13 @@ public class SearchPickerFieldSupportSpiPathTest {
     public void spiPickerCreationTouchesNoCandidateSourceBeforeOpen() {
         final FakeSource source = new FakeSource(5000);
         Registry registry = new Registry();
-        registry.register(spiProvider("test:spi", source), 64);
+        registry.register(spiProvider("test:spi", source));
         registry.freeze();
         SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
         try {
             Signal<Object> value = Signal.<Object>create("k1");
             runtime.mount(new SceneNode(), () -> SearchPickerFieldSupport.createControlledIfPresent(
-                    runtime, ValueSpec.string().withWidget(new SearchPickerSpec("test:spi", 8)),
+                    runtime, ValueSpec.string().withWidget(new SearchPickerSpec("test:spi")),
                     value, registry, value::set));
             runtime.flush();
             runtime.flush();
@@ -151,12 +149,12 @@ public class SearchPickerFieldSupportSpiPathTest {
         Assert.assertTrue(resolved.get(2).enumerated());
     }
 
-    /** 注册期只固化「引用 + 一个 int」：register 不触发任何候选读取（A-05 的 UILib 侧证据）。 */
+    /** 注册期只固化引用：register 不触发任何候选读取（A-05 的 UILib 侧证据）。 */
     @Test
     public void registrationCapturesReferenceWithoutTouchingCandidates() {
         FakeSource source = new FakeSource(5000);
         Registry registry = new Registry();
-        registry.register(spiProvider("test:spi", source), 128);
+        registry.register(spiProvider("test:spi", source));
         registry.freeze();
 
         Assert.assertEquals("注册不得读取清单长度", 0, source.sizeCalls);
@@ -166,7 +164,6 @@ public class SearchPickerFieldSupportSpiPathTest {
         CandidateSourceValueEditorProvider registered =
                 (CandidateSourceValueEditorProvider) registry.find("test:spi");
         Assert.assertSame("注册期冻结的必须是惰性 source 的引用", source, registered.candidateSource());
-        Assert.assertEquals("装配层传入的搜索窗口被收进注册快照", 128, registered.searchMaxItems());
     }
 
     /**
@@ -178,13 +175,13 @@ public class SearchPickerFieldSupportSpiPathTest {
     public void fieldWiringRegistersSourceSoSessionReleaseReachesIt() {
         FakeSource source = new FakeSource(3);
         Registry registry = new Registry();
-        registry.register(spiProvider("test:spi", source), 64);
+        registry.register(spiProvider("test:spi", source));
         registry.freeze();
         SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
         try {
             Signal<Object> value = Signal.<Object>create("k1");
             runtime.mount(new SceneNode(), () -> SearchPickerFieldSupport.createControlledIfPresent(
-                    runtime, ValueSpec.string().withWidget(new SearchPickerSpec("test:spi", 8)),
+                    runtime, ValueSpec.string().withWidget(new SearchPickerSpec("test:spi")),
                     value, registry, value::set));
             runtime.flush();
 
@@ -200,32 +197,6 @@ public class SearchPickerFieldSupportSpiPathTest {
         Assert.assertEquals("会话释放必须命中经真实接线登记的源",
                 1, PickerSourceLifecycle.releaseAll("client_disconnect"));
         Assert.assertEquals("release 恰一次", 1, source.releaseCalls);
-    }
-
-    /** 未传窗口时沿用 provider 自报值；非法窗口立即失败。 */
-    @Test
-    public void registrationUsesProviderValueAndRejectsIllegalWindow() {
-        Registry registry = new Registry();
-        registry.register(spiProvider("test:spi", new FakeSource(1)));
-        registry.freeze();
-        CandidateSourceValueEditorProvider registered =
-                (CandidateSourceValueEditorProvider) registry.find("test:spi");
-        Assert.assertEquals(CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS, registered.searchMaxItems());
-
-        Registry invalid = new Registry();
-        try {
-            invalid.register(spiProvider("test:bad", new FakeSource(1)), 0);
-            Assert.fail("expected non-positive window rejection");
-        } catch (IllegalArgumentException expected) {
-            Assert.assertTrue(expected.getMessage().contains("searchMaxItems"));
-        }
-    }
-
-    /** 两条默认值来源必须同值（spec 是权威，SPI 常量只是缺省；漂移即红）。 */
-    @Test
-    public void specAndSpiDefaultsAgree() {
-        Assert.assertEquals(SearchPickerSpec.DEFAULT_MAX_ITEMS,
-                CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS);
     }
 
     // ==================== 夹具 ====================

@@ -1,45 +1,38 @@
 package club.heiqi.config.schema;
 
-/** 搜索选择器 widget 元数据。 */
+/**
+ * 搜索选择器 widget 元数据。
+ *
+ * <p>只描述 picker 身份与配置值绑定粒度：<b>搜索 lane 的窗口总量 = 候选源返回的真实命中数，
+ * 无窗口上限</b>（可见性 = 按窗口几何的惰性分页，{@code PickerCandidateSource#page} 支持任意 offset）。</p>
+ */
 public final class SearchPickerSpec implements WidgetSpec {
     /** picker 与配置值的绑定粒度。 */
     public enum BindingMode { SINGLE_VALUE, LIST_MEMBERS }
 
-    /** 搜索 lane 窗口上限的默认值（浏览 lane 不受此上限约束）。 */
-    public static final int DEFAULT_MAX_ITEMS = 64;
-
     private final String editorId;
-    private final int maxItems;
     private final BindingMode bindingMode;
 
     /**
-     * 创建搜索选择器描述。
+     * 创建搜索选择器描述（默认 {@link BindingMode#SINGLE_VALUE} 绑定）。
      *
      * @param editorId namespaced editor id，格式为 namespace:path
-     * @param maxItems <b>搜索 lane 窗口上限</b>（唯一真值来源；由 UILib 装配层读取并作为查询上限传入，
-     *                 截断经 {@code SearchPickerData.SearchResult#truncated()} 透传到信息条）；
-     *                 必须为正。浏览 lane（空查询）不受此上限约束
      */
-    public SearchPickerSpec(String editorId, int maxItems) {
-        this(editorId, maxItems, BindingMode.SINGLE_VALUE);
+    public SearchPickerSpec(String editorId) {
+        this(editorId, BindingMode.SINGLE_VALUE);
     }
 
     /**
      * 创建指定绑定粒度的搜索选择器描述。
      *
      * @param editorId namespaced editor id，格式为 namespace:path
-     * @param maxItems 搜索 lane 窗口上限（唯一真值来源），必须为正
      * @param bindingMode 配置值绑定粒度
      */
-    public SearchPickerSpec(String editorId, int maxItems, BindingMode bindingMode) {
+    public SearchPickerSpec(String editorId, BindingMode bindingMode) {
         if (!isNamespacedId(editorId)) {
             throw new IllegalArgumentException("editorId must use namespace:path with lowercase ASCII characters");
         }
-        if (maxItems < 1) {
-            throw new IllegalArgumentException("maxItems must be positive");
-        }
         this.editorId = editorId;
-        this.maxItems = maxItems;
         if (bindingMode == null) {
             throw new IllegalArgumentException("bindingMode must not be null");
         }
@@ -48,11 +41,6 @@ public final class SearchPickerSpec implements WidgetSpec {
 
     /** @return namespaced editor id */
     public String editorId() { return editorId; }
-
-    /**
-     * @return 搜索 lane 窗口上限（由装配层读取并作为查询上限传入；浏览 lane 不受其约束）
-     */
-    public int maxItems() { return maxItems; }
 
     /** @return picker 与配置值的绑定粒度 */
     public BindingMode bindingMode() { return bindingMode; }

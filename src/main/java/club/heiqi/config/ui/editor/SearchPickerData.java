@@ -181,8 +181,9 @@ public final class SearchPickerData {
         /**
          * 创建携带真实截断标志的结果快照（候选域键去重，首项胜）。
          *
-         * <p>截断语义由**查询结果**承载：调用方按 {@code matchCount(query) > searchMaxItems} 判定后传入，
-         * 取代旧的「预算参数在 UILib 侧被丢弃、truncated 恒 false」形态（过渡态 T-3 的目标语义）。</p>
+         * <p>截断语义由**查询结果**承载：调用方按其查询实际是否被裁剪（例如外部给定了有限 limit）判定后传入。
+         * SPI 惰性候选源路径<b>不产生截断</b>（窗口总量 = 真实命中数，无窗口上限），该路径恒为 false；
+         * 本通道保留给旧全量结果路径使用，信息条优先级不变。</p>
          *
          * @param candidates 原始候选
          * @param truncated  是否因上限被截断

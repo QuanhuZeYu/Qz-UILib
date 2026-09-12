@@ -73,7 +73,6 @@ public class ScenePickerPanelCategoryFilterTest {
     private static final int W = 800;
     private static final int H = 600;
     private static final int COLUMNS = 4;
-    private static final int SEARCH_MAX_ITEMS = 64;
 
     private SceneRuntime rt;
     private SceneLayoutEngine layoutEngine;
@@ -269,16 +268,15 @@ public class ScenePickerPanelCategoryFilterTest {
     }
 
     /**
-     * 搜索 lane：窗口总量取 {@code min(hits, searchMaxItems)}、窗口行数随之派生、切片请求量不越上限，
-     * 截断语义由 truncated 通道（顶栏统计行）表达；导航「全部」行取<b>真实命中数</b>（不夹取上限）。
+     * 搜索 lane 与浏览 lane 同构：窗口总量 = <b>真实命中数</b>（无窗口上限）、窗口行数随之派生、
+     * 切片请求量只受窗口几何约束，且不出现截断提示；导航「全部」行取同一口径的真实命中数。
      *
-     * <p>口径依据：分类行徽章来自 {@code source.categories()} 的 count（真实候选规模，与窗口上限
-     * 无关），「全部」行必须与各分类行同源；{@code min(hits, maxItems)} 反而是异源，截断由顶栏/
-     * 信息条的 truncated 文案单独承担。断言在<b>同一挂载实例</b>内完成（打开后输入查询、不重新 open），
-     * 同时看护「行键不变而计数换代必须刷上屏」的导航徽章通路。</p>
+     * <p>旧实现把总量夹成 {@code min(hits, 64)}（已移除的装配层窗口上限）：200 命中时窗口只到第 64 项、
+     * 顶栏统计与截断提示都与真实命中数不符（本用例即该缺陷的回归锚点）。断言在<b>同一挂载实例</b>
+     * 内完成（打开后输入查询、不重新 open），同时看护「行键不变而计数换代必须刷上屏」的导航徽章通路。</p>
      */
     @Test
-    public void searchLaneAllRowShowsTrueHitsWhileWindowStaysCapped() {
+    public void searchLaneWindowTotalsTrueHitsWithoutCap() {
         CategorySource source = new CategorySource();
         source.textHits = 200;
         Fixture f = new Fixture(source);
@@ -289,22 +287,21 @@ public class ScenePickerPanelCategoryFilterTest {
         layoutAll();
 
         SceneGridWindow.WindowModel model = windowModel(f);
-        Assert.assertEquals("搜索 lane 窗口总量 = min(真实命中数, searchMaxItems)",
-                SEARCH_MAX_ITEMS, model.totalItems());
-        Assert.assertEquals("窗口行数由 capped 总量派生（不得按真实命中数 200 算）", 16, model.totalRows());
-        Assert.assertTrue("切片请求量不得超上限: " + source.lastPageLimit,
-                source.lastPageLimit <= SEARCH_MAX_ITEMS);
+        Assert.assertEquals("搜索 lane 窗口总量 = 真实命中数（无上限）", 200, model.totalItems());
+        Assert.assertEquals("窗口行数按真实命中数派生", 50, model.totalRows());
+        Assert.assertTrue("切片请求量只受窗口几何约束（与命中总数无关）: " + source.lastPageLimit,
+                source.lastPageLimit <= (model.visibleRows() + 1) * COLUMNS);
 
-        Assert.assertTrue("截断必须由 truncated 通道表达（顶栏统计行）: " + allText(f.panelRoot()),
+        Assert.assertFalse("无窗口上限 ⇒ 不得出现截断提示: " + allText(f.panelRoot()),
                 allText(f.panelRoot()).contains(
                         SearchPickerPanelPresentation.defaultEnglish().truncatedResults()));
-        Assert.assertTrue("顶栏统计 = min(真实命中数, searchMaxItems): " + allText(f.panelRoot()),
+        Assert.assertTrue("顶栏统计 = 真实命中数: " + allText(f.panelRoot()),
                 allText(f.panelRoot()).contains(
-                        SearchPickerPresentation.defaultEnglish().resultSummary(SEARCH_MAX_ITEMS)));
+                        SearchPickerPresentation.defaultEnglish().resultSummary(200)));
 
         String allLabel = SearchPickerPanelPresentation.defaultEnglish().allCategoryLabel();
         Map<String, String> badges = navBadges(f.panelRoot());
-        Assert.assertEquals("同一挂载实例内「全部」行 = 真实命中数（不夹取 searchMaxItems）: " + badges,
+        Assert.assertEquals("同一挂载实例内「全部」行 = 真实命中数: " + badges,
                 "200", badges.get(allLabel));
     }
 
@@ -338,7 +335,7 @@ public class ScenePickerPanelCategoryFilterTest {
                             new SearchPickerCategories.Category("gamma", "Gamma", 80))))
                     .categoryOf(source::categoryOf)
                     .currentCategoryKey(categoryKey, categoryKey::set)
-                    .candidateSource(source, SEARCH_MAX_ITEMS, sourceQuery, version)
+                    .candidateSource(source, sourceQuery, version)
                     .build();
             result = ScenePickerPanel.create(rt, props);
             sceneRoot.appendChild(result.root());

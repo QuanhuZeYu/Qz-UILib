@@ -76,8 +76,8 @@ public interface PickerCandidateSource {
      *       {@code !hasCategoryFilter()}）：恒等于 {@link #size()}（清单恒等序）；</li>
      *   <li>浏览 lane <b>带分类过滤</b>：该分类的命中数（清单序<b>子序列</b>的规模，即
      *       {@code page(同一 query, 0, size())} 的返回条数）；</li>
-     *   <li>搜索 lane：返回<b>真实命中数</b>（可大于装配层的 {@code searchMaxItems} 上限，
-     *       截断由调用方按 {@code matchCount > maxItems} 判定）。</li>
+     *   <li>搜索 lane：返回<b>真实命中数</b>（窗口总量同口径，<b>不夹取任何上限</b>；
+     *       可见性 = UILib 按窗口几何的惰性分页，任意 offset 均可 {@link #page} 取到）。</li>
      * </ul>
      *
      * <p>分类 key 参与命中序，实现不得忽略 {@link PickerQuery#hasCategoryFilter()} 而一律回

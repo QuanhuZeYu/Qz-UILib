@@ -68,7 +68,7 @@ public class SearchPickerFieldSupportTest {
     public void missingProviderFailsFast() {
         Registry registry = new Registry();
         registry.freeze();
-        ValueSpec spec = ValueSpec.string().withWidget(new SearchPickerSpec("test:missing", 8));
+        ValueSpec spec = ValueSpec.string().withWidget(new SearchPickerSpec("test:missing"));
 
         try {
             SearchPickerFieldSupport.createIfPresent(null, spec, "", registry, value -> { });
@@ -82,7 +82,7 @@ public class SearchPickerFieldSupportTest {
     @Test
     public void listMembersModeRequiresExplicitBinding() {
         Registry registry = registry(statelessCodec((current, selected) -> selected), (query, max) -> result());
-        ValueSpec spec = ValueSpec.string().withWidget(new SearchPickerSpec("test:picker", 8,
+        ValueSpec spec = ValueSpec.string().withWidget(new SearchPickerSpec("test:picker",
                 SearchPickerSpec.BindingMode.LIST_MEMBERS));
         try {
             SearchPickerFieldSupport.createControlledIfPresent(null, spec, Signal.<Object>create(""),
@@ -373,7 +373,7 @@ public class SearchPickerFieldSupportTest {
         registry.register(multiDimensionProvider(memberCodec()));
         registry.freeze();
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items, registry, ignored -> { });
         harness.mountRoot(picker, 640, 420);
         harness.click(picker.__getChildren().get(0).__getChildren().get(0));
@@ -524,7 +524,7 @@ public class SearchPickerFieldSupportTest {
         Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(
                 new SceneSimpleList.ListItem("raw:x"), new SceneSimpleList.ListItem("raw:y")));
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), (query, max) -> result()), ignored -> { });
         harness.mountRoot(picker, 640, 420);
@@ -563,7 +563,7 @@ public class SearchPickerFieldSupportTest {
         Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Arrays.asList(
                 new SceneSimpleList.ListItem("raw:x"), new SceneSimpleList.ListItem("raw:y")));
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), (query, max) -> result()), ignored -> { });
         harness.mountRoot(picker, 640, 420);
@@ -632,7 +632,7 @@ public class SearchPickerFieldSupportTest {
             items.set(next);
         };
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), search), onChange);
         harness.mountRoot(picker, 640, 420);
@@ -701,7 +701,7 @@ public class SearchPickerFieldSupportTest {
         Signal<List<SceneSimpleList.ListItem>> items = Signal.create(
                 Collections.singletonList(new SceneSimpleList.ListItem("raw:x")));
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), (query, max) -> result()),
                 ignored -> { throw new IllegalStateException("adapter"); });
@@ -738,7 +738,7 @@ public class SearchPickerFieldSupportTest {
         Signal<List<SceneSimpleList.ListItem>> items = Signal.create(Collections.singletonList(item));
         AtomicInteger attempts = new AtomicInteger();
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), (query, max) -> result()), ignored -> {
                     attempts.incrementAndGet();
@@ -782,7 +782,7 @@ public class SearchPickerFieldSupportTest {
                 new SearchPickerData.Candidate("7", "Malformed key remains",
                         Collections.<SearchPickerData.Variant>emptyList())));
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(registryIdentityMemberCodec(), (query, max) -> complete), ignored -> { });
         harness.mountRoot(picker, 640, 420);
@@ -823,7 +823,7 @@ public class SearchPickerFieldSupportTest {
             return SearchPickerData.SearchResult.empty();
         };
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), search), ignored -> { });
         harness.mountRoot(picker, 640, 420);
@@ -865,7 +865,7 @@ public class SearchPickerFieldSupportTest {
         Signal<Object> raw = Signal.<Object>create(initialRaw);
         Signal<List<SceneSimpleList.ListItem>> items = Signal.create(initialItems);
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), (query, max) -> new SearchPickerData.SearchResult(candidates)),
                 published -> raw.set(published));
@@ -977,7 +977,7 @@ public class SearchPickerFieldSupportTest {
                                 new SearchPickerData.Variant("v-alpha", "Alpha"),
                                 new SearchPickerData.Variant("v-beta", "Beta")))));
         SceneNode picker = SearchPickerFieldSupport.createListMembersIfPresent(runtime,
-                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker", 8,
+                ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec("test:picker",
                         SearchPickerSpec.BindingMode.LIST_MEMBERS)), raw, items,
                 registry(memberCodec(), search), ignored -> { });
         harness.mountRoot(picker, 640, 420);
@@ -1144,7 +1144,7 @@ public class SearchPickerFieldSupportTest {
             SceneThemes.withTheme(pageTheme, () -> holder[0] = SearchPickerFieldSupport
                     .createListMembersIfPresent(runtime,
                             ValueSpec.list(ValueSpec.string()).withWidget(new SearchPickerSpec(
-                                    "test:picker", 8, SearchPickerSpec.BindingMode.LIST_MEMBERS)),
+                                    "test:picker", SearchPickerSpec.BindingMode.LIST_MEMBERS)),
                             raw, items, registry(memberCodec()), ignored -> { }));
             return holder[0];
         });
@@ -1314,7 +1314,7 @@ public class SearchPickerFieldSupportTest {
     }
 
     private static ValueSpec spec() {
-        return ValueSpec.string().withWidget(new SearchPickerSpec("test:picker", 8));
+        return ValueSpec.string().withWidget(new SearchPickerSpec("test:picker"));
     }
 
     private static Registry registry(final Codec codec) {

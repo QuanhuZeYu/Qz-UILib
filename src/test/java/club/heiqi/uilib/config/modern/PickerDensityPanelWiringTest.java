@@ -305,7 +305,7 @@ public class PickerDensityPanelWiringTest {
         Registry registry = pickerRegistry();
         mountHandle = rt.mount(sceneRoot, () -> {
             fieldRoot = SearchPickerFieldSupport.createControlledIfPresent(rt,
-                    ValueSpec.string().withWidget(new SearchPickerSpec(EDITOR_ID, 64)),
+                    ValueSpec.string().withWidget(new SearchPickerSpec(EDITOR_ID)),
                     value, registry, value::set);
             return fieldRoot;
         });

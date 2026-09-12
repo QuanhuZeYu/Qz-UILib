@@ -45,9 +45,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * 面板页窗口切片生产装配（P3 交接 U-1 / ADR §3.2「唯一实现 = ScenePickerPanel」）。
  *
  * <p>覆盖：面板自建 {@code pageProvider} 闭包按<b>控件产出的</b>窗口请求向 {@link PickerCandidateSource}
- * 拉片；总量 = 浏览 lane 的命中数（<b>无分类收窄</b> = {@code size()}，<b>带分类过滤</b> = 该分类
- * 命中数（清单序子序列规模））/ 搜索 lane 的 {@code min(matchCount, maxItems)}；
- * 截断真值进入信息条；激活走 {@code exact(key)} 免全表回查；关闭后不再触碰候选源、重开恢复；
+ * 拉片；总量 = 该 lane 的真实命中数（浏览 lane 无分类收窄 = {@code size()}，带分类过滤 = 该分类
+ * 命中数（清单序子序列规模）；搜索 lane = {@code matchCount}，<b>无窗口上限</b>）；
+ * 截断真值进入信息条（SPI 路径恒无截断）；激活走 {@code exact(key)} 免全表回查；关闭后不再触碰候选源、重开恢复；
  * 源版本信号变化（语言/资源/注册表代际）触发重查；调用点携带运行期主线程断言。</p>
  */
 public class ScenePickerPanelSpiWindowTest {
@@ -55,7 +55,6 @@ public class ScenePickerPanelSpiWindowTest {
     private static final int W = 800;
     private static final int H = 600;
     private static final int COLUMNS = 4;
-    private static final int SEARCH_MAX_ITEMS = 64;
 
     private SceneRuntime rt;
     private SceneLayoutEngine layoutEngine;
@@ -87,7 +86,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void browseLaneTotalsFromSourceAndPullsBoundedWindows() {
         FakeSource source = new FakeSource(5000);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.openPanel();
 
         SceneGridWindow.WindowModel model = windowModel(f);
@@ -112,14 +111,17 @@ public class ScenePickerPanelSpiWindowTest {
                 cellLabels(f).contains("k5000"));
     }
 
-    // ==================== 搜索 lane：上限 + 截断明示 ====================
+    // ==================== 搜索 lane：真实命中数、无窗口上限 ====================
 
-    /** 搜索 lane：总量 = min(matchCount, searchMaxItems)，请求量不超上限，信息条出现截断提示。 */
+    /**
+     * 搜索 lane：总量 = 真实命中数（与浏览 lane 同口径，无窗口上限），窗口行数随之派生，
+     * 切片请求量只受窗口几何约束（与命中总数 N 无关）；无上限 ⇒ 不出现截断提示。
+     */
     @Test
-    public void searchLaneCapsWindowAndSurfacesTruncation() {
+    public void searchLaneTotalsTrueHitsWithoutCapOrTruncation() {
         FakeSource source = new FakeSource(5000);
         source.textHits = 200;
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.openPanel();
 
         f.query.set("stone");
@@ -127,13 +129,13 @@ public class ScenePickerPanelSpiWindowTest {
         layoutAll();
 
         SceneGridWindow.WindowModel model = windowModel(f);
-        Assert.assertEquals("搜索 lane 总量 = min(matchCount, maxItems)", SEARCH_MAX_ITEMS, model.totalItems());
+        Assert.assertEquals("搜索 lane 总量 = 真实命中数", 200, model.totalItems());
+        Assert.assertEquals("窗口行数按真实命中数派生", 50, model.totalRows());
         Assert.assertTrue("搜索 lane 必须统计真实命中数", source.matchCountCalls >= 1);
-        Assert.assertTrue("请求量不得超过搜索上限：" + source.lastPageLimit,
-                source.lastPageLimit <= SEARCH_MAX_ITEMS);
-        // P5 §3.3：截断提示落在<b>顶栏统计行右侧</b>（「与统计同行」），不再占用信息条。
-        // 断言不降级：截断文案仍必须有可见落点。
-        Assert.assertTrue("截断必须明示（顶栏统计行）：" + allText(f.panelRoot()),
+        Assert.assertTrue("请求量只受窗口几何约束（与命中总数无关）：" + source.lastPageLimit,
+                source.lastPageLimit <= (model.visibleRows() + 1) * COLUMNS);
+        // P5 §3.3 的截断落点（顶栏统计行右侧）保留，但无窗口上限 ⇒ 该文案永不出现。
+        Assert.assertFalse("无窗口上限即无截断提示：" + allText(f.panelRoot()),
                 allText(f.panelRoot())
                         .contains(f.panelPresentation().truncatedResults()));
 
@@ -141,10 +143,74 @@ public class ScenePickerPanelSpiWindowTest {
         f.query.set("st");
         rt.flush();
         layoutAll();
-        Assert.assertEquals("命中数低于上限时总量 = 命中数", 10, windowModel(f).totalItems());
+        Assert.assertEquals("命中数回落时总量 = 命中数", 10, windowModel(f).totalItems());
         Assert.assertFalse("未截断时不得出现截断提示",
                 allText(f.panelRoot())
                         .contains(f.panelPresentation().truncatedResults()));
+    }
+
+    // ==================== 缺陷回归：命中数越过旧窗口上限（A 方案） ====================
+
+    /**
+     * 缺陷回归：命中 200 &gt; 旧窗口上限 64 时，面板必须把真实命中数交给窗口数学，
+     * 且 {@code pageProvider} 能按 offset &gt; 64 拉到后段 —— 滚到底必须看见第 200 项。
+     *
+     * <p>旧实现（{@code totalItems = min(hits, 64)}，已移除的装配层窗口上限）在本用例下只能滚到第 64 项、
+     * 最后请求 offset ≤ 63，且会显示截断提示。</p>
+     */
+    @Test
+    public void searchLaneReachesHitsBeyondFormerWindowCap() {
+        FakeSource source = new FakeSource(5000);
+        source.textHits = 200;
+        SpiFixture f = new SpiFixture(source);
+        f.openPanel();
+
+        f.query.set("stone");
+        rt.flush();
+        layoutAll();
+        Assert.assertEquals("窗口总量 = 真实命中数 200", 200, windowModel(f).totalItems());
+        Assert.assertEquals("窗口行数 = ceil(200 / 列数)", 50, windowModel(f).totalRows());
+        Assert.assertFalse("无上限即无截断提示", allText(f.panelRoot())
+                .contains(f.panelPresentation().truncatedResults()));
+
+        routeScrollAt(f.viewport(), -1_000_000);
+        rt.flush();
+        layoutAll();
+
+        Assert.assertTrue("pageProvider 必须按 offset > 64 取到后段（旧实现在 64 截断）：最后请求 offset="
+                + source.lastPageOffset, source.lastPageOffset > 64);
+        Assert.assertTrue("滚到底必须看见第 200 项: " + cellLabels(f), cellLabels(f).contains("k200"));
+    }
+
+    /**
+     * 缺陷回归：同一 fixture、同一底层候选集下，搜索 lane 与浏览 lane 的窗口总量口径一致
+     * （都等于真实命中数），末项在两条 lane 都可滚动到达。
+     */
+    @Test
+    public void searchLaneAndBrowseLaneShareTotalItemsSemantics() {
+        FakeSource source = new FakeSource(280);
+        source.textHits = 280;
+        SpiFixture f = new SpiFixture(source);
+        f.openPanel();
+
+        Assert.assertEquals("浏览 lane 总量 = size()", 280, windowModel(f).totalItems());
+        routeScrollAt(f.viewport(), -1_000_000);
+        rt.flush();
+        layoutAll();
+        Assert.assertTrue("浏览 lane 末项可达: " + cellLabels(f), cellLabels(f).contains("k280"));
+
+        f.query.set("stone");
+        rt.flush();
+        layoutAll();
+
+        Assert.assertEquals("搜索 lane 总量 = 同一候选集的真实命中数", 280, windowModel(f).totalItems());
+        Assert.assertFalse("搜索 lane 不产生截断", allText(f.panelRoot())
+                .contains(f.panelPresentation().truncatedResults()));
+        routeScrollAt(f.viewport(), -1_000_000);
+        rt.flush();
+        layoutAll();
+        Assert.assertTrue("搜索 lane 末项同样可达（旧实现被 64 上限挡在 k64）: " + cellLabels(f),
+                cellLabels(f).contains("k280"));
     }
 
     // ==================== 激活路径：exact 免全表回查 ====================
@@ -153,7 +219,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void activationResolvesCandidateViaExactWithoutScanningWindow() {
         FakeSource source = new FakeSource(5000);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.openPanel();
 
         SceneNode cell = gridCell(f.viewport(), 2);
@@ -174,7 +240,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void closedPanelStopsTouchingSourceAndReopenPullsOnlyWindowSlices() {
         FakeSource source = new FakeSource(5000);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.openPanel();
         int pagesAfterFirstOpen = source.pageCalls;
         Assert.assertTrue("首次打开必须拉片", pagesAfterFirstOpen > 0);
@@ -206,7 +272,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void sourceVersionChangeRequeriesLane() {
         FakeSource source = new FakeSource(5000);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.openPanel();
         Assert.assertEquals(5000, windowModel(f).totalItems());
         int sizeBefore = source.sizeCalls;
@@ -239,7 +305,7 @@ public class ScenePickerPanelSpiWindowTest {
             }
         });
         FakeSource source = new FakeSource(500);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.openPanel();
         f.query.set("stone");
         rt.flush();
@@ -258,7 +324,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void configuredCandidatesStayVisibleMarkedAndActivateNormally() {
         FakeSource source = new FakeSource(5000);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.configureMember("k2");
         f.openPanel();
 
@@ -331,7 +397,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void memberBadgeHoverExplainsIssueThroughPresentation() {
         FakeSource source = new FakeSource(20);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.members.set(Arrays.asList(
                 new SearchPickerData.CurrentMember(0L, null, null, false),
                 new SearchPickerData.CurrentMember(1L,
@@ -378,7 +444,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void infoBarClickCopiesStableIdWithBoundedInjectedFeedback() {
         FakeSource source = new FakeSource(20);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         ClipboardStub clipboard = new ClipboardStub();
         rt.bindClipboard(clipboard);
         f.openPanel();
@@ -417,7 +483,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void infoBarClickWithoutClipboardPortDegradesSilently() {
         FakeSource source = new FakeSource(20);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.openPanel();
         hover(cellByKey(f.viewport(), "k1"));
         String before = infoBarText(f.panelRoot());
@@ -442,7 +508,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void infoBarClickWithoutCopyPayloadIsNoOp() {
         FakeSource source = new FakeSource(20);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         ClipboardStub clipboard = new ClipboardStub();
         rt.bindClipboard(clipboard);
         f.openPanel();
@@ -465,7 +531,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void infoBarCopyClickIsNotAnOutsideClickAndScrimStillDismissesOnce() {
         FakeSource source = new FakeSource(20);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         ClipboardStub clipboard = new ClipboardStub();
         rt.bindClipboard(clipboard);
         f.openPanel();
@@ -501,7 +567,7 @@ public class ScenePickerPanelSpiWindowTest {
     @Test
     public void tabRingStaysInsidePanelAndCoversSearchNavGridAndMembers() {
         FakeSource source = new FakeSource(20);
-        SpiFixture f = new SpiFixture(source, SEARCH_MAX_ITEMS);
+        SpiFixture f = new SpiFixture(source);
         f.configureMember("k2");
         f.configureMember("k3");
         f.openPanel();
@@ -762,7 +828,7 @@ public class ScenePickerPanelSpiWindowTest {
         private final club.heiqi.config.ui.editor.SearchPickerPanelPresentation panelPresentation;
         private final club.heiqi.config.ui.editor.SearchPickerPresentation presentation;
 
-        SpiFixture(PickerCandidateSource source, int searchMaxItems) {
+        SpiFixture(PickerCandidateSource source) {
             Signal<Integer> dimensionSignal = dimension;
             Signal<String> categorySignal = categoryKey;
             Computed<PickerQuery> sourceQuery = Computed.create(() -> PickerQuery.text(
@@ -776,7 +842,7 @@ public class ScenePickerPanelSpiWindowTest {
                     })
                     .grid(GridProps.of(COLUMNS, 64, 64, 8, 8, 3))
                     .currentMembers(members, memberId -> { })
-                    .candidateSource(source, searchMaxItems, sourceQuery, version)
+                    .candidateSource(source, sourceQuery, version)
                     .build();
             panelPresentation = props.panelPresentation();
             presentation = props.presentation();

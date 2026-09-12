@@ -140,9 +140,9 @@ public final class ScenePickerPanelNav {
      *   <li>计数 -1 = 未知 ⇒ 同样隐藏（旧路径对未知静态计数同处置；不冒充 0 计数展示）；</li>
      *   <li>「全部」行计数 = 该行对应的候选规模（由调用方给出）：浏览 lane 未收窄 = {@code size()}、
      *       浏览 + 分类过滤 = {@code size()}（此时 {@code size()} 才是「全部」，被选中分类的命中数在
-     *       该分类行自身上）、搜索 lane = <b>真实命中数（不夹取 {@code searchMaxItems}）</b>——
+     *       该分类行自身上）、搜索 lane = <b>真实命中数（与窗口总量同口径，无窗口上限）</b>——
      *       与各分类行的 {@code count}（{@link SearchPickerCategories.Category#count()}，真实候选规模）
-     *       同源；窗口上限与截断不参与导航徽章，截断由调用方的 truncated 通道表达。</li>
+     *       同源；截断不参与导航徽章，截断由调用方的 truncated 通道表达。</li>
      * </ul>
      *
      * @param categories 源给出的分类行（可空/null）

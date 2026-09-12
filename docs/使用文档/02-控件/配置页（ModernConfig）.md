@@ -250,7 +250,7 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 - **section raw overlay**：schema section 内未知 MAP 子树保留；**schema 优先仅限 MAP overlay**——section 为 scalar/list 时 bootstrap/reload fail-closed，禁止静默默认覆盖
 ## 搜索选择器 beta 接入
 
-结构化对象 member 可用 `Values.widget(valueSpec, Values.searchPicker(editorId, maxItems))`
+结构化对象 member 可用 `Values.widget(valueSpec, Values.searchPicker(editorId))`（`LIST_MEMBERS` 绑定用 `Values.searchPicker(editorId, SearchPickerSpec.BindingMode.LIST_MEMBERS)`）
 声明搜索选择器，并通过 `ConfigUI.buildScreen` 5 参重载最后一个 customizer 注册对应
 `ValueEditorProvider`。装配顺序是打开 draft、创建 adapter、定制并冻结每 screen editor registry、
 创建默认字段 registry、定制字段 renderer、定制恢复策略、创建 screen。
@@ -270,7 +270,7 @@ ValueEditorProvider 与 ConfigUI editor registry 都属于预发布 API，不在
 ```java
 Values.widget(
         Values.list(Values.string()),
-        Values.searchPicker("my-mod:item", 64,
+        Values.searchPicker("my-mod:item",
                 SearchPickerSpec.BindingMode.LIST_MEMBERS));
 ```
 

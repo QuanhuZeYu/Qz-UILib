@@ -163,7 +163,7 @@ public final class SearchResultList {
      *                          非 null 时首帧即正确列数，不再有收敛帧）
      * @param totalItemsSignal  <b>动态总量通道</b>（P4 增补；可为 null = 用 {@code totalItems} 静态值）：
      *                          总量随查询/数据源变化的形态（如惰性候选源「浏览 lane = size() /
-     *                          搜索 lane = min(matchCount, maxItems)」）必须经本信号进入窗口数学——
+     *                          搜索 lane = matchCount（真实命中数）」）必须经本信号进入窗口数学——
      *                          窗口 Computed 依赖它，总量变化即重派生 totalRows/maxScrollPx 并重新拉片。
      *                          与 {@code totalItems} 同时给出时以本信号为准
      * @param sliceRevision     <b>切片修订通道</b>（P4 增补·纯加法；可为 null = 不订阅）：窗口 Computed

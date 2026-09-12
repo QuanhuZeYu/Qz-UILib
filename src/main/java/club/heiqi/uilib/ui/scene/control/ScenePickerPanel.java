@@ -17,7 +17,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.config.ui.editor.CandidateSourceValueEditorProvider;
 import club.heiqi.config.ui.editor.PickerCandidateSource;
 import club.heiqi.config.ui.editor.PickerQuery;
 import club.heiqi.config.ui.editor.PickerSourceVersion;
@@ -86,8 +85,8 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p>① <b>结果信号路径</b>（{@code Props.candidateSource} == null，T-1 回退）：{@code Props.results()}
  * 自带候选全集，面板侧按分类过滤后派生全量项。② <b>惰性候选源路径</b>（ADR §3.2）：面板在内容 Owner
  * 内自建 {@code pageProvider} 闭包，按控件产出的 {@code WindowRequest} 调
- * {@code PickerCandidateSource.page(query, offset, limit)}；总量 = 浏览 lane 的命中数（无分类收窄即
- * {@code size()}，带分类过滤 = 该分类命中数）/ 搜索 lane 的 {@code min(matchCount, searchMaxItems)}；
+ * {@code PickerCandidateSource.page(query, offset, limit)}；总量 = 该 lane 的真实命中数（浏览 lane 无分类
+ * 收窄即 {@code size()}，带分类过滤 = 该分类命中数；搜索 lane = {@code matchCount}，无窗口上限）；
  * 切片重取由「查询条件 + 源版本」修订快照驱动；激活经 {@code exact(key)} O(1) 定位。
  * 两条路径共用同一套节点构建（{@link Feed} 是唯一数据出口）。</p>
  *
@@ -246,8 +245,6 @@ public final class ScenePickerPanel {
          * 改在内容 Owner 内自建 {@code pageProvider} 闭包按窗口切片拉取；null = 旧全量结果信号路径（T-1）。
          */
         private final PickerCandidateSource candidateSource;
-        /** 搜索 lane 窗口上限（取值链 = {@code SearchPickerSpec.maxItems()}，由装配层注入）。 */
-        private final int searchMaxItems;
         /** 当前查询条件信号（归一化 {@link PickerQuery}，装配层受控注入）；SPI 路径必填。 */
         private final ReadableSignal<PickerQuery> sourceQuery;
         /** 候选源版本信号（装配层的 {@code PickerRevisionBridge}）：变化即重查（可为 null = 不订阅）。 */
@@ -310,7 +307,6 @@ public final class ScenePickerPanel {
             this.variantSearchEnabled = false;
             this.resultsCategoryFiltered = false;
             this.candidateSource = null;
-            this.searchMaxItems = CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS;
             this.sourceQuery = null;
             this.sourceVersion = null;
             this.densityPreference = null;
@@ -346,7 +342,6 @@ public final class ScenePickerPanel {
             variantSearchEnabled = builder.variantSearchEnabled;
             resultsCategoryFiltered = builder.resultsCategoryFiltered;
             candidateSource = builder.candidateSource;
-            searchMaxItems = builder.searchMaxItems;
             sourceQuery = builder.sourceQuery;
             sourceVersion = builder.sourceVersion;
             densityPreference = builder.densityPreference;
@@ -354,9 +349,6 @@ public final class ScenePickerPanel {
             onDiscardRemoved = builder.onDiscardRemoved;
             if (candidateSource != null && sourceQuery == null) {
                 throw new IllegalArgumentException("candidateSource 非 null 时必须提供 sourceQuery（面板自建窗口切片）");
-            }
-            if (candidateSource != null && searchMaxItems < 1) {
-                throw new IllegalArgumentException("searchMaxItems 必须为正数");
             }
         }
 
@@ -429,8 +421,6 @@ public final class ScenePickerPanel {
         public boolean resultsCategoryFiltered() { return resultsCategoryFiltered; }
         /** @return 惰性候选源；null = 旧全量结果信号路径 */
         public PickerCandidateSource candidateSource() { return candidateSource; }
-        /** @return 搜索 lane 窗口上限 */
-        public int searchMaxItems() { return searchMaxItems; }
         /** @return 受控查询条件信号；SPI 路径必填 */
         public ReadableSignal<PickerQuery> sourceQuery() { return sourceQuery; }
         /** @return 候选源版本信号（可为 null = 不订阅版本变化） */
@@ -480,7 +470,6 @@ public final class ScenePickerPanel {
             private boolean variantSearchEnabled;
             private boolean resultsCategoryFiltered;
             private PickerCandidateSource candidateSource;
-            private int searchMaxItems = CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS;
             private ReadableSignal<PickerQuery> sourceQuery;
             private ReadableSignal<PickerSourceVersion> sourceVersion;
 
@@ -675,24 +664,22 @@ public final class ScenePickerPanel {
             /**
              * 接入惰性候选源（SPI 路径，ADR §3.2）。
              *
-             * <p>面板在内容 Owner 内自建 {@code pageProvider} 闭包：持有查询条件信号 + 候选源引用 +
-             * 搜索窗口上限，按控件产出的 {@link SearchResultList.WindowRequest} 调
-             * {@code source.page(query, offset, limit)}；总量 = 浏览 lane 的命中数（无分类收窄即
-             * {@code size()}）或搜索 lane 的 {@code min(matchCount, searchMaxItems)}；
+             * <p>面板在内容 Owner 内自建 {@code pageProvider} 闭包：持有查询条件信号 + 候选源引用，
+             * 按控件产出的 {@link SearchResultList.WindowRequest} 调
+             * {@code source.page(query, offset, limit)}；总量 = 该 lane 的真实命中数（浏览 lane 无分类
+             * 收窄即 {@code size()}；搜索 lane = {@code matchCount}，无窗口上限）；
              * 切片重取由「查询条件 + 源版本」的修订快照驱动（总量持平也重取）。{@code Props.results()}
              * 在本路径下不参与列表渲染。</p>
              *
              * @param source        惰性候选源（非 null）
-             * @param searchMaxItems 搜索 lane 窗口上限（&gt;0；取值链 = SearchPickerSpec.maxItems()）
              * @param query         受控查询条件信号（非 null）
              * @param version       候选源版本信号（可为 null = 不订阅版本变化）
              * @return 本 builder
              */
-            public Builder candidateSource(PickerCandidateSource source, int searchMaxItems,
+            public Builder candidateSource(PickerCandidateSource source,
                                            ReadableSignal<PickerQuery> query,
                                            ReadableSignal<PickerSourceVersion> version) {
                 candidateSource = Objects.requireNonNull(source, "candidateSource");
-                this.searchMaxItems = searchMaxItems;
                 sourceQuery = Objects.requireNonNull(query, "sourceQuery");
                 sourceVersion = version;
                 return this;
@@ -1140,10 +1127,10 @@ public final class ScenePickerPanel {
         SceneNode summary = text(rt, "");
         rt.bind(secondaryForeground, summary::setTextColor);
         // 结果统计 = 当前查询总量（SPI 路径 = 浏览 lane 命中数（无分类收窄 = size()、带分类过滤 =
-        // matchCount）/ 搜索 lane = min(matchCount,maxItems)；旧路径 = 过滤后候选数），
+        // matchCount）/ 搜索 lane = matchCount（真实命中数，无窗口上限）；旧路径 = 过滤后候选数），
         // 不再读"全表长度"——切片路径下全表根本不存在（ADR §3.5 高亮回夹同口径）。
         // 统计行 = 「N 个结果」+ 同一行右侧的截断提示（P5 §3.3「与统计同行」）。
-        // 截断真值来自数据面（SPI 路径 = matchCount > searchMaxItems 的本地判定；旧路径 =
+        // 截断真值来自数据面（SPI 路径恒 false——搜索窗口上限概念已移除；旧路径 =
         // results.truncated()），恒 false 时不追加任何字符（不显示空段）。
         rt.bindText(summary, Computed.create(() -> {
             String base = props.presentation().resultSummary(
@@ -2005,11 +1992,14 @@ public final class ScenePickerPanel {
         /** SPI 路径：窗口切片生产者；旧路径 null（控件对全量 items 自切片）。 */
         private final SearchResultList.PageProvider pageProvider;
         /**
-         * 当前查询的窗口总量（SPI = 浏览 lane 命中数（无收窄即 {@code size()}）/ 搜索 lane
-         * {@code min(matchCount,maxItems)}；旧路径 = 过滤后候选数）。
+         * 当前查询的窗口总量（SPI = 该 lane 的真实命中数：浏览 lane 无收窄即 {@code size()}、
+         * 搜索 lane = {@code matchCount}；旧路径 = 过滤后候选数）。
          */
         private final ReadableSignal<Integer> totalItems;
-        /** 结果是否被搜索上限截断（信息条常驻提示）。 */
+        /**
+         * 结果是否被截断（信息条常驻提示）：SPI 路径恒 false（窗口上限概念已移除，总量 = 真实命中数）；
+         * 旧路径 = {@code SearchResult.truncated()}（外部调用方给有限 limit 时仍如实置位）。
+         */
         private final ReadableSignal<Boolean> truncated;
         /** 分类导航行（旧路径由候选列表动态计数；SPI 路径取 {@code source.categories(dimension)}）。 */
         private final ReadableSignal<List<CategoryRow>> categoryRows;
@@ -2052,13 +2042,13 @@ public final class ScenePickerPanel {
      *
      * <p>{@code candidateCount} = 本次查询看到的候选总规模（无分类收窄的浏览 lane = {@code size()}，
      * 其余 = {@code matchCount(query)}），是 {@code picker.candidates} 的口径（ADR §6.2）；
-     * {@code totalItems} = 窗口数学的总量（浏览 lane 无上限 = 命中数；搜索 lane 被
-     * {@code searchMaxItems} 截到上限）；{@code allRowCount} = 分类导航「全部」行的计数口径 ——
+     * {@code totalItems} = 窗口数学的总量 = <b>真实命中数（两条 lane 同口径，无窗口上限）</b>；
+     * {@code allRowCount} = 分类导航「全部」行的计数口径 ——
      * 「全部」= 该行对应的候选规模：浏览 lane = 未收窄的清单规模 {@code size()}（该行语义 = 取消分类
      * 过滤，故不随过滤变化；带分类过滤时被选中分类的命中数由该分类行自己的 {@code count} 表达），
-     * 搜索 lane = <b>真实命中数（不受 {@code searchMaxItems} 影响）</b>。导航徽章与各分类行的
-     * {@code count}（{@code source.categories(dimension)} 的真实候选规模）同源——窗口上限与截断不参与
-     * 导航徽章，截断语义由 {@code truncated} 通道单独表达。</p>
+     * 搜索 lane = <b>真实命中数</b>。导航徽章与各分类行的
+     * {@code count}（{@code source.categories(dimension)} 的真实候选规模）同源——截断不参与
+     * 导航徽章，截断语义由 {@code truncated} 通道单独表达（SPI 路径恒 false）。</p>
      */
     @Desugar
     private record LaneView(PickerQuery query, int candidateCount, int totalItems, boolean truncated,
@@ -2111,11 +2101,11 @@ public final class ScenePickerPanel {
     }
 
     /**
-     * SPI 路径数据面（ADR §3.2「唯一实现」）：持有查询条件信号 + 候选源引用 + 搜索窗口上限，
+     * SPI 路径数据面（ADR §3.2「唯一实现」）：持有查询条件信号 + 候选源引用，
      * 按控件产出的 {@link SearchResultList.WindowRequest} 拉取窗口切片 —— 面板<b>不持有候选全集</b>。
      *
-     * <p>总量与截断都来自同一次 lane 求值（浏览 lane = 命中数（无分类收窄即 {@code size()}），无上限；
-     * 搜索 lane = {@code min(matchCount, searchMaxItems)} + {@code truncated = hits > maxItems}）。</p>
+     * <p>总量与截断都来自同一次 lane 求值（两条 lane 的窗口总量 = 真实命中数，无窗口上限；浏览 lane 无
+     * 分类收窄即 {@code size()}；{@code truncated} 恒 false —— 截断通道只为旧路径保留）。</p>
      *
      * <p>切片重取由「{@link SliceRevision 修订快照}」驱动而非「总量变化」：修订 = 查询条件 + 源版本的
      * 值快照，任一变化即使总量持平也重新拉片（分类切换命中数相同、语言代际变化后标签作废等）。</p>
@@ -2167,7 +2157,6 @@ public final class ScenePickerPanel {
      */
     private static ReadableSignal<LaneView> laneView(Props props) {
         final PickerCandidateSource source = props.candidateSource();
-        final int searchMaxItems = props.searchMaxItems();
         return Computed.create(() -> {
             readVersion(props);
             PickerQuery query = props.sourceQuery().get();
@@ -2181,8 +2170,10 @@ public final class ScenePickerPanel {
                 // 浏览 lane 无上限：候选规模 = 窗口总量，不存在 cap/分页。
                 return new LaneView(query, hits, hits, false, all);
             }
+            // 搜索 lane 与浏览 lane 同构：窗口总量 = 真实命中数，不存在 cap/分页；
+            // 可见性 = 按窗口几何的惰性分页（page 支持任意 offset）。
             int hits = hitsOf(source, query);
-            return new LaneView(query, hits, Math.min(hits, searchMaxItems), hits > searchMaxItems, hits);
+            return new LaneView(query, hits, hits, false, hits);
         });
     }
 

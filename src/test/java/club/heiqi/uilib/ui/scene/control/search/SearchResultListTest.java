@@ -538,7 +538,7 @@ public class SearchResultListTest {
     }
 
     /**
-     * 动态总量通道（P4 增补，ADR §3.2 的「totalItems = lane == browse ? size() : min(matchCount, maxItems)」）：
+     * 动态总量通道（P4 增补，ADR §3.2 的「totalItems = lane == browse ? size() : matchCount（真实命中数）」）：
      * 惰性候选源的查询总量随后端查询变化，静态 {@code int totalItems} 无法表达 ⇒ 经
      * {@code Props.totalItemsSignal} 进入窗口数学；信号变化必须重派生 totalRows/maxScrollPx 并重拉切片。
      */
@@ -579,7 +579,7 @@ public class SearchResultListTest {
         int requestsBefore = requests.size();
         Assert.assertTrue("窗口切片必须由控件拉取", requestsBefore > 0);
 
-        // 查询切换：总量 4988 → 12（搜索 lane 上限场景）——窗口数学与切片必须随之重派生。
+        // 查询切换：总量 4988 → 12（搜索 lane 命中数收敛场景）——窗口数学与切片必须随之重派生。
         total.set(Integer.valueOf(12));
         rt.flush();
         layoutAndBridge();

@@ -16,31 +16,10 @@ package club.heiqi.config.ui.editor;
 public interface CandidateSourceValueEditorProvider extends ValueEditorProvider {
 
     /**
-     * 搜索 lane 窗口上限的 SPI 缺省值。
-     *
-     * <p>与 {@code SearchPickerSpec.DEFAULT_MAX_ITEMS} 同值但<b>不是同一真值来源</b>：
-     * 权威值永远是 {@code SearchPickerSpec.maxItems()}（装配层读取），本常量只服务于「provider 未声明」的缺省。
-     * 两者漂移由守卫测试钉死（{@code PickerSourceDefaultsTest}）。</p>
-     */
-    int DEFAULT_SEARCH_MAX_ITEMS = 64;
-
-    /**
      * @return 惰性候选源引用；null ⇒ 回退旧 {@code SearchFunction} 路径（T-1）
      */
     default PickerCandidateSource candidateSource() {
         return null;
-    }
-
-    /**
-     * 搜索 lane 窗口上限（唯一真值来源是 {@code SearchPickerSpec.maxItems()}，经装配层收进本方法）。
-     *
-     * <p>取值链：{@code SearchPickerSpec.maxItems()} → {@code Registry.register} 收进注册快照 →
-     * 本方法 → 装配层构造查询上限。浏览 lane 不受此上限约束。</p>
-     *
-     * @return 搜索 lane 单窗上限（正数）
-     */
-    default int searchMaxItems() {
-        return DEFAULT_SEARCH_MAX_ITEMS;
     }
 
     /**
