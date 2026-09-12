@@ -30,12 +30,15 @@ import cpw.mods.fml.common.versioning.VersionRange;
 public class FmlRemoteVersionCompatibilityContractTest {
 
     /**
-     * 发布态远端版本范围格式：两侧均为 major.minor.patch 三段式版本，左闭右开。
-     * 例：[4.9.0,5.0.0)；拒绝 [4.7.0,4.7.0) 空区间、缺失括号与预发布标签混入等形式。
-     * 不假定 major 恒为 4：区间上界本就允许跨 minor/跨 major（发布 5.0.0 时声明
-     * [5.0.0,5.1.0)），把 4.x 写死会在发版时误判合法声明。
+     * 发布态远端版本范围格式：两侧均为 major.minor.patch 三段式版本，左闭右开，
+     * <b>且两端 major 必须相同</b> —— 同 major 内互通才是承诺范围；上界允许跨 minor
+     * （[4.9.0,4.11.0) 同时覆盖 4.9.x 与 4.10.x），但不允许跨 major（[4.9.0,5.0.0) 等于
+     * 多承诺一个 major）。
+     * 例：[4.9.0,4.11.0)；拒绝 [4.7.0,4.7.0) 空区间、缺失括号、预发布标签混入与跨 major 形式。
+     * 反向引用 {@code \1} 表达「major 相同」，不把 4 写死：发布 5.0.0 时声明 [5.0.0,5.1.0)
+     * 同样合法。
      */
-    private static final String RELEASE_RANGE_PATTERN = "\\[\\d+\\.\\d+\\.\\d+,\\d+\\.\\d+\\.\\d+\\)";
+    private static final String RELEASE_RANGE_PATTERN = "\\[(\\d+)\\.\\d+\\.\\d+,(?:\\1)\\.\\d+\\.\\d+\\)";
 
     /**
      * 声明必须显式给出左闭右开区间；显式空串是禁止形态。
@@ -50,7 +53,7 @@ public class FmlRemoteVersionCompatibilityContractTest {
         String range = declaration.acceptableRemoteVersions();
         assertFalse("显式空串构成空区间、拒绝一切远端版本（含自身），禁止使用；"
                 + "需要放开限制时应整条删除该属性（FML 取到 null 才走精确版本相等）", range.isEmpty());
-        assertTrue("远端版本范围必须为 [x.y.z,x.y.z) 左闭右开区间，实际：" + range,
+        assertTrue("远端版本范围必须为 [x.y.z,x.y.z) 左闭右开三段式且两端 major 相同，实际：" + range,
                 range.matches(RELEASE_RANGE_PATTERN));
     }
 
