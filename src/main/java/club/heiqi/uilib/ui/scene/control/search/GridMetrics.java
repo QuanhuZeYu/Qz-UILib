@@ -127,13 +127,35 @@ public final class GridMetrics {
         int measured = rt.measureTextWidth(PickerDensityTokens.CELL_WIDTH_SAMPLE, fs);
         int cellWidth = Math.max(iconSide + 2 * pad, measured);
         // I-2：轨道高恒 >= 图标 + 上下 padding + 标签行 + 间距 —— 字号放大只抬轨道高，不回缩图标。
-        int contentFloor = iconSide + 2 * pad + lineHeight + labelGap;
+        int contentFloor = contentFloorPx(iconSide, pad, labelGap, lineHeight);
         int trackHeight = Math.max(Math.max(1, cellHeightFloorPx), contentFloor);
         int gap = clamp(roundHalfEven(fs * PickerDensityTokens.CELL_GAP_RATIO),
                 PickerDensityTokens.CELL_GAP_MIN, PickerDensityTokens.CELL_GAP_MAX);
         int columns = columnsFor(innerWidthPx, cellWidth, gap);
         return new GridMetrics(fs, lineHeight, pad, labelGap, iconSide, cellWidth, trackHeight,
                 gap, gap, trackHeight + gap, columns);
+    }
+
+    /**
+     * I-2 内容底（轨道高下界的唯一公式）：{@code iconSide + 2*padding + labelLineHeight + labelGap}。
+     *
+     * <p>四个分量里前三个来自密度档派生，{@code labelLineHeight} 是<b>标签节点的字号真值</b>
+     * （{@code rt.lineHeight(label.effectiveFontSize())}）。用派生输入 {@code fs} 反算行高只有在
+     * 「控件实际字号 == 派生 fs」时成立；宿主要求的字号（portal 内容根 {@code fontScope}，默认 16）
+     * 覆盖档位基准字号（12）时，真实标签行高会超过按 {@code fs} 算出的轨道高 —— 行真实 pitch &gt;
+     * 模型 stride，内容高 &gt; {@code totalRows*stride}，{@code maxScrollPx} 因此短一截、末排不可达。
+     * 故派生链与节点字号分叉时，调用方用本入口按<b>节点字号</b>复核轨道高（{@link #deriveDensity}
+     * 与 {@code SearchResultList} 的度量通道共用同一公式，不存在第二份内容底数学）。</p>
+     *
+     * @param iconSidePx   图位边长（&lt;1 按 1）
+     * @param paddingPx    单元上下内边距（&lt;0 按 0）
+     * @param labelGapPx   图标与标签间距（&lt;0 按 0）
+     * @param lineHeightPx 标签行高（&lt;1 按 1；须取标签节点生效字号的行高）
+     * @return 轨道高下界（≥1）
+     */
+    public static int contentFloorPx(int iconSidePx, int paddingPx, int labelGapPx, int lineHeightPx) {
+        return Math.max(1, iconSidePx) + 2 * Math.max(0, paddingPx)
+                + Math.max(1, lineHeightPx) + Math.max(0, labelGapPx);
     }
 
     /** 行步长闭式：{@code trackHeight + gapY}（&lt;1 收敛到 1）。 */

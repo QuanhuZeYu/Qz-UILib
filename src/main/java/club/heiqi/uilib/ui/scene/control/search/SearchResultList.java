@@ -512,7 +512,9 @@ public final class SearchResultList {
         GridMetrics initialMetrics = metricsSignal == null ? null : metricsSignal.get();
         stackHost.setFallbackFontSize(LABEL_FONT_SIZE);
         final Signal<Integer> trackHeight = Signal.create(Integer.valueOf(
-                initialMetrics != null ? initialMetrics.trackHeightPx() : props.cellHeight()));
+                initialMetrics != null
+                        ? trackHeightWithEffectiveFont(rt, initialMetrics, stackHost.effectiveFontSize())
+                        : props.cellHeight()));
         final Signal<Integer> cellPadding = Signal.create(Integer.valueOf(
                 initialMetrics != null ? initialMetrics.paddingPx() : CELL_PADDING));
         final Signal<Integer> labelGap = Signal.create(Integer.valueOf(
@@ -523,19 +525,29 @@ public final class SearchResultList {
                 initialMetrics != null ? initialMetrics.gapY() : props.gapY()));
         final Signal<Integer> cellWidth = Signal.create(Integer.valueOf(
                 initialMetrics != null ? initialMetrics.cellWidthPx() : props.cellWidth()));
+        // 轨道高的唯一重算出口：生效字号 → I-2 内容底（框架既有「字号 → 几何」通道，
+        // 登记即按当前生效字号算一次，其后字号变化由框架驱动重算）。
+        // 旧路径 = max(cellHeight 下限, 内容底(fs))；度量通道 = max(密度档派生轨道高, 内容底(控件实际字号))
+        // —— 与 GridMetrics.derive / deriveDensity 的 max(下限, 内容底) 同构，不是第三份公式。
+        // 必须按控件实际字号复核的理由：面板文字字号由宿主字号链（portal 内容根 fontScope）决定，
+        // 默认 16 ≠ 档位基准字号 12 ⇒ 只信快照会让标签行高超过 trackHeight、行真实 pitch > stride、
+        // 内容高 > totalRows*stride ⇒ maxScrollPx 短一截、末排被裁（I-2 后半句「标签不裁切」失效）。
+        stackHost.setFontSizeMetric((node, fontSizePx) -> Effect.untrack(() -> {
+            GridMetrics m = initialMetrics == null ? null : metricsSignal.get();
+            setIfChanged(trackHeight, m == null
+                    ? minTrackHeightFor(rt, props, fontSizePx)
+                    : trackHeightWithEffectiveFont(rt, m, fontSizePx));
+        }));
         if (initialMetrics != null) {
             rt.bind(metricsSignal, m -> Effect.untrack(() -> {
-                setIfChanged(trackHeight, m.trackHeightPx());
+                setIfChanged(trackHeight, trackHeightWithEffectiveFont(rt, m,
+                        stackHost.effectiveFontSize()));
                 setIfChanged(cellPadding, m.paddingPx());
                 setIfChanged(labelGap, m.labelGapPx());
                 setIfChanged(iconSide, m.iconSidePx());
                 setIfChanged(cellGap, m.gapY());
                 setIfChanged(cellWidth, m.cellWidthPx());
             }));
-        } else {
-            // 旧路径：轨道高由控件根的字号度量回调抬升（cellHeight 为下限）。
-            stackHost.setFontSizeMetric((node, fontSizePx) ->
-                    trackHeight.set(Integer.valueOf(minTrackHeightFor(rt, props, fontSizePx))));
         }
 
         // 行步长（stride）唯一派生：GridMetrics（轨道高 + 行间距）。行高 / spacer / maxScrollPx / 滚动定位全部读它。
@@ -1010,6 +1022,25 @@ public final class SearchResultList {
             available -= rt.lineHeight(label.effectiveFontSize()) + labelGapPx;
         }
         return Math.max(1, available);
+    }
+
+    /**
+     * 度量通道下的轨道高：{@code max(密度档派生下限, I-2 内容底(控件实际生效字号))}。
+     *
+     * <p>密度档给定的轨道高是按派生字号 {@code fs} 算出的下限；标签行高必须取标签节点（与控件根
+     * 同链、同字号）的生效字号 —— 两者分叉时取大者，与 {@link GridMetrics#derive} 的
+     * {@code max(cellHeightFloor, contentFloor)} 同构。行高 / 单元高 / spacer / stride /
+     * {@code maxScrollPx} 仍全部读同一 {@code trackHeight} 信号，不引入第二份窗口数学。</p>
+     *
+     * @param rt                场景运行时（行高度量）
+     * @param metrics           生效度量快照（非 null）
+     * @param effectiveFontSizePx 控件实际生效字号（节点字号链真值）
+     * @return 轨道高（≥ 派生下限）
+     */
+    private static int trackHeightWithEffectiveFont(SceneRuntime rt, GridMetrics metrics,
+                                                    int effectiveFontSizePx) {
+        return Math.max(metrics.trackHeightPx(), GridMetrics.contentFloorPx(metrics.iconSidePx(),
+                metrics.paddingPx(), metrics.labelGapPx(), rt.lineHeight(effectiveFontSizePx)));
     }
 
     /**

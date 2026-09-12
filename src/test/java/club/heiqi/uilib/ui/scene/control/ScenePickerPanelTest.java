@@ -2460,6 +2460,45 @@ public class ScenePickerPanelTest {
     }
 
     /**
+     * 小盒降级（P5 §1.5.3「信息条不占位」）必须以<b>内容折叠声明</b>落地，而不是只把
+     * preferredHeight 写 0：信息条是「有子容器」，preferredHeight==0 会让
+     * {@code ConstraintResolver.priorKnownChildHeight} 返回 UNCONSTRAINED，中栏整条 COLUMN
+     * grow 分配被放弃（U-P5-17「grow 先验闸门」复发）⇒ 结果区 viewport 回退 shrink-to-fit：
+     * 被内容撑大、{@code SceneGeometry.maxScrollY == 0}，末排既滚不到也看不见（独立缺陷，
+     * 与「字号真值分叉 ⇒ 末排裁切」不是同一条断言）。
+     */
+    @Test
+    public void smallBoxInfoBarCollapsesSoGridKeepsDefiniteViewport() {
+        rt.__setViewportLogicalBox(W, H);            // 800×600 < 1280×720 ⇒ 小盒降级
+        List<SearchPickerData.Candidate> many = new ArrayList<SearchPickerData.Candidate>();
+        for (int i = 0; i < 300; i++) {
+            many.add(candidate("k" + i));
+        }
+        Fixture f = new Fixture(many, false);
+        openPanel(f);
+        SceneNode center = centerColumn(overlayRoot(0));
+        SceneNode infoBar = center.__getChildren().get(3);
+        // 结果列表容器 = 中栏 children[2]（[error, emptyHint, stackHost, infoBar]），viewport = container[0]。
+        SceneNode gridViewport = center.__getChildren().get(2).__getChildren().get(0);
+
+        Assert.assertEquals("小盒信息条派生高为 0（P5 §1.5.3）", 0, infoBar.getPreferredHeight());
+        Assert.assertTrue("小盒信息条必须声明内容折叠（退出布局域，而不是零 preferredHeight 的容器）",
+                infoBar.isCollapsed());
+        Assert.assertNotNull("前置：信息条必须已布局", infoBar.getCachedLayout());
+        // 折叠口径 = 零内容叶：盒高只剩自身上下 padding（与 ConstraintResolver.priorKnownChildHeight
+        // 对折叠节点的先验口径同源）——先验高与实际高由构造一致，grow 分配的先验闸门才不触发。
+        int collapsedFloor = infoBar.getPaddingTop() + infoBar.getPaddingBottom();
+        Assert.assertEquals("折叠态盒高必须等于先验口径（零内容叶 = 上下 padding）",
+                collapsedFloor, ((LayoutBox) infoBar.getCachedLayout()).getHeight());
+        // 结果区必须是"确定视口高的可滚动视口"：闸门触发时 viewport 会被内容撑大、maxScrollY==0。
+        Assert.assertTrue("结果区必须收到确定视口高（内容被物理约束，不是被内容撑大）",
+                SceneGeometry.maxScrollY(gridViewport) > 0);
+        Assert.assertTrue("结果区视口高必须小于内容高（可滚动）",
+                ((LayoutBox) gridViewport.getCachedLayout()).getHeight()
+                        < ((LayoutBox) gridViewport.__getChildren().get(0).getCachedLayout()).getHeight());
+    }
+
+    /**
      * P5 §1.1 / ADR §3.4 判据①：结果网格列数在<b>挂载前</b>由面板盒预算算好 ——
      * 首帧列数 == 稳态列数，不存在「1 列挂载 N 行 → 收敛重建」的收敛帧（T5 ST-01）。
      */

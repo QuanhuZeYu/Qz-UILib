@@ -1338,12 +1338,31 @@ public final class ScenePickerPanel {
         SceneNode infoBar = PickerInfoBar.create(rt, new PickerInfoBar.Props(infoText, props.enabled()),
                 onCopy);
         if (viewportSizing) {
-            infoBar.setPreferredHeight(metrics.get().panel().infoBarHeightPx());
+            applyInfoBarHeight(infoBar, metrics.get().panel().infoBarHeightPx());
             rt.bind(metrics, m -> Effect.untrack(
-                    () -> infoBar.setPreferredHeight(m.panel().infoBarHeightPx())));
+                    () -> applyInfoBarHeight(infoBar, m.panel().infoBarHeightPx())));
         }
         center.appendChild(infoBar);
         return center;
+    }
+
+    /**
+     * 信息条高度 / 内容折叠声明（同一入口，避免高度与折叠成为两个真值）。
+     *
+     * <p>小盒降级下 P5 §1.5.3 要求「信息条不占位」，派生高为 {@code 0}：此时必须同时用
+     * {@link SceneNode#setCollapsed(boolean)} 声明内容退出布局域，而不是只把 preferredHeight 写成
+     * 0 —— 信息条是「<b>有子容器</b>」，preferredHeight==0 时 {@code ConstraintResolver
+     * .priorKnownChildHeight} 返回 UNCONSTRAINED，中栏整条 COLUMN grow 分配被放弃
+     * （U-P5-17「grow 先验闸门」复发）⇒ 结果区 viewport 回退 shrink-to-fit：被内容撑大、
+     * {@code SceneGeometry.maxScrollY == 0}，末排既滚不到也看不见。声明折叠后先验高与实际高
+     * 都是「零内容叶」口径，由构造一致，闸门不再触发（与撤销条 setCollapsed 同一根除方式）。</p>
+     *
+     * @param infoBar  信息条节点
+     * @param heightPx 派生高度（{@code <=0} = 小盒降级不占位）
+     */
+    private static void applyInfoBarHeight(SceneNode infoBar, int heightPx) {
+        infoBar.setPreferredHeight(heightPx);
+        infoBar.setCollapsed(heightPx <= 0);
     }
 
     /** 下容器（listMembers）：已选择编辑全宽底部横带。 */
