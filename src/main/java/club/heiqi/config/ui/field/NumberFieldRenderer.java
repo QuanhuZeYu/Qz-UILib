@@ -2,6 +2,7 @@ package club.heiqi.config.ui.field;
 
 import java.util.function.Supplier;
 
+import club.heiqi.config.schema.ColorSpec;
 import club.heiqi.config.schema.FieldConstraints;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.SliderSpec;
@@ -20,8 +21,13 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
- * NUMBER 字段渲染器：按 {@link WidgetSpec} 声明分发——
- * {@link SliderSpec} 用 {@link SceneSlider}，{@code null} 或 InputSpec 用 {@link SceneTextInput}。
+ * NUMBER 字段渲染器：按 {@link WidgetSpec} 声明分发——{@link SliderSpec} 用 {@link SceneSlider}，
+ * {@link ColorSpec} 交给 {@link ColorFieldRenderer}（HEX 颜色输入框），{@code null} 或 InputSpec
+ * 用 {@link SceneTextInput}。
+ *
+ * <p>颜色经这里的 widget 分发而不是新增一种 {@code FieldType}：颜色字段的值与校验就是 NUMBER
+ * （range {@code [0, 0xFFFFFF]}），控件形态是唯一差别；按 widget 分流可让草稿、范围校验、持久化、
+ * schema 兼容判定与类型注册表全部沿用既有通道。</p>
  *
  * <p>有 range 且声明 slider 时 value 由 draftSignal 经 {@link FieldRenderSupport#toDoubleSignal} 转 Double，
  * onChange 调 {@link DraftSignalAdapter#onFieldEdit} 写回 Double，
@@ -59,6 +65,9 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  */
 public final class NumberFieldRenderer implements FieldRenderer {
 
+    /** 颜色 widget 的渲染器（无状态，实例可共享） */
+    private static final ColorFieldRenderer COLOR = new ColorFieldRenderer();
+
     /** 纯静态工厂语义，但实现接口需实例化；无实例字段 */
     public NumberFieldRenderer() {
     }
@@ -66,6 +75,10 @@ public final class NumberFieldRenderer implements FieldRenderer {
     @Override
     public SceneNode render(SceneRuntime rt, FieldSpec spec, DraftSignalAdapter adapter) {
         WidgetSpec w = spec.widget();
+        if (w instanceof ColorSpec) {
+            // 颜色字段：写回 / 校验 / 脏标 / 保存全部沿用 NUMBER 通道，只有控件形态不同
+            return COLOR.render(rt, spec, adapter);
+        }
         if (w instanceof SliderSpec) {
             SliderSpec s = (SliderSpec) w;
             FieldConstraints c = spec.constraints();

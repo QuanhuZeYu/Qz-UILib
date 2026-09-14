@@ -16,11 +16,47 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
  *
  * <p>纯静态方法、无实例字段，守 R1（控件契约零内部状态）的近似延伸：renderer 自身仍是无状态工厂，
  * 本工具仅为其提供无状态函数。</p>
+ *
+ * <h3>编辑期原文机制（所有文本型字段共用一套）</h3>
+ * <p>{@code SceneTextInput} 是受控控件：显示文本只从外部 value 派生、自己不缓存原文，而「值 ↔ 文本」
+ * 映射普遍有损——{@code "0."} 与 {@code 0} 同值、{@code "40E6FF"} 与 {@code "#40E6FF"} 同值。
+ * 故文本型字段渲染器统一自持编辑期原文（字段层一个 {@code Signal<String> editText}），
+ * 显示文本 = {@code isUnfinishedText(原文, draft 值, 编解码) ? 原文 : 编解码.format(draft 值)}，
+ * 失焦时原文归位到规范写法。{@link ValueTextCodec} 是这套机制的编解码契约：NUMBER 用
+ * {@link #isUnfinishedNumberText} / {@link #numberTextOf}（内部走私有 NUMBER 实现），
+ * 十六进制颜色字段由 {@code config.ui.field} 里它自己的渲染器提供实现——
+ * <b>新增文本型字段只提供编解码，不另造第二套编辑期原文机制</b>。</p>
  */
 public final class FieldRenderSupport {
 
     /** 工具类，禁止实例化 */
     private FieldRenderSupport() {
+    }
+
+    /**
+     * 「值 ↔ 文本」的编解码契约：{@link #format(Object)} 给出值的规范写法，
+     * {@link #parse(String)} 把用户原文读回值（读不出返回 {@code null}，不做近似兜底）。
+     *
+     * <p>它是 {@link #isUnfinishedText} 的输入，不是控件/外观抽象：实现必须是纯函数、无状态，
+     * 且不得依赖 scene 或主题（编解码只描述文本形态，与观感无关）。</p>
+     */
+    public interface ValueTextCodec {
+
+        /**
+         * 值 → 规范显示文本。
+         *
+         * @param value draft 当前值，可为 null
+         * @return 显示文本，恒非 null
+         */
+        String format(Object value);
+
+        /**
+         * 原文 → 值。
+         *
+         * @param text 输入框原文，可为 null
+         * @return 解析结果；非法 / 读不出返回 {@code null}（调用方据此保留原文并交给草稿校验报错）
+         */
+        Object parse(String text);
     }
 
     /**
@@ -79,14 +115,29 @@ public final class FieldRenderSupport {
      * @return 显示文本（恒非 null）
      */
     public static String numberTextOf(Object draftValue) {
-        if (draftValue == null) {
-            return "";
-        }
-        if (draftValue instanceof Number) {
-            return formatReadout(((Number) draftValue).doubleValue());
-        }
-        return String.valueOf(draftValue);
+        return NUMBER_TEXT.format(draftValue);
     }
+
+    /**
+     * NUMBER 文本形态的编解码（{@link #numberTextOf} 与 {@link #isUnfinishedNumberText} 的共用实现）。
+     */
+    private static final ValueTextCodec NUMBER_TEXT = new ValueTextCodec() {
+        @Override
+        public String format(Object value) {
+            if (value == null) {
+                return "";
+            }
+            if (value instanceof Number) {
+                return formatReadout(((Number) value).doubleValue());
+            }
+            return String.valueOf(value);
+        }
+
+        @Override
+        public Object parse(String text) {
+            return parseNumberOrNull(text);
+        }
+    };
 
     /**
      * 判断输入框原文是否仍是 draft 当前值的「未完成写法」——原文能解析成数、且解析结果正是该值，
@@ -106,12 +157,32 @@ public final class FieldRenderSupport {
      * @return true 表示原文仍是该值的未完成写法（应继续显示原文）
      */
     public static boolean isUnfinishedNumberText(String text, Object draftValue) {
+        return isUnfinishedText(text, draftValue, NUMBER_TEXT);
+    }
+
+    /**
+     * 判断输入框原文是否仍是 draft 当前值的「未完成写法」——原文经编解码读回的<b>就是</b>当前值，
+     * 只是写法尚未规范化（{@code "0."} 与 {@code 0}、{@code "40E6FF"} 与 {@code "#40E6FF"}）。
+     *
+     * <p><b>用途（文本型字段编辑期原文判据）</b>：值 ↔ 文本有损，受控文本控件只从外部 value 派生
+     * 显示文本、自己不缓存原文。故字段渲染器在编辑期自持原文，并只在「原文仍代表当前值」时显示
+     * 原文；一旦值被外部改写（重置 / 撤销 / 其它控件写同字段），判据不再命中，显示回落规范写法。</p>
+     *
+     * <p>原文读不出值不属于未完成写法：那种原文会作为 String 落进 draft，此时原文与显示文本逐字
+     * 相等，本方法按「String 型 draft 值」分支判为命中，由 draft 校验按既有规则报错。</p>
+     *
+     * @param text       输入框原文（可为 null）
+     * @param draftValue draft 当前值，可为 null
+     * @param codec      该字段的「值 ↔ 文本」编解码
+     * @return true 表示原文仍是该值的未完成写法（应继续显示原文）
+     */
+    public static boolean isUnfinishedText(String text, Object draftValue, ValueTextCodec codec) {
         if (draftValue instanceof Number) {
-            Double parsed = parseNumberOrNull(text);
-            return parsed != null
-                    && Double.compare(parsed.doubleValue(), ((Number) draftValue).doubleValue()) == 0;
+            Object parsed = codec.parse(text);
+            return parsed instanceof Number
+                    && Double.compare(((Number) parsed).doubleValue(), ((Number) draftValue).doubleValue()) == 0;
         }
-        return text == null ? draftValue == null : text.equals(numberTextOf(draftValue));
+        return text == null ? draftValue == null : text.equals(codec.format(draftValue));
     }
 
     /**

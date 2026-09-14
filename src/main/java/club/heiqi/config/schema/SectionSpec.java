@@ -86,6 +86,20 @@ public record SectionSpec(
         }
 
         /**
+         * 添加颜色字段：值语义是 NUMBER 整数 {@code 0xRRGGBB}，UI 是 {@code #RRGGBB} HEX 输入框。
+         *
+         * <p>一行声明即完成值域与控件形态：未显式 {@code .range(...)} 时区间补齐
+         * {@code [0, 0xFFFFFF]}（{@link HexColorCodec#MAX_RGB}），widget 声明为 {@link ColorSpec}；
+         * 校验、草稿、持久化全部沿用既有 NUMBER 通道。</p>
+         *
+         * @param key 字段 key（不含分类前缀）
+         * @return 字段构建器，默认值类型编译期绑定为 {@link Double}
+         */
+        public FieldSpec.Builder<Double> color(String key) {
+            return new FieldSpec.Builder<Double>(this, name + "." + key, FieldType.NUMBER).color();
+        }
+
+        /**
          * 添加 BOOLEAN 类型字段。
          *
          * @param key 字段 key

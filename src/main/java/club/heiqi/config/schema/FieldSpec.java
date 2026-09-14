@@ -25,7 +25,10 @@ public record FieldSpec(
     String label,
     /** UI 帮助文本，可选，未设置时为 null */
     String helper,
-    /** NUMBER 字段的 widget 声明，null 表示默认走 input；非 NUMBER 字段忽略 */
+    /**
+     * NUMBER 字段的 widget 声明（{@link SliderSpec} / {@link InputSpec} / {@link ColorSpec}）；
+     * null 表示默认走 input，非 NUMBER 字段忽略
+     */
     WidgetSpec widget,
     /** STRUCTURED_LIST 的递归值描述；旧字段由 FieldType 自动映射。 */
     ValueSpec valueSpec
@@ -243,6 +246,24 @@ public record FieldSpec(
          */
         public Builder<T> input() {
             this.widget = InputSpec.INSTANCE;
+            return this;
+        }
+
+        /**
+         * NUMBER 专用：声明字段使用 color widget——{@code #RRGGBB} 文本输入框，
+         * 值语义仍是 {@code 0xRRGGBB} 整数（见 {@link ColorSpec}）。
+         *
+         * <p>未显式声明 {@link #range(double, double)} 时按颜色语义补齐 {@code [0, 0xFFFFFF]}；
+         * 显式 range 优先且与调用顺序无关（已有显式区间不被本方法覆盖）。</p>
+         *
+         * @return 当前构建器
+         */
+        public Builder<T> color() {
+            this.widget = ColorSpec.INSTANCE;
+            if (min == null && max == null) {
+                this.min = Double.valueOf(0.0D);
+                this.max = Double.valueOf((double) HexColorCodec.MAX_RGB);
+            }
             return this;
         }
 
