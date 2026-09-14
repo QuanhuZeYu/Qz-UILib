@@ -54,7 +54,7 @@ Notes for first-time setup, especially on Windows with a non-ASCII username:
 1. **JDK 25** — `.java-version` pins Java 25 for compilation. Gradle's toolchain support will try to download it automatically; if your network blocks that, install JDK 25 manually and Gradle will detect it.
 2. **Gradle** — always invoke the bundled `gradlew.bat` (Windows) / `./gradlew` (Unix). The wrapper is pinned to 9.3.1, so there is no need to install Gradle separately.
 3. **`GRADLE_USER_HOME` on Windows** — if your Windows username or its home path contains non-ASCII characters, spaces, or other special characters, configure `GRADLE_USER_HOME` to a clean ASCII path outside the agent before starting it. Agents only verify the existing value and never modify the environment.
-4. **GTNH Maven reachability** — the first build resolves a large dependency graph from `nexus.gtnewhorizons.com` (the GTNH modpack). On networks where that host is slow or blocked, expect long sync times or timeouts. An offline fallback is documented in `docs/控制律层/稳定命令.md`.
+4. **GTNH Maven reachability** — the first build resolves a large dependency graph from `nexus.gtnewhorizons.com` (the GTNH modpack). On networks where that host is slow or blocked, expect long sync times or timeouts. An offline fallback is documented in `docs/反馈层/errors/ERROR-elytra-offline-manifest-cache.md`.
 
 ## Documentation
 
@@ -83,7 +83,7 @@ Full documentation index: [docs/README.md](docs/README.md).
 ./gradlew.bat --no-configuration-cache runClient21
 ```
 
-For the authoritative, up-to-date command list and troubleshooting (offline mode, log locations, MCP mapping dialog, etc.), see `docs/控制律层/稳定命令.md`.
+For the documentation map, build/run commands and troubleshooting entry points, see [docs/README.md](docs/README.md).
 
 ## License
 

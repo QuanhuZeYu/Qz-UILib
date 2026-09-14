@@ -6,7 +6,7 @@
 
 ## 现行规范
 
-- `scene基础API规范.md`：Scene Primitive API 规范（primitive/wrapper 分层、Props/Result 形态、I1-I11 不变量）。
+- `scene基础API规范.md`：Scene Primitive API 规范（primitive/wrapper 分层、Props/Result 形态、语义化不变量清单）。
 - `UI投影宿主语义.md`：统一 content/projection/host/input 与 state/intent 高层语义（scene 输入层语义母本）。
 - `物品视觉渲染接缝.md`：Breaking major 的 snapshot-only ItemStack icon 合同（完整原版委托 + RenderSemantics + 分级）。
 - `数据表可编辑单元格视觉规格.md`：DataTable 可编辑列视觉方案（well/inset 输入槽，色值已落 `SceneChromeTokens` token）。

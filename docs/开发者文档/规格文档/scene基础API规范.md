@@ -86,13 +86,16 @@ public static Result create(SceneRuntime rt, Props props)
 
 ## 6. 不变量约束
 
-| 不变量 | 约束 |
+| 约束（语义标签） | 内容 |
 |---|---|
-| I1 | primitive handler 只 `signal.set()` 或调 `props.onChange()/onSelect()`，不直接改节点属性 |
-| I4 | primitive 文本绑定走 `Invalidation.LAYOUT`；wrapper 颜色绑定走 `Invalidation.PAINT` |
-| I7 | **不得新增 wrapper 节点层**——wrapper 在 primitive 返回的 root 上挂 chrome，不包新层（守 cell.children 索引 + 测试结构断言） |
-| I10 | primitive 用 `SceneKey` 枚举，不碰 lwjgl/GLFW/minecraft import |
-| I11 | handler 只 `signal.set` + `stopPropagation`（逃生舱②）；只读几何测量走逃生舱① |
+| handler 只发布状态 | primitive handler 只 `signal.set()` 或调 `props.onChange()/onSelect()`，不直接改节点属性 |
+| 绑定按层级失效 | primitive 文本绑定走 `Invalidation.LAYOUT`；wrapper 颜色绑定走 `Invalidation.PAINT` |
+| wrapper 不新增节点层 | **不得新增 wrapper 节点层**——wrapper 在 primitive 返回的 root 上挂 chrome，不包新层（守 cell.children 索引 + 测试结构断言） |
+| scene core 平台无关 | primitive 用 `SceneKey` 枚举，不碰 lwjgl/GLFW/minecraft import |
+| handler 边界与几何逃生舱 | handler 只 `signal.set` + `stopPropagation`（逃生舱②）；只读几何测量走逃生舱① |
+
+> 源码存量注释里仍可能出现旧编号 `I1` / `I4` / `I7` / `I10` / `I11` / `I12`（`逃生舱①` / `逃生舱②` 是其中两个子项）。
+> 编号表出处已废止：含义以本表语义标签与引用处注释为准；新写注释一律使用语义标签，碰到旧编号就地改写。
 
 ---
 

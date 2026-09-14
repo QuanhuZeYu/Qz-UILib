@@ -240,7 +240,7 @@ policy.custom("fontSystem.fontSort", adapter -> { ... }); // 自定义写回
 | `club.heiqi.uilib.config.ModConfigGui` | Forge guiFactory 中转 |
 | `club.heiqi.uilib.ui.screen.McScreenBridge` | MC GuiScreen 宿主基类 |
 
-诊断层说明见 `docs/诊断层/Config模块.md`。迁移决策档案见 `docs/反馈层/决策/config-migration-modern.md`。
+现行蓝图见 [现代配置实现蓝图](../../开发者文档/规格文档/现代配置实现蓝图.md)；分层契约与数据事务边界以源码注释为准。
 ## 配置回灌与 disk 严格类型（beta）
 
 - ConfigSaveListener 经 ModernConfigApplyCoordinator 全局协调：每次打开配置页注册不可变 Registration（generation+manager 原子发布）；仅当前 Registration 事件可 submit；register/submit 同一线性化域，stale 不得覆盖新世代；静态队列 Runnable 不闭包旧 listener；协调器持最新 manager 作为 UILib 全局配置当前 Authority

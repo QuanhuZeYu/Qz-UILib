@@ -18,7 +18,7 @@
 5. [Minecraft 界面入口](03-宿主集成/Minecraft界面入口.md)
 6. [指令触发方案](04-诊断入口/指令触发方案.md) ／ [测试场地](04-诊断入口/测试场地.md)
 7. [稳定 API 清单](v4.x-LTS-稳定API清单.md)
-8. [Config 模块使用指南](../Config模块使用指南.md)
+8. [Config 模块使用指南](Config模块使用指南.md)
 
 > 旧 document 栈（HTML-like 文档树 / CSS-like 样式表 / 远程文档页）已随 breaking major 整体删除，
 > 对应的入门示例与控件教程（最小文档页面、完整业务页面示例、基础控件、表格与背包槽位、远程页面、
