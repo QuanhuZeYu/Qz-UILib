@@ -8,6 +8,7 @@ import club.heiqi.config.schema.SliderSpec;
 import club.heiqi.config.schema.WidgetSpec;
 import club.heiqi.config.ui.DraftSignalAdapter;
 import club.heiqi.config.ui.theme.ConfigTheme;
+import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -27,10 +28,23 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * step 由 {@link SliderSpec#step()} 透传（&le;0 表示连续不量化）。</p>
  *
  * <p>未声明 slider（widget=null 或 InputSpec）时走文本输入框，
- * value 转 String 显示（经 {@link FieldRenderSupport#toNumberStringSignal}），
+ * value 经 {@link FieldRenderSupport#numberTextOf} 派生规范显示文本（编辑期显示用户原文，见下节），
  * onChange 把 String parse 为 Double 写回
  * （parse 失败时存原始 String，让 DraftBuffer 校验报"不是有效数字"）。
  * 外壳装配经 {@link FieldShellBinder#build} 收口，标题回退经 {@link FieldRenderSupport#labelOf}。</p>
+ *
+ * <h3>编辑期原文：数值输入框必须自己持有「用户正在输入的形态」</h3>
+ * <p><b>缺陷与根因</b>：{@code SceneTextInput} 是受控控件——显示文本只从外部 value 派生，
+ * 控件不缓存、不自改；而本层的「值 → 文本」是有损的（{@code Double.parseDouble("0.")} 合法
+ * = 0.0，parse 后再格式化必然吃掉未完成写法）。若直接把「draft 值 → 文本」的派生信号当
+ * value，用户先输 {@code 0} 再敲 {@code .} 时，parse 出的 0.0 与 draft 现值相等，写回被帧末
+ * 「无净变化」去重丢弃 ⇒ 上游 signal 不通知 ⇒ 文本不重算 ⇒ 小数点永远显示不出来
+ * （{@code 5.} / {@code .5} 同源受害）。</p>
+ *
+ * <p><b>修法</b>：编辑期原文由本层持有（受控契约下「谁拥有真值谁负责编辑期形态」），
+ * 显示文本 = {@code 原文仍是当前值的未完成写法 ? 原文 : 值的规范写法}；值本身仍走
+ * parse-then-writeback（数值提交、dirty、DraftBuffer 校验、保存路径全部不变），
+ * 失焦时原文归位到规范写法（{@code "5." → "5"}），未完成形态不长期滞留。</p>
  *
  * <p><b>G15/Number 外观口径</b>（契约 §4/§4.1/§4.2）：字段卡片表面与 dirty/error 语义色由
  * {@link FieldShellBinder} 下沉的 FormFieldShell theme-aware 路径派生（GROUP 角色），本类不复制；
@@ -128,16 +142,29 @@ public final class NumberFieldRenderer implements FieldRenderer {
         final String path = spec.path();
         final ReadableSignal<Object> draftSig = adapter.draftSignal(path);
 
-        ReadableSignal<String> stringValue = FieldRenderSupport.toNumberStringSignal(draftSig);
+        // 构建期同步取初值：Computed.create(Supplier) 首帧前是 null，而控件在事件 handler 里同步读
+        // value（非 flush 路径），故规范文本与编辑期原文都必须有确定的起点。
+        final String initialText = FieldRenderSupport.numberTextOf(draftSig.get());
+        // 编辑期原文（受控契约下的「字段权威」）：键入即写它，值的写回仍走下面既有 parse-then-writeback。
+        final Signal<String> editText = Signal.create(initialText);
+        // 显示文本 = 原文仍是当前值的未完成写法 ? 原文 : 值的规范写法。
+        // 等值写回被帧末去重丢弃时，editText 的这次变化仍会推动本派生重算 ⇒ "0." 显示得出来。
+        final ReadableSignal<String> displayText = Computed.create(initialText, () -> {
+            Object value = draftSig.get();
+            String raw = editText.get();
+            return FieldRenderSupport.isUnfinishedNumberText(raw, value)
+                    ? raw : FieldRenderSupport.numberTextOf(value);
+        });
 
         SceneTextInput.Props props = new SceneTextInput.Props(
-                stringValue,
+                displayText,
                 Signal.create(Boolean.TRUE),
                 Signal.create(Boolean.FALSE),
                 "",
                 Integer.MAX_VALUE,
                 SceneInputType.NUMBER,
                 next -> {
+                    editText.set(next);
                     try {
                         adapter.onFieldEdit(path, Double.valueOf(Double.parseDouble(next)));
                     } catch (NumberFormatException e) {
@@ -146,8 +173,20 @@ public final class NumberFieldRenderer implements FieldRenderer {
                     }
                 });
 
+        // 失焦：原文归位到值的规范写法（"5." → "5"），未完成形态不长期滞留；值本身不动，
+        // 校验仍由 DraftBuffer 按既有规则跑（parse 失败的原文依旧留在 draft 里报错）。
+        // 该绑定同时读 draft：未聚焦期间外部改动（重置/撤销/他控件写同字段）也把原文带回规范写法。
+        final Supplier<SceneNode> control = () -> {
+            SceneNode input = SceneTextInput.create(rt, props).get();
+            rt.bind(rt.interactionState(input).focused(), focused -> {
+                if (!Boolean.TRUE.equals(focused)) {
+                    editText.set(FieldRenderSupport.numberTextOf(draftSig.get()));
+                }
+            });
+            return input;
+        };
+
         // G15/收口：原 theme 兼容占位实参（ConfigTheme.asFormTheme()）随 binder 签名收口摘除。
-        return FieldShellBinder.build(rt, spec, adapter,
-                SceneTextInput.create(rt, props));
+        return FieldShellBinder.build(rt, spec, adapter, control);
     }
 }

@@ -35,7 +35,8 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * 受控双向闭环（点击只调 onChange 交还期望新值、控件零内部状态不自翻转）、
  * 命中穿透（点 track/label 装饰子节点穿透到 root）、四态切换零重排（R-D 终极反证）、
  * 键盘激活（Enter/Space）、on/off thumb transform Motion 且零重排，
- * 以及主题化外观（track 走 INDICATOR 选中配方、thumb 走强调色、label 走主题前景、
+ * 以及主题化外观（track 走 INDICATOR 选中配方、thumb 按 on/off 取两个不同主题 token
+ * （on = 强调底前景 / off = outline 档）、label 走主题前景、
  * 主题切换不重建节点、禁用取禁用档、卸载回收绑定）。</p>
  *
  * <h3>测试沙箱 pipeline（对照 SceneButtonTest）</h3>
@@ -86,8 +87,14 @@ public class SceneToggleTest {
      * 保留原 alpha（故选中是色彩语义，不是仅透明度）。
      */
     private static final int TRACK_ON_ENABLED = selectedTint(TRACK_OFF_ENABLED, SceneThemes.DEFAULT.accent());
-    /** thumb 启用色 = 主题强调色；禁用色 = 主题禁用前景色。 */
-    private static final int THUMB_ENABLED = SceneThemes.DEFAULT.accent();
+    /**
+     * thumb 启用态两色：on = 主题强调底前景、off = 主题 outline 档（默认边框色）。
+     *
+     * <p>两态必须取不同 token 才读得出开关态（原缺陷：两态同取 accent ⇒ thumb 逐字节相同，
+     * track 两态合成对比度仅约 1.05:1）。禁用色 = 主题禁用前景色。</p>
+     */
+    private static final int THUMB_ON_ENABLED = SceneThemes.DEFAULT.onAccentForeground();
+    private static final int THUMB_OFF_ENABLED = SceneThemes.DEFAULT.borderDefault();
     private static final int THUMB_DISABLED = SceneThemes.DEFAULT.disabledForeground();
     /** label 前景：主题正文色 / 主题禁用前景色。 */
     private static final int LABEL_ENABLED = SceneThemes.DEFAULT.foreground();
@@ -393,8 +400,13 @@ public class SceneToggleTest {
 
     /**
      * 默认工厂路径（不传任何样式参数）：track 的边框宽/圆角/染色/滤镜/实体高度全部等于
-     * {@code SceneThemes.DEFAULT.surface(Role.INDICATOR)} 的对应值；thumb 取主题强调色、
-     * label 取主题正文色；选中时 tint 的 RGB 换成强调色且保留配方 alpha（选中不只靠透明度）。
+     * {@code SceneThemes.DEFAULT.surface(Role.INDICATOR)} 的对应值；thumb 按 on/off 取两个
+     * 不同主题 token、label 取主题正文色；选中时 tint 的 RGB 换成强调色且保留配方 alpha
+     * （选中不只靠透明度）。
+     *
+     * <p><b>证伪原缺陷</b>：thumb 曾两态同取 {@code accent}（逐字节相同），开关态只能靠 24px
+     * 位移与约 1.05:1 的轨道染色读出。此处 on/off 两态各自断言等于 onAccentForeground /
+     * borderDefault 且两者必须不同——恢复「两态同色」本用例立即变红。</p>
      */
     @Test
     public void defaultFactoryShouldConsumeIndicatorRecipeAndThemeForeground() {
@@ -409,7 +421,7 @@ public class SceneToggleTest {
         Assert.assertEquals("实体高度来自配方 idle 档", TRACK_SURFACE.getIdle().getElevation(),
                 trackNode().__getSurfaceElevation(), 0.0001F);
         Assert.assertEquals("track 未选中染色 = 配方 idle tint", TRACK_OFF_ENABLED, trackBackground());
-        Assert.assertEquals("thumb 底色 = 主题强调色", THUMB_ENABLED, thumbNode().getBackgroundColor());
+        Assert.assertEquals("off thumb 底色 = 主题 outline 档", THUMB_OFF_ENABLED, thumbNode().getBackgroundColor());
         Assert.assertEquals("label 前景 = 主题正文色", LABEL_ENABLED, labelNode().getTextColor());
 
         onSignal.set(Boolean.TRUE);
@@ -423,14 +435,17 @@ public class SceneToggleTest {
         Assert.assertTrue("选中强度必须高于未选中档，否则读不出选中",
                 alphaOf(trackBackground()) > alphaOf(TRACK_OFF_ENABLED));
         Assert.assertNotEquals("选中与未选中必须可区分", TRACK_OFF_ENABLED, trackBackground());
-        Assert.assertEquals("thumb 在选中态保持强调色", THUMB_ENABLED, thumbNode().getBackgroundColor());
+        Assert.assertEquals("on thumb 底色 = 主题强调底前景", THUMB_ON_ENABLED, thumbNode().getBackgroundColor());
+        Assert.assertNotEquals("on/off 两态 thumb 必须取不同主题 token（原缺陷：两态同色）",
+                THUMB_OFF_ENABLED, THUMB_ON_ENABLED);
         Assert.assertEquals("选中不改变 label 前景", LABEL_ENABLED, labelNode().getTextColor());
     }
 
     // ==================== 验收 8：禁用态取禁用档与禁用前景 ====================
 
     /**
-     * 禁用态：track 取角色配方禁用档，thumb 与 label 取主题禁用前景色；
+     * 禁用态：track 取角色配方禁用档，thumb 与 label 取主题禁用前景色（禁用不区分 on/off，
+     * 开关态仍由 track 位移读出，与 SceneRadioGroup「禁用不显示选中标记」同口径）；
      * 「选中 + 禁用」仍走禁用档（选中配方不覆盖 disabled 分支），受控值不受影响。
      */
     @Test
@@ -456,7 +471,8 @@ public class SceneToggleTest {
         runtime.flush();
         doLayout();
         Assert.assertEquals("恢复启用回到选中档", TRACK_ON_ENABLED, trackBackground());
-        Assert.assertEquals("恢复启用 thumb 回强调色", THUMB_ENABLED, thumbNode().getBackgroundColor());
+        Assert.assertEquals("恢复启用且 on 时 thumb 回强调底前景", THUMB_ON_ENABLED,
+                thumbNode().getBackgroundColor());
         Assert.assertEquals("恢复启用 label 回正文色", LABEL_ENABLED, labelNode().getTextColor());
     }
 
@@ -465,6 +481,9 @@ public class SceneToggleTest {
     /**
      * 页面主题信号更新 + flush 后：track/thumb/label 外观随新主题更新，
      * 节点身份不变、effect 数不增长；卸载后绑定全部回收。
+     *
+     * <p>thumb 断言按新接线取各档 {@code borderDefault}（off）/ {@code onAccentForeground}（on）：
+     * 任何把某档写死成静态色值或构造期快照的改法都会让本用例变红（切换后仍是旧档值）。</p>
      */
     @Test
     public void themeSwitchShouldUpdateAppearanceWithoutRebuild() {
@@ -493,7 +512,8 @@ public class SceneToggleTest {
 
         Assert.assertEquals("初始 track 取深色配方",
                 dark.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), themedTrack.getBackgroundColor());
-        Assert.assertEquals("初始 thumb 取深色强调色", dark.accent(), themedThumb.getBackgroundColor());
+        Assert.assertEquals("初始 off thumb 取深色 outline 档", dark.borderDefault(),
+                themedThumb.getBackgroundColor());
         Assert.assertEquals("初始 label 取深色正文色", dark.foreground(), themedLabel.getTextColor());
 
         int effectsBeforeSwitch = ReactiveTestProbe.registeredEffectCount();
@@ -507,9 +527,15 @@ public class SceneToggleTest {
                 light.surface(SceneTheme.Role.INDICATOR).getIdle().getTint(), themedTrack.getBackgroundColor());
         Assert.assertEquals("track 圆角随主题更新",
                 light.surface(SceneTheme.Role.INDICATOR).getCornerRadius(), themedTrack.getCornerRadius());
-        Assert.assertEquals("thumb 随主题更新", light.accent(), themedThumb.getBackgroundColor());
+        Assert.assertEquals("off thumb 随主题更新", light.borderDefault(), themedThumb.getBackgroundColor());
         Assert.assertEquals("label 随主题更新", light.foreground(), themedLabel.getTextColor());
         Assert.assertEquals("主题切换不新增订阅", effectsBeforeSwitch, ReactiveTestProbe.registeredEffectCount());
+
+        // on 档同样随主题（不是静态快照）：同一节点在浅色档下取浅色 onAccentForeground
+        onSignal.set(Boolean.TRUE);
+        runtime.flush();
+        Assert.assertEquals("on thumb 随主题更新", light.onAccentForeground(), themedThumb.getBackgroundColor());
+        Assert.assertNotEquals("主题切换后 on/off 仍必须两色", light.borderDefault(), light.onAccentForeground());
 
         themed.dispose();
         Assert.assertEquals("卸载后回收该实例全部绑定", baseline, ReactiveTestProbe.registeredEffectCount());

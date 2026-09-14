@@ -44,10 +44,20 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * 故「选中」是色彩语义而非仅透明度），禁用态仍取角色禁用档。控件不再静态设 track 边框宽/圆角，
  * 也不再叠加 {@code SceneStateColors.*Background} 与 {@code SceneControlChrome.bindStandardBorder}。</p>
  *
- * <p>thumb 是控件自持的强调指示：底色取 {@link SceneThemes#accent(SceneRuntime)}
- * （禁用取 {@link SceneThemes#disabledForeground(SceneRuntime)}），其 {@code transform}
- * 仍归控件（on/off 位移由控件写 translateX，不交给绑定器）；label 前景取
+ * <p>thumb 是控件自持的开关态指示：底色随 {@code on} 取两个不同的主题 token——on 取
+ * {@link SceneThemes#onAccentForeground(SceneRuntime)}（此时轨道已被强调色填充，与
+ * {@link SceneCheckbox} 的勾选标记同一 token，是「强调底上的指示」的既有范式）；off 取
+ * {@link SceneThemes#borderDefault(SceneRuntime)}（outline 档，未激活手柄语义），禁用取
+ * {@link SceneThemes#disabledForeground(SceneRuntime)}。其 {@code transform} 仍归控件
+ * （on/off 位移由控件写 translateX，不交给绑定器）；label 前景取
  * {@link SceneThemes#foreground(SceneRuntime)} / 禁用取 disabledForeground。</p>
+ *
+ * <p><b>为何 thumb 必须分两色（实机反馈的缺陷根因）</b>：48×24 轨道 + 3px padding + 18px thumb
+ * 使 thumb 恰好占满内容高、竖直方向轨道不可见，且 OFF 轨道染色仅 0x0E alpha（5.5%）、
+ * ON 轨道是 0x59 alpha 的强调色——两者合成到名义底后对比度约 1.05:1（{@code withoutBackdrop}
+ * 档约 1.01:1），等于没有区分。thumb 是两态都可见的唯一实色面，把开关态落在它的底色上
+ * （on/off 两 token 实算对比度：深色/实色档 2.46:1、浅色档 4.55:1；且各自对轨道 >3.9:1）
+ * 才读得出来。</p>
  *
  * <h3>契约</h3>
  * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 回调 / R3 组件函数只执行一次 /
@@ -148,12 +158,16 @@ public final class SceneToggle {
                     x -> thumb.setTransform(Transform.translate(x.floatValue(), 0.0f)),
                     SceneChromeTokens.MOTION_STANDARD_MS);
 
-            // thumb 底色：启用取主题强调色，禁用取禁用前景色（对比选中/未选中的轨道染色，
-            // 选中不只靠透明度区分）。transform 仍归控件，不交给绑定器。
-            ReadableSignal<Integer> accent = SceneThemes.accent(rt);
+            // thumb 底色 = 开关态指示（两态必须不同色，理由见类注释「为何 thumb 必须分两色」）：
+            // on 取强调底前景（与 SceneCheckbox 勾选标记同一 token）、off 取主题 outline 档
+            // （borderDefault，未激活手柄语义）、禁用取禁用前景（与 SceneRadioGroup「禁用不显示
+            // 选中标记」同口径，禁用下的开关态仍由 track 位移读出）。transform 仍归控件，
+            // 不交给绑定器。
+            ReadableSignal<Integer> onThumb = SceneThemes.onAccentForeground(rt);
+            ReadableSignal<Integer> offThumb = SceneThemes.borderDefault(rt);
             ReadableSignal<Integer> disabledThumb = SceneThemes.disabledForeground(rt);
-            rt.__bindAnimatedColor(() -> Boolean.TRUE.equals(props.enabled().get())
-                            ? accent.get() : disabledThumb.get(),
+            rt.__bindAnimatedColor(() -> resolveThumbColor(props.enabled().get(), props.on().get(),
+                            onThumb.get(), offThumb.get(), disabledThumb.get()),
                     thumb::setBackgroundColor, SceneChromeTokens.MOTION_FAST_MS);
 
             // label 前景：主题正文色，禁用取主题禁用前景色。
@@ -168,5 +182,27 @@ public final class SceneToggle {
 
             return root;
         };
+    }
+
+    /**
+     * 解析 thumb 底色：启用态按开关态取两档主题 token（on 取强调底前景、off 取 outline 档），
+     * 禁用态取主题禁用前景。
+     *
+     * <p>禁用优先级最高且不再区分 on/off——禁用态不开第二套配色，开关态由 track 位移
+     * 与轨道禁用档读出（与 {@code SceneRadioGroup}「禁用不显示选中标记」同口径）。</p>
+     *
+     * @param enabled       是否启用
+     * @param on            开关态
+     * @param onColor       选中档 thumb 底色（主题强调底前景）
+     * @param offColor      未选中档 thumb 底色（主题 outline 档）
+     * @param disabledColor 禁用档 thumb 底色（主题禁用前景）
+     * @return thumb 底色 ARGB
+     */
+    private static int resolveThumbColor(Boolean enabled, Boolean on,
+                                        int onColor, int offColor, int disabledColor) {
+        if (!Boolean.TRUE.equals(enabled)) {
+            return disabledColor;
+        }
+        return Boolean.TRUE.equals(on) ? onColor : offColor;
     }
 }

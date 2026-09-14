@@ -63,16 +63,75 @@ public final class FieldRenderSupport {
      * @return 派生 String signal（数字格式化 / 非 Number 透传 valueOf）
      */
     public static ReadableSignal<String> toNumberStringSignal(ReadableSignal<Object> source) {
-        return Computed.create(() -> {
-            Object v = source.get();
-            if (v == null) {
-                return "";
-            }
-            if (v instanceof Number) {
-                return formatReadout(((Number) v).doubleValue());
-            }
-            return String.valueOf(v);
-        });
+        return Computed.create(() -> numberTextOf(source.get()));
+    }
+
+    /**
+     * draft 值 → NUMBER 字段显示文本（{@link #toNumberStringSignal} 的同步同口径版本）：
+     * {@code null} → {@code ""}；{@link Number} → {@link #formatReadout(double)}（整数值去 {@code .0}）；
+     * 其余 {@link String#valueOf(Object)}（draft 里 parse 失败的原文原样透出）。
+     *
+     * <p><b>为何要有同步版本</b>：{@code Computed.create(Supplier)} 的初值是 {@code null}，
+     * 首次 flush 前读不到派生值。数值输入框要在构建期就把「值的规范写法」注入控件 value
+     * 与编辑期原文信号（读控件 value 的同步路径不止 flush 一处），故把这段纯转换提成静态方法。</p>
+     *
+     * @param draftValue draft 当前值，可为 null
+     * @return 显示文本（恒非 null）
+     */
+    public static String numberTextOf(Object draftValue) {
+        if (draftValue == null) {
+            return "";
+        }
+        if (draftValue instanceof Number) {
+            return formatReadout(((Number) draftValue).doubleValue());
+        }
+        return String.valueOf(draftValue);
+    }
+
+    /**
+     * 判断输入框原文是否仍是 draft 当前值的「未完成写法」——原文能解析成数、且解析结果正是该值，
+     * 但写法尚未规范化（如 {@code 0.} / {@code 5.} / {@code .5} / {@code 1e2} / {@code 1.50}）。
+     *
+     * <p><b>用途（数值输入框编辑期原文判据）</b>：值 ↔ 文本的映射是有损的——{@code "0."} 与
+     * {@code "0"} 同值、{@code ".5"} 与 {@code "0.5"} 同值，而受控文本控件只从外部 value 派生
+     * 显示文本、自己不缓存原文。故输入框必须在编辑期自己持有原文，并只在「原文仍代表当前值」
+     * 时显示原文；一旦值被外部改写（重置 / 撤销 / 其它控件写同字段）就不再命中，回落规范写法。</p>
+     *
+     * <p>原文解析失败不属于未完成写法：那种原文会作为 String 落进 draft（{@code "abc"}、
+     * {@code "-"}），此时原文与显示文本逐字相等，本方法按「String 型 draft 值」分支判为命中，
+     * 由 draft 校验按既有规则报错。</p>
+     *
+     * @param text       输入框原文（可为 null）
+     * @param draftValue draft 当前值，可为 null
+     * @return true 表示原文仍是该值的未完成写法（应继续显示原文）
+     */
+    public static boolean isUnfinishedNumberText(String text, Object draftValue) {
+        if (draftValue instanceof Number) {
+            Double parsed = parseNumberOrNull(text);
+            return parsed != null
+                    && Double.compare(parsed.doubleValue(), ((Number) draftValue).doubleValue()) == 0;
+        }
+        return text == null ? draftValue == null : text.equals(numberTextOf(draftValue));
+    }
+
+    /**
+     * 严格解析数值文本：解析失败 / null / 空串返回 {@code null}（调用方据此区分「不是数」）。
+     *
+     * <p>与 {@link #toDouble} 的区别：后者把解析失败静默降级为 {@code 0.0}（slider 场景需要
+     * 一个可用数值），本方法保留「解析不出」这一信息，供编辑期原文判据使用。</p>
+     *
+     * @param text 待解析文本（可为 null）
+     * @return 解析结果，或 null 表示解析失败
+     */
+    private static Double parseNumberOrNull(String text) {
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+        try {
+            return Double.valueOf(Double.parseDouble(text));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

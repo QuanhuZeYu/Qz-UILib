@@ -116,6 +116,54 @@ public class FieldRenderSupportTest {
         Assert.assertEquals("非 Number 走 valueOf", "abc", derived.get());
     }
 
+    // ===== numberTextOf / isUnfinishedNumberText（NUMBER 文本输入编辑期原文判据，纯函数） =====
+
+    /** numberTextOf 与 toNumberStringSignal 同口径：null → ""、Number 走 formatReadout、其余 valueOf。 */
+    @Test
+    public void numberTextOfMatchesDerivedSignalConvention() {
+        Assert.assertEquals("null → 空串", "", FieldRenderSupport.numberTextOf(null));
+        Assert.assertEquals("整数 Double 去 .0", "0", FieldRenderSupport.numberTextOf(Double.valueOf(0.0)));
+        Assert.assertEquals("浮点保留", "0.5", FieldRenderSupport.numberTextOf(Double.valueOf(0.5)));
+        Assert.assertEquals("parse 失败原文透出", "abc", FieldRenderSupport.numberTextOf("abc"));
+    }
+
+    /**
+     * 未完成写法判据：原文解析值 == draft 值即命中（{@code 0.} / {@code 5.} / {@code .5} / {@code 1e2} /
+     * {@code 1.50}）；值真的不同或原文不是数则不命中（回落规范写法）。
+     *
+     * <p><b>证伪原缺陷</b>：输 {@code 0} 后敲 {@code .} 得到原文 {@code "0."}、draft 值为 0.0——
+     * 本判据必须为 true，编辑期原文才留得住；若判据按「原文 == 规范写法」实现（旧行为的事实口径），
+     * 这一格立刻变红。</p>
+     */
+    @Test
+    public void unfinishedNumberTextStaysTrueWhileRawTextStillRepresentsValue() {
+        Assert.assertTrue("0. 与 0.0 同值 → 是未完成写法",
+                FieldRenderSupport.isUnfinishedNumberText("0.", Double.valueOf(0.0)));
+        Assert.assertTrue("5. 与 5.0 同值", FieldRenderSupport.isUnfinishedNumberText("5.", Double.valueOf(5.0)));
+        Assert.assertTrue(".5 与 0.5 同值", FieldRenderSupport.isUnfinishedNumberText(".5", Double.valueOf(0.5)));
+        Assert.assertTrue("1e2 与 100 同值",
+                FieldRenderSupport.isUnfinishedNumberText("1e2", Double.valueOf(100.0)));
+        Assert.assertTrue("1.50 与 1.5 同值",
+                FieldRenderSupport.isUnfinishedNumberText("1.50", Double.valueOf(1.5)));
+        Assert.assertTrue("Integer 型 draft 值同样按数值比对（不是 equals 类型比对）",
+                FieldRenderSupport.isUnfinishedNumberText("7.", Integer.valueOf(7)));
+
+        Assert.assertFalse("值真的不同 → 不命中（回落规范写法）",
+                FieldRenderSupport.isUnfinishedNumberText("0.", Double.valueOf(2.0)));
+        Assert.assertFalse("原文不是数且 draft 已是数值 → 不命中",
+                FieldRenderSupport.isUnfinishedNumberText("abc", Double.valueOf(1.0)));
+        Assert.assertFalse("原文为空且 draft 是数值 → 不命中",
+                FieldRenderSupport.isUnfinishedNumberText("", Double.valueOf(1.0)));
+
+        // parse 失败的原文会作为 String 落进 draft：此时原文与显示文本逐字相等，仍判命中
+        Assert.assertTrue("draft 存 parse 失败原文时逐字相等 → 命中",
+                FieldRenderSupport.isUnfinishedNumberText("-", "-"));
+        Assert.assertTrue("空串 draft（用户清空）",
+                FieldRenderSupport.isUnfinishedNumberText("", ""));
+        Assert.assertFalse("String 型 draft 与原文不同 → 不命中",
+                FieldRenderSupport.isUnfinishedNumberText("1", "abc"));
+    }
+
     // ===== toDoubleSignal（NUMBER slider 用） =====
 
     /** Number 直接取 doubleValue；可解析 String 转换；不可解析 / null → 0.0。 */
