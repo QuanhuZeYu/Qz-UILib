@@ -50,7 +50,7 @@ public class SceneThemesBackdropQualityTest {
         ReactiveScheduler.get().reset();
     }
 
-    /** 写进程级档位信号并等帧末 flush（守 I9：档位生效同一口径）。 */
+    /** 写进程级档位信号并等帧末 flush（档位生效同一口径）。 */
     private static void applyQuality(String raw) {
         BackdropQualityService.getInstance().applyConfigured(raw);
         ReactiveScheduler.get().flush();

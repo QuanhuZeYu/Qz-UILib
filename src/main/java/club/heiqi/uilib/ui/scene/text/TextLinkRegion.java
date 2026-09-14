@@ -4,7 +4,7 @@ package club.heiqi.uilib.ui.scene.text;
  * scene 侧链接区域：单行文本内一个 {@code <a>} 段的水平区间与目标 URL。
 
  * <p>与渲染层 {@code ui.text.TextLinkRegion} 语义一致，由装配层 adapter 映射转换；
- * scene 核心（layout/paint）只依赖本类，不接触渲染层类型（守 I10）。</p>
+ * scene 核心（layout/paint）只依赖本类，不接触渲染层类型（渲染类型止于装配层 adapter）。</p>
  */
 public final class TextLinkRegion {
 

@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * （root 直接子中 FlexDirection==ROW 且含 scrollable 直接子的节点），断言其直接子数。
  * 不依赖 layout/paint，结构在建树（Supplier.get）时即固定。</p>
  *
- * <p>守 I1 signal-first（scrollbar 是否建由 Props showScrollbar 布尔字段决定）、
+ * <p>守 signal-first（scrollbar 是否建由 Props showScrollbar 布尔字段决定）、
  * R1 纯静态工厂（每次 create 都新建独立树）。</p>
  */
 public class ControlScrollbarWiringTest {

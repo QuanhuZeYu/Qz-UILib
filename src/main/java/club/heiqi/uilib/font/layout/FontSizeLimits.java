@@ -8,7 +8,7 @@ package club.heiqi.uilib.font.layout;
  * 富文本解析、{@link club.heiqi.uilib.ui.scene.node.SceneNode} 的字号 setter、
  * 用户缩放出口共用本类。</p>
  *
- * <p>分层理由：{@code font.layout} 不依赖 {@code ui.scene}（I10 接缝纯净），而
+ * <p>分层理由：{@code font.layout} 不依赖 {@code ui.scene}（接缝纯净：不产生反向包边），而
  * {@code SceneNode} 已依赖本包（{@code font.layout.TextSegment}），故常量落在 font 域
  * 既不产生新的包边、也不把 font 层反向绑到 scene 层。</p>
  */

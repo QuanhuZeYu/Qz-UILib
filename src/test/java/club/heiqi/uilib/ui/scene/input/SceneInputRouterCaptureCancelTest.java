@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * SceneInputRouter 显式指针捕获 + POINTER_CANCEL 收口单元测试（I4d）。
+ * SceneInputRouter 显式指针捕获 + POINTER_CANCEL 收口单元测试。
  *
  * <p>覆盖：requestPointerCapture 强制投递、capture 期间 hover 仍跟 hitTarget、
  * UP 后自动释放、CANCEL 投递与状态清理、CANCEL 不合成 CLICK、
@@ -466,7 +466,7 @@ public class SceneInputRouterCaptureCancelTest {
     // ==================== 组 W：CANCEL 零标脏回归 ====================
 
     /**
-     * W1：CANCEL route 后 flush 前 7 脏探针全等（零标脏 I7 核验）。
+     * W1：CANCEL route 后 flush 前 7 脏探针全等（零标脏核验）。
      */
     @Test
     public void w1_cancelRouteZeroDirtyProbes() {

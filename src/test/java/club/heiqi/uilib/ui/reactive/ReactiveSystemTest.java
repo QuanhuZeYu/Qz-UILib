@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * 响应式数据层基础契约测试。
- * 覆盖：Signal 读写、Effect 自动追踪与重跑、批处理（I9）、dispose、Owner 作用域。
+ * 覆盖：Signal 读写、Effect 自动追踪与重跑、批处理、dispose、Owner 作用域。
  */
 public class ReactiveSystemTest {
 
@@ -85,7 +85,7 @@ public class ReactiveSystemTest {
 
         a.set(10);
         b.set(20);
-        ReactiveScheduler.get().flush();             // I9：两次 set 只触发一次重跑
+        ReactiveScheduler.get().flush();             // 两次 set 只触发一次重跑
         Assert.assertEquals(2, runs.size());
     }
 

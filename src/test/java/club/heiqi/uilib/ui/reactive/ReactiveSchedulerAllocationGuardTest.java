@@ -15,7 +15,7 @@ import org.junit.Test;
  * <ul>
  *   <li>无 pending 写且无脏 effect 的 flush <b>不得扫描任何 effect</b>（O(1) 早退，
  *       消除 E≈2 万时每帧最大的一笔空转）；</li>
- *   <li>早退绝不能吞掉真脏的 effect（守 I2/I9：不动点语义逐位不变）；</li>
+ *   <li>早退绝不能吞掉真脏的 effect（守不动点语义逐位不变）；</li>
  *   <li>dirty 计数的不变量（= 登记表内脏 effect 数）在 reset / 注销 / 迟到 dispose 交叠下不被带偏——
  *       计数偏低会让早退跳过真脏 effect，属正确性事故，必须结构性钉死。</li>
  * </ul>
@@ -76,7 +76,7 @@ public class ReactiveSchedulerAllocationGuardTest {
         Effect second = Effect.create(() -> signal.get());
         ReactiveScheduler.get().flush();
         Assert.assertEquals(0, ReactiveScheduler.get().__dirtyEffectCount());
-        // 注意：Signal.set 只是排队（信条四：写入在 flush 内 drain），此时计数仍为 0 且不变量成立
+        // 注意：Signal.set 只是排队（写入在 flush 内 drain），此时计数仍为 0 且不变量成立
         signal.set(1);
         Assert.assertTrue(ReactiveScheduler.get().__hasPendingWrites());
         Assert.assertEquals("排队写入尚未标脏订阅者，计数不得提前变化",

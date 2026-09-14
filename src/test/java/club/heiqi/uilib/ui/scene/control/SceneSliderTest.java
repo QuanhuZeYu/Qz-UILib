@@ -252,7 +252,7 @@ public class SceneSliderTest {
         routePointer(action, x, y, 0, 0);
     }
 
-    /** 构造单指针事件帧并 route 到 sceneRoot（可指定 rootAbs，验证 I12 三层坐标） */
+    /** 构造单指针事件帧并 route 到 sceneRoot（可指定 rootAbs，覆盖 rootAbs≠0 的局部坐标换算） */
     private void routePointer(ScenePointerAction action, int x, int y, int rootAbsX, int rootAbsY) {
         InputFrameBuilder fb = new InputFrameBuilder(x, y);
         fb.push(RawInputEvent.ofPointer(action, x, y, SceneMouseButton.LEFT,
@@ -743,10 +743,10 @@ public class SceneSliderTest {
         Assert.assertTrue("恢复 value=50 后 fill 宽 >0", fillBox.getWidth() > 0);
     }
 
-    // ==================== 验收 12：I12 rootAbs≠0 时拖拽定位不偏移 ====================
+    // ==================== 验收 12：rootAbs≠0 时拖拽定位不偏移（raw 与绝对坐标不得混比） ====================
 
     /**
-     * I12 坐标系对齐：rootAbsX/Y≠0 时，slider 拖拽定位 value 仍正确（不因 raw 含 rootAbs 而错位）。
+     * 坐标系对齐：rootAbsX/Y≠0 时，slider 拖拽定位 value 仍正确（不因 raw 含 rootAbs 而错位）。
      *
      * <p>修复前 slider 用 ev.getPointerX()（raw，含 rootAbs）与 absoluteBox(track,0,0)（host 局部，不含 rootAbs）
      * 混比，rootAbs≠0 时 localX 多算一个 rootAbs，value 偏移。修复后用 ctx.getLocalPointerX()（两层坐标，

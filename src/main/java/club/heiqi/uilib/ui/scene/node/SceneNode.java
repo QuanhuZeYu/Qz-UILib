@@ -29,24 +29,24 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
  *
  * <p>旧 DOM 模型（{@code DocumentNode.markSubtreeLayoutMutation}）在容器增删时
  * 无条件向下递归刷新全部后代的布局版本号，导致未变的稳定子节点被布局层判定复用失败、
- * 全量重算——这是 I7 债的根源。本类的设计正面翻转此方向：</p>
+ * 全量重算——这正是本类要根除的重算债。本类的设计正面翻转此方向：</p>
  * <ul>
  *   <li>节点自身变化时，只标自己（{@code selfLayoutDirty / selfPaintDirty / compositeDirty}）
  *       并通过祖先链向上点亮路标（{@code descendantLayoutDirty / descendantPaintDirty}），
  *       告知布局/绘制/合成遍历"需要下沉到我这里"。</li>
  *   <li>绝对不触碰任何兄弟节点、任何后代节点。</li>
- *   <li>稳定复用的子节点（如列表 keyed diff 中未变的项）零标脏，保证 I7：
- *       干净子树在布局、绘制、合成三阶段都被跳过。</li>
+ *   <li>稳定复用的子节点（如列表 keyed diff 中未变的项）零标脏，保证干净子树
+ *       在布局、绘制、合成三阶段都被跳过。</li>
  * </ul>
  *
  * <h3>属性 setter 的设计意图</h3>
  * <p>每个 setter（{@link #setText}, {@link #setBackgroundColor}, {@link #setOpacity},
  * {@link #setTransform}）内部自动打出对应失效级别，调用方无需手选级别，
- * 从而降低 I4"打错级别"的风险。setter 先去重（值与当前相等则直接 return），
+ * 从而降低"打错级别"的风险。setter 先去重（值与当前相等则直接 return），
  * 对齐 reactive 层"对已应用值去重"的铁律，避免无谓标脏。</p>
  *
  * <h3>批量结构变更（{@link #applyChildReconcile}）</h3>
- * <p>这是根除 I7 债的关键 API。reconciler 一次性提交最终子节点序列 + 其中新增/移动的项。
+ * <p>这是根除重算债的关键 API。reconciler 一次性提交最终子节点序列 + 其中新增/移动的项。
  * 容器自身因子序列变化标一次脏；稳定复用节点零标脏——正面翻转旧
  * {@code markSubtreeLayoutMutation} 的递归全标行为。</p>
  *

@@ -19,7 +19,7 @@ import club.heiqi.uilib.ui.scene.text.TextLinePlan;
  * {@code measuredTextNodes.add(node)} 与 {@code node.__setLastMeasuredEpoch(...)}
  * 是 epoch 失效链（P0 命门）的核心登记动作，逐字从主引擎搬迁保留。
  * SizingCalculator 自身不持有可变状态字段，measuredTextNodes 由主引擎构造时注入
- * （final 引用），写入的是主引擎的 Set，语义与原主引擎内联时逐位等价（I7/I8）。
+ * （final 引用），写入的是主引擎的 Set，语义与原主引擎内联时逐位等价。
  * 删除这两行会破坏 epoch 失效链，导致字体 reload 后干净子树文本不更新。</p>
  *
  * <h3>跨类契约（★最高风险，改一处必须同步另一处）</h3>
@@ -256,7 +256,7 @@ class SizingCalculator {
      * <p>注意：本分支只钉死 viewport <b>自身</b>的 LayoutBox.height；子内容仍由
      * positionChildren 步骤 4 按 COLUMN 主轴 START 从 padTop 起累加定位，
      * 总高超视口部分由 paint 阶段的 CLIP 裁剪 + {@code -scrollOffsetY} 平移处理，
-     * 布局层绝不感知 scrollOffset（守 I7：滚动不触发重排）。</p>
+     * 布局层绝不感知 scrollOffset（滚动不触发重排）。</p>
      *
      * @param node        节点
      * @param constraints 当前节点的布局约束
@@ -353,7 +353,7 @@ class SizingCalculator {
      *
      * <p>主动忽略内容撑大（首次解耦 viewport/content），是布局计算语义的一等例外，
      * 已转正为正式能力：视口高只由「preferredHeight 钉死 &gt; fill 约束高 &gt; 内容高截断」
-     * 优先级决定，不随内容增长（旧 NORTH_STAR §4 视口条款，含义以上述优先级口径为准）。详见偏离登记 2026-06-21-扩展。</p>
+     * 优先级决定，不随内容增长。</p>
      *
      * <p><b>耦合不变式（跨类契约 2：viewportHeight 与 priorKnownInnerHeight）</b>：
      * 本方法 fill 分支（preferredHeight&lt;=0 且 fillParentHeight 且
@@ -384,7 +384,7 @@ class SizingCalculator {
 
     /**
      * 判定节点高度是否"被约束驱动"——即节点高度不由子内容决定而是由约束决定，
-     * 约束变化时必须重算自身（守 I8）。
+     * 约束变化时必须重算自身高度。
      *
      * <p>覆盖四类节点：</p>
      * <ul>
@@ -513,7 +513,7 @@ class SizingCalculator {
      * 测量多行文本中各行的最大 UI 像素宽度。
      *
      * <p>包级可见：同包 {@link ConstraintResolver#priorKnownChildWidth} 复用本实现，
-     * 全仓唯一的「按换行类扫行取最大行宽」单点（I7 纯读，无副作用）。</p>
+     * 全仓唯一的「按换行类扫行取最大行宽」单点（纯读，无副作用）。</p>
      *
      * @param text       文本内容（按 Unicode 换行类切分多行，{@code \r\n} 折叠）
      * @param fontSizePx 字号（UI 像素）

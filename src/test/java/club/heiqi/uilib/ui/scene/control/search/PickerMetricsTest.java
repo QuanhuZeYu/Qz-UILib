@@ -165,11 +165,11 @@ public class PickerMetricsTest {
             assertEquals("A5 fs=" + fs + " 图标恒为目标边长", 40, grid.iconSidePx());
             int expectedTrack = grid.iconSidePx() + 2 * grid.paddingPx()
                     + grid.lineHeightPx() + grid.labelGapPx();
-            assertEquals("I-2 轨道高 = 图标 + 上下 padding + 标签行 + 间距 (fs=" + fs + ")",
+            assertEquals("轨道高 = 图标 + 上下 padding + 标签行 + 间距 (fs=" + fs + ")",
                     expectedTrack, grid.trackHeightPx());
-            assertTrue("I-3 cellW >= 图标 + 上下 padding (fs=" + fs + ")",
+            assertTrue("cellW >= 图标 + 上下 padding (fs=" + fs + ")",
                     grid.cellWidthPx() >= grid.iconSidePx() + 2 * grid.paddingPx());
-            assertEquals("I-4 stride = trackH + gap (fs=" + fs + ")",
+            assertEquals("stride = trackH + gap (fs=" + fs + ")",
                     grid.trackHeightPx() + grid.gapY(), grid.stridePx());
             assertEquals("列行同源：gapX == gapY (fs=" + fs + ")", grid.gapX(), grid.gapY());
         }
@@ -450,7 +450,7 @@ public class PickerMetricsTest {
         assertEquals("150% -> fs 18", 18, scaled.fontSizePx());
         assertTrue("字号放大后 stride 单调增（A-11）",
                 scaled.grid().stridePx() > base.grid().stridePx());
-        assertTrue("字号放大后轨道高单调增（A-11 / I-2）",
+        assertTrue("字号放大后轨道高单调增（A-11）",
                 scaled.grid().trackHeightPx() > base.grid().trackHeightPx());
         // A5 的准确口径：字号不参与图标挤压（图标 = 档位目标 × k），但 auto 阶梯可以下调 k。
         // 因此约束是「图标 ∈ [最小档目标, 档位目标]」且 k 只能在阶梯取值。

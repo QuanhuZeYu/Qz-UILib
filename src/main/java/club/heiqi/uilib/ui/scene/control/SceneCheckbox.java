@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p>本控件是 strangler 模式下控件层重建的首批真实控件之一，确立「受控双向控件」契约 R7：
  * 控件<b>零内部状态</b>，当前勾选态完全由外部 {@code checked} 只读 signal 驱动；点击时
  * <b>绝不自己翻转</b>，而是经 {@code onChange.accept(!checked.get())} 把「期望的新值」交还外部，
- * 由外部 set 回 checked signal（守 R1/R5/I11，避免双向状态源不一致）。</p>
+ * 由外部 set 回 checked signal（守 R1/R5，且 handler 只上抛期望值、不直接改状态的边界，避免双向状态源不一致）。</p>
  *
  * <h3>结构</h3>
  * <p>root（交互单元，hitTestable 默认 true，ROW + SHRINK 内容宽 + 交叉轴 CENTER + gap）

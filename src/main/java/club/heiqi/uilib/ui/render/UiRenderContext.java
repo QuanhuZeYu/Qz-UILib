@@ -397,7 +397,7 @@ public class UiRenderContext implements UiRenderBackend {
      * 绘制带圆角的表面（UiRenderBackend 接口实现，uniform 单值圆角）。
      *
      * <p>第 7 参为 {@code int cornerRadius}，避免 scene 回放器反向依赖 {@code ui.style}
-     * 包的 {@code ResolvedCornerRadii} 类型（守不变量 I6）。render 层内部仍可自由使用
+     * 包的 {@code ResolvedCornerRadii} 类型（守 scene 回放器不反向依赖样式层类型的分层边界）。render 层内部仍可自由使用
      * {@code ui.style}，这里把 uniform 单值转成 {@link UiSurfaceStyle} 所需的分角圆角结构。</p>
      *
      * @param left 左侧坐标
@@ -1206,7 +1206,7 @@ public class UiRenderContext implements UiRenderBackend {
     }
 
     /**
-     * 纯数值 pushTransform 重载（I6 让步，全 primitive，零 scene/DOM 概念）。
+     * 纯数值 pushTransform 重载（分层边界让步：全 primitive，零 scene/DOM 概念）。
      *
      * <p>与 opacity 的 {@link #pushGroupOpacity} 同构，供 ScenePaintReplayer 调用，
      * 不暴露 UiTransform/Transform 类型。origin 三明治：先移到 origin+translate，

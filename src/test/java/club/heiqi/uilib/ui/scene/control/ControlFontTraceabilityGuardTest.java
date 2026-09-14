@@ -37,7 +37,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLinePlan;
 
 /**
- * 字号溯源与不变量守卫（字号动态化 I-4，守卫 3）。
+ * 字号溯源与不变量守卫（字号动态化，守卫 3）。
  *
  * <p>三条不变量：</p>
  * <ol>

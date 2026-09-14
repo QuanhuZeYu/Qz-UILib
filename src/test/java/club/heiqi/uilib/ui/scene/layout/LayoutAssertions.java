@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
  * 布局不变量断言库 —— 把关键布局不变量（失效四级矩阵、干净子树三阶段跳过 / 重算收敛、
- * 两层坐标语义、求和不变量；旧编号 I4 / I7 / I12 / §4.5，含义以本库各方法与所在测试为准）翻译成可复用的数学断言方法。
+ * 两层坐标语义、求和不变量；§4.5，含义以本库各方法与所在测试为准）翻译成可复用的数学断言方法。
  *
  * <p>本类专供 L2 纯数学测试层使用：构造场景树 → 调用
  * {@link SceneLayoutEngine#layout} → 用本库的方法断言布局结果与失效状态。
@@ -21,14 +21,14 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <pre>
  * | 你要断言什么 | 用哪个 helper |
  * |---|---|
- * | 某 setter 只触发某一级失效（I4 矩阵） | assertOnlyInvalidation(node, level) |
+ * | 某 setter 只触发某一级失效（失效级别矩阵） | assertOnlyInvalidation(node, level) |
  * | 遍历后节点完全清脏 | assertClean(node) |
  * | 局部坐标全 4 维（x/y/w/h） | assertLocalBox(node, x, y, w, h) |
- * | 绝对坐标累加（I12/§4.5，只 x/y） | assertAbsoluteBox(node, rootX, rootY, x, y) |
+ * | 绝对坐标累加（§4.5，只 x/y） | assertAbsoluteBox(node, rootX, rootY, x, y) |
  * | COLUMN shrink-to-fit 高度求和 | assertColumnHeightSum(container) |
  * | ROW SHRINK 宽度求和 | assertRowWidthSum(container, availW) |
- * | 增量失效恰好重算某集合（I7） | assertRelayoutSet(result, nodes...) |
- * | 干净帧零重算（I7） | assertNoRelayout(result) |
+ * | 增量失效恰好重算某集合 | assertRelayoutSet(result, nodes...) |
+ * | 干净帧零重算 | assertNoRelayout(result) |
  * </pre>
  * <p>不在此表的几何/失效断言，优先扩充本库而非在测试里裸写 {@code assertEquals}；
  * 纯缓存计数/并行池等非几何量除外。</p>
@@ -71,7 +71,7 @@ public final class LayoutAssertions {
         COMPOSITE
     }
 
-    // ==================== I4 失效级别断言 ====================
+    // ==================== 失效级别断言 ====================
 
     /**
      * 断言节点恰好处于指定级别的失效状态：该级别的 self dirty 位为 true，
@@ -82,7 +82,7 @@ public final class LayoutAssertions {
      * 例如 {@link SceneNode#markSelfLayout()} 会同时点亮祖先的
      * {@code descendantLayoutDirty}，但本节点自身的失效级别仍是「恰好 LAYOUT」。</p>
      *
-     * <p>用于 I4 失效级别矩阵表测试：对每个 setter 验证它只触发声明级别的失效，
+     * <p>用于失效级别矩阵表测试：对每个 setter 验证它只触发声明级别的失效，
      * 不污染其它级别。</p>
      *
      * @param node  待断言节点（非 null）
@@ -151,7 +151,7 @@ public final class LayoutAssertions {
         Assert.assertFalse("clean 节点 descendantCompositeDirty 应 false", node.__isDescendantCompositeDirty());
     }
 
-    // ==================== I12 / §4.5 坐标断言 ====================
+    // ==================== §4.5 坐标断言 ====================
 
     /**
      * 断言节点的局部 {@link LayoutBox}（相对父容器左上角的坐标）精确匹配期望值。
@@ -424,13 +424,13 @@ public final class LayoutAssertions {
                 expected, box.getWidth());
     }
 
-    // ==================== I7 重算断言 ====================
+    // ==================== 重算断言 ====================
 
     /**
      * 断言本次 layout 的重算节点集合（{@link LayoutResult#getRelayoutedNodes()}）
      * 精确匹配期望集合（顺序无关）。
      *
-     * <p>用于 I7 增量失效验证：构造失效场景后，断言恰好预期的脏节点被重算，
+     * <p>用于增量失效验证：构造失效场景后，断言恰好预期的脏节点被重算，
      * 既不多（不该脏的被牵连）也不少（该脏的没漏掉）。</p>
      *
      * @param result   layout 结果（非 null）
@@ -452,7 +452,7 @@ public final class LayoutAssertions {
      * 断言本次 layout 无任何重算（{@link LayoutResult#getRelayoutCount()}==0 且
      * 重算节点集合为空）。
      *
-     * <p>这是 I7 增量失效的核心断言：干净帧（约束未变、无 setter 触发失效）下，
+     * <p>这是增量失效的核心断言：干净帧（约束未变、无 setter 触发失效）下，
      * layout 引擎应整棵跳过，零重算。</p>
      *
      * @param result layout 结果（非 null）

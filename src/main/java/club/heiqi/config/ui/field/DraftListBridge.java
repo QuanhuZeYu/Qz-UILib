@@ -31,14 +31,14 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * </ul>
  *
  * <p><b>不合并</b> {@code ListItem} / {@code FontSortItem} / {@code CharacterRuleItem} 类型；
- * 不把 scrollbar 塞进桥。keyFn 由 caller 在 forEach 时传入（守 I5）。</p>
+ * 不把 scrollbar 塞进桥。keyFn 由 caller 在 forEach 时传入（keyed diff：forEach 必须带 keyFn）。</p>
  *
  * <h3>合规</h3>
  * <ul>
  *   <li>R3：reset 守卫落 rt.bind effect，禁止进 Supplier 建树体。</li>
  *   <li>R7：{@link CommitMode#CONTROL_ALREADY_SET} 不二次 set localItems。</li>
- *   <li>I1/I11：守卫内读投影包 Effect.untrack，避免订阅环。</li>
- *   <li>I3：render 构建期不写 adapter signal / DraftBuffer；prefill 仅局部初值。</li>
+ *   <li>守卫内读投影包 Effect.untrack，避免订阅环（不建立反向订阅）。</li>
+ *   <li>render 期零副作用：构建期不写 adapter signal / DraftBuffer；prefill 仅局部初值。</li>
  * </ul>
  *
  * @param <T> 行数据类型（ListItem / CharacterRuleItem 等）

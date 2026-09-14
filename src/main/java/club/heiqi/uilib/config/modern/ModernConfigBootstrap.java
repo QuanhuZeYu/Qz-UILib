@@ -52,12 +52,12 @@ import club.heiqi.uilib.font.config.FontConfig;
  * <p>同时必须在 {@code NetTransportFactory.create} 之前回灌 {@code Config.netTransport}
  * 新栈值（{@code netTransport} 启动只读一次）。</p>
  *
- * <h3>守 I1</h3>
+ * <h3>守「UI 状态只经 signal 改变」</h3>
  * <p>{@link ConfigValueBridge#applyFromAuthority} 写静态字段是配置数据模型层
  * （非 {@code SceneNode} 属性槽，非 UI 状态）。{@link FontService#reload}（仅在
  * {@code affectsFontRuntime} 且运行时已就绪时触发，判据见
  * {@link FontService#requestReloadIfRenderRuntimeReady(String)}）→ {@code invalidateAll}
- * 失效注册表，非命令式改节点。I1 守。</p>
+ * 失效注册表，非命令式改节点，不违「UI 状态只经 signal 改变」。</p>
  *
  * <h3>与 {@link ModernConfigEntry#createScreen} 的关系</h3>
  * <p>两者都 {@link ConfigManager#bootstrap} 出新 {@link ConfigManager}，但用途不同：</p>

@@ -32,7 +32,7 @@ import club.heiqi.uilib.util.UiNumbers;
  *
  * <p>本类收口列表拖拽排序的把手节点、输入 handler、落点判定与列表移动算法。
  * 控件仍以 signal 作为唯一状态写入入口；拖拽瞬态只保存在 handler 闭包 final 容器中，
- * 不在控件类或本工具类上增加实例状态（守 R1/I11）。</p>
+ * 不在控件类或本工具类上增加实例状态（守 R1 与 handler 边界：状态写入只经 signal，瞬态只留在 handler 闭包）。</p>
  *
  * <p><b>外观契约（全库默认液态玻璃样式 G12/拖拽把手）</b>：把手底色取主题
  * {@code Role.INDICATOR} 配方的 idle/hovered/pressed tint 档（把手态），图标色取

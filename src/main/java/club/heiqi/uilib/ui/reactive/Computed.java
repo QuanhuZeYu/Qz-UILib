@@ -4,7 +4,7 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * 只读派生 signal：值由一个函数从其它 {@link ReadableSignal} 算出，上游变化时自动重算（信条二）。
+ * 只读派生 signal：值由一个函数从其它 {@link ReadableSignal} 算出，上游变化时自动重算。
  *
  * <p>实现为「effect 驱动 + 输出 cell」：内部 recompute effect 在追踪上下文中执行派生函数，
  * 自动订阅其读取的所有上游源；重算结果同步推入内部输出 {@link Signal}（cell）。

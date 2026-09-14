@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>由 {@link SceneInputRouter} 根据指针、键盘、文本或焦点 authority 切换构造。
  * 对象不可变，全 final 字段 + getter 无 setter。包级构造器仅供 router 使用。</p>
  *
- * <h3>坐标语义（两层坐标，I12）</h3>
+ * <h3>坐标语义（两层坐标：raw 屏幕绝对 / local 当前接收 handler 节点局部）</h3>
  * <p>指针事件携带两层坐标，handler 通过 {@link SceneEventContext} 按需消费：</p>
  * <ul>
  *   <li><b>raw（屏幕绝对）</b>：{@code rawPointerX/rawPointerY}，存储屏幕绝对坐标（含 {@code rootAbsX/Y}，
@@ -48,7 +48,7 @@ public class SceneEvent {
     /** 事件时间戳（纳秒） */
     private final long timeNanos;
 
-    // === I4a 键盘/文本字段（指针事件为 null/默认） ===
+    // === 键盘/文本字段（指针事件为 null/默认） ===
     /** 按键标识，非键盘事件为 null */
     private final SceneKey key;
     /** 按键动作，非键盘事件为 null */

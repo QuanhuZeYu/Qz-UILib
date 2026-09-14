@@ -50,7 +50,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *       保证用户输入不丢失，错误信息在行下方红字提示。</li>
  * </ul>
  *
- * <h3>D2 本地 Signal 桥（{@link DraftListBridge}）+ I5 keyed diff</h3>
+ * <h3>D2 本地 Signal 桥（{@link DraftListBridge}）+ keyed diff</h3>
  * <p>本地 SSOT 与 reset 守卫统一由 {@link DraftListBridge} 托管：首次从 draft 转
  * {@code List<CharacterRuleItem>}；reset 时 untrack 读投影 + normalize 比对；
  * commit 走 {@link DraftListBridge.CommitMode#SET_THEN_EDIT}。</p>
@@ -62,7 +62,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *   <li>R4：行错误文本经 {@code rt.bind} 派生。</li>
  *   <li>R6：错误文本节点 {@code setHitTestable(false)}。</li>
  *   <li>R7：onFieldEdit 后不回 set localItems；handler 在调 onFieldEdit 前已 set。</li>
- *   <li>I5：{@code forEach} 用带 keyFn 重载（{@code CharacterRuleItem::getId}）。</li>
+ *   <li>{@code forEach} 用带 keyFn 重载（{@code CharacterRuleItem::getId}），按 key 复用行节点。</li>
  *   <li>字体名输入用成品 {@link SceneAutocomplete}（内置 chrome），不再内联 chrome 样板。</li>
  * </ul>
  *
@@ -184,7 +184,7 @@ public final class CharacterRuleFieldRenderer implements FieldRenderer {
         stackHost.appendChild(scrollbar.column());
         root.appendChild(stackHost);
 
-        // I5 keyed diff：必须用带 keyFn 重载（CharacterRuleItem::getId）
+        // keyed diff：必须用带 keyFn 重载（CharacterRuleItem::getId）
         Computed<List<CharacterRuleItem>> itemsComputed =
                 Computed.create(() -> safeItems(localItems.get()));
         rt.forEach(listViewport, itemsComputed, CharacterRuleItem::getId,

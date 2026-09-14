@@ -5,14 +5,14 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 中央事务日志（信条四：所有状态写入收口到中央事务）。
+ * 中央事务日志（所有状态写入收口到中央事务）。
  *
  * <p>一次 {@link ReactiveScheduler#flush()} 内应用的所有 signal 写入合并为一个原子 {@link Transaction}
- * （I9 批处理在数据结构上的体现），记入一个<b>有界环形缓冲</b>。每个事务携带单调序号、时间戳、可选标签，
- * 与逐条 {@link Entry}（signal、before、after），共同构成信条四要求的<b>单一审计路径</b>——
+ * （一帧内多次写入合并为一次刷新的批处理在数据结构上的体现），记入一个<b>有界环形缓冲</b>。每个事务携带单调序号、时间戳、可选标签，
+ * 与逐条 {@link Entry}（signal、before、after），共同构成中央事务要求的<b>单一审计路径</b>——
  * 永远能回答「谁、何时、因何改了它」。</p>
  *
- * <p><b>游标时间旅行</b>（信条四②）：{@link #cursor()} 把日志分为「已应用」段 {@code [0, cursor)} 与
+ * <p><b>游标时间旅行</b>：{@link #cursor()} 把日志分为「已应用」段 {@code [0, cursor)} 与
  * 「可重做的未来」段 {@code [cursor, size)}。撤销 = 游标后退并由调度器回退该事务的 before 值；
  * 重做 = 游标前进并重新应用 after 值。游标位置即一个逻辑状态快照——无需为每个 signal 存全量值快照
  * （这正是用户拍板的「仅日志 + 游标」模型，不引入 signal 全局注册表）。</p>

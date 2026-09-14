@@ -41,7 +41,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <h3>契约</h3>
  * <p>纯静态工厂 + 无状态（契约 R1）；输入全只读 signal（R2）；组件函数交
- * {@link SceneRuntime#mount} 执行一次（I3）；节点不可命中，不拦截输入。</p>
+ * {@link SceneRuntime#mount} 执行一次（组件函数只跑一次）；节点不可命中，不拦截输入。</p>
  *
  * <h3>前景归属</h3>
  * <p>默认路径（未传颜色参数）跟随来源主题的正文前景：构建期捕获
@@ -435,7 +435,7 @@ public final class SceneLabel {
     /**
      * 工厂：构建标签组件函数。
      *
-     * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（I3）：
+     * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（组件函数只跑一次）：
      * 只建 SceneNode + 设静态样式 + 前景归属 + {@code rt.bindText} 绑定响应式文本。
      * 不追加玻璃、不参与表面绑定。</p>
      *

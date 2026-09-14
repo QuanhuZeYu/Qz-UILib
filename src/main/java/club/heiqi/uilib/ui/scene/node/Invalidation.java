@@ -1,7 +1,7 @@
 package club.heiqi.uilib.ui.scene.node;
 
 /**
- * 失效级别枚举 —— 对应信条五"分级失效"的四级模型。
+ * 失效级别枚举 —— 分级失效的四级模型。
  *
  * <p>每个 effect 触发时必须声明它影响哪一级，只打对应脏标记：
  * <ul>
@@ -12,7 +12,7 @@ package club.heiqi.uilib.ui.scene.node;
  * </ul>
  *
  * <p>调用方不应手选级别，而是通过 {@link SceneNode} 强类型 setter 自动打出正确的失效级别，
- * 以降低 I4"打错级别"的风险。</p>
+ * 以降低"打错级别"的风险。</p>
  */
 public enum Invalidation {
     /** 布局级失效：文本/尺寸/增删节点变化，触发重布局并连带重绘和重新合成 */

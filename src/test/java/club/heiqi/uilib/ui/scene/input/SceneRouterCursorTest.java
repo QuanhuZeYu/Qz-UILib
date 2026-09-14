@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Router cursorSignal 单元测试（I4c cursor 投影——Router 接通验证）。
+ * Router cursorSignal 单元测试（cursor 投影——Router 接通验证）。
  *
  * <p>覆盖：hover 进按钮→cursorSignal 变 POINTER / 移出→变 DEFAULT /
  * cursorSignal 初始值 / route+flush 时序 / 零标脏回归。</p>

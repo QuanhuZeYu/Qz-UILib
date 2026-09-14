@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * FocusManager + 键盘/文本路由 + 焦点信号闭环 单元测试（I4a 全部验收单测）。
+ * FocusManager + 键盘/文本路由 + 焦点信号闭环 单元测试。
  *
  * <p>覆盖：A焦点基础 / B Tab遍历 / C键盘分发 / D文本分发 /
  * E requestFocus via ctx / F focused signal接通 / G零标脏回归 / H回收/隔离。</p>

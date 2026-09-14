@@ -19,7 +19,7 @@ import java.util.Map;
  * 命中 focusable（沿命中链最深处向 root 找首个 focusable，含祖先链）→ 聚焦；
  * 命中树内非 focusable 节点或点在树外空白（hitTarget==null）→ 一律失焦（clearFocus）；
  * handler 内 ctx.requestFocus 可覆盖隐式结果（含命中非 focusable 先 clearFocus 再被 handler 覆盖）；
- * requestFocus 幂等（再点已聚焦节点不误 blur）；route 全程零标脏（I7/I11）。</p>
+ * requestFocus 幂等（再点已聚焦节点不误 blur）；route 全程零标脏。</p>
  */
 public class SceneRouterImplicitFocusTest {
 

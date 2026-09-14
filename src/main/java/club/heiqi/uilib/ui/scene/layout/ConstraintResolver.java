@@ -22,7 +22,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *   <li>构造下传给子节点的约束（{@link #buildChildConstraints}）：宽度内宽基准来自
  *       {@link SizingCalculator#computeWidth}，高度下传按 ROW/COLUMN 分支处理。</li>
  *   <li>约束变化感知（{@link #childConstraintsWouldChange}）：判断新旧约束是否会改变
- *       下传给子的约束，驱动 I7 干净帧短路判定。</li>
+ *       下传给子的约束，驱动干净帧短路判定（约束未变时可整棵子树跳过重算）。</li>
 *   <li>高度先验计算（{@link #priorKnownInnerHeight} / {@link #priorKnownChildHeight}）：
 *       在子节点布局前估算容器/固定兄弟的先验高度，供 COLUMN grow 子权重分配求解。</li>
  * </ul>
@@ -253,7 +253,7 @@ class ConstraintResolver {
      *
      * <p>preferredWidth 最高优先级；文本叶经 sizing.measureMaxLineWidth 测量文本最大行宽
      * + 左右 padding；无文本叶用左右 padding；容器或其他无法先验的节点返回
-     * {@link Constraints#UNCONSTRAINED}。只读节点属性 + sizing 度量，严禁读取 cachedLayout（守 I7）。</p>
+     * {@link Constraints#UNCONSTRAINED}。只读节点属性 + sizing 度量，严禁读取 cachedLayout（避免父子布局循环依赖）。</p>
      *
      * <p><b>文本宽度估算说明</b>：与高度分支（{@link SizingCalculator#leafTextHeight} 的
      * wrap 感知估算）对称，此处经 {@link SizingCalculator#measureMaxLineWidth} 单点测量文本
@@ -364,7 +364,7 @@ class ConstraintResolver {
         //   （CSS §9.8 definite 语义：父分配 tight 高 → 子高度 definite）。
         // ★ scrollable 排除：viewport 语义主动忽略内容撑大，内高不作子先验，
         //   与 `SizingCalculator#viewportHeight` 的 scrollable 专用分支对称（跨类契约 2）。
-        // ★ 守 I7：纯读静态元数据 + 入参，不回看子 cache。
+        // ★ 纯读静态元数据 + 入参，不回看子 cache（避免父子布局循环依赖）。
         if ((node.isFillParentHeight() || node.getFlexGrow() > 0 || node.getPercentHeight() > 0)
                 && !node.isScrollable()
                 && constraints.hasHeightConstraint()) {
@@ -512,10 +512,10 @@ class ConstraintResolver {
         // grow 子分配的是 freeH（子自身高，不含 margin），freeze do-while 仍基于 freeH
         int freeH = Math.max(0, innerH - fixedH - growMarginTotal - totalGap);
 
-        // freeze 主循环（上界+下界对称，Qt qGeomCalc 语义，守 I7 数值求解器边界）
+        // freeze 主循环（上界+下界对称，Qt qGeomCalc 语义；求解只读静态元数据 + 入参，不回看子 cache）
         // 撞 maxHeight 上界：冻结到 maxHeight，释放空间回流未冻结子
         // 撞 preferredHeight 下界：冻结到 preferredHeight，占用空间
-        // 全程只读 effectiveGrow/maxHeight/preferredHeight，不读子 cachedLayout（守 I7）
+        // 全程只读 effectiveGrow/maxHeight/preferredHeight，不读子 cachedLayout（先验铁律，避免循环依赖）
         Map<SceneNode, Integer> frozen = new IdentityHashMap<>();
         long remainingFree = freeH;
         long remainingW = sumW;
@@ -675,7 +675,7 @@ class ConstraintResolver {
         // freeW 扣减：固定子含 margin + grow 子 margin + gap 全部扣减
         int freeW = Math.max(0, innerW - fixedW - growMarginTotal - totalGap);
 
-        // freeze 主循环（与 COLUMN 版本对称，守 I7 数值求解器边界）
+        // freeze 主循环（与 COLUMN 版本对称；求解只读静态元数据 + 入参，不回看子 cache）
         Map<SceneNode, Integer> frozen = new IdentityHashMap<>();
         long remainingFree = freeW;
         long remainingW = sumW;

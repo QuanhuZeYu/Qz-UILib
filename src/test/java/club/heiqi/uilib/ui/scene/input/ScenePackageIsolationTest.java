@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * I10 包隔离红线单元测试。
+ * 包隔离红线单元测试。
  *
  * <p>验证 src/main/java/club/heiqi/uilib/ui/scene/input/ 下的所有核心源文件
  * 不引入任何平台绑定或 Minecraft 依赖，确保输入层与平台完全解耦。</p>
@@ -52,7 +52,7 @@ public class ScenePackageIsolationTest {
             "(UiRenderContext|FontRenderer|club\\.heiqi\\.uilib\\.ui\\.text\\.)");
 
     /**
-     * 禁止 scene 核心包 import {@code ui.style} 的正则（守不变量 I6）。
+     * 禁止 scene 核心包 import {@code ui.style} 的正则（守数据层不反向依赖样式层）。
      *
      * <p>scene 数据层（layout/paint/node/overlay 及顶层）不得反向依赖样式系统
      * {@code club.heiqi.uilib.ui.style}：样式解析在构建期完成，回放期只消费纯数值。
@@ -94,7 +94,7 @@ public class ScenePackageIsolationTest {
                     .collect(Collectors.toList());
         }
 
-        Assert.assertTrue("input 包下应有至少 24 个 .java 文件（含 I4a FocusManager + I4c SceneCursor/CursorBackend 等新增文件）",
+        Assert.assertTrue("input 包下应有至少 24 个 .java 文件（含 FocusManager + SceneCursor/CursorBackend 等新增文件）",
                 javaFiles.size() >= 24);
 
         for (Path javaFile : javaFiles) {
@@ -107,7 +107,7 @@ public class ScenePackageIsolationTest {
      * 也不 import 渲染上下文 / FontRenderer / ui.text.* 度量实现。
      *
      * <p>node 子包是文本/字号/度量字段的实际持有者，是未来最可能被误引入度量实现的位置，
-     * 故与 layout/paint 同列入渲染纯度红线（守 I10：核心只认窄端口 {@code SceneTextMeasurer}）。
+     * 故与 layout/paint 同列入渲染纯度红线（守核心只认窄端口 {@code SceneTextMeasurer}）。
      * overlay 子包是 top-layer 数据地基，也必须保持平台和渲染实现无关。</p>
      *
      * <p>注意 scene/text 装配子包是合法接缝<b>不纳入</b>本渲染纯度断言范围：
@@ -152,7 +152,7 @@ public class ScenePackageIsolationTest {
             // A 组 S1-S4 接口化后 ScenePaintReplayer 已改持有渲染出口接口 UiRenderBackend，
             // 不再 import 具体 UiRenderContext，故移除既往整文件豁免，统一纳入扫描。
             assertNoForbiddenRenderRef(javaFile);
-            // ui.style 反向依赖禁止（守 I6：scene 数据层不得 import 样式系统）
+            // ui.style 反向依赖禁止（scene 数据层不得 import 样式系统）
             assertNoForbiddenStyleRef(javaFile);
         }
     }
@@ -161,7 +161,7 @@ public class ScenePackageIsolationTest {
      * 验证：A 组 S1-S4 接口化收口铁证 —— {@code ScenePaintReplayer} 依赖渲染出口接口
      * {@code UiRenderBackend}，而非具体渲染后端类 {@code UiRenderContext}。
      *
-     * <p>这是 scene 脱 MC 移植契约线（宪章信条六）的可回归守线：scene 核心只通过接口
+     * <p>这是 scene 脱 MC 移植契约线的可回归守线：scene 核心只通过接口
      * 认识渲染层。断言 replayer 源文件的 import 区<b>含</b> {@code UiRenderBackend} 接口、
      * <b>不含</b>对具体 {@code UiRenderContext} 类的 import（注释中合法提及 MC 实现不计）。</p>
      *
@@ -183,7 +183,7 @@ public class ScenePackageIsolationTest {
                     "replayer import 行不得依赖具体渲染类 UiRenderContext（应只认接口 UiRenderBackend）: " + trimmed,
                     trimmed.contains("UiRenderContext"));
             Assert.assertFalse(
-                    "replayer import 行不得反向依赖 ui.style（守 I6）: " + trimmed,
+                    "replayer import 行不得反向依赖 ui.style: " + trimmed,
                     trimmed.contains("club.heiqi.uilib.ui.style"));
             if (trimmed.contains("club.heiqi.uilib.ui.render.UiRenderBackend")) {
                 importsBackendInterface = true;
@@ -196,7 +196,7 @@ public class ScenePackageIsolationTest {
 
     /**
      * 验证：scene 核心顶层包（ui.scene 直接子 .java，不含子包）不含具体渲染后端类 UiRenderContext
-     * 及任何平台引用（守宪章信条六 / I6）。
+     * 及任何平台引用（守渲染出口只认抽象接口）。
      *
      * <p>顶层包（如 {@code UiSurface}）是 scene 渲染面入口，只能认渲染出口抽象接口
      * {@link club.heiqi.uilib.ui.render.UiRenderBackend}，绝不 import 焊 GL 的具体后端。</p>
@@ -319,7 +319,7 @@ public class ScenePackageIsolationTest {
     }
 
     /**
-     * 断言单个源文件不含禁止的 {@code ui.style} 反向依赖（跳过纯注释行，守 I6）。
+     * 断言单个源文件不含禁止的 {@code ui.style} 反向依赖（跳过纯注释行，守数据层不反向依赖样式层）。
      *
      * @param javaFile 待检查的源文件
      * @throws IOException 读取文件失败

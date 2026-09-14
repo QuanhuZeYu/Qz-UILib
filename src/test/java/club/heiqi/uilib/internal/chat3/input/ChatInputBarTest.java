@@ -155,14 +155,14 @@ public class ChatInputBarTest {
         Assert.assertNull("仅空白提交不入历史", bar.submitText());
         bar.recallHistory(-1);
         rt.flush();
-        // I3:空历史按 ↑ 是无效操作,不应清空用户已有输入(草稿清空缺陷修复)
+        // 空历史按 ↑ 是无效操作,不应清空用户已有输入(草稿清空缺陷修复)
         Assert.assertEquals("空提交后 Up 无历史可回显,输入保持不变", "   ", bar.inputText().get());
     }
 
-    // ==================== I3 草稿清空修复(无效操作不碰输入) ====================
+    // ==================== 草稿清空修复(无效操作不碰输入) ====================
 
     /**
-     * I3:有输入但未进过历史,底槽按 ↓ 返回 null 哨兵,输入完全不被清空。
+     * 有输入但未进过历史,底槽按 ↓ 返回 null 哨兵,输入完全不被清空。
      */
     @Test
     public void recallHistoryAtBottomWithoutDraftKeepsInput() {
@@ -178,7 +178,7 @@ public class ChatInputBarTest {
     }
 
     /**
-     * I3:空历史按 ↑ 返回 null 哨兵,输入完全不被清空(此前缺陷:无条件回写 "" 清空输入)。
+     * 空历史按 ↑ 返回 null 哨兵,输入完全不被清空(此前缺陷:无条件回写 "" 清空输入)。
      */
     @Test
     public void recallHistoryEmptyHistoryDoesNotClearInput() {
@@ -290,7 +290,7 @@ public class ChatInputBarTest {
         Assert.assertEquals("补全 commit 剔 §", "ab", bar.inputText().get());
     }
 
-    // ==================== I5 caret 非词尾 Tab 屏蔽(不改用户编辑位) ====================
+    // ==================== caret 非词尾 Tab 屏蔽(不改用户编辑位) ====================
 
     /**
      * 记录型假补全宿主:与 {@link ChatCompletionEngineTest} 同构,bar 注入后观察状态机
@@ -353,7 +353,7 @@ public class ChatInputBarTest {
     }
 
     /**
-     * I5 主案例:输入 "abc def",←×5 使 caret 落在词 "abc" 中(caret=2),Tab 必须完全无反应:
+     * 主案例:输入 "abc def",←×5 使 caret 落在词 "abc" 中(caret=2),Tab 必须完全无反应:
      * 文本不变、caret 不动、状态机未被驱动(零请求/零 commit/零本地候选查询)。
      */
     @Test

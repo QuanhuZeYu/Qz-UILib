@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * SceneRuntime + bind 骨架单元测试 —— Phase 0 T3 验收点。
  *
- * <p>验证：bind 对接属性槽自动打级（I4）、mount builder 只执行一次（I3）、
+ * <p>验证：bind 对接属性槽自动打级、mount builder 只执行一次、
  * dispose 后退订 effect。全程不碰 layout/paint/旧栈。</p>
  */
 public class SceneRuntimeTest {
@@ -49,7 +49,7 @@ public class SceneRuntimeTest {
         ReactiveScheduler.get().reset();
     }
 
-    // ==================== 测试 1：bind 属性槽自动打级（I4） ====================
+    // ==================== 测试 1：bind 属性槽自动打级 ====================
 
     /**
      * 验证：bind Signal&lt;Integer&gt; 到 SceneNode 的 backgroundColor 后，
@@ -72,10 +72,10 @@ public class SceneRuntimeTest {
         colorSignal.set(0xFFFF0000); // 红色
         runtime.flush();
 
-        // === I4 断言：effect 重跑后节点值已更新 ===
+        // === 断言：effect 重跑后节点值已更新 ===
         Assert.assertEquals("节点 backgroundColor 应为新值", 0xFFFF0000, node.getBackgroundColor());
 
-        // === I4 断言：仅打出 PAINT 级失效 ===
+        // === 断言：仅打出 PAINT 级失效 ===
         Assert.assertTrue("节点应标 selfPaintDirty", node.__isSelfPaintDirty());
         Assert.assertFalse("不应标 selfLayoutDirty", node.__isSelfLayoutDirty());
         Assert.assertFalse("不应标 compositeDirty", node.__isCompositeDirty());
@@ -125,10 +125,10 @@ public class SceneRuntimeTest {
         Assert.assertFalse("不应标 selfPaintDirty", node.__isSelfPaintDirty());
     }
 
-    // ==================== 测试 2：mount builder 只执行一次（I3） ====================
+    // ==================== 测试 2：mount builder 只执行一次 ====================
 
     /**
-     * 验证：mount 的 builder 只执行一次（I3）。
+     * 验证：mount 的 builder 只执行一次。
      * 多次修改 bind 的 signal 并 flush，builder 计数器仍为 1。
      */
     @Test

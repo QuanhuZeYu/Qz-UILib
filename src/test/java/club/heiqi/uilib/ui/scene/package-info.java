@@ -13,8 +13,8 @@
  *
  * <h3>各子包职责（一行）</h3>
  * <ul>
- *   <li>{@code layout/} —— L2 布局数学层（I4/I7/I12/§4.5 不变量，CI 硬门禁）。</li>
- *   <li>{@code node/} —— SceneNode 脏标记 / 失效传播（含 I4 失效级别矩阵 InvalidationLevelMatrixTest）。</li>
+ *   <li>{@code layout/} —— L2 布局数学层（失效四级矩阵 / 干净子树跳过 / 两层坐标不变量，§4.5，CI 硬门禁）。</li>
+ *   <li>{@code node/} —— SceneNode 脏标记 / 失效传播（含失效级别矩阵 InvalidationLevelMatrixTest）。</li>
  *   <li>{@code control/} —— 控件装配结构（按钮 / 列表 / 表格 / 滑块等控件的 SceneNode 装配断言）。</li>
  *   <li>{@code input/} —— 输入路由（hit-test / focus / cursor / overlay dismiss / key mapping）。</li>
  *   <li>{@code integration/} —— 跨子系统 L3 集成（runtime + signal + input + paint 端到端）。</li>

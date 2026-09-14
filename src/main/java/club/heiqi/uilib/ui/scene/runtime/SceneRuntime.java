@@ -49,11 +49,11 @@ import club.heiqi.uilib.util.UiNumbers;
  *
  * <h3>核心职责</h3>
  * <ul>
- *   <li><b>mount</b>：在 Owner 子作用域内执行组件 builder 一次（I3），产物挂到父节点，
+ *   <li><b>mount</b>：在 Owner 子作用域内执行组件 builder 一次（挂载即拥有独立 Owner 作用域），产物挂到父节点，
  *       卸载时自动 removeChild + 回收所有 effect。</li>
  *   <li><b>bind</b>：建 effect 订阅 {@link ReadableSignal}，读值交给 applier 写 SceneNode
- *       属性槽——属性槽 setter 内部自动打出正确失效级别（I4），调用方无需手选级别。</li>
- *   <li><b>flush</b>：委托 {@link ReactiveScheduler#flush()} 帧末统一应用写入 + 重跑脏 effect（I2/I9）。</li>
+ *       属性槽——属性槽 setter 内部自动打出正确失效级别，调用方无需手选级别。</li>
+ *   <li><b>flush</b>：委托 {@link ReactiveScheduler#flush()} 帧末统一应用写入 + 重跑脏 effect（一帧一次 flush）。</li>
  *   <li><b>dispose</b>：递归销毁整棵 Owner 作用域树，回收所有 effect 订阅，并强制恢复已绑定平台光标。</li>
  * </ul>
  */
@@ -88,8 +88,8 @@ public class SceneRuntime implements SceneFontEnvironment {
      * 走各自通道，不发布本 signal。</p>
      *
      * <p>层间通信：引擎纪元（纯 int）→ runtime signal。signal 归 runtime 持有与 set，
-     * 纪元仍归引擎持有（守 I6：layout 层只持 int epoch，不持 signal）。
-     * Computed 记忆化 + setter 去重保证干净帧零开销（守 I7）。</p>
+     * 纪元仍归引擎持有（layout 层只持 int epoch、不持 signal，层间不反向依赖）。
+     * Computed 记忆化 + setter 去重保证干净帧零开销（干净帧不做任何重算）。</p>
      */
     private final Signal<Integer> layoutDoneSignal = Signal.create(Integer.valueOf(0));
 
@@ -461,7 +461,7 @@ public class SceneRuntime implements SceneFontEnvironment {
     }
 
     /**
-     * 挂载一个组件：在 Owner 子作用域内执行组件 builder 一次（信条三 I3），
+     * 挂载一个组件：在 Owner 子作用域内执行组件 builder 一次（挂载即拥有独立 Owner 作用域），
      * builder 产出的 SceneNode 自动 append 到 parent。
      *
      * <p>卸载时（調用返回句柄的 {@link MountHandle#dispose()}）：
@@ -469,7 +469,7 @@ public class SceneRuntime implements SceneFontEnvironment {
      * mount 的根节点自动从 parent 移除（通过 onCleanup 注册的回调）。</p>
      *
      * @param parent  挂载到的父节点（不可为 null）
-     * @param builder 组件构建函数，返回组件根节点（执行一次，I3）
+     * @param builder 组件构建函数，返回组件根节点（每个 Owner 作用域只执行一次）
      * @return 挂载句柄（含根节点引用 + 卸载能力）
      */
     public MountHandle mount(SceneNode parent, Supplier<SceneNode> builder) {
@@ -508,7 +508,7 @@ public class SceneRuntime implements SceneFontEnvironment {
     /**
      * 绑定一个响应式信号到 SceneNode 属性槽。
      *
-     * <h3>失效级别（I4）由 setter 自动打出</h3>
+     * <h3>失效级别由 setter 自动打出</h3>
      * <p>真正的失效级别由 {@link SceneNode} 的强类型属性槽 setter 内部自动决定，
      * 调用方无需手选级别。例如：
      * <ul>
@@ -518,7 +518,7 @@ public class SceneRuntime implements SceneFontEnvironment {
      *   <li>{@code bind(opacitySignal, node::setOpacity)}
      *       → 同理，{@code setOpacity} 内部自动调 {@code markComposite()}。</li>
      * </ul>
-     * 从而降低 I4"打错级别"的风险。失效级别的语义定义见 {@link Invalidation}。</p>
+     * 从而降低"打错级别"的风险。失效级别的语义定义见 {@link Invalidation}。</p>
      *
      * <h3>Effect 归属</h3>
      * <p>若当前处于 {@link Owner} 作用域内（如 mount 的 builder 回调中），effect 归属该作用域，
@@ -834,9 +834,9 @@ public class SceneRuntime implements SceneFontEnvironment {
      * <h3>路 B：批量 applyChildReconcile 一次原子提交</h3>
      * <p>内部 {@link SceneKeyedListReconciler} 用 LIS 算出 finalOrder 后一次性调用
      * {@link SceneNode#applyChildReconcile}，取代旧栈逐项 insertBefore 的副作用驱动。
-     * 容器只被 {@code markSelfLayout} 一次，稳定项零重算由 layout 引擎的几何 equals 闸门坐实（守 I7）。</p>
+     * 容器只被 {@code markSelfLayout} 一次，稳定项零重算由 layout 引擎的几何 equals 闸门坐实。</p>
      *
-     * <h3>I5 隔离</h3>
+     * <h3>追踪隔离（单项变化不触发整列表重协调）</h3>
      * <p>reconcile effect 只订阅 {@code itemsSignal}，协调逻辑包在 {@link Effect#untrack} 内，
      * 项内部读取的 signal 不会回流成整列表依赖——单项变化绝不触发整列表重协调。</p>
      *
@@ -859,7 +859,7 @@ public class SceneRuntime implements SceneFontEnvironment {
         SceneKeyedListReconciler<T> reconciler =
                 new SceneKeyedListReconciler<>(container, keyFn, itemComponent, listOwner);
         // reconcile effect 只订阅 itemsSignal（唯一追踪点）；协调在 untrack 内，
-        // 隔离 item 构建期对内部 signal 的读取，杜绝单项变化触发整列表重协调（守 I5）。
+        // 隔离 item 构建期对内部 signal 的读取，杜绝单项变化触发整列表重协调。
         listOwner.run(() -> Effect.create(() -> {
             java.util.List<T> items = itemsSignal.get();
             Effect.untrack(() -> reconciler.reconcile(items));
@@ -875,7 +875,7 @@ public class SceneRuntime implements SceneFontEnvironment {
      * 误删兄弟，故 show 用零尺寸 anchor 占位 + insertBefore/removeChild 副作用驱动（0/1 项无批量收益）。
      * 详见 {@link SceneConditionalRenderer}。</p>
      *
-     * <h3>I5 隔离 + I7 稳定</h3>
+     * <h3>追踪隔离 + 稳定不重建</h3>
      * <p>effect 只订阅 {@code condition}，内容协调包在 untrack 内；连续两次 true 不重建已挂载内容。</p>
      *
      * @param parent    内容挂载到的父节点（不可为 null，可含其它兄弟）
@@ -906,7 +906,7 @@ public class SceneRuntime implements SceneFontEnvironment {
         };
         SceneConditionalRenderer renderer =
                 new SceneConditionalRenderer(parent, anchor, contentWithEnvironment, condOwner);
-        // effect 只订阅 condition（唯一追踪点）；update 内的内容构建/卸载包在 untrack 内（守 I5）。
+        // effect 只订阅 condition（唯一追踪点）；update 内的内容构建/卸载包在 untrack 内。
         condOwner.run(() -> Effect.create(() -> {
             boolean visible = Boolean.TRUE.equals(condition.get());
             Effect.untrack(() -> renderer.update(visible));
@@ -957,7 +957,7 @@ public class SceneRuntime implements SceneFontEnvironment {
     /**
      * 受控锚定浮层 portal：visible 为 true 时构建 overlay root，并按 trigger 几何定位。
      *
-     * <p>anchorProvider 是 I11 逃生舱①只读几何探针，只返回 host 局部坐标盒，不写节点、不打脏。</p>
+     * <p>anchorProvider 是只读几何探针：只返回 host 局部坐标盒，不写节点、不打脏。</p>
      *
      * @param visible 浮层可见性信号，不可为 null
      * @param content 浮层根节点构建函数，visible 首次变 true 时调用，不可为 null
@@ -1131,7 +1131,7 @@ public class SceneRuntime implements SceneFontEnvironment {
         return overlayHost;
     }
 
-    // ==================== I4a 焦点/键盘委托 ====================
+    // ==================== 焦点/键盘委托 ====================
 
     /**
      * 请求将焦点切换到指定节点（薄委托到 Router → FocusManager）。
@@ -1163,14 +1163,14 @@ public class SceneRuntime implements SceneFontEnvironment {
      * enabled 变化时 effect 重跑，自动进出 Tab 环。Tab 顺序由 FocusManager 按 DOM 前序实时排序，
      * 故 enabled=true 恢复时自然回到原 DOM 位置（不跑末尾）。</p>
      *
-     * <h3>I1 signal-first / I7 Owner 归属</h3>
+     * <h3>signal-first 派生 / Owner 归属</h3>
      * <p>focusable 的动态进出完全经 signal→effect 派生，不命令式。effect 归属规则与 {@link #bind}
      * 一致：当前处于 Owner 作用域内则归属该作用域（随组件卸载一并退订），否则归属 rootOwner。
      * 卸载兜底 cleanup 只登记一次（{@code unregisterFocusable} 幂等），避免 effect 重跑累积 cleanup。</p>
      *
      * <h3>effect body 包 untrack</h3>
      * <p>register/unregister 不读 signal，包 {@link Effect#untrack} 是防御性隔离，确保 effect 唯一
-     * 追踪点只有 {@code enabledSignal}（守 I5）。</p>
+     * 追踪点只有 {@code enabledSignal}。</p>
      *
      * @param node          目标节点
      * @param enabledSignal 是否启用的响应式数据源，true=进 Tab 环，false=退出
@@ -1202,7 +1202,7 @@ public class SceneRuntime implements SceneFontEnvironment {
         return inputRouter.getFocusedNode();
     }
 
-    // ==================== I4c cursor 投影委托 ====================
+    // ==================== cursor 投影委托 ====================
 
     /**
      * 绑定光标后端：创建 cursor effect，订阅 Router 的全局 cursorSignal，
@@ -1213,9 +1213,9 @@ public class SceneRuntime implements SceneFontEnvironment {
      * 绝不碰任何 SceneNode setter。因此不会打任何脏标记，普通 rootOwner effect 天然不污染。
      * 独立 Owner 唯一正当理由可单独 dispose（此处不需要，cursor effect 全生命周期伴随 runtime）。</p>
      *
-     * <h3>信号链：I11 cursor 投影纪律</h3>
+     * <h3>信号链：cursor 投影纪律</h3>
      * <p>Router 写 cursorSignal → cursor effect 订阅它 → 调 backend.apply。
-     * 绝不命令式 setCursor，走 signal→effect 派生（I11）。</p>
+     * 绝不命令式 setCursor，走 signal→effect 派生。</p>
      *
      * <h3>关闭扫尾</h3>
      * <p>同一 backend 还会登记一个 root 生命周期 cleanup；runtime 关闭时经
@@ -1250,7 +1250,7 @@ public class SceneRuntime implements SceneFontEnvironment {
     private ClipboardBackend clipboardBackend;
 
     /**
-     * 绑定平台剪贴板后端（I4c 适配层注入）。
+     * 绑定平台剪贴板后端（由适配层注入；核心只见 {@link ClipboardBackend} 抽象）。
      *
      * <p>未绑定时 {@link #getClipboardBackend()} 返回 null，控件 Ctrl+C/X/V 快捷键静默降级。
      * 与 {@link #bindCursor} 不同：剪贴板是同步读写（帧内快捷键路径），无需 signal 订阅链。</p>
@@ -1340,7 +1340,7 @@ public class SceneRuntime implements SceneFontEnvironment {
 
     /**
      * 帧末批量刷新：委托 {@link ReactiveScheduler#flush()} 统一应用所有待写入 signal
-     * 并重跑所有脏 effect（信条四 I2/I9）。
+     * 并重跑所有脏 effect（帧末一次 flush）。
      */
     public void flush() {
         ReactiveScheduler.get().flush();

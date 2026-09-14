@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.text;
 /**
  * scene 层文本内容解析模式的唯一语义锚。
  *
- * <p>scene 核心（node/layout/paint）因 I10 边界不得 import {@code ui.text.*}，历史上以原始 int
+ * <p>scene 核心（node/layout/paint）因平台/渲染类型止于适配边界的约束不得 import {@code ui.text.*}，历史上以原始 int
  * 编码传递内容模式（0/1/2），三模式语义散落于 paint.TextStyle 常量、SceneNode setter、
  * measurer 接缝与两套 switch（normalizeTextMode / mapTextMode）。本枚举收敛全部语义：</p>
  *

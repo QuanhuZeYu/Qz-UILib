@@ -18,7 +18,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * 内建文字控件清单完备性守卫（字号动态化 I-4，守卫 1a）。
+ * 内建文字控件清单完备性守卫（字号动态化，守卫 1a）。
  *
  * <p>不变量（INV-FONT-1 的静态下限）：{@code ui/scene/control/**} 内每一个「创建用户可见文字」的文件，
  * 必须落进三类之一——</p>

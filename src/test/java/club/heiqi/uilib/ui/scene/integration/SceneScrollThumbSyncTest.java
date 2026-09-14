@@ -28,8 +28,8 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * <p>归类 L3 集成层：依赖 control（SceneScrollContainer/SceneScrollbar）+ runtime（bind/flush/route）
  * + input（滚轮 route）+ layout（maxScrollY/thumb 几何依赖 LayoutBox）多子系统协作。</p>
  *
- * <p>守 I1 signal-first（滚动位置经 attach 内部 scrollSignal 驱动）、I7 GEOMETRY 级滚动、
- * I4 transform 仅标 COMPOSITE（thumb translateY 变化不打 LAYOUT 重排）。</p>
+ * <p>守 signal-first（滚动位置经 attach 内部 scrollSignal 驱动）、GEOMETRY 级滚动、
+ * transform 仅标 COMPOSITE（thumb translateY 变化不打 LAYOUT 重排）。</p>
  */
 public class SceneScrollThumbSyncTest {
 

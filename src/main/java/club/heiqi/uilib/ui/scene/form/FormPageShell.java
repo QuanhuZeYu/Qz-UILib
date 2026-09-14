@@ -49,7 +49,7 @@ import com.github.bsideup.jabel.Desugar;
  * <p><b>零 config 依赖</b>：本类不 import 任何 {@code club.heiqi.config.*}，
  * 主题色由 caller 以 {@link FormTheme} 注入或按来源主题派生。</p>
  *
- * <p><b>零 MC/Forge/GL 依赖（守 I10）</b>：本类禁止 import 任何 Minecraft / Forge / GL 平台类型，
+ * <p><b>零 MC/Forge/GL 依赖（平台类型止于适配边界）</b>：本类禁止 import 任何 Minecraft / Forge / GL 平台类型，
  * 与 scene 栈其余子包一致，保持纯 Java 响应式组合层。</p>
  *
  * <p>滚动受控源经 {@link SceneScrolls#attach} 取得，由 caller 自行消费。</p>

@@ -6,16 +6,16 @@ import java.util.Set;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
- * layout() 返回的不可变结果，携带 I7/I8 测试探针。
+ * layout() 返回的不可变结果，携带布局重算统计探针。
  *
  * <p>本类是 Display List 契约线阶段 1 的产物：把原本散落在 {@link SceneLayoutEngine}
  * 实例字段中的「本次 layout 重算次数 / 重算节点集合 / 约束被迫重算节点集合」探针
- * 打包成 per-call 不可变交付物，使引擎逐步走向无状态化（守干净子树三阶段跳过与不可变交付物，旧 I7/I8）。</p>
+ * 打包成 per-call 不可变交付物，使引擎逐步走向无状态化（守干净子树三阶段跳过与不可变交付物）。</p>
  *
  * <h3>不可变契约</h3>
  * <ul>
- *   <li>{@link #relayoutCount}：本次 layout 中因 selfLayoutDirty 触发的重算次数（I7 语义）。</li>
- *   <li>{@link #relayoutedNodes}：本次 layout 中因 selfLayoutDirty 被重算的节点集合（I7 断言）。</li>
+ *   <li>{@link #relayoutCount}：本次 layout 中因 selfLayoutDirty 触发的重算次数。</li>
+ *   <li>{@link #relayoutedNodes}：本次 layout 中因 selfLayoutDirty 被重算的节点集合。</li>
  *   <li>{@link #constraintRelayoutedNodes}：本次 layout 中因「收到的约束变化」被迫重算自身高度、
  *       但自身未脏的节点集合（深层 fill 节点感知父高变化的探针，与 relayoutedNodes 严格分离）。</li>
  * </ul>
@@ -25,7 +25,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  */
 public final class LayoutResult {
 
-    /** 本次 layout 的重算次数（selfLayoutDirty 触发，I7 语义）。 */
+    /** 本次 layout 的重算次数（selfLayoutDirty 触发）。 */
     private final int relayoutCount;
 
     /** 本次 layout 中因 selfLayoutDirty 被重算的节点集合。 */
@@ -51,17 +51,17 @@ public final class LayoutResult {
         this.constraintRelayoutedNodes = constraintRelayoutedNodes;
     }
 
-    /** @return 本次 layout 的重算次数（I7 测试探针） */
+    /** @return 本次 layout 的重算次数（测试探针） */
     public int getRelayoutCount() {
         return relayoutCount;
     }
 
-    /** @return 因 selfLayoutDirty 被重算的节点集合的不可变视图（I7 测试探针） */
+    /** @return 因 selfLayoutDirty 被重算的节点集合的不可变视图（测试探针） */
     public Set<SceneNode> getRelayoutedNodes() {
         return Collections.unmodifiableSet(relayoutedNodes);
     }
 
-    /** @return 因约束变化被迫重算的节点集合的不可变视图（I7 测试探针） */
+    /** @return 因约束变化被迫重算的节点集合的不可变视图（测试探针） */
     public Set<SceneNode> getConstraintRelayoutedNodes() {
         return Collections.unmodifiableSet(constraintRelayoutedNodes);
     }

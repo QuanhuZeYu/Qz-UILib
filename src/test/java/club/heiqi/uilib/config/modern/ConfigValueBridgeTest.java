@@ -237,7 +237,7 @@ public class ConfigValueBridgeTest {
      * 喂入非空 characterFontRules 后，characterRuleSet 派生态被刷新为非 empty。
      *
      * <p>验证 Bridge 写完 characterFontRules 后调用了 {@link FontConfig#refreshDerivedRuleSet()}，
-     * 守宪章派生态不陈旧。</p>
+     * 守派生态在写入后立即刷新、不得陈旧。</p>
      */
     @Test
     public void characterRuleSetRefreshedAfterFeedingRules() throws Exception {
@@ -380,7 +380,7 @@ public class ConfigValueBridgeTest {
                 .getString(PickerDensityPreferences.CONFIG_PATH));
 
         ConfigValueBridge.applyFromAuthority(persisted.authority());
-        ReactiveScheduler.get().flush();     // 帧末口径（守 I9）
+        ReactiveScheduler.get().flush();     // 帧末口径：写入经调度器批处理，此处 flush 后生效
         assertEquals("Bridge 必须把配置档位回灌进进程级信号", PickerDensityPreference.COMPACT,
                 PickerDensityPreferences.signal().get());
 
@@ -418,7 +418,7 @@ public class ConfigValueBridgeTest {
         assertEquals("solid", persisted.authority().getString(BackdropQualityService.CONFIG_PATH));
 
         ConfigValueBridge.applyFromAuthority(persisted.authority());
-        ReactiveScheduler.get().flush();     // 帧末口径（守 I9）
+        ReactiveScheduler.get().flush();     // 帧末口径：写入经调度器批处理，此处 flush 后生效
         assertEquals("Bridge 必须把配置档位回灌进进程级信号", BackdropQuality.OFF,
                 BackdropQualityService.getInstance().current());
 

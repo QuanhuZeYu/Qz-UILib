@@ -6,17 +6,17 @@ import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 /**
- * scene 渲染出口契约线（架构宪章信条六）。
+ * scene 渲染出口契约线（数据层与渲染层之间唯一的跨线契约）。
  *
  * <p>scene 数据层（layout / paint / node）经 Display List 产出纯数据绘制命令，
  * scene 回放器（ScenePaintReplayer）把这些命令翻译为对本接口的调用。scene 核心
- * 只通过本接口认识渲染层，绝不持有任何具体后端类，从而兑现信条六承诺：换渲染
+ * 只通过本接口认识渲染层，绝不持有任何具体后端类，从而兑现「数据层与渲染层只经契约通信」的承诺：换渲染
  * 后端（Vulkan / Metal / WebGPU / AWT 等）只需另写一份本接口的实现，scene 核心
  * 代码零改动即可移植到任意 Java 程序。</p>
  *
  * <p>本接口的方法全部是平台无关的纯数值绘制指令（坐标、颜色、文本、不透明度、
  * transform 分量、圆角等），不出现任何 GL / Minecraft 类型，也不出现 signal /
- * 组件 / DOM 概念（守不变量 I6）。实现方负责把这些指令翻译成具体平台的绘制调用：
+ * 组件 / DOM 概念（守分层边界：scene 出口只暴露纯数值绘制指令）。实现方负责把这些指令翻译成具体平台的绘制调用：
  * Minecraft 平台的实现是 {@link UiRenderContext}，它把每条指令焊到直接 LWJGL GL 调用上
  * （架构禁令：禁用原版包装类 Tessellator 等）；移植到其它平台只需另写一份实现，
  * 无需触碰 scene 核心。</p>
@@ -76,7 +76,7 @@ public interface UiRenderBackend {
      * 绘制带圆角的表面。
      *
      * <p>第 7 参降级为 {@code int cornerRadius}（uniform 单值），避免 scene 回放器
-     * 反向依赖 {@code ui.style} 包的 {@code ResolvedCornerRadii} 类型（守不变量 I6）。
+     * 反向依赖 {@code ui.style} 包的 {@code ResolvedCornerRadii} 类型（守 scene 回放器不反向依赖样式层类型的分层边界）。
      * render 层实现方负责把该单值转成内部所需的分角圆角结构。</p>
      *
      * @param left 左侧坐标
@@ -94,7 +94,7 @@ public interface UiRenderBackend {
      * 绘制带四角独立圆角的表面（T4a，聊天气泡首/中/尾 12/4 分级）。
      *
      * <p>四角以 4 个 {@code int} 纯数值传递，避免 scene 回放器反向依赖
-     * {@code ResolvedCornerRadii} 类型（守不变量 I6，与 uniform 重载同构）。
+     * {@code ResolvedCornerRadii} 类型（守 scene 回放器不反向依赖样式层类型的分层边界，与 uniform 重载同构）。
      * render 层实现方负责把四角数值转成内部所需的分角圆角结构。</p>
      *
      * <p><b>默认实现（未 override 的旧 backend）：</b>四角一致时退化为 uniform

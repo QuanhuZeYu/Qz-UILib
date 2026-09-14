@@ -3,7 +3,8 @@ package club.heiqi.uilib.ui.scene.host.lwjgl;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 
 /**
- * LWJGL 原生键码 → {@link SceneKey} 映射表（适配层，I10 平台侧端点）。
+ * LWJGL 原生键码 → {@link SceneKey} 映射表（适配层即平台侧端点：平台键码在此终止，
+ * 核心层只见 {@link SceneKey}）。
  *
  * <p>将 LWJGL/LWJGLX {@code Keyboard.KEY_xxx} 原生整型键码映射为平台无关的
  * {@link SceneKey} 枚举。未识别的键码统一返回 {@link SceneKey#UNKNOWN}，

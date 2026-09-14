@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * SceneLayoutEngine 增量布局引擎单元测试。
  *
- * <p>核心验证 I7/I8 的双标记跳过机制：干净子树零重算。
+ * <p>核心验证双标记跳过机制：干净子树零重算。
  * 这是与旧栈 version 闸门全量重算的正面翻转证明。</p>
  */
 public class SceneLayoutEngineTest {
@@ -78,7 +78,7 @@ public class SceneLayoutEngineTest {
     }
 
     // ============================================================
-    // 测试 2：I7 核心铁证 —— 干净兄弟被跳过、不重算
+    // 测试 2：核心铁证 —— 干净兄弟被跳过、不重算
     // ============================================================
 
     /**
@@ -119,7 +119,7 @@ public class SceneLayoutEngineTest {
         // 第二次 layout
         LayoutResult result = engine.layout(root, new Constraints(100));
 
-        // I7 铁证：A 和 C 的 LayoutBox 引用应不变（未被重算，即未进入 performLayout）
+        // 铁证：A 和 C 的 LayoutBox 引用应不变（未被重算，即未进入 performLayout）
         LayoutBox boxA2 = (LayoutBox) a.getCachedLayout();
         LayoutBox boxC2 = (LayoutBox) c.getCachedLayout();
 
@@ -348,7 +348,7 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("root 高度应同步为 32", 32, rootBox2.getHeight());
 
         // leaf 被重算（selfLayoutDirty），但 container/root 仅因几何上传,
-        // 不计入 relayoutCount（保持 I7 语义）
+        // 不计入 relayoutCount（只有自身标脏的节点才重算）
         Assert.assertEquals("重算次数=1（仅 leaf 自身）", 1, result.getRelayoutCount());
         Assert.assertTrue("leaf 在重算集合", result.getRelayoutedNodes().contains(leaf));
         Assert.assertFalse("container 不在重算集合", result.getRelayoutedNodes().contains(container));
@@ -582,10 +582,10 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * 约束高度变化突破双 false 跳过（I7 关键正例）。
+     * 约束高度变化突破双 false 跳过（关键正例）。
      *
      * <p>先 layout(root, (W,100)) 跑干净，再 layout(root, (W,200))，
-     * 约束变化应驱动 root 标脏 → 突破 I7 双 false → root 被重算、height==200。</p>
+     * 约束变化应驱动 root 标脏 → 突破双 false 跳过 → root 被重算、height==200。</p>
      */
     @Test
     public void shouldBreakI7SkipOnConstraintHeightChange() {
@@ -637,7 +637,7 @@ public class SceneLayoutEngineTest {
 
     /**
      * 约束不变不过度失效：连续两次相同 Constraints(W,100) 的 fill root，
-     * 第二次 result.getRelayoutCount() 应为 0（I7 整棵跳过）。
+     * 第二次 result.getRelayoutCount() 应为 0（干净帧整棵跳过）。
      */
     @Test
     public void shouldNotRelayoutOnSameConstraints() {
@@ -659,7 +659,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * I7 兄弟跳过保持：fill root 下挂干净非 fill 兄弟，约束不变时
+     * 干净兄弟跳过保持：fill root 下挂干净非 fill 兄弟，约束不变时
      * 它们 LayoutBox assertSame 复用、不在 result.getRelayoutedNodes() 中。
      */
     @Test
@@ -1051,7 +1051,7 @@ public class SceneLayoutEngineTest {
 
     /**
      * 字体 epoch 变化时，上一帧测量过的文本叶被向上冒泡标脏并重测；
-     * 同时干净的非文本子树不被向下标脏（I7 正向断言）。
+     * 同时干净的非文本子树不被向下标脏（正向断言）。
      *
      * <p>步骤：用可控 epoch 的 stub 跑稳态 → bump epoch → 再 layout，
      * 断言文本叶在重算集合、root 不在重算集合（仅因 descendant 下沉，不计入）。</p>
@@ -1082,13 +1082,13 @@ public class SceneLayoutEngineTest {
         // 文本叶被重算（epoch 失效链向上冒泡标脏）
         Assert.assertTrue("epoch 变化后文本叶应被重算",
                 result.getRelayoutedNodes().contains(textLeaf));
-        // root 仅因 descendant 下沉重定位，不计入重算集合（I7：未向下标脏 root 自身）
+        // root 仅因 descendant 下沉重定位，不计入重算集合（未向下标脏 root 自身）
         Assert.assertFalse("root 不应被计入重算集合（未被向下标脏）",
                 result.getRelayoutedNodes().contains(root));
     }
 
     /**
-     * epoch 失效链不波及无文本子树（I7 正向断言）：
+     * epoch 失效链不波及无文本子树（正向断言）：
      * 纯容器 + 无文本叶在 epoch 变化时不被标脏重算。
      */
     @Test
@@ -1288,7 +1288,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * T6 I7 零重排：稳定布局后改无关 PAINT 级属性（背景色），再 layout，
+     * T6 零重排：稳定布局后改无关 PAINT 级属性（背景色），再 layout，
      * 断言 result.getRelayoutCount()==0（PAINT 级变化不触发布局重排）；
      * 再断言 preferredWidth 不变的连续两帧第二帧 relayoutCount 仍为 0。
      */
@@ -1308,7 +1308,7 @@ public class SceneLayoutEngineTest {
         // 改无关 PAINT 级属性（背景色），不应触发布局重排
         leaf.setBackgroundColor(0xFFFF0000);
         result = engine.layout(root, c);
-        Assert.assertEquals("PAINT 级背景色变化不触发布局重排（I7）", 0, result.getRelayoutCount());
+        Assert.assertEquals("PAINT 级背景色变化不触发布局重排", 0, result.getRelayoutCount());
 
         // preferredWidth 不变的连续两帧，第二帧零重排
         result = engine.layout(root, c);
@@ -1352,7 +1352,7 @@ public class SceneLayoutEngineTest {
      * 稳定后只把<b>父</b>的 preferredWidth 由 0 扩到 100（只标父 selfLayoutDirty，子保持干净）。
      * 父重排时重新定位子：START 下子仍落 x=0、cross 维度因子有 preferredHeight 而 STRETCH 豁免、
      * 尺寸 16×16 不变 → 子盒值完全不变。验证子 LayoutBox 引用被复用、子不在重算集合、子无几何脏。
-     * 这正是几何闸门「值不变即复用引用」的语义，且全程绝不向下递归标脏（I7）。</p>
+     * 这正是几何闸门「值不变即复用引用」的语义，且全程绝不向下递归标脏。</p>
      */
     @Test
     public void cleanFixedChildShouldReuseBoxWhenDirtyParentRelayouts() {
@@ -1470,7 +1470,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * 干净装饰兄弟在约束高变化时绝不被重算（反证 I7 红线）。
+     * 干净装饰兄弟在约束高变化时绝不被重算（干净兄弟零重算红线）。
      *
      * <p>同上树先 layout(root,(200,100)) 跑干净，再 layout(root,(200,200))（仅改高）。
      * 断言 deco 自身未脏、不在 relayoutedNodes、不在 constraintRelayoutedNodes；
@@ -2080,7 +2080,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * 无文本装饰叶宽度依赖约束宽，约束宽变化时应突破 I7 跳过并重算。
+     * 无文本装饰叶宽度依赖约束宽，约束宽变化时应突破干净子树跳过并重算。
      */
     @Test
     public void fillDecorativeLeafShouldRecomputeOnConstraintWidthChange() {
@@ -2136,7 +2136,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * 非 clamp 短文本叶只遇到高度约束变化时，应保持 I7 跳过与缓存引用稳定。
+     * 非 clamp 短文本叶只遇到高度约束变化时，应保持干净子树跳过与缓存引用稳定。
      */
     @Test
     public void nonClampedTextLeafShouldSkipOnHeightOnlyConstraintChange() {
@@ -2595,7 +2595,7 @@ public class SceneLayoutEngineTest {
     }
 
     // ============================================================
-    // flexGrow 权重分配系列（阶段 3：还 2026-06-20 偏离登记的债；编号表已废，见 AGENTS.md 设计取向节）
+    // flexGrow 权重分配系列（阶段 3：偿还 2026-06-20 记录的欠账）
     // ============================================================
 
     /**
@@ -2721,7 +2721,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * T5 ★I7 核心反证：多 grow 子约束变化时干净兄弟不被重算。
+     * T5 ★核心反证：多 grow 子约束变化时干净兄弟不被重算。
      *
      * <p>树 = root(COLUMN,fill)，header(preferredHeight=20)、a(grow=1)、b(grow=1)。
      * 先 layout(root,(200,100))；再 layout(root,(200,160))。断言：
@@ -2938,13 +2938,13 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * M5 ★I7 反证：撞顶重分配后干净装饰兄弟零重算。
+     * M5 ★反证：撞顶重分配后干净装饰兄弟零重算。
      *
      * <p>树 = root(COLUMN,fill)，header(preferredHeight=20 装饰固定)、a(grow=1, maxHeight=50)、
      * b(grow=1)。先 layout(root,(200,300))：freeH=280，第一轮 tentative=140，a 撞顶冻结到 50，
      * b 回流得 230。再 layout(root,(200,300)) 相同约束，断言：① relayoutCount=0、
      * ② header assertSame LayoutBox 复用、③ header 不在 relayoutedNodes。
-     * 证明 freeze do-while 撞顶重分配不破坏 I7 干净帧短路。</p>
+     * 证明 freeze do-while 撞顶重分配不破坏干净帧短路。</p>
      */
     @Test
     public void maxHeightCleanSiblingNotRelayouted() {
@@ -3322,7 +3322,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * A4：alignSelf 改变只重算自身，干净兄弟零重算（I7 反证）。
+     * A4：alignSelf 改变只重算自身，干净兄弟零重算。
      *
      * <p>root(ROW, crossAxisAlign=START, innerH=100)→a(宽20高20, alignSelf=CENTER),
      * b(宽20高20, 默认 AUTO=START)。
@@ -3361,7 +3361,7 @@ public class SceneLayoutEngineTest {
         LayoutBox aBox2 = (LayoutBox) a.getCachedLayout();
         LayoutBox bBox2 = (LayoutBox) b.getCachedLayout();
         Assert.assertEquals("第二帧 a END y=80", 80, aBox2.getY());
-        // I7 反证：b 零重算
+        // 反证：b 零重算
         Assert.assertFalse("b 不在重算集合中（零重算）",
                 result.getRelayoutedNodes().contains(b));
         Assert.assertTrue("a 在重算集合中（自身脏重算）",
@@ -3624,7 +3624,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * G4：margin 改变只重算自身，干净兄弟零重算（I7 反证）。
+     * G4：margin 改变只重算自身，干净兄弟零重算。
      *
      * <p>root(ROW, innerH=100)→a(宽20高20, marginLeft=10), b(宽20高20)。
      * 第一帧 a.x=10（marginLeft 偏移），b.x=30（a 占用 20+10+0=30，b 紧跟）。
@@ -3660,7 +3660,7 @@ public class SceneLayoutEngineTest {
 
         Assert.assertTrue("a 在重算集合（自身 margin 变）",
                 result.getRelayoutedNodes().contains(a));
-        Assert.assertFalse("b 不在重算集合（I7 干净兄弟零重算）",
+        Assert.assertFalse("b 不在重算集合（干净兄弟零重算）",
                 result.getRelayoutedNodes().contains(b));
     }
 
@@ -3873,7 +3873,7 @@ public class SceneLayoutEngineTest {
         Assert.assertEquals("第二帧 b.x=40（a 占用 40，b 紧跟）", 40, boxB2.getX());
         Assert.assertTrue("a 在重算集合（自身 margin 变）",
                 result.getRelayoutedNodes().contains(a));
-        Assert.assertFalse("b 不在重算集合（I7 干净兄弟零重算）",
+        Assert.assertFalse("b 不在重算集合（干净兄弟零重算）",
                 result.getRelayoutedNodes().contains(b));
         Assert.assertEquals("b 零重算（relayoutCount 仅含 a）",
                 1, result.getRelayoutCount());
@@ -4040,7 +4040,7 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * P7：percent 子改变只重算自身，干净兄弟零重算（I7 反证）。
+     * P7：percent 子改变只重算自身，干净兄弟零重算。
      *
      * <p>root(COLUMN, fill, 高=200)→a(percentHeight=50), b(文本"X" 自然高16)。
      * 第一帧：a=100（percent 固定子），b=16（文本 shrink，不在 alloc，下传 UNCONSTRAINED）。
@@ -4075,10 +4075,10 @@ public class SceneLayoutEngineTest {
         LayoutBox bBox2 = (LayoutBox) b.getCachedLayout();
         Assert.assertEquals("第二帧 a=120（percentHeight=60）", 120, aBox2.getHeight());
         Assert.assertEquals("第二帧 b 高不变=16", 16, bBox2.getHeight());
-        // I7 反证：a 重算，b 零重算
+        // 反证：a 重算，b 零重算
         Assert.assertTrue("a 在重算集合（自身 percent 变）",
                 result.getRelayoutedNodes().contains(a));
-        Assert.assertFalse("b 不在重算集合（I7 干净兄弟零重算）",
+        Assert.assertFalse("b 不在重算集合（干净兄弟零重算）",
                 result.getRelayoutedNodes().contains(b));
         Assert.assertEquals("relayoutCount 仅含 a（b 零重算）",
                 1, result.getRelayoutCount());
@@ -4390,11 +4390,11 @@ public class SceneLayoutEngineTest {
     }
 
     /**
-     * L1-5 I7 干净帧：嵌套 grow 树二次 layout 同约束全树 skip。
+     * L1-5 干净帧：嵌套 grow 树二次 layout 同约束全树 skip。
      *
      * <p>root(COLUMN,fill,高200) → X(grow=1,COLUMN) → 孙子(grow=1,文本节点)。
      * 同约束 layout 两次，断言第二次全树 skip（relayoutCount=0，孙子 LayoutBox 引用复用），
-     * 守 I7 干净帧短路。参考现有 I7 干净帧测试写法（assertSame + getRelayoutCount）。</p>
+     * 守干净帧短路。参考现有干净帧测试写法（assertSame + getRelayoutCount）。</p>
      */
     @Test
     public void nestedGrowTreeCleanFrameFullSkipOnSameConstraints() {
@@ -4424,7 +4424,7 @@ public class SceneLayoutEngineTest {
 
         Assert.assertEquals("同约束第二次 relayoutCount=0（全树 skip）",
                 0, result.getRelayoutCount());
-        Assert.assertSame("孙子 LayoutBox 引用复用（I7 干净帧）",
+        Assert.assertSame("孙子 LayoutBox 引用复用（干净帧）",
                 grandchildBox1, grandchildBox2);
     }
 

@@ -79,7 +79,7 @@ public class ModConfigGui extends GuiScreen {
      *
      * <p>保存回调链路：{@link ModernConfigEntry#createScreen:86-87} 已在 bootstrap 之后
      * 挂 {@code ConfigSaveListener}，监听 BATCH_SAVE 触发 ConfigValueBridge 回灌 +
-     * FontService.reload（守 I1）。</p>
+     * FontService.reload（回灌只经 signal，不命令式改 UI）。</p>
      *
      * @param parentScreen 父界面（同时作为 bootstrap 失败回退目标）
      * @return 新栈配置屏；本次切换理论上不返回 parent（除非 mcDataDir/qzuilib-modern.yaml 解析错）

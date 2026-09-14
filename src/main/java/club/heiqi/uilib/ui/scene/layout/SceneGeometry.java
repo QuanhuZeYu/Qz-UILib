@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * 场景只读几何工具。
  *
- * <p>本类只读取 {@link LayoutBox} 与 parent 链，不写节点、不标脏，属于 I11 逃生舱①只读几何测量。</p>
+ * <p>本类只读取 {@link LayoutBox} 与 parent 链，不写节点、不标脏——几何测量只读不写，是无副作用的测量逃生舱。</p>
  */
 public final class SceneGeometry {
 

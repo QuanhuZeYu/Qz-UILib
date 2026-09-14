@@ -17,14 +17,14 @@
  * 或不可变常量，输出只能是回调（{@code Runnable}/{@code Consumer}）。
  * 禁止可变容器、禁止直接传 {@code SceneNode}。</p>
  *
- * <h3>R3：组件函数只执行一次（I3）</h3>
+ * <h3>R3：组件函数只执行一次</h3>
  * <p>{@code create} 返回的 {@code Supplier} 体只执行一次：只允许建 SceneNode 树 +
  * 设静态属性 + {@code rt.bind/bindText/on/focusable}。禁止在 Supplier 体内读 signal
  * 当前值（{@code signal.get()}）做 if 分支建树——动态部分必须落到 bind。</p>
  *
  * <h3>R4：外观随状态变化只能经 rt.bind(computed(...))</h3>
  * <p>外观随状态变化只能通过 {@code rt.bind(computed(...), setter)} 派生，
- * 禁止在 {@code rt.on} 的 handler 里直接调任何 SceneNode 的 {@code setXxx}（I1/I11）。
+ * 禁止在 {@code rt.on} 的 handler 里直接调任何 SceneNode 的 {@code setXxx}。
  * handler 只允许 {@code signal.set} 或调 props 回调。</p>
  *
  * <h3>R5：交互态只能读 interactionState 暴露的 signal</h3>
@@ -54,7 +54,7 @@
  * {@link club.heiqi.uilib.ui.scene.control.SceneCheckbox}、
  * {@link club.heiqi.uilib.ui.scene.control.SceneToggle}）必须<b>零内部状态</b>——
  * 当前值由外部只读 signal 驱动，交互时只经 {@code onChange} 回调把「期望的新值」交还外部，
- * 控件自身<b>绝不翻转或缓存值</b>（守 R1/R5/I11，避免双向状态源不一致）。</p>
+ * 控件自身<b>绝不翻转或缓存值</b>（守 R1/R5 与 handler 只上抛、不直接改状态的边界，避免双向状态源不一致）。</p>
  *
  * <p>背景：若控件自持 {@code boolean checked} 字段并在 handler 里自己翻转，则同时存在
  * 「控件内部值」与「外部 signal 值」两个状态源，二者一旦失步（外部 set 与内部翻转时序错位、
@@ -77,7 +77,7 @@
  * 杜绝「内部选中态」与「外部 signal」双源。激活落点：CLICK / Enter / Space 一律
  * {@code onSelect.accept(targetIndex)}，由外部决定是否真正 set 回 selectedIndex signal；
  * 方向键导航时 handler 内读 {@code selectedIndex.get()} 算相邻下标后 onSelect 上抛
- * （读 signal 合法，I11 只禁写节点属性槽不禁读 signal），并经 {@code rt.requestFocus}
+ * （读 signal 合法：handler 边界只禁写节点属性槽，不禁读 signal），并经 {@code rt.requestFocus}
  * 移动焦点（受控逃生舱合法）。</p>
  *
  * <h3>R9：受控文本输入控件必须零内部状态</h3>
@@ -86,7 +86,7 @@
  * {@link club.heiqi.uilib.ui.reactive.ReadableSignal}{@code <String> value}
  * <b>唯一驱动</b>；字符输入/退格时控件 handler 在<b>纯函数</b>内读 {@code value.get()}、
  * 算出期望的新字符串，只经 {@code onChange.accept(newString)} 上抛<b>真实 String</b>，
- * 控件<b>绝不自己缓存或修改 value</b>（守 R1/R5/I11/R9）。这是 R7 从二值布尔、R8 从 N 值下标
+ * 控件<b>绝不自己缓存或修改 value</b>（守 R1/R5/R9 与 handler 只上抛、不直接改状态的边界）。这是 R7 从二值布尔、R8 从 N 值下标
  * 到任意 String 的推广——同一灵魂（外部唯一源 + 期望值上抛），杜绝「内部文本缓冲」与
  * 「外部 signal」双源。</p>
  *
@@ -112,13 +112,13 @@
  * {@link club.heiqi.uilib.ui.scene.control.SceneTab}），其内容区的页切换<b>必须</b>落成
  * N 个独立 {@code rt.show(contentPanel, Computed(activeIndex==i), tabPanels.get(i))}——
  * 每页一个 show，condition 是该页是否活动的派生 {@link club.heiqi.uilib.ui.reactive.Computed}，
- * 由 show 引擎按 condition 挂载/卸载内容（守 I5 收窄、I7 稳定不重建）。</p>
+ * 由 show 引擎按 condition 挂载/卸载内容（挂卸收窄在内容区，稳定子树不重建）。</p>
  *
  * <p><b>★ 双重禁止</b>：①<b>绝不</b>在 {@code create} 的 {@code Supplier} 体内
  * {@code activeIndex.get()} 做 {@code if} 分支建树（违 R3：组件函数只执行一次，分支建树会把
  * 「当前活动页」固化进唯一一次建树，后续切页失灵）；②<b>绝不</b>命令式
  * {@code clearChildren() + 重新 append} 切换内容（旧栈 {@code DocumentTabControl.mountActiveTab}
- * 老路，违 I1/I11：UI 变化只经 signal→show 派生，不靠命令式重挂）。各页 builder 必须是
+ * 老路，违「UI 变化只经 signal→show 派生、不靠命令式重挂」的声明式纪律）。各页 builder 必须是
  * Props 传入的独立 {@link java.util.function.Supplier}，分别交各自的 show，<b>不得合并</b>。</p>
  *
  * <p>这是「UI = f(state)」声明式范式在「内容区切换」场景的落地：内容区是 activeIndex 的纯函数派生，

@@ -12,7 +12,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *   <li>{@link #getRoot()}：获取组件产出的根 {@link SceneNode}</li>
  *   <li>{@link #fontSize(int)} / {@link #fontSize(ReadableSignal)}：控件字号的统一入口</li>
  *   <li>{@link #clearFontSize()}：撤回本句柄的字号声明（目标回落下一层）</li>
- *   <li>{@link #dispose()}：卸载组件、递归回收该作用域内所有 effect 并自动从父节点摘除（I3）</li>
+ *   <li>{@link #dispose()}：卸载组件、递归回收该作用域内所有 effect 并自动从父节点摘除
+ *       （挂载即拥有独立 Owner 作用域，卸载随作用域一并清理）</li>
  * </ul>
  *
  * <h3>入口语义（契约 §4「控件字号入口」）</h3>

@@ -10,7 +10,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 中央事务日志与时间旅行契约测试（信条四）。
+ * 中央事务日志与时间旅行契约测试。
  * 覆盖：日志记录、按 signal 合并、净变化过滤、有界环形淘汰、游标 undo/redo、
  * 未来分支截断、effect/computed 重算、事务标签（审计路径）、开关与容量。
  */

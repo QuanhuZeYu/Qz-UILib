@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 生命周期作用域（信条三：组件挂载/卸载）。
+ * 生命周期作用域（组件挂载/卸载）。
  *
  * <p>Owner 形成一棵树：每个组件挂载时建立一个子 Owner，组件内创建的 effect 与子组件 Owner 都归属于它。
  * 卸载时 {@link #dispose()} 递归清理整棵子树——先 dispose 子 Owner、再释放本作用域 effect、最后运行 cleanup 回调，
@@ -14,7 +14,7 @@ import java.util.Map;
  *
  * <p><b>自动归属</b>：{@link #run(Runnable)} 在 {@link ReactiveContext} 当前 owner 上下文中执行 body，
  * 期间新建的 {@link Effect} 与子 {@link Owner} 自动 attach 到本作用域，无需手动传递。这是「组件函数只跑一次、
- * 动态行为落在 effect 里、且 effect 不泄漏」（I3）的机制基础。</p>
+ * 动态行为落在 effect 里、且 effect 不泄漏」的机制基础。</p>
  */
 public final class Owner {
 
@@ -61,7 +61,7 @@ public final class Owner {
     /**
      * 在本作用域内创建一个 effect，生命周期绑定到此 Owner。
      *
-     * @param body effect 体（I3：动态行为的唯一落点）
+     * @param body effect 体（动态行为的唯一落点）
      * @return 创建的 effect（通常不需要直接持有）
      */
     public Effect createEffect(Runnable body) {

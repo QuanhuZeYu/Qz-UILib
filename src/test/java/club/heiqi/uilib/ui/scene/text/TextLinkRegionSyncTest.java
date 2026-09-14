@@ -11,7 +11,7 @@ import org.junit.Test;
  * 两套 TextLinkRegion 编译期字段同步守卫（审查报告附录）。
  *
  * <p>scene.text.TextLinkRegion 与 ui.text.TextLinkRegion 是接缝两侧的平行结构
- * （scene 核心守 I10 不 import 渲染层类型），adapter 逐字段映射转换。任一侧
+ * （scene 核心不 import 渲染层类型），adapter 逐字段映射转换。任一侧
  * 增删字段若不同步，adapter 会静默丢字段或编译期取不到值——本测试锁死
  * 字段集与 getter 出口的逐位一致。</p>
  */

@@ -34,7 +34,7 @@ import club.heiqi.uilib.ui.scene.text.TextLinkRegion;
  * 下沉到位置变化节点：selfPaintDirty==false 时复用 fragment、仅用新 offset 重新叠加坐标；
  * selfPaintDirty==true 时正常重生成 fragment。</p>
  *
- * <h3>I8 缓存复用（单节点 PaintFragment 按 selfPaintDirty 判定）</h3>
+ * <h3>fragment 缓存复用（单节点 PaintFragment 按 selfPaintDirty 判定）</h3>
  * <ul>
  *   <li><b>selfPaintDirty==false && cache存在 → 复用 fragment</b>：包括 geometry 脏场景（仅 offset 不同），
  *       也包括 paint/geometry 双 false 场景。复用后仍递归子节点（每帧 O(N) 遍历重拼 display list
@@ -97,20 +97,20 @@ public class ScenePaintEngine {
     // ==================== 内部递归 ====================
 
     /**
-     * DFS 递归绘制单节点，实施 I8 双标记判定 + geometryDirty 下沉 + 相对坐标方案 +
+     * DFS 递归绘制单节点，实施 fragment 复用双标记判定 + geometryDirty 下沉 + 相对坐标方案 +
      * Phase 3B 合成级 opacity/transform 通路。
      *
      * <p>所有命令直接写入共享 {@code plan}（由调用方传入），方法返回本子树重生成
      * fragment 数。子节点串行递归调用本方法，沿用同一共享 plan，保证 DFS 前序
      * z-order 与 PUSH/POP 嵌套天然正确。</p>
      *
-     * <h3>Phase 4C 合成传导（守宪章信条五：合成级动画绝不触碰布局/绘制层）</h3>
+     * <h3>Phase 4C 合成传导（合成级动画绝不触碰布局/绘制层）</h3>
      * <ul>
      *   <li><b>transform（方案甲完整矩阵）</b>：{@code node.getTransform()} 非恒等时，在
      *       「本节点命令 + 全部后代命令」最外层包 PUSH_TRANSFORM/POP_TRANSFORM 边界命令，
      *       携带绝对屏幕边界 + 7 个浮点分量（translate/rotate/scale/origin），由 GL 矩阵栈做
      *       origin 三明治顶点变换。transform <b>绝不进 fragment</b>，每帧实时从 node 读取，
-     *       守 I6：回放器只见 primitive getter，零 Transform/SceneNode 认知。</li>
+     *       回放器只见 primitive getter，零 Transform/SceneNode 认知（渲染层不认识 scene 类型）。</li>
      *   <li><b>opacity（D1，group 栈）</b>：{@code node.getOpacity()} {@code < 1.0} 时，在
      *       「本节点命令 + 全部后代命令」外层包 PUSH_OPACITY/POP_OPACITY 边界命令，由本递归骨架
      *       前后两句保证严格配对。回放器顺序转译为 {@code pushGroupOpacity/popGroupOpacity}，
@@ -121,7 +121,7 @@ public class ScenePaintEngine {
      * <p>opacity/transform <b>绝不存进 PaintFragment</b>——fragment 只持纯几何相对坐标命令。
      * opacity/transform 每帧实时从 node 读取（transform→PUSH_TRANSFORM 边界命令、opacity→边界命令），
      * 故纯 opacity/transform 变化帧 {@code selfPaintDirty==false} → fragment 引用复用、
-     * 零重建（{@code regeneratedFragmentCount} 不增）。这是信条五铁律的实现根基。</p>
+     * 零重建（{@code regeneratedFragmentCount} 不增）。这是合成级动画不触碰布局/绘制层的实现根基。</p>
      *
      * @param node    当前节点
      * @param plan    共享绘制计划，所有命令直接写入此 plan
@@ -154,7 +154,7 @@ public class ScenePaintEngine {
         // 门控：needTransform && (needClip || preferTransformLayer) → PUSH_TRANSFORM_LAYER
         //       （FBO 离屏图层：先 identity 清晰栅格化，贴回时再施加 transform——rotate 下 scissor
         //       轴对齐正确裁剪 + 文字先栅格化后整体动画，不经字形逐顶点重采样）
-        //       needTransform && 其余 → PUSH_TRANSFORM（GL 矩阵纯顶点变换，零重栅格化守信条五）
+        //       needTransform && 其余 → PUSH_TRANSFORM（GL 矩阵纯顶点变换，零重栅格化，不触发绘制层重建）
         Transform transform = node.getTransform();
         boolean needTransform = box != null && transform != null && !transform.isIdentity();
         boolean needClip = box != null && node.isClipWindow();
@@ -211,7 +211,7 @@ public class ScenePaintEngine {
                             transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
                 }
             } else {
-                // 无 clip：走 GL 矩阵纯顶点变换（零重栅格化，守信条五铁律）
+                // 无 clip：走 GL 矩阵纯顶点变换（零重栅格化，不触碰布局/绘制层）
                 plan.addPushTransform(nodeAbsX, nodeAbsY, nodeAbsX + width, nodeAbsY + height,
                         transform.translateX, transform.translateY, transform.rotateDegrees,
                         transform.scaleX, transform.scaleY, transform.originXRatio, transform.originYRatio);
@@ -254,7 +254,7 @@ public class ScenePaintEngine {
             // 本节点 paint 属性未变，复用缓存 fragment（但用新的 offset）
             // 这包括 selfGeometryDirty==true（布局位置/presentation offset 变）与
             // compositeDirty==true（opacity/transform 变）场景：
-            // 均只重定位/重合成不重绘 —— 纯 composite 帧 fragment 引用不变，守信条五铁律
+            // 均只重定位/重合成不重绘 —— 纯 composite 帧 fragment 引用不变（合成级动画不触碰布局/绘制层）
             plan.addFragment(cached, nodeAbsX, nodeAbsY);
         } else {
             // 需要重新生成 fragment（命令使用相对坐标，不含 presentation offset/opacity/transform）
@@ -270,7 +270,7 @@ public class ScenePaintEngine {
         // ★ scrollable 视口注入纵向滚动偏移：传给后代的 Y 基准改为 nodeAbsY - scrollOffsetY，
         // 使后代内容整体上移 scrollOffsetY 像素显示（向下为正语义：scrollOffsetY 越大越往下滚、
         // 内容越往上移）。★只在 paint 骨架注入，绝不在 layout 改子 y——否则会把 scrollOffset
-        // 烤进 LayoutBox 导致滚动即重排破 I7。CLIP 窗口（上方 needClip 分支）用不含 offset 的
+        // 烤进 LayoutBox 导致滚动即重排。CLIP 窗口（上方 needClip 分支）用不含 offset 的
         // nodeAbsY 固定不动，后代用含 offset 的基准平移落在固定窗口内，超出被裁。后代 fragment
         // 复用通路自动正确：selfPaintDirty==false 时 addFragment 用的 nodeAbsY 已含注入偏移，
         // 复用 fragment + 新偏移与现有 geometry 重定位同构，无需特殊处理。

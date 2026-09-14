@@ -25,7 +25,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 /**
  * {@link SimpleListFieldRenderer} 端到端 integration 测试（L3：runtime + signal + input）。
  *
- * <p>覆盖装配结构、编辑写回 I5 keyed 复用（D2 回环守卫）、增删节点稳定、
+ * <p>覆盖装配结构、编辑写回 keyed 复用（D2 回环守卫）、增删节点稳定、
  * 外部 reset 回流守卫（D2 reset 语义）。</p>
  *
  * <h3>测试搭台说明</h3>
@@ -136,7 +136,7 @@ public class SimpleListFieldRendererTest {
         Assert.assertNotNull("应渲染添加按钮", addButton(simpleListRoot));
     }
 
-    // ==================== B6. 编辑写回 + I5 keyed 复用（D2 回环守卫） ====================
+    // ==================== B6. 编辑写回 + keyed 复用（D2 回环守卫） ====================
 
     /** typeText 改第 2 行 → onFieldEdit 收到 ["a","bX","c"]，第 1/3 行节点复用未重建。 */
     @Test
@@ -159,7 +159,7 @@ public class SimpleListFieldRendererTest {
         Assert.assertEquals("编辑第 2 行写回",
                 Arrays.asList("a", "bX", "c"), draftValue);
 
-        // I5 keyed 复用：第 1/3 行节点未重建
+        // keyed 复用：第 1/3 行节点未重建
         Assert.assertSame("第 1 行节点复用未重建", row0Before, rowAt(simpleListRoot, 0));
         Assert.assertSame("第 3 行节点复用未重建", row2Before, rowAt(simpleListRoot, 2));
         // D2 回环守卫：编辑后第 2 行输入节点也未重建（投影相等 → 跳过重建）
@@ -297,7 +297,7 @@ public class SimpleListFieldRendererTest {
         Assert.assertEquals("首行 a", "a", textInputValue(rowAt(simpleListRoot, 0)));
         Assert.assertEquals("末行 b", "b", textInputValue(rowAt(simpleListRoot, 1)));
 
-        // draft 镜像 signal 仍空（I3：局部 prefill 不写 adapter signal）
+        // draft 镜像 signal 仍空（局部 prefill 不写 adapter signal）
         Object draftValue = adapter.draftSignal("font.sort").get();
         Assert.assertTrue("draft signal 值应为 List", draftValue instanceof List);
         Assert.assertEquals("draftSignal 仍空（局部 prefill）", 0, ((List<?>) draftValue).size());

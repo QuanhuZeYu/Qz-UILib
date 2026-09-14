@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.scene.control.search.PickerDensityPreference;
  *       只改它的值，<b>不重建</b>它，也不重建任何面板（改档位无需关闭重开配置页或选择器）。</li>
  *   <li><b>帧末口径</b>：写入口 {@link #applyConfigured(String)} 经
  *       {@link club.heiqi.uilib.ui.reactive.ReactiveScheduler} 批处理，与仓库内所有 signal 写入同源
- *       （守 I9「一帧一写入合并」）；宿主帧末 flush 后新值生效并驱动下游重派生。</li>
+ *       （一帧内的多次写入合并为一次刷新）；宿主帧末 flush 后新值生效并驱动下游重派生。</li>
  *   <li><b>失效通道</b>：{@code null} / 空白 / 未知名称一律回落 {@link PickerDensityPreference#AUTO}
  *       （= 现状档），并留下 WARN —— 配置坏值不得让 UI 起不来，也不得静默吞掉。</li>
  * </ul>

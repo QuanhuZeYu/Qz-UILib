@@ -62,7 +62,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <h3>键盘步进（focusable + KEY_DOWN，离散提交 committing=true，不走 draggingValue）</h3>
  * <p>←/↓ 减、→/↑ 加（步长 = step>0?step:(max-min)/100）；PageUp 加 10×、PageDown 减 10×；Home→min、End→max。
- * 每次读 {@code value.get()} 算相邻值（读 signal 合法 I11），onChange(量化+clamp 后的 newV, committing=true)。</p>
+ * 每次读 {@code value.get()} 算相邻值（读 signal 合法：handler 边界只禁写节点属性槽，不禁读 signal），onChange(量化+clamp 后的 newV, committing=true)。</p>
  *
  * <h3>契约</h3>
  * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 不可变常量 + 回调 / R3 组件函数只执行一次 /

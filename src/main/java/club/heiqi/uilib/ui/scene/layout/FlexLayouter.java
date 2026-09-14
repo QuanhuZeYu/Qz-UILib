@@ -94,7 +94,7 @@ class FlexLayouter {
      * （不持 SizingCalculator 引用）。步骤 C STRETCH 改子高发生在锁定之后，步骤 D 复用
      * 此入参值不回算，天然斩断自反馈放大——从注释约束升格为类型约束。</p>
      *
-     * <h3>I7 铁律</h3>
+     * <h3>干净子树铁律（几何闸门 + 不向下递归标脏）</h3>
      * <p>仍走 {@code newBox.equals(childBox)} 几何闸门 + {@code markGeometryDirty}：
      * 仅在 LayoutBox 值确实变化时才替换缓存并标记 geometry 脏。<b>绝不调用任何子节点的
      * {@code markSelfLayout}，绝不向下递归触碰后代。</b>padding/gap 等容器属性变化
@@ -275,7 +275,7 @@ class FlexLayouter {
             }
 
             LayoutBox newBox = new LayoutBox(nx, ny, nw, nh);
-            // 仅在位置或尺寸确实变化时才替换，保持缓存引用稳定（I7 几何闸门）
+            // 仅在位置或尺寸确实变化时才替换，保持缓存引用稳定（几何闸门）
             if (!newBox.equals(cb)) {
                 child.setCachedLayout(newBox);
                 // 位置/尺寸变化 → geometry 级标记，让 paint 遍历感知 offset 需更新
@@ -330,7 +330,7 @@ class FlexLayouter {
      * 的回退逻辑集中在此处，positionChildren 步骤 C 的交叉轴 switch 统一消费本方法
      * 的返回值，不直接读父级 crossAxisAlign。AUTO 回退父级保证零回归。</p>
      *
-     * <h3>I7 不变量</h3>
+     * <h3>不变量</h3>
      * <p>纯交叉轴定位读取，不改 buildChildConstraints 下传约束，
      * childConstraintsWouldChange 不受影响。</p>
      *

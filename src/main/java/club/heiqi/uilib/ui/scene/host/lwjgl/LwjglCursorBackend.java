@@ -9,7 +9,7 @@ import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * 宿主系统光标后端实现 —— I4c 适配层。
+ * 宿主系统光标后端实现 —— 平台适配层实现（核心只认 {@link CursorBackend} 抽象）。
  *
  * <h3>设计理由：委托宿主能力而非自写反射桥</h3>
  * <p>中性系统宿主已含完整的 {@code SdlReflectionBridge}
@@ -17,12 +17,12 @@ import java.util.Map;
  * 自写一份轻量版既重复又有遗漏风险（漏某个光标常量、漏主线程调度、漏去重逻辑）。</p>
  *
  * <h3>SceneCursor → UiCursor 映射</h3>
- * <p>映射表在适配层完成（不在核心包），守 I10：核心包不 import UiCursor。</p>
+ * <p>映射表在适配层完成（不在核心包）：核心包不 import {@code UiCursor}，平台类型止于适配边界。</p>
  *
  * <h3>静默降级</h3>
  * <p>中性系统宿主内部已实现全失败 no-op 降级
  * （Display 创建探测失败 / 反射解析失败 / 运行时光标应用失败均静默降级），
- * 本类直接继承此保证，满足 I4c 叫停关口⑤。</p>
+ * 本类直接继承此保证（全失败静默降级，不抛异常打断输入链路）。</p>
  */
 public class LwjglCursorBackend implements CursorBackend {
 

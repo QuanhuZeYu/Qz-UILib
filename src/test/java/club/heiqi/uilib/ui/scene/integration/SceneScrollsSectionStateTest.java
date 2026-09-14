@@ -31,8 +31,8 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * <p>归类 L3 集成层：依赖 reactive（Signal/Computed）+ runtime（bind/flush）+ input（滚轮 route）
  * + layout（maxScrollY 依赖 viewport LayoutBox）多子系统协作。</p>
  *
- * <p>守 I1 signal-first（scroll state 全程经 signal 驱动，不命令式写 viewport）、
- * I7 GEOMETRY 级滚动（viewport scrollable，滚动不重排）。</p>
+ * <p>守 signal-first（scroll state 全程经 signal 驱动，不命令式写 viewport）、
+ * GEOMETRY 级滚动（viewport scrollable，滚动不重排）。</p>
  */
 public class SceneScrollsSectionStateTest {
 

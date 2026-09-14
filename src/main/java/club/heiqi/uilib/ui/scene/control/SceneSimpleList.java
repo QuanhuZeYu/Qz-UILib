@@ -174,7 +174,7 @@ public final class SceneSimpleList {
          * 是否启用行拖拽排序。false（默认）表示不渲染拖拽把手、不响应拖拽（向后兼容）；
          * true 时每行行首渲染拖拽把手，被拖行中心越过相邻行中线时重排。拖拽业务瞬态存 handler
          * 局部闭包变量；被拖行浮起偏移由 owner-scoped signal 投影；重排经 {@code items.set → keyed diff}
-         * 平移节点（I5）。
+         * 平移节点。
          */
         private final boolean draggable;
 
@@ -686,10 +686,10 @@ public final class SceneSimpleList {
      * 局部闭包变量；{@code dragOffsetSig} 仅投影被拖行浮起偏移。POINTER_DOWN 只记起点，
      * 达到激活阈值后重采样受控顺序并 requestPointerCapture；
      * MOVE 在被拖行中心越过相邻行中线时算目标 index，与 dragId 当前 index 不同则 moveItem 重排（id 保留，引用移动），
-     * 重排经 {@code items.set → keyed diff} 平移节点（守 R4：不改节点 setXxx；I5：id 不变复用节点）；
+     * 重排经 {@code items.set → keyed diff} 平移节点（守 R4：不改节点 setXxx；keyed diff：id 不变复用节点）；
      * UP/CANCEL 清 dragging 释放 capture。</p>
      *
-     * <p>坐标系（I12 两层）：treeRootAbsY 不可直接读，由 {@code (rawY - handleLocalY) - absBox(handle,0,0).y}
+     * <p>坐标系（两层：raw 屏幕绝对 / local 当前节点局部）：treeRootAbsY 不可直接读，由 {@code (rawY - handleLocalY) - absBox(handle,0,0).y}
      * 反推（handle 为 currentNode 时 {@code localY = rawY - absBox(handle,treeRootAbs).y}，二者配合消去 rootAbs）。
      * 再据此把各行子节点 layout Y 平移到屏幕系与 rawPointerY 同系比对，生产（rootAbs≠0）与测试（rootAbs=0）通用。</p>
      *

@@ -24,7 +24,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 /**
  * ScenePaintEngine + ScenePaintReplayer 单元测试。
  *
- * <p>核心验证：I8 缓存复用（干净兄弟 fragment 零重生成）、命令生成正确性、
+ * <p>核心验证：缓存复用（干净兄弟 fragment 零重生成）、命令生成正确性、
  * Replayer 翻译到 UiRenderContext 的映射正确性。</p>
  */
 public class ScenePaintEngineTest {
@@ -86,7 +86,7 @@ public class ScenePaintEngineTest {
     }
 
     // ============================================================
-    // 测试 2：I8 铁证 —— 干净兄弟 fragment 被复用
+    // 测试 2：铁证 —— 干净兄弟 fragment 被复用
     // ============================================================
 
     /**
@@ -125,12 +125,12 @@ public class ScenePaintEngineTest {
         // 第二次 paint
         PaintResult result = paintEngine.paint(root);
 
-        // I8 铁证：A 和 C 的 fragment 引用不变（零重生成）
+        // 铁证：A 和 C 的 fragment 引用不变（零重生成）
         PaintFragment fragA2 = (PaintFragment) a.getCachedPaint();
         PaintFragment fragC2 = (PaintFragment) c.getCachedPaint();
 
-        Assert.assertSame("I8: A 的 fragment 应被复用（引用相同）", fragA1, fragA2);
-        Assert.assertSame("I8: C 的 fragment 应被复用（引用相同）", fragC1, fragC2);
+        Assert.assertSame("A 的 fragment 应被复用（引用相同）", fragA1, fragA2);
+        Assert.assertSame("C 的 fragment 应被复用（引用相同）", fragC1, fragC2);
 
         // 验证只重新生成了 1 个 fragment（B）
         Assert.assertEquals("重新生成 fragment 数", 1, result.getRegeneratedFragmentCount());
@@ -505,7 +505,7 @@ public class ScenePaintEngineTest {
             Assert.assertEquals("命令[" + i + "] text", cmd1.getText(), cmd2.getText());
         }
 
-        // BLOCK-1 锚点 3：零重生成（I8 缓存命中，plan 完整）
+        // BLOCK-1 锚点 3：零重生成（缓存命中，plan 完整）
         Assert.assertEquals("第二帧零重生成", 0, result.getRegeneratedFragmentCount());
     }
 

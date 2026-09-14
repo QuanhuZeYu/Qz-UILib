@@ -22,7 +22,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <p><b>零 config 依赖</b>：本类只吃 {@link ReadableSignal} / {@link Runnable} /
  * {@link FormTheme}，不感知任何 config 业务类型。handler 只写 signal 或调 Runnable
- * （守 I1/I11）；create 体只跑一次（守 R3）。</p>
+ * （不直接改节点属性）；create 体只跑一次（守 R3）。</p>
  *
  * <pre>
  * row (ROW, preferredHeight, gap, TOOLBAR 表面)

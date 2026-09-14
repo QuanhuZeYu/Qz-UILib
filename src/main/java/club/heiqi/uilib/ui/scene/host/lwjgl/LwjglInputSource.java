@@ -257,7 +257,7 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
                     ctrl, shift, alt, meta, now));
         }
 
-        // === I4d 失焦边沿差分：lastWindowFocused==true && cur==false → 合成 CANCEL ===
+        // === 失焦边沿差分：lastWindowFocused==true && cur==false → 合成 CANCEL ===
         // 在 MOVE/按钮/滚轮之后、封板之前 push（一帧内若同时失焦+有其他事件，CANCEL 最后到达语义合理）
         if (lastWindowFocused && !curWindowFocused) {
             // 坐标用当前帧 poll 的 curX/curY（当前指针位置），mods 全 false
@@ -307,7 +307,7 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
     /**
      * 宿主 keyTyped 回调入口 —— 将键盘按下事件推入 builder 缓冲。
      *
-     * <h3>I4b 帧中途 push 语义</h3>
+     * <h3>帧中途 push 语义</h3>
      * <p>与 {@link #drainFrame()} 内 poll 差分共享同一 {@code builder}（单线程顺序 push 无冲突）：
      * 帧中途 keyTyped 推入 KEY/TEXT 事件 → 帧末 drainFrame poll pointer 再 push → 统一封板。</p>
      *
@@ -323,7 +323,8 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      * <ul>
      *   <li><b>external 模式</b>：文本完全交给 lwjgl3ify {@code onTextEvent} → {@link #pushText}，此处不产 TEXT</li>
      *   <li><b>降级模式</b>：surrogate-aware 累积——高代理项暂存、低代理项与暂存 high 组合成完整 emoji String，
-     *       BMP 可打印字符直接 push（守 I1 契约 ofText 物理上不携带修饰键）</li>
+     *       BMP 可打印字符直接 push（守住 {@code ofText} 契约：TEXT 事件物理上不携带修饰键，
+     *       修饰键只随 KEY 事件传递）</li>
      * </ul>
      *
      * @param typedChar     MC GuiScreen.keyTyped 传入的字符（'\0' 表示无字符）
@@ -558,7 +559,7 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      *
      * <p>等价于原宿主基类构造内 {@code new LwjglCursorBackend()} 路径，行为零变；
      * 由 {@code AbstractSceneHostWidget} 通过 {@link CursorBackendProvider} 接口调用，
-     * 使基类不再认识具体平台类（守 I10）。</p>
+     * 使基类不再认识具体平台类（平台类型止于适配边界，基类不依赖平台侧端点）。</p>
      *
      * @return 新的 LWJGL 光标后端实例
      */
@@ -571,7 +572,7 @@ public class LwjglInputSource implements PlatformInputSource, KeyboardTextInputS
      * 创建本平台对应的系统剪贴板后端 —— {@link ClipboardBackendProvider} 实现。
      *
      * <p>由 {@code AbstractSceneHostWidget} 通过 {@link ClipboardBackendProvider} 接口调用，
-     * 使基类不再认识具体平台类（守 I10）。后端内部全失败静默降级。</p>
+     * 使基类不再认识具体平台类（平台类型止于适配边界，基类不依赖平台侧端点）。后端内部全失败静默降级。</p>
      *
      * @return 新的 LWJGL 剪贴板后端实例
      */

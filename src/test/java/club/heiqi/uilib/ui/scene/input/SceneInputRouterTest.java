@@ -312,7 +312,7 @@ public class SceneInputRouterTest {
         Assert.assertTrue("btnA/btnB 叶子不应收 CLICK（CLICK 已合成到 LCA=root）", log.isEmpty());
     }
 
-    // ===== T16：dispatch 零标脏 I7 核验 =====
+    // ===== T16：dispatch 零标脏核验 =====
 
     /**
      * 构造树 + layout + 清脏 → DFS 收集每节点 7 探针存 before →
@@ -512,10 +512,10 @@ public class SceneInputRouterTest {
         Assert.assertEquals("指针偏移为负不应命中", 0, log.size());
     }
 
-    // ===== I12：localPointer 注入正确性（两层坐标） =====
+    // ===== localPointer 注入正确性（raw 与 absoluteBox 不得混比） =====
 
     /**
-     * I12 localPointer 注入：rootAbs≠0 时，
+     * localPointer 注入：rootAbs≠0 时，
      *   rawPointer = 屏幕绝对（含 rootAbs），evt.getRawPointerX/Y 与 ctx.getRawPointerX/Y 一致
      *   localPointer = rawPointer - absoluteBox(currentNode, treeAbs)，由 ctx.getLocalPointerX/Y 每级重算
      *   absoluteBox(node, treeAbs) 返回 node 屏幕绝对（含 treeAbs），故 local = raw - node屏幕绝对 = node 真局部
@@ -555,7 +555,7 @@ public class SceneInputRouterTest {
     }
 
     /**
-     * I12 向后兼容：rootAbs=0 且 root layout 在原点时，
+     * 向后兼容：rootAbs=0 且 root layout 在原点时，
      * raw == ctxRaw，local = raw - absoluteBox(child,0,0)（host 局部系，rootAbs=0 时同屏幕绝对），既有 handler 行为不变。
      */
     @Test
@@ -588,7 +588,7 @@ public class SceneInputRouterTest {
     }
 
     /**
-     * I12 CLICK 合成也注入 localPointer：rootAbs≠0 时 CLICK 事件 localPointer 正确。
+     * CLICK 合成也注入 localPointer：rootAbs≠0 时 CLICK 事件 localPointer 正确。
      */
     @Test
     public void shouldInjectLocalPointerInSynthesizedClick() {
@@ -613,7 +613,7 @@ public class SceneInputRouterTest {
     }
 
     /**
-     * I12 CANCEL 块也注入 localPointer：rootAbs≠0 时 CANCEL 事件 localPointer 正确。
+     * CANCEL 块也注入 localPointer：rootAbs≠0 时 CANCEL 事件 localPointer 正确。
      */
     @Test
     public void shouldInjectLocalPointerInCancel() {

@@ -49,7 +49,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *   <li>R3：create 体只跑一次（建树 + chrome bind）。</li>
  *   <li>R4：外观经 rt.bind/bindComputed 派生；构造期只捕获主题信号，不解引用未求值的 Computed。</li>
  *   <li>R13：expanded 由 primitive 持有独立可写 Signal，本类不派生。</li>
- *   <li>I5：候选项 keyed diff 在 primitive 内完成。</li>
+ *   <li>候选项 keyed diff（按 key 复用/增删）在 primitive 内完成。</li>
  *   <li>零 config 依赖：不 import 任何 {@code club.heiqi.config.*}。</li>
  * </ul>
  */

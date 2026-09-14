@@ -166,7 +166,7 @@ public class CharacterRuleFieldRendererTest {
         Assert.assertNull("原 valid", valid.getErrorMessage());
         CharacterRuleItem invalid = valid.withSelector("XY");
         Assert.assertNotNull("改成无效 selector 后 errorMessage 出现", invalid.getErrorMessage());
-        Assert.assertEquals("id 保持稳定（I5）", valid.getId(), invalid.getId());
+        Assert.assertEquals("id 保持稳定", valid.getId(), invalid.getId());
 
         CharacterRuleItem back = invalid.withSelector("a");
         Assert.assertNull("改回有效后 errorMessage 消失", back.getErrorMessage());
@@ -278,7 +278,7 @@ public class CharacterRuleFieldRendererTest {
         CharacterRuleItem base = CharacterRuleItem.fromRaw("a=Font");
         CharacterRuleItem withEmptySegments = base.withSelector(",,");
         Assert.assertNotNull("withSelector 全段空 errorMessage 非空", withEmptySegments.getErrorMessage());
-        Assert.assertEquals("id 保持稳定（I5）", base.getId(), withEmptySegments.getId());
+        Assert.assertEquals("id 保持稳定", base.getId(), withEmptySegments.getId());
     }
 
     /** 取单条规则经 CharacterRuleItem 派生的 errorMessage。 */

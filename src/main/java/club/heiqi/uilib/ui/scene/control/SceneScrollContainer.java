@@ -45,8 +45,8 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <h3>守不变量</h3>
  * <ul>
- *   <li><b>I1 signal-first</b>：滚动位置经 scrollSignal 驱动，不命令式写节点。</li>
- *   <li><b>I7 GEOMETRY 级滚动</b>：viewport {@code scrollable=true}，滚动不重排。</li>
+ *   <li><b>signal-first</b>：滚动位置经 scrollSignal 驱动，不命令式写节点。</li>
+ *   <li><b>GEOMETRY 级滚动</b>：viewport {@code scrollable=true}，滚动不重排。</li>
  *   <li><b>R1 纯静态工厂</b>：零实例字段，无状态。</li>
  *   <li><b>外观唯一写入者</b>：默认路径的 background/border/borderWidth/cornerRadius/backdrop/
  *       surfaceElevation 全归 {@link SceneSurfaceBinder}（GROUP 角色配方）；显式实色路径由静态

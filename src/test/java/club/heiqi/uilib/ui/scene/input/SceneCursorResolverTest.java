@@ -5,7 +5,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * SceneCursorResolver 纯算法单元测试（I4c cursor 投影）。
+ * SceneCursorResolver 纯算法单元测试（cursor 投影）。
  *
  * <p>覆盖：祖先链级联解析（叶节点声明→返回自身 / 叶无父有→返回父 / 都无→DEFAULT / null→DEFAULT）。</p>
  */

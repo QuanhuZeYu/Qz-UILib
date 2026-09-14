@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <h3>核心不变量</h3>
  * <ul>
  *   <li><b>只读</b>：仅调 {@link SceneNode#__getParent()} + {@link SceneNode#getCursor()}，
- *       绝不写任何节点状态/标脏（I7 零标脏）。</li>
+ *       绝不写任何节点状态/标脏（零标脏）。</li>
  *   <li><b>纯算法无状态</b>：所有方法 static，不持任何字段。</li>
  *   <li><b>祖先链级联解析</b>：沿 {@code hoveredNode} 的 {@code __getParent()} 链向根查找，
  *       返回首个声明 cursor（非 null）的节点声明的值；都无声明返回 {@link SceneCursor#DEFAULT}。</li>

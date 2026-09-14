@@ -28,7 +28,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 /**
  * {@link CharacterRuleFieldRenderer} 端到端 integration 测试（L3：runtime + signal + input）。
  *
- * <p>覆盖装配结构（三栏 + 添加按钮）、I5 keyed 复用（编辑第 2 行 selector 时第 1/3 行节点不重建）、
+ * <p>覆盖装配结构（三栏 + 添加按钮）、keyed 复用（编辑第 2 行 selector 时第 1/3 行节点不重建）、
  * D2 reset 守卫（控件自写回投影相等跳过重建）、add/delete 行为、无效行错误文本透出。</p>
  *
  * <h3>结构探针</h3>
@@ -134,11 +134,11 @@ public class CharacterRuleFieldRendererIntegrationTest {
         Assert.assertNotNull("应渲染添加按钮", findAddButton(findControlRoot(card)));
     }
 
-    // ==================== I5 keyed 复用 + D2 回环守卫 ====================
+    // ==================== keyed 复用 + D2 回环守卫 ====================
 
     /**
      * typeText 改第 2 行 selector → onFieldEdit 收到含新 selector 的列表；
-     * 第 1/3 行节点未重建（I5 keyed）；第 2 行 selectorInput 节点也未重建（D2 回环守卫）。
+     * 第 1/3 行节点未重建（keyed）；第 2 行 selectorInput 节点也未重建（D2 回环守卫）。
      */
     @Test
     public void editSelectorWritesBackAndKeepsOtherRowsStable() throws Exception {
@@ -160,7 +160,7 @@ public class CharacterRuleFieldRendererIntegrationTest {
         Assert.assertEquals("编辑第 2 行 selector 写回",
                 Arrays.asList("a=FontA", "bX=FontB", "c=FontC"), draftValue);
 
-        // I5 keyed 复用：第 1/3 行节点未重建
+        // keyed 复用：第 1/3 行节点未重建
         Assert.assertSame("第 1 行节点复用未重建", row0Before, rowAt(viewport, 0));
         Assert.assertSame("第 3 行节点复用未重建", row2Before, rowAt(viewport, 2));
         // D2 回环守卫：编辑后第 2 行 selector 输入节点也未重建

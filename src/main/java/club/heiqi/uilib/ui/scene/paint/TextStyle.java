@@ -9,7 +9,7 @@ import java.util.Objects;
  * 包含渲染所需的最小样式字段。所有字段 final，构造后不可变。</p>
  *
  * <p>内容解析模式以 {@link club.heiqi.uilib.ui.scene.text.SceneTextMode} 枚举承载（scene 核心不
- * import {@code ui.text.*}，守 I10）；历史 int 编码构造器/取值器保留兼容，{@code TEXT_MODE_*}
+ * import {@code ui.text.*}——数据层不依赖渲染/样式层类型）；历史 int 编码构造器/取值器保留兼容，{@code TEXT_MODE_*}
  * 常量与 {@code SceneTextMode.getCode()} 逐位对齐（编译期守卫见 SceneTextModeTest）。</p>
  *
  * <p>后续预留扩展：字重（fontWeight）、字体族（fontFamily）、行高（lineHeight）、阴影（textShadow）等。</p>

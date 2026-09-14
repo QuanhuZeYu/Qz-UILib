@@ -37,7 +37,8 @@ public final class SceneScrolls {
      * handler 使用 {@link SceneGeometry#maxScrollY(SceneNode)} 读取 GEOMETRY 级几何，按
      * {@code current - wheelDelta} 计算下一位置，仅当 clamp 后位置变化时写 signal 并停止冒泡。</p>
      *
-     * <p>该方法遵守 I1 signal-first、I7 GEOMETRY 级滚动不重排、I11 逃生舱①只读几何约束。</p>
+     * <p>该方法遵守：handler 只写 signal 不改节点属性；滚动是 GEOMETRY 级失效，绝不触发重排；
+      * 几何测量只读 {@link SceneGeometry#maxScrollY(SceneNode)}，不写节点、不标脏。</p>
      *
      * @param runtime 场景运行时
      * @param viewport 滚动视口节点
@@ -71,7 +72,8 @@ public final class SceneScrolls {
      * handler 读 {@code scrollOffsetSignal} 当前值，按 {@code current - wheelDelta} 计算下一位置，
      * clamp 后经 {@code setScrollOffset} 回调写入，仅当位置变化时停止冒泡。</p>
      *
-     * <p>该方法遵守 I1 signal-first、I7 GEOMETRY 级滚动不重排、I11 逃生舱①只读几何约束。</p>
+     * <p>该方法遵守：handler 只写 signal 不改节点属性；滚动是 GEOMETRY 级失效，绝不触发重排；
+      * 几何测量只读 {@link SceneGeometry#maxScrollY(SceneNode)}，不写节点、不标脏。</p>
      *
      * @param runtime 场景运行时
      * @param viewport 滚动视口节点（须先 setScrollable(true)）

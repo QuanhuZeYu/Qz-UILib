@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
 /**
  * SceneAutocompletePrimitive L3 集成测试 —— 验证浮层显隐信号链、键盘导航、选中、portal 挂卸、
- * expanded effect 驱动与键集正交（守 R13 + R10/R11 + I5 keyed diff）。
+ * expanded effect 驱动与键集正交（守 R13 + R10/R11 + keyed diff）。
  *
  * <p>覆盖：
  * <ul>
@@ -334,7 +334,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertEquals("未 hover 的 item[1] 仍透明", ITEM_BG_DEFAULT, overlayItem(1).getBackgroundColor());
     }
 
-    // ==================== 契约 3：filtered 随 value 动态变化（I5 keyed diff） ====================
+    // ==================== 契约 3：filtered 随 value 动态变化（keyed diff） ====================
 
     /** 打字 Ari→Calibri：filtered 切换，item 节点按 keyed diff 增删（不重建整个 listbox）。 */
     @Test

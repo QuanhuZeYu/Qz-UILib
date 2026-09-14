@@ -19,7 +19,7 @@ import org.junit.Test;
 /**
  * 分层契约守护测试。
  *
- * <p>把架构关键不变量里反复靠人工 grep + 交接口述守护的分层铁律（I1-I9 旧编号，含义以本类断言为准），
+ * <p>把架构关键不变量里反复靠人工 grep + 交接口述守护的分层铁律（含义以本类断言为准），
  * 资产化为可执行、可在 CI 阻断合并的源码扫描断言。复用 {@code Lwjgl3ifyInputBackendTest}
  * 已验证的 {@code Files.walk("src/main/java")} 静态扫描范式，无需真机 / GUI 依赖。</p>
  *
@@ -71,7 +71,7 @@ public class LayerContractGuardTest {
             "TextLayoutService.java", "DefaultFontRendererAdapter.java"));
 
     /**
-     * 守护 I6 依赖方向：数据层（响应式）不得静态 import 控件层（{@code ui.control}）。
+     * 守护分层依赖方向：数据层（响应式）不得静态 import 控件层（{@code ui.control}）。
      *
      * <p>旧组件层与 DOM 层已删除；保留数据层反向 import 守线，避免响应式基础设施穿透控件层。</p>
      */
@@ -81,7 +81,7 @@ public class LayerContractGuardTest {
         violations.addAll(collectImportViolations(REACTIVE_PACKAGE, IMPORT_UI_CONTROL));
 
         Assert.assertTrue(
-                "数据层不得 import 控件层 ui.control（I6 依赖方向）：" + violations,
+                "数据层不得 import 控件层 ui.control：" + violations,
                 violations.isEmpty());
     }
 

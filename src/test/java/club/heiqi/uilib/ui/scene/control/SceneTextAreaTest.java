@@ -370,7 +370,7 @@ public class SceneTextAreaTest {
     }
 
     /**
-     * 点击指定绝对坐标，可指定 rootAbs（验证 I12 三层坐标）。
+     * 点击指定绝对坐标，可指定 rootAbs（覆盖 rootAbs≠0 的局部坐标换算）。
      * rootAbs≠0 时，传入的 absX/absY 应已含 rootAbs（即屏幕绝对坐标），hitTester 内部 nodeAbs 也含 rootAbs，命中正确。
      *
      * <p>白盒回退（精确 localX / 自定义坐标，§7.1判据2）：精确行列 caret 定位需按 content 绝对坐标 + 行高 + 字符宽推算 absX/absY，
@@ -1551,10 +1551,10 @@ public class SceneTextAreaTest {
         }
     }
 
-    // ==================== I12：rootAbs≠0 时点击 caret 定位不偏移 ====================
+    // ==================== rootAbs≠0 时点击 caret 定位不偏移（raw 与绝对坐标不得混比） ====================
 
     /**
-     * I12 坐标系对齐：rootAbsX/Y≠0 时，点击 TextArea 行1第2个字符后，
+     * 坐标系对齐：rootAbsX/Y≠0 时，点击 TextArea 行1第2个字符后，
      * caret 仍定位到 row=1 col=2（prefix="bb"），与 rootAbs=0 时一致。
      *
      * <p>修复前 SceneTextAreaPrimitive 用 ev.getPointerX/Y()（raw，含 rootAbs）与

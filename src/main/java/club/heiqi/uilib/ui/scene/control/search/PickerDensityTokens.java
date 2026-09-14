@@ -98,9 +98,9 @@ public final class PickerDensityTokens {
     /** 列/行间距上限（逻辑 px）。 */
     public static final int CELL_GAP_MAX = 10;
     /**
-     * cellW 宽度下限的实测字符样本（4 字符实测宽；度量口径同源，见 P5 I-5）。
+     * cellW 宽度下限的实测字符样本（4 字符实测宽；与其他度量项口径同源）。
      *
-     * <p>语义 = {@code cellW >= 实测 4 字符宽} 的"防零宽"下界（I-3 原始语义）。标签的
+     * <p>语义 = {@code cellW >= 实测 4 字符宽} 的"防零宽"下界（防零宽下界的原始语义）。标签的
      * <b>可读宽度</b>由 {@link #LABEL_BUDGET_EM} 表达并同样取 {@code max}，
      * 两者都是 cellW 的下界分量、不互相替代。</p>
      */

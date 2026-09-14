@@ -21,7 +21,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 /**
  * Phase 2 三声明式基石（bindText / forEach / show）验收测试 —— Phase 2 终审判据。
  *
- * <p>核心是坐实 I7（稳定项零重算）：列表结构变化时，未变的稳定项既不进入 layout 引擎的
+ * <p>核心是坐实稳定项零重算：列表结构变化时，未变的稳定项既不进入 layout 引擎的
  * 重算集合（{@code result.getRelayoutedNodes}），其 {@code cachedLayout} 引用也保持不变。</p>
  *
  * <h3>flush 时机约定</h3>
@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * 是「最近一帧」语义：每次 {@code layout()} 调用刷新（见 SceneLayoutEngineTest「第二次 layout 重算次数=0」）。
  * 因此 C 组先 layout 一帧达稳态，再结构变化后 layout 一帧，探针只反映增量。</p>
  *
- * <h3>I7 断言不在约束变化帧做</h3>
+ * <h3>零重算断言不在约束变化帧做</h3>
  * <p>root 约束变化会 {@code markSelfLayout(root)} 污染重算集合，故 C 组全程保持 Constraints 不变跨帧。</p>
  */
 public class SceneDeclarativePrimitivesTest {
@@ -264,10 +264,10 @@ public class SceneDeclarativePrimitivesTest {
         }
     }
 
-    // ==================== C. forEach 的 I7 终审（最关键） ====================
+    // ==================== C. forEach 的稳定项零重算终审（最关键） ====================
 
     /**
-     * C1：I7 终审——末尾插入一项后，稳定项 a/b/c 零重算且 cachedLayout 引用不变。
+     * C1：零重算终审——末尾插入一项后，稳定项 a/b/c 零重算且 cachedLayout 引用不变。
      *
      * <p>步骤：
      * <ol>
@@ -317,12 +317,12 @@ public class SceneDeclarativePrimitivesTest {
         // 第二帧：同一约束再 layout（探针刷新为本帧增量）
         LayoutResult result = engine.layout(root, constraints);
 
-        // === I7 铁证 1：稳定项不进入重算集合 ===
+        // === 铁证 1：稳定项不进入重算集合 ===
         Assert.assertFalse("稳定项 a 不应重算", result.getRelayoutedNodes().contains(nodeA));
         Assert.assertFalse("稳定项 b 不应重算", result.getRelayoutedNodes().contains(nodeB));
         Assert.assertFalse("稳定项 c 不应重算", result.getRelayoutedNodes().contains(nodeC));
 
-        // === I7 铁证 2：稳定项 cachedLayout 引用不变（复用，未重算） ===
+        // === 铁证 2：稳定项 cachedLayout 引用不变（复用，未重算） ===
         Assert.assertSame("a 的 cachedLayout 应复用", boxA1, nodeA.getCachedLayout());
         Assert.assertSame("b 的 cachedLayout 应复用", boxB1, nodeB.getCachedLayout());
         Assert.assertSame("c 的 cachedLayout 应复用", boxC1, nodeC.getCachedLayout());
@@ -440,7 +440,7 @@ public class SceneDeclarativePrimitivesTest {
     }
 
     /**
-     * D3：验证 condition 连续两次 true（true→set(true)）时 content 是同一对象引用（未重建，守 I7）。
+     * D3：验证 condition 连续两次 true（true→set(true)）时 content 是同一对象引用（未跨真假边界，不重建）。
      */
     @Test
     public void showShouldNotRebuildContentOnConsecutiveTrue() {
@@ -460,7 +460,7 @@ public class SceneDeclarativePrimitivesTest {
         // 记录首次挂载的 content 节点
         SceneNode contentBefore = parent.__getChildren().get(0);
 
-        // 再次 set(true)：条件未跨真假边界，已挂载不应重建（守 I7）
+        // 再次 set(true)：条件未跨真假边界，已挂载不应重建
         cond.set(true);
         runtime.flush();
 

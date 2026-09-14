@@ -459,7 +459,7 @@ public class LwjglInputSourceTest {
         Assert.assertEquals("首帧后的正常帧应产事件", 1, events.size());
     }
 
-    // ==================== I4b 组 K：pushKeyTyped ====================
+    // ==================== 组 K：pushKeyTyped ====================
 
     /** drain 一帧并返回键盘事件列表 */
     private List<SceneKeyEvent> drainKeyEvents() {
@@ -627,7 +627,7 @@ public class LwjglInputSourceTest {
 
     @Test
     public void k8_textEventDoesNotCarryMods() {
-        // ofText 恒不带修饰键（I1 既定契约）
+        // ofText 恒不带修饰键（既定契约）
         drainFrame();
         reader.advanceTime();
 
@@ -664,7 +664,7 @@ public class LwjglInputSourceTest {
         Assert.assertTrue("DEL (0x7F) 不可打印，不应产 TEXT", textEvents.isEmpty());
     }
 
-    // ==================== I4d 组 N：失焦边沿合成 CANCEL ====================
+    // ==================== 组 N：失焦边沿合成 CANCEL ====================
 
     /**
      * N1：windowFocused true→false（失焦边沿）→ drainFrame 产出 CANCEL pointer 事件。

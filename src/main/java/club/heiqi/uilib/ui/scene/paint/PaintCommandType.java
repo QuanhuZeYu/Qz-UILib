@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.paint;
 /**
  * 绘制命令类型枚举，定义 Display List 中每条绘制命令的语义类型。
  *
- * <p>渲染层根据命令类型选择对应的绘制操作，不感知任何上层概念（宪章信条六/I6）。
+ * <p>渲染层根据命令类型选择对应的绘制操作，不感知任何上层概念。
  * 每条命令仅携带构建期固化的数据，回放期零节点反查。</p>
  *
  * <p>当前仅包含"矩形+文本"切片所需的最小命令集，后续按需扩展。</p>
@@ -21,7 +21,7 @@ public enum PaintCommandType {
      * 玻璃是"背景被改色"，节点的半透明填充色要叠在玻璃之上，才是 iOS 那层"气泡即玻璃"；
      * 顺序反了会把玻璃盖住（等价没接）。</p>
      *
-     * <p>后端不支持该增强能力时静默不绘（宪章信条六：契约不含 backdrop，能力经门面探测）。
+     * <p>后端不支持该增强能力时静默不绘（契约不含 backdrop 平台类型，能力经门面探测）。
      * 命令携带 effect 引用属不可变值对象，随 fragment 复用安全。</p>
      */
     BACKDROP,
@@ -47,8 +47,8 @@ public enum PaintCommandType {
      *
      * <p>渲染层操作：在指定坐标按命令携带的 {@code List<TextSegment>} 段样式
      * （颜色/字重/斜体/下划线/删除线/§k 混淆/链接）绘制整行，基准字号取命令
-     * {@code textStyle.getFontSize()}。段流是 font 层不可变数据（守 I6：
-     * 零节点反查，与 TEXT 同构）。与 TEXT 互斥：节点同时设文本与段流时段流优先。</p>
+     * {@code textStyle.getFontSize()}。段流是 font 层不可变数据（零节点反查，与 TEXT 同构）。
+     * 与 TEXT 互斥：节点同时设文本与段流时段流优先。</p>
      */
     SEGMENTS,
 
@@ -117,7 +117,7 @@ public enum PaintCommandType {
      * <p>仅当节点 transform 非恒等时由绘制引擎产出；恒等变换走快速路径不产生本命令。
      * 命令携带绝对屏幕区域（left/top/right/bottom，origin 按 ratio 解析交给渲染层）+
      * rotate/scale/origin 纯数值字段，<b>绝不进 fragment</b>，每帧从 node 实时读
-     * （保持 L1 零重建，守信条五铁律）。</p>
+     * （纯 composite 变化帧不动 fragment，保持 L1 零重建）。</p>
      */
     PUSH_TRANSFORM,
 
@@ -140,8 +140,8 @@ public enum PaintCommandType {
      *
      * <p>仅当节点 transform 非恒等<b>且</b>有 clip（isClipWindow）时由绘制引擎产出此命令
      * （而非 {@link #PUSH_TRANSFORM}），以 FBO 离屏层解决 rotate 下 scissor 矩形裁剪失效。
-     * 无 clip 的 transform 走 {@link #PUSH_TRANSFORM} 纯 GL 矩阵路径（零重栅格化，守信条五）。
-     * 命令携带绝对屏幕区域 + 7 个浮点分量，全 primitive（守 I6），绝不进 fragment。</p>
+     * 无 clip 的 transform 走 {@link #PUSH_TRANSFORM} 纯 GL 矩阵路径（零重栅格化，不触碰布局/绘制层）。
+     * 命令携带绝对屏幕区域 + 7 个浮点分量，全 primitive（不含 scene 侧类型），绝不进 fragment。</p>
      */
     PUSH_TRANSFORM_LAYER,
 

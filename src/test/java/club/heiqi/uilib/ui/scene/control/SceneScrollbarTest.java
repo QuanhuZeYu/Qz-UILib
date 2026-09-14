@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
- * SceneScrollbar 单元测试 —— 验证派生几何算法、失效级别（I4 双轨核对 / COMPOSITE 级零重排）、
+ * SceneScrollbar 单元测试 —— 验证派生几何算法、失效级别（脏标记探针与行为双轨核对 / COMPOSITE 级零重排）、
  * B1 无溢出隐藏、B2 拖动 + track page、B3 resize 更新、C5 首帧零高、主题派生默认配色
  * （idle=mutedForeground+中性 alpha、hover/drag=foreground 更强档）与显式色完全覆盖主题。
  *
@@ -398,7 +398,7 @@ public class SceneScrollbarTest {
                 setup.scrollbar.thumb().getPreferredHeight());
     }
 
-    // ==================== 验收 5：滚动零重排（COMPOSITE 级）+ I4 双轨探针断言 ====================
+    // ==================== 验收 5：滚动零重排（COMPOSITE 级）+ 失效级别双轨探针断言 ====================
 
     @Test
     public void scrollShouldOnlyChangeTransformNotHeight() {

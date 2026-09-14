@@ -18,7 +18,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *     metrics = PickerMetrics.derive(rt, logicalBox, panelFontSize, density, membersRows)
  * </pre>
  * <p>本类<b>不接收</b> GUI Scale、不接收物理分辨率、不缓存跨帧结果 —— 三个输入任一变化即重派生
- * （P5 I-6「无静态快照」）。</p>
+ * （无静态快照）。</p>
  *
  * <h3>auto 求解（P5 §1.4 + 标签宽度预算，规范性）</h3>
  * <pre>

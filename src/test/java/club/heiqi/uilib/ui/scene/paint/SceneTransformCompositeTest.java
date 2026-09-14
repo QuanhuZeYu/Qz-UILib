@@ -21,9 +21,9 @@ import club.heiqi.uilib.ui.scene.node.Transform;
  *
  * <h3>测试目标</h3>
  * <ul>
- *   <li>T1-T3：纯 transform 变化帧零重排 + 零 fragment 重建（信条五铁律）</li>
+ *   <li>T1-T3：纯 transform 变化帧零重排 + 零 fragment 重建</li>
  *   <li>T4：阳性对照 —— 真实 paint/layout 脏变化时计数 &gt;0（防假阴性）</li>
- *   <li>T5：I6 静态守线 —— ScenePaintReplayer.java 源文件不含 Transform/UiTransform/SceneNode import</li>
+ *   <li>T5：静态守线 —— ScenePaintReplayer.java 源文件不含 Transform/UiTransform/SceneNode import</li>
  *   <li>T6：命令序列 —— 非恒等 transform 节点产出 PUSH_TRANSFORM/POP_TRANSFORM 配对且携带正确分量</li>
  * </ul>
  */
@@ -99,7 +99,7 @@ public class SceneTransformCompositeTest {
     // ================================================================
 
     /**
-     * T3：模拟 60 帧旋转动画，每帧均无重排无 fragment 重建（信条五铁律大规模验证）。
+     * T3：模拟 60 帧旋转动画，每帧均无重排无 fragment 重建（大规模验证）。
      */
     @Test
     public void t3_sixty_framesRotateAnimationShouldNeverRegenerate() {
@@ -173,13 +173,13 @@ public class SceneTransformCompositeTest {
     }
 
     // ================================================================
-    // T5：I6 静态守线 —— ScenePaintReplayer.java 无 Transform import
+    // T5：静态守线 —— ScenePaintReplayer.java 无 Transform import
     // ================================================================
 
     /**
      * T5：读取 ScenePaintReplayer.java 源文件，断言不含 Transform/UiTransform/SceneNode import 行。
      *
-     * <p>这是 I6「replayer 零 scene/DOM 认知」的静态守线。精确匹配 import 语句行（行首 import ），
+     * <p>这是「replayer 零 scene/DOM 认知」的静态守线。精确匹配 import 语句行（行首 import ），
      * 避免注释中合法提及这些类名时误判。</p>
      */
     @Test

@@ -4,7 +4,7 @@ package club.heiqi.uilib.ui.reactive;
  * 追踪当前响应式执行上下文：
  * <ul>
  *   <li>当前正在执行的 {@link Effect}——实现 {@link Signal#get()} 的自动依赖注册；</li>
- *   <li>当前激活的 {@link Owner} 作用域——实现新建 effect 的自动归属（信条三：组件挂载/卸载）。</li>
+ *   <li>当前激活的 {@link Owner} 作用域——实现新建 effect 的自动归属（组件挂载/卸载）。</li>
  * </ul>
  */
 final class ReactiveContext {

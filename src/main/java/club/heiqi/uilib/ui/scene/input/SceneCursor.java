@@ -1,7 +1,7 @@
 package club.heiqi.uilib.ui.scene.input;
 
 /**
- * 新栈光标样式枚举 —— I4c cursor 投影能力。
+ * 新栈光标样式枚举 —— cursor 投影能力的取值域（组件声明 → 祖先链解析 → 平台后端应用）。
  *
  * <h3>设计意图</h3>
  * <p>值照抄旧栈 {@code club.heiqi.uilib.ui.base.props.UiCursor}，

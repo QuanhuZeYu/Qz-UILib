@@ -17,7 +17,7 @@ import java.util.Set;
  * {@link ValidationState}，收成静态工具方法。数据模型（{@code KeyValueRow}/{@code ValidationError}/
  * {@code ValidationErrorType}）已独立为同包顶级类型，校验逻辑独立成可单测的纯函数。</p>
  *
- * <h3>为何放 control 包（守 R12 / I6）</h3>
+ * <h3>为何放 control 包（守 R12 与包依赖边界）</h3>
  * <p>校验只依赖主类的公共数据模型（纯 POJO），不触碰 runtime/input/node/paint，放 control 包与
  * 宿主 {@link SceneKeyValueMap} 同包，可直接以简单名引用公共数据类型，不引入任何新的非法依赖方向。
  * 本类只承担「校验算法」，不夹控件渲染或状态核心，守 R12。</p>

@@ -26,13 +26,13 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <h3>定位：纯派生显示控件 + 拖动/track page 交互（契约 R4 外观随状态经 bind 派生）</h3>
  * <p>滚动条不持有任何滚动位置状态——它只<b>读</b> viewport 的几何
- * （LayoutBox，只读 I11 逃生舱①）与外部传入的 {@code scrollOffsetSignal}，派生 thumb 的几何
+ * （LayoutBox，只读几何测量：不写节点、不标脏）与外部传入的 {@code scrollOffsetSignal}，派生 thumb 的几何
  * （高度 + Y 偏移 + 颜色 + column 宽）并经 bind 写入节点属性。滚动位置唯一权威源是外部
  * scroll state（由 {@link club.heiqi.uilib.ui.scene.runtime.SceneScrolls#attach} 创建并维护）。</p>
  *
  * <p>Props 拆 read/write：{@code scrollOffsetSignal} 为只读显示源（可派生，如 per-section 派生），
  * {@code setScrollOffset} 为写入回调（handler 调）。拖动/track page/滚轮 handler 只调
- * {@code setScrollOffset.accept(v)}（守 I1/I11），绝不直接写节点。
+ * {@code setScrollOffset.accept(v)}（守 signal-first：状态写入只经 signal 回调），绝不直接写节点。
  * thumb 的 hovered/pressed 交互态经 {@link SceneInteractionState} 暴露，PAINT bind 据此派生三态颜色。</p>
  *
  * <h3>结构</h3>
@@ -68,23 +68,23 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p>{@link Props#barWidthSignal()} 是可选宽度源：<b>缺省（null）= 常量 {@code barWidth}，逐值不变</b>；
  * 非 null 时取信号当前值（值 ≤ 0 / null 回退常量，避免零宽不可命中）。信号变化时只<b>重派生几何</b>
  * —— column 命中带宽（column 的 preferredWidth 即指针可达面）、thumb 可视宽、两处圆角
- * （半径 = 宽度/2 同源）—— 不重建控件、不重置滚动位置、不新增订阅（一个 create 一条 effect，I3）。
+ * （半径 = 宽度/2 同源）—— 不重建控件、不重置滚动位置、不新增订阅（一个 create 只跑一次，只建一条 effect）。
  * 显式 {@code hitBandWidth}/{@code thumbVisualWidth} 覆盖仍优先于信号（与 create 期同口径）。</p>
  * <p>命中面与拖动/track 判定<b>不缓存宽度</b>：拖动公式读节点盒与 transform、track page 读
  * column 局部指针 Y，故宽度变化后两者天然同步，无需第二失效通道。装配点（
  * {@link SceneScrollContainer} 默认创建路径、picker 各滚动区）按需接入字号/密度派生。</p>
  *
- * <h3>失效级别（守 I7 / I4 双轨核对）</h3>
+ * <h3>失效级别（滚动零重排 / 级别由 setter 自决，双轨核对）</h3>
  * <ul>
  *   <li><b>thumb 位置</b>用 {@link Transform#translate(float, float)}（COMPOSITE 级）平移，
- *       由声明 COMPOSITE 的 bind 写入——滚动时只标 compositeDirty，零重排零重绘（守信条五）。</li>
+ *       由声明 COMPOSITE 的 bind 写入——滚动时只标 compositeDirty，零重排零重绘（变化只触达最低必要层）。</li>
  *   <li><b>thumb 高度</b>用 {@code setPreferredHeight}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
  *   <li><b>column 宽</b>固定为 barWidth，不随 overflow 状态变化。</li>
  *   <li><b>track/thumb 颜色</b>用 {@code setBackgroundColor}（PAINT 级），由声明 PAINT 的 bind 写入。</li>
  *   <li><b>订阅源</b>：LAYOUT bind（thumb 高）订阅 {@code rt.layoutDoneSignal()}；
  *       COMPOSITE bind 订阅 {@code scrollOffsetSignal} + {@code rt.layoutDoneSignal()}；
  *       PAINT bind 订阅 hovered/pressed + {@code rt.layoutDoneSignal()}。
- *       滚动时只有 COMPOSITE bind 跑，LAYOUT/PAINT bind 不跑——按需重算，守 I7。</li>
+ *       滚动时只有 COMPOSITE bind 跑，LAYOUT/PAINT bind 不跑——按需重算，滚动只标 COMPOSITE、零重排。</li>
  * </ul>
  *
  * <h3>layoutDoneSignal 契约（P0 去外泄）</h3>
@@ -100,12 +100,12 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <h3>守不变量</h3>
  * <ul>
- *   <li><b>I1</b>：拖动/track handler 只 {@code setScrollOffset.accept(v)}，不直接写节点。</li>
- *   <li><b>I3</b>：create 只跑一次，bind/on 注册在 create 内。</li>
- *   <li><b>I4</b>：thumb 高 LAYOUT / track 与 thumb 颜色 PAINT / thumb Y COMPOSITE。</li>
- *   <li><b>I6</b>：paint 层只读 thumb 节点属性；effect 在数据层写 node 属性。</li>
- *   <li><b>I7</b>：滚动只触发 COMPOSITE 级 transform 变化，零重排。</li>
- *   <li><b>I11 逃生舱①</b>：effect body 与 track page handler 读 viewport/thumb LayoutBox（只读几何，不写节点、不标脏）。</li>
+ *   <li><b>signal-first</b>：拖动/track handler 只 {@code setScrollOffset.accept(v)}，不直接写节点。</li>
+ *   <li><b>create 只跑一次</b>：bind/on 注册在 create 内。</li>
+ *   <li><b>失效级别</b>：thumb 高 LAYOUT / track 与 thumb 颜色 PAINT / thumb Y COMPOSITE。</li>
+ *   <li><b>分层边界</b>：paint 层只读 thumb 节点属性；effect 在数据层写 node 属性。</li>
+ *   <li><b>零重排</b>：滚动只触发 COMPOSITE 级 transform 变化。</li>
+ *   <li><b>只读几何测量</b>：effect body 与 track page handler 读 viewport/thumb LayoutBox（不写节点、不标脏）。</li>
  * </ul>
  */
 public final class SceneScrollbar {
@@ -128,7 +128,7 @@ public final class SceneScrollbar {
      * @param scrollOffsetSignal 滚动偏移只读显示源（由 SceneScrolls.attach 创建的 signal 或其派生 Computed；
      *                       scrollbar 据此派生 thumb Y，handler 读此值做拖动起点）
      * @param setScrollOffset 滚动偏移写入回调（handler 调用此回调写 scroll state；
-     *                       拖动/track page/滚轮 handler 只调此回调，守 I1）
+     *                       拖动/track page/滚轮 handler 只调此回调，不直接写节点）
      * @param trackColor    轨道背景色（ARGB）；0 表示显式透明轨道；{@link #THEME_COLOR} 表示跟随主题
      *                      派生极淡 tint（默认，见类文档「默认配色」）
      * @param thumbColor    滑块默认态背景色（ARGB，idle 态）；{@link #THEME_COLOR} 表示跟随主题派生
@@ -447,7 +447,7 @@ public final class SceneScrollbar {
             if (trackRange <= 0) {
                 return;
             }
-            // 坐标系（I12 两层）：ctx.getLocalPointerY() = 当前 capture target（thumb 或 column）局部 Y。
+            // 坐标系（两层：raw 屏幕绝对 / local 当前节点局部）：ctx.getLocalPointerY() = 当前 capture target（thumb 或 column）局部 Y。
             // thumb layout Y=0（column 唯一子），absoluteBox(thumb,treeAbs).getY()==absoluteBox(column,treeAbs).getY()，
             // 故 thumb 局部 Y == column 局部 Y，dragStart[1] 无论 capture target 是 thumb 还是 column 都同系。
             int pointerDelta = ctx.getLocalPointerY() - dragStart[1];
@@ -511,7 +511,7 @@ public final class SceneScrollbar {
             }
             // 读 thumb transform 偏移（COMPOSITE 级平移）+ thumb layout 高度，得到 thumb 视觉位置。
             // hit tester 用布局位置（thumb layout Y=0），transform 不计入命中，故需手动叠加 transform 算视觉上/下界。
-            // 坐标系（I12 两层）：ctx.getLocalPointerY() = column 局部 Y；thumb 局部 Y=0，transformY 即 thumb 视觉在 column 局部的 Y，同系。
+            // 坐标系（两层：raw 屏幕绝对 / local 当前节点局部）：ctx.getLocalPointerY() = column 局部 Y；thumb 局部 Y=0，transformY 即 thumb 视觉在 column 局部的 Y，同系。
             // 首帧 layout 未完成时 thumb.getCachedLayout() 可能为 null，此时无法判定 thumb 视觉边界，
             // 不启动拖动也不翻页，直接 return（与 vpBox null 守卫同范式）。
             Object thumbCached = thumb.getCachedLayout();
@@ -558,7 +558,7 @@ public final class SceneScrollbar {
         // 只重派生几何，不重建控件：写入 column 命中带宽（column 的 preferredWidth 即指针可达面）、
         // thumb 可视宽、两处圆角（半径 = barWidth/2 与宽度同源）。拖动/track 判定不缓存宽度
         // （handler 每次读节点盒与 transform），故宽度变化后命中面与拖动判定天然同步。
-        // 有界：一个 create 只建一条 effect（I3：create 只跑一次），信号重复变化不新增订阅。
+        // 有界：一个 create 只建一条 effect（create 只跑一次），信号重复变化不新增订阅。
         // 显式 hitBandWidth/thumbVisualWidth 覆盖优先（与 create 期同口径），不被信号抹掉。
         if (barWidthSignal != null) {
             rt.bind(barWidthSignal, w -> Effect.untrack(() -> {

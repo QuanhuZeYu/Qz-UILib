@@ -9,12 +9,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * ReactiveScheduler 双通道交替到不动点契约守卫（守 I2 / I9）。
+ * ReactiveScheduler 双通道交替到不动点契约守卫（守单一收口 + 帧末批处理）。
  *
  * <p>钉死 Oracle 方案 A 实施后的核心契约：effect 内 {@link Signal#set} 在<b>同一次 flush</b> 内被 drain、
  * 订阅者被 markDirty、下游 effect 在同一 flush 内重跑。写入全程经 {@link ReactiveScheduler#queueWrite}
- * 进入 {@code pendingWrites}，再无绕过调度器的同步路径（撤 {@code setImmediate} 守 I2 单一收口）。
- * 一帧内多轮 drain 合并为单事务（守 I9 批处理）。</p>
+ * 进入 {@code pendingWrites}，再无绕过调度器的同步路径（撤 {@code setImmediate}，守写入只经调度器这一单一收口）。
+ * 一帧内多轮 drain 合并为单事务（守帧末批处理）。</p>
  *
  * <p>归属：reactive 层 L2 集成测试——纯调度器内部多 effect/signal 协作，无 UI 渲染依赖，但跨 effect/signal
  * 间的因果传播，属 L2「多单元协作」边界（非纯数学单点）。</p>
@@ -138,7 +138,7 @@ public class ReactiveSchedulerEffectSetSameFlushTest {
     /**
      * 用例 4（额外）：effect 内 set 中间值再回 frame 初值，事务日志无 entry（多轮抖动去重）。
      *
-     * <p>守 I9 在双通道版本下的等价物：多轮 drain 的中间值抖动回帧初值，firstBefore/lastAfter 相等去重，
+     * <p>帧末批处理在双通道版本下的等价物：多轮 drain 的中间值抖动回帧初值，firstBefore/lastAfter 相等去重，
      * 不入事务、effect 不重跑。</p>
      */
     @Test

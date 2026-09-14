@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <p>只做「构建期一次性建树」的静态装配：返回的节点已设好不可命中、宽度尺寸等静态样式，
  * 动态随状态变化的外观一律由页面在 {@code build} 内用 {@code rt.bind/bindComputed} 派生
- * （守 scene 信条 R3/R4：组件函数只执行一次、外观随状态经 bind 派生）。</p>
+ * （守 scene 组件契约：组件函数只执行一次、外观随状态经 bind 派生）。</p>
  *
  * <p><b>公共构件默认消费主题</b>：{@link #card()} 取 {@link SceneTheme.Role#GROUP} 配方，
  * {@link #button}/{@link #primaryButton} 复用已主题化的 {@link SceneButton}（标准/主操作角色），

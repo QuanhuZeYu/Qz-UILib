@@ -7,7 +7,7 @@ import com.github.bsideup.jabel.Desugar;
  * 保存反馈，不可变。承载 {@code ConfigScreen.saveChanges()} 的结局供 UI 消费。
  *
  * <p>由 {@link DraftSignalAdapter#setSaveFeedback} 写入受控 signal，
- * 状态栏/操作栏经 {@code rt.bind} 消费反馈文本与颜色（守 I1）。</p>
+ * 状态栏/操作栏经 {@code rt.bind} 消费反馈文本与颜色（守 signal-first：消费方只经 bind 派生）。</p>
  *
  * @param status  反馈状态：NONE 无反馈 / OK 成功 / INVALID 校验失败 / IO_FAILED 写盘失败 / CONFLICT 冲突
  * @param message 反馈文案，OK 时为成功提示，失败时为原因，NONE 时为空串

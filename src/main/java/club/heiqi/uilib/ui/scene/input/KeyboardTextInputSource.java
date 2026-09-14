@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.input;
 
 /**
  * 键盘/文本输入旁路源解耦接口 —— 宿主基类据此判定输入源是否支持键盘/文本旁路，
- * 不再认识具体平台实现类（守 I10：基类不依赖平台侧端点）。
+ * 不再认识具体平台实现类（基类不依赖平台侧端点，平台类型止于适配边界）。
  *
  * <p>由平台适配层（如 {@code club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource}）实现，
  * 宿主基类只持本接口引用，等价于原 {@code instanceof LwjglInputSource} 判定。</p>

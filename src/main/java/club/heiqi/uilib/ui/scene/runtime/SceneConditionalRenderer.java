@@ -7,18 +7,18 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
- * 场景树条件渲染协调器（信条三）：按布尔条件挂载/卸载一棵子树——条件为真时构建内容并插入到
+ * 场景树条件渲染协调器：按布尔条件挂载/卸载一棵子树——条件为真时构建内容并插入到
  * {@code anchor} 之前，为假时 dispose 内容作用域（其 {@code onCleanup} 把内容节点摘除）。
  *
  * <p>本类是旧栈 {@code club.heiqi.uilib.ui.component.ConditionalRenderer} 在新场景树栈上的对等实现：
  * 操作对象从 {@code ElementNode} 换成 {@link SceneNode}，去掉 {@code UiDocument} 依赖（新栈无
  * document，内容直接由 {@link Supplier} 工厂构造）。条件渲染本质是「0 或 1 项的 keyed 列表」：</p>
  * <ul>
- *   <li><b>稳定不重建（I7）</b>：条件值未跨越真假边界时（连续两次 true 或连续两次 false），
+ *   <li><b>稳定不重建</b>：条件值未跨越真假边界时（连续两次 true 或连续两次 false），
  *       {@link #update(boolean)} 直接返回、不动场景树——已挂载的内容子树被完整跳过，不重建。</li>
- *   <li><b>收窄范围（I5）</b>：全部结构操作严格限定在 {@code parent} 内
+ *   <li><b>收窄范围</b>：全部结构操作严格限定在 {@code parent} 内
  *       （{@link SceneNode#insertBefore}/{@link SceneNode#removeChild}），绝不触达外部节点。</li>
- *   <li><b>作用域隔离（I3）</b>：每次挂载的内容拥有独立子 {@link Owner}，其内部 bind/effect 自动
+ *   <li><b>作用域隔离</b>：每次挂载的内容拥有独立子 {@link Owner}，其内部 bind/effect 自动
  *       归属该作用域；卸载时随作用域一并清理。</li>
  * </ul>
  *
@@ -37,7 +37,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <b>anchor 由调用方（show 方法）创建并 append 到 parent，本类不创建 anchor，只把它当作
  * insertBefore 的锚点使用。</b></p>
  *
- * <h3>非追踪约束（守 I5）</h3>
+ * <h3>非追踪约束</h3>
  * <p>内容工厂读取的 signal 不得回流为条件订阅，否则内容内部 signal 变化会反向触发条件重算。
  * 因此 {@link #update(boolean)} 内部<b>绝不直接订阅任何信号</b>（只读 {@code visible} 入参、
  * 操作场景树、跑子作用域），从而保证调用方可以安全地把 {@code update} 调用整体包在
@@ -86,7 +86,7 @@ final class SceneConditionalRenderer {
      *
      * <p>四分支语义对齐旧栈 {@code ConditionalRenderer.update}：</p>
      * <ul>
-     *   <li>visible=true 且已挂载（contentOwner != null）→ 直接 return（守 I7：稳定子树不重建）。</li>
+     *   <li>visible=true 且已挂载（contentOwner != null）→ 直接 return（稳定子树不重建）。</li>
      *   <li>visible=true 且未挂载 → {@link #mount()} 构建并插入内容。</li>
      *   <li>visible=false 且已挂载 → dispose 内容作用域（onCleanup 摘除内容节点），置空状态。</li>
      *   <li>visible=false 且未挂载 → 无操作（no-op）。</li>
@@ -100,7 +100,7 @@ final class SceneConditionalRenderer {
     void update(boolean visible) {
         if (visible) {
             if (contentOwner != null) {
-                return; // 已挂载，条件仍为真 → 跳过（守 I7：稳定子树不重建）
+                return; // 已挂载，条件仍为真 → 跳过（稳定子树不重建）
             }
             mount();
         } else {

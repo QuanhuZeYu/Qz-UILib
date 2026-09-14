@@ -1,6 +1,5 @@
 /**
- * L2 纯数学布局测试层 —— 锚定布局不变量（失效四级矩阵 / 干净子树三阶段跳过 / 两层坐标，
- * 旧编号 I4 / I7 / I12 / §4.5）。
+ * L2 纯数学布局测试层 —— 锚定布局不变量（失效四级矩阵 / 干净子树三阶段跳过 / 两层坐标累加，§4.5）。
  *
  * <h3>L2 定义</h3>
  * <p>纯数学层：零 runtime / signal / input / paint 依赖。测试只做三件事——
@@ -30,7 +29,7 @@
  *   <li><b>engine 实例</b>：每个测试用例用独立 engine 实例（per-field final 或 per-test new 均可），
  *       禁跨用例复用同一 engine。</li>
  *   <li><b>import 禁区</b>：L2 测试禁 import reactive / runtime / input / paint 包，违者即应下沉 L3。</li>
- *   <li><b>I4 矩阵</b>：新增任何 setter，其失效级别必须补进
+ *   <li><b>失效级别矩阵</b>：新增任何 setter，其失效级别必须补进
  *       {@code scene/node/InvalidationLevelMatrixTest} 的矩阵表。</li>
  *   <li><b>grow 场景</b>：grow 分配新场景必须补进 {@link GrowAllocationTableTest} 的 Case builder，
  *       期望值需 Oracle 手算并交叉校验。</li>
@@ -38,12 +37,12 @@
  *
  * <h3>本包文件清单</h3>
  * <ul>
- *   <li>{@link LayoutAssertions} —— 布局不变量断言库（I4/I7/I12/求和不变量的可复用 static 方法）。</li>
+ *   <li>{@link LayoutAssertions} —— 布局不变量断言库（失效级别 / 重算集合 / 坐标累加 / 求和不变量的可复用 static 方法）。</li>
  *   <li>{@link LayoutAssertionsTest} —— 断言库自身的自测（守卫跳过 / 断言失败信息正确）。</li>
  *   <li>{@link SceneLayoutEngineTest} —— 布局引擎主测（约束下传 / shrink / fill / 嵌套）。</li>
  *   <li>{@link GrowAllocationTableTest} —— 24 场景 grow 分配表（主轴分配快照，裸 assertEquals 例外所在）。</li>
  *   <li>{@link RowGrowWidthAllocationTest} —— ROW 方向 grow 既有回归。</li>
- *   <li>{@link CoordinateInvariantTest} —— I12 / §4.5 坐标累加 + scrollOffsetY 注入数学契约。</li>
+ *   <li>{@link CoordinateInvariantTest} —— §4.5 坐标累加 + scrollOffsetY 注入数学契约。</li>
  *   <li>{@link SceneParallelExecutorTest} —— 并行池基建（executor 隔离 / 任务调度）。</li>
  * </ul>
  *

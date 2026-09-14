@@ -31,9 +31,9 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * 默认配方来自 {@link SceneThemes} 的按钮角色（未显式传 {@link Props#surface()} 时），
  * 显式配方优先于主题；{@code SceneTheme.solidDark()} 可表达旧实色观感。</p>
  *
- * <h3>组件函数形态（信条一）</h3>
+ * <h3>组件函数形态（UI = f(state)，声明式优先）</h3>
  * <p>纯静态工厂 + 私有构造，控件类自身无任何实例字段（强制无状态）。
- * {@link #create} 返回 {@code Supplier<SceneNode>}，交 {@link SceneRuntime#mount} 执行一次（I3）：
+ * {@link #create} 返回 {@code Supplier<SceneNode>}，交 {@link SceneRuntime#mount} 执行一次（组件函数只跑一次）：
  * 建树 + 设静态样式 + 绑定响应式派生。不是 fluent builder，不是持有节点的 setter 对象。</p>
  */
 public final class SceneButton {
@@ -214,7 +214,7 @@ public final class SceneButton {
     /**
      * 工厂：构建按钮组件函数。
      *
-     * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（I3）：
+     * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（组件函数只跑一次）：
      * 只建 SceneNode 树 + 设静态属性 + {@code rt.bind/bindText/on/focusable}，
      * 动态外观全落配方信号派生，交互只经 {@code on} 调回调（契约 R3/R4/R5）。</p>
      *

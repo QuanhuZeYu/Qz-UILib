@@ -11,8 +11,8 @@ import org.junit.Test;
  * 本测试类逐条验证解耦后的核心不变量：</p>
  * <ul>
  *   <li>setOpacity/setTransform 只点亮 composite 路标，绝不污染 paint 路标（解耦正向断言）。</li>
- *   <li>composite 路标冒泡遵循 O(深度)：遇已点亮即停，绝不向下递归（I7）。</li>
- *   <li>干净兄弟节点零 composite 标记（I7）。</li>
+ *   <li>composite 路标冒泡遵循 O(深度)：遇已点亮即停，绝不向下递归。</li>
+ *   <li>干净兄弟节点零 composite 标记。</li>
  *   <li>composite 与 paint 的清除双向隔离（互不影响）。</li>
  * </ul>
  */
@@ -126,7 +126,7 @@ public class SceneNodeCompositeDirtyTest {
         Assert.assertTrue("root 仍点亮", root.__isDescendantCompositeDirty());
     }
 
-    // ==================== 测试 4：干净兄弟零 composite 标记（I7） ====================
+    // ==================== 测试 4：干净兄弟零 composite 标记 ====================
 
     /**
      * 验证：对一个节点 setOpacity，干净兄弟及其子树零 composite 标记。
@@ -154,7 +154,7 @@ public class SceneNodeCompositeDirtyTest {
         Assert.assertTrue("branchA descendantComposite", branchA.__isDescendantCompositeDirty());
         Assert.assertTrue("root descendantComposite", root.__isDescendantCompositeDirty());
 
-        // ★ I7：干净兄弟 branchB 子树零 composite 标记
+        // ★ 干净兄弟 branchB 子树零 composite 标记
         Assert.assertFalse("branchB compositeDirty", branchB.__isCompositeDirty());
         Assert.assertFalse("branchB descendantComposite", branchB.__isDescendantCompositeDirty());
         Assert.assertFalse("leafB compositeDirty", leafB.__isCompositeDirty());

@@ -13,7 +13,7 @@ import org.junit.Test;
 /**
  * SceneNode 双标记机制单元测试 —— Phase 0 叫停关口核验点。
  *
- * <p>本测试类的每条用例都是 I7 根除的"铁证"，验证脏标记只向上冒泡（O(深度)）、
+ * <p>本测试类的每条用例都是"铁证"，验证脏标记只向上冒泡（O(深度)）、
  * 绝不向下递归（O(子树)）的核心设计。</p>
  */
 public class SceneNodeTest {
@@ -99,7 +99,7 @@ public class SceneNodeTest {
         Assert.assertFalse("root selfLayout", root.__isSelfLayoutDirty());
     }
 
-    // ==================== 测试 1：属性变化只标自身和祖先路径（I7 根除铁证之一） ====================
+    // ==================== 测试 1：属性变化只标自身和祖先路径（铁证之一） ====================
 
     /**
      * 验证：对叶子节点设置文本后，只有该节点自身和祖先链被标记，
@@ -155,7 +155,7 @@ public class SceneNodeTest {
         Assert.assertFalse("root 自身不应标 selfLayout 脏",
             root.__isSelfLayoutDirty());
 
-        // === 断言兄弟及其子树零标脏（I7 铁证） ===
+        // === 断言兄弟及其子树零标脏（铁证） ===
         Assert.assertFalse("兄弟 child1 selfLayout 应为 false",
             child1.__isSelfLayoutDirty());
         Assert.assertFalse("兄弟 child1 descendantLayout 应为 false",
@@ -171,7 +171,7 @@ public class SceneNodeTest {
             containerA.__isDescendantPaintDirty());
     }
 
-    // ==================== 测试 2：applyChildReconcile 稳定兄弟零标脏（I7 根除铁证之二） ====================
+    // ==================== 测试 2：applyChildReconcile 稳定兄弟零标脏（铁证之二） ====================
 
     /**
      * 验证：容器的 applyChildReconcile 对稳定复用子节点零标脏。
@@ -207,7 +207,7 @@ public class SceneNodeTest {
         // === 断言容器自身标脏 ===
         Assert.assertTrue("容器自身应标 selfLayout 脏", container.__isSelfLayoutDirty());
 
-        // === 断言稳定兄弟零标脏（I7 铁证） ===
+        // === 断言稳定兄弟零标脏（铁证） ===
         Assert.assertFalse("稳定兄弟 child1 selfLayout 应为 false",
             child1.__isSelfLayoutDirty());
         Assert.assertFalse("稳定兄弟 child2 selfLayout 应为 false",
@@ -300,7 +300,7 @@ public class SceneNodeTest {
         Assert.assertFalse("a selfLayout 不应被标", a.__isSelfLayoutDirty());
     }
 
-    // ==================== 测试 4：各 setter 打出正确的失效级别（I4） ====================
+    // ==================== 测试 4：各 setter 打出正确的失效级别 ====================
 
     /**
      * 验证：不同 setter 只打出对应级别的失效标记，不打多余级别。
@@ -465,7 +465,7 @@ public class SceneNodeTest {
 
     /**
      * 验证（Phase 3A 解耦后）：composite 脏标记走独立的 descendantComposite 路标冒泡，
-     * 不再借道 paint 路标，与 paint/layout/geometry 失效语义正交（守 I4）。
+     * 不再借道 paint 路标，与 paint/layout/geometry 失效语义正交。
      */
     @Test
     public void shouldBubbleCompositeViaIndependentPathway() {
@@ -571,7 +571,7 @@ public class SceneNodeTest {
         Assert.assertNull("b parent 应为 null", b.__getParent());
         Assert.assertNull("d parent 应为 null", d.__getParent());
 
-        // ③ 稳定项 a（既不在 insertedOrMoved 中，也不是被删或被移动）零标脏 —— I7 铁证
+        // ③ 稳定项 a（既不在 insertedOrMoved 中，也不是被删或被移动）零标脏 —— 铁证
         Assert.assertFalse("稳定项 a selfLayout 应为 false", a.__isSelfLayoutDirty());
         Assert.assertFalse("稳定项 a descendantLayout 应为 false", a.__isDescendantLayoutDirty());
 
@@ -1044,7 +1044,7 @@ public class SceneNodeTest {
         Assert.assertFalse("同值 setHitTestable 仍为 false", node.isHitTestable());
     }
 
-    // ==================== isClipWindow 谓词（B3/I7 口径统一） ====================
+    // ==================== isClipWindow 谓词（B3 与 paint/hit-test 口径统一） ====================
 
     /**
      * isClipWindow() = isClipChildren() || isScrollable()，供 paint 与 hit-test 共用，

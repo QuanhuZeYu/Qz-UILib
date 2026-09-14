@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 中央事务调度器：signal 写入的唯一收口（I2, I9，信条四）。
+ * 中央事务调度器：signal 写入的唯一收口，一帧内多次写入合并为一次刷新。
  *
  * <p>工作流程：</p>
  * <ol>
@@ -15,14 +15,14 @@ import java.util.Objects;
  *   <li>宿主帧循环调用 {@link #flush()}，统一应用写入并重跑所有脏 effect</li>
  * </ol>
  *
- * <p>I9 保证：一帧内多次写入合并为一次刷新，不逐次触发重排。</p>
+ * <p>批处理保证：一帧内多次写入合并为一次刷新，不逐次触发重排。</p>
  *
  * <p><b>P1-3 每帧分配</b>：一次 {@code flush} 的写入快照、事务累积表与 effect 扫描快照全部走
  * 实例 scratch（{@code clear()} 后 {@code putAll/addAll} 复用，容量有界不缩），且
  * {@code dirtyEffectCount == 0} 时 O(1) 跳过整轮 effect 扫描——E≈2 万时这是每帧最大的一笔分配与空转。
  * 跳过的是「无工作的扫描」，effect 的注册/注销与不动点语义逐位不变。</p>
  *
- * <p><b>信条四（中央事务）</b>：每次 {@link #flush()} 把本帧所有 signal 写入合并为一个原子事务记入
+ * <p><b>中央事务</b>：每次 {@link #flush()} 把本帧所有 signal 写入合并为一个原子事务记入
  * {@link TransactionLog}（默认开启的有界环形缓冲）。这换来：① 批处理（已有）；② {@link #undo()}/{@link #redo()}
  * 游标时间旅行；③ 单一审计路径——日志永远能回答「谁、何时、因何改了它」。</p>
  */
@@ -47,7 +47,7 @@ public final class ReactiveScheduler {
      * 一帧一事务的累积 scratch（跨 flush 复用，<b>禁止每帧新建</b>）。
      *
      * <p>{@code firstBefore} 保留每个 signal 本帧<b>首见</b>的帧初值（putIfAbsent），
-     * {@code lastAfter} 覆盖式留下最后一轮的终值；循环结束后统一提交为一条事务（守 I9）。
+     * {@code lastAfter} 覆盖式留下最后一轮的终值；循环结束后统一提交为一条事务（一帧一事务）。
      * 生命期只在一次 flush / applyAndRerun 内，两端 clear。</p>
      */
     private final Map<Signal<?>, Object> firstBefore = new LinkedHashMap<>();
@@ -66,14 +66,14 @@ public final class ReactiveScheduler {
      * ——注册（{@link #registerEffect}）、dirty 翻转（{@link Effect#markDirty()} 与
      * {@link Effect#run()}）、注销（{@link #unregisterEffect}），且都要求 effect 处于
      * 「已登记」状态，故 {@code reset()} 与事后 dispose 的交叠不会把计数带偏。
-     * 计数为 0 即「无脏 effect」⇒ 可安全跳过整轮扫描（守 I2/I9：跳过的是「无工作的扫描」，
+     * 计数为 0 即「无脏 effect」⇒ 可安全跳过整轮扫描（守单一收口与帧末批处理：跳过的是「无工作的扫描」，
      * 不是 effect 的注册或注销）。</p>
      */
     private int dirtyEffectCount;
 
     /** 已注册的 effect 列表（注册顺序即粗略拓扑序）。 */
     private final List<Effect> effects = new ArrayList<>();
-    /** 中央事务日志（信条四：审计 + 时间旅行）。 */
+    /** 中央事务日志（审计 + 时间旅行）。 */
     private final TransactionLog log = new TransactionLog();
     /** 下一次 flush 提交事务时附带的标签（一次性，提交后清空）。 */
     private String pendingLabel = null;
@@ -158,7 +158,7 @@ public final class ReactiveScheduler {
      */
     int registeredEffectCount() { return effects.size(); }
 
-    /** 中央事务日志（信条四：审计路径 + 时间旅行的事实源）。 */
+    /** 中央事务日志（审计路径 + 时间旅行的事实源）。 */
     public TransactionLog transactionLog() { return log; }
 
     /**
@@ -183,20 +183,20 @@ public final class ReactiveScheduler {
      *   <li>{@link #drainPendingWrites()}：快照并清空 {@link #pendingWrites}，对每个 signal
      *       对比「当前现值」与「待应用值」，仅净变化才 {@link Signal#applyAndNotify}（apply + 标脏订阅者），
      *       并把本帧首次出现的 before 累积到 {@code firstBefore}、本帧覆盖性 after 累积到 {@code lastAfter}
-     *       （多轮合并，守 I9 一帧一事务）</li>
+     *       （多轮合并，一帧一事务）</li>
      *   <li>{@link #runDirtyEffectsOneSweep()}：按注册顺序扫描一遍 effects，重跑所有 isDirty() 的</li>
      * </ol>
      *
      * <p>两步都无进展（既无净变化写入、也无脏 effect）即到达不动点，退出循环。一帧内 drain 写入和
      * effect 内 set 产生的写入都经 {@link #queueWrite} → {@link #pendingWrites}（再无任何绕过队列的路径），
      * 保证 effect 内 {@link Signal#set} 也能在<b>同一次 flush</b> 内被 drain、订阅者被 markDirty、
-     * 下游 effect 在紧接的 sweep 内重跑——无需 {@code setImmediate} 这种绕过调度器的同步写入（守 I2）。</p>
+     * 下游 effect 在紧接的 sweep 内重跑——无需 {@code setImmediate} 这种绕过调度器的同步写入（守 signal 写入的唯一收口）。</p>
      *
      * <p><b>不动点收敛保证</b>：① 相等去重——同值 set 不 apply、不 markDirty；{@link Computed} 的记忆化
      * 同款机制使其输出无变化时不向下游传播。② {@link #MAX_FLUSH_PASSES} 上限——超出抛
      * {@link IllegalStateException}，判定 effect 循环依赖。两者共同保证有限步内收敛。</p>
      *
-     * <p><b>一帧一事务</b>（守 I9）：多轮 drain 的净变化在 {@code firstBefore}/{@code lastAfter} 中累积，
+     * <p><b>一帧一事务</b>：多轮 drain 的净变化在 {@code firstBefore}/{@code lastAfter} 中累积，
      * 循环结束统一提交为<b>一个</b> {@link TransactionLog} 条目；同一 signal 跨多轮 set 中间值再回帧初值
      * 的抖动会被 {@link #commitTransaction()} 的相等去重吸收为「无净变化、不入日志」。
      * {@link Computed} 的派生值不入日志（其值可由源 signal 重放后自动重算）。日志关闭时本段零额外开销。</p>
@@ -204,8 +204,8 @@ public final class ReactiveScheduler {
      * <p><b>历史</b>：原实现把 flush 分两阶段——阶段1 一次性 drain 后清空 {@link #pendingWrites}、阶段2 只
      * 扫 markDirty 通道（{@code runEffectsToFixpoint}）而不再 drain {@link #pendingWrites}。这导致 effect 内
      * {@link Signal#set}（写进 {@link #pendingWrites}）的写入要等下次 flush 才生效，下游延迟一帧——
-     * 违反「中央事务应在帧内消费完所有写入」的语义（I2）。为绕过此缺口曾引入 {@code Signal.setImmediate}
-     * 直接 {@link Signal#applyAndNotify} 同步刷新，但 {@code applyAndNotify} 不经队列/日志，破坏 I2 单一收口。
+     * 违反「中央事务应在帧内消费完所有写入」的语义。为绕过此缺口曾引入 {@code Signal.setImmediate}
+     * 直接 {@link Signal#applyAndNotify} 同步刷新，但 {@code applyAndNotify} 不经队列/日志，破坏 signal 写入的唯一收口。
      * 本方法改为双通道交替到不动点后，{@code setImmediate} 已撤回，effect 内 {@code set} 即同帧生效。</p>
      *
      * <p>可重入保护：flush 过程中不允许递归调用。</p>
@@ -215,7 +215,7 @@ public final class ReactiveScheduler {
         flushing = true;
         try {
             // 一帧一个事务：firstBefore/lastAfter 是实例 scratch（跨 flush 复用，禁止每帧新建），
-            // 跨多轮 drain 累积，循环结束后统一合并提交（守 I9）。
+            // 跨多轮 drain 累积，循环结束后统一合并提交（一帧一事务）。
             firstBefore.clear();
             lastAfter.clear();
             int pass = 0;
@@ -331,7 +331,7 @@ public final class ReactiveScheduler {
     }
 
     /**
-     * 时间旅行·撤销（信条四②）：游标后退一格，把上一个已应用事务的所有源 signal 回退到 {@code before} 值，
+     * 时间旅行·撤销：游标后退一格，把上一个已应用事务的所有源 signal 回退到 {@code before} 值，
      * 并重跑受影响的 effect/computed。被撤销的事务保留在日志中可 {@link #redo()}。
      *
      * <p>撤销本身<b>不产生新事务</b>（直接应用、绕过队列与日志），是纯导航操作。{@link Computed} 派生值
@@ -348,7 +348,7 @@ public final class ReactiveScheduler {
     }
 
     /**
-     * 时间旅行·重做（信条四②）：游标前进一格，把下一个事务的所有源 signal 重新应用到 {@code after} 值，
+     * 时间旅行·重做：游标前进一格，把下一个事务的所有源 signal 重新应用到 {@code after} 值，
      * 并重跑受影响的 effect/computed。
      *
      * @return 是否执行了重做（无可重做事务时返回 {@code false}）

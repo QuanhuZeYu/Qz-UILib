@@ -54,7 +54,7 @@ import club.heiqi.uilib.util.UiNumbers;
  *       的 effect 在条件满足时 {@code expanded.set(TRUE)}；「关」动作（ESC/ENTER/item CLICK/dismiss）
  *       直接收起并清空键盘高亮。打字→value 变→filtered 重算→effect 重评→自动重弹，
  *       替代旧 {@code suppressed.set(FALSE)} 复位机制。effect 内 set signal 必须包
- *       {@link Effect#untrack} 避免下游订阅反向触发本 effect（守 I1/I11，参考
+ *       {@link Effect#untrack} 避免下游订阅反向触发本 effect（参考
  *       {@code SceneRuntime.portalAnchored} L434-437 同款模式）。</li>
  *   <li><b>focus 时序</b>：autocomplete 的 effect 读 primitive 已声明的 focused signal，
  *       primitive.create 必须在前，autocomplete 组合在后（自然顺序满足）。</li>
@@ -76,9 +76,9 @@ import club.heiqi.uilib.util.UiNumbers;
  *   <li>R10/R11：浮层走 signal→portal，expanded 独立可写 Signal 驱动 portalAnchored 挂卸，
  *       dismissRequest 直接收起并清空键盘高亮。</li>
  *   <li>R12：返回 Result record。</li>
- *   <li>I1/I11：effect 内 set signal 包 Effect.untrack；KEY_DOWN handler 与 item CLICK handler 只写 signal。</li>
- *   <li>I5：浮层候选用 rt.forEach(filtered, keyFn) keyed diff。</li>
- *   <li>I12：root 锚点 AnchorProvider.forNode 读 absoluteBox（逃生舱①只读几何）。</li>
+ *   <li>effect 内 set signal 包 Effect.untrack；KEY_DOWN handler 与 item CLICK handler 只写 signal、不直接改节点。</li>
+ *   <li>浮层候选用 rt.forEach(filtered, keyFn) keyed diff（按 key 复用/增删）。</li>
+ *   <li>root 锚点 AnchorProvider.forNode 读 absoluteBox（只读几何测量：不写节点、不标脏）。</li>
  * </ul>
  */
 public final class SceneAutocompletePrimitive {
@@ -361,7 +361,7 @@ public final class SceneAutocompletePrimitive {
         //    expanded 驱动 effect（R13 核心）：监听 focused/enabled/filtered/value，命令式 set expanded。
         //    替代了原 Computed(focused && ...) 派生——语义等价（条件相同），但从"派生"变为"effect 内命令式 set"，
         //    使 expanded 成为独立可写 Signal（与 SceneSelectPrimitive 对齐），不再被 DOWN 隐式失焦跨帧掐断。
-        //    I1/I11：effect 内 set signal 必须包 Effect.untrack（参考 SceneRuntime.portalAnchored L434-437 模式），
+        //    effect 内 set signal 必须包 Effect.untrack（参考 SceneRuntime.portalAnchored L434-437 模式），
         //    否则 set 触发的下游订阅会反向触发本 effect 重订阅形成环。
         //    （R9：disabled 不弹浮层。focusable() effect 在 enabled=false 时会注销焦点环并清焦点，
         //     但 requestFocus 可绕过焦点环直写 focused signal，故此处显式带 enabled 守卫）
@@ -376,7 +376,7 @@ public final class SceneAutocompletePrimitive {
             final boolean next = shouldExpand;
             // effect 内 set 经队列进入 pendingWrites；ReactiveScheduler.flush 已改为双通道（drain-writes
             // 与 run-effects）交替到不动点，effect 内 set 在紧接的 drain 轮内即被应用、订阅者被 markDirty、
-            // 下游 portalAnchored effect 在同一 flush 内重跑——无需绕过调度器的同步写入（守 I2）。
+            // 下游 portalAnchored effect 在同一 flush 内重跑——无需绕过调度器的同步写入（守 signal 写入的唯一收口）。
             Effect.untrack(() -> {
                 if (next) {
                     expanded.set(Boolean.TRUE);
@@ -436,7 +436,7 @@ public final class SceneAutocompletePrimitive {
             }
         });
 
-        // 5) portal 挂载（R11 核心）：expanded 独立 Signal 驱动挂卸，dismissRequest 统一 collapse（I1/I11）
+        // 5) portal 挂载（R11 核心）：expanded 独立 Signal 驱动挂卸，dismissRequest 统一 collapse（挂卸只由 signal 派生驱动，不命令式重挂）
         AnchorProvider anchor = AnchorProvider.forNode(root);
         // 候选 listbox 建在 portal 树里，与输入框根不同树 → 用 portal 入口把「root 的字号声明」
         // 落到内容根（内容根持声明，候选行沿父链继承）；每个布局纪元重新断言，同值去重。
@@ -457,7 +457,7 @@ public final class SceneAutocompletePrimitive {
      * 构建 listbox overlay root（每次 expanded: false→true 时调一次）。
      *
      * <p>候选用 {@link SceneRuntime#forEach} keyed diff（keyFn = 候选字符串本身，候选唯一），
-     * filtered 动态变化时按 key 复用/增删 item 节点（I5）。item CLICK 走 onSelectResolved.accept(candidate)
+     * filtered 动态变化时按 key 复用/增删 item 节点。item CLICK 走 onSelectResolved.accept(candidate)
      * + 收起并清空高亮 + stopPropagation（R13：显式关闭意图直接写独立 Signal）。</p>
      *
      * @param rt                  场景运行时
@@ -485,7 +485,7 @@ public final class SceneAutocompletePrimitive {
         SceneScrolls.attach(rt, listbox);
         props.chrome().decorateListbox(listbox);
 
-        // I5 keyed diff：filtered 动态变化必须 keyed（不可照抄 SceneSelectPrimitive 静态 for 循环）
+        // keyed diff：filtered 动态变化必须按 key 复用/增删（不可照抄 SceneSelectPrimitive 静态 for 循环）
         // keyFn = 候选字符串本身（候选在 candidates 内唯一；filtered 是 candidates 子序列，亦唯一）
         rt.forEach(listbox, filtered, Function.identity(), candidate -> {
             SceneNode item = SceneNode.row();

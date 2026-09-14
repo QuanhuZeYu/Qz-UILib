@@ -8,7 +8,7 @@ package club.heiqi.uilib.ui.render;
  * 之所以不直接复用 {@link UiBackdropEffect}，是因为模糊半径属于"这块玻璃"而非
  * "这个配方"——同一配方（如 REGULAR）可以用不同半径贴在气泡与输入条上。</p>
  *
- * <p>后端不支持 backdrop 能力时静默不绘（宪章信条六：能力经门面探测，不泄进契约）。
+ * <p>后端不支持 backdrop 能力时静默不绘（能力经门面探测，不泄进契约）。
  * 节点圆角沿用节点自身 {@code cornerRadius}，不在本对象重复表达。</p>
  */
 public final class UiBackdrop {

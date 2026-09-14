@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *       {@link club.heiqi.uilib.ui.scene.control.SceneDragReorder} 行为工具。</li>
  * </ul>
  *
- * <h3>prefillWhenEmpty 发现态预填充（局部只读初值，守 I3）</h3>
+ * <h3>prefillWhenEmpty 发现态预填充（局部只读初值，render 期零副作用）</h3>
  * <p>可选 {@link #prefillWhenEmpty} 源（构造注入，{@code null} 表示不预填充，向后兼容）：
  * 当 draft 首次读取为空（{@code List<String>.isEmpty()}）且源非空时，
  * prefill 仅作为 renderer/bridge 的<strong>局部只读初始投影</strong>，
@@ -47,13 +47,13 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *       {@link FontSortFieldRenderer} 收口。</li>
  *   <li>业务中立性：本渲染器不硬编码 FontConfig 依赖，{@link Supplier} 由 uilib 接入层注入
  *       （参照 uilib.config.modern 下 CharacterRuleFieldRenderer 候选源接入先例）。</li>
- *   <li>守 I3：render 体零副作用；prefill 只赋局部 {@code initial} 变量。</li>
+ *   <li>render 体零副作用：prefill 只赋局部 {@code initial} 变量。</li>
  * </ul>
 
  *
  * <h3>D2 本地 Signal 桥 + 控件 id 自治（最关键）</h3>
  * <p>不在每次 draft 变化时重映射 {@code List<String>→List<ListItem>}——那样会重新分配 id，
- * 破坏 I5 keyed 复用。改为在 render 体内建<b>一个本地可写</b> {@code Signal<List<ListItem>> localItems}
+ * 破坏 keyed 复用（按 id 复用行节点）。改为在 render 体内建<b>一个本地可写</b> {@code Signal<List<ListItem>> localItems}
  * 作为 SSOT 桥：</p>
  * <ul>
  *   <li>仅在 render 体内首次从 draft 转 {@code List<ListItem>} 初始化一次；</li>
@@ -118,7 +118,7 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
     /**
      * 发现态预填充源（A'）。{@code null} 表示不预填充（无参 / 单参构造默认，向后兼容）；
      * 非 null 时，render 体首段若 draft 为空且源非空，仅赋<strong>局部只读</strong> initial 投影，
-     * 不写 DraftBuffer / adapter signal / validation（守 I3）。
+     * 不写 DraftBuffer / adapter signal / validation（render 期零副作用）。
      *
      * <p>final + 构造注入，守 R1（renderer 零可变内部状态），与 {@link #draggable} 同性质。
      * 业务中立：本字段是通用 {@link Supplier}，不硬编码 FontConfig 依赖。</p>
@@ -173,7 +173,7 @@ public final class SimpleListFieldRenderer implements FieldRenderer {
         // D2：本地 SSOT 桥 —— 仅首次从 draft 转 List<ListItem>，后续增删改由控件自治 id
         List<String> initial = toDraftList(draftSig.get());
 
-        // A' 发现态预填充（局部只读初值，守 I3）：
+        // A' 发现态预填充（局部只读初值，render 期零副作用）：
         // draft 首读为空 且有 prefill 源 且源非空 → 只赋局部 initial，不写 adapter/DraftBuffer/Signal。
         // dirty=false，保存其他字段时列表不落 YAML；用户首次编辑/删除/拖拽经 onFieldEdit 写入 draft。
         // render 构建期禁止 Signal.set、adapter seed、validation/feedback 清理。

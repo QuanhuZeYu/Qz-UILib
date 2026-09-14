@@ -4,7 +4,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * 响应式 effect：依赖变化时自动重跑的副作用单元（I3，信条二）。
+ * 响应式 effect：依赖变化时自动重跑的副作用单元（组件函数只跑一次、动态行为落在 effect 里）。
  * <p>创建时注册到 {@link ReactiveScheduler}，首次 {@link ReactiveScheduler#flush()} 时执行。
  * 此后任何被追踪的 {@link Signal} 变化都会将本 effect 标脏，并在下一次 flush 时重跑。</p>
  */
@@ -29,7 +29,7 @@ public final class Effect {
     Effect(Runnable body) {
         this.body = body;
         // 自动归属：若处于某 Owner 作用域内（如组件 mount 期），attach 到当前 owner，
-        // 随该作用域 dispose 一并清理（I3：effect 不泄漏）。无作用域时由调度器管理。
+        // 随该作用域 dispose 一并清理（effect 不泄漏）。无作用域时由调度器管理。
         Owner owner = ReactiveContext.getCurrentOwner();
         if (owner != null) {
             owner.attach(this);
@@ -50,9 +50,9 @@ public final class Effect {
      * 在<b>非追踪</b>上下文中执行 {@code body}：期间对任何 {@link Signal}/{@link Computed} 的读取
      * <b>都不会</b>登记为当前 effect 的依赖。
      *
-     * <p>用途（守 I5 红线）：keyed 列表协调（{@code forEach}）的 reconcile effect 只应订阅「列表本身」，
+     * <p>用途（守 keyed 列表协调红线）：keyed 列表协调（{@code forEach}）的 reconcile effect 只应订阅「列表本身」，
      * 对每一项的构建/更新若直接读取 item 内部的 signal，必须用本方法隔离，否则单项 signal 变化会反向
-     * 触发整个列表重协调——退化成「全列表 diff」，违反信条三红线。SolidJS {@code untrack} 的等价物。</p>
+     * 触发整个列表重协调——退化成「全列表 diff」，违反「diff 只收窄在列表节点内部、且必须 keyed」的红线。SolidJS {@code untrack} 的等价物。</p>
      *
      * @param body 在非追踪上下文中执行的逻辑
      */

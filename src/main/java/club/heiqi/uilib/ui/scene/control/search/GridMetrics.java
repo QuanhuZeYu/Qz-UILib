@@ -14,14 +14,14 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *   lineH    = rt.lineHeight(fs)                        // 字体服务真值（ascent+descent+lineGap）
  *   iconSide = max(ICON_MIN, round(density.icon * k))
  *   labelW   = 2*pad + round(fs * LABEL_BUDGET_EM * degrade)            // 标签可读宽度下界（新增）
- *   cellW    = max(iconSide + 2*pad, rt.measureTextWidth("MMMM", fs), labelW)  // I-3/I-5 同源度量
- *   trackH   = max(cellHeight 下限, iconSide + 2*pad + lineH + labelGap)  // I-2 标签不裁切
+ *   cellW    = max(iconSide + 2*pad, rt.measureTextWidth("MMMM", fs), labelW)  // 同源度量（防零宽下界 / 实测字符宽同口径）
+ *   trackH   = max(cellHeight 下限, iconSide + 2*pad + lineH + labelGap)  // 标签不裁切的内容底
  *   gap      = clamp(round(fs / 2), 3, 10)
  *   stride   = trackH + gap
  *   columns  = SceneVirtualGridNav.deriveColumns(innerWidth, cellW, gap)  // 复用既有公式
  * </pre>
  * <p>行高、单元高、图位高、spacer、{@code maxScrollPx}、滚动定位全部读同一份派生结果
- * （P5 I-4「单一 GridMetrics 快照」）；任何第二处 stride 推导都属漂移。</p>
+ * （单一 GridMetrics 快照：几何只有一个真值来源）；任何第二处 stride 推导都属漂移。</p>
  *
  * <h3>P5 换源已完成（P3 交接 U-4 / S-07）</h3>
  * <p>P3 曾把 {@link #STANDARD_ICON_SIDE_PX} 与 {@link #STANDARD_DENSITY_SCALE} 登记为「标准档唯一常量点」
@@ -133,7 +133,7 @@ public final class GridMetrics {
      * 的结构性成因。本项把"标签应有多少空间"变成派生链的一等输入，且以 <b>em</b> 表达
      * （不假定字符集/语言，只随字号缩放）。</p>
      *
-     * <p>本项是 <b>cellW 的下界之一</b>（与 I-3 的"防零宽"下界取 max，不互相替代）；宽度变大带来的
+     * <p>本项是 <b>cellW 的下界之一</b>（与"防零宽"下界取 max，不互相替代）；宽度变大带来的
      * 列数下降由 {@link PickerMetrics} 的求解与预算降级阶梯吸收。</p>
      *
      * @param rt                 场景运行时（提供行高与文本宽度量；非 null）
@@ -159,7 +159,7 @@ public final class GridMetrics {
         int measured = rt.measureTextWidth(PickerDensityTokens.CELL_WIDTH_SAMPLE, fs);
         int labelBudget = labelBudgetPx(fs, pad, labelBudgetEm);
         int cellWidth = Math.max(Math.max(iconSide + 2 * pad, measured), labelBudget);
-        // I-2：轨道高恒 >= 图标 + 上下 padding + 标签行 + 间距 —— 字号放大只抬轨道高，不回缩图标。
+        // 内容底：轨道高恒 >= 图标 + 上下 padding + 标签行 + 间距 —— 字号放大只抬轨道高，不回缩图标。
         int contentFloor = contentFloorPx(iconSide, pad, labelGap, lineHeight);
         int trackHeight = Math.max(Math.max(1, cellHeightFloorPx), contentFloor);
         int gap = clamp(roundHalfEven(fs * PickerDensityTokens.CELL_GAP_RATIO),
@@ -191,7 +191,7 @@ public final class GridMetrics {
     }
 
     /**
-     * I-2 内容底（轨道高下界的唯一公式）：{@code iconSide + 2*padding + labelLineHeight + labelGap}。
+     * 轨道高内容底（下界的唯一公式）：{@code iconSide + 2*padding + labelLineHeight + labelGap}。
      *
      * <p>四个分量里前三个来自密度档派生，{@code labelLineHeight} 是<b>标签节点的字号真值</b>
      * （{@code rt.lineHeight(label.effectiveFontSize())}）。用派生输入 {@code fs} 反算行高只有在

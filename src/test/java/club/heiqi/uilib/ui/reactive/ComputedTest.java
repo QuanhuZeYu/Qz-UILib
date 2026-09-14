@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * {@link Computed} 派生 signal 契约测试。
  * 覆盖：派生值物化、上游变化重算、记忆化（输出不变不传播）、链式传播（signal→computed→effect、
- * computed→computed）、dispose、批处理（I9）。
+ * computed→computed）、dispose、批处理。
  */
 public class ComputedTest {
 
@@ -98,7 +98,7 @@ public class ComputedTest {
 
         x.set(10);
         y.set(20);
-        ReactiveScheduler.get().flush();          // I9：两上游同帧变化合并为一次重算
+        ReactiveScheduler.get().flush();          // 两上游同帧变化合并为一次重算
         Assert.assertEquals(Integer.valueOf(30), sum.get());
     }
 

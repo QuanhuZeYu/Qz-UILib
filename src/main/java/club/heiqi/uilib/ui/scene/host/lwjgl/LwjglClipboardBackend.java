@@ -8,7 +8,7 @@ import org.apache.logging.log4j.Logger;
 import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
 
 /**
- * 平台剪贴板后端实现 —— I4c 适配层。
+ * 平台剪贴板后端实现 —— 平台适配层实现（核心只认 {@link ClipboardBackend} 抽象）。
  *
  * <h3>反射解析优先级（与 LwjglStateReader 同构）</h3>
  * <ol>
@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.scene.input.ClipboardBackend;
  *   <li>{@code net.minecraft.client.gui.GuiScreen}（MC 静态剪贴板入口，含 lwjgl3ify patch）</li>
  * </ol>
  * <p>逐级探测静态方法 {@code getClipboardString()} / {@code setClipboardString(String)}，
- * 全失败时静默降级：get 返回 null、set 忽略（I4c 叫停关口⑤，不抛异常打断输入链路）。
+ * 全失败时静默降级：get 返回 null、set 忽略（不抛异常打断输入链路）。
  * 类解析失败仅记 debug 日志，不向运行态传播。</p>
  *
  * <p>读写均为同步反射调用，在帧内快捷键路径（主线程）执行，无跨线程安全需求。</p>

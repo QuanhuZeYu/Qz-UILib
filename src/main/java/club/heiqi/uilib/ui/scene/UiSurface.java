@@ -7,7 +7,8 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 /**
  * 平台无关的 scene UI 渲染面，实现类负责持有 scene pipeline 所有内部状态。
  *
- * <p>渲染出口只认抽象契约 {@link UiRenderBackend}（守宪章信条六 / I6）：本接口位于
+ * <p>渲染出口只认抽象契约 {@link UiRenderBackend}（scene 核心只依赖抽象渲染出口，不 import
+ * 具体渲染后端/渲染层类型）：本接口位于
  * scene 核心顶层包，绝不 import 任何具体渲染后端类（如 MC 平台的
  * {@code UiRenderContext}）。宿主壳构造具体后端实现后向上转型传入，scene 渲染面
  * 零平台认知，换渲染后端无需触碰本接口。</p>

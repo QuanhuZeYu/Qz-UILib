@@ -82,7 +82,7 @@ public final class ConfigValueBridge {
      * <p>逐字段按 {@code QzUiLibModernSchema} 声明的 path（{@code "section.key"} 全路径）
      * 从 Authority 取值，做必要类型转换后写入对应 public static 静态字段。
      * 写完 {@code characterFontRules} 后调 {@link FontConfig#refreshDerivedRuleSet()}
-     * 刷新 {@code characterRuleSet} 派生态（守宪章派生态不陈旧）。</p>
+     * 刷新 {@code characterRuleSet} 派生态（守派生态不陈旧）。</p>
      *
      * <p><b>不做</b>：判 affectsFontRuntime、调 FontService.reload、刷 last* 快照
      * （调用方职责，见类级 Javadoc）。</p>

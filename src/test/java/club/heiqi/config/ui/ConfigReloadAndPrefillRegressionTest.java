@@ -38,7 +38,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
- * 真实 reload 按钮 / I3 prefill 不污染 validation / dispose 订阅 回归。
+ * 真实 reload 按钮 / prefill 不污染 validation / dispose 订阅 回归。
  *
  * <p>输入必须走 ConfigScreen 自身 {@link SceneRuntime#route}（包级 {@code __getRuntime}），
  * 禁止探针 fallback；真实 click 不生效直接失败。</p>

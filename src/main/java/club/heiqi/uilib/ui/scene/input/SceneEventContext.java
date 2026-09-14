@@ -12,10 +12,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * {@link #getCurrentNode()} 获取当前派发游标所在的祖先节点。</p>
  *
  * <p>{@link #requestFocus()} 将聚焦 ctx 构造时指定的事件 target（最深命中/焦点节点），
- * 不受 bubble 游标 currentNode 影响。{@link #requestPointerCapture()} 为 I4d 预留。
- * 这两个命令改的是 Router 的权威状态机，结果仍经 signal 暴露（I11 白名单②）。</p>
+ * 不受 bubble 游标 currentNode 影响。{@link #requestPointerCapture()} 为显式指针捕获预留。
+ * 这两个命令改的是 Router 的权威状态机，结果仍经 signal 暴露。</p>
  *
- * <h3>两层坐标（I12）</h3>
+ * <h3>两层坐标（raw 屏幕绝对 / local 当前接收 handler 节点局部）</h3>
  * <p>ctx 持有 raw 指针坐标与 treeRoot 绝对偏移，提供两层坐标 getter：</p>
  * <ul>
  *   <li>{@link #getRawPointerX()} / {@link #getRawPointerY()}：屏幕绝对（含 rootAbs），仅供跨树辅助，
@@ -123,7 +123,7 @@ public class SceneEventContext {
      * @return 当前接收 handler 节点局部 X 坐标（local 层）。
      *         = {@code rawPointerX - absoluteBox(currentNode, treeRootAbsX, treeRootAbsY).getX()}。
      *         currentNode 每级 bubble 由 Router 更新，故每级重算。handler 默认消费此值。
-     *         只读 absoluteBox，守 I7/I11/I12。
+     *         只读 absoluteBox：不写节点、不标脏，local 层按「raw 减当前节点绝对盒」解释。
      */
     public int getLocalPointerX() {
         AnchorRect box = SceneGeometry.absoluteBox(currentNode, treeRootAbsX, treeRootAbsY);
@@ -134,7 +134,7 @@ public class SceneEventContext {
      * @return 当前接收 handler 节点局部 Y 坐标（local 层）。
      *         = {@code rawPointerY - absoluteBox(currentNode, treeRootAbsX, treeRootAbsY).getY()}。
      *         currentNode 每级 bubble 由 Router 更新，故每级重算。handler 默认消费此值。
-     *         只读 absoluteBox，守 I7/I11/I12。
+     *         只读 absoluteBox：不写节点、不标脏，local 层按「raw 减当前节点绝对盒」解释。
      */
     public int getLocalPointerY() {
         AnchorRect box = SceneGeometry.absoluteBox(currentNode, treeRootAbsX, treeRootAbsY);
@@ -161,7 +161,7 @@ public class SceneEventContext {
      * 请求焦点：将焦点赋予当前事件的目标节点（非 bubble 游标 currentNode）。
      *
      * <p>若 router 或 target 为 null，则无副作用短路。此命令改 Router 权威状态机，
-     * 结果经 focus signal 暴露（I11 白名单②）。</p>
+     * 结果经 focus signal 暴露。</p>
      */
     public void requestFocus() {
         if (router != null && target != null) {
@@ -173,7 +173,7 @@ public class SceneEventContext {
      * 请求指针捕获：将事件原始 target（非 bubble 游标 currentNode）设为 Router 的显式捕获节点。
      *
      * <p>捕获后 MOVE/UP/DOWN 均强制投递给 capturedNode，直至 UP 后自动释放。
-     * 此命令改 Router 权威状态机，结果仍经 signal 暴露（I11 白名单②）。</p>
+     * 此命令改 Router 权威状态机，结果仍经 signal 暴露。</p>
      */
     public void requestPointerCapture() {
         if (router != null && target != null) {

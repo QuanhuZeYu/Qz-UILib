@@ -278,7 +278,7 @@ public class SceneTextInputTest {
     }
 
     /**
-     * 点击 input 内 localX 偏移（文本区局部），可指定 rootAbs（验证 I12 三层坐标）。
+     * 点击 input 内 localX 偏移（文本区局部），可指定 rootAbs（覆盖 rootAbs≠0 的局部坐标换算）。
      * 屏幕坐标 = absoluteX(inputRoot) + PADDING + localX + rootAbsX（hitTester 内部 nodeAbs 含 rootAbs）。
      *
      * <p>白盒回退（精确 localX / 自定义坐标，§7.1判据2 + 判据4）：精确 caret 定位需按文本区局部偏移 + rootAbs 三层坐标计算，
@@ -1410,10 +1410,10 @@ public class SceneTextInputTest {
         }
     }
 
-    // ==================== I12：rootAbs≠0 时点击 caret 定位不偏移 ====================
+    // ==================== rootAbs≠0 时点击 caret 定位不偏移（raw 与绝对坐标不得混比） ====================
 
     /**
-     * I12 坐标系对齐：rootAbsX/Y≠0 时，点击 input 内 localX=13（落在 "ab" 与 "c" 之间），
+     * 坐标系对齐：rootAbsX/Y≠0 时，点击 input 内 localX=13（落在 "ab" 与 "c" 之间），
      * caret 仍定位到 index=2（prefix="ab"），与 rootAbs=0 时一致。
      *
      * <p>修复前 SceneTextInputPrimitive 用 ev.getPointerX()（raw，含 rootAbs）-

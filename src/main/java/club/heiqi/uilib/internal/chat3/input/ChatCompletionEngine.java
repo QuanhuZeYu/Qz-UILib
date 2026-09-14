@@ -13,7 +13,7 @@ import java.util.List;
  *   <li>客户端命令本地候选(forge 补丁同构):"/" 开头文本在请求时同步调
  *       {@link Host#localCommandCompletions(String)} 并随请求快照缓存,响应到达时
  *       本地在前合并去重(dedupe(concat(local, server)))——本地不先行覆盖服务端,首 Tab RTT 体感不变;</li>
- *   <li>I4 跨请求错配修复:单槽请求快照升级为 FIFO 快照队列,AWAITING 期重复 Tab
+ *   <li>跨请求错配修复:单槽请求快照升级为 FIFO 快照队列,AWAITING 期重复 Tab
  *       追加请求(每次 Tab 都发请求,原版体感),绝不覆盖既有请求;响应按同连接 FIFO 配对
  *       (1.7.10 S3APacketTabComplete 无 transaction id,同连接响应顺序=请求顺序,只能 FIFO);</li>
  *   <li>双守卫解耦:队列负责「哪个响应对应哪个请求」,快照守卫负责「请求是否过期」
@@ -30,7 +30,7 @@ import java.util.List;
  *
  * <p>边界分析:同 TCP 连接 C14/S3A 响应 FIFO 严格成立(1.7.10 协议保证);断线残留 pending 由
  * 下次 Tab 的 networkAvailable() 检测清空;非标准服务端乱序响应 → 队首快照不匹配被丢弃,
- * 队列逐条自对齐;与 I5(请求屏蔽)交互:屏蔽只减少请求数,不改变队列配对语义。</p>
+ * 队列逐条自对齐;与请求屏蔽(caret 非词尾时不发 Tab 请求)交互:屏蔽只减少请求数,不改变队列配对语义。</p>
  */
 final class ChatCompletionEngine {
 

@@ -429,7 +429,7 @@ public class SceneHitTesterTest {
         Assert.assertSame(outer, outsideInner.get(1));
     }
 
-    // ===== T12：clipChildren（非 scrollable）节点也是裁剪窗口（B3/I7 口径统一） =====
+    // ===== T12：clipChildren（非 scrollable）节点也是裁剪窗口（B3 与 paint/hit-test 口径统一） =====
 
     /**
      * clipChildren=true 但非 scrollable 的节点，其超出本节点 LayoutBox 边界的子节点

@@ -31,7 +31,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
  * 纵向滚动视口单元测试 —— Phase 4 批 4 步骤 B「滚动/视口基础设施地基」验收。
  *
  * <p>验证核心约束：scrollable 钉死视口高、scrollOffsetY 只标 geometry 不标 layout/paint、
- * 滚动帧 layout 零重排（I7 命门反证）、滚动帧后代 fragment 复用（滚动只重定位不重绘）、CLIP 裁剪固定不随滚动跑、
+ * 滚动帧 layout 零重排（滚动只标 GEOMETRY、不标 LAYOUT）、滚动帧后代 fragment 复用（滚动只重定位不重绘）、CLIP 裁剪固定不随滚动跑、
  * 滚轮 handler clamp、几何偏移生效。</p>
  *
  * <p>归类 L3 集成层：依赖 reactive/runtime/input/paint 多子系统协作，已从 layout 包迁出至
@@ -114,11 +114,11 @@ public class SceneScrollViewportTest {
         Assert.assertEquals("子内容总高应为 600", 600, contentTotalHeight);
     }
 
-    // ==================== 验收 2：滚动帧 layout 零重排（I7 命门反证） ====================
+    // ==================== 验收 2：滚动帧 layout 零重排（滚动只标 GEOMETRY、不标 LAYOUT） ====================
 
     /**
      * 滚动后改 scrollOffsetY，断言 result.getRelayoutCount()==0
-     * ——这是 I7 不破的核心反证：滚动只标 geometry 不标 layout，绝不触发重排。
+     * ——这是滚动零重排不破的核心反证：滚动只标 geometry 不标 layout，绝不触发重排。
      */
     @Test
     public void scrollShouldNotTriggerRelayout() {
@@ -142,7 +142,7 @@ public class SceneScrollViewportTest {
         // 滚动帧布局：断言零重排
         result = doLayout();
         int scrollLayoutCount = result.getRelayoutCount();
-        Assert.assertEquals("滚动帧 layout 应零重排（I7 命门反证）",
+        Assert.assertEquals("滚动帧 layout 应零重排（滚动只标 GEOMETRY、不标 LAYOUT）",
                 0, scrollLayoutCount);
     }
 

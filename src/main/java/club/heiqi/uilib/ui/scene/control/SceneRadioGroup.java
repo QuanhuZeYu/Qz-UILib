@@ -27,7 +27,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p>本控件确立「多选项单选受控零状态」契约 R8：带「N 选 1」语义的受控控件，当前选中项由外部
  * {@code selectedIndex} 只读 signal 唯一驱动；激活某选项时<b>只经 {@code onSelect.accept(targetIndex)}
  * 上抛期望选中项</b>，控件<b>绝不自己维护或修改 selectedIndex</b>。这是 R7 从二值布尔到 N 值下标的推广
- * ——同一灵魂（外部唯一源 + 期望值上抛），杜绝「内部选中态」与「外部 signal」双源（守 R1/R5/I11/R8）。</p>
+ * ——同一灵魂（外部唯一源 + 期望值上抛），杜绝「内部选中态」与「外部 signal」双源（守 R1/R5/R8，且 handler 只上抛期望值、不直接改状态的边界）。</p>
  *
  * <h3>结构（VERTICAL only）</h3>
  * <pre>
@@ -41,7 +41,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <h3>选中表达：主题配方染色 + 透明背景而非 display:none（纯 PAINT 级零重排）</h3>
  * <p>dot 节点常驻占位，靠「选中且启用 → 主题强调底前景色，其余 → 透明」切换显隐，绝不增删节点
- * ——保证选中切换帧零重排（I7）。circle 的选中染色同样只改 tint，不动几何。</p>
+ * ——保证选中切换帧零重排（不增删节点、不触发布局失效）。circle 的选中染色同样只改 tint，不动几何。</p>
  *
  * <h3>外观归属：表面绑定是 circle 的唯一写入者</h3>
  * <p>circle 的 background / borderColor / borderWidth / cornerRadius / backdrop /
@@ -132,7 +132,7 @@ public final class SceneRadioGroup {
      * 工厂：构建 RadioGroup 组件函数。
      *
      * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：
-     * 体内 for 循环建 N 个 option 节点（options 固定，循环建树无副作用、只跑一次，守 I3）。
+     * 体内 for 循环建 N 个 option 节点（options 固定，循环建树无副作用、只跑一次）。
      * 动态外观全落 {@code bind(computed(...))}，交互只经 {@code on} 调 {@code onSelect}（R4/R5/R8）。</p>
      *
      * @param rt    场景运行时

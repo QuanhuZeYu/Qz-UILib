@@ -8,10 +8,10 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
 /**
  * 装配层 adapter —— 把渲染侧 {@link TextMeasureService} 适配为 scene 核心窄端口 {@link SceneTextMeasurer}。
  *
- * <h3>定位：scene 核心与 ui.text 之间的合法接缝（I6/I10）</h3>
+ * <h3>定位：scene 核心与 ui.text 之间的合法接缝（唯一桥接点）</h3>
  * <p>本类位于 scene/text 装配子包，<b>允许 import {@code ui.text.*}</b>，是 scene 核心与
  * 渲染侧度量服务的唯一桥接点。scene 核心包（layout/paint/node）只认 {@link SceneTextMeasurer}，
- * 真实度量逻辑全部复用渲染层（I6：不重造度量），由本 adapter 三方法委托完成。</p>
+ * 真实度量逻辑全部复用渲染层（不重造度量），由本 adapter 三方法委托完成。</p>
  *
  * <p>装配根（如 {@code AbstractSceneHostWidget}）在构造 {@code SceneLayoutEngine} 时 new 本 adapter 注入，
  * 使引擎在不感知任何平台/渲染类型的前提下拿到真实字体度量。</p>
@@ -125,7 +125,7 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     /**
      * scene → ui.text 内容模式的<b>唯一映射点</b>。
      *
-     * <p>SceneTextMode 守 I10 不得 import {@code ui.text.*}，本方法的 switch 是 scene 装配
+     * <p>SceneTextMode 不得 import {@code ui.text.*}（渲染类型止于本装配层），本方法的 switch 是 scene 装配
      * 接缝内的唯一映射点。渲染层（UiRenderContext）不再经本方法取模式（2026-09-01 越界引用
      * 收回）：其 drawText(int textMode) 重载直取 scene 值类型 SceneTextMode.fromCode 归一后
      * 按 code 映射 TextContentMode——code↔ordinal 逐位对齐由 SceneTextModeTest 编译期守卫

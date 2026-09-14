@@ -41,7 +41,7 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     private final SceneNode inputRoot;
     /** primitive 结果；直接复用补全 commit 的 caret 对齐窄操作。 */
     private final SceneTextInputPrimitive.Result inputHandle;
-    /** Tab 补全状态机(idle → awaiting → cycling);I5 测试注入口可整体替换为假引擎。 */
+    /** Tab 补全状态机(idle → awaiting → cycling);测试注入口可整体替换为假引擎。 */
     private ChatCompletionEngine completion;
     /** 独立外观作用域，背景/边框各自只有一个绑定写入者。 */
     private final ChatInputChrome chrome;
@@ -132,7 +132,7 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     /** 历史回显(vanilla getSentHistory 语义:-1 上一条 / +1 下一条;回到底恢复暂存草稿)。 */
     public void recallHistory(int direction) {
         String recalled = sentHistory.recall(direction, inputText.get());
-        // I3 草稿清空修复:recall 返回 null 表示无效操作(底槽按 ↓ / 空历史按 ↑),完全早退,
+        // 草稿清空修复:recall 返回 null 表示无效操作(底槽按 ↓ / 空历史按 ↑),完全早退,
         // 不动 caret/文本/补全态(注意:sanitize 内部 nullSafe 会把 null 变 "" 吞掉哨兵,
         // 必须先判 null 再过滤)
         if (recalled == null) {
@@ -158,7 +158,7 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     /**
      * Tab 补全(委托状态机;direction +1 正向 Tab,-1 Shift+Tab 反向)。
      *
-     * <p>I5 caret 非词尾屏蔽(方案 B):补全按 {@link ChatCompletionState#wordStart(String)}
+     * <p>caret 非词尾屏蔽(方案 B):补全按 {@link ChatCompletionState#wordStart(String)}
      * 恒取行尾词,caret 在词中/词首/分隔符上按 Tab 会拿行尾词候选整段替换并改写用户编辑位置。
      * 此处 caret 非「当前词词尾」直接 return,不进入状态机——文本/caret/补全态全部不动,状态机零改动。</p>
      *
@@ -188,7 +188,7 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
     }
 
     /**
-     * caret 码点索引读取路径(I5 关键陷阱):primitive 的 caretIndex signal 是帧末投影
+     * caret 码点索引读取路径(关键陷阱):primitive 的 caretIndex signal 是帧末投影
      * (Signal.set 入 pending,flush 才 applyAndNotify),flush 外 get() 读旧值;SceneTextInputPrimitive
      * 内 caretAuthority(int[]) 是即时真值但包外不可达,本任务不改其公共接口。
      * 此处改用帧末显示投影:primitive 结构固定「子 0 = prefixText = caret 前显示子串」,
@@ -204,7 +204,7 @@ public final class ChatInputBar implements ChatCompletionEngine.Host {
         return prefix == null ? 0 : prefix.codePointCount(0, prefix.length());
     }
 
-    /** I5 测试注入口:替换补全状态机(headless 用记录型假宿主观察 Tab 是否驱动状态机;生产恒用真引擎)。 */
+    /** 测试注入口:替换补全状态机(headless 用记录型假宿主观察 Tab 是否驱动状态机;生产恒用真引擎)。 */
     void __setCompletionEngineForTest(ChatCompletionEngine engineForTest) {
         completion = engineForTest;
     }

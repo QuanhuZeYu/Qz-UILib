@@ -35,7 +35,7 @@ final class SceneLayoutProps {
      *
      * <p><b>对称说明</b>：与 fillParentHeight 形成两轴对称——COLUMN 主轴（高）由
      * fillParentHeight 桥接隐式 grow，ROW 主轴（宽）由 fillParentWidth 桥接隐式 grow。
-     * 还清原 ROW/COLUMN 不对称偏离（见偏离登记 2026-06-30，今随编号表并入 AGENTS.md 设计取向节）。</p>
+     * 还清原 ROW/COLUMN 不对称偏离。</p>
      */
     boolean fillParentWidth;
 
@@ -203,12 +203,12 @@ final class SceneLayoutProps {
      * <h3>为何 scrollOffsetY 是 geometry 而非 paint/layout</h3>
      * <ul>
      *   <li><b>不是 LAYOUT</b>：滚动只是把内容子树整体上移/下移显示，绝不改变任何节点的盒模型
-     *       尺寸或子节点排布。若标 LAYOUT，每次滚动都会触发整棵 viewport 子树重排（破 I7：
-     *       滚动即重排），且会把 scrollOffset「烤进」LayoutBox 的 y 坐标，与「布局结果稳定、
+     *       尺寸或子节点排布。若标 LAYOUT，每次滚动都会触发整棵 viewport 子树重排（滚动即重排），
+     *       且会把 scrollOffset「烤进」LayoutBox 的 y 坐标，与「布局结果稳定、
      *       滚动只是绘制平移」的解耦原则冲突。</li>
      *   <li><b>不是 PAINT</b>：滚动不改变任何节点的绘制属性（颜色/文字/边框），后代 fragment
      *       内容完全不变，只是叠加的屏幕偏移变了。若标 PAINT，每次滚动都会让 viewport 内所有
-     *       后代 selfPaintDirty=true 而重新生成 fragment（污染 I8 缓存复用），白白重绘。</li>
+     *       后代 selfPaintDirty=true 而重新生成 fragment（破坏 fragment 缓存复用），白白重绘。</li>
      *   <li><b>是 GEOMETRY</b>：滚动的语义本质就是「位置变、不重绘、不重排」——这正是 geometry
      *       级标记的语义（paint 遍历下沉、复用 fragment、仅用新 offset 重新叠加坐标）。绘制引擎
      *       对 scrollable 节点在递归后代时注入 {@code -scrollOffsetY} 的 Y 基准偏移，后代复用

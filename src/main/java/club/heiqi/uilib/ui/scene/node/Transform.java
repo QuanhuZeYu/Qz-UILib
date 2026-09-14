@@ -6,7 +6,7 @@ package club.heiqi.uilib.ui.scene.node;
  * <p>持有 translate（浮点平移）、rotateDegrees（绕 Z 顺时针旋转角度）、scaleX/scaleY（缩放倍率）、
  * originXRatio/originYRatio（变换原点比率，相对节点 box 的归一化坐标）。本期方案甲<b>不含 skew</b>。
  * 与 opacity 同为合成级属性，{@link SceneNode#setTransform(Transform)} 走 composite 级失效通路
- * （markComposite），绝不触发 layout 重排或 fragment 重建（守宪章信条五分级失效铁律）。</p>
+ * （markComposite），绝不触发 layout 重排或 fragment 重建（composite 级失效铁律）。</p>
  *
  * <h3>不可变设计</h3>
  * <p>全部字段为 {@code final}，构造后不可修改，确保线程安全且避免意外修改触发遗漏脏标记。

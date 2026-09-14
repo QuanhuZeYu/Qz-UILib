@@ -14,7 +14,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 /**
- * 字号接线源码守卫（字号动态化 I-4，守卫 2）：禁则 + 必需钉。
+ * 字号接线源码守卫（字号动态化，守卫 2）：禁则 + 必需钉。
  *
  * <p>范式对齐 CharacterRuleFieldRendererThemeTest.sourceGuardWritesColorsOnlyViaThemeBindings：
  * 注释剥离后做 banned 检查，再做 required 检查与计数钉；先有正锚（必须真读到源码），负向清单才有意义。</p>

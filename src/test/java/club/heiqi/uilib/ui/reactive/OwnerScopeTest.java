@@ -6,7 +6,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * Owner 作用域上下文契约测试（信条三：作用域继承与生命周期）。
+ * Owner 作用域上下文契约测试（作用域继承与生命周期）。
  *
  * <p>覆盖：同作用域读写、子继承父、子覆盖父、null 移除后父值重新可见、兄弟作用域隔离、
  * dispose 后不可见、类型化便捷查找。</p>

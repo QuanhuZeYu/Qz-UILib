@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.scene.testkit.ScenePaintCapture;
 
 /**
  * scene 渲染出口契约端到端测试 —— 锁定「{@link UiRenderBackend} 契约层是视觉意图原语，
- * 跨后端通用」的承诺（宪章信条六）。
+ * 跨后端通用」的承诺。
  *
  * <p>用 {@link ScenePaintEngine} 产 PaintPlan → {@link ScenePaintReplayer#replay} 回放到
  * {@link RecordingRenderBackend}（零 GL 能力的纯 mock）→ 断言调用序列。若有人偷偷在

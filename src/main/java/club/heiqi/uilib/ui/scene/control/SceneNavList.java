@@ -103,7 +103,7 @@ public final class SceneNavList {
      * 工厂：构建 NavList 组件函数。
      *
      * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：
-     * 体内 for 循环建 N 个 item 节点（options 固定，循环建树无副作用、只跑一次，守 I3）。
+     * 体内 for 循环建 N 个 item 节点（options 固定，循环建树无副作用、只跑一次）。
      * 动态外观全落 {@code bind(computed(...))}，交互只经 {@code on} 调 {@code onSelect}（R4/R5/R8）。</p>
      *
      * @param rt    场景运行时

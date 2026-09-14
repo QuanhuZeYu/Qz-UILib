@@ -858,7 +858,7 @@ public final class ScenePickerPanel {
 
             // P5 派生度量（三分量：逻辑盒 + 字号倍率 + 密度偏好）：在内容 Owner 内创建 ⇒
             // 关闭即随 disposeMounted() 释放，不做跨开合常驻；打开时算一次、之后只在三个输入
-            // 变化时重派生（无静态快照，P5 I-6）。
+            // 变化时重派生（无静态快照）。
             ReadableSignal<PickerMetrics> metrics = createMetrics(rt, props, panelDeclaredFont);
             // 撤销条可见性投影（内容 Owner 内 ⇒ 关闭即释放；空串/无 tombstone 时零占位）。
             ReadableSignal<Boolean> undoVisible = Computed.create(() ->

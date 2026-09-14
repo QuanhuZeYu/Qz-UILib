@@ -23,7 +23,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * SceneBreadcrumb —— scene 新栈控件层 Phase 4 批 2 面包屑控件（纯展示 + 点击回调）。
  *
  * <h3>定位：纯展示 + 回调，不走受控双向，不用 forEach</h3>
- * <p>本批 Breadcrumb 按「路径构建期固定」处理，<b>不用 forEach、不做动态路径</b>（绕开 I5 风险面，
+ * <p>本批 Breadcrumb 按「路径构建期固定」处理，<b>不用 forEach、不做动态路径</b>（绕开 keyed 复用风险面，
  * 动态列表排后续批）。Breadcrumb <b>无选中态</b>，纯展示 + 点击回调，<b>控件自身零状态</b>：
  * 点击某段只经 {@code onSelect.accept(path)} 上抛该段 path（纯回调，非受控双向）。</p>
  *
@@ -116,7 +116,7 @@ public final class SceneBreadcrumb {
      * 工厂：构建 Breadcrumb 组件函数。
      *
      * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：
-     * 体内 for 循环建各段节点（segments 固定，循环建树无副作用、只跑一次，守 I3）。
+     * 体内 for 循环建各段节点（segments 固定，循环建树无副作用、只跑一次）。
      * 文字色与段背景随主题/交互态经 {@code bind} 派生，交互只经 {@code on} 调 {@code onSelect}（R4/R5）。</p>
      *
      * <p>主题信号在构造期捕获一次（此时 {@link club.heiqi.uilib.ui.reactive.Owner#current()} 是来源
@@ -128,7 +128,7 @@ public final class SceneBreadcrumb {
      */
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
-            // ① 建树一次（无副作用，I3）—— 横向容器
+            // ① 建树一次（无副作用）—— 横向容器
             SceneNode root = SceneNode.row();
             root.setCrossAxisAlign(CrossAxisAlign.CENTER);
             root.setGap(ROOT_GAP);

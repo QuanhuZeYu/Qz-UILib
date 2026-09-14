@@ -9,7 +9,7 @@ import java.util.Objects;
  * 整棵场景树的绘制计划 —— Display List 的顶层载体。
  *
  * <p>{@code PaintPlan} 是数据层产出的最终绘制命令序列，渲染层只按顺序消费
- * 其中的 {@link PaintCommand}，不认识任何上游概念（宪章信条六/I6）。
+ * 其中的 {@link PaintCommand}，不认识任何上游概念。
  * 这是数据层与渲染层之间唯一的合同交付物。</p>
  *
  * <h3>使用方式</h3>
@@ -188,7 +188,7 @@ public final class PaintPlan {
      *
      * <p>由 {@link ScenePaintEngine#paintNode} 递归骨架在「本节点 + 全部后代命令」
      * 外层调用，与 {@link #addPopTransform()} 严格配对。坐标为<b>绝对屏幕坐标</b>，
-     * transform 分量全 primitive（守 I6），每帧从 node 实时读，绝不进 fragment。</p>
+     * transform 分量全 primitive（不含 scene 侧类型），每帧从 node 实时读，绝不进 fragment。</p>
      *
      * @param left          绝对左边界（像素）
      * @param top           绝对上边界（像素）
@@ -229,7 +229,7 @@ public final class PaintPlan {
      * （needClip 或 preferTransformLayer）时于「本节点 + 全部后代命令」外层调用，与
      * {@link #addPopTransformLayer()} 严格配对。区域为<b>子树内容包围盒</b>的绝对屏幕坐标
      * （P10b：pop 回贴窗口与 opacity 同源——离屏层全屏分配，窗口钉节点盒会把溢出后代隐式硬裁）。
-     * transform 分量全 primitive（守 I6），每帧从 node 实时读，绝不进 fragment；origin 分量已由
+     * transform 分量全 primitive（不含 scene 侧类型），每帧从 node 实时读，绝不进 fragment；origin 分量已由
      * 引擎折算为包围盒坐标系下的等价比率，绝对变换原点仍锚定节点自身盒（box 归一化语义不变）。</p>
      *
      * @param left          子树内容包围盒左边界（绝对屏幕坐标，像素）

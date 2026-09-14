@@ -13,7 +13,7 @@ import java.util.List;
  *
  * <p>深度优先 + 子节点优先遍历场景树，根据指针绝对坐标确定命中链。
  * 全程只读，绝不调用任何 setter/markXxx/appendChild/removeChild，
- * 保证零副作用（I7/I11 硬不变量）。</p>
+ * 保证零副作用（命中测试只读、不写节点也不标脏的硬不变量）。</p>
  *
  * <h3>坐标体系</h3>
  * <p>{@code pointerX/pointerY} 为画布逻辑坐标（不预先叠加 rootAbsX）。

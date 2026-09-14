@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /**
  * 坐标系契约不变量表测试 —— 锚定两层坐标不变量（raw 局部 vs absolute
- * 绝对）与坐标系契约（旧编号 I12 / §4.5）的<b>布局侧数学不变量</b>。
+ * 绝对）与坐标系契约（§4.5）的<b>布局侧数学不变量</b>。
  *
  * <p>本类只验证 {@link SceneGeometry} 的只读几何工具在 layout 产出 LayoutBox 后返回的绝对坐标
  * 是否严格满足父链累加 + scrollOffsetY 注入 + rootAbs 偏移三条数学规则，不触发 paint/composite，
@@ -23,7 +23,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *       {@code y = parentAbsY - parent.getScrollOffsetY()}（注意是<b>减</b>）。
  *       语义：滚动向上，子内容绝对坐标随滚动量减小。</li>
  *   <li><b>rootAbs 偏移</b>：{@code rootAbsX/rootAbsY} 是初值偏移，传 0 即 host 局部坐标；
- *       GUI 居中场景 rootAbs≠0 时绝对坐标整体偏移——这正是 I12「raw 与 absoluteBox(node,0,0)
+ *       GUI 居中场景 rootAbs≠0 时绝对坐标整体偏移——这正是「raw 与 absoluteBox(node,0,0)
  *       禁止混比」的根因。</li>
  * </ul>
  *
@@ -68,11 +68,11 @@ public class CoordinateInvariantTest {
     }
 
     // ============================================================
-    // 场景 2：多层嵌套坐标累加（I12 核心）
+    // 场景 2：多层嵌套坐标累加（父链累加核心）
     // ============================================================
 
     /**
-     * 锚定 I12 两层坐标核心：absoluteBox 沿 parent 链累加 LayoutBox.x/y。
+     * 锚定两层坐标核心：absoluteBox 沿 parent 链累加 LayoutBox.x/y。
      *
      * <p>树形：root(pad10) → child COLUMN(pad5, fillParentWidth) → grandchild(50x30)。
      * layout 后 grandchild 局部 (5,5)、child 局部 (10,10)、root 局部 (0,0)，
@@ -83,7 +83,7 @@ public class CoordinateInvariantTest {
      * 只累加 x/y，child.height 不参与绝对坐标计算，故绝对坐标 (15,15) 不受影响。</p>
      *
      * <p>这条断言把 raw 局部坐标 (5,5) 与 absoluteBox 绝对坐标 (15,15) 显式区分开——
-     * 正是 I12「raw 与 absoluteBox 禁止混比」的反例锚定。</p>
+     * 正是「raw 与 absoluteBox 禁止混比」的反例锚定。</p>
      */
     @Test
     public void nestedChain_accumulatesLayoutBoxOffsets() {
@@ -112,14 +112,14 @@ public class CoordinateInvariantTest {
     }
 
     // ============================================================
-    // 场景 3：rootAbs 偏移（I12 GUI 居中场景）
+    // 场景 3：rootAbs 偏移（GUI 居中场景）
     // ============================================================
 
     /**
-     * 锚定 I12 GUI 居中场景：rootAbs≠0 时绝对坐标整体偏移。
+     * 锚定 GUI 居中场景：rootAbs≠0 时绝对坐标整体偏移。
      *
      * <p>同场景 2 的树，但 absoluteBox(grandchild, 100, 50) 应 = 100+10+5=115 (x)、
-     * 50+10+5=65 (y)。这锚定 I12「raw 与 absoluteBox(node,0,0) 禁止混比」——
+     * 50+10+5=65 (y)。这锚定「raw 与 absoluteBox(node,0,0) 禁止混比」——
      * rootAbs 是初值偏移，不同 rootAbs 下同一节点的绝对坐标不同，但 raw 局部坐标不变。</p>
      */
     @Test

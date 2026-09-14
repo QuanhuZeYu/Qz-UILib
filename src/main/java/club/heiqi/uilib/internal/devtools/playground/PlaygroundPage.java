@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p>页面是「可挂载的 scene 组件函数」：{@link #build} 返回 {@link Supplier}，
  * 由宿主在页切换时经 {@code runtime.mount(content, ...)} 在当前 Owner 作用域内执行一次
- * （scene 信条 I3：组件函数只执行一次，随后外观随状态经 bind 派生、交互只经 on 回调）。</p>
+ * （组件函数只执行一次，随后外观随状态经 bind 派生、交互只经 on 回调）。</p>
  *
  * <p>推荐实现形态：页面实例持有自己的 {@code Signal} 状态（页切换保留——测试场地便于
  * 「切走再切回」观察状态粘性），{@code build} 引用这些信号构建树并注册

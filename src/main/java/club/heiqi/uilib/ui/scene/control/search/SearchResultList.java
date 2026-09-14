@@ -563,7 +563,7 @@ public final class SearchResultList {
         // 层 4a 回落值：与单元标签的回落值同源（12），使控件根解析出的生效字号与标签一致——
         // 否则未声明字号时根的层 4b 默认 16 会让轨道按 16 算（默认几何漂移）。层 1/2/3 均优先于它。
         // P5 派生度量通道（非 null = 面板已按「逻辑盒 + 字号 + 密度」派生好唯一快照）：
-        // 四个几何信号全部从同一份 GridMetrics 取初值并随其变化整体重写 —— 这就是 I-4 的
+        // 四个几何信号全部从同一份 GridMetrics 取初值并随其变化整体重写 —— 这就是
         // 「单一 GridMetrics 快照」：轨道高/图位边长/内边距/间距/列数不存在第二个真值来源。
         final ReadableSignal<GridMetrics> metricsSignal = props.metrics();
         GridMetrics initialMetrics = metricsSignal == null ? null : metricsSignal.get();
@@ -582,13 +582,13 @@ public final class SearchResultList {
                 initialMetrics != null ? initialMetrics.gapY() : props.gapY()));
         final Signal<Integer> cellWidth = Signal.create(Integer.valueOf(
                 initialMetrics != null ? initialMetrics.cellWidthPx() : props.cellWidth()));
-        // 轨道高的唯一重算出口：生效字号 → I-2 内容底（框架既有「字号 → 几何」通道，
+        // 轨道高的唯一重算出口：生效字号 → 内容底（框架既有「字号 → 几何」通道，
         // 登记即按当前生效字号算一次，其后字号变化由框架驱动重算）。
         // 旧路径 = max(cellHeight 下限, 内容底(fs))；度量通道 = max(密度档派生轨道高, 内容底(控件实际字号))
         // —— 与 GridMetrics.derive / deriveDensity 的 max(下限, 内容底) 同构，不是第三份公式。
         // 必须按控件实际字号复核的理由：面板文字字号由宿主字号链（portal 内容根 fontScope）决定，
         // 默认 16 ≠ 档位基准字号 12 ⇒ 只信快照会让标签行高超过 trackHeight、行真实 pitch > stride、
-        // 内容高 > totalRows*stride ⇒ maxScrollPx 短一截、末排被裁（I-2 后半句「标签不裁切」失效）。
+        // 内容高 > totalRows*stride ⇒ maxScrollPx 短一截、末排被裁（内容底的「标签不裁切」失效）。
         stackHost.setFontSizeMetric((node, fontSizePx) -> Effect.untrack(() -> {
             GridMetrics m = initialMetrics == null ? null : metricsSignal.get();
             setIfChanged(trackHeight, m == null
@@ -977,7 +977,7 @@ public final class SearchResultList {
      * 单元几何信号组 —— {@code GridMetrics} 单一快照在单元层的五项投影。
      *
      * <p>五个信号由 {@code create()} 从同一份 {@link GridMetrics} 初始化并随之整体重写；
-     * 单元/行只订阅它们，<b>不得</b>再读 {@code Props} 的静态几何（那是第二个真值来源，I-4）。</p>
+     * 单元/行只订阅它们，<b>不得</b>再读 {@code Props} 的静态几何（那是第二个真值来源）。</p>
      *
      * @param paddingPx  单元内边距
      * @param labelGapPx 图标与标签间距
@@ -1040,7 +1040,7 @@ public final class SearchResultList {
         rowNode.setPreferredHeight(trackHeight.get().intValue());
         // 轨道高随生效字号变 → 行高跟着变；spacer 数学读同一 stride 信号，内容总高守恒。
         rt.bind(trackHeight, height -> rowNode.setPreferredHeight(height.intValue()));
-        // 行间距与列间距同源（I-4）：两者都取度量快照的 gap，绝不再读 Props 的静态值，
+        // 行间距与列间距同源：两者都取度量快照的 gap，绝不再读 Props 的静态值，
         // 否则 stride 用新 gap、行 margin 用旧 gap，内容总高与 maxScrollPx 立即漂移。
         rt.bind(geometry.gapPx(), gap -> Effect.untrack(() -> {
             rowNode.setMargin(0, 0, gap.intValue(), 0);
@@ -1098,7 +1098,7 @@ public final class SearchResultList {
     }
 
     /**
-     * 度量通道下的轨道高：{@code max(密度档派生下限, I-2 内容底(控件实际生效字号))}。
+     * 度量通道下的轨道高：{@code max(密度档派生下限, 内容底(控件实际生效字号))}。
      *
      * <p>密度档给定的轨道高是按派生字号 {@code fs} 算出的下限；标签行高必须取标签节点（与控件根
      * 同链、同字号）的生效字号 —— 两者分叉时取大者，与 {@link GridMetrics#derive} 的
@@ -1217,7 +1217,7 @@ public final class SearchResultList {
         final SceneNode labelRef = label;
         SceneNode icon = new SceneNode();
         icon.setHitTestable(false);
-        // I-1 图标正方形：P5 派生路径下图位是<B>正方形</B>且边长 = density.icon × k，
+        // 图标正方形：P5 派生路径下图位是<B>正方形</B>且边长 = density.icon × k，
         // 不再用 max(cellWidth - 2*pad) × (轨道剩余高) 的矩形让 ITEM_ICON 走 min(w,h) 兜底
         // （那正是现状「图位 56x39 → 图标实际 39」的成因，T5 UX-15）。
         // 旧路径（iconSidePx == 0）保持原「图位吃剩余空间」语义，兼容旧调用方。

@@ -83,10 +83,10 @@ public class ChatSentHistoryTest {
         Assert.assertEquals("新草稿", history.recall(1, "新草稿"));
     }
 
-    // ==================== I3 草稿清空修复(null 哨兵契约) ====================
+    // ==================== 草稿清空修复(null 哨兵契约) ====================
 
     /**
-     * I3:底槽且无暂存时返回 null(无效操作哨兵,vanilla getSentHistory 越界返回 null 同款);
+     * 底槽且无暂存时返回 null(无效操作哨兵,vanilla getSentHistory 越界返回 null 同款);
      * 空串是合法暂存值,恢复仍返回空串。
      */
     @Test
@@ -105,7 +105,7 @@ public class ChatSentHistoryTest {
     }
 
     /**
-     * I3:底槽返回 null 哨兵时不移动光标、不清草稿(无效操作零副作用)。
+     * 底槽返回 null 哨兵时不移动光标、不清草稿(无效操作零副作用)。
      */
     @Test
     public void nullReturnDoesNotMutateCursorOrDraft() {
@@ -126,7 +126,7 @@ public class ChatSentHistoryTest {
     }
 
     /**
-     * I3:单参 recall(direction) 不暂存草稿(语义与双参传 null 一致)。
+     * 单参 recall(direction) 不暂存草稿(语义与双参传 null 一致)。
      */
     @Test
     public void singleArgRecallDoesNotStashDraft() {

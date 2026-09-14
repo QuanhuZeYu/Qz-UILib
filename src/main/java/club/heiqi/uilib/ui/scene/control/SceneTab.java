@@ -32,7 +32,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *       上抛期望页下标，控件<b>绝不自维护/修改 activeIndex</b>（R8）。</li>
  *   <li><b>内容区 N 选 1 用 N 个独立 {@code rt.show}</b>（契约 R10）：对每页 i 调一次
  *       {@code rt.show(contentPanel, Computed(activeIndex==i), tabPanels.get(i))}，
- *       由 show 引擎按 condition 挂载/卸载内容（守 I5/I7）。<b>绝不</b>在 create 的 Supplier
+ *       由 show 引擎按 condition 挂载/卸载内容（切换只挂卸内容区、稳定子树不重建）。<b>绝不</b>在 create 的 Supplier
  *       体内 {@code activeIndex.get()} 做 if 分支建树（违 R3）。</li>
  * </ul>
  *
@@ -213,7 +213,7 @@ public final class SceneTab {
      *
      * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：
      * 体内建 root(COLUMN) → tabBar(ROW，N 选 1 受控头) + contentPanel(单内容区)，
-     * for 循环建 N 个 tab 段（tabLabels 固定，循环建树无副作用、只跑一次，守 I3），
+     * for 循环建 N 个 tab 段（tabLabels 固定，循环建树无副作用、只跑一次），
      * 再对每页调一次 {@code rt.show}（N 个独立 show，condition 为 {@code activeIndex==i}）。
      * 动态外观全落 {@code bind(computed(...))}，交互只经 {@code on} 调 {@code onActivate}（R4/R5/R8）。</p>
      *
@@ -234,7 +234,7 @@ public final class SceneTab {
             final ReadableSignal<Integer> configuredFontSize = props.fontSize();
             final Integer configuredFontSizeValue =
                     configuredFontSize == null ? null : configuredFontSize.get();
-            // ① 建树一次（无副作用，I3）—— 纵向容器：tabBar 在上、contentPanel 在下
+            // ① 建树一次（无副作用）—— 纵向容器：tabBar 在上、contentPanel 在下
             SceneNode root = SceneNode.column();
             root.setGap(ROOT_GAP);
             // 层 4a 回落值：数值与框架层 4b 默认同值（16），层 1/2/3 均优先于它。

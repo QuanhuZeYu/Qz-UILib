@@ -55,7 +55,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * 不感知任何 config 业务类型。caller 负责把 {@code FieldSpec} / {@code DraftSignalAdapter}
  * 拆解为 title / helper / errorSignal / dirtySignal 后传入。</p>
  *
- * <p>外观随状态变化只经 {@code rt.bind/bindComputed/__bindAnimatedColor} 派生（守 I1/I11/R4），
+ * <p>外观随状态变化只经 {@code rt.bind/bindComputed/__bindAnimatedColor} 派生（守 R4 与 handler 边界：不在 handler 里命令式改节点属性），
  * 控件 mount 槽由 caller 以 {@code Supplier<SceneNode>} 注入，本类不建业务控件。</p>
  */
 public final class FormFieldShell {

@@ -354,7 +354,7 @@ public class CharacterRuleFieldRendererThemeTest {
                 "SceneTextInput.create(",                      // G04
                 "SceneAutocomplete.create(",                   // G04 成品 autocomplete
                 "SceneScrollbar.createDefault(",               // G07 滚动条只挂载
-                "rt.forEach(",                                 // keyed 行树（I5）
+                "rt.forEach(",                                 // keyed 行树（按 key 复用行节点，不整树重建）
                 "CharacterRuleItem::getId",                    // 行复用合同不动
         };
         for (String token : required) {

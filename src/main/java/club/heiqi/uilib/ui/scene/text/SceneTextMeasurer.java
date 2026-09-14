@@ -5,8 +5,8 @@ package club.heiqi.uilib.ui.scene.text;
  *
  * <h3>定位：scene 核心与渲染层度量服务之间的零依赖接缝</h3>
  * <p>scene 核心包（layout/paint/node）严禁 import 任何平台类、渲染上下文或
- * {@code ui.text.*} 度量实现（I10）。布局引擎只认本接口，真实度量由装配层 adapter
- * （{@code TextMeasureServiceSceneAdapter}）持有渲染侧 {@code TextMeasureService} 委托完成（I6）。</p>
+ * {@code ui.text.*} 度量实现（平台/渲染类型止于适配边界）。布局引擎只认本接口，真实度量由装配层 adapter
+ * （{@code TextMeasureServiceSceneAdapter}）持有渲染侧 {@code TextMeasureService} 委托完成（core 不 import 渲染/样式层类型）。</p>
  *
  * <p>三个方法均以 UI 像素为单位（除 {@link #epoch()}），布局引擎据此做叶节点 shrink-to-fit
  * 与多行行高累计。</p>

@@ -145,7 +145,7 @@ public final class SceneSliderPrimitive {
             }
             ctx.requestPointerCapture();
             // v 用事件坐标当场算（valueFromPointer），draggingValue.set(v) 仅为渲染。
-            // 坐标系（I12 两层）：ctx.getLocalPointerX() = track 局部 X（框架每级重算），rootAbs≠0 不再错位。
+            // 坐标系（两层：raw 屏幕绝对 / local 当前节点局部）：ctx.getLocalPointerX() = track 局部 X（框架每级重算），rootAbs≠0 不再错位。
             double v = valueFromPointerX(trackWidth(track), ctx.getLocalPointerX(), min, max, step);
             draggingValue.set(v);
             props.onChange().onChange(v, false);
@@ -160,7 +160,7 @@ public final class SceneSliderPrimitive {
                 return;
             }
             // v 用事件坐标当场算，draggingValue.set(v) 仅为渲染（只写不读）。
-            // 坐标系（I12 两层）：ctx.getLocalPointerX() = track 局部 X。
+            // 坐标系（两层：raw 屏幕绝对 / local 当前节点局部）：ctx.getLocalPointerX() = track 局部 X。
             double v = valueFromPointerX(trackWidth(track), ctx.getLocalPointerX(), min, max, step);
             draggingValue.set(v);
             props.onChange().onChange(v, false);
@@ -171,7 +171,7 @@ public final class SceneSliderPrimitive {
             }
             // 核心修复（缺陷 D）：v 用事件坐标当场算，绝不读 draggingValue。
             // draggingValue 降级为纯渲染 signal（只写不读），UP 不再依赖它跨帧可见。
-            // 坐标系（I12 两层）：ctx.getLocalPointerX() = track 局部 X。
+            // 坐标系（两层：raw 屏幕绝对 / local 当前节点局部）：ctx.getLocalPointerX() = track 局部 X。
             double v = valueFromPointerX(trackWidth(track), ctx.getLocalPointerX(), min, max, step);
             draggingValue.set(null);
             props.onChange().onChange(v, true);

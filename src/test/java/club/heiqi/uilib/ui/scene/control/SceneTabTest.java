@@ -39,7 +39,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * SceneTab 端到端单元测试 —— Phase 4 批 4 标签页控件（R8 受控头 + R10 内容区 show 切换）验收。
  *
  * <p>端到端验证：tabBar 受控闭环（点 tab 只上抛期望页下标、控件零状态不自改）、
- * 内容区 N 选 1（仅活动页内容挂载、切页卸旧挂新）、show I7 不重建（活动页保持不变重复 flush 不重建）、
+ * 内容区 N 选 1（仅活动页内容挂载、切页卸旧挂新）、show 不重建（活动页保持不变重复 flush 不重建）、
  * R6 段穿透（点 tab 内 label 文字穿透到段）、键盘导航（←/→/Home/End/Enter/Space）、
  * disabled 拦截、tabBar 四态切换零重排。</p>
  *
@@ -350,10 +350,10 @@ public class SceneTabTest {
         Assert.assertEquals("activeIndex=2：挂载的是 page2", Integer.valueOf(2), mounted2.get(0));
     }
 
-    // ==================== 验收 3：show I7 不重建（活动页保持不变重复 flush 不重建） ====================
+    // ==================== 验收 3：show 不重建（活动页保持不变重复 flush 不重建） ====================
 
     /**
-     * show I7 稳定：activeIndex 保持 0 不变，重复 flush（含其它无关 signal 变化触发的 flush）
+     * show 稳定：activeIndex 保持 0 不变，重复 flush（含其它无关 signal 变化触发的 flush）
      * 不重建当前活动页（page0 builder 仍只调用一次）。
      */
     @Test

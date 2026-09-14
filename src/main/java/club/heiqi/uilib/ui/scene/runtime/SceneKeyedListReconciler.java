@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * 新栈 keyed 列表协调引擎（路 B / 批量版）——forEach 的结构协调核心。
  *
  * <p>按 key 对齐新旧子项，复用 key 不变项的 {@link SceneNode} 与生命周期作用域、<b>不重建</b>
- * （守 I7：干净子树被跳过）；用最长递增子序列（LIS）求出相对顺序不变的稳定项，使移动量最小。</p>
+ * （干净子树被跳过）；用最长递增子序列（LIS）求出相对顺序不变的稳定项，使移动量最小。</p>
  *
  * <h3>与旧栈 {@code ui.component.KeyedListReconciler} 的核心差异：路 A → 路 B</h3>
  * <p>旧栈是<b>路 A（副作用驱动）</b>：reorder 阶段从右往左逐个 {@code container.insertBefore}，
@@ -42,7 +42,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <p>本方法体<b>不直接读取任何 signal</b>：item 的构建被收在 {@link #createItem} 内、由调用方用
  * {@code Effect.untrack(...)} 包裹整个 reconcile 调用（接线见 SceneRuntime.forEach）。因此单个 item
  * 内部读取的 signal 不会回流成「列表」的依赖——单项变化只重跑该项自己的 effect，不触发整列表重协调
- * （守 I5：杜绝全列表 diff）。</p>
+ * （杜绝全列表 diff）。</p>
  *
  * <h3>关键约束③：insertedOrMoved 在路 B 下不驱动标脏</h3>
  * <p>本引擎照常计算 {@code insertedOrMoved} 并传入 applyChildReconcile，纯为 API 契约完整 +

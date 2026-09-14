@@ -11,7 +11,7 @@ import java.util.Objects;
  *
  * <p>不可变值对象，布局引擎计算后存入 {@code SceneNode#cachedLayout} 缓存槽。
  * 缓存有效的条件是节点 {@code selfLayoutDirty==false && descendantLayoutDirty==false}，
- * 此时可直接复用 LayoutBox 跳过重算（I7/I8）。</p>
+ * 此时可直接复用 LayoutBox 跳过重算（本节点与后代都无需重算）。</p>
  */
 public final class LayoutBox {
 

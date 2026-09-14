@@ -16,7 +16,7 @@ import club.heiqi.uilib.util.UiNumbers;
  * 得到最终屏幕坐标。这使得 fragment 可跨帧复用（节点位置变化 → fragment 引用不变、
  * 仅叠加的 offset 变），符合 COMPOSITE 级"位置变化不重绘"精神。</p>
  *
- * <h3>核心红线（宪章信条六/I6）</h3>
+ * <h3>核心红线（数据层与渲染层的契约边界）</h3>
  * <p>本类是数据层与渲染层的<strong>契约对象</strong>，禁止持有任何 SceneNode / 节点引用。
  * 所有坐标、颜色、文本、样式在<strong>构建期固化</strong>进命令字段，回放期<strong>零节点反查</strong>。</p>
  *
@@ -24,7 +24,7 @@ import club.heiqi.uilib.util.UiNumbers;
  * {@code ComputedStyle elementStyle} 字段，回放渲染时还反查节点取 scroll/style——这污染了契约线，
  * 让渲染层间接认识了 DOM。新模型必须避免这种设计。</p>
  *
- * <h3>transform 分量全 primitive（方案甲，守 I6）</h3>
+ * <h3>transform 分量全 primitive（方案甲：不持 scene 侧 {@code Transform} 类型字段）</h3>
  * <p>PUSH_TRANSFORM 边界命令承载完整 2D 变换矩阵分量（translate/rotate/scale/origin），
  * 全部为 {@code float} 原始类型，<b>绝不持有 {@code Transform} 类型字段</b>。回放器从
  * getter 取浮点数喂给 {@link club.heiqi.uilib.ui.render.UiRenderBackend} 的纯数值
@@ -32,7 +32,7 @@ import club.heiqi.uilib.util.UiNumbers;
  *
  * <h3>不可变性</h3>
  * <p>所有字段均为 {@code final}，通过静态工厂方法构造。构造完成后即不可变，线程安全，
- * 未来可跨线程双缓冲（符合宪章空间换时间国策）。</p>
+ * 未来可跨线程双缓冲（空间换时间）。</p>
  *
  * <h3>使用方式</h3>
  * <pre>{@code
@@ -114,7 +114,7 @@ public final class PaintCommand {
     /** 边框宽度（像素）。仅 BORDER 命令有意义，其余命令默认 0 */
     private final int borderWidth;
 
-    // === transform（方案甲，PUSH_TRANSFORM 边界命令专用，全 primitive 守 I6，7 分量与 Transform 对齐） ===
+    // === transform（方案甲，PUSH_TRANSFORM 边界命令专用，全 primitive 不含 scene 类型，7 分量与 Transform 对齐） ===
 
     /** X 轴平移量（浮点像素，GL 矩阵消费零量化）。仅 PUSH_TRANSFORM 命令有意义，其余命令默认 0 */
     private final float translateX;
@@ -512,7 +512,7 @@ public final class PaintCommand {
      * pushTransform 重载，由 GL 矩阵栈做 origin 三明治顶点变换。变换作用域包住
      * 「本节点命令 + 全部后代命令」，由绘制引擎递归骨架保证与 {@link #popTransform()} 严格配对。</p>
      *
-     * <p>transform 分量全 primitive，绝不持 {@code Transform} 类型字段（守 I6）。
+     * <p>transform 分量全 primitive，绝不持 {@code Transform} 类型字段（契约对象不含 scene 侧类型）。
      * 每帧由绘制引擎从 node 实时读取产出，绝不进 fragment（保持纯 composite 帧零重建）。</p>
      *
      * @param left          绝对左边界（像素）
@@ -561,7 +561,7 @@ public final class PaintCommand {
      * origin 分量已由引擎折算为包围盒坐标系下的等价比率，绝对变换原点仍锚定节点自身盒
      * （box 归一化语义不变）。仅当节点 transform 非恒等<b>且</b>（有 clip 或
      * preferTransformLayer）时产出此命令（而非 {@link #pushTransform}）。
-     * transform 分量全 primitive，绝不持 {@code Transform} 类型字段（守 I6）。
+     * transform 分量全 primitive，绝不持 {@code Transform} 类型字段（契约对象不含 scene 侧类型）。
      * 每帧由绘制引擎从 node 实时读取产出，绝不进 fragment。</p>
      *
      * @param left          子树内容包围盒左边界（绝对屏幕坐标，像素）

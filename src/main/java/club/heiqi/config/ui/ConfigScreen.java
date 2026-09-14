@@ -84,10 +84,10 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  *
  * <h3>关键守不变量</h3>
  * <ul>
- *   <li>I1：导航目标与 saveFeedback 经 signal 驱动；Motion phase 不写事务历史</li>
- *   <li>I3：section 单槽严格先 dispose outgoing Owner 再 mount incoming</li>
- *   <li>I7/I8：未激活 section 子树不参与布局/绘制</li>
- *   <li>I11：导航点击 handler 只 activeSectionSignal.set，不直接改 SceneNode</li>
+ *   <li>signal-first：导航目标与 saveFeedback 经 signal 驱动；Motion phase 不写事务历史</li>
+ *   <li>生命周期纪律：section 单槽严格先 dispose outgoing Owner 再 mount incoming</li>
+ *   <li>未激活 section 子树不参与布局/绘制</li>
+ *   <li>handler 边界：导航点击 handler 只 activeSectionSignal.set，不直接改 SceneNode</li>
  * </ul>
  *
  * <h3>按钮回调</h3>
@@ -375,7 +375,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
                 pageRoot.appendChild(scrollContainer);
             }
 
-            // S4：save 反馈独立行，rt.show 懒挂载（saveFeedbackSignal 非 NONE 时显示，NONE 时隐藏不占高，守 I7）。
+            // S4：save 反馈独立行，rt.show 懒挂载（saveFeedbackSignal 非 NONE 时显示，NONE 时隐藏不占高——未激活子树不参与布局/绘制）。
             // 挂在 scrollContainer 之后（页壳 COLUMN 内）——反馈靠近底部，actionBar 已在顶部，反馈不挤占操作行视觉。
             rt().show(pageRoot,
                     Computed.create(() -> {
@@ -433,7 +433,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
             });
             // 项4：滚动条叠加在 viewport 右侧（scrollContainer ROW 内 viewport 旁的独立列），
             // 反映滚动位置/可滚动范围。几何由 bind 派生（订阅 activeScroll + rt.layoutDoneSignal），
-            // 守 I7/I11/I4。P0：scrollbar 内部直接订阅 rt.layoutDoneSignal()——
+            // 守「滚动只标 COMPOSITE 零重排 / handler 只写 signal / 失效级别由 setter 自决」。P0：scrollbar 内部直接订阅 rt.layoutDoneSignal()——
             // host 在 post-flush 主树与 overlay 完成布局后桥接最终 epoch，scrollbar 同帧 flush
             // 内重跑 effect 读最新 LayoutBox，
             // 零滞后覆盖 section 切换 + 窗口 resize 两种 content 高度变化场景。
@@ -540,10 +540,10 @@ public class ConfigScreen extends AbstractSceneHostWidget {
 
     /**
      * 创建 save 反馈独立行（S4）：仅在 {@code saveFeedbackSignal} 非 NONE 时挂载，
-     * NONE 时隐藏不占高（守 I7，rt.show 懒挂载）。
+     * NONE 时隐藏不占高（rt.show 懒挂载：未激活子树不参与布局/绘制）。
      *
      * <p>requiresReload 冲突时额外挂「丢弃编辑并重新加载」按钮行（组件只建一次，
-     * 显隐由 Signal/Computed + rt.show 驱动，守 I1/I3/I9；不自动 reload/merge）。</p>
+     * 显隐由 Signal/Computed + rt.show 驱动（不做命令式挂卸、组件只建一次、写入帧末批处理生效）；不自动 reload/merge）。</p>
      *
      * <p>G15/Shell：内容卡片底座改走主题路径——表面由 {@link SceneSurfaceBinder} 按来源
      * 主题 {@code GROUP} 配方独占绑定（低干扰内容底座，契约 §4.1），旧的
@@ -588,7 +588,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
         row.appendChild(feedback);
         col.appendChild(row);
 
-        // reload 按钮：condition = requiresReload；Supplier 只跑一次建按钮（I3）
+        // reload 按钮：condition = requiresReload；Supplier 只跑一次建按钮
         rt().show(col,
                 Computed.create(() -> Boolean.valueOf(adapter.requiresReload())),
                 this::createReloadButtonRow);

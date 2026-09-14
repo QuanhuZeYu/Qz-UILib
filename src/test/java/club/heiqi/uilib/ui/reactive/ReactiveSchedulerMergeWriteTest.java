@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 调度器「帧末合并写入 + 净变化去重」回归测试（I9）。
+ * 调度器「帧末合并写入 + 净变化去重」回归测试。
  *
  * <p>直击历史 latent bug：去重曾放在 {@link Signal#set(Object)}，用「已 flush 旧值」做比较，
  * 导致「同帧 set 到中间值、再 set 回帧初值」的第二次 set 被误判无变化而丢弃，flush 后落到错误的
@@ -128,7 +128,7 @@ public class ReactiveSchedulerMergeWriteTest {
      * 在紧接的 drain 轮内被应用、订阅者被 markDirty、下游 effect 在<b>同一 flush</b> 内重跑。
      *
      * <p>历史：原实现阶段1 已 clear 后阶段2 不再 drain，导致 effect 内 set 要等下次 flush 生效，
-     * 曾靠 Signal.setImmediate 绕过队列补救（违反 I2）。改为双通道后此用例直接验证同帧生效。</p>
+     * 曾靠 Signal.setImmediate 绕过队列补救（违反单一收口：写入必须经调度器队列，不得同步绕过）。改为双通道后此用例直接验证同帧生效。</p>
      */
     @Test
     public void phase2EffectSetAppliedSameFlush() {

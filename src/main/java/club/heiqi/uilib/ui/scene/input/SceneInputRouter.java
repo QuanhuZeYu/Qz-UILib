@@ -21,7 +21,8 @@ import club.heiqi.uilib.ui.scene.overlay.SceneOverlayHost;
 import club.heiqi.uilib.util.LogThrottle;
 
 /**
- * 场景输入路由器 —— I2 路由主入口 + I4a 键盘/焦点路由。
+ * 场景输入路由器 —— 指针/滚动/键盘/文本事件的统一路由入口，兼任 handler 注册表、
+ * hover/按压/捕获交互状态与焦点/cursor 投影的权威状态机。
  *
  * <h3>核心职责</h3>
  * <ul>
@@ -36,18 +37,18 @@ import club.heiqi.uilib.util.LogThrottle;
  *       跨 overlay/主树（不同 paint root）时 LCA=null 不合成（浮层卸载场景正确）。</li>
  *   <li><b>hit-test → target+bubble</b>：每 POINTER 事件 hit-test 得命中链，
  *       映射 action→type，先 target 阶段再沿链向 root 反向 bubble。</li>
- *   <li><b>I4a 键盘/文本路由</b>：持有 {@link FocusManager}，key 事件投给焦点节点走 bubble；
+ *   <li><b>键盘/文本路由</b>：持有 {@link FocusManager}，key 事件投给焦点节点走 bubble；
  *       text 事件投给焦点节点；Tab 触发焦点遍历。</li>
  * </ul>
  *
  * <h3>零标脏硬不变量</h3>
  * <p>route 过程中绝不调用任何 node.setXxx()/markXxx()/appendChild/removeChild，
- * hit-test 的绝对坐标仅在遍历时临时累加绝不回写（I7/I11）。</p>
+ * hit-test 的绝对坐标仅在遍历时临时累加绝不回写（路由全程只读，不写节点也不标脏）。</p>
  *
  * <h3>真机文本通道诊断（零行为变更）</h3>
  * <p>TEXT_INPUT 是平台文本通道的终点：事件已到达路由器却无人接收时，现象与"事件根本没来"
  * 完全一样（输入框无反应）。故本类在文本分发入口补三条互斥观测（限流，仅读注册表与焦点真值，
- * 不碰任何 setter，不扩 I11）：</p>
+ * 不碰任何 setter，不扩大 handler 边界）：</p>
  * <ul>
  *   <li>无焦点目标 → warn（限流）：事件到了，但焦点为空；</li>
  *   <li>有焦点但冒泡链上无 TEXT_INPUT handler → warn（限流）：事件到了但没有控件接受；</li>
@@ -97,9 +98,9 @@ public class SceneInputRouter {
     private SceneOverlayHost.Entry capturedOverlayEntry;
 
     /**
-     * I3 交互状态：当前 hover 的节点（单节点，最深命中目标）。
+     * 交互状态：当前 hover 的节点（单节点，最深命中目标）。
      *
-     * <p>I3 仅跟踪最深命中目标的 hover 切换；整条祖先链 :hover 留 I4。</p>
+     * <p>仅跟踪最深命中目标的 hover 切换；整条祖先链的 :hover 尚未实现。</p>
      */
     private SceneNode hoveredNode;
 
@@ -108,12 +109,12 @@ public class SceneInputRouter {
      *
      * <p>route 内检测到本帧含 SCROLL 事件时置 true；由 host 在 flush + layout 后
      * 调用 {@link #reconcileHoverAfterScroll} 消费并清零。纯内部协议状态，
-     * 不在 EventContext 上，handler 碰不到（不扩 I11）。</p>
+     * 不在 EventContext 上，handler 碰不到。</p>
      */
     private boolean pendingHoverReconcile = false;
 
     /**
-     * I3 交互状态外挂表：SceneNode → {@link SceneInteractionState}。
+     * 交互状态外挂表：SceneNode → {@link SceneInteractionState}。
      *
      * <p>强引用 Map（禁止 WeakHashMap），靠 {@link Owner#onCleanup} 回收，
      * 与 handler registry 同款生命周期。</p>
@@ -121,17 +122,17 @@ public class SceneInputRouter {
     private final Map<SceneNode, SceneInteractionState> interactionStates = new HashMap<>();
 
     /**
-     * I4a 焦点管理器：全局唯一焦点 + focusable 注册表 + Tab 遍历。
+     * 焦点管理器：全局唯一焦点 + focusable 注册表 + Tab 遍历。
      * 构造注入 interactionStates 引用，焦点切换时通过它写 focused signal。
      */
     private final FocusManager focusManager;
 
     /**
-     * I4c 全局光标 signal：Router 在 hover 切换时写入解析后的 {@link SceneCursor}，
+     * 全局光标 signal：Router 在 hover 切换时写入解析后的 {@link SceneCursor}，
      * cursor effect 订阅它驱动 {@link CursorBackend#apply}。初始值 {@link SceneCursor#DEFAULT}。
      *
      * <p>写操作 = {@code cursorSignal.set(SceneCursorResolver.resolve(hoveredNode))}，
-     * 走 queueWrite，同帧末 flush 生效（I9 同帧一次 flush）。</p>
+     * 走 queueWrite，同帧末 flush 生效（一帧一次 flush）。</p>
      */
     private final Signal<SceneCursor> cursorSignal = Signal.create(SceneCursor.DEFAULT);
 
@@ -185,7 +186,7 @@ public class SceneInputRouter {
             int canvasX = pe.getLogicalX();
             int canvasY = pe.getLogicalY();
 
-            // hit-test：overlay top-first 优先；未命中时退回主树（hitTester 全程只读，守 I7）。
+            // hit-test：overlay top-first 优先；未命中时退回主树（hitTester 全程只读，不写节点也不标脏）。
             HitResult hitResult = hitTestWithOverlays(root, canvasX, canvasY, rootAbsX, rootAbsY);
             List<SceneNode> hitChain = hitResult.chain;
 
@@ -204,7 +205,7 @@ public class SceneInputRouter {
             // 改为比对帧初值与合并末值，终值==帧初值（往返回原值）会被正确吸收为无净变化，
             // 不再残留。权威 hoveredNode 真值在任何时刻都正确，无需额外维护本帧 touched 集。
             //
-            // ★ capture 只改 dispatch effectiveTarget，绝不改 newHover = hitTarget（守 I3 边界③）
+            // ★ capture 只改 dispatch effectiveTarget，绝不改 newHover = hitTarget（hover 权威真值只由 hit-test 决定）
             if (type == SceneEventType.POINTER_MOVE) {
                 // 复用统一 hover 切换逻辑（与 reconcileHoverAfterScroll 同源）
                 updateHoverFromTarget(hitTarget);
@@ -217,7 +218,7 @@ public class SceneInputRouter {
                 pendingHoverReconcile = true;
             }
 
-            // === POINTER_CANCEL 收口（I4d）：在 effectiveTarget 判定之前走专属投递块，绝不触达通用 dispatch ===
+            // === POINTER_CANCEL 收口：在 effectiveTarget 判定之前走专属投递块，绝不触达通用 dispatch ===
             // CANCEL 目标是 pressedNode/capturedNode，不依赖 hit-test 命中；
             // 提前处理 + continue 确保跳过通用 effectiveTarget dispatch，消除 double-dispatch。
             if (type == SceneEventType.POINTER_CANCEL) {
@@ -246,15 +247,15 @@ public class SceneInputRouter {
     }
 
     /**
-     * POINTER_CANCEL 专属投递（I4d 收口）。
+     * POINTER_CANCEL 专属投递（取消帧收口）。
      *
      * <p>CANCEL 目标是 pressedNode/capturedNode，不依赖 hit-test 命中；
      * 在 route 中提前处理 + continue 确保跳过通用 effectiveTarget dispatch，消除 double-dispatch。</p>
      *
      * <p>CANCEL 沿捕获时锁定的 paint root 派发；overlay anchor 与 occurrence placement 在派发时重算。
-     * 投递完成后写入 pressed=false 并清空所有按压/捕获状态（收口 I3 边界① 的 pressedNode 失焦泄漏）。</p>
+     * 投递完成后写入 pressed=false 并清空所有按压/捕获状态（收口 pressedNode 因失焦而未被清理的泄漏）。</p>
      *
-     * <p>零标脏（I7）：只读 interactionStates，不碰任何 SceneNode setter。</p>
+     * <p>零标脏：只读 interactionStates，不碰任何 SceneNode setter。</p>
      *
      * @param pe       指针事件（取 button/wheelDelta/修饰键/timeNanos）
      * @param canvasX  画布逻辑 X
@@ -343,13 +344,13 @@ public class SceneInputRouter {
      * 豁免条件严格限定为 {@code hitResult.overlayEntry != null}，不扩大到其他场景。</p>
      *
      * <p>★判定只看 hitTarget（命中真值），与 capturedNode/pressedNode 正交——失焦是焦点机制、capture 是指针机制。
-     * 零标脏（I7）：clearFocus 内部 writeFocused(false)→queueWrite，focusedNode==null 时短路安全；requestFocus 同款零标脏。</p>
+     * 零标脏：clearFocus 内部 writeFocused(false)→queueWrite，focusedNode==null 时短路安全；requestFocus 同款零标脏。</p>
      *
      * <p>★N1 守卫：显式 capture 持有期抑制隐式聚焦——capture 已把指针归属锁定到 capturedNode，
      * 此时同一 DOWN 若再走隐式聚焦（命中非 focusable/树外 → clearFocus）会与 capture 投递形成相反归属，
      * capture 持有期焦点机制让位指针 capture，跳过本块。</p>
      *
-     * <h3>effectiveTarget 判定（I4d）</h3>
+     * <h3>effectiveTarget 判定（含显式指针捕获）</h3>
      * <p>显式 capture 优先 ＞ 隐式 pressedNode（MOVE/UP）＞ hitTarget。非捕获且未命中（hitTarget==null）
      * 直接 return 跳过此事件（原 route 循环中的 continue，因后续逻辑全在本方法内，return 等价）。</p>
      *
@@ -392,7 +393,7 @@ public class SceneInputRouter {
             }
         }
 
-        // ===== 显式 capture 优先于隐式 pressedNode（I4d effectiveTarget 判定） =====
+        // ===== 显式 capture 优先于隐式 pressedNode（effectiveTarget 判定） =====
         SceneNode effectiveTarget;
         if (capturedNode != null) {
             // 显式捕获：MOVE/UP/DOWN 都强制投 capturedNode，即使 hitTarget 为 null
@@ -407,7 +408,7 @@ public class SceneInputRouter {
             effectiveTarget = hitTarget;
         }
 
-        // 构造事件（两层坐标 I12）：
+        // 构造事件（两层坐标：raw 屏幕绝对 / local 当前接收 handler 节点局部）：
         //   rawPointerX/Y = 屏幕绝对（raw，含 rootAbs），SceneEvent 只携带 raw
         //   local 由 ctx 每级 bubble 重算（rawPointer - absoluteBox(currentNode, treeAbs)）
         // overlay 命中时 treeAbs=overlay anchor，主树命中时 treeAbs=rootAbs，local 自动正确。
@@ -573,7 +574,7 @@ public class SceneInputRouter {
                 reportTextWithoutReceiver(te, null);
                 continue; // 无焦点丢弃
             }
-            // 只读注册表判定接收者（不新增任何 setter 调用，不扩 I11）：TEXT_INPUT handler 可挂在
+            // 只读注册表判定接收者（不新增任何 setter 调用，不扩大 handler 边界）：TEXT_INPUT handler 可挂在
             // 焦点目标自身或任一祖先（bubble 阶段派发），故沿父链查 active handler。
             if (hasTextInputReceiver(focusTarget)) {
                 reportTextDelivery(te, focusTarget);
@@ -804,10 +805,10 @@ public class SceneInputRouter {
      *
      * <p>给定本帧最深命中目标 newHover（可能 null），与当前 hoveredNode 比较：
      * 不同则对旧节点 writeHovered(false)、新节点 writeHovered(true)，更新 hoveredNode，
-     * 并写 cursorSignal（均走 queueWrite，同帧末 flush 生效，守 I9）。</p>
+     * 并写 cursorSignal（均走 queueWrite，同帧末 flush 生效，一帧一次 flush）。</p>
      *
-     * <p>零标脏（I7）：只读 interactionStates / cursorSignal，不碰任何 SceneNode setter。
-     * capture 只改 dispatch effectiveTarget，绝不改 newHover（守 I3 边界③）。</p>
+     * <p>零标脏：只读 interactionStates / cursorSignal，不碰任何 SceneNode setter。
+     * capture 只改 dispatch effectiveTarget，绝不改 newHover（hover 权威真值只由 hit-test 决定）。</p>
      *
      * @param newHover 本帧最深命中目标，可能 null（指针移出整树）
      */
@@ -822,7 +823,7 @@ public class SceneInputRouter {
                 if (cur != null) cur.writeHovered(true);
             }
             hoveredNode = newHover;
-            // I4c: hover 切换后更新全局 cursor signal（queueWrite，同帧末 flush 生效）
+            // hover 切换后更新全局 cursor signal（queueWrite，同帧末 flush 生效）
             cursorSignal.set(SceneCursorResolver.resolve(hoveredNode));
         }
     }
@@ -847,7 +848,7 @@ public class SceneInputRouter {
      * 下一帧若无新事件是空帧，host 不调 route，标记永远等不到。故重算必须在 flush 之后、
      * scrollOffsetY 已生效时由 host 显式调用本方法。</p>
      *
-     * <h3>协议纪律（不扩 I11）</h3>
+     * <h3>协议纪律（不扩大 handler 边界）</h3>
      * <p>本方法是 Router↔host 内部协议，与 route 同级，不在 {@link SceneEventContext} 上，
      * handler 碰不到。hover 重算是 Router 内部职责（与 MOVE 触发 hover 同源），不需要外部命令。</p>
      *
@@ -1182,7 +1183,7 @@ public class SceneInputRouter {
         return st;
     }
 
-    // ==================== I4d 显式指针捕获 ====================
+    // ==================== 显式指针捕获 ====================
 
     /**
      * 请求显式指针捕获：将指定节点设为捕获目标。
@@ -1209,7 +1210,7 @@ public class SceneInputRouter {
         this.capturedOverlayEntry = null;
     }
 
-    // ==================== I4a 焦点/键盘委托 ====================
+    // ==================== 焦点/键盘委托 ====================
 
     /**
      * 请求将焦点切换到指定节点（薄委托到 {@link FocusManager#requestFocus}）。切换会同步派发
@@ -1262,13 +1263,13 @@ public class SceneInputRouter {
         return focusManager.getFocusedNode();
     }
 
-    // ==================== I4c cursor 暴露 ====================
+    // ==================== cursor 暴露 ====================
 
     /**
      * 暴露全局 cursor signal（只读），供 {@code SceneRuntime.bindCursor} 创建 cursor effect。
      *
      * <p>signal 值由 Router 在 hover 切换时写入 {@link SceneCursorResolver#resolve} 结果，
-     * 走 queueWrite → 同帧末 flush 生效（I9）。</p>
+     * 走 queueWrite → 同帧末 flush 生效（一帧一次 flush）。</p>
      *
      * @return 全局光标样式 signal（只读）
      */
@@ -1286,7 +1287,7 @@ public class SceneInputRouter {
     }
 
     /**
-     * @return 当前显式捕获节点（测试探针，I4d）
+     * @return 当前显式捕获节点（测试探针）
      */
     SceneNode __getCapturedNode() {
         return capturedNode;

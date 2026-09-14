@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.scene.image.SceneImageSource;
  * <p>每条接口调用被快照为一个 {@link RenderCall}（方法名 + 参数值），追加到内部列表。
  * 不画任何图，只记录。用于契约测试端到端验证 scene 核心（paint engine → replayer）
  * 纯靠 {@link UiRenderBackend} 接口方法工作，不依赖任何 GL 语义或 UiRenderContext 特有
- * 能力——这是「换渲染后端零改动」承诺的测试锚点（宪章信条六）。</p>
+ * 能力——这是「换渲染后端零改动」承诺的测试锚点。</p>
  *
  * <h3>设计要点</h3>
  * <ul>

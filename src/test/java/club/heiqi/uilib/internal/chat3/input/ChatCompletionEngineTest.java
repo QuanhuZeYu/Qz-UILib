@@ -76,7 +76,7 @@ public class ChatCompletionEngineTest {
         Assert.assertEquals("首 Tab 发 C14 光标前全文(含 /)", Arrays.asList("/tp ste"), host.sentRequests);
         Assert.assertEquals("等待态不修改文本", "/tp ste", host.text);
 
-        engine.onTab(1); // 等待态重复 Tab:原版语义重发 C14(I4:FIFO 追加请求,不覆盖既有请求快照)
+        engine.onTab(1); // 等待态重复 Tab:原版语义重发 C14(FIFO 追加请求,不覆盖既有请求快照)
         Assert.assertEquals(2, host.sentRequests.size());
         Assert.assertEquals(Arrays.asList("/tp ste", "/tp ste"), host.sentRequests);
         Assert.assertEquals("等待态不修改文本", "/tp ste", host.text);
@@ -336,7 +336,7 @@ public class ChatCompletionEngineTest {
         ChatCompletionEngine engine = engine(host);
         engine.onTab(1);
 
-        engine.onTab(1); // I4:AWAITING 期重复 Tab 追加请求(FIFO 排队),绝不覆盖既有请求快照
+        engine.onTab(1); // AWAITING 期重复 Tab 追加请求(FIFO 排队),绝不覆盖既有请求快照
         Assert.assertEquals(Arrays.asList("/tp ste", "/tp ste"), host.sentRequests);
 
         // 响应1:空应答(无候选可应用),文本不变 → 请求2 快照仍匹配
@@ -356,7 +356,7 @@ public class ChatCompletionEngineTest {
         ChatCompletionEngine engine = engine(host);
         engine.onTab(1); // 请求1 快照 A = "/tp ste"
 
-        // 文本继续编辑为 B(直接改真值,不调 onTextEdited:模拟清队时序缝隙,正是 I4 要防的错配)
+        // 文本继续编辑为 B(直接改真值,不调 onTextEdited:模拟清队时序缝隙,正是请求快照校验要防的错配)
         host.text = "/tp stev";
         engine.onTab(1); // 请求2 快照 B = "/tp stev",FIFO 追加(不覆盖请求1)
         Assert.assertEquals("每次 Tab 各发一份请求", 2, host.sentRequests.size());
@@ -405,7 +405,7 @@ public class ChatCompletionEngineTest {
         engine.onTab(1);
         Assert.assertEquals(2, host.sentRequests.size());
 
-        engine.onTextEdited(); // I4:清空全部 pending,而非仅清最后一份请求快照
+        engine.onTextEdited(); // 清空全部 pending,而非仅清最后一份请求快照
         Assert.assertEquals("编辑后回到 idle,不残留 pending", 2, host.sentRequests.size());
 
         engine.onResponse(new String[] { "steve", "stella" });

@@ -26,7 +26,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <h3>定位：受控双向控件（契约 R7）</h3>
  * <p>受控双向契约同 {@link SceneCheckbox}：控件<b>零内部状态</b>，当前开关态由外部 {@code on}
  * 只读 signal 驱动；点击时<b>绝不自己翻转</b>，而是经 {@code onChange.accept(!on.get())}
- * 把「期望新值」交还外部，由外部 set 回 on signal（守 R1/R5/I11/R7）。</p>
+ * 把「期望新值」交还外部，由外部 set 回 on signal（守 R1/R5/R7，且 handler 只上抛期望值、不直接改状态的边界）。</p>
  *
  * <h3>结构</h3>
  * <p>root（交互单元，hitTestable 默认 true，ROW + SHRINK 内容宽 + 交叉轴 CENTER + gap）

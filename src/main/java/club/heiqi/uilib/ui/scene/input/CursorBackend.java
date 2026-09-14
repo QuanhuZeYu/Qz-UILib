@@ -5,12 +5,12 @@ package club.heiqi.uilib.ui.scene.input;
  *
  * <h3>设计理由（入核心包而非适配层）</h3>
  * <p>本接口仅声明 {@code void apply(SceneCursor)}，零平台依赖、零 LWJGL/Minecraft import，
- * 满足 I10 红线。置于核心包 {@code ui.scene.input} 使 {@code SceneRuntime.bindCursor(CursorBackend)}
+ * 满足平台类型止于适配边界的红线。置于核心包 {@code ui.scene.input} 使 {@code SceneRuntime.bindCursor(CursorBackend)}
  * 能直接引用本类型；实现类（{@code LwjglCursorBackend}）落平台适配层
  * {@code ui.scene.host.lwjgl}，在宿主接线时通过多态注入。</p>
  *
  * <h3>实现合同</h3>
- * <p>实现方必须静默 no-op 降级：反射全失败时不得抛异常打断输入链路（I4c 叫停关口⑤）。</p>
+ * <p>实现方必须静默 no-op 降级：反射全失败时不得抛异常打断输入链路。</p>
  */
 public interface CursorBackend {
 

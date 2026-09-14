@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import com.github.bsideup.jabel.Desugar;
 
 /**
- * 增量布局引擎 —— 实施 I7"干净子树三阶段跳过"的布局核心。
+ * 增量布局引擎 —— 实施"干净子树在布局、绘制、合成三阶段被整棵跳过"的布局核心。
  *
  * <h3>核心思想：双标记决定跳过/下沉/重算</h3>
  * <p>每个节点持有两个布局脏标记：
@@ -22,7 +22,7 @@ import com.github.bsideup.jabel.Desugar;
  * DFS 遍历时，引擎读取这两个布尔标记决定行为：</p>
  * <ul>
  *   <li><b>双 false → 整棵跳过</b>：节点自身和所有后代均干净，直接 return，
- *       复用 {@code cachedLayout}。这是 I7 的核心价值：干净子树零开销。</li>
+ *       复用 {@code cachedLayout}。这是增量布局的核心价值：干净子树零开销。</li>
  *   <li><b>selfLayoutDirty==true → 重算本节点</b>：自身的 text/子节点集合等输入变了，
  *       执行后序遍历：先递归子节点，再基于子节点布局结果重算本节点。</li>
  *   <li><b>selfLayoutDirty==false && descendantLayoutDirty==true → 下沉但不重算</b>：
@@ -35,11 +35,11 @@ import com.github.bsideup.jabel.Desugar;
  * 行高由 {@link SceneTextMeasurer#lineHeight} 驱动。叶节点主轴宽不再被 cross-align 改写，
  * 使 ROW+CENTER 主轴偏移恢复非 0（叶节点内在宽 &lt; 可用宽时居中可见）。</p>
  *
- * <h3>I10 接缝纯净</h3>
+ * <h3>接缝纯净（平台类型止于适配边界）</h3>
  * <p>引擎只认 scene 端口 {@link SceneTextMeasurer}，绝不 import 任何平台类、
- * 渲染上下文或 {@code ui.text.*} 度量实现。真实度量由装配层 adapter 委托完成（I6）。</p>
+ * 渲染上下文或 {@code ui.text.*} 度量实现。真实度量由装配层 adapter 委托完成（core 不 import 渲染/样式层类型）。</p>
  *
- * <h3>epoch 失效链（I7 铁律：只向上冒泡）</h3>
+ * <h3>epoch 失效链（铁律：只向上冒泡）</h3>
  * <p>字体运行时 epoch 变化时，遍历上一帧测量过的文本叶节点，对每个
  * {@code node.__getLastMeasuredEpoch() != currentEpoch} 的节点 {@code markSelfLayout()}
  * （只向上冒泡，O(文本节点数)，<b>绝不向下递归标脏</b>）。</p>
@@ -53,7 +53,7 @@ import com.github.bsideup.jabel.Desugar;
  * 下沉到文本叶自查点。</p>
  *
  * <p><b>measuredTextNodes 保有界强引用登记表。</b>与原机制语义等价（原机制只在
- * epoch 变化帧清空+重填，平时保留累积清单）。若每帧清空，会因 I7 干净跳过导致干净
+ * epoch 变化帧清空+重填，平时保留累积清单）。若每帧清空，会因干净子树整棵跳过导致干净
  * 文本叶不走 computeWidth、不重填，下一帧 measuredTextNodes 丢失这些节点，失效链断裂。</p>
  *
  * <p><b>三条不变量（P1-1）</b>：</p>
@@ -138,7 +138,7 @@ public class SceneLayoutEngine {
      * <b>绝不向下递归</b>）。</p>
      *
      * <p><b>持续累积，不在入口清空</b>：与原机制语义等价（原机制只在 epoch 变化帧
-     * 清空+重填）。若每帧清空，I7 干净跳过会导致干净文本叶不走 computeWidth、不重填，
+     * 清空+重填）。若每帧清空，干净子树整棵跳过会导致干净文本叶不走 computeWidth、不重填，
      * 下一帧 measuredTextNodes 丢失这些节点，失效链断裂。文本叶测量时幂等 add，
      * detached 节点累积无害（冒泡到 null parent 无害）。</p>
      *
@@ -151,7 +151,7 @@ public class SceneLayoutEngine {
      *
      * <p><b>阶段 4.1：注入 SizingCalculator</b>。本 Set 仍由主引擎拥有（layout 入口
      * 遍历它做 epoch 比对），但 {@link SizingCalculator#computeWidth} 内的 add 登记
-     * 动作通过构造器注入的同一引用完成，语义与原主引擎内联时逐位等价（I7/I8）。</p>
+     * 动作通过构造器注入的同一引用完成，语义与原主引擎内联时逐位等价。</p>
      *
      * <p><b>阶段 P1-1：有界 + 可剪枝</b>。原先「只增不减」使保留 1 个文本叶即经
      * {@code parent} 链钉住整棵已卸载子树（连 cachedLayout/cachedPaint/TextLinePlan 一起常驻），
@@ -245,7 +245,7 @@ public class SceneLayoutEngine {
     // 主引擎作为消费者引用 FlexLayouter.SelfBubbleSignal，详见 FlexLayouter 类级 Javadoc。
 
     /**
-     * I7 跳过判定结果载体。
+     * 跳过判定结果载体（干净子树整棵跳过）。
      *
      * <ul>
      *   <li>{@code canSkip}：三道闸门合取（cleanSelf && !childConstraintsWouldChange
@@ -283,7 +283,7 @@ public class SceneLayoutEngine {
      * 上一次 layout 调用传入的根约束。
      *
      * <p>用于检测约束变化：约束变化时驱动 root 标脏，保证约束增高/降低
-     * 能被布局引擎感知。约束不变时不做任何标脏，保持 I7 双 false 跳过。</p>
+     * 能被布局引擎感知。约束不变时不做任何标脏，保持「双 false + 缓存有效」的整棵跳过。</p>
      */
     private Constraints lastRootConstraints;
 
@@ -337,7 +337,7 @@ public class SceneLayoutEngine {
      *
      * @param root            场景树根节点
      * @param rootConstraints 根节点的布局约束（如屏幕可用宽度）
-     * @return layout 产出的不可变结果，携带 I7/I8 测试探针
+     * @return layout 产出的不可变结果，携带布局重算统计测试探针
      */
     public LayoutResult layout(SceneNode root, Constraints rootConstraints) {
         // ==================== 入口序列（顺序即语义） ====================
@@ -349,7 +349,7 @@ public class SceneLayoutEngine {
         //   入口冒泡点亮 descendantLayoutDirty，使干净中间层下沉到文本叶自查点。
         //
         // ★ 不清空 measuredTextNodes：与原机制语义等价。原机制只在 epoch 变化帧清空+重填
-        //   （if 保护），平时保留累积清单。若每批清空，会因 I7 干净跳过导致干净文本叶
+        //   （if 保护），平时保留累积清单。若每批清空，会因干净子树整棵跳过导致干净文本叶
         //   不走 computeWidth、不重填，下一批登记表丢失这些节点，失效链断裂。
         //   登记表改由「结构变更剪枝 + 已知根 LRU + 有界强引用」维持有界性（P1-1 三不变量）。
 
@@ -452,7 +452,7 @@ public class SceneLayoutEngine {
      * 顶层节点在 {@link #knownRoots} 内 → 仍挂载，保留；否则整条链已断开 → 移除。</p>
      *
      * <p><b>为什么移除前必须作废路径缓存</b>：被移除的文本叶不再参与 epoch 失效链，
-     * 若它所在子树日后被重挂载，I7 的「干净子树整棵跳过」会让它永远不被重新测量
+     * 若它所在子树日后被重挂载，「干净子树整棵跳过」会让它永远不被重新测量
      * （cachedLayout 非空 + 双标记 false），索引完备性会静默失守。沿 叶→顶 的路径逐个
      * {@link SceneNode#markSelfLayout()} 后，重挂载时该路径上每个节点都不满足跳过条件，
      * 布局必然下潜到文本叶 → 重新测量 → 重新登记，失效链自愈。</p>
@@ -538,7 +538,7 @@ public class SceneLayoutEngine {
     // ==================== 内部递归 ====================
 
     /**
-     * DFS 递归布局，实施双标记判定（I7 灵魂）+ 子节点几何变化上传。
+     * DFS 递归布局，实施双标记判定 + 子节点几何变化上传。
      *
      * <h3>返回值</h3>
      * <p>返回 {@code true} 表示以本节点为根的子树几何发生了变化（本节点或后代
@@ -563,7 +563,7 @@ public class SceneLayoutEngine {
     private SubtreeLayoutResult layoutInternal(SceneNode node, Constraints constraints,
                                                int[] relayoutCount, Set<SceneNode> relayoutedNodes,
                                                Set<SceneNode> constraintRelayoutedNodes) {
-        // ==== I7 核心判定：缓存有效 + 双 false → 整棵跳过，几何未变 ====
+        // ==== 核心判定：缓存有效 + 双 false → 整棵跳过，几何未变 ====
         // 在原「缓存有效 + 双 false」基础上，叠加两道与约束相关的放行条件：
         //   1. childConstraintsWouldChange：约束变化是否会改变下传给子的约束
         //      （决定是否值得为后代下沉递归，约束未变/无子 → false，99% 干净帧短路）；
@@ -605,7 +605,7 @@ public class SceneLayoutEngine {
         boolean selfPaintBubble = false;
 
         if (needRelayout) {
-            // 仅在"节点自身内容变化"时计入重算统计（I7 语义）
+            // 仅在"节点自身内容变化"时计入重算统计
             // 因兄弟几何变化导致的"位置顺移"不算入重算计数
             if (selfDirty) {                       // 计数口径维持只认 selfDirty，零回归现存测试
                 relayoutCount[0]++;
@@ -637,7 +637,7 @@ public class SceneLayoutEngine {
     }
 
     /**
-     * I7 跳过判定：计算"干净子树整棵跳过"的三道闸门，并携带 selfConsumesConstraint 回传。
+     * 跳过判定：计算"干净子树整棵跳过"的三道闸门，并携带 selfConsumesConstraint 回传。
      *
      * <h3>三道闸门（全 true 才跳过）</h3>
      * <ol>

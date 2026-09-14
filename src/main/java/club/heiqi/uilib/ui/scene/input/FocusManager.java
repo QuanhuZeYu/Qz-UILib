@@ -12,7 +12,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 
 /**
- * 焦点管理器 —— I4a 全局唯一焦点 + focusable 注册表 + Tab 遍历。
+ * 焦点管理器 —— 全局唯一焦点 + focusable 注册表 + Tab 遍历。
  *
  * <h3>核心职责</h3>
  * <ul>
@@ -21,7 +21,7 @@ import java.util.WeakHashMap;
  *       与 handler registry / interactionStates 同款生命周期。</li>
  *   <li><b>焦点切换写 signal</b>：通过共享的 {@link #interactionStates} 引用，
  *       对旧焦点调用 {@code writeFocused(false)}、新焦点调用 {@code writeFocused(true)}，
- *       接通 I3 留下的 dead code（I11 白名单②）。</li>
+ *       接通此前遗留的 dead code（焦点切换是受控命令入口：只改 Router 权威状态，结果仍经 focused signal 暴露）。</li>
  *   <li><b>同步生命周期事件</b>：由 Router 安装的 listener 在 authority 切换返回前派发
  *       {@link SceneEventType#FOCUS_LOST}/{@link SceneEventType#FOCUS_GAINED}；focused signal 仍延迟。</li>
  *   <li><b>Tab/Shift+Tab 遍历</b>：按根节点 DOM 前序排序 focusables 后循环遍历。</li>

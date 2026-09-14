@@ -19,7 +19,7 @@ import club.heiqi.uilib.ui.scene.node.Transform;
  *
  * <p>验证 compositeDirty 不再是白标——opacity 经 PUSH_OPACITY/POP_OPACITY 边界命令传导、
  * transform-translate 经命令绝对坐标传导，且<b>纯 composite 变化帧零重排零 fragment 重建</b>
- * （信条五铁律）。</p>
+ * ——此为不可破的合成级铁律。</p>
  *
  * <h3>断言策略</h3>
  * <p>group 栈配对正确性全部在 <b>PaintPlan 命令流层面</b>断言（不依赖 UiRenderContext——
@@ -34,7 +34,7 @@ public class ScenePaintCompositeReplayTest {
     private final ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
 
     // ============================================================
-    // A. 信条五铁律锚点（最高优先，★）
+    // A. 合成级铁律锚点（最高优先，★）
     // ============================================================
 
     /**

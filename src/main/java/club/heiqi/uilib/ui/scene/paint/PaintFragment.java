@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.control.SceneListOps;
  * 单节点绘制片段缓存单元。
  *
  * <p>每个场景节点在绘制阶段产出一组绘制命令，封装为 {@code PaintFragment}。
- * 后续可配合节点级 paint 脏标记实现缓存复用（宪章 I8）：若节点的
+ * 后续可配合节点级 paint 脏标记实现缓存复用：若节点的
  * {@code selfPaintDirty} 未标，其绘制属性不变，对应的 PaintFragment 可跳过重建直接复用。</p>
  *
  * <p>本类不可变：构造时做防御性拷贝，对外暴露不可变视图。</p>

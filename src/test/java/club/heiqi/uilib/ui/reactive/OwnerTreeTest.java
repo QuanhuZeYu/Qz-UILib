@@ -10,7 +10,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * Owner 树形作用域契约测试（信条三：组件挂载/卸载）。
+ * Owner 树形作用域契约测试（组件挂载/卸载）。
  *
  * <p>覆盖：嵌套子作用域、递归 dispose、effect 自动归属当前作用域、cleanup 回调、dispose 后从父摘除。</p>
  */

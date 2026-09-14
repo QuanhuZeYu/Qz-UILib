@@ -192,7 +192,7 @@ public final class SceneInteractionHarness {
      * 可能的卸载），再 UP 帧 route+flush。传 {@code null} 退化为紧邻两帧 DOWN/UP（无中间 layout），
      * 语义等价于 {@link #press(SceneNode)} + {@link #release(SceneNode)} 但用一个坐标缓存。</p>
      *
-     * <p><b>不在本方法内写 signal、不命令式挂卸 overlay、不碰节点结构</b>（守 I1/I7/I11/I12、R11/R13）——
+     * <p><b>不在本方法内写 signal、不命令式挂卸 overlay、不碰节点结构</b>（R11/R13）——
      * 纯 route+flush 注入路径，overlay 卸载由调用方在 {@code betweenFrames} 里触发生产语义（写 expanded
      * signal 等）。</p>
      *

@@ -38,7 +38,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /**
- * 控件字号运行期守卫（字号动态化 I-4，守卫 1b）：挂载式控件在真实帧里必须跟随句柄字号，
+ * 控件字号运行期守卫（字号动态化，守卫 1b）：挂载式控件在真实帧里必须跟随句柄字号，
  * 浮层族必须与句柄字号保持单值一致。
  *
  * <p>断言只读真实帧产物（{@link PaintCommand#getTextStyle()} 的字号），不读节点内部字段：

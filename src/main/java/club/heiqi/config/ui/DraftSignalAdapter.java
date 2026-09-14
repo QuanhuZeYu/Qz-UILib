@@ -422,7 +422,7 @@ public final class DraftSignalAdapter {
     }
 
     /**
-     * 写入保存反馈，供 ConfigScreen 在 saveChanges 后调用（守 I1：只经 signal 改 UI）。
+     * 写入保存反馈，供 ConfigScreen 在 saveChanges 后调用（守 signal-first：只经 signal 改 UI）。
      *
      * @param feedback 保存反馈，null 时按 NONE 处理
      */
@@ -567,7 +567,7 @@ public final class DraftSignalAdapter {
     /**
      * 展示态预填充：只更新 UI signal 镜像，不写 DraftBuffer（不进 candidate / YAML），dirty=false。
      *
-     * <p><b>I3 纪律</b>：本方法会 {@code Signal.set} 与可能清理 validation/feedback，
+     * <p><b>render 期零副作用纪律</b>：本方法会 {@code Signal.set} 与可能清理 validation/feedback，
      * <strong>禁止</strong>在 FieldRenderer.render 组件构建期调用。
      * render 期 prefill 应使用 renderer/bridge 局部只读初值（不写 adapter signal / DraftBuffer）；
      * 首次真实列表交互经 {@link #onFieldEdit} 写入完整可见列表。</p>

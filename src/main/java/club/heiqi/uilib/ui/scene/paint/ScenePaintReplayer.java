@@ -16,10 +16,10 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
  * 绘制命令回放器 —— 将纯数据 Display List 翻译为对 {@link UiRenderBackend} 的调用。
  *
  * <p>回放器只通过 scene 渲染出口接口 {@link UiRenderBackend} 认识渲染层，不持有任何
- * 具体后端类（守宪章信条六，scene 核心可脱 MC 移植）。Minecraft 平台下，该接口的
+ * 具体后端类（scene 核心只认抽象渲染出口，可脱 MC 移植）。Minecraft 平台下，该接口的
  * 实现是 {@code club.heiqi.uilib.ui.render.UiRenderContext}（直接 LWJGL GL，架构禁令禁用原版包装类）。</p>
  *
- * <h3>回放期零节点反查（宪章信条六/I6）</h3>
+ * <h3>回放期零节点反查</h3>
  * <p>每条 {@link PaintCommand} 已经是自包含的绘制操作描述（坐标、颜色、文本、样式
  * 全部在构建期固化）。回放器只读取命令字段并映射到 render API，绝不访问任何
  * SceneNode / DOM / 样式系统。这是数据层与渲染层的最终合同执行点。</p>
@@ -41,10 +41,10 @@ import club.heiqi.uilib.ui.render.UiRenderBackend;
  *
  * <p>T4a：BACKGROUND/BORDER 命令携带四角独立圆角时，回放器把四角以 4 个 {@code int}
  * 纯数值传给 {@link UiRenderBackend} 的四角 drawSurface 重载（后端内部转
- * {@code ResolvedCornerRadii}），scene 层零分角类型依赖（守 I6）。CLIP 本轮仍 uniform。</p>
+ * {@code ResolvedCornerRadii}），scene 层零分角类型依赖（后端只见纯数值 int）。CLIP 本轮仍 uniform。</p>
  *
  * <p>Phase 4C 方案甲：transform 走 PUSH_TRANSFORM/POP_TRANSFORM 边界命令，回放器从命令 getter
- * 取 7 个浮点分量喂给 {@link UiRenderBackend} 的纯数值 pushTransform 重载（全 primitive，守 I6）。
+ * 取 7 个浮点分量喂给 {@link UiRenderBackend} 的纯数值 pushTransform 重载（全 primitive）。
  * 纯数值重载与 opacity 的 pushGroupOpacity 同构，渲染层零 scene/DOM 认知。</p>
  *
  * <h3>禁止</h3>
@@ -77,7 +77,7 @@ public class ScenePaintReplayer {
      * 回放 Display List 中的所有命令到渲染上下文，叠加屏幕偏移。
      *
      * <p>每条 BACKGROUND 和 TEXT 命令的坐标均叠加 (offsetX, offsetY) 后再映射到 render API。
-     * 偏移使用 int 类型，绝不引入 style/transform 类型——replayer 零 SceneNode 认知（I6）。</p>
+     * 偏移使用 int 类型，绝不引入 style/transform 类型——replayer 零 SceneNode 认知。</p>
      *
      * @param plan    Display List
      * @param ctx     渲染上下文
@@ -197,7 +197,7 @@ public class ScenePaintReplayer {
             }
             case BACKDROP: {
                 // 声明式玻璃：坐标与 fragment 偏移同域（logical px），换算与 scaled 穿透
-                // 由门面统一负责——replayer 不碰 GL、不猜后端类型（宪章信条六）。
+                // 由门面统一负责——replayer 不碰 GL、不猜后端类型（只认抽象渲染出口）。
                 // 四角圆角复用 BORDER 的口径：无分角时退化为 uniform。
                 club.heiqi.uilib.ui.base.cascade.UiBorderRadiusResolver.ResolvedCornerRadii radii =
                         cmd.hasPerCornerRadii()
@@ -316,7 +316,7 @@ public class ScenePaintReplayer {
 
             case PUSH_TRANSFORM:
                 // 方案甲：进入 transform 顶点变换作用域。7 个浮点分量从命令 getter 取，
-                // 喂给纯数值 pushTransform 重载（全 primitive，守 I6），GL 矩阵栈完成 origin 三明治。
+                // 喂给纯数值 pushTransform 重载（全 primitive），GL 矩阵栈完成 origin 三明治。
                 ctx.pushTransform(cmd.getTranslateX(), cmd.getTranslateY(), cmd.getRotateDegrees(),
                         cmd.getScaleX(), cmd.getScaleY(), cmd.getOriginXRatio(), cmd.getOriginYRatio(),
                         cmd.getLeft(), cmd.getTop(), cmd.getRight(), cmd.getBottom());
@@ -331,7 +331,7 @@ public class ScenePaintReplayer {
 
             case PUSH_TRANSFORM_LAYER:
                 // B6 FBO 方案：进入 transform 离屏图层作用域（transform+clip 叠加正确处理）。
-                // 7 个浮点分量从命令 getter 取，喂给 pushTransformLayer（全 primitive，守 I6）。
+                // 7 个浮点分量从命令 getter 取，喂给 pushTransformLayer（全 primitive）。
                 // 内部借 FBO 离屏层 + MODELVIEW 归 I + 重建父 clip，段内 scissor 在未变换坐标系下正确裁剪。
                 ctx.pushTransformLayer(cmd.getTranslateX(), cmd.getTranslateY(), cmd.getRotateDegrees(),
                         cmd.getScaleX(), cmd.getScaleY(), cmd.getOriginXRatio(), cmd.getOriginYRatio(),

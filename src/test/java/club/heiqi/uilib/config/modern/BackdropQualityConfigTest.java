@@ -114,7 +114,7 @@ public class BackdropQualityConfigTest {
         // 回灌入口的唯一调用形态（生产调用点是 ConfigValueBridge.applyGeneral）
         BackdropQualityService.getInstance().applyConfigured(
                 persisted.authority().getString(BackdropQualityService.CONFIG_PATH));
-        // 帧末口径（守 I9）：写入经调度器批处理，宿主帧末 flush 后生效。
+        // 帧末口径：写入经调度器批处理，宿主帧末 flush 后生效。
         ReactiveScheduler.get().flush();
         assertEquals("回灌后信号应为配置档位", BackdropQuality.OFF,
                 BackdropQualityService.getInstance().current());
