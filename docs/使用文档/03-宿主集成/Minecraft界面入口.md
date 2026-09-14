@@ -104,7 +104,7 @@ HUD 使用的 session scene 会在世界卸载时释放，并在重连后按仍�
 ## 聊天 markdown 递交（ChatAccess.printMarkdown）
 
 聊天接管（`ChatMarkdownSettings.isEnabled()`）生效后，mod 可以用 `ChatAccess` 的两个 public
-入口把消息**按 markdown 渲染**递交进聊天框（AGENTS 三条输入通道的第③条）。语义定案：
+入口把消息**按 markdown 渲染**递交进聊天框（显式 markdown 递交通道，见 `club.heiqi.uilib.api.chat.ChatAccess#printMarkdown` 注释与 AGENTS「玩家名称走原版解析、发送内容走 markdown」条）。语义定案：
 **print 家族恒纯——内容即所见，永不过装饰器链**；要装饰必须由调用方主动调既有
 `decorate(IChatComponent)`（只变换不注入）再把结果递进来。两者语义完全分开，没有
 「过装饰链的 markdown 打印」这种糖。

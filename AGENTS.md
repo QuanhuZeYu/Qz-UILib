@@ -4,23 +4,17 @@
 
 ## 项目边界
 
-- Qz-UILib 提供通用 UI、scene、输入、渲染与宿主适配能力，不依赖 Qz-Miner 或其他下游业务仓。
-- 开始改动前先读本文件；业务现状以实时 Git 与代码（含其注释）为准，跨模块结论见 `docs/反馈层/errors/`。
+- Qz-UILib 提供通用 UI、scene、输入、渲染与宿主适配能力，不依赖 Qz-Miner 或其他下游业务仓；开始改动前先读本文件，业务现状以实时 Git 与代码（含其注释）为准，跨模块结论见 `docs/反馈层/errors/`。
 
 ## 设计取向与主权
 
-- **对齐目标 = 现代化主流引擎（2026-09-06 用户裁定）**：UILib 的目标是对齐现代化主流引擎的行为语义，**不是对齐 MC 的「小众」独立格式**。markdown 解析/渲染以主流规范（CommonMark 等主流引擎）为唯一对齐基准；MC 特有格式（§ 颜色码、聊天旧行级规则等）不得成为解析核心的语义依据，也不得在 markdown 的输入通道上被解释。**聊天消息的三条输入通道（C7 定案，2026-09-07 用户裁决）**：① 玩家消息的**内容**——原版 `chat.type.text` 的结构参数 `getFormatArgs()[1]`（经 `internal/chat3/viewmodel/StructuredChatReader` 读取）走 UILib markdown，非 vanilla 形（自定义 key 或改写过的格式）退 `SenderExtractor` 正则；② 其余原版消息（系统/广播/带事件文本）全走原版解析链；③ 显式按 markdown 递交的消息走 UILib markdown（**C8 已落地** = `ChatAccess.printMarkdown` 双入口：`printMarkdown(String)` 把内容包成 `uilib.markdown` 键组件旁路注入、`printMarkdown(IChatComponent)` 递交调用方自己装配的组件；两入口同一语义 = **显式递交、内容即所见，print 家族永不过装饰器链**。要装饰必须调用方主动调既有 public `decorate(IChatComponent)`（只变换不注入）再把结果递进 `printMarkdown`——要么纯 markdown，要么显式装饰，语义完全分开，无 `printDecoratedMarkdown` 一类糖；接管未激活时降级原版显示。L1 直连消费者如 `MarkdownPage` 与门禁 B 路同属本通道）。**两条玩家通道都只取 unformatted 源**：`ChatComponentStyle.getFormattedText()` 由客户端逐组件前置样式码、尾追 RESET（母本 :105-119），是旧 § 残渣的唯一来源，markdown 路径一律不经它。**玩家名称走原版解析、发送内容走 markdown，两者不混合**。**markdown 解析器内 § 是普通字符、原样显示、零处理**（行首 § 因此吃掉块标记，代码段/行内 code/latex 内同样字面；非 vanilla 形带进来的 § 字面显示是设计行为，不是缺陷），该规则由 `MarkdownSectionCodeIsPlainTextLockTest` 正向钉死、`MarkdownL1ZeroSectionKnowledgeGuardTest` 反向看护。凡现存为对齐 MC 旧行为而偏离主流的裁定/实现/锁，**一律拆除**（在案拆除项已全部落地：深缩进独立列表 F2、缩进代码块缺失与段落续行缩进折叠、F2 段流前导空格编码 = C1a；L1 块层剥 § 的 F4 归位 = C4；§ 处理曾在 chat3 集成层存在的三代机制——C4 初版「无条件剥」→ C4-fix 乙′「命中才剥 + 输出后置桥」→ C6b 甲「进 markdown 前把 § 码对转成样式锚点 span 流（`toSpanStream`→`parseSpans`）」——**已于 C7 整套拆除**（连同 `FormatPrefixStripper` 的 § 跳跃切片与甲↔乙′ 迁移等价锁），集成层自此不含任何 § 机制；`MarkdownDocument.parseSpans` 保留给将来富文本 component 入口，且不得被 § 相关代码使用；宪法句不变：L1 零认知 §，常驻守卫钉死；门禁 A 路「旧行为规格快照」基准重定 = C3b1；setext 缺失 = C3b2 实现 + C4 收紧惰性偏离。逐批销账见《规划-通用Markdown渲染器》§二之八）。
-
+- **对齐目标 = 现代化主流引擎**：UILib 对齐现代化主流引擎的行为语义，不对齐 MC 的「小众」独立格式；markdown 解析/渲染以主流规范（CommonMark 等主流引擎）为唯一对齐基准，MC 特有格式（§ 颜色码、聊天旧行级规则等）不得成为解析核心的语义依据，也不得在 markdown 的输入通道上被解释。
+- **§ 在 markdown 内是普通字符、原样显示、零处理**：解析层不为它开任何特例——行首 § 因此吃掉块标记，行内 code、围栏代码与 latex 原子内同样字面。
+- **玩家名称走原版解析、发送内容走 markdown，两者不混合**；markdown 输入一律取 unformatted 源，`getFormattedText()` 不作输入。三条输入通道（玩家消息内容 / 其余原版消息 / 显式 markdown 递交）的现行口径与实现要点写在最近的代码处：`internal/chat3/viewmodel/StructuredChatReader`、`MessageGrouper` 类注释与 `api/chat/ChatAccess#printMarkdown` 注释；接入方视角见 `docs/使用文档/03-宿主集成/Minecraft界面入口.md`「聊天 markdown 递交」。
 - **中心思想**：数据层以尽可能小的范围计算变化，渲染层以尽可能小的代价把变化刷上屏；两者通过平台无关、不可变的绘制计划协作。数据流两条链在 state 处汇合——平台类型止于适配边界，GL 调用止于 replay/backend。
 - **增量性能**：变化从最低必要层起算（layout / paint / geometry / composite 按影响选择）；缓存的价值是跳过未变化工作，必须有明确失效来源，不得以陈旧画面换命中率——**新增缓存必须答得出「让哪一层跳过什么重算」，答不上来就不加**；动画优先使用不触发布局的属性，性能不足先测重算起点与实际热点，不为假设中的负载增加框架。
-- **投放与输入主权：本文件不重述**。现行母本是 `docs/开发者文档/规格文档/UI投影宿主语义.md`（content 不识宿主、同一 content 多次投放逐 occurrence 隔离、单一 composition owner 采集、claim 只读且只有胜者 dispatch、handler 只发布 semantic intent）。该文档明示其 Input Scope 条款「不随实现删除」——U0 实现已删、语义条款仍是规范，改输入仲裁以它为唯一真相。
-- **约束要在引用处自证**：本仓历史上以 `I1..I13`、`信条一~八`、`偏离登记` 等编号指代不变量，其编号表母本 `NORTH_STAR.md` 已不在仓内——**编号在本仓没有定义可查**，语义只存在于引用处的注释与测试里。所以每条约束的含义要能从它出现的地方直接读到：「数据层不 import 渲染/样式层」「干净子树在布局/绘制/合成三阶段被整棵跳过」（`SceneLayoutEngine` 的 cachedLayout 短路即其实现）「平台类型止于适配边界」（`PlatformInputSource`）「分级失效四级模型」（`Invalidation` 现行定义）。判断一条红线是否仍然有效，看它在所在处能否自证，而不是看它挂在哪个编号下。
-
-- **旧约束必须随现状实时更新**，不得以「先记档、以后统一清」为由留着：碰到旧编号或旧文档指针，当场判类并就地改。
-  ① 含义仍活（多由现存测试钉着）——把含义补进本处注释、去掉编号；
-  ② **已被现架构演化或部分废弃**——按现状改写，禁止照抄旧文（例：旧「GPU 端场景增量更新」已被现架构演化——`SceneScrollViewportTest` 把它当反证使用，`ScenePaintEngine` 注明 fragment 重建是正常代价、plan 级跨帧缓存未做）；
-  ③ 指向**已删除文件**的指针属缺陷，立即改：适用于 `NORTH_STAR.md`、`docs/传感层/测试体系约定.md` 这类已删母本——后者承载的测试分层边界规矩本身仍被遵守，母本没了就把该层边界就地写进引用它的注释，不另立母本。本条作为通用防线长期有效。
-- **任务体系票号是变更出处，不是约束**：`C#`/`F#`/`U#`/`B#`/`P#`/`D#`/`S#`/`G#`/`T#`、`§小节号`、`第 N 条`（规划/核准表条目号，如 `R2`、`R3-C`、`§4.5`）指向已删任务与规划体系，本仓同样无从查证——票据本身不承载可执行的约束，引用它的地方要能直接读到「做了什么」的直述。改写只动注释文本：标识符、字符串字面量、断言表达式一律不碰（断言消息位置的文本可改，期望值位置不动）。**同形活编号不得误伤**：`R1-R13` 是控件契约红线（定义处 `ui/scene/control/package-info.java`，属现行规范）、`L1/L2` 是文档/解析层名、`GL\d+` 是 GL 常量——三类不进清理范围。
+- **投放与输入主权：本文件不重述**。现行母本是 `docs/开发者文档/规格文档/UI投影宿主语义.md`（content 不识宿主、同一 content 多次投放逐 occurrence 隔离、单一 composition owner 采集、claim 只读且只有胜者 dispatch、handler 只发布 semantic intent）；该文档明示其 Input Scope 条款「不随实现删除」，改输入仲裁以它为唯一真相。
+- **约束要在引用处自证，失效引用就地修正**：约束的含义必须能从它出现的地方直接读到（或经该处给出的定义指针查到）；碰到已删母本、历史编号或作废指针，当场按现状改写为自述语义并说明仍有效的约束——历史编号、已删母本与历史记录不充当规范，判断一条红线是否有效看它在所在处能否自证，而不是看它挂在哪个编号下；同形的现行编号不得误伤（`R1-R13` 控件契约红线、`L1/L2` 分层名、`GL\d+` GL 常量）。
 
 ## 高影响安全边界
 
@@ -28,16 +22,14 @@
 - layout、paint、replay、裁剪和输入共享同一 logical px 坐标事实；Minecraft GUI Scale 不得混入内部闭环，缩放只在 host 边界成对转换。
 - UI 变化以 state/signal 驱动；输入 handler 不直接改节点属性或树结构。焦点、capture 等命令只通过路由器受控入口改变权威交互状态。
 - paint/replay 之间传递自包含、不可变的绘制计划；replay/backend 必须恢复其触碰的 GL 状态，不能污染 Minecraft 或其他 mod 的后续渲染。
-- **绘制禁令（用户硬性要求，2026-08-23 定）：UILib 严禁使用原版包装类（Tessellator 等）。** 绘制一律走直接 GL（GL11/GL14 立即模式与状态调用）或 UILib 自有渲染管线；原版包装类在 Angelica/lwjgl3ify 下行为不可控（真机实证：全局 Tessellator 的 TRIANGLE_FAN 不可见、聊天卡片背景整块丢失）。
+- **绘制禁令（用户硬性要求）：UILib 严禁使用原版包装类（Tessellator 等）。** 绘制一律走直接 GL（GL11/GL14 立即模式与状态调用）或 UILib 自有渲染管线；原版包装类在 Angelica/lwjgl3ify 下行为不可控（真机实证：全局 Tessellator 的 TRIANGLE_FAN 不可见、聊天卡片背景整块丢失）。
 - 公共 API、配置持久数据、网络协议、版本兼容承诺或上述边界需要改变时，先说明明确后果并取得用户确认。
 
 ## 优先复用 UILib 能力（最高优先级）
 
 - 实现任何功能前，**必须优先评估并复用 UILib 既有能力**：scene 树与布局引擎（SceneNode/布局/SHRINK/AlignSelf）、Signal/Computed/rt.forEach 状态驱动、PaintCommand 管线与 SEGMENTS 文本渲染、通用控件（SceneTextInput/SceneScrollbar/SceneSlider/SceneAutocomplete 等）、字体度量（TextLayoutService）、动画（Animator/DisplayStateMachine）等。
-- **「与原版对齐/还原原版」指使用体感对齐，不是实现方式对齐**：原版（GuiNewChat/GuiChat/GuiTextField 等）行为只作为行为规格参照；禁止复制、移植或直连调用原版 GUI 类内部逻辑来完成功能；实现必须落在 UILib 自有抽象内。
-- 调研原版行为（含 Forge 补丁、反编译源码）只为提取「体感规格」；规格提取后的实现必须回到 UILib 能力上，不得顺手引入原版调用路径。
-- 仅当 UILib 确实缺失某能力且无法低成本扩展时，才允许在业务层做最小补充（附缺失理由与取舍说明），不得绕过 UILib 直连原版实现。
-- 验收时自查：交付中若出现对原版 GUI/渲染类的直接依赖或调用，视为违规，须重构回 UILib 能力。
+- **「与原版对齐/还原原版」指使用体感对齐，不是实现方式对齐**：原版（GuiNewChat/GuiChat/GuiTextField 等）行为只作为行为规格参照，禁止复制、移植或直连调用其内部逻辑：调研（含 Forge 补丁、反编译源码）只为提取「体感规格」，实现必须落在 UILib 自有抽象内，不得顺手引入原版调用路径。
+- 仅当 UILib 确实缺失某能力且无法低成本扩展时，才允许在业务层做最小补充（附缺失理由与取舍说明），不得绕过 UILib 直连原版实现；验收时自查，交付中出现对原版 GUI/渲染类的直接依赖或调用即视为违规，须重构回 UILib 能力。
 
 ## 工作方式与验证
 
@@ -46,9 +38,8 @@
 - 代码改动通过完整 build 后才作为可交付增量自动提交（本地 commit）；失败时继续定位、修复并重跑。纯文档改动可跳过 build；未执行的测试、制品或运行态不得写成通过。
 - 交付前检查相关 diff、status 与近期提交风格，只暂存任务文件并自动创建本地 commit。无冲突、保留双方完整历史与内容且不删除来源分支的本地纯增量 merge 可自动执行；push、tag 与 release 仍须用户明确要求。
 - 修改历史、删除分支、丢弃提交或改动、以及会让现有内容从最终工作目录消失的 Git 操作必须先说明影响并取得用户确认；纯增量 merge 出现冲突或无法证明完整保留时也必须停止询问。
-- `runClient*`、`runServer*` 与发布仍交 CI 或用户；公共 API、依赖/版本、发布策略、生产操作、密钥与认证由用户决定。
-- 修改本文件、核心架构边界或发布策略前取得用户确认。
+- `runClient*`、`runServer*` 与发布仍交 CI 或用户；修改本文件、核心架构边界、发布策略或公共 API、依赖/版本、生产操作、密钥与认证前取得用户确认，均由用户决定。
 
 ## 踩坑
 
-- 重要踩坑**优先写在缺陷所在的源码或测试注释里**（与代码同处、随改随读，避免多处同步改动）；仅当结论跨模块、需要读代码之外的上下文才看得懂时，才落 `docs/反馈层/errors/`。存量记录不批量搬，下次碰到该处代码时顺手搬。
+- 重要踩坑**优先写在缺陷所在的源码或测试注释里**（与代码同处、随改随读）；仅当结论跨模块、需要读代码之外的上下文才看得懂时，才落 `docs/反馈层/errors/`。存量记录不批量搬，下次碰到该处代码时顺手搬。
