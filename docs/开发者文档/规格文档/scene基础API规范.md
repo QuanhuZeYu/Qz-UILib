@@ -94,9 +94,6 @@ public static Result create(SceneRuntime rt, Props props)
 | scene core 平台无关 | primitive 用 `SceneKey` 枚举，不碰 lwjgl/GLFW/minecraft import |
 | handler 边界与几何逃生舱 | handler 只 `signal.set` + `stopPropagation`（逃生舱②）；只读几何测量走逃生舱① |
 
-> 源码存量注释里仍可能出现旧编号 `I1` / `I4` / `I7` / `I10` / `I11` / `I12`（`逃生舱①` / `逃生舱②` 是其中两个子项）。
-> 编号表出处已废止：含义以本表语义标签与引用处注释为准；新写注释一律使用语义标签，碰到旧编号就地改写。
-
 ---
 
 ## 7. wrapper 规范

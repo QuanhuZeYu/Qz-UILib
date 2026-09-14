@@ -18,7 +18,7 @@ SceneNode label = SceneLabel.create(runtime, props).get();
 parent.appendChild(label);
 ```
 
-组件形态与 scene 栈其它控件一致：纯静态工厂 + record Props + 组件函数（契约 R1/R2/I3），
+组件形态与 scene 栈其它控件一致：纯静态工厂 + record Props + 组件函数，
 文本经 signal 驱动；节点不可命中（`hitTestable=false`），不拦截任何输入。
 
 显式行距（可选，默认自动行高 = 行内最大字号对应行高）：
