@@ -43,3 +43,4 @@ layout.json
 # .opencode/tasks/ 可按需保存任务笔记
 .opencode/control-envelope.json
 __pycache__/
+/temp/
