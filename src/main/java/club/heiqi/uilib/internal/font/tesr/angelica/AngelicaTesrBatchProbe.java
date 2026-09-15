@@ -15,6 +15,10 @@ import club.heiqi.uilib.internal.font.tesr.TesrTextReplayCoordinator;
  *
  * <p>未复核的 Angelica 版本（类在、成员不在）留一次 WARN，便于现场定位 ABI 漂移；类完全缺席属正常
  * 组合，不告警。</p>
+ *
+ * <p>另提供仅用于诊断日志的观测面：宿主当前 pass 键（0/1 为主 pass、2 为光影 shadow pass）与可读标签。
+ * pass 字段是宿主私有实现细节，读不到只让观测退化为「未知」，既不影响 {@code hasPendingDeferredGeometry()}
+ * 的判定，也不影响捕获与回放行为。</p>
  */
 public final class AngelicaTesrBatchProbe implements TesrTextReplayCoordinator.HostProbe {
 
@@ -23,12 +27,23 @@ public final class AngelicaTesrBatchProbe implements TesrTextReplayCoordinator.H
     private static final String PENDING_GEOMETRY_METHOD = "hasPendingGeometry";
     /** 类加载时序可能早于宿主初始化，解析失败允许的有限重试次数。 */
     private static final int MAX_RESOLVE_ATTEMPTS = 3;
+    /** 宿主当前 pass 字段（观测用私有成员）。 */
+    private static final String ACTIVE_PASS_FIELD = "activePass";
+    /** 宿主 pass 键：主 pass。 */
+    private static final int PASS_MAIN_0 = 0;
+    /** 宿主 pass 键：第二主 pass。 */
+    private static final int PASS_MAIN_1 = 1;
+    /** 宿主 pass 键：光影 shadow pass。 */
+    private static final int PASS_SHADOW = 2;
 
     private Object renderer;
     private Method pendingGeometryMethod;
     private int resolveAttempts;
     private boolean unavailable;
     private boolean abiWarned;
+    private Field activePassField;
+    private boolean activePassResolved;
+    private boolean activePassUnavailable;
 
     @Override
     public boolean hasPendingDeferredGeometry() {
@@ -45,6 +60,75 @@ public final class AngelicaTesrBatchProbe implements TesrTextReplayCoordinator.H
             unavailable = true;
             warnAbi("调用宿主 TESR 批处理探针失败", throwable);
             return false;
+        }
+    }
+
+    @Override
+    public int activePassKey() {
+        if (renderer == null && !resolve()) {
+            return TesrTextReplayCoordinator.HostProbe.PASS_UNKNOWN;
+        }
+        return readActivePass(renderer);
+    }
+
+    @Override
+    public int activePassKeyOf(Object hostInstance) {
+        return hostInstance == null ? TesrTextReplayCoordinator.HostProbe.PASS_UNKNOWN : readActivePass(hostInstance);
+    }
+
+    @Override
+    public String activePassLabel(int passKey) {
+        return describePass(passKey);
+    }
+
+    /**
+     * 宿主 pass 键的可读标签（观测用）。
+     *
+     * @param passKey pass 键
+     * @return 标签；非已知键为 {@code "unknown"}
+     */
+    static String describePass(int passKey) {
+        switch (passKey) {
+            case PASS_MAIN_0:
+                return "main0";
+            case PASS_MAIN_1:
+                return "main1";
+            case PASS_SHADOW:
+                return "shadow";
+            default:
+                return "unknown";
+        }
+    }
+
+    private int readActivePass(Object hostInstance) {
+        if (unavailable || activePassUnavailable) {
+            return TesrTextReplayCoordinator.HostProbe.PASS_UNKNOWN;
+        }
+        if (!activePassResolved) {
+            resolveActivePassField(hostInstance);
+        }
+        Field field = activePassField;
+        if (field == null) {
+            return TesrTextReplayCoordinator.HostProbe.PASS_UNKNOWN;
+        }
+        try {
+            return field.getInt(hostInstance);
+        } catch (Throwable throwable) {
+            activePassUnavailable = true;
+            warnAbi("读取宿主 TESR pass 身份失败（未复核的 Angelica 版本），世界文字协调观测停用", throwable);
+            return TesrTextReplayCoordinator.HostProbe.PASS_UNKNOWN;
+        }
+    }
+
+    private void resolveActivePassField(Object hostInstance) {
+        activePassResolved = true;
+        try {
+            Field field = hostInstance.getClass().getDeclaredField(ACTIVE_PASS_FIELD);
+            field.setAccessible(true);
+            activePassField = field;
+        } catch (Throwable throwable) {
+            activePassUnavailable = true;
+            warnAbi("宿主 TESR pass 字段不可用（未复核的 Angelica 版本），世界文字协调观测停用", throwable);
         }
     }
 

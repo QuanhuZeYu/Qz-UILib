@@ -36,16 +36,18 @@ public class TesrTextReplayMixinContractTest {
         Assert.assertTrue(probe.contains("Class.forName(RENDERER_CLASS)"));
     }
 
-    /** 三个注入点都 require = 0：宿主方法缺失时只跳过围栏，不崩、不阻断启动。 */
+    /** 四个注入点都 require = 0：宿主方法缺失时只跳过围栏，不崩、不阻断启动。 */
     @Test
     public void everyInjectionPointIsOptional() throws IOException {
         String mixin = source(MIXIN);
         int injects = occurrences(mixin, "@Inject(");
 
-        Assert.assertEquals(3, injects);
+        Assert.assertEquals(4, injects);
         Assert.assertEquals("全部注入点必须 require = 0", injects, occurrences(mixin, "require = 0"));
         Assert.assertTrue(mixin.contains("method = \"flush\", at = @At(\"RETURN\")"));
         Assert.assertTrue(mixin.contains("method = \"flushAfterDeferred\", at = @At(\"RETURN\")"));
+        Assert.assertTrue("提交点身份观测必须挂在方法入口",
+                mixin.contains("method = { \"flush\", \"flushAfterDeferred\" }, at = @At(\"HEAD\")"));
     }
 
     /** 回放只发生在宿主提交点之后，且捕获以「宿主钩子已安装 + 探针报告有未提交几何」为前提。 */

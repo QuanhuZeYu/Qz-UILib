@@ -8,6 +8,8 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import club.heiqi.uilib.Config;
+
 /**
  * 宿主 TESR 批量窗口内世界文字延后回放的行为契约测试。
  *
@@ -20,10 +22,30 @@ public class TesrTextReplayCoordinatorTest {
     private static final class FakeProbe implements TesrTextReplayCoordinator.HostProbe {
 
         boolean pending;
+        int passKey = PASS_UNKNOWN;
+        int passQueryCount;
+        int commitPassQueryCount;
 
         @Override
         public boolean hasPendingDeferredGeometry() {
             return pending;
+        }
+
+        @Override
+        public int activePassKey() {
+            passQueryCount++;
+            return passKey;
+        }
+
+        @Override
+        public int activePassKeyOf(Object hostInstance) {
+            commitPassQueryCount++;
+            return passKey;
+        }
+
+        @Override
+        public String activePassLabel(int passKey) {
+            return "pass" + passKey;
         }
     }
 
@@ -139,6 +161,50 @@ public class TesrTextReplayCoordinatorTest {
 
         Assert.assertEquals(0, TesrTextReplayCoordinator.pendingCount());
         Assert.assertTrue(sink.replayed.isEmpty());
+    }
+
+    /** 观测默认关闭：捕获路径不查询宿主 pass 身份，捕获判定不受观测影响。 */
+    @Test
+    public void diagnosticsOffKeepsPassProbeUntouched() {
+        Config.fontRuntimeDebug = false;
+        try {
+            TesrTextReplayCoordinator.markHostHookInstalled();
+            probe.pending = true;
+
+            Assert.assertTrue(TesrTextReplayCoordinator.shouldCapture(false));
+            TesrTextReplayCoordinator.capture("quiet", 0, 0, 0xFF000000, false, -1);
+
+            Assert.assertEquals("诊断关闭时不得查询宿主 pass", 0, probe.passQueryCount);
+            Assert.assertEquals(1, TesrTextReplayCoordinator.pendingCount());
+        } finally {
+            Config.fontRuntimeDebug = false;
+        }
+    }
+
+    /** 观测开启：记录捕获与提交点两端的宿主 pass 身份，捕获-回放行为与关闭时完全一致。 */
+    @Test
+    public void diagnosticsRecordsHostPassIdentityWithoutChangingBehaviour() {
+        Config.fontRuntimeDebug = true;
+        try {
+            TesrTextReplayCoordinator.markHostHookInstalled();
+            probe.pending = true;
+            probe.passKey = 2;
+
+            Assert.assertTrue(TesrTextReplayCoordinator.shouldCapture(false));
+            TesrTextReplayCoordinator.capture("sign", 1, 2, 0xFF000000, false, -1);
+            Assert.assertEquals("观测必须记录捕获时刻的宿主 pass", 1, probe.passQueryCount);
+            Assert.assertEquals(1, TesrTextReplayCoordinator.pendingCount());
+
+            TesrTextReplayCoordinator.observeHostCommitPoint("host");
+            Assert.assertEquals("提交点身份必须由宿主实例读出", 1, probe.commitPassQueryCount);
+
+            probe.pending = false;
+            TesrTextReplayCoordinator.replayAfterHostCommit();
+            Assert.assertEquals("观测不得改变回放行为", 1, sink.replayed.size());
+            Assert.assertEquals(0, TesrTextReplayCoordinator.pendingCount());
+        } finally {
+            Config.fontRuntimeDebug = false;
+        }
     }
 
     /** 回放出口抛异常：丢弃本帧滞留项、不向渲染链传播异常。 */

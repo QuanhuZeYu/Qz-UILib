@@ -8,6 +8,7 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 import club.heiqi.uilib.internal.font.tesr.angelica.AngelicaTesrBatchProbe;
 
 /**
@@ -30,6 +31,10 @@ import club.heiqi.uilib.internal.font.tesr.angelica.AngelicaTesrBatchProbe;
  *   <li>宿主未在帧内提交（异常、批次被丢弃）时，帧边界丢弃滞留项并留一次 WARN，不静默永久丢字。</li>
  * </ul>
  *
+ * <p>观测（{@code fontRuntimeDebug} 开启时）：记录每次捕获/回放/丢弃事件以及事件两端的宿主 pass
+ * 身份，用于在宿主多 pass 场景（例如光影 shadow pass）下确认捕获与回放落在同一个 pass。观测关闭时
+ * 连宿主 pass 字段都不查询，既不改捕获判定也不改回放判定。</p>
+ *
  * <p>本类只经 {@link ReplaySink} 与字体接入层交互，不直接依赖适配器实现；矩阵读取经
  * {@link MatrixReader} 注入，headless 场地可注入桩实现。</p>
  */
@@ -38,12 +43,51 @@ public final class TesrTextReplayCoordinator {
     /** 宿主探针：判断宿主当前是否处于「几何已排队、尚未提交」的窗口。 */
     public interface HostProbe {
 
+        /** 宿主 pass 键未知：宿主没有 pass 概念，或探针拿不到该字段。 */
+        int PASS_UNKNOWN = Integer.MIN_VALUE;
+
         /**
          * 查询宿主是否有未提交的 TESR 几何。
          *
          * @return true 表示宿主处于批量提交窗口内
          */
         boolean hasPendingDeferredGeometry();
+
+        /**
+         * 宿主当前 pass 键（观测用）。
+         *
+         * <p>只服务诊断日志，不参与捕获判定：捕获条件与宿主自身的延迟文字条件保持一致——宿主
+         * {@code shouldDeferNow()} 同样只看「是否有未提交几何」，不区分 pass。</p>
+         *
+         * @return pass 键；未知为 {@link #PASS_UNKNOWN}
+         */
+        default int activePassKey() {
+            return PASS_UNKNOWN;
+        }
+
+        /**
+         * pass 键的可读标签（观测用）。
+         *
+         * @param passKey pass 键
+         * @return 标签；未知为 {@code "unknown"}
+         */
+        default String activePassLabel(int passKey) {
+            return "unknown";
+        }
+
+        /**
+         * 读取指定宿主实例的当前 pass 键（观测用）。
+         *
+         * <p>宿主进入提交点（{@code flush} / {@code flushAfterDeferred}）时，其 pass 字段仍是本次
+         * pass 的值；单例上的「当前 pass」在回放时刻已被宿主置为「无 pass」，因此提交点身份只能由
+         * 宿主实例读出。</p>
+         *
+         * @param hostInstance 宿主实例
+         * @return pass 键；未知为 {@link #PASS_UNKNOWN}
+         */
+        default int activePassKeyOf(Object hostInstance) {
+            return PASS_UNKNOWN;
+        }
     }
 
     /** 回放出口：由字体接入层实现，用捕获时的矩阵重新绘制该条文字。 */
@@ -152,6 +196,12 @@ public final class TesrTextReplayCoordinator {
     private static volatile MatrixReader matrixReader = GL_MATRIX_READER;
     /** 丢弃告警只出一次的标志。 */
     private static volatile boolean dropWarned;
+    /** 观测：最近一次捕获时刻的宿主 pass 键。 */
+    private static volatile int lastCapturePassKey = HostProbe.PASS_UNKNOWN;
+    /** 观测：最近一次捕获时刻的宿主 pass 标签。 */
+    private static volatile String lastCapturePassLabel = "unknown";
+    /** 观测：宿主最近一次进入提交点时的 pass 键。 */
+    private static volatile int lastCommitPassKey = HostProbe.PASS_UNKNOWN;
 
     private TesrTextReplayCoordinator() {}
 
@@ -225,6 +275,36 @@ public final class TesrTextReplayCoordinator {
         matrixReader.readModelview(item.modelview);
         matrixReader.readProjection(item.projection);
         PENDING.get().addLast(item);
+        if (FontRuntimeDiagnostics.shouldLogTesrTextEvent()) {
+            observeCapture();
+        }
+    }
+
+    /** 观测：记录捕获时刻的宿主 pass 身份（仅诊断开启时调用）。 */
+    private static void observeCapture() {
+        HostProbe probe = hostProbe;
+        int passKey = probe == null ? HostProbe.PASS_UNKNOWN : probe.activePassKey();
+        String passLabel = probe == null ? "unknown" : probe.activePassLabel(passKey);
+        lastCapturePassKey = passKey;
+        lastCapturePassLabel = passLabel;
+        lastCommitPassKey = passKey;
+        FontRuntimeDiagnostics.logTesrTextEvent("capture", passKey, passLabel, passKey, 1, PENDING.get().size());
+    }
+
+    /**
+     * 观测：宿主进入批量提交点（由可选 Mixin 在宿主提交方法入口调用）。
+     *
+     * <p>此时宿主的 pass 字段仍是本次 pass 的值，读出来的就是「本次提交属于哪个 pass」。诊断关闭时
+     * 直接返回：不查询宿主、不触碰任何回放状态。</p>
+     *
+     * @param hostInstance 宿主实例
+     */
+    public static void observeHostCommitPoint(Object hostInstance) {
+        if (!FontRuntimeDiagnostics.shouldLogTesrTextEvent()) {
+            return;
+        }
+        HostProbe probe = hostProbe;
+        lastCommitPassKey = probe == null ? HostProbe.PASS_UNKNOWN : probe.activePassKeyOf(hostInstance);
     }
 
     /**
@@ -247,10 +327,12 @@ public final class TesrTextReplayCoordinator {
             pending.clear();
             return;
         }
+        int replayed = 0;
         while (!pending.isEmpty()) {
             DeferredText item = pending.pollFirst();
             try {
                 sink.replay(item);
+                replayed++;
             } catch (RuntimeException exception) {
                 pending.clear();
                 warnOnce("字体世界文字延后回放失败，已丢弃本帧滞留项并回即时绘制：{}", exception.toString());
@@ -259,6 +341,10 @@ public final class TesrTextReplayCoordinator {
                 pending.clear();
                 throw error;
             }
+        }
+        if (replayed > 0 && FontRuntimeDiagnostics.shouldLogTesrTextEvent()) {
+            FontRuntimeDiagnostics.logTesrTextEvent("replay", lastCapturePassKey, lastCapturePassLabel,
+                    lastCommitPassKey, replayed, pending.size());
         }
     }
 
@@ -270,6 +356,10 @@ public final class TesrTextReplayCoordinator {
         }
         int dropped = pending.size();
         pending.clear();
+        if (FontRuntimeDiagnostics.shouldLogTesrTextEvent()) {
+            FontRuntimeDiagnostics.logTesrTextEvent("drop", lastCapturePassKey, lastCapturePassLabel,
+                    lastCommitPassKey, dropped, 0);
+        }
         warnOnce("宿主未在本帧提交 TESR 批次，已丢弃 {} 项延后文字并回即时绘制", Integer.valueOf(dropped));
     }
 
@@ -289,6 +379,9 @@ public final class TesrTextReplayCoordinator {
         hostProbe = new AngelicaTesrBatchProbe();
         matrixReader = GL_MATRIX_READER;
         dropWarned = false;
+        lastCapturePassKey = HostProbe.PASS_UNKNOWN;
+        lastCapturePassLabel = "unknown";
+        lastCommitPassKey = HostProbe.PASS_UNKNOWN;
         PENDING.get().clear();
     }
 

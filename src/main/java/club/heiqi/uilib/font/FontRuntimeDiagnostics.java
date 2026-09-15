@@ -21,12 +21,14 @@ public final class FontRuntimeDiagnostics {
     private static final int MAX_UPLOAD_LOGS = 16;
     private static final int MAX_FLUSH_LOGS = 32;
     private static final int MAX_TOKEN_EVENT_LOGS = 32;
+    private static final int MAX_TESR_TEXT_EVENT_LOGS = 48;
     private static final int MAX_FAILURE_FINGERPRINTS = 64;
 
     private static final AtomicInteger generatedLogCount = new AtomicInteger(0);
     private static final AtomicInteger uploadLogCount = new AtomicInteger(0);
     private static final AtomicInteger flushLogCount = new AtomicInteger(0);
     private static final AtomicInteger tokenEventLogCount = new AtomicInteger(0);
+    private static final AtomicInteger tesrTextEventLogCount = new AtomicInteger(0);
     private static final ConcurrentHashMap<String, AtomicInteger> pipelineFailureCounts =
             new ConcurrentHashMap<String, AtomicInteger>();
     private static final ConcurrentHashMap<String, AtomicLong> capacityEventCounts =
@@ -318,6 +320,56 @@ public final class FontRuntimeDiagnostics {
      */
     public static boolean shouldLogGlyphUpload() {
         return Config.fontRuntimeDebug && uploadLogCount.get() < MAX_UPLOAD_LOGS;
+    }
+
+    /**
+     * 判断当前是否仍在记录「宿主 TESR 提交窗口内世界文字」的协调事件。
+     *
+     * <p>受 {@code fontRuntimeDebug} 与条数上限双重控制：默认关闭时协调器连宿主 pass 身份都不查询，
+     * 常态运行没有额外开销。</p>
+     *
+     * @return 是否应记录
+     */
+    public static boolean shouldLogTesrTextEvent() {
+        return Config.fontRuntimeDebug && tesrTextEventLogCount.get() <= MAX_TESR_TEXT_EVENT_LOGS;
+    }
+
+    /**
+     * 记录一次世界文字协调事件，以及事件两端的宿主 pass 身份。
+     *
+     * <p>用于在宿主多 pass 场景（例如光影 shadow pass）下观测捕获与回放是否落在同一个 pass：
+     * {@code capturePass} 是文字被捕获时的宿主 pass，{@code commitPass} 是回放所在宿主提交点的 pass。
+     * 两者不一致即说明捕获项被带出了原本的 pass（跨 pass 回放会拿错渲染目标）。</p>
+     *
+     * @param stage 事件阶段：capture / replay / drop
+     * @param capturePass 捕获时刻宿主 pass 键；未知为 {@code Integer.MIN_VALUE}
+     * @param captureLabel 捕获时刻宿主 pass 标签
+     * @param commitPass 回放所在宿主提交点的 pass 键；未知为 {@code Integer.MIN_VALUE}
+     * @param count 本次事件条目数
+     * @param pending 事件后仍滞留条目数
+     */
+    public static void logTesrTextEvent(String stage, int capturePass, String captureLabel, int commitPass,
+            int count, int pending) {
+        if (!Config.fontRuntimeDebug) {
+            return;
+        }
+        int index = tesrTextEventLogCount.getAndIncrement();
+        if (index > MAX_TESR_TEXT_EVENT_LOGS) {
+            return;
+        }
+        if (index == MAX_TESR_TEXT_EVENT_LOGS) {
+            MyMod.LOG.info("字体诊断[世界文字] 事件日志已达上限 {} 条，后续同类事件静默",
+                    Integer.valueOf(MAX_TESR_TEXT_EVENT_LOGS));
+            return;
+        }
+
+        MyMod.LOG.info("字体诊断[世界文字] stage={} capturePass={}({}) commitPass={} count={} pending={}",
+                stage,
+                Integer.valueOf(capturePass),
+                captureLabel,
+                Integer.valueOf(commitPass),
+                Integer.valueOf(count),
+                Integer.valueOf(pending));
     }
 
     /**

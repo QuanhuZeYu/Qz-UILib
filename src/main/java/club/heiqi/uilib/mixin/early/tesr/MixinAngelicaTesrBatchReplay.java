@@ -30,6 +30,17 @@ public abstract class MixinAngelicaTesrBatchReplay {
         TesrTextReplayCoordinator.markHostHookInstalled();
     }
 
+    /**
+     * 观测：进入提交点时记录本次提交属于哪个宿主 pass。
+     *
+     * <p>只观测不回放：诊断关闭时协调器直接返回。放在方法入口是因为宿主此时已把 pass 字段写成本次
+     * pass，RETURN 处该字段已被置为「无 pass」。</p>
+     */
+    @Inject(method = { "flush", "flushAfterDeferred" }, at = @At("HEAD"), require = 0)
+    private void qzuilib$observeHostCommitPoint(CallbackInfo callbackInfo) {
+        TesrTextReplayCoordinator.observeHostCommitPoint(this);
+    }
+
     /** 非延迟管线：几何在本方法内提交完毕，RETURN 即安全回放点。 */
     @Inject(method = "flush", at = @At("RETURN"), require = 0)
     private void qzuilib$replayWorldTextAfterBatchFlush(CallbackInfo callbackInfo) {
