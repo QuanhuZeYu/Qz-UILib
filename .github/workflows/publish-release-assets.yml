@@ -1,6 +1,7 @@
 # 从指定 tag 构建 4 个 jar 并发布到该 tag 对应的 GitHub Release。
 # 触发方式（在目标分支上运行）：
 #   gh workflow run "Publish Release Assets" --ref <分支> -f tag=4.7.0 -f confirmation="PUBLISH 4.7.0"
+#   gh workflow run "Publish Release Assets" --ref <分支> -f tag=4.11.0-beta.1 -f confirmation="PUBLISH 4.11.0-beta.1"
 # 若 Release 已存在则把资产上传到既有 Release；不存在则先创建（title 用 tag 名、notes 用 .changelogs/<tag>.md）。
 name: Publish Release Assets
 
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 目标 release tag，如 4.7.0
+        description: 目标 release tag，如 4.7.0 或预发布 4.11.0-beta.1
         required: true
         type: string
       confirmation:
@@ -33,7 +34,12 @@ jobs:
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           test "${CONFIRMATION}" = "PUBLISH ${TAG}"
-          if [[ ! "${TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          # tag 形态：正式 x.y.z，或预发布 x.y.z-(alpha|beta|rc).N。
+          # 后缀只放行 alpha/beta/rc：FML 的 ComparableVersion 把未知限定符（pre/dev/sp 等）
+          # 排在正式版之后，那样的 tag 会让 NetworkModHolder 的 acceptVersion(自身) 自检失败。
+          # 序号只接受点号形态且必须存在（蓄水池靠 N 递增），历史脏 tag
+          # （如 4.5.3-beta-1-fontsort）与无序号形态（4.11.0-beta）一并被拒。
+          if [[ ! "${TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
             echo "invalid tag format: ${TAG}" >&2
             exit 1
           fi
@@ -180,24 +186,33 @@ jobs:
             "build/release-bundle/qz_uilib-${TAG}-sources.jar"
             "build/release-bundle/qz_uilib-${TAG}-dev-preshadow.jar"
           )
+          # 预发布 tag 必须标 prerelease：让 GitHub Latest 继续指向最近的正式版，避免 pre 被当成
+          # 稳定版取用；正式版不传该标志（与既有发布行为逐位一致，重跑旧 tag 也不会篡改 Latest）。
+          if [[ "${TAG}" =~ -(alpha|beta|rc) ]]; then
+            RELEASE_KIND=(--prerelease)
+          else
+            RELEASE_KIND=()
+          fi
           if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release upload "${TAG}" "${JARS[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
           else
             gh release create "${TAG}" "${JARS[@]}" \
               --repo "${GITHUB_REPOSITORY}" \
               --title "${TAG}" \
-              --notes-file release-notes.md
+              --notes-file release-notes.md \
+              "${RELEASE_KIND[@]}"
           fi
-          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --notes-file release-notes.md
+          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --notes-file release-notes.md "${RELEASE_KIND[@]}"
 
       - name: 校验 Release 资产齐全且已上传
         # Release 资产规范：仅 4 个 jar（manifest.json 只作内部校验物，不发布）。
-        # Release title 为纯版本号，notes 为 .changelogs/<tag>.md 全文（含验证边界），非 prerelease、非 draft。
+        # Release title 为纯版本号，notes 为 .changelogs/<tag>.md 全文（含验证边界），draft 恒为 false。
+        # prerelease 标记按 tag 形态派生：预发布（-alpha/-beta/-rc）必须为 true，正式版必须为 false。
         shell: bash
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets > release-assets.json
+          gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets,isPrerelease > release-assets.json
           python3 - <<'PY'
           import json
           import os
@@ -210,7 +225,13 @@ jobs:
               f"qz_uilib-{tag}-sources.jar",
               f"qz_uilib-{tag}-dev-preshadow.jar",
           }
-          assets = json.loads(Path("release-assets.json").read_text(encoding="utf-8"))["assets"]
+          payload = json.loads(Path("release-assets.json").read_text(encoding="utf-8"))
+          expected_prerelease = any(marker in tag for marker in ("-alpha", "-beta", "-rc"))
+          if bool(payload.get("isPrerelease")) != expected_prerelease:
+              raise SystemExit(
+                  f"prerelease flag mismatch for {tag}: "
+                  f"isPrerelease={payload.get('isPrerelease')}, expected={expected_prerelease}")
+          assets = payload["assets"]
           by_name = {asset.get("name"): asset for asset in assets}
           missing = sorted(expected - set(by_name))
           if missing:
