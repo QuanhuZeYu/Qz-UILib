@@ -73,8 +73,13 @@ public class PickerSourceCallSiteGuardTest {
                 }
             }
         }
+        // Files.walk 的枚举顺序随平台/文件系统变化（Windows 与 Linux 不一致）——断言前两边统一排序，
+        // 判据强度不变（仍要求「恰为已登记调用点」），只去掉对枚举顺序的隐含依赖。
+        List<String> expectedCallSites = new ArrayList<String>(QUERY_CALL_SITES.keySet());
+        Collections.sort(expectedCallSites);
+        Collections.sort(seen);
         Assert.assertEquals("白名单必须恰为已登记调用点（新增即红，须显式登记并说明理由）",
-                new ArrayList<String>(QUERY_CALL_SITES.keySet()), seen);
+                expectedCallSites, seen);
         Assert.assertEquals("出现未登记的查询调用点", new ArrayList<String>(), offenders);
     }
 

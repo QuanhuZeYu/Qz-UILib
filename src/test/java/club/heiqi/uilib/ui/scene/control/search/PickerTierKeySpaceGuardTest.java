@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -111,7 +112,11 @@ public class PickerTierKeySpaceGuardTest {
                 callers.add(name);
             }
         }
-        List<String> expected = Arrays.asList("MemberGrid.java", "PickerIconCache.java");
+        // Files.walk 的枚举顺序随平台/文件系统变化（Windows 与 Linux 不一致）——断言前两边统一排序，
+        // 判据强度不变（仍要求「恰好这两个调用面」），只去掉对枚举顺序的隐含依赖。
+        List<String> expected = new ArrayList<String>(Arrays.asList("MemberGrid.java", "PickerIconCache.java"));
+        Collections.sort(expected);
+        Collections.sort(callers);
         Assert.assertEquals("生成器调用面 = 选择器缓存 + 成员网格（新增即红，须说明键族归属）",
                 expected, callers);
     }
