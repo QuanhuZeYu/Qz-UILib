@@ -86,6 +86,21 @@ public record SectionSpec(
         }
 
         /**
+         * 添加 INTEGER 类型字段：值语义是 64 位整数，落盘是十进制整数字面量。
+         *
+         * <p>默认值类型编译期绑定为 {@link Long}（{@code .defaultValue(16777216L)}）；范围用
+         * {@code .range(min, max)} 声明（见 {@link FieldSpec.Builder#range(double, double)} 的
+         * 精度边界），控件形态用 {@code .slider(...)} / {@code .input()} 声明。既有
+         * {@code number(...)} 字段不受影响：两者是并列类型，各自独立落盘与校验。</p>
+         *
+         * @param key 字段 key（不含分类前缀）
+         * @return 字段构建器，默认值类型编译期绑定为 {@link Long}
+         */
+        public FieldSpec.Builder<Long> integer(String key) {
+            return new FieldSpec.Builder<Long>(this, name + "." + key, FieldType.INTEGER);
+        }
+
+        /**
          * 添加颜色字段：值语义是 NUMBER 整数 {@code 0xRRGGBB}，UI 是 {@code #RRGGBB} HEX 输入框。
          *
          * <p>一行声明即完成值域与控件形态：未显式 {@code .range(...)} 时区间补齐

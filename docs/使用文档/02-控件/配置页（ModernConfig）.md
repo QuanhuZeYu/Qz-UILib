@@ -130,6 +130,8 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
                 .label("启用").helper("总开关").build()
             .number("scale").defaultValue(Double.valueOf(1.0)).range(0.5, 2.0)
                 .label("缩放").build()
+            .integer("maxBytes").defaultValue(16777216L).range(0, 2147483647)
+                .label("上限字节").build()
             .choice("mode").options("a", "b", "c").defaultValue("a")
                 .label("模式").build()
             .string("name").defaultValue("")
@@ -145,7 +147,13 @@ ConfigSchema schema = ConfigSchema.builder("my-mod")
         .build();
 ```
 
-`FieldType` 当前可用：`STRING` / `NUMBER` / `BOOLEAN` / `CHOICE` / `SIMPLE_LIST` / `STRUCTURED_LIST`。
+`FieldType` 当前可用：`STRING` / `NUMBER` / `INTEGER` / `BOOLEAN` / `CHOICE` / `SIMPLE_LIST` / `STRUCTURED_LIST`。
+`INTEGER` 的值是 64 位整数（默认值类型 `Long`），落盘是十进制整数字面量（`16777216`，不是
+`number(...)` 的 `1.6777216E7`），范围校验与 UI 编辑都按整数：小数（`1.5`）与越界值在 disk 严格读、
+草稿校验两处 fail-closed，不截断、不夹取、不回落默认值。把既有 NUMBER 键改成 `integer(...)` 声明
+时，磁盘上的旧值 `1.6777216E7` / `16777216.0` / `16777216` 都读成同一整数值，首次保存即落成整数形态；
+既有 `number(...)` 字段的读值、写值、落盘形态与 UI 表现完全不变。整数范围用 `.range(min, max)` 声明
+（区间以 double 承载，精确界 `|界| <= 2^53`）。
 `STRUCTURED_LIST` 的值由递归 `ValueSpec` 描述，默认表达
 `List<Object{id:String,members:List<String>}>`；未知 object member 在读取、草稿和写盘时保留。
 结构化列表可通过三参 `structuredList(key, elementSpec, new StructuredListSpec(height))` 声明字段级
@@ -172,6 +180,7 @@ Authority/YAML 使用严格节点类型，Draft 校验错误路径可精确到
 | BOOLEAN | `SceneToggle` |
 | STRING | `SceneTextInput` |
 | NUMBER | 声明 `SliderSpec` → `SceneSlider`；否则 `SceneTextInput` |
+| INTEGER | 声明 `SliderSpec` → `SceneSlider`（写回按整数取整）；否则 `SceneTextInput`（整数文本形态） |
 | CHOICE | 选项 ≤4 → `SceneSegmented`；>4 → `SceneSelect` |
 | SIMPLE_LIST | `SceneSimpleList`（默认可增删，拖拽需 path 覆盖） |
 | STRUCTURED_LIST | keyed 对象列表（增删、上移/下移、标量、`List<String>` 与 `List<CHOICE>` member 编辑） |

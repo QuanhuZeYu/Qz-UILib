@@ -7,6 +7,7 @@ import club.heiqi.config.ConfigNode;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
+import club.heiqi.config.schema.IntegerCodec;
 import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.MutableConfig;
 import club.heiqi.uilib.util.UiNumbers;
@@ -25,7 +26,8 @@ import java.util.Objects;
  * <p>关键约束：</p>
  * <ul>
  *   <li>直接持 {@code Map<String, Object>}，不复用 {@code DefaultMutableConfig}。</li>
- *   <li>Schema 字段存 typed 值（String / Double / Boolean），按全路径 {@code "section.key"} 为键。</li>
+ *   <li>Schema 字段存 typed 值（String / Double / Long / Boolean），按全路径 {@code "section.key"} 为键。
+ *       INTEGER 字段的 typed 值是 {@link Long}（因此落盘为十进制整数字面量）。</li>
  *   <li>非 Schema 顶层 key 存 {@link ConfigNode} 子树，原样保留供 {@link LegacyAdapter} 透传。</li>
  *   <li><b>section raw overlay</b>：schema 分类名（顶层 section）下未知字段/子树存为
  *       {@link ConfigNode}（键为 section 名，仅含非 schema 子键）；序列化时以 raw 为底再覆盖
@@ -43,7 +45,9 @@ import java.util.Objects;
  *       内存零变化（见 {@link #putRaw}）。</li>
  *   <li><b>disk 严格类型</b>：从 {@link ConfigNode} 加载时按 {@link FieldType} 先检查
  *       {@link ConfigNode.NodeType}——STRING/CHOICE 仅 STRING；BOOLEAN 仅 BOOLEAN；
- *       NUMBER 仅 NUMBER（quoted {@code "80"} 拒绝）；SIMPLE_LIST 仅 LIST 且每项 STRING 非 null。
+ *       NUMBER 仅 NUMBER（quoted {@code "80"} 拒绝）；INTEGER 仅 NUMBER 且必须是整数值
+ *       （quoted 字符串拒绝、{@code 1.5} 拒绝、越界拒绝，{@code 1.6777216E7} 读成整数值）；
+ *       SIMPLE_LIST 仅 LIST 且每项 STRING 非 null。
  *       与 UI {@link DraftBuffer} 的 NUMBER 字符串解析边界分离。</li>
  * </ul>
  *
@@ -102,7 +106,7 @@ public final class Authority {
     /**
      * 从已捕获的磁盘快照解析权威态（不二次读盘）。
      *
-     * <p>disk 路径按 FieldType 严格检查 NodeType；NUMBER 非法不静默折叠为 0.0。
+     * <p>disk 路径按 FieldType 严格检查 NodeType；NUMBER / INTEGER 非法不静默折叠为 0。
      * reload 校验路径另用 {@link #extractSchemaCandidateForValidation} 保留可拒绝形态。</p>
      *
      * @param snap   文件快照，非 null
@@ -209,6 +213,20 @@ public final class Authority {
                     String raw = node.asString();
                     return raw != null ? raw : "not-a-number";
                 }
+            }
+            case INTEGER: {
+                // 可拒绝形态：整数值直接给 Long（落盘走十进制整数字面量）；
+                // 小数 / 越界 / 错型保留原文，交给内置校验报错（不截断、不折叠默认）
+                if (nt != ConfigNode.NodeType.NUMBER) {
+                    String raw = node.asString();
+                    return raw != null ? raw : "not-an-integer";
+                }
+                Long integral = IntegerCodec.readNumberNode(node);
+                if (integral != null) {
+                    return integral;
+                }
+                String raw = node.asString();
+                return raw != null ? raw : "not-an-integer";
             }
             case BOOLEAN: {
                 if (nt != ConfigNode.NodeType.BOOLEAN) {
@@ -420,6 +438,14 @@ public final class Authority {
                     throw new ConfigException("strict type: field " + path + " NUMBER is not finite", ConfigException.Category.VALIDATION);
                 }
                 return Double.valueOf(v);
+            }
+            case INTEGER: {
+                // 旧数据兼容：曾经的浮点形态（1.6777216E7 / 16777216.0 / 16777216）都读成同一整数值。
+                // 有小数部分或越界的值 fail-closed 抛 VALIDATION（不截断、不回落默认值）。
+                if (nt != ConfigNode.NodeType.NUMBER) {
+                    throw new ConfigException("strict type: field " + path + " expected NUMBER NodeType, got " + nt + " (quoted numeric strings are rejected on disk path)", ConfigException.Category.VALIDATION);
+                }
+                return Long.valueOf(IntegerCodec.requireNumberNode(node, path));
             }
             case BOOLEAN: {
                 if (nt != ConfigNode.NodeType.BOOLEAN) {
@@ -835,6 +861,8 @@ public final class Authority {
                     return "";
                 case NUMBER:
                     return 0.0;
+                case INTEGER:
+                    return Long.valueOf(0L);
                 case BOOLEAN:
                     return false;
                 case SIMPLE_LIST:
@@ -858,6 +886,14 @@ public final class Authority {
                 } catch (NumberFormatException e) {
                     return 0.0;
                 }
+            case INTEGER: {
+                Long integral = IntegerCodec.toLong(defaultValue);
+                if (integral != null) {
+                    return integral;
+                }
+                Long parsed = defaultValue instanceof String ? IntegerCodec.parse((String) defaultValue) : null;
+                return parsed != null ? parsed : Long.valueOf(0L);
+            }
             case BOOLEAN:
                 if (defaultValue instanceof Boolean) {
                     return defaultValue;

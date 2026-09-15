@@ -63,6 +63,17 @@ public final class ValueSpec {
         return scalar(ValueKind.NUMBER);
     }
 
+    /**
+     * 创建 INTEGER 描述：64 位有符号整数标量（内存形态 {@link Long}）。
+     *
+     * <p>值为整数值的 {@link Number}（{@code 1} / {@code 1.0} / {@code 1.6777216E7}）在
+     * 归一化时收敛为 {@link Long}，因此落盘走十进制整数字面量；有小数部分或越界的值不被
+     * 归一化，留给校验拒绝（判读规则见 {@link IntegerCodec}）。</p>
+     */
+    public static ValueSpec integer() {
+        return scalar(ValueKind.INTEGER);
+    }
+
     /** 创建 BOOLEAN 描述。 */
     public static ValueSpec bool() {
         return scalar(ValueKind.BOOLEAN);
@@ -126,6 +137,7 @@ public final class ValueSpec {
         switch (type) {
             case STRING: return string();
             case NUMBER: return number();
+            case INTEGER: return integer();
             case BOOLEAN: return bool();
             // 旧 CHOICE 的 options 仍由 FieldConstraints 持有；这里仅提供兼容的值种类。
             case CHOICE: return scalar(ValueKind.CHOICE);
@@ -192,7 +204,8 @@ public final class ValueSpec {
      * 声明对象的可靠身份 member。
      *
      * <p>identity member 必须是稳定可比较的 {@link ValueKind#STRING}、
-     * {@link ValueKind#NUMBER}、{@link ValueKind#BOOLEAN} 或 {@link ValueKind#CHOICE} 标量；
+     * {@link ValueKind#NUMBER}、{@link ValueKind#BOOLEAN}、{@link ValueKind#CHOICE} 或
+     * {@link ValueKind#INTEGER} 标量；
      * {@link ValueKind#LIST}、{@link ValueKind#OBJECT} 及未来不支持的种类在 schema 构建阶段直接拒绝。
      * 只有非空、唯一的身份值才会被模型用于复用内部 key；空值或重复值按未知身份处理，不做猜测。</p>
      *
@@ -213,11 +226,13 @@ public final class ValueSpec {
             case NUMBER:
             case BOOLEAN:
             case CHOICE:
+            case INTEGER:
+                // INTEGER 的身份值是 Long：稳定、可比较，与 NUMBER 的 Double 同族
                 break;
             default:
                 throw new IllegalArgumentException("identity member '" + memberName
-                        + "' must use a stable comparable scalar (STRING, NUMBER, BOOLEAN, or CHOICE), but was "
-                        + identityKind);
+                        + "' must use a stable comparable scalar (STRING, NUMBER, BOOLEAN, CHOICE, or INTEGER),"
+                        + " but was " + identityKind);
         }
         return new ValueSpec(kind, element, members, choices, explicitDefault, hasExplicitDefault, memberName, widget);
     }
@@ -230,6 +245,7 @@ public final class ValueSpec {
         switch (kind) {
             case STRING: return "";
             case NUMBER: return Double.valueOf(0.0);
+            case INTEGER: return Long.valueOf(0L);
             case BOOLEAN: return Boolean.FALSE;
             case CHOICE: return choices.isEmpty() ? "" : choices.get(0);
             case LIST: return Collections.unmodifiableList(new ArrayList<Object>());
@@ -249,6 +265,12 @@ public final class ValueSpec {
             return defaultValue();
         }
         switch (kind) {
+            case INTEGER: {
+                // 整数值收敛为 Long：内存形态统一，落盘才可能是十进制整数字面量。
+                // 非整数值 / 越界原样复制（不截断），由校验拒绝。
+                Long integral = IntegerCodec.toLong(value);
+                return integral != null ? integral : copyAndFreeze(value);
+            }
             case LIST:
                 if (!(value instanceof List)) return copyAndFreeze(value);
                 List<Object> list = new ArrayList<Object>();
@@ -298,6 +320,20 @@ public final class ValueSpec {
                     double number = ((Number) value).doubleValue();
                     if (!UiNumbers.isFinite(number)) {
                         errors.put(path, "值不是有限数字");
+                    }
+                }
+                return;
+            case INTEGER:
+                if (!(value instanceof Number)) {
+                    errors.put(path, "值必须是整数类型");
+                } else {
+                    double number = ((Number) value).doubleValue();
+                    if (!UiNumbers.isFinite(number)) {
+                        errors.put(path, "值不是有限数字");
+                    } else if (number != Math.floor(number)) {
+                        errors.put(path, "值不是整数值");
+                    } else if (IntegerCodec.toLong(value) == null) {
+                        errors.put(path, "数值超出 64 位整数范围");
                     }
                 }
                 return;
@@ -384,6 +420,17 @@ public final class ValueSpec {
                     return nodeToJava(node);
                 }
                 return Double.valueOf(number);
+            case INTEGER: {
+                // 旧数据兼容：磁盘上曾经的浮点形态（1.6777216E7 / 1.0 / 16777216）都读成同一整数值，
+                // 判读规则集中在 IntegerCodec（不截断小数、不夹取越界）。
+                if (node.getType() != ConfigNode.NodeType.NUMBER) return wrong(node, path, strict, "NUMBER");
+                Long integral = IntegerCodec.readNumberNode(node);
+                if (integral != null) {
+                    return integral;
+                }
+                if (strict) throw validationError(path + " must be an integral 64-bit number");
+                return nodeToJava(node);
+            }
             case BOOLEAN:
                 if (node.getType() != ConfigNode.NodeType.BOOLEAN) return wrong(node, path, strict, "BOOLEAN");
                 return Boolean.valueOf(node.asBoolean());

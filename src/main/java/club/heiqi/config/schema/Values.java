@@ -8,6 +8,8 @@ public final class Values {
     public static ValueSpec string() { return ValueSpec.string(); }
     /** @return NUMBER spec */
     public static ValueSpec number() { return ValueSpec.number(); }
+    /** @return INTEGER spec（64 位整数标量，内存形态 Long） */
+    public static ValueSpec integer() { return ValueSpec.integer(); }
     /** @return BOOLEAN spec */
     public static ValueSpec bool() { return ValueSpec.bool(); }
     /** @return CHOICE spec */
@@ -40,7 +42,7 @@ public final class Values {
      * @param identityMember 用于 keyed 列表复用的对象 member 名称
      * @param members 对象 member 定义
      * @return 带身份声明的 OBJECT spec
-     * @throws IllegalArgumentException identity member 不是 STRING、NUMBER、BOOLEAN 或 CHOICE 标量
+     * @throws IllegalArgumentException identity member 不是 STRING、NUMBER、BOOLEAN、CHOICE 或 INTEGER 标量
      */
     public static ValueSpec objectWithIdentity(String identityMember, ValueSpec.Member... members) {
         return ValueSpec.object(members).withIdentityMember(identityMember);

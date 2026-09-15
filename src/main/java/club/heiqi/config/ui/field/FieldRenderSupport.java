@@ -1,6 +1,7 @@
 package club.heiqi.config.ui.field;
 
 import club.heiqi.config.schema.FieldSpec;
+import club.heiqi.config.schema.IntegerCodec;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 
@@ -23,7 +24,9 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
  * 故文本型字段渲染器统一自持编辑期原文（字段层一个 {@code Signal<String> editText}），
  * 显示文本 = {@code isUnfinishedText(原文, draft 值, 编解码) ? 原文 : 编解码.format(draft 值)}，
  * 失焦时原文归位到规范写法。{@link ValueTextCodec} 是这套机制的编解码契约：NUMBER 用
- * {@link #isUnfinishedNumberText} / {@link #numberTextOf}（内部走私有 NUMBER 实现），
+ * {@link #isUnfinishedNumberText} / {@link #numberTextOf}（内部走私有 NUMBER 实现）、
+ * INTEGER 用 {@link #isUnfinishedIntegerText} / {@link #integerTextOf}（内部走
+ * {@link IntegerCodec}——整数文本形态的唯一判读点，渲染器不得自写字面量规则），
  * 十六进制颜色字段由 {@code config.ui.field} 里它自己的渲染器提供实现——
  * <b>新增文本型字段只提供编解码，不另造第二套编辑期原文机制</b>。</p>
  */
@@ -117,6 +120,52 @@ public final class FieldRenderSupport {
     public static String numberTextOf(Object draftValue) {
         return NUMBER_TEXT.format(draftValue);
     }
+
+    /**
+     * 判断输入框原文是否仍是 INTEGER 字段当前值的「未完成写法」——原文能读成整数、且正是该值，
+     * 但写法尚未规范化（如 {@code "007"} / {@code "+7"}）。
+     *
+     * <p>与 {@link #isUnfinishedNumberText} 同一套机制，只是编解码换成整数：{@code "1.5"}
+     * 读不出整数，不属于未完成写法，会作为原文落进草稿由校验报「值不是有效整数」。</p>
+     *
+     * @param text       输入框原文（可为 null）
+     * @param draftValue draft 当前值，可为 null
+     * @return true 表示原文仍是该值的未完成写法（应继续显示原文）
+     */
+    public static boolean isUnfinishedIntegerText(String text, Object draftValue) {
+        return isUnfinishedText(text, draftValue, INTEGER_TEXT);
+    }
+
+    /**
+     * draft 值 → INTEGER 字段显示文本：{@code null} → {@code ""}；整数值 → 十进制整数形态
+     * （无 {@code .0} 与指数写法，64 位域内不丢精度）；其余 {@link String#valueOf(Object)}
+     * （draft 里读不出整数的原文原样透出）。
+     *
+     * <p>与 {@link #numberTextOf} 一样是同步版本：整数输入框要在构建期就把规范写法注入控件
+     * 与编辑期原文信号。</p>
+     *
+     * @param draftValue draft 当前值，可为 null
+     * @return 显示文本（恒非 null）
+     */
+    public static String integerTextOf(Object draftValue) {
+        return INTEGER_TEXT.format(draftValue);
+    }
+
+    /**
+     * INTEGER 文本形态的编解码（{@link #integerTextOf} 与 {@link #isUnfinishedIntegerText}
+     * 的共用实现）；值 ↔ 文本规则全部委托 {@link IntegerCodec}。
+     */
+    private static final ValueTextCodec INTEGER_TEXT = new ValueTextCodec() {
+        @Override
+        public String format(Object value) {
+            return IntegerCodec.textOf(value);
+        }
+
+        @Override
+        public Object parse(String text) {
+            return IntegerCodec.parse(text);
+        }
+    };
 
     /**
      * NUMBER 文本形态的编解码（{@link #numberTextOf} 与 {@link #isUnfinishedNumberText} 的共用实现）。

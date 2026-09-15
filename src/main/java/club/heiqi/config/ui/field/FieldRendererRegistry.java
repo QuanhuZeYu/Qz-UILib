@@ -20,7 +20,8 @@ import club.heiqi.config.ui.editor.Registry;
  *   <li>未命中回落 {@link #renderers}（按 {@link FieldType} 注册的默认表）。</li>
  * </ol>
  *
- * <p>{@link #defaultRegistry()} 预注册 6 种默认 renderer（含 STRUCTURED_LIST）。
+ * <p>{@link #defaultRegistry()} 预注册全部内置 {@link FieldType} 的默认 renderer（含 STRUCTURED_LIST 与
+ * INTEGER）——未注册类型的字段在 {@code ConfigScreen} 里会被静默跳过，新增类型必须同时登记渲染器。
  * 可通过 {@link #register} 替换默认实现或扩展新类型，通过 {@link #registerPath} 为特定字段挂覆盖。</p>
  *
  * <h3>path 格式</h3>
@@ -99,7 +100,7 @@ public final class FieldRendererRegistry {
     }
 
     /**
-     * 创建默认注册表，预注册 5 种默认 renderer。
+     * 创建默认注册表，预注册全部内置 {@link FieldType} 的默认 renderer。
      *
      * @return 预填充的注册表
      */
@@ -117,6 +118,7 @@ public final class FieldRendererRegistry {
         FieldRendererRegistry registry = new FieldRendererRegistry();
         registry.register(FieldType.STRING, new StringFieldRenderer());
         registry.register(FieldType.NUMBER, new NumberFieldRenderer());
+        registry.register(FieldType.INTEGER, new IntegerFieldRenderer());
         registry.register(FieldType.BOOLEAN, new BooleanFieldRenderer());
         registry.register(FieldType.CHOICE, new ChoiceFieldRenderer());
         registry.register(FieldType.SIMPLE_LIST, new SimpleListFieldRenderer());

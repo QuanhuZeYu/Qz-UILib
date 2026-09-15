@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.field;
 
+import club.heiqi.config.schema.IntegerCodec;
 import club.heiqi.config.schema.ValueKind;
 import club.heiqi.config.schema.ValueSpec;
 import club.heiqi.config.schema.FieldSpec;
@@ -350,6 +351,14 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
                         FieldRenderSupport.toNumberStringSignal(value), Signal.create(Boolean.TRUE),
                         Signal.create(Boolean.FALSE), "", Integer.MAX_VALUE, SceneInputType.NUMBER,
                           next -> publishMember(adapter, rootPath, rows, lineage, key, name, parseNumber(next)))).get();
+            case INTEGER:
+                // 成员值语义与 INTEGER 字段一致：写回 Long（落盘十进制整数字面量），
+                // 读不出整数的原文按原文写回，由 ValueSpec 的 INTEGER 校验拒绝。
+                return SceneTextInput.create(rt, new SceneTextInput.Props(
+                        Computed.create(() -> FieldRenderSupport.integerTextOf(value.get())),
+                        Signal.create(Boolean.TRUE), Signal.create(Boolean.FALSE), "",
+                        Integer.MAX_VALUE, SceneInputType.NUMBER,
+                          next -> publishMember(adapter, rootPath, rows, lineage, key, name, parseInteger(next)))).get();
             case BOOLEAN:
                 return SceneToggle.create(rt, new SceneToggle.Props(
                         Computed.create(() -> Boolean.valueOf(Boolean.TRUE.equals(value.get()))),
@@ -457,6 +466,12 @@ public final class StructuredListFieldRenderer implements FieldRenderer {
     private static Object parseNumber(String value) {
         try { return Double.valueOf(Double.parseDouble(value)); }
         catch (NumberFormatException e) { return value; }
+    }
+
+    /** 整数成员：读得出返回 Long，读不出按原文写回（交给 INTEGER 校验报错，不静默取整）。 */
+    private static Object parseInteger(String value) {
+        Long parsed = IntegerCodec.parse(value);
+        return parsed != null ? (Object) parsed : value;
     }
 
     /**

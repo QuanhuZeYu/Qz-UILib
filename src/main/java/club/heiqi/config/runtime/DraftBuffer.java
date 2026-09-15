@@ -4,6 +4,7 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.FieldConstraints;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.config.schema.FieldType;
+import club.heiqi.config.schema.IntegerCodec;
 import club.heiqi.uilib.util.UiNumbers;
 
 import java.util.ArrayList;
@@ -345,7 +346,7 @@ public final class DraftBuffer {
      * 捕获事务 candidate（package 内部使用）。
      *
      * <p>base 取自 {@link #baseValues}（open 时 Authority），proposed 为 draft 全表；
-     * 合法 NUMBER 值在 proposed 中统一为 {@link Double}。</p>
+     * 合法 NUMBER 值在 proposed 中统一为 {@link Double}，合法 INTEGER 值统一为 {@link Long}。</p>
      *
      * @return 事务 candidate
      */
@@ -525,6 +526,43 @@ public final class DraftBuffer {
                 break;
             }
 
+            case INTEGER: {
+                // 整数语义的范围校验：与 NUMBER 同一套 min/max（double 承载，见 FieldSpec.Builder#range）。
+                // 判读规则集中在 IntegerCodec：小数不截断、越界不夹取，一律报错。
+                Long integer;
+                if (value instanceof Number) {
+                    double number = ((Number) value).doubleValue();
+                    if (!UiNumbers.isFinite(number)) {
+                        return "值不是有限数字";
+                    }
+                    if (number != Math.floor(number)) {
+                        return "值不是整数值";
+                    }
+                    integer = IntegerCodec.toLong(value);
+                    if (integer == null) {
+                        return "数值超出 64 位整数范围";
+                    }
+                } else if (value instanceof String) {
+                    // 合法整数文本可规范化为 Long（UI 输入）；"1.5" / "1e5" 等非法原文拒绝，不静默取整
+                    integer = IntegerCodec.parse((String) value);
+                    if (integer == null) {
+                        return "值不是有效整数";
+                    }
+                } else {
+                    return "值必须是整数类型";
+                }
+                if (c != null) {
+                    double v = integer.doubleValue();
+                    if (v < c.min()) {
+                        return "数值 " + integer + " 小于下限 " + c.min();
+                    }
+                    if (v > c.max()) {
+                        return "数值 " + integer + " 大于上限 " + c.max();
+                    }
+                }
+                break;
+            }
+
             case STRING: {
                 if (!(value instanceof String)) {
                     return "值必须是字符串";
@@ -578,13 +616,24 @@ public final class DraftBuffer {
 
 
     /**
-     * 将可合法解释的 NUMBER 候选统一为 Double；非法/非数字字符串原样保留给内置校验 fail-closed。
+     * 将可合法解释的 NUMBER / INTEGER 候选统一为 Double / Long；
+     * 非法、非数字或非整数的原文原样保留给内置校验 fail-closed。
      * <p><b>边界</b>：合法数字字符串解析<strong>仅</strong>在本 DraftBuffer / UI 提交路径；
      * disk reload 路径禁止解析 NUMBER 字符串（见 {@link Authority#extractSchemaCandidateForValidation}
      * 严格 NodeType）。</p>
      * 合法数字字符串（UI 输入）规范化为 Double；禁止 NaN/Infinity 通过。
      */
     private static Object normalizeCandidateValue(FieldSpec field, Object value) {
+        if (field.type() == FieldType.INTEGER) {
+            if (value == null) {
+                return null;
+            }
+            // 整数值（含 UI 输入的整数文本）统一为 Long ⇒ 落盘是十进制整数字面量；
+            // 小数 / 越界 / 非法原文原样保留，给内置校验 fail-closed。
+            Long integral = value instanceof String
+                    ? IntegerCodec.parse((String) value) : IntegerCodec.toLong(value);
+            return integral != null ? integral : ValueCopy.copyOf(value);
+        }
         if (field.type() != FieldType.NUMBER || value == null) {
             if (field.type() == FieldType.STRUCTURED_LIST) {
                 return value == null ? null : field.valueSpec().normalize(value);

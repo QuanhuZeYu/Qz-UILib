@@ -10,7 +10,8 @@ import java.util.List;
  * 字段约束，不可变值对象。
  * 不同约束按 {@link FieldType} 语义适用于不同类型：
  * <ul>
- *   <li>NUMBER：{@link #min()} / {@link #max()}</li>
+ *   <li>NUMBER / INTEGER：{@link #min()} / {@link #max()}（INTEGER 的区间以 double 承载，
+ *       精确界见 {@link FieldSpec.Builder#range(double, double)} 的精度边界说明）</li>
  *   <li>STRING：{@link #maxLength()}</li>
  *   <li>CHOICE：{@link #choices()}</li>
  *   <li>通用：{@link #required()}</li>

@@ -26,8 +26,9 @@ public record FieldSpec(
     /** UI 帮助文本，可选，未设置时为 null */
     String helper,
     /**
-     * NUMBER 字段的 widget 声明（{@link SliderSpec} / {@link InputSpec} / {@link ColorSpec}）；
-     * null 表示默认走 input，非 NUMBER 字段忽略
+     * 数值字段的 widget 声明（{@link SliderSpec} / {@link InputSpec} / {@link ColorSpec}）；
+     * null 表示默认走 input。{@link ColorSpec} 只对 NUMBER 声明（颜色值域是 24 位），
+     * INTEGER 字段可声明 {@link SliderSpec} / {@link InputSpec}，其余类型忽略
      */
     WidgetSpec widget,
     /** STRUCTURED_LIST 的递归值描述；旧字段由 FieldType 自动映射。 */
@@ -68,6 +69,16 @@ public record FieldSpec(
         if (constraints == null) {
             constraints = FieldConstraints.none();
         }
+        if (type == FieldType.INTEGER && defaultValue != null) {
+            // 声明期收敛为 Long：内存形态统一，落盘才可能是十进制整数字面量。
+            // 非整数值（1.5）与越界值（>= 2^63）在这里就拒绝，不留到运行期静默截断。
+            Long integral = IntegerCodec.toLong(defaultValue);
+            if (integral == null) {
+                throw new IllegalArgumentException(
+                        "INTEGER 字段 " + path + " 的默认值必须是 64 位整数值，实际: " + defaultValue);
+            }
+            defaultValue = integral;
+        }
         if (type == FieldType.SIMPLE_LIST && defaultValue != null) {
             if (!(defaultValue instanceof List)) {
                 throw new IllegalArgumentException("SIMPLE_LIST 默认值必须是 List");
@@ -90,7 +101,7 @@ public record FieldSpec(
      * 构建完成后返回父 {@link SectionSpec.Builder}，回到分类作用域。
      *
      * @param <T> 默认值类型，由 {@link SectionSpec.Builder#string}/{@link #number}/
-     *            {@link #bool}/{@link #choice} 工厂方法在编译期绑定，
+     *            {@link SectionSpec.Builder#integer}/{@link #bool}/{@link #choice} 工厂方法在编译期绑定，
      *            使 {@link #defaultValue(Object)} 获得编译期类型检查。
      *            range/slider/maxLength/options 等约束方法暂留基类做运行时按 type 校验。
      */
@@ -173,7 +184,10 @@ public record FieldSpec(
         }
 
         /**
-         * NUMBER 专用：设置数值范围。
+         * 数值字段（NUMBER / INTEGER）：设置数值范围。
+         *
+         * <p><b>INTEGER 的精度边界</b>：区间以 {@code double} 承载，只有 {@code |界| <= 2^53}
+         * 能精确表示；需要更大整数域时不要声明 range（不声明即无约束），不要用近似界充当精确界。</p>
          *
          * @param min 最小值
          * @param max 最大值
@@ -218,7 +232,7 @@ public record FieldSpec(
         }
 
         /**
-         * NUMBER 专用：声明字段使用 slider widget（连续，step=0 不量化）。
+         * 数值字段（NUMBER / INTEGER）专用：声明字段使用 slider widget（连续，step=0 不量化）。
          *
          * @return 当前构建器
          */
@@ -228,7 +242,10 @@ public record FieldSpec(
         }
 
         /**
-         * NUMBER 专用：声明字段使用 slider widget 并指定量化步进。
+         * 数值字段（NUMBER / INTEGER）专用：声明字段使用 slider widget 并指定量化步进。
+         *
+         * <p>INTEGER 字段写回时按整数取整（step 小于 1 不会产生小数值），故 step 声明成整数步进
+         * 才与字段语义一致。</p>
          *
          * @param step 量化步进，{@code step=0} 表示连续不量化，{@code step>0} 表示量化步进，不能为负
          * @return 当前构建器
@@ -239,7 +256,7 @@ public record FieldSpec(
         }
 
         /**
-         * NUMBER 专用：显式声明字段使用 input widget（文本输入框）。
+         * 数值字段（NUMBER / INTEGER）专用：显式声明字段使用 input widget（文本输入框）。
          * 与不调用任何 widget 方法（widget=null）效果一致，用于显式表达意图。
          *
          * @return 当前构建器
@@ -259,6 +276,11 @@ public record FieldSpec(
          * @return 当前构建器
          */
         public Builder<T> color() {
+            if (type == FieldType.INTEGER) {
+                // 颜色 widget 绑的是 24 位值域与 HEX 文本形态，落在 INTEGER 上会与「整数落盘形态」
+                // 这套语义打架；要颜色请用颜色字段（SectionSpec.Builder#color）。
+                throw new IllegalArgumentException("color widget 只适用于 NUMBER 字段: " + path);
+            }
             this.widget = ColorSpec.INSTANCE;
             if (min == null && max == null) {
                 this.min = Double.valueOf(0.0D);
@@ -302,6 +324,8 @@ public record FieldSpec(
                     return "";
                 case NUMBER:
                     return Double.valueOf(0.0);
+                case INTEGER:
+                    return Long.valueOf(0L);
                 case BOOLEAN:
                     return Boolean.FALSE;
                 case CHOICE:
@@ -337,6 +361,13 @@ public record FieldSpec(
                     if (!(value instanceof Number)) {
                         throw new IllegalArgumentException(
                             "NUMBER 字段 " + path + " 的默认值必须是 Number，实际: " + className(value));
+                    }
+                    break;
+                case INTEGER:
+                    if (IntegerCodec.toLong(value) == null) {
+                        throw new IllegalArgumentException(
+                            "INTEGER 字段 " + path + " 的默认值必须是 64 位整数值，实际: "
+                                    + value + " (" + className(value) + ")");
                     }
                     break;
                 case BOOLEAN:
@@ -395,6 +426,19 @@ public record FieldSpec(
                         if (v > constraints.max()) {
                             throw new IllegalArgumentException(
                                 "NUMBER 字段 " + path + " 的默认值 " + v + " 大于上限 " + constraints.max());
+                        }
+                    }
+                    break;
+                case INTEGER:
+                    if (value instanceof Number) {
+                        double v = ((Number) value).doubleValue();
+                        if (v < constraints.min()) {
+                            throw new IllegalArgumentException(
+                                "INTEGER 字段 " + path + " 的默认值 " + value + " 小于下限 " + constraints.min());
+                        }
+                        if (v > constraints.max()) {
+                            throw new IllegalArgumentException(
+                                "INTEGER 字段 " + path + " 的默认值 " + value + " 大于上限 " + constraints.max());
                         }
                     }
                     break;
