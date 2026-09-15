@@ -59,6 +59,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     /** 行内 code 衬底水平 padding（px，设计稿 §3.5：向两侧各外扩 3）。 */
     private static final float CODE_BACKGROUND_PAD_PX = 3.0F;
     private final FontRenderStateGuard renderStateGuard = new FontRenderStateGuard();
+    /**
+     * 延后回放期间的矩阵覆盖（{@code [modelview, projection]}）。
+     *
+     * <p>宿主 TESR 批次窗口内捕获的世界文字改到宿主提交点回放，那时固定管线矩阵已不是捕获时刻的
+     * 变换，因此以捕获快照作为 uniform 覆盖；读取侧见 {@link #flushCollectedBatches(FontService)}。</p>
+     */
+    private final ThreadLocal<float[][]> capturedMatrixOverride = new ThreadLocal<float[][]>();
     private final ThreadLocal<Integer> deferredFlushScopeDepth = new ThreadLocal<Integer>() {
         @Override
         protected Integer initialValue() {
@@ -1631,11 +1638,17 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     private void flushCollectedBatches(final FontService fontService) {
+        final float[][] override = capturedMatrixOverride.get();
         try {
             renderStateGuard.run(new Runnable() {
                 @Override
                 public void run() {
-                    fontService.getBatchRenderer().flushWithinActiveState(fontService.getShaderProgram());
+                    if (override == null) {
+                        fontService.getBatchRenderer().flushWithinActiveState(fontService.getShaderProgram());
+                    } else {
+                        fontService.getBatchRenderer().flushWithinActiveState(fontService.getShaderProgram(),
+                                override[0], override[1]);
+                    }
                 }
             }, !fontService.getBatchRenderer().isAssumingInternalUiMatrices());
         } catch (RuntimeException exception) {
@@ -1649,6 +1662,26 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     private void clearCollectedBatches(FontService fontService) {
         fontService.getBatchRenderer().clearFrame();
+    }
+
+    /**
+     * 进入延后回放：后续 flush 使用给定的捕获矩阵，而不是回放时刻的固定管线矩阵。
+     *
+     * <p>必须与 {@link #endCapturedMatrixReplay()} 成对，由回放出口在 try/finally 中保证。</p>
+     *
+     * @param modelview  捕获时刻的模型视图矩阵（16 元素，列主序）
+     * @param projection 捕获时刻的投影矩阵（16 元素，列主序）
+     */
+    public void beginCapturedMatrixReplay(float[] modelview, float[] projection) {
+        if (modelview == null || projection == null) {
+            throw new IllegalArgumentException("captured matrices must not be null");
+        }
+        capturedMatrixOverride.set(new float[][] { modelview.clone(), projection.clone() });
+    }
+
+    /** 退出延后回放，恢复按当前固定管线矩阵解析。 */
+    public void endCapturedMatrixReplay() {
+        capturedMatrixOverride.remove();
     }
 
     private int drawWithRenderStateGuardIfNeeded(FontService fontService, DrawStringTask task) {

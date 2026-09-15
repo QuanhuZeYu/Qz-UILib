@@ -451,6 +451,23 @@ public class FontBatchRenderer implements GlyphCollector {
      * @return 提交的四边形数量
      */
     public int flushWithinActiveState(FontShaderProgram shaderProgram) {
+        return flushWithinActiveState(shaderProgram, null, null);
+    }
+
+    /**
+     * 在调用方已经建立的状态保护边界内提交当前帧批次，并在需要时使用显式矩阵覆盖。
+     *
+     * <p>矩阵覆盖供「延后回放」使用：字形在别处捕获、在宿主提交批次之后才回放时，固定管线矩阵已不是
+     * 捕获时刻的变换。传入捕获时刻的投影/模型视图矩阵，可使字形位置与深度与即时绘制逐位一致，且整个
+     * 过程不读取、不修改宿主的矩阵状态。</p>
+     *
+     * @param shaderProgram      字体 shader
+     * @param modelviewOverride  捕获时刻的模型视图矩阵（16 元素，列主序）；null 表示读当前固定管线矩阵
+     * @param projectionOverride 捕获时刻的投影矩阵（16 元素，列主序）；null 表示读当前固定管线矩阵
+     * @return 提交的四边形数量
+     */
+    public int flushWithinActiveState(FontShaderProgram shaderProgram, float[] modelviewOverride,
+            float[] projectionOverride) {
         initialize();
         shaderProgram.initialize();
 
@@ -476,7 +493,7 @@ public class FontBatchRenderer implements GlyphCollector {
 
         shaderProgram.bind();
         try {
-            setupUniforms(shaderProgram);
+            setupUniforms(shaderProgram, modelviewOverride, projectionOverride);
             shaderProgram.setUniformI("mainTex", 0);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
 
@@ -599,6 +616,14 @@ public class FontBatchRenderer implements GlyphCollector {
         return lastFlushBoundTextureId;
     }
 
+    /** 把 16 元素列主序矩阵写入 uniform 缓冲（覆盖路径专用）。 */
+    private static FloatBuffer writeMatrixBuffer(FloatBuffer target, float[] source) {
+        target.clear();
+        target.put(source, 0, 16);
+        target.flip();
+        return target;
+    }
+
     private int bindTextureIfNeeded(int textureId, int boundTextureId) {
         if (boundTextureId != textureId) {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
@@ -607,10 +632,13 @@ public class FontBatchRenderer implements GlyphCollector {
         return boundTextureId;
     }
 
-    private void setupUniforms(FontShaderProgram shaderProgram) {
-        FloatBuffer modelViewUniform = modelViewBuffer;
-        FloatBuffer projectionUniform = projectionBuffer;
-        if (assumeInternalUiMatrices) {
+    private void setupUniforms(FontShaderProgram shaderProgram, float[] modelviewOverride, float[] projectionOverride) {
+        FloatBuffer modelViewUniform;
+        FloatBuffer projectionUniform;
+        if (modelviewOverride != null && projectionOverride != null) {
+            modelViewUniform = writeMatrixBuffer(modelViewBuffer, modelviewOverride);
+            projectionUniform = writeMatrixBuffer(projectionBuffer, projectionOverride);
+        } else if (assumeInternalUiMatrices) {
             modelViewUniform = identityModelViewBuffer;
             projectionUniform = internalUiProjectionBuffer;
         } else {
@@ -620,6 +648,8 @@ public class FontBatchRenderer implements GlyphCollector {
             GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, projectionBuffer);
             modelViewBuffer.flip();
             projectionBuffer.flip();
+            modelViewUniform = modelViewBuffer;
+            projectionUniform = projectionBuffer;
         }
 
         shaderProgram.setUniformM4f("modelview", modelViewUniform);

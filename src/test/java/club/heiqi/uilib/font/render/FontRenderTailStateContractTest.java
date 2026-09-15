@@ -43,9 +43,12 @@ public class FontRenderTailStateContractTest {
         String drawBody = methodBody(source, "public InvocationResult<Integer> drawString(");
         String patchBody = methodBody(source, "private static void applyVanillaDrawStringTailState(");
 
-        int guardedDraw = drawBody.indexOf("drawBaselineAlignedString");
-        int tailPatch = drawBody.indexOf("applyVanillaDrawStringTailState");
+        // 即时绘制路径钉死：补丁必须在 adapter 同步 draw 之后（守卫 pop 之后）。
+        // 捕获分支（宿主 TESR 批次窗口内的延后回放，见 TesrTextReplayCoordinator）不经过 adapter draw，
+        // 其尾状态按「本次未 flush」语义处理，不在本断言范围内。
+        int guardedDraw = drawBody.indexOf("int width = adapter.drawBaselineAlignedString");
         assertTrue("invoker drawString 必须经过 adapter 同步 draw", guardedDraw >= 0);
+        int tailPatch = drawBody.indexOf("applyVanillaDrawStringTailState", guardedDraw);
         assertTrue("尾状态补丁必须在 adapter draw 之后（守卫 pop 之后）执行", tailPatch > guardedDraw);
         assertTrue("补丁必须无条件启用 ALPHA_TEST", patchBody.contains("glEnable(GL11.GL_ALPHA_TEST)"));
         assertTrue("补丁必须补齐末字形色", patchBody.contains("glColor4f"));
@@ -55,7 +58,8 @@ public class FontRenderTailStateContractTest {
     @Test
     public void batchRendererRecordsTailStateAtFlushSide() throws IOException {
         String source = source(BATCH_RENDERER);
-        String flushBody = methodBody(source, "public int flushWithinActiveState(");
+        String flushBody = methodBody(source,
+                "public int flushWithinActiveState(FontShaderProgram shaderProgram, float[] modelviewOverride,");
         String clearBody = methodBody(source, "public void clearFrame()");
 
         String collectorSource = source(BATCH_COLLECTOR);

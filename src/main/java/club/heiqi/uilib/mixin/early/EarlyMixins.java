@@ -58,6 +58,9 @@ public class EarlyMixins implements IEarlyMixinLoader, IFMLLoadingPlugin {
             mixins.add("nametag.MixinRenderPlayerScoreboardNameTag");
             if (loadedCoreMods != null && loadedCoreMods.contains(ANGELICA_TWEAKER)) {
                 mixins.add("nametag.MixinAngelicaPlayerNameTagReplay");
+                // 宿主把 TESR 几何排队延后提交，本库字形却在调用点内立即提交，两者落屏顺序不同源，
+                // 需要宿主提交点上的世界文字回放围栏（无 Angelica 时不注册，行为退回即时绘制）。
+                mixins.add("tesr.MixinAngelicaTesrBatchReplay");
             }
         }
         mixins.add("network.MixinNetHandlerPlayServer");

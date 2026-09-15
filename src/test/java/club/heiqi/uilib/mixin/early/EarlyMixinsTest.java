@@ -26,6 +26,7 @@ public class EarlyMixinsTest {
         Assert.assertFalse(mixins.contains("MixinMinecraftWorldLoadPump"));
         Assert.assertFalse(mixins.contains("MixinGuiScreenKeyboardIsolation"));
         Assert.assertFalse(mixins.contains("MixinGuiContainerKeyTypedIsolation"));
+        Assert.assertFalse(mixins.contains("tesr.MixinAngelicaTesrBatchReplay"));
         assertNoNameTagMixins(mixins);
     }
 
@@ -40,6 +41,7 @@ public class EarlyMixinsTest {
         Assert.assertFalse(mixins.contains("MixinGuiContainerKeyTypedIsolation"));
         assertGenericNameTagMixins(mixins);
         Assert.assertFalse(mixins.contains("nametag.MixinAngelicaPlayerNameTagReplay"));
+        Assert.assertFalse(mixins.contains("tesr.MixinAngelicaTesrBatchReplay"));
     }
 
     @Test
@@ -49,6 +51,8 @@ public class EarlyMixinsTest {
         List<String> clientMixins = EarlyMixins.buildMixinsForSide(Side.CLIENT, loadedCoreMods);
         assertGenericNameTagMixins(clientMixins);
         Assert.assertTrue(clientMixins.contains("nametag.MixinAngelicaPlayerNameTagReplay"));
+        Assert.assertTrue("Angelica 在场时注册 TESR 批次提交点回放围栏",
+                clientMixins.contains("tesr.MixinAngelicaTesrBatchReplay"));
 
         List<String> serverMixins = EarlyMixins.buildMixinsForSide(Side.SERVER, loadedCoreMods);
         assertNoNameTagMixins(serverMixins);
@@ -65,5 +69,6 @@ public class EarlyMixinsTest {
         Assert.assertFalse(mixins.contains("nametag.MixinRendererLivingEntityPlayerNameTag"));
         Assert.assertFalse(mixins.contains("nametag.MixinRenderPlayerScoreboardNameTag"));
         Assert.assertFalse(mixins.contains("nametag.MixinAngelicaPlayerNameTagReplay"));
+        Assert.assertFalse(mixins.contains("tesr.MixinAngelicaTesrBatchReplay"));
     }
 }

@@ -2,6 +2,7 @@ package club.heiqi.uilib.client;
 
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.chat3.wiring.ChatMarkdownInstaller;
+import club.heiqi.uilib.internal.font.tesr.TesrTextReplayCoordinator;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
@@ -23,6 +24,8 @@ public class FontRenderTickListener {
         if (event.phase != TickEvent.Phase.START) {
             return;
         }
+        // 帧边界收口：宿主上一帧若未提交 TESR 批次，滞留的延后文字在这里丢弃并回即时绘制（fail-open）。
+        TesrTextReplayCoordinator.onFrameBoundary();
         FontService.getInstance().tickMainThread(64);
         ChatMarkdownInstaller.installIfNeeded();
         ChatMarkdownInstaller.tickController();

@@ -9,6 +9,8 @@ import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.render.FontBatchRenderer;
+import club.heiqi.uilib.font.render.FontRenderStateGuard;
+import club.heiqi.uilib.internal.font.tesr.TesrTextReplayCoordinator;
 
 /**
  * 原版 FontRenderer 注入层的 UILib 字体管线调用器。
@@ -17,6 +19,20 @@ public final class FontRendererFallbackInvoker {
 
     private static final FontRendererFallbackInvoker INSTANCE = new FontRendererFallbackInvoker();
     private static final InvocationResult<?> UNHANDLED = new InvocationResult<Object>(false, null);
+    /**
+     * 回放序列自身的状态边界：回放要复刻原版世界文字「不写深度」的调用方语义，进出都以此还原宿主状态。
+     */
+    private static final FontRenderStateGuard REPLAY_STATE_GUARD = new FontRenderStateGuard();
+
+    static {
+        // 回放出口装在本调用器（原版 drawString 的唯一接管点）：只有它会捕获，宿主钩子未安装时永不触发。
+        TesrTextReplayCoordinator.installReplaySink(new TesrTextReplayCoordinator.ReplaySink() {
+            @Override
+            public void replay(TesrTextReplayCoordinator.DeferredText text) {
+                replayDeferredWorldText(text);
+            }
+        });
+    }
 
     private boolean fontPipelineFailureLogged;
 
@@ -55,7 +71,12 @@ public final class FontRendererFallbackInvoker {
             return false;
         }
         try {
-            DefaultFontRendererAdapter.getInstance().drawSplitString(text, x, y, wrapWidth, textColor);
+            DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
+            if (TesrTextReplayCoordinator.shouldCapture(adapter.isDeferredFlushScopeActive())) {
+                TesrTextReplayCoordinator.capture(text, x, y, textColor, false, wrapWidth);
+                return true;
+            }
+            adapter.drawSplitString(text, x, y, wrapWidth, textColor);
             return true;
         } catch (RuntimeException exception) {
             logFontPipelineFailure(exception);
@@ -83,8 +104,16 @@ public final class FontRendererFallbackInvoker {
         try {
             FontBatchRenderer batchRenderer = FontService.getInstance().getBatchRenderer();
             long flushSequenceBefore = batchRenderer.getLastFlushSequence();
-            int width = DefaultFontRendererAdapter.getInstance().drawBaselineAlignedString(text, x, y, color,
-                    dropShadow);
+            DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
+            if (TesrTextReplayCoordinator.shouldCapture(adapter.isDeferredFlushScopeActive())) {
+                // 宿主的 TESR 几何仍排在队列里：此刻立即绘制的字形会被稍后提交的几何按同深度整块覆盖
+                // （字形按原版语义不写深度）。改到宿主提交点回放；推进量用同一套字体度量算，调用方的
+                // 居中/排版口径不变。
+                TesrTextReplayCoordinator.capture(text, x, y, color, dropShadow, -1);
+                applyVanillaDrawStringTailState(batchRenderer, flushSequenceBefore, color);
+                return InvocationResult.handled(Integer.valueOf(x + adapter.getStringWidth(text)));
+            }
+            int width = adapter.drawBaselineAlignedString(text, x, y, color, dropShadow);
             applyVanillaDrawStringTailState(batchRenderer, flushSequenceBefore, color);
             return InvocationResult.handled(Integer.valueOf(width));
         } catch (RuntimeException exception) {
@@ -241,6 +270,39 @@ public final class FontRendererFallbackInvoker {
         int lastTextureId = batchRenderer.getLastFlushBoundTextureId();
         if (lastTextureId != FontBatchRenderer.NO_TEXTURE) {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, lastTextureId);
+        }
+    }
+
+    /**
+     * 在宿主提交 TESR 批次之后回放一条被延后的世界文字。
+     *
+     * <p>两条约束都来自原版世界文字的调用方契约：</p>
+     * <ul>
+     *   <li><b>变换</b>：回放时刻的固定管线矩阵已不是捕获时刻的，故以捕获快照作 uniform 覆盖
+     *       （{@link DefaultFontRendererAdapter#beginCapturedMatrixReplay}）；</li>
+     *   <li><b>深度</b>：原版世界文字不写深度（告示牌调用方显式 {@code glDepthMask(false)}），而回放点
+     *       宿主通常已恢复写深度，故临时关闭写深度，退出时由状态边界还原。</li>
+     * </ul>
+     *
+     * @param text 捕获项
+     */
+    private static void replayDeferredWorldText(TesrTextReplayCoordinator.DeferredText text) {
+        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
+        REPLAY_STATE_GUARD.push(false);
+        try {
+            GL11.glDepthMask(false);
+            adapter.beginCapturedMatrixReplay(text.modelview, text.projection);
+            try {
+                if (text.wrapWidth >= 0) {
+                    adapter.drawSplitString(text.text, text.x, text.y, text.wrapWidth, text.color);
+                } else {
+                    adapter.drawBaselineAlignedString(text.text, text.x, text.y, text.color, text.dropShadow);
+                }
+            } finally {
+                adapter.endCapturedMatrixReplay();
+            }
+        } finally {
+            REPLAY_STATE_GUARD.pop();
         }
     }
 
