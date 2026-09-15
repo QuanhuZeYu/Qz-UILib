@@ -1,5 +1,4 @@
 
-import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.api.tasks.testing.Test
 
 plugins {
@@ -11,12 +10,4 @@ plugins {
 // 512m 默认堆下与其他字体测试类同 JVM 跑会互相挤压 OOM。
 tasks.withType<Test>().configureEach {
     maxHeapSize = "1024m"
-}
-
-val isJitPack = providers.environmentVariable("JITPACK")
-    .map { it.equals("true", ignoreCase = true) }
-    .orElse(false)
-
-tasks.withType<GenerateModuleMetadata>().configureEach {
-    enabled = !isJitPack.get()
 }
