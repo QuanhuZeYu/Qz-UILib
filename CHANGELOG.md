@@ -8,7 +8,7 @@
 
 ## [4.10.0] - 2026-09-15
 
-> 状态：**发布定稿**（CI 证据已回填；tag 与发布 workflow 待执行），全文见 [.changelogs/4.10.0.md](.changelogs/4.10.0.md)。本版 tag 取次版本号 **4.10.0**：相对 4.9.1 含 **8 项**公共面删除（1 个公共类 + 7 个公共成员，其中 5 个成员来自本轮 A 方案撤回），**与 4.9.x 不承诺混用、需成对升级**（含删除在语义化版本上本应记 major，本次按发布口径以次版本发布，取舍见版本说明「迁移指引」第 1 条）；另有 5 组（6 个公共成员）4.10.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入对 4.9.1 的删除，逐项登记见「移除」）。
+> 全文见 [.changelogs/4.10.0.md](.changelogs/4.10.0.md)。本版 tag 取次版本号 **4.10.0**：相对 4.9.1 含 **8 项**公共面删除（1 个公共类 + 7 个公共成员，其中 5 个成员来自本轮 A 方案撤回），**与 4.9.x 不承诺混用、需成对升级**（含删除在语义化版本上本应记 major，本次按发布口径以次版本发布，取舍见版本说明「迁移指引」第 1 条）；另有 5 组（6 个公共成员）4.10.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入对 4.9.1 的删除，逐项登记见「移除」）。
 
 ### 新增
 
@@ -23,7 +23,7 @@
 - 面板与控件接线：`SearchResultList.Props` 新增 `pageProvider` / `totalItems` / `windowOffset` / `availableWidth` / `visibleRows` / `totalItemsSignal` / `metrics` / `configuredKeys` / `onExitUp`，`Result` 新增 `windowModel()` / `highlightedItem()`；`ScenePickerPanel.Props` 新增 `candidateSource()` / `sourceQuery()` / `sourceVersion()` / `densityPreference()` / `onRestoreCurrent()` / `onDiscardRemoved()`
 - 交互收口：整页翻页 / 首末项 / 搜索框与网格双向跳转 / 分类导航键盘可聚焦、外部点击 scrim 单一检测点（同挂载幂等）、删除即生效 + 5s 撤销条（至多 1 条 tombstone）、信息条常驻占位 + 点击复制稳定 ID
 - 背景滤镜档位与玻璃成本优化：新增配置项 `general.backdropQuality`（`full` 完整默认 / `eco` 省电＝9 抽头变体 / `solid` 关闭＝实色替代底）与进程级档位信号 `ui.render.BackdropQuality` / `ui.render.BackdropQualityService`（`ConfigValueBridge` 唯一回灌点，**不是** `Config` 静态字段）；库默认主题改按档位动态解析——`solid` ⇒ `SceneTheme.withoutBackdrop()`，切档只重派生配方、不重建节点，`SceneThemes.DEFAULT` 常量恒为液态玻璃（显式消费者语义锚，已知边界）；渲染侧同轮收口 ds==1 无读 mipmap、clip 外玻璃整链早退、诊断串按需构造，并新增 `frame.backdrop.*` 计数供 `useDebug` 真机 A/B（见 [.changelogs/4.10.0.md](.changelogs/4.10.0.md) §11 与 `docs/反馈层/踩坑记录.md`）
-- 通用颜色字段能力（`5f02aa7b`）：`config.schema.ColorSpec` / `config.schema.HexColorCodec` / `config.ui.field.ColorFieldRenderer` 与 DSL `SectionSpec.Builder.color(String)` / `FieldSpec.Builder.color()`——值语义仍是 `0xRRGGBB` 的 NUMBER（未显式 range 时补 `[0,0xFFFFFF]`），输入接受 `#RRGGBB` / `0xRRGGBB` / 无前缀六位十六进制 / 纯十进制，编辑期保留未完成原文；下游（Qz-Miner）已随之删除私有 HEX 实现与四个 path 覆盖注册
+- 通用颜色字段能力（`5f02aa7b`）：`config.schema.ColorSpec` / `config.schema.HexColorCodec` / `config.ui.field.ColorFieldRenderer` 与 DSL `SectionSpec.Builder.color(String)` / `FieldSpec.Builder.color()`——值语义仍是 `0xRRGGBB` 的 NUMBER（未显式 range 时补 `[0,0xFFFFFF]`），输入接受 `#RRGGBB` / `0xRRGGBB` / 无前缀六位十六进制 / 纯十进制，编辑期保留未完成原文；受影响的下游需删除私有 HEX 实现与 path 覆盖注册
 
 ### 变更
 
@@ -74,7 +74,7 @@
 - 公开 HUD 编辑契约 `ui.hud.api.HudEditTarget` / `ui.hud.api.HudEditService`：第三方 Mod 注册可编辑 HUD 目标（预览内容工厂 + 默认放置 + 可选外接工具栏规格），`requestEdit(hudId)` 发布「进入编辑并聚焦该目标」意图，由当前打开的聊天输入屏消费（无活动聊天屏时静默丢弃，不排队、不抛异常）；`revision()` 在目标增删时 +1 驱动宿主重建预览，`focus()` / `isEditing()` 暴露会话状态，重复 hudId 注册明确拒绝、注销句柄幂等
 - 聊天输入屏编辑态支持任意已注册 HUD 目标：每个目标一个预览浮层（内容 + 可选外接工具栏），位置走 `HudLayoutResolver`（外框含工具栏 gap + thickness），左键命中拖动写 `HudLayoutService` 草稿并按外框尺寸 clamp，Esc 拖动中优先回滚手势，保存/取消/恢复当前（聚焦目标）/恢复全部沿用既有工具栏按钮语义；非编辑态不注册浮层、不拦截输入（零开销），`qzuilib:chat3` 自身编辑路径零回归
 
-- HUD 缩放内聚化：每 HUD 倍率从外接工具栏注册项提升为统一缩放状态（`HudToolbarService.scale(hudId)` 惰性创建、独立于工具栏注册，注销工具栏不重置倍率），`SceneHudHost` 与打开态聊天屏不再取工具栏层的挂载倍率——未注册外接工具栏的 HUD 同样按统一倍率缩放（此前恒 1.0，Miner HUD 因此调不了缩放）
+- HUD 缩放内聚化：每 HUD 倍率从外接工具栏注册项提升为统一缩放状态（`HudToolbarService.scale(hudId)` 惰性创建、独立于工具栏注册，注销工具栏不重置倍率），`SceneHudHost` 与打开态聊天屏不再取工具栏层的挂载倍率——未注册外接工具栏的 HUD 同样按统一倍率缩放（此前恒 1.0，未注册工具栏的 HUD 因此调不了缩放）
 - 缩放入口移入编辑态：聊天屏编辑子模式为每个可编辑目标统一装配 - / 1:1 / +（`HudEditTarget.getToolbarSpec()` 降级为可选额外自定义工具，为 null 不再意味着没有缩放），非编辑态不挂缩放控件；预览外框与拖动 clamp 按统一倍率换算，口径与放置一致
 - HUD 布局与缩放持久化端口：位置不落绝对坐标，改落「四角锚点 + 该轴行程百分比（分母 = 可用空间 − 内容物理盒，与 `HudLayoutResolver.clamp` 可行区间逐点同源）+ 缩放百分比」的 `schemaVersion=1` 文本；新增公共 `ui.hud.api.HudLayoutStore`（宿主只实现 `String load()` / `void save(String)` 两个纯文本 IO 方法，不解析 schema、不做坐标数学）、`HudLayoutMetrics`（每帧度量值对象）与 `HudLayoutPersistence`（`install` / `uninstall` / `isInstalled` 窄入口），`HudLayoutService` 新增 `attachStore` / `detachStore` / `hasStore` / `reload` / `save` / `observe`；编辑提交按内容盒中心自动选最近角锚点（平局取 LEFT/TOP，重锚定不改变可见盒），宿主每帧 `observe(metrics)` 后视口/内容变化按百分比跟随；缩放与位置同一条记录、同一次落盘（缩放变更先置脏、下一次 observe 合并写一次），损坏或未知 `schemaVersion` 降级为默认布局且本次会话不自动写回
 - 持久化显式接线且默认零变化：未安装端口 / 未上报度量时 `observe` 首行 volatile 直返、提交与重置保持既有内存语义（不自动改锚、不写盘）；`save` 由 UILib 在提交或缩放变更后调用，宿主不需要 flush
@@ -184,8 +184,8 @@
 
 ### 兼容性
 
-- 本次发布为 minor `4.8.0`；正式 tag 前 FML 远端范围恢复 `[4.8.0,4.9.0)`；Qz-Miner 编译依赖经仓库 libs 内置 dev 制品解析，不依赖 JitPack
-- 删除 `SearchPickerPresentation.Builder.cancelRemove/confirmRemove` 文案 API 与对应 getter，`SearchPicker` 成员删除改为一步直达（beta API，非 LTS 承诺范围，唯一下游 Qz-Miner 已同步）
+- 本次发布为 minor `4.8.0`；正式 tag 前 FML 远端范围恢复 `[4.8.0,4.9.0)`；下游对 dev 制品的引用经仓库 libs 内置解析，不依赖 JitPack
+- 删除 `SearchPickerPresentation.Builder.cancelRemove/confirmRemove` 文案 API 与对应 getter，`SearchPicker` 成员删除改为一步直达（beta API，非 LTS 承诺范围）
 - 主 `NetEnvelope` v2 与 Realtime v1 保持不变，不增加运行时协议协商或跨 major fallback
 
 ## [4.7.0] - 2026-08-14
@@ -372,7 +372,7 @@ SceneScrollbar 无 overflow 时宽度变化导致的配置页多帧 ROW grow 诊
 ### 兼容性
 
 - `ValueSpec` 旧工厂与 API 保留；widget 只作 schema UI 元数据，不参与 YAML、默认值、校验或 schema 兼容判定
-- 保留 ConfigUI 2/3/4 参与 FieldRendererRegistry 无参入口；不改 Qz-Miner、SceneSearchPicker 或图片契约
+- 保留 ConfigUI 2/3/4 参与 FieldRendererRegistry 无参入口；不改 SceneSearchPicker 或图片契约
 
 ### 修复
 
@@ -383,8 +383,7 @@ SceneScrollbar 无 overflow 时宽度变化导致的配置页多帧 ROW grow 诊
 
 结构化列表多选：`List<CHOICE>` 默认渲染为受控 checkbox，已知值按 schema 顺序去重，
 未知字符串显示失效标识且只允许删除；非法 passthrough 值继续由严格保存校验阻断写盘。
-详细说明见 `.changelogs/4.5.3-beta-4.md`。本次只执行本地 beta 制品验证，不执行
-merge、push、tag 或 release，也不修改 Qz-Miner。
+详细说明见 `.changelogs/4.5.3-beta-4.md`。
 
 ### 新增
 
@@ -401,7 +400,6 @@ merge、push、tag 或 release，也不修改 Qz-Miner。
 
 输入体验修复：结构化列表逐字符编辑保持 keyed row/input/focus，中文 IME 经通用
 `McScreenBridge` 接入完整 String 文本桥。详细说明见 `.changelogs/4.5.3-beta-3.md`。
-本次只执行本地 beta 制品验证，不执行 tag、push 或 release，也不修改 Qz-Miner。
 
 ### 修复
 
@@ -414,7 +412,7 @@ merge、push、tag 或 release，也不修改 Qz-Miner。
 
 ### 诊断边界
 
-- 旧日志 `Qz-Miner/run/client/logs/fml-client-latest.log:15313-15321` 是 beta-2 修复前基线，仅含 ROW/COLUMN grow WARN，不能证明 beta-3 行为
+- 旧诊断日志是 beta-2 修复前基线，仅含 ROW/COLUMN grow WARN，不能证明 beta-3 行为
 - 代码诊断：生产 Config 之前未注册 text bridge 是中文 IME 根因；renderer 本地 keyed rows 未在 adapter 回调前更新是确定的一键失焦根因
 - ROW/COLUMN grow WARN 未顺手改布局，留作修复后实机复验项
 

@@ -136,6 +136,39 @@ jobs:
           )
           PY
 
+      - name: 生成发布说明（changelog 全文 + 验证证据节）
+        # 动态证据（run 链接、提交、资产 sha256）由本步骤生成，写进 Release 面；
+        # .changelogs/<tag>.md 只承载静态事实，发布前不需要、也不允许回填这些内容。
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          tag = os.environ["TAG"]
+          root = Path("build/release-bundle")
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          evidence = [
+              "",
+              "---",
+              "",
+              "## 验证证据（由发布 workflow 自动生成）",
+              "",
+              f"- 发布提交：`{manifest['commit']}`（tag `{tag}`，tag 对象 `{manifest['tag_object']}`）",
+              f"- 发布 run：{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "- 构建验证：本 workflow 从 `refs/tags/<tag>` 不可变 checkout 后执行 test + build（与分支 CI 同一验证面）",
+              "- 资产：",
+          ]
+          for asset in manifest["assets"]:
+              evidence.append(f"  - `{asset['name']}`：{asset['size']} bytes，sha256 `{asset['sha256']}`")
+          notes = (root / "release-notes.md").read_text(encoding="utf-8").rstrip() + "\n" + "\n".join(evidence) + "\n"
+          Path("release-notes.md").write_text(notes, encoding="utf-8")
+          print(f"release notes = changelog + 验证证据（{len(manifest['assets'])} 个资产）")
+          PY
+
       - name: 上传资产到既有 Release 或创建 Release
         shell: bash
         env:
@@ -153,8 +186,9 @@ jobs:
             gh release create "${TAG}" "${JARS[@]}" \
               --repo "${GITHUB_REPOSITORY}" \
               --title "${TAG}" \
-              --notes-file ".changelogs/${TAG}.md"
+              --notes-file release-notes.md
           fi
+          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --notes-file release-notes.md
 
       - name: 校验 Release 资产齐全且已上传
         # Release 资产规范：仅 4 个 jar（manifest.json 只作内部校验物，不发布）。
