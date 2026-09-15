@@ -35,6 +35,18 @@ import club.heiqi.uilib.internal.font.tesr.angelica.AngelicaTesrBatchProbe;
  * 身份，用于在宿主多 pass 场景（例如光影 shadow pass）下确认捕获与回放落在同一个 pass。观测关闭时
  * 连宿主 pass 字段都不查询，既不改捕获判定也不改回放判定。</p>
  *
+ * <h3>与宿主窗口条件的一致性（复核自 Angelica 2.2.10，含 multi-release 变体）</h3>
+ * <p>宿主自身的字体延迟条件为 {@code TesrBatchRenderer.hasPendingGeometry() || ModelPartBatcher.isActive()}
+ * （不区分 pass，shadow pass 与 main pass 同条件）；宿主刷新延迟文字的条件为 {@code !hasPendingGeometry()}
+ * （出现在 {@code TesrBatchRenderer.flush()} 的两个分支与 {@code ModelPartBatcher.flush()} 末尾）。本类的捕获与
+ * 回放条件与「刷新条件」对齐，只覆盖 {@code hasPendingGeometry()} 窗口，因此不会出现「捕获了却没有宿主提交点
+ * 可回放」的滞留。</p>
+ *
+ * <p>已知边界：在「{@code ModelPartBatcher} 活跃但无活跃 TESR pass」的窗口（实体批处理）里宿主会延后文字、
+ * 本类不捕获（文字保持即时绘制）；该窗口内的玩家名签由 {@code PlayerNameTagRenderCoordinator} 另行协调。
+ * 若将来确需覆盖该窗口，必须同时扩展探针条件并在 {@code ModelPartBatcher.flush()} 增加回放点——只扩展条件
+ * 会让捕获项滞留到帧边界被丢弃。</p>
+ *
  * <p>本类只经 {@link ReplaySink} 与字体接入层交互，不直接依赖适配器实现；矩阵读取经
  * {@link MatrixReader} 注入，headless 场地可注入桩实现。</p>
  */
