@@ -6,8 +6,10 @@ import club.heiqi.uilib.client.FontRenderTickListener;
 import club.heiqi.uilib.client.MinecraftMainThreadOracle;
 import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
+import club.heiqi.uilib.config.modern.ChatFrameConfig;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.i18n.LanguageEpochService;
+import club.heiqi.uilib.internal.chat3.input.ChatFrameIntent;
 import club.heiqi.uilib.internal.chat3.input.ChatInputOpenListener;
 import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
 import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
@@ -60,6 +62,11 @@ public class ClientProxy extends CommonProxy {
         LanguageEpochService.getInstance().install();
         NetStoreUiBridge.getInstance().initialize();
         DevToolsClientBootstrap.registerClientDevTools();
+        // 聊天框形态切换（4.10.1）：动作注册与配置持久化分居两层——internal.chat3 只发布切换语义，
+        // 写盘/回灌实现在 config.modern（internal 不反向依赖配置包），装配层在此注入两个端口：
+        // 先写盘、自定义输入屏按既有 CLOSING 动画收回去，关屏完成后才回灌运行态。
+        // 与聊天总开关无关：切回原版后动作仍留在注册表，重新接管时按钮自然回来。
+        ChatFrameIntent.install(ChatFrameConfig::persistVanilla, ChatFrameConfig::applyVanilla);
         // 运行时自检端点集属于 devtools：唯一驱动者是客户端命令（DevToolsClientBootstrap 注册的
         // qzuilib 命令）。在服务端注册只会白起常驻线程，并把 13 个调试端点暴露给任意客户端。
         NetRuntimeSelfChecks.register();

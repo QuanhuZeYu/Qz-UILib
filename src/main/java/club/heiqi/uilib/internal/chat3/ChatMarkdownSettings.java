@@ -5,6 +5,12 @@ package club.heiqi.uilib.internal.chat3;
  *
  * <p>关闭后安装器把原版实例写回 GuiIngame.persistantChatGUI,原版对话框整套回归(逃生舱语义,
  * 用户裁决)。默认开。</p>
+ *
+ * <p><b>持久真源是配置文件项 {@code general.chatFrame}</b>（custom=开 / vanilla=关，接入点
+ * {@code club.heiqi.uilib.config.modern.ChatFrameConfig}）：启动加载与配置页保存经
+ * ConfigValueBridge 回灌本字段；聊天工具栏「切换聊天框形态」按钮先写配置、待输入屏按既有
+ * 关闭动画收回去后才回灌；devtools 命令 {@code /qzuilib chatmd on|off} 只改本字段
+ * （临时运行态，不写配置，重启后回到配置值）。本字段是运行态权威，不另立第二份形态状态。</p>
  */
 public final class ChatMarkdownSettings {
 

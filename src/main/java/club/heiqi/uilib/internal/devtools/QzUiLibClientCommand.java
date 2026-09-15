@@ -24,7 +24,9 @@ import net.minecraft.util.ChatComponentText;
  *   <li>{@code glass} —— 打开磨玻璃实验室（{@link GlassLabEntry#open()}），
  *       backdrop-filter 仿 iOS 磨玻璃观感与渲染路径验收；</li>
  *   <li>{@code modernconfig} —— 打开新架构配置页调试入口（{@link ModernConfigEntry#open()}）；</li>
- *   <li>{@code chatmd on|off|status} —— 聊天 3.0 接管开关与状态诊断（on 启用/off 逃生舱回退原版/status 查看接管状态）。</li>
+ *   <li>{@code chatmd on|off|status} —— 聊天 3.0 接管开关与状态诊断（on 启用/off 逃生舱回退原版/status 查看接管状态）。
+ *       只改本次运行态、<b>不写配置</b>：持久真源是配置项 {@code general.chatFrame}
+ *       （见 {@code club.heiqi.uilib.config.modern.ChatFrameConfig}），重启后回到该配置值。</li>
  * </ul>
  */
 final class QzUiLibClientCommand extends CommandBase {

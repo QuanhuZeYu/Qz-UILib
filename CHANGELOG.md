@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [4.10.1] - 2026-09-16
+
+> 全文见 [.changelogs/4.10.1.md](.changelogs/4.10.1.md)。本版为 patch：新增配置项 `general.chatFrame`（`custom` 自定义聊天框 / `vanilla` 原版聊天框，默认 `custom`）与聊天工具栏「切换聊天框形态」按钮；零类删除、零公共成员签名变更，缺键回落 `custom` = 4.10.0 行为。
+
+### 新增
+
+- 配置项 `general.chatFrame`（CHOICE，默认 `custom`）：把聊天框接管总开关变成可持久配置；`ConfigValueBridge.applyGeneral` 经 `config.modern.ChatFrameConfig` 回灌 `internal.chat3` 接管开关，启动加载 / 配置页保存 / 磁盘重载三条既有入口同源，保存后下一渲染帧生效
+- 聊天工具栏「切换聊天框形态」动作 `qzuilib:chat_frame_toggle`（`internal.chat3.input.ChatFrameIntent`，与内置「编辑 HUD」同一 `ChatActionService` 注册链）：点击先落盘 `general.chatFrame=vanilla`（三阶段事务，其它键原样保留），成功后再把自定义聊天输入屏按既有收回动画关掉，关屏之后才回退原版；写盘失败不改形态、不关屏，只在聊天栏提示。原版聊天框**不新增**任何快捷切换入口，回切只走配置页 / 手改 yaml
+
+### 变更
+
+- `ModernConfigEntry.CONFIG_RELATIVE_PATH` 放宽到包级可见：运行时写盘与配置页读写复用同一路径真源，不新增第二份字面量
+- 运行态临时通道（`ChatMarkdownSettings` / `/qzuilib chatmd on|off`）语义不变：只改本次运行态、不写配置；持久真源是 `general.chatFrame`
+
 ## [4.10.0] - 2026-09-15
 
 > 全文见 [.changelogs/4.10.0.md](.changelogs/4.10.0.md)。本版 tag 取次版本号 **4.10.0**：相对 4.9.1 含 **8 项**公共面删除（1 个公共类 + 7 个公共成员，其中 5 个成员来自本轮 A 方案撤回），**与 4.9.x 不承诺混用、需成对升级**（含删除在语义化版本上本应记 major，本次按发布口径以次版本发布，取舍见版本说明「迁移指引」第 1 条）；另有 5 组（6 个公共成员）4.10.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入对 4.9.1 的删除，逐项登记见「移除」）。

@@ -309,3 +309,19 @@ Values.widget(
    - `frame.backdrop.taps`：`areaPx × 抽头数` 的估计值（full 13 / eco 9）；
 4. 逐档对比同一页面、同一停留时长下的 `fps` 与 `frame.backdrop.*`；`solid` 档这些计数应为 0。
 
+## 聊天框形态（`general.chatFrame`）
+
+UILib 默认接管聊天框（改动后的自定义聊天框：markdown 渲染、气泡分组、液态玻璃、下挂工具栏）。要让聊天回到原版样式，用配置项 `general.chatFrame` 切换：
+
+| 取值 | 语义 |
+|---|---|
+| `custom`（默认） | 自定义聊天框（4.10.0 起的现状），含下挂工具栏 |
+| `vanilla` | 原版聊天框（原版 `GuiNewChat` 整套），UILib 不再接管 |
+
+- 保存后**即时生效**：配置页保存、启动加载、磁盘重载三条入口都经 `ConfigValueBridge.applyGeneral`（经 `config.modern.ChatFrameConfig`）回灌聊天接管开关，安装器每渲染帧按该开关接管或回退，无需重启或重开聊天。
+- **回切只有配置一条路**：聊天工具栏上有一颗「切换聊天框形态」按钮，点击后先把 `general.chatFrame` 写成 `vanilla`（三阶段事务落盘，其它配置键原样保留），再把自定义聊天输入屏按既有 CLOSING 动画收回去，关屏完成后才回退原版——所以按钮是单向门：切到原版后按钮随自定义聊天框一起消失。要回到自定义聊天框，用配置页（Forge 模组列表 → Qz UILib → Config）把「聊天框形态」改回 `custom`，或手改 `config/qzuilib-modern.yaml` 后重启。
+- 写盘失败（配置文件损坏 / 写域冲突）时**不切换形态**、不关屏，只在聊天栏给一条提示：界面看到的形态始终等于配置里的形态。
+- 手改 yaml 写裸词 `custom` / `vanilla` 即可（两者都不是 YAML 1.1 布尔词）；缺键或非法值回落 `custom` 并留 WARN。
+- devtools 命令 `/qzuilib chatmd on|off|status` 仍是**临时运行态**通道：只改本次运行、不写配置，重启后回到 `general.chatFrame` 的值。
+
+

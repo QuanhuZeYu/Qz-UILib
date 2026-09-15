@@ -20,7 +20,7 @@ final class ChatToolbarIcons {
     /**
      * Google Material Icons outlined（Apache-2.0），固定提交避免上游更新改变图案。
      * 官方 PNG 只有黑色版本；复制 alpha 并置白，不能修改共享缓存中的原图。
-     * 六个地址均已验证 HTTP 200、image/png、48×48。
+     * 七个地址均已验证 HTTP 200、image/png、48×48。
      * 来源：https://github.com/google/material-design-icons （Google，Apache-2.0）。
      * 许可证：https://github.com/google/material-design-icons/blob/
      * 0cbb08816df07faaae3dca060d4ebb10b66c214f/LICENSE
@@ -79,6 +79,9 @@ final class ChatToolbarIcons {
         } else if ("reset-all".equals(name)) {
             path = "action/restore";
             glyph = "restore";
+        } else if ("frame".equals(name)) {
+            path = "action/swap_horiz";
+            glyph = "swap_horiz";
         } else {
             path = "navigation/more_horiz";
             glyph = "more_horiz";
@@ -92,6 +95,7 @@ final class ChatToolbarIcons {
         if ("cancel".equals(name)) return "X";
         if ("reset-current".equals(name)) return "<";
         if ("reset-all".equals(name)) return "R";
+        if ("frame".equals(name)) return "S";
         return "*";
     }
 

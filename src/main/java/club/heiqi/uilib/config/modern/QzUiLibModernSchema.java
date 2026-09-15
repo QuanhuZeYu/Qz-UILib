@@ -51,6 +51,10 @@ public final class QzUiLibModernSchema {
                         .label("fontRuntimeDebug").helper("是否启用字体运行时高频诊断日志；默认关闭").build()
                     .choice("netTransport").options("vanilla", "forge").defaultValue("vanilla")
                         .label("netTransport").helper("网络传输适配器：vanilla 默认 early mixin 路径，forge 仅兼容排障").build()
+                    .choice("chatFrame").options("custom", "vanilla").defaultValue("custom")
+                        .label("聊天框形态").helper("custom 自定义聊天框（默认，改动后）；vanilla 原版聊天框。"
+                                + "保存后即时生效，无需重启或重开聊天。切到 vanilla 后，自定义聊天框连同其下挂工具栏"
+                                + "（含「切换聊天框形态」按钮）一起退场，界面上不再有切回入口——回切请回本页改成 custom。").build()
                     .choice("pickerDensity").options("auto", "compact", "standard", "roomy").defaultValue("auto")
                         .label("pickerDensity").helper("选择器面板密度档位：auto 自动求解（默认，不低于现状）；"
                                 + "compact 紧凑 / standard 标准 / roomy 宽松为显式覆盖，三档同样受不低于现状约束。"

@@ -211,12 +211,28 @@ public final class ChatToolbar {
                 String detail = action.getTooltip();
                 String tooltip = detail == null || detail.trim().isEmpty() || detail.equals(action.getLabel())
                         ? action.getLabel() : action.getLabel() + "\n" + detail;
-                String icon = ChatHudEditIntent.ACTION_ID.equals(action.getId()) ? "edit" : "action";
+                String icon = iconFor(action.getId());
                 items.add(new Item("action:" + action.getId(), tooltip, icon, action.getEnabled(),
                         () -> runAction(action), SceneButtonVariant.STANDARD));
             }
         }
         return items;
+    }
+
+    /**
+     * 动作 id → 私有图标名；未登记的动作统一用通用图标。
+     *
+     * <p>图标按 id 登记的既有做法只覆盖内置动作，第三方动作共享通用图标（
+     * {@code ChatAction} 不开放自定义图标，见其类注释）。</p>
+     */
+    private static String iconFor(String actionId) {
+        if (ChatHudEditIntent.ACTION_ID.equals(actionId)) {
+            return "edit";
+        }
+        if (ChatFrameIntent.ACTION_ID.equals(actionId)) {
+            return "frame";
+        }
+        return "action";
     }
 
     /** 复用按钮交互原语；表面外观走通用主题配方桥（G17/Toolbar），内容与动作留在工具栏。 */

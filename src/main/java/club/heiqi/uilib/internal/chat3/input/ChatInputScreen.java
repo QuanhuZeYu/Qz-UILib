@@ -28,6 +28,9 @@ public final class ChatInputScreen extends McScreenBridge {
 
     private final ChatInputSurface surface;
 
+    /** 形态切换挂起的「关屏完成后」回调（动画完成或被顶替关闭时恰好执行一次）。 */
+    private Runnable pendingFrameSwitch;
+
     /**
      * @param initialText 预填文本(斜杠键进入时 = "/",可为空)
      */
@@ -57,6 +60,9 @@ public final class ChatInputScreen extends McScreenBridge {
     public void onGuiClosed() {
         try {
             surface.onClosed();
+            // 形态切换挂起的回调在此兜底：动画期间屏幕被其它屏顶替时 updateScreen 不再驱动
+            // 动画完成回调，若不在这里取走，配置已写成 vanilla 而运行态仍停在自定义形态。
+            runPendingFrameSwitch();
         } finally {
             super.onGuiClosed();
         }
@@ -160,6 +166,43 @@ public final class ChatInputScreen extends McScreenBridge {
         if (mc != null && mc.currentScreen == this) {
             mc.displayGuiScreen((GuiScreen) null);
             surface.notifyScreenClosed();
+        }
+    }
+
+    /**
+     * 形态切换路径的关闭（{@code ChatFrameIntent} 切换到原版聊天框时调用）。
+     *
+     * <p>复用既有安全关闭路径：先播容器 CLOSING 动画，动画结束、真正关屏（渲染栈外）
+     * 之后才执行 {@code onClosed}。与 {@link #requestClose()} 只有一处不同——不调
+     * {@code surface.notifyScreenClosed()}：那会把自定义聊天 HUD 立即挂回，而本次切换的
+     * 目的正是让它整体退场（运行态也由 {@code onClosed} 在关屏完成后才回灌）。</p>
+     *
+     * <p>动画期间屏幕被其它屏顶替时 {@link #onGuiClosed()} 会兜底取走回调，保证
+     * 「关屏完成 → 回灌运行态」恰好执行一次。</p>
+     *
+     * @param onClosed 关屏完成回调（可为 null）
+     */
+    void closeForFrameSwitch(Runnable onClosed) {
+        pendingFrameSwitch = onClosed;
+        surface.requestClose(this::finishFrameSwitchClose);
+    }
+
+    /** CLOSING 动画完成：真正关屏（只关自己），随后取走挂起的形态切换回调。 */
+    private void finishFrameSwitchClose() {
+        Minecraft mc = Minecraft.getMinecraft();
+        // 只关自己:动画期间若被其他屏幕顶替(异路径打开),不误关新屏幕
+        if (mc != null && mc.currentScreen == this) {
+            mc.displayGuiScreen((GuiScreen) null);
+        }
+        runPendingFrameSwitch();
+    }
+
+    /** 取走挂起的形态切换回调（置空判幂等：动画完成与 onGuiClosed 兜底只有一个真正执行）。 */
+    private void runPendingFrameSwitch() {
+        Runnable pending = pendingFrameSwitch;
+        pendingFrameSwitch = null;
+        if (pending != null) {
+            pending.run();
         }
     }
 }
