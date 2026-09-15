@@ -1,6 +1,6 @@
 # 统一 UI 投放、宿主与输入语义
 
-> 状态：语义规范母本（scene 输入层现行规则据此实现）；U0 实现已于 2026-08 废弃删除（见「实施」），U1/U2 未单独立项。职责名不等于已冻结 Java API；本文 Input Scope 条款仍是现行规范（`SceneFramePipeline`/`SceneInputRouter`/`LwjglInputSource` 据此约束），不随实现删除。
+> 状态：**现行规范**（scene 输入层语义规范母本，现行规则据此实现）。「Input Scope」与「State 与 Intent」两节是**现行规范，不随实现删除**——`SceneFramePipeline` / `SceneInputRouter` / `LwjglInputSource` 及 `AGENTS.md` 据此约束。职责名不等于已冻结 Java API；「实施」一节的 U0 实现已删除，U1/U2 未单独立项，其历史与复活条件见该节。
 
 ## 中心模型
 
@@ -34,8 +34,8 @@ business state -> content -> projection occurrence -> host adapter -> native hos
 
 ## 实施
 
-- U0：internal fake composition，证明同一 factory 的两个 occurrence 共享 state、隔离 scene/focus，input 只 drain/dispatch 一次。——**实现已废弃删除**（原 `ui.scene.input.SceneProjectionComposition`，package-private、生产零消费者、无渲染半边；与 `SceneFramePipeline` 存在双重唯一 drain 者冲突——`drainFrame()` 一次性消费，两仲裁者并存即互相偷事件，删除同时消除该隐患）。**复活触发条件**：出现第二个真实的多输入投放面（H4）；复活前必须先解决上述 drain 独占冲突。语义条款保留于本文，作为未来实现的规范。
-- U1：screen/overlay 接入同一合同，overlay 默认 passive。——未单独立项；scene overlay 现行合同（`SceneOverlayHost`）已按本语义实现。
-- U2：现有 HUD facade 迁移后删除 HUD owner/priority/runtime 特例。——未执行，HUD facade 现行；本项作为长期方向保留。
+- **U0（已删除，仅留语义与教训）**：曾经的 internal fake composition 用于证明「同一 factory 的两个 occurrence 共享 state、隔离 scene/focus，input 只 drain/dispatch 一次」；该实现（原 `ui.scene.input.SceneProjectionComposition`）于 2026-08 随同目录 `投放职责聚合方案.md` 的 A3 批次整类删除——它与 `SceneFramePipeline` 构成双重唯一 drain 者（`drainFrame()` 是一次性消费，两仲裁者并存即互相偷事件），且无渲染半边、生产零消费者。**复活触发条件：出现第二个真实的多输入投放面（H4）；复活前必须先解决 drain 独占冲突。** 语义条款保留于本文，作为未来实现的规范。
+- **U1（未单独立项）**：screen/overlay 接入同一合同，overlay 默认 passive；scene overlay 现行合同（`SceneOverlayHost`）已按本语义实现。
+- **U2（未执行）**：现有 HUD facade 迁移后删除 HUD owner/priority/runtime 特例；HUD facade 现行，本项作为长期方向保留。
 
-U0 不增加正式 public `UiContent`/`UiProjection` API，不处理 scale/rotate 命中，也不改 GuiContainer。
+上述三项都不引入正式 public `UiContent`/`UiProjection` API，不处理 scale/rotate 命中，也不改 GuiContainer。

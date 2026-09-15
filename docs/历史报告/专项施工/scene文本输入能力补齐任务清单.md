@@ -1,6 +1,6 @@
 # scene 文本输入能力补齐任务清单
 
-> 状态：**已固化**——P0/P1/P2 全部落地（Phase A-E 完成；E2 IME 核实后降级关闭）；
+> 状态：**历史任务清单（已收口）**——P0/P1/P2 全部落地（Phase A-E 完成；E2 IME 核实后降级关闭）；本文是施工期任务分解与提交流水，不构成现行要求，现行能力见 `scene基础API规范.md` 与 `docs/使用文档/`。
 > 测试场地 /qzuilib test 落地并经真机验收（两轮问题修复 + 浮层改进 + 列表竞态崩溃修复）；
 > 右键菜单 hover 高亮落地；功能冻结进入维护，遗留烟测项移交测试场地文档「真机烟测清单」；
 > 公共 API 已登记稳定 API 清单（SceneContextMenu/SceneDialog/SceneToast + overlay 锚定配套类型）

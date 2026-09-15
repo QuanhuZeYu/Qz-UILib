@@ -1,6 +1,6 @@
 # Scene Primitive API 规范
 
-> 类型：架构规范文档
+> 状态：**现行规范**（架构规范文档）
 > 范围：scene 新栈所有 primitive 的 API 形态约定
 > 已落地范例：`SceneTextInputPrimitive`、`SceneSelectPrimitive`
 

@@ -1,5 +1,7 @@
 # 网络层 vanilla mixin 策略
 
+> 状态：**现行规范**（vanilla 注入策略与默认传输路径）；实现以 `mixin/early/network` 与 `net.transport.vanilla` 实时源码为准。
+
 第一版网络层默认使用 `VanillaMixinTransport`，early mixin 负责拦截 vanilla custom payload。
 
 ## early loader

@@ -24,7 +24,7 @@ flowchart TD
   I2["DISMISS_INVISIBLE<br>锚点不可见 → requestDismiss → 同帧 flush 物化<br>本帧 REPLAY 不再绘制该 overlay"]
   J["PAINT<br>只读生成自包含不可变 PaintPlan<br>前置断言：无 pendingWrites / 无布局脏"]
   K["REPLAY<br>主树 + overlay bottom-first<br>翻译为 UiRenderBackend 调用"]
-  L["UiRenderBackend 的 MC 实现 UiRenderContext<br>焊到 Tessellator 与 GL 调用"]
+  L["UiRenderBackend 的 MC 实现 UiRenderContext<br>直接 GL 立即模式（架构禁用 Tessellator 等原版包装类）"]
 
   A --> B --> C --> D --> E --> F --> G --> H --> I1 --> I2 --> J --> K --> L
 ```

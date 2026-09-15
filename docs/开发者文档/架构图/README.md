@@ -27,7 +27,7 @@
 - [05-字体异步时序.md](05-字体异步时序.md) —— L2：一次 reload 从信号到唯一 reconcile、candidate 校验与 commit 的完整时序
 - [06-glyph状态机与上传.md](06-glyph状态机与上传.md) —— L2：`GlyphState` 状态机（`GlyphRequestToken` 为结算 key）、demand 有界调度与 upload 事务
 - [07-线程与所有权.md](07-线程与所有权.md) —— L2：字体运行时的线程参与者与所有权流向
-- [10-帧管线时序与调度.md](10-帧管线时序与调度.md) —— L2：宿主一帧时序协议现状与 `SceneFramePipeline` 状态机重构规划（含 settle 收敛、flush 单点、epoch 桥接）
+- [10-帧管线时序与调度.md](10-帧管线时序与调度.md) —— L2：宿主一帧 16 步 phase 序列与 `SceneFramePipeline` 状态机（settle 收敛、flush 单点、epoch 桥接），文末附实施发现与偏差
 
 ## 按需阅读路径
 
