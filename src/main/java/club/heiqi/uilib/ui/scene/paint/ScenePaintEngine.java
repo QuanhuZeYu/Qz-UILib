@@ -89,7 +89,7 @@ public class ScenePaintEngine {
         int regeneratedFragmentCount = 0;
         PaintPlan plan = new PaintPlan();
         if (root != null) {
-            regeneratedFragmentCount = paintNode(root, plan, 0, 0, null);
+            regeneratedFragmentCount = paintNode(root, plan, 0, 0, null, true);
         }
         return new PaintResult(plan, regeneratedFragmentCount);
     }
@@ -131,7 +131,7 @@ public class ScenePaintEngine {
      * @return 本子树重新生成的 fragment 数（含后代）
      */
     private int paintNode(SceneNode node, PaintPlan plan, int offsetX, int offsetY,
-                          ClipRect ancestorClip) {
+                          ClipRect ancestorClip, boolean cullingSafe) {
         int regenerated = 0;
         // 计算本节点的绘制绝对坐标：LayoutBox 保持终态，internal reveal offset 只在 paint 几何叠加。
         LayoutBox box = (LayoutBox) node.getCachedLayout();
@@ -159,6 +159,8 @@ public class ScenePaintEngine {
         boolean needTransform = box != null && transform != null && !transform.isIdentity();
         boolean needClip = box != null && node.isClipWindow();
         boolean needLayer = needClip || node.isPreferTransformLayer();
+        // 祖先变换同样会移动后代；未经投影的裁剪矩形不能用于该整棵子树的 CPU 剔除。
+        cullingSafe = cullingSafe && !needTransform;
 
         // ==== opacity（D1）：< 1.0 且已布局则本节点子树进入 group opacity 合成作用域 ====
         // box==null（节点未布局）时不开 group：零面积离屏层无意义，且与「无布局节点跳过」语义对齐
@@ -173,7 +175,7 @@ public class ScenePaintEngine {
         //   ③ 本窗口绝对盒与「有效祖先裁剪矩形」无交集：本子树任何像素都落在祖先 scissor 之外。
         // 渲染层 CLIP 栈与父层求交（ClipStack.push），故 ③ 成立时该子树在改前也是整片被裁掉、
         // 一个像素都不落帧缓冲——剔除后帧缓冲逐像素不变，且不清脏标记（回到可见区按脏标记重发射）。
-        if (box != null && needClip && !needTransform && ancestorClip != null
+        if (box != null && needClip && cullingSafe && ancestorClip != null
                 && !ancestorClip.intersects(nodeAbsX, nodeAbsY,
                         nodeAbsX + box.getWidth(), nodeAbsY + box.getHeight())) {
             return regenerated;
@@ -255,15 +257,22 @@ public class ScenePaintEngine {
             // 这包括 selfGeometryDirty==true（布局位置/presentation offset 变）与
             // compositeDirty==true（opacity/transform 变）场景：
             // 均只重定位/重合成不重绘 —— 纯 composite 帧 fragment 引用不变（合成级动画不触碰布局/绘制层）
-            plan.addFragment(cached, nodeAbsX, nodeAbsY);
+            // 可见性在下方统一判断，缓存本身不随滚动改变。
         } else {
             // 需要重新生成 fragment（命令使用相对坐标，不含 presentation offset/opacity/transform）
             List<PaintCommand> commands = new ArrayList<>();
             generateCommands(node, commands);
-            PaintFragment newFragment = new PaintFragment(commands);
+            PaintFragment newFragment = new PaintFragment(commands, measurer);
             node.setCachedPaint(newFragment);
-            plan.addFragment(newFragment, nodeAbsX, nodeAbsY);
+            cached = newFragment;
             regenerated++;
+        }
+
+        // 普通配置行不一定是裁剪窗口：只剔除自身片段，仍下降访问可能溢出父盒的后代。
+        // 片段不进入计划，其文字也不会被 replay 预发布为可见需求，避免屏外文字挤占字体工作。
+        if (!cullingSafe || ancestorClip == null
+                || cached.intersectsVerticalClip(nodeAbsY, ancestorClip.top, ancestorClip.bottom)) {
+            plan.addFragment(cached, nodeAbsX, nodeAbsY);
         }
 
         // ==== 递归子节点（paint 或 geometry 脏导致下沉；子树命令落在本节点 group 作用域内） ====
@@ -289,7 +298,7 @@ public class ScenePaintEngine {
                 ? java.util.Collections.<SceneNode>emptyList() : node.__getChildren();
         for (int i = 0; i < children.size(); i++) {
             SceneNode child = children.get(i);
-            regenerated += paintNode(child, plan, childOffsetX, childOffsetY, childClip);
+            regenerated += paintNode(child, plan, childOffsetX, childOffsetY, childClip, cullingSafe);
         }
 
         // ==== 子树命令全部产出后，先闭合裁剪作用域（与 CLIP_PUSH 严格配对，内层先关） ====

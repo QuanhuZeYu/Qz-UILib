@@ -944,6 +944,8 @@ public class ScenePaintEngineTest {
         clipper.setClipChildren(true);
         clipper.setCornerRadius(6);
         child.setBackgroundColor(0xFFAABBCC);
+        // 配对测试必须有可见像素；零高度背景允许在组装计划时剔除。
+        child.setPreferredHeight(20);
 
         clipper.appendChild(child);
         root.appendChild(clipper);

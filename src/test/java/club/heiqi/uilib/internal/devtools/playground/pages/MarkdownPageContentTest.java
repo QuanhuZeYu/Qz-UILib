@@ -102,7 +102,15 @@ public class MarkdownPageContentTest {
                 scrolled.add(command);
             }
         }
-        assertCommands(visible, scrolled, -7);
+        // 背景拥有完整矩形，完全离开视口时应剔除；段流仍保守保留，不能按原点裁掉文字。
+        List<PaintCommand> expectedScrolled = new ArrayList<PaintCommand>();
+        for (PaintCommand command : visible) {
+            if (command.getType() == PaintCommandType.SEGMENTS
+                    || (command.getBottom() > 7 && command.getTop() < 7 + 14)) {
+                expectedScrolled.add(command);
+            }
+        }
+        assertCommands(expectedScrolled, scrolled, -7);
         Assert.assertTrue("保留scene裁剪边界", clipped.size() > scrolled.size());
     }
 
