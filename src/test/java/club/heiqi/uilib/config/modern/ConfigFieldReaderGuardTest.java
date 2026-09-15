@@ -51,7 +51,7 @@ public class ConfigFieldReaderGuardTest {
 
     /**
      * 已知假开关白名单。<b>只能在撤键时同步删除；新增一条等于承认又造了个假开关。</b>
-     * 撤键清单见 docs/开发者文档/架构审查/2026-09-04-内聚项增量扫描.md 的 T1-1
+     * 撤键清单见 docs/历史报告/审查/2026-09-04-内聚项增量扫描.md 的 T1-1
      * （用户已裁两条都撤，走 D-4 那趟 breaking 车）。
      */
     private static final Set<String> ACCEPTED_DEAD_SWITCHES = new HashSet<String>(Arrays.asList(

@@ -30,7 +30,7 @@ import org.junit.Test;
  *       比不写更糟；大半径的预降采样已由快照 downsample + separable filter pass 承担。</li>
  * </ol>
  *
- * <p>刻意不用正则与反斜杠，纯 indexOf/charAt 扫描（见仓库踩坑记录：跨语言写正则会把
+ * <p>刻意不用正则与反斜杠，纯 indexOf/charAt 扫描（见仓库 docs/反馈层/踩坑记录.md：跨语言写正则会把
  * 转义吃掉）。注意黑名单必须在<strong>剥注释之后</strong>的文本上匹配，否则文档注释里
  * 提到函数名会误报。</p>
  */

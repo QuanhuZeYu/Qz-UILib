@@ -1371,7 +1371,7 @@ public class TextLayoutService {
         // fractional=false 与生产 FONT_RENDER_CONTEXT 的 true 不同，但该标志只作用于 advance 的
         // 亚像素取整，不改变轮廓边界：实测 Dialog/Serif × 字号 14/24/48 × 9 个字形（含 CJK、
         // 定界符、数学符号）共 54 组，getVisualBounds() 的 x/y/width/height 逐位相同，差异 0。
-        // 此处不是口径分叉，不要为"对齐"改成 true（详见 踩坑记录.md 2026-09-08 条）。
+        // 此处不是口径分叉，不要为"对齐"改成 true（详见 docs/反馈层/踩坑记录.md 2026-09-08 条）。
         java.awt.font.FontRenderContext frc = new java.awt.font.FontRenderContext(
                 sized.getTransform(), true, false);
         // createGlyphVector(FontRenderContext, int[]) 收的是 glyph code，不是 Unicode 码点：

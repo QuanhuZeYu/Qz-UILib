@@ -19,17 +19,20 @@ Qz UILib 提供声明式 scene UI 栈：signal → 脏标 → layout → Display
 
 ## 快速开始
 
-**配置页（本 mod 推荐入口）：**
+**打开本库自己的配置页（实验性）：**
 
 ```java
-// 完整 bootstrap 见 ModernConfigEntry / 使用文档
+// 本库自身接入样板；完整 bootstrap 见 ModernConfigEntry
 GuiScreen screen = ModernConfigEntry.createScreen(parent);
 Minecraft.getMinecraft().displayGuiScreen(screen);
 ```
 
+**给自己的 Mod 接入配置页：** 用 `ConfigUI.buildScreen(...)` 构建 `ConfigScreen`，自行桥接为 MC `GuiScreen`。接入指南：
+
+- [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) — 配置页接入指南
+
 **自定义 scene 屏：** 使用 `AbstractSceneHostWidget` / `McScreenBridge` + `SceneRuntime` + `Scene*` 控件。权威文档：
 
-- [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) — **唯一**配置接入文档
 - [使用文档](docs/使用文档/README.md)
 
 > 请勿再把已移除的 HTML-like / `UiDocument` / CSS 当作主路径。
@@ -61,27 +64,14 @@ Minecraft.getMinecraft().displayGuiScreen(screen);
 | 文档 | 说明 |
 |------|------|
 | [使用文档](docs/使用文档/README.md) | 面向接入开发者的入门指南、控件、宿主集成 |
-| [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) | **唯一**配置页接入文档 |
-| [开发者文档](docs/开发者文档/README.md) | 面向框架维护者的内部架构、审查、错误记录 |
+| [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) | 配置页接入指南 |
+| [开发者文档](docs/开发者文档/README.md) | 面向框架维护者的内部架构、规格与排障记录 |
 
 完整文档导航见 [docs/README.md](docs/README.md)。
 
 ## 构建
 
-```powershell
-# 如有需要，请在启动 agent 前于外部预先配置 GRADLE_USER_HOME；agent 只验证。
-
-# 编译
-./gradlew.bat --no-configuration-cache compileJava
-
-# 测试
-./gradlew.bat --no-configuration-cache test
-
-# 启动客户端（游戏内验证，lwjgl3ify 运行时）
-./gradlew.bat --no-configuration-cache runClient21
-```
-
-文档导航、命令清单与排障入口见 [docs/README.md](docs/README.md)。
+编译、测试与实机运行命令集中在 [docs/README.md](docs/README.md) 的「稳定命令与排障」一节，文档导航与排障入口同页；环境前置（JDK 25、Gradle wrapper、`GRADLE_USER_HOME`、GTNH Maven 可达性）见上文「环境搭建」。
 
 ## 许可证
 

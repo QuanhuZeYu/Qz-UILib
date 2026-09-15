@@ -65,7 +65,7 @@ public class LayerContractGuardTest {
      *
      * <p>环成因：{@code TextContentMode / TextMeasureStyle / TextLinkRegion} 三个纯值词汇
      * 类型住在上层 ui.text，font 层两个文件被迫反向 import。三类型均在
-     * v4.x-LTS-稳定API清单点名 ✅，换包=breaking，物理断环留 5.x 窗口。</p>
+     * 公共 API 稳定清单点名 ✅，换包=breaking，物理断环留 5.x 窗口。</p>
      */
     private static final Set<String> KNOWN_FONT_TO_UITEXT_BASELINE = new TreeSet<String>(Arrays.asList(
             "TextLayoutService.java", "DefaultFontRendererAdapter.java"));

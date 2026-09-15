@@ -37,7 +37,7 @@ import net.minecraft.util.IChatComponent;
  * {@code NoClassDefFoundError}；gradle 测试 classpath 上 commons-io 与 guava 都在场、
  * StatCollector 可用，取文本<b>不抛</b>。故本锁<b>不写成</b>「断言取文本抛 Throwable」——
  * 那是探针环境残缺的副产物，不是本层约束（跨环境结论必须标 classpath 前提，见
- * {@code 踩坑记录.md}）。</p>
+ * {@code docs/反馈层/踩坑记录.md}）。</p>
  */
 public class StructuredChatReaderTest {
 

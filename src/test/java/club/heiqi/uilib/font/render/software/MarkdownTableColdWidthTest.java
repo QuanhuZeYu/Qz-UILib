@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommandType;
  * 下一次重新布局——这正是「同一次启动内第一次打开错误、第二次正确」的机制。</p>
  *
  * <p><b>判据是关系形，不写绝对像素</b>：断言「收紧预算的列宽向量 == 无预算的列宽向量」，
- * 两端在同一 JVM 内当场量出，因此与平台字体无关（{@code 踩坑记录.md} 2026-09-07 C9 条）。</p>
+ * 两端在同一 JVM 内当场量出，因此与平台字体无关（{@code docs/反馈层/踩坑记录.md} 2026-09-07 C9 条）。</p>
  *
  * <p><b>负向验证</b>：把 {@code measureCodepointWidth} 的预算耗尽分支改回固定
  * {@code getSpaceWidth()}，本测试必红（列0 宽度由无预算时的实测值塌到约一半）。</p>

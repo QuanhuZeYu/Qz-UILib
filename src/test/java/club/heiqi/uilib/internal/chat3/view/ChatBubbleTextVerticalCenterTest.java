@@ -37,7 +37,7 @@ import net.minecraft.util.ChatComponentText;
  *
  * <p><b>为什么必须有 Test A</b>：本类初版只有手搓气泡（Test B/C），反向对照
  * 「把 ChatMessageList 的段流节点改回 TOP」时全绿——手搓节点锁的是自己那份复刻，
- * 不是生产代码。虚断言（见 踩坑记录 同日第 3 条）的复发，故补生产构树锁。</p>
+ * 不是生产代码。虚断言（见 docs/反馈层/踩坑记录.md 同日第 3 条）的复发，故补生产构树锁。</p>
  */
 public class ChatBubbleTextVerticalCenterTest {
 

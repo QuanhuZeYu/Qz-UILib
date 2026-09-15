@@ -31,7 +31,7 @@ import org.junit.Test;
  * </ul>
  *
  * <p>刻意不用正则与反斜杠转义，纯 indexOf/substring 逐行扫描，避免跨语言写正则
- * 把转义吃掉（见仓库踩坑记录）。</p>
+ * 把转义吃掉（见仓库 docs/反馈层/踩坑记录.md）。</p>
  */
 public class UiBackdropShaderContractTest {
 

@@ -32,7 +32,7 @@ import org.junit.Test;
  * 只有一个权威"从口头约定升级为 CI 拦截：main 源码中读取 LayoutBox 变量 x/y 的
  * 文件必须在白名单内（递归累加器本体）。</p>
  *
- * <p>纯字符串扫描（零正则——反斜杠多层传递教训，见踩坑记录 2026-09 条目）。</p>
+ * <p>纯字符串扫描（零正则——反斜杠多层传递教训，见 docs/反馈层/踩坑记录.md 2026-09 条目）。</p>
  */
 public class LayoutBoxLocalCoordGuardTest {
 

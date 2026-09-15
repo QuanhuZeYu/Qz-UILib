@@ -19,17 +19,20 @@ Highlights:
 
 ## Quick Start
 
-**Configuration page (recommended entry for this mod):**
+**Open this mod's own config page (experimental):**
 
 ```java
-// See ModernConfigEntry / docs for full bootstrap
+// uilib's own integration sample; see ModernConfigEntry for the full bootstrap
 GuiScreen screen = ModernConfigEntry.createScreen(parent);
 Minecraft.getMinecraft().displayGuiScreen(screen);
 ```
 
+**Wire a config page into your own mod:** build a `ConfigScreen` with `ConfigUI.buildScreen(...)` and bridge it to MC `GuiScreen` yourself — integration guide:
+
+- [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) — config integration guide
+
 **Scene host (custom screens):** use `AbstractSceneHostWidget` / `McScreenBridge` with `SceneRuntime` and `Scene*` controls. Authoritative guide:
 
-- [配置页（ModernConfig）](docs/使用文档/02-控件/配置页（ModernConfig）.md) — **unique** config integration doc
 - [使用文档](docs/使用文档/README.md)
 
 > Do **not** use removed HTML-like / `UiDocument` / CSS APIs as the primary path.
@@ -61,8 +64,8 @@ Notes for first-time setup, especially on Windows with a non-ASCII username:
 | Document | Description |
 |----------|-------------|
 | [Usage Docs (Chinese)](docs/使用文档/README.md) | Onboarding guide, controls and host integration for integrators |
-| [ModernConfig](docs/使用文档/02-控件/配置页（ModernConfig）.md) | **Unique** config page integration doc |
-| [Developer Docs (Chinese)](docs/开发者文档/README.md) | Internal architecture, reviews, and error records for framework maintainers |
+| [ModernConfig](docs/使用文档/02-控件/配置页（ModernConfig）.md) | Config page integration guide |
+| [Developer Docs (Chinese)](docs/开发者文档/README.md) | Internal architecture, specs, and troubleshooting records for framework maintainers |
 
 Full documentation index: [docs/README.md](docs/README.md).
 
@@ -70,20 +73,7 @@ Full documentation index: [docs/README.md](docs/README.md).
 
 ## Build
 
-```powershell
-# If needed, configure GRADLE_USER_HOME outside the agent before starting it; agents only verify it.
-
-# Compile
-./gradlew.bat --no-configuration-cache compileJava
-
-# Run tests
-./gradlew.bat --no-configuration-cache test
-
-# Launch the client (in-game validation, lwjgl3ify runtime)
-./gradlew.bat --no-configuration-cache runClient21
-```
-
-For the documentation map, build/run commands and troubleshooting entry points, see [docs/README.md](docs/README.md).
+Compile, test and in-game run commands are maintained in one place: see the 「稳定命令与排障」 section of [docs/README.md](docs/README.md), which also holds the troubleshooting entry points. Environment prerequisites (JDK 25, Gradle wrapper, `GRADLE_USER_HOME`, GTNH Maven reachability) are listed in Environment Setup above.
 
 ## License
 
