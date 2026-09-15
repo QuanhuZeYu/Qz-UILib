@@ -2,7 +2,7 @@
 
 本文定义 Qz UILib 当前实现（scene 栈）的公共 API 边界，明确哪些类型与方法属于稳定契约、哪些不承诺稳定、哪些已删除。
 
-清单范围：scene 栈（4.8.0 起）至当前开发线，含 4.9.x / 4.10.x 与 5.0.0 开发期新登记面；现行版本号与兼容区间以 `src/main/java/club/heiqi/uilib/MyMod.java`、构建配置与 git tag 为准。每一项以三种状态标记给出：**✅ 稳定**（业务代码可依赖，在本版本期内不随意变更签名或语义）、**⚠️ 公开但不稳定**（对外可见但不承诺稳定，如 beta 能力、引擎细节）、**🔒 内部**（不承诺稳定，不列公共面）。判定口径见「阅读约定」，具体适用范围以各条目登记与当前源码为准。
+清单范围：scene 栈（4.8.0 起）至当前开发线，含 4.9.x 与 4.10.0（本版）新登记面；现行版本号与兼容区间以 `src/main/java/club/heiqi/uilib/MyMod.java`、构建配置与 git tag 为准。每一项以三种状态标记给出：**✅ 稳定**（业务代码可依赖，在本版本期内不随意变更签名或语义）、**⚠️ 公开但不稳定**（对外可见但不承诺稳定，如 beta 能力、引擎细节）、**🔒 内部**（不承诺稳定，不列公共面）。判定口径见「阅读约定」，具体适用范围以各条目登记与当前源码为准。
 
 > **历史档案**：原「v4.x LTS 稳定 API 清单」（4.1.0-LTS 起）已随 breaking major 作废——旧 document 栈
 > （`ui.dom / style / remote / animation / document / paint / layout / page` 整包）已删除，旧清单正文
@@ -16,9 +16,9 @@
 | ⚠️ 公开但不稳定 | 对外可见但不承诺稳定（如 beta 能力、引擎细节） |
 | 🔒 内部 | 包名带 `internal`、`__` 双下划线方法、devtools 诊断页——不承诺稳定 |
 
-## 稳定级别与判定理由（5.0.0 新增面）
+## 稳定级别与判定理由（4.10.0 新增面）
 
-本节按「阅读约定」的既有口径，对 5.0.0 新登记面逐项给级并写明**判定理由**（依据为级别定义本身 + 该面在 4.9.1→5.0.0 差分中的客观事实，不新造标准）：
+本节按「阅读约定」的既有口径，对 4.10.0 新登记面逐项给级并写明**判定理由**（依据为级别定义本身 + 该面在 4.9.1→4.10.0 差分中的客观事实，不新造标准）：
 
 - **✅ 稳定**（业务代码可依赖；本 minor/major 期内不随意变更签名或语义）——判定理由 = 该面**有意作为对外契约**、当前语义已冻结且有守卫钉住：
   - `SceneNode.setCollapsed(boolean)` / `isCollapsed()`：能力语义唯一权威落在 `SceneLayoutProps#collapsed`，六面（尺寸 / 先验 / 布局 / 绘制 / 命中 / 焦点）逐步长口径化并有等价性证明 + 变异检查双重背书；纯加法（无声明 ⇒ 逐位不变）⇒ 不会因下游使用而逼出破坏性调整。
@@ -39,14 +39,14 @@
 
 | 组 | 类型 | 备注 |
 |---|---|---|
-| 运行时 | ✅ `ui.scene.runtime.SceneRuntime` | `mount / bind / bindText / bindComputed / forEach / show / portal / portalAnchored / on / focusable / requestFocus`；5.0.0 新增读取面 ✅ `logicalBox()`（宿主逻辑盒）与 ✅ `fontEpochSignal()`（字号纪元信号），以及 ⚠️ `SceneLayoutEngine.layoutChangeEpoch()`（几何真变化纪元：零几何变化帧不变更；批计数仍是 `layoutEpoch()`）、⚠️ `PaintPlan.addPlan(PaintPlan)`（纯加法，供窗口裁剪盒整片包装） |
+| 运行时 | ✅ `ui.scene.runtime.SceneRuntime` | `mount / bind / bindText / bindComputed / forEach / show / portal / portalAnchored / on / focusable / requestFocus`；4.10.0 新增读取面 ✅ `logicalBox()`（宿主逻辑盒）与 ✅ `fontEpochSignal()`（字号纪元信号），以及 ⚠️ `SceneLayoutEngine.layoutChangeEpoch()`（几何真变化纪元：零几何变化帧不变更；批计数仍是 `layoutEpoch()`）、⚠️ `PaintPlan.addPlan(PaintPlan)`（纯加法，供窗口裁剪盒整片包装） |
 | 响应式 | ✅ `ui.reactive.Signal / Computed / Effect / Owner / ReadableSignal` | 帧末 flush 批处理语义（`ReactiveScheduler`） |
-| 树节点 | ✅ `ui.scene.node.SceneNode` | 属性槽 setter 自动打失效级别；**禁止重写 equals/hashCode**（identity 语义锚定）。5.0.0 新增 ✅ `setCollapsed(boolean)` / `isCollapsed()`（内容折叠声明：**折叠 = 本节点内容退出布局域，自身按零内容叶留在父流中**，padding 计入、preferred 仍作下限；折叠子树在布局 / 绘制 / 命中 / 焦点四面同步退出，双轴先验高与宽恒可知，根除 `ConstraintResolver`「grow 先验闸门」。纯加法：默认 `false` ⇒ 未声明节点逐位不变；等价性由 `CollapsedLayoutEquivalenceTest` 对「挂摘 vs 折叠声明」整棵可观测树逐值证明。已知取舍：折叠节点自身仍占一个零尺寸槽（gap/margin 照旧）；折叠子树内「已持焦点」需调用方释放，Tab 环已排除） |
+| 树节点 | ✅ `ui.scene.node.SceneNode` | 属性槽 setter 自动打失效级别；**禁止重写 equals/hashCode**（identity 语义锚定）。4.10.0 新增 ✅ `setCollapsed(boolean)` / `isCollapsed()`（内容折叠声明：**折叠 = 本节点内容退出布局域，自身按零内容叶留在父流中**，padding 计入、preferred 仍作下限；折叠子树在布局 / 绘制 / 命中 / 焦点四面同步退出，双轴先验高与宽恒可知，根除 `ConstraintResolver`「grow 先验闸门」。纯加法：默认 `false` ⇒ 未声明节点逐位不变；等价性由 `CollapsedLayoutEquivalenceTest` 对「挂摘 vs 折叠声明」整棵可观测树逐值证明。已知取舍：折叠节点自身仍占一个零尺寸槽（gap/margin 照旧）；折叠子树内「已持焦点」需调用方释放，Tab 环已排除） |
 | 宿主 | ✅ `ui.scene.host.AbstractSceneHostWidget`、`ui.scene.UiSurface` | 业务页面继承宿主基类或实现 `UiSurface`；`ui.screen.HostViewportScale`（宿主逻辑盒边界，native ↔ gui 换算唯一处） |
 | 控件 | ✅ `ui.scene.control.*` | SceneButton / SceneLabel / SceneTextInput / SceneTextArea / SceneSelect / SceneAutocomplete / SceneSlider / SceneToggle / SceneCheckbox / SceneRadioGroup / SceneSegmented / SceneTab / SceneTooltip / SceneScrollContainer / SceneVirtualGrid / SceneSimpleList / SceneNavList / SceneDataTable / SceneKeyValueMap / SceneObjectField / ScenePickerPanel / SceneDragReorder / SceneBreadcrumb / SceneContextMenu / SceneDialog / SceneToast / ⚠️ SceneGridWindow（+ `$RowRange` / `$WindowModel`）/ ⚠️ SceneItemIndex / ⚠️ SceneGridSnapshot |
-| 选择器几何派生（5.0.0 新增，`ui.scene.control.search` 包） | ⚠️ beta（归 `config.ui.editor` 既有 beta 登记面）：`PickerDensity`（三档 `compact32` / `standard40` / `roomy48`）、`PickerDensityPreference`、`PickerDensityTokens`（比例 / 夹取边界唯一常量表）、`PickerMetrics`（+ `$PanelBox`）、`PickerChrome`、`GridMetrics` | 派生唯一实现：网格 stride、图标边长、面板盒、成员卡、变体行、分类行、徽章内边距、触发器图标全部按「逻辑盒 + 字号 + 密度档」派生；picker 家族内不再有硬编码 6/8 位色值与布局常量（由 `ScenePickerTokenGuardTest` 钉住），下游不要自抄数字 |
+| 选择器几何派生（4.10.0 新增，`ui.scene.control.search` 包） | ⚠️ beta（归 `config.ui.editor` 既有 beta 登记面）：`PickerDensity`（三档 `compact32` / `standard40` / `roomy48`）、`PickerDensityPreference`、`PickerDensityTokens`（比例 / 夹取边界唯一常量表）、`PickerMetrics`（+ `$PanelBox`）、`PickerChrome`、`GridMetrics` | 派生唯一实现：网格 stride、图标边长、面板盒、成员卡、变体行、分类行、徽章内边距、触发器图标全部按「逻辑盒 + 字号 + 密度档」派生；picker 家族内不再有硬编码 6/8 位色值与布局常量（由 `ScenePickerTokenGuardTest` 钉住），下游不要自抄数字 |
 | 表单 | ✅ `ui.scene.form.*` | FormFieldShell / FormActionBar / FormPageShell / FormTheme；`FormPageShell.build` 不带 FormTheme 的重载 = 默认消费来源主题；`FormThemes`（⚠️ 新增，签名观察期后转 ✅）为模板主题桥 |
-| 主题 | ⚠️ `ui.scene.theme.*`（4.0 起公开，签名稳定后转 ✅） | `SceneTheme`（不可变值对象，`liquidGlassDark()` 为全库默认外观档、`liquidGlassLight()` / `solidDark()` / `withoutBackdrop()` 显式档）/ `SceneThemes`（`install / resolve / withTheme / surface / foreground / mutedForeground / accent / errorText / warningText / danger / successText` 等派生入口）/ `SceneSurfaceStyle`（角色表面配方，`backdrop=null` 表示显式关闭滤镜）/ `SceneSurfaceBinder`（表面属性唯一通用写入者；同一节点只 bind 一次）。默认行为变更：全部 `ui.scene.control.*` 工厂与表单模板零配置即得液态玻璃外观，显式配方/旧 FormTheme/旧 Props 优先；5.0.0 新增 ⚠️ `SceneRenderProtocolTokens`（非主题静态协议色唯一集中定义处，「无图」占位色 `0xFF454B54`、hover/选中 alpha、SCRIM `0xCC121016`）与主题语义槽 ✅ `SceneTheme.warningSubtle` / `SceneThemes.warningSubtle`（重复徽章）；「UNRENDERABLE」与「无图」是两种可区分令牌（前者主题派生 `ItemRenderFallbackKeys.unrenderableTint(SceneRuntime)`，后者固定协议色） |
+| 主题 | ⚠️ `ui.scene.theme.*`（4.0 起公开，签名稳定后转 ✅） | `SceneTheme`（不可变值对象，`liquidGlassDark()` 为全库默认外观档、`liquidGlassLight()` / `solidDark()` / `withoutBackdrop()` 显式档）/ `SceneThemes`（`install / resolve / withTheme / surface / foreground / mutedForeground / accent / errorText / warningText / danger / successText` 等派生入口）/ `SceneSurfaceStyle`（角色表面配方，`backdrop=null` 表示显式关闭滤镜）/ `SceneSurfaceBinder`（表面属性唯一通用写入者；同一节点只 bind 一次）。默认行为变更：全部 `ui.scene.control.*` 工厂与表单模板零配置即得液态玻璃外观，显式配方/旧 FormTheme/旧 Props 优先；4.10.0 新增 ⚠️ `SceneRenderProtocolTokens`（非主题静态协议色唯一集中定义处，「无图」占位色 `0xFF454B54`、hover/选中 alpha、SCRIM `0xCC121016`）与主题语义槽 ✅ `SceneTheme.warningSubtle` / `SceneThemes.warningSubtle`（重复徽章）；「UNRENDERABLE」与「无图」是两种可区分令牌（前者主题派生 `ItemRenderFallbackKeys.unrenderableTint(SceneRuntime)`，后者固定协议色） |
 | 布局 | ✅ `ui.scene.layout.Constraints / LayoutBox / FlexDirection` 等公开值类型 | 引擎内部（`SceneLayoutEngine`）⚠️；`LogicalBox`（逻辑盒值对象）在同一公开值类型族内；曾列于此的 `GridLayouter` 网格门面已退役删除（零生产消费者） |
 | 文本 | ✅ `ui.scene.text.SceneTextMode / SceneTextMeasurer / SceneLineClamp / TextLinkRegion` | `SceneTextMode` 为 scene 层内容模式唯一语义锚（code 0/1/2 与 `paint.TextStyle.TEXT_MODE_*` 常量、`TextContentMode` 序数值对齐，编译期守卫） |
 | 文本控件契约 | ✅ `SceneLabel.Props`（TextSpec / LayoutSpec / AlignSpec 分组 + `onLinkClick`）与 `Props.builder(...)` 有界 builder | 历史 4 个级联构造器与 12 个 accessor（`text()/color()/...`）兼容保留；`TextLinePlan / LinkHitRegion` 为引擎内部流通数据 ⚠️ |
@@ -61,7 +61,7 @@
 |---|---|---|
 | 树节点 | ✅ `ui.scene.node.SceneNode` 的声明式字号 API | `setFontSize(int)` 写本节点显式声明（越界抛 `IllegalArgumentException`）；`getFontSize()` = **生效值**（沿父链解析、已含用户倍率、恒在 `[1,256]`）；`getExplicitFontSize()` = 本节点自有显式声明（`Integer`，可为 null）；`declaredFontSize()` = 沿父链解析出的声明值（不含倍率，写给别人做声明时用它）；`clearExplicitFontSize()` / `resetFontScope()` 清除本节点声明（清层 1 / 清层 2）；`setFontSizeMetric(FontSizeMetric)` 声明几何随字号派生；`setMinWidth(int)` 声明宽度下限；`setFontScope(int)` 写层 2 作用域声明；`fontSizeSource()` 返回声明来源枚举 `FontSource`（机制读取面 ⚠️）。**声明会被整棵子树继承，没有「取消继承」原语**——要隔离就在目标节点重新声明一层（`resetFontScope()` 是回落继承，不是隔离） |
 | 运行时 | ✅ `ui.scene.runtime.SceneRuntime` | `setDefaultFontSize(int \| ReadableSignal<Integer>)`（层 3 环境默认，父链无任何声明时生效）、`setFontScale(int \| ReadableSignal<Integer>)`（用户倍率，整数百分比 `100..200`，作用于解析出口，布局与绘制同步跟随） |
-| 控件入口 | ✅ `ui.scene.runtime.MountHandle` / `ui.scene.runtime.ScenePortalHandle` / `ui.scene.control.SceneContextMenu.Handle` / `ui.scene.control.SceneToast` | 挂载式控件统一经 `MountHandle.fontSize(int \| ReadableSignal<Integer>)`；浮层三入口为 `ScenePortalHandle.fontSize`（Dialog）、`SceneContextMenu.Handle.fontSize`（右键菜单）、`SceneToast.defaultFontSize(rt, int \| ReadableSignal<Integer>)`（通知）——与挂载式共用同一条解析链，不存在「浮层例外」；`Props.fontSize*` / `Builder.fontSize(signal)` 为构建期语法糖，写同一槽，不是第二套真值。5.0.0 追加两处**签名观察期**新增：⚠️ `SceneScrollbar$Props.barWidthSignal()` / `SceneScrollContainer$ScrollbarSpec.barWidthSignal()`（宽度信号；旧 12 参 / 4 参 canonical 以显式构造器保留，`equals/hashCode/toString` 随之纳入新组件）与 ⚠️ `SceneScrollContainer.defaultScrollbarSpec(ReadableSignal)` / `createDefault(..., ReadableSignal)` |
+| 控件入口 | ✅ `ui.scene.runtime.MountHandle` / `ui.scene.runtime.ScenePortalHandle` / `ui.scene.control.SceneContextMenu.Handle` / `ui.scene.control.SceneToast` | 挂载式控件统一经 `MountHandle.fontSize(int \| ReadableSignal<Integer>)`；浮层三入口为 `ScenePortalHandle.fontSize`（Dialog）、`SceneContextMenu.Handle.fontSize`（右键菜单）、`SceneToast.defaultFontSize(rt, int \| ReadableSignal<Integer>)`（通知）——与挂载式共用同一条解析链，不存在「浮层例外」；`Props.fontSize*` / `Builder.fontSize(signal)` 为构建期语法糖，写同一槽，不是第二套真值。4.10.0 追加两处**签名观察期**新增：⚠️ `SceneScrollbar$Props.barWidthSignal()` / `SceneScrollContainer$ScrollbarSpec.barWidthSignal()`（宽度信号；旧 12 参 / 4 参 canonical 以显式构造器保留，`equals/hashCode/toString` 随之纳入新组件）与 ⚠️ `SceneScrollContainer.defaultScrollbarSpec(ReadableSignal)` / `createDefault(..., ReadableSignal)` |
 | 字号域 | ✅ `font.layout.FontSizeLimits` | `DEFAULT_FONT_SIZE_PX` / `MIN_FONT_SIZE_PX` / `MAX_FONT_SIZE_PX`（16 / 1 / 256，全库唯一定义点）；`clampFontSize`（信号与缩放出口，越界钳制不抛）与 `requireValidFontSize`（调用点传入的 int 参数，越界抛 `IllegalArgumentException`）分工明确 |
 
 > 语义锚：字号是 LAYOUT+PAINT 的控件属性（与 padding 同类，**不进主题通道**）；声明变化向下失效，并同时作用于布局与绘制。字号入口写声明槽，控件内建文字沿父链继承，无需逐节点接线。
@@ -76,7 +76,7 @@
 | 渲染 | ✅ `ui.render.BackdropBlurPreset / BackdropBlurPolicy / BackdropBlurController / UiRenderBackend` |
 | 屏幕 | ✅ `ui.screen.McScreenBridge / UiScreenManager` |
 | 适配器 | ✅ `ui.runtime.UiRuntimeAdapters`（`minecraftDefaults() / empty()`） |
-| 图片 | ✅ `ui.image.HostImageSource`（`itemIcon(ItemStack)` snapshot 工厂；5.0.0 新增 `itemIcon(ItemStack, String explicitRegistryKey)` 显式键工厂——键优先、null/空白回落自算）、`ItemIconRenderer`、`RenderSemantics`、⚠️ `ItemRenderTierRegistry`（渲染分级注册表，5.0.0 新增 `invalidateAll(String)` / `tierGeneration()` / `size()` / `tombstoneSize()` + `$Listener.onInvalidated(String)`） |
+| 图片 | ✅ `ui.image.HostImageSource`（`itemIcon(ItemStack)` snapshot 工厂；4.10.0 新增 `itemIcon(ItemStack, String explicitRegistryKey)` 显式键工厂——键优先、null/空白回落自算）、`ItemIconRenderer`、`RenderSemantics`、⚠️ `ItemRenderTierRegistry`（渲染分级注册表，4.10.0 新增 `invalidateAll(String)` / `tierGeneration()` / `size()` / `tombstoneSize()` + `$Listener.onInvalidated(String)`） |
 
 > **文本测量是「条件可用」（issue #71 同族审计 B2 的裁定）** —— 承诺稳定，前提是运行环境有可用系统字体：
 > - **侧别不构成条件**：`FontService.ensureLayoutRuntimeReady()` 是 CPU-only 契约，专用服务端同样可以量文本；
@@ -108,7 +108,7 @@
 >
 > 已知边界（如实）：① 跨宿主内容盒口径不同（编辑预览外框含缩放工具行、关闭态不含），同一百分比在两宿主解码差 ≤ 工具栏厚度 × fraction；② `offsetScale` != 1（关闭态 `HudScaleSetting` 当前恒 1.0）时编解码各一次取整，往返可能 ≤1 存储 px 量化；③ `ChatInputSurface` 的度量上报在 preferred 尺寸更新后，打开态聊天 HUD 的视口跟随有一帧延迟（关闭态宿主与编辑预览同帧）；④ 真机（重启加载、窗口缩放跟随）尚未验收。
 
-### 诊断与计数（5.0.0 新增）
+### 诊断与计数（4.10.0 新增）
 
 | 组 | 类型 | 备注 |
 |---|---|---|
@@ -130,8 +130,8 @@
 | 核心 | ✅ `club.heiqi.config.runtime.ConfigManager / Authority / DraftView`、`config.schema.ConfigSchema / FieldSpec / SearchPickerSpec / StructuredListSpec` |
 | 界面 | ✅ `club.heiqi.config.ui.ConfigUI.buildScreen(...)` |
 | 桥接 | ⚠️ `uilib.config.modern`（MC 依赖桥接层，非平台中立） |
-| SearchPicker 编辑器 | ⚠️ beta（`config.ui.editor` 相关 provider/registry，非 LTS 承诺）——5.0.0 新增公共面：`PickerCandidateSource` / `PickerQuery` / `PickerSourceVersion` / `PickerEnvironment` / `CandidateSourceValueEditorProvider` / `PickerIconSource` |
-| SearchPicker 候选源接入（`config.ui.field` 包，5.0.0 新登记） | ⚠️ beta：`PickerSourceGuard`（+ `$ThreadOracle`）、`PickerGeneration`、`PickerRevisionBridge`、`PickerIconResolver`、`PickerSourceLifecycle`、`PickerDensityPreferenceSource` |
+| SearchPicker 编辑器 | ⚠️ beta（`config.ui.editor` 相关 provider/registry，非 LTS 承诺）——4.10.0 新增公共面：`PickerCandidateSource` / `PickerQuery` / `PickerSourceVersion` / `PickerEnvironment` / `CandidateSourceValueEditorProvider` / `PickerIconSource` |
+| SearchPicker 候选源接入（`config.ui.field` 包，4.10.0 新登记） | ⚠️ beta：`PickerSourceGuard`（+ `$ThreadOracle`）、`PickerGeneration`、`PickerRevisionBridge`、`PickerIconResolver`、`PickerSourceLifecycle`、`PickerDensityPreferenceSource` |
 
 ## 明确删除（breaking major）
 
@@ -139,12 +139,12 @@
 - 旧 document 栈整包：`ui.dom / ui.style / ui.remote / ui.animation / ui.document / ui.paint / ui.layout / ui.page`（`UiDocument / ElementNode / TextNode / UiDocumentScreens / RemoteDocumentPages / DocumentAnimation` 等全部类型）。
 - `ForgeConfigTemplate*` 配置模板、远程配置同步（`ConfigTemplateSyncManager / RemoteConfigDocumentPages / ConfigSync*`）。
 - 背包槽位网格与通用 slot 容器（`ui.slot / ui.inventory`）。
-- **5.0.0 删除（breaking major，相对 4.9.1 共 8 项 = 1 个公共类 + 7 个公共成员，全部经 ADR 显式放行）**：
+- **4.10.0 删除（breaking：含公共面删除但按发布口径取次版本号，相对 4.9.1 共 8 项 = 1 个公共类 + 7 个公共成员，全部经 ADR 显式放行）**：
   - `club.heiqi.uilib.ui.scene.control.search.SearchResultList$Row`（公共嵌套 record，**整类删除**）——原签名：`public final class SearchResultList$Row`，成员 `Row(int, List<SceneVirtualGrid$Item>)` / `int firstIndex()` / `List<SceneVirtualGrid$Item> items()`（record 自带 `equals/hashCode/toString`）。契约出处：ADR §10 **V2.6(1)**（判据行 §7 A-24/A-25）。删除理由：窗口化后行区间由 `SceneGridWindow` 唯一实现，持有 `Row` 的宿主即「第二份窗口数学」；4.9.1 与 Miner 侧无生产消费者。迁移：改用 `SceneGridWindow.RowRange`（`firstIndex()` / `count()`），需要行内单元经 `SearchResultList$Result.windowModel()` 取切片，不要再自行按行聚合。
   - `club.heiqi.config.ui.editor.SearchPickerPresentation.currentMember(SearchPickerData$CurrentMember)`（公共实例方法）——原签名：`public java.lang.String currentMember(club.heiqi.config.ui.editor.SearchPickerData$CurrentMember);`。契约出处：ADR §10 **V2.4**。删除理由：真死键（无注入、无消费者），成员文案已由 `currentMemberPrimary(member)` / `currentMemberSecondary(member)` 承载。迁移：改用后二者；成员 ID 由 `SearchPickerData$CurrentMember` 自身携带。
   - `club.heiqi.uilib.ui.scene.control.search.ItemRenderFallbackKeys.splitRegistryKey(String)`（公共静态方法，**无替代者**）——原签名：`public static java.lang.String[] splitRegistryKey(java.lang.String);`。契约出处：ADR §1.7 **D-10** 与 §10 **Z-3**。删除理由：分级键统一为候选域键后解析端不复存在；该方法按最后一个冒号切分会把方块名当 meta（`minecraft:stone` → `{"minecraft","stone"}`），使回退集合恒空、UNRENDERABLE 静默失效。迁移：不要解析键——把 `PickerIconKey.candidate(registryKey)` / `PickerIconKey.variant(registryKey, meta)` 的返回值原样当分级/图标键使用。
-  - **本轮 A 方案撤回新增的 5 个成员删除**（4.9.1 存在，签名对照见 [.changelogs/5.0.0.md](../../.changelogs/5.0.0.md) 迁移指引第 6 条）：`SearchPickerSpec.maxItems()`、`SearchPickerSpec(String, int)`、`SearchPickerSpec(String, int, BindingMode)`、`Values.searchPicker(String, int)`、`Values.searchPicker(String, int, BindingMode)`。迁移：`new SearchPickerSpec(id[, mode])` / `Values.searchPicker(id[, mode])`；规模改读 `Result.windowModel().totalItems()` 或候选源 `matchCount(query)`。理由：搜索 lane 不再有窗口上限（见「版本兼容」5.0.0 段）。
-  - 另有 5 组 / 6 个公共成员的 5.0.0 开发期新增面在发布前撤回（从未随任何版本发布，不构成对 4.9.1 的删除）：`SearchPickerSpec.DEFAULT_MAX_ITEMS`、`Registry.register(ValueEditorProvider, int)`、`CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS` / `searchMaxItems()`、`ScenePickerPanel$Props.searchMaxItems()`、`ScenePickerPanel$Props$Builder.candidateSource(..., int, ...)` 旧形态。
+  - **本轮 A 方案撤回新增的 5 个成员删除**（4.9.1 存在，签名对照见 [.changelogs/4.10.0.md](../../.changelogs/4.10.0.md) 迁移指引第 6 条）：`SearchPickerSpec.maxItems()`、`SearchPickerSpec(String, int)`、`SearchPickerSpec(String, int, BindingMode)`、`Values.searchPicker(String, int)`、`Values.searchPicker(String, int, BindingMode)`。迁移：`new SearchPickerSpec(id[, mode])` / `Values.searchPicker(id[, mode])`；规模改读 `Result.windowModel().totalItems()` 或候选源 `matchCount(query)`。理由：搜索 lane 不再有窗口上限（见「版本兼容」4.10.0 段）。
+  - 另有 5 组 / 6 个公共成员的 4.10.0 开发期新增面在发布前撤回（从未随任何版本发布，不构成对 4.9.1 的删除）：`SearchPickerSpec.DEFAULT_MAX_ITEMS`、`Registry.register(ValueEditorProvider, int)`、`CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS` / `searchMaxItems()`、`ScenePickerPanel$Props.searchMaxItems()`、`ScenePickerPanel$Props$Builder.candidateSource(..., int, ...)` 旧形态。
   - 行为面（非 API 删除，但同批通报）：`picker.lookup.comparisons` 计数常量与写入者删除（删除线性查找助手后恒 0）。
 - 4.0 开发期破坏性变更（登记）：`SceneToast.Entry` 新增 `sourceTheme` 分量（仓内零外部构造点）；`FieldShellBinder.build` 两重载的 `theme` 占位形参删除（仓内调用点已全部收口）。`SceneLabel.TextSpec` 追加 `followTheme` 分量但旧 4 参构造器语义不变（显式 color）。
 
@@ -153,7 +153,7 @@
 - **4.9.1 定档时的远端范围 = `[4.9.0,4.10.0)`**：4.9.0 拒绝旧端，旧端拒绝 4.9.0，双端需同步升级。该值其后已调整（提交 `9bb73003`，2026-09-12）：现值 `[4.9.0,4.11.0)`（见 `src/main/java/club/heiqi/uilib/MyMod.java` 的 `acceptableRemoteVersions`；区间随发布批次变化，以实时源码为准），上界抬到制品 `4.10.0` 的下一 minor 边界，覆盖 `4.9.x` 与 `4.10.x`。
 - **4.9.0 与 4.9.1 双端可混用**：`[4.9.0,4.10.0)` 同时接受 `4.9.0` 与 `4.9.1`（已用游戏自身 FML `VersionRange` 类实跑三组判定均为 true：4.9.1 接受 4.9.0 / 4.9.0 接受 4.9.1 / 4.9.1 接受 4.9.1）。4.9.1 相对 4.9.0 为**纯增量**（`javap -public` 全量对比：公开类 1048 → 1056、零类删除、零 public / protected 成员删除或签名变更，详见 [.changelogs/4.9.1.md](../../.changelogs/4.9.1.md) 的「兼容面」小节）。使用 `HudEditService` / `HudEditTarget` 新 API 的消费方下界必须 ≥ 4.9.1（旧版本不含这些类型，运行期会 NoClassDefFoundError）。本轮持久化批次另新增 3 个公开类型（`HudLayoutStore` / `HudLayoutMetrics` / `HudLayoutPersistence`）；精确类数以最终发布制品的对照脚本输出为准。
 - 区间上界只决定「覆盖到哪个 minor」，与补丁定档无关：定档时上界为 `4.10.0`、现为 `4.11.0`（覆盖 `4.9.x` 与 `4.10.x`）。两种取值下 `4.9.0` / `4.9.1` 都在区间内，沿用既有区间即可混用，无需双端协调升级。
-- **5.0.0 与 4.9.1 的关系（major 越过 ⇒ 不承诺混用，需成对升级）**：真实删除 **8 项**（1 个公共类 + 7 个公共成员）——`SearchResultList$Row` 整类、`SearchPickerPresentation.currentMember(...)`、`ItemRenderFallbackKeys.splitRegistryKey(String)`，以及本轮 A 方案撤回新增的 5 个成员（`SearchPickerSpec.maxItems()` 与两个 int 构造器、`Values.searchPicker(id,int)` 与 `searchPicker(id,int,mode)`）；另有 5 组 / 6 个公共成员的 5.0.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入）。行为面变化：搜索 lane **无窗口上限**（总量 = 真实命中数 + 惰性分页；原「maxItems 反转为窗口上限」已随 A 方案撤回）、`Props.items()` 由全量变窗口切片、已配置候选不再被排除。因此**不适用** 4.9.0 / 4.9.1 那种「双端可混用」结论：新旧端混用会在编译期（引用已删类型/方法）或语义层（窗口口径）不一致。升级方必须把 UILib 依赖与本地制品成对换到 5.0.0，并按 `docs/开发者文档/发布流程.md` §1 同步版本区间常量（§1 现行口径：FML 远端范围按已批准的兼容承诺确定，且必须包含当前构建版本；`MyMod.acceptableRemoteVersions` 的调整与 tag 同批执行）。量化口径：javap 全量差分的类数与成员数按最终制品重跑回填，结论与验证边界见 [.changelogs/5.0.0.md](../../.changelogs/5.0.0.md)「验证边界」。
+- **4.10.0 与 4.9.1 的关系（含 8 项公共面删除 ⇒ 不承诺混用，需成对升级）**：真实删除 **8 项**（1 个公共类 + 7 个公共成员）——`SearchResultList$Row` 整类、`SearchPickerPresentation.currentMember(...)`、`ItemRenderFallbackKeys.splitRegistryKey(String)`，以及本轮 A 方案撤回新增的 5 个成员（`SearchPickerSpec.maxItems()` 与两个 int 构造器、`Values.searchPicker(id,int)` 与 `searchPicker(id,int,mode)`）；另有 5 组 / 6 个公共成员的 4.10.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入）。行为面变化：搜索 lane **无窗口上限**（总量 = 真实命中数 + 惰性分页；原「maxItems 反转为窗口上限」已随 A 方案撤回）、`Props.items()` 由全量变窗口切片、已配置候选不再被排除。因此**不适用** 4.9.0 / 4.9.1 那种「双端可混用」结论：新旧端混用会在编译期（引用已删类型/方法）或语义层（窗口口径）不一致。升级方必须把 UILib 依赖与本地制品成对换到 4.10.0，并按 `docs/开发者文档/发布流程.md` §1 同步版本区间常量（§1 现行口径：FML 远端范围按已批准的兼容承诺确定，且必须包含当前构建版本；本版 4.10.0 落在既有 `[4.9.0,4.11.0)` 内，无需调整区间）。量化口径：javap 全量差分的类数与成员数按最终制品重跑回填，结论与验证边界见 [.changelogs/4.10.0.md](../../.changelogs/4.10.0.md)「验证边界」。
 - 4.8.0 起 public API 变更将按语义化版本走 minor/major 判定；`__` 双下划线内部桥（如 `SceneRuntime.__bridgeLayoutEpoch`）不构成兼容承诺。
 
 ## 以代码为准

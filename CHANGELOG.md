@@ -6,9 +6,9 @@
 
 ## [Unreleased]
 
-## [5.0.0] - 待定
+## [4.10.0] - 2026-09-15
 
-> 状态：**待发布**（版本闸门与 tag 未执行，日期待定），全文见 [.changelogs/5.0.0.md](.changelogs/5.0.0.md)。本版为 major：相对 4.9.1 有 **8 项**明确删除（1 个公共类 + 7 个公共成员，其中 5 个成员来自本轮 A 方案撤回），与 4.9.x 不承诺混用、需成对升级；另有 5 组（6 个公共成员）5.0.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入对 4.9.1 的删除，逐项登记见「移除」）。
+> 状态：**待发布**（tag 与发布 workflow 未执行），全文见 [.changelogs/4.10.0.md](.changelogs/4.10.0.md)。本版 tag 取次版本号 **4.10.0**：相对 4.9.1 含 **8 项**公共面删除（1 个公共类 + 7 个公共成员，其中 5 个成员来自本轮 A 方案撤回），**与 4.9.x 不承诺混用、需成对升级**（含删除在语义化版本上本应记 major，本次按发布口径以次版本发布，取舍见版本说明「迁移指引」第 1 条）；另有 5 组（6 个公共成员）4.10.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入对 4.9.1 的删除，逐项登记见「移除」）。
 
 ### 新增
 
@@ -22,7 +22,8 @@
 - 框架新增公共面：`SceneNode.setCollapsed(boolean)` / `isCollapsed()`（内容折叠声明，折叠子树在布局/绘制/命中/焦点四面退出）、`SceneScrollbar$Props` / `SceneScrollContainer$ScrollbarSpec` 新增 `barWidthSignal`（滚动条宽度动态派生）、`SceneScrollContainer.defaultScrollbarSpec(ReadableSignal)` / `createDefault(..., ReadableSignal)`、`PickerChrome.scrollbarWidthSignal` / `scrollbarWidthSignalOf`、`SceneLayoutEngine.layoutChangeEpoch()`、`PaintPlan.addPlan(PaintPlan)`、`SceneRuntime.logicalBox()` / `fontEpochSignal()`、`HostImageSource.itemIcon(ItemStack, String explicitRegistryKey)`、`Values.searchPicker(String)` / `Values.searchPicker(String, SearchPickerSpec.BindingMode)`、`ItemRenderFallbackKeys.unrenderableTint(SceneRuntime)`
 - 面板与控件接线：`SearchResultList.Props` 新增 `pageProvider` / `totalItems` / `windowOffset` / `availableWidth` / `visibleRows` / `totalItemsSignal` / `metrics` / `configuredKeys` / `onExitUp`，`Result` 新增 `windowModel()` / `highlightedItem()`；`ScenePickerPanel.Props` 新增 `candidateSource()` / `sourceQuery()` / `sourceVersion()` / `densityPreference()` / `onRestoreCurrent()` / `onDiscardRemoved()`
 - 交互收口：整页翻页 / 首末项 / 搜索框与网格双向跳转 / 分类导航键盘可聚焦、外部点击 scrim 单一检测点（同挂载幂等）、删除即生效 + 5s 撤销条（至多 1 条 tombstone）、信息条常驻占位 + 点击复制稳定 ID
-- 背景滤镜档位与玻璃成本优化：新增配置项 `general.backdropQuality`（`full` 完整默认 / `eco` 省电＝9 抽头变体 / `solid` 关闭＝实色替代底）与进程级档位信号 `ui.render.BackdropQuality` / `ui.render.BackdropQualityService`（`ConfigValueBridge` 唯一回灌点，**不是** `Config` 静态字段）；库默认主题改按档位动态解析——`solid` ⇒ `SceneTheme.withoutBackdrop()`，切档只重派生配方、不重建节点，`SceneThemes.DEFAULT` 常量恒为液态玻璃（显式消费者语义锚，已知边界）；渲染侧同轮收口 ds==1 无读 mipmap、clip 外玻璃整链早退、诊断串按需构造，并新增 `frame.backdrop.*` 计数供 `useDebug` 真机 A/B（见 [.changelogs/5.0.0.md](.changelogs/5.0.0.md) §11 与 `docs/反馈层/踩坑记录.md`）
+- 背景滤镜档位与玻璃成本优化：新增配置项 `general.backdropQuality`（`full` 完整默认 / `eco` 省电＝9 抽头变体 / `solid` 关闭＝实色替代底）与进程级档位信号 `ui.render.BackdropQuality` / `ui.render.BackdropQualityService`（`ConfigValueBridge` 唯一回灌点，**不是** `Config` 静态字段）；库默认主题改按档位动态解析——`solid` ⇒ `SceneTheme.withoutBackdrop()`，切档只重派生配方、不重建节点，`SceneThemes.DEFAULT` 常量恒为液态玻璃（显式消费者语义锚，已知边界）；渲染侧同轮收口 ds==1 无读 mipmap、clip 外玻璃整链早退、诊断串按需构造，并新增 `frame.backdrop.*` 计数供 `useDebug` 真机 A/B（见 [.changelogs/4.10.0.md](.changelogs/4.10.0.md) §11 与 `docs/反馈层/踩坑记录.md`）
+- 通用颜色字段能力（`5f02aa7b`）：`config.schema.ColorSpec` / `config.schema.HexColorCodec` / `config.ui.field.ColorFieldRenderer` 与 DSL `SectionSpec.Builder.color(String)` / `FieldSpec.Builder.color()`——值语义仍是 `0xRRGGBB` 的 NUMBER（未显式 range 时补 `[0,0xFFFFFF]`），输入接受 `#RRGGBB` / `0xRRGGBB` / 无前缀六位十六进制 / 纯十进制，编辑期保留未完成原文；下游（Qz-Miner）已随之删除私有 HEX 实现与四个 path 覆盖注册
 
 ### 变更
 
@@ -45,6 +46,10 @@
 - 成员带高度有界 + 带内可滚动；信息条点击复制稳定 ID（≤2s 有界反馈）
 - 框架正确性与性能（P1）：`measuredTextNodes` 登记表生命周期收口（结构版本号 + 确定性剪枝 + 已知根 LRU + 入口 epoch 快路径，修复反复挂载/卸载后条目只增不减）；`layoutEpoch` 语义拆分（干净帧不再误发布几何纪元，overlay 变更按求和聚合不漏发）；每帧分配优化（`ReactiveScheduler` scratch 化 + dirty effect 计数早退、`PaintPlan` 条目序列 + `getCommands()` 按需物化，`getCommands()` 返回值与回放调用序列逐位不变）；静止帧剔除 L0+L3（干净批 O(1) 快路径、视口外 clip 子树整棵剔除，保守优先且不清脏标记）
 
+- **告示牌等世界空间文字不显示 /「被物体挡住才可见」（#74）**：宿主（Angelica）把 TESR 几何排队、遍历结束后统一提交，而替换字体后的字形在 `drawString` 调用点内立即提交 ⇒ 两条通道落屏顺序不同源；木板晚于字形落屏时按原版「世界文字不写深度」语义整块覆盖字形。修复（`e7cfee56`）= 新增内部 `TesrTextReplayCoordinator`：把处于宿主批量窗口内的世界文字捕获后改到宿主提交批次之后回放（回放使用捕获时刻的投影/模型视图矩阵、临时关闭深度写入），宿主侧由可选 Mixin 围栏（`TesrBatchRenderer.flush()` / `flushAfterDeferred()`）驱动；无 Angelica / 版本不匹配 / Mixin 未应用时协调器整体停用（fail-open，退回即时绘制），宿主未在帧内提交时帧边界丢弃滞留项并留一次 WARN。观测面与窗口契约见 `58ee46b6` / `a55bdaa3`
+- **配置页滚动卡顿（#74）**：配置页默认主题改为平面（`general.configPageTheme`，默认 `flat`、可切 `glass`），不再默认走半透明背景采样（`34cd531c`）；`PaintFragment` 记录自身纵向绘制范围，滚动重放时与裁剪窗口判交、屏外片段不再重放（`d78b520f`）
+- **数值输入框编辑期未完成原文被吞；开关 thumb 两态不可区分（`659009ee`）**：编辑期保留未完成原文（不再提前规范化），thumb 两态改用既有主题 token 区分
+
 ### 移除
 
 - **`club.heiqi.uilib.ui.scene.control.search.SearchResultList$Row`**（公共嵌套 record，整类删除）：窗口化后行区间由 `SceneGridWindow.RowRange`（`firstIndex()` / `count()`）承载；持有它的宿主即「第二份窗口数学」的载体。无生产消费者。ADR §10 V2.6(1)
@@ -53,13 +58,13 @@
 - **【本轮 A 方案撤回新增，相对 4.9.1 的真实删除】`club.heiqi.config.schema.SearchPickerSpec.maxItems()`**（公共实例方法）：搜索 lane 不再有窗口上限，窗口总量 = 候选源 `matchCount(query)`；需展示规模请读 `ScenePickerPanel$Result.windowModel().totalItems()`（窗口状态唯一回读通道）。判据：ADR §7 A-24/A-25（显式登记后的删除允许）；出处：ADR §0-R 修订 R-02
 - **【本轮 A 方案撤回新增】`SearchPickerSpec(String editorId, int maxItems)` / `SearchPickerSpec(String editorId, int maxItems, BindingMode bindingMode)`**（两个公共构造器）：替代者 = `SearchPickerSpec(String editorId)` / `SearchPickerSpec(String editorId, BindingMode bindingMode)`；widget 元数据不再携带窗口上限
 - **【本轮 A 方案撤回新增】`Values.searchPicker(String editorId, int maxItems)` / `Values.searchPicker(String editorId, int maxItems, BindingMode bindingMode)`**（两个公共静态方法）：替代者 = `Values.searchPicker(String editorId)` / `Values.searchPicker(String editorId, BindingMode bindingMode)`
-- **【发布前撤回，不计入对 4.9.1 的删除】5.0.0 开发期新增面（5 组 / 6 个公共成员，从未随任何版本发布，登记备查）**：
+- **【发布前撤回，不计入对 4.9.1 的删除】4.10.0 开发期新增面（5 组 / 6 个公共成员，从未随任何版本发布，登记备查）**：
   - `SearchPickerSpec.DEFAULT_MAX_ITEMS`（静态常量）→ 上限概念移除，无替代者；
   - `Registry.register(ValueEditorProvider, int)` → 回到单参 `Registry.register(ValueEditorProvider)`（与 4.9.1 同形）；
   - `CandidateSourceValueEditorProvider.DEFAULT_SEARCH_MAX_ITEMS` / `searchMaxItems()` → SPI 只剩 `candidateSource()` / `iconSource()`；
   - `ScenePickerPanel$Props.searchMaxItems()` → 无替代者（总量读 `Result.windowModel().totalItems()`）；
   - `ScenePickerPanel$Props$Builder.candidateSource(PickerCandidateSource, int, ReadableSignal, ReadableSignal)` 旧形态 → 替代者 = 三参 `candidateSource(source, query, version)`
-- 本轮登记口径小结：相对 4.9.1 的真实删除 = 上列前 3 项 + 本轮新增 3 组（5 个成员），合计 **1 个公共类 + 7 个公共成员**；javap 门禁须按最终制品重跑并回填（见 [.changelogs/5.0.0.md](.changelogs/5.0.0.md)「验证边界」）
+- 本轮登记口径小结：相对 4.9.1 的真实删除 = 上列前 3 项 + 本轮新增 3 组（5 个成员），合计 **1 个公共类 + 7 个公共成员**；javap 门禁已按最终制品重跑回填（见 [.changelogs/4.10.0.md](.changelogs/4.10.0.md)「验证边界」）
 - 计数常量与写入者 `picker.lookup.comparisons`（见「变更」）
 
 ## [4.9.1] - 2026-09-11

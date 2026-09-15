@@ -35,7 +35,7 @@ public class FmlRemoteVersionCompatibilityContractTest {
      * （[4.9.0,4.11.0) 同时覆盖 4.9.x 与 4.10.x），但不允许跨 major（[4.9.0,5.0.0) 等于
      * 多承诺一个 major）。
      * 例：[4.9.0,4.11.0)；拒绝 [4.7.0,4.7.0) 空区间、缺失括号、预发布标签混入与跨 major 形式。
-     * 反向引用 {@code \1} 表达「major 相同」，不把 4 写死：发布 5.0.0 时声明 [5.0.0,5.1.0)
+     * 反向引用 {@code \1} 表达「major 相同」，不把 4 写死：major 变化时（如 [5.0.0,5.1.0)）
      * 同样合法。
      */
     private static final String RELEASE_RANGE_PATTERN = "\\[(\\d+)\\.\\d+\\.\\d+,(?:\\1)\\.\\d+\\.\\d+\\)";
