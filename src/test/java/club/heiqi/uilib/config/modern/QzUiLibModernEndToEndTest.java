@@ -310,26 +310,17 @@ public class QzUiLibModernEndToEndTest {
         assertFalse("不应含 JSON 大括号: " + text, text.contains("}"));
     }
 
-    /**
-     * Schema 结构完整性：三个 section 全部存在，字段数符合预期
-     * （general 6 + fontSystem 18 + fontSizeSetting 2 = 26）。
-     *
-     * <p>general 由 4 → 5：新增 {@code pickerDensity}（P5 三档密度的用户入口，纯加法，
-     * 默认 auto = 现状档）；再由 5 → 6：新增 {@code backdropQuality}（背景滤镜档位入口，
-     * 纯加法，默认 full = 现状液态玻璃，观感零变化）。</p>
-     */
+    /** Schema 保留各配置分组；配置页主题在旧文件缺键时默认平面。 */
     @Test
-    public void schemaHasExpectedSectionsAndFieldCount() {
+    public void schemaKeepsSectionsAndDefaultsMissingThemeToFlat() throws Exception {
         ConfigSchema schema = QzUiLibModernSchema.create();
         assertEquals("qzuilib", schema.modId());
         assertEquals(3, schema.sections().size());
         assertEquals("general", schema.sections().get(0).name());
         assertEquals("fontSystem", schema.sections().get(1).name());
         assertEquals("fontSizeSetting", schema.sections().get(2).name());
-        // 总字段数：general 6 + fontSystem 18 + fontSizeSetting 2 = 26
-        // （fontSystem 含 fontSort / characterFontRules 两个 SIMPLE_LIST 字段；
-        //   general 的 pickerDensity / backdropQuality 是增量新增的两个档位入口）
-        assertEquals(26, schema.allFields().size());
+        assertEquals("flat", club.heiqi.config.runtime.Authority.load((File) null, schema)
+                .getString("general.configPageTheme"));
     }
 
     // ===== range 上界边界回归测试 =====

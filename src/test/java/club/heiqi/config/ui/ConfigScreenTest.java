@@ -30,6 +30,7 @@ import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.theme.ConfigTheme;
+import club.heiqi.config.ui.theme.ConfigThemePreference;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.ReactiveTestProbe;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -77,6 +78,8 @@ public class ConfigScreenTest {
     @Before
     public void setUp() throws Exception {
         ReactiveScheduler.get().reset();
+        ConfigThemePreference.applyConfigured("flat");
+        ReactiveScheduler.get().flush();
         File file = tempFolder.newFile("config-screen.yaml");
         write(file, "");
         ConfigSchema schema = UiSchemaFactory.serverSchema();
@@ -93,6 +96,8 @@ public class ConfigScreenTest {
     public void tearDown() throws Exception {
         screen.dispose();
         adapter.dispose();
+        ConfigThemePreference.applyConfigured("flat");
+        ReactiveScheduler.get().flush();
         ReactiveScheduler.get().reset();
     }
 
@@ -1732,9 +1737,14 @@ public class ConfigScreenTest {
                 recipe.getCornerRadius(), node.getCornerRadius());
         Assert.assertEquals(label + " 浮雕高度 = 配方 idle elevation",
                 recipe.getIdle().getElevation(), node.__getSurfaceElevation(), 0.0001F);
-        Assert.assertNotNull(label + " 装配方滤镜", node.getBackdrop());
-        Assert.assertEquals(label + " 滤镜模糊半径 = 配方值",
-                recipe.getBackdrop().getBlurRadius(), node.getBackdrop().getBlurRadius());
+        if (recipe.getBackdrop() == null) {
+            Assert.assertNull(label + " 平面配方不装滤镜", node.getBackdrop());
+        } else {
+            // 透镜强度由交互态因子派生；模糊半径保持配方值。
+            Assert.assertNotNull(label + " 装配方滤镜", node.getBackdrop());
+            Assert.assertEquals(label + " 滤镜模糊半径 = 配方值",
+                    recipe.getBackdrop().getBlurRadius(), node.getBackdrop().getBlurRadius());
+        }
     }
 
     /** 收敛外观动画到配方终值（ConfigScreen 启用了 Motion，动画色需 finish 后才等于目标值）。 */
@@ -1758,13 +1768,32 @@ public class ConfigScreenTest {
         return null;
     }
 
-    /** ① 默认路径：页壳 root/viewport=PANEL、操作条=TOOLBAR，逐项等于各自 Role 配方。 */
+    /** #74：切换只更新外观；平面档的实际绘制计划不能残留玻璃采样。 */
+    @Test
+    public void configuredThemeSwitchKeepsPageAndDraftAndRemovesBackdropCommands() {
+        SceneNode page = screen.__getPageRoot();
+        adapter.onFieldEdit("server.host", "unsaved.host");
+        for (String theme : new String[] { "glass", "flat", "invalid" }) {
+            ConfigThemePreference.applyConfigured(theme);
+            settleVisuals(screen);
+            doLayout();
+            Assert.assertSame(page, screen.__getPageRoot());
+            Assert.assertEquals("unsaved.host", adapter.draft().getDraft("server.host"));
+            boolean hasBackdrop = false;
+            for (PaintCommand command : screen.getPaintEngine().paint(screen.__getRoot()).getPlan().getCommands()) {
+                hasBackdrop |= command.getType() == PaintCommandType.BACKDROP;
+            }
+            Assert.assertEquals("只有显式玻璃档需要背景采样", "glass".equals(theme), hasBackdrop);
+        }
+    }
+
+    /** 默认路径：页壳 root/viewport=PANEL、操作条=TOOLBAR，消费平面主题配方。 */
     @Test
     public void pageShellAndActionBarBindRoleRecipesByDefault() throws Exception {
-        SceneSurfaceStyle panel = SceneThemes.DEFAULT.surface(SceneTheme.Role.PANEL);
-        SceneSurfaceStyle toolbar = SceneThemes.DEFAULT.surface(SceneTheme.Role.TOOLBAR);
-        Assert.assertNotNull("前置：PANEL 配方自带滤镜", panel.getBackdrop());
-        Assert.assertNotNull("前置：TOOLBAR 配方自带滤镜", toolbar.getBackdrop());
+        SceneSurfaceStyle panel = SceneTheme.solidDark().surface(SceneTheme.Role.PANEL);
+        SceneSurfaceStyle toolbar = SceneTheme.solidDark().surface(SceneTheme.Role.TOOLBAR);
+        Assert.assertNull("默认平面 PANEL 无滤镜", panel.getBackdrop());
+        Assert.assertNull("默认平面 TOOLBAR 无滤镜", toolbar.getBackdrop());
         settleVisuals(screen);
 
         assertSurfaceMatchesRoleRecipe("玻璃页壳 root", screen.__getPageRoot(), panel);
@@ -1782,6 +1811,7 @@ public class ConfigScreenTest {
     /** ④ 遮罩保持：ROOT_BG 像素锁、遮罩不装玻璃，且绘制顺序上遮罩先于玻璃 BACKDROP（不挡采样）。 */
     @Test
     public void rootMaskKeepsPixelLockAndPaintsBeforeGlassBackdrop() throws Exception {
+        ConfigThemePreference.applyConfigured("glass");
         settleVisuals(screen);
         doLayout();
 
@@ -1815,6 +1845,8 @@ public class ConfigScreenTest {
     /** save 反馈条内容底座走 GROUP 配方（不再是 SURFACE_CONTAINER 静态实色）。 */
     @Test
     public void saveFeedbackBarBindsGroupRecipe() throws Exception {
+        ConfigThemePreference.applyConfigured("glass");
+        settleVisuals(screen);
         adapter.onFieldEdit("server.host", "saved.host");
         screen.__getRuntime().flush();
         screen.__saveChanges();

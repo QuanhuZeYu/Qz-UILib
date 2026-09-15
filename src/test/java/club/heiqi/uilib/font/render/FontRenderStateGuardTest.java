@@ -93,7 +93,7 @@ public class FontRenderStateGuardTest {
         int entryMode = gl.matrixMode;
         int modelviewDepth = gl.modelviewDepth;
         int projectionDepth = gl.projectionDepth;
-        int textureDepth = gl.textureDepth;
+        Map<Integer, Integer> textureDepths = new HashMap<Integer, Integer>(gl.textureDepths);
 
         new FontRenderStateGuard(gl).run(new Runnable() {
             @Override
@@ -105,7 +105,7 @@ public class FontRenderStateGuardTest {
         assertEquals(entryMode, gl.matrixMode);
         assertEquals(modelviewDepth, gl.modelviewDepth);
         assertEquals(projectionDepth, gl.projectionDepth);
-        assertEquals(textureDepth, gl.textureDepth);
+        assertEquals(textureDepths, gl.textureDepths);
     }
 
     /** 缺少对应 push 的 pop 必须失败。 */
@@ -137,6 +137,7 @@ public class FontRenderStateGuardTest {
     private static final class EntryState {
         private final Map<Integer, Boolean> textureEnabled;
         private final Map<Integer, Integer> textureBindings;
+        private final Map<Integer, Integer> textureDepths;
         private final int matrixMode;
         private final int activeTexture;
         private final int program;
@@ -148,6 +149,7 @@ public class FontRenderStateGuardTest {
         EntryState(FakeGlAccess gl) {
             textureEnabled = new HashMap<Integer, Boolean>(gl.textureEnabled);
             textureBindings = new HashMap<Integer, Integer>(gl.textureBindings);
+            textureDepths = new HashMap<Integer, Integer>(gl.textureDepths);
             matrixMode = gl.matrixMode;
             activeTexture = gl.activeTexture;
             program = gl.program;
@@ -160,6 +162,7 @@ public class FontRenderStateGuardTest {
         void assertRestored(FakeGlAccess gl) {
             assertEquals(textureEnabled, gl.textureEnabled);
             assertEquals(textureBindings, gl.textureBindings);
+            assertEquals("纹理矩阵栈必须在各自单元内配对", textureDepths, gl.textureDepths);
             assertEquals(matrixMode, gl.matrixMode);
             assertEquals(activeTexture, gl.activeTexture);
             assertEquals(program, gl.program);
@@ -184,13 +187,15 @@ public class FontRenderStateGuardTest {
         final int[] viewport = { 4, 5, 640, 360 };
         int modelviewDepth = 2;
         int projectionDepth = 1;
-        int textureDepth = 1;
+        final Map<Integer, Integer> textureDepths = new HashMap<Integer, Integer>();
         int attribPushes;
         int attribPops;
         int clientAttribPushes;
         int clientAttribPops;
 
         FakeGlAccess() {
+            textureDepths.put(GL13.GL_TEXTURE0, 1);
+            textureDepths.put(GL13.GL_TEXTURE1, 1);
             textureEnabled.put(GL13.GL_TEXTURE0, true);
             textureEnabled.put(GL13.GL_TEXTURE1, true);
             textureBindings.put(GL13.GL_TEXTURE0, 61);
@@ -282,7 +287,7 @@ public class FontRenderStateGuardTest {
             } else if (matrixMode == GL11.GL_PROJECTION) {
                 projectionDepth++;
             } else if (matrixMode == GL11.GL_TEXTURE) {
-                textureDepth++;
+                textureDepths.put(activeTexture, textureDepths.get(activeTexture) + 1);
             }
         }
 
@@ -293,7 +298,7 @@ public class FontRenderStateGuardTest {
             } else if (matrixMode == GL11.GL_PROJECTION) {
                 projectionDepth--;
             } else if (matrixMode == GL11.GL_TEXTURE) {
-                textureDepth--;
+                textureDepths.put(activeTexture, textureDepths.get(activeTexture) - 1);
             }
         }
 

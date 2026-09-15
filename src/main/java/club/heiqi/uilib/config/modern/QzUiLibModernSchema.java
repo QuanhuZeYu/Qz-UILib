@@ -55,6 +55,10 @@ public final class QzUiLibModernSchema {
                         .label("pickerDensity").helper("选择器面板密度档位：auto 自动求解（默认，不低于现状）；"
                                 + "compact 紧凑 / standard 标准 / roomy 宽松为显式覆盖，三档同样受不低于现状约束。"
                                 + "改档位即时生效，无需重开配置页或选择器。").build()
+                    .choice("configPageTheme").options("flat", "glass").defaultValue("flat")
+                        .label("配置页主题").helper("flat 平面（默认，不使用背景模糊或玻璃材质）；"
+                                + "glass 液态玻璃。保存后更新已打开的配置页，无需重开。"
+                                + "液态玻璃的滤镜质量由 backdropQuality 控制。").build()
                     .choice("backdropQuality").options("full", "eco", "solid").defaultValue("full")
                         .label("backdropQuality").helper("背景滤镜（液态玻璃模糊）档位："
                                 + "full 完整＝现状液态玻璃（默认，观感零变化）；"

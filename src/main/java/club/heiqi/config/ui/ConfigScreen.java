@@ -15,6 +15,7 @@ import club.heiqi.config.schema.SectionSpec;
 import club.heiqi.config.ui.field.FieldRenderer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.theme.ConfigTheme;
+import club.heiqi.config.ui.theme.ConfigThemePreference;
 import club.heiqi.uilib.ui.scene.form.FormActionBar;
 import club.heiqi.uilib.ui.scene.form.FormPageShell;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
@@ -247,7 +248,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     public ConfigScreen(PlatformInputSource input, ConfigManager manager,
                         DraftSignalAdapter adapter, FieldRendererRegistry registry,
                         FieldRestorePolicy restorePolicy) {
-        this(input, manager, adapter, registry, restorePolicy, null);
+        this(input, manager, adapter, registry, restorePolicy, ConfigThemePreference.signal());
     }
 
     /**
@@ -257,7 +258,7 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      * {@link SceneThemes#install(SceneRuntime, ReadableSignal)} 安装为 runtime 默认主题，
      * 使「主题切换只重派生外观、不丢草稿/分类/滚动」可被确定性验证（P-04 口径要求切换档
      * 配方值真的不同）。安装的不是第二套解析——恰是契约 §2.4 唯一安装路径；null 时不安装，
-     * 与公共构造器行为一致（回落库默认液态玻璃档）。</p>
+     * 回落库默认主题；公共构造器则安装配置页偏好信号（默认平面档）。</p>
      *
      * @param input        平台输入源，可为 null（headless 测试）
      * @param manager      配置管理器

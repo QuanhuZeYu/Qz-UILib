@@ -152,6 +152,9 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
         }
         SavedState state = savedStates.pop();
         if (state.matrixStateSaved) {
+            // GL_TEXTURE 矩阵栈属于 active texture 单元。字体批次会切到 TEXTURE0，
+            // 必须先回到 push 时的单元，否则 unit0 下溢而入口单元不断积累未弹出的矩阵。
+            gl.activeTexture(state.activeTexture);
             popMatrixStack(GL11.GL_TEXTURE);
             popMatrixStack(GL11.GL_PROJECTION);
             popMatrixStack(GL11.GL_MODELVIEW);

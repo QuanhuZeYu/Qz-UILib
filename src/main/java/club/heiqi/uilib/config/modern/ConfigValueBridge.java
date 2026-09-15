@@ -3,6 +3,7 @@ package club.heiqi.uilib.config.modern;
 import java.util.List;
 
 import club.heiqi.config.runtime.Authority;
+import club.heiqi.config.ui.theme.ConfigThemePreference;
 import club.heiqi.config.schema.FieldConstraints;
 import club.heiqi.config.schema.FieldSpec;
 import club.heiqi.uilib.Config;
@@ -16,7 +17,8 @@ import club.heiqi.uilib.util.UiNumbers;
  * 值回灌抽象：从新栈 {@link Authority} 全量拉值回灌 Config + FontConfig 静态字段，
  * 并把非静态字段形态的进程级偏好回灌进各自信号载体：
  * {@code general.pickerDensity} → {@link PickerDensityPreferences}、
- * {@code general.backdropQuality} → {@link BackdropQualityService}。
+ * {@code general.backdropQuality} → {@link BackdropQualityService}、
+ * {@code general.configPageTheme} → {@link ConfigThemePreference}。
  *
  * <p>解决阶段 C P0 缺口：新栈 {@code ConfigManager} 保存后值只落 Authority Map + YAML，
  * 从不写 {@code FontConfig.xxx} / {@code Config.xxx} 静态字段；而运行时读取者
@@ -97,7 +99,7 @@ public final class ConfigValueBridge {
 
         // characterRuleSet 是 private，Bridge 喂完 characterFontRules 后委托 FontConfig 刷新派生态
         FontConfig.refreshDerivedRuleSet();
-        MyMod.LOG.debug("Bridge 回灌完成: Config 4 + FontConfig 20 字段 + 进程级偏好信号 2（pickerDensity / backdropQuality）");
+        MyMod.LOG.debug("Bridge 回灌完成: Config 4 + FontConfig 20 字段 + 进程级偏好信号（pickerDensity / backdropQuality / configPageTheme）");
     }
 
     /**
@@ -111,6 +113,7 @@ public final class ConfigValueBridge {
         Config.uiDebug = authority.getBool("general.uiDebug");
         Config.fontRuntimeDebug = authority.getBool("general.fontRuntimeDebug");
         Config.netTransport = authority.getString("general.netTransport");
+        ConfigThemePreference.applyConfigured(authority.getString("general.configPageTheme"));
         // 密度偏好不是静态字段而是进程级信号（P5 §1.4「配置 → 信号 → 面板」）：面板经依赖追踪消费，
         // 保存 / 磁盘热更 / 配置页 initial apply 三条既有通道都经本方法回灌，无需重开面板。
         // 值非法（手改配置/缺键）时由 PickerDensityPreferences 回落 auto（= 现状档）并留 WARN。
