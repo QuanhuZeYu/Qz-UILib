@@ -54,7 +54,10 @@ public final class LaunchSide {
      * @return 专用服务端返回 true
      */
     public boolean isDedicatedServer() {
-        return side == Side.SERVER;
+        // 不能写成 side == Side.SERVER：非 FML 宿主的 classpath 上没有 cpw.mods.fml.relauncher.Side，
+        // 读取该类的静态字段会抛 NoClassDefFoundError（实测：headless 直启在字体渲染 bootstrap 判定处崩溃）。
+        // 按名字比较走的是实例方法，只有 side != null（即 Side 类已成功加载）时才可能执行。
+        return side != null && "SERVER".equals(side.name());
     }
 
     /**

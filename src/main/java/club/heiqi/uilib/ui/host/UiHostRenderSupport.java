@@ -107,6 +107,58 @@ public final class UiHostRenderSupport {
     }
 
     /**
+     * 主 UI 帧的矩阵 / 状态作用域：与 {@link #beginMainUiFrame} 成对，{@code close()} 恢复进入前的矩阵栈。
+     */
+    public static final class MainFrameScope implements AutoCloseable {
+
+        private final int previousMatrixMode;
+        private boolean closed;
+
+        private MainFrameScope(int previousMatrixMode) {
+            this.previousMatrixMode = previousMatrixMode;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPopMatrix();
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glPopMatrix();
+            GL11.glMatrixMode(previousMatrixMode);
+        }
+    }
+
+    /**
+     * 开始一帧主 UI 渲染：建立正交投影、viewport 与混合状态。
+     *
+     * <p>为什么必须共用同一入口：投影与 viewport 是渲染的<b>帧前置语义</b>。headless 宿主若不设这一段，
+     * 顶点会落在单位矩阵下被整体裁掉，表现为「绘制无像素」（像素自检报整帧全透明）。
+     * 生产 MC 宿主（{@code McScreenBridge}）与 headless 宿主共用本方法，避免两边帧语义漂移。</p>
+     *
+     * @param nativeWidth  原生像素宽
+     * @param nativeHeight 原生像素高
+     * @return 帧作用域，必须在 finally / try-with-resources 中关闭
+     */
+    public static MainFrameScope beginMainUiFrame(int nativeWidth, int nativeHeight) {
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
+        // 投影自设的同时必须自设 viewport：窗口缩放帧若沿用上一帧旧 viewport，场景会绘制进错误区域。
+        GL11.glViewport(0, 0, nativeWidth, nativeHeight);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        prepareMainUiRenderState();
+        return new MainFrameScope(previousMatrixMode);
+    }
+
+    /**
      * 准备主 UI 层稳定的 2D OpenGL 状态。
      */
     public static void prepareMainUiRenderState() {

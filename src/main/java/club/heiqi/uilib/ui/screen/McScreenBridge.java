@@ -252,24 +252,12 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
             firstFrameLogged = true;
         }
 
-        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glPushMatrix();
-        try {
-            GL11.glLoadIdentity();
-            GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
-            // 投影自设的同时必须自设 viewport：窗口缩放帧若沿用上一帧旧 viewport，
-            // 场景会绘制进错误区域（缩放不同步/裁切错位）。
-            GL11.glViewport(0, 0, nativeWidth, nativeHeight);
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPushMatrix();
+        // 帧前置语义（正交投影 / viewport / 混合状态）与 headless 宿主共用同一入口，避免两边漂移。
+        try (UiHostRenderSupport.MainFrameScope frame =
+                UiHostRenderSupport.beginMainUiFrame(nativeWidth, nativeHeight)) {
+            paintContextCompositor.beginFrame();
+            mainLayerSnapshotService.beginFrame();
             try {
-                GL11.glLoadIdentity();
-                UiHostRenderSupport.prepareMainUiRenderState();
-                paintContextCompositor.beginFrame();
-                mainLayerSnapshotService.beginFrame();
-                try {
                     UiRenderContext context = UiHostRenderSupport.createRenderContext(nativeWidth, nativeHeight,
                             pointerX, pointerY, partialTicks, paintContextCompositor, mainLayerSnapshotService,
                             runtimeAdapters);
@@ -287,18 +275,10 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
                                 renderError);
                     }
                     throw renderError;
-                } finally {
-                    mainLayerSnapshotService.finishFrame();
-                    paintContextCompositor.finishFrame();
-                }
             } finally {
-                GL11.glMatrixMode(GL11.GL_MODELVIEW);
-                GL11.glPopMatrix();
+                mainLayerSnapshotService.finishFrame();
+                paintContextCompositor.finishFrame();
             }
-        } finally {
-            GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPopMatrix();
-            GL11.glMatrixMode(previousMatrixMode);
         }
 
         if (DEBUG) {

@@ -54,10 +54,16 @@ public class FontRenderDepthStateContractTest {
     private static void assertPreparesBeforeReplay(Path path, String methodMarker, String replayMarker)
             throws IOException {
         String method = methodBody(source(path), methodMarker);
-        int prepare = method.indexOf("UiHostRenderSupport.prepareMainUiRenderState()");
+        // 主 UI 状态只有两个合法建立点：直接调 prepareMainUiRenderState（HUD 路径），
+        // 或经共享帧入口 beginMainUiFrame（MC 屏幕与 headless 宿主共用；该入口内部即调用 prepareMainUiRenderState）。
+        // 断言不锁定实现形式，但仍钉住「回放前必须已建立主 UI 状态」这一真实回归面。
+        int directPrepare = method.indexOf("UiHostRenderSupport.prepareMainUiRenderState()");
+        int frameEntry = method.indexOf("UiHostRenderSupport.beginMainUiFrame(");
+        int prepare = directPrepare >= 0 ? directPrepare : frameEntry;
         int replay = method.indexOf(replayMarker);
 
-        assertTrue(path + " 缺少主 UI 状态准备", prepare >= 0);
+        assertTrue(path + " 缺少主 UI 状态准备（须直调 prepareMainUiRenderState 或经 beginMainUiFrame 入口）",
+                prepare >= 0);
         assertTrue(path + " 必须先准备主 UI 状态再回放内容", replay > prepare);
     }
 

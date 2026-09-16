@@ -17,13 +17,20 @@ public class McScreenBridgeTest {
     private static final Path MODERN_CONFIG_SOURCE = Paths.get(
             "src/main/java/club/heiqi/uilib/config/modern/ModernConfigScreen.java");
 
+    private static final Path HOST_RENDER_SUPPORT = Paths.get(
+            "src/main/java/club/heiqi/uilib/ui/host/UiHostRenderSupport.java");
+
     @Test
     public void modernConfigKeepsFullSurfaceAndOnlySuppressesWorldBackground() throws Exception {
         String bridge = source(BRIDGE_SOURCE);
         String modernConfig = source(MODERN_CONFIG_SOURCE);
 
-        Assert.assertTrue("投影必须继续使用完整 framebuffer 高度",
-                bridge.contains("GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D"));
+        // 投影与 viewport 已上提到共享帧入口（MC 宿主与 headless 宿主共用同一帧前置语义），
+        // 故断言改钉「桥把完整 native 盒交给该入口」，并由入口源码自身钉住 ortho 用的是完整高度。
+        Assert.assertTrue("桥必须经共享帧入口把完整 native 盒交给投影与 viewport",
+                bridge.contains("UiHostRenderSupport.beginMainUiFrame(nativeWidth, nativeHeight)"));
+        Assert.assertTrue("共享帧入口必须继续使用完整 framebuffer 高度做正交投影",
+                source(HOST_RENDER_SUPPORT).contains("GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D"));
         Assert.assertTrue("渲染上下文工厂必须继续收到完整 framebuffer 高度与指针坐标",
                 bridge.contains("UiHostRenderSupport.createRenderContext(nativeWidth, nativeHeight,")
                         && bridge.contains("pointerX, pointerY, partialTicks"));
