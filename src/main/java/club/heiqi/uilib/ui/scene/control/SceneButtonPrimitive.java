@@ -28,16 +28,28 @@ public final class SceneButtonPrimitive {
     /**
      * Button primitive 输入契约 —— 只包含行为所需数据，不包含 chrome 字段。
      *
-     * @param label   文本内容（响应式只读）
-     * @param enabled 是否启用
-     * @param onClick 动作输出回调
+     * @param label                文本内容（响应式只读）
+     * @param enabled              是否启用
+     * @param onClick              动作输出回调
+     * @param stopClickPropagation CLICK 是否止于本控件（true = 不向祖先链冒泡）。
+     *                             <b>复合容器内的按钮应声明 true</b>：CLICK 沿命中链
+     *                             target→bubble 派发，容器常在祖先上挂「整行 / 整卡点击」
+     *                             处理器，不声明就会「点按钮同时触发容器动作」（真机案例：
+     *                             列表行的行内删除按钮同时选中该行）。语义与 enabled 无关
+     *                             ——按钮区域的事件边界由本声明决定，不由禁用态决定。
      */
     @Desugar
     public record Props(
         ReadableSignal<String> label,
         ReadableSignal<Boolean> enabled,
-        Runnable onClick
+        Runnable onClick,
+        boolean stopClickPropagation
     ) {
+
+        /** 三参便捷构造：CLICK 照常冒泡（既有行为，既有调用点零改动）。 */
+        public Props(ReadableSignal<String> label, ReadableSignal<Boolean> enabled, Runnable onClick) {
+            this(label, enabled, onClick, false);
+        }
     }
 
     /**
@@ -88,6 +100,11 @@ public final class SceneButtonPrimitive {
         rt.on(root, SceneEventType.CLICK, (ev, ctx) -> {
             if (Boolean.TRUE.equals(props.enabled().get())) {
                 props.onClick().run();
+            }
+            // 止冒泡在动作之后无条件执行：同一节点的 handler 全部执行完才判定是否继续冒泡，
+            // 故按钮自身动作不丢，只是祖先（行 / 卡容器）不再收到 CLICK。
+            if (props.stopClickPropagation()) {
+                ctx.stopPropagation();
             }
         });
 

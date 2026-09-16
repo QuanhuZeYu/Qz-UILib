@@ -35,6 +35,13 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * <p>纯静态工厂 + 私有构造，控件类自身无任何实例字段（强制无状态）。
  * {@link #create} 返回 {@code Supplier<SceneNode>}，交 {@link SceneRuntime#mount} 执行一次（组件函数只跑一次）：
  * 建树 + 设静态样式 + 绑定响应式派生。不是 fluent builder，不是持有节点的 setter 对象。</p>
+ *
+ * <h3>CLICK 冒泡边界</h3>
+ * <p>CLICK 由路由器合成后沿命中链 target→bubble 派发（同一节点内 handler 全部执行，
+ * {@code stopPropagation()} 只截断向祖先的派发）。按钮默认照常冒泡，既有调用点零改动；
+ * 放在「容器自身也响应点击」的位置（列表行内按钮、卡片内按钮）时应声明
+ * {@link Props#stopClickPropagation()} 为 true——否则点按钮会连带触发容器动作，且两个
+ * 请求在同一帧写入，故障表现为「点删除却进了另一条流程」（真机案例见该参数 javadoc）。</p>
  */
 public final class SceneButton {
 
@@ -52,12 +59,16 @@ public final class SceneButton {
     /**
      * Button 输入契约 —— 全部只读 signal + 输出回调（契约 R2）。
      *
-     * @param label   文本内容（响应式只读）
-     * @param enabled 是否启用（响应式只读），false 时禁用点击/键盘并切灰态
-     * @param onClick 动作输出回调，点击或 Enter/Space 激活时触发
-     * @param variant 视觉变体，STANDARD 玻璃中性 / PRIMARY 强调 / DANGER 危险
-     * @param surface 显式表面配方（可为 null = 跟随当前主题的按钮角色）
-     * @param fontSize 控件内文字字号（UI 像素，响应式）；null = 不指定，沿用节点默认字号
+     * @param label                文本内容（响应式只读）
+     * @param enabled              是否启用（响应式只读），false 时禁用点击/键盘并切灰态
+     * @param onClick              动作输出回调，点击或 Enter/Space 激活时触发
+     * @param variant              视觉变体，STANDARD 玻璃中性 / PRIMARY 强调 / DANGER 危险
+     * @param surface              显式表面配方（可为 null = 跟随当前主题的按钮角色）
+     * @param fontSize             控件内文字字号（UI 像素，响应式）；null = 不指定，沿用节点默认字号
+     * @param stopClickPropagation CLICK 是否止于本按钮（true = 不向祖先链冒泡）。
+     *                             默认 false 保持既有冒泡语义；<b>行内 / 卡内等「容器自身也
+     *                             响应点击」的位置应声明 true</b>，否则点按钮会连带触发容器
+     *                             动作（真机案例：列表行的行内删除按钮同时选中该行）。
      */
     @Desugar
     public record Props(
@@ -66,7 +77,8 @@ public final class SceneButton {
         Runnable onClick,
         SceneButtonVariant variant,
         ReadableSignal<SceneSurfaceStyle> surface,
-        ReadableSignal<Integer> fontSize
+        ReadableSignal<Integer> fontSize,
+        boolean stopClickPropagation
     ) {
         /**
          * 兼容三参构造器：variant 默认 STANDARD、配方跟随主题，保持旧调用方零改动。
@@ -76,7 +88,7 @@ public final class SceneButton {
          * @param onClick 点击回调
          */
         public Props(ReadableSignal<String> label, ReadableSignal<Boolean> enabled, Runnable onClick) {
-            this(label, enabled, onClick, SceneButtonVariant.STANDARD, null);
+            this(label, enabled, onClick, SceneButtonVariant.STANDARD, null, null, false);
         }
 
         /**
@@ -89,7 +101,7 @@ public final class SceneButton {
          */
         public Props(ReadableSignal<String> label, ReadableSignal<Boolean> enabled, Runnable onClick,
                 SceneButtonVariant variant) {
-            this(label, enabled, onClick, variant, null, null);
+            this(label, enabled, onClick, variant, null, null, false);
         }
 
         /**
@@ -103,7 +115,7 @@ public final class SceneButton {
          */
         public Props(ReadableSignal<String> label, ReadableSignal<Boolean> enabled, Runnable onClick,
                 SceneButtonVariant variant, ReadableSignal<SceneSurfaceStyle> surface) {
-            this(label, enabled, onClick, variant, surface, null);
+            this(label, enabled, onClick, variant, surface, null, false);
         }
 
         /**
@@ -135,6 +147,8 @@ public final class SceneButton {
             private ReadableSignal<SceneSurfaceStyle> surface;
             /** 控件内文字字号；null = 不指定，沿用节点默认字号。 */
             private ReadableSignal<Integer> fontSize;
+            /** CLICK 是否止于按钮；默认 false = 照常冒泡（与旧构造路径一致）。 */
+            private boolean stopClickPropagation;
 
             /**
              * 创建构建器。
@@ -174,6 +188,20 @@ public final class SceneButton {
             }
 
             /**
+             * 设置 CLICK 是否止于本按钮。
+             *
+             * <p>行内 / 卡内等「容器自身也响应点击」的位置传 {@code true}，避免点按钮时
+             * CLICK 冒泡到容器、连带触发容器动作。</p>
+             *
+             * @param stopClickPropagation true = 不向祖先链冒泡
+             * @return 当前 builder
+             */
+            public Builder stopClickPropagation(boolean stopClickPropagation) {
+                this.stopClickPropagation = stopClickPropagation;
+                return this;
+            }
+
+            /**
              * 设置控件内文字字号（构建期定值）。
              *
              * <p>只影响本控件自己画的文字（内部 label / caret / 度量）；业务方塞进来的
@@ -206,7 +234,7 @@ public final class SceneButton {
              * @return Props 实例
              */
             public Props build() {
-                return new Props(label, enabled, onClick, variant, surface, fontSize);
+                return new Props(label, enabled, onClick, variant, surface, fontSize, stopClickPropagation);
             }
         }
     }
@@ -225,7 +253,7 @@ public final class SceneButton {
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
             SceneButtonPrimitive.Props primitiveProps = new SceneButtonPrimitive.Props(
-                props.label(), props.enabled(), props.onClick());
+                props.label(), props.enabled(), props.onClick(), props.stopClickPropagation());
             SceneButtonPrimitive.Result result = SceneButtonPrimitive.create(rt, primitiveProps);
             SceneNode root = result.root();
             SceneInteractionState interaction = result.interaction();

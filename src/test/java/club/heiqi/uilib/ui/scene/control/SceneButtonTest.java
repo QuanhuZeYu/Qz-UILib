@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.input.SceneEventType;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -695,6 +696,42 @@ public class SceneButtonTest {
         PaintCommand text = firstOfType(plan.getCommands(), PaintCommandType.TEXT);
         Assert.assertEquals("实色档文字取主题正文色",
                 SceneTheme.solidDark().foreground(), text.getTextStyle().getColor());
+    }
+
+    /**
+     * CLICK 冒泡边界：容器内的按钮声明 {@code stopClickPropagation(true)} 后，CLICK 不再到达
+     * 祖先容器（「整行 / 整卡点击」处理器不被误触发），按钮自身动作照常执行；未声明时保持既有
+     * 冒泡语义（容器同时收到 CLICK）——对照组钉住默认行为不漂移。
+     *
+     * <p>真机案例：列表行承担「选中该行」，行内删除按钮未声明止冒泡时点删除会同时选中该行，
+     * 选中信号在下一帧被消费 → 误入另一条流程。</p>
+     */
+    @Test
+    public void stopClickPropagationKeepsClickAwayFromAncestors() {
+        final AtomicInteger containerClicks = new AtomicInteger(0);
+        runtime.on(sceneRoot, SceneEventType.CLICK, (ev, ctx) -> containerClicks.incrementAndGet());
+        runtime.flush();
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // 对照组：setUp 挂载的按钮未声明止冒泡
+        harness.click(buttonRoot);
+        Assert.assertEquals("未声明：CLICK 冒泡到容器", 1, containerClicks.get());
+        Assert.assertEquals("未声明：按钮动作执行", 1, clickCount.get());
+
+        // 实验组：同容器内再挂一个声明止冒泡的按钮
+        final AtomicInteger stoppedClicks = new AtomicInteger(0);
+        SceneButton.Props stoppedProps = SceneButton.Props.builder(labelSignal)
+                .onClick(stoppedClicks::incrementAndGet)
+                .stopClickPropagation(true)
+                .build();
+        MountHandle stopped = runtime.mount(sceneRoot, SceneButton.create(runtime, stoppedProps));
+        runtime.flush();
+        harness.mountRoot(sceneRoot, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        containerClicks.set(0);
+        harness.click(stopped.getRoot());
+        Assert.assertEquals("声明止冒泡：容器不再收到 CLICK", 0, containerClicks.get());
+        Assert.assertEquals("声明止冒泡：按钮动作照常执行", 1, stoppedClicks.get());
     }
 }
 
