@@ -1,7 +1,7 @@
 # 规划-headless 运行时（Qt offscreen 式）与验收设施（立项草案）
 
-**状态：** 立项**草案**（2026-09-17，第二轮：按用户补充的目的重定位）。M0 技术闸门已在本地实测打通（F7）；
-§六 七个岔路待用户裁定后冻结。裁定前本档不构成施工依据。
+**状态：** **已冻结**（2026-09-17，第三轮：§六 七个岔路已由用户裁定，见 §六）。M0 技术闸门已在本地实测打通（F7）；
+本档自冻结起构成 M1 施工依据，施工中新出现的岔路回填 §六 并标注日期。
 **定位（用户补充，2026-09-17）：** 对齐 **Qt `-platform offscreen`** 的形态——**同一份 UI 代码**在无游戏、无窗口的
 进程里装配、布局、绘制，可脚本化注入输入、可导出像素。**首要用途是 agent 与开发者的快速迭代**
 （不开游戏、改一行→秒级出图→看图判断），**测试/CI 回归是顺带用途，不是主用途**。
@@ -164,6 +164,49 @@
     `Fontconfig head is null`，`getAllFonts` / `createFont` / 逻辑字体一起失效，**没有绕过路径**。
 - 这两笔成本**只付一次**的性质，支持「常驻进程 + 请求出图」作为 agent 工作流的目标形态（§六-3）。
 
+### F11 运行期 classpath 里没有 LWJGL2（实测，2026-09-17）
+
+用 init script 探针（`--no-configuration-cache`，不改仓库）打印四个 configuration 的文件名：
+
+| configuration | 文件数 | 含 lwjgl 的文件 |
+|---|---|---|
+| `compileClasspath` | 115 | `lwjgl-2.9.4-nightly-20150209.jar`、`lwjgl_util-2.9.4-nightly-20150209.jar`、`lwjgl-platform-…-natives-{linux,osx,windows}.jar`、`librarylwjglopenal-20100824.jar`、`lwjgl3ify-3.0.31-{api,dev}.jar` |
+| `testCompileClasspath` | 63 | 同上（除 `-api`） |
+| `runtimeClasspath` | 100 | 仅 `librarylwjglopenal-20100824.jar`、`lwjgl3ify-3.0.31-dev.jar` |
+| `testRuntimeClasspath` | 105 | 仅 `librarylwjglopenal-20100824.jar`、`lwjgl3ify-3.0.31-dev.jar` |
+
+两条结论：
+
+1. **编译期零改动成立**：生产渲染用的 `org.lwjgl.opengl.GL11` 在 `compileClasspath` 与 `testCompileClasspath` **都已在**，
+   落 main 域或 test 域都**不需要新增编译依赖**；
+2. **运行期不成立**：LWJGL2 主 jar 与 natives **不在任何 runtime classpath 上**（真机由 MC 客户端 / lwjgl3ify 供给）——
+   headless 直启必须自带补充 classpath（LWJGL2 + natives）。这正是 M0 探针当初必须用 init script 注入的原因，
+   也是 §六-2 与 M1 的必做项，而不是可选项。
+
+### F12 打包链形状（实测，2026-09-17）
+
+`tasks.withType(AbstractArchiveTask)` 实测出 7 个产物任务，主线是：
+
+```
+jar (classifier dev-preshadow, src/main/java)
+  → shadowJar (classifier dev, ShadowJar ← Jar；输入含 main / test / mcLauncher / patchedMc / injectedTags)
+      → reobfJar (发布 jar；输入 = 上面的 dev jar)
+```
+
+| 任务 | 类型 | 产物 |
+|---|---|---|
+| `jar` | `org.gradle.api.tasks.bundling.Jar` | `…-dev-preshadow.jar` |
+| `shadowJar` | `com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar`（继承 `Jar`） | `…-dev.jar` |
+| `sourcesJar` / `apiJar` | `Jar` | `…-sources.jar` / `…-api.jar` |
+| `reobfJar` | `com.gtnewhorizons.retrofuturagradle.mcp.ReobfuscatedJar`（**不是 `Jar` 子类**） | `qz_uilib-….jar`（发布物） |
+
+两点施工含义：
+
+1. **排除写在 `tasks.withType<Jar>` 上即可覆盖 `reobfJar`**：`reobfJar` 自身没有 CopySpec / `exclude`，但它吃的是
+   `shadowJar` 的产物，排除随输入传播——M1 必须用 `jar tf` 逐产物实测确认，不靠推断；
+2. **test 域不是「物理进不了包」**：`shadowJar` 的输入里含 `test` 源集输出——所以隔离一律靠显式排除 + 门禁，
+   不能靠目录位置（这推翻了「落 test 域天然隔离」的先前假设）。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**
@@ -231,9 +274,17 @@
 | 测试域路径 | `gradlew test --tests …` | 12~22 s | 回归用（P3） |
 
 四者**共用同一套 headless 装配与后端**，区别只在启动壳。
-**设施落点建议 main 域 `internal.devtools.headless`**（与 `playground`/`glass` 同层）——因为
-`org.lwjgl.opengl.GL11` **本来就是 main 的编译依赖**（生产代码在用），落 main 域后**不再需要新增 classpath 依赖**，
-只剩「natives 运行时供给」（natives 已在本地 Gradle 缓存，需一次解压到固定目录 + `-Djava.library.path`）。
+
+**设施落点（§六-1 已裁定）**：main 域 `internal.devtools.headless`（与 `playground`/`glass` 同层），
+**硬约束是不进打包产物**：
+
+- **编译期零依赖改动**（F11 实测）：`org.lwjgl.opengl.GL11` 已在 `compileClasspath`；
+- **打包隔离**：`tasks.withType<Jar>` 上 `exclude("club/heiqi/uilib/internal/devtools/headless/**")`——覆盖
+  `jar` / `shadowJar` / `sourcesJar` / `apiJar`，并经 dev jar 传播到 `reobfJar`（F12）；
+- **隔离门禁**：新增 `verifyHeadlessNotPackaged` 挂到 `check`，逐个打开上述产物断言不含该包（对照 `addon.late.gradle`
+  的 `verifyRunClasspathIsolation` 先例）——排除是意图，门禁才是保证；
+- **运行期补充 classpath**：LWJGL2 + natives 不在 runtime classpath（F11），直启壳需自带（§六-2 的解压任务产出固定目录，
+  `-Djava.library.path` 指向它）。
 
 ## 五、已声明的边界（不能声称的）
 
@@ -249,24 +300,38 @@
    否则出图出现豆腐块或直接初始化失败，**不得当作代码缺陷**；
 7. Linux 无桌面环境下需要 Xvfb（与 Qt offscreen 的实质差距，见 §一）。
 
-## 六、待用户裁定（冻结前必须收口）
+## 六、岔路裁定（2026-09-17 用户裁定，已冻结）
 
-| # | 岔路 | 建议 |
+用户口径（原文）：「1 不进生产包放哪都可以」→「只要不影响打包体积放 main 域也可以」；「其余采纳建议」。
+
+| # | 岔路 | 裁定 |
 |---|---|---|
-| 1 | **设施归属**：main 域 `internal.devtools.headless` vs test 域 testkit | **main 域**：新定位下 agent 要直启出图，test 域会强制走 Gradle test 壳；且 LWJGL2 本就是 main 依赖 |
-| 2 | **natives 供给**：Gradle 任务解压到固定目录 + 文档化路径 vs 运行期自解压 | Gradle 任务一次解压 + 文档化 |
-| 3 | **快路径形态**：直启 JVM vs 常驻进程 vs Gradle `JavaExec` | 先直启（M1 落地），常驻作为 M4 候选 |
-| 4 | **首批可渲染范围**：playground 页 / 核心控件 / 配置页 / chat3 / HUD | M1 先做 playground 首页 + 核心控件冒烟，其余分批 |
-| 5 | **分辨率档位集合** | 先 360P / 720P / 1080P / 2K 四档 |
-| 6 | **软光栅去留** | 保留为「无 GL 回退」，退出主路径；其语义测试不受影响 |
-| 7 | **CI 策略（已降级为可选）** | 本轮可不接；需要时再开独立任务 |
+| 1 | **设施归属** | **main 域 `internal.devtools.headless`**（与 `playground`/`glass` 同层），**且不影响打包体积**：`tasks.withType<Jar>` 排除该包 + `check` 挂 `verifyHeadlessNotPackaged` 门禁（口径见 §四 E，传播路径见 F12）。位置由用户明确为次要项，「不进生产包 / 不影响打包体积」是硬约束 |
+| 2 | **natives 供给** | 采纳建议：Gradle 任务一次解压到固定目录 + 文档化路径，运行期以 `-Djava.library.path` 指过去（F11：runtime classpath 不含 natives，必须自带） |
+| 3 | **快路径形态** | 采纳建议：M1 先直启 JVM（`java -cp @cp <入口> --page=… --size=… --out=…`），常驻进程留作 M4 候选（F10：150 MiB 字体常驻是常驻模式的收益来源） |
+| 4 | **首批可渲染范围** | 采纳建议：M1 只做 playground 首页 + 核心控件冒烟；配置页 / chat3 / HUD 分批进 M4 |
+| 5 | **分辨率档位** | 采纳建议：360P / 720P / 1080P / 2K 四档；854×480 / 960×540 / 1600×900 按需扩 |
+| 6 | **软光栅去留** | 采纳建议：保留为「无 GL 回退」（A2），退出主路径；其语义测试与既有出图不受影响 |
+| 7 | **CI 策略** | 采纳建议：本轮不接 CI，需要时再开独立任务（F5 的 Xvfb + Mesa 环境仍可用） |
+
+裁定顺带修正的三条口径（施工时必须遵守）：
+
+1. 「落 main 域 ⇒ 零依赖改动」**只在编译期成立**；运行期必须补 LWJGL2 + natives（F11）；
+2. 「落 test 域天然不进包」**不成立**（F12：`shadowJar` 吃 test 输出）——隔离一律靠排除 + 门禁；
+3. 门禁必须遍历 `AbstractArchiveTask` 产物，而不是硬编码任务名——构建链新增打包任务时硬编码门禁会静默失效。
 
 ## 七、建议分批
 
 - **M0 闸门（可行性）**：**已通过**（F7，本地）。CI 侧不再是闸门（降级为可选）。
 - **M1 出图入口与最小闭环（P1 核心）**：main 域 `internal.devtools.headless`——上下文 + FBO + `UiRenderContext`
-  复用 + PNG 落盘 + 自检信号 + 命令行参数（页面/尺寸/输出）+ natives 解压任务；**目标：一条命令渲染 playground
-  首页出图，冷启动 ≤ 3 s**。
+  复用 + PNG 落盘 + 自检信号 + 命令行参数（页面/尺寸/输出）；**目标：一条命令渲染 playground 首页出图，冷启动 ≤ 3 s**。
+  落地顺序（每步可独立验证，先证「不影响打包」再往里加代码）：
+  1. **打包隔离 + 门禁先行**（§六-1 硬约束）：`tasks.withType<Jar>` 排除该包 + `verifyHeadlessNotPackaged` 挂 `check`，
+     用 `jar tf` 对 `jar` / `shadowJar` / `sourcesJar` / `apiJar` / `reobfJar` 逐个产物确认（先放一个哨兵类即可验证链路）；
+  2. **natives 解压任务**（§六-2）：把 LWJGL2 natives 解到固定目录（建议 `build/headless/natives`），文档化路径；
+  3. **headless 运行期 classpath**（F11）：一次性导出「main 输出 + LWJGL2 主 jar + natives」到 classpath 文件，供直启壳使用
+     （F10：绕开 Gradle 才是「快」的关键）；
+  4. **入口与最小闭环**：上下文 + FBO + PNG + 自检信号（墨水率 / 缺字形 / `glGetError`）+ 命令行参数；冷启动实测回填 §八-4。
 - **M2 渲染地基**：字体 GL 尾端接入（`FontBatchRenderer` 的真 GL 路径）；出图完整性显式覆盖
   `drawText` / `drawSegments` / `drawImage`（后两者 default no-op，漏接不报错）；与既有软光栅出图对拍一次。
 - **M3 输入设备模型**：C1~C5 + 脚本化输入（P2）。
@@ -280,7 +345,7 @@
 | 1 | LWJGL2 `Display.create()` 在 JDK 17 下能否初始化 | **已实测通过**（F7） |
 | 2 | `UiRenderContext` 在无 MC 环境下的可构造性 | **已实测通过**（F7） |
 | 3 | 2K 一帧的 GL 侧耗时 | **已实测**：534 ms（本机 GPU） |
-| 4 | 快路径（直启 JVM）的真实冷启动耗时 | **未实测**，M1 量化（Gradle 路径为 12~22 s） |
+| 4 | 快路径（直启 JVM）的真实冷启动耗时 | **未实测**，M1 量化（Gradle 路径为 12~22 s）；前置约束已实测：runtime classpath 无 LWJGL2，需自带（F11） |
 | 5 | 完整 scene（含玻璃/裁剪/字体）单帧耗时 | **未实测**，M2 出图后量化 |
 | 6 | 无字体环境下的失败语义与自检表现 | **未实测**（已知 `ERROR-20260904` 的崩溃形态） |
 | 7 | 非 Windows 平台（Linux/llvmpipe、macOS） | **未实测**（本地 agent 场景不阻塞） |
