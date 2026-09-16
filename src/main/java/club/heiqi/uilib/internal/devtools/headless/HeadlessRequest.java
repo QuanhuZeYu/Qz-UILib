@@ -22,20 +22,31 @@ public final class HeadlessRequest {
     private static final int MAX_EDGE = 16384;
     /** 默认宿主背景：不透明中性深色，代表 MC 屏幕底色。 */
     public static final int DEFAULT_BACKGROUND = 0xFF0E1014;
+    /** 文本探针页面标识：渲染 {@link #text()} 一行文本，供字体路径对照与诊断。 */
+    public static final String TEXT_PROBE_PAGE = "text-probe";
+    /** 文本探针默认文本：中英数混排，覆盖 CJK 与拉丁字形。 */
+    public static final String DEFAULT_PROBE_TEXT = "Qz UILib 对拍样本 Ag123";
 
     private final String pageId;
     private final int width;
     private final int height;
     private final int frames;
+    private final int settleFrames;
+    private final int maxFrames;
     private final int background;
+    private final String text;
     private final Path output;
 
-    private HeadlessRequest(String pageId, int width, int height, int frames, int background, Path output) {
+    private HeadlessRequest(String pageId, int width, int height, int frames, int settleFrames, int maxFrames,
+            int background, String text, Path output) {
         this.pageId = pageId;
         this.width = width;
         this.height = height;
         this.frames = frames;
+        this.settleFrames = settleFrames;
+        this.maxFrames = maxFrames;
         this.background = background;
+        this.text = text;
         this.output = output;
     }
 
@@ -59,14 +70,29 @@ public final class HeadlessRequest {
         return height;
     }
 
-    /** @return 推进帧数（首帧物化、后续帧稳定） */
+    /** @return 最少推进帧数（首帧物化；此后才开始稳定判据） */
     public int frames() {
         return frames;
+    }
+
+    /** @return 稳定判据：连续多少帧像素指纹一致即停止推进 */
+    public int settleFrames() {
+        return settleFrames;
+    }
+
+    /** @return 帧数硬上限（不收敛时的兜底） */
+    public int maxFrames() {
+        return maxFrames;
     }
 
     /** @return 宿主背景色（ARGB） */
     public int background() {
         return background;
+    }
+
+    /** @return 文本探针页面渲染的文本（{@link #TEXT_PROBE_PAGE} 使用） */
+    public String text() {
+        return text;
     }
 
     /** @return PNG 产物路径 */
@@ -78,6 +104,8 @@ public final class HeadlessRequest {
     public String summary() {
         return "page=" + pageId + " size=" + width + "x" + height + " frames=" + frames
                 + " background=" + String.format("%08X", Integer.valueOf(background))
+                + " settle=" + settleFrames + " maxFrames=" + maxFrames
+                + (TEXT_PROBE_PAGE.equals(pageId) ? " text=\"" + text + "\"" : "")
                 + " out=" + output;
     }
 
@@ -88,7 +116,10 @@ public final class HeadlessRequest {
         private int width = 1280;
         private int height = 720;
         private int frames = 2;
+        private int settleFrames = 2;
+        private int maxFrames = 60;
         private int background = DEFAULT_BACKGROUND;
+        private String text = DEFAULT_PROBE_TEXT;
         private Path output = Paths.get("build", "reports", "headless", "shot.png");
 
         private Builder() {
@@ -107,15 +138,33 @@ public final class HeadlessRequest {
             return this;
         }
 
-        /** @param value 帧数，至少 1 * @return this */
+        /** @param value 最少帧数，至少 1 * @return this */
         public Builder frames(int value) {
             this.frames = value;
+            return this;
+        }
+
+        /** @param value 稳定判据帧数，至少 1 * @return this */
+        public Builder settle(int value) {
+            this.settleFrames = value;
+            return this;
+        }
+
+        /** @param value 帧数硬上限，需 >= 最少帧数 * @return this */
+        public Builder maxFrames(int value) {
+            this.maxFrames = value;
             return this;
         }
 
         /** @param argb 宿主背景色（ARGB），0x00000000 表示透明 * @return this */
         public Builder background(int argb) {
             this.background = argb;
+            return this;
+        }
+
+        /** @param value 文本探针文本 * @return this */
+        public Builder text(String value) {
+            this.text = value;
             return this;
         }
 
@@ -137,10 +186,17 @@ public final class HeadlessRequest {
             if (frames < 1) {
                 throw new IllegalArgumentException("frames 至少为 1");
             }
+            if (settleFrames < 1) {
+                throw new IllegalArgumentException("settle 至少为 1");
+            }
+            if (maxFrames < frames) {
+                throw new IllegalArgumentException("maxFrames 不得小于 frames：" + maxFrames + " < " + frames);
+            }
             if (output == null) {
                 throw new IllegalArgumentException("output 不可为空");
             }
-            return new HeadlessRequest(pageId, width, height, frames, background, output);
+            return new HeadlessRequest(pageId, width, height, frames, settleFrames, maxFrames, background,
+                    text == null ? "" : text, output);
         }
     }
 }

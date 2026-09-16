@@ -64,6 +64,30 @@ public final class HeadlessDrawSummary {
         maxY = Math.max(maxY, bottom);
     }
 
+    /** 清零所有计数与几何并集：摘要按「最后一帧」语义对外，多帧推进时不累计。 */
+    void reset() {
+        fillRectCount = 0;
+        drawSurfaceCount = 0;
+        drawBorderCount = 0;
+        drawTextCount = 0;
+        drawSegmentsCount = 0;
+        drawImageCount = 0;
+        clipPushCount = 0;
+        clipPopCount = 0;
+        groupOpacityCount = 0;
+        textDemandCount = 0;
+        textDemandChars = 0;
+        textChars = 0;
+        segmentsCount = 0;
+        rectCommands = 0;
+        rectsOutsideViewport = 0;
+        hasBounds = false;
+        minX = Integer.MAX_VALUE;
+        minY = Integer.MAX_VALUE;
+        maxX = Integer.MIN_VALUE;
+        maxY = Integer.MIN_VALUE;
+    }
+
     void recordFillRect(int left, int top, int right, int bottom) {
         fillRectCount++;
         recordRect(left, top, right, bottom);

@@ -31,9 +31,15 @@ final class RecordingUiRenderContext extends UiRenderContext {
         this.summary = new HeadlessDrawSummary(width, height);
     }
 
-    /** @return 本帧命令面摘要 */
+    /** @return 最近一帧的命令面摘要 */
     HeadlessDrawSummary summary() {
         return summary;
+    }
+
+    /** 开始新一帧：清零上一帧的指纹，保证摘要与像素说的是同一帧。 */
+    void resetFrame() {
+        summary.reset();
+        inText = false;
     }
 
     @Override

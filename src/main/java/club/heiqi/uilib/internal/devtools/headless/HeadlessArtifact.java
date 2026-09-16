@@ -17,10 +17,11 @@ public final class HeadlessArtifact {
     private final Path output;
     private final long pngBytes;
     private final long elapsedMillis;
+    private final int renderedFrames;
 
     HeadlessArtifact(HeadlessRequest request, HeadlessCapabilities capabilities,
             HeadlessSelfCheck.Report selfCheck, HeadlessDrawSummary drawSummary, Path output, long pngBytes,
-            long elapsedMillis) {
+            long elapsedMillis, int renderedFrames) {
         this.request = request;
         this.capabilities = capabilities;
         this.selfCheck = selfCheck;
@@ -28,6 +29,7 @@ public final class HeadlessArtifact {
         this.output = output;
         this.pngBytes = pngBytes;
         this.elapsedMillis = elapsedMillis;
+        this.renderedFrames = renderedFrames;
     }
 
     /** @return 源请求 */
@@ -60,6 +62,11 @@ public final class HeadlessArtifact {
         return pngBytes;
     }
 
+    /** @return 实际渲染帧数（稳定判据收敛时的帧数；等于上限表示未收敛） */
+    public int renderedFrames() {
+        return renderedFrames;
+    }
+
     /** @return 本次 capture 的墙钟耗时（毫秒） */
     public long elapsedMillis() {
         return elapsedMillis;
@@ -77,6 +84,11 @@ public final class HeadlessArtifact {
         for (String note : selfCheck.notes()) {
             sb.append("[headless]   - ").append(note).append('\n');
         }
+        sb.append("[headless] frames: ").append(renderedFrames).append('/').append(request.maxFrames());
+        if (renderedFrames >= request.maxFrames()) {
+            sb.append("（达到帧上限仍未收敛：检查是否有持续变化的动画/时间源）");
+        }
+        sb.append('\n');
         sb.append("[headless] elapsed: ").append(elapsedMillis).append(" ms");
         return sb.toString();
     }

@@ -87,6 +87,9 @@ public final class HeadlessSession implements AutoCloseable {
         if ("playground".equals(request.pageId())) {
             return new TestPlaygroundHost(new HeadlessInputSource(request.width(), request.height()));
         }
+        if (HeadlessRequest.TEXT_PROBE_PAGE.equals(request.pageId())) {
+            return new TextProbeHost(request.text(), request.width(), request.height());
+        }
         throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
                 "未知页面：" + request.pageId() + "（当前仅提供 playground）");
     }
@@ -103,7 +106,15 @@ public final class HeadlessSession implements AutoCloseable {
         ensureOpen();
         long startedNanos = System.nanoTime();
         int glError = 0;
-        for (int frame = 0; frame < request.frames(); frame++) {
+        int[] argb = null;
+        int lastFingerprint = 0;
+        int stableFrames = 0;
+        int renderedFrames = 0;
+        // 帧循环 = 「最少帧数」+「稳定判据」：字形是异步生成的，固定帧数出图会在字形未就绪时产出残缺内容
+        // （实测同一次文本探针：1 帧全空、2 帧只剩首个字形、≥10 帧收敛）。稳定判据用像素指纹，
+        // 连续 settleFrames 帧指纹一致即停；maxFrames 是硬上限，避免不收敛时死循环。
+        while (renderedFrames < request.maxFrames()) {
+            renderContext.resetFrame();
             surface.beginFrame(request.background());
             // 帧前置语义（正交投影 / viewport / 混合状态）与生产 MC 宿主共用 UiHostRenderSupport.beginMainUiFrame：
             // headless 自建这一段的后果是顶点落在单位矩阵下被整体裁掉——表现为「绘制无像素」而不是报错。
@@ -117,21 +128,35 @@ public final class HeadlessSession implements AutoCloseable {
                     throw failure;
                 } catch (RuntimeException e) {
                     throw new HeadlessFailure(HeadlessFailure.Stage.FRAME,
-                            "第 " + (frame + 1) + " 帧推进失败：" + e.getMessage(), e);
+                            "第 " + (renderedFrames + 1) + " 帧推进失败：" + e.getMessage(), e);
                 } finally {
                     mainLayerSnapshotService.finishFrame();
                     paintContextCompositor.finishFrame();
                 }
             }
+            renderedFrames++;
             int frameError = surface.consumeGlError();
             if (frameError != 0 && glError == 0) {
                 glError = frameError;
             }
+            if (renderedFrames < request.frames()) {
+                continue;
+            }
+            argb = surface.readPixels();
+            int fingerprint = fingerprintOf(argb);
+            if (fingerprint == lastFingerprint) {
+                stableFrames++;
+                if (stableFrames >= request.settleFrames()) {
+                    break;
+                }
+            } else {
+                stableFrames = 0;
+                lastFingerprint = fingerprint;
+            }
         }
-        int[] argb = surface.readPixels();
-        int readError = surface.consumeGlError();
-        if (readError != 0 && glError == 0) {
-            glError = readError;
+        if (argb == null) {
+            throw new HeadlessFailure(HeadlessFailure.Stage.FRAME,
+                    "未产出任何帧（frames=" + request.frames() + "，maxFrames=" + request.maxFrames() + "）");
         }
         HeadlessDrawSummary drawSummary = renderContext.summary();
         HeadlessSelfCheck.Report report = HeadlessSelfCheck.inspect(argb, request.width(), request.height(), glError,
@@ -139,7 +164,7 @@ public final class HeadlessSession implements AutoCloseable {
         long bytes = PngWriter.write(request.output(), argb, request.width(), request.height());
         long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
         return new HeadlessArtifact(request, capabilities, report, drawSummary, request.output(), bytes,
-                elapsedMillis);
+                elapsedMillis, renderedFrames);
     }
 
     /** @return 本次会话的能力快照 */
@@ -150,6 +175,21 @@ public final class HeadlessSession implements AutoCloseable {
     /** @return 本次会话的请求 */
     public HeadlessRequest request() {
         return request;
+    }
+
+    /**
+     * 像素指纹：按步长采样做 FNV 哈希，用于判断「这一帧与上一帧是否已经一致」。
+     *
+     * @param argb 行主序 ARGB 像素
+     * @return 指纹值
+     */
+    private static int fingerprintOf(int[] argb) {
+        int hash = 0x811C9DC5;
+        int step = Math.max(1, argb.length / 4096);
+        for (int i = 0; i < argb.length; i += step) {
+            hash = (hash ^ argb[i]) * 0x01000193;
+        }
+        return hash;
     }
 
     private void ensureOpen() {

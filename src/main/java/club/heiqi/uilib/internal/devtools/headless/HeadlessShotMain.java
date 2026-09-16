@@ -41,7 +41,10 @@ public final class HeadlessShotMain {
         int width = 1280;
         int height = 720;
         int frames = 2;
+        int settle = 2;
+        int maxFrames = 60;
         int background = HeadlessRequest.DEFAULT_BACKGROUND;
+        String text = HeadlessRequest.DEFAULT_PROBE_TEXT;
         String out = null;
         boolean probeOnly = false;
         try {
@@ -57,8 +60,14 @@ public final class HeadlessShotMain {
                     out = arg.substring("--out=".length());
                 } else if (arg.startsWith("--bg=")) {
                     background = parseBackground(arg.substring("--bg=".length()));
+                } else if (arg.startsWith("--text=")) {
+                    text = arg.substring("--text=".length());
                 } else if (arg.startsWith("--frames=")) {
                     frames = Integer.parseInt(arg.substring("--frames=".length()));
+                } else if (arg.startsWith("--settle=")) {
+                    settle = Integer.parseInt(arg.substring("--settle=".length()));
+                } else if (arg.startsWith("--max-frames=")) {
+                    maxFrames = Integer.parseInt(arg.substring("--max-frames=".length()));
                 } else if (arg.startsWith("--size=")) {
                     String[] parts = arg.substring("--size=".length()).split("[xX]");
                     if (parts.length != 2) {
@@ -83,7 +92,7 @@ public final class HeadlessShotMain {
         HeadlessRequest request;
         try {
             request = HeadlessRequest.builder().page(page).size(width, height).frames(frames)
-                    .background(background).output(output).build();
+                    .background(background).text(text).settle(settle).maxFrames(maxFrames).output(output).build();
         } catch (RuntimeException e) {
             System.err.println("[headless] 请求非法：" + e.getMessage());
             return 2;
@@ -120,7 +129,7 @@ public final class HeadlessShotMain {
     }
 
     private static void printUsage(PrintStream out) {
-        out.println("用法: HeadlessShotMain [--page=playground] [--size=WxH] [--out=path] [--frames=N]"
-                + " [--bg=RRGGBB|transparent] [--probe]");
+        out.println("用法: HeadlessShotMain [--page=playground|text-probe] [--size=WxH] [--out=path]"
+                + " [--frames=N] [--settle=N] [--max-frames=N] [--bg=RRGGBB|transparent] [--text=…] [--probe]");
     }
 }
