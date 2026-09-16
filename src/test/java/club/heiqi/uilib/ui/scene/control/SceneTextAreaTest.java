@@ -80,11 +80,13 @@ public class SceneTextAreaTest {
      */
     private static final SceneSurfaceStyle INPUT_SURFACE =
             SceneThemes.DEFAULT.surface(SceneTheme.Role.INPUT);
-    /** 表面四态取值（idle/hover/disabled 染色与 idle 缘色）。 */
+    /** 表面四态取值（idle/hover/disabled 染色与 idle/hover 缘色）。 */
     private static final int BG_ENABLED = INPUT_SURFACE.getIdle().getTint();
     private static final int BG_HOVER = INPUT_SURFACE.getHovered().getTint();
     private static final int BG_DISABLED = INPUT_SURFACE.getDisabled().getTint();
     private static final int BORDER_ENABLED = INPUT_SURFACE.getIdle().getEdge();
+    /** hover 档自带缘色（绑定器在未聚焦的非禁用态取当前档的 edge，静态设值已被表面绑定接管）。 */
+    private static final int BORDER_HOVER = INPUT_SURFACE.getHovered().getEdge();
     /** 聚焦缘色来自配方 focusEdge（表面绑定器覆盖缘色），与 caret 的主题聚焦色是两条通道。 */
     private static final int BORDER_FOCUS = INPUT_SURFACE.getFocusEdge();
     /** 浮点比较容差。 */
@@ -1167,11 +1169,15 @@ public class SceneTextAreaTest {
     }
 
     /**
-     * 表面状态来自 INPUT 配方：idle 染色/缘色、focus 只覆盖非禁用态缘色、disabled 压过一切。
+     * 表面状态来自 INPUT 配方：idle 染色/缘色、hover 档由 content 命中激活、focus 只覆盖非禁用态缘色、
+     * disabled 压过一切。
      *
-     * <p>hover 档对本控件不可达：表面绑定读的是 content 的 {@link SceneInteractionState}，
-     * 而指针命中的最深目标恒为行节点（行 hitTestable=true），hover 不写 content。这是既有接线
-     * （B2 把 interaction 挂 content），本实例不改；此处显式钉住该现状，避免误以为 hover 已覆盖。</p>
+     * <p>hover 档可达的前提是「视觉行退出命中候选」（见 {@code SceneTextAreaPrimitive#buildVisualRow}）：
+     * 表面绑定读的是 content 的 {@link SceneInteractionState}，只有指针命中的最深目标落在 content 上，
+     * hover 才写进该容器。行节点若可命中，命中最深恒为行、hover 档永不激活 —— 本用例此前钉住的正是
+     * 那处错配现状，本轮随修复改写为正向断言。hover 档不止改染色，也把缘色换成该档 edge；聚焦后
+     * 缘色转由 focusEdge 接管（与是否 hover 无关）。控件 root / viewport 的内边距带命中的是父节点而非
+     * content，不在 hover 档覆盖范围内。</p>
      */
     @Test
     public void surfaceFollowsInputRecipeStatesWithFocusEdgeAndDisabledPriority() {
@@ -1182,12 +1188,15 @@ public class SceneTextAreaTest {
 
         harness.moveTo(contentNode());
         runtime.flush();
-        Assert.assertEquals("指针悬停 content 不改变染色（命中最深为行，hover 不写 content）",
-                BG_ENABLED, inputRoot.getBackgroundColor());
+        Assert.assertEquals("指针悬停 content 激活 INPUT 配方 hover 档",
+                BG_HOVER, inputRoot.getBackgroundColor());
+        Assert.assertEquals("hover 档自带缘色（未聚焦时取当前档 edge）",
+                BORDER_HOVER, inputRoot.getBorderColor());
 
         runtime.requestFocus(contentNode());
         runtime.flush();
-        Assert.assertEquals("focus 不改染色（只改缘色）", BG_ENABLED, inputRoot.getBackgroundColor());
+        Assert.assertEquals("focus 不改染色（指针仍悬停 content，染色保持 hover 档）",
+                BG_HOVER, inputRoot.getBackgroundColor());
         Assert.assertEquals("focus 缘色取配方 focusEdge", BORDER_FOCUS, inputRoot.getBorderColor());
 
         enabledSignal.set(Boolean.FALSE);

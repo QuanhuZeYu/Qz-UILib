@@ -336,7 +336,9 @@ public final class SceneTextAreaPrimitive {
         root.appendChild(viewport);
 
         SceneNode content = SceneNode.column();
-        content.setHitTestable(true); // B2：content 为交互单元，命中 content → handler 触发 + focused 写 content
+        // B2：content 为交互单元，命中 content → handler 触发 + focused/hover 写 content；
+        // 视觉行已退出命中候选（见 buildVisualRow），故 content 是控件内容区内唯一 hover 目标。
+        content.setHitTestable(true);
         viewport.appendChild(content);
 
         // 占位层（A3 口径统一，与单行 SceneTextInputPrimitive 同形）：一颗<b>独立文本叶</b>，
@@ -766,6 +768,10 @@ public final class SceneTextAreaPrimitive {
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(ROW_GAP);
         row.setClipChildren(true);
+        // 行是纯布局容器（控制包 R6）：五个槽位与占位层都已退出命中候选，行自身也必须退出。
+        // 否则指针在 content 内命中的最深节点恒为这一行，而表面绑定读的是 content 的
+        // SceneInteractionState（见 SceneTextArea#create 的 B2 接线）→ hover 档永不写入。
+        row.setHitTestable(false);
 
         SceneNode prefix = new SceneNode();
         prefix.setHitTestable(false);
