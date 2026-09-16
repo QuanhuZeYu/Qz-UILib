@@ -123,6 +123,10 @@
 - **反证澄清**：把 `lwjgl3ify` 当普通依赖丢进 test classpath 不可行——其 redirect 需 RFB system classloader +
   UniMixins 全套 JVM 参数（dev jar 内含 446 个 `org.lwjglx` 类）。真无 X 的兜底只有 LWJGL3 null 平台 + OSMesa
   （需 `libosmesa6`，且与生产 LWJGL2 API 面不兼容），故**不作主路径**，仅作环境不可用时的备选。
+- **生态先例**：Minecraft 生态已有 `headlesshq/mc-runtime-test`（HeadlessMC + Xvfb 跑 1.7.10 客户端），
+  说明「Xvfb + Mesa 跑 1.7.10 渲染」是通行做法；本项目只是把同一环境用在 JUnit 域。
+- **保真上限**：软件光栅器（llvmpipe / OSMesa / SwiftShader）本身就是 native 库，且与真 GPU 驱动在纹理过滤、
+  混合精度、多重采样上存在实现差异；**硬件级保真只有真 GPU（本地真机或自托管 runner）**——这是 §五 分层的依据。
 
 ## 三、目标形态：headless 验收运行时四件套
 
