@@ -4,8 +4,6 @@ import club.heiqi.uilib.internal.devtools.playground.TestPlaygroundHost;
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
-import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 
 /**
@@ -23,13 +21,13 @@ public final class HeadlessSession implements AutoCloseable {
     private final GlOffscreenSurface surface;
     private final HeadlessCapabilities capabilities;
     private final AbstractSceneHostWidget host;
-    private final UiRenderContext renderContext;
+    private final RecordingUiRenderContext renderContext;
     private final PaintContextCompositor paintContextCompositor;
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private boolean closed;
 
     private HeadlessSession(HeadlessRequest request, GlOffscreenSurface surface,
-            HeadlessCapabilities capabilities, AbstractSceneHostWidget host, UiRenderContext renderContext,
+            HeadlessCapabilities capabilities, AbstractSceneHostWidget host, RecordingUiRenderContext renderContext,
             PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService) {
         this.request = request;
         this.surface = surface;
@@ -68,8 +66,10 @@ public final class HeadlessSession implements AutoCloseable {
         // 缺了它们不会报错，只会让玻璃层内容缺失（静默降级），因此与生产宿主保持同一装配。
         PaintContextCompositor paintContextCompositor = new PaintContextCompositor();
         UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
-        UiRenderContext renderContext = UiHostRenderSupport.createRenderContext(request.width(), request.height(),
-                0, 0, 0f, paintContextCompositor, mainLayerSnapshotService, UiRuntimeAdapters.empty());
+        // 用记录上下文（UiRenderContext 子类）承接像素路径：身份不变（instanceof 解析照旧生效），
+        // 旁路记录命令面，供出图完整性交叉判据使用。
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(request.width(), request.height(),
+                paintContextCompositor, mainLayerSnapshotService);
         return new HeadlessSession(request, surface, capabilities, host, renderContext, paintContextCompositor,
                 mainLayerSnapshotService);
     }
@@ -133,10 +133,13 @@ public final class HeadlessSession implements AutoCloseable {
         if (readError != 0 && glError == 0) {
             glError = readError;
         }
-        HeadlessSelfCheck.Report report = HeadlessSelfCheck.inspect(argb, request.width(), request.height(), glError);
+        HeadlessDrawSummary drawSummary = renderContext.summary();
+        HeadlessSelfCheck.Report report = HeadlessSelfCheck.inspect(argb, request.width(), request.height(), glError,
+                drawSummary);
         long bytes = PngWriter.write(request.output(), argb, request.width(), request.height());
         long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
-        return new HeadlessArtifact(request, capabilities, report, request.output(), bytes, elapsedMillis);
+        return new HeadlessArtifact(request, capabilities, report, drawSummary, request.output(), bytes,
+                elapsedMillis);
     }
 
     /** @return 本次会话的能力快照 */

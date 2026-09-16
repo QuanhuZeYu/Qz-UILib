@@ -127,6 +127,24 @@ public final class HeadlessSelfCheck {
      * @return 自检报告
      */
     public static Report inspect(int[] argb, int width, int height, int glError) {
+        return inspect(argb, width, height, glError, null);
+    }
+
+    /**
+     * 检查一帧 ARGB 像素，并与命令面摘要交叉验证出图完整性。
+     *
+     * <p>为什么要交叉：命令面与像素面是两条独立证据。只有命令没像素 = 帧前置/绑定/裁剪问题；
+     * 只有像素没命令 = 记录器没挂上。两者都不该被当作「UI 画得不好」。</p>
+     *
+     * @param argb        行主序 ARGB 像素（长度必须为 width * height）
+     * @param width       像素宽
+     * @param height      像素高
+     * @param glError     帧末 glGetError 结果
+     * @param drawSummary 命令面摘要；可为 null（不做交叉判据）
+     * @return 自检报告
+     */
+    public static Report inspect(int[] argb, int width, int height, int glError,
+            HeadlessDrawSummary drawSummary) {
         if (argb == null || argb.length != width * height) {
             throw new HeadlessFailure(HeadlessFailure.Stage.READBACK,
                     "像素缓冲长度不符：期望 " + (width * height) + "，实际 " + (argb == null ? -1 : argb.length));
@@ -173,6 +191,26 @@ public final class HeadlessSelfCheck {
             notes.add("整帧以半透明像素为主（meanAlpha=" + String.format(Locale.ROOT, "%.1f", meanAlpha)
                     + "，不透明占比=" + String.format(Locale.ROOT, "%.2f%%", opaqueRatio * 100d)
                     + "）：若期望不透明判读，请把宿主背景设为不透明（--bg=RRGGBB）");
+        }
+        if (drawSummary != null) {
+            if (drawSummary.drawCommands() > 0 && ink == 0) {
+                ok = false;
+                notes.add("命令面有 " + drawSummary.drawCommands() + " 条绘制命令但像素全空："
+                        + "帧前置语义 / 帧缓冲绑定 / 裁剪栈问题（不是「UI 没画」）");
+            }
+            if (drawSummary.drawCommands() == 0 && ink > 0) {
+                notes.add("像素有内容但命令面为空：命令记录上下文可能未挂上");
+            }
+            if (drawSummary.rectCommands() > 0
+                    && drawSummary.rectsOutsideViewport() == drawSummary.rectCommands()) {
+                ok = false;
+                notes.add("全部 " + drawSummary.rectCommands() + " 条矩形命令都落在视口外（bounds="
+                        + drawSummary.bounds() + "，视口=" + width + "x" + height + "）");
+            } else if (drawSummary.rectsOutsideViewport() > 0) {
+                notes.add(drawSummary.rectsOutsideViewport() + "/" + drawSummary.rectCommands()
+                        + " 条矩形命令完全落在视口外（bounds=" + drawSummary.bounds() + "，视口="
+                        + width + "x" + height + "）：小视口下页面可能存在溢出内容，属提示而非失败");
+            }
         }
         if (ok) {
             notes.add("像素自检通过");
