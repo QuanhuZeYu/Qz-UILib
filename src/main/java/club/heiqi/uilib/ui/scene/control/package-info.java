@@ -38,10 +38,11 @@
  * 只读 signal，禁止控件自己维护 {@code boolean active/pressed} 字段。
  * 交互态的权威源是 {@link club.heiqi.uilib.ui.scene.input.SceneInputRouter}。</p>
  *
- * <h3>R6：装饰性子节点必须 setHitTestable(false)</h3>
- * <p>复合控件中纯装饰、不独立接收交互的子节点（如标签文字、图标、滑轨），
- * 必须在建树时调 {@code node.setHitTestable(false)}，使 hit-test 命中穿透到控件根节点
- * （交互单元）。交互态（pressed/hovered）只绑在控件根节点，读
+ * <h3>R6：装饰性子节点与纯布局容器必须 setHitTestable(false)</h3>
+ * <p>复合控件中不独立接收交互的子节点必须在建树时调 {@code node.setHitTestable(false)}，
+ * 使 hit-test 命中穿透到控件根节点（交互单元）：既包括纯装饰节点（标签文字、图标、滑轨、
+ * 指示器），也包括<b>纯布局容器</b>——只承担排布、自身不接收交互的中间节点（行壳、content、
+ * 列容器等）。交互态（pressed/hovered）只绑在控件根节点，读
  * {@code rt.interactionState(root)} 的 signal。</p>
  *
  * <p>背景：{@link club.heiqi.uilib.ui.scene.input.SceneInputRouter} 对 POINTER_DOWN 与
@@ -53,11 +54,22 @@
  * 到根节点，即可修复此「容器挂交互态/命中叶节点」拓扑错配；交互单元内真正的独立交互子单元
  * （按钮/输入框）保持可命中，其区域不属于外层容器的 hover。</p>
  *
+ * <p><b>★ 适用范围</b>：本条口径同样适用于<b>业务页面自建的复合交互单元</b>（自建列表行、
+ * 卡片、可点区域）。行根是交互单元时，其内部纯布局容器与装饰叶必须一并穿透，否则命中最深
+ * 落在容器上、行根的 pressed 与 hovered 恒 false——点击仍能经 CLICK 的 target+bubble 到达
+ * 行根，但行 hover 反馈与挂在行根的 {@link SceneTooltip} 只在子节点未覆盖的边带生效
+ * （真机症状：列表行 tooltip「只有鼠标贴到行边缘才出现」）。</p>
+ *
  * <p><b>★ hitTestable=false 仅用于「装饰穿透」，禁止用它做逻辑禁用</b>——
  * 禁用态走 enabled signal 控制 {@code onClick} 与视觉，不靠命中穿透。</p>
  *
  * <p><b>★ 段式控件（Segmented）中每个「段」是独立交互单元</b>，段本身 hitTestable=true，
  * 仅段内文字/图标 hitTestable=false 穿透到所属段。</p>
+ *
+ * <p><b>★ 无自动化保障</b>：本条靠人工评审落地——仓内没有针对命中穿透的 lint、守护测试或
+ * 辅助 API（对照 {@code tools/audit/README.md} 记录的表面写入权守护退役后同为人工巡检）。
+ * 新增/修改复合控件、以及业务侧自建交互单元时，必须逐个核对子树里非交互节点的
+ * {@code hitTestable}，漏写不会报错、只会在真机上表现为「反馈只在边缘出现」。</p>
  *
  * <h3>R7：受控双向控件必须零内部状态</h3>
  * <p>带可切换值的受控双向控件（如

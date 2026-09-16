@@ -417,6 +417,10 @@ public class SceneInputRouter {
             effectiveTarget = pressedNode;
         } else {
             // 非捕获且未命中 → 跳过此事件（原 route 循环 continue，本方法内 return 等价）
+            // ★ 后果（逃生舱边界）：指针不在任何节点上时（树外、或命中链为空的空白区）MOVE 不再
+            // 派发，因此「容器用 rt.on(node, POINTER_MOVE) 接收后代冒泡来自维护『指针在子树内』」
+            // 的做法收不到收尾事件——指针移出后自维护 hover 会滞留。容器级 hover 的正解是让
+            // 装饰/布局子节点命中穿透（控件层契约 R6），而不是自维护一份指针状态。
             if (hitTarget == null) return;
             effectiveTarget = hitTarget;
         }
