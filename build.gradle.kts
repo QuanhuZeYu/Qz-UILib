@@ -134,6 +134,15 @@ abstract class ExportHeadlessClasspath : DefaultTask() {
     }
 }
 
+// 4) 对拍测试供给：把「直启 classpath 文件」与「natives 目录」交给 test JVM。
+//    测试侧走进程外直启（与 agent 真实使用路径一致），因此 test JVM 自身不需要 LWJGL2 依赖，
+//    也避开了 lwjgl3ify shim 与真 LWJGL2 在同一条 classpath 上的先后之争。
+tasks.withType<Test>().configureEach {
+    dependsOn(tasks.named("exportHeadlessClasspath"))
+    systemProperty("qz.headless.classpathFile", headlessRuntimeDir.get().file("classpath.txt").asFile.absolutePath)
+    systemProperty("qz.headless.nativesDir", headlessRuntimeDir.get().dir("natives").asFile.absolutePath)
+}
+
 val exportHeadlessClasspath by tasks.registering(ExportHeadlessClasspath::class) {
     group = "headless"
     description = "导出 headless 直启 classpath（main 输出 + 真 LWJGL2 + 运行期依赖）"
