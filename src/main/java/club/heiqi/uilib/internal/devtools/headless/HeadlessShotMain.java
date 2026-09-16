@@ -45,6 +45,7 @@ public final class HeadlessShotMain {
         int maxFrames = 60;
         int background = HeadlessRequest.DEFAULT_BACKGROUND;
         String text = HeadlessRequest.DEFAULT_PROBE_TEXT;
+        String script = "";
         String out = null;
         boolean probeOnly = false;
         try {
@@ -62,6 +63,10 @@ public final class HeadlessShotMain {
                     background = parseBackground(arg.substring("--bg=".length()));
                 } else if (arg.startsWith("--text=")) {
                     text = arg.substring("--text=".length());
+                } else if (arg.startsWith("--actions=")) {
+                    script = arg.substring("--actions=".length());
+                } else if (arg.startsWith("--script=")) {
+                    script = readScriptFile(arg.substring("--script=".length()));
                 } else if (arg.startsWith("--frames=")) {
                     frames = Integer.parseInt(arg.substring("--frames=".length()));
                 } else if (arg.startsWith("--settle=")) {
@@ -92,7 +97,8 @@ public final class HeadlessShotMain {
         HeadlessRequest request;
         try {
             request = HeadlessRequest.builder().page(page).size(width, height).frames(frames)
-                    .background(background).text(text).settle(settle).maxFrames(maxFrames).output(output).build();
+                    .background(background).text(text).script(script).settle(settle).maxFrames(maxFrames)
+                    .output(output).build();
         } catch (RuntimeException e) {
             System.err.println("[headless] 请求非法：" + e.getMessage());
             return 2;
@@ -128,8 +134,24 @@ public final class HeadlessShotMain {
         return 0xFF000000 | (int) Long.parseLong(hex, 16);
     }
 
+    /**
+     * 读取脚本文件（IO 失败转成参数错误，交由参数解析路径统一处理）。
+     *
+     * @param path 文件路径
+     * @return 文件文本
+     */
+    private static String readScriptFile(String path) {
+        try {
+            return new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(path)),
+                    java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("脚本文件读取失败：" + path + "（" + e.getMessage() + "）");
+        }
+    }
+
     private static void printUsage(PrintStream out) {
         out.println("用法: HeadlessShotMain [--page=playground|text-probe] [--size=WxH] [--out=path]"
-                + " [--frames=N] [--settle=N] [--max-frames=N] [--bg=RRGGBB|transparent] [--text=…] [--probe]");
+                + " [--frames=N] [--settle=N] [--max-frames=N] [--bg=RRGGBB|transparent] [--text=…]"
+                + " [--actions=\"…\"|--script=file] [--probe]");
     }
 }

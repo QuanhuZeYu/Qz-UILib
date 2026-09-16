@@ -18,10 +18,11 @@ public final class HeadlessArtifact {
     private final long pngBytes;
     private final long elapsedMillis;
     private final int renderedFrames;
+    private final String inputSummary;
 
     HeadlessArtifact(HeadlessRequest request, HeadlessCapabilities capabilities,
             HeadlessSelfCheck.Report selfCheck, HeadlessDrawSummary drawSummary, Path output, long pngBytes,
-            long elapsedMillis, int renderedFrames) {
+            long elapsedMillis, int renderedFrames, String inputSummary) {
         this.request = request;
         this.capabilities = capabilities;
         this.selfCheck = selfCheck;
@@ -30,6 +31,7 @@ public final class HeadlessArtifact {
         this.pngBytes = pngBytes;
         this.elapsedMillis = elapsedMillis;
         this.renderedFrames = renderedFrames;
+        this.inputSummary = inputSummary;
     }
 
     /** @return 源请求 */
@@ -77,6 +79,7 @@ public final class HeadlessArtifact {
         StringBuilder sb = new StringBuilder();
         sb.append("[headless] request: ").append(request.summary()).append('\n');
         sb.append("[headless] capabilities: ").append(capabilities.summary()).append('\n');
+        sb.append("[headless] input: ").append(inputSummary).append('\n');
         sb.append("[headless] commands: ").append(drawSummary.describe()).append('\n');
         sb.append("[headless] output: ").append(output).append(" (").append(pngBytes).append(" bytes)")
                 .append('\n');

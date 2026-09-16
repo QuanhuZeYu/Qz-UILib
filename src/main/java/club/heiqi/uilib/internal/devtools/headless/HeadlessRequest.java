@@ -35,10 +35,11 @@ public final class HeadlessRequest {
     private final int maxFrames;
     private final int background;
     private final String text;
+    private final String script;
     private final Path output;
 
     private HeadlessRequest(String pageId, int width, int height, int frames, int settleFrames, int maxFrames,
-            int background, String text, Path output) {
+            int background, String text, String script, Path output) {
         this.pageId = pageId;
         this.width = width;
         this.height = height;
@@ -47,6 +48,7 @@ public final class HeadlessRequest {
         this.maxFrames = maxFrames;
         this.background = background;
         this.text = text;
+        this.script = script;
         this.output = output;
     }
 
@@ -95,6 +97,11 @@ public final class HeadlessRequest {
         return text;
     }
 
+    /** @return 输入脚本（每条语句用换行或分号分隔）；空串表示无输入 */
+    public String script() {
+        return script;
+    }
+
     /** @return PNG 产物路径 */
     public Path output() {
         return output;
@@ -120,6 +127,7 @@ public final class HeadlessRequest {
         private int maxFrames = 60;
         private int background = DEFAULT_BACKGROUND;
         private String text = DEFAULT_PROBE_TEXT;
+        private String script = "";
         private Path output = Paths.get("build", "reports", "headless", "shot.png");
 
         private Builder() {
@@ -168,6 +176,12 @@ public final class HeadlessRequest {
             return this;
         }
 
+        /** @param value 输入脚本 * @return this */
+        public Builder script(String value) {
+            this.script = value;
+            return this;
+        }
+
         /** @param value PNG 路径 * @return this */
         public Builder output(Path value) {
             this.output = value;
@@ -196,7 +210,7 @@ public final class HeadlessRequest {
                 throw new IllegalArgumentException("output 不可为空");
             }
             return new HeadlessRequest(pageId, width, height, frames, settleFrames, maxFrames, background,
-                    text == null ? "" : text, output);
+                    text == null ? "" : text, script == null ? "" : script, output);
         }
     }
 }

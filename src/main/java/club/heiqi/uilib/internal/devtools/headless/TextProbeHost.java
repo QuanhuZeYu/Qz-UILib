@@ -1,6 +1,7 @@
 package club.heiqi.uilib.internal.devtools.headless;
 
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -29,8 +30,8 @@ final class TextProbeHost extends AbstractSceneHostWidget {
     private final int height;
     private SceneNode root;
 
-    TextProbeHost(String text, int width, int height) {
-        super(new HeadlessInputSource(width, height));
+    TextProbeHost(String text, int width, int height, PlatformInputSource input) {
+        super(input);
         this.text = text;
         this.width = width;
         this.height = height;

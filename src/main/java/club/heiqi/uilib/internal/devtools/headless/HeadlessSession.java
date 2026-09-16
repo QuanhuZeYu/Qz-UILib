@@ -24,11 +24,13 @@ public final class HeadlessSession implements AutoCloseable {
     private final RecordingUiRenderContext renderContext;
     private final PaintContextCompositor paintContextCompositor;
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
+    private final HeadlessInputSource inputSource;
     private boolean closed;
 
     private HeadlessSession(HeadlessRequest request, GlOffscreenSurface surface,
             HeadlessCapabilities capabilities, AbstractSceneHostWidget host, RecordingUiRenderContext renderContext,
-            PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService) {
+            PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService,
+            HeadlessInputSource inputSource) {
         this.request = request;
         this.surface = surface;
         this.capabilities = capabilities;
@@ -36,6 +38,7 @@ public final class HeadlessSession implements AutoCloseable {
         this.renderContext = renderContext;
         this.paintContextCompositor = paintContextCompositor;
         this.mainLayerSnapshotService = mainLayerSnapshotService;
+        this.inputSource = inputSource;
     }
 
     /**
@@ -51,9 +54,12 @@ public final class HeadlessSession implements AutoCloseable {
         GlOffscreenSurface surface = GlOffscreenSurface.create(request.width(), request.height());
         capabilities = capabilities.withGl(surface.glVersion(), surface.glRenderer(), surface.stencilBits(),
                 surface.maxTextureSize());
+        // 输入设备与会话同生命周期：脚本在装配期编译进设备，帧推进时由帧管线经 drainFrame 消费。
+        HeadlessInputSource inputSource = new HeadlessInputSource(request.width(), request.height());
+        HeadlessInputScript.apply(inputSource.device(), request.script());
         AbstractSceneHostWidget host;
         try {
-            host = createHost(request);
+            host = createHost(request, inputSource);
         } catch (HeadlessFailure failure) {
             surface.close();
             throw failure;
@@ -71,7 +77,7 @@ public final class HeadlessSession implements AutoCloseable {
         RecordingUiRenderContext renderContext = new RecordingUiRenderContext(request.width(), request.height(),
                 paintContextCompositor, mainLayerSnapshotService);
         return new HeadlessSession(request, surface, capabilities, host, renderContext, paintContextCompositor,
-                mainLayerSnapshotService);
+                mainLayerSnapshotService, inputSource);
     }
 
     /**
@@ -83,12 +89,12 @@ public final class HeadlessSession implements AutoCloseable {
      * @param request 请求
      * @return 已装配页面宿主
      */
-    private static AbstractSceneHostWidget createHost(HeadlessRequest request) {
+    private static AbstractSceneHostWidget createHost(HeadlessRequest request, HeadlessInputSource inputSource) {
         if ("playground".equals(request.pageId())) {
-            return new TestPlaygroundHost(new HeadlessInputSource(request.width(), request.height()));
+            return new TestPlaygroundHost(inputSource);
         }
         if (HeadlessRequest.TEXT_PROBE_PAGE.equals(request.pageId())) {
-            return new TextProbeHost(request.text(), request.width(), request.height());
+            return new TextProbeHost(request.text(), request.width(), request.height(), inputSource);
         }
         throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
                 "未知页面：" + request.pageId() + "（当前仅提供 playground）");
@@ -164,7 +170,7 @@ public final class HeadlessSession implements AutoCloseable {
         long bytes = PngWriter.write(request.output(), argb, request.width(), request.height());
         long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
         return new HeadlessArtifact(request, capabilities, report, drawSummary, request.output(), bytes,
-                elapsedMillis, renderedFrames);
+                elapsedMillis, renderedFrames, inputSource.device().describe());
     }
 
     /** @return 本次会话的能力快照 */
