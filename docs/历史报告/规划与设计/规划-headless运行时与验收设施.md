@@ -207,6 +207,23 @@ jar (classifier dev-preshadow, src/main/java)
 2. **test 域不是「物理进不了包」**：`shadowJar` 的输入里含 `test` 源集输出——所以隔离一律靠显式排除 + 门禁，
    不能靠目录位置（这推翻了「落 test 域天然隔离」的先前假设）。
 
+### F13 M1 落地实测：两处「宿主语义」缺口（2026-09-17）
+
+M1 已落地（main 域 `internal.devtools.headless`，提交 `c7264618`）。第一次跑通时出现「GL 正常、字体正常、却整帧全透明」，
+排查出的两处都不是 headless 独有缺陷，而是**照抄了渲染调用、漏抄了宿主语义**：
+
+| 缺口 | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| 帧前置语义 | 绘制无像素（自检报整帧全透明，`glError=0`） | 生产宿主在 `surface.render` 前设正交投影与 viewport；headless 自建这一段时顶点落在单位矩阵下被整体裁掉 | 帧前置上提 `UiHostRenderSupport.beginMainUiFrame`，MC 宿主与 headless 共用同一入口（`McScreenBridge` 改用之） |
+| 宿主背景语义 | 有像素但 alpha≈18/255，导出后「白底淡字」 | UI 面板是半透明玻璃配方，真机叠在游戏世界之上；headless 从全透明开始时面板 alpha 停在极低值 | `HeadlessRequest.background`（默认不透明中性深色，`--bg=transparent` 可选）；自检增加 alpha 统计并对半透明底给出提示 |
+
+附带修一处无 FML 宿主缺陷：`LaunchSide.isDedicatedServer()` 原先读 `Side.SERVER` 常量，非 FML classpath 上没有该类，
+字体渲染 bootstrap 判定直接 `NoClassDefFoundError`；改为 `"SERVER".equals(side.name())`（按名字比较，行为等价）。
+
+实测（本机 RTX 5070 Ti / GL 4.6.0）：1280×720 playground 首页、2 帧，**459 ms**（含字体初始化）；
+像素自检 `ink=100% opaquePx=921600 meanAlpha=255 colors=1290 glError=0`；完整 `build` 通过
+（5748 tests；`verifyHeadlessNotPackaged` 逐个校验 7 个产物均不含该包——门禁在首次运行时就抓出并修掉了 `apiJar` 漏排）。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**
@@ -323,9 +340,10 @@ jar (classifier dev-preshadow, src/main/java)
 ## 七、建议分批
 
 - **M0 闸门（可行性）**：**已通过**（F7，本地）。CI 侧不再是闸门（降级为可选）。
-- **M1 出图入口与最小闭环（P1 核心）**：main 域 `internal.devtools.headless`——上下文 + FBO + `UiRenderContext`
-  复用 + PNG 落盘 + 自检信号 + 命令行参数（页面/尺寸/输出）；**目标：一条命令渲染 playground 首页出图，冷启动 ≤ 3 s**。
-  落地顺序（每步可独立验证，先证「不影响打包」再往里加代码）：
+- **M1 出图入口与最小闭环（P1 核心）**：**已完成**（提交 `c7264618`，实测见 F13：459 ms，自检全绿）。
+  范围：main 域 `internal.devtools.headless`——上下文 + FBO + `UiRenderContext` 复用 + PNG 落盘 + 自检信号
+  + 命令行参数（页面/尺寸/输出/背景/帧数）；**目标「一条命令渲染 playground 首页出图 ≤ 3 s」已达成**。
+  实际落地顺序（每步独立验证，先证「不影响打包」再往里加代码）：
   1. **打包隔离 + 门禁先行**（§六-1 硬约束）：`tasks.withType<Jar>` 排除该包 + `verifyHeadlessNotPackaged` 挂 `check`，
      用 `jar tf` 对 `jar` / `shadowJar` / `sourcesJar` / `apiJar` / `reobfJar` 逐个产物确认（先放一个哨兵类即可验证链路）；
   2. **natives 解压任务**（§六-2）：把 LWJGL2 natives 解到固定目录（建议 `build/headless/natives`），文档化路径；
@@ -345,7 +363,7 @@ jar (classifier dev-preshadow, src/main/java)
 | 1 | LWJGL2 `Display.create()` 在 JDK 17 下能否初始化 | **已实测通过**（F7） |
 | 2 | `UiRenderContext` 在无 MC 环境下的可构造性 | **已实测通过**（F7） |
 | 3 | 2K 一帧的 GL 侧耗时 | **已实测**：534 ms（本机 GPU） |
-| 4 | 快路径（直启 JVM）的真实冷启动耗时 | **未实测**，M1 量化（Gradle 路径为 12~22 s）；前置约束已实测：runtime classpath 无 LWJGL2，需自带（F11） |
+| 4 | 快路径（直启 JVM）的真实冷启动耗时 | **已实测**：直启 → 出图 **459 ms**（1280×720、2 帧、含字体初始化；Gradle 路径为 12~22 s）；前置约束：runtime classpath 无 LWJGL2，需自带（F11） |
 | 5 | 完整 scene（含玻璃/裁剪/字体）单帧耗时 | **未实测**，M2 出图后量化 |
 | 6 | 无字体环境下的失败语义与自检表现 | **未实测**（已知 `ERROR-20260904` 的崩溃形态） |
 | 7 | 非 Windows 平台（Linux/llvmpipe、macOS） | **未实测**（本地 agent 场景不阻塞） |
