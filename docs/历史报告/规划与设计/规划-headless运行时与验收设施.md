@@ -298,6 +298,34 @@ M2 前半段暴露的隐患：**固定帧数出图会静默产出残缺内容**�
 **M2 至此收口**：字体 GL 尾端上屏有据（F14）、出图完整性判据落地（F14）、帧稳定语义堵住残缺出图（F15）、
 跨通道几何对拍通过（本则）。下一步 M3：纯代码输入设备模型与脚本化输入。
 
+### F17 M3 纯代码输入设备模型与输入脚本（2026-09-17）
+
+设备模型表达**用户动作**，而不是平台事件：
+
+- `HeadlessInputDevice`：`moveTo / moveBy / press / release / click / doubleClick / scroll / keyDown / keyUp /
+  pressKey / type / compose / cancelPointer / frame / wait`；时间轴按 16.67ms 单调推进；
+  修饰键由「当前按住的键集合」推导；`click` / `pressKey` 自动插入帧边界（跨帧）。
+- `HeadlessInputScript`：可读脚本，每条语句换行或 `;` 分隔、`#` 注释；语法错误显式失败（不静默跳过）。
+  关键字：`move / moveby / down / up / click / dblclick / scroll / keydown / keyup / key / type / compose / cancel / frame / wait`。
+- `HeadlessInputSource`：实现 `PlatformInputSource` + `KeyboardTextInputSource`，事件经**生产 `InputFrameBuilder`**
+  封板（不另造帧构造）；`drainFrame()` 内部先推进设备再封板，因此**帧划分与生产帧管线天然对齐**，
+  调用方不需要手工对齐帧号。整串文本（`compose`）与逐字符（`type`）两条文本路径都在。
+
+端到端实测（一条命令）：`--actions="move 315 88; frame; click; wait 4"` 完成「移到导航 → 点击 → 切页 → 出图」：
+
+| 指标 | 基线（无脚本） | 点击导航第 2 项 |
+|---|---|---|
+| input | dispatched=0 | **dispatched=3**，pointer=315,88 |
+| 命令/文本 | 62 / 46 条 / 1050 字符 | 54 / 30 条 / **413 字符** |
+| PNG | 200 031 B | 108 587 B |
+| 差分 | — | **170 495 像素（18.5%）**，页面切到「单行文本」 |
+
+契约测试 `HeadlessInputDeviceTest`（5 项）：跨帧点击、修饰键跟随按住键、`wait` 语义、整串文本单帧交付、
+非法脚本显式失败。
+
+踩坑记录：`wait` 最初实现在**动作队列之前**生效，导致「队列里还有动作时先空转」——实测 `dispatched=0`、
+脚本整段静默不执行。已改为「队列耗尽后才空转」，并由 `waitRunsAfterQueuedActions` 钉住。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**
@@ -427,7 +455,8 @@ M2 前半段暴露的隐患：**固定帧数出图会静默产出残缺内容**�
 - **M2 渲染地基**：**已完成**（F14 / F15 / F16）——字体 GL 尾端上屏有据（命令面 × 像素面）；出图完整性判据落地；
   帧稳定语义（settle）与文本探针（`text-probe`）堵住「固定帧数出图静默残缺」；与软光栅出图几何对拍通过
   （宽比 1.029 / 高比 1.059），并由此把 headless 出图接进了既有验收测试体系。
-- **M3 输入设备模型**：C1~C5 + 脚本化输入（P2）。
+- **M3 输入设备模型**：**已完成**（F17）——C1 设备模型 / C2 时间轴 / C3 脚本化 / C4 走生产链路不旁路 / C5 文本两态；
+  端到端以「一条命令完成点击切页并出图」收口，契约测试 5 项钉住时序。
 - **M4 铺开**：分辨率矩阵、消费者域扩展（控件/表单/浮层/HUD/chat3）、快路径提速（常驻候选）。
 - **M5 收口**：软光栅降级为回退、文档与规格落点、CI 可选接线。
 
