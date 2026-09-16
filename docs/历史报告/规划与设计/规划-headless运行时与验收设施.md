@@ -277,6 +277,27 @@ M2 前半段暴露的隐患：**固定帧数出图会静默产出残缺内容**�
 
 顺带修探针自身缺陷：`SceneLabel` 在零宽约束下会把文本裁到只剩首字符，探针必须显式给可用宽度。
 
+### F16 与软光栅出图对拍（2026-09-17，M2 收口）
+
+新增 `HeadlessTextParityTest`（test 域 `font/render/software`，与软光栅套件同包）：
+
+- GL 侧走**进程外直启** `HeadlessShotMain --page=text-probe`（与 agent 真实路径一致），直启所需 classpath 文件与
+  natives 目录由 Gradle 经 system property 注入 test JVM（`tasks.withType<Test>` + `dependsOn exportHeadlessClasspath`）——
+  **test JVM 自身不需要 LWJGL2**，也避开 lwjgl3ify shim 与真 LWJGL2 在同一条 classpath 上的先后之争；
+- 软光栅侧走既有验收通道 `LatexSoftwareRenderKit.render(text, 32, true)`；
+- 判据是**几何**而非逐像素（两者 AA 实现不同）：墨迹宽度比 ∈ [0.75, 1.25]、高度比 ∈ [0.6, 1.4]，实测值打进测试输出。
+
+实测（文本 `Qz UILib 对拍样本 Ag123`，字号 32，背景 `0xFF202020`）：
+
+| 通道 | 墨迹 | 说明 |
+|---|---|---|
+| GL（headless 直启） | **393 × 36** | 真机路径：FBO + 生产 `UiRenderContext` |
+| 软光栅（既有验收） | **382 × 34** | `LatexSoftwareRenderKit`，advance=389 |
+| 比值 | 宽 **1.029** / 高 **1.059** | 差异 3~6%，属 AA 实现差异，度量链路一致 |
+
+**M2 至此收口**：字体 GL 尾端上屏有据（F14）、出图完整性判据落地（F14）、帧稳定语义堵住残缺出图（F15）、
+跨通道几何对拍通过（本则）。下一步 M3：纯代码输入设备模型与脚本化输入。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**
@@ -403,10 +424,9 @@ M2 前半段暴露的隐患：**固定帧数出图会静默产出残缺内容**�
   3. **headless 运行期 classpath**（F11）：一次性导出「main 输出 + LWJGL2 主 jar + natives」到 classpath 文件，供直启壳使用
      （F10：绕开 Gradle 才是「快」的关键）；
   4. **入口与最小闭环**：上下文 + FBO + PNG + 自检信号（墨水率 / 缺字形 / `glGetError`）+ 命令行参数；冷启动实测回填 §八-4。
-- **M2 渲染地基**：**接近完成**（F14 / F15）——字体 GL 尾端由「命令面 × 像素面」证据确认上屏；出图完整性判据落地；
-  帧稳定语义（settle）与文本探针（`text-probe`）落地，堵住「固定帧数出图静默残缺」这一隐蔽失败模式。
-  **剩余唯一项：与既有软光栅出图对拍一次**（软光栅侧入口已定位：`LatexSoftwareRenderKit.render(text, fontSize, true)`
-  + `FontSoftwareRasterizer`；对拍测试需把直启 classpath 与 natives 路径注入 test 任务）。
+- **M2 渲染地基**：**已完成**（F14 / F15 / F16）——字体 GL 尾端上屏有据（命令面 × 像素面）；出图完整性判据落地；
+  帧稳定语义（settle）与文本探针（`text-probe`）堵住「固定帧数出图静默残缺」；与软光栅出图几何对拍通过
+  （宽比 1.029 / 高比 1.059），并由此把 headless 出图接进了既有验收测试体系。
 - **M3 输入设备模型**：C1~C5 + 脚本化输入（P2）。
 - **M4 铺开**：分辨率矩阵、消费者域扩展（控件/表单/浮层/HUD/chat3）、快路径提速（常驻候选）。
 - **M5 收口**：软光栅降级为回退、文档与规格落点、CI 可选接线。
