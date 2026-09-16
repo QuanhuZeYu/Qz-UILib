@@ -24,6 +24,7 @@ public final class HeadlessRequest {
     public static final int DEFAULT_BACKGROUND = 0xFF0E1014;
     /** 文本探针页面标识：渲染 {@link #text()} 一行文本，供字体路径对照与诊断。 */
     public static final String TEXT_PROBE_PAGE = "text-probe";
+
     /** 文本探针默认文本：中英数混排，覆盖 CJK 与拉丁字形。 */
     public static final String DEFAULT_PROBE_TEXT = "Qz UILib 对拍样本 Ag123";
 

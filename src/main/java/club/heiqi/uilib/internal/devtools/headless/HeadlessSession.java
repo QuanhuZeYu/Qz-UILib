@@ -101,6 +101,7 @@ public final class HeadlessSession implements AutoCloseable {
         if (HeadlessRequest.TEXT_PROBE_PAGE.equals(request.pageId())) {
             return new TextProbeHost(request.text(), request.width(), request.height(), inputSource);
         }
+
         throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
                 "未知页面：" + request.pageId() + "（当前仅提供 playground）");
     }

@@ -123,6 +123,8 @@ val extractHeadlessNatives by tasks.registering(Sync::class) {
 abstract class ExportHeadlessClasspath : DefaultTask() {
     @get:InputFiles
     abstract val classpath: ConfigurableFileCollection
+    @get:InputFiles
+    abstract val fullClasspath: ConfigurableFileCollection
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
     @get:Input
@@ -147,20 +149,43 @@ abstract class ExportHeadlessClasspath : DefaultTask() {
             append("club.heiqi.uilib.internal.devtools.headless.HeadlessShotMain").append('\n')
         })
         val java = javaExecutable.get()
-        File(directory, "qz-shot.bat").writeText(buildString {
+        writeLauncher(directory, java, "shot-args.txt", "qz-shot.bat")
+
+        // 完整开发类路径：最小集优先，再补 compileClasspath 其余（MC/Forge 等）。
+        // 用途：页面渲染一旦触及 MC 类型（IChatComponent / ChatComponentText），最小集链接不上——
+        // 这不是「facility 坏了」，而是「这条页面路径本来就要 MC 类型」，故单独供给而不是把最小集撑大。
+        val fullOrdered = LinkedHashSet<File>()
+        fullOrdered.addAll(unique)
+        fullOrdered.addAll(fullClasspath.files)
+        File(directory, "classpath-full.txt").writeText(fullOrdered.joinToString(File.pathSeparator))
+        File(directory, "shot-args-full.txt").writeText(buildString {
+            append("-Djava.library.path=").append(File(directory, "natives").absolutePath).append('\n')
+            append("-Xmx2g").append('\n')
+            append("-cp").append('\n')
+            append(fullOrdered.joinToString(File.pathSeparator)).append('\n')
+            append("club.heiqi.uilib.internal.devtools.headless.HeadlessShotMain").append('\n')
+        })
+        writeLauncher(directory, java, "shot-args-full.txt", "qz-shot-full.bat")
+        logger.lifecycle("exportHeadlessClasspath: " + unique.size + " 项 -> " + classpathFile
+                + "（启动器 qz-shot.bat / qz-shot.sh / qz-shot-full.bat）")
+    }
+
+    /** 写一个平台启动器（Windows .bat 与 POSIX .sh 各一份）。 */
+    private fun writeLauncher(directory: File, java: String, argFileName: String, batName: String) {
+        File(directory, batName).writeText(buildString {
             append("@echo off\r\n")
             append("rem headless 出图启动器（由 exportHeadlessClasspath 生成）\r\n")
-            append('"').append(java).append('"').append(" @\"%~dp0shot-args.txt\" %*\r\n")
+            append('"').append(java).append('"').append(" @\"%~dp0").append(argFileName).append("\" %*\r\n")
         })
-        val shell = File(directory, "qz-shot.sh")
+        val shName = batName.replace(".bat", ".sh")
+        val shell = File(directory, shName)
         shell.writeText(buildString {
             append("#!/bin/sh\n")
             append("# headless 出图启动器（由 exportHeadlessClasspath 生成）\n")
-            append("exec \"").append(java).append("\" \"@\$(dirname \"\$0\")/shot-args.txt\" \"\$@\"\n")
+            append("exec \"").append(java).append("\" \"@\$(dirname \"\$0\")/").append(argFileName)
+                    .append("\" \"\$@\"\n")
         })
         shell.setExecutable(true)
-        logger.lifecycle("exportHeadlessClasspath: " + unique.size + " 项 -> " + classpathFile
-                + "（启动器 qz-shot.bat / qz-shot.sh）")
     }
 }
 
@@ -182,6 +207,11 @@ val exportHeadlessClasspath by tasks.registering(ExportHeadlessClasspath::class)
     classpath.from(mainSourceOutput)
     classpath.from(headlessLwjglRuntimeJars)
     classpath.from(configurations.named("runtimeClasspath"))
+    fullClasspath.from(configurations.named("compileClasspath"))
+    // MC 类不在 compileClasspath 上：RFG 把重编译后的 Minecraft 放在 patchedMc 源集输出里，
+    // mcLauncher 提供启动期类型。渲染触及 MC 类型的页面（chat 探针的 IChatComponent）必须带上它们。
+    fullClasspath.from(sourceSets.getByName("patchedMc").output)
+    fullClasspath.from(sourceSets.getByName("mcLauncher").output)
     outputDirectory.set(headlessRuntimeDir)
     javaExecutable.set(File(System.getProperty("java.home"), "bin/java").absolutePath)
 }
