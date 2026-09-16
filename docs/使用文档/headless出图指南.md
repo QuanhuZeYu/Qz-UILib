@@ -11,8 +11,14 @@ gradlew exportHeadlessClasspath
 build\headless\qz-shot.bat --page=playground --size=1280x720 --out=out\shot.png
 ```
 
-`qz-shot.bat` / `qz-shot.sh` 由 `exportHeadlessClasspath` 生成（内含 classpath 参数文件与 natives 路径）。
-**冷启动约 1.6 s**；`gradlew` 跑单张图要 12~22 s（配置与编译开销），批量出图请一律用启动器。
+`exportHeadlessClasspath` 生成两个启动器（内含 classpath 参数文件与 natives 路径）：
+
+| 启动器 | 类路径 | 用途 |
+|---|---|---|
+| `qz-shot.bat` / `qz-shot.sh` | 最小集（107 项） | **agent 默认**：快、不含 Minecraft 静态初始化风险 |
+| `qz-shot-full.bat` / `qz-shot-full.sh` | 完整开发类路径（137 项，含重编译 Minecraft 类） | 页面渲染一旦触及 MC 类型（如 `IChatComponent`）时使用 |
+
+**冷启动约 1.6~2.0 s**；`gradlew` 跑单张图要 12~22 s（配置与编译开销），批量出图请一律用启动器。
 
 ## 参数
 
@@ -97,4 +103,7 @@ build\headless\qz-shot.bat --page=playground --actions="move 315 88; frame; clic
 - 出图**不代表**真机 MC 宿主 / Angelica / lwjgl3ify 上下文；
 - GL 输出依赖驱动实现，**不作为逐像素金样**；
 - 不覆盖原版包装类禁令（Tessellator 等）一类问题；
-- 不经过 `LwjglInputSource` 的 poll 差分语义——headless 注入的是帧，桥内部的差分/边沿类缺陷不在覆盖范围内。
+- 不经过 `LwjglInputSource` 的 poll 差分语义——headless 注入的是帧，桥内部的差分/边沿类缺陷不在覆盖范围内；
+- **chat3 / HUD 不在可渲染面内**：chat3 视图的内容树由宿主装配链驱动（`ChatContainer` / `ChatHudWindow` / 输入屏幕），
+  `ChatSceneController.buildContent` 直接挂树实测为**空画面**（`commands=0`）；HUD 宿主 `SceneHudHost` / `HudRegistry` 在 `client/`（MC 域）。
+  两者要纳入，正确姿势是在测试域用生产装配接线，而不是在 headless 里复刻宿主。
