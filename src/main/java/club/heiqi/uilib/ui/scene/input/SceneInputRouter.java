@@ -100,7 +100,20 @@ public class SceneInputRouter {
     /**
      * 交互状态：当前 hover 的节点（单节点，最深命中目标）。
      *
-     * <p>仅跟踪最深命中目标的 hover 切换；整条祖先链的 :hover 尚未实现。</p>
+     * <p><b>语义 = leaf hover（现行规范：{@code docs/开发者文档/规格文档/UI投影宿主语义.md} 的
+     * Input Scope 节），不是浏览器 CSS {@code :hover} 的祖先链匹配。</b>只有最深命中节点收到
+     * hovered=true，其祖先不会因此收到 hover；命中链其余节点只在事件 target/bubble 阶段被派发
+     * ——故 CLICK 仍能沿祖先链冒泡到容器，而 hover/pressed 不能。</p>
+     *
+     * <p>需要「容器级 hover」（列表行、卡片等复合交互单元的整体悬停反馈）时的正解不是改本语义，
+     * 而是让纯装饰/布局子节点 {@code setHitTestable(false)} 使命中穿透到交互单元根：契约见
+     * {@code ui.scene.control} package-info 的 R6；交互单元内真正的独立交互子单元（按钮/输入框）
+     * 保持可命中，其自身区域不属于外层容器的 hover。</p>
+     *
+     * <p><b>何时才做祖先链 hover</b>：仅当出现「同一交互单元内嵌独立交互子单元、且外层仍必须有
+     * 整体 hover 反馈」的真实需求、且该需求无法用命中穿透表达时，才另立「子树 hover 投影」——
+     * 那会改变全库 hover 观感与 cursor/focus 派生，属公共行为变更，须先取得用户确认；在此之前
+     * 本条语义即为现行规范，不做过渡实现。</p>
      */
     private SceneNode hoveredNode;
 

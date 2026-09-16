@@ -8,6 +8,12 @@
  * 用一个文件撞齐 scene 全部新地基能力（flex 居中 + padding + 边框 + 圆角 +
  * 裁剪 + 非白文字 + 四态），并确立后续控件照抄的契约范本。R1-R13 共 13 条红线。</p>
  *
+ * <p><b>派生来源（工作站《用户偏好-工程取向》§6 框架指导层的追溯要求）</b>：
+ * R3/R4/R10/R11 派生自「动态化」——外观、条件内容与浮层显隐一律经 signal→bind/show/portal
+ * 派生，禁止构造期快照与命令式挂卸；R1/R2/R5/R6/R7/R8/R9/R13 派生自「框架正确（不缝补）」的
+ * 「单一权威源 + 状态/命中单元边界」——状态只认框架权威、控件不自持第二状态源，装饰子节点须
+ * 退出命中候选（R6），显隐不得派生自路由瞬态（R13）；R12 是上述两族的 API 形态分层。</p>
+ *
  * <h3>R1：控件必须是纯静态工厂</h3>
  * <p>控件类必须是 {@code private} 构造器 + {@code static create()} 工厂，
  * 控件类自身禁止任何实例字段。控件是无状态的工厂，状态全部由 signal 承载。</p>
@@ -38,10 +44,14 @@
  * （交互单元）。交互态（pressed/hovered）只绑在控件根节点，读
  * {@code rt.interactionState(root)} 的 signal。</p>
  *
- * <p>背景：{@link club.heiqi.uilib.ui.scene.input.SceneInputRouter} 的 POINTER_DOWN
- * 只给<b>最深命中节点</b>写 pressed（不冒泡）。若装饰子节点（如 label 文字）仍参与命中，
- * 用户点文字时最深命中是子节点 → 控件根节点 pressed 永远 false → 点文字按钮不会 pressed。
- * 让装饰子节点退出命中候选，命中穿透到根节点，即可修复此「容器挂交互态/命中叶节点」拓扑错配。</p>
+ * <p>背景：{@link club.heiqi.uilib.ui.scene.input.SceneInputRouter} 对 POINTER_DOWN 与
+ * POINTER_MOVE 都只给<b>最深命中节点</b>写交互态（pressed 与 hovered 均不向祖先链回写）。
+ * 若装饰子节点（如 label 文字、纯布局列容器）仍参与命中：用户点文字时最深命中是子节点 →
+ * 控件根 pressed 永远 false → 点文字按钮不会 pressed；同理鼠标落在子节点上时控件根 hovered
+ * 恒 false → 挂在控件根上的 {@link SceneTooltip} 与表面 hover 态只在子节点未覆盖的边带生效
+ * （真机表现：列表行 tooltip「只有鼠标贴到行边缘才出现」）。让装饰子节点退出命中候选、命中穿透
+ * 到根节点，即可修复此「容器挂交互态/命中叶节点」拓扑错配；交互单元内真正的独立交互子单元
+ * （按钮/输入框）保持可命中，其区域不属于外层容器的 hover。</p>
  *
  * <p><b>★ hitTestable=false 仅用于「装饰穿透」，禁止用它做逻辑禁用</b>——
  * 禁用态走 enabled signal 控制 {@code onClick} 与视觉，不靠命中穿透。</p>
