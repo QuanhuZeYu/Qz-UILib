@@ -28,6 +28,7 @@ public final class HeadlessRequest {
     public static final String DEFAULT_PROBE_TEXT = "Qz UILib 对拍样本 Ag123";
 
     private final String pageId;
+    private final int pageIndex;
     private final int width;
     private final int height;
     private final int frames;
@@ -38,9 +39,10 @@ public final class HeadlessRequest {
     private final String script;
     private final Path output;
 
-    private HeadlessRequest(String pageId, int width, int height, int frames, int settleFrames, int maxFrames,
+    private HeadlessRequest(String pageId, int pageIndex, int width, int height, int frames, int settleFrames, int maxFrames,
             int background, String text, String script, Path output) {
         this.pageId = pageId;
+        this.pageIndex = pageIndex;
         this.width = width;
         this.height = height;
         this.frames = frames;
@@ -60,6 +62,11 @@ public final class HeadlessRequest {
     /** @return 页面标识 */
     public String pageId() {
         return pageId;
+    }
+
+    /** @return 页面内下标；-1 表示由页面自身决定（如 playground 首页） */
+    public int pageIndex() {
+        return pageIndex;
     }
 
     /** @return 目标像素宽 */
@@ -109,7 +116,8 @@ public final class HeadlessRequest {
 
     /** @return 单行摘要（用于诊断与产物元信息） */
     public String summary() {
-        return "page=" + pageId + " size=" + width + "x" + height + " frames=" + frames
+        return "page=" + pageId + (pageIndex >= 0 ? "#" + pageIndex : "") + " size=" + width + "x"
+                + height + " frames=" + frames
                 + " background=" + String.format("%08X", Integer.valueOf(background))
                 + " settle=" + settleFrames + " maxFrames=" + maxFrames
                 + (TEXT_PROBE_PAGE.equals(pageId) ? " text=\"" + text + "\"" : "")
@@ -120,6 +128,7 @@ public final class HeadlessRequest {
     public static final class Builder {
 
         private String pageId = "playground";
+        private int pageIndex = -1;
         private int width = 1280;
         private int height = 720;
         private int frames = 2;
@@ -136,6 +145,12 @@ public final class HeadlessRequest {
         /** @param value 页面标识，不可为空 * @return this */
         public Builder page(String value) {
             this.pageId = value;
+            return this;
+        }
+
+        /** @param value 页面内下标；-1 表示不指定 * @return this */
+        public Builder pageIndex(int value) {
+            this.pageIndex = value;
             return this;
         }
 
@@ -209,7 +224,8 @@ public final class HeadlessRequest {
             if (output == null) {
                 throw new IllegalArgumentException("output 不可为空");
             }
-            return new HeadlessRequest(pageId, width, height, frames, settleFrames, maxFrames, background,
+            return new HeadlessRequest(pageId, pageIndex, width, height, frames, settleFrames, maxFrames,
+                    background,
                     text == null ? "" : text, script == null ? "" : script, output);
         }
     }

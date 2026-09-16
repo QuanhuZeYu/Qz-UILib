@@ -297,6 +297,37 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         return switchPage(displayedPageIndex, false);
     }
 
+    /**
+     * 请求切换到指定页（signal-first）：写受控导航源，由既有绑定通道驱动单槽切换。
+     *
+     * <p>这是给「不开游戏的出图 / 验证」用的确定性入口：不依赖导航标签的命中坐标，
+     * 因此窄画布下也不会静默 miss。它与用户点击导航走<b>同一条</b>通道（{@link #activePageSignal}），
+     * 不新增第二条切页路径，也不直接改树。</p>
+     *
+     * @param index 目标页下标；越界按 clamp 处理
+     */
+    public void showPage(int index) {
+        activePageSignal.set(Integer.valueOf(index));
+    }
+
+    /** @return 页面数量 */
+    public int pageCount() {
+        return pages.size();
+    }
+
+    /**
+     * 查询页面标题。
+     *
+     * @param index 页下标
+     * @return 标题；越界返回空串
+     */
+    public String pageTitle(int index) {
+        if (index < 0 || index >= pages.size()) {
+            return "";
+        }
+        return pages.get(index).title();
+    }
+
     // ==================== 基类实现 ====================
 
     @Override

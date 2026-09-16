@@ -91,7 +91,12 @@ public final class HeadlessSession implements AutoCloseable {
      */
     private static AbstractSceneHostWidget createHost(HeadlessRequest request, HeadlessInputSource inputSource) {
         if ("playground".equals(request.pageId())) {
-            return new TestPlaygroundHost(inputSource);
+            TestPlaygroundHost playgroundHost = new TestPlaygroundHost(inputSource);
+            if (request.pageIndex() >= 0) {
+                // 确定性切页：走宿主 signal 通道（与用户点击导航同源），不依赖命中坐标。
+                playgroundHost.showPage(request.pageIndex());
+            }
+            return playgroundHost;
         }
         if (HeadlessRequest.TEXT_PROBE_PAGE.equals(request.pageId())) {
             return new TextProbeHost(request.text(), request.width(), request.height(), inputSource);
