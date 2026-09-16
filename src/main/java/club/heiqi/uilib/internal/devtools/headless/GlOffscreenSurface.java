@@ -67,9 +67,10 @@ public final class GlOffscreenSurface implements AutoCloseable {
             // 运行期用真 LWJGL2（其 create 抛 checked LWJGLException）——签名不一致，故统一按 Throwable 收口，
             // 两种 classpath 组合下都能给出可归因的失败。
             String hint = e instanceof UnsatisfiedLinkError
-                    ? "加载 LWJGL2 natives 失败（检查 -Djava.library.path）"
+                    ? "加载 LWJGL2 natives 失败：请确认 natives 已解压且 -Djava.library.path 指向该目录"
+                            + "（exportHeadlessClasspath 生成的 qz-shot.bat 已自带该参数）"
                     : "创建 GL 上下文失败（Linux 无桌面环境需 Xvfb）";
-            throw new HeadlessFailure(HeadlessFailure.Stage.CONTEXT, hint + "：" + e, e);
+            throw new HeadlessFailure(HeadlessFailure.Stage.CONTEXT, hint + "：" + HeadlessFailure.brief(e), e);
         }
         String version = safeGlString(GL11.GL_VERSION);
         String renderer = safeGlString(GL11.GL_RENDERER);
@@ -138,6 +139,7 @@ public final class GlOffscreenSurface implements AutoCloseable {
             Display.destroy();
         }
     }
+
 
     private static String safeGlString(int name) {
         String value = GL11.glGetString(name);

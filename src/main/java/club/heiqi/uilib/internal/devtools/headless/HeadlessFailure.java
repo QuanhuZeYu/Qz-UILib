@@ -68,7 +68,23 @@ public final class HeadlessFailure extends RuntimeException {
         out.println("[headless] " + getMessage());
         Throwable cause = getCause();
         if (cause != null) {
-            out.println("[headless] cause: " + cause.getClass().getName() + ": " + cause.getMessage());
+            out.println("[headless] cause: " + cause.getClass().getName() + ": " + brief(cause));
         }
+    }
+
+    /**
+     * 截断异常文案：{@code UnsatisfiedLinkError} 会把整条 {@code java.library.path} 拼进消息（可达数千字符），
+     * 直接透传会让诊断不可读。全设施共用这一份实现。
+     *
+     * @param failure 异常
+     * @return 截断后的单行描述
+     */
+    static String brief(Throwable failure) {
+        String message = failure.getMessage();
+        if (message == null) {
+            return failure.getClass().getSimpleName();
+        }
+        String single = message.replace('\n', ' ').trim();
+        return single.length() <= 200 ? single : single.substring(0, 200) + "…";
     }
 }

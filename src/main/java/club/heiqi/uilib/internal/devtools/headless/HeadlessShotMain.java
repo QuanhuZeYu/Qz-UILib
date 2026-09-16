@@ -128,6 +128,7 @@ public final class HeadlessShotMain {
         boolean multi = total > 1;
         int okCount = 0;
         int failedCount = 0;
+        int environmentFailures = 0;
         List<String> labels = new ArrayList<String>();
         for (Integer targetPageIndex : pageTargets) {
             for (int[] size : sizeTargets) {
@@ -159,6 +160,9 @@ public final class HeadlessShotMain {
                     ok = artifact.selfCheck().ok();
                 } catch (HeadlessFailure failure) {
                     failure.printDiagnosis(System.err);
+                    // 环境 / 上下文 / 装配 / 帧 / 读回 / 编码失败属于「设施没能出图」，与「图出来了但内容可疑」分开报，
+                    // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」。
+                    environmentFailures++;
                     ok = false;
                 }
                 if (ok) {
@@ -172,6 +176,9 @@ public final class HeadlessShotMain {
 
         if (multi) {
             System.out.println("[headless] batch: " + okCount + "/" + total + " ok — " + String.join(" ", labels));
+        }
+        if (environmentFailures > 0) {
+            return 3;
         }
         return failedCount == 0 ? 0 : 4;
     }
