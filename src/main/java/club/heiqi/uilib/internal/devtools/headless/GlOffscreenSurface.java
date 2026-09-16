@@ -3,6 +3,7 @@ package club.heiqi.uilib.internal.devtools.headless;
 import java.nio.ByteBuffer;
 
 import org.lwjgl.BufferUtils;
+import org.lwjgl.LWJGLException;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
@@ -60,11 +61,7 @@ public final class GlOffscreenSurface implements AutoCloseable {
      */
     public static GlOffscreenSurface create(int width, int height) {
         try {
-            if (Display.isCreated()) {
-                Display.destroy();
-            }
-            Display.setTitle("Qz-UILib headless");
-            Display.create(new PixelFormat().withDepthBits(24).withStencilBits(8));
+            ensureContext();
         } catch (Throwable e) {
             // 编译期解析到 lwjgl3ify 的 org.lwjgl shim（其 create 不声明 checked 异常），
             // 运行期用真 LWJGL2（其 create 抛 checked LWJGLException）——签名不一致，故统一按 Throwable 收口，
@@ -118,6 +115,28 @@ public final class GlOffscreenSurface implements AutoCloseable {
         }
         return new GlOffscreenSurface(width, height, framebufferId, colorTextureId, depthStencilBufferId,
                 version, renderer, stencil, maxTexture);
+    }
+
+    /**
+     * 确保进程级 GL 上下文存在（已存在则复用）。
+     *
+     * <p>上下文是<b>进程级资源</b>，不是会话级资源：字体 atlas 等全局 GL 对象挂在它上面，
+     * 每次会话销毁并重建上下文会让后续会话用到失效纹理——实测多档矩阵从第 2 档起
+     * {@code glError=1281}、颜色数从 1290 掉到 217（文字大面积丢失）。</p>
+     */
+    private static void ensureContext() throws LWJGLException {
+        if (Display.isCreated()) {
+            return;
+        }
+        Display.setTitle("Qz-UILib headless");
+        Display.create(new PixelFormat().withDepthBits(24).withStencilBits(8));
+    }
+
+    /** 进程退出前释放上下文（可选：JVM 退出也会释放）。多测试共享 JVM 时不应调用。 */
+    public static void shutdownContext() {
+        if (Display.isCreated()) {
+            Display.destroy();
+        }
     }
 
     private static String safeGlString(int name) {
@@ -242,7 +261,7 @@ public final class GlOffscreenSurface implements AutoCloseable {
             if (framebufferId != 0) {
                 GL30.glDeleteFramebuffers(framebufferId);
             }
-            Display.destroy();
         }
+        // 不销毁 Display：上下文由进程共享（见 ensureContext 的说明）。
     }
 }

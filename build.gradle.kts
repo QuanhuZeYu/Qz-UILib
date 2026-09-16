@@ -6,7 +6,9 @@ import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.RegularFile
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
@@ -121,16 +123,44 @@ val extractHeadlessNatives by tasks.registering(Sync::class) {
 abstract class ExportHeadlessClasspath : DefaultTask() {
     @get:InputFiles
     abstract val classpath: ConfigurableFileCollection
-    @get:OutputFile
-    abstract val outputFile: RegularFileProperty
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+    @get:Input
+    abstract val javaExecutable: Property<String>
 
     @TaskAction
     fun export() {
+        val directory = outputDirectory.get().asFile
+        directory.mkdirs()
         val unique = LinkedHashSet<File>(classpath.files)
-        val target = outputFile.get().asFile
-        target.parentFile?.mkdirs()
-        target.writeText(unique.joinToString(File.pathSeparator))
-        logger.lifecycle("exportHeadlessClasspath: " + unique.size + " 项 -> " + target)
+        val classpathFile = File(directory, "classpath.txt")
+        classpathFile.writeText(unique.joinToString(File.pathSeparator))
+
+        // 启动器：把「一条命令出图」做成设施的一部分，而不是让 agent 自己拼 classpath。
+        // Java 的 @argfile 机制让超长 classpath 不必挤进 shell 命令行；参数文件按当前平台生成。
+        val argFile = File(directory, "shot-args.txt")
+        argFile.writeText(buildString {
+            append("-Djava.library.path=").append(File(directory, "natives").absolutePath).append('\n')
+            append("-Xmx2g").append('\n')
+            append("-cp").append('\n')
+            append(unique.joinToString(File.pathSeparator)).append('\n')
+            append("club.heiqi.uilib.internal.devtools.headless.HeadlessShotMain").append('\n')
+        })
+        val java = javaExecutable.get()
+        File(directory, "qz-shot.bat").writeText(buildString {
+            append("@echo off\r\n")
+            append("rem headless 出图启动器（由 exportHeadlessClasspath 生成）\r\n")
+            append('"').append(java).append('"').append(" @\"%~dp0shot-args.txt\" %*\r\n")
+        })
+        val shell = File(directory, "qz-shot.sh")
+        shell.writeText(buildString {
+            append("#!/bin/sh\n")
+            append("# headless 出图启动器（由 exportHeadlessClasspath 生成）\n")
+            append("exec \"").append(java).append("\" \"@\$(dirname \"\$0\")/shot-args.txt\" \"\$@\"\n")
+        })
+        shell.setExecutable(true)
+        logger.lifecycle("exportHeadlessClasspath: " + unique.size + " 项 -> " + classpathFile
+                + "（启动器 qz-shot.bat / qz-shot.sh）")
     }
 }
 
@@ -152,5 +182,6 @@ val exportHeadlessClasspath by tasks.registering(ExportHeadlessClasspath::class)
     classpath.from(mainSourceOutput)
     classpath.from(headlessLwjglRuntimeJars)
     classpath.from(configurations.named("runtimeClasspath"))
-    outputFile.set(headlessRuntimeDir.map { dir -> dir.file("classpath.txt") })
+    outputDirectory.set(headlessRuntimeDir)
+    javaExecutable.set(File(System.getProperty("java.home"), "bin/java").absolutePath)
 }
