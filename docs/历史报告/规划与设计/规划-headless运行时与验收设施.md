@@ -408,6 +408,27 @@ A2 与 §六-6 据此修正为：保留软光栅作为**字体侧既有验收通
 
 内存口径（RGBA 单帧）：360P 0.88 MiB → 2K 14.06 MiB；字体系统首次初始化常驻约 150 MiB（`FontService`，进程内只付一次）。
 
+### F21 完整开发类路径供给与 chat3/HUD 边界结论（2026-09-17）
+
+**新增完整开发类路径供给**：`exportHeadlessClasspath` 现在额外产出 `classpath-full.txt` + `qz-shot-full.bat`
+（137 项 = 最小集 107 项 + `compileClasspath` + `patchedMc` / `mcLauncher` 源集输出，即重编译后的 Minecraft 类）。
+
+- 起因（实测）：渲染触及 MC 类型的页面时链接失败——`NoClassDefFoundError: net/minecraft/util/IChatComponent`；
+  根因是 **MC 类不在 `compileClasspath` 上**（RFG 把重编译产物放在 `patchedMc` 源集输出）；
+- 补上 `patchedMc` + `mcLauncher` 后链接成功（同一命令从 exit 1 变为正常启动）；
+- 定位：**最小集仍是 agent 默认**（快、无 MC 静态初始化风险），完整集给「页面本来就要 MC 类型」的场景。
+
+**chat3 / HUD 未纳入 headless 直启可渲染面（带证据的结论）**：
+
+| 消费者 | 可 headless 性 | 证据 |
+|---|---|---|
+| chat3 视图 | **部分** | `ChatSceneController` 有专门的 headless 注入构造（`uiLibMeasure()` 为 public 且不依赖 MC），`buildContent(rt)` 可直接调用；但消息数据 `ChatLineRecord ← IChatComponent` 需要 MC 类，且**内容树由宿主装配驱动**——实测把 `buildContent` 结果直接挂树渲染得到空画面（`commands=0`，`colors=1`），说明列表内容挂在容器 / HUD 窗口装配链上（`ChatContainer` / `ChatHudWindow` / 输入屏幕） |
+| HUD | **否（宿主在 MC 域）** | `ui/hud` API 层零 MC 依赖，但宿主装配 `SceneHudHost` / `HudRegistry` / `ClientHudServiceImpl` 全在 `client/` 包；在 headless 复刻等于新增一套 HUD 虚拟窗口装配，违背「复用生产链路」原则 |
+
+结论：两者若要纳入，正确姿势是**在测试域（已有 MC classpath）用生产装配接线**，而不是在 headless 直启里复刻宿主。
+设施侧已把前置条件补齐（完整类路径供给）；本轮据此把 chat 探针**回退**（不交付渲染空画面的页面），
+同时把「有命令无像素 / 有像素无命令」的两个自检提示留在产品里作为同类问题的探测器。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**
