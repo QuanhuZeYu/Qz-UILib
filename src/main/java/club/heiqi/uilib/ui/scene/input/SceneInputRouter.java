@@ -1004,6 +1004,28 @@ public class SceneInputRouter {
     }
 
     /**
+     * <b>只读命中探针</b>：报出「在这一点按下，事件会沿哪条链派发」（root→最深目标）。
+     *
+     * <p>存在的理由：诊断侧（headless 树投影）要如实回答「点这个节点的中心，事件到不到它」。
+     * 这件事只有命中测试能回答 —— 任何几何近似都不等价：被滚动容器裁掉的目标、被模态遮罩盖住的
+     * 目标，几何上都「有尺寸、也没有更深的可点后代」，唯独点下去到不了自己。让诊断侧自拼一套判据
+     * 等于复制命中语义，且必然与真实派发漂移（独立复核抓到 4 类反例）。</p>
+     *
+     * <p>返回<b>整条链</b>而非最深节点：链上成员资格就是「事件会冒泡到它」的判据，而链尾是「谁是
+     * 本次点击的目标」。两者都是投影要报的事实，少一个就得再算一次。</p>
+     *
+     * <p>零副作用沿用 {@link SceneHitTester} 的硬不变量（只读不写、不标脏），可安全用于查询路径。</p>
+     *
+     * @param root    主树根；可为 null（浮层由本路由器按 top-first 优先检查，不依赖主树）
+     * @param canvasX 画布逻辑 X
+     * @param canvasY 画布逻辑 Y
+     * @return 命中链（root→最深目标）；未命中返回空表
+     */
+    public List<SceneNode> __probeHitChain(SceneNode root, int canvasX, int canvasY) {
+        return hitTestWithOverlays(root, canvasX, canvasY, 0, 0).chain;
+    }
+
+    /**
      * 将 occurrence placement 与当前 overlay anchor 合成为派发树绝对原点。
      *
      * <p>overlay 命中时同一按 s 换算（overlay 坐标空间 = 画布逻辑 ÷ s）；主树 entry == null

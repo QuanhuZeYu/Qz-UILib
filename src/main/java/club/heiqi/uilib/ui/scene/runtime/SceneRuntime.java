@@ -131,21 +131,36 @@ public class SceneRuntime implements SceneFontEnvironment {
             Signal.create(LogicalBox.EMPTY);
 
     /**
-     * 已登记环境根（宿主装配时写入环境的树根）；恒等语义，随宿主卸载摘除。
+     * 已登记<b>环境根</b>：需要接收字号环境广播（{@code __invalidateFontSubtree}）的子树入口。
      *
-     * <p><b>用 List 而非 IdentityHashSet</b>：登记顺序对外是语义的一部分 —— 节点寻址（headless 树投影）
-     * 以 {@code r<下标>} 表达「第几棵树」，集合的无序实现会让同一装配在不同进程里给出不同编号。
-     * 恒等语义靠遍历比对（{@code ==}）保持，不依赖元素的 equals。规模是个位数（主树 + 各浮层），
-     * 线性查找的成本可忽略。</p>
+     * <p><b>用 List 而非 IdentityHashSet</b>：恒等语义靠遍历比对（{@code ==}）保持，不依赖元素的
+     * equals；规模是个位数，线性查找的成本可忽略。集合本身<b>不再承载寻址语义</b>（见下）。</p>
      *
-     * <p><b>本集合装两种语义的根，寻址只能读前者</b>：{@link #__adoptFontEnvironmentRoot} 的调用点有
-     * 三类 —— ① {@code SceneHostAssembly.attachTree}：宿主<b>装配树根</b>（无父，装配期一次，顺序稳定）；
-     * ② {@code mount} / {@code portal}：<b>子内容根</b>（有父，挂在宿主树上，页重建时旧根摘除、新根追加）。
-     * 环境写入需要覆盖两者（内容根可能先于宿主装配拿到环境），但<b>寻址只能以①为『第几棵树』</b>：
-     * ②的顺序随页重建漂移（实测 fs 变化触发 refreshPage 后 r1/r2 互换），拿它当地址锚点必然失效。
-     * 故 {@link #__fontEnvironmentRoots()} 只返回①，见其 javadoc。</p>
+     * <p><b>这是「广播域」，不是「地址空间」</b>：本集合的成员资格是「这棵子树自己持有了环境引用、
+     * 必须被独立失效」，与「它在树里的位置」无关。{@code mount} / {@code portal} / {@code show} 的内容根
+     * 都是宿主树上的<b>子内容根</b>（有父指针），它们进本集合是因为可能先于宿主装配拿到环境；
+     * 而<b>寻址</b>要的是「第几棵独立的树」—— 内容根在 {@code r0/…} 里本来就已可达，不该另占一个根号。</p>
+     *
+     * <p><b>历史教训（独立复核实测）</b>：本类曾用 {@code __fontEnvironmentRoots()} 从本集合里按
+     * {@code __getParent() == null} 筛出「装配树根」供寻址用。该判据表达不了语义 —— 它同时为真于
+     * ①宿主装配树根、②浮层根（{@code SceneOverlayHost.register} 只入栈，portal 根本就无父）、
+     * ③<b>已脱离树的孤儿</b>。{@code show} 的内容根登记后未配对释放，条件转假卸下后恰成孤儿，
+     * 于是死根被当成树根占用 {@code r1/r2…}：同一浮层的地址随交互历史漂移，且根数随开关无上限增长。
+     * 寻址现已改由语义权威供给（{@link #__addressableRoots()}），本判据不再参与寻址。</p>
      */
     private final List<SceneNode> fontEnvironmentRoots = new ArrayList<SceneNode>();
+
+    /**
+     * <b>装配树根</b>（{@code SceneHostAssembly.attachTree} 声明，卸载摘除）：寻址地址空间的前半段。
+     *
+     * <p>与 {@link #fontEnvironmentRoots} 分开的理由：两者的成员资格判据不同。广播域要「谁持有环境
+     * 引用」，装配根要「谁是一棵独立的树」；{@code mount}/{@code portal}/{@code show} 的内容根属前者
+     * 不属后者。混在一起就只能靠代理判据区分，而任何几何代理都区分不了「浮层根」与「卸载后的孤儿」
+     * （两者都无父）。</p>
+     *
+     * <p>顺序 = 装配顺序，只由宿主装配决定，与页重建、字号刷新、交互历史无关。</p>
+     */
+    private final List<SceneNode> assemblyRoots = new ArrayList<SceneNode>();
 
     /** 默认字号信号桥的唯一 effect（幂等替换，不叠加）。 */
     private Effect defaultFontSizeEffect;
@@ -411,13 +426,18 @@ public class SceneRuntime implements SceneFontEnvironment {
     }
 
     /**
-     * 宿主装配唯一口径：把一棵已构建的树交给本 runtime（写树根环境引用 + 登记环境根）。
+     * <b>环境广播域</b>登记：把一棵子树根纳入本 runtime 的字号环境广播范围（写环境引用 + 登记）。
      *
-     * <p>由 {@code SceneHostAssembly.attachTree(SceneRuntime, SceneNode)} 委托调用；
-     * 覆盖 mount / portalAnchored / show / HUD 窗口自建 runtime 等装配路径。
-     * 环境引用随<b>树根装配</b>设置，不随节点构造设置 —— 摘除即父链断开、环境自然失效。</p>
+     * <p>调用者是「需要持环境引用的子树根」：{@code mount} / {@code portal} / {@code show} 的内容根
+     * （它们可能先于宿主装配拿到环境）以及装配树根本身。环境引用随<b>根装配</b>设置，不随节点构造
+     * 设置 —— 摘除即父链断开、环境自然失效。</p>
      *
-     * @param root 已构建的树根；null = no-op
+     * <p><b>本方法与寻址无关</b>：进广播域不等于「是一棵独立的树」。装配树根要额外走
+     * {@link #__registerAssemblyRoot} 才获得寻址身份；浮层根的寻址身份由浮层宿主供给。
+     * 曾把本方法与寻址混为一谈（再按 {@code __getParent() == null} 筛），是本类最贵的一次教训，
+     * 见 {@link #fontEnvironmentRoots} 字段注释。</p>
+     *
+     * @param root 已构建的子树根；null = no-op
      */
     public void __adoptFontEnvironmentRoot(SceneNode root) {
         if (root == null) {
@@ -455,28 +475,79 @@ public class SceneRuntime implements SceneFontEnvironment {
     }
 
     /**
-     * <b>装配树根</b>的只读视图，按装配顺序 —— 节点寻址的「第几棵树」就是这里的下标。
+     * 登记一个<b>装配树根</b>：{@code SceneHostAssembly.attachTree} 在宿主装配期调用，卸载时摘除。
      *
-     * <p>判据是 {@code __getParent() == null}：{@code attachTree} 登记的宿主树根没有父，而
-     * {@code mount} / {@code portal} 登记的内容根挂在宿主树上。<b>不能用登记顺序直接当地址</b>
-     * —— 内容根会随页重建被摘除并重新追加到末尾，导致同一个控件的路径在「改字号 / 切页 / 点一次
-     * 导航」后漂移（独立复核实测三个反例）。按「无父」筛选后，装配树根的顺序只由宿主装配顺序决定，
-     * 与页重建无关。</p>
+     * <p>「是不是一棵独立的树」由<b>装配声明</b>决定，不由节点当前有没有父指针推断。这个区别是
+     * 承重的：{@code SceneOverlayHost.register} 只把浮层根入栈，浮层根本就无父；而 {@code show}
+     * 的内容根在卸下后同样无父 —— 用 {@code __getParent() == null} 当判据无法区分这两者，
+     * 结果是把死根当成树根编号（独立复核的最小反例：同一对话框在 r1/r2/r3 之间漂移）。</p>
      *
-     * <p>顺序只在 runtime 内部可知（宿主侧各自持有根字段：{@code AbstractSceneHostWidget.getRoot()}
-     * 是 protected、{@code SceneHostWindow.root()} 是公开访问器），故在此开出只读视图，与
-     * {@link #__adoptFontEnvironmentRoot} 同一事实源，不新增第二套登记。</p>
-     *
-     * @return 不可变视图（顺序 = 装配顺序；未装配时为空）
+     * @param root 装配树根；null = no-op
      */
-    public List<SceneNode> __fontEnvironmentRoots() {
-        List<SceneNode> assemblyRoots = new ArrayList<SceneNode>();
-        for (SceneNode root : fontEnvironmentRoots) {
-            if (root.__getParent() == null) {
-                assemblyRoots.add(root);
+    public void __registerAssemblyRoot(SceneNode root) {
+        if (root == null) {
+            return;
+        }
+        for (int i = 0; i < assemblyRoots.size(); i++) {
+            if (assemblyRoots.get(i) == root) {
+                return;                              // 幂等：同一棵树重复登记不占第二个序号
             }
         }
-        return Collections.unmodifiableList(assemblyRoots);
+        assemblyRoots.add(root);
+    }
+
+    /**
+     * 摘除装配树根登记（宿主卸载时调用，与 {@link #__registerAssemblyRoot} 成对）。
+     *
+     * @param root 已卸载的装配树根；null = no-op
+     */
+    public void __unregisterAssemblyRoot(SceneNode root) {
+        if (root == null) {
+            return;
+        }
+        for (int i = 0; i < assemblyRoots.size(); i++) {
+            if (assemblyRoots.get(i) == root) {
+                assemblyRoots.remove(i);
+                return;
+            }
+        }
+    }
+
+    /**
+     * <b>可寻址根</b>的只读视图 —— 节点寻址里 {@code r<下标>} 的「下标」就是这里的下标。
+     *
+     * <p>地址空间由<b>两个语义权威</b>拼成，不做任何几何筛选：</p>
+     * <ol>
+     *   <li><b>装配树根</b>（{@link #__registerAssemblyRoot}）：顺序 = 宿主装配顺序，与页重建无关；</li>
+     *   <li><b>活跃浮层根</b>（{@code overlayHost.bottomFirst()}）：顺序 = 浮层栈序，即当前 z-order；
+     *       已卸载的浮层不在栈里，因此不留历史痕迹。</li>
+     * </ol>
+     *
+     * <p>两者都不含 {@code mount} / {@code show} 的内容根 —— 它们在 {@code r0/…} 路径里本来就已可达，
+     * 另占一个根号只会让同一控件有两个地址，且随页重建漂移。这也保证了死根（已脱离树的节点）
+     * 绝不出现在地址空间里：它不是装配树根，也不在浮层栈上。</p>
+     *
+     * @return 不可变视图（装配树根在前、浮层根在后；未装配时为空）
+     */
+    public List<SceneNode> __addressableRoots() {
+        List<SceneNode> roots = new ArrayList<SceneNode>(assemblyRoots);
+        for (SceneOverlayHost.Entry entry : overlayHost.bottomFirst()) {
+            roots.add(entry.getRoot());
+        }
+        return Collections.unmodifiableList(roots);
+    }
+
+    /**
+     * <b>装配树根</b>的只读视图（不含浮层根），顺序 = 装配顺序。
+     *
+     * <p>与 {@link #__addressableRoots()} 只差「要不要浮层」：命中测试入口需要的是<b>主树根</b>
+     * ——浮层由 {@code SceneInputRouter} 自己按 top-first 优先检查，调用方不该重复拼装那套逻辑。
+     * 两者读同一字段，不新增登记。</p>
+     *
+     * @return 不可变视图
+     */
+    public List<SceneNode> __assemblyRoots() {
+        return Collections.unmodifiableList(new ArrayList<SceneNode>(assemblyRoots));
     }
 
     /** @return 本 runtime 是否已 {@link #dispose()}。 */
@@ -979,10 +1050,19 @@ public class SceneRuntime implements SceneFontEnvironment {
         parent.appendChild(anchor);
         // 装配点 P14：show 的内容根在构建后写入环境引用（内容根随 parent 继承，此处显式兜底，
         // 保证 parent 尚未装配时内容树也能获得本 runtime 的环境）。包装不改 renderer 语义。
+        //
+        // 释放必须与登记配对（独立复核抓到的 P0）：此前只登记不释放，内容根在条件转假卸下后
+        // 变成无父孤儿，永久留在广播域里 —— 每次环境变更白遍历，且根数随浮层开关无上限增长。
+        // 释放挂在「本次挂载的内容作用域」上（Owner.run 内的 current 即该作用域），
+        // 故用 renderer 回传的卸载点，而不是在 show 外层猜生命周期。
         Supplier<SceneNode> contentWithEnvironment = () -> {
             SceneNode contentRoot = content.get();
             if (contentRoot != null) {
                 __adoptFontEnvironmentRoot(contentRoot);
+                Owner mountedScope = Owner.current();
+                if (mountedScope != null) {
+                    mountedScope.onCleanup(() -> __releaseFontEnvironmentRoot(contentRoot));
+                }
             }
             return contentRoot;
         };

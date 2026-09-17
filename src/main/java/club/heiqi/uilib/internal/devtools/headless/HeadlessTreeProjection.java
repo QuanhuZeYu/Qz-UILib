@@ -59,13 +59,15 @@ public final class HeadlessTreeProjection {
         private final int height;
         private final int fontSizePx;
         private final boolean hitTestable;
-        private final boolean ownName;
-        private final int hitTestableDescendants;
+        private final String ownName;
+        private final boolean centerHitsSelf;
+        private final boolean onHitChain;
+        private final String centerHitLabel;
         private final int childCount;
 
         Row(HeadlessNodePath path, int depth, String type, String text, int absX, int absY,
-                int width, int height, int fontSizePx, boolean hitTestable, boolean ownName,
-                int hitTestableDescendants, int childCount) {
+                int width, int height, int fontSizePx, boolean hitTestable, String ownName,
+                boolean centerHitsSelf, boolean onHitChain, String centerHitLabel, int childCount) {
             this.path = path;
             this.depth = depth;
             this.type = type;
@@ -77,7 +79,9 @@ public final class HeadlessTreeProjection {
             this.fontSizePx = fontSizePx;
             this.hitTestable = hitTestable;
             this.ownName = ownName;
-            this.hitTestableDescendants = hitTestableDescendants;
+            this.centerHitsSelf = centerHitsSelf;
+            this.onHitChain = onHitChain;
+            this.centerHitLabel = centerHitLabel;
             this.childCount = childCount;
         }
 
@@ -131,26 +135,52 @@ public final class HeadlessTreeProjection {
             return hitTestable;
         }
 
-        /**
-         * @return 名称是否取自本节点自身（false = 从子树聚合得到）。
-         *
-         * <p>聚合名会带来「容器与它的按钮同名」这类候选爆炸（实测 {@code --find=删除} 命中 4 个，
-         * 含全屏遮罩与对话框卡片，真按钮只是其中之一）。</p>
-         */
-        public boolean ownName() {
+        /** @return 本节点自身的名称（无自身文本时为 null，此时 {@link #text()} 是聚合名） */
+        public String ownName() {
             return ownName;
         }
 
         /**
-         * @return 是否为<b>可点目标</b>：可命中、有可见尺寸、且没有同为可命中的后代。
+         * @return 点本节点<b>中心</b>时，事件的目标是不是它自己。
          *
-         * <p><b>判据是「最深可点节点」而不是「自身持名」</b>：场景里按钮与列表项普遍自己可命中、
-         * 文案挂在不可命中的子 label 上，用「自身持名」会把真正的按钮也判成容器。反过来，全屏遮罩、
-         * 对话框卡片这些可命中容器<b>有</b>可命中的后代，点它们的中心点会落在错误目标上 —— 这才
-         * 是该剔除的那一类。</p>
+         * <p>这是「这个坐标点下去能不能如你所愿」的直接事实，与真实派发同一处实现
+         * （{@code SceneInputRouter.__probeHitChain}，含浮层 top-first 与滚动裁剪）。</p>
+         */
+        public boolean centerHitsSelf() {
+            return centerHitsSelf;
+        }
+
+        /**
+         * @return 本节点是否出现在中心点的命中链上（即事件会冒泡到它）。
+         *
+         * <p>与 {@link #centerHitsSelf()} 的区别：本节点被<b>可命中的后代</b>盖住时，中心点到不了它，
+         * 但后代是它的子节点，事件仍会冒泡经过它。这类节点（卡片、列表行）适合作为「整块区域」目标，
+         * 不适合作为「精确点某个按钮」的目标。</p>
+         */
+        public boolean onHitChain() {
+            return onHitChain;
+        }
+
+        /**
+         * @return 中心点实际命中<b>谁</b>（{"地址 类型"}，未命中为 null）。
+         *
+         * <p>只报类型（如 {@code SceneNode}）对 agent 无用：27 行 {@code [blocked]} 全是同一个类型名，
+         * 看不出被什么挡住。报地址才能给出可执行信息 —— 「被 {@code r1/0} 这层遮罩盖住了，先关它」。</p>
+         */
+        public String centerHitLabel() {
+            return centerHitLabel;
+        }
+
+        /**
+         * @return 是否为<b>可点目标</b>：有可见尺寸、可命中，且点它的中心<b>真的打到它自己</b>。
+         *
+         * <p><b>判据是真实命中，不是几何近似</b>。历史上用过「没有同为可命中的后代」，它等价不了
+         * 「点得中」，独立复核据此给出四类反例：被滚动容器裁掉的目标（几何有尺寸、点下去越界）、
+         * 被模态遮罩盖住的目标（点下去打到遮罩）、以及能命中自己的容器（反而被判成非目标）。
+         * 这些差异只有命中测试能回答，所以判据直接取命中结果，不再叠加任何几何推导。</p>
          */
         public boolean actionableTarget() {
-            return hitTestable && width > 0 && height > 0 && hitTestableDescendants == 0;
+            return hitTestable && width > 0 && height > 0 && centerHitsSelf;
         }
 
         /** @return 直接子节点数 */
@@ -168,7 +198,7 @@ public final class HeadlessTreeProjection {
             return absY + height / 2;
         }
 
-        /** @return 单行摘要：{@code <path> <type> "<text>" @x,y wxh fs=N} */
+        /** @return 单行摘要：{@code <path> <type> "<text>" @x,y wxh fs=N} + 质量标注 */
         public String describe() {
             StringBuilder sb = new StringBuilder();
             sb.append(path).append(' ').append(type);
@@ -178,17 +208,34 @@ public final class HeadlessTreeProjection {
             sb.append(" @").append(absX).append(',').append(absY)
                     .append(' ').append(width).append('x').append(height)
                     .append(" fs=").append(fontSizePx);
-            if (!hitTestable) {
-                sb.append(" [non-interactive]");
-            }
-            if (actionableTarget()) {
-                sb.append(" [target]");
-            } else if (ownName) {
-                sb.append(" [container]");
-            } else {
-                sb.append(" [aggregate-name]");
-            }
+            sb.append(qualityTag());
             return sb.toString();
+        }
+
+        /**
+         * 质量标注：调用方据此判断「这个地址该不该点」。
+         *
+         * <p>四档的语义边界（都不含几何推断，全部来自事实）：</p>
+         * <ul>
+         *   <li>{@code [target]}：中心点命中自己 —— 直接点，事件就到它。</li>
+         *   <li>{@code [blocked]}：可命中、有尺寸，但中心点被别的东西接走了（裁剪 / 遮挡 / 更深的后代）。
+         *       此时给出 {@code hit=<实际命中类型>} 说明被谁接走，调用方据此决定改点别处或先关浮层。</li>
+         *   <li>{@code [container]}：中心点命中的是自己的后代（事件仍冒泡经过它）—— 适合整块区域，
+         *       不适合「精确点某个控件」。</li>
+         *   <li>{@code [non-interactive]}：自身不参与命中（布局容器 / 装饰叶）。</li>
+         * </ul>
+         */
+        public String qualityTag() {
+            if (actionableTarget()) {
+                return " [target]";
+            }
+            if (!hitTestable) {
+                return " [non-interactive]";
+            }
+            if (onHitChain) {
+                return " [container]";
+            }
+            return " [blocked] hit=" + (centerHitLabel == null ? "NONE" : centerHitLabel);
         }
 
         private static String abbreviate(String text) {
@@ -206,12 +253,59 @@ public final class HeadlessTreeProjection {
      * @return 事实行（深度优先，同级按子节点顺序 = z-order）
      */
     public static List<Row> project(SceneNode root, int rootIndex, boolean interactiveOnly) {
+        return project(root, rootIndex, interactiveOnly, null);
+    }
+
+    /**
+     * 投影一棵树，并用<b>真实命中</b>标注每个节点的中心点质量。
+     *
+     * <p>命中源由调用方注入（{@link HitProbe}），而不是在本类内部自己拼一套几何判据：中心点
+     * 「点到谁」只有 {@code SceneInputRouter} 的命中链能回答（含浮层 top-first、滚动裁剪与
+     * 可命中祖先链），任何几何近似都会与真实派发漂移 —— 这正是本类此前 4 类标注反例的根因。</p>
+     *
+     * @param root            树根；null 返回空表
+     * @param rootIndex       根序号（用于地址）
+     * @param interactiveOnly true = 只留可命中节点（其祖先链保留以给出路径）
+     * @param hitProbe        命中探针；null = 不标注（{@code centerHitsSelf}/{@code onHitChain}
+     *                        恒为 false，{@code [target]} 不再出现）
+     * @return 事实行（深度优先，同级按子节点顺序 = z-order）
+     */
+    public static List<Row> project(SceneNode root, int rootIndex, boolean interactiveOnly,
+            HitProbe hitProbe) {
         List<Row> rows = new ArrayList<Row>();
         if (root == null) {
             return rows;
         }
-        collect(root, HeadlessNodePath.root(rootIndex), 0, interactiveOnly, rows);
+        collect(root, HeadlessNodePath.root(rootIndex), 0, interactiveOnly, hitProbe, rows);
         return rows;
+    }
+
+    /**
+     * 命中探针：把「某坐标的实际命中链」交给投影。
+     *
+     * <p>契约：只读、零副作用（与 {@code SceneHitTester} 的硬不变量一致）。返回空表表示该点未命中
+     * 任何节点（越界 / 被完全裁掉）。</p>
+     */
+    public interface HitProbe {
+
+        /**
+         * @param x 画布逻辑 X
+         * @param y 画布逻辑 Y
+         * @return 命中链（root→最深目标）；未命中返回空表
+         */
+        List<SceneNode> hitChainAt(int x, int y);
+
+        /**
+         * 把任意节点渲染成<b>可执行的目标描述</b>（形如 {@code r1/0/2 SceneNode}）。
+         *
+         * <p>为什么由调用方提供：地址空间由 runtime 持有（装配根 + 活跃浮层 + 子下标），投影只认
+         * 「路径字符串」这一种表示。让本类自己反推地址会复制寻址规则，两处一旦不一致，报出的
+         * {@code hit=…} 就指向不存在的目标 —— 而它正是用来指引 agent 下一步动作的。</p>
+         *
+         * @param node 目标节点；可为 null
+         * @return 目标描述；节点不在任何已知地址空间内时返回 {@code null}
+         */
+        String labelOf(SceneNode node);
     }
 
     /**
@@ -226,7 +320,7 @@ public final class HeadlessTreeProjection {
      * <p>未布局的节点（cachedLayout == null）得到零盒，如实报 0 —— <b>不猜</b>。</p>
      */
     private static void collect(SceneNode node, HeadlessNodePath path, int depth,
-            boolean interactiveOnly, List<Row> rows) {
+            boolean interactiveOnly, HitProbe hitProbe, List<Row> rows) {
         if (depth > MAX_DEPTH) {
             return;
         }
@@ -241,16 +335,34 @@ public final class HeadlessTreeProjection {
         List<SceneNode> children = node.__getChildren();
         if (keep) {
             String own = textOf(node);
-            boolean ownName = own != null && !own.isEmpty();
-            rows.add(new Row(path, depth, typeOf(node), ownName ? own : firstDescendantText(node,
-                    NAME_SEARCH_DEPTH), absX, absY, width, height, node.effectiveFontSize(),
-                    node.isHitTestable(), ownName, countHitTestableDescendants(node, 4), children.size()));
+            String ownText = (own != null && !own.isEmpty()) ? own : null;
+            // 中心点用与 centerX/centerY 同一式子（+w/2），命中事实必须对应「会被点击的那个点」。
+            String hitLabel = null;
+            boolean hitsSelf = false;
+            boolean onChain = false;
+            if (hitProbe != null && width > 0 && height > 0) {
+                List<SceneNode> chain = hitProbe.hitChainAt(absX + width / 2, absY + height / 2);
+                if (chain != null && !chain.isEmpty()) {
+                    hitsSelf = chain.get(chain.size() - 1) == node;
+                    for (SceneNode hit : chain) {
+                        if (hit == node) {
+                            onChain = true;
+                            break;
+                        }
+                    }
+                    hitLabel = hitProbe.labelOf(chain.get(chain.size() - 1));
+                }
+            }
+            rows.add(new Row(path, depth, typeOf(node), ownText != null ? ownText
+                    : firstDescendantText(node, NAME_SEARCH_DEPTH), absX, absY, width, height,
+                    node.effectiveFontSize(), node.isHitTestable(), ownText, hitsSelf, onChain,
+                    hitLabel, children.size()));
         }
         for (int i = 0; i < children.size(); i++) {
             List<Integer> childIndexes = new ArrayList<Integer>(path.childIndexes());
             childIndexes.add(Integer.valueOf(i));
             collect(children.get(i), HeadlessNodePath.of(path.rootIndex(), childIndexes), depth + 1,
-                    interactiveOnly, rows);
+                    interactiveOnly, hitProbe, rows);
         }
     }
 
@@ -258,20 +370,6 @@ public final class HeadlessTreeProjection {
     private static final int NAME_SEARCH_DEPTH = 3;
 
 
-    /** 统计可命中的后代个数（深度上限内；用于区分「叶子可点目标」与「可点容器」）。 */
-    private static int countHitTestableDescendants(SceneNode node, int depthLeft) {
-        if (depthLeft <= 0) {
-            return 0;
-        }
-        int count = 0;
-        for (SceneNode child : node.__getChildren()) {
-            if (child.isHitTestable()) {
-                count++;
-            }
-            count += countHitTestableDescendants(child, depthLeft - 1);
-        }
-        return count;
-    }
 
     /** 深度优先找第一个非空后代文本；超过深度上限返回 null。 */
     private static String firstDescendantText(SceneNode node, int depthLeft) {

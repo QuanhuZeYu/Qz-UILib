@@ -96,6 +96,9 @@ public final class SceneHostAssembly {
             throw new IllegalArgumentException("runtime must not be null");
         }
         runtime.__adoptFontEnvironmentRoot(root);
+        // 寻址身份与广播身份分开登记：本方法是「宿主装配」的唯一口径，因此也是「这是一棵独立的树」
+        // 的权威声明点。用几何判据（无父）反推装配根会把卸载后的 show 内容根也当成树根（独立复核实测）。
+        runtime.__registerAssemblyRoot(root);
     }
 
     /**
@@ -109,6 +112,7 @@ public final class SceneHostAssembly {
             return;
         }
         runtime.__releaseFontEnvironmentRoot(root);
+        runtime.__unregisterAssemblyRoot(root);
         // 清掉树根的环境引用：后代沿父链只看树根，因此清一处即整树脱离该 runtime，
         // 杜绝「已卸载的树仍指向旧 runtime」的跨 runtime 陈旧。
         if (root.__getFontEnvironment() == runtime) {

@@ -632,16 +632,21 @@ public final class HeadlessShotMain {
                         ordered.add(row);
                     }
                 }
-                int actionable = ordered.size() - (matched.size() - countActionable(matched));
+                int actionable = countActionable(matched);
                 System.out.println("[headless] find \"" + find + "\": " + matched.size()
-                        + " 个命中（其中可点目标 " + countActionable(matched) + " 个）");
+                        + " 个命中（其中可点目标 " + actionable + " 个）");
                 for (HeadlessTreeProjection.Row row : ordered) {
                     System.out.println("[headless]   " + row.describe()
                             + " center=" + row.centerX() + "," + row.centerY());
                 }
-                if (find != null && actionable == 0 && !ordered.isEmpty()) {
-                    System.out.println("[headless]   提示：以上均为容器 / 聚合名（无自身文本），"
-                            + "直接按中心点点击多半落在遮罩或卡片上");
+                if (actionable == 0 && !ordered.isEmpty()) {
+                    // 提示必须说清「为什么点不到」，而不是笼统一句「多半落在遮罩上」：
+                    // [blocked] 的成因至少三种（被裁掉 / 被别的东西接走 / 命中的是自己的后代），
+                    // agent 据此采取的动作完全不同。逐行已给出 hit=…，这里只汇总一句。
+                    System.out.println("[headless]   提示：没有中心点可命中的目标。"
+                            + "[container] 的中心落到了自己的后代（点下去事件仍冒泡经过它）；"
+                            + "[blocked] 见各行 hit=：hit=NONE 表示该坐标没有任何节点接住（多半被滚动容器裁掉），"
+                            + "hit=<地址> 表示被该节点接走（浮层遮罩、更深的兄弟节点），可先处理它");
                 }
                 if (matched.isEmpty()) {
                     return 4;
@@ -658,7 +663,12 @@ public final class HeadlessShotMain {
         }
     }
 
-    /** @return 命中的可点目标数（自身可命中、有可见尺寸、自身持名） */
+    /**
+     * @return 命中的可点目标数（可命中、有可见尺寸、且<b>中心点命中自己</b>）。
+     *
+     * <p>判据即 {@link HeadlessTreeProjection.Row#actionableTarget()} —— 事实来自真实命中链，
+     * 不是几何推断。此处只做计数，不重复判据。</p>
+     */
     private static int countActionable(List<HeadlessTreeProjection.Row> rows) {
         int count = 0;
         for (HeadlessTreeProjection.Row row : rows) {

@@ -294,10 +294,10 @@ public final class HeadlessSession implements AutoCloseable {
         return request;
     }
 
-    /** @return 当前已登记的树根数量（主树 + 各浮层） */
+    /** @return 当前可寻址根数量（装配树根 + 活跃浮层根） */
     public int rootCount() {
         ensureOpen();
-        return runtime.__fontEnvironmentRoots().size();
+        return runtime.__addressableRoots().size();
     }
 
     /**
@@ -366,11 +366,75 @@ public final class HeadlessSession implements AutoCloseable {
     public List<HeadlessTreeProjection.Row> projectTree(boolean interactiveOnly) {
         ensureOpen();
         List<HeadlessTreeProjection.Row> rows = new ArrayList<HeadlessTreeProjection.Row>();
-        List<SceneNode> roots = runtime.__fontEnvironmentRoots();
+        List<SceneNode> roots = runtime.__addressableRoots();
+        // 命中入口只有一个：主树根。浮层由路由器自己按 top-first 检查 —— 若在此把每个浮层根都
+        // 当成独立主树去命中，浮层的遮挡关系就被调用方拍平了，标注出的 [target] 会与实际派发不符。
+        SceneNode mainRoot = runtime.__assemblyRoots().isEmpty() ? null : runtime.__assemblyRoots().get(0);
+        HeadlessTreeProjection.HitProbe probe = mainRoot == null ? null
+                : new HeadlessTreeProjection.HitProbe() {
+                    @Override
+                    public List<SceneNode> hitChainAt(int x, int y) {
+                        return runtime.getInputRouter().__probeHitChain(mainRoot, x, y);
+                    }
+
+                    @Override
+                    public String labelOf(SceneNode node) {
+                        return addressOf(node);
+                    }
+                };
         for (int i = 0; i < roots.size(); i++) {
-            rows.addAll(HeadlessTreeProjection.project(roots.get(i), i, interactiveOnly));
+            rows.addAll(HeadlessTreeProjection.project(roots.get(i), i, interactiveOnly, probe));
         }
         return rows;
+    }
+
+    /**
+     * 反查节点的<b>可执行地址</b>（形如 {@code r1/0/2 SceneNode}）；不在任何可寻址根下时返回 null。
+     *
+     * <p>与 {@link #centerOf(String)} 是同一套地址空间的<b>反方向</b>：那边由地址找节点，这边由节点
+     * 找地址。两者共用 {@link #runtime}.__addressableRoots() 这一个事实源，因此报出的地址保证可被
+     * {@code --center} 解回来 —— 诊断里给出的「被谁挡住了」如果指向一个解析不了的地址，
+     * 那它比不给还糟。</p>
+     *
+     * @param node 目标节点；null 返回 null
+     * @return {@code "<地址> <类型>"}；节点不在可寻址根下时 null
+     */
+    private String addressOf(SceneNode node) {
+        if (node == null) {
+            return null;
+        }
+        List<SceneNode> roots = runtime.__addressableRoots();
+        for (int i = 0; i < roots.size(); i++) {
+            List<Integer> indexes = childIndexesFrom(roots.get(i), node);
+            if (indexes != null) {
+                return HeadlessNodePath.of(i, indexes) + " " + node.getClass().getSimpleName();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 自下而上求节点在指定根下的子下标序列；不在该根下返回 null。
+     *
+     * <p>不缓存索引：投影与反查都发生在查询路径，节点规模在千级、调用次数与投影行数同阶，
+     * 现算比维护一份「树变了要失效」的映射更不容易出错（静态快照必须有失效通道，此处干脆不留）。</p>
+     */
+    private static List<Integer> childIndexesFrom(SceneNode root, SceneNode node) {
+        List<Integer> indexes = new ArrayList<Integer>();
+        SceneNode current = node;
+        while (current != root) {
+            SceneNode parent = current.__getParent();
+            if (parent == null) {
+                return null;
+            }
+            int index = parent.__getChildren().indexOf(current);
+            if (index < 0) {
+                return null;
+            }
+            indexes.add(0, Integer.valueOf(index));
+            current = parent;
+        }
+        return indexes;
     }
 
     /**
@@ -404,7 +468,7 @@ public final class HeadlessSession implements AutoCloseable {
      */
     public int[] centerOf(String path) {
         HeadlessNodePath nodePath = HeadlessNodePath.parse(path);
-        List<SceneNode> roots = runtime.__fontEnvironmentRoots();
+        List<SceneNode> roots = runtime.__addressableRoots();
         if (nodePath.rootIndex() >= roots.size()) {
             throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
                     "根序号越界：" + path + "（当前树根数 " + roots.size() + "）");
