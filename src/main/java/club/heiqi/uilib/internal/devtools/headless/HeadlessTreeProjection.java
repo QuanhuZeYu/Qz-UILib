@@ -390,7 +390,12 @@ public final class HeadlessTreeProjection {
                             break;
                         }
                     }
-                    hitLabel = hitProbe.labelOf(chain.get(chain.size() - 1));
+                    // 区分「没命中任何节点」与「命中了但它不在地址空间里」：前者说明该坐标是空的
+                    // （多半被裁掉），后者说明命中了却指不出去处 —— 两者对调用方的含义不同，
+                    // 都写 NONE 会把「指不出」误读成「那里什么都没有」（独立复核 P3）。
+                    SceneNode hitNode = chain.get(chain.size() - 1);
+                    String hitAddress = hitProbe.labelOf(hitNode);
+                    hitLabel = hitAddress != null ? hitAddress : "(不可寻址)" + typeOf(hitNode);
                 }
             }
             rows.add(new Row(path, depth, typeOf(node), ownText != null ? ownText

@@ -49,15 +49,25 @@ public class HeadlessInputDeviceTest {
         Assert.assertTrue("按住 Shift 之后的事件必须带 Shift 修饰", moved.isShiftDown());
     }
 
-    /** wait 的语义是「先把动作发完，再空转」，不是「一上来就吞帧」。 */
+    /**
+     * {@code wait N} 在<b>语句位置</b>等待，后续语句落到 N 帧之后。
+     *
+     * <p>用「wait 之后还有动作」的脚本钉住位置语义 —— 若把 wait 放在末尾，两种实现恰好等价，
+     * 测试就失去区分力（旧实现是「等整个队列耗尽后再空转」，独立复核被它静默误导过：
+     * {@code …; wait 10; click} 里的 click 不会等，连续点击被退场动画吞掉）。</p>
+     */
     @Test
-    public void waitRunsAfterQueuedActions() {
+    public void waitHoldsItsStatementPosition() {
         HeadlessInputSource source = new HeadlessInputSource(200, 100);
-        HeadlessInputScript.apply(source.device(), "move 5 5; wait 2");
+        HeadlessInputScript.apply(source.device(), "move 5 5; wait 2; move 9 9");
 
-        Assert.assertEquals(1, source.drainFrame().getPointerEvents().size());
-        Assert.assertTrue(source.drainFrame().isEmpty());
-        Assert.assertTrue(source.drainFrame().isEmpty());
+        Assert.assertEquals("wait 之前的动作在第一帧下发",
+                1, source.drainFrame().getPointerEvents().size());
+        // 关键断言：wait 让后续语句顺延。旧实现（等队列耗尽才空转）会把两个 move 挤进相邻两帧，
+        // 即第二帧就能看到 move 9 9 —— 此处为空即证明 wait 生效在语句位置。
+        Assert.assertTrue("wait 期间空转，后续语句不得提前下发", source.drainFrame().isEmpty());
+        Assert.assertEquals("wait 之后的动作晚 2 帧下发",
+                1, source.drainFrame().getPointerEvents().size());
     }
 
     /** 整串文本（外部接管 / IME 语义）在一帧内以单条 TEXT 事件交付。 */

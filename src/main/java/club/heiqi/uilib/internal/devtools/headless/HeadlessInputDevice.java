@@ -55,7 +55,6 @@ public final class HeadlessInputDevice {
     private long clockNanos;
     private int pointerX;
     private int pointerY;
-    private int pendingWaitFrames;
     private int dispatchedActions;
 
     /**
@@ -268,13 +267,26 @@ public final class HeadlessInputDevice {
     }
 
     /**
-     * 空推进若干帧（保持当前状态，不发送事件）。
+     * 在<b>语句位置</b>空推进若干帧（保持当前状态，不发送事件）。
      *
-     * @param frames 帧数，至少 0
+     * <p><b>语义是位置化的</b>：{@code "move A; wait 10; click"} 先移动、再空转 10 帧、最后点击。
+     * 实现为在该位置插入 N 个帧边界，后续语句自然落到 N 帧之后。</p>
+     *
+     * <p><b>曾经的语义是「等队列耗尽后再空转」</b>（把剩余帧记在另一个计数器、只在队列空时递减），
+     * 结果是 {@code wait} 之后的语句<b>不会等</b>：连续两次点击被退场动画吞掉，而脚本看起来完全正常。
+     * 独立复核就被它误导过（改用 {@code frame} 重复才自洽）。语句文档一直写的是「空推进 N 帧」，
+     * 即位置化语义 —— 实现与自己的文档不一致，按文档修正。</p>
+     *
+     * @param frames 帧数，至少 0（0 = 不等待）
      */
     public void waitFrames(int frames) {
-        pendingWaitFrames += Math.max(0, frames);
-        pending.addLast(FRAME_BOUNDARY);
+        int count = Math.max(0, frames);
+        // N 个边界 = 「下一条语句晚 N 帧」：每个边界独占一次 pumpFrame，
+        // 其中第一个边界也会顺手结束当前帧（若当前帧还有动作，那条动作仍算在它自己那一帧）。
+        // 实测："move A; wait 2; move B" 得帧1=A、帧2=空、帧3=B —— B 恰好晚 2 帧。
+        for (int i = 0; i < count; i++) {
+            pending.addLast(FRAME_BOUNDARY);
+        }
     }
 
     /**
@@ -295,11 +307,6 @@ public final class HeadlessInputDevice {
             pending.removeFirst().apply(builder, clockNanos, this);
             dispatched++;
         }
-        // wait 只在动作队列耗尽后生效：语义是「先把动作发完，再空转 N 帧」，
-        // 而不是「一上来就吞掉 N 帧动作」（后者会让脚本静默不执行，实测踩过）。
-        if (pendingWaitFrames > 0) {
-            pendingWaitFrames--;
-        }
         dispatchedActions += dispatched;
         return dispatched;
     }
@@ -315,13 +322,13 @@ public final class HeadlessInputDevice {
     }
 
     /**
-     * @return 脚本是否已全部下发（队列空且无剩余空转帧）。
+     * @return 脚本是否已全部下发（动作队列与帧边界都排空）。
      *
-     * <p>查询路径用它判断「脚本跑完了没有」：{@code pendingActionCount()} 只数队列，而 {@code wait N}
-     * 的剩余空转帧记在另一个计数器里，只看队列会把「还要空转 10 帧」误判成已结束。</p>
+     * <p>查询路径用它判断「脚本跑完了没有」。{@code wait N} 现在按位置插入 N 个帧边界，
+     * 所以只看队列是否为空即可 —— 队里还剩帧边界，就说明 {@code wait} 还没走完。</p>
      */
     public boolean hasPendingWork() {
-        return !pending.isEmpty() || pendingWaitFrames > 0;
+        return !pending.isEmpty();
     }
 
     /** @return 累计已下发动作数 */

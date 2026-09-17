@@ -387,16 +387,18 @@ public final class HeadlessSession implements AutoCloseable {
         ensureOpen();
         List<HeadlessTreeProjection.Row> rows = new ArrayList<HeadlessTreeProjection.Row>();
         List<SceneNode> roots = runtime.__addressableRoots();
-        // 命中入口只有一个：主树根。浮层由路由器自己按 top-first 检查 —— 若在此把每个浮层根都
-        // 当成独立主树去命中，浮层的遮挡关系就被调用方拍平了，标注出的 [target] 会与实际派发不符。
-        SceneNode mainRoot = runtime.__assemblyRoots().isEmpty() ? null : runtime.__assemblyRoots().get(0);
-        HeadlessTreeProjection.HitProbe probe = mainRoot == null ? null
+        // 命中入口给「回退主树」：浮层由路由器自己按 top-first 检查（若在此把每个浮层根都当成独立
+        // 主树去命中，浮层的遮挡关系就被调用方拍平了，标注出的 [target] 会与实际派发不符）。
+        // 回退根必须<b>按被投影的树选取</b>：命中某棵装配树自己的节点时，回退就该是它本身；
+        // 固定取第一棵会让第二棵起的装配树全部失真（独立复核 P3）。
+        List<SceneNode> assemblyRoots = runtime.__assemblyRoots();
+        HeadlessTreeProjection.HitProbe probe = assemblyRoots.isEmpty() ? null
                 : new HeadlessTreeProjection.HitProbe() {
                     @Override
                     public List<SceneNode> hitChainAt(SceneNode tree, int x, int y) {
                         // x,y 是 tree 自己的坐标空间；是不是画布空间、要不要叠加浮层锚点，由路由器
                         // 按同一处换算判定（__probeHitChain 的 tree 参数）。投影不猜这件事。
-                        return runtime.getInputRouter().__probeHitChain(mainRoot, tree, x, y);
+                        return runtime.getInputRouter().__probeHitChain(fallbackRootOf(tree), tree, x, y);
                     }
 
                     @Override
@@ -407,6 +409,16 @@ public final class HeadlessSession implements AutoCloseable {
                     @Override
                     public String labelOf(SceneNode node) {
                         return addressOf(node);
+                    }
+
+                    /** 被投影的树若是装配树根，回退根即它本身；否则（浮层）回退到第一棵装配树。 */
+                    private SceneNode fallbackRootOf(SceneNode tree) {
+                        for (SceneNode candidate : assemblyRoots) {
+                            if (candidate == tree) {
+                                return tree;
+                            }
+                        }
+                        return assemblyRoots.get(0);
                     }
                 };
         for (int i = 0; i < roots.size(); i++) {

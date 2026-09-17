@@ -284,19 +284,24 @@ public final class HeadlessShotMain {
         // 目标寻址模式：先推进一帧（布局结果要等帧管线写回 cachedLayout），再投影 / 查询。
         // 多档轴同时给出时逐档报告（与出图矩阵同语义）—— 此前静默只处理第一档，会让
         // 「--sizes=A,B --nodes」看起来只出了 A 档而无任何提示（独立复核指出）。
+        // 某一档失败不中断其余档：矩阵验收要的是「哪几档坏了」的全貌，早退会把后面的档藏起来
+        // （独立复核指出）。退出码按最严聚合：任一处设施失败(3) > 有档无结果(4) > 全成功(0)。
         if (nodes || find != null || center != null) {
             int queryFailures = 0;
+            boolean facilityFailed = false;
             for (HeadlessRequest request : requests) {
                 if (requests.size() > 1) {
                     System.out.println("[headless] --- " + labelOf(request) + " ---");
                 }
                 int code = reportTargets(request, nodes, nodesAll, find, center);
-                if (code != 0) {
+                if (code == 3) {
+                    facilityFailed = true;
+                } else if (code != 0) {
                     queryFailures++;
-                    if (code == 3) {
-                        return 3;
-                    }
                 }
+            }
+            if (facilityFailed) {
+                return 3;
             }
             return queryFailures == 0 ? 0 : 4;
         }
