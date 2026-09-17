@@ -55,6 +55,7 @@ public final class HeadlessShotMain {
         String script = "";
         String out = null;
         boolean probeOnly = false;
+        boolean framesGiven = false;
         try {
             for (String arg : args) {
                 if ("--help".equals(arg) || "-h".equals(arg)) {
@@ -80,6 +81,7 @@ public final class HeadlessShotMain {
                     script = readScriptFile(arg.substring("--script=".length()));
                 } else if (arg.startsWith("--frames=")) {
                     frames = Integer.parseInt(arg.substring("--frames=".length()));
+                    framesGiven = true;
                 } else if (arg.startsWith("--settle=")) {
                     settle = Integer.parseInt(arg.substring("--settle=".length()));
                 } else if (arg.startsWith("--max-frames=")) {
@@ -100,6 +102,18 @@ public final class HeadlessShotMain {
             System.err.println("[headless] 参数解析失败：" + e.getMessage());
             printUsage(System.err);
             return 2;
+        }
+
+        // 聊天页默认：命令行未显式给 --text 时用演示消息集（省得每次出图都拼长参数串），
+        // 未显式给 --frames 时把最小帧数提到 20——消息组首次合成有 180ms 入场动画（16ms/帧 → 12 帧），
+        // 动画期间整树 opacity=0 且像素逐帧不变，稳定判据会把这段误判成「已收敛」而提前停帧出空图。
+        if (HeadlessRequest.CHAT_PAGE.equals(page)) {
+            if (HeadlessRequest.DEFAULT_PROBE_TEXT.equals(text)) {
+                text = HeadlessRequest.CHAT_DEFAULT_TEXT;
+            }
+            if (!framesGiven) {
+                frames = 20;
+            }
         }
 
         List<Integer> pageTargets = new ArrayList<Integer>();
@@ -262,7 +276,7 @@ public final class HeadlessShotMain {
     }
 
     private static void printUsage(PrintStream out) {
-        out.println("用法: HeadlessShotMain [--page=playground|text-probe] [--page-index=N | --page-indexes=N,N,…]"
+        out.println("用法: HeadlessShotMain [--page=playground|text-probe|chat] [--page-index=N | --page-indexes=N,N,…]"
                 + " [--size=WxH | --sizes=WxH,WxH,…] [--out=path] [--frames=N] [--settle=N] [--max-frames=N]"
                 + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file] [--probe]");
     }

@@ -101,9 +101,14 @@ public final class HeadlessSession implements AutoCloseable {
         if (HeadlessRequest.TEXT_PROBE_PAGE.equals(request.pageId())) {
             return new TextProbeHost(request.text(), request.width(), request.height(), inputSource);
         }
+        if (HeadlessRequest.CHAT_PAGE.equals(request.pageId())) {
+            return new ChatSceneProbeHost(request.width(), request.height(),
+                    ChatSceneProbeHost.splitMessages(request.text()), inputSource);
+        }
 
         throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
-                "未知页面：" + request.pageId() + "（当前仅提供 playground）");
+                "未知页面：" + request.pageId()
+                        + "（当前提供 playground / text-probe / chat）");
     }
 
     /**

@@ -29,6 +29,14 @@ import java.util.function.Supplier;
  * 复发守卫 = {@code ScenePickerPanelTest#preLayoutBudgetGivesSteadyStateColumnsOnFirstLayout}
  * （已收紧为「首帧列数 == 派生 oracle」）。</p>
  *
+ * <p><b>陷阱二：派生函数里读非 signal 的可变量 = 一次性快照。</b>派生函数只在其追踪到的
+ * {@link Signal} 变化时重算；若函数体读的是静态字段 / 配置对象（典型形态
+ * {@code Computed.create(() -> Config.uiDebug)}），它就<b>没有任何依赖</b>——首次
+ * {@link ReactiveScheduler#flush()} 之后再不会重算，读侧永远拿到首算的旧值，且失败是静默的
+ * （改那个量既不报错也不生效）。实测对照（同一进程内 flush 两次）：静态源 {@code false → false}，
+ * signal 源 {@code false → true}。判据：<b>需要响应的量必须先成为 signal</b>（或在写入点桥接为
+ * signal，写入唯一收口是 {@link Signal#set(Object)}）；不要把静态量包进 Computed 当派生值用。</p>
+ *
  * @param <T> 派生值类型
  */
 public final class Computed<T> implements ReadableSignal<T> {

@@ -24,6 +24,24 @@ public final class HeadlessRequest {
     public static final int DEFAULT_BACKGROUND = 0xFF0E1014;
     /** 文本探针页面标识：渲染 {@link #text()} 一行文本，供字体路径对照与诊断。 */
     public static final String TEXT_PROBE_PAGE = "text-probe";
+    /** 聊天页面标识：经生产内容构建入口渲染 chat3 内容树（气泡 / markdown / 公式 / 链接）。 */
+    public static final String CHAT_PAGE = "chat";
+    /**
+     * 聊天消息分隔符：{@code --text} 用它切成多条消息。
+     *
+     * <p>不取 {@code |}：那是 Windows 命令行的管道符，写进 {@code --text} 会被 shell 先解释掉。</p>
+     */
+    public static final String CHAT_MESSAGE_SEPARATOR = ";;";
+    /**
+     * 聊天页面默认消息集（语法见 {@code ChatSceneProbeHost} 类注释）：
+     * 玩家气泡 / markdown / 公式 / 链接自动识别 / markdown 系统行 / 纯系统文本 / 长文本折行。
+     */
+    public static final String CHAT_DEFAULT_TEXT = "Steve:**Markdown 粗体**与 `行内 code` 片段"
+            + CHAT_MESSAGE_SEPARATOR + "Alex:行内公式 $E = mc^2$ 与分式 $\\frac{a}{b}$"
+            + CHAT_MESSAGE_SEPARATOR + "Steve:链接 https://example.com/docs 自动识别"
+            + CHAT_MESSAGE_SEPARATOR + "md:### Markdown 系统行\\n\\n- 列表项一\\n- 列表项二\\n\\n> 引用块"
+            + CHAT_MESSAGE_SEPARATOR + "服务器：欢迎回到 Qz-UILib"
+            + CHAT_MESSAGE_SEPARATOR + "Steve:长文本气泡按内容宽自动换行，超过气泡最大宽后继续折行显示。";
 
     /** 文本探针默认文本：中英数混排，覆盖 CJK 与拉丁字形。 */
     public static final String DEFAULT_PROBE_TEXT = "Qz UILib 对拍样本 Ag123";

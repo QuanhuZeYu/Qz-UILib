@@ -418,16 +418,19 @@ A2 与 §六-6 据此修正为：保留软光栅作为**字体侧既有验收通
 - 补上 `patchedMc` + `mcLauncher` 后链接成功（同一命令从 exit 1 变为正常启动）；
 - 定位：**最小集仍是 agent 默认**（快、无 MC 静态初始化风险），完整集给「页面本来就要 MC 类型」的场景。
 
-**chat3 / HUD 未纳入 headless 直启可渲染面（带证据的结论）**：
+**chat3 / HUD 边界结论（2026-09-17 初判 → 2026-09-18 修正）**：
 
 | 消费者 | 可 headless 性 | 证据 |
 |---|---|---|
-| chat3 视图 | **部分** | `ChatSceneController` 有专门的 headless 注入构造（`uiLibMeasure()` 为 public 且不依赖 MC），`buildContent(rt)` 可直接调用；但消息数据 `ChatLineRecord ← IChatComponent` 需要 MC 类，且**内容树由宿主装配驱动**——实测把 `buildContent` 结果直接挂树渲染得到空画面（`commands=0`，`colors=1`），说明列表内容挂在容器 / HUD 窗口装配链上（`ChatContainer` / `ChatHudWindow` / 输入屏幕） |
+| chat3 视图 | **已纳入**（`--page=chat`） | 走生产同一入口 `ChatSceneController.buildContent(SceneRuntime)`。2026-09-17 判为「空画面（`commands=0`/`colors=1`）说明内容挂在宿主装配链上」**结论有误**：真实成因是两处接线——① 漏写 `setHostViewport` → `chatWidthFor(0)` 收敛到 1px；② `--frames` 默认 2 帧时消息组 180 ms 入场动画期间整树 `opacity=0` 且像素逐帧不变，被「连续 N 帧像素一致」的稳定判据误判为已收敛。补齐后 1280×720 实测 `commands=23 [surface=5 segments=18]`、`colors=1318`，出图含气泡 / 组头 / markdown / 公式 / 链接 / 折行 |
 | HUD | **否（宿主在 MC 域）** | `ui/hud` API 层零 MC 依赖，但宿主装配 `SceneHudHost` / `HudRegistry` / `ClientHudServiceImpl` 全在 `client/` 包；在 headless 复刻等于新增一套 HUD 虚拟窗口装配，违背「复用生产链路」原则 |
 
-结论：两者若要纳入，正确姿势是**在测试域（已有 MC classpath）用生产装配接线**，而不是在 headless 直启里复刻宿主。
-设施侧已把前置条件补齐（完整类路径供给）；本轮据此把 chat 探针**回退**（不交付渲染空画面的页面），
-同时把「有命令无像素 / 有像素无命令」的两个自检提示留在产品里作为同类问题的探测器。
+结论修正：**chat3 不需要新抽象**——它的内容构建入口（`buildContent(SceneRuntime)`）本来就是宿主无关的，
+缺的只是接线与时间语义（视口先写入、帧数覆盖入场动画）。
+**HUD 需要一处搬迁 + 依赖倒置**：把 `client.hud.SceneHudHost.RetainedWindow`（外壳 + 五件套 + 空内容语义）
+上提为 `ui.scene.host` 里宿主无关的单窗口宿主，由 client 与 headless 共用；四角锚定数学已在宿主无关的
+`SceneAnchorResolver`。在 headless 复刻第二套 HUD 装配仍是禁止项。
+「有命令无像素 / 有像素无命令」两个自检提示保留，本次空画面正是被它们点出来的。
 
 ## 三、目标形态
 
