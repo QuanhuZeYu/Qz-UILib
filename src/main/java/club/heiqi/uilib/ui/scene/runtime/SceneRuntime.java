@@ -137,6 +137,13 @@ public class SceneRuntime implements SceneFontEnvironment {
      * 以 {@code r<下标>} 表达「第几棵树」，集合的无序实现会让同一装配在不同进程里给出不同编号。
      * 恒等语义靠遍历比对（{@code ==}）保持，不依赖元素的 equals。规模是个位数（主树 + 各浮层），
      * 线性查找的成本可忽略。</p>
+     *
+     * <p><b>本集合装两种语义的根，寻址只能读前者</b>：{@link #__adoptFontEnvironmentRoot} 的调用点有
+     * 三类 —— ① {@code SceneHostAssembly.attachTree}：宿主<b>装配树根</b>（无父，装配期一次，顺序稳定）；
+     * ② {@code mount} / {@code portal}：<b>子内容根</b>（有父，挂在宿主树上，页重建时旧根摘除、新根追加）。
+     * 环境写入需要覆盖两者（内容根可能先于宿主装配拿到环境），但<b>寻址只能以①为『第几棵树』</b>：
+     * ②的顺序随页重建漂移（实测 fs 变化触发 refreshPage 后 r1/r2 互换），拿它当地址锚点必然失效。
+     * 故 {@link #__fontEnvironmentRoots()} 只返回①，见其 javadoc。</p>
      */
     private final List<SceneNode> fontEnvironmentRoots = new ArrayList<SceneNode>();
 
@@ -448,17 +455,28 @@ public class SceneRuntime implements SceneFontEnvironment {
     }
 
     /**
-     * 已登记树根的只读视图，<b>按登记顺序</b>。
+     * <b>装配树根</b>的只读视图，按装配顺序 —— 节点寻址的「第几棵树」就是这里的下标。
      *
-     * <p>寻址（headless 树投影 / 目标寻址）需要「第几棵树」这一事实，而登记顺序只在 runtime 内部
-     * 可知；宿主侧各自持有根字段（{@code AbstractSceneHostWidget.getRoot()} 是 protected、
-     * {@code SceneHostWindow.root()} 是公开访问器），会话拿不到统一口径。故在此开出只读视图，
-     * 与 {@link #__adoptFontEnvironmentRoot} 同一事实源，不新增第二套登记。</p>
+     * <p>判据是 {@code __getParent() == null}：{@code attachTree} 登记的宿主树根没有父，而
+     * {@code mount} / {@code portal} 登记的内容根挂在宿主树上。<b>不能用登记顺序直接当地址</b>
+     * —— 内容根会随页重建被摘除并重新追加到末尾，导致同一个控件的路径在「改字号 / 切页 / 点一次
+     * 导航」后漂移（独立复核实测三个反例）。按「无父」筛选后，装配树根的顺序只由宿主装配顺序决定，
+     * 与页重建无关。</p>
      *
-     * @return 不可变视图（顺序 = 登记顺序；未装配时为空）
+     * <p>顺序只在 runtime 内部可知（宿主侧各自持有根字段：{@code AbstractSceneHostWidget.getRoot()}
+     * 是 protected、{@code SceneHostWindow.root()} 是公开访问器），故在此开出只读视图，与
+     * {@link #__adoptFontEnvironmentRoot} 同一事实源，不新增第二套登记。</p>
+     *
+     * @return 不可变视图（顺序 = 装配顺序；未装配时为空）
      */
     public List<SceneNode> __fontEnvironmentRoots() {
-        return Collections.unmodifiableList(new ArrayList<SceneNode>(fontEnvironmentRoots));
+        List<SceneNode> assemblyRoots = new ArrayList<SceneNode>();
+        for (SceneNode root : fontEnvironmentRoots) {
+            if (root.__getParent() == null) {
+                assemblyRoots.add(root);
+            }
+        }
+        return Collections.unmodifiableList(assemblyRoots);
     }
 
     /** @return 本 runtime 是否已 {@link #dispose()}。 */

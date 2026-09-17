@@ -19,13 +19,24 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  * <h3>它是只读视图，不是第二套真值</h3>
  * <p>本类<b>只读</b>节点既有状态（{@code __getChildren} / {@code getCachedLayout} / {@code getText} /
  * {@code effectiveFontSize} 等），不缓存、不写回、不建立索引副本：每次调用现算，产物即当帧事实。
- * 绝对坐标由局部 {@link LayoutBox} 沿路径累加得到（{@code SceneHitTester} 内部同法），故与命中测试
- * 的坐标口径天然一致 —— 投影里报出的坐标，就是点击会命中的位置。</p>
+ * 绝对坐标走 {@link SceneGeometry#absoluteBox}(node, 0, 0) —— 跨层几何换算的权威单点，含祖先滚动
+ * 偏移注入，与命中测试同源 —— 故投影里报出的坐标，就是点击会命中的位置。</p>
  *
  * <h3>交互事实为何必须筛</h3>
  * <p>树里绝大多数节点是布局容器与装饰叶（{@code hitTestable=false}），全部列出会让 agent 淹没在噪声里。
- * 默认只投影 {@code hitTestable && !collapsed} 的节点（即「点得到的东西」），其祖先链保留以给出路径。
- * {@code --nodes=all} 可要完整树（调试用）。</p>
+ * 默认只投影 {@code hitTestable && !collapsed} 且<b>有可见尺寸</b>的节点，其祖先链保留以给出路径。
+ * {@code --nodes=all} 可要完整树（含不可见尺寸 / 未激活浮层，调试用）。</p>
+ *
+ * <h3>两条已知边界（如实登记，不假装解决）</h3>
+ * <ul>
+ *   <li><b>尺寸 0 的节点不给中心点</b>：它不可点，中心点会误导。默认投影仍列出（结构事实），
+ *       但 {@code centerX/Y} 的语义是「盒的中心」；调用方点之前应确认 {@code width>0 && height>0}。
+ *       交互筛选下零尺寸节点被剔除。</li>
+ *   <li><b>坐标是未裁剪的绝对盒</b>：被滚动容器裁掉、或属于未激活浮层的节点，坐标仍按几何算出。
+ *       区分「在画面内 / 在树里」需要视口求交（{@code SceneGeometry.visibleBoxWithinScrollableAncestors}
+ *       提供该能力），本类暂不引入 —— 引入后 {@code --nodes} 的语义会从「树里有什么」变成
+ *       「画面上有什么」，那是另一个功能，不该偷偷改。</li>
+ * </ul>
  */
 public final class HeadlessTreeProjection {
 
@@ -48,10 +59,13 @@ public final class HeadlessTreeProjection {
         private final int height;
         private final int fontSizePx;
         private final boolean hitTestable;
+        private final boolean ownName;
+        private final int hitTestableDescendants;
         private final int childCount;
 
         Row(HeadlessNodePath path, int depth, String type, String text, int absX, int absY,
-                int width, int height, int fontSizePx, boolean hitTestable, int childCount) {
+                int width, int height, int fontSizePx, boolean hitTestable, boolean ownName,
+                int hitTestableDescendants, int childCount) {
             this.path = path;
             this.depth = depth;
             this.type = type;
@@ -62,6 +76,8 @@ public final class HeadlessTreeProjection {
             this.height = height;
             this.fontSizePx = fontSizePx;
             this.hitTestable = hitTestable;
+            this.ownName = ownName;
+            this.hitTestableDescendants = hitTestableDescendants;
             this.childCount = childCount;
         }
 
@@ -115,6 +131,28 @@ public final class HeadlessTreeProjection {
             return hitTestable;
         }
 
+        /**
+         * @return 名称是否取自本节点自身（false = 从子树聚合得到）。
+         *
+         * <p>聚合名会带来「容器与它的按钮同名」这类候选爆炸（实测 {@code --find=删除} 命中 4 个，
+         * 含全屏遮罩与对话框卡片，真按钮只是其中之一）。</p>
+         */
+        public boolean ownName() {
+            return ownName;
+        }
+
+        /**
+         * @return 是否为<b>可点目标</b>：可命中、有可见尺寸、且没有同为可命中的后代。
+         *
+         * <p><b>判据是「最深可点节点」而不是「自身持名」</b>：场景里按钮与列表项普遍自己可命中、
+         * 文案挂在不可命中的子 label 上，用「自身持名」会把真正的按钮也判成容器。反过来，全屏遮罩、
+         * 对话框卡片这些可命中容器<b>有</b>可命中的后代，点它们的中心点会落在错误目标上 —— 这才
+         * 是该剔除的那一类。</p>
+         */
+        public boolean actionableTarget() {
+            return hitTestable && width > 0 && height > 0 && hitTestableDescendants == 0;
+        }
+
         /** @return 直接子节点数 */
         public int childCount() {
             return childCount;
@@ -142,6 +180,13 @@ public final class HeadlessTreeProjection {
                     .append(" fs=").append(fontSizePx);
             if (!hitTestable) {
                 sb.append(" [non-interactive]");
+            }
+            if (actionableTarget()) {
+                sb.append(" [target]");
+            } else if (ownName) {
+                sb.append(" [container]");
+            } else {
+                sb.append(" [aggregate-name]");
             }
             return sb.toString();
         }
@@ -190,11 +235,16 @@ public final class HeadlessTreeProjection {
         int absY = box.getY();
         int width = box.getWidth();
         int height = box.getHeight();
-        boolean keep = !interactiveOnly || node.isHitTestable();
+        // 交互筛选：可命中、未折叠、且有可见尺寸（零尺寸节点点了必落空，不该混进可点目标里）。
+        boolean keep = !interactiveOnly
+                || (node.isHitTestable() && !node.isCollapsed() && width > 0 && height > 0);
         List<SceneNode> children = node.__getChildren();
         if (keep) {
-            rows.add(new Row(path, depth, typeOf(node), nameOf(node), absX, absY, width, height,
-                    node.effectiveFontSize(), node.isHitTestable(), children.size()));
+            String own = textOf(node);
+            boolean ownName = own != null && !own.isEmpty();
+            rows.add(new Row(path, depth, typeOf(node), ownName ? own : firstDescendantText(node,
+                    NAME_SEARCH_DEPTH), absX, absY, width, height, node.effectiveFontSize(),
+                    node.isHitTestable(), ownName, countHitTestableDescendants(node, 4), children.size()));
         }
         for (int i = 0; i < children.size(); i++) {
             List<Integer> childIndexes = new ArrayList<Integer>(path.childIndexes());
@@ -207,21 +257,20 @@ public final class HeadlessTreeProjection {
     /** 后代文本聚合的深度上限：可访问名称只取自浅层，避免深子树里翻出无关文案。 */
     private static final int NAME_SEARCH_DEPTH = 3;
 
-    /**
-     * 节点的<b>可访问名称</b>：自身文本优先，为空时向下取第一个非空文本。
-     *
-     * <p>为什么必须聚合：可交互节点（按钮 / 列表项）在场景里通常<b>自己不持文本</b> —— 文案挂在
-     * 子 label 上，而 label 往往 {@code hitTestable=false}、在「仅可命中」投影里被滤掉。只读自身
-     * 文本会让 agent 看到一排 {@code r0/0 @0,0 57x40} 而完全不知道是哪个按钮（实测 playground
-     * 导航 9 个标签全无名称）。这正是「按可见文本寻址」要解决的问题，故按无障碍树的口径
-     * （名称从子树计算）补齐。</p>
-     */
-    private static String nameOf(SceneNode node) {
-        String own = textOf(node);
-        if (own != null && !own.isEmpty()) {
-            return own;
+
+    /** 统计可命中的后代个数（深度上限内；用于区分「叶子可点目标」与「可点容器」）。 */
+    private static int countHitTestableDescendants(SceneNode node, int depthLeft) {
+        if (depthLeft <= 0) {
+            return 0;
         }
-        return firstDescendantText(node, NAME_SEARCH_DEPTH);
+        int count = 0;
+        for (SceneNode child : node.__getChildren()) {
+            if (child.isHitTestable()) {
+                count++;
+            }
+            count += countHitTestableDescendants(child, depthLeft - 1);
+        }
+        return count;
     }
 
     /** 深度优先找第一个非空后代文本；超过深度上限返回 null。 */

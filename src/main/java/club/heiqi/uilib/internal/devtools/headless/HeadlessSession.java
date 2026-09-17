@@ -239,26 +239,7 @@ public final class HeadlessSession implements AutoCloseable {
             monitor.beginFrame(SAMPLE_SCREEN, request.width(), request.height(), request.width(),
                     request.height(), environment.diagnostics());
             try {
-                renderContext.resetFrame();
-                surface.beginFrame(request.background());
-                // 帧前置语义（正交投影 / viewport / 混合状态）与生产 MC 宿主共用 UiHostRenderSupport.beginMainUiFrame：
-                // headless 自建这一段的后果是顶点落在单位矩阵下被整体裁掉——表现为「绘制无像素」而不是报错。
-                try (UiHostRenderSupport.MainFrameScope frameScope =
-                        UiHostRenderSupport.beginMainUiFrame(request.width(), request.height())) {
-                    paintContextCompositor.beginFrame();
-                    mainLayerSnapshotService.beginFrame();
-                    try {
-                        host.render(request.width(), request.height(), renderContext, 0, 0);
-                    } catch (HeadlessFailure failure) {
-                        throw failure;
-                    } catch (RuntimeException e) {
-                        throw new HeadlessFailure(HeadlessFailure.Stage.FRAME,
-                                "第 " + (renderedFrames + 1) + " 帧推进失败：" + e.getMessage(), e);
-                    } finally {
-                        mainLayerSnapshotService.finishFrame();
-                        paintContextCompositor.finishFrame();
-                    }
-                }
+                advanceOneFrame(renderedFrames);
             } finally {
                 monitor.finishFrame();
             }
@@ -322,18 +303,54 @@ public final class HeadlessSession implements AutoCloseable {
     /**
      * 驱动帧但不写 PNG：供寻址查询用（布局结果要等帧管线写回 cachedLayout）。
      *
-     * <p>为什么不复用 {@link #capture()}：那是「出图」语义，会写文件并做像素自检。寻址是查询，
-     * 不该有产物副作用 —— 两者共用同一帧驱动路径，只是后者不落盘。</p>
+     * <p><b>与 {@link #capture()} 共用同一帧驱动原语</b>（{@link #advanceOneFrame}），区别只在
+     * 「读不读像素、写不写 PNG」—— 查询态与出图态必须看到同一棵树，帧前置/后置配平也不能有两套。</p>
+     *
+     * <p>踩过的坑（独立复核实测，6/6 稳定复现）：本方法最初只调 {@code host.render(...)}，
+     * 缺了帧缓冲绑定与帧前置状态（正交投影 / viewport / 混合），字形上传事务因此被回滚 ——
+     * 表现为每次查询必打 {@code glError=1282 UPLOAD_TRANSACTION_ROLLED_BACK} 且日志被污染。
+     * 「少写几行也能跑」正是这类静默降级的温床，故改为共用原语。</p>
+     *
+     * @return 实际推进的帧数
      */
-    public void captureSilently() {
+    public int advanceFramesForQuery() {
         ensureOpen();
-        advanceForQuery();
+        int rendered = 0;
+        for (int i = 0; i < request.frames(); i++) {
+            advanceOneFrame(rendered);
+            rendered++;
+        }
+        return rendered;
     }
 
-    /** 推进到「布局已就绪」的最小帧数：与出图路径同源，只是不读像素、不写文件。 */
-    private void advanceForQuery() {
-        for (int i = 0; i < request.frames(); i++) {
-            host.render(request.width(), request.height(), renderContext, 0, 0);
+    /**
+     * 推进一帧：帧缓冲绑定 → 帧前置（正交投影 / viewport / 混合）→ 生产宿主 render → 配对收尾。
+     *
+     * <p>{@link #capture()} 与 {@link #advanceFramesForQuery()} 的唯一帧驱动实现；两处若各写一份，
+     * 帧前置漏一项就是上面那条 GL 错误。</p>
+     *
+     * @param renderedFrames 已推进帧数（仅用于失败信息定位）
+     */
+    private void advanceOneFrame(int renderedFrames) {
+        renderContext.resetFrame();
+        surface.beginFrame(request.background());
+        // 帧前置语义（正交投影 / viewport / 混合状态）与生产 MC 宿主共用 UiHostRenderSupport.beginMainUiFrame：
+        // headless 自建这一段的后果是顶点落在单位矩阵下被整体裁掉——表现为「绘制无像素」而不是报错。
+        try (UiHostRenderSupport.MainFrameScope frameScope =
+                UiHostRenderSupport.beginMainUiFrame(request.width(), request.height())) {
+            paintContextCompositor.beginFrame();
+            mainLayerSnapshotService.beginFrame();
+            try {
+                host.render(request.width(), request.height(), renderContext, 0, 0);
+            } catch (HeadlessFailure failure) {
+                throw failure;
+            } catch (RuntimeException e) {
+                throw new HeadlessFailure(HeadlessFailure.Stage.FRAME,
+                        "第 " + (renderedFrames + 1) + " 帧推进失败：" + e.getMessage(), e);
+            } finally {
+                mainLayerSnapshotService.finishFrame();
+                paintContextCompositor.finishFrame();
+            }
         }
     }
 

@@ -282,8 +282,23 @@ public final class HeadlessShotMain {
         }
 
         // 目标寻址模式：先推进一帧（布局结果要等帧管线写回 cachedLayout），再投影 / 查询。
+        // 多档轴同时给出时逐档报告（与出图矩阵同语义）—— 此前静默只处理第一档，会让
+        // 「--sizes=A,B --nodes」看起来只出了 A 档而无任何提示（独立复核指出）。
         if (nodes || find != null || center != null) {
-            return reportTargets(requests.get(0), nodes, nodesAll, find, center);
+            int queryFailures = 0;
+            for (HeadlessRequest request : requests) {
+                if (requests.size() > 1) {
+                    System.out.println("[headless] --- " + labelOf(request) + " ---");
+                }
+                int code = reportTargets(request, nodes, nodesAll, find, center);
+                if (code != 0) {
+                    queryFailures++;
+                    if (code == 3) {
+                        return 3;
+                    }
+                }
+            }
+            return queryFailures == 0 ? 0 : 4;
         }
 
         // 多档默认逐档独立进程：见 runIsolated 的性能与正确性权衡说明。
@@ -592,7 +607,7 @@ public final class HeadlessShotMain {
             String find, String center) {
         try (HeadlessSession session = HeadlessSession.open(request)) {
             // 推进一帧只为拿到布局结果，不写 PNG：寻址是查询，不该有产物副作用。
-            session.captureSilently();
+            session.advanceFramesForQuery();
             List<HeadlessTreeProjection.Row> rows = session.projectTree(!nodesAll);
             System.out.println("[headless] targets: roots=" + session.rootCount()
                     + " rows=" + rows.size()
@@ -604,10 +619,29 @@ public final class HeadlessShotMain {
             }
             if (find != null) {
                 List<HeadlessTreeProjection.Row> matched = session.findByText(find);
-                System.out.println("[headless] find \"" + find + "\": " + matched.size() + " 个命中");
+                // 按「可点目标优先」排序：命中里常有容器与遮罩（它们从子树聚合到同一段文案），
+                // 直接按 DFS 顺序输出会让 agent 点中整屏遮罩。排序在同一质量档内保持 DFS 序（稳定）。
+                List<HeadlessTreeProjection.Row> ordered = new ArrayList<HeadlessTreeProjection.Row>();
                 for (HeadlessTreeProjection.Row row : matched) {
+                    if (row.actionableTarget()) {
+                        ordered.add(row);
+                    }
+                }
+                for (HeadlessTreeProjection.Row row : matched) {
+                    if (!row.actionableTarget()) {
+                        ordered.add(row);
+                    }
+                }
+                int actionable = ordered.size() - (matched.size() - countActionable(matched));
+                System.out.println("[headless] find \"" + find + "\": " + matched.size()
+                        + " 个命中（其中可点目标 " + countActionable(matched) + " 个）");
+                for (HeadlessTreeProjection.Row row : ordered) {
                     System.out.println("[headless]   " + row.describe()
                             + " center=" + row.centerX() + "," + row.centerY());
+                }
+                if (find != null && actionable == 0 && !ordered.isEmpty()) {
+                    System.out.println("[headless]   提示：以上均为容器 / 聚合名（无自身文本），"
+                            + "直接按中心点点击多半落在遮罩或卡片上");
                 }
                 if (matched.isEmpty()) {
                     return 4;
@@ -622,6 +656,17 @@ public final class HeadlessShotMain {
             failure.printDiagnosis(System.err);
             return 3;
         }
+    }
+
+    /** @return 命中的可点目标数（自身可命中、有可见尺寸、自身持名） */
+    private static int countActionable(List<HeadlessTreeProjection.Row> rows) {
+        int count = 0;
+        for (HeadlessTreeProjection.Row row : rows) {
+            if (row.actionableTarget()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static void printUsage(PrintStream out) {
