@@ -1119,14 +1119,29 @@ public final class ChatMessageList {
             }
             List<String> displayLines = message.getDisplayLines();
             List<ChatLineLayouter.LineFragment> displayFragments = message.getDisplayFragments();
+            // 换行宽必须与气泡内宽同源(2026-09-09 出图取证):composer 的 wrapWidth
+            // (= controller 的 maxLine = chatWidthFor(v) − 2×paddingX)是「气泡外宽上限」的
+            // <b>父口径</b>,未乘 bubbleMaxWidthRatio;而气泡节点与行节点实际被钳到
+            // maxBubbleWidthPx(= round(父口径 × 0.85))。两者相差 0.85 倍 → 文本按父口径换行、
+            // 按气泡内宽显示 → 长消息从气泡右缘溢出到背景上。
+            // 实测(视口 1280 → chatWidth 320):换行宽 300、气泡外宽 255,首行文本画到 x=298
+            // 而气泡底色止于 x=254(溢出 44px);≤255 宽的短消息不触发,故只在长消息上可见。
+            // maxBubbleWidthPx 未设置(视口未知)时回落到 composer 口径——与下方 ruleLine
+            // roomy、geometryReappliers 的既有判据同式,不引入第三把尺。
+            // 逐行缩进(quote/listExtra)不进换行宽扣减:那是逐行量而非全局常量,由下方行节点
+            // padding 与 reserve 逐行处理(既有口径,与钳宽同式);accent 条宽是常量,必须扣。
+            final int textWrapWidthPx = maxBubbleWidthPx > 0 && !system && !markdownSystem
+                    ? Math.max(1, maxBubbleWidthPx - 2 * paddingX
+                            - (accent ? ACCENT_BAR_WIDTH_PX : 0))
+                    : message.getWrapWidthPx();
             List<ChatMarkdownPipeline.RenderedLine> markdownLines = system ? null
                     : markdown.layout(message.getDisplayText(), baseTextColor,
-                            message.getWrapWidthPx(), fontSize, segmentPostProcessor, segmentFlowWrapper);
+                            textWrapWidthPx, fontSize, segmentPostProcessor, segmentFlowWrapper);
             if (markdownLines != null && style.isTtlFade()) {
                 // T8 设计稿 §5.4(验收 22):HUD 形态 8 行截断 + 末行省略号(M5 起作用于
                 // L2 视觉行;行节点级 maxLines/ellipsis 防御仍保留在下方构建处)
                 markdownLines = ChatMarkdownPipeline.clampHudLines(markdownLines, segmentMeasurer,
-                        fontSize, message.getWrapWidthPx());
+                        fontSize, textWrapWidthPx);
             }
             int lineCount = system ? displayLines.size() : markdownLines.size();
             // 跨显示行 URL 续链(仅系统消息;每条消息独立,长 URL 被字符硬断时才真正开放)

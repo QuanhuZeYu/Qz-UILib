@@ -535,7 +535,9 @@ public class ChatMessageListTest {
     public void longSelfMessageClampsBubbleToMaxWidthAndKeepsAccentInside() {
         ChatSceneController controller = linkController();
         controller.setHostViewport(400, 300);
-        // maxBubble = round((160 - 2×10) × 0.85) = 119;行切分宽 = 160-20 = 140(35 字符/行)
+        // maxBubble = round((160 - 2×10) × 0.85) = 119 → 气泡内可用宽 = 99
+        // (行切分宽必须与气泡内宽同源;旧口径 140 是未乘 0.85 的父口径,即 2026-09-09 出图
+        //  取证的「文字画出气泡右缘」缺陷)
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Alex> " + longMessageBody()), 1, T0));
         controller.notifyDataChanged();
@@ -546,15 +548,28 @@ public class ChatMessageListTest {
 
         SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
         LayoutBox bubbleBox = (LayoutBox) bubble.getCachedLayout();
-        Assert.assertEquals("长消息气泡钳到 0.85 上限宽", 119, bubbleBox.getWidth());
-        // accent 仍在气泡右内缘;行节点宽 ≤ 气泡内可用宽(119-20-2=97),不溢出气泡
+        Assert.assertTrue("长消息气泡不超 0.85 上限宽", bubbleBox.getWidth() <= 119);
+        // accent 仍在气泡右内缘
         SceneNode accentBar = bubble.__getChildren().get(1);
         LayoutBox accentBox = (LayoutBox) accentBar.getCachedLayout();
-        Assert.assertEquals("长消息强调条右缘 == 气泡右缘", 119,
+        Assert.assertEquals("长消息强调条右缘 == 气泡右缘", bubbleBox.getWidth(),
                 accentBox.getX() + accentBox.getWidth());
-        SceneNode firstLine = bubble.__getChildren().get(0).__getChildren().get(0);
-        Assert.assertEquals("行节点钳到气泡内可用宽", 97,
-                ((LayoutBox) firstLine.getCachedLayout()).getWidth());
+        // 溢出锁:只量节点宽量不出溢出(节点宽被钳到气泡内宽,文字仍按换行宽画出去),
+        // 故逐行累加段落实宽(4px/码点,与 FIXED 同源),必须装得进气泡内可用宽。
+        SceneNode contentColumn = bubble.__getChildren().get(0);
+        Assert.assertTrue("长消息必须真的折行", contentColumn.__getChildren().size() > 1);
+        int innerWidth = bubbleBox.getWidth() - 2 * ChatMarkdownSettings.getBubblePaddingX();
+        FixedTextMeasurer measurer = new FixedTextMeasurer(4, 16);
+        for (SceneNode line : contentColumn.__getChildren()) {
+            int lineTextWidth = 0;
+            if (line.getSegments() != null) {
+                for (TextSegment segment : line.getSegments()) {
+                    lineTextWidth += measurer.measureWidth(segment.getText(), line.getFontSize());
+                }
+            }
+            Assert.assertTrue("行文本实宽 " + lineTextWidth + " 不得超气泡内可用宽 " + innerWidth,
+                    lineTextWidth <= innerWidth);
+        }
     }
 
     @Test
@@ -1966,14 +1981,24 @@ public class ChatMessageListTest {
 
     /** 布局 + 提取单消息他人组:返回 [气泡节点, 行节点序列, 控制器]。 */
     private static Object[] layoutSingleOtherBubble(ChatSceneController controller) {
+        return layoutSingleOtherBubble(controller, 400);
+    }
+
+    /**
+     * 窄/宽视口变体:气泡内可用宽 = round((chatWidthFor(v) − 2×padding) × 0.85) − 2×padding,
+     * 视口 400 → chatWidth 160 → 内宽 99(4px/码点下仅 24 字符)。行内 code 段样式/字号这类
+     * 断言与折行无关,长行内 code 被拆成两行会让「前缀 + code + 后缀三段」失真,故给宽视口。
+     */
+    private static Object[] layoutSingleOtherBubble(ChatSceneController controller, int viewportWidth) {
         // 与 layoutSingleOtherGroup 同因:先注入视口再建树(T7 chatWidthFor 窄屏分支,
         // 未设视口 = 0 → 1px 根宽 + maxLine=1 逐字符折行,行/引用结构断言全崩)。
-        controller.setHostViewport(400, 300);
+        controller.setHostViewport(viewportWidth, 300);
         controller.notifyDataChanged();
         SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
-        new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
+        new SceneLayoutEngine(new FixedTextMeasurer(8, 16))
+                .layout(root, new Constraints(viewportWidth, 300));
         SceneNode bubble = hudGroups(root).get(0).__getChildren().get(1);
         return new Object[] { bubble, root, rt };
     }
@@ -1983,7 +2008,7 @@ public class ChatMessageListTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText(
                 "<Bob> run `gradle build` now"), 1, T0));
-        Object[] parts = layoutSingleOtherBubble(controller);
+        Object[] parts = layoutSingleOtherBubble(controller, 1920);
         SceneNode lineNode = (SceneNode) parts[0];
         Assert.assertEquals("单行气泡", 1, lineNode.__getChildren().size());
         List<TextSegment> segments = lineNode.__getChildren().get(0).getSegments();
@@ -2534,7 +2559,7 @@ public class ChatMessageListTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText(
                 "<Bob> run `gradle build` now"), 1, T0));
-        Object[] parts = layoutSingleOtherBubble(controller);
+        Object[] parts = layoutSingleOtherBubble(controller, 1920);
         SceneNode bubble = (SceneNode) parts[0];
         SceneNode lineNode = bubble.__getChildren().get(0);
         List<TextSegment> segments = lineNode.getSegments();
@@ -2884,7 +2909,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(new SiblingStyledComponent(
                 "<Bob> `System.out.println(42)`",
                 "§f<Bob> §f`System.out.println(42)`"), 1, T0));
-        Object[] parts = layoutSingleOtherBubble(controller);
+        Object[] parts = layoutSingleOtherBubble(controller, 1920);
         SceneNode bubble = (SceneNode) parts[0];
         SceneNode lineNode = bubble.__getChildren().get(0);
         List<TextSegment> segments = lineNode.getSegments();
