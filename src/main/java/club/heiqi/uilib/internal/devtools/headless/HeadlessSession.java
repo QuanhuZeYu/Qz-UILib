@@ -380,7 +380,7 @@ public final class HeadlessSession implements AutoCloseable {
      * <p>必须在至少推进过一帧之后调用：布局结果由帧管线写入节点的 cachedLayout，
      * 未布局的树投影出来坐标与尺寸全为 0（本方法如实报 0，不猜）。</p>
      *
-     * @param interactiveOnly true = 只留可命中节点（其祖先链保留以给出路径）
+     * @param interactiveOnly true = 只留可命中节点（路径即地址，无需保留祖先行）
      * @return 按根登记顺序、深度优先的事实行
      */
     public List<HeadlessTreeProjection.Row> projectTree(boolean interactiveOnly) {

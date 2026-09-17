@@ -18,24 +18,35 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
  *
  * <h3>它是只读视图，不是第二套真值</h3>
  * <p>本类<b>只读</b>节点既有状态（{@code __getChildren} / {@code getCachedLayout} / {@code getText} /
- * {@code effectiveFontSize} 等），不缓存、不写回、不建立索引副本：每次调用现算，产物即当帧事实。
- * 绝对坐标走 {@link SceneGeometry#absoluteBox}(node, 0, 0) —— 跨层几何换算的权威单点，含祖先滚动
- * 偏移注入，与命中测试同源 —— 故投影里报出的坐标，就是点击会命中的位置。</p>
+ * {@code effectiveFontSize} 等），不缓存、不写回、不建立索引副本：每次调用现算，产物即当帧事实。</p>
+ *
+ * <p><b>两个事实各自由其权威回答，本类不自己推导：</b></p>
+ * <ul>
+ *   <li><b>坐标</b>：布局盒走 {@link SceneGeometry#absoluteBox}(node, 0, 0)（含祖先滚动偏移注入），
+ *       再经注入的 {@link HitProbe#canvasBoxOf} 换算成画布坐标 —— 浮层根布局在自己的坐标空间里
+ *       （锚点 + 相对倍率），只有换算后才是 agent 能直接喂给 {@code move x y} 的位置。</li>
+ *   <li><b>可点性</b>：中心点「点到谁」只有命中测试能回答（{@link HitProbe#hitChainAt}），
+ *       故 {@code [target]}/{@code [container]}/{@code [blocked]} 全部取自真实命中链，
+ *       不叠加任何几何推断。</li>
+ * </ul>
+ *
+ * <p><b>用几何判据代替命中判据出过错</b>（独立复核四类反例）：「没有同为可命中的后代」判不出
+ * 「点得中」—— 被滚动容器裁掉的目标、被模态遮罩盖住的目标都满足前者、点下去却到不了自己。
+ * 故本类不保留任何几何近似判据，命中事实一律外注。</p>
  *
  * <h3>交互事实为何必须筛</h3>
  * <p>树里绝大多数节点是布局容器与装饰叶（{@code hitTestable=false}），全部列出会让 agent 淹没在噪声里。
- * 默认只投影 {@code hitTestable && !collapsed} 且<b>有可见尺寸</b>的节点，其祖先链保留以给出路径。
+ * 默认只投影 {@code hitTestable && !collapsed} 且<b>有可见尺寸</b>的节点（路径本身即地址，无需保留祖先行）。
  * {@code --nodes=all} 可要完整树（含不可见尺寸 / 未激活浮层，调试用）。</p>
  *
- * <h3>两条已知边界（如实登记，不假装解决）</h3>
+ * <h3>已知边界（如实登记，不假装解决）</h3>
  * <ul>
  *   <li><b>尺寸 0 的节点不给中心点</b>：它不可点，中心点会误导。默认投影仍列出（结构事实），
  *       但 {@code centerX/Y} 的语义是「盒的中心」；调用方点之前应确认 {@code width>0 && height>0}。
  *       交互筛选下零尺寸节点被剔除。</li>
- *   <li><b>坐标是未裁剪的绝对盒</b>：被滚动容器裁掉、或属于未激活浮层的节点，坐标仍按几何算出。
- *       区分「在画面内 / 在树里」需要视口求交（{@code SceneGeometry.visibleBoxWithinScrollableAncestors}
- *       提供该能力），本类暂不引入 —— 引入后 {@code --nodes} 的语义会从「树里有什么」变成
- *       「画面上有什么」，那是另一个功能，不该偷偷改。</li>
+ *   <li><b>坐标是未裁剪的盒，可点性另报</b>：被滚动容器裁掉的节点仍按布局报坐标（排查「它为什么
+ *       不在画面上」需要的正是未裁剪的盒），此时它会被标为 {@code [blocked]} —— 两个事实一致时
+ *       说明「它既不在这、也点不到」，不一致时（有坐标但点不到）恰恰是要看的信息。</li>
  * </ul>
  */
 public final class HeadlessTreeProjection {
@@ -249,7 +260,7 @@ public final class HeadlessTreeProjection {
      *
      * @param root           树根；null 返回空表
      * @param rootIndex      根序号（用于地址）
-     * @param interactiveOnly true = 只留可命中节点（其祖先链保留以给出路径）
+     * @param interactiveOnly true = 只留可命中节点（路径即地址，无需保留祖先行）
      * @return 事实行（深度优先，同级按子节点顺序 = z-order）
      */
     public static List<Row> project(SceneNode root, int rootIndex, boolean interactiveOnly) {
@@ -265,7 +276,7 @@ public final class HeadlessTreeProjection {
      *
      * @param root            树根；null 返回空表
      * @param rootIndex       根序号（用于地址）
-     * @param interactiveOnly true = 只留可命中节点（其祖先链保留以给出路径）
+     * @param interactiveOnly true = 只留可命中节点（路径即地址，无需保留祖先行）
      * @param hitProbe        命中探针；null = 不标注（{@code centerHitsSelf}/{@code onHitChain}
      *                        恒为 false，{@code [target]} 不再出现）
      * @return 事实行（深度优先，同级按子节点顺序 = z-order）
