@@ -68,8 +68,18 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
 
     private final ChatSceneController controller;
     private final SceneNode root;
-    /** 虚拟时钟：从进程当前时刻起步，每帧单调步进。 */
-    private long clockMillis = System.currentTimeMillis();
+    /**
+     * 虚拟时钟：<b>内容就绪后</b>从进程当前时刻起步，每帧单调步进。
+     *
+     * <p><b>为什么初值必须在这里取、不能放字段初始化器</b>：消息的出生时刻（
+     * {@code ChatCardComposer} 组的 {@code latestMillis}）是 wall clock，而入场动画进度 =
+     * {@code (帧时钟 − 出生时刻) / 180ms}。字段初始化器在 {@code super(...)} 之后立即求值，
+     * 早于 {@code ChatSceneController} 的创建与消息 append；而控制器初始化（度量/段解析装配）
+     * 实测可耗数百毫秒，于是出生时刻反而<b>晚于</b>帧时钟起点 → 进度恒为负 → 每组 opacity 恒 0 →
+     * 整树被 paint 的「零透明子树跳过」优化吃掉 → 出图纯色（{@code commands=0}、{@code colors=1}）。
+     * 实测偏差 353ms（默认 frames=20 ≈ 320ms 追不回来），故把起点挪到内容构建之后。</p>
+     */
+    private long clockMillis;
 
     /**
      * 装配聊天探针。
@@ -101,6 +111,8 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
         controller.notifyDataChanged();
         this.root = controller.buildContent(runtime);
         SceneHostAssembly.attachTree(runtime, root);
+        // 内容已就绪，此刻起算虚拟时钟（理由见 clockMillis 字段 javadoc）。
+        this.clockMillis = System.currentTimeMillis();
     }
 
     /**
