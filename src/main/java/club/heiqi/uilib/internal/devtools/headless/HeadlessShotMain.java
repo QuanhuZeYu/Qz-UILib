@@ -221,6 +221,20 @@ public final class HeadlessShotMain {
             return 2;
         }
 
+        // config 页不接收外观档（主题对它是**配置内容**：配置页在页壳树构建前安装自己的偏好信号）。
+        // 命令层给一条提示而不是静默忽略——「跑了没变化」与「参数没接线」在产物上不可区分，
+        // 而本仓的通例是「不许静默降级」。
+        boolean themeGiven = false;
+        for (String targetTheme : themeTargets) {
+            if (targetTheme != null) {
+                themeGiven = true;
+            }
+        }
+        if (themeGiven && pageNameTargets.contains(HeadlessRequest.CONFIG_PAGE)) {
+            System.out.println("[headless] 提示：config 页不接收 --theme —— 主题对配置页是配置内容"
+                    + "（页壳树构建前安装自己的偏好信号），不是请求级环境量；该参数对 config 档无效");
+        }
+
         int total = pageNameTargets.size() * pageTargets.size() * sizeTargets.size()
                 * fontScaleTargets.size() * themeTargets.size();
         boolean multi = total > 1;

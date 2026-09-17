@@ -111,6 +111,24 @@ public final class HeadlessSession implements AutoCloseable {
                     "宿主装配失败（页面 " + request.pageId() + "）：" + e.getMessage(), e);
         }
         UiSurface host = binding.surface();
+        final Runnable hostCleanup = binding.cleanup();
+        try {
+            return assembleSession(request, surface, capabilities, environment, host, inputSource, binding);
+        } catch (RuntimeException | Error e) {
+            // 交棒后的任何失败都要把装配期痕迹带走，并释放已建的离屏上下文：cleanup 的所有权此刻已从
+            // createHost 转到会话，而会话还没建出来（独立复核列为结构缺口）。
+            surface.close();
+            if (hostCleanup != null) {
+                hostCleanup.run();
+            }
+            throw e;
+        }
+    }
+
+    /** 会话组装主体：合成器 / 主层快照 / 记录上下文 / 环境投影，最后建会话。 */
+    private static HeadlessSession assembleSession(HeadlessRequest request, GlOffscreenSurface surface,
+            HeadlessCapabilities capabilities, UiEnvironment environment, UiSurface host,
+            HeadlessInputSource inputSource, HostBinding binding) {
         // 会话持有合成器与主层快照服务：它们在每帧成对 begin/finish，是 backdrop/玻璃合成语义的载体，
         // 缺了它们不会报错，只会让玻璃层内容缺失（静默降级），因此与生产宿主保持同一装配。
         PaintContextCompositor paintContextCompositor = new PaintContextCompositor();
@@ -704,10 +722,20 @@ public final class HeadlessSession implements AutoCloseable {
         } catch (RuntimeException ignored) {
             // 资源释放路径不掩盖主流程结果：宿主 runtime 回收失败不应让已产出的图作废。
         }
-        surface.close();
-        if (hostCleanup != null) {
-            // 进程外痕迹不留：配置页的临时配置目录随会话关闭整体删除。
-            hostCleanup.run();
+        try {
+            try {
+                host.dispose();
+            } catch (RuntimeException ignored) {
+                // 资源释放路径不掩盖主流程结果：宿主 runtime 回收失败不应让已产出的图作废。
+            }
+            surface.close();
+        } finally {
+            // 进程外痕迹清理必须无条件执行：它是「一次出图不留痕」这条承诺的唯一载体。
+            // 此前它排在表面释放之后且不在 finally 内 —— 那两步抛 Error 时清理会被跳过
+            // （独立复核列为结构缺口）。
+            if (hostCleanup != null) {
+                hostCleanup.run();
+            }
         }
     }
 }

@@ -24,9 +24,13 @@ import club.heiqi.uilib.ui.screen.UiScreenManager;
  * → 本类（定位 mcDataDir 配置文件 → 订阅保存/重载回调 → 包进 {@link ModernConfigScreen}）
  * → {@code displayGuiScreen}。</p>
  *
- * <p><b>为什么装配不在本类</b>：不是行数问题而是**类加载**问题——本类方法签名含 {@code GuiScreen}，
- * 在无 MC 类路径下类加载即失败（实测 {@code NoClassDefFoundError: net/minecraft/client/gui/GuiScreen}），
- * 装配若与它同类，headless 出图就被迫带上整包 MC 及其静态初始化面。按「一个类要么是宿主、
+ * <p><b>为什么装配不在本类</b>：不是行数问题而是**类加载**问题——本类在无 MC 类路径下加载即失败
+ * （实测 {@code Class.forName("…ModernConfigEntry")} 抛
+ * {@code NoClassDefFoundError: net/minecraft/client/gui/GuiScreen}）。触发点见
+ * {@link ModernConfigAssembly} 类注释：**不是**方法签名引用 MC 类型，而是
+ * {@code return new ModernConfigScreen(parent, screen)} 这一句——校验期要证明
+ * {@code ModernConfigScreen → McScreenBridge → GuiScreen} 可赋值，于是被迫解析缺失的父类型。
+ * 装配若与宿主同类，headless 出图就被迫带上整包 MC 及其静态初始化面；按「一个类要么是宿主、
  * 要么是装配」切开之后，同一份装配在游戏与无游戏进程下都可运行。</p>
  *
  * <p>本类仍然持有的两件宿主事实：**配置真源落在哪个文件**（{@code mcDataDir} 下的路径）

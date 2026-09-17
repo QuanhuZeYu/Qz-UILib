@@ -1024,8 +1024,13 @@ Registration）。外观档不接收（见下）。
 
 **装配与宿主拆成两个类（本轮的关键修法）**：首次接入把 `buildScreen` 与 `createScreen(GuiScreen)`
 放在同一个 `ModernConfigEntry` 里，最小集下**出图直接失败**——实测
-`Class.forName("…ModernConfigEntry")` ⇒ `NoClassDefFoundError: net/minecraft/client/gui/GuiScreen`
-（该类对 MC 类型的引用使它在无 MC 类路径下不可加载）。修法：拆出零 MC 依赖的
+`Class.forName("…ModernConfigEntry")` ⇒ `NoClassDefFoundError: net/minecraft/client/gui/GuiScreen`。
+**触发点经独立复核定位（并推翻了我的初版解释）**：不是「方法签名含 GuiScreen」——合成实验证明仅出现在
+方法签名 / 字段类型 / `checkcast` / `instanceof` / `invokevirtual` 里的 MC 类型都不触发，真实变异也照样
+出图；真实原因是**校验期的可赋值性检查**：`return new ModernConfigScreen(parent, screen)` 要证明
+`ModernConfigScreen → McScreenBridge → GuiScreen` 可赋值，于是被迫解析缺失的父类型；把那一句改成先赋
+`Object` 再强转，`Class.forName` 立刻恢复 OK（单行变异）。判据由此改为「有没有把子类型收敛到缺失的
+父类型」，不是「有没有 import MC」。修法：拆出零 MC 依赖的
 `ModernConfigAssembly`（Schema → 字段定制 → ConfigScreen），`ModernConfigEntry` 只留 MC 宿主包装
 （定位配置文件、订阅回调、包 GuiScreen）。判据与 F25「宿主窗口上提」同源：**一个类要么是宿主、
 要么是装配**。与 F21 的区别要分清：chat/hud 的探针宿主在**方法体**里用 MC 类型，因而只在完整集可跑
@@ -1037,11 +1042,20 @@ Registration）。外观档不接收（见下）。
 正常路径把删除动作交给会话（`HostBinding.cleanup()`），其余一切出口在 `finally` 里删。
 **类型枚举的失效方式是静默漏一类，`finally` 不是。**
 
-**门禁与它的区分力（含一条未复现的变异，如实记录）**：新增 `HeadlessPageLinkageTest`——直启出图，
+**复核补的两处结构缺口（已收口）**：① `open()` 里 `createHost` 交棒后到构造会话之间抛
+Error/RuntimeException 时 `binding.cleanup()` 无人执行（会话还没建出来）——现包一层 catch 执行清理
+并释放离屏上下文；② `close()` 的清理排在 `host.dispose()` / `surface.close()` 之后且不在 `finally`
+内，那两步抛 Error 即跳过清理——现收进 `finally`。两处原先都无实测触发手段，属结构缺口而非已发生缺陷。
+
+**门禁与它的区分力（含一条被复核补上的覆盖缺口，如实记录）**：新增 `HeadlessPageLinkageTest`——直启出图，
 断言 `--page=config` 与 `--page=playground`（正锚，用来区分「页面坏了」与「最小集/注入面坏了」）
-在**最小集**上都 exit=0 且落出 PNG。变异试验：给装配类加一个「仅方法签名引用 MC 类型」的探针方法，
-**门禁仍绿**（未复现失败）⇒ 触发点在类内更深处，未逐项测定；故类注释只写实测事实
-（`Class.forName` 抛 `NoClassDefFoundError`）与端到端判据，**不把「签名引用即触发」的推断写进断言**。
+在**最小集**上都 exit=0 且落出 PNG。首版只钉这两条，独立复核用变异指出**覆盖缺口**：
+把 `ConfigScreen.showSection` 改成空操作、或摘掉 `HeadlessSession.close()` 里的 `hostCleanup.run()`，
+门禁**全绿**——本轮交付了页面可出图 / section 轴生效 / 不留痕三项能力，却只守住一项。
+已补两条判据并各自变异验证：G1 空操作 ⇒ `configSectionAxisSwitchesContent` FAILED（其余三条绿）；
+G2 摘清理 ⇒ `configPageLeavesNoTempDirectory` FAILED（其余三条绿）。四条判据各钉一项交付。
+另：给装配类加「仅方法签名引用 MC 类型」的探针方法时门禁仍绿（作者与复核两方一致）——那不是判据失效，
+而是**它不是机制推断**：它钉的是端到端事实。
 
 **验收（一手实测）**：
 
@@ -1050,11 +1064,17 @@ Registration）。外观档不接收（见下）。
 | 单页 1280×720（最小集） | `commands=59 [fill=1 surface=33 text=25/226ch]`、`bounds=0,0..1280,745`、`outsideViewport=0`、`colors=1156`、自检 ok、**917 ms** |
 | 三 section（`--page-indexes=0,1,2`） | `batch: 3/3 ok`；命令面 / 颜色数两两不同（59/1156、58/1066、41/1117）⇒ 切换真的生效 |
 | 无进程外痕迹 | 会话关闭后临时目录 0 残留；仓库内 `qzuilib-modern.yaml` 未生成 |
-| 门禁 | `HeadlessPageLinkageTest` 2/2（`skipped=0`），产物 `linkage-config.png` 81089 B / `linkage-playground.png` 200031 B |
+| 门禁 | `HeadlessPageLinkageTest` 首版 2/2（`skipped=0`，产物 81089 B / 200031 B）；复核补两条后 **4/4**，两条新判据各自变异验证会红 |
 
 **外观档边界**：配置页不接收 `--theme`——它在页壳树构建前安装自己的偏好信号
 （`ConfigThemePreference`，默认平面档）。主题对配置页是**配置内容**而非请求级环境量，要换档得改配置
-真源。已记入指南的环境矩阵页面表。
+真源。已记入指南的环境矩阵页面表；命令层现给**显式提示**（复核指出原先属静默忽略，与本仓
+「不许静默降级」的取向相反）。
+
+**语义边界（复核追问后补齐）**：「不订阅」的必然代价是**字体运行态也不回灌**——真机路径订阅后由
+coordinator 做 initial apply（仓库注释自述「可能随后把 FontConfig 清为空」），而 headless 保持进程当前的
+字体发现态（实测 507 个字体顺序）。同一页面在这两条路径上的字体解析**可能不同**，可见程度本机无法
+判定（不能开游戏）。已写进指南。
 
 **顺带的公共面变更**：`ConfigScreen` / `ConfigUI` 增加**环境可注入**构造与重载（旧构造保留并委托
 `SceneHostAssembly.defaultEnvironment()`，生产行为逐位不变）。理由不只是 headless：F22 已定「宿主环境

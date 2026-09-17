@@ -1327,7 +1327,9 @@ public class ConfigScreen extends AbstractSceneHostWidget {
      *
      * <p>与导航点击 handler 写的是同一个受控源（{@code activeSectionSignal}），因此不引入第二条
      * 切 section 路径；给 headless 出图矩阵用——配置页一次只挂一个 section，没有这个入口就只能
-     * 出到第一个 section 的图。形态与 {@code TestPlaygroundHost#showPage(int)} 同构。</p>
+     * 出到第一个 section 的图。与 {@code TestPlaygroundHost#showPage(int)} 同构的只是
+     * 「signal-first、不依赖命中坐标」这一点；**越界语义刻意不同**——那边越界 clamp，这里 fail-fast
+     * （下标写错要能当场看见，而不是静默出一张别的 section 的图）。</p>
      *
      * @param index section 下标，取值 [0, schema.sections().size())
      * @throws IllegalArgumentException 下标越界

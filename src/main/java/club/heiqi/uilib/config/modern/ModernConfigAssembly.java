@@ -23,11 +23,19 @@ import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
  * 也服务 headless 出图（{@code internal.devtools.headless}）——出图里的字段形态因此**就是**真机形态，
  * 而不是照着真机再写一遍的近似。</p>
  *
- * <p><b>为什么与 {@link ModernConfigEntry} 分成两个类</b>：不是行数问题，是**类加载**问题。
- * 入口类的方法签名含 {@code GuiScreen}，在无 MC 类路径下加载即失败
- * （实测 {@code NoClassDefFoundError: net/minecraft/client/gui/GuiScreen}）；装配若与它同类，
- * headless 出图就被迫带上整包 MC 及其静态初始化面。判据与「宿主窗口上提」同源：
- * 一个类要么是宿主，要么是装配，混在一起就两边都不可复用。</p>
+ * <p><b>为什么与 {@link ModernConfigEntry} 分成两个类</b>：不是行数问题，是**类加载**问题——
+ * 那个类在无 MC 类路径下根本加载不了（实测 {@code Class.forName("…ModernConfigEntry")} 抛
+ * {@code NoClassDefFoundError: net/minecraft/client/gui/GuiScreen}）。</p>
+ *
+ * <p><b>触发点（含一次被自己推翻的初版结论）</b>：**不是**「方法签名引用了 {@code GuiScreen}」——
+ * 独立复核的合成实验证明，仅出现在方法签名 / 字段类型 / {@code checkcast} / {@code instanceof} /
+ * {@code invokevirtual} / 静态字段读里的 MC 类型**都不触发**加载失败，仅签名引用的真实变异也照样
+ * 出图成功。真实触发点是**校验期的可赋值性检查**：{@code return new ModernConfigScreen(...)} 要求
+ * 证明 {@code ModernConfigScreen → McScreenBridge → GuiScreen} 可赋值，于是被迫解析缺失的父类型。
+ * 把那一句改成先赋给 {@code Object} 再强转，{@code Class.forName} 立刻恢复 OK（单行变异实测）。
+ * 故判据不是「有没有 import MC」，而是**有没有把子类型收敛到缺失的父类型**。</p>
+ *
+ * <p>判据与「宿主窗口上提」同源：一个类要么是宿主，要么是装配，混在一起就两边都不可复用。</p>
  *
  * <p>字段定制是 uilib 接入层事实（{@code fontSystem.fontSort} 的专用 renderer、
  * {@code fontSystem.characterFontRules} 的三栏编辑器），硬编码留在本类——不进通用

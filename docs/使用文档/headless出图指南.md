@@ -291,21 +291,34 @@ build\headless\qz-shot.bat --page=config --page-indexes=0,1,2 --out=out\config-s
 ```
 
 - **用最小集即可**（`qz-shot.bat`）：配置页的装配链零 `net.minecraft` 依赖。实测 1280×720：
-  `commands=59 [fill=1 surface=33 text=25/226ch] bounds=0,0..1280,745 colors=1156`、自检 ok、917 ms；
+  `commands=59 [fill=1 surface=33 text=25/226ch] bounds=0,0..1280,745 colors=1156`、自检 ok、约 0.9 s（8 次复跑 758~967 ms，单次样本会抖）；
 - `--page-index` 选 **section 下标**：走屏幕公开入口 `showSection(int)`（与导航点击写同一个受控源），
   不依赖命中坐标。三档实测命令面与颜色数两两不同（59/1156、58/1066、41/1117）⇒ 切换真的生效；
 - **配置真源落临时目录**，随会话关闭整体删除：一次出图不改写你的真实配置，也不在进程外留痕。
   文件初始不存在 ⇒ 出图是**默认配置下的配置页**，这正是可复现的那个状态；
 - **不订阅保存/重载回调**：`ConfigSaveListener` 会把保存结果回灌**本进程运行态**并触发字体 reload，
   那是「游戏客户端」这个宿主的职责。故点「保存」只写临时文件，不改变任何进程状态；
-- **不接收 `--theme`**：见「环境矩阵」的页面表；
+- **字体运行态也不回灌**（「不订阅」的必然代价，不是缺陷）：真机路径订阅后由 coordinator 做 initial
+  apply（仓库注释自述「可能随后把 FontConfig 清为空」），而 headless 保持进程当前的字体发现态
+  （实测 507 个字体顺序）。故同一页面在这两条路径上的**字体解析可能不同**；
+- **不接收 `--theme`**：见「环境矩阵」的页面表。命令层会给一条显式提示，不静默忽略——
+  「跑了没变化」与「参数没接线」在产物上不可区分；
 - 默认最小帧数同聊天系页面（20）：标题与字段 presentation shell 在布局发布后有 opacity 级联进入，
   帧数给少会截到半成品（与 chat 页同因）。
 
 **为什么装配与 MC 宿主是两个类**：装配入口 `ModernConfigAssembly` 与宿主包装 `ModernConfigEntry`
 分开，不是行数取舍而是**加载事实**——宿主类在最小集类路径下 `Class.forName` 就抛
-`NoClassDefFoundError: net/minecraft/client/gui/GuiScreen`（实测），装配若与它同类，出图就被迫带整包 MC。
-门禁 `HeadlessPageLinkageTest` 直启出图钉住这条（含 playground 作正锚）。
+`NoClassDefFoundError: net/minecraft/client/gui/GuiScreen`（实测）。
+
+触发点**不是**「方法签名引用了 MC 类型」——独立复核的合成实验证明：仅出现在方法签名 / 字段类型 /
+`checkcast` / `instanceof` 里的 MC 类型都不触发；真实原因是**校验期的可赋值性检查**：
+`return new ModernConfigScreen(...)` 要证明它可赋给 `GuiScreen`，于是被迫解析缺失的父类型。
+故判据不是「有没有 import MC」，而是**有没有把子类型收敛到缺失的父类型**。
+
+门禁 `HeadlessPageLinkageTest` 直启出图钉四条：`config` 出图 / `playground` 正锚（用来区分
+「页面坏了」与「最小集/注入面坏了」）/ `--page-indexes=0,1,2` 三档颜色数两两不同 / 出图后临时配置
+目录无新增。后两条是补的：独立复核实测「把 `showSection` 改成空操作」「摘掉会话清理」时，
+只钉前两条的门禁**全绿**——即交付了三项能力却只守住一项。
 
 ## 出图确定性
 
