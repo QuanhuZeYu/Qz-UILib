@@ -314,6 +314,16 @@ public final class HeadlessInputDevice {
         return pending.size();
     }
 
+    /**
+     * @return 脚本是否已全部下发（队列空且无剩余空转帧）。
+     *
+     * <p>查询路径用它判断「脚本跑完了没有」：{@code pendingActionCount()} 只数队列，而 {@code wait N}
+     * 的剩余空转帧记在另一个计数器里，只看队列会把「还要空转 10 帧」误判成已结束。</p>
+     */
+    public boolean hasPendingWork() {
+        return !pending.isEmpty() || pendingWaitFrames > 0;
+    }
+
     /** @return 累计已下发动作数 */
     public int dispatchedActionCount() {
         return dispatchedActions;

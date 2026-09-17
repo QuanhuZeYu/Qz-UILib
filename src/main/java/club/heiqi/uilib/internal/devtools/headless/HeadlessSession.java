@@ -316,9 +316,29 @@ public final class HeadlessSession implements AutoCloseable {
     public int advanceFramesForQuery() {
         ensureOpen();
         int rendered = 0;
-        for (int i = 0; i < request.frames(); i++) {
+        int glError = 0;
+        // 至少推进 request.frames() 帧（保证布局落定），此后**只要脚本还有待办就继续推进**。
+        // 不这么做的话「--actions="… click …" --nodes」会在脚本只跑了两帧时就去投影，
+        // 查询到的是点击之前的树 —— 输出完全正常，是个静默空测（独立复核据此得出过错误结论）。
+        // 上限沿用 maxFrames，避免不收敛的脚本把查询挂死。
+        while (rendered < request.frames() || inputSource.device().hasPendingWork()) {
+            if (rendered >= request.maxFrames()) {
+                throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
+                        "输入脚本在 " + request.maxFrames() + " 帧内未执行完（已推进 " + rendered
+                                + " 帧）；请抬高 --max-frames 或检查脚本是否自续");
+            }
             advanceOneFrame(rendered);
             rendered++;
+            int frameError = surface.consumeGlError();
+            if (frameError != 0 && glError == 0) {
+                glError = frameError;
+            }
+        }
+        // 查询路径此前不消费 GL 错误：帧坏了照样打印一份看似正常的事实表，
+        // 变异测试证明这种静默会让「查询路径已修好」的门禁失效。故与出图同口径，坏帧即失败。
+        if (glError != 0) {
+            throw new HeadlessFailure(HeadlessFailure.Stage.FRAME,
+                    "查询路径存在 GL 错误（glGetError=" + glError + "），事实表不可信");
         }
         return rendered;
     }
