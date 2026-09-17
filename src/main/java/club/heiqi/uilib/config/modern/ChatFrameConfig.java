@@ -102,7 +102,7 @@ public final class ChatFrameConfig {
             MyMod.LOG.warn("聊天框形态持久化失败：客户端不可用");
             return false;
         }
-        return persist(new File(minecraft.mcDataDir, ModernConfigEntry.CONFIG_RELATIVE_PATH), MODE_VANILLA);
+        return persist(new File(minecraft.mcDataDir, ModernConfigAssembly.CONFIG_RELATIVE_PATH), MODE_VANILLA);
     }
 
     /**

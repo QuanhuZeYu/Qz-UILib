@@ -22,6 +22,8 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * qz-shot.bat --page=chat --size=1280x720 --font-scales=100,150,200 --out=out/chat.png
  * qz-shot.bat --page=chat --themes=liquid-glass-dark,liquid-glass-light --out=out/theme.png
  * qz-shot.bat --page=hud --size=1920x1080 --debug
+ * qz-shot.bat --page=config --size=1280x720 --out=out/config.png
+ * qz-shot.bat --page=config --page-indexes=0,1,2 --out=out/config-section.png
  * </pre>
 
  * <p><b>三个批处理轴</b>：{@code --page-indexes} × {@code --font-scales} × {@code --sizes} 按笛卡尔积
@@ -481,9 +483,10 @@ public final class HeadlessShotMain {
     }
 
     /**
-     * 页面的默认帧数：聊天系页面未显式给 {@code --frames} 时提到 20 ——
+     * 页面的默认帧数：聊天系页面与配置页未显式给 {@code --frames} 时提到 20 ——
      * 消息组首次合成有 180 ms 入场动画（16 ms/帧 → 12 帧），动画期间整树 opacity=0 且像素逐帧不变，
-     * 稳定判据会把这段误判成「已收敛」而提前停帧出空图。
+     * 稳定判据会把这段误判成「已收敛」而提前停帧出空图；配置页同理——它的标题与字段 presentation
+     * shell 在完整布局发布后有 opacity 级联进入。
      *
      * @param page 页面标识
      * @param frames 命令行给出的最小帧数
@@ -491,7 +494,8 @@ public final class HeadlessShotMain {
      * @return 该页实际使用的最小帧数
      */
     private static int defaultFramesFor(String page, int frames, boolean framesGiven) {
-        if (!framesGiven && (HeadlessRequest.CHAT_PAGE.equals(page) || HeadlessRequest.HUD_PAGE.equals(page))) {
+        if (!framesGiven && (HeadlessRequest.CHAT_PAGE.equals(page) || HeadlessRequest.HUD_PAGE.equals(page)
+                || HeadlessRequest.CONFIG_PAGE.equals(page))) {
             return 20;
         }
         return frames;
@@ -685,7 +689,7 @@ public final class HeadlessShotMain {
     }
 
     private static void printUsage(PrintStream out) {
-        out.println("用法: HeadlessShotMain [--page=playground|text-probe|chat|hud |"
+        out.println("用法: HeadlessShotMain [--page=playground|text-probe|chat|hud|config |"
                 + " --pages=NAME,NAME,…] [--page-index=N | --page-indexes=N,N,…]"
                 + " [--size=WxH | --sizes=WxH,WxH,…] [--out=path] [--frames=N] [--settle=N] [--max-frames=N]"
                 + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file]"
@@ -697,7 +701,10 @@ public final class HeadlessShotMain {
         out.println("主题档: " + HeadlessThemes.names() + "（不给 = 各页面用自己的默认外观）");
         out.println("目标寻址: --nodes 打印可命中节点（--nodes=all 打印完整树）；--find=TEXT 按可见文本找节点"
                 + "（给出地址与中心点）；--center=r0/3/1 解地址取中心点。三者都先推进一帧拿布局，不产出 PNG");
-        out.println("页面: playground / text-probe / chat / hud；--pages 给多页面矩阵，"
-                + "--page-index 的含义随页面而变（playground = 演示页下标，hud = 锚点，chat/text-probe 忽略）");
+        out.println("页面: playground / text-probe / chat / hud / config；--pages 给多页面矩阵，"
+                + "--page-index 的含义随页面而变（playground = 演示页下标，hud = 锚点，"
+                + "config = section 下标，chat/text-probe 忽略）");
+        out.println("config 页：生产配置页 UI（字段定制与游戏内同一入口）；配置真源落随会话删除的临时目录，"
+                + "文件初始不存在 ⇒ 出图是默认配置下的配置页；不接收 --theme（主题对它是配置内容）");
     }
 }

@@ -107,14 +107,14 @@ public class ModernConfigEntryRestorePolicyTest {
     @Test
     public void restoreDefaultsUsesFrozenSnapshotAfterFontConfigChanges() throws Exception {
         FontConfig.fontSort = new String[] {"Detected A", "Detected B"};
-        List<String> frozen = ModernConfigEntry.captureFontSortSnapshot();
+        List<String> frozen = ModernConfigAssembly.captureFontSortSnapshot();
         FontConfig.fontSort = new String[0];
         DraftSignalAdapter adapter = buildAdapter("fontSystem:\n"
                 + "  fontSort:\n"
                 + "    - Configured\n");
         try {
             FieldRestorePolicy policy = new FieldRestorePolicy();
-            ModernConfigEntry.configureRestorePolicy(policy, frozen);
+            ModernConfigAssembly.configureRestorePolicy(policy, frozen);
             policy.getCustom("fontSystem.fontSort").accept(adapter);
             ReactiveScheduler.get().flush();
             Assert.assertEquals(Arrays.asList("Detected A", "Detected B"),
@@ -130,7 +130,7 @@ public class ModernConfigEntryRestorePolicyTest {
         ModernConfigApplyCoordinator coordinator = ModernConfigApplyCoordinator.getInstance();
         coordinator.resetForTest();
         FontConfig.fontSort = new String[] {"Detected A", "Detected B"};
-        List<String> frozen = ModernConfigEntry.captureFontSortSnapshot();
+        List<String> frozen = ModernConfigAssembly.captureFontSortSnapshot();
         File file = tempFolder.newFile("qzuilib-modern-snapshot.yaml");
         write(file, "fontSystem:\n  fontSort: []\n");
         ConfigManager manager = ConfigManager.bootstrap(file, QzUiLibModernSchema.create());
@@ -160,13 +160,13 @@ public class ModernConfigEntryRestorePolicyTest {
     }
 
     /**
-     * 执行 ModernConfigEntry 注入的恢复默认策略。
+     * 执行 ModernConfigAssembly 注入的恢复默认策略。
      *
      * @param adapter 草稿适配器
      */
     private static void applyModernRestorePolicy(DraftSignalAdapter adapter) {
         FieldRestorePolicy policy = new FieldRestorePolicy();
-        ModernConfigEntry.configureRestorePolicy(policy);
+        ModernConfigAssembly.configureRestorePolicy(policy);
         Assert.assertTrue("characterFontRules 应注册为 skip",
                 policy.isSkipped("fontSystem.characterFontRules"));
         Consumer<DraftSignalAdapter> custom = policy.getCustom("fontSystem.fontSort");

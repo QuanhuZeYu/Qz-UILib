@@ -1,8 +1,6 @@
 package club.heiqi.uilib.config.modern;
 
 import java.io.File;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 import net.minecraft.client.Minecraft;
@@ -12,31 +10,35 @@ import club.heiqi.config.ConfigException;
 import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.schema.ConfigSchema;
 import club.heiqi.config.ui.ConfigScreen;
-import club.heiqi.config.ui.ConfigUI;
-import club.heiqi.config.ui.FieldRestorePolicy;
-import club.heiqi.config.ui.field.FieldRendererRegistry;
-import club.heiqi.config.ui.field.FontSortFieldRenderer;
-import club.heiqi.config.ui.field.FontSortOrderModel;
 import club.heiqi.uilib.MyMod;
-import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglInputSource;
 import club.heiqi.uilib.ui.scene.host.lwjgl.LwjglStateReader;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
 
 /**
- * uilib 自身配置接入新架构的入口（实验性）。
+ * uilib 自身配置接入新架构的 **MC 宿主入口**（实验性）。
  *
- * <p>把 uilib 这个 mod 作为新架构配置页的第一个真实使用方，端到端验证：
- * 声明 Schema → {@link ConfigManager#bootstrap} → {@link ConfigUI#buildScreen}
- * → 包进 {@link ModernConfigScreen} → {@code displayGuiScreen}。</p>
+ * <p>端到端链路：{@link ModernConfigAssembly}（Schema → 字段定制 → {@link ConfigScreen}）
+ * → 本类（定位 mcDataDir 配置文件 → 订阅保存/重载回调 → 包进 {@link ModernConfigScreen}）
+ * → {@code displayGuiScreen}。</p>
+ *
+ * <p><b>为什么装配不在本类</b>：不是行数问题而是**类加载**问题——本类方法签名含 {@code GuiScreen}，
+ * 在无 MC 类路径下类加载即失败（实测 {@code NoClassDefFoundError: net/minecraft/client/gui/GuiScreen}），
+ * 装配若与它同类，headless 出图就被迫带上整包 MC 及其静态初始化面。按「一个类要么是宿主、
+ * 要么是装配」切开之后，同一份装配在游戏与无游戏进程下都可运行。</p>
+ *
+ * <p>本类仍然持有的两件宿主事实：**配置真源落在哪个文件**（{@code mcDataDir} 下的路径）
+ * 与**是否订阅保存/重载回调**（把保存结果回灌本进程运行态、必要时字体 reload，
+ * 这是「游戏客户端」这个宿主的职责，headless 不订阅）。</p>
  *
  * <h3>合规边界守护</h3>
  * <ul>
  *   <li>本类位于 {@code uilib.config.modern}（mod 配置接入专门包），非 {@code uilib.ui.*} 通用组件包。</li>
  *   <li>依据决策 {@code ee1e181d}，uilib 作为 mod 自身使用方可直接 import
  *       {@code club.heiqi.config.schema.*} / {@code club.heiqi.config.runtime.*}
- *       / {@code club.heiqi.config.ui.*}（含 {@link ConfigUI}），合法使用新架构全部 API。</li>
+ *       / {@code club.heiqi.config.ui.*}，合法使用新架构全部 API。</li>
  *   <li>仍严守：uilib 通用 UI 组件包（{@code uilib.ui.*}）严禁 import {@code config.ui.*}
  *       ——本类不在通用组件包内，不触发该红线。</li>
  *   <li>{@link LwjglInputSource} / {@link LwjglStateReader} 暂复用 devtools 输入适配器
@@ -53,80 +55,19 @@ import club.heiqi.uilib.ui.screen.UiScreenManager;
  * </ul>
  *
  * <h3>配置文件</h3>
- * <p>新架构配置独立于 Forge cfg，使用 YAML 格式存于 {@code config/qzuilib-modern.yaml}，
- * 避免与 Forge 配置互相覆盖。本实验为并行接入，不影响现有 Forge 配置链路。</p>
+ * <p>新架构配置独立于 Forge cfg，使用 YAML 格式存于
+ * {@link ModernConfigAssembly#CONFIG_RELATIVE_PATH}（相对 mcDataDir），避免与 Forge 配置互相覆盖。
+ * 本实验为并行接入，不影响现有 Forge 配置链路。</p>
  */
 public final class ModernConfigEntry {
-
-    /**
-     * 新架构配置文件相对路径（相对 mcDataDir）。
-     *
-     * <p>包级可见：{@link ChatFrameConfig} 的运行时写入与配置页读写同一份文件，
-     * 路径字面量只此一处（避免出现第二份会漂移的拷贝）。</p>
-     */
-    static final String CONFIG_RELATIVE_PATH = "config/qzuilib-modern.yaml";
 
     private ModernConfigEntry() {
     }
 
     /**
-     * 注册 uilib 自身配置页的专用字段 renderer。
-     *
-     * @param registry 字段 renderer 注册表
-     */
-    static void configureFieldRenderers(FieldRendererRegistry registry) {
-        configureFieldRenderers(registry, captureFontSortSnapshot());
-    }
-
-    /**
-     * 注册 renderer，并显式传入本 screen 的 frozen discovered snapshot。
-     *
-     * @param registry 字段 renderer 注册表
-     * @param discoveredSnapshot 本次打开时冻结的发现顺序
-     */
-    static void configureFieldRenderers(FieldRendererRegistry registry, List<String> discoveredSnapshot) {
-        registry.registerPath("fontSystem.fontSort",
-                new FontSortFieldRenderer(discoveredSnapshot));
-        registry.registerPath("fontSystem.characterFontRules", new CharacterRuleFieldRenderer());
-    }
-
-    /**
-     * 注册 uilib 自身配置页的恢复默认策略。
-     *
-     * @param policy 恢复默认字段策略
-     */
-    static void configureRestorePolicy(FieldRestorePolicy policy) {
-        configureRestorePolicy(policy, captureFontSortSnapshot());
-    }
-
-    /**
-     * 注册恢复默认策略，并固定使用本 screen 的 discovered snapshot。
-     *
-     * @param policy 恢复默认字段策略
-     * @param discoveredSnapshot 本次打开时冻结的发现顺序
-     */
-    static void configureRestorePolicy(FieldRestorePolicy policy, List<String> discoveredSnapshot) {
-        policy.skip("fontSystem.characterFontRules");
-        policy.custom("fontSystem.fontSort", adapter -> {
-            adapter.onFieldEdit("fontSystem.fontSort",
-                    FontSortOrderModel.merge(discoveredSnapshot, Collections.<String>emptyList()));
-        });
-    }
-
-    /**
-     * 在 ConfigSaveListener/coordinator initial apply 前冻结当前 FontConfig 发现顺序。
-     *
-     * @return 不可变 canonical discovered snapshot
-     */
-    static List<String> captureFontSortSnapshot() {
-        return FontSortOrderModel.freezeDiscovered(
-                Arrays.asList(FontConfig.getFontSortSnapshot()));
-    }
-
-    /**
      * 同步构建新栈配置屏。供 guiFactory 中转层（{@code ModConfigGui}）与命令入口统一调用。
      *
-     * <p>流程：bootstrap ConfigManager → {@link ConfigUI#buildScreen} 构建 ConfigScreen
+     * <p>流程：bootstrap ConfigManager → {@link ModernConfigAssembly#buildScreen} 构建 ConfigScreen
      * → 包进 {@link ModernConfigScreen} 返回。</p>
      *
      * <p>bootstrap 失败时返回 parent（回到来源屏，不回无界面状态），调用方无需 null 检查。</p>
@@ -139,7 +80,7 @@ public final class ModernConfigEntry {
         if (minecraft == null) {
             return parent;
         }
-        final File configFile = new File(minecraft.mcDataDir, CONFIG_RELATIVE_PATH);
+        final File configFile = new File(minecraft.mcDataDir, ModernConfigAssembly.CONFIG_RELATIVE_PATH);
         final ConfigSchema schema = QzUiLibModernSchema.create();
 
         final ConfigManager manager;
@@ -152,7 +93,7 @@ public final class ModernConfigEntry {
 
         // 必须先于 listener 注册：coordinator initial apply 可能随后把 FontConfig 清为空，
         // 但本 screen 的 renderer/restore policy 仍共享这一次打开时的发现快照。
-        final List<String> discoveredSnapshot = captureFontSortSnapshot();
+        final List<String> discoveredSnapshot = ModernConfigAssembly.captureFontSortSnapshot();
 
         // 阶段 C C2：挂保存/重载回调 listener（BATCH_SAVE 与 RELOAD），经 ModernConfigApplyCoordinator
         // 主线程回灌；构造时注册 generation 绑定本 manager 为 UILib 全局配置当前 Authority
@@ -163,16 +104,16 @@ public final class ModernConfigEntry {
         // 不提供输入框/增删按钮，仍保留拖拽排序支持。
         // fontSort 使用 screen-open 前冻结的 discovered snapshot：首次打开若 yaml 为空 list
         // 则仅展示已发现字体，抹平 dirty（不点亮保存按钮，不写盘）；用户显式调序、索引移动
-        // 或恢复默认才 dirty→保存→写盘。FontConfig 依赖留在 uilib 接入层
-        // （本类已 import font 生态），不进通用 SimpleListFieldRenderer。
+        // 或恢复默认才 dirty→保存→写盘。FontConfig 依赖留在 uilib 接入层，
+        // 不进通用 SimpleListFieldRenderer。
         // P4：characterFontRules 挂 CharacterRuleFieldRenderer —— 字符字体规则字段，
         // YAML 仍是 simpleList，但渲染层拆成「启用/选择器/字体名」三栏编辑 + parse 错误透出。
         // 该 path 硬编码留在 uilib 接入层，不污染通用 FieldRendererRegistry.defaultRegistry()。
-        // ConfigScreen extends AbstractSceneHostWidget implements UiSurface，
-        // 天然可作 ModernConfigScreen 的 surface 参数。
-        final ConfigScreen screen = ConfigUI.buildScreen(manager, input,
-                registry -> configureFieldRenderers(registry, discoveredSnapshot),
-                policy -> configureRestorePolicy(policy, discoveredSnapshot));
+        // ConfigScreen extends AbstractSceneHostWidget implements UiSurface，天然可作
+        // ModernConfigScreen 的 surface 参数。字段定制与环境一律走 ModernConfigAssembly.buildScreen
+        // （与 headless 出图同一入口），环境取生产装配默认——与迁移前 ConfigScreen 单参 super 逐位相同。
+        final ConfigScreen screen = ModernConfigAssembly.buildScreen(manager, input,
+                SceneHostAssembly.defaultEnvironment(), discoveredSnapshot);
         return new ModernConfigScreen(parent, screen);
     }
 

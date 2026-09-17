@@ -6,6 +6,8 @@ import club.heiqi.config.runtime.ConfigManager;
 import club.heiqi.config.runtime.DraftBuffer;
 import club.heiqi.config.ui.field.FieldRendererRegistry;
 import club.heiqi.config.ui.editor.Registry;
+import club.heiqi.uilib.ui.env.UiEnvironment;
+import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 
 /**
@@ -132,8 +134,28 @@ public final class ConfigUI {
         return buildScreen(manager, input, registryCustomizer, restorePolicyCustomizer, editors -> { });
     }
 
-    /** 构建配置页，并在字段 renderer 装配前定制每 screen value editor registry。 */
+    /**
+     * 构建配置页，并在字段 renderer 装配前定制每 screen value editor registry。
+     *
+     * <p>宿主环境取生产装配默认（{@code SceneHostAssembly.defaultEnvironment()}）。需要表态
+     * 环境事实（headless 出图矩阵注入请求级诊断域）的调用方走
+     * {@link #buildScreen(ConfigManager, PlatformInputSource, UiEnvironment, Consumer, Consumer, Consumer)}。</p>
+     */
     public static ConfigScreen buildScreen(ConfigManager manager, PlatformInputSource input,
+                                            Consumer<FieldRendererRegistry> registryCustomizer,
+                                            Consumer<FieldRestorePolicy> restorePolicyCustomizer,
+                                            Consumer<Registry> editorRegistryCustomizer) {
+        return buildScreen(manager, input, SceneHostAssembly.defaultEnvironment(), registryCustomizer,
+                restorePolicyCustomizer, editorRegistryCustomizer);
+    }
+
+    /**
+     * 构建配置页，宿主环境由调用方给定。
+     *
+     * @param environment 宿主环境端口，不可为 null；无环境事实传 {@link UiEnvironment#empty()}
+     */
+    public static ConfigScreen buildScreen(ConfigManager manager, PlatformInputSource input,
+                                            UiEnvironment environment,
                                             Consumer<FieldRendererRegistry> registryCustomizer,
                                             Consumer<FieldRestorePolicy> restorePolicyCustomizer,
                                             Consumer<Registry> editorRegistryCustomizer) {
@@ -158,6 +180,6 @@ public final class ConfigUI {
         registryCustomizer.accept(registry);
         FieldRestorePolicy policy = new FieldRestorePolicy();
         restorePolicyCustomizer.accept(policy);
-        return new ConfigScreen(input, manager, adapter, registry, policy);
+        return new ConfigScreen(input, environment, manager, adapter, registry, policy);
     }
 }

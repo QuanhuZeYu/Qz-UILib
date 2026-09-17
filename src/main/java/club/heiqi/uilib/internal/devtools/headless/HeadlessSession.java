@@ -1,8 +1,20 @@
 package club.heiqi.uilib.internal.devtools.headless;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 
+import club.heiqi.config.ConfigException;
+import club.heiqi.config.runtime.ConfigManager;
+import club.heiqi.config.ui.ConfigScreen;
+import club.heiqi.uilib.config.modern.ModernConfigAssembly;
+import club.heiqi.uilib.config.modern.QzUiLibModernSchema;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.internal.devtools.playground.TestPlaygroundHost;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
@@ -41,13 +53,15 @@ public final class HeadlessSession implements AutoCloseable {
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final HeadlessInputSource inputSource;
     private final SceneRuntime runtime;
+    /** 装配期产生的进程外痕迹（配置页的临时配置目录）清理动作，可为 null。 */
+    private final Runnable hostCleanup;
     private boolean closed;
 
     private HeadlessSession(HeadlessRequest request, GlOffscreenSurface surface,
             HeadlessCapabilities capabilities, UiEnvironment environment, UiSurface host,
             RecordingUiRenderContext renderContext,
             PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService,
-            HeadlessInputSource inputSource, SceneRuntime runtime) {
+            HeadlessInputSource inputSource, SceneRuntime runtime, Runnable hostCleanup) {
         this.request = request;
         this.surface = surface;
         this.capabilities = capabilities;
@@ -58,6 +72,7 @@ public final class HeadlessSession implements AutoCloseable {
         this.mainLayerSnapshotService = mainLayerSnapshotService;
         this.inputSource = inputSource;
         this.runtime = runtime;
+        this.hostCleanup = hostCleanup;
     }
 
     /**
@@ -106,7 +121,8 @@ public final class HeadlessSession implements AutoCloseable {
                 paintContextCompositor, mainLayerSnapshotService);
         applyEnvironment(binding, request);
         return new HeadlessSession(request, surface, capabilities, environment, host, renderContext,
-                paintContextCompositor, mainLayerSnapshotService, inputSource, binding.runtime());
+                paintContextCompositor, mainLayerSnapshotService, inputSource, binding.runtime(),
+                binding.cleanup());
     }
 
     /**
@@ -132,8 +148,9 @@ public final class HeadlessSession implements AutoCloseable {
      * 页面来源：把页面标识映射为宿主。
      *
      * <p>当前提供 {@code playground}（测试场地首页）、{@code text-probe}（单行文本）、
-     * {@code chat}（chat3 内容树）与 {@code hud}（HUD 宿主装配：外壳 + 锚定放置）；后续页面
-     * 在此登记，不允许调用方自行 new 宿主绕过会话生命周期。</p>
+     * {@code chat}（chat3 内容树）、{@code hud}（HUD 宿主装配：外壳 + 锚定放置）与
+     * {@code config}（配置页，{@code pageIndex} = section 下标，见 {@link #createConfigHost}）；
+     * 后续页面在此登记，不允许调用方自行 new 宿主绕过会话生命周期。</p>
      *
      * <p>返回类型是 {@link UiSurface} 而非 {@code AbstractSceneHostWidget}：页面宿主有两种形态——
      * 挂在场景帧管线上的「页面宿主」（Widget 派生、有输入源）与保留式「宿主窗口」
@@ -179,9 +196,108 @@ public final class HeadlessSession implements AutoCloseable {
             return new HostBinding(hudProbe, hudProbe.runtime());
         }
 
+        if (HeadlessRequest.CONFIG_PAGE.equals(request.pageId())) {
+            return createConfigHost(request, inputSource, environment);
+        }
+
         throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
                 "未知页面：" + request.pageId()
-                        + "（当前提供 playground / text-probe / chat / hud）");
+                        + "（当前提供 playground / text-probe / chat / hud / config）");
+    }
+
+    /**
+     * 配置页装配：临时配置真源 → 生产接入层定制 → 屏幕。
+     *
+     * <p><b>为什么配置真源落临时目录</b>：headless 出图的语义是「只看不改」——一次出图不得改写用户
+     * 真实配置，也不得在进程外留痕。临时目录随会话关闭整体删除（{@link HostBinding#cleanup()}）。
+     * 文件初始不存在，故 {@code bootstrap} 走「无文件」分支：出图内容是**默认配置下的配置页**，
+     * 这正是可复现的那个状态。</p>
+     *
+     * <p><b>为什么不订阅 {@code ConfigSaveListener}</b>：它把保存结果回灌本进程运行态并触发字体 reload，
+     * 那是「游戏客户端」这个宿主的职责；headless 进程没有运行态可回灌，且订阅会向
+     * {@code ModernConfigApplyCoordinator} 注册全局 Registration（进程级副作用）。</p>
+     *
+     * <p><b>为什么字段定制不在这里写第二份</b>：{@code fontSort} 专用 renderer 与
+     * {@code characterFontRules} 三栏编辑器是 uilib 接入层事实，走
+     * {@link ModernConfigAssembly#buildScreen(ConfigManager, club.heiqi.uilib.ui.scene.input.PlatformInputSource, UiEnvironment)}
+     * ——与游戏内配置页同一个装配入口。在这里复刻一份会让出图的字段形态不代表真机。</p>
+     *
+     * <p><b>外观档</b>：配置页不接收 {@code --theme}。它在页壳树构建前安装自己的偏好信号
+     * （{@code ConfigThemePreference.signal()}，默认平面档）——主题对配置页是**配置内容**而非请求级
+     * 环境量，要换档得改配置真源，不是改请求。</p>
+     *
+     * @param request     出图请求（{@code pageIndex} ≥ 0 时切到该 section 下标）
+     * @param inputSource 输入源（脚本已编译进设备）
+     * @param environment 请求声明的环境端口
+     * @return 装配结果（屏幕是 {@code AbstractSceneHostWidget} 子类，天然是 UiSurface）
+     */
+    private static HostBinding createConfigHost(HeadlessRequest request, HeadlessInputSource inputSource,
+            UiEnvironment environment) {
+        final Path tempDir;
+        try {
+            tempDir = Files.createTempDirectory("qz-headless-config-");
+        } catch (IOException e) {
+            throw new HeadlessFailure(HeadlessFailure.Stage.CONTEXT,
+                    "配置页需要临时配置目录，创建失败：" + HeadlessFailure.brief(e), e);
+        }
+        // 清理责任在「交棒给会话」这一点转移：正常路径把删除动作交给 HostBinding（会话关闭时执行），
+        // 其余一切出口都在 finally 里删掉。**刻意不按异常类型列举**——首次实现写了
+        // catch (ConfigException) + catch (RuntimeException)，而当时真实抛出的是
+        // NoClassDefFoundError（Error 不是 RuntimeException），于是临时目录残留；
+        // 类型枚举的失效方式是静默漏一类，finally 不是。
+        boolean handedOff = false;
+        try {
+            final ConfigScreen screen;
+            try {
+                ConfigManager manager = ConfigManager.bootstrap(
+                        tempDir.resolve("qz-uilib-modern.yaml").toFile(), QzUiLibModernSchema.create());
+                screen = ModernConfigAssembly.buildScreen(manager, inputSource, environment);
+            } catch (ConfigException e) {
+                throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
+                        "配置页 bootstrap 失败：" + HeadlessFailure.brief(e), e);
+            }
+            if (request.pageIndex() >= 0) {
+                // 确定性切 section：走屏幕的公开入口（与导航点击写同一个受控源），不依赖命中坐标。
+                screen.showSection(request.pageIndex());
+            }
+            final Path cleanupTarget = tempDir;
+            HostBinding binding = new HostBinding(screen, screen.runtime(), new Runnable() {
+                @Override
+                public void run() {
+                    deleteRecursively(cleanupTarget);
+                }
+            });
+            handedOff = true;
+            return binding;
+        } finally {
+            if (!handedOff) {
+                deleteRecursively(tempDir);
+            }
+        }
+    }
+
+    /** 递归删除装配期临时目录；清理失败不掩盖主流程结果。 */
+    private static void deleteRecursively(Path dir) {
+        if (dir == null) {
+            return;
+        }
+        try {
+            Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    Files.deleteIfExists(file);
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path directory, IOException exc) throws IOException {
+                    Files.deleteIfExists(directory);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException | RuntimeException ignored) {
+            // 临时目录残留不影响出图结果，不在此处报错。
+        }
     }
 
     /**
@@ -196,10 +312,16 @@ public final class HeadlessSession implements AutoCloseable {
 
         private final UiSurface surface;
         private final SceneRuntime runtime;
+        private final Runnable cleanup;
 
         HostBinding(UiSurface surface, SceneRuntime runtime) {
+            this(surface, runtime, null);
+        }
+
+        HostBinding(UiSurface surface, SceneRuntime runtime, Runnable cleanup) {
             this.surface = surface;
             this.runtime = runtime;
+            this.cleanup = cleanup;
         }
 
         UiSurface surface() {
@@ -208,6 +330,10 @@ public final class HeadlessSession implements AutoCloseable {
 
         SceneRuntime runtime() {
             return runtime;
+        }
+
+        Runnable cleanup() {
+            return cleanup;
         }
     }
 
@@ -579,5 +705,9 @@ public final class HeadlessSession implements AutoCloseable {
             // 资源释放路径不掩盖主流程结果：宿主 runtime 回收失败不应让已产出的图作废。
         }
         surface.close();
+        if (hostCleanup != null) {
+            // 进程外痕迹不留：配置页的临时配置目录随会话关闭整体删除。
+            hostCleanup.run();
+        }
     }
 }

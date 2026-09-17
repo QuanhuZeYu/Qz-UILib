@@ -1003,6 +1003,64 @@ x=254、文字画到 298（溢出 44px）；两条短消息内边距恒为 10~11
   残留分叉，需先查 `ScenePickerPanel` 的声明值夹取语义再定修法；`labelBudgetPx(fs=0)` 返回 `2*pad=4`
   而非 0（javadoc 已改准确）
 
+### F37 配置页纳入 headless：装配与 MC 宿主拆类（2026-09-18）
+
+**动机**：配置页是 agent 改 UI 后**唯一无法出图验证**的主要界面——页面表当时只有
+playground / text-probe / chat / hud。
+
+**一手事实（决定接入成本）**：
+
+- `club/heiqi/config/ui` 全树（`ui` + `field` + `editor` + `theme`）`import net.minecraft` **实测 0 条**
+  ⇒ 配置页 UI 是纯 uilib 新架构，不需要 MC 域、不需要完整类路径；
+- `ConfigUI.buildScreen(manager, input, …)` 的 javadoc 早就写着「input 平台输入源，可为 null（headless）」
+  —— 接入是设计内路径，不是外挂；
+- `ConfigScreen extends AbstractSceneHostWidget implements UiSurface` ⇒ 天然是 headless 会话接受的渲染面。
+
+**接入形态**：`--page=config`；`--page-index` = **section 下标**（走屏幕公开入口 `showSection(int)`，
+与导航点击写同一个受控源，不依赖命中坐标）。配置真源落**随会话删除的临时目录**（不改写用户真实配置），
+文件初始不存在 ⇒ 出图是**默认配置下的配置页**。**不订阅** `ConfigSaveListener`：它把保存结果回灌
+本进程运行态并触发字体 reload，那是宿主的职责（订阅还会向 `ModernConfigApplyCoordinator` 注册全局
+Registration）。外观档不接收（见下）。
+
+**装配与宿主拆成两个类（本轮的关键修法）**：首次接入把 `buildScreen` 与 `createScreen(GuiScreen)`
+放在同一个 `ModernConfigEntry` 里，最小集下**出图直接失败**——实测
+`Class.forName("…ModernConfigEntry")` ⇒ `NoClassDefFoundError: net/minecraft/client/gui/GuiScreen`
+（该类对 MC 类型的引用使它在无 MC 类路径下不可加载）。修法：拆出零 MC 依赖的
+`ModernConfigAssembly`（Schema → 字段定制 → ConfigScreen），`ModernConfigEntry` 只留 MC 宿主包装
+（定位配置文件、订阅回调、包 GuiScreen）。判据与 F25「宿主窗口上提」同源：**一个类要么是宿主、
+要么是装配**。与 F21 的区别要分清：chat/hud 的探针宿主在**方法体**里用 MC 类型，因而只在完整集可跑
+——那是注入面事实；本轮撞的是**类加载**层面，连最小集都进不去。
+
+**接入时自己踩的清理缺陷**：`createConfigHost` 初版用 `catch (ConfigException)` +
+`catch (RuntimeException)` 清理临时目录，而当时真实抛出的是 `NoClassDefFoundError`（`Error` 不是
+`RuntimeException`）⇒ 临时目录残留（实测残留 1 个目录 / 0 文件）。改为 `handedOff` 标志 + `finally`：
+正常路径把删除动作交给会话（`HostBinding.cleanup()`），其余一切出口在 `finally` 里删。
+**类型枚举的失效方式是静默漏一类，`finally` 不是。**
+
+**门禁与它的区分力（含一条未复现的变异，如实记录）**：新增 `HeadlessPageLinkageTest`——直启出图，
+断言 `--page=config` 与 `--page=playground`（正锚，用来区分「页面坏了」与「最小集/注入面坏了」）
+在**最小集**上都 exit=0 且落出 PNG。变异试验：给装配类加一个「仅方法签名引用 MC 类型」的探针方法，
+**门禁仍绿**（未复现失败）⇒ 触发点在类内更深处，未逐项测定；故类注释只写实测事实
+（`Class.forName` 抛 `NoClassDefFoundError`）与端到端判据，**不把「签名引用即触发」的推断写进断言**。
+
+**验收（一手实测）**：
+
+| 项 | 结果 |
+|---|---|
+| 单页 1280×720（最小集） | `commands=59 [fill=1 surface=33 text=25/226ch]`、`bounds=0,0..1280,745`、`outsideViewport=0`、`colors=1156`、自检 ok、**917 ms** |
+| 三 section（`--page-indexes=0,1,2`） | `batch: 3/3 ok`；命令面 / 颜色数两两不同（59/1156、58/1066、41/1117）⇒ 切换真的生效 |
+| 无进程外痕迹 | 会话关闭后临时目录 0 残留；仓库内 `qzuilib-modern.yaml` 未生成 |
+| 门禁 | `HeadlessPageLinkageTest` 2/2（`skipped=0`），产物 `linkage-config.png` 81089 B / `linkage-playground.png` 200031 B |
+
+**外观档边界**：配置页不接收 `--theme`——它在页壳树构建前安装自己的偏好信号
+（`ConfigThemePreference`，默认平面档）。主题对配置页是**配置内容**而非请求级环境量，要换档得改配置
+真源。已记入指南的环境矩阵页面表。
+
+**顺带的公共面变更**：`ConfigScreen` / `ConfigUI` 增加**环境可注入**构造与重载（旧构造保留并委托
+`SceneHostAssembly.defaultEnvironment()`，生产行为逐位不变）。理由不只是 headless：F22 已定「宿主环境
+是构造依赖」，而配置页此前只有单参 `super(input)` ⇒ 永远读生产单例，且这一处**不受 headless 包的环境
+门禁覆盖**（门禁只扫 headless 生产包自身）。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**

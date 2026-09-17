@@ -50,6 +50,17 @@ public final class HeadlessRequest {
      */
     public static final String HUD_PAGE = "hud";
     /**
+     * 配置页标识：{@code club.heiqi.config.ui.ConfigScreen}（生产配置页 UI 骨架，零 MC 依赖）。
+     *
+     * <p>装配走 uilib 接入层的 {@code ModernConfigAssembly.buildScreen(...)}——与游戏内配置页同一个
+     * 字段定制入口；配置真源落在随会话删除的临时目录，文件初始不存在 ⇒ 出图是**默认配置下的配置页**。
+     * {@code pageIndex} 在这里表示 section 下标（走屏幕公开入口切 section）。</p>
+     *
+     * <p>不接收 {@code --theme}：配置页在页壳树构建前安装自己的偏好信号，主题对它是配置内容
+     * 而非请求级环境量。</p>
+     */
+    public static final String CONFIG_PAGE = "config";
+    /**
      * 聊天消息分隔符：{@code --text} 用它切成多条消息。
      *
      * <p>不取 {@code |}：那是 Windows 命令行的管道符，写进 {@code --text} 会被 shell 先解释掉。</p>

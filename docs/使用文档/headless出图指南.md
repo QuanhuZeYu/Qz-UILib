@@ -37,9 +37,9 @@ GL 上下文需要窗口句柄，而 LWJGL2 的 `Display.create()` 会创建**�
 
 | 参数 | 说明 |
 |---|---|
-| `--page=A\|B\|C\|D` | 单页面；`playground` = 测试场地，`text-probe` = 单行文本探针，`chat` = 聊天 3.0 内容树，`hud` = 同一内容树走 HUD 宿主装配（两者均见下节） |
+| `--page=A\|B\|…` | 单页面；`playground` = 测试场地，`text-probe` = 单行文本探针，`chat` = 聊天 3.0 内容树，`hud` = 同一内容树走 HUD 宿主装配，`config` = 生产配置页（三者均见下节） |
 | `--pages=A,B,…` | **多页面矩阵**（与尺寸 / 外观 / 字号轴同构）；与 `--page` 同时给出时本参数胜 |
-| `--page-index=N` / `--page-indexes=0,1,…` | `playground` 子页下标（0 总览 / 1 单行文本 / 2 多行文本 / 3 浮层 / 4 响应式 / 5 富文本 / 6 控制字符 / 7 LaTeX / 8 Markdown）；`hud` 页当作**锚点**（0 左上 / 1 右上 / 2 左下 / 3 右下），`chat` 与 `text-probe` 忽略 |
+| `--page-index=N` / `--page-indexes=0,1,…` | `playground` 子页下标（0 总览 / 1 单行文本 / 2 多行文本 / 3 浮层 / 4 响应式 / 5 富文本 / 6 控制字符 / 7 LaTeX / 8 Markdown）；`hud` 页当作**锚点**（0 左上 / 1 右上 / 2 左下 / 3 右下），`config` 页当作 **section 下标**，`chat` 与 `text-probe` 忽略 |
 | `--size=WxH` / `--sizes=WxH,…` | 单档 / 分辨率矩阵（360P~2K 任意尺寸，渲染到自建 FBO，与窗口无关） |
 | `--out=path` | 输出 PNG；矩阵出图时按轴追加后缀：`-pg<页面名>`（多页面时）/ `-p<下标>` / `-th<外观档>` / `-fs<百分比>` / `-WxH`，各段只在对应轴存在多档时出现 |
 | `--actions="…"` / `--script=file` | 输入脚本（见下） |
@@ -202,6 +202,7 @@ build\headless\qz-shot.bat --page=hud --size=1920x1080 --debug
 | `playground` | **变色**（默认 vs 浅色档 685824/921600 像素不同） | 外壳与 9 个演示页都经 `SceneThemes` 取配方 |
 | `chat` / `hud` | **逐像素相同**（实测 0/921600） | chat3 的 HUD 形态配色来自它自己的进程级色板 `ChatMarkdownSettings`（气泡底/正文/组头…），不读 runtime 默认主题；只有容器形态（输入屏打开时）走 `SceneThemes` |
 | `text-probe` | 无效 | 前景色写死，连安装都不做 |
+| `config` | **无效**（不接收） | 配置页在页壳树构建前安装自己的偏好信号（`ConfigThemePreference`，默认平面档）——主题对它是**配置内容**而非请求级环境量 |
 
 出处：`HeadlessThemes` 的类注释记着这条边界与实测值。要用 `--theme` 看效果，请用 `playground` 或走主题系统的业务页面。
 
@@ -277,6 +278,34 @@ build\headless\qz-shot-full.bat --page=hud --page-indexes=0,1,2,3 --out=out\hud.
 - **本页无输入**：HUD 窗口的契约就是不持有输入源、不参与命中仲裁，故 `--actions` 对本页不生效；
 - **`--text=`（空消息集）出纯背景是预期**：内容空尺寸 ⇒ 整窗（含外壳）隐藏，输出
   `commands=0 / bounds=(empty) / colors=1`。这与 `chat` 页的同款现象含义不同——那里 `commands=0` 是缺陷信号（见排查表）。
+
+## 配置页（config）
+
+生产配置页 UI（`club.heiqi.config.ui.ConfigScreen`）在无游戏进程里装配、出图——**字段定制与游戏内
+同一个入口**（`ModernConfigAssembly.buildScreen`：fontSort 专用 renderer、characterFontRules 三栏编辑器），
+所以图里的字段形态就是真机形态，不是照着真机再写一遍的近似。
+
+```bat
+build\headless\qz-shot.bat --page=config --size=1280x720 --out=out\config.png
+build\headless\qz-shot.bat --page=config --page-indexes=0,1,2 --out=out\config-section.png
+```
+
+- **用最小集即可**（`qz-shot.bat`）：配置页的装配链零 `net.minecraft` 依赖。实测 1280×720：
+  `commands=59 [fill=1 surface=33 text=25/226ch] bounds=0,0..1280,745 colors=1156`、自检 ok、917 ms；
+- `--page-index` 选 **section 下标**：走屏幕公开入口 `showSection(int)`（与导航点击写同一个受控源），
+  不依赖命中坐标。三档实测命令面与颜色数两两不同（59/1156、58/1066、41/1117）⇒ 切换真的生效；
+- **配置真源落临时目录**，随会话关闭整体删除：一次出图不改写你的真实配置，也不在进程外留痕。
+  文件初始不存在 ⇒ 出图是**默认配置下的配置页**，这正是可复现的那个状态；
+- **不订阅保存/重载回调**：`ConfigSaveListener` 会把保存结果回灌**本进程运行态**并触发字体 reload，
+  那是「游戏客户端」这个宿主的职责。故点「保存」只写临时文件，不改变任何进程状态；
+- **不接收 `--theme`**：见「环境矩阵」的页面表；
+- 默认最小帧数同聊天系页面（20）：标题与字段 presentation shell 在布局发布后有 opacity 级联进入，
+  帧数给少会截到半成品（与 chat 页同因）。
+
+**为什么装配与 MC 宿主是两个类**：装配入口 `ModernConfigAssembly` 与宿主包装 `ModernConfigEntry`
+分开，不是行数取舍而是**加载事实**——宿主类在最小集类路径下 `Class.forName` 就抛
+`NoClassDefFoundError: net/minecraft/client/gui/GuiScreen`（实测），装配若与它同类，出图就被迫带整包 MC。
+门禁 `HeadlessPageLinkageTest` 直启出图钉住这条（含 playground 作正锚）。
 
 ## 出图确定性
 

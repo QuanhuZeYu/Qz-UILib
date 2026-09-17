@@ -19,7 +19,9 @@ import club.heiqi.config.ui.theme.ConfigThemePreference;
 import club.heiqi.uilib.ui.scene.form.FormActionBar;
 import club.heiqi.uilib.ui.scene.form.FormPageShell;
 import club.heiqi.uilib.ui.scene.form.FormTheme;
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
+import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -270,7 +272,46 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     ConfigScreen(PlatformInputSource input, ConfigManager manager,
                  DraftSignalAdapter adapter, FieldRendererRegistry registry,
                  FieldRestorePolicy restorePolicy, ReadableSignal<SceneTheme> runtimeTheme) {
-        super(input);
+        this(input, SceneHostAssembly.defaultEnvironment(), manager, adapter, registry, restorePolicy,
+                runtimeTheme);
+    }
+
+    /**
+     * 环境可注入构造（主题走配置页偏好信号，与公共构造同路）。
+     *
+     * @param input         平台输入源，可为 null（headless 测试）
+     * @param environment   宿主环境端口，不可为 null
+     * @param manager       配置管理器
+     * @param adapter       草稿 signal 适配器
+     * @param registry      字段渲染器注册表
+     * @param restorePolicy 恢复默认字段策略，可为 null
+     */
+    ConfigScreen(PlatformInputSource input, UiEnvironment environment, ConfigManager manager,
+                 DraftSignalAdapter adapter, FieldRendererRegistry registry,
+                 FieldRestorePolicy restorePolicy) {
+        this(input, environment, manager, adapter, registry, restorePolicy, ConfigThemePreference.signal());
+    }
+
+    /**
+     * 环境可注入构造：宿主环境事实由调用方给定，不回落生产单例。
+     *
+     * <p>存在理由与 {@code AbstractSceneHostWidget(PlatformInputSource, UiEnvironment)} 同源——
+     * 环境事实是构造依赖，任何宿主都不该把「读到的是生产进程状态」写成不可替换的事实。
+     * 配置页此前只走单参 {@code super(input)}，于是 headless 出图矩阵无法注入请求级诊断域，
+     * 而这一处不受 headless 包的环境门禁覆盖（门禁只扫 headless 生产包自身）。</p>
+     *
+     * @param input         平台输入源，可为 null（headless 测试）
+     * @param environment   宿主环境端口，不可为 null；无环境事实传 {@link UiEnvironment#empty()}
+     * @param manager       配置管理器
+     * @param adapter       草稿 signal 适配器
+     * @param registry      字段渲染器注册表
+     * @param restorePolicy 恢复默认字段策略，可为 null
+     * @param runtimeTheme  runtime 默认主题信号，可为 null（不安装）
+     */
+    ConfigScreen(PlatformInputSource input, UiEnvironment environment, ConfigManager manager,
+                 DraftSignalAdapter adapter, FieldRendererRegistry registry,
+                 FieldRestorePolicy restorePolicy, ReadableSignal<SceneTheme> runtimeTheme) {
+        super(input, environment);
         if (manager == null) {
             throw new IllegalArgumentException("manager must not be null");
         }
@@ -1279,6 +1320,25 @@ public class ConfigScreen extends AbstractSceneHostWidget {
     /** @return 当前活动 section 下标受控源 */
     Signal<Integer> __getActiveSectionSignal() {
         return activeSectionSignal;
+    }
+
+    /**
+     * 切换到指定 section（导航入口的宿主无关形态）。
+     *
+     * <p>与导航点击 handler 写的是同一个受控源（{@code activeSectionSignal}），因此不引入第二条
+     * 切 section 路径；给 headless 出图矩阵用——配置页一次只挂一个 section，没有这个入口就只能
+     * 出到第一个 section 的图。形态与 {@code TestPlaygroundHost#showPage(int)} 同构。</p>
+     *
+     * @param index section 下标，取值 [0, schema.sections().size())
+     * @throws IllegalArgumentException 下标越界
+     */
+    public void showSection(int index) {
+        final int count = schema.sections().size();
+        if (index < 0 || index >= count) {
+            throw new IllegalArgumentException(
+                    "section 下标越界：" + index + "（有效范围 0.." + (count - 1) + "）");
+        }
+        activeSectionSignal.set(Integer.valueOf(index));
     }
 
     /** @return 当前实际挂载的 section 下标 */
