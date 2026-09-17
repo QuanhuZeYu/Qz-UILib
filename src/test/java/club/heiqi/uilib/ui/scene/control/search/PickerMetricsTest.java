@@ -540,6 +540,37 @@ public class PickerMetricsTest {
         assertEquals("null 偏好回落 AUTO", PickerDensityPreference.AUTO, zero.preference());
     }
 
+    // ==================== 字号 0 = 显式退化（解析出口） ====================
+
+    /**
+     * 字号 0 必须原样进派生链，不被夹回 {@code FONT_FLOOR}。
+     *
+     * <p>审核在 f30c78e0 上指出：当时把 {@code fontSizeFor} 的 {@code rendered <= 0} 改成返回 0，
+     * 但生产唯一调用方 {@code ScenePickerPanel} 直接把返回值交给 {@code derive}，而 derive/solve
+     * 各有一道 {@code clamp(.., FONT_FLOOR, ..)} 使 0 与 11 不可区分 —— 声称消除的「几何按 11px 算、
+     * 文字按 0px 画」的分叉原样保留。本用例钉住解析出口：0 原样进链、标签相关几何归零、图标仍占位
+     * （面板退化为纯图标网格），而<b>非零</b>输入照旧夹到字号域下限。</p>
+     */
+    @Test
+    public void zeroFontSizeDegradesLabelGeometryInsteadOfSnappingToFloor() {
+        PickerMetrics zero = PickerMetrics.solve(rt, 1920, 1080, 0, null, -1);
+        PickerMetrics floor = PickerMetrics.solve(rt, 1920, 1080,
+                PickerDensityTokens.FONT_FLOOR, null, -1);
+        assertEquals("字号 0 必须原样进派生链", 0, zero.fontSizePx());
+        assertEquals("字号 0 时标签行不占高", 0, zero.grid().lineHeightPx());
+        assertEquals("字号 0 时标签间距不占位", 0, zero.grid().labelGapPx());
+        assertTrue("图标仍占位（面板退化为纯图标网格）", zero.grid().iconSidePx() >= 1);
+        assertTrue("标签不占高后轨道高必须低于字号下限档",
+                zero.grid().trackHeightPx() < floor.grid().trackHeightPx());
+        assertEquals("非零输入仍夹到字号域下限", PickerDensityTokens.FONT_FLOOR, floor.fontSizePx());
+        // 生产入口那一跳：ScenePickerPanel 走的是「fontSizeFor(声明, 倍率) → derive」两个入口，
+        // 只钉 solve 不够 —— 分叉当时正是发生在 derive 自己的夹取上。
+        assertEquals("倍率 0 时 fontSizeFor 与 derive 两跳都必须保持 0",
+                0, PickerMetrics.derive(rt, 1920, 1080,
+                        PickerMetrics.fontSizeFor(PickerDensity.STANDARD.baseFontPx(), 0), null, -1)
+                        .fontSizePx());
+    }
+
     // ==================== 三分量铁律源码守卫（R3） ====================
 
     @Test

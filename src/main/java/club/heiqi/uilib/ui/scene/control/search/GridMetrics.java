@@ -93,10 +93,11 @@ public final class GridMetrics {
      */
     public static GridMetrics derive(SceneRuntime rt, int fontSizePx, int cellHeightFloorPx,
                                      int paddingPx, int labelGapPx, int gapY) {
-        int fs = Math.max(1, fontSizePx);
+        // 同 deriveDensity：字号 0 是显式退化，不在派生层抬成 1（见该方法的注释）。
+        int fs = Math.max(0, fontSizePx);
         int pad = Math.max(0, paddingPx);
         int gap = Math.max(0, labelGapPx);
-        int lineHeight = Math.max(1, rt.lineHeight(fs));
+        int lineHeight = fs > 0 ? Math.max(1, rt.lineHeight(fs)) : 0;
         int iconSide = Math.max(MIN_ICON_SIDE_PX, STANDARD_ICON_SIDE_PX * STANDARD_DENSITY_SCALE);
         int contentFloor = lineHeight + gap + MIN_ICON_SIDE_PX + 2 * pad;
         int trackHeight = Math.max(Math.max(1, cellHeightFloorPx), contentFloor);
@@ -109,7 +110,7 @@ public final class GridMetrics {
      * 密度派生（P5 §2.1 正式入口）：字号 + 图标目标边长 + {@code k} + 可用内宽 → 完整网格快照。
      *
      * @param rt                 场景运行时（提供行高与文本宽度量；非 null）
-     * @param fontSizePx         生效字号（夹取到 [1, ∞)，调用方通常已按字号域夹取）
+     * @param fontSizePx         生效字号（&lt;=0 = 显式退化，几何按 0 派生；正值按字号域夹取）
      * @param iconTargetPx       档位图标目标边长（&lt;1 按 1）
      * @param iconScalePercent   {@code k} 的百分比形式（100 = 不缩；&lt;1 按 1）
      * @param cellHeightFloorPx  调用方轨道高下限（&lt;1 按 1）
@@ -137,7 +138,7 @@ public final class GridMetrics {
      * 列数下降由 {@link PickerMetrics} 的求解与预算降级阶梯吸收。</p>
      *
      * @param rt                 场景运行时（提供行高与文本宽度量；非 null）
-     * @param fontSizePx         生效字号（夹取到 [1, ∞)）
+     * @param fontSizePx         生效字号（&lt;=0 = 显式退化，几何按 0 派生；正值按字号域夹取）
      * @param iconTargetPx       档位图标目标边长（&lt;1 按 1）
      * @param iconScalePercent   {@code k} 的百分比形式（100 = 不缩；&lt;1 按 1）
      * @param cellHeightFloorPx  调用方轨道高下限（&lt;1 按 1）
@@ -148,12 +149,16 @@ public final class GridMetrics {
     public static GridMetrics deriveDensity(SceneRuntime rt, int fontSizePx, int iconTargetPx,
                                             int iconScalePercent, int cellHeightFloorPx,
                                             int innerWidthPx, double labelBudgetEm) {
-        int fs = Math.max(1, fontSizePx);
+        // 字号 0 = 显式退化（{@code FontSizeLimits}：文本不占空间且不上屏）：fs 原样保持 0 送进派生，
+        // 标签相关的两个保底（labelGap / lineHeight）随之归零；pad 仍走自己的内距下限 —— 它是单元格的
+        // 交互/视觉下限，不是字号的函数。若这里把 0 抬成 1，几何会按 1px 字号算而文字按 0px 画，正是
+        // 「在边界短路、不在下游逐一放宽」要避免的分叉（审核在 f30c78e0 上指出该分叉仍在）。
+        int fs = Math.max(0, fontSizePx);
         int pad = clamp(roundHalfEven(fs / PickerDensityTokens.CELL_PAD_DIVISOR),
                 PickerDensityTokens.CELL_PAD_MIN, PickerDensityTokens.CELL_PAD_MAX);
-        int labelGap = Math.max(1,
-                roundHalfEven(fs / PickerDensityTokens.LABEL_GAP_DIVISOR));
-        int lineHeight = Math.max(1, rt.lineHeight(fs));
+        int labelGap = fs > 0
+                ? Math.max(1, roundHalfEven(fs / PickerDensityTokens.LABEL_GAP_DIVISOR)) : 0;
+        int lineHeight = fs > 0 ? Math.max(1, rt.lineHeight(fs)) : 0;
         int iconSide = Math.max(PickerDensityTokens.ICON_MIN,
                 roundHalfEven(Math.max(1, iconTargetPx) * iconScalePercent / 100.0));
         int measured = rt.measureTextWidth(PickerDensityTokens.CELL_WIDTH_SAMPLE, fs);
@@ -177,7 +182,7 @@ public final class GridMetrics {
      * {@code max}；标签节点能用的净宽 = 返回值 − 2*padding（{@code SearchResultList} 的
      * {@code maxTextWidth} 同口径）。</p>
      *
-     * @param fontSizePx 标签生效字号（&lt;1 按 1）
+     * @param fontSizePx 标签生效字号（&lt;=0 按 0：字号 0 = 文本不占空间，预算随之归零）
      * @param paddingPx  单元内边距（&lt;0 按 0）
      * @param labelBudgetEm 预算（em）
      * @return 单元总宽口径的标签下界（0 = 未启用）
@@ -187,7 +192,7 @@ public final class GridMetrics {
             return 0;
         }
         return 2 * Math.max(0, paddingPx)
-                + Math.max(0, roundHalfEven(Math.max(1, fontSizePx) * labelBudgetEm));
+                + Math.max(0, roundHalfEven(Math.max(0, fontSizePx) * labelBudgetEm));
     }
 
     /**
@@ -204,12 +209,12 @@ public final class GridMetrics {
      * @param iconSidePx   图位边长（&lt;1 按 1）
      * @param paddingPx    单元上下内边距（&lt;0 按 0）
      * @param labelGapPx   图标与标签间距（&lt;0 按 0）
-     * @param lineHeightPx 标签行高（&lt;1 按 1；须取标签节点生效字号的行高）
+     * @param lineHeightPx 标签行高（&lt;=0 按 0：字号 0 时标签行不占高；否则须取标签节点生效字号的行高）
      * @return 轨道高下界（≥1）
      */
     public static int contentFloorPx(int iconSidePx, int paddingPx, int labelGapPx, int lineHeightPx) {
         return Math.max(1, iconSidePx) + 2 * Math.max(0, paddingPx)
-                + Math.max(1, lineHeightPx) + Math.max(0, labelGapPx);
+                + Math.max(0, lineHeightPx) + Math.max(0, labelGapPx);
     }
 
     /** 行步长闭式：{@code trackHeight + gapY}（&lt;1 收敛到 1）。 */

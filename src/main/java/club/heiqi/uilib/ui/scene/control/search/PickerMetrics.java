@@ -125,7 +125,8 @@ public final class PickerMetrics {
      * @param rt              场景运行时（提供行高与文本宽度量；非 null）
      * @param logicalWidthPx  逻辑盒宽（宿主边界已折算；&lt;1 按 1）
      * @param logicalHeightPx 逻辑盒高（宿主边界已折算；&lt;1 按 1）
-     * @param panelFontSizePx 面板生效字号（夹取到字号域）
+     * @param panelFontSizePx 面板生效字号（{@code <=0} = 显式退化，见 {@link #resolveFontSizePx(int)}；
+     *                        正值夹取到字号域）
      * @param preference      密度偏好（null 按 {@link PickerDensityPreference#AUTO}）
      * @param membersRows     成员行数：{@code >=0} 表示有成员带（0 = 折叠提示行），{@code <0} = 无成员带
      * @return 不可变度量快照（非 null）
@@ -133,8 +134,7 @@ public final class PickerMetrics {
     public static PickerMetrics derive(SceneRuntime rt, int logicalWidthPx, int logicalHeightPx,
                                        int panelFontSizePx, PickerDensityPreference preference,
                                        int membersRows) {
-        return solve(rt, logicalWidthPx, logicalHeightPx,
-                clamp(panelFontSizePx, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL),
+        return solve(rt, logicalWidthPx, logicalHeightPx, resolveFontSizePx(panelFontSizePx),
                 preference, membersRows);
     }
 
@@ -163,7 +163,7 @@ public final class PickerMetrics {
      * @param rt              场景运行时（非 null）
      * @param logicalWidthPx  逻辑盒宽
      * @param logicalHeightPx 逻辑盒高
-     * @param fontSizePx      生效字号（夹取到字号域）
+     * @param fontSizePx      生效字号（{@code <=0} = 显式退化；正值夹取到字号域）
      * @param preference      密度偏好
      * @param membersRows     成员行数（{@code <0} = 无成员带）
      * @return 不可变度量快照（非 null）
@@ -173,7 +173,7 @@ public final class PickerMetrics {
                                       int membersRows) {
         int w = Math.max(1, logicalWidthPx);
         int h = Math.max(1, logicalHeightPx);
-        int fs = clamp(fontSizePx, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
+        int fs = resolveFontSizePx(fontSizePx);
         PickerDensityPreference pref = preference == null
                 ? PickerDensityPreference.AUTO : preference;
         boolean small = isSmallBox(w, h);
@@ -240,6 +240,27 @@ public final class PickerMetrics {
     }
 
     // ==================== 纯派生助手（可单测、无副作用） ====================
+
+    /**
+     * 面板字号解析：{@code <=0} 是<b>显式退化</b>（字号域语义「该文本不参与布局且不上屏」），
+     * 原样返回 0 送进派生链；正值才夹取到 {@code [FONT_FLOOR, FONT_CEIL]}。
+     *
+     * <p><b>为什么 0 不能夹回下限</b>：{@link #fontSizeFor(int, int)} 在倍率 0 时按渲染出口返回 0，
+     * 若本层再把它夹成 {@code FONT_FLOOR}（11），几何就按 11px 算而文字按 0px 画 —— 正是
+     * {@code fontSizeFor} 的 javadoc 承诺要避免的「几何/渲染分叉」。审核在 f30c78e0 上指出：
+     * 当时的分叉修复在生产路径上等于没修，因为唯一的调用方 {@code ScenePickerPanel} 把返回值直接
+     * 交给 {@link #derive}，而 {@code derive}/{@link #solve} 里各有一道夹取把 0 与 11 变得不可区分。
+     * 修在解析出口（本方法）而不是逐个下游放宽，与 {@code FontSizeLimits} 的边界口径一致。</p>
+     *
+     * <p>字号域下限仍是「面板标签可读」的<b>业务</b>下限，只对真实的字号偏好生效；它不负责把
+     * 「用户把字号缩到 0」重新解释成 11px —— 那是把 0 的语义在派生层丢掉。</p>
+     */
+    private static int resolveFontSizePx(int fontSizePx) {
+        if (fontSizePx <= 0) {
+            return 0;
+        }
+        return clamp(fontSizePx, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
+    }
 
     /**
      * 字号派生：{@code clamp(round(declared * fontScalePercent/100), FONT_FLOOR, FONT_CEIL)}。
