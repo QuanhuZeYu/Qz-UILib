@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.devtools.headless;
 
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.internal.devtools.playground.TestPlaygroundHost;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.env.UiEnvironment;
@@ -59,6 +60,11 @@ public final class HeadlessSession implements AutoCloseable {
      * @return 已就绪会话
      */
     public static HeadlessSession open(HeadlessRequest request) {
+        // 出图确定性【实验验证中】：宽度缓存 miss 预算按 16ms 真实时间窗限流，超预算的码点按
+        // 空格宽近似排版（TextLayoutService.tryAcquireWidthMissBudget）⇒ 布局宽度取决于「本窗口内
+        // 已测量多少码点」，即取决于真实耗时。headless 是确定性工具，不受交互帧预算约束：解除预算，
+        // 全部码点走精确测量。
+        FontConfig.widthCacheMissBudgetPerWindow = 0;
         HeadlessCapabilities capabilities = HeadlessCapabilities.probeFonts();
         GlOffscreenSurface surface = GlOffscreenSurface.create(request.width(), request.height());
         capabilities = capabilities.withGl(surface.glVersion(), surface.glRenderer(), surface.stencilBits(),
