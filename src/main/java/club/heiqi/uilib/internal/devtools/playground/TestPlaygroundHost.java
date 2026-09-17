@@ -142,7 +142,8 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         runtime.__runRoot(() -> {
             buildShell();
             runtime.bind(activePageSignal, this::requestPageTransition);
-            // 字号倍率变化 ⇒ 当前页必须重建。页工厂里的几何（markdown 的 L2 换行基准、样式表基准、
+            // 字号环境变化（用户倍率<b>或环境默认字号</b> —— 触发源是 broadcastFontEnvironmentChange）
+            // ⇒ 当前页必须重建。页工厂里的几何（markdown 的 L2 换行基准、样式表基准、
             // 卡片行高/行宽，以及代码块/围栏块几何）是<b>构建期</b>按当时的生效字号算死的：
             // 页内组件订阅字号代际只能让「缓存」失效，换不掉已经算好的实参（例如
             // MarkdownPageContent 的 layoutFontPx 是 create 期捕获值）。缺这一跳时，运行期改倍率会

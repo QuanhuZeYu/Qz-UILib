@@ -182,7 +182,8 @@ public final class GridMetrics {
      * {@code max}；标签节点能用的净宽 = 返回值 − 2*padding（{@code SearchResultList} 的
      * {@code maxTextWidth} 同口径）。</p>
      *
-     * @param fontSizePx 标签生效字号（&lt;=0 按 0：字号 0 = 文本不占空间，预算随之归零）
+     * @param fontSizePx 标签生效字号（&lt;=0 按 0：字号 0 = 文本不占空间，故预算里随字号的那一项
+     *                    归零；内距分量 {@code 2*paddingPx} 与字号无关，照常保留）
      * @param paddingPx  单元内边距（&lt;0 按 0）
      * @param labelBudgetEm 预算（em）
      * @return 单元总宽口径的标签下界（0 = 未启用）
