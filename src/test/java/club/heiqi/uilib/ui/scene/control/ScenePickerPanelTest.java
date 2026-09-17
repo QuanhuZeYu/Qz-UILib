@@ -2146,7 +2146,10 @@ public class ScenePickerPanelTest {
         openPanel(f);
         SceneNode infoBar = centerColumn(overlayRoot(0)).__getChildren().get(3);
 
-        Assert.assertEquals("信息条高度合同不变", PickerInfoBar.INFO_BAR_HEIGHT, infoBar.getPreferredHeight());
+        // 本 fixture 未发布逻辑盒 ⇒ 走 viewportSizing=false 的回退分支，高度停在组件初值；
+        // 生产宿主每帧发布逻辑盒，实占是派生的 round(fs*2)（由下面悬停态用例的 fs=12 → 24 覆盖）。
+        Assert.assertEquals("回退分支：信息条停在组件初值", PickerInfoBar.INFO_BAR_HEIGHT,
+                infoBar.getPreferredHeight());
         Assert.assertEquals("信息条背景 = TOOLBAR idle 染色",
                 TOOLBAR.getIdle().getTint(), infoBar.getBackgroundColor());
         Assert.assertEquals("信息条边框宽 = 配方", TOOLBAR.getBorderWidth(), infoBar.getBorderWidth());
@@ -2666,7 +2669,9 @@ public class ScenePickerPanelTest {
                 label.getText().contains(f.panelPresentation().hoverHint()));
         Assert.assertEquals("信息条恒为单行省略（P5 §3.3）", 1, label.getMaxLines());
         Assert.assertTrue("信息条开启省略号", label.isEllipsis());
-        Assert.assertEquals("悬停前信息条高 = 派生值（fs=12 -> 24）",
+        // fs=12 时派生值与组件初值恰好同数（round(12*2) = INFO_BAR_RATIO 基准）；本用例断言的是
+        // 回退分支上的这个数，生产路径的随字号跟随由 PickerInfoBar 直接单测覆盖。
+        Assert.assertEquals("回退分支：信息条高（fs=12 -> 24）",
                 PickerInfoBar.INFO_BAR_HEIGHT, infoBar.getPreferredHeight());
     }
 }

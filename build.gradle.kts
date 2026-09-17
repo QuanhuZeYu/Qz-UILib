@@ -192,16 +192,28 @@ abstract class ExportHeadlessClasspath : DefaultTask() {
 // 4) 对拍测试供给：把「直启 classpath 文件」与「natives 目录」交给 test JVM。
 //    测试侧走进程外直启（与 agent 真实使用路径一致），因此 test JVM 自身不需要 LWJGL2 依赖，
 //    也避开了 lwjgl3ify shim 与真 LWJGL2 在同一条 classpath 上的先后之争。
+//    注入缺失时直启类测试会 Assume 跳过：构建期在这里 fail 一次，避免整类门禁被静默跳过
+//    （独立复核实测：删掉这两条 systemProperty 后构建仍 SUCCESSFUL，只有 XML 的 skipped 属性变了）。
 tasks.withType<Test>().configureEach {
     dependsOn(tasks.named("exportHeadlessClasspath"))
-    systemProperty("qz.headless.classpathFile", headlessRuntimeDir.get().file("classpath.txt").asFile.absolutePath)
-    systemProperty("qz.headless.nativesDir", headlessRuntimeDir.get().dir("natives").asFile.absolutePath)
+    val headlessClasspathFile = headlessRuntimeDir.get().file("classpath.txt").asFile
+    val headlessNativesDir = headlessRuntimeDir.get().dir("natives").asFile
+    doFirst {
+        check(headlessClasspathFile.isFile && headlessClasspathFile.length() > 0L) {
+            "headless 直启 classpath 缺失或为空：${headlessClasspathFile} —— exportHeadlessClasspath 未产出，直启类测试会被整类跳过"
+        }
+        check(headlessNativesDir.isDirectory) {
+            "headless natives 目录缺失：" + headlessNativesDir
+        }
+    }
+    systemProperty("qz.headless.classpathFile", headlessClasspathFile.absolutePath)
+    systemProperty("qz.headless.nativesDir", headlessNativesDir.absolutePath)
 }
 
 val exportHeadlessClasspath by tasks.registering(ExportHeadlessClasspath::class) {
     group = "headless"
     description = "导出 headless 直启 classpath（main 输出 + 真 LWJGL2 + 运行期依赖）"
-    dependsOn(tasks.named("classes"), extractHeadlessNatives)
+    dependsOn(tasks.named("classes"), tasks.named("extractHeadlessNatives"))
     // 顺序即优先级：main 输出（含 headless 类）→ 真 LWJGL2（必须排在 lwjgl3ify shim 之前）→ 运行期依赖。
     // 注意必须用 sourceSets.main.output，而不是 classes 任务的 outputs——classes 是生命周期任务，outputs 为空。
     classpath.from(mainSourceOutput)

@@ -9,7 +9,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import javax.imageio.ImageIO;
 
@@ -35,9 +37,10 @@ import org.junit.Test;
  * <ul>
  *   <li>字号倍率 {@code --font-scale}：投影到 runtime 的字号代际通道；</li>
  *   <li>外观档 {@code --theme}：配方派生在构建期捕获主题信号，装晚了不会重算；</li>
- *   <li>诊断 {@code --debug}：环境端口是否真的让采样器表态（输出里必须有 {@code perf:}），
- *       且不改变绘制；</li>
- *   <li>矩阵命名：多档出图必须落出多个互不相同的产物，否则各档互相覆盖。</li>
+ *   <li>诊断 {@code --debug}：环境端口是否真的接到了采样器 —— 断言 {@code perf:} 行里的
+ *       {@code phases=} / {@code counters=} <b>非空</b>（采样会话真的开了），而不是「有没有打印
+ *       perf 这行字」：后者由请求字段回显决定，把环境端口掐断照样打印、内容全 0（独立复核实测）；</li>
+ *   <li>矩阵命名：多页面 + 多档出图必须落出多个<b>文件名互不相同</b>的产物，否则各档互相覆盖。</li>
  * </ul>
  */
 public class HeadlessWiringBehaviourTest {
@@ -69,25 +72,48 @@ public class HeadlessWiringBehaviourTest {
     /**
      * {@code --debug} 必须真的打开采样器（环境端口接线），且不改变绘制。
      *
-     * <p>原始缺陷：诊断开关恒取 {@code Config.useDebug}（缺省 false），{@code --debug} 收下不生效 ——
-     * 采样器永远打不开、输出里没有 {@code perf:} 行，而命令本身不报错。故这里断言的是<b>输出里的
-     * {@code perf:} 事实</b>，不是「源码里有这一行」。</p>
+     * <p><b>断言的是采样折叠结果，不是「有没有打印 perf 这行字」</b>：perf 行的有无由请求字段回显
+     * 决定，把环境端口掐断（{@code HeadlessEnvironment.of(false)}）而 {@code request.diagnostics()}
+     * 照旧时，仍然会打印一行 {@code phases=<none> counters=<none>} 的全 0 摘要 —— 那恰恰就是原始缺陷
+     * 的形态（命令不报错、采样器没开），独立复核用变异测试实测过这一盲区。故这里要求折叠结果非空。</p>
      */
     @Test
     public void debugOpensTheSamplerWithoutChangingDrawing() throws Exception {
         Shot plain = shot("wiring-nodebug");
         Shot debug = shot("wiring-debug", "--debug");
-        Assert.assertTrue("--debug 必须让采样器表态（输出缺少 perf: 行）：\n" + debug.output,
-                debug.output.contains("perf:"));
+        String perf = perfLine(debug.output);
+        Assert.assertNotNull("--debug 必须让采样器表态（输出缺少 perf: 行）：\n" + debug.output, perf);
+        Assert.assertFalse("采样会话没开：perf 行的 phases/counters 为空 —— " + perf,
+                perf.contains("phases=<none>") || perf.contains("counters=<none>"));
+        Assert.assertTrue("perf 行必须给出阶段耗时事实：" + perf, perf.contains("phases="));
         Assert.assertEquals("--debug 不得改变绘制（既有性质：0 / " + (WIDTH * HEIGHT) + "）",
                 0, differingPixels(plain, debug));
     }
 
+    /** 从进程输出里取 {@code perf:} 行；没有则返回 null。 */
+    private static String perfLine(String output) {
+        for (String line : output.split("\\r?\\n")) {
+            int index = line.indexOf("perf:");
+            if (index >= 0) {
+                return line.substring(index);
+            }
+        }
+        return null;
+    }
+
     /**
-     * 多档矩阵必须落出多个互不相同的产物（否则各档互相覆盖，矩阵只剩最后一张）。
+     * 多轴矩阵必须落出多个<b>文件名互不相同</b>的产物（否则各档互相覆盖，矩阵只剩最后一张）。
      *
-     * <p>不钉命名格式，只钉事实：{@code --themes} 给两档时必须出现两个同前缀、彼此不同的文件。
+     * <p>不钉命名格式，只钉事实：三轴同时给（3 页面 × 2 外观档）必须是 6 个不同文件名。
      * 这是原「产物名必须带页名 / 档名」源码串断言所守的可观测后果。</p>
+     *
+     * <p><b>为什么页面轴必须一起给</b>：只给外观档时页面段（{@code -pg}）恒为缺省，删掉页面段
+     * 的实现照样落出多个文件 —— 独立复核实测该缺口（删 {@code -pg} 段后门禁仍绿、真实产物从 2 塌成 1）。
+     * 同时只比「文件数」也不够：两档写进同一个文件名同样满足计数，故这里比对<b>去重后的文件名集合</b>。</p>
+     *
+     * <p>页面轴只用 <b>最小集类路径</b>可跑的页面：注入的 classpath 是 {@code classpath.txt}（agent 默认
+     * 启动器那一份），{@code chat} / {@code hud} 需要 {@code net.minecraft.*}（只在
+     * {@code classpath-full.txt} 里），在这条链路上会以非 0 退出。这是注入面的事实，不是被测行为。</p>
      */
     @Test
     public void matrixAxesGetDistinctArtifactNames() throws Exception {
@@ -98,15 +124,19 @@ public class HeadlessWiringBehaviourTest {
             Files.deleteIfExists(stale);
         }
         List<String> args = new ArrayList<String>();
-        args.add("--page=playground");
+        args.add("--pages=playground,text-probe");
         args.add("--size=" + WIDTH + "x" + HEIGHT);
         args.add("--themes=liquid-glass-light,solid-dark");
         args.add("--out=" + out);
         String text = execute(classpathFile, nativesDir, args);
 
         List<Path> produced = siblings(out);
-        Assert.assertTrue("两档外观矩阵必须落出两个以上产物，实际 " + produced + "：\n" + text,
-                produced.size() >= 2);
+        Set<String> names = new LinkedHashSet<String>();
+        for (Path path : produced) {
+            names.add(path.getFileName().toString());
+        }
+        Assert.assertEquals("2 页面 × 2 外观档必须落出 4 个互不相同的文件名（页面段/档名段缺一即塌缩）：\n"
+                + text + "实际 " + names, 4, names.size());
     }
 
     /** 出图产物 + 进程输出。 */

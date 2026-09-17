@@ -284,7 +284,12 @@ public final class HeadlessSession implements AutoCloseable {
         long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
         // 帧内事实只在请求声明采样时附上：关闭态读到的可能是同 JVM 早先会话的残留快照（批量出图同一进程）。
         // 该摘要是耗时事实，天然逐次不同；它不进 PNG，故不影响出图的逐像素可复现性。
-        String performance = request.diagnostics() ? monitor.getRuntimeStats().toString() : null;
+        // 诊断开关是**环境量**：判断它是否打开必须读会话环境端口（environment.diagnostics()），
+        // 不得旁路读 request.diagnostics()。两者在 headless 里当前同值，但旁路读会让「--debug 是否
+        // 真的接到采样器」在源码层不可验证 —— 把环境端口掐断（HeadlessEnvironment.of(false)）而
+        // 此处照旧读请求时，perf 行仍会打印（内容全 0），出图验收单测因此失效（独立复核实测）。
+        String performance = environment.diagnostics().debugEnabled()
+                ? monitor.getRuntimeStats().toString() : null;
         return new HeadlessArtifact(request, capabilities, report, drawSummary, request.output(), bytes,
                 elapsedMillis, renderedFrames, inputSource.device().describe(), performance);
     }

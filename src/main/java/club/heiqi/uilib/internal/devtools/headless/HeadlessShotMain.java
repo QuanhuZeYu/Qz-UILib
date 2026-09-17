@@ -380,6 +380,8 @@ public final class HeadlessShotMain {
         }
         args.add("--clock=" + request.clockMillis());
         args.add("--font-scale=" + request.fontScalePercent());
+        // 子进程是独立进程，其环境端口由 --debug 经请求重建；此处是「请求 → 子进程参数」的投影，
+        // 读请求是正确口径（会话内的诊断判断走 environment.diagnostics()，见 HeadlessSession）。
         if (request.diagnostics()) {
             args.add("--debug");
         }

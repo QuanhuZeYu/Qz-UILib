@@ -217,7 +217,7 @@ build\headless\qz-shot-full.bat --page=hud --page-indexes=0,1,2,3 --out=out\hud.
   `--page=playground --page-index=8 --size=1280x720 --font-scale=100`，本机 50 次得 **48 次**
   `a8fb1156c3978823…`（`commands=101 segments=62`）、**2 次** `2669a01c4c59cc42…`
   （`commands=100 segments=61`）；独立复核在修复前基线上另跑 32 次得 29:3、16 次得 14:2 ——
-  即 **4% ~ 12.5%，合并样本约 6%，该比率随机器负载浮动，不要当固定值**。两个 hash 与当初审核
+  即 **4% ~ 12.5%，合并样本 7/98 ≈ 7%，该比率随机器负载浮动，不要当固定值**。两个 hash 与当初审核
   记录的一对完全相同；像素差异是滚动条滑块底端圆角的 8×6 px（30 像素，行剖面 2/2/4/8/8/6）。
   **根因**：`TextLayoutService.tryAcquireWidthMissBudget()` 把宽度缓存 miss 预算绑在 **16ms 真实
   时间窗**（`System.nanoTime()`）上，超预算（默认 64/窗口）的码点按**空格宽近似**排版。冷启动一帧
