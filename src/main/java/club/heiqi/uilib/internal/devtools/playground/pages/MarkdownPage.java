@@ -146,10 +146,6 @@ public final class MarkdownPage implements PlaygroundPage {
      */
     private static final int[] HEADING_DELTA_PX = {10, 7, 4, 2, 1, 0};
 
-    /** 设计增量 → 生效增量（与几何字号同一倍率口径）。 */
-    private static int headingDeltaPx(int designDeltaPx, float scale) {
-        return Math.round(designDeltaPx * scale);
-    }
 
     /**
      * 内容布局缓存的失效纪元：字体运行时纪元（字形/度量变化）与字号代际（用户倍率变化）的组合。
@@ -182,8 +178,9 @@ public final class MarkdownPage implements PlaygroundPage {
         SceneNode card = PlaygroundKit.card();
         card.appendChild(PlaygroundKit.title("表格：对齐与自动换行"));
         MarkdownStyleTable styles = MarkdownStyleTable.defaults();
+        styles.setDefaultFontSizePx(BASE_FONT_PX);
+        styles = styles.scaledDesignMetrics(rt.fontScale());
         int layoutFont = layoutFontPx(rt);
-        styles.setDefaultFontSizePx(layoutFont);
         TextStyle base = new TextStyle();
         // 保留显式（契约 §7.3 markdown 样本）：base 色经 L1 内联解析成为表格正文段的渲染像素默认色，
         // 非 chrome 容器前景；主题接管即改写 markdown 渲染输出（任务单 G16 禁止项），口径同 sampleCard。
@@ -333,19 +330,17 @@ public final class MarkdownPage implements PlaygroundPage {
         SceneNode card = PlaygroundKit.card();
         card.appendChild(PlaygroundKit.title(sample[0]));
 
+        // 设计量先按<b>设计值</b>登记，再经样式表唯一换算面统一转成生效量：基准字号、标题增量、
+        // 行内 code 字号、引用步长与竖条宽、分隔线厚、表格内衬一次同源换算。缺这一步时行内 code
+        // 恒为 12px（fs=200 下比正文小一半、fs=50 下比正文还大），因为该旋钮此前没有公共 setter。
         MarkdownStyleTable styles = MarkdownStyleTable.defaults();
-        int layoutFontPx = layoutFontPx(rt);
-        // 样式表字号取生效值：段样式字号决定 L2 产出的段流（命令坐标与命令字号都在生效尺度上），
-        // 而节点声明层仍写设计基准 BASE_FONT_PX —— 两侧分工见 FontSizeLimits#effectiveFontSizePx。
-        styles.setDefaultFontSizePx(layoutFontPx);
-        // 标题增量是<b>设计量</b>（相对基准的 px 增量，见 HEADING_DELTA_PX），必须与基准同源换算成
-        // 生效量：L2 按 {@code anchor + delta} 算标题字号，anchor 已在生效尺度上，delta 若留设计值
-        // 则标题层级会随倍率被压缩 —— 实测 h1 字号 24/31/38（fs=100/150/200，即 14×scale+10），
-        // h1/正文 由 1.71 掉到 1.48、1.36；等比换算后 h1 恒为 24×倍率。
-        float scale = rt.fontScale();
+        styles.setDefaultFontSizePx(BASE_FONT_PX);
         for (int level = 0; level < HEADING_DELTA_PX.length; level++) {
-            styles.setHeadingFontSizeDeltaPx(level + 1, headingDeltaPx(HEADING_DELTA_PX[level], scale));
+            styles.setHeadingFontSizeDeltaPx(level + 1, HEADING_DELTA_PX[level]);
         }
+        styles = styles.scaledDesignMetrics(rt.fontScale());
+        // 节点声明层仍写设计基准 BASE_FONT_PX；几何另用生效字号 —— 分工见 FontSizeLimits。
+        int layoutFontPx = layoutFontPx(rt);
         // M7 方案乙：真横线取代字面 dash（既有旋钮）；本页走块身份行接缝
         styles.setThematicBreakText("");
         TextStyle base = new TextStyle();

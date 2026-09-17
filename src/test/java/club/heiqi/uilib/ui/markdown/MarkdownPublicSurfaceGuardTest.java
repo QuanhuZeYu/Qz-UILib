@@ -141,8 +141,8 @@ public class MarkdownPublicSurfaceGuardTest {
     private static final int LAYOUT_LINE_FIELDS = 1;
 
     /** {@code MarkdownStyleTable} = 19（18 方法 + 1 构造器 + 0 字段）；旧账「18」是纯方法尺。 */
-    private static final int STYLE_TABLE_TOTAL = 19;
-    private static final int STYLE_TABLE_METHODS = 18;
+    private static final int STYLE_TABLE_TOTAL = 20;
+    private static final int STYLE_TABLE_METHODS = 19;
     private static final int STYLE_TABLE_CONSTRUCTORS = 1;
     private static final int STYLE_TABLE_FIELDS = 0;
 
@@ -199,9 +199,12 @@ public class MarkdownPublicSurfaceGuardTest {
                 LAYOUT_LINE_CONSTRUCTORS, LAYOUT_LINE_FIELDS);
     }
 
-    /** {@code MarkdownStyleTable} 锚定 19 = 18 方法 + 1 构造器 + 0 字段（旧账「18」是纯方法尺）。 */
+    /** {@code MarkdownStyleTable} 锚定 20 = 19 方法 + 1 构造器 + 0 字段（旧账「18」是纯方法尺）。
+     *  2026-09-19 起 18→19 方法：多的是 {@code scaledDesignMetrics(float)} —— 长度类设计量的
+     *  「设计 → 生效」唯一换算面（缺它时行内 code 字号等量没有 setter，下游无法换算，
+     *  实测 fs=200 下 code 12px 而正文 28px）。公共面只加这一个口，不动既有成员。 */
     @Test
-    public void markdownStyleTablePublicSurfaceIsAnchoredAt19() {
+    public void markdownStyleTablePublicSurfaceIsAnchoredAt20() {
         assertSurface(publicSurface(load(STYLE_TABLE)), STYLE_TABLE_TOTAL, STYLE_TABLE_METHODS,
                 STYLE_TABLE_CONSTRUCTORS, STYLE_TABLE_FIELDS);
     }

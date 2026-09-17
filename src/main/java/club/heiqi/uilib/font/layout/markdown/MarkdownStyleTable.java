@@ -1,5 +1,7 @@
 package club.heiqi.uilib.font.layout.markdown;
 
+import club.heiqi.uilib.font.layout.FontSizeLimits;
+
 /**
  * 块级样式/排版表（D3 最小公共面中「一个样式/排版表类型」的落点）。
  *
@@ -73,9 +75,10 @@ public final class MarkdownStyleTable {
     private int blockAccentArgb = 0x40FFFFFF;
 
     // 表格样式只在包内登记，由 LayoutContent 的 TableUnit 快照送到 L2。
-    final int tablePaddingXPx = 6;
-    final int tablePaddingYPx = 4;
-    final int tableBorderPx = 1;
+    // 长度类（内衬/边框厚）随 scaledDesignMetrics 换算，故不是 final；两个色值不随倍率。
+    int tablePaddingXPx = 6;
+    int tablePaddingYPx = 4;
+    int tableBorderPx = 1;
     final int tableBorderArgb = 0x40FFFFFF;
     final int tableHeaderArgb = 0x18FFFFFF;
 
@@ -264,5 +267,57 @@ public final class MarkdownStyleTable {
     /** 块级装饰色（包内登记，非公共面；M7）：引用竖条与分隔线共用，默认 0x40FFFFFF。 */
     int getBlockAccentArgb() {
         return blockAccentArgb;
+    }
+
+    // ==================== 设计量 -> 生效量（唯一换算面） ====================
+
+    /**
+     * 按用户级缩放倍率把本表的<b>长度类设计量</b>换算成生效量，返回<b>新表</b>（本表不变）。
+     *
+     * <p><b>为什么必须有这个出口</b>：本表的长度量（兜底基准字号、标题增量、行内 code 字号、
+     * 引用步长与竖条宽、分隔线厚、表格内衬与边框厚）都是<b>设计量</b>，而 markdown 内容在场景里按
+     * 生效字号渲染（设计值 × 倍率）。此前只有基准字号与标题增量有公共 setter，行内 code 字号等量
+     * 既无 setter、也无统一换算口 —— 下游即使知道要换算也改不动，于是同一段内容里出现两种尺度：
+     * 实测 fs=200 时行内 code 仍是 12px 而正文 28px（应为 24），fs=50 时 code 比正文还大
+     * （独立审核 2026-09-19 实测）。这与页面「几何按设计值、渲染按生效值」的分叉同源：
+     * <b>设计量必须有唯一的「设计 → 生效」换算面</b>，否则每个下游都会各自复发。</p>
+     *
+     * <p>只换算长度类量；颜色、标记字符串与开关与倍率无关，逐值保留。基准字号走字号域解析出口
+     * （与 {@code SceneNode.effectiveFontSize()} 同式），其余长度量按 {@code Math.round} 取整。
+     * {@code scale == 1.0f} 时逐值恒等 —— 默认倍率出图逐像素不变。</p>
+     *
+     * @param scale 用户级缩放倍率（{@code 1.0f} = 100%；负值按 0）
+     * @return 换算后的新表（调用方持有；本表不被修改）
+     */
+    public MarkdownStyleTable scaledDesignMetrics(float scale) {
+        float effective = Math.max(0.0f, scale);
+        MarkdownStyleTable out = new MarkdownStyleTable();
+        // 与倍率无关的量：逐值搬运。
+        out.headingBold = headingBold;
+        out.headingUnderline = headingUnderline;
+        out.quoteItalic = quoteItalic;
+        out.bulletMarker = bulletMarker;
+        out.thematicBreakText = thematicBreakText;
+        out.quoteTextColor = quoteTextColor;
+        out.codeBackgroundColor = codeBackgroundColor;
+        out.blockAccentArgb = blockAccentArgb;
+        // 长度类：基准字号走字号域出口，其余按同一倍率取整。
+        out.defaultFontSizePx = FontSizeLimits.effectiveFontSizePx(defaultFontSizePx, effective);
+        out.codeFontSizePx = scaledPx(codeFontSizePx, effective);
+        out.quoteIndentPx = scaledPx(quoteIndentPx, effective);
+        out.quoteBarWidthPx = scaledPx(quoteBarWidthPx, effective);
+        out.ruleThicknessPx = scaledPx(ruleThicknessPx, effective);
+        out.tablePaddingXPx = scaledPx(tablePaddingXPx, effective);
+        out.tablePaddingYPx = scaledPx(tablePaddingYPx, effective);
+        out.tableBorderPx = scaledPx(tableBorderPx, effective);
+        for (int i = 0; i < headingFontSizeDeltaPx.length; i++) {
+            out.headingFontSizeDeltaPx[i] = scaledPx(headingFontSizeDeltaPx[i], effective);
+        }
+        return out;
+    }
+
+    /** 单个长度设计量 → 生效量（与字号出口同式取整；{@code 0} 恒等映射到 0）。 */
+    private static int scaledPx(int designPx, float scale) {
+        return Math.round(designPx * scale);
     }
 }
