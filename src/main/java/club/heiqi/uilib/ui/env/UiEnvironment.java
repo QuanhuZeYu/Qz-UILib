@@ -18,7 +18,7 @@ package club.heiqi.uilib.ui.env;
  * </ol>
  *
  * <h3>为什么需要它</h3>
- * <p>框架今日获取环境事实有两条路：<b>进程级静态/单例直读</b>（{@code Config.useDebug} 被 23 处
+ * <p>框架此前获取环境事实有两条路：<b>进程级静态/单例直读</b>（{@code Config.useDebug} 曾被 23 处
  * 每帧读、{@code LanguageEpochService} 自述「不是 signal 通道」）与<b>构造期注入</b>
  * （{@code HudScaleSetting}、{@code SceneThemes.install(runtime, signal)}）。前者在 headless
  * 出图与测试里<b>无法替换</b>、在运行期<b>无法通知</b>消费者；后者已被证明可用，却各自为政、
@@ -29,7 +29,9 @@ package club.heiqi.uilib.ui.env;
  * <p>域访问器全部是 {@code default} 方法并返回该域的缺席实现，因此<b>新增域不破坏既有实现类</b>；
  * 宿主只需覆盖自己真正提供的域。每个域按需暴露三类成员：<b>值读</b>（必需）、
  * <b>代际</b>（可选，单调不减 long，用于缓存失效）、<b>订阅</b>（可选，signal，用于响应式派生）。
- * 本版落三域的值读与代际，订阅留待需要 signal 派生的域接入时补。</p>
+ * 本版落三域的值读与代际；订阅<b>按需暴露</b>——诊断域已接入（调试浮层显隐的响应式派生，
+ * 见 {@link DiagnosticsEnvironment#debugOverlayChanges()}），其余域等出现响应式派生消费方时再补，
+ * 不预先铺无人消费的通道。</p>
  *
  * <h3>注入路径</h3>
  * <p>唯一注入点是构造依赖：{@code SceneRuntime(SceneTextMeasurer, UiEnvironment)}

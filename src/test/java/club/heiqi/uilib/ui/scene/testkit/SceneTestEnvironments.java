@@ -75,10 +75,8 @@ public final class SceneTestEnvironments {
     /**
      * 诊断开启环境：只覆盖诊断域（{@code debugEnabled() == true}），语言与资源域缺席。
      *
-     * <p><b>注意诊断开关当前是双源</b>：帧管线已改走环境端口（本工厂驱动），而
-     * {@code UiPerformanceMonitor} 仍是 {@code Config.useDebug} 静态直读（尚未接线）。
-     * 因此「完整采样」在测试里需要<b>两者同时打开</b>——注入本环境 + 设置该静态字段；
-     * 只做一半会得到「有会话无计数」或「有计数无门控」的半开态。收敛时以环境端口为准。</p>
+     * <p><b>开关单源</b>：帧管线与 {@code UiPerformanceMonitor} 都只读注入的诊断域，
+     * 故「完整采样」只需注入本环境<b>一处</b>，不需要再写任何配置静态字段。</p>
      *
      * @return 诊断开启的测试环境（无状态单例）
      */

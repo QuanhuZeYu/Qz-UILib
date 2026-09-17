@@ -152,9 +152,9 @@ public final class UiPerfMarkers {
     /**
      * 计数：新建宿主物品图标源次数（每次 = 一次物品栈拷贝 + 一个图片源对象）。
      *
-     * <p>选择器图标与服务端图标等全部宿主物品图标共用本计数；选择器 P3 重写后必须延续该口径。
-     * 图标<b>缓存命中</b>无法在此计数——缓存持有者在调用方（下游 {@code BlockPickerVisualAdapter}），
-     * 见交付说明的未决项。</p>
+     * <p>写入者必须是<b>持有诊断环境的调用方</b>（图标缓存 / 装配层）：图片源工厂
+     * （{@code HostImageSource} 的静态工厂）无环境引用，按环境端口纪律不得直读配置开关，故不埋点。
+     * 与 {@link #COUNTER_PICKER_ICON_CACHED}（缓存命中）互补，二者之比即图标复用率。</p>
      */
     public static final String COUNTER_IMAGE_ICON_CREATED = "image.icon.created";
 

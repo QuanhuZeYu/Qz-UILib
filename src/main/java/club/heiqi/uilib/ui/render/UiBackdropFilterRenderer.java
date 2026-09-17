@@ -528,9 +528,9 @@ final class UiBackdropFilterRenderer {
      *       draw，故遍数=2；否则 1）。计第二遍是硬要求——漏掉会把独立层的采样量低估一半。</li>
      * </ul>
      *
-     * <p>{@code UiPerformanceMonitor.recordCounter} 自带 {@code Config.useDebug} 第一道门控
-     * （关闭时只读一次静态布尔即返回、不分配），故这里不再重复判断；本方法自身只做
-     * int/long 运算，热路径零分配。{@code taps} 是估计值（同像素在不同分支下抽头数不同，
+     * <p>{@code UiPerformanceMonitor.recordCounter} 自带第一道门控（帧内按本帧诊断域判定、
+     * 帧外入有界待折叠桶），故这里不再重复判断；本方法自身只做 int/long 运算，热路径零分配。
+     * {@code taps} 是估计值（同像素在不同分支下抽头数不同，
      * 且边缘覆盖率不改变 draw 遍数），用于 full/eco 档位 A/B 的量级对比。</p>
      */
     private static void recordShaderSurfaceCounters(int left, int top, int right, int bottom, int tapBudget,

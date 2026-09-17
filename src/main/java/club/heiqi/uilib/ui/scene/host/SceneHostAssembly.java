@@ -36,8 +36,9 @@ public final class SceneHostAssembly {
      * 生产默认环境端口：把 UILib 既有进程级环境量（{@code Config.useDebug}、语言代际、资源代际）
      * 适配进 {@link UiEnvironment} 的唯一装配点。
      *
-     * <p>与 {@link #defaultMeasurer()} 对称：宿主不自定义环境时取此实现。返回的适配器无状态，
-     * 多实例语义等价。</p>
+     * <p>与 {@link #defaultMeasurer()} 对称：宿主不自定义环境时取此实现。返回的适配器是
+     * <b>进程单例</b>而非可复制的无状态对象 —— 诊断域持有调试浮层的订阅源，复制实例会让订阅通道
+     * 分裂（派生方订阅到的那条可能永远不更新），故不得自行 new。</p>
      *
      * @return 生产环境端口
      */

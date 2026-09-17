@@ -1,6 +1,5 @@
 package club.heiqi.uilib.client;
 
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.client.hud.ClientHudServiceImpl;
 import club.heiqi.uilib.client.hud.FramebufferViewportFactory;
 import club.heiqi.uilib.client.hud.HudViewportMetrics;
@@ -11,10 +10,12 @@ import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.hud.api.HudSpec;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import net.minecraft.client.Minecraft;
@@ -39,17 +40,30 @@ public final class UiHudRenderListener {
     private final PaintContextCompositor compositor = new PaintContextCompositor();
     private final UiMainLayerSnapshotService snapshots = new UiMainLayerSnapshotService();
     private final MinecraftHudEnvironment environment;
+    /**
+     * UI 环境端口（诊断开关的唯一来源）。
+     *
+     * <p>组合根持有：HUD 帧的采样会话与调试浮层的显隐都读它，不再直读配置静态字段。
+     * 默认与 HUD 各窗口的 runtime 同源（{@link SceneHostAssembly#defaultEnvironment()}）。</p>
+     */
+    private final UiEnvironment uiEnvironment;
     /** debug HUD 显示的当前界面名（每帧在 renderHudFrame 更新）。 */
     private final Signal<String> debugScreenName = Signal.create("null");
 
     /** 创建 bridge，并把 UILib debug 文本注册为普通统一 HUD。 */
     public UiHudRenderListener() {
-        this(new LiveMinecraftHudEnvironment());
+        this(new LiveMinecraftHudEnvironment(), SceneHostAssembly.defaultEnvironment());
     }
 
     /** 创建使用指定 Minecraft 环境的 bridge。 */
     UiHudRenderListener(MinecraftHudEnvironment environment) {
+        this(environment, SceneHostAssembly.defaultEnvironment());
+    }
+
+    /** 创建使用指定 Minecraft 环境与 UI 环境端口的 bridge。 */
+    UiHudRenderListener(MinecraftHudEnvironment environment, UiEnvironment uiEnvironment) {
         this.environment = environment;
+        this.uiEnvironment = uiEnvironment;
         // 装配层接线（composition root 在 client）：chat3 命中检测读宿主权威放置盒。
         // internal→client 为禁止方向,故经端口注入而非直引。
         club.heiqi.uilib.internal.chat3.view.ChatHudWindow.setPlacementSource(
@@ -87,8 +101,10 @@ public final class UiHudRenderListener {
                 rt -> {
                     club.heiqi.uilib.ui.scene.node.SceneNode root = club.heiqi.uilib.ui.scene.node.SceneNode.row()
                             .setHitTestable(false);
-                    // uiDebug 关闭时卸载内容树 → 空内容整窗隐藏（对齐旧 EMPTY 快照语义）
-                    rt.show(root, club.heiqi.uilib.ui.reactive.Computed.create(() -> Config.uiDebug),
+                    // 调试浮层开关：订阅诊断域的进程级通道（原为 Computed.create(() -> Config.uiDebug)，
+                    // 那是没有任何依赖的一次性快照 —— 关闭→开启不重算，HUD 再也不出现）。
+                    // 关闭时卸载内容树 → 空内容整窗隐藏（对齐旧 EMPTY 快照语义）。
+                    rt.show(root, rt.environment().diagnostics().debugOverlayChanges(),
                             () -> {
                                 club.heiqi.uilib.ui.scene.node.SceneNode line =
                                         club.heiqi.uilib.ui.scene.node.SceneNode.row()
@@ -129,7 +145,7 @@ public final class UiHudRenderListener {
         // 内容间接驱动了控件宿主，嵌套由 monitor 的线程内重入深度保护，不重复计数。
         // try/finally 包住整个帧体：两句清理与末尾重抛路径都必须经过 finishFrame，不把会话泄漏在 ThreadLocal。
         UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
-        monitor.beginFrame(HUD_SAMPLE_SCREEN, width, height, width, height);
+        monitor.beginFrame(HUD_SAMPLE_SCREEN, width, height, width, height, uiEnvironment.diagnostics());
         try {
             // A8：值变才写——每帧无条件 set 会向全局调度器持续入队同值 pendingWrite。
             String screenName = currentScreenName();

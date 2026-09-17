@@ -16,7 +16,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
@@ -72,19 +71,15 @@ public class ScenePickerPanelLifecycleTest {
     private SceneNode sceneRoot;
     private MountHandle mountHandle;
     private long frameTimeNanos = 1_000_000L;
-    private boolean originalUseDebug;
 
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        originalUseDebug = Config.useDebug;
-        Config.useDebug = true;
         UiPerformanceMonitor.getInstance().finishFrame();
         UiPerformanceMonitor.getInstance().resetHistory(SCREEN);
         SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        // 诊断开关双源：帧管线采样判定走注入的环境端口（本用例断 frame.nodes，必须有采样），
-        // UiPerformanceMonitor 的计数记录与统计读取仍是 Config.useDebug 静态直读（未接线），
-        // 故 setUp 里那句静态赋值同样不可省 —— 两者同时打开才构成完整采样语义。
+        // 诊断开关单源：帧管线与性能采样器都按注入的环境端口判定（本用例断 frame.nodes，
+        // 必须有采样），故只需注入这一个域，不再有第二处静态开关。
         rt = SceneTestEnvironments.runtime(measurer, SceneTestEnvironments.debugEnabled());
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
@@ -97,7 +92,6 @@ public class ScenePickerPanelLifecycleTest {
         if (mountHandle != null) mountHandle.dispose();
         UiPerformanceMonitor.getInstance().finishFrame();
         UiPerformanceMonitor.getInstance().resetHistory(SCREEN);
-        Config.useDebug = originalUseDebug;
         rt.dispose();
         ReactiveScheduler.get().reset();
     }
@@ -263,7 +257,7 @@ public class ScenePickerPanelLifecycleTest {
     private UiRuntimeStats runFrame() {
         UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
         frameTimeNanos += 16_000_000L;
-        monitor.beginFrame(SCREEN, W, H, W, H);
+        monitor.beginFrame(SCREEN, W, H, W, H, rt.environment().diagnostics());
         try {
             pipeline.run(sceneRoot, W, H, new RecordingRenderBackend(), 0, 0, frameTimeNanos);
         } finally {

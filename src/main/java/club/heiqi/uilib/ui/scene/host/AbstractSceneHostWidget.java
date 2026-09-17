@@ -138,7 +138,9 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
         // 故此处是唯一挂点；嵌套帧（如聊天输入面被 HUD 路径间接触发）由 monitor 的线程内深度保护，
         // 不会重复计数。finishFrame 必须在 finally：渲染异常路径同样结算，不把会话泄漏在 ThreadLocal。
         UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
-        monitor.beginFrame(hostLabel, Math.max(0, w), Math.max(0, h), Math.max(0, w), Math.max(0, h));
+        // 诊断环境随帧表态（本宿主的 runtime 环境）：采样开关的唯一来源，替代旧的 Config.useDebug 直读。
+        monitor.beginFrame(hostLabel, Math.max(0, w), Math.max(0, h), Math.max(0, w), Math.max(0, h),
+                runtime.environment().diagnostics());
         try {
             // host 每帧只采一次单调时间，帧率探针与 Motion 共用同一个 timestamp；
             // tick 保留在宿主（子类覆写 render 不调 super 则 tick 不执行——子类责任，基类尽力默认采集）。

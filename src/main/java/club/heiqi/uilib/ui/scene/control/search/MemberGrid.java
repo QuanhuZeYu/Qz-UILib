@@ -13,7 +13,6 @@ import com.github.bsideup.jabel.Desugar;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -361,7 +360,7 @@ public final class MemberGrid {
     private static SceneNode cellComponent(SceneRuntime rt, Props props,
                                            SearchPickerData.CurrentMember initialMember,
                                            ReadableSignal<Set<Object>> unrenderableKeys) {
-        recordMemberCell();
+        recordMemberCell(rt.environment().diagnostics().debugEnabled());
         long memberId = initialMember.memberId();
         ReadableSignal<SearchPickerData.CurrentMember> currentMember = Computed.create(() -> {
             for (SearchPickerData.CurrentMember member : safeMembers(props.members())) {
@@ -607,9 +606,13 @@ public final class MemberGrid {
 
     // ==================== 采样埋点（只加观测，不改渲染与交互语义） ====================
 
-    /** 累计一个已挂载的成员卡片。 */
-    private static void recordMemberCell() {
-        if (!Config.useDebug) {
+    /**
+     * 累计一个已挂载的成员卡片。
+     *
+     * @param sampling 本帧采样开关（调用方按环境端口取值）
+     */
+    private static void recordMemberCell(boolean sampling) {
+        if (!sampling) {
             return;
         }
         UiPerformanceMonitor.getInstance().recordCounter(UiPerfMarkers.COUNTER_PICKER_MEMBERS, 1L);

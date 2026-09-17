@@ -26,7 +26,6 @@ import club.heiqi.config.ui.editor.SearchPickerPanelPresentation;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
 import club.heiqi.config.ui.field.PickerSourceGuard;
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -845,7 +844,8 @@ public final class ScenePickerPanel {
         // 顶部/中栏/成员区/空态等全部宿主文字再沿父链继承）；与 Dialog/ContextMenu 的浮层
         // 真值归位是同一机制：声明落在内容根，而不是逐节点写字号。
         ScenePortalHandle panelPortal = rt.portal(open, () -> {
-            long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            // 采样门控走环境端口（帧内直读，无快照）：0 表示关闭，后续 record* 首判即返回。
+            long startedAtNanos = rt.environment().diagnostics().debugEnabled() ? System.nanoTime() : 0L;
             // ==================== 内容 Owner（每次 open=true 重建，关闭即 dispose） ====================
             // 全部候选相关派生在此创建：Computed 是 effect 驱动（上游变化即重算），放在 create 期会让
             // 「面板关闭但结果信号变化」继续触发派生；移入内容 Owner 后关闭即随 disposeMounted() 停止。
@@ -854,7 +854,8 @@ public final class ScenePickerPanel {
             // 数据面二选一（构建期分支，非逐帧门控）：
             //   旧路径（无候选源，T-1）= 结果信号自带候选全集，面板侧过滤 + 全量项派生；
             //   SPI 路径 = 面板自建 pageProvider 闭包按窗口切片拉取，面板不持有候选全集（ADR §3.2）。
-            Feed feed = props.candidateSource() == null ? legacyFeed(props, categoryKey) : sourceFeed(props);
+            Feed feed = props.candidateSource() == null
+                ? legacyFeed(rt, props, categoryKey) : sourceFeed(rt, props);
 
             // P5 派生度量（三分量：逻辑盒 + 字号倍率 + 密度偏好）：在内容 Owner 内创建 ⇒
             // 关闭即随 disposeMounted() 释放，不做跨开合常驻；打开时算一次、之后只在三个输入
@@ -1951,7 +1952,7 @@ public final class ScenePickerPanel {
      * {@code itemCount} = 本次实际参与挂载的项数 —— 二者之比即虚拟化比例。
      * 采样关闭时本方法在第一道判断即返回。</p>
      *
-     * @param startedAtNanos 起始时间戳；0 表示采样关闭（调用方已按 Config.useDebug 取值）
+     * @param startedAtNanos 起始时间戳；0 表示采样关闭（调用方已按环境端口取值）
      * @param candidateCount 本次查询的候选总规模（不受窗口上限裁剪）
      * @param itemCount 本次派生产出的网格项数（挂载窗口大小）
      */
@@ -2074,8 +2075,10 @@ public final class ScenePickerPanel {
      *
      * <p>分类过滤仅在旧路径发生（ADR §1.7 D-12/T-6）；{@code resultsCategoryFiltered} 供
      * 「上层已按分类过滤的全量结果信号」形态跳过面板二次过滤。</p>
+     *
+     * @param rt 宿主 runtime（采样门控按 {@code rt.environment().diagnostics()} 取值）
      */
-    private static Feed legacyFeed(Props props, ReadableSignal<String> categoryKey) {
+    private static Feed legacyFeed(SceneRuntime rt, Props props, ReadableSignal<String> categoryKey) {
         ReadableSignal<List<SearchPickerData.Candidate>> filtered = Computed.create(() -> {
             List<SearchPickerData.Candidate> candidates = safeResults(props).candidates();
             if (props.resultsCategoryFiltered()) {
@@ -2084,7 +2087,7 @@ public final class ScenePickerPanel {
             return ScenePickerPanelNav.filterByCategory(candidates, categoryKey.get(), props.categoryOf());
         });
         ReadableSignal<List<Item>> gridItems = Computed.create(() -> {
-            long gridStartedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            long gridStartedAtNanos = rt.environment().diagnostics().debugEnabled() ? System.nanoTime() : 0L;
             List<SearchPickerData.Candidate> candidates = filtered.get();
             List<Item> items = toItems(props, candidates);
             recordGridTransform(gridStartedAtNanos, candidates.size(), items.size());
@@ -2109,8 +2112,10 @@ public final class ScenePickerPanel {
      *
      * <p>切片重取由「{@link SliceRevision 修订快照}」驱动而非「总量变化」：修订 = 查询条件 + 源版本的
      * 值快照，任一变化即使总量持平也重新拉片（分类切换命中数相同、语言代际变化后标签作废等）。</p>
+     *
+     * @param rt 宿主 runtime（采样门控按 {@code rt.environment().diagnostics()} 取值）
      */
-    private static Feed sourceFeed(Props props) {
+    private static Feed sourceFeed(SceneRuntime rt, Props props) {
         final PickerCandidateSource source = props.candidateSource();
         final ReadableSignal<LaneView> lane = laneView(props);
         final ReadableSignal<PickerSourceVersion> sourceVersion = props.sourceVersion();
@@ -2123,7 +2128,7 @@ public final class ScenePickerPanel {
             LaneView view = lane.get();
             int offset = Math.max(0, request.offset());
             int limit = Math.max(0, Math.min(request.limit(), view.totalItems() - offset));
-            long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            long startedAtNanos = rt.environment().diagnostics().debugEnabled() ? System.nanoTime() : 0L;
             PickerSourceGuard.requireMainThread("page");
             List<SearchPickerData.Candidate> candidates = source.page(view.query(), offset, limit);
             List<Item> items = toItems(props,

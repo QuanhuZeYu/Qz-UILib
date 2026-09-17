@@ -380,8 +380,8 @@ public final class SceneFramePipeline {
     /**
      * 递归统计子树节点数（含自身）。
      *
-     * <p>只在采样开启时调用（调用方以 {@link Config#useDebug} 门控），其成本与已开启的采样
-     * 同阶，不进入 {@code debug=false} 路径。</p>
+     * <p>只在采样开启时调用（调用方以本帧诊断域门控，见 {@link #phaseReplay()}），
+     * 其成本与已开启的采样同阶，不进入关闭路径。</p>
      *
      * @param root 子树根
      * @return 节点总数

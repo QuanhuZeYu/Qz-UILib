@@ -8,7 +8,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -27,16 +26,17 @@ import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
  * <p>判据：同一棵场景树在 {@code debug=false} 与 {@code debug=true} 各跑一帧，
  * 两帧的①阶段序列、②回放调用序列（方法名 + 参数）必须逐位相同。采样开启时额外断言
  * 帧级计数点确实产出，关闭时额外断言没有建会话——把"零成本"与"不改语义"两侧都钉住。</p>
+ *
+ * <p><b>开关单源</b>：本用例只经注入的 {@link club.heiqi.uilib.ui.env.DiagnosticsEnvironment}
+ * 打开采样（不写任何配置静态字段）。若哪天采样重新需要第二处开关，本类会先红——
+ * 它同时是"诊断单源"的回归锁。</p>
  */
 public class UiSamplingRenderSemanticsTest {
 
     private static final String SCREEN = "semantics-guard";
 
-    private boolean originalUseDebug;
-
     @Before
     public void setUp() {
-        originalUseDebug = Config.useDebug;
         UiPerformanceMonitor.getInstance().resetHistory(SCREEN);
         UiPerformanceMonitor.getInstance().finishFrame();
     }
@@ -45,7 +45,6 @@ public class UiSamplingRenderSemanticsTest {
     public void tearDown() {
         UiPerformanceMonitor.getInstance().finishFrame();
         UiPerformanceMonitor.getInstance().resetHistory(SCREEN);
-        Config.useDebug = originalUseDebug;
     }
 
     /** 采样开启与关闭：阶段序列、回放调用序列、根布局盒必须完全一致。 */
@@ -71,10 +70,8 @@ public class UiSamplingRenderSemanticsTest {
     }
 
     private static Frame runFrame(boolean useDebug) {
-        // 帧管线的采样开关已改走环境端口（注入，见 debugEnvironment）；UiPerformanceMonitor 侧
-        // 仍是 Config.useDebug 静态直读（尚未接线），故此处仍需写静态字段 —— 两侧同时打开才构成
-        // 「采样开启」的完整语义，本测试守的正是这条口径。
-        Config.useDebug = useDebug;
+        // 采样开关只有一个来源：注入的环境端口。帧管线与性能采样器读的是同一个域，
+        // 故「采样开启」只需这一处（改前还需要额外写 Config.useDebug 静态字段）。
         SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
         SceneRuntime runtime = SceneTestEnvironments.runtime(measurer, useDebug
                 ? SceneTestEnvironments.debugEnabled()
@@ -95,7 +92,7 @@ public class UiSamplingRenderSemanticsTest {
 
         RecordingRenderBackend backend = new RecordingRenderBackend();
         UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
-        monitor.beginFrame(SCREEN, 320, 240, 640, 480);
+        monitor.beginFrame(SCREEN, 320, 240, 640, 480, runtime.environment().diagnostics());
         try {
             pipeline.run(root, 320, 240, backend, 0, 0, 1_000_000L);
         } finally {

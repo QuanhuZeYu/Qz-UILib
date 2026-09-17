@@ -15,7 +15,6 @@ import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.SearchPickerPanelPresentation;
 import club.heiqi.config.ui.editor.SearchPickerPresentation;
 import club.heiqi.config.ui.editor.VisualAdapter;
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -300,7 +299,8 @@ public final class VariantChooser {
         // 字号声明」落到内容根（内容根持声明，内嵌 Segmented/TextInput 与文字沿父链继承）；
         // 每个布局纪元重新断言当前声明，同值去重。
         ScenePortalHandle overlayPortal = rt.portal(showSignal, () -> {
-            long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+            // 采样门控走环境端口（帧内直读，无快照）：0 表示关闭，后续 record* 首判即返回。
+            long startedAtNanos = rt.environment().diagnostics().debugEnabled() ? System.nanoTime() : 0L;
             SceneNode overlay = buildOverlay(rt, props, variantQuery);
             recordOpenVariant(startedAtNanos);
             return overlay;
@@ -497,7 +497,7 @@ public final class VariantChooser {
                                         ReadableSignal<Set<Object>> unrenderableKeys,
                                         ReadableSignal<Integer> labelForeground,
                                         ReadableSignal<Integer> onAccentForeground) {
-        recordVariantRow();
+        recordVariantRow(rt.environment().diagnostics().debugEnabled());
         SceneNode row = SceneNode.row();
         row.setPreferredHeight(props.effectiveRowHeight());
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
@@ -660,9 +660,13 @@ public final class VariantChooser {
                 .recordPhase(UiPerfMarkers.PHASE_PICKER_OPEN_VARIANT, System.nanoTime() - startedAtNanos);
     }
 
-    /** 累计一个已挂载的变体行。 */
-    private static void recordVariantRow() {
-        if (!Config.useDebug) {
+    /**
+     * 累计一个已挂载的变体行。
+     *
+     * @param sampling 本帧采样开关（调用方按环境端口取值；见 {@code UiEnvironment} 的读取纪律）
+     */
+    private static void recordVariantRow(boolean sampling) {
+        if (!sampling) {
             return;
         }
         UiPerformanceMonitor.getInstance().recordCounter(UiPerfMarkers.COUNTER_PICKER_VARIANT_ROWS, 1L);

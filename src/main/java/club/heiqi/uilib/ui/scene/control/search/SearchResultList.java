@@ -9,7 +9,6 @@ import java.util.function.Consumer;
 
 import com.github.bsideup.jabel.Desugar;
 
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.Computed;
@@ -732,7 +731,8 @@ public final class SearchResultList {
             } else {
                 slice = windowSlice(source, model.windowOffset(), model.mountedRows() * columns);
             }
-            recordListModel(model.totalRows(), model.visibleRows());
+            recordListModel(model.totalRows(), model.visibleRows(),
+                    rt.environment().diagnostics().debugEnabled());
             return new WindowData(model, SceneGridSnapshot.of(slice, model.windowOffset()));
         });
         ReadableSignal<SceneGridWindow.WindowModel> windowModelSignal =
@@ -1068,7 +1068,7 @@ public final class SearchResultList {
         rt.forEach(rowNode, rowItems, SceneVirtualGrid.Item::key,
                 item -> cellComponent(rt, props, item, window, unrenderableKeys, palette,
                         trackHeight, stridePx, hoveredKey, geometry));
-        recordMountedRow();
+        recordMountedRow(rt.environment().diagnostics().debugEnabled());
         return rowNode;
     }
 
@@ -1135,7 +1135,8 @@ public final class SearchResultList {
                                            ReadableSignal<Integer> stridePx,
                                            Signal<Object> hoveredKey,
                                            CellGeometry geometry) {
-        long startedAtNanos = Config.useDebug ? System.nanoTime() : 0L;
+        // 采样门控走环境端口（帧内直读，无快照）：0 表示关闭，后续 record* 首判即返回。
+        long startedAtNanos = rt.environment().diagnostics().debugEnabled() ? System.nanoTime() : 0L;
         SceneNode cell = SceneNode.column();
         cell.setPreferredWidth(geometry.cellWidthPx().get().intValue());
         rt.bind(geometry.cellWidthPx(), w -> cell.setPreferredWidth(w.intValue()));
@@ -1416,9 +1417,10 @@ public final class SearchResultList {
      *
      * @param totalRows   数据总行数
      * @param visibleRows 生效可视行数
+     * @param sampling    本帧采样开关（调用方按环境端口取值）
      */
-    private static void recordListModel(int totalRows, int visibleRows) {
-        if (!Config.useDebug) {
+    private static void recordListModel(int totalRows, int visibleRows, boolean sampling) {
+        if (!sampling) {
             return;
         }
         UiPerformanceMonitor monitor = UiPerformanceMonitor.getInstance();
@@ -1426,9 +1428,13 @@ public final class SearchResultList {
         monitor.recordCounter(UiPerfMarkers.COUNTER_PICKER_VISIBLE_ROWS, visibleRows);
     }
 
-    /** 累计一个已挂载的结果行。 */
-    private static void recordMountedRow() {
-        if (!Config.useDebug) {
+    /**
+     * 累计一个已挂载的结果行。
+     *
+     * @param sampling 本帧采样开关（调用方按环境端口取值）
+     */
+    private static void recordMountedRow(boolean sampling) {
+        if (!sampling) {
             return;
         }
         UiPerformanceMonitor.getInstance().recordCounter(UiPerfMarkers.COUNTER_PICKER_LIST_ROWS, 1L);

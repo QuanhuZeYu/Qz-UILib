@@ -10,6 +10,7 @@ import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontRuntimeSettings;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.ui.env.ProcessUiEnvironment;
 import club.heiqi.uilib.ui.render.BackdropQualityService;
 import club.heiqi.uilib.util.UiNumbers;
 
@@ -113,6 +114,10 @@ public final class ConfigValueBridge {
     private static void applyGeneral(Authority authority) {
         Config.useDebug = authority.getBool("general.useDebug");
         Config.uiDebug = authority.getBool("general.uiDebug");
+        // 调试开关的值读权威是上面的静态字段（每帧直读）；调试浮层的响应式消费方订阅的是
+        // 诊断域的进程级通道，必须由本方法在写字段之后投影一次 —— 本方法是三条回灌入口
+        // （启动加载 / 配置页保存 / 磁盘热更）的唯一汇合点，故也是订阅通道的唯一写入口。
+        ProcessUiEnvironment.publishUiDebug(Config.uiDebug);
         Config.fontRuntimeDebug = authority.getBool("general.fontRuntimeDebug");
         Config.netTransport = authority.getString("general.netTransport");
         ConfigThemePreference.applyConfigured(authority.getString("general.configPageTheme"));

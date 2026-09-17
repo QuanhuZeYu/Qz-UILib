@@ -7,9 +7,9 @@ import java.util.Map;
 import club.heiqi.config.ui.editor.PickerCandidateSource;
 import club.heiqi.config.ui.editor.PickerIconSource;
 import club.heiqi.config.ui.field.PickerSourceGuard;
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
+import club.heiqi.uilib.ui.env.DiagnosticsEnvironment;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
@@ -40,12 +40,20 @@ public final class PickerIconCache {
 
     private final Map<String, SceneImageSource> candidateIcons;
     private final Map<String, SceneImageSource> variantIcons;
+    /**
+     * 诊断环境（采样埋点的开关来源）。
+     *
+     * <p>构造注入而非静态直读：本缓存是采样埋点的<b>持有者</b>，按环境端口纪律，
+     * 开关只能来自注入的环境（见 {@code UiEnvironment}）。缺席态 = 不采样，
+     * 与「未安装」逐位等价。</p>
+     */
+    private final DiagnosticsEnvironment diagnostics;
     private long createdCount;
     private long hitCount;
 
-    /** 按默认容量创建空缓存（条目在首个请求时产出）。 */
+    /** 按默认容量创建空缓存（条目在首个请求时产出）；诊断缺席（不采样）。 */
     public PickerIconCache() {
-        this(DEFAULT_CANDIDATE_CAPACITY, DEFAULT_VARIANT_CAPACITY);
+        this(DEFAULT_CANDIDATE_CAPACITY, DEFAULT_VARIANT_CAPACITY, DiagnosticsEnvironment.EMPTY);
     }
 
     /**
@@ -53,11 +61,24 @@ public final class PickerIconCache {
      * @param variantCapacity   变体级上限（正数）
      */
     public PickerIconCache(int candidateCapacity, int variantCapacity) {
+        this(candidateCapacity, variantCapacity, DiagnosticsEnvironment.EMPTY);
+    }
+
+    /**
+     * @param candidateCapacity 候选级上限（正数）
+     * @param variantCapacity   变体级上限（正数）
+     * @param diagnostics       诊断环境（不可为 null；缺席请显式传 {@link DiagnosticsEnvironment#EMPTY}）
+     */
+    public PickerIconCache(int candidateCapacity, int variantCapacity, DiagnosticsEnvironment diagnostics) {
         if (candidateCapacity < 1 || variantCapacity < 1) {
             throw new IllegalArgumentException("capacities must be positive");
         }
+        if (diagnostics == null) {
+            throw new IllegalArgumentException("diagnostics must not be null");
+        }
         this.candidateIcons = newLru(candidateCapacity);
         this.variantIcons = newLru(variantCapacity);
+        this.diagnostics = diagnostics;
     }
 
     /**
@@ -106,8 +127,8 @@ public final class PickerIconCache {
         return created;
     }
 
-    private static void record(String marker) {
-        if (!Config.useDebug) {
+    private void record(String marker) {
+        if (!diagnostics.debugEnabled()) {
             return;
         }
         UiPerformanceMonitor.getInstance().recordCounter(marker, 1L);

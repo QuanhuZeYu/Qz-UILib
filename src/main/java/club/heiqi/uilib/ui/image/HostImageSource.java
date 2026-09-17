@@ -6,9 +6,7 @@ import java.util.Objects;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
-import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
 
 /**
@@ -72,9 +70,10 @@ public final class HostImageSource implements SceneImageSource {
      *
      * <p>工厂在返回前执行完整 {@link ItemStack#copy()}，后续不再读取调用方持有的可变实例。</p>
      *
-     * <p><b>采样埋点</b>：每次成功创建都计入 {@link UiPerfMarkers#COUNTER_IMAGE_ICON_CREATED}
-     * （选择器网格图标与服务端图标等共用本计数）。选择器的图标<b>缓存命中</b>不在此计数——
-     * 缓存持有者在调用方（下游 {@code BlockPickerVisualAdapter}）。采样关闭时本方法仅多一次静态判断。</p>
+     * <p><b>埋点归属（本工厂不埋点）</b>：{@link UiPerfMarkers#COUNTER_IMAGE_ICON_CREATED} 的
+     * 口径是「宿主物品图标源的物化次数」，但采样门控必须取自环境端口，而本类是无环境引用的静态工厂
+     * （见 {@code UiEnvironment} 的值读纪律）—— 故计数由<b>持有诊断环境的调用方</b>
+     * （图标缓存 / 装配层）在采样作用域内记录，本方法只负责创建。</p>
      *
      * @param itemStack 要在创建时复制的物品
      * @return 静态物品图标源
@@ -101,12 +100,8 @@ public final class HostImageSource implements SceneImageSource {
         if (itemStack == null || itemStack.getItem() == null) {
             throw new IllegalArgumentException("itemStack must contain an item");
         }
-        HostImageSource source = new HostImageSource(Kind.ITEM_ICON, itemStack.copy(), null, null, null,
+        return new HostImageSource(Kind.ITEM_ICON, itemStack.copy(), null, null, null,
                 16, 16, 0, 0, 16, 16, explicitRegistryKey);
-        if (Config.useDebug) {
-            UiPerformanceMonitor.getInstance().recordCounter(UiPerfMarkers.COUNTER_IMAGE_ICON_CREATED, 1L);
-        }
-        return source;
     }
 
     /**

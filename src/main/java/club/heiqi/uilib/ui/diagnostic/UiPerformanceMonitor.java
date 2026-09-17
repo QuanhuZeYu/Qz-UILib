@@ -11,24 +11,33 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.ui.env.DiagnosticsEnvironment;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 
 /**
  * UI 框架性能采样器。
  *
- * <h3>开关与成本（debug=false 零成本）</h3>
- * <p>{@link Config#useDebug} 是唯一总开关，且必须是所有采样入口的<b>第一道判断</b>：
- * 关闭时 {@link #beginFrame} 不创建 {@link FrameSession}，{@link #recordPhase} /
- * {@link #recordCounter} 只做一次静态布尔读取即返回，<b>不触碰 ThreadLocal、不分配任何对象</b>。
- * 开启时每帧恰好创建一个 {@code FrameSession}（帧内复用，计数器表按帧重建）。</p>
+ * <h3>诊断环境从哪来（本类不持有开关）</h3>
+ * <p>采样开关的唯一来源是 {@link #beginFrame} 的 {@link DiagnosticsEnvironment} 参数 —— <b>帧是采样的
+ * 管辖单位</b>。会话持的是<b>域引用而非开关快照</b>，故 {@link DiagnosticsEnvironment#debugEnabled()}
+ * 的每次读都取当前值：帧中途改开关即时生效，与旧的静态直读语义逐位一致。本类不读任何配置字段、
+ * 也不缓存诊断域，故全仓只有一条投影路径（{@code ProcessUiEnvironment}），不存在第二个开关源。</p>
+ *
+ * <h3>成本（诊断关闭时零累计、零保留）</h3>
+ * <p>关闭时 {@link #beginFrame} 不创建 {@link FrameSession}，帧内 {@link #recordPhase} /
+ * {@link #recordCounter} 命中会话后按域判定即返回，不累计、不分配。帧外（无会话，即宿主渲染帧
+ * 之外的面板构建、候选枚举）的样本落入有界待折叠桶，其取舍由「将要折叠进的那一帧」的诊断域决定：
+ * 关闭的帧在 {@code beginFrame} 处直接作废该桶，故关闭态不会留下待折叠样本。关闭态的唯一残余成本
+ * 是一次线程本地读；调用点若连这次读也要省掉，可自行按环境端口判定后再调用（仓库内控件埋点即如此），
+ * 但那<b>不是正确性所必需</b> —— 漏判只会多一次入桶，不会污染统计。</p>
  *
  * <h3>帧入口与重入</h3>
  * <p>UILib 有两条互不嵌套、但可能在同一渲染帧内先后发生的宿主帧入口（屏幕/控件宿主与 HUD），
  * 且聊天输入面等控件宿主可能被 HUD 路径间接驱动。本类用<b>线程内重入深度</b>保证：
  * 最外层 {@code beginFrame} 拥有本帧会话，嵌套调用只递增深度、不新建会话；对应最外层
- * {@code finishFrame} 才结算。调用方仍需以 {@code try/finally} 保证配对
+ * {@code finishFrame} 才结算。嵌套层传入的诊断域被忽略（本帧的诊断事实归最外层），
+ * 故「帧中途关闭开关」不会让嵌套调用拆掉本帧会话。调用方仍需以 {@code try/finally} 保证配对
  * （见 {@code AbstractSceneHostWidget#render} 与 {@code UiHudRenderListener#renderHudFrame}）。</p>
  *
  * <h3>按界面分组的帧历史（有界）</h3>
@@ -40,8 +49,9 @@ import club.heiqi.uilib.ui.input.UiInputFrame;
  * <h3>帧外样本折叠</h3>
  * <p>选择器候选枚举、面板构建等操作发生在宿主渲染帧之外（此时无线程会话）。这类样本
  * （阶段耗时与计数）先落入有界的待折叠桶，在下一次 {@link #beginFrame} 时并入该帧快照，
- * 避免"最有价值的构建期数据恰好被丢弃"。折叠桶容量上限 {@value #MAX_PENDING_KEYS} 个键，
- * 超限丢弃新键（不静默增长）。帧时间历史仍严格按 {@code screenName} 分组，不受此折叠影响。</p>
+ * 避免"最有价值的构建期数据恰好被丢弃"。帧外样本无自己的时刻归属，其采样与否由<b>折叠时的诊断域</b>
+ * 判定：折叠进开启的帧则采纳，落进关闭的帧则与桶一同作废。折叠桶容量上限 {@value #MAX_PENDING_KEYS}
+ * 个键，超限丢弃新键（不静默增长）。帧时间历史仍严格按 {@code screenName} 分组，不受此折叠影响。</p>
  */
 public class UiPerformanceMonitor {
 
@@ -112,19 +122,22 @@ public class UiPerformanceMonitor {
     /**
      * 记录当前帧中的阶段耗时。
      *
-     * <p>无活跃帧会话且采样开启时，样本落入待折叠桶，随下一次同界面名的 {@link #beginFrame}
-     * 并入该帧（覆盖宿主帧之外发生的候选枚举、面板构建等一次性成本）。</p>
+     * <p>无活跃帧会话时样本落入待折叠桶，随下一次 {@link #beginFrame} 并入该帧（覆盖宿主帧之外
+     * 发生的候选枚举、面板构建等一次性成本）；该桶采纳与否由折叠时的诊断域决定。</p>
      *
      * @param phaseName 阶段名（应取 {@link UiPerfMarkers} 常量，禁止动态拼接）
      * @param nanos 耗时
      */
     public void recordPhase(String phaseName, long nanos) {
-        if (!Config.useDebug || nanos <= 0L || phaseName == null || phaseName.isEmpty()) {
+        if (nanos <= 0L || phaseName == null || phaseName.isEmpty()) {
             return;
         }
         FrameSession session = activeFrameSession.get();
         if (session == null) {
             accumulatePendingPhase(phaseName, nanos);
+            return;
+        }
+        if (!session.diagnostics().debugEnabled()) {
             return;
         }
         session.recordPhase(phaseName, nanos);
@@ -137,12 +150,15 @@ public class UiPerformanceMonitor {
      * @param delta 增量
      */
     public void recordCounter(String counterName, long delta) {
-        if (!Config.useDebug || delta == 0L || counterName == null || counterName.isEmpty()) {
+        if (delta == 0L || counterName == null || counterName.isEmpty()) {
             return;
         }
         FrameSession session = activeFrameSession.get();
         if (session == null) {
             accumulatePendingCounter(counterName, delta);
+            return;
+        }
+        if (!session.diagnostics().debugEnabled()) {
             return;
         }
         session.recordCounter(counterName, delta);
@@ -151,32 +167,42 @@ public class UiPerformanceMonitor {
     /**
      * 开始记录当前 UI 帧。
      *
-     * <p>{@link Config#useDebug} 关闭时立即返回：既不创建会话也不分配。
-     * 同一线程已有活跃帧时只递增重入深度（最外层拥有本帧）；重复调用而不配对
-     * {@code finishFrame} 时同样只递增深度，不会产生第二个会话。</p>
+     * <p><b>本方法是采样开关的唯一入口</b>：宿主在此显式表态本帧的诊断环境（缺席请传
+     * {@link DiagnosticsEnvironment#EMPTY}，与「未安装」逐位等价）。会话只持有<b>域引用</b>而不缓存
+     * 开关值，故帧中途改开关即时生效（关闭后帧内采样立刻停止，但已开始的本帧仍照常结算）。</p>
+     *
+     * <p>诊断关闭时立即返回：既不创建会话也不分配，并作废帧外待折叠样本 —— 关闭态不得留下待折叠
+     * 样本，否则关闭期的记录会被后续开启的帧采纳。同一线程已有活跃帧时只递增重入深度（最外层拥有
+     * 本帧，嵌套层传入的诊断域被忽略）；重复调用而不配对 {@code finishFrame} 时同样只递增深度，
+     * 不会产生第二个会话。</p>
      *
      * @param screenName 界面名（null 视为空串）
      * @param guiWidth GUI 逻辑宽度
      * @param guiHeight GUI 逻辑高度
      * @param nativeWidth 原生渲染宽度
      * @param nativeHeight 原生渲染高度
+     * @param diagnostics 本帧的诊断环境（不可为 null）
      */
-    public void beginFrame(String screenName, int guiWidth, int guiHeight, int nativeWidth, int nativeHeight) {
-        FrameScope scope = frameScope.get();
-        if (!Config.useDebug) {
-            // 开关在帧中途被关闭的兜底：丢弃未闭合会话，避免残留于 ThreadLocal
-            if (scope.depth != 0) {
-                scope.depth = 0;
-                activeFrameSession.remove();
-            }
-            return;
+    public void beginFrame(String screenName, int guiWidth, int guiHeight, int nativeWidth, int nativeHeight,
+            DiagnosticsEnvironment diagnostics) {
+        if (diagnostics == null) {
+            throw new IllegalArgumentException("diagnostics 不可为 null；缺席请传 DiagnosticsEnvironment.EMPTY");
         }
+        FrameScope scope = frameScope.get();
         if (scope.depth > 0) {
+            // 嵌套帧沿用最外层会话（含其诊断域）：内层传什么域都不改变本帧管辖，也不会拆掉会话。
             scope.depth++;
             return;
         }
+        if (!diagnostics.debugEnabled()) {
+            synchronized (this) {
+                pendingSamples = null;
+            }
+            return;
+        }
         String resolvedScreenName = screenName == null ? "" : screenName;
-        FrameSession session = new FrameSession(resolvedScreenName, guiWidth, guiHeight, nativeWidth, nativeHeight);
+        FrameSession session = new FrameSession(resolvedScreenName, guiWidth, guiHeight, nativeWidth, nativeHeight,
+                diagnostics);
         synchronized (this) {
             historyFor(resolvedScreenName);
             if (pendingInputSession != null) {
@@ -214,13 +240,11 @@ public class UiPerformanceMonitor {
      * @param nanos 渲染耗时
      */
     public void recordRenderPhase(long nanos) {
-        if (!Config.useDebug) {
+        FrameSession session = activeFrameSession.get();
+        if (session == null || !session.diagnostics().debugEnabled()) {
             return;
         }
-        FrameSession session = activeFrameSession.get();
-        if (session != null) {
-            session.renderTimeNanos = Math.max(0L, nanos);
-        }
+        session.renderTimeNanos = Math.max(0L, nanos);
     }
 
     /**
@@ -229,23 +253,25 @@ public class UiPerformanceMonitor {
      * @param nanos 贴屏耗时
      */
     public void recordPresentPhase(long nanos) {
-        if (!Config.useDebug) {
+        FrameSession session = activeFrameSession.get();
+        if (session == null || !session.diagnostics().debugEnabled()) {
             return;
         }
-        FrameSession session = activeFrameSession.get();
-        if (session != null) {
-            session.presentTimeNanos = Math.max(0L, nanos);
-        }
+        session.presentTimeNanos = Math.max(0L, nanos);
     }
 
     /**
      * 开始记录输入路由阶段。
      *
+     * <p>与 {@link #beginFrame} 同一口径：输入路由有自己的诊断环境入口，诊断关闭时不建会话
+     * （后续 {@link #recordHitTestVisit} 因此不累计）。</p>
+     *
      * @param screenName 界面名
      * @param frame 输入快照
+     * @param diagnostics 本段输入路由的诊断环境（不可为 null）
      */
-    public void beginInputRouting(String screenName, UiInputFrame frame) {
-        if (frame == null) {
+    public void beginInputRouting(String screenName, UiInputFrame frame, DiagnosticsEnvironment diagnostics) {
+        if (frame == null || diagnostics == null || !diagnostics.debugEnabled()) {
             return;
         }
         activeInputSession.set(new InputSession(
@@ -274,9 +300,8 @@ public class UiPerformanceMonitor {
      * 记录一次命中测试访问。
      */
     public void recordHitTestVisit() {
-        if (!Config.useDebug) {
-            return;
-        }
+        // 命中测试是单帧内调用最密的采样点，故不设前置开关读：两段会话各自持有诊断域，
+        // 关闭态下两次查询都落空，代价是两次线程本地读（今日为一次静态读，差异在纳秒级）。
         InputSession inputSession = activeInputSession.get();
         if (inputSession != null) {
             inputSession.hitTestVisitCount++;
@@ -284,7 +309,7 @@ public class UiPerformanceMonitor {
         }
 
         FrameSession frameSession = activeFrameSession.get();
-        if (frameSession != null) {
+        if (frameSession != null && frameSession.diagnostics().debugEnabled()) {
             frameSession.hitTestVisitCount++;
         }
     }
@@ -319,7 +344,7 @@ public class UiPerformanceMonitor {
             stats = buildStats(session);
             latestStats = stats;
         }
-        debugLogStats(stats);
+        debugLogStats(stats, session.diagnostics());
     }
 
     private synchronized UiRuntimeStats buildStats(FrameSession session) {
@@ -429,8 +454,11 @@ public class UiPerformanceMonitor {
         return builder.toString();
     }
 
-    private void debugLogStats(UiRuntimeStats stats) {
-        if (!Config.useDebug || stats.getSampledFrameCount() <= 0) {
+    /**
+     * 采样日志：开关与被记录的那一帧同源（读本帧诊断域），不另设第二处开关判定。
+     */
+    private void debugLogStats(UiRuntimeStats stats, DiagnosticsEnvironment diagnostics) {
+        if (!diagnostics.debugEnabled() || stats.getSampledFrameCount() <= 0) {
             return;
         }
 
@@ -585,6 +613,8 @@ public class UiPerformanceMonitor {
         private final int guiHeight;
         private final int nativeWidth;
         private final int nativeHeight;
+        /** 本帧的诊断域（域引用而非开关快照：每次读都取当前值）。 */
+        private final DiagnosticsEnvironment diagnostics;
         private final long frameStartNanos = System.nanoTime();
         private final Map<String, PhaseSample> phaseSamples = new LinkedHashMap<String, PhaseSample>();
         private final Map<String, CounterSample> counterSamples = new LinkedHashMap<String, CounterSample>();
@@ -604,12 +634,18 @@ public class UiPerformanceMonitor {
         private String slowestWidgetTotalClassName = "";
         private long slowestWidgetTotalTimeNanos;
 
-        private FrameSession(String screenName, int guiWidth, int guiHeight, int nativeWidth, int nativeHeight) {
+        private FrameSession(String screenName, int guiWidth, int guiHeight, int nativeWidth, int nativeHeight,
+                DiagnosticsEnvironment diagnostics) {
             this.screenName = screenName;
             this.guiWidth = guiWidth;
             this.guiHeight = guiHeight;
             this.nativeWidth = nativeWidth;
             this.nativeHeight = nativeHeight;
+            this.diagnostics = diagnostics;
+        }
+
+        private DiagnosticsEnvironment diagnostics() {
+            return diagnostics;
         }
 
         private void applyInput(InputSession session) {
