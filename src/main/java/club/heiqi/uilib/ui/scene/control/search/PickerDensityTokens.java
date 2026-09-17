@@ -77,10 +77,9 @@ public final class PickerDensityTokens {
 
     // ==================== 网格几何（P5 §2.1） ====================
 
-    /** 字号下限（逻辑 px）。 */
-    public static final int FONT_FLOOR = 11;
-    /** 字号上限（逻辑 px）。 */
-    public static final int FONT_CEIL = 24;
+    // 本控件不设自有字号域：字号边界唯一在 FontSizeLimits（[0, 256]）。历史上这里有一对
+    // FONT_FLOOR=11 / FONT_CEIL=24 并把派生字号夹进去，副作用是「用户设 8px → 几何按 11px 算」
+    // 的设定/产出不符，且 0 一路豁免、8 被抬到 11 自相矛盾。已删除，几何如实跟随生效字号。
     /** 图标最小边长（逻辑 px；{@code k} 缩放的兜底下限）。 */
     public static final int ICON_MIN = 16;
     /** 单元内边距比例（fs / 3）。 */

@@ -1859,11 +1859,11 @@ public class ScenePickerPanelTest {
     }
 
     /**
-     * 面板字号声明解析：宿主显式声明跟随、层 4a 不算声明、声明值归一到控件字号域。
+     * 面板字号声明解析：宿主显式声明跟随、层 4a 不算声明、声明值原样传递。
      *
      * <p>钉住三件事：① 未挂树 + 无声明 ⇒ 档位基准字号（不是框架兜底 16）；② 祖先/自身登记的
      * 层 4a 回落值（{@code NODE_DEFAULT}）<b>不是</b>宿主声明，不得改面板字号；③ 层 2 声明跟随，
-     * 且越界值被夹到 {@code [FONT_FLOOR, FONT_CEIL]}（与派生链同域）。</p>
+     * 且<b>原样</b>进入派生链 —— 字号边界唯一在 {@code FontSizeLimits}，控件不再叠加第二套区间。</p>
      */
     @Test
     public void panelDeclaredFontFollowsHostDeclarationAndIgnoresNodeFallback() {
@@ -1879,7 +1879,7 @@ public class ScenePickerPanelTest {
         Assert.assertEquals("层 2 声明必须被跟随", 20,
                 ScenePickerPanel.resolvePanelDeclaredFont(anchor));
         anchor.setFontScope(30);
-        Assert.assertEquals("声明值归一到控件字号域上限", PickerDensityTokens.FONT_CEIL,
+        Assert.assertEquals("声明值原样传递（不夹到任何控件自有限制）", 30,
                 ScenePickerPanel.resolvePanelDeclaredFont(anchor));
     }
 

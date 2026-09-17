@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <h3>派生链（P5 §2.1）</h3>
  * <pre>
- *   fs       = clamp(渲染出口同式(声明值 × 倍率), FONT_FLOOR, FONT_CEIL)          // PickerMetrics
+ *   fs       = 非负(渲染出口同式(声明值 × 倍率))                  // PickerMetrics，不设自有字号域
  *   pad      = clamp(round(fs / 3), 2, 6)
  *   labelGap = max(1, round(fs / 6))
  *   lineH    = rt.lineHeight(fs)                        // 字体服务真值（ascent+descent+lineGap）

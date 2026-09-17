@@ -13,17 +13,26 @@ import java.util.stream.Stream;
 import org.junit.Test;
 
 /**
- * headless 环境注入的源码门禁。
+ * headless 环境注入的源码门禁：只留<b>禁则</b>。
  *
  * <h3>它守什么</h3>
  * <p>判据：headless 生产包内不得回落生产环境单例（{@code SceneHostAssembly.defaultEnvironment()} /
- * {@code ProcessUiEnvironment}），且请求声明的环境量必须真的投影到装配点与 runtime。</p>
+ * {@code ProcessUiEnvironment}）。</p>
  *
- * <p>违反后的实测症状：诊断开关恒取 {@code Config.useDebug}（缺省 false），于是 {@code --debug} 是一句
- * 空话 —— 采样器永远打不开、帧内事实永远是空的，而命令本身<b>不报错</b>。同类症状还有字号倍率：请求里
- * 有字段、会话里忘了投影，{@code --font-scale=150} 会出一张与 100% 逐像素相同的图。</p>
+ * <p>违反后的实测症状：诊断开关恒取 {@code Config.useDebug}（缺省 false），于是 {@code --debug}
+ * 是一句空话 —— 采样器永远打不开、帧内事实永远是空的，而命令本身<b>不报错</b>。这类「接口在、
+ * 接线断」的静默失效在行为测试里很难覆盖（需要真 GL 上下文），故用禁则钉住。</p>
  *
- * <p>这两类都是「接口在、接线断」的静默失效，行为测试很难覆盖（需要真 GL 上下文），故用源码结构钉住。</p>
+ * <h3>为什么删掉「请求 → 环境 → 各页面宿主」的接线存在性检查</h3>
+ * <p>那组检查是 18 条源码串 {@code contains("...")} 快照（如
+ * {@code session.contains(".fontScale(scalePercent)")}、{@code cli.contains("\"-pg\" + pageName")}）。
+ * 它把「实现怎么写」抄进了测试：换个等价的局部变量名就红，而真正的回归（参数收下了但没接线）
+ * 与「接线了但写法不同」在字符串层面不可区分。接线的强制手段改为<b>构造依赖</b>：环境事实由
+ * {@code HeadlessEnvironment.of(request.diagnostics())} 构造，各宿主把 {@code UiEnvironment}
+ * 作为构造参数（不提供单参构造），漏接即编译失败。</p>
+ *
+ * <p>「参数是否真的生效」是<b>运行态事实</b>（{@code --font-scale=150} 必须出一张与 100% 不同的
+ * 图），由出图验收矩阵承担（见 {@code docs/使用文档/headless出图指南.md}），不由单测的字符串比对冒充。</p>
  */
 public class HeadlessEnvironmentInjectionGuardTest {
 
@@ -52,51 +61,6 @@ public class HeadlessEnvironmentInjectionGuardTest {
                 scanned.size() >= 10);
         assertTrue("环境事实必须来自请求（HeadlessEnvironment），不得回落生产环境单例：" + offenders,
                 offenders.isEmpty());
-    }
-
-    /**
-     * 接线存在性：请求 → 环境端口 → 各页面宿主，以及请求 → runtime 的字号倍率投影。
-     *
-     * <p>这些片段一旦被删掉，功能即静默降级为「参数收下了但没用」。</p>
-     */
-    @Test
-    public void requestEnvironmentIsActuallyProjected() throws Exception {
-        String session = stripComments(source(PACKAGE_ROOT.resolve("HeadlessSession.java")));
-        assertTrue("环境必须由请求构造", session.contains("HeadlessEnvironment.of(request.diagnostics())"));
-        assertTrue("字号倍率必须投影到页面 runtime", session.contains("setFontScale(request.fontScalePercent())"));
-        assertTrue("帧采样会话必须表态请求声明的环境（否则 --debug 收下但不生效）",
-                session.contains("environment.diagnostics()"));
-        for (String name : new String[] {"ChatSceneProbeHost.java", "TextProbeHost.java", "HudSceneProbeHost.java"}) {
-            String code = stripComments(source(PACKAGE_ROOT.resolve(name)));
-            assertTrue(name + " 必须把环境作为构造依赖", code.contains("UiEnvironment environment"));
-        }
-        assertTrue("会话必须解析请求里的外观档", session.contains("HeadlessThemes.resolve(request.theme())"));
-        assertTrue("playground 页必须走完整注入构造（环境 + 外观，不得回落单参构造）",
-                session.contains("new TestPlaygroundHost(inputSource, environment, theme)"));
-
-        // 外观档是「装配期」环境量：装晚了不会让已建树的配方派生重算，只会静默出一张没换过配色的图。
-        for (String name : new String[] {"ChatSceneProbeHost.java", "HudSceneProbeHost.java"}) {
-            String code = stripComments(source(PACKAGE_ROOT.resolve(name)));
-            int install = code.indexOf("SceneThemes.install(");
-            int build = code.indexOf("buildContent(");
-            assertTrue(name + " 必须在装配期装入外观档", code.contains("SceneTheme theme") && install >= 0);
-            assertTrue(name + " 的外观档安装必须早于内容构建（否则已建树的派生仍绑在旧主题信号上）",
-                    install >= 0 && build >= 0 && install < build);
-        }
-        String request = stripComments(source(PACKAGE_ROOT.resolve("HeadlessRequest.java")));
-        assertTrue("请求必须暴露字号倍率", request.contains("public int fontScalePercent()"));
-        assertTrue("请求必须暴露诊断开关", request.contains("public boolean diagnostics()"));
-        String cli = stripComments(source(PACKAGE_ROOT.resolve("HeadlessShotMain.java")));
-        assertTrue("命令行必须把 --font-scale 接到请求", cli.contains(".fontScale(scalePercent)"));
-        assertTrue("命令行必须把 --debug 接到请求", cli.contains(".diagnostics(diagnostics)"));
-        assertTrue("命令行必须把 --theme 接到请求", cli.contains(".theme(targetTheme)"));
-        assertTrue("命令行必须把外观档接进产物命名（否则矩阵各档互相覆盖）",
-                cli.contains("\"-th\" + targetTheme"));
-        assertTrue("命令行必须把页面接进产物命名（多页面共用 --out 时必须能区分）",
-                cli.contains("\"-pg\" + pageName"));
-        assertTrue("页面相关的默认值必须按页计算（全局替换会把聊天页的演示消息集串给别的页面）",
-                cli.contains("defaultTextFor(pageName, text)")
-                        && cli.contains("defaultFramesFor(pageName, frames, framesGiven)"));
     }
 
     /** 读取 UTF-8 生产源码。 */

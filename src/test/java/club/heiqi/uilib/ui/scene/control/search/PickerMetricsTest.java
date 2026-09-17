@@ -367,45 +367,33 @@ public class PickerMetricsTest {
         assertEquals("声明 12 × 150% = 18", 18, PickerMetrics.fontSizeFor(12, 150));
         assertEquals("宿主声明 20 时面板跟随 20（不是档位基准 12）",
                 20, PickerMetrics.fontSizeFor(20, 100));
-        assertEquals("声明 6 被归一到字号下限 11", 11, PickerMetrics.fontSizeFor(6, 100));
+        // 本控件不设自有字号域：小值是使用方的选择，几何如实跟随（历史口径会把 6 抬到 11）。
+        assertEquals("声明 6 原样跟随，不抬到任何下限", 6, PickerMetrics.fontSizeFor(6, 100));
+        assertEquals("声明 30 原样跟随，不夹到任何上限", 30, PickerMetrics.fontSizeFor(30, 100));
         assertEquals("默认面板声明字号 = 标准档基准", PickerDensity.STANDARD.baseFontPx(),
                 PickerMetrics.defaultPanelDeclaredFontPx());
-        assertEquals("面板声明归一到域上限：30 → 24", PickerDensityTokens.FONT_CEIL,
-                PickerMetrics.clampPanelDeclaredFontPx(30));
-        assertEquals("面板声明归一到域下限：6 → 11", PickerDensityTokens.FONT_FLOOR,
-                PickerMetrics.clampPanelDeclaredFontPx(6));
     }
 
     /**
-     * 字体真值同源 oracle：{@code fontSizeFor} 在<b>字号域内</b>必须与渲染出口逐值相等。
+     * 字体真值同源 oracle：{@code fontSizeFor} 必须与渲染出口<b>全域逐值相等</b>（无自有域）。
      *
      * <p>渲染出口 = {@code SceneNode.effectiveFontSize()} 的
      * {@code FontSizeLimits.clampFontSize(Math.round(declared * pct/100f))}；派生侧若改取整模式
-     * （{@code Math.rint} 与 {@code Math.round} 在半值平局上不同）或改域，就会出现"文字按 17 画、
-     * 几何按 16 算"的分叉。域外（渲染值 &lt; FONT_FLOOR 或 &gt; FONT_CEIL）由本控件域夹取，
-     * 断言的是夹取结果本身。</p>
+     * （{@code Math.rint} 与 {@code Math.round} 在半值平局上不同）或叠加第二套区间，就会出现
+     * "文字按 17 画、几何按 16 算"的分叉。本控件不再有"域内才同源"的例外区间。</p>
      */
     @Test
     public void fontSizeForMatchesRendererExitInsideFontDomain() {
-        int inside = 0;
+        int samples = 0;
         for (int declared = 1; declared <= 40; declared++) {
             for (int pct = 100; pct <= 200; pct += 5) {
                 int rendered = FontSizeLimits.clampFontSize(Math.round(declared * (pct / 100f)));
-                int derived = PickerMetrics.fontSizeFor(declared, pct);
-                String tag = "declared=" + declared + " pct=" + pct;
-                if (rendered < PickerDensityTokens.FONT_FLOOR) {
-                    assertEquals(tag + " 渲染值低于控件域下限 ⇒ 夹到下限",
-                            PickerDensityTokens.FONT_FLOOR, derived);
-                } else if (rendered > PickerDensityTokens.FONT_CEIL) {
-                    assertEquals(tag + " 渲染值高于控件域上限 ⇒ 夹到上限",
-                            PickerDensityTokens.FONT_CEIL, derived);
-                } else {
-                    assertEquals(tag + " 域内必须与渲染出口逐值相等", rendered, derived);
-                    inside++;
-                }
+                assertEquals("declared=" + declared + " pct=" + pct + " 必须与渲染出口逐值相等",
+                        rendered, PickerMetrics.fontSizeFor(declared, pct));
+                samples++;
             }
         }
-        assertTrue("域内同源样本必须足够多（否则守卫空转）", inside > 100);
+        assertTrue("同源样本必须足够多（否则守卫空转）", samples > 100);
     }
 
     // ==================== A8 小盒降级 ====================
@@ -543,26 +531,25 @@ public class PickerMetricsTest {
     // ==================== 字号 0 = 显式退化（解析出口） ====================
 
     /**
-     * 字号 0 必须原样进派生链，不被夹回 {@code FONT_FLOOR}。
+     * 字号 0 必须原样进派生链，不被任何下游夹回某个下限。
      *
      * <p>审核在 f30c78e0 上指出：当时把 {@code fontSizeFor} 的 {@code rendered <= 0} 改成返回 0，
      * 但生产唯一调用方 {@code ScenePickerPanel} 直接把返回值交给 {@code derive}，而 derive/solve
-     * 各有一道 {@code clamp(.., FONT_FLOOR, ..)} 使 0 与 11 不可区分 —— 声称消除的「几何按 11px 算、
-     * 文字按 0px 画」的分叉原样保留。本用例钉住解析出口：0 原样进链、标签相关几何归零、图标仍占位
-     * （面板退化为纯图标网格），而<b>非零</b>输入照旧夹到字号域下限。</p>
+     * 各有一道夹取使 0 与 11 不可区分 —— 声称消除的「几何按 11px 算、文字按 0px 画」的分叉原样
+     * 保留。根因是「本控件自有字号域」本身，现已删除该域：派生链只保留非负前提，任何非零字号
+     * （含小于历史下限 11 的值）都原样进链。</p>
      */
     @Test
     public void zeroFontSizeDegradesLabelGeometryInsteadOfSnappingToFloor() {
         PickerMetrics zero = PickerMetrics.solve(rt, 1920, 1080, 0, null, -1);
-        PickerMetrics floor = PickerMetrics.solve(rt, 1920, 1080,
-                PickerDensityTokens.FONT_FLOOR, null, -1);
+        PickerMetrics small = PickerMetrics.solve(rt, 1920, 1080, 8, null, -1);
         assertEquals("字号 0 必须原样进派生链", 0, zero.fontSizePx());
         assertEquals("字号 0 时标签行不占高", 0, zero.grid().lineHeightPx());
         assertEquals("字号 0 时标签间距不占位", 0, zero.grid().labelGapPx());
         assertTrue("图标仍占位（面板退化为纯图标网格）", zero.grid().iconSidePx() >= 1);
-        assertTrue("标签不占高后轨道高必须低于字号下限档",
-                zero.grid().trackHeightPx() < floor.grid().trackHeightPx());
-        assertEquals("非零输入仍夹到字号域下限", PickerDensityTokens.FONT_FLOOR, floor.fontSizePx());
+        assertTrue("标签不占高后轨道高必须低于小字号档",
+                zero.grid().trackHeightPx() < small.grid().trackHeightPx());
+        assertEquals("小字号原样进派生链（不再抬到 11）", 8, small.fontSizePx());
         // 生产入口那一跳：ScenePickerPanel 走的是「fontSizeFor(声明, 倍率) → derive」两个入口，
         // 只钉 solve 不够 —— 分叉当时正是发生在 derive 自己的夹取上。
         assertEquals("倍率 0 时 fontSizeFor 与 derive 两跳都必须保持 0",

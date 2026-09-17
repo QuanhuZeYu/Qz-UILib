@@ -10,29 +10,29 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /**
- * 字号接线源码守卫（字号动态化，守卫 2）：禁则 + 必需钉。
+ * 字号接线源码守卫（字号动态化，守卫 2）：只留<b>禁则、唯一真值与机制钉</b>。
  *
- * <p>范式对齐 CharacterRuleFieldRendererThemeTest.sourceGuardWritesColorsOnlyViaThemeBindings：
- * 注释剥离后做 banned 检查，再做 required 检查与计数钉；先有正锚（必须真读到源码），负向清单才有意义。</p>
+ * <h3>为什么删掉「消费点必须调用 effectiveFontSize()」那组钉</h3>
+ * <p>那组断言（{@code SizingCalculator} / {@code ConstraintResolver} / {@code ScenePaintEngine} /
+ * {@code StructuredListFieldRenderer}）是<b>源码串快照</b>：数的是某个文件里
+ * {@code "effectiveFontSize("} 与 {@code "getFontSize()"} 的出现次数。它守的情形已经被语义消除 ——
+ * {@code SceneNode.getFontSize()} 的现状就是 {@code return effectiveFontSize();}，控制域不存在
+ * 「读到原始字号」这条路径，继续钉一个不可能发生的回归只是把实现抄进测试。同理删除两组计数钉
+ * （{@code setFontSize} 白名单处数、溢出白名单文件数）：一改实现就红的数字不构成回归防线。</p>
  *
- * <p><b>必需钉覆盖 5 处解析消费点</b>（报告 §七原写「两处读取点」，实测为 5 处）：
- * SizingCalculator:159/:489、ConstraintResolver:270、ScenePaintEngine:469/:482 —
- * 全部必须改读 effectiveFontSize()，漏一处就会出现「文字变了框没变」或「框变了字没变」。</p>
+ * <p>留下的是三类仍有真实回归风险的项：<b>禁则</b>（旧通道 {@code SceneControlTypography} 不得
+ * 回潮）、<b>唯一真值</b>（字号上限字面量只有 {@code FontSizeLimits} 一个宿主）、
+ * <b>机制钉</b>（三个对外字号入口经同一绑定器写槽且都不自建 effect —— 钉机制、不钉字面）。</p>
  */
 public class FontWiringSourceGuardTest {
 
     private static final Path CONTROL_ROOT =
             Paths.get("src/main/java/club/heiqi/uilib/ui/scene/control");
 
-    private static final Map<String, Integer> CONSUMER_FILES = consumerFiles();
-
-    private static final Map<String, Integer> ALLOWED_EXPLICIT_WRITES = allowedExplicitWrites();
-
-    /** by-design 滚动视口 / 单行短文本边界：clip+text 同现但无需槽位溢出策略（按文件登记，恰 11）。 */
+    /** by-design 滚动视口 / 单行短文本边界：clip+text 同现但无需槽位溢出策略（逐条登记理由）。 */
     private static final Map<String, String> OVERFLOW_SCROLL_WHITELIST = overflowScrollWhitelist();
 
     private static Map<String, String> overflowScrollWhitelist() {
@@ -51,98 +51,25 @@ public class FontWiringSourceGuardTest {
         return map;
     }
 
-    private static Map<String, Integer> consumerFiles() {
-        Map<String, Integer> map = new LinkedHashMap<String, Integer>();
-        map.put("src/main/java/club/heiqi/uilib/ui/scene/layout/SizingCalculator.java", Integer.valueOf(2));
-        map.put("src/main/java/club/heiqi/uilib/ui/scene/layout/ConstraintResolver.java", Integer.valueOf(1));
-        map.put("src/main/java/club/heiqi/uilib/ui/scene/paint/ScenePaintEngine.java", Integer.valueOf(2));
-        return map;
-    }
-
-    private static Map<String, Integer> allowedExplicitWrites() {
-        Map<String, Integer> map = new LinkedHashMap<String, Integer>();
-        // SceneLabel 的 root 自身就是文字叶：Props.fontSizePx 写的是「显式值」（四层真值第 1 层），
-        // 属合法语义而非兼容妥协；若收口为写 scope，此处必须同步降为 0（保留断言本体作回潮哨兵）。
-        map.put("SceneLabel.java", Integer.valueOf(1));
-        return map;
-    }
-
-    /** 必需钉：SizingCalculator 的两处文本测量必须走解析字号（:159 文本叶宽、:489 行计划基准）。 */
+    /** 禁则：控制域不得残留旧字号通道（手工接线删除后，唯一真值是字号链）。 */
     @Test
-    public void sizingCalculatorUsesResolvedFontSize() throws Exception {
-        assertConsumer("src/main/java/club/heiqi/uilib/ui/scene/layout/SizingCalculator.java");
-    }
-
-    /** 必需钉：ConstraintResolver 先验子宽路径必须走解析字号（:270，报告漏列的第 3 个消费点）。 */
-    @Test
-    public void constraintResolverUsesResolvedFontSize() throws Exception {
-        assertConsumer("src/main/java/club/heiqi/uilib/ui/scene/layout/ConstraintResolver.java");
-    }
-
-    /** 必需钉：绘制引擎 TEXT（:482）与 SEGMENTS（:469）基准字号都必须走解析字号。 */
-    @Test
-    public void scenePaintEngineUsesResolvedFontSize() throws Exception {
-        assertConsumer("src/main/java/club/heiqi/uilib/ui/scene/paint/ScenePaintEngine.java");
-    }
-
-    /** 伴随改：config 渲染器的固定外宽必须按解析字号测量（StructuredListFieldRenderer:465）。 */
-    @Test
-    public void configRendererUsesResolvedFontSize() throws Exception {
-        Path file = Paths.get("src/main/java/club/heiqi/config/ui/field/StructuredListFieldRenderer.java");
-        Assert.assertTrue("伴随改文件必须存在：" + file, Files.exists(file));
-        String code = codeWithoutComments(read(file));
-        Assert.assertEquals("StructuredListFieldRenderer 不得再读节点原始字号（:465）",
-                0, occurrences(code, "label.getFontSize()"));
-        Assert.assertTrue("StructuredListFieldRenderer 必须出现解析字号调用",
-                occurrences(code, "effectiveFontSize(") >= 1);
-    }
-
-    /** 禁则：控制域不得残留旧通道，显式 setFontSize 必须恰为白名单处数。 */
-    @Test
-    public void controlDomainHasNoManualFontWiring() throws Exception {
+    public void controlDomainHasNoLegacyTypographyChannel() throws Exception {
         int typography = 0;
-        StringBuilder offenders = new StringBuilder();
         for (Path file : controlSources()) {
-            String name = file.getFileName().toString();
-            String code = codeWithoutComments(read(file));
-            typography += occurrences(code, "SceneControlTypography");
-            int writes = occurrences(code, ".setFontSize(");
-            Integer allowed = ALLOWED_EXPLICIT_WRITES.get(name);
-            int expected = allowed == null ? 0 : allowed.intValue();
-            if (writes != expected) {
-                offenders.append(name).append("(setFontSize=").append(writes)
-                        .append(",允许=").append(expected).append(") ");
-            }
+            typography += occurrences(codeWithoutComments(read(file)), "SceneControlTypography");
         }
-        Assert.assertEquals("旧通道 SceneControlTypography 必须归零（手工接线删除后）",
+        Assert.assertEquals("旧通道 SceneControlTypography 必须归零（字号只有字号链一条真值）",
                 0, typography);
-        Assert.assertEquals("控制域显式 setFontSize 必须恰为白名单处数（新增即红）",
-                "", offenders.toString());
-    }
-
-    /** 禁则：控制域不得直接读节点原始字号（全部改读解析字号）。 */
-    @Test
-    public void controlDomainDoesNotReadRawFontSize() throws Exception {
-        StringBuilder offenders = new StringBuilder();
-        for (Path file : controlSources()) {
-            String code = codeWithoutComments(read(file));
-            int raw = occurrences(code, "getFontSize()");
-            if (raw > 0) {
-                offenders.append(file.getFileName()).append('(').append(raw).append(") ");
-            }
-        }
-        Assert.assertEquals("控制域不得读节点原始字号（改读 effectiveFontSize()）",
-                "", offenders.toString());
     }
 
     /**
-     * 计数钉（**钉机制不钉字面**）：三入口必须统一经 FontSizeBinding 写层 2 声明，且都不得自建 effect。
+     * 机制钉（<b>钉机制不钉字面</b>）：三入口必须统一经 FontSizeBinding 写层 2 声明，且都不得自建 effect。
      *
      * <p>为什么不再逐字要求 setFontScope(：现实现是 {@code FontSizeBinding.apply()} 写槽
      * （MountHandle/ScenePortalHandle 各持一个绑定器实例，ContextMenu.Handle 委托 portal），
-     * 逐字比对会把「经绑定器写槽」的合法实现误判为未接——守卫要钉的是
-     * 「每入口唯一绑定 + 不各自建 effect」这一机制，而不是某一行字面。
-     * 运行期幂等不变量由 ControlFontRuntimeGuardTest 承担（toastDefaultFontSizeTenCalls...）。</p>
+     * 逐字比对会把「经绑定器写槽」的合法实现误判为未接 —— 守卫要钉的是
+     * 「每入口唯一绑定 + 不各自建 effect」这一机制。运行期幂等不变量由
+     * {@code ControlFontRuntimeGuardTest} 承担（toastDefaultFontSizeTenCalls...）。</p>
      */
     @Test
     public void entryPointsWriteTheSingleScopeSlot() throws Exception {
@@ -173,9 +100,9 @@ public class FontWiringSourceGuardTest {
     /**
      * 溢出策略并轨（守卫 2 / improve-3 G-A）：clip 且含文本的文件必须显式声明溢出策略。
      *
-     * <p>口径（可复跑 i4_scan_overflow.py）：control/** 内 setClipChildren(true) 处 32 / 文件 21，
-     * 与 .setText( 同现 **15 文件**；其中 4 文件已有 setMaxTextWidth/setMaxLines/setEllipsis，
-     * 余 11 文件按「by-design 滚动视口 / 单行短文本边界」逐条登记白名单（**恰 11**，禁止通配）。</p>
+     * <p>白名单是「by-design 滚动视口 / 单行短文本边界」的逐条登记（每条必须写明理由、
+     * 且必须真在候选集合内）——<b>不钉数量</b>：新增边界登记是正常演进，钉死文件数只会让
+     * 合理改动撞红。</p>
      */
     @Test
     public void overflowPolicyDeclaredNextToClip() throws Exception {
@@ -194,9 +121,7 @@ public class FontWiringSourceGuardTest {
                 offenders.add(name);
             }
         }
-        Assert.assertEquals("clip+文本同现文件必须恰 15 个（处 32 / 文件 21 / 同现 15）",
-                15, seen.size());
-        Assert.assertEquals("溢出策略白名单必须恰 11 个文件", 11, OVERFLOW_SCROLL_WHITELIST.size());
+        Assert.assertFalse("扫描范围异常：控制域应当存在 clip+文本同现文件", seen.isEmpty());
         for (Map.Entry<String, String> entry : OVERFLOW_SCROLL_WHITELIST.entrySet()) {
             Assert.assertFalse("白名单必须写明理由：" + entry.getKey(),
                     entry.getValue() == null || entry.getValue().isEmpty());
@@ -225,11 +150,11 @@ public class FontWiringSourceGuardTest {
     }
 
     /**
-     * 禁则（S5 终态）：SceneToast 内字号绑定不得挂 runtime 根 Owner。
+     * 禁则：SceneToast 内字号绑定不得挂 runtime 根 Owner。
      *
-     * <p>过渡态（S2 起）的等价不变量是**行为面**的「重复设置不累积 effect」，由
-     * ControlFontRuntimeGuardTest.toastDefaultFontSizeTenCallsDoNotAccumulateEffects 常驻承担；
-     * 本方法只管终态（作用域机制消解 root 绑定后 __runRoot( 归零），两者分开登记避免 S5 误判。</p>
+     * <p>过渡态的等价不变量是<b>行为面</b>的「重复设置不累积 effect」，由
+     * {@code ControlFontRuntimeGuardTest.toastDefaultFontSizeTenCallsDoNotAccumulateEffects}
+     * 常驻承担；本方法只管终态（作用域机制消解 root 绑定后 __runRoot( 归零）。</p>
      */
     @Test
     public void toastDoesNotBindOnRuntimeRoot() throws Exception {
@@ -237,18 +162,6 @@ public class FontWiringSourceGuardTest {
                 "src/main/java/club/heiqi/uilib/ui/scene/control/SceneToast.java")));
         Assert.assertEquals("SceneToast 不得往 runtime 根 Owner 挂永久 effect",
                 0, occurrences(toast, "__runRoot("));
-    }
-
-    private static void assertConsumer(String relativePath) throws Exception {
-        Path file = Paths.get(relativePath);
-        Assert.assertTrue("消费点文件必须存在：" + relativePath, Files.exists(file));
-        String code = codeWithoutComments(read(file));
-        int expected = CONSUMER_FILES.get(relativePath).intValue();
-        int resolved = occurrences(code, "effectiveFontSize(");
-        int raw = occurrences(code, "getFontSize()");
-        Assert.assertTrue("解析字号调用点不足（期望 >= " + expected + "，实际 " + resolved + "）："
-                + file.getFileName(), resolved >= expected);
-        Assert.assertEquals("消费点不得回退到节点原始字号：" + file.getFileName(), 0, raw);
     }
 
     private static List<Path> controlSources() throws Exception {

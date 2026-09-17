@@ -2320,19 +2320,20 @@ public final class ScenePickerPanel {
      * <b>层 4a（{@code NODE_DEFAULT}）不算声明</b>：它是"某个控件给自己的回落值"，不是宿主对
      * 子树的字号要求 —— 否则宿主随手给某个祖先登记的回落值会静默改掉整个面板的字号与几何。</p>
      *
-     * <p>返回值再经 {@link PickerMetrics#clampPanelDeclaredFontPx(int)} 归一到本控件字号域，
-     * 使"写进 portal 的声明值"与"派生链的输入域"一致。</p>
+     * <p>返回值<b>不夹取到任何控件自有字号域</b>：字号边界唯一在 {@code FontSizeLimits}
+     * （{@code [0, 256]}），写进 portal 的声明值原样进入派生链 —— 面板几何与渲染文字因此
+     * 逐值同源，不存在「宿主声明 30 → 渲染 30 / 几何 24」这类分叉。
+     * 设置过小（含 0）是使用方的选择，几何如实跟随。</p>
      *
      * @param anchor 控件根（Result.root）
-     * @return 面板声明字号（未乘用户倍率；已归一到 [FONT_FLOOR, FONT_CEIL]）
+     * @return 面板声明字号（未乘用户倍率；原样，不做域夹取）
      */
     static int resolvePanelDeclaredFont(SceneNode anchor) {
         FontSource source = anchor.fontSizeSource();
-        int declared = source == FontSource.EXPLICIT || source == FontSource.SCOPE
+        return source == FontSource.EXPLICIT || source == FontSource.SCOPE
                 || source == FontSource.ENVIRONMENT
                 ? anchor.declaredFontSize()
                 : PickerMetrics.defaultPanelDeclaredFontPx();
-        return PickerMetrics.clampPanelDeclaredFontPx(declared);
     }
 
     /**

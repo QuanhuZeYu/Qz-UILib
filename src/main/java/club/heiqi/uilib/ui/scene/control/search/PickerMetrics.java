@@ -126,7 +126,7 @@ public final class PickerMetrics {
      * @param logicalWidthPx  逻辑盒宽（宿主边界已折算；&lt;1 按 1）
      * @param logicalHeightPx 逻辑盒高（宿主边界已折算；&lt;1 按 1）
      * @param panelFontSizePx 面板生效字号（{@code <=0} = 显式退化，见 {@link #resolveFontSizePx(int)}；
-     *                        正值夹取到字号域）
+     *                        负值按 0）
      * @param preference      密度偏好（null 按 {@link PickerDensityPreference#AUTO}）
      * @param membersRows     成员行数：{@code >=0} 表示有成员带（0 = 折叠提示行），{@code <0} = 无成员带
      * @return 不可变度量快照（非 null）
@@ -163,7 +163,7 @@ public final class PickerMetrics {
      * @param rt              场景运行时（非 null）
      * @param logicalWidthPx  逻辑盒宽
      * @param logicalHeightPx 逻辑盒高
-     * @param fontSizePx      生效字号（{@code <=0} = 显式退化；正值夹取到字号域）
+     * @param fontSizePx      生效字号（{@code <=0} = 显式退化；负值按 0）
      * @param preference      密度偏好
      * @param membersRows     成员行数（{@code <0} = 无成员带）
      * @return 不可变度量快照（非 null）
@@ -242,68 +242,37 @@ public final class PickerMetrics {
     // ==================== 纯派生助手（可单测、无副作用） ====================
 
     /**
-     * 面板字号解析：{@code <=0} 是<b>显式退化</b>（字号域语义「该文本不参与布局且不上屏」），
-     * 原样返回 0 送进派生链；正值才夹取到 {@code [FONT_FLOOR, FONT_CEIL]}。
+     * 面板字号解析：只保留「非负」这一数学前提（负字号在派生链里没有定义，{@code fs/3} 之类
+     * 会产出负几何），<b>本控件不设自有字号域</b>。
      *
-     * <p><b>为什么 0 不能夹回下限</b>：{@link #fontSizeFor(int, int)} 在倍率 0 时按渲染出口返回 0，
-     * 若本层再把它夹成 {@code FONT_FLOOR}（11），几何就按 11px 算而文字按 0px 画 —— 正是
-     * {@code fontSizeFor} 的 javadoc 承诺要避免的「几何/渲染分叉」。审核在 f30c78e0 上指出：
-     * 当时的分叉修复在生产路径上等于没修，因为唯一的调用方 {@code ScenePickerPanel} 把返回值直接
-     * 交给 {@link #derive}，而 {@code derive}/{@link #solve} 里各有一道夹取把 0 与 11 变得不可区分。
-     * 修在解析出口（本方法）而不是逐个下游放宽，与 {@code FontSizeLimits} 的边界口径一致。</p>
+     * <p>历史口径是把正值夹到 {@code [FONT_FLOOR=11, FONT_CEIL=24]}，副作用有两层：
+     * ① 用户把字号设成 8px 时几何按 11px 算，设定与产出不符；② 0 一路豁免而 8 被抬到 11，
+     * 同一个下限对两个小值给出不同解释。字号域的唯一边界是 {@link FontSizeLimits} 的
+     * {@code [0, 256]}，本控件不再叠加第二套区间 —— <b>设置过小是使用方的问题，几何如实跟随</b>。
+     * 审核在 f30c78e0/af52f4a4 上指出过「下游夹取让 0 与 11 不可区分」，当时的修法是逐个出口
+     * 豁免 0；根因是夹取本身，现在直接去掉。</p>
      *
-     * <p>字号域下限仍是「面板标签可读」的<b>业务</b>下限，只对真实的字号偏好生效；它不负责把
-     * 「用户把字号缩到 0」重新解释成 11px —— 那是把 0 的语义在派生层丢掉。</p>
+     * <p>本方法仍是<b>唯一</b>解析出口（{@link #derive}/{@link #solve} 共用），因此不存在
+     * 「下游某处又夹一次」的分叉面。</p>
      */
     private static int resolveFontSizePx(int fontSizePx) {
-        if (fontSizePx <= 0) {
-            return 0;
-        }
-        return clamp(fontSizePx, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
+        return Math.max(0, fontSizePx);
     }
 
     /**
-     * 字号派生：{@code clamp(round(declared * fontScalePercent/100), FONT_FLOOR, FONT_CEIL)}。
+     * 字号派生：与渲染出口 {@link FontSizeLimits#effectiveFontSizePx(int, float)} <b>同一个方法</b>。
      *
-     * <p>与 {@code SceneNode.effectiveFontSize()} 的解析出口同式（声明值 × 环境倍率，再夹取到域内）：
-     * 面板派生用的字号必须与内容根真正渲染的字号逐值相同，否则宽度/行高/间距会按一个字号算、
-     * 文字按另一个字号画（「几何 12 / 渲染 16」的分叉即 P7 遗留 L1）。</p>
+     * <p>面板派生用的字号必须与内容根真正渲染的字号逐值相同，否则宽度/行高/间距会按一个字号算、
+     * 文字按另一个字号画（「几何 12 / 渲染 16」的分叉即 P7 遗留 L1）。同源靠「调用同一个出口」
+     * 保证，而不是靠「本控件再夹一次区间」—— 后者只在区间内同源，区间外即分叉。</p>
      *
-     * @param declaredFontSizePx 面板内容根的<b>声明</b>字号（未乘倍率；&lt;1 按 1）
-     * @param fontScalePercent   用户字号倍率（百分比；&lt;1 按 1）
-     * @return 生效字号（逻辑 px）
+     * @param declaredFontSizePx 面板内容根的<b>声明</b>字号（未乘倍率；负值按 0）
+     * @param fontScalePercent   用户字号倍率（百分比；负值按 0）
+     * @return 生效字号（逻辑 px；0 = 文本不占空间且不上屏）
      */
     public static int fontSizeFor(int declaredFontSizePx, int fontScalePercent) {
-        int declared = Math.max(1, declaredFontSizePx);
-        int pct = Math.max(1, fontScalePercent);
-        // ① 先与渲染出口逐值同式：float 乘法 → Math.round → FontSizeLimits 夹取
-        //    （SceneNode.effectiveFontSize() 的解析出口；取整模式必须一致，否则半值平局会差 1px）；
-        // ② 再夹到本控件的字号域：派生链只在 [FONT_FLOOR, FONT_CEIL] 内有定义。
-        int rendered = FontSizeLimits.effectiveFontSizePx(declared, pct / 100f);
-        if (rendered <= 0) {
-            // 字号 0 = 文本不占空间（语义见 FontSizeLimits#MIN_FONT_SIZE_PX）：此处<b>不得</b>再夹到
-            // FONT_FLOOR，否则面板几何按 ≥11px 算、文字按 0px 画 —— 正是本方法 javadoc 承诺要避免的
-            // 「几何/渲染分叉」。审核在 af52f4a4 上指出了这一点，本轮补上。
-            return 0;
-        }
-        return clamp(rendered, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
-    }
-
-    /**
-     * 把面板内容根的<b>声明</b>字号夹取到本控件字号域（{@code [FONT_FLOOR, FONT_CEIL]}）。
-     *
-     * <p>写入 portal 内容根的必须是域内值：内容节点在解析出口只会按 {@link FontSizeLimits} 的
-     * {@code [1,256]} 夹取，而派生链只在 {@code [11,24]} 内有定义。不先归一会让"宿主声明 30"
-     * 这类输入产生"渲染 30 / 几何 24"的分叉；归一到域内后，任何
-     * {@code 声明值 × 倍率 ≤ FONT_CEIL} 的输入都逐值同源（超出上限的倍率组合仍由
-     * {@link #fontSizeFor} 夹到 {@code FONT_CEIL}，属已登记的域外差异）。</p>
-     *
-     * @param declaredFontSizePx 面板内容根的声明字号（未乘倍率；&lt;1 按 1）
-     * @return 域内声明字号
-     */
-    public static int clampPanelDeclaredFontPx(int declaredFontSizePx) {
-        return clamp(Math.max(1, declaredFontSizePx),
-                PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
+        return FontSizeLimits.effectiveFontSizePx(Math.max(0, declaredFontSizePx),
+                Math.max(0, fontScalePercent) / 100f);
     }
 
     /**
