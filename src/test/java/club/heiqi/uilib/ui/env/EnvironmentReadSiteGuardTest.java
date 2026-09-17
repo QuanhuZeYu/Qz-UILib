@@ -40,9 +40,15 @@ public class EnvironmentReadSiteGuardTest {
             "club/heiqi/uilib/resource/ResourceReloadService.java",
             "club/heiqi/uilib/i18n/LanguageEpochService.java"));
 
-    /** 代际读取点的两个受禁串。 */
+    /**
+     * 代际读取点的受禁串。
+     *
+     * <p>第三个是<b>静态</b>探测口（{@code currentLanguageCode} 直读客户端语言）：它不走
+     * {@code getInstance()}，只查后者的门禁会漏掉「绕过单例直接读静态探测」这条路径。</p>
+     */
     private static final String[] FORBIDDEN = {
-            "ResourceReloadService.getInstance()", "LanguageEpochService.getInstance()"};
+            "ResourceReloadService.getInstance()", "LanguageEpochService.getInstance()",
+            "LanguageEpochService.currentLanguageCode"};
 
     private static final Path SOURCE_ROOT = Paths.get("src/main/java");
 
@@ -80,9 +86,11 @@ public class EnvironmentReadSiteGuardTest {
     @Test
     public void adapterForwardsBothEpochsAndAssemblyInjectsTheEnvironment() throws Exception {
         String adapter = stripComments(source(SOURCE_ROOT.resolve(ALLOWED.get(0))));
-        assertEquals("环境适配器必须同时转发资源代际与语言代际", 2,
+        // 3 处 = 资源代际 + 语言代际 + 语言码静态探测（值读与代际读各一条，见各域「值 vs 代际」语义）
+        assertEquals("环境适配器必须转发资源代际、语言代际与语言码", 3,
                 occurrences(adapter, "ResourceReloadService.getInstance()")
-                        + occurrences(adapter, "LanguageEpochService.getInstance()"));
+                        + occurrences(adapter, "LanguageEpochService.getInstance()")
+                        + occurrences(adapter, "LanguageEpochService.currentLanguageCode"));
 
         String assembly = stripComments(source(Paths.get(
                 "src/main/java/club/heiqi/config/ui/field/SearchPickerFieldSupport.java")));
