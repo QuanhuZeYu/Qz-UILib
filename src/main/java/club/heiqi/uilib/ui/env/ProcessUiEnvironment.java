@@ -37,9 +37,13 @@ import club.heiqi.uilib.ui.reactive.Signal;
  *   <li>控件内的采样埋点：能拿到 runtime 的走 {@code rt.environment().diagnostics()}；
  *       拿不到 runtime 的由持有方构造注入诊断域（{@code PickerIconCache}）。</li>
  * </ul>
- * <p>仍未接线的读取点只剩<b>代际比对类</b>：{@code PickerIconResolver} / {@code PickerRevisionBridge}
- * 的资源代际与语言代际比对尚未改走 {@link ResourceEnvironment} / {@link LocaleEnvironment}，
- * 与诊断域无关，属独立批次。</p>
+ *   <li>代际比对类：{@code PickerIconResolver} 的资源代际、{@code PickerRevisionBridge} 的语言与资源
+ *       代际，均由装配点（{@code SearchPickerFieldSupport}，那里持有 {@code SceneRuntime}）从
+ *       {@code rt.environment()} 注入，不再直读进程单例。</li>
+ * </ul>
+ * <p>至此<b>已无遗留读取点</b>：本类是该端口在生产侧的唯一实现，任何新增直读
+ * {@code ResourceReloadService} / {@code LanguageEpochService} 的代码都会被
+ * {@code EnvironmentReadSiteGuardTest} 拦下（白名单只放本类、宿主写入口与两个服务自身）。</p>
  */
 public final class ProcessUiEnvironment implements UiEnvironment {
 

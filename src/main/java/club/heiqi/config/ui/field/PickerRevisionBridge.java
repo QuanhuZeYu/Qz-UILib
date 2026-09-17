@@ -5,8 +5,7 @@ import java.util.function.LongSupplier;
 import club.heiqi.config.ui.editor.PickerCandidateSource;
 import club.heiqi.config.ui.editor.PickerEnvironment;
 import club.heiqi.config.ui.editor.PickerSourceVersion;
-import club.heiqi.uilib.i18n.LanguageEpochService;
-import club.heiqi.uilib.resource.ResourceReloadService;
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
@@ -17,8 +16,9 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p>契约出处：{@code team/P0-ADR-契约与测量.md} §2.4（A3/A9/Z-4/S-12）。每帧两件事：</p>
  * <ol>
- *   <li><b>推</b>：读环境代际（{@link LanguageEpochService#nameEpoch()} /
- *       {@link ResourceReloadService#resourceEpoch()}，均 O(1) long 读），与桥内上次值比对；
+ *   <li><b>推</b>：读环境代际（{@link club.heiqi.uilib.ui.env.LocaleEnvironment#nameEpoch()} /
+ *       {@link club.heiqi.uilib.ui.env.ResourceEnvironment#resourceEpoch()}，均 O(1) long 读，
+ *       来自<b>构造注入的宿主环境端口</b>），与桥内上次值比对；
  *       <b>有变化才</b>调 {@link PickerCandidateSource#onEnvironmentChanged(long, long)}
  *       （主线程、同步、无分配）。环境代际只经此通道下行——候选源不轮询、不自注册 reload listener；</li>
  *   <li><b>拉</b>：读 {@link PickerCandidateSource#version()} 三段，与上次发布值比对，
@@ -74,15 +74,24 @@ public final class PickerRevisionBridge {
     }
 
     /**
-     * 生产形态：环境代际取两个进程单例，分级代际取分级表。
+     * 生产形态：环境代际取宿主环境端口的两个域，分级代际取分级表。
      *
-     * @param source 候选源
+     * <p>环境由装配点传入而非在此直读进程单例：直读会让本桥在 headless 出图 / 测试里无法替换环境
+     * 事实（配置界面在无头进程里同样会装配到本桥）。端口缺席值与「未安装语言 / 资源服务」逐位等价
+     * （{@code nameEpoch}=0、{@code resourceEpoch}=0），故生产行为不变。</p>
+     *
+     * @param source      候选源
+     * @param environment 宿主环境端口（不可为 null；无环境事实传 {@link UiEnvironment#empty()}）
      * @return 桥
      */
-    public static PickerRevisionBridge forSource(PickerCandidateSource source) {
+    public static PickerRevisionBridge forSource(PickerCandidateSource source, UiEnvironment environment) {
+        if (environment == null) {
+            throw new IllegalArgumentException("environment must not be null；"
+                    + "无环境事实请传 UiEnvironment.empty()");
+        }
         return new PickerRevisionBridge(source,
-                LanguageEpochService.getInstance()::nameEpoch,
-                ResourceReloadService.getInstance()::resourceEpoch,
+                environment.locale()::nameEpoch,
+                environment.resources()::resourceEpoch,
                 ItemRenderTierRegistry::tierGeneration);
     }
 

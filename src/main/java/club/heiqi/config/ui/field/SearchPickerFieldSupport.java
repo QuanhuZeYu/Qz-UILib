@@ -443,7 +443,7 @@ public final class SearchPickerFieldSupport {
      * 否则原样使用 provider 自己的适配器；缓存释放挂到当前 Owner 作用域（屏级释放链）。
      */
     private static club.heiqi.config.ui.editor.VisualAdapter visualAdapterOf(SceneRuntime rt, ValueEditorProvider provider) {
-        PickerIconResolver resolver = PickerIconResolver.of(provider);
+        PickerIconResolver resolver = PickerIconResolver.of(provider, rt.environment().resources());
         if (resolver == null) {
             return provider.visualAdapter();
         }
@@ -517,7 +517,7 @@ public final class SearchPickerFieldSupport {
         if (source == null) {
             return;
         }
-        PickerRevisionBridge bridge = PickerRevisionBridge.forSource(source);
+        PickerRevisionBridge bridge = PickerRevisionBridge.forSource(source, rt.environment());
         bridge.bindTo(rt);
         Computed<PickerQuery> sourceQuery = Computed.create(() -> queryFor(query.get(), categoryState));
         builder.candidateSource(source, sourceQuery, bridge.versionSignal());

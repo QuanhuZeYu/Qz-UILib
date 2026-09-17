@@ -770,6 +770,31 @@ x=254、文字画到 298（溢出 44px）；两条短消息内边距恒为 10~11
 **可复用教训**：跨提交对拍时，**基线必须与本次同一条命令**。「批量第 N 档」与「单跑」是两条命令，
 把它们当成同一口径会既误报又漏报 —— 本次正是靠这条不一致才发现缺口。
 
+### F32 环境读取点接线收口：代际比对改走端口（2026-09-18）
+
+**背景**：F22 落环境面时列出「仍未接线的读取点只剩**代际比对类**」—— `PickerIconResolver` 的资源代际、
+`PickerRevisionBridge` 的资源与语言代际，共三处直读进程单例。后果：headless 出图与测试无法替换这些
+环境事实，而「换代际 → 缓存失效」这条链在无头进程里只能读到真实进程状态。
+
+**关键前提**：两个适配器的装配点（`SearchPickerFieldSupport.visualAdapterOf` / `wireRevisionAndQuery`）
+**都持有 `SceneRuntime`** ⇒ 环境可达 ⇒ 正解是构造注入端口，而不是给单例加测试口。
+
+**修法**：
+
+- `PickerIconResolver` 构造加 `ResourceEnvironment`（保留便捷二参构造委托缺席态，与 `PickerIconCache`
+  同形态）；`of(provider)` → `of(provider, resources)`，单参删除使装配点**编译期**强制给环境；
+- `PickerRevisionBridge.forSource(source)` → `forSource(source, UiEnvironment)`（语言域与资源域各自取）；
+- `ProcessUiEnvironment` 的「接线进度」段由「剩代际比对类」改为「已无遗留读取点」。
+
+**顺带的测试收益**：`PickerIconResolverTest` 的资源代际失效用例原本靠
+`ResourceReloadService.getInstance().onResourceManagerReload(null)` 驱动、并在 setUp/tearDown 反复复位
+进程单例；改用注入的假环境后**不再触碰全局状态**，用例本身也更强（直接驱动代际）。
+
+**门禁**：新增 `EnvironmentReadSiteGuardTest` —— 生产源码中 `ResourceReloadService.getInstance()` /
+`LanguageEpochService.getInstance()` 只允许环境适配器、宿主写入口（`ClientProxy`）与两个服务自身；
+带正锚（适配器必须转发两个代际 + 装配点必须真的把环境注进去）。首跑即抓到白名单路径写错
+（`ClientProxy` 在 `club/heiqi/uilib/` 而非 `client/` 子包）—— 门禁在工作的直接证据。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**

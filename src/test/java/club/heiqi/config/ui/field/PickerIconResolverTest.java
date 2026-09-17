@@ -13,7 +13,7 @@ import club.heiqi.config.ui.editor.PickerIconSource;
 import club.heiqi.config.ui.editor.SearchPickerData;
 import club.heiqi.config.ui.editor.ValueEditorProvider;
 import club.heiqi.config.ui.editor.VisualAdapter;
-import club.heiqi.uilib.resource.ResourceReloadService;
+import club.heiqi.uilib.ui.env.ResourceEnvironment;
 import club.heiqi.uilib.ui.scene.control.search.PickerIconKey;
 import club.heiqi.uilib.ui.scene.image.ItemRenderTierRegistry;
 import club.heiqi.uilib.ui.scene.image.SceneImageSource;
@@ -28,14 +28,12 @@ public class PickerIconResolverTest {
     @Before
     public void setUp() {
         ItemRenderTierRegistry.resetForTests();
-        ResourceReloadService.getInstance().__resetForTests();
         PickerSourceGuard.__resetForTests();
     }
 
     @After
     public void tearDown() {
         ItemRenderTierRegistry.resetForTests();
-        ResourceReloadService.getInstance().__resetForTests();
         PickerSourceGuard.__resetForTests();
     }
 
@@ -60,17 +58,40 @@ public class PickerIconResolverTest {
         Assert.assertSame("变体图标本阶段委托（无候选上下文）", delegate.variantImage, resolver.variantImage(variant("3")));
     }
 
-    /** 资源代际变化：取图标时清空缓存（按 key 重取）。 */
+    /**
+     * 资源代际变化：取图标时清空缓存（按 key 重取）。
+     *
+     * <p>代际来自<b>注入的环境端口</b>（不再是进程单例）：测试因此能直接驱动代际，既不必复位全局
+     * 单例、也不受同 JVM 其它测试影响。生产侧同一条路径由 {@code SearchPickerFieldSupport} 从
+     * {@code rt.environment()} 注入。</p>
+     */
     @Test
     public void resourceEpochChangeClearsCache() {
-        PickerIconResolver resolver = new PickerIconResolver(new DelegateAdapter(), new CountingIconSource());
+        FakeResources resources = new FakeResources();
+        PickerIconResolver resolver = new PickerIconResolver(new DelegateAdapter(), new CountingIconSource(),
+                resources);
         resolver.candidateImage(candidate("a"));
         Assert.assertEquals(1, resolver.cache().candidateSize());
 
-        ResourceReloadService.getInstance().onResourceManagerReload(null);
+        resources.bump();
         resolver.candidateImage(candidate("a"));
         Assert.assertEquals("失效后只保留本次重取的条目", 1, resolver.cache().candidateSize());
         Assert.assertEquals("重取发生（created=2）", 2, resolver.cache().createdCount());
+    }
+
+    /** 受控资源代际环境：本测试不再需要碰进程单例。 */
+    private static final class FakeResources implements ResourceEnvironment {
+
+        private long epoch;
+
+        @Override
+        public long resourceEpoch() {
+            return epoch;
+        }
+
+        void bump() {
+            epoch++;
+        }
     }
 
     /**
@@ -130,9 +151,11 @@ public class PickerIconResolverTest {
     /** 未实现 SPI 或无图标源时 of() 返回 null（保持原适配器，零行为变化）。 */
     @Test
     public void ofReturnsNullWithoutIconSource() {
-        Assert.assertNull("未实现 SPI", PickerIconResolver.of(legacyProvider()));
-        Assert.assertNull("实现 SPI 但无图标源", PickerIconResolver.of(spiProvider(null)));
-        Assert.assertNotNull("实现 SPI 且给出图标源", PickerIconResolver.of(spiProvider(new CountingIconSource())));
+        Assert.assertNull("未实现 SPI", PickerIconResolver.of(legacyProvider(), ResourceEnvironment.EMPTY));
+        Assert.assertNull("实现 SPI 但无图标源",
+                PickerIconResolver.of(spiProvider(null), ResourceEnvironment.EMPTY));
+        Assert.assertNotNull("实现 SPI 且给出图标源",
+                PickerIconResolver.of(spiProvider(new CountingIconSource()), ResourceEnvironment.EMPTY));
     }
 
     // ==================== 夹具 ====================
