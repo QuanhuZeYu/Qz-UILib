@@ -103,23 +103,35 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
      * @param input 平台输入源，可为 null（headless 测试退化模式）
      */
     public TestPlaygroundHost(PlatformInputSource input) {
-        this(input, club.heiqi.uilib.ui.scene.host.SceneHostAssembly.defaultEnvironment());
+        this(input, club.heiqi.uilib.ui.scene.host.SceneHostAssembly.defaultEnvironment(), null);
     }
 
     /**
-     * 创建测试场地宿主（环境可注入）。
-     *
-     * <p>只关心环境的调用方（headless 出图矩阵注入请求级诊断域）用它，避免连带表态度量端口。
-     * 与 {@code AbstractSceneHostWidget} 的环境可注入构造同口径。</p>
+     * 创建测试场地宿主（环境可注入，外观取宿主默认）。
      *
      * @param input 平台输入源，可为 null（headless 测试退化模式）
      * @param environment 宿主环境端口，不可为 null
      */
     public TestPlaygroundHost(PlatformInputSource input, UiEnvironment environment) {
+        this(input, environment, null);
+    }
+
+    /**
+     * 创建测试场地宿主（环境与初始外观都可注入）。
+     *
+     * <p>外观参数只能走构造：{@link SceneThemes#install} 的重复安装只影响此后构建的控件，
+     * 换信号对象不会让已建树的部分重算，故它必须在建树之前确定（见 headless 侧的
+     * {@code HeadlessThemes}）。</p>
+     *
+     * @param input 平台输入源，可为 null（headless 测试退化模式）
+     * @param environment 宿主环境端口，不可为 null
+     * @param theme 初始外观档；{@code null} = 宿主默认（{@link SceneThemes#DEFAULT}）
+     */
+    public TestPlaygroundHost(PlatformInputSource input, UiEnvironment environment, SceneTheme theme) {
         super(input, environment);
         this.pages = PlaygroundPageRegistry.defaultPages();
         this.activePageSignal = Signal.create(Integer.valueOf(0));
-        this.themeSignal = Signal.create(SceneThemes.DEFAULT);
+        this.themeSignal = Signal.create(theme == null ? SceneThemes.DEFAULT : theme);
         runtime.__enableMotion();
         // 主题来源先于建树安装：外壳与页面都从 runtime 根作用域继承同一份主题信号。
         SceneThemes.install(runtime, themeSignal);

@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 
 /**
  * headless 会话：一次装配 → 多次推进 → 多次出图，并独占 GL 资源生命周期。
@@ -124,6 +125,10 @@ public final class HeadlessSession implements AutoCloseable {
      * （{@link club.heiqi.uilib.ui.scene.host.SceneHostWindow}：无输入、内容空即隐）。
      * 会话只驱动渲染面，不假定宿主内部形态。</p>
      *
+     * <p>外观档同属装配期环境量：它必须早于内容构建安装（控件的配方派生在构建期捕获主题信号对象），
+     * 故在这里解析一次、逐个交给页面宿主的构造。{@code text-probe} 不接收外观档——它的前景色是写死的
+     * 固定值，装主题对它没有任何影响，收了也是空参数。</p>
+     *
      * @param request 请求
      * @param inputSource 输入源（脚本已编译进设备）
      * @param environment 请求声明的环境端口；每个页面宿主都按构造依赖接收，不得回落生产单例
@@ -131,8 +136,9 @@ public final class HeadlessSession implements AutoCloseable {
      */
     private static HostBinding createHost(HeadlessRequest request, HeadlessInputSource inputSource,
             UiEnvironment environment) {
+        SceneTheme theme = HeadlessThemes.resolve(request.theme());
         if ("playground".equals(request.pageId())) {
-            TestPlaygroundHost playgroundHost = new TestPlaygroundHost(inputSource, environment);
+            TestPlaygroundHost playgroundHost = new TestPlaygroundHost(inputSource, environment, theme);
             if (request.pageIndex() >= 0) {
                 // 确定性切页：走宿主 signal 通道（与用户点击导航同源），不依赖命中坐标。
                 playgroundHost.showPage(request.pageIndex());
@@ -147,14 +153,14 @@ public final class HeadlessSession implements AutoCloseable {
         if (HeadlessRequest.CHAT_PAGE.equals(request.pageId())) {
             ChatSceneProbeHost chatProbe = new ChatSceneProbeHost(request.width(), request.height(),
                     ChatSceneProbeHost.splitMessages(request.text()), inputSource, request.clockMillis(),
-                    environment);
+                    environment, theme);
             return new HostBinding(chatProbe, chatProbe.runtime());
         }
 
         if (HeadlessRequest.HUD_PAGE.equals(request.pageId())) {
             HudSceneProbeHost hudProbe = new HudSceneProbeHost(request.width(), request.height(),
                     ChatSceneProbeHost.splitMessages(request.text()), request.pageIndex(),
-                    request.clockMillis(), environment);
+                    request.clockMillis(), environment, theme);
             return new HostBinding(hudProbe, hudProbe.runtime());
         }
 

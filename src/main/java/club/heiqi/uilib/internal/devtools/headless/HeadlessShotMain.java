@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * qz-shot.bat --page=playground --actions="move 315 88; frame; click; wait 4"
  * qz-shot.bat --page=chat --sizes=640x360,1280x720,2560x1440 --out=out/chat.png
  * qz-shot.bat --page=chat --size=1280x720 --font-scales=100,150,200 --out=out/chat.png
+ * qz-shot.bat --page=chat --themes=liquid-glass-dark,liquid-glass-light --out=out/theme.png
  * qz-shot.bat --page=hud --size=1920x1080 --debug
  * </pre>
 
@@ -76,6 +77,8 @@ public final class HeadlessShotMain {
         long clockMillis = HeadlessRequest.DEFAULT_CLOCK_MILLIS;
         int fontScalePercent = SceneRuntime.FONT_SCALE_NONE_PERCENT;
         String fontScales = null;
+        String theme = null;
+        String themes = null;
         boolean diagnostics = false;
         boolean probeOnly = false;
         boolean framesGiven = false;
@@ -115,6 +118,10 @@ public final class HeadlessShotMain {
                     int[] parsed = parseSize(arg.substring("--size=".length()));
                     width = parsed[0];
                     height = parsed[1];
+                } else if (arg.startsWith("--themes=")) {
+                    themes = arg.substring("--themes=".length());
+                } else if (arg.startsWith("--theme=")) {
+                    theme = arg.substring("--theme=".length());
                 } else if (arg.startsWith("--font-scales=")) {
                     fontScales = arg.substring("--font-scales=".length());
                 } else if (arg.startsWith("--font-scale=")) {
@@ -150,6 +157,7 @@ public final class HeadlessShotMain {
         List<Integer> pageTargets = new ArrayList<Integer>();
         List<int[]> sizeTargets = new ArrayList<int[]>();
         List<Integer> fontScaleTargets = new ArrayList<Integer>();
+        List<String> themeTargets = new ArrayList<String>();
         try {
             if (pageIndexesArg == null || pageIndexesArg.trim().isEmpty()) {
                 pageTargets.add(Integer.valueOf(pageIndex));
@@ -172,64 +180,75 @@ public final class HeadlessShotMain {
                     fontScaleTargets.add(Integer.valueOf(part.trim()));
                 }
             }
+            // 主题档允许 null（= 不干预，各页面用自己生产装配的默认），故用「空串即缺省」表达。
+            if (themes == null || themes.trim().isEmpty()) {
+                themeTargets.add(theme);
+            } else {
+                for (String part : themes.split(",")) {
+                    String name = part.trim();
+                    themeTargets.add(name.isEmpty() ? null : name);
+                }
+            }
         } catch (RuntimeException e) {
             System.err.println("[headless] 批量参数非法：" + e.getMessage());
             return 2;
         }
 
-        int total = pageTargets.size() * sizeTargets.size() * fontScaleTargets.size();
+        int total = pageTargets.size() * sizeTargets.size() * fontScaleTargets.size() * themeTargets.size();
         boolean multi = total > 1;
         int okCount = 0;
         int failedCount = 0;
         int environmentFailures = 0;
         List<String> labels = new ArrayList<String>();
         for (Integer targetPageIndex : pageTargets) {
-            for (Integer targetFontScale : fontScaleTargets) {
-                for (int[] size : sizeTargets) {
-                    int scalePercent = targetFontScale.intValue();
-                    Path output = resolveOutput(out, page, targetPageIndex.intValue(), scalePercent, size[0],
-                            size[1], multi);
-                    HeadlessRequest request;
-                    try {
-                        request = HeadlessRequest.builder().page(page).pageIndex(targetPageIndex.intValue())
-                                .size(size[0], size[1]).frames(frames).background(background).text(text)
-                                .script(script).settle(settle).maxFrames(maxFrames).clock(clockMillis)
-                                .fontScale(scalePercent).diagnostics(diagnostics)
-                                .output(output).build();
-                    } catch (RuntimeException e) {
-                        System.err.println("[headless] 请求非法：" + e.getMessage());
-                        return 2;
-                    }
+            for (String targetTheme : themeTargets) {
+                for (Integer targetFontScale : fontScaleTargets) {
+                    for (int[] size : sizeTargets) {
+                        int scalePercent = targetFontScale.intValue();
+                        Path output = resolveOutput(out, page, targetPageIndex.intValue(), targetTheme,
+                                scalePercent, size[0], size[1], multi);
+                        HeadlessRequest request;
+                        try {
+                            request = HeadlessRequest.builder().page(page).pageIndex(targetPageIndex.intValue())
+                                    .size(size[0], size[1]).frames(frames).background(background).text(text)
+                                    .script(script).settle(settle).maxFrames(maxFrames).clock(clockMillis)
+                                    .fontScale(scalePercent).diagnostics(diagnostics).theme(targetTheme)
+                                    .output(output).build();
+                        } catch (RuntimeException e) {
+                            System.err.println("[headless] 请求非法：" + e.getMessage());
+                            return 2;
+                        }
 
-                    if (probeOnly) {
+                        if (probeOnly) {
+                            try (HeadlessSession session = HeadlessSession.open(request)) {
+                                System.out.println("[headless] capabilities: " + session.capabilities().summary());
+                            } catch (HeadlessFailure failure) {
+                                failure.printDiagnosis(System.err);
+                                return 3;
+                            }
+                            return 0;
+                        }
+
+                        boolean ok;
                         try (HeadlessSession session = HeadlessSession.open(request)) {
-                            System.out.println("[headless] capabilities: " + session.capabilities().summary());
+                            HeadlessArtifact artifact = session.capture();
+                            System.out.println(artifact.describe());
+                            ok = artifact.selfCheck().ok();
                         } catch (HeadlessFailure failure) {
                             failure.printDiagnosis(System.err);
-                            return 3;
+                            // 环境 / 上下文 / 装配 / 帧 / 读回 / 编码失败属于「设施没能出图」，与「图出来了但内容可疑」分开报，
+                            // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」。
+                            environmentFailures++;
+                            ok = false;
                         }
-                        return 0;
+                        if (ok) {
+                            okCount++;
+                        } else {
+                            failedCount++;
+                        }
+                        labels.add(labelOf(page, targetPageIndex.intValue(), targetTheme, scalePercent,
+                                size[0], size[1]) + "=" + (ok ? "ok" : "FAILED"));
                     }
-
-                    boolean ok;
-                    try (HeadlessSession session = HeadlessSession.open(request)) {
-                        HeadlessArtifact artifact = session.capture();
-                        System.out.println(artifact.describe());
-                        ok = artifact.selfCheck().ok();
-                    } catch (HeadlessFailure failure) {
-                        failure.printDiagnosis(System.err);
-                        // 环境 / 上下文 / 装配 / 帧 / 读回 / 编码失败属于「设施没能出图」，与「图出来了但内容可疑」分开报，
-                        // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」。
-                        environmentFailures++;
-                        ok = false;
-                    }
-                    if (ok) {
-                        okCount++;
-                    } else {
-                        failedCount++;
-                    }
-                    labels.add(labelOf(page, targetPageIndex.intValue(), scalePercent, size[0], size[1])
-                            + "=" + (ok ? "ok" : "FAILED"));
                 }
             }
         }
@@ -244,19 +263,22 @@ public final class HeadlessShotMain {
     }
 
     /**
-     * 汇总行标签：页 + 尺寸，非默认字号倍率时补一段。
+     * 汇总行标签：页 + 尺寸，偏离缺省的环境维度补一段。
      *
      * @param page 页面标识
      * @param pageIndex 页下标；-1 表示不指定
+     * @param theme 外观档名；{@code null} 表示不干预（不显示）
      * @param fontScalePercent 字号缩放百分比；缺省水位不显示，避免逐条汇总被重复信息淹没
      * @param width 宽
      * @param height 高
      * @return 标签
      */
-    private static String labelOf(String page, int pageIndex, int fontScalePercent, int width, int height) {
+    private static String labelOf(String page, int pageIndex, String theme, int fontScalePercent, int width,
+            int height) {
         return (pageIndex >= 0 ? page + "#" + pageIndex : page) + "@" + width + "x" + height
                 + (fontScalePercent == SceneRuntime.FONT_SCALE_NONE_PERCENT ? ""
-                        : " fs" + fontScalePercent + "%");
+                        : " fs" + fontScalePercent + "%")
+                + (theme == null ? "" : " theme=" + theme);
     }
 
     /**
@@ -283,15 +305,17 @@ public final class HeadlessShotMain {
      * @param out       命令行给出的输出路径；null 表示用默认路径
      * @param page      页面标识
      * @param pageIndex 页下标；-1 表示不指定
+     * @param theme     外观档名；{@code null} 表示不干预（不进后缀）
      * @param fontScalePercent 字号缩放百分比
      * @param width     宽
      * @param height    高
      * @param multi     是否批量
      * @return 目标路径
      */
-    private static Path resolveOutput(String out, String page, int pageIndex, int fontScalePercent, int width,
-            int height, boolean multi) {
+    private static Path resolveOutput(String out, String page, int pageIndex, String theme,
+            int fontScalePercent, int width, int height, boolean multi) {
         String suffix = (pageIndex >= 0 ? "-p" + pageIndex : "")
+                + (theme == null ? "" : "-th" + theme)
                 + (fontScalePercent == SceneRuntime.FONT_SCALE_NONE_PERCENT ? "" : "-fs" + fontScalePercent)
                 + "-" + width + "x" + height;
         if (out == null) {
@@ -347,6 +371,8 @@ public final class HeadlessShotMain {
                 + " [--size=WxH | --sizes=WxH,WxH,…] [--out=path] [--frames=N] [--settle=N] [--max-frames=N]"
                 + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file]"
                 + " [--clock=epochMillis]"
-                + " [--font-scale=P | --font-scales=P,P,…] [--debug] [--probe]");
+                + " [--theme=NAME | --themes=NAME,…] [--font-scale=P | --font-scales=P,P,…] [--debug]"
+                + " [--probe]");
+        out.println("主题档: " + HeadlessThemes.names() + "（不给 = 各页面用自己的默认外观）");
     }
 }

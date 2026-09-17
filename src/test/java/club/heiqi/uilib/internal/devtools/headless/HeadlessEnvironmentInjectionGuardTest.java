@@ -66,12 +66,22 @@ public class HeadlessEnvironmentInjectionGuardTest {
         assertTrue("字号倍率必须投影到页面 runtime", session.contains("setFontScale(request.fontScalePercent())"));
         assertTrue("帧采样会话必须表态请求声明的环境（否则 --debug 收下但不生效）",
                 session.contains("environment.diagnostics()"));
-        assertTrue("playground 页必须走环境可注入构造（不得回落单参构造）",
-                session.contains("new TestPlaygroundHost(inputSource, environment)"));
-
         for (String name : new String[] {"ChatSceneProbeHost.java", "TextProbeHost.java", "HudSceneProbeHost.java"}) {
             String code = stripComments(source(PACKAGE_ROOT.resolve(name)));
             assertTrue(name + " 必须把环境作为构造依赖", code.contains("UiEnvironment environment"));
+        }
+        assertTrue("会话必须解析请求里的外观档", session.contains("HeadlessThemes.resolve(request.theme())"));
+        assertTrue("playground 页必须走完整注入构造（环境 + 外观，不得回落单参构造）",
+                session.contains("new TestPlaygroundHost(inputSource, environment, theme)"));
+
+        // 外观档是「装配期」环境量：装晚了不会让已建树的配方派生重算，只会静默出一张没换过配色的图。
+        for (String name : new String[] {"ChatSceneProbeHost.java", "HudSceneProbeHost.java"}) {
+            String code = stripComments(source(PACKAGE_ROOT.resolve(name)));
+            int install = code.indexOf("SceneThemes.install(");
+            int build = code.indexOf("buildContent(");
+            assertTrue(name + " 必须在装配期装入外观档", code.contains("SceneTheme theme") && install >= 0);
+            assertTrue(name + " 的外观档安装必须早于内容构建（否则已建树的派生仍绑在旧主题信号上）",
+                    install >= 0 && build >= 0 && install < build);
         }
         String request = stripComments(source(PACKAGE_ROOT.resolve("HeadlessRequest.java")));
         assertTrue("请求必须暴露字号倍率", request.contains("public int fontScalePercent()"));
@@ -79,6 +89,9 @@ public class HeadlessEnvironmentInjectionGuardTest {
         String cli = stripComments(source(PACKAGE_ROOT.resolve("HeadlessShotMain.java")));
         assertTrue("命令行必须把 --font-scale 接到请求", cli.contains(".fontScale(scalePercent)"));
         assertTrue("命令行必须把 --debug 接到请求", cli.contains(".diagnostics(diagnostics)"));
+        assertTrue("命令行必须把 --theme 接到请求", cli.contains(".theme(targetTheme)"));
+        assertTrue("命令行必须把外观档接进产物命名（否则矩阵各档互相覆盖）",
+                cli.contains("\"-th\" + theme"));
     }
 
     /** 读取 UTF-8 生产源码。 */

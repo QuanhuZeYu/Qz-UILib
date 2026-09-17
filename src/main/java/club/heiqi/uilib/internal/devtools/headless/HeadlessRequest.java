@@ -23,11 +23,12 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  * {@link #DEFAULT_CLOCK_MILLIS}。</p>
  *
  * <p><b>环境事实也是请求事实</b>：字号倍率（{@link #fontScalePercent()}，经
- * {@link SceneRuntime#setFontScale(int)} 投影到 runtime）与诊断采样开关（{@link #diagnostics()}，
- * 经 {@code HeadlessEnvironment} 投影到装配用的环境端口）同样由请求声明。二者此前无入口：字号倍率
- * 恒为不缩放、诊断开关恒取生产配置 —— 于是「同一命令在不同机器/配置下出图不同」，
- * 「不开游戏就没法看一帧花在哪」都无从解决。缺省值取各自的中性水位（不缩放 / 不采样），
- * 与「未声明」逐位等价。</p>
+ * {@link SceneRuntime#setFontScale(int)} 投影到 runtime）、诊断采样开关（{@link #diagnostics()}，
+ * 经 {@code HeadlessEnvironment} 投影到装配用的环境端口）与外观档（{@link #theme()}，
+ * 经 {@code SceneThemes.install} 在<b>装配期</b>装到页面 runtime）同样由请求声明。三者此前无入口：
+ * 字号倍率恒为不缩放、诊断开关恒取生产配置、外观恒取库默认 —— 于是「同一命令在不同机器/配置下出图
+ * 不同」与「不开游戏就没法看一帧花在哪/换个配色长什么样」都无从解决。缺省值取各自的中性水位
+ * （不缩放 / 不采样 / 不干预），与「未声明」逐位等价。</p>
  */
 public final class HeadlessRequest {
 
@@ -89,11 +90,12 @@ public final class HeadlessRequest {
     private final long clockMillis;
     private final int fontScalePercent;
     private final boolean diagnostics;
+    private final String theme;
     private final Path output;
 
     private HeadlessRequest(String pageId, int pageIndex, int width, int height, int frames, int settleFrames, int maxFrames,
             int background, String text, String script, long clockMillis, int fontScalePercent, boolean diagnostics,
-            Path output) {
+            String theme, Path output) {
         this.pageId = pageId;
         this.pageIndex = pageIndex;
         this.width = width;
@@ -107,6 +109,7 @@ public final class HeadlessRequest {
         this.clockMillis = clockMillis;
         this.fontScalePercent = fontScalePercent;
         this.diagnostics = diagnostics;
+        this.theme = theme;
         this.output = output;
     }
 
@@ -199,6 +202,18 @@ public final class HeadlessRequest {
         return diagnostics;
     }
 
+    /**
+     * 外观档名；{@code null} = 不干预（各页面维持自己生产装配的默认主题）。
+     *
+     * <p>合法档名清单与「为什么主题必须在装配期安装」见 {@code HeadlessThemes}。取字符串而非
+     * {@code SceneTheme} 值对象：请求是数据，不该为了一个档名把外观值对象拉进它的依赖面。</p>
+     *
+     * @return 档名或 {@code null}
+     */
+    public String theme() {
+        return theme;
+    }
+
     /** @return PNG 产物路径 */
     public Path output() {
         return output;
@@ -213,6 +228,7 @@ public final class HeadlessRequest {
                 + " clock=" + clockMillis
                 + " fontScale=" + fontScalePercent + "%"
                 + " debug=" + diagnostics
+                + " theme=" + (theme == null ? "(page default)" : theme)
                 + (TEXT_PROBE_PAGE.equals(pageId) ? " text=\"" + text + "\"" : "")
                 + " out=" + output;
     }
@@ -233,6 +249,7 @@ public final class HeadlessRequest {
         private long clockMillis = DEFAULT_CLOCK_MILLIS;
         private int fontScalePercent = SceneRuntime.FONT_SCALE_NONE_PERCENT;
         private boolean diagnostics;
+        private String theme;
         private Path output = Paths.get("build", "reports", "headless", "shot.png");
 
         private Builder() {
@@ -315,6 +332,15 @@ public final class HeadlessRequest {
             return this;
         }
 
+        /**
+         * @param value 外观档名；{@code null} = 不干预（各页面用自己的默认主题）
+         * @return this
+         */
+        public Builder theme(String value) {
+            this.theme = value;
+            return this;
+        }
+
         /** @param value PNG 路径 * @return this */
         public Builder output(Path value) {
             this.output = value;
@@ -350,10 +376,12 @@ public final class HeadlessRequest {
                         + "（合法区间 " + SceneRuntime.FONT_SCALE_MIN_PERCENT + "~"
                         + SceneRuntime.FONT_SCALE_MAX_PERCENT + "）");
             }
+            // 档名合法性在请求构建期收口（参数错误 → 退出码 2），不等装配期才发现。
+            HeadlessThemes.requireValid(theme);
             return new HeadlessRequest(pageId, pageIndex, width, height, frames, settleFrames, maxFrames,
                     background,
                     text == null ? "" : text, script == null ? "" : script, clockMillis, fontScalePercent,
-                    diagnostics, output);
+                    diagnostics, theme, output);
         }
     }
 }

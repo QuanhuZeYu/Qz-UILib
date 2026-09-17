@@ -5,6 +5,7 @@ import java.util.List;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
@@ -14,6 +15,8 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * HUD 页探针宿主：用<b>生产 HUD 宿主装配</b>（{@link SceneHostWindow}）在无游戏进程里出图。
@@ -65,9 +68,12 @@ final class HudSceneProbeHost implements UiSurface {
      * @param anchorIndex 锚点下标（0 左上 / 1 右上 / 2 左下 / 3 右下；越界按左下）
      * @param clockMillis 虚拟墙钟基准（epoch 毫秒）；同时作为消息到达时刻与帧时钟起点
      * @param environment 宿主环境端口（请求声明的环境事实），经 {@link SceneHostWindow} 传给其自建 runtime
+     * @param theme      外观档；{@code null} = 不干预。本页的 runtime 归 {@link SceneHostWindow} 自建，
+     *                   故安装点只能落在内容工厂回调里 —— 它在 runtime 建好后、建内容前执行，
+     *                   正好是「装配期、建树前」这个唯一合法时机
      */
     HudSceneProbeHost(int width, int height, List<String> messages, int anchorIndex, long clockMillis,
-            UiEnvironment environment) {
+            UiEnvironment environment, SceneTheme theme) {
         this.controller = new ChatSceneController(ChatSceneController.uiLibMeasure(),
                 new ChatSceneController.SelfNameProvider() {
                     @Override
@@ -86,7 +92,12 @@ final class HudSceneProbeHost implements UiSurface {
         // headless 无注册表 → 内容直通（装饰层装配路径由 SceneHostWindowTest 覆盖）。
         this.window = new SceneHostWindow(SceneHostAssembly.defaultMeasurer(),
                 environment, SceneHostWindow.Shell.HUD_DEFAULT,
-                rt -> controller.buildContent(rt), null, null);
+                rt -> {
+                    if (theme != null) {
+                        SceneThemes.install(rt, Signal.create(theme));
+                    }
+                    return controller.buildContent(rt);
+                }, null, null);
         // 帧时钟起点 = 消息到达时刻（理由见 clockMillis 字段 javadoc）。
         this.clockMillis = clockMillis;
     }

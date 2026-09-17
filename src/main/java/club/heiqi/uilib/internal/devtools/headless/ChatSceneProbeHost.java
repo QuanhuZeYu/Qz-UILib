@@ -11,11 +11,14 @@ import club.heiqi.uilib.api.chat.ChatAccess;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 import club.heiqi.uilib.ui.env.UiEnvironment;
+import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.theme.SceneTheme;
+import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
 /**
  * 聊天 3.0 探针宿主：用<b>生产内容构建入口</b>（{@link ChatSceneController#buildContent}）在无游戏进程里出图。
@@ -104,10 +107,16 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
      * @param input    平台输入源（脚本注入的鼠标键盘）
      * @param clockMillis 虚拟墙钟基准（epoch 毫秒）；同时作为消息到达时刻与帧时钟起点
      * @param environment 宿主环境端口（请求声明的环境事实；诊断采样开关经它下发）
+     * @param theme      外观档；{@code null} = 不干预（走库默认）。<b>必须在建树前安装</b>：
+     *                   控件的配方派生在构建期捕获主题信号对象，换对象只影响此后构建的控件
+     *                   （见 {@code HeadlessThemes}）
      */
     ChatSceneProbeHost(int width, int height, List<String> messages, PlatformInputSource input, long clockMillis,
-            UiEnvironment environment) {
+            UiEnvironment environment, SceneTheme theme) {
         super(input, environment);
+        if (theme != null) {
+            SceneThemes.install(runtime, Signal.create(theme));
+        }
         this.controller = new ChatSceneController(ChatSceneController.uiLibMeasure(),
                 new ChatSceneController.SelfNameProvider() {
                     @Override

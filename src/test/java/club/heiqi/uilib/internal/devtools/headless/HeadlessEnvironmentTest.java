@@ -57,6 +57,31 @@ public class HeadlessEnvironmentTest {
         Assert.assertFalse(request.summary().contains("fontScale=null"));
     }
 
+    /**
+     * 外观档：缺省不干预、非法快速失败、三档可区分。
+     *
+     * <p>「不干预」是真实语义而非省略：playground 页显式装 {@code SceneThemes.DEFAULT}，而 chat/hud 走
+     * 按背景滤镜档动态解析的库默认 —— 两者本就不同，headless 不该替它们做主。</p>
+     */
+    @Test
+    public void themeAxisDefaultsToNoInterventionAndKeepsTiersDistinct() {
+        Assert.assertNull("缺省不干预：各页面用自己的默认外观", HeadlessRequest.builder().build().theme());
+        Assert.assertNull("null 档名不干预", HeadlessThemes.resolve(null));
+        try {
+            HeadlessRequest.builder().theme("no-such-theme").build();
+            Assert.fail("未知外观档必须被拒绝（静默忽略会让使用者以为换过配色）");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue("报错需列出可选档名，便于命令行使用者自助",
+                    expected.getMessage().contains(HeadlessThemes.LIQUID_GLASS_LIGHT));
+        }
+        Assert.assertNotEquals("深色与浅色档必须可区分",
+                HeadlessThemes.resolve(HeadlessThemes.LIQUID_GLASS_DARK),
+                HeadlessThemes.resolve(HeadlessThemes.LIQUID_GLASS_LIGHT));
+        Assert.assertNotEquals("液态玻璃与实色档必须可区分",
+                HeadlessThemes.resolve(HeadlessThemes.LIQUID_GLASS_DARK),
+                HeadlessThemes.resolve(HeadlessThemes.SOLID_DARK));
+    }
+
     /** 越界倍率必须快速失败：静默钳制会让使用者拿到与请求不符的图。 */
     @Test
     public void outOfRangeFontScaleFailsFast() {
