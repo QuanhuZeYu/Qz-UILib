@@ -105,15 +105,22 @@ final class MarkdownPageContent {
      * 使用同源度量补齐叶盒供 scene 可见性判断；不重新分配列宽或换行。
      * 仅计划变化时翻译一次，scroll/clip/paint 仍归既有 scene 管线。
      *
-     * <p><b>字号契约（调用方必须遵守，否则几何与渲染分叉）</b>：本方法的几何取自 L2 命令样式里的
-     * {@code fontSize}（{@code node.setFontSize(command.getTextStyle().getFontSize())}），而节点在场景
-     * 里的实际布局与渲染走 {@code effectiveFontSize()}（生效值 = 声明值 × 用户倍率）。二者只在
-     * <b>传入的字号本身就是生效字号</b>时相等。因此调用方必须：</p>
+     * <p><b>字号契约（调用方必须遵守，否则几何与渲染分叉）</b>：L2 命令的坐标与样式字号都处于
+     * <b>生效尺度</b>（= 设计值 × 用户倍率），故：</p>
      * <ul>
-     *   <li>把 {@code styles.setDefaultFontSizePx(...)} 设成<b>生效字号</b>（见 {@code MarkdownPage}
-     *       的 {@code effectiveFontPx}），使 L2 段流、命令坐标、节点字号三处同源；</li>
-     *   <li>{@code epochs} 必须<b>同时覆盖</b>度量纪元与字号代际（{@code SceneRuntime.textMeasureEpoch()}
-     *       不含用户倍率，只订阅它则倍率变化时内容布局不重算）。</li>
+     *   <li>节点<b>声明层</b>只写设计基准 {@code declaredFontPx}。写命令字号会被解析出口再乘一次
+     *       倍率（2×2 重复缩放）；无显式字号的段（正文）因此渲染成 {@code declared × 倍率}，恰好等于
+     *       命令尺度，有显式字号的段（标题等）用段样式自身的绝对值。</li>
+     *   <li>盒宽/盒高取<b>命令字号</b>（{@code MarkdownPainter.lineWidthPx/lineHeightPx}），与真正
+     *       渲染的字形同尺度。段流节点无 text，叶高完全由这里的 {@code setPreferredHeight} 决定。</li>
+     *   <li>调用方必须把 {@code styles.setDefaultFontSizePx(...)} 设成<b>生效字号</b>（见
+     *       {@code MarkdownPage.layoutFontPx}），使 L2 段流、命令坐标、盒几何三处同源。</li>
+     *   <li>{@code epochs} 必须<b>同时覆盖</b>度量纪元与字号代际：{@code SceneRuntime.textMeasureEpoch()}
+     *       是字体运行时纪元，不含用户倍率。</li>
+     *   <li><b>{@code layoutFontPx} 是 create 期捕获值</b>：组件内的纪元订阅只能作废缓存、换不掉这个
+     *       实参，所以<b>倍率变化必须由宿主重建页面</b>（{@code TestPlaygroundHost} 在字号代际抬升时
+     *       调 {@code refreshPage()}）。只订阅纪元而不重建，运行期改倍率会呈现「文字按新倍率放大、
+     *       行框仍是旧尺度」—— F36 的同类分叉在真实运行期路径复发（独立审核指出）。</li>
      * </ul>
      *
      * <p><b>现场记录（2026-09-18 实测，缺陷已修）</b>：修前调用方传声明字号 {@code BASE_FONT_PX}，

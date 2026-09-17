@@ -141,6 +141,17 @@ public final class MarkdownPage implements PlaygroundPage {
     }
 
     /**
+     * 标题增量（<b>设计</b> px，相对基准字号）：h1..h6。与 {@link #BASE_FONT_PX} 同属设计量，
+     * 进样式表前必须经 {@link #headingDeltaPx(int, float)} 换算成生效量。
+     */
+    private static final int[] HEADING_DELTA_PX = {10, 7, 4, 2, 1, 0};
+
+    /** 设计增量 → 生效增量（与几何字号同一倍率口径）。 */
+    private static int headingDeltaPx(int designDeltaPx, float scale) {
+        return Math.round(designDeltaPx * scale);
+    }
+
+    /**
      * 内容布局缓存的失效纪元：字体运行时纪元（字形/度量变化）与字号代际（用户倍率变化）的组合。
      *
      * <p>只用 {@code rt.textMeasureEpoch()} 不够 —— 那是 {@code TextMeasureService.epoch()}，</p>
@@ -155,12 +166,11 @@ public final class MarkdownPage implements PlaygroundPage {
     public Supplier<SceneNode> build(final SceneRuntime rt) {
         return () -> {
             TextLayoutService measurer = FontService.getInstance().getTextLayoutService();
-            int layoutFont = layoutFontPx(rt);
             SceneNode shell = SceneNode.column();
             shell.setFillParentWidth(true);
             shell.setGap(10);
             for (int i = 0; i < SAMPLES.length; i++) {
-                shell.appendChild(sampleCard(SAMPLES[i], measurer, layoutFont));
+                shell.appendChild(sampleCard(SAMPLES[i], measurer, rt));
             }
             shell.appendChild(tableCard(rt));
             return shell;
@@ -319,20 +329,23 @@ public final class MarkdownPage implements PlaygroundPage {
      * {@link #quoteGroup(java.util.List, int, int, int, int)} 成套容器，quoteLevel==0 的单元
      * 原样入卡列。列表续行偏移（M10b）在第一趟用 {@code leftInsetPx} 反解为节点 padding。</p>
      */
-    private static SceneNode sampleCard(String[] sample, TextLayoutService measurer, int layoutFontPx) {
+    private static SceneNode sampleCard(String[] sample, TextLayoutService measurer, SceneRuntime rt) {
         SceneNode card = PlaygroundKit.card();
         card.appendChild(PlaygroundKit.title(sample[0]));
 
         MarkdownStyleTable styles = MarkdownStyleTable.defaults();
+        int layoutFontPx = layoutFontPx(rt);
         // 样式表字号取生效值：段样式字号决定 L2 产出的段流（命令坐标与命令字号都在生效尺度上），
         // 而节点声明层仍写设计基准 BASE_FONT_PX —— 两侧分工见 FontSizeLimits#effectiveFontSizePx。
         styles.setDefaultFontSizePx(layoutFontPx);
-        styles.setHeadingFontSizeDeltaPx(1, 10);
-        styles.setHeadingFontSizeDeltaPx(2, 7);
-        styles.setHeadingFontSizeDeltaPx(3, 4);
-        styles.setHeadingFontSizeDeltaPx(4, 2);
-        styles.setHeadingFontSizeDeltaPx(5, 1);
-        styles.setHeadingFontSizeDeltaPx(6, 0);
+        // 标题增量是<b>设计量</b>（相对基准的 px 增量，见 HEADING_DELTA_PX），必须与基准同源换算成
+        // 生效量：L2 按 {@code anchor + delta} 算标题字号，anchor 已在生效尺度上，delta 若留设计值
+        // 则标题层级会随倍率被压缩 —— 实测 h1 字号 24/31/38（fs=100/150/200，即 14×scale+10），
+        // h1/正文 由 1.71 掉到 1.48、1.36；等比换算后 h1 恒为 24×倍率。
+        float scale = rt.fontScale();
+        for (int level = 0; level < HEADING_DELTA_PX.length; level++) {
+            styles.setHeadingFontSizeDeltaPx(level + 1, headingDeltaPx(HEADING_DELTA_PX[level], scale));
+        }
         // M7 方案乙：真横线取代字面 dash（既有旋钮）；本页走块身份行接缝
         styles.setThematicBreakText("");
         TextStyle base = new TextStyle();

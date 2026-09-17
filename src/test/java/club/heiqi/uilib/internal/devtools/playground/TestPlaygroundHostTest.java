@@ -239,6 +239,60 @@ public class TestPlaygroundHostTest {
         }
     }
 
+    // ==================== 字号倍率变化 => 当前页重建 ====================
+
+    /**
+     * 倍率变化必须重建当前页，否则几何停在旧尺度而文字按新倍率放大（F36 的运行期复发路径）。
+     *
+     * <p>页工厂里的几何是构建期按当时的生效字号算死的：markdown 的 L2 换行基准、样式表基准、
+     * 卡片行高/行宽都属于此类，页内订阅字号代际只能作废缓存、换不掉已算好的实参
+     * （{@code MarkdownPageContent} 的 layoutFontPx 是 create 期捕获值）。headless 出图是
+     * 「先 setFontScale 再建页」，走不到这条路径，故由本用例守。</p>
+     */
+    @Test
+    public void fontScaleChangeRebuildsCurrentPageSoGeometryFollowsNewScale() {
+        List<PlaygroundPage> pages = PlaygroundPageRegistry.defaultPages();
+        int markdownIndex = -1;
+        for (int i = 0; i < pages.size(); i++) {
+            if ("markdown".equals(pages.get(i).id())) {
+                markdownIndex = i;
+            }
+        }
+        org.junit.Assume.assumeTrue("注册表须含 markdown 页", markdownIndex >= 0);
+        host.showPage(markdownIndex);
+        host.__getRuntime().flush();
+        settleLayout();
+        SceneNode before = host.__getDisplayedPageRoot();
+        int heightBefore = maxPreferredHeight(before);
+
+        host.__getRuntime().setFontScale(150);
+        host.__getRuntime().flush();
+        settleLayout();
+        SceneNode after = host.__getDisplayedPageRoot();
+
+        Assert.assertNotSame("倍率变化必须重建当前页（否则几何仍是旧尺度）", before, after);
+        Assert.assertNull("旧页根已摘除", before.__getParent());
+        Assert.assertTrue("新页几何按新生效字号（内容更高）：before=" + heightBefore
+                        + " after=" + maxPreferredHeight(after),
+                maxPreferredHeight(after) > heightBefore);
+    }
+
+    /** 两趟布局：首趟发布内容宽、次趟用新宽重排（内容体高度写进 preferredHeight）。 */
+    private void settleLayout() {
+        doLayout();
+        host.__getRuntime().flush();
+        doLayout();
+    }
+
+    /** 子树里最大的首选高（markdown 内容体的高度写在这里）。 */
+    private static int maxPreferredHeight(SceneNode node) {
+        int max = node.getPreferredHeight();
+        for (SceneNode child : node.__getChildren()) {
+            max = Math.max(max, maxPreferredHeight(child));
+        }
+        return max;
+    }
+
     // ==================== 主动刷新（F5 语义） ====================
 
     /**

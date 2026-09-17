@@ -142,6 +142,25 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
         runtime.__runRoot(() -> {
             buildShell();
             runtime.bind(activePageSignal, this::requestPageTransition);
+            // 字号倍率变化 ⇒ 当前页必须重建。页工厂里的几何（markdown 的 L2 换行基准、样式表基准、
+            // 卡片行高/行宽，以及代码块/围栏块几何）是<b>构建期</b>按当时的生效字号算死的：
+            // 页内组件订阅字号代际只能让「缓存」失效，换不掉已经算好的实参（例如
+            // MarkdownPageContent 的 layoutFontPx 是 create 期捕获值）。缺这一跳时，运行期改倍率会
+            // 呈现「文字按新倍率放大、行框仍是旧尺度」—— 正是 F36 修掉的分叉在真实运行期路径复发。
+            // headless 出图是「先 setFontScale 再建页」，掩盖了这条路径（由独立审核指出）。
+            // 订阅挂在宿主 rootOwner 而不是页 Owner：refreshPage 要 dispose 当前页，
+            // 订阅若归属页作用域会被自己回收。
+            // effect 首次物化时会以当前值跑一次，那不是「变化」——只有代际真的抬升才重建，
+            // 否则构造后的首次 flush 就会白重建一次（同页导航 no-op 的既有契约会因此失效）。
+            final long[] seenFontEpoch = {runtime.fontEpoch()};
+            runtime.bind(runtime.fontEpochSignal(), epoch -> {
+                long current = epoch.longValue();
+                if (current == seenFontEpoch[0]) {
+                    return;
+                }
+                seenFontEpoch[0] = current;
+                refreshPage();
+            });
             mountPage(0);
         });
         // A4c:构造期 flush 已收口——首帧管线 FLUSH 相位即物化本页;测试须自行 flush(见各页测试)。
