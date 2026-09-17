@@ -64,6 +64,7 @@ public final class HeadlessShotMain {
      */
     static int run(String[] args) {
         String page = "playground";
+        String pages = null;
         String sizes = null;
         String pageIndexesArg = null;
         int pageIndex = -1;
@@ -92,6 +93,8 @@ public final class HeadlessShotMain {
                     return 0;
                 } else if ("--probe".equals(arg)) {
                     probeOnly = true;
+                } else if (arg.startsWith("--pages=")) {
+                    pages = arg.substring("--pages=".length());
                 } else if (arg.startsWith("--page=")) {
                     page = arg.substring("--page=".length());
                 } else if (arg.startsWith("--page-indexes=")) {
@@ -147,23 +150,26 @@ public final class HeadlessShotMain {
             return 2;
         }
 
-        // 聊天页默认：命令行未显式给 --text 时用演示消息集（省得每次出图都拼长参数串），
-        // 未显式给 --frames 时把最小帧数提到 20——消息组首次合成有 180ms 入场动画（16ms/帧 → 12 帧），
-        // 动画期间整树 opacity=0 且像素逐帧不变，稳定判据会把这段误判成「已收敛」而提前停帧出空图。
-        if (HeadlessRequest.CHAT_PAGE.equals(page) || HeadlessRequest.HUD_PAGE.equals(page)) {
-            if (HeadlessRequest.DEFAULT_PROBE_TEXT.equals(text)) {
-                text = HeadlessRequest.CHAT_DEFAULT_TEXT;
-            }
-            if (!framesGiven) {
-                frames = 20;
-            }
-        }
 
+        List<String> pageNameTargets = new ArrayList<String>();
         List<Integer> pageTargets = new ArrayList<Integer>();
         List<int[]> sizeTargets = new ArrayList<int[]>();
         List<Integer> fontScaleTargets = new ArrayList<Integer>();
         List<String> themeTargets = new ArrayList<String>();
         try {
+            // 页面轴：--page 是单页面（缺省），--pages 给出多页面矩阵；两者同时给出时 --pages 胜。
+            if (pages == null || pages.trim().isEmpty()) {
+                pageNameTargets.add(page);
+            } else {
+                for (String part : pages.split(",")) {
+                    if (!part.trim().isEmpty()) {
+                        pageNameTargets.add(part.trim());
+                    }
+                }
+                if (pageNameTargets.isEmpty()) {
+                    pageNameTargets.add(page);
+                }
+            }
             if (pageIndexesArg == null || pageIndexesArg.trim().isEmpty()) {
                 pageTargets.add(Integer.valueOf(pageIndex));
             } else {
@@ -199,25 +205,49 @@ public final class HeadlessShotMain {
             return 2;
         }
 
-        int total = pageTargets.size() * sizeTargets.size() * fontScaleTargets.size() * themeTargets.size();
+        int total = pageNameTargets.size() * pageTargets.size() * sizeTargets.size()
+                * fontScaleTargets.size() * themeTargets.size();
         boolean multi = total > 1;
+        // 页面段进产物后缀只在多页面时：单页面时页面名已在默认文件名前缀里，再加一段是冗余；
+        // 而多页面共用同一个 --out 时必须能区分（见 resolveOutput）。
+        boolean multiPage = pageNameTargets.size() > 1;
         // 轴展开 → 请求列表：档名/字号域等校验与产物命名在这里一次收口；后面的「隔离调度」与
         // 「同进程渲染」消费同一份列表，不各自再推一遍参数（推两遍必然漂移）。
         List<HeadlessRequest> requests = new ArrayList<HeadlessRequest>();
         try {
-            for (Integer targetPageIndex : pageTargets) {
-                for (String targetTheme : themeTargets) {
-                    for (Integer targetFontScale : fontScaleTargets) {
-                        for (int[] size : sizeTargets) {
-                            int scalePercent = targetFontScale.intValue();
-                            Path output = resolveOutput(out, page, targetPageIndex.intValue(), targetTheme,
-                                    scalePercent, size[0], size[1], multi);
-                            requests.add(HeadlessRequest.builder().page(page)
-                                    .pageIndex(targetPageIndex.intValue())
-                                    .size(size[0], size[1]).frames(frames).background(background).text(text)
-                                    .script(script).settle(settle).maxFrames(maxFrames).clock(clockMillis)
-                                    .fontScale(scalePercent).diagnostics(diagnostics).theme(targetTheme)
-                                    .output(output).build());
+            for (String pageName : pageNameTargets) {
+                // 页面相关的默认值按页算（聊天系的演示消息集与最小帧数不能串给别的页面）。
+                String pageText = defaultTextFor(pageName, text);
+                int pageFrames = defaultFramesFor(pageName, frames, framesGiven);
+                for (Integer targetPageIndex : pageTargets) {
+                    for (String targetTheme : themeTargets) {
+                        for (Integer targetFontScale : fontScaleTargets) {
+                            for (int[] size : sizeTargets) {
+                                int scalePercent = targetFontScale.intValue();
+                                List<String> suffixParts = new ArrayList<String>();
+                                if (multiPage) {
+                                    suffixParts.add("-pg" + pageName);
+                                }
+                                if (targetPageIndex.intValue() >= 0) {
+                                    suffixParts.add("-p" + targetPageIndex);
+                                }
+                                if (targetTheme != null) {
+                                    suffixParts.add("-th" + targetTheme);
+                                }
+                                if (scalePercent != SceneRuntime.FONT_SCALE_NONE_PERCENT) {
+                                    suffixParts.add("-fs" + scalePercent);
+                                }
+                                suffixParts.add("-" + size[0] + "x" + size[1]);
+                                Path output = resolveOutput(out, pageName, suffixParts, multi);
+                                requests.add(HeadlessRequest.builder().page(pageName)
+                                        .pageIndex(targetPageIndex.intValue())
+                                        .size(size[0], size[1]).frames(pageFrames)
+                                        .background(background).text(pageText)
+                                        .script(script).settle(settle).maxFrames(maxFrames)
+                                        .clock(clockMillis).fontScale(scalePercent)
+                                        .diagnostics(diagnostics).theme(targetTheme)
+                                        .output(output).build());
+                            }
                         }
                     }
                 }
@@ -391,6 +421,41 @@ public final class HeadlessShotMain {
         }
     }
 
+    /**
+     * 页面的默认文本：聊天系页面（chat / hud）未显式给 {@code --text} 时用演示消息集
+     * （省得每次出图都拼长参数串）。
+     *
+     * <p>按页计算而非全局替换：多页面轴下一次调用会同时出多个页面，全局替换会把聊天页的演示消息集
+     * 串给 playground。</p>
+     *
+     * @param page 页面标识
+     * @param text 命令行给出的文本
+     * @return 该页实际使用的文本
+     */
+    private static String defaultTextFor(String page, String text) {
+        if (HeadlessRequest.CHAT_PAGE.equals(page) || HeadlessRequest.HUD_PAGE.equals(page)) {
+            return HeadlessRequest.DEFAULT_PROBE_TEXT.equals(text) ? HeadlessRequest.CHAT_DEFAULT_TEXT : text;
+        }
+        return text;
+    }
+
+    /**
+     * 页面的默认帧数：聊天系页面未显式给 {@code --frames} 时提到 20 ——
+     * 消息组首次合成有 180 ms 入场动画（16 ms/帧 → 12 帧），动画期间整树 opacity=0 且像素逐帧不变，
+     * 稳定判据会把这段误判成「已收敛」而提前停帧出空图。
+     *
+     * @param page 页面标识
+     * @param frames 命令行给出的最小帧数
+     * @param framesGiven 命令行是否显式给过 {@code --frames}
+     * @return 该页实际使用的最小帧数
+     */
+    private static int defaultFramesFor(String page, int frames, boolean framesGiven) {
+        if (!framesGiven && (HeadlessRequest.CHAT_PAGE.equals(page) || HeadlessRequest.HUD_PAGE.equals(page))) {
+            return 20;
+        }
+        return frames;
+    }
+
     /** @return 当前 JVM 的 java 可执行文件路径（子进程与父进程同 JDK、同 natives） */
     private static String javaExecutable() {
         String executable = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("win")
@@ -435,22 +500,14 @@ public final class HeadlessShotMain {
      * 不同产物，没有「缺省尺寸」可言），页下标在指定时进，字号倍率只在非缺省水位时进 —— 于是既有
      * 命令的产物路径逐字不变，新增维度也不会与既有命名撞车。</p>
      *
-     * @param out       命令行给出的输出路径；null 表示用默认路径
-     * @param page      页面标识
-     * @param pageIndex 页下标；-1 表示不指定
-     * @param theme     外观档名；{@code null} 表示不干预（不进后缀）
-     * @param fontScalePercent 字号缩放百分比
-     * @param width     宽
-     * @param height    高
-     * @param multi     是否批量
+     * @param out         命令行给出的输出路径；null 表示用默认路径
+     * @param page        页面标识（默认路径的文件名前缀）
+     * @param suffixParts 后缀段（调用方按「哪些维度偏离缺省」拼好；尺寸段恒在其中）
+     * @param multi       是否批量
      * @return 目标路径
      */
-    private static Path resolveOutput(String out, String page, int pageIndex, String theme,
-            int fontScalePercent, int width, int height, boolean multi) {
-        String suffix = (pageIndex >= 0 ? "-p" + pageIndex : "")
-                + (theme == null ? "" : "-th" + theme)
-                + (fontScalePercent == SceneRuntime.FONT_SCALE_NONE_PERCENT ? "" : "-fs" + fontScalePercent)
-                + "-" + width + "x" + height;
+    private static Path resolveOutput(String out, String page, List<String> suffixParts, boolean multi) {
+        String suffix = String.join("", suffixParts);
         if (out == null) {
             return Paths.get("build", "reports", "headless", page + suffix + ".png");
         }
@@ -499,8 +556,8 @@ public final class HeadlessShotMain {
     }
 
     private static void printUsage(PrintStream out) {
-        out.println("用法: HeadlessShotMain [--page=playground|text-probe|chat|hud]"
-                + " [--page-index=N | --page-indexes=N,N,…]"
+        out.println("用法: HeadlessShotMain [--page=playground|text-probe|chat|hud |"
+                + " --pages=NAME,NAME,…] [--page-index=N | --page-indexes=N,N,…]"
                 + " [--size=WxH | --sizes=WxH,WxH,…] [--out=path] [--frames=N] [--settle=N] [--max-frames=N]"
                 + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file]"
                 + " [--clock=epochMillis]"
@@ -508,5 +565,7 @@ public final class HeadlessShotMain {
                 + " [--share-context] [--probe]");
         out.println("批量默认逐档独立进程（产物只依赖请求）；--share-context 同进程复用（快，但产物带 atlas 历史依赖）");
         out.println("主题档: " + HeadlessThemes.names() + "（不给 = 各页面用自己的默认外观）");
+        out.println("页面: playground / text-probe / chat / hud；--pages 给多页面矩阵，"
+                + "--page-index 的含义随页面而变（playground = 演示页下标，hud = 锚点，chat/text-probe 忽略）");
     }
 }

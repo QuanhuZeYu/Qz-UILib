@@ -548,6 +548,12 @@ public class TextLayoutService {
             if (text == null || text.isEmpty()) {
                 return 0;
             }
+            // 字号 <= 0 = 文本不占空间（语义见 FontSizeLimits#MIN_FONT_SIZE_PX）：宽度 0。
+            // 短路必须落在本入口而不是只在 scene 的度量适配器上：markdown 等模块直接用本服务，
+            // 绕过适配器（实测：只修适配器时 Markdown 页 fs=0 的 bounds 仍有 885，块几何按 1px 行高重排）。
+            if (resolvedStyle.getFontSizePx() <= 0) {
+                return 0;
+            }
 
             double width = 0.0D;
             TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
@@ -1769,6 +1775,10 @@ public class TextLayoutService {
     }
 
     private int getLineHeight(int fontSizePx) {
+        if (fontSizePx <= 0) {
+            // 同上：零字号不占空间，行高必须是 0（不得被保底抬成 1px，否则块几何按 1px 行高重排）。
+            return 0;
+        }
         int safeFontSizePx = Math.max(1, fontSizePx);
         int ascent = getAscent(safeFontSizePx);
         int descent = getDescent(safeFontSizePx);

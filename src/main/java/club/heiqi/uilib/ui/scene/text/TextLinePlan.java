@@ -64,7 +64,11 @@ public final class TextLinePlan {
         for (int index = 0; index < clamped.size(); index++) {
             String line = clamped.get(index);
             int autoHeight = measurer.lineHeight(line, fontSizePx, textMode);
-            heights[index] = Math.max(1, lineHeightResolver.applyAsInt(autoHeight));
+            // 行高保底 1px 只对「有字号的文本」生效：字号 <= 0 = 文本不占空间（语义见
+            // FontSizeLimits#MIN_FONT_SIZE_PX），此时行高必须是 0。审核实测正是在这里露的馅 ——
+            // 保底把 0 抬成 1px，于是 Markdown 页 fs=0 出图的 bounds 反而从 751 涨到 893（块几何
+            // 按 1px 行高重排），「不占空间」在布局域不成立。
+            heights[index] = fontSizePx <= 0 ? 0 : Math.max(1, lineHeightResolver.applyAsInt(autoHeight));
             linkRegions.add(measurer.linkRegions(line, fontSizePx, textMode));
         }
         return new TextLinePlan(clamped, heights, linkRegions);

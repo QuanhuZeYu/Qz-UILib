@@ -37,8 +37,9 @@ GL 上下文需要窗口句柄，而 LWJGL2 的 `Display.create()` 会创建**�
 
 | 参数 | 说明 |
 |---|---|
-| `--page=playground\|text-probe\|chat\|hud` | 页面；`playground` = 测试场地，`text-probe` = 单行文本探针，`chat` = 聊天 3.0 内容树，`hud` = 同一内容树走 HUD 宿主装配（两者均见下节） |
-| `--page-index=N` / `--page-indexes=0,1,…` | playground 子页下标（0 总览 / 1 单行文本 / 2 多行文本 / 3 浮层 / 4 响应式 / 5 富文本 / 6 控制字符 / 7 LaTeX / 8 Markdown） |
+| `--page=A\|B\|C\|D` | 单页面；`playground` = 测试场地，`text-probe` = 单行文本探针，`chat` = 聊天 3.0 内容树，`hud` = 同一内容树走 HUD 宿主装配（两者均见下节） |
+| `--pages=A,B,…` | **多页面矩阵**（与尺寸 / 外观 / 字号轴同构）；与 `--page` 同时给出时本参数胜 |
+| `--page-index=N` / `--page-indexes=0,1,…` | `playground` 子页下标（0 总览 / 1 单行文本 / 2 多行文本 / 3 浮层 / 4 响应式 / 5 富文本 / 6 控制字符 / 7 LaTeX / 8 Markdown）；`hud` 页当作**锚点**（0 左上 / 1 右上 / 2 左下 / 3 右下），`chat` 与 `text-probe` 忽略 |
 | `--size=WxH` / `--sizes=WxH,…` | 单档 / 分辨率矩阵（360P~2K 任意尺寸，渲染到自建 FBO，与窗口无关） |
 | `--out=path` | 输出 PNG；批量时自动追加 `-p<下标>-<W>x<H>` 后缀 |
 | `--actions="…"` / `--script=file` | 输入脚本（见下） |
@@ -53,6 +54,13 @@ GL 上下文需要窗口句柄，而 LWJGL2 的 `Display.create()` 会创建**�
 | `--probe` | 只打印能力（GL 版本、stencil、字体数量）不出图 |
 
 页面、外观、字号、尺寸四个维度可同时给，按笛卡尔积出图（产物命名规则见「环境矩阵」）。
+
+多页面一次出图：
+
+```bat
+build\headless\qz-shot.bat --pages=playground,chat,hud --size=1280x720 --out=out\all.png
+:: 产出 out\all-pgplayground-1280x720.png / -pgchat-… / -pghud-…
+```
 
 ## 输入脚本
 
@@ -94,8 +102,8 @@ build\headless\qz-shot.bat --page=hud --size=1920x1080 --debug
 ```
 
 **产物命名 = 「偏离缺省的维度」+ 尺寸**：`out\hud-640x360.png`、`out\theme-thsolid-dark-1280x720.png`、
-`out\fs-fs150-1280x720.png`（外观/字号非缺省才带 `-th<档名>` / `-fs<P>`，页下标在指定时带 `-p<N>`）。
-缺省命令的路径因此逐字不变。
+`out\fs-fs150-1280x720.png`（外观/字号非缺省才带 `-th<档名>` / `-fs<P>`，页下标在指定时带 `-p<N>`，
+**多页面**时每档带 `-pg<页面名>`）。缺省命令的路径因此逐字不变。
 
 三类环境量的**接入时机不同**，这不是实现细节而是语义差别：
 

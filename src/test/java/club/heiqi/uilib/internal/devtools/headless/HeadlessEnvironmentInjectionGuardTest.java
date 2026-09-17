@@ -91,7 +91,12 @@ public class HeadlessEnvironmentInjectionGuardTest {
         assertTrue("命令行必须把 --debug 接到请求", cli.contains(".diagnostics(diagnostics)"));
         assertTrue("命令行必须把 --theme 接到请求", cli.contains(".theme(targetTheme)"));
         assertTrue("命令行必须把外观档接进产物命名（否则矩阵各档互相覆盖）",
-                cli.contains("\"-th\" + theme"));
+                cli.contains("\"-th\" + targetTheme"));
+        assertTrue("命令行必须把页面接进产物命名（多页面共用 --out 时必须能区分）",
+                cli.contains("\"-pg\" + pageName"));
+        assertTrue("页面相关的默认值必须按页计算（全局替换会把聊天页的演示消息集串给别的页面）",
+                cli.contains("defaultTextFor(pageName, text)")
+                        && cli.contains("defaultFramesFor(pageName, frames, framesGiven)"));
     }
 
     /** 读取 UTF-8 生产源码。 */

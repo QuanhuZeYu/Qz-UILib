@@ -180,6 +180,11 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
             // 环境根登记（幂等、O(1)）：让宿主自有外框也进层 3 默认字号与用户倍率的管辖范围，
             // 理由见 attachedRoot 字段注释。root 未变时不重复登记，热路径只多一次引用比较。
             if (root != attachedRoot) {
+                if (attachedRoot != null) {
+                    // 与 attachTree 成对：先摘旧根再挂新根，否则旧根会永久留在 runtime 的
+                    // 环境根集合里，每次环境广播都白遍历一次，且它仍指着一个已换掉的 runtime 子树。
+                    SceneHostAssembly.detachTree(runtime, attachedRoot);
+                }
                 SceneHostAssembly.attachTree(runtime, root);
                 attachedRoot = root;
             }
@@ -281,9 +286,18 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
         frameProbe.reset();
     }
 
-    /** 释放 runtime 资源。 */
+    /**
+     * 释放 runtime 资源。
+     *
+     * <p>先摘环境根再销毁 runtime（与 {@link #render} 内的 {@code attachTree} 成对）：
+     * {@code SceneRuntime.dispose()} 不清理已登记的环境根集合，留着会让已卸载的宿主参与环境广播。</p>
+     */
     @Override
     public void dispose() {
+        if (attachedRoot != null) {
+            SceneHostAssembly.detachTree(runtime, attachedRoot);
+            attachedRoot = null;
+        }
         runtime.dispose();
     }
 
