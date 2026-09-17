@@ -24,7 +24,7 @@ build\headless\qz-shot.bat --page=playground --size=1280x720 --out=out\shot.png
 
 | 参数 | 说明 |
 |---|---|
-| `--page=playground\|text-probe\|chat` | 页面；`playground` = 测试场地，`text-probe` = 单行文本探针，`chat` = 聊天 3.0 内容树（见下节） |
+| `--page=playground\|text-probe\|chat\|hud` | 页面；`playground` = 测试场地，`text-probe` = 单行文本探针，`chat` = 聊天 3.0 内容树，`hud` = 同一内容树走 HUD 宿主装配（两者均见下节） |
 | `--page-index=N` / `--page-indexes=0,1,…` | playground 子页下标（0 总览 / 1 单行文本 / 2 多行文本 / 3 浮层 / 4 响应式 / 5 富文本 / 6 控制字符 / 7 LaTeX / 8 Markdown） |
 | `--size=WxH` / `--sizes=WxH,…` | 单档 / 分辨率矩阵（360P~2K 任意尺寸，渲染到自建 FBO，与窗口无关） |
 | `--out=path` | 输出 PNG；批量时自动追加 `-p<下标>-<W>x<H>` 后缀 |
@@ -88,7 +88,27 @@ build\headless\qz-shot.bat --page=chat --text="Steve:**粗体** 与 `code`;;md:#
 - 消息组首次合成有 **180 ms 入场动画**（组节点 opacity 0→1），动画期间整树不可见、像素逐帧不变，
   「连续 N 帧像素一致」的稳定判据会把这段误判成「已收敛」。故 `chat` 页在未显式给 `--frames` 时
   默认最少 20 帧（≈320 ms 虚拟时间）；自己指定帧数时要覆盖动画时长。
-- 本页只渲染内容根，**不套 HUD 外壳、不做四角锚定与倍率缩放**，内容贴在左上角，与真机 HUD 的放置位置不同。
+- 本页只渲染内容根，**不套 HUD 外壳、不做四角锚定与倍率缩放**，内容贴在左上角，与真机 HUD 的放置位置不同；
+  要出「HUD 放置后的画面」用 `--page=hud`（下节）。
+
+## HUD 页（hud）
+
+同一份聊天内容树走**生产 HUD 宿主装配**（`ui.scene.host.SceneHostWindow`：外壳 + 内容 + 装饰层 + 帧管线），
+并按四角锚定放置——即「同一份内容代码，换宿主」的对照，观感与真机 HUD 一致。
+
+```bat
+build\headless\qz-shot-full.bat --page=hud --size=1280x720 --out=out\hud.png
+build\headless\qz-shot-full.bat --page=hud --page-indexes=0,1,2,3 --out=out\hud.png
+```
+
+- `--page-index` 选锚点：**0 = 左上 / 1 = 右上 / 2 = 左下（默认，与原版聊天同位）/ 3 = 右下**；
+  `--page-indexes=0,1,2,3` 一次出四角矩阵；
+- 消息语法、默认消息集、入场动画与最小帧数都与 `chat` 页相同；
+- 外壳与真机**同源**：`SceneHostWindow.Shell.HUD_DEFAULT`（内边距 7/6 + 半透明底）是客户端
+  `SceneHudHost` 与 headless 共用的同一份默认外壳，不是两处各写一份；
+- **本页无输入**：HUD 窗口的契约就是不持有输入源、不参与命中仲裁，故 `--actions` 对本页不生效；
+- **`--text=`（空消息集）出纯背景是预期**：内容空尺寸 ⇒ 整窗（含外壳）隐藏，输出
+  `commands=0 / bounds=(empty) / colors=1`。这与 `chat` 页的同款现象含义不同——那里 `commands=0` 是缺陷信号（见排查表）。
 
 ## 怎么读输出
 
@@ -128,6 +148,7 @@ build\headless\qz-shot.bat --page=chat --text="Steve:**粗体** 与 `code`;;md:#
 | 文字残缺（只出部分字形） | 字形异步生成尚未就绪：提高 `--settle` / `--max-frames`（默认已自动收敛） |
 | `--page=chat` 出全背景、`colors=1` | 帧数不足：入场动画（180 ms）期间整树不可见且像素不变，会被判成「已收敛」。提高 `--frames`（≥20） |
 | `--page=chat` 出全背景且 `commands=0` | 入场动画**整段未起播**：组 opacity 恒 0 → 零透明子树被 paint 跳过 → 命令面为空。根因是虚拟时钟起点早于消息出生时刻（构造期控制器初始化耗时可达数百 ms 的时序竞态），2026-09-18 已修；若此现象复现，先查这条（详见规划文档 F23），不要再往帧数上加 |
+| `--page=hud --text=`（空消息集）出纯背景 | **预期行为**而非故障：内容空尺寸 ⇒ 整窗（含外壳）隐藏，`commands=0 / colors=1` 正确。给非空 `--text` 即出外壳与内容 |
 | 需要一次出多张 | `--sizes=` / `--page-indexes=`：同进程内多档，字体与 GL 上下文只初始化一次 |
 
 ## 边界（不要据此下结论）
@@ -138,6 +159,6 @@ build\headless\qz-shot.bat --page=chat --text="Steve:**粗体** 与 `code`;;md:#
 - 不经过 `LwjglInputSource` 的 poll 差分语义——headless 注入的是帧，桥内部的差分/边沿类缺陷不在覆盖范围内；
 - **chat3 已纳入**（`--page=chat`）：走的是生产同一入口 `ChatSceneController.buildContent`。
   仍未覆盖的是 MC 宿主侧接线（输入屏、网络消息来源、原版聊天接管），它们不属于渲染面。
-- **HUD 尚未纳入**：HUD 的「内容」已经宿主无关（`ui.hud.api.HudWindowFactory.build(SceneRuntime)`），
-  但「单窗口宿主」（外壳 + 五件套 + 空内容语义 + 四角锚定与倍率）目前只存在于 `client.hud.SceneHudHost.RetainedWindow`（MC 域）。
-  要出「HUD 放置后的画面」，正确姿势是把该窗口宿主上提为宿主无关类型后由 headless 复用，而不是在 headless 里复刻一套装配。
+- **HUD 已纳入**（`--page=hud`）：窗口宿主已上提为宿主无关的 `ui.scene.host.SceneHostWindow`
+  （外壳 + 内容 + 装饰层 + 帧管线 + 空内容语义），与客户端 `client.hud.SceneHudHost.RetainedWindow` 共用同一份装配。
+  仍未覆盖的是 MC 宿主侧接线（注册表生命周期、工具栏注册表、倍率设置持久化），它们不属于渲染面。

@@ -107,7 +107,7 @@ public final class HeadlessShotMain {
         // 聊天页默认：命令行未显式给 --text 时用演示消息集（省得每次出图都拼长参数串），
         // 未显式给 --frames 时把最小帧数提到 20——消息组首次合成有 180ms 入场动画（16ms/帧 → 12 帧），
         // 动画期间整树 opacity=0 且像素逐帧不变，稳定判据会把这段误判成「已收敛」而提前停帧出空图。
-        if (HeadlessRequest.CHAT_PAGE.equals(page)) {
+        if (HeadlessRequest.CHAT_PAGE.equals(page) || HeadlessRequest.HUD_PAGE.equals(page)) {
             if (HeadlessRequest.DEFAULT_PROBE_TEXT.equals(text)) {
                 text = HeadlessRequest.CHAT_DEFAULT_TEXT;
             }

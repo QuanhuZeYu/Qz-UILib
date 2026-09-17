@@ -530,6 +530,40 @@ x=254、文字画到 298（溢出 44px）；两条短消息内边距恒为 10~11
 2. **只量节点宽量不出溢出**——溢出是「内容超出节点盒」，断言必须量内容（段落实宽）；
 3. headless 出图的价值不止「出一张图」：像素级测量能发现生产代码里长期潜伏的口径缺陷。
 
+### F25 宿主窗口上提：SceneHostWindow 与 headless HUD 页（2026-09-18）
+
+**问题**：HUD 宿主的可复用单元（外壳 + 内容 + 装饰层 + 独立帧管线）原本是
+`client.hud.SceneHudHost.RetainedWindow` 的私有内部类，直接读三处 client 事实
+（`MyMod.LOG` / `HudTokens` / `HudToolbarService`）⇒ headless 无法复现「HUD 放置后的画面」，
+只剩「在 headless 里照抄第二套装配」这条禁止项。
+
+**上提**：新增 `ui.scene.host.SceneHostWindow`——**独立类型，不继承 `AbstractSceneHostWidget`**：
+后者是「Widget 派生页面宿主：有输入源、随屏幕生命周期」，前者是「保留式窗口：无输入、内容空即隐」，
+两者只共用 `SceneHostAssembly` 的装配口径。三处外部事实倒置为构造参数：
+`failureSink`（原 `MyMod.LOG`）、`Shell`（原 `HudTokens` 内边距 + 外壳底色，`Shell.HUD_DEFAULT`
+成为全仓唯一一份默认外壳）、`ContentDecorator`（原 `HudToolbarService.mountLayer`，失败单点隔离）。
+`RetainedWindow` 退化为薄包装，工具栏注册表版本与工具栏层探针留在 client。
+
+**headless 消费**：新增 `--page=hud`（`HudSceneProbeHost implements UiSurface`）——同一份聊天
+内容树套 HUD 外壳并按四角锚定放置（`--page-index` 0/1/2/3 = 左上/右上/左下/右下，默认左下）。
+`HeadlessSession` 的宿主类型由 `AbstractSceneHostWidget` 放宽为 `UiSurface`：页面宿主有两种形态，
+会话只驱动渲染面，不假定宿主内部结构（否则只能二选一：要么让 HUD 页继承基类从而跑起两条管线，
+要么永远出不了 HUD 图）。
+
+**验收（一手实测）**：
+
+- `--page=hud` 默认左下 `bounds=4,364..338,716`，`--page-index=0` 左上 `bounds=4,4..338,356`；
+  外壳宽 334 = 内容 320 + 2×7 内边距（与生产外壳几何同源）；
+- 空消息集 `--text=` → `commands=0 / bounds=(empty) / colors=1`：整窗（含外壳）隐藏，
+  空窗路径在 headless 下可见、可与「设施没出图」区分；
+- 客户端既有防线 `SceneHudPipelineTest`（608 行：工具栏外框、空窗自愈、倍率缩放逐命令对拍）
+  **零改动**通过；新增 `SceneHostWindowTest` 只钉上提后新增/易退化的语义（外壳开关、装饰层隔离与
+  测量、空内容判定、环境根成对、null 快速失败），不重复镜像既有覆盖。
+
+**可复用教训**：判断「能不能上提」的判据不是代码行数，而是**外部事实的条数**——把三处外部事实
+变成构造参数后，同一份装配即可在客户端与无游戏进程下运行；反过来，任何仍读静态单例的装配点，
+都是下一个不可复用单元。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**

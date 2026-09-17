@@ -160,7 +160,7 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
      * @param message 消息文本
      * @return 组件；空白消息返回 null
      */
-    private static IChatComponent componentOf(String message) {
+    static IChatComponent componentOf(String message) {
         String text = unescapeNewlines(message);
         if (text.startsWith(MARKDOWN_PREFIX)) {
             String markdown = text.substring(MARKDOWN_PREFIX.length());

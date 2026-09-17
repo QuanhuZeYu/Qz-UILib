@@ -13,15 +13,12 @@ import club.heiqi.uilib.ui.hud.api.HudToolbarLayer;
 import club.heiqi.uilib.ui.hud.api.HudToolbarService;
 import club.heiqi.uilib.ui.hud.api.HudVisibility;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
-import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
+import club.heiqi.uilib.ui.scene.host.SceneHostWindow;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
 import club.heiqi.uilib.ui.scene.layout.AnchorRect;
-import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 import java.util.ArrayList;
@@ -130,11 +127,11 @@ public final class SceneHudHost {
             // 宿主合同（A2）：空窗 flush 照常、paint 跳过——signal 物化不被跳帧锁死，
             // 下一帧有内容即恢复绘制；投放方因此无须在宿主栈外强制 flush。
             if (window.isEmptyContent()) {
-                window.settleWithoutPaint(logicalWidth, logicalHeight);
+                window.settleWithoutPaint(logicalWidth, logicalHeight, frameTimeNanos);
                 continue;
             }
             int minimum = entry.spec.getMinWidth() == 0
-                    ? Math.min(HudTokens.NORMAL.minWidth, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
+                    ? Math.min(HudTokens.MIN_WIDTH, entry.spec.getMaxWidth()) : entry.spec.getMinWidth();
             int measuredWidth = Math.max(minimum, Math.min(entry.spec.getMaxWidth(), box.getWidth()));
             measured.add(new MeasuredHud(entry, measuredWidth, box.getHeight(), scale));
         }
@@ -301,84 +298,52 @@ public final class SceneHudHost {
      * 内容空尺寸（signal 卸载或空文本）时整窗（含外壳）隐藏。</p>
      */
     static final class RetainedWindow {
-        private final SceneNode root;
-        private final SceneNode content;
-        private final SceneRuntime runtime;
-        private final SceneLayoutEngine layoutEngine;
-        private final SceneFramePipeline pipeline;
+        /** 窗口装配本体（外壳 + 内容 + 装饰层 + 独立帧管线；上提至 ui.scene.host 供 headless 共用）。 */
+        private final SceneHostWindow window;
         /** 外接工具栏层（未注册该 HUD 的工具栏时为内容直通）。 */
         private final HudToolbarLayer.Result toolbarLayer;
         /** 建立本窗口时的工具栏注册表版本（宿主据此判断是否重建）。 */
         private final int toolbarRevision;
 
         RetainedWindow(HudRegistry.Entry entry, SceneTextMeasurer measurer) {
-            HudTokens tokens = HudTokens.NORMAL;
-            // 五件套唯一装配点（A4）；无输入退化模式 inputSource=null。
-            // 构造期不再强制 flush：首帧物化由宿主合同保证（measure 空 → settleWithoutPaint
-            // 同帧 flush+relayout → 次帧绘制），signal 绑定内容至多晚一帧可见。
-            SceneHostAssembly.Bundle bundle = SceneHostAssembly.assemble(measurer, null,
-                    SceneHostAssembly.defaultEnvironment());
-            runtime = bundle.getRuntime();
-            layoutEngine = bundle.getLayoutEngine();
-            pipeline = bundle.getPipeline();
-            SceneNode shell = SceneNode.column().setHitTestable(false).setClipChildren(true)
-                    .setWidthSizing(SceneNode.WidthSizing.SHRINK);
-            if (entry.spec.isChrome()) {
-                // 默认外壳:半透明背景 + 内边距;chrome(false) 时内容直接浮在画面上(现代悬浮风格)
-                shell.setPadding(tokens.paddingY, tokens.paddingX, tokens.paddingY, tokens.paddingX)
-                        .setBackgroundColor(club.heiqi.uilib.ui.scene.paint.SceneChromeTokens.HUD_SHELL_BG);
-            }
-            root = shell;
-            SceneNode contentRoot = entry.factory.build(runtime);
-            if (contentRoot == null) {
-                throw new IllegalStateException("HUD window factory must return a content root: "
-                        + entry.spec.getId());
-            }
+            final String hudId = entry.spec.getId();
             // 外接工具栏层：挂在内容盒外侧一条边，尺寸参与外框测量与放置（四边工具栏
-            // 不遮挡主体）；未注册该 HUD 的工具栏时直通，root 子树与既有行为逐位一致。
-            // 工具栏工厂失败只丢工具栏，HUD 主体照常显示（单点隔离）。
-            HudToolbarLayer.Result layer;
-            try {
-                layer = HudToolbarService.getInstance()
-                        .mountLayer(runtime, entry.spec.getId(), contentRoot);
-            } catch (RuntimeException failure) {
-                MyMod.LOG.warn("HUD 工具栏工厂挂载失败，已跳过该工具栏: id={}",
-                        entry.spec.getId(), failure);
-                layer = HudToolbarLayer.passthrough(contentRoot);
-            }
-            toolbarLayer = layer;
-            toolbarRevision = HudToolbarService.getInstance().revision().get().intValue();
-            root.appendChild(layer.root());
-            content = contentRoot;
-            // 字号环境写入（装配点 P12）：本窗口自建 runtime（SceneHostAssembly.assemble :301-303），
-            // 建树路径不经 SceneRuntime.mount，必须在此把外框根交给 runtime。
-            // 覆盖范围 = 外壳 + 工厂内容 + 外接工具栏层整棵树：工具栏 wrapper/content 是 root 的
-            // 后代，沿父链继承；工具栏内的缩放宽按钮另经 HudToolbarLayer 的 rt.mount 写入。
-            SceneHostAssembly.attachTree(runtime, root);
+            // 不遮挡主体）；未注册该 HUD 的工具栏时直通，子树与既有行为逐位一致。
+            // 工具栏工厂失败只丢工具栏、HUD 主体照常显示（单点隔离）——隔离由 SceneHostWindow
+            // 统一承担，这里只把挂载结果记进探针字段。
+            final HudToolbarLayer.Result[] mounted = new HudToolbarLayer.Result[1];
+            SceneHostWindow assembled = new SceneHostWindow(measurer,
+                    SceneHostAssembly.defaultEnvironment(),
+                    entry.spec.isChrome() ? SceneHostWindow.Shell.HUD_DEFAULT
+                            : SceneHostWindow.Shell.BARE,
+                    entry.factory::build,
+                    (rt, contentRoot) -> {
+                        HudToolbarLayer.Result layer = HudToolbarService.getInstance()
+                                .mountLayer(rt, hudId, contentRoot);
+                        mounted[0] = layer;
+                        return layer.root();
+                    },
+                    failure -> MyMod.LOG.warn(
+                            "HUD 外接层挂载失败，已跳过该工具栏: id={}", hudId, failure));
+            this.window = assembled;
+            this.toolbarLayer = mounted[0] != null
+                    ? mounted[0] : HudToolbarLayer.passthrough(assembled.content());
+            this.toolbarRevision = HudToolbarService.getInstance().revision().get().intValue();
         }
 
         /** 测量（含外壳）：layout 后返回外壳盒。 */
         LayoutBox measure(int width, int height) {
-            layoutEngine.layout(root, new Constraints(Math.max(1, width), Math.max(1, height)));
-            return (LayoutBox) root.getCachedLayout();
+            return window.measure(width, height);
         }
 
-        /** 空窗帧推进：flush/layout/settle 照常，不 paint 不 replay（宿主合同 A2）。 */
-        void settleWithoutPaint(int width, int height) {
-            runtime.__tickFrame(System.nanoTime());
-            pipeline.settleWithoutPaint(root, width, height);
+        /** 空窗帧推进：flush/layout/settle 照常，不 paint 不 replay（投放方合同 A2）。 */
+        void settleWithoutPaint(int width, int height, long frameTimeNanos) {
+            window.settleWithoutPaint(width, height, frameTimeNanos);
         }
 
-        /**
-         * 内容子树无可见尺寸（signal 卸载/空文本）→ 整窗隐藏，对齐旧「空快照不显示」语义。
-         *
-         * <p><b>只看内容、不看工具栏</b>：外接工具栏是内容的附属，内容为空时整窗（含工具栏）
-         * 都不出现。这条同时避免了聊天"双形态"下的重复渲染——聊天输入屏打开期间 HUD 树为空，
-         * 若工具栏可见就单独渲染，工具栏会在屏幕与 HUD 各画一次。</p>
-         */
+        /** 内容子树无可见尺寸（signal 卸载/空文本）→ 整窗隐藏（语义见 {@link SceneHostWindow}）。 */
         boolean isEmptyContent() {
-            Object box = content.getCachedLayout();
-            return box == null || ((LayoutBox) box).getWidth() <= 0 || ((LayoutBox) box).getHeight() <= 0;
+            return window.isEmptyContent();
         }
 
         /** @return 建立本窗口时的工具栏注册表版本 */
@@ -391,20 +356,17 @@ public final class SceneHudHost {
             return toolbarLayer;
         }
 
-        /** 窗口帧循环：与 UI 页面同源的 11 阶段帧管线，并以放置盒硬裁剪（内容超长不溢出窗口）。 */
+        /** 窗口帧循环：与 UI 页面同源的帧管线，并以放置盒硬裁剪（内容超长不溢出窗口）。 */
         void frame(UiRenderBackend backend, int x, int y, int width, int height, long frameTimeNanos) {
-            runtime.__tickFrame(frameTimeNanos);
-            pipeline.run(root, width, height, backend, x, y, frameTimeNanos,
-                    new club.heiqi.uilib.ui.scene.layout.AnchorRect(0, 0, width, height));
+            window.frame(backend, x, y, width, height, frameTimeNanos);
         }
 
         void dispose() {
-            // 摘除环境根登记并清掉树根的环境引用（RC-10）：环境引用随树根装配设置，
-            // 卸载时成对摘除，避免跨 runtime 陈旧。
-            SceneHostAssembly.detachTree(runtime, root);
-            runtime.dispose();
+            window.dispose();
         }
 
-        SceneNode root() { return root; }
+        SceneNode root() {
+            return window.root();
+        }
     }
 }

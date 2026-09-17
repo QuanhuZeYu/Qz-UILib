@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.hud.api.HudToolbarSpec;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
+import club.heiqi.uilib.ui.scene.host.SceneHostWindow;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -208,7 +209,7 @@ public class SceneHudPipelineTest {
         new SceneHudHost(registry, MEASURER).render(shortBackend, 200, 80, true, false);
         RecordingRenderBackend.RenderCall shortClip = firstCall(shortBackend, "pushClip");
         assertNotNull(shortClip);
-        assertEquals(8 + HudTokens.NORMAL.paddingX * 2, shortClip.getInt(2) - shortClip.getInt(0));
+        assertEquals(8 + SceneHostWindow.Shell.HUD_DEFAULT.getPaddingX() * 2, shortClip.getInt(2) - shortClip.getInt(0));
         assertTrue(shortClip.getInt(2) - shortClip.getInt(0) < 200);
 
         HudRegistry longRegistry = new HudRegistry();
@@ -310,7 +311,7 @@ public class SceneHudPipelineTest {
         club.heiqi.uilib.ui.scene.layout.AnchorRect placement = host.currentPlacement("bar");
         assertNotNull("挂工具栏的 HUD 必须有权威放置盒", placement);
         assertEquals("外框高计入工具栏厚度与间隙",
-                HudTokens.NORMAL.paddingY * 2 + 16 + 3 + 20, placement.getHeight());
+                SceneHostWindow.Shell.HUD_DEFAULT.getPaddingY() * 2 + 16 + 3 + 20, placement.getHeight());
         assertTrue("主体照常绘制", backend.getCalls().stream().anyMatch(call ->
                 "drawText".equals(call.methodName()) && "BODY".equals(call.getString(0))));
         assertTrue("工具栏内容必须落在同一外框内绘制", backend.getCalls().stream().anyMatch(call ->
@@ -338,7 +339,7 @@ public class SceneHudPipelineTest {
         club.heiqi.uilib.ui.scene.layout.AnchorRect placement = host.currentPlacement("quiet");
         assertNotNull(placement);
         assertEquals("不可见工具栏不占外框尺寸",
-                HudTokens.NORMAL.paddingY * 2 + 16, placement.getHeight());
+                SceneHostWindow.Shell.HUD_DEFAULT.getPaddingY() * 2 + 16, placement.getHeight());
         assertTrue("工具栏内容不得绘制", backend.getCalls().stream().noneMatch(call ->
                 "drawText".equals(call.methodName()) && "TOOLS".equals(call.getString(0))));
     }
@@ -351,7 +352,7 @@ public class SceneHudPipelineTest {
         host.render(new RecordingRenderBackend(), 200, 100, true, false);
         club.heiqi.uilib.ui.scene.layout.AnchorRect before = host.currentPlacement("late");
         assertNotNull(before);
-        assertEquals(HudTokens.NORMAL.paddingY * 2 + 16, before.getHeight());
+        assertEquals(SceneHostWindow.Shell.HUD_DEFAULT.getPaddingY() * 2 + 16, before.getHeight());
 
         registerTools("late", HudToolbarSide.BOTTOM, 20, 3, Signal.create(Boolean.TRUE));
         // 注册表版本经帧末批处理生效；宿主在下一帧入口读到新版本后重建保留窗口
@@ -360,7 +361,7 @@ public class SceneHudPipelineTest {
         host.render(backend, 200, 100, true, false);
         club.heiqi.uilib.ui.scene.layout.AnchorRect after = host.currentPlacement("late");
         assertEquals("注册后必须重建并计入工具栏",
-                HudTokens.NORMAL.paddingY * 2 + 16 + 3 + 20, after.getHeight());
+                SceneHostWindow.Shell.HUD_DEFAULT.getPaddingY() * 2 + 16 + 3 + 20, after.getHeight());
         assertTrue(backend.getCalls().stream().anyMatch(call ->
                 "drawText".equals(call.methodName()) && "TOOLS".equals(call.getString(0))));
     }
@@ -381,7 +382,7 @@ public class SceneHudPipelineTest {
         club.heiqi.uilib.ui.scene.layout.AnchorRect placement = host.currentPlacement("broken-tools");
         assertNotNull(placement);
         assertEquals("工具栏工厂失败时外框退化为内容尺寸",
-                HudTokens.NORMAL.paddingY * 2 + 16, placement.getHeight());
+                SceneHostWindow.Shell.HUD_DEFAULT.getPaddingY() * 2 + 16, placement.getHeight());
     }
 
     @Test public void customPlacementOffsetsKeepGlobalScaleSemantics() {

@@ -27,6 +27,13 @@ public final class HeadlessRequest {
     /** 聊天页面标识：经生产内容构建入口渲染 chat3 内容树（气泡 / markdown / 公式 / 链接）。 */
     public static final String CHAT_PAGE = "chat";
     /**
+     * HUD 页面标识：同一份聊天内容树走生产 HUD 宿主装配（{@code SceneHostWindow}：外壳 + 锚定放置）。
+     *
+     * <p>与 {@link #CHAT_PAGE} 的差别只有宿主装配——用于对照「同一份内容代码，换宿主」的观感，
+     * 并核对 HUD 外壳几何、空窗隐藏与放置裁剪。</p>
+     */
+    public static final String HUD_PAGE = "hud";
+    /**
      * 聊天消息分隔符：{@code --text} 用它切成多条消息。
      *
      * <p>不取 {@code |}：那是 Windows 命令行的管道符，写进 {@code --text} 会被 shell 先解释掉。</p>

@@ -4,7 +4,7 @@ import club.heiqi.uilib.internal.devtools.playground.TestPlaygroundHost;
 import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
-import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
+import club.heiqi.uilib.ui.scene.UiSurface;
 
 /**
  * headless 会话：一次装配 → 多次推进 → 多次出图，并独占 GL 资源生命周期。
@@ -20,7 +20,7 @@ public final class HeadlessSession implements AutoCloseable {
     private final HeadlessRequest request;
     private final GlOffscreenSurface surface;
     private final HeadlessCapabilities capabilities;
-    private final AbstractSceneHostWidget host;
+    private final UiSurface host;
     private final RecordingUiRenderContext renderContext;
     private final PaintContextCompositor paintContextCompositor;
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
@@ -28,7 +28,7 @@ public final class HeadlessSession implements AutoCloseable {
     private boolean closed;
 
     private HeadlessSession(HeadlessRequest request, GlOffscreenSurface surface,
-            HeadlessCapabilities capabilities, AbstractSceneHostWidget host, RecordingUiRenderContext renderContext,
+            HeadlessCapabilities capabilities, UiSurface host, RecordingUiRenderContext renderContext,
             PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService,
             HeadlessInputSource inputSource) {
         this.request = request;
@@ -57,7 +57,7 @@ public final class HeadlessSession implements AutoCloseable {
         // 输入设备与会话同生命周期：脚本在装配期编译进设备，帧推进时由帧管线经 drainFrame 消费。
         HeadlessInputSource inputSource = new HeadlessInputSource(request.width(), request.height());
         HeadlessInputScript.apply(inputSource.device(), request.script());
-        AbstractSceneHostWidget host;
+        UiSurface host;
         try {
             host = createHost(request, inputSource);
         } catch (HeadlessFailure failure) {
@@ -83,13 +83,19 @@ public final class HeadlessSession implements AutoCloseable {
     /**
      * 页面来源：把页面标识映射为宿主。
      *
-     * <p>当前只提供 {@code playground}（测试场地首页）；后续页面（核心控件冒烟、配置页、chat3、HUD）
+     * <p>当前提供 {@code playground}（测试场地首页）、{@code text-probe}（单行文本）、
+     * {@code chat}（chat3 内容树）与 {@code hud}（HUD 宿主装配：外壳 + 锚定放置）；后续页面
      * 在此登记，不允许调用方自行 new 宿主绕过会话生命周期。</p>
+     *
+     * <p>返回类型是 {@link UiSurface} 而非 {@code AbstractSceneHostWidget}：页面宿主有两种形态——
+     * 挂在场景帧管线上的「页面宿主」（Widget 派生、有输入源）与保留式「宿主窗口」
+     * （{@link club.heiqi.uilib.ui.scene.host.SceneHostWindow}：无输入、内容空即隐）。
+     * 会话只驱动渲染面，不假定宿主内部形态。</p>
      *
      * @param request 请求
      * @return 已装配页面宿主
      */
-    private static AbstractSceneHostWidget createHost(HeadlessRequest request, HeadlessInputSource inputSource) {
+    private static UiSurface createHost(HeadlessRequest request, HeadlessInputSource inputSource) {
         if ("playground".equals(request.pageId())) {
             TestPlaygroundHost playgroundHost = new TestPlaygroundHost(inputSource);
             if (request.pageIndex() >= 0) {
@@ -106,9 +112,14 @@ public final class HeadlessSession implements AutoCloseable {
                     ChatSceneProbeHost.splitMessages(request.text()), inputSource);
         }
 
+        if (HeadlessRequest.HUD_PAGE.equals(request.pageId())) {
+            return new HudSceneProbeHost(request.width(), request.height(),
+                    ChatSceneProbeHost.splitMessages(request.text()), request.pageIndex());
+        }
+
         throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
                 "未知页面：" + request.pageId()
-                        + "（当前提供 playground / text-probe / chat）");
+                        + "（当前提供 playground / text-probe / chat / hud）");
     }
 
     /**

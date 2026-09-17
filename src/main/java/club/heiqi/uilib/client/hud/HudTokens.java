@@ -1,17 +1,19 @@
 package club.heiqi.uilib.client.hud;
 
-/** 通用 HUD 窗口外壳的默认皮肤 token（内边距与最小宽）。 */
+/**
+ * HUD 宿主层的放置令牌：默认最小宽与同锚点堆叠间隙。
+ *
+ * <p><b>外壳皮肤不在这里</b>：内边距与底色是「窗口外壳」的事实，已收敛到
+ * {@link club.heiqi.uilib.ui.scene.host.SceneHostWindow.Shell#HUD_DEFAULT}
+ * （ui 层唯一一份，客户端宿主与 headless 出图页共用，避免两处各写一份内边距）。
+ * 本类只保留「放置 / 堆叠」这一层的事实。</p>
+ */
 final class HudTokens {
-    static final HudTokens NORMAL = new HudTokens(7, 6, 32);
+    /** 未显式指定 minWidth 时的默认最小宽（px）。 */
+    static final int MIN_WIDTH = 32;
+    /** 同锚点相邻窗口的堆叠间隙（px）。 */
     static final int STACK_GAP = 4;
 
-    final int paddingX;
-    final int paddingY;
-    final int minWidth;
-
-    private HudTokens(int paddingX, int paddingY, int minWidth) {
-        this.paddingX = paddingX;
-        this.paddingY = paddingY;
-        this.minWidth = minWidth;
+    private HudTokens() {
     }
 }
