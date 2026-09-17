@@ -633,7 +633,7 @@ public class TextLayoutService {
 
             return strategyFor(resolveTextContentMode(textContentMode)).trim(text, targetWidth,
                     createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle),
-                    (int) currentSettings().getCharSize());
+                    (int) currentSettings().getGameCharSize());
         } finally {
             unlockGeneration();
         }
@@ -702,7 +702,7 @@ public class TextLayoutService {
             if (resolveTextContentMode(textContentMode) == TextContentMode.RICH_TAGS) {
                 return trimRichStringToWidthFromTail(text, targetWidth,
                         createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL),
-                        (int) currentSettings().getCharSize());
+                        (int) currentSettings().getGameCharSize());
             }
 
             StringBuilder visibleBuilder = new StringBuilder();
@@ -770,7 +770,7 @@ public class TextLayoutService {
 
             return strategyFor(resolveTextContentMode(textContentMode)).wrap(text, wrapWidth,
                     createBaseStyle(0xFFFFFFFF, UiFontWeight.NORMAL, UiFontStyle.NORMAL),
-                    (int) currentSettings().getCharSize());
+                    (int) currentSettings().getGameCharSize());
         } finally {
             unlockGeneration();
         }
@@ -955,14 +955,14 @@ public class TextLayoutService {
             if (segment.isLatex()) {
                 TextStyle style = segment.getStyle();
                 int effectiveSize = style == null ? 0
-                        : style.resolveEffectiveFontSizePx((int) currentSettings().getCharSize());
+                        : style.resolveEffectiveFontSizePx((int) currentSettings().getGameCharSize());
                 return getLatexBoxAtSize(segment, Math.max(1, effectiveSize)).getWidth();
             }
             double width = 0.0D;
             String text = segment.getText();
             TextStyle style = segment.getStyle();
             int effectiveSize = style == null ? 0
-                    : style.resolveEffectiveFontSizePx((int) currentSettings().getCharSize());
+                    : style.resolveEffectiveFontSizePx((int) currentSettings().getGameCharSize());
             for (int i = 0; i < text.length(); ) {
                 int codepoint = text.codePointAt(i);
                 width += resolveCodepointAdvance(codepoint, style, effectiveSize);
@@ -1540,7 +1540,7 @@ public class TextLayoutService {
 
     double measureCodepointWidth(int codepoint, FontType fontType, int fontSizePx) {
         double defaultWidth = measureCodepointWidth(codepoint, fontType);
-        return defaultWidth * Math.max(1, fontSizePx) / Math.max(1.0D, currentSettings().getCharSize());
+        return defaultWidth * Math.max(1, fontSizePx) / Math.max(1.0D, currentSettings().getGameCharSize());
     }
 
     /**
@@ -1746,7 +1746,7 @@ public class TextLayoutService {
     public int getLineHeight() {
         lockGeneration();
         try {
-            return getLineHeight((int) currentSettings().getCharSize());
+            return getLineHeight((int) currentSettings().getGameCharSize());
         } finally {
             unlockGeneration();
         }
@@ -1838,7 +1838,7 @@ public class TextLayoutService {
             GlyphRuntimeTables tables = currentRuntimeTables();
             float atlasAscent = tables == null ? 0.0F : tables.ascent(fontType);
             return Math.round(atlasAscent * Math.max(1, fontSizePx)
-                    / (float) currentSettings().getAwtCharSize());
+                    / (float) currentSettings().getGlyphGenerationSize());
         } finally {
             unlockGeneration();
         }
@@ -1860,7 +1860,7 @@ public class TextLayoutService {
             GlyphRuntimeTables tables = currentRuntimeTables();
             float atlasDescent = tables == null ? 0.0F : tables.descent(fontType);
             return Math.round(atlasDescent * Math.max(1, fontSizePx)
-                    / (float) currentSettings().getAwtCharSize());
+                    / (float) currentSettings().getGlyphGenerationSize());
         } finally {
             unlockGeneration();
         }
@@ -1883,10 +1883,10 @@ public class TextLayoutService {
             float atlasXHeight = tables == null ? 0.0F : tables.xHeight(fontType);
             if (atlasXHeight <= 0.0F) {
                 // 度量未发布时回退 CM 比例（x-height ≈ 0.431em）
-                atlasXHeight = (float) (0.431D * currentSettings().getAwtCharSize());
+                atlasXHeight = (float) (0.431D * currentSettings().getGlyphGenerationSize());
             }
             return Math.round(atlasXHeight * Math.max(1, fontSizePx)
-                    / (float) currentSettings().getAwtCharSize());
+                    / (float) currentSettings().getGlyphGenerationSize());
         } finally {
             unlockGeneration();
         }
@@ -1904,7 +1904,7 @@ public class TextLayoutService {
             GlyphRuntimeTables tables = currentRuntimeTables();
             float atlasLeading = tables == null ? 0.0F : tables.leading(FontType.NORMAL);
             return Math.round(atlasLeading * Math.max(1, fontSizePx)
-                    / (float) currentSettings().getAwtCharSize());
+                    / (float) currentSettings().getGlyphGenerationSize());
         } finally {
             unlockGeneration();
         }
@@ -1928,7 +1928,7 @@ public class TextLayoutService {
         if (advance <= 0.0D) {
             return settings.getSpaceWidth();
         }
-        return ((advance / glyphSize) * settings.getCharSize()) + settings.getCharacterSpacing();
+        return ((advance / glyphSize) * settings.getGameCharSize()) + settings.getCharacterSpacing();
     }
 
     /**

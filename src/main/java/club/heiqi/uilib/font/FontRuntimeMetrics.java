@@ -57,8 +57,8 @@ public final class FontRuntimeMetrics {
                 FONT_RENDER_CONTEXT);
         LineMetrics bold = baseFont.deriveFont(Font.BOLD, size).getLineMetrics(METRICS_SAMPLE,
                 FONT_RENDER_CONTEXT);
-        float[] normalizedNormal = normalize(normal, (float) settings.getAwtCharSize());
-        float[] normalizedBold = normalize(bold, (float) settings.getAwtCharSize());
+        float[] normalizedNormal = normalize(normal, (float) settings.getGlyphGenerationSize());
+        float[] normalizedBold = normalize(bold, (float) settings.getGlyphGenerationSize());
         float xHeightNormal = measureXHeight(baseFont, Font.PLAIN, settings);
         float xHeightBold = measureXHeight(baseFont, Font.BOLD, settings);
         return new FontRuntimeMetrics(normalizedNormal[0], normalizedNormal[1], normalizedNormal[2],
@@ -74,9 +74,9 @@ public final class FontRuntimeMetrics {
         double rawHeight = bounds.getHeight();
         if (rawHeight <= 0.0D) {
             // 字体无法给出 x 字形几何时回退 CM 比例（x-height ≈ 0.431em）
-            return (float) (0.431D * settings.getAwtCharSize());
+            return (float) (0.431D * settings.getGlyphGenerationSize());
         }
-        return (float) (rawHeight / glyphSize * settings.getAwtCharSize());
+        return (float) (rawHeight / glyphSize * settings.getGlyphGenerationSize());
     }
 
     public float getAscent(FontType fontType) {

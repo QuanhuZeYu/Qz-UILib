@@ -96,7 +96,7 @@ public class AwtInkCenterFallbackTest {
     @Test
     public void missingFontUsesNonzeroBoxCenter() {
         ColdFixture fixture = new ColdFixture();
-        float atlasSize = (float) FontRuntimeSettings.capture().getAwtCharSize();
+        float atlasSize = (float) FontRuntimeSettings.capture().getGlyphGenerationSize();
         // 由构造确定 UI ascent=SIZE_PX、descent=0；ink 表仍为空。
         fixture.tables.ascentNormal = atlasSize;
         fixture.tables.descentNormal = 0.0F;

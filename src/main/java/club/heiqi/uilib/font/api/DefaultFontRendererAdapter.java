@@ -302,7 +302,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             initializeForRender(fontService);
             FontRuntimeSettings settings = fontService.getRuntimeSettings();
             PreparedText preparedText = prepareTextDemand(fontService, text, normalizeColor(color), textContentMode,
-                    fontWeight, fontStyle, 1.0F, (float) settings.getCharSize(), settings);
+                    fontWeight, fontStyle, 1.0F, (float) settings.getGameCharSize(), settings);
             if (preparedText.isEmpty()) {
                 return (int) Math.ceil(x);
             }
@@ -310,7 +310,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 @Override
                 public int run() {
                     return drawPreparedText(fontService, preparedText, x, y, dropShadow,
-                            (float) settings.getCharSize(), 1.0F);
+                            (float) settings.getGameCharSize(), 1.0F);
                 }
             });
         }
@@ -400,7 +400,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             FontRuntimeSettings settings = fontService.getRuntimeSettings();
             float resolvedRenderScale = Math.max(0.01F, renderScale);
             PreparedText preparedText = prepareTextDemand(fontService, text, normalizeColor(color), textContentMode,
-                    fontWeight, fontStyle, resolvedRenderScale, (float) settings.getCharSize(), settings);
+                    fontWeight, fontStyle, resolvedRenderScale, (float) settings.getGameCharSize(), settings);
             if (preparedText.isEmpty()) {
                 return (int) Math.ceil(x);
             }
@@ -408,7 +408,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 @Override
                 public int run() {
                     return drawPreparedText(fontService, preparedText, x, y, dropShadow,
-                            (float) settings.getCharSize() * resolvedRenderScale, resolvedRenderScale);
+                            (float) settings.getGameCharSize() * resolvedRenderScale, resolvedRenderScale);
                 }
             });
         }
@@ -1815,7 +1815,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         private static PreparedText empty(FontRuntimeSettings settings) {
             return new PreparedText(settings, new int[0], new FontType[0], new float[0], new TextStyle[0],
-                    new int[0], (int) settings.getCharSize(), (int) settings.getCharSize(),
+                    new int[0], (int) settings.getGameCharSize(), (int) settings.getGameCharSize(),
                     new float[0], new float[0], new boolean[0], new boolean[0], false, new float[0][0], new int[0],
                     new int[0], new int[0], 0, 0.0F, new float[1], new PreparedMathGlyph[0]);
         }

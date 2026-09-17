@@ -40,7 +40,7 @@ public class DefaultFontRendererAdapterBaselineSizeTest {
         TextLayoutService textLayoutService = createService();
         TextStyle style = new TextStyle();
         style.resetAll(0xFFFFFFFF);
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
 
         // 段字号 = 调用方 px 字号（15）：宽 = 缓存宽（1.0，settings.charSize 坐标系）× 15/base
         double width15 = DefaultFontRendererAdapter.resolveSegmentCodepointWidth(textLayoutService, 'A', style, 15);

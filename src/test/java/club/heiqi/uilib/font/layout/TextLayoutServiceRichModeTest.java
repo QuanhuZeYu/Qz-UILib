@@ -59,7 +59,7 @@ public class TextLayoutServiceRichModeTest {
     @Test
     public void shouldScaleSupWidthByThreeQuarters() {
         TextLayoutService service = createService('A');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         double plainWidth = service.getSegmentWidth(new TextSegment("A", plainStyle()));
         TextStyle supStyle = plainStyle();
         supStyle.setSuperscript(true);
@@ -73,7 +73,7 @@ public class TextLayoutServiceRichModeTest {
     @Test
     public void shouldNotInflateLineHeightForSup() {
         TextLayoutService service = createService('A');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextMeasureStyle richStyle = TextMeasureStyle.fontSizePx(baseSize)
                 .withTextContentMode(TextContentMode.RICH_TAGS);
 
@@ -158,7 +158,7 @@ public class TextLayoutServiceRichModeTest {
     @Test
     public void shouldExtractLinkRegionsWithOffsets() {
         TextLayoutService service = createService('A', 'B', 'C', 'D');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextMeasureStyle style = TextMeasureStyle.fontSizePx(baseSize)
                 .withTextContentMode(TextContentMode.RICH_TAGS);
 
@@ -175,7 +175,7 @@ public class TextLayoutServiceRichModeTest {
     @Test
     public void shouldScaleWidthByExplicitSize() {
         TextLayoutService service = createService('A');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         String text = "A<size=" + (baseSize * 2) + ">A";
 
         int richWidth = service.getStringWidth(text, TextContentMode.RICH_TAGS);
@@ -250,7 +250,7 @@ public class TextLayoutServiceRichModeTest {
     @Test
     public void shouldMeasureSegmentWidthWithExplicitFontSize() {
         TextLayoutService service = createService('A');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextStyle style = new TextStyle();
         style.resetAll(0xFFFFFFFF);
         style.setFontSizePx(baseSize * 2);
@@ -265,7 +265,7 @@ public class TextLayoutServiceRichModeTest {
     @Test
     public void shouldComputeMaxFontSizeLineHeightForRichText() {
         TextLayoutService service = createService('A');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextMeasureStyle richStyle = TextMeasureStyle.fontSizePx(baseSize)
                 .withTextContentMode(TextContentMode.RICH_TAGS);
 
@@ -279,7 +279,7 @@ public class TextLayoutServiceRichModeTest {
     @Test
     public void shouldFallBackToPlainLineHeightOutsideRichMode() {
         TextLayoutService service = createService('A');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextMeasureStyle rawStyle = TextMeasureStyle.fontSizePx(baseSize);
 
         Assert.assertEquals(service.getLineHeight(rawStyle),
@@ -289,7 +289,7 @@ public class TextLayoutServiceRichModeTest {
     @Test
     public void shouldWrapMixedSizeLineWithSegmentSizes() {
         TextLayoutService service = createService('A', 'B', 'C');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         String text = "A<size=" + (baseSize * 2) + ">B</size>C";
 
         List<String> lines = service.listFormattedStringToWidth(text, 2, TextContentMode.RICH_TAGS);

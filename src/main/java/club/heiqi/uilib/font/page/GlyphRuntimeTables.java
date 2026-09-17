@@ -314,7 +314,7 @@ public final class GlyphRuntimeTables {
         if (!Float.isNaN(widthCache[codepoint])) {
             return;
         }
-        widthCache[codepoint] = (float) (((double) advance / glyphSize) * settings.getCharSize())
+        widthCache[codepoint] = (float) (((double) advance / glyphSize) * settings.getGameCharSize())
                 + (float) settings.getCharacterSpacing();
         // 装配真值入缓存即清偿该码点的宽度近似债务：冷启动布局若曾按空格宽近似过，
         // 债务归零时递增宽度收敛代，页面层布局产物随之失效重算。

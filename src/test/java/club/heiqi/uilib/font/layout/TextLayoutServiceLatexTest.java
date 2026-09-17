@@ -125,7 +125,7 @@ public class TextLayoutServiceLatexTest {
     @Test
     public void shouldIncludeLatexBoxInRichLineHeight() {
         TextLayoutService service = createService();
-        int baseSize = (int) club.heiqi.uilib.font.FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) club.heiqi.uilib.font.FontRuntimeSettings.capture().getGameCharSize();
         TextMeasureStyle richStyle = club.heiqi.uilib.ui.text.TextMeasureStyle.fontSizePx(baseSize)
                 .withTextContentMode(TextContentMode.RICH_TAGS);
         int withLatex = service.getLineHeight("A<latex>\\frac{a}{b}</latex>", richStyle);
@@ -138,7 +138,7 @@ public class TextLayoutServiceLatexTest {
         // 盒度量 ink 化后公式盒总高=内容墨水高，行高必须附加行距余量（上下各 0.1em），
         // 否则多行公式零间距（24px 压力卡多行分数视觉重叠）
         TextLayoutService service = createService();
-        int baseSize = (int) club.heiqi.uilib.font.FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) club.heiqi.uilib.font.FontRuntimeSettings.capture().getGameCharSize();
         TextMeasureStyle richStyle = club.heiqi.uilib.ui.text.TextMeasureStyle.fontSizePx(baseSize)
                 .withTextContentMode(TextContentMode.RICH_TAGS);
         TextStyle style = new TextStyle();

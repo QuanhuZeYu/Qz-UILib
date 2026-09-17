@@ -10,7 +10,7 @@ import club.heiqi.uilib.font.layout.TextStyle;
  * markdown 出图渲染倍率的单一开关（M4 增补需求：@1x 出货口径 + @Nx 判读副本）。
  *
  * <p><b>真放大依据（一手核实）</b>：软件装配的 atlas 字形按
- * {@code FontConfig.awtCharSize=64.0} 生成（{@code FontRuntimeSettings.getPageGlyphSize()}=64），
+ * {@code FontConfig.glyphGenerationSize=64.0} 生成（{@code FontRuntimeSettings.getPageGlyphSize()}=64），
  * 生产渲染基准 13px 本就是对 64px 位图的降采样。故 {@code renderSegmentsToCollector} 的
  * {@code baseFontSizePx} 提到 13×N（N≤4 时 52px ≤ 64px）即<b>按字形 px 真放大</b>，
  * 零事后缩放、零新增代码路径——@Nx 与 @1x 共享同一语料、同一次解析/换行结果，只换倍率参数。
@@ -30,7 +30,7 @@ final class MarkdownRenderScaleKit {
     static final int MIN_CANVAS_W = 854;
     static final int MIN_CANVAS_H = 480;
 
-    /** atlas 字形生成分辨率（FontConfig.awtCharSize 默认值；profiles 记录用）。 */
+    /** atlas 字形生成分辨率（FontConfig.glyphGenerationSize 默认值；profiles 记录用）。 */
     static final int ATLAS_GLYPH_PX = 64;
 
     private static int readN() {

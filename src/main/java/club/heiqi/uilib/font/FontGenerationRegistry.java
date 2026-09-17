@@ -64,7 +64,7 @@ final class FontGenerationRegistry {
 
     private List<Font> loadAssetFonts(FontRuntimeSettings settings, FontResourceSnapshot resources) {
         List<Font> fonts = new ArrayList<Font>();
-        float derivedSize = (float) settings.getAwtCharSize();
+        float derivedSize = (float) settings.getGlyphGenerationSize();
         for (FontResourceSnapshot.AssetFontResource resource : resources.getAssetFonts()) {
             FontResourceSnapshot.assertNotInterrupted();
             try (ByteArrayInputStream input = resource.openContentStream()) {
@@ -80,7 +80,7 @@ final class FontGenerationRegistry {
 
     private List<Font> loadInstalledFonts(FontRuntimeSettings settings, FontResourceSnapshot resources) {
         List<Font> fonts = new ArrayList<Font>();
-        float derivedSize = (float) settings.getAwtCharSize();
+        float derivedSize = (float) settings.getGlyphGenerationSize();
         for (Font font : resources.getInstalledFonts()) {
             FontResourceSnapshot.assertNotInterrupted();
             fonts.add(font.deriveFont(derivedSize));

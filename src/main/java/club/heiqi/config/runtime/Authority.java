@@ -518,6 +518,62 @@ public final class Authority {
         }
     }
 
+    /**
+     * 一次性迁移读取：取 schema section 内<b>非 schema 子键</b>的数值，并从权威态移除该键。
+     *
+     * <p>用途 = 配置项改名后的兼容读取。历史键在新 schema 里不再声明，{@code fromRoot} 会把它收进
+     * section raw overlay（键 = section 名，仅含未知子键）；本方法读出该值后从内存态删除，
+     * 使下一次保存不再写出历史键。<b>若只读不删</b>，历史键会长期留在文件里、每次启动覆盖新键，
+     * 用户在 UI 改新键也会被顶回。</p>
+     *
+     * <p>只改内存态，落盘由保存事务负责。键不存在 / overlay 非 MAP / 值非 NUMBER 或非有限
+     * 一律返回 null（不抛、不猜）。</p>
+     *
+     * @param section   schema 顶层 section 名
+     * @param legacyKey section 内的历史子键
+     * @return 历史键的数值；不可用时 null
+     */
+    public Double consumeLegacySectionNumber(String section, String legacyKey) {
+        if (section == null || legacyKey == null) {
+            return null;
+        }
+        synchronized (transactionLock) {
+            Object stored = typedValues.get(section);
+            if (!(stored instanceof ConfigNode)) {
+                return null;
+            }
+            ConfigNode overlay = (ConfigNode) stored;
+            if (overlay.isNull() || overlay.getType() != ConfigNode.NodeType.MAP) {
+                return null;
+            }
+            ConfigNode child = overlay.get(legacyKey);
+            if (child == null || child.isNull() || child.getType() != ConfigNode.NodeType.NUMBER) {
+                return null;
+            }
+            double value;
+            try {
+                value = child.asDouble();
+            } catch (ConfigException e) {
+                return null;
+            }
+            if (!UiNumbers.isFinite(value)) {
+                return null;
+            }
+            MutableConfig trimmed = Config.createMutable(ConfigFormat.YAML);
+            loadSubtreeInto(trimmed, overlay);
+            trimmed.remove(legacyKey);
+            ConfigNode after = trimmed.asImmutable();
+            Map<String, ConfigNode> remaining =
+                    after.getType() == ConfigNode.NodeType.MAP ? after.asMap() : null;
+            if (remaining == null || remaining.isEmpty()) {
+                typedValues.remove(section);
+            } else {
+                typedValues.put(section, ValueCopy.copyOf(after));
+            }
+            return Double.valueOf(value);
+        }
+    }
+
     public ConfigSchema schema() {
         return schema;
     }

@@ -15,13 +15,29 @@ public final class FontConfig {
     public static int lerpMode = 3;
     public static int aaMode = 2;
     /**
-     * atlas 生成分辨率；与 charSize 的比值是字体层缩放因子。
+     * 字形生成分辨率（AWT atlas 坐标系，单位 = atlas 像素）：决定字形清晰度与图集显存，
+     * 与 {@link #gameCharSize} 的比值就是显示侧缩放因子。
+     *
+     * <p>历史名 {@code awtCharSize}（改名理由：{@code awt} 是实现前缀，不承载语义）。</p>
      */
-    public static double awtCharSize = 64.0D;
+    public static double glyphGenerationSize = 64.0D;
     /**
-     * 默认显示字号；与 awtCharSize 的比值是显示侧缩放因子。
+     * 游戏字符大小：字体引擎的<b>基准显示字号</b>（UI 像素），三项事实的唯一来源——
+     * ① 原版 {@code drawString} 接管路径在调用方未给字号时的默认显示字号；
+     * ② 宽度 / 行高折算的坐标系原点（{@code defaultWidth × fontSizePx / 本值}）；
+     * ③ 测量缺省基准（{@code TextMeasureService} 的口径）。
+     *
+     * <p>默认 9.0 与原版字高对齐，但这是<b>数值约定</b>而非代码引用：改本值等于改原版观感，
+     * 且会触发字形 / 图集重建（见 {@link #affectsFontRuntime()}）。</p>
+     *
+     * <p><b>不随用户字号变化</b>：用户字号作用于 scene 文本的显示尺寸（scene 字号 1:1 透传到
+     * 渲染器，不经 {@code UI_TEXT_SCALE}）；本值是坐标系基准，挂在「用户调字号」的热路径上
+     * 会导致整库字形重建。</p>
+     *
+     * <p>历史名 {@code charSize}（改名理由：原名的「字符尺寸」无法区分它到底是原版字号、
+     * 缺省字号还是折算基准——实际是同一个值）。</p>
      */
-    public static double charSize = 9.0D;
+    public static double gameCharSize = 9.0D;
     public static double spaceWidth = 4.0D;
     public static double characterSpacing = 0.1D;
     public static double shadowOffsetX = 0.5D;
@@ -72,8 +88,8 @@ public final class FontConfig {
     private static int lastGlyphInkPadding = glyphInkPadding;
     private static double lastAtlasTextureScale = atlasTextureScale;
     private static int lastLerpMode = lerpMode;
-    private static double lastAwtCharSize = awtCharSize;
-    private static double lastCharSize = charSize;
+    private static double lastGlyphGenerationSize = glyphGenerationSize;
+    private static double lastGameCharSize = gameCharSize;
     private static double lastSpaceWidth = spaceWidth;
     private static double lastCharacterSpacing = characterSpacing;
     private static boolean lastReplaceOrigin = replaceOrigin;
@@ -93,8 +109,8 @@ public final class FontConfig {
         return lastLerpMode != lerpMode
                 || lastGlyphInkPadding != glyphInkPadding
                 || Double.compare(lastAtlasTextureScale, atlasTextureScale) != 0
-                || Double.compare(lastAwtCharSize, awtCharSize) != 0
-                || Double.compare(lastCharSize, charSize) != 0
+                || Double.compare(lastGlyphGenerationSize, glyphGenerationSize) != 0
+                || Double.compare(lastGameCharSize, gameCharSize) != 0
                 || Double.compare(lastSpaceWidth, spaceWidth) != 0
                 || Double.compare(lastCharacterSpacing, characterSpacing) != 0
                 || lastReplaceOrigin != replaceOrigin
@@ -123,8 +139,8 @@ public final class FontConfig {
         lastGlyphInkPadding = glyphInkPadding;
         lastAtlasTextureScale = atlasTextureScale;
         lastLerpMode = lerpMode;
-        lastAwtCharSize = awtCharSize;
-        lastCharSize = charSize;
+        lastGlyphGenerationSize = glyphGenerationSize;
+        lastGameCharSize = gameCharSize;
         lastSpaceWidth = spaceWidth;
         lastCharacterSpacing = characterSpacing;
         lastReplaceOrigin = replaceOrigin;
@@ -210,8 +226,8 @@ public final class FontConfig {
      * @return 摘要文本
      */
     public static String buildSummary() {
-        return "charSize=" + charSize
-                + ", awtCharSize=" + awtCharSize
+        return "gameCharSize=" + gameCharSize
+                + ", glyphGenerationSize=" + glyphGenerationSize
                 + ", replaceOrigin=" + replaceOrigin
                 + ", customInvCountFont=" + customInvCountFont
                 + ", fontSort=" + Arrays.toString(fontSort)

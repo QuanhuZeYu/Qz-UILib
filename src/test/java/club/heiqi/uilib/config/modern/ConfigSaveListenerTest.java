@@ -89,8 +89,8 @@ public class ConfigSaveListenerTest {
         saveNetTransport = Config.netTransport;
         saveLerpMode = FontConfig.lerpMode;
         saveAaMode = FontConfig.aaMode;
-        saveAwtCharSize = FontConfig.awtCharSize;
-        saveCharSize = FontConfig.charSize;
+        saveAwtCharSize = FontConfig.glyphGenerationSize;
+        saveCharSize = FontConfig.gameCharSize;
         saveSpaceWidth = FontConfig.spaceWidth;
         saveCharacterSpacing = FontConfig.characterSpacing;
         saveShadowOffsetX = FontConfig.shadowOffsetX;
@@ -129,8 +129,8 @@ public class ConfigSaveListenerTest {
         Config.netTransport = saveNetTransport;
         FontConfig.lerpMode = saveLerpMode;
         FontConfig.aaMode = saveAaMode;
-        FontConfig.awtCharSize = saveAwtCharSize;
-        FontConfig.charSize = saveCharSize;
+        FontConfig.glyphGenerationSize = saveAwtCharSize;
+        FontConfig.gameCharSize = saveCharSize;
         FontConfig.spaceWidth = saveSpaceWidth;
         FontConfig.characterSpacing = saveCharacterSpacing;
         FontConfig.shadowOffsetX = saveShadowOffsetX;

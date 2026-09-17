@@ -120,13 +120,13 @@ public class FontServiceLayoutRuntimeSmokeTest {
         NonQuiescentAfterShutdownScheduler scheduler = new NonQuiescentAfterShutdownScheduler();
         FontService service = new FontService(signal, DefaultFontGenerationCandidateFactory.INSTANCE,
                 new GlyphGenerationDispatcher(), scheduler);
-        double oldCharSize = FontConfig.charSize;
+        double oldCharSize = FontConfig.gameCharSize;
         try {
             service.initialize();
             ActiveFontGeneration original = service.getActiveGeneration();
             service.shutdown();
             double desiredCharSize = oldCharSize >= 72.0D ? oldCharSize - 1.0D : oldCharSize + 1.0D;
-            FontConfig.charSize = desiredCharSize;
+            FontConfig.gameCharSize = desiredCharSize;
 
             service.initialize();
 
@@ -150,11 +150,11 @@ public class FontServiceLayoutRuntimeSmokeTest {
 
             ActiveFontGeneration converged = service.getActiveGeneration();
             Assert.assertNotSame("旧 scheduler 收敛后必须最终提交 desired generation", original, converged);
-            Assert.assertEquals(desiredCharSize, converged.getSettings().getCharSize(), 0.0D);
+            Assert.assertEquals(desiredCharSize, converged.getSettings().getGameCharSize(), 0.0D);
             Assert.assertEquals(0, signal.getPendingCount());
             Assert.assertEquals(1, scheduler.getSubmittedCount());
         } finally {
-            FontConfig.charSize = oldCharSize;
+            FontConfig.gameCharSize = oldCharSize;
             scheduler.allowQuiescence();
             service.shutdown();
         }
@@ -709,14 +709,14 @@ public class FontServiceLayoutRuntimeSmokeTest {
     /** layout-only warmup 后配置再变化，完整 initialize 必须重新捕获 desired settings。 */
     @Test
     public void shouldRecaptureDesiredSettingsWhenInitializingAfterLayoutWarmup() throws Exception {
-        double oldCharSize = FontConfig.charSize;
+        double oldCharSize = FontConfig.gameCharSize;
         FontReloadSignal signal = new FontReloadSignal(0L, 0L, 0L, System::nanoTime);
         FontService service = new FontService(signal);
         try {
             service.ensureLayoutRuntimeReady();
             ActiveFontGeneration layoutGeneration = service.getActiveGeneration();
             double desiredCharSize = oldCharSize >= 72.0D ? oldCharSize - 1.0D : oldCharSize + 1.0D;
-            FontConfig.charSize = desiredCharSize;
+            FontConfig.gameCharSize = desiredCharSize;
 
             service.initialize();
 
@@ -731,9 +731,9 @@ public class FontServiceLayoutRuntimeSmokeTest {
             Assert.assertNotSame(layoutGeneration, initializedGeneration);
             Assert.assertEquals(layoutGeneration.getRuntimeVersion() + 1,
                     initializedGeneration.getRuntimeVersion());
-            Assert.assertEquals(desiredCharSize, initializedGeneration.getSettings().getCharSize(), 0.0D);
+            Assert.assertEquals(desiredCharSize, initializedGeneration.getSettings().getGameCharSize(), 0.0D);
         } finally {
-            FontConfig.charSize = oldCharSize;
+            FontConfig.gameCharSize = oldCharSize;
             service.shutdown();
         }
     }

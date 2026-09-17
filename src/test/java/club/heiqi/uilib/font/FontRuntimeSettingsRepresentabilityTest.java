@@ -32,8 +32,8 @@ public class FontRuntimeSettingsRepresentabilityTest {
     /** 公开构造器能表达的字段（atlasTextureScale 不在其中，见类级说明）。 */
     private static final String[] CONSTRUCTED_FIELDS = {
             FontRuntimeSettings.FIELD_LERP_MODE,
-            FontRuntimeSettings.FIELD_AWT_CHAR_SIZE,
-            FontRuntimeSettings.FIELD_CHAR_SIZE,
+            FontRuntimeSettings.FIELD_GLYPH_GENERATION_SIZE,
+            FontRuntimeSettings.FIELD_GAME_CHAR_SIZE,
             FontRuntimeSettings.FIELD_SPACE_WIDTH,
             FontRuntimeSettings.FIELD_CHARACTER_SPACING,
     };
@@ -91,9 +91,9 @@ public class FontRuntimeSettingsRepresentabilityTest {
     @Test
     public void legalValuesBeyondUiRangesAreNotTreatedAsBroken() {
         Assert.assertTrue("charSize=90 超出 UI 上限但产品可表示",
-                FontRuntimeSettings.isRepresentable(FontRuntimeSettings.FIELD_CHAR_SIZE, 90.0D));
+                FontRuntimeSettings.isRepresentable(FontRuntimeSettings.FIELD_GAME_CHAR_SIZE, 90.0D));
         Assert.assertTrue("awtCharSize=300 超出 UI 上限但产品可表示",
-                FontRuntimeSettings.isRepresentable(FontRuntimeSettings.FIELD_AWT_CHAR_SIZE, 300.0D));
+                FontRuntimeSettings.isRepresentable(FontRuntimeSettings.FIELD_GLYPH_GENERATION_SIZE, 300.0D));
         Assert.assertTrue("spaceWidth 允许 0 与负值（有明确语义）",
                 FontRuntimeSettings.isRepresentable(FontRuntimeSettings.FIELD_SPACE_WIDTH, 0.0D)
                         && FontRuntimeSettings.isRepresentable(FontRuntimeSettings.FIELD_SPACE_WIDTH, -2.0D));
@@ -153,9 +153,9 @@ public class FontRuntimeSettingsRepresentabilityTest {
         double characterSpacing = 0.1D;
         if (FontRuntimeSettings.FIELD_LERP_MODE.equals(field)) {
             lerpMode = (int) value;
-        } else if (FontRuntimeSettings.FIELD_AWT_CHAR_SIZE.equals(field)) {
+        } else if (FontRuntimeSettings.FIELD_GLYPH_GENERATION_SIZE.equals(field)) {
             awtCharSize = value;
-        } else if (FontRuntimeSettings.FIELD_CHAR_SIZE.equals(field)) {
+        } else if (FontRuntimeSettings.FIELD_GAME_CHAR_SIZE.equals(field)) {
             charSize = value;
         } else if (FontRuntimeSettings.FIELD_SPACE_WIDTH.equals(field)) {
             spaceWidth = value;

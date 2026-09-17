@@ -120,7 +120,7 @@ public class FontRegistry {
             return fonts;
         }
 
-        float derivedSize = (float) settings.getAwtCharSize();
+        float derivedSize = (float) settings.getGlyphGenerationSize();
         for (File file : fontFiles) {
             try {
                 Font font = Font.createFont(Font.TRUETYPE_FONT, file).deriveFont(derivedSize);
@@ -152,7 +152,7 @@ public class FontRegistry {
 
     private List<Font> loadInstalledFonts(FontRuntimeSettings settings) {
         List<Font> fonts = new ArrayList<Font>();
-        float derivedSize = (float) settings.getAwtCharSize();
+        float derivedSize = (float) settings.getGlyphGenerationSize();
         Font[] installed = GraphicsEnvironment.getLocalGraphicsEnvironment().getAllFonts();
         for (Font font : installed) {
             fonts.add(font.deriveFont(derivedSize));

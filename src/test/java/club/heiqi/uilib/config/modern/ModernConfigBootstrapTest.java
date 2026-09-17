@@ -95,8 +95,8 @@ public class ModernConfigBootstrapTest {
         // FontConfig
         saveLerpMode = FontConfig.lerpMode;
         saveAaMode = FontConfig.aaMode;
-        saveAwtCharSize = FontConfig.awtCharSize;
-        saveCharSize = FontConfig.charSize;
+        saveAwtCharSize = FontConfig.glyphGenerationSize;
+        saveCharSize = FontConfig.gameCharSize;
         saveSpaceWidth = FontConfig.spaceWidth;
         saveCharacterSpacing = FontConfig.characterSpacing;
         saveShadowOffsetX = FontConfig.shadowOffsetX;
@@ -131,8 +131,8 @@ public class ModernConfigBootstrapTest {
         Config.netTransport = saveNetTransport;
         FontConfig.lerpMode = saveLerpMode;
         FontConfig.aaMode = saveAaMode;
-        FontConfig.awtCharSize = saveAwtCharSize;
-        FontConfig.charSize = saveCharSize;
+        FontConfig.glyphGenerationSize = saveAwtCharSize;
+        FontConfig.gameCharSize = saveCharSize;
         FontConfig.spaceWidth = saveSpaceWidth;
         FontConfig.characterSpacing = saveCharacterSpacing;
         FontConfig.shadowOffsetX = saveShadowOffsetX;
@@ -208,8 +208,8 @@ public class ModernConfigBootstrapTest {
         assertArrayEquals("characterFontRules 默认空数组", new String[0], FontConfig.characterFontRules);
 
         // fontSizeSetting section
-        assertEquals("awtCharSize 默认 64.0", 64.0, FontConfig.awtCharSize, 0.0);
-        assertEquals("charSize 默认 9.0", 9.0, FontConfig.charSize, 0.0);
+        assertEquals("awtCharSize 默认 64.0", 64.0, FontConfig.glyphGenerationSize, 0.0);
+        assertEquals("charSize 默认 9.0", 9.0, FontConfig.gameCharSize, 0.0);
     }
 
     /**
@@ -230,7 +230,7 @@ public class ModernConfigBootstrapTest {
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         draft.setDraft("fontSystem.brightnessGain", Double.valueOf(3.5));
         draft.setDraft("fontSystem.fontSort", Arrays.asList("Sans"));
-        draft.setDraft("fontSizeSetting.awtCharSize", Double.valueOf(96.0));
+        draft.setDraft("fontSizeSetting.glyphGenerationSize", Double.valueOf(96.0));
         SaveOutcome outcome = writer.save(draft);
         assertTrue("保存应成功: " + outcome.status(), outcome.isSuccess());
 
@@ -242,7 +242,7 @@ public class ModernConfigBootstrapTest {
         assertEquals("lerpMode 应为 1", 1, FontConfig.lerpMode);
         assertEquals("brightnessGain 应为 3.5", 3.5, FontConfig.brightnessGain, 0.0);
         assertArrayEquals("fontSort 应为 [Sans]", new String[] {"Sans"}, FontConfig.fontSort);
-        assertEquals("awtCharSize 应为 96.0", 96.0, FontConfig.awtCharSize, 0.0);
+        assertEquals("awtCharSize 应为 96.0", 96.0, FontConfig.glyphGenerationSize, 0.0);
     }
 
     /**
@@ -300,25 +300,25 @@ public class ModernConfigBootstrapTest {
         File file = tempFolder.newFile("qzuilib-bootstrap-out-of-range.yaml");
         try (java.io.PrintWriter pw = new java.io.PrintWriter(file, "UTF-8")) {
             pw.write("fontSystem:\n  lerpMode: 9\n");
-            pw.write("fontSizeSetting:\n  charSize: 0\n  awtCharSize: -5\n");
+            pw.write("fontSizeSetting:\n  gameCharSize: 0\n  glyphGenerationSize: -5\n");
         }
 
         ModernConfigBootstrap.bootstrapAndApply(file);
 
         assertEquals("lerpMode 越上界应钳到 schema 声明的上界 3", 3, FontConfig.lerpMode);
-        assertEquals("charSize=0 无法表示，应钳到 schema 下界 1", 1.0D, FontConfig.charSize, 0.0D);
-        assertEquals("awtCharSize 负值无法表示，应钳到 schema 下界 8", 8.0D, FontConfig.awtCharSize, 0.0D);
+        assertEquals("gameCharSize=0 无法表示，应钳到 schema 下界 1", 1.0D, FontConfig.gameCharSize, 0.0D);
+        assertEquals("glyphGenerationSize 负值无法表示，应钳到 schema 下界 8", 8.0D, FontConfig.glyphGenerationSize, 0.0D);
         FontRuntimeSettings settings = FontRuntimeSettings.capture();
         assertEquals("capture() 必须接受修完的值（这一句以前会抛 ExceptionInInitializerError）",
                 3, settings.getLerpMode());
-        assertEquals(1.0D, settings.getCharSize(), 0.0D);
-        assertEquals(8.0D, settings.getAwtCharSize(), 0.0D);
+        assertEquals(1.0D, settings.getGameCharSize(), 0.0D);
+        assertEquals(8.0D, settings.getGlyphGenerationSize(), 0.0D);
     }
 
     /**
      * 用例 E：产品能表示的高值必须原样保留（A1 选定语义的钉子）。
      *
-     * <p>修复只针对"产品无法表示"的值，而不是"超出 UI 滑条范围"的值。{@code charSize: 90}
+     * <p>修复只针对"产品无法表示"的值，而不是"超出 UI 滑条范围"的值。{@code gameCharSize: 90}
      * 超出 schema 声明的 1..72，但字体运行时完全能表示它；若图省事按 schema 统一钳位，
      * 等于用一次崩溃修复悄悄没收用户特意手改的大字号。这条断言把取舍钉死：
      * 谁改成按 schema 范围钳，这里立刻红。</p>
@@ -327,15 +327,15 @@ public class ModernConfigBootstrapTest {
     public void bootstrapAndApplyKeepsLegalValuesBeyondUiRanges() throws Exception {
         File file = tempFolder.newFile("qzuilib-bootstrap-legal-high.yaml");
         try (java.io.PrintWriter pw = new java.io.PrintWriter(file, "UTF-8")) {
-            pw.write("fontSizeSetting:\n  charSize: 90\n  awtCharSize: 300\n");
+            pw.write("fontSizeSetting:\n  gameCharSize: 90\n  glyphGenerationSize: 300\n");
         }
 
         ModernConfigBootstrap.bootstrapAndApply(file);
 
-        assertEquals("charSize=90 超出 UI 上限但产品可表示，不得被钳成 72",
-                90.0D, FontConfig.charSize, 0.0D);
-        assertEquals("awtCharSize=300 同理，必须保持 300", 300.0D, FontConfig.awtCharSize, 0.0D);
+        assertEquals("gameCharSize=90 超出 UI 上限但产品可表示，不得被钳成 72",
+                90.0D, FontConfig.gameCharSize, 0.0D);
+        assertEquals("glyphGenerationSize=300 同理，必须保持 300", 300.0D, FontConfig.glyphGenerationSize, 0.0D);
         assertEquals("capture() 读到的就是用户配的值",
-                90.0D, FontRuntimeSettings.capture().getCharSize(), 0.0D);
+                90.0D, FontRuntimeSettings.capture().getGameCharSize(), 0.0D);
     }
 }

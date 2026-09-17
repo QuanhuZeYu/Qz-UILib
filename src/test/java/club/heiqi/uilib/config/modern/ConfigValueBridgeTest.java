@@ -96,8 +96,8 @@ public class ConfigValueBridgeTest {
         // FontConfig
         saveLerpMode = FontConfig.lerpMode;
         saveAaMode = FontConfig.aaMode;
-        saveAwtCharSize = FontConfig.awtCharSize;
-        saveCharSize = FontConfig.charSize;
+        saveAwtCharSize = FontConfig.glyphGenerationSize;
+        saveCharSize = FontConfig.gameCharSize;
         saveSpaceWidth = FontConfig.spaceWidth;
         saveCharacterSpacing = FontConfig.characterSpacing;
         saveShadowOffsetX = FontConfig.shadowOffsetX;
@@ -132,8 +132,8 @@ public class ConfigValueBridgeTest {
         Config.netTransport = saveNetTransport;
         FontConfig.lerpMode = saveLerpMode;
         FontConfig.aaMode = saveAaMode;
-        FontConfig.awtCharSize = saveAwtCharSize;
-        FontConfig.charSize = saveCharSize;
+        FontConfig.glyphGenerationSize = saveAwtCharSize;
+        FontConfig.gameCharSize = saveCharSize;
         FontConfig.spaceWidth = saveSpaceWidth;
         FontConfig.characterSpacing = saveCharacterSpacing;
         FontConfig.shadowOffsetX = saveShadowOffsetX;
@@ -204,8 +204,8 @@ public class ConfigValueBridgeTest {
                 FontConfig.fontSortConfigured);
 
         // fontSizeSetting section
-        assertEquals(64.0, FontConfig.awtCharSize, 0.0);
-        assertEquals(9.0, FontConfig.charSize, 0.0);
+        assertEquals(64.0, FontConfig.glyphGenerationSize, 0.0);
+        assertEquals(9.0, FontConfig.gameCharSize, 0.0);
     }
 
     /**
@@ -279,8 +279,8 @@ public class ConfigValueBridgeTest {
         draft.setDraft("general.netTransport", "forge");
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
         draft.setDraft("fontSystem.brightnessGain", Double.valueOf(3.5));
-        draft.setDraft("fontSizeSetting.charSize", Double.valueOf(12.0));
-        draft.setDraft("fontSizeSetting.awtCharSize", Double.valueOf(96.0));
+        draft.setDraft("fontSizeSetting.gameCharSize", Double.valueOf(12.0));
+        draft.setDraft("fontSizeSetting.glyphGenerationSize", Double.valueOf(96.0));
         assertTrue(manager.save(draft).isSuccess());
 
         ConfigValueBridge.applyFromAuthority(manager.authority());
@@ -289,8 +289,8 @@ public class ConfigValueBridgeTest {
         assertEquals("forge", Config.netTransport);
         assertEquals(1, FontConfig.lerpMode);
         assertEquals(3.5, FontConfig.brightnessGain, 0.0);
-        assertEquals(12.0, FontConfig.charSize, 0.0);
-        assertEquals(96.0, FontConfig.awtCharSize, 0.0);
+        assertEquals(12.0, FontConfig.gameCharSize, 0.0);
+        assertEquals(96.0, FontConfig.glyphGenerationSize, 0.0);
     }
 
     /**
@@ -357,6 +357,42 @@ public class ConfigValueBridgeTest {
         assertEquals(0, FontConfig.fontSort.length);
         assertNotNull("characterFontRules null 守卫应转空数组", FontConfig.characterFontRules);
         assertEquals(0, FontConfig.characterFontRules.length);
+    }
+
+    /**
+     * 字号配置项改名的迁移语义：文件里仍是历史键（{@code fontSizeSetting.charSize} /
+     * {@code awtCharSize}）时，<b>旧值生效并完成一次性迁移</b>——旧键从权威态移除，
+     * 此后写新键不再被旧值顶回。
+     *
+     * <p>为什么必须删而不是长期回退：历史键在新 schema 里不再是字段，会落进 section raw overlay，
+     * 每次启动都被读到；只读不删会让用户在界面改 {@code gameCharSize} 后一重启就被旧值覆盖，
+     * 且旧键永久留在配置文件里。</p>
+     */
+    @Test
+    public void legacyFontSizeKeysMigrateOnceAndStopOverridingNewKey() throws Exception {
+        File file = tempFolder.newFile("qzuilib-legacy-fontsize.yaml");
+        ConfigSchema schema = QzUiLibModernSchema.create();
+        java.nio.file.Files.write(file.toPath(), Arrays.asList(
+                "fontSizeSetting:",
+                "  charSize: 12.0",
+                "  awtCharSize: 96.0"), java.nio.charset.StandardCharsets.UTF_8);
+        ConfigManager manager = ConfigManager.bootstrap(file, schema);
+        Authority authority = manager.authority();
+
+        ConfigValueBridge.applyFromAuthority(authority);
+        assertEquals("历史键 charSize 的值应生效", 12.0, FontConfig.gameCharSize, 0.0);
+        assertEquals("历史键 awtCharSize 的值应生效", 96.0, FontConfig.glyphGenerationSize, 0.0);
+        assertNull("迁移后历史键应从权威态移除",
+                authority.consumeLegacySectionNumber("fontSizeSetting", "charSize"));
+        assertNull("迁移后历史键应从权威态移除",
+                authority.consumeLegacySectionNumber("fontSizeSetting", "awtCharSize"));
+
+        DraftBuffer draft = manager.openDraft();
+        draft.setDraft("fontSizeSetting.gameCharSize", "15.0");
+        SaveOutcome outcome = manager.save(draft);
+        assertTrue("新键必须可保存: " + outcome.status(), outcome.isSuccess());
+        ConfigValueBridge.applyFromAuthority(manager.authority());
+        assertEquals("历史键不得再覆盖新键", 15.0, FontConfig.gameCharSize, 0.0);
     }
 
     /**

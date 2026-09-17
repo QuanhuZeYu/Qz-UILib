@@ -73,8 +73,8 @@ public class QzUiLibModernEndToEndTest {
         assertEquals(2.0, manager.authority().getNumber("fontSystem.brightnessGain"), 0.0);
         assertFalse(manager.authority().getBool("fontSystem.replaceOrigin"));
         // fontSizeSetting
-        assertEquals(64.0, manager.authority().getNumber("fontSizeSetting.awtCharSize"), 0.0);
-        assertEquals(9.0, manager.authority().getNumber("fontSizeSetting.charSize"), 0.0);
+        assertEquals(64.0, manager.authority().getNumber("fontSizeSetting.glyphGenerationSize"), 0.0);
+        assertEquals(9.0, manager.authority().getNumber("fontSizeSetting.gameCharSize"), 0.0);
     }
 
     /**
@@ -91,7 +91,7 @@ public class QzUiLibModernEndToEndTest {
         draft.setDraft("general.useDebug", Boolean.TRUE);
         draft.setDraft("general.netTransport", "forge");
         draft.setDraft("fontSystem.lerpMode", Double.valueOf(1.0));
-        draft.setDraft("fontSizeSetting.charSize", Double.valueOf(12.0));
+        draft.setDraft("fontSizeSetting.gameCharSize", Double.valueOf(12.0));
 
         SaveOutcome outcome = manager.save(draft);
         assertTrue("保存应成功: " + outcome.status(), outcome.isSuccess());
@@ -101,14 +101,14 @@ public class QzUiLibModernEndToEndTest {
         assertTrue(reloaded.get("general.useDebug").asBoolean());
         assertEquals("forge", reloaded.get("general.netTransport").asString());
         assertEquals(1, reloaded.get("fontSystem.lerpMode").asInt());
-        assertEquals(12.0, reloaded.get("fontSizeSetting.charSize").asDouble(), 0.0);
+        assertEquals(12.0, reloaded.get("fontSizeSetting.gameCharSize").asDouble(), 0.0);
 
         // 重新 bootstrap，authority 返回新值
         ConfigManager manager2 = ConfigManager.bootstrap(file, schema);
         assertTrue(manager2.authority().getBool("general.useDebug"));
         assertEquals("forge", manager2.authority().getString("general.netTransport"));
         assertEquals(1.0, manager2.authority().getNumber("fontSystem.lerpMode"), 0.0);
-        assertEquals(12.0, manager2.authority().getNumber("fontSizeSetting.charSize"), 0.0);
+        assertEquals(12.0, manager2.authority().getNumber("fontSizeSetting.gameCharSize"), 0.0);
     }
 
     /**
@@ -189,7 +189,7 @@ public class QzUiLibModernEndToEndTest {
         try {
             w.write("general:\n  useDebug: true\n  netTransport: forge\n"
                     + "fontSystem:\n  lerpMode: 1\n"
-                    + "fontSizeSetting:\n  charSize: 20.0\n");
+                    + "fontSizeSetting:\n  gameCharSize: 20.0\n");
         } finally {
             w.close();
         }
@@ -199,17 +199,17 @@ public class QzUiLibModernEndToEndTest {
 
         // 确认加载了非默认值
         assertTrue(manager.authority().getBool("general.useDebug"));
-        assertEquals(20.0, manager.authority().getNumber("fontSizeSetting.charSize"), 0.0);
+        assertEquals(20.0, manager.authority().getNumber("fontSizeSetting.gameCharSize"), 0.0);
 
         DraftBuffer draft = manager.openDraft();
         draft.resetFieldToDefault("general.useDebug");
-        draft.resetFieldToDefault("fontSizeSetting.charSize");
+        draft.resetFieldToDefault("fontSizeSetting.gameCharSize");
         assertTrue(manager.save(draft).isSuccess());
 
         ConfigNode reloaded = Config.load(ConfigSource.fromFile(file), ConfigFormat.YAML);
         // 回到 schema 默认
         assertFalse(reloaded.get("general.useDebug").asBoolean());
-        assertEquals(9.0, reloaded.get("fontSizeSetting.charSize").asDouble(), 0.0);
+        assertEquals(9.0, reloaded.get("fontSizeSetting.gameCharSize").asDouble(), 0.0);
         // 未重置的字段保持预置值
         assertEquals("forge", reloaded.get("general.netTransport").asString());
         assertEquals(1, reloaded.get("fontSystem.lerpMode").asInt());
@@ -277,15 +277,15 @@ public class QzUiLibModernEndToEndTest {
 
         DraftBuffer draft = manager1.openDraft();
         draft.setDraft("general.netTransport", "forge");
-        draft.setDraft("fontSizeSetting.charSize", Double.valueOf(11.0));
+        draft.setDraft("fontSizeSetting.gameCharSize", Double.valueOf(11.0));
         assertTrue(manager1.save(draft).isSuccess());
 
         String transport1 = manager1.authority().getString("general.netTransport");
-        double charSize1 = manager1.authority().getNumber("fontSizeSetting.charSize");
+        double charSize1 = manager1.authority().getNumber("fontSizeSetting.gameCharSize");
 
         ConfigManager manager2 = ConfigManager.bootstrap(file, schema);
         assertEquals(transport1, manager2.authority().getString("general.netTransport"));
-        assertEquals(charSize1, manager2.authority().getNumber("fontSizeSetting.charSize"), 0.0);
+        assertEquals(charSize1, manager2.authority().getNumber("fontSizeSetting.gameCharSize"), 0.0);
     }
 
     /**
@@ -342,18 +342,18 @@ public class QzUiLibModernEndToEndTest {
 
         // 上界 256 合法，可保存
         DraftBuffer draftAtMax = manager.openDraft();
-        draftAtMax.setDraft("fontSizeSetting.awtCharSize", Double.valueOf(256.0));
+        draftAtMax.setDraft("fontSizeSetting.glyphGenerationSize", Double.valueOf(256.0));
         SaveOutcome atMax = manager.save(draftAtMax);
         assertTrue("awtCharSize=256 应可保存: " + atMax.status(), atMax.isSuccess());
-        assertEquals(256.0, manager.authority().getNumber("fontSizeSetting.awtCharSize"), 0.0);
+        assertEquals(256.0, manager.authority().getNumber("fontSizeSetting.glyphGenerationSize"), 0.0);
 
         // 上界 +1 = 257 非法，回滚
         DraftBuffer draftOver = manager.openDraft();
-        draftOver.setDraft("fontSizeSetting.awtCharSize", Double.valueOf(257.0));
+        draftOver.setDraft("fontSizeSetting.glyphGenerationSize", Double.valueOf(257.0));
         SaveOutcome over = manager.save(draftOver);
         assertEquals("awtCharSize=257 应 INVALID", SaveOutcome.Status.INVALID, over.status());
         // authority 仍为上一次合法值 256
-        assertEquals(256.0, manager.authority().getNumber("fontSizeSetting.awtCharSize"), 0.0);
+        assertEquals(256.0, manager.authority().getNumber("fontSizeSetting.glyphGenerationSize"), 0.0);
     }
 
     /**
@@ -394,15 +394,15 @@ public class QzUiLibModernEndToEndTest {
         ConfigManager manager = ConfigManager.bootstrap(file, schema);
 
         DraftBuffer draftAtMax = manager.openDraft();
-        draftAtMax.setDraft("fontSizeSetting.charSize", Double.valueOf(72.0));
+        draftAtMax.setDraft("fontSizeSetting.gameCharSize", Double.valueOf(72.0));
         SaveOutcome atMax = manager.save(draftAtMax);
         assertTrue("charSize=72 应可保存: " + atMax.status(), atMax.isSuccess());
-        assertEquals(72.0, manager.authority().getNumber("fontSizeSetting.charSize"), 0.0);
+        assertEquals(72.0, manager.authority().getNumber("fontSizeSetting.gameCharSize"), 0.0);
 
         DraftBuffer draftOver = manager.openDraft();
-        draftOver.setDraft("fontSizeSetting.charSize", Double.valueOf(73.0));
+        draftOver.setDraft("fontSizeSetting.gameCharSize", Double.valueOf(73.0));
         SaveOutcome over = manager.save(draftOver);
         assertEquals("charSize=73 应 INVALID", SaveOutcome.Status.INVALID, over.status());
-        assertEquals(72.0, manager.authority().getNumber("fontSizeSetting.charSize"), 0.0);
+        assertEquals(72.0, manager.authority().getNumber("fontSizeSetting.gameCharSize"), 0.0);
     }
 }

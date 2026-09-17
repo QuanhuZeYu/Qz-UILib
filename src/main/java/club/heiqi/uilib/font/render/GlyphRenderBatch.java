@@ -86,7 +86,7 @@ public final class GlyphRenderBatch {
             float v1, float clipU0, float clipU1, float clipV0, float clipV1, float red, float green, float blue,
             float alpha, float renderType) {
         addQuad(x, y, z, width, height, italic, u0, u1, v0, v1, clipU0, clipU1, clipV0, clipV1, red, green,
-                blue, alpha, renderType, (float) FontRuntimeSettings.capture().getCharSize());
+                blue, alpha, renderType, (float) FontRuntimeSettings.capture().getGameCharSize());
     }
 
     /** 按 generation 基准字号追加字形 quad。 */

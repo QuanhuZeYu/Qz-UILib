@@ -36,7 +36,7 @@ public class TextLayoutServiceWrapFontSizeTest {
     @Test
     public void rawWrapMustMeasureAtStyleFontSize() {
         TextLayoutService service = createService('A');
-        int baseSize = Math.max(1, (int) FontRuntimeSettings.capture().getCharSize());
+        int baseSize = Math.max(1, (int) FontRuntimeSettings.capture().getGameCharSize());
         // 基准字号下恰好容得下 5 个 A
         int unit = service.getStringWidth("AAAAA", TextContentMode.UILIB_RAW);
         Assert.assertTrue("基准字号下 5 字符宽度为正", unit > 0);
@@ -57,7 +57,7 @@ public class TextLayoutServiceWrapFontSizeTest {
     @Test
     public void everyRawWrapLineMustFitWrapWidthAtItsOwnFontSize() {
         TextLayoutService service = createService('A');
-        int baseSize = Math.max(1, (int) FontRuntimeSettings.capture().getCharSize());
+        int baseSize = Math.max(1, (int) FontRuntimeSettings.capture().getGameCharSize());
         int wrapWidth = service.getStringWidth("AAAAA", TextContentMode.UILIB_RAW);
         int fontSize = baseSize * 2;
 

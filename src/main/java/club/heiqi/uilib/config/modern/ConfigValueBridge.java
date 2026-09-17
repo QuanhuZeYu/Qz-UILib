@@ -189,12 +189,39 @@ public final class ConfigValueBridge {
      * @param authority 权威源
      */
     private static void applyFontSizeSetting(Authority authority) {
-        FontConfig.awtCharSize = representableNumber(authority, "fontSizeSetting.awtCharSize",
-                FontRuntimeSettings.FIELD_AWT_CHAR_SIZE, authority.getNumber("fontSizeSetting.awtCharSize"),
-                FontConfig.awtCharSize);
-        FontConfig.charSize = representableNumber(authority, "fontSizeSetting.charSize",
-                FontRuntimeSettings.FIELD_CHAR_SIZE, authority.getNumber("fontSizeSetting.charSize"),
-                FontConfig.charSize);
+        FontConfig.glyphGenerationSize = representableNumber(authority, "fontSizeSetting.glyphGenerationSize",
+                FontRuntimeSettings.FIELD_GLYPH_GENERATION_SIZE,
+                configuredFontSizeSetting(authority, "glyphGenerationSize", "awtCharSize"),
+                FontConfig.glyphGenerationSize);
+        FontConfig.gameCharSize = representableNumber(authority, "fontSizeSetting.gameCharSize",
+                FontRuntimeSettings.FIELD_GAME_CHAR_SIZE,
+                configuredFontSizeSetting(authority, "gameCharSize", "charSize"),
+                FontConfig.gameCharSize);
+    }
+
+    /**
+     * 字号配置项改名兼容读取：新键（schema 字段）优先；用户配置文件里仍写着历史键时，
+     * <b>一次性读取历史值并从权威态移除历史键</b>，下次保存只写新键。
+     *
+     * <p>为什么必须移除而不是长期回退：历史键在新 schema 里不再是字段，会落进 section raw overlay
+     * 并在每次启动被本方法读到——若不移除，用户在界面里改新键后仍会被旧键值顶回，且旧键永久留在文件里。</p>
+     *
+     * <p>删除条件：改名版本发布满一个发布周期、确认存量配置都已迁移后，连同
+     * {@link Authority#consumeLegacySectionNumber} 一起删除。</p>
+     *
+     * @param authority  权威源
+     * @param currentKey 新键（section 内相对名）
+     * @param legacyKey  历史键（section 内相对名）
+     * @return 本次生效的数值
+     */
+    private static double configuredFontSizeSetting(Authority authority, String currentKey, String legacyKey) {
+        Double legacy = authority.consumeLegacySectionNumber("fontSizeSetting", legacyKey);
+        if (legacy == null) {
+            return authority.getNumber("fontSizeSetting." + currentKey);
+        }
+        MyMod.LOG.warn("配置项 fontSizeSetting.{} 已更名为 fontSizeSetting.{}，旧值 {} 继续生效并完成迁移"
+                + "（旧键已移除，下次保存只写新键）", legacyKey, currentKey, legacy);
+        return legacy.doubleValue();
     }
 
     /**

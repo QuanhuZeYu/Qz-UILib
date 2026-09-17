@@ -20,10 +20,10 @@ public final class FontRuntimeSettings {
 
     /** atlas 采样模式字段名。 */
     public static final String FIELD_LERP_MODE = "lerpMode";
-    /** AWT 字形生成分辨率字段名。 */
-    public static final String FIELD_AWT_CHAR_SIZE = "awtCharSize";
-    /** 默认显示字号字段名。 */
-    public static final String FIELD_CHAR_SIZE = "charSize";
+    /** 字形生成分辨率字段名。 */
+    public static final String FIELD_GLYPH_GENERATION_SIZE = "glyphGenerationSize";
+    /** 游戏字符大小字段名（原版接管路径的默认显示字号，同时是折算坐标系基准）。 */
+    public static final String FIELD_GAME_CHAR_SIZE = "gameCharSize";
     /** 空格宽度字段名。 */
     public static final String FIELD_SPACE_WIDTH = "spaceWidth";
     /** 字间距字段名。 */
@@ -38,7 +38,7 @@ public final class FontRuntimeSettings {
 
     /** 必须有限且大于 0 的字段。 */
     private static final String[] FIELDS_REQUIRING_POSITIVE = {
-            FIELD_AWT_CHAR_SIZE, FIELD_CHAR_SIZE, FIELD_ATLAS_TEXTURE_SCALE,
+            FIELD_GLYPH_GENERATION_SIZE, FIELD_GAME_CHAR_SIZE, FIELD_ATLAS_TEXTURE_SCALE,
     };
     /** 只要求有限的字段（0 与负值有明确语义，不得被改动）。 */
     private static final String[] FIELDS_REQUIRING_FINITE = {
@@ -47,8 +47,8 @@ public final class FontRuntimeSettings {
 
     private final int lerpMode;
     private final int glyphInkPadding;
-    private final double awtCharSize;
-    private final double charSize;
+    private final double glyphGenerationSize;
+    private final double gameCharSize;
     private final double spaceWidth;
     private final double characterSpacing;
     private final boolean fontSortConfigured;
@@ -61,34 +61,34 @@ public final class FontRuntimeSettings {
      * 创建不可变字体运行时设置。
      *
      * @param lerpMode atlas 采样模式
-     * @param awtCharSize AWT 字形生成分辨率
-     * @param charSize 默认显示字号
+     * @param glyphGenerationSize 字形生成分辨率（atlas 坐标系）
+     * @param gameCharSize 游戏字符大小（基准显示字号）
      * @param spaceWidth 空格宽度
      * @param characterSpacing 字间距
      * @param fontSortConfigured 是否显式配置字体顺序
      * @param fontSort 字体顺序提示
      * @param characterRuleSet 字符字体规则
      */
-    public FontRuntimeSettings(int lerpMode, double awtCharSize, double charSize, double spaceWidth,
+    public FontRuntimeSettings(int lerpMode, double glyphGenerationSize, double gameCharSize, double spaceWidth,
             double characterSpacing, boolean fontSortConfigured, String[] fontSort,
             FontCharacterRuleSet characterRuleSet) {
-        this(lerpMode, awtCharSize, charSize, spaceWidth, characterSpacing, fontSortConfigured, fontSort,
+        this(lerpMode, glyphGenerationSize, gameCharSize, spaceWidth, characterSpacing, fontSortConfigured, fontSort,
                 new String[0], characterRuleSet, 64.0D);
     }
 
-    private FontRuntimeSettings(int lerpMode, double awtCharSize, double charSize, double spaceWidth,
+    private FontRuntimeSettings(int lerpMode, double glyphGenerationSize, double gameCharSize, double spaceWidth,
             double characterSpacing, boolean fontSortConfigured, String[] fontSort, String[] characterFontRules,
             FontCharacterRuleSet characterRuleSet, double atlasTextureScale) {
-        requireRepresentable(FIELD_AWT_CHAR_SIZE, awtCharSize);
-        requireRepresentable(FIELD_CHAR_SIZE, charSize);
+        requireRepresentable(FIELD_GLYPH_GENERATION_SIZE, glyphGenerationSize);
+        requireRepresentable(FIELD_GAME_CHAR_SIZE, gameCharSize);
         requireRepresentable(FIELD_SPACE_WIDTH, spaceWidth);
         requireRepresentable(FIELD_CHARACTER_SPACING, characterSpacing);
         requireRepresentable(FIELD_ATLAS_TEXTURE_SCALE, atlasTextureScale);
         requireRepresentable(FIELD_LERP_MODE, lerpMode);
         this.lerpMode = lerpMode;
         this.glyphInkPadding = Math.max(0, Math.min(32, FontConfig.glyphInkPadding));
-        this.awtCharSize = awtCharSize;
-        this.charSize = charSize;
+        this.glyphGenerationSize = glyphGenerationSize;
+        this.gameCharSize = gameCharSize;
         this.spaceWidth = spaceWidth;
         this.characterSpacing = characterSpacing;
         this.fontSortConfigured = fontSortConfigured;
@@ -105,7 +105,7 @@ public final class FontRuntimeSettings {
      * @return 不可变设置快照
      */
     public static FontRuntimeSettings capture() {
-        return new FontRuntimeSettings(FontConfig.lerpMode, FontConfig.awtCharSize, FontConfig.charSize,
+        return new FontRuntimeSettings(FontConfig.lerpMode, FontConfig.glyphGenerationSize, FontConfig.gameCharSize,
                 FontConfig.spaceWidth, FontConfig.characterSpacing, FontConfig.fontSortConfigured,
                 FontConfig.getFontSortSnapshot(), FontConfig.getCharacterFontRuleSnapshot(),
                 FontConfig.getCharacterRuleSet(), FontConfig.atlasTextureScale);
@@ -120,12 +120,14 @@ public final class FontRuntimeSettings {
         return glyphInkPadding;
     }
 
-    public double getAwtCharSize() {
-        return awtCharSize;
+    /** @return 字形生成分辨率（atlas 坐标系；决定清晰度与图集显存） */
+    public double getGlyphGenerationSize() {
+        return glyphGenerationSize;
     }
 
-    public double getCharSize() {
-        return charSize;
+    /** @return 游戏字符大小（基准显示字号；原版接管路径的默认字号与折算基准） */
+    public double getGameCharSize() {
+        return gameCharSize;
     }
 
     public double getSpaceWidth() {
@@ -168,8 +170,8 @@ public final class FontRuntimeSettings {
         }
         return lerpMode == other.lerpMode
                 && glyphInkPadding == other.glyphInkPadding
-                && Double.compare(awtCharSize, other.awtCharSize) == 0
-                && Double.compare(charSize, other.charSize) == 0
+                && Double.compare(glyphGenerationSize, other.glyphGenerationSize) == 0
+                && Double.compare(gameCharSize, other.gameCharSize) == 0
                 && Double.compare(spaceWidth, other.spaceWidth) == 0
                 && Double.compare(characterSpacing, other.characterSpacing) == 0
                 && Double.compare(atlasTextureScale, other.atlasTextureScale) == 0
@@ -185,7 +187,7 @@ public final class FontRuntimeSettings {
      * @return 向上取整后的字形格大小
      */
     public int getGlyphSize() {
-        return Math.max(8, (int) Math.ceil(awtCharSize));
+        return Math.max(8, (int) Math.ceil(glyphGenerationSize));
     }
 
     /**
@@ -194,7 +196,7 @@ public final class FontRuntimeSettings {
      * @return page 字形格大小
      */
     public int getPageGlyphSize() {
-        return Math.max(8, (int) awtCharSize);
+        return Math.max(8, (int) glyphGenerationSize);
     }
 
     /**
@@ -203,7 +205,7 @@ public final class FontRuntimeSettings {
      * @return texture 边长
      */
     public int getTextureSize() {
-        return Math.max(64, (int) (awtCharSize * atlasTextureScale));
+        return Math.max(64, (int) (glyphGenerationSize * atlasTextureScale));
     }
 
     private static boolean hasSameCharacterRuleSemantics(FontCharacterRuleSet left, FontCharacterRuleSet right) {

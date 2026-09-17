@@ -28,7 +28,7 @@ import club.heiqi.uilib.font.render.software.LatexSoftwareRenderKit;
  * {@code 64.5} 使 ceil=65、trunc=64，比值 1.5625%，24px 字号下 inkWidth 差 0.25px，
  * 远超 1e-3 容差。</p>
  *
- * <p><b>负向验证</b>：把分母改回 {@code (int) currentSettings().getAwtCharSize()}，
+ * <p><b>负向验证</b>：把分母改回 {@code (int) currentSettings().getGlyphGenerationSize()}，
  * 本测试在 inkWidth / inkHeight / inkCenterOffsetY / italicOverhang / inkLeftBearing 上必红。</p>
  */
 public class InkAtlasDenominatorTest {
@@ -43,15 +43,15 @@ public class InkAtlasDenominatorTest {
 
     @BeforeClass
     public static void setUpClass() {
-        savedAwtCharSize = FontConfig.awtCharSize;
-        FontConfig.awtCharSize = NON_INTEGER_AWT_CHAR_SIZE;
+        savedAwtCharSize = FontConfig.glyphGenerationSize;
+        FontConfig.glyphGenerationSize = NON_INTEGER_AWT_CHAR_SIZE;
         FontConfig.refreshDerivedRuleSet();
         LatexSoftwareRenderKit.resetShared();
     }
 
     @AfterClass
     public static void tearDownClass() {
-        FontConfig.awtCharSize = savedAwtCharSize;
+        FontConfig.glyphGenerationSize = savedAwtCharSize;
         FontConfig.refreshDerivedRuleSet();
         LatexSoftwareRenderKit.resetShared();
     }
@@ -61,7 +61,7 @@ public class InkAtlasDenominatorTest {
         LatexSoftwareRenderKit.RenderResult result = LatexSoftwareRenderKit.render(SOURCE, SIZE_PX);
         FontRuntimeSettings settings = FontRuntimeSettings.capture();
         int raster = settings.getGlyphSize();
-        int truncated = Math.max(1, (int) settings.getAwtCharSize());
+        int truncated = Math.max(1, (int) settings.getGlyphGenerationSize());
         Assert.assertTrue("本锁必须在 ceil/trunc 分叉区间生效: raster=" + raster
                 + " truncated=" + truncated, raster != truncated);
 

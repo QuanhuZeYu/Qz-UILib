@@ -25,8 +25,8 @@ public class FontRuntimeSettingsTest {
     public void saveConfig() {
         oldLerpMode = FontConfig.lerpMode;
         oldAtlasTextureScale = FontConfig.atlasTextureScale;
-        oldAwtCharSize = FontConfig.awtCharSize;
-        oldCharSize = FontConfig.charSize;
+        oldAwtCharSize = FontConfig.glyphGenerationSize;
+        oldCharSize = FontConfig.gameCharSize;
         oldSpaceWidth = FontConfig.spaceWidth;
         oldCharacterSpacing = FontConfig.characterSpacing;
         oldFontSortConfigured = FontConfig.fontSortConfigured;
@@ -38,8 +38,8 @@ public class FontRuntimeSettingsTest {
     public void restoreConfig() {
         FontConfig.lerpMode = oldLerpMode;
         FontConfig.atlasTextureScale = oldAtlasTextureScale;
-        FontConfig.awtCharSize = oldAwtCharSize;
-        FontConfig.charSize = oldCharSize;
+        FontConfig.glyphGenerationSize = oldAwtCharSize;
+        FontConfig.gameCharSize = oldCharSize;
         FontConfig.spaceWidth = oldSpaceWidth;
         FontConfig.characterSpacing = oldCharacterSpacing;
         FontConfig.fontSortConfigured = oldFontSortConfigured;
@@ -52,8 +52,8 @@ public class FontRuntimeSettingsTest {
     public void capturedSettingsSurviveLiveConfigMutation() {
         String[] fontSort = new String[]{"First", "Second"};
         FontConfig.lerpMode = 2;
-        FontConfig.awtCharSize = 63.5D;
-        FontConfig.charSize = 10.0D;
+        FontConfig.glyphGenerationSize = 63.5D;
+        FontConfig.gameCharSize = 10.0D;
         FontConfig.spaceWidth = 5.0D;
         FontConfig.characterSpacing = 0.25D;
         FontConfig.fontSortConfigured = true;
@@ -63,8 +63,8 @@ public class FontRuntimeSettingsTest {
 
         FontRuntimeSettings settings = FontRuntimeSettings.capture();
         fontSort[0] = "Mutated";
-        FontConfig.awtCharSize = 128.0D;
-        FontConfig.charSize = 20.0D;
+        FontConfig.glyphGenerationSize = 128.0D;
+        FontConfig.gameCharSize = 20.0D;
         FontConfig.spaceWidth = 9.0D;
         FontConfig.characterSpacing = 2.0D;
         FontConfig.fontSort = new String[]{"Other"};
@@ -72,8 +72,8 @@ public class FontRuntimeSettingsTest {
         FontConfig.refreshDerivedRuleSet();
 
         Assert.assertEquals(2, settings.getLerpMode());
-        Assert.assertEquals(63.5D, settings.getAwtCharSize(), 0.0D);
-        Assert.assertEquals(10.0D, settings.getCharSize(), 0.0D);
+        Assert.assertEquals(63.5D, settings.getGlyphGenerationSize(), 0.0D);
+        Assert.assertEquals(10.0D, settings.getGameCharSize(), 0.0D);
         Assert.assertEquals(5.0D, settings.getSpaceWidth(), 0.0D);
         Assert.assertEquals(0.25D, settings.getCharacterSpacing(), 0.0D);
         Assert.assertArrayEquals(new String[]{"First", "Second"}, settings.getFontSort());
@@ -98,7 +98,7 @@ public class FontRuntimeSettingsTest {
         FontConfig.atlasTextureScale = 32.0D;
         FontRuntimeSettings captured = FontRuntimeSettings.capture();
         Assert.assertEquals(32.0D, captured.getAtlasTextureScale(), 0.0D);
-        Assert.assertEquals(Math.max(64, (int) (FontConfig.awtCharSize * 32.0D)), captured.getTextureSize());
+        Assert.assertEquals(Math.max(64, (int) (FontConfig.glyphGenerationSize * 32.0D)), captured.getTextureSize());
 
         FontRuntimeSettings gridDefault = new FontRuntimeSettings(3, 64.0D, 9.0D, 4.0D, 0.1D, false,
                 new String[0], FontCharacterRuleSet.empty());

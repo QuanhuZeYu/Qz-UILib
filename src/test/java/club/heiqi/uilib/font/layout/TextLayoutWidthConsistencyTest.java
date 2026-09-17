@@ -29,7 +29,7 @@ public class TextLayoutWidthConsistencyTest {
     @Test
     public void advanceAccumulationMatchesSegmentWidthWithLetterSpacing() {
         TextLayoutService service = createService('A', 'B', 'C');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextStyle style = plainStyle();
         style.setLetterSpacing(3);
 
@@ -46,7 +46,7 @@ public class TextLayoutWidthConsistencyTest {
     @Test
     public void advanceAccumulationMatchesStringWidthWithoutSpacing() {
         TextLayoutService service = createService('A', 'B', 'C');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextStyle style = plainStyle();
 
         double accumulated = service.resolveAdvance('A', style, baseSize)
@@ -62,7 +62,7 @@ public class TextLayoutWidthConsistencyTest {
     @Test
     public void renderSideFormulaMatchesUnifiedAdvance() {
         TextLayoutService service = createService('A', 'B');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextStyle style = plainStyle();
         style.setLetterSpacing(5);
 
@@ -78,7 +78,7 @@ public class TextLayoutWidthConsistencyTest {
     @Test
     public void superscriptAdvanceScalesBySupSubFactor() {
         TextLayoutService service = createService('A');
-        int baseSize = (int) FontRuntimeSettings.capture().getCharSize();
+        int baseSize = (int) FontRuntimeSettings.capture().getGameCharSize();
         TextStyle plain = plainStyle();
         TextStyle sup = plainStyle();
         sup.setSuperscript(true);
