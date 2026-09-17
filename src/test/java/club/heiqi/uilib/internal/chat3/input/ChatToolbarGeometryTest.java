@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.input;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -175,7 +176,7 @@ public class ChatToolbarGeometryTest {
     private void mountInstance() {
         host = new TestHost();
         ChatHudWindow.attachToolbarHost(host);
-        rt = new SceneRuntime(MEASURER);
+        rt = SceneTestEnvironments.runtime(MEASURER);
         engine = new SceneLayoutEngine(MEASURER);
         root = SceneNode.column().setHitTestable(true).setFillParentHeight(true).setPadding(0);
         ChatSceneController controller = new ChatSceneController(MEASURE,

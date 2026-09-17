@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.host;
 import club.heiqi.uilib.ui.diagnostic.FrameRateProbe;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.UiSurface;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -72,17 +73,33 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
      * @param inputSource 平台输入源，可为 null（退化模式）
      */
     protected AbstractSceneHostWidget(PlatformInputSource inputSource) {
-        this(SceneHostAssembly.defaultMeasurer(), inputSource);
+        this(SceneHostAssembly.defaultMeasurer(), inputSource, SceneHostAssembly.defaultEnvironment());
     }
 
     /**
      * measurer 可注入构造（投放职责聚合方案 A4 缺口②）：headless 测试传入确定度量端口。
      *
+     * <p>环境端口取生产默认（{@link SceneHostAssembly#defaultEnvironment()}）。需要观察特定环境
+     * 事实（调试开关、语言、资源代际）的装配走
+     * {@link #AbstractSceneHostWidget(SceneTextMeasurer, PlatformInputSource, UiEnvironment)}。</p>
+     *
      * @param measurer    文本度量端口，五件套共用（装配事实源 {@link SceneHostAssembly}）
      * @param inputSource 平台输入源，可为 null（退化模式）
      */
     protected AbstractSceneHostWidget(SceneTextMeasurer measurer, PlatformInputSource inputSource) {
-        SceneHostAssembly.Bundle bundle = SceneHostAssembly.assemble(measurer, inputSource);
+        this(measurer, inputSource, SceneHostAssembly.defaultEnvironment());
+    }
+
+    /**
+     * 完整注入构造：度量端口与环境端口都由调用方给定（headless 出图矩阵、环境隔离测试用）。
+     *
+     * @param measurer    文本度量端口，五件套共用（装配事实源 {@link SceneHostAssembly}）
+     * @param inputSource 平台输入源，可为 null（退化模式）
+     * @param environment 宿主环境端口，不可为 null；无环境事实传 {@link UiEnvironment#empty()}
+     */
+    protected AbstractSceneHostWidget(SceneTextMeasurer measurer, PlatformInputSource inputSource,
+            UiEnvironment environment) {
+        SceneHostAssembly.Bundle bundle = SceneHostAssembly.assemble(measurer, inputSource, environment);
         this.inputSource = inputSource;
         this.measurer = bundle.getMeasurer();
         this.runtime = bundle.getRuntime();

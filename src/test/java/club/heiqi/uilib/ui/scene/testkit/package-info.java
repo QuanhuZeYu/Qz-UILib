@@ -16,6 +16,9 @@
  *       {@link SceneInteractionHarness}，持有 runtime + root + layoutEngine）。</li>
  *   <li><b>{@code SceneXxxCapture}</b>：无状态 static 工具（如
  *       {@link ScenePaintCapture}，跑通链路返回记录）。</li>
+ *   <li><b>{@code SceneXxxEnvironments}</b>：无状态 static 的构造收口（如
+ *       {@link SceneTestEnvironments}，把「测试用缺席环境端口」这一表态收敛到一处，
+ *       使调用点一眼可见环境来源，将来测试需要真环境时只改一处）。</li>
  * </ul>
  *
  * <h3>准入判据</h3>

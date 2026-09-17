@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -74,7 +75,7 @@ public class SearchResultListLastRowTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FontSensitiveMeasurer measurer = new FontSensitiveMeasurer();
-        rt = new SceneRuntime(measurer);
+        rt = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
     }

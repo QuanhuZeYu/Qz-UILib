@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.view;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -77,7 +78,7 @@ public class ChatBubbleTextVerticalCenterTest {
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello world"), 1, T0));
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> second line here"), 2, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 

@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.input;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -108,7 +109,7 @@ public class ChatToolbarThemeTest {
     private HudToolbarLayer.Result mountViaHudLayer(Signal<SceneTheme> theme, Signal<Boolean> editing) {
         attachedHost = host(editing);
         ChatHudWindow.attachToolbarHost(attachedHost);
-        rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         if (theme != null) {
             SceneThemes.install(rt, theme);
         }

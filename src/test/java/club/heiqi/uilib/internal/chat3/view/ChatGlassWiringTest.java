@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.view;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -84,7 +85,7 @@ public class ChatGlassWiringTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         List<SceneNode> groupChildren = hudGroups(root).get(0).__getChildren();
@@ -141,7 +142,7 @@ public class ChatGlassWiringTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatContainer.Result result = ChatContainer.mount(rt, controller,
                 new java.util.HashMap<SceneNode, ChatLineRecord>(), "draft");
         rt.flush();

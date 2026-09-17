@@ -1,5 +1,6 @@
 package club.heiqi.uilib.config.modern;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.io.File;
 import java.io.FileWriter;
 import java.nio.charset.StandardCharsets;
@@ -66,7 +67,7 @@ public class CharacterRuleFieldRendererThemeTest {
     public void setUp() throws Exception {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         schema = ConfigSchema.builder("t")
                 .section("fontSystem")
                     .simpleList("characterFontRules").label("字符字体规则").helper("每行一条").build()

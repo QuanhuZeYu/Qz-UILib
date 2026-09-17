@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -81,7 +82,10 @@ public class ScenePickerPanelLifecycleTest {
         UiPerformanceMonitor.getInstance().finishFrame();
         UiPerformanceMonitor.getInstance().resetHistory(SCREEN);
         SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        rt = new SceneRuntime(measurer);
+        // 诊断开关双源：帧管线采样判定走注入的环境端口（本用例断 frame.nodes，必须有采样），
+        // UiPerformanceMonitor 的计数记录与统计读取仍是 Config.useDebug 静态直读（未接线），
+        // 故 setUp 里那句静态赋值同样不可省 —— 两者同时打开才构成完整采样语义。
+        rt = SceneTestEnvironments.runtime(measurer, SceneTestEnvironments.debugEnabled());
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         pipeline = new SceneFramePipeline(rt, layoutEngine, paintEngine, new ScenePaintReplayer(), measurer, null);

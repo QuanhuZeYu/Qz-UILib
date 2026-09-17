@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -35,7 +36,7 @@ public class ScenePickerPanelFocusIntentTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        rt = new SceneRuntime(new FixedTextMeasurer());
+        rt = SceneTestEnvironments.runtime(new FixedTextMeasurer());
     }
 
     @After

@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -80,7 +81,7 @@ public class SearchResultListTest {
         ReactiveScheduler.get().reset();
         ItemRenderTierRegistry.resetForTests();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        rt = new SceneRuntime(measurer);
+        rt = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();
@@ -789,7 +790,7 @@ public class SearchResultListTest {
     public void strideChangeRemapsScrollAnchorWithoutJump() {
         // 行高随字号线性变化（FixedTextMeasurer 行高固定，测不出派生链），故本用例用局部 runtime。
         SceneTextMeasurer measurer = new FontScaledMeasurer();
-        SceneRuntime localRt = new SceneRuntime(measurer);
+        SceneRuntime localRt = SceneTestEnvironments.runtime(measurer);
         SceneLayoutEngine localEngine = new SceneLayoutEngine(measurer);
         SceneNode localRoot = new SceneNode();
         final int smallCell = 24;

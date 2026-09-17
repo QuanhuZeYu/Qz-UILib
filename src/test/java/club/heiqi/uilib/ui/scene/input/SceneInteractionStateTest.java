@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -27,7 +28,7 @@ public class SceneInteractionStateTest {
         ReactiveScheduler.get().reset();
         router = new SceneInputRouter();
         frameBuilder = new InputFrameBuilder(0, 0);
-        runtime = new SceneRuntime();
+        runtime = SceneTestEnvironments.runtime();
     }
 
     @After

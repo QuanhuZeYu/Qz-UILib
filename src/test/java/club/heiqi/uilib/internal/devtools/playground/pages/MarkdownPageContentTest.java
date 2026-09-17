@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.devtools.playground.pages;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Assert;
@@ -118,7 +119,7 @@ public class MarkdownPageContentTest {
     public void widthAndEpochSignalsRebuildOnlyWhenNecessary() {
         ReactiveScheduler.get().reset();
         MarkdownCountingMetrics metrics = new MarkdownCountingMetrics();
-        SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer());
+        SceneRuntime runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer());
         SceneNode root = SceneNode.column();
         int[] epoch = {1};
         SceneNode[] body = {null};

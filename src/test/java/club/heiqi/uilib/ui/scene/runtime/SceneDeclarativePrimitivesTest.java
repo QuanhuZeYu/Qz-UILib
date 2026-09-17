@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -43,7 +44,7 @@ public class SceneDeclarativePrimitivesTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        runtime = SceneTestEnvironments.runtime();
     }
 
     @After

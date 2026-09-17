@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -91,7 +92,7 @@ public class OverlayKeyIntegrityTest {
     public void toastSurvivesRuntimeOpenCloseCycles() {
         // 模拟反复开关测试场地：新 runtime → show/tick → dispose，循环 20 次
         for (int cycle = 0; cycle < 20; cycle++) {
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
             SceneNode root = new SceneNode();
             // 直接以该 runtime 投递（无需完整 host widget）
             for (int i = 0; i < 8; i++) {
@@ -119,7 +120,7 @@ public class OverlayKeyIntegrityTest {
         };
         for (String sample : samples) {
             // 每个样本独立 runtime：避免缓存干扰
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
             SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
             SceneNode root = new SceneNode();
             rt.flush();
@@ -157,7 +158,7 @@ public class OverlayKeyIntegrityTest {
     @Test
     public void textAreaRepeatInsertionsAroundVisualLine28() {
         // 模拟连续输入推进视觉行：逐步加长文本跨过 28 字符边界 + 换行切分
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
         SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
         SceneNode root = new SceneNode();
         Signal<String> value = Signal.create("");

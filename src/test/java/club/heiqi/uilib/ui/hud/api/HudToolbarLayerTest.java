@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.hud.api;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -68,7 +69,7 @@ public class HudToolbarLayerTest {
 
     @Test
     public void bottomSideKeepsToolbarOutsideContentBelow() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         HudToolbarLayer.Result layer = mount(rt, spec(HudToolbarSide.BOTTOM, Signal.create(Boolean.TRUE)));
         rt.flush();
         layout(layer.root());
@@ -88,7 +89,7 @@ public class HudToolbarLayerTest {
 
     @Test
     public void topSideKeepsToolbarOutsideContentAbove() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         HudToolbarLayer.Result layer = mount(rt, spec(HudToolbarSide.TOP, Signal.create(Boolean.TRUE)));
         rt.flush();
         layout(layer.root());
@@ -103,7 +104,7 @@ public class HudToolbarLayerTest {
 
     @Test
     public void leftAndRightSidesAddThicknessToOuterWidth() {
-        SceneRuntime leftRt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime leftRt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         HudToolbarLayer.Result left = mount(leftRt,
                 spec(HudToolbarSide.LEFT, Signal.create(Boolean.TRUE)));
         leftRt.flush();
@@ -118,7 +119,7 @@ public class HudToolbarLayerTest {
         Assert.assertEquals("竖直边不改外框高", CONTENT_H, left.outerHeight(CONTENT_H));
         Assert.assertEquals("竖直工具栏拉满内容高", CONTENT_H, leftToolbar.getHeight());
 
-        SceneRuntime rightRt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rightRt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         HudToolbarLayer.Result right = mount(rightRt,
                 spec(HudToolbarSide.RIGHT, Signal.create(Boolean.TRUE)));
         rightRt.flush();
@@ -135,7 +136,7 @@ public class HudToolbarLayerTest {
     @Test
     public void hiddenToolbarLeavesTreeAndShrinksOuterBoxThenReturns() {
         Signal<Boolean> visible = Signal.create(Boolean.FALSE);
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         HudToolbarLayer.Result layer = mount(rt, spec(HudToolbarSide.BOTTOM, visible));
         rt.flush();
         Assert.assertNull("不可见时工具栏不在树中", layer.toolbar().__getParent());
@@ -158,7 +159,7 @@ public class HudToolbarLayerTest {
 
     @Test
     public void outerBoxFeedsPlacementSoToolbarStaysInsideSafeArea() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         HudToolbarLayer.Result layer = mount(rt, spec(HudToolbarSide.BOTTOM, Signal.create(Boolean.TRUE)));
         rt.flush();
         layout(layer.root());

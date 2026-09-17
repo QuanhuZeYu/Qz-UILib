@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.field;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -63,7 +64,7 @@ public class FontSortFieldRendererThemeTest {
     public void setUp() throws Exception {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         schema = ConfigSchema.builder("t")
                 .section("fontSystem")
                     .simpleList("fontSort").label("字体排序").helper("按优先级拖拽排序").build()

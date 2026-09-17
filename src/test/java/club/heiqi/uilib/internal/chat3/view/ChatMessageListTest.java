@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.view;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -248,7 +249,7 @@ public class ChatMessageListTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 
@@ -281,7 +282,7 @@ public class ChatMessageListTest {
         controller.setHostViewport(400, 300);
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -308,7 +309,7 @@ public class ChatMessageListTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 
@@ -327,7 +328,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> two"), 2, T0 + 1000));
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> three"), 3, T0 + 2000));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 
@@ -348,7 +349,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> two"), 2, T0 + 1000));
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> three"), 3, T0 + 2000));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 
@@ -365,7 +366,7 @@ public class ChatMessageListTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> solo"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 
@@ -380,7 +381,7 @@ public class ChatMessageListTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 
@@ -405,7 +406,7 @@ public class ChatMessageListTest {
         ChatSceneController otherController = controller();
         otherController.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, T0));
         otherController.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode otherRoot = otherController.buildContent(rt);
         rt.flush();
         SceneNode otherBubble = hudGroups(otherRoot).get(0).__getChildren().get(1);
@@ -423,7 +424,7 @@ public class ChatMessageListTest {
             ChatSceneController classicController = controller();
             classicController.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
             classicController.notifyDataChanged();
-            SceneRuntime rtClassic = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rtClassic = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             SceneNode classicRoot = classicController.buildContent(rtClassic);
             rtClassic.flush();
             SceneNode classicBubble = hudGroups(classicRoot).get(0).__getChildren().get(1);
@@ -443,7 +444,7 @@ public class ChatMessageListTest {
         controller.setHostViewport(400, 300); // chatWidthFor(400) = 160
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -481,7 +482,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Alex> a much longer message"), 1, T0 + 1000));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -515,7 +516,7 @@ public class ChatMessageListTest {
         controller.setHostViewport(400, 300);
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -538,7 +539,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Alex> " + longMessageBody()), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -565,7 +566,7 @@ public class ChatMessageListTest {
             ChatSceneController controller = controller();
             controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
             controller.notifyDataChanged();
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             SceneNode root = controller.buildContent(rt);
             rt.flush();
             SceneNode accentBar = hudGroups(root).get(0).__getChildren().get(1).__getChildren().get(1);
@@ -600,7 +601,7 @@ public class ChatMessageListTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         SceneNode group = hudGroups(root).get(0);
@@ -641,7 +642,7 @@ public class ChatMessageListTest {
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> one"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 
@@ -686,7 +687,7 @@ public class ChatMessageListTest {
             ChatSceneController controller = controller();
             controller.history().append(new ChatLineRecord(new ChatComponentText("<Alex> hi"), 1, T0));
             controller.notifyDataChanged();
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             // 注入可见时钟(生产侧由 TC 维护,每帧仅值变化时 set;测试手动推进,
             // 初始 0 = 可见时钟起点,与控制器侧生命周期登记的起点同坐标系)
             Signal<Long> hudVisible = Signal.create(Long.valueOf(0L));
@@ -1009,7 +1010,7 @@ public class ChatMessageListTest {
                     1, T0));
         }
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode group;
         SceneListHandle handle = null;
         if (hud) {
@@ -1085,7 +1086,7 @@ public class ChatMessageListTest {
                 new net.minecraft.util.ChatComponentTranslation(MARKDOWN_KEY,
                         new Object[] {"**b**" + section + "a 公告 http://a.co"}), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         SceneNode group = hudGroups(root).get(0);
@@ -1131,7 +1132,7 @@ public class ChatMessageListTest {
                 new net.minecraft.util.ChatComponentTranslation(MARKDOWN_KEY, new Object[] {md}),
                 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         SceneNode messageNode = hudGroups(root).get(0).__getChildren().get(0);
@@ -1180,7 +1181,7 @@ public class ChatMessageListTest {
                 new net.minecraft.util.ChatComponentTranslation(MARKDOWN_KEY, new Object[] {md}),
                 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         List<SceneNode> viewLines = hudGroups(root).get(0).__getChildren().get(0)
@@ -1202,7 +1203,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("[公告] 维护通知"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         SceneNode group = hudGroups(root).get(0);
@@ -1228,7 +1229,7 @@ public class ChatMessageListTest {
         controller.setHostViewport(400, 300);
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         // 生产同路：HUD 窗口树由 SceneHudHost.RetainedWindow 经 SceneHostAssembly.attachTree
         // 交给本窗口 runtime（ChatHudWindow 注册的工厂即 buildContent）——字号环境自此生效。
@@ -1311,7 +1312,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Bob> " + longMessageBody()), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
 
@@ -1335,7 +1336,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Bob> hello"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode list = SceneNode.column().setHitTestable(false);
         Map<SceneNode, ChatLineRecord> registry = new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
         ChatMessageList renderer = new ChatMessageList(PARSER);
@@ -1376,7 +1377,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Bob> formula"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode list = SceneNode.column().setHitTestable(false);
         Map<SceneNode, ChatLineRecord> registry = new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
         ChatMessageList renderer = new ChatMessageList(PARSER, null, processor);
@@ -1402,7 +1403,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> see http://a.co x"),
                 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -1563,7 +1564,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Bob> " + LONG_URL), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -1614,7 +1615,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Bob> " + LONG_URL), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -1653,7 +1654,7 @@ public class ChatMessageListTest {
                 new ChatComponentText("<Bob> aaaaaaaaaa http://a.co/bbbbbbbbbbbb ccccccccccc"),
                 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -1693,7 +1694,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("[公告] see http://a.co ok"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         SceneNode systemMessage = hudGroups(root).get(0).__getChildren().get(0);
@@ -1708,7 +1709,7 @@ public class ChatMessageListTest {
         other.setHostViewport(400, 300);
         other.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, T0));
         other.notifyDataChanged();
-        SceneRuntime rt2 = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt2 = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode otherRoot = other.buildContent(rt2);
         rt2.flush();
         SceneNode bubbleLine = hudGroups(otherRoot).get(0).__getChildren().get(1)
@@ -1729,7 +1730,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(new ChatComponentText(
                 "[公告]" + longMessageBody()), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -1750,7 +1751,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("[公告] see http://a.co ok"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -1794,7 +1795,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("[公告] 服务器将于 23:00 维护"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -1812,7 +1813,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("[公告] see http://a.co ok"), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -1969,7 +1970,7 @@ public class ChatMessageListTest {
         // 未设视口 = 0 → 1px 根宽 + maxLine=1 逐字符折行,行/引用结构断言全崩)。
         controller.setHostViewport(400, 300);
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -2501,7 +2502,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> one"), 1, T0));
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> two"), 2, T0 + 1000));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -2906,7 +2907,7 @@ public class ChatMessageListTest {
                 new ChatComponentText("- 系统公告"), 1, T0));
         controller.setHostViewport(400, 300);
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         SceneNode systemMessage = hudGroups(root).get(0).__getChildren().get(0);
@@ -2995,7 +2996,7 @@ public class ChatMessageListTest {
         controller.history().append(new ChatLineRecord(
                 new ChatComponentText("<Bob> " + LONG_URL), 1, T0));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode root = controller.buildContent(rt);
         rt.flush();
         new SceneLayoutEngine(new FixedTextMeasurer(8, 16)).layout(root, new Constraints(400, 300));
@@ -3211,7 +3212,7 @@ public class ChatMessageListTest {
         boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
         try {
             ChatMarkdownSettings.setGlassEnabled(true);
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
             ChatSceneController controller = controller();
             controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
@@ -3262,7 +3263,7 @@ public class ChatMessageListTest {
      */
     @Test
     public void partialChatPatchOverridesThemePerComponent() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
@@ -3305,7 +3306,7 @@ public class ChatMessageListTest {
             controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> one"), 1, T0));
             controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> two"), 2, T0 + 1000));
             controller.notifyDataChanged();
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             SceneNode list = SceneNode.column().setHitTestable(false);
             Map<SceneNode, ChatLineRecord> registry =
                     new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
@@ -3364,7 +3365,7 @@ public class ChatMessageListTest {
      */
     @Test
     public void plainThemeOnlyBubbleMatchesGroupRecipeItemByItem() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
         ChatSceneController controller = controller();
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
@@ -3405,7 +3406,7 @@ public class ChatMessageListTest {
             ChatSceneController controller = controller();
             controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hello"), 1, T0));
             controller.notifyDataChanged();
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             Signal<SceneTheme> themeSignal = Signal.create(competingBubbleTheme());
             SceneThemes.install(rt, themeSignal);
             SceneNode root = controller.buildContent(rt);
@@ -3452,7 +3453,7 @@ public class ChatMessageListTest {
      */
     @Test
     public void themeSwitchRederivesPlainThemeOnlyBubbleToNewRecipe() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         Signal<SceneTheme> themeSignal = Signal.create(competingBubbleTheme());
         SceneThemes.install(rt, themeSignal);
         ChatSceneController controller = controller();
@@ -3535,7 +3536,7 @@ public class ChatMessageListTest {
             controller.history().append(new ChatLineRecord(
                     new ChatComponentText("<Bob> hello http://a.co"), 1, T0));
             controller.notifyDataChanged();
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
             SceneNode root = controller.buildContent(rt);
             rt.flush();
@@ -3575,7 +3576,7 @@ public class ChatMessageListTest {
             controller.history().append(new ChatLineRecord(
                     new ChatComponentText("<Alex> hi"), 2, T0 + 60_000L));
             controller.notifyDataChanged();
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             SceneThemes.install(rt, Signal.create(competingBubbleTheme()));
             SceneNode root = controller.buildContent(rt);
             rt.flush();

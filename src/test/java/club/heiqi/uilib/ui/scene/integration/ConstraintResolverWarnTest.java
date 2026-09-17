@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -49,7 +50,7 @@ public class ConstraintResolverWarnTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
 

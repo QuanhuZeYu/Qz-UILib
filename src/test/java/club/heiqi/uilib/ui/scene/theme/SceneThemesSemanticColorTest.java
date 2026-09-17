@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.theme;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -98,7 +99,7 @@ public class SceneThemesSemanticColorTest {
                 SceneTheme.liquidGlassDark().withoutBackdrop(),
         };
         for (SceneTheme tier : tiers) {
-            SceneRuntime rt = new SceneRuntime();
+            SceneRuntime rt = SceneTestEnvironments.runtime();
             Captured captured = captureEntries(rt, new SceneNode(), Signal.create(tier));
             // 构造期初值即正确（Effect.untrack 预读），无需 flush。
             assertMatchesTheme(captured, tier, tier.toString());
@@ -111,7 +112,7 @@ public class SceneThemesSemanticColorTest {
         SceneTheme light = SceneTheme.liquidGlassLight();
         assertTiersDiffer(dark, light);
 
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Signal<SceneTheme> page = Signal.create(dark);
         Captured captured = captureEntries(rt, new SceneNode(), page);
         assertMatchesTheme(captured, dark, "初始深色档");
@@ -128,7 +129,7 @@ public class SceneThemesSemanticColorTest {
 
     @Test
     public void fallbackRuntimeWithoutInstallYieldsLibraryDefault() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Captured captured = captureEntries(rt, new SceneNode(), null);
         assertMatchesTheme(captured, SceneThemes.DEFAULT, "兜底 runtime（未 install）");
     }
@@ -139,7 +140,7 @@ public class SceneThemesSemanticColorTest {
         SceneTheme light = SceneTheme.liquidGlassLight();
         assertTiersDiffer(dark, light);
 
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Signal<SceneTheme> installed = Signal.create(dark);
         SceneThemes.install(rt, installed);
         Captured captured = captureEntries(rt, new SceneNode(), null);
@@ -156,7 +157,7 @@ public class SceneThemesSemanticColorTest {
      */
     @Test
     public void dangerAndErrorTextAreDistinctRoles() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Captured dark = captureEntries(rt, new SceneNode(), Signal.create(SceneTheme.liquidGlassDark()));
         Captured light = captureEntries(rt, new SceneNode(), Signal.create(SceneTheme.liquidGlassLight()));
 
@@ -186,7 +187,7 @@ public class SceneThemesSemanticColorTest {
      */
     @Test
     public void successTextDelegatesToAccentAcrossTiers() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme dark = SceneTheme.liquidGlassDark();
         SceneTheme light = SceneTheme.liquidGlassLight();
         Signal<SceneTheme> page = Signal.create(dark);
@@ -216,7 +217,7 @@ public class SceneThemesSemanticColorTest {
         Assert.assertNotEquals("测试前提：两档 borderDisabled 必须互异",
                 dark.borderDisabled(), light.borderDisabled());
 
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Signal<SceneTheme> page = Signal.create(dark);
         final ReadableSignal<Integer>[] holder = new ReadableSignal[2];
         rt.mount(new SceneNode(), () -> {

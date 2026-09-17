@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -55,7 +56,7 @@ public class PickerMetricsTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        rt = new SceneRuntime(new SpecMeasurer());
+        rt = SceneTestEnvironments.runtime(new SpecMeasurer());
     }
 
     @After

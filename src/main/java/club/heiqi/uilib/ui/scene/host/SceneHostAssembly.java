@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.host;
 
+import club.heiqi.uilib.ui.env.ProcessUiEnvironment;
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.scene.input.PlatformInputSource;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
@@ -15,9 +17,10 @@ import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
  * replayer / pipeline 一次装配成自洽 {@link Bundle}，杜绝各宿主手搭第二份。
  *
  * <p>{@link AbstractSceneHostWidget}（UI 页面宿主）与 {@code client.hud.SceneHudHost.RetainedWindow}
- * （屏幕级虚拟窗口宿主）共用本装配语义；measurer 可注入（测试传自定义端口），生产默认走
- * {@link #defaultMeasurer()} 全仓唯一度量装配点。inputSource 可为 null（无输入退化模式）。
- * 宿主专属钩子（cursor/clipboard 绑定、构造期物化）留在宿主侧，不进水工厂。</p>
+ * （屏幕级虚拟窗口宿主）共用本装配语义；measurer 与环境端口均可注入（headless / 测试传确定实现），
+ * 生产默认走 {@link #defaultMeasurer()} 与 {@link #defaultEnvironment()} 两个全仓唯一装配点。
+ * inputSource 可为 null（无输入退化模式）。宿主专属钩子（cursor/clipboard 绑定、构造期物化）
+ * 留在宿主侧，不进水工厂。</p>
  */
 public final class SceneHostAssembly {
 
@@ -30,17 +33,36 @@ public final class SceneHostAssembly {
     }
 
     /**
-     * 装配一套宿主管线（各组件绑定同一 measurer，度量口径单源）。
+     * 生产默认环境端口：把 UILib 既有进程级环境量（{@code Config.useDebug}、语言代际、资源代际）
+     * 适配进 {@link UiEnvironment} 的唯一装配点。
+     *
+     * <p>与 {@link #defaultMeasurer()} 对称：宿主不自定义环境时取此实现。返回的适配器无状态，
+     * 多实例语义等价。</p>
+     *
+     * @return 生产环境端口
+     */
+    public static UiEnvironment defaultEnvironment() {
+        return ProcessUiEnvironment.INSTANCE;
+    }
+
+    /**
+     * 装配一套宿主管线（各组件绑定同一 measurer，度量口径单源；环境端口注入 runtime）。
      *
      * @param measurer    文本度量端口，不可为 null
      * @param inputSource 平台输入源，可为 null（无输入退化模式）
+     * @param environment 宿主环境端口，不可为 null；无环境事实传 {@link UiEnvironment#empty()}
      * @return 自洽装配包
      */
-    public static Bundle assemble(SceneTextMeasurer measurer, PlatformInputSource inputSource) {
+    public static Bundle assemble(SceneTextMeasurer measurer, PlatformInputSource inputSource,
+            UiEnvironment environment) {
         if (measurer == null) {
             throw new IllegalArgumentException("measurer must not be null");
         }
-        SceneRuntime runtime = new SceneRuntime(measurer);
+        if (environment == null) {
+            throw new IllegalArgumentException(
+                    "environment must not be null；无环境事实请传 UiEnvironment.empty()");
+        }
+        SceneRuntime runtime = new SceneRuntime(measurer, environment);
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
         ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
         ScenePaintReplayer replayer = new ScenePaintReplayer();

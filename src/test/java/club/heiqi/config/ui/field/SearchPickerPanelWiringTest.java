@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.field;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -60,7 +61,7 @@ public class SearchPickerPanelWiringTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        rt = new SceneRuntime(measurer);
+        rt = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
     }

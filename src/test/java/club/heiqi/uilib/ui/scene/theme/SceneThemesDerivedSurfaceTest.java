@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.theme;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.function.UnaryOperator;
 
 import org.junit.After;
@@ -78,7 +79,7 @@ public class SceneThemesDerivedSurfaceTest {
     /** ① 构造期初值 = override(基线)；覆盖字段生效，未覆盖字段逐值等于基线。 */
     @Test
     public void constructionInitialValueIsOverrideOfBaseline() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Probe probe = capture(rt, Signal.create(SceneTheme.liquidGlassDark()),
                 SceneThemesDerivedSurfaceTest::patch);
 
@@ -109,7 +110,7 @@ public class SceneThemesDerivedSurfaceTest {
         Assert.assertNotEquals("测试前提：两档 GROUP idle 底色必须互异",
                 dark.surface(ROLE).getIdle().getTint(), light.surface(ROLE).getIdle().getTint());
 
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Signal<SceneTheme> page = Signal.create(dark);
         Probe probe = capture(rt, page, SceneThemesDerivedSurfaceTest::patch);
         Assert.assertEquals("初始档：未覆盖字段 = 深色档",
@@ -131,7 +132,7 @@ public class SceneThemesDerivedSurfaceTest {
     /** ③ override 内读取的业务信号自动成为失效源。 */
     @Test
     public void businessSignalInsideOverrideBecomesInvalidationSource() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Signal<Integer> radius = Signal.create(Integer.valueOf(4));
         Probe probe = capture(rt, Signal.create(SceneTheme.liquidGlassDark()),
                 style -> style.toBuilder().cornerRadius(radius.get().intValue()).build());
@@ -152,7 +153,7 @@ public class SceneThemesDerivedSurfaceTest {
     public void themeAndBusinessSignalsAreIndependentSources() {
         SceneTheme dark = SceneTheme.liquidGlassDark();
         SceneTheme light = SceneTheme.liquidGlassLight();
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Signal<SceneTheme> page = Signal.create(dark);
         Signal<Integer> radius = Signal.create(Integer.valueOf(4));
         Probe probe = capture(rt, page,
@@ -178,7 +179,7 @@ public class SceneThemesDerivedSurfaceTest {
     /** ⑤ 返回类型是可显式回收的 Computed：dispose 后停止重算（自持 Owner 场景的回收路径）。 */
     @Test
     public void returnedComputedCanBeDisposedAndStopsReDeriving() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Signal<SceneTheme> page = Signal.create(SceneTheme.liquidGlassDark());
         Probe probe = capture(rt, page, SceneThemesDerivedSurfaceTest::patch);
         int frozenRadius = probe.derived.get().getCornerRadius();
@@ -198,7 +199,7 @@ public class SceneThemesDerivedSurfaceTest {
     public void matchesHandWrittenComputedSample() {
         SceneTheme dark = SceneTheme.liquidGlassDark();
         SceneTheme light = SceneTheme.liquidGlassLight();
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Signal<SceneTheme> page = Signal.create(dark);
         Signal<Integer> radius = Signal.create(Integer.valueOf(4));
 

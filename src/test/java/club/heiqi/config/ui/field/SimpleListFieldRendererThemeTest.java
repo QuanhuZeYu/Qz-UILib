@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.field;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.io.File;
 import java.io.FileWriter;
 import java.nio.charset.StandardCharsets;
@@ -62,7 +63,7 @@ public class SimpleListFieldRendererThemeTest {
     public void setUp() throws Exception {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         schema = ConfigSchema.builder("t")
                 .section("font")
                     .simpleList("sort").label("Sort").helper("排序").build()

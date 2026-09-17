@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.view;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -104,7 +105,7 @@ public class ChatMarkdownContentTest {
     @Test public void occurrenceRetainsWholePlanClipsAndSkipsSteadySceneRebuild() {
         MarkdownCountingMetrics metrics = new MarkdownCountingMetrics();
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer());
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer());
         SceneNode root = SceneNode.column();
         ChatMarkdownContent.Result[] content = {null};
         int[] epoch = {1};
@@ -146,7 +147,7 @@ public class ChatMarkdownContentTest {
     @Test public void hudOccurrenceKeepsOverflowWithoutInstallingInteractiveControls() {
         MarkdownCountingMetrics metrics = new MarkdownCountingMetrics();
         ChatMarkdownPipeline pipeline = new ChatMarkdownPipeline();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer());
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer());
         SceneNode root = SceneNode.column();
         ChatMarkdownContent.Result[] content = {null};
         rt.mount(root, () -> {
@@ -165,7 +166,7 @@ public class ChatMarkdownContentTest {
     }
 
     @Test public void resizeClampsBothAxesAndRemovesHorizontalControl() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer());
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer());
         SceneNode root = SceneNode.column();
         ChatMarkdownPipeline.RenderedContent wide = new ChatMarkdownPipeline.RenderedContent(
                 java.util.Collections.emptyList(), 500, 400);

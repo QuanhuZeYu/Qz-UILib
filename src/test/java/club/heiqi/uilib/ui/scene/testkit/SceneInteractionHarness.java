@@ -80,14 +80,14 @@ public final class SceneInteractionHarness {
      * 工厂：用外部传入的 {@link SceneTextMeasurer} 构造 {@link SceneRuntime} + {@link SceneLayoutEngine}。
      *
      * <p>用于控件构建期需要调 {@link SceneRuntime#measureTextWidth} 的场景——
-     * {@link SceneRuntime#SceneRuntime()} 无参构造挂 null measurer，控件构建期调度量会抛异常，
+     * {@link #create()} 走的无度量端口工厂在控件构建期调度量会抛异常，
      * 此重载让调用方注入真实/桩 measurer 避免该问题。</p>
      *
      * @param measurer 文本度量窄端口（不可为 null）
      * @return 新 harness 实例
      */
     public static SceneInteractionHarness create(SceneTextMeasurer measurer) {
-        SceneRuntime runtime = new SceneRuntime(measurer);
+        SceneRuntime runtime = SceneTestEnvironments.runtime(measurer);
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
         return new SceneInteractionHarness(runtime, layoutEngine);
     }

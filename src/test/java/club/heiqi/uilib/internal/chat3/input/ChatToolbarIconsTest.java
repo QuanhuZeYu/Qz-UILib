@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.input;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.awt.image.BufferedImage;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -30,7 +31,7 @@ public class ChatToolbarIconsTest {
         ReactiveScheduler.get().reset();
         cache = DocumentRemoteImageCache.getInstance();
         cache.clearForTesting();
-        rt = new SceneRuntime();
+        rt = SceneTestEnvironments.runtime();
     }
 
     @After

@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -199,7 +200,7 @@ public class SceneCheckboxTest {
     private void remountInTheme(ReadableSignal<SceneTheme> theme) {
         runtime.dispose();
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        runtime = SceneTestEnvironments.runtime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);

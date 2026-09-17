@@ -316,7 +316,8 @@ public final class SceneHudHost {
             // 五件套唯一装配点（A4）；无输入退化模式 inputSource=null。
             // 构造期不再强制 flush：首帧物化由宿主合同保证（measure 空 → settleWithoutPaint
             // 同帧 flush+relayout → 次帧绘制），signal 绑定内容至多晚一帧可见。
-            SceneHostAssembly.Bundle bundle = SceneHostAssembly.assemble(measurer, null);
+            SceneHostAssembly.Bundle bundle = SceneHostAssembly.assemble(measurer, null,
+                    SceneHostAssembly.defaultEnvironment());
             runtime = bundle.getRuntime();
             layoutEngine = bundle.getLayoutEngine();
             pipeline = bundle.getPipeline();

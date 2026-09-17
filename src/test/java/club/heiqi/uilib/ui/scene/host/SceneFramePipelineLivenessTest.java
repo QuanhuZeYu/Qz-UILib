@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.host;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -42,7 +43,7 @@ public class SceneFramePipelineLivenessTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         pipeline = new SceneFramePipeline(runtime, layoutEngine, new ScenePaintEngine(measurer),
                 new ScenePaintReplayer(), measurer, null);

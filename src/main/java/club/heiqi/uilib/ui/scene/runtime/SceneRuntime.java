@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Effect;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -70,6 +71,15 @@ public class SceneRuntime implements SceneFontEnvironment {
 
     /** 只读文本度量窄端口：供控件做点击定位等只读几何计算。 */
     private final SceneTextMeasurer textMeasurer;
+
+    /**
+     * 宿主环境端口（构造依赖注入，只读）。
+     *
+     * <p><b>方向</b>：宿主 → runtime 的<b>上行注入</b>；与 {@link SceneFontEnvironment}
+     * 的「runtime → 节点」下行暴露方向相反，两者不得互相顶替。注入点是唯一公开构造，
+     * 不提供服务定位式静态获取 —— 多 runtime（测试并行、HUD 每窗口自建）天然隔离。</p>
+     */
+    private final UiEnvironment environment;
 
     /** 已绑定光标后端的幂等关闭扫尾；root Owner 清理中断时由 dispose finally 兜底。 */
     private final List<CursorReset> cursorResets = new ArrayList<>();
@@ -141,21 +151,39 @@ public class SceneRuntime implements SceneFontEnvironment {
     /** 用户级字号缩放上限（200%），与 HUD 显示缩放档位同一水位。 */
     public static final int FONT_SCALE_MAX_PERCENT = 200;
 
-    /** 创建一个新的场景运行时实例。 */
-    public SceneRuntime() {
-        this(null);
-    }
-
     /**
-     * 创建一个带文本度量窄端口的场景运行时实例。
+     * 创建场景运行时实例（<b>唯一公开构造</b>：度量端口 + 宿主环境端口均为构造依赖）。
      *
-     * @param textMeasurer 文本度量窄端口，可为 null；调用度量方法时 null 会抛出异常
+     * <p>两个依赖都是显式装配参数，不提供无参构造也不提供「缺省即静默取进程单例」的重载：
+     * 度量端口缺席的后果由 {@link #measureTextWidth} 的快速失败表达，环境端口缺席必须由调用方
+     * 显式写 {@link UiEnvironment#empty()} 表态 —— 否则「宿主忘了注入环境」会静默退化为缺席态，
+     * 玩家的调试开关开了却不生效这类事故无从暴露。</p>
+     *
+     * @param textMeasurer 文本度量窄端口，可为 null（调用度量方法时抛异常）
+     * @param environment  宿主环境端口，不可为 null；无环境事实传 {@link UiEnvironment#empty()}
+     * @throws IllegalArgumentException environment 为 null
      */
-    public SceneRuntime(SceneTextMeasurer textMeasurer) {
+    public SceneRuntime(SceneTextMeasurer textMeasurer, UiEnvironment environment) {
+        if (environment == null) {
+            throw new IllegalArgumentException("environment 不可为 null；无环境事实请传 UiEnvironment.empty()");
+        }
         this.rootOwner = new Owner();
         this.overlayHost = new SceneOverlayHost();
         this.inputRouter = new SceneInputRouter(overlayHost);
         this.textMeasurer = textMeasurer;
+        this.environment = environment;
+    }
+
+    /**
+     * 获取宿主环境端口（只读）。
+     *
+     * <p>读取纪律见 {@link UiEnvironment}：O(1) 帧内直读，<b>禁止</b>把结果缓存进构造期字段或
+     * {@code Computed} 快照。</p>
+     *
+     * @return 宿主环境端口，恒不为 null
+     */
+    public UiEnvironment environment() {
+        return environment;
     }
 
     /**

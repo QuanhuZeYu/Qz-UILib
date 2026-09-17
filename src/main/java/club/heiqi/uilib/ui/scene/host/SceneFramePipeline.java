@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 
-import club.heiqi.uilib.Config;
 import club.heiqi.uilib.ui.diagnostic.UiPerfMarkers;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
@@ -342,7 +341,10 @@ public final class SceneFramePipeline {
     /** REPLAY：主树 + overlay bottom-first 各自独立 replay，并（仅采样开启时）统计帧级绘制规模。 */
     private void phaseReplay() {
         trace(FramePhase.REPLAY);
-        boolean sampling = Config.useDebug;
+        // 环境端口直读（每帧一次，O(1)）：原为 Config.useDebug 静态直读，改为经注入的环境端口后
+        // headless / 测试可注入自己的诊断实现，生产仍由 ProcessUiEnvironment 转发同一字段。
+        // 禁止把本值缓存进字段或 Computed —— 那会退化成一次性快照（见 Computed javadoc 陷阱二）。
+        boolean sampling = runtime.environment().diagnostics().debugEnabled();
         int overlayCount = 0;
         int commandCount = state.paintResult.getPlan().size();
         int nodeCount = sampling ? countNodes(state.root) : 0;

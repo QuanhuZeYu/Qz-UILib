@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.form;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -41,7 +42,7 @@ public class FormPageShellTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
     }
 
     @After

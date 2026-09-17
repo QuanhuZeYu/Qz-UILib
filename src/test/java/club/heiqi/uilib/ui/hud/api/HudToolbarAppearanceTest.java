@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.hud.api;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -28,7 +29,7 @@ public class HudToolbarAppearanceTest {
     }
 
     @Test public void liveRecipeUpdatesExistingButtonsAndPreservesContentProperties() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneGlassButtonStyle glass = SceneGlassButtonStyle.builder()
                 .backdrop(UiBackdrop.liquidGlass(UiGlassMaterial.THIN, 3, 0.8f)).build();
         Signal<SceneGlassButtonStyle> style = Signal.create(glass);

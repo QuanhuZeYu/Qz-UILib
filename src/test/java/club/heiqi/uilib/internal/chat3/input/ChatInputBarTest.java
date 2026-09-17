@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.input;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -45,7 +46,7 @@ public class ChatInputBarTest {
 
     @Test
     public void inputRootPinsHeightPaddingAndWidthToDesign() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "");
         SceneNode root = bar.root();
 
@@ -150,7 +151,7 @@ public class ChatInputBarTest {
     @Test
     public void emptySubmitDoesNotPolluteUpDownHistory() {
         // T4:空 Enter 只关屏不入发送历史(原版语义),不污染 Up/Down 回显
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "   ");
         Assert.assertNull("仅空白提交不入历史", bar.submitText());
         bar.recallHistory(-1);
@@ -166,7 +167,7 @@ public class ChatInputBarTest {
      */
     @Test
     public void recallHistoryAtBottomWithoutDraftKeepsInput() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "abc");
         bar.recordSent("sent before");
         bar.inputText().set("abc");
@@ -182,7 +183,7 @@ public class ChatInputBarTest {
      */
     @Test
     public void recallHistoryEmptyHistoryDoesNotClearInput() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "草稿输入");
         rt.flush();
         bar.recallHistory(-1);
@@ -192,7 +193,7 @@ public class ChatInputBarTest {
 
     @Test
     public void nonEmptySubmitRecordsHistoryForUpDownRecall() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, " hello ");
         Assert.assertEquals("trim 后返回提交文本", "hello", bar.submitText());
         bar.inputText().set("");
@@ -207,7 +208,7 @@ public class ChatInputBarTest {
 
     @Test
     public void placeholderTextAndColorFollowChat3Design() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "");
         rt.flush();
         SceneNode root = bar.root();
@@ -269,7 +270,7 @@ public class ChatInputBarTest {
      */
     @Test
     public void recalledHistoryStripsSectionSign() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "");
         bar.recordSent("a\u00A7b");
         rt.flush();
@@ -283,7 +284,7 @@ public class ChatInputBarTest {
      */
     @Test
     public void completionCommitStripsSectionSign() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "");
         bar.commit("a\u00A7b");
         rt.flush();
@@ -433,7 +434,7 @@ public class ChatInputBarTest {
 
     @Test
     public void disposeStopsAppearanceUpdatesWithoutClearingInput() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         try {
             ChatInputBar bar = new ChatInputBar(rt, "draft");
             rt.flush();
@@ -453,7 +454,7 @@ public class ChatInputBarTest {
     @Test
     public void inputBackgroundIsDesignTokenAfterFlush() {
         // 聊天 chrome 是底色唯一写入者，flush 后保持设计令牌，不依赖绑定注册次序。
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         ChatInputBar bar = new ChatInputBar(rt, "");
         rt.flush();
         Assert.assertEquals("输入底色 = bg-input 0xFF1E232A", BG_INPUT,

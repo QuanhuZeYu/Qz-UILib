@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -33,7 +34,7 @@ public class FocusManagerKeyRouterTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        runtime = SceneTestEnvironments.runtime();
         router = runtime.getInputRouter();
         frameBuilder = new InputFrameBuilder(0, 0);
     }

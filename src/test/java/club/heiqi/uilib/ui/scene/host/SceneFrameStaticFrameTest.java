@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.host;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.List;
 
 import org.junit.After;
@@ -43,7 +44,7 @@ public class SceneFrameStaticFrameTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         pipeline = new SceneFramePipeline(runtime, layoutEngine, paintEngine,

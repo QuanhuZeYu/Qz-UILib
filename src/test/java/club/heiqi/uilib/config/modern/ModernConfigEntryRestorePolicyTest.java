@@ -1,5 +1,6 @@
 package club.heiqi.uilib.config.modern;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.Arrays;
@@ -137,7 +138,7 @@ public class ModernConfigEntryRestorePolicyTest {
         MainThreadDispatcher.getInstance().drainClient();
         Assert.assertEquals("coordinator initial apply 后 FontConfig 可为空", 0, FontConfig.fontSort.length);
 
-        SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         DraftSignalAdapter adapter = new DraftSignalAdapter(runtime, manager.openDraft());
         try {
             SceneNode card = new FontSortFieldRenderer(frozen).render(

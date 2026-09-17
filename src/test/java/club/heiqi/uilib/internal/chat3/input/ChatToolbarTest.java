@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.input;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
@@ -150,7 +151,7 @@ public class ChatToolbarTest {
     public void rendersRegisteredActionsAndSwitchesToEditRow() {
         ChatActionRegistration registration = ChatActionService.getInstance()
                 .register(action("test:action", "测试动作", 1));
-        rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         Signal<Boolean> editing = Signal.create(Boolean.FALSE);
         SceneNode toolbar = ChatToolbar.mount(rt, host(editing));
         rt.flush();
@@ -177,7 +178,7 @@ public class ChatToolbarTest {
             ChatMarkdownSettings.setGlassLensStrength(0.8F);
             for (int blur : new int[] {0, 3, 20}) {
                 ChatMarkdownSettings.setGlassBlurRadiusPx(blur);
-                rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+                rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
                 SceneNode toolbar = ChatToolbar.mount(rt, host(Signal.create(Boolean.TRUE)));
                 rt.flush();
                 assertIconRow(toolbar, "finish", "cancel", "reset-current", "reset-all");
@@ -196,7 +197,7 @@ public class ChatToolbarTest {
                 rt = null;
             }
             ChatMarkdownSettings.setGlassEnabled(false);
-            rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             SceneNode toolbar = ChatToolbar.mount(rt, host(Signal.create(Boolean.TRUE)));
             rt.flush();
             assertIconRow(toolbar, "finish", "cancel", "reset-current", "reset-all");
@@ -221,7 +222,7 @@ public class ChatToolbarTest {
             ChatMarkdownSettings.setGlassBlurRadiusPx(3);
             attachedHost = host(Signal.create(Boolean.TRUE));
             ChatHudWindow.attachToolbarHost(attachedHost);
-            rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             HudToolbarLayer.Result layer = HudToolbarLayer.mount(rt, ChatHudWindow.chatToolbarSpec(),
                     SceneNode.column().setPreferredWidth(200).setPreferredHeight(100),
                     runtime -> ChatToolbar.mount(runtime, attachedHost));
@@ -259,7 +260,7 @@ public class ChatToolbarTest {
                 .action(new Runnable() {
                     @Override public void run() { }
                 }).build());
-        rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode toolbar = ChatToolbar.mount(rt, host(Signal.create(Boolean.FALSE)));
         rt.flush();
         assertIconRow(toolbar);
@@ -280,7 +281,7 @@ public class ChatToolbarTest {
         Assert.assertTrue("打开态聊天屏工具栏可见", Boolean.TRUE.equals(spec.getVisible().get()));
 
         ChatActionService.getInstance().register(action("test:layer", "图层动作", 1));
-        rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode content = SceneNode.column().setPreferredWidth(200).setPreferredHeight(100);
         HudToolbarLayer.Result layer = HudToolbarLayer.mount(rt, spec, content,
                 r -> ChatToolbar.mount(r, host(Signal.create(Boolean.FALSE))));

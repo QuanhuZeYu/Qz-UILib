@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.theme;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,7 +59,7 @@ public class SceneThemesBackdropQualityTest {
 
     /** 一个已构建页面：挂载表面节点 + 捕获库默认主题下的角色配方信号。 */
     private static final class Page {
-        final SceneRuntime rt = new SceneRuntime();
+        final SceneRuntime rt = SceneTestEnvironments.runtime();
         final SceneNode root = SceneNode.column();
         SceneNode surface;
         ReadableSignal<SceneSurfaceStyle> style;
@@ -139,7 +140,7 @@ public class SceneThemesBackdropQualityTest {
         Assert.assertNotNull("显式 SceneThemes.DEFAULT 是语义锚，不随档位变化",
                 SceneThemes.DEFAULT.surface(ROLE).getBackdrop());
 
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         runtimes.add(rt);
         Assert.assertEquals("solid 档 + 未 install：resolve 回落档位感知默认（实色无滤镜）",
                 SceneThemes.DEFAULT.withoutBackdrop(), SceneThemes.resolve(rt).get());
@@ -152,7 +153,7 @@ public class SceneThemesBackdropQualityTest {
     /** ⑤ 主题优先级不变：runtime 显式安装的主题压过库默认的档位回落。 */
     @Test
     public void explicitlyInstalledRuntimeThemeWinsOverQualityFallback() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         runtimes.add(rt);
         SceneTheme explicit = SceneTheme.liquidGlassLight();
         SceneThemes.install(rt, Signal.create(explicit));

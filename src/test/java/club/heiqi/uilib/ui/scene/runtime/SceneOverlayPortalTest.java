@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -27,7 +28,7 @@ public class SceneOverlayPortalTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        runtime = SceneTestEnvironments.runtime();
     }
 
     @After

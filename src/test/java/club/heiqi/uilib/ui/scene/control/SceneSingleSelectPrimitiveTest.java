@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -203,7 +204,7 @@ public class SceneSingleSelectPrimitiveTest {
     public void horizontalArrowNavigationUsesLeftRightOnly() {
         // 用独立 primitive 实例（HORIZONTAL），挂到同一 sceneRoot 会冲突，用独立 runtime
         ReactiveScheduler.get().reset();
-        SceneRuntime rt2 = new SceneRuntime();
+        SceneRuntime rt2 = SceneTestEnvironments.runtime();
         SceneLayoutEngine le2 = new SceneLayoutEngine(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
         SceneNode root2 = new SceneNode();
         Signal<Integer> sel2 = Signal.create(Integer.valueOf(0));
@@ -383,7 +384,7 @@ public class SceneSingleSelectPrimitiveTest {
 
         // HORIZONTAL 单独验证（mountPrimitive 已在 setUp 用 VERTICAL）
         ReactiveScheduler.get().reset();
-        SceneRuntime rt2 = new SceneRuntime();
+        SceneRuntime rt2 = SceneTestEnvironments.runtime();
         SceneNode root2 = new SceneNode();
         Signal<Integer> sel2 = Signal.create(Integer.valueOf(0));
         Signal<Boolean> en2 = Signal.create(Boolean.TRUE);

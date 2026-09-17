@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.view;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.List;
 
 import org.junit.Assert;
@@ -30,7 +31,7 @@ public class ChatMarkdownPipelineFontScaleTest {
     /** 换算公式必须与 scene 解析出口同式：clamp(round(设计值 × 倍率))。 */
     @Test
     public void effectiveFontSizeFormulaMatchesSceneResolutionExit() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         try {
             Assert.assertEquals("100%：有效值 = 设计值",
                     ChatMarkdownSettings.getChatFontSizePx(), ChatFontMetrics.chatFontSizePx(rt));

@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -47,7 +48,7 @@ public class SceneScrollContainerTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
         // sceneRoot 设 fillParentHeight 使其从 Constraints 收到确定高并下传给 container（grow 子），

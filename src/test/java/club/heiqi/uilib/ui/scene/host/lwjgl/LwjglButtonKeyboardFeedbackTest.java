@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.host.lwjgl;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
@@ -36,7 +37,7 @@ public class LwjglButtonKeyboardFeedbackTest {
         ReactiveScheduler.get().reset();
         reader = new MockPlatformStateReader();
         source = new LwjglInputSource(reader);
-        runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         root = new SceneNode();
         clicks = new AtomicInteger();
         button = runtime.mount(root, SceneButton.create(runtime,

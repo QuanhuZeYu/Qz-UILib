@@ -1,5 +1,6 @@
 package club.heiqi.uilib.config.modern;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -65,7 +66,7 @@ public class PickerDensityPanelWiringTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        rt = new SceneRuntime(measurer);
+        rt = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
         rt.__setViewportLogicalBox(W, H);

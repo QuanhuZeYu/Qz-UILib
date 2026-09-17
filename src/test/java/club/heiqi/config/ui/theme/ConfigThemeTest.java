@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.theme;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,7 +62,7 @@ public class ConfigThemeTest {
     }
 
     private SceneRuntime newRuntime() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         runtimes.add(rt);
         return rt;
     }

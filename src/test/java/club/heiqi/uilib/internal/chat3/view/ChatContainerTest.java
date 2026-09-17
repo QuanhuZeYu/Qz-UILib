@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.view;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.Map;
 
 import org.junit.Assert;
@@ -98,7 +99,7 @@ public class ChatContainerTest {
         controller.setHostViewport(400, 300);
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, 0L));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         Map<SceneNode, ChatLineRecord> registry = new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
         ChatContainer.Result result = ChatContainer.mount(rt, controller, registry, "");
         rt.flush();
@@ -147,7 +148,7 @@ public class ChatContainerTest {
         controller.setHostViewport(400, 300);
         controller.history().append(new ChatLineRecord(new ChatComponentText("<Bob> hi"), 1, 0L));
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         Map<SceneNode, ChatLineRecord> registry = new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
         ChatContainer.Result result = ChatContainer.mount(rt, controller, registry, "");
         rt.flush();
@@ -178,7 +179,7 @@ public class ChatContainerTest {
                     new ChatComponentText("<Bob> message number " + i), 1, T0 + i));
         }
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
         Map<SceneNode, ChatLineRecord> registry = new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
         ChatContainer.Result result = ChatContainer.mount(rt, controller, registry, "");
@@ -312,7 +313,7 @@ public class ChatContainerTest {
                     new ChatComponentText("Server announces event " + i), id++, t++));
         }
         controller.notifyDataChanged();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
         Map<SceneNode, ChatLineRecord> registry = new java.util.IdentityHashMap<SceneNode, ChatLineRecord>();
         ChatContainer.Result result = ChatContainer.mount(rt, controller, registry, "");
@@ -548,7 +549,7 @@ public class ChatContainerTest {
         boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
         try {
             ChatMarkdownSettings.setGlassEnabled(true);
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             Signal<SceneTheme> pageTheme = Signal.create(SceneTheme.liquidGlassLight());
             SceneThemes.install(rt, pageTheme);
             ChatContainer.Result result = mountGlassedContainer(rt, controller());
@@ -620,7 +621,7 @@ public class ChatContainerTest {
         boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
         try {
             ChatMarkdownSettings.setGlassEnabled(true);
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             // 装一个与聊天设置材质档完全不同的主题：局部覆盖若失效（优先级写反）当场可辨
             SceneThemes.install(rt, Signal.create(SceneTheme.liquidGlassLight()));
             ChatContainer.Result result = mountGlassedContainer(rt, controller());
@@ -693,7 +694,7 @@ public class ChatContainerTest {
         int savedAlpha = ChatMarkdownSettings.getGlassContainerAlpha();
         try {
             ChatMarkdownSettings.setGlassEnabled(true);
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             ChatContainer.Result result = mountGlassedContainer(rt, controller());
             SceneNode container = result.root();
             SceneNode listRow = container.__getChildren().get(0);
@@ -751,7 +752,7 @@ public class ChatContainerTest {
         boolean savedGlass = ChatMarkdownSettings.isGlassEnabled();
         try {
             ChatMarkdownSettings.setGlassEnabled(true);
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             ChatSceneController controller = controller();
             ChatContainer.Result result = mountGlassedContainer(rt, controller);
             result.setViewport(400, 300);
@@ -823,7 +824,7 @@ public class ChatContainerTest {
         try {
             ChatMarkdownSettings.setGlassEnabled(true);
             int before = ReactiveTestProbe.registeredEffectCount();
-            SceneRuntime rt1 = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt1 = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             ChatContainer.Result result1 = mountGlassedContainer(rt1, controller());
             Assert.assertTrue("挂载应注册响应式绑定（含配方与设置观察）",
                     ReactiveTestProbe.registeredEffectCount() > before);
@@ -838,7 +839,7 @@ public class ChatContainerTest {
             // 第二轮：先改设置再挂新实例——新观察器会把新快照发布进共享 Signal；
             // 若旧配方/旧绑定未注销，就会在旧读数与旧节点上复活。
             ChatMarkdownSettings.setGlassBlurRadiusPx(20);
-            SceneRuntime rt2 = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt2 = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             ChatContainer.Result result2 = mountGlassedContainer(rt2, controller());
             rt2.__tickFrame(1L);
             rt2.flush();

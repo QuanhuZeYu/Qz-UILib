@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
@@ -67,7 +68,7 @@ public class SceneSliderPrimitiveTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        runtime = SceneTestEnvironments.runtime();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, 16);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
@@ -378,7 +379,7 @@ public class SceneSliderPrimitiveTest {
     public void stepLeZeroUsesContinuousModeWithoutQuantization() {
         // 独立 primitive 实例：step=0
         ReactiveScheduler.get().reset();
-        SceneRuntime rt2 = new SceneRuntime();
+        SceneRuntime rt2 = SceneTestEnvironments.runtime();
         SceneLayoutEngine le2 = new SceneLayoutEngine(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
         SceneNode root2 = new SceneNode();
         Signal<Double> v2 = Signal.create(0.0D);
@@ -442,7 +443,7 @@ public class SceneSliderPrimitiveTest {
     @Test
     public void maxLeMinDegradesSilently() {
         ReactiveScheduler.get().reset();
-        SceneRuntime rt2 = new SceneRuntime();
+        SceneRuntime rt2 = SceneTestEnvironments.runtime();
         SceneLayoutEngine le2 = new SceneLayoutEngine(new FixedTextMeasurer(STUB_CHAR_WIDTH, 16));
         SceneNode root2 = new SceneNode();
         Signal<Double> v2 = Signal.create(50.0D);

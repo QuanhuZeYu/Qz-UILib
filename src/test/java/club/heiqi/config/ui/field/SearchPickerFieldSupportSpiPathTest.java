@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.field;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -64,7 +65,7 @@ public class SearchPickerFieldSupportSpiPathTest {
         Registry registry = new Registry();
         registry.register(spiProvider("test:spi", source));
         registry.freeze();
-        SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         try {
             Signal<Object> value = Signal.<Object>create("k1");
             runtime.mount(new SceneNode(), () -> SearchPickerFieldSupport.createControlledIfPresent(
@@ -177,7 +178,7 @@ public class SearchPickerFieldSupportSpiPathTest {
         Registry registry = new Registry();
         registry.register(spiProvider("test:spi", source));
         registry.freeze();
-        SceneRuntime runtime = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         try {
             Signal<Object> value = Signal.<Object>create("k1");
             runtime.mount(new SceneNode(), () -> SearchPickerFieldSupport.createControlledIfPresent(

@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.hud.api;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -31,7 +32,7 @@ public class HudToolbarScaleTest {
     }
 
     @Test public void customPaddingIsPreservedWhenAddingScaleControls() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         try {
             SceneNode custom = custom().setPadding(3, 5, 7, 9);
             HudToolbarLayer.Result layer = HudToolbarLayer.mount(rt, HudToolbarSpec.builder().build(), content(), r -> custom);
@@ -79,8 +80,8 @@ public class HudToolbarScaleTest {
         HudToolbarSpec spec = HudToolbarSpec.builder().build();
         HudRegistration registration = service.register("test:a", spec, rt -> custom());
         service.register("test:b", spec, rt -> custom());
-        SceneRuntime first = new SceneRuntime(new FixedTextMeasurer(8, 16));
-        SceneRuntime second = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime first = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
+        SceneRuntime second = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         try {
             HudToolbarLayer.Result a = service.mountLayer(first, "test:a", content());
             HudToolbarLayer.Result b = service.mountLayer(second, "test:a", content());
@@ -136,7 +137,7 @@ public class HudToolbarScaleTest {
     }
 
     @Test public void optOutPreservesCustomRootAndScalingSurvivesHiddenToolbar() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         Signal<Boolean> visible = Signal.create(true);
         SceneNode custom = custom();
         try {
@@ -158,7 +159,7 @@ public class HudToolbarScaleTest {
     @Test public void visualExtentAndBottomRightPlacementUseSameScaleForAllSides() {
         // 预期以工作站 Python Fraction 验算：logical = 200x132 或 232x100。
         for (HudToolbarSide side : HudToolbarSide.values()) {
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             try {
                 HudToolbarLayer.Result layer = HudToolbarLayer.mount(rt,
                         HudToolbarSpec.builder(side).scaleControls(false).build(), content(), r -> custom());

@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.theme;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.Collections;
 import java.util.List;
 
@@ -57,14 +58,14 @@ public class SceneThemeScopeTest {
 
     @Test
     public void resolveFallsBackToLibraryDefaultWithoutInstall() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         Assert.assertSame("未安装时回落库默认主题",
                 SceneThemes.DEFAULT, SceneThemes.resolve(rt).get());
     }
 
     @Test
     public void installProvidesRuntimeDefaultTheme() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme installed = theme(0xFF112233);
         SceneThemes.install(rt, Signal.create(installed));
 
@@ -73,8 +74,8 @@ public class SceneThemeScopeTest {
 
     @Test
     public void twoRuntimesKeepIndependentDefaults() {
-        SceneRuntime left = new SceneRuntime();
-        SceneRuntime right = new SceneRuntime();
+        SceneRuntime left = SceneTestEnvironments.runtime();
+        SceneRuntime right = SceneTestEnvironments.runtime();
         SceneTheme leftTheme = theme(0xFF112233);
         SceneTheme rightTheme = theme(0xFF445566);
         SceneThemes.install(left, Signal.create(leftTheme));
@@ -86,7 +87,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void withThemeOverridesWithinScopeAndRestoresAfter() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme page = theme(0xFF112233);
         SceneNode root = new SceneNode();
         Holder<ReadableSignal<SceneTheme>> inside = new Holder<ReadableSignal<SceneTheme>>();
@@ -104,7 +105,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void nestedWithThemeNarrowsThenRestores() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme outer = theme(0xFF112233);
         SceneTheme inner = theme(0xFF445566);
         SceneNode root = new SceneNode();
@@ -125,7 +126,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void themeIsInheritedByShowContentBuilder() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme page = theme(0xFF112233);
         SceneNode root = new SceneNode();
         Holder<ReadableSignal<SceneTheme>> captured = new Holder<ReadableSignal<SceneTheme>>();
@@ -150,7 +151,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void themeIsInheritedByForEachItemBuilder() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme page = theme(0xFF112233);
         SceneNode root = new SceneNode();
         Holder<ReadableSignal<SceneTheme>> captured = new Holder<ReadableSignal<SceneTheme>>();
@@ -174,7 +175,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void themeIsInheritedByPortalContentBuilder() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme page = theme(0xFF112233);
         SceneNode root = new SceneNode();
         Holder<ReadableSignal<SceneTheme>> captured = new Holder<ReadableSignal<SceneTheme>>();
@@ -197,7 +198,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void surfaceFollowsThemeUpdatesWithoutRebuild() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme first = theme(0xFF112233, 12);
         SceneTheme second = theme(0xFF445566, 24);
         Signal<SceneTheme> page = Signal.create(first);
@@ -222,7 +223,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void equalRoleRecipesDoNotPropagate() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme first = theme(0xFF112233, 12);
         SceneTheme second = theme(0xFF445566, 12);
         Signal<SceneTheme> page = Signal.create(first);
@@ -244,7 +245,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void disposedScopeStopsResolvingLocalTheme() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneTheme page = theme(0xFF112233);
         SceneNode root = new SceneNode();
         Holder<ReadableSignal<SceneTheme>> afterDispose = new Holder<ReadableSignal<SceneTheme>>();
@@ -264,7 +265,7 @@ public class SceneThemeScopeTest {
 
     @Test
     public void installAfterMountDoesNotRetargetAlreadyCapturedSurface() {
-        SceneRuntime rt = new SceneRuntime();
+        SceneRuntime rt = SceneTestEnvironments.runtime();
         SceneNode root = new SceneNode();
         Holder<ReadableSignal<SceneSurfaceStyle>> captured = new Holder<ReadableSignal<SceneSurfaceStyle>>();
 

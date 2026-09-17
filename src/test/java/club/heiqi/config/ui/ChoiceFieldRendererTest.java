@@ -1,5 +1,6 @@
 package club.heiqi.config.ui;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.io.File;
 
 import org.junit.After;
@@ -38,7 +39,7 @@ public class ChoiceFieldRendererTest {
     public void setUp() throws Exception {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         schema = UiSchemaFactory.serverSchema();
         authority = Authority.load(new File("nonexistent-ui-choice.yaml"), schema);
         draft = DraftBuffer.from(authority);

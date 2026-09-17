@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.devtools.playground;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -43,7 +44,7 @@ public class PlaygroundPageRegistryTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime(new FixedTextMeasurer());
+        runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer());
     }
 
     @After

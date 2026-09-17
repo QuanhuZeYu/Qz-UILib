@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.devtools.playground;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -218,7 +219,7 @@ public class PlaygroundKitTest {
      */
     @Test
     public void withoutHostContextFallsBackToStaticColors() {
-        SceneRuntime bare = new SceneRuntime(new FixedTextMeasurer());
+        SceneRuntime bare = SceneTestEnvironments.runtime(new FixedTextMeasurer());
         try {
             int effectsBefore = ReactiveTestProbe.registeredEffectCount();
 

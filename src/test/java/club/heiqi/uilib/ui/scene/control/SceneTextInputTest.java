@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -745,7 +746,7 @@ public class SceneTextInputTest {
         runtime.dispose();
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(STUB_CHAR_WIDTH, LINE_HEIGHT);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
         mountInput("", SceneInputType.NUMBER, MAX_LENGTH, "");
@@ -1024,7 +1025,7 @@ public class SceneTextInputTest {
             runtime.dispose();
         }
         CountingTextMeasurer measurer = new CountingTextMeasurer(STUB_CHAR_WIDTH, LINE_HEIGHT);
-        runtime = new SceneRuntime(measurer);
+        runtime = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
 

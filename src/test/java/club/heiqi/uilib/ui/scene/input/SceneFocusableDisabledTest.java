@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.input;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -30,7 +31,7 @@ public class SceneFocusableDisabledTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime();
+        runtime = SceneTestEnvironments.runtime();
         router = runtime.getInputRouter();
         fm = router.__getFocusManager();
     }

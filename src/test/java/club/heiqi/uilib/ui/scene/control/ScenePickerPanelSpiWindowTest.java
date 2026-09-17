@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -65,7 +66,7 @@ public class ScenePickerPanelSpiWindowTest {
         ReactiveScheduler.get().reset();
         PickerSourceGuard.__resetForTests();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        rt = new SceneRuntime(measurer);
+        rt = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         sceneRoot = new SceneNode();
     }

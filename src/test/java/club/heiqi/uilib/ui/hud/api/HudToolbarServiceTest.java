@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.hud.api;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -104,7 +105,7 @@ public class HudToolbarServiceTest {
 
     @Test
     public void unregisteredHudMountsPassthrough() {
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         SceneNode content = content();
         HudToolbarLayer.Result result = HudToolbarService.getInstance()
                 .mountLayer(rt, HUD_ID, content);
@@ -122,7 +123,7 @@ public class HudToolbarServiceTest {
                 HudToolbarSpec.builder(HudToolbarSide.TOP).thickness(24).gap(3)
                         .visible(Signal.create(Boolean.TRUE)).build(),
                 rt -> SceneNode.row().setPreferredWidth(40).setPreferredHeight(24));
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         HudToolbarLayer.Result result = HudToolbarService.getInstance()
                 .mountLayer(rt, HUD_ID, content());
         rt.flush();

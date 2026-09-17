@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.host;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -198,7 +199,7 @@ public class SceneOverlayRelativeScalePipelineTest {
 
         Fixture() {
             SceneTextMeasurer m = measurer();
-            this.runtime = new SceneRuntime(m);
+            this.runtime = SceneTestEnvironments.runtime(m);
             this.layoutEngine = new SceneLayoutEngine(m);
             this.paintEngine = new ScenePaintEngine(m);
             this.pipeline = new SceneFramePipeline(runtime, layoutEngine, paintEngine,

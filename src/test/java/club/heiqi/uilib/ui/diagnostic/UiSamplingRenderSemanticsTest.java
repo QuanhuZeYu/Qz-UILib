@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.diagnostic;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.List;
 
 import org.junit.After;
@@ -70,9 +71,14 @@ public class UiSamplingRenderSemanticsTest {
     }
 
     private static Frame runFrame(boolean useDebug) {
+        // 帧管线的采样开关已改走环境端口（注入，见 debugEnvironment）；UiPerformanceMonitor 侧
+        // 仍是 Config.useDebug 静态直读（尚未接线），故此处仍需写静态字段 —— 两侧同时打开才构成
+        // 「采样开启」的完整语义，本测试守的正是这条口径。
         Config.useDebug = useDebug;
         SceneTextMeasurer measurer = new TextMeasureServiceSceneAdapter(DefaultTextMeasureService.getInstance());
-        SceneRuntime runtime = new SceneRuntime(measurer);
+        SceneRuntime runtime = SceneTestEnvironments.runtime(measurer, useDebug
+                ? SceneTestEnvironments.debugEnabled()
+                : SceneTestEnvironments.emptyEnvironment());
         SceneLayoutEngine layoutEngine = new SceneLayoutEngine(measurer);
         ScenePaintEngine paintEngine = new ScenePaintEngine(measurer);
         SceneFramePipeline pipeline = new SceneFramePipeline(runtime, layoutEngine, paintEngine,

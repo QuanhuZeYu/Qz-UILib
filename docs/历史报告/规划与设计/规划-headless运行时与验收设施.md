@@ -432,6 +432,46 @@ A2 与 §六-6 据此修正为：保留软光栅作为**字体侧既有验收通
 `SceneAnchorResolver`。在 headless 复刻第二套 HUD 装配仍是禁止项。
 「有命令无像素 / 有像素无命令」两个自检提示保留，本次空画面正是被它们点出来的。
 
+### F22 环境面落地：宿主环境端口（2026-09-18）
+
+**裁定**：环境事实走**注入端口**（构造依赖），不做单例直读、不做服务定位器。判据是
+「静态量必须有失效通道」——框架今日获取环境事实的两条路各有缺口：进程级静态/单例直读
+（`Config.useDebug` 被 23 处每帧读、`LanguageEpochService` 自述「不是 signal 通道」）
+在 headless 出图与测试里**无法替换**、在运行期**无法通知**消费者；构造期注入
+（`HudScaleSetting`、`SceneThemes.install(runtime, signal)`）已被证明可用，却各自为政、每加一个
+环境量就要多改一次宿主构造签名。环境面把后者上升为统一语义，给前者一个明确归属。
+
+**落地**（`club.heiqi.uilib.ui.env`）：`UiEnvironment` 端口 + 三域
+`DiagnosticsEnvironment` / `LocaleEnvironment` / `ResourceEnvironment`（含各自缺席实现）
++ 缺席态 `UiEnvironment.empty()` + 生产适配器 `ProcessUiEnvironment`（**无状态**转发：
+`Config.useDebug` / 语言代际 / 资源代际，因此多实例语义等价，无需单点装配）。
+
+注入点是**构造依赖**：`SceneRuntime(SceneTextMeasurer, UiEnvironment)` 成为唯一公开构造
+（传 null 快速失败，不给「缺省即静默缺席」的路径），`SceneHostAssembly.assemble` 加第三参，
+`SceneHostAssembly.defaultEnvironment()` 与既有的 `defaultMeasurer()` 对称、是全仓唯一生产环境装配点。
+
+三条不变量（写在 `UiEnvironment` javadoc）：① 只读且方向**自外向内**（宿主 → runtime；
+与 `SceneFontEnvironment` 的 runtime → 节点下行暴露方向相反，不得互相顶替）；② 缺席态与
+「未安装态」**逐位等价**（各域 javadoc 写明具体缺席值）；③ 环境值是 O(1) 帧内直读，
+**禁止**缓存进构造期字段或 `Computed` 快照（后者即仓库内已实测的静默失效事故同型）。
+
+**接线范围（本版）**：帧管线 `phaseReplay` 的采样开关由 `Config.useDebug` 静态直读改为
+`runtime.environment().diagnostics().debugEnabled()`（有 runtime 引用可直达，行为等价，
+且 headless / 测试自此可注入自己的诊断实现）。其余读取点的**接线进度与前提**写在
+`ProcessUiEnvironment` javadoc，按可达性分两类，下次接手不必重新盘点：
+有 runtime 引用但改端口读解决不了的（`registerDebugHud` 的 Computed 快照，需先给诊断域补
+可订阅通道）；需先补「节点 → 环境」通道的（控件内 `Config.useDebug` 采样点、
+`UiPerformanceMonitor`、`HostImageSource`、`PickerIconResolver` / `PickerRevisionBridge` 的代际比对）。
+
+**测试侧**：`SceneRuntime` 旧的无参 / 单参构造删除，**283 处**测试构造点机械迁移到 testkit 收口工厂
+`SceneTestEnvironments.runtime(...)`（103 个文件，纯机械替换 + import 补插，断言零改动；
+`SceneInteractionHarness` 同包免 import）。`UiSamplingRenderSemanticsTest` 是唯一需要语义改动的：
+它原本靠改 `Config.useDebug` 静态字段驱动帧管线，现改为**注入诊断环境**（不再污染进程静态态）；
+`UiPerformanceMonitor` 侧仍是静态直读（未接线），故该测试两侧同时打开以构成完整「采样开启」语义。
+
+**本版边界**：不提供环境量的**订阅（signal）**通道，只提供值读与代际；需要响应式派生的域接入时
+再补（届时 `UiEnvironment` 的 default 域访问器保证新增域不破坏既有实现）。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**

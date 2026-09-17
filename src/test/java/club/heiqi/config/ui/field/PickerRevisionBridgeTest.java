@@ -1,5 +1,6 @@
 package club.heiqi.config.ui.field;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -89,7 +90,7 @@ public class PickerRevisionBridgeTest {
         PickerRevisionBridge bridge = new PickerRevisionBridge(source, () -> 0L, () -> 0L, () -> 0L);
         List<PickerSourceVersion> emissions = new ArrayList<PickerSourceVersion>();
         ReadableSignal<PickerSourceVersion> signal = bridge.versionSignal();
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         rt.bind(signal, emissions::add);
         rt.flush();
 
@@ -129,7 +130,7 @@ public class PickerRevisionBridgeTest {
         FakeSource source = new FakeSource();
         long[] name = { 0L };
         PickerRevisionBridge bridge = new PickerRevisionBridge(source, () -> name[0], () -> 0L, () -> 0L);
-        SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+        SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
         bridge.bindTo(rt);
 
         rt.__tickFrame(1_000L);

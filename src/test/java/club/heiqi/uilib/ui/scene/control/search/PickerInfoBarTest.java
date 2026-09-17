@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.List;
 
 import org.junit.After;
@@ -58,7 +59,7 @@ public class PickerInfoBarTest {
     public void setUp() {
         ReactiveScheduler.get().reset();
         FixedTextMeasurer measurer = new FixedTextMeasurer(8, 16);
-        rt = new SceneRuntime(measurer);
+        rt = SceneTestEnvironments.runtime(measurer);
         layoutEngine = new SceneLayoutEngine(measurer);
         paintEngine = new ScenePaintEngine(measurer);
         sceneRoot = new SceneNode();

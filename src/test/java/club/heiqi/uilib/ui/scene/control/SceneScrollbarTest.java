@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -52,7 +53,7 @@ public class SceneScrollbarTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime(new FixedTextMeasurer());
+        runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer());
         layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         sceneRoot = new SceneNode();
         sceneRoot.setFillParentHeight(true); // 根填满 canvas 高，使 column 有 free space grow

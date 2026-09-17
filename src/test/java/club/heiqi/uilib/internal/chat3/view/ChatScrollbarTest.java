@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.chat3.view;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -110,7 +111,7 @@ public class ChatScrollbarTest {
         // 丢弃 ChatScrollbar 注入的 design 令牌;修复后回读 props.thumbColor()。
         ReactiveScheduler.get().reset();
         try {
-            SceneRuntime rt = new SceneRuntime(new FixedTextMeasurer(8, 16));
+            SceneRuntime rt = SceneTestEnvironments.runtime(new FixedTextMeasurer(8, 16));
             SceneNode sceneRoot = new SceneNode();
             sceneRoot.setFillParentHeight(true);
             SceneNode viewport = new SceneNode();

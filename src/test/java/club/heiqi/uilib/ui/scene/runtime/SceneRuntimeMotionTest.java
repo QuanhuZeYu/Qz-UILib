@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.Arrays;
 
 import org.junit.After;
@@ -31,7 +32,7 @@ public class SceneRuntimeMotionTest {
 
     @Test
     public void floatMotionUsesManualFrameTimeWithoutWritingHistory() {
-        SceneRuntime runtime = new SceneRuntime();
+        SceneRuntime runtime = SceneTestEnvironments.runtime();
         try {
             runtime.__enableMotion();
             SceneNode node = new SceneNode();
@@ -66,7 +67,7 @@ public class SceneRuntimeMotionTest {
 
     @Test
     public void colorMotionInterpolatesArgbAtFastDuration() {
-        SceneRuntime runtime = new SceneRuntime();
+        SceneRuntime runtime = SceneTestEnvironments.runtime();
         try {
             runtime.__enableMotion();
             SceneNode node = new SceneNode();
@@ -89,7 +90,7 @@ public class SceneRuntimeMotionTest {
 
     @Test
     public void colorMotionPreservesVisibleRgbAtTransparentEndpoint() {
-        SceneRuntime runtime = new SceneRuntime();
+        SceneRuntime runtime = SceneTestEnvironments.runtime();
         try {
             runtime.__enableMotion();
             SceneNode node = new SceneNode();
@@ -121,8 +122,8 @@ public class SceneRuntimeMotionTest {
 
     @Test
     public void runtimesSampleSameSignalIndependently() {
-        SceneRuntime first = new SceneRuntime();
-        SceneRuntime second = new SceneRuntime();
+        SceneRuntime first = SceneTestEnvironments.runtime();
+        SceneRuntime second = SceneTestEnvironments.runtime();
         try {
             first.__enableMotion();
             second.__enableMotion();
@@ -155,7 +156,7 @@ public class SceneRuntimeMotionTest {
 
     @Test
     public void staggeredRevealWaitsForFreshLayoutAndCapsDelayWithoutOpacityFlash() {
-        SceneRuntime runtime = new SceneRuntime();
+        SceneRuntime runtime = SceneTestEnvironments.runtime();
         try {
             runtime.__enableMotion();
             SceneNode parent = SceneNode.column();
@@ -228,7 +229,7 @@ public class SceneRuntimeMotionTest {
 
     @Test
     public void staggeredRevealDisposalBeforeLayoutPublicationRestoresInitialState() {
-        SceneRuntime runtime = new SceneRuntime();
+        SceneRuntime runtime = SceneTestEnvironments.runtime();
         try {
             runtime.__enableMotion();
             SceneNode parent = SceneNode.column();
@@ -257,7 +258,7 @@ public class SceneRuntimeMotionTest {
 
     @Test
     public void runtimeDisposeRestoresActiveStaggeredReveal() {
-        SceneRuntime runtime = new SceneRuntime();
+        SceneRuntime runtime = SceneTestEnvironments.runtime();
         boolean disposed = false;
         SceneNode target = new SceneNode().setPreferredHeight(20);
         try {
@@ -291,7 +292,7 @@ public class SceneRuntimeMotionTest {
 
     @Test
     public void staggeredRevealTracksFollowMountOwnerLifetime() {
-        SceneRuntime runtime = new SceneRuntime();
+        SceneRuntime runtime = SceneTestEnvironments.runtime();
         try {
             runtime.__enableMotion();
             SceneNode parent = SceneNode.column();

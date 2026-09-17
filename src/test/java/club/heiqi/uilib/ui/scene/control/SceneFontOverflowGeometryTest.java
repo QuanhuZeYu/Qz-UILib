@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -69,7 +70,7 @@ public class SceneFontOverflowGeometryTest {
         static final String LONG_TEXT = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
         final FontMeasurer measurer = new FontMeasurer();
-        final SceneRuntime rt = new SceneRuntime(measurer);
+        final SceneRuntime rt = SceneTestEnvironments.runtime(measurer);
         final SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
         final SceneNode sceneRoot = new SceneNode();
         final Signal<List<SceneDataTable.Row>> rows = Signal.create(Collections.unmodifiableList(
@@ -222,7 +223,7 @@ public class SceneFontOverflowGeometryTest {
     @Test
     public void keyValueMapHeaderDeclaresOverflowAndGrowsWithFont() {
         FontMeasurer measurer = new FontMeasurer();
-        SceneRuntime rt = new SceneRuntime(measurer);
+        SceneRuntime rt = SceneTestEnvironments.runtime(measurer);
         SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
         SceneNode sceneRoot = new SceneNode();
         Signal<List<KeyValueRow>> rows = Signal.create(Collections.unmodifiableList(Arrays.asList(
@@ -262,7 +263,7 @@ public class SceneFontOverflowGeometryTest {
     @Test
     public void objectFieldLabelTrackEllipsizesWithinFixedWidth() {
         FontMeasurer measurer = new FontMeasurer();
-        SceneRuntime rt = new SceneRuntime(measurer);
+        SceneRuntime rt = SceneTestEnvironments.runtime(measurer);
         SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
         SceneNode sceneRoot = new SceneNode();
         Map<String, Object> value = new LinkedHashMap<String, Object>();
@@ -313,7 +314,7 @@ public class SceneFontOverflowGeometryTest {
     @Test
     public void virtualGridIconHeightYieldsToLabelLineHeight() {
         FontMeasurer measurer = new FontMeasurer();
-        SceneRuntime rt = new SceneRuntime(measurer);
+        SceneRuntime rt = SceneTestEnvironments.runtime(measurer);
         SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
         SceneNode sceneRoot = new SceneNode();
         final int cellW = 64;
@@ -367,7 +368,7 @@ public class SceneFontOverflowGeometryTest {
     @Test
     public void searchResultListTrackHeightGrowsWithFontAndKeepsLabelIntact() {
         FontMeasurer measurer = new FontMeasurer();
-        SceneRuntime rt = new SceneRuntime(measurer);
+        SceneRuntime rt = SceneTestEnvironments.runtime(measurer);
         SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
         SceneNode sceneRoot = new SceneNode();
         final int cellW = 64;
@@ -431,7 +432,7 @@ public class SceneFontOverflowGeometryTest {
     @Test
     public void segmentedGeometryFollowsFontSizeViaMetric() {
         FontMeasurer measurer = new FontMeasurer();
-        SceneRuntime rt = new SceneRuntime(measurer);
+        SceneRuntime rt = SceneTestEnvironments.runtime(measurer);
         SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
         SceneNode sceneRoot = new SceneNode();
         final List<String> options = Arrays.asList("Day", "Week", "Month");
@@ -470,7 +471,7 @@ public class SceneFontOverflowGeometryTest {
     @Test
     public void tabGeometryFollowsFontSizeViaMetricWithMinWidth() {
         FontMeasurer measurer = new FontMeasurer();
-        SceneRuntime rt = new SceneRuntime(measurer);
+        SceneRuntime rt = SceneTestEnvironments.runtime(measurer);
         SceneLayoutEngine engine = new SceneLayoutEngine(measurer);
         SceneNode sceneRoot = new SceneNode();
         final List<String> labels = Arrays.asList("Day", "Week", "Month");

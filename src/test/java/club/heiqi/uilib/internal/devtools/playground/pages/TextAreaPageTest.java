@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.devtools.playground.pages;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,7 +46,7 @@ public class TextAreaPageTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime(new FixedTextMeasurer());
+        runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer());
         theme = Signal.create(DARK);
         SceneThemes.install(runtime, theme);
         mountPoint = new SceneNode();

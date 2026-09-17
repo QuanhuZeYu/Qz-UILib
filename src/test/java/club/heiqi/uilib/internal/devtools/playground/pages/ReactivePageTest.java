@@ -1,5 +1,6 @@
 package club.heiqi.uilib.internal.devtools.playground.pages;
 
+import club.heiqi.uilib.ui.scene.testkit.SceneTestEnvironments;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -70,7 +71,7 @@ public class ReactivePageTest {
     @Before
     public void setUp() {
         ReactiveScheduler.get().reset();
-        runtime = new SceneRuntime(new FixedTextMeasurer());
+        runtime = SceneTestEnvironments.runtime(new FixedTextMeasurer());
         layoutEngine = new SceneLayoutEngine(new FixedTextMeasurer());
         theme = Signal.create(DARK);
         SceneThemes.install(runtime, theme);
