@@ -4,6 +4,7 @@ import java.util.List;
 
 import net.minecraft.util.IChatComponent;
 
+import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
@@ -49,12 +50,10 @@ final class HudSceneProbeHost implements UiSurface {
     private final SceneHostWindow window;
     private final HudAnchor anchor;
     /**
-     * 虚拟时钟：内容就绪后从进程当前时刻起步，每帧单调步进。
+     * 虚拟时钟：从<b>请求注入的基准</b>起步，每帧单调步进。
      *
-     * <p>为什么初值必须在这里取、不能放字段初始化器：组的出生时刻是 wall clock，而入场动画进度 =
-     * （帧时钟 − 出生时刻）/ 180ms；字段初始化器早于 {@code ChatSceneController} 创建与消息 append，
-     * 控制器初始化耗时会让出生时刻落在起点之后 → 每组 opacity 恒 0 → 出图纯色。
-     * 完整排查链见 {@link ChatSceneProbeHost} 的同类字段。</p>
+     * <p>与消息到达时刻同源（同一基准入史），故入场进度首帧即 0 并单调上升，不依赖构造耗时、
+     * 不依赖墙钟；组头 {@code HH:mm} 因此稳定。完整排查链见 {@link ChatSceneProbeHost} 的同类字段。</p>
      */
     private long clockMillis;
 
@@ -65,8 +64,9 @@ final class HudSceneProbeHost implements UiSurface {
      * @param height      视口高（逻辑 px）
      * @param messages    初始消息（语法见 {@link ChatSceneProbeHost}）
      * @param anchorIndex 锚点下标（0 左上 / 1 右上 / 2 左下 / 3 右下；越界按左下）
+     * @param clockMillis 虚拟墙钟基准（epoch 毫秒）；同时作为消息到达时刻与帧时钟起点
      */
-    HudSceneProbeHost(int width, int height, List<String> messages, int anchorIndex) {
+    HudSceneProbeHost(int width, int height, List<String> messages, int anchorIndex, long clockMillis) {
         this.controller = new ChatSceneController(ChatSceneController.uiLibMeasure(),
                 new ChatSceneController.SelfNameProvider() {
                     @Override
@@ -81,7 +81,8 @@ final class HudSceneProbeHost implements UiSurface {
         for (String message : messages) {
             IChatComponent component = ChatSceneProbeHost.componentOf(message);
             if (component != null) {
-                controller.history().append(component, messageId++);
+                // 到达时刻用注入基准而非进程当前时刻（理由见 ChatSceneProbeHost 同名构造）。
+                controller.history().append(new ChatLineRecord(component, messageId++, clockMillis));
             }
         }
         controller.notifyDataChanged();
@@ -91,8 +92,8 @@ final class HudSceneProbeHost implements UiSurface {
         this.window = new SceneHostWindow(SceneHostAssembly.defaultMeasurer(),
                 SceneHostAssembly.defaultEnvironment(), SceneHostWindow.Shell.HUD_DEFAULT,
                 rt -> controller.buildContent(rt), null, null);
-        // 内容已就绪，此刻起算虚拟时钟（理由见 clockMillis 字段 javadoc）。
-        this.clockMillis = System.currentTimeMillis();
+        // 帧时钟起点 = 消息到达时刻（理由见 clockMillis 字段 javadoc）。
+        this.clockMillis = clockMillis;
     }
 
     /**

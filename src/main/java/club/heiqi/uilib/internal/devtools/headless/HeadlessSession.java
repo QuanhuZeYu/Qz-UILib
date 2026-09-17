@@ -109,12 +109,13 @@ public final class HeadlessSession implements AutoCloseable {
         }
         if (HeadlessRequest.CHAT_PAGE.equals(request.pageId())) {
             return new ChatSceneProbeHost(request.width(), request.height(),
-                    ChatSceneProbeHost.splitMessages(request.text()), inputSource);
+                    ChatSceneProbeHost.splitMessages(request.text()), inputSource, request.clockMillis());
         }
 
         if (HeadlessRequest.HUD_PAGE.equals(request.pageId())) {
             return new HudSceneProbeHost(request.width(), request.height(),
-                    ChatSceneProbeHost.splitMessages(request.text()), request.pageIndex());
+                    ChatSceneProbeHost.splitMessages(request.text()), request.pageIndex(),
+                    request.clockMillis());
         }
 
         throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,

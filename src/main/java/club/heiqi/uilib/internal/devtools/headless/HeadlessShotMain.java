@@ -54,6 +54,7 @@ public final class HeadlessShotMain {
         String text = HeadlessRequest.DEFAULT_PROBE_TEXT;
         String script = "";
         String out = null;
+        long clockMillis = HeadlessRequest.DEFAULT_CLOCK_MILLIS;
         boolean probeOnly = false;
         boolean framesGiven = false;
         try {
@@ -92,6 +93,8 @@ public final class HeadlessShotMain {
                     int[] parsed = parseSize(arg.substring("--size=".length()));
                     width = parsed[0];
                     height = parsed[1];
+                } else if (arg.startsWith("--clock=")) {
+                    clockMillis = Long.parseLong(arg.substring("--clock=".length()));
                 } else {
                     System.err.println("[headless] 未知参数：" + arg);
                     printUsage(System.err);
@@ -151,7 +154,8 @@ public final class HeadlessShotMain {
                 try {
                     request = HeadlessRequest.builder().page(page).pageIndex(targetPageIndex.intValue())
                             .size(size[0], size[1]).frames(frames).background(background).text(text)
-                            .script(script).settle(settle).maxFrames(maxFrames).output(output).build();
+                            .script(script).settle(settle).maxFrames(maxFrames).clock(clockMillis)
+                            .output(output).build();
                 } catch (RuntimeException e) {
                     System.err.println("[headless] 请求非法：" + e.getMessage());
                     return 2;
@@ -276,8 +280,10 @@ public final class HeadlessShotMain {
     }
 
     private static void printUsage(PrintStream out) {
-        out.println("用法: HeadlessShotMain [--page=playground|text-probe|chat] [--page-index=N | --page-indexes=N,N,…]"
+        out.println("用法: HeadlessShotMain [--page=playground|text-probe|chat|hud]"
+                + " [--page-index=N | --page-indexes=N,N,…]"
                 + " [--size=WxH | --sizes=WxH,WxH,…] [--out=path] [--frames=N] [--settle=N] [--max-frames=N]"
-                + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file] [--probe]");
+                + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file]"
+                + " [--clock=epochMillis] [--probe]");
     }
 }

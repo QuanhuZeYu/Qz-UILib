@@ -13,6 +13,11 @@ import java.nio.file.Paths;
  * <p><b>宿主背景是语义而非装饰</b>：UI 面板大量使用半透明玻璃配方，真机上叠在游戏世界之上才成立；
  * 从全透明开始时面板 alpha 会停在极低值（实测 meanAlpha≈18/255），导出 PNG 后看似「白底淡字」。
  * 默认给不透明中性深色（等价于屏幕底色），需要透明底时显式选择 {@code 0x00000000}。</p>
+ *
+ * <p><b>虚拟墙钟是语义而非便利</b>：聊天内容的时间戳（组头 {@code HH:mm}）与消息存活窗口都以
+ * 「消息到达时刻」为基准，而到达时刻此前取进程当前时刻 ⇒ 跨分钟的两次出图必然像素不同，
+ * 「同一命令出同一张图」不成立。故请求持有一个虚拟墙钟基准（{@link #clockMillis()}），
+ * 探针用它同时作为消息到达时刻与帧时钟起点，缺省为 {@link #DEFAULT_CLOCK_MILLIS}。</p>
  */
 public final class HeadlessRequest {
 
@@ -52,6 +57,14 @@ public final class HeadlessRequest {
 
     /** 文本探针默认文本：中英数混排，覆盖 CJK 与拉丁字形。 */
     public static final String DEFAULT_PROBE_TEXT = "Qz UILib 对拍样本 Ag123";
+    /**
+     * 默认虚拟墙钟基准：{@code 2024-01-01T00:00:00Z} 的 epoch 毫秒。
+     *
+     * <p>固定基准让「同一命令在任何时刻出图」逐像素一致；显示值按<b>本机默认时区</b>格式化
+     * （东八区为 {@code 08:00}）—— 同一台机器上确定，跨时区不同，这是有意的：UI 本就按本地时区显示。
+     * 需要观察其它时刻的观感时用 {@code --clock=<epochMillis>} 覆盖。</p>
+     */
+    public static final long DEFAULT_CLOCK_MILLIS = 1_704_067_200_000L;
 
     private final String pageId;
     private final int pageIndex;
@@ -63,10 +76,11 @@ public final class HeadlessRequest {
     private final int background;
     private final String text;
     private final String script;
+    private final long clockMillis;
     private final Path output;
 
     private HeadlessRequest(String pageId, int pageIndex, int width, int height, int frames, int settleFrames, int maxFrames,
-            int background, String text, String script, Path output) {
+            int background, String text, String script, long clockMillis, Path output) {
         this.pageId = pageId;
         this.pageIndex = pageIndex;
         this.width = width;
@@ -77,6 +91,7 @@ public final class HeadlessRequest {
         this.background = background;
         this.text = text;
         this.script = script;
+        this.clockMillis = clockMillis;
         this.output = output;
     }
 
@@ -135,6 +150,13 @@ public final class HeadlessRequest {
         return script;
     }
 
+    /**
+     * @return 虚拟墙钟基准（epoch 毫秒）；内容时间戳与帧时钟起点都取自它
+     */
+    public long clockMillis() {
+        return clockMillis;
+    }
+
     /** @return PNG 产物路径 */
     public Path output() {
         return output;
@@ -146,6 +168,7 @@ public final class HeadlessRequest {
                 + height + " frames=" + frames
                 + " background=" + String.format("%08X", Integer.valueOf(background))
                 + " settle=" + settleFrames + " maxFrames=" + maxFrames
+                + " clock=" + clockMillis
                 + (TEXT_PROBE_PAGE.equals(pageId) ? " text=\"" + text + "\"" : "")
                 + " out=" + output;
     }
@@ -163,6 +186,7 @@ public final class HeadlessRequest {
         private int background = DEFAULT_BACKGROUND;
         private String text = DEFAULT_PROBE_TEXT;
         private String script = "";
+        private long clockMillis = DEFAULT_CLOCK_MILLIS;
         private Path output = Paths.get("build", "reports", "headless", "shot.png");
 
         private Builder() {
@@ -223,6 +247,12 @@ public final class HeadlessRequest {
             return this;
         }
 
+        /** @param value 虚拟墙钟基准（epoch 毫秒） * @return this */
+        public Builder clock(long value) {
+            this.clockMillis = value;
+            return this;
+        }
+
         /** @param value PNG 路径 * @return this */
         public Builder output(Path value) {
             this.output = value;
@@ -252,7 +282,7 @@ public final class HeadlessRequest {
             }
             return new HeadlessRequest(pageId, pageIndex, width, height, frames, settleFrames, maxFrames,
                     background,
-                    text == null ? "" : text, script == null ? "" : script, output);
+                    text == null ? "" : text, script == null ? "" : script, clockMillis, output);
         }
     }
 }

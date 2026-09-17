@@ -8,6 +8,7 @@ import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.IChatComponent;
 
 import club.heiqi.uilib.api.chat.ChatAccess;
+import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
@@ -69,15 +70,13 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
     private final ChatSceneController controller;
     private final SceneNode root;
     /**
-     * 虚拟时钟：<b>内容就绪后</b>从进程当前时刻起步，每帧单调步进。
+     * 虚拟时钟：从<b>请求注入的基准</b>起步，每帧单调步进。
      *
-     * <p><b>为什么初值必须在这里取、不能放字段初始化器</b>：消息的出生时刻（
-     * {@code ChatCardComposer} 组的 {@code latestMillis}）是 wall clock，而入场动画进度 =
-     * {@code (帧时钟 − 出生时刻) / 180ms}。字段初始化器在 {@code super(...)} 之后立即求值，
-     * 早于 {@code ChatSceneController} 的创建与消息 append；而控制器初始化（度量/段解析装配）
-     * 实测可耗数百毫秒，于是出生时刻反而<b>晚于</b>帧时钟起点 → 进度恒为负 → 每组 opacity 恒 0 →
-     * 整树被 paint 的「零透明子树跳过」优化吃掉 → 出图纯色（{@code commands=0}、{@code colors=1}）。
-     * 实测偏差 353ms（默认 frames=20 ≈ 320ms 追不回来），故把起点挪到内容构建之后。</p>
+     * <p><b>与消息到达时刻同源</b>：消息以同一基准入史，故入场动画进度 {@code (帧时钟 − 出生时刻) / 180ms}
+     * 首帧即 0、随后单调上升，既不依赖构造耗时也不依赖墙钟。旧实现取 {@code System.currentTimeMillis()}
+     * 并把初值挪到内容构建之后来躲开构造耗时（否则出生时刻晚于帧时钟起点 → 进度恒负 → 每组 opacity 0 →
+     * 零透明子树被 paint 跳过 → 出图纯色，实测偏差 353ms）；同源之后该时序竞态不再存在。
+     * 出图可复现性也由此成立：组头 {@code HH:mm} 取自到达时刻，不再随真实时间变化。</p>
      */
     private long clockMillis;
 
@@ -88,8 +87,9 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
      * @param height   视口高（逻辑 px）
      * @param messages 初始消息（语法见类注释）
      * @param input    平台输入源（脚本注入的鼠标键盘）
+     * @param clockMillis 虚拟墙钟基准（epoch 毫秒）；同时作为消息到达时刻与帧时钟起点
      */
-    ChatSceneProbeHost(int width, int height, List<String> messages, PlatformInputSource input) {
+    ChatSceneProbeHost(int width, int height, List<String> messages, PlatformInputSource input, long clockMillis) {
         super(input);
         this.controller = new ChatSceneController(ChatSceneController.uiLibMeasure(),
                 new ChatSceneController.SelfNameProvider() {
@@ -105,14 +105,16 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
         for (String message : messages) {
             IChatComponent component = componentOf(message);
             if (component != null) {
-                controller.history().append(component, messageId++);
+                // 到达时刻用注入基准而非进程当前时刻：组头 HH:mm 与存活窗口因此可复现
+                //（二参 append 读 System.currentTimeMillis，出图路径不得使用）。
+                controller.history().append(new ChatLineRecord(component, messageId++, clockMillis));
             }
         }
         controller.notifyDataChanged();
         this.root = controller.buildContent(runtime);
         SceneHostAssembly.attachTree(runtime, root);
-        // 内容已就绪，此刻起算虚拟时钟（理由见 clockMillis 字段 javadoc）。
-        this.clockMillis = System.currentTimeMillis();
+        // 帧时钟起点 = 消息到达时刻（理由见 clockMillis 字段 javadoc）。
+        this.clockMillis = clockMillis;
     }
 
     /**
