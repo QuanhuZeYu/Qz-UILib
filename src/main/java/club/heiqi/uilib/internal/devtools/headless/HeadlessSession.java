@@ -1,5 +1,8 @@
 package club.heiqi.uilib.internal.devtools.headless;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.internal.devtools.playground.TestPlaygroundHost;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
@@ -8,6 +11,10 @@ import club.heiqi.uilib.ui.host.UiHostRenderSupport;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.scene.UiSurface;
+import club.heiqi.uilib.ui.scene.layout.AnchorRect;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 
@@ -33,13 +40,14 @@ public final class HeadlessSession implements AutoCloseable {
     private final PaintContextCompositor paintContextCompositor;
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final HeadlessInputSource inputSource;
+    private final SceneRuntime runtime;
     private boolean closed;
 
     private HeadlessSession(HeadlessRequest request, GlOffscreenSurface surface,
             HeadlessCapabilities capabilities, UiEnvironment environment, UiSurface host,
             RecordingUiRenderContext renderContext,
             PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService,
-            HeadlessInputSource inputSource) {
+            HeadlessInputSource inputSource, SceneRuntime runtime) {
         this.request = request;
         this.surface = surface;
         this.capabilities = capabilities;
@@ -49,6 +57,7 @@ public final class HeadlessSession implements AutoCloseable {
         this.paintContextCompositor = paintContextCompositor;
         this.mainLayerSnapshotService = mainLayerSnapshotService;
         this.inputSource = inputSource;
+        this.runtime = runtime;
     }
 
     /**
@@ -97,7 +106,7 @@ public final class HeadlessSession implements AutoCloseable {
                 paintContextCompositor, mainLayerSnapshotService);
         applyEnvironment(binding, request);
         return new HeadlessSession(request, surface, capabilities, environment, host, renderContext,
-                paintContextCompositor, mainLayerSnapshotService, inputSource);
+                paintContextCompositor, mainLayerSnapshotService, inputSource, binding.runtime());
     }
 
     /**
@@ -303,6 +312,97 @@ public final class HeadlessSession implements AutoCloseable {
     public HeadlessRequest request() {
         return request;
     }
+
+    /** @return 当前已登记的树根数量（主树 + 各浮层） */
+    public int rootCount() {
+        ensureOpen();
+        return runtime.__fontEnvironmentRoots().size();
+    }
+
+    /**
+     * 驱动帧但不写 PNG：供寻址查询用（布局结果要等帧管线写回 cachedLayout）。
+     *
+     * <p>为什么不复用 {@link #capture()}：那是「出图」语义，会写文件并做像素自检。寻址是查询，
+     * 不该有产物副作用 —— 两者共用同一帧驱动路径，只是后者不落盘。</p>
+     */
+    public void captureSilently() {
+        ensureOpen();
+        advanceForQuery();
+    }
+
+    /** 推进到「布局已就绪」的最小帧数：与出图路径同源，只是不读像素、不写文件。 */
+    private void advanceForQuery() {
+        for (int i = 0; i < request.frames(); i++) {
+            host.render(request.width(), request.height(), renderContext, 0, 0);
+        }
+    }
+
+    /**
+     * 投影当前场景树：把「画布上有什么、在哪、能不能点」变成可寻址的事实表。
+     *
+     * <p>必须在至少推进过一帧之后调用：布局结果由帧管线写入节点的 cachedLayout，
+     * 未布局的树投影出来坐标与尺寸全为 0（本方法如实报 0，不猜）。</p>
+     *
+     * @param interactiveOnly true = 只留可命中节点（其祖先链保留以给出路径）
+     * @return 按根登记顺序、深度优先的事实行
+     */
+    public List<HeadlessTreeProjection.Row> projectTree(boolean interactiveOnly) {
+        ensureOpen();
+        List<HeadlessTreeProjection.Row> rows = new ArrayList<HeadlessTreeProjection.Row>();
+        List<SceneNode> roots = runtime.__fontEnvironmentRoots();
+        for (int i = 0; i < roots.size(); i++) {
+            rows.addAll(HeadlessTreeProjection.project(roots.get(i), i, interactiveOnly));
+        }
+        return rows;
+    }
+
+    /**
+     * 按可见文本找可命中节点（大小写不敏感子串匹配）。
+     *
+     * <p>这是「按目标寻址」的查询面：agent 说出想点的文字（按钮文案、列表项），拿到地址与坐标，
+     * 而不是自己数像素。命中多个时按投影顺序（= z-order 深度优先）返回，调用方自行取舍。</p>
+     *
+     * @param text 要匹配的文本片段（null / 空串返回空表）
+     * @return 匹配的事实行
+     */
+    public List<HeadlessTreeProjection.Row> findByText(String text) {
+        List<HeadlessTreeProjection.Row> matched = new ArrayList<HeadlessTreeProjection.Row>();
+        if (text == null || text.isEmpty()) {
+            return matched;
+        }
+        for (HeadlessTreeProjection.Row row : projectTree(true)) {
+            if (HeadlessTreeProjection.matchesText(row, text)) {
+                matched.add(row);
+            }
+        }
+        return matched;
+    }
+
+    /**
+     * 解析节点地址并返回该节点当前的中心点坐标。
+     *
+     * @param path 地址文本（r0/3/1）
+     * @return 中心点（长度 2 的数组：x, y）
+     * @throws HeadlessFailure 地址非法、越界，或该节点尚未布局
+     */
+    public int[] centerOf(String path) {
+        HeadlessNodePath nodePath = HeadlessNodePath.parse(path);
+        List<SceneNode> roots = runtime.__fontEnvironmentRoots();
+        if (nodePath.rootIndex() >= roots.size()) {
+            throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
+                    "根序号越界：" + path + "（当前树根数 " + roots.size() + "）");
+        }
+        SceneNode node = nodePath.resolve(roots.get(nodePath.rootIndex()));
+        if (!(node.getCachedLayout() instanceof LayoutBox)) {
+            throw new HeadlessFailure(HeadlessFailure.Stage.CAPABILITY,
+                    "节点尚未布局，取不到坐标：" + path + "（先推进至少一帧再寻址）");
+        }
+        // 绝对盒走权威单点（含祖先滚动偏移注入），不自己累加局部坐标。
+        AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
+        return new int[] {box.getX() + box.getWidth() / 2, box.getY() + box.getHeight() / 2};
+    }
+
+
 
     /**
      * 像素指纹：按步长采样做 FNV 哈希，用于判断「这一帧与上一帧是否已经一致」。

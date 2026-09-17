@@ -52,6 +52,9 @@ GL 上下文需要窗口句柄，而 LWJGL2 的 `Display.create()` 会创建**�
 | `--debug` | 打开诊断采样：摘要多一行 `perf:`（帧内阶段耗时与计数）。**不改变绘制**，像素与关闭态逐位相同 |
 | `--share-context` | 批量时同进程复用 GL/字体上下文（快，但产物带 atlas 历史依赖，见「出图确定性」）。默认逐档独立进程 |
 | `--probe` | 只打印能力（GL 版本、stencil、字体数量）不出图 |
+| `--nodes[=all]` | **目标寻址**：打印节点事实表（仅可命中节点；`=all` 打印完整树），先推进一帧拿布局，**不产出 PNG** |
+| `--find=TEXT` | 按可见文本找可命中节点（大小写不敏感子串），给出地址与中心点；无命中 exit 4 |
+| `--center=PATH` | 解节点地址取中心点（如 `--center=r2/1/0/8`） |
 
 页面、外观、字号、尺寸四个维度可同时给，按笛卡尔积出图（产物命名规则见「环境矩阵」）。
 
@@ -61,6 +64,40 @@ GL 上下文需要窗口句柄，而 LWJGL2 的 `Display.create()` 会创建**�
 build\headless\qz-shot.bat --pages=playground,chat,hud --size=1280x720 --out=out\all.png
 :: 产出 out\all-pgplayground-1280x720.png / -pgchat-… / -pghud-…
 ```
+
+## 目标寻址（不数像素）
+
+agent 出图后常要「点某个按钮再出图」。此前只能硬编码坐标（`move 315 88`），页面稍改即失效。
+寻址把「画布上有什么、在哪、能不能点」变成可读事实：
+
+```bat
+:: 1) 看有哪些可点的东西（不含 PNG 产物）
+build\headless\qz-shot-full.bat --page=playground --size=1280x720 --nodes
+:: 2) 按文案找目标，拿到地址与中心点
+build\headless\qz-shot-full.bat --page=playground --size=1280x720 --find=Markdown
+::   [headless]   r2/1/0/8 SceneNode "Markdown 渲染" @879,64 148x40 fs=16 center=953,84
+:: 3) 用中心点点击（或用 --center=r2/1/0/8 复核地址）
+build\headless\qz-shot-full.bat --page=playground --size=1280x720 ^
+  --actions="move 953 84; frame; click; wait 6" --out=out\md.png
+```
+
+**地址语义**：`r<根序号>[/<子下标>]…`。根序号是 runtime 的树根登记顺序（主树 + 各浮层，同一装配下确定），
+子下标是父节点的子节点序号（同级按 z-order）。地址**跨进程稳定**——与 `System.identityHashCode` 不同，
+可以写进脚本长期使用。
+
+**名称来自子树**（无障碍树口径）：可交互节点通常自己不持文本，文案挂在子 label 上，故名称取「自身文本为空时
+向下第一个非空文本」。没有这一步，导航按钮只会显示成一排 `r0/0 @0,0 57x40`。
+
+**两条使用纪律**：
+
+- **必须先推进过一帧**：坐标来自布局结果（`cachedLayout`），未布局时投影如实报 0。`--nodes` / `--find` / `--center`
+  内部会自动推进，进程内自建的寻址需自己先 render；
+- **坐标就是命中口径**：绝对坐标由局部 `LayoutBox` 沿路径累加，与 `SceneHitTester` 同法 —— 投影里报出的中心点，
+  就是点击会命中的位置。
+
+实测（`--page=playground --size=1280x720`）：寻址得 `r2/1/0/8` 中心 `953,84` → 按该坐标点击后出图，
+命令面与 `--page-index=8` 直接切页**逐项相同**（`commands=101 segments=62 bounds=1,0..1279,751 frames=22`），
+像素差 15942/921600（1.7%，集中在文本反锯齿区，来自 atlas 历史而非寻址路径）。
 
 ## 输入脚本
 

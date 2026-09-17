@@ -85,6 +85,11 @@ public final class HeadlessShotMain {
         boolean diagnostics = false;
         boolean shareContext = false;
         boolean probeOnly = false;
+        // 目标寻址：--nodes[=all] 打印树投影；--find=TEXT 按可见文本找可命中节点；--center=PATH 解地址取中心点。
+        boolean nodes = false;
+        boolean nodesAll = false;
+        String find = null;
+        String center = null;
         boolean framesGiven = false;
         try {
             for (String arg : args) {
@@ -93,6 +98,15 @@ public final class HeadlessShotMain {
                     return 0;
                 } else if ("--probe".equals(arg)) {
                     probeOnly = true;
+                } else if ("--nodes".equals(arg)) {
+                    nodes = true;
+                } else if ("--nodes=all".equals(arg)) {
+                    nodes = true;
+                    nodesAll = true;
+                } else if (arg.startsWith("--find=")) {
+                    find = arg.substring("--find=".length());
+                } else if (arg.startsWith("--center=")) {
+                    center = arg.substring("--center=".length());
                 } else if (arg.startsWith("--pages=")) {
                     pages = arg.substring("--pages=".length());
                 } else if (arg.startsWith("--page=")) {
@@ -265,6 +279,11 @@ public final class HeadlessShotMain {
                 return 3;
             }
             return 0;
+        }
+
+        // 目标寻址模式：先推进一帧（布局结果要等帧管线写回 cachedLayout），再投影 / 查询。
+        if (nodes || find != null || center != null) {
+            return reportTargets(requests.get(0), nodes, nodesAll, find, center);
         }
 
         // 多档默认逐档独立进程：见 runIsolated 的性能与正确性权衡说明。
@@ -557,6 +576,54 @@ public final class HeadlessShotMain {
         }
     }
 
+    /**
+     * 目标寻址：投影当前树的节点事实，或按文本 / 地址查询。
+     *
+     * <p>先推进一帧再查询：布局结果由帧管线写回节点的 {@code cachedLayout}，未布局的树坐标全 0。</p>
+     *
+     * @param request       请求（决定页面 / 尺寸 / 环境）
+     * @param nodes         是否打印树投影
+     * @param nodesAll      true = 打印完整树（含不可命中的容器与装饰叶）
+     * @param find          按可见文本匹配的片段；null = 不查
+     * @param center        要解析的节点地址；null = 不查
+     * @return 退出码（0 成功 / 3 设施失败 / 4 查询无结果）
+     */
+    private static int reportTargets(HeadlessRequest request, boolean nodes, boolean nodesAll,
+            String find, String center) {
+        try (HeadlessSession session = HeadlessSession.open(request)) {
+            // 推进一帧只为拿到布局结果，不写 PNG：寻址是查询，不该有产物副作用。
+            session.captureSilently();
+            List<HeadlessTreeProjection.Row> rows = session.projectTree(!nodesAll);
+            System.out.println("[headless] targets: roots=" + session.rootCount()
+                    + " rows=" + rows.size()
+                    + (nodesAll ? " (完整树)" : " (仅可命中节点)"));
+            if (nodes) {
+                for (HeadlessTreeProjection.Row row : rows) {
+                    System.out.println("[headless]   " + row.describe());
+                }
+            }
+            if (find != null) {
+                List<HeadlessTreeProjection.Row> matched = session.findByText(find);
+                System.out.println("[headless] find \"" + find + "\": " + matched.size() + " 个命中");
+                for (HeadlessTreeProjection.Row row : matched) {
+                    System.out.println("[headless]   " + row.describe()
+                            + " center=" + row.centerX() + "," + row.centerY());
+                }
+                if (matched.isEmpty()) {
+                    return 4;
+                }
+            }
+            if (center != null) {
+                int[] point = session.centerOf(center);
+                System.out.println("[headless] center " + center + " = " + point[0] + "," + point[1]);
+            }
+            return 0;
+        } catch (HeadlessFailure failure) {
+            failure.printDiagnosis(System.err);
+            return 3;
+        }
+    }
+
     private static void printUsage(PrintStream out) {
         out.println("用法: HeadlessShotMain [--page=playground|text-probe|chat|hud |"
                 + " --pages=NAME,NAME,…] [--page-index=N | --page-indexes=N,N,…]"
@@ -564,9 +631,12 @@ public final class HeadlessShotMain {
                 + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file]"
                 + " [--clock=epochMillis]"
                 + " [--theme=NAME | --themes=NAME,…] [--font-scale=P | --font-scales=P,P,…] [--debug]"
-                + " [--share-context] [--probe]");
+                + " [--share-context] [--probe]"
+                + " [--nodes[=all]] [--find=TEXT] [--center=PATH]");
         out.println("批量默认逐档独立进程（产物只依赖请求）；--share-context 同进程复用（快，但产物带 atlas 历史依赖）");
         out.println("主题档: " + HeadlessThemes.names() + "（不给 = 各页面用自己的默认外观）");
+        out.println("目标寻址: --nodes 打印可命中节点（--nodes=all 打印完整树）；--find=TEXT 按可见文本找节点"
+                + "（给出地址与中心点）；--center=r0/3/1 解地址取中心点。三者都先推进一帧拿布局，不产出 PNG");
         out.println("页面: playground / text-probe / chat / hud；--pages 给多页面矩阵，"
                 + "--page-index 的含义随页面而变（playground = 演示页下标，hud = 锚点，chat/text-probe 忽略）");
     }

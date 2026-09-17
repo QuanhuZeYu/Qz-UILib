@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -131,9 +130,15 @@ public class SceneRuntime implements SceneFontEnvironment {
     private final Signal<LogicalBox> logicalBoxSignal =
             Signal.create(LogicalBox.EMPTY);
 
-    /** 已登记环境根（宿主装配时写入环境的树根）；恒等语义，随宿主卸载摘除。 */
-    private final Set<SceneNode> fontEnvironmentRoots =
-            Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
+    /**
+     * 已登记环境根（宿主装配时写入环境的树根）；恒等语义，随宿主卸载摘除。
+     *
+     * <p><b>用 List 而非 IdentityHashSet</b>：登记顺序对外是语义的一部分 —— 节点寻址（headless 树投影）
+     * 以 {@code r<下标>} 表达「第几棵树」，集合的无序实现会让同一装配在不同进程里给出不同编号。
+     * 恒等语义靠遍历比对（{@code ==}）保持，不依赖元素的 equals。规模是个位数（主树 + 各浮层），
+     * 线性查找的成本可忽略。</p>
+     */
+    private final List<SceneNode> fontEnvironmentRoots = new ArrayList<SceneNode>();
 
     /** 默认字号信号桥的唯一 effect（幂等替换，不叠加）。 */
     private Effect defaultFontSizeEffect;
@@ -412,6 +417,11 @@ public class SceneRuntime implements SceneFontEnvironment {
             return;
         }
         root.__setFontEnvironment(this);
+        for (int i = 0; i < fontEnvironmentRoots.size(); i++) {
+            if (fontEnvironmentRoots.get(i) == root) {
+                return;                              // 幂等：同一棵树重复登记不占第二个序号
+            }
+        }
         fontEnvironmentRoots.add(root);
     }
 
@@ -424,12 +434,31 @@ public class SceneRuntime implements SceneFontEnvironment {
         if (root == null) {
             return;
         }
-        fontEnvironmentRoots.remove(root);
+        for (int i = 0; i < fontEnvironmentRoots.size(); i++) {
+            if (fontEnvironmentRoots.get(i) == root) {
+                fontEnvironmentRoots.remove(i);
+                return;
+            }
+        }
     }
 
     /** @return 当前已登记的环境根数量（测试探针）。 */
     public int __getFontEnvironmentRootCount() {
         return fontEnvironmentRoots.size();
+    }
+
+    /**
+     * 已登记树根的只读视图，<b>按登记顺序</b>。
+     *
+     * <p>寻址（headless 树投影 / 目标寻址）需要「第几棵树」这一事实，而登记顺序只在 runtime 内部
+     * 可知；宿主侧各自持有根字段（{@code AbstractSceneHostWidget.getRoot()} 是 protected、
+     * {@code SceneHostWindow.root()} 是公开访问器），会话拿不到统一口径。故在此开出只读视图，
+     * 与 {@link #__adoptFontEnvironmentRoot} 同一事实源，不新增第二套登记。</p>
+     *
+     * @return 不可变视图（顺序 = 登记顺序；未装配时为空）
+     */
+    public List<SceneNode> __fontEnvironmentRoots() {
+        return Collections.unmodifiableList(new ArrayList<SceneNode>(fontEnvironmentRoots));
     }
 
     /** @return 本 runtime 是否已 {@link #dispose()}。 */
