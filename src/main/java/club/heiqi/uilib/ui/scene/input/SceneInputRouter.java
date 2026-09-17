@@ -1011,18 +1011,72 @@ public class SceneInputRouter {
      * 目标，几何上都「有尺寸、也没有更深的可点后代」，唯独点下去到不了自己。让诊断侧自拼一套判据
      * 等于复制命中语义，且必然与真实派发漂移（独立复核抓到 4 类反例）。</p>
      *
+     * <p><b>坐标口径（承重）</b>：{@code localX/localY} 是<b>目标树自己的坐标空间</b>，不是画布坐标。
+     * 主树的空间即画布空间；浮层则有自己的锚点偏移与相对倍率，其局部 {@code (0,0)} 不在画布原点。
+     * 故调用方只说「在<b>这棵树</b>的这一点」，换算由本方法按 {@code resolveTreeAbsX/Y} 完成 ——
+     * 那与真实派发用的是同一处换算。让调用方自己算画布坐标会漏掉锚点，实测表现是：锚定浮层内
+     * 每个菜单项都被误报为「点不到」（原始实现只传 {@code 0,0} 当整树平移量）。</p>
+     *
      * <p>返回<b>整条链</b>而非最深节点：链上成员资格就是「事件会冒泡到它」的判据，而链尾是「谁是
      * 本次点击的目标」。两者都是投影要报的事实，少一个就得再算一次。</p>
      *
      * <p>零副作用沿用 {@link SceneHitTester} 的硬不变量（只读不写、不标脏），可安全用于查询路径。</p>
      *
-     * @param root    主树根；可为 null（浮层由本路由器按 top-first 优先检查，不依赖主树）
-     * @param canvasX 画布逻辑 X
-     * @param canvasY 画布逻辑 Y
+     * @param root   主树根；可为 null（浮层由本路由器按 top-first 优先检查，不依赖主树）
+     * @param tree   坐标所属的树根：传主树根表示画布坐标；传某个浮层根表示该浮层的局部坐标
+     * @param localX 目标树坐标空间下的 X
+     * @param localY 目标树坐标空间下的 Y
      * @return 命中链（root→最深目标）；未命中返回空表
      */
-    public List<SceneNode> __probeHitChain(SceneNode root, int canvasX, int canvasY) {
-        return hitTestWithOverlays(root, canvasX, canvasY, 0, 0).chain;
+    public List<SceneNode> __probeHitChain(SceneNode root, SceneNode tree, int localX, int localY) {
+        int[] canvas = __toCanvasPoint(tree, localX, localY);
+        return hitTestWithOverlays(root, canvas[0], canvas[1], 0, 0).chain;
+    }
+
+    /**
+     * <b>局部坐标 → 画布坐标</b>（浮层换算的唯一实现）。
+     *
+     * <p>{@code node} 所属的树若是浮层根，其坐标空间被锚点与相对倍率平移缩放；主树（或不属于任何
+     * 浮层的节点）的坐标空间即画布空间。这与 {@code SceneFramePipeline.toHostLogicalBox} 是同一口径，
+     * 是 {@link #toOverlay} 的逆：画布 = 局部 × s + 锚点。</p>
+     *
+     * <p>存在的理由：命中探针与「按地址取坐标」都要做这次换算。两处各写一份的结果是
+     * 其中一处漏掉锚点 —— 实测表现是锚定浮层里的菜单项全部被报成「点不到」。故收敛到这一个方法。</p>
+     *
+     * @param node   坐标所属的节点；null = 按主树处理
+     * @param localX 局部坐标 X
+     * @param localY 局部坐标 Y
+     * @return 画布坐标 {@code [x, y]}
+     */
+    public int[] __toCanvasPoint(SceneNode node, int localX, int localY) {
+        int[] box = __toCanvasBox(node, localX, localY, 0, 0);
+        return new int[] {box[0], box[1]};
+    }
+
+    /**
+     * <b>局部盒 → 画布盒</b>（浮层换算的唯一实现）：返回 {@code [x, y, w, h]}。
+     *
+     * <p>宽高同样按相对倍率缩放（渲染侧就是按 s 放大的），漏掉它会让浮层里报出的尺寸偏小。</p>
+     *
+     * @param node   坐标所属的节点；null = 按主树处理
+     * @param localX 局部 X
+     * @param localY 局部 Y
+     * @param width  局部宽
+     * @param height 局部高
+     * @return 画布坐标盒 {@code [x, y, w, h]}
+     */
+    public int[] __toCanvasBox(SceneNode node, int localX, int localY, int width, int height) {
+        SceneOverlayHost.Entry entry = findOverlayEntryForNode(node);
+        if (entry == null) {
+            return new int[] {localX, localY, width, height};
+        }
+        float scale = entry.getRelativeScale();
+        if (Float.compare(scale, 1F) == 0) {
+            return new int[] {localX + entry.getAnchorX(), localY + entry.getAnchorY(), width, height};
+        }
+        return new int[] {Math.round(localX * scale) + entry.getAnchorX(),
+                Math.round(localY * scale) + entry.getAnchorY(),
+                Math.round(width * scale), Math.round(height * scale)};
     }
 
     /**

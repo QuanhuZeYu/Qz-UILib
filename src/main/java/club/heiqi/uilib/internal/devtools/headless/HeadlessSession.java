@@ -373,8 +373,15 @@ public final class HeadlessSession implements AutoCloseable {
         HeadlessTreeProjection.HitProbe probe = mainRoot == null ? null
                 : new HeadlessTreeProjection.HitProbe() {
                     @Override
-                    public List<SceneNode> hitChainAt(int x, int y) {
-                        return runtime.getInputRouter().__probeHitChain(mainRoot, x, y);
+                    public List<SceneNode> hitChainAt(SceneNode tree, int x, int y) {
+                        // x,y 是 tree 自己的坐标空间；是不是画布空间、要不要叠加浮层锚点，由路由器
+                        // 按同一处换算判定（__probeHitChain 的 tree 参数）。投影不猜这件事。
+                        return runtime.getInputRouter().__probeHitChain(mainRoot, tree, x, y);
+                    }
+
+                    @Override
+                    public int[] canvasBoxOf(SceneNode tree, int localX, int localY, int width, int height) {
+                        return runtime.getInputRouter().__toCanvasBox(tree, localX, localY, width, height);
                     }
 
                     @Override
@@ -480,7 +487,29 @@ public final class HeadlessSession implements AutoCloseable {
         }
         // 绝对盒走权威单点（含祖先滚动偏移注入），不自己累加局部坐标。
         AnchorRect box = SceneGeometry.absoluteBox(node, 0, 0);
-        return new int[] {box.getX() + box.getWidth() / 2, box.getY() + box.getHeight() / 2};
+        return canvasCenter(node, box);
+    }
+
+    /**
+     * 把「某棵树坐标空间下的盒」换算成<b>画布坐标</b>的中心点。
+     *
+     * <p><b>为什么必须有这一步</b>：浮层根被布局在自己的坐标空间里，它在画布上的位置由锚点
+     * （{@code anchorX/anchorY}）与相对倍率（{@code relativeScale}）决定，局部 {@code (0,0)} 通常不在
+     * 画布原点。{@link SceneGeometry#absoluteBox}(node, 0, 0) 给的是局部坐标 —— 对主树恰好等于画布
+     * 坐标，对锚定浮层则不是。曾经的后果（实测）：锚定上下文菜单里每个菜单项都报「点不到」，
+     * 且 {@code --center} 解出的坐标点下去落在主树空白处。</p>
+     *
+     * <p>换算口径与 {@code SceneFramePipeline.toHostLogicalBox} / {@code SceneInputRouter} 的浮层换算
+     * 一致：画布 = 局部 × s + 锚点（{@code s == 1} 时退化为纯平移；锚定浮层的 s 恒为 1）。</p>
+     *
+     * @param node 该坐标所属的节点（用于判定它属于哪个浮层）
+     * @param box  该节点在其所属树坐标空间下的绝对盒
+     * @return 画布坐标下的中心点（长度 2 的数组：x, y）
+     */
+    private int[] canvasCenter(SceneNode node, AnchorRect box) {
+        int localX = box.getX() + box.getWidth() / 2;
+        int localY = box.getY() + box.getHeight() / 2;
+        return runtime.getInputRouter().__toCanvasPoint(node, localX, localY);
     }
 
 

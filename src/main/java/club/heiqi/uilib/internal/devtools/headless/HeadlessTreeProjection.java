@@ -276,7 +276,7 @@ public final class HeadlessTreeProjection {
         if (root == null) {
             return rows;
         }
-        collect(root, HeadlessNodePath.root(rootIndex), 0, interactiveOnly, hitProbe, rows);
+        collect(root, root, HeadlessNodePath.root(rootIndex), 0, interactiveOnly, hitProbe, rows);
         return rows;
     }
 
@@ -289,11 +289,29 @@ public final class HeadlessTreeProjection {
     public interface HitProbe {
 
         /**
-         * @param x 画布逻辑 X
-         * @param y 画布逻辑 Y
+         * @param tree 坐标所属的树根（投影正在遍历的那棵树）
+         * @param x    该树坐标空间下的 X
+         * @param y    该树坐标空间下的 Y
          * @return 命中链（root→最深目标）；未命中返回空表
          */
-        List<SceneNode> hitChainAt(int x, int y);
+        List<SceneNode> hitChainAt(SceneNode tree, int x, int y);
+
+        /**
+         * 把「某棵树坐标空间下的盒」换算成<b>画布坐标</b>盒（{@code [x, y, w, h]}）。
+         *
+         * <p>投影报出的坐标必须是画布坐标 —— 它直接被 agent 拿去写 {@code move x y}。
+         * 浮层根布局在自己的坐标空间里（锚点 + 相对倍率），局部 {@code (0,0)} 不在画布原点，
+         * 若原样报出，锚定浮层里的每个节点都会指向画布上无关的位置。换算由本回调注入，
+         * 与命中探针共用同一实现。</p>
+         *
+         * @param tree   坐标所属的树根
+         * @param localX 局部 X
+         * @param localY 局部 Y
+         * @param width  局部宽
+         * @param height 局部高
+         * @return 画布坐标盒 {@code [x, y, w, h]}
+         */
+        int[] canvasBoxOf(SceneNode tree, int localX, int localY, int width, int height);
 
         /**
          * 把任意节点渲染成<b>可执行的目标描述</b>（形如 {@code r1/0/2 SceneNode}）。
@@ -319,7 +337,7 @@ public final class HeadlessTreeProjection {
      *
      * <p>未布局的节点（cachedLayout == null）得到零盒，如实报 0 —— <b>不猜</b>。</p>
      */
-    private static void collect(SceneNode node, HeadlessNodePath path, int depth,
+    private static void collect(SceneNode treeRoot, SceneNode node, HeadlessNodePath path, int depth,
             boolean interactiveOnly, HitProbe hitProbe, List<Row> rows) {
         if (depth > MAX_DEPTH) {
             return;
@@ -329,6 +347,17 @@ public final class HeadlessTreeProjection {
         int absY = box.getY();
         int width = box.getWidth();
         int height = box.getHeight();
+        // 浮层根布局在自己的坐标空间：报出的坐标必须是画布坐标，否则 agent 照抄 center= 会点错地方。
+        // 命中判定仍用局部坐标（探针自己换算），两者取同一权威。
+        int localCenterX = absX + width / 2;
+        int localCenterY = absY + height / 2;
+        if (hitProbe != null) {
+            int[] canvas = hitProbe.canvasBoxOf(treeRoot, absX, absY, width, height);
+            absX = canvas[0];
+            absY = canvas[1];
+            width = canvas[2];
+            height = canvas[3];
+        }
         // 交互筛选：可命中、未折叠、且有可见尺寸（零尺寸节点点了必落空，不该混进可点目标里）。
         boolean keep = !interactiveOnly
                 || (node.isHitTestable() && !node.isCollapsed() && width > 0 && height > 0);
@@ -341,7 +370,7 @@ public final class HeadlessTreeProjection {
             boolean hitsSelf = false;
             boolean onChain = false;
             if (hitProbe != null && width > 0 && height > 0) {
-                List<SceneNode> chain = hitProbe.hitChainAt(absX + width / 2, absY + height / 2);
+                List<SceneNode> chain = hitProbe.hitChainAt(treeRoot, localCenterX, localCenterY);
                 if (chain != null && !chain.isEmpty()) {
                     hitsSelf = chain.get(chain.size() - 1) == node;
                     for (SceneNode hit : chain) {
@@ -361,7 +390,7 @@ public final class HeadlessTreeProjection {
         for (int i = 0; i < children.size(); i++) {
             List<Integer> childIndexes = new ArrayList<Integer>(path.childIndexes());
             childIndexes.add(Integer.valueOf(i));
-            collect(children.get(i), HeadlessNodePath.of(path.rootIndex(), childIndexes), depth + 1,
+            collect(treeRoot, children.get(i), HeadlessNodePath.of(path.rootIndex(), childIndexes), depth + 1,
                     interactiveOnly, hitProbe, rows);
         }
     }
