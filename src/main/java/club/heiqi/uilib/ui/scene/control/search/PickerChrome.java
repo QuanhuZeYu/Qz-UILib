@@ -12,8 +12,9 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
  * {@link PickerDensityTokens}（P5 §4.3 条 2 的机械核对口径）。</p>
  *
  * <p>取整统一走 {@link GridMetrics#roundHalfEven}（与 P5 验算脚本的 Python {@code round()} 同语义），
- * 避免字号档之间的取整分叉。字号为 {@code 0} 或负值时按 {@code 1} 处理（退化输入不抛异常，
- * 与 {@code PickerMetrics} 同口径）。</p>
+ * 避免字号档之间的取整分叉。字号输入只做<b>非负归一</b>（{@code fs(0) == 0}），与
+ * {@code PickerMetrics.resolveFontSizePx} 同口径 —— 本类<b>不设字号下限</b>：字号 0 时随字号派生的
+ * 量如实归零，各几何量自己的 {@code MIN} 是组件下限，与字号域无关。</p>
  *
  * <h3>失效通道（P5 §4.3 条 5）</h3>
  * <p>本类是纯函数集合、无状态、无缓存，因此不需要失效通道：调用方把<b>字号信号</b>接进来，
@@ -144,8 +145,9 @@ public final class PickerChrome {
                 () -> Integer.valueOf(scrollbarWidth(metrics.get().fontSizePx())));
     }
 
+    /** 非负归一（与 {@code PickerMetrics.resolveFontSizePx} 同口径）：字号 0 时派生量如实归零。 */
     private static int fs(int fontSizePx) {
-        return Math.max(1, fontSizePx);
+        return Math.max(0, fontSizePx);
     }
 
     private static int clamp(int value, int min, int max) {

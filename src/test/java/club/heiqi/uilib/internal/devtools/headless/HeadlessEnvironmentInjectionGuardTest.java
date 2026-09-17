@@ -27,12 +27,18 @@ import org.junit.Test;
  * <p>那组检查是 18 条源码串 {@code contains("...")} 快照（如
  * {@code session.contains(".fontScale(scalePercent)")}、{@code cli.contains("\"-pg\" + pageName")}）。
  * 它把「实现怎么写」抄进了测试：换个等价的局部变量名就红，而真正的回归（参数收下了但没接线）
- * 与「接线了但写法不同」在字符串层面不可区分。接线的强制手段改为<b>构造依赖</b>：环境事实由
- * {@code HeadlessEnvironment.of(request.diagnostics())} 构造，各宿主把 {@code UiEnvironment}
- * 作为构造参数（不提供单参构造），漏接即编译失败。</p>
+ * 与「接线了但写法不同」在字符串层面不可区分。替代手段分两层：</p>
+ * <ul>
+ *   <li><b>编译期</b>：{@code TextProbeHost} / {@code ChatSceneProbeHost} / {@code HudSceneProbeHost}
+ *       把 {@code UiEnvironment} 作为构造参数且不提供单参构造，漏接即编译失败；</li>
+ *   <li><b>运行期</b>：{@code HeadlessWiringBehaviourTest} 直启出图，钉「只改一个环境参数，产物必须
+ *       不同」（字号倍率轴 / 外观档轴 / {@code --debug} 轴 / 矩阵命名轴）。</li>
+ * </ul>
  *
- * <p>「参数是否真的生效」是<b>运行态事实</b>（{@code --font-scale=150} 必须出一张与 100% 不同的
- * 图），由出图验收矩阵承担（见 {@code docs/使用文档/headless出图指南.md}），不由单测的字符串比对冒充。</p>
+ * <p><b>playground 不在编译期那一层</b>：{@code TestPlaygroundHost} 保留单参构造并回落
+ * {@code SceneHostAssembly.defaultEnvironment()} —— 那在<b>生产</b>路径是正确语义（游戏内打开测试
+ * 场地就该用生产环境），代价是「构造依赖强制」对它不成立。故 playground 侧只由上面的运行期门禁
+ * 覆盖，<b>不能声称「漏接即编译失败」</b>。</p>
  */
 public class HeadlessEnvironmentInjectionGuardTest {
 
