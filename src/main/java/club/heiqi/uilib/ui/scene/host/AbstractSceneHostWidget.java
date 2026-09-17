@@ -59,6 +59,17 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
     private final String hostLabel = resolveHostLabel();
 
     /**
+     * 已登记为环境根的树根（{@link #render} 内登记；root 未变时不重复登记）。
+     *
+     * <p>为什么基类要登记：走 {@code SceneRuntime.mount} 的内容根由 mount 自己登记，而宿主<b>自己的外框</b>
+     * （{@code buildShell} / {@code buildRoot} 直接建的树）不经过 mount。漏登记时
+     * {@code SceneNode#resolveFontEnvironment} 沿父链找不到持有者 ⇒ 该子树读不到层 3 默认字号与
+     * 用户倍率，现象是「倍率改了，外壳文字纹丝不动」（实测：{@code --page=text-probe --font-scale=0}
+     * 与不缩放逐像素相同，{@code playground} 每页都残留外壳那 2 条文本）。</p>
+     */
+    private SceneNode attachedRoot;
+
+    /**
      * 最近一帧主树最终 layout 的结果（有效探针引用）。
      *
      * <p>render 至少执行 route 前与 flush 后两次 layout。若 flush 挂载了新树，host 会把第二次
@@ -166,6 +177,12 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
             // 因此同帧的「布局前预算」（列数/面板尺寸）读到的是本帧尺寸，不产生收敛帧。
             runtime.__setViewportLogicalBox(w, h);
             SceneNode root = getRoot();
+            // 环境根登记（幂等、O(1)）：让宿主自有外框也进层 3 默认字号与用户倍率的管辖范围，
+            // 理由见 attachedRoot 字段注释。root 未变时不重复登记，热路径只多一次引用比较。
+            if (root != attachedRoot) {
+                SceneHostAssembly.attachTree(runtime, root);
+                attachedRoot = root;
+            }
             // 一帧 16 步时序协议全部委托帧管线（阶段 1 序列容器，行为与旧 render 1:1 对拍）。
             this.lastLayoutResult = pipeline.run(root, w, h, ctx, absX, absY, frameTimeNanos);
         } finally {

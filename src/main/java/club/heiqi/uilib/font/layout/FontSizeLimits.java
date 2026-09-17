@@ -17,8 +17,21 @@ public final class FontSizeLimits {
     /** 默认字号（UI 逻辑像素）；与节点层 4b 兜底同源。 */
     public static final int DEFAULT_FONT_SIZE_PX = 16;
 
-    /** 最小字号。 */
-    public static final int MIN_FONT_SIZE_PX = 1;
+    /**
+     * 最小字号（{@code 0} = 文本不占空间且不可见）。
+     *
+     * <p><b>0 的语义与落点</b>：字号 0 是<b>合法表达</b>（用户级缩放可以一路缩到零、声明字号也可以写 0），
+     * 语义为「该文本不参与布局且不上屏」。它在<b>两条边界</b>上短路，而不是在下游逐一放宽：</p>
+     * <ul>
+     *   <li>度量边界 {@code TextMeasureServiceSceneAdapter}：字号 ≤ 0 ⇒ 宽 0 / 行高 0 / 上下度量 0 /
+     *       不拆行 / 不裁剪 / 无链接区域；</li>
+     *   <li>绘制边界 {@code ScenePaintEngine}：字号 ≤ 0 ⇒ 不产出 TEXT 与 SEGMENTS 命令。</li>
+     * </ul>
+     * <p>下游字形路径里的 {@code Math.max(1, …)}（atlas 槽位、纹理尺寸、栅格化尺寸）是<b>进入栅格化之后</b>
+     * 的内部尺寸，字号 0 经上述短路后根本不会走到那里，故不逐一放宽 —— 那会让「0」在每个层级被重新解释
+     * 成不同的最小值。非零输入的行为逐位不变：本域下界由 1 改 0 对 {@code ≥ 1} 的输入是恒等映射。</p>
+     */
+    public static final int MIN_FONT_SIZE_PX = 0;
 
     /** 最大字号；沿用既有 256 作为全库唯一上限。 */
     public static final int MAX_FONT_SIZE_PX = 256;

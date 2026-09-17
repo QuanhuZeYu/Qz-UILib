@@ -559,6 +559,11 @@ public class ScenePaintEngine {
         java.util.List<club.heiqi.uilib.font.layout.TextSegment> segments = node.getSegments();
         if (segments != null && !segments.isEmpty()) {
             int segmentsFontSize = node.effectiveFontSize();
+            // 字号 ≤ 0 = 文本不占空间且不可见（语义与两条边界见 FontSizeLimits#MIN_FONT_SIZE_PX）：
+            // 不产段流命令。字形路径内的 Math.max(1, …) 属进入栅格化后的内部尺寸，此处短路后不会走到。
+            if (segmentsFontSize <= 0) {
+                return;
+            }
             int segmentsTop = calculateTextTop(node, box, segmentsFontSize);
             out.add(PaintCommand.segments(segments, node.getPaddingLeft(), segmentsTop, segmentsFontSize));
             return;
@@ -570,8 +575,9 @@ public class ScenePaintEngine {
         // 拆行/clamp/行高/链接区域一次性行计划（审查报告 §8 B2-4）：布局缓存则复用，
         // 防御（paint 先于 layout）时本地构建（不缓存）；每行一条 TEXT 命令。
         String text = node.getText();
-        if (text != null && !text.isEmpty()) {
-            int fontSize = node.effectiveFontSize();
+        int fontSize = node.effectiveFontSize();
+        // 同上：零字号不产文本命令，也不产链接命中区域（否则会留下不可见但可点的热区）。
+        if (text != null && !text.isEmpty() && fontSize > 0) {
             SceneTextMode textMode = node.getTextMode();
             int wrapWidth = node.getMaxTextWidth();
             TextLinePlan plan = node.getCachedTextPlan();

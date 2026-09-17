@@ -146,8 +146,14 @@ public class SceneRuntime implements SceneFontEnvironment {
 
     /** 不缩放百分比（100%）。 */
     public static final int FONT_SCALE_NONE_PERCENT = 100;
-    /** 用户级字号缩放下限（100% = 允许缩小方向的缺口，见方案 §2.7）。 */
-    public static final int FONT_SCALE_MIN_PERCENT = 100;
+    /**
+     * 用户级字号缩放下限（{@code 0} = 允许一路缩到零）。
+     *
+     * <p>此处原为 {@code 100}（只许放大、不许缩小），字段注释自述那是「允许缩小方向的缺口」。
+     * 缺口已补：域为 {@code [0, 200]}，{@code 0%} ⇒ 解析出口折算出字号 0 ⇒ 文本不占空间且不上屏
+     * （语义与落点见 {@code FontSizeLimits#MIN_FONT_SIZE_PX}）。非零倍率的行为逐位不变。</p>
+     */
+    public static final int FONT_SCALE_MIN_PERCENT = 0;
     /** 用户级字号缩放上限（200%），与 HUD 显示缩放档位同一水位。 */
     public static final int FONT_SCALE_MAX_PERCENT = 200;
 
@@ -297,14 +303,15 @@ public class SceneRuntime implements SceneFontEnvironment {
     /**
      * 设置解析出口的用户缩放倍率（正交倍率层，参与布局）——构建期定值，同步生效。
      *
-     * <p><b>整型百分比</b>（100 = 不缩放），域 {@code [100, 200]}：守「logical px 单一事实」，
+     * <p><b>整型百分比</b>（100 = 不缩放），域 {@code [0, 200]}（0 = 缩到零，见
+     * {@link #FONT_SCALE_MIN_PERCENT}）：守「logical px 单一事实」，
      * 解析出口用整数算术 {@code (declared × percent + 50) / 100} 等价取整（rc_resolve_sim 验算
      * 与浮点实现零不一致）。倍率变化不在任何节点的声明里，因此不能靠子树失效：必须走环境变更广播
      * （{@code fontEpoch++} + 对所有已登记环境根做向下失效）。</p>
      *
      * <p>本入口会释放此前 {@link #setFontScale(ReadableSignal)} 建立的信号订阅（后写者胜出）。</p>
      *
-     * @param percent 缩放百分比，100..200
+     * @param percent 缩放百分比，0..200
      * @throws IllegalArgumentException 越界
      * @throws IllegalStateException    本 runtime 已 {@link #dispose()}
      */

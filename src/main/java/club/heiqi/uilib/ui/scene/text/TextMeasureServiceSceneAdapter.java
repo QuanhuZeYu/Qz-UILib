@@ -15,6 +15,14 @@ import club.heiqi.uilib.ui.text.TextMeasureStyle;
  *
  * <p>装配根（如 {@code AbstractSceneHostWidget}）在构造 {@code SceneLayoutEngine} 时 new 本 adapter 注入，
  * 使引擎在不感知任何平台/渲染类型的前提下拿到真实字体度量。</p>
+ *
+ * <h3>字号 0 的短路（本类是度量边界）</h3>
+ * <p>{@code fontSizePx <= 0} 时全部度量返回零值：宽 0、行高 0、上下度量 0、不拆行、不裁剪、无链接区域。
+ * 这是「字号 0 = 文本不占空间」这条语义的<b>唯一度量侧落点</b>——渲染侧字形路径里的
+ * {@code Math.max(1, …)}（atlas 槽位、纹理尺寸）属进入栅格化之后的内部尺寸，此处短路后不会走到，
+ * 故不需要、也不应该逐一放宽（那会让 0 在每个层级被重新解释成不同的最小值）。</p>
+ *
+ * <p>非零输入逐位不变：短路只对 {@code <= 0} 生效，其余路径与本类此前完全一致。</p>
  */
 public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
 
@@ -37,6 +45,9 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
 
     @Override
     public int measureWidth(String text, int fontSizePx) {
+        if (fontSizePx <= 0) {
+            return 0;
+        }
         return textMeasureService.getStringWidth(text, TextMeasureStyle.fontSizePx(fontSizePx));
     }
 
@@ -47,22 +58,25 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
 
     @Override
     public int lineHeight(int fontSizePx) {
+        if (fontSizePx <= 0) {
+            return 0;
+        }
         return textMeasureService.getLineHeight(TextMeasureStyle.fontSizePx(fontSizePx));
     }
 
     @Override
     public int ascent(int fontSizePx) {
-        return textMeasureService.getAscent(fontSizePx);
+        return fontSizePx <= 0 ? 0 : textMeasureService.getAscent(fontSizePx);
     }
 
     @Override
     public int descent(int fontSizePx) {
-        return textMeasureService.getDescent(fontSizePx);
+        return fontSizePx <= 0 ? 0 : textMeasureService.getDescent(fontSizePx);
     }
 
     @Override
     public int lineGap(int fontSizePx) {
-        return textMeasureService.getLineGap(fontSizePx);
+        return fontSizePx <= 0 ? 0 : textMeasureService.getLineGap(fontSizePx);
     }
 
     @Override
@@ -73,6 +87,10 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     @Override
     public java.util.List<String> splitLines(String text, int fontSizePx, int wrapWidth, int textMode) {
         String safeText = text == null ? "" : text;
+        if (fontSizePx <= 0) {
+            // 零字号不拆行：整段原样单行（宽度为 0，换行无意义，且要保住文本内容供上层读回）
+            return java.util.Collections.singletonList(safeText);
+        }
         // 非 wrap（wrapWidth<=0）同样按硬换行拆行：无限宽下软换行不触发，
         // 硬换行经 wrap 重建保证样式跨行续传（<br>/\n 不再被渲染层吞掉）。
         int effectiveWrapWidth = wrapWidth <= 0 ? Integer.MAX_VALUE : wrapWidth;
@@ -88,6 +106,9 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     @Override
     public int lineHeight(String text, int fontSizePx, int textMode) {
         String safeText = text == null ? "" : text;
+        if (fontSizePx <= 0) {
+            return 0;
+        }
         return textMeasureService.getLineHeight(safeText,
                 new TextMeasureStyle(fontSizePx, toTextContentMode(textMode), club.heiqi.uilib.ui.base.props.UiFontWeight.NORMAL,
                         club.heiqi.uilib.ui.base.props.UiFontStyle.NORMAL));
@@ -96,7 +117,7 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     @Override
     public String trimToWidth(String text, int fontSizePx, int width, int textMode) {
         String safeText = text == null ? "" : text;
-        if (width <= 0) {
+        if (width <= 0 || fontSizePx <= 0) {
             return safeText;
         }
         // 必须走带 style 重载：无 style 重载按渲染层基准字号（charSize）裁剪，与节点 fontSizePx 脱钩，
@@ -110,6 +131,9 @@ public final class TextMeasureServiceSceneAdapter implements SceneTextMeasurer {
     @Override
     public java.util.List<TextLinkRegion> linkRegions(String line, int fontSizePx, int textMode) {
         String safeLine = line == null ? "" : line;
+        if (fontSizePx <= 0) {
+            return java.util.Collections.emptyList();
+        }
         java.util.List<club.heiqi.uilib.ui.text.TextLinkRegion> regions =
                 textMeasureService.getLinkRegions(safeLine,
                         new TextMeasureStyle(fontSizePx, toTextContentMode(textMode),
