@@ -3,6 +3,7 @@ package club.heiqi.uilib.internal.devtools.playground;
 import java.util.ArrayList;
 import java.util.List;
 
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
@@ -97,12 +98,25 @@ public class TestPlaygroundHost extends AbstractSceneHostWidget {
     private int displayedPageIndex = -1;
 
     /**
-     * 创建测试场地宿主。
+     * 创建测试场地宿主（环境取生产默认）。
      *
      * @param input 平台输入源，可为 null（headless 测试退化模式）
      */
     public TestPlaygroundHost(PlatformInputSource input) {
-        super(input);
+        this(input, club.heiqi.uilib.ui.scene.host.SceneHostAssembly.defaultEnvironment());
+    }
+
+    /**
+     * 创建测试场地宿主（环境可注入）。
+     *
+     * <p>只关心环境的调用方（headless 出图矩阵注入请求级诊断域）用它，避免连带表态度量端口。
+     * 与 {@code AbstractSceneHostWidget} 的环境可注入构造同口径。</p>
+     *
+     * @param input 平台输入源，可为 null（headless 测试退化模式）
+     * @param environment 宿主环境端口，不可为 null
+     */
+    public TestPlaygroundHost(PlatformInputSource input, UiEnvironment environment) {
+        super(input, environment);
         this.pages = PlaygroundPageRegistry.defaultPages();
         this.activePageSignal = Signal.create(Integer.valueOf(0));
         this.themeSignal = Signal.create(SceneThemes.DEFAULT);

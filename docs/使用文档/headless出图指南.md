@@ -20,6 +20,19 @@ build\headless\qz-shot.bat --page=playground --size=1280x720 --out=out\shot.png
 
 **冷启动约 1.6~2.0 s**；`gradlew` 跑单张图要 12~22 s（配置与编译开销），批量出图请一律用启动器。
 
+## 不弹窗（离屏语义）
+
+出图期间屏幕上**不会出现任何窗口**，也不抢焦点——可以一边出图一边继续用电脑。
+
+GL 上下文需要窗口句柄，而 LWJGL2 的 `Display.create()` 会创建**真实可见窗口**（旧行为，标题 `Qz-UILib headless`，实测会挡住屏幕）。现在把 Display 挂到一个**从不显示**的 AWT `Canvas` 上：`pack()` 只为拿到 native peer，顶层容器始终不可见；渲染目标本来就是自建 FBO，那个窗口对出图没有任何贡献。
+
+实测（出图期间每 50 ms 枚举本进程顶层窗口）：**可见窗口峰值 0 个**；进程内确有 AWT 隐藏容器（`SunAwtFrame`，visible=false）与驱动自建的离屏窗口（`NVOGLDC invisible` / `__wglDummyWindowFodder`，均 visible=false）。
+
+两条约束：
+
+- **不要设 `-Djava.awt.headless=true`**：离屏窗口句柄由 AWT 提供，headless 模式下会直接报错并说明原因；
+- 出图结束会显式释放 GL 上下文与隐藏容器（`GlOffscreenSurface.shutdownContext`）。少了这一步，`System.exit` 会停在 AWT 的退出钩子里——表现为「图已经写出来了，进程却不退出」。
+
 ## 参数
 
 | 参数 | 说明 |
@@ -32,10 +45,12 @@ build\headless\qz-shot.bat --page=playground --size=1280x720 --out=out\shot.png
 | `--text=…` | `text-probe` 的文本；`chat` 的消息串（语法见「聊天页」） |
 | `--bg=RRGGBB\|transparent` | 宿主背景，默认不透明深色；透明底请显式指定 |
 | `--frames=N` / `--settle=N` / `--max-frames=N` | 帧计划：最少帧数 / 稳定判据（连续 N 帧像素一致）/ 硬上限 |
-| `--clock=epochMillis` | 虚拟墙钟基准（默认 `2024-01-01T00:00:00Z`）：决定消息时间戳与动画时间轴，见「出图确定性」 |
+| `--clock=epochMillis` | 虚拟墙钟基准（默认 `2024-01-01T00:00:00Z`）：**最后一条**消息的到达时刻 + 帧时钟起点，见「出图确定性」 |
+| `--font-scale=P` / `--font-scales=P,…` | 用户级字号缩放百分比（100 = 不缩放，域 100~200）：单档 / 字号矩阵，见「环境矩阵」 |
+| `--debug` | 打开诊断采样：摘要多一行 `perf:`（帧内阶段耗时与计数）。**不改变绘制**，像素与关闭态逐位相同 |
 | `--probe` | 只打印能力（GL 版本、stencil、字体数量）不出图 |
 
-页面与尺寸可同时给，按「页面 × 尺寸」笛卡尔积出图。
+页面、尺寸、字号三个维度可同时给，按笛卡尔积出图（产物命名规则见「环境矩阵」）。
 
 ## 输入脚本
 
@@ -60,6 +75,44 @@ frame / wait 4     # 帧边界 / 空推进 4 帧
 ```bat
 build\headless\qz-shot.bat --page=playground --actions="move 315 88; frame; click; wait 4" --out=out\nav.png
 ```
+
+## 环境矩阵（字号 × 分辨率 × 诊断）
+
+出图的观感不只由页面决定，也由**环境事实**决定。请求可声明三类环境量，与尺寸一样按档位扫：
+
+```bat
+:: 字号矩阵（作用点 = 解析出口的倍率层，参与布局而不只是把字画大）
+build\headless\qz-shot.bat --page=chat --size=1280x720 --font-scales=100,150,200 --out=out\fs.png
+:: 360P~2K 分辨率矩阵
+build\headless\qz-shot.bat --page=hud --sizes=640x360,854x480,960x540,1280x720,1600x900,1920x1080,2560x1440 --out=out\hud.png
+:: 一帧花在哪（采样摘要随本次出图给出）
+build\headless\qz-shot.bat --page=hud --size=1920x1080 --debug
+```
+
+**产物命名 = 「偏离缺省的维度」+ 尺寸**：`out\hud-640x360.png`、`out\fs-fs150-1280x720.png`
+（字号非缺省才带 `-fs<P>`，页下标在指定时带 `-p<N>`）。缺省命令的路径因此逐字不变。
+
+两条实测性质，可直接当回归判据：
+
+| 性质 | 实测 |
+|---|---|
+| `--debug` 不改变像素 | 同一命令加/不加 `--debug`：**0 / 921600** 像素不同 |
+| `--font-scale` 改变像素 | 100 与 150：**176911 / 921600** 像素不同（跨过标题/换行等布局差异） |
+| 同命令逐像素可复现 | 连跑两次：**0 / 921600**（见「出图确定性」） |
+
+环境事实**全部来自请求**：headless 生产包内不得回落生产环境单例（`HeadlessEnvironmentInjectionGuardTest`
+守着这条）。违反的后果是静默的——同一命令在不同 `Config` 下出图不同，且 `--debug` 变成一句空话
+（采样器永远打不开，命令本身不报错）。
+
+### 小视口下只显示最新几条是预期
+
+HUD 形态的堆叠高度上限是**视口高 × 0.5**（`hudMaxHeightRatio`），超出时按到达时刻剔除更旧的组
+（`ChatSceneController#trimHudGroupsByHeight`，设计意图「刷屏不侵占半屏以上」）。故 360P 这类小视口下
+只会保留最新的一两组——这是设计行为，不是出图故障。需要看完整内容就用足够大的尺寸，或减少 `--text` 的消息数。
+
+探针的消息按 **1 秒一条**的节奏到达（`ARRIVAL_SPACING_MILLIS`），最后一条恰为 `--clock=` 基准。
+真实聊天不可能多条同刻到达，而「同刻到达」会让上述剔除逻辑一次越过全部组 ⇒ 整树为空、出图只剩背景
+（实测 `--page=chat --size=1100x720` 命令面 0 条，而同一内容在 `1200x720` 有 24 条）。
 
 ## 聊天页（chat）
 
@@ -172,6 +225,8 @@ build\headless\qz-shot-full.bat --page=hud --clock=1735689600000 --out=out\hud-2
 | `--page=chat` 出全背景且 `commands=0` | 入场动画**整段未起播**：组 opacity 恒 0 → 零透明子树被 paint 跳过 → 命令面为空。历史上的根因是虚拟时钟起点早于消息出生时刻（构造期控制器初始化耗时数百 ms 的时序竞态，规划 F23）；2026-09-18 起两者同源于 `--clock=` 注入的基准，该竞态已根除。若仍复现，按「出图确定性」一节查时间源，不要再往帧数上加 |
 | `--page=hud --text=`（空消息集）出纯背景 | **预期行为**而非故障：内容空尺寸 ⇒ 整窗（含外壳）隐藏，`commands=0 / colors=1` 正确。给非空 `--text` 即出外壳与内容 |
 | 需要一次出多张 | `--sizes=` / `--page-indexes=`：同进程内多档，字体与 GL 上下文只初始化一次 |
+| 出图完成但进程不退出 | 历史缺陷（GL 上下文挂在隐藏 AWT 容器上，未显式释放时 `System.exit` 停在 AWT 退出钩子）；现已由 `HeadlessShotMain` 出图后调 `GlOffscreenSurface.shutdownContext()` 处理。若复现请报障 |
+| 屏幕上出现窗口 / 抢焦点 | 不应发生（可见窗口峰值 0）。若复现，检查是否有人改回 `Display.create()` 直连路径，见「不弹窗」 |
 | 两次出图像素不同 | 先确认命令逐字相同：`--clock=` 不同本就该不同（时间戳/动画轴变了），`--frames` 不同也会不同（动画进度不同）。同机同命令仍不同则是设施缺陷，带两份命令与产物报障 |
 
 ## 边界（不要据此下结论）

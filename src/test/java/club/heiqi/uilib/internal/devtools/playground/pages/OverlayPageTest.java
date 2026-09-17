@@ -30,7 +30,6 @@ import club.heiqi.uilib.ui.scene.layout.CrossAxisAlign;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
-import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
@@ -334,7 +333,7 @@ public class OverlayPageTest {
     // ==================== 辅助：宿主/导航/命中 ====================
 
     /**
-     * 测试探针宿主：暴露基类 protected 的 runtime 与根节点。
+     * 测试探针宿主：暴露根节点（runtime 由基类公开提供，见 {@code AbstractSceneHostWidget#runtime()}）。
      *
      * <p>本测试与宿主不同包（{@code ...playground.pages} vs {@code ...playground}），
      * {@code TestPlaygroundHost} 的状态探针是包级可见，故用子类桥接；页工厂与主题解析仍走
@@ -344,10 +343,6 @@ public class OverlayPageTest {
 
         ProbeHost() {
             super(null);
-        }
-
-        SceneRuntime runtime() {
-            return runtime;
         }
 
         SceneNode root() {

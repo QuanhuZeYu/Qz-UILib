@@ -37,7 +37,6 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
-import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
@@ -731,15 +730,11 @@ public class MarkdownPageTest {
 
     // ==================== 宿主/布局辅助（与 LatexPageTest 同口径） ====================
 
-    /** 测试探针宿主：暴露基类 protected 的 runtime 与根节点（与 OverlayPageTest 同口径）。 */
+    /** 测试探针宿主：暴露根节点（runtime 由基类公开提供）。 */
     private static final class ProbeHost extends TestPlaygroundHost {
 
         ProbeHost() {
             super(null);
-        }
-
-        SceneRuntime runtime() {
-            return runtime;
         }
 
         SceneNode root() {

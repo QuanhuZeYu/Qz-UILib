@@ -2,10 +2,8 @@ package club.heiqi.uilib.internal.devtools.headless;
 
 import java.util.List;
 
-import net.minecraft.util.IChatComponent;
-
-import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.hud.api.HudAnchor;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.UiSurface;
@@ -15,6 +13,7 @@ import club.heiqi.uilib.ui.scene.input.SceneMouseButton;
 import club.heiqi.uilib.ui.scene.input.ScenePointerAction;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.overlay.SceneAnchorResolver;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /**
  * HUD 页探针宿主：用<b>生产 HUD 宿主装配</b>（{@link SceneHostWindow}）在无游戏进程里出图。
@@ -65,8 +64,10 @@ final class HudSceneProbeHost implements UiSurface {
      * @param messages    初始消息（语法见 {@link ChatSceneProbeHost}）
      * @param anchorIndex 锚点下标（0 左上 / 1 右上 / 2 左下 / 3 右下；越界按左下）
      * @param clockMillis 虚拟墙钟基准（epoch 毫秒）；同时作为消息到达时刻与帧时钟起点
+     * @param environment 宿主环境端口（请求声明的环境事实），经 {@link SceneHostWindow} 传给其自建 runtime
      */
-    HudSceneProbeHost(int width, int height, List<String> messages, int anchorIndex, long clockMillis) {
+    HudSceneProbeHost(int width, int height, List<String> messages, int anchorIndex, long clockMillis,
+            UiEnvironment environment) {
         this.controller = new ChatSceneController(ChatSceneController.uiLibMeasure(),
                 new ChatSceneController.SelfNameProvider() {
                     @Override
@@ -77,20 +78,14 @@ final class HudSceneProbeHost implements UiSurface {
                 ChatSceneController.uiLibSegmentParser(),
                 ChatSceneController.uiLibSegmentMeasurer());
         controller.setHostViewport(width, height);
-        int messageId = 1;
-        for (String message : messages) {
-            IChatComponent component = ChatSceneProbeHost.componentOf(message);
-            if (component != null) {
-                // 到达时刻用注入基准而非进程当前时刻（理由见 ChatSceneProbeHost 同名构造）。
-                controller.history().append(new ChatLineRecord(component, messageId++, clockMillis));
-            }
-        }
+        // 到达节奏与 chat 页共用同一实现（含「不得同刻到达」的理由，见该方法 javadoc）。
+        ChatSceneProbeHost.appendWithArrivalCadence(controller, messages, clockMillis);
         controller.notifyDataChanged();
         this.anchor = anchorOf(anchorIndex);
         // 不带装饰层：外接工具栏是 client 侧注册表（HudToolbarService）的事实，
         // headless 无注册表 → 内容直通（装饰层装配路径由 SceneHostWindowTest 覆盖）。
         this.window = new SceneHostWindow(SceneHostAssembly.defaultMeasurer(),
-                SceneHostAssembly.defaultEnvironment(), SceneHostWindow.Shell.HUD_DEFAULT,
+                environment, SceneHostWindow.Shell.HUD_DEFAULT,
                 rt -> controller.buildContent(rt), null, null);
         // 帧时钟起点 = 消息到达时刻（理由见 clockMillis 字段 javadoc）。
         this.clockMillis = clockMillis;
@@ -116,6 +111,18 @@ final class HudSceneProbeHost implements UiSurface {
                 0, 0, 0, 0, 0);
         window.frame(ctx, placed.getX() + absX, placed.getY() + absY,
                 placed.getWidth(), placed.getHeight(), frameNanos);
+    }
+
+    /**
+     * 本页宿主的运行时。
+     *
+     * <p>本页的 runtime 归 {@link SceneHostWindow} 自建，会话拿不到基类字段，故经窗口的公开访问器
+     * 转达一次；返回引用而非复制任何环境量，字号倍率等仍由 runtime 单点持有。</p>
+     *
+     * @return 窗口运行时
+     */
+    SceneRuntime runtime() {
+        return window.runtime();
     }
 
     private static HudAnchor anchorOf(int pageIndex) {

@@ -60,9 +60,17 @@ public class HeadlessWallClockGuardTest {
             String code = stripComments(source(PACKAGE_ROOT.resolve(name)));
             assertTrue(name + " 必须从请求注入虚拟墙钟（构造参数）", code.contains("long clockMillis"));
             assertTrue(name + " 必须把注入值作为帧时钟起点", code.contains("this.clockMillis = clockMillis"));
-            assertTrue(name + " 必须用注入基准写入消息到达时刻（不得走二参 append）",
-                    code.contains("new ChatLineRecord(component, messageId++, clockMillis)"));
+            assertTrue(name + " 必须按到达节奏写入消息（不得把多条消息压在同一时刻，理由见该方法 javadoc）",
+                    code.contains("appendWithArrivalCadence"));
+            assertTrue(name + " 不得把注入基准直接当作每条消息的到达时刻（同刻到达 = 探针输入失真）",
+                    !code.contains(", clockMillis))"));
+            assertTrue(name + " 不得走二参 append（它读 System.currentTimeMillis）",
+                    !code.contains("append(component"));
         }
+        String chatProbe = stripComments(source(PACKAGE_ROOT.resolve("ChatSceneProbeHost.java")));
+        assertTrue("到达节奏实现必须按条依次前移（同刻到达会触发高度裁剪把整树剔空）",
+                chatProbe.contains("clockMillis - (long) (components.size() - 1 - i) * ARRIVAL_SPACING_MILLIS"));
+        assertTrue("到达间隔必须有具名常量与取值理由", chatProbe.contains("ARRIVAL_SPACING_MILLIS = "));
         String request = stripComments(source(PACKAGE_ROOT.resolve("HeadlessRequest.java")));
         assertTrue("请求必须提供默认基准常量", request.contains("DEFAULT_CLOCK_MILLIS"));
         assertTrue("请求必须暴露基准访问器", request.contains("public long clockMillis()"));

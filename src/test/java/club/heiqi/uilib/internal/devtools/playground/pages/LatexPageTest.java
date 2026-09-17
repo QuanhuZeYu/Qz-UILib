@@ -29,7 +29,6 @@ import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
-import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
@@ -312,16 +311,12 @@ public class LatexPageTest {
     // ==================== 辅助：宿主/导航 ====================
 
     /**
-     * 测试探针宿主：暴露基类 protected 的 runtime 与根节点（与 OverlayPageTest 同口径）。
+     * 测试探针宿主：暴露根节点（runtime 由基类公开提供，见 {@code AbstractSceneHostWidget#runtime()}）。
      */
     private static final class ProbeHost extends TestPlaygroundHost {
 
         ProbeHost() {
             super(null);
-        }
-
-        SceneRuntime runtime() {
-            return runtime;
         }
 
         SceneNode root() {

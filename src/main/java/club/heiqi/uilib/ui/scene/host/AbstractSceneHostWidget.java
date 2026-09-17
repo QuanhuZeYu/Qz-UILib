@@ -77,6 +77,19 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
     }
 
     /**
+     * 环境可注入构造：度量端口取生产装配事实，只覆盖环境端口。
+     *
+     * <p>存在理由：只关心环境事实的调用方（headless 出图矩阵注入请求级诊断域）不该被迫连带表态
+     * 度量端口 —— 那不是它的事实。需要两者都覆盖时用三参构造。</p>
+     *
+     * @param inputSource 平台输入源，可为 null（退化模式）
+     * @param environment 宿主环境端口，不可为 null；无环境事实传 {@link UiEnvironment#empty()}
+     */
+    protected AbstractSceneHostWidget(PlatformInputSource inputSource, UiEnvironment environment) {
+        this(SceneHostAssembly.defaultMeasurer(), inputSource, environment);
+    }
+
+    /**
      * measurer 可注入构造（投放职责聚合方案 A4 缺口②）：headless 测试传入确定度量端口。
      *
      * <p>环境端口取生产默认（{@link SceneHostAssembly#defaultEnvironment()}）。需要观察特定环境
@@ -255,6 +268,23 @@ public abstract class AbstractSceneHostWidget implements UiSurface {
     @Override
     public void dispose() {
         runtime.dispose();
+    }
+
+    /**
+     * 获取宿主运行时（装配后环境的<b>唯一权威</b>）。
+     *
+     * <p>与 {@link SceneHostWindow#runtime()} 同口径：字号默认值与用户缩放倍率等环境量归 runtime 持有，
+     * 宿主不复制这些字段（复制即第二套口径，且丢失效通道）。需要按宿主设置环境覆盖的装配方
+     * （headless 出图矩阵、多屏宿主）经本访问器写入一次，由 runtime 自身的失效通道
+     * （{@code fontEpoch} / 字号代际信号）通知消费者。</p>
+     *
+     * <p>本访问器只暴露 runtime 引用，不改变装配契约：runtime 的创建点仍是唯一装配点
+     * {@link SceneHostAssembly#assemble}，外部只能读引用、不能替换实例。</p>
+     *
+     * @return 宿主运行时
+     */
+    public SceneRuntime runtime() {
+        return runtime;
     }
 
     /** @return paint 引擎 */

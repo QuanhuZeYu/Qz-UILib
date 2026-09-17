@@ -640,6 +640,70 @@ x=254、文字画到 298（溢出 44px）；两条短消息内边距恒为 10~11
 **可复用教训**：排查「非确定性」时先把两次运行的差异**放大到看得见** —— 一眼读出「时间戳 == 文件时间」
 胜过多轮统计推断；统计量（差异像素数、行分布、跨版本对照）对多种成因同样成立，不能用来定因。
 
+### F28 环境矩阵：请求级环境事实（2026-09-18）
+
+**问题**：出图的观感不只由页面决定，也由环境事实决定（字号倍率、诊断开关），而请求没有这些入口 ——
+字号恒为不缩放、诊断开关恒取生产配置，于是「同一命令在不同机器/配置下出图不同」与「不开游戏就没法看
+一帧花在哪」都无从解决。`package-info` 的不变量 3 早已声明「尺寸、缩放、帧数、输出路径全部来自请求；
+不读全局单例的隐藏状态」，这一轮补的是它**已声明、未落地**的那一半。
+
+**修法（自顶向下：环境事实进请求，会话投影到装配点）**：
+
+- `HeadlessRequest` 增 `fontScalePercent`（域引用 `SceneRuntime` 常量，越界 fail-fast 不静默钳制）与
+  `diagnostics`；缺省值取各自的中性水位，与「未声明」逐位等价；
+- 新增 `HeadlessEnvironment`（`UiEnvironment` 实现）：**只覆盖诊断域**。语言/资源域按缺席 —— headless 进程
+  没有那两个服务，伪造语言码只会让消费者读到不存在的事实；调试浮层开关保持 `false` 并写明「这是事实而非
+  缺省」（浮层是 client HUD 注册表里的一份内容，headless 没有注册表）；
+- 四个页面宿主全部改为**构造依赖**注入环境（`playground` 补环境可注入构造；chat/hud/text-probe 的探针宿主
+  各加一个环境参数）；`AbstractSceneHostWidget.runtime()` 公开（与 `SceneHostWindow.runtime()` 对齐），
+  字号倍率经它投影到 runtime，由 runtime 自己的失效通道通知消费者，宿主不复制环境字段；
+- CLI 增 `--font-scale=P` / `--font-scales=P,…`（矩阵第三维）与 `--debug`；产物后缀规则 =「偏离缺省的维度 +
+  尺寸」，故既有命令的路径逐字不变。
+
+**顺带发现（矩阵的第一次真实产出）**：`--page=chat`/`hud` 在「内容总高 &gt; 视口高 × 0.5」时**整屏为空**。
+高度裁剪 `trimHudGroupsByHeight` 按到达时刻取一个只进不退的阈值剔除更旧的组，而探针把 N 条消息的到达
+时刻压成了同一个值 ⇒ 阈值一次越过全部组。实测 `1100x720` 命令面 0 条、同一内容在 `1200x720` 有 24 条，
+差别只是内容总高刚好越过 `0.5×720=360` 这条裁剪线。**这是探针输入失真而非生产缺陷**（真实聊天不会同刻
+到达）：改为按 1 秒一条的节奏到达、最后一条恰为 `--clock` 基准后，360P~2K 全档有内容，小视口只保留最新的
+一两组 —— 那正是「刷屏不侵占半屏以上」的设计意图。
+
+**验收（一手实测）**：
+
+| 项 | 结果 |
+|---|---|
+| 360P~2K 七档 | 全部有内容（修复前 640x360 / 854x480 / 960x540 三档纯背景：1753 → 21052 bytes） |
+| `--debug` 不改变像素 | 0 / 921600 差异（同一命令加不加 `--debug`） |
+| 同命令两次 | 0 / 921600（F27 的确定性保持） |
+| `--font-scale` 生效 | 100 vs 150：176911 / 921600 差异 |
+| `--debug` 产出 | `perf:` 行含帧时间、阶段耗时（`frame.REPLAY` 等）与计数器 |
+
+**门禁**：`HeadlessEnvironmentInjectionGuardTest`（headless 生产包不得回落 `ProcessUiEnvironment` /
+`defaultEnvironment`，且「请求 → 环境 → 宿主」「请求 → runtime」的接线必须存在，带正锚）、
+`HeadlessEnvironmentTest`（环境三态、请求缺省与越界校验）。
+
+### F29 离屏不弹窗：Display 挂到不显示的 AWT 容器（2026-09-18）
+
+**问题（用户报告）**：每次出图都弹出一个窗口挡住屏幕、干扰使用。根因：`GlOffscreenSurface.ensureContext()`
+走 `Display.create()`，而 LWJGL2 的 `Display` **本身就是真实窗口**（标题 `Qz-UILib headless`）——
+渲染目标其实是自建 FBO，那个窗口对出图没有任何贡献。
+
+**修法**：`Display.setParent(从不显示的 AWT Canvas)`。`pack()` 是必要步骤而非尺寸设定 —— 它触发
+`addNotify` 建出 native peer（否则 `Canvas.isDisplayable()` 为 false，LWJGL 拒绝挂载），而顶层 `Frame`
+始终 `visible=false`，故即使 LWJGL 把 Canvas 置为可见，其祖先容器不可见，屏幕上什么都不出现。
+
+**为什么不用 `Pbuffer`（本该更正统的离屏路径）**：本项目是双 classpath —— 编译期解析 lwjgl3ify shim、
+运行期用真 LWJGL2。`javap` 核实：shim 的 `Pbuffer` 只有无参构造，真 LWJGL2 的只有
+`Pbuffer(int,int,PixelFormat,Drawable)`，**没有共有签名**，任选其一都会在另一端抛 `NoSuchMethodError`；
+而 `Display.setParent(Canvas)` 两边签名一致。
+
+**顺带修掉一个退出死锁**：引入 AWT 后 `System.exit` 会停在 AWT 的退出钩子里 —— 实测表现为「PNG 已经写出、
+`elapsed: 1024 ms` 也打了，进程却一直不退出」（jstack 显示 `main` 在 `ApplicationShutdownHooks.runHooks`
+里 join）。修法：`HeadlessShotMain` 出图后显式 `GlOffscreenSurface.shutdownContext()`，释放隐藏容器并销毁上下文。
+
+**验收（一手实测）**：出图期间每 50 ms 枚举本进程顶层窗口 —— **可见窗口峰值 0**；进程内 9 个窗口全部
+`visible=false`（AWT 的 `SunAwtFrame` 隐藏容器、驱动自建的 `NVOGLDC invisible` / `__wglDummyWindowFodder`）；
+进程 4.8 s 内正常 `exit=0`；命令面与修复前一致（`commands=25` / `bounds=4,364..338,716`）。
+
 ## 三、目标形态
 
 **四件套 + 一个出口：**

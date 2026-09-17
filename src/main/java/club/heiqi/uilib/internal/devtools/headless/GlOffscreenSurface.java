@@ -1,9 +1,12 @@
 package club.heiqi.uilib.internal.devtools.headless;
 
+import java.awt.BorderLayout;
+import java.awt.Canvas;
+import java.awt.Frame;
+import java.awt.HeadlessException;
 import java.nio.ByteBuffer;
 
 import org.lwjgl.BufferUtils;
-import org.lwjgl.LWJGLException;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
@@ -20,6 +23,11 @@ import org.lwjgl.opengl.PixelFormat;
  *
  * <p>PixelFormat 必须带 stencil：生产 {@code ClipStack} 走 scissor + stencil mask，
  * 缺 stencil 会让圆角/裁剪语义静默失配。</p>
+ *
+ * <p><b>不弹窗</b>：{@link Display#create} 在 LWJGL2 里会创建<b>真实可见窗口</b>，出图期间抢焦点、
+ * 挡在用户屏幕上；而本设施的渲染目标是自建 FBO，窗口尺寸与内容都无关，那个窗口纯属多余。
+ * 故把 Display 挂到一个<b>从不显示</b>的 AWT {@link Canvas} 上（{@link Display#setParent}）：
+ * {@code pack()} 只为拿到 native peer，顶层容器始终保持不可见，屏幕上不会出现任何窗口。</p>
  */
 public final class GlOffscreenSurface implements AutoCloseable {
 
@@ -36,6 +44,13 @@ public final class GlOffscreenSurface implements AutoCloseable {
     private final String glRenderer;
     private final int stencilBits;
     private final int maxTextureSize;
+    /**
+     * 承载 GL 上下文窗口句柄的隐藏顶层容器（见 {@link #createHiddenCanvas()}）。
+     *
+     * <p>必须活到上下文销毁：GL 上下文挂在它的 native peer 上。静态持有而非局部变量，
+     * 是为了让 {@link #shutdownContext()} 能在共享 JVM（测试）里显式回收它。</p>
+     */
+    private static Frame hiddenHolder;
     private boolean closed;
 
     private GlOffscreenSurface(int width, int height, int framebufferId, int colorTextureId,
@@ -66,10 +81,16 @@ public final class GlOffscreenSurface implements AutoCloseable {
             // 编译期解析到 lwjgl3ify 的 org.lwjgl shim（其 create 不声明 checked 异常），
             // 运行期用真 LWJGL2（其 create 抛 checked LWJGLException）——签名不一致，故统一按 Throwable 收口，
             // 两种 classpath 组合下都能给出可归因的失败。
-            String hint = e instanceof UnsatisfiedLinkError
-                    ? "加载 LWJGL2 natives 失败：请确认 natives 已解压且 -Djava.library.path 指向该目录"
-                            + "（exportHeadlessClasspath 生成的 qz-shot.bat 已自带该参数）"
-                    : "创建 GL 上下文失败（Linux 无桌面环境需 Xvfb）";
+            String hint;
+            if (e instanceof UnsatisfiedLinkError) {
+                hint = "加载 LWJGL2 natives 失败：请确认 natives 已解压且 -Djava.library.path 指向该目录"
+                        + "（exportHeadlessClasspath 生成的 qz-shot.bat 已自带该参数）";
+            } else if (e instanceof HeadlessException) {
+                hint = "AWT 处于 headless 模式，无法提供离屏窗口句柄（本设施用不显示的 Canvas 承载 GL 上下文）："
+                        + "请去掉 -Djava.awt.headless=true";
+            } else {
+                hint = "创建 GL 上下文失败（Linux 无桌面环境需 Xvfb）";
+            }
             throw new HeadlessFailure(HeadlessFailure.Stage.CONTEXT, hint + "：" + HeadlessFailure.brief(e), e);
         }
         String version = safeGlString(GL11.GL_VERSION);
@@ -124,19 +145,56 @@ public final class GlOffscreenSurface implements AutoCloseable {
      * <p>上下文是<b>进程级资源</b>，不是会话级资源：字体 atlas 等全局 GL 对象挂在它上面，
      * 每次会话销毁并重建上下文会让后续会话用到失效纹理——实测多档矩阵从第 2 档起
      * {@code glError=1281}、颜色数从 1290 掉到 217（文字大面积丢失）。</p>
+     *
+     * <p><b>为什么经 AWT Canvas 而不是直接 {@code Display.create()}</b>：后者会弹出一个真实窗口
+     * （旧标题 {@code Qz-UILib headless}）占住用户屏幕。离屏句柄必须由 AWT 提供是 LWJGL2 的限制——
+     * {@code Pbuffer} 这个本该正统的离屏路径在本项目的双 classpath 下不可用：编译期解析到的
+     * lwjgl3ify shim 只有无参 {@code Pbuffer()}，运行期的真 LWJGL2 只有
+     * {@code Pbuffer(int,int,PixelFormat,Drawable)}，<b>没有共有构造签名</b>，任选其一都会在另一端
+     * 抛 {@code NoSuchMethodError}；而 {@code Display.setParent(Canvas)} 两边的签名一致。</p>
+     *
+     * <p>屏幕不会出现窗口的原因：{@code pack()} 只创建 native peer（AWT 要求 parent 已 displayable），
+     * 顶层 {@link Frame} 始终 {@code visible=false}，故即使 LWJGL 把 Canvas 置为可见，其祖先容器不可见，
+     * 屏幕上仍然什么都不出现。</p>
      */
-    private static void ensureContext() throws LWJGLException {
+    private static void ensureContext() throws Exception {
         if (Display.isCreated()) {
             return;
         }
-        Display.setTitle("Qz-UILib headless");
+        Display.setParent(createHiddenCanvas());
         Display.create(new PixelFormat().withDepthBits(24).withStencilBits(8));
+    }
+
+    /**
+     * 创建一个<b>从不显示</b>的 AWT Canvas，用作 GL 上下文的窗口句柄来源。
+     *
+     * <p>{@code pack()} 是必要步骤而非尺寸设定：它触发 {@code addNotify} 建出 native peer，
+     * 否则 {@code Canvas.isDisplayable()} 为 false，LWJGL 会拒绝挂载；{@code pack()} 不显示顶层容器。
+     * 尺寸取 1x1：渲染目标是自建 FBO，这个 Canvas 不承接任何像素。</p>
+     *
+     * <p>持有一个不被引用的 {@link Frame} 是有意的：它必须活到进程退出（GL 上下文挂在它的 peer 上），
+     * 且未显示的顶层容器不会阻塞 JVM 退出（{@code HeadlessShotMain} 末尾显式 {@code System.exit}）。</p>
+     */
+    private static Canvas createHiddenCanvas() {
+        Frame holder = new Frame();
+        holder.setUndecorated(true);
+        holder.setLayout(new BorderLayout());
+        Canvas canvas = new Canvas();
+        holder.add(canvas, BorderLayout.CENTER);
+        holder.setSize(1, 1);
+        holder.pack();
+        hiddenHolder = holder;
+        return canvas;
     }
 
     /** 进程退出前释放上下文（可选：JVM 退出也会释放）。多测试共享 JVM 时不应调用。 */
     public static void shutdownContext() {
         if (Display.isCreated()) {
             Display.destroy();
+        }
+        if (hiddenHolder != null) {
+            hiddenHolder.dispose();
+            hiddenHolder = null;
         }
     }
 

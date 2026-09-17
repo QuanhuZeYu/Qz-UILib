@@ -19,10 +19,11 @@ public final class HeadlessArtifact {
     private final long elapsedMillis;
     private final int renderedFrames;
     private final String inputSummary;
+    private final String performanceSummary;
 
     HeadlessArtifact(HeadlessRequest request, HeadlessCapabilities capabilities,
             HeadlessSelfCheck.Report selfCheck, HeadlessDrawSummary drawSummary, Path output, long pngBytes,
-            long elapsedMillis, int renderedFrames, String inputSummary) {
+            long elapsedMillis, int renderedFrames, String inputSummary, String performanceSummary) {
         this.request = request;
         this.capabilities = capabilities;
         this.selfCheck = selfCheck;
@@ -32,6 +33,7 @@ public final class HeadlessArtifact {
         this.elapsedMillis = elapsedMillis;
         this.renderedFrames = renderedFrames;
         this.inputSummary = inputSummary;
+        this.performanceSummary = performanceSummary;
     }
 
     /** @return 源请求 */
@@ -74,6 +76,18 @@ public final class HeadlessArtifact {
         return elapsedMillis;
     }
 
+    /**
+     * 帧内事实摘要（阶段耗时、计数、最慢控件），仅当请求声明诊断采样时存在。
+     *
+     * <p>它是耗时事实而非像素事实：同一命令两次出图的该字段天然不同，故不参与任何出图对拍，
+     * 也不写进 PNG。回答的问题是「这一帧花在哪」，而不是「画成了什么」。</p>
+     *
+     * @return 统计摘要；未采样时为 null
+     */
+    public String performanceSummary() {
+        return performanceSummary;
+    }
+
     /** @return 多行可读摘要（CLI 默认输出） */
     public String describe() {
         StringBuilder sb = new StringBuilder();
@@ -92,6 +106,9 @@ public final class HeadlessArtifact {
             sb.append("（达到帧上限仍未收敛：检查是否有持续变化的动画/时间源）");
         }
         sb.append('\n');
+        if (performanceSummary != null) {
+            sb.append("[headless] perf: ").append(performanceSummary).append('\n');
+        }
         sb.append("[headless] elapsed: ").append(elapsedMillis).append(" ms");
         return sb.toString();
     }

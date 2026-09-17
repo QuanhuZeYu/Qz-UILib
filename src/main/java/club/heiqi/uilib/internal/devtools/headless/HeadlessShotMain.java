@@ -6,6 +6,8 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+
 /**
  * headless 出图命令行出口：一条命令拿 PNG（单张、分辨率矩阵、页面矩阵）。
  *
@@ -14,7 +16,16 @@ import java.util.List;
  * qz-shot.bat --page=playground --sizes=640x360,1280x720,1920x1080,2560x1440 --out=out/shot.png
  * qz-shot.bat --page=playground --page-indexes=0,1,2,3,4,5,6,7,8 --out=out/page.png
  * qz-shot.bat --page=playground --actions="move 315 88; frame; click; wait 4"
+ * qz-shot.bat --page=chat --sizes=640x360,1280x720,2560x1440 --out=out/chat.png
+ * qz-shot.bat --page=chat --size=1280x720 --font-scales=100,150,200 --out=out/chat.png
+ * qz-shot.bat --page=hud --size=1920x1080 --debug
  * </pre>
+
+ * <p><b>三个批处理轴</b>：{@code --page-indexes} × {@code --font-scales} × {@code --sizes} 按笛卡尔积
+ * 出图，多档时 {@code --out} 自动追加轴后缀（见 {@link #resolveOutput}），末尾输出汇总行。</p>
+ *
+ * <p><b>环境轴与尺寸轴同级</b>：字号倍率是 runtime 侧的环境量（见 {@code HeadlessRequest#fontScalePercent()}），
+ * 诊断采样同理 —— 二者都不是「渲染选项」而是本次出图的环境声明，故与尺寸一样可按档位扫。</p>
  *
  * <p>批处理维度：`--sizes` 与 `--page-indexes` 可同时给出，按「页面 × 尺寸」笛卡尔积出图；
  * 多档时 {@code --out} 自动追加 {@code -p<下标>-<W>x<H>} 后缀，末尾输出汇总行。
@@ -31,7 +42,15 @@ public final class HeadlessShotMain {
      * @param args 命令行参数
      */
     public static void main(String[] args) {
-        System.exit(run(args));
+        int code;
+        try {
+            code = run(args);
+        } finally {
+            // 出图完成即释放 GL 上下文与承载它的隐藏窗口容器：AWT 的退出钩子要等窗口资源回收，
+            // 不显式释放会让 System.exit 停在该钩子里 —— 实测表现为「图已经写出来了，进程却不退出」。
+            GlOffscreenSurface.shutdownContext();
+        }
+        System.exit(code);
     }
 
     /**
@@ -55,6 +74,9 @@ public final class HeadlessShotMain {
         String script = "";
         String out = null;
         long clockMillis = HeadlessRequest.DEFAULT_CLOCK_MILLIS;
+        int fontScalePercent = SceneRuntime.FONT_SCALE_NONE_PERCENT;
+        String fontScales = null;
+        boolean diagnostics = false;
         boolean probeOnly = false;
         boolean framesGiven = false;
         try {
@@ -93,6 +115,12 @@ public final class HeadlessShotMain {
                     int[] parsed = parseSize(arg.substring("--size=".length()));
                     width = parsed[0];
                     height = parsed[1];
+                } else if (arg.startsWith("--font-scales=")) {
+                    fontScales = arg.substring("--font-scales=".length());
+                } else if (arg.startsWith("--font-scale=")) {
+                    fontScalePercent = Integer.parseInt(arg.substring("--font-scale=".length()));
+                } else if ("--debug".equals(arg)) {
+                    diagnostics = true;
                 } else if (arg.startsWith("--clock=")) {
                     clockMillis = Long.parseLong(arg.substring("--clock=".length()));
                 } else {
@@ -121,6 +149,7 @@ public final class HeadlessShotMain {
 
         List<Integer> pageTargets = new ArrayList<Integer>();
         List<int[]> sizeTargets = new ArrayList<int[]>();
+        List<Integer> fontScaleTargets = new ArrayList<Integer>();
         try {
             if (pageIndexesArg == null || pageIndexesArg.trim().isEmpty()) {
                 pageTargets.add(Integer.valueOf(pageIndex));
@@ -136,59 +165,72 @@ public final class HeadlessShotMain {
                     sizeTargets.add(parseSize(part.trim()));
                 }
             }
+            if (fontScales == null || fontScales.trim().isEmpty()) {
+                fontScaleTargets.add(Integer.valueOf(fontScalePercent));
+            } else {
+                for (String part : fontScales.split(",")) {
+                    fontScaleTargets.add(Integer.valueOf(part.trim()));
+                }
+            }
         } catch (RuntimeException e) {
             System.err.println("[headless] 批量参数非法：" + e.getMessage());
             return 2;
         }
 
-        int total = pageTargets.size() * sizeTargets.size();
+        int total = pageTargets.size() * sizeTargets.size() * fontScaleTargets.size();
         boolean multi = total > 1;
         int okCount = 0;
         int failedCount = 0;
         int environmentFailures = 0;
         List<String> labels = new ArrayList<String>();
         for (Integer targetPageIndex : pageTargets) {
-            for (int[] size : sizeTargets) {
-                Path output = resolveOutput(out, page, targetPageIndex.intValue(), size[0], size[1], multi);
-                HeadlessRequest request;
-                try {
-                    request = HeadlessRequest.builder().page(page).pageIndex(targetPageIndex.intValue())
-                            .size(size[0], size[1]).frames(frames).background(background).text(text)
-                            .script(script).settle(settle).maxFrames(maxFrames).clock(clockMillis)
-                            .output(output).build();
-                } catch (RuntimeException e) {
-                    System.err.println("[headless] 请求非法：" + e.getMessage());
-                    return 2;
-                }
+            for (Integer targetFontScale : fontScaleTargets) {
+                for (int[] size : sizeTargets) {
+                    int scalePercent = targetFontScale.intValue();
+                    Path output = resolveOutput(out, page, targetPageIndex.intValue(), scalePercent, size[0],
+                            size[1], multi);
+                    HeadlessRequest request;
+                    try {
+                        request = HeadlessRequest.builder().page(page).pageIndex(targetPageIndex.intValue())
+                                .size(size[0], size[1]).frames(frames).background(background).text(text)
+                                .script(script).settle(settle).maxFrames(maxFrames).clock(clockMillis)
+                                .fontScale(scalePercent).diagnostics(diagnostics)
+                                .output(output).build();
+                    } catch (RuntimeException e) {
+                        System.err.println("[headless] 请求非法：" + e.getMessage());
+                        return 2;
+                    }
 
-                if (probeOnly) {
+                    if (probeOnly) {
+                        try (HeadlessSession session = HeadlessSession.open(request)) {
+                            System.out.println("[headless] capabilities: " + session.capabilities().summary());
+                        } catch (HeadlessFailure failure) {
+                            failure.printDiagnosis(System.err);
+                            return 3;
+                        }
+                        return 0;
+                    }
+
+                    boolean ok;
                     try (HeadlessSession session = HeadlessSession.open(request)) {
-                        System.out.println("[headless] capabilities: " + session.capabilities().summary());
+                        HeadlessArtifact artifact = session.capture();
+                        System.out.println(artifact.describe());
+                        ok = artifact.selfCheck().ok();
                     } catch (HeadlessFailure failure) {
                         failure.printDiagnosis(System.err);
-                        return 3;
+                        // 环境 / 上下文 / 装配 / 帧 / 读回 / 编码失败属于「设施没能出图」，与「图出来了但内容可疑」分开报，
+                        // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」。
+                        environmentFailures++;
+                        ok = false;
                     }
-                    return 0;
+                    if (ok) {
+                        okCount++;
+                    } else {
+                        failedCount++;
+                    }
+                    labels.add(labelOf(page, targetPageIndex.intValue(), scalePercent, size[0], size[1])
+                            + "=" + (ok ? "ok" : "FAILED"));
                 }
-
-                boolean ok;
-                try (HeadlessSession session = HeadlessSession.open(request)) {
-                    HeadlessArtifact artifact = session.capture();
-                    System.out.println(artifact.describe());
-                    ok = artifact.selfCheck().ok();
-                } catch (HeadlessFailure failure) {
-                    failure.printDiagnosis(System.err);
-                    // 环境 / 上下文 / 装配 / 帧 / 读回 / 编码失败属于「设施没能出图」，与「图出来了但内容可疑」分开报，
-                    // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」。
-                    environmentFailures++;
-                    ok = false;
-                }
-                if (ok) {
-                    okCount++;
-                } else {
-                    failedCount++;
-                }
-                labels.add(labelOf(page, targetPageIndex.intValue(), size[0], size[1]) + "=" + (ok ? "ok" : "FAILED"));
             }
         }
 
@@ -201,8 +243,20 @@ public final class HeadlessShotMain {
         return failedCount == 0 ? 0 : 4;
     }
 
-    private static String labelOf(String page, int pageIndex, int width, int height) {
-        return (pageIndex >= 0 ? page + "#" + pageIndex : page) + "@" + width + "x" + height;
+    /**
+     * 汇总行标签：页 + 尺寸，非默认字号倍率时补一段。
+     *
+     * @param page 页面标识
+     * @param pageIndex 页下标；-1 表示不指定
+     * @param fontScalePercent 字号缩放百分比；缺省水位不显示，避免逐条汇总被重复信息淹没
+     * @param width 宽
+     * @param height 高
+     * @return 标签
+     */
+    private static String labelOf(String page, int pageIndex, int fontScalePercent, int width, int height) {
+        return (pageIndex >= 0 ? page + "#" + pageIndex : page) + "@" + width + "x" + height
+                + (fontScalePercent == SceneRuntime.FONT_SCALE_NONE_PERCENT ? ""
+                        : " fs" + fontScalePercent + "%");
     }
 
     /**
@@ -220,18 +274,26 @@ public final class HeadlessShotMain {
     }
 
     /**
-     * 解析输出路径：批量时在文件名里插入页下标与尺寸后缀，避免互相覆盖。
+     * 解析输出路径：批量时在文件名里插入各轴后缀，避免互相覆盖。
+     *
+     * <p>后缀的组成规则是「<b>偏离缺省取值的维度</b> + 目标尺寸」：尺寸恒进（同一页面的不同尺寸是
+     * 不同产物，没有「缺省尺寸」可言），页下标在指定时进，字号倍率只在非缺省水位时进 —— 于是既有
+     * 命令的产物路径逐字不变，新增维度也不会与既有命名撞车。</p>
      *
      * @param out       命令行给出的输出路径；null 表示用默认路径
      * @param page      页面标识
      * @param pageIndex 页下标；-1 表示不指定
+     * @param fontScalePercent 字号缩放百分比
      * @param width     宽
      * @param height    高
      * @param multi     是否批量
      * @return 目标路径
      */
-    private static Path resolveOutput(String out, String page, int pageIndex, int width, int height, boolean multi) {
-        String suffix = (pageIndex >= 0 ? "-p" + pageIndex : "") + "-" + width + "x" + height;
+    private static Path resolveOutput(String out, String page, int pageIndex, int fontScalePercent, int width,
+            int height, boolean multi) {
+        String suffix = (pageIndex >= 0 ? "-p" + pageIndex : "")
+                + (fontScalePercent == SceneRuntime.FONT_SCALE_NONE_PERCENT ? "" : "-fs" + fontScalePercent)
+                + "-" + width + "x" + height;
         if (out == null) {
             return Paths.get("build", "reports", "headless", page + suffix + ".png");
         }
@@ -284,6 +346,7 @@ public final class HeadlessShotMain {
                 + " [--page-index=N | --page-indexes=N,N,…]"
                 + " [--size=WxH | --sizes=WxH,WxH,…] [--out=path] [--frames=N] [--settle=N] [--max-frames=N]"
                 + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file]"
-                + " [--clock=epochMillis] [--probe]");
+                + " [--clock=epochMillis]"
+                + " [--font-scale=P | --font-scales=P,P,…] [--debug] [--probe]");
     }
 }

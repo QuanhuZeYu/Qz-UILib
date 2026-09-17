@@ -10,6 +10,7 @@ import net.minecraft.util.IChatComponent;
 import club.heiqi.uilib.api.chat.ChatAccess;
 import club.heiqi.uilib.internal.chat3.data.ChatLineRecord;
 import club.heiqi.uilib.internal.chat3.view.ChatSceneController;
+import club.heiqi.uilib.ui.env.UiEnvironment;
 import club.heiqi.uilib.ui.render.UiRenderBackend;
 import club.heiqi.uilib.ui.scene.host.AbstractSceneHostWidget;
 import club.heiqi.uilib.ui.scene.host.SceneHostAssembly;
@@ -66,6 +67,20 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
     private static final String MARKDOWN_PREFIX = "md:";
     /** 玩家消息结构键：与生产服务端广播同键（见 {@code StructuredChatReader}）。 */
     private static final String PLAYER_CHAT_KEY = "chat.type.text";
+    /**
+     * 相邻消息的到达间隔（ms）：模拟真实聊天的到达节奏，让每条消息有<b>互不相同</b>的到达时刻。
+     *
+     * <p><b>为什么不能把所有消息压在同一时刻</b>：HUD 形态的堆叠高度裁剪
+     * （{@code ChatSceneController#trimHudGroupsByHeight}）在「未过期组总高 &gt; 视口高 × 0.5」时，
+     * 按到达时刻取一个<b>只进不退</b>的阈值剔除更旧的组。N 条消息若同刻到达，该阈值一次就越过全部组
+     * ⇒ 整树为空、出图只剩背景：实测 {@code --page=chat --size=1100x720} 命令面 0 条，而同一份内容
+     * 在 {@code 1200x720} 有 24 条 —— 两者差别只是内容总高刚好越过 0.5×720=360 这条裁剪线。
+     * 真实聊天不可能同刻到达，故这是探针输入失真，不是生产缺陷；探针必须喂真实形状的输入。</p>
+     *
+     * <p>取值 1 秒：与真实聊天节奏同量级；N 条消息的总跨度（默认 6 条 = 5 秒）远小于 HUD 存活窗口
+     * （{@code hudTtlMillis} 12 秒），不会把最早的消息推成「已过期」。</p>
+     */
+    private static final long ARRIVAL_SPACING_MILLIS = 1000L;
 
     private final ChatSceneController controller;
     private final SceneNode root;
@@ -88,9 +103,11 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
      * @param messages 初始消息（语法见类注释）
      * @param input    平台输入源（脚本注入的鼠标键盘）
      * @param clockMillis 虚拟墙钟基准（epoch 毫秒）；同时作为消息到达时刻与帧时钟起点
+     * @param environment 宿主环境端口（请求声明的环境事实；诊断采样开关经它下发）
      */
-    ChatSceneProbeHost(int width, int height, List<String> messages, PlatformInputSource input, long clockMillis) {
-        super(input);
+    ChatSceneProbeHost(int width, int height, List<String> messages, PlatformInputSource input, long clockMillis,
+            UiEnvironment environment) {
+        super(input, environment);
         this.controller = new ChatSceneController(ChatSceneController.uiLibMeasure(),
                 new ChatSceneController.SelfNameProvider() {
                     @Override
@@ -101,15 +118,7 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
                 ChatSceneController.uiLibSegmentParser(),
                 ChatSceneController.uiLibSegmentMeasurer());
         controller.setHostViewport(width, height);
-        int messageId = 1;
-        for (String message : messages) {
-            IChatComponent component = componentOf(message);
-            if (component != null) {
-                // 到达时刻用注入基准而非进程当前时刻：组头 HH:mm 与存活窗口因此可复现
-                //（二参 append 读 System.currentTimeMillis，出图路径不得使用）。
-                controller.history().append(new ChatLineRecord(component, messageId++, clockMillis));
-            }
-        }
+        appendWithArrivalCadence(controller, messages, clockMillis);
         controller.notifyDataChanged();
         this.root = controller.buildContent(runtime);
         SceneHostAssembly.attachTree(runtime, root);
@@ -133,6 +142,35 @@ final class ChatSceneProbeHost extends AbstractSceneHostWidget {
     @Override
     protected SceneNode getRoot() {
         return root;
+    }
+
+    /**
+     * 按真实到达节奏把消息写入历史：最后一条恰为 {@code clockMillis}，更早的按
+     * {@link #ARRIVAL_SPACING_MILLIS} 依次前移。
+     *
+     * <p>到达时刻用注入基准而非进程当前时刻：组头 {@code HH:mm} 与存活窗口因此可复现
+     * （二参 {@code append} 读 {@code System.currentTimeMillis}，出图路径不得使用）。
+     * 「最后一条 = 基准」保住了另一条同源约束：帧时钟起点等于最后一条的到达时刻，
+     * 入场动画进度首帧即 0 并单调上升。</p>
+     *
+     * @param controller 目标控制器
+     * @param messages   消息文本（语法见类注释）
+     * @param clockMillis 虚拟墙钟基准 = 最后一条消息的到达时刻 = 帧时钟起点
+     */
+    static void appendWithArrivalCadence(ChatSceneController controller, List<String> messages,
+            long clockMillis) {
+        List<IChatComponent> components = new ArrayList<IChatComponent>();
+        for (String message : messages) {
+            IChatComponent component = componentOf(message);
+            if (component != null) {
+                components.add(component);
+            }
+        }
+        int messageId = 1;
+        for (int i = 0; i < components.size(); i++) {
+            long arrived = clockMillis - (long) (components.size() - 1 - i) * ARRIVAL_SPACING_MILLIS;
+            controller.history().append(new ChatLineRecord(components.get(i), messageId++, arrived));
+        }
     }
 
     /**

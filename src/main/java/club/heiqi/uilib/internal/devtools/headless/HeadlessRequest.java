@@ -3,6 +3,8 @@ package club.heiqi.uilib.internal.devtools.headless;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+
 /**
  * 一次出图请求：页面 + 尺寸 + 宿主背景 + 帧计划 + 产物路径，不可变。
  *
@@ -16,8 +18,16 @@ import java.nio.file.Paths;
  *
  * <p><b>虚拟墙钟是语义而非便利</b>：聊天内容的时间戳（组头 {@code HH:mm}）与消息存活窗口都以
  * 「消息到达时刻」为基准，而到达时刻此前取进程当前时刻 ⇒ 跨分钟的两次出图必然像素不同，
- * 「同一命令出同一张图」不成立。故请求持有一个虚拟墙钟基准（{@link #clockMillis()}），
- * 探针用它同时作为消息到达时刻与帧时钟起点，缺省为 {@link #DEFAULT_CLOCK_MILLIS}。</p>
+ * 「同一命令出同一张图」不成立。故请求持有一个虚拟墙钟基准（{@link #clockMillis()}）：
+ * 它是最后一条消息的到达时刻，也是帧时钟起点；更早的消息按固定节奏向前回推，缺省为
+ * {@link #DEFAULT_CLOCK_MILLIS}。</p>
+ *
+ * <p><b>环境事实也是请求事实</b>：字号倍率（{@link #fontScalePercent()}，经
+ * {@link SceneRuntime#setFontScale(int)} 投影到 runtime）与诊断采样开关（{@link #diagnostics()}，
+ * 经 {@code HeadlessEnvironment} 投影到装配用的环境端口）同样由请求声明。二者此前无入口：字号倍率
+ * 恒为不缩放、诊断开关恒取生产配置 —— 于是「同一命令在不同机器/配置下出图不同」，
+ * 「不开游戏就没法看一帧花在哪」都无从解决。缺省值取各自的中性水位（不缩放 / 不采样），
+ * 与「未声明」逐位等价。</p>
  */
 public final class HeadlessRequest {
 
@@ -77,10 +87,13 @@ public final class HeadlessRequest {
     private final String text;
     private final String script;
     private final long clockMillis;
+    private final int fontScalePercent;
+    private final boolean diagnostics;
     private final Path output;
 
     private HeadlessRequest(String pageId, int pageIndex, int width, int height, int frames, int settleFrames, int maxFrames,
-            int background, String text, String script, long clockMillis, Path output) {
+            int background, String text, String script, long clockMillis, int fontScalePercent, boolean diagnostics,
+            Path output) {
         this.pageId = pageId;
         this.pageIndex = pageIndex;
         this.width = width;
@@ -92,6 +105,8 @@ public final class HeadlessRequest {
         this.text = text;
         this.script = script;
         this.clockMillis = clockMillis;
+        this.fontScalePercent = fontScalePercent;
+        this.diagnostics = diagnostics;
         this.output = output;
     }
 
@@ -151,10 +166,37 @@ public final class HeadlessRequest {
     }
 
     /**
-     * @return 虚拟墙钟基准（epoch 毫秒）；内容时间戳与帧时钟起点都取自它
+     * 虚拟墙钟基准（epoch 毫秒）：<b>最后一条</b>消息的到达时刻，同时是帧时钟起点。
+     *
+     * <p>更早的消息按真实到达节奏（1 秒一条）从本基准向前回推，故每条消息有互不相同的到达时刻；
+     * 理由见 {@code ChatSceneProbeHost#ARRIVAL_SPACING_MILLIS}（同刻到达会让 HUD 高度裁剪一次
+     * 剔空整树）。</p>
+     *
+     * @return 虚拟墙钟基准
      */
     public long clockMillis() {
         return clockMillis;
+    }
+
+    /**
+     * 用户级字号缩放百分比（100 = 不缩放）。
+     *
+     * <p>作用点是解析出口的正交倍率层（见 {@code SceneFontEnvironment#fontScale()}），参与布局而非
+     * 仅绘制。取值域由 {@link SceneRuntime} 单点声明，本类不复制字面量。</p>
+     *
+     * @return 字号缩放百分比
+     */
+    public int fontScalePercent() {
+        return fontScalePercent;
+    }
+
+    /**
+     * 是否打开诊断采样。
+     *
+     * @return true = 本次出图采集帧内事实（阶段耗时与计数），并在产物摘要中给出
+     */
+    public boolean diagnostics() {
+        return diagnostics;
     }
 
     /** @return PNG 产物路径 */
@@ -169,6 +211,8 @@ public final class HeadlessRequest {
                 + " background=" + String.format("%08X", Integer.valueOf(background))
                 + " settle=" + settleFrames + " maxFrames=" + maxFrames
                 + " clock=" + clockMillis
+                + " fontScale=" + fontScalePercent + "%"
+                + " debug=" + diagnostics
                 + (TEXT_PROBE_PAGE.equals(pageId) ? " text=\"" + text + "\"" : "")
                 + " out=" + output;
     }
@@ -187,6 +231,8 @@ public final class HeadlessRequest {
         private String text = DEFAULT_PROBE_TEXT;
         private String script = "";
         private long clockMillis = DEFAULT_CLOCK_MILLIS;
+        private int fontScalePercent = SceneRuntime.FONT_SCALE_NONE_PERCENT;
+        private boolean diagnostics;
         private Path output = Paths.get("build", "reports", "headless", "shot.png");
 
         private Builder() {
@@ -253,6 +299,22 @@ public final class HeadlessRequest {
             return this;
         }
 
+        /**
+         * @param value 用户级字号缩放百分比；域为 {@link SceneRuntime#FONT_SCALE_MIN_PERCENT}
+         *              ~{@link SceneRuntime#FONT_SCALE_MAX_PERCENT}
+         * @return this
+         */
+        public Builder fontScale(int value) {
+            this.fontScalePercent = value;
+            return this;
+        }
+
+        /** @param value 是否打开诊断采样 * @return this */
+        public Builder diagnostics(boolean value) {
+            this.diagnostics = value;
+            return this;
+        }
+
         /** @param value PNG 路径 * @return this */
         public Builder output(Path value) {
             this.output = value;
@@ -280,9 +342,18 @@ public final class HeadlessRequest {
             if (output == null) {
                 throw new IllegalArgumentException("output 不可为空");
             }
+            // 字号倍率是参数错误而非运行期状态：越界直接失败，不静默钳制（与 SceneRuntime 的
+            // requireValidFontScalePercent 同口径——信号路径才允许钳制，调用点参数不允许）。
+            if (fontScalePercent < SceneRuntime.FONT_SCALE_MIN_PERCENT
+                    || fontScalePercent > SceneRuntime.FONT_SCALE_MAX_PERCENT) {
+                throw new IllegalArgumentException("fontScalePercent 越界：" + fontScalePercent
+                        + "（合法区间 " + SceneRuntime.FONT_SCALE_MIN_PERCENT + "~"
+                        + SceneRuntime.FONT_SCALE_MAX_PERCENT + "）");
+            }
             return new HeadlessRequest(pageId, pageIndex, width, height, frames, settleFrames, maxFrames,
                     background,
-                    text == null ? "" : text, script == null ? "" : script, clockMillis, output);
+                    text == null ? "" : text, script == null ? "" : script, clockMillis, fontScalePercent,
+                    diagnostics, output);
         }
     }
 }
