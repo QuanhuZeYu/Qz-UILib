@@ -36,8 +36,8 @@ final class ChatFontMetrics {
         if (rt == null) {
             return designPx;
         }
-        float scale = rt.fontScale();
-        return FontSizeLimits.clampFontSize(Math.round(designPx * scale));
+        // 换算式收敛在字号域唯一出口（FontSizeLimits.effectiveFontSizePx），本类只补 null 语义。
+        return FontSizeLimits.effectiveFontSizePx(designPx, rt.fontScale());
     }
 
     /** @param rt 场景运行时（null = 无倍率上下文） @return 气泡正文有效字号 */

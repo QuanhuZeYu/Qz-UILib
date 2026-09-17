@@ -894,7 +894,7 @@ public class SceneNode {
         int declared = resolveDeclaredFontSize();
         resolvedDeclaredFontSize = declared;
         float scale = env == null ? 1.0f : env.fontScale();
-        resolvedFontSize = FontSizeLimits.clampFontSize(Math.round(declared * scale));
+        resolvedFontSize = FontSizeLimits.effectiveFontSizePx(declared, scale);
         resolvedAtFontEpoch = epoch;
         fontResolved = true;
         return resolvedFontSize;

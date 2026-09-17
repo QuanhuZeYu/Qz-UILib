@@ -54,6 +54,28 @@ public final class FontSizeLimits {
     }
 
     /**
+     * 「声明字号 → 生效字号」的<b>唯一解析式</b>：{@code clamp(round(声明值 × 倍率))}。
+     *
+     * <p>与 {@code SceneNode.effectiveFontSize()} 的解析出口逐值同式（float 乘法 → {@code Math.round}
+     * → 域内夹取；取整模式必须一致，否则半值平局会差 1px）。该式此前在 {@code SceneNode} /
+     * {@code ChatFontMetrics} / {@code PickerMetrics} 各写一份，只能靠注释互相提醒「与出口同式」；
+     * 而<b>声明值一旦被外围预先换算成生效值再写回节点声明层，解析出口会再乘一次倍率</b>
+     * （2×2 重复缩放 ⇒ 文字放大而行框不变 ⇒ 重叠/裁切）：chat3 的 RC-06 与 markdown 出图页各踩过
+     * 一次，故收敛到本类唯一出口。</p>
+     *
+     * <p><b>调用口径</b>：节点/控件的<b>声明</b>字号必须保持设计值（进场景后由解析出口乘一次倍率）；
+     * 只有<b>几何</b>（换行宽、行框高、气泡高、段宽度量、样式表基准、L2 换行基准）才用本方法换算出的
+     * 生效值。反用（把生效值写进声明层）即上述重复缩放。</p>
+     *
+     * @param declaredFontSizePx 声明字号（设计值，未乘倍率）
+     * @param scaleFactor        用户字号倍率（{@code 1.0f} = 100%）
+     * @return 生效字号（域内，逻辑像素）
+     */
+    public static int effectiveFontSizePx(int declaredFontSizePx, float scaleFactor) {
+        return clampFontSize(Math.round(declaredFontSizePx * scaleFactor));
+    }
+
+    /**
      * 调用点参数校验：越界直接抛 {@link IllegalArgumentException}。
      *
      * <p>用于「业务或控件显式传入的 int 字号」（字号入口的构建期定值、控件回落值登记等）：
