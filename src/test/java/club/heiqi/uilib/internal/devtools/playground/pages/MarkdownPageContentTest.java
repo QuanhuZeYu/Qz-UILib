@@ -72,7 +72,7 @@ public class MarkdownPageContentTest {
         MarkdownPainter.ContentLayout plan = cache(SOURCE).layout(metrics, 180, 14, 1);
         SceneNode root = SceneNode.column(0).setPreferredWidth(plan.getWidthPx())
                 .setPreferredHeight(plan.getHeightPx());
-        for (SceneNode node : MarkdownPageContent.nodes(plan, metrics)) root.appendChild(node);
+        for (SceneNode node : MarkdownPageContent.nodes(plan, metrics, 14)) root.appendChild(node);
         FixedTextMeasurer sceneMetrics = new FixedTextMeasurer();
         new SceneLayoutEngine(sceneMetrics).layout(root, new Constraints(plan.getWidthPx(), plan.getHeightPx()));
         List<PaintCommand> actual = new ScenePaintEngine(sceneMetrics).paint(root).getPlan().getCommands();
@@ -125,7 +125,7 @@ public class MarkdownPageContentTest {
         SceneNode[] body = {null};
         runtime.mount(root, () -> {
             body[0] = MarkdownPageContent.create(runtime, SOURCE, MarkdownStyleTable.defaults(),
-                    new TextStyle(), 14, () -> metrics, () -> epoch[0]);
+                    new TextStyle(), 14, 14, () -> metrics, () -> epoch[0]);
             return body[0];
         });
         SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer());
@@ -194,7 +194,7 @@ public class MarkdownPageContentTest {
     public void backgroundNodePropsAreTransportedFromCommandsNotPalette() {
         MarkdownCountingMetrics metrics = new MarkdownCountingMetrics();
         MarkdownPainter.ContentLayout plan = cache(SOURCE).layout(metrics, 180, 14, 1);
-        List<SceneNode> nodes = MarkdownPageContent.nodes(plan, metrics);
+        List<SceneNode> nodes = MarkdownPageContent.nodes(plan, metrics, 14);
         List<PaintCommand> visible = new ArrayList<PaintCommand>();
         for (PaintCommand command : plan.getCommands()) {
             if (command.getType() != PaintCommandType.LINK_REGION) visible.add(command);

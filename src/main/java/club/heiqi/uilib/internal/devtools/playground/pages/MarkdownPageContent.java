@@ -58,8 +58,12 @@ final class MarkdownPageContent {
         return next;
     }
 
+    /**
+     * @param declaredFontPx 声明层字号（设计基准，写进节点 {@code setFontSize}；进场景后由解析出口乘一次倍率）
+     * @param layoutFontPx   L2 布局尺度字号（= 声明值 × 当前倍率，命令坐标与命令样式字号都在此尺度上）
+     */
     static SceneNode create(SceneRuntime rt, String source, MarkdownStyleTable styles, TextStyle base,
-            int font, Supplier<TextLayoutService> measurers, IntSupplier epochs) {
+            int declaredFontPx, int layoutFontPx, Supplier<TextLayoutService> measurers, IntSupplier epochs) {
         MarkdownPageContent cache = new MarkdownPageContent(source, styles, base);
         SceneNode body = SceneNode.column(0).setFillParentWidth(true).setHitTestable(false);
         Signal<List<SceneNode>> children = Signal.create(Collections.<SceneNode>emptyList());
@@ -70,11 +74,11 @@ final class MarkdownPageContent {
         Runnable refresh = () -> {
             if (width[0] <= 0) return;
             TextLayoutService measurer = measurers.get();
-            MarkdownPainter.ContentLayout plan = cache.layout(measurer, width[0], font, epoch[0]);
+            MarkdownPainter.ContentLayout plan = cache.layout(measurer, width[0], layoutFontPx, epoch[0]);
             if (published[0] == plan) return;
             published[0] = plan;
             body.setPreferredHeight(Math.max(1, plan.getHeightPx()));
-            children.set(nodes(plan, measurer));
+            children.set(nodes(plan, measurer, declaredFontPx));
         };
         // 与 SceneTextAreaPrimitive 同源：最终布局盒发布后读取真实内容宽，两趟收敛。
         rt.bind(rt.layoutDoneSignal(), done -> {
@@ -101,20 +105,25 @@ final class MarkdownPageContent {
      * 使用同源度量补齐叶盒供 scene 可见性判断；不重新分配列宽或换行。
      * 仅计划变化时翻译一次，scroll/clip/paint 仍归既有 scene 管线。
      *
-     * <p><b>已知缺陷：几何用声明字号、布局与渲染用生效字号（2026-09-18 实测）</b>。
-     * 本方法的几何取自 {@code node.getFontSize()}（<b>声明值</b>，本页恒为 {@code BASE_FONT_PX}）与 L2
-     * 命令坐标，而节点在场景里的实际布局与渲染走 {@code effectiveFontSize()}（<b>生效值</b> =
-     * 声明值 × 用户倍率）。两者只在倍率 100% 时相等，故任何其它倍率下都分叉。实测
-     * {@code --page=playground --page-index=8} 的 commands bounds 在 fs=100/150/200 下为
-     * 1279x751 / 1309x818 / <b>1592</b>x885 —— fs=200 的宽已横向溢出 1280 视口；fs=0 时装饰
-     * （代码块衬底、引用竖条）仍按声明字号排布而文本塌陷为 0，卡片被拉长（bounds 885，与 fs=200
-     * 同高）。</p>
+     * <p><b>字号契约（调用方必须遵守，否则几何与渲染分叉）</b>：本方法的几何取自 L2 命令样式里的
+     * {@code fontSize}（{@code node.setFontSize(command.getTextStyle().getFontSize())}），而节点在场景
+     * 里的实际布局与渲染走 {@code effectiveFontSize()}（生效值 = 声明值 × 用户倍率）。二者只在
+     * <b>传入的字号本身就是生效字号</b>时相等。因此调用方必须：</p>
+     * <ul>
+     *   <li>把 {@code styles.setDefaultFontSizePx(...)} 设成<b>生效字号</b>（见 {@code MarkdownPage}
+     *       的 {@code effectiveFontPx}），使 L2 段流、命令坐标、节点字号三处同源；</li>
+     *   <li>{@code epochs} 必须<b>同时覆盖</b>度量纪元与字号代际（{@code SceneRuntime.textMeasureEpoch()}
+     *       不含用户倍率，只订阅它则倍率变化时内容布局不重算）。</li>
+     * </ul>
      *
-     * <p>修法方向：几何改用生效字号<b>并随字号失效</b>（把段流盒的行高/宽度交给布局引擎按
-     * {@code effectiveFontSize()} 测量，而不是在构建期用常量算死）。改动会影响本页既有目检基线与
-     * {@code MarkdownPageTest} 的反向钉住，属独立批次，此处只留现场。</p>
+     * <p><b>现场记录（2026-09-18 实测，缺陷已修）</b>：修前调用方传声明字号 {@code BASE_FONT_PX}，
+     * 且 {@code epochs} 只订阅 {@code textMeasureEpoch}。实测 {@code --page=playground --page-index=8}
+     * 的 commands bounds 在 fs=100/150/200 下为 1279x751 / 1309x818 / <b>1592</b>x885 —— fs=200 的宽
+     * 已横向溢出 1280 视口；fs=0 时装饰（代码块衬底、引用竖条）仍按声明字号排布而文本塌陷为 0，
+     * 卡片被拉长（bounds 885，与 fs=200 同高）。修后同一页几何随倍率整体缩放，默认 100% 逐像素不变。</p>
      */
-    static List<SceneNode> nodes(MarkdownPainter.ContentLayout plan, TextLayoutService measurer) {
+    static List<SceneNode> nodes(MarkdownPainter.ContentLayout plan, TextLayoutService measurer,
+            int declaredFontPx) {
         List<SceneNode> out = new ArrayList<SceneNode>();
         int cursor = 0;
         for (PaintCommand command : plan.getCommands()) {
@@ -132,10 +141,17 @@ final class MarkdownPageContent {
                     break;
                 case SEGMENTS:
                     node.setSegments(command.getSegments());
-                    node.setFontSize(command.getTextStyle().getFontSize());
+                    // 声明层写设计基准，绝不写命令字号：命令字号处于<b>生效尺度</b>（已含倍率），
+                    // 写进声明层会被解析出口再乘一次（2×2 重复缩放 ⇒ 150%/200% 下行与行重叠，
+                    // 见 FontSizeLimits#effectiveFontSizePx 的调用口径）。无显式字号的段（正文）
+                    // 因此按「设计基准 × 倍率」渲染，恰好等于命令尺度；有显式字号的段（标题等）
+                    // 用段样式自身的绝对值，与节点声明无关。
+                    node.setFontSize(declaredFontPx);
                     node.setTextVerticalAlign(TextVerticalAlign.TOP);
-                    width = Math.max(1, MarkdownPainter.lineWidthPx(command.getSegments(), measurer, node.getFontSize()));
-                    height = Math.max(1, MarkdownPainter.lineHeightPx(command.getSegments(), measurer, node.getFontSize()));
+                    // 几何取命令字号（生效尺度）：盒宽/盒高必须与真正渲染的字形同尺度。
+                    int commandFont = command.getTextStyle().getFontSize();
+                    width = Math.max(1, MarkdownPainter.lineWidthPx(command.getSegments(), measurer, commandFont));
+                    height = Math.max(1, MarkdownPainter.lineHeightPx(command.getSegments(), measurer, commandFont));
                     break;
                 default:
                     throw new IllegalArgumentException("Unsupported Markdown page command: " + command.getType());

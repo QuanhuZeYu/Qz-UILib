@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
@@ -125,15 +126,41 @@ public final class MarkdownPage implements PlaygroundPage {
         return "标题、代码、引用、列表、公式与表格；支持对齐和自动换行";
     }
 
+    /**
+     * 本页<b>几何</b>用的生效字号：声明值 × 当前用户倍率，再归一到字号域。
+     *
+     * <p>与 {@code SceneNode.effectiveFontSize()} 的解析出口同式（float 乘法 → {@code Math.round} →
+     * 域内夹取）。本页的几何（换行宽、行高、首选尺寸）必须与内容节点真正渲染的字号<b>同源</b>，否则任何
+     * 非 100% 倍率下都会「几何按声明字号、渲染按生效字号」分叉：实测 fs=200 时出图宽 1592 已溢出 1280
+     * 视口；fs=0 时装饰按 14px 排布而文字塌陷为 0，卡片被拉长（bounds 885，与 fs=200 同高）。</p>
+     *
+     * <p>倍率 100% 时返回值恒等于 {@link #BASE_FONT_PX}，故默认出图逐像素不变。</p>
+     */
+    private static int layoutFontPx(SceneRuntime rt) {
+        return FontSizeLimits.effectiveFontSizePx(BASE_FONT_PX, rt.fontScale());
+    }
+
+    /**
+     * 内容布局缓存的失效纪元：字体运行时纪元（字形/度量变化）与字号代际（用户倍率变化）的组合。
+     *
+     * <p>只用 {@code rt.textMeasureEpoch()} 不够 —— 那是 {@code TextMeasureService.epoch()}，</p>
+     * <p>不含用户倍率；倍率变化时 {@code SceneRuntime.fontEpoch()} 才 ++，必须一并进入纪元，否则字号
+     * 变了内容布局不重算（缓存键里的 font 收不到新值）。</p>
+     */
+    private static java.util.function.IntSupplier layoutEpochs(final SceneRuntime rt) {
+        return () -> (int) (rt.textMeasureEpoch() * 31L + rt.fontEpoch());
+    }
+
     @Override
     public Supplier<SceneNode> build(final SceneRuntime rt) {
         return () -> {
             TextLayoutService measurer = FontService.getInstance().getTextLayoutService();
+            int layoutFont = layoutFontPx(rt);
             SceneNode shell = SceneNode.column();
             shell.setFillParentWidth(true);
             shell.setGap(10);
             for (int i = 0; i < SAMPLES.length; i++) {
-                shell.appendChild(sampleCard(SAMPLES[i], measurer));
+                shell.appendChild(sampleCard(SAMPLES[i], measurer, layoutFont));
             }
             shell.appendChild(tableCard(rt));
             return shell;
@@ -145,7 +172,8 @@ public final class MarkdownPage implements PlaygroundPage {
         SceneNode card = PlaygroundKit.card();
         card.appendChild(PlaygroundKit.title("表格：对齐与自动换行"));
         MarkdownStyleTable styles = MarkdownStyleTable.defaults();
-        styles.setDefaultFontSizePx(BASE_FONT_PX);
+        int layoutFont = layoutFontPx(rt);
+        styles.setDefaultFontSizePx(layoutFont);
         TextStyle base = new TextStyle();
         // 保留显式（契约 §7.3 markdown 样本）：base 色经 L1 内联解析成为表格正文段的渲染像素默认色，
         // 非 chrome 容器前景；主题接管即改写 markdown 渲染输出（任务单 G16 禁止项），口径同 sampleCard。
@@ -156,9 +184,10 @@ public final class MarkdownPage implements PlaygroundPage {
                 + "| [使用指南](https://example.com/guide) | `code` 与 ~~旧名称~~ | 16 |\n"
                 + "| 公式 | $e = mc^2$ | 1 |\n\n"
                 + "表格后的正文继续显示。";
-        card.appendChild(MarkdownPageContent.create(rt, source, styles, base, BASE_FONT_PX,
+        card.appendChild(MarkdownPageContent.create(rt, source, styles, base,
+                BASE_FONT_PX, layoutFont,
                 () -> FontService.getInstance().getTextLayoutService(),
-                rt::textMeasureEpoch));
+                layoutEpochs(rt)));
         card.appendChild(PlaygroundKit.hint("左对齐、居中和右对齐；缩窄窗口可观察单元格换行。"));
         return card;
     }
@@ -171,7 +200,7 @@ public final class MarkdownPage implements PlaygroundPage {
      * 容器上下内衬保持 0，块外缘观感与旧版逐字节相同，只消掉块内那条 8px 缝。</p>
      */
     private static SceneNode codeBlockNode(List<MarkdownLayoutLine> lines, int from, int to,
-            TextLayoutService measurer) {
+            TextLayoutService measurer, int layoutFontPx) {
         MarkdownLayoutLine head = lines.get(from);
         int contentWidthPx = head.getBlockContentWidthPx();
         // M10d：项内围栏整块随正文列平移（同块各行同链同列 ⇒ 矩形仍连续，M9 语义不变；
@@ -190,14 +219,15 @@ public final class MarkdownPage implements PlaygroundPage {
             List<TextSegment> segments = row.getSegments();
             SceneNode rowNode = new SceneNode()
                     .setHitTestable(false)
+                    // 声明层恒写设计基准（进场景后乘一次倍率）；几何另用 layoutFontPx。
                     .setFontSize(BASE_FONT_PX)
                     .setTextVerticalAlign(TextVerticalAlign.TOP)
                     .setPreferredHeight(Math.max(1,
-                            MarkdownPainter.lineHeightPx(segments, measurer, BASE_FONT_PX)));
+                            MarkdownPainter.lineHeightPx(segments, measurer, layoutFontPx)));
             if (!segments.isEmpty()) {
                 rowNode.setSegments(segments);
                 rowNode.setPreferredWidth(Math.max(1,
-                        MarkdownPainter.lineWidthPx(segments, measurer, BASE_FONT_PX)));
+                        MarkdownPainter.lineWidthPx(segments, measurer, layoutFontPx)));
                 contentWidthPx = Math.max(contentWidthPx, rowNode.getPreferredWidth());
             } else {
                 rowNode.setWidthSizing(SceneNode.WidthSizing.FILL);
@@ -289,12 +319,14 @@ public final class MarkdownPage implements PlaygroundPage {
      * {@link #quoteGroup(java.util.List, int, int, int, int)} 成套容器，quoteLevel==0 的单元
      * 原样入卡列。列表续行偏移（M10b）在第一趟用 {@code leftInsetPx} 反解为节点 padding。</p>
      */
-    private static SceneNode sampleCard(String[] sample, TextLayoutService measurer) {
+    private static SceneNode sampleCard(String[] sample, TextLayoutService measurer, int layoutFontPx) {
         SceneNode card = PlaygroundKit.card();
         card.appendChild(PlaygroundKit.title(sample[0]));
 
         MarkdownStyleTable styles = MarkdownStyleTable.defaults();
-        styles.setDefaultFontSizePx(BASE_FONT_PX);
+        // 样式表字号取生效值：段样式字号决定 L2 产出的段流（命令坐标与命令字号都在生效尺度上），
+        // 而节点声明层仍写设计基准 BASE_FONT_PX —— 两侧分工见 FontSizeLimits#effectiveFontSizePx。
+        styles.setDefaultFontSizePx(layoutFontPx);
         styles.setHeadingFontSizeDeltaPx(1, 10);
         styles.setHeadingFontSizeDeltaPx(2, 7);
         styles.setHeadingFontSizeDeltaPx(3, 4);
@@ -310,7 +342,7 @@ public final class MarkdownPage implements PlaygroundPage {
         base.setColor(PlaygroundKit.TEXT);
         List<MarkdownLayoutLine> lines = MarkdownPainter.wrapLayoutLines(
                 MarkdownDocument.parse(sample[2]).toLayoutLines(styles, base),
-                measurer, WRAP_WIDTH_PX, BASE_FONT_PX);
+                measurer, WRAP_WIDTH_PX, layoutFontPx);
         // 第一趟：逐行/逐围栏产「装配单元」，不套引用容器
         List<Unit> units = new ArrayList<Unit>();
         int i = 0;
@@ -326,7 +358,7 @@ public final class MarkdownPage implements PlaygroundPage {
                         && lines.get(j + 1).getBlockId() == line.getBlockId()) {
                     j++;
                 }
-                units.add(new Unit(codeBlockNode(lines, i, j, measurer),
+                units.add(new Unit(codeBlockNode(lines, i, j, measurer, layoutFontPx),
                         line.getQuoteLevel(), line.getAccentArgb()));
                 i = j + 1;
                 continue;
@@ -346,14 +378,15 @@ public final class MarkdownPage implements PlaygroundPage {
             } else {
                 lineNode = new SceneNode()
                         .setHitTestable(false)
+                        // 声明层恒写设计基准（进场景后乘一次倍率）；几何另用 layoutFontPx。
                         .setFontSize(BASE_FONT_PX)
                         .setTextVerticalAlign(TextVerticalAlign.TOP)
                         .setPreferredHeight(Math.max(1,
-                                MarkdownPainter.lineHeightPx(segments, measurer, BASE_FONT_PX)));
+                                MarkdownPainter.lineHeightPx(segments, measurer, layoutFontPx)));
                 if (!segments.isEmpty()) {
                     lineNode.setSegments(segments);
                 }
-                int contentWidthPx = MarkdownPainter.lineWidthPx(segments, measurer, BASE_FONT_PX);
+                int contentWidthPx = MarkdownPainter.lineWidthPx(segments, measurer, layoutFontPx);
                 if (!segments.isEmpty()) {
                     lineNode.setPreferredWidth(Math.max(1, contentWidthPx));
                 } else {
