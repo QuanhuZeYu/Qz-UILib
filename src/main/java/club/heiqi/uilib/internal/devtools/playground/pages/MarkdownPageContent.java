@@ -100,6 +100,19 @@ final class MarkdownPageContent {
      * 父盒必须由 ContentLayout 钉高，不取末命令 bottom。段流命令只携带原点，
      * 使用同源度量补齐叶盒供 scene 可见性判断；不重新分配列宽或换行。
      * 仅计划变化时翻译一次，scroll/clip/paint 仍归既有 scene 管线。
+     *
+     * <p><b>已知缺陷：几何用声明字号、布局与渲染用生效字号（2026-09-18 实测）</b>。
+     * 本方法的几何取自 {@code node.getFontSize()}（<b>声明值</b>，本页恒为 {@code BASE_FONT_PX}）与 L2
+     * 命令坐标，而节点在场景里的实际布局与渲染走 {@code effectiveFontSize()}（<b>生效值</b> =
+     * 声明值 × 用户倍率）。两者只在倍率 100% 时相等，故任何其它倍率下都分叉。实测
+     * {@code --page=playground --page-index=8} 的 commands bounds 在 fs=100/150/200 下为
+     * 1279x751 / 1309x818 / <b>1592</b>x885 —— fs=200 的宽已横向溢出 1280 视口；fs=0 时装饰
+     * （代码块衬底、引用竖条）仍按声明字号排布而文本塌陷为 0，卡片被拉长（bounds 885，与 fs=200
+     * 同高）。</p>
+     *
+     * <p>修法方向：几何改用生效字号<b>并随字号失效</b>（把段流盒的行高/宽度交给布局引擎按
+     * {@code effectiveFontSize()} 测量，而不是在构建期用常量算死）。改动会影响本页既有目检基线与
+     * {@code MarkdownPageTest} 的反向钉住，属独立批次，此处只留现场。</p>
      */
     static List<SceneNode> nodes(MarkdownPainter.ContentLayout plan, TextLayoutService measurer) {
         List<SceneNode> out = new ArrayList<SceneNode>();

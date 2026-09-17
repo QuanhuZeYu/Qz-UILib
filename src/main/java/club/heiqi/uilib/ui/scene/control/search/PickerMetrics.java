@@ -259,6 +259,12 @@ public final class PickerMetrics {
         //    （SceneNode.effectiveFontSize() 的解析出口；取整模式必须一致，否则半值平局会差 1px）；
         // ② 再夹到本控件的字号域：派生链只在 [FONT_FLOOR, FONT_CEIL] 内有定义。
         int rendered = FontSizeLimits.clampFontSize(Math.round(declared * (pct / 100f)));
+        if (rendered <= 0) {
+            // 字号 0 = 文本不占空间（语义见 FontSizeLimits#MIN_FONT_SIZE_PX）：此处<b>不得</b>再夹到
+            // FONT_FLOOR，否则面板几何按 ≥11px 算、文字按 0px 画 —— 正是本方法 javadoc 承诺要避免的
+            // 「几何/渲染分叉」。审核在 af52f4a4 上指出了这一点，本轮补上。
+            return 0;
+        }
         return clamp(rendered, PickerDensityTokens.FONT_FLOOR, PickerDensityTokens.FONT_CEIL);
     }
 
