@@ -1,10 +1,12 @@
 package club.heiqi.uilib.internal.devtools.headless;
 
+import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
@@ -80,6 +82,7 @@ public final class HeadlessShotMain {
         String theme = null;
         String themes = null;
         boolean diagnostics = false;
+        boolean shareContext = false;
         boolean probeOnly = false;
         boolean framesGiven = false;
         try {
@@ -128,6 +131,8 @@ public final class HeadlessShotMain {
                     fontScalePercent = Integer.parseInt(arg.substring("--font-scale=".length()));
                 } else if ("--debug".equals(arg)) {
                     diagnostics = true;
+                } else if ("--share-context".equals(arg)) {
+                    shareContext = true;
                 } else if (arg.startsWith("--clock=")) {
                     clockMillis = Long.parseLong(arg.substring("--clock=".length()));
                 } else {
@@ -196,65 +201,75 @@ public final class HeadlessShotMain {
 
         int total = pageTargets.size() * sizeTargets.size() * fontScaleTargets.size() * themeTargets.size();
         boolean multi = total > 1;
+        // 轴展开 → 请求列表：档名/字号域等校验与产物命名在这里一次收口；后面的「隔离调度」与
+        // 「同进程渲染」消费同一份列表，不各自再推一遍参数（推两遍必然漂移）。
+        List<HeadlessRequest> requests = new ArrayList<HeadlessRequest>();
+        try {
+            for (Integer targetPageIndex : pageTargets) {
+                for (String targetTheme : themeTargets) {
+                    for (Integer targetFontScale : fontScaleTargets) {
+                        for (int[] size : sizeTargets) {
+                            int scalePercent = targetFontScale.intValue();
+                            Path output = resolveOutput(out, page, targetPageIndex.intValue(), targetTheme,
+                                    scalePercent, size[0], size[1], multi);
+                            requests.add(HeadlessRequest.builder().page(page)
+                                    .pageIndex(targetPageIndex.intValue())
+                                    .size(size[0], size[1]).frames(frames).background(background).text(text)
+                                    .script(script).settle(settle).maxFrames(maxFrames).clock(clockMillis)
+                                    .fontScale(scalePercent).diagnostics(diagnostics).theme(targetTheme)
+                                    .output(output).build());
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            System.err.println("[headless] 请求非法：" + e.getMessage());
+            return 2;
+        }
+
+        if (probeOnly) {
+            try (HeadlessSession session = HeadlessSession.open(requests.get(0))) {
+                System.out.println("[headless] capabilities: " + session.capabilities().summary());
+            } catch (HeadlessFailure failure) {
+                failure.printDiagnosis(System.err);
+                return 3;
+            }
+            return 0;
+        }
+
+        // 多档默认逐档独立进程：见 runIsolated 的性能与正确性权衡说明。
+        if (multi && !shareContext) {
+            return runIsolated(requests);
+        }
+
         int okCount = 0;
         int failedCount = 0;
         int environmentFailures = 0;
         List<String> labels = new ArrayList<String>();
-        for (Integer targetPageIndex : pageTargets) {
-            for (String targetTheme : themeTargets) {
-                for (Integer targetFontScale : fontScaleTargets) {
-                    for (int[] size : sizeTargets) {
-                        int scalePercent = targetFontScale.intValue();
-                        Path output = resolveOutput(out, page, targetPageIndex.intValue(), targetTheme,
-                                scalePercent, size[0], size[1], multi);
-                        HeadlessRequest request;
-                        try {
-                            request = HeadlessRequest.builder().page(page).pageIndex(targetPageIndex.intValue())
-                                    .size(size[0], size[1]).frames(frames).background(background).text(text)
-                                    .script(script).settle(settle).maxFrames(maxFrames).clock(clockMillis)
-                                    .fontScale(scalePercent).diagnostics(diagnostics).theme(targetTheme)
-                                    .output(output).build();
-                        } catch (RuntimeException e) {
-                            System.err.println("[headless] 请求非法：" + e.getMessage());
-                            return 2;
-                        }
-
-                        if (probeOnly) {
-                            try (HeadlessSession session = HeadlessSession.open(request)) {
-                                System.out.println("[headless] capabilities: " + session.capabilities().summary());
-                            } catch (HeadlessFailure failure) {
-                                failure.printDiagnosis(System.err);
-                                return 3;
-                            }
-                            return 0;
-                        }
-
-                        boolean ok;
-                        try (HeadlessSession session = HeadlessSession.open(request)) {
-                            HeadlessArtifact artifact = session.capture();
-                            System.out.println(artifact.describe());
-                            ok = artifact.selfCheck().ok();
-                        } catch (HeadlessFailure failure) {
-                            failure.printDiagnosis(System.err);
-                            // 环境 / 上下文 / 装配 / 帧 / 读回 / 编码失败属于「设施没能出图」，与「图出来了但内容可疑」分开报，
-                            // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」。
-                            environmentFailures++;
-                            ok = false;
-                        }
-                        if (ok) {
-                            okCount++;
-                        } else {
-                            failedCount++;
-                        }
-                        labels.add(labelOf(page, targetPageIndex.intValue(), targetTheme, scalePercent,
-                                size[0], size[1]) + "=" + (ok ? "ok" : "FAILED"));
-                    }
-                }
+        for (HeadlessRequest request : requests) {
+            boolean ok;
+            try (HeadlessSession session = HeadlessSession.open(request)) {
+                HeadlessArtifact artifact = session.capture();
+                System.out.println(artifact.describe());
+                ok = artifact.selfCheck().ok();
+            } catch (HeadlessFailure failure) {
+                failure.printDiagnosis(System.err);
+                // 环境 / 上下文 / 装配 / 帧 / 读回 / 编码失败属于「设施没能出图」，与「图出来了但内容可疑」分开报，
+                // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」。
+                environmentFailures++;
+                ok = false;
             }
+            if (ok) {
+                okCount++;
+            } else {
+                failedCount++;
+            }
+            labels.add(labelOf(request) + "=" + (ok ? "ok" : "FAILED"));
         }
 
         if (multi) {
-            System.out.println("[headless] batch: " + okCount + "/" + total + " ok — " + String.join(" ", labels));
+            System.out.println("[headless] batch: " + okCount + "/" + total + " ok (同进程) — "
+                    + String.join(" ", labels));
         }
         if (environmentFailures > 0) {
             return 3;
@@ -263,22 +278,140 @@ public final class HeadlessShotMain {
     }
 
     /**
-     * 汇总行标签：页 + 尺寸，偏离缺省的环境维度补一段。
+     * 逐档独立进程出图：多档默认走这里。
      *
-     * @param page 页面标识
-     * @param pageIndex 页下标；-1 表示不指定
-     * @param theme 外观档名；{@code null} 表示不干预（不显示）
-     * @param fontScalePercent 字号缩放百分比；缺省水位不显示，避免逐条汇总被重复信息淹没
-     * @param width 宽
-     * @param height 高
+     * <h3>为什么默认隔离（实测依据）</h3>
+     * <p>字体 atlas 是<b>进程级按需资源</b>：字形落在 atlas 的哪个位置取决于「此前生成过哪些字形」。
+     * 于是同一 JVM 内渲染第 N 档时，atlas 里已有前面各档的字形 ⇒ 本档字形的 UV 与冷启动不同 ⇒
+     * 边缘双线性采样出现 ±1~±5 的微差。实测：批量 {@code [640x360,2560x1440]} 的 2560 档与单跑差
+     * 31534/3686400 像素，而把前置档从 640 换成 1280 又得到第三个结果（31724 差异）——
+     * <b>产物取决于它在进程内的渲染次序，而不是只取决于请求</b>。</p>
+     *
+     * <p>这与设施不变量 3（「不读全局单例的隐藏状态」，产物是请求的函数）直接冲突，而「改动一行 →
+     * 出图对拍」正是本设施的主用途：批量下把 atlas 微差当成代码改动的影响会直接误判。故默认隔离，
+     * 每档从冷状态起算。代价是每档 +1.6 s 左右的 JVM 启动（7 档矩阵 2.4 s → ~12 s）。</p>
+     *
+     * <p>{@code --share-context} 可换回同进程复用（快，但产物带上述历史依赖），仅建议用于扫观感。</p>
+     *
+     * @param requests 已展开并校验的请求列表
+     * @return 退出码（0 全绿 / 3 有档位没能出图 / 4 有档位自检未过）
+     */
+    private static int runIsolated(List<HeadlessRequest> requests) {
+        int environmentFailures = 0;
+        int contentFailures = 0;
+        List<String> labels = new ArrayList<String>();
+        for (HeadlessRequest request : requests) {
+            int code = spawnIsolated(argsOf(request));
+            if (code == 0) {
+                labels.add(labelOf(request) + "=ok");
+                continue;
+            }
+            labels.add(labelOf(request) + "=FAILED");
+            if (code == 3) {
+                environmentFailures++;
+            } else {
+                contentFailures++;
+            }
+        }
+        System.out.println("[headless] batch: " + (requests.size() - environmentFailures - contentFailures)
+                + "/" + requests.size() + " ok (逐档独立进程) — " + String.join(" ", labels));
+        if (environmentFailures > 0) {
+            return 3;
+        }
+        return contentFailures == 0 ? 0 : 4;
+    }
+
+    /**
+     * 请求 → 子进程命令行参数（单档等价形式）。
+     *
+     * <p>从请求反推而非从原始参数转发：请求是校验后的单一事实源，且这份参数会被子进程再解析一次，
+     * 必须与主进程解析出的请求<b>逐字段等价</b>（含 chat/hud 页的默认文本与帧数替换 —— 那些替换
+     * 作用在已替换值上是幂等的）。</p>
+     *
+     * @param request 请求
+     * @return 参数列表（不含 java 与主类）
+     */
+    private static List<String> argsOf(HeadlessRequest request) {
+        List<String> args = new ArrayList<String>();
+        args.add("--page=" + request.pageId());
+        if (request.pageIndex() >= 0) {
+            args.add("--page-index=" + request.pageIndex());
+        }
+        args.add("--size=" + request.width() + "x" + request.height());
+        args.add("--frames=" + request.frames());
+        args.add("--settle=" + request.settleFrames());
+        args.add("--max-frames=" + request.maxFrames());
+        int background = request.background();
+        args.add("--bg=" + ((background >>> 24) == 0 ? "transparent"
+                : String.format("%06X", Integer.valueOf(background & 0xFFFFFF))));
+        args.add("--text=" + request.text());
+        if (!request.script().isEmpty()) {
+            args.add("--actions=" + request.script());
+        }
+        args.add("--clock=" + request.clockMillis());
+        args.add("--font-scale=" + request.fontScalePercent());
+        if (request.diagnostics()) {
+            args.add("--debug");
+        }
+        if (request.theme() != null) {
+            args.add("--theme=" + request.theme());
+        }
+        args.add("--out=" + request.output());
+        return args;
+    }
+
+    /**
+     * 启动一个只出一档的子进程并等它结束（输出直通，便于逐档读诊断）。
+     *
+     * @param requestArgs 单档参数
+     * @return 子进程退出码；启动失败按「没能出图」（3）计
+     */
+    private static int spawnIsolated(List<String> requestArgs) {
+        List<String> command = new ArrayList<String>();
+        command.add(javaExecutable());
+        String classpath = System.getProperty("java.class.path");
+        if (classpath != null && !classpath.isEmpty()) {
+            command.add("-cp");
+            command.add(classpath);
+        }
+        String libraryPath = System.getProperty("java.library.path");
+        if (libraryPath != null && !libraryPath.isEmpty()) {
+            command.add("-Djava.library.path=" + libraryPath);
+        }
+        command.add(HeadlessShotMain.class.getName());
+        command.addAll(requestArgs);
+        try {
+            return new ProcessBuilder(command).inheritIO().start().waitFor();
+        } catch (IOException e) {
+            System.err.println("[headless] 隔离档启动失败：" + e.getMessage());
+            return 3;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return 3;
+        }
+    }
+
+    /** @return 当前 JVM 的 java 可执行文件路径（子进程与父进程同 JDK、同 natives） */
+    private static String javaExecutable() {
+        String executable = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("win")
+                ? "java.exe" : "java";
+        return Paths.get(System.getProperty("java.home"), "bin", executable).toString();
+    }
+
+    /**
+     * 汇总行标签：从请求派生（页 + 尺寸 + 偏离缺省的环境维度）。
+     *
+     * <p>从请求而不是从原始参数派生：隔离路径与同进程路径共用它，参数一旦在这里再推一遍就会漂移。</p>
+     *
+     * @param request 请求
      * @return 标签
      */
-    private static String labelOf(String page, int pageIndex, String theme, int fontScalePercent, int width,
-            int height) {
-        return (pageIndex >= 0 ? page + "#" + pageIndex : page) + "@" + width + "x" + height
-                + (fontScalePercent == SceneRuntime.FONT_SCALE_NONE_PERCENT ? ""
-                        : " fs" + fontScalePercent + "%")
-                + (theme == null ? "" : " theme=" + theme);
+    private static String labelOf(HeadlessRequest request) {
+        return (request.pageIndex() >= 0 ? request.pageId() + "#" + request.pageIndex() : request.pageId())
+                + "@" + request.width() + "x" + request.height()
+                + (request.fontScalePercent() == SceneRuntime.FONT_SCALE_NONE_PERCENT ? ""
+                        : " fs" + request.fontScalePercent() + "%")
+                + (request.theme() == null ? "" : " theme=" + request.theme());
     }
 
     /**
@@ -372,7 +505,8 @@ public final class HeadlessShotMain {
                 + " [--bg=RRGGBB|transparent] [--text=…] [--actions=\"…\"|--script=file]"
                 + " [--clock=epochMillis]"
                 + " [--theme=NAME | --themes=NAME,…] [--font-scale=P | --font-scales=P,P,…] [--debug]"
-                + " [--probe]");
+                + " [--share-context] [--probe]");
+        out.println("批量默认逐档独立进程（产物只依赖请求）；--share-context 同进程复用（快，但产物带 atlas 历史依赖）");
         out.println("主题档: " + HeadlessThemes.names() + "（不给 = 各页面用自己的默认外观）");
     }
 }
