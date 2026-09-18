@@ -22,9 +22,16 @@ import java.util.function.Consumer;
  * {@code info}/{@code warn} 级各打一条（正常路径每条消息只打一次，不刷屏）：</p>
  * <ul>
  *   <li>注册成功 → info 一条（证明 external 模式确实接管）；</li>
- *   <li>反射面不匹配（缺方法）→ warn 一条（版本漂移第一现场，提示比对 api jar）；</li>
+ *   <li>宿主为 2.x 世代（{@code InputEvents} 无 begin/endTextInput）→ info 一条：该世代 jar 内
+ *       无任何类调用 {@code injectTextEvent}，字符只经 MC {@code keyTyped} 到达，回退 char 路径
+ *       是它的正确形态而非降级；</li>
+ *   <li>反射面不匹配（已有 begin/endTextInput 却缺监听器注册入口）→ warn 一条
+ *       （版本漂移第一现场，提示比对 api jar）；</li>
  *   <li>注册事务异常 → warn 一条带异常（证明回落 char 降级路径）。</li>
  * </ul>
+ *
+ * <p>级别口径与 {@code McScreenBridge} 的文本通道四态一致：世代差异是正常态，只有「契约存在但
+ * 面不匹配」才是异常态。</p>
  */
 public final class SceneLwjgl3ifyTextBridge {
 
@@ -44,6 +51,8 @@ public final class SceneLwjgl3ifyTextBridge {
     private boolean successReported;
     /** 反射面不匹配日志是否已上报（每实例一次）。 */
     private boolean faceMismatchReported;
+    /** 2.x 世代无文本接管契约说明是否已上报（每实例一次）。 */
+    private boolean generationReported;
 
     /** 创建使用真实反射的文本桥。 */
     public SceneLwjgl3ifyTextBridge(Consumer<String> textSink) {
@@ -123,7 +132,7 @@ public final class SceneLwjgl3ifyTextBridge {
         try {
             RegistrationPlan prepared = preparePlan();
             if (prepared == null) {
-                logFaceMismatchOnce();
+                reportUnavailableOnce();
                 return false;
             }
             plan = prepared;
@@ -159,14 +168,40 @@ public final class SceneLwjgl3ifyTextBridge {
                 INPUT_EVENTS_CLASS_NAME, registered.addMethod.getName());
     }
 
+    /**
+     * 无法注册时按宿主世代分级上报。
+     *
+     * <p>「缺 begin/endTextInput」与「有 begin/endTextInput 却缺监听器注册入口」是两件事：
+     * 前者是 lwjgl3ify 2.x 世代的契约形态（GTNH 2.8.0/2.8.4 的 2.1.15/2.1.16），后者才是本类
+     * 反射面与宿主不匹配。把前者报成 warn 会让真机日志每次打开界面都出现假告警。</p>
+     */
+    private void reportUnavailableOnce() {
+        if (!textTakeoverSupported(reflection)) {
+            logGenerationWithoutTakeoverOnce();
+            return;
+        }
+        logFaceMismatchOnce();
+    }
+
+    /** 2.x 世代一次性说明：该世代没有外部文本接管契约，char 路径就是正确路径。 */
+    private void logGenerationWithoutTakeoverOnce() {
+        if (generationReported) {
+            return;
+        }
+        generationReported = true;
+        LOG.info("[文本通道] 宿主 lwjgl3ify 无文本接管契约（2.x GLFW 世代）: {} 上无 beginTextInput/"
+                        + "endTextInput ⇒ 本类不注册监听器，字符按该世代正确路径由 MC keyTyped 合成，非降级",
+                INPUT_EVENTS_CLASS_NAME);
+    }
+
     /** 反射面不匹配一次性告警：lwjgl3ify 版本漂移（改名/移除）的第一现场。 */
     private void logFaceMismatchOnce() {
         if (faceMismatchReported) {
             return;
         }
         faceMismatchReported = true;
-        LOG.warn("[文本通道] lwjgl3ify 输入 API 反射面不匹配: {} 上缺少 beginTextInput/endTextInput "
-                        + "或 add+remove[Weak]KeyboardListener ⇒ 不注册，回退 MC char 降级路径；"
+        LOG.warn("[文本通道] lwjgl3ify 输入 API 反射面不匹配: {} 具备 beginTextInput/endTextInput，"
+                        + "却缺少 add+remove[Weak]KeyboardListener ⇒ 不注册，回退 MC char 路径；"
                         + "本类按 lwjgl3ify 3.0.x InputEvents 契约反射，版本变更时请比对 api jar",
                 INPUT_EVENTS_CLASS_NAME);
     }
