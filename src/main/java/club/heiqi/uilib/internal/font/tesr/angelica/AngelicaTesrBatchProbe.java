@@ -23,6 +23,8 @@ import club.heiqi.uilib.internal.font.tesr.TesrTextReplayCoordinator;
 public final class AngelicaTesrBatchProbe implements TesrTextReplayCoordinator.HostProbe {
 
     private static final String RENDERER_CLASS = "com.gtnewhorizons.angelica.rendering.tesr.TesrBatchRenderer";
+    /** Angelica coremod 入口类：只用于区分「宿主缺席」与「宿主版本不提供该渲染器」。 */
+    private static final String ANGELICA_TWEAKER_CLASS = "com.gtnewhorizons.angelica.loading.AngelicaTweaker";
     private static final String INSTANCE_FIELD = "INSTANCE";
     private static final String PENDING_GEOMETRY_METHOD = "hasPendingGeometry";
     /** 类加载时序可能早于宿主初始化，解析失败允许的有限重试次数。 */
@@ -150,12 +152,28 @@ public final class AngelicaTesrBatchProbe implements TesrTextReplayCoordinator.H
             renderer = instance;
             return true;
         } catch (ClassNotFoundException absent) {
-            // 无 Angelica：正常组合，静默 fail-open。
+            // 无 Angelica：正常组合，静默 fail-open。有 Angelica 却没有该类，说明宿主版本不提供
+            // TESR 批处理（GTNH 2.8.x 的 Angelica 1.0.0-betaXX）：世界文字层序保护不可用属功能降级，
+            // 不是正常缺席，留一次告警便于现场定位。
             unavailable = resolveAttempts >= MAX_RESOLVE_ATTEMPTS;
+            if (unavailable && angelicaPresent()) {
+                warnAbi("宿主 Angelica 未提供 TESR 批处理渲染器，世界文字退回即时绘制（层序保护不可用）",
+                        absent);
+            }
             return false;
         } catch (Throwable throwable) {
             unavailable = resolveAttempts >= MAX_RESOLVE_ATTEMPTS;
             warnAbi("宿主 TESR 批处理 ABI 不可用（未复核的 Angelica 版本），世界文字保持即时绘制", throwable);
+            return false;
+        }
+    }
+
+    /** Angelica coremod 是否在本进程内（与 EarlyMixins 的宿主判据同源，仍只用类名字符串）。 */
+    private static boolean angelicaPresent() {
+        try {
+            Class.forName(ANGELICA_TWEAKER_CLASS, false, AngelicaTesrBatchProbe.class.getClassLoader());
+            return true;
+        } catch (Throwable absent) {
             return false;
         }
     }

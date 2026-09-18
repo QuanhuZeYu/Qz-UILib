@@ -16,19 +16,26 @@ import org.lwjgl.opengl.GL11;
  * UILib 在自身状态边界（图标 scope / 字体守卫 / 屏幕帧）读取真实深度，
  * 把边界内第三方多压入的深度按量弹出，避免泄漏跨帧累积。</p>
  *
- * <p>深度入口按"新→旧"解析：优先 {@code GLStateManager.getAttribDepth()}（2.1.x 起即为 public static，
- * 且 2.2.10 把 attribDepth 由 GLStateManager 静态字段迁至 GLContextState 后仍由该访问器暴露），
- * 其次回退旧版 {@code private static int attribDepth} 字段反射。Angelica 不可用或两个入口都缺失时
- * 所有方法静默降级为 no-op（返回 -1）。</p>
+ * <p>深度入口按"新→旧"解析，三种形态互斥，统一收敛为 {@link DepthAccessor}：</p>
+ * <ol>
+ *   <li>{@code public static int GLStateManager.getAttribDepth()}（2.1.x 起即为 public static，
+ *       且 2.2.10 把 attribDepth 由 GLStateManager 静态字段迁至 GLContextState 后仍由该访问器暴露）；</li>
+ *   <li>{@code private static int GLStateManager.attribDepth} 字段；</li>
+ *   <li>{@code private static final IntStack GLStateManager.attribs} 字段（GTNH 2.8.x 的
+ *       Angelica 1.0.0-betaXX 形态）——该容器本身就是 attrib 栈，深度即 {@code size()}。</li>
+ * </ol>
+ *
+ * <p>Angelica 不可用或三档都缺失时所有方法静默降级为 no-op（返回 -1）。字段反射沿用本类既有做法
+ * （{@code setAccessible} 只用于读取上游私有状态，不做写入）。</p>
  */
 public final class GlAttribDepth {
 
     private static final Logger LOG = LogManager.getLogger("QzUILib/GlAttribDepth");
 
-    /** 新版入口：{@code public static int GLStateManager.getAttribDepth()}。 */
-    private static Method depthMethod;
-    /** 旧版入口：{@code private static int GLStateManager.attribDepth}。 */
-    private static Field depthField;
+    /** 宿主 GLStateManager 类名；只在此处出现，通用路径不链接上游类型。 */
+    private static final String GLSM_CLASS_NAME = "com.gtnewhorizons.angelica.glsm.GLStateManager";
+
+    private static DepthAccessor accessor;
     private static boolean initFailed;
     /** 降级只 WARN 一次：本工具处于每帧调用路径，重复告警会刷屏。 */
     private static boolean readWarned;
@@ -43,7 +50,9 @@ public final class GlAttribDepth {
             return -1;
         }
         try {
-            return readAttribDepth();
+            ensureAccessor();
+            DepthAccessor resolved = accessor;
+            return resolved == null ? -1 : resolved.read();
         } catch (Throwable throwable) {
             // 原为静默 return -1；改为首次 WARN 留痕（对齐 5d-D5 assertClientThread 先例），
             // 语义不变：Angelica 缺席/反射失败时降级 no-op。
@@ -81,51 +90,127 @@ public final class GlAttribDepth {
         }
     }
 
-    /** 读取 Angelica 侧 attrib 栈深度；优先 public 访问器，回退旧版私有字段。 */
-    private static int readAttribDepth() throws Exception {
-        resolveDepthAccessor();
-        if (initFailed) {
-            return -1;
+    /** 解析并缓存深度读取入口（每个进程一次）。 */
+    private static synchronized void ensureAccessor() throws ClassNotFoundException {
+        if (accessor != null || initFailed) {
+            return;
         }
-        Method method = depthMethod;
-        if (method != null) {
-            Object value = method.invoke(null);
-            return value instanceof Number ? ((Number) value).intValue() : -1;
+        DepthAccessor resolved = resolveFrom(Class.forName(GLSM_CLASS_NAME));
+        if (resolved == null) {
+            initFailed = true;
+            LOG.warn("Angelica 未提供可读的 attrib 栈深度入口（getAttribDepth()/attribDepth/attribs 均缺失），"
+                    + "attrib 过量弹出保护降级为 no-op");
+            return;
         }
-        return depthField.getInt(null);
+        accessor = resolved;
     }
 
     /**
-     * 解析并缓存深度读取入口（每个进程一次）。
+     * 从宿主类解析深度读取入口（纯解析，不缓存；包内可见以便纯 JVM 测试直接喂替身类）。
      *
-     * <p>Angelica 2.2.10 把 {@code attribDepth} 从 GLStateManager 静态字段迁移到 GLContextState，
-     * 旧字段反射必然失败；而 {@code getAttribDepth()} 在 2.1.32 / 2.1.43 / 2.1.50 / 2.2.10 中均为
-     * {@code public static int}，2.1.x 返回 GLStateManager.attribDepth、2.2.10 返回
-     * GLContextState.attribDepth，语义同为 attrib 栈深度。</p>
+     * <p>{@code getAttribDepth()} 在 2.1.32 / 2.1.43 / 2.1.50 / 2.2.10 中均为 {@code public static int}，
+     * 2.1.x 返回 GLStateManager.attribDepth、2.2.10 返回 GLContextState.attribDepth，语义同为 attrib 栈深度；
+     * 1.0.0-betaXX 两者都没有，只有私有的 {@code IntStack attribs} 容器。</p>
+     *
+     * @param glsm 宿主 GLStateManager 类
+     * @return 深度读取入口；三档都缺失时返回 {@code null}
      */
-    private static synchronized void resolveDepthAccessor() throws ClassNotFoundException {
-        if (depthMethod != null || depthField != null || initFailed) {
-            return;
+    static DepthAccessor resolveFrom(Class<?> glsm) {
+        if (glsm == null) {
+            return null;
         }
-        Class<?> glsm = Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager");
         try {
-            Method accessor = glsm.getMethod("getAttribDepth");
-            if (accessor.getReturnType() == int.class && Modifier.isStatic(accessor.getModifiers())) {
-                depthMethod = accessor;
-                return;
+            Method candidate = glsm.getMethod("getAttribDepth");
+            if (candidate.getReturnType() == int.class && Modifier.isStatic(candidate.getModifiers())) {
+                return DepthAccessor.forMethod(candidate);
             }
         } catch (NoSuchMethodException ignored) {
-            // 无访问器的旧版继续走字段反射。
+            // 无访问器的版本继续走字段反射。
+        } catch (SecurityException ignored) {
+            // 同上：安全策略拒绝探测时退回字段反射。
         }
         for (Field field : glsm.getDeclaredFields()) {
             if ("attribDepth".equals(field.getName()) && field.getType() == int.class) {
                 field.setAccessible(true);
-                depthField = field;
-                return;
+                return DepthAccessor.forIntField(field);
             }
         }
-        initFailed = true;
-        LOG.warn("Angelica 未提供可读的 attrib 栈深度入口（getAttribDepth()/attribDepth 均缺失），"
-                + "attrib 过量弹出保护降级为 no-op");
+        for (Field field : glsm.getDeclaredFields()) {
+            if (!"attribs".equals(field.getName())) {
+                continue;
+            }
+            Method size = sizeMethodOf(field.getType());
+            if (size == null) {
+                continue;
+            }
+            field.setAccessible(true);
+            return DepthAccessor.forStackField(field, size);
+        }
+        return null;
+    }
+
+    /** 取容器类型的 {@code int size()}；fastutil 的 IntStack 由 IntCollection 继承而来。 */
+    private static Method sizeMethodOf(Class<?> stackType) {
+        if (stackType == null) {
+            return null;
+        }
+        try {
+            Method size = stackType.getMethod("size");
+            return size.getReturnType() == int.class ? size : null;
+        } catch (NoSuchMethodException exception) {
+            return null;
+        } catch (SecurityException exception) {
+            return null;
+        }
+    }
+
+    /** 深度读取入口；三种形态互斥，构造期已定死其一。 */
+    static final class DepthAccessor {
+
+        private final Method accessorMethod;
+        private final Field depthField;
+        private final Field stackField;
+        private final Method stackSizeMethod;
+
+        private DepthAccessor(Method accessorMethod, Field depthField, Field stackField, Method stackSizeMethod) {
+            this.accessorMethod = accessorMethod;
+            this.depthField = depthField;
+            this.stackField = stackField;
+            this.stackSizeMethod = stackSizeMethod;
+        }
+
+        static DepthAccessor forMethod(Method accessorMethod) {
+            return new DepthAccessor(accessorMethod, null, null, null);
+        }
+
+        static DepthAccessor forIntField(Field depthField) {
+            return new DepthAccessor(null, depthField, null, null);
+        }
+
+        static DepthAccessor forStackField(Field stackField, Method stackSizeMethod) {
+            return new DepthAccessor(null, null, stackField, stackSizeMethod);
+        }
+
+        /**
+         * 读取当前 attrib 栈深度。
+         *
+         * @return 深度；入口形态不可读时返回 -1
+         * @throws Exception 反射调用失败（由调用方统一降级为 -1 并首次留痕）
+         */
+        int read() throws Exception {
+            if (accessorMethod != null) {
+                Object value = accessorMethod.invoke(null);
+                return value instanceof Number ? ((Number) value).intValue() : -1;
+            }
+            if (depthField != null) {
+                return depthField.getInt(null);
+            }
+            Object stack = stackField.get(null);
+            if (stack == null) {
+                return -1;
+            }
+            Object size = stackSizeMethod.invoke(stack);
+            return size instanceof Number ? ((Number) size).intValue() : -1;
+        }
     }
 }

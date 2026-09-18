@@ -246,6 +246,7 @@ public class GlyphPageVariableSlotPackingTest {
 
         private int nextTextureId = 1;
         private int pendingError;
+        private final java.util.ArrayDeque<Integer> pendingErrors = new java.util.ArrayDeque<Integer>();
         private int deletedTextureCount;
         private int pushAttribCount;
         private int popAttribCount;
@@ -435,8 +436,16 @@ public class GlyphPageVariableSlotPackingTest {
             deletedTextureCount++;
         }
 
+        /** 预置一条遗留 GL 错误（模拟进入上传事务前第三方留下的错误队列）。 */
+        void pushPendingError(int error) {
+            pendingErrors.addLast(Integer.valueOf(error));
+        }
+
         @Override
         public int getError() {
+            if (!pendingErrors.isEmpty()) {
+                return pendingErrors.pollFirst().intValue();
+            }
             int error = pendingError;
             pendingError = 0;
             return error;

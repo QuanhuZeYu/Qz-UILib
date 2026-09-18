@@ -136,6 +136,50 @@ public class GlyphPageBatchUploadTest {
         Assert.assertEquals(gl.getPushClientAttribCount(), gl.getPopClientAttribCount());
     }
 
+    /**
+     * entry 相位的遗留 GL 错误只排空、不致命（issue #75 的 1286 形态）。
+     *
+     * <p>真机上 {@code batch_entry} 在任何本库 GL 调用之前就读到 1286
+     * （GL_INVALID_FRAMEBUFFER_OPERATION），那是进入前的第三方污染；把它当成本库上传失败会让整条字体
+     * 上传链在 GTNH 2.8.4 上必然崩溃。事务内相位仍严格，见
+     * {@link #batchSubImageFailureClearsRegionAndClosesAllocation()}。</p>
+     */
+    @Test
+    public void entryPhaseDrainsLegacyGlErrorAndStillUploads() {
+        GlyphPageVariableSlotPackingTest.FakeGlApi gl = new GlyphPageVariableSlotPackingTest.FakeGlApi();
+        GlyphPage page = new GlyphPage(1, 0, 64, 64, 3, gl);
+        GlyphPage.GlyphSlot slot = page.allocateSlot(8, 8);
+
+        gl.pushPendingError(1286);
+        gl.pushPendingError(1286);
+        page.beginBatchUpload();
+        page.uploadInBatch(slot, plan('A', 8, 8));
+        page.endBatchUpload();
+
+        Assert.assertEquals("遗留错误不得阻止上传", 1, gl.getTexSubImageCount());
+        Assert.assertEquals("遗留错误必须被排空", GL11.GL_NO_ERROR, gl.getError());
+        Assert.assertFalse(page.isBatchActive());
+    }
+
+    /** 事务内相位仍严格：入口干净时 subImage 失败照旧抛出并回滚。 */
+    @Test
+    public void inTransactionGlErrorStaysFatalAfterEntryDrain() {
+        GlyphPageVariableSlotPackingTest.FakeGlApi gl = new GlyphPageVariableSlotPackingTest.FakeGlApi();
+        GlyphPage page = new GlyphPage(1, 0, 64, 64, 3, gl);
+        GlyphPage.GlyphSlot slot = page.allocateSlot(8, 8);
+
+        page.beginBatchUpload();
+        gl.failNextSubImage();
+        try {
+            page.uploadInBatch(slot, plan('A', 8, 8));
+            Assert.fail("事务内 GL 错误必须仍然致命");
+        } catch (GlyphPage.GlyphUploadException expected) {
+            Assert.assertEquals("batch_upload_pixels", expected.getPhase());
+        }
+        page.endBatchUpload();
+        Assert.assertEquals(gl.getPushAttribCount(), gl.getPopAttribCount());
+    }
+
     private static GlyphUploadPlan plan(char codepoint, int slotWidth, int slotHeight) {
         GlyphRequestToken token = new GlyphRequestToken(1, codepoint, codepoint, FontType.NORMAL);
         GlyphInfo glyphInfo = new GlyphInfo(codepoint, 8, 8, 8.0F, 0.0F, 0.0F, 0.0F, 8.0F, 8.0F, slotWidth, slotHeight,

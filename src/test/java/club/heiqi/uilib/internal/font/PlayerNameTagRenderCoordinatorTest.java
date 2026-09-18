@@ -166,31 +166,47 @@ public class PlayerNameTagRenderCoordinatorTest {
         Assert.assertEquals(0, coordinator.scopeDepth());
     }
 
-    /** 无 Angelica 不要求可选围栏；两档受支持版本（2.1.50 / 2.2.10）且握手完成时都允许捕获。 */
+    /** 无 Angelica 不要求可选围栏；四档已复核版本（2.8.x 两档 + 2.9.x 两档）且握手完成时都允许捕获。 */
     @Test
-    public void compatibilityAllowsAbsentOrExactGuardedAngelica() {
-        Assert.assertTrue(policy(AngelicaEnvironment.absent(), false, new ArrayList<String>()).permitsCapture());
-        Assert.assertTrue(policy(
-                AngelicaEnvironment.present("2.1.50"), true, new ArrayList<String>()).permitsCapture());
-        Assert.assertTrue(policy(
-                AngelicaEnvironment.present("2.2.10"), true, new ArrayList<String>()).permitsCapture());
+    public void compatibilityAllowsAbsentOrReviewedGuardedAngelica() {
+        List<String> absentWarnings = new ArrayList<String>();
+        Assert.assertTrue(policy(AngelicaEnvironment.absent(), false, absentWarnings).permitsCapture());
+        Assert.assertEquals(0, absentWarnings.size());
+
+        List<String> beta57Warnings = new ArrayList<String>();
+        Assert.assertTrue(policy(AngelicaEnvironment.present("1.0.0-beta57"), true, beta57Warnings).permitsCapture());
+        Assert.assertEquals(0, beta57Warnings.size());
+
+        List<String> beta66bWarnings = new ArrayList<String>();
+        Assert.assertTrue(policy(AngelicaEnvironment.present("1.0.0-beta66b"), true, beta66bWarnings).permitsCapture());
+        Assert.assertEquals(0, beta66bWarnings.size());
+
+        List<String> beta2Warnings = new ArrayList<String>();
+        Assert.assertTrue(policy(AngelicaEnvironment.present("2.1.50"), true, beta2Warnings).permitsCapture());
+        Assert.assertEquals(0, beta2Warnings.size());
+
+        List<String> beta3Warnings = new ArrayList<String>();
+        Assert.assertTrue(policy(AngelicaEnvironment.present("2.2.10"), true, beta3Warnings).permitsCapture());
+        Assert.assertEquals(0, beta3Warnings.size());
     }
 
-    /** 未知版本与缺失握手均 fail-open，且每个策略实例只告警一次。 */
+    /**
+     * 版本号不再是闸门：未复核版本照旧允许捕获（行为由围栏的能力档位决定），只留一条复核提示；
+     * 握手未完成仍 fail-open，且每个策略实例只告警一次。
+     */
     @Test
-    public void compatibilityRejectsUnknownVersionOrMissingGuardOnce() {
+    public void compatibilityAllowsUnreviewedVersionWithSingleNoticeAndStillRequiresGuard() {
         List<String> unknownWarnings = new ArrayList<String>();
-        // 比受支持版本更新的未复核版本 fail-open，保持精确匹配哲学。
+        // 比已复核版本更新的未复核版本：按能力档位启用，不因版本号被拒。
         CompatibilityPolicy unknown = policy(AngelicaEnvironment.present("2.2.11"), true, unknownWarnings);
-        Assert.assertFalse(unknown.permitsCapture());
-        Assert.assertFalse(unknown.permitsCapture());
+        Assert.assertTrue(unknown.permitsCapture());
+        Assert.assertTrue(unknown.permitsCapture());
         Assert.assertEquals(1, unknownWarnings.size());
 
         List<String> legacyAdjacentWarnings = new ArrayList<String>();
-        // 2.1.50 前后的未复核版本同样 fail-open，不因"同 minor"被放行。
         CompatibilityPolicy legacyAdjacent = policy(
                 AngelicaEnvironment.present("2.1.51"), true, legacyAdjacentWarnings);
-        Assert.assertFalse(legacyAdjacent.permitsCapture());
+        Assert.assertTrue(legacyAdjacent.permitsCapture());
         Assert.assertEquals(1, legacyAdjacentWarnings.size());
 
         List<String> guardWarnings = new ArrayList<String>();

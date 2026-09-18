@@ -137,9 +137,14 @@ public class AngelicaNameTagReplayGuardTest {
                 AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(PairedState.class);
 
         Assert.assertTrue(dispatch.isUsable());
+        Assert.assertEquals(AngelicaNameTagReplayGuard.RecoveryTier.PAIRED, dispatch.tier());
         PairedState state = new PairedState();
+        Assert.assertEquals(-1, dispatch.readEntity(state));
+        Assert.assertEquals(37, dispatch.readItem(state));
         dispatch.restore(state, 91, 92);
         Assert.assertEquals(Arrays.asList("entity-item:91:92"), state.events);
+        Assert.assertEquals(91, dispatch.readEntity(state));
+        Assert.assertEquals(92, dispatch.readItem(state));
     }
 
     /** 2.1.50 形态：无配对入口、两个单参入口均为 public → 先 entity、后 item。 */
@@ -149,6 +154,7 @@ public class AngelicaNameTagReplayGuardTest {
                 AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(LegacyState.class);
 
         Assert.assertTrue(dispatch.isUsable());
+        Assert.assertEquals(AngelicaNameTagReplayGuard.RecoveryTier.TWO_STEP, dispatch.tier());
         LegacyState state = new LegacyState();
         dispatch.restore(state, 14, 38);
         Assert.assertEquals(Arrays.asList("entity:14", "item:38"), state.events);
@@ -161,6 +167,25 @@ public class AngelicaNameTagReplayGuardTest {
                 AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(PrivateEntityState.class);
 
         Assert.assertFalse(dispatch.isUsable());
+    }
+
+    /** GTNH 2.8.x 形态：只有 entity 面 → ENTITY_ONLY，恢复只写 entity 且不读取 item。 */
+    @Test
+    public void recoveryDispatchUsesEntityOnlyContractWhenHostHasNoItemDimension() {
+        AngelicaNameTagReplayGuard.RecoveryDispatch dispatch =
+                AngelicaNameTagReplayGuard.RecoveryDispatch.resolve(EntityOnlyState.class);
+
+        Assert.assertTrue(dispatch.isUsable());
+        Assert.assertEquals(AngelicaNameTagReplayGuard.RecoveryTier.ENTITY_ONLY, dispatch.tier());
+
+        EntityOnlyState state = new EntityOnlyState();
+        Assert.assertEquals(12, dispatch.readEntity(state));
+        Assert.assertEquals("宿主无 item 维度时读取返回哨兵",
+                AngelicaNameTagReplayGuard.NO_ITEM, dispatch.readItem(state));
+
+        dispatch.restore(state, 91, AngelicaNameTagReplayGuard.NO_ITEM);
+        Assert.assertEquals(Arrays.asList("entity:91"), state.events);
+        Assert.assertEquals(91, dispatch.readEntity(state));
     }
 
     /** 契约与 null owner 都不可用：restore 必须抛出而非静默。 */
@@ -274,13 +299,25 @@ public class AngelicaNameTagReplayGuardTest {
         }
     }
 
-    /** 2.2.10 形态假 owner：只有配对入口。 */
+    /** 2.2.10 形态假 owner：只有配对入口 + entity/item 读取面。 */
     public static final class PairedState {
 
         private final List<String> events = new ArrayList<String>();
+        private int entity = -1;
+        private int item = 37;
+
+        public int getCurrentRenderedEntity() {
+            return entity;
+        }
+
+        public int getCurrentRenderedItem() {
+            return item;
+        }
 
         public void setCurrentEntityAndItem(int entityId, int itemId) {
             events.add("entity-item:" + entityId + ":" + itemId);
+            entity = entityId;
+            item = itemId;
         }
     }
 
@@ -288,20 +325,40 @@ public class AngelicaNameTagReplayGuardTest {
     public static final class LegacyState {
 
         private final List<String> events = new ArrayList<String>();
+        private int entity = 14;
+        private int item = 38;
+
+        public int getCurrentRenderedEntity() {
+            return entity;
+        }
+
+        public int getCurrentRenderedItem() {
+            return item;
+        }
 
         public void setCurrentEntity(int entityId) {
             events.add("entity:" + entityId);
+            entity = entityId;
         }
 
         public void setCurrentRenderedItem(int itemId) {
             events.add("item:" + itemId);
+            item = itemId;
         }
     }
 
-    /** 2.2.10 兜底形态假 owner：单参 entity 入口为 private，且没有配对入口。 */
+    /** 兜底形态假 owner：单参 entity 入口为 private，且没有配对入口。 */
     public static final class PrivateEntityState {
 
         private final List<String> events = new ArrayList<String>();
+
+        public int getCurrentRenderedEntity() {
+            return 0;
+        }
+
+        public int getCurrentRenderedItem() {
+            return 0;
+        }
 
         public void setCurrentRenderedItem(int itemId) {
             events.add("item:" + itemId);
@@ -310,6 +367,27 @@ public class AngelicaNameTagReplayGuardTest {
         @SuppressWarnings("unused")
         private void setCurrentEntity(int entityId) {
             events.add("entity:" + entityId);
+        }
+    }
+
+    /**
+     * GTNH 2.8.x（Angelica 1.0.0-betaXX）形态假 owner：只有 entity 读写面，没有 item 概念。
+     *
+     * <p>dev jar 实证：1.0.0-beta57 / 1.0.0-beta66b 的 {@code CapturedRenderingState} 只有
+     * {@code setCurrentEntity(int)} 与 {@code getCurrentRenderedEntity()}，既无 item 读入口也无 item 写入口。</p>
+     */
+    public static final class EntityOnlyState {
+
+        private final List<String> events = new ArrayList<String>();
+        private int entity = 12;
+
+        public int getCurrentRenderedEntity() {
+            return entity;
+        }
+
+        public void setCurrentEntity(int entityId) {
+            events.add("entity:" + entityId);
+            entity = entityId;
         }
     }
 

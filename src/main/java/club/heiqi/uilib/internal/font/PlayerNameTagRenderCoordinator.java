@@ -26,21 +26,24 @@ public final class PlayerNameTagRenderCoordinator {
 
     static final String ANGELICA_MOD_ID = "angelica";
     /**
-     * 精确匹配的受支持 Angelica 版本集合（GTNH 2.9.0-beta-2 的 2.1.50 与 2.9.0-beta-3 的 2.2.10）。
+     * 已人工复核的 Angelica 版本集合（GTNH 2.8.0 的 1.0.0-beta57、2.8.4 的 1.0.0-beta66b、
+     * 2.9.0-beta-2 的 2.1.50 与 2.9.0-beta-3 的 2.2.10）。
      *
-     * <p>精确匹配是防止 ABI 漂移的保护：回放围栏直接绑定 Angelica 侧的渲染 phase 与 entity/item 捕获
-     * 状态访问器，任何未复核的版本都必须 fail-open 回即时绘制。上游 ABI 类名只出现在 angelica 包的
-     * 可选围栏实现里，通用路径不引用（契约守卫钉死）。两档版本对应同一围栏的两条恢复入口：2.1.50 走
-     * "先 entity、后 item"的两段式；2.2.10 把单参恢复入口收为 private 并新增配对入口，围栏改走配对调用；
-     * 具体分派由 {@code internal.font.angelica} 包的围栏按 public 方法契约在运行期解析。</p>
+     * <p><b>版本号不再是闸门</b>：是否启用回放围栏由运行期能力档位决定——围栏按 host 的 public 方法契约
+     * 解析出 PAIRED / TWO_STEP / ENTITY_ONLY / UNAVAILABLE，档位可用即启用，不可用则在围栏内部 fail-open
+     * 回即时绘制并留一次 WARN。本集合只决定日志口径：命中静默；未命中提示"未复核版本，按能力档位启用"，
+     * 让上游换版本后无需改代码即可工作，同时保留人工复核线索。</p>
+     *
+     * <p>上游 ABI 类名只出现在 angelica 包的可选围栏实现里，通用路径不引用（契约守卫钉死）。</p>
      */
-    static final Set<String> SUPPORTED_ANGELICA_VERSIONS = Collections.unmodifiableSet(
-            new LinkedHashSet<String>(Arrays.asList("2.1.50", "2.2.10")));
+    static final Set<String> REVIEWED_ANGELICA_VERSIONS = Collections.unmodifiableSet(
+            new LinkedHashSet<String>(
+                    Arrays.asList("1.0.0-beta57", "1.0.0-beta66b", "2.1.50", "2.2.10")));
 
-    /** 受支持版本集合的可读文案，仅用于降级告警。 */
-    private static String describeSupportedVersions() {
+    /** 已复核版本集合的可读文案，仅用于提示告警。 */
+    private static String describeReviewedVersions() {
         StringBuilder builder = new StringBuilder();
-        for (String version : SUPPORTED_ANGELICA_VERSIONS) {
+        for (String version : REVIEWED_ANGELICA_VERSIONS) {
             if (builder.length() > 0) {
                 builder.append(" / ");
             }
@@ -306,14 +309,15 @@ public final class PlayerNameTagRenderCoordinator {
             if (!environment.present) {
                 return true;
             }
-            if (!SUPPORTED_ANGELICA_VERSIONS.contains(environment.version)) {
-                warnOnce("玩家标签延后仅支持 Angelica " + describeSupportedVersions()
-                        + "，当前版本为 " + String.valueOf(environment.version) + "，已保持即时绘制");
-                return false;
-            }
+            // 能力闸门：握手未完成说明宿主侧围栏未安装，回放批次没有可用的 phase 围栏。
             if (!guardAvailability.isInstalled()) {
                 warnOnce("玩家标签延后的 Angelica 回放围栏未安装，已保持即时绘制");
                 return false;
+            }
+            // 版本只影响日志口径：围栏自身的恢复档位在运行期按 public 方法契约解析并 fail-open。
+            if (!REVIEWED_ANGELICA_VERSIONS.contains(environment.version)) {
+                warnOnce("玩家标签延后遇到未复核的 Angelica " + String.valueOf(environment.version)
+                        + "（已复核：" + describeReviewedVersions() + "），按运行期能力档位启用回放围栏");
             }
             return true;
         }

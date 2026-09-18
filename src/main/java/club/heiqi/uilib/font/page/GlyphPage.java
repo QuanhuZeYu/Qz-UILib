@@ -3,6 +3,8 @@ package club.heiqi.uilib.font.page;
 import java.awt.image.BufferedImage;
 import java.nio.ByteBuffer;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 
@@ -14,6 +16,15 @@ import club.heiqi.uilib.font.glyph.GlyphRequestToken;
  * 字符页。
  */
 public class GlyphPage {
+
+    private static final Logger LOG = LogManager.getLogger("QzUILib/GlyphPage");
+
+    /** entry 相位遗留错误的排空上限：GL 错误队列没有标准深度，防呆避免驱动持续报错时死循环。 */
+    private static final int MAX_ENTRY_GL_ERROR_DRAIN = 32;
+
+    /** entry 相位遗留错误的告警门：每次上传都会经过该相位，只在首次留痕。 */
+    private static final java.util.concurrent.atomic.AtomicBoolean ENTRY_GL_ERROR_WARNED =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     /**
      * 主线程专用零数据纹理缓冲。
@@ -182,7 +193,7 @@ public class GlyphPage {
         boolean clientAttribPushed = false;
         Throwable failure = null;
         try {
-            requireNoGlError("upload_rollback_entry");
+            drainEntryGlError("upload_rollback_entry");
             gl.pushAttrib(UPLOAD_ATTRIB_MASK);
             requireNoGlError("upload_rollback_attrib_push");
             attribPushed = true;
@@ -223,7 +234,7 @@ public class GlyphPage {
         if (batchActive) {
             return;
         }
-        requireNoGlError("batch_entry");
+        drainEntryGlError("batch_entry");
         Throwable failure = null;
         try {
             gl.pushAttrib(UPLOAD_ATTRIB_MASK);
@@ -421,7 +432,7 @@ public class GlyphPage {
         boolean pixelsWritten = false;
         Throwable failure = null;
         try {
-            requireNoGlError("upload_entry");
+            drainEntryGlError("upload_entry");
             gl.pushAttrib(UPLOAD_ATTRIB_MASK);
             requireNoGlError("upload_attrib_push");
             attribPushed = true;
@@ -505,7 +516,7 @@ public class GlyphPage {
             resetAllocator();
             return;
         }
-        requireNoGlError("texture_close_entry");
+        drainEntryGlError("texture_close_entry");
         Throwable failure = null;
         if (textureId != 0) {
             int readyTexture = textureId;
@@ -573,7 +584,7 @@ public class GlyphPage {
             return;
         }
         cleanupUncommittedTexture();
-        requireNoGlError("texture_init_entry");
+        drainEntryGlError("texture_init_entry");
         int candidateTexture = gl.genTexture();
         if (candidateTexture != 0) {
             uncommittedTextureId = candidateTexture;
@@ -965,6 +976,36 @@ public class GlyphPage {
         return failure;
     }
 
+    /**
+     * 排空进入上传事务前的遗留 GL 错误。
+     *
+     * <p>{@code phase} 属 entry 类相位：其调用点在任何本库 GL 调用之前，此处读到的错误必然来自进入前的
+     * 第三方污染（真机实证：GTNH 2.8.4 上 {@code batch_entry} 命中 1286
+     * {@code GL_INVALID_FRAMEBUFFER_OPERATION}）。遗留污染不该升级为本库的上传失败，因此这里只排空 +
+     * 首次留痕，不抛异常；事务内相位仍走 {@link #requireNoGlError(String)} 的严格语义。</p>
+     *
+     * @param phase 相位名（仅用于日志）
+     */
+    private void drainEntryGlError(String phase) {
+        int firstError = GL11.GL_NO_ERROR;
+        int drained = 0;
+        int error;
+        while ((error = gl.getError()) != GL11.GL_NO_ERROR) {
+            if (firstError == GL11.GL_NO_ERROR) {
+                firstError = error;
+            }
+            drained++;
+            if (drained >= MAX_ENTRY_GL_ERROR_DRAIN) {
+                break;
+            }
+        }
+        if (firstError != GL11.GL_NO_ERROR && ENTRY_GL_ERROR_WARNED.compareAndSet(false, true)) {
+            LOG.warn("字符页上传入口存在遗留 GL 错误，已排空并继续上传：phase={} first=0x{} drained={}",
+                    phase, Integer.toHexString(firstError), Integer.valueOf(drained));
+        }
+    }
+
+    /** 事务内相位的严格 GL 错误闸门：非 NO_ERROR 即抛 {@link GlyphUploadException}。 */
     private void requireNoGlError(String phase) {
         int glError = gl.getError();
         if (glError != GL11.GL_NO_ERROR) {
