@@ -2,6 +2,7 @@ package club.heiqi.uilib;
 
 import club.heiqi.config.ui.field.PickerSourceGuard;
 import club.heiqi.config.ui.field.PickerSourceLifecycle;
+import club.heiqi.uilib.client.AngelicaHudCachingSuppressor;
 import club.heiqi.uilib.client.FontRenderTickListener;
 import club.heiqi.uilib.client.MinecraftMainThreadOracle;
 import club.heiqi.uilib.client.UiHudRenderListener;
@@ -35,6 +36,7 @@ public class ClientProxy extends CommonProxy {
     private final FontRenderTickListener fontRenderTickListener = new FontRenderTickListener();
     private final UiHudRenderListener uiHudRenderListener = new UiHudRenderListener();
     private final UiInputTickListener uiInputTickListener = new UiInputTickListener();
+    private final AngelicaHudCachingSuppressor angelicaHudCachingSuppressor = new AngelicaHudCachingSuppressor();
     private final ChatInputOpenListener chatInputOpenListener = new ChatInputOpenListener();
 
     /**
@@ -75,6 +77,9 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(chatInputOpenListener);
         FMLCommonHandler.instance().bus().register(fontRenderTickListener);
         FMLCommonHandler.instance().bus().register(uiInputTickListener);
+        // 宿主兼容：Angelica 的 HUD 缓存会让 UILib 背景滤镜（液态玻璃）采样不到世界画面 ⇒ 强制停用。
+        // 挂 tick 而非 HUD 帧：HUD 帧本身会被宿主的 HUDCachingEarlyReturnTransformer 提前返回。
+        FMLCommonHandler.instance().bus().register(angelicaHudCachingSuppressor);
         FMLCommonHandler.instance().bus().register(this);
         Runtime.getRuntime().addShutdownHook(new Thread(this::onJvmShutdown, "QzUiLibShutdown"));
     }
