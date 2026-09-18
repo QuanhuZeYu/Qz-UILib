@@ -153,7 +153,8 @@ public final class AngelicaTesrBatchProbe implements TesrTextReplayCoordinator.H
             return true;
         } catch (ClassNotFoundException absent) {
             // 无 Angelica：正常组合，静默 fail-open。有 Angelica 却没有该类，说明宿主版本不提供
-            // TESR 批处理（GTNH 2.8.x 的 Angelica 1.0.0-betaXX）：世界文字层序保护不可用属功能降级，
+            // TESR 批处理（已复核：2.8.0 的 1.0.0-beta57、2.8.4 的 1.0.0-beta66b 与 2.9.0-beta-2 的
+            // 2.1.50 均无该类，自 2.2.10 起才提供）：世界文字层序保护不可用属功能降级，
             // 不是正常缺席，留一次告警便于现场定位。
             unavailable = resolveAttempts >= MAX_RESOLVE_ATTEMPTS;
             if (unavailable && angelicaPresent()) {

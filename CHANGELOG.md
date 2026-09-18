@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### 兼容
+
+- GTNH **2.8.0 / 2.8.4** 纳入支持面：Angelica `1.0.0-beta57` / `1.0.0-beta66b` 按能力档位分派 —— 玩家标签回放走 `ENTITY_ONLY`（两版均无 item 面）、attrib 栈深度走 private `IntStack attribs` 容器档、TESR 批处理渲染器缺失时登记一次告警并退回即时绘制；glyph 上传**入口相位**的遗留 GL 错误改为排空 + 限频告警，事务内相位仍严格（Qz-UILib#75）
+- lwjgl3ify 文本接管按**宿主世代**分派：只有 3.x 世代（`InputEvents` 声明 `beginTextInput`/`endTextInput`）才由 `onTextEvent` 接管并停止合成 char；2.x 世代（GTNH 2.8.x 的 `2.1.15`/`2.1.16`）保留 MC `keyTyped` char 合成路径；文本通道日志区分「无 lwjgl3ify / 2.x 世代正常路径 / 3.x 世代未生效」三态（Qz-Miner#252）
+
 ## [4.10.1] - 2026-09-16
 
 > 全文见 [.changelogs/4.10.1.md](.changelogs/4.10.1.md)。本版为 patch：新增配置项 `general.chatFrame`（`custom` 自定义聊天框 / `vanilla` 原版聊天框，默认 `custom`）与聊天工具栏「切换聊天框形态」按钮；零类删除、零公共成员签名变更，缺键回落 `custom` = 4.10.0 行为。

@@ -21,8 +21,9 @@ import org.lwjgl.opengl.GL11;
  *   <li>{@code public static int GLStateManager.getAttribDepth()}（2.1.x 起即为 public static，
  *       且 2.2.10 把 attribDepth 由 GLStateManager 静态字段迁至 GLContextState 后仍由该访问器暴露）；</li>
  *   <li>{@code private static int GLStateManager.attribDepth} 字段；</li>
- *   <li>{@code private static final IntStack GLStateManager.attribs} 字段（GTNH 2.8.x 的
- *       Angelica 1.0.0-betaXX 形态）——该容器本身就是 attrib 栈，深度即 {@code size()}。</li>
+ *   <li>{@code private static final IntStack GLStateManager.attribs} 字段（GTNH 2.8.0 / 2.8.4 的
+ *       Angelica 1.0.0-beta57 / 1.0.0-beta66b 形态，两者 attrib 相关成员面逐项一致）——
+ *       该容器本身就是 attrib 栈，深度即 {@code size()}。</li>
  * </ol>
  *
  * <p>Angelica 不可用或三档都缺失时所有方法静默降级为 no-op（返回 -1）。字段反射沿用本类既有做法
@@ -110,7 +111,7 @@ public final class GlAttribDepth {
      *
      * <p>{@code getAttribDepth()} 在 2.1.32 / 2.1.43 / 2.1.50 / 2.2.10 中均为 {@code public static int}，
      * 2.1.x 返回 GLStateManager.attribDepth、2.2.10 返回 GLContextState.attribDepth，语义同为 attrib 栈深度；
-     * 1.0.0-betaXX 两者都没有，只有私有的 {@code IntStack attribs} 容器。</p>
+     * 1.0.0-beta57 / 1.0.0-beta66b 两者都没有，只有私有的 {@code IntStack attribs} 容器。</p>
      *
      * @param glsm 宿主 GLStateManager 类
      * @return 深度读取入口；三档都缺失时返回 {@code null}

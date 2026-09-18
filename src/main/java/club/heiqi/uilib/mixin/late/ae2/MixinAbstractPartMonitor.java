@@ -22,6 +22,12 @@ import club.heiqi.uilib.font.config.FontConfig;
  * VAO/VBO 状态和异步到达的字形并不具有固定管线列表的回放语义，数量因而可能消失或跟随镜头。
  * 替换开启时只绕过列表缓存，保留宿主的朝向/物品绘制，数量仍经 FontRenderer 注入走 UILib。
  * 同时保持 updateList 为脏，关闭替换后的首帧必须重建列表，不能复用开启前留下的原版字形。</p>
+ *
+ * <p>注入契约落在方法体指令上，仅签名一致不足以判定，故已对 GTNH 两档 AE2 逐条核对：
+ * {@code rv3-beta-690-GTNH}（2.8.0）与 {@code rv3-beta-695-GTNH}（2.8.4）的 {@code renderDynamic}
+ * 方法体逐条一致（{@code glNewList(II)V} 1 处、{@code glEndList()V} 1 处、
+ * {@code PUTFIELD AbstractPartMonitor.updateList:Z} 1 处），四个 {@code require=1} 注入点在两档上
+ * 同时成立；换 AE2 版本时按同一清单复核对齐。</p>
  */
 @Pseudo
 @Mixin(targets = "appeng.parts.reporting.AbstractPartMonitor", remap = false)

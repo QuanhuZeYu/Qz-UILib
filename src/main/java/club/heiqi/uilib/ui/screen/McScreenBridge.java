@@ -78,6 +78,15 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
     private static final boolean LWJGL3IFY_TEXT_BRIDGE_AVAILABLE = SceneLwjgl3ifyTextBridge.isAvailable();
 
     /**
+     * 宿主是否提供文本接管契约（beginTextInput/endTextInput，lwjgl3ify 3.x 世代）。
+     *
+     * <p>「lwjgl3ify 在场」与「lwjgl3ify 能接管文本」是两件事：2.x 世代（GTNH 2.8.x 的 2.1.x）
+     * 只有 InputEvents 入口而没有启停契约，走 MC char 路径是该世代的正确形态，不是异常。</p>
+     */
+    private static final boolean LWJGL3IFY_TEXT_TAKEOVER_SUPPORTED =
+            SceneLwjgl3ifyTextBridge.textTakeoverSupported();
+
+    /**
      * 上一次上报的文本通道状态签名：首开必报一条，之后仅在状态变化时报。
      *
      * <p>与 {@link #logFirstFrameDiagnostics} 同属「常开一次性真机诊断」：真机复现输入类故障时
@@ -179,8 +188,9 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
      * 文本桥还是 MC char 降级路径，以及 external 模式是否真的写进了输入源。级别按"是否异常"选：</p>
      * <ul>
      *   <li>{@code isActive && 实际写入 true} → info（external 路径生效，正常）；</li>
-     *   <li>lwjgl3ify 不在 classpath（探测 false）→ info（降级路径是正常配置，不是告警）；</li>
-     *   <li>lwjgl3ify 在场但 external 未生效 → warn（注册失败/模式未写入，才是异常）。</li>
+     *   <li>lwjgl3ify 不在 classpath（探测 false）→ info（char 路径是正常配置，不是告警）；</li>
+     *   <li>lwjgl3ify 2.x 世代（无 beginTextInput/endTextInput 契约）→ info（该世代本就只能走 char 路径）；</li>
+     *   <li>lwjgl3ify 3.x 世代但 external 未生效 → warn（注册失败/模式未写入，才是异常）。</li>
      * </ul>
      *
      * <p>频率：状态签名变化才打（首开必打一条），重复 initGui/resize 只落 debug。</p>
@@ -212,6 +222,10 @@ public abstract class McScreenBridge extends GuiScreen implements club.heiqi.uil
                     + "pushKeyTyped 的 char 按契约不产 TEXT", screenLabel, state);
         } else if (!LWJGL3IFY_TEXT_BRIDGE_AVAILABLE) {
             LOG.info("[文本通道] initGui {}: {} ⇒ 本环境无 lwjgl3ify，走 MC keyTyped char 降级路径（正常配置）",
+                    screenLabel, state);
+        } else if (!LWJGL3IFY_TEXT_TAKEOVER_SUPPORTED) {
+            LOG.info("[文本通道] initGui {}: {} ⇒ 宿主 lwjgl3ify 为 2.x 世代（无 beginTextInput/endTextInput "
+                    + "契约），本次界面按该世代正确路径走 MC keyTyped char，无需接管",
                     screenLabel, state);
         } else {
             LOG.warn("[文本通道] initGui {} 异常: {} ⇒ lwjgl3ify 在 classpath 上但 external 文本模式未生效，"

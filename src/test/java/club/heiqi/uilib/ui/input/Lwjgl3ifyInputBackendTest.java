@@ -59,15 +59,35 @@ public class Lwjgl3ifyInputBackendTest {
     }
 
     /**
-     * 验证监听注册成功后宿主 `keyTyped` 字符不会再次写入文本队列。
+     * 验证宿主未声明文本接管契约（lwjgl3ify 2.x 世代，GTNH 2.8.0/2.8.4）时，即使监听器注册成功，
+     * 宿主 `keyTyped` 字符仍交轮询后端合成文本：该世代 jar 内无任何类投递 `injectTextEvent`，
+     * 吞 char 等于把文本整段落空。
      */
     @Test
-    public void shouldIgnoreHostTypedCharacterWhenListenerRegistrationSucceeds() throws Exception {
+    public void shouldSynthesizeTextWhenHostHasNoTextTakeoverContract() throws Exception {
         UiInputService inputService = createInputService();
         RecordingInputBackend pollingBackend = new RecordingInputBackend();
         Lwjgl3ifyInputBackend backend = createBackend(inputService, SuccessfulInputEvents.class,
                 SuccessfulInputEvents.class.getMethod("addKeyboardListener", Object.class), new Object(), pollingBackend,
                 new RecordingFallback());
+
+        backend.initialize();
+        backend.handleHostTypedCharacter('A', UiKeyCodes.KEY_A);
+
+        Assert.assertEquals(1, pollingBackend.hostTypedCharacterCount);
+    }
+
+    /**
+     * 验证宿主声明文本接管契约（lwjgl3ify 3.x 世代）时，宿主 `keyTyped` 字符不再写入文本队列，
+     * 文本只由 onTextEvent 投递。
+     */
+    @Test
+    public void shouldIgnoreHostTypedCharacterWhenHostDeclaresTextTakeover() throws Exception {
+        UiInputService inputService = createInputService();
+        RecordingInputBackend pollingBackend = new RecordingInputBackend();
+        Lwjgl3ifyInputBackend backend = createBackend(inputService, TextTakeoverInputEvents.class,
+                TextTakeoverInputEvents.class.getMethod("addKeyboardListener", Object.class), new Object(),
+                pollingBackend, new RecordingFallback());
 
         backend.initialize();
         backend.handleHostTypedCharacter('A', UiKeyCodes.KEY_A);
@@ -222,11 +242,23 @@ public class Lwjgl3ifyInputBackendTest {
     }
 
     /**
-     * 模拟注册成功的 `InputEvents` 类。
+     * 模拟注册成功的 `InputEvents` 类（lwjgl3ify 2.x 世代形态：只有监听入口，无文本接管契约）。
      */
     public static final class SuccessfulInputEvents {
 
         public static void addKeyboardListener(Object listener) {}
+    }
+
+    /**
+     * 模拟声明文本接管契约的 `InputEvents` 类（lwjgl3ify 3.x 世代形态）。
+     */
+    public static final class TextTakeoverInputEvents {
+
+        public static void addKeyboardListener(Object listener) {}
+
+        public static void beginTextInput() {}
+
+        public static void endTextInput() {}
     }
 
     /**

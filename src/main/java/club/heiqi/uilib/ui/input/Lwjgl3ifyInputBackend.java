@@ -15,6 +15,12 @@ import club.heiqi.uilib.ui.event.UiTextInputEvent;
 
 /**
  * 通过反射桥接 lwjgl3ify `InputEvents` 的输入后端。
+ *
+ * <p>「是否吞掉宿主 keyTyped 字符」按<b>宿主世代能力</b>决定，而不是按「监听器注册成功」决定：
+ * 只有宿主声明了 {@code beginTextInput()}/{@code endTextInput()}（lwjgl3ify 3.x 的 SDL 文本输入
+ * 世代，字符由 `onTextEvent` 投递）时才不再走 char 合成；2.x 世代（GLFW 后端，GTNH 2.8.0/2.8.4
+ * 的 2.1.x）虽有 `addKeyboardListener` 可注册，却没有任何类投递 `injectTextEvent`，此时若仍吞
+ * char，文本会在「宿主不投递」与「char 被丢弃」之间整段落空。</p>
  */
 final class Lwjgl3ifyInputBackend implements UiInputBackend {
 
@@ -23,6 +29,7 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     private static final AtomicBoolean INPUT_FIELD_REFLECTION_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean INPUT_EVENTS_METHOD_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean KEYBOARD_POLLING_FALLBACK_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean TEXT_PATH_LOGGED = new AtomicBoolean(false);
     private static final String INPUT_EVENTS_CLASS_NAME = "me.eigenraven.lwjgl3ify.api.InputEvents";
     private static final String KEYBOARD_LISTENER_CLASS_NAME =
             "me.eigenraven.lwjgl3ify.api.InputEvents$KeyboardListener";
@@ -41,7 +48,11 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     private final Class<?> inputEventsClass;
     private final Method addKeyboardListenerMethod;
     private final Object keyboardListener;
-    private volatile boolean keyboardListenerRegistered;
+    /**
+     * 宿主是否具备文本接管能力（{@code InputEvents} 声明 beginTextInput/endTextInput）。
+     * 见类注释：它决定 keyTyped char 是否移交轮询后端合成文本。
+     */
+    private final boolean textTakeoverSupported;
 
     private Lwjgl3ifyInputBackend(UiInputService inputService, Class<?> inputEventsClass,
             Method addKeyboardListenerMethod, Object keyboardListener) {
@@ -61,6 +72,15 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     Lwjgl3ifyInputBackend(UiInputService inputService, Class<?> inputEventsClass,
             Method addKeyboardListenerMethod, Object keyboardListener, UiInputBackend pollingBackend,
             Runnable keyboardPollingFallback) {
+        this(inputService, inputEventsClass, addKeyboardListenerMethod, keyboardListener, pollingBackend,
+                keyboardPollingFallback, supportsTextTakeover(inputEventsClass));
+    }
+
+    /** 显式指定宿主文本接管能力的构造器，供表驱动测试覆盖两个世代。 */
+    Lwjgl3ifyInputBackend(UiInputService inputService, Class<?> inputEventsClass,
+            Method addKeyboardListenerMethod, Object keyboardListener, UiInputBackend pollingBackend,
+            Runnable keyboardPollingFallback, boolean textTakeoverSupported) {
+        this.textTakeoverSupported = textTakeoverSupported;
         this.inputService = inputService;
         this.pollingBackend = pollingBackend;
         this.keyboardPollingFallback = keyboardPollingFallback;
@@ -107,7 +127,7 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
         pollingBackend.initialize();
         try {
             addKeyboardListenerMethod.invoke(null, keyboardListener);
-            keyboardListenerRegistered = true;
+            logTextPathOnce();
         } catch (IllegalAccessException exception) {
             enableKeyboardPollingFallback(exception);
         } catch (InvocationTargetException exception) {
@@ -138,10 +158,32 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
 
     @Override
     public void handleHostTypedCharacter(char typedChar, int keyCode) {
-        if (keyboardListenerRegistered) {
+        if (textTakeoverSupported) {
             return;
         }
         pollingBackend.handleHostTypedCharacter(typedChar, keyCode);
+    }
+
+    /**
+     * 宿主是否声明文本接管契约（静态无参 beginTextInput/endTextInput）。
+     *
+     * <p>探测失败一律按「不支持」处理：宁可多走一次 char 合成，也不让字符在无人投递 text event
+     * 的宿主上被吞掉。</p>
+     */
+    private static boolean supportsTextTakeover(Class<?> inputEventsClass) {
+        if (inputEventsClass == null) {
+            return false;
+        }
+        try {
+            inputEventsClass.getMethod("beginTextInput");
+            inputEventsClass.getMethod("endTextInput");
+            return true;
+        } catch (NoSuchMethodException exception) {
+            return false;
+        } catch (SecurityException exception) {
+            logInputEventsMethodFailureOnce("beginTextInput/endTextInput", exception);
+            return false;
+        }
     }
 
     @Override
@@ -173,6 +215,25 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
             logInputEventsMethodFailureOnce(methodName, exception);
         } catch (IllegalArgumentException exception) {
             logInputEventsMethodFailureOnce(methodName, exception);
+        }
+    }
+
+    /**
+     * 文本路径归属一次性上报（常开真机诊断）。
+     *
+     * <p>一条日志回答「本环境的字符从哪来」：宿主世代决定 keyTyped char 是合成文本，还是被
+     * onTextEvent 取代。</p>
+     */
+    private void logTextPathOnce() {
+        if (!TEXT_PATH_LOGGED.compareAndSet(false, true)) {
+            return;
+        }
+        if (textTakeoverSupported) {
+            LOG.info("UILib 输入后端：宿主 lwjgl3ify 声明文本接管契约（beginTextInput/endTextInput），"
+                    + "keyTyped char 不再合成，文本由 onTextEvent 投递");
+        } else {
+            LOG.info("UILib 输入后端：宿主 lwjgl3ify 无文本接管契约（2.x GLFW 世代），"
+                    + "keyTyped char 由 UILib 合成文本——该世代宿主不投递 onTextEvent，char 路径是正确路径");
         }
     }
 

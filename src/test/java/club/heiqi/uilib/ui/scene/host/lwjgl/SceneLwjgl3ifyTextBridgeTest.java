@@ -30,6 +30,22 @@ public class SceneLwjgl3ifyTextBridgeTest {
     }
 
     @Test
+    public void textTakeoverSupportFollowsBeginEndContract() {
+        FakeAdapter complete = new FakeAdapter();
+        Assert.assertTrue(SceneLwjgl3ifyTextBridge.textTakeoverSupported(complete));
+
+        for (String missing : Arrays.asList("beginTextInput", "endTextInput")) {
+            FakeAdapter incomplete = new FakeAdapter();
+            incomplete.missing.add(missing);
+            Assert.assertFalse("missing=" + missing, SceneLwjgl3ifyTextBridge.textTakeoverSupported(incomplete));
+        }
+
+        FakeAdapter absent = new FakeAdapter();
+        absent.loadFailure = new ClassNotFoundException("missing");
+        Assert.assertFalse(SceneLwjgl3ifyTextBridge.textTakeoverSupported(absent));
+    }
+
+    @Test
     public void successfulLifecycleIsOrderedAndIdempotent() {
         FakeAdapter adapter = new FakeAdapter();
         SceneLwjgl3ifyTextBridge bridge = bridge(adapter);

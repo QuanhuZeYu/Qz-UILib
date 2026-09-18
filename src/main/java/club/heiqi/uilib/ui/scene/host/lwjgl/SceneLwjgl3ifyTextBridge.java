@@ -72,6 +72,39 @@ public final class SceneLwjgl3ifyTextBridge {
     }
 
     /**
+     * 探测宿主是否提供文本接管契约：{@code InputEvents} 上同时存在 {@code beginTextInput()} 与
+     * {@code endTextInput()}。
+     *
+     * <p>两个 lwjgl3ify 世代的正确文本路径不同，本探测就是这条分界：2.x 世代（GLFW 后端，
+     * GTNH 2.8.0/2.8.4 的 2.1.15/2.1.16）不声明这两个方法，其 jar 内也无任何类调用
+     * {@code injectTextEvent}，字符只经 MC {@code keyTyped} 到达，因此「回退 MC char 路径」是该
+     * 世代的正确形态而非降级；3.x 世代（SDL 文本输入，GTNH 2.9.0 的 3.0.x）改为显式启停，
+     * 字符随之改由 {@code onTextEvent} 投递，{@code pushKeyTyped} 的 char 才按契约不产 TEXT。</p>
+     *
+     * <p>与 {@link #register()} 的必要条件同源：本探测为 true 只说明宿主具备接管能力，
+     * 是否真的生效仍由注册事务结果决定。</p>
+     */
+    public static boolean textTakeoverSupported() {
+        return textTakeoverSupported(new ReflectionAdapter());
+    }
+
+    /** 使用指定反射适配器探测宿主文本接管能力。 */
+    static boolean textTakeoverSupported(ReflectionAdapter adapter) {
+        try {
+            Class<?> inputEvents = adapter.loadClass(INPUT_EVENTS_CLASS_NAME, false, ANCHOR_LOADER);
+            try {
+                adapter.getMethod(inputEvents, "beginTextInput");
+                adapter.getMethod(inputEvents, "endTextInput");
+                return true;
+            } catch (NoSuchMethodException | SecurityException e) {
+                return false;
+            }
+        } catch (ClassNotFoundException | SecurityException | LinkageError e) {
+            return false;
+        }
+    }
+
+    /**
      * 注册监听器并启动 SDL 文本输入。
      *
      * @return 注册事务完整提交时返回 true，否则回滚并返回 false
