@@ -34,9 +34,23 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
  *
  * <p>批处理维度：`--sizes` 与 `--page-indexes` 可同时给出，按「页面 × 尺寸」笛卡尔积出图；
  * 多档时 {@code --out} 自动追加 {@code -p<下标>-<W>x<H>} 后缀，末尾输出汇总行。
- * 退出码：0 成功；2 参数错误；3 能力/上下文/渲染失败；4 像素自检未通过或批量中存在失败档位。</p>
+ * 退出码：0 成功；2 参数错误；3 设施失败（装配 / 帧推进 / 读回 / 编码）；4 像素自检未通过或批量中存在失败档位；
+ * 5 运行环境不具备 headless 出图能力（{@link #EXIT_ENVIRONMENT_UNAVAILABLE}）。</p>
+ *
+ * <p><b>为什么 5 要独立于 3</b>：二者都是「没出成图」，但处置相反 —— 3 说明设施或 UI 坏了，必须查；
+ * 5 说明这台机器没能力出图（natives 加载失败 / 无窗口句柄能力 / 上下文建不起来），换环境即可。
+ * 混在一起时，无图形环境上的调用方只能「一律报障」或「一律静默跳过」，两种都错。
+ * 判据来自 {@link HeadlessFailure#isEnvironmentUnavailable()}，不解析消息文本。</p>
  */
 public final class HeadlessShotMain {
+
+    /**
+     * 退出码：运行环境不具备 headless 出图能力（不是被测代码的缺陷）。
+     *
+     * <p>调用方契约：测试据它 {@code Assume} 跳过（见测试域 {@code HeadlessShotGate}），
+     * agent 据它提示换 JDK / 加 Xvfb，而不是去查 UI。</p>
+     */
+    public static final int EXIT_ENVIRONMENT_UNAVAILABLE = 5;
 
     private HeadlessShotMain() {
     }
@@ -292,7 +306,7 @@ public final class HeadlessShotMain {
                 System.out.println("[headless] capabilities: " + session.capabilities().summary());
             } catch (HeadlessFailure failure) {
                 failure.printDiagnosis(System.err);
-                return 3;
+                return exitCodeOf(failure);
             }
             return 0;
         }
@@ -305,6 +319,7 @@ public final class HeadlessShotMain {
         if (nodes || find != null || center != null) {
             int queryFailures = 0;
             boolean facilityFailed = false;
+            boolean environmentMissing = false;
             for (HeadlessRequest request : requests) {
                 if (requests.size() > 1) {
                     System.out.println("[headless] --- " + labelOf(request) + " ---");
@@ -312,6 +327,8 @@ public final class HeadlessShotMain {
                 int code = reportTargets(request, nodes, nodesAll, find, center);
                 if (code == 3) {
                     facilityFailed = true;
+                } else if (code == EXIT_ENVIRONMENT_UNAVAILABLE) {
+                    environmentMissing = true;
                 } else if (code != 0) {
                     queryFailures++;
                 }
@@ -319,7 +336,11 @@ public final class HeadlessShotMain {
             if (facilityFailed) {
                 return 3;
             }
-            return queryFailures == 0 ? 0 : 4;
+            if (queryFailures > 0) {
+                return 4;
+            }
+            // 环境不具备时连帧都推不动，报 5 才不会把「没查」说成「没查到」。
+            return environmentMissing ? EXIT_ENVIRONMENT_UNAVAILABLE : 0;
         }
 
         // 多档默认逐档独立进程：见 runIsolated 的性能与正确性权衡说明。
@@ -328,11 +349,13 @@ public final class HeadlessShotMain {
         }
 
         int okCount = 0;
-        int failedCount = 0;
-        int environmentFailures = 0;
+        int facilityFailures = 0;
+        int contentFailures = 0;
+        int environmentMissing = 0;
         List<String> labels = new ArrayList<String>();
         for (HeadlessRequest request : requests) {
             boolean ok;
+            boolean environmentUnavailable = false;
             try (HeadlessSession session = HeadlessSession.open(request)) {
                 HeadlessArtifact artifact = session.capture();
                 System.out.println(artifact.describe());
@@ -340,14 +363,20 @@ public final class HeadlessShotMain {
             } catch (HeadlessFailure failure) {
                 failure.printDiagnosis(System.err);
                 // 环境 / 上下文 / 装配 / 帧 / 读回 / 编码失败属于「设施没能出图」，与「图出来了但内容可疑」分开报，
-                // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」。
-                environmentFailures++;
+                // 否则 agent 无法按退出码区分「环境没准备好」和「UI 有问题」；「运行环境不具备」再单列一档，
+                // 因为它的处置不是查设施而是换环境（见 EXIT_ENVIRONMENT_UNAVAILABLE）。
+                environmentUnavailable = failure.isEnvironmentUnavailable();
+                if (environmentUnavailable) {
+                    environmentMissing++;
+                } else {
+                    facilityFailures++;
+                }
                 ok = false;
             }
             if (ok) {
                 okCount++;
-            } else {
-                failedCount++;
+            } else if (!environmentUnavailable) {
+                contentFailures++;
             }
             labels.add(labelOf(request) + "=" + (ok ? "ok" : "FAILED"));
         }
@@ -356,10 +385,13 @@ public final class HeadlessShotMain {
             System.out.println("[headless] batch: " + okCount + "/" + total + " ok (同进程) — "
                     + String.join(" ", labels));
         }
-        if (environmentFailures > 0) {
+        if (facilityFailures > 0) {
             return 3;
         }
-        return failedCount == 0 ? 0 : 4;
+        if (contentFailures > 0) {
+            return 4;
+        }
+        return environmentMissing > 0 ? EXIT_ENVIRONMENT_UNAVAILABLE : 0;
     }
 
     /**
@@ -379,11 +411,12 @@ public final class HeadlessShotMain {
      * <p>{@code --share-context} 可换回同进程复用（快，但产物带上述历史依赖），仅建议用于扫观感。</p>
      *
      * @param requests 已展开并校验的请求列表
-     * @return 退出码（0 全绿 / 3 有档位没能出图 / 4 有档位自检未过）
+     * @return 退出码（0 全绿 / 3 有档位设施失败 / 4 有档位自检未过 / 5 运行环境不具备）
      */
     private static int runIsolated(List<HeadlessRequest> requests) {
-        int environmentFailures = 0;
+        int facilityFailures = 0;
         int contentFailures = 0;
+        int environmentMissing = 0;
         List<String> labels = new ArrayList<String>();
         for (HeadlessRequest request : requests) {
             int code = spawnIsolated(argsOf(request));
@@ -392,18 +425,25 @@ public final class HeadlessShotMain {
                 continue;
             }
             labels.add(labelOf(request) + "=FAILED");
-            if (code == 3) {
-                environmentFailures++;
+            // 子进程退出码即契约（见类注释）：3 设施失败 / 4 自检未过 / 5 运行环境不具备。
+            if (code == EXIT_ENVIRONMENT_UNAVAILABLE) {
+                environmentMissing++;
+            } else if (code == 3) {
+                facilityFailures++;
             } else {
                 contentFailures++;
             }
         }
-        System.out.println("[headless] batch: " + (requests.size() - environmentFailures - contentFailures)
-                + "/" + requests.size() + " ok (逐档独立进程) — " + String.join(" ", labels));
-        if (environmentFailures > 0) {
+        System.out.println("[headless] batch: " + (requests.size() - facilityFailures - contentFailures
+                - environmentMissing) + "/" + requests.size() + " ok (逐档独立进程) — "
+                + String.join(" ", labels));
+        if (facilityFailures > 0) {
             return 3;
         }
-        return contentFailures == 0 ? 0 : 4;
+        if (contentFailures > 0) {
+            return 4;
+        }
+        return environmentMissing > 0 ? EXIT_ENVIRONMENT_UNAVAILABLE : 0;
     }
 
     /**
@@ -624,7 +664,7 @@ public final class HeadlessShotMain {
      * @param nodesAll      true = 打印完整树（含不可命中的容器与装饰叶）
      * @param find          按可见文本匹配的片段；null = 不查
      * @param center        要解析的节点地址；null = 不查
-     * @return 退出码（0 成功 / 3 设施失败 / 4 查询无结果）
+     * @return 退出码（0 成功 / 3 设施失败 / 4 查询无结果 / 5 运行环境不具备）
      */
     private static int reportTargets(HeadlessRequest request, boolean nodes, boolean nodesAll,
             String find, String center) {
@@ -682,8 +722,20 @@ public final class HeadlessShotMain {
             return 0;
         } catch (HeadlessFailure failure) {
             failure.printDiagnosis(System.err);
-            return 3;
+            return exitCodeOf(failure);
         }
+    }
+
+    /**
+     * 失败 → 退出码：运行环境不具备 5，其余设施失败 3。
+     *
+     * <p>映射只此一处：三个登出点（{@code --probe} / 目标寻址 / 单档出图）各判一次必然漂移。</p>
+     *
+     * @param failure 捕获到的失败
+     * @return {@link #EXIT_ENVIRONMENT_UNAVAILABLE} 或 3
+     */
+    private static int exitCodeOf(HeadlessFailure failure) {
+        return failure.isEnvironmentUnavailable() ? EXIT_ENVIRONMENT_UNAVAILABLE : 3;
     }
 
     /**

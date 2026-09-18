@@ -128,7 +128,7 @@ public class HeadlessWiringBehaviourTest {
         args.add("--size=" + WIDTH + "x" + HEIGHT);
         args.add("--themes=liquid-glass-light,solid-dark");
         args.add("--out=" + out);
-        String text = execute(classpathFile, nativesDir, args);
+        String text = execute("wiring-matrix", classpathFile, nativesDir, args);
 
         List<Path> produced = siblings(out);
         Set<String> names = new LinkedHashSet<String>();
@@ -170,13 +170,18 @@ public class HeadlessWiringBehaviourTest {
         }
         args.add("--out=" + output);
 
-        String text = execute(classpathFile, nativesDir, args);
+        String text = execute(name, classpathFile, nativesDir, args);
         Assert.assertTrue("headless 未产出 PNG（" + name + "）：\n" + text, Files.isRegularFile(output));
         return new Shot(output, text);
     }
 
-    /** 直启 headless 出图并返回进程输出；退出码非 0 即断言失败。 */
-    private static String execute(String classpathFile, String nativesDir, List<String> args) throws Exception {
+    /**
+     * 直启 headless 出图并返回进程输出；退出码非 0 即断言失败。
+     *
+     * @param label 直启标签（产物名），出现在跳过原因与失败文案里
+     */
+    private static String execute(String label, String classpathFile, String nativesDir, List<String> args)
+            throws Exception {
         String javaExecutable = Paths.get(System.getProperty("java.home"), "bin",
                 isWindows() ? "java.exe" : "java").toString();
         String classpath = new String(Files.readAllBytes(Paths.get(classpathFile)),
@@ -207,7 +212,9 @@ public class HeadlessWiringBehaviourTest {
             stream.close();
         }
         int exit = process.waitFor();
-        Assert.assertEquals("headless 直启失败（exit=" + exit + "）：\n" + text, 0, exit);
+        // 运行环境不具备（无 GL / natives 加载不了）时跳过，其余非 0 一律红。
+        HeadlessShotGate.assumeEnvironmentAvailable(label, exit, text);
+        Assert.assertEquals("headless 直启失败（" + label + " exit=" + exit + "）：\n" + text, 0, exit);
         return text;
     }
 

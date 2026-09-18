@@ -396,14 +396,19 @@ build\headless\qz-shot-full.bat --page=hud --clock=1735689600000 --out=out\hud-2
 |---|---|
 | 0 | 成功 |
 | 2 | 参数错误 |
-| 3 | 能力 / 上下文 / 渲染失败（诊断带阶段标签：能力探测 / GL 上下文 / scene 装配 / 帧推进 / 像素读回 / PNG 编码） |
+| 3 | 设施失败（诊断带阶段标签：能力探测 / scene 装配 / 帧推进 / 像素读回 / PNG 编码） |
 | 4 | 像素自检未通过，或批量中存在失败档位 |
+| 5 | **运行环境不具备**出图能力（natives 加载失败 / AWT 无窗口句柄能力 / GL 上下文建不起来）。诊断里带 `ENV-UNAVAILABLE` 行；处置是换 JDK 或加 Xvfb，不是查 UI |
+
+3 与 5 都是「没出成图」，但处置相反：3 要查设施 / UI，5 是这台机器没能力出图。
+测试侧据此分流（`HeadlessShotGate`）——5 跳过、3 / 4 红，不解析消息文本。
 
 ## 排查
 
 | 现象 | 原因与处理 |
 |---|---|
 | `[GL 上下文] 创建 GL 上下文失败` | 缺 natives（启动器已带 `-Djava.library.path`）；Linux 无桌面环境需 Xvfb |
+| `[GL 上下文] … libjawt.so: version 'SUNWprivate_1.1' not found` | JDK 发行版不兼容：Zulu 的 `libjawt.so` 不导出该版本符号，而 LWJGL2 的 `liblwjgl64.so` 在加载期就依赖它（实测 CI 的 Zulu 17）。换 Temurin / Oracle JDK；此类失败以退出码 5 报出（`ENV-UNAVAILABLE`），不是 UI 缺陷 |
 | `fonts=0`、出图豆腐块或字体初始化失败 | 环境无系统字体（AWT 字体子系统全有或全无）：装 fontconfig + 字体包后重启进程 |
 | 整帧全透明且自检 FAILED | 帧前置语义 / 帧缓冲绑定问题，属设施缺陷，请带自检输出报障 |
 | 文字残缺（只出部分字形） | 字形异步生成尚未就绪：提高 `--settle` / `--max-frames`（默认已自动收敛） |

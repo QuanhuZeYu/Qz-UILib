@@ -9,6 +9,12 @@ import java.io.PrintStream;
  * {@code drawSegments} / {@code publishTextDemand}）带静默 no-op 兜底，本仓历史多次出现
  * 「没抛异常但内容缺失」。headless 设施要求失败可归因，故把阶段（{@link Stage}）编进异常，
  * 调用方与 agent 可据此区分「环境没准备好」与「UI 代码有问题」。</p>
+ *
+ * <p><b>阶段与「环境是否具备」是两个正交维度</b>：{@link Stage} 说「哪一层没准备好」，
+ * {@link #isEnvironmentUnavailable()} 说「这台机器有没有能力跑 headless 出图」。
+ * 后者单独成维是因为同属 {@code Stage.CONTEXT} 的两种情况处置完全相反：natives 加载失败 /
+ * 上下文建不起来是运行环境的事实（调用方应跳过或换环境），而 FBO 不完整、像素面已关闭是
+ * 设施自身的缺陷（必须红）。把它塞进 {@code Stage} 枚举会让「阶段」同时承担两种含义。</p>
  */
 public final class HeadlessFailure extends RuntimeException {
 
@@ -42,20 +48,49 @@ public final class HeadlessFailure extends RuntimeException {
     }
 
     private final Stage stage;
+    /** 失败是否源于运行环境不具备（而非被测代码）：见 {@link #isEnvironmentUnavailable()}。 */
+    private final boolean environmentUnavailable;
 
     public HeadlessFailure(Stage stage, String message) {
-        super("[" + stage.label() + "] " + message);
-        this.stage = stage;
+        this(stage, message, null, false);
     }
 
     public HeadlessFailure(Stage stage, String message, Throwable cause) {
+        this(stage, message, cause, false);
+    }
+
+    private HeadlessFailure(Stage stage, String message, Throwable cause, boolean environmentUnavailable) {
         super("[" + stage.label() + "] " + message, cause);
         this.stage = stage;
+        this.environmentUnavailable = environmentUnavailable;
+    }
+
+    /**
+     * 运行环境不具备：本进程连 GL 上下文都拿不到（natives 加载失败 / AWT 无窗口句柄能力 /
+     * 上下文创建失败），此后任何出图都不可能成功。
+     *
+     * <p>与普通构造的区别只有一个：{@code HeadlessShotMain} 据此返回专用退出码
+     * （{@code EXIT_ENVIRONMENT_UNAVAILABLE}），测试侧据此 {@code Assume} 跳过而不是报缺陷。
+     * 用工厂方法而不是 public 构造，是为了让「这是环境事实」在<b>抛出点</b>就写明，
+     * 而不是让调用方从消息文本里猜。</p>
+     *
+     * @param stage   失败阶段（目前仅 {@link Stage#CONTEXT} 使用）
+     * @param message 诊断文案
+     * @param cause   原始异常（可为 null）
+     * @return 标记为环境不具备的失败
+     */
+    public static HeadlessFailure environmentUnavailable(Stage stage, String message, Throwable cause) {
+        return new HeadlessFailure(stage, message, cause, true);
     }
 
     /** @return 失败阶段 */
     public Stage stage() {
         return stage;
+    }
+
+    /** @return true = 运行环境不具备 headless 出图能力，不是被测代码的缺陷 */
+    public boolean isEnvironmentUnavailable() {
+        return environmentUnavailable;
     }
 
     /**
@@ -65,6 +100,12 @@ public final class HeadlessFailure extends RuntimeException {
      */
     public void printDiagnosis(PrintStream out) {
         out.println("[headless] FAILED stage=" + stage.name() + " (" + stage.label() + ")");
+        if (environmentUnavailable) {
+            // 单独一行且用固定词 ENV-UNAVAILABLE：CI 日志与测试输出都靠它一眼区分
+            // 「这台机器跑不了」与「能出图但坏了」，不必去读下面的 cause 文本。
+            out.println("[headless] ENV-UNAVAILABLE：运行环境不具备 headless 出图能力，"
+                    + "本次终止不是被测代码的缺陷");
+        }
         out.println("[headless] " + getMessage());
         Throwable cause = getCause();
         if (cause != null) {

@@ -17,6 +17,8 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 
+import club.heiqi.uilib.internal.devtools.headless.HeadlessShotGate;
+
 /**
  * headless GL 出图与软光栅出图的文本几何对拍。
  *
@@ -118,6 +120,8 @@ public class HeadlessTextParityTest {
             stream.close();
         }
         int exit = process.waitFor();
+        // 运行环境不具备（无 GL / natives 加载不了）时跳过，其余非 0 一律红。
+        HeadlessShotGate.assumeEnvironmentAvailable("parity-gl", exit, outputText);
         Assert.assertEquals("headless 直启失败（exit=" + exit + "）：\n" + outputText, 0, exit);
         Assert.assertTrue("headless 未产出 PNG：\n" + outputText, Files.isRegularFile(output));
         return output;

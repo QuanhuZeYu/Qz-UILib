@@ -142,6 +142,8 @@ public class HeadlessPageLinkageTest {
             stream.close();
         }
         int exit = process.waitFor();
+        // 运行环境不具备（无 GL / natives 加载不了）时跳过，其余非 0 一律红。
+        HeadlessShotGate.assumeEnvironmentAvailable(name, exit, text);
         Assert.assertEquals("headless 直启失败（" + name + " exit=" + exit + "）：\n" + text, 0, exit);
         // 单档落主名、多档落带轴后缀的名字，故只要求「同前缀至少一个产物」。
         List<Path> produced = sameStem(out);

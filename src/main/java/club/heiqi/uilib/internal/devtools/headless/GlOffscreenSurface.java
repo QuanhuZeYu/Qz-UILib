@@ -69,10 +69,23 @@ public final class GlOffscreenSurface implements AutoCloseable {
     /**
      * 建立上下文与指定尺寸的离屏帧缓冲。
      *
+     * <p><b>为什么上下文建不起来算「运行环境不具备」而不是普通失败</b>：{@code ensureContext()}
+     * 失败意味着本进程连一个 GL 上下文都拿不到（natives 加载失败 / AWT 无窗口句柄能力 / 驱动拒绝），
+     * 此后任何出图都不可能成功 —— 这是运行环境的事实，不是被测代码的缺陷。调用方据此把
+     * 「这台机器跑不了 headless 出图」与「能出图但设施 / 内容有问题」分开（见 {@link HeadlessFailure}、
+     * {@code HeadlessShotMain.EXIT_ENVIRONMENT_UNAVAILABLE}）。</p>
+     *
+     * <p><b>实测成因（保留以免后人重复定位）</b>：CI（ubuntu + Zulu 17）的 {@code libjawt.so}
+     * 不导出 {@code SUNWprivate_1.1} 版本符号，而 LWJGL2 的 {@code liblwjgl64.so} 在 {@code dlopen}
+     * 阶段就要求它，于是报 {@code UnsatisfiedLinkError: liblwjgl64.so: libjawt.so:
+     * version 'SUNWprivate_1.1' not found}。这是 JDK 发行版差异，与 natives 是否解压无关；
+     * Temurin / Oracle JDK 不受影响。另注意它会让 {@link org.lwjgl.opengl.Display} 成为 erroneous 类，
+     * 故 {@link #shutdownContext()} 必须容忍触碰它时的 {@code NoClassDefFoundError}。</p>
+     *
      * @param width  渲染目标宽（像素）
      * @param height 渲染目标高（像素）
      * @return 已就绪的离屏像素面
-     * @throws HeadlessFailure 上下文创建失败或 FBO 不完整
+     * @throws HeadlessFailure 上下文创建失败（环境不具备）或 FBO 不完整
      */
     public static GlOffscreenSurface create(int width, int height) {
         try {
@@ -84,14 +97,17 @@ public final class GlOffscreenSurface implements AutoCloseable {
             String hint;
             if (e instanceof UnsatisfiedLinkError) {
                 hint = "加载 LWJGL2 natives 失败：请确认 natives 已解压且 -Djava.library.path 指向该目录"
-                        + "（exportHeadlessClasspath 生成的 qz-shot.bat 已自带该参数）";
+                        + "（exportHeadlessClasspath 生成的 qz-shot.bat 已自带该参数）；"
+                        + "若报的是 libjawt 的 SUNWprivate_1.1 not found，那是 JDK 发行版不兼容"
+                        + "（Zulu 的 libjawt 不导出该版本符号，而 LWJGL2 依赖它），换 Temurin / Oracle JDK";
             } else if (e instanceof HeadlessException) {
                 hint = "AWT 处于 headless 模式，无法提供离屏窗口句柄（本设施用不显示的 Canvas 承载 GL 上下文）："
                         + "请去掉 -Djava.awt.headless=true";
             } else {
                 hint = "创建 GL 上下文失败（Linux 无桌面环境需 Xvfb）";
             }
-            throw new HeadlessFailure(HeadlessFailure.Stage.CONTEXT, hint + "：" + HeadlessFailure.brief(e), e);
+            throw HeadlessFailure.environmentUnavailable(HeadlessFailure.Stage.CONTEXT,
+                    hint + "：" + HeadlessFailure.brief(e), e);
         }
         String version = safeGlString(GL11.GL_VERSION);
         String renderer = safeGlString(GL11.GL_RENDERER);
@@ -187,13 +203,28 @@ public final class GlOffscreenSurface implements AutoCloseable {
         return canvas;
     }
 
-    /** 进程退出前释放上下文（可选：JVM 退出也会释放）。多测试共享 JVM 时不应调用。 */
+    /**
+     * 进程退出前释放上下文（可选：JVM 退出也会释放）。多测试共享 JVM 时不应调用。
+     *
+     * <p><b>必须容忍 {@link Display} 类初始化失败</b>：natives 加载失败时 {@code Sys.<clinit>}
+     * 抛 {@code UnsatisfiedLinkError}，此后 {@code Display} 是 erroneous 类，任何触碰
+     * （含 {@code Display.isCreated()}）都抛 {@code NoClassDefFoundError}。本方法在
+     * {@code HeadlessShotMain.main} 的 {@code finally} 里调用，未捕获的 Error 会<b>把已算好的退出码
+     * 换成 1</b> —— 实测 CI 正是这样把「运行环境不具备」报成 {@code exit=1}，让调用方无法按契约分流。
+     * 释放是尽力而为的动作，本方法不得有失败语义。</p>
+     */
     public static void shutdownContext() {
-        if (Display.isCreated()) {
-            Display.destroy();
-        }
-        if (hiddenHolder != null) {
-            hiddenHolder.dispose();
+        try {
+            if (Display.isCreated()) {
+                Display.destroy();
+            }
+            if (hiddenHolder != null) {
+                hiddenHolder.dispose();
+                hiddenHolder = null;
+            }
+        } catch (Throwable ignored) {
+            // 见方法注释：上下文本来就没建起来（或 Display 已是 erroneous 类），没有可释放的资源。
+            // 这里绝不能抛出 —— main 的 finally 抛出会吞掉退出码。
             hiddenHolder = null;
         }
     }
