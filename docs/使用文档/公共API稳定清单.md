@@ -2,7 +2,7 @@
 
 本文定义 Qz UILib 当前实现（scene 栈）的公共 API 边界，明确哪些类型与方法属于稳定契约、哪些不承诺稳定、哪些已删除。
 
-清单范围：scene 栈（4.8.0 起）至当前开发线，含 4.9.x 与 4.10.0（本版）新登记面；现行版本号与兼容区间以 `src/main/java/club/heiqi/uilib/MyMod.java`、构建配置与 git tag 为准。每一项以三种状态标记给出：**✅ 稳定**（业务代码可依赖，在本版本期内不随意变更签名或语义）、**⚠️ 公开但不稳定**（对外可见但不承诺稳定，如 beta 能力、引擎细节）、**🔒 内部**（不承诺稳定，不列公共面）。判定口径见「阅读约定」，具体适用范围以各条目登记与当前源码为准。
+清单范围：scene 栈（4.8.0 起）至当前开发线，含 4.9.x、4.10.x 与 4.11.0（本版）新登记面；现行版本号与兼容区间以 `src/main/java/club/heiqi/uilib/MyMod.java`、构建配置与 git tag 为准。每一项以三种状态标记给出：**✅ 稳定**（业务代码可依赖，在本版本期内不随意变更签名或语义）、**⚠️ 公开但不稳定**（对外可见但不承诺稳定，如 beta 能力、引擎细节）、**🔒 内部**（不承诺稳定，不列公共面）。判定口径见「阅读约定」，具体适用范围以各条目登记与当前源码为准。
 
 > **历史档案**：原「v4.x LTS 稳定 API 清单」（4.1.0-LTS 起）已随 breaking major 作废——旧 document 栈
 > （`ui.dom / style / remote / animation / document / paint / layout / page` 整包）已删除，旧清单正文
@@ -32,6 +32,18 @@
   - ✅ 稳定（3 类 + 1 组方法）：`club.heiqi.uilib.ui.scene.node.SceneNode`（新增 `setCollapsed` / `isCollapsed`）、`club.heiqi.uilib.ui.screen.HostViewportScale`、`club.heiqi.uilib.ui.scene.layout.LogicalBox`、`scene.theme.SceneTheme` / `SceneThemes` 的 `warningSubtle` 槽。
   - ⚠️ beta / 观察期（36 类）：`club.heiqi.config.ui.editor.PickerCandidateSource`、`club.heiqi.config.ui.editor.PickerQuery`、`club.heiqi.config.ui.editor.PickerSourceVersion`、`club.heiqi.config.ui.editor.PickerEnvironment`、`club.heiqi.config.ui.editor.CandidateSourceValueEditorProvider`、`club.heiqi.config.ui.editor.PickerIconSource`、`club.heiqi.config.ui.field.PickerSourceGuard`、`club.heiqi.config.ui.field.PickerSourceGuard$ThreadOracle`、`club.heiqi.config.ui.field.PickerGeneration`、`club.heiqi.config.ui.field.PickerRevisionBridge`、`club.heiqi.config.ui.field.PickerIconResolver`、`club.heiqi.config.ui.field.PickerSourceLifecycle`、`club.heiqi.config.ui.field.PickerDensityPreferenceSource`、`club.heiqi.uilib.config.modern.PickerDensityPreferences`、`club.heiqi.uilib.ui.scene.control.SceneGridWindow`、`club.heiqi.uilib.ui.scene.control.SceneGridWindow$RowRange`、`club.heiqi.uilib.ui.scene.control.SceneGridWindow$WindowModel`、`club.heiqi.uilib.ui.scene.control.SceneItemIndex`、`club.heiqi.uilib.ui.scene.control.SceneGridSnapshot`、`club.heiqi.uilib.ui.scene.control.search.PickerDensity`、`club.heiqi.uilib.ui.scene.control.search.PickerDensityPreference`、`club.heiqi.uilib.ui.scene.control.search.PickerDensityTokens`、`club.heiqi.uilib.ui.scene.control.search.PickerMetrics`、`club.heiqi.uilib.ui.scene.control.search.PickerMetrics$PanelBox`、`club.heiqi.uilib.ui.scene.control.search.PickerChrome`、`club.heiqi.uilib.ui.scene.control.search.GridMetrics`、`club.heiqi.uilib.ui.scene.control.search.PickerIconKey`、`club.heiqi.uilib.ui.scene.control.search.PickerIconCache`、`club.heiqi.uilib.ui.scene.control.search.SearchResultList$PageProvider`、`club.heiqi.uilib.ui.scene.control.search.SearchResultList$WindowPage`、`club.heiqi.uilib.ui.scene.control.search.SearchResultList$WindowRequest`、`club.heiqi.uilib.ui.scene.paint.SceneRenderProtocolTokens`、`club.heiqi.uilib.ui.diagnostic.UiPerfMarkers`、`club.heiqi.uilib.resource.ResourceReloadService`、`club.heiqi.uilib.resource.ResourceReloadService$Listener`、`club.heiqi.uilib.i18n.LanguageEpochService`、`club.heiqi.uilib.client.MinecraftMainThreadOracle`。
 - **🔒 不列公共面**：`SceneNode.__structureVersion()`、`SceneRuntime.__setViewportLogicalBox(int,int)`（`__` 双下划线内部桥）；`PickerDensityPreferences` / `PickerDensityPreferenceSource` 属 MC 依赖桥接层（`uilib.config.modern`，本文既有 ⚠️ 口径），本版**不升格**为 LTS 稳定承诺——其是否转为 ✅ 待后续批次裁定。
+
+## 稳定级别与判定理由（4.11.0 新增面）
+
+本节按「阅读约定」的既有口径，对 4.11.0 新登记面逐项给级并写明判定理由（依据为级别定义本身 + 该面在 4.10.1→4.11.0 差分中的客观事实，不新造标准）：
+
+- **✅ 稳定**（纯追加，归入既有 ✅ 族）：
+  - 配置 INTEGER 字段类型：`config.schema.ValueSpec.integer()` / `SectionSpec.integer(String)` / `config.schema.IntegerCodec` / `config.ui.field.IntegerFieldRenderer`——`config.schema` / `config.ui` 既有面即 ✅，本次为**纯加法**（未声明 INTEGER 的 schema 逐位不变），旧浮点值兼容读回保证既有 yaml 不受影响。
+  - `config.ui.ConfigUI.buildScreen(...)` 新增重载与 `config.modern.ModernConfigAssembly`：`ConfigUI.buildScreen` 既有面为 ✅，新重载是同语义的宿主解耦形态（配置页装配与 MC 宿主拆类）。
+- **⚠️ 公开但不稳定**（新面观察期，对外可见但不承诺稳定）：
+  - `ui.env` 端口族（`UiEnvironment` / `DiagnosticsEnvironment` / `LocaleEnvironment` / `ResourceEnvironment` / `ProcessUiEnvironment`）：宿主→框架的**只读环境事实注入面**，代际读取点已全部改走端口，但注入语义（缺席实现、代际比对、安装时机）尚未经一个发布周期观察——同 `FormThemes` 先例先标 ⚠️，稳定后转 ✅。
+  - `ui.scene.host.SceneHostWindow`：由业务侧上提的公共宿主窗口（headless HUD 页与业务页共用同一窗口），签名已收敛但仍属新公共宿主族，同样先观察一个发布周期。
+- **🔒 内部**（不列公共面）：`internal.devtools.headless.*`（headless 出图设施；`verifyHeadlessNotPackaged` 门禁保证不进发布 jar）、`client.AngelicaHudCachingSuppressor`（宿主兼容抑制器，随宿主版本演进）。
 
 ## 稳定 API 面（按子系统）
 
@@ -148,6 +160,13 @@
   - 行为面（非 API 删除，但同批通报）：`picker.lookup.comparisons` 计数常量与写入者删除（删除线性查找助手后恒 0）。
 - 4.0 开发期破坏性变更（登记）：`SceneToast.Entry` 新增 `sourceTheme` 分量（仓内零外部构造点）；`FieldShellBinder.build` 两重载的 `theme` 占位形参删除（仓内调用点已全部收口）。`SceneLabel.TextSpec` 追加 `followTheme` 分量但旧 4 参构造器语义不变（显式 color）。
 
+- **4.11.0 删除与签名变更（含公共面删除 ⇒ 不承诺与 4.10.x 及更早版本混用，需成对升级；minor 级，维持 4.9.0 / 4.10.0 的既有做法）**：
+  - `club.heiqi.uilib.font.FontRuntimeSettings`：`getCharSize()` / `getAwtCharSize()` 删除，由 `getGameCharSize()` / `getGlyphGenerationSize()` 取代；构造器前两个 `double` 形参随之改名（`charSize` / `awtCharSize` → `gameCharSize` / `glyphGenerationSize`）。迁移：按新名取值，语义未变（游戏字号 / glyph 生成字号），改名目的是把此前易混的两个域显式区分；字号配置键随之改名并有兼容迁移读回。
+  - `club.heiqi.uilib.ui.scene.control.search.PickerMetrics.fontSizeFor(int, int)` / `clampPanelDeclaredFontPx(int)` 删除。迁移：改用「声明字号 → 生效字号」的字号域唯一出口，不要自行夹取。
+  - `club.heiqi.config.ui.field.PickerIconResolver.of(ValueEditorProvider)` → `of(ValueEditorProvider, ResourceEnvironment)`；`club.heiqi.config.ui.field.PickerRevisionBridge.forSource(PickerCandidateSource)` → `forSource(PickerCandidateSource, UiEnvironment)`。迁移：两个入口都改为显式传入环境端口。
+  - `club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor.beginFrame(...)` / `beginInputRouting(...)`：签名变更（诊断开关单源收敛到 `UiEnvironment.diagnostics()`）；该面本为 ⚠️ 采样设施，非运行时契约。
+  - `club.heiqi.uilib.ui.scene.host.SceneHostAssembly.assemble(...)` 与 `club.heiqi.uilib.ui.scene.runtime.SceneRuntime` 构造器：签名变更（环境端口注入）。
+
 ## 版本兼容
 
 - **4.9.1 定档时的远端范围 = `[4.9.0,4.10.0)`**：4.9.0 拒绝旧端，旧端拒绝 4.9.0，双端需同步升级。该值其后已调整（提交 `9bb73003`，2026-09-12）：现值 `[4.9.0,4.11.0)`（见 `src/main/java/club/heiqi/uilib/MyMod.java` 的 `acceptableRemoteVersions`；区间随发布批次变化，以实时源码为准），上界抬到制品 `4.10.0` 的下一 minor 边界，覆盖 `4.9.x` 与 `4.10.x`。
@@ -155,6 +174,8 @@
 - 区间上界只决定「覆盖到哪个 minor」，与补丁定档无关：定档时上界为 `4.10.0`、现为 `4.11.0`（覆盖 `4.9.x` 与 `4.10.x`）。两种取值下 `4.9.0` / `4.9.1` 都在区间内，沿用既有区间即可混用，无需双端协调升级。
 - **4.10.0 与 4.9.1 的关系（含 8 项公共面删除 ⇒ 不承诺混用，需成对升级）**：真实删除 **8 项**（1 个公共类 + 7 个公共成员）——`SearchResultList$Row` 整类、`SearchPickerPresentation.currentMember(...)`、`ItemRenderFallbackKeys.splitRegistryKey(String)`，以及本轮 A 方案撤回新增的 5 个成员（`SearchPickerSpec.maxItems()` 与两个 int 构造器、`Values.searchPicker(id,int)` 与 `searchPicker(id,int,mode)`）；另有 5 组 / 6 个公共成员的 4.10.0 开发期新增面在发布前撤回（从未随任何版本发布，不计入）。行为面变化：搜索 lane **无窗口上限**（总量 = 真实命中数 + 惰性分页；原「maxItems 反转为窗口上限」已随 A 方案撤回）、`Props.items()` 由全量变窗口切片、已配置候选不再被排除。因此**不适用** 4.9.0 / 4.9.1 那种「双端可混用」结论：新旧端混用会在编译期（引用已删类型/方法）或语义层（窗口口径）不一致。升级方必须把 UILib 依赖与本地制品成对换到 4.10.0，并按 `docs/开发者文档/发布流程.md` §1 同步版本区间常量（§1 现行口径：FML 远端范围按已批准的兼容承诺确定，且必须包含当前构建版本；本版 4.10.0 落在既有 `[4.9.0,4.11.0)` 内，无需调整区间）。量化口径：javap 全量差分的类数与成员数按最终制品重跑回填，结论与验证边界见 [.changelogs/4.10.0.md](../../.changelogs/4.10.0.md)「验证边界」。
 - 4.8.0 起 public API 变更将按语义化版本走 minor/major 判定；`__` 双下划线内部桥（如 `SceneRuntime.__bridgeLayoutEpoch`）不构成兼容承诺。
+
+- **4.11.0 定档时的远端范围 = `[4.11.0,4.12.0)`**：本版含公共面删除（见「明确删除」4.11.0 段），按《发布流程》§1/§2 不沿用「区间不动」的默认——下界收紧到本版、上界抬到下一 minor 边界。因此 **4.11.0 与 4.10.x 及更早版本不承诺混用，客户端/服务端需成对升级**；4.11.x 内部相互接受。此前「`[4.9.0,4.11.0)` 覆盖 4.9.x 与 4.10.x」的结论自本版起失效。
 
 ## 以代码为准
 

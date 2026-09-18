@@ -6,11 +6,44 @@
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-09-18
+
+> 全文见 [.changelogs/4.11.0.md](.changelogs/4.11.0.md)。本版 tag 取次版本号 **4.11.0**：含**公共面删除与签名变更**（minor 级，维持 4.9.0 / 4.10.0 的既有做法），并按《发布流程》§1/§2 把 `MyMod.acceptableRemoteVersions` 收紧并抬界为 `[4.11.0,4.12.0)`——**与 4.10.x 及更早版本不承诺混用，客户端/服务端需成对升级**。
+
+### 新增
+
+- **headless 出图与验收设施**（devtools，不随发布 jar，`verifyHeadlessNotPackaged` 门禁）：GL 离屏出图，分辨率 / 页面 / 外观 / 环境四条矩阵轴，纯代码输入设备模型与输入脚本，目标寻址（节点地址、场景树投影、按文本查找），失败语义与退出码分流，命令面 × 像素面交叉验证
+- 环境端口 `ui.env`（`UiEnvironment` + 缺席实现 + 生产适配器 `ProcessUiEnvironment`）：宿主环境事实由进程级静态读取改为注入式端口，picker / 图标解析 / 修订桥与代际读取点全部改走端口
+- `ui.scene.host.SceneHostWindow` 从业务侧上提为公共宿主窗口，并接通 headless HUD 页
+- 配置层新增 INTEGER 字段类型（整数落盘形态 + 旧浮点值兼容读回）：`config.schema.IntegerCodec`、`config.ui.field.IntegerFieldRenderer`、`config.modern.ModernConfigAssembly`
+
+### 变更
+
+- 字号域收口：`FontRuntimeSettings` 字段与访问器语义精确化（`gameCharSize` / `glyphGenerationSize`，配置键改名并兼容迁移）、字号域下界放开到 0（倍率 0..200）、「声明字号 → 生效字号」解析式收敛到字号域唯一出口（picker / markdown / playground 各自的自有字号域取消）
+- 诊断开关单源收敛：帧管辖采样、调试浮层订阅与源码门禁同源（`UiEnvironment.diagnostics()`），消除「关闭→开启不重算」的一次性快照
+- 配置页装配与 MC 宿主拆类：`ConfigUI.buildScreen(...)` 不再直接依赖 MC 宿主接线
+- 发布流程支持预发布 tag 蓄水池（`4.11.0-beta.N`）：minor 级新增先进预发布，定档正式版时抬 `acceptableRemoteVersions` 上界
+
+### 修复
+
+- 自定义聊天框：气泡内文本换行宽与气泡内宽同源，长消息不再溢出气泡
+- 控件：`SceneTextArea` 视觉行退出命中候选（hover 档恢复可达）；`SceneButton` 新增 CLICK 止冒泡声明 `stopClickPropagation`
+- markdown / playground：行内 code 等长度设计量随倍率换算（样式表开唯一换算面）、页几何改用生效字号（修 150% / 200% 行重叠与 0% 装饰残留）、倍率变化重建当前页
+- headless：出图确定性（虚拟墙钟解耦、虚拟时钟起点时序竞态）、批量逐档独立进程消除字体 atlas 历史依赖、解除宽度缓存 miss 预算（出图抖动根因）、地址锚装配树根与浮层坐标换算到画布
+
 ### 兼容
 
 - GTNH **2.8.0 / 2.8.4** 纳入支持面：Angelica `1.0.0-beta57` / `1.0.0-beta66b` 按能力档位分派 —— 玩家标签回放走 `ENTITY_ONLY`（两版均无 item 面）、attrib 栈深度走 private `IntStack attribs` 容器档、TESR 批处理渲染器缺失时登记一次告警并退回即时绘制；glyph 上传**入口相位**的遗留 GL 错误改为排空 + 限频告警，事务内相位仍严格（Qz-UILib#75）
 - lwjgl3ify 文本接管按**宿主世代**分派：只有 3.x 世代（`InputEvents` 声明 `beginTextInput`/`endTextInput`）才由 `onTextEvent` 接管并停止合成 char；2.x 世代（GTNH 2.8.x 的 `2.1.15`/`2.1.16`）保留 MC `keyTyped` char 合成路径；文本通道日志区分「无 lwjgl3ify / 2.x 世代正常路径 / 3.x 世代未生效」三态（Qz-Miner#252）
 - 强制停用 **Angelica HUD 缓存**（`client.AngelicaHudCachingSuppressor`）：HUD 缓存把 HUD 渲染进独立 framebuffer，UILib 背景滤镜（液态玻璃）在其中采样不到世界画面 ⇒ HUD 卡片呈黑底；按字段存在性分派——Angelica ≥ 2.1.x 置 `AngelicaConfig.hudCachingActive=false`（宿主自带运行时开关），`1.0.0-betaXX`（GTNH 2.8.0/2.8.4）置 `HUDCaching.framebuffer=null` 命中其原版降级分支；每 tick 守卫（进世界会重建缓存 framebuffer），无需改宿主配置（Qz-Miner#252）
+
+### 移除
+
+- `FontRuntimeSettings.getCharSize()` / `getAwtCharSize()`：由 `getGameCharSize()` / `getGlyphGenerationSize()` 取代（构造器前两个 `double` 形参随语义改名）
+- `PickerMetrics.fontSizeFor(int, int)` / `clampPanelDeclaredFontPx(int)` 删除：字号解析收敛到字号域唯一出口
+- `PickerIconResolver.of(ValueEditorProvider)` / `PickerRevisionBridge.forSource(PickerCandidateSource)`：由接收环境端口的重载取代
+- `UiPerformanceMonitor.beginFrame(...)` / `beginInputRouting(...)`：签名变更（诊断开关单源收敛）
+- `SceneHostAssembly.assemble(...)` 与 `SceneRuntime` 构造器：签名变更（环境端口注入）
 
 ## [4.10.1] - 2026-09-16
 
