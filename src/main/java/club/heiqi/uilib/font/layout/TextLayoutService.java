@@ -1372,8 +1372,14 @@ public class TextLayoutService {
         if (font == null) {
             return Float.NaN;
         }
-        java.awt.Font sized = font.deriveFont(fontType == FontType.BOLD ? java.awt.Font.BOLD
-                : java.awt.Font.PLAIN, (float) Math.max(1, sizePx));
+        int awtStyle = java.awt.Font.PLAIN;
+        if (fontType != null && fontType.isBold()) {
+            awtStyle |= java.awt.Font.BOLD;
+        }
+        if (fontType != null && fontType.isItalic()) {
+            awtStyle |= java.awt.Font.ITALIC;
+        }
+        java.awt.Font sized = font.deriveFont(awtStyle, (float) Math.max(1, sizePx));
         // fractional=false 与生产 FONT_RENDER_CONTEXT 的 true 不同，但该标志只作用于 advance 的
         // 亚像素取整，不改变轮廓边界：实测 Dialog/Serif × 字号 14/24/48 × 9 个字形（含 CJK、
         // 定界符、数学符号）共 54 组，getVisualBounds() 的 x/y/width/height 逐位相同，差异 0。

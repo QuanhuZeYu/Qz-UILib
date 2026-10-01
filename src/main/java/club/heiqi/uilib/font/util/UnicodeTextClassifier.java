@@ -189,6 +189,21 @@ public final class UnicodeTextClassifier {
         return CharClass.REGULAR;
     }
 
+    /**
+     * @return 是否为 CJK 语言类别码点（CJK 统一表意/扩展、假名、谚文、CJK 标点、全角形式等）。
+     *
+     * <p>用于「中文/西文」字体指派分流，不是控制字符分类的一部分。覆盖范围取保守的
+     * 常见 CJK 块；未覆盖的稀有扩展表意仍按西文处理（可在字体排序上兜底）。</p>
+     */
+    public static boolean isCjk(int codepoint) {
+        return (codepoint >= 0x2E80 && codepoint <= 0x9FFF)
+                || (codepoint >= 0xAC00 && codepoint <= 0xD7AF)
+                || (codepoint >= 0xF900 && codepoint <= 0xFAFF)
+                || (codepoint >= 0xFE30 && codepoint <= 0xFE4F)
+                || (codepoint >= 0xFF00 && codepoint <= 0xFFEF)
+                || (codepoint >= 0x20000 && codepoint <= 0x3134F);
+    }
+
     /** @return 是否为换行类控制字符（{@code \n \r \v \f NEL LS PS}） */
     public static boolean isLineBreak(int codepoint) {
         return classify(codepoint) == CharClass.NEWLINE;

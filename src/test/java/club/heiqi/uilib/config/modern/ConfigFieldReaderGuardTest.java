@@ -150,7 +150,7 @@ public class ConfigFieldReaderGuardTest {
         // 宽松匹配 \.\w+\( 会把 label("...") 的显示名一并收进来（30 个），那是超集、不精确，
         // 且一旦哪天 helper 文本与字段重名就会掩盖真缺陷，故按方法名白名单收窄。
         Matcher matcher = Pattern.compile(
-                "\\.(?:number|integer|bool|choice|simpleList|text|password)\\(\\s*\"([A-Za-z0-9_]+)\"")
+                "\\.(?:number|integer|bool|choice|simpleList|string|text|password)\\(\\s*\"([A-Za-z0-9_]+)\"")
                 .matcher(read(SCHEMA));
         while (matcher.find()) {
             keys.add(matcher.group(1));

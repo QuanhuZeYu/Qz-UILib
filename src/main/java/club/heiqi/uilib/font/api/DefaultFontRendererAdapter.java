@@ -1140,13 +1140,18 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
                 double codepointWidth = resolveSegmentCodepointWidth(textLayoutService, codepoint, style,
                         segmentFontSizePx);
+                // 斜体：若该语言类别已指派真实斜体字体族，则走 ITALIC 字面并关闭渲染期斜切；
+                // 否则维持既有行为（正体字面 + 渲染期几何斜切）。
+                FontType baseType = style.getFontType();
+                boolean realItalic = style.isItalic() && settings.getFaceAssignment().hasItalic(codepoint);
+                FontType faceType = realItalic ? FontType.of(baseType.isBold(), true) : baseType;
                 int renderCodepoint = style.isRandomStyle()
                         ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
-                        : resolveDisplayCodepoint(codepoint, style.getFontType(), tables);
+                        : resolveDisplayCodepoint(codepoint, faceType, tables);
                 renderCodepoints[glyphIndex] = renderCodepoint;
-                fontTypes[glyphIndex] = style.getFontType();
+                fontTypes[glyphIndex] = faceType;
                 italicFlags[glyphIndex] = false;
-                inheritTextItalicFlags[glyphIndex] = true;
+                inheritTextItalicFlags[glyphIndex] = !realItalic;
                 // 推进宽度经 TextLayoutService.resolveAdvance 同源（测量/trim/wrap 共用口径，
                 // 内部按 sup/sub 解析有效字号）；装饰线/高亮矩形随 advance 覆盖间隙，整体同乘 renderScale。
                 measuredWidths[glyphIndex] = (float) textLayoutService.resolveAdvance(
@@ -1540,7 +1545,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     private long packDemandKey(int codepoint, FontType fontType) {
-        return ((long) codepoint << 1) | (fontType == FontType.BOLD ? 1L : 0L);
+        return ((long) codepoint << 2) | (fontType == null ? 0L : fontType.ordinal());
     }
 
     private int resolveRandomStyleCodepoint(int originalCodepoint, TextStyle style, double originalWidth,

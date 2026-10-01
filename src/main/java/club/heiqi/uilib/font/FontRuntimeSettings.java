@@ -6,6 +6,7 @@ import java.util.List;
 import club.heiqi.uilib.font.config.FontCharacterRule;
 import club.heiqi.uilib.font.config.FontCharacterRuleSet;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.config.FontFaceAssignment;
 import club.heiqi.uilib.util.UiNumbers;
 
 /**
@@ -56,6 +57,7 @@ public final class FontRuntimeSettings {
     private final String[] characterFontRules;
     private final FontCharacterRuleSet characterRuleSet;
     private final double atlasTextureScale;
+    private final FontFaceAssignment faceAssignment;
 
     /**
      * 创建不可变字体运行时设置。
@@ -73,12 +75,19 @@ public final class FontRuntimeSettings {
             double characterSpacing, boolean fontSortConfigured, String[] fontSort,
             FontCharacterRuleSet characterRuleSet) {
         this(lerpMode, glyphGenerationSize, gameCharSize, spaceWidth, characterSpacing, fontSortConfigured, fontSort,
-                new String[0], characterRuleSet, 64.0D);
+                new String[0], characterRuleSet, 64.0D, FontFaceAssignment.EMPTY);
     }
 
     private FontRuntimeSettings(int lerpMode, double glyphGenerationSize, double gameCharSize, double spaceWidth,
             double characterSpacing, boolean fontSortConfigured, String[] fontSort, String[] characterFontRules,
             FontCharacterRuleSet characterRuleSet, double atlasTextureScale) {
+        this(lerpMode, glyphGenerationSize, gameCharSize, spaceWidth, characterSpacing, fontSortConfigured, fontSort,
+                characterFontRules, characterRuleSet, atlasTextureScale, FontFaceAssignment.EMPTY);
+    }
+
+    private FontRuntimeSettings(int lerpMode, double glyphGenerationSize, double gameCharSize, double spaceWidth,
+            double characterSpacing, boolean fontSortConfigured, String[] fontSort, String[] characterFontRules,
+            FontCharacterRuleSet characterRuleSet, double atlasTextureScale, FontFaceAssignment faceAssignment) {
         requireRepresentable(FIELD_GLYPH_GENERATION_SIZE, glyphGenerationSize);
         requireRepresentable(FIELD_GAME_CHAR_SIZE, gameCharSize);
         requireRepresentable(FIELD_SPACE_WIDTH, spaceWidth);
@@ -97,6 +106,7 @@ public final class FontRuntimeSettings {
                 : Arrays.copyOf(characterFontRules, characterFontRules.length);
         this.characterRuleSet = characterRuleSet == null ? FontCharacterRuleSet.empty() : characterRuleSet;
         this.atlasTextureScale = atlasTextureScale;
+        this.faceAssignment = faceAssignment == null ? FontFaceAssignment.EMPTY : faceAssignment;
     }
 
     /**
@@ -108,7 +118,7 @@ public final class FontRuntimeSettings {
         return new FontRuntimeSettings(FontConfig.lerpMode, FontConfig.glyphGenerationSize, FontConfig.gameCharSize,
                 FontConfig.spaceWidth, FontConfig.characterSpacing, FontConfig.fontSortConfigured,
                 FontConfig.getFontSortSnapshot(), FontConfig.getCharacterFontRuleSnapshot(),
-                FontConfig.getCharacterRuleSet(), FontConfig.atlasTextureScale);
+                FontConfig.getCharacterRuleSet(), FontConfig.atlasTextureScale, FontConfig.getFaceAssignment());
     }
 
     public int getLerpMode() {
@@ -150,6 +160,13 @@ public final class FontRuntimeSettings {
         return characterRuleSet;
     }
 
+    /**
+     * @return 六槽字体指派（西文/中文 × 正常/粗体/斜体）
+     */
+    public FontFaceAssignment getFaceAssignment() {
+        return faceAssignment;
+    }
+
     public double getAtlasTextureScale() {
         return atlasTextureScale;
     }
@@ -178,7 +195,17 @@ public final class FontRuntimeSettings {
                 && fontSortConfigured == other.fontSortConfigured
                 && (!fontSortConfigured || Arrays.equals(fontSort, other.fontSort)
                         || publishedFontOrder != null && Arrays.equals(publishedFontOrder, other.fontSort))
-                && hasSameCharacterRuleSemantics(characterRuleSet, other.characterRuleSet);
+                && hasSameCharacterRuleSemantics(characterRuleSet, other.characterRuleSet)
+                && hasSameFaceAssignment(faceAssignment, other.faceAssignment);
+    }
+
+    private static boolean hasSameFaceAssignment(FontFaceAssignment left, FontFaceAssignment right) {
+        return left.getWesternNormal().equals(right.getWesternNormal())
+                && left.getWesternBold().equals(right.getWesternBold())
+                && left.getWesternItalic().equals(right.getWesternItalic())
+                && left.getCjkNormal().equals(right.getCjkNormal())
+                && left.getCjkBold().equals(right.getCjkBold())
+                && left.getCjkItalic().equals(right.getCjkItalic());
     }
 
     /**

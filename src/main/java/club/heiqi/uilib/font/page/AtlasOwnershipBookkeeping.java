@@ -17,50 +17,82 @@ final class AtlasOwnershipBookkeeping {
 
     private final List<GlyphPage> retiredPageRetries = new ArrayList<GlyphPage>();
     private final Set<GlyphPage> retainedOwnerships = new HashSet<GlyphPage>();
-    private final BitSet normalPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
-    private final BitSet boldPressureGlyphs = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
+    /** 每个字面（{@link FontType#ordinal()}）一份压力位图与压力标记。 */
+    private final BitSet[] pressureGlyphs = new BitSet[FontType.values().length];
+    private final boolean[] pressure = new boolean[FontType.values().length];
     private int residentPageCount;
     private int retainedPageCount;
-    private boolean normalPressure;
-    private boolean boldPressure;
+
+    AtlasOwnershipBookkeeping() {
+        for (int index = 0; index < pressureGlyphs.length; index++) {
+            pressureGlyphs[index] = new BitSet(GlyphRuntimeTables.CODEPOINT_COUNT);
+        }
+    }
 
     boolean hasRetiredRetries() { return !retiredPageRetries.isEmpty(); }
 
     /** generation reset 时清空驻留计数与压力位图（保留退役重试队列）。 */
     void resetResidency() {
         residentPageCount = 0;
-        normalPressure = false;
-        boldPressure = false;
-        normalPressureGlyphs.clear();
-        boldPressureGlyphs.clear();
-    }
-
-    BitSet pressureGlyphs(FontType fontType) {
-        return fontType == FontType.BOLD ? boldPressureGlyphs : normalPressureGlyphs;
-    }
-
-    void setPressure(FontType fontType, boolean pressure) {
-        if (fontType == FontType.BOLD) {
-            boldPressure = pressure;
-        } else {
-            normalPressure = pressure;
+        for (int index = 0; index < pressure.length; index++) {
+            pressure[index] = false;
+            pressureGlyphs[index].clear();
         }
     }
 
-    boolean isPressure(FontType fontType) {
-        return fontType == FontType.BOLD ? boldPressure : normalPressure;
+    private int faceIndex(FontType fontType) {
+        return fontType == null ? FontType.NORMAL.ordinal() : fontType.ordinal();
     }
 
-    boolean bothPressures() { return normalPressure && boldPressure; }
-    boolean normalPressure() { return normalPressure; }
-    boolean boldPressure() { return boldPressure; }
+    BitSet pressureGlyphs(FontType fontType) {
+        return pressureGlyphs[faceIndex(fontType)];
+    }
+
+    void setPressure(FontType fontType, boolean value) {
+        pressure[faceIndex(fontType)] = value;
+    }
+
+    boolean isPressure(FontType fontType) {
+        return pressure[faceIndex(fontType)];
+    }
+
+    /** 至少一个字面处于压力态。 */
+    boolean anyPressure() {
+        for (boolean value : pressure) {
+            if (value) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 处于压力态的字面名（{@code +} 连接），全空返回 NONE。 */
+    String pressureName() {
+        StringBuilder builder = new StringBuilder();
+        for (FontType fontType : FontType.values()) {
+            if (pressure[fontType.ordinal()]) {
+                if (builder.length() > 0) {
+                    builder.append('+');
+                }
+                builder.append(fontType.name());
+            }
+        }
+        return builder.length() == 0 ? "NONE" : builder.toString();
+    }
 
     void clearPressureGlyphs() {
-        normalPressureGlyphs.clear();
-        boldPressureGlyphs.clear();
+        for (BitSet glyphs : pressureGlyphs) {
+            glyphs.clear();
+        }
     }
 
-    int pressureGlyphCount() { return normalPressureGlyphs.cardinality() + boldPressureGlyphs.cardinality(); }
+    int pressureGlyphCount() {
+        int count = 0;
+        for (BitSet glyphs : pressureGlyphs) {
+            count += glyphs.cardinality();
+        }
+        return count;
+    }
 
     int ownedPageCount() { return residentPageCount + retainedPageCount; }
     int residentCount() { return residentPageCount; }

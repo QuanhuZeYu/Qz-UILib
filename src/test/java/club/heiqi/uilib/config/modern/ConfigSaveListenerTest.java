@@ -76,6 +76,12 @@ public class ConfigSaveListenerTest {
     private int saveGlyphInkPadding;
     private double saveAtlasTextureScale;
     private String[] saveMissingFontSort;
+    private String saveWesternNormalFont;
+    private String saveWesternBoldFont;
+    private String saveWesternItalicFont;
+    private String saveCjkNormalFont;
+    private String saveCjkBoldFont;
+    private String saveCjkItalicFont;
 
     @Before
     public void saveStaticState() {
@@ -112,6 +118,12 @@ public class ConfigSaveListenerTest {
         saveGlyphInkPadding = FontConfig.glyphInkPadding;
         saveAtlasTextureScale = FontConfig.atlasTextureScale;
         saveMissingFontSort = FontConfig.missingFontSort;
+        saveWesternNormalFont = FontConfig.westernNormalFont;
+        saveWesternBoldFont = FontConfig.westernBoldFont;
+        saveWesternItalicFont = FontConfig.westernItalicFont;
+        saveCjkNormalFont = FontConfig.cjkNormalFont;
+        saveCjkBoldFont = FontConfig.cjkBoldFont;
+        saveCjkItalicFont = FontConfig.cjkItalicFont;
     }
 
     @After
@@ -152,6 +164,12 @@ public class ConfigSaveListenerTest {
         FontConfig.glyphInkPadding = saveGlyphInkPadding;
         FontConfig.atlasTextureScale = saveAtlasTextureScale;
         FontConfig.missingFontSort = saveMissingFontSort;
+        FontConfig.westernNormalFont = saveWesternNormalFont;
+        FontConfig.westernBoldFont = saveWesternBoldFont;
+        FontConfig.westernItalicFont = saveWesternItalicFont;
+        FontConfig.cjkNormalFont = saveCjkNormalFont;
+        FontConfig.cjkBoldFont = saveCjkBoldFont;
+        FontConfig.cjkItalicFont = saveCjkItalicFont;
         FontConfig.refreshDerivedRuleSet();
         FontConfig.onConfigReload();
     }

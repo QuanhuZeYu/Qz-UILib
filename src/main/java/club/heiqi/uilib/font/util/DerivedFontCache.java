@@ -70,7 +70,7 @@ public class DerivedFontCache {
         if (snapshot == null) {
             return null;
         }
-        int style = fontType == FontType.BOLD ? Font.BOLD : Font.PLAIN;
+        int style = awtStyle(fontType);
         float size = (float) Math.max(glyphSize, 6.0D);
         long key = packKey(fontIndex, style, size);
         synchronized (this) {
@@ -131,6 +131,18 @@ public class DerivedFontCache {
 
     private FontCatalog.Snapshot currentSnapshot() {
         return fixedSnapshot == null ? fontCatalog.snapshot() : fixedSnapshot;
+    }
+
+    /** 字面 → AWT style 位：粗体/斜体两维独立叠加，四个字面各有稳定键。 */
+    private static int awtStyle(FontType fontType) {
+        int style = Font.PLAIN;
+        if (fontType != null && fontType.isBold()) {
+            style |= Font.BOLD;
+        }
+        if (fontType != null && fontType.isItalic()) {
+            style |= Font.ITALIC;
+        }
+        return style;
     }
 
     private long packKey(int fontIndex, int style, float size) {

@@ -175,6 +175,14 @@ public final class ConfigValueBridge {
         FontConfig.fontSort = listToStringArray(authority.<List<String>>get("fontSystem.fontSort"));
         FontConfig.characterFontRules = listToStringArray(authority.<List<String>>get("fontSystem.characterFontRules"));
 
+        // STRING 字段：六槽字体指派（西文/中文 × 正常/粗体/斜体），空串 = 未指派。
+        FontConfig.westernNormalFont = stringOrEmpty(authority, "fontSystem.westernNormalFont");
+        FontConfig.westernBoldFont = stringOrEmpty(authority, "fontSystem.westernBoldFont");
+        FontConfig.westernItalicFont = stringOrEmpty(authority, "fontSystem.westernItalicFont");
+        FontConfig.cjkNormalFont = stringOrEmpty(authority, "fontSystem.cjkNormalFont");
+        FontConfig.cjkBoldFont = stringOrEmpty(authority, "fontSystem.cjkBoldFont");
+        FontConfig.cjkItalicFont = stringOrEmpty(authority, "fontSystem.cjkItalicFont");
+
         // fontSortConfigured 语义按 fontSort 数组是否非空决定（活消费点=FontGenerationRegistry
         // .prepare 的 orderHints 二分支，经 FontRuntimeSettings.isFontSortConfigured 读取；
         // 注：同名旧类 font/util/FontRegistry 为零实例化遗留壳，勿按其找逻辑）：
@@ -291,5 +299,17 @@ public final class ConfigValueBridge {
      */
     private static String[] listToStringArray(List<String> list) {
         return list == null ? new String[0] : list.toArray(new String[0]);
+    }
+
+    /**
+     * 读取字符串字段，null 归空串（path 缺失或值类型不符时 Authority 可能返 null）。
+     *
+     * @param authority 权威源
+     * @param path      字段路径
+     * @return 不为 null 的字符串
+     */
+    private static String stringOrEmpty(Authority authority, String path) {
+        String value = authority.getString(path);
+        return value == null ? "" : value;
     }
 }

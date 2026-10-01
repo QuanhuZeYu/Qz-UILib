@@ -82,6 +82,12 @@ public class ConfigValueBridgeTest {
     private int saveGlyphInkPadding;
     private double saveAtlasTextureScale;
     private String[] saveMissingFontSort;
+    private String saveWesternNormalFont;
+    private String saveWesternBoldFont;
+    private String saveWesternItalicFont;
+    private String saveCjkNormalFont;
+    private String saveCjkBoldFont;
+    private String saveCjkItalicFont;
 
     /**
      * 保存所有受测静态字段初值，防止测试间相互污染。
@@ -119,6 +125,12 @@ public class ConfigValueBridgeTest {
         saveGlyphInkPadding = FontConfig.glyphInkPadding;
         saveAtlasTextureScale = FontConfig.atlasTextureScale;
         saveMissingFontSort = FontConfig.missingFontSort;
+        saveWesternNormalFont = FontConfig.westernNormalFont;
+        saveWesternBoldFont = FontConfig.westernBoldFont;
+        saveWesternItalicFont = FontConfig.westernItalicFont;
+        saveCjkNormalFont = FontConfig.cjkNormalFont;
+        saveCjkBoldFont = FontConfig.cjkBoldFont;
+        saveCjkItalicFont = FontConfig.cjkItalicFont;
     }
 
     /**
@@ -155,6 +167,12 @@ public class ConfigValueBridgeTest {
         FontConfig.glyphInkPadding = saveGlyphInkPadding;
         FontConfig.atlasTextureScale = saveAtlasTextureScale;
         FontConfig.missingFontSort = saveMissingFontSort;
+        FontConfig.westernNormalFont = saveWesternNormalFont;
+        FontConfig.westernBoldFont = saveWesternBoldFont;
+        FontConfig.westernItalicFont = saveWesternItalicFont;
+        FontConfig.cjkNormalFont = saveCjkNormalFont;
+        FontConfig.cjkBoldFont = saveCjkBoldFont;
+        FontConfig.cjkItalicFont = saveCjkItalicFont;
         // 刷新 characterRuleSet 派生态，避免快照泄漏
         FontConfig.refreshDerivedRuleSet();
         // 同步 last* 私有快照：恢复 public 后若不重跑 onConfigReload，

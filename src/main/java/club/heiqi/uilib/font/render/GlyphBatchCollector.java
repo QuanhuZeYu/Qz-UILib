@@ -16,19 +16,27 @@ import club.heiqi.uilib.font.page.GlyphRuntimeTables;
  */
 public final class GlyphBatchCollector implements GlyphCollector {
 
-    private static final byte ACTIVE_TYPE_NORMAL = 0;
-    private static final byte ACTIVE_TYPE_BOLD = 1;
+    /** 字面数量（{@code FontType.values().length}，NORMAL/BOLD/ITALIC/BOLD_ITALIC）。 */
+    private static final int FACE_COUNT = FontType.values().length;
 
     /** 表示本次收集没有记录到任何字形颜色的哨兵值。 */
     public static final int NO_GLYPH_COLOR = -1;
 
-    private GlyphRenderBatch[] normalPageBatches = new GlyphRenderBatch[4];
-    private GlyphRenderBatch[] boldPageBatches = new GlyphRenderBatch[4];
+    /** 每字面一份页批次数组；索引 = {@code FontType.ordinal()}。 */
+    private final GlyphRenderBatch[][] pageBatches = new GlyphRenderBatch[FACE_COUNT][];
+    /** 每字面一份页激活标记；索引 = {@code FontType.ordinal()}。 */
+    private final boolean[][] activePages = new boolean[FACE_COUNT][];
     private int[] activePageIndices = new int[8];
+    /** 激活页所属字面的 {@code FontType.ordinal()}。 */
     private byte[] activePageTypes = new byte[8];
-    private boolean[] activeNormalPages = new boolean[4];
-    private boolean[] activeBoldPages = new boolean[4];
     private int activePageCount;
+
+    {
+        for (int faceIndex = 0; faceIndex < FACE_COUNT; faceIndex++) {
+            pageBatches[faceIndex] = new GlyphRenderBatch[4];
+            activePages[faceIndex] = new boolean[4];
+        }
+    }
     private final GlyphRenderBatch decorationBatch = new GlyphRenderBatch();
     private final GlyphRenderBatch markBackgroundBatch = new GlyphRenderBatch();
     private int quadCount;
@@ -128,8 +136,7 @@ public final class GlyphBatchCollector implements GlyphCollector {
             return null;
         }
         int pageIndex = activePageIndices[activeIndex];
-        GlyphRenderBatch[] batches = activePageTypes[activeIndex] == ACTIVE_TYPE_BOLD ? boldPageBatches
-                : normalPageBatches;
+        GlyphRenderBatch[] batches = pageBatches[activePageTypes[activeIndex]];
         if (pageIndex < 0 || pageIndex >= batches.length) {
             return null;
         }
@@ -162,60 +169,57 @@ public final class GlyphBatchCollector implements GlyphCollector {
         lastCollectedGlyphColor = NO_GLYPH_COLOR;
     }
 
+    private static int faceIndex(FontType fontType) {
+        return fontType == null ? FontType.NORMAL.ordinal() : fontType.ordinal();
+    }
+
     private GlyphRenderBatch obtainPageBatch(FontType fontType, int pageIndex, int textureId) {
-        GlyphRenderBatch[] batches = ensurePageBatchCapacity(fontType, pageIndex + 1);
+        int faceIndex = faceIndex(fontType);
+        GlyphRenderBatch[] batches = ensurePageBatchCapacity(faceIndex, pageIndex + 1);
         GlyphRenderBatch batch = batches[pageIndex];
         if (batch == null) {
             batch = new GlyphRenderBatch();
             batches[pageIndex] = batch;
         }
-        if (markPageActive(fontType, pageIndex)) {
-            appendActivePage(fontType, pageIndex);
+        if (markPageActive(faceIndex, pageIndex)) {
+            appendActivePage(faceIndex, pageIndex);
         }
         batch.setTextureId(textureId);
         return batch;
     }
 
-    private GlyphRenderBatch[] ensurePageBatchCapacity(FontType fontType, int minCapacity) {
-        if (fontType == FontType.BOLD) {
-            if (boldPageBatches.length < minCapacity) {
-                boldPageBatches = grow(boldPageBatches, minCapacity);
-                activeBoldPages = grow(activeBoldPages, minCapacity);
-            }
-            return boldPageBatches;
+    private GlyphRenderBatch[] ensurePageBatchCapacity(int faceIndex, int minCapacity) {
+        if (pageBatches[faceIndex].length < minCapacity) {
+            pageBatches[faceIndex] = grow(pageBatches[faceIndex], minCapacity);
+            activePages[faceIndex] = grow(activePages[faceIndex], minCapacity);
         }
-        if (normalPageBatches.length < minCapacity) {
-            normalPageBatches = grow(normalPageBatches, minCapacity);
-            activeNormalPages = grow(activeNormalPages, minCapacity);
-        }
-        return normalPageBatches;
+        return pageBatches[faceIndex];
     }
 
-    private boolean markPageActive(FontType fontType, int pageIndex) {
-        boolean[] activePages = fontType == FontType.BOLD ? activeBoldPages : activeNormalPages;
-        if (activePages[pageIndex]) {
+    private boolean markPageActive(int faceIndex, int pageIndex) {
+        boolean[] faceActivePages = activePages[faceIndex];
+        if (faceActivePages[pageIndex]) {
             return false;
         }
-        activePages[pageIndex] = true;
+        faceActivePages[pageIndex] = true;
         return true;
     }
 
-    private void appendActivePage(FontType fontType, int pageIndex) {
+    private void appendActivePage(int faceIndex, int pageIndex) {
         if (activePageCount >= activePageIndices.length) {
             activePageIndices = grow(activePageIndices, activePageCount + 1);
             activePageTypes = grow(activePageTypes, activePageCount + 1);
         }
         activePageIndices[activePageCount] = pageIndex;
-        activePageTypes[activePageCount] = fontType == FontType.BOLD ? ACTIVE_TYPE_BOLD : ACTIVE_TYPE_NORMAL;
+        activePageTypes[activePageCount] = (byte) faceIndex;
         activePageCount++;
     }
 
     private void clearActiveMarker(int activeIndex) {
         int pageIndex = activePageIndices[activeIndex];
-        boolean[] activePages = activePageTypes[activeIndex] == ACTIVE_TYPE_BOLD ? activeBoldPages
-                : activeNormalPages;
-        if (pageIndex >= 0 && pageIndex < activePages.length) {
-            activePages[pageIndex] = false;
+        boolean[] faceActivePages = activePages[activePageTypes[activeIndex]];
+        if (pageIndex >= 0 && pageIndex < faceActivePages.length) {
+            faceActivePages[pageIndex] = false;
         }
     }
 

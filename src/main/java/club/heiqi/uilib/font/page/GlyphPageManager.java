@@ -240,8 +240,13 @@ public class GlyphPageManager {
             throw new IllegalStateException("上一 retiring generation 仍持有 atlas page，拒绝退休当前 active generation");
         }
         if (initialized.get()) {
-            closePages(runtimeTables.normalPages, runtimeTables.normalPageCount);
-            closePages(runtimeTables.boldPages, runtimeTables.boldPageCount);
+            for (FontType fontType : FontType.values()) {
+                FaceTables face = runtimeTables.faces[fontType.ordinal()];
+                if (!face.isAllocated()) {
+                    continue;
+                }
+                closePages(face.pages, face.pageCount);
+            }
         }
         discardPendingUploads();
         demands.clear();
@@ -765,18 +770,27 @@ public class GlyphPageManager {
      * @return 可恢复字符请求 packed 快照
      */
     public synchronized long[] snapshotRecoverableRequests() {
-        int requestCount = countRecoverableRequests(runtimeTables.stateNormal)
-                + countRecoverableRequests(runtimeTables.stateBold)
-                + atlasBookkeeping.pressureGlyphCount();
+        int requestCount = atlasBookkeeping.pressureGlyphCount();
+        for (FontType fontType : FontType.values()) {
+            FaceTables face = runtimeTables.faces[fontType.ordinal()];
+            if (face.isAllocated()) {
+                requestCount += countRecoverableRequests(face.state);
+            }
+        }
         if (requestCount <= 0) {
             return new long[0];
         }
         long[] requests = new long[requestCount];
-        int offset = collectRecoverableRequests(requests, 0, runtimeTables.stateNormal, FontType.NORMAL);
-        offset = collectRecoverableRequests(requests, offset, runtimeTables.stateBold, FontType.BOLD);
-        offset = collectPressureRequests(requests, offset, atlasBookkeeping.pressureGlyphs(FontType.NORMAL),
-                FontType.NORMAL);
-        collectPressureRequests(requests, offset, atlasBookkeeping.pressureGlyphs(FontType.BOLD), FontType.BOLD);
+        int offset = 0;
+        for (FontType fontType : FontType.values()) {
+            FaceTables face = runtimeTables.faces[fontType.ordinal()];
+            if (face.isAllocated()) {
+                offset = collectRecoverableRequests(requests, offset, face.state, fontType);
+            }
+        }
+        for (FontType fontType : FontType.values()) {
+            offset = collectPressureRequests(requests, offset, atlasBookkeeping.pressureGlyphs(fontType), fontType);
+        }
         return requests;
     }
 
@@ -1171,11 +1185,7 @@ public class GlyphPageManager {
 
     private void markAtlasPressure(GlyphRequestToken token, UploadAttemptContext context, String reason) {
         FontType fontType = atlasGroup(token);
-        if (fontType == FontType.BOLD) {
-            atlasBookkeeping.setPressure(FontType.BOLD, true);
-        } else {
-            atlasBookkeeping.setPressure(FontType.NORMAL, true);
-        }
+        atlasBookkeeping.setPressure(fontType, true);
         stats.recordAtlasPressure();
         context.pressure = reason;
         context.rollbackReason = "ATLAS_PRESSURE_RETRY";
@@ -1272,8 +1282,9 @@ public class GlyphPageManager {
         }
         for (MathGlyphRecord record : runtimeTables.mathGlyphs.values()) record.pressure = false;
         atlasBookkeeping.clearPressureGlyphs();
-        atlasBookkeeping.setPressure(FontType.NORMAL, false);
-        atlasBookkeeping.setPressure(FontType.BOLD, false);
+        for (FontType fontType : FontType.values()) {
+            atlasBookkeeping.setPressure(fontType, false);
+        }
     }
 
     private String uploadRollbackReason(Throwable throwable) {
@@ -1285,16 +1296,7 @@ public class GlyphPageManager {
     }
 
     private String atlasPressureName() {
-        if (atlasBookkeeping.bothPressures()) {
-            return "NORMAL+BOLD";
-        }
-        if (atlasBookkeeping.normalPressure()) {
-            return "NORMAL";
-        }
-        if (atlasBookkeeping.boldPressure()) {
-            return "BOLD";
-        }
-        return "NONE";
+        return atlasBookkeeping.pressureName();
     }
 
     private int atlasOwnedPageCount() {
@@ -1315,9 +1317,14 @@ public class GlyphPageManager {
 
     private long atlasOwnedTextureBytes() {
         Set<GlyphPage> countedPages = new HashSet<GlyphPage>();
-        long ownedBytes = collectAtlasBytes(runtimeTables.normalPages, runtimeTables.normalPageCount, countedPages);
-        ownedBytes = saturatedAdd(ownedBytes,
-                collectAtlasBytes(runtimeTables.boldPages, runtimeTables.boldPageCount, countedPages));
+        long ownedBytes = 0L;
+        for (FontType fontType : FontType.values()) {
+            FaceTables face = runtimeTables.faces[fontType.ordinal()];
+            if (!face.isAllocated()) {
+                continue;
+            }
+            ownedBytes = saturatedAdd(ownedBytes, collectAtlasBytes(face.pages, face.pageCount, countedPages));
+        }
         for (GlyphPage page : atlasBookkeeping.retainedOwnershipsSnapshot()) {
             if (countedPages.add(page)) {
                 ownedBytes = saturatedAdd(ownedBytes, atlasPageBytes(page.getTextureSize()));
@@ -1355,19 +1362,13 @@ public class GlyphPageManager {
 
     private void detachLastPage(FontType fontType, GlyphPage page) {
         int pageIndex = page.getPageIndex();
-        if (fontType == FontType.BOLD) {
-            if (runtimeTables.boldPageCount != pageIndex + 1 || runtimeTables.boldPages[pageIndex] != page) {
-                throw new IllegalStateException("无法回滚非末尾 bold atlas page publication");
-            }
-            runtimeTables.boldPages[pageIndex] = null;
-            runtimeTables.boldPageCount = pageIndex;
-            return;
+        FaceTables face = runtimeTables.forType(fontType);
+        if (face.pageCount != pageIndex + 1 || face.pages[pageIndex] != page) {
+            throw new IllegalStateException("无法回滚非末尾 " + fontType + " atlas page publication");
         }
-        if (runtimeTables.normalPageCount != pageIndex + 1 || runtimeTables.normalPages[pageIndex] != page) {
-            throw new IllegalStateException("无法回滚非末尾 normal atlas page publication");
-        }
-        runtimeTables.normalPages[pageIndex] = null;
-        runtimeTables.normalPageCount = pageIndex;
+        face.pages[pageIndex] = null;
+        face.pageCount = pageIndex;
+        runtimeTables.syncPageAliases();
     }
 
     private static long elapsedNanos(long startedNanos, long currentNanos) {
@@ -1647,8 +1648,8 @@ public class GlyphPageManager {
     }
 
     private static long packRecoverableRequest(int codepoint, FontType fontType) {
-        long typeBit = fontType == FontType.BOLD ? 1L : 0L;
-        return ((long) codepoint & 0x1FFFFFL) << 1 | typeBit;
+        int typeBits = fontType == null ? 0 : fontType.ordinal();
+        return ((long) codepoint & 0x1FFFFFL) << GlyphRuntimeTables.REQUEST_TYPE_BITS | (typeBits & 0x3L);
     }
 
     /**
@@ -1658,17 +1659,17 @@ public class GlyphPageManager {
      * @return 字符码点
      */
     public static int unpackRecoverableCodepoint(long packedRequest) {
-        return (int) ((packedRequest >>> 1) & 0x1FFFFFL);
+        return (int) ((packedRequest >>> GlyphRuntimeTables.REQUEST_TYPE_BITS) & 0x1FFFFFL);
     }
 
     /**
-     * 从 packed 请求中解出字重类型。
+     * 从 packed 请求中解出字面类型。
      *
      * @param packedRequest packed 请求
-     * @return 字重类型
+     * @return 字面类型
      */
     public static FontType unpackRecoverableFontType(long packedRequest) {
-        return (packedRequest & 1L) != 0L ? FontType.BOLD : FontType.NORMAL;
+        return FontType.values()[(int) (packedRequest & 0x3L)];
     }
 
     private GlyphState toGlyphState(byte state) {

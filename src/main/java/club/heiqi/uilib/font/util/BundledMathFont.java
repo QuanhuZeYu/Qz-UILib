@@ -286,7 +286,7 @@ public final class BundledMathFont implements MathFontSupport {
 
     /** 仅映射明确的数学 alphabet；符号、已编码数学字母和未知文字原样查 cmap。 */
     private static int alphabetCodepoint(int cp, MathFontStyle style, FontType weight) {
-        boolean bold = style == MathFontStyle.BOLD || weight == FontType.BOLD;
+        boolean bold = style == MathFontStyle.BOLD || weight != null && weight.isBold();
         boolean latin = (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
         boolean greekSmall = (cp >= 0x3b1 && cp <= 0x3c9) || greekVariant(cp) >= 0;
         boolean italic = style == MathFontStyle.ITALIC

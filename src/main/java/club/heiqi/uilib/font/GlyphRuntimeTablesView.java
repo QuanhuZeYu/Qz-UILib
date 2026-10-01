@@ -1,5 +1,6 @@
 package club.heiqi.uilib.font;
 
+import club.heiqi.uilib.font.page.FaceTables;
 import club.heiqi.uilib.font.page.GlyphPage;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
@@ -19,10 +20,9 @@ public final class GlyphRuntimeTablesView {
     private final Object ownerToken;
     private final int runtimeVersion;
     private final GlyphPage[] mathPages;
-    private final int[] textureIdNormal;
-    private final int[] textureIdBold;
-    private final int[] textureSizeNormal;
-    private final int[] textureSizeBold;
+    /** 每字面一份页纹理 ID / 边长快照；索引 = {@code FontType.ordinal()}。 */
+    private final int[][] textureIds;
+    private final int[][] textureSizes;
 
     GlyphRuntimeTablesView(GlyphRuntimeTables tables, GlyphPageManager pageManager, Object ownerToken,
             int runtimeVersion) {
@@ -35,10 +35,12 @@ public final class GlyphRuntimeTablesView {
         this.runtimeVersion = runtimeVersion;
         // 渲染热路径帧级快照：构造时刻冻结页表纹理 ID/尺寸，绘制循环内零 FontRuntimeAccess 开销。
         // 上传只发生在 RenderTick START 稳定阶段（渲染前），快照与帧内绘制天然一致。
-        this.textureIdNormal = snapshotTextureIds(FontType.NORMAL);
-        this.textureIdBold = snapshotTextureIds(FontType.BOLD);
-        this.textureSizeNormal = snapshotTextureSizes(FontType.NORMAL);
-        this.textureSizeBold = snapshotTextureSizes(FontType.BOLD);
+        this.textureIds = new int[FontType.values().length][];
+        this.textureSizes = new int[FontType.values().length][];
+        for (FontType fontType : FontType.values()) {
+            this.textureIds[fontType.ordinal()] = snapshotTextureIds(fontType);
+            this.textureSizes[fontType.ordinal()] = snapshotTextureSizes(fontType);
+        }
         this.mathPages = new GlyphPage[tables.pageCount(FontType.NORMAL)];
         System.arraycopy(tables.pages(FontType.NORMAL), 0, mathPages, 0, mathPages.length);
     }
@@ -168,7 +170,7 @@ public final class GlyphRuntimeTablesView {
      * 的 0 语义一致，可直接作为渲染门控。</p>
      */
     public int getPageTextureIdSnapshot(FontType fontType, int pageIndex) {
-        int[] snapshot = fontType == FontType.BOLD ? textureIdBold : textureIdNormal;
+        int[] snapshot = textureIds[fontType == null ? 0 : fontType.ordinal()];
         return pageIndex >= 0 && pageIndex < snapshot.length ? snapshot[pageIndex] : 0;
     }
 
@@ -178,13 +180,17 @@ public final class GlyphRuntimeTablesView {
      * <p>页无效（不存在/版本不匹配）返回 0，与 {@link #getPageTextureSize} 的 0 语义一致。</p>
      */
     public int getPageTextureSizeSnapshot(FontType fontType, int pageIndex) {
-        int[] snapshot = fontType == FontType.BOLD ? textureSizeBold : textureSizeNormal;
+        int[] snapshot = textureSizes[fontType == null ? 0 : fontType.ordinal()];
         return pageIndex >= 0 && pageIndex < snapshot.length ? snapshot[pageIndex] : 0;
     }
 
     private int[] snapshotTextureIds(FontType fontType) {
-        GlyphPage[] pages = tables.pages(fontType);
-        int pageCount = tables.pageCount(fontType);
+        FaceTables face = tables.faces[fontType.ordinal()];
+        if (!face.isAllocated()) {
+            return new int[0];
+        }
+        GlyphPage[] pages = face.pages;
+        int pageCount = face.pageCount;
         int[] snapshot = new int[pageCount];
         for (int index = 0; index < pageCount; index++) {
             GlyphPage page = pages[index];
@@ -195,8 +201,12 @@ public final class GlyphRuntimeTablesView {
     }
 
     private int[] snapshotTextureSizes(FontType fontType) {
-        GlyphPage[] pages = tables.pages(fontType);
-        int pageCount = tables.pageCount(fontType);
+        FaceTables face = tables.faces[fontType.ordinal()];
+        if (!face.isAllocated()) {
+            return new int[0];
+        }
+        GlyphPage[] pages = face.pages;
+        int pageCount = face.pageCount;
         int[] snapshot = new int[pageCount];
         for (int index = 0; index < pageCount; index++) {
             GlyphPage page = pages[index];
@@ -207,7 +217,8 @@ public final class GlyphRuntimeTablesView {
     }
 
     private GlyphPage resolvePage(FontType fontType, int pageIndex) {
-        if (pageIndex < 0 || pageIndex >= tables.pageCount(fontType)) {
+        FaceTables face = tables.faces[fontType == null ? 0 : fontType.ordinal()];
+        if (!face.isAllocated() || pageIndex < 0 || pageIndex >= face.pageCount) {
             return null;
         }
         return pageManager.getPageByLocation(GlyphRuntimeTables.packLocation(pageIndex, 0), fontType);

@@ -523,10 +523,7 @@ public class GlyphGenerationDispatcher {
     }
 
     private long packRequestKey(int generation, int codepoint, FontType fontType) {
-        long versionBits = ((long) generation & 0xFFFFFFFFL) << 32;
-        long codepointBits = ((long) codepoint & 0x1FFFFFL) << 1;
-        long typeBit = fontType == FontType.BOLD ? 1L : 0L;
-        return versionBits | codepointBits | typeBit;
+        return club.heiqi.uilib.font.page.GlyphRuntimeTables.packRequestKey(generation, codepoint, fontType);
     }
 
     private final class ScheduledGlyphTask implements Runnable {

@@ -83,6 +83,17 @@ public final class FontConfig {
     public static String[] missingFontSort = new String[0];
     public static String[] characterFontRules = new String[0];
     public static boolean fontSortConfigured;
+    /**
+     * 六槽字体指派（西文/中文 × 正常/粗体/斜体）。空串 = 未指派，退回自动排序。
+     *
+     * <p>斜体槽被指派时，斜体文本使用该字体族的真实斜体字面，关闭渲染期几何斜切。</p>
+     */
+    public static String westernNormalFont = "";
+    public static String westernBoldFont = "";
+    public static String westernItalicFont = "";
+    public static String cjkNormalFont = "";
+    public static String cjkBoldFont = "";
+    public static String cjkItalicFont = "";
     private static volatile FontCharacterRuleSet characterRuleSet = FontCharacterRuleSet.empty();
 
     private static int lastGlyphInkPadding = glyphInkPadding;
@@ -96,6 +107,12 @@ public final class FontConfig {
     private static boolean lastCustomInvCountFont = customInvCountFont;
     private static String[] lastFontSort = fontSort;
     private static String[] lastCharacterFontRules = characterFontRules;
+    private static String lastWesternNormalFont = westernNormalFont;
+    private static String lastWesternBoldFont = westernBoldFont;
+    private static String lastWesternItalicFont = westernItalicFont;
+    private static String lastCjkNormalFont = cjkNormalFont;
+    private static String lastCjkBoldFont = cjkBoldFont;
+    private static String lastCjkItalicFont = cjkItalicFont;
 
     private FontConfig() {
     }
@@ -116,7 +133,13 @@ public final class FontConfig {
                 || lastReplaceOrigin != replaceOrigin
                 || lastCustomInvCountFont != customInvCountFont
                 || !Arrays.equals(lastFontSort, fontSort)
-                || !Arrays.equals(lastCharacterFontRules, characterFontRules);
+                || !Arrays.equals(lastCharacterFontRules, characterFontRules)
+                || !java.util.Objects.equals(lastWesternNormalFont, westernNormalFont)
+                || !java.util.Objects.equals(lastWesternBoldFont, westernBoldFont)
+                || !java.util.Objects.equals(lastWesternItalicFont, westernItalicFont)
+                || !java.util.Objects.equals(lastCjkNormalFont, cjkNormalFont)
+                || !java.util.Objects.equals(lastCjkBoldFont, cjkBoldFont)
+                || !java.util.Objects.equals(lastCjkItalicFont, cjkItalicFont);
     }
 
     /**
@@ -148,6 +171,22 @@ public final class FontConfig {
         lastFontSort = fontSort == null ? new String[0] : Arrays.copyOf(fontSort, fontSort.length);
         lastCharacterFontRules = characterFontRules == null ? new String[0]
                 : Arrays.copyOf(characterFontRules, characterFontRules.length);
+        lastWesternNormalFont = westernNormalFont;
+        lastWesternBoldFont = westernBoldFont;
+        lastWesternItalicFont = westernItalicFont;
+        lastCjkNormalFont = cjkNormalFont;
+        lastCjkBoldFont = cjkBoldFont;
+        lastCjkItalicFont = cjkItalicFont;
+    }
+
+    /**
+     * 捕获当前六槽字体指派为不可变对象。
+     *
+     * @return 字体指派快照
+     */
+    public static FontFaceAssignment getFaceAssignment() {
+        return new FontFaceAssignment(westernNormalFont, westernBoldFont, westernItalicFont, cjkNormalFont,
+                cjkBoldFont, cjkItalicFont);
     }
 
     /**

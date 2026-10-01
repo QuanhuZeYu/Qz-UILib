@@ -160,15 +160,20 @@ public final class GlyphRuntimeTables {
      * <p>不递增收敛代：换代本身已由字体换代代区分，收敛代只表达「债务清偿完毕」。</p>
      */
     private void clearWidthApproximationDebt() {
-        for (int index = 0; index < WIDTH_DEBT_WORD_COUNT; index++) {
-            widthApproximationDebtNormal.set(index, 0L);
-            widthApproximationDebtBold.set(index, 0L);
+        for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+            AtomicLongArray debt = faces[faceIndex].widthApproximationDebt;
+            if (debt == null) {
+                continue;
+            }
+            for (int index = 0; index < WIDTH_DEBT_WORD_COUNT; index++) {
+                debt.set(index, 0L);
+            }
         }
         widthApproximationDebtCount.set(0);
     }
 
     private AtomicLongArray widthApproximationDebtArray(FontType fontType) {
-        return fontType == FontType.BOLD ? widthApproximationDebtBold : widthApproximationDebtNormal;
+        return forType(fontType).widthApproximationDebt;
     }
 
     public final float[] widthNormal = createWidthArray();
@@ -257,6 +262,95 @@ public final class GlyphRuntimeTables {
     public int slotsPerPage;
 
     /**
+     * 字面表，按 {@code FontType.ordinal()} 索引（NORMAL/BOLD/ITALIC/BOLD_ITALIC）。
+     *
+     * <p>过渡期：NORMAL/BOLD 别名既有 {@code *Normal/*Bold} 数组（单一数据源），
+     * ITALIC/BOLD_ITALIC 为新增独立数组。新代码统一走 {@link #forType(FontType)}。</p>
+     */
+    public final FaceTables[] faces = new FaceTables[FontType.values().length];
+    {
+        FaceTables normal = new FaceTables();
+        normal.width = widthNormal;
+        normal.matchedFont = matchedFontNormal;
+        normal.state = stateNormal;
+        normal.requestId = requestIdNormal;
+        normal.location = locationNormal;
+        normal.flags = flagsNormal;
+        normal.slotX = slotXNormal;
+        normal.slotY = slotYNormal;
+        normal.slotWidth = slotWidthNormal;
+        normal.slotHeight = slotHeightNormal;
+        normal.atlasBaselineX = atlasBaselineXNormal;
+        normal.atlasBaselineY = atlasBaselineYNormal;
+        normal.lineBaselineY = lineBaselineYNormal;
+        normal.inkWidth = inkWidthNormal;
+        normal.inkHeight = inkHeightNormal;
+        normal.bearingX = bearingXNormal;
+        normal.bearingY = bearingYNormal;
+        normal.ascent = ascentNormal;
+        normal.descent = descentNormal;
+        normal.leading = leadingNormal;
+        normal.xHeight = xHeightNormal;
+        normal.pages = normalPages;
+        normal.pageCount = normalPageCount;
+        normal.widthApproximationDebt = widthApproximationDebtNormal;
+        normal.markAliased();
+
+        FaceTables bold = new FaceTables();
+        bold.width = widthBold;
+        bold.matchedFont = matchedFontBold;
+        bold.state = stateBold;
+        bold.requestId = requestIdBold;
+        bold.location = locationBold;
+        bold.flags = flagsBold;
+        bold.slotX = slotXBold;
+        bold.slotY = slotYBold;
+        bold.slotWidth = slotWidthBold;
+        bold.slotHeight = slotHeightBold;
+        bold.atlasBaselineX = atlasBaselineXBold;
+        bold.atlasBaselineY = atlasBaselineYBold;
+        bold.lineBaselineY = lineBaselineYBold;
+        bold.inkWidth = inkWidthBold;
+        bold.inkHeight = inkHeightBold;
+        bold.bearingX = bearingXBold;
+        bold.bearingY = bearingYBold;
+        bold.ascent = ascentBold;
+        bold.descent = descentBold;
+        bold.leading = leadingBold;
+        bold.xHeight = xHeightBold;
+        bold.pages = boldPages;
+        bold.pageCount = boldPageCount;
+        bold.widthApproximationDebt = widthApproximationDebtBold;
+        bold.markAliased();
+
+        faces[FontType.NORMAL.ordinal()] = normal;
+        faces[FontType.BOLD.ordinal()] = bold;
+        // ITALIC/BOLD_ITALIC 惰性分配：首次取用时才付 ~65MiB/张的直索引表成本。
+        faces[FontType.ITALIC.ordinal()] = new FaceTables();
+        faces[FontType.BOLD_ITALIC.ordinal()] = new FaceTables();
+    }
+
+    /**
+     * 取某字面的表；{@code null} 视为 NORMAL。未分配字面（ITALIC/BOLD_ITALIC 尚未用到）
+     * 在此首次访问时惰性分配，保证调用方拿到的数组恒非 null。
+     */
+    public FaceTables forType(FontType fontType) {
+        FaceTables face = fontType == null ? faces[FontType.NORMAL.ordinal()]
+                : faces[clampOrdinal(fontType)];
+        if (!face.isAllocated()) {
+            synchronized (face) {
+                face.allocate(CODEPOINT_COUNT);
+            }
+        }
+        return face;
+    }
+
+    private int clampOrdinal(FontType fontType) {
+        int index = fontType.ordinal();
+        return index >= 0 && index < faces.length ? index : FontType.NORMAL.ordinal();
+    }
+
+    /**
      * 判断码点是否可作为 direct-index 下标。
      *
      * @param codepoint 字符码点
@@ -283,6 +377,37 @@ public final class GlyphRuntimeTables {
 
     public static int unpackSlotIndex(int packedLocation) {
         return packedLocation & 0xFFFF;
+    }
+
+    /** 请求 key 中字面类型占用的位数（NORMAL/BOLD/ITALIC/BOLD_ITALIC 共 4 值）。 */
+    public static final int REQUEST_TYPE_BITS = 2;
+
+    /**
+     * 把 {@code generation + codepoint + FontType} 打包为稳定请求 key。
+     *
+     * <p>布局：generation(32b) | codepoint(21b) | fontType(2b)。字面占 2 位以容纳
+     * 四个 {@link FontType} 取值；旧实现只占 1 位（BOLD/NORMAL），斜体字面会与正体撞 key。</p>
+     *
+     * @param generation 字体运行时版本
+     * @param codepoint  字符码点
+     * @param fontType   字面类型；{@code null} 视为 NORMAL
+     * @return 稳定请求 key
+     */
+    public static long packRequestKey(int generation, int codepoint, FontType fontType) {
+        int typeBits = fontType == null ? 0 : fontType.ordinal();
+        return ((long) generation & 0xFFFFFFFFL) << 32
+                | (long) (codepoint & 0x1FFFFFL) << REQUEST_TYPE_BITS
+                | (typeBits & 0x3L);
+    }
+
+    /** 从 {@link #packRequestKey} 产物解出字面类型。 */
+    public static FontType unpackRequestFontType(long requestKey) {
+        return FontType.values()[(int) (requestKey & 0x3L)];
+    }
+
+    /** 从 {@link #packRequestKey} 产物解出码点。 */
+    public static int unpackRequestCodepoint(long requestKey) {
+        return (int) ((requestKey >>> REQUEST_TYPE_BITS) & 0x1FFFFFL);
     }
 
     /**
@@ -322,133 +447,175 @@ public final class GlyphRuntimeTables {
     }
 
     public float[] widthArray(FontType fontType) {
-        return fontType == FontType.BOLD ? widthBold : widthNormal;
+        return forType(fontType).width;
     }
 
     public int[] matchedFontArray(FontType fontType) {
-        return fontType == FontType.BOLD ? matchedFontBold : matchedFontNormal;
+        return forType(fontType).matchedFont;
     }
 
     public byte[] stateArray(FontType fontType) {
-        return fontType == FontType.BOLD ? stateBold : stateNormal;
+        return forType(fontType).state;
     }
 
     public long[] requestIdArray(FontType fontType) {
-        return fontType == FontType.BOLD ? requestIdBold : requestIdNormal;
+        return forType(fontType).requestId;
     }
 
     public int[] locationArray(FontType fontType) {
-        return fontType == FontType.BOLD ? locationBold : locationNormal;
+        return forType(fontType).location;
     }
 
     public byte[] flagsArray(FontType fontType) {
-        return fontType == FontType.BOLD ? flagsBold : flagsNormal;
+        return forType(fontType).flags;
     }
 
     public int[] slotXArray(FontType fontType) {
-        return fontType == FontType.BOLD ? slotXBold : slotXNormal;
+        return forType(fontType).slotX;
     }
 
     public int[] slotYArray(FontType fontType) {
-        return fontType == FontType.BOLD ? slotYBold : slotYNormal;
+        return forType(fontType).slotY;
     }
 
     public int[] slotWidthArray(FontType fontType) {
-        return fontType == FontType.BOLD ? slotWidthBold : slotWidthNormal;
+        return forType(fontType).slotWidth;
     }
 
     public int[] slotHeightArray(FontType fontType) {
-        return fontType == FontType.BOLD ? slotHeightBold : slotHeightNormal;
+        return forType(fontType).slotHeight;
     }
 
     public int[] atlasBaselineXArray(FontType fontType) {
-        return fontType == FontType.BOLD ? atlasBaselineXBold : atlasBaselineXNormal;
+        return forType(fontType).atlasBaselineX;
     }
 
     public int[] atlasBaselineYArray(FontType fontType) {
-        return fontType == FontType.BOLD ? atlasBaselineYBold : atlasBaselineYNormal;
+        return forType(fontType).atlasBaselineY;
     }
 
     public int[] lineBaselineYArray(FontType fontType) {
-        return fontType == FontType.BOLD ? lineBaselineYBold : lineBaselineYNormal;
+        return forType(fontType).lineBaselineY;
     }
 
+    // 行度量：NORMAL/BOLD 的权威存储是遗留 *Normal/*Bold 标量字段（既有读者/测试直接写它们），
+    // ITALIC/BOLD_ITALIC 走 FaceTables 标量字段。此处显式分派，不用 forType()——避免把
+    // 「标量别名」误当成同源可变引用（Java 字段无法互相别名）。
     public float xHeight(FontType fontType) {
-        return fontType == FontType.BOLD ? xHeightBold : xHeightNormal;
+        if (fontType == FontType.BOLD) {
+            return xHeightBold;
+        }
+        if (fontType == FontType.ITALIC) {
+            return faces[FontType.ITALIC.ordinal()].xHeight;
+        }
+        if (fontType == FontType.BOLD_ITALIC) {
+            return faces[FontType.BOLD_ITALIC.ordinal()].xHeight;
+        }
+        return xHeightNormal;
     }
 
     public float ascent(FontType fontType) {
-        return fontType == FontType.BOLD ? ascentBold : ascentNormal;
+        if (fontType == FontType.BOLD) {
+            return ascentBold;
+        }
+        if (fontType == FontType.ITALIC) {
+            return faces[FontType.ITALIC.ordinal()].ascent;
+        }
+        if (fontType == FontType.BOLD_ITALIC) {
+            return faces[FontType.BOLD_ITALIC.ordinal()].ascent;
+        }
+        return ascentNormal;
     }
 
     public float descent(FontType fontType) {
-        return fontType == FontType.BOLD ? descentBold : descentNormal;
+        if (fontType == FontType.BOLD) {
+            return descentBold;
+        }
+        if (fontType == FontType.ITALIC) {
+            return faces[FontType.ITALIC.ordinal()].descent;
+        }
+        if (fontType == FontType.BOLD_ITALIC) {
+            return faces[FontType.BOLD_ITALIC.ordinal()].descent;
+        }
+        return descentNormal;
     }
 
     public float leading(FontType fontType) {
-        return fontType == FontType.BOLD ? leadingBold : leadingNormal;
+        if (fontType == FontType.BOLD) {
+            return leadingBold;
+        }
+        if (fontType == FontType.ITALIC) {
+            return faces[FontType.ITALIC.ordinal()].leading;
+        }
+        if (fontType == FontType.BOLD_ITALIC) {
+            return faces[FontType.BOLD_ITALIC.ordinal()].leading;
+        }
+        return leadingNormal;
     }
 
     public short[] inkWidthArray(FontType fontType) {
-        return fontType == FontType.BOLD ? inkWidthBold : inkWidthNormal;
+        return forType(fontType).inkWidth;
     }
 
     public short[] inkHeightArray(FontType fontType) {
-        return fontType == FontType.BOLD ? inkHeightBold : inkHeightNormal;
+        return forType(fontType).inkHeight;
     }
 
     public short[] bearingXArray(FontType fontType) {
-        return fontType == FontType.BOLD ? bearingXBold : bearingXNormal;
+        return forType(fontType).bearingX;
     }
 
     public short[] bearingYArray(FontType fontType) {
-        return fontType == FontType.BOLD ? bearingYBold : bearingYNormal;
+        return forType(fontType).bearingY;
     }
 
     public GlyphPage[] pages(FontType fontType) {
-        return fontType == FontType.BOLD ? boldPages : normalPages;
+        return forType(fontType).pages;
     }
 
     public int pageCount(FontType fontType) {
-        return fontType == FontType.BOLD ? boldPageCount : normalPageCount;
+        return forType(fontType).pageCount;
     }
 
     /**
      * 清空按码点宽度缓存。
      */
     public void clearWidthCache() {
-        Arrays.fill(widthNormal, Float.NaN);
-        Arrays.fill(widthBold, Float.NaN);
+        for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+            if (!faces[faceIndex].isAllocated()) {
+                continue;
+            }
+            Arrays.fill(faces[faceIndex].width, Float.NaN);
+        }
     }
 
     /**
      * 清空按码点字体匹配缓存。
      */
     public void clearMatchedFontCache() {
-        Arrays.fill(matchedFontNormal, FONT_INDEX_UNRESOLVED);
-        Arrays.fill(matchedFontBold, FONT_INDEX_UNRESOLVED);
+        for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+            if (!faces[faceIndex].isAllocated()) {
+                continue;
+            }
+            Arrays.fill(faces[faceIndex].matchedFont, FONT_INDEX_UNRESOLVED);
+        }
     }
 
     /**
      * 清空字形生命周期、位置和页引用。
      */
     public void resetGlyphRuntime() {
-        Arrays.fill(stateNormal, STATE_ABSENT);
-        Arrays.fill(stateBold, STATE_ABSENT);
-        Arrays.fill(requestIdNormal, 0L);
-        Arrays.fill(requestIdBold, 0L);
-        Arrays.fill(locationNormal, LOCATION_NOT_READY);
-        Arrays.fill(locationBold, LOCATION_NOT_READY);
-        Arrays.fill(flagsNormal, (byte) 0);
-        Arrays.fill(flagsBold, (byte) 0);
-        ascentNormal = 0.0F;
-        ascentBold = 0.0F;
-        descentNormal = 0.0F;
-        descentBold = 0.0F;
-        leadingNormal = 0.0F;
-        leadingBold = 0.0F;
-        xHeightNormal = 0.0F;
-        xHeightBold = 0.0F;
+        for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+            if (!faces[faceIndex].isAllocated()) {
+                continue;
+            }
+            FaceTables face = faces[faceIndex];
+            Arrays.fill(face.state, STATE_ABSENT);
+            Arrays.fill(face.requestId, 0L);
+            Arrays.fill(face.location, LOCATION_NOT_READY);
+            Arrays.fill(face.flags, (byte) 0);
+        }
+        clearMetrics();
         clearGlyphGeometry();
         clearPageReferences();
         clearWidthApproximationDebt();
@@ -470,22 +637,17 @@ public final class GlyphRuntimeTables {
      * 用于 reload 时避免主线程大数组清理停顿。</p>
      */
     public void resetGlyphLifecycle() {
-        Arrays.fill(stateNormal, STATE_ABSENT);
-        Arrays.fill(stateBold, STATE_ABSENT);
-        Arrays.fill(locationNormal, LOCATION_NOT_READY);
-        Arrays.fill(locationBold, LOCATION_NOT_READY);
-        Arrays.fill(widthNormal, Float.NaN);
-        Arrays.fill(widthBold, Float.NaN);
-        Arrays.fill(matchedFontNormal, FONT_INDEX_UNRESOLVED);
-        Arrays.fill(matchedFontBold, FONT_INDEX_UNRESOLVED);
-        ascentNormal = 0.0F;
-        ascentBold = 0.0F;
-        descentNormal = 0.0F;
-        descentBold = 0.0F;
-        leadingNormal = 0.0F;
-        leadingBold = 0.0F;
-        xHeightNormal = 0.0F;
-        xHeightBold = 0.0F;
+        for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+            if (!faces[faceIndex].isAllocated()) {
+                continue;
+            }
+            FaceTables face = faces[faceIndex];
+            Arrays.fill(face.state, STATE_ABSENT);
+            Arrays.fill(face.location, LOCATION_NOT_READY);
+            Arrays.fill(face.width, Float.NaN);
+            Arrays.fill(face.matchedFont, FONT_INDEX_UNRESOLVED);
+        }
+        clearMetrics();
         clearPageReferences();
         clearWidthApproximationDebt();
     }
@@ -512,11 +674,37 @@ public final class GlyphRuntimeTables {
         ascentNormal = metrics.getAscent(FontType.NORMAL);
         descentNormal = metrics.getDescent(FontType.NORMAL);
         leadingNormal = metrics.getLeading(FontType.NORMAL);
+        xHeightNormal = metrics.getXHeight(FontType.NORMAL);
         ascentBold = metrics.getAscent(FontType.BOLD);
         descentBold = metrics.getDescent(FontType.BOLD);
         leadingBold = metrics.getLeading(FontType.BOLD);
-        xHeightNormal = metrics.getXHeight(FontType.NORMAL);
         xHeightBold = metrics.getXHeight(FontType.BOLD);
+        for (FontType fontType : new FontType[] { FontType.ITALIC, FontType.BOLD_ITALIC }) {
+            FaceTables face = faces[fontType.ordinal()];
+            face.ascent = metrics.getAscent(fontType);
+            face.descent = metrics.getDescent(fontType);
+            face.leading = metrics.getLeading(fontType);
+            face.xHeight = metrics.getXHeight(fontType);
+        }
+    }
+
+    /** 清零 NORMAL/BOLD 别名度量与斜体字面度量（generation reset 用）。 */
+    private void clearMetrics() {
+        ascentNormal = 0.0F;
+        descentNormal = 0.0F;
+        leadingNormal = 0.0F;
+        xHeightNormal = 0.0F;
+        ascentBold = 0.0F;
+        descentBold = 0.0F;
+        leadingBold = 0.0F;
+        xHeightBold = 0.0F;
+        for (FontType fontType : new FontType[] { FontType.ITALIC, FontType.BOLD_ITALIC }) {
+            FaceTables face = faces[fontType.ordinal()];
+            face.ascent = 0.0F;
+            face.descent = 0.0F;
+            face.leading = 0.0F;
+            face.xHeight = 0.0F;
+        }
     }
 
     /**
@@ -526,55 +714,57 @@ public final class GlyphRuntimeTables {
      * @param minCapacity 最小容量
      */
     public void ensurePageArrayCapacity(FontType fontType, int minCapacity) {
-        if (fontType == FontType.BOLD) {
-            boldPages = ensureCapacity(boldPages, minCapacity);
-            return;
+        FaceTables face = forType(fontType);
+        if (face.pages.length < minCapacity) {
+            face.pages = ensureCapacity(face.pages, minCapacity);
+            syncPageAliases();
         }
-        normalPages = ensureCapacity(normalPages, minCapacity);
     }
 
     public void setPage(FontType fontType, int index, GlyphPage page) {
         ensurePageArrayCapacity(fontType, index + 1);
-        if (fontType == FontType.BOLD) {
-            boldPages[index] = page;
-            boldPageCount = Math.max(boldPageCount, index + 1);
-            return;
-        }
-        normalPages[index] = page;
-        normalPageCount = Math.max(normalPageCount, index + 1);
+        FaceTables face = forType(fontType);
+        face.pages[index] = page;
+        face.pageCount = Math.max(face.pageCount, index + 1);
+        syncPageAliases();
     }
 
     private void clearGlyphGeometry() {
-        Arrays.fill(slotXNormal, 0);
-        Arrays.fill(slotXBold, 0);
-        Arrays.fill(slotYNormal, 0);
-        Arrays.fill(slotYBold, 0);
-        Arrays.fill(slotWidthNormal, 0);
-        Arrays.fill(slotWidthBold, 0);
-        Arrays.fill(slotHeightNormal, 0);
-        Arrays.fill(slotHeightBold, 0);
-        Arrays.fill(atlasBaselineXNormal, 0);
-        Arrays.fill(atlasBaselineXBold, 0);
-        Arrays.fill(atlasBaselineYNormal, 0);
-        Arrays.fill(atlasBaselineYBold, 0);
-        Arrays.fill(lineBaselineYNormal, 0);
-        Arrays.fill(lineBaselineYBold, 0);
-        Arrays.fill(inkWidthNormal, (short) 0);
-        Arrays.fill(inkWidthBold, (short) 0);
-        Arrays.fill(inkHeightNormal, (short) 0);
-        Arrays.fill(inkHeightBold, (short) 0);
-        Arrays.fill(bearingXNormal, (short) 0);
-        Arrays.fill(bearingXBold, (short) 0);
-        Arrays.fill(bearingYNormal, (short) 0);
-        Arrays.fill(bearingYBold, (short) 0);
+        for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+            if (!faces[faceIndex].isAllocated()) {
+                continue;
+            }
+            FaceTables face = faces[faceIndex];
+            Arrays.fill(face.slotX, 0);
+            Arrays.fill(face.slotY, 0);
+            Arrays.fill(face.slotWidth, 0);
+            Arrays.fill(face.slotHeight, 0);
+            Arrays.fill(face.atlasBaselineX, 0);
+            Arrays.fill(face.atlasBaselineY, 0);
+            Arrays.fill(face.lineBaselineY, 0);
+            Arrays.fill(face.inkWidth, (short) 0);
+            Arrays.fill(face.inkHeight, (short) 0);
+            Arrays.fill(face.bearingX, (short) 0);
+            Arrays.fill(face.bearingY, (short) 0);
+        }
     }
 
     private void clearPageReferences() {
         mathGlyphs.clear();
-        Arrays.fill(normalPages, 0, normalPageCount, null);
-        Arrays.fill(boldPages, 0, boldPageCount, null);
-        normalPageCount = 0;
-        boldPageCount = 0;
+        for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+            FaceTables face = faces[faceIndex];
+            Arrays.fill(face.pages, 0, face.pageCount, null);
+            face.pageCount = 0;
+        }
+        syncPageAliases();
+    }
+
+    /** 把 NORMAL/BOLD 字面的页数组与计数回写到遗留字段（别名镜像）。 */
+    void syncPageAliases() {
+        normalPages = faces[FontType.NORMAL.ordinal()].pages;
+        normalPageCount = faces[FontType.NORMAL.ordinal()].pageCount;
+        boldPages = faces[FontType.BOLD.ordinal()].pages;
+        boldPageCount = faces[FontType.BOLD.ordinal()].pageCount;
     }
 
     private static float[] createWidthArray() {

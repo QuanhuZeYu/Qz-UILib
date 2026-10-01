@@ -108,7 +108,21 @@ public final class ModernConfigAssembly {
         registry.registerPath("fontSystem.fontSort",
                 new FontSortFieldRenderer(discoveredSnapshot));
         registry.registerPath("fontSystem.characterFontRules", new CharacterRuleFieldRenderer());
+        // 六槽字体指派：字体列表 GUI 单选（空 = 自动），候选取本 screen 冻结的发现快照。
+        for (String path : FONT_FACE_ASSIGNMENT_PATHS) {
+            registry.registerPath(path, new FontFamilyFieldRenderer(discoveredSnapshot));
+        }
     }
+
+    /** 六槽字体指派的 schema 路径（西文/中文 × 正常/粗体/斜体）。 */
+    private static final String[] FONT_FACE_ASSIGNMENT_PATHS = {
+            "fontSystem.westernNormalFont",
+            "fontSystem.westernBoldFont",
+            "fontSystem.westernItalicFont",
+            "fontSystem.cjkNormalFont",
+            "fontSystem.cjkBoldFont",
+            "fontSystem.cjkItalicFont",
+    };
 
     /**
      * 注册 uilib 自身配置页的恢复默认策略。

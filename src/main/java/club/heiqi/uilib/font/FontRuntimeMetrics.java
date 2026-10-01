@@ -16,25 +16,17 @@ public final class FontRuntimeMetrics {
             new FontRenderContext(new AffineTransform(), true, true);
     private static final String METRICS_SAMPLE = "Ag";
 
-    private final float ascentNormal;
-    private final float descentNormal;
-    private final float leadingNormal;
-    private final float xHeightNormal;
-    private final float ascentBold;
-    private final float descentBold;
-    private final float leadingBold;
-    private final float xHeightBold;
+    /** 每字面一份行度量；索引 = {@code FontType.ordinal()}。 */
+    private final float[] ascent;
+    private final float[] descent;
+    private final float[] leading;
+    private final float[] xHeight;
 
-    private FontRuntimeMetrics(float ascentNormal, float descentNormal, float leadingNormal, float xHeightNormal,
-            float ascentBold, float descentBold, float leadingBold, float xHeightBold) {
-        this.ascentNormal = ascentNormal;
-        this.descentNormal = descentNormal;
-        this.leadingNormal = leadingNormal;
-        this.xHeightNormal = xHeightNormal;
-        this.ascentBold = ascentBold;
-        this.descentBold = descentBold;
-        this.leadingBold = leadingBold;
-        this.xHeightBold = xHeightBold;
+    private FontRuntimeMetrics(float[] ascent, float[] descent, float[] leading, float[] xHeight) {
+        this.ascent = ascent;
+        this.descent = descent;
+        this.leading = leading;
+        this.xHeight = xHeight;
     }
 
     /**
@@ -53,16 +45,35 @@ public final class FontRuntimeMetrics {
             baseFont = new Font("Dialog", Font.PLAIN, settings.getGlyphSize());
         }
         float size = (float) settings.getGlyphSize();
-        LineMetrics normal = baseFont.deriveFont(Font.PLAIN, size).getLineMetrics(METRICS_SAMPLE,
-                FONT_RENDER_CONTEXT);
-        LineMetrics bold = baseFont.deriveFont(Font.BOLD, size).getLineMetrics(METRICS_SAMPLE,
-                FONT_RENDER_CONTEXT);
-        float[] normalizedNormal = normalize(normal, (float) settings.getGlyphGenerationSize());
-        float[] normalizedBold = normalize(bold, (float) settings.getGlyphGenerationSize());
-        float xHeightNormal = measureXHeight(baseFont, Font.PLAIN, settings);
-        float xHeightBold = measureXHeight(baseFont, Font.BOLD, settings);
-        return new FontRuntimeMetrics(normalizedNormal[0], normalizedNormal[1], normalizedNormal[2],
-                xHeightNormal, normalizedBold[0], normalizedBold[1], normalizedBold[2], xHeightBold);
+        float normalizedHeight = (float) settings.getGlyphGenerationSize();
+        FontType[] types = FontType.values();
+        float[] ascent = new float[types.length];
+        float[] descent = new float[types.length];
+        float[] leading = new float[types.length];
+        float[] xHeight = new float[types.length];
+        for (FontType fontType : types) {
+            int awtStyle = awtStyle(fontType);
+            LineMetrics metrics = baseFont.deriveFont(awtStyle, size).getLineMetrics(METRICS_SAMPLE,
+                    FONT_RENDER_CONTEXT);
+            float[] normalized = normalize(metrics, normalizedHeight);
+            ascent[fontType.ordinal()] = normalized[0];
+            descent[fontType.ordinal()] = normalized[1];
+            leading[fontType.ordinal()] = normalized[2];
+            xHeight[fontType.ordinal()] = measureXHeight(baseFont, awtStyle, settings);
+        }
+        return new FontRuntimeMetrics(ascent, descent, leading, xHeight);
+    }
+
+    /** 字面 → AWT style 位（粗体/斜体由 {@link FontType} 派生）。 */
+    private static int awtStyle(FontType fontType) {
+        int style = Font.PLAIN;
+        if (fontType.isBold()) {
+            style |= Font.BOLD;
+        }
+        if (fontType.isItalic()) {
+            style |= Font.ITALIC;
+        }
+        return style;
     }
 
     /** 测量小写 x 的 ink 高度并归一化到 awtCharSize 坐标系（TeX x-height 参数）。 */
@@ -79,20 +90,24 @@ public final class FontRuntimeMetrics {
         return (float) (rawHeight / glyphSize * settings.getGlyphGenerationSize());
     }
 
+    private static int faceIndex(FontType fontType) {
+        return fontType == null ? FontType.NORMAL.ordinal() : fontType.ordinal();
+    }
+
     public float getAscent(FontType fontType) {
-        return fontType == FontType.BOLD ? ascentBold : ascentNormal;
+        return ascent[faceIndex(fontType)];
     }
 
     public float getDescent(FontType fontType) {
-        return fontType == FontType.BOLD ? descentBold : descentNormal;
+        return descent[faceIndex(fontType)];
     }
 
     public float getLeading(FontType fontType) {
-        return fontType == FontType.BOLD ? leadingBold : leadingNormal;
+        return leading[faceIndex(fontType)];
     }
 
     public float getXHeight(FontType fontType) {
-        return fontType == FontType.BOLD ? xHeightBold : xHeightNormal;
+        return xHeight[faceIndex(fontType)];
     }
 
     private static float[] normalize(LineMetrics metrics, float targetHeight) {

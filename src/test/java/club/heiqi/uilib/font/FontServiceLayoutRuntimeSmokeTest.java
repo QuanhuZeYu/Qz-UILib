@@ -982,7 +982,8 @@ public class FontServiceLayoutRuntimeSmokeTest {
     }
 
     private static long recoverable(int codepoint) {
-        return ((long) codepoint & 0x1FFFFFL) << 1;
+        // 与 GlyphPageManager 打包口径一致：codepoint(21b) << FontType 位数(2b) | type(NORMAL=0)。
+        return ((long) codepoint & 0x1FFFFFL) << 2;
     }
 
     private static final class ManualCandidateScheduler implements FontGenerationCandidateScheduler {

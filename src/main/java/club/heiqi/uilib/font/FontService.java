@@ -1274,7 +1274,7 @@ public class FontService {
                 continue;
             }
             FontType fontType = GlyphPageManager.unpackRecoverableFontType(glyph);
-            byte typeFlag = fontType == FontType.BOLD ? (byte) 2 : (byte) 1;
+            byte typeFlag = (byte) (1 << fontType.ordinal());
             if ((requestedFlags[codepoint] & typeFlag) != 0) {
                 continue;
             }
