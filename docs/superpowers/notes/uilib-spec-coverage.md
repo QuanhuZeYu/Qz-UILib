@@ -57,6 +57,8 @@
 
 ### 已确认补充
 
+额外数学入口调查：固定插件 renderer 在 info.trim().toLowerCase() === math 时调用块数学呈现；enableBareBlocks 未开启。Node VM 渲染探针以记录调用的 KaTeX stub 核对：math 围栏调用 displayMode=true，text 围栏及裸 matrix 环境不调用；未验证真实数学绘制。第 13.5 节新增待裁定方案：支持 math 围栏，裸环境不自动启动解析。
+
 用户已认可公式块配对差异：只有完整配对 $$ 才识别为公式块，未闭合按普通文档保留，不自动补闭合/修复/恢复。已转为第 13.5 节正式合同并补齐验收。
 
 固定参照调查：VS Code 更新 API 返回稳定版 1.140.0（commit 07f806f999227108933c2e30515b26eecc1fda74）。已读取对应 tag 的 Markdown package.json、markdownEngine.ts、markdown-math extension.ts 及两份 package-lock：markdown-it 14.2.0，内置数学扩展 @vscode/markdown-it-katex 1.1.2。Node VM 使用这两个固定包运行纯解析探针，KaTeX 渲染以空实现替代，仅核对 token，不验证公式绘制或真实 VS Code 预览。结果见后续正文；URL 以固定版本来源记录，不以 latest 漂移作为合同。
