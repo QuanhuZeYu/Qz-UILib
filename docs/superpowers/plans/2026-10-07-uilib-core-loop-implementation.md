@@ -12,7 +12,7 @@
 
 **Spec：** [唯一 spec](../specs/2026-10-07-uilib-core-contract-design.md)，第 2—10 节正式合同与第 15 节拟议接口。
 
-**状态与授权：** 计划已编写，生产步骤均未执行。第 15 节尚待整体审阅；当前授权是核心设计，不把计划完成当作生产实现已获授权。数学专项暂缓。实机启动须按仓库授权边界执行。
+**状态与授权：** 用户已授权开始生产任务，并补充破坏式重构及无平台自动化优先。实施 worktree 为 uilib-core；基线含人工清空源码提交 0d2720d1，因此文件表是职责落点，新核心从归零基线建设，不恢复旧代码树。数学专项暂缓，MC 启动按仓库授权边界衔接。进度与证据见 ../notes/uilib-core-execution.md。
 
 ## Global Constraints
 
@@ -50,7 +50,7 @@
 
 在代码 worktree 使用已加载环境的 execWithEnvironment 直接运行 java，参数数组如下，避免 Windows bat 或 PowerShell：
 
-    java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-configuration-cache test --tests club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest
+    java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-configuration-cache coreLoopScenario
     java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-configuration-cache build
 
 每次命令先检查真实环境和 Git，非零结果先诊断再继续；这些命令本轮尚未运行。实机使用文档已有 runClient21 任务，需要明确启动授权。

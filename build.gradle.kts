@@ -26,7 +26,19 @@ plugins {
 // 512m 默认堆下与其他字体测试类同 JVM 跑会互相挤压 OOM。
 tasks.withType<Test>().configureEach {
     maxHeapSize = "1024m"
+    // 归零核心采用直启集成场景，check 必须执行 coreLoopScenario；当前无 JUnit 用例。
+    failOnNoDiscoveredTests.set(false)
 }
+
+// 集成场景直启只包含核心与场景类，不将 MC/Forge/LWJGL 放到执行类路径。
+val coreLoopScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "运行无平台核心业务与场景闭环"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
+}
+tasks.named("check") { dependsOn(coreLoopScenario) }
 
 // ============================================================================
 // 内部开发工具（main 域 club.heiqi.uilib.internal.devtools）
