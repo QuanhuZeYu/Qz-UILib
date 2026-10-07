@@ -17,7 +17,7 @@
 | 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围、归属、非模态参与与焦点声明职责已明确；宿主实现与统一默认策略属于设计 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
 | 绘制与材质动效 | ui/scene/paint、theme；ui/render、base；gl | 平台及坐标边界已确认；能力与失败语义待补 |
-| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版、测量/链接共同几何；语法范围及降级待裁决 |
+| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片/HTML 显示及扩展词法待补 |
 | 数学排版 | font/latex、glyph | 第 13 节明确数学混排职责；命令范围、字形能力及降级待补 |
 | 字体与资源 | font/api、page、render；resource、i18n | 第 13 节补齐度量/绘制一致、变化及资源归属；字体选择与失败策略待补 |
 | 图像与物品 | ui/image、scene/image | 适配边界已确认；图像来源、状态、缩放及物品语义待补 |
@@ -34,6 +34,8 @@
 核心职责规格已收束至可交接实现设计；不以执行器、算法或接口签名未选定要求继续逐项裁决。第 10.2 节保留技术设计交接。全库能力覆盖仍未完成。下一组核对字体、富文本、Markdown、数学排版和绘制。
 
 ### 已确认补充
+
+Markdown 采用 CommonMark 基础，明确表格与数学扩展，不承诺浏览器 HTML 和全部扩展。已记录到 spec 第 13.5 节；旧解析器不同输出路径、兼容词法及聊天特例不作为新实现必须保持的合同。图片能力待裁决，不从基础语法名或旧“不支持”注释推导最终显示策略。
 
 派生读取当前结果已获用户认可并写入 spec 第 3.1 节：首次及后续读取基于当前来源，允许按需计算/缓存，读取不执行副作用。后续继续收束 Effect、结果发布及核心布局/生命周期合同。
 
