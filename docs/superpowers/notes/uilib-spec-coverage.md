@@ -12,8 +12,8 @@
 
 | 能力 | 实现入口（现状定位） | 规格覆盖状态 |
 | --- | --- | --- |
-| 状态与呈现 | ui/reactive、ui/scene/runtime、ui/env | 直接状态与派生读取当前值已确认；渲染批次统一更新布局/画面/命中职责已确认；Effect 调度待设计 |
-| 布局与扩展 | ui/scene/node、layout、control、form | 尺寸意图已确认；分配、溢出命中与自定义扩展合同待完成 |
+| 状态与呈现 | ui/reactive、ui/scene/runtime、ui/env | 直接状态/派生读取与渲染批次职责已确认；Effect 与生命周期资源归属明确，执行器及合批属于设计 |
+| 布局与扩展 | ui/scene/node、layout、control、form | 尺寸意图及自定义接入职责已明确；溢出命中行为待收束，分配/扩展接口属于设计 |
 | 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围与归属已确认；宿主能力、恢复焦点、非模态交互待完成 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
 | 绘制与材质动效 | ui/scene/paint、theme；ui/render、base；gl | 平台及坐标边界已确认；能力与失败语义待补 |
