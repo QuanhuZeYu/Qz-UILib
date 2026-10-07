@@ -1,5 +1,7 @@
 # 字体与合批实施恢复点
 
+真实1.7.10启动回归修复：用户启动118后Initializing game失败，原因LaunchWrapper1.12将CodeSource设为jar内IsolatedFontEngine.class URL，旧privateURLloader误当搜索根而找不到LwjglFontEngine。从自身actualclassresource经JarURLConnection取jar根，file开发目录去完整entry后缀；保native隔离、nullparent与父合同身份。实际LaunchWrapper+Oracle8u51旧118重现同CNF，修后整包与file分支Arabic/emoji/ZWJ/native/身份均EXIT0。FML同次扫描另发现SnakeYAML Java9多版本class被原ASM5.0.3拒绝，发行排除META-INF/versions/**，保Java8根实现；原2137rootclasses有2失败，修后2135rootclasses全部ASM5 accept成功。完整build+manualTestJar通过，证据build/forge-bootstrap-review/launchwrapper-*及old118-asm5-root-red.log、mr-fixed118-dirty-asm5.log。本修复来自用户直接报告，无对应issue；最终clean包仍须复验并替换两实例。不自动启动MC。
+
 当前增量以4e6a99e8为基线：用户要求原Java8u51/LWJGL2的纯Forge实例也能运行，禁止补LWJGL3ify，允许MC外层加UniMixins。核心文本已通过FontEngine/FontSession/FontFace注入，FT/HB官方CPU bindings随包嵌套并由null-parent私有loader加载；核心接口/DTO委派父loader，native提取与查找使用独立目录，禁止native资源父fallback。GPU算法单份，经GlApi注入LWJGL2或3绑定，Iris/MC接入留外层。历史下文的“发布依赖LWJGL3ify提供字体bindings”结论已被此增量取代。
 
 父亲自完成build+manualTestJar（54s）、全部七个GL3设备回归（28s），并正式执行GL2/GL3的2D与ARRAY双宿主场景，均BUILD SUCCESSFUL。GL2固定第二实例Java1.8.0_51、原LWJGL2.9.4，Display.create()不传ContextAttribs，实际AMD610M兼容4.6；GL3实际core3.2。一行双view上传、straight MASK白gutter、负绕序、alpha0RGB、unit3、历史状态、共享预算均通过。build/host-isolation-check保存完整原始日志。独立审查发现复用scratch按capacity写导致limit越界，已修为limit并由原真实上传场景关闭；无剩余审查发现。

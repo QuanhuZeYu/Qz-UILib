@@ -400,6 +400,8 @@ val internalDevToolsPackagePath = "club/heiqi/uilib/internal/devtools"
 //    reobfJar 是 ReobfuscatedJar（非 Jar 子类、无 exclude），吃的是 dev jar 产物，排除随输入传播——由下面的门禁实测确认。
 tasks.withType<Jar>().configureEach {
     exclude("$internalDevToolsPackagePath/**")
+    // Forge1.7.10会扫描每个class，ASM5拒绝依赖的Java9+多版本实现；Java8使用的根实现完整保留。
+    exclude("META-INF/versions/**")
 }
 // apiJar 用的是旧类型 org.gradle.jvm.tasks.Jar（不是 bundling.Jar 的子类），必须单独排除——
 // 这一处漏排正是第一次门禁跑出来的真实缺陷（apiJar 里混进了 headless 包）。

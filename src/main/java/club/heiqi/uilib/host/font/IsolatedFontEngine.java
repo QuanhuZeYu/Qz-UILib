@@ -31,7 +31,7 @@ public final class IsolatedFontEngine implements FontEngine {
             Path directory=Files.createTempDirectory("qz-font-bindings-");
             directory.toFile().deleteOnExit();
             List<URL> urls=new ArrayList<URL>();
-            urls.add(IsolatedFontEngine.class.getProtectionDomain().getCodeSource().getLocation());
+            urls.add(implementationRoot());
             String index;
             try(InputStream input=application.getResourceAsStream(ROOT+"index.txt")){
                 if(input==null)throw new IOException("缺少随包CPU字体绑定清单");
@@ -59,6 +59,18 @@ public final class IsolatedFontEngine implements FontEngine {
             Object factory=Class.forName("club.heiqi.uilib.host.font.freetype.LwjglFontEngine",true,bindings).getConstructor().newInstance();
             engine=(FontEngine)factory;
         }catch(IOException|ReflectiveOperationException failure){throw new IllegalStateException("UILib随包字体绑定初始化失败",failure);}
+    }
+    /** LaunchWrapper的CodeSource是jar内class资源URL，不能作为URLClassLoader的搜索根。
+     * 从自身实际资源归一化jar根或开发classes目录；实现仍只由私有loader定义。 */
+    private static URL implementationRoot() throws IOException {
+        String entry=IsolatedFontEngine.class.getName().replace('.','/')+".class";
+        URL resource=IsolatedFontEngine.class.getResource("/"+entry);
+        if(resource==null)throw new IOException("缺少字体隔离入口资源: "+entry);
+        java.net.URLConnection connection=resource.openConnection();
+        if(connection instanceof java.net.JarURLConnection)return ((java.net.JarURLConnection)connection).getJarFileURL();
+        String location=resource.toExternalForm();
+        if("file".equals(resource.getProtocol())&&location.endsWith(entry))return new URL(location.substring(0,location.length()-entry.length()));
+        throw new IOException("字体实现资源不支持的来源: "+resource);
     }
     @Override public FontSession openSession(){return engine.openSession();}
 
