@@ -12,7 +12,7 @@
 
 | 能力 | 实现入口（现状定位） | 规格覆盖状态 |
 | --- | --- | --- |
-| 状态与呈现 | ui/reactive、ui/scene/runtime、ui/env | 核心边界已确认；派生读取、Effect 调度、结果发布待完成 |
+| 状态与呈现 | ui/reactive、ui/scene/runtime、ui/env | 直接状态与派生读取当前值已确认；Effect 调度、结果发布待完成 |
 | 布局与扩展 | ui/scene/node、layout、control、form | 尺寸意图已确认；分配、溢出命中与自定义扩展合同待完成 |
 | 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围与归属已确认；宿主能力、恢复焦点、非模态交互待完成 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
@@ -31,7 +31,9 @@
 
 ## 当前必要裁决
 
-派生读取是否保证当前来源结果：推荐首次及后续读取均得到基于当前状态的结果，允许按需计算/缓存，读取不执行副作用。已提问，等待用户裁决；5.0 重构许可不等于该合同已认可。
+派生读取当前结果已获用户认可并写入 spec 第 3.1 节：首次及后续读取基于当前来源，允许按需计算/缓存，读取不执行副作用。后续继续收束 Effect、结果发布及核心布局/生命周期合同。
+
+环境服务原文已核对：ResourceReloadService、LanguageEpochService、UiEnvironment、LocaleEnvironment、ResourceEnvironment、ProcessUiEnvironment。spec 第 3.3 节按既有动态更新边界细化职责；未继承旧单例、计数或按帧读取约定。
 
 用户允许按新 spec 直接重构至 5.0；生产重构不属于本轮规格补充。
 
