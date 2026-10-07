@@ -19,7 +19,7 @@ public final class FramebufferSceneRenderer implements AutoCloseable {
         if(renderer==null)renderer=owner.createPlanRenderer();
         int[] scissor=new int[4],viewport=new int[4];glGetIntegerv(GL_SCISSOR_BOX,scissor);glGetIntegerv(GL_VIEWPORT,viewport);
         LayoutBox visible=FramebufferCoordinates.viewportClip(width,height,glIsEnabled(GL_SCISSOR_TEST),scissor);
-        try(GlPaintPlanRenderer.Prepared prepared=renderer.prepare(plan,visible,owner.settings().upload)) {
+        try(GlPaintPlanRenderer.Prepared prepared=owner.prepare(renderer,plan,visible)) {
             // framebuffer正交坐标与viewport配套；保护宿主实际viewport，固定矩阵保持原样。
             glViewport(0,0,width,height);
             try{prepared.render(FramebufferCoordinates.orthographic(width,height),height,false);}

@@ -25,7 +25,7 @@ public final class MinecraftFontServices {
         IResourceManager resources=Minecraft.getMinecraft().getResourceManager();
         if(!(resources instanceof IReloadableResourceManager))throw new IllegalStateException("字体资源要求可重载MC ResourceManager");
         ResourceFonts initial=new ResourceFonts(resources,thread);
-        try{shared=new ClientFontServices(initial,++revision,ClientFontServices.Settings.defaults());loader=initial;}
+        try{shared=new ClientFontServices(initial,++revision,ClientFontServices.Settings.defaults(),true);loader=initial;}
         catch(IOException failure){throw new IllegalStateException("客户端字体服务安装失败",failure);}
         installed=true;
         ((IReloadableResourceManager)resources).registerReloadListener(new IResourceManagerReloadListener(){
@@ -38,6 +38,12 @@ public final class MinecraftFontServices {
     }
     private static void checkThread(){if(Thread.currentThread()!=thread)throw new IllegalStateException("MC字体资源仅限客户端主线程");}
     public static ClientFontServices shared(){checkThread();if(shared==null)throw new IllegalStateException("客户端字体服务尚未安装/已关闭");return shared;}
+    /** LWJGL窗口交换之前的通知；org.lwjgl类被宿主排除转换，故由MC调用点转交。
+     * 无文字消费时不创建呈现范围、worker或GL资源。 */
+    public static void beforePresent() {
+        if(shared==null)return;checkThread();
+        if(shared.presentationStats().active)shared.endPresentation();
+    }
     public static void closeShared() {
         if(shared==null)return;checkThread();ClientFontServices owner=shared;shared=null;
         try{owner.close();}finally{if(loader!=null){loader.retire();loader=null;}}

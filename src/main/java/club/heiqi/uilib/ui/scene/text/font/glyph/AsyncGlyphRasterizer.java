@@ -115,7 +115,7 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
                         }
                         face=key.source.openFace(service,key.size);faces.put(faceKey,face);ownedFaceBytes+=sourceBytes;
                     }
-                    bitmap=face.rasterize(key.glyphId);
+                    bitmap=face.rasterize(key.glyphId,key.rasterStyle);
                     if((long)bitmap.width*bitmap.height*4>budget.bitmapBytes)
                         throw new IllegalArgumentException("单字形超过 CPU bitmap bytes 预算: "+key);
                 }catch(RuntimeException error){failure=error;}

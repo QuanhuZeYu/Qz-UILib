@@ -3,6 +3,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.gui.GuiScreen;
 import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
@@ -62,18 +63,18 @@ public final class CoreLoopScreen extends GuiScreen {
         return new SceneNode().text(text).size(Size.fill(1), Size.natural()).padding(3).background(0xFF405060)
             .bind(NodeBinding.value(style, SceneNode::style)).onClick(action);
     }
-    @Override public void drawScreen(int mouseX, int mouseY, float partialTicks) { drawDefaultBackground(); pipeline.frame(); }
+    @Override public void drawScreen(int mouseX, int mouseY, float partialTicks) { pipeline.frame(); }
     @Override protected void mouseClicked(int mouseX, int mouseY, int button) {
         // GuiScreen传入的整数scaled坐标已丢原生分辨率；scene直接消费当前raw事件。
         if (button == 0 && pipeline != null) pipeline.click(Mouse.getEventX(),
-            club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(mc.displayHeight, Mouse.getEventY()));
+            club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(Display.getHeight(), Mouse.getEventY()));
     }
     @Override public void handleMouseInput() {
         super.handleMouseInput();
         int wheel = Mouse.getEventDWheel();
         if (wheel != 0) {
             int x = Mouse.getEventX();
-            int y = club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(mc.displayHeight, Mouse.getEventY());
+            int y = club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(Display.getHeight(), Mouse.getEventY());
             pipeline.scroll(x, y, Integer.signum(wheel));
         }
     }

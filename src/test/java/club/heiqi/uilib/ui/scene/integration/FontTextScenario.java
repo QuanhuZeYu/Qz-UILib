@@ -197,7 +197,10 @@ public final class FontTextScenario {
         require(glyphs(first).get(0).source.equals(alternate) && glyphs(second).get(0).source.equals(defaults.get(0)), "candidate reorder污染匹配");
         TextLayout old = service.layout("A😀", style, 1000, TextPolicy.SINGLE_LINE);
         TextLayout recolored = service.layout("A😀", style.withColor(0x12345678), 1000, TextPolicy.SINGLE_LINE);
-        require(old.lines().get(0) == recolored.lines().get(0), "颜色改变重排glyph");
+        for(int i=0;i<glyphs(old).size();i++){TextLayout.Glyph a=glyphs(old).get(i),b=glyphs(recolored).get(i);
+            require(a.glyphId==b.glyphId&&a.x==b.x&&a.y==b.y&&a.inkBounds==b.inkBounds&&a.rasterStyle.equals(b.rasterStyle),"颜色改变重排glyph或重复查询墨迹");
+            require(b.resolvedStyle.color==0x12345678,"颜色热缓存未重绑实际glyph载荷");
+        }
         final int[] notices = {0}; AutoCloseable subscription = service.onInvalidated(() -> notices[0]++);
         service.reload(Collections.singletonList(alternate));
         TextLayout changed = service.layout("A", style, 1000, TextPolicy.SINGLE_LINE);

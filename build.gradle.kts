@@ -114,6 +114,45 @@ val glBatchScenario by tasks.registering(JavaExec::class) {
     jvmArgs("-Dfile.encoding=UTF-8")
     args(layout.buildDirectory.dir("font-machine/gl").get().asFile.absolutePath)
 }
+val fontProjectionScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "透视采样、矩阵快照与有界光栅档位验收"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontProjectionScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+    args("cpu")
+}
+val fontContextGlScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Core与Compatibility有效字体上下文捕获（需要设备）"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontProjectionScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+}
+tasks.named("check") { dependsOn(fontProjectionScenario) }
+val attributedGlyphGlScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "整簇属性字形采样、彩色与装饰真实GL验收（需要设备）"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.AttributedGlyphGlScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+    args(layout.buildDirectory.dir("font-machine/attributed-gl").get().asFile.absolutePath)
+}
+val presentationEpochScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "多消费者字形需求与总帧上传预算（需要设备）"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.PresentationEpochScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+}
 val clientFontServicesScenario by tasks.registering(JavaExec::class) {
     group = "verification"
     description = "共享字体owner、原生framebuffer scene与输入资源生命周期（需要设备）"
@@ -144,7 +183,27 @@ val fontTextScenario by tasks.registering(JavaExec::class) {
     jvmArgs("-Dfile.encoding=UTF-8")
     args(projectDir.absolutePath)
 }
-tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario, fontTextScenario) }
+val attributedTextScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "整簇属性文本、格式来源与逻辑采样分离验收"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.AttributedTextScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+}
+val glyphRasterStyleScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "真实原生字形合成样式、墨迹范围与有界资源验收"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.GlyphRasterStyleScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+    args(file("src/main/resources/assets/qz_uilib/fonts").absolutePath,
+        layout.buildDirectory.dir("font-machine/raster-style").get().asFile.absolutePath)
+}
+tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario, fontTextScenario, glyphRasterStyleScenario, attributedTextScenario) }
 
 
 // 显式人工测试附加包：与发布包分离，不进入 assemble/publish，真实实例自动安装 /qzcore。

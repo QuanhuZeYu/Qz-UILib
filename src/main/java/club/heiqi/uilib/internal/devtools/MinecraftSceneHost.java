@@ -1,6 +1,6 @@
 package club.heiqi.uilib.internal.devtools;
 
-import net.minecraft.client.Minecraft;
+import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.host.client.font.ClientFontServices;
 import club.heiqi.uilib.host.client.font.FramebufferSceneRenderer;
 import club.heiqi.uilib.host.client.font.MinecraftFontServices;
@@ -15,8 +15,8 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 final class MinecraftSceneHost implements SceneHost,SceneTextMeasurer,AutoCloseable {
     private final ClientFontServices fonts=MinecraftFontServices.shared();
     private final FramebufferSceneRenderer renderer=new FramebufferSceneRenderer(fonts);
-    @Override public int width(){return Minecraft.getMinecraft().displayWidth;}
-    @Override public int height(){return Minecraft.getMinecraft().displayHeight;}
+    @Override public int width(){return Display.getWidth();}
+    @Override public int height(){return Display.getHeight();}
     @Override public long metricsRevision(){return fonts.fonts().generation();}
     @Override public TextLayout layout(String text,TextStyle style,int availableWidth){return fonts.layout(text,style,availableWidth);}
     @Override public TextLayout layout(String text,TextStyle style,int availableWidth,TextPolicy policy){return fonts.layout(text,style,availableWidth,policy);}

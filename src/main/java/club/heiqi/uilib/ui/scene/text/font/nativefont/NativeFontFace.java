@@ -81,7 +81,19 @@ public final class NativeFontFace implements AutoCloseable {
 
     public Metrics metrics() { checkOpen(); return metrics; }
     /** 墨迹的保守像素界，用于需求裁剪；不执行FT_Render_Glyph或生成像素缓存。 */
-    public InkBounds glyphInkBounds(int glyphId) {
+    public InkBounds glyphInkBounds(int glyphId) { return glyphInkBounds(glyphId, GlyphRasterStyle.NORMAL); }
+    public InkBounds glyphInkBounds(int glyphId, GlyphRasterStyle style) {
+        Objects.requireNonNull(style, "style");
+        InkBounds raw = rawInkBounds(glyphId);
+        if (!raw.known || style.normal() || raw.right <= raw.left || raw.bottom <= raw.top) return raw;
+        double[] e = style.envelope(raw.left, raw.top, raw.right, raw.bottom, pixelScale);
+        float left = (float) (e[0] * pixelScale), top = (float) (e[1] * pixelScale);
+        float right = (float) (e[2] * pixelScale), bottom = (float) (e[3] * pixelScale);
+        if (!Float.isFinite(left) || !Float.isFinite(top) || !Float.isFinite(right) || !Float.isFinite(bottom))
+            throw new IllegalArgumentException("字形变体墨迹界溢出");
+        return new InkBounds(true, left, top, right, bottom);
+    }
+    private InkBounds rawInkBounds(int glyphId) {
         checkOpen();
         if (glyphId < 0 || glyphId >= face.num_glyphs()) throw new IllegalArgumentException("Invalid glyph ID");
         NativeFontService.check(FreeType.FT_Load_Glyph(face, glyphId, FreeType.FT_LOAD_DEFAULT | FreeType.FT_LOAD_COLOR), "FT_Load_Glyph bounds");
@@ -170,14 +182,16 @@ public final class NativeFontFace implements AutoCloseable {
     }
 
     /** 灰度/mono 输出白色 premultiplied coverage；BGRA 保留原生 premultiplied 颜色并重排为 RGBA。 */
-    public GlyphBitmap rasterize(int glyphId) {
+    public GlyphBitmap rasterize(int glyphId) { return rasterize(glyphId, GlyphRasterStyle.NORMAL); }
+    public GlyphBitmap rasterize(int glyphId, GlyphRasterStyle style) {
+        Objects.requireNonNull(style, "style");
         checkOpen();
         NativeFontService.check(FreeType.FT_Load_Glyph(face, glyphId, FreeType.FT_LOAD_DEFAULT | FreeType.FT_LOAD_COLOR), "FT_Load_Glyph");
         FT_GlyphSlot slot = face.glyph();
         if (slot.format() != FreeType.FT_GLYPH_FORMAT_BITMAP) {
             NativeFontService.check(FreeType.FT_Render_Glyph(slot, FreeType.FT_RENDER_MODE_NORMAL), "FT_Render_Glyph");
         }
-        return GlyphBitmap.copy(slot.bitmap(), slot.bitmap_left() * pixelScale, slot.bitmap_top() * pixelScale, pixelScale);
+        return GlyphBitmap.copy(slot.bitmap(), slot.bitmap_left() * pixelScale, slot.bitmap_top() * pixelScale, pixelScale).styled(style);
     }
 
     @Override public void close() {

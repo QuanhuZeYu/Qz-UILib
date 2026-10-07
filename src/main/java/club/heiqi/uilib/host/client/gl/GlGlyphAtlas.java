@@ -90,15 +90,22 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
     }
     private void check(){if(Thread.currentThread()!=thread)throw new IllegalStateException("图集仅限所属GL线程");if(closed)throw new IllegalStateException("图集已关闭");}
     public Stats stats(){check();return new Stats(this);}
-    public Frame beginFrame(Collection<GlyphKey> demand) {
+    public Frame beginFrame(Collection<GlyphKey> demand) {return beginFrame(demand,false);}
+    /** managed consumer保留此前consumer的分帧upload，epoch结束时才裁决过期。 */
+    public Frame beginFrame(Collection<GlyphKey> demand,boolean preserveUpload) {
         check();if(active!=null)throw new IllegalStateException("先结束上一个图集范围");
         Frame frame=new Frame();for(GlyphKey key:demand) {
             if(frame.demand.size()>=budget.maxDemand&&!frame.demand.contains(key)){rejected++;continue;}
             frame.demand.add(key);Resident resident=residents.get(key);if(resident!=null){resident.group.pinned=true;resident.group.lastUsed=++clock;}
         }
-        if(uploading!=null&&!frame.demand.contains(uploading.key))uploading=null;
+        if(!preserveUpload&&uploading!=null&&!frame.demand.contains(uploading.key))uploading=null;
         if(uploading!=null)uploading.resident.group.pinned=true;
         active=frame;return frame;
+    }
+    /** 不持Frame/UV的epoch结束裁决，仅丢弃不再可见的未完成upload。 */
+    public void retainUploadDemand(Collection<GlyphKey> demand) {
+        check();if(active!=null)throw new IllegalStateException("先关闭Frame再结束epoch");
+        if(uploading!=null&&!demand.contains(uploading.key))uploading=null;
     }
     public final class Frame implements AutoCloseable {
         private final LinkedHashSet<GlyphKey> demand=new LinkedHashSet<GlyphKey>();
@@ -108,9 +115,11 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
         public Resident lookup(GlyphKey key){checkFrame();return frozen?visible.get(key):residents.get(key);}
         private void checkFrame(){check();if(done||active!=this)throw new IllegalStateException("图集范围已结束");}
         /** 时间预算只在驱动提交边界检查，无法中断单次 GL 调用。RGBA8 padded 区域分行上传。 */
-        public void prepare(AsyncGlyphRasterizer cpu,UploadBudget uploadBudget) {
+        public void prepare(AsyncGlyphRasterizer cpu,UploadBudget uploadBudget) {prepare(cpu,uploadBudget,true);}
+        /** 共享owner在presentation结束时统一retain；单consumer默认保持旧行为。 */
+        public void prepare(AsyncGlyphRasterizer cpu,UploadBudget uploadBudget,boolean retainPending) {
             checkFrame();if(frozen)throw new IllegalStateException("绘制期间禁止上传");
-            cpu.retainPending(demand);cpu.drainReady(budget.maxDemand);
+            if(retainPending)cpu.retainPending(demand);cpu.drainReady(budget.maxDemand);
             for(GlyphKey key:demand)if(!residents.containsKey(key))cpu.request(key);
             long start=System.nanoTime(),remaining=uploadBudget.bytes;int calls=0;
             try(UploadState state=new UploadState()) {

@@ -232,7 +232,7 @@ UILib 采用原生 framebuffer 分辨率：布局、字号、裁剪、滚动距�
 
 滚动有效偏移由框架按最终内容范围与视口限制；内容未溢出时偏移为零，到达末尾后的滚轮不累积额外偏移，反向滚动立即响应。内容删除、换行、字号及窗口变化后重新计算范围并限制已有偏移，业务无需维护末尾边界。
 
-核心平台无关，平台输入只经适配边界进入；内部布局、绘制、裁剪和输入共享 logical px，GUI Scale 转换仅在宿主边界成对发生。数据/paint 层不调用 GL，paint/replay 传递自包含、不可变绘制计划。backend/replay 恢复触碰的 GL 状态，包括宿主已有非默认裁剪、stencil 与 mask。通用绘制不得使用 Minecraft 的 Tessellator 等包装类，应走直接 GL 或 UILib 自有管线。物品 icon 的 Minecraft 适配可完整委托 RenderItem.renderItemAndEffectIntoGUI（含 Forge hook 与标准光照）；此适配例外不扩及通用 GUI 或渲染核心。
+核心平台无关，平台输入只经适配边界进入；内部布局、绘制、裁剪和输入共享 logical px，GUI Scale 转换仅在宿主边界成对发生。数据/paint 层不调用 GL，paint/replay 传递自包含、不可变绘制计划。backend/replay 恢复触碰的 GL 状态，包括宿主已有非默认裁剪、stencil 与 mask。UILib 即便在宿主边界也优先直接使用 LWJGL 宿主能力；窗口、framebuffer、原生输入与 GL 操作不优先经 Minecraft 包装方法取得。Minecraft 特有资源包、生命周期与调用语义留在专用适配层；宿主虚拟化的 GL 状态须读取其实际有效状态，不以裸驱动查询替代宿主缓存事实。通用绘制不得使用 Minecraft 的 Tessellator 等包装类，应走直接 GL 或 UILib 自有管线。物品 icon 的 Minecraft 适配可完整委托 RenderItem.renderItemAndEffectIntoGUI（含 Forge hook 与标准光照）；此适配例外不扩及通用 GUI 或渲染核心。
 
 优先复用 scene、响应式、PaintCommand、标准控件及字体能力，不能为了通过测试绕过生产路径或直连原版 GUI。
 

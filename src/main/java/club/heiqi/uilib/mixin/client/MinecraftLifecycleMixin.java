@@ -10,6 +10,9 @@ import club.heiqi.uilib.host.client.font.MinecraftFontServices;
 /** 在宿主GL上下文销毁之前，同一client线程释放字体owner；不能用shutdownhook代替。 */
 @Mixin(Minecraft.class)
 public abstract class MinecraftLifecycleMixin {
+    // LWJGL3ify排除org.lwjgl类转换；此处仅转交present，不使用MC尺寸/绘制包装。
+    @Inject(method = "func_147120_f", at = @At(value = "INVOKE", target = "Lorg/lwjgl/opengl/Display;update()V", remap = false))
+    private void qz$presentFontResources(CallbackInfo callback) { MinecraftFontServices.beforePresent(); }
     @Inject(method = "shutdownMinecraftApplet", at = @At("HEAD"))
     private void qz$closeFontServices(CallbackInfo callback) { MinecraftFontServices.closeShared(); }
 }

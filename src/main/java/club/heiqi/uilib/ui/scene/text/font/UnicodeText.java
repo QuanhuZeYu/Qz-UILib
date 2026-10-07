@@ -30,7 +30,7 @@ final class UnicodeText {
                 cp = 10;
             } else if (cp == 0x2028 || cp == 0x2029) cp = 10;
             else if ((cp < 32 && cp != 9 && cp != 10) || cp >= 0x7f && cp <= 0x9f) {
-                diagnostics.add(new Diagnostic(Diagnostic.Kind.CONTROL_MARKER, input.sourceOffset(start), input.sourceOffset(i),
+                diagnostics.add(new Diagnostic(Diagnostic.Kind.CONTROL_MARKER, input.sourceStart(start), input.sourceEnd(i - 1),
                     "控制符 U+" + Integer.toHexString(cp).toUpperCase(java.util.Locale.ROOT) + " 显示标记"));
                 cp = cp < 32 ? 0x2400 + cp : cp == 127 ? 0x2421 : 0x2426;
             }
@@ -40,7 +40,8 @@ final class UnicodeText {
         offsets.add(input.text.length()); display = out.toString(); logical = new int[offsets.size()];
         for (int i = 0; i < logical.length; i++) logical[i] = offsets.get(i);
     }
-    int source(int offset) { return input.sourceOffset(logical[offset]); }
+    int source(int offset) { return input.sourceRight(logical[offset]); }
+    int sourceEnd(int offset){return logical[offset]==0?0:input.sourceEnd(logical[offset]-1);}
     List<Unit> units(int start, int end, String language, EmojiData emojiData) {
         String text = display.substring(start, end);
         BreakIterator breaks = BreakIterator.getCharacterInstance(ULocale.forLanguageTag(language)); breaks.setText(text);
@@ -131,6 +132,7 @@ final class UnicodeText {
         int script;
         final boolean emoji, emojiLike;
         FontSource source;
+        club.heiqi.uilib.ui.scene.text.TextStyle style, shapeStyle;
         boolean replacement;
         int replacementId;
         Unit(int start, int end, int script, boolean emoji, boolean emojiLike) {

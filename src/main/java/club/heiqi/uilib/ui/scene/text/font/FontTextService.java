@@ -23,6 +23,12 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextLayout.Diagnostic;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
+import club.heiqi.uilib.ui.scene.text.AttributedText;
+import club.heiqi.uilib.ui.scene.text.RasterSampling;
+import club.heiqi.uilib.ui.scene.text.StyleSpan;
+import club.heiqi.uilib.ui.scene.text.TextDecoration;
+import club.heiqi.uilib.ui.scene.text.TextEffects;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 import club.heiqi.uilib.ui.scene.text.font.UnicodeText.Unit;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
@@ -43,7 +49,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private final LinkedHashMap<FaceKey, NativeFontFace> faces = new LinkedHashMap<FaceKey, NativeFontFace>(16, .75f, true);
     private final LinkedHashMap<FaceKey, String> failures = new LinkedHashMap<FaceKey, String>(16, .75f, true);
     private final LinkedHashMap<ColorKey, Boolean> colors = new LinkedHashMap<ColorKey, Boolean>(16, .75f, true);
-    private final LinkedHashMap<ColorKey, NativeFontFace.InkBounds> ink = new LinkedHashMap<ColorKey, NativeFontFace.InkBounds>(16, .75f, true);
+    private final LinkedHashMap<InkKey, NativeFontFace.InkBounds> ink = new LinkedHashMap<InkKey, NativeFontFace.InkBounds>(16, .75f, true);
     private final LinkedHashMap<LayoutKey, TextLayout> layouts = new LinkedHashMap<LayoutKey, TextLayout>(16, .75f, true);
     private final Map<String, List<FontSource>> named = new HashMap<String, List<FontSource>>();
     private final List<Runnable> invalidation = new ArrayList<Runnable>();
@@ -120,20 +126,36 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     @Override public TextLayout layout(String text, TextStyle style, int width) { return layout(text, style, width, TextPolicy.NORMAL); }
     @Override public TextLayout layout(String text, TextStyle style, int width, TextPolicy policy) {
         check(); Objects.requireNonNull(text, "text"); Objects.requireNonNull(style, "style"); Objects.requireNonNull(policy, "policy");
+        if(!style.effects.equals(TextEffects.NORMAL)||!style.decoration.equals(TextDecoration.NONE)) return layout(new AttributedText(TextInput.string(text),text,style,text.isEmpty()?Collections.<StyleSpan>emptyList():Collections.singletonList(new StyleSpan(0,text.length(),style))),width,policy);
         List<FontSource> sources = candidates(style);
-        LayoutKey key = new LayoutKey(text, sources, style.size, width, policy);
+        LayoutKey key = new LayoutKey(text, sources, style.logicalEm, width, policy);
         TextLayout cached = layouts.get(key);
-        if (cached != null) return cached.withStyle(style);
+        if (cached != null) return rebindResolvedStyle(cached,style,key.sources);
         TextLayout result = build(TextInput.string(text), text, style, width, policy, sources);
         if (layoutLimit > 0 && text.length() <= cachedTextLimit) { layouts.put(key, result); trim(layouts, layoutLimit); }
         return result;
     }
+    /** 仅plain缓存命中可调用：完整LayoutKey已证明解析后的有序候选及em相等。公开withStyle仍严格检查原selector。 */
+    private TextLayout rebindResolvedStyle(TextLayout cached,TextStyle style,List<FontSource> resolvedSources) {
+        if(!candidates(cached.style).equals(resolvedSources)||!candidates(style).equals(resolvedSources)||cached.style.logicalEm!=style.logicalEm
+            ||!cached.style.effects.equals(style.effects)||!cached.style.decoration.equals(style.decoration))throw new IllegalArgumentException("缓存样式没有等价的实际字体身份");
+        if(cached.style.sameFont(style))return cached.withStyle(style);
+        List<TextLayout.Line> lines=new ArrayList<TextLayout.Line>();
+        for(TextLayout.Line line:cached.lines()){
+            List<TextLayout.Glyph> glyphs=new ArrayList<TextLayout.Glyph>();List<TextLayout.Cluster> clusters=new ArrayList<TextLayout.Cluster>();List<TextLayout.Decoration> decorations=new ArrayList<TextLayout.Decoration>();
+            for(TextLayout.Glyph g:line.glyphs())glyphs.add(new TextLayout.Glyph(g.source,g.size,g.glyphId,g.logicalStart,g.logicalEnd,g.sourceStart,g.sourceEnd,g.x,g.y,g.xAdvance,g.yAdvance,g.color,g.replacement,g.inkBounds,g.logicalEm,g.rasterToLayout,g.rasterStyle,style,g.clusterIndex));
+            for(TextLayout.Cluster c:line.clusters())clusters.add(new TextLayout.Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,c.glyphIndexStart,c.glyphIndexEnd,c.x,c.advance,style));
+            for(TextLayout.Decoration d:line.decorations())decorations.add(new TextLayout.Decoration(d.kind,d.x,d.y,d.width,d.height,style.color,d.logicalStart,d.logicalEnd,d.sourceStart,d.sourceEnd));
+            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,clusters,decorations));
+        }
+        return new TextLayout(cached.width,cached.height,cached.advanceWidth,cached.advanceHeight,style,lines,cached.logicalText,cached.originalText,cached.generation,cached.diagnostics(),cached.input);
+    }
     /** 输入对象携带 byte/UTF16 来源，因此不与 String cache 混用。 */
     public TextLayout layout(TextInput text, TextStyle style, int width, TextPolicy policy) {
         check(); Objects.requireNonNull(style, "style"); Objects.requireNonNull(policy, "policy");
-        return build(Objects.requireNonNull(text, "text"), null, style, width, policy, candidates(style));
+        return layout(AttributedText.plain(Objects.requireNonNull(text,"text"),style),width,policy);
     }
-    private NativeFontFace face(FontSource source, int size, UnicodeText doc) {
+    private NativeFontFace face(FontSource source, float size, UnicodeText doc) {
         FaceKey key = new FaceKey(source, size);
         NativeFontFace found = faces.get(key); if (found != null) return found;
         String failure = failures.get(key);
@@ -153,7 +175,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         for (Diagnostic d : doc.diagnostics) if (d.kind == Diagnostic.Kind.FONT_RESOURCE && d.message.equals(message)) return null;
         doc.diagnostics.add(new Diagnostic(Diagnostic.Kind.FONT_RESOURCE, 0, 0, message)); return null;
     }
-    private boolean color(FontSource source, int size, int glyph, NativeFontFace face) {
+    private boolean color(FontSource source, float size, int glyph, NativeFontFace face) {
         ColorKey key = new ColorKey(source, size, glyph); Boolean found = colors.get(key);
         if (found == null) {
             GlyphBitmap bitmap = face.rasterize(glyph);
@@ -167,12 +189,12 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         return found;
     }
     /** 仅加载真实glyph metrics/bitmap，不执行FT_Render_Glyph。实际identity与光栅请求完全相同。 */
-    private NativeFontFace.InkBounds inkBounds(FontSource source, int size, int glyph, UnicodeText doc) {
-        ColorKey key = new ColorKey(source, size, glyph); NativeFontFace.InkBounds result = ink.get(key);
+    private NativeFontFace.InkBounds inkBounds(FontSource source, float size, int glyph, GlyphRasterStyle variant, UnicodeText doc) {
+        InkKey key = new InkKey(source, size, glyph,variant); NativeFontFace.InkBounds result = ink.get(key);
         if (result == null) {
             NativeFontFace face = face(source, size, doc);
             if (face == null) throw new IllegalStateException("已匹配字体无法取得真实墨迹边界");
-            result = face.glyphInkBounds(glyph); ink.put(key, result); trim(ink, 1024);
+            result = face.glyphInkBounds(glyph,variant); ink.put(key, result); trim(ink, 1024);
         }
         return result;
     }
@@ -181,7 +203,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     }
     private void match(UnicodeText doc, List<Unit> units, Bidi bidi, int paragraphStart, TextStyle style,
             TextPolicy policy, List<FontSource> sources) {
-        Map<String, FontSource> independent = new HashMap<String, FontSource>();
+        Map<MatchKey, FontSource> independent = new HashMap<MatchKey, FontSource>();
         for (int i = 0; i < units.size();) {
             Unit first = units.get(i); int j = i + 1;
             if (UnicodeText.complex(first.script)) {
@@ -189,18 +211,24 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     && bidi.getLevelAt(units.get(j).start - paragraphStart) == bidi.getLevelAt(first.start - paragraphStart)) j++;
             }
             int start = first.start, end = units.get(j - 1).end;
+            TextStyle leading=first.shapeStyle;
+            for(int k=i;k<j;k++){Unit unit=units.get(k);if(!unit.shapeStyle.sameFont(leading)){
+                doc.diagnostics.add(new Diagnostic(Diagnostic.Kind.STYLE_COALESCED,doc.source(start),doc.sourceEnd(end),"必要连接范围字体/字号统一使用逻辑首样式"));
+                unit.shapeStyle=leading;
+            }}
+            style=leading;sources=candidates(leading);
             if (!UnicodeText.visible(doc.display, start, end) || doc.display.charAt(start) == '	') { i = j; continue; }
             NativeFontFace.Direction direction = (bidi.getLevelAt(start - paragraphStart) & 1) == 0
                 ? NativeFontFace.Direction.LTR : NativeFontFace.Direction.RTL;
             // 独立字素的匹配没有跨字素连接上下文，当前layout内相同字素复用候选结果。
             String matchText = UnicodeText.complex(first.script) ? null : doc.display.substring(start, end);
-            String matchKey = matchText == null ? null : first.script + ":" + first.emoji + ":" + direction + ":" + matchText;
+            MatchKey matchKey = matchText==null?null:new MatchKey(sources,style.logicalEm,first.script,first.emoji,direction,matchText);
             FontSource selected = matchKey == null ? null : independent.get(matchKey);
             if (selected != null) { for (int k = i; k < j; k++) units.get(k).source = selected; i = j; continue; }
             for (FontSource candidate : sources) {
                 if (UnicodeText.complex(first.script) && !candidate.supportsScript(UScript.getShortName(first.script))) continue;
                 if (first.emoji && !candidate.color) continue;
-                NativeFontFace f = face(candidate, style.size, doc); if (f == null) continue;
+                NativeFontFace f = face(candidate, style.logicalEm, doc); if (f == null) continue;
                 String context = matchText == null ? doc.display : matchText;
                 int from = matchText == null ? start : 0, limit = matchText == null ? end : matchText.length();
                 List<NativeFontFace.Glyph> shaped = f.shape(context, from, limit, direction, policy.language,
@@ -213,7 +241,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     visible++;
                     if (g.glyphId == 0) { ok = false; break; }
                     // Emoji 默认/VS16必须实际彩色；VS15或默认文字必须不能输出彩色 bitmap。
-                    if ((first.emoji || first.emojiLike || candidate.color) && color(candidate, style.size, g.glyphId, f) != first.emoji) { ok = false; break; }
+                    if ((first.emoji || first.emojiLike || candidate.color) && color(candidate, style.logicalEm, g.glyphId, f) != first.emoji) { ok = false; break; }
                 }
                 // 一个 emoji 字素必须形成一个真实彩色序列，不把散开的码点宣称正确生成。
                 if (first.emoji && visible != 1) ok = false;
@@ -224,12 +252,12 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     "候选列表无法正确生成 " + UScript.getShortName(first.script) + " 范围；使用列表内稳定替代"));
                 int replacement = 0;
                 for (FontSource candidate : sources) {
-                    NativeFontFace f = face(candidate, style.size, doc); if (f == null) continue;
+                    NativeFontFace f = face(candidate, style.logicalEm, doc); if (f == null) continue;
                     int id = f.glyphIndex(0xfffd);
-                    if (id != 0 && !color(candidate, style.size, id, f)) { selected = candidate; replacement = id; break; }
+                    if (id != 0 && !color(candidate, style.logicalEm, id, f)) { selected = candidate; replacement = id; break; }
                 }
                 if (selected == null) for (FontSource candidate : sources) {
-                    NativeFontFace f = face(candidate, style.size, doc); if (f != null && !color(candidate, style.size, 0, f)) { selected = candidate; break; }
+                    NativeFontFace f = face(candidate, style.logicalEm, doc); if (f != null && !color(candidate, style.logicalEm, 0, f)) { selected = candidate; break; }
                 }
                 if (selected == null) {
                     StringBuilder failure = new StringBuilder("候选列表无有效文字字体，不能生成稳定替代: ").append(sources);
@@ -243,16 +271,37 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         }
     }
     private TextLayout build(TextInput input, String original, TextStyle style, int width, TextPolicy policy, List<FontSource> sources) {
-        if (style.size > 32767) throw new IllegalArgumentException("native em 字号上限为32767");
-        UnicodeText doc = new UnicodeText(input); List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
+        if (style.logicalEm > 32767) throw new IllegalArgumentException("native em 字号上限为32767");
+        return build(AttributedText.plain(input,style),original,width,policy);
+    }
+    @Override public TextLayout layout(AttributedText text,float width,TextPolicy policy) {
+        check();Objects.requireNonNull(text,"text");Objects.requireNonNull(policy,"policy");
+        if(!Float.isFinite(width))throw new IllegalArgumentException("无效布局宽度");
+        for(StyleSpan span:text.spans())if(span.style.effects.obfuscated)throw new UnsupportedOperationException("混淆动画不属于当前属性布局切片");
+        if(text.baseStyle.effects.obfuscated)throw new UnsupportedOperationException("混淆动画尚未实现");
+        return build(text,text.originalText,width,policy);
+    }
+    private TextLayout build(AttributedText attributed,String original,float width,TextPolicy policy) {
+        TextInput input=attributed.input;TextStyle style=attributed.baseStyle;List<FontSource> sources=candidates(style);
+        UnicodeText doc = new UnicodeText(input);doc.diagnostics.addAll(attributed.diagnostics()); List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
         float y = 0, maxWidth = 0;
         for (int start = 0; start <= doc.display.length();) {
             int newline = doc.display.indexOf('\n', start), end = newline < 0 ? doc.display.length() : newline;
+            // 空段也有活动逻辑样式，末段使用显式trailing状态，不能继承整个输入的base度量。
+            style=attributed.styleAt(doc.logical[start]);sources=candidates(style);
             String paragraph = doc.display.substring(start, end); Bidi bidi = new Bidi();
             byte level = policy.direction == TextPolicy.Direction.AUTO ? Bidi.LEVEL_DEFAULT_LTR
                 : (byte) (policy.direction == TextPolicy.Direction.LTR ? 0 : 1);
             bidi.setPara(paragraph, level, null);
             List<Unit> units = doc.units(start, end, policy.language, emojiData);
+            int spanCursor=0;List<StyleSpan> requested=attributed.spans();
+            while(spanCursor<requested.size()&&requested.get(spanCursor).logicalEnd<=doc.logical[start])spanCursor++;
+            for(Unit unit:units){unit.style=attributed.styleAt(doc.logical[unit.start]);unit.shapeStyle=unit.style;
+                while(spanCursor<requested.size()&&requested.get(spanCursor).logicalEnd<=doc.logical[unit.start])spanCursor++;
+                for(int k=spanCursor+1;k<requested.size()&&requested.get(k).logicalStart<doc.logical[unit.end];k++)if(!requested.get(k).style.equals(unit.style)){
+                    doc.diagnostics.add(new Diagnostic(Diagnostic.Kind.STYLE_COALESCED,doc.source(unit.start),doc.sourceEnd(unit.end),"字素内部样式统一使用逻辑首样式"));break;
+                }
+            }
             match(doc, units, bidi, start, style, policy, sources);
             TreeSet<Integer> safe = new TreeSet<Integer>(); safe.add(start); safe.add(end);
             for (Unit unit : units) { safe.add(unit.start); safe.add(unit.end); }
@@ -294,21 +343,50 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     }
                 }
                 float h = policy.lineHeight > 0 ? policy.lineHeight : Math.max(chosen.ascent + chosen.descent, chosen.metricHeight);
-                if (h <= 0) h = style.size;
+                if (h <= 0) h = style.logicalEm;
                 float baseline = y + chosen.ascent;
                 List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
-                for (Placed g : chosen.glyphs) glyphs.add(new TextLayout.Glyph(g.source, style.size, g.id,
-                    doc.logical[g.start], doc.logical[g.end], doc.source(g.start), doc.source(g.end),
-                    g.x, baseline + g.y, g.advance, g.yAdvance, g.color, g.replacement,
-                    inkBounds(g.source, style.size, g.id, doc)));
+                List<TextLayout.Cluster> cells=new ArrayList<TextLayout.Cluster>();List<TextLayout.Decoration> decorations=new ArrayList<TextLayout.Decoration>();
+                Map<Cell,Integer> cellIds=new java.util.IdentityHashMap<Cell,Integer>();
+                for(Cell c:chosen.cells){int id=cells.size();cellIds.put(c,id);
+                    int ls=doc.logical[c.start],le=doc.logical[c.end],ss=doc.source(c.start),se=doc.sourceEnd(c.end);
+                    cells.add(new TextLayout.Cluster(ls,le,ss,se,c.glyphStart,c.glyphEnd,c.x,c.advance,c.style));
+                    TextDecoration d=c.style.decoration;
+                    if(c.style.effects.underline&&d.underlineThickness>0)decorations.add(new TextLayout.Decoration(TextLayout.Decoration.Kind.UNDERLINE,c.x+d.underlineStartOffset,baseline+d.underlineTop,c.advance-d.underlineStartOffset,d.underlineThickness,c.style.color,ls,le,ss,se));
+                    if(c.style.effects.strike&&d.strikeThickness>0)decorations.add(new TextLayout.Decoration(TextLayout.Decoration.Kind.STRIKE,c.x,baseline+d.strikeTop,c.advance,d.strikeThickness,c.style.color,ls,le,ss,se));
+                }
+                for (Placed g : chosen.glyphs) {TextStyle paint=g.cell.style;GlyphRasterStyle variant=variant(paint,1);
+                    glyphs.add(new TextLayout.Glyph(g.source,paint.logicalEm,g.id,
+                    doc.logical[g.cell.start],doc.logical[g.cell.end],doc.source(g.cell.start),doc.sourceEnd(g.cell.end),
+                    g.x,baseline+g.y,g.advance,g.yAdvance,g.color,g.replacement,
+                    inkBounds(g.source,paint.logicalEm,g.id,variant,doc),paint.logicalEm,1,variant,paint,cellIds.get(g.cell)));
+                }
                 lines.add(new TextLayout.Line(input.text.substring(doc.logical[a], doc.logical[b]), 0, (int) Math.floor(y),
-                    doc.logical[a], doc.logical[b], doc.source(a), doc.source(b), chosen.width, baseline,
-                    chosen.ascent, chosen.descent, h, glyphs));
+                    doc.logical[a], doc.logical[b],input.sourceLeft(doc.logical[a]),b==end?input.sourceRight(doc.logical[b]):input.sourceLeft(doc.logical[b]), chosen.width,baseline,
+                    chosen.ascent,chosen.descent,h,glyphs,cells,decorations));
                 maxWidth = Math.max(maxWidth, chosen.width); y += h; a = b;
             } while (a < end);
             if (newline < 0) break; start = end + 1;
         }
-        return new TextLayout(ceil(maxWidth), ceil(y), maxWidth, y, style, lines, input.text, original, generation, doc.diagnostics);
+        return new TextLayout(ceil(maxWidth), ceil(y), maxWidth, y, attributed.baseStyle, lines, input.text, original, generation, doc.diagnostics,input);
+    }
+    private static GlyphRasterStyle variant(TextStyle style,float ratio){return new GlyphRasterStyle(style.effects.boldAdvance/ratio,style.effects.italicShear);}
+    /** 不shape、不render，同glyphId实际采样边界映回逻辑坐标。 */
+    public TextLayout sample(TextLayout layout,RasterSampling sampling){
+        check();Objects.requireNonNull(layout,"layout");Objects.requireNonNull(sampling,"sampling");
+        UnicodeText doc=new UnicodeText(layout.input==null?TextInput.string(layout.logicalText):layout.input);List<TextLayout.Line> lines=new ArrayList<TextLayout.Line>();
+        for(TextLayout.Line line:layout.lines()){List<TextLayout.Glyph> glyphs=new ArrayList<TextLayout.Glyph>();
+            for(TextLayout.Glyph g:line.glyphs()){float em=g.logicalEm*sampling.pixelsPerLayoutUnit;
+                if(!Float.isFinite(em)||em<=0||em>32767)throw new IllegalArgumentException("采样em超过原生范围");
+                float ratio=g.logicalEm/em;TextStyle style=g.resolvedStyle==null?layout.style:g.resolvedStyle;
+                GlyphRasterStyle variant=variant(style,ratio);NativeFontFace.InkBounds raw=inkBounds(g.source,em,g.glyphId,variant,doc);
+                NativeFontFace.InkBounds mapped=raw.known?new NativeFontFace.InkBounds(true,raw.left*ratio,raw.top*ratio,raw.right*ratio,raw.bottom*ratio):NativeFontFace.InkBounds.UNKNOWN;
+                glyphs.add(new TextLayout.Glyph(g.source,em,g.glyphId,g.logicalStart,g.logicalEnd,g.sourceStart,g.sourceEnd,g.x,g.y,g.xAdvance,g.yAdvance,g.color,g.replacement,mapped,g.logicalEm,ratio,variant,style,g.clusterIndex));
+            }
+            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,line.clusters(),line.decorations()));
+        }
+        List<Diagnostic> diagnostics=new ArrayList<Diagnostic>(layout.diagnostics());diagnostics.addAll(doc.diagnostics);
+        return new TextLayout(layout.width,layout.height,layout.advanceWidth,layout.advanceHeight,layout.style,lines,layout.logicalText,layout.originalText,layout.generation,diagnostics,layout.input);
     }
     private static int ceil(float value) {
         if (!Float.isFinite(value) || value > Integer.MAX_VALUE) throw new IllegalArgumentException("文本布局尺寸超出 scene 范围");
@@ -331,21 +409,24 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 int s = Math.max(runStart, u.start), e = Math.min(runEnd, u.end);
                 boolean special = doc.display.charAt(s) == '	' || !UnicodeText.visible(doc.display, s, e) || u.replacement || u.source == null;
                 Span last = spans.isEmpty() ? null : spans.get(spans.size() - 1);
-                if (!special && last != null && !last.special && last.unit.source.equals(u.source) && last.unit.script == u.script && last.end == s)
+                if (!special && last != null && !last.special && last.unit.source.equals(u.source) && last.unit.script == u.script && last.unit.shapeStyle.sameFont(u.shapeStyle) && last.end == s)
                     last.end = e;
                 else spans.add(new Span(s, e, u, special));
             }
             if (run.isOddRun()) Collections.reverse(spans);
             for (Span span : spans) {
-                Unit u = span.unit;
+                Unit u = span.unit;style=u.shapeStyle;sources=candidates(style);
+                int glyphBegin=draft.glyphs.size();float spanPen=pen;
                 if (doc.display.charAt(span.start) == '	') {
                     float tab = policy.tabSize > 0 ? policy.tabSize : spaceAdvance(style, doc, sources, policy) * 4;
                     float advance = (float) ((Math.floor(pen / tab) + 1) * tab - pen);
+                    draft.cells.add(new Cell(span.start,span.end,pen,advance,u.style,glyphBegin,glyphBegin));
                     draft.spaces.add(new Gap(span.start, span.end, advance)); pen += advance; continue;
                 }
                 if (!UnicodeText.visible(doc.display, span.start, span.end)) continue;
-                if (u.source == null) { float advance = style.size; draft.spaces.add(new Gap(span.start, span.end, advance)); pen += advance; continue; }
-                NativeFontFace f = face(u.source, style.size, doc); if (f == null) throw new IllegalStateException("已匹配字体无法重开");
+                if (u.source == null) { float advance = style.logicalEm; draft.cells.add(new Cell(span.start,span.end,pen,advance,u.style,glyphBegin,glyphBegin));
+                    draft.spaces.add(new Gap(span.start, span.end, advance)); pen += advance; continue; }
+                NativeFontFace f = face(u.source, style.logicalEm, doc); if (f == null) throw new IllegalStateException("已匹配字体无法重开");
                 draft.metrics(f.metrics());
                 if (u.replacement) {
                     // U+FFFD 不可用时使用同列表第一有效 face 的 .notdef；身份仍可真实光栅。
@@ -353,7 +434,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                         NativeFontFace.Direction.LTR, policy.language);
                     NativeFontFace.Glyph g = replacement.get(0);
                     draft.glyphs.add(new Placed(u.source, u.replacementId, span.start, span.end, pen + g.xOffset, -g.yOffset,
-                        g.xAdvance, -g.yAdvance, false, true)); pen += g.xAdvance; continue;
+                        g.xAdvance, -g.yAdvance, false, true)); pen += g.xAdvance;
+                    pen=finishSpan(draft,units,doc,glyphBegin,spanPen,pen,u.script);continue;
                 }
                 List<NativeFontFace.Glyph> shaped = f.shape(context, span.start - start, span.end - start,
                     run.isOddRun() ? NativeFontFace.Direction.RTL : NativeFontFace.Direction.LTR, policy.language,
@@ -369,29 +451,68 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     clusterStart = atStart.start; clusterEnd = atEnd.end;
                     boolean draw = UnicodeText.visible(doc.display, c, next);
                     if (draw) draft.glyphs.add(new Placed(u.source, g.glyphId, clusterStart, clusterEnd, pen + g.xOffset,
-                        -g.yOffset, g.xAdvance, -g.yAdvance, u.source.color && color(u.source, style.size, g.glyphId, f), false));
+                        -g.yOffset, g.xAdvance, -g.yAdvance, u.source.color && color(u.source, style.logicalEm, g.glyphId, f), false));
                     else if (g.xAdvance != 0) draft.spaces.add(new Gap(clusterStart, clusterEnd, g.xAdvance));
                     pen += g.xAdvance;
                 }
+                pen=finishSpan(draft,units,doc,glyphBegin,spanPen,pen,u.script);
             }
         }
         draft.width = pen;
         if (draft.ascent + draft.descent == 0) defaultMetrics(draft, style, doc, sources);
         return draft;
     }
+    /** 必要连接范围内保留HB墨迹相对位置，完整安全簇只增加一次advance。 */
+    private float finishSpan(Draft draft,UnitIndex units,UnicodeText doc,int begin,float spanPen,float pen,int script) {
+        LinkedHashMap<Integer,Cell> grouped=new LinkedHashMap<Integer,Cell>();float nativePen=spanPen;
+        for(int i=begin;i<draft.glyphs.size();i++){
+            Placed g=draft.glyphs.get(i);Cell cell=grouped.get(g.start);
+            if(cell==null){TextStyle paint=units.starts.floorEntry(g.start).getValue().style;
+                TextStyle shape=units.starts.floorEntry(g.start).getValue().shapeStyle;
+                paint=new TextStyle(shape.font,shape.logicalEm,paint.color,shape.candidates(),paint.effects,paint.decoration);
+                cell=new Cell(g.start,g.end,nativePen,0,paint,i,i);grouped.put(g.start,cell);
+            }
+            cell.end=Math.max(cell.end,g.end);cell.glyphEnd=i+1;cell.advance+=g.advance;g.cell=cell;nativePen+=g.advance;
+        }
+        List<Cell> cells=new ArrayList<Cell>(grouped.values());
+        for(int i=1;i<cells.size();){Cell prev=cells.get(i-1),next=cells.get(i);
+            if(prev.start<next.end&&next.start<prev.end){
+                int leading=Math.min(prev.start,next.start);prev.start=leading;prev.end=Math.max(prev.end,next.end);prev.advance+=next.advance;prev.glyphEnd=next.glyphEnd;
+                TextStyle requested=units.starts.floorEntry(leading).getValue().style;
+                prev.style=new TextStyle(prev.style.font,prev.style.logicalEm,requested.color,prev.style.candidates(),requested.effects,requested.decoration);
+                for(int g=next.glyphStart;g<next.glyphEnd;g++)draft.glyphs.get(g).cell=prev;cells.remove(i);
+            }else i++;
+        }
+        float extra=0;
+        for(Cell cell:cells){float delta=cell.advance!=0?cell.style.effects.boldAdvance:0;
+            for(Unit unit:units.starts.subMap(cell.start,true,cell.end,false).values())if(!unit.style.effects.equals(cell.style.effects)||unit.style.color!=cell.style.color||!unit.style.decoration.equals(cell.style.decoration)){
+                boolean exists=false;for(Diagnostic d:doc.diagnostics)if(d.kind==Diagnostic.Kind.STYLE_COALESCED&&d.sourceStart==doc.source(cell.start)&&d.sourceEnd==doc.sourceEnd(cell.end)){exists=true;break;}
+                if(!exists)doc.diagnostics.add(new Diagnostic(Diagnostic.Kind.STYLE_COALESCED,doc.source(cell.start),doc.sourceEnd(cell.end),"HB安全簇内部效果统一使用逻辑首样式"));break;
+            }
+            cell.x+=extra;cell.advance+=delta;
+            if(!UnicodeText.complex(script))for(int i=cell.glyphStart;i<cell.glyphEnd;i++)draft.glyphs.get(i).x+=extra;
+            if(delta!=0)draft.glyphs.get(cell.glyphEnd-1).advance+=delta;
+            extra+=delta;draft.cells.add(cell);
+        }
+        return pen+extra;
+    }
+    private static final class Cell {
+        int start,end,glyphEnd;final int glyphStart;float x,advance;TextStyle style;
+        Cell(int start,int end,float x,float advance,TextStyle style,int glyphStart,int glyphEnd){this.start=start;this.end=end;this.x=x;this.advance=advance;this.style=style;this.glyphStart=glyphStart;this.glyphEnd=glyphEnd;}
+    }
     private void defaultMetrics(Draft draft, TextStyle style, UnicodeText doc, List<FontSource> sources) {
-        for (FontSource source : sources) { NativeFontFace f = face(source, style.size, doc); if (f != null) { draft.metrics(f.metrics()); return; } }
-        draft.ascent = style.size; draft.metricHeight = style.size;
+        for (FontSource source : sources) { NativeFontFace f = face(source, style.logicalEm, doc); if (f != null) { draft.metrics(f.metrics()); return; } }
+        draft.ascent = style.logicalEm; draft.metricHeight = style.logicalEm;
     }
     private float spaceAdvance(TextStyle style, UnicodeText doc, List<FontSource> sources, TextPolicy policy) {
         for (FontSource source : sources) {
-            NativeFontFace f = face(source, style.size, doc);
+            NativeFontFace f = face(source, style.logicalEm, doc);
             if (f != null && f.glyphIndex(32) != 0) {
                 float advance = 0; for (NativeFontFace.Glyph g : f.shape(" ", NativeFontFace.Direction.LTR, policy.language)) advance += g.xAdvance;
-                if (advance > 0) return advance;
+                if (advance > 0) return advance+style.effects.boldAdvance;
             }
         }
-        return style.size / 2f;
+        return style.logicalEm / 2f;
     }
     @Override public void close() {
         if (Thread.currentThread() != thread) throw new IllegalStateException("FontTextService belongs to its creating thread");
@@ -399,20 +520,32 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         layouts.clear(); colors.clear(); ink.clear(); failures.clear(); faces.clear(); named.clear(); invalidation.clear(); defaults = Collections.emptyList();
         nativeService.close();
     }
+    private static final class MatchKey {
+        final List<FontSource> sources;final float em;final int script;final boolean emoji;final NativeFontFace.Direction direction;final String text;
+        MatchKey(List<FontSource> sources,float em,int script,boolean emoji,NativeFontFace.Direction direction,String text){this.sources=sources;this.em=em;this.script=script;this.emoji=emoji;this.direction=direction;this.text=text;}
+        @Override public boolean equals(Object o){if(!(o instanceof MatchKey))return false;MatchKey k=(MatchKey)o;return em==k.em&&script==k.script&&emoji==k.emoji&&direction==k.direction&&text.equals(k.text)&&sources.equals(k.sources);}
+        @Override public int hashCode(){return Objects.hash(sources,em,script,emoji,direction,text);}
+    }
     private static class FaceKey {
-        final FontSource source; final int size;
-        FaceKey(FontSource source, int size) { this.source = source; this.size = size; }
+        final FontSource source; final float size;
+        FaceKey(FontSource source, float size) { this.source = source; this.size = size; }
         @Override public boolean equals(Object o) { return o != null && getClass() == o.getClass() && source.equals(((FaceKey)o).source) && size == ((FaceKey)o).size; }
         @Override public int hashCode() { return Objects.hash(source, size); }
     }
+    private static final class InkKey extends FaceKey {
+        final int glyph;final GlyphRasterStyle style;
+        InkKey(FontSource source,float size,int glyph,GlyphRasterStyle style){super(source,size);this.glyph=glyph;this.style=style;}
+        @Override public boolean equals(Object o){return super.equals(o)&&glyph==((InkKey)o).glyph&&style.equals(((InkKey)o).style);}
+        @Override public int hashCode(){return Objects.hash(super.hashCode(),glyph,style);}
+    }
     private static final class ColorKey extends FaceKey {
-        final int glyph; ColorKey(FontSource source, int size, int glyph) { super(source, size); this.glyph = glyph; }
+        final int glyph; ColorKey(FontSource source, float size, int glyph) { super(source, size); this.glyph = glyph; }
         @Override public boolean equals(Object o) { return super.equals(o) && glyph == ((ColorKey)o).glyph; }
         @Override public int hashCode() { return super.hashCode() * 31 + glyph; }
     }
     private static final class LayoutKey {
-        final String text; final List<FontSource> sources; final int size, width; final TextPolicy policy;
-        LayoutKey(String text, List<FontSource> sources, int size, int width, TextPolicy policy) {
+        final String text; final List<FontSource> sources; final float size; final int width; final TextPolicy policy;
+        LayoutKey(String text, List<FontSource> sources, float size, int width, TextPolicy policy) {
             this.text = text; this.sources = sources; this.size = size; this.width = width; this.policy = policy;
         }
         @Override public boolean equals(Object o) {
@@ -463,7 +596,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         Gap(int start, int end, float advance) { this.start = start; this.end = end; this.advance = advance; }
     }
     private static final class Placed {
-        final FontSource source; final int id, start, end; final float x, y, advance, yAdvance; final boolean color, replacement;
+        final FontSource source; final int id, start, end; float x, advance; final float y, yAdvance; final boolean color, replacement;
+        Cell cell;
         Placed(FontSource source, int id, int start, int end, float x, float y, float advance, float yAdvance, boolean color, boolean replacement) {
             this.source = source; this.id = id; this.start = start; this.end = end; this.x = x; this.y = y;
             this.advance = advance; this.yAdvance = yAdvance; this.color = color; this.replacement = replacement;
@@ -471,6 +605,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     }
     private static final class Draft {
         final List<Placed> glyphs = new ArrayList<Placed>(); final List<Gap> spaces = new ArrayList<Gap>();
+        final List<Cell> cells=new ArrayList<Cell>();
         float width, ascent, descent, metricHeight;
         void metrics(NativeFontFace.Metrics m) { ascent = Math.max(ascent, m.ascent); descent = Math.max(descent, m.descent); metricHeight = Math.max(metricHeight, m.lineHeight); }
         double[] prefix(int start, int end) {

@@ -1,6 +1,10 @@
 # 字体与合批实施恢复点
 
-用户已采纳并授权继续。既有refactor/uilib-core内实施，无MC启动/发布。
+用户暂停后已明确要求“继续任务”，并补充宿主边界优先LWJGL而非MC包装。已恢复实际施工；运行时update_goal(resume)拒绝“the model cannot resume a paused goal; the user must resume it”，因此自动目标仍paused/disarmed（revision2），不另建目标绕过；实际工作依用户最新授权继续。既有refactor/uilib-core内实施，无MC启动/发布。
+
+当前基线为350a7c90（原生scene/共享client owner），之前fa6e60b2与5c7a1327。第四增量已实施：多消费者PresentationEpoch共享需求并集与总上传预算；生产owner在Display.update调用前结束呈现帧；AttributedText/token双侧来源/整簇样式、logicalEm与rasterEm分离；原生COPY粗体/基线斜体；GL回放采样比例、实际颜色及装饰。新增LWJGL上下文捕获与透视采样量化目录已完成独立审查，偏轴透视Jacobian数值微分核验通过。当前冻结增量完整build及全部五个正式设备场景已通过，可保存本地增量提交，不能外推尚未实现的原版接管。
+
+本轮独立Java8/native/GL证据：epoch partial跨consumer跨帧最终ready、每epoch1024bytes/1call上限、已驻留需求拒绝不能绕pin；原生样式含sub1em和彩色strike包络与premult像素；属性文本3953RGI/371VS15回归、密度1/1.5/2/3/4保持逻辑定位。独立review修复alias缓存重绑异常、控制诊断吞token、空行活动字号。富文本GL与独立软件参考原始最大通道差1/1/128/2；2倍采样精确quad边界137channels另计，其余最大4/255，clip外检查无排除。父正式执行build + presentationEpochScenario + clientFontServicesScenario + glyphPipelineScenario + attributedGlyphGlScenario + fontContextGlScenario，最终BUILD SUCCESSFUL in 40s；Checkstyle违规及原生任务字体/输出argv混淆均已修正。正式设备运行Java8 1.8.0_492/LWJGL3.4.2/AMD610M，context core3.3与compat4.6通过。原版默认替代、trim/混淆动画、TESR/Iris/列表生产接管仍未完成，不部署冒充全接管。
 
 首增量：生产OrderedQuadCollector/Batch（相邻状态、有界段、禁止回调重入、double裁剪、固定索引模板）；TextInput（UTF8 maximal subpart/UTF16来源）；NativeFontService/Face/GlyphBitmap（Java8、上下文HB整形、FT实际em归一、灰度/mono/BGRA premultRGBA、线程专属生命周期）。
 

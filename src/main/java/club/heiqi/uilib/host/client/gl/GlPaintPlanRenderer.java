@@ -34,7 +34,8 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
     public long blankGlyphs(){return blankGlyphs;}
     public long drawnGlyphs(){return drawnGlyphs;}
     public GlQuadRenderer.Counters counters(){return quads.counters();}
-    public Prepared prepare(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.UploadBudget budget) {
+    /** 可见需求与回放共用实际墨迹判定，供共享owner累积同帧有界union。 */
+    public java.util.Set<GlyphKey> collectVisibleDemand(PaintPlan plan,LayoutBox viewport) {
         Objects.requireNonNull(plan,"plan");Objects.requireNonNull(viewport,"viewport");
         LinkedHashSet<GlyphKey> demand=new LinkedHashSet<GlyphKey>();
         for(PaintCommand command:plan.commands())if(command.kind==PaintCommand.Kind.TEXT) {
@@ -45,8 +46,18 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                 if(demand.size()<maxDemand||demand.contains(key))demand.add(key);else demandOverflow++;
             }
         }
-        GlGlyphAtlas.Frame frame=atlas.beginFrame(demand);
-        try {frame.prepare(cpu,budget);frame.freeze();return new Prepared(plan,viewport,frame);}
+        return java.util.Collections.unmodifiableSet(demand);
+    }
+    public Prepared prepare(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.UploadBudget budget) {
+        return prepareDemand(plan,viewport,budget,collectVisibleDemand(plan,viewport),true,null);
+    }
+    /** 显式资源准备入口；共享owner传入已裁决的epoch需求与剩余预算，不能重新扩张需求。
+     * onClose仅归还owner生命周期，不控制渲染或上传。 */
+    public Prepared prepareDemand(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.UploadBudget budget,
+            java.util.Collection<GlyphKey> demand,boolean retainPending,Runnable onClose) {
+        Objects.requireNonNull(plan,"plan");Objects.requireNonNull(viewport,"viewport");
+        GlGlyphAtlas.Frame frame=atlas.beginFrame(demand,!retainPending);
+        try {frame.prepare(cpu,budget,retainPending);frame.freeze();return new Prepared(plan,viewport,frame,onClose);}
         catch(RuntimeException|Error failure){frame.close();throw failure;}
     }
     private static boolean visible(PaintCommand command,TextLayout.Glyph glyph,LayoutBox clip) {
@@ -65,7 +76,8 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
     public final class Prepared implements AutoCloseable {
         public final PaintPlan plan;public final LayoutBox viewport;
         private final GlGlyphAtlas.Frame frame;private boolean closed;private Replay active;
-        private Prepared(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.Frame frame){this.plan=plan;this.viewport=viewport;this.frame=frame;}
+        private final Runnable onClose;
+        private Prepared(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.Frame frame,Runnable onClose){this.plan=plan;this.viewport=viewport;this.frame=frame;this.onClose=onClose;}
         public GlGlyphAtlas.Resident resident(TextLayout.Glyph glyph){check();return frame.lookup(GlyphKey.of(glyph));}
         public int demandCount(){check();return frame.demand().size();}
         public int readyCount(){check();int n=0;for(GlyphKey key:frame.demand())if(frame.lookup(key)!=null)n++;return n;}
@@ -77,7 +89,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
         public void render(float[] mvp,int framebufferHeight,boolean depthEnabled) {
             try(Replay replay=begin(mvp,framebufferHeight,depthEnabled)){for(PaintCommand command:plan.commands())replay.draw(command);}
         }
-        @Override public void close(){if(closed)return;if(active!=null)throw new IllegalStateException("先结束回放");frame.close();closed=true;}
+        @Override public void close(){if(closed)return;if(active!=null)throw new IllegalStateException("先结束回放");frame.close();closed=true;if(onClose!=null)onClose.run();}
     }
     public final class Replay implements AutoCloseable {
         private final Prepared prepared;private final float[] mvp;private final int height;private final boolean depth;
@@ -90,13 +102,23 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             if(command.kind==PaintCommand.Kind.RECT) {
                 collector.add(new State(GlQuadRenderer.SOLID,0,0,clip),new Quad(command.box.x,command.box.y,
                     command.box.width,command.box.height,0,0,0,0,0,command.color));
-            }else for(TextLayout.Line line:command.text.lines())for(TextLayout.Glyph glyph:line.glyphs()) {
-                if(!visible(command,glyph,clip))continue;
-                GlGlyphAtlas.Resident r=prepared.frame.lookup(GlyphKey.of(glyph));
-                if(r==null){blankGlyphs++;continue;}if(r.width==0||r.height==0)continue;
-                float x=command.box.x+glyph.x+r.bearingX,y=command.box.y+glyph.y-r.bearingY;
-                collector.add(new State(r.color?GlQuadRenderer.COLOR_PREMULT:GlQuadRenderer.MONOCHROME_COVERAGE,r.resource,r.generation,clip),
-                    new Quad(x,y,r.width*r.pixelScale,r.height*r.pixelScale,r.u0,r.v0,r.u1,r.v1,r.layer,command.color));drawnGlyphs++;
+            }else for(TextLayout.Line line:command.text.lines()) {
+                for(TextLayout.Glyph glyph:line.glyphs()) {
+                    if(!visible(command,glyph,clip))continue;
+                    GlGlyphAtlas.Resident r=prepared.frame.lookup(GlyphKey.of(glyph));
+                    if(r==null){blankGlyphs++;continue;}if(r.width==0||r.height==0)continue;
+                    // resident bearing/尺寸属于采样face；布局位置与墨迹界已是logical单位，只映回一次。
+                    float ratio=glyph.rasterToLayout;
+                    float x=command.box.x+glyph.x+r.bearingX*ratio,y=command.box.y+glyph.y-r.bearingY*ratio;
+                    int color=glyph.resolvedStyle==null?command.color:glyph.resolvedStyle.color;
+                    collector.add(new State(r.color?GlQuadRenderer.COLOR_PREMULT:GlQuadRenderer.MONOCHROME_COVERAGE,r.resource,r.generation,clip),
+                        new Quad(x,y,r.width*r.pixelScale*ratio,r.height*r.pixelScale*ratio,r.u0,r.v0,r.u1,r.v1,r.layer,color));drawnGlyphs++;
+                }
+                for(TextLayout.Decoration decoration:line.decorations()) {
+                    collector.add(new State(GlQuadRenderer.SOLID,0,0,clip),
+                        new Quad(command.box.x+decoration.x,command.box.y+decoration.y,decoration.width,decoration.height,
+                            0,0,0,0,0,decoration.color));
+                }
             }
         }
         /** 外部绘制前提交并退出quad状态范围，委托后重新观测宿主状态，不复用状态猜测。 */
