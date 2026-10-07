@@ -17,7 +17,7 @@
 | 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围、归属、非模态参与与焦点声明职责已明确；宿主实现与统一默认策略属于设计 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
 | 绘制与材质动效 | ui/scene/paint、theme；ui/render、base；gl | 平台及坐标边界已确认；能力与失败语义待补 |
-| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片统一系统已确认；HTML 显示及扩展词法待补 |
+| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片统一系统已确认；VS Code 内置预览语义参照已确认；HTML 子集/差异及扩展具体词法待补 |
 | 数学排版 | font/latex、glyph | 第 13 节明确数学混排职责；命令范围、字形能力及降级待补 |
 | 字体与资源 | font/api、page、render；resource、i18n | 第 13 节补齐度量/绘制一致、变化及资源归属；字体选择与失败策略待补 |
 | 图像与物品 | ui/image、scene/image | 第 14 节统一图像职责及纹理/区域、位图、HTTP/HTTPS、物品来源已确认；第 14.6 节自然尺寸与适配已确认；第 14.4 节默认加载/失败占位与正式重载已确认；第 14.7 节物品外观/效果及可选覆盖层/提示已确认；首期合同可交接设计 |
@@ -37,7 +37,7 @@
 
 物品渲染修正：为最大兼容性不采用平台无关物品策略，宿主适配器直接调用原版 API，允许 ItemStack 声明，保留 Forge/模组绘制接缝；区域、输入及宿主状态恢复仍由 UILib 协调。
 
-VS Code 对齐调查：官方说明以 CommonMark 为目标并使用 markdown-it；公开 main 分支 markdownEngine.ts 开启 html，并从设置提供 breaks/linkify/typographer。当前仅为参照调查，尚未将“对齐 VS Code”写成用户已认可目标，需明确内置预览的基线版本和设置；HTML 全部字面显示提议暂不落实。
+VS Code 对齐调查：官方说明以 CommonMark 为目标并使用 markdown-it；公开 main 分支 markdownEngine.ts 开启 html，并从设置提供 breaks/linkify/typographer。用户已认可对齐内置预览的文档解释及主要阅读行为，实际渲染仍使用 UILib，已写入 spec 第 13.5 节；固定稳定版本/默认设置/无第三方扩展，具体版本由设计记录。HTML/CSS 等差异必须明确，不承诺完整浏览器，HTML 全部字面显示提议撤回。
 
 Markdown 采用 CommonMark 基础，明确表格与数学扩展，不承诺浏览器 HTML 和全部扩展。已记录到 spec 第 13.5 节；旧解析器不同输出路径、兼容词法及聊天特例不作为新实现必须保持的合同。用户已认可 Markdown 图片和内嵌显示，并明确由 UILib 专有图像系统管理以便业务轻量声明，已写入 spec 第 13.5、14 节。来源范围已认可：资源纹理及区域、运行时位图、HTTP/HTTPS 和 Minecraft 物品图标；写入第 14.5 节。自然尺寸、单边按比例推导、四种适配及 Markdown 默认缩小策略已认可，写入第 14.6 节；加载/失败默认占位、业务覆盖与正式重新加载已认可，写入第 14.4 节；后台重试有结束边界，具体算法由设计承担。
 
