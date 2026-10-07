@@ -3,6 +3,8 @@ import com.gtnewhorizons.retrofuturagradle.mcp.ReobfuscatedJar
 import org.gradle.api.tasks.bundling.Zip
 import java.io.File
 import java.util.zip.ZipFile
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DuplicatesStrategy
@@ -88,7 +90,27 @@ val packageFontBindings by tasks.registering {
         val destination = isolatedFontResources.get().dir("assets/qz_uilib/runtime/font").asFile
         destination.mkdirs()
         val artifacts = isolatedFontRuntime.files.sortedBy { it.name }
-        artifacts.forEach { it.copyTo(File(destination, it.name), overwrite = true) }
+        // 私有字体固定使用完整的官方JNI实现。3.4.2的Java25多版本FFM在
+        // FT_New_Memory_Face的invokePPNNPI生成时发生Operand stack underflow。
+        // 仅移除随包字体绑定的版本覆盖，保留根类及全部native；不改宿主LWJGL或全局配置。
+        // 升级绑定时重新评估：FFM完成同包Java8/25回归后再恢复多版本覆盖。
+        artifacts.forEach { artifact ->
+            ZipFile(artifact).use { source ->
+                ZipOutputStream(File(destination, artifact.name).outputStream()).use { output ->
+                    val entries = source.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        if (!entry.name.startsWith("META-INF/versions/")) {
+                            val copy = ZipEntry(entry.name)
+                            copy.time = 0L
+                            output.putNextEntry(copy)
+                            if (!entry.isDirectory) source.getInputStream(entry).use { it.copyTo(output) }
+                            output.closeEntry()
+                        }
+                    }
+                }
+            }
+        }
         File(destination, "index.txt").writeText(artifacts.joinToString("\n") { it.name } + "\n", Charsets.UTF_8)
     }
 }
@@ -201,6 +223,17 @@ val packagedUnicodeScenario = registerTestApplication("packagedUnicodeScenario",
     classpath = sourceSets.getByName("test").output
     doFirst { args(tasks.named<Jar>("shadowJar").get().archiveFile.get().asFile.absolutePath) }
 }
+// 正式嵌套绑定必须同时覆盖旧Java8与GTNH的Java25多版本选择。
+val packagedFontScenarios = listOf(8, 25).map { javaVersion ->
+    registerTestApplication("packagedFontJava$javaVersion", "Java${javaVersion}验证正式包字体整形与彩色光栅", "club.heiqi.uilib.ui.scene.integration.PackagedFontScenario") {
+        dependsOn(tasks.named("testClasses"), tasks.named("shadowJar"))
+        classpath = sourceSets.getByName("test").output
+        javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(javaVersion)) })
+        doFirst { args(tasks.named<Jar>("shadowJar").get().archiveFile.get().asFile.absolutePath) }
+    }
+}
+tasks.named("check") { dependsOn(packagedFontScenarios) }
+
 val glBatchScenario = registerTestApplication("glBatchScenario", "独立GLFW上下文对照真实二维纹理及数组回放（需本机GL设备）", "club.heiqi.uilib.ui.scene.integration.GlBatchScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime
