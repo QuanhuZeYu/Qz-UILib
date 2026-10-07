@@ -17,10 +17,10 @@
 | 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围、归属、非模态参与与焦点声明职责已明确；宿主实现与统一默认策略属于设计 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
 | 绘制与材质动效 | ui/scene/paint、theme；ui/render、base；gl | 平台及坐标边界已确认；能力与失败语义待补 |
-| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片/HTML 显示及扩展词法待补 |
+| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片统一系统已确认；HTML 显示及扩展词法待补 |
 | 数学排版 | font/latex、glyph | 第 13 节明确数学混排职责；命令范围、字形能力及降级待补 |
 | 字体与资源 | font/api、page、render；resource、i18n | 第 13 节补齐度量/绘制一致、变化及资源归属；字体选择与失败策略待补 |
-| 图像与物品 | ui/image、scene/image | 适配边界已确认；图像来源、状态、缩放及物品语义待补 |
+| 图像与物品 | ui/image、scene/image | 第 14 节统一图像声明/加载/尺寸更新/资源归属已明确；来源、默认呈现、适配及物品语义待补 |
 | 配置数据与事务 | club/heiqi/config；runtime、schema | 仅通用业务边界已有；配置系统自己的权威、持久化与冲突合同待补 |
 | 配置 UI 与桥接 | config/ui；uilib/config/modern | 编辑协调可复用；schema 驱动与保存呈现待补 |
 | 网络 | net/api、core、codec、transport、store | Channel、Fetch、Stream、Store、Realtime 及连接生命周期待补 |
@@ -35,7 +35,7 @@
 
 ### 已确认补充
 
-Markdown 采用 CommonMark 基础，明确表格与数学扩展，不承诺浏览器 HTML 和全部扩展。已记录到 spec 第 13.5 节；旧解析器不同输出路径、兼容词法及聊天特例不作为新实现必须保持的合同。图片能力待裁决，不从基础语法名或旧“不支持”注释推导最终显示策略。
+Markdown 采用 CommonMark 基础，明确表格与数学扩展，不承诺浏览器 HTML 和全部扩展。已记录到 spec 第 13.5 节；旧解析器不同输出路径、兼容词法及聊天特例不作为新实现必须保持的合同。用户已认可 Markdown 图片和内嵌显示，并明确由 UILib 专有图像系统管理以便业务轻量声明，已写入 spec 第 13.5、14 节。来源类型与默认呈现政策继续补充。
 
 派生读取当前结果已获用户认可并写入 spec 第 3.1 节：首次及后续读取基于当前来源，允许按需计算/缓存，读取不执行副作用。后续继续收束 Effect、结果发布及核心布局/生命周期合同。
 
