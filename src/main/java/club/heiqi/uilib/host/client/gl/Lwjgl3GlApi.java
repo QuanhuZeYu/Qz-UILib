@@ -2,7 +2,11 @@ package club.heiqi.uilib.host.client.gl;
 
 import java.nio.ByteBuffer;
 
-/** LWJGL3宿主binding。 */
+/** LWJGL3宿主binding。
+ * 直接调用LWJGL3：使用宿主官方逐类标记，防止LWJGL3ify把GL/GL*C误映射到LWJGL2 shim。
+ * 标记止于此适配；其他旧GL11/Display调用仍须由宿主转换，不能给整个发行jar标记Aware。
+ */
+@me.eigenraven.lwjgl3ify.api.Lwjgl3Aware
 public final class Lwjgl3GlApi implements GlApi {
     private final java.nio.IntBuffer attributeSize=java.nio.ByteBuffer.allocateDirect(4).order(java.nio.ByteOrder.nativeOrder()).asIntBuffer(),attributeType=java.nio.ByteBuffer.allocateDirect(4).order(java.nio.ByteOrder.nativeOrder()).asIntBuffer();
     public void glDisableVertexAttribArray(int location){org.lwjgl.opengl.GL20C.glDisableVertexAttribArray(location);}

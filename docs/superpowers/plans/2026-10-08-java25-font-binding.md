@@ -15,5 +15,6 @@
 - [x] 用GTNH实际Java25.0.1与部署121复现FT_New_Memory_Face的Operand stack underflow；原始记录build/gt25-font-review/before.log。
 - [x] 修正packageFontBindings选择稳定JNI，保持native完整；复用TestApplication和TestResources新增PackagedFontScenario真实整形及像素case，同发布包Java8/25运行，纳入check。
 - [x] 完整build、GTNH实际Java25同探针、Java8u504与GL2必要回归、只读独立审查。最终日志build/gt25-font-review/final-build-device.log、java25-reobf.log、zip-asm5.log；独立审查无Critical/Important，17嵌套jar保留entry与官方逐字节一致。Minor测试名称收窄为实际整形与像素观测。
-- [ ] 本地提交后完整build与正式包复验。
-- [ ] 备份GTNH实例旧UILib并部署修复包，明确完整游戏启动尚待复测。
+- [x] 本地提交557c35f5后完整build与正式125包复验，committed-build.log、committed-java25.log。
+- [x] 备份GTNH实例旧121并部署正式125，deployment.json记录sha256和原Java配置未改；Prism实际启动，UILibinit/postinit与324mods加载成功。
+- [ ] 处理实机第二个错误：00:09:36主菜单Rendering screen，Lwjgl3GlApi.capabilities链接org/lwjglx/opengl/GL缺失。官方LWJGL3ify3.0.31将org/lwjgl/引用映射至org/lwjglx/；此直接GL3适配添加既有依赖中的官方Lwjgl3Aware逐类标记，不标记整jar，保旧LWJGL2与宿主GLSM转换。完整build/GL2/GL3及独立审查后提交、部署、再次启动到主菜单。
