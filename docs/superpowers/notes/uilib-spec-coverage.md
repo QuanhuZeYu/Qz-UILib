@@ -29,11 +29,35 @@
 | 诊断与开发工具 | ui/diagnostic、internal/devtools、client/command | 反馈原则已有；工具能力、headless 与打包范围待补 |
 | 平台启动与集成 | ClientProxy、CommonProxy、MyMod；client、mixin、util | 平台边界已有；启动、双端环境与退出清理待补 |
 
+## 固定 Markdown 解析探针结果
+
+来源：[VS Code 1.140.0](<https://github.com/microsoft/vscode/tree/1.140.0>)、[markdown-it 14.2.0](<https://unpkg.com/markdown-it@14.2.0/dist/markdown-it.js>)、[数学插件 1.1.2](<https://unpkg.com/@vscode/markdown-it-katex@1.1.2/dist/index.js>)。探针启用 html/linkify，关闭 breaks/typographer，设置 fuzzyLink=false；数学设置 enableFencedBlocks=true、globalGroup=true、macros={}。Node VM 加载固定 UMD 与数学插件，KaTeX require 仅替换 renderToString 为空实现；调用 parse(input,{}) 核对 tokens，不验证绘制。
+
+| 输入 | 解析结果 |
+| --- | --- |
+| `hello\nworld` | 同一段落，softbreak |
+| `~~gone~~` | 删除线 |
+| 完整 https 地址与邮箱 | 自动链接；邮箱目标为 mailto |
+| `example.com`、`www.example.com` | 普通文本 |
+| `$x$`、`$ x $` | 行内公式，源文分别为 x 与两侧含空白的 x |
+| `a$x$b` | 普通文本 |
+| `中文$x$中文` | 中文与行内公式混排 |
+| `$5 and $10` | 普通金额文本 |
+| `\$x\$` | 字面 `$x$` |
+| `$x` | 普通文本 |
+| `$x\ny$` | 同段内跨行公式 |
+| 行内代码内 `$x$` | code_inline，不解析公式 |
+| 独立 `$$x$$` 或分行配对 $$ | math_block |
+| 未闭合 `$$\nx\nnext paragraph` | 参照将后续内容收为 math_block；与保留后续正文的目标存在边界冲突，需明确差异 |
+| math/text 围栏 | 解析 token 为 fence；math 语言可能在渲染阶段转换，不能仅据 token 宣称显示为代码 |
+
 ## 核心收束及后续补充
 
 核心职责规格已收束至可交接实现设计；不以执行器、算法或接口签名未选定要求继续逐项裁决。第 10.2 节保留技术设计交接。全库能力覆盖仍未完成。下一组核对字体、富文本、Markdown、数学排版和绘制。
 
 ### 已确认补充
+
+固定参照调查：VS Code 更新 API 返回稳定版 1.140.0（commit 07f806f999227108933c2e30515b26eecc1fda74）。已读取对应 tag 的 Markdown package.json、markdownEngine.ts、markdown-math extension.ts 及两份 package-lock：markdown-it 14.2.0，内置数学扩展 @vscode/markdown-it-katex 1.1.2。Node VM 使用这两个固定包运行纯解析探针，KaTeX 渲染以空实现替代，仅核对 token，不验证公式绘制或真实 VS Code 预览。结果见后续正文；URL 以固定版本来源记录，不以 latest 漂移作为合同。
 
 富文本正常内容合同已获用户认可并转正：第 13.5 节定义标签集合、具名/双引号属性、局部嵌套、字面实体及序列化语义；不承诺旧简写兼容，不增加修复/恢复。图像入口已获认可并写入第 13.5 节正式合同：img 的 src/alt、可选 width/height/fit 映射统一图像合同；结构化来源通过正式引用关联，不序列化平台对象到标签。尺寸及动态更新验收已补齐。
 
