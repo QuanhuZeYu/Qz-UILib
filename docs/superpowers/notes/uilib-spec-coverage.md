@@ -17,9 +17,9 @@
 | 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围、归属、非模态参与与焦点声明职责已明确；宿主实现与统一默认策略属于设计 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
 | 绘制与材质动效 | ui/scene/paint、theme；ui/render、base；gl | 平台及坐标边界已确认；能力与失败语义待补 |
-| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 基本文案策略已确认；文档模型、样式、测量及链接待补 |
-| 数学排版 | font/latex、glyph | 命令范围、混排、伸缩符号和降级待补 |
-| 字体与资源 | font/api、page、render；resource、i18n | 动态失效原则已确认；字体选择、生成发布与资源释放待补 |
+| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版、测量/链接共同几何；语法范围及降级待裁决 |
+| 数学排版 | font/latex、glyph | 第 13 节明确数学混排职责；命令范围、字形能力及降级待补 |
+| 字体与资源 | font/api、page、render；resource、i18n | 第 13 节补齐度量/绘制一致、变化及资源归属；字体选择与失败策略待补 |
 | 图像与物品 | ui/image、scene/image | 适配边界已确认；图像来源、状态、缩放及物品语义待补 |
 | 配置数据与事务 | club/heiqi/config；runtime、schema | 仅通用业务边界已有；配置系统自己的权威、持久化与冲突合同待补 |
 | 配置 UI 与桥接 | config/ui；uilib/config/modern | 编辑协调可复用；schema 驱动与保存呈现待补 |
