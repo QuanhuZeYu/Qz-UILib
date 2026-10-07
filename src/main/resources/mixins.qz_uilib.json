@@ -2,11 +2,14 @@
   "required": true,
   "minVersion": "0.8.5",
   "package": "club.heiqi.uilib.mixin",
+  "plugin": "club.heiqi.uilib.mixin.FontMixinPlugin",
   "refmap": "mixins.qz_uilib.refmap.json",
   "compatibilityLevel": "JAVA_8",
   "mixins": [],
   "client": [
-    "client.MinecraftLifecycleMixin"
+    "client.MinecraftLifecycleMixin",
+    "client.VanillaFontRendererMixin",
+    "client.AngelicaFontOrderMixin"
   ],
   "server": [],
   "injectors": {

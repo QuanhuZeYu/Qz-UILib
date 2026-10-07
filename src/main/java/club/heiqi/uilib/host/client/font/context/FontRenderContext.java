@@ -13,14 +13,56 @@ public final class FontRenderContext {
     public final long revision;
     public final Object contextIdentity;
     public final MatrixState state;
+    /** null仅供旧即时UI调用；新capture总有typed状态，旧value构造不查询GL。 */
+    public final RasterState rasterState;
     private final int[] scissor;
     public FontRenderContext(FontProjection projection,int framebuffer,int height,boolean depthTest,int depthFunction,
             boolean depthWrite,boolean scissorEnabled,int[] scissor,MatrixState state,Object identity,long revision,int passKey) {
+        this(projection,framebuffer,height,depthTest,depthFunction,depthWrite,scissorEnabled,scissor,state,identity,revision,passKey,null);
+    }
+    public FontRenderContext(FontProjection projection,int framebuffer,int height,boolean depthTest,int depthFunction,
+            boolean depthWrite,boolean scissorEnabled,int[] scissor,MatrixState state,Object identity,long revision,int passKey,RasterState rasterState) {
+        this.rasterState=rasterState;
         this.projection=Objects.requireNonNull(projection,"projection");
         if(height<=0||scissor==null||scissor.length!=4||scissor[2]<0||scissor[3]<0)throw new IllegalArgumentException("无效target/scissor");
         drawFramebuffer=framebuffer;sourceFramebufferHeight=height;this.depthTest=depthTest;this.depthFunction=depthFunction;
         this.depthWrite=depthWrite;this.scissorEnabled=scissorEnabled;this.scissor=scissor.clone();this.state=Objects.requireNonNull(state,"state");
         contextIdentity=Objects.requireNonNull(identity,"contextIdentity");this.revision=revision;this.passKey=passKey;
+    }
+    /** 延期提交的光栅状态值；数组只能通过防御拷贝读取，不在构造中查询GL。
+     * FBO/viewport/depth/scissor仍由外层context保存。延期consumer应用本载荷后须恢复回放入口状态。
+     */
+    public static final class RasterState {
+        public final boolean blendEnabled,stencilEnabled,cullEnabled,polygonOffsetFill;
+        public final int blendSrcRgb,blendDstRgb,blendSrcAlpha,blendDstAlpha,blendEquationRgb,blendEquationAlpha,cullFace,frontFace;
+        public final float polygonOffsetFactor,polygonOffsetUnits;
+        public final StencilFace frontStencil,backStencil;
+        private final float[] blendColor,depthRange;
+        private final boolean[] colorMask;
+        public RasterState(boolean blendEnabled,int srcRgb,int dstRgb,int srcAlpha,int dstAlpha,int equationRgb,int equationAlpha,
+                float[] blendColor,boolean stencilEnabled,StencilFace frontStencil,StencilFace backStencil,boolean[] colorMask,
+                float[] depthRange,boolean cullEnabled,int cullFace,int frontFace,boolean polygonOffsetFill,float factor,float units) {
+            this.blendEnabled=blendEnabled;blendSrcRgb=srcRgb;blendDstRgb=dstRgb;blendSrcAlpha=srcAlpha;blendDstAlpha=dstAlpha;
+            blendEquationRgb=equationRgb;blendEquationAlpha=equationAlpha;
+            this.blendColor=vector(blendColor,4);this.depthRange=vector(depthRange,2);
+            if(colorMask==null||colorMask.length!=4)throw new IllegalArgumentException("无效colorMask");this.colorMask=colorMask.clone();
+            this.stencilEnabled=stencilEnabled;this.frontStencil=Objects.requireNonNull(frontStencil,"frontStencil");
+            this.backStencil=Objects.requireNonNull(backStencil,"backStencil");this.cullEnabled=cullEnabled;this.cullFace=cullFace;this.frontFace=frontFace;
+            if(!Float.isFinite(factor)||!Float.isFinite(units))throw new IllegalArgumentException("无效polygon offset");
+            this.polygonOffsetFill=polygonOffsetFill;polygonOffsetFactor=factor;polygonOffsetUnits=units;
+        }
+        private static float[] vector(float[] value,int size){if(value==null||value.length!=size)throw new IllegalArgumentException("无效光栅向量");
+            for(float f:value)if(!Float.isFinite(f))throw new IllegalArgumentException("非有限光栅状态");return value.clone();}
+        public float[] blendColor(){return blendColor.clone();}
+        public float[] depthRange(){return depthRange.clone();}
+        public boolean[] colorMask(){return colorMask.clone();}
+    }
+    public static final class StencilFace {
+        public final int function,reference,valueMask,writeMask,fail,depthFail,depthPass;
+        public StencilFace(int function,int reference,int valueMask,int writeMask,int fail,int depthFail,int depthPass){
+            this.function=function;this.reference=reference;this.valueMask=valueMask;this.writeMask=writeMask;
+            this.fail=fail;this.depthFail=depthFail;this.depthPass=depthPass;
+        }
     }
     public int[] scissor() { return scissor.clone(); }
     public RasterSampling samplingAt(double x,double y,double logicalEm,RasterPolicy policy) { return projection.samplingAt(x,y,logicalEm,policy,revision); }

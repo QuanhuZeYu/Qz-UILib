@@ -5,6 +5,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.LinkedHashSet;
+import java.util.Collection;
+import java.util.Set;
+import java.util.Collections;
+import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
@@ -88,22 +92,49 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
      * nanos扣atlas prepare耗时（不含需求收集、布局、回放和consumer间空闲），比仅驱动耗时保守；
      * GL调用不可抢占，单调用可超过剩余时间，但后续消费不会重新获取预算。
      */
-    public GlPaintPlanRenderer.Prepared prepare(GlPaintPlanRenderer renderer,PaintPlan plan,LayoutBox viewport) {
+    /** 延期consumer只注册投影可见key并启动有界worker，不创建Frame、图集或冻结UV。
+     * 与scene/immediate consumer共用完整呈现需求；真正回放时才取得短Prepared。 */
+    public Set<GlyphKey> registerVisibleDemand(GlPaintPlanRenderer renderer,PaintPlan plan,FontRenderContext context) {
+        checkRenderer(renderer);
+        if(!presentationBoundaryRequired&&!presenting)throw new IllegalStateException("延期consumer需要显式presentation或真实present边界");
+        if(!presenting)beginPresentation(--autoEpoch);
+        Set<GlyphKey> admitted=admitDemand(renderer.collectVisibleDemand(plan,context));
+        for(GlyphKey key:admitted)rasterizer.request(key);
+        return admitted;
+    }
+    private void checkRenderer(GlPaintPlanRenderer renderer) {
         check();if(!renderers.contains(renderer))throw new IllegalArgumentException("renderer不属于该owner");
+    }
+    private Set<GlyphKey> admitDemand(Collection<GlyphKey> incoming) {
+        LinkedHashSet<GlyphKey> admitted=new LinkedHashSet<GlyphKey>();
+        for(GlyphKey key:incoming) {
+            if(presentationDemand.size()<settings.maxDemand||presentationDemand.contains(key)){presentationDemand.add(key);admitted.add(key);}
+            else rejectedDemand++;
+        }
+        return Collections.unmodifiableSet(admitted);
+    }
+    public GlPaintPlanRenderer.Prepared prepare(GlPaintPlanRenderer renderer,PaintPlan plan,LayoutBox viewport) {
+        return prepare(renderer,plan,viewport,null);
+    }
+    public GlPaintPlanRenderer.Prepared prepare(GlPaintPlanRenderer renderer,PaintPlan plan,FontRenderContext context) {
+        Objects.requireNonNull(context,"context");
+        return prepare(renderer,plan,null,context);
+    }
+    private GlPaintPlanRenderer.Prepared prepare(GlPaintPlanRenderer renderer,PaintPlan plan,LayoutBox viewport,FontRenderContext context) {
+        checkRenderer(renderer);
         if(preparedCount!=0)throw new IllegalStateException("共享atlas只允许即时短Prepared");
         boolean automatic=!presenting&&!presentationBoundaryRequired;if(!presenting)beginPresentation(--autoEpoch);
         long start=System.nanoTime();
         try {
-            for(GlyphKey key:renderer.collectVisibleDemand(plan,viewport)) {
-                if(presentationDemand.size()<settings.maxDemand||presentationDemand.contains(key))presentationDemand.add(key);
-                else rejectedDemand++;
-            }
+            admitDemand(context==null?renderer.collectVisibleDemand(plan,viewport):renderer.collectVisibleDemand(plan,context));
             GlGlyphAtlas sharedAtlas=atlas();GlGlyphAtlas.Stats before=sharedAtlas.stats();
             long availableNanos=Math.max(0,remainingNanos-(System.nanoTime()-start));
             try {
-                GlPaintPlanRenderer.Prepared prepared=renderer.prepareDemand(plan,viewport,
-                    new GlGlyphAtlas.UploadBudget(remainingBytes,availableNanos,remainingCalls),presentationDemand,false,
-                    ()->{preparedCount--;if(automatic)endPresentation();});
+                GlGlyphAtlas.UploadBudget budget=new GlGlyphAtlas.UploadBudget(remainingBytes,availableNanos,remainingCalls);
+                Runnable onClose=()->{preparedCount--;if(automatic)endPresentation();};
+                GlPaintPlanRenderer.Prepared prepared=context==null
+                    ?renderer.prepareDemand(plan,viewport,budget,presentationDemand,false,onClose)
+                    :renderer.prepareDemandContext(plan,context,budget,presentationDemand,onClose);
                 preparedCount++;return prepared;
             }finally {
                 GlGlyphAtlas.Stats after=sharedAtlas.stats();long bytes=after.uploadedBytes-before.uploadedBytes;

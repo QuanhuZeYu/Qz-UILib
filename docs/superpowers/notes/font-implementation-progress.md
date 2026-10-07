@@ -1,5 +1,13 @@
 # 字体与合批实施恢复点
 
+本轮以695e6388为基线，执行用户“开始按规格接入原版字体替换和优化”：默认开关、十个标准FontRenderer入口、整簇格式/trim/wrap/混淆、共享owner需求注册、普通world历史状态与Iris活动pass自有producer均已实施。scene与原版复用定位、CPU字形和全呈现帧GPU上传预算；premult array与straight 2D资源共存，partial按两个view有界保存。禁止Tessellator或原FontRenderer另引擎。
+
+最终冻结版父亲自执行完整build + manualTestJar + vanillaFontGlScenario + fontDeferredStateScenario + presentationEpochScenario + clientFontServicesScenario + glyphPipelineScenario + attributedGlyphGlScenario + fontContextGlScenario，BUILD SUCCESSFUL in 1m18s；array配置正式vanillaFontGlScenario另跑14s通过。证据build/font-final-check/full-build-first.log与array-world.log。近面原点behind但12实际alpha可见的保守采样、阴影不重复HB、同tick正文/阴影混淆同形、双owner同range identity、双view一行一call进度、原字符负绕序cull、源非blend历史状态、光照与入口unit3恢复全部实际验收。独立审查所有确认缺陷已关闭。
+
+实际Sponge0.8.7/LaunchWrapper1.12/UniMixins0.3.1及MixinExtras0.5离线双profile通过：standard priority500使取消先于Angelica；BFR两个WrapOperation保留owner与私有数组全部原参数，各require3，对六原callsite各原调用一次及pipeline原boolean返回。错误纯range匹配已删除。正式包相关类/config/refmap必须按最终产物做identity审计，证据build/font-vanilla-transform/round3-*；已通过快照SHA97d6930a3c6e3bdf1a87e60682c8e989a2a7261358d030aa2fe303eb54706ebb。提交后仅版本元数据重包仍须audit，不借旧Local hook结果。
+
+实际MC/Angelica/Iris引擎和shaderpack视觉、整帧p95/p99及字体CPU/GPU门槛尚待人工验收；目前Iris证据为真实GL的生产emitter合成program像素ABI（realIrisEngine=false），未知custom/packed terrain整数属性明确拒绝。固定Prism实例不自动启动，只部署短人工包并备份旧包。全部子代理slice冻结：680纯文字、d57context与采样、895compat、0038GL、abc变换及最终包审计、caa独立review。施工树保留，不merge/push/tag/release；全库与5.0并未完成。
+
 用户暂停后已明确要求“继续任务”，并补充宿主边界优先LWJGL而非MC包装。已恢复实际施工；运行时update_goal(resume)拒绝“the model cannot resume a paused goal; the user must resume it”，因此自动目标仍paused/disarmed（revision2），不另建目标绕过；实际工作依用户最新授权继续。既有refactor/uilib-core内实施，无MC启动/发布。
 
 当前基线为350a7c90（原生scene/共享client owner），之前fa6e60b2与5c7a1327。第四增量已实施：多消费者PresentationEpoch共享需求并集与总上传预算；生产owner在Display.update调用前结束呈现帧；AttributedText/token双侧来源/整簇样式、logicalEm与rasterEm分离；原生COPY粗体/基线斜体；GL回放采样比例、实际颜色及装饰。新增LWJGL上下文捕获与透视采样量化目录已完成独立审查，偏轴透视Jacobian数值微分核验通过。当前冻结增量完整build及全部五个正式设备场景已通过，可保存本地增量提交，不能外推尚未实现的原版接管。

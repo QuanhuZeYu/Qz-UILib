@@ -2,6 +2,8 @@ package club.heiqi.uilib.host.client.gl;
 
 import java.nio.ByteBuffer;
 import java.util.Objects;
+import club.heiqi.uilib.host.client.font.context.FontRenderContext;
+import club.heiqi.uilib.host.client.font.compat.OptionalIrisProgramScope;
 import org.lwjgl.system.MemoryUtil;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Draw;
@@ -127,10 +129,16 @@ public final class GlQuadRenderer implements AutoCloseable {
         + "void main(){gl_Position=mvp*vec4(position,0,1);texUv=uv;texLayer=layer;tint=color;}";
     private static String fragment(boolean array) {
         return "#version 150\n" + "uniform " + (array ? "sampler2DArray" : "sampler2D")
-            + " image; uniform int material; in vec2 texUv; flat in float texLayer; in vec4 tint; out vec4 result; "
+            + " image; uniform int material; uniform vec3 hostLighting; uniform float hostAlpha; "
+            + "uniform int alphaEnabled,alphaFunction,lightmapEnabled,outputStraight; uniform float alphaReference; uniform sampler2D lightmapImage; uniform vec2 lightmapUv; "
+            + "in vec2 texUv; flat in float texLayer; in vec4 tint; out vec4 result; "
+            + "bool alphaPass(float a){if(alphaFunction==512)return false;if(alphaFunction==513)return a<alphaReference;if(alphaFunction==514)return a==alphaReference;"
+            + "if(alphaFunction==515)return a<=alphaReference;if(alphaFunction==516)return a>alphaReference;if(alphaFunction==517)return a!=alphaReference;if(alphaFunction==518)return a>=alphaReference;return true;} "
             + "void main(){if(material==0){result=vec4(tint.rgb*tint.a,tint.a);}else{vec4 s=texture(image,"
             + (array ? "vec3(texUv,texLayer)" : "texUv")
-            + ");if(material==1){float a=s.a*tint.a;result=vec4(tint.rgb*a,a);}else{result=s*tint.a;}}}";
+            + ");if(material==1){float a=s.a*tint.a;result=vec4(tint.rgb*a,a);}else{result=s*tint.a;}}"
+            + "result*=hostAlpha;result.rgb*=hostLighting;if(lightmapEnabled!=0)result.rgb*=texture(lightmapImage,lightmapUv).rgb;"
+            + "if(alphaEnabled!=0&&!alphaPass(result.a))discard;if(outputStraight!=0){if(material==0||material==1){result.rgb=tint.rgb*hostLighting;if(lightmapEnabled!=0)result.rgb*=texture(lightmapImage,lightmapUv).rgb;}else result.rgb=result.a>0.0?result.rgb/result.a:vec3(0.0);}}";
     }
     public GlQuadRenderer(int capacity, ResourceProvider resources) {
         if (capacity <= 0 || capacity > Integer.MAX_VALUE / (4 * STRIDE))
@@ -186,7 +194,7 @@ public final class GlQuadRenderer implements AutoCloseable {
         Scope scope=new Scope(mvp.clone(),framebufferHeight);
         active=scope;
         try {
-            glBindVertexArray(vao);glBindBuffer(GL_ARRAY_BUFFER,vbo);
+            scope.selectTextureUnit();glBindVertexArray(vao);glBindBuffer(GL_ARRAY_BUFFER,vbo);glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,ebo);
             glEnable(GL_BLEND);glBlendEquationSeparate(GL_FUNC_ADD,GL_FUNC_ADD);
             glBlendFuncSeparate(GL_ONE,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
             enable(GL_CULL_FACE,false);enable(GL_DEPTH_TEST,depthEnabled);
@@ -194,8 +202,34 @@ public final class GlQuadRenderer implements AutoCloseable {
             return scope;
         }catch(RuntimeException | Error failure){scope.close();throw failure;}
     }
+    /** ordinary world producer，caller有效MVP保持透视w/深度；Iris active pass不能走该ownshader。 */
+    private GlFontIrisProducer irisProducer;private int fontEbo;
+    // 原版字体strip TL/BL/TR/BR在caller XY是负绕序；UI通用quad保持其既有正绕序。
+    static int[] fontIndices(int capacity){int[] indices=OrderedQuadBatch.quadIndices(capacity);for(int i=0;i<indices.length;i+=6){int swap=indices[i+1];indices[i+1]=indices[i+2];indices[i+2]=swap;swap=indices[i+4];indices[i+4]=indices[i+5];indices[i+5]=swap;}return indices;}
+    private void bindFontIndices(){if(fontEbo==0){fontEbo=glGenBuffers();glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,fontEbo);glBufferData(GL_ELEMENT_ARRAY_BUFFER,fontIndices(capacity),GL_STATIC_DRAW);indexUploads++;}else glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,fontEbo);}
+    public Scope begin(FontRenderContext context) {
+        Objects.requireNonNull(context,"context");
+
+        if(closed||active!=null)throw new IllegalStateException("backend已关闭或范围重入");
+        GlFontWorldState world=new GlFontWorldState(context);Scope scope=null;
+        try{
+            if(OptionalIrisProgramScope.preview(GlQuadRenderer.class.getClassLoader(),context)!=null){
+                scope=new Scope(context.projection.mvp(),context.sourceFramebufferHeight);active=scope;scope.world=world;
+                scope.iris=OptionalIrisProgramScope.open(GlQuadRenderer.class.getClassLoader(),context);
+                if(scope.iris==null)throw new IllegalStateException("Iris prepare/render activepass不一致");
+                scope.selectTextureUnit();
+                if(irisProducer==null)irisProducer=new GlFontIrisProducer(capacity);irisProducer.configure(scope.iris);world.applyIris();
+                // Pass.use拥有FBO/blend/alpha overrides；不能再用普通world.apply盖掉pack定义。
+                return scope;
+            }
+            scope=begin(context.projection.mvp(),context.sourceFramebufferHeight,context.depthTest);scope.world=world;world.apply();bindFontIndices();return scope;
+        }
+        catch(RuntimeException|Error failure){try{if(scope!=null)scope.close();else world.close();}catch(RuntimeException|Error cleanup){failure.addSuppressed(cleanup);}throw failure;}
+    }
     public final class Scope implements AutoCloseable {
         private final float[] mvp;
+        private GlFontWorldState world;
+        private OptionalIrisProgramScope iris;
         private final int height,program=glGetInteger(GL_CURRENT_PROGRAM),oldVao=glGetInteger(GL_VERTEX_ARRAY_BINDING),
             oldVbo=glGetInteger(GL_ARRAY_BUFFER_BINDING),unit=glGetInteger(GL_ACTIVE_TEXTURE);
         private final int eqRgb=glGetInteger(GL_BLEND_EQUATION_RGB),eqAlpha=glGetInteger(GL_BLEND_EQUATION_ALPHA),
@@ -217,14 +251,16 @@ public final class GlQuadRenderer implements AutoCloseable {
             textureArray=glGetInteger(GL_TEXTURE_BINDING_2D_ARRAY);bound2d=texture2d;boundArray=textureArray;
             // 外部sampler会覆盖图集过滤，范围内使用资源纹理参数，并还原unit0的sampler。
             sampler = samplerObjects ? glGetInteger(org.lwjgl.opengl.GL33C.GL_SAMPLER_BINDING) : 0;
-            if (samplerObjects) org.lwjgl.opengl.GL33C.glBindSampler(0, 0);
+            glActiveTexture(unit);
         }
+        private void selectTextureUnit(){glActiveTexture(GL_TEXTURE0);if(samplerObjects)org.lwjgl.opengl.GL33C.glBindSampler(0,0);}
         /** 一段恰好一次顶点上传；逐 Draw 使用原 firstQuad/quadCount，不合并或排序。 */
         public void consumeBatch(OrderedQuadBatch batch) {
             if(done || active!=this)throw new IllegalStateException("范围已结束");
             Objects.requireNonNull(batch,"batch");
             if(batch.quads().size()>capacity)throw new IllegalArgumentException("提交段超过 backend 容量");
             if(batch.quads().isEmpty())return;
+            if(iris!=null){bytes+=irisProducer.consume(batch,iris,world.context,resources);uploads++;draws+=batch.draws().size();return;}
             staging.clear();
             for(Quad q:batch.quads()) {
                 vertex(q,q.x,q.y,q.u0,q.v0);vertex(q,q.x+q.width,q.y,q.u1,q.v0);
@@ -237,12 +273,18 @@ public final class GlQuadRenderer implements AutoCloseable {
                 Texture t=material==SOLID ? null : Objects.requireNonNull(resources.resolve(draw.state.resource,draw.state.generation),"texture");
                 int variant=t!=null && t.target==GL_TEXTURE_2D_ARRAY ? 1 : 0;
                 if(currentProgram!=variant){glUseProgram(programs[variant]);glUniformMatrix4fv(matrices[variant],false,mvp);
-                    glUniform1i(samplers[variant],0);currentProgram=variant;}
+                    glUniform1i(samplers[variant],0);if(world==null)GlFontWorldState.uiUniforms(programs[variant]);else world.uniforms(programs[variant]);currentProgram=variant;}
                 glUniform1i(materials[variant],material);
                 if(t!=null && (variant==0 ? bound2d : boundArray)!=t.id) {
                     glBindTexture(t.target,t.id);if(variant==0)bound2d=t.id;else boundArray=t.id;bindings++;
                 }
-                LayoutBox clip=draw.state.clip;
+                LayoutBox clip=world==null?draw.state.clip:GlFontVisibility.viewport(world.context);
+                if(world!=null&&world.context.scissorEnabled){int[] s=world.context.scissor();
+                    LayoutBox hostClip=new LayoutBox(s[0],Math.toIntExact((long)height-s[1]-s[3]),s[2],s[3]);
+                    if(clip==null)clip=hostClip;else{long l=Math.max((long)clip.x,hostClip.x),top=Math.max((long)clip.y,hostClip.y);
+                        long r=Math.min((long)clip.x+clip.width,(long)hostClip.x+hostClip.width),bottom=Math.min((long)clip.y+clip.height,(long)hostClip.y+hostClip.height);
+                        clip=new LayoutBox(Math.toIntExact(l),Math.toIntExact(top),Math.toIntExact(Math.max(0,r-l)),Math.toIntExact(Math.max(0,bottom-top)));}}
+
                 enable(GL_SCISSOR_TEST,clip!=null);
                 if(clip!=null)glScissor(clip.x,Math.toIntExact((long)height-clip.y-clip.height),clip.width,clip.height);
                 glDrawElements(GL_TRIANGLES,draw.quadCount*6,GL_UNSIGNED_INT,(long)draw.firstQuad*6*4);draws++;
@@ -250,13 +292,18 @@ public final class GlQuadRenderer implements AutoCloseable {
         }
         @Override public void close() {
             if(done)return;done=true;
+            Throwable failure=null;try{
             glUseProgram(program);glBindVertexArray(oldVao);glBindBuffer(GL_ARRAY_BUFFER,oldVbo);
             glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,texture2d);glBindTexture(GL_TEXTURE_2D_ARRAY,textureArray);glActiveTexture(unit);
             glBlendEquationSeparate(eqRgb,eqAlpha);glBlendFuncSeparate(srcRgb,dstRgb,srcAlpha,dstAlpha);enable(GL_BLEND,blend);
             glScissor(box[0],box[1],box[2],box[3]);enable(GL_SCISSOR_TEST,scissor);enable(GL_CULL_FACE,cull);enable(GL_DEPTH_TEST,depth);
             if (compatibility) enable(org.lwjgl.opengl.GL11.GL_ALPHA_TEST, alphaTest);
             if (samplerObjects) org.lwjgl.opengl.GL33C.glBindSampler(0, sampler);
-            active=null;
+            }catch(RuntimeException|Error error){failure=error;}
+            try{if(world!=null)world.close();}catch(RuntimeException|Error error){if(failure==null)failure=error;else failure.addSuppressed(error);}
+            // Irisclose最后重建effective缓存与旧pass；两个cleanup均执行并保留先前错误。
+            try{if(iris!=null)iris.close();}catch(RuntimeException|Error error){if(failure==null)failure=error;else failure.addSuppressed(error);}finally{active=null;}
+            if(failure instanceof RuntimeException)throw (RuntimeException)failure;if(failure instanceof Error)throw (Error)failure;
         }
     }
     private void vertex(Quad q,float x,float y,float u,float v) {
@@ -266,6 +313,7 @@ public final class GlQuadRenderer implements AutoCloseable {
     }
     private static void enable(int capability,boolean value){if(value)glEnable(capability);else glDisable(capability);}
     private void release() {
+        if(irisProducer!=null){irisProducer.close();irisProducer=null;}if(fontEbo!=0){glDeleteBuffers(fontEbo);fontEbo=0;}
         if(ebo!=0)glDeleteBuffers(ebo);if(vbo!=0)glDeleteBuffers(vbo);if(vao!=0)glDeleteVertexArrays(vao);
         for(int p:programs)if(p!=0)glDeleteProgram(p);
         if(staging!=null){MemoryUtil.memFree(staging);staging=null;}

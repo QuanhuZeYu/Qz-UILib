@@ -37,16 +37,18 @@ public final class MinecraftFontServices {
         });
     }
     private static void checkThread(){if(Thread.currentThread()!=thread)throw new IllegalStateException("MC字体资源仅限客户端主线程");}
+    public static long resourceRevision(){checkThread();return revision;}
     public static ClientFontServices shared(){checkThread();if(shared==null)throw new IllegalStateException("客户端字体服务尚未安装/已关闭");return shared;}
     /** LWJGL窗口交换之前的通知；org.lwjgl类被宿主排除转换，故由MC调用点转交。
      * 无文字消费时不创建呈现范围、worker或GL资源。 */
     public static void beforePresent() {
         if(shared==null)return;checkThread();
+        MinecraftVanillaFont.beforePresent();
         if(shared.presentationStats().active)shared.endPresentation();
     }
     public static void closeShared() {
         if(shared==null)return;checkThread();ClientFontServices owner=shared;shared=null;
-        try{owner.close();}finally{if(loader!=null){loader.retire();loader=null;}}
+        try{MinecraftVanillaFont.close();owner.close();}finally{if(loader!=null){loader.retire();loader=null;}}
     }
     /** 仅资源指定的候选列表；读取失败显式报告，不回退classpath或append隐藏字体。
      * 旧plan已加载FontSource保持byte snapshot；退休代际未加载source拒绝重读新包。

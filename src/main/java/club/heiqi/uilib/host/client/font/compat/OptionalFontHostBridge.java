@@ -1,0 +1,31 @@
+package club.heiqi.uilib.host.client.font.compat;
+
+import java.util.Objects;
+import club.heiqi.uilib.host.client.font.context.FontRenderContext;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+
+/** 原版adapter可选宿主桥；不需要scene，不拥有字体engine/atlas。
+ * submit接管sourceLease，父owner负责需求union和回放短Prepared。关闭替代开关由adapter决定。 */
+public interface OptionalFontHostBridge extends AutoCloseable {
+    interface ReplaySink {
+        void draw(PaintPlan plan,FontRenderContext context);
+        void registerVisible(PaintPlan plan,FontRenderContext context);
+        FontRenderContext capture();
+    }
+    void submit(PaintPlan plan,FontRenderContext context,AutoCloseable sourceLease);
+    void abort();
+    int pending();
+    @Override void close();
+    static OptionalFontHostBridge create(ClassLoader loader,ReplaySink sink,int queueCapacity) {
+        Objects.requireNonNull(loader,"loader");Objects.requireNonNull(sink,"sink");
+        try {return new AngelicaBridge(Class.forName("com.gtnewhorizons.angelica.client.font.BatchingFontRenderer",false,loader),loader,sink,queueCapacity);}
+        catch(ClassNotFoundException absent){return new Direct(sink);}
+        catch(LinkageError incompatible){throw new IllegalStateException("可选Angelica存在但加载失败，禁止静默旧字体回退",incompatible);}
+    }
+    final class Direct implements OptionalFontHostBridge {
+        private final ReplaySink sink;private boolean closed;
+        Direct(ReplaySink sink){this.sink=sink;}
+        @Override public void submit(PaintPlan plan,FontRenderContext context,AutoCloseable lease){Objects.requireNonNull(lease,"lease");try{if(closed)throw new IllegalStateException("font bridge已关闭");sink.registerVisible(plan,context);sink.draw(plan,context);}finally{FontHostOrderQueue.release(lease);}}
+        @Override public void abort(){}@Override public int pending(){return 0;}@Override public void close(){closed=true;}
+    }
+}

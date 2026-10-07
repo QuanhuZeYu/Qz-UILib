@@ -54,6 +54,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private final Map<String, List<FontSource>> named = new HashMap<String, List<FontSource>>();
     private final List<Runnable> invalidation = new ArrayList<Runnable>();
     private List<FontSource> defaults;
+    private final LinkedHashMap<FaceKey,List<ObfuscatedGlyph>> obfuscationPools=new LinkedHashMap<FaceKey,List<ObfuscatedGlyph>>(16,.75f,true);
     private long generation = 1;
     private boolean closed;
     public FontTextService() throws IOException { this(defaultSources(FontTextService.class.getClassLoader(), 1)); }
@@ -113,7 +114,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     /** 默认名称 default/minecraft 随资源列表换代；显式注册列表由提供者另行换代。 */
     public void reload(List<FontSource> candidates) { check(); defaults = copy(candidates); invalidate(); }
     private void invalidate() {
-        generation++; layouts.clear(); colors.clear(); ink.clear(); failures.clear();
+        generation++; layouts.clear(); colors.clear(); ink.clear(); failures.clear();obfuscationPools.clear();
         for (NativeFontFace face : faces.values()) face.close(); faces.clear();
         for (Runnable listener : new ArrayList<Runnable>(invalidation)) listener.run();
     }
@@ -370,6 +371,71 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         }
         return new TextLayout(ceil(maxWidth), ceil(y), maxWidth, y, attributed.baseStyle, lines, input.text, original, generation, doc.diagnostics,input);
     }
+    private static final class ObfuscatedGlyph {
+        final FontSource source;final int id;final float advance;
+        ObfuscatedGlyph(FontSource source,int id,float advance){this.source=source;this.id=id;this.advance=advance;}
+    }
+    /** 候选池只来自显式列表；一次性真实HB验证，最多32个source/em池、每池94个ASCII glyph。 */
+    private List<ObfuscatedGlyph> obfuscationPool(FontSource preferred,float em,UnicodeText doc,TextStyle style){
+        List<FontSource> sources=new ArrayList<FontSource>();sources.add(preferred);for(FontSource source:candidates(style))if(!sources.contains(source))sources.add(source);
+        for(FontSource source:sources){if(source.color)continue;FaceKey key=new FaceKey(source,em);List<ObfuscatedGlyph> cached=obfuscationPools.get(key);if(cached!=null&&!cached.isEmpty())return cached;
+            if(cached!=null)continue;NativeFontFace f=face(source,em,doc);if(f==null)continue;
+            List<ObfuscatedGlyph> pool=new ArrayList<ObfuscatedGlyph>();
+            for(int cp=33;cp<=126;cp++){List<NativeFontFace.Glyph> shaped=f.shape(String.valueOf((char)cp),NativeFontFace.Direction.LTR,"und");
+                if(shaped.size()==1){NativeFontFace.Glyph g=shaped.get(0);if(g.glyphId!=0&&g.xAdvance>0&&!color(source,em,g.glyphId,f))pool.add(new ObfuscatedGlyph(source,g.glyphId,g.xAdvance));}}
+            obfuscationPools.put(key,Collections.unmodifiableList(pool));trim(obfuscationPools,32);if(!pool.isEmpty())return pool;
+        }
+        throw new IllegalStateException("显式候选没有可用于完整簇混淆的实际单色glyph");
+    }
+    /** 混淆只替换完整安全簇；复杂脚本的连续必要face范围整体替换为单色中性cell。
+     * 独立字素优先真实等advance桶；无精确桶/复杂range使用完整cell等比收纳并居中，绝不假称仍保原连接形态。
+     * tick/salt由宿主捕获，逻辑advance/断行/source/style保持原计划；不重新整形原字符串。
+     */
+    public TextLayout obfuscate(TextLayout layout,long tick,long salt){
+        TreeMap<Integer,TextStyle> styles=new TreeMap<Integer,TextStyle>();styles.put(0,layout.style);
+        for(TextLayout.Line line:layout.lines())for(TextLayout.Cluster cluster:line.clusters())styles.put(cluster.logicalStart,cluster.style);
+        List<StyleSpan> spans=new ArrayList<StyleSpan>();List<Integer> starts=new ArrayList<Integer>(styles.keySet());
+        for(int i=0;i<starts.size();i++){int start=starts.get(i),end=i+1<starts.size()?starts.get(i+1):layout.logicalText.length();if(start<end)spans.add(new StyleSpan(start,end,styles.get(start)));}
+        TextInput input=layout.input==null?TextInput.string(layout.logicalText):layout.input;
+        AttributedText requests=new AttributedText(input,layout.originalText,layout.style,spans);
+        return obfuscate(layout,requests,tick,salt);
+    }
+    public TextLayout obfuscate(TextLayout layout,AttributedText request,long tick,long salt){
+        check();UnicodeText doc=new UnicodeText(request.input);List<TextLayout.Line> lines=new ArrayList<TextLayout.Line>();
+        for(TextLayout.Line line:layout.lines()){
+            List<TextLayout.Glyph> output=new ArrayList<TextLayout.Glyph>();List<TextLayout.Cluster> clusters=new ArrayList<TextLayout.Cluster>();
+            List<TextLayout.Cluster> original=line.clusters();int glyphCursor=0;
+            for(int ci=0;ci<original.size();){TextLayout.Cluster cell=original.get(ci);int end=ci+1;boolean replace=request.styleAt(cell.logicalStart).effects.obfuscated;
+                boolean complex=cell.glyphIndexEnd>cell.glyphIndexStart&&!line.glyphs().get(cell.glyphIndexStart).source.supportedScripts().isEmpty();
+                if(complex){FontSource source=line.glyphs().get(cell.glyphIndexStart).source;
+                    while(end<original.size()){TextLayout.Cluster next=original.get(end);if(next.glyphIndexStart==next.glyphIndexEnd||line.glyphs().get(next.glyphIndexStart).source!=source)break;end++;}}
+                int glyphEnd=original.get(end-1).glyphIndexEnd;
+                if(complex){TextLayout.Cluster leading=cell;for(int j=ci+1;j<end;j++)if(original.get(j).logicalStart<leading.logicalStart)leading=original.get(j);replace=request.styleAt(leading.logicalStart).effects.obfuscated;cell=leading;int rangeEnd=leading.sourceEnd;for(int j=ci;j<end;j++)rangeEnd=Math.max(rangeEnd,original.get(j).sourceEnd);
+                    for(int j=ci;j<end;j++)if(request.styleAt(original.get(j).logicalStart).effects.obfuscated!=replace){doc.diagnostics.add(new Diagnostic(Diagnostic.Kind.STYLE_COALESCED,leading.sourceStart,rangeEnd,"复杂脚本必要范围混淆状态使用逻辑首样式"));break;}}
+                if(replace&&cell.advance>0&&cell.glyphIndexStart<cell.glyphIndexEnd){
+                    float width=0;int logicalStart=Integer.MAX_VALUE,logicalEnd=0,sourceStart=Integer.MAX_VALUE,sourceEnd=0;float x=cell.x;
+                    for(int j=ci;j<end;j++){TextLayout.Cluster c=original.get(j);width+=c.advance;logicalStart=Math.min(logicalStart,c.logicalStart);logicalEnd=Math.max(logicalEnd,c.logicalEnd);sourceStart=Math.min(sourceStart,c.sourceStart);sourceEnd=Math.max(sourceEnd,c.sourceEnd);x=Math.min(x,c.x);}
+                    TextLayout.Glyph first=line.glyphs().get(cell.glyphIndexStart);List<ObfuscatedGlyph> pool=obfuscationPool(first.source,cell.style.logicalEm,doc,cell.style),equal=new ArrayList<ObfuscatedGlyph>();
+                    float target=width-cell.style.effects.boldAdvance;for(ObfuscatedGlyph candidate:pool)if(candidate.advance==target)equal.add(candidate);
+                    List<ObfuscatedGlyph> selection=equal.isEmpty()?pool:equal;long seed=tick*0x9e3779b97f4a7c15L+salt+logicalStart*31L+logicalEnd;seed^=seed>>>33;
+                    ObfuscatedGlyph chosen=selection.get((int)Math.floorMod(seed,(long)selection.size()));float fit=Math.min(1,width/(chosen.advance+cell.style.effects.boldAdvance));
+                    float ratio=fit;GlyphRasterStyle variant=variant(cell.style,ratio);NativeFontFace.InkBounds raw=inkBounds(chosen.source,cell.style.logicalEm,chosen.id,variant,doc);
+                    NativeFontFace.InkBounds mapped=raw.known?new NativeFontFace.InkBounds(true,raw.left*ratio,raw.top*ratio,raw.right*ratio,raw.bottom*ratio):NativeFontFace.InkBounds.UNKNOWN;
+                    int begin=output.size();output.add(new TextLayout.Glyph(chosen.source,cell.style.logicalEm,chosen.id,logicalStart,logicalEnd,sourceStart,sourceEnd,x+(width-(chosen.advance+cell.style.effects.boldAdvance)*fit)/2,line.baseline,width,0,false,false,mapped,cell.style.logicalEm*fit,ratio,variant,cell.style,clusters.size()));
+                    clusters.add(new TextLayout.Cluster(logicalStart,logicalEnd,sourceStart,sourceEnd,begin,output.size(),x,width,cell.style));
+                }else{
+                    for(int j=ci;j<end;j++){TextLayout.Cluster c=original.get(j);int begin=output.size();
+                        for(int g=c.glyphIndexStart;g<c.glyphIndexEnd;g++){TextLayout.Glyph a=line.glyphs().get(g);output.add(new TextLayout.Glyph(a.source,a.size,a.glyphId,a.logicalStart,a.logicalEnd,a.sourceStart,a.sourceEnd,a.x,a.y,a.xAdvance,a.yAdvance,a.color,a.replacement,a.inkBounds,a.logicalEm,a.rasterToLayout,a.rasterStyle,a.resolvedStyle,clusters.size()));}
+                        clusters.add(new TextLayout.Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,begin,output.size(),c.x,c.advance,c.style));}
+                }
+                glyphCursor=glyphEnd;ci=end;
+            }
+            if(glyphCursor!=line.glyphs().size())throw new IllegalStateException("混淆簇未覆盖全部glyph");
+            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,output,clusters,line.decorations()));
+        }
+        List<Diagnostic> diagnostics=new ArrayList<Diagnostic>(layout.diagnostics());diagnostics.addAll(doc.diagnostics);
+        return new TextLayout(layout.width,layout.height,layout.advanceWidth,layout.advanceHeight,layout.style,lines,layout.logicalText,layout.originalText,layout.generation,diagnostics,layout.input);
+    }
     private static GlyphRasterStyle variant(TextStyle style,float ratio){return new GlyphRasterStyle(style.effects.boldAdvance/ratio,style.effects.italicShear);}
     /** 不shape、不render，同glyphId实际采样边界映回逻辑坐标。 */
     public TextLayout sample(TextLayout layout,RasterSampling sampling){
@@ -517,7 +583,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     @Override public void close() {
         if (Thread.currentThread() != thread) throw new IllegalStateException("FontTextService belongs to its creating thread");
         if (closed) return; closed = true;
-        layouts.clear(); colors.clear(); ink.clear(); failures.clear(); faces.clear(); named.clear(); invalidation.clear(); defaults = Collections.emptyList();
+        layouts.clear(); colors.clear(); ink.clear(); failures.clear(); faces.clear();obfuscationPools.clear(); named.clear(); invalidation.clear(); defaults = Collections.emptyList();
         nativeService.close();
     }
     private static final class MatchKey {

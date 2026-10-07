@@ -2,6 +2,8 @@ package club.heiqi.uilib.host.client.gl;
 
 import java.util.LinkedHashSet;
 import java.util.Objects;
+import club.heiqi.uilib.host.client.font.context.FontRenderContext;
+import club.heiqi.uilib.host.client.font.compat.OptionalIrisProgramScope;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
@@ -16,8 +18,8 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace.InkBounds;
 /** 正式 PaintPlan 回放：位置只消费不可变 Glyph，不重新布局、读取 scene 或等待字形。
  * 调用方先 prepare（资源上传/失效通知边界），再 replay（固定MVP/depth/pass），最后关闭 Prepared。
  * plan.box/clip、glyph定位及 prepare.viewport 均为原生 framebuffer 像素（左上原点）。
- * MVP 将该 framebuffer XY 映射到 clip space，不得再次应用 GUI scale；world/GUI 调用者
- * 坐标及其 clip 的转换属于上游 adapter。本 consumer 不直接接受这些宿主坐标。
+ * 旧UI重载MVP将framebuffer XY映到clip，不再次GUI scale。FontRenderContext重载直接接受caller XY，
+ * 保留P/MV/viewport/FBO与齐次w；只使用context outer scissor，不把callerclip矩形近似成screenrect。
  * CPU与atlas由宿主持有，可跨renderer复用；本类仅拥有自己的quad backend。
  */
 public final class GlPaintPlanRenderer implements AutoCloseable {
@@ -48,6 +50,25 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
         }
         return java.util.Collections.unmodifiableSet(demand);
     }
+    /** caller空间的world需求：真实墨迹通过齐次clip与实际viewport/scissor裁决，不重布局。 */
+    public java.util.Set<GlyphKey> collectVisibleDemand(PaintPlan plan,FontRenderContext context) {
+        Objects.requireNonNull(plan,"plan");Objects.requireNonNull(context,"context");
+        LinkedHashSet<GlyphKey> demand=new LinkedHashSet<GlyphKey>();
+        for(PaintCommand command:plan.commands())if(command.kind==PaintCommand.Kind.TEXT)
+            for(TextLayout.Line line:command.text.lines())for(TextLayout.Glyph glyph:line.glyphs()){
+                if(!GlFontVisibility.visible(command,glyph,context)){clippedGlyphs++;continue;}
+                GlyphKey key=GlyphKey.of(glyph);if(demand.size()<maxDemand||demand.contains(key))demand.add(key);else demandOverflow++;
+            }
+        return java.util.Collections.unmodifiableSet(demand);
+    }
+    /** owner传同epoch裁决资源key与剩余预算；此入口不重新扩张需求或取消其他consumer。 */
+    public Prepared prepareDemandContext(PaintPlan plan,FontRenderContext context,GlGlyphAtlas.UploadBudget budget,
+            java.util.Collection<GlyphKey> admitted,Runnable onClose) {
+        Objects.requireNonNull(context,"context");return prepareDemandView(plan,GlFontVisibility.viewport(context),budget,admitted,false,onClose,resolveSamplingView(context));
+    }
+    public GlGlyphAtlas.SamplingView resolveSamplingView(FontRenderContext context) {
+        return OptionalIrisProgramScope.preview(GlPaintPlanRenderer.class.getClassLoader(),context)==null?GlGlyphAtlas.SamplingView.PREMULT_RGBA:GlGlyphAtlas.SamplingView.STRAIGHT_RGBA;
+    }
     public Prepared prepare(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.UploadBudget budget) {
         return prepareDemand(plan,viewport,budget,collectVisibleDemand(plan,viewport),true,null);
     }
@@ -55,8 +76,13 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
      * onClose仅归还owner生命周期，不控制渲染或上传。 */
     public Prepared prepareDemand(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.UploadBudget budget,
             java.util.Collection<GlyphKey> demand,boolean retainPending,Runnable onClose) {
+        return prepareDemandView(plan,viewport,budget,demand,retainPending,onClose,GlGlyphAtlas.SamplingView.PREMULT_RGBA);
+    }
+    private Prepared prepareDemandView(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.UploadBudget budget,
+            java.util.Collection<GlyphKey> demand,boolean retainPending,Runnable onClose,GlGlyphAtlas.SamplingView view) {
         Objects.requireNonNull(plan,"plan");Objects.requireNonNull(viewport,"viewport");
-        GlGlyphAtlas.Frame frame=atlas.beginFrame(demand,!retainPending);
+        boolean needsSolid=false;for(PaintCommand command:plan.commands())if(command.kind==PaintCommand.Kind.RECT)needsSolid=true;else for(TextLayout.Line line:command.text.lines())if(!line.decorations().isEmpty())needsSolid=true;
+        GlGlyphAtlas.Frame frame=atlas.beginFrame(demand,!retainPending,view,needsSolid);
         try {frame.prepare(cpu,budget,retainPending);frame.freeze();return new Prepared(plan,viewport,frame,onClose);}
         catch(RuntimeException|Error failure){frame.close();throw failure;}
     }
@@ -86,6 +112,13 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             check();if(active!=null)throw new IllegalStateException("回放范围重入");
             Replay replay=new Replay(this,mvp.clone(),framebufferHeight,depthEnabled);active=replay;return replay;
         }
+        public Replay begin(FontRenderContext context) {
+            check();if(active!=null)throw new IllegalStateException("回放范围重入");
+            Replay replay=new Replay(this,Objects.requireNonNull(context,"context"));active=replay;return replay;
+        }
+        public void render(FontRenderContext context) {
+            try(Replay replay=begin(context)){for(PaintCommand command:plan.commands())replay.draw(command);}
+        }
         public void render(float[] mvp,int framebufferHeight,boolean depthEnabled) {
             try(Replay replay=begin(mvp,framebufferHeight,depthEnabled)){for(PaintCommand command:plan.commands())replay.draw(command);}
         }
@@ -93,18 +126,20 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
     }
     public final class Replay implements AutoCloseable {
         private final Prepared prepared;private final float[] mvp;private final int height;private final boolean depth;
+        private FontRenderContext context;
         private GlQuadRenderer.Scope scope;private OrderedQuadCollector collector;private boolean closed;
         private Replay(Prepared prepared,float[] mvp,int height,boolean depth){this.prepared=prepared;this.mvp=mvp;this.height=height;this.depth=depth;open();}
-        private void open(){scope=quads.begin(mvp,height,depth);collector=new OrderedQuadCollector(capacity,scope::consumeBatch);}
+        private Replay(Prepared prepared,FontRenderContext context){this.prepared=prepared;this.context=context;this.mvp=context.projection.mvp();this.height=context.sourceFramebufferHeight;this.depth=context.depthTest;open();}
+        private void open(){if(context!=null&&prepared.frame.view!=resolveSamplingView(context))throw new IllegalStateException("prepare/replay atlas采样view与activepass不一致");scope=context==null?quads.begin(mvp,height,depth):quads.begin(context);collector=new OrderedQuadCollector(capacity,scope::consumeBatch);}
         public void draw(PaintCommand command) {
-            if(closed)throw new IllegalStateException("回放已结束");LayoutBox clip=clip(command.clip,prepared.viewport);
-            if(clip.width==0||clip.height==0)return;
+            if(closed)throw new IllegalStateException("回放已结束");LayoutBox clip=context==null?clip(command.clip,prepared.viewport):null;
+            // world不能把framebuffer scissor交给会按callerXY裁决的collector；scope单独处理outerclip。
+            if(clip!=null&&(clip.width==0||clip.height==0))return;
             if(command.kind==PaintCommand.Kind.RECT) {
-                collector.add(new State(GlQuadRenderer.SOLID,0,0,clip),new Quad(command.box.x,command.box.y,
-                    command.box.width,command.box.height,0,0,0,0,0,command.color));
+                solid(command.box.x,command.box.y,command.box.width,command.box.height,command.color,clip);
             }else for(TextLayout.Line line:command.text.lines()) {
                 for(TextLayout.Glyph glyph:line.glyphs()) {
-                    if(!visible(command,glyph,clip))continue;
+                    if(context==null?!visible(command,glyph,clip):!GlFontVisibility.visible(command,glyph,context))continue;
                     GlGlyphAtlas.Resident r=prepared.frame.lookup(GlyphKey.of(glyph));
                     if(r==null){blankGlyphs++;continue;}if(r.width==0||r.height==0)continue;
                     // resident bearing/尺寸属于采样face；布局位置与墨迹界已是logical单位，只映回一次。
@@ -115,11 +150,14 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
                         new Quad(x,y,r.width*r.pixelScale*ratio,r.height*r.pixelScale*ratio,r.u0,r.v0,r.u1,r.v1,r.layer,color));drawnGlyphs++;
                 }
                 for(TextLayout.Decoration decoration:line.decorations()) {
-                    collector.add(new State(GlQuadRenderer.SOLID,0,0,clip),
-                        new Quad(command.box.x+decoration.x,command.box.y+decoration.y,decoration.width,decoration.height,
-                            0,0,0,0,0,decoration.color));
+                    solid(command.box.x+decoration.x,command.box.y+decoration.y,decoration.width,decoration.height,decoration.color,clip);
                 }
             }
+        }
+        private void solid(float x,float y,float width,float height,int color,LayoutBox clip){
+            if(prepared.frame.view==GlGlyphAtlas.SamplingView.STRAIGHT_RGBA){GlGlyphAtlas.Resident white=prepared.frame.solid();if(white==null)return;
+                collector.add(new State(GlQuadRenderer.MONOCHROME_COVERAGE,white.resource,white.generation,clip),new Quad(x,y,width,height,white.u0,white.v0,white.u1,white.v1,0,color));
+            }else collector.add(new State(GlQuadRenderer.SOLID,0,0,clip),new Quad(x,y,width,height,0,0,0,0,0,color));
         }
         /** 外部绘制前提交并退出quad状态范围，委托后重新观测宿主状态，不复用状态猜测。 */
         public void delegate(Runnable delegated) {
