@@ -5,6 +5,13 @@ import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.font.compat.IrisProgramProvider;
 import java.io.InputStream;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import cpw.mods.fml.common.FMLLog;
+import club.heiqi.uilib.ui.scene.text.font.FontSource;
+import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraft.client.resources.IResourceManager;
@@ -32,13 +39,42 @@ public final class MinecraftFontServices {
             IsolatedFontEngine.shared(),gl,new IrisProgramProvider(MinecraftFontServices.class.getClassLoader(),gl));loader=initial;}
         catch(IOException failure){throw new IllegalStateException("客户端字体服务安装失败",failure);}
         installed=true;
+        // MC注册listener会立即回调；安装期也从同一入口建立配置+内置候选的新代际。
         ((IReloadableResourceManager)resources).registerReloadListener(new IResourceManagerReloadListener(){
             @Override public void onResourceManagerReload(IResourceManager manager) {
-                if(shared==null)return;checkThread();ResourceFonts next=new ResourceFonts(manager,thread);
-                try{shared.reload(next,++revision);loader.retire();loader=next;}
-                catch(IOException failure){next.retire();throw new IllegalStateException("客户端字体资源重载失败",failure);}
+                if(shared==null)return;checkThread();reloadSources(manager);
             }
         });
+    }
+    /** 配置入口不安装服务；启动前只保留快照，退出后通知也不能重新创建owner。 */
+    static void configurationChanged() {
+        if(shared==null)return;checkThread();
+        reloadSources(Minecraft.getMinecraft().getResourceManager());
+    }
+    private static void reloadSources(IResourceManager resources) {
+        checkThread();
+        ResourceFonts next=new ResourceFonts(resources,thread);long nextRevision=revision+1;
+        try {
+            List<FontSource> candidates=new ArrayList<FontSource>();
+            List<String> paths=VanillaFontOptions.systemFontFiles();
+            for(int i=0;i<paths.size();i++) {
+                String path=paths.get(i);String id="system-file-"+i;
+                if(path.trim().isEmpty())throw new IllegalArgumentException("系统字体路径为空: "+id);
+                // 文件现在取字节快照；未验证脚本能力，不能凭cmap认定msyh.ttc支持复杂整形。
+                try{candidates.add(FontSource.file(id,nextRevision,Paths.get(path),0,false,Collections.<String>emptySet()));}
+                catch(IOException failure){throw new IOException("系统字体读取失败: "+id+" origin="+path,failure);}
+            }
+            candidates.addAll(FontTextService.defaultSources(next,nextRevision));
+            shared.reload(candidates);revision=nextRevision;loader.retire();loader=next;
+            StringBuilder origins=new StringBuilder();
+            for(FontSource source:candidates) {
+                if(origins.length()>0)origins.append(", ");
+                origins.append(source.id).append(" origin=").append(source.origin);
+            }
+            FMLLog.info("[Qz-UILib] 字体候选换代 revision=%s candidates=[%s]",revision,origins);
+        }catch(IOException|RuntimeException failure) {
+            next.retire();throw new IllegalStateException("客户端字体候选重载失败，revision="+nextRevision,failure);
+        }
     }
     private static void checkThread(){if(Thread.currentThread()!=thread)throw new IllegalStateException("MC字体资源仅限客户端主线程");}
     public static long resourceRevision(){checkThread();return revision;}

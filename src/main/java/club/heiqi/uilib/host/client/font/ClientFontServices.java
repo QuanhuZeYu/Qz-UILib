@@ -175,7 +175,9 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
     public int pumpReady() {
         check();int count=rasterizer.drainReady(settings.cpu.ready).size();readyVersion=rasterizer.stats().version;return count;
     }
-    public void reload(ClassLoader loader,long revision) throws IOException {check();fonts.reload(FontTextService.defaultSources(loader,revision));}
+    public void reload(ClassLoader loader,long revision) throws IOException {check();reload(FontTextService.defaultSources(loader,revision));}
+    /** 宿主组合有序候选后经owner换代；复用字体失效通知，不新建第二套缓存。 */
+    public void reload(List<club.heiqi.uilib.ui.scene.text.font.FontSource> sources) {check();fonts.reload(sources);}
     public GlGlyphAtlas atlas() {
         check();if(atlas==null) {
             if(!gl.capabilities().openGL32)throw new IllegalStateException("共享字体backend要求实际GL3.2+能力，不能以bindings版本推断");
