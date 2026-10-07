@@ -1,4 +1,6 @@
 
+import com.gtnewhorizons.retrofuturagradle.mcp.ReobfuscatedJar
+import org.gradle.api.tasks.bundling.Zip
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -40,6 +42,51 @@ val coreLoopScenario by tasks.registering(JavaExec::class) {
 }
 tasks.named("check") { dependsOn(coreLoopScenario) }
 
+// 显式人工测试附加包：与发布包分离，不进入 assemble/publish，真实实例自动安装 /qzcore。
+val manualTestSources = sourceSets.create("manualTest") {
+    compileClasspath = sourceSets.getByName("main").output + sourceSets.getByName("main").compileClasspath
+}
+tasks.named<JavaCompile>(manualTestSources.compileJavaTaskName) {
+    // 附加入口只有 Java 8 语法，不加载从业务 classpath 发现的编译处理器。
+    options.compilerArgs.add("-proc:none")
+    options.annotationProcessorPath = tasks.named<JavaCompile>("compileJava").get().options.annotationProcessorPath
+}
+val manualTestDevJar by tasks.registering(Zip::class) {
+    dependsOn(tasks.named("classes"), tasks.named("manualTestClasses"))
+    archiveBaseName.set("qz_uilib_manualtest")
+    archiveVersion.set("core-loop-1")
+    archiveClassifier.set("dev")
+    archiveExtension.set("jar")
+    destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
+    from(sourceSets.getByName("main").output) { include("club/heiqi/uilib/internal/devtools/**") }
+    from(manualTestSources.output)
+}
+val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
+    dependsOn(manualTestDevJar, tasks.named("reobfJar"))
+    val production = tasks.named<ReobfuscatedJar>("reobfJar")
+    inputJar.set(manualTestDevJar.flatMap { it.archiveFile })
+    archiveBaseName.set("qz_uilib_manualtest")
+    archiveVersion.set("core-loop-1")
+    archiveClassifier.set("")
+    destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
+    mcVersion.set(production.flatMap { it.mcVersion })
+    srg.set(production.flatMap { it.srg })
+    fieldCsv.set(production.flatMap { it.fieldCsv })
+    methodCsv.set(production.flatMap { it.methodCsv })
+    exceptorCfg.set(production.flatMap { it.exceptorCfg })
+    recompMcJar.set(production.flatMap { it.recompMcJar })
+    referenceClasspath.from(sourceSets.getByName("main").compileClasspath, sourceSets.getByName("main").output)
+    extraSrgEntries.set(emptyList<String>())
+    doLast {
+        ZipFile(archiveFile.get().asFile).use { zip ->
+            check(zip.getEntry("club/heiqi/uilib/manualtest/ManualTestMod.class") != null) { "人工测试入口缺失" }
+            check(zip.getEntry("club/heiqi/uilib/internal/devtools/CoreLoopScreen.class") != null) { "人工测试面板缺失" }
+            check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心类" }
+        }
+    }
+}
+
+
 // ============================================================================
 // 内部开发工具（main 域 club.heiqi.uilib.internal.devtools）
 // 含 headless 出图、scene 测试场地（playground）、磨玻璃实验室（glass）、网络自检端点
@@ -60,7 +107,7 @@ tasks.withType<Jar>().configureEach {
 // apiJar 用的是旧类型 org.gradle.jvm.tasks.Jar（不是 bundling.Jar 的子类），必须单独排除——
 // 这一处漏排正是第一次门禁跑出来的真实缺陷（apiJar 里混进了 headless 包）。
 tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
-    exclude("$internalDevToolsPackagePath/**")
+    if (name != "manualTestJar") exclude("$internalDevToolsPackagePath/**")
 }
 
 // 2) 门禁：逐个打开产物断言不含该包。排除是意图，门禁才是保证；
@@ -74,7 +121,7 @@ val verifyDevToolsNotPackaged by tasks.registering {
         tasks.named(name, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile }
     }
     val allArchives: Provider<List<File>> = provider {
-        tasks.withType(AbstractArchiveTask::class.java).toList().map { task -> task.archiveFile.get().asFile }
+        tasks.withType(AbstractArchiveTask::class.java).toList().filter { it.name != "manualTestDevJar" && it.name != "manualTestJar" }.map { task -> task.archiveFile.get().asFile }
     }
     val forbidden = "$internalDevToolsPackagePath/"
     doLast {

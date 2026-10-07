@@ -1,6 +1,7 @@
 # 核心重构执行记录
 
 - worktree：D:/Code/MC/Qz-UILib/.worktrees/uilib-core，分支 refactor/uilib-core，起点12af6b23，状态增量49f1b91e。主仓4.0协作者未提交文档保持不动。
+- 人工测试偏好：每次交付少量容易操作的检查，短步骤和可观察预期；本轮只测打开/添加、正文滚动、模态隔离，其他项后续分批。用户已授权部署到指定Prism实例，由用户启动测试，不自动启动游戏。人工包用独立manualTestJar附加入口（真实实例无需JVM参数），发布包继续排除devtools。
 - 用户授权：核心实施、破坏式更新、可5.0.0；无平台自动化优先，尽量不写单元测试；MC runClient/runServer 依AGENTS第15行仍需明确授权。
 - 基线0d2720d1为人工清空源码，旧规格worktree中的源码副本不在Git；从归零基线建设，不整树恢复。计划旧路径仅作职责证据。
 - 已实现独立ReactiveDomain/Signal/Computed/Effect/Owner与呈现Observation；节点UUID、attach/detach/move/destroy、逻辑repeat、脏绑定；自然/固定/有界填充、滚动/裁剪；统一几何命中、点击/滚轮/模态；不可变TextLayout/TextStyle/PaintPlan；Measure/Arrange/Paint自定义控件端口及声明测量依赖。

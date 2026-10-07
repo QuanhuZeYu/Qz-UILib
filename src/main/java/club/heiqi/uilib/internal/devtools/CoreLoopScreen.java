@@ -1,6 +1,5 @@
 package club.heiqi.uilib.internal.devtools;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import net.minecraft.client.gui.GuiScreen;
 import org.lwjgl.input.Mouse;
@@ -26,7 +25,9 @@ public final class CoreLoopScreen extends GuiScreen {
         if (runtime != null) return;
         domain.execute(() -> {
             runtime = new SceneRuntime(domain); business = domain.owner();
-            Signal<List<Integer>> rows = domain.signal(Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12));
+            List<Integer> initialRows = new ArrayList<>();
+            for (int item = 1; item <= 60; item++) initialRows.add(item);
+            Signal<List<Integer>> rows = domain.signal(initialRows);
             Signal<Integer> count = domain.signal(0), fontSize = domain.signal(9);
             Signal<Boolean> expanded = domain.signal(false), modal = domain.signal(false);
             scroll = domain.signal(0);
