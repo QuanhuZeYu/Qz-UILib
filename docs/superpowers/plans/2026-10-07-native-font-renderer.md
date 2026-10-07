@@ -10,7 +10,7 @@
 
 **开发模式：** runtime-driven-development，先无平台直启真实集成，GPU由指定Prism实例短小人工批次验收；不引入方法级单元测试。
 
-**Spec：** ../specs/2026-10-07-uilib-core-contract-design.md 第9、13.1—13.3.1节。数学深入保持暂停。
+**Spec：** [字体渲染器专有规格](../specs/2026-10-07-uilib-font-renderer-spec.md)；[核心规格](../specs/2026-10-07-uilib-core-contract-design.md)第9、13.1—13.2节。字体规格待用户审阅，实施暂停；数学深入保持暂停。
 
 ## Global Constraints
 
