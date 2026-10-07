@@ -30,7 +30,11 @@ public final class SceneNode {
     private Axis axis = Axis.COLUMN;
     private Size width = Size.natural(), height = Size.natural();
     private TextStyle style = new TextStyle("default", 12, 0xFFFFFFFF);
+    private club.heiqi.uilib.ui.scene.text.TextPolicy textPolicy = club.heiqi.uilib.ui.scene.text.TextPolicy.NORMAL;
+    public club.heiqi.uilib.ui.scene.text.TextPolicy textPolicy() { return textPolicy; }
+    public SceneNode textPolicy(club.heiqi.uilib.ui.scene.text.TextPolicy value) { writable(); textPolicy = Objects.requireNonNull(value, "textPolicy"); changed(); return this; }
     private int padding, gap, scrollOffset, background;
+    private int scrollStep = 20;
     private boolean modal;
     private boolean clip, scrollable, visible = true;
     private boolean enabled = true;
@@ -45,6 +49,8 @@ public final class SceneNode {
     public int padding() { return padding; }
     public int gap() { return gap; }
     public int scrollOffset() { return scrollOffset; }
+    public int scrollStep() { return scrollStep; }
+    public SceneNode scrollStep(int value) { writable(); if (value <= 0) throw new IllegalArgumentException("滚动步长必须为正"); scrollStep = value; changed(); return this; }
     public int background() { return background; }
     public boolean clip() { return clip; }
     public boolean scrollable() { return scrollable; }

@@ -56,7 +56,36 @@ final class SoftwareSceneScenario {
             return new TextLayout(maxWidth, lines.size() * lineHeight, style, lines);
         }
     }
+    private static void boundedScrolling() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        domain.execute(() -> {
+            SoftwareHost host = new SoftwareHost();
+            SceneRuntime runtime = new SceneRuntime(domain);
+            Signal<Integer> contentHeight = domain.signal(300);
+            SceneNode content = new SceneNode().size(Size.fixed(100), Size.fixed(300))
+                .bind(NodeBinding.value(contentHeight, (node, value) -> node.size(Size.fixed(100), Size.fixed(value))));
+            SceneNode viewport = new SceneNode().size(Size.fixed(100), Size.fixed(80)).scrollable(true).scrollStep(20).add(content);
+            runtime.attach(null, viewport);
+            SceneFramePipeline pipe = new SceneFramePipeline(runtime, host, host);
+            ScenePresentation original = pipe.current();
+            for (int i = 0; i < 100; i++) pipe.scroll(5, 5, -1);
+            pipe.frame();
+            SceneGeometryView.Entry end = pipe.current().geometry.get(viewport);
+            require(end.scrollOffset == end.scrollMaximum && end.scrollMaximum > 20, "实际滚动必须止于真实内容末尾");
+            pipe.scroll(5, 5, 1); pipe.frame();
+            require(pipe.current().geometry.get(viewport).scrollOffset == end.scrollMaximum - 20, "末尾反向一格立即移动，不偿还不可见滚动债务");
+            require(original.geometry.get(viewport).scrollOffset == 0, "滚动后旧几何仍不可变");
+            contentHeight.set(100); SceneGeometryView.Entry smaller = pipe.current().geometry.get(viewport);
+            require(smaller.scrollOffset == smaller.scrollMaximum, "内容缩短即时夹到新边界");
+            pipe.scroll(5, 5, 1); pipe.frame();
+            require(pipe.current().geometry.get(viewport).scrollOffset == 0, "内容缩短后反向输入立即有效");
+            contentHeight.set(300); pipe.scroll(5, 5, Integer.MIN_VALUE); pipe.frame();
+            require(pipe.current().geometry.get(viewport).scrollOffset == pipe.current().geometry.get(viewport).scrollMaximum, "极端滚轮值不可整数溢出");
+            runtime.close();
+        });
+    }
     static void run() throws Exception {
+        boundedScrolling();
         try { Class.forName("net.minecraft.client.Minecraft"); throw new AssertionError("软件场景执行类路径不得包含 MC"); }
         catch (ClassNotFoundException expected) { }
         ReactiveDomain domain = ReactiveDomain.direct();

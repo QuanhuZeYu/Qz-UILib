@@ -20,7 +20,6 @@ public final class CoreLoopScreen extends GuiScreen {
     private SceneFramePipeline pipeline;
     private MinecraftSceneHost host;
     private Owner business;
-    private Signal<Integer> scroll;
     @Override public void initGui() {
         if (runtime != null) return;
         domain.execute(() -> {
@@ -30,7 +29,6 @@ public final class CoreLoopScreen extends GuiScreen {
             Signal<List<Integer>> rows = domain.signal(initialRows);
             Signal<Integer> count = domain.signal(0), fontSize = domain.signal(9);
             Signal<Boolean> expanded = domain.signal(false), modal = domain.signal(false);
-            scroll = domain.signal(0);
             Computed<TextStyle> style = domain.computed(business, () -> new TextStyle("minecraft", fontSize.get(), 0xFFFFFFFF));
             Computed<String> heading = domain.computed(business, () -> (expanded.get() ? "核心闭环：标题加长时自然换行，正文自动获得剩余空间。累计业务操作：" : "核心闭环：") + count.get());
             SceneNode title = label(heading, style).size(Size.fill(1), Size.natural());
@@ -40,8 +38,7 @@ public final class CoreLoopScreen extends GuiScreen {
             controls.add(button("字号", style, () -> fontSize.set(fontSize.get() == 9 ? 14 : 9)));
             controls.add(button("模态", style, () -> modal.set(true)));
             SceneNode body = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).gap(2)
-                .onScroll(delta -> scroll.set(Math.max(0, scroll.get() - delta * 20)))
-                .bind(NodeBinding.value(scroll, SceneNode::scrollOffset))
+                .scrollStep(20)
                 .bind(NodeBinding.repeat(rows, value -> value, value -> {
                     return new SceneNode().bind(NodeBinding.value(value, (node, item) -> node.text("条目 " + item + "：滚轮滚动正文，标题与操作区保持位置。")))
                         .bind(NodeBinding.value(style, SceneNode::style)).size(Size.fill(1), Size.natural()).background(0xAA202830);

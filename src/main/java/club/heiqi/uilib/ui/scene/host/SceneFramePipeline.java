@@ -48,6 +48,7 @@ public final class SceneFramePipeline {
         if (presentation == null || revision != runtime.revision() || width != w || height != h || metrics != nextMetrics) {
             boolean geometryDirty = presentation == null || geometryRevision != runtime.geometryRevision() || width != w || height != h || metrics != nextMetrics;
             SceneGeometry geometry = geometryDirty ? runtime.domain().readOnly(() -> layout.layout(runtime.roots(), w, h)) : presentation.geometry;
+            if (geometryDirty) runtime.prepareScrollPositions(geometry);
             PaintPlanBuilder paint = new PaintPlanBuilder();
             for (SceneGeometryView.Entry entry : geometry.ordered()) {
                 if (entry.node.control() != null) {

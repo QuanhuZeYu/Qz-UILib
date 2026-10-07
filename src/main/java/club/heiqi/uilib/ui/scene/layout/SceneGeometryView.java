@@ -7,7 +7,12 @@ public interface SceneGeometryView {
         public final SceneNode node;
         public final LayoutBox box, clip;
         public final TextLayout text;
-        public Entry(SceneNode node, LayoutBox box, LayoutBox clip, TextLayout text) { this.node = node; this.box = box; this.clip = clip; this.text = text; }
+        public final int scrollOffset, scrollMaximum;
+        public Entry(SceneNode node, LayoutBox box, LayoutBox clip, TextLayout text) { this(node, box, clip, text, 0, 0); }
+        public Entry(SceneNode node, LayoutBox box, LayoutBox clip, TextLayout text, int scrollOffset, int scrollMaximum) {
+            this.node = node; this.box = box; this.clip = clip; this.text = text;
+            this.scrollOffset = scrollOffset; this.scrollMaximum = scrollMaximum;
+        }
     }
     Entry get(SceneNode node);
     List<Entry> ordered();

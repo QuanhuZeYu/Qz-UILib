@@ -54,8 +54,10 @@ tasks.named("check") { dependsOn(coreLoopScenario, orderedBatchScenario) }
 // 与目标LWJGL3ify实例的正式3.4.2对齐。宿主提供核心/字体native，发布jar不重复打入LWJGL。
 val fontBindings by configurations.creating
 val fontNativeRuntime by configurations.creating { extendsFrom(fontBindings) }
+val fontUnicodeRuntime by configurations.creating
 dependencies {
-    listOf("lwjgl", "lwjgl-freetype", "lwjgl-harfbuzz").forEach {
+    add(fontUnicodeRuntime.name, "com.ibm.icu:icu4j:76.1")
+    listOf("lwjgl", "lwjgl-freetype", "lwjgl-harfbuzz", "lwjgl-opengl", "lwjgl-glfw").forEach {
         add(fontBindings.name, "org.lwjgl:$it:3.4.2") { isTransitive = false }
     }
     val platform = System.getProperty("os.name").lowercase()
@@ -65,13 +67,14 @@ dependencies {
         platform.contains("mac") -> if (arch == "aarch64") "natives-macos-arm64" else "natives-macos"
         else -> if (arch == "aarch64") "natives-linux-arm64" else "natives-linux"
     }
-    listOf("lwjgl", "lwjgl-freetype").forEach {
+    listOf("lwjgl", "lwjgl-freetype", "lwjgl-opengl", "lwjgl-glfw").forEach {
         add(fontNativeRuntime.name, "org.lwjgl:$it:3.4.2:$nativeClassifier") { isTransitive = false }
     }
 }
 configurations.named("compileOnly") { extendsFrom(fontBindings) }
 // PointerBuffer与BufferUtils须使用LWJGL3核心，不能被旧LWJGL2编译classpath遮蔽。
 tasks.named<JavaCompile>("compileJava") { classpath = fontBindings + classpath }
+tasks.named<JavaCompile>("compileTestJava") { classpath = fontBindings + classpath }
 val nativeFontScenario by tasks.registering(JavaExec::class) {
     group = "verification"
     description = "Java8独立运行正式字体整形/彩色像素与资源生命周期场景"
@@ -101,7 +104,37 @@ val packagedUnicodeScenario by tasks.registering(JavaExec::class) {
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
     doFirst { args(tasks.named<Jar>("shadowJar").get().archiveFile.get().asFile.absolutePath) }
 }
-tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario) }
+val glBatchScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "独立GLFW上下文对照真实二维纹理及数组回放（需本机GL设备）"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.GlBatchScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+    args(layout.buildDirectory.dir("font-machine/gl").get().asFile.absolutePath)
+}
+val glyphPipelineScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "真实共享定位、后台光栅、有界图集和GL回放对照（需要设备）"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.GlyphPipelineScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+    args(layout.buildDirectory.dir("font-machine/glyph").get().asFile.absolutePath)
+}
+val fontTextScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "真实共享Unicode/Bidi/复杂脚本与Emoji17全量候选匹配"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontTextScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+    args(projectDir.absolutePath)
+}
+tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario, fontTextScenario) }
 
 
 // 显式人工测试附加包：与发布包分离，不进入 assemble/publish，真实实例自动安装 /qzcore。

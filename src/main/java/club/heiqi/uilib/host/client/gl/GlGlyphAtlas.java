@@ -1,0 +1,218 @@
+package club.heiqi.uilib.host.client.gl;
+
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import org.lwjgl.system.MemoryUtil;
+import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
+import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
+import static org.lwjgl.opengl.GL32C.*;
+
+/** GL上下文线程的稀疏、按需图集。mono/color 分页，数组的层数由预算指定。
+ * Frame 在 prepare 收集整个范围的可见需求并 pin，freeze 后只读，不在 draw 中上传或淘汰。
+ * UV 只属于当前 Frame；旧 PaintPlan 保存字体来源而非 UV，下次 prepare 可重建已淘汰资源。
+ */
+public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoCloseable {
+    public enum Mode { TEXTURE_2D, TEXTURE_ARRAY }
+    public static final class Budget {
+        public final int pageSize,layers,maxGroups,maxResidents,maxDemand;
+        public final long gpuBytes;
+        public Budget(int pageSize,int layers,int maxGroups,int maxResidents,int maxDemand,long gpuBytes) {
+            if(pageSize<4||layers<1||maxGroups<1||maxResidents<1||maxDemand<1||gpuBytes<4)
+                throw new IllegalArgumentException("无效图集预算");
+            this.pageSize=pageSize;this.layers=layers;this.maxGroups=maxGroups;
+            this.maxResidents=maxResidents;this.maxDemand=maxDemand;this.gpuBytes=gpuBytes;
+        }
+    }
+    /** 最小提交单位为含透明padding的RGBA整行：bytes须容纳4*(bitmap.width+2)。
+     * 不累计不足一行的跨帧预算；bytes>=4*pageSize可覆盖所有可放入该页的字形。
+     * nanos在驱动调用边界检查，无法抢占单次GL调用；任一预算为0时该帧不上传。 */
+    public static final class UploadBudget {
+        public final long bytes,nanos;public final int calls;
+        public UploadBudget(long bytes,long nanos,int calls) {
+            if(bytes<0||nanos<0||calls<0)throw new IllegalArgumentException("无效帧上传预算");
+            this.bytes=bytes;this.nanos=nanos;this.calls=calls;
+        }
+    }
+    public static final class Resident {
+        public final long resource,generation;
+        public final int layer,width,height;
+        public final float u0,v0,u1,v1,bearingX,bearingY,pixelScale;
+        public final boolean color;
+        private final Group group;
+        private Resident(Group group,int layer,int x,int y,int pageSize,GlyphBitmap b) {
+            this.group=group;resource=group.resource;generation=group.generation;this.layer=layer;
+            width=b.width;height=b.height;bearingX=b.bearingX;bearingY=b.bearingY;pixelScale=b.pixelScale;color=b.color;
+            u0=(x+1f)/pageSize;v0=(y+1f)/pageSize;u1=(x+1f+b.width)/pageSize;v1=(y+1f+b.height)/pageSize;
+        }
+    }
+    public static final class Stats {
+        public final long gpuBytes,uploadedBytes,uploadCalls,createdGroups,evictedGroups,rejected,version;
+        public final int groups,residents;
+        private Stats(GlGlyphAtlas a){gpuBytes=a.gpuBytes;uploadedBytes=a.uploadedBytes;uploadCalls=a.uploadCalls;
+            createdGroups=a.createdGroups;evictedGroups=a.evictedGroups;rejected=a.rejected;version=a.version;
+            groups=a.groups.size();residents=a.residents.size();}
+    }
+    private static final class Page {
+        int x,y,rowHeight;
+        boolean fits(int w,int h,int size){return w<=size&&h<=size&&(x+w<=size?y+h<=size:y+rowHeight+h<=size);}
+        int[] allocate(int w,int h,int size){if(x+w>size){x=0;y+=rowHeight;rowHeight=0;}int[] p={x,y};x+=w;rowHeight=Math.max(rowHeight,h);return p;}
+    }
+    private static final class Group {
+        final long resource,generation;final int texture;final boolean color;final Page[] pages;
+        long lastUsed;boolean pinned;
+        final List<GlyphKey> keys=new ArrayList<GlyphKey>();
+        Group(long resource,long generation,int texture,boolean color,int layers){this.resource=resource;this.generation=generation;
+            this.texture=texture;this.color=color;pages=new Page[layers];for(int i=0;i<layers;i++)pages[i]=new Page();}
+    }
+    private static final class Upload {
+        final GlyphKey key;final GlyphBitmap bitmap;final Resident resident;final int x,y;int row;
+        Upload(GlyphKey key,GlyphBitmap bitmap,Resident resident,int x,int y){this.key=key;this.bitmap=bitmap;this.resident=resident;this.x=x;this.y=y;}
+    }
+    private final Thread thread=Thread.currentThread();
+    private final Mode mode;private final Budget budget;private final int layers,target;
+    private final LinkedHashMap<Long,Group> groups=new LinkedHashMap<Long,Group>();
+    private final Map<GlyphKey,Resident> residents=new HashMap<GlyphKey,Resident>();
+    private long gpuBytes,uploadedBytes,uploadCalls,createdGroups,evictedGroups,rejected,version,nextResource=1,nextGeneration=1,clock;
+    private boolean closed;private Frame active;private Upload uploading;
+    private UploadState preparingState;
+    public GlGlyphAtlas(Mode mode,Budget budget) {
+        this.mode=java.util.Objects.requireNonNull(mode,"mode");this.budget=java.util.Objects.requireNonNull(budget,"budget");
+        layers=mode==Mode.TEXTURE_ARRAY?budget.layers:1;target=mode==Mode.TEXTURE_ARRAY?GL_TEXTURE_2D_ARRAY:GL_TEXTURE_2D;
+        if(budget.pageSize>glGetInteger(GL_MAX_TEXTURE_SIZE)||layers>glGetInteger(GL_MAX_ARRAY_TEXTURE_LAYERS)
+            ||(long)budget.pageSize*budget.pageSize*layers*4>budget.gpuBytes)throw new IllegalArgumentException("图集配置超出GL能力/预算");
+    }
+    private void check(){if(Thread.currentThread()!=thread)throw new IllegalStateException("图集仅限所属GL线程");if(closed)throw new IllegalStateException("图集已关闭");}
+    public Stats stats(){check();return new Stats(this);}
+    public Frame beginFrame(Collection<GlyphKey> demand) {
+        check();if(active!=null)throw new IllegalStateException("先结束上一个图集范围");
+        Frame frame=new Frame();for(GlyphKey key:demand) {
+            if(frame.demand.size()>=budget.maxDemand&&!frame.demand.contains(key)){rejected++;continue;}
+            frame.demand.add(key);Resident resident=residents.get(key);if(resident!=null){resident.group.pinned=true;resident.group.lastUsed=++clock;}
+        }
+        if(uploading!=null&&!frame.demand.contains(uploading.key))uploading=null;
+        if(uploading!=null)uploading.resident.group.pinned=true;
+        active=frame;return frame;
+    }
+    public final class Frame implements AutoCloseable {
+        private final LinkedHashSet<GlyphKey> demand=new LinkedHashSet<GlyphKey>();
+        private final Map<GlyphKey,Resident> visible=new HashMap<GlyphKey,Resident>();
+        private boolean frozen,done;
+        public Collection<GlyphKey> demand(){return java.util.Collections.unmodifiableSet(demand);}
+        public Resident lookup(GlyphKey key){checkFrame();return frozen?visible.get(key):residents.get(key);}
+        private void checkFrame(){check();if(done||active!=this)throw new IllegalStateException("图集范围已结束");}
+        /** 时间预算只在驱动提交边界检查，无法中断单次 GL 调用。RGBA8 padded 区域分行上传。 */
+        public void prepare(AsyncGlyphRasterizer cpu,UploadBudget uploadBudget) {
+            checkFrame();if(frozen)throw new IllegalStateException("绘制期间禁止上传");
+            cpu.retainPending(demand);cpu.drainReady(budget.maxDemand);
+            for(GlyphKey key:demand)if(!residents.containsKey(key))cpu.request(key);
+            long start=System.nanoTime(),remaining=uploadBudget.bytes;int calls=0;
+            try(UploadState state=new UploadState()) {
+                preparingState=state;
+                for(GlyphKey key:demand) {
+                    if(calls>=uploadBudget.calls||remaining==0||System.nanoTime()-start>=uploadBudget.nanos)break;
+                    if(residents.containsKey(key))continue;
+                    if(uploading!=null&&!uploading.key.equals(key))continue;
+                    if(uploading==null) {
+                        GlyphBitmap bitmap=cpu.peek(key);if(bitmap==null)continue;
+                        uploading=allocate(key,bitmap);if(uploading==null)continue;
+                    }
+                    Upload job=uploading;int rowBytes=Math.multiplyExact(job.bitmap.width+2,4),totalRows=job.bitmap.height+2;
+                    while(job.row<totalRows&&calls<uploadBudget.calls&&remaining>=rowBytes&&System.nanoTime()-start<uploadBudget.nanos) {
+                        int rows=(int)Math.min(totalRows-job.row,remaining/rowBytes);
+                        // 复用小块提交，单次 staging 不超过64KiB；宽行本身是最小预算单位。
+                        rows=Math.min(rows,Math.max(1,65536/rowBytes));
+                        ByteBuffer data=MemoryUtil.memCalloc(Math.multiplyExact(rows,rowBytes));
+                        try {
+                            ByteBuffer source=job.bitmap.pixelsBuffer();
+                            for(int r=0;r<rows;r++) {
+                                int bitmapRow=job.row+r-1;if(bitmapRow<0||bitmapRow>=job.bitmap.height)continue;
+                                source.position(bitmapRow*job.bitmap.width*4);source.limit((bitmapRow+1)*job.bitmap.width*4);
+                                data.position(r*rowBytes+4);data.put(source);source.limit(source.capacity());
+                            }
+                            data.position(0);data.limit(rows*rowBytes);glBindTexture(target,job.resident.group.texture);
+                            if(mode==Mode.TEXTURE_ARRAY)glTexSubImage3D(target,0,job.x,job.y+job.row,job.resident.layer,
+                                job.bitmap.width+2,rows,1,GL_RGBA,GL_UNSIGNED_BYTE,data);
+                            else glTexSubImage2D(target,0,job.x,job.y+job.row,job.bitmap.width+2,rows,GL_RGBA,GL_UNSIGNED_BYTE,data);
+                        }finally{MemoryUtil.memFree(data);}
+                        long bytes=(long)rows*rowBytes;remaining-=bytes;uploadedBytes+=bytes;uploadCalls++;calls++;job.row+=rows;
+                    }
+                    if(job.row==totalRows) {
+                        residents.put(key,job.resident);job.resident.group.keys.add(key);job.resident.group.lastUsed=++clock;
+                        uploading=null;version++;
+                    }else break;
+                }
+            }finally{preparingState=null;}
+        }
+        public void freeze() {
+            checkFrame();if(frozen)return;
+            for(GlyphKey key:demand){Resident r=residents.get(key);if(r!=null){visible.put(key,r);r.group.pinned=true;}}
+            frozen=true;
+        }
+        @Override public void close(){if(done)return;checkFrame();done=true;for(Group g:groups.values())g.pinned=false;active=null;}
+    }
+    private Upload allocate(GlyphKey key,GlyphBitmap bitmap) {
+        int w=bitmap.width+2,h=bitmap.height+2;
+        if(w>budget.pageSize||h>budget.pageSize){rejected++;return null;}
+        while(residents.size()>=budget.maxResidents)if(!evict()){rejected++;return null;}
+        for(Group g:groups.values())if(g.color==bitmap.color)for(int layer=0;layer<layers;layer++)if(g.pages[layer].fits(w,h,budget.pageSize))
+            return place(key,bitmap,g,layer,w,h);
+        long size=(long)budget.pageSize*budget.pageSize*layers*4;
+        while(groups.size()>=budget.maxGroups||gpuBytes+size>budget.gpuBytes)if(!evict()){rejected++;return null;}
+        int texture=glGenTextures();
+        try {
+            glBindTexture(target,texture);glTexParameteri(target,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(target,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+            glTexParameteri(target,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(target,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+            glTexParameteri(target,GL_TEXTURE_BASE_LEVEL,0);glTexParameteri(target,GL_TEXTURE_MAX_LEVEL,0);
+            if(mode==Mode.TEXTURE_ARRAY)glTexImage3D(target,0,GL_RGBA8,budget.pageSize,budget.pageSize,layers,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
+            else glTexImage2D(target,0,GL_RGBA8,budget.pageSize,budget.pageSize,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
+            Group group=new Group(nextResource++,nextGeneration++,texture,bitmap.color,layers);groups.put(group.resource,group);gpuBytes+=size;createdGroups++;
+            return place(key,bitmap,group,0,w,h);
+        }catch(RuntimeException|Error failure){glDeleteTextures(texture);throw failure;}
+    }
+    private Upload place(GlyphKey key,GlyphBitmap bitmap,Group group,int layer,int w,int h) {
+        int[] pos=group.pages[layer].allocate(w,h,budget.pageSize);group.pinned=true;group.lastUsed=++clock;
+        return new Upload(key,bitmap,new Resident(group,layer,pos[0],pos[1],budget.pageSize,bitmap),pos[0],pos[1]);
+    }
+    private boolean evict() {
+        // glDeleteTextures 会解除所有单元上的绑定。仅在真实淘汰压力下查询各单元，
+        // 不删除宿主仍绑定的资源；预算不足留白，不能破坏上传进入态或其他单元。
+        java.util.HashSet<Integer> bound=new java.util.HashSet<Integer>();
+        if(preparingState!=null){bound.add(preparingState.two);bound.add(preparingState.array);}
+        int activeUnit=glGetInteger(GL_ACTIVE_TEXTURE),units=glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+        try{for(int i=0;i<units;i++){glActiveTexture(GL_TEXTURE0+i);bound.add(glGetInteger(mode==Mode.TEXTURE_ARRAY?GL_TEXTURE_BINDING_2D_ARRAY:GL_TEXTURE_BINDING_2D));}}
+        finally{glActiveTexture(activeUnit);}
+        Group candidate=null;for(Group group:groups.values())if(!group.pinned&&!bound.contains(group.texture)&&(uploading==null||uploading.resident.group!=group)
+            &&(candidate==null||group.lastUsed<candidate.lastUsed))candidate=group;
+        if(candidate==null)return false;
+        for(GlyphKey key:candidate.keys)residents.remove(key);
+        groups.remove(candidate.resource);glDeleteTextures(candidate.texture);gpuBytes-=(long)budget.pageSize*budget.pageSize*layers*4;evictedGroups++;return true;
+    }
+    /** 只读取已 freeze 的 pin 范围，不上传、不创建、不推测资源代际。 */
+    @Override public GlQuadRenderer.Texture resolve(long resource,long generation) {
+        check();if(active==null||!active.frozen)throw new IllegalStateException("先冻结图集范围");
+        Group group=groups.get(resource);if(group==null||!group.pinned||group.generation!=generation)throw new IllegalArgumentException("失效图集资源");
+        return new GlQuadRenderer.Texture(target,group.texture);
+    }
+    /** 上传触及的状态集中保存/恢复；host 的 unpack PBO 与各布局参数不能渗入 CPU 指针。 */
+    private static final class UploadState implements AutoCloseable {
+        final int unit=glGetInteger(GL_ACTIVE_TEXTURE),pbo=glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
+        final int[] names={GL_UNPACK_ALIGNMENT,GL_UNPACK_ROW_LENGTH,GL_UNPACK_IMAGE_HEIGHT,GL_UNPACK_SKIP_PIXELS,GL_UNPACK_SKIP_ROWS,GL_UNPACK_SKIP_IMAGES,GL_UNPACK_SWAP_BYTES,GL_UNPACK_LSB_FIRST};
+        final int[] values=new int[names.length];final int two,array;
+        UploadState() {
+            for(int i=0;i<names.length;i++)values[i]=glGetInteger(names[i]);
+            glActiveTexture(GL_TEXTURE0);two=glGetInteger(GL_TEXTURE_BINDING_2D);array=glGetInteger(GL_TEXTURE_BINDING_2D_ARRAY);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER,0);for(int name:names)glPixelStorei(name,name==GL_UNPACK_ALIGNMENT?1:0);
+        }
+        @Override public void close(){glBindTexture(GL_TEXTURE_2D,two);glBindTexture(GL_TEXTURE_2D_ARRAY,array);glActiveTexture(unit);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER,pbo);for(int i=0;i<names.length;i++)glPixelStorei(names[i],values[i]);}
+    }
+    @Override public void close(){if(closed)return;check();if(active!=null)throw new IllegalStateException("先结束图集范围");
+        for(Group group:groups.values())glDeleteTextures(group.texture);groups.clear();residents.clear();uploading=null;gpuBytes=0;closed=true;}
+}

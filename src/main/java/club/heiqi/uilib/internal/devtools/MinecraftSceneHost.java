@@ -54,8 +54,8 @@ final class MinecraftSceneHost implements SceneHost, SceneTextMeasurer, AutoClos
         int binding = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D), mode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         int src = GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB), dst = GL11.glGetInteger(GL14.GL_BLEND_DST_RGB);
         int srcAlpha = GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA), dstAlpha = GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA);
-        IntBuffer previousClip = BufferUtils.createIntBuffer(4); GL11.glGetInteger(GL11.GL_SCISSOR_BOX, previousClip);
-        FloatBuffer previousColor = BufferUtils.createFloatBuffer(4); GL11.glGetFloat(GL11.GL_CURRENT_COLOR, previousColor);
+        IntBuffer previousClip = BufferUtils.createIntBuffer(4); GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, previousClip);
+        FloatBuffer previousColor = BufferUtils.createFloatBuffer(4); GL11.glGetFloatv(GL11.GL_CURRENT_COLOR, previousColor);
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         try {
             for (PaintCommand command : plan.commands()) {

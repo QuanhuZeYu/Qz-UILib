@@ -80,6 +80,35 @@ public final class NativeFontFace implements AutoCloseable {
     }
 
     public Metrics metrics() { checkOpen(); return metrics; }
+    /** 墨迹的保守像素界，用于需求裁剪；不执行FT_Render_Glyph或生成像素缓存。 */
+    public InkBounds glyphInkBounds(int glyphId) {
+        checkOpen();
+        if (glyphId < 0 || glyphId >= face.num_glyphs()) throw new IllegalArgumentException("Invalid glyph ID");
+        NativeFontService.check(FreeType.FT_Load_Glyph(face, glyphId, FreeType.FT_LOAD_DEFAULT | FreeType.FT_LOAD_COLOR), "FT_Load_Glyph bounds");
+        FT_GlyphSlot slot = face.glyph();
+        if (slot.format() == FreeType.FT_GLYPH_FORMAT_BITMAP) {
+            return new InkBounds(true, slot.bitmap_left() * pixelScale, -slot.bitmap_top() * pixelScale,
+                (slot.bitmap_left() + slot.bitmap().width()) * pixelScale, (-slot.bitmap_top() + slot.bitmap().rows()) * pixelScale);
+        }
+        // COLR/SVG等字形的paint可能伸出outline metrics，未验证格式不得用经验界裁掉。
+        if (slot.format() != FreeType.FT_GLYPH_FORMAT_OUTLINE || (face.face_flags() & FreeType.FT_FACE_FLAG_COLOR) != 0)
+            return InkBounds.UNKNOWN;
+        org.lwjgl.util.freetype.FT_Glyph_Metrics m = slot.metrics();
+        float left = (float) Math.floor(m.horiBearingX() / 64.0) - 1;
+        float top = (float) Math.floor(-m.horiBearingY() / 64.0) - 1;
+        float right = (float) Math.ceil((m.horiBearingX() + m.width()) / 64.0) + 1;
+        float bottom = (float) Math.ceil((-m.horiBearingY() + m.height()) / 64.0) + 1;
+        return new InkBounds(true, left * pixelScale, top * pixelScale, right * pixelScale, bottom * pixelScale);
+    }
+    public static final class InkBounds {
+        public static final InkBounds UNKNOWN = new InkBounds(false, 0, 0, 0, 0);
+        public final boolean known;
+        /** 相对glyph定位原点，Y向下。未知界不能作为拒绝可见需求的理由。 */
+        public final float left, top, right, bottom;
+        public InkBounds(boolean known, float left, float top, float right, float bottom) {
+            this.known = known; this.left = left; this.top = top; this.right = right; this.bottom = bottom;
+        }
+    }
     public int glyphIndex(int codePoint) {
         checkOpen();
         if (!Character.isValidCodePoint(codePoint)) throw new IllegalArgumentException("Invalid code point");

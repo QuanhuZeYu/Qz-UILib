@@ -21,6 +21,11 @@ public final class SceneRuntime implements AutoCloseable {
         final List<BindingActivation> bindings = new ArrayList<>();
         Mount(Owner owner) { this.owner = owner; }
     }
+    /** 视图位置属于挂载激活；声明scrollOffset仅在其值改变时作为显式跳转目标。 */
+    private static final class ScrollPosition {
+        int declaration, value, maximum;
+    }
+    private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
     private final ReactiveDomain domain;
     private final Owner owner;
     private final Map<SceneNode, Mount> mounts = new IdentityHashMap<>();
@@ -113,7 +118,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
     private void releaseSubtree(SceneNode node) {
         for (SceneNode child : node.children()) releaseSubtree(child);
-        mounts.remove(node); dirtyBindings.remove(node); node.frameworkRuntime(this, false);
+        mounts.remove(node); scrolling.remove(node); dirtyBindings.remove(node); node.frameworkRuntime(this, false);
     }
     void move(SceneNode node, Object token, SceneNode next) {
         Mount mount = requireMount(node, token);
@@ -191,8 +196,31 @@ public final class SceneRuntime implements AutoCloseable {
         routing = true;
         try { node.clickAction().run(); } finally { routing = false; }
     }
+    /** 只读布局取得本次目标；不在测量期间修改状态。 */
+    public int scrollOffset(SceneNode node) {
+        checkAlive();
+        ScrollPosition position = scrolling.get(node);
+        return position == null || position.declaration != node.scrollOffset() ? node.scrollOffset() : position.value;
+    }
+    /** 从最终几何发布边界；内容/窗口变小会立即丢弃越界偏移，不积攒不可见滚动债务。 */
+    public void prepareScrollPositions(club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry) {
+        command();
+        for (club.heiqi.uilib.ui.scene.layout.SceneGeometryView.Entry entry : geometry.ordered()) {
+            if (!entry.node.scrollable() || !mounts.containsKey(entry.node)) continue;
+            ScrollPosition position = scrolling.computeIfAbsent(entry.node, ignored -> new ScrollPosition());
+            position.declaration = entry.node.scrollOffset(); position.value = entry.scrollOffset; position.maximum = entry.scrollMaximum;
+        }
+    }
     public void dispatchScroll(SceneNode node, int delta) {
-        checkAlive(); if (!interactive(node) || node.scrollAction() == null) return;
+        checkAlive(); if (!interactive(node)) return;
+        if (node.scrollable()) {
+            ScrollPosition position = scrolling.get(node);
+            if (position != null) {
+                int next = (int) Math.max(0L, Math.min(position.maximum, (long) position.value - (long) delta * node.scrollStep()));
+                if (next != position.value) { position.value = next; invalidate(); }
+            }
+        }
+        if (node.scrollAction() == null) return;
         routing = true;
         try { node.scrollAction().accept(delta); } finally { routing = false; }
     }

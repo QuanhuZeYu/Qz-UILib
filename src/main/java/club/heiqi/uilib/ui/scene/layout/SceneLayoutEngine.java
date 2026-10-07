@@ -27,7 +27,7 @@ public final class SceneLayoutEngine {
         return size.constrain(size.mode == Size.Mode.FIXED ? size.value : size.mode == Size.Mode.FILL ? Math.max(0, available) : desired);
     }
     private TextLayout textLayout(SceneNode node, int width) {
-        return textCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(width, key -> text.layout(node.text(), node.style(), width));
+        return textCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(width, key -> text.layout(node.text(), node.style(), width, node.textPolicy()));
     }
     private int[] measure(SceneNode node, int availableWidth) {
         return measuredCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(availableWidth, key -> measureUncached(node, availableWidth));
@@ -71,13 +71,23 @@ public final class SceneLayoutEngine {
         LayoutBox ownClip = node.clip() || node.scrollable() ? box : null;
         LayoutBox clip = ancestorClip == null ? ownClip : ownClip == null ? ancestorClip : ancestorClip.intersect(ownClip);
         TextLayout lines = textLayout(node, innerWidth);
+        int entryIndex = entries.size();
         entries.add(new SceneGeometryView.Entry(node, box, clip, lines));
         if (node.control() != null) {
             java.util.Set<SceneNode> placed = java.util.Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
-            for (ChildPlacements.Entry child : node.control().arrange(node, box).entries()) {
+            List<ChildPlacements.Entry> placements = node.control().arrange(node, box).entries();
+            boolean row = node.axis() == SceneNode.Axis.ROW;
+            long extent = 0;
+            for (ChildPlacements.Entry child : placements) extent = Math.max(extent,
+                row ? (long) child.relativeBox.x + child.relativeBox.width : (long) child.relativeBox.y + child.relativeBox.height);
+            int maximum = node.scrollable() ? (int) Math.min(Integer.MAX_VALUE, Math.max(0L, extent - (row ? box.width : box.height))) : 0;
+            int desired = node.runtime() == null ? node.scrollOffset() : node.runtime().scrollOffset(node);
+            int scroll = node.scrollable() ? Math.min(desired, maximum) : 0;
+            entries.set(entryIndex, new SceneGeometryView.Entry(node, box, clip, lines, scroll, maximum));
+            for (ChildPlacements.Entry child : placements) {
                 if (child.child.parent() != node || !placed.add(child.child)) throw new IllegalArgumentException("控件排列包含非逻辑子节点或重复节点");
                 LayoutBox relative = child.relativeBox;
-                arrange(child.child, new LayoutBox(box.x + relative.x, box.y + relative.y, relative.width, relative.height), clip, entries);
+                arrange(child.child, new LayoutBox(box.x + relative.x - (row ? scroll : 0), box.y + relative.y - (row ? 0 : scroll), relative.width, relative.height), clip, entries);
             }
             return;
         }
@@ -87,9 +97,12 @@ public final class SceneLayoutEngine {
         boolean row = node.axis() == SceneNode.Axis.ROW;
         int available = (row ? innerWidth : innerHeight) - Math.max(0, children.size() - 1) * node.gap();
         int[] allocated = allocate(children, measured, Math.max(0, available), row);
-        int content = Math.max(0, children.size() - 1) * node.gap();
+        long content = Math.max(0L, children.size() - 1L) * node.gap();
         for (int size : allocated) content += size;
-        int scroll = node.scrollable() ? Math.min(node.scrollOffset(), Math.max(0, content - (row ? innerWidth : innerHeight))) : 0;
+        int maximum = node.scrollable() ? (int) Math.min(Integer.MAX_VALUE, Math.max(0L, content - (row ? innerWidth : innerHeight))) : 0;
+        int desired = node.runtime() == null ? node.scrollOffset() : node.runtime().scrollOffset(node);
+        int scroll = node.scrollable() ? Math.min(desired, maximum) : 0;
+        entries.set(entryIndex, new SceneGeometryView.Entry(node, box, clip, lines, scroll, maximum));
         int cursor = -scroll;
         for (int i = 0; i < children.size(); i++) {
             SceneNode child = children.get(i);

@@ -34,7 +34,7 @@ UILib 页面使用原生 framebuffer 像素；GUI Scale 不改变文字大小，
 
 ### 2.3 emoji（Q3 A）
 
-采用 Unicode 默认呈现；默认 emoji 用彩色，默认文本呈现用文字字形；VS15/VS16 显式选择。默认包覆盖选定 Unicode/Emoji 版本的完整 RGI 集，包括肤色、旗帜、键帽和 ZWJ 序列。实施锁定数据/字体版本并列入资源清单，更新通过资源换代生效。
+采用 Unicode 默认呈现；默认 emoji 用彩色，默认文本呈现用文字字形；VS15/VS16 显式选择。默认包覆盖选定 Unicode/Emoji 版本的完整 RGI 集，包括肤色、旗帜、键帽和 ZWJ 序列。Emoji锁定正式17.0属性/标准变体/RGI四份数据，NotoColorEmoji v2.051与单色NotoEmoji固定资源已通过3953条完整RGI/371标准VS15原生及共享候选匹配。一般Unicode算法采用ICU76.1的Unicode16数据，不以Emoji数据补充冒称所有UAX升级17。更新通过资源换代生效。
 
 彩色字形保留原色，文本颜色不染色；整体透明度和裁剪生效。非 RGI 序列按实际整形能力显示。受支持序列缺失属于覆盖缺陷，不能拆成独立符号冒充成功。
 
