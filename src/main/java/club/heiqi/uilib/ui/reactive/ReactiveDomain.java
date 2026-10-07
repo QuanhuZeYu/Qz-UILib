@@ -13,6 +13,7 @@ public final class ReactiveDomain {
     private final ArrayDeque<Effect> effects = new ArrayDeque<>();
     private boolean scheduled;
     private int depth;
+    private int readOnlyDepth;
     private boolean drainingEffects;
     Tracker tracker;
 
@@ -66,18 +67,29 @@ public final class ReactiveDomain {
         Computed<T> value = computed(derivation); owner.own(value); return value;
     }
     public Effect effect(Owner owner, Runnable action) {
-        checkAccess();
+        checkWrite();
         Effect effect = new Effect(this, Objects.requireNonNull(action, "action"));
         owner.own(effect);
         enqueue(effect);
         return effect;
     }
+    public Observation observe(Owner owner, Runnable read, Runnable changed) {
+        checkAccess();
+        Observation observation = new Observation(this, Objects.requireNonNull(read, "read"), Objects.requireNonNull(changed, "changed"));
+        owner.own(observation);
+        return observation;
+    }
     public Owner owner() { checkAccess(); return new Owner(this); }
     public void checkAccess() {
         if (CURRENT.get() != this) throw new IllegalStateException("不可跨域直接访问状态");
     }
+    public <T> T readOnly(Supplier<T> read) {
+        checkAccess(); readOnlyDepth++;
+        try { return read.get(); } finally { readOnlyDepth--; }
+    }
     void checkWrite() {
         checkAccess();
+        if (readOnlyDepth != 0) throw new IllegalStateException("测量或绘制不能写业务状态");
         if (tracker instanceof Computed<?>) throw new IllegalStateException("纯派生不能写状态");
     }
     void enqueue(Effect effect) { if (!effect.queued && !effect.disposed) { effect.queued = true; effects.add(effect); } }

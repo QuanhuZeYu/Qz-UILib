@@ -4,6 +4,12 @@ import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import java.util.UUID;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -15,6 +21,52 @@ import java.util.concurrent.TimeUnit;
 
 /** 可直启的真实业务场景；无需测试库或平台类，后续接通场景树与绘制计划。 */
 public final class SceneCoreLoopTest {
+    private static void lifecycleScenario(ReactiveDomain domain) {
+        domain.execute(() -> {
+            Signal<Integer> operations = domain.signal(0);
+            SceneRuntime runtime = new SceneRuntime(domain);
+            SceneNode oldParent = new SceneNode();
+            SceneNode newParent = new SceneNode().enabled(false);
+            MountHandle oldRoot = runtime.attach(null, oldParent);
+            MountHandle newRoot = runtime.attach(null, newParent);
+            List<String> releases = new ArrayList<>();
+            SceneNode action = new SceneNode().bind(NodeBinding.value(operations, (node, value) -> node.text("操作:" + value)))
+                .bind((scene, node, owner) -> new BindingActivation() {
+                    @Override public void refresh() { }
+                    @Override public void close() { releases.add("关闭"); }
+                }).onClick(() -> operations.set(operations.get() + 1));
+            UUID identity = action.id();
+            MountHandle active = runtime.attach(oldParent, action);
+            runtime.preparePresentation();
+            require(action.text().equals("操作:0"), "挂载读取当前声明");
+            runtime.dispatchClick(action); runtime.preparePresentation();
+            require(operations.get() == 1 && action.text().equals("操作:1"), "操作改数据而非直接改节点");
+            try { action.text("错误"); throw new AssertionError("业务不能直接改挂载节点"); }
+            catch (IllegalStateException expected) { }
+            active.moveTo(newParent);
+            oldRoot.destroy();
+            require(releases.isEmpty() && action.parent() == newParent, "销毁旧父不能释放移出节点");
+            runtime.dispatchClick(action);
+            require(operations.get() == 1, "移后按新父输入资格隔离");
+            active.detach();
+            require(releases.size() == 1 && action.runtime() == null, "卸载恰好释放本次激活");
+            operations.set(7);
+            MountHandle reattached = runtime.attach(null, action);
+            runtime.preparePresentation();
+            require(action.id().equals(identity) && action.text().equals("操作:7"), "重挂载身份不变且读取最新状态");
+            runtime.dispatchClick(action); runtime.preparePresentation();
+            require(operations.get() == 8, "重挂载操作只执行一次");
+            try { active.moveTo(null); throw new AssertionError("旧句柄不能复活"); }
+            catch (IllegalStateException expected) { }
+            reattached.moveTo(newParent);
+            newRoot.destroy();
+            require(action.destroyed() && releases.size() == 2, "当前父永久删除销毁当前子树");
+            operations.set(9);
+            require(operations.get() == 9, "销毁控件不销毁独立业务状态");
+            runtime.close();
+        });
+    }
+
     private static void require(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
     }
@@ -101,6 +153,8 @@ public final class SceneCoreLoopTest {
             require(finished.await(5, TimeUnit.SECONDS), "独立执行器副作用无需宿主帧");
             require(asyncObserved.equals(Arrays.asList(16)), "异步域实际执行结果");
         } finally { worker.shutdownNow(); }
-        System.out.println("无平台业务状态/多级派生/作用域/副作用场景通过");
+        lifecycleScenario(domain);
+        SoftwareSceneScenario.run();
+        System.out.println("无平台业务状态/派生/作用域/副作用及节点生命周期场景通过");
     }
 }

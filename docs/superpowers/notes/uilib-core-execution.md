@@ -1,10 +1,12 @@
 # 核心重构执行记录
 
-- 代码 worktree：D:/Code/MC/Qz-UILib/.worktrees/uilib-core，分支 refactor/uilib-core，起点 12af6b23。
-- 用户已授权核心设计实施、破坏式更新、可达 5.0.0；无平台自动化优先，尽量不用单元测试；MC 启动仍按宿主边界衔接。
-- 重要基线：0d2720d1 为人工清空生产源码的归零提交。规格 worktree 中旧源码副本不在 Git。不得从旧 4.0 整批恢复；归零重建，旧类仅作能力证据。
-- 裁决：计划原列路径视为职责落点，不是必须迁移的现存文件；从归零基线建立新的 reactive/scene/host 核心，实际接口在唯一 spec 内维护。
-- 已实现 ReactiveDomain、Signal、Computed、Effect、Owner 等纯 Java 状态域；真实集成 main 覆盖直接读取、多级派生、分支退订、释放、独立执行器和非递归 Effect。javac --release 8 编译与直接 java 场景通过。
-- Gradle 首次失败：归零后残留 usesMixins=true 和不存在的 EarlyMixins。已关闭当前不存在的注入能力，真实 MC 接入需要时再配置。
-- build/coreLoopScenario 已实际通过；完整 build 首轮有 Test 无 JUnit 发现及 wildcard import 检查失败，已修正，待重跑。测试入口直启，不新增 JUnit 单元测试；check 强制执行 coreLoopScenario，类路径仅 main/test 输出，不含平台依赖。
-- 完整 build 已实际成功（34s），coreLoopScenario、checkstyle、产物检查及类路径隔离均执行通过；首次状态增量提交后继续生命周期。当前没有对应 issue，该功能来自本次核心重建请求，不伪造编号。后续：节点声明/挂载期作用域、布局/命中/绘制闭环，最后独立分支审查。
+- worktree：D:/Code/MC/Qz-UILib/.worktrees/uilib-core，分支 refactor/uilib-core，起点12af6b23，状态增量49f1b91e。主仓4.0协作者未提交文档保持不动。
+- 用户授权：核心实施、破坏式更新、可5.0.0；无平台自动化优先，尽量不写单元测试；MC runClient/runServer 依AGENTS第15行仍需明确授权。
+- 基线0d2720d1为人工清空源码，旧规格worktree中的源码副本不在Git；从归零基线建设，不整树恢复。计划旧路径仅作职责证据。
+- 已实现独立ReactiveDomain/Signal/Computed/Effect/Owner与呈现Observation；节点UUID、attach/detach/move/destroy、逻辑repeat、脏绑定；自然/固定/有界填充、滚动/裁剪；统一几何命中、点击/滚轮/模态；不可变TextLayout/TextStyle/PaintPlan；Measure/Arrange/Paint自定义控件端口及声明测量依赖。
+- 核心直启集成入口coreLoopScenario classpath只main/test输出，场景确认MC类不可加载。javac --release8另可独立执行；不新增JUnit单元测试。完整build最新52s通过，含场景/checkstyle/产物排除/类路径隔离。
+- 归零构建故障：残留usesMixins/EarlyMixins已对齐；JUnit无用例发现改为直启场景check门禁；spotlessApply不是本仓任务，已停止使用，不影响后续build通过。
+- 独立只读审查3a76d7a0-4207-4406-a116-1a70ecc4374e发现repeat重挂载丢UUID、实际宽度自然高度不符、混合min/max留余、余数突破max、paint-only全测量。全部修复并重跑原探针；repeat同对象/同UUID；列25x20/父20；行50x20/父20；水位80+20=100；余数1,1,0；paint-only额外度量0。真实集成锁定反例。审查另跑seed20261007共2000组有界分配无失败。
+- 同轮补充独立复核已通过：control三阶段写Signal均被拒绝且来源保持0，最新集成场景通过；直接GL矩形静态符合合同，撤回Tessellator差距。最新完整build为31s通过。开发命令/qzcore已编译准备，面板加列表、标题、字号、模态和滚动；开发工具整包不入产物。原版字体是开发比较边界，不代表正式字体系统。Gui.drawRect已替换自有shader/VAO/VBO矩形，不借道Tessellator。真实MC/GL恢复/字体效果未验收。
+- 当前交付范围是首个核心软件切片及宿主验证准备，不是全库5.0发布：标准编辑/IME/focus/capture/portal与全部控件、百分比策略、字体/DSL/Markdown/数学/图像、配置/网络/聊天/HUD后续继续，不能因切片缺少细则而静默宣称已替代旧产品能力。数学深入保持暂停。
+- 本次功能无对应issue，提交不伪造编号；无push/tag/release或自动下游升级。

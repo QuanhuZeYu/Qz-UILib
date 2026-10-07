@@ -644,7 +644,7 @@ Markdown 图片默认保持比例，仅在自然宽度超过文档当前可用�
 
 建议用 ReactiveDomain 表达合法状态访问上下文及独立副作用调度。每个域串行执行，状态访问发生在所属上下文；宿主及后台通过 execute(Runnable) 递交域内任务。UI 使用宿主串行执行上下文，独立业务域可使用调用方提供的串行执行器。后台不能直接改节点。首个切片的页面状态、派生与呈现绑定处于同一 UI 串行域；后台计算结果经该域 execute 递交后成为页面状态，不跨域直接 get 或建立依赖边。独立业务域照常可用，但跨域响应式绑定不属于本切片，不能将直接读另一域当成隐式支持。默认当前域保留简便构造方式，但不以全局 UI 帧为推进条件。
 
-跨任务接口意图如下，新增名称为拟议接口，不表示已经存在：
+状态域当前接口如下：
 
     ReactiveDomain.execute(Runnable action) : void
     ReactiveDomain.batch(Runnable action) : void
@@ -665,10 +665,10 @@ Computed 与 Effect 共享依赖收集工具，但不是同一种执行单元。
 
 SceneNode 承载稳定身份及逻辑声明，框架结果不成为另一份业务配置树。新增自动 UUID 的节点身份；调用方不提供去重键来保证身份正确。静态页面构建可直接组合声明；挂载后内容、属性、显隐及子关系通过正式绑定或状态声明更新，handler 只发状态/意图。
 
-建议用 NodeBinding 保存可重新激活的声明描述，挂载时返回 BindingActivation（可 dispose）。SceneRuntime 创建挂载期 Owner，将输入、环境、资源及呈现订阅放入该作用域。独立业务 Owner 不作为其子作用域。
+NodeBinding 保存可重新激活的声明描述，挂载时返回 BindingActivation（AutoCloseable）。SceneRuntime 创建挂载期 Owner，将输入、环境、资源及呈现订阅放入该作用域。独立业务 Owner 不作为其子作用域。
 
     NodeBinding.activate(SceneRuntime runtime, SceneNode node, Owner mountOwner) : BindingActivation
-    BindingActivation.dispose() : void
+    BindingActivation.close() : void
     SceneRuntime.attach(SceneNode parent, SceneNode root) : MountHandle
     MountHandle.detach() : void
     MountHandle.moveTo(SceneNode parent) : void
@@ -682,7 +682,7 @@ detach 摘树、释放挂载期订阅/输入/capture，并保留节点及声明�
 
 SceneTextMeasurer、Constraints、LayoutBox 和现有布局策略按职责评估复用或替换，不冻结旧类型和签名。宽高使用一致尺寸语义：先求固定/自然/填充意图，再应用自身 min/max；固定尺寸不因父空间不足缩小。普通容器不隐含裁剪，滚动是显式视口策略。
 
-首个切片针对列布局：标题、页签、操作区按自然尺寸，正文按剩余空间分配并滚动。填充分配先扣固定/自然占用及间距；多个参与者按权重分配并应用 min/max，触及边界者退出剩余分配。硬最小之和超过空间则按已声明溢出策略处理，不突破 min；取整余数沿稳定子序分配，保持已分配总量一致。算法数值由实施探针验算，不在本次未运行的设计中声称数值正确。
+首个切片针对列布局：标题、页签、操作区按自然尺寸，正文按剩余空间分配并滚动。填充分配先扣固定/自然占用及间距；多个参与者按权重分配并应用 min/max，触及边界者退出剩余分配。硬最小之和超过空间则按已声明溢出策略处理，不突破 min；取整余数仅向未达 max 的项目沿稳定子序分配，保持已分配总量一致。实现按所有 min/max 求共同水位，再对自由项使用整数有理分配；边界集合必须由最终水位确定，不能把暂时触及 min 的项目永久移出。数值由实际集成场景与独立探针验算。
 
 自定义控件使用一个 Measure/Arrange/Paint 接口组合，测量声明依赖，内部排列返回子区域，框架保存结果：
 
@@ -712,7 +712,7 @@ ScenePresentation 持有同一次求解的只读几何与封闭绘制计划，�
 
 布局、绘制和命中共同读取 SceneGeometry 的变换/裁剪结果，覆盖父盒外未裁剪子节点、滚动及浮层。命中遍历仅依据有效祖先裁剪/输入资格裁掉子树，父自身是否命中单独判断；重叠顺序沿绘制次序反向，portal 绘制层与逻辑归属分别处理。
 
-PaintPlanBuilder 接收 add/clear，build() 发布不可变 PaintPlan；发布后不再修改命令或片段。封闭范围包含命令中的列表、TextSegment、TextStyle 等可变载荷：构建时复制为不可变值或固定资源引用，读取端不返回可修改的样式对象。宿主对象例外仍通过第 14 节专用适配声明内容；宿主内容及资源版本归适配器管理，不能据此放开普通文本样式的可变引用。复用现有 PaintCommand 和 backend/replayer，计划不能在 replay 时回读当前可变节点来重建布局。物品宿主专用路径仍按第 14 节执行。
+PaintPlanBuilder 接收 add，build() 发布不可变 PaintPlan；发布后不再修改命令或片段。封闭范围包含命令中的列表、TextSegment、TextStyle 等可变载荷：构建时复制为不可变值或固定资源引用，读取端不返回可修改的样式对象。宿主对象例外仍通过第 14 节专用适配声明内容；宿主内容及资源版本归适配器管理，不能据此放开普通文本样式的可变引用。复用现有 PaintCommand 和 backend/replayer，计划不能在 replay 时回读当前可变节点来重建布局。物品宿主专用路径仍按第 14 节执行。
 
 布局观察用途按实际调用点迁移：普通测量补偿移入声明/约束，锚定移入框架布局，必要只读观察保留正式入口。首个切片移除其所依赖的 observer 读回反写闭环，不批量删除尚未评估的现有观察能力。
 
