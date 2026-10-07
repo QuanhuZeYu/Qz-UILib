@@ -49,13 +49,15 @@ public final class IsolatedFontEngine implements FontEngine {
                 }
                 file.toFile().deleteOnExit();urls.add(file.toUri().toURL());
             }
-            bindings=new BindingLoader(urls.toArray(new URL[urls.size()]),application);
             Path nativeDirectory=Files.createDirectory(directory.resolve("native"));nativeDirectory.toFile().deleteOnExit();
+            bindings=new BindingLoader(urls.toArray(new URL[urls.size()]),application,nativeDirectory);
             Class<?> configuration=Class.forName("org.lwjgl.system.Configuration",true,bindings);
             for(String option:new String[]{"SHARED_LIBRARY_EXTRACT_PATH","LIBRARY_PATH"}){
                 Object setting=configuration.getField(option).get(null);
                 setting.getClass().getMethod("set",Object.class).invoke(setting,nativeDirectory.toAbsolutePath().toString());
             }
+            Object extractForce=configuration.getField("SHARED_LIBRARY_EXTRACT_FORCE").get(null);
+            extractForce.getClass().getMethod("set",Object.class).invoke(extractForce,Boolean.FALSE);
             Object factory=Class.forName("club.heiqi.uilib.host.font.freetype.LwjglFontEngine",true,bindings).getConstructor().newInstance();
             engine=(FontEngine)factory;
         }catch(IOException|ReflectiveOperationException failure){throw new IllegalStateException("UILib随包字体绑定初始化失败",failure);}
@@ -76,7 +78,8 @@ public final class IsolatedFontEngine implements FontEngine {
 
     private static final class BindingLoader extends URLClassLoader {
         private final ClassLoader application;
-        BindingLoader(URL[] urls,ClassLoader application){super(urls,null);this.application=application;}
+        private final Path nativeDirectory;
+        BindingLoader(URL[] urls,ClassLoader application,Path nativeDirectory){super(urls,null);this.application=application;this.nativeDirectory=nativeDirectory;}
         @Override protected synchronized Class<?> loadClass(String name,boolean resolve)throws ClassNotFoundException {
             if(name.startsWith("org.lwjgl.")||name.startsWith("club.heiqi.uilib.host.font.freetype.")){
                 Class<?> type=findLoadedClass(name);if(type==null)type=findClass(name);if(resolve)resolveClass(type);return type;
@@ -84,9 +87,24 @@ public final class IsolatedFontEngine implements FontEngine {
             if(name.startsWith("java.")||name.startsWith("javax.")||name.startsWith("sun."))return super.loadClass(name,resolve);
             return application.loadClass(name);
         }
-        @Override public URL getResource(String name){
+        @Override public synchronized URL getResource(String name){
             URL owned=findResource(name);
-            if(owned!=null||name.contains("org/lwjgl")||name.endsWith(".dll")||name.endsWith(".so")||name.endsWith(".dylib"))return owned;
+            boolean nativeResource=name.endsWith(".dll")||name.endsWith(".so")||name.endsWith(".dylib");
+            if(owned!=null&&nativeResource){
+                // 官方SharedLibraryLoader提取jar资源时会写进程全局org.lwjgl.librarypath。
+                // 返回私有常规文件让官方Library直接加载；按其请求选择平台/架构，不改JNI或全局属性。
+                Path file=nativeDirectory.resolve(name).normalize();
+                if(!file.startsWith(nativeDirectory))throw new IllegalStateException("无效字体native资源: "+name);
+                try{
+                    if(!Files.exists(file)){
+                        Files.createDirectories(file.getParent());
+                        try(InputStream input=owned.openStream()){Files.copy(input,file);}
+                        file.toFile().deleteOnExit();
+                    }
+                    return file.toUri().toURL();
+                }catch(IOException failure){throw new IllegalStateException("私有字体native提取失败: "+name,failure);}
+            }
+            if(owned!=null||name.contains("org/lwjgl")||nativeResource)return owned;
             return application.getResource(name);
         }
     }
