@@ -40,7 +40,69 @@ val coreLoopScenario by tasks.registering(JavaExec::class) {
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output
     mainClass.set("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
 }
-tasks.named("check") { dependsOn(coreLoopScenario) }
+val orderedBatchScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "运行无平台生产合批透明重叠与裁剪出图场景"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.OrderedBatchScenario")
+    systemProperty("java.awt.headless", "true")
+    args(layout.buildDirectory.dir("font-machine/batch").get().asFile.absolutePath)
+}
+tasks.named("check") { dependsOn(coreLoopScenario, orderedBatchScenario) }
+
+// 与目标LWJGL3ify实例的正式3.4.2对齐。宿主提供核心/字体native，发布jar不重复打入LWJGL。
+val fontBindings by configurations.creating
+val fontNativeRuntime by configurations.creating { extendsFrom(fontBindings) }
+dependencies {
+    listOf("lwjgl", "lwjgl-freetype", "lwjgl-harfbuzz").forEach {
+        add(fontBindings.name, "org.lwjgl:$it:3.4.2") { isTransitive = false }
+    }
+    val platform = System.getProperty("os.name").lowercase()
+    val arch = System.getProperty("os.arch").lowercase()
+    val nativeClassifier = when {
+        platform.contains("win") -> if (arch == "aarch64") "natives-windows-arm64" else if (arch == "x86") "natives-windows-x86" else "natives-windows"
+        platform.contains("mac") -> if (arch == "aarch64") "natives-macos-arm64" else "natives-macos"
+        else -> if (arch == "aarch64") "natives-linux-arm64" else "natives-linux"
+    }
+    listOf("lwjgl", "lwjgl-freetype").forEach {
+        add(fontNativeRuntime.name, "org.lwjgl:$it:3.4.2:$nativeClassifier") { isTransitive = false }
+    }
+}
+configurations.named("compileOnly") { extendsFrom(fontBindings) }
+// PointerBuffer与BufferUtils须使用LWJGL3核心，不能被旧LWJGL2编译classpath遮蔽。
+tasks.named<JavaCompile>("compileJava") { classpath = fontBindings + classpath }
+val nativeFontScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Java8独立运行正式字体整形/彩色像素与资源生命周期场景"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.NativeFontScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    args(file("src/main/resources/assets/qz_uilib/fonts/noto").absolutePath)
+}
+val nativeFontVisualScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "回放生产字体定位和FT光栅生成多语言PNG"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.NativeFontVisualScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    systemProperty("java.awt.headless", "true")
+    args(file("src/main/resources/assets/qz_uilib/fonts/noto").absolutePath,
+        layout.buildDirectory.dir("font-machine/native").get().asFile.absolutePath)
+}
+val packagedUnicodeScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "隔离验证发布包私有ICU的Bidi、字素及泰文字典资源"
+    dependsOn(tasks.named("testClasses"), tasks.named("shadowJar"))
+    classpath = sourceSets.getByName("test").output
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.PackagedUnicodeScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    doFirst { args(tasks.named<Jar>("shadowJar").get().archiveFile.get().asFile.absolutePath) }
+}
+tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario) }
+
 
 // 显式人工测试附加包：与发布包分离，不进入 assemble/publish，真实实例自动安装 /qzcore。
 val manualTestSources = sourceSets.create("manualTest") {

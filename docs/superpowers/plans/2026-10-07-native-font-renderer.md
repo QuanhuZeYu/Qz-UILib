@@ -1,68 +1,44 @@
-# 原生分辨率与自有字体实施计划
+# 字体、宿主合批与无平台测试机实施计划
 
-> **暂停：** 用户补充必需的彩色emoji、双向/阿拉伯文/印度文字/泰文及控制字符效果。本计划基于Java2D的能力假设和首期范围已失效，不能按原任务直接实施；待专有规格审阅及完整整形/彩色字体能力验证后重写。原生坐标/滚动任务仍作为需求保留。
+状态：用户已采纳规格并要求继续。替换旧Java2D-only计划，运行反馈模式内联实施，不启动MC、不发布。工作区为既有refactor/uilib-core；基线完整build通过。
 
-**目标：** 原生 framebuffer 坐标贯通、自有默认及系统字体测量/绘制，修正无限滚动。
+## 目标与合同
 
-**架构：** 字体服务加载随库 GNU Unifont 与明确系统字体，Java2D Font/GlyphVector 提供字体文件解析、整形和CPU字形光栅，UILib 自行负责候选匹配、统一行布局、不可变字形定位及图集GL回放。字体服务不依赖Minecraft；宿主只提交资源更新及回放。
+依据[字体规格](../specs/2026-10-07-uilib-font-renderer-spec.md)、[宿主优化规格](../specs/2026-10-07-mc-host-render-optimization-spec.md)。字体候选统一优先级；复杂Unicode/彩色emoji必需；组件决定排版策略；原版默认接管且不创建scene；有序合批、固定EBO、有界顶点提交。先在无MC环境使用真实生产流程，后短小MC部署。
 
-**技术栈：** Java 8、Java2D headless、现有 scene/ReactiveDomain/Observation/PaintCommand、LWJGL3ify GL150。
+## 任务一：依赖与平台无关合批闭环
 
-**开发模式：** runtime-driven-development，先无平台直启真实集成，GPU由指定Prism实例短小人工批次验收；不引入方法级单元测试。
+- 核验ICU Unicode、LWJGL HarfBuzz/FreeType的实际版本、Java字节码和native加载；与目标lwjgl3ify核心版本对齐，区分Java8产物和Java17/21MC宿主。不把未经验证的native混入发布包。
+- ui/render/batch新增有序图元/批次/容量切片，平台无关，资源身份与裁剪决定相邻合并；输出封闭载荷，固定四边形索引可复用。
+- internal/devtools字体测试机及test直启集成驱动生产收集器，输出PNG与统计；覆盖A/B/A透明重叠、裁剪屏障、容量边界，不新增方法级JUnit。
+- 验收：真实生产收集结果保持次序，合批与逐图元软件像素一致；完整build后提交。
 
-**Spec：** [字体渲染器专有规格](../specs/2026-10-07-uilib-font-renderer-spec.md)；[核心规格](../specs/2026-10-07-uilib-core-contract-design.md)第9、13.1—13.2节。字体规格待用户审阅，实施暂停；数学深入保持暂停。
+## 任务二：真实字体服务与Unicode排版
 
-## Global Constraints
+- ui/scene/text扩展不可变TextStyle/TextLayout，保留既有简易调用；新增font服务及资源代际、UTF8输入/诊断、候选列表、实际face/glyph身份。
+- ICU执行Bidi/字素/语言断行，HarfBuzz整形，FreeType单色及彩色光栅；候选匹配保留脚本上下文。字号em与实际行高，颜色仅绘制失效；GPU等待为空白。
+- 内置Unifont、Noto脚本与彩色资源从官方来源取得、记录SHA/许可证；脚本覆盖和RGI集用真实字体检查，不以cmap覆盖代替序列整形。
+- FontService实现SceneTextMeasurer，共享定位供scene和原版入口使用，组件策略作为入参。
+- 验收：真实多语言PNG/来源映射/候选变更/最终行整形/UTF8异常，正式流程直启纳入check；完整build后提交。
 
-- 发布不含internal/devtools；人工测试由独立附加包消费生产字体能力。
-- GUI Scale不改变UILib坐标；logical px与framebuffer px一一对应。
-- 不调用FontRenderer度量或绘制；系统字体与内置字体并存，候选回退不污染其他内容。
-- 统一不可变字形定位供度量/绘制消费；缓存有界、失效有来源、共享资源由运行时释放。
-- 世界、存档及其他Mod不改动；不启动游戏，部署后用户操作。
+## 任务三：按需字形与独立GL合批
 
-## Review Focus
+- 稀疏实际glyph缓存、重复需求合并、可见优先、有界CPU与GPU预算、后台光栅及主线程发布。上传就绪只使相关paint失效。
+- 生产host/client/backend消费同一有序批次；固定EBO、一个有界段一次顶点上传、状态范围内绑定。
+- 无MC GL上下文探针：二维纹理与纹理数组保持相同次序对照；检查版本/层数/采样/显存，比较CPU/GPU与慢帧。依据实测选用，不预设通过。
+- 验收：截图透明颜色/裁剪与软件一致、预算/资源换代无旧UV，记录实测而非只比较draw call；完整build后提交。
 
-实际字体文件能否被Java运行时加载及字形能否光栅：任务一真实文件探针。新旧排版/字形资源混用：任务二切换字体与保留旧计划验证。原生输入与裁剪/回放坐标不符：任务三软件边界验证、任务四用户实机。无限滚动反馈：任务三到末尾后逆滚立即动。
+## 任务四：scene与MC适配
 
-### 任务一：字体来源和CPU排版闭环
+- MinecraftSceneHost改正式字体/backend，原生framebuffer尺寸/鼠标/裁剪一致；CoreLoopScreen仅消费正式能力。
+- Scene滚动正式入口按内容range钳制，缩内容/重排更新；末尾反向立即移动，用真实scene闭环覆盖。
+- 恢复正式Mixin接管标准FontRenderer的度量/绘制/截取/换行/高度和设置；默认开启。即时调用与已知Angelica宿主延后范围区分，保留原版坐标/返回/尾状态语义，不从旧仓整树恢复。
+- 验收：无平台使用原版方法等价输入的适配场景，完整build与manualTestJar；实机注入只能最后目标实例验收。
 
-**开发模式：** runtime-driven-development。
+## 任务五：证据与交付
 
-**文件：** 新建 ui/scene/text/font 下 FontSelection（候选）、FontService（加载与资源代际）、GlyphRaster（只读CPU字形）、GlyphPlacement（位置/来源）、FontTextLayout（行与字形定位）；修改TextLayout让定位随计划封闭保存。资源放assets/qz_uilib/fonts/unifont，携带上游许可与来源。生产状态先读再修改。
+- 独立审查共享服务边界、完整Unicode、请求/资源生命周期、有序合批、原版适配与动态坐标；解决重要问题再提交。
+- 无平台生成图像、异步GPU计时和机器可读统计，性能按已审定门槛比较；原版同机基线留到MC采集，不伪造相对原版通过。
+- 部署用户已授权实例，每次少量简单操作；不启动游戏，第一批文字与GUI Scale，后续复杂脚本/原版宿主及性能。
 
-**接口：** FontService.layout(String, TextStyle, int)返回TextLayout；实现SceneTextMeasurer。字体选择通过TextStyle及默认配置确定；系统字体枚举由服务提供，刷新/选择通过同一入口通知metricsRevision。GL不进入这些类型。
-
-- [ ] 从官方取得稳定Unifont文件/许可，记录SHA256；真实Java加载并光栅中英文及补充平面样本，不以假字体替代。
-- [ ] 使用Font.layoutGlyphVector定位字符运行，保持码点/组合字符边界及源文关系；按段落与合法换行边界排版，无断代理对。复杂整形适用范围以真实Java字形结果验证，不宣称全部脚本支持。
-- [ ] 默认候选与系统候选共用入口；缺字替代诊断和字体加载错误分开。
-- [ ] 字形光栅有界缓存按实际font/glyph/size区分，内容切换自动失效。场景同时展示同码点两字体与动态字号。
-
-### 任务二：自有GL文字回放
-
-**开发模式：** runtime-driven-development。
-
-**文件：** 新建host/client字体图集与shader/VAO/VBO回放类；修改PaintCommand与MinecraftSceneHost。图集上传只在GL线程，使用FontService产出字形光栅。
-
-**接口：** GL回放消费TextLayout保存的GlyphPlacement/GlyphRaster，不回读节点、不重新整形。宿主关闭释放GL资源；不可变CPU载荷保留有效内容。图集页数量有界，逐页绘制确保淘汰后不使用旧UV；新字体资源生成使用独立身份。
-
-- [ ] 按字形alpha图集和定位绘制，有序批次遵守文本/矩形绘制顺序与clip。
-- [ ] 恢复实际触及program/VAO/VBO/texture unit及binding/blend/scissor等状态。
-- [ ] 生产字体不放devtools；开发面板换默认字号与可选系统字体，完全移除FontRenderer路径。
-
-### 任务三：原生坐标和滚动边界
-
-**开发模式：** runtime-driven-development。
-
-**文件：** MinecraftSceneHost/CoreLoopScreen、SceneLayoutEngine/SceneGeometry/SceneRuntime输入滚动相关类型、SoftwareSceneScenario。
-
-- [ ] framebuffer宽高为宿主尺寸，Mouse原生坐标在边界转换Y轴；按实际GL viewport回放/裁剪，GUI Scale不参与。
-- [ ] 保存内容范围与视口，滚动请求按最终range限制；偏移来自状态也由正式滚动入口限制，不让业务继续累积虚空距离。内容缩水/宽度变化后自动归位。
-- [ ] 真实软件场景验证末尾多次滚轮再反向立即动，以及字体重排后范围更新；核心状态不因绘制回写。
-
-### 任务四：构建审查与短小人工批次
-
-**开发模式：** runtime-driven-development。
-
-- [ ] build manualTestJar完整通过，真实FontService CPU场景并入check；发布排除/附加包门禁仍通过。
-- [ ] 独立审查字体来源、测量/绘制一致、资源生命周期、滚动边界；处理Critical/Important后提交。
-- [ ] 部署指定Prism实例，第一轮只检查文字可见/字号切换/GUI Scale独立，后续单独测试系统字体切换；不把部署成功当GPU验收。
+生产代码每个可交付增量完整build通过再提交。无issue的增量说明理由，不push/tag/release。保留未跟踪字体资源，经过来源与完整构建后才纳入字体增量。

@@ -1,0 +1,192 @@
+package club.heiqi.uilib.ui.scene.integration;
+
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.List;
+import club.heiqi.uilib.ui.scene.text.TextInput;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+
+/**
+ * 测试机真实 FreeType/HarfBuzz 场景，无 MC、Forge 或 AWT。
+ * 参数为字体目录，包含 NotoSansArabic.ttf、NotoSansDevanagari.ttf、NotoSansThai.ttf、NotoColorEmoji.ttf。
+ * 输出真实 glyph/cluster、metrics、彩色像素与尺寸数据，并检查内存所有权、缩放、线程和关闭契约。
+ */
+public final class NativeFontScenario {
+    private static void require(boolean condition, String message) {
+        if (!condition) throw new AssertionError(message);
+    }
+
+    private static ByteBuffer font(Path directory, String name) throws Exception {
+        return ByteBuffer.wrap(Files.readAllBytes(directory.resolve(name + ".ttf")));
+    }
+
+    private static void verifyTextInput() {
+        String original = "中文 العربية हिन्दी ภาษาไทย 😀 👩‍💻";
+        byte[] encoded = original.getBytes(StandardCharsets.UTF_8);
+        byte[] saved = encoded.clone();
+        TextInput input = TextInput.utf8(encoded);
+        require(input.text.equals(original) && input.invalidRanges().isEmpty(), "正常多语 UTF-8 roundtrip 失败");
+        require(Arrays.equals(saved, encoded), "UTF-8 解码修改了来源字节");
+        int utf16 = 0, bytes = 0;
+        while (utf16 < original.length()) {
+            int count = Character.charCount(original.codePointAt(utf16));
+            for (int i = 0; i < count; i++) require(input.sourceOffset(utf16 + i) == bytes, "正常多语来源 byte offset 错误");
+            bytes += original.substring(utf16, utf16 + count).getBytes(StandardCharsets.UTF_8).length;
+            utf16 += count;
+        }
+        require(input.sourceOffset(original.length()) == encoded.length, "UTF-8 终点来源错误");
+        malformedUtf8("ED A0 80", new byte[] {(byte) 0xed, (byte) 0xa0, (byte) 0x80}, "���",
+                new int[] {0, 1, 2, 3}, new int[][] {{0, 1}, {1, 2}, {2, 3}});
+        malformedUtf8("E1 80 truncated", new byte[] {(byte) 0xe1, (byte) 0x80}, "�",
+                new int[] {0, 2}, new int[][] {{0, 2}});
+        malformedUtf8("F4 90 80 80 out-of-range", new byte[] {(byte) 0xf4, (byte) 0x90, (byte) 0x80, (byte) 0x80}, "����",
+                new int[] {0, 1, 2, 3, 4}, new int[][] {{0, 1}, {1, 2}, {2, 3}, {3, 4}});
+        String lowSurrogate = "a\uDC00😀z";
+        TextInput fromString = TextInput.string(lowSurrogate);
+        require(fromString.text.equals("a�😀z"), "孤立低代理未替换为 U+FFFD");
+        int[] offsets = {0, 1, 2, 2, 4, 5};
+        for (int i = 0; i < offsets.length; i++) require(fromString.sourceOffset(i) == offsets[i], "String 代理来源索引错误");
+        require(fromString.invalidRanges().size() == 1 && fromString.invalidRanges().get(0).start == 1
+                && fromString.invalidRanges().get(0).end == 2, "低代理非法来源范围错误");
+        require(lowSurrogate.charAt(1) == '\uDC00', "原始 String 被显示替代污染");
+        System.out.println("PASS TextInput 多语UTF-8 roundtrip、maximal subpart replacement、原byte/UTF-16来源与孤立低代理");
+    }
+
+    private static void malformedUtf8(String label, byte[] source, String expected, int[] offsets, int[][] ranges) {
+        byte[] saved = source.clone();
+        TextInput decoded = TextInput.utf8(source);
+        require(decoded.text.equals(expected), label + " replacement 数量错误");
+        require(Arrays.equals(source, saved), label + " 来源字节被修改");
+        require(decoded.invalidRanges().size() == ranges.length, label + " 非法范围数量错误");
+        for (int i = 0; i < offsets.length; i++) require(decoded.sourceOffset(i) == offsets[i], label + " 来源索引错误");
+        StringBuilder actual = new StringBuilder();
+        for (int i = 0; i < ranges.length; i++) {
+            TextInput.InvalidRange range = decoded.invalidRanges().get(i);
+            require(range.start == ranges[i][0] && range.end == ranges[i][1], label + " maximal subpart 范围错误");
+            actual.append('[').append(range.start).append(',').append(range.end).append(") ");
+        }
+        System.out.println("TextInput " + label + " replacements=" + decoded.text.length() + " ranges=" + actual);
+    }
+
+    public static void main(String[] args) throws Exception {
+        verifyTextInput();
+        Path directory = Paths.get(args.length == 0 ? "build/font-native-probe" : args[0]);
+        NativeFontService service = new NativeFontService();
+        try {
+            String[] names = {"NotoSansArabic", "NotoSansDevanagari", "NotoSansThai", "NotoColorEmoji", "NotoColorEmoji"};
+            String[] texts = {"العربية", "हिन्दी", "ภาษาไทย", "😀", "👩‍💻"};
+            String[] languages = {"ar", "hi", "th", "und", "und"};
+            for (int i = 0; i < texts.length; i++) {
+                ByteBuffer source = font(directory, names[i]);
+                try (NativeFontFace face = service.openFace(source, 0, 32.3f)) {
+                    // 原缓冲立即改写，验证 FT memory face 使用服务持有的独立副本。
+                    Arrays.fill(source.array(), (byte) 0);
+                    NativeFontFace.Direction direction = i == 0 ? NativeFontFace.Direction.RTL : NativeFontFace.Direction.LTR;
+                    String context = "xx" + texts[i] + "yy";
+                    List<NativeFontFace.Glyph> run = face.shape(context, 2, 2 + texts[i].length(), direction,
+                            languages[i], null, false, false);
+                    require(!run.isEmpty(), "shape 结果为空");
+                    float advance = 0;
+                    StringBuilder glyphs = new StringBuilder();
+                    for (NativeFontFace.Glyph glyph : run) {
+                        require(glyph.glyphId != 0, "出现缺字");
+                        require(glyph.cluster >= 2 && glyph.cluster < 2 + texts[i].length(), "cluster 未使用原串 UTF-16 索引");
+                        advance += glyph.xAdvance;
+                        glyphs.append(glyph.glyphId).append('@').append(glyph.cluster).append(' ');
+                    }
+                    GlyphBitmap bitmap = face.rasterize(run.get(0).glyphId);
+                    require(bitmap.pixels().length == bitmap.width * bitmap.height * 4, "像素尺寸错误");
+                    require(bitmap.pixelsBuffer().isReadOnly(), "像素缓冲可写");
+                    byte[] pixels = bitmap.pixels();
+                    int visiblePixels = 0;
+                    boolean chromatic = false;
+                    for (int p = 0; p < pixels.length; p += 4) {
+                        int alpha = pixels[p + 3] & 255;
+                        if (alpha > 0) visiblePixels++;
+                        for (int c = 0; c < 3; c++) require((pixels[p + c] & 255) <= alpha, "颜色未 premultiply alpha");
+                        chromatic |= pixels[p] != pixels[p + 1] || pixels[p + 1] != pixels[p + 2];
+                    }
+                    if (i >= 3) require(bitmap.color && chromatic && visiblePixels > 0, "emoji 未输出真实彩色像素");
+                    NativeFontFace.Metrics metrics = face.metrics();
+                    require(metrics.ascent > 0 && metrics.lineHeight > 0 && advance > 0, "真实字体 metrics 错误");
+                    System.out.println(names[i] + " text=" + texts[i] + " glyphs=" + run.size() + " ids@clusters=" + glyphs
+                            + " advance=" + advance + " metrics=" + metrics.ascent + "," + metrics.descent + "," + metrics.lineHeight
+                            + " bitmap=" + bitmap.width + "x" + bitmap.height + " bearing=" + bitmap.bearingX + "," + bitmap.bearingY
+                            + " scale=" + bitmap.pixelScale + " draw=" + bitmap.width * bitmap.pixelScale + "x" + bitmap.height * bitmap.pixelScale
+                            + " color=" + bitmap.color + " visiblePixels=" + visiblePixels);
+                }
+            }
+            try (NativeFontFace small = service.openFace(font(directory, "NotoColorEmoji"), 0, 16.15f);
+                    NativeFontFace large = service.openFace(font(directory, "NotoColorEmoji"), 0, 32.3f)) {
+                GlyphBitmap a = small.rasterize(small.glyphIndex(0x1f600));
+                GlyphBitmap b = large.rasterize(large.glyphIndex(0x1f600));
+                float pixelRatio = b.pixelScale / a.pixelScale;
+                float metricRatio = large.metrics().lineHeight / small.metrics().lineHeight;
+                float advanceRatio = large.shape("😀", NativeFontFace.Direction.LTR, "und").get(0).xAdvance
+                        / small.shape("😀", NativeFontFace.Direction.LTR, "und").get(0).xAdvance;
+                require(Math.abs(pixelRatio - 2) < 0.00001f, "strike 像素比例错误");
+                require(Math.abs(metricRatio - 2) < 0.00001f, "strike metrics 比例错误");
+                require(Math.abs(advanceRatio - 2) < 0.00001f, "strike shape 比例错误");
+                System.out.println("strike ratios pixels=" + pixelRatio + " metrics=" + metricRatio + " advance=" + advanceRatio);
+            }
+            for (int i = 0; i < 3; i++) {
+                try {
+                    service.openFace(ByteBuffer.wrap(new byte[] {1, 2, 3}), 0, 16);
+                    throw new AssertionError("无效字体被接受");
+                } catch (IllegalStateException expected) {
+                    // 验证失败后同一服务还可创建真实 face。
+                }
+            }
+            try (NativeFontFace one = service.openFace(font(directory, "NotoSansArabic"), 0, 1);
+                    NativeFontFace half = service.openFace(font(directory, "NotoSansArabic"), 0, 0.5f)) {
+                require(half.metrics().lineHeight == one.metrics().lineHeight * 0.5f, "FT最小1pt必须按请求em归一");
+                GlyphBitmap full = one.rasterize(one.glyphIndex(0x627));
+                GlyphBitmap reduced = half.rasterize(half.glyphIndex(0x627));
+                require(reduced.pixelScale == full.pixelScale * 0.5f, "小于1px的真实光栅缩放错误");
+                System.out.println("PASS em<1实际FT尺寸归一：" + reduced.pixelScale);
+            }
+            final NativeFontFace open = service.openFace(font(directory, "NotoSansArabic"), 0, 16);
+            // 完整段落超过LWJGL栈编码容量，仍可shape短run，且cluster必须保留原文位置。
+            char[] padding = new char[40000]; Arrays.fill(padding, 'x');
+            String longContext = new String(padding) + "العربية";
+            List<NativeFontFace.Glyph> longRun = open.shape(longContext, padding.length, longContext.length(),
+                NativeFontFace.Direction.RTL, "ar", null, false, true);
+            require(!longRun.isEmpty(), "长段落短run整形为空");
+            for (NativeFontFace.Glyph glyph : longRun) require(glyph.cluster >= padding.length && glyph.glyphId != 0,
+                "长段落源文位置或字形错误");
+            System.out.println("PASS 超64KiB UTF16上下文短run：" + longContext.length() + " units");
+            final Throwable[] failure = new Throwable[1];
+            Thread foreign = new Thread(() -> {
+                try {
+                    open.metrics();
+                    failure[0] = new AssertionError("错误线程可访问 face");
+                } catch (IllegalStateException expected) {
+                    // 线程契约要求明确拒绝访问。
+                } catch (Throwable unexpected) {
+                    failure[0] = unexpected;
+                }
+            });
+            foreign.start();
+            foreign.join();
+            if (failure[0] != null) throw new AssertionError(failure[0]);
+            service.close();
+            service.close();
+            open.close();
+            try {
+                open.metrics();
+                throw new AssertionError("关闭后的 face 可访问");
+            } catch (IllegalStateException expected) {
+                // service close 已关闭全部未主动关闭的 face；重复 close 合法。
+            }
+            System.out.println("PASS 字体内存所有权、UTF-16上下文、真实脚本shape、彩色premultiplied、strike缩放、异常清理、线程和关闭契约");
+        } finally {
+            service.close();
+        }
+    }
+}
