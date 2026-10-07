@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import club.heiqi.uilib.testing.TestApplication;
+
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
@@ -20,11 +22,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /** 可直启的真实业务场景；无需测试库或平台类，后续接通场景树与绘制计划。 */
-public final class SceneCoreLoopTest {
-    private static void lifecycleScenario(ReactiveDomain domain) {
+public final class SceneCoreLoopTest extends TestApplication {
+    private void lifecycleScenario(ReactiveDomain domain) {
         domain.execute(() -> {
             Signal<Integer> operations = domain.signal(0);
             SceneRuntime runtime = new SceneRuntime(domain);
+            onClose(() -> domain.execute(runtime::close));
             SceneNode oldParent = new SceneNode();
             SceneNode newParent = new SceneNode().enabled(false);
             MountHandle oldRoot = runtime.attach(null, oldParent);
@@ -63,15 +66,14 @@ public final class SceneCoreLoopTest {
             require(action.destroyed() && releases.size() == 2, "当前父永久删除销毁当前子树");
             operations.set(9);
             require(operations.get() == 9, "销毁控件不销毁独立业务状态");
-            runtime.close();
         });
     }
 
-    private static void require(boolean condition, String message) {
-        if (!condition) throw new AssertionError(message);
-    }
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws Exception { new SceneCoreLoopTest().run(args); }
+
+    @Override protected void runTests() throws Exception {
         ReactiveDomain domain = ReactiveDomain.direct();
+        scenario("写后可读与批量派生", () -> {
         List<String> notifications = new ArrayList<>();
         domain.execute(() -> {
             Owner business = domain.owner();
@@ -91,6 +93,8 @@ public final class SceneCoreLoopTest {
             require(notifications.isEmpty(), "纯派生读取不能推进副作用");
         });
         require(notifications.equals(Arrays.asList("已选:10")), "无 UI 帧的首次副作用在操作结束执行");
+        });
+        scenario("副作用切换分支", () -> {
         domain.execute(() -> {
             Owner business = domain.owner();
             Signal<Boolean> useLeft = domain.signal(true);
@@ -102,6 +106,8 @@ public final class SceneCoreLoopTest {
             business.own(() -> require(observed.size() <= 2, "业务作用域释放"));
             domain.effect(business, () -> { if (observed.size() == 1) useLeft.set(false); });
         });
+        });
+        scenario("动态依赖与作用域释放", () -> {
         List<Integer> branch = new ArrayList<>();
         Signal<?>[] source = new Signal<?>[3];
         Owner[] scope = new Owner[1];
@@ -127,6 +133,8 @@ public final class SceneCoreLoopTest {
         });
         try { source[0].get(); throw new AssertionError("域外访问必须诊断"); }
         catch (IllegalStateException expected) { }
+        });
+        scenario("副作用非递归顺序推进", () -> {
         List<Integer> ordered = new ArrayList<>();
         domain.execute(() -> {
             Signal<Integer> step = domain.signal(0);
@@ -138,6 +146,8 @@ public final class SceneCoreLoopTest {
             });
         });
         require(ordered.equals(Arrays.asList(0, 1, 2, 3)), "Effect 回调后顺序推进");
+        });
+        scenario("独立执行器驱动", () -> {
         ExecutorService worker = Executors.newSingleThreadExecutor();
         try {
             ReactiveDomain async = new ReactiveDomain(worker);
@@ -153,8 +163,9 @@ public final class SceneCoreLoopTest {
             require(finished.await(5, TimeUnit.SECONDS), "独立执行器副作用无需宿主帧");
             require(asyncObserved.equals(Arrays.asList(16)), "异步域实际执行结果");
         } finally { worker.shutdownNow(); }
-        lifecycleScenario(domain);
-        SoftwareSceneScenario.run();
+        });
+        scenario("节点挂载移动卸载生命周期", () -> lifecycleScenario(domain));
+        scenario("软件scene完整生产链路", () -> new SoftwareSceneScenario().run());
         System.out.println("无平台业务状态/派生/作用域/副作用及节点生命周期场景通过");
     }
 }

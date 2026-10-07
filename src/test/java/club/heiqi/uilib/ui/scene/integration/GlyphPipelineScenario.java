@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.testing.GlfwTestEnvironment;
+import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.client.gl.GlProgramProvider;
@@ -13,8 +16,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import javax.imageio.ImageIO;
-import org.lwjgl.glfw.GLFWErrorCallback;
-import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryUtil;
 import club.heiqi.uilib.host.client.gl.GlGlyphAtlas;
 import club.heiqi.uilib.host.client.gl.GlPaintPlanRenderer;
@@ -30,13 +31,12 @@ import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL32C.*;
 
 /** 正式字体→owned worker→budget atlas→PaintPlan→GL读回，无MC、无JUnit。
  * 软件只合成生产 native 位图；模拟GL_LINEAR透明padding和RGBA8逐次混合，容差3/255。
  */
-public final class GlyphPipelineScenario {
+public final class GlyphPipelineScenario extends TestApplication {
     private static final int W=640,H=280,TOLERANCE=3;
     private static final LayoutBox VIEWPORT=new LayoutBox(0,0,W,H);
     private static final float[] MVP={2f/W,0,0,0,0,-2f/H,0,0,0,0,1,0,-1,1,0,1};
@@ -113,8 +113,9 @@ public final class GlyphPipelineScenario {
         TextStyle style=new TextStyle("default",24,-1);TextLayout.Line line=new TextLayout.Line("hidden",0,0,0,1,0,1,10000,0,24,4,28,glyphs);
         TextLayout layout=new TextLayout(20000,20000,style,Collections.singletonList(line));return new PaintPlanBuilder().add(PaintCommand.text(new LayoutBox(0,0,20000,20000),VIEWPORT,layout)).build();
     }
-    private static int[] run(GlGlyphAtlas.Mode mode,PaintPlan plan,File output) throws Exception {
-        AsyncGlyphRasterizer cpu=cpu();String name=mode==GlGlyphAtlas.Mode.TEXTURE_2D?"2d":"array";
+    private int[] run(GlGlyphAtlas.Mode mode,PaintPlan plan,File output) throws Exception {
+        AsyncGlyphRasterizer cpu=cpu();
+        onClose(()->{cpu.close();require(cpu.awaitClose(10000)&&cpu.stats().terminated&&cpu.stats().faces==0&&cpu.stats().faceBytes==0,"worker原生关闭未完成");});String name=mode==GlGlyphAtlas.Mode.TEXTURE_2D?"2d":"array";
         try(GlGlyphAtlas atlas=new GlGlyphAtlas(new Lwjgl3GlApi(),mode,new GlGlyphAtlas.Budget(256,2,8,256,128,4*1024*1024));
             GlPaintPlanRenderer renderer=new GlPaintPlanRenderer(new Lwjgl3GlApi(),cpu,atlas,64,128,GlProgramProvider.NONE)) {
             try(GlPaintPlanRenderer.Prepared hidden=renderer.prepare(hidden(plan),VIEWPORT,UPLOAD)) {
@@ -158,7 +159,7 @@ public final class GlyphPipelineScenario {
                 +" bitmapBytes="+cs.bitmapBytes+" faceBytes="+cs.faceBytes+" faces="+cs.faces+" gpuBytes="+gs.gpuBytes+" uploadedBytes="+gs.uploadedBytes+" uploadCalls="+gs.uploadCalls
                 +" groups="+gs.groups+" clippedGlyphs="+renderer.clippedGlyphs()+" blankGlyphs="+renderer.blankGlyphs()+" draw="+renderer.counters().draws+" uploads="+renderer.counters().vertexUploads);
             pressure(cpu,plan,name);if(glGetError()!=GL_NO_ERROR)throw new AssertionError("GL error");return finalPixels;
-        }finally{cpu.close();if(!cpu.awaitClose(10000)||!cpu.stats().terminated||cpu.stats().faces!=0||cpu.stats().faceBytes!=0)throw new AssertionError("worker原生关闭未完成");}
+        }
     }
     private static void pressure(AsyncGlyphRasterizer cpu,PaintPlan plan,String name) {
         List<GlyphKey> small=new ArrayList<GlyphKey>();for(GlyphKey key:keys(plan)) {
@@ -197,10 +198,11 @@ public final class GlyphPipelineScenario {
             }
         }
     }
-    private static void cpuPressure(PaintPlan plan) throws Exception {
+    private void cpuPressure(PaintPlan plan) throws Exception {
         List<GlyphKey> keys=new ArrayList<GlyphKey>(keys(plan));
         AsyncGlyphRasterizer worker=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(1,1,1,1024*1024,1,96*1024*1024,1,96),IsolatedFontEngine.shared());
-        try {
+        onClose(()->{worker.close();require(worker.awaitClose(10000)&&worker.stats().faces==0,"tinyCPU原生关闭失败");});
+        {
             for(int i=0;i<3;i++) {
                 GlyphKey key=keys.get(i);worker.request(key);long end=System.nanoTime()+10000000000L;
                 while(worker.peek(key)==null) {
@@ -216,40 +218,45 @@ public final class GlyphPipelineScenario {
             while(worker.failures().isEmpty()){worker.drainReady(1);if(System.nanoTime()>end)throw new AssertionError("光栅错误未发布");Thread.sleep(2);}
             long requests=worker.stats().deduplicated;worker.request(bad);if(worker.stats().deduplicated!=requests+1||worker.stats().pending!=0)throw new AssertionError("失败身份未去重");
             System.out.println("cpuPressure cacheEntries="+worker.stats().cacheEntries+" evicted="+worker.stats().evicted+" rejected="+worker.stats().rejected+" observableError="+worker.failures().get(0).message);
-        }finally{worker.close();if(!worker.awaitClose(10000)||worker.stats().faces!=0)throw new AssertionError("tinyCPU原生关闭失败");}
+        }
     }
-    private static void oldSource(FontTextService fonts,PaintPlan old) throws Exception {
+    private void oldSource(FontTextService fonts,PaintPlan old) throws Exception {
         GlyphKey key=keys(old).iterator().next();List<FontSource> newSources=FontTextService.defaultSources(FontTextService.class.getClassLoader(),2);fonts.reload(newSources);
         TextLayout fresh=fonts.layout("A",new TextStyle("default",24,-1),100);GlyphKey newer=GlyphKey.of(fresh.lines().get(0).glyphs().get(0));
         if(newer.source==key.source)throw new AssertionError("reload来源未换代");AsyncGlyphRasterizer worker=cpu();
-        try{worker.request(key);worker.request(newer);long end=System.nanoTime()+10000000000L;
+        onClose(()->{worker.close();require(worker.awaitClose(10000),"reload worker未关闭");});
+        {worker.request(key);worker.request(newer);long end=System.nanoTime()+10000000000L;
             while(worker.peek(key)==null||worker.peek(newer)==null){worker.drainReady(128);if(System.nanoTime()>end||worker.workerFailure()!=null||!worker.failures().isEmpty())throw new AssertionError("旧source重开失败");Thread.sleep(2);}
             if(worker.stats().rasterized!=2)throw new AssertionError("旧新source身份合并");System.out.println("reload oldSource="+key.source+" newSource="+newer.source+" workerRasterized=2 oldPlanStable=true");
-        }finally{worker.close();if(!worker.awaitClose(10000))throw new AssertionError("reload worker未关闭");}
+        }
     }
-    public static void main(String[] args)throws Exception {
+    @Override protected void runTests() throws Exception {
+        String[] args=arguments();
         File output=new File(args.length==0?"build/font-gl-probe/glyph-output":args[0]);if(!output.isDirectory()&&!output.mkdirs())throw new IllegalStateException("不能创建输出目录");
-        GLFWErrorCallback error=GLFWErrorCallback.createPrint(System.err);error.set();long window=0;
-        try {
-            if(!glfwInit())throw new IllegalStateException("GLFW init failed");glfwDefaultWindowHints();glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,2);glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
-            window=glfwCreateWindow(W,H,"UILib glyph pipeline",0,0);if(window==0)throw new IllegalStateException("GLFW window failed");glfwMakeContextCurrent(window);GL.createCapabilities();
+        GlfwTestEnvironment environment=own(new GlfwTestEnvironment());
+        own(environment.window(W,H,"GlyphPipelineScenario",Profile.CORE,2,false,true));
             System.out.println("LWJGL="+org.lwjgl.Version.getVersion()+" Java="+System.getProperty("java.version")+" vendor="+glGetString(GL_VENDOR)+" renderer="+glGetString(GL_RENDERER)+" version="+glGetString(GL_VERSION));
             int target=glGenTextures(),fbo=glGenFramebuffers(),pbo=glGenBuffers(),sentinel2d=glGenTextures(),sentinelArray=glGenTextures();
-            try(FontTextService fonts=new FontTextService(IsolatedFontEngine.shared())) {
+            onClose(()->{glBindBuffer(GL_PIXEL_UNPACK_BUFFER,0);glDeleteBuffers(pbo);glBindFramebuffer(GL_FRAMEBUFFER,0);glDeleteFramebuffers(fbo);glDeleteTextures(target);glDeleteTextures(sentinel2d);glDeleteTextures(sentinelArray);});
+            FontTextService fonts=own(new FontTextService(IsolatedFontEngine.shared()));
+            {
                 glBindTexture(GL_TEXTURE_2D,target);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,W,H,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
                 glBindFramebuffer(GL_FRAMEBUFFER,fbo);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,target,0);
-                if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE)throw new AssertionError("FBO incomplete");glViewport(0,0,W,H);glDisable(GL_DITHER);glDisable(GL_FRAMEBUFFER_SRGB);
+                require(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE,"FBO incomplete");glViewport(0,0,W,H);glDisable(GL_DITHER);glDisable(GL_FRAMEBUFFER_SRGB);
                 glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,sentinel2d);glBindTexture(GL_TEXTURE_2D_ARRAY,sentinelArray);
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER,pbo);glBufferData(GL_PIXEL_UNPACK_BUFFER,4096,GL_STREAM_DRAW);
                 glPixelStorei(GL_UNPACK_ALIGNMENT,8);glPixelStorei(GL_UNPACK_ROW_LENGTH,17);glPixelStorei(GL_UNPACK_IMAGE_HEIGHT,19);
                 glPixelStorei(GL_UNPACK_SKIP_PIXELS,3);glPixelStorei(GL_UNPACK_SKIP_ROWS,5);glPixelStorei(GL_UNPACK_SKIP_IMAGES,7);glPixelStorei(GL_UNPACK_SWAP_BYTES,1);glPixelStorei(GL_UNPACK_LSB_FIRST,1);
                 glActiveTexture(GL_TEXTURE3);glEnable(GL_SCISSOR_TEST);glScissor(3,5,7,11);glEnable(GL_BLEND);glBlendEquationSeparate(GL_FUNC_SUBTRACT,GL_FUNC_REVERSE_SUBTRACT);
                 glBlendFuncSeparate(GL_DST_ALPHA,GL_SRC_ALPHA,GL_ZERO,GL_ONE);glEnable(GL_CULL_FACE);glEnable(GL_DEPTH_TEST);
-                PaintPlan plan=plan(fonts);String sig=signature(plan);int[] a=run(GlGlyphAtlas.Mode.TEXTURE_2D,plan,output),b=run(GlGlyphAtlas.Mode.TEXTURE_ARRAY,plan,output);compare("2d-vs-array",a,b);
-                cpuPressure(plan);oldSource(fonts,plan);if(!sig.equals(signature(plan)))throw new AssertionError("reload修改旧plan");
+                PaintPlan plan=plan(fonts);String sig=signature(plan);int[][] routes=new int[2][];
+                scenario("2D字形准备回放与图集压力",()->routes[0]=run(GlGlyphAtlas.Mode.TEXTURE_2D,plan,output));
+                scenario("array字形准备回放与图集压力",()->routes[1]=run(GlGlyphAtlas.Mode.TEXTURE_ARRAY,plan,output));
+                scenario("两宿主字形像素一致",()->compare("2d-vs-array",routes[0],routes[1]));
+                scenario("CPU缓存压力与错误可观察",()->cpuPressure(plan));
+                scenario("来源换代保留旧计划",()->{oldSource(fonts,plan);require(sig.equals(signature(plan)),"reload修改旧plan");});
                 System.out.println("GLYPH_PIPELINE_SCENARIO_PASS firstBlank layoutStable clip10000 queueDedup partialBudget nativeWorkerClose uploadStateRestore replayStateRestore oldSourceReload");
-            }finally{glBindBuffer(GL_PIXEL_UNPACK_BUFFER,0);glDeleteBuffers(pbo);glBindFramebuffer(GL_FRAMEBUFFER,0);glDeleteFramebuffers(fbo);glDeleteTextures(target);glDeleteTextures(sentinel2d);glDeleteTextures(sentinelArray);}
-        }finally{GL.setCapabilities(null);if(window!=0)glfwDestroyWindow(window);glfwTerminate();glfwSetErrorCallback(null);error.free();}
+            }
     }
+    public static void main(String[] args) throws Exception { new GlyphPipelineScenario().run(args); }
 }

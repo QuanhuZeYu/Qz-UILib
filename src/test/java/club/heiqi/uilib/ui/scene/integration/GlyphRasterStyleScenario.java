@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+
+import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.testing.TestResources;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
@@ -6,7 +9,6 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -22,12 +24,12 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /** 真实FT/HB验收：不同字体原生位图、浮点em、可见墨迹包络、彩色副本和owned worker缓存。 */
-public final class GlyphRasterStyleScenario {
+public final class GlyphRasterStyleScenario extends TestApplication {
     private static final GlyphRasterStyle[] STYLES = {GlyphRasterStyle.NORMAL,
         new GlyphRasterStyle(1.25f,0),new GlyphRasterStyle(0,0.25f),new GlyphRasterStyle(1.25f,0.25f)};
-    private static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
+
     private static FontSource source(File root,String name,boolean color)throws Exception {
-        return new FontSource(name,1,"scenario:"+name,Files.readAllBytes(new File(root,name).toPath()),0,color,Collections.emptySet());
+        return new FontSource(name,1,"scenario:"+name,TestResources.bytes(new File(root,name).toPath()).array(),0,color,Collections.emptySet());
     }
     private static long alpha(GlyphBitmap bitmap) {
         byte[] pixels=bitmap.pixels();long sum=0;for(int i=3;i<pixels.length;i+=4)sum+=pixels[i]&255;return sum;
@@ -116,13 +118,15 @@ public final class GlyphRasterStyleScenario {
             require(System.nanoTime()<end,"variant worker timed out");worker.drainReady(32);Thread.sleep(2);
         }
     }
-    private static void cacheCase(FontSource source,File fonts)throws Exception {
+    private void cacheCase(FontSource source,File fonts)throws Exception {
         int glyphId;long normalBytes;
         try(FontSession service=new LwjglFontEngine().openSession();FontFace face=source.openFace(service,18.375f)) {
             glyphId=face.glyphIndex('A');GlyphBitmap b=face.rasterize(glyphId);normalBytes=(long)b.width*b.height*4;
         }
         AsyncGlyphRasterizer worker=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(16,16,16,4*1024*1024,2,64*1024*1024,8,64),new LwjglFontEngine());
-        try {
+        onClose(() -> require(worker.awaitClose(10000)&&worker.stats().faces==0,"owned native worker close"));
+        own(worker);
+        {
             List<GlyphKey> keys=new ArrayList<GlyphKey>();
             for(GlyphRasterStyle style:STYLES){GlyphKey key=new GlyphKey(source,18.375f,glyphId,style);keys.add(key);for(int i=0;i<20;i++)worker.request(new GlyphKey(source,18.375f,glyphId,style));}
             require(new java.util.HashSet<GlyphKey>(keys).size()==4,"variants alias in key");
@@ -134,7 +138,7 @@ public final class GlyphRasterStyleScenario {
             AsyncGlyphRasterizer.Stats stats=worker.stats();
             require(stats.rasterized==4&&stats.faces==1&&stats.cacheEntries==4&&stats.bitmapBytes==sum,"variant cache/face/byte budget wrong");
             byte[] old=worker.peek(keys.get(0)).pixels();
-            FontSource newer=new FontSource(source.id,2,"newer",Files.readAllBytes(new File(fonts,source.id).toPath()),0,false,Collections.emptySet());
+            FontSource newer=new FontSource(source.id,2,"newer",TestResources.bytes(new File(fonts,source.id).toPath()).array(),0,false,Collections.emptySet());
             GlyphKey newerKey=new GlyphKey(newer,18.375f,glyphId);
             require(!keys.get(0).equals(newerKey),"source revision aliased");
             worker.request(newerKey);waitReady(worker,Collections.singletonList(newerKey));
@@ -142,26 +146,33 @@ public final class GlyphRasterStyleScenario {
             require(Arrays.equals(old,worker.peek(keys.get(0)).pixels()),"new source mutated old pixels");
             System.out.println("sourceGenerations cacheEntries="+worker.stats().cacheEntries+" faces="+worker.stats().faces+" oldSnapshotStable=true");
             System.out.println("cache variants=4 faces=1 rasterized="+stats.rasterized+" deduplicated="+stats.deduplicated+" bytes="+sum);
-        }finally{worker.close();require(worker.awaitClose(10000)&&worker.stats().faces==0,"owned native worker close");}
+        }
         AsyncGlyphRasterizer limited=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(4,4,4,Math.max(4,normalBytes),1,64*1024*1024,4,64),new LwjglFontEngine());
-        try {
+        onClose(() -> require(limited.awaitClose(10000),"limited worker close"));
+        own(limited);
+        {
             GlyphKey large=new GlyphKey(source,18.375f,glyphId,new GlyphRasterStyle(256,0));limited.request(large);
             long end=System.nanoTime()+10000000000L;while(limited.failures().isEmpty()){require(System.nanoTime()<end,"budget rejection timeout");Thread.sleep(2);}
             require(limited.peek(large)==null&&limited.stats().bitmapBytes==0&&limited.workerFailure()==null,"expanded bitmap bypassed budget");
             System.out.println("variantBudget rejectedExpandedBitmap=true bytes=0");
-        }finally{limited.close();require(limited.awaitClose(10000),"limited worker close");}
+        }
     }
-    public static void main(String[] args)throws Exception {
-        File fonts=new File(args.length>0?args[0]:"src/main/resources/assets/qz_uilib/fonts");
-        File output=new File(args.length>1?args[1]:"build/font-raster-style-probe/output");if(!output.isDirectory()&&!output.mkdirs())throw new IllegalStateException("output mkdir failed");
+    public static void main(String[] args) throws Exception { new GlyphRasterStyleScenario().run(args); }
+
+    @Override protected void runTests() throws Exception {
+        String[] args = arguments();
+        File fonts=TestResources.argumentPath(args,0,"src/main/resources/assets/qz_uilib/fonts").toFile();
+        File output=TestResources.outputDirectory(args,1,"build/font-raster-style-probe/output").toFile();
+        scenario("变体参数校验", () -> {
         require(GlyphRasterStyle.NORMAL.equals(new GlyphRasterStyle(-0f,-0f)),"signed zero style");
         boolean invalid=false;try{new GlyphRasterStyle(-1,0);}catch(IllegalArgumentException expected){invalid=true;}require(invalid,"negative offset");
+        });
         FontSource unifont=source(fonts,"unifont/unifont-16.0.04.otf",false);
-        nativeCase(unifont,18.375f,"A中",ShapeDirection.LTR,output);
-        nativeCase(source(fonts,"noto/NotoSansArabic.ttf",false),24.375f,"سلام",ShapeDirection.RTL,output);
-        nativeCase(source(fonts,"noto/NotoSansDevanagari.ttf",false),20.375f,"क्षि",ShapeDirection.LTR,output);
-        nativeCase(source(fonts,"noto/NotoSansArabic.ttf",false),0.375f,"س",ShapeDirection.RTL,output);
-        nativeCase(source(fonts,"noto/NotoColorEmoji.ttf",true),23.375f,"😀",ShapeDirection.LTR,output);
-        cacheCase(unifont,fonts);System.out.println("GLYPH_RASTER_STYLE_SCENARIO_PASS nativeVariants premultColor floatEm knownInk normalBytes faceReuse keyDedup boundedCache ownedWorkerClose");
+        scenario("Unifont浮点em变体", () -> nativeCase(unifont,18.375f,"A中",ShapeDirection.LTR,output));
+        scenario("Arabic原生变体", () -> nativeCase(source(fonts,"noto/NotoSansArabic.ttf",false),24.375f,"سلام",ShapeDirection.RTL,output));
+        scenario("Indic原生变体", () -> nativeCase(source(fonts,"noto/NotoSansDevanagari.ttf",false),20.375f,"क्षि",ShapeDirection.LTR,output));
+        scenario("Arabic小于1em原生变体", () -> nativeCase(source(fonts,"noto/NotoSansArabic.ttf",false),0.375f,"س",ShapeDirection.RTL,output));
+        scenario("彩色Emoji原生变体", () -> nativeCase(source(fonts,"noto/NotoColorEmoji.ttf",true),23.375f,"😀",ShapeDirection.LTR,output));
+        scenario("异步worker变体缓存及预算", () -> cacheCase(unifont,fonts));System.out.println("GLYPH_RASTER_STYLE_SCENARIO_PASS nativeVariants premultColor floatEm knownInk normalBytes faceReuse keyDedup boundedCache ownedWorkerClose");
     }
 }

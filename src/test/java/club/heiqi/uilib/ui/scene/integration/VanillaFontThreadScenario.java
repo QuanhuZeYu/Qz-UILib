@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import club.heiqi.uilib.testing.TestApplication;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicReference;
@@ -9,18 +11,29 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** FML启动绘制线程不接管；真实安装只建立逻辑适配器，不创建MC字体服务或GL对象。 */
-public final class VanillaFontThreadScenario {
-    private static void require(boolean condition,String message){if(!condition)throw new AssertionError(message);}
+public final class VanillaFontThreadScenario extends TestApplication {
+
     private static final class FontBoundary extends VanillaFontRendererMixin {
         @Override protected void enableAlpha(){throw new AssertionError("启动线程触碰GL");}
         @Override protected void setColor(float r,float g,float b,float a){throw new AssertionError("启动线程触碰GL");}
         @Override public int qz$fontHeight(){throw new AssertionError("启动线程进入UILib字体事实读取");}
         @Override public int[] qz$palette(){throw new AssertionError("启动线程进入UILib字体调色板");}
     }
-    public static void main(String[] arguments)throws Exception {
+    public static void main(String[] args) throws Exception { new VanillaFontThreadScenario().run(args); }
+
+    @Override protected void setup() {
+        require(!MinecraftVanillaFont.active(), "安装前不得接管FML字体");
+        onClose(MinecraftVanillaFont::close);
+    }
+
+    @Override protected void runTests() throws Exception {
+        scenario("真实安装线程接管", () -> {
         require(!MinecraftVanillaFont.active(),"安装前不得接管FML字体");
         MinecraftVanillaFont.install();
+
         require(MinecraftVanillaFont.active(),"安装线程须保持默认字体接管");
+        });
+        scenario("Splash全部标准callback不接管", () -> {
         AtomicReference<Throwable> failure=new AtomicReference<Throwable>();
         Thread splash=new Thread(()->{try{
             require(!MinecraftVanillaFont.active(),"安装后Splash线程不能使用主线程字体服务");
@@ -45,7 +58,10 @@ public final class VanillaFontThreadScenario {
             System.out.println("PASS splash after install active=false all10CallbacksUncancelled noFontOrGLAccess");
         }catch(Throwable error){failure.set(error);}},"FML-Splash-font-regression");
         splash.start();splash.join();if(failure.get()!=null)throw new AssertionError("启动字体线程回归",failure.get());
+        });
+        scenario("Splash返回后owner仍接管", () -> {
         require(MinecraftVanillaFont.active(),"Splash返回后安装主线程仍须接管");
         System.out.println("PASS install owner remains active before/after worker; actual production install and gate");
+        });
     }
 }

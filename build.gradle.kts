@@ -33,19 +33,13 @@ tasks.withType<Test>().configureEach {
 }
 
 // 集成场景直启只包含核心与场景类，不将 MC/Forge/LWJGL 放到执行类路径。
-val coreLoopScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "运行无平台核心业务与场景闭环"
+val coreLoopScenario = registerTestApplication("coreLoopScenario", "运行无平台核心业务与场景闭环", "club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
 }
-val orderedBatchScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "运行无平台生产合批透明重叠与裁剪出图场景"
+val orderedBatchScenario = registerTestApplication("orderedBatchScenario", "运行无平台生产合批透明重叠与裁剪出图场景", "club.heiqi.uilib.ui.scene.integration.OrderedBatchScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.OrderedBatchScenario")
     systemProperty("java.awt.headless", "true")
     args(layout.buildDirectory.dir("font-machine/batch").get().asFile.absolutePath)
 }
@@ -105,6 +99,40 @@ tasks.named<Jar>("sourcesJar") {
     exclude("assets/qz_uilib/runtime/font/**")
     from("src/lwjgl2/java")
 }
+// 测试应用独立编译；纯Java8，不加入正式发行。
+val testSupportSources = sourceSets.create("testSupport") {
+    java.srcDir("src/testSupport/java")
+    compileClasspath = files()
+    runtimeClasspath = output
+}
+tasks.named<JavaCompile>(testSupportSources.compileJavaTaskName) {
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.compilerArgs.add("-proc:none")
+}
+sourceSets.getByName("test") {
+    compileClasspath += testSupportSources.output
+    runtimeClasspath += testSupportSources.output
+}
+// convention插件为test任务单独设置classpath，显式把共同应用输出接到实际编译任务。
+tasks.named<JavaCompile>("compileTestJava") {
+    dependsOn(tasks.named(testSupportSources.classesTaskName))
+    classpath += testSupportSources.output
+}
+
+// 共享启动设置；宿主classpath和参数仍由测试声明。
+fun registerTestApplication(taskName: String, summary: String, application: String, useDefaultLauncher: Boolean = true, configure: JavaExec.() -> Unit) =
+    tasks.register<JavaExec>(taskName) {
+        group = "verification"
+        description = summary
+        mainClass.set(application)
+        if (useDefaultLauncher) javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+        jvmArgs("-Dfile.encoding=UTF-8")
+        dependsOn(tasks.named(testSupportSources.classesTaskName))
+        configure()
+        classpath += testSupportSources.output
+    }
+
 val lwjgl2Sources = sourceSets.create("lwjgl2") {
     java.srcDir("src/lwjgl2/java")
     compileClasspath = sourceSets.getByName("main").output + lwjgl2Bindings
@@ -122,25 +150,23 @@ val coreFontClasses = layout.buildDirectory.dir("classes/core-font")
 val compileCoreFontScenario by tasks.registering(JavaCompile::class) {
     source(fileTree("src/main/java/club/heiqi/uilib/ui/scene/text") { include("**/*.java") })
     source("src/test/java/club/heiqi/uilib/ui/scene/integration/CoreFontEngineScenario.java")
-    classpath = fontUnicodeRuntime
+    classpath = fontUnicodeRuntime + testSupportSources.output
     destinationDirectory.set(coreFontClasses)
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"
     options.compilerArgs.add("-proc:none")
 }
-val coreFontEngineScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "不含Minecraft、Forge或LWJGL的真实核心合同运行"
+val coreFontEngineScenario = registerTestApplication("coreFontEngineScenario", "不含Minecraft、Forge或LWJGL的真实核心合同运行", "club.heiqi.uilib.ui.scene.integration.CoreFontEngineScenario") {
     dependsOn(compileCoreFontScenario)
     classpath = files(coreFontClasses, "src/main/resources") + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.CoreFontEngineScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
-tasks.named("check") { dependsOn(coreFontEngineScenario) }
+val testApplicationScenario = registerTestApplication("testApplicationScenario", "测试应用作用域与失败语义", "club.heiqi.uilib.testing.TestApplicationScenario") {
+    classpath = testSupportSources.output
+}
+tasks.named("check") { dependsOn(coreFontEngineScenario, testApplicationScenario) }
 val lwjgl2TestSources = sourceSets.create("lwjgl2Test") {
     java.srcDir("src/lwjgl2Test/java")
-    compileClasspath = sourceSets.getByName("main").output + lwjgl2Sources.output + lwjgl2Bindings
+    compileClasspath = sourceSets.getByName("main").output + lwjgl2Sources.output + lwjgl2Bindings + testSupportSources.output
     runtimeClasspath = output + compileClasspath + fontUnicodeRuntime
 }
 tasks.named<JavaCompile>(lwjgl2TestSources.compileJavaTaskName) {
@@ -149,199 +175,104 @@ tasks.named<JavaCompile>(lwjgl2TestSources.compileJavaTaskName) {
     targetCompatibility = "1.8"
     options.compilerArgs.add("-proc:none")
 }
-val lwjgl2HostScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "原LWJGL2默认Display context、正式字体owner和共享GPU像素验收"
+val lwjgl2HostScenario = registerTestApplication("lwjgl2HostScenario", "原LWJGL2默认Display context、正式字体owner和共享GPU像素验收", "club.heiqi.uilib.ui.scene.integration.Lwjgl2HostScenario", useDefaultLauncher = false) {
     dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractHeadlessNatives")
     classpath = lwjgl2TestSources.runtimeClasspath
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.Lwjgl2HostScenario")
     val legacyJava = providers.gradleProperty("fontLegacyJava")
     if (legacyJava.isPresent) setExecutable(legacyJava.get())
     else javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
     args(providers.gradleProperty("fontWorldAtlasMode").getOrElse("2d"))
     jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("headless/natives").get().asFile.absolutePath)
 }
-val nativeFontScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "Java8独立运行正式字体整形/彩色像素与资源生命周期场景"
+val nativeFontScenario = registerTestApplication("nativeFontScenario", "Java8独立运行正式字体整形/彩色像素与资源生命周期场景", "club.heiqi.uilib.ui.scene.integration.NativeFontScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.NativeFontScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
     args(file("src/main/resources/assets/qz_uilib/fonts/noto").absolutePath)
 }
-val nativeFontVisualScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "回放生产字体定位和FT光栅生成多语言PNG"
+val nativeFontVisualScenario = registerTestApplication("nativeFontVisualScenario", "回放生产字体定位和FT光栅生成多语言PNG", "club.heiqi.uilib.ui.scene.integration.NativeFontVisualScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.NativeFontVisualScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
     systemProperty("java.awt.headless", "true")
     args(file("src/main/resources/assets/qz_uilib/fonts/noto").absolutePath,
         layout.buildDirectory.dir("font-machine/native").get().asFile.absolutePath)
 }
-val packagedUnicodeScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "隔离验证发布包私有ICU的Bidi、字素及泰文字典资源"
+val packagedUnicodeScenario = registerTestApplication("packagedUnicodeScenario", "隔离验证发布包私有ICU的Bidi、字素及泰文字典资源", "club.heiqi.uilib.ui.scene.integration.PackagedUnicodeScenario") {
     dependsOn(tasks.named("testClasses"), tasks.named("shadowJar"))
     classpath = sourceSets.getByName("test").output
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.PackagedUnicodeScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
     doFirst { args(tasks.named<Jar>("shadowJar").get().archiveFile.get().asFile.absolutePath) }
 }
-val glBatchScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "独立GLFW上下文对照真实二维纹理及数组回放（需本机GL设备）"
+val glBatchScenario = registerTestApplication("glBatchScenario", "独立GLFW上下文对照真实二维纹理及数组回放（需本机GL设备）", "club.heiqi.uilib.ui.scene.integration.GlBatchScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.GlBatchScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
     args(layout.buildDirectory.dir("font-machine/gl").get().asFile.absolutePath)
 }
-val fontProjectionScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "透视采样、矩阵快照与有界光栅档位验收"
+val fontProjectionScenario = registerTestApplication("fontProjectionScenario", "透视采样、矩阵快照与有界光栅档位验收", "club.heiqi.uilib.ui.scene.integration.FontProjectionScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontProjectionScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
     args("cpu")
 }
-val fontContextGlScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "Core与Compatibility有效字体上下文捕获（需要设备）"
+val fontContextGlScenario = registerTestApplication("fontContextGlScenario", "Core与Compatibility有效字体上下文捕获（需要设备）", "club.heiqi.uilib.ui.scene.integration.FontProjectionScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontProjectionScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
 tasks.named("check") { dependsOn(fontProjectionScenario) }
-val vanillaTextScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "原版文字统一测量、安全裁剪换行、混淆与有界热缓存验收"
+val vanillaTextScenario = registerTestApplication("vanillaTextScenario", "原版文字统一测量、安全裁剪换行、混淆与有界热缓存验收", "club.heiqi.uilib.ui.scene.integration.VanillaTextScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.VanillaTextScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
-val fontHostOrderScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "宿主延期票据保序、异常清理与资源lease验收"
+val fontHostOrderScenario = registerTestApplication("fontHostOrderScenario", "宿主延期票据保序、异常清理与资源lease验收", "club.heiqi.uilib.ui.scene.integration.FontHostOrderScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontHostOrderScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
-val fontDeferredStateScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "Core与Compatibility延期文字历史状态快照验收（需要设备）"
+val fontDeferredStateScenario = registerTestApplication("fontDeferredStateScenario", "Core与Compatibility延期文字历史状态快照验收（需要设备）", "club.heiqi.uilib.ui.scene.integration.FontDeferredStateScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontDeferredStateScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
-val vanillaFontGlScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "原版世界文字透视、光照、历史状态与图集视图验收（需要设备）"
+val vanillaFontGlScenario = registerTestApplication("vanillaFontGlScenario", "原版世界文字透视、光照、历史状态与图集视图验收（需要设备）", "club.heiqi.uilib.ui.scene.integration.VanillaFontGlScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.VanillaFontGlScenario")
     args(providers.gradleProperty("fontWorldAtlasMode").getOrElse("2d"))
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
-val fontPlanSamplingScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "近裁面可见墨迹、保守采样封顶与GUI快速路径验收"
+val fontPlanSamplingScenario = registerTestApplication("fontPlanSamplingScenario", "近裁面可见墨迹、保守采样封顶与GUI快速路径验收", "club.heiqi.uilib.ui.scene.integration.FontPlanSamplingScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontPlanSamplingScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
-val vanillaFontThreadScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "真实安装后Splash线程十个标准入口不接管，主线程保留接管"
+val vanillaFontThreadScenario = registerTestApplication("vanillaFontThreadScenario", "真实安装后Splash线程十个标准入口不接管，主线程保留接管", "club.heiqi.uilib.ui.scene.integration.VanillaFontThreadScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("test").runtimeClasspath
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.VanillaFontThreadScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
 tasks.named("check") { dependsOn(vanillaTextScenario, fontHostOrderScenario, fontPlanSamplingScenario, vanillaFontThreadScenario) }
-val attributedGlyphGlScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "整簇属性字形采样、彩色与装饰真实GL验收（需要设备）"
+val attributedGlyphGlScenario = registerTestApplication("attributedGlyphGlScenario", "整簇属性字形采样、彩色与装饰真实GL验收（需要设备）", "club.heiqi.uilib.ui.scene.integration.AttributedGlyphGlScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.AttributedGlyphGlScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
     args(layout.buildDirectory.dir("font-machine/attributed-gl").get().asFile.absolutePath)
 }
-val presentationEpochScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "多消费者字形需求与总帧上传预算（需要设备）"
+val presentationEpochScenario = registerTestApplication("presentationEpochScenario", "多消费者字形需求与总帧上传预算（需要设备）", "club.heiqi.uilib.ui.scene.integration.PresentationEpochScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.PresentationEpochScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
-val clientFontServicesScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "共享字体owner、原生framebuffer scene与输入资源生命周期（需要设备）"
+val clientFontServicesScenario = registerTestApplication("clientFontServicesScenario", "共享字体owner、原生framebuffer scene与输入资源生命周期（需要设备）", "club.heiqi.uilib.ui.scene.integration.ClientFontServicesScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.ClientFontServicesScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
     args(layout.buildDirectory.dir("font-machine/client").get().asFile.absolutePath)
 }
-val glyphPipelineScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "真实共享定位、后台光栅、有界图集和GL回放对照（需要设备）"
+val glyphPipelineScenario = registerTestApplication("glyphPipelineScenario", "真实共享定位、后台光栅、有界图集和GL回放对照（需要设备）", "club.heiqi.uilib.ui.scene.integration.GlyphPipelineScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.GlyphPipelineScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
     args(layout.buildDirectory.dir("font-machine/glyph").get().asFile.absolutePath)
 }
-val fontTextScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "真实共享Unicode/Bidi/复杂脚本与Emoji17全量候选匹配"
+val fontTextScenario = registerTestApplication("fontTextScenario", "真实共享Unicode/Bidi/复杂脚本与Emoji17全量候选匹配", "club.heiqi.uilib.ui.scene.integration.FontTextScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.FontTextScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
     args(projectDir.absolutePath)
 }
-val attributedTextScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "整簇属性文本、格式来源与逻辑采样分离验收"
+val attributedTextScenario = registerTestApplication("attributedTextScenario", "整簇属性文本、格式来源与逻辑采样分离验收", "club.heiqi.uilib.ui.scene.integration.AttributedTextScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.AttributedTextScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
 }
-val glyphRasterStyleScenario by tasks.registering(JavaExec::class) {
-    group = "verification"
-    description = "真实原生字形合成样式、墨迹范围与有界资源验收"
+val glyphRasterStyleScenario = registerTestApplication("glyphRasterStyleScenario", "真实原生字形合成样式、墨迹范围与有界资源验收", "club.heiqi.uilib.ui.scene.integration.GlyphRasterStyleScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
-    mainClass.set("club.heiqi.uilib.ui.scene.integration.GlyphRasterStyleScenario")
-    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-    jvmArgs("-Dfile.encoding=UTF-8")
     args(file("src/main/resources/assets/qz_uilib/fonts").absolutePath,
         layout.buildDirectory.dir("font-machine/raster-style").get().asFile.absolutePath)
 }
@@ -445,7 +376,7 @@ val verifyDevToolsNotPackaged by tasks.registering {
                 val entries = zip.entries()
                 while (entries.hasMoreElements()) {
                     val entryName = entries.nextElement().name
-                    if (entryName.startsWith(forbidden)) {
+                    if (entryName.startsWith(forbidden) || entryName.startsWith("club/heiqi/uilib/testing/")) {
                         hit = entryName
                         break
                     }

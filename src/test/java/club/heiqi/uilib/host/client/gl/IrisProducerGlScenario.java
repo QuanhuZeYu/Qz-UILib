@@ -16,9 +16,15 @@ public final class IrisProducerGlScenario {
     private IrisProducerGlScenario(){}
     public static void run(final FontRenderContext context,final GlGlyphAtlas atlas,int fbo,int width,int height)throws Exception{
         int oldVao=glGetInteger(GL_VERTEX_ARRAY_BINDING),oldVbo=glGetInteger(GL_ARRAY_BUFFER_BINDING),oldProgram=glGetInteger(GL_CURRENT_PROGRAM);
+        // 这是world应用具名case复用的producer探针；不是独立空应用。
+        final int[] resources=new int[3];
+        try(AutoCloseable cleanup=()->{
+            glUseProgram(oldProgram);glBindVertexArray(oldVao);glBindBuffer(GL_ARRAY_BUFFER,oldVbo);
+            glDeleteProgram(resources[2]);glDeleteShader(resources[0]);glDeleteShader(resources[1]);
+        }) {
         String vertex="#version 150\nin vec4 position,color,uv0,uv1;in vec3 normal;in vec4 mc_Entity,at_midBlock;out vec4 c;out vec2 uv;out vec3 light;void main(){gl_Position=position;c=color;c.rgb*=vec3(-mc_Entity.x,-mc_Entity.y/2.0,mc_Entity.z*4.0)*(at_midBlock.x+at_midBlock.y+at_midBlock.z)*(8.0/7.0);c.a*=at_midBlock.w/0.75;uv=uv0.xy;light=vec3(uv1.xy/256.0,normal.z*0.25*mc_Entity.w);}";
         String fragment="#version 150\nuniform sampler2D image;in vec4 c;in vec2 uv;in vec3 light;out vec4 result;void main(){result=texture(image,uv)*c;result.rgb*=light;}";
-        int vs=shader(GL_VERTEX_SHADER,vertex),fs=shader(GL_FRAGMENT_SHADER,fragment),program=glCreateProgram();
+        int vs=resources[0]=shader(GL_VERTEX_SHADER,vertex),fs=resources[1]=shader(GL_FRAGMENT_SHADER,fragment),program=resources[2]=glCreateProgram();
         glAttachShader(program,vs);glAttachShader(program,fs);String[] names={"position","color","uv0","uv1","normal"};for(int i=0;i<names.length;i++)glBindAttribLocation(program,i,names[i]);glBindFragDataLocation(program,0,"result");glLinkProgram(program);
         if(glGetProgrami(program,GL_LINK_STATUS)==0)throw new AssertionError(glGetProgramInfoLog(program));
         final List<GlProgramAttribute> attributes=new ArrayList<GlProgramAttribute>();
@@ -47,7 +53,8 @@ public final class IrisProducerGlScenario {
             }finally{MemoryUtil.memFree(pixel);}
             if(glGetError()!=GL_NO_ERROR)throw new AssertionError("Iris producer GL error");
             System.out.println("IRIS_SYNTHETIC_PRODUCER_ABI_PASS productionEmitter=true rawPackedUv1=true straightWhiteSolid=true historicalAlpha=true capturedMcEntityMidBlock=true realIrisEngine=false");
-        }finally{glUseProgram(oldProgram);glBindVertexArray(oldVao);glBindBuffer(GL_ARRAY_BUFFER,oldVbo);glDeleteProgram(program);glDeleteShader(vs);glDeleteShader(fs);}
+        }
+        }
     }
-    private static int shader(int type,String source){int id=glCreateShader(type);glShaderSource(id,source);glCompileShader(id);if(glGetShaderi(id,GL_COMPILE_STATUS)==0)throw new AssertionError(glGetShaderInfoLog(id));return id;}
+    private static int shader(int type,String source){int id=glCreateShader(type);try{glShaderSource(id,source);glCompileShader(id);if(glGetShaderi(id,GL_COMPILE_STATUS)==0)throw new AssertionError(glGetShaderInfoLog(id));return id;}catch(RuntimeException|Error failure){try{glDeleteShader(id);}catch(Throwable cleanup){failure.addSuppressed(cleanup);}throw failure;}}
 }

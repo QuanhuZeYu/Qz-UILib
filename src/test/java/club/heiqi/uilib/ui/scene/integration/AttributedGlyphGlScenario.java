@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.testing.GlfwTestEnvironment;
+import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
 import club.heiqi.uilib.host.font.IsolatedFontEngine;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.client.gl.GlProgramProvider;
@@ -10,8 +13,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import javax.imageio.ImageIO;
-import org.lwjgl.glfw.GLFWErrorCallback;
-import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryUtil;
 import club.heiqi.uilib.host.client.font.ClientFontServices;
 import club.heiqi.uilib.host.client.font.FramebufferCoordinates;
@@ -31,11 +32,10 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL32C.*;
 
 /** generic attributed输入→共享owner→真实GL；软件参考只消费native bitmap和pixel-center双线性定义。 */
-public final class AttributedGlyphGlScenario {
+public final class AttributedGlyphGlScenario extends TestApplication {
     private static final int W=460,H=90,OX=7,OY=8;
     private static final LayoutBox VIEW=new LayoutBox(0,0,W,H),CLIP=new LayoutBox(9,3,410,70);
     private static TextStyle style(int color,boolean effect){return new TextStyle("default",18.5f,color,null,
@@ -103,39 +103,52 @@ public final class AttributedGlyphGlScenario {
             if(expected){lit++;if(actual[i]!=0x33||actual[i+1]!=0xaa||actual[i+2]!=0x77||actual[i+3]!=255)throw new AssertionError("decoration颜色不符");}}
         if(lit!=7)throw new AssertionError("decoration裁剪计数");System.out.println("decoration onePixelHeight clippedPixels=7 exactResolvedColor=true");
     }
-    public static void main(String[] args)throws Exception {
-        File output=new File(args.length==0?"build/font-attributed-gl/output":args[0]);if(!output.isDirectory()&&!output.mkdirs())throw new IllegalStateException("输出目录");
-        ClientFontServices owner=new ClientFontServices(AttributedGlyphGlScenario.class.getClassLoader(),1,ClientFontServices.Settings.defaults(),IsolatedFontEngine.shared(),new Lwjgl3GlApi(),GlProgramProvider.NONE);TextLayout logical=logical(owner);
-        if(owner.hasGlResources()||owner.rasterizer().stats().started)throw new AssertionError("度量提前启动GLworker");
-        GLFWErrorCallback error=GLFWErrorCallback.createPrint(System.err);error.set();long window=0;
-        try {
-            if(!glfwInit())throw new IllegalStateException("GLFW");glfwDefaultWindowHints();glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,2);glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
-            window=glfwCreateWindow(W,H,"attributed glyph",0,0);if(window==0)throw new IllegalStateException("context");glfwMakeContextCurrent(window);GL.createCapabilities();
-            System.out.println("LWJGL="+org.lwjgl.Version.getVersion()+" Java="+System.getProperty("java.version")+" renderer="+glGetString(GL_RENDERER)+" version="+glGetString(GL_VERSION));
-            int texture=glGenTextures(),fbo=glGenFramebuffers();try {
-                glBindTexture(GL_TEXTURE_2D,texture);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,W,H,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);glBindFramebuffer(GL_FRAMEBUFFER,fbo);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);
-                if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE)throw new AssertionError("FBO");glViewport(0,0,W,H);glDisable(GL_DITHER);glDisable(GL_FRAMEBUFFER_SRGB);
-                GlPaintPlanRenderer renderer=owner.sharedPlanRenderer();int decorations=0;for(TextLayout.Line l:logical.lines())decorations+=l.decorations().size();if(decorations<2)throw new AssertionError("underline/strike缺失");
-                for(float scale:new float[]{1,1.5f,2,3}) {
-                    TextLayout sampled=owner.fonts().sample(logical,new RasterSampling(scale,1));stable(logical,sampled,scale);
-                    PaintPlan plan=new PaintPlanBuilder().add(PaintCommand.text(new LayoutBox(OX,OY,W,H),CLIP,sampled)).build();
-                    long end=System.nanoTime()+20000000000L;int frames=0;
-                    for(;;){glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);boolean all=true;
-                        try(GlPaintPlanRenderer.Prepared p=owner.prepare(renderer,plan,VIEW)){all=p.readyCount()==p.demandCount();p.render(FramebufferCoordinates.orthographic(W,H),H,false);}
-                        if(all)break;if(System.nanoTime()>end)throw new AssertionError("富文本字形未ready");Thread.sleep(2);frames++;
-                    }
-                    int[] actual=read(),expected=reference(owner,sampled);
-                    image(new File(output,"scale-"+scale+"-gl.png"),actual);image(new File(output,"scale-"+scale+"-reference.png"),expected);compare(owner,sampled,actual,expected,scale);
-                    // 样式色不应染掉emoji原色；真实读回中的黄色像素证明保留RGBA。
-                    boolean colored=false;for(TextLayout.Glyph g:glyphs(sampled))if(g.color){GlyphBitmap bm=owner.rasterizer().peek(GlyphKey.of(g));if(!bm.color)throw new AssertionError("emoji没有colorbitmap");int yellow=0;
-                        for(int y=0;y<H;y++)for(int x=Math.max(0,(int)(OX+g.x-3));x<Math.min(W,(int)(OX+g.x+g.xAdvance+3));x++){int i=(y*W+x)*4;if(actual[i]>80&&actual[i+1]>50&&actual[i+2]<actual[i]/2)yellow++;}if(yellow==0)throw new AssertionError("绿色文本emoji原黄色丢失");colored=true;}
-                    if(!colored)throw new AssertionError("color emoji探针未命中");
-                    for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(!inside(x,y)&&actual[(y*W+x)*4+3]!=0)throw new AssertionError("clip外像素");
-                    System.out.println("scale="+scale+" advance="+sampled.advanceWidth+" decorations="+decorations+" readyFrames="+frames+" originalEmojiColor=true clipped=true");
-                }
-                decorationClip(owner,renderer);
-                if(glGetError()!=GL_NO_ERROR)throw new AssertionError("GLerror");System.out.println("ATTRIBUTED_GLYPH_GL_SCENARIO_PASS logicalEm18.5 sampling1_1.5_2_3 layoutStable resolvedColors boldItalic decorations nativePremultBilinearReference");
-            }finally{glBindFramebuffer(GL_FRAMEBUFFER,0);glDeleteFramebuffers(fbo);glDeleteTextures(texture);}
-        }finally{owner.close();if(!owner.awaitRasterizerClose(10000))throw new AssertionError("workerclose");GL.setCapabilities(null);if(window!=0)glfwDestroyWindow(window);glfwTerminate();glfwSetErrorCallback(null);error.free();}
+    private GlfwTestEnvironment environment;
+    private ClientFontServices owner;
+    private TextLayout logical;
+    private GlPaintPlanRenderer renderer;
+    private File output;
+    private int decorations;
+
+    @Override protected void setup() throws Exception {
+        // owner在无context度量后才创建窗口；预留宿主释放位保证owner始终先关闭。
+        onClose(()->{if(environment!=null)environment.close();});
+        owner=new ClientFontServices(AttributedGlyphGlScenario.class.getClassLoader(),1,ClientFontServices.Settings.defaults(),IsolatedFontEngine.shared(),new Lwjgl3GlApi(),GlProgramProvider.NONE);
+        onClose(()->{owner.close();require(owner.awaitRasterizerClose(10000),"workerclose");});
     }
+    @Override protected void runTests() throws Exception {
+        String[] args=arguments();
+        output=new File(args.length==0?"build/font-attributed-gl/output":args[0]);require(output.isDirectory()||output.mkdirs(),"输出目录");
+        scenario("无context富文本度量保持lazy",()->{logical=logical(owner);require(!owner.hasGlResources()&&!owner.rasterizer().stats().started,"度量提前启动GLworker");});
+        environment=new GlfwTestEnvironment();
+        environment.window(W,H,"attributed glyph",Profile.CORE,2);
+            System.out.println("LWJGL="+org.lwjgl.Version.getVersion()+" Java="+System.getProperty("java.version")+" renderer="+glGetString(GL_RENDERER)+" version="+glGetString(GL_VERSION));
+            int texture=glGenTextures(),fbo=glGenFramebuffers();
+            onClose(()->{glBindFramebuffer(GL_FRAMEBUFFER,0);glDeleteFramebuffers(fbo);glDeleteTextures(texture);});
+        glBindTexture(GL_TEXTURE_2D,texture);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,W,H,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);glBindFramebuffer(GL_FRAMEBUFFER,fbo);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);
+        if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE)throw new AssertionError("FBO");glViewport(0,0,W,H);glDisable(GL_DITHER);glDisable(GL_FRAMEBUFFER_SRGB);
+        renderer=owner.sharedPlanRenderer();decorations=0;for(TextLayout.Line l:logical.lines())decorations+=l.decorations().size();if(decorations<2)throw new AssertionError("underline/strike缺失");
+        for(float scale:new float[]{1,1.5f,2,3}) scenario("富文本采样与像素参考 scale="+scale,()->sampling(scale));
+        scenario("单像素装饰线裁剪",()->decorationClip(owner,renderer));
+        require(glGetError()==GL_NO_ERROR,"GLerror");
+        System.out.println("ATTRIBUTED_GLYPH_GL_SCENARIO_PASS logicalEm18.5 sampling1_1.5_2_3 layoutStable resolvedColors boldItalic decorations nativePremultBilinearReference");
+    }
+    private void sampling(float scale) throws Exception {
+            TextLayout sampled=owner.fonts().sample(logical,new RasterSampling(scale,1));stable(logical,sampled,scale);
+            PaintPlan plan=new PaintPlanBuilder().add(PaintCommand.text(new LayoutBox(OX,OY,W,H),CLIP,sampled)).build();
+            long end=System.nanoTime()+20000000000L;int frames=0;
+            for(;;){glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);boolean all=true;
+                try(GlPaintPlanRenderer.Prepared p=owner.prepare(renderer,plan,VIEW)){all=p.readyCount()==p.demandCount();p.render(FramebufferCoordinates.orthographic(W,H),H,false);}
+                if(all)break;if(System.nanoTime()>end)throw new AssertionError("富文本字形未ready");Thread.sleep(2);frames++;
+            }
+            int[] actual=read(),expected=reference(owner,sampled);
+            image(new File(output,"scale-"+scale+"-gl.png"),actual);image(new File(output,"scale-"+scale+"-reference.png"),expected);compare(owner,sampled,actual,expected,scale);
+            // 样式色不应染掉emoji原色；真实读回中的黄色像素证明保留RGBA。
+            boolean colored=false;for(TextLayout.Glyph g:glyphs(sampled))if(g.color){GlyphBitmap bm=owner.rasterizer().peek(GlyphKey.of(g));if(!bm.color)throw new AssertionError("emoji没有colorbitmap");int yellow=0;
+                for(int y=0;y<H;y++)for(int x=Math.max(0,(int)(OX+g.x-3));x<Math.min(W,(int)(OX+g.x+g.xAdvance+3));x++){int i=(y*W+x)*4;if(actual[i]>80&&actual[i+1]>50&&actual[i+2]<actual[i]/2)yellow++;}if(yellow==0)throw new AssertionError("绿色文本emoji原黄色丢失");colored=true;}
+            if(!colored)throw new AssertionError("color emoji探针未命中");
+            for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(!inside(x,y)&&actual[(y*W+x)*4+3]!=0)throw new AssertionError("clip外像素");
+            System.out.println("scale="+scale+" advance="+sampled.advanceWidth+" decorations="+decorations+" readyFrames="+frames+" originalEmojiColor=true clipped=true");
+    }
+    public static void main(String[] args) throws Exception { new AttributedGlyphGlScenario().run(args); }
 }

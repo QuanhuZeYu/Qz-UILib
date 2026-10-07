@@ -1,4 +1,6 @@
 package club.heiqi.uilib.ui.scene.integration;
+
+import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -20,8 +22,8 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 /** 真实属性文本集成，覆盖格式来源、完整簇、逻辑度量/实际采样事实，不运行MC。 */
-public final class AttributedTextScenario {
- static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
+public final class AttributedTextScenario extends TestApplication {
+
  static List<TextLayout.Glyph> glyphs(TextLayout layout){List<TextLayout.Glyph> r=new ArrayList<TextLayout.Glyph>();for(TextLayout.Line l:layout.lines())r.addAll(l.glyphs());return r;}
  static final MinecraftFormat.Context CONTEXT=new MinecraftFormat.Context(){
   public int paletteColor(int i){return i==15?0xffffff:i==12?0xff3344:0x335577;}
@@ -118,9 +120,20 @@ public final class AttributedTextScenario {
   }
   System.out.println("PASS review resolved-selector cache rebind/public guard/control-invalid source/empty-active float metrics");
  }
- public static void main(String[] args)throws Exception{
-  List<FontSource> fonts=FontTextService.defaultSources(AttributedTextScenario.class.getClassLoader(),1);TextStyle style=new TextStyle("default",9f,0x7fabcdef,null,TextEffects.NORMAL,TextDecoration.NONE);
-  try(FontTextService service=new FontTextService(fonts,new LwjglFontEngine(),4,8,4096)){source(service,style);cluster(service,style);sampling(service,style);reviewRegressions(service,fonts);}
-  System.out.println("AttributedTextScenario PASS realFT/HB Java8；第一切片未实现trim/混淆动画");
- }
+    public static void main(String[] args) throws Exception { new AttributedTextScenario().run(args); }
+
+    private List<FontSource> fonts;
+    private TextStyle style;
+    private FontTextService service;
+    @Override protected void setup() throws Exception {
+        fonts = FontTextService.defaultSources(AttributedTextScenario.class.getClassLoader(), 1);
+        style = new TextStyle("default", 9f, 0x7fabcdef, null, TextEffects.NORMAL, TextDecoration.NONE);
+        service = own(new FontTextService(fonts, new LwjglFontEngine(), 4, 8, 4096));
+    }
+    @Override protected void runTests() throws Exception {
+        scenario("格式token与双来源边界", () -> source(service, style));
+        scenario("完整簇与属性断行", () -> cluster(service, style));
+        scenario("装饰及实际像素采样", () -> sampling(service, style));
+        scenario("selector缓存及诊断空行回归", () -> reviewRegressions(service, fonts));
+    }
 }

@@ -46,6 +46,7 @@
 
 Unix 将 `gradlew.bat` 替换为 `./gradlew`。协作 Agent 的命令入口与实机运行授权遵循 [协作规范](../AGENTS.md)。
 
+- 继承统一基类编写自动化测试：见 [测试应用](开发者文档/测试应用.md)。
 - 不启动游戏验证 UI：见 [headless 出图指南](使用文档/headless出图指南.md)。
 - 离线构建卡在 GTNH convention 的 manifest 读取：见 [离线 manifest 缓存排查](反馈层/errors/ERROR-elytra-offline-manifest-cache.md)。
 - 其他构建、输入、布局与渲染问题：见 [排障与反馈](反馈层/README.md)。

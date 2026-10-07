@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
 
+import club.heiqi.uilib.testing.TestApplication;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -32,8 +34,8 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** 软件场景只替换度量/宿主回放边界，实际状态、节点、布局、路由和计划均使用生产实现。 */
-final class SoftwareSceneScenario {
-    private static void require(boolean value, String message) { if (!value) throw new AssertionError(message); }
+final class SoftwareSceneScenario extends TestApplication {
+
     private static final class SoftwareHost implements SceneHost, SceneTextMeasurer {
         int width = 100, height = 80, glyph = 5, lineHeight = 10, measures;
         long metrics;
@@ -56,11 +58,18 @@ final class SoftwareSceneScenario {
             return new TextLayout(maxWidth, lines.size() * lineHeight, style, lines);
         }
     }
-    private static void boundedScrolling() {
+    /** 在实际domain内关闭，场景失败时同样释放挂载与订阅。 */
+    private SceneRuntime sceneRuntime(ReactiveDomain domain) {
+        SceneRuntime runtime = new SceneRuntime(domain);
+        onClose(() -> domain.execute(runtime::close));
+        return runtime;
+    }
+
+    private void boundedScrolling() {
         ReactiveDomain domain = ReactiveDomain.direct();
         domain.execute(() -> {
             SoftwareHost host = new SoftwareHost();
-            SceneRuntime runtime = new SceneRuntime(domain);
+            SceneRuntime runtime = sceneRuntime(domain);
             Signal<Integer> contentHeight = domain.signal(300);
             SceneNode content = new SceneNode().size(Size.fixed(100), Size.fixed(300))
                 .bind(NodeBinding.value(contentHeight, (node, value) -> node.size(Size.fixed(100), Size.fixed(value))));
@@ -81,11 +90,20 @@ final class SoftwareSceneScenario {
             require(pipe.current().geometry.get(viewport).scrollOffset == 0, "内容缩短后反向输入立即有效");
             contentHeight.set(300); pipe.scroll(5, 5, Integer.MIN_VALUE); pipe.frame();
             require(pipe.current().geometry.get(viewport).scrollOffset == pipe.current().geometry.get(viewport).scrollMaximum, "极端滚轮值不可整数溢出");
-            runtime.close();
+
         });
     }
-    static void run() throws Exception {
-        boundedScrolling();
+    @Override protected void runTests() throws Exception {
+        scenario("有界滚动与内容缩短", this::boundedScrolling);
+        scenario("动态列表布局与同代绘制命中", this::dynamicPanel);
+        ReactiveDomain domain = ReactiveDomain.direct();
+        scenario("裁剪与模态输入", () -> clippingAndModal(domain));
+        scenario("不可变绘制载荷", SoftwareSceneScenario::immutablePayload);
+        scenario("评审边界回归", () -> reviewedBoundaries(domain));
+        scenario("自定义控件共同几何", () -> customControl(domain));
+    }
+
+    private void dynamicPanel() throws Exception {
         try { Class.forName("net.minecraft.client.Minecraft"); throw new AssertionError("软件场景执行类路径不得包含 MC"); }
         catch (ClassNotFoundException expected) { }
         ReactiveDomain domain = ReactiveDomain.direct();
@@ -99,7 +117,7 @@ final class SoftwareSceneScenario {
         ScenePresentation[] saved = new ScenePresentation[1];
         UUID[] firstIdentity = new UUID[1];
         domain.execute(() -> {
-            runtime[0] = new SceneRuntime(domain);
+            runtime[0] = sceneRuntime(domain);
             pipe[0] = new SceneFramePipeline(runtime[0], host, host);
             count[0] = domain.signal(0); heading[0] = domain.signal("标题");
             items[0] = domain.signal(Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8));
@@ -157,15 +175,12 @@ final class SoftwareSceneScenario {
             PaintCommand rendered = host.last.commands().stream().filter(command -> command.kind == PaintCommand.Kind.TEXT && command.text.lines().get(0).text.startsWith("标题")).findFirst().get();
             LayoutBox hitBox = pipe[0].current().geometry.get(title[0]).box;
             require(rendered.box.x == hitBox.x && rendered.box.y == hitBox.y, "绘制和命中使用同代坐标");
-            runtime[0].close();
+
         });
-        clippingAndModal(domain);
-        immutablePayload();
-        reviewedBoundaries(domain);
-        customControl(domain);
+
         System.out.println("软件面板：动态列表/自然标题/剩余正文/事件/环境变化/裁剪/模态/不可变计划通过");
     }
-    private static void clippingAndModal(ReactiveDomain domain) {
+    private void clippingAndModal(ReactiveDomain domain) {
         SoftwareHost host = new SoftwareHost();
         SceneRuntime[] runtime = new SceneRuntime[1];
         SceneFramePipeline[] pipe = new SceneFramePipeline[1];
@@ -175,7 +190,7 @@ final class SoftwareSceneScenario {
         Signal<Integer>[] hits = new Signal[1];
         SceneNode[] child = new SceneNode[1], overflow = new SceneNode[1], modalNode = new SceneNode[1];
         domain.execute(() -> {
-            runtime[0] = new SceneRuntime(domain); pipe[0] = new SceneFramePipeline(runtime[0], host, host);
+            runtime[0] = sceneRuntime(domain); pipe[0] = new SceneFramePipeline(runtime[0], host, host);
             clip[0] = domain.signal(false); modal[0] = domain.signal(false); hits[0] = domain.signal(0); scrolled[0] = domain.signal(0);
             child[0] = new SceneNode().size(Size.fixed(40), Size.fixed(10)).onClick(() -> hits[0].set(hits[0].get() + 1));
             overflow[0] = new SceneNode().size(Size.fixed(10), Size.fixed(10)).onScroll(delta -> scrolled[0].set(scrolled[0].get() + delta)).add(child[0]).bind(NodeBinding.value(clip[0], SceneNode::clip));
@@ -192,8 +207,8 @@ final class SoftwareSceneScenario {
         pipe[0].click(20, 1); pipe[0].scroll(1, 1, 1); pipe[0].frame();
         domain.execute(() -> {
             require(hits[0].get() == 2 && scrolled[0].get() == 1, "模态关闭恢复点击和滚轮资格");
-            runtime[0].close();
-            SceneRuntime bounded = new SceneRuntime(domain);
+
+            SceneRuntime bounded = sceneRuntime(domain);
             SceneNode first = new SceneNode().size(Size.fill(1).bounds(9, 20), Size.fixed(1));
             SceneNode second = new SceneNode().size(Size.fill(1).bounds(0, 2), Size.fixed(1));
             SceneNode row = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fixed(10), Size.fixed(1)).add(first).add(second);
@@ -201,14 +216,14 @@ final class SoftwareSceneScenario {
             SceneFramePipeline boundedPipe = new SceneFramePipeline(bounded, host, host);
             SceneGeometryView geometry = boundedPipe.current().geometry;
             require(geometry.get(first).box.width == 9 && geometry.get(second).box.width == 1, "填充上下界共同约束时空间可行不应溢出");
-            bounded.close();
+
         });
     }
 
-    private static void reviewedBoundaries(ReactiveDomain domain) {
+    private void reviewedBoundaries(ReactiveDomain domain) {
         domain.execute(() -> {
             SoftwareHost host = new SoftwareHost();
-            SceneRuntime runtime = new SceneRuntime(domain);
+            SceneRuntime runtime = sceneRuntime(domain);
             Signal<List<Integer>> list = domain.signal(Arrays.asList(1, 2));
             Signal<Integer> color = domain.signal(0xFF000000);
             SceneNode repeat = new SceneNode().bind(NodeBinding.repeat(list, item -> item,
@@ -223,8 +238,8 @@ final class SoftwareSceneScenario {
             ScenePresentation old = pipe.current(); int measures = host.measures;
             color.set(0xFFFFFFFF); ScenePresentation next = pipe.current();
             require(host.measures == measures && next.geometry == old.geometry && next.paint != old.paint, "paint-only 失效只重建计划，复用几何并且不测量文本");
-            runtime.close();
-            SceneRuntime layouts = new SceneRuntime(domain);
+
+            SceneRuntime layouts = sceneRuntime(domain);
             SceneNode limited = new SceneNode().size(Size.fill(1).bounds(0, 25), Size.natural()).text("abcdefghij");
             SceneNode column = new SceneNode().size(Size.fill(1), Size.natural()).add(limited);
             MountHandle active = layouts.attach(null, column);
@@ -253,12 +268,12 @@ final class SoftwareSceneScenario {
             layouts.attach(null, remainder); result = geometry.current().geometry;
             int total = result.get(capped).box.height + result.get(rest1).box.height + result.get(rest2).box.height;
             require(result.get(capped).box.height <= capped.height().max && total == remainder.height().value, "整数余数保持总量且不能突破硬 max");
-            layouts.close();
+
         });
     }
-    private static void customControl(ReactiveDomain domain) {
+    private void customControl(ReactiveDomain domain) {
         domain.execute(() -> {
-            SoftwareHost host = new SoftwareHost(); SceneRuntime runtime = new SceneRuntime(domain);
+            SoftwareHost host = new SoftwareHost(); SceneRuntime runtime = sceneRuntime(domain);
             Signal<Integer> desired = domain.signal(15);
             SceneNode child = new SceneNode().text("组合子节点");
             SceneNode control = new SceneNode().size(Size.fill(1), Size.natural()).add(child).control(new SceneControl() {
@@ -274,7 +289,7 @@ final class SoftwareSceneScenario {
             desired.set(30); ScenePresentation current = pipe.current();
             require(current.geometry.get(control).box.height == desired.get() && current.geometry.get(child).box.y == 2, "声明测量依赖通知后自动重排并保存子区域");
             require(current.paint.commands().get(0).box == current.geometry.get(control).box, "扩展绘制消费共同几何");
-            runtime.close();
+
         });
     }
     private static void immutablePayload() {

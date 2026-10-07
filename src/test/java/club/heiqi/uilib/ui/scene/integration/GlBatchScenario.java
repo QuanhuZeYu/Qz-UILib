@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.testing.GlfwTestEnvironment;
+import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 
@@ -9,8 +12,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import javax.imageio.ImageIO;
-import org.lwjgl.glfw.GLFWErrorCallback;
-import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryUtil;
 import club.heiqi.uilib.host.client.gl.GlQuadRenderer;
 import club.heiqi.uilib.host.client.gl.GlQuadRenderer.Counters;
@@ -20,22 +21,6 @@ import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
-import static org.lwjgl.glfw.GLFW.GLFW_CONTEXT_VERSION_MAJOR;
-import static org.lwjgl.glfw.GLFW.GLFW_CONTEXT_VERSION_MINOR;
-import static org.lwjgl.glfw.GLFW.GLFW_FALSE;
-import static org.lwjgl.glfw.GLFW.GLFW_OPENGL_CORE_PROFILE;
-import static org.lwjgl.glfw.GLFW.GLFW_OPENGL_FORWARD_COMPAT;
-import static org.lwjgl.glfw.GLFW.GLFW_OPENGL_PROFILE;
-import static org.lwjgl.glfw.GLFW.GLFW_TRUE;
-import static org.lwjgl.glfw.GLFW.GLFW_VISIBLE;
-import static org.lwjgl.glfw.GLFW.glfwCreateWindow;
-import static org.lwjgl.glfw.GLFW.glfwDefaultWindowHints;
-import static org.lwjgl.glfw.GLFW.glfwDestroyWindow;
-import static org.lwjgl.glfw.GLFW.glfwInit;
-import static org.lwjgl.glfw.GLFW.glfwMakeContextCurrent;
-import static org.lwjgl.glfw.GLFW.glfwSetErrorCallback;
-import static org.lwjgl.glfw.GLFW.glfwTerminate;
-import static org.lwjgl.glfw.GLFW.glfwWindowHint;
 import static org.lwjgl.opengl.GL32C.GL_ACTIVE_TEXTURE;
 import static org.lwjgl.opengl.GL32C.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL32C.GL_ARRAY_BUFFER_BINDING;
@@ -139,7 +124,7 @@ import static org.lwjgl.opengl.GL32C.glViewport;
  * 参考器按原图元顺序在 premult 字节域执行 SrcOver；允许每通道 2/255，覆盖
  * RGBA8 framebuffer 每次混合的定点舍入及驱动浮点转换差异，不容许移动图元次序。
  */
-public final class GlBatchScenario {
+public final class GlBatchScenario extends TestApplication {
     private static final int W=96,H=72,CAPACITY=4,TOLERANCE=2;
     private static final float[] MVP={2f/W,0,0,0, 0,-2f/H,0,0, 0,0,1,0, -1,1,0,1};
     private static final int[][] MONO={{128,128,128,128},{192,192,192,192}};
@@ -249,9 +234,15 @@ public final class GlBatchScenario {
     }
     private static int[] route(boolean array,File output,List<Item> items,int[] expected) throws Exception {
         int[] ids=new int[array?2:4];
+        final int[] seeds=new int[4];
+        try(AutoCloseable cleanup=()->{
+            glUseProgram(0);glBindVertexArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glDeleteProgram(seeds[3]);
+            glDeleteVertexArrays(seeds[0]);glDeleteBuffers(seeds[1]);glDeleteBuffers(seeds[2]);
+            for(int id:ids)glDeleteTextures(id);
+        }) {
         if(array){ids[0]=texture(true,MONO);ids[1]=texture(true,COLOR);}
         else for(int i=0;i<4;i++)ids[i]=texture(false,new int[][]{i<2?MONO[i]:COLOR[i-2]});
-        int seedVao=glGenVertexArrays(),seedVbo=glGenBuffers(),seedEbo=glGenBuffers(),seed=seedProgram();
+        int seedVao=seeds[0]=glGenVertexArrays(),seedVbo=seeds[1]=glGenBuffers(),seedEbo=seeds[2]=glGenBuffers(),seed=seeds[3]=seedProgram();
         glBindVertexArray(seedVao);glBindBuffer(GL_ARRAY_BUFFER,seedVbo);glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,seedEbo);glUseProgram(seed);
         glEnable(GL_BLEND);glBlendEquationSeparate(GL_FUNC_REVERSE_SUBTRACT,GL_FUNC_SUBTRACT);
         glBlendFuncSeparate(GL_SRC_ALPHA,GL_DST_ALPHA,GL_ZERO,GL_ONE);
@@ -303,35 +294,31 @@ public final class GlBatchScenario {
                 +" (含 CPU提交与GPU完成，无独立GPU计时；仅初步probe，不裁定胜出)");
             int error=glGetError();if(error!=GL_NO_ERROR)throw new AssertionError("GL error="+error);
             return actual;
-        }finally {
-            glUseProgram(0);glBindVertexArray(0);glBindBuffer(GL_ARRAY_BUFFER,0);glDeleteProgram(seed);
-            glDeleteVertexArrays(seedVao);glDeleteBuffers(seedVbo);glDeleteBuffers(seedEbo);
-            for(int id:ids)glDeleteTextures(id);
+        }
         }
     }
-    public static void main(String[] args) throws Exception {
+    @Override protected void runTests() throws Exception {
+        String[] args=arguments();
         File output=new File(args.length==0?"build/font-gl-probe/output":args[0]);if(!output.isDirectory()&&!output.mkdirs())throw new IllegalStateException("不能创建出图目录");
-        GLFWErrorCallback error=GLFWErrorCallback.createPrint(System.err);error.set();long window=0;
-        try {
-            if(!glfwInit())throw new IllegalStateException("GLFW init failed");
-            glfwDefaultWindowHints();glfwWindowHint(GLFW_VISIBLE,GLFW_FALSE);
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,2);
-            glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT,GLFW_TRUE);
-            window=glfwCreateWindow(W,H,"UILib GL probe",0,0);if(window==0)throw new IllegalStateException("GLFW context failed");
-            glfwMakeContextCurrent(window);GL.createCapabilities();
+        GlfwTestEnvironment environment=own(new GlfwTestEnvironment());
+        own(environment.window(W,H,"GlBatchScenario",Profile.CORE,2,true,true));
             System.out.println("LWJGL="+org.lwjgl.Version.getVersion()+" Java="+System.getProperty("java.version"));
             System.out.println("vendor="+glGetString(GL_VENDOR)+" renderer="+glGetString(GL_RENDERER)+" version="+glGetString(GL_VERSION)+" GLSL="+glGetString(GL_SHADING_LANGUAGE_VERSION));
             System.out.println("GL_MAX_ARRAY_TEXTURE_LAYERS="+glGetInteger(GL_MAX_ARRAY_TEXTURE_LAYERS)+" testAllocatedLayers=2 format=RGBA8 1x1");
             int target=glGenTextures(),fbo=glGenFramebuffers();
-            try {
+            onClose(()->{glBindFramebuffer(GL_FRAMEBUFFER,0);glDeleteFramebuffers(fbo);glDeleteTextures(target);});
+            {
                 glBindTexture(GL_TEXTURE_2D,target);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,W,H,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
                 glBindFramebuffer(GL_FRAMEBUFFER,fbo);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,target,0);
-                if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE)throw new AssertionError("FBO incomplete");
+                require(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE,"FBO incomplete");
                 glViewport(0,0,W,H);glDisable(GL_DITHER);glDisable(GL_FRAMEBUFFER_SRGB);
                 List<Item> items=scene();int[] expected=reference(items);image(new File(output,"software-reference.png"),expected);
-                int[] a=route(false,output,items,expected),b=route(true,output,items,expected);compare("2d-vs-array",a,b);
+                int[][] routes=new int[2][];
+                scenario("2D原序像素与状态恢复",()->routes[0]=route(false,output,items,expected));
+                scenario("array原序像素与状态恢复",()->routes[1]=route(true,output,items,expected));
+                scenario("2D与array参考一致",()->compare("2d-vs-array",routes[0],routes[1]));
                 System.out.println("GL_BATCH_SCENARIO_PASS stateRestore=normal+exception capacity=4 segments=2");
-            }finally{glBindFramebuffer(GL_FRAMEBUFFER,0);glDeleteFramebuffers(fbo);glDeleteTextures(target);}
-        }finally{GL.setCapabilities(null);if(window!=0)glfwDestroyWindow(window);glfwTerminate();glfwSetErrorCallback(null);error.free();}
+            }
     }
+    public static void main(String[] args) throws Exception { new GlBatchScenario().run(args); }
 }

@@ -1,11 +1,11 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.testing.GlfwTestEnvironment;
+import club.heiqi.uilib.testing.GlfwTestEnvironment.Profile;
 import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 
 import java.util.Arrays;
-import org.lwjgl.glfw.GLFW;
-import org.lwjgl.glfw.GLFWErrorCallback;
-import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
@@ -14,8 +14,7 @@ import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.host.client.font.context.LwjglFontContextCapture;
 
 /** 延期producer真实GL捕捉A，再把宿主切到B：只验证历史载荷，不替代backend apply/restore或Angelica初始化。 */
-public final class FontDeferredStateScenario {
-    private static void require(boolean v,String m){if(!v)throw new AssertionError(m);}
+public final class FontDeferredStateScenario extends TestApplication {
     private static final float[] IDENTITY={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
     private static void stateA(int framebuffer){
         GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,framebuffer);GL11.glViewport(3,5,41,43);
@@ -64,10 +63,11 @@ public final class FontDeferredStateScenario {
         require(a.depthTest&&!a.depthWrite&&a.depthFunction==GL11.GL_GEQUAL&&a.scissorEnabled&&Arrays.equals(a.scissor(),new int[]{4,6,8,10})&&Arrays.equals(a.projection.viewport(),new int[]{1,2,30,40}),"effective provider ignored for historical depth/viewport/scissor");
         require(!GL11.glIsEnabled(GL11.GL_DEPTH_TEST)&&GL11.glGetInteger(GL11.GL_DEPTH_FUNC)==GL11.GL_LESS,"provider wrote driver");
     }
-    private static void run(boolean compatibility){
-        GLFW.glfwDefaultWindowHints();GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,3);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,compatibility?3:2);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,compatibility?GLFW.GLFW_OPENGL_COMPAT_PROFILE:GLFW.GLFW_OPENGL_CORE_PROFILE);
-        long window=GLFW.glfwCreateWindow(64,64,"font-deferred",0,0);require(window!=0,"hidden context");GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();int fboA=GL30.glGenFramebuffers(),fboB=GL30.glGenFramebuffers();
-        try {
+    private void capture(GlfwTestEnvironment environment,boolean compatibility){
+        own(environment.window(64,64,"font-deferred",compatibility?Profile.COMPATIBILITY:Profile.CORE,compatibility?3:2));
+        int fboA=GL30.glGenFramebuffers(),fboB=GL30.glGenFramebuffers();
+        onClose(()->{GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fboA);GL30.glDeleteFramebuffers(fboB);});
+        {
             LwjglFontContextCapture capture=new LwjglFontContextCapture(new Lwjgl3GlApi(),compatibility?LwjglFontContextCapture.compatibility(new Lwjgl3GlApi()):LwjglFontContextCapture.explicit(new Lwjgl3GlApi(),FontRenderContext.MatrixState.ui(IDENTITY,IDENTITY)));
             if(compatibility){GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glLoadIdentity();GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glLoadIdentity();GL11.glDisable(GL11.GL_LIGHTING);}
             stateA(fboA);FontRenderContext a=capture.capture(64,5,9);verifyA(a,fboA);stateB(fboB);FontRenderContext b=capture.capture(64,6,10);
@@ -77,7 +77,14 @@ public final class FontDeferredStateScenario {
             effectiveProvider();
             require(GL11.glGetError()==GL11.GL_NO_ERROR,"capture invalid legacy enum");
             System.out.println((compatibility?"compat":"core")+" capturedAImmutable=true driverBUnchanged=true stencilBoth=true blendColorMaskDepthRange=true GL="+GL11.glGetString(GL11.GL_VERSION));
-        }finally{GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fboA);GL30.glDeleteFramebuffers(fboB);GL.setCapabilities(null);GLFW.glfwDestroyWindow(window);}
+        }
     }
-    public static void main(String[] args){valueOnly();GLFWErrorCallback error=GLFWErrorCallback.createPrint(System.err);error.set();require(GLFW.glfwInit(),"glfw init");try{run(false);run(true);System.out.println("FONT_DEFERRED_STATE_SCENARIO_PASS captureOnly historicalA liveB immutableRaster");}finally{GLFW.glfwTerminate();GLFW.glfwSetErrorCallback(null);error.free();}}
+    @Override protected void runTests() throws Exception {
+        scenario("值对象复制与兼容构造", FontDeferredStateScenario::valueOnly);
+
+        GlfwTestEnvironment environment=own(new GlfwTestEnvironment());
+        scenario("core历史状态捕捉",()->capture(environment,false));
+        scenario("compatibility历史状态捕捉",()->capture(environment,true));
+    }
+    public static void main(String[] args) throws Exception { new FontDeferredStateScenario().run(args); }
 }

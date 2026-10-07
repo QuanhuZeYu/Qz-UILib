@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+
+import club.heiqi.uilib.testing.TestApplication;
+import club.heiqi.uilib.testing.TestResources;
 import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
@@ -24,8 +27,8 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /** 非 JUnit 真实 CPU 链路；不加载 MC/Forge/AWT，不用 GPU 是否就绪参与度量。 */
-public final class FontTextScenario {
-    private static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
+public final class FontTextScenario extends TestApplication {
+
     private static TextPolicy policy(TextPolicy.Direction direction, TextPolicy.Wrap wrap, String language) {
         return new TextPolicy(direction, wrap, language, 0, 0);
     }
@@ -137,7 +140,7 @@ public final class FontTextScenario {
         }
         int variations = 0;
         try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(
-                FontTextScenario.class.getClassLoader().getResourceAsStream("assets/qz_uilib/unicode/emoji17/emoji-variation-sequences.txt"), StandardCharsets.UTF_8))) {
+                new java.io.ByteArrayInputStream(TestResources.resource(FontTextScenario.class.getClassLoader(), "assets/qz_uilib/unicode/emoji17/emoji-variation-sequences.txt").array()), StandardCharsets.UTF_8))) {
             for (String record; (record = reader.readLine()) != null;) {
                 String body = record.split("#", 2)[0].trim(); if (body.isEmpty()) continue;
                 String[] fields = body.split(";"); if (!fields[1].trim().equals("text style")) continue;
@@ -153,7 +156,7 @@ public final class FontTextScenario {
         System.out.println("PASS Emoji17 七个新增默认码点；全部标准 VS15 text variations=" + variations);
     }
     private static void rgiBatch(FontTextService service, TextStyle style, String root) throws Exception {
-        java.io.InputStream canonical = FontTextScenario.class.getClassLoader().getResourceAsStream("font/emoji-rgi-17.0.txt");
+        java.io.InputStream canonical = new java.io.ByteArrayInputStream(TestResources.resource(FontTextScenario.class.getClassLoader(), "font/emoji-rgi-17.0.txt").array());
         if (canonical == null) throw new java.io.IOException("缺少完整RGI独立canonical test resource");
         int count = 0;
         try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(canonical, StandardCharsets.UTF_8))) {
@@ -278,17 +281,29 @@ public final class FontTextScenario {
         require(!service.layout("a\u00ad", style, 13, emergency).lines().isEmpty(), "段落尾软连字符使断点循环不前进");
         System.out.println("PASS WJ/GL prohibited boundaries; resource failure identity/origin/native cause");
     }
-    public static void main(String[] args) throws Exception {
-        String root = args.length == 0 ? "." : args[0];
-        List<FontSource> defaults = FontTextService.defaultSources(FontTextScenario.class.getClassLoader(), 1);
+    public static void main(String[] args) throws Exception { new FontTextScenario().run(args); }
+
+    private String root;
+    private List<FontSource> defaults;
+    private TextStyle style;
+    private FontTextService service;
+
+    @Override protected void setup() throws Exception {
+        root = arguments().length == 0 ? "." : arguments()[0];
+        defaults = FontTextService.defaultSources(FontTextScenario.class.getClassLoader(), 1);
         for (FontSource source : defaults) require(!source.isLoaded(), "默认候选构造时预加载全部字体");
-        TextStyle style = new TextStyle("default", 24, -1);
-        try (FontTextService service = new FontTextService(defaults,new LwjglFontEngine(), 4, 8, 4096)) {
-            bidi(service, style); arabic(service, defaults.get(1)); indicThai(service, defaults.get(2), defaults.get(3));
-            emoji(service, style, defaults.get(4)); emojiVersions(service, style); rgiBatch(service, style, root);
-            controls(service, style); resources(service, defaults, style, root);
-            reviewRegressions(service, defaults, style);
-        }
-        System.out.println("FontTextScenario PASS (ICU76.1 realFT/HB Java8); 未完成: 省略/软连字符可见断点/系统字体能力自动探针/编辑器affinity/性能与GPU验收");
+        style = new TextStyle("default", 24, -1);
+        service = own(new FontTextService(defaults, new LwjglFontEngine(), 4, 8, 4096));
+    }
+    @Override protected void runTests() throws Exception {
+        scenario("混合Bidi与显式RTL", () -> bidi(service, style));
+        scenario("Arabic最终行独立整形", () -> arabic(service, defaults.get(1)));
+        scenario("Indic完整簇与Thai字典断行", () -> indicThai(service, defaults.get(2), defaults.get(3)));
+        scenario("Emoji序列与实际彩色像素", () -> emoji(service, style, defaults.get(4)));
+        scenario("Emoji17新增码点与全部VS15", () -> emojiVersions(service, style));
+        scenario("完整canonical RGI集合", () -> rgiBatch(service, style, root));
+        scenario("控制字符与输入来源", () -> controls(service, style));
+        scenario("候选资源换代与缓存边界", () -> resources(service, defaults, style, root));
+        scenario("已定位排版回归", () -> reviewRegressions(service, defaults, style));
     }
 }
