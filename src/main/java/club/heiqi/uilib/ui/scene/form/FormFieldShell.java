@@ -15,49 +15,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * 字段卡片外壳共享构建器：label + helper + 控件 mount 槽 + error 提示 + dirty 标记。
- *
- * <p>从 {@code config.ui.field.FieldShell} 提炼下沉的通用工具，照
- * {@code SceneFormHostWidget.createFieldShell} 范式，供表单消费方复用，避免每个字段
- * renderer 重复外壳样板。外壳结构：</p>
- * <pre>
- * card (COLUMN, bg, border, radius, padding, gap)
- *   ├ bind border color by error/dirty
- *   ├ header (ROW, gap)
- *   │   ├ dot (●, color by error/dirty)
- *   │   └ title (label)
- *   ├ helper text
- *   ├ 控件 (mount 槽，由 caller 提供 Supplier)
- *   └ error text (rt.show 条件挂载：errorSignal 非空时才挂载，空时仅留零尺寸 anchor 占位)
- * </pre>
- *
- * <p><b>两条外观路径（一个属性只有一个写入者，互斥不叠加）</b></p>
- * <ul>
- *   <li><b>默认路径</b>——不传 {@link FormTheme} 的重载：卡片表面（background/borderColor/
- *       borderWidth/cornerRadius/backdrop/surfaceElevation）经 {@link SceneSurfaceBinder#bind}
- *       消费来源主题的 {@link SceneTheme.Role#GROUP} 配方，绑定器是这些属性的唯一写入者；
- *       error/dirty 只把配方缘色换成 {@link FormThemes} 映射的危险色/强调色（派生配方，
- *       仍由同一绑定器写入），不在配方之外再叠第二层玻璃或滤镜。文字语义经
- *       {@link FormThemes#resolve} 取来源主题：标题 {@code textColor}（foreground）、
- *       helper {@code mutedColor}（mutedForeground）、error {@code errorColor}（errorText 危险语义）、
- *       dirty 状态点 {@code dirtyColor}（accent 强调语义）——三类各自可见且色值互不相同。
- *       来源主题切换只重派生外观，不重建节点、不丢编辑状态。</li>
- *   <li><b>显式路径</b>——保留的 {@link FormTheme} 重载：语义与迁移前一致，
- *       cardBg/边框宽/圆角/内边距静态写入、边框色与状态点随 error/dirty 动画派生、
- *       不装滤镜、不订阅主题；显式主题完全覆盖主题派生。</li>
- * </ul>
- * <p>两条路径的结构、布局（内边距/间距/字号/控件高度）与 error 条件挂载策略完全一致；
- * 无边框模板（{@link #buildBorderless}）两条路径都保持无底色/无边框/无圆角，不因主题又加出卡片。</p>
- *
- * <p><b>零 config 依赖</b>：本类只吃 {@link java.lang.String} /
- * {@link ReadableSignal} / {@link Supplier} / {@link FormTheme}，
- * 不感知任何 config 业务类型。caller 负责把 {@code FieldSpec} / {@code DraftSignalAdapter}
- * 拆解为 title / helper / errorSignal / dirtySignal 后传入。</p>
- *
- * <p>外观随状态变化只经 {@code rt.bind/bindComputed/__bindAnimatedColor} 派生（守 R4 与 handler 边界：不在 handler 里命令式改节点属性），
- * 控件 mount 槽由 caller 以 {@code Supplier<SceneNode>} 注入，本类不建业务控件。</p>
- */
+
 public final class FormFieldShell {
 
     /** 字段外壳卡片恒定启用（卡片本身无禁用态；内部控件自带 enabled 信号）。 */
@@ -305,7 +263,6 @@ public final class FormFieldShell {
             controlRoot.setPreferredHeight(controlHeight);
         }
 
-        // error 文本：errorSignal 非空时才挂载（rt.show 条件渲染，守 R11）
         // 空文案时仅留零尺寸 anchor 占位，不再常驻空 errorNode（m1：消除空节点常驻）。
         // bind 注册在 content supplier 内，随 show 卸载自动退订，重挂时重建。
         // 作用域：condition Computed 归属调用方当前 mount Owner；show handle 内部 Owner

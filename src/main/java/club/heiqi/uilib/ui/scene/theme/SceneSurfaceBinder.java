@@ -13,39 +13,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/**
- * 通用表面绑定器：把 {@link SceneSurfaceStyle} 配方信号 + 交互态绑定到节点。
- *
- * <p>本类是「主题/显式配方 → 节点属性」的唯一通用写入者。同一节点只调用一次；重复调用会让
- * 两个绑定竞争同一属性槽，违反「一个属性只有一个外观写入者」。</p>
- *
- * <p><b>属性归属</b>：node 的 background / border / borderWidth / cornerRadius /
- * surfaceElevation / backdrop 归本绑定；motionRoot 非 null 时其 transform / opacity 也归本绑定，
- * 业务内容必须挂在其后代并保留自己的变换写入权。文本前景由
- * {@link #bindForeground} 显式绑定，本绑定不遍历后代、不给位图染色。</p>
- *
- * <p><b>状态优先级</b>：disabled &gt; pressed &gt; hovered &gt; idle；focus 只覆盖非禁用态的缘色。
- * 这些状态全部来自 {@link SceneInteractionState} 与调用方传入的 enabled 信号，绑定器不制造
- * 加载/错误等业务状态。</p>
- *
- * <p><b>失效语义</b>：材质变化即刻重派生（PAINT），动画样本只改变当前配方的透镜强度；
- * 不向信号写每帧样本、不捕获旧材质、不因配方切换重复创建订阅或动画轨道。颜色/模糊/折射
- * 变化不触发布局。</p>
- *
- * <p><b>无滤镜替代</b>：{@code backdrop == null} 时不写 backdrop，只写配方自身的 tint/edge/
- * elevation；配方作者负责让 tint 可读（见 {@link SceneTheme#withoutBackdrop()}）。</p>
 
- *
- * <p><b>接管语义</b>：本绑定对目标节点的 backgroundColor / borderColor / borderWidth / cornerRadius /
- * backdrop / surfaceElevation 行使独占写入。调用方只允许在 bind 之前设置这些属性的初值；bind 之后
- * （尤其首次 flush 之后）再静态写同一属性即违反契约 §4「属性归属表」，表现为主题切换被覆盖、交互时
- * 属性值反复。元素级轻量槽（caret/thumb/dot/scrim 等）不受此约束——它们写的是控件独占子节点，
- * 不与配方争同一节点。</p>
- *
- * <p><b>浮雕豁免</b>：配方的 {@link SceneSurfaceStyle#isReliefDisabled()} 为 true 时，本绑定对
- * {@code surfaceElevation} 恒写 -1（普通绘制），不消费四态 elevation。其余属性照常独占——
- * 豁免只针对浮雕通道，不改变写入权归属。</p>
- */
 public final class SceneSurfaceBinder {
 
     private enum State { IDLE, HOVERED, PRESSED, DISABLED }
@@ -110,7 +78,6 @@ public final class SceneSurfaceBinder {
                 () -> surface(recipe.get(), state.get()));
         Supplier<Integer> duration = () -> recipe.get().getTransitionMillis();
 
-        // 全部经 __write* 内部通道写：公开 setter 在接管后拒绝应用侧静态写（契约 §4 的运行期
         // 保障），绑定器自身必须绕过守卫——否则首个 effect 就会拦住自己（G20 第 3 步）。
         rt.bindComputed(() -> recipe.get().getBorderWidth(), node::__writeBorderWidth);
         rt.bindComputed(() -> recipe.get().getCornerRadius(), node::__writeCornerRadius);

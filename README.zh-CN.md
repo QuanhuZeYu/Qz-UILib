@@ -1,5 +1,7 @@
 # Qz UILib
 
+> 规格与验收以 [唯一 spec](<docs/superpowers/specs/2026-10-07-uilib-core-contract-design.md>) 为准。本页及所链接的实现、接入和历史资料不另立要求，旧“现行规范”标签及历史编号无规范效力。
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 面向 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境的声明式 scene UI 框架。

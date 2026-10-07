@@ -19,21 +19,7 @@ import club.heiqi.uilib.ui.scene.layout.FlexDirection;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/**
- * 4 控件（SimpleList/ObjectField/KeyValueMap/DataTable）scrollbar 结构断言 —— 验证 create 内部
- * stackHost 的子节点数随 {@code showScrollbar} 是否为 true 而变化：
- * <ul>
- *   <li>true：stackHost 含 [viewport, scrollbar column] 共 2 子；</li>
- *   <li>false：stackHost 仅含 viewport 共 1 子。</li>
- * </ul>
- *
- * <p>归类 L3 结构集成层：通过控件公开 create 门面建树，遍历 root 子树按结构特征定位 stackHost
- * （root 直接子中 FlexDirection==ROW 且含 scrollable 直接子的节点），断言其直接子数。
- * 不依赖 layout/paint，结构在建树（Supplier.get）时即固定。</p>
- *
- * <p>守 signal-first（scrollbar 是否建由 Props showScrollbar 布尔字段决定）、
- * R1 纯静态工厂（每次 create 都新建独立树）。</p>
- */
+
 public class ControlScrollbarWiringTest {
 
     private SceneRuntime runtime;

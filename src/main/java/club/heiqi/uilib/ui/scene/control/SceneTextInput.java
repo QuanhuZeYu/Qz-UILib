@@ -30,10 +30,10 @@ import club.heiqi.uilib.ui.scene.theme.SceneThemes;
  * caret、选区色消费主题语义色；显式 {@code placeholderColor} 仍优先。caret 颜色在显式启用
  * Motion 的 runtime 内使用 fast 过渡，表面过渡时长取配方自身。</p>
  *
- * <h3>受控契约</h3>
- * <p>文本真值仍由外部 {@code value} 唯一持有；控件不缓存 value、不自改 value。内部仅维护
- * {@code caretIndex} 本地 UI 状态，语义为真实文本的码点索引。所有写入都只经
- * {@code onChange.accept(next)} 上抛，handler 内不直接改文本节点属性。</p>
+ * <h3>当前接入实现（待迁移）</h3>
+ * <p>本类当前使用外部 value 与 onChange 回路。目标行为以唯一 spec 第 8 节为准：
+ * 编辑状态与业务最终值分开，当前 API 形状不构成零内部编辑状态的要求。
+ * handler 发布编辑意图，不直接修改文本节点属性。</p>
  *
  * <h3>结构</h3>
  * <pre>
@@ -55,7 +55,7 @@ public final class SceneTextInput {
     }
 
     /**
-     * TextInput 输入契约 —— 受控文本：当前文本由外部只读 signal 驱动，
+     * 当前 TextInput 接入参数（不替代 spec 的编辑状态合同）：文本由外部只读 signal 驱动，
      * 输入经 onChange 交还期望新值真实 String。
      *
      * @param value       当前文本（响应式只读，受控源），控件绝不自己缓存/修改此值

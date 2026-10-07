@@ -35,20 +35,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneTab 端到端单元测试 —— Phase 4 批 4 标签页控件（R8 受控头 + R10 内容区 show 切换）验收。
- *
- * <p>端到端验证：tabBar 受控闭环（点 tab 只上抛期望页下标、控件零状态不自改）、
- * 内容区 N 选 1（仅活动页内容挂载、切页卸旧挂新）、show 不重建（活动页保持不变重复 flush 不重建）、
- * R6 段穿透（点 tab 内 label 文字穿透到段）、键盘导航（←/→/Home/End/Enter/Space）、
- * disabled 拦截、tabBar 四态切换零重排。</p>
- *
- * <p>外观断言按主题配方语义：导航条底座 = {@code Role.TOOLBAR} 配方，每个 tab 项 =
- * {@code SceneThemes.selectableSurface(Role.INDICATOR, selected)}（选中 tint 换强调色、保留 0x59
- * alpha，故选中不只靠透明度），文字 = 主题正文/禁用前景（选中在强调底前景与正文色间按对比度择一），
- * 内容区面板保持透明不装表面。断言取 {@link SceneThemes#DEFAULT} 的配方值而非硬编码色号，
- * 主题集中调参时本类自动跟随。</p>
- */
+
 public class SceneTabTest {
 
     private SceneNode sceneRoot;
@@ -378,12 +365,8 @@ public class SceneTabTest {
         Assert.assertEquals("activeIndex 设同值：page0 不重建（仍 1 次）", 1, buildCounts.get(0).get());
     }
 
-    // ==================== 验收 4：R6 段穿透（点 tab 内 label 穿透到段） ====================
 
-    /**
-     * R6 权威落地：点 tabSeg[1] 内 label 文字几何中心，命中穿透到 tabSeg[1]，
-     * tabSeg[1] 进 pressed → 切 pressed 背景；释放合成 CLICK 上抛 1。
-     */
+
     @Test
     public void hitTestShouldPassThroughTabLabelToSegment() {
         doLayout();

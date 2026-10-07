@@ -31,53 +31,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * CategoryNavPane —— 分类导航面板（导航族底座 + 内嵌滚动视口 + 轻量选中行）。
- *
- * <h3>定位</h3>
- * <p>左栏竖向分类列表：首行恒为「全部」（key 为 {@code null}），其后按 rows 声明顺序排列。
- * 每行 = 轻量状态覆盖 + 标签 + 数量徽章；点击某行回调 {@code onSelect}（选「全部」时 accept(null)）。
- * 布局常量、行结构与命中策略不变，默认外观全部交还主题。</p>
- *
- * <h3>外观归属（液态玻璃迁移，导航族口径，契约 §4.1）</h3>
- * <p><b>底座</b>（nav 根节点）走 {@link SceneThemes#surface} 的 {@link SceneTheme.Role#TOOLBAR} 配方：
- * background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 六项由
- * {@link SceneSurfaceBinder} 独占；旧 {@code SceneChromeTokens.applyPanelChrome} 静态四件套写入者
- * 已删除。clipChildren 不属于绑定器六项属性，仍由本组件自持（保持原外壳裁剪语义）。</p>
- *
- * <p><b>每一行是真正的 pill 行</b>：消费 {@link SceneThemes#selectableSurface} 的
- * {@link SceneTheme.Role#INDICATOR} 配方状态档（未选中取角色极淡 idle tint，hover/pressed 取角色
- * 对应档，选中把 tint RGB 换成主题强调色、强度取主题统一选中强度，禁用仍走角色禁用档；
- * 优先级 disabled &gt; pressed &gt; hovered &gt; idle，契约 §2.5），再经本地字段级覆盖得到行配方
- * （见 {@link #rowSurface}）。行有真实形状：圆角/描边取角色配方（PILL_RADIUS / 1px，渲染层按
- * 盒子夹取，见渲染层 {@code UiRoundedRectGeometry.clampCornerRadius}），左右内缩与行间间距由
- * 生效字号派生（{@link PickerChrome#navRowInset} / {@link PickerChrome#navRowGap}）。
- * 属性归属：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 六项由
- * {@link SceneSurfaceBinder} 独占——与底座走同一条「配方 → 属性」通道；{@code backdrop} 显式关闭 ⇒
- * <b>行仍是零 BACKDROP 采样</b>（整族滤镜只由导航底座那一颗承担），{@code reliefDisabled} 让行恒走
- * 普通绘制路径（不消费四态 elevation）。虚拟化重绑时行状态全部由该行自己的信号重派生，
- * 不与底座竞争属性槽。</p>
- *
- * <p><b>hover/pressed 可见度（量化口径）</b>：角色配方的 hover tint 只比 idle 高 {@code 0x06}、
- * pressed 甚至比 idle 更淡，在「满宽 + 无圆角 + 无描边」的旧形态下几乎读不出。本组件不做全局
- * 主题调参（超出本控件范围），只把 tint 强度步进放大为 {@code +0x18}（hover）/ {@code +0x2C}
- * （pressed），缘色沿用主题 hovered（{@code 0x40 → 0x80}，2×）/ pressed 档（回落 = 「按下去」）。
- * 同屏可辨判据：hover − idle tint Δalpha ≥ {@code 0x12}（≥7.1pp）、缘 Δalpha ≥ {@code 0x40}；
- * pressed − hovered tint Δalpha ≥ {@code 0x10} 且缘色反向回落。选中行<b>不覆盖</b>：选中已是
- * 0x59 强调填充，色彩语义本身足够区分（{@link SceneThemes#selectableSurface} 原档保持不变）。</p>
- *
- * <p><b>文字</b>：行标签启用取 {@link SceneThemes#foreground}（选中行同色，不取
- * {@code onAccentForeground}——选中底是叠在玻璃上的半透明染色中间调，参照已验收 SceneNavList
- * 的 WCAG 实算裁决），数量徽章与空态提示属次要信息取 {@link SceneThemes#mutedForeground}，
- * 禁用时一律取 {@link SceneThemes#disabledForeground}；旧 {@code TEXT_SECONDARY} 静态写入已删除。</p>
- *
- * <h3>生命周期</h3>
- * <p>全部 bind/forEach/on/interactionState/show 均在 {@code create()} 调用者 Owner 作用域内注册，
- * 卸载随组件回收；主题切换只重派生外观，不重建节点。</p>
- *
- * <h3>空态</h3>
- * <p>rows 为空时经 {@code show} 渲染空提示（emptyLabel 或「暂无分类」兜底）。</p>
- */
+
 public final class CategoryNavPane {
 
     /** 导航面板宽度（像素）。 */
@@ -526,18 +480,7 @@ public final class CategoryNavPane {
                 () -> Integer.valueOf(PickerChrome.navRowInset(metrics.get().fontSizePx())));
     }
 
-    /**
-     * 绑定行表面：{@link SceneThemes#selectableSurface}(INDICATOR, selected) 提供「主题基线 +
-     * 选中语义」，再经 {@link #rowSurface} 做字段级覆盖（只在非选中档放大 tint 步进、关滤镜、关浮雕），
-     * 最后交给 {@link SceneSurfaceBinder} 独占六项写入 —— 行与底座共用同一条「配方 → 属性」通道，
-     * 行的状态优先级（disabled &gt; pressed &gt; hovered &gt; idle）由绑定器按契约 §2.5 执行。
-     *
-     * <p><b>为什么不是 {@code SceneThemes.derivedSurface}</b>：derivedSurface 从 {@code surface(role)}
-     * 起算，拿不到 {@code selectableSurface} 的「选中 = 主题 accent 0x59」语义；而选中强度
-     * {@code SELECTED_TINT_ALPHA} 是主题私有真值，自带一份等于复制主题。故本组件保持
-     * 「selectableSurface + 局部纯函数覆盖（{@code Computed}）」的组合：两条失效源（主题、选中信号）
-     * 都由 Computed 承担，覆盖函数本身无状态。</p>
-     */
+
     private static void bindRowSurface(SceneRuntime rt, ReadableSignal<Boolean> enabled,
                                        ReadableSignal<Boolean> selected,
                                        SceneInteractionState interaction, SceneNode rowNode) {

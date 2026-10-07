@@ -1,5 +1,7 @@
 # 排障与反馈
 
+> 规格与验收以 [唯一 spec](<../superpowers/specs/2026-10-07-uilib-core-contract-design.md>) 为准。本页及所链接的实现、接入和历史资料不另立要求，旧“现行规范”标签及历史编号无规范效力。
+
 [文档首页](../README.md) / 排障与反馈
 
 面向构建、接入与运行故障的排查者。先查当前使用方式，再用历史复盘定位相似症状；记录中的版本、行号、测试结果与处置过程都是撰写当时的事实。
@@ -14,7 +16,7 @@
 | 控件溢出、重复挂载或坐标失真 | [布局约束与踩坑](../开发者文档/布局约束与踩坑.md) | [宿主按钮坐标失真](errors/ERROR-20260714-scene宿主按钮坐标失真.md) · [成员行溢出与误命中](errors/ERROR-20260714-picker成员行文本溢出与误命中.md) |
 | 焦点、文本编辑或关闭后光标异常 | [场景文本输入与浮层](../使用文档/02-控件/场景文本输入与浮层.md) | [焦点投影与成员编辑](errors/ERROR-20260714-scene焦点投影与成员编辑.md) · [光标残留](errors/ERROR-20260725-scene-cursor-close-cleanup.md) |
 | 文字缺失、混排或公式显示异常 | [字体架构](../开发者文档/架构图/04-字体引擎.md) · [LaTeX 支持范围](../开发者文档/LaTeX命令支持清单.md) | [进入世界后文字不出现](errors/ERROR-20260818-world-load-render-pause-upload-chain-break.md) · [混排基线与行高](errors/ERROR-20260819-rich-text-mixed-baseline-line-height.md) |
-| 物品图像或 GL 状态异常 | [物品视觉渲染接缝](../开发者文档/规格文档/物品视觉渲染接缝.md) | [HostImage 状态污染](errors/ERROR-20260714-hostimage-gl状态污染.md) · [Core Profile 能力误判](errors/ERROR-2026-07-14-host-image-core-profile-texture-matrix.md) |
+| 物品图像或 GL 状态异常 | 物品视觉渲染接缝（旧资料已退役，原文见 Git 历史） | [HostImage 状态污染](errors/ERROR-20260714-hostimage-gl状态污染.md) · [Core Profile 能力误判](errors/ERROR-2026-07-14-host-image-core-profile-texture-matrix.md) |
 | Release 或分发流程失败 | [发布流程](../开发者文档/发布流程.md) | [Release draft ID 丢失](errors/ERROR-20260722-github-release-draft-id.md) · [外部渠道耦合](errors/ERROR-20260722-release-channel-coupling.md) |
 
 ## 完整记录入口

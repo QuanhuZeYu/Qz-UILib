@@ -32,19 +32,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneNavList 单元测试 —— 纵向受控单选导航列表的「行为不变 + 默认外观主题化」验收。
- *
- * <p>行为基线（必须继续通过）：{@code preferredHeight} prop 透传、选中指示条/标签位移的
- * standard Motion 半程与终态、受控单选闭环（点/键盘只上抛期望下标）、方向键导航、禁用拦截、
- * 交互与选中切换零重排。</p>
- *
- * <p>主题化验收（G09/NavList）：默认工厂路径底座取 {@code TOOLBAR} 配方、每个选项取
- * {@code selectableSurface(INDICATOR, selected)} 且<b>各自恰好采样一次背景</b>（保留配方自带的
- * 轻滤镜，契约 §4.1「导航族选项的滤镜口径（G09 裁决）」）、选中项 tint 为强调色系且强度 0x59、
- * 文字取主题正文/禁用前景色、{@code withTheme} 切换后底座/项/文字更新且选中项不丢、节点身份
- * 不变、effect 数不增长、卸载后绑定全部回收。</p>
- */
+
 public class SceneNavListTest {
 
     private SceneRuntime runtime;
@@ -298,11 +286,7 @@ public class SceneNavListTest {
 
     // ==================== 滤镜口径：每个选项恰好 1 条 BACKDROP ====================
 
-    /**
-     * 契约 §4.1「导航族选项的滤镜口径（G09 裁决）」：每个选项消费 {@code selectableSurface} 并
-     * <b>保留配方自带的轻滤镜</b>——整树 BACKDROP 命令数 = 底座 1 + 选项 N，且每个选项子树恰好 1 条
-     * （不在配方之外叠第二层玻璃、不把配方 backdrop 置空）。
-     */
+
     @Test
     public void eachItemShouldSampleBackdropExactlyOnce() {
         SceneNode root = mountNav(new SceneNode(), Signal.create(Integer.valueOf(1)),
@@ -326,7 +310,6 @@ public class SceneNavListTest {
         }
     }
 
-    // ==================== 四态优先级与 focus 缘色（契约 §2.5 状态语义） ====================
 
     /**
      * 选项表面四态来自 INDICATOR 配方：disabled &gt; pressed &gt; hovered &gt; idle；

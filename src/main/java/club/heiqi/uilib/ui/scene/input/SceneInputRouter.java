@@ -97,24 +97,7 @@ public class SceneInputRouter {
     /** 显式捕获节点所属 overlay；null 表示主树。 */
     private SceneOverlayHost.Entry capturedOverlayEntry;
 
-    /**
-     * 交互状态：当前 hover 的节点（单节点，最深命中目标）。
-     *
-     * <p><b>语义 = leaf hover（现行规范：{@code docs/开发者文档/规格文档/UI投影宿主语义.md} 的
-     * Input Scope 节），不是浏览器 CSS {@code :hover} 的祖先链匹配。</b>只有最深命中节点收到
-     * hovered=true，其祖先不会因此收到 hover；命中链其余节点只在事件 target/bubble 阶段被派发
-     * ——故 CLICK 仍能沿祖先链冒泡到容器，而 hover/pressed 不能。</p>
-     *
-     * <p>需要「容器级 hover」（列表行、卡片等复合交互单元的整体悬停反馈）时的正解不是改本语义，
-     * 而是让纯装饰/布局子节点 {@code setHitTestable(false)} 使命中穿透到交互单元根：契约见
-     * {@code ui.scene.control} package-info 的 R6；交互单元内真正的独立交互子单元（按钮/输入框）
-     * 保持可命中，其自身区域不属于外层容器的 hover。</p>
-     *
-     * <p><b>何时才做祖先链 hover</b>：仅当出现「同一交互单元内嵌独立交互子单元、且外层仍必须有
-     * 整体 hover 反馈」的真实需求、且该需求无法用命中穿透表达时，才另立「子树 hover 投影」——
-     * 那会改变全库 hover 观感与 cursor/focus 派生，属公共行为变更，须先取得用户确认；在此之前
-     * 本条语义即为现行规范，不做过渡实现。</p>
-     */
+
     private SceneNode hoveredNode;
 
     /**
@@ -331,58 +314,7 @@ public class SceneInputRouter {
         dispatchTargetAndBubble(event, context, target);
     }
 
-    /**
-     * 指针事件主体路由：隐式聚焦/失焦 + effectiveTarget 判定 + target/bubble 派发
-     * + 按压捕获状态更新 + CLICK 合成。
-     *
-     * <p>覆盖 DOWN/MOVE/UP/SCROLL（CANCEL 已由 {@link #dispatchPointerCancel} 专属处理）。</p>
-     *
-     * <h3>隐式聚焦（Bug1）</h3>
-     * <p>POINTER_DOWN 时焦点完全由"这一下点在哪"决定：命中 focusable（含沿命中链向 root 的祖先）
-     * → 聚焦；命中非 focusable 或点在树外 → 失焦（clearFocus，用户拍板反转语义）。放 dispatch 之前，
-     * 使 handler 内 ctx.requestFocus() 可覆盖隐式结果（命中非 focusable 先 clearFocus，事件仍 dispatch，
-     * handler 内 requestFocus 在后覆盖）。无条件进入（去掉 hitTarget != null 守卫）：树外点击 hitTarget==null
-     * 时本块先执行 clearFocus，再走到下方 hitTarget==null→return。</p>
-     *
-     * <p><b>浮层豁免（真因 D1 修复，2026-07）</b>：DOWN 命中的是 active overlay entry 时
-     * （{@code hitResult.overlayEntry != null}，即指针落在 select/autocomplete 等弹层内），
-     * 即使命中链无 focusable（浮层 item 本身通常不登记 focusable），<b>也不清焦</b>——保持 opener 焦点。
-     * 历史背景：autocomplete primitive 的 {@code expanded} 曾从 {@code focused} 派生（Computed），
-     * 若此处 clearFocus → 帧末 flush 后 focused=false → expanded=false → 浮层卸载；
-     * 真机 DOWN/UP 跨帧，UP 到达时浮层已卸载 → hitTarget != pressedNode → CLICK 不合成 → onSelect 永不触发。
-     * 对比 SceneSelect：其 expanded 是独立可写 signal，trigger CLICK 显式翻转，不依赖 focused，故不受 clearFocus 影响。
-     * <b>R13 重构后</b>，autocomplete 的 {@code expanded} 已改为独立可写 Signal + focused effect 驱动（守 R13），
-     * 不再直接派生自 focused；但本豁免<b>保留作通用框架防御</b>——未来其他 overlay 控件若仍有 focus 耦合，
-     * 或 effect 链在极端时序下出现跨帧延迟，本豁免兜底保证 overlay 内点击不掐断 opener 焦点。
-     * 豁免条件严格限定为 {@code hitResult.overlayEntry != null}，不扩大到其他场景。</p>
-     *
-     * <p>★判定只看 hitTarget（命中真值），与 capturedNode/pressedNode 正交——失焦是焦点机制、capture 是指针机制。
-     * 零标脏：clearFocus 内部 writeFocused(false)→queueWrite，focusedNode==null 时短路安全；requestFocus 同款零标脏。</p>
-     *
-     * <p>★N1 守卫：显式 capture 持有期抑制隐式聚焦——capture 已把指针归属锁定到 capturedNode，
-     * 此时同一 DOWN 若再走隐式聚焦（命中非 focusable/树外 → clearFocus）会与 capture 投递形成相反归属，
-     * capture 持有期焦点机制让位指针 capture，跳过本块。</p>
-     *
-     * <h3>effectiveTarget 判定（含显式指针捕获）</h3>
-     * <p>显式 capture 优先 ＞ 隐式 pressedNode（MOVE/UP）＞ hitTarget。非捕获且未命中（hitTarget==null）
-     * 直接 return 跳过此事件（原 route 循环中的 continue，因后续逻辑全在本方法内，return 等价）。</p>
-     *
-     * <h3>CLICK 合成</h3>
-     * <p>UP 时基于 LCA（最近公共祖先）容差合成——DOWN 的 pressedNode 与 UP 的原始命中 hitTarget
-     * 的最近公共祖先非空时，在 UP 派发完成后合成 CLICK 派发到该 LCA target+bubble 链。
-     * 严格身份相等（{@code hitTarget == pressedNode}）在 keyed diff 重建节点 / layout 位移 /
-     * hover 命中盒变化时会丢 CLICK（P1 真因）；LCA 容差对节点身份变化鲁棒，参考旧栈
-     * {@code DocumentClickEventDispatcher#findNearestCommonInclusiveAncestor}。出界 UP
-     * （hitTarget=null）或跨 overlay/主树无公共祖先时不合成。</p>
-     *
-     * @param pe        指针事件
-     * @param type      已映射的事件类型（非 null，非 CANCEL）
-     * @param canvasX   画布逻辑 X
-     * @param canvasY   画布逻辑 Y
-     * @param hitResult hit-test 结果（含命中链与 overlay entry）
-     * @param rootAbsX  根节点屏幕绝对 X 偏移
-     * @param rootAbsY  根节点屏幕绝对 Y 偏移
-     */
+
     private void dispatchPointerMain(ScenePointerEvent pe, SceneEventType type,
                                      int canvasX, int canvasY,
                                      HitResult hitResult, int rootAbsX, int rootAbsY) {
@@ -400,7 +332,6 @@ public class SceneInputRouter {
             } else if (hitResult.overlayEntry == null) {
                 // 命中主树非 focusable 或树外(null) → 失焦
                 // 豁免：命中 active overlay（浮层 item 通常非 focusable）时不清焦，保持 opener 焦点。
-                // R13 重构后 autocomplete expanded 已是独立可写 Signal + effect 驱动，本豁免保留作通用框架
                 // 防御（未来其他 overlay 控件 / effect 跨帧延迟兜底），历史 D1 背景见类 Javadoc。
                 focusManager.clearFocus();
             }
@@ -420,7 +351,6 @@ public class SceneInputRouter {
             // ★ 后果（逃生舱边界）：指针不在任何节点上时（树外、或命中链为空的空白区）MOVE 不再
             // 派发，因此「容器用 rt.on(node, POINTER_MOVE) 接收后代冒泡来自维护『指针在子树内』」
             // 的做法收不到收尾事件——指针移出后自维护 hover 会滞留。容器级 hover 的正解是让
-            // 装饰/布局子节点命中穿透（控件层契约 R6），而不是自维护一份指针状态。
             if (hitTarget == null) return;
             effectiveTarget = hitTarget;
         }
@@ -1337,14 +1267,7 @@ public class SceneInputRouter {
         focusManager.addFocusable(node);
     }
 
-    /**
-     * 将节点从可聚焦注册表移除（薄委托到 {@link FocusManager#unregisterFocusable}）。
-     *
-     * <p>用于 enabled=false 时让控件退出 Tab 环（守 package-info R9「disabled 不可聚焦」）。
-     * 若该节点是当前焦点，会立即清失焦点。</p>
-     *
-     * @param node 目标节点
-     */
+
     public void unregisterFocusable(SceneNode node) {
         focusManager.unregisterFocusable(node);
     }

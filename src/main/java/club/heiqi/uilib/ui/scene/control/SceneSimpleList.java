@@ -564,22 +564,7 @@ public final class SceneSimpleList {
         };
     }
 
-    /**
-     * 构建单行编辑节点。
-     *
-     * <p>draggable=true 时行首追加拖拽把手（独立交互单元，承接 POINTER_DOWN 启动拖拽）；
-     * 把手内图标 hitTestable=false 穿透到把手（R6）。</p>
-     *
-     * <p>行外观只做轻量状态覆盖：默认全透明露出底座玻璃，hover/按下/拖拽取主题 accent 半透明染色；
-     * 行自身不装滤镜、不写边框与圆角，故不与底座争同一属性槽。行内输入框复用
-     * {@link SceneTextInput} 已主题化的 INPUT 表面与前景（含占位 mutedForeground），本控件不重复绑定。</p>
-     *
-     * @param rt       场景运行时
-     * @param props    SimpleList 输入契约
-     * @param viewport 列表视口（拖拽 MOVE 时按其子节点 box 定位目标行）
-     * @param row      行数据
-     * @return 行根节点
-     */
+
     private static SceneNode buildRow(SceneRuntime rt, Props props, Signal<List<ListItem>> previewItems,
                                       SceneNode viewport, Signal<Integer> scrollSignal, ListItem row) {
         SceneNode line = SceneNode.row();
@@ -679,26 +664,7 @@ public final class SceneSimpleList {
         return (alpha << 24) | (argb & 0x00FFFFFF);
     }
 
-    /**
-     * 构建拖拽把手节点并注册四段式拖拽 handler（复刻 SceneScrollbar 范式）。
-     *
-     * <p><b>中线插槽换位</b>：拖拽业务瞬态（起点/武装/dragging 标志/起点坐标）存 handler
-     * 局部闭包变量；{@code dragOffsetSig} 仅投影被拖行浮起偏移。POINTER_DOWN 只记起点，
-     * 达到激活阈值后重采样受控顺序并 requestPointerCapture；
-     * MOVE 在被拖行中心越过相邻行中线时算目标 index，与 dragId 当前 index 不同则 moveItem 重排（id 保留，引用移动），
-     * 重排经 {@code items.set → keyed diff} 平移节点（守 R4：不改节点 setXxx；keyed diff：id 不变复用节点）；
-     * UP/CANCEL 清 dragging 释放 capture。</p>
-     *
-     * <p>坐标系（两层：raw 屏幕绝对 / local 当前节点局部）：treeRootAbsY 不可直接读，由 {@code (rawY - handleLocalY) - absBox(handle,0,0).y}
-     * 反推（handle 为 currentNode 时 {@code localY = rawY - absBox(handle,treeRootAbs).y}，二者配合消去 rootAbs）。
-     * 再据此把各行子节点 layout Y 平移到屏幕系与 rawPointerY 同系比对，生产（rootAbs≠0）与测试（rootAbs=0）通用。</p>
-     *
-     * @param rt       场景运行时
-     * @param props    SimpleList 输入契约
-     * @param viewport 列表视口（拖拽 MOVE 时遍历其子节点 box 定位目标行）
-     * @param row      行数据（id 在闭包内捕获为 final，恒定）
-     * @return 把手节点
-     */
+
     private static SceneNode buildDragHandle(SceneRuntime rt, Props props, Signal<List<ListItem>> previewItems,
                                              SceneNode viewport, Signal<Integer> scrollSignal, ListItem row) {
         // dragId 不可变：row.getId() 在 keyed diff 复用期间恒定（buildRow 仅建一次）

@@ -36,14 +36,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneSelect 端到端单元测试 —— R8 受控选择 + R11 signal→portal 浮层契约验收。
- *
- * <p>外观按主题化后语义断言：触发器消费 {@link SceneTheme.Role#INPUT INPUT 角色配方}与主题
- * {@code foreground}/{@code mutedForeground}/{@code disabledForeground}，弹出底座消费
- * {@link SceneTheme.Role#OVERLAY OVERLAY 角色配方}，候选行只做 hover/选中/键盘高亮的轻量
- * 半透明覆盖（默认透明、行不装滤镜）。portal、键盘导航、选中源、焦点返回与值保持语义不变。</p>
- */
+
 public class SceneSelectTest {
 
     private SceneNode sceneRoot;

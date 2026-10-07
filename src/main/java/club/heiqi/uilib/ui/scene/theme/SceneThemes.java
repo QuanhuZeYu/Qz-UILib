@@ -340,28 +340,7 @@ public final class SceneThemes {
         return color(rt, theme -> theme.danger());
     }
 
-    /**
-     * 「成功」语义前景的只读派生。<b>当前委托 {@link #accent(SceneRuntime)}（G19/P-02
-     * 裁决：临时借道，非最终观感定档）。</b>
-     *
-     * <p><b>裁决理由</b>：{@code SceneTheme} 的冻结分量清单（契约 §2.3）没有 success 槽；
-     * 增设分量需要一对「对三档名义底均 ≥4.5:1 且不引入新色板来源」的干净绿值——G19 用
-     * WCAG 实算扫描候选（M3 green80/green40/green500 均过 dark 档 6.30~8.24:1 但对浅色档
-     * 名义底仅 1.66~2.17:1；深色绿 {@code 0xFF006C34} 反之过 light 6.25:1 不过 dark 2.18:1），
-     * 单一值无解、双值属自造色板（契约 §5 起步色板无绿），故本入口<b>暂委托 accent</b>，
-     * 与 G15/Shell「成功态用 accent」既有裁决同源同值。届时若主代理批准增设
-     * {@code SceneTheme.successText()} 分量，只改本方法实现为
-     * {@code color(rt, theme -> theme.successText())}，各消费点（Toast 成功色点、Shell 成功
-     * 反馈等）经本入口自动跟随，无需逐控件再收编。</p>
-     *
-     * <p><b>对比度警示</b>：深色档 accent（{@code 0xFF4F378B}）对 PANEL 名义底仅约 1.54:1，
-     * 成功语义用于<b>正文级长文本</b>时可读性不足，现阶段适合色点、徽标、短反馈文本的强调
-     * 着色；宿主如需成功正文文本，优先走 {@link #foreground(SceneRuntime)} 并另加非颜色
-     * 区分（图标/文案）。</p>
-     *
-     * @param rt 目标 runtime，不可为 null
-     * @return 成功语义前景信号（现值恒等于同主题 accent）
-     */
+
     public static ReadableSignal<Integer> successText(SceneRuntime rt) {
         return color(rt, SceneTheme::accent);
     }

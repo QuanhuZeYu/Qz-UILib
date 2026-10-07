@@ -4,7 +4,9 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * 响应式 signal 原子：数据层最小状态单元：UI 状态只经 signal 改变，写入经中央事务收口。
+ * 响应式 signal 的当前实现。
+ * <p>目标合同见唯一 spec 第 3 节：直接状态写后立即可读。当前队列实现尚未满足该要求，
+ * 下述方法说明仅描述实现现状，不定义延迟读取的规范。</p>
  * <ul>
  *   <li>{@link #get()} 在响应式上下文中自动注册订阅（依赖追踪）</li>
  *   <li>{@link #set(Object)} 经 {@link ReactiveScheduler} 批处理，帧末统一生效</li>
@@ -49,7 +51,7 @@ public final class Signal<T> implements ReadableSignal<T> {
      *
      * <p><b>effect 内调用同帧生效</b>：{@link ReactiveScheduler#flush()} 已改为「drain-writes 与 run-effects
      * 双通道交替到不动点」，effect 内 set 进入的 pendingWrites 在紧接的 drain 轮内即被应用、订阅者被 markDirty、
-     * 下游 effect 在同一 flush 内重跑。无需任何绕过调度器的同步写入（守 signal 写入的唯一收口）。effect 内 set signal
+     * 下游 effect 在同一 flush 内重跑。这是当前调度实现，写入可见性须后续按 spec 迁移。effect 内 set signal
      * 需要包 {@link Effect#untrack} 避免下游订阅反向触发本 effect 重订阅形成环（守 signal 单向流）。</p>
      *
      * @param newValue 新值

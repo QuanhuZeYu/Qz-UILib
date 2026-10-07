@@ -40,27 +40,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * {@link CategoryNavPane} 单元测试（G13 液态玻璃迁移口径）。
- *
- * <p>行为基线（必须继续通过）：3 分类渲染与徽章文本格式、点击回调 key / 全部 accept(null)、
- * 选中态随 categoryKey 变化、空态提示、滚动结构、行命中与禁用拦截。</p>
- *
- * <p>主题化验收（导航族口径，契约 §4.1 + G09 裁决的实例化）：</p>
- * <ul>
- *   <li>底座 = {@code TOOLBAR} 配方，六项（background/border/borderWidth/cornerRadius/backdrop/
- *       surfaceElevation）由 {@code SceneSurfaceBinder} 独占；旧 {@code applyPanelChrome}
- *       实色四件套不再出现。</li>
- *   <li>行 = <b>pill 行</b>：{@code selectableSurface(INDICATOR, selected)} 为主题基线，
- *       本地只放大非选中档的 tint 步进（hover +0x18 / pressed +0x2C）并关滤镜/关浮雕；形状
- *       （圆角 + 1px 描边）取角色配方，左右内缩与行间间距由生效字号派生；<b>行零 BACKDROP</b>
- *       （底座恰好新增 1 颗采样）。状态档量化判据见 {@link #rowStatesAreQuantifiablyDistinctFromIdle}。</li>
- *   <li>复用/重绑不串状态：换 key 重建的行不带上一项的选中/hover 残留；同 key 换位节点身份不变、
- *       选中跟随 key。</li>
- *   <li>文字取主题 {@code foreground}/{@code mutedForeground}，禁用取 {@code disabledForeground}。</li>
- *   <li>主题切换只重派生：节点身份不变、effect 数不增长；卸载回收全部绑定。</li>
- * </ul>
- */
+
 public class CategoryNavPaneTest {
 
     private SceneNode sceneRoot;

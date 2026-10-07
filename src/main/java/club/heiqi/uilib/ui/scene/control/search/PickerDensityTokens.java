@@ -1,28 +1,6 @@
 package club.heiqi.uilib.ui.scene.control.search;
 
-/**
- * PickerDensityTokens —— 选择器尺寸/密度派生的<b>唯一比例常量表</b>（P5 §4.2 A）。
- *
- * <h3>为什么是"比例常量"而不是"尺寸表"</h3>
- * <p>本类只登记<b>比例、除数、夹取边界</b>；任何"某分辨率下的确定像素值"都不在这里 ——
- * 那些值必须由 {@link PickerMetrics} 从「逻辑盒 + 字号 + 密度档」派生。
- * 把 {@code 48 / 248 / 168 / 64} 这类确定值写进令牌表，等于把静态假定换个地方藏起来
- * （用户工程偏好「不假定静态」红线）。</p>
- *
- * <h3>唯一允许的确定像素值</h3>
- * <ul>
- *   <li><b>夹取边界</b>（clamp 上下界）：它们本身是"可读性下限 / 空间上限"的语义，
- *       且参与派生，不是布局快照；</li>
- *   <li><b>{@code LEGACY_*} 现状基线常量</b>：只服务 {@link PickerMetrics#legacyBaselineItems}
- *       的<b>支配性对照</b>（红线 R1/R2「不得低于现状」的参照物），<b>不参与任何布局计算</b>。
- *       它们一旦被用于布局即属违约。</li>
- * </ul>
- *
- * <h3>失效通道（P5 §4.3 铁律 5：无失效通道的令牌禁止新增）</h3>
- * <p>本类全部常量是 {@code static final} <b>编译期比例</b>，不是可变量，因此不需要失效通道：
- * 它们不随任何运行期状态变化。真正需要失效通道的是<i>由它们派生的结果</i>，
- * 该职责由 {@link PickerMetrics} 的输入信号（逻辑盒 / 字号倍率 / 密度偏好）承担。</p>
- */
+
 public final class PickerDensityTokens {
 
     private PickerDensityTokens() {

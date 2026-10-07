@@ -29,12 +29,7 @@ import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneLabel 通用文本组件测试：属性装配、富文本模式透传、信号驱动文本更新。
- *
- * <p>前景语义（契约 §2.7）：无颜色参数的普通调用跟随来源主题；显式 color 继续生效，
- * 含色值恰好等于旧 {@link SceneChromeTokens#TEXT_PRIMARY} 的情况。</p>
- */
+
 public class SceneLabelTest {
 
     private SceneNode sceneRoot;

@@ -1,5 +1,7 @@
 # L1 scene 渲染管线：一帧真实数据流
 
+> 当前管线实现记录，不冻结阶段顺序、flush 位置或算法。目标和验收见 [唯一 spec](<../../superpowers/specs/2026-10-07-uilib-core-contract-design.md>)。
+
 一句话定位：从宿主 `AbstractSceneHostWidget.render` 经帧管线 `SceneFramePipeline` 到 GL 的一帧完整流水线，阶段顺序与源码一致。
 
 > 素材基线：源码实时状态（2026-08-18）。涉及类名可在 `src/main/java` 核对。

@@ -15,41 +15,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * PickerInfoBar —— 搜索面板底部的信息横条（常驻单行文本提示）。
- *
- * <h3>定位</h3>
- * <p>自带底表面的条带类容器，仅承载一行次要前景文本（12px），文本由受控信号驱动，
- * 外壳不负责省略（派生文本由调用方负责）。常驻挂载：文本为空时显示空串而非卸载。</p>
- *
- * <h3>外观归属（液态玻璃迁移，G13 搜索配件族口径）</h3>
- * <p>外壳 background/border/borderWidth/cornerRadius/surfaceElevation/backdrop 六项由
- * {@link SceneSurfaceBinder} 独占，消费来源主题 {@link SceneTheme.Role#TOOLBAR} 配方
- * （条带类容器取 FormActionBar 已验收先例；GROUP 是网格/内容底座口径，不适用）。
- * 文本取主题 {@code mutedForeground} 语义前景（旧 {@code TEXT_SECONDARY} 的迁移落点，
- * 与 MemberGrid 副文本同口径）。无复制通道时 {@code hitTestable(false)} 纯展示：hover/pressed/focus
- * 永不触发，不预声明交互信号、不绑定 motionRoot（有复制通道时的差别见下节）。信息条常驻隐式启用（与迁移前一致，
- * {@link Props#enabled()} 仅保留宿主统一接线），故表面绑定恒传启用信号。
- * 内边距/固定高为布局常量（契约 §4.2「尺寸/间距常量继续使用」）。主题切换只重派生外观，
- * 不重建节点；全部绑定注册在 create() 调用者 Owner 作用域内，卸载随组件回收。</p>
- *
- * <h3>可选「点击复制」通道（P5 §5.4 D4）</h3>
- * <p>{@link #create(SceneRuntime, Props, Runnable)} 传入非 null 的 {@code onCopy} 时，条体成为
- * <b>可命中面</b>（{@code hitTestable(true)} + 构建期声明 hover/pressed/focused 三态，表面按同一
- * TOOLBAR 配方状态档重派生），CLICK 目标恒为条体自身（内部文本叶仍 {@code hitTestable(false)}）。
- * 两个形态的差别只在这一处：不传 {@code onCopy} 时行为与迁移前逐位一致（纯展示、不参与命中）。
- * 命中面本身不承担「点击是否算面板外点击」的判定 —— 该判定由面板 scrim 的
- * 「命中目标 == scrim 自身」单点闸门承担（见 ScenePickerPanel），故点条体既触发复制、又不会被
- * 外部点击关闭逻辑吞掉。</p>
- *
- * <h3>语义</h3>
- * <ul>
- *   <li>外壳固定高 {@link #INFO_BAR_HEIGHT}，上下内边距 {@link SceneChromeTokens#PAD_SM}
- *       （沿用原布局实参 {@code setPadding(PAD_SM, 0, PAD_SM, 0)}，语义与数值零改动）。</li>
- *   <li>{@code clipChildren(true)}、{@code hitTestable(false)}：纯展示，不参与命中。</li>
- *   <li>内部文本子节点经 {@link SceneRuntime#bindText} 绑定 text 信号，随组件卸载一并回收。</li>
- * </ul>
- */
+
 public final class PickerInfoBar {
 
     /** 信息条高度（像素）。 */

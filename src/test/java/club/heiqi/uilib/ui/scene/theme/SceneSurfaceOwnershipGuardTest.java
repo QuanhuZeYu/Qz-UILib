@@ -20,17 +20,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
-/**
- * 表面写入权守卫契约测试（G20 第 3 步）。
- *
- * <p>守卫的运行期语义：{@code SceneSurfaceBinder} 首次写入后，公开 setter 对**该节点**的
- * 表面属性（backgroundColor / borderColor / borderWidth / cornerRadius / backdrop）抛
- * {@link IllegalStateException}；绑定器自身走 {@code __write*} 内部通道不受影响；绑定释放
- * （Owner/Binding dispose）后写入权归还应用侧。契约依据见「契约 §4 属性归属表」。</p>
- *
- * <p>覆盖：接管后逐属性拒绝（含消息可诊断性）/ bind 前与首次 flush 前合法 / 释放后归还 /
- * 未接管节点与轻量槽零影响。</p>
- */
+
 public class SceneSurfaceOwnershipGuardTest {
 
     private static final Constraints CANVAS = new Constraints(200, 100);

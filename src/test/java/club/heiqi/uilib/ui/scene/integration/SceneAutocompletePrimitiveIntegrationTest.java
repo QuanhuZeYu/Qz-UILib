@@ -31,25 +31,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.testkit.SceneInteractionHarness;
 
-/**
- * SceneAutocompletePrimitive L3 集成测试 —— 验证浮层显隐信号链、键盘导航、选中、portal 挂卸、
- * expanded effect 驱动与键集正交（守 R13 + R10/R11 + keyed diff）。
- *
- * <p>覆盖：
- * <ul>
- *   <li>浮层显隐信号链（R13：expanded 独立可写 Signal + focused/filtered effect 驱动）：
- *       focus→打字→filtered 重算→effect set expanded=true→portal 挂载；失焦→effect set false→卸载；
- *       ESC→expanded.set(false)→卸载；再打字→filtered 重算→effect set true→重弹。</li>
- *   <li>键盘：ARROW_DOWN/UP 移动 highlightedIndex（截止边界）；ENTER 上抛正确候选 + 关闭；ESC 关闭。</li>
- *   <li>选中：item CLICK 上抛正确候选 + expanded.set(false)。</li>
- *   <li>portal 挂卸：expanded 反复 true/false 时 overlay entry 正确增删。</li>
- *   <li>协作回归：ARROW_LEFT/RIGHT/BACKSPACE 仍走 primitive（caret 移动/删除正常），未被 autocomplete 吞。</li>
- * </ul>
- *
- * <p>键盘导航属 overlay 行为，harness 固定 0,0 坐标对 overlay 节点几何不适用，故用白盒回退
- * （SceneSelectPrimitiveTest 同款）：自建 InputFrameBuilder 注入到 sceneRoot（KEY_DOWN 冒泡根节点
- * 不要求几何中心）。</p>
- */
+
 public class SceneAutocompletePrimitiveIntegrationTest {
 
     private SceneNode sceneRoot;
@@ -471,7 +453,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
         Assert.assertTrue("ENTER 回写后 overlay 不应重挂", runtime.getOverlayHost().isEmpty());
     }
 
-    /** ESC → expanded.set(false) → 关闭；再打字→filtered 重算→effect set true→重弹（守 R13 effect 驱动）。 */
+
     @Test
     public void escapeSuppressesAndTypingRestarts() {
         doLayout();
@@ -543,21 +525,7 @@ public class SceneAutocompletePrimitiveIntegrationTest {
 
     // ==================== 契约 5b：跨帧点击守卫（真因 D1 回归） ====================
 
-    /**
-     * 跨帧点击 listbox item[1]：DOWN 与 UP 之间隔一帧 flush + layout。
-     *
-     * <p>真因 D1 守卫（R13 重构 + C1 双保险）：R13 重构前 autocomplete {@code expanded} 派生自
-     * {@code focused}（Computed），DOWN 命中 overlay item（非 focusable）时若 Router 无条件 clearFocus，
-     * DOWN→flush 后 focused=false→expanded=false→浮层卸载；UP 到达时浮层已卸载，
-     * hitTarget != pressedNode → CLICK 不合成 → onSelect 永不触发（即"点击/hover 无响应"现象）。
-     * R13 重构后 {@code expanded} 改为独立可写 Signal + focused effect 驱动（守 R13），但 effect 内
-     * {@code if (!focused) expanded.set(false)} 仍会在 focused 掐断时关浮层——故 C1 豁免（SceneInputRouter
-     * 命中 active overlay 时不清焦）保留作框架兜底：C1 阻止 clearFocus → focused 保持 → expanded effect
-     * 不关浮层 → UP 命中同 item → CLICK 合成 → onSelect 上抛候选。</p>
-     *
-     * <p>本用例改 P0-1 之前应红（onSelectValue 仍 null），改之后绿；R13 重构后仍依赖 C1 兜底，继续绿。
-     * 与 {@link #itemClickCommitsCandidate}（同帧 clickCenter）互补，覆盖真机跨帧盲区。</p>
-     */
+
     @Test
     public void itemClickSurvivesCrossFrameFocusLoss() {
         doLayout();

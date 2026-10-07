@@ -16,59 +16,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneSlider —— scene 新栈控件层 Phase 4 批 3 迁移控件（水平连续数值滑块）。
- *
- * <h3>定位：受控连续值控件（契约 R7 连续版）</h3>
- * <p>当前值由外部 {@code value} 只读 signal 驱动，控件<b>零内部受控状态</b>。
- * 交互时只经 {@code onChange(value, committing)} 把「期望的新值」交还外部，
- * 由外部决定是否 set 回 value signal。控件自身唯一的本地态是
- * <b>瞬态拖拽值 {@code draggingValue}</b>（由 {@link SceneSliderPrimitive} 内部创建，
- * null=未拖拽，仅 pointerCapture 生命周期内存活，被 handler 闭包捕获、归 Owner 作用域），
- * 它不是控件类字段（守 R1 零实例字段），<b>降级为纯渲染 signal（只写不读）</b>——
- * 仅在拖拽期临时接管 progress 派生，松手清 null 自动回落外部 value。
- * UP/MOVE 的业务值用事件坐标当场算（valueFromPointerX），绝不读 draggingValue。</p>
- *
- * <h3>渲染派生（守 R7 受控零状态）</h3>
- * <p>统一读 {@code effectiveValue = draggingValue!=null ? draggingValue : value}，
- * 由它算 {@code progress = clamp((effectiveValue-min)/(max-min),0,1)}。非拖拽期 draggingValue==null，
- * 完全由外部 value 驱动；拖拽期临时接管，松手清 null 回落外部 value（即使外部不回写）。
- * 所有外观变化经 {@code rt.bind(computed(...))}，绝不在 handler 里直接 setXxx（R4）。</p>
- *
- * <h3>结构</h3>
- * <pre>
- * root (ROW, crossAxisAlign=CENTER, 装饰穿透 hitTestable=false)
- *   └─ track (ROW, crossAxisAlign=CENTER, preferredWidth=200, 交互单元 hitTestable=true)  ← 绑 interactionState
- *         ├─ fillBox (叶, preferredWidth 动态=round(W*progress)-thumb/2, 装饰穿透)  ← 进度填充（accent 实色）
- *         └─ thumb   (叶, THUMB_SIZE 圆, 装饰穿透)                                  ← 紧随 fill 推到 progress 位置
- * </pre>
- * <p>track 是交互单元（{@code setHitTestable(true)}），root/fill/thumb 全部 {@code setHitTestable(false)}
- * 命中穿透到 track（交互单元）——R6。
- * thumb 骑中心用负偏移近似：fillBox 宽减 thumbSize/2，使 thumb 中心落在 {@code round(W*progress)}。
- * <b>margin 精确定位回退说明</b>：经核查，当前布局引擎无绝对定位、负 margin collapse 规则不完整、
- * setPreferredWidth(0) 触发 fill 陷阱（0=不约束=回退 fill 父宽），三重约束下无法用 margin 精确定位
- * thumb 中心到 round(W*progress) 且 progress=0 时 thumb 中心=0。故回退当前近似方案，不阻塞缺陷 D 修复。</p>
- * <p><b>外观归属</b>：track 由 INPUT 角色配方、thumb 由 INDICATOR 强调配方经
- * {@link SceneSurfaceBinder} 独占写入（圆角/边框/滤镜/实体高度全来自配方），fillBox 底色取主题
- * {@code accent}/{@code disabledForeground}；控件自身只保留尺寸、间距与 fill 圆角这类非颜色几何。</p>
- *
- * <h3>拖拽手势（pointerCapture，committing 双语义，缺陷 D 根治后）</h3>
- * <ul>
- *   <li>POINTER_DOWN：{@code requestPointerCapture}，按命中 x 当场算初值，draggingValue.set(初值)（纯渲染），onChange(初值, committing=false)</li>
- *   <li>POINTER_MOVE（capture 期间强制投递到 root，无 draggingValue==null 守卫）：按指针 x 当场算新值，draggingValue.set(newV)（纯渲染），onChange(newV, committing=false)——预览</li>
- *   <li>POINTER_UP：按指针 x 当场算提交值（绝不读 draggingValue），draggingValue.set(null) 清渲染态，onChange(当场算的 v, committing=true)——提交后归还外部</li>
- *   <li>POINTER_CANCEL：draggingValue.set(null)——取消不提交、不读 signal</li>
- * </ul>
- *
- * <h3>键盘步进（focusable + KEY_DOWN，离散提交 committing=true，不走 draggingValue）</h3>
- * <p>←/↓ 减、→/↑ 加（步长 = step>0?step:(max-min)/100）；PageUp 加 10×、PageDown 减 10×；Home→min、End→max。
- * 每次读 {@code value.get()} 算相邻值（读 signal 合法：handler 边界只禁写节点属性槽，不禁读 signal），onChange(量化+clamp 后的 newV, committing=true)。</p>
- *
- * <h3>契约</h3>
- * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 不可变常量 + 回调 / R3 组件函数只执行一次 /
- * R4 外观随状态经 bind 派生 / R5 交互态读 interactionState / R6 装饰子节点命中穿透 /
- * R7 受控连续零内部受控状态。</p>
- */
+
 public final class SceneSlider {
 
     /**
@@ -95,23 +43,11 @@ public final class SceneSlider {
      */
     private static final int FILL_MIN_WIDTH = 1;
 
-    /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
+
     private SceneSlider() {
     }
 
-    /**
-     * Slider 输入契约 —— 受控连续：当前值由外部只读 signal 驱动，
-     * 交互经 onChange 交还期望新值（契约 R2/R7）。
-     *
-     * <p>onChange 类型复用 {@link SceneSliderPrimitive.SliderChange}，不再单独声明子接口。</p>
-     *
-     * @param value    当前值（响应式只读，受控源），控件绝不自己缓存此值
-     * @param enabled  是否启用（响应式只读），false 时禁用拖拽/键盘并切灰态
-     * @param min      最小值（不可变常量）
-     * @param max      最大值（不可变常量，应 &gt; min）
-     * @param step     步进（不可变常量），&lt;=0 表示连续（不量化）
-     * @param onChange 值变更回调，预览传 committing=false、提交传 committing=true
-     */
+
     @Desugar
     public record Props(
             ReadableSignal<Double> value,
@@ -226,27 +162,7 @@ public final class SceneSlider {
         }
     }
 
-    /**
-     * 工厂：构建 Slider 组件函数。
-     *
-     * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：
-     * 建树 + 设静态尺寸 + 体内创建瞬态 {@code draggingValue} signal（被 handler 闭包捕获，
-     * 归 Owner 作用域，非控件类字段守 R1）。动态外观全落 {@code bind(computed(...))}，
-     * 拖拽/键盘交互只经 {@code draggingValue.set} 或 {@code onChange} 回调（R4/R5/R7）。</p>
-     *
-     * <p><b>主题化</b>：track 走 {@link SceneThemes#surface} 的 INPUT 角色配方（凹陷轨道），
-     * thumb 走 {@link SceneThemes#accentSurface} 的 INDICATOR 强调配方，两者由
-     * {@link SceneSurfaceBinder} 独占 background/border/borderWidth/cornerRadius/backdrop/
-     * surfaceElevation——不再静态设值，也不再叠加 {@code SceneStateColors} 与
-     * {@code SceneControlChrome.bindStandardBorder} 的第二外观写入者；fillBox 底色取
-     * {@link SceneThemes#accent}（禁用取 {@link SceneThemes#disabledForeground}）。
-     * thumb 的 {@code motionRoot} 显式传 null：数值定位由 primitive 的布局（fill 宽度 + thumb
-     * 紧随）驱动，绑定器不得写其 transform/opacity。</p>
-     *
-     * @param rt    场景运行时
-     * @param props Slider 输入契约
-     * @return 组件函数，交 {@code rt.mount(parent, ...)} 挂载
-     */
+
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
             SceneSliderPrimitive.Props primitiveProps = new SceneSliderPrimitive.Props(

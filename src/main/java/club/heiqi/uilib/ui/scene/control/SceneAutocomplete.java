@@ -17,42 +17,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneAutocomplete —— scene 新栈带样式自动补全成品控件。
- *
- * <p>包装 {@link SceneAutocompletePrimitive}：在行为核心之上挂载输入区 chrome 与候选浮层
- * chrome。调用方无需再手写 {@code applyTextInputChrome} / listbox 装饰，直接
- * {@code SceneAutocomplete.create(rt, props)} 即可。</p>
- *
- * <h3>外观归属：主题配方是唯一写入者</h3>
- * <ul>
- *   <li>输入区：{@link SceneSurfaceBinder} 从 {@link SceneThemes#surface(SceneRuntime,
- *       SceneTheme.Role) INPUT 角色配方}派生 background/border/borderWidth/cornerRadius/
- *       backdrop/surfaceElevation；正文/占位/禁用前景与 caret、选区色消费主题语义色
- *       （与 {@link SceneTextInput} 同一接缝，不静态设色、不叠加第二套实色动画）。</li>
- *   <li>候选浮层：同一个绑定器从 {@link SceneTheme.Role#OVERLAY OVERLAY 角色配方}派生浮层根的
- *       表面属性——浮层是独立玻璃面，候选行只做 hover/键盘高亮的轻量染色覆盖，不逐项采样滤镜。</li>
- * </ul>
- *
- * <h3>与 Primitive 的边界</h3>
- * <ul>
- *   <li>本类负责视觉 chrome（padding/INPUT 表面/主题前景/cursor + OVERLAY 表面/item 覆盖）。</li>
- *   <li>{@link SceneAutocompletePrimitive} 保留不删：无样式行为核心 + R13 expanded 独立 Signal；
- *       过滤、补全、键盘导航、延迟打开/关闭语义全在 primitive，本类不改。</li>
- *   <li>Props 对齐 TextInput + candidates/matchMode/maxVisible/onSelect；不暴露 chrome 注入口
- *       （成品壳内置默认 chrome）。</li>
- * </ul>
- *
- * <h3>合规守护</h3>
- * <ul>
- *   <li>R1：纯静态工厂 + 零实例字段。</li>
- *   <li>R3：create 体只跑一次（建树 + chrome bind）。</li>
- *   <li>R4：外观经 rt.bind/bindComputed 派生；构造期只捕获主题信号，不解引用未求值的 Computed。</li>
- *   <li>R13：expanded 由 primitive 持有独立可写 Signal，本类不派生。</li>
- *   <li>候选项 keyed diff（按 key 复用/增删）在 primitive 内完成。</li>
- *   <li>零 config 依赖：不 import 任何 {@code club.heiqi.config.*}。</li>
- * </ul>
- */
+
 public final class SceneAutocomplete {
 
     /** caret 不可见（全透明，纯 PAINT 切换不重排）。 */
@@ -74,20 +39,7 @@ public final class SceneAutocomplete {
     private SceneAutocomplete() {
     }
 
-    /**
-     * Autocomplete 成品输入契约。
-     *
-     * @param value       当前文本（受控源，R9）
-     * @param enabled     是否启用
-     * @param readOnly    是否只读
-     * @param placeholder 占位文本
-     * @param maxLength   最大长度（码点数）
-     * @param candidates  构建期固定候选列表
-     * @param matchMode   匹配模式，null 时默认 PREFIX
-     * @param maxVisible  浮层最多候选数，{@code <=0} 时用 primitive 默认
-     * @param onChange    文本变更上抛
-     * @param onSelect    选中候选上抛；null 时回退 onChange
-     */
+
     @Desugar
     public record Props(
             ReadableSignal<String> value,

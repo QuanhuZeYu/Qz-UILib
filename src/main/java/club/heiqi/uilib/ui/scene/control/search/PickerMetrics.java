@@ -5,56 +5,7 @@ import com.github.bsideup.jabel.Desugar;
 import club.heiqi.uilib.font.layout.FontSizeLimits;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/**
- * PickerMetrics —— 选择器「尺寸 / 密度 / 网格几何」的<strong>唯一派生实现</strong>（P5 §1 + §2）。
- *
- * <h3>三分量铁律（Qz-UILib AGENTS.md:28）</h3>
- * <pre>
- *   [宿主边界 · 唯一允许接触 GUI Scale 的位置]
- *     logicalBox = hostCompose(nativeBox, guiScale)        // 见 HostViewportScale
- *   [面板内部 · 禁止读 GUI Scale / 禁止假定分辨率]
- *     panelFontSize = 面板内容根字号链的生效字号（声明值 × 用户倍率；运行期可变）
- *     density = 用户偏好（AUTO/COMPACT/STANDARD/ROOMY）     // 运行期可变
- *     metrics = PickerMetrics.derive(rt, logicalBox, panelFontSize, density, membersRows)
- * </pre>
- * <p>本类<b>不接收</b> GUI Scale、不接收物理分辨率、不缓存跨帧结果 —— 三个输入任一变化即重派生
- * （无静态快照）。</p>
- *
- * <h3>auto 求解（P5 §1.4 + 标签宽度预算，规范性）</h3>
- * <pre>
- *   hard = max(现状可见量(logicalBox), 12)      // 支配性硬目标（红线 R1/R2）
- *   soft = ceil(hard * 1.05)                    // 5% 安全裕度（基准参数下可达时保持）
- *   for degrade in [1.00,.85,.70,.55,.40,0.0]:  // 标签可读宽度预算从大到小（最外层）
- *     em = LABEL_BUDGET_EM * degrade            // 末档 0 = 关闭预算
- *     for ratio in [70,78,84,92]:               // 面板从小到大
- *       for density in [standard, compact]:     // 图标从大到小
- *         for k in [1.00,.95,.90,.85,.80]:      // 图标等比缩小（字号不缩）
- *           if visible >= soft: return 该组合
- *     该预算下存在 visible >= hard 的组合 → 采用（预算不再降）
- *   全部预算都不满足 hard → 取可见量最大的组合
- * </pre>
- * <p><b>预算为何在最外层</b>：标签能读几个字是用户直接感知的信息量，可见量硬红线是底线；
- * 两者冲突时先保红线（降预算），红线都保不住时就不可能给出更大预算 —— 顺序即优先级。
- * 代价是 <b>5% 软裕度可能让位</b>：贴线点（如 1080p/字号 150%）会停在「≥ hard 但 &lt; soft」，
- * 这是有意的产品取舍，由 {@code PickerMetricsTest.a7AutoKeepsSafetyMarginWhenPossible} 明示口径。</p>
- * <p>被选中的组合同时决定：面板比例、密度档、{@code k}、网格几何、列数与可视行数。</p>
- *
- * <h3>小盒降级（P5 §1.5.3）</h3>
- * <p>逻辑盒 &lt; 1280×720 时强制：面板 100%（满屏留 {@code PANEL_MARGIN}）、紧凑档、
- * 成员带折叠为提示行、信息条不占位、导航宽 {@code min(0.18*W, ...)}。
- * 小盒下<b>不承诺</b> 75 项（几何不成立），只承诺「支配现状 + 全部内容可滚动可达」。</p>
- *
- * <h3>信息条占位口径（P5 §1.2，偏差 D-P5-2）</h3>
- * <p>规格给出两个可选形态（「hover 才占位」或「并入 header 第二行」）。本实现取<b>常驻占位</b>，
- * 高度 {@code round(fs*2)} 随字号派生、内容永不空（悬停 -> {@code label · ID: key}；
- * 空闲 -> 操作提示 {@code hoverHint}），理由是一条可复现的缺陷：hover 才占位会让「信息条出现」
- * 与「结果区收缩 24px」互相驱动 —— 指针下的单元被顶走 -> hover 丢失 -> 信息条消失 ->
- * 单元落回指针下 -> hover 恢复 -> <b>闪烁环</b>。常驻占位把该环从结构上消除，代价是 24px。
- * 代价已量化：该口径下 1080p auto = 100 项（现状 75，仍 +33%），8 视口 × 3 字号支配失败点 0
- * （复算脚本 {@code temp/p5_model_check.py} 的「常驻占位」模型；A1-A8 断言见
- * {@code PickerMetricsTest}）。截断提示按规格 §3.3 落在顶栏统计行右侧（与统计同行），
- * 不占用信息条。</p>
- */
+
 public final class PickerMetrics {
 
     /**
@@ -292,16 +243,7 @@ public final class PickerMetrics {
                 || logicalHeightPx < PickerDensityTokens.SMALL_BOX_MIN_HEIGHT;
     }
 
-    /**
-     * 现状基线可见项数（<b>只服务支配性对照</b>，红线 R1/R2 的参照物）。
-     *
-     * <p>公式 = 现状 70% 面板 + 固定 48 顶栏 / 248 成员带 / 168 导航 / 64 单元 / 8 间距 / 24 信息条。
-     * 这些常量登记在 {@link PickerDensityTokens} 的 {@code LEGACY_*} 组，<b>不得</b>参与任何布局计算。</p>
-     *
-     * @param logicalWidthPx  逻辑盒宽
-     * @param logicalHeightPx 逻辑盒高
-     * @return 现状可见项数（≥0）
-     */
+
     public static int legacyBaselineItems(int logicalWidthPx, int logicalHeightPx) {
         int pw = logicalWidthPx * PickerDensityTokens.LEGACY_PANEL_RATIO / 100;
         int ph = logicalHeightPx * PickerDensityTokens.LEGACY_PANEL_RATIO / 100;

@@ -16,33 +16,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneButton —— scene 控件层参考实现，第 0 段地基总验收试金石。
- *
- * <h3>定位：缺口浓缩器试金石，非真实迁移目标</h3>
- * <p>本控件用一个文件撞齐 scene 全部新地基能力：水平居中 flex（ROW + 主/交叉轴 CENTER）、
- * padding、边框、胶囊圆角、子节点裁剪（overflow:hidden）、非白文字色、四态背景切换。
- * 证明「裸 SceneNode + 新属性槽 + SceneRuntime」真能拼出完整控件，并确立后续所有控件
- * 照抄的契约范本（契约红线见 {@code package-info.java} R1-R5）。</p>
- *
- * <h3>外观归属：表面绑定是唯一写入者</h3>
- * <p>背景/边框/边框宽/圆角/滤镜/实体高度由 {@link SceneSurfaceBinder} 从配方信号派生，
- * 本控件不再静态设色、不再叠加第二套实色动画（守「一个属性只有一个外观写入者」）。
- * 默认配方来自 {@link SceneThemes} 的按钮角色（未显式传 {@link Props#surface()} 时），
- * 显式配方优先于主题；{@code SceneTheme.solidDark()} 可表达旧实色观感。</p>
- *
- * <h3>组件函数形态（UI = f(state)，声明式优先）</h3>
- * <p>纯静态工厂 + 私有构造，控件类自身无任何实例字段（强制无状态）。
- * {@link #create} 返回 {@code Supplier<SceneNode>}，交 {@link SceneRuntime#mount} 执行一次（组件函数只跑一次）：
- * 建树 + 设静态样式 + 绑定响应式派生。不是 fluent builder，不是持有节点的 setter 对象。</p>
- *
- * <h3>CLICK 冒泡边界</h3>
- * <p>CLICK 由路由器合成后沿命中链 target→bubble 派发（同一节点内 handler 全部执行，
- * {@code stopPropagation()} 只截断向祖先的派发）。按钮默认照常冒泡，既有调用点零改动；
- * 放在「容器自身也响应点击」的位置（列表行内按钮、卡片内按钮）时应声明
- * {@link Props#stopClickPropagation()} 为 true——否则点按钮会连带触发容器动作，且两个
- * 请求在同一帧写入，故障表现为「点删除却进了另一条流程」（真机案例见该参数 javadoc）。</p>
- */
+
 public final class SceneButton {
 
     /**
@@ -50,26 +24,11 @@ public final class SceneButton {
      */
     private static final int PADDING = SceneChromeTokens.PAD_MD;
 
-    /**
-     * 纯静态工厂，禁止实例化（强制无状态，契约 R1）
-     */
+
     private SceneButton() {
     }
 
-    /**
-     * Button 输入契约 —— 全部只读 signal + 输出回调（契约 R2）。
-     *
-     * @param label                文本内容（响应式只读）
-     * @param enabled              是否启用（响应式只读），false 时禁用点击/键盘并切灰态
-     * @param onClick              动作输出回调，点击或 Enter/Space 激活时触发
-     * @param variant              视觉变体，STANDARD 玻璃中性 / PRIMARY 强调 / DANGER 危险
-     * @param surface              显式表面配方（可为 null = 跟随当前主题的按钮角色）
-     * @param fontSize             控件内文字字号（UI 像素，响应式）；null = 不指定，沿用节点默认字号
-     * @param stopClickPropagation CLICK 是否止于本按钮（true = 不向祖先链冒泡）。
-     *                             默认 false 保持既有冒泡语义；<b>行内 / 卡内等「容器自身也
-     *                             响应点击」的位置应声明 true</b>，否则点按钮会连带触发容器
-     *                             动作（真机案例：列表行的行内删除按钮同时选中该行）。
-     */
+
     @Desugar
     public record Props(
         ReadableSignal<String> label,
@@ -239,17 +198,7 @@ public final class SceneButton {
         }
     }
 
-    /**
-     * 工厂：构建按钮组件函数。
-     *
-     * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（组件函数只跑一次）：
-     * 只建 SceneNode 树 + 设静态属性 + {@code rt.bind/bindText/on/focusable}，
-     * 动态外观全落配方信号派生，交互只经 {@code on} 调回调（契约 R3/R4/R5）。</p>
-     *
-     * @param rt    场景运行时（提供 bind/on/interactionState/focusable）
-     * @param props 按钮输入契约
-     * @return 组件函数，交 {@code rt.mount(parent, ...)} 挂载
-     */
+
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
             SceneButtonPrimitive.Props primitiveProps = new SceneButtonPrimitive.Props(

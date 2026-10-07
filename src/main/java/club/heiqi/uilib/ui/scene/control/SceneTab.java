@@ -20,70 +20,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneTab —— scene 新栈控件层 Phase 4 批 4 标签页控件（N 选 1 受控头 + 单内容区切换）。
- *
- * <h3>定位：旧栈 {@code DocumentTabControl} 的 strangler 声明式迁移</h3>
- * <p>把旧栈命令式标签页（{@code clearChildren} + {@code mountActiveTab} 命令式挂卸内容）
- * 迁成 scene 声明式范式：</p>
- * <ul>
- *   <li><b>tabBar 完全照 {@link SceneSegmented} R8</b>：N 选 1 受控头，当前页由外部
- *       {@code activeIndex} 只读 signal 唯一驱动；激活某页时<b>只经 {@code onActivate.accept(i)}</b>
- *       上抛期望页下标，控件<b>绝不自维护/修改 activeIndex</b>（R8）。</li>
- *   <li><b>内容区 N 选 1 用 N 个独立 {@code rt.show}</b>（契约 R10）：对每页 i 调一次
- *       {@code rt.show(contentPanel, Computed(activeIndex==i), tabPanels.get(i))}，
- *       由 show 引擎按 condition 挂载/卸载内容（切换只挂卸内容区、稳定子树不重建）。<b>绝不</b>在 create 的 Supplier
- *       体内 {@code activeIndex.get()} 做 if 分支建树（违 R3）。</li>
- * </ul>
- *
- * <h3>结构</h3>
- * <pre>
- * root (COLUMN, gap)
- *   ├─ tabBar (ROW, crossAxisAlign=STRETCH, gap)            ← 照 SceneSegmented R8 范式
- *   │     └─ tabSeg[i] (ROW, main/cross=CENTER, padding, preferredWidth)  ← 交互单元 hitTestable=true
- *   │           └─ label[i] (text)                          ← 装饰 hitTestable=false
- *   └─ contentPanel (COLUMN, 单内容区容器)                   ← N 个 show 各自挂内容到此（tabBar 的兄弟）
- *           └─ anchor[i] × N + 当前页内容（由 show 引擎管理）
- * </pre>
- *
- * <h3>外观归属：主题配方是唯一外观写入者</h3>
- * <p>导航条底座取 {@link SceneTheme.Role#TOOLBAR} 配方，每个 tab 项取
- * {@link SceneThemes#selectableSurface(SceneRuntime, SceneTheme.Role, ReadableSignal)} 的
- * {@link SceneTheme.Role#INDICATOR} 配方（选中把 tint 的 RGB 换成主题强调色、alpha 用统一选中
- * 强度 0x59，故「选中」是色彩语义而非仅透明度；禁用仍走角色禁用档）。两者的
- * background / border / borderWidth / cornerRadius / backdrop / surfaceElevation 全归
- * {@link SceneSurfaceBinder} 独占——控件不再静态设圆角/边框，也不再叠加
- * {@code SceneControlChrome.bindSelectableBackground/bindStandardBorder} 与
- * {@code SceneStateColors} 取色（同一属性留两个写入者会按执行顺序互相覆盖）。</p>
- *
- * <p>每项只调用一次表面绑定，项内不嵌套第二层玻璃节点（配方自带滤镜按「一颗表面只采样一次」
- * 生效）；内容区面板保持透明、不装表面，避免第二层玻璃挡死导航条底座。选中项文字在
- * {@link SceneThemes#onAccentForeground(SceneRuntime)} 与 {@link SceneThemes#foreground(SceneRuntime)}
- * 之间按对比度择一（见 {@link #selectedForeground}），未选中取正文色，禁用取
- * {@link SceneThemes#disabledForeground(SceneRuntime)}。</p>
- *
- * <h3>父高传导（fill 选项，默认关）</h3>
- * <p>默认 {@code fillContentPanel=false}：contentPanel 按各页内容自然高 shrink，整控件随内容长高。
- * 设 {@code fillContentPanel=true} 时打通 4 处断裂点，让 contentPanel 填满父分配高：</p>
- * <ol>
- *   <li>root {@code setFillParentHeight(true)}（否则父视 root 为固定容器子放弃 grow 分配）；</li>
- *   <li>contentPanel {@code setFillParentHeight(true)}（从 root 拿确定高下传）；</li>
- *   <li>tabBar 补 {@code preferredHeight}（隐藏杀手：固定兄弟无 preferredHeight 会令
- *       {@code computeColumnGrowHeights} 早退、root 放弃向 contentPanel 分配，照 {@link SceneSegmented} 口径）；</li>
- *   <li>各页内容 panel 由调用方自行 {@code setFillParentHeight(true)}（控件不可代劳）。</li>
- * </ol>
- * <p>fill 门槛：{@code setFillParentHeight(true)} 只有收到确定高约束才生效，故 ①③ 必须先打通。
- * 读 {@code fillContentPanel} 常量做静态 if 配置（构建期一次性，非 signal 订阅，守 R3）。</p>
- *
- * <h3>本期范围（YAGNI，oracle 裁决排除）</h3>
- * <p>不做：可关闭页签、页签溢出滚动（滚动地基是后续独立步骤，本步零引擎改动）、
- * roving 之外复杂键盘、内容懒加载缓存优化。键盘只保留 ←/→/Home/End/Enter/Space。</p>
- *
- * <h3>契约</h3>
- * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 常量 + 回调 / R3 组件函数只执行一次 /
- * R4 外观随状态经 bind 派生 / R5 交互态读 interactionState / R6 段内文字命中穿透到段 /
- * R8 多选项单选受控零状态 / R10 内容区切换必须经 show（不得命令式 clearChildren）。</p>
- */
+
 public final class SceneTab {
 
     /**
@@ -106,34 +43,11 @@ public final class SceneTab {
      */
     private static final int TAB_LABEL_FONT_SIZE = 16;
 
-    /** 纯静态工厂，禁止实例化（强制无状态，契约 R1） */
+
     private SceneTab() {
     }
 
-    /**
-     * Tab 输入契约 —— N 选 1 受控头 + 各页内容 builder（契约 R2/R8）。
-     *
-     * <p>{@code tabLabels} 与 {@code tabPanels} 必须<b>同长度同序</b>：第 i 个页签文本对应第 i 个内容
-     * builder。各页 builder 是独立 {@link Supplier}，分别交给第 i 个 show 在 condition 为真时调用一次。
-     * 该同长同序契约由紧凑构造器在运行期 fail-fast 校验，违例抛 {@link IllegalArgumentException}
-     * （避免建树循环 {@code items.get(idx)} 越界 {@link IndexOutOfBoundsException} 的延迟崩溃）。</p>
-     *
-     * @param activeIndex 当前活动页下标（响应式只读，受控源），控件绝不自己修改此值
-     * @param tabLabels   页签文本列表（构建期固定常量，R2 允许常量）
-     * @param tabPanels   各页内容构建器列表（与 tabLabels 同长度同序），各自交独立 show 调用
-     * @param enabled     是否启用（响应式只读），false 时禁用点击/键盘并切灰态
-     * @param onActivate  激活回调，激活某页时以该页下标调用，由外部 set 回 activeIndex signal
-     * @param fillContentPanel 是否把 contentPanel 填满父分配高（构建期常量，非 signal，守 R3）。
-     *                         <p>{@code true} 时打通父高传导链：root/contentPanel 各 {@code setFillParentHeight(true)}，
-     *                         并给 tabBar 补 {@code preferredHeight}（消除固定容器子无 preferredHeight 导致
-     *                         {@code computeColumnGrowHeights} 早退的隐藏杀手，照 {@link SceneSegmented} 口径）。
-     *                         调用方需自行让各页内容 panel {@code setFillParentHeight(true)} 才能真正吃到父高。
-     *                         默认 {@code false}（走 5 参重载）保持旧行为：contentPanel 按内容自然高 shrink。</p>
-     * @param fontSize         页签标签字号（UI 像素，响应式）；null = 不指定，沿用
-     *                         {@link #TAB_LABEL_FONT_SIZE}。页签宽度 = 标签文本宽 + 2*内边距
-     *                         （SHRINK 派生，随字号同步变化），{@link #TAB_WIDTH} 是<b>最小段宽</b>
-     *                         （短标签保持等宽节奏，长标签不会截断）。
-     */
+
     @Desugar
     public record Props(
             ReadableSignal<Integer> activeIndex,
@@ -208,23 +122,7 @@ public final class SceneTab {
         }
     }
 
-    /**
-     * 工厂：构建 Tab 组件函数。
-     *
-     * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：
-     * 体内建 root(COLUMN) → tabBar(ROW，N 选 1 受控头) + contentPanel(单内容区)，
-     * for 循环建 N 个 tab 段（tabLabels 固定，循环建树无副作用、只跑一次），
-     * 再对每页调一次 {@code rt.show}（N 个独立 show，condition 为 {@code activeIndex==i}）。
-     * 动态外观全落 {@code bind(computed(...))}，交互只经 {@code on} 调 {@code onActivate}（R4/R5/R8）。</p>
-     *
-     * <p><b>内容切换铁律（R10）</b>：N 选 1 内容切换<b>必须</b>落成 N 个 show 的 condition computed，
-     * <b>绝不</b>在 Supplier 体内 {@code activeIndex.get()} 做 if 分支建树（违 R3），
-     * 也绝不命令式 {@code clearChildren} + 重挂（旧栈老路，违 R10）。</p>
-     *
-     * @param rt    场景运行时
-     * @param props Tab 输入契约
-     * @return 组件函数，交 {@code rt.mount(parent, ...)} 挂载
-     */
+
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
             // 字号唯一真值是 root（与 Button/TextInput/TextArea 同口径）。
@@ -253,12 +151,10 @@ public final class SceneTab {
             }
             // 断裂点①（fill 传导）：root 自身 fill，否则在父眼里是"固定容器子"，
             // priorKnownChildHeight 命中容器分支返回 UNCONSTRAINED，父放弃向 root 分配 grow 高。
-            // 读 fillContentPanel 常量做静态配置（构建期一次性，非 signal 订阅，守 R3）。
             if (props.fillContentPanel()) {
                 root.setFillParentHeight(true);
             }
 
-            // tabBar：横向 N 选 1 受控头复用 SingleSelect primitive，Tab 只挂 chrome（照 SceneSegmented R8）
             SceneSingleSelectPrimitive.Props primitiveProps = new SceneSingleSelectPrimitive.Props(
                     props.activeIndex(),
                     props.tabLabels(),
@@ -312,7 +208,6 @@ public final class SceneTab {
                 tabSeg.setFontSizeMetric((node, fontSizePx) -> node.setPreferredWidth(
                         Math.max(TAB_WIDTH, rt.measureTextWidth(title, fontSizePx) + 2 * TAB_PADDING)));
 
-                // label[i]：段内纯文本装饰子节点，命中穿透到段（契约 R6）；字号沿父链继承。
                 tabSeg.appendChild(handle.label());
 
                 // tab 项表面：INDICATOR 角色配方 + selected 派生。选中只替换 tint 的 RGB（保留 0x59 alpha，
@@ -353,9 +248,7 @@ public final class SceneTab {
             }
             root.appendChild(contentPanel);
 
-            // ⑤ 内容区 N 选 1（契约 R10）：对每页 i 调一次独立 show，condition 用 handle.selected()
             //    与 tabBar 同源（primitive 的 normalizeIndex 语义），确保 null/越界 activeIndex 时
-            //    tabBar 高亮与 contentPanel 挂载语义一致。绝不在本 Supplier 体内做 if 建树（违 R3）。
             final List<Supplier<SceneNode>> panels = props.tabPanels();
             List<SceneSingleSelectPrimitive.ItemHandle> items = result.items();
             for (int idx = 0; idx < panels.size(); idx++) {

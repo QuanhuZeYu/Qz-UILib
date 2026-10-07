@@ -69,61 +69,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * ScenePickerPanel —— 创造物品栏式 70% 居中 picker 面板（通用、平台无关、受控）。
- *
- * <h3>定位</h3>
- * <p>以旧版内联搜索选择器为功能语义基准（SINGLE_VALUE 与 LIST_MEMBERS 两模式、
- * 可拒绝的 selectionCommit、稳定 memberId、无效/重复徽章、变体 ALL/SELECTED 语义、ESC 分层、
- * 焦点意图），重塑为居中 70% 卡片上下分区布局：顶栏（搜索 + 分类维度分段 + 结果统计）、上容器选择区
- * （左分类导航 | 中 SearchResultList 窗口化候选列表：浏览 lane 数据范围无上限、挂载量 ∝ 可视量，
- * 列数随可用宽度自适应）、下容器已选择编辑（仅 listMembers 的全宽底部横带，当前规则列表）。
- * 面板本身不持有业务状态——开合、query、结果、当前分类、当前成员全部受控。</p>
- *
- * <h3>数据面（两条路径，构建期分支、非逐帧门控）</h3>
- * <p>① <b>结果信号路径</b>（{@code Props.candidateSource} == null，T-1 回退）：{@code Props.results()}
- * 自带候选全集，面板侧按分类过滤后派生全量项。② <b>惰性候选源路径</b>（ADR §3.2）：面板在内容 Owner
- * 内自建 {@code pageProvider} 闭包，按控件产出的 {@code WindowRequest} 调
- * {@code PickerCandidateSource.page(query, offset, limit)}；总量 = 该 lane 的真实命中数（浏览 lane 无分类
- * 收窄即 {@code size()}，带分类过滤 = 该分类命中数；搜索 lane = {@code matchCount}，无窗口上限）；
- * 切片重取由「查询条件 + 源版本」修订快照驱动；激活经 {@code exact(key)} O(1) 定位。
- * 两条路径共用同一套节点构建（{@link Feed} 是唯一数据出口）。</p>
- *
- * <h3>ESC 分层</h3>
- * <p>主面板 portal 与变体浮层 portal 独立注册；{@code SceneInputRouter} 的 ESC 优先请求栈顶
- * overlay 关闭：变体浮层开时 ESC 只退回主面板，主面板 ESC 先走 {@code onCancel} 再请求关闭
- * （经 {@code onCloseRequest} 上抛，由外部把受控 {@code open} 置 false）。</p>
- *
- * <h3>生命周期</h3>
- * <p>必须在组件构建作用域（mount builder）内创建：全部 signal / effect / portal 归属当前 Owner；
- * 面板关闭时 portal 子树卸载，tooltip 与变体浮层一并清理；网格高亮与滚动在数据收缩时经
- * owner-scoped effect 回夹。</p>
- *
- * <p><b>关闭即停算（ADR §4.1/§4.3）</b>：候选相关派生（{@link Feed} 与其 lane 视图、分类行、
- * 成员问题、回夹、变体浮层）全部在 {@code rt.portal(open, ...)} 的<b>内容 Owner</b> 内创建，
- * 关闭即随 {@code SceneRuntime.disposeMounted()} 递归 dispose —— 停止语义由 owner 作用域与订阅边界
- * 保证，<b>不得</b>用 {@code if(!open)} 逐帧门控（本类不含任何以 open 为条件的求值分支）。</p>
- *
- * <h3>外观归属（液态玻璃迁移，G14 宿主整合，契约 §4.1「PANEL（外）/GROUP（网格）/OVERLAY（浮层）」）</h3>
- * <p><b>宿主外层卡片</b>恰装一颗 {@link SceneTheme.Role#PANEL} 配方表面（FormPageShell 已验收
- * PANEL 先例）：background/border/borderWidth/cornerRadius/surfaceElevation/backdrop 六项由
- * {@link SceneSurfaceBinder} 独占，旧 {@code SceneChromeTokens.applyPanelChrome(root, RADIUS_LG)}
- * 实色四件套写入者已删除；clip 不属绑定器六项属性，裁剪合同由宿主自持。</p>
- *
- * <p><b>表面分层由容器承担、宿主不再包第二层</b>（G14 预裁决 1/2）：中栏外壳原
- * {@code applyPanelChrome(center, RADIUS_MD)} 实底会包住 SearchResultList 自己的 GROUP 底座，
- * 构成两层玻璃语义叠加——该实底外壳的表面写入已删除，中栏只剩布局职责（clip 几何合同与
- * padding/gap 常量保留，契约 §4.2「尺寸/间距常量继续使用」），结果区表面归内容底座一颗。
- * 底部成员横带同理：原 {@code applyOuterShell} 的边框/圆角表面写入已删除，成员区表面归
- * MemberGrid 的 GROUP 底座。各 G13 配件走各自已验收配方（左导航 TOOLBAR、信息条 TOOLBAR、
- * 结果底座 GROUP、成员网格 GROUP、变体浮层 OVERLAY），宿主不复制、不覆写其内部控件样式。</p>
- *
- * <p><b>宿主文字</b>取来源主题语义前景：顶栏标题/成员区标题 {@code foreground}，结果统计、
- * 问题摘要与空态提示 {@code mutedForeground}，错误行 {@code errorText}；禁用一律
- * {@code disabledForeground}（与 CategoryNavPane 同一派生口径）。<b>物品图像不改色</b>
- * （契约 §4.1 + §7.3）：候选/成员/变体图标与占位底属渲染协议，归各配件模块的静态值，
- * 宿主不重染。整树滤镜预算 = 每颗表面各采样一次（见 G14 集成测试的整树 BACKDROP 构成表）。</p>
- */
+
 public final class ScenePickerPanel {
 
     /** 面板可视阶段（观察用）。 */
@@ -1001,7 +947,6 @@ public final class ScenePickerPanel {
             root.setPercentWidth(PANEL_WIDTH_PERCENT_FALLBACK);
             root.setPercentHeight(PANEL_HEIGHT_PERCENT_FALLBACK);
         }
-        // 宿主外层恰装一颗 PANEL 配方表面（契约 §4.1「PANEL（外）」，G14 预裁决 2）：
         // background/border/borderWidth/cornerRadius/surfaceElevation/backdrop 六项归
         // SceneSurfaceBinder 独占；旧 applyPanelChrome(root, RADIUS_LG) 实色四件套写入者已删除。
         // 时序契约（FormPageShell PANEL 先例）：构建期声明关心状态，Router 后续写入才会落到
@@ -1175,13 +1120,7 @@ public final class ScenePickerPanel {
 
 
 
-    /**
-     * 中栏：布局壳（不装表面）包候选列表（SearchResultList）+ 信息条（PickerInfoBar）+ 错误行。
-     *
-     * <p>G14 预裁决 1：原 {@code applyPanelChrome(center, RADIUS_MD)} 实底包住 SearchResultList
-     * 自己的 GROUP 底座，构成两层玻璃语义叠加；该表面写入已删除（背景/边框/圆角归零，表面归
-     * 内容底座一颗）。clip 与 padding 属布局合同保留（契约 §4.2「尺寸/间距常量继续使用」）。</p>
-     */
+
     private static SceneNode centerColumn(SceneRuntime rt, Props props, Runnable closeRequest,
                                           Feed feed,
                                           ReadableSignal<String> categoryKey,

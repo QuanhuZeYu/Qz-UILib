@@ -31,26 +31,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneSlider 端到端单元测试 —— Phase 4 批 3 受控连续滑块控件验收。
- *
- * <p>构造 SceneRuntime + SceneLayoutEngine + ScenePaintEngine 三件套，端到端验证：
- * 受控连续闭环（拖拽 committing=false 预览、释放 committing=true 提交）、
- * draggingValue 瞬态接管 + 松手回落外部 value（R7 受控命门）、值↔像素映射、
- * step 量化、键盘步进（←/→/Home/End/PageUp/PageDown）、disabled 阻断、
- * 命中穿透（点 fill/thumb 装饰子节点穿透到 root），
- * 以及主题化外观（track 走 INPUT 角色配方、thumb 走 INDICATOR 强调配方且 tint RGB=主题 accent、
- * fill 取主题 accent/禁用前景色、拖动中切主题不回写值且不重置 capture、禁用档可读、卸载回收绑定）。</p>
- *
- * <h3>测试沙箱 pipeline（对照 SceneToggleTest）</h3>
- * <pre>
- *   signal.set / route → runtime.flush() → layout → paint → 断言
- * </pre>
- *
- * <p><b>时序说明</b>：真机一帧 route 一次 flush；本测试每次 routePointer 后单独 flush，
- * 模拟「跨帧拖拽」场景；同帧场景另见 {@code sameFramePressAndReleaseStillCommits}
- * 与 {@code sameFrameDownMoveUpCommitsLastPosition}（在 SceneSliderPrimitiveTest 中）。</p>
- */
+
 public class SceneSliderTest {
 
     /** 场景根：slider 作为子节点 mount 到此（route/layout/paint 入口） */
@@ -318,13 +299,8 @@ public class SceneSliderTest {
         Assert.assertEquals("UP 提交末值 75", 75.0D, lastChangeValue, EPS);
     }
 
-    // ==================== 验收 2：draggingValue 瞬态 + 松手回落外部 value（R7 受控命门） ====================
 
-    /**
-     * R7 受控命门：拖拽期 effectiveValue 跟 draggingValue（thumb 位置随拖拽移动，
-     * <b>即使外部 value 始终为 0 不回写</b>）；松手清 null 后 effectiveValue 回落外部 value=0
-     * （thumb 回到最左）。这证明控件零内部受控状态——拖拽态是瞬态接管，提交后归还外部唯一源。
-     */
+
     @Test
     public void draggingValueIsTransientAndFallsBackToExternalValueOnRelease() {
         doLayout();

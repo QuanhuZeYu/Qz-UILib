@@ -16,44 +16,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneScrollContainer —— 滚动容器高阶工厂，一行建出「viewport + content + 可选 scrollbar」
- * 的标准滚动结构，封装 {@link SceneScrolls#attach} + {@link SceneScrollbar#create} 样板。
- *
- * <h3>定位：易用性工厂（非控件）</h3>
- * <p>本工厂只负责把滚动结构的 5 步样板（建 container/viewport/content、attach、可选建 scrollbar）
- * 收敛为一处，消除调用方手写滚动容器的复发风险。工厂<b>不持有状态、不维护滚动位置</b>——
- * 滚动位置唯一权威源是返回的 {@code scrollSignal}（由 {@link SceneScrolls#attach} 创建）。</p>
- *
- * <h3>结构</h3>
- * <pre>
- * container (ROW, fillParentHeight)
- *   ├─ viewport (COLUMN, fillParentHeight, flexGrow=1, scrollable=true, clipChildren, padding/gap,
- *   │           背景/圆角：默认跟随主题 GROUP 配方；显式 backgroundColor/cornerRadius 时走实色)
- *   │     └─ content (COLUMN, gap)   ← 调用方挂实际内容到这里
- *   └─ scrollbarColumn (SceneScrollbar, 可选)   ← scrollbarSpec != null 时建
- * </pre>
- *
- * <h3>★ 边界：viewport 高度仍需调用方在布局链上保证</h3>
- * <p>工厂<b>无法</b>替调用方解决父链高度问题。container 设了 {@code fillParentHeight}，
- * 但若 container 的父节点本身高度不确定（无确定高约束下传），container 高度仍会被内容撑大，
- * 进而 viewport 也被撑大、{@code maxScrollY == 0}、滚动无效。<b>调用方必须确保 container 的
- * 父链在某处给出确定高</b>（如 container 的父是 fill/grow/percent 容器且收到确定高约束，
- * 或 container 的父给 container 设了 preferredHeight）。工厂只保证 viewport 自身
- * {@code scrollable=true} + {@code flexGrow=1}，使 viewport 在 container 高度确定时
- * 收到确定高约束、不被内容撑大。</p>
- *
- * <h3>守不变量</h3>
- * <ul>
- *   <li><b>signal-first</b>：滚动位置经 scrollSignal 驱动，不命令式写节点。</li>
- *   <li><b>GEOMETRY 级滚动</b>：viewport {@code scrollable=true}，滚动不重排。</li>
- *   <li><b>R1 纯静态工厂</b>：零实例字段，无状态。</li>
- *   <li><b>外观唯一写入者</b>：默认路径的 background/border/borderWidth/cornerRadius/backdrop/
- *       surfaceElevation 全归 {@link SceneSurfaceBinder}（GROUP 角色配方）；显式实色路径由静态
- *       setter 独占，两条路径互斥，同一属性不会有两个绑定竞争。底座只装在 viewport 一次，
- *       不给 content 的每个子项重复装滤镜。</li>
- * </ul>
- */
+
 public final class SceneScrollContainer {
 
     /**
@@ -98,19 +61,7 @@ public final class SceneScrollContainer {
         }
     }
 
-    /**
-     * 滚动容器输入契约 —— 纯常量 + 可选滚动条规格（契约 R2 允许常量）。
-     *
-     * <p><b>外观优先级</b>：{@code backgroundColor}/{@code cornerRadius} 是显式实色入口，
-     * 一旦任一非缺省值存在即整体走实色路径（显式值优先，缺省分量为 0）；两者都取缺省值时
-     * viewport 跟随主题 {@link SceneTheme.Role#GROUP} 配方（默认液态玻璃底座 + 配方圆角/边框）。</p>
-     *
-     * @param padding        viewport 四向内边距（像素，0 = 无内边距）
-     * @param gap            viewport 内子节点间距 + content 内子节点间距（像素）
-     * @param backgroundColor viewport 显式背景色（ARGB）；0 = 不显式指定，跟随主题 GROUP 配方
-     * @param cornerRadius   viewport 显式圆角（像素，0 = 不显式指定，跟随主题 GROUP 配方）
-     * @param scrollbarSpec  滚动条规格；null = 不建滚动条（仅 attach 滚动能力，无可视滚动条）
-     */
+
     @Desugar
     public record Props(
         int padding,

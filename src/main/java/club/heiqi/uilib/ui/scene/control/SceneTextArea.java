@@ -16,40 +16,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneTextArea —— scene 新栈多行受控文本输入框（D4：soft wrap 视觉行模型）。
- *
- * <h3>能力范围</h3>
- * <p>支持 Enter 换行、Backspace/Delete 跨行删除、方向键跨视觉行移动 caret、Home/End 视觉行首尾、
- * 点击定位、纵向滚动、placeholder；跨视觉行拖选、Shift 扩展、双击选词、三击选逻辑行、
- * Ctrl+A 全选与选区替换/删除；Ctrl+C/X/V 剪贴板、Ctrl+←/→ 词跳转、Ctrl+Home/End 文首尾、
- * Ctrl+Backspace/Delete 删词、caret 闪烁与纵向跟随；soft wrap 按视口可用宽软换行
- * （横向滚动需求由换行消除）。暂不支持 IME 组合态。</p>
- *
- * <h3>受控契约</h3>
- * <p>文本真值由外部 {@code value} 唯一持有（含 {@code \n}）；控件不缓存 value。内部维护
- * {@code caretIndex} 与 {@link TextSelection} 两个本地 UI 态（caret≡selection.focus）。
- * 所有写入经 {@code onChange.accept(next)} 上抛。</p>
- *
- * <h3>外观归属：表面绑定是唯一写入者</h3>
- * <p>背景/边框/边框宽/圆角/滤镜/实体高度由 {@link SceneSurfaceBinder} 从
- * {@link SceneThemes#surface(SceneRuntime, SceneTheme.Role) INPUT 角色配方}派生；本控件不再
- * 静态设边框宽/圆角、不再叠加 {@code SceneStateColors.inputBackground} 与
- * {@code SceneControlChrome.bindStandardBorder} 第二套写入者。行文本/占位/禁用前景与 caret 色
- * 由 wrapper 捕获的主题语义色信号供给 primitive（行文本由 primitive 内部 forEach 创建，
- * Result 不暴露行节点，故只能经 Props 信号消费，契约 §2.8）。视口不再自绘内层底色，
- * root 玻璃即唯一表面。</p>
- *
- * <h3>结构</h3>
- * <pre>
- * root (COLUMN, clipChildren=true, focusable, padding, INPUT 玻璃表面)
- *   └─ viewport (COLUMN, scrollable, clipChildren, preferredHeight, 透明)
- *        └─ content (COLUMN) ← forEach 视觉行
- *             └─ row0 = 五节点 + placeholder 占位层（独立容器，show 独占；仅第一行）
- * </pre>
- * <p>占位口径与单行输入控件统一：空值且有占位文案即显示（与聚焦无关），占位层位于 caret 之后
- * ⇒ 落点即文本原点且不遮挡 caret（第四轮；旧形态聚焦即隐藏且占位另起一行）。</p>
- */
+
 public final class SceneTextArea {
 
     /** 默认视口高度（像素） */
@@ -262,7 +229,6 @@ public final class SceneTextArea {
             ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
             ReadableSignal<Integer> mutedForeground = SceneThemes.mutedForeground(rt);
             ReadableSignal<Integer> disabledForeground = SceneThemes.disabledForeground(rt);
-            // 选区两色与单行输入/自动补全/下拉列表同源（契约 §2.8：不得直接取 SceneChromeTokens.SELECTION_*）。
             ReadableSignal<Integer> selectionBackground = SceneThemes.selectionBackground(rt);
             ReadableSignal<Integer> selectionForeground = SceneThemes.selectionForeground(rt);
 
@@ -314,7 +280,6 @@ public final class SceneTextArea {
 
             // cursor + hitTestable 跟随 enabled
             // B2：cursor 设到 content（hover 写 content，resolver 读 content.cursor）；root hitTestable 保留控制 padding 区命中。
-            // 表面绑定读 content 的交互态，故 primitive 的视觉行已退出命中候选（R6），使内容区内 hover 落在 content 上。
             SceneNode content = result.content();
             SceneControlChrome.bindCursor(rt, content, props.enabled(), SceneCursor.TEXT, SceneCursor.NOT_ALLOWED);
             rt.bind(props.enabled(),

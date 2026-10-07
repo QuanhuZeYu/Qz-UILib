@@ -99,34 +99,7 @@ public final class SceneTextAreaPrimitive {
     private SceneTextAreaPrimitive() {
     }
 
-    /**
-     * TextArea primitive 输入契约 —— 只包含行为所需数据，不包含样式开关。
-     *
-     * <p>颜色由 wrapper 供给，两种形态：{@code int} 常量（旧路径的裸值）与可空的
-     * {@link ReadableSignal}&lt;Integer&gt; 语义色信号（主题路径）。信号非 null 时优先于同名
-     * int 常量，且在 effect 派生内读取，因此主题切换自动重算、不重建节点；信号为 null 时
-     * 完全回落同名 int 常量（旧 10 参构造器即此语义）。行文本由内部 forEach 创建、Result
-     * 不暴露行节点，所以只能由 primitive 消费这些信号（契约 §2.8 授权修改本 Props 与颜色解析）。</p>
-     *
-     * @param value              当前文本（响应式只读，受控源，含 {@code \n} 换行符）
-     * @param enabled            是否启用
-     * @param readOnly           是否只读
-     * @param placeholder        占位文本
-     * @param maxLength          最大长度（按码点数）
-     * @param caretVisibleColor  caret 可见时的颜色（focus 蓝，由 wrapper 传 token）
-     * @param textNormalColor    普通文本色（enabled 且非 placeholder）
-     * @param textPlaceholderColor placeholder 文本色（enabled 且空值）
-     * @param textDisabledColor  禁用态文本色
-     * @param onChange           文本变更回调
-     * @param caretVisibleSignal caret 可见色语义信号；null = 回落 {@code caretVisibleColor}
-     * @param textNormalSignal   正文前景语义信号；null = 回落 {@code textNormalColor}
-     * @param textPlaceholderSignal 占位前景语义信号；null = 回落 {@code textPlaceholderColor}
-     * @param textDisabledSignal 禁用前景语义信号；null = 回落 {@code textDisabledColor}
-     * @param selectionBackgroundSignal 选区高亮背景语义信号（主题 {@code selectionBackground()}）；
-     *        null = 回落 {@link SceneChromeTokens#SELECTION_BG}（旧 14/10 参构造路径兼容）
-     * @param selectionForegroundSignal 选区高亮前景语义信号（主题 {@code selectionForeground()}）；
-     *        null = 回落 {@link SceneChromeTokens#SELECTION_TEXT}（旧 14/10 参构造路径兼容）
-     */
+
     @Desugar
     public record Props(
             ReadableSignal<String> value,
@@ -768,7 +741,6 @@ public final class SceneTextAreaPrimitive {
         row.setCrossAxisAlign(CrossAxisAlign.CENTER);
         row.setGap(ROW_GAP);
         row.setClipChildren(true);
-        // 行是纯布局容器（控制包 R6）：五个槽位与占位层都已退出命中候选，行自身也必须退出。
         // 否则指针在 content 内命中的最深节点恒为这一行，而表面绑定读的是 content 的
         // SceneInteractionState（见 SceneTextArea#create 的 B2 接线）→ hover 档永不写入。
         row.setHitTestable(false);

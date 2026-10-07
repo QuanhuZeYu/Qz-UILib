@@ -12,22 +12,7 @@ import org.junit.runners.Parameterized;
 import club.heiqi.uilib.ui.scene.FixedTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/**
- * ROW/COLUMN 主轴 grow 分配表驱动参数化测试。
- *
- * <p>覆盖 24 个对称场景（COLUMN 高度 C1-C12 + ROW 宽度 R1-R12），逐场景断言
- * {@link ConstraintResolver#computeColumnGrowHeights} /
- * {@link ConstraintResolver#computeRowGrowWidths} 的 freeze do-while 撞顶撞底、
- * 余数末位吸收、percent 作固定子、margin/gap/padding 扣减与位置摆放。</p>
- *
- * <p>度量用 {@link FixedTextMeasurer}(8,16) 桩保证纯 JUnit 可断言。装饰叶
- * 用 {@code new SceneNode()}（无子无文本，content=0），除非 case 注明。</p>
- *
- * <p>COLUMN 容器靠 {@code setFillParentHeight(true)} 让 priorKnownInnerHeight
- * 返回确定值（约束驱动高度）；ROW 容器靠父级下传确定宽约束驱动主轴分配。</p>
- *
- * <p>期望值经 Oracle 手算并用现有 grow 测试交叉校验，逐字填入。</p>
- */
+
 @RunWith(Parameterized.class)
 public class GrowAllocationTableTest {
 
@@ -38,10 +23,7 @@ public class GrowAllocationTableTest {
         this.c = c;
     }
 
-    /**
-     * 24 个场景：COLUMN 组（C1-C12，主轴=高）+ ROW 组（R1-R12，主轴=宽）。
-     * 每场景的期望值逐字填 Oracle 手算结果。
-     */
+
     @Parameterized.Parameters(name = "{0}")
     public static Collection<Object[]> data() {
         List<Object[]> list = new ArrayList<>();
@@ -121,45 +103,37 @@ public class GrowAllocationTableTest {
         );
         // ============ ROW 组（断言 width）============
         addAll(list,
-            // R1 单grow吃满（对称C1）
             row("R1 单grow吃满")
                 .size(100, 100)
                 .child(new Spec("side").pref(30).expect(30))
                 .child(new Spec("g").grow(1).expect(70)),
-            // R2 多grow1:2:3（对称C2）
             row("R2 多grow1:2:3")
                 .size(120, 100)
                 .child(new Spec("a").grow(1).expect(20))
                 .child(new Spec("b").grow(2).expect(40))
                 .child(new Spec("c").grow(3).expect(60)),
-            // R3 权重2:3:1余数（对称C3）
             row("R3 权重2:3:1余数")
                 .size(100, 100)
                 .child(new Spec("a").grow(2).expect(33))
                 .child(new Spec("b").grow(3).expect(50))
                 .child(new Spec("c").grow(1).expect(17)),
-            // R4 grow撞max回流（对称C4）
             row("R4 grow撞max回流")
                 .size(300, 100)
                 .child(new Spec("a").grow(1).expect(125))
                 .child(new Spec("b").grow(1).max(50).expect(50))
                 .child(new Spec("c").grow(1).expect(125)),
-            // R5 grow撞prefreeze（对称C5）
             row("R5 grow撞prefreeze")
                 .size(100, 100)
                 .child(new Spec("a").grow(1).pref(80).expect(80))
                 .child(new Spec("b").grow(1).expect(20)),
-            // R6 全grow溢出freeW→0（对称C6）
             row("R6 grow溢出freeW归零")
                 .size(100, 100)
                 .child(new Spec("side").pref(120).expect(120))
                 .child(new Spec("a").grow(1).expect(0)),
-            // R7 grow+margin（对称C7）：a(marginLeft10+marginRight6)
             row("R7 grow+margin")
                 .size(100, 100)
                 .child(new Spec("a").grow(1).margin(10, 6).expect(42).pos(10))
                 .child(new Spec("b").grow(1).expect(42).pos(58)),
-            // R8 grow+gap+padding（对称C8）：pad(0,7,0,5)左5右7 gap3
             row("R8 grow+gap+padding")
                 .size(120, 100)
                 .padding(0, 7, 0, 5)
@@ -167,26 +141,22 @@ public class GrowAllocationTableTest {
                 .child(new Spec("side").pref(20).expect(20).pos(5))
                 .child(new Spec("a").grow(1).expect(41).pos(28))
                 .child(new Spec("b").grow(1).expect(41).pos(72)),
-            // R9 grow混percent（对称C9）⚠ 可能 red：ROW percentWidth 疑似二次应用百分比
             row("R9 grow混percent")
                 .size(100, 100)
                 .child(new Spec("p").percent(40).expect(40))
                 .child(new Spec("a").grow(1).expect(30))
                 .child(new Spec("b").grow(1).expect(30)),
-            // R10 freeze多轮3轮（对称C10）
             row("R10 freeze多轮3轮")
                 .size(300, 100)
                 .child(new Spec("a").grow(1).max(50).expect(50))
                 .child(new Spec("b").grow(1).max(80).expect(80))
                 .child(new Spec("c").grow(1).max(100).expect(85))
                 .child(new Spec("d").grow(1).expect(85)),
-            // R11 混合上下界（对称C11）
             row("R11 混合上下界")
                 .size(200, 100)
                 .child(new Spec("a").grow(1).max(30).expect(30))
                 .child(new Spec("b").grow(1).pref(80).expect(80))
                 .child(new Spec("c").grow(1).expect(90)),
-            // R12 fillParentWidth隐式桥+显式flexGrow：a(fill隐式1)/b(grow3),freeW=100,a=25,b末位=75
             row("R12 fillParentWidth隐式桥+flexGrow")
                 .size(100, 100)
                 .child(new Spec("a").fill().expect(25))
@@ -195,11 +165,7 @@ public class GrowAllocationTableTest {
         return list;
     }
 
-    /**
-     * 主轴分配断言：COLUMN 断 height，ROW 断 width；C7/C8/R7/R8 额外断位置（y/x）。
-     *
-     * <p>per-test 新建引擎避免跨用例缓存污染。</p>
-     */
+
     @Test
     public void mainAxisAllocation() {
         SceneLayoutEngine engine = new SceneLayoutEngine(new FixedTextMeasurer(8, 16));
@@ -437,7 +403,7 @@ public class GrowAllocationTableTest {
             return this;
         }
 
-        /** 期望主轴位置（COLUMN=y / ROW=x），用于 C7/C8/R7/R8 附加位置断言。 */
+
         Spec pos(int p) {
             this.expectedPos = p;
             return this;

@@ -119,7 +119,7 @@ public final class ScenePortalHandle {
         return portalOwner.isDisposed();
     }
 
-    /** R8：已释放句柄上的写入口快速失败。 */
+
     private void requireAlive() {
         if (portalOwner.isDisposed()) {
             throw new IllegalStateException(

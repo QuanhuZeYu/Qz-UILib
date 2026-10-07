@@ -11,55 +11,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * 表单模板族主题桥：把当前来源 {@link SceneTheme} 派生为表单模板消费的 {@link FormTheme}。
- *
- * <p>表单模板族（{@code FormPageShell}/{@code FormFieldShell}/{@code FormActionBar}）吃的是
- * 单一 {@link FormTheme} 值对象，而全库默认外观由 {@link SceneThemes} 的作用域主题驱动。
- * 本类是两者之间唯一的解析桥：不传显式 {@code FormTheme} 的调用方经 {@link #resolve(SceneRuntime)}
- * 取「当前来源主题派生出的表单主题」，主题切换自动重算；显式传 {@code FormTheme} 的旧调用
- * 语义完全不变（{@link FormTheme#defaultDark()} 保持原值，未被本桥改写）。</p>
- *
- * <h2>派生映射（按契约 §4.1 角色与语义色）</h2>
- *
- * <table border="1">
- *   <caption>FormTheme 分量 → 主题来源</caption>
- *   <tr><th>分量</th><th>来源</th></tr>
- *   <tr><td>{@code cardBg} / {@code cardBorder}</td>
- *       <td>{@code surface(rt, Role.GROUP)} 的 idle tint / edge</td></tr>
- *   <tr><td>{@code cardBorderDirty}</td><td>主题 {@code accent()}</td></tr>
- *   <tr><td>{@code cardBorderError}</td><td>主题 {@code errorText()}</td></tr>
- *   <tr><td>{@code textColor} / {@code titleColor}</td><td>主题 {@code foreground()}</td></tr>
- *   <tr><td>{@code mutedColor}</td><td>主题 {@code mutedForeground()}</td></tr>
- *   <tr><td>{@code errorColor}</td><td>主题 {@code errorText()}</td></tr>
- *   <tr><td>{@code dirtyColor}</td><td>主题 {@code accent()}</td></tr>
- *   <tr><td>{@code rootBg} / {@code viewportBg}</td>
- *       <td>{@code surface(rt, Role.PANEL)} 的 idle tint；该 tint 不透明时直接采用，
- *           否则回落 {@link SceneTheme#FALLBACK_BG} 不透明替代底色</td></tr>
- *   <tr><td>{@code cardRadius} / {@code cardPad} / {@code fieldGap} / {@code inputHeight}</td>
- *       <td>既有 {@link SceneChromeTokens} 常量（主题不接管布局）</td></tr>
- *   <tr><td>{@code fontLabel} / {@code fontHelper} / {@code fontError} / {@code listHeight}</td>
- *       <td>{@link FormTheme#defaultDark()} 既有值（主题不接管字号与视口高度）</td></tr>
- * </table>
- *
- * <p><b>底色不透明化的理由</b>：{@code rootBg}/{@code viewportBg} 由
- * {@code FormPageShell} 直接写进 {@code SceneNode.setBackgroundColor}，节点上<b>没有</b>
- * 玻璃滤镜承载半透明 tint；把液态玻璃档的 PANEL idle tint（如 {@code 0x14EAF7FF}，
- * alpha≈8%）原样当页底色会让世界画面直接透出、标题不可读。故只在 tint 自身不透明
- * （{@code alpha == 0xFF}）时采用它，否则用 {@link SceneTheme#FALLBACK_BG}——即
- * {@code SceneTheme.withoutBackdrop()} 给面板角色的同一替代底色，语义与契约 §5 一致。</p>
- *
- * <p><b>零 config 依赖</b>：本类不 import 任何 {@code club.heiqi.config.*}；config 侧的
- * {@code ConfigTheme.asFormTheme()} 仍是「显式主题」入口，与本桥并存不互斥。</p>
- *
- * <p><b>分层</b>：本类位于 {@code ui.scene.form}，只依赖 {@code ui.reactive}、
- * {@code ui.scene.paint}、{@code ui.scene.runtime}、{@code ui.scene.theme}，
- * 不 import {@code ui.scene.control}、{@code internal.*}，也不依赖 Minecraft/LWJGL
- * （{@code theme} 包亦不反向依赖本包，无环）。</p>
- *
- * @see SceneThemes
- * @see FormTheme
- */
+
 public final class FormThemes {
 
     /** 字段 label 字号：与 {@link FormTheme#defaultDark()} 既有值一致，主题不接管字号。 */

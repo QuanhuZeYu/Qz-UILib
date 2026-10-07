@@ -29,16 +29,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneRadioGroup 端到端单元测试 —— Phase 4 批 2 多选项单选受控控件（R8）验收。
- *
- * <p>构造 SceneRuntime + SceneLayoutEngine + ScenePaintEngine 三件套，端到端验证：
- * 受控闭环（点 option 只上抛期望下标、控件零状态不自改 selectedIndex）、
- * 命中穿透（点 circle/dot/label 装饰子节点穿透到所属 option）、四态切换零重排、
- * 键盘激活（Enter/Space）+ disabled 拦截、方向键导航（↑/↓ + 焦点移动），
- * 以及主题化外观（circle 走 INDICATOR 选中配方、dot 走强调底前景、label 走主题前景、
- * 主题切换不重建节点、禁用取禁用档、卸载回收绑定）。</p>
- */
+
 public class SceneRadioGroupTest {
 
     private SceneNode sceneRoot;

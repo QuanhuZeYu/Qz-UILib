@@ -21,129 +21,14 @@ import club.heiqi.uilib.ui.scene.node.Transform;
 import club.heiqi.uilib.ui.scene.paint.SceneChromeTokens;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneScrollbar —— scene 控件库纵向滚动条控件，叠加在可滚动视口右侧反映滚动位置。
- *
- * <h3>定位：纯派生显示控件 + 拖动/track page 交互（契约 R4 外观随状态经 bind 派生）</h3>
- * <p>滚动条不持有任何滚动位置状态——它只<b>读</b> viewport 的几何
- * （LayoutBox，只读几何测量：不写节点、不标脏）与外部传入的 {@code scrollOffsetSignal}，派生 thumb 的几何
- * （高度 + Y 偏移 + 颜色 + column 宽）并经 bind 写入节点属性。滚动位置唯一权威源是外部
- * scroll state（由 {@link club.heiqi.uilib.ui.scene.runtime.SceneScrolls#attach} 创建并维护）。</p>
- *
- * <p>Props 拆 read/write：{@code scrollOffsetSignal} 为只读显示源（可派生，如 per-section 派生），
- * {@code setScrollOffset} 为写入回调（handler 调）。拖动/track page/滚轮 handler 只调
- * {@code setScrollOffset.accept(v)}（守 signal-first：状态写入只经 signal 回调），绝不直接写节点。
- * thumb 的 hovered/pressed 交互态经 {@link SceneInteractionState} 暴露，PAINT bind 据此派生三态颜色。</p>
- *
- * <h3>结构</h3>
- * <pre>
- * column (COLUMN, preferredWidth=hitBandWidth（缺省 barWidth，宽度信号可派生）, fillParentHeight, bg=派生透明/主题轨道 tint/显式 trackColor, clipChildren=true, cornerRadius, hitTestable=true)
- *   └─ thumb (preferredWidth=thumbVisualWidth（缺省 barWidth）, AlignSelf=END 贴右缘, preferredHeight=派生,
- *             bg=派生主题三态色/显式三态色, cornerRadius, transform.translateY=派生, hitTestable=true)   ← COMPOSITE 级平移，零重排
- * </pre>
- *
- * <h3>默认配色（主题派生，滚动条不采样背景）</h3>
- * <p>滚动条没有「表面」——按材质角色映射它不取 {@code SceneSurfaceStyle}，也<b>不给 column/thumb 装
- * backdrop</b>：滚动条贴在任意内容之上，采样背景会引入额外滤镜开销与玻璃叠加噪声。默认配色改由主题
- * 语义色派生（主题切换自动重算，不重建节点）：</p>
- * <ul>
- *   <li>thumb idle = {@link SceneThemes#mutedForeground} + 中性 alpha（{@link #THUMB_IDLE_ALPHA}）；</li>
- *   <li>thumb hover = {@link SceneThemes#foreground} + {@link #THUMB_HOVER_ALPHA}（比 idle 更强的反馈）；</li>
- *   <li>thumb drag = {@link SceneThemes#foreground} + {@link #THUMB_DRAG_ALPHA}（最强反馈）；</li>
- *   <li>track = {@link SceneThemes#mutedForeground} + {@link #TRACK_TINT_ALPHA}（极淡槽底；无溢出仍全透明）。</li>
- * </ul>
- * <p>显式参数（{@code trackColor}/{@code thumbColor}/{@code hoverColor}/{@code dragColor}）优先级更高：
- * 传具体色值即完全覆盖主题派生（{@link #THEME_COLOR} 哨兵与 {@code hoverColor/dragColor} 的 null 表示
- * 「跟随主题」）。几何、滚动源、隐藏/显示、悬停与拖动语义与迁移前完全一致。</p>
- *
- * <h3>派生几何算法</h3>
- * <ul>
- *   <li><b>content 总高</b> = viewport 可见高 + maxScrollY（{@link SceneGeometry#maxScrollY} 闭式）。</li>
- *   <li><b>thumb 高</b> = max(viewHeight² / contentHeight, minThumbHeight)；无溢出时返回 0（thumb 不可见）。</li>
- *   <li><b>thumb Y</b> = (trackHeight - thumbHeight) * (scrollOffset / maxScroll)，浮点中间量防截断，无溢出时为 0。</li>
- *   <li><b>column 宽</b>恒为 hitBandWidth（0 缺省=barWidth）；无溢出时 track/thumb 透明，避免跨帧宽度变化扰动父级 ROW 求解。</li>
- * </ul>
- *
- * <h3>宽度信号（P5 第六轮 U-P5-13：滚动条宽度动态派生）</h3>
- * <p>{@link Props#barWidthSignal()} 是可选宽度源：<b>缺省（null）= 常量 {@code barWidth}，逐值不变</b>；
- * 非 null 时取信号当前值（值 ≤ 0 / null 回退常量，避免零宽不可命中）。信号变化时只<b>重派生几何</b>
- * —— column 命中带宽（column 的 preferredWidth 即指针可达面）、thumb 可视宽、两处圆角
- * （半径 = 宽度/2 同源）—— 不重建控件、不重置滚动位置、不新增订阅（一个 create 只跑一次，只建一条 effect）。
- * 显式 {@code hitBandWidth}/{@code thumbVisualWidth} 覆盖仍优先于信号（与 create 期同口径）。</p>
- * <p>命中面与拖动/track 判定<b>不缓存宽度</b>：拖动公式读节点盒与 transform、track page 读
- * column 局部指针 Y，故宽度变化后两者天然同步，无需第二失效通道。装配点（
- * {@link SceneScrollContainer} 默认创建路径、picker 各滚动区）按需接入字号/密度派生。</p>
- *
- * <h3>失效级别（滚动零重排 / 级别由 setter 自决，双轨核对）</h3>
- * <ul>
- *   <li><b>thumb 位置</b>用 {@link Transform#translate(float, float)}（COMPOSITE 级）平移，
- *       由声明 COMPOSITE 的 bind 写入——滚动时只标 compositeDirty，零重排零重绘（变化只触达最低必要层）。</li>
- *   <li><b>thumb 高度</b>用 {@code setPreferredHeight}（LAYOUT 级），由声明 LAYOUT 的 bind 写入。</li>
- *   <li><b>column 宽</b>固定为 barWidth，不随 overflow 状态变化。</li>
- *   <li><b>track/thumb 颜色</b>用 {@code setBackgroundColor}（PAINT 级），由声明 PAINT 的 bind 写入。</li>
- *   <li><b>订阅源</b>：LAYOUT bind（thumb 高）订阅 {@code rt.layoutDoneSignal()}；
- *       COMPOSITE bind 订阅 {@code scrollOffsetSignal} + {@code rt.layoutDoneSignal()}；
- *       PAINT bind 订阅 hovered/pressed + {@code rt.layoutDoneSignal()}。
- *       滚动时只有 COMPOSITE bind 跑，LAYOUT/PAINT bind 不跑——按需重算，滚动只标 COMPOSITE、零重排。</li>
- * </ul>
- *
- * <h3>layoutDoneSignal 契约（P0 去外泄）</h3>
- * <p>scrollbar 不再要求调用方手传 layout 完成通知——直接订阅 {@link SceneRuntime#layoutDoneSignal()}。
- * host 在 post-flush 主树与 overlay 完成布局后通过 {@link SceneRuntime#__bridgeLayoutEpoch(int)}
- * 桥接最终主树 epoch，scrollbar 据此在同帧 flush 内重跑 effect 读最新 LayoutBox，
- * 消除「content 高度变化滞后一帧」缺陷。
- * 作者无需传任何 signal，外泄消除。</p>
- *
- * <h3>拖动公式（行业公式）</h3>
- * <p>拖动 thumb 时按 {@code scrollDelta = pointerDelta * (content - viewport) / (track - thumb)}
- * 反推滚动量，使 thumb 严格跟随指针。track page 点击 thumb 上/下方按 viewportHeight 翻页。</p>
- *
- * <h3>守不变量</h3>
- * <ul>
- *   <li><b>signal-first</b>：拖动/track handler 只 {@code setScrollOffset.accept(v)}，不直接写节点。</li>
- *   <li><b>create 只跑一次</b>：bind/on 注册在 create 内。</li>
- *   <li><b>失效级别</b>：thumb 高 LAYOUT / track 与 thumb 颜色 PAINT / thumb Y COMPOSITE。</li>
- *   <li><b>分层边界</b>：paint 层只读 thumb 节点属性；effect 在数据层写 node 属性。</li>
- *   <li><b>零重排</b>：滚动只触发 COMPOSITE 级 transform 变化。</li>
- *   <li><b>只读几何测量</b>：effect body 与 track page handler 读 viewport/thumb LayoutBox（不写节点、不标脏）。</li>
- * </ul>
- */
+
 public final class SceneScrollbar {
 
-    /**
-     * 纯静态工厂，禁止实例化（强制无状态，契约 R1）。
-     */
+
     private SceneScrollbar() {
     }
 
-    /**
-     * Scrollbar 输入契约 —— 纯只读受控源 + 视口节点引用 + 视觉常量（契约 R2）。
-     *
-     * <p>Props 拆 read/write：{@code scrollOffsetSignal} 为只读显示源（可派生，如 per-section 派生），
-     * {@code setScrollOffset} 为写入回调（handler 调）。可选 {@code onDragStart} 在捕获拖动前收到当前
-     * 显示 offset，供有平滑滚动的宿主先取消 Motion。拆分后支持 ConfigScreen 的 per-section scroll state
-     * 方案——显示源为当前可见 scroll，写入回调写当前 active section 的 authority。</p>
-     *
-     * @param viewport      被反映滚动位置的可滚动视口节点（isScrollable==true，构建期固定引用）
-     * @param scrollOffsetSignal 滚动偏移只读显示源（由 SceneScrolls.attach 创建的 signal 或其派生 Computed；
-     *                       scrollbar 据此派生 thumb Y，handler 读此值做拖动起点）
-     * @param setScrollOffset 滚动偏移写入回调（handler 调用此回调写 scroll state；
-     *                       拖动/track page/滚轮 handler 只调此回调，不直接写节点）
-     * @param trackColor    轨道背景色（ARGB）；0 表示显式透明轨道；{@link #THEME_COLOR} 表示跟随主题
-     *                      派生极淡 tint（默认，见类文档「默认配色」）
-     * @param thumbColor    滑块默认态背景色（ARGB，idle 态）；{@link #THEME_COLOR} 表示跟随主题派生
-     *                      （默认，mutedForeground + 中性 alpha）
-     * @param barWidth      滚动条宽度（像素，建议 6-8）
-     * @param minThumbHeight 滑块最小高度（像素，避免内容过多时滑块消失）
-     * @param onDragStart 拖动开始回调；接收当前显示 offset，可用于取消尚未完成的平滑滚动，可为 null
-     * @param hoverColor  滑块悬停态背景色（ARGB）；null=跟随主题派生（foreground + 更高强度）
-     * @param dragColor   滑块拖动态背景色（ARGB）；null=跟随主题派生（foreground + 最高强度）
-     * @param hitBandWidth 命中带宽（像素）；0=缺省用 barWidth（column 加宽为隐性命中带，可视滑块贴右缘）
-     * @param thumbVisualWidth 滑块可视宽度（像素）；0=缺省用 barWidth
-     * @param barWidthSignal 宽度信号（像素，可派生，如按字号/密度派生）；null 或值 ≤ 0 = 缺省用常量
-     *                       {@code barWidth}（逐值不变）。信号变化时只重派生几何（column 命中带宽 /
-     *                       thumb 可视宽 / 圆角），不重建控件，见类文档「宽度信号」。
-     */
+
     @Desugar
     public record Props(
         SceneNode viewport,

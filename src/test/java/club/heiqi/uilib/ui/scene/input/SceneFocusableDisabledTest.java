@@ -11,17 +11,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/**
- * disabled 控件 focusable 动态进出 Tab 环验收（兑现 package-info R9「disabled 不可聚焦」）。
- *
- * <p>验证 {@link SceneRuntime#focusable(SceneNode, club.heiqi.uilib.ui.reactive.ReadableSignal)}
- * signal 驱动重载的三条核心行为：
- * <ol>
- *   <li>enabled=false 时控件不在 Tab 环（Tab 跳过）</li>
- *   <li>enabled true→false 时若该控件正聚焦，焦点立即清失</li>
- *   <li>enabled false→true 时恢复到原 DOM 前序位置（不跑末尾）</li>
- * </ol>
- */
+
 public class SceneFocusableDisabledTest {
 
     private SceneRuntime runtime;

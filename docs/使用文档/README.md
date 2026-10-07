@@ -1,5 +1,7 @@
 # 使用文档
 
+> 规格与验收以 [唯一 spec](<../superpowers/specs/2026-10-07-uilib-core-contract-design.md>) 为准。本页及所链接的实现、接入和历史资料不另立要求，旧“现行规范”标签及历史编号无规范效力。
+
 [文档首页](../README.md) / 使用文档
 
 面向在 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境中接入 Qz UILib 的 Mod 开发者。使用 Java API、scene 树与响应式 signal 构建界面。
@@ -36,7 +38,7 @@
 ## 接入边界
 
 - 页面与宿主能力以当前源码与 [公共 API 稳定清单](公共API稳定清单.md) 为准。本库配置页的接入样板为 `ModernConfigEntry`。
-- ItemStack 视觉使用 `HostImageSource.itemIcon(ItemStack)`；合同见 [物品视觉渲染接缝](../开发者文档/规格文档/物品视觉渲染接缝.md)。
+- ItemStack 视觉使用 `HostImageSource.itemIcon(ItemStack)`；合同见 物品视觉渲染接缝（旧资料已退役，原文见 Git 历史）。
 - 发布产物的玩家命令为 `/qzuilib modernconfig` 与 `/qzuilib chatmd on|off|status`。scene 测试场地等开发设施位于 `internal.devtools`，不随发布 jar 分发。
 - 旧 document 栈（HTML-like 文档树、CSS-like 样式表、远程文档页）已随 breaking major 整体删除，相关教程与 API 不再可用；旧版本资料从 Git 历史查阅。
 

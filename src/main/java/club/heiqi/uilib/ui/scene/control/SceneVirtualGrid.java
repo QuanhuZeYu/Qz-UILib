@@ -27,55 +27,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceBinder;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneVirtualGrid —— 虚拟化图标网格控件（创造物品栏式方块选择器的网格地基）。
- *
- * <h3>行级虚拟化</h3>
- * <p>只有可见窗口内的行实际挂载子节点（每行是完整网格行，含 overscan 一行避免滚动半行露白）：
- * viewport（scrollable + 固定 preferredHeight）内挂 {@code topSpacer + rowsContainer + bottomSpacer}，
- * spacer 高度由窗口数学推导，使布局引擎算出的内容总高恒等于 {@code totalRows * stride}，
- * {@code SceneGeometry.maxScrollY} 全程正确，{@link SceneScrolls} 的滚轮 clamp 无需特判。</p>
- *
- * <h3>单元轨道与字号（S5 已登记限制）</h3>
- * <p>{@link Props#cellHeight()} 是<b>调用方给定的固定轨道高</b>，虚拟化 stride
- * （{@code cellHeight + gapY}）、spacer 高度、视口闭式与滚动/窗口数学全部由它推导 ——
- * 该值属公共语义，<b>不随生效字号变化</b>。单元内的图位高会按标签行高（生效字号）让位
- * （见 {@code bindIconHeight}），因此只要满足</p>
- * <pre>cellHeight &gt;= lineHeight(生效字号) + LABEL_GAP + 1(图位最小) + 2*CELL_PADDING</pre>
- * <p>单元就恰好被内容填满、不裁字、spacer 数学不破。默认配置（cellHeight=64）在 200% 字号
- * （16 → 32）下恰好满足：32 + 2 + 22 + 8 = 64。</p>
- * <p><b>限制（不得沉默）</b>：若字号大到超出上式，单元会按内容自然高变大，而 stride 仍按调用方的
- * {@code cellHeight} 推导 → 相邻行间距不再等于 stride。此形态下控件<b>优先保证不裁字</b>（标签行高完整），
- * 越界可由 {@code cellBox.getHeight() > Props.cellHeight()} 检测；调用方应抬高 {@code cellHeight} 或限制字号。
- * 把轨道高也做成字号派生的 metric 会改变 stride 的公共语义，本轮不做（见 improve-3 §8）。</p>
- *
- * <h3>滚动驱动窗口</h3>
- * <p>滚动唯一权威是 {@link SceneScrolls#attach} 返回的 scrollSignal（GEOMETRY 级滚动不重排）；
- * 窗口首行由 {@code floor(scroll / stride)} 派生（Computed），数据收缩时经 owner 作用域 effect
- * 把 scroll 回夹到新 maxScroll（参考旧版搜索选择器的 windowFor/bindScrollClamp 范式）。</p>
- *
- * <h3>高亮（受控/内部双形态）</h3>
- * <p>{@link Props#highlighted()} 非 null 时高亮完全受控（显示用外部 signal、导航经
- * {@link Props#onHighlightChange()} 回写）；null 时控件内部自管。点击与四向键盘导航都会推进高亮，
- * 高亮行自动滚动进入视野（越界换行/夹取语义见 {@link SceneVirtualGridNav}）。</p>
- *
- * <h3>外观归属（液态玻璃迁移，G14，契约 §4.1「VirtualGrid：GROUP（网格）」与 §4.1 复用行轻量口径）</h3>
- * <p><b>网格底座</b>：root 即滚动 viewport，按 G07 {@link SceneScrollContainer} 先例自持一颗主题
- * {@code GROUP} 配方表面——background/border/borderWidth/cornerRadius/backdrop/surfaceElevation
- * 六项由 {@link SceneSurfaceBinder} 独占（每颗表面只采样一次滤镜）；不再外包第二层容器、不给
- * 行/单元各装滤镜，避免叠层。</p>
- *
- * <p><b>复用单元轻量覆盖</b>（虚拟化复用行口径，G13 裁决）：单元（回收再绑数据的那层）外观写入槽
- * 只剩 {@code backgroundColor}——选中取主题选区背景（alpha {@code 0x59}）、hover 取主题 accent
- * （alpha {@code 0x1F}，与 {@code SceneAutocomplete}/{@code SearchResultList} 候选行同一口径，
- * 选中明显强于 hover、不只靠透明度区分）；禁用时底色清空（禁用反馈由文字禁用前景与点击/键盘守卫
- * 承担）。单元零 {@code BACKDROP}、零边框、零圆角、elevation 保持 -1（普通绘制）。选中与底色
- * 按 key 从实时数据源派生，回收/重绑节点不残留上一项的 hover/选中色。</p>
- *
- * <p><b>不改渲染协议</b>（契约 §4.1「物品图像不改色」+ §7.3）：图位圆角与占位底色
- * （{@link #DEFAULT_PLACEHOLDER_COLOR}）属图像渲染协议，保持静态值、不随主题重染；行标签文字取主题
- * {@code mutedForeground}/{@code disabledForeground}（旧 {@code TEXT_SECONDARY} 同值起步）。</p>
- */
+
 public final class SceneVirtualGrid {
 
     /** 无图片项的占位底色（属图像渲染协议，非主题槽位；集中定义处 = {@link SceneRenderProtocolTokens}）。 */
@@ -303,7 +255,6 @@ public final class SceneVirtualGrid {
 
         // 网格底座：root 即滚动 viewport，按 G07 ScrollContainer 先例自持一颗 GROUP 配方表面。
         // background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 六项归
-        // SceneSurfaceBinder 独占（契约 §4），主题切换只重派生、不重建节点；底座只装这一颗，
         // 行/单元零滤镜（§4.1 复用行轻量口径），不外包第二层容器避免叠层。
         // 时序契约（G07 同款）：构建期声明关心状态，Router 后续写入才会落到已创建的 signal。
         SceneInteractionState gridInteraction = rt.interactionState(viewport);
@@ -489,7 +440,6 @@ public final class SceneVirtualGrid {
         cell.setClipChildren(true);
         cell.setGap(LABEL_GAP);
         cell.setPadding(CELL_PADDING);
-        // 轻量覆盖口径（契约 §4.1 虚拟化复用行裁决）：单元不写圆角/边框、不装滤镜、
         // elevation 保持 -1（未绑定即普通绘制），外观只剩主题派生的 backgroundColor。
         SceneInteractionState interaction = rt.interactionState(cell);
         // 时序契约：构建期声明关心 hovered，Router 后续写入才会落到已创建的 signal。
@@ -534,7 +484,6 @@ public final class SceneVirtualGrid {
         icon.setHitTestable(false);
         icon.setPreferredWidth(Math.max(1, props.cellWidth() - CELL_PADDING * 2));
         bindIconHeight(rt, props, icon, label);
-        // 图位圆角与占位底色属物品图像渲染协议（契约 §4.1「物品图像不改色」+ §7.3）：保持静态值。
         icon.setCornerRadius(SceneChromeTokens.RADIUS_SM);
         rt.bindComputed(() -> {
             Item live = snapshot.get().index().itemAt(item.key());
@@ -568,7 +517,6 @@ public final class SceneVirtualGrid {
         return cell;
     }
 
-    // ==================== 复用单元轻量覆盖派生（契约 §4.1 虚拟化复用行口径） ====================
 
     /**
      * 解析复用单元底色：禁用清空 &gt; 选中（主题选区背景 0x59）&gt; hover（主题 accent 0x1F）

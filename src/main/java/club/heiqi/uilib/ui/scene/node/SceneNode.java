@@ -59,15 +59,7 @@ import club.heiqi.uilib.ui.scene.layout.MainAxisAlign;
  */
 public class SceneNode {
 
-    /**
-     * 宽轴尺寸策略。高轴无对称枚举——COLUMN 容器高度默认 shrink-to-fit（由子节点累加决定），
-     * 高轴的"shrink"是默认态无需开关——视口钉死经 preferredHeight / fillParentHeight 达成，不设高轴收缩开关（旧 §4 视口条款，含义以本条直述为准）。
-     * fillParentHeight(true) 是 COLUMN 主轴 grow 桥，与 WidthSizing 语义正交。
-     *
-     * <p>{@link #FILL} 保持默认填满父约束宽度；{@link #SHRINK} 让容器在未设置
-     * preferredWidth 时按已布局子节点内容回收宽度。该策略仅影响有子节点的容器，
-     * 叶节点仍沿用文本 shrink / 装饰 fill 的既有语义。</p>
-     */
+
     public enum WidthSizing {
         /** 容器宽度填满父级下传的可用宽度。 */
         FILL,
@@ -77,21 +69,7 @@ public class SceneNode {
 
     // ==================== 树关系 ====================
 
-    /**
-     * 全进程树结构版本号：任一挂载/卸载/重排操作（{@link #appendChild}、{@link #removeChild}、
-     * {@link #insertBefore}、{@link #applyChildReconcile}）自增 1。
-     *
-     * <p><b>用途</b>：布局引擎的文本叶登记表需要「结构变更触发的一次确定性剪枝」——
-     * 引擎与 runtime 之间零引用（不新增反向依赖），故由节点侧暴露一个 O(1) 变更信号，
-     * 由 {@code SceneLayoutEngine.layout} 入口比对。语义是<b>保守触发源</b>：跨 runtime /
-     * 跨引擎的无关结构变更只会让某个引擎多跑一次剪枝，绝不漏跑（漏跑 = 已卸载子树的
-     * 文本叶永久驻留）。</p>
-     *
-     * <p><b>跨包可见性说明</b>：场景布局引擎在 {@code ui.scene.layout} 包，本类在
-     * {@code ui.scene.node} 包，「包私有」跨包不可达，故计数器本体 {@code private static}、
-     * 读取口沿用本仓既有的 {@code __} 内部桥命名约定（与 {@link #__getLastMeasuredEpoch()}
-     * 同例），不构成公共兼容承诺。不提供写入口：只有本类的四个结构方法能推进它。</p>
-     */
+
     private static long structureVersion;
 
     /** @return 全进程树结构版本号（{@code __} 内部桥；仅结构方法推进，任何人不得写入） */
@@ -236,19 +214,7 @@ public class SceneNode {
     /** 解析缓存：是否有效（写侧失效把它置 false）。 */
     private boolean fontResolved;
 
-    /**
-     * 宽轴下限（UI 逻辑像素），0 = 无下限。
-     *
-     * <p>与 {@code preferredWidth} 的分工：preferredWidth 是<b>目标宽</b>（SHRINK 容器上会被内容宽取代），
-     * minWidth 是<b>收缩不得越过的下限</b>。二者关系为
-     * {@code effectiveWidth = max(minWidth, clamp(naturalOrPreferred, maxWidth))} —— 语义同 CSS
-     * {@code min-width} 与 {@code width} 的关系。</p>
-     *
-     * <p><b>clamp 接入点（S5 已落地）</b>：① {@code SizingCalculator.clampWidth}（computeWidth
-     * 全部非 preferredWidth 出口）；② {@code FlexLayouter} 的 STRETCH 改写分支（父容器改写子宽
-     * 时同样保下限）。{@code preferredWidth > 0} 的显式钉死分支不参与 min/max 钳制（既有约定：
-     * 显式钉死优先级最高）。归一：{@code <=0} 表示无下限；与 maxWidth 矛盾时<b>下限优先</b>。</p>
-     */
+
     private int minWidth;
 
     /** 几何派生声明（{@code null} = 未登记）；字号变化时按当前生效字号重算几何槽。 */
@@ -256,9 +222,7 @@ public class SceneNode {
     /** 上次应用几何派生声明时使用的生效字号；{@code Integer.MIN_VALUE} = 从未应用。 */
     private int fontSizeMetricAppliedPx = Integer.MIN_VALUE;
 
-    /** 富文本段流（SEGMENTS 绘制命令载体）；null=未设置。
-     *  与 textProps.text 互斥（绘制引擎段流优先）。仅标 PAINT：布局几何由
-     *  preferredWidth/Height 显式提供（宽度度量走 font 层，业务布局缓存承担）。 */
+
     private List<TextSegment> segments;
 
     /** 光标样式声明，纯交互投影，setter 不标脏。 */
@@ -1024,31 +988,7 @@ public class SceneNode {
         invalidateFontSubtree();
     }
 
-    /**
-     * 几何派生声明：告诉节点「本节点的某些布局槽是<b>由字号派生</b>的」。
-     *
-     * <p>登记后，节点在<b>生效字号发生变化</b>时（含首次登记）用当前生效字号调用一次
-     * {@code metric}，由它写入派生几何（通常只写 {@link #setPreferredWidth(int)} /
-     * {@link #setPreferredHeight(int)} / {@link #setMinWidth(int)}）。控件因此不必再手写
-     * {@code rt.bind(rt.layoutDoneSignal(), ...)} 重算 —— 字号真值仍然只有一条解析链，
-     * 本接口<b>只声明派生关系，不承载任何字号值</b>（不引入第二套真值）。</p>
-     *
-     * <p>回调触发点：① 本方法登记时立即一次；② {@link #setFontSize}/{@link #setFontScope}/
-     * {@link #clearExplicitFontSize}/{@link #resetFontScope}/{@link #setFallbackFontSize} 等声明
-     * 变化；③ 继承到的字号变化（环境写入 / runtime 默认或倍率广播 / 祖先声明变化向下传播）。
-     * 同一字号值重复触发会被去重（{@code fontSizeMetricAppliedPx}）。</p>
-     *
-     * <p>回调内写布局槽会自动标 LAYOUT（走既有 setter 契约），无需返回值。</p>
-     *
-     * <p><b>同周期生效保证</b>：回调在当前失效周期内<b>同步</b>执行（声明变化路径
-     * {@code onFontDeclarationChanged} 与继承变化路径 {@code invalidateFontSubtree} 都在标脏后
-     * 立即调用），而布局读取发生在之后的布局阶段 —— 因此回调里写的 {@code minWidth} /
-     * {@code preferredWidth} 在本帧布局就已被 {@code SizingCalculator.clampWidth} 读到，
-     * 不会出现「回调改了 minWidth 但本帧 clamp 用旧值」。</p>
-     *
-     * @param metric 派生回调；{@code null} = 取消登记（节点不再响应字号变化重算几何）
-     * @return 本节点（链式）
-     */
+
     public SceneNode setFontSizeMetric(FontSizeMetric metric) {
         this.fontSizeMetric = metric;
         this.fontSizeMetricAppliedPx = Integer.MIN_VALUE;   // 重新登记 → 允许按当前字号再算一次
@@ -1084,12 +1024,7 @@ public class SceneNode {
         metric.apply(this, px);
     }
 
-    /**
-     * 几何派生回调：把「生效字号」映射为该节点的派生布局槽。
-     *
-     * <p>实现约定：只写派生布局属性（preferredWidth/Height、minWidth 等），
-     * <b>不得</b>回写字号（否则形成反馈环）。调用发生在字号失效路径内，本节点此时已标脏。</p>
-     */
+
     @FunctionalInterface
     public interface FontSizeMetric {
         /**
@@ -1164,17 +1099,7 @@ public class SceneNode {
         invalidateFontDescendants();
     }
 
-    /**
-     * <b>声明变更路径（脏标契约，不得被缓存剪枝吃掉）</b>：本节点的字号声明真的发生变化时，
-     * <b>无条件</b>标 self LAYOUT + PAINT 并作废行计划 —— 这是属性 setter 的既有失效契约
-     * （{@code InvalidationLevelMatrixTest} 是对应矩阵钉）。
-     *
-     * <p>「值变剪枝」只作用于<b>后代</b>（{@link #invalidateFontDescendants()}）：祖先声明变化时，
-     * 若某后代重解析后的值与旧值相同，则该后代及其子树无需重排。</p>
-     *
-     * <p>与 {@link #invalidateFontSubtree()} 的分工：后者用于「本节点声明未变、只是继承到的值变了」
-     * 的路径（环境写入 / runtime 广播），因此允许对本节点也做值变剪枝。</p>
-     */
+
     private void onFontDeclarationChanged() {
         fontResolved = false;
         markSelfLayout();
@@ -1238,15 +1163,7 @@ public class SceneNode {
         return applyBackgroundColor(backgroundColor);
     }
 
-    /**
-     * 绑定器专用写入通道：写底色并置位表面写入权标记。
-     *
-     * <p>双下划线表示 internal bridge，业务与应用代码不得调用——绕过公开 setter 的接管守卫
-     * 会让「一个属性只有一个写入者」失去运行期保障（契约 §4）。</p>
-     *
-     * @param backgroundColor ARGB
-     * @return this（链式）
-     */
+
     public SceneNode __writeBackgroundColor(int backgroundColor) {
         paintProps.surfaceOwned = true;
         return applyBackgroundColor(backgroundColor);
@@ -1410,7 +1327,7 @@ public class SceneNode {
     /** @see SceneLayoutProps#fillParentWidth */
     public boolean isFillParentWidth() { return layoutProps.fillParentWidth; }
 
-    /** @see SceneLayoutProps#preferredHeight */
+
     public SceneNode setPreferredHeight(int preferredHeight) {
         if (layoutProps.preferredHeight == preferredHeight) return this;
         layoutProps.preferredHeight = preferredHeight;
@@ -1418,10 +1335,10 @@ public class SceneNode {
         return this;
     }
 
-    /** @see SceneLayoutProps#preferredHeight */
+
     public int getPreferredHeight() { return layoutProps.preferredHeight; }
 
-    /** @see SceneLayoutProps#preferredWidth */
+
     public SceneNode setPreferredWidth(int preferredWidth) {
         if (layoutProps.preferredWidth == preferredWidth) return this;
         layoutProps.preferredWidth = preferredWidth;
@@ -1429,7 +1346,7 @@ public class SceneNode {
         return this;
     }
 
-    /** @see SceneLayoutProps#preferredWidth */
+
     public int getPreferredWidth() { return layoutProps.preferredWidth; }
 
     /** @see SceneLayoutProps#maxHeight */
@@ -1454,20 +1371,7 @@ public class SceneNode {
     /** @see SceneLayoutProps#maxWidth */
     public int getMaxWidth() { return layoutProps.maxWidth; }
 
-    /**
-     * 设置宽轴下限（UI 逻辑像素），0 = 无下限；变化时标 LAYOUT。
-     *
-     * <p>与 {@link #setPreferredWidth(int)} 的分工见 {@link #getMinWidth()}。归一：负值按 0
-     * （= 无下限）处理，不做上界钳制（与 maxWidth 组合的矛盾由引擎按「下限优先」处理）。</p>
-     *
-     * <p><b>可证伪断言</b>（宽度下限是否真的进了布局）：对短内容节点（如 {@code setText("x")}
-     * 的文本叶，无 preferredWidth）设 {@code setMinWidth(72)} → 跑一轮 layout →
-     * {@code ((LayoutBox) node.getCachedLayout()).getWidth() == 72}；随后 {@code setMinWidth(0)}
-     * 再跑一轮 layout → 回到自然宽（{@code < 72}）。若 clamp 未接入，第一条断言读到自然宽而红。</p>
-     *
-     * @param minWidth 宽轴下限；{@code <=0} 表示无下限
-     * @return 本节点（链式）
-     */
+
     public SceneNode setMinWidth(int minWidth) {
         int normalized = Math.max(0, minWidth);
         if (this.minWidth == normalized) return this;
@@ -1683,14 +1587,7 @@ public class SceneNode {
 
     // ==================== 绘制属性访问器（PAINT 级） ====================
 
-    /**
-     * 表面写入权守卫：节点被绑定器接管后，公开 setter 拒绝应用侧静态写。
-     *
-     * <p>接管标记由绑定器的 {@code __write*} 通道置位（首次写入时），因此 bind 之后、
-     * 首次 flush 之前的构造期播种仍然合法——见契约 §4「属性归属表」。</p>
-     *
-     * @param property 属性名（用于诊断消息）
-     */
+
     private void requireSurfaceWritable(String property) {
         if (!paintProps.surfaceOwned) {
             return;

@@ -11,35 +11,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneDataTableEditorChrome —— DataTable 编辑槽（TextInput/Select）与下拉浮层的主题化装配入口。
- *
- * <h3>定位（液态玻璃迁移后）</h3>
- * <p>{@link SceneDataTable} 的默认路径已改为<b>直接复用</b>已主题化的 {@link SceneTextInput} 与
- * {@link SceneSelect}（INPUT 表面 + OVERLAY 弹出底座由它们自持），本类不再是默认外观写入者。
- * 本类保留原有公共签名，作为「自行装配 primitive 的调用方」的兼容入口：所有外观都从主题派生
- * （{@link SceneSurfaceBinder} 独占 background/border/borderWidth/cornerRadius/backdrop/
- * surfaceElevation，文字/caret/选区取主题语义色），不再持有任何静态色板常量。</p>
- *
- * <h3>属性归属</h3>
- * <p>表面属性唯一写入者是 {@link SceneSurfaceBinder}；文本前景是 {@code bindComputed} /
- * {@code bindForeground} 单点绑定；cursor 保持 {@link SceneControlChrome#bindCursor}。
- * 同一节点只绑定一次，不与任何旧实色绑定竞争。</p>
- *
- * <h3>守 R1（静态工具零实例字段）</h3>
- * <p>类为 {@code public final} + {@code private} 构造器，零实例字段、零静态可变状态。
- * 唯一的成员类 {@link DataTableListboxChrome} 是浮层 chrome 装配器实例（每次 select 列渲染
- * 时按需 new，持有 {@link SceneRuntime} 引用用于注册绑定），不属于工具类自身的实例状态。</p>
- *
- * <h3>Boolean 解包</h3>
- * <p>对 signal 值统一用 {@code Boolean.TRUE.equals(x)} 防御性解包，与 DataTable 原编辑槽装配
- * 口径一字不差，行为零变。</p>
- *
- * @see SceneDataTable
- * @see SceneTextInput
- * @see SceneSelect
- * @see SceneControlChrome
- */
+
 public final class SceneDataTableEditorChrome {
 
     /** 编辑输入槽横向内边距（纯布局，不参与外观归属）。 */

@@ -1,5 +1,7 @@
 # 架构图集
 
+> 规格与验收以 [唯一 spec](<../../superpowers/specs/2026-10-07-uilib-core-contract-design.md>) 为准。本页及所链接的实现、接入和历史资料不另立要求，旧“现行规范”标签及历史编号无规范效力。
+
 [文档首页](../../README.md) / [开发者文档](../README.md) / 架构图集
 
 面向维护者与 AI 协作 Agent 的源码级架构示意图集，以 mermaid 图为主、文字说明为辅。

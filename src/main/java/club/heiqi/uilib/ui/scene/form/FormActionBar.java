@@ -14,41 +14,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * 表单操作条共享工厂：恢复默认（左）/ spacer / 取消 + 保存（右，primary）。
- *
- * <p>从 {@code ConfigScreen.createActionBar} 与 demo 操作条提炼下沉的通用布局，
- * 左右分区 + flexGrow spacer 撑开中间，供任意表单页复用。</p>
- *
- * <p><b>零 config 依赖</b>：本类只吃 {@link ReadableSignal} / {@link Runnable} /
- * {@link FormTheme}，不感知任何 config 业务类型。handler 只写 signal 或调 Runnable
- * （不直接改节点属性）；create 体只跑一次（守 R3）。</p>
- *
- * <pre>
- * row (ROW, preferredHeight, gap, TOOLBAR 表面)
- *   ├ 恢复默认 (enabled 恒 true 或 restoreEnabled)
- *   ├ spacer (flexGrow=1)
- *   ├ 取消 (enabled = cancelEnabled / dirty)
- *   └ 保存 (enabled = canSave, primary)
- * </pre>
- *
- * <p><b>两条外观路径（一个属性只有一个写入者，互斥不叠加）</b></p>
- * <ul>
- *   <li><b>默认路径</b>——不传 {@link FormTheme} 的重载：操作条 root 表面（background/borderColor/
- *       borderWidth/cornerRadius/backdrop/surfaceElevation）经 {@link SceneSurfaceBinder#bind}
- *       消费来源主题的 {@link SceneTheme.Role#TOOLBAR} 配方，绑定器是这些属性的唯一写入者；
- *       操作条恒启用（禁用语义在各按钮自身的 enabled 信号），构建期先声明关心
- *       hover/pressed/focus 再绑定。条上文字即按钮文案，只读复用已主题化的
- *       {@link SceneButton}（standard/primary 变体走各自 BUTTON_* 角色配方，其前景即主题
- *       {@code foreground}/{@code onAccentForeground}），本类不复制、不覆盖其任何样式。
- *       来源主题切换只重派生外观，不重建节点。</li>
- *   <li><b>显式路径</b>——保留的 {@link FormTheme} 重载：语义与迁移前完全一致，操作条 root
- *       不写任何外观属性（theme 仍为扩展位、布局常量内置），不装滤镜、不订阅主题；
- *       caller 自身的静态设色（如 {@code ConfigScreen} 挂回后设底色/圆角）继续独占生效，
- *       不与主题派生竞争。</li>
- * </ul>
- * <p>两条路径的布局（高度/内边距/间距/对齐/子序）与按钮回调、enabled 语义完全一致。</p>
- */
+
 public final class FormActionBar {
 
     /** 按钮默认宽度（像素）。 */

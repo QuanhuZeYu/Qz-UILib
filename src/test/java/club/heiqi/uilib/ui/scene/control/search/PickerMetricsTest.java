@@ -21,24 +21,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveScheduler;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
-/**
- * P5 尺寸/密度派生证明（P5 §1.5.1-§1.5.3、§2.1-§2.3；红线 R1/R2/R3）。
- *
- * <p>本类把 {@code temp/p5_density_spec.py} 的断言 A1-A8 逐条搬到 Java 侧复算，
- * 用 {@link SpecMeasurer} 复刻脚本的度量模型（{@code lineHeight(fs)=round(fs*1.25)}、
- * 4 字符样本宽 {@code round(fs*3.2)}），从而与规格表的<b>逐值</b>对拍：</p>
- * <ul>
- *   <li>A1 现状基线 1920×1080 = 75（T5 对拍）；</li>
- *   <li>A2/A3 P5 1080p fs=12/15/18 ≥ 75（常驻信息条口径实测 100/80/95）；</li>
- *   <li>A4 auto 逐点支配（8 视口 × 3 字号，失败点 0）；</li>
- *   <li>A5 图标正方形不变量（fs=12/24 均 40）；</li>
- *   <li>A6/A7 三档均 ≥ 现状（失败点 0）；</li>
- *   <li>A8 小盒降级 ≥ 现状（960×540 → 102、640×360 → 30）。</li>
- * </ul>
- *
- * <p>另一条红线（R3 动态化）由 {@code pickerSizeChainNeverTouchesGuiScale} 承担：
- * 派生链源码内不得出现 GUI Scale / 物理分辨率符号 —— 三分量中「GUI Scale」只在宿主边界合成。</p>
- */
+
 public class PickerMetricsTest {
 
     /** 规格脚本的 8 个对照视口。 */
@@ -425,7 +408,6 @@ public class PickerMetricsTest {
         assertTrue("1280x719 属小盒", PickerMetrics.isSmallBox(1280, 719));
     }
 
-    // ==================== 三分量动态性（R3） ====================
 
     @Test
     public void fontScalePercentDrivesEveryGeometryComponent() {
@@ -558,7 +540,6 @@ public class PickerMetricsTest {
                         .fontSizePx());
     }
 
-    // ==================== 三分量铁律源码守卫（R3） ====================
 
     @Test
     public void pickerSizeChainNeverTouchesGuiScale() throws IOException {

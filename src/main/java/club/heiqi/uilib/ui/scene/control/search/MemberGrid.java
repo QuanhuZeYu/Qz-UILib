@@ -39,35 +39,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * MemberGrid —— 已选择成员的多列网格（模块化：替代面板内联的单列成员行）。
- *
- * <h3>定位</h3>
- * <p>底部「已选择」横带的成员区：自动列数网格（每成员一张小卡片：图标 + 主文本 + 无效/重复徽章 +
- * 副文本 + 编辑/删除操作，删除一步直达无需二次确认），标准滚动结构带可见滚动条
- *（{@link SceneScrollContainer} 工厂）。</p>
- *
- * <h3>受控语义</h3>
- * <p>成员列表、问题统计、编辑/删除回调全部受控；本模块只读上抛，不持有业务状态。</p>
- *
- * <h3>外观归属（液态玻璃迁移，G13 网格族口径 + T2 卡面）</h3>
- * <p>网格底座即 {@link SceneScrollContainer} 工厂的 viewport，background/border/borderWidth/
- * cornerRadius/backdrop/surfaceElevation 六项由容器按主题 {@link SceneTheme.Role#GROUP} 配方
- * 独占（契约 §4.1 网格族「容器 GROUP」），本模块<b>不再</b>对底座二次绑定。
- * <b>成员卡自身是悬停面</b>：单元格的六项同样归 {@code SceneSurfaceBinder} 独占，配方经
- * 「主题 INDICATOR 基线 + 局部覆盖」派生（{@code backdrop(null)} ⇒ 零新增 BACKDROP 采样、
- * {@code reliefDisabled} ⇒ 普通绘制路径、圆角随字号派生）：静息/禁用全透明（观感与「零表面」
- * 时期逐值一致），悬停浮现低强度 tint + 主题 hovered 缘色 —— 卡片这才有可读的 hover 反馈。
- * 卡片文字取主题语义前景：主文本 {@code foreground}、副文本 {@code mutedForeground}、徽章文字
- * duplicate 取 {@code warningText}、其余取 {@code foreground}（与 SceneToast / SceneObjectField
- * 同一口径）。命中：单元格 hitTestable=true（Router 只把 hover 写给最深命中节点），子节点优先 ⇒
- * 卡内按钮/徽章仍是点击与 hover 的第一目标，CLICK 沿命中链冒泡，卡体不吞事件。</p>
- * <p>
- * 无效徽章底（{@code DANGER_BG_SUBTLE}）与图标占位底色属于状态徽标 / 物品图像渲染协议
- *（契约 §7.3「状态徽标、内容图片不迁移」与 §4.1「物品图像不改色」），保持静态、不随主题重染。
- * 卡内编辑/删除按钮复用已主题化的 {@link SceneButton}，本模块不重复绑定。主题切换只重派生、
- * 不重建节点，虚拟化式的 keyed 行/单元复用行为不变。</p>
- */
+
 public final class MemberGrid {
 
     /** 单元图标边长（像素）。 */
@@ -242,7 +214,6 @@ public final class MemberGrid {
 
         // 标准滚动结构 + 可见滚动条：SceneScrollContainer 工厂（默认视觉）。
         // 缺省显式实色参时，工厂已把 viewport 按主题 GROUP 配方绑定为网格底座（唯一写入者）；
-        // 本模块不再对底座重复绑定，也不给每个单元格装滤镜（契约 §4.1 网格族口径）。
         // P5 第六轮 U-P5-13：滚动条宽度接密度/字号派生（缺度量通道 ⇒ null ⇒ 常量缺省，逐值不变）。
         SceneScrollContainer.Result sc = SceneScrollContainer.createDefault(rt, 0, 0, 0, 0,
                 PickerChrome.scrollbarWidthSignal(props.metrics()));
@@ -406,7 +377,6 @@ public final class MemberGrid {
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(props.effectiveIconSide()).setPreferredHeight(props.effectiveIconSide())
                 .setHitTestable(false);
-        // 生效图标：不可渲染项回退占位样式。图像渲染协议不改色（契约 §4.1「物品图像不改色」
         // + §7.3「内容图片不迁移」）：占位底色与透明底均为静态值，不随主题重染。
         ReadableSignal<SceneImageSource> effectiveImage = Computed.create(() -> {
             SearchPickerData.CurrentMember member = currentMember.get();

@@ -9,38 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * SceneKeyValueMapValidation —— 键值对编辑器校验算法层（纯静态工具）。
- *
- * <h3>定位：校验算法层，对标 Flutter validator 外置 + Web Zod 校验独立化</h3>
- * <p>从 {@link SceneKeyValueMap} 抽出校验主算法（空 key / 含点 / 重复 key 三规则）与派生状态
- * {@link ValidationState}，收成静态工具方法。数据模型（{@code KeyValueRow}/{@code ValidationError}/
- * {@code ValidationErrorType}）已独立为同包顶级类型，校验逻辑独立成可单测的纯函数。</p>
- *
- * <h3>为何放 control 包（守 R12 与包依赖边界）</h3>
- * <p>校验只依赖主类的公共数据模型（纯 POJO），不触碰 runtime/input/node/paint，放 control 包与
- * 宿主 {@link SceneKeyValueMap} 同包，可直接以简单名引用公共数据类型，不引入任何新的非法依赖方向。
- * 本类只承担「校验算法」，不夹控件渲染或状态核心，守 R12。</p>
- *
- * <h3>守 R1（静态工具零实例字段）</h3>
- * <p>类为 {@code public final} + {@code private} 构造器，零实例字段、零静态可变状态。唯一的成员类
- * {@link ValidationState} 是不可变值对象（构造后字段不再变更），不属于工具类自身的实例状态。</p>
- *
- * <h3>校验规则（三规则，读源码确认）</h3>
- * <ul>
- *   <li>空 key：{@code key.trim().isEmpty()} → {@code EMPTY_KEY}</li>
- *   <li>含点：{@code key.indexOf('.') >= 0} → {@code KEY_CONTAINS_DOT}</li>
- *   <li>重复 key：同 key 计数 &gt; 1 → {@code DUPLICATE_KEY}</li>
- * </ul>
- * <p>规则按行顺序短路：每行只命中第一个匹配规则；首个错误按行遍历顺序锁定。所有命中规则的行 id
- * 并入 {@code invalidRowIds}，供行高亮批量染色。</p>
- *
- * <h3>理想 L2 单测目标</h3>
- * <p>{@link #validateRows(List)} 是纯函数（输入行列表 → 输出校验状态，无副作用），是理想的 L2 纯数学
- * 边界单测目标：可直接断言三规则各自的命中、首错锁定顺序、invalidRowIds 聚合，无需挂 runtime。</p>
- *
- * @see SceneKeyValueMap
- */
+
 public final class SceneKeyValueMapValidation {
 
     /**

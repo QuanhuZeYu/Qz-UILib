@@ -1,58 +1,6 @@
 /**
- * scene 测试搭台设施层（testkit）—— 跨 L2/L3、跨 input/paint 子系统的可复用测试 helper 归属。
- *
- * <h3>定位（区别于各子包）</h3>
- * <ul>
- *   <li>本包只放「跨包复用的搭台 helper」：把多个测试里反复出现的样板范式（layout→paint→replay
- *       捕获、取中心→route→flush 交互注入）收口为统一入口，消除坐标硬编码与 11 参事件构造易错样板。</li>
- *   <li>区别于 {@code scene/mock/}（{@code PlatformInputSource} 替身实现，属桥封板契约范畴）、
- *       {@code scene/integration/}（具体测试用例）、{@code scene/layout/}（L2 纯数学测试用例）。
- *       本包不含测试用例，只含 helper 工具与它们的自测。</li>
- * </ul>
- *
- * <h3>命名规范</h3>
- * <ul>
- *   <li><b>{@code SceneXxxHarness}</b>：有状态、需 mount/flush 生命周期的搭台（如
- *       {@link SceneInteractionHarness}，持有 runtime + root + layoutEngine）。</li>
- *   <li><b>{@code SceneXxxCapture}</b>：无状态 static 工具（如
- *       {@link ScenePaintCapture}，跑通链路返回记录）。</li>
- *   <li><b>{@code SceneXxxEnvironments}</b>：无状态 static 的构造收口（如
- *       {@link SceneTestEnvironments}，把「测试用缺席环境端口」这一表态收敛到一处，
- *       使调用点一眼可见环境来源，将来测试需要真环境时只改一处）。</li>
- * </ul>
- *
- * <h3>准入判据</h3>
- * <p>跨包复用的搭台 helper 进本包；单包私有的探针 / 断言留原文件（如 {@code LayoutAssertions}
- * 留 {@code layout/}、控件结构探针留 {@code control/}）。</p>
- *
- * <h3>输入侧两入口边界（简版）</h3>
- * <p>scene 输入测试有两条正交入口，务必按场景选择，不要混用：</p>
- * <ul>
- *   <li><b>入口 A「编程注入帧」（默认入口）</b>：{@link SceneInteractionHarness}（首选）
- *       或裸 {@code InputFrameBuilder}（白盒回退）→ {@code SceneRuntime.route}。
- *       覆盖交互路由 + 状态机（click / hover / scroll / key）。交互测试一律走此入口。
- *       <b>harness 优先，5 类白盒场景回退裸建，判据见 §7.1</b>。</li>
- *   <li><b>入口 B「桥封板契约」</b>：{@code MockPlatformInputSource}（位于 {@code scene/input/mock/}，
- *       <b>非本包</b>）。仅用于封板状态机 / 键映射 / 不可变性测试。<b>不用于交互测试</b>——
- *       {@code MockPlatformInputSource} ≡ {@code InputFrameBuilder} 壳，交互测试经它零覆盖增益
- *       （「绕过桥」非缺陷）。桥内部差分（{@code LwjglInputSource} + {@code PlatformStateReader}）
- *       属独立桥单测范畴，与本入口正交。</li>
- * </ul>
- *
- * <h3>渲染侧顶点断言边界</h3>
- * <ul>
- *   <li>{@link ScenePaintCapture#paintAndCapture} 是渲染出口顶点验证的唯一入口
- *       （layout → paint → {@code ScenePaintReplayer#replay} → {@code RecordingRenderBackend}）。</li>
- *   <li>普通 box 顶点反映 layout 几何；internal presentation geometry offset 直接累加到顶点与
- *       后代 clip。常规 transform 仍仅出现在 {@code pushTransform} 的 7 个浮点分量里。</li>
- *   <li><b>不做「变换后顶点」</b>：变换后的最终像素位置属 GPU 顶点层，纯 JUnit mock backend
- *       不可观测；transform 对 hit-test 的已知限制：仅 GPU 顶点层生效，hit-test 不可观测。</li>
- *   <li>控件顶点断言按需：仅独特自绘结构才补，默认复用 {@code SceneBackendContractTest} 8 场景
- *       + L2 坐标不变量。</li>
- * </ul>
- *
- * <p><b>入口纪律精要</b>（旧测试体系约定 §7，已并入本节节文内联，不再另立母本）：交互测试一律走
- * {@link SceneInteractionHarness}，白盒回退裸 {@code InputFrameBuilder} 须标回退类别；
- * 渲染侧顶点断言走 {@link ScenePaintCapture#paintAndCapture} 唯一入口。</p>
+ * scene 测试辅助设施。
+ * <p>行为与验收依据为 docs/superpowers/specs/2026-10-07-uilib-core-contract-design.md。
+ * 本包实现或现有测试不另立规范，也不能证明未覆盖的生产能力。</p>
  */
 package club.heiqi.uilib.ui.scene.testkit;

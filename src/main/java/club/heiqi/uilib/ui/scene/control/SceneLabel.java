@@ -18,38 +18,7 @@ import club.heiqi.uilib.ui.scene.text.LinkHitRegion;
 import club.heiqi.uilib.ui.scene.text.SceneTextMode;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneLabel —— 通用文本显示组件，纯文本与现代富文本合一。
- *
- * <h3>定位</h3>
- * <p>scene 新栈的通用只读文本组件：文本经 {@code ReadableSignal} 响应式驱动，
- * 内容模式经 {@link Props} 切换（原始文本 / 现代富文本标签），
- * 支持水平/垂直对齐与 {@code wrapWidth} 自动换行（富文本感知：标签不占宽、样式跨行续传）。</p>
- *
- * <h3>Props 分组（审查报告 §8 B2-1）</h3>
- * <p>输入契约按语义分组为 {@link TextSpec}（文本内容与字形）、{@link LayoutSpec}（换行/行距/限行）、
- * {@link AlignSpec}（对齐），外加交互回调 {@code onLinkClick}；历史 4 个级联构造器与 12 个
- * accessor（{@code text()/color()/...}）全部保留委托分组，公共 API 面零破坏。</p>
- *
- * <h3>富文本标签语法（{@code contentMode = SceneTextMode.RICH_TAGS}）</h3>
- * <ul>
- *   <li>{@code <color=#FF5533>} / {@code <color=red>} 颜色（6/8 位 hex 或 CSS 16 基础色名）</li>
- *   <li>{@code <b>} {@code <i>} {@code <u>} {@code <s>} 粗体/斜体/下划线/删除线</li>
- *   <li>{@code <size=N>} 绝对像素字号（{@link club.heiqi.uilib.font.layout.FontSizeLimits#MIN_FONT_SIZE_PX}..{@link club.heiqi.uilib.font.layout.FontSizeLimits#MAX_FONT_SIZE_PX}）；{@code <br>} 硬换行</li>
- *   <li>任意嵌套、样式继承父级；转义实体 {@code &lt;} {@code &gt;} {@code &amp;}</li>
- * </ul>
- *
- * <h3>契约</h3>
- * <p>纯静态工厂 + 无状态（契约 R1）；输入全只读 signal（R2）；组件函数交
- * {@link SceneRuntime#mount} 执行一次（组件函数只跑一次）；节点不可命中，不拦截输入。</p>
- *
- * <h3>前景归属</h3>
- * <p>默认路径（未传颜色参数）跟随来源主题的正文前景：构建期捕获
- * {@link SceneThemes#resolve} 返回的主题信号，派生期只读该信号（见 {@link #bindTextColor}），
- * 主题切换只重算前景、不重建节点。显式 {@code color} 继续生效且不再订阅主题——包括色值
- * 恰好等于旧默认色的调用（禁止用 {@code color == TEXT_PRIMARY} 推断调用意图）。
- * Label 不追加玻璃、不参与表面绑定，{@code textColor} 只有本类一个写入者。</p>
- */
+
 public final class SceneLabel {
 
     /** 默认字号（UI 像素），与 {@link SceneNode} 默认一致。 */

@@ -39,28 +39,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * {@link VariantChooser} 单元测试（受控契约修订版 + G13 液态玻璃迁移口径）。
- *
- * <p>行为基线（必须继续通过）：开合挂载语义（有/无变体候选）、行渲染数量与 label、SELECTED
- * 点击 toggle 勾选、ALL 点击只读无副作用、提交 Selection 契约（candidateKey/mode/variantKeys）、
- * 取消回调、查询前缀过滤、模式分段受控回写。</p>
- *
- * <p>主题化验收（G13 虚拟化复用行口径，契约 §4.1 +「虚拟化复用行轻量零滤镜」裁决）：</p>
- * <ul>
- *   <li>浮层面板 = {@code OVERLAY} 配方六项由 {@code SceneSurfaceBinder} 独占（面板自身恰一颗
- *       滤镜），scrim 零玻璃、旧 {@code applyPanelChrome} 实色四件套消失；</li>
- *   <li>变体行 = {@code selectableSurface(INDICATOR, checked)} 轻量状态档（只写背景色，选中
- *       强度 0x59 明显高于 hover 档）、行子树零 BACKDROP、零边框/圆角/实体高度；</li>
- *   <li>复用/重绑不串态：换候选重建的行不带上一项选中/hover 残留；同 key 换位节点身份不变、
- *       选中跟随 key 而非位置；</li>
- *   <li>文字三件套（标题/候选名/行标签）取主题 {@code foreground}/{@code mutedForeground}/
- *       {@code disabledForeground}；勾选圆点取 {@code onAccentForeground}；</li>
- *   <li>变体物品图像不改色（反向钉住）：有图透明底 + 原图片源、无图静态占位底，主题切换前后
- *       逐字节不变、零滤镜；</li>
- *   <li>主题切换只重派生：节点身份不变、effect 数不增长、受控选中不丢；关闭与卸载回收绑定。</li>
- * </ul>
- */
+
 public class VariantChooserTest {
 
     private SceneNode sceneRoot;
@@ -511,7 +490,6 @@ public class VariantChooserTest {
         Assert.assertNotEquals("不再取旧 BORDER_DEFAULT", SceneChromeTokens.BORDER_DEFAULT,
                 card.getBorderColor());
 
-        // scrim 只负责遮罩：静态半透明底、零玻璃（契约 §4.1「遮罩只负责遮罩」）
         Assert.assertNull("scrim 不声明 backdrop", scrim.getBackdrop());
         Assert.assertEquals("scrim = 场景遮罩统一值（P5 U-P5-3 收敛）", 0xCC121016, scrim.getBackgroundColor());
         Assert.assertEquals("scrim 自身不新增 BACKDROP 采样（面板表面那颗挂在 card 上）",

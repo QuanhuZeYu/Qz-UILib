@@ -80,9 +80,7 @@ public final class SceneKeyValueMap {
      * 行内间距。
      */
     private static final int CELL_GAP = 6;
-    /**
-     * 按钮内边距（布局属性，取自 chrome token；外观尺寸常量不受主题接管，契约 §4.2）。
-     */
+
     private static final int BUTTON_PADDING = SceneChromeTokens.PAD_MD;
     /**
      * 输入框高度，取自 chrome token。

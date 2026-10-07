@@ -41,60 +41,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * VariantChooser —— 变体选择浮层（模块 D）。
- *
- * <h3>定位</h3>
- * <p>把 {@link club.heiqi.uilib.ui.scene.control.ScenePickerPanel} 里的 {@code variantPanel}
- * 抽成独立可复用的受控浮层组件。选择模式与已选 key 采用受控所有权（与网格
- * highlighted/onHighlightChange 同款）：外壳持有 {@link Props#mode()} / {@link Props#selectedKeys()}
- * 的 signal 真值，本模块只读并通过 {@link Props#onModeChange()} / {@link Props#onKeysChange()}
- * 上抛期望新值；过滤查询文本保持模块内部状态，浮层打开时清空。</p>
- *
- * <h3>浮层结构</h3>
- * <pre>
- * scrim (ROW, 全屏遮罩 + 居中)
- *   └─ card (COLUMN, OVERLAY 玻璃浮层面板)
- *        ├─ header (标题 + 候选名)
- *        ├─ search (查询输入, 前缀过滤)
- *        ├─ segmented (ALL / SELECTED 模式切换)
- *        ├─ list (滚动视口, 勾选行列表)
- *        └─ footer (取消 / 确认)
- * </pre>
- *
- * <h3>外观归属（液态玻璃迁移，G13 虚拟化复用行口径，契约 §4.1）</h3>
- * <p><b>浮层面板</b>（card）走 {@link SceneThemes#surface} 的 {@link SceneTheme.Role#OVERLAY}
- * 配方：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 六项由
- * {@link SceneSurfaceBinder} 独占，面板自身恰装一颗滤镜；旧 {@code SceneChromeTokens.applyPanelChrome}
- * 实色四件套写入者已删除。clip 不属于绑定器六项属性，仍由本组件自持。scrim 是全屏遮罩，
- * 只负责遮罩（契约 §4.1「遮罩只负责遮罩」），保持静态半透明底、不装玻璃。卡片内部的查询输入、
- * 分段、按钮是已主题化的独立控件实例（G04/G09/G03），各自的表面归其自身，与本面板表面互不竞争。</p>
- *
- * <p><b>每一变体行</b>是动态复用行（keyed {@code forEach}），消费
- * {@link SceneThemes#selectableSurface} 的 {@link SceneTheme.Role#INDICATOR} 配方状态档，
- * 但只做<b>只写 {@code backgroundColor} 一个属性的轻量覆盖</b>（与 CategoryNavPane 同构）：
- * 行不装滤镜、不写边框/圆角/实体高度，选中档 RGB 取主题强调色、强度取统一选中强度 0x59
- * （明显强于 hover 档，选中不只靠透明度）；重绑/复用时行状态全部由该行自己的信号重派生，
- * 不与面板竞争属性槽，也不给浮层新增 BACKDROP 采样（G13「虚拟化复用行轻量零滤镜」裁决）。</p>
- *
- * <p><b>文字三件套</b>：标题与行标签取 {@link SceneThemes#foreground}、候选名（次要信息）取
- * {@link SceneThemes#mutedForeground}，禁用一律取 {@link SceneThemes#disabledForeground}。
- * <b>变体物品图像不改色</b>（契约 §4.1「物品图像不改色」+ §7.3「内容图片不迁移」）：图标节点的
- * 占位底色 / 透明底与图片源均为渲染协议静态值，不随主题重染。右端勾选圆点是控件自持的选中
- * 标记（与 {@code SceneRadioGroup} dot 同一口径）：启用且选中取 {@link SceneThemes#onAccentForeground}，
- * 其余（未选中/禁用）透明；其圆角是标记自身几何、非绑定六项，保持组件自持。</p>
- *
- * <h3>受控语义</h3>
- * <p>行点击严格复刻现状 {@code variantRow}：SELECTED 模式点击 → {@code onKeysChange(含则移除否则加入)}；
- * ALL 模式点击 → 无任何副作用（只读）。模式切换走 {@link SceneSegmented}（ALL/SELECTED 两段）
- * 回写 {@code onModeChange}。提交 {@code onCommit(new Selection(candidate.key(), mode.get(),
- * orderedKeys(...)))}；取消/back {@code onCancel}。两者都<b>不写 open</b>（open 由外壳持有、回调里关闭）。</p>
- *
- * <h3>生命周期</h3>
- * <p>本模块的所有 effect / portal / interactionState / on 均在 {@code create()} 的调用者
- * Owner 作用域内注册，组件卸载时一并回收；内部 portal 每次可见挂载创建独立子 Owner，
- * overlay 子树随关闭卸载，无残留。</p>
- */
+
 public final class VariantChooser {
 
     /** 浮层卡片宽度（像素）。 */
@@ -105,11 +52,7 @@ public final class VariantChooser {
     private static final int VARIANT_ROW_HEIGHT = 34;
     /** 变体图标尺寸（像素）。 */
     private static final int VARIANT_ICON_SIZE = 18;
-    /**
-     * 全屏遮罩底色：与 {@code SceneDialog} 收敛为同一枚（P5 U-P5-3，协议集中定义）。
-     *
-     * <p>遮罩只负责遮罩、不装玻璃（契约 §4.1）。</p>
-     */
+
     private static final int OVERLAY_SCRIM = SceneRenderProtocolTokens.SCRIM_ARGB;
     /** 无图占位底色：图像渲染协议静态值，不随主题重染（集中定义）。 */
     private static final int PLACEHOLDER_COLOR = SceneRenderProtocolTokens.IMAGE_PLACEHOLDER_ARGB;
@@ -346,7 +289,6 @@ public final class VariantChooser {
         card.setGap(SceneChromeTokens.GAP_MD);
         scrim.appendChild(card);
 
-        // 主题语义前景在构造期捕获一次（portal builder 作用域继承来源主题，契约 §6 路径 5）；
         // 标题/候选名/行标签共享同一派生信号，主题切换只重派生、不重建节点。
         ReadableSignal<Integer> foreground = SceneThemes.foreground(rt);
         ReadableSignal<Integer> mutedForeground = SceneThemes.mutedForeground(rt);
@@ -517,7 +459,6 @@ public final class VariantChooser {
         bindRowTint(rt, props.enabled(), checked, interaction, row);
 
         // 图标：无图或已分级不可渲染 → 占位底色（与结果列表同款回退语义，随分级变更响应式更新）。
-        // 图像渲染协议不改色（契约 §4.1「物品图像不改色」）：占位底/透明底为静态值、不随主题重染。
         SceneNode icon = new SceneNode();
         icon.setPreferredWidth(props.effectiveIconSide()).setPreferredHeight(props.effectiveIconSide())
                 .setHitTestable(false);
@@ -569,15 +510,7 @@ public final class VariantChooser {
         return row;
     }
 
-    /**
-     * 绑定行背景：消费 {@link SceneThemes#selectableSurface}(INDICATOR, checked) 配方的状态档，
-     * 按契约 §2.5 优先级 disabled &gt; pressed &gt; hovered &gt; idle 取 tint，只写
-     * {@code backgroundColor} 一个属性。
-     *
-     * <p>行不装滤镜、不写边框/圆角/实体高度（保持普通绘制路径，{@code __getSurfaceElevation()}
-     * 恒为 -1），动态复用重绑时选中/hover/禁用均由各行自己的信号重派生，不残留上一项状态。
-     * 全部取值发生在派生函数内，构造期不解引用未求值的 Computed。</p>
-     */
+
     private static void bindRowTint(SceneRuntime rt, ReadableSignal<Boolean> enabled,
                                     ReadableSignal<Boolean> selected,
                                     SceneInteractionState interaction, SceneNode rowNode) {

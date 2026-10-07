@@ -20,58 +20,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneSegmented —— scene 新栈控件层 Phase 4 批 2 分段单选控件（水平段式）。
- *
- * <h3>定位：多选项单选受控控件（契约 R8，与 {@link SceneRadioGroup} 同构）</h3>
- * <p>Props 与 RadioGroup 完全同构（selectedIndex + options 固定 + enabled + onSelect），复用 R8：
- * 当前选中段由外部 {@code selectedIndex} 只读 signal 唯一驱动；激活某段时<b>只经
- * {@code onSelect.accept(i)} 上抛期望选中下标</b>，控件<b>绝不自己维护或修改 selectedIndex</b>。</p>
- *
- * <h3>结构</h3>
- * <pre>
- * root (ROW, crossAxisAlign=STRETCH, gap)                  ← 导航底座，承载 TOOLBAR 表面
- *   └─ segment[i] (ROW, mainAxisAlign=CENTER, crossAxisAlign=CENTER, padding,
- *                   SHRINK + setFontSizeMetric(preferredWidth = 文本宽 + 2*PAD))  ← 交互单元 hitTestable=true
- *         └─ label[i] (text)   ← 装饰 hitTestable=false
- * </pre>
- *
- * <h3>设计要点</h3>
- * <ul>
- *   <li><b>不复用 SceneButton</b>：它是试金石不是积木，嵌套会让交互态归属混乱，直接建段节点。</li>
- *   <li><b>段宽按标题文本自适应</b>：段 = SHRINK 容器，宽度 = 标签文本宽（布局阶段按<b>生效字号</b>测量）
- *       + 2*SEGMENT_PADDING，短标题不留白、长标题不截断。字号变化经向下失效 + 布局重算承担，
- *       不固化构建期测量值、不手写 layoutDone 重算（S5 收口）。</li>
- *   <li><b>R6 段穿透权威落地</b>：段本身 hitTestable=true，段内 label 文字 hitTestable=false 穿透到所属段。</li>
- * </ul>
- *
- * <h3>外观归属：底座 TOOLBAR + 段 INDICATOR 选中配方，唯一写入者是表面绑定器</h3>
- * <p><b>底座</b>（primitive root）走 {@link SceneThemes#surface} 的 {@link SceneTheme.Role#TOOLBAR}
- * 配方：background/border/borderWidth/cornerRadius/backdrop/surfaceElevation 全归
- * {@link SceneSurfaceBinder}。旧的静态边框/圆角设值与
- * {@code SceneControlChrome.bindStandardBorder}/{@code SceneStateColors} 写入者已删除。</p>
- *
- * <p><b>每段</b>走 {@link SceneThemes#selectableSurface} 的 {@link SceneTheme.Role#INDICATOR} 配方：
- * 未选中保持角色配方的极淡 tint（轻量状态覆盖），选中态把 tint 的 RGB 换成主题强调色、强度取
- * 主题统一选中强度 {@code 0x59}——<b>选中是色彩语义，不是仅透明度</b>；禁用态仍走角色禁用档。
- * 段<b>保留配方自带的轻滤镜</b>（与 G05 选中族 RadioGroup circle / Checkbox box / Toggle track
- * 同口径，每段恰好一条 BACKDROP，见契约 §4.1「导航族选项的滤镜口径（G09 裁决）」）；
- * 「不给每个子项重复安装滤镜」的语义是<b>不得在配方之外再叠第二层玻璃、也不得让段内文字或内容
- * 各自采样背景</b>，不是把选项配方的 backdrop 置空。</p>
- *
- * <p><b>段文字</b>：启用取 {@link SceneThemes#foreground}，禁用取
- * {@link SceneThemes#disabledForeground}，删除 {@code SceneStateColors} 取色。选中项不使用
- * {@link SceneThemes#onAccentForeground}——选中段是叠在 TOOLBAR 玻璃上的 {@code 0x59} 半透明
- * 强调染色而非不透明强调底，合成底色仍由玻璃主导；{@code onAccentForeground} 是给不透明强调底
- * （如 RadioGroup 的 dot 标记）用的，浅色主题下它在浅紫合成底上对比度不足（约 1.7:1），而主题
- * 正文色正是主题作者保证在自身玻璃上可读的正文色（契约 §4.1 给 Segmented 的前景映射同为
- * {@code foreground}）。选中区分由染色承担，不靠文字变色。</p>
- *
- * <h3>契约</h3>
- * <p>R1 纯静态工厂零实例字段 / R2 Props 只读 signal + 常量 + 回调 / R3 组件函数只执行一次 /
- * R4 外观随状态经 bind 派生 / R5 交互态读 interactionState / R6 段内文字命中穿透到段 /
- * R8 多选项单选受控零状态。</p>
- */
+
 public final class SceneSegmented {
 
     /**
@@ -93,22 +42,11 @@ public final class SceneSegmented {
      */
     private static final int SEG_LABEL_FONT_SIZE = 16;
 
-    /**
-     * 纯静态工厂，禁止实例化（强制无状态，契约 R1）
-     */
+
     private SceneSegmented() {
     }
 
-    /**
-     * Segmented 输入契约 —— 多选项单选受控，与 {@link SceneRadioGroup.Props} 同构（契约 R2/R8）。
-     *
-     * @param selectedIndex 当前选中段下标（响应式只读，受控源），控件绝不自己修改此值
-     * @param options       段文本列表（构建期固定常量，R2 允许常量）
-     * @param enabled       是否启用（响应式只读），false 时禁用点击/键盘并切灰态
-     * @param onSelect      选择回调，激活某段时以该段下标调用，由外部 set 回 selectedIndex signal
-     * @param fontSize      段标签字号（UI 像素，响应式）；null = 不指定，沿用
-     *                      {@link #SEG_LABEL_FONT_SIZE}
-     */
+
     @Desugar
     public record Props(
         ReadableSignal<Integer> selectedIndex,
@@ -132,17 +70,7 @@ public final class SceneSegmented {
         }
     }
 
-    /**
-     * 工厂：构建 Segmented 组件函数。
-     *
-     * <p>返回的 {@code Supplier} 体由 {@link SceneRuntime#mount} 执行一次（R3）：
-     * 体内 for 循环建 N 个 segment 节点（options 固定，循环建树无副作用、只跑一次）。
-     * 动态外观全落 {@code bind(computed(...))}，交互只经 {@code on} 调 {@code onSelect}（R4/R5/R8）。</p>
-     *
-     * @param rt    场景运行时
-     * @param props Segmented 输入契约
-     * @return 组件函数，交 {@code rt.mount(parent, ...)} 挂载
-     */
+
     public static Supplier<SceneNode> create(SceneRuntime rt, Props props) {
         return () -> {
             SceneSingleSelectPrimitive.Props primitiveProps = new SceneSingleSelectPrimitive.Props(

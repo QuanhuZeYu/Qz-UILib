@@ -60,63 +60,14 @@ class SizingCalculator {
         this.measuredTextNodes = measuredTextNodes;
     }
 
-    /**
-     * 计算节点宽度（解除偏离 1 的核心）。
-     *
-     * <ul>
-     *   <li>显式 preferredWidth（&gt;0）：<b>最高优先级</b>，直接返回该值（外尺寸，含 padding），
-     *       压过下列所有现有决策。用于固定宽控件（Checkbox box / slider thumb 等）。</li>
-     *   <li>叶节点（无子节点）且有文本：shrink-to-fit，
-     *       {@code min(outerWidth, measureWidth(text, fontSize) + padLeft + padRight)}，
-     *       使叶节点主轴宽=内在宽（不被 cross-align STRETCH 改写为可用宽），
-     *       ROW+CENTER 主轴偏移恢复非 0。</li>
-     *   <li>叶节点无文本：宽=outerWidth（保留现状，preferredHeight 矩形仍铺满）。</li>
-     *   <li>容器节点：默认宽=outerWidth；设置 {@link SceneNode.WidthSizing#SHRINK} 后，
-     *       在子节点已布局时按内容宽回收，并被 outerWidth clamp。</li>
-     * </ul>
-     *
-     * <p>优先级总结：preferredWidth &gt; percentWidth（有宽约束时）&gt; 容器 widthSizing &gt; 文本 shrink-to-fit &gt; 无文本 fill。
-     * percentWidth 在无宽约束（{@link Constraints#UNCONSTRAINED}）时回退 shrink（忽略 percent）。</p>
-     *
-     * <p>注意：父 STRETCH（默认）在 cross 维度仍会把叶 cross 改写为 crossAvail，
-     * 故默认 COLUMN+STRETCH 的 fill 宽度行为零回归（叶 cross=宽，被改写填满）；
-     * ROW 下叶 main=宽=内在宽不被 cross-align 改写。子节点设了 cross 向 preferred
-     * 时则在 STRETCH 分支被豁免改写（见 FlexLayouter.positionChildren）。</p>
-     *
-     * <p>当 {@code allowChildCacheForShrink=false} 时，SHRINK 容器不得读取子节点
-     * cachedLayout，必须保守回退到外部约束宽度。该分支仅供下传约束和约束变化判断使用，
-     * 防止读取未布局或陈旧子宽度。真正的 shrink-to-fit 宽度只在子节点布局完成后的
-     * positionChildren 阶段回收。</p>
-     *
-     * <p><b>★ 耦合不变式（跨类契约 1：内宽基准权威）</b><br>
-     * 本方法返回的 outerWidth 是后续所有"内宽 = outerWidth - padding"计算的权威基准。
-     * <ul>
-     *   <li>ConstraintResolver.buildChildConstraints 用 {@code computeWidth(node, c, false) - padH}
-     *       算下传给子的 innerWidth；</li>
-     *   <li>FlexLayouter.positionChildren 步骤 1 用 {@code computeWidth(node, c, true) - padH}
-     *       算自己的 innerWidth。</li>
-     * </ul>
-     * 两处必须用同一 SizingCalculator 实例的 computeWidth，确保固定宽容器（有 preferredWidth）
-     * 的子节点不按裸约束宽布局而溢出父盒。<br>
-     * <b>改 computeWidth 优先级链时必须同步检查 ConstraintResolver 与 FlexLayouter 的两处调用。</b>
-     * 当前调用点：ConstraintResolver.buildChildConstraints（computeWidth(c, false)）
-     * 与 SceneLayoutEngine 主流程（computeWidth(c, true) 后传给 FlexLayouter.positionChildren）。</p>
-     *
-     * @param node                     节点
-     * @param constraints              当前节点的布局约束
-     * @param allowChildCacheForShrink 是否允许 SHRINK 容器读取子布局缓存
-     * @return 节点宽度（像素）
-     */
+
     public int computeWidth(SceneNode node, Constraints constraints, boolean allowChildCacheForShrink) {
-        // 最高优先级：显式 preferredWidth 钉死盒宽（外尺寸，含 padding），
         // 压过容器 fill / 文本 shrink-to-fit / 无文本 fill 三种现有决策。
-        // 显式钉死时不 clamp maxWidth（preferredWidth 优先级最高，与 preferredHeight 对称）。
         if (node.getPreferredWidth() > 0) {
             return node.getPreferredWidth();
         }
 
         // percentWidth 分支：相对父内宽（availableWidth），无宽约束时回退 shrink（忽略 percent）。
-        // 优先级位于 preferredWidth 之后、SHRINK/文本 shrink/fill 之前。
         // availableWidth == UNCONSTRAINED 时走 fallback（进入下方 SHRINK/fill 分支）。
         if (node.getPercentWidth() > 0 && constraints.getAvailableWidth() != Constraints.UNCONSTRAINED) {
             // 用 long 中间量防 availableWidth * pct 溢出
@@ -172,23 +123,7 @@ class SizingCalculator {
         return clampWidth(node, Math.min(boundedOuter, intrinsicWidth));
     }
 
-    /**
-     * 宽度 clamp：先按 maxWidth 取上界，再按 minWidth 取下界。
-     *
-     * <p>公式（与 {@link SceneNode#setMinWidth(int)} 的 javadoc 同源）：
-     * {@code effectiveWidth = max(minWidth, clamp(naturalOrPreferred, maxWidth))}，
-     * 即 0 值表示「该侧无约束」，两侧都为零时原值返回。归一：{@code minWidth <= 0} 无下限、
-     * {@code maxWidth <= 0} 无上界；两者矛盾（{@code minWidth > maxWidth}）时<b>下限优先</b>
-     * ——与 preferredWidth 不被 maxWidth 压低的既有取舍同口径（下限/目标不被上界抑制）。</p>
-     *
-     * <p>仅用于 computeWidth 非 preferredWidth 分支出口。preferredWidth 显式钉死分支
-     * 不参与 min/max 钳制（优先级最高，既有约定）。maxWidth/minWidth 均为<b>外尺寸</b>
-     * （含 padding），与 computeWidth 返回值口径一致。</p>
-     *
-     * @param node 节点
-     * @param w    待 clamp 的宽度（外尺寸，含 padding）
-     * @return clamp 后的宽度
-     */
+
     private static int clampWidth(SceneNode node, int w) {
         int max = node.getMaxWidth();
         int clamped = max > 0 ? Math.min(w, max) : w;
@@ -234,34 +169,7 @@ class SizingCalculator {
         return Math.min(outerWidth, contentWidth + totalGap + padH);
     }
 
-    /**
-     * 计算节点高度。
-     *
-     * <p>先按 shrink-to-fit 计算内容高度：
-     * 容器节点（有子节点）= 子节点 cachedLayout 高度之和；
-     * 叶节点 = 文本行数 × 行高（{@link SceneTextMeasurer#lineHeight}）；
-     * 无文本叶节点 = 0。</p>
-     *
-     * <p>如果节点设置了 {@code fillParentHeight} 且约束有高度约束，
-     * 则返回 max(内容高度, 约束高度) 实现"至少填满"语义。</p>
-     *
-     * <h3>scrollable 视口钉死分支（纵向滚动地基）</h3>
-     * <p>{@code node.isScrollable()==true} 时，<b>不走</b> {@code max(natural, preferredHeight)}
-     * 的内容撑大逻辑，而是<b>直接返回视口高</b>，主动忽略内容高——这是 viewport/content 高度
-     * 解耦的关键：viewport 自身盒高固定为视口高，子内容子树总高可超视口高（这正是滚动的前提）。
-     * 视口高来源优先级：preferredHeight（&gt;0）&gt; fillParentHeight 的约束高。两者皆无时
-     * 回退内容高；若收到高度约束，则将该约束作为 maxHeight cap，支持 overlay listbox 等
-     * 「内容少时包住、内容多时截断并滚动」场景。</p>
-     *
-     * <p>注意：本分支只钉死 viewport <b>自身</b>的 LayoutBox.height；子内容仍由
-     * positionChildren 步骤 4 按 COLUMN 主轴 START 从 padTop 起累加定位，
-     * 总高超视口部分由 paint 阶段的 CLIP 裁剪 + {@code -scrollOffsetY} 平移处理，
-     * 布局层绝不感知 scrollOffset（滚动不触发重排）。</p>
-     *
-     * @param node        节点
-     * @param constraints 当前节点的布局约束
-     * @return 节点高度（像素）
-     */
+
     public int computeHeight(SceneNode node, Constraints constraints) {
         // scrollable 视口：委托唯一决策点 viewportHeight（isScrollable 分支收口，消除散落）
         // viewportHeight 已有自己的 cap 语义（min(内容高, 约束高)），maxHeight 对 scrollable 无意义，不 clamp。
@@ -284,20 +192,7 @@ class SizingCalculator {
         return clampHeight(node, contentHeight);
     }
 
-    /**
-     * scrollableX 视口宽度的唯一决策点（横向滚动地基，与 {@link #viewportHeight} 对称）。
-     *
-     * <p>优先级口径：</p>
-     * <ol>
-     *   <li>preferredWidth &gt; 0 → 直接返回（显式钉死）</li>
-     *   <li>有宽约束 → 返回约束宽（fill 语义，保持有约束场景外观与现状一致）</li>
-     *   <li>无约束 → 回退内容宽（子缓存缺失时回退 0，后续布局收敛帧修正）</li>
-     * </ol>
-     *
-     * @param node        节点（必须是 isScrollableX()==true 的调用方）
-     * @param constraints 当前节点收到的约束
-     * @return 视口宽度（像素）
-     */
+
     public int viewportWidth(SceneNode node, Constraints constraints) {
         if (node.getPreferredWidth() > 0) {
             return node.getPreferredWidth();
@@ -308,30 +203,7 @@ class SizingCalculator {
         return Math.max(0, computeShrinkContainerWidth(node, constraints.getAvailableWidth()));
     }
 
-    /**
-     * 高度 clamp：maxHeight &gt; 0 时取 {@code max(preferredHeight, min(h, maxHeight))}，
-     * 否则原值返回。
-     *
-     * <p>仅用于 computeHeight 非 scrollable 分支出口。scrollable 分支不 clamp
-     * （viewportHeight 已有 cap 语义，maxHeight 对 scrollable 无意义）。maxHeight 是
-     * 外尺寸上界（含 padding），与 computeHeight 返回值口径一致。</p>
-     *
-     * <p><b>下限优先（CSS min-height 赢 max-height 语义）</b>：preferredHeight 作下限，
-     * maxHeight 作上限，矛盾时（preferredHeight &gt; maxHeight）下限赢，返回 preferredHeight。
-     * computeContentHeight 已把 preferredHeight 作下限 max 进 contentHeight，本方法不应破坏它。
-     * preferredHeight=0 时 {@code max(0, min(h, max))} = {@code min(h, max)}，退化为纯 min，
-     * 不影响无 preferredHeight 节点。</p>
-     *
-     * <p><b>与 ConstraintResolver.clampToMax 的关系</b>：clamp 公式
-     * {@code max(preferredHeight, min(h, maxHeight))}（min 赢 CSS 语义）。clampToMax 实现
-     * {@code min(natural, max)}，省略 {@code max(preferredHeight, ...)}，因为 clampToMax 只在
-     * priorKnownChildHeight 的自然高分支调用（该分支前提 preferredHeight&lt;=0，无需下限保护）；
-     * clampHeight 用在 computeHeight 出口（preferredHeight 可能 &gt;0，需完整三参数 clamp）。</p>
-     *
-     * @param node 节点
-     * @param h    待 clamp 的高度（外尺寸，含 padding）
-     * @return clamp 后的高度
-     */
+
     private static int clampHeight(SceneNode node, int h) {
         int max = node.getMaxHeight();
         if (max <= 0) return h;
@@ -340,32 +212,7 @@ class SizingCalculator {
         return pref > 0 ? Math.max(pref, clamped) : clamped;
     }
 
-    /**
-     * scrollable 视口高度的唯一决策点（纯读，不读子 cache）。
-     *
-     * <p>优先级口径（与 computeHeight 旧 scrollable 分支逐位等价）：</p>
-     * <ol>
-     *   <li>preferredHeight &gt; 0 → 直接返回（视口高度被显式钉死）</li>
-     *   <li>fillParentHeight 且有高度约束 → 返回约束高（吃满父高）</li>
-     *   <li>回退内容高，有约束时按 min(内容高, 约束高) 截断（支持 overlay maxHeight 等场景）</li>
-     *   <li>无约束 → 返回内容高</li>
-     * </ol>
-     *
-     * <p>主动忽略内容撑大（首次解耦 viewport/content），是布局计算语义的一等例外，
-     * 已转正为正式能力：视口高只由「preferredHeight 钉死 &gt; fill 约束高 &gt; 内容高截断」
-     * 优先级决定，不随内容增长。</p>
-     *
-     * <p><b>耦合不变式（跨类契约 2：viewportHeight 与 priorKnownInnerHeight）</b>：
-     * 本方法 fill 分支（preferredHeight&lt;=0 且 fillParentHeight 且
-     * hasHeightConstraint 返回 availableHeight）必须与主引擎 priorKnownInnerHeight
-     * 中 fill 分支的口径一致——两处共享同一"fill 容器高度由约束决定"语义，改一处必须改另一处。
-     * priorKnownInnerHeight 已搬到 ConstraintResolver，其 fill 分支口径与
-     * 本方法 fill 分支口径一致（详见 ConstraintResolver.priorKnownInnerHeight Javadoc）。</p>
-     *
-     * @param node        节点（必须是 isScrollable()==true 的调用方）
-     * @param constraints 当前节点收到的约束
-     * @return 视口高度（像素）
-     */
+
     public int viewportHeight(SceneNode node, Constraints constraints) {
         if (node.getPreferredHeight() > 0) {
             return node.getPreferredHeight();
@@ -373,7 +220,6 @@ class SizingCalculator {
         if (node.isFillParentHeight() && constraints.hasHeightConstraint()) {
             return constraints.getAvailableHeight();
         }
-        // 既无 preferredHeight 也无 fill 约束高 → 回退内容高；
         // 但若存在高度约束，按 min(内容高, 约束高) 截断——支持 overlay maxHeight 等场景。
         int contentHeight = computeContentHeight(node);
         if (constraints.hasHeightConstraint()) {
@@ -382,28 +228,7 @@ class SizingCalculator {
         return contentHeight;
     }
 
-    /**
-     * 判定节点高度是否"被约束驱动"——即节点高度不由子内容决定而是由约束决定，
-     * 约束变化时必须重算自身高度。
-     *
-     * <p>覆盖四类节点：</p>
-     * <ul>
-     *   <li>fill 节点：高度取 max(内容高, 约束高)，约束变必重算</li>
-     *   <li>grow 节点（flexGrow&gt;0）：COLUMN 主轴吃父分配空间，等价隐式 fill，
-     *       约束变必重算（与 computeHeight fill 分支条件对称）</li>
-     *   <li>percent 节点（percentHeight&gt;0）：相对父先验内高，收到下传 tight 高约束后
-     *       隐式 fill 返回该高（与 grow 子隐式 fill 对称），约束变必重算</li>
-     *   <li>scrollable 回退 cap 节点：无 preferredHeight 也无 fill，但有约束时按
-     *       min(内容高, 约束高) 截断，约束变需重算</li>
-     * </ul>
-     *
-     * <p>本谓词收口 layoutInternal 中叶/容器两分支的重复子条件
-     * （原 :255-258 / :265-268 两段逐字相同的 isScrollable && !isFillParentHeight
-     * && preferredHeight&lt;=0 组合），单一权威，改一处即生效两处。</p>
-     *
-     * @param node 节点
-     * @return true 表示本节点高度由约束驱动
-     */
+
     public boolean isHeightConsumingConstraint(SceneNode node) {
         return node.isFillParentHeight()
                 || node.getFlexGrow() > 0
@@ -413,28 +238,10 @@ class SizingCalculator {
                         && node.getPreferredHeight() <= 0);
     }
 
-    /**
-     * 按 shrink-to-fit 计算节点的内容高度（含上下 padding，不考虑 fill）。
-     *
-     * <p>按 {@code flexDirection} 区分容器主轴：</p>
-     * <ul>
-     *   <li>ROW 容器：高度 = 子节点最大高度（crossMax） + 上下 padding。</li>
-     *   <li>COLUMN 容器：高度 = 子节点高度之和 + gap*(n-1) + 上下 padding。</li>
-     *   <li>叶节点：文本高度 + 上下 padding。</li>
-     * </ul>
-     *
-     * <p><b>preferredHeight 语义（外尺寸下限）</b>：preferredHeight 表示
-     * 「最终盒外尺寸（含 padding）」，与 {@code LayoutBox.height} / preferredWidth 对称。
-     * 容器分支与叶分支均先算出自然外高（聚合/文本 + padV），再与 preferredHeight 取 max，
-     * preferredHeight 不重复叠加 padding。</p>
-     *
-     * @param node 节点
-     * @return 内容高度（像素）
-     */
+
     private int computeContentHeight(SceneNode node) {
         int padV = node.getPaddingTop() + node.getPaddingBottom();
         // ★ 内容折叠（纯加法，默认 false 时逐值不变）：与 computeWidth 同口径 ——
-        //   折叠节点按「无子无文本」的空内容叶计算（padding 计入，preferredHeight 仍作下限）。
         List<SceneNode> children = node.isCollapsed()
                 ? Collections.<SceneNode>emptyList() : node.__getChildren();
         if (!children.isEmpty()) {
@@ -452,7 +259,6 @@ class SizingCalculator {
                         }
                     }
                 }
-                // 自然外高（聚合 + padV）与 preferredHeight（外尺寸下限）取 max
                 int natural = crossMax + padV;
                 return node.getPreferredHeight() > 0
                         ? Math.max(natural, node.getPreferredHeight())
@@ -470,7 +276,6 @@ class SizingCalculator {
                 }
             }
             int totalGap = count > 1 ? node.getGap() * (count - 1) : 0;
-            // 自然外高（聚合 + gap + padV）与 preferredHeight（外尺寸下限）取 max
             int natural = total + totalGap + padV;
             return node.getPreferredHeight() > 0
                     ? Math.max(natural, node.getPreferredHeight())
@@ -480,7 +285,6 @@ class SizingCalculator {
         // 叶节点：文本高度（wrap 感知：拆行后逐行行高求和；否则行数 × 行高）；无文本 → 高度为 0
         // 折叠节点的自身文本同属「内容」，一并折叠为 0（不登记测量、不产出文本行计划）。
         int textHeight = node.isCollapsed() ? 0 : leafTextHeight(node);
-        // 自然外高（文本高 + padV）与 preferredHeight（外尺寸下限）取 max，padV 不重复加
         int naturalLeaf = textHeight + padV;
         return node.getPreferredHeight() > 0
                 ? Math.max(naturalLeaf, node.getPreferredHeight())

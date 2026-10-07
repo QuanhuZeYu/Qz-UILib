@@ -560,7 +560,6 @@ public class SceneVirtualGridTest {
                         -1.0F, cell.__getSurfaceElevation(), 0.0001F);
                 Assert.assertEquals("单元[" + r + "," + c + "] 标签取主题次要前景",
                         SceneThemes.DEFAULT.mutedForeground(), labelOf(cell).getTextColor());
-                // 物品图像渲染协议（契约 §4.1「物品图像不改色」+ §7.3）：图位圆角与占位底色不改
                 Assert.assertEquals("单元[" + r + "," + c + "] 图位圆角属渲染协议",
                         SceneChromeTokens.RADIUS_SM, iconOf(cell).getCornerRadius());
                 Assert.assertEquals("单元[" + r + "," + c + "] 占位底色不改",

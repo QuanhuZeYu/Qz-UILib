@@ -555,7 +555,7 @@ public class SceneRuntime implements SceneFontEnvironment {
         return rootOwner.isDisposed();
     }
 
-    /** R8：已释放 runtime 上的字号写入口快速失败（不再静默 no-op / 静默丢弃）。 */
+
     private void requireAlive() {
         if (rootOwner.isDisposed()) {
             throw new IllegalStateException("SceneRuntime 已 dispose：字号环境入口不可调用");
@@ -1350,29 +1350,7 @@ public class SceneRuntime implements SceneFontEnvironment {
         inputRouter.registerFocusable(node);
     }
 
-    /**
-     * 按 enabled signal 动态登记/注销可聚焦节点（兑现 package-info R9「disabled 不可聚焦」）。
-     *
-     * <p>创建一个 effect 订阅 {@code enabledSignal}：
-     * <ul>
-     *   <li>enabled=true → 注册进 FocusManager Tab 环（{@code registerFocusableRaw}，不登记 cleanup）</li>
-     *   <li>enabled=false → 从 Tab 环注销（{@code unregisterFocusable}），若该节点正聚焦则立即清失焦点</li>
-     * </ul>
-     * enabled 变化时 effect 重跑，自动进出 Tab 环。Tab 顺序由 FocusManager 按 DOM 前序实时排序，
-     * 故 enabled=true 恢复时自然回到原 DOM 位置（不跑末尾）。</p>
-     *
-     * <h3>signal-first 派生 / Owner 归属</h3>
-     * <p>focusable 的动态进出完全经 signal→effect 派生，不命令式。effect 归属规则与 {@link #bind}
-     * 一致：当前处于 Owner 作用域内则归属该作用域（随组件卸载一并退订），否则归属 rootOwner。
-     * 卸载兜底 cleanup 只登记一次（{@code unregisterFocusable} 幂等），避免 effect 重跑累积 cleanup。</p>
-     *
-     * <h3>effect body 包 untrack</h3>
-     * <p>register/unregister 不读 signal，包 {@link Effect#untrack} 是防御性隔离，确保 effect 唯一
-     * 追踪点只有 {@code enabledSignal}。</p>
-     *
-     * @param node          目标节点
-     * @param enabledSignal 是否启用的响应式数据源，true=进 Tab 环，false=退出
-     */
+
     public void focusable(SceneNode node, ReadableSignal<Boolean> enabledSignal) {
         if (node == null || enabledSignal == null) {
             throw new IllegalArgumentException("node 与 enabledSignal 均不可为 null");

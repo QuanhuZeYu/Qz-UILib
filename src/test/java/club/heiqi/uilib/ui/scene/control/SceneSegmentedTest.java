@@ -32,16 +32,7 @@ import club.heiqi.uilib.ui.scene.theme.SceneSurfaceStyle;
 import club.heiqi.uilib.ui.scene.theme.SceneTheme;
 import club.heiqi.uilib.ui.scene.theme.SceneThemes;
 
-/**
- * SceneSegmented 端到端单元测试 —— Phase 4 批 2 分段单选受控控件（R8）验收。
- *
- * <p>端到端验证：受控闭环（点段只上抛期望下标、控件零状态不自改）、
- * R6 段穿透权威验证（点段内 label 文字穿透到所属段进 pressed）、四态切换零重排、
- * 键盘激活（Enter/Space）+ disabled 拦截、方向键导航（←/→ + 焦点移动），
- * 以及主题化外观（底座走 TOOLBAR 配方、段走 INDICATOR 选中配方并保留配方自带轻滤镜
- * （每段恰好一条 BACKDROP）、选中 tint 为强调色系且强度 0x59、文字走主题正文/禁用前景色、
- * hover/focus 走配方状态档、主题切换不重建节点且选中项不丢、卸载回收绑定）。</p>
- */
+
 public class SceneSegmentedTest {
 
     private SceneNode sceneRoot;
@@ -233,12 +224,8 @@ public class SceneSegmentedTest {
         Assert.assertEquals("外部回写后 segment[0] 退选背景", SEG_UNSEL_ENABLED, segBackground(0));
     }
 
-    // ==================== 验收 2：R6 段穿透权威验证（点段内 label 文字穿透到段） ====================
 
-    /**
-     * R6 权威落地：点 segment[1] 内 label 文字几何中心，命中穿透到 segment[1]，
-     * segment[1] 进 pressed → 切 pressed 背景；释放合成 CLICK 上抛 1。
-     */
+
     @Test
     public void hitTestShouldPassThroughSegmentLabelToSegment() {
         doLayout();
@@ -627,12 +614,7 @@ public class SceneSegmentedTest {
 
     // ==================== 验收 13：每颗表面恰好采样一次背景（不重复安装滤镜） ====================
 
-    /**
-     * 滤镜口径（G09 裁决，契约 §4.1）：导航族选项保留配方自带的轻滤镜，与 G05 选中族
-     * （RadioGroup circle / Checkbox box / Toggle track）一致；「不给每个子项重复安装滤镜」
-     * 的语义是不得在配方之外再叠第二层玻璃、也不得让段内文字各自采样背景。
-     * 故底座与每段各自恰好一条 BACKDROP，段内 label 的 PaintFragment 内 0 条。
-     */
+
     @Test
     public void eachSurfaceShouldSampleBackdropExactlyOnce() {
         doLayout();

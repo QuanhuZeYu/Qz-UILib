@@ -417,7 +417,7 @@ public class SceneSelectPrimitiveTest {
         Assert.assertTrue("NOOP_CHROME 点击 item 后关闭", runtime.getOverlayHost().isEmpty());
     }
 
-    /** overlay item 跨帧 DOWN/UP 后仍应 select 并关闭 overlay，守 R13/D1 输入链路回归。 */
+
     @Test
     public void overlayItemClickAcrossFramesShouldSelectAndCloseOverlay() {
         doLayout();
