@@ -8,10 +8,23 @@ import java.nio.ByteBuffer;
  */
 @me.eigenraven.lwjgl3ify.api.Lwjgl3Aware
 public final class Lwjgl3GlApi implements GlApi {
+    // 矩阵上传使用共同的direct-buffer签名。Angelica2.2.10把glUniformMatrix4fv映射到
+    // GLSM.glUniformMatrix4，但只提供FloatBuffer重载，float[]重载会在实机链接失败。
+    private final java.nio.FloatBuffer matrix = ByteBuffer.allocateDirect(64).order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer();
     private final java.nio.IntBuffer attributeSize=java.nio.ByteBuffer.allocateDirect(4).order(java.nio.ByteOrder.nativeOrder()).asIntBuffer(),attributeType=java.nio.ByteBuffer.allocateDirect(4).order(java.nio.ByteOrder.nativeOrder()).asIntBuffer();
     public void glDisableVertexAttribArray(int location){org.lwjgl.opengl.GL20C.glDisableVertexAttribArray(location);}
     public void glGetVertexAttribfv(int location,int pname,float[] values){org.lwjgl.opengl.GL20C.glGetVertexAttribfv(location,pname,values);}
-    public GlProgramAttribute glGetActiveAttribute(int program,int index){attributeSize.clear();attributeType.clear();String name=org.lwjgl.opengl.GL20C.glGetActiveAttrib(program,index,attributeSize,attributeType);return new GlProgramAttribute(name,org.lwjgl.opengl.GL20C.glGetAttribLocation(program,name),attributeType.get(0),attributeSize.get(0));}
+    public GlProgramAttribute glGetActiveAttribute(int program,int index){
+        // GLSM也未提供LWJGL3的String+独立size/type缓冲重载，使用共同的完整缓冲签名。
+        int maximum=org.lwjgl.opengl.GL20C.glGetProgrami(program,org.lwjgl.opengl.GL20C.GL_ACTIVE_ATTRIBUTE_MAX_LENGTH);
+        ByteBuffer nameBuffer=ByteBuffer.allocateDirect(Math.max(1,maximum));
+        java.nio.IntBuffer length=ByteBuffer.allocateDirect(4).order(java.nio.ByteOrder.nativeOrder()).asIntBuffer();
+        attributeSize.clear();attributeType.clear();
+        org.lwjgl.opengl.GL20C.glGetActiveAttrib(program,index,length,attributeSize,attributeType,nameBuffer);
+        byte[] encoded=new byte[length.get(0)];nameBuffer.get(encoded);
+        String name=new String(encoded,java.nio.charset.StandardCharsets.UTF_8);
+        return new GlProgramAttribute(name,org.lwjgl.opengl.GL20C.glGetAttribLocation(program,name),attributeType.get(0),attributeSize.get(0));
+    }
     public GlCapabilities capabilities(){org.lwjgl.opengl.GLCapabilities c;try{c=org.lwjgl.opengl.GL.getCapabilities();}catch(IllegalStateException missing){c=org.lwjgl.opengl.GL.createCapabilities();}return new GlCapabilities(c,c.OpenGL32,c.OpenGL33||c.GL_ARB_sampler_objects);}
     public void glActiveTexture(int a){org.lwjgl.opengl.GL13C.glActiveTexture(a);}
     public void glAttachShader(int a,int b){org.lwjgl.opengl.GL20C.glAttachShader(a,b);}
@@ -79,7 +92,7 @@ public final class Lwjgl3GlApi implements GlApi {
     public void glUniform2f(int a,float b,float c){org.lwjgl.opengl.GL20C.glUniform2f(a,b,c);}
     public void glUniform3f(int a,float b,float c,float d){org.lwjgl.opengl.GL20C.glUniform3f(a,b,c,d);}
     public void glUniform3fv(int a,float[] b){org.lwjgl.opengl.GL20C.glUniform3fv(a,b);}
-    public void glUniformMatrix4fv(int a,boolean b,float[] c){org.lwjgl.opengl.GL20C.glUniformMatrix4fv(a,b,c);}
+    public void glUniformMatrix4fv(int a,boolean b,float[] c){matrix.clear();matrix.put(c).flip();org.lwjgl.opengl.GL20C.glUniformMatrix4fv(a,b,matrix);}
     public void glUseProgram(int a){org.lwjgl.opengl.GL20C.glUseProgram(a);}
     public void glVertexAttribPointer(int a,int b,int c,boolean d,int e,long f){org.lwjgl.opengl.GL20C.glVertexAttribPointer(a,b,c,d,e,f);}
     public void glViewport(int a,int b,int c,int d){org.lwjgl.opengl.GL11C.glViewport(a,b,c,d);}
