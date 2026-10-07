@@ -14,6 +14,6 @@
 
 滚动真实范围已Runtime管理，不由业务Signal累计像素；Geometry发布offset/maximum，末尾逆向即移动，内容缩短和窗口变更夹取；独立default/custom控件含padding、同帧输入/旧plan/卸载重挂载实际通过，完整build待高层与GPU施工收尾。GlyphKey/AsyncGlyphRasterizer/GlGlyphAtlas/GlPaintPlanRenderer已实施并独立review关闭。正式glyphPipelineScenario真实AMD610M/Java8/GL3.2：2D/array首次blank、分帧partial、最终多语+emoji与软件原nativebitmap最大通道差2/255，两条路线字节完全相同。按CPU/GPUbudget和visible真实inkbounds请求，clip外10000字形不启动worker；worker-ownednative、去重/pressure/旧source、uploadState与delegate异常恢复实际通过。UploadBudget整行最小单位，不承诺低于一行的正bytes会累计；CPU bitmap budget限持有cache，最多额外一份inflight，不承诺限制native单次瞬时分配。GPU当帧pin，host已绑定纹理不删除。正式设备任务不加入无显示check。
 
-下一步仍需共享服务scene和原版默认适配、原生framebuffer输入/坐标、原版格式及Angelica/TESR尾状态合同、系统字体自动能力探针、省略/软连字符、MC实测并部署短包。当前MC仍使用原版字体，不部署本增量冒充接管完成。旧Java2D-only计划已替换。
+下一步仍需共享服务scene和原版默认适配、原生framebuffer输入/坐标、原版格式及Angelica/TESR尾状态合同、系统字体自动能力探针、省略/软连字符、MC实测并部署短包。第二增量fa6e60b2已本地提交，tree当时干净。第三增量已接入生产ClientFontServices/MinecraftFontServices及自有scene：原生display像素/Mouse事件/outer scissor/viewport、代际资源包、screen仅关quad、主线程退出关闭共享owner；client-only Mixin实际refmap已确认shutdownMinecraftApplet→func_71405_e。父build+clientFontServicesScenario成功（45秒），独立Java8/AMD GL3.2 review无确定剩余缺陷。真实MC资源回调/硬件输入/注入退出仍未启动验证。原版字体标准入口替代尚未实现，不能把scene接入宣称全接管；不部署冒充接管完成。旧Java2D-only计划已替换。
 
 无对应issue：本任务是用户直接授权的架构重构切片，不编造编号。

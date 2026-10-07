@@ -114,6 +114,16 @@ val glBatchScenario by tasks.registering(JavaExec::class) {
     jvmArgs("-Dfile.encoding=UTF-8")
     args(layout.buildDirectory.dir("font-machine/gl").get().asFile.absolutePath)
 }
+val clientFontServicesScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "共享字体owner、原生framebuffer scene与输入资源生命周期（需要设备）"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.ClientFontServicesScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+    args(layout.buildDirectory.dir("font-machine/client").get().asFile.absolutePath)
+}
 val glyphPipelineScenario by tasks.registering(JavaExec::class) {
     group = "verification"
     description = "真实共享定位、后台光栅、有界图集和GL回放对照（需要设备）"

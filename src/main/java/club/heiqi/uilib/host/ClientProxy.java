@@ -1,9 +1,10 @@
 package club.heiqi.uilib.host;
 import java.lang.reflect.InvocationTargetException;
 import net.minecraft.launchwrapper.Launch;
-/** 开发场景采用已有整包排除规则，发布包不会携带场景或其命令。 */
+/** 生产client先安装共享字体owner；开发场景仍采用整包排除规则，不进入发布包。 */
 public final class ClientProxy extends CommonProxy {
     @Override public void init() {
+        club.heiqi.uilib.host.client.font.MinecraftFontServices.installShared();
         if (!Boolean.TRUE.equals(Launch.blackboard.get("fml.deobfuscatedEnvironment"))) return;
         try { Class.forName("club.heiqi.uilib.internal.devtools.CoreLoopBootstrap").getMethod("install").invoke(null); }
         catch (ClassNotFoundException excludedDevelopmentTools) { /* 发布包没有开发工具。 */ }
