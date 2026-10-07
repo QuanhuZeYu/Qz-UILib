@@ -20,7 +20,7 @@
 | 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片统一系统已确认；HTML 显示及扩展词法待补 |
 | 数学排版 | font/latex、glyph | 第 13 节明确数学混排职责；命令范围、字形能力及降级待补 |
 | 字体与资源 | font/api、page、render；resource、i18n | 第 13 节补齐度量/绘制一致、变化及资源归属；字体选择与失败策略待补 |
-| 图像与物品 | ui/image、scene/image | 第 14 节统一图像职责及纹理/区域、位图、HTTP/HTTPS、物品来源已确认；第 14.6 节自然尺寸与适配已确认；第 14.4 节默认加载/失败占位与正式重载已确认；物品详细语义待补 |
+| 图像与物品 | ui/image、scene/image | 第 14 节统一图像职责及纹理/区域、位图、HTTP/HTTPS、物品来源已确认；第 14.6 节自然尺寸与适配已确认；第 14.4 节默认加载/失败占位与正式重载已确认；第 14.7 节物品外观/效果及可选覆盖层/提示已确认；首期合同可交接设计 |
 | 配置数据与事务 | club/heiqi/config；runtime、schema | 仅通用业务边界已有；配置系统自己的权威、持久化与冲突合同待补 |
 | 配置 UI 与桥接 | config/ui；uilib/config/modern | 编辑协调可复用；schema 驱动与保存呈现待补 |
 | 网络 | net/api、core、codec、transport、store | Channel、Fetch、Stream、Store、Realtime 及连接生命周期待补 |
