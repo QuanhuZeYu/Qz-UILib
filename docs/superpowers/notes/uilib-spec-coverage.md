@@ -17,7 +17,7 @@
 | 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围、归属、非模态参与与焦点声明职责已明确；宿主实现与统一默认策略属于设计 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
 | 绘制与材质动效 | ui/scene/paint、theme；ui/render、base；gl | 平台及坐标边界已确认；能力与失败语义待补 |
-| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片统一系统已确认；VS Code 内置预览语义参照已确认；常用 HTML 内容子集已认可并记录第 13.5 节；HTML 降级及管道表格语义已认可；美元定界方向已认可；固定默认词法已核对，未闭合公式块按普通文档保留的差异已认可；额外数学入口及其他扩展范围待补 |
+| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片统一系统已确认；VS Code 内置预览语义参照已确认；常用 HTML 内容子集已认可并记录第 13.5 节；HTML 降级及管道表格语义已认可；美元定界方向已认可；固定默认词法已核对，未闭合公式块按普通文档保留的差异已认可；math 围栏及裸环境边界已认可；其他扩展范围待补 |
 | 数学排版 | font/latex、glyph | 第 13.4 节数学常用结构及失败源文呈现已认可；具体命令表及字形边界待补 |
 | 字体与资源 | font/api、page、render；resource、i18n | 第 13.3 节同字符多字体共存、度量/绘制一致及资源归属已明确；有序候选/主题默认/缺字替代已确认；加载/重载使用统一错误诊断，不增加失败分支策略；字体核心职责可交接设计 |
 | 图像与物品 | ui/image、scene/image | 第 14 节统一图像职责及纹理/区域、位图、HTTP/HTTPS、物品来源已确认；第 14.6 节自然尺寸与适配已确认；第 14.4 节默认加载/失败占位与正式重载已确认；第 14.7 节物品外观/效果及可选覆盖层/提示已确认；首期合同可交接设计 |
@@ -57,7 +57,7 @@
 
 ### 已确认补充
 
-额外数学入口调查：固定插件 renderer 在 info.trim().toLowerCase() === math 时调用块数学呈现；enableBareBlocks 未开启。Node VM 渲染探针以记录调用的 KaTeX stub 核对：math 围栏调用 displayMode=true，text 围栏及裸 matrix 环境不调用；未验证真实数学绘制。第 13.5 节新增待裁定方案：支持 math 围栏，裸环境不自动启动解析。
+额外数学入口调查：固定插件 renderer 在 info.trim().toLowerCase() === math 时调用块数学呈现；enableBareBlocks 未开启。Node VM 渲染探针以记录调用的 KaTeX stub 核对：math 围栏调用 displayMode=true，text 围栏及裸 matrix 环境不调用；未验证真实数学绘制。用户已认可并转正第 13.5 节合同：支持 math 围栏，裸环境不自动启动解析；对应验收已补齐。
 
 用户已认可公式块配对差异：只有完整配对 $$ 才识别为公式块，未闭合按普通文档保留，不自动补闭合/修复/恢复。已转为第 13.5 节正式合同并补齐验收。
 
