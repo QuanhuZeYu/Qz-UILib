@@ -17,7 +17,7 @@
 | 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围、归属、非模态参与与焦点声明职责已明确；宿主实现与统一默认策略属于设计 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
 | 绘制与材质动效 | ui/scene/paint、theme；ui/render、base；gl | 平台及坐标边界已确认；能力与失败语义待补 |
-| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片统一系统已确认；VS Code 内置预览语义参照已确认；常用 HTML 内容子集已认可并记录第 13.5 节；HTML 降级及管道表格语义已认可；美元定界方向已认可；歧义规则按固定参照补齐，其余扩展词法待补 |
+| 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 第 13 节补齐模式、排版及共同几何；CommonMark 基础+表格/数学扩展已获认可，图片统一系统已确认；VS Code 内置预览语义参照已确认；常用 HTML 内容子集已认可并记录第 13.5 节；HTML 降级及管道表格语义已认可；美元定界方向已认可；固定默认词法已核对，未闭合公式块按普通文档保留的差异已认可；额外数学入口及其他扩展范围待补 |
 | 数学排版 | font/latex、glyph | 第 13.4 节数学常用结构及失败源文呈现已认可；具体命令表及字形边界待补 |
 | 字体与资源 | font/api、page、render；resource、i18n | 第 13.3 节同字符多字体共存、度量/绘制一致及资源归属已明确；有序候选/主题默认/缺字替代已确认；加载/重载使用统一错误诊断，不增加失败分支策略；字体核心职责可交接设计 |
 | 图像与物品 | ui/image、scene/image | 第 14 节统一图像职责及纹理/区域、位图、HTTP/HTTPS、物品来源已确认；第 14.6 节自然尺寸与适配已确认；第 14.4 节默认加载/失败占位与正式重载已确认；第 14.7 节物品外观/效果及可选覆盖层/提示已确认；首期合同可交接设计 |
@@ -48,7 +48,7 @@
 | `$x\ny$` | 同段内跨行公式 |
 | 行内代码内 `$x$` | code_inline，不解析公式 |
 | 独立 `$$x$$` 或分行配对 $$ | math_block |
-| 未闭合 `$$\nx\nnext paragraph` | 参照将后续内容收为 math_block；与保留后续正文的目标存在边界冲突，需明确差异 |
+| 未闭合 `$$\nx\nnext paragraph` | 参照将后续内容收为 math_block；用户已认可 UILib 按普通文档保留的差异 |
 | math/text 围栏 | 解析 token 为 fence；math 语言可能在渲染阶段转换，不能仅据 token 宣称显示为代码 |
 
 ## 核心收束及后续补充
@@ -56,6 +56,8 @@
 核心职责规格已收束至可交接实现设计；不以执行器、算法或接口签名未选定要求继续逐项裁决。第 10.2 节保留技术设计交接。全库能力覆盖仍未完成。下一组核对字体、富文本、Markdown、数学排版和绘制。
 
 ### 已确认补充
+
+用户已认可公式块配对差异：只有完整配对 $$ 才识别为公式块，未闭合按普通文档保留，不自动补闭合/修复/恢复。已转为第 13.5 节正式合同并补齐验收。
 
 固定参照调查：VS Code 更新 API 返回稳定版 1.140.0（commit 07f806f999227108933c2e30515b26eecc1fda74）。已读取对应 tag 的 Markdown package.json、markdownEngine.ts、markdown-math extension.ts 及两份 package-lock：markdown-it 14.2.0，内置数学扩展 @vscode/markdown-it-katex 1.1.2。Node VM 使用这两个固定包运行纯解析探针，KaTeX 渲染以空实现替代，仅核对 token，不验证公式绘制或真实 VS Code 预览。结果见后续正文；URL 以固定版本来源记录，不以 latest 漂移作为合同。
 
