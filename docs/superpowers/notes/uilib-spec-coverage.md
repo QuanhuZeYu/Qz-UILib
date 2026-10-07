@@ -33,6 +33,10 @@
 
 派生读取当前结果已获用户认可并写入 spec 第 3.1 节：首次及后续读取基于当前来源，允许按需计算/缓存，读取不执行副作用。后续继续收束 Effect、结果发布及核心布局/生命周期合同。
 
+当前等待裁决：推荐指针几何命中采用最后已呈现的布局，新布局与对应画面一起对输入生效；销毁、禁用及模态资格仍即时检查。尚未写入 spec 为已确认合同。
+
+结果发布调查：SceneFramePipeline 位于 ui/scene/host，当前 run 在 ROUTE 前执行 LAYOUT_PRE_ROUTE，在路由后继续布局并生成及回放画面；SceneInputRouter 调用 SceneHitTester，后者直接读取节点 cachedLayout 并在父盒外提前返回。静态源码说明当前路径，不证明新旧画面/命中一致性已满足；父盒外溢出命中及裁剪遍历仍需布局专题收束。旧阶段顺序和缓存形状不冻结为新规格。
+
 环境服务原文已核对：ResourceReloadService、LanguageEpochService、UiEnvironment、LocaleEnvironment、ResourceEnvironment、ProcessUiEnvironment。spec 第 3.3 节按既有动态更新边界细化职责；未继承旧单例、计数或按帧读取约定。
 
 用户允许按新 spec 直接重构至 5.0；生产重构不属于本轮规格补充。
