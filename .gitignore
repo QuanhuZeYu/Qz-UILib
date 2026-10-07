@@ -44,3 +44,4 @@ layout.json
 .opencode/control-envelope.json
 __pycache__/
 /temp/
+/.worktrees/
