@@ -57,7 +57,7 @@
 
 ### 已确认补充
 
-用户已认可数学首期核心命令范围，写入第 13.4 节；要求暂不继续深入数学。当前转回核心骨架进度核对：核心职责规格可交接设计，生产重构尚未启动；后续设计落点见第 10.2 节。
+用户已认可数学首期核心命令范围，写入第 13.4 节；要求暂不继续深入数学。用户已授权开始核心骨架设计：已核对 Signal 排队写、Computed Effect 驱动、父盒外命中早退、挂载 Owner 及可变 PaintPlan。唯一 spec 第 15 节为待整体审阅实现设计，实施工具见 ../plans/2026-10-07-uilib-core-loop-implementation.md。当前只有文档，生产重构/构建/实机均未启动；数学深入仍暂停。
 
 额外数学入口调查：固定插件 renderer 在 info.trim().toLowerCase() === math 时调用块数学呈现；enableBareBlocks 未开启。Node VM 渲染探针以记录调用的 KaTeX stub 核对：math 围栏调用 displayMode=true，text 围栏及裸 matrix 环境不调用；未验证真实数学绘制。用户已认可并转正第 13.5 节合同：支持 math 围栏，裸环境不自动启动解析；对应验收已补齐。
 
