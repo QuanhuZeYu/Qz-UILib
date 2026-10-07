@@ -232,6 +232,12 @@ UILib 采用原生 framebuffer 分辨率：布局、字号、裁剪、滚动距�
 
 滚动有效偏移由框架按最终内容范围与视口限制；内容未溢出时偏移为零，到达末尾后的滚轮不累积额外偏移，反向滚动立即响应。内容删除、换行、字号及窗口变化后重新计算范围并限制已有偏移，业务无需维护末尾边界。
 
+平台层次为“无平台核心 → 可替换的宿主适配（如 LWJGL2/LWJGL3）→ Minecraft 等应用宿主接入”。无平台核心的公开合同、布局、输入逻辑、文本定位、绘制计划与资源生命周期不依赖 Minecraft、Forge、LWJGL 类型或其运行时存在；加载和使用核心不能触发这些宿主的类加载、native 初始化或 GL 上下文要求。字体整形、光栅与 GPU 回放所需的 native 绑定及能力查询由适配实现提供，核心通过不含宿主类型的合同使用其结果，不能把某一绑定库置于核心路径后称为无平台实现。
+
+LWJGL 是宿主层，不是核心的必要前提；Minecraft 位于更外层，负责游戏资源、调用语义和生命周期接入。直接使用 LWJGL 的偏好仅适用于对应宿主适配内部，不授权核心直接依赖 LWJGL，也不意味着只支持 LWJGL3。纯 Forge 1.7.10 自带的 LWJGL2 必须有可用适配，UILib 核心、自有页面与默认原版字体替代不得要求安装 LWJGL3ify、Angelica，或为迁就实现而替换该实例的 Java/LWJGL 宿主。LWJGL3ify/Angelica 存在时使用对应适配并保留既定兼容合同；缺席时通过现有宿主完成相同核心语义，不能静默退回原版字体、禁用核心功能或删减文字能力。native 资源确需随适配提供时由 UILib 的适配发行负责，不要求用户安装无关宿主 Mod。
+
+验收分别覆盖：无 Minecraft/Forge/LWJGL 的核心加载与逻辑流程；纯 Forge 1.7.10、原有 Java8/LWJGL2、无 LWJGL3ify/Angelica 的实际运行；既有 LWJGL3ify/Angelica 实例的回归。两种 MC 宿主复用同一文本定位、字形需求与有序绘制合同，差异止于资源、native 绑定、GPU 提交及游戏接入，不建立第二套排版/格式/缓存引擎。独立运行器使用 LWJGL3 取得的证据只属于该宿主，不能替代无平台核心或 LWJGL2 的验收。
+
 核心平台无关，平台输入只经适配边界进入；内部布局、绘制、裁剪和输入共享 logical px，GUI Scale 转换仅在宿主边界成对发生。数据/paint 层不调用 GL，paint/replay 传递自包含、不可变绘制计划。backend/replay 恢复触碰的 GL 状态，包括宿主已有非默认裁剪、stencil 与 mask。UILib 即便在宿主边界也优先直接使用 LWJGL 宿主能力；窗口、framebuffer、原生输入与 GL 操作不优先经 Minecraft 包装方法取得。Minecraft 特有资源包、生命周期与调用语义留在专用适配层；宿主虚拟化的 GL 状态须读取其实际有效状态，不以裸驱动查询替代宿主缓存事实。通用绘制不得使用 Minecraft 的 Tessellator 等包装类，应走直接 GL 或 UILib 自有管线。物品 icon 的 Minecraft 适配可完整委托 RenderItem.renderItemAndEffectIntoGUI（含 Forge hook 与标准光照）；此适配例外不扩及通用 GUI 或渲染核心。
 
 优先复用 scene、响应式、PaintCommand、标准控件及字体能力，不能为了通过测试绕过生产路径或直连原版 GUI。
