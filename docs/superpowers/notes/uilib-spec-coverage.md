@@ -13,8 +13,8 @@
 | 能力 | 实现入口（现状定位） | 规格覆盖状态 |
 | --- | --- | --- |
 | 状态与呈现 | ui/reactive、ui/scene/runtime、ui/env | 直接状态/派生读取与渲染批次职责已确认；Effect 与生命周期资源归属明确，执行器及合批属于设计 |
-| 布局与扩展 | ui/scene/node、layout、control、form | 尺寸意图及自定义接入职责已明确；溢出命中行为待收束，分配/扩展接口属于设计 |
-| 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围与归属已确认；宿主能力、恢复焦点、非模态交互待完成 |
+| 布局与扩展 | ui/scene/node、layout、control、form | 尺寸意图、自定义接入和可见溢出命中已明确；分配/扩展接口属于设计 |
+| 输入与生命周期 | ui/scene/input、overlay、host；ui/input、screen | 范围、归属、非模态参与与焦点声明职责已明确；宿主实现与统一默认策略属于设计 |
 | 通用控件与编辑器 | ui/scene/control、form；config/ui/editor、field | 完整文本编辑已确认；其他控件逐项覆盖待完成 |
 | 绘制与材质动效 | ui/scene/paint、theme；ui/render、base；gl | 平台及坐标边界已确认；能力与失败语义待补 |
 | 文本与 Markdown | ui/text、markdown、scene/text；font/layout | 基本文案策略已确认；文档模型、样式、测量及链接待补 |
@@ -29,13 +29,17 @@
 | 诊断与开发工具 | ui/diagnostic、internal/devtools、client/command | 反馈原则已有；工具能力、headless 与打包范围待补 |
 | 平台启动与集成 | ClientProxy、CommonProxy、MyMod；client、mixin、util | 平台边界已有；启动、双端环境与退出清理待补 |
 
-## 当前必要裁决
+## 核心收束及后续补充
+
+核心职责规格已收束至可交接实现设计；不以执行器、算法或接口签名未选定要求继续逐项裁决。第 10.2 节保留技术设计交接。全库能力覆盖仍未完成。下一组核对字体、富文本、Markdown、数学排版和绘制。
+
+### 已确认补充
 
 派生读取当前结果已获用户认可并写入 spec 第 3.1 节：首次及后续读取基于当前来源，允许按需计算/缓存，读取不执行副作用。后续继续收束 Effect、结果发布及核心布局/生命周期合同。
 
 用户裁定：布局与命中区域归框架自动管理，在渲染批次统一更新，画面与命中保持一致；已写入 spec 第 3.4、4.1 节。“采用最后已呈现布局”的独立合同提议撤回，不冻结快照或具体时机算法。继续按职责边界收束核心规格，既有边界内的可逆技术选择留给设计，不重复细节裁决。
 
-结果发布调查：SceneFramePipeline 位于 ui/scene/host，当前 run 在 ROUTE 前执行 LAYOUT_PRE_ROUTE，在路由后继续布局并生成及回放画面；SceneInputRouter 调用 SceneHitTester，后者直接读取节点 cachedLayout 并在父盒外提前返回。静态源码说明当前路径，不证明新旧画面/命中一致性已满足；父盒外溢出命中及裁剪遍历仍需布局专题收束。旧阶段顺序和缓存形状不冻结为新规格。
+结果发布调查：SceneFramePipeline 位于 ui/scene/host，当前 run 在 ROUTE 前执行 LAYOUT_PRE_ROUTE，在路由后继续布局并生成及回放画面；SceneInputRouter 调用 SceneHitTester，后者直接读取节点 cachedLayout 并在父盒外提前返回。静态源码说明当前路径，不证明新旧画面/命中一致性已满足；父盒外可见且未裁剪部分可交互已获用户认可，写入 spec 第 4.2 节；现有父盒外提前返回路径需迁移。旧阶段顺序和缓存形状不冻结为新规格。
 
 环境服务原文已核对：ResourceReloadService、LanguageEpochService、UiEnvironment、LocaleEnvironment、ResourceEnvironment、ProcessUiEnvironment。spec 第 3.3 节按既有动态更新边界细化职责；未继承旧单例、计数或按帧读取约定。
 
