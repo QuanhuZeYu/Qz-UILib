@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -31,7 +34,7 @@ public final class PresentationEpochScenario {
         return new ClientFontServices(PresentationEpochScenario.class.getClassLoader(),1,
             new ClientFontServices.Settings(new AsyncGlyphRasterizer.Budget(128,256,ready,8*1024*1024,4,96*1024*1024,16,96),
                 GlGlyphAtlas.Mode.TEXTURE_2D,new GlGlyphAtlas.Budget(256,1,8,256,128,2*1024*1024),
-                new GlGlyphAtlas.UploadBudget(bytes,nanos,calls),64,demand));
+                new GlGlyphAtlas.UploadBudget(bytes,nanos,calls),64,demand),IsolatedFontEngine.shared(),new Lwjgl3GlApi(),GlProgramProvider.NONE);
     }
     private static PaintPlan text(ClientFontServices owner,String text,int x) {
         TextLayout layout=owner.layout(text,new TextStyle("default",24,0xffe0c040),W);
@@ -112,7 +115,7 @@ public final class PresentationEpochScenario {
     }
     private static void boundaryMode()throws Exception {
         ClientFontServices.Settings settings=ClientFontServices.Settings.defaults();
-        ClientFontServices owner=new ClientFontServices(PresentationEpochScenario.class.getClassLoader(),1,settings,true);
+        ClientFontServices owner=new ClientFontServices(PresentationEpochScenario.class.getClassLoader(),1,settings,true,IsolatedFontEngine.shared(),new Lwjgl3GlApi(),GlProgramProvider.NONE);
         try {
             if(owner.hasGlResources()||owner.presentationStats().active||owner.rasterizer().stats().started)throw new AssertionError("无draw边界owner不lazy");
             GlPaintPlanRenderer a=owner.createPlanRenderer(),b=owner.createPlanRenderer();PaintPlan pa=text(owner,"中",4),pb=text(owner,"A",94);

@@ -11,8 +11,9 @@ import java.util.Map;
 import java.util.Set;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
 
 /** 单个按需启动的 owned worker。GL/render 请求只操作短临界区，不打开字体或等待光栅。
  * 位图、pending、ready通知和错误各有上限；错误保留身份与原因，不自动重试。
@@ -52,6 +53,7 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
         @Override public boolean equals(Object value){return value instanceof FaceKey && source==((FaceKey)value).source && size==((FaceKey)value).size;}
     }
     private final Budget budget;
+    private final FontEngine engine;
     private final LinkedHashMap<GlyphKey,Boolean> pending=new LinkedHashMap<GlyphKey,Boolean>();
     private final LinkedHashMap<GlyphKey,GlyphBitmap> cache=new LinkedHashMap<GlyphKey,GlyphBitmap>(16,.75f,true);
     private final LinkedHashMap<GlyphKey,Failure> failures=new LinkedHashMap<GlyphKey,Failure>(16,.75f,true);
@@ -61,7 +63,7 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
     private long bytes,faceBytes,requests,deduplicated,rasterized,rejected,evicted,cancelled,version;
     private int faceCount;
     private String workerFailure;
-    public AsyncGlyphRasterizer(Budget budget){this.budget=java.util.Objects.requireNonNull(budget,"budget");}
+    public AsyncGlyphRasterizer(Budget budget,FontEngine engine){this.budget=java.util.Objects.requireNonNull(budget,"budget");this.engine=java.util.Objects.requireNonNull(engine,"engine");}
     public synchronized GlyphBitmap request(GlyphKey key) {
         java.util.Objects.requireNonNull(key,"key");if(closed)throw new IllegalStateException("glyph worker 已关闭");requests++;
         GlyphBitmap bitmap=cache.get(key);if(bitmap!=null){deduplicated++;return bitmap;}
@@ -99,18 +101,18 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
         }
     }
     private void work() {
-        LinkedHashMap<FaceKey,NativeFontFace> faces=new LinkedHashMap<FaceKey,NativeFontFace>(16,.75f,true);
+        LinkedHashMap<FaceKey,FontFace> faces=new LinkedHashMap<FaceKey,FontFace>(16,.75f,true);
         long ownedFaceBytes=0;
-        try(NativeFontService service=new NativeFontService()) {
+        try(FontSession service=engine.openSession()) {
             for(GlyphKey key;(key=next())!=null;) {
                 GlyphBitmap bitmap=null;Throwable failure=null;
                 try {
-                    FaceKey faceKey=new FaceKey(key);NativeFontFace face=faces.get(faceKey);
+                    FaceKey faceKey=new FaceKey(key);FontFace face=faces.get(faceKey);
                     if(face==null) {
                         int sourceBytes=key.source.byteSize();
                         if(sourceBytes>budget.faceBytes)throw new IllegalArgumentException("字体超过 face bytes 预算: "+key.source);
                         while(faces.size()>=budget.faces||ownedFaceBytes+sourceBytes>budget.faceBytes) {
-                            FaceKey first=faces.keySet().iterator().next();NativeFontFace old=faces.remove(first);
+                            FaceKey first=faces.keySet().iterator().next();FontFace old=faces.remove(first);
                             ownedFaceBytes-=first.source.byteSize();old.close();
                         }
                         face=key.source.openFace(service,key.size);faces.put(faceKey,face);ownedFaceBytes+=sourceBytes;

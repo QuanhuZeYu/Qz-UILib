@@ -1,11 +1,12 @@
 package club.heiqi.uilib.ui.scene.text;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 
 /** 度量与绘制共享的不可变定位。int 尺寸为真实浮点边界向上取整，不把 advance 逐字取整。 */
@@ -22,20 +23,20 @@ public final class TextLayout {
         public final float x, y, xAdvance, yAdvance;
         public final boolean color, replacement;
         /** 实际glyph原点的不可变墨迹边界（Y向下），UNKNOWN时不能据此剔除需求。 */
-        public final NativeFontFace.InkBounds inkBounds;
+        public final InkBounds inkBounds;
         public Glyph(FontSource source, float size, int glyphId, int logicalStart, int logicalEnd,
                 int sourceStart, int sourceEnd, float x, float y, float xAdvance, float yAdvance,
                 boolean color, boolean replacement) {
             this(source, size, glyphId, logicalStart, logicalEnd, sourceStart, sourceEnd, x, y, xAdvance, yAdvance,
-                color, replacement, NativeFontFace.InkBounds.UNKNOWN);
+                color, replacement, InkBounds.UNKNOWN);
         }
         public Glyph(FontSource source, float size, int glyphId, int logicalStart, int logicalEnd,
                 int sourceStart, int sourceEnd, float x, float y, float xAdvance, float yAdvance,
-                boolean color, boolean replacement, NativeFontFace.InkBounds inkBounds) {
+                boolean color, boolean replacement, InkBounds inkBounds) {
             this(source,size,glyphId,logicalStart,logicalEnd,sourceStart,sourceEnd,x,y,xAdvance,yAdvance,color,replacement,inkBounds,size,1,GlyphRasterStyle.NORMAL,null,-1);
         }
         public Glyph(FontSource source,float size,int glyphId,int logicalStart,int logicalEnd,int sourceStart,int sourceEnd,
-                float x,float y,float xAdvance,float yAdvance,boolean color,boolean replacement,NativeFontFace.InkBounds inkBounds,
+                float x,float y,float xAdvance,float yAdvance,boolean color,boolean replacement,InkBounds inkBounds,
                 float logicalEm,float rasterToLayout,GlyphRasterStyle rasterStyle,TextStyle resolvedStyle,int clusterIndex) {
             if(!Float.isFinite(size)||size<=0||!Float.isFinite(logicalEm)||logicalEm<=0||!Float.isFinite(rasterToLayout)||rasterToLayout<=0)throw new IllegalArgumentException("无效glyph采样尺度");
             this.logicalEm=logicalEm;this.rasterToLayout=rasterToLayout;this.rasterStyle=Objects.requireNonNull(rasterStyle,"rasterStyle");this.resolvedStyle=resolvedStyle;this.clusterIndex=clusterIndex;

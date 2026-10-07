@@ -2,6 +2,7 @@ package club.heiqi.uilib.host.client.font.compat;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import club.heiqi.uilib.host.client.gl.GlApi;
 import java.util.List;
 import java.util.IdentityHashMap;
 import java.util.Objects;
@@ -14,14 +15,14 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 public final class AngelicaBridge implements OptionalFontHostBridge {
     private static AngelicaBridge active;
     private final Thread thread=Thread.currentThread();
-    private final ReplaySink sink;private final FontHostOrderQueue queue;private final ClassLoader loader;
+    private final ReplaySink sink;private final FontHostOrderQueue queue;private final ClassLoader loader;private final GlApi gl;
     private final Method seal,defer,recording,listMode,record,pause,resume;
     private final Field arena,depth,segments,deferred,segmentOwner,from,to;
     private final Class<?> commandType;
     private int flushDepth;private boolean closed,primed;
     private final IdentityHashMap<Object,Boolean> replayed=new IdentityHashMap<Object,Boolean>();
-    AngelicaBridge(Class<?> font,ClassLoader loader,ReplaySink sink,int capacity) {
-        this.sink=sink;this.loader=loader;queue=new FontHostOrderQueue(capacity);
+    AngelicaBridge(Class<?> font,ClassLoader loader,GlApi gl,ReplaySink sink,int capacity) {
+        this.sink=sink;this.loader=loader;this.gl=gl;queue=new FontHostOrderQueue(capacity);
         try{
             font.getMethod("uilibFontOrderHooksInstalled");
             seal=declared(font,"sealBatchSegment");defer=declared(font,"shouldDeferNow");arena=field(font,"arenaOwner");depth=field(font,"batchDepth");
@@ -57,7 +58,7 @@ public final class AngelicaBridge implements OptionalFontHostBridge {
             if(!primed){for(Object segment:(List<?>)read(deferred,null))register(segment,read(segmentOwner,segment));if(owner!=null)for(Object segment:(List<?>)read(segments,owner))register(segment,owner);primed=true;}
             if(owner!=null)invoke(seal,owner);
             boolean queued=(Boolean)invoke(defer,null)||(owner!=null&&((Number)read(depth,owner)).intValue()>0)||!((List<?>)read(deferred,null)).isEmpty();
-            HostProgramSnapshot program=HostProgramSnapshot.capture(loader);
+            HostProgramSnapshot program=HostProgramSnapshot.capture(loader,gl);
             sink.registerVisible(plan,context);
             queue.submit(()->HostProgramSnapshot.replay(program,()->sink.draw(plan,context)),lease);transferred=true;
             if(!queued)queue.drainTail();

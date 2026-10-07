@@ -1,4 +1,8 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontMetrics;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -9,8 +13,8 @@ import java.util.Arrays;
 import java.util.List;
 import club.heiqi.uilib.ui.scene.text.TextInput;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /**
  * 测试机真实 FreeType/HarfBuzz 场景，无 MC、Forge 或 AWT。
@@ -77,24 +81,24 @@ public final class NativeFontScenario {
     public static void main(String[] args) throws Exception {
         verifyTextInput();
         Path directory = Paths.get(args.length == 0 ? "build/font-native-probe" : args[0]);
-        NativeFontService service = new NativeFontService();
+        FontSession service = new LwjglFontEngine().openSession();
         try {
             String[] names = {"NotoSansArabic", "NotoSansDevanagari", "NotoSansThai", "NotoColorEmoji", "NotoColorEmoji"};
             String[] texts = {"العربية", "हिन्दी", "ภาษาไทย", "😀", "👩‍💻"};
             String[] languages = {"ar", "hi", "th", "und", "und"};
             for (int i = 0; i < texts.length; i++) {
                 ByteBuffer source = font(directory, names[i]);
-                try (NativeFontFace face = service.openFace(source, 0, 32.3f)) {
+                try (FontFace face = service.openFace(source, 0, 32.3f)) {
                     // 原缓冲立即改写，验证 FT memory face 使用服务持有的独立副本。
                     Arrays.fill(source.array(), (byte) 0);
-                    NativeFontFace.Direction direction = i == 0 ? NativeFontFace.Direction.RTL : NativeFontFace.Direction.LTR;
+                    ShapeDirection direction = i == 0 ? ShapeDirection.RTL : ShapeDirection.LTR;
                     String context = "xx" + texts[i] + "yy";
-                    List<NativeFontFace.Glyph> run = face.shape(context, 2, 2 + texts[i].length(), direction,
+                    List<ShapedGlyph> run = face.shape(context, 2, 2 + texts[i].length(), direction,
                             languages[i], null, false, false);
                     require(!run.isEmpty(), "shape 结果为空");
                     float advance = 0;
                     StringBuilder glyphs = new StringBuilder();
-                    for (NativeFontFace.Glyph glyph : run) {
+                    for (ShapedGlyph glyph : run) {
                         require(glyph.glyphId != 0, "出现缺字");
                         require(glyph.cluster >= 2 && glyph.cluster < 2 + texts[i].length(), "cluster 未使用原串 UTF-16 索引");
                         advance += glyph.xAdvance;
@@ -113,7 +117,7 @@ public final class NativeFontScenario {
                         chromatic |= pixels[p] != pixels[p + 1] || pixels[p + 1] != pixels[p + 2];
                     }
                     if (i >= 3) require(bitmap.color && chromatic && visiblePixels > 0, "emoji 未输出真实彩色像素");
-                    NativeFontFace.Metrics metrics = face.metrics();
+                    FontMetrics metrics = face.metrics();
                     require(metrics.ascent > 0 && metrics.lineHeight > 0 && advance > 0, "真实字体 metrics 错误");
                     System.out.println(names[i] + " text=" + texts[i] + " glyphs=" + run.size() + " ids@clusters=" + glyphs
                             + " advance=" + advance + " metrics=" + metrics.ascent + "," + metrics.descent + "," + metrics.lineHeight
@@ -122,14 +126,14 @@ public final class NativeFontScenario {
                             + " color=" + bitmap.color + " visiblePixels=" + visiblePixels);
                 }
             }
-            try (NativeFontFace small = service.openFace(font(directory, "NotoColorEmoji"), 0, 16.15f);
-                    NativeFontFace large = service.openFace(font(directory, "NotoColorEmoji"), 0, 32.3f)) {
+            try (FontFace small = service.openFace(font(directory, "NotoColorEmoji"), 0, 16.15f);
+                    FontFace large = service.openFace(font(directory, "NotoColorEmoji"), 0, 32.3f)) {
                 GlyphBitmap a = small.rasterize(small.glyphIndex(0x1f600));
                 GlyphBitmap b = large.rasterize(large.glyphIndex(0x1f600));
                 float pixelRatio = b.pixelScale / a.pixelScale;
                 float metricRatio = large.metrics().lineHeight / small.metrics().lineHeight;
-                float advanceRatio = large.shape("😀", NativeFontFace.Direction.LTR, "und").get(0).xAdvance
-                        / small.shape("😀", NativeFontFace.Direction.LTR, "und").get(0).xAdvance;
+                float advanceRatio = large.shape("😀", ShapeDirection.LTR, "und").get(0).xAdvance
+                        / small.shape("😀", ShapeDirection.LTR, "und").get(0).xAdvance;
                 require(Math.abs(pixelRatio - 2) < 0.00001f, "strike 像素比例错误");
                 require(Math.abs(metricRatio - 2) < 0.00001f, "strike metrics 比例错误");
                 require(Math.abs(advanceRatio - 2) < 0.00001f, "strike shape 比例错误");
@@ -143,22 +147,22 @@ public final class NativeFontScenario {
                     // 验证失败后同一服务还可创建真实 face。
                 }
             }
-            try (NativeFontFace one = service.openFace(font(directory, "NotoSansArabic"), 0, 1);
-                    NativeFontFace half = service.openFace(font(directory, "NotoSansArabic"), 0, 0.5f)) {
+            try (FontFace one = service.openFace(font(directory, "NotoSansArabic"), 0, 1);
+                    FontFace half = service.openFace(font(directory, "NotoSansArabic"), 0, 0.5f)) {
                 require(half.metrics().lineHeight == one.metrics().lineHeight * 0.5f, "FT最小1pt必须按请求em归一");
                 GlyphBitmap full = one.rasterize(one.glyphIndex(0x627));
                 GlyphBitmap reduced = half.rasterize(half.glyphIndex(0x627));
                 require(reduced.pixelScale == full.pixelScale * 0.5f, "小于1px的真实光栅缩放错误");
                 System.out.println("PASS em<1实际FT尺寸归一：" + reduced.pixelScale);
             }
-            final NativeFontFace open = service.openFace(font(directory, "NotoSansArabic"), 0, 16);
+            final FontFace open = service.openFace(font(directory, "NotoSansArabic"), 0, 16);
             // 完整段落超过LWJGL栈编码容量，仍可shape短run，且cluster必须保留原文位置。
             char[] padding = new char[40000]; Arrays.fill(padding, 'x');
             String longContext = new String(padding) + "العربية";
-            List<NativeFontFace.Glyph> longRun = open.shape(longContext, padding.length, longContext.length(),
-                NativeFontFace.Direction.RTL, "ar", null, false, true);
+            List<ShapedGlyph> longRun = open.shape(longContext, padding.length, longContext.length(),
+                ShapeDirection.RTL, "ar", null, false, true);
             require(!longRun.isEmpty(), "长段落短run整形为空");
-            for (NativeFontFace.Glyph glyph : longRun) require(glyph.cluster >= padding.length && glyph.glyphId != 0,
+            for (ShapedGlyph glyph : longRun) require(glyph.cluster >= padding.length && glyph.glyphId != 0,
                 "长段落源文位置或字形错误");
             System.out.println("PASS 超64KiB UTF16上下文短run：" + longContext.length() + " units");
             final Throwable[] failure = new Throwable[1];

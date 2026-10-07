@@ -3,11 +3,9 @@ package club.heiqi.uilib.host.client.gl;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import org.lwjgl.BufferUtils;
-import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.List;
 import org.lwjgl.system.MemoryUtil;
-import club.heiqi.uilib.host.client.font.compat.OptionalIrisProgramScope.Attribute;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
@@ -23,16 +21,19 @@ public final class IrisProducerGlScenario {
         int vs=shader(GL_VERTEX_SHADER,vertex),fs=shader(GL_FRAGMENT_SHADER,fragment),program=glCreateProgram();
         glAttachShader(program,vs);glAttachShader(program,fs);String[] names={"position","color","uv0","uv1","normal"};for(int i=0;i<names.length;i++)glBindAttribLocation(program,i,names[i]);glBindFragDataLocation(program,0,"result");glLinkProgram(program);
         if(glGetProgrami(program,GL_LINK_STATUS)==0)throw new AssertionError(glGetProgramInfoLog(program));
-        final List<Attribute> attributes=new ArrayList<Attribute>();Constructor<Attribute> ctor=Attribute.class.getDeclaredConstructor(String.class,int.class,int.class,int.class);ctor.setAccessible(true);
-        for(int i=0;i<glGetProgrami(program,GL_ACTIVE_ATTRIBUTES);i++){IntBuffer size=BufferUtils.createIntBuffer(1),type=BufferUtils.createIntBuffer(1);String name=glGetActiveAttrib(program,i,size,type);attributes.add(ctor.newInstance(name,glGetAttribLocation(program,name),type.get(0),size.get(0)));}
+        final List<GlProgramAttribute> attributes=new ArrayList<GlProgramAttribute>();
+        for(int i=0;i<glGetProgrami(program,GL_ACTIVE_ATTRIBUTES);i++){IntBuffer size=BufferUtils.createIntBuffer(1),type=BufferUtils.createIntBuffer(1);String name=glGetActiveAttrib(program,i,size,type);attributes.add(new GlProgramAttribute(name,glGetAttribLocation(program,name),type.get(0),size.get(0)));}
         final int activeProgram=program;
-        GlFontIrisProducer.ProgramDelegate delegate=new GlFontIrisProducer.ProgramDelegate(){
-            public int programId(){return activeProgram;}public List<Attribute> attributes(){return attributes;}public float[] normal(){return new float[]{0,0,1};}public int packedLight(){return 240|128<<16;}public float[] extended(String name,int type){return "mc_Entity".equals(name)?new float[]{-1,-2,0.25f,1}:new float[]{0.125f,0.25f,0.5f,0.75f};}
-            public void configure(int vao,int vbo,int ebo,GlFontProgramLayout layout){glBindVertexArray(vao);glBindBuffer(GL_ARRAY_BUFFER,vbo);glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,ebo);for(GlFontProgramLayout.Binding b:layout.bindings){glEnableVertexAttribArray(b.location);glVertexAttribPointer(b.location,b.size,GL_FLOAT,false,GlFontProgramLayout.STRIDE,b.offset);}}
+        GlProgramScope delegate=new GlProgramScope(){
+            public int programId(){return activeProgram;}public List<GlProgramAttribute> attributes(){return attributes;}public float[] normal(){return new float[]{0,0,1};}public int packedLight(){return 240|128<<16;}public float[] extended(String name,int type){return "mc_Entity".equals(name)?new float[]{-1,-2,0.25f,1}:new float[]{0.125f,0.25f,0.5f,0.75f};}
+            public void configure(int vao,int vbo,int ebo,boolean uv,boolean color,boolean lightmap,boolean normal){glBindVertexArray(vao);glBindBuffer(GL_ARRAY_BUFFER,vbo);glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,ebo);}
+            public void pointer(int location,int size,int type,boolean normalized,int stride,long offset){glVertexAttribPointer(location,size,type,normalized,stride,offset);}
+            public void disable(int location){glDisableVertexAttribArray(location);}
+            public void close(){}
             public void beforeDraw(){glUseProgram(activeProgram);glUniform1i(glGetUniformLocation(activeProgram,"image"),0);}
-            public void bindTexture(int texture){glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,texture);}
+            public void bindTexture2D(int texture){glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,texture);}
         };
-        try(GlFontIrisProducer producer=new GlFontIrisProducer(16);GlGlyphAtlas.Frame frame=atlas.beginFrame(java.util.Collections.emptyList(),true,GlGlyphAtlas.SamplingView.STRAIGHT_RGBA,true)){
+        try(GlFontIrisProducer producer=new GlFontIrisProducer(new Lwjgl3GlApi(),16);GlGlyphAtlas.Frame frame=atlas.beginFrame(java.util.Collections.emptyList(),true,GlGlyphAtlas.SamplingView.STRAIGHT_RGBA,true)){
             long before=atlas.stats().uploadedBytes;frame.prepare(null,new GlGlyphAtlas.UploadBudget(36,1000000000,1),false);frame.freeze();GlGlyphAtlas.Resident white=frame.solid();if(white==null)throw new AssertionError("pureSOLID whiteview未ready");if(atlas.resolve(white.resource,white.generation).target!=GL_TEXTURE_2D)throw new AssertionError("straightview不能是array sampler");
             if(atlas.stats().uploadedBytes-before>36)throw new AssertionError("white超上传budget");
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER,fbo);glViewport(0,0,width,height);glDisable(GL_DEPTH_TEST);glDisable(GL_STENCIL_TEST);glDisable(GL_SCISSOR_TEST);glDisable(GL_CULL_FACE);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);

@@ -1,4 +1,8 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
@@ -16,8 +20,8 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /** 非 JUnit 真实 CPU 链路；不加载 MC/Forge/AWT，不用 GPU 是否就绪参与度量。 */
 public final class FontTextScenario {
@@ -66,9 +70,9 @@ public final class FontTextScenario {
         TextPolicy p = policy(TextPolicy.Direction.RTL, TextPolicy.Wrap.EMERGENCY, "ar");
         TextLayout layout = service.layout("السلامعليكمالسلامعليكم", style, 65, p); facts(layout);
         require(layout.lines().size() > 1, "Arabic没有应急断行");
-        try (NativeFontService nativeService = new NativeFontService(); NativeFontFace face = arabic.openFace(nativeService, 28)) {
+        try (FontSession nativeService = new LwjglFontEngine().openSession(); FontFace face = arabic.openFace(nativeService, 28)) {
             for (TextLayout.Line line : layout.lines()) {
-                List<NativeFontFace.Glyph> actual = face.shape(line.text, 0, line.text.length(), NativeFontFace.Direction.RTL, "ar", "Arab", true, true);
+                List<ShapedGlyph> actual = face.shape(line.text, 0, line.text.length(), ShapeDirection.RTL, "ar", "Arab", true, true);
                 require(actual.size() == line.glyphs().size(), "最终Arabic行没有重新整形");
                 float advance = 0;
                 for (int i = 0; i < actual.size(); i++) {
@@ -107,10 +111,10 @@ public final class FontTextScenario {
             require(layout.lines().size() == 1 && glyphs.size() == 1, "emoji完整序列被拆开: " + sequence);
             TextLayout.Glyph g = glyphs.get(0);
             require(g.source.equals(emoji) && g.color && !g.replacement, "Unifont抢emoji或非实际彩色序列: " + sequence);
-            try (NativeFontService nativeService = new NativeFontService(); NativeFontFace face = g.source.openFace(nativeService, g.size)) {
+            try (FontSession nativeService = new LwjglFontEngine().openSession(); FontFace face = g.source.openFace(nativeService, g.size)) {
                 GlyphBitmap bitmap = face.rasterize(g.glyphId);
                 require(bitmap.color && bitmap.width > 0 && bitmap.height > 0, "plan的实际glyph身份不能生成彩色像素");
-                NativeFontFace.InkBounds bounds = g.inkBounds;
+                InkBounds bounds = g.inkBounds;
                 require(bounds.known && bounds.left <= bitmap.bearingX + .001f && bounds.top <= -bitmap.bearingY + .001f
                     && bounds.right + .001f >= bitmap.bearingX + bitmap.width * bitmap.pixelScale
                     && bounds.bottom + .001f >= -bitmap.bearingY + bitmap.height * bitmap.pixelScale,
@@ -209,7 +213,7 @@ public final class FontTextScenario {
         final TextLayout.Glyph saved = glyphs(old).get(0);
         AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
         Thread worker = new Thread(() -> {
-            try (NativeFontService scope = new NativeFontService(); NativeFontFace face = saved.source.openFace(scope, saved.size)) {
+            try (FontSession scope = new LwjglFontEngine().openSession(); FontFace face = saved.source.openFace(scope, saved.size)) {
                 require(face.rasterize(saved.glyphId).width > 0, "旧plan无法在新native线程生成同一glyph");
             } catch (Throwable error) { failure.set(error); }
         }); worker.start(); worker.join(); if (failure.get() != null) throw new AssertionError(failure.get());
@@ -243,8 +247,8 @@ public final class FontTextScenario {
         for (String text : Arrays.asList("بـب", "بــب")) {
             TextLayout layout = service.layout(text, style, 1000, TextPolicy.SINGLE_LINE); facts(layout);
             List<TextLayout.Glyph> placed = glyphs(layout);
-            try (NativeFontService scope = new NativeFontService(); NativeFontFace face = defaults.get(1).openFace(scope, style.size)) {
-                List<NativeFontFace.Glyph> reference = face.shape(text, 0, text.length(), NativeFontFace.Direction.RTL, "und", "Arab", true, true);
+            try (FontSession scope = new LwjglFontEngine().openSession(); FontFace face = defaults.get(1).openFace(scope, style.size)) {
+                List<ShapedGlyph> reference = face.shape(text, 0, text.length(), ShapeDirection.RTL, "und", "Arab", true, true);
                 require(reference.size() == placed.size(), "连接范围glyph数不一致"); float advance = 0;
                 for (int i = 0; i < reference.size(); i++) {
                     require(placed.get(i).source.equals(defaults.get(1)) && placed.get(i).glyphId == reference.get(i).glyphId,
@@ -279,7 +283,7 @@ public final class FontTextScenario {
         List<FontSource> defaults = FontTextService.defaultSources(FontTextScenario.class.getClassLoader(), 1);
         for (FontSource source : defaults) require(!source.isLoaded(), "默认候选构造时预加载全部字体");
         TextStyle style = new TextStyle("default", 24, -1);
-        try (FontTextService service = new FontTextService(defaults, 4, 8, 4096)) {
+        try (FontTextService service = new FontTextService(defaults,new LwjglFontEngine(), 4, 8, 4096)) {
             bidi(service, style); arabic(service, defaults.get(1)); indicThai(service, defaults.get(2), defaults.get(3));
             emoji(service, style, defaults.get(4)); emojiVersions(service, style); rgiBatch(service, style, root);
             controls(service, style); resources(service, defaults, style, root);

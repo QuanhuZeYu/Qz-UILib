@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -47,7 +50,7 @@ public final class VanillaFontGlScenario {
             window=glfwCreateWindow(W,H,"world font",0,0);if(window==0)throw new IllegalStateException("context");glfwMakeContextCurrent(window);GL.createCapabilities();
             System.out.println("LWJGL="+org.lwjgl.Version.getVersion()+" renderer="+glGetString(GL_RENDERER)+" version="+glGetString(GL_VERSION));
             ClientFontServices.Settings defaults=ClientFontServices.Settings.defaults();ClientFontServices.Settings settings=new ClientFontServices.Settings(defaults.cpu,args.length>0&&"array".equals(args[0])?GlGlyphAtlas.Mode.TEXTURE_ARRAY:GlGlyphAtlas.Mode.TEXTURE_2D,defaults.atlas,defaults.upload,defaults.quadCapacity,defaults.maxDemand);
-            owner=new ClientFontServices(VanillaFontGlScenario.class.getClassLoader(),1,settings);GlPaintPlanRenderer renderer=owner.sharedPlanRenderer();
+            owner=new ClientFontServices(VanillaFontGlScenario.class.getClassLoader(),1,settings,IsolatedFontEngine.shared(),new Lwjgl3GlApi(),GlProgramProvider.NONE);GlPaintPlanRenderer renderer=owner.sharedPlanRenderer();
             int texture=glGenTextures(),depth=glGenRenderbuffers(),fbo=glGenFramebuffers(),light=glGenTextures();
             try{
                 glBindTexture(GL_TEXTURE_2D,texture);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,W,H,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
@@ -135,7 +138,7 @@ public final class VanillaFontGlScenario {
                 if(owner.atlas().stats().gpuBytes-beforeBytes!=2L*owner.settings().atlas.pageSize*owner.settings().atlas.pageSize*4)throw new AssertionError("straightgroup必须各只有2D一layer bytes");
                 if(owner.rasterizer().stats().rasterized!=rasterized||owner.atlas().stats().gpuBytes<=beforeBytes||owner.atlas().stats().gpuBytes>owner.settings().atlas.gpuBytes)throw new AssertionError("双view共享CPU/GPUbudget失败");
                 // 真实回归：两view交替，每consumer仅一paddedrow/一call，partial必须各自推进到ready。
-                try(GlGlyphAtlas alternating=new GlGlyphAtlas(owner.settings().mode,owner.settings().atlas)){
+                try(GlGlyphAtlas alternating=new GlGlyphAtlas(new Lwjgl3GlApi(),owner.settings().mode,owner.settings().atlas)){
                     int rowBytes=(bitmap.width+2)*4,hits=0;int turns=2*(bitmap.height+3);
                     long beforeRaster=owner.rasterizer().stats().rasterized;
                     for(int turn=0;turn<turns;turn++)try(GlGlyphAtlas.Frame frame=alternating.beginFrame(Arrays.asList(key),true,GlGlyphAtlas.SamplingView.values()[turn%2])){

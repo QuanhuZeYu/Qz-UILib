@@ -94,7 +94,8 @@ public final class MinecraftVanillaFont {
         font.qz$tailState(text.terminalColor(source,style,color));
     }
     private static FontRenderContext capture() {
-        if(capture==null)capture=new LwjglFontContextCapture(AngelicaMatrixStateProvider.optional(MinecraftVanillaFont.class.getClassLoader()));
+        ClientFontServices owner=MinecraftFontServices.shared();
+        if(capture==null)capture=new LwjglFontContextCapture(owner.gl(),AngelicaMatrixStateProvider.optional(MinecraftVanillaFont.class.getClassLoader(),owner.gl()));
         FontRenderContext context=capture.capture(Display.getHeight(),MinecraftFontServices.resourceRevision(),0);
         FontRenderContext.MatrixState state=context.state;
         // 标准方法的显式文字颜色替换current color；布局已保存每个格式色，不重复相乘旧caller颜色。
@@ -105,7 +106,7 @@ public final class MinecraftVanillaFont {
             context.depthWrite,context.scissorEnabled,context.scissor(),fontState,context.contextIdentity,context.revision,context.passKey,context.rasterState);
     }
     private static OptionalFontHostBridge hostBridge() {
-        if(bridge==null)bridge=OptionalFontHostBridge.create(MinecraftVanillaFont.class.getClassLoader(),new OptionalFontHostBridge.ReplaySink(){
+        if(bridge==null)bridge=OptionalFontHostBridge.create(MinecraftVanillaFont.class.getClassLoader(),MinecraftFontServices.shared().gl(),new OptionalFontHostBridge.ReplaySink(){
             @Override public FontRenderContext capture(){return MinecraftVanillaFont.capture();}
             @Override public void registerVisible(PaintPlan plan,FontRenderContext context) {
                 ClientFontServices owner=MinecraftFontServices.shared();GlPaintPlanRenderer renderer=owner.sharedPlanRenderer();

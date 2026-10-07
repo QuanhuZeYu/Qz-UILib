@@ -1,6 +1,7 @@
 package club.heiqi.uilib.host.client.font.compat;
 
 import java.util.Objects;
+import club.heiqi.uilib.host.client.gl.GlApi;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
@@ -16,9 +17,10 @@ public interface OptionalFontHostBridge extends AutoCloseable {
     void abort();
     int pending();
     @Override void close();
-    static OptionalFontHostBridge create(ClassLoader loader,ReplaySink sink,int queueCapacity) {
+    static OptionalFontHostBridge create(ClassLoader loader,ReplaySink sink,int queueCapacity) {return create(loader,null,sink,queueCapacity);}
+    static OptionalFontHostBridge create(ClassLoader loader,GlApi gl,ReplaySink sink,int queueCapacity) {
         Objects.requireNonNull(loader,"loader");Objects.requireNonNull(sink,"sink");
-        try {return new AngelicaBridge(Class.forName("com.gtnewhorizons.angelica.client.font.BatchingFontRenderer",false,loader),loader,sink,queueCapacity);}
+        try {return new AngelicaBridge(Class.forName("com.gtnewhorizons.angelica.client.font.BatchingFontRenderer",false,loader),loader,Objects.requireNonNull(gl,"Angelica bridge须注入GlApi"),sink,queueCapacity);}
         catch(ClassNotFoundException absent){return new Direct(sink);}
         catch(LinkageError incompatible){throw new IllegalStateException("可选Angelica存在但加载失败，禁止静默旧字体回退",incompatible);}
     }

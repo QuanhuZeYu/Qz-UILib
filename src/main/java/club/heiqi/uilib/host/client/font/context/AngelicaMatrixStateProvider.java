@@ -4,8 +4,10 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.FloatBuffer;
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.GlTokens;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
 
 /** 可选Angelica 2.2.10有效状态读取，仅缓存反射入口、不持mutable JOML实例。
@@ -14,6 +16,8 @@ import club.heiqi.uilib.host.client.font.context.FontRenderContext.MatrixState;
  * 存在但不匹配时显式失败，不假装driver等价。
  * provider不拥有GL/字体对象；构造只解析入口，capture在宿主GL线程执行。 */
 public final class AngelicaMatrixStateProvider implements LwjglFontContextCapture.MatrixStateProvider {
+    private final GlApi gl;
+    @Override public GlApi gl(){return gl;}
     private final Method getFloat,getAlpha,alphaEnabled,depthWrite,getNormal,getTextures,unitMatrix,unitBinding,bindingValue,
             matrixGet,packedLight,blockEntity,lightingFactor,unitState,unitEnabled;
     private final Constructor<?> alphaConstructor,vectorConstructor;
@@ -22,18 +26,19 @@ public final class AngelicaMatrixStateProvider implements LwjglFontContextCaptur
     private final Constructor<?> blendConstructor;
     private final Method[] blendGetters=new Method[10],backStencilGetters=new Method[7];
     private final Method caching,getStencil,getPolygon,offsetFactor,offsetUnits;
-    private static final int[] BACK_STENCIL_NAMES={org.lwjgl.opengl.GL20.GL_STENCIL_BACK_FUNC,org.lwjgl.opengl.GL20.GL_STENCIL_BACK_REF,
-        org.lwjgl.opengl.GL20.GL_STENCIL_BACK_VALUE_MASK,org.lwjgl.opengl.GL20.GL_STENCIL_BACK_WRITEMASK,org.lwjgl.opengl.GL20.GL_STENCIL_BACK_FAIL,
-        org.lwjgl.opengl.GL20.GL_STENCIL_BACK_PASS_DEPTH_FAIL,org.lwjgl.opengl.GL20.GL_STENCIL_BACK_PASS_DEPTH_PASS};
+    private static final int[] BACK_STENCIL_NAMES={GlTokens.GL_STENCIL_BACK_FUNC,GlTokens.GL_STENCIL_BACK_REF,
+        GlTokens.GL_STENCIL_BACK_VALUE_MASK,GlTokens.GL_STENCIL_BACK_WRITEMASK,GlTokens.GL_STENCIL_BACK_FAIL,
+        GlTokens.GL_STENCIL_BACK_PASS_DEPTH_FAIL,GlTokens.GL_STENCIL_BACK_PASS_DEPTH_PASS};
     private final Field brightnessX,brightnessY,vectorX,vectorY,vectorZ,instance;
-    public static LwjglFontContextCapture.MatrixStateProvider optional(ClassLoader loader) {
+    public static LwjglFontContextCapture.MatrixStateProvider optional(ClassLoader loader,GlApi gl) {
         final Class<?> glsm;
         try { glsm=Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager",false,loader); }
-        catch(ClassNotFoundException absent) { return LwjglFontContextCapture.compatibility(); }
+        catch(ClassNotFoundException absent) { return LwjglFontContextCapture.compatibility(gl); }
         catch(LinkageError mismatch) {throw new IllegalStateException("Angelica有效状态类无法加载，不能回退legacy矩阵",mismatch);}
-        return new AngelicaMatrixStateProvider(glsm,loader);
+        return new AngelicaMatrixStateProvider(glsm,loader,gl);
     }
-    private AngelicaMatrixStateProvider(Class<?> glsm,ClassLoader loader) {
+    private AngelicaMatrixStateProvider(Class<?> glsm,ClassLoader loader,GlApi gl) {
+        this.gl=java.util.Objects.requireNonNull(gl,"gl");
         try {
             getFloat=glsm.getMethod("glGetFloat",int.class,FloatBuffer.class);
             getInteger=glsm.getMethod("glGetInteger",int.class);getIntegers=glsm.getMethod("glGetInteger",int.class,java.nio.IntBuffer.class);
@@ -65,13 +70,13 @@ public final class AngelicaMatrixStateProvider implements LwjglFontContextCaptur
     }
     @Override public MatrixState capture() {
         try {
-            float[] p=read(GL11.GL_PROJECTION_MATRIX,16),mv=read(GL11.GL_MODELVIEW_MATRIX,16),color=read(GL11.GL_CURRENT_COLOR,4);
+            float[] p=read(GlTokens.GL_PROJECTION_MATRIX,16),mv=read(GlTokens.GL_MODELVIEW_MATRIX,16),color=read(GlTokens.GL_CURRENT_COLOR,4);
             Object alpha=alphaConstructor.newInstance();getAlpha.invoke(null,alpha);
             Object textures=getTextures.invoke(null);int texture=((Number)bindingValue.invoke(unitBinding.invoke(textures,1))).intValue();
             // 专用宿主font判据：BatchingFontRenderer.isWorldSpaceText以m33()==0识别透视。
             // 它不是通用world分类；custom projection应使用显式MatrixStateProvider。
             boolean lit=p[15]==0 && texture!=0 && (Boolean)unitEnabled.invoke(unitState.invoke(textures,1));float u=0,v=0;int packed=0;
-            if(lit){float[] m=new float[16];FloatBuffer out=BufferUtils.createFloatBuffer(16);matrixGet.invoke(unitMatrix.invoke(textures,1),out);for(int i=0;i<16;i++)m[i]=out.get(i);
+            if(lit){float[] m=new float[16];FloatBuffer out=buffer(64).asFloatBuffer();matrixGet.invoke(unitMatrix.invoke(textures,1),out);for(int i=0;i<16;i++)m[i]=out.get(i);
                 float x=brightnessX.getFloat(null),y=brightnessY.getFloat(null);u=m[0]*x+m[4]*y+m[12];v=m[1]*x+m[5]*y+m[13];packed=((Number)packedLight.invoke(null)).intValue();}
             Object n=getNormal.invoke(null);float[] normal=vector(n);float[] factor={1,1,1};
             if(p[15]==0){Object dest=vectorConstructor.newInstance();if((Boolean)lightingFactor.invoke(null,dest))factor=vector(dest);}
@@ -85,12 +90,12 @@ public final class AngelicaMatrixStateProvider implements LwjglFontContextCaptur
         if((Boolean)caching.invoke(null))for(int i=0;i<BACK_STENCIL_NAMES.length;i++)if(name==BACK_STENCIL_NAMES[i])return ((Number)backStencilGetters[i].invoke(getStencil.invoke(null))).intValue();
         return ((Number)getInteger.invoke(null,name)).intValue();
     }catch(ReflectiveOperationException error){throw failure(error);}}
-    @Override public int[] integers(int name,int count){try{java.nio.IntBuffer out=BufferUtils.createIntBuffer(count);getIntegers.invoke(null,name,out);int[] a=new int[count];for(int i=0;i<count;i++)a[i]=out.get(i);return a;}catch(ReflectiveOperationException error){throw failure(error);}}
+    @Override public int[] integers(int name,int count){try{java.nio.IntBuffer out=buffer(count*4).asIntBuffer();getIntegers.invoke(null,name,out);int[] a=new int[count];for(int i=0;i<count;i++)a[i]=out.get(i);return a;}catch(ReflectiveOperationException error){throw failure(error);}}
     @Override public boolean enabled(int name){try{return (Boolean)isEnabled.invoke(null,name);}catch(ReflectiveOperationException error){throw failure(error);}}
-    @Override public boolean[] booleans(int name,int count){try{java.nio.ByteBuffer out=BufferUtils.createByteBuffer(count);getBooleans.invoke(null,name,out);boolean[] a=new boolean[count];for(int i=0;i<count;i++)a[i]=out.get(i)!=0;return a;}catch(ReflectiveOperationException error){throw failure(error);}}
+    @Override public boolean[] booleans(int name,int count){try{java.nio.ByteBuffer out=buffer(count);getBooleans.invoke(null,name,out);boolean[] a=new boolean[count];for(int i=0;i<count;i++)a[i]=out.get(i)!=0;return a;}catch(ReflectiveOperationException error){throw failure(error);}}
     @Override public float[] floats(int name,int count){try{
-        if(count==1&&(name==GL11.GL_POLYGON_OFFSET_FACTOR||name==GL11.GL_POLYGON_OFFSET_UNITS)&&(Boolean)caching.invoke(null))
-            return new float[]{((Number)(name==GL11.GL_POLYGON_OFFSET_FACTOR?offsetFactor:offsetUnits).invoke(getPolygon.invoke(null))).floatValue()};
+        if(count==1&&(name==GlTokens.GL_POLYGON_OFFSET_FACTOR||name==GlTokens.GL_POLYGON_OFFSET_UNITS)&&(Boolean)caching.invoke(null))
+            return new float[]{((Number)(name==GlTokens.GL_POLYGON_OFFSET_FACTOR?offsetFactor:offsetUnits).invoke(getPolygon.invoke(null))).floatValue()};
         return read(name,count);
     }catch(ReflectiveOperationException error){throw failure(error);}}
     @Override public FontRenderContext.RasterState rasterState(){
@@ -107,7 +112,8 @@ public final class AngelicaMatrixStateProvider implements LwjglFontContextCaptur
                 raw.stencilEnabled,raw.frontStencil,raw.backStencil,raw.colorMask(),raw.depthRange(),raw.cullEnabled,raw.cullFace,raw.frontFace,raw.polygonOffsetFill,raw.polygonOffsetFactor,raw.polygonOffsetUnits);
         }catch(ReflectiveOperationException error){throw failure(error);}
     }
+    private static ByteBuffer buffer(int size){if(size<0||size>1024)throw new IllegalArgumentException("有效状态buffer越界");return ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder());}
     private static IllegalStateException failure(Exception error){return new IllegalStateException("Angelica有效光栅状态读取失败；未降级driver",error);}
     private float[] vector(Object v)throws IllegalAccessException{return new float[]{vectorX.getFloat(v),vectorY.getFloat(v),vectorZ.getFloat(v)};}
-    private float[] read(int name,int length)throws ReflectiveOperationException {FloatBuffer buffer=BufferUtils.createFloatBuffer(length);getFloat.invoke(null,name,buffer);float[] result=new float[length];for(int i=0;i<length;i++)result[i]=buffer.get(i);return result;}
+    private float[] read(int name,int length)throws ReflectiveOperationException {FloatBuffer buffer=buffer(length*4).asFloatBuffer();getFloat.invoke(null,name,buffer);float[] result=new float[length];for(int i=0;i<length;i++)result[i]=buffer.get(i);return result;}
 }

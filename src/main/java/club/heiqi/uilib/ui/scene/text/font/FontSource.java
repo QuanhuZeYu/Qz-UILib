@@ -13,8 +13,8 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /**
  * 实际字体字节的只读资源代际。内置资源首次使用才加载；加载一次后保留完整字节快照。
@@ -96,7 +96,7 @@ public final class FontSource {
     public int byteSize() { return snapshot().length; }
     public String contentFingerprint() { snapshot(); return contentHash; }
     /** 调用线程所属 native 作用域中创建新 face；不共享服务中的可变 face。 */
-    public NativeFontFace openFace(NativeFontService service, float emSize) {
+    public FontFace openFace(FontSession service, float emSize) {
         return service.openFace(ByteBuffer.wrap(snapshot()).asReadOnlyBuffer(), faceIndex, emSize);
     }
     @Override public boolean equals(Object other) {

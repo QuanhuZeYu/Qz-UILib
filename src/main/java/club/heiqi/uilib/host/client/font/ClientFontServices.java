@@ -12,7 +12,9 @@ import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
-import org.lwjgl.opengl.GL;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
 import club.heiqi.uilib.host.client.gl.GlGlyphAtlas;
 import club.heiqi.uilib.host.client.gl.GlPaintPlanRenderer;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -49,6 +51,8 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
     }
     private final Thread thread=Thread.currentThread();
     private final Settings settings;
+    private final GlApi gl;
+    private final GlProgramProvider programs;
     private final FontTextService fonts;
     private final AsyncGlyphRasterizer rasterizer;
     private final List<GlPaintPlanRenderer> renderers=new ArrayList<GlPaintPlanRenderer>();
@@ -145,17 +149,18 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
             }
         }catch(RuntimeException|Error failure){if(automatic&&preparedCount==0)endPresentation();throw failure;}
     }
-    public ClientFontServices(ClassLoader sources,long revision,Settings settings) throws IOException {
-        this(sources,revision,settings,false);
+    public ClientFontServices(ClassLoader sources,long revision,Settings settings,FontEngine engine,GlApi gl,GlProgramProvider programs) throws IOException {
+        this(sources,revision,settings,false,engine,gl,programs);
     }
     /** 具有真实present通知的宿主选择保留整个呈现范围；首次消费懒启动，
      * 所有短Prepared仍须逐次关闭，宿主在交换窗口缓冲之前调用endPresentation。
      * 无present边界的独立consumer沿用默认自动单次范围。 */
-    public ClientFontServices(ClassLoader sources,long revision,Settings settings,boolean presentationBoundaryRequired) throws IOException {
+    public ClientFontServices(ClassLoader sources,long revision,Settings settings,boolean presentationBoundaryRequired,FontEngine engine,GlApi gl,GlProgramProvider programs) throws IOException {
         this.presentationBoundaryRequired=presentationBoundaryRequired;
+        this.gl=Objects.requireNonNull(gl,"gl");this.programs=Objects.requireNonNull(programs,"programs");
         this.settings=Objects.requireNonNull(settings,"settings");
-        fonts=new FontTextService(FontTextService.defaultSources(sources,revision));
-        rasterizer=new AsyncGlyphRasterizer(settings.cpu);
+        fonts=new FontTextService(FontTextService.defaultSources(sources,revision),Objects.requireNonNull(engine,"engine"),32,256,8192);
+        rasterizer=new AsyncGlyphRasterizer(settings.cpu,engine);
     }
     private void check(){if(Thread.currentThread()!=thread)throw new IllegalStateException("客户端字体owner仅限创建线程");if(closed)throw new IllegalStateException("客户端字体owner已关闭");}
     public FontTextService fonts(){check();return fonts;}
@@ -163,6 +168,7 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
     @Override public TextLayout layout(String text,TextStyle style,int availableWidth,TextPolicy policy){check();return fonts.layout(text,style,availableWidth,policy);}
     public AsyncGlyphRasterizer rasterizer(){check();return rasterizer;}
     public Settings settings(){return settings;}
+    public GlApi gl(){check();return gl;}
     public boolean hasGlResources(){check();return atlas!=null;}
     public long readyVersion(){check();return readyVersion;}
     /** 宿主每帧准备阶段主动pump；ready只影响资源可画，不递增布局/字体度量代际。 */
@@ -172,15 +178,14 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
     public void reload(ClassLoader loader,long revision) throws IOException {check();fonts.reload(FontTextService.defaultSources(loader,revision));}
     public GlGlyphAtlas atlas() {
         check();if(atlas==null) {
-            try{GL.getCapabilities();}catch(IllegalStateException noCapabilities){GL.createCapabilities();}
-            if(!GL.getCapabilities().OpenGL32)throw new IllegalStateException("共享字体backend要求GL3.2+");
-            atlas=new GlGlyphAtlas(settings.mode,settings.atlas);
+            if(!gl.capabilities().openGL32)throw new IllegalStateException("共享字体backend要求实际GL3.2+能力，不能以bindings版本推断");
+            atlas=new GlGlyphAtlas(gl,settings.mode,settings.atlas);
         }
         return atlas;
     }
     /** 返回screen/consumer拥有的renderer；release只释放这份quad，不影响共享缓存。 */
     public GlPaintPlanRenderer createPlanRenderer() {
-        check();GlPaintPlanRenderer renderer=new GlPaintPlanRenderer(rasterizer,atlas(),settings.quadCapacity,settings.maxDemand);
+        check();GlPaintPlanRenderer renderer=new GlPaintPlanRenderer(gl,rasterizer,atlas(),settings.quadCapacity,settings.maxDemand,programs);
         renderers.add(renderer);return renderer;
     }
     public void releasePlanRenderer(GlPaintPlanRenderer renderer) {

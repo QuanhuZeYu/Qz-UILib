@@ -1,4 +1,5 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -16,8 +17,8 @@ import club.heiqi.uilib.ui.scene.text.format.MinecraftFormat;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 /** 真实属性文本集成，覆盖格式来源、完整簇、逻辑度量/实际采样事实，不运行MC。 */
 public final class AttributedTextScenario {
  static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
@@ -81,11 +82,11 @@ public final class AttributedTextScenario {
   for(float density:new float[]{1,1.5f,2,3,4}){
    TextLayout sampled=service.sample(logical,new RasterSampling(density,1));require(sampled.advanceWidth==logical.advanceWidth&&sampled.advanceHeight==logical.advanceHeight,"采样改变逻辑度量");
    List<TextLayout.Glyph> a=glyphs(logical),b=glyphs(sampled);require(a.size()==b.size(),"采样重排glyph");
-   try(NativeFontService scope=new NativeFontService()){
+   try(FontSession scope=new LwjglFontEngine().openSession()){
     for(int i=0;i<b.size();i++){TextLayout.Glyph g=b.get(i),old=a.get(i);
      require(g.glyphId==old.glyphId&&g.x==old.x&&g.y==old.y&&g.xAdvance==old.xAdvance&&g.size==style.logicalEm*density&&Math.abs(g.rasterToLayout*density-1)<.00001f,"采样glyph身份/位置/比例改变");
      require(g.rasterStyle.boldOffset==density&&g.resolvedStyle!=null,"变体offset不是实际raster单位");
-     try(NativeFontFace face=g.source.openFace(scope,g.size)){GlyphBitmap bitmap=face.rasterize(g.glyphId,g.rasterStyle);byte[] pixels=bitmap.pixels();
+     try(FontFace face=g.source.openFace(scope,g.size)){GlyphBitmap bitmap=face.rasterize(g.glyphId,g.rasterStyle);byte[] pixels=bitmap.pixels();
       for(int y=0;y<bitmap.height;y++)for(int x=0;x<bitmap.width;x++)if(pixels[(y*bitmap.width+x)*4+3]!=0){float px=(bitmap.bearingX+(x+.5f)*bitmap.pixelScale)*g.rasterToLayout,py=(-bitmap.bearingY+(y+.5f)*bitmap.pixelScale)*g.rasterToLayout;
        require(!g.inkBounds.known||px>=g.inkBounds.left-.001f&&px<=g.inkBounds.right+.001f&&py>=g.inkBounds.top-.001f&&py<=g.inkBounds.bottom+.001f,"采样变体实际像素超logicalink");}
      }
@@ -119,7 +120,7 @@ public final class AttributedTextScenario {
  }
  public static void main(String[] args)throws Exception{
   List<FontSource> fonts=FontTextService.defaultSources(AttributedTextScenario.class.getClassLoader(),1);TextStyle style=new TextStyle("default",9f,0x7fabcdef,null,TextEffects.NORMAL,TextDecoration.NONE);
-  try(FontTextService service=new FontTextService(fonts,4,8,4096)){source(service,style);cluster(service,style);sampling(service,style);reviewRegressions(service,fonts);}
+  try(FontTextService service=new FontTextService(fonts,new LwjglFontEngine(),4,8,4096)){source(service,style);cluster(service,style);sampling(service,style);reviewRegressions(service,fonts);}
   System.out.println("AttributedTextScenario PASS realFT/HB Java8；第一切片未实现trim/混淆动画");
  }
 }

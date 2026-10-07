@@ -1,4 +1,8 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -14,8 +18,8 @@ import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /** 真实FT/HB验收：不同字体原生位图、浮点em、可见墨迹包络、彩色副本和owned worker缓存。 */
 public final class GlyphRasterStyleScenario {
@@ -28,7 +32,7 @@ public final class GlyphRasterStyleScenario {
     private static long alpha(GlyphBitmap bitmap) {
         byte[] pixels=bitmap.pixels();long sum=0;for(int i=3;i<pixels.length;i+=4)sum+=pixels[i]&255;return sum;
     }
-    private static void checkInk(GlyphBitmap bitmap,NativeFontFace.InkBounds ink,String label) {
+    private static void checkInk(GlyphBitmap bitmap,InkBounds ink,String label) {
         byte[] pixels=bitmap.pixels();int visible=0,colored=0;
         for(int y=0;y<bitmap.height;y++)for(int x=0;x<bitmap.width;x++) {
             int i=(y*bitmap.width+x)*4,a=pixels[i+3]&255;
@@ -54,7 +58,7 @@ public final class GlyphRasterStyleScenario {
         image.getRaster().setDataElements(0,0,bitmap.width,bitmap.height,values);ImageIO.write(image,"png",file);
     }
     /** 不重写滤波算法：只验收整数位移、不相交副本应保留原生每个颜色通道。 */
-    private static void disjointCopy(NativeFontFace face,int glyphId,GlyphBitmap original) {
+    private static void disjointCopy(FontFace face,int glyphId,GlyphBitmap original) {
         int distance=original.width+4;
         GlyphBitmap copy=face.rasterize(glyphId,new GlyphRasterStyle(distance*original.pixelScale,0));
         byte[] before=original.pixels(),after=copy.pixels();
@@ -67,11 +71,11 @@ public final class GlyphRasterStyleScenario {
             require(Math.abs(expected-first)<=1&&Math.abs(expected-second)<=1,"disjoint COPY lost native color");
         }
     }
-    private static void nativeCase(FontSource source,float em,String text,NativeFontFace.Direction direction,File output)throws Exception {
-        try(NativeFontService service=new NativeFontService();NativeFontFace face=source.openFace(service,em)) {
-            List<NativeFontFace.Glyph> shaped=face.shape(text,direction,null);
+    private static void nativeCase(FontSource source,float em,String text,ShapeDirection direction,File output)throws Exception {
+        try(FontSession service=new LwjglFontEngine().openSession();FontFace face=source.openFace(service,em)) {
+            List<ShapedGlyph> shaped=face.shape(text,direction,null);
             require(!shaped.isEmpty(),"shape empty");int checked=0;
-            for(NativeFontFace.Glyph glyph:shaped) {
+            for(ShapedGlyph glyph:shaped) {
                 GlyphBitmap normal=face.rasterize(glyph.glyphId);if(alpha(normal)==0)continue;
                 GlyphBitmap explicit=face.rasterize(glyph.glyphId,GlyphRasterStyle.NORMAL);
                 require(normal.width==explicit.width&&normal.height==explicit.height&&normal.bearingX==explicit.bearingX
@@ -93,10 +97,10 @@ public final class GlyphRasterStyleScenario {
             try{face.rasterize(id,new GlyphRasterStyle(Float.MAX_VALUE,Float.MAX_VALUE));}
             catch(IllegalArgumentException expected){rejected=true;}
             require(rejected,"extreme variant allocated instead of rejecting");
-            List<NativeFontFace.Glyph> after=face.shape(text,direction,null);
+            List<ShapedGlyph> after=face.shape(text,direction,null);
             require(after.size()==shaped.size(),"variant mutated shaping face");
             for(int i=0;i<after.size();i++) {
-                NativeFontFace.Glyph a=shaped.get(i),b=after.get(i);
+                ShapedGlyph a=shaped.get(i),b=after.get(i);
                 require(a.glyphId==b.glyphId&&a.cluster==b.cluster&&a.xAdvance==b.xAdvance&&a.yAdvance==b.yAdvance
                     &&a.xOffset==b.xOffset&&a.yOffset==b.yOffset,"variant mutated HB identity/position");
             }
@@ -114,16 +118,16 @@ public final class GlyphRasterStyleScenario {
     }
     private static void cacheCase(FontSource source,File fonts)throws Exception {
         int glyphId;long normalBytes;
-        try(NativeFontService service=new NativeFontService();NativeFontFace face=source.openFace(service,18.375f)) {
+        try(FontSession service=new LwjglFontEngine().openSession();FontFace face=source.openFace(service,18.375f)) {
             glyphId=face.glyphIndex('A');GlyphBitmap b=face.rasterize(glyphId);normalBytes=(long)b.width*b.height*4;
         }
-        AsyncGlyphRasterizer worker=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(16,16,16,4*1024*1024,2,64*1024*1024,8,64));
+        AsyncGlyphRasterizer worker=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(16,16,16,4*1024*1024,2,64*1024*1024,8,64),new LwjglFontEngine());
         try {
             List<GlyphKey> keys=new ArrayList<GlyphKey>();
             for(GlyphRasterStyle style:STYLES){GlyphKey key=new GlyphKey(source,18.375f,glyphId,style);keys.add(key);for(int i=0;i<20;i++)worker.request(new GlyphKey(source,18.375f,glyphId,style));}
             require(new java.util.HashSet<GlyphKey>(keys).size()==4,"variants alias in key");
             TextLayout.Glyph declared=new TextLayout.Glyph(source,18.375f,glyphId,0,1,0,1,0,0,0,0,false,false,
-                NativeFontFace.InkBounds.UNKNOWN,9.1875f,0.5f,STYLES[3],null,0);
+                InkBounds.UNKNOWN,9.1875f,0.5f,STYLES[3],null,0);
             require(GlyphKey.of(declared).equals(keys.get(3)),"GlyphKey.of lost rasterStyle/actual em");
             waitReady(worker,keys);
             long sum=0;for(GlyphKey key:keys){GlyphBitmap b=worker.peek(key);sum+=(long)b.width*b.height*4;worker.request(key);}
@@ -139,7 +143,7 @@ public final class GlyphRasterStyleScenario {
             System.out.println("sourceGenerations cacheEntries="+worker.stats().cacheEntries+" faces="+worker.stats().faces+" oldSnapshotStable=true");
             System.out.println("cache variants=4 faces=1 rasterized="+stats.rasterized+" deduplicated="+stats.deduplicated+" bytes="+sum);
         }finally{worker.close();require(worker.awaitClose(10000)&&worker.stats().faces==0,"owned native worker close");}
-        AsyncGlyphRasterizer limited=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(4,4,4,Math.max(4,normalBytes),1,64*1024*1024,4,64));
+        AsyncGlyphRasterizer limited=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(4,4,4,Math.max(4,normalBytes),1,64*1024*1024,4,64),new LwjglFontEngine());
         try {
             GlyphKey large=new GlyphKey(source,18.375f,glyphId,new GlyphRasterStyle(256,0));limited.request(large);
             long end=System.nanoTime()+10000000000L;while(limited.failures().isEmpty()){require(System.nanoTime()<end,"budget rejection timeout");Thread.sleep(2);}
@@ -153,11 +157,11 @@ public final class GlyphRasterStyleScenario {
         require(GlyphRasterStyle.NORMAL.equals(new GlyphRasterStyle(-0f,-0f)),"signed zero style");
         boolean invalid=false;try{new GlyphRasterStyle(-1,0);}catch(IllegalArgumentException expected){invalid=true;}require(invalid,"negative offset");
         FontSource unifont=source(fonts,"unifont/unifont-16.0.04.otf",false);
-        nativeCase(unifont,18.375f,"A中",NativeFontFace.Direction.LTR,output);
-        nativeCase(source(fonts,"noto/NotoSansArabic.ttf",false),24.375f,"سلام",NativeFontFace.Direction.RTL,output);
-        nativeCase(source(fonts,"noto/NotoSansDevanagari.ttf",false),20.375f,"क्षि",NativeFontFace.Direction.LTR,output);
-        nativeCase(source(fonts,"noto/NotoSansArabic.ttf",false),0.375f,"س",NativeFontFace.Direction.RTL,output);
-        nativeCase(source(fonts,"noto/NotoColorEmoji.ttf",true),23.375f,"😀",NativeFontFace.Direction.LTR,output);
+        nativeCase(unifont,18.375f,"A中",ShapeDirection.LTR,output);
+        nativeCase(source(fonts,"noto/NotoSansArabic.ttf",false),24.375f,"سلام",ShapeDirection.RTL,output);
+        nativeCase(source(fonts,"noto/NotoSansDevanagari.ttf",false),20.375f,"क्षि",ShapeDirection.LTR,output);
+        nativeCase(source(fonts,"noto/NotoSansArabic.ttf",false),0.375f,"س",ShapeDirection.RTL,output);
+        nativeCase(source(fonts,"noto/NotoColorEmoji.ttf",true),23.375f,"😀",ShapeDirection.LTR,output);
         cacheCase(unifont,fonts);System.out.println("GLYPH_RASTER_STYLE_SCENARIO_PASS nativeVariants premultColor floatEm knownInk normalBytes faceReuse keyDedup boundedCache ownedWorkerClose");
     }
 }

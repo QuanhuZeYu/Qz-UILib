@@ -1,4 +1,5 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 
 import java.nio.FloatBuffer;
 import java.util.HashSet;
@@ -47,9 +48,9 @@ public final class FontProjectionScenario {
             int fbo=GL30.glGenFramebuffers();GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,fbo);
             try{
                 FontRenderContext context;
-                if(core){MatrixState state=MatrixState.ui(perspective(),atDepth(2));context=new LwjglFontContextCapture(LwjglFontContextCapture.explicit(state)).capture(768,9,1);reject(()->LwjglFontContextCapture.compatibility().capture());}
+                if(core){MatrixState state=MatrixState.ui(perspective(),atDepth(2));context=new LwjglFontContextCapture(new Lwjgl3GlApi(),LwjglFontContextCapture.explicit(new Lwjgl3GlApi(),state)).capture(768,9,1);reject(()->LwjglFontContextCapture.compatibility(new Lwjgl3GlApi()).capture());}
                 else{FloatBuffer p=BufferUtils.createFloatBuffer(16),mv=BufferUtils.createFloatBuffer(16);p.put(perspective()).flip();mv.put(atDepth(2)).flip();GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glLoadMatrixf(p);GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glLoadMatrixf(mv);GL11.glColor4f(.2f,.3f,.4f,.5f);GL11.glEnable(GL11.GL_ALPHA_TEST);GL11.glAlphaFunc(GL11.GL_GREATER,.2f);
-                    context=new LwjglFontContextCapture(AngelicaMatrixStateProvider.optional(FontProjectionScenario.class.getClassLoader())).capture(768,9,1);GL11.glLoadIdentity();GL11.glColor4f(1,1,1,1);near(context.state.color()[3],.5,1e-6);check(context.state.alphaTest,"compatalpha");}
+                    context=new LwjglFontContextCapture(new Lwjgl3GlApi(),AngelicaMatrixStateProvider.optional(FontProjectionScenario.class.getClassLoader(),new Lwjgl3GlApi())).capture(768,9,1);GL11.glLoadIdentity();GL11.glColor4f(1,1,1,1);near(context.state.color()[3],.5,1e-6);check(context.state.alphaTest,"compatalpha");}
                 GL11.glViewport(0,0,1,1);GL11.glDepthMask(true);check(context.drawFramebuffer==fbo&&!context.depthWrite&&context.scissorEnabled,"target state捕捉");check(context.sourceFramebufferHeight==768&&context.projection.viewport()[2]==800,"target高度非viewport猜测");near(context.projection.pixelsPerUnitAt(0,0,0),300,1e-5);near(context.projection.clipAt(0,0,0)[3],2,0);
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"capture不应产生legacy invalidenum");System.out.println((core?"CORE":"COMPAT")+"_PASS "+GL11.glGetString(GL11.GL_VERSION)+" immutableCapture fbo="+fbo+" density=300");
             }finally{GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,0);GL30.glDeleteFramebuffers(fbo);}

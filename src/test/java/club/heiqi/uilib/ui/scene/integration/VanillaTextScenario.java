@@ -1,4 +1,5 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -12,8 +13,8 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /** 原版适配CPU真实集成，替代一次标准文字API实机测量；不宣称GL/MC性能验收。 */
 public final class VanillaTextScenario {
@@ -22,9 +23,9 @@ public final class VanillaTextScenario {
     private static int[] palette(){int[] result=new int[32];for(int i=0;i<32;i++){int boost=(i>>3&1)*85,r=(i>>2&1)*170+boost,g=(i>>1&1)*170+boost,b=(i&1)*170+boost;if(i==6)r+=85;if(i>=16){r/=4;g/=4;b/=4;}result[i]=r<<16|g<<8|b;}return result;}
     private static void calibration(FontTextService font){for(int em:new int[]{8,9,10,12}){TextStyle style=new TextStyle("minecraft",em,-1);for(String raw:new String[]{"AiW .中","Hello, world!","بـب क्षि 👩‍💻"}){TextLayout l=font.layout(raw,style,1000,TextPolicy.SINGLE_LINE);StringBuilder detail=new StringBuilder();for(TextLayout.Glyph g:glyphs(l))detail.append(g.xAdvance).append('/').append(g.inkBounds.top).append("..").append(g.inkBounds.bottom).append(' ');System.out.println("CALIBRATION em="+em+" raw="+raw+" advance="+l.advanceWidth+" actual="+detail);}}}
     private static void actualAlpha(FontTextService font)throws Exception{
-        try(NativeFontService nativeService=new NativeFontService()){
+        try(FontSession nativeService=new LwjglFontEngine().openSession()){
             for(int em:new int[]{8,12})for(TextLayout.Glyph glyph:glyphs(font.layout("AiW中",new TextStyle("minecraft",em,-1),1000,TextPolicy.SINGLE_LINE))){
-                try(NativeFontFace face=glyph.source.openFace(nativeService,em)){GlyphBitmap bitmap=face.rasterize(glyph.glyphId);byte[] pixels=bitmap.pixels();int minY=bitmap.height,maxY=-1;
+                try(FontFace face=glyph.source.openFace(nativeService,em)){GlyphBitmap bitmap=face.rasterize(glyph.glyphId);byte[] pixels=bitmap.pixels();int minY=bitmap.height,maxY=-1;
                     for(int y=0;y<bitmap.height;y++)for(int x=0;x<bitmap.width;x++)if(pixels[(y*bitmap.width+x)*4+3]!=0){minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
                     System.out.println("ALPHA em="+em+" source="+glyph.logicalStart+" advance="+glyph.xAdvance+" actualtop="+(-bitmap.bearingY+minY*bitmap.pixelScale)+" actualbottom="+(-bitmap.bearingY+(maxY+1)*bitmap.pixelScale));
                 }
@@ -98,13 +99,13 @@ public final class VanillaTextScenario {
     }
     public static void main(String[] args)throws Exception{
         List<FontSource> fonts=FontTextService.defaultSources(VanillaTextScenario.class.getClassLoader(),1);
-        try(FontTextService font=new FontTextService(fonts,8,32,8192)){
+        try(FontTextService font=new FontTextService(fonts,new LwjglFontEngine(),8,32,8192)){
             calibration(font);actualAlpha(font);VanillaTextService adapter=new VanillaTextService(font);Settings s=new Settings(12,9,9,true,false,palette());semantics(adapter,s);sampling(adapter,s);shadowReuse(adapter,s);performance(adapter,s);
             TextLayout before=adapter.sample("ABC",s,-1,1000,TextPolicy.SINGLE_LINE,RasterSampling.LOGICAL,0,0);font.reload(fonts);TextLayout after=adapter.sample("ABC",s,-1,1000,TextPolicy.SINGLE_LINE,RasterSampling.LOGICAL,0,0);require(after!=before&&after.generation>before.generation,"资源generation没有失效缓存");
         }
-        final FontTextService[] holder={new FontTextService(fonts,8,32,8192)};VanillaTextService adapter=new VanillaTextService(()->holder[0]);Settings settings=new Settings(12,9,9,true,false,palette());
+        final FontTextService[] holder={new FontTextService(fonts,new LwjglFontEngine(),8,32,8192)};VanillaTextService adapter=new VanillaTextService(()->holder[0]);Settings settings=new Settings(12,9,9,true,false,palette());
         TextLayout frozen=adapter.layout("§k👩‍💻",settings,-1,1000,TextPolicy.SINGLE_LINE);FontSource expected=frozen.style.candidates().get(0);holder[0].close();
-        holder[0]=new FontTextService(FontTextService.defaultSources(VanillaTextScenario.class.getClassLoader(),2),8,32,8192);
+        holder[0]=new FontTextService(FontTextService.defaultSources(VanillaTextScenario.class.getClassLoader(),2),new LwjglFontEngine(),8,32,8192);
         try{TextLayout replay=adapter.sample(frozen,new RasterSampling(2,3),9,0);require(glyphs(replay).get(0).source==expected,"旧混淆plan重放偷用新代际候选");}finally{holder[0].close();}
         System.out.println("PASS vanilla old frozen plan new service keeps explicit source snapshot");
         System.out.println("VanillaTextScenario PASS real Java8 FT/HB CPU；MC视觉/GL性能待宿主验收");

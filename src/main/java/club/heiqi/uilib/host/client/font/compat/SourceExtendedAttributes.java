@@ -1,9 +1,8 @@
 package club.heiqi.uilib.host.client.font.compat;
 
-import java.nio.FloatBuffer;
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL20;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.GlTokens;
+
 
 /** 固定Angelica 2.2.10非terrain字体的来源generic值副本；没有atlas、VAO或nativebuffer引用。
  * GbufferPrograms.setBlockEntityDefaults实际写attr11=(-1,-1,0,1)、attr14=(0,0,0,0)。
@@ -14,13 +13,13 @@ public final class SourceExtendedAttributes {
     private final float[] mcEntity,midBlock;
     private SourceExtendedAttributes(float[] mcEntity,float[] midBlock){this.mcEntity=copy(mcEntity);this.midBlock=copy(midBlock);}
     private static float[] copy(float[] value){float[] result=value.clone();for(float x:result)if(!Float.isFinite(x))throw new IllegalStateException("非有限来源extended属性");return result;}
-    static SourceExtendedAttributes capture(){return new SourceExtendedAttributes(current(11),current(14));}
-    private static float[] current(int location){FloatBuffer b=BufferUtils.createFloatBuffer(4);GL20.glGetVertexAttribfv(location,GL20.GL_CURRENT_VERTEX_ATTRIB,b);return new float[]{b.get(0),b.get(1),b.get(2),b.get(3)};}
+    static SourceExtendedAttributes capture(GlApi gl){return new SourceExtendedAttributes(current(gl,11),current(gl,14));}
+    private static float[] current(GlApi gl,int location){float[] values=new float[4];gl.glGetVertexAttribfv(location,GlTokens.GL_CURRENT_VERTEX_ATTRIB,values);return values;}
     public float[] mcEntity(){return mcEntity.clone();}
     public float[] midBlock(){return midBlock.clone();}
     /** 仅匹配实际FFP浮点ABI；uint/ivec packedterrain以及额外属性须明确来源协议，不能猜值。 */
     public float[] valuesFor(String name,int shaderType){
-        if(shaderType!=GL11.GL_FLOAT&&shaderType!=GL20.GL_FLOAT_VEC2&&shaderType!=GL20.GL_FLOAT_VEC3&&shaderType!=GL20.GL_FLOAT_VEC4)
+        if(shaderType!=GlTokens.GL_FLOAT&&shaderType!=GlTokens.GL_FLOAT_VEC2&&shaderType!=GlTokens.GL_FLOAT_VEC3&&shaderType!=GlTokens.GL_FLOAT_VEC4)
             throw new IllegalStateException("字体来源FFP不提供packed/integer属性："+name+" type="+shaderType);
         if("mc_Entity".equals(name))return mcEntity();
         if("at_midBlock".equals(name))return midBlock();

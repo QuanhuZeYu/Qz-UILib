@@ -1,23 +1,23 @@
 package club.heiqi.uilib.host.client.font.compat;
 
-import java.nio.IntBuffer;
-import org.lwjgl.BufferUtils;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.GlProgramScope;
+import club.heiqi.uilib.host.client.gl.GlProgramAttribute;
+import club.heiqi.uilib.host.client.gl.GlTokens;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL20;
-import org.lwjgl.opengl.GL30;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 
 /** Iris pack program与Pass.use真实scope；不生成任何quad、不调用Tessellator。
  * producer必须使用自己的VAO/VBO，并依据requiredAttributes给完整vertex ABI。
  * shaderpack标准sampler2D要求STRAIGHT_RGBA采样view，不能重解释共享premult页。
  * 若无world pipeline返回null；存在且ABI错误明确失败。scope只在有效宿主GL线程短期使用。 */
-public final class OptionalIrisProgramScope implements AutoCloseable {
+public final class OptionalIrisProgramScope implements GlProgramScope {
     public enum SamplingView { STRAIGHT_RGBA }
     public static final class Attribute {
         public final String name;public final int location,type,size;
@@ -28,8 +28,10 @@ public final class OptionalIrisProgramScope implements AutoCloseable {
     public final int packedLight;
     private final float[] normal;private final boolean lightmapActive;
     public final List<Attribute> requiredAttributes;
+    private final List<GlProgramAttribute> programAttributes;
     private final Object pipeline,oldInputs,oldPhase,oldTranslucency;
     private final Method setInputs,setPhase,setTranslucency,rebind,preDraw;
+    private final GlApi gl;
     private boolean closed;
     private final ProducerStateScope producer;
     public final int entityId,itemId,blockEntityId;
@@ -48,7 +50,7 @@ public final class OptionalIrisProgramScope implements AutoCloseable {
         }catch(ClassNotFoundException absent){if("net.coderbot.iris.Iris".equals(absent.getMessage()))return null;throw new IllegalStateException("Iris存在但必需ABI类缺失",absent);}
         catch(ReflectiveOperationException|LinkageError error){throw new IllegalStateException("Iris采样view查询失败，未静默使用premult atlas",error);}
     }
-    public static OptionalIrisProgramScope open(ClassLoader loader,FontRenderContext context) {
+    public static OptionalIrisProgramScope open(ClassLoader loader,GlApi gl,FontRenderContext context) {
         HostProgramSnapshot source=HostProgramSnapshot.current();
         if(source!=null&&!source.active)return null;
         final Class<?> iris;
@@ -63,11 +65,11 @@ public final class OptionalIrisProgramScope implements AutoCloseable {
                 if(captured!=null&&captured.active)throw new IllegalStateException("延期Iris文字回放已离开有效world pass，禁止own shader回退");
                 return null;
             }
-            return new OptionalIrisProgramScope(pipeline,deferred,loader,context);
+            return new OptionalIrisProgramScope(pipeline,deferred,loader,gl,context);
         }catch(ReflectiveOperationException|LinkageError error){throw new IllegalStateException("Iris world program接口失配，禁止own shader伪兼容",error);}
     }
-    private OptionalIrisProgramScope(Object pipeline,Class<?> type,ClassLoader loader,FontRenderContext context)throws ReflectiveOperationException {
-        this.pipeline=pipeline;pipelineType=type;
+    private OptionalIrisProgramScope(Object pipeline,Class<?> type,ClassLoader loader,GlApi gl,FontRenderContext context)throws ReflectiveOperationException {
+        this.gl=java.util.Objects.requireNonNull(gl,"gl");this.pipeline=pipeline;pipelineType=type;
         Class<?> inputsType=Class.forName("net.coderbot.iris.gbuffer_overrides.matching.InputAvailability",false,loader);
         Constructor<?> inputsConstructor=inputsType.getConstructor(boolean.class,boolean.class);
         setInputs=type.getMethod("setInputs",inputsType);
@@ -77,23 +79,31 @@ public final class OptionalIrisProgramScope implements AutoCloseable {
         Field translucent=type.getDeclaredField("declaredTranslucent");translucent.setAccessible(true);oldTranslucency=translucent.get(pipeline);oldPhase=getPhase.invoke(pipeline);
         Class<?> glsm=Class.forName("com.gtnewhorizons.angelica.glsm.GLStateManager",false,loader);preDraw=glsm.getMethod("preDraw",int.class);
         packedLight=context.state.packedLight;normal=context.state.normal();lightmapActive=context.state.lightmapActive;
-        HostProgramSnapshot source=HostProgramSnapshot.current();if(source==null)source=HostProgramSnapshot.capture(loader);
+        HostProgramSnapshot source=HostProgramSnapshot.current();if(source==null)source=HostProgramSnapshot.capture(loader,gl);
         sourceExtended=source==null?null:source.extended;
         entityId=source==null?0:source.entityId;itemId=source==null?0:source.itemId;blockEntityId=context.state.blockEntityId;
         refreshUniforms=Class.forName("com.gtnewhorizons.angelica.glsm.CompatUniformManager",false,loader).getMethod("refreshCompatUniforms",int.class);
-        producer=new ProducerStateScope(loader,context,source);
+        producer=new ProducerStateScope(loader,gl,context,source);
         try{
             HostProgramSnapshot captured=HostProgramSnapshot.current();
             if(captured!=null&&captured.active)setPhase.invoke(pipeline,captured.phase);
             setTranslucency.invoke(pipeline,Boolean.TRUE);setInputs.invoke(pipeline,inputsConstructor.newInstance(true,context.state.lightmapActive));rebind.invoke(pipeline);
             programId=((Number)type.getMethod("getActivePassProgramId").invoke(pipeline)).intValue();
             if(programId<=0)throw new IllegalStateException("Iris当前font pass没有可提交program");
-            if(GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=context.drawFramebuffer)throw new IllegalStateException("Iris font pass目标FBO与来源caller target不一致，不能覆盖pack pass强行回放");
-            List<Attribute> attributes=new ArrayList<Attribute>();int count=GL20.glGetProgrami(programId,GL20.GL_ACTIVE_ATTRIBUTES);
-            for(int i=0;i<count;i++){IntBuffer size=BufferUtils.createIntBuffer(1),attributeType=BufferUtils.createIntBuffer(1);String name=GL20.glGetActiveAttrib(programId,i,size,attributeType);attributes.add(new Attribute(name,GL20.glGetAttribLocation(programId,name),attributeType.get(0),size.get(0)));}
+            if(gl.glGetInteger(GlTokens.GL_DRAW_FRAMEBUFFER_BINDING)!=context.drawFramebuffer)throw new IllegalStateException("Iris font pass目标FBO与来源caller target不一致，不能覆盖pack pass强行回放");
+            List<Attribute> attributes=new ArrayList<Attribute>();int count=gl.glGetProgrami(programId,GlTokens.GL_ACTIVE_ATTRIBUTES);
+            for(int i=0;i<count;i++){GlProgramAttribute attribute=gl.glGetActiveAttribute(programId,i);attributes.add(new Attribute(attribute.name,attribute.location,attribute.type,attribute.size));}
             requiredAttributes=Collections.unmodifiableList(attributes);
+            List<GlProgramAttribute> exposed=new ArrayList<GlProgramAttribute>();for(Attribute a:attributes)exposed.add(new GlProgramAttribute(a.name,a.location,a.type,a.size));programAttributes=Collections.unmodifiableList(exposed);
         }catch(ReflectiveOperationException|RuntimeException error){try{producer.close();}catch(RuntimeException cleanup){error.addSuppressed(cleanup);}try{restore();}catch(ReflectiveOperationException restoreFailure){error.addSuppressed(restoreFailure);}throw error;}
     }
+    @Override public int programId(){return programId;}
+    @Override public int packedLight(){return packedLight;}
+    @Override public List<GlProgramAttribute> attributes(){return programAttributes;}
+    @Override public float[] extended(String name,int type){return freezeSourceExtendedAttributes().valuesFor(name,type);}
+    @Override public void configure(int vao,int vbo,int ebo,boolean uv,boolean color,boolean lightmap,boolean normal){configureProducer(vao,vbo,ebo,uv,color,lightmap,normal);}
+    @Override public void pointer(int location,int size,int type,boolean normalized,int stride,long offset){producer.pointer(location,size,type,normalized,stride,offset);}
+    @Override public void disable(int location){producer.disable(location);}
     public float[] normal(){return normal.clone();}
     /** 来源时间冻结的FFP generic属性；延期回放不会读取当前mesh属性。 */
     public SourceExtendedAttributes freezeSourceExtendedAttributes(){if(sourceExtended==null)throw new IllegalStateException("缺少来源FFP extended属性");return sourceExtended;}
@@ -113,7 +123,7 @@ public final class OptionalIrisProgramScope implements AutoCloseable {
     }
     /** producer完成VAO/effective flags同步后调用，刷新当前宿主兼容uniform/扩展属性。
      * 不代替producer设置midUV/entity/tangent，不能只凭此就宣称全pack ABI通过。 */
-    public void beforeDraw(){if(closed)throw new IllegalStateException("Iris program scope已关闭");try{preDraw.invoke(null,GL11.GL_TRIANGLES);if(GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM)!=programId)throw new IllegalStateException("Iris preDraw改变了已匹配的pack program，拒绝错误vertex ABI提交");}catch(ReflectiveOperationException error){throw new IllegalStateException("Iris draw prehook失败",error);}}
+    public void beforeDraw(){if(closed)throw new IllegalStateException("Iris program scope已关闭");try{preDraw.invoke(null,GlTokens.GL_TRIANGLES);if(gl.glGetInteger(GlTokens.GL_CURRENT_PROGRAM)!=programId)throw new IllegalStateException("Iris preDraw改变了已匹配的pack program，拒绝错误vertex ABI提交");}catch(ReflectiveOperationException error){throw new IllegalStateException("Iris draw prehook失败",error);}}
     private void restore()throws ReflectiveOperationException{setPhase.invoke(pipeline,oldPhase);setTranslucency.invoke(pipeline,oldTranslucency);setInputs.invoke(pipeline,oldInputs);rebind.invoke(pipeline);}
     @Override public void close(){if(!closed){closed=true;try{producer.close();}finally{try{restore();int restored=((Number)pipelineType.getMethod("getActivePassProgramId").invoke(pipeline)).intValue();if(restored>0)refreshUniforms.invoke(null,restored);}catch(ReflectiveOperationException error){throw new IllegalStateException("Iris pass scope恢复失败",error);}}}}
 }

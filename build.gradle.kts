@@ -51,12 +51,23 @@ val orderedBatchScenario by tasks.registering(JavaExec::class) {
 }
 tasks.named("check") { dependsOn(coreLoopScenario, orderedBatchScenario) }
 
-// 与目标LWJGL3ify实例的正式3.4.2对齐。宿主提供核心/字体native，发布jar不重复打入LWJGL。
+// GPU bindings由宿主提供；CPU字体bindings以嵌套jar隔离发行，不覆盖LWJGL2/3宿主的同名类。
 val fontBindings by configurations.creating
 val fontNativeRuntime by configurations.creating { extendsFrom(fontBindings) }
 val fontUnicodeRuntime by configurations.creating
+val isolatedFontRuntime by configurations.creating
+val lwjgl2Bindings by configurations.creating
 dependencies {
     add(fontUnicodeRuntime.name, "com.ibm.icu:icu4j:76.1")
+    add(lwjgl2Bindings.name, "org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209") { isTransitive = false }
+    listOf("lwjgl", "lwjgl-freetype", "lwjgl-harfbuzz").forEach {
+        add(isolatedFontRuntime.name, "org.lwjgl:$it:3.4.2") { isTransitive = false }
+    }
+    listOf("natives-windows", "natives-windows-x86", "natives-windows-arm64", "natives-linux", "natives-linux-arm64", "natives-macos", "natives-macos-arm64").forEach { classifier ->
+        listOf("lwjgl", "lwjgl-freetype").forEach { module ->
+            add(isolatedFontRuntime.name, "org.lwjgl:$module:3.4.2:$classifier") { isTransitive = false }
+        }
+    }
     listOf("lwjgl", "lwjgl-freetype", "lwjgl-harfbuzz", "lwjgl-opengl", "lwjgl-glfw").forEach {
         add(fontBindings.name, "org.lwjgl:$it:3.4.2") { isTransitive = false }
     }
@@ -75,6 +86,81 @@ configurations.named("compileOnly") { extendsFrom(fontBindings) }
 // PointerBuffer与BufferUtils须使用LWJGL3核心，不能被旧LWJGL2编译classpath遮蔽。
 tasks.named<JavaCompile>("compileJava") { classpath = fontBindings + classpath }
 tasks.named<JavaCompile>("compileTestJava") { classpath = fontBindings + classpath }
+val isolatedFontResources = layout.buildDirectory.dir("generated/isolated-font")
+val packageFontBindings by tasks.registering {
+    inputs.files(isolatedFontRuntime)
+    outputs.dir(isolatedFontResources)
+    doLast {
+        val destination = isolatedFontResources.get().dir("assets/qz_uilib/runtime/font").asFile
+        destination.mkdirs()
+        val artifacts = isolatedFontRuntime.files.sortedBy { it.name }
+        artifacts.forEach { it.copyTo(File(destination, it.name), overwrite = true) }
+        File(destination, "index.txt").writeText(artifacts.joinToString("\n") { it.name } + "\n", Charsets.UTF_8)
+    }
+}
+sourceSets.getByName("main").resources.srcDir(isolatedFontResources)
+tasks.named("processResources") { dependsOn(packageFontBindings) }
+tasks.named<Jar>("sourcesJar") {
+    dependsOn(packageFontBindings)
+    exclude("assets/qz_uilib/runtime/font/**")
+    from("src/lwjgl2/java")
+}
+val lwjgl2Sources = sourceSets.create("lwjgl2") {
+    java.srcDir("src/lwjgl2/java")
+    compileClasspath = sourceSets.getByName("main").output + lwjgl2Bindings
+    runtimeClasspath = output + compileClasspath
+}
+tasks.named<JavaCompile>(lwjgl2Sources.compileJavaTaskName) {
+    dependsOn(tasks.named("compileJava"))
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.compilerArgs.add("-proc:none")
+}
+tasks.named<Jar>("jar") { from(lwjgl2Sources.output) }
+tasks.named<Jar>("shadowJar") { from(lwjgl2Sources.output) }
+val coreFontClasses = layout.buildDirectory.dir("classes/core-font")
+val compileCoreFontScenario by tasks.registering(JavaCompile::class) {
+    source(fileTree("src/main/java/club/heiqi/uilib/ui/scene/text") { include("**/*.java") })
+    source("src/test/java/club/heiqi/uilib/ui/scene/integration/CoreFontEngineScenario.java")
+    classpath = fontUnicodeRuntime
+    destinationDirectory.set(coreFontClasses)
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.compilerArgs.add("-proc:none")
+}
+val coreFontEngineScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "不含Minecraft、Forge或LWJGL的真实核心合同运行"
+    dependsOn(compileCoreFontScenario)
+    classpath = files(coreFontClasses, "src/main/resources") + fontUnicodeRuntime
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.CoreFontEngineScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+}
+tasks.named("check") { dependsOn(coreFontEngineScenario) }
+val lwjgl2TestSources = sourceSets.create("lwjgl2Test") {
+    java.srcDir("src/lwjgl2Test/java")
+    compileClasspath = sourceSets.getByName("main").output + lwjgl2Sources.output + lwjgl2Bindings
+    runtimeClasspath = output + compileClasspath + fontUnicodeRuntime
+}
+tasks.named<JavaCompile>(lwjgl2TestSources.compileJavaTaskName) {
+    dependsOn(tasks.named(lwjgl2Sources.classesTaskName))
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.compilerArgs.add("-proc:none")
+}
+val lwjgl2HostScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "原LWJGL2默认Display context、正式字体owner和共享GPU像素验收"
+    dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractHeadlessNatives")
+    classpath = lwjgl2TestSources.runtimeClasspath
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.Lwjgl2HostScenario")
+    val legacyJava = providers.gradleProperty("fontLegacyJava")
+    if (legacyJava.isPresent) setExecutable(legacyJava.get())
+    else javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    args(providers.gradleProperty("fontWorldAtlasMode").getOrElse("2d"))
+    jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("headless/natives").get().asFile.absolutePath)
+}
 val nativeFontScenario by tasks.registering(JavaExec::class) {
     group = "verification"
     description = "Java8独立运行正式字体整形/彩色像素与资源生命周期场景"

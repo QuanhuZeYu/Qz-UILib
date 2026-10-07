@@ -1,4 +1,6 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
 
 import java.util.Arrays;
 import org.lwjgl.glfw.GLFW;
@@ -51,13 +53,14 @@ public final class FontDeferredStateScenario {
     }
     private static void effectiveProvider(){
         LwjglFontContextCapture.MatrixStateProvider effective=new LwjglFontContextCapture.MatrixStateProvider(){
+            public GlApi gl(){return new Lwjgl3GlApi();}
             public FontRenderContext.MatrixState capture(){return FontRenderContext.MatrixState.ui(IDENTITY,IDENTITY);}
-            public int[] integers(int name,int count){if(name==GL11.GL_VIEWPORT)return new int[]{1,2,30,40};if(name==GL11.GL_SCISSOR_BOX)return new int[]{4,6,8,10};throw new AssertionError("unexpected int vector");}
+            public int[] integers(int name,int count){if(name==GL11.GL_VIEWPORT)return new int[]{1,2,30,40};if(name==GL11.GL_SCISSOR_BOX)return new int[]{4,6,8,10};return LwjglFontContextCapture.MatrixStateProvider.super.integers(name,count);}
             public int integer(int name){if(name==GL11.GL_DEPTH_FUNC)return GL11.GL_GEQUAL;return LwjglFontContextCapture.MatrixStateProvider.super.integer(name);}
             public boolean enabled(int name){if(name==GL11.GL_DEPTH_TEST||name==GL11.GL_SCISSOR_TEST)return true;return LwjglFontContextCapture.MatrixStateProvider.super.enabled(name);}
             public boolean[] booleans(int name,int count){if(name==GL11.GL_DEPTH_WRITEMASK)return new boolean[]{false};return LwjglFontContextCapture.MatrixStateProvider.super.booleans(name,count);}
         };
-        FontRenderContext a=new LwjglFontContextCapture(effective).capture(64,7,11);
+        FontRenderContext a=new LwjglFontContextCapture(new Lwjgl3GlApi(),effective).capture(64,7,11);
         require(a.depthTest&&!a.depthWrite&&a.depthFunction==GL11.GL_GEQUAL&&a.scissorEnabled&&Arrays.equals(a.scissor(),new int[]{4,6,8,10})&&Arrays.equals(a.projection.viewport(),new int[]{1,2,30,40}),"effective provider ignored for historical depth/viewport/scissor");
         require(!GL11.glIsEnabled(GL11.GL_DEPTH_TEST)&&GL11.glGetInteger(GL11.GL_DEPTH_FUNC)==GL11.GL_LESS,"provider wrote driver");
     }
@@ -65,7 +68,7 @@ public final class FontDeferredStateScenario {
         GLFW.glfwDefaultWindowHints();GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,3);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,compatibility?3:2);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,compatibility?GLFW.GLFW_OPENGL_COMPAT_PROFILE:GLFW.GLFW_OPENGL_CORE_PROFILE);
         long window=GLFW.glfwCreateWindow(64,64,"font-deferred",0,0);require(window!=0,"hidden context");GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();int fboA=GL30.glGenFramebuffers(),fboB=GL30.glGenFramebuffers();
         try {
-            LwjglFontContextCapture capture=new LwjglFontContextCapture(compatibility?LwjglFontContextCapture.compatibility():LwjglFontContextCapture.explicit(FontRenderContext.MatrixState.ui(IDENTITY,IDENTITY)));
+            LwjglFontContextCapture capture=new LwjglFontContextCapture(new Lwjgl3GlApi(),compatibility?LwjglFontContextCapture.compatibility(new Lwjgl3GlApi()):LwjglFontContextCapture.explicit(new Lwjgl3GlApi(),FontRenderContext.MatrixState.ui(IDENTITY,IDENTITY)));
             if(compatibility){GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glLoadIdentity();GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glLoadIdentity();GL11.glDisable(GL11.GL_LIGHTING);}
             stateA(fboA);FontRenderContext a=capture.capture(64,5,9);verifyA(a,fboA);stateB(fboB);FontRenderContext b=capture.capture(64,6,10);
             require(!b.rasterState.blendEnabled&&!b.depthTest&&b.depthWrite&&b.drawFramebuffer==fboB,"stateB captured");verifyA(a,fboA);

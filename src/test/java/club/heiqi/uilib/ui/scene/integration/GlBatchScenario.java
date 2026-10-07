@@ -1,4 +1,6 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -256,10 +258,10 @@ public final class GlBatchScenario {
         glEnable(GL_CULL_FACE);glEnable(GL_DEPTH_TEST);glEnable(GL_SCISSOR_TEST);glScissor(3,5,7,11);glActiveTexture(GL_TEXTURE3);
         int[] before=state();
         String name=array?"array":"2d";
-        try(GlQuadRenderer renderer=new GlQuadRenderer(CAPACITY,(resource,generation)->{
+        try(GlQuadRenderer renderer=new GlQuadRenderer(new Lwjgl3GlApi(),CAPACITY,(resource,generation)->{
             if(generation!=7)throw new IllegalArgumentException("过期资源代际");
             return new Texture(array?GL_TEXTURE_2D_ARRAY:GL_TEXTURE_2D,ids[Math.toIntExact(resource)-1]);
-        })) {
+        },GlProgramProvider.NONE)) {
             restored(before);if(glGetInteger(GL_ELEMENT_ARRAY_BUFFER_BINDING)!=seedEbo)throw new AssertionError("构造污染 EBO");
             glDisable(GL_SCISSOR_TEST);glClearColor(0,0,0,0);glClear(GL_COLOR_BUFFER_BIT);glEnable(GL_SCISSOR_TEST);
             List<OrderedQuadBatch> segments=new ArrayList<>();

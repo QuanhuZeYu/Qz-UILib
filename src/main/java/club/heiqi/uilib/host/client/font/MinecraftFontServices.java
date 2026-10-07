@@ -1,6 +1,9 @@
 package club.heiqi.uilib.host.client.font;
 
 import java.io.IOException;
+import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.client.gl.GlApi;
+import club.heiqi.uilib.host.client.font.compat.IrisProgramProvider;
 import java.io.InputStream;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IReloadableResourceManager;
@@ -25,7 +28,8 @@ public final class MinecraftFontServices {
         IResourceManager resources=Minecraft.getMinecraft().getResourceManager();
         if(!(resources instanceof IReloadableResourceManager))throw new IllegalStateException("字体资源要求可重载MC ResourceManager");
         ResourceFonts initial=new ResourceFonts(resources,thread);
-        try{shared=new ClientFontServices(initial,++revision,ClientFontServices.Settings.defaults(),true);loader=initial;}
+        try{GlApi gl=MinecraftGlHost.create();shared=new ClientFontServices(initial,++revision,ClientFontServices.Settings.defaults(),true,
+            IsolatedFontEngine.shared(),gl,new IrisProgramProvider(MinecraftFontServices.class.getClassLoader(),gl));loader=initial;}
         catch(IOException failure){throw new IllegalStateException("客户端字体服务安装失败",failure);}
         installed=true;
         ((IReloadableResourceManager)resources).registerReloadListener(new IResourceManagerReloadListener(){

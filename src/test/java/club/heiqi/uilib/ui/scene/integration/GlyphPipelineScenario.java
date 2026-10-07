@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -38,7 +41,7 @@ public final class GlyphPipelineScenario {
     private static final LayoutBox VIEWPORT=new LayoutBox(0,0,W,H);
     private static final float[] MVP={2f/W,0,0,0,0,-2f/H,0,0,0,0,1,0,-1,1,0,1};
     private static final GlGlyphAtlas.UploadBudget UPLOAD=new GlGlyphAtlas.UploadBudget(4096,10000000,2);
-    private static AsyncGlyphRasterizer cpu(){return new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(128,512,128,8*1024*1024,4,96*1024*1024,16,96));}
+    private static AsyncGlyphRasterizer cpu(){return new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(128,512,128,8*1024*1024,4,96*1024*1024,16,96),IsolatedFontEngine.shared());}
     private static PaintPlan plan(FontTextService fonts) {
         PaintPlanBuilder builder=new PaintPlanBuilder();builder.add(PaintCommand.rect(VIEWPORT,null,0xff182030));
         String[] texts={"中文 Latin e\u0301 שלום 123 العربية", "कर्म क्षि বাংলা ไทย ภาษา", "👩🏽‍💻 🇨🇳 1️⃣ 😀 ❤️ ♥︎"};
@@ -112,8 +115,8 @@ public final class GlyphPipelineScenario {
     }
     private static int[] run(GlGlyphAtlas.Mode mode,PaintPlan plan,File output) throws Exception {
         AsyncGlyphRasterizer cpu=cpu();String name=mode==GlGlyphAtlas.Mode.TEXTURE_2D?"2d":"array";
-        try(GlGlyphAtlas atlas=new GlGlyphAtlas(mode,new GlGlyphAtlas.Budget(256,2,8,256,128,4*1024*1024));
-            GlPaintPlanRenderer renderer=new GlPaintPlanRenderer(cpu,atlas,64,128)) {
+        try(GlGlyphAtlas atlas=new GlGlyphAtlas(new Lwjgl3GlApi(),mode,new GlGlyphAtlas.Budget(256,2,8,256,128,4*1024*1024));
+            GlPaintPlanRenderer renderer=new GlPaintPlanRenderer(new Lwjgl3GlApi(),cpu,atlas,64,128,GlProgramProvider.NONE)) {
             try(GlPaintPlanRenderer.Prepared hidden=renderer.prepare(hidden(plan),VIEWPORT,UPLOAD)) {
                 if(hidden.demandCount()!=0||cpu.stats().started)throw new AssertionError("clip外一万字形启动队列");
             }
@@ -162,7 +165,7 @@ public final class GlyphPipelineScenario {
             GlyphBitmap b=cpu.peek(key);if(b!=null&&!b.color&&b.width>0&&b.height>0&&b.width<62&&b.height<62)small.add(key);
         }
         if(small.size()<3)throw new AssertionError("不足压力测试字形");
-        try(GlGlyphAtlas tiny=new GlGlyphAtlas(GlGlyphAtlas.Mode.TEXTURE_2D,new GlGlyphAtlas.Budget(64,1,1,1,32,64*64*4))) {
+        try(GlGlyphAtlas tiny=new GlGlyphAtlas(new Lwjgl3GlApi(),GlGlyphAtlas.Mode.TEXTURE_2D,new GlGlyphAtlas.Budget(64,1,1,1,32,64*64*4))) {
             GlGlyphAtlas.Resident old=null;long evictions=0;
             for(GlyphKey key:small) {
                 try(GlGlyphAtlas.Frame frame=tiny.beginFrame(Collections.singletonList(key))) {
@@ -196,7 +199,7 @@ public final class GlyphPipelineScenario {
     }
     private static void cpuPressure(PaintPlan plan) throws Exception {
         List<GlyphKey> keys=new ArrayList<GlyphKey>(keys(plan));
-        AsyncGlyphRasterizer worker=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(1,1,1,1024*1024,1,96*1024*1024,1,96));
+        AsyncGlyphRasterizer worker=new AsyncGlyphRasterizer(new AsyncGlyphRasterizer.Budget(1,1,1,1024*1024,1,96*1024*1024,1,96),IsolatedFontEngine.shared());
         try {
             for(int i=0;i<3;i++) {
                 GlyphKey key=keys.get(i);worker.request(key);long end=System.nanoTime()+10000000000L;
@@ -233,7 +236,7 @@ public final class GlyphPipelineScenario {
             window=glfwCreateWindow(W,H,"UILib glyph pipeline",0,0);if(window==0)throw new IllegalStateException("GLFW window failed");glfwMakeContextCurrent(window);GL.createCapabilities();
             System.out.println("LWJGL="+org.lwjgl.Version.getVersion()+" Java="+System.getProperty("java.version")+" vendor="+glGetString(GL_VENDOR)+" renderer="+glGetString(GL_RENDERER)+" version="+glGetString(GL_VERSION));
             int target=glGenTextures(),fbo=glGenFramebuffers(),pbo=glGenBuffers(),sentinel2d=glGenTextures(),sentinelArray=glGenTextures();
-            try(FontTextService fonts=new FontTextService()) {
+            try(FontTextService fonts=new FontTextService(IsolatedFontEngine.shared())) {
                 glBindTexture(GL_TEXTURE_2D,target);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,W,H,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
                 glBindFramebuffer(GL_FRAMEBUFFER,fbo);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,target,0);
                 if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE)throw new AssertionError("FBO incomplete");glViewport(0,0,W,H);glDisable(GL_DITHER);glDisable(GL_FRAMEBUFFER_SRGB);

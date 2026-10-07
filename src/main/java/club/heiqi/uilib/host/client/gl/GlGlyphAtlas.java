@@ -1,6 +1,10 @@
 package club.heiqi.uilib.host.client.gl;
 
+import static club.heiqi.uilib.host.client.gl.GlTokens.*;
+
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Objects;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -8,11 +12,9 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import org.lwjgl.system.MemoryUtil;
 import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import static org.lwjgl.opengl.GL32C.*;
 
 /** GL上下文线程的稀疏、按需图集。mono/color 分页，数组的层数由预算指定。
  * Frame 在 prepare 收集整个范围的可见需求并 pin，freeze 后只读，不在 draw 中上传或淘汰。
@@ -86,6 +88,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
         Upload(GlyphKey key,GlyphBitmap bitmap,Resident resident,int x,int y){this.key=key;this.bitmap=bitmap;this.resident=resident;this.x=x;this.y=y;}
     }
     private final Thread thread=Thread.currentThread();
+    private final GlApi gl;private final ByteBuffer whiteScratch=ByteBuffer.allocateDirect(36).order(ByteOrder.nativeOrder());private ByteBuffer uploadScratch;
     private final Mode mode;private final Budget budget;private final int layers,target;
     private final LinkedHashMap<Long,Group> groups=new LinkedHashMap<Long,Group>();
     private final Map<ViewKey,Resident> residents=new HashMap<ViewKey,Resident>();
@@ -94,10 +97,11 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
     // 两种资源格式各保留一个partial；同原生bitmap对象，不新增CPUviewcache或长期Frame。
     private final java.util.EnumMap<SamplingView,Upload> partials=new java.util.EnumMap<SamplingView,Upload>(SamplingView.class);
     private UploadState preparingState;
-    public GlGlyphAtlas(Mode mode,Budget budget) {
+    public GlGlyphAtlas(GlApi gl,Mode mode,Budget budget) {
+        this.gl=Objects.requireNonNull(gl,"gl");
         this.mode=java.util.Objects.requireNonNull(mode,"mode");this.budget=java.util.Objects.requireNonNull(budget,"budget");
         layers=mode==Mode.TEXTURE_ARRAY?budget.layers:1;target=mode==Mode.TEXTURE_ARRAY?GL_TEXTURE_2D_ARRAY:GL_TEXTURE_2D;
-        if(budget.pageSize>glGetInteger(GL_MAX_TEXTURE_SIZE)||layers>glGetInteger(GL_MAX_ARRAY_TEXTURE_LAYERS)
+        if(budget.pageSize>gl.glGetInteger(GL_MAX_TEXTURE_SIZE)||layers>gl.glGetInteger(GL_MAX_ARRAY_TEXTURE_LAYERS)
             ||(long)budget.pageSize*budget.pageSize*layers*4>budget.gpuBytes)throw new IllegalArgumentException("图集配置超出GL能力/预算");
     }
     private void check(){if(Thread.currentThread()!=thread)throw new IllegalStateException("图集仅限所属GL线程");if(closed)throw new IllegalStateException("图集已关闭");}
@@ -150,9 +154,9 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
                     if(whiteGroup==null&&remaining>=36&&calls<uploadBudget.calls&&System.nanoTime()-start<uploadBudget.nanos)whiteGroup=createGroup(false,view);
                     if(whiteGroup!=null){whiteGroup.pinned=true;whiteGroup.lastUsed=++clock;
                         if(!whiteGroup.whiteReady&&remaining>=36&&calls<uploadBudget.calls&&System.nanoTime()-start<uploadBudget.nanos){
-                            ByteBuffer whiteData=MemoryUtil.memAlloc(36);try{for(int i=0;i<36;i++)whiteData.put((byte)255);whiteData.flip();glBindTexture(whiteGroup.target,whiteGroup.texture);
-                                glTexSubImage2D(whiteGroup.target,0,0,0,3,3,GL_RGBA,GL_UNSIGNED_BYTE,whiteData);
-                            }finally{MemoryUtil.memFree(whiteData);}whiteGroup.whiteReady=true;remaining-=36;calls++;uploadedBytes+=36;uploadCalls++;
+                            ByteBuffer whiteData=whiteScratch;whiteData.clear();try{for(int i=0;i<36;i++)whiteData.put((byte)255);whiteData.flip();gl.glBindTexture(whiteGroup.target,whiteGroup.texture);
+                                gl.glTexSubImage2D(whiteGroup.target,0,0,0,3,3,GL_RGBA,GL_UNSIGNED_BYTE,whiteData);
+                            }finally{}whiteGroup.whiteReady=true;remaining-=36;calls++;uploadedBytes+=36;uploadCalls++;
                         }
                         if(whiteGroup.whiteReady)white=new Resident(whiteGroup,budget.pageSize);
                     }
@@ -170,11 +174,11 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
                         int rows=(int)Math.min(totalRows-job.row,remaining/rowBytes);
                         // 复用小块提交，单次 staging 不超过64KiB；宽行本身是最小预算单位。
                         rows=Math.min(rows,Math.max(1,65536/rowBytes));
-                        ByteBuffer data=MemoryUtil.memCalloc(Math.multiplyExact(rows,rowBytes));
+                        ByteBuffer data=uploadScratch(Math.multiplyExact(rows,rowBytes));
                         try {
                             // MASK straight view的RGB恒白，含alpha0 gutter；避免linear过滤覆盖率时二次变暗。
                             // COLOR view的alpha0 RGB定义为0，保持明确RGBA格式而不偷偷改premult页。
-                            if(view==SamplingView.STRAIGHT_RGBA&&!job.bitmap.color)for(int i=0;i<data.capacity();i+=4){data.put(i,(byte)255);data.put(i+1,(byte)255);data.put(i+2,(byte)255);}
+                            if(view==SamplingView.STRAIGHT_RGBA&&!job.bitmap.color)for(int i=0;i<data.limit();i+=4){data.put(i,(byte)255);data.put(i+1,(byte)255);data.put(i+2,(byte)255);}
                             ByteBuffer source=job.bitmap.pixelsBuffer();
                             for(int r=0;r<rows;r++) {
                                 int bitmapRow=job.row+r-1;if(bitmapRow<0||bitmapRow>=job.bitmap.height)continue;
@@ -185,11 +189,11 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
                                     for(int c=0;c<3;c++){int premult=source.get(offset+c)&255;data.put((byte)(!job.bitmap.color?255:a==0?0:Math.min(255,(premult*255+a/2)/a)));}data.put((byte)a);}
                                 source.limit(source.capacity());
                             }
-                            data.position(0);data.limit(rows*rowBytes);glBindTexture(job.resident.group.target,job.resident.group.texture);
-                            if(job.resident.group.target==GL_TEXTURE_2D_ARRAY)glTexSubImage3D(job.resident.group.target,0,job.x,job.y+job.row,job.resident.layer,
+                            data.position(0);data.limit(rows*rowBytes);gl.glBindTexture(job.resident.group.target,job.resident.group.texture);
+                            if(job.resident.group.target==GL_TEXTURE_2D_ARRAY)gl.glTexSubImage3D(job.resident.group.target,0,job.x,job.y+job.row,job.resident.layer,
                                 job.bitmap.width+2,rows,1,GL_RGBA,GL_UNSIGNED_BYTE,data);
-                            else glTexSubImage2D(job.resident.group.target,0,job.x,job.y+job.row,job.bitmap.width+2,rows,GL_RGBA,GL_UNSIGNED_BYTE,data);
-                        }finally{MemoryUtil.memFree(data);}
+                            else gl.glTexSubImage2D(job.resident.group.target,0,job.x,job.y+job.row,job.bitmap.width+2,rows,GL_RGBA,GL_UNSIGNED_BYTE,data);
+                        }finally{}
                         long bytes=(long)rows*rowBytes;remaining-=bytes;uploadedBytes+=bytes;uploadCalls++;calls++;job.row+=rows;
                     }
                     if(job.row==totalRows) {
@@ -219,17 +223,17 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
         int groupTarget=view==SamplingView.STRAIGHT_RGBA?GL_TEXTURE_2D:target,groupLayers=view==SamplingView.STRAIGHT_RGBA?1:layers;
         long size=(long)budget.pageSize*budget.pageSize*groupLayers*4;
         while(groups.size()>=budget.maxGroups||gpuBytes+size>budget.gpuBytes)if(!evict()){rejected++;return null;}
-        int texture=glGenTextures();
+        int texture=gl.glGenTextures();
         try {
-            glBindTexture(groupTarget,texture);glTexParameteri(groupTarget,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(groupTarget,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-            glTexParameteri(groupTarget,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(groupTarget,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-            glTexParameteri(groupTarget,GL_TEXTURE_BASE_LEVEL,0);glTexParameteri(groupTarget,GL_TEXTURE_MAX_LEVEL,0);
-            if(groupTarget==GL_TEXTURE_2D_ARRAY)glTexImage3D(groupTarget,0,GL_RGBA8,budget.pageSize,budget.pageSize,groupLayers,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
-            else glTexImage2D(groupTarget,0,GL_RGBA8,budget.pageSize,budget.pageSize,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
+            gl.glBindTexture(groupTarget,texture);gl.glTexParameteri(groupTarget,GL_TEXTURE_MIN_FILTER,GL_LINEAR);gl.glTexParameteri(groupTarget,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+            gl.glTexParameteri(groupTarget,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);gl.glTexParameteri(groupTarget,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+            gl.glTexParameteri(groupTarget,GL_TEXTURE_BASE_LEVEL,0);gl.glTexParameteri(groupTarget,GL_TEXTURE_MAX_LEVEL,0);
+            if(groupTarget==GL_TEXTURE_2D_ARRAY)gl.glTexImage3D(groupTarget,0,GL_RGBA8,budget.pageSize,budget.pageSize,groupLayers,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
+            else gl.glTexImage2D(groupTarget,0,GL_RGBA8,budget.pageSize,budget.pageSize,0,GL_RGBA,GL_UNSIGNED_BYTE,(ByteBuffer)null);
             Group group=new Group(nextResource++,nextGeneration++,texture,color,groupLayers,view,groupTarget);groups.put(group.resource,group);gpuBytes+=size;createdGroups++;
             if(view==SamplingView.STRAIGHT_RGBA)group.pages[0].allocate(3,3,budget.pageSize);
             return group;
-        }catch(RuntimeException|Error failure){glDeleteTextures(texture);throw failure;}
+        }catch(RuntimeException|Error failure){gl.glDeleteTextures(texture);throw failure;}
     }
     private Upload place(GlyphKey key,GlyphBitmap bitmap,Group group,int layer,int w,int h) {
         int[] pos=group.pages[layer].allocate(w,h,budget.pageSize);group.pinned=true;group.lastUsed=++clock;
@@ -241,34 +245,36 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
         // 不删除宿主仍绑定的资源；预算不足留白，不能破坏上传进入态或其他单元。
         java.util.HashSet<Integer> bound=new java.util.HashSet<Integer>();
         if(preparingState!=null){bound.add(preparingState.two);bound.add(preparingState.array);}
-        int activeUnit=glGetInteger(GL_ACTIVE_TEXTURE),units=glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
-        try{for(int i=0;i<units;i++){glActiveTexture(GL_TEXTURE0+i);bound.add(glGetInteger(GL_TEXTURE_BINDING_2D_ARRAY));bound.add(glGetInteger(GL_TEXTURE_BINDING_2D));}}
-        finally{glActiveTexture(activeUnit);}
+        int activeUnit=gl.glGetInteger(GL_ACTIVE_TEXTURE),units=gl.glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+        try{for(int i=0;i<units;i++){gl.glActiveTexture(GL_TEXTURE0+i);bound.add(gl.glGetInteger(GL_TEXTURE_BINDING_2D_ARRAY));bound.add(gl.glGetInteger(GL_TEXTURE_BINDING_2D));}}
+        finally{gl.glActiveTexture(activeUnit);}
         Group candidate=null;for(Group group:groups.values())if(!group.pinned&&!bound.contains(group.texture)&&!hasPartial(group)
             &&(candidate==null||group.lastUsed<candidate.lastUsed))candidate=group;
         if(candidate==null)return false;
         for(ViewKey key:candidate.keys)residents.remove(key);
-        groups.remove(candidate.resource);glDeleteTextures(candidate.texture);gpuBytes-=(long)budget.pageSize*budget.pageSize*candidate.pages.length*4;evictedGroups++;return true;
+        groups.remove(candidate.resource);gl.glDeleteTextures(candidate.texture);gpuBytes-=(long)budget.pageSize*budget.pageSize*candidate.pages.length*4;evictedGroups++;return true;
     }
     /** 只读取已 freeze 的 pin 范围，不上传、不创建、不推测资源代际。 */
+    /** 单atlas可复用scratch，最大为64KiB或一行；每上传清零padding而不分配native行buffer。 */
+    private ByteBuffer uploadScratch(int bytes){if(uploadScratch==null||uploadScratch.capacity()<bytes)uploadScratch=ByteBuffer.allocateDirect(Math.max(bytes,65536)).order(ByteOrder.nativeOrder());uploadScratch.clear();uploadScratch.limit(bytes);for(int i=0;i<bytes;i++)uploadScratch.put(i,(byte)0);return uploadScratch;}
     @Override public GlQuadRenderer.Texture resolve(long resource,long generation) {
         check();if(active==null||!active.frozen)throw new IllegalStateException("先冻结图集范围");
         Group group=groups.get(resource);if(group==null||!group.pinned||group.generation!=generation)throw new IllegalArgumentException("失效图集资源");
         return new GlQuadRenderer.Texture(group.target,group.texture);
     }
     /** 上传触及的状态集中保存/恢复；host 的 unpack PBO 与各布局参数不能渗入 CPU 指针。 */
-    private static final class UploadState implements AutoCloseable {
-        final int unit=glGetInteger(GL_ACTIVE_TEXTURE),pbo=glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
+    private final class UploadState implements AutoCloseable {
+        final int unit=gl.glGetInteger(GL_ACTIVE_TEXTURE),pbo=gl.glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
         final int[] names={GL_UNPACK_ALIGNMENT,GL_UNPACK_ROW_LENGTH,GL_UNPACK_IMAGE_HEIGHT,GL_UNPACK_SKIP_PIXELS,GL_UNPACK_SKIP_ROWS,GL_UNPACK_SKIP_IMAGES,GL_UNPACK_SWAP_BYTES,GL_UNPACK_LSB_FIRST};
         final int[] values=new int[names.length];final int two,array;
         UploadState() {
-            for(int i=0;i<names.length;i++)values[i]=glGetInteger(names[i]);
-            glActiveTexture(GL_TEXTURE0);two=glGetInteger(GL_TEXTURE_BINDING_2D);array=glGetInteger(GL_TEXTURE_BINDING_2D_ARRAY);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER,0);for(int name:names)glPixelStorei(name,name==GL_UNPACK_ALIGNMENT?1:0);
+            for(int i=0;i<names.length;i++)values[i]=gl.glGetInteger(names[i]);
+            gl.glActiveTexture(GL_TEXTURE0);two=gl.glGetInteger(GL_TEXTURE_BINDING_2D);array=gl.glGetInteger(GL_TEXTURE_BINDING_2D_ARRAY);
+            gl.glBindBuffer(GL_PIXEL_UNPACK_BUFFER,0);for(int name:names)gl.glPixelStorei(name,name==GL_UNPACK_ALIGNMENT?1:0);
         }
-        @Override public void close(){glBindTexture(GL_TEXTURE_2D,two);glBindTexture(GL_TEXTURE_2D_ARRAY,array);glActiveTexture(unit);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER,pbo);for(int i=0;i<names.length;i++)glPixelStorei(names[i],values[i]);}
+        @Override public void close(){gl.glBindTexture(GL_TEXTURE_2D,two);gl.glBindTexture(GL_TEXTURE_2D_ARRAY,array);gl.glActiveTexture(unit);
+            gl.glBindBuffer(GL_PIXEL_UNPACK_BUFFER,pbo);for(int i=0;i<names.length;i++)gl.glPixelStorei(names[i],values[i]);}
     }
     @Override public void close(){if(closed)return;check();if(active!=null)throw new IllegalStateException("先结束图集范围");
-        for(Group group:groups.values())glDeleteTextures(group.texture);groups.clear();residents.clear();uploading=null;partials.clear();gpuBytes=0;closed=true;}
+        for(Group group:groups.values())gl.glDeleteTextures(group.texture);groups.clear();residents.clear();uploading=null;partials.clear();gpuBytes=0;closed=true;}
 }

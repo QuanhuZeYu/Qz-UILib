@@ -1,9 +1,10 @@
 package club.heiqi.uilib.host.client.gl;
 
+import static club.heiqi.uilib.host.client.gl.GlTokens.*;
+
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import club.heiqi.uilib.host.client.font.context.FontRenderContext;
-import club.heiqi.uilib.host.client.font.compat.OptionalIrisProgramScope;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadCollector;
@@ -13,7 +14,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.font.glyph.AsyncGlyphRasterizer;
 import club.heiqi.uilib.ui.scene.text.font.glyph.GlyphKey;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace.InkBounds;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 /** 正式 PaintPlan 回放：位置只消费不可变 Glyph，不重新布局、读取 scene 或等待字形。
  * 调用方先 prepare（资源上传/失效通知边界），再 replay（固定MVP/depth/pass），最后关闭 Prepared。
@@ -23,13 +24,15 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace.InkBounds;
  * CPU与atlas由宿主持有，可跨renderer复用；本类仅拥有自己的quad backend。
  */
 public final class GlPaintPlanRenderer implements AutoCloseable {
+    private final GlProgramProvider programs;
     private final AsyncGlyphRasterizer cpu;private final GlGlyphAtlas atlas;private final GlQuadRenderer quads;
     private final int capacity,maxDemand;
     private long clippedGlyphs,demandOverflow,blankGlyphs,drawnGlyphs;
-    public GlPaintPlanRenderer(AsyncGlyphRasterizer cpu,GlGlyphAtlas atlas,int quadCapacity,int maxDemand) {
+    public GlPaintPlanRenderer(GlApi gl,AsyncGlyphRasterizer cpu,GlGlyphAtlas atlas,int quadCapacity,int maxDemand,GlProgramProvider programs) {
+        this.programs=Objects.requireNonNull(programs,"programs");
         if(maxDemand<1)throw new IllegalArgumentException("无效需求预算");
         this.cpu=Objects.requireNonNull(cpu,"cpu");this.atlas=Objects.requireNonNull(atlas,"atlas");
-        capacity=quadCapacity;this.maxDemand=maxDemand;quads=new GlQuadRenderer(quadCapacity,atlas);
+        capacity=quadCapacity;this.maxDemand=maxDemand;quads=new GlQuadRenderer(gl,quadCapacity,atlas,programs);
     }
     public long clippedGlyphs(){return clippedGlyphs;}
     public long demandOverflow(){return demandOverflow;}
@@ -67,7 +70,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
         Objects.requireNonNull(context,"context");return prepareDemandView(plan,GlFontVisibility.viewport(context),budget,admitted,false,onClose,resolveSamplingView(context));
     }
     public GlGlyphAtlas.SamplingView resolveSamplingView(FontRenderContext context) {
-        return OptionalIrisProgramScope.preview(GlPaintPlanRenderer.class.getClassLoader(),context)==null?GlGlyphAtlas.SamplingView.PREMULT_RGBA:GlGlyphAtlas.SamplingView.STRAIGHT_RGBA;
+        return !programs.preview(context)?GlGlyphAtlas.SamplingView.PREMULT_RGBA:GlGlyphAtlas.SamplingView.STRAIGHT_RGBA;
     }
     public Prepared prepare(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.UploadBudget budget) {
         return prepareDemand(plan,viewport,budget,collectVisibleDemand(plan,viewport),true,null);

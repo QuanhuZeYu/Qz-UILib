@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -62,7 +65,7 @@ public final class ClientFontServicesScenario {
     }
     public static void main(String[] args)throws Exception {
         File output=new File(args.length==0?"build/font-gl-probe/client-output":args[0]);if(!output.isDirectory()&&!output.mkdirs())throw new IllegalStateException("不能建输出目录");
-        coordinates();GenerationFonts initial=new GenerationFonts();ClientFontServices owner=new ClientFontServices(initial,1,ClientFontServices.Settings.defaults());
+        coordinates();GenerationFonts initial=new GenerationFonts();ClientFontServices owner=new ClientFontServices(initial,1,ClientFontServices.Settings.defaults(),IsolatedFontEngine.shared(),new Lwjgl3GlApi(),GlProgramProvider.NONE);
         if(owner.hasGlResources()||owner.rasterizer().stats().started)throw new AssertionError("init启动GL/worker");
         TextStyle style=new TextStyle("default",20,0xfff0d050);TextLayout warm=owner.fonts().layout("中文 e\u0301 👩🏽‍💻",style,W);
         if(owner.hasGlResources()||owner.rasterizer().stats().started)throw new AssertionError("measure启动GL/worker");

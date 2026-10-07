@@ -4,7 +4,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.text.RasterSampling;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace.InkBounds;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
 
 /** 已定位计划的有界质量采样，不重排、不查询native ink、不代替GLVisibility或预算。
  * 标准宿主计划从同一Settings捕获统一logicalEm；此入口明确拒绝混字号计划。

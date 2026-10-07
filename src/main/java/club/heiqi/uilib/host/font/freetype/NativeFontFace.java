@@ -1,4 +1,13 @@
-package club.heiqi.uilib.ui.scene.text.font.nativefont;
+package club.heiqi.uilib.host.font.freetype;
+
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontMetrics;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeRun;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -18,15 +27,14 @@ import org.lwjgl.util.harfbuzz.hb_glyph_info_t;
 import org.lwjgl.util.harfbuzz.hb_glyph_position_t;
 
 /** 持有字体内存的固定字号 face；仅在所属服务的创建线程使用。无平台 GUI 依赖。 */
-public final class NativeFontFace implements AutoCloseable {
-    public enum Direction { LTR, RTL }
+public final class NativeFontFace implements FontFace {
     private final NativeFontService owner;
     private ByteBuffer bytes;
     private FT_Face face;
     private long faceAddress;
     private long font;
     private final float pixelScale;
-    private final Metrics metrics;
+    private final FontMetrics metrics;
 
     NativeFontFace(NativeFontService owner, long library, ByteBuffer source, long faceIndex, float emSize) {
         this.owner = owner;
@@ -63,7 +71,7 @@ public final class NativeFontFace implements AutoCloseable {
                 pixelScale = emSize / strikeEm;
             }
             FT_Size_Metrics m = face.size().metrics();
-            metrics = new Metrics(m.ascender() / 64.0f * pixelScale, -m.descender() / 64.0f * pixelScale,
+            metrics = new FontMetrics(m.ascender() / 64.0f * pixelScale, -m.descender() / 64.0f * pixelScale,
                     m.height() / 64.0f * pixelScale, emSize);
             font = HarfBuzz.hb_ft_font_create_referenced(face.address());
             if (font == 0 || font == HarfBuzz.hb_font_get_empty()) throw new IllegalStateException("Cannot create HarfBuzz font");
@@ -79,7 +87,7 @@ public final class NativeFontFace implements AutoCloseable {
         if (face == null) throw new IllegalStateException("Native font face is closed");
     }
 
-    public Metrics metrics() { checkOpen(); return metrics; }
+    public FontMetrics metrics() { checkOpen(); return metrics; }
     /** 墨迹的保守像素界，用于需求裁剪；不执行FT_Render_Glyph或生成像素缓存。 */
     public InkBounds glyphInkBounds(int glyphId) { return glyphInkBounds(glyphId, GlyphRasterStyle.NORMAL); }
     public InkBounds glyphInkBounds(int glyphId, GlyphRasterStyle style) {
@@ -112,22 +120,13 @@ public final class NativeFontFace implements AutoCloseable {
         float bottom = (float) Math.ceil((-m.horiBearingY() + m.height()) / 64.0) + 1;
         return new InkBounds(true, left * pixelScale, top * pixelScale, right * pixelScale, bottom * pixelScale);
     }
-    public static final class InkBounds {
-        public static final InkBounds UNKNOWN = new InkBounds(false, 0, 0, 0, 0);
-        public final boolean known;
-        /** 相对glyph定位原点，Y向下。未知界不能作为拒绝可见需求的理由。 */
-        public final float left, top, right, bottom;
-        public InkBounds(boolean known, float left, float top, float right, float bottom) {
-            this.known = known; this.left = left; this.top = top; this.right = right; this.bottom = bottom;
-        }
-    }
     public int glyphIndex(int codePoint) {
         checkOpen();
         if (!Character.isValidCodePoint(codePoint)) throw new IllegalArgumentException("Invalid code point");
         return FreeType.FT_Get_Char_Index(face, codePoint);
     }
 
-    public List<Glyph> shape(String text, Direction direction, String language) {
+    public ShapeRun shape(String text, ShapeDirection direction, String language) {
         return shape(text, 0, text.length(), direction, language, null, true, true);
     }
 
@@ -136,7 +135,7 @@ public final class NativeFontFace implements AutoCloseable {
      * script 为可空 ISO 15924 标记；空时 HB 猜测。beginning/endOfText 指真正文本边界，非普通 run 边界。
      * 输出保持 HB 顺序和向上为正的 Y；所有 advance/offset 均为请求 emSize 下的浮点单位。
      */
-    public List<Glyph> shape(String text, int start, int end, Direction direction, String language,
+    public ShapeRun shape(String text, int start, int end, ShapeDirection direction, String language,
             String script, boolean beginningOfText, boolean endOfText) {
         checkOpen();
         Objects.requireNonNull(text, "text");
@@ -152,7 +151,7 @@ public final class NativeFontFace implements AutoCloseable {
             ByteBuffer utf16 = MemoryUtil.memUTF16(text, false);
             try { HarfBuzz.hb_buffer_add_utf16(buffer, utf16, start, end - start); }
             finally { MemoryUtil.memFree(utf16); }
-            HarfBuzz.hb_buffer_set_direction(buffer, direction == Direction.LTR ? HarfBuzz.HB_DIRECTION_LTR : HarfBuzz.HB_DIRECTION_RTL);
+            HarfBuzz.hb_buffer_set_direction(buffer, direction == ShapeDirection.LTR ? HarfBuzz.HB_DIRECTION_LTR : HarfBuzz.HB_DIRECTION_RTL);
             if (language != null) HarfBuzz.hb_buffer_set_language(buffer, HarfBuzz.hb_language_from_string(language));
             if (script != null) HarfBuzz.hb_buffer_set_script(buffer, HarfBuzz.hb_script_from_string(script));
             HarfBuzz.hb_buffer_set_flags(buffer, (beginningOfText ? HarfBuzz.HB_BUFFER_FLAG_BOT : 0)
@@ -161,18 +160,18 @@ public final class NativeFontFace implements AutoCloseable {
             HarfBuzz.hb_shape(font, buffer, null);
             if (!HarfBuzz.hb_buffer_allocation_successful(buffer)) throw new OutOfMemoryError("HarfBuzz buffer allocation");
             int count = HarfBuzz.hb_buffer_get_length(buffer);
-            if (count == 0) return Collections.emptyList();
+            if (count == 0) return ShapeRun.EMPTY;
             hb_glyph_info_t.Buffer infos = HarfBuzz.hb_buffer_get_glyph_infos(buffer);
             hb_glyph_position_t.Buffer positions = HarfBuzz.hb_buffer_get_glyph_positions(buffer);
-            List<Glyph> result = new ArrayList<Glyph>(count);
+            List<ShapedGlyph> result = new ArrayList<ShapedGlyph>(count);
             float scale = pixelScale / 64.0f;
             for (int i = 0; i < count; i++) {
                 hb_glyph_info_t info = infos.get(i);
                 hb_glyph_position_t p = positions.get(i);
-                result.add(new Glyph(info.codepoint(), info.cluster(), p.x_advance() * scale, p.y_advance() * scale,
+                result.add(new ShapedGlyph(info.codepoint(), info.cluster(), p.x_advance() * scale, p.y_advance() * scale,
                         p.x_offset() * scale, p.y_offset() * scale));
             }
-            return Collections.unmodifiableList(result);
+            return new ShapeRun(result);
         } finally { HarfBuzz.hb_buffer_destroy(buffer); }
     }
 
@@ -191,7 +190,7 @@ public final class NativeFontFace implements AutoCloseable {
         if (slot.format() != FreeType.FT_GLYPH_FORMAT_BITMAP) {
             NativeFontService.check(FreeType.FT_Render_Glyph(slot, FreeType.FT_RENDER_MODE_NORMAL), "FT_Render_Glyph");
         }
-        return GlyphBitmap.copy(slot.bitmap(), slot.bitmap_left() * pixelScale, slot.bitmap_top() * pixelScale, pixelScale).styled(style);
+        return FreeTypeBitmap.copy(slot.bitmap(), slot.bitmap_left() * pixelScale, slot.bitmap_top() * pixelScale, pixelScale).styled(style);
     }
 
     @Override public void close() {
@@ -211,20 +210,4 @@ public final class NativeFontFace implements AutoCloseable {
         }
     }
 
-    /** ascender/descent 为基线上下距离，lineHeight 为 FT 的真实行高。 */
-    public static final class Metrics {
-        public final float ascent, descent, lineHeight, emSize;
-        private Metrics(float ascent, float descent, float lineHeight, float emSize) {
-            this.ascent = ascent; this.descent = descent; this.lineHeight = lineHeight; this.emSize = emSize;
-        }
-    }
-
-    public static final class Glyph {
-        public final int glyphId, cluster;
-        public final float xAdvance, yAdvance, xOffset, yOffset;
-        private Glyph(int glyphId, int cluster, float xAdvance, float yAdvance, float xOffset, float yOffset) {
-            this.glyphId = glyphId; this.cluster = cluster; this.xAdvance = xAdvance; this.yAdvance = yAdvance;
-            this.xOffset = xOffset; this.yOffset = yOffset;
-        }
-    }
 }

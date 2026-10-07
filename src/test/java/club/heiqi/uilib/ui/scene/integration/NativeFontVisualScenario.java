@@ -1,4 +1,6 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.freetype.LwjglFontEngine;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -12,9 +14,9 @@ import java.nio.file.Files;
 import java.util.List;
 import javax.imageio.ImageIO;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace.Glyph;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapedGlyph;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /** 直接回放生产HB定位和FT像素，Java2D只承担软件合成，不负责文本整形/度量/字形生成。 */
 public final class NativeFontVisualScenario {
@@ -28,13 +30,13 @@ public final class NativeFontVisualScenario {
         String[] faces = {"NotoSansArabic", "NotoSansDevanagari", "NotoSansThai", "NotoColorEmoji", "NotoColorEmoji"};
         String[] samples = {"العربية", "हिन्दी", "ภาษาไทย", "😀", "👩‍💻"};
         String[] languages = {"ar", "hi", "th", "en", "en"};
-        try (NativeFontService service = new NativeFontService()) {
+        try (FontSession service = new LwjglFontEngine().openSession()) {
             for (int row = 0; row < faces.length; row++) {
-                NativeFontFace face = service.openFace(ByteBuffer.wrap(Files.readAllBytes(new File(fonts, faces[row] + ".ttf").toPath())), 0, 36);
-                List<Glyph> glyphs = face.shape(samples[row], row == 0 ? NativeFontFace.Direction.RTL : NativeFontFace.Direction.LTR, languages[row]);
+                FontFace face = service.openFace(ByteBuffer.wrap(Files.readAllBytes(new File(fonts, faces[row] + ".ttf").toPath())), 0, 36);
+                List<ShapedGlyph> glyphs = face.shape(samples[row], row == 0 ? ShapeDirection.RTL : ShapeDirection.LTR, languages[row]);
                 float pen = 250, baseline = 50 + row * 60;
                 g.setColor(Color.WHITE); g.drawString(faces[row] + " / " + glyphs.size() + " glyphs", 15, (int) baseline);
-                for (Glyph glyph : glyphs) {
+                for (ShapedGlyph glyph : glyphs) {
                     if (glyph.glyphId == 0) throw new AssertionError("真实字形缺失：" + faces[row]);
                     GlyphBitmap bitmap = face.rasterize(glyph.glyphId);
                     if (bitmap.width > 0 && bitmap.height > 0) {

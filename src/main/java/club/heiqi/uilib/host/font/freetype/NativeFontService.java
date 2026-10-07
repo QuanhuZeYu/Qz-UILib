@@ -1,4 +1,7 @@
-package club.heiqi.uilib.ui.scene.text.font.nativefont;
+package club.heiqi.uilib.host.font.freetype;
+
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -10,7 +13,7 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.freetype.FreeType;
 
 /** 原生字体资源作用域。所有操作（含关闭）仅限创建线程，不创建线程池。 */
-public final class NativeFontService implements AutoCloseable {
+public final class NativeFontService implements FontSession {
     private final Thread thread = Thread.currentThread();
     private final Set<NativeFontFace> faces = new LinkedHashSet<NativeFontFace>();
     private long library;
@@ -26,7 +29,7 @@ public final class NativeFontService implements AutoCloseable {
     }
 
     /** 拷贝 source 的 remaining 字节；调用方可立即释放/修改自己的缓冲。 */
-    public NativeFontFace openFace(ByteBuffer source, long faceIndex, float emSize) {
+    public FontFace openFace(ByteBuffer source, long faceIndex, float emSize) {
         checkOpen();
         NativeFontFace face = new NativeFontFace(this, library, source, faceIndex, emSize);
         try {

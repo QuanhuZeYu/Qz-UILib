@@ -15,15 +15,17 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontFace;
-import club.heiqi.uilib.ui.scene.text.font.nativefont.NativeFontService;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.InkBounds;
+import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /** 原版替代near-plane欠采样真实native像素复现；其余验收只用已定位计划，完全不查询MC/GL。 */
 public final class FontPlanSamplingScenario {
     private static final float[] IDENTITY={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
     private static void require(boolean v,String message){if(!v)throw new AssertionError(message);}
     private static FontRenderContext context(float[] p,float[] mv){return new FontRenderContext(new FontProjection(p,mv,new int[]{0,0,800,600}),0,600,false,0x0201,false,false,new int[]{0,0,800,600},FontRenderContext.MatrixState.ui(p,mv),new Object(),71,0);}
-    private static PaintCommand command(FontSource source,int id,NativeFontFace.InkBounds ink,float ratio,float logicalEm){
+    private static PaintCommand command(FontSource source,int id,InkBounds ink,float ratio,float logicalEm){
         TextStyle style=new TextStyle("probe",12,0xffffffff);
         TextLayout.Glyph glyph=new TextLayout.Glyph(source,12,id,0,1,0,1,0,9,6,0,false,false,ink,logicalEm,ratio,GlyphRasterStyle.NORMAL,style,0);
         TextLayout.Line line=new TextLayout.Line("A",0,0,0,1,0,1,6,9,9,3,12,Collections.singletonList(glyph));
@@ -36,7 +38,7 @@ public final class FontPlanSamplingScenario {
         float[] p=new float[16];p[0]=p[5]=1;p[10]=-1.002002f;p[11]=-1;p[14]=-.2002002f;
         float[] mv=IDENTITY.clone();mv[0]=.01f;mv[5]=.01f;mv[6]=.2f;mv[13]=-.03f;mv[14]=-1;
         FontRenderContext world=context(p,mv);PaintCommand known;int id;
-        try(NativeFontService nativeService=new NativeFontService();NativeFontFace face=source.openFace(nativeService,12)){
+        try(FontSession nativeService=IsolatedFontEngine.shared().openSession();FontFace face=source.openFace(nativeService,12)){
             id=face.glyphIndex('A');known=command(source,id,face.glyphInkBounds(id),1,12);
             GlyphBitmap bitmap=face.rasterize(id);byte[] pixels=bitmap.pixels();int visible=0;double maximum=0;
             for(int y=0;y<bitmap.height;y++)for(int x=0;x<bitmap.width;x++)if((pixels[(y*bitmap.width+x)*4+3]&255)!=0){
@@ -52,7 +54,7 @@ public final class FontPlanSamplingScenario {
         }
         // face已关闭：后续计划采样只能消费logical ink，不可能依赖实时native ink查询。
         float[] distantMv=mv.clone();distantMv[14]=-10;FontRenderContext distant=context(p,distantMv);
-        NativeFontFace.InkBounds stored=known.text.lines().get(0).glyphs().get(0).inkBounds;double cornerDensity=0;
+        InkBounds stored=known.text.lines().get(0).glyphs().get(0).inkBounds;double cornerDensity=0;
         for(int corner=0;corner<4;corner++)cornerDensity=Math.max(cornerDensity,distant.projection.pixelsPerUnitAt((corner&1)==0?stored.left:stored.right,9+((corner&2)==0?stored.top:stored.bottom),0));
         int expectedDistant=RasterPolicy.DEFAULT.rasterEm(cornerDensity*12);
         require(Math.abs(actual(FontPlanSampling.sampling(known,distant,RasterPolicy.DEFAULT))-expectedDistant)<0.001,"positive-w four corners ignored");
@@ -62,11 +64,11 @@ public final class FontPlanSamplingScenario {
         require(Math.abs(actual(FontPlanSampling.sampling(moved,world,RasterPolicy.DEFAULT))-12)<0.001,"command box missing from logical ink coordinates");
         RasterPolicy custom=new RasterPolicy(4,12,37);require(Math.abs(actual(FontPlanSampling.sampling(known,world,custom))-37)<0.001,"hardcoded maximum");
         require(Math.abs(actual(FontPlanSampling.sampling(command(source,id,known.text.lines().get(0).glyphs().get(0).inkBounds,0.001f,12),world,custom))-37)<0.001,"logical ink multiplied by rasterToLayout twice");
-        PaintCommand unknown=command(source,id,NativeFontFace.InkBounds.UNKNOWN,1,12);
+        PaintCommand unknown=command(source,id,InkBounds.UNKNOWN,1,12);
         require(Math.abs(actual(FontPlanSampling.sampling(unknown,world,custom))-37)<0.001,"unknown perspective needs bounded conservative quality");
-        NativeFontFace.InkBounds nearOnly=new NativeFontFace.InkBounds(true,0,-4.75f,1,-4.25f);
+        InkBounds nearOnly=new InkBounds(true,0,-4.75f,1,-4.25f);
         require(Math.abs(actual(FontPlanSampling.sampling(command(source,id,nearOnly,1,12),world,custom))-37)<0.001,"positive-w near plane crossing");
-        NativeFontFace.InkBounds invalid=new NativeFontFace.InkBounds(true,Float.NaN,-8,1,0);
+        InkBounds invalid=new InkBounds(true,Float.NaN,-8,1,0);
         require(Math.abs(actual(FontPlanSampling.sampling(command(source,id,invalid,1,12),world,custom))-37)<0.001,"nonfinite ink discarded quality");
         float[] gui=IDENTITY.clone();gui[0]=2f/800;gui[5]=-2f/600;FontRenderContext screen=context(gui,IDENTITY);
         // float投影系数的精度可能把密度略推过1；按实际Jacobian向上选档，不硬塞em12。
@@ -76,7 +78,7 @@ public final class FontPlanSamplingScenario {
         PaintCommand empty=PaintCommand.text(new LayoutBox(0,0,0,0),null,new TextLayout(0,0,new TextStyle("probe",12,-1),Collections.<TextLayout.Line>emptyList()));
         RasterSampling emptySampling=FontPlanSampling.sampling(empty,world,new RasterPolicy(37));
         require(emptySampling.pixelsPerLayoutUnit==1&&emptySampling.revision==71,"empty plan changed logical quality/revision");
-        boolean rejected=false;try{FontPlanSampling.sampling(command(source,id,NativeFontFace.InkBounds.UNKNOWN,1,24),screen,custom);}catch(IllegalArgumentException expected){rejected=true;}require(rejected,"mixed logicalEm silently accepted");
+        boolean rejected=false;try{FontPlanSampling.sampling(command(source,id,InkBounds.UNKNOWN,1,24),screen,custom);}catch(IllegalArgumentException expected){rejected=true;}require(rejected,"mixed logicalEm silently accepted");
         System.out.println("FONT_PLAN_SAMPLING_SCENARIO_PASS nearEye knownInkCorners unknownBounded policyMaximum logicalInk guiStable mixedEmExplicit");
     }
 }

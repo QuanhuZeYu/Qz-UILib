@@ -1,4 +1,7 @@
 package club.heiqi.uilib.ui.scene.integration;
+import club.heiqi.uilib.host.font.IsolatedFontEngine;
+import club.heiqi.uilib.host.client.gl.Lwjgl3GlApi;
+import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -102,7 +105,7 @@ public final class AttributedGlyphGlScenario {
     }
     public static void main(String[] args)throws Exception {
         File output=new File(args.length==0?"build/font-attributed-gl/output":args[0]);if(!output.isDirectory()&&!output.mkdirs())throw new IllegalStateException("输出目录");
-        ClientFontServices owner=new ClientFontServices(AttributedGlyphGlScenario.class.getClassLoader(),1,ClientFontServices.Settings.defaults());TextLayout logical=logical(owner);
+        ClientFontServices owner=new ClientFontServices(AttributedGlyphGlScenario.class.getClassLoader(),1,ClientFontServices.Settings.defaults(),IsolatedFontEngine.shared(),new Lwjgl3GlApi(),GlProgramProvider.NONE);TextLayout logical=logical(owner);
         if(owner.hasGlResources()||owner.rasterizer().stats().started)throw new AssertionError("度量提前启动GLworker");
         GLFWErrorCallback error=GLFWErrorCallback.createPrint(System.err);error.set();long window=0;
         try {

@@ -1,9 +1,9 @@
 package club.heiqi.uilib.host.client.gl;
 
+import static club.heiqi.uilib.host.client.gl.GlTokens.*;
+
 import java.util.ArrayList;
 import java.util.List;
-import club.heiqi.uilib.host.client.font.compat.OptionalIrisProgramScope.Attribute;
-import static org.lwjgl.opengl.GL32C.*;
 
 /** active pack属性映射，不缓存program/packgeneration；未知属性必须诊断而非默认为0。 */
 final class GlFontProgramLayout {
@@ -14,8 +14,8 @@ final class GlFontProgramLayout {
     }
     final List<Binding> bindings=new ArrayList<Binding>();
     boolean uv,color,lightmap,normal;
-    GlFontProgramLayout(List<Attribute> attributes,int program) {
-        for(Attribute a:attributes){
+    GlFontProgramLayout(List<GlProgramAttribute> attributes,int program) {
+        for(GlProgramAttribute a:attributes){
             if(a.size!=1)throw new UnsupportedOperationException("Iris program "+program+"不支持attribute数组 "+a.name+" size="+a.size);
             int offset,size;
             if(a.location==0&&a.type==GL_FLOAT_VEC4){offset=0;size=4;}
