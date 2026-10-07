@@ -266,7 +266,16 @@ val fontPlanSamplingScenario by tasks.registering(JavaExec::class) {
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
     jvmArgs("-Dfile.encoding=UTF-8")
 }
-tasks.named("check") { dependsOn(vanillaTextScenario, fontHostOrderScenario, fontPlanSamplingScenario) }
+val vanillaFontThreadScenario by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "真实安装后Splash线程十个标准入口不接管，主线程保留接管"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("test").runtimeClasspath
+    mainClass.set("club.heiqi.uilib.ui.scene.integration.VanillaFontThreadScenario")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8")
+}
+tasks.named("check") { dependsOn(vanillaTextScenario, fontHostOrderScenario, fontPlanSamplingScenario, vanillaFontThreadScenario) }
 val attributedGlyphGlScenario by tasks.registering(JavaExec::class) {
     group = "verification"
     description = "整簇属性字形采样、彩色与装饰真实GL验收（需要设备）"

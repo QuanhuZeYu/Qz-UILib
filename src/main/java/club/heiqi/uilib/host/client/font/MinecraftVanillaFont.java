@@ -29,14 +29,18 @@ public final class MinecraftVanillaFont {
     private static VanillaTextService text;
     private static LwjglFontContextCapture capture;
     private static OptionalFontHostBridge bridge;
-    private static boolean installed;
+    private static Thread ownerThread;
+    private static volatile boolean installed;
     private MinecraftVanillaFont() {}
     public static void install() {
         if(installed)throw new IllegalStateException("原版字体入口重复安装");
         text=new VanillaTextService(()->MinecraftFontServices.shared().fonts());
+        ownerThread=Thread.currentThread();
         installed=true;
     }
-    public static boolean active(){return installed&&VanillaFontOptions.enabled();}
+    // Forge Splash在独立线程和context继续绘制启动字；安装后也不属于游戏字体owner。
+    // volatile安装标记发布逻辑适配器与owner，所有标准入口先判断线程，避免访问资源、缓存或GL。
+    public static boolean active(){return installed&&Thread.currentThread()==ownerThread&&VanillaFontOptions.enabled();}
     private static VanillaTextService.Settings settings(FontRendererAccess font,boolean shadow) {
         int height=font.qz$fontHeight();
         if(height<=0)throw new IllegalArgumentException("标准FONT_HEIGHT须为正数");
@@ -132,5 +136,5 @@ public final class MinecraftVanillaFont {
         return builder.build();
     }
     public static void beforePresent(){if(bridge!=null&&bridge.pending()!=0)throw new IllegalStateException("呈现之前仍有未消费的宿主字体票据："+bridge.pending());}
-    public static void close(){if(bridge!=null){bridge.close();bridge=null;}capture=null;text=null;SETTINGS.clear();installed=false;}
+    public static void close(){installed=false;if(bridge!=null){bridge.close();bridge=null;}capture=null;text=null;SETTINGS.clear();}
 }
