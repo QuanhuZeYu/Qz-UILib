@@ -236,6 +236,8 @@ UILib 采用原生 framebuffer 分辨率：布局、字号、裁剪、滚动距�
 
 LWJGL 是宿主层，不是核心的必要前提；Minecraft 位于更外层，负责游戏资源、调用语义和生命周期接入。直接使用 LWJGL 的偏好仅适用于对应宿主适配内部，不授权核心直接依赖 LWJGL，也不意味着只支持 LWJGL3。纯 Forge 1.7.10 自带的 LWJGL2 必须有可用适配，UILib 核心、自有页面与默认原版字体替代不得要求安装 LWJGL3ify、Angelica，或为迁就实现而替换该实例的 Java/LWJGL 宿主。LWJGL3ify/Angelica 存在时使用对应适配并保留既定兼容合同；缺席时通过现有宿主完成相同核心语义，不能静默退回原版字体、禁用核心功能或删减文字能力。native 资源确需随适配提供时由 UILib 的适配发行负责，不要求用户安装无关宿主 Mod。用户另行明确允许 MC 实例安装 UniMixins 以提供注入运行时；该 MC 外层依赖不进入核心，直接复用其 Mixin 能力，不自行实现注入框架。
 
+宿主适配负责所声明运行组合中的绑定、类转换和方法签名兼容。处理这些差异时保留宿主有效状态及其虚拟化管理，不通过关闭整个宿主转换链或改变全局宿主配置来绕过兼容缺口；只需要隔离的绑定在自身作用域加载。兼容修复止于 UILib 自身能力及接入边界，不扩展为修复原版游戏自身内容。具体绑定版本、转换标记、重载选择与缺陷原因随实现维护；验收使用实际发行包及目标宿主，独立绑定测试不能替代整合宿主的启动与绘制验证。
+
 验收分别覆盖：无 Minecraft/Forge/LWJGL 的核心加载与逻辑流程；纯 Forge 1.7.10、原有 Java8/LWJGL2、无 LWJGL3ify/Angelica 的实际运行；既有 LWJGL3ify/Angelica 实例的回归。两种 MC 宿主复用同一文本定位、字形需求与有序绘制合同，差异止于资源、native 绑定、GPU 提交及游戏接入，不建立第二套排版/格式/缓存引擎。独立运行器使用 LWJGL3 取得的证据只属于该宿主，不能替代无平台核心或 LWJGL2 的验收。
 
 核心平台无关，平台输入只经适配边界进入；内部布局、绘制、裁剪和输入共享 logical px，GUI Scale 转换仅在宿主边界成对发生。数据/paint 层不调用 GL，paint/replay 传递自包含、不可变绘制计划。backend/replay 恢复触碰的 GL 状态，包括宿主已有非默认裁剪、stencil 与 mask。UILib 即便在宿主边界也优先直接使用 LWJGL 宿主能力；窗口、framebuffer、原生输入与 GL 操作不优先经 Minecraft 包装方法取得。Minecraft 特有资源包、生命周期与调用语义留在专用适配层；宿主虚拟化的 GL 状态须读取其实际有效状态，不以裸驱动查询替代宿主缓存事实。通用绘制不得使用 Minecraft 的 Tessellator 等包装类，应走直接 GL 或 UILib 自有管线。物品 icon 的 Minecraft 适配可完整委托 RenderItem.renderItemAndEffectIntoGUI（含 Forge hook 与标准光照）；此适配例外不扩及通用 GUI 或渲染核心。
