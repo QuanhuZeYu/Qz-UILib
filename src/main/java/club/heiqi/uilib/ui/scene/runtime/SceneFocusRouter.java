@@ -40,6 +40,28 @@ public final class SceneFocusRouter {
         setOwner(target);
         return true;
     }
+    /** 按spec6.2当前范围的逻辑前序循环；调用方先结算声明。返回是否有有效候选，
+     * 单项仍返回true但不重复通知，无焦点正向取首项/反向取末项；不激活控件。 */
+    public boolean navigate(boolean backward) {
+        runtime.domain().checkWrite(); if (closed) return false;
+        revalidate(); Range range = top();
+        List<SceneNode> candidates = new ArrayList<>();
+        if (range.modal != null) collect(range.modal.node(), candidates);
+        else for (SceneNode root : runtime.roots()) collect(root, candidates);
+        cancelPending();
+        if (candidates.isEmpty()) { setOwner(null); return false; }
+        int current = owner == null ? -1 : candidates.indexOf(owner.node());
+        int next = current < 0 ? (backward ? candidates.size() - 1 : 0)
+            : (current + (backward ? candidates.size() - 1 : 1)) % candidates.size();
+        setOwner(runtime.captureMount(candidates.get(next)));
+        return true;
+    }
+    // 仅本次命令遍历声明树；从唯一当前范围开始，跳过失活子树，不缓存导航表或用几何排序。
+    private void collect(SceneNode node, List<SceneNode> candidates) {
+        if (!runtime.locallyInteractive(node)) return;
+        if (node.focusable()) candidates.add(node);
+        for (SceneNode child : node.children()) collect(child, candidates);
+    }
     /** 清除当前焦点并取消当前待进入选择；不取消被覆盖外层的合法恢复记录。 */
     public void clear() {
         runtime.domain().checkWrite();

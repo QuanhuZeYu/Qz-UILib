@@ -3,6 +3,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.runtime.ScenePointerRouter;
 import java.util.Objects;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -20,7 +21,13 @@ public final class SceneFramePipeline implements AutoCloseable {
     private final SceneRuntime runtime;
     private final SceneHost host;
     private final SceneLayoutEngine layout;
-    private final ArrayDeque<ScenePointerEvent> inputs = new ArrayDeque<>();
+    private static final class QueuedInput {
+        final ScenePointerEvent pointer;
+        final SceneNavigationEvent navigation;
+        QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation) { this.pointer = pointer; this.navigation = navigation; }
+        void discard(ScenePointerRouter router) { if (pointer != null) router.discardAfterFailure(pointer); }
+    }
+    private final ArrayDeque<QueuedInput> inputs = new ArrayDeque<>();
     private static final class InputBatch { boolean failed; }
     private boolean closed;
     private ScenePresentation presentation;
@@ -30,7 +37,9 @@ public final class SceneFramePipeline implements AutoCloseable {
         this.runtime = runtime; this.host = host; this.layout = new SceneLayoutEngine(measurer);
     }
     /** 宿主在域外按采集顺序递交typed输入，所有物理按钮均需递交。 */
-    public void pointer(ScenePointerEvent event) { synchronized (inputs) { checkOpen(); inputs.add(Objects.requireNonNull(event, "event")); } }
+    public void pointer(ScenePointerEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(Objects.requireNonNull(event, "event"), null)); } }
+    /** 与指针共享采集顺序；不从宿主另建焦点表。 */
+    public void navigation(SceneNavigationEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(null, Objects.requireNonNull(event, "event"))); } }
     /** 完整synthetic activation入口，不是DOWN；已有物理手势时吞掉，不绕过owner。 */
     public void click(int x, int y) { pointer(ScenePointerEvent.syntheticActivation(x, y)); }
     /** 保留现行滚轮行为，与pointer事件共享采集顺序和prepare。 */
@@ -38,7 +47,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     /** 每事件独立domain.execute→prepare→route，前handler状态影响下一事件。
      * handler失败时取消owner、仅记本批剩余物理尾部并外抛，不丢已采集的第二键。 */
     public void frame() {
-        List<ScenePointerEvent> events = new ArrayList<>();
+        List<QueuedInput> events = new ArrayList<>();
         synchronized (inputs) { checkOpen(); while (!inputs.isEmpty()) events.add(inputs.remove()); }
         InputBatch batch = new InputBatch();
         for (int i = 0; i < events.size(); i++) {
@@ -46,12 +55,17 @@ public final class SceneFramePipeline implements AutoCloseable {
             runtime.domain().execute(() -> {
                 if (batch.failed) return;
                 ScenePointerRouter router = runtime.pointerRouter();
-                if (isClosed()) { router.discardAfterFailure(events.get(index)); return; }
-                router.route(events.get(index), prepare().geometry);
+                QueuedInput event = events.get(index);
+                if (isClosed()) { event.discard(router); return; }
+                SceneGeometryView geometry = prepare().geometry;
+                if (event.pointer != null) router.route(event.pointer, geometry);
+                else runtime.focusRouter().navigate(event.navigation == SceneNavigationEvent.PREVIOUS);
             }, failure -> {
                 batch.failed = true;
                 ScenePointerRouter router = runtime.pointerRouter();
-                for (int tail = index; tail < events.size(); tail++) router.discardAfterFailure(events.get(tail));
+                // 导航后的业务Effect也可能失败；即使剩余只有导航，旧物理owner仍必须取消。
+                router.discardAfterFailure(ScenePointerEvent.cancel());
+                for (int tail = index; tail < events.size(); tail++) events.get(tail).discard(router);
             });
         }
         runtime.domain().execute(() -> { if (!batch.failed && !isClosed()) host.replay(prepare().paint); });
@@ -62,7 +76,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     /** 页面关闭时丢弃未处理输入并取消owner，不执行frame或replay；不关闭业务runtime。
      * 生命周期所有者随后关闭runtime；重复close安全，pending域任务也不再访问host。 */
     @Override public void close() {
-        List<ScenePointerEvent> pending = new ArrayList<>();
+        List<QueuedInput> pending = new ArrayList<>();
         synchronized (inputs) {
             if (closed) return; closed = true;
             while (!inputs.isEmpty()) pending.add(inputs.remove());
@@ -70,7 +84,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         runtime.domain().execute(() -> {
             ScenePointerRouter router = runtime.pointerRouter();
             // close不执行业务，但不能丢掉已采集的第二键；另一管线仍共享该物理段。
-            for (ScenePointerEvent event : pending) router.discardAfterFailure(event);
+            for (QueuedInput event : pending) event.discard(router);
             router.discardAfterFailure(ScenePointerEvent.cancel());
             presentation = null;
         });

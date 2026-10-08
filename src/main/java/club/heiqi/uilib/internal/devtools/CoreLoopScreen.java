@@ -3,6 +3,8 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.gui.GuiScreen;
 import org.lwjgl.input.Mouse;
+import org.lwjgl.input.Keyboard;
+import club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter;
 import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -20,6 +22,7 @@ public final class CoreLoopScreen extends GuiScreen {
     private final ReactiveDomain domain = ReactiveDomain.direct();
     private SceneRuntime runtime;
     private SceneFramePipeline pipeline;
+    private SceneTabInputAdapter tabInput;
     private MinecraftSceneHost host;
     private Owner business;
     /** 宿主只记录原生输入可用性；目标、挂载代际和物理按钮权威全部归核心。 */
@@ -98,6 +101,7 @@ public final class CoreLoopScreen extends GuiScreen {
             runtime.attach(null, dialog);
             host = new MinecraftSceneHost();
             pipeline = new SceneFramePipeline(runtime, host, host);
+            tabInput = new SceneTabInputAdapter(pipeline::navigation);
         });
     }
     private SceneNode label(club.heiqi.uilib.ui.reactive.ReadableSignal<String> text, club.heiqi.uilib.ui.reactive.ReadableSignal<TextStyle> style) {
@@ -110,7 +114,7 @@ public final class CoreLoopScreen extends GuiScreen {
     /** MC可在没有runTick时绘制；这里只观测失焦并取消，绝不能用物理快照提前放行历史事件。 */
     @Override public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         if (pipeline == null) return;
-        syncPointerFocus();
+        syncInputAvailability();
         pipeline.frame();
     }
     /** 父类独占Mouse.next/Keyboard.next；本轮历史事件全部消费后，才确认物理全释放并恢复输入。 */
@@ -118,16 +122,28 @@ public final class CoreLoopScreen extends GuiScreen {
         super.handleInput();
         // ESC等键盘事件可能已关闭本页，不能访问已释放的pipeline。
         if (pipeline == null) return;
-        syncPointerFocus();
+        syncInputAvailability();
         if (pointerSuspended && pointerWindowActive && allNativeButtonsReleased()) {
             pipeline.pointer(ScenePointerEvent.allButtonsReleased());
             pointerSuspended = false;
         }
+        if (Keyboard.isCreated()) tabInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_TAB),
+            Keyboard.isKeyDown(Keyboard.KEY_LSHIFT), Keyboard.isKeyDown(Keyboard.KEY_RSHIFT));
+    }
+    /** 父类handleInput是唯一Keyboard.next消费者；按当前历史事件翻译，不读取未来修饰键快照。 */
+    @Override public void handleKeyboardInput() {
+        if (pipeline == null) return;
+        syncInputAvailability();
+        int key = Keyboard.getEventKey(); boolean down = Keyboard.getEventKeyState();
+        if (key == Keyboard.KEY_LSHIFT) tabInput.shift(true, down);
+        else if (key == Keyboard.KEY_RSHIFT) tabInput.shift(false, down);
+        else if (key == Keyboard.KEY_TAB) { tabInput.tab(down, Keyboard.isRepeatEvent()); return; }
+        super.handleKeyboardInput();
     }
     /** 父类handleInput是唯一Mouse.next消费者；本方法只翻译当前历史事件，不再派发原版鼠标行为。 */
     @Override public void handleMouseInput() {
         if (pipeline == null) return;
-        syncPointerFocus();
+        syncInputAvailability();
         int button = Mouse.getEventButton();
         boolean down = button >= 0 && Mouse.getEventButtonState();
         int x = Mouse.getEventX();
@@ -143,8 +159,9 @@ public final class CoreLoopScreen extends GuiScreen {
         if (wheel != 0) pipeline.scroll(x, y, Integer.signum(wheel));
     }
     /** 窗口焦点边沿取消手势；重获焦点仍等所有物理键释放，不能借恢复焦点重建旧owner。 */
-    private void syncPointerFocus() {
+    private void syncInputAvailability() {
         boolean active = Display.isActive();
+        if (tabInput != null) tabInput.availability(active);
         if (!active) {
             if (pointerWindowActive) pipeline.pointer(ScenePointerEvent.cancel());
             pointerSuspended = true;
@@ -169,7 +186,7 @@ public final class CoreLoopScreen extends GuiScreen {
                     try { business.dispose(); }
                     finally {
                         try { host.close(); }
-                        finally { runtime = null; business = null; host = null; pipeline = null; pointerWindowActive = false; pointerSuspended = true; }
+                        finally { runtime = null; business = null; host = null; pipeline = null; tabInput = null; pointerWindowActive = false; pointerSuspended = true; }
                     }
                 }
             }

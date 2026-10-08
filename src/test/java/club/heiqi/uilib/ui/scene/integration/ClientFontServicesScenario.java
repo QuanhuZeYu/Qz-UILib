@@ -100,6 +100,7 @@ public final class ClientFontServicesScenario extends TestApplication {
         scenario("ready通知无需重布局",this::readyWithoutLayout);
         scenario("焦点响应绑定经真实GPU像素观察",this::focusReplay);
         scenario("范围进入与返回经真实GPU回放",this::scopeReplay);
+        scenario("Tab历史适配与导航高亮经真实GPU观察",this::navigationReplay);
         scenario("点击滚动与动态resize",this::inputAndResize);
         scenario("字体来源退休与旧glyph重开",this::reloadSources);
         scenario("screen关闭保留sharedowner",this::screenOwnership);
@@ -178,6 +179,21 @@ public final class ClientFontServicesScenario extends TestApplication {
         } finally { domain.execute(()->layer[0].detach()); }
         clear();pipeline.frame();require(read()[W+1]==0xff28b060,"返回原焦点未恢复实际像素");
         domain.execute(()->runtime.focusRouter().clear());clear();pipeline.frame();
+    }
+    private void navigationReplay() throws Exception {
+        final club.heiqi.uilib.ui.scene.runtime.MountHandle[] second={null};
+        domain.execute(()->{
+            runtime.focusRouter().request(runtime.captureMount(nodes[1]));
+            second[0]=runtime.attach(null,new SceneNode().focusable(true).size(Size.fixed(1),Size.fixed(1)));
+        });
+        club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter keys=new club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter(pipeline::navigation);
+        keys.availability(true);keys.historyDrained(false,false,false);
+        try {
+            keys.tab(true,false);clear();pipeline.frame();require(read()[W+1]==0xff182030,"Tab离开原目标后实际高亮未消失");
+            keys.shift(true,true);keys.tab(true,true);clear();pipeline.frame();require(read()[W+1]==0xff28b060,"Shift+Tab历史repeat未恢复高亮");
+            keys.availability(false);keys.availability(true);keys.tab(true,true);clear();pipeline.frame();require(read()[W+1]==0xff28b060,"失焦尾部repeat不能导航");
+        } finally { domain.execute(()->{second[0].detach();runtime.focusRouter().clear();}); }
+        clear();pipeline.frame();
     }
     private void inputAndResize() throws Exception {
         int rawY=FramebufferCoordinates.mouseY(H,H-6);
