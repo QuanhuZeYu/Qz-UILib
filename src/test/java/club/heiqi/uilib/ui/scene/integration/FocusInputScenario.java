@@ -55,7 +55,7 @@ public final class FocusInputScenario extends TestApplication {
     }
     @Override protected void runTests() throws Exception {
         scenario("请求切换清除经真实绑定与PaintPlan观察", () -> {
-            Page p = new Page(); p.expect(null, "无焦点");
+            Page p = new Page(); p.expect(p.a, "焦点A");
             p.domain.execute(() -> require(p.runtime.focusRouter().request(p.ah), "请求A应接受")); p.expect(p.a, "焦点A");
             p.domain.execute(() -> require(p.runtime.focusRouter().request(p.bh), "请求B应接受")); p.expect(p.b, "焦点B");
             require(p.clicks == 0, "请求焦点不能激活业务");
@@ -83,7 +83,7 @@ public final class FocusInputScenario extends TestApplication {
                 require(!p.runtime.focusRouter().request(p.ah), "后台不得请求");
                 require(p.runtime.focusRouter().request(p.runtime.captureMount(child)), "模态内可请求");
             });
-            p.domain.execute(() -> modal[0].detach()); p.expect(null, "无焦点");
+            p.domain.execute(() -> { modal[0].detach(); p.runtime.preparePresentation(); }); p.expect(p.a, "焦点A");
             p.domain.execute(() -> p.runtime.focusRouter().request(p.ah)); p.expect(p.a, "焦点A");
         });
         scenario("挂载代际和移动资格", () -> {

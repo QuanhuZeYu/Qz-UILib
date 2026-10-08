@@ -39,6 +39,13 @@ public final class SceneNode {
     private boolean clip, scrollable, visible = true;
     private boolean enabled = true;
     private boolean focusable;
+    private SceneNode initialFocus, restoreFocus;
+    /** 页面根或模态的进入目标；null使用框架逻辑顺序，不在更新声明时抢焦点。 */
+    public SceneNode initialFocus() { return initialFocus; }
+    public SceneNode initialFocus(SceneNode target) { writable(); initialFocus = target; return this; }
+    /** 返回该范围时优先核验的声明目标；无效时核验原挂载焦点，再使用初始策略。 */
+    public SceneNode restoreFocus() { return restoreFocus; }
+    public SceneNode restoreFocus(SceneNode target) { writable(); restoreFocus = target; return this; }
     /** 是否声明参与焦点；默认false，资格还受当前挂载及输入范围约束。 */
     public boolean focusable() { return focusable; }
     /** 挂载后通过绑定更新，不在输入handler直接改声明。 */
@@ -61,7 +68,7 @@ public final class SceneNode {
     public boolean scrollable() { return scrollable; }
     public boolean visible() { return visible; }
     public boolean modal() { return modal; }
-    public SceneNode modal(boolean value) { writable(); modal = value; changed(); return this; }
+    public SceneNode modal(boolean value) { writable(); if (modal != value) { modal = value; if (runtime != null) runtime.invalidateRange(); } return this; }
     public SceneNode axis(Axis value) { writable(); axis = Objects.requireNonNull(value, "axis"); changed(); return this; }
     public SceneNode size(Size width, Size height) { writable(); this.width = Objects.requireNonNull(width, "width"); this.height = Objects.requireNonNull(height, "height"); changed(); return this; }
     public SceneNode style(TextStyle style) { writable(); this.style = Objects.requireNonNull(style, "style"); changed(); return this; }
@@ -70,7 +77,7 @@ public final class SceneNode {
     public SceneNode scrollable(boolean value) { writable(); scrollable = value; changed(); return this; }
     public SceneNode scrollOffset(int value) { writable(); if (value < 0) throw new IllegalArgumentException("滚动位置不能为负"); scrollOffset = value; changed(); return this; }
     public SceneNode clip(boolean value) { writable(); clip = value; changed(); return this; }
-    public SceneNode visible(boolean value) { writable(); visible = value; changed(); return this; }
+    public SceneNode visible(boolean value) { writable(); if (visible != value) { visible = value; if (runtime != null) runtime.invalidateRange(); } return this; }
     public SceneNode background(int value) { writable(); background = value; if (runtime != null) runtime.invalidatePaint(); return this; }
     public SceneNode parent() { return parent; }
     public List<SceneNode> children() { return Collections.unmodifiableList(children); }
@@ -87,7 +94,7 @@ public final class SceneNode {
     public IntConsumer scrollAction() { return scrollAction; }
     public SceneNode onScroll(IntConsumer action) { writable(); scrollAction = action; return this; }
     public SceneNode text(String value) { writable(); text = Objects.requireNonNull(value, "text"); changed(); return this; }
-    public SceneNode enabled(boolean value) { writable(); enabled = value; changed(); return this; }
+    public SceneNode enabled(boolean value) { writable(); if (enabled != value) { enabled = value; if (runtime != null) runtime.invalidateRange(); } return this; }
     public SceneNode onClick(Runnable action) { writable(); click = action; return this; }
     public SceneNode bind(NodeBinding binding) { unmounted(); bindings.add(Objects.requireNonNull(binding, "binding")); return this; }
     public SceneNode add(SceneNode child) {
@@ -111,7 +118,7 @@ public final class SceneNode {
         runtime = attached ? authority : null;
     }
     public void frameworkDestroy(SceneRuntime authority) {
-        authority.checkMutation(); destroyed = true; control = null; declarationState.clear(); bindings.clear(); click = null; scrollAction = null; text = "";
+        authority.checkMutation(); destroyed = true; control = null; initialFocus = null; restoreFocus = null; declarationState.clear(); bindings.clear(); click = null; scrollAction = null; text = "";
     }
     private void unmounted() { if (destroyed || runtime != null) throw new IllegalStateException("节点不能修改挂载声明"); }
     private void writable() {

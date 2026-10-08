@@ -99,6 +99,7 @@ public final class ClientFontServicesScenario extends TestApplication {
         scenario("单像素scissor与宿主恢复",this::onePixel);
         scenario("ready通知无需重布局",this::readyWithoutLayout);
         scenario("焦点响应绑定经真实GPU像素观察",this::focusReplay);
+        scenario("范围进入与返回经真实GPU回放",this::scopeReplay);
         scenario("点击滚动与动态resize",this::inputAndResize);
         scenario("字体来源退休与旧glyph重开",this::reloadSources);
         scenario("screen关闭保留sharedowner",this::screenOwnership);
@@ -162,6 +163,21 @@ public final class ClientFontServicesScenario extends TestApplication {
         domain.execute(()->runtime.focusRouter().clear());clear();pipeline.frame();int[] cleared=read();
         require(cleared[W+1]==0xff182030,"清除焦点未恢复背景");
         require(clicked[0]==0,"焦点请求不能激活业务");
+    }
+    private void scopeReplay() throws Exception {
+        final club.heiqi.uilib.ui.scene.runtime.MountHandle[] layer={null};
+        domain.execute(()->{
+            runtime.focusRouter().request(runtime.captureMount(nodes[1]));
+            SceneNode target=new SceneNode().focusable(true).size(Size.fixed(3),Size.fixed(3));
+            SceneNode overlay=new SceneNode().modal(true).initialFocus(target).size(Size.fill(1),Size.fill(1))
+                .bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(runtime.focusRouter().focused(),(node,focus)->node.background(focus==target?0xff4028b0:0xff404040))).add(target);
+            layer[0]=runtime.attach(null,overlay);
+        });
+        try {
+            clear();pipeline.frame();require(read()[W+1]==0xff4028b0,"模态初始选择未进入FBO");
+        } finally { domain.execute(()->layer[0].detach()); }
+        clear();pipeline.frame();require(read()[W+1]==0xff28b060,"返回原焦点未恢复实际像素");
+        domain.execute(()->runtime.focusRouter().clear());clear();pipeline.frame();
     }
     private void inputAndResize() throws Exception {
         int rawY=FramebufferCoordinates.mouseY(H,H-6);

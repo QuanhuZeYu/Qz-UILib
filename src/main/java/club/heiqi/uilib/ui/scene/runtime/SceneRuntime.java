@@ -64,6 +64,8 @@ public final class SceneRuntime implements AutoCloseable {
         pointerRouter.revalidate();
         focusRouter.revalidate();
     }
+    /** 结构/显隐/启用/模态变化才重验范围；普通文案和布局不触发重新选择。 */
+    public void invalidateRange() { domain.checkAccess(); focusRouter.rangeChanged(); invalidate(); }
     public void invalidatePaint() { domain.checkAccess(); revision++; }
     public void invalidateBinding(SceneNode node) { domain.checkAccess(); dirtyBindings.add(node); }
     public void checkMutation() {
@@ -81,7 +83,7 @@ public final class SceneRuntime implements AutoCloseable {
             root.frameworkParent(this, parent);
             if (parent == null) roots.add(root);
             mountSubtree(root, parent == null ? owner : mounts.get(parent).owner);
-            invalidate();
+            invalidateRange();
             return new MountHandle(this, root, mounts.get(root).token);
         } catch (RuntimeException | Error failure) {
             Mount partial = mounts.get(root);
@@ -90,6 +92,8 @@ public final class SceneRuntime implements AutoCloseable {
                 releaseSubtree(root);
             }
             roots.remove(root); root.frameworkParent(this, null);
+            // 声明激活可在失败前显露模态；卸载部分挂载后也要结束该范围，不能留下幽灵输入范围。
+            try { invalidateRange(); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
             throw failure;
         } finally { mutation = false; }
     }
@@ -118,11 +122,15 @@ public final class SceneRuntime implements AutoCloseable {
     public void preparePresentation() {
         command(); mutation = true;
         try {
-            while (!dirtyBindings.isEmpty()) {
-                SceneNode node = dirtyBindings.iterator().next(); dirtyBindings.remove(node);
-                Mount mount = mounts.get(node);
-                if (mount != null) for (BindingActivation active : mount.bindings) active.refresh();
-            }
+            do {
+                while (!dirtyBindings.isEmpty()) {
+                    SceneNode node = dirtyBindings.iterator().next(); dirtyBindings.remove(node);
+                    Mount mount = mounts.get(node);
+                    if (mount != null) for (BindingActivation active : mount.bindings) active.refresh();
+                }
+                // 进入选择依赖已结算声明；选择的响应投影再结算绑定，首次回放即可显示。
+                focusRouter.prepareScopes();
+            } while (!dirtyBindings.isEmpty());
         } finally { mutation = false; }
     }
     private Mount requireMount(SceneNode node, Object token) {
@@ -135,7 +143,7 @@ public final class SceneRuntime implements AutoCloseable {
         try {
             try { mount.owner.dispose(); }
             finally {
-                releaseSubtree(node); roots.remove(node); node.frameworkParent(this, null); invalidate();
+                releaseSubtree(node); roots.remove(node); node.frameworkParent(this, null); invalidateRange();
             }
         } finally { mutation = false; }
     }
@@ -153,7 +161,7 @@ public final class SceneRuntime implements AutoCloseable {
             mount.owner.moveTo(next == null ? owner : mounts.get(next).owner);
             roots.remove(node); node.frameworkParent(this, next);
             if (next == null) roots.add(node);
-            invalidate();
+            invalidateRange();
         } finally { mutation = false; }
     }
     void destroy(SceneNode node, Object token) {
@@ -192,11 +200,10 @@ public final class SceneRuntime implements AutoCloseable {
             node.frameworkParent(this, parent);
             if (fresh) mountSubtree(node, mounts.get(parent).owner);
         }
-        invalidate();
+        invalidateRange();
     }
     public boolean interactive(SceneNode node) {
-        checkAlive(); if (!mounts.containsKey(node)) return false;
-        for (SceneNode cursor = node; cursor != null; cursor = cursor.parent()) if (!cursor.enabled() || !cursor.visible()) return false;
+        checkAlive(); if (!locallyInteractive(node)) return false;
         SceneNode modal = activeModal();
         if (modal != null) {
             for (SceneNode cursor = node; cursor != null; cursor = cursor.parent()) if (cursor == modal) return true;
@@ -204,12 +211,24 @@ public final class SceneRuntime implements AutoCloseable {
         }
         return true;
     }
-    private SceneNode activeModal() {
+    /** 被模态覆盖仍可保留恢复资格，显隐/禁用失活则立即取消；不把隔离当作禁用。 */
+    boolean locallyInteractive(SceneNode node) {
+        domain.checkAccess(); if (!mounts.containsKey(node)) return false;
+        for (SceneNode cursor = node; cursor != null; cursor = cursor.parent()) if (!cursor.enabled() || !cursor.visible()) return false;
+        return true;
+    }
+    boolean visibleInTree(SceneNode node) {
+        domain.checkAccess(); if (!mounts.containsKey(node)) return false;
+        for (SceneNode cursor = node; cursor != null; cursor = cursor.parent()) if (!cursor.visible()) return false;
+        return true;
+    }
+    SceneNode activeModal() {
         for (int i = roots.size() - 1; i >= 0; i--) { SceneNode found = findModal(roots.get(i)); if (found != null) return found; }
         return null;
     }
     private SceneNode findModal(SceneNode node) {
-        if (!node.visible()) return null;
+        // 挂载阶段声明树可以含尚未取得token的子节点，它们不能成为有效输入范围。
+        if (!mounts.containsKey(node) || !node.visible()) return null;
         for (int i = node.children().size() - 1; i >= 0; i--) { SceneNode found = findModal(node.children().get(i)); if (found != null) return found; }
         return node.modal() ? node : null;
     }

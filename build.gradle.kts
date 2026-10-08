@@ -186,7 +186,8 @@ val compileCoreSceneScenario by tasks.registering(JavaCompile::class) {
     source("src/test/java/club/heiqi/uilib/ui/scene/integration/SceneCoreLoopTest.java",
         "src/test/java/club/heiqi/uilib/ui/scene/integration/SoftwareSceneScenario.java",
         "src/test/java/club/heiqi/uilib/ui/scene/integration/PointerInputScenario.java",
-        "src/test/java/club/heiqi/uilib/ui/scene/integration/FocusInputScenario.java")
+        "src/test/java/club/heiqi/uilib/ui/scene/integration/FocusInputScenario.java",
+        "src/test/java/club/heiqi/uilib/ui/scene/integration/FocusScopeScenario.java")
     classpath = coreSources.output + testSupportSources.output
     destinationDirectory.set(coreSceneClasses)
     sourceCompatibility = "1.8"
@@ -201,11 +202,15 @@ val focusInputScenario = registerTestApplication("focusInputScenario", "无平�
     dependsOn(compileCoreSceneScenario)
     classpath = files(coreSceneClasses) + coreSources.output + fontUnicodeRuntime
 }
+val focusScopeScenario = registerTestApplication("focusScopeScenario", "无平台真实scene范围进入与焦点恢复验收", "club.heiqi.uilib.ui.scene.integration.FocusScopeScenario") {
+    dependsOn(compileCoreSceneScenario)
+    classpath = files(coreSceneClasses) + coreSources.output + fontUnicodeRuntime
+}
 val coreStateScenario = registerTestApplication("coreStateScenario", "隔离运行状态与生命周期场景", "club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest") {
     dependsOn(compileCoreSceneScenario)
     classpath = files(coreSceneClasses) + coreSources.output + fontUnicodeRuntime
 }
-tasks.named("check") { dependsOn(pointerInputScenario, focusInputScenario) }
+tasks.named("check") { dependsOn(pointerInputScenario, focusInputScenario, focusScopeScenario) }
 val coreFontClasses = layout.buildDirectory.dir("classes/core-font")
 val compileCoreFontScenario by tasks.registering(JavaCompile::class) {
     source(fileTree("src/main/java/club/heiqi/uilib/ui/scene/text") { include("**/*.java") })
@@ -228,7 +233,7 @@ tasks.register("coreSceneCheck") {
     group = "verification"
     description = "完整核心状态、scene、输入、字体合同和应用生命周期验收，不编译MC源"
     // coreStateScenario已按既有模式内嵌SoftwareSceneScenario，避免重复启动。
-    dependsOn(coreStateScenario, pointerInputScenario, focusInputScenario, coreFontEngineScenario, testApplicationScenario)
+    dependsOn(coreStateScenario, pointerInputScenario, focusInputScenario, focusScopeScenario, coreFontEngineScenario, testApplicationScenario)
 }
 val lwjgl2TestSources = sourceSets.create("lwjgl2Test") {
     java.srcDir("src/lwjgl2Test/java")

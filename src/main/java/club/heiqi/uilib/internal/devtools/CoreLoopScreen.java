@@ -49,9 +49,15 @@ public final class CoreLoopScreen extends GuiScreen {
                         .bind(NodeBinding.value(style, SceneNode::style)).size(Size.fill(1), Size.natural()).background(0xAA202830);
                 }));
             Signal<Boolean> focusVisible = domain.signal(true), focusEnabled = domain.signal(true);
+            Signal<Boolean> focusAEnabled = domain.signal(true), innerModal = domain.signal(false), restoreA = domain.signal(false);
             // 明确的焦点操作不改变普通按钮策略；目标与token始终由runtime管理。
             SceneNode focusA = button("选择A", style, () -> { });
             SceneNode focusB = button("选择B", style, () -> { });
+            SceneNode focusM = button("选择M", style, () -> { });
+            SceneNode focusN = button("选择N", style, () -> { });
+            focusM.focusable(true).onClick(() -> runtime.focusRouter().request(runtime.captureMount(focusM)));
+            focusN.focusable(true).onClick(() -> runtime.focusRouter().request(runtime.captureMount(focusN)));
+            focusA.bind(NodeBinding.value(focusAEnabled, SceneNode::enabled));
             focusA.focusable(true).onClick(() -> runtime.focusRouter().request(runtime.captureMount(focusA)));
             focusB.focusable(true).onClick(() -> runtime.focusRouter().request(runtime.captureMount(focusB)));
             focusA.bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target) -> node.background(target == node ? 0xFF287848 : 0xFF405060)));
@@ -61,20 +67,34 @@ public final class CoreLoopScreen extends GuiScreen {
                 .add(focusA).add(focusB);
             Computed<String> focusStatus = domain.computed(business, () -> {
                 SceneNode target = runtime.focusRouter().focused().get();
-                return "焦点：" + (target == focusA ? "A" : target == focusB ? "B" : "无")
-                    + "；目标" + (focusVisible.get() ? "显示" : "隐藏") + "/" + (focusEnabled.get() ? "启用" : "禁用");
+                return "焦点：" + (target == focusA ? "A" : target == focusB ? "B" : target == focusM ? "M" : target == focusN ? "N" : "无")
+                    + "；目标" + (focusVisible.get() ? "显示" : "隐藏") + "/" + (focusEnabled.get() ? "启用" : "禁用")
+                    + "；A" + (focusAEnabled.get() ? "启用" : "禁用") + "；恢复：" + (restoreA.get() ? "指定A" : "原焦点");
             });
             SceneNode focusActions = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(2)
                 .add(button("清除焦点", style, () -> runtime.focusRouter().clear()))
                 .add(button("显隐目标", style, () -> focusVisible.set(!focusVisible.get())))
-                .add(button("启禁目标", style, () -> focusEnabled.set(!focusEnabled.get())));
-            SceneNode panel = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(8).gap(4).background(0xE0101820)
+                .add(button("启禁目标", style, () -> focusEnabled.set(!focusEnabled.get())))
+                .add(button("恢复策略", style, () -> restoreA.set(!restoreA.get())));
+            SceneNode panel = new SceneNode().initialFocus(focusA)
+                .bind(NodeBinding.value(restoreA, (node,useA) -> node.restoreFocus(useA ? focusA : null)))
+                .size(Size.fill(1), Size.fill(1)).padding(8).gap(4).background(0xE0101820)
                 .add(title).add(controls).add(label(focusStatus, style)).add(focusTargets).add(focusActions).add(body);
             runtime.attach(null, panel);
-            SceneNode dialog = new SceneNode().size(Size.fixed(360), Size.natural()).padding(10).gap(5).background(0xFF303848).modal(true)
+            focusM.bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target) -> node.background(target == node ? 0xFF287848 : 0xFF405060)));
+            focusN.bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target) -> node.background(target == node ? 0xFF287848 : 0xFF405060)));
+            SceneNode inner = new SceneNode().size(Size.fill(1), Size.natural()).padding(6).gap(3).background(0xFF465060).modal(true).initialFocus(focusN)
+                .bind(NodeBinding.value(innerModal, SceneNode::visible))
+                .add(label(focusStatus, style)).add(focusN)
+                .add(button("返回外层M", style, () -> innerModal.set(false)))
+                .add(button("关闭全部", style, () -> { innerModal.set(false); modal.set(false); }));
+            SceneNode dialog = new SceneNode().size(Size.fixed(360), Size.natural()).padding(10).gap(5).background(0xFF303848).modal(true).initialFocus(focusM)
                 .bind(NodeBinding.value(modal, SceneNode::visible))
-                .add(new SceneNode().text("模态打开：后台按钮应隔离").size(Size.fill(1), Size.natural()).bind(NodeBinding.value(style, SceneNode::style)))
-                .add(button("关闭", style, () -> modal.set(false)));
+                .add(label(focusStatus, style)).add(focusM)
+                .add(button("内层模态", style, () -> innerModal.set(true)))
+                .add(button("启禁A", style, () -> focusAEnabled.set(!focusAEnabled.get())))
+                .add(button("关闭", style, () -> { innerModal.set(false); modal.set(false); }))
+                .add(inner);
             runtime.attach(null, dialog);
             host = new MinecraftSceneHost();
             pipeline = new SceneFramePipeline(runtime, host, host);
