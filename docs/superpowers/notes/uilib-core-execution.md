@@ -12,4 +12,4 @@
 - 当前交付范围是首个核心软件切片及宿主验证准备，不是全库5.0发布：标准编辑/IME/focus/capture/portal与全部控件、百分比策略、字体/DSL/Markdown/数学/图像、配置/网络/聊天/HUD后续继续，不能因切片缺少细则而静默宣称已替代旧产品能力。数学深入保持暂停。
 - 本次功能无对应issue，提交不伪造编号；无push/tag/release或自动下游升级。
 - 最新字体小步交付：b8c59c75，仅3个宿主字体文件新增systemFontFiles配置；两个测试实例（GTNH2.9.0b3、1.7.10）均已备份并部署正式130+b8c59c751e，首选C:/Windows/Fonts/msyh.ttc。GTNH此前实际菜单已确认；1.7.10仅配置/包hash及实际8u504字体CPUprobe已确认，等待用户启动观察，未由agent启动。证据build/system-font-review/。
-- 用户要求逐步实现供代码审阅：下一核心生产增量仅指针手势所有权与取消（按下不激活、合法释放激活、第二按钮吞尾、owner失活取消），复用现有scene/信号/几何/handler，不并入focus/导航/IME；目前只读调查完成，尚未实施。
+- 指针手势增量已实现：runtime唯一owner/token；按下不激活、合法释放激活、所有键占位/第二按钮吞尾、owner即时失活取消。先coreSceneCheck隔离Java8通过（pointer28具名场景与旧状态/scene/font/application）；再真实GPU8场景通过；最后接入MC /qzcore原生事件/focus可用性gate和close，无第二输入目标权威。完整build通过。详细证据及边界见pointer-core-slice.md和build/pointer-review/。未启动或部署MC，focus/导航/IME后续继续。

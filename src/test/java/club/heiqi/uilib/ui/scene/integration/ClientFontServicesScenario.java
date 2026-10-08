@@ -153,7 +153,11 @@ public final class ClientFontServicesScenario extends TestApplication {
         image(new File(output,"scene-native.png"),read());
     }
     private void inputAndResize() throws Exception {
-        pipeline.click(5,FramebufferCoordinates.mouseY(H,H-6));pipeline.frame();if(clicked[0]!=1)throw new AssertionError("raw像素点击未命中");
+        int rawY=FramebufferCoordinates.mouseY(H,H-6);
+        pipeline.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0,5,rawY));pipeline.frame();
+        if(clicked[0]!=0)throw new AssertionError("raw像素DOWN不应激活");
+        pipeline.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0,5,rawY));pipeline.frame();
+        if(clicked[0]!=1)throw new AssertionError("raw像素UP未命中原owner");
         domain.execute(()->presentation[0]=pipeline.current());LayoutBox scroll=presentation[0].geometry.get(nodes[2]).box;
         pipeline.scroll(scroll.x+5,FramebufferCoordinates.mouseY(H,H-(scroll.y+5)-1),-1);pipeline.frame();
         domain.execute(()->{if(pipeline.current().geometry.get(nodes[2]).scrollOffset!=32)throw new AssertionError("scroll非声明32原生px");});

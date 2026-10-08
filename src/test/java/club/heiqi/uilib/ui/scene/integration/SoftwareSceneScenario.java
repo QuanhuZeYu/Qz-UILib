@@ -36,7 +36,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 /** 软件场景只替换度量/宿主回放边界，实际状态、节点、布局、路由和计划均使用生产实现。 */
 final class SoftwareSceneScenario extends TestApplication {
 
-    private static final class SoftwareHost implements SceneHost, SceneTextMeasurer {
+    static final class SoftwareHost implements SceneHost, SceneTextMeasurer {
         int width = 100, height = 80, glyph = 5, lineHeight = 10, measures;
         long metrics;
         PaintPlan last;

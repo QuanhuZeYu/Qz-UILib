@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
+import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
@@ -21,6 +22,9 @@ public final class CoreLoopScreen extends GuiScreen {
     private SceneFramePipeline pipeline;
     private MinecraftSceneHost host;
     private Owner business;
+    /** 宿主只记录原生输入可用性；目标、挂载代际和物理按钮权威全部归核心。 */
+    private boolean pointerWindowActive;
+    private boolean pointerSuspended = true;
     @Override public void initGui() {
         if (runtime != null) return;
         domain.execute(() -> {
@@ -63,27 +67,72 @@ public final class CoreLoopScreen extends GuiScreen {
         return new SceneNode().text(text).size(Size.fill(1), Size.natural()).padding(3).background(0xFF405060)
             .bind(NodeBinding.value(style, SceneNode::style)).onClick(action);
     }
-    @Override public void drawScreen(int mouseX, int mouseY, float partialTicks) { pipeline.frame(); }
-    @Override protected void mouseClicked(int mouseX, int mouseY, int button) {
-        // GuiScreen传入的整数scaled坐标已丢原生分辨率；scene直接消费当前raw事件。
-        if (button == 0 && pipeline != null) pipeline.click(Mouse.getEventX(),
-            club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(Display.getHeight(), Mouse.getEventY()));
+    /** MC可在没有runTick时绘制；这里只观测失焦并取消，绝不能用物理快照提前放行历史事件。 */
+    @Override public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        if (pipeline == null) return;
+        syncPointerFocus();
+        pipeline.frame();
     }
-    @Override public void handleMouseInput() {
-        super.handleMouseInput();
-        int wheel = Mouse.getEventDWheel();
-        if (wheel != 0) {
-            int x = Mouse.getEventX();
-            int y = club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(Display.getHeight(), Mouse.getEventY());
-            pipeline.scroll(x, y, Integer.signum(wheel));
+    /** 父类独占Mouse.next/Keyboard.next；本轮历史事件全部消费后，才确认物理全释放并恢复输入。 */
+    @Override public void handleInput() {
+        super.handleInput();
+        // ESC等键盘事件可能已关闭本页，不能访问已释放的pipeline。
+        if (pipeline == null) return;
+        syncPointerFocus();
+        if (pointerSuspended && pointerWindowActive && allNativeButtonsReleased()) {
+            pipeline.pointer(ScenePointerEvent.allButtonsReleased());
+            pointerSuspended = false;
         }
+    }
+    /** 父类handleInput是唯一Mouse.next消费者；本方法只翻译当前历史事件，不再派发原版鼠标行为。 */
+    @Override public void handleMouseInput() {
+        if (pipeline == null) return;
+        syncPointerFocus();
+        int button = Mouse.getEventButton();
+        boolean down = button >= 0 && Mouse.getEventButtonState();
+        int x = Mouse.getEventX();
+        int y = club.heiqi.uilib.host.client.font.FramebufferCoordinates.mouseY(Display.getHeight(), Mouse.getEventY());
+        int wheel = Mouse.getEventDWheel();
+        if (pointerSuspended) {
+            // 失焦/开屏期间不建立新owner，只把旧段的UP交给核心吞尾。
+            if (button >= 0 && !down) pipeline.pointer(ScenePointerEvent.up(button, x, y));
+            return;
+        }
+        if (button >= 0) pipeline.pointer(down ? ScenePointerEvent.down(button, x, y) : ScenePointerEvent.up(button, x, y));
+        else pipeline.pointer(ScenePointerEvent.move(x, y));
+        if (wheel != 0) pipeline.scroll(x, y, Integer.signum(wheel));
+    }
+    /** 窗口焦点边沿取消手势；重获焦点仍等所有物理键释放，不能借恢复焦点重建旧owner。 */
+    private void syncPointerFocus() {
+        boolean active = Display.isActive();
+        if (!active) {
+            if (pointerWindowActive) pipeline.pointer(ScenePointerEvent.cancel());
+            pointerSuspended = true;
+        }
+        pointerWindowActive = active;
+    }
+    /** 只在handleInput历史事件消费完成后调用；未创建Mouse不能被当成物理全释放。 */
+    private boolean allNativeButtonsReleased() {
+        if (!Mouse.isCreated()) return false;
+        for (int button = 0; button < Mouse.getButtonCount(); button++) if (Mouse.isButtonDown(button)) return false;
+        return true;
     }
     @Override public boolean doesGuiPauseGame() { return false; }
     @Override public void onGuiClosed() {
         domain.execute(() -> {
             if (runtime == null) return;
-            try { runtime.close(); } finally { try { business.dispose(); } finally { host.close(); } }
-            runtime = null; business = null; host = null; pipeline = null;
+            // 先丢掉逻辑队列/取消owner，不为处理CANCEL而frame，避免关闭时点击及绘制。
+            try { pipeline.close(); }
+            finally {
+                try { runtime.close(); }
+                finally {
+                    try { business.dispose(); }
+                    finally {
+                        try { host.close(); }
+                        finally { runtime = null; business = null; host = null; pipeline = null; pointerWindowActive = false; pointerSuspended = true; }
+                    }
+                }
+            }
         });
     }
 }

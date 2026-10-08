@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
+import java.util.function.Consumer;
 
 /** 串行状态上下文；状态立即生效，副作用在操作结束后推进，完全独立于 UI 帧。 */
 public final class ReactiveDomain {
@@ -23,6 +24,18 @@ public final class ReactiveDomain {
         ReactiveDomain domain = CURRENT.get();
         if (domain == null) throw new IllegalStateException("状态访问不在状态域内");
         return domain;
+    }
+    private static final class FailureBoundary implements Runnable {
+        final Runnable action;
+        final Consumer<Throwable> failed;
+        FailureBoundary(Runnable action, Consumer<Throwable> failed) { this.action = action; this.failed = failed; }
+        @Override public void run() { action.run(); }
+    }
+    /** 递交独立操作，并在该操作或其结束时Effect结算失败后于域内通知清理者。
+     * 同步和外部executor使用同一边界；通知不吞原异常，不重试业务操作。
+     * 清理失败追加为suppressed，原始Throwable仍交既有executor错误通道。 */
+    public void execute(Runnable action, Consumer<Throwable> failed) {
+        execute(new FailureBoundary(Objects.requireNonNull(action, "action"), Objects.requireNonNull(failed, "failed")));
     }
     public void execute(Runnable action) {
         Objects.requireNonNull(action, "action");
@@ -53,10 +66,18 @@ public final class ReactiveDomain {
         } finally { CURRENT.set(previous); }
     }
     private void operation(Runnable action) {
-        depth++;
-        try { action.run(); }
-        finally { depth--; }
-        if (depth == 0) drainEffects();
+        try {
+            depth++;
+            try { action.run(); }
+            finally { depth--; }
+            if (depth == 0) drainEffects();
+        } catch (RuntimeException | Error failure) {
+            if (action instanceof FailureBoundary) {
+                try { ((FailureBoundary) action).failed.accept(failure); }
+                catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            }
+            throw failure;
+        }
     }
     public void batch(Runnable action) { checkAccess(); operation(Objects.requireNonNull(action, "action")); }
     public <T> Signal<T> signal(T initial) { checkAccess(); return new Signal<>(this, initial); }

@@ -168,6 +168,39 @@ tasks.named<JavaCompile>(lwjgl2Sources.compileJavaTaskName) {
 }
 tasks.named<Jar>("jar") { from(lwjgl2Sources.output) }
 tasks.named<Jar>("shadowJar") { from(lwjgl2Sources.output) }
+// 真实scene与响应式核心独立编译：此路径不经过MC源或宿主classpath。
+val coreSources = sourceSets.create("core") {
+    java.srcDir("src/main/java")
+    java.include("club/heiqi/uilib/ui/scene/**", "club/heiqi/uilib/ui/reactive/**")
+    compileClasspath = fontUnicodeRuntime
+    runtimeClasspath = output + compileClasspath
+}
+tasks.named<JavaCompile>(coreSources.compileJavaTaskName) {
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.compilerArgs.add("-proc:none")
+}
+val coreSceneClasses = layout.buildDirectory.dir("classes/core-scene")
+val compileCoreSceneScenario by tasks.registering(JavaCompile::class) {
+    dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(testSupportSources.classesTaskName))
+    source("src/test/java/club/heiqi/uilib/ui/scene/integration/SceneCoreLoopTest.java",
+        "src/test/java/club/heiqi/uilib/ui/scene/integration/SoftwareSceneScenario.java",
+        "src/test/java/club/heiqi/uilib/ui/scene/integration/PointerInputScenario.java")
+    classpath = coreSources.output + testSupportSources.output
+    destinationDirectory.set(coreSceneClasses)
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.compilerArgs.add("-proc:none")
+}
+val pointerInputScenario = registerTestApplication("pointerInputScenario", "无平台真实scene指针手势验收", "club.heiqi.uilib.ui.scene.integration.PointerInputScenario") {
+    dependsOn(compileCoreSceneScenario)
+    classpath = files(coreSceneClasses) + coreSources.output + fontUnicodeRuntime
+}
+val coreStateScenario = registerTestApplication("coreStateScenario", "隔离运行状态与生命周期场景", "club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest") {
+    dependsOn(compileCoreSceneScenario)
+    classpath = files(coreSceneClasses) + coreSources.output + fontUnicodeRuntime
+}
+tasks.named("check") { dependsOn(pointerInputScenario) }
 val coreFontClasses = layout.buildDirectory.dir("classes/core-font")
 val compileCoreFontScenario by tasks.registering(JavaCompile::class) {
     source(fileTree("src/main/java/club/heiqi/uilib/ui/scene/text") { include("**/*.java") })
@@ -186,6 +219,12 @@ val testApplicationScenario = registerTestApplication("testApplicationScenario",
     classpath = testSupportSources.output
 }
 tasks.named("check") { dependsOn(coreFontEngineScenario, testApplicationScenario) }
+tasks.register("coreSceneCheck") {
+    group = "verification"
+    description = "完整核心状态、scene、输入、字体合同和应用生命周期验收，不编译MC源"
+    // coreStateScenario已按既有模式内嵌SoftwareSceneScenario，避免重复启动。
+    dependsOn(coreStateScenario, pointerInputScenario, coreFontEngineScenario, testApplicationScenario)
+}
 val lwjgl2TestSources = sourceSets.create("lwjgl2Test") {
     java.srcDir("src/lwjgl2Test/java")
     compileClasspath = sourceSets.getByName("main").output + lwjgl2Sources.output + lwjgl2Bindings + testSupportSources.output

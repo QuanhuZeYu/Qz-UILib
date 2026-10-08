@@ -26,6 +26,7 @@ public final class SceneRuntime implements AutoCloseable {
         int declaration, value, maximum;
     }
     private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
+    private final ScenePointerRouter pointerRouter;
     private final ReactiveDomain domain;
     private final Owner owner;
     private final Map<SceneNode, Mount> mounts = new IdentityHashMap<>();
@@ -35,12 +36,28 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean routing;
     private boolean disposed;
     private long revision, geometryRevision;
-    public SceneRuntime(ReactiveDomain domain) { this.domain = domain; domain.checkAccess(); owner = domain.owner(); }
+    public SceneRuntime(ReactiveDomain domain) { this.domain = domain; domain.checkAccess(); owner = domain.owner(); pointerRouter = new ScenePointerRouter(this); }
     public ReactiveDomain domain() { return domain; }
+    /** 同runtime的帧管线共享唯一pointer owner；不在宿主建立另一套手势权威。 */
+    public ScenePointerRouter pointerRouter() { domain.checkAccess(); return pointerRouter; }
+    /** 为输入所有权捕获当前挂载身份；同runtime移动保留，detach/remount更换token。 */
+    public MountHandle captureMount(SceneNode node) {
+        checkAlive(); Mount mount = mounts.get(node);
+        if (mount == null) throw new IllegalArgumentException("节点未挂载");
+        return new MountHandle(this, node, mount.token);
+    }
+    boolean isCurrentMount(SceneNode node, Object token) {
+        domain.checkAccess(); Mount mount = mounts.get(node);
+        return !disposed && mount != null && mount.token == token;
+    }
     public List<SceneNode> roots() { domain.checkAccess(); return Collections.unmodifiableList(roots); }
     public long revision() { domain.checkAccess(); return revision; }
     public long geometryRevision() { domain.checkAccess(); return geometryRevision; }
-    public void invalidate() { domain.checkAccess(); revision++; geometryRevision++; }
+    public void invalidate() {
+        domain.checkAccess(); revision++; geometryRevision++;
+        // attach/move/detach及可见/启用/模态声明生效时取消失活owner，不等下一帧。
+        pointerRouter.revalidate();
+    }
     public void invalidatePaint() { domain.checkAccess(); revision++; }
     public void invalidateBinding(SceneNode node) { domain.checkAccess(); dirtyBindings.add(node); }
     public void checkMutation() {
@@ -190,9 +207,15 @@ public final class SceneRuntime implements AutoCloseable {
         for (int i = node.children().size() - 1; i >= 0; i--) { SceneNode found = findModal(node.children().get(i)); if (found != null) return found; }
         return node.modal() ? node : null;
     }
-    /** 受控输入入口，后续几何路由在调用前选择目标。 */
+    /** 已知逻辑目标的完整synthetic activation兼容入口；物理输入应经帧管线的typed事件。
+     * 有物理按钮占位时吞掉，不能绕过已有手势；仍按当前挂载与输入范围检查目标。 */
     public void dispatchClick(SceneNode node) {
-        checkAlive(); if (!interactive(node) || node.clickAction() == null) return;
+        command(); if (!pointerRouter.idle()) return;
+        dispatchPointerClick(node);
+    }
+    // 只有同包唯一router可在UP时激活第一owner；第二键仍按下不影响第一owner正常结束。
+    void dispatchPointerClick(SceneNode node) {
+        command(); if (!interactive(node) || node.clickAction() == null) return;
         routing = true;
         try { node.clickAction().run(); } finally { routing = false; }
     }
@@ -225,7 +248,9 @@ public final class SceneRuntime implements AutoCloseable {
         try { node.scrollAction().accept(delta); } finally { routing = false; }
     }
     @Override public void close() {
+        domain.checkAccess(); if (disposed) return;
         command();
+        pointerRouter.close();
         RuntimeException failure = null;
         for (SceneNode root : new ArrayList<>(roots)) {
             try { detach(root, mounts.get(root).token); }
