@@ -7,6 +7,7 @@ public final class MountHandle {
     private final Object token;
     MountHandle(SceneRuntime runtime, SceneNode node, Object token) { this.runtime = runtime; this.node = node; this.token = token; }
     public SceneNode node() { return node; }
+    boolean belongsTo(SceneRuntime candidate) { return runtime == candidate; }
     /** 当前仍是同一次挂载；UUID或同节点重挂载不能使旧句柄恢复。域内读取。 */
     public boolean active() { return runtime.isCurrentMount(node, token); }
     public void detach() { runtime.detach(node, token); }

@@ -48,8 +48,28 @@ public final class CoreLoopScreen extends GuiScreen {
                     return new SceneNode().bind(NodeBinding.value(value, (node, item) -> node.text("条目 " + item + "：滚轮滚动正文，标题与操作区保持位置。")))
                         .bind(NodeBinding.value(style, SceneNode::style)).size(Size.fill(1), Size.natural()).background(0xAA202830);
                 }));
+            Signal<Boolean> focusVisible = domain.signal(true), focusEnabled = domain.signal(true);
+            // 明确的焦点操作不改变普通按钮策略；目标与token始终由runtime管理。
+            SceneNode focusA = button("选择A", style, () -> { });
+            SceneNode focusB = button("选择B", style, () -> { });
+            focusA.focusable(true).onClick(() -> runtime.focusRouter().request(runtime.captureMount(focusA)));
+            focusB.focusable(true).onClick(() -> runtime.focusRouter().request(runtime.captureMount(focusB)));
+            focusA.bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target) -> node.background(target == node ? 0xFF287848 : 0xFF405060)));
+            focusB.bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target) -> node.background(target == node ? 0xFF287848 : 0xFF405060)));
+            SceneNode focusTargets = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(2)
+                .bind(NodeBinding.value(focusVisible, SceneNode::visible)).bind(NodeBinding.value(focusEnabled, SceneNode::enabled))
+                .add(focusA).add(focusB);
+            Computed<String> focusStatus = domain.computed(business, () -> {
+                SceneNode target = runtime.focusRouter().focused().get();
+                return "焦点：" + (target == focusA ? "A" : target == focusB ? "B" : "无")
+                    + "；目标" + (focusVisible.get() ? "显示" : "隐藏") + "/" + (focusEnabled.get() ? "启用" : "禁用");
+            });
+            SceneNode focusActions = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(2)
+                .add(button("清除焦点", style, () -> runtime.focusRouter().clear()))
+                .add(button("显隐目标", style, () -> focusVisible.set(!focusVisible.get())))
+                .add(button("启禁目标", style, () -> focusEnabled.set(!focusEnabled.get())));
             SceneNode panel = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(8).gap(4).background(0xE0101820)
-                .add(title).add(controls).add(body);
+                .add(title).add(controls).add(label(focusStatus, style)).add(focusTargets).add(focusActions).add(body);
             runtime.attach(null, panel);
             SceneNode dialog = new SceneNode().size(Size.fixed(360), Size.natural()).padding(10).gap(5).background(0xFF303848).modal(true)
                 .bind(NodeBinding.value(modal, SceneNode::visible))

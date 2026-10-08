@@ -98,6 +98,7 @@ public final class ClientFontServicesScenario extends TestApplication {
         initializeScene();
         scenario("单像素scissor与宿主恢复",this::onePixel);
         scenario("ready通知无需重布局",this::readyWithoutLayout);
+        scenario("焦点响应绑定经真实GPU像素观察",this::focusReplay);
         scenario("点击滚动与动态resize",this::inputAndResize);
         scenario("字体来源退休与旧glyph重开",this::reloadSources);
         scenario("screen关闭保留sharedowner",this::screenOwnership);
@@ -122,6 +123,8 @@ public final class ClientFontServicesScenario extends TestApplication {
             nodes=new SceneNode[3];domain.execute(()->{
         nodes[0]=new SceneNode().size(Size.fill(1),Size.fill(1)).background(0xff182030);
         nodes[1]=new SceneNode().text("中文 click e\u0301 👩🏽‍💻").style(style).size(Size.fill(1),Size.natural()).padding(4).onClick(()->clicked[0]++);
+        nodes[1].focusable(true).bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(runtime.focusRouter().focused(),
+            (node,target)->node.background(target==node?0xff28b060:0)));
         nodes[2]=new SceneNode().size(Size.fill(1),Size.fill(1)).scrollable(true).scrollStep(32);
         for(int i=0;i<30;i++)nodes[2].add(new SceneNode().text("行 "+i+" 原生像素").style(style).size(Size.fill(1),Size.natural()));
         nodes[0].add(nodes[1]).add(nodes[2]);runtime.attach(null,nodes[0]);
@@ -151,6 +154,14 @@ public final class ClientFontServicesScenario extends TestApplication {
         }
         if(owner.readyVersion()==0)throw new AssertionError("宿主未显式pump ready");
         image(new File(output,"scene-native.png"),read());
+    }
+    private void focusReplay() throws Exception {
+        domain.execute(()->require(runtime.focusRouter().request(runtime.captureMount(nodes[1])),"GPU焦点请求"));
+        clear();pipeline.frame();int[] focused=read();
+        require(focused[W+1]==0xff28b060,"焦点绑定未进入真实FBO像素");
+        domain.execute(()->runtime.focusRouter().clear());clear();pipeline.frame();int[] cleared=read();
+        require(cleared[W+1]==0xff182030,"清除焦点未恢复背景");
+        require(clicked[0]==0,"焦点请求不能激活业务");
     }
     private void inputAndResize() throws Exception {
         int rawY=FramebufferCoordinates.mouseY(H,H-6);

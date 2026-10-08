@@ -38,6 +38,11 @@ public final class SceneNode {
     private boolean modal;
     private boolean clip, scrollable, visible = true;
     private boolean enabled = true;
+    private boolean focusable;
+    /** 是否声明参与焦点；默认false，资格还受当前挂载及输入范围约束。 */
+    public boolean focusable() { return focusable; }
+    /** 挂载后通过绑定更新，不在输入handler直接改声明。 */
+    public SceneNode focusable(boolean value) { writable(); focusable = value; if (runtime != null) runtime.invalidateInteraction(); return this; }
     private String text = "";
     private Runnable click;
     private IntConsumer scrollAction;

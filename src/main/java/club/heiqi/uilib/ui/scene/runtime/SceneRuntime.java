@@ -27,6 +27,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
     private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
     private final ScenePointerRouter pointerRouter;
+    private final SceneFocusRouter focusRouter;
     private final ReactiveDomain domain;
     private final Owner owner;
     private final Map<SceneNode, Mount> mounts = new IdentityHashMap<>();
@@ -36,10 +37,14 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean routing;
     private boolean disposed;
     private long revision, geometryRevision;
-    public SceneRuntime(ReactiveDomain domain) { this.domain = domain; domain.checkAccess(); owner = domain.owner(); pointerRouter = new ScenePointerRouter(this); }
+    public SceneRuntime(ReactiveDomain domain) { this.domain = domain; domain.checkAccess(); owner = domain.owner(); pointerRouter = new ScenePointerRouter(this); focusRouter = new SceneFocusRouter(this); }
     public ReactiveDomain domain() { return domain; }
     /** 同runtime的帧管线共享唯一pointer owner；不在宿主建立另一套手势权威。 */
     public ScenePointerRouter pointerRouter() { domain.checkAccess(); return pointerRouter; }
+    /** 同runtime唯一焦点权威；宿主与业务只观察投影或发受控命令。 */
+    public SceneFocusRouter focusRouter() { domain.checkAccess(); return focusRouter; }
+    /** 焦点资格声明变化不改变几何，仍立即释放已经失活的焦点。 */
+    public void invalidateInteraction() { domain.checkAccess(); revision++; pointerRouter.revalidate(); focusRouter.revalidate(); }
     /** 为输入所有权捕获当前挂载身份；同runtime移动保留，detach/remount更换token。 */
     public MountHandle captureMount(SceneNode node) {
         checkAlive(); Mount mount = mounts.get(node);
@@ -57,6 +62,7 @@ public final class SceneRuntime implements AutoCloseable {
         domain.checkAccess(); revision++; geometryRevision++;
         // attach/move/detach及可见/启用/模态声明生效时取消失活owner，不等下一帧。
         pointerRouter.revalidate();
+        focusRouter.revalidate();
     }
     public void invalidatePaint() { domain.checkAccess(); revision++; }
     public void invalidateBinding(SceneNode node) { domain.checkAccess(); dirtyBindings.add(node); }
@@ -251,6 +257,7 @@ public final class SceneRuntime implements AutoCloseable {
         domain.checkAccess(); if (disposed) return;
         command();
         pointerRouter.close();
+        focusRouter.close();
         RuntimeException failure = null;
         for (SceneNode root : new ArrayList<>(roots)) {
             try { detach(root, mounts.get(root).token); }

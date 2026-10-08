@@ -108,7 +108,8 @@ public final class ReactiveDomain {
         checkAccess(); readOnlyDepth++;
         try { return read.get(); } finally { readOnlyDepth--; }
     }
-    void checkWrite() {
+    /** 校验域内受控写命令；测量、绘制和纯派生阶段不能改变交互或业务权威。 */
+    public void checkWrite() {
         checkAccess();
         if (readOnlyDepth != 0) throw new IllegalStateException("测量或绘制不能写业务状态");
         if (tracker instanceof Computed<?>) throw new IllegalStateException("纯派生不能写状态");
