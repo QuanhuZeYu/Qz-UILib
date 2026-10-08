@@ -75,6 +75,7 @@ public final class GlTokens {
     public static final int GL_STENCIL_VALUE_MASK=2963;
     public static final int GL_STENCIL_WRITEMASK=2968;
     public static final int GL_STREAM_DRAW=35040;
+    public static final int GL_SRC_ALPHA=770;
     public static final int GL_TEXTURE0=33984;
     public static final int GL_TEXTURE1=33985;
     public static final int GL_TEXTURE_2D=3553;

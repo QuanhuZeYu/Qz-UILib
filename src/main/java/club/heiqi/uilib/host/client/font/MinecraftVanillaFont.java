@@ -11,6 +11,7 @@ import club.heiqi.uilib.host.client.font.context.FontRenderContext;
 import club.heiqi.uilib.host.client.font.context.FontPlanSampling;
 import club.heiqi.uilib.host.client.font.context.LwjglFontContextCapture;
 import club.heiqi.uilib.host.client.font.context.RasterPolicy;
+import club.heiqi.uilib.host.client.font.context.StandardFontContext;
 import club.heiqi.uilib.host.client.font.vanilla.VanillaTextService;
 import club.heiqi.uilib.host.client.gl.GlPaintPlanRenderer;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -101,13 +102,7 @@ public final class MinecraftVanillaFont {
         ClientFontServices owner=MinecraftFontServices.shared();
         if(capture==null)capture=new LwjglFontContextCapture(owner.gl(),AngelicaMatrixStateProvider.optional(MinecraftVanillaFont.class.getClassLoader(),owner.gl()));
         FontRenderContext context=capture.capture(Display.getHeight(),MinecraftFontServices.resourceRevision(),0);
-        FontRenderContext.MatrixState state=context.state;
-        // 标准方法的显式文字颜色替换current color；布局已保存每个格式色，不重复相乘旧caller颜色。
-        FontRenderContext.MatrixState fontState=new FontRenderContext.MatrixState(state.projection(),state.modelView(),new float[]{1,1,1,1},
-            state.alphaTest,state.alphaFunction,state.alphaReference,state.lightmapActive,state.lightmapTexture,state.lightmapU,state.lightmapV,
-            state.packedLight,state.normal(),state.lighting(),state.blockEntityId);
-        return new FontRenderContext(context.projection,context.drawFramebuffer,context.sourceFramebufferHeight,context.depthTest,context.depthFunction,
-            context.depthWrite,context.scissorEnabled,context.scissor(),fontState,context.contextIdentity,context.revision,context.passKey,context.rasterState);
+        return StandardFontContext.from(context);
     }
     private static OptionalFontHostBridge hostBridge() {
         if(bridge==null)bridge=OptionalFontHostBridge.create(MinecraftVanillaFont.class.getClassLoader(),MinecraftFontServices.shared().gl(),new OptionalFontHostBridge.ReplaySink(){
