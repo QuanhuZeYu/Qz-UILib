@@ -51,6 +51,6 @@
 - [x] 核心/GL通过后在/qzcore明确展示默认初始与模态M、内层N、恢复失败选择；原点击/字号/标题操作不抢焦点。
 - [x] 完整build与最终独立审查通过；两项Important已修复并同代理复核关闭，必要核心/GL回归通过。
 交付执行：本地提交、manualTestJar、核验哈希与双实例部署；实际版本与结果记录在build/focus-scope-review/，不自动启动实例。
-- [ ] 两实例由用户观察初始、模态进入/恢复、内层返回、失活恢复失败及普通更新保持；自动通过后交付待实机版本。
+- [x] c9528c1df8正式135包与验收包已备份部署1.7.10及GTNH并核验hash；用户反馈“实机验收全部通过”。agent未启动实例。
 
 运行沿agent-environment.mjs的execWithEnvironment，Gradle wrapper使用--offline --no-configuration-cache --console=plain。核心入口focusScopeScenario/coreSceneCheck、真实GPUclientFontServicesScenario、完整build与manualTestJar。日志放build/focus-scope-review/，配置/编译失败不作行为RED。
