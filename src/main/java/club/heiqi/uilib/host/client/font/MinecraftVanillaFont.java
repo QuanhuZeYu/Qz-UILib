@@ -26,7 +26,10 @@ import club.heiqi.uilib.ui.scene.text.RasterSampling;
  * 安装只创建逻辑适配器，度量不创建GL对象；所有文字共享scene的字体/worker/atlas/backend。 */
 public final class MinecraftVanillaFont {
     private static final Map<FontRendererAccess,SettingsEntry> SETTINGS=new WeakHashMap<FontRendererAccess,SettingsEntry>();
-    private static final RasterPolicy RASTER=RasterPolicy.DEFAULT;
+    // 标准文字的小字号轮廓至少以32px采样，布局em/advance/基线仍由Settings决定。
+    // 微软雅黑“世界/取消”探针在em11、GUI密度2时，24px首墨迹行比32px晚一物理像素；
+    // 32px采样保留顶部细节，避免为显示质量改变共享字体的hinting、整形或墨迹规则。
+    private static final RasterPolicy RASTER=new RasterPolicy(32,48,64,96,128,192,256,384,512);
     private static VanillaTextService text;
     private static LwjglFontContextCapture capture;
     private static OptionalFontHostBridge bridge;
