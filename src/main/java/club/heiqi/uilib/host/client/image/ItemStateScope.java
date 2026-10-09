@@ -14,12 +14,12 @@ import club.heiqi.uilib.ui.scene.image.ImagePlacement;
 
 /** 原版 GUI item 的状态边界，独立于字体 producer。Angelica 的有效栈和 driver 栈分别保存、恢复。
  * all attrib 包含 lighting/material/alpha/depth/blend/color/normal；矩阵、现代 bindings 单独保存。
- * 每次调用隔离 VAO，异常漏出的 matrix push 按原深度 unwind；不承诺恢复任意 hook 对全局资源的修改。 */
+ * legacy客户端数组使用默认 VAO 并另存其client状态，异常漏出的 matrix push 按原深度 unwind；不承诺恢复任意 hook 对全局资源的修改。 */
 public final class ItemStateScope implements AutoCloseable {
     private final GlApi gl;
     private final Port raw, effective;
     private final LegacySnapshot driver, cached;
-    private final int program, vao, vbo, ebo, drawFbo, readFbo, activeUnit, isolatedVao;
+    private final int program, vao, vbo, ebo, drawFbo, readFbo, activeUnit;
     private final int[][] textures;
     private final boolean samplers;
     private final int[] viewport = new int[4];
@@ -41,11 +41,14 @@ public final class ItemStateScope implements AutoCloseable {
         // 先捕获 driver；effective 查询会改变 raw active unit，但不能覆盖这份入口快照。
         driver = new LegacySnapshot(raw, gl.glGetInteger(34018));
         cached = effective == null ? null : new LegacySnapshot(effective, gl.glGetInteger(34018));
-        isolatedVao = gl.glGenVertexArrays();
         try {
             driver.push(); if (cached != null) cached.push();
-            if (effective != null) { effective.call("glBindVertexArray", new Class<?>[]{int.class}, isolatedVao); effective.call("glBindBuffer", new Class<?>[]{int.class,int.class}, GL_ARRAY_BUFFER, 0); effective.call("glBindBuffer", new Class<?>[]{int.class,int.class}, GL_ELEMENT_ARRAY_BUFFER, 0); }
-            gl.glBindVertexArray(isolatedVao); gl.glBindBuffer(GL_ARRAY_BUFFER, 0); gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+            if(effective!=null)effective.one("glBindVertexArray",0);
+            gl.glBindVertexArray(0);
+            // compatibility客户端数组禁止非零VAO+CPU指针；先保存默认VAO自身，再清空buffer绑定。
+            driver.pushDefaultClient();if(cached!=null)cached.pushDefaultClient();
+            if(effective!=null){effective.call("glBindBuffer",new Class<?>[]{int.class,int.class},GL_ARRAY_BUFFER,0);effective.call("glBindBuffer",new Class<?>[]{int.class,int.class},GL_ELEMENT_ARRAY_BUFFER,0);}
+            gl.glBindBuffer(GL_ARRAY_BUFFER,0);gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,0);
         } catch (RuntimeException | Error failure) { try { close(); } catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); } throw failure; }
     }
     /** framebuffer XY 正交矩阵直接加载到两套矩阵；不乘 GUI Scale。RenderItem 用自身 16px 坐标。 */
@@ -57,13 +60,16 @@ public final class ItemStateScope implements AutoCloseable {
         if(effective!=null)effective.one("glUseProgram",0);
         gl.glUseProgram(0); gl.glViewport(0,0,framebufferWidth,framebufferHeight);
         if (clip != null) { gl.glEnable(GL_SCISSOR_TEST); gl.glScissor(clip.x,framebufferHeight-clip.y-clip.height,clip.width,clip.height); }
+        // shader quad不依赖固定纹理enable/env/matrix；原版flat RenderItem只bind atlas，须自备旧GUI入态。
+        if(effective!=null)effective.guiTextures(cached.matrices.size()-2);
+        raw.guiTextures(driver.matrices.size()-2);
         gl.glActiveTexture(GL_TEXTURE0); if (effective != null) effective.active(GL_TEXTURE0);
         if (samplers) { gl.glBindSampler(0,0); if (textures.length > 1) gl.glBindSampler(1,0); }
     }
     @Override public void close() {
         if (closed) return; closed = true; RuntimeException failure = null;
         // 漏出的嵌套 attrib 先在委托当前 FBO 下 unwind；最后属于本 scope 的快照才在入口 FBO 下 pop。
-        driver.unwindDelegatedAttribs();
+        driver.unwindDelegatedAttribs();driver.unwindDelegatedClients();
         // cache pop 可写 driver，所以必须先 cache，后独立 driver 恢复。
         if (cached != null) try { cached.restore(); } catch (RuntimeException error) { failure = error; }
         // GL_COLOR_BUFFER_BIT 恢复的 draw/read buffer 属于入口 FBO，必须先重新绑定它，否则 default FBO 拒绝 COLOR_ATTACHMENT0。
@@ -75,7 +81,7 @@ public final class ItemStateScope implements AutoCloseable {
             gl.glBindFramebuffer(GL_DRAW_FRAMEBUFFER,drawFbo); gl.glBindFramebuffer(36008,readFbo); gl.glUseProgram(program);
             gl.glViewport(viewport[0],viewport[1],viewport[2],viewport[3]);
             for (int i=0;i<textures.length;i++) { gl.glActiveTexture(GL_TEXTURE0+i); for(int j=0;j<TARGETS.length;j++)gl.glBindTexture(TARGETS[j],textures[i][j]);if(samplers)gl.glBindSampler(i,textures[i][4]); }
-        } finally { gl.glActiveTexture(activeUnit); gl.glDeleteVertexArrays(isolatedVao); }
+        } finally { gl.glActiveTexture(activeUnit); }
         if (failure != null) throw failure;
     }
     private static final class Matrix {
@@ -86,10 +92,10 @@ public final class ItemStateScope implements AutoCloseable {
     private static final class LegacySnapshot {
         final Port p; final int mode, active, vao, vbo, ebo, attribDepth,clientDepth,program,drawFbo,readFbo;final Captured captured;
         final float[] normal;final List<Matrix> matrices=new ArrayList<>();
-        boolean pushed,clientPushed;
+        boolean pushed,clientPushed,defaultClientPushed;
         LegacySnapshot(Port p,int units) {
             this.p=p;mode=p.integer(GL_MATRIX_MODE);active=p.integer(GL_ACTIVE_TEXTURE);attribDepth=p.cached?((Number)p.none("getAttribDepth")).intValue():p.integer(2992);
-            vao=p.cached?p.integer(GL_VERTEX_ARRAY_BINDING):0;vbo=p.cached?p.integer(GL_ARRAY_BUFFER_BINDING):0;ebo=p.cached?p.integer(GL_ELEMENT_ARRAY_BUFFER_BINDING):0;
+            vao=p.integer(GL_VERTEX_ARRAY_BINDING);vbo=p.cached?p.integer(GL_ARRAY_BUFFER_BINDING):0;ebo=p.cached?p.integer(GL_ELEMENT_ARRAY_BUFFER_BINDING):0;
             program=p.cached?p.integer(GL_CURRENT_PROGRAM):0;drawFbo=p.cached?p.integer(GL_DRAW_FRAMEBUFFER_BINDING):0;readFbo=p.cached?p.integer(36010):0;
             clientDepth=p.clientDepth();captured=p.cached?Captured.read(p.type.getClassLoader()):null;
             normal=p.cached?p.normal():p.floats(GL_CURRENT_NORMAL,3);
@@ -97,11 +103,19 @@ public final class ItemStateScope implements AutoCloseable {
             finally { p.active(active);p.mode(mode); }
         }
         void push(){p.one("glPushAttrib",0xfffff);pushed=true;p.one("glPushClientAttrib",-1);clientPushed=true;}
+        void pushDefaultClient(){p.one("glPushClientAttrib",-1);defaultClientPushed=true;}
+        void unwindDelegatedClients(){if(clientPushed){int owned=clientDepth+1+(defaultClientPushed?1:0);if(p.clientDepth()<owned)throw new IllegalStateException("物品hook弹出了调用方client栈");while(p.clientDepth()>owned)p.none("glPopClientAttrib");}}
+        void restoreClients(){
+            // Angelica pop只写当前VAO的flags，不绑定push时VAO；不可先bind父然后总whilepop。
+            unwindDelegatedClients();
+            if(defaultClientPushed){p.bindVao(0);p.none("glPopClientAttrib");defaultClientPushed=false;}
+            if(clientPushed){p.bindVao(vao);p.none("glPopClientAttrib");clientPushed=false;}
+        }
         void unwindDelegatedAttribs(){if(pushed)while((p.cached?((Number)p.none("getAttribDepth")).intValue():p.integer(2992))>attribDepth+1)p.none("glPopAttrib");}
         void restore(){
             RuntimeException failure=null;
             unwindDelegatedAttribs();
-            try { if(p.cached){p.call("glBindFramebuffer",new Class<?>[]{int.class,int.class},GL_DRAW_FRAMEBUFFER,drawFbo);p.call("glBindFramebuffer",new Class<?>[]{int.class,int.class},36008,readFbo);p.one("glBindVertexArray",vao);p.call("glBindBuffer",new Class<?>[]{int.class,int.class},GL_ARRAY_BUFFER,vbo);p.call("glBindBuffer",new Class<?>[]{int.class,int.class},GL_ELEMENT_ARRAY_BUFFER,ebo);}if(clientPushed)while(p.clientDepth()>clientDepth)p.none("glPopClientAttrib");if(pushed){if(p.cached){while(((Number)p.none("getAttribDepth")).intValue()>attribDepth)p.none("glPopAttrib");}else{while(p.integer(2992)>attribDepth)p.none("glPopAttrib");}} }
+            try { if(p.cached){p.call("glBindFramebuffer",new Class<?>[]{int.class,int.class},GL_DRAW_FRAMEBUFFER,drawFbo);p.call("glBindFramebuffer",new Class<?>[]{int.class,int.class},36008,readFbo);}restoreClients();if(p.cached){p.one("glBindVertexArray",vao);p.call("glBindBuffer",new Class<?>[]{int.class,int.class},GL_ARRAY_BUFFER,vbo);p.call("glBindBuffer",new Class<?>[]{int.class,int.class},GL_ELEMENT_ARRAY_BUFFER,ebo);}if(pushed){if(p.cached){while(((Number)p.none("getAttribDepth")).intValue()>attribDepth)p.none("glPopAttrib");}else{while(p.integer(2992)>attribDepth)p.none("glPopAttrib");}} }
             catch(RuntimeException error){failure=error;}
             try { for(Matrix matrix:matrices)matrix.restore(p);p.call("glNormal3f",new Class<?>[]{float.class,float.class,float.class},normal[0],normal[1],normal[2]);
                 if(p.cached){p.one("glUseProgram",program);p.call("glBindFramebuffer",new Class<?>[]{int.class,int.class},GL_DRAW_FRAMEBUFFER,drawFbo);p.call("glBindFramebuffer",new Class<?>[]{int.class,int.class},36008,readFbo);p.one("glBindVertexArray",vao);p.call("glBindBuffer",new Class<?>[]{int.class,int.class},GL_ARRAY_BUFFER,vbo);p.call("glBindBuffer",new Class<?>[]{int.class,int.class},GL_ELEMENT_ARRAY_BUFFER,ebo);}
@@ -125,10 +139,20 @@ public final class ItemStateScope implements AutoCloseable {
         Object none(String name){return call(name,new Class<?>[0]);}
         void one(String name,int value){call(name,new Class<?>[]{int.class},value);}
         int integer(int name){return ((Number)call("glGetInteger",new Class<?>[]{int.class},name)).intValue();}
+        void bindVao(int vao){if(cached)one("glBindVertexArray",vao);else try{invoke(Class.forName("org.lwjgl.opengl.GL30",false,type.getClassLoader()),"glBindVertexArray",new Class<?>[]{int.class},vao);}catch(ClassNotFoundException error){throw new IllegalStateException("缺少VAO端口",error);}}
         void mode(int mode){one("glMatrixMode",mode);}
         void active(int unit){invoke(multitexture,"glActiveTexture",new Class<?>[]{int.class},unit);}
         float[] floats(int name,int size){FloatBuffer b=buffer(16);call("glGetFloat",new Class<?>[]{int.class,FloatBuffer.class},name,b);float[] a=new float[size];for(int i=0;i<size;i++)a[i]=b.get(i);return a;}
         void matrix(int mode,float[] top){mode(mode);FloatBuffer b=buffer(16);b.put(top).flip();call("glLoadMatrix",new Class<?>[]{FloatBuffer.class},b);}
+        void guiTextures(int units){
+            float[] identity={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+            for(int i=0;i<units;i++){active(GL_TEXTURE0+i);one("glDisable",32879);one("glDisable",34067);one("glDisable",3552);one(i==0?"glEnable":"glDisable",GL_TEXTURE_2D);matrix(GL_TEXTURE,identity);}
+            invoke(multitexture,"glClientActiveTexture",new Class<?>[]{int.class},GL_TEXTURE0);
+            one("glDisableClientState",32885);one("glDisableClientState",32886);
+            active(GL_TEXTURE0);call("glTexEnvi",new Class<?>[]{int.class,int.class,int.class},8960,8704,8448);mode(GL_MODELVIEW);
+            call("glColor4f",new Class<?>[]{float.class,float.class,float.class,float.class},1f,1f,1f,1f);
+            call("glAlphaFunc",new Class<?>[]{int.class,float.class},516,.1f);
+        }
         int clientDepth(){if(!cached)return integer(2993);try{Method ctx=type.getDeclaredMethod("ctx");ctx.setAccessible(true);Object context=ctx.invoke(null);java.lang.reflect.Field depth=context.getClass().getDeclaredField("clientAttribStackPointer");depth.setAccessible(true);return depth.getInt(context);}catch(ReflectiveOperationException error){throw new IllegalStateException("无法读取有效client attrib栈",error);}}
         float[] normal(){try{Class<?> shader=Class.forName("com.gtnewhorizons.angelica.glsm.ffp.ShaderManager",false,type.getClassLoader());Object n=shader.getMethod("getCurrentNormal").invoke(null);return new float[]{n.getClass().getField("x").getFloat(n),n.getClass().getField("y").getFloat(n),n.getClass().getField("z").getFloat(n)};}catch(ReflectiveOperationException error){throw new IllegalStateException("无法读取有效normal",error);}}
         int depth(int mode){if(!cached)return integer(mode==GL_PROJECTION?2980:mode==GL_MODELVIEW?2979:2981);Object stack=none("getMatrixStack");return ((Number)call("getMatrixStackDepth",new Class<?>[]{stack.getClass()},stack)).intValue();}
