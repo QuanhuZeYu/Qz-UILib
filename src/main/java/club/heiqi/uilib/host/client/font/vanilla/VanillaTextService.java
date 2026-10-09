@@ -39,27 +39,18 @@ public final class VanillaTextService {
 
     /** palette含实际宿主32色；em与lineHeight分别表达字体尺寸和可写FONT_HEIGHT合同。 */
     public static final class Settings {
-        /** baseline保存caller纵向锚点：旧构造器为基线，bottomAligned工厂为框底；实际基线见Line.baseline。 */
         public final float logicalEm,lineHeight,baseline;
         public final boolean bidi,unicode;
-        private final boolean bottomAligned;
         private final int[] palette;
         public Settings(float logicalEm,float lineHeight,float baseline,boolean bidi,boolean unicode,int[] palette){
-            this(logicalEm,lineHeight,baseline,bidi,unicode,palette,false);
-        }
-        /** bottom为caller贴图框底部；使用行的真实下降部换算基线，不按每字墨迹底部摆字。 */
-        public static Settings bottomAligned(float logicalEm,float lineHeight,float bottom,boolean bidi,boolean unicode,int[] palette){
-            return new Settings(logicalEm,lineHeight,bottom,bidi,unicode,palette,true);
-        }
-        private Settings(float logicalEm,float lineHeight,float baseline,boolean bidi,boolean unicode,int[] palette,boolean bottomAligned){
             if(!Float.isFinite(logicalEm)||logicalEm<=0||logicalEm>32767||!Float.isFinite(lineHeight)||lineHeight<=0||!Float.isFinite(baseline)||palette.length!=32)throw new IllegalArgumentException("无效原版字体设置");
-            this.logicalEm=logicalEm;this.lineHeight=lineHeight;this.baseline=baseline;this.bidi=bidi;this.unicode=unicode;this.palette=palette.clone();this.bottomAligned=bottomAligned;
+            this.logicalEm=logicalEm;this.lineHeight=lineHeight;this.baseline=baseline;this.bidi=bidi;this.unicode=unicode;this.palette=palette.clone();
         }
         public int paletteColor(int index){return palette[index];}
         /** 阴影调用使用同一快照的后16色；baseColor由调用者应用旧alpha/shadow规则。 */
-        public Settings shadow(){int[] p=palette.clone();System.arraycopy(palette,16,p,0,16);return new Settings(logicalEm,lineHeight,baseline,bidi,unicode,p,bottomAligned);}
-        @Override public boolean equals(Object o){if(!(o instanceof Settings))return false;Settings s=(Settings)o;return logicalEm==s.logicalEm&&lineHeight==s.lineHeight&&baseline==s.baseline&&bottomAligned==s.bottomAligned&&bidi==s.bidi&&unicode==s.unicode&&Arrays.equals(palette,s.palette);}
-        @Override public int hashCode(){return Objects.hash(logicalEm,lineHeight,baseline,bottomAligned,bidi,unicode,Arrays.hashCode(palette));}
+        public Settings shadow(){int[] p=palette.clone();System.arraycopy(palette,16,p,0,16);return new Settings(logicalEm,lineHeight,baseline,bidi,unicode,p);}
+        @Override public boolean equals(Object o){if(!(o instanceof Settings))return false;Settings s=(Settings)o;return logicalEm==s.logicalEm&&lineHeight==s.lineHeight&&baseline==s.baseline&&bidi==s.bidi&&unicode==s.unicode&&Arrays.equals(palette,s.palette);}
+        @Override public int hashCode(){return Objects.hash(logicalEm,lineHeight,baseline,bidi,unicode,Arrays.hashCode(palette));}
     }
     public VanillaTextService(FontTextService service){this(()->service);}
     public VanillaTextService(Supplier<FontTextService> provider){this.provider=Objects.requireNonNull(provider,"provider");}
@@ -86,15 +77,14 @@ public final class VanillaTextService {
         return new AttributedText(request.input,request.originalText,request.baseStyle.withEffects(withoutObfuscation(request.baseStyle.effects)),spans,request.trailingStyle.withEffects(withoutObfuscation(request.trailingStyle.effects)),request.diagnostics());
     }
     private static TextPolicy policy(Settings settings,TextPolicy input){return new TextPolicy(settings.bidi?TextPolicy.Direction.AUTO:TextPolicy.Direction.LTR,input.wrap,input.language,input.tabSize,settings.lineHeight);}
-    /** caller原点按显式基线或贴图框底部对齐；底部模式扣除真实下降部，保留整行共享基线。 */
+    /** 顶部caller原点按Settings.baseline对齐；不缩小回退字体以塞入固定行高。 */
     private static TextLayout align(TextLayout layout,Settings settings){
         List<TextLayout.Line> lines=new ArrayList<TextLayout.Line>();float top=0;
         for(TextLayout.Line line:layout.lines()){
-            float baseline=top+settings.baseline-(settings.bottomAligned?line.descent:0);
-            float delta=baseline-line.baseline,decorationDelta=top+settings.baseline-line.baseline;List<TextLayout.Glyph> glyphs=new ArrayList<TextLayout.Glyph>();List<TextLayout.Decoration> decorations=new ArrayList<TextLayout.Decoration>();
+            float delta=top+settings.baseline-line.baseline;List<TextLayout.Glyph> glyphs=new ArrayList<TextLayout.Glyph>();List<TextLayout.Decoration> decorations=new ArrayList<TextLayout.Decoration>();
             for(TextLayout.Glyph g:line.glyphs())glyphs.add(new TextLayout.Glyph(g.source,g.size,g.glyphId,g.logicalStart,g.logicalEnd,g.sourceStart,g.sourceEnd,g.x,g.y+delta,g.xAdvance,g.yAdvance,g.color,g.replacement,g.inkBounds,g.logicalEm,g.rasterToLayout,g.rasterStyle,g.resolvedStyle,g.clusterIndex));
-            for(TextLayout.Decoration d:line.decorations())decorations.add(new TextLayout.Decoration(d.kind,d.x,d.y+decorationDelta,d.width,d.height,d.color,d.logicalStart,d.logicalEnd,d.sourceStart,d.sourceEnd));
-            lines.add(new TextLayout.Line(line.text,line.x,(int)top,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,baseline,line.ascent,line.descent,settings.lineHeight,glyphs,line.clusters(),decorations));top+=settings.lineHeight;
+            for(TextLayout.Decoration d:line.decorations())decorations.add(new TextLayout.Decoration(d.kind,d.x,d.y+delta,d.width,d.height,d.color,d.logicalStart,d.logicalEnd,d.sourceStart,d.sourceEnd));
+            lines.add(new TextLayout.Line(line.text,line.x,(int)top,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,top+settings.baseline,line.ascent,line.descent,settings.lineHeight,glyphs,line.clusters(),decorations));top+=settings.lineHeight;
         }
         return new TextLayout(layout.width,(int)Math.ceil(top),layout.advanceWidth,top,layout.style,lines,layout.logicalText,layout.originalText,layout.generation,layout.diagnostics(),layout.input);
     }
@@ -185,8 +175,8 @@ public final class VanillaTextService {
     private static final class LayoutKey {
         final String raw;final Settings settings;final float width;final TextPolicy policy;
         LayoutKey(String raw,Settings settings,float width,TextPolicy policy){this.raw=raw;this.settings=settings;this.width=width;this.policy=policy;}
-        @Override public boolean equals(Object o){if(!(o instanceof LayoutKey))return false;LayoutKey k=(LayoutKey)o;return raw.equals(k.raw)&&settings.logicalEm==k.settings.logicalEm&&settings.lineHeight==k.settings.lineHeight&&settings.baseline==k.settings.baseline&&settings.bottomAligned==k.settings.bottomAligned&&settings.bidi==k.settings.bidi&&settings.unicode==k.settings.unicode&&width==k.width&&policy.equals(k.policy);}
-        @Override public int hashCode(){return Objects.hash(raw,settings.logicalEm,settings.lineHeight,settings.baseline,settings.bottomAligned,settings.bidi,settings.unicode,width,policy);}
+        @Override public boolean equals(Object o){if(!(o instanceof LayoutKey))return false;LayoutKey k=(LayoutKey)o;return raw.equals(k.raw)&&settings.logicalEm==k.settings.logicalEm&&settings.lineHeight==k.settings.lineHeight&&settings.baseline==k.settings.baseline&&settings.bidi==k.settings.bidi&&settings.unicode==k.settings.unicode&&width==k.width&&policy.equals(k.policy);}
+        @Override public int hashCode(){return Objects.hash(raw,settings.logicalEm,settings.lineHeight,settings.baseline,settings.bidi,settings.unicode,width,policy);}
     }
     private static final class SampleKey {
         final LayoutKey layout;final int color;final float density;final long revision,tick,salt;
