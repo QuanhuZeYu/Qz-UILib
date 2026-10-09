@@ -6,6 +6,8 @@ import java.util.ArrayDeque;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
@@ -17,6 +19,8 @@ public final class FocusScopeScenario extends TestApplication {
     private final class Page {
         final ReactiveDomain domain = ReactiveDomain.direct();
         final SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        ScenePageSession session;
+        ScenePageContext context;
         SceneRuntime runtime;
         SceneFramePipeline pipe;
         SceneNode a, b, m, n, root, outer, inner;
@@ -24,8 +28,9 @@ public final class FocusScopeScenario extends TestApplication {
         Signal<SceneNode> initial, restore;
         MountHandle outerHandle;
         Page(boolean explicit) {
-            domain.execute(() -> {
-                runtime = new SceneRuntime(domain); onClose(() -> domain.execute(runtime::close));
+            session = ScenePageSession.open(domain, host, host, ctx -> {
+                context = ctx;
+                runtime = ctx.runtime();
                 outerOpen = domain.signal(false); innerOpen = domain.signal(false);
                 aEnabled = domain.signal(true); aVisible = domain.signal(true); aFocusable = domain.signal(true);
                 a = new SceneNode().text("A").focusable(true).bind(NodeBinding.value(aEnabled, SceneNode::enabled))
@@ -34,16 +39,17 @@ public final class FocusScopeScenario extends TestApplication {
                 initial = domain.signal(explicit ? b : null); restore = domain.signal(null);
                 SceneNode status = new SceneNode().bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target)->node.text("焦点="+name(target))));
                 root = new SceneNode().bind(NodeBinding.value(initial, SceneNode::initialFocus)).bind(NodeBinding.value(restore, SceneNode::restoreFocus)).add(a).add(b).add(status);
-                runtime.attach(null, root);
+                ctx.mount(root);
                 inner = new SceneNode().modal(true).visible(false).initialFocus(n).bind(NodeBinding.value(innerOpen, SceneNode::visible)).add(n);
                 outer = new SceneNode().modal(true).visible(false).initialFocus(m).bind(NodeBinding.value(outerOpen, SceneNode::visible)).add(m).add(inner);
-                outerHandle = runtime.attach(null, outer);
-                pipe = new SceneFramePipeline(runtime, host, host); onClose(pipe::close);
+                outerHandle = ctx.mount(outer);
             });
+            pipe = session.pipeline();
+            onClose(session::close);
         }
         String name(SceneNode node) { return node == a ? "A" : node == b ? "B" : node == m ? "M" : node == n ? "N" : "无"; }
         void expect(SceneNode node) {
-            pipe.frame(); domain.execute(() -> require(runtime.focusRouter().focused().get() == node, "期望"+name(node)+"，实际"+name(runtime.focusRouter().focused().get())));
+            session.frame(); domain.execute(() -> require(runtime.focusRouter().focused().get() == node, "期望"+name(node)+"，实际"+name(runtime.focusRouter().focused().get())));
             require(host.last.commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.TEXT && c.text.lines().stream().anyMatch(l -> l.text.equals("焦点="+name(node)))), "真实Plan焦点显示错误");
         }
         void choose(SceneNode node) { domain.execute(() -> require(runtime.focusRouter().request(runtime.captureMount(node)), "合法请求应接受")); }
@@ -101,7 +107,8 @@ public final class FocusScopeScenario extends TestApplication {
         scenario("目标越范围或跨runtime被拒且空范围无焦点", () -> {
             Page p = new Page(true); p.expect(p.b);
             p.domain.execute(() -> {
-                SceneRuntime other = new SceneRuntime(p.domain); onClose(() -> p.domain.execute(other::close));
+                // 底层合同：异runtime目标必须被同一焦点权威拒绝，刻意构造外域目标。
+                SceneRuntime other = new SceneRuntime(p.domain); p.context.own(other);
                 SceneNode foreign = new SceneNode().focusable(true); other.attach(null, foreign);
                 p.initial.set(foreign); p.restore.set(foreign);
             }); p.expect(p.b); p.open(p.outerOpen, true); p.expect(p.m);
@@ -133,7 +140,7 @@ public final class FocusScopeScenario extends TestApplication {
                 p.runtime.captureMount(p.a).detach(); p.runtime.captureMount(p.b).detach(); p.runtime.attach(p.root, holder);
                 p.initial.set(null);
             }); p.open(p.outerOpen, false);
-            p.pipe.frame(); p.domain.execute(() -> require(p.runtime.focusRouter().focused().get().text().equals("C"), "恢复失败按新声明顺序选C"));
+            p.session.frame(); p.domain.execute(() -> require(p.runtime.focusRouter().focused().get().text().equals("C"), "恢复失败按新声明顺序选C"));
         });
         scenario("modal声明关闭后返回而非保留原模态目标", () -> {
             Page p = new Page(true); p.expect(p.b);
@@ -143,7 +150,7 @@ public final class FocusScopeScenario extends TestApplication {
                 z[0] = new SceneNode().focusable(true);
                 p.runtime.attach(null, new SceneNode().modal(true).initialFocus(z[0]).bind(NodeBinding.value(mode, SceneNode::modal)).add(z[0]));
                 end[0] = () -> mode.set(false);
-            }); p.pipe.frame(); p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == z[0], "进入新模态"));
+            }); p.session.frame(); p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == z[0], "进入新模态"));
             p.domain.execute(end[0]); p.expect(p.b);
         });
         scenario("独立后台模态结束不改变仍有效的前台焦点", () -> {
@@ -193,11 +200,12 @@ public final class FocusScopeScenario extends TestApplication {
             ArrayDeque<Runnable> queue = new ArrayDeque<>(); ReactiveDomain domain = new ReactiveDomain(queue::add);
             final SceneRuntime[] runtime = new SceneRuntime[1]; final SceneNode[] target = new SceneNode[1]; final MountHandle[] modal = new MountHandle[1];
             Runnable drain = () -> { while (!queue.isEmpty()) queue.remove().run(); };
-            domain.execute(() -> { runtime[0] = new SceneRuntime(domain); target[0] = new SceneNode().focusable(true); runtime[0].attach(null, new SceneNode().add(target[0])); }); drain.run();
-            onClose(() -> { domain.execute(runtime[0]::close); drain.run(); });
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+            ScenePageSession session = ScenePageSession.open(domain, host, host, ctx -> { runtime[0] = ctx.runtime(); target[0] = new SceneNode().focusable(true); ctx.mount(new SceneNode().add(target[0])); }); drain.run();
+            onClose(() -> { session.close(); drain.run(); });
             domain.execute(() -> { runtime[0].preparePresentation(); require(runtime[0].focusRouter().focused().get() == target[0], "默认进入先执行"); });
             domain.execute(() -> { modal[0] = runtime[0].attach(null, new SceneNode().modal(true)); runtime[0].preparePresentation(); require(runtime[0].focusRouter().focused().get() == null, "空模态隔离"); });
-            domain.execute(() -> { modal[0].detach(); runtime[0].preparePresentation(); require(runtime[0].focusRouter().focused().get() == target[0], "返回恢复"); runtime[0].close(); }); drain.run();
+            domain.execute(() -> { modal[0].detach(); runtime[0].preparePresentation(); require(runtime[0].focusRouter().focused().get() == target[0], "返回恢复"); session.close(); }); drain.run();
         });
     }
     public static void main(String[] args) throws Exception { new FocusScopeScenario().run(args); }

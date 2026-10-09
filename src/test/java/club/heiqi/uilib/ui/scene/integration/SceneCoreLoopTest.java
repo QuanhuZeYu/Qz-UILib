@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import java.util.UUID;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -21,17 +22,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-/** 可直启的真实业务场景；无需测试库或平台类，后续接通场景树与绘制计划。 */
+/** 可直启的状态和挂载合同场景；生命周期共享正式页面入口，反例直接观察原runtime。 */
 public final class SceneCoreLoopTest extends TestApplication {
     private void lifecycleScenario(ReactiveDomain domain) {
-        domain.execute(() -> {
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        ScenePageSession session = ScenePageSession.open(domain, host, host, context -> {
             Signal<Integer> operations = domain.signal(0);
-            SceneRuntime runtime = new SceneRuntime(domain);
-            onClose(() -> domain.execute(runtime::close));
+            SceneRuntime runtime = context.runtime();
             SceneNode oldParent = new SceneNode();
             SceneNode newParent = new SceneNode().enabled(false);
-            MountHandle oldRoot = runtime.attach(null, oldParent);
-            MountHandle newRoot = runtime.attach(null, newParent);
+            MountHandle oldRoot = context.mount(oldParent);
+            MountHandle newRoot = context.mount(newParent);
             List<String> releases = new ArrayList<>();
             SceneNode action = new SceneNode().bind(NodeBinding.value(operations, (node, value) -> node.text("操作:" + value)))
                 .bind((scene, node, owner) -> new BindingActivation() {
@@ -67,6 +68,7 @@ public final class SceneCoreLoopTest extends TestApplication {
             operations.set(9);
             require(operations.get() == 9, "销毁控件不销毁独立业务状态");
         });
+        onClose(session::close);
     }
 
     public static void main(String[] args) throws Exception { new SceneCoreLoopTest().run(args); }

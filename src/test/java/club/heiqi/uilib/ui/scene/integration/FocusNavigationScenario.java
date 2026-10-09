@@ -8,6 +8,8 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
@@ -24,6 +26,8 @@ public final class FocusNavigationScenario extends TestApplication {
         final ReactiveDomain domain;
         final Runnable drain;
         final SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        ScenePageSession session;
+        ScenePageContext context;
         SceneRuntime runtime;
         SceneFramePipeline pipe;
         SceneTabInputAdapter keys;
@@ -35,27 +39,30 @@ public final class FocusNavigationScenario extends TestApplication {
         Page() { this(ReactiveDomain.direct(), () -> {}); }
         Page(ReactiveDomain domain, Runnable drain) {
             this.domain = domain; this.drain = drain;
-            domain.execute(() -> {
-                runtime = new SceneRuntime(domain); onClose(() -> { domain.execute(runtime::close); drain.run(); });
+            session = ScenePageSession.open(domain, host, host, ctx -> {
+                context = ctx;
+                runtime = ctx.runtime();
                 bEnabled = domain.signal(true); cFocusable = domain.signal(true); cVisible = domain.signal(true); action = domain.signal(() -> clicks++);
                 a = new SceneNode().text("A").focusable(true).size(Size.fixed(30), Size.fixed(20)).bind(NodeBinding.value(action, SceneNode::onClick));
                 b = new SceneNode().text("B").focusable(true).size(Size.fixed(30), Size.fixed(20)).bind(NodeBinding.value(bEnabled, SceneNode::enabled));
                 c = new SceneNode().text("C").focusable(true).size(Size.fixed(30), Size.fixed(20)).bind(NodeBinding.value(cFocusable, SceneNode::focusable)).bind(NodeBinding.value(cVisible, SceneNode::visible));
                 status = new SceneNode().bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target) -> node.text("@"+name(target))));
                 order = domain.signal(Arrays.asList(a,b,c,status));
-                root = new SceneNode().bind(NodeBinding.children(order)); runtime.attach(null,root);
-                pipe = new SceneFramePipeline(runtime,host,host); onClose(() -> { pipe.close(); drain.run(); });
-                keys = new SceneTabInputAdapter(pipe::navigation); keys.availability(true); keys.historyDrained(false,false,false);
-            }); drain.run(); pipe.frame(); drain.run();
+                root = new SceneNode().bind(NodeBinding.children(order)); ctx.mount(root);
+                keys = new SceneTabInputAdapter(event -> session.navigation(event)); keys.availability(true); keys.historyDrained(false,false,false);
+            }); drain.run();
+            pipe = session.pipeline();
+            onClose(() -> { session.close(); drain.run(); });
+            session.frame(); drain.run();
         }
         String name(SceneNode node) { return node == a ? "A" : node == b ? "B" : node == c ? "C" : node == null ? "无" : node == n ? "N" : "M"; }
         void expect(SceneNode target) {
-            pipe.frame(); drain.run();
+            session.frame(); drain.run();
             domain.execute(() -> { require(runtime.focusRouter().focused().get() == target,"应为"+name(target)+"实际"+name(runtime.focusRouter().focused().get())); require(clicks == 0,"导航不能激活业务"); }); drain.run();
             require(host.last.commands().stream().anyMatch(command -> command.kind == PaintCommand.Kind.TEXT && command.text.lines().stream().anyMatch(line -> line.text.equals("@"+name(target)))),"实际Plan未反映导航焦点");
         }
-        void next() { pipe.navigation(SceneNavigationEvent.NEXT); }
-        void previous() { pipe.navigation(SceneNavigationEvent.PREVIOUS); }
+        void next() { session.navigation(SceneNavigationEvent.NEXT); }
+        void previous() { session.navigation(SceneNavigationEvent.PREVIOUS); }
     }
     @Override protected void runTests() throws Exception {
         scenario("前后循环与clear后首末经真实Plan", () -> {
@@ -73,7 +80,7 @@ public final class FocusNavigationScenario extends TestApplication {
         scenario("资格过滤单项无重复通知与动态逻辑重排", () -> {
             Page p = new Page(); final int[] changes = {0};
             p.domain.execute(() -> {
-                Owner watcher = p.domain.owner(); onClose(() -> p.domain.execute(watcher::dispose));
+                Owner watcher = p.context.scope();
                 p.domain.effect(watcher, () -> { p.runtime.focusRouter().focused().get(); changes[0]++; });
                 p.bEnabled.set(false); p.cFocusable.set(false);
             }); int before = changes[0]; p.next(); p.expect(p.a); require(changes[0] == before,"单项不重复通知");
@@ -100,7 +107,7 @@ public final class FocusNavigationScenario extends TestApplication {
                 require(p.runtime.focusRouter().focused().get() == p.b,"导航应先于当前click");
                 p.bEnabled.set(false); p.cFocusable.set(false); p.runtime.focusRouter().clear();
             }));
-            p.next(); p.pipe.click(1,1); p.next(); p.expect(p.a);
+            p.next(); p.session.pointer(ScenePointerEvent.syntheticActivation(1,1)); p.next(); p.expect(p.a);
         });
         scenario("失焦历史repeat及开屏持键隔离恢复后鲜活Tab", () -> {
             Page p = new Page(); p.keys.tab(true,false); p.expect(p.b);
@@ -109,19 +116,19 @@ public final class FocusNavigationScenario extends TestApplication {
             p.keys.tab(false,false); p.keys.tab(true,false); p.expect(p.b);
             p.keys.historyDrained(false,true,false); p.keys.tab(true,true); p.expect(p.b);
             p.keys.tab(true,false); p.expect(p.a); // 物理Shift基线适用于随后新Tab。
-            SceneTabInputAdapter opening = new SceneTabInputAdapter(p.pipe::navigation); opening.availability(true);
+            SceneTabInputAdapter opening = new SceneTabInputAdapter(p.session::navigation); opening.availability(true);
             opening.tab(true,false); opening.historyDrained(true,false,false); opening.tab(true,true); p.expect(p.a);
             opening.tab(false,false); opening.historyDrained(false,false,false); opening.tab(true,false); p.expect(p.b);
         });
         scenario("导航Effect失败取消旧物理owner并吞剩余输入", () -> {
             Page p = new Page(); RuntimeException primary = new RuntimeException("导航业务Effect失败");
             p.domain.execute(() -> {
-                Owner watcher = p.domain.owner(); onClose(() -> p.domain.execute(watcher::dispose));
+                Owner watcher = p.context.scope();
                 p.domain.effect(watcher, () -> { if (p.runtime.focusRouter().focused().get() == p.b) throw primary; });
             });
-            p.pipe.pointer(ScenePointerEvent.down(0,1,1)); p.next();
-            p.pipe.pointer(ScenePointerEvent.down(1,1,1)); p.pipe.pointer(ScenePointerEvent.up(0,1,1)); p.previous(); p.pipe.pointer(ScenePointerEvent.up(1,1,1));
-            try { p.pipe.frame(); throw new AssertionError("应保留Effect失败"); } catch (RuntimeException actual) { require(actual == primary,"原Throwable被改变"); }
+            p.session.pointer(ScenePointerEvent.down(0,1,1)); p.next();
+            p.session.pointer(ScenePointerEvent.down(1,1,1)); p.session.pointer(ScenePointerEvent.up(0,1,1)); p.previous(); p.session.pointer(ScenePointerEvent.up(1,1,1));
+            try { p.session.frame(); throw new AssertionError("应保留Effect失败"); } catch (RuntimeException actual) { require(actual == primary,"原Throwable被改变"); }
             p.expect(p.b); p.domain.execute(() -> { p.runtime.dispatchClick(p.a); require(p.clicks == 1,"尾部结清后新激活可执行"); });
         });
         scenario("无旧token导航表及只读命令保护", () -> {
@@ -137,9 +144,11 @@ public final class FocusNavigationScenario extends TestApplication {
         scenario("排队域关闭跳过导航但保留第二物理键尾部", () -> {
             ArrayDeque<Runnable> queue = new ArrayDeque<>(); Runnable drain = () -> { while (!queue.isEmpty()) queue.remove().run(); };
             Page p = new Page(new ReactiveDomain(queue::add),drain);
-            p.pipe.pointer(ScenePointerEvent.down(0,1,1)); p.next(); p.pipe.pointer(ScenePointerEvent.down(1,1,1)); p.pipe.frame(); p.pipe.close(); drain.run();
+            p.session.pointer(ScenePointerEvent.down(0,1,1)); p.next(); p.session.pointer(ScenePointerEvent.down(1,1,1)); p.session.frame(); p.pipe.close(); drain.run();
             p.domain.execute(() -> { require(p.runtime.focusRouter().focused().get() == p.a,"关闭不执行导航"); p.runtime.dispatchClick(p.a); require(p.clicks == 0,"未释放占位必须吞synthetic激活"); }); drain.run();
-            SceneFramePipeline other = new SceneFramePipeline(p.runtime,p.host,p.host); onClose(() -> { other.close(); drain.run(); });
+            // 底层合同：pipeline.close不释放runtime，另一管线须共用物理尾部权威。
+            SceneFramePipeline other = new SceneFramePipeline(p.runtime,p.host,p.host);
+            p.domain.execute(() -> p.context.own(other)); drain.run();
             other.pointer(ScenePointerEvent.up(0,1,1)); other.pointer(ScenePointerEvent.up(1,1,1)); other.frame(); drain.run();
             p.domain.execute(() -> { require(p.clicks == 0,"关闭尾部不click"); p.runtime.dispatchClick(p.a); require(p.clicks == 1,"共享管线结清后新激活可执行"); }); drain.run();
             try { p.next(); throw new AssertionError("关闭入口拒绝输入"); } catch (IllegalStateException expected) { }

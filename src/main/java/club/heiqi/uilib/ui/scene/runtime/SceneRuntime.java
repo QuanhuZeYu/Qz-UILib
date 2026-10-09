@@ -90,7 +90,7 @@ public final class SceneRuntime implements AutoCloseable {
         } catch (RuntimeException | Error failure) {
             Mount partial = mounts.get(root);
             if (partial != null) {
-                try { partial.owner.dispose(); } catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+                try { partial.owner.dispose(); } catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
                 releaseSubtree(root);
             }
             roots.remove(root); root.frameworkParent(this, null);
@@ -296,14 +296,15 @@ public final class SceneRuntime implements AutoCloseable {
         command();
         pointerRouter.close();
         focusRouter.close();
-        RuntimeException failure = null;
+        Throwable failure = null;
         for (SceneNode root : new ArrayList<>(roots)) {
             try { detach(root, mounts.get(root).token); }
-            catch (RuntimeException e) { if (failure == null) failure = e; else failure.addSuppressed(e); }
+            catch (RuntimeException | Error e) { if (failure == null) failure = e; else if (e != failure) failure.addSuppressed(e); }
         }
         try { owner.dispose(); }
-        catch (RuntimeException e) { if (failure == null) failure = e; else failure.addSuppressed(e); }
+        catch (RuntimeException | Error e) { if (failure == null) failure = e; else if (e != failure) failure.addSuppressed(e); }
         finally { disposed = true; }
-        if (failure != null) throw failure;
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 }

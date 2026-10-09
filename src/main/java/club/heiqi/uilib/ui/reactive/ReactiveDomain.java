@@ -16,6 +16,8 @@ public final class ReactiveDomain {
     private int depth;
     private int readOnlyDepth;
     private boolean drainingEffects;
+    private boolean drainingCleanups;
+    private final ArrayDeque<Runnable> cleanups = new ArrayDeque<>();
     Tracker tracker;
 
     public ReactiveDomain(Executor executor) { this.executor = Objects.requireNonNull(executor, "executor"); }
@@ -75,18 +77,48 @@ public final class ReactiveDomain {
         } finally { CURRENT.set(previous); }
     }
     private void operation(Runnable action) {
+        Throwable primary = null;
         try {
             depth++;
             try { action.run(); }
             finally { depth--; }
             if (depth == 0) drainEffects();
         } catch (RuntimeException | Error failure) {
+            primary = failure;
             if (action instanceof FailureBoundary) {
                 try { ((FailureBoundary) action).failed.accept(failure); }
                 catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             }
             throw failure;
+        } finally {
+            if (depth == 0 && !drainingEffects && !drainingCleanups) {
+                try { drainCleanups(); }
+                catch (RuntimeException | Error cleanup) {
+                    if (primary == null) throw cleanup;
+                    if (cleanup != primary) primary.addSuppressed(cleanup);
+                }
+            }
         }
+    }
+    /** 生命周期释放延后到当前最外层操作和Effect结束，失败也执行；不推进后续业务队列。
+     * 域外按普通操作递交；域内只登记清理，不能在输入handler/routing中直接卸载。 */
+    public void deferCleanup(Runnable cleanup) {
+        Objects.requireNonNull(cleanup, "cleanup");
+        if (CURRENT.get() != this) { execute(() -> deferCleanup(cleanup)); return; }
+        checkWrite(); cleanups.add(cleanup);
+    }
+    private void drainCleanups() {
+        drainingCleanups = true; Throwable failure = null;
+        try {
+            while (!cleanups.isEmpty()) {
+                try { cleanups.remove().run(); }
+                catch (RuntimeException | Error next) {
+                    if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next);
+                }
+            }
+        } finally { drainingCleanups = false; }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
     public void batch(Runnable action) { checkAccess(); operation(Objects.requireNonNull(action, "action")); }
     public <T> Signal<T> signal(T initial) { checkAccess(); return new Signal<>(this, initial); }
@@ -110,6 +142,8 @@ public final class ReactiveDomain {
         return observation;
     }
     public Owner owner() { checkAccess(); return new Owner(this); }
+    /** 宿主可从域外递交命令；域内纯派生/测量阶段不得藉排队改变生命周期。 */
+    public void checkDispatch() { if (CURRENT.get() == this) checkWrite(); }
     public void checkAccess() {
         if (CURRENT.get() != this) throw new IllegalStateException("不可跨域直接访问状态");
     }

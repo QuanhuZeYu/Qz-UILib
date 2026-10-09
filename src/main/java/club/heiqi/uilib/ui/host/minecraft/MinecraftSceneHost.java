@@ -1,4 +1,4 @@
-package club.heiqi.uilib.internal.devtools;
+package club.heiqi.uilib.ui.host.minecraft;
 
 import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.host.client.font.ClientFontServices;
@@ -11,8 +11,9 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** scene与生产client字体owner共享度量、异步光栅及图集；布局/绘制/输入均原生framebufferpx。 */
-final class MinecraftSceneHost implements SceneHost,SceneTextMeasurer,AutoCloseable {
+/** 正式 MC 宿主与生产 client 字体服务共享度量、异步光栅及图集；坐标统一为 framebuffer px。
+ * 本页只拥有 renderer；关闭不释放共享 ClientFontServices。 */
+public final class MinecraftSceneHost implements SceneHost,SceneTextMeasurer,AutoCloseable {
     private final ClientFontServices fonts=MinecraftFontServices.shared();
     private final FramebufferSceneRenderer renderer=new FramebufferSceneRenderer(fonts);
     @Override public int width(){return Display.getWidth();}

@@ -7,6 +7,8 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
@@ -19,6 +21,8 @@ public final class FocusInputScenario extends TestApplication {
     private final class Page {
         final ReactiveDomain domain = ReactiveDomain.direct();
         final SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        ScenePageSession session;
+        ScenePageContext context;
         SceneRuntime runtime;
         SceneFramePipeline pipe;
         SceneNode a, b, root;
@@ -27,9 +31,9 @@ public final class FocusInputScenario extends TestApplication {
         Signal<String> caption;
         int clicks;
         Page() {
-            domain.execute(() -> {
-                runtime = new SceneRuntime(domain);
-                onClose(() -> domain.execute(runtime::close));
+            session = ScenePageSession.open(domain, host, host, ctx -> {
+                context = ctx;
+                runtime = ctx.runtime();
                 visible = domain.signal(true); enabled = domain.signal(true); focusable = domain.signal(true); caption = domain.signal("A");
                 a = new SceneNode().focusable(true)
                     .bind(NodeBinding.value(caption, SceneNode::text))
@@ -39,16 +43,16 @@ public final class FocusInputScenario extends TestApplication {
                     (node, target) -> node.text(target == a ? "焦点A" : target == b ? "焦点B" : "无焦点")));
                 root = new SceneNode().bind(NodeBinding.value(visible, SceneNode::visible))
                     .bind(NodeBinding.value(enabled, SceneNode::enabled)).add(a).add(b).add(status);
-                runtime.attach(null, root);
+                ctx.mount(root);
                 ah = runtime.captureMount(a); bh = runtime.captureMount(b);
-                pipe = new SceneFramePipeline(runtime, host, host);
-                onClose(pipe::close);
             });
-            pipe.frame();
+            pipe = session.pipeline();
+            onClose(session::close);
+            session.frame();
         }
         void expect(SceneNode target, String text) {
             domain.execute(() -> require(runtime.focusRouter().focused().get() == target, "焦点权威错误"));
-            pipe.frame();
+            session.frame();
             require(host.last.commands().stream().anyMatch(c -> c.kind == PaintCommand.Kind.TEXT &&
                 c.text.lines().stream().anyMatch(line -> line.text.equals(text))), "实际计划未显示" + text);
         }
@@ -106,9 +110,10 @@ public final class FocusInputScenario extends TestApplication {
         scenario("无效请求保留合法焦点及重复通知", () -> {
             Page p = new Page(); final int[] notifications = {0};
             p.domain.execute(() -> {
-                SceneRuntime other = new SceneRuntime(p.domain); onClose(() -> p.domain.execute(other::close));
+                // 底层合同：异runtime目标必须被同一焦点权威拒绝，刻意构造外域目标。
+                SceneRuntime other = new SceneRuntime(p.domain); p.context.own(other);
                 MountHandle foreign = other.attach(null, new SceneNode().focusable(true));
-                p.domain.effect(p.domain.owner(), () -> { p.runtime.focusRouter().focused().get(); notifications[0]++; });
+                p.domain.effect(p.context.scope(), () -> { p.runtime.focusRouter().focused().get(); notifications[0]++; });
                 p.runtime.focusRouter().request(p.ah);
                 require(!p.runtime.focusRouter().request(foreign), "异runtime拒绝");
                 require(!p.runtime.focusRouter().request(p.runtime.captureMount(p.root)), "未声明可聚焦拒绝");
@@ -119,7 +124,7 @@ public final class FocusInputScenario extends TestApplication {
             require(p.clicks == 0, "请求不激活业务");
         });
         scenario("handler受控请求与只读写保护", () -> {
-            Page p = new Page(); p.pipe.pointer(ScenePointerEvent.down(0, 5, 5)); p.pipe.pointer(ScenePointerEvent.up(0, 5, 5)); p.pipe.frame();
+            Page p = new Page(); p.session.pointer(ScenePointerEvent.down(0, 5, 5)); p.session.pointer(ScenePointerEvent.up(0, 5, 5)); p.session.frame();
             p.expect(p.a, "焦点A"); require(p.clicks == 1, "合法UP可请求焦点");
             p.domain.execute(() -> {
                 boolean rejected = false;
@@ -131,6 +136,7 @@ public final class FocusInputScenario extends TestApplication {
                 p.caption.set("新内容"); p.runtime.preparePresentation();
             }); p.expect(p.a, "焦点A");
         });
+        // 底层合同：pipeline.close保留runtime焦点，runtime.close才释放焦点权威。
         scenario("管线关闭保留共享焦点与runtime关闭清空", () -> {
             Page p = new Page(); p.domain.execute(() -> p.runtime.focusRouter().request(p.ah)); p.pipe.close();
             p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == p.a, "pipeline不销毁焦点"));
@@ -143,8 +149,10 @@ public final class FocusInputScenario extends TestApplication {
             ArrayDeque<Runnable> queue = new ArrayDeque<>(); ReactiveDomain domain = new ReactiveDomain(queue::add);
             final SceneRuntime[] runtime = new SceneRuntime[1]; final MountHandle[] target = new MountHandle[1];
             Runnable drain = () -> { while (!queue.isEmpty()) queue.remove().run(); };
-            domain.execute(() -> { runtime[0] = new SceneRuntime(domain); target[0] = runtime[0].attach(null, new SceneNode().focusable(true)); }); drain.run();
-            onClose(() -> { domain.execute(runtime[0]::close); drain.run(); });
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+            ScenePageSession session = ScenePageSession.open(domain, host, host, ctx -> { runtime[0] = ctx.runtime(); target[0] = ctx.mount(new SceneNode().focusable(true)); }); drain.run();
+            onClose(() -> { session.close(); drain.run(); });
+            // 底层合同：直接关闭runtime后的focused可读与排队顺序，不用session替代关闭命令。
             domain.execute(() -> require(runtime[0].focusRouter().request(target[0]), "排队请求接受"));
             domain.execute(() -> { require(runtime[0].focusRouter().focused().get() == target[0].node(), "后操作可读前结果"); runtime[0].close(); });
             domain.execute(() -> require(runtime[0].focusRouter().focused().get() == null, "排队close释放")); drain.run();

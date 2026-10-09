@@ -20,6 +20,7 @@ import club.heiqi.uilib.host.client.gl.GlPaintPlanRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -72,7 +73,7 @@ public final class ClientFontServicesScenario extends TestApplication {
     private final int[] clicked={0};
     private ReactiveDomain domain;
     private SceneRuntime runtime;
-    private boolean runtimeClosed;
+    private ScenePageSession session;
     private SceneNode[] nodes;
     private SceneFramePipeline pipeline;
     private final ScenePresentation[] presentation={null};
@@ -119,19 +120,20 @@ public final class ClientFontServicesScenario extends TestApplication {
     private void initializeScene() throws Exception {
             // owner首次GLconsumer自行创建caps；此前构造和真实measure均无context。
             host=new Host(owner);domain=ReactiveDomain.direct();
-            onClose(()->host.screen.close());
-            SceneRuntime[] runtimeHolder=new SceneRuntime[1];domain.execute(()->runtimeHolder[0]=new SceneRuntime(domain));runtime=runtimeHolder[0];
-            // 原关闭case成功后不重复释放非幂等的SceneRuntime；失败路径仍由应用清理。
-            onClose(this::closeRuntime);
-            nodes=new SceneNode[3];domain.execute(()->{
+            nodes=new SceneNode[3];
+            session=ScenePageSession.open(domain,host,owner,ctx->{
+                runtime=ctx.runtime();
+                ctx.own(host.screen);
         nodes[0]=new SceneNode().size(Size.fill(1),Size.fill(1)).background(0xff182030);
         nodes[1]=new SceneNode().text("中文 click e\u0301 👩🏽‍💻").style(style).size(Size.fill(1),Size.natural()).padding(4).onClick(()->clicked[0]++);
         nodes[1].focusable(true).bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(runtime.focusRouter().focused(),
             (node,target)->node.background(target==node?0xff28b060:0)));
         nodes[2]=new SceneNode().size(Size.fill(1),Size.fill(1)).scrollable(true).scrollStep(32);
         for(int i=0;i<30;i++)nodes[2].add(new SceneNode().text("行 "+i+" 原生像素").style(style).size(Size.fill(1),Size.natural()));
-        nodes[0].add(nodes[1]).add(nodes[2]);runtime.attach(null,nodes[0]);
-            });pipeline=new SceneFramePipeline(runtime,host,owner);
+        nodes[0].add(nodes[1]).add(nodes[2]);ctx.mount(nodes[0]);
+            });
+            pipeline=session.pipeline();
+            onClose(session::close);
             owner.atlas();System.out.println("vendor="+glGetString(GL_VENDOR)+" renderer="+glGetString(GL_RENDERER)+" version="+glGetString(GL_VERSION)+" Java="+System.getProperty("java.version"));
             int texture=glGenTextures(),fbo=glGenFramebuffers();
             onClose(()->{glBindFramebuffer(GL_FRAMEBUFFER,0);glDeleteFramebuffers(fbo);glDeleteTextures(texture);});
@@ -151,8 +153,8 @@ public final class ClientFontServicesScenario extends TestApplication {
     }
     private void readyWithoutLayout() throws Exception {
         glDisable(GL_SCISSOR_TEST);long end=System.nanoTime()+15000000000L;frames=0;
-        for(;;){clear();pipeline.frame();domain.execute(()->{if(pipeline.current()!=presentation[0])throw new AssertionError("ready导致重布局");});
-            if(owner.rasterizer().stats().pending==0&&owner.rasterizer().stats().rasterized>0&&owner.atlas().stats().residents>0){pipeline.frame();break;}
+        for(;;){clear();session.frame();domain.execute(()->{if(pipeline.current()!=presentation[0])throw new AssertionError("ready导致重布局");});
+            if(owner.rasterizer().stats().pending==0&&owner.rasterizer().stats().rasterized>0&&owner.atlas().stats().residents>0){session.frame();break;}
             if(System.nanoTime()>end)throw new AssertionError("shared字形未ready");Thread.sleep(2);frames++;
         }
         if(owner.readyVersion()==0)throw new AssertionError("宿主未显式pump ready");
@@ -160,9 +162,9 @@ public final class ClientFontServicesScenario extends TestApplication {
     }
     private void focusReplay() throws Exception {
         domain.execute(()->require(runtime.focusRouter().request(runtime.captureMount(nodes[1])),"GPU焦点请求"));
-        clear();pipeline.frame();int[] focused=read();
+        clear();session.frame();int[] focused=read();
         require(focused[W+1]==0xff28b060,"焦点绑定未进入真实FBO像素");
-        domain.execute(()->runtime.focusRouter().clear());clear();pipeline.frame();int[] cleared=read();
+        domain.execute(()->runtime.focusRouter().clear());clear();session.frame();int[] cleared=read();
         require(cleared[W+1]==0xff182030,"清除焦点未恢复背景");
         require(clicked[0]==0,"焦点请求不能激活业务");
     }
@@ -176,10 +178,10 @@ public final class ClientFontServicesScenario extends TestApplication {
             layer[0]=runtime.attach(null,overlay);
         });
         try {
-            clear();pipeline.frame();require(read()[W+1]==0xff4028b0,"模态初始选择未进入FBO");
+            clear();session.frame();require(read()[W+1]==0xff4028b0,"模态初始选择未进入FBO");
         } finally { domain.execute(()->layer[0].detach()); }
-        clear();pipeline.frame();require(read()[W+1]==0xff28b060,"返回原焦点未恢复实际像素");
-        domain.execute(()->runtime.focusRouter().clear());clear();pipeline.frame();
+        clear();session.frame();require(read()[W+1]==0xff28b060,"返回原焦点未恢复实际像素");
+        domain.execute(()->runtime.focusRouter().clear());clear();session.frame();
     }
     private void navigationReplay() throws Exception {
         final club.heiqi.uilib.ui.scene.runtime.MountHandle[] second={null};
@@ -187,14 +189,14 @@ public final class ClientFontServicesScenario extends TestApplication {
             runtime.focusRouter().request(runtime.captureMount(nodes[1]));
             second[0]=runtime.attach(null,new SceneNode().focusable(true).size(Size.fixed(1),Size.fixed(1)));
         });
-        club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter keys=new club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter(pipeline::navigation);
+        club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter keys=new club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter(session::navigation);
         keys.availability(true);keys.historyDrained(false,false,false);
         try {
-            keys.tab(true,false);clear();pipeline.frame();require(read()[W+1]==0xff182030,"Tab离开原目标后实际高亮未消失");
-            keys.shift(true,true);keys.tab(true,true);clear();pipeline.frame();require(read()[W+1]==0xff28b060,"Shift+Tab历史repeat未恢复高亮");
-            keys.availability(false);keys.availability(true);keys.tab(true,true);clear();pipeline.frame();require(read()[W+1]==0xff28b060,"失焦尾部repeat不能导航");
+            keys.tab(true,false);clear();session.frame();require(read()[W+1]==0xff182030,"Tab离开原目标后实际高亮未消失");
+            keys.shift(true,true);keys.tab(true,true);clear();session.frame();require(read()[W+1]==0xff28b060,"Shift+Tab历史repeat未恢复高亮");
+            keys.availability(false);keys.availability(true);keys.tab(true,true);clear();session.frame();require(read()[W+1]==0xff28b060,"失焦尾部repeat不能导航");
         } finally { domain.execute(()->{second[0].detach();runtime.focusRouter().clear();}); }
-        clear();pipeline.frame();
+        clear();session.frame();
     }
     private void escapeReplay() throws Exception {
         final club.heiqi.uilib.ui.scene.runtime.MountHandle[] layer={null};
@@ -209,24 +211,24 @@ public final class ClientFontServicesScenario extends TestApplication {
                 .onEscape(()->{visible[0].set(false);return true;}).add(target);
             layer[0]=runtime.attach(null,overlay);
         });
-        club.heiqi.uilib.ui.scene.host.SceneEscapeInputAdapter keys=new club.heiqi.uilib.ui.scene.host.SceneEscapeInputAdapter(()->pipeline.escape(()->fallback[0]++));
+        club.heiqi.uilib.ui.scene.host.SceneEscapeInputAdapter keys=new club.heiqi.uilib.ui.scene.host.SceneEscapeInputAdapter(()->session.escape(()->fallback[0]++));
         keys.availability(true);keys.historyDrained(false);
         try {
-            clear();pipeline.frame();require(read()[W+1]==0xff4028b0,"ESC前模态高亮");
-            keys.key(true,false);clear();pipeline.frame();require(read()[W+1]==0xff28b060 && fallback[0]==0,"消费ESC应恢复原焦点而不fallback");
-            keys.key(true,true);clear();pipeline.frame();require(fallback[0]==0,"repeat不能关闭页面");
-            keys.key(false,false);keys.key(true,false);clear();pipeline.frame();require(fallback[0]==1,"新的未消费ESC才fallback");
+            clear();session.frame();require(read()[W+1]==0xff4028b0,"ESC前模态高亮");
+            keys.key(true,false);clear();session.frame();require(read()[W+1]==0xff28b060 && fallback[0]==0,"消费ESC应恢复原焦点而不fallback");
+            keys.key(true,true);clear();session.frame();require(fallback[0]==0,"repeat不能关闭页面");
+            keys.key(false,false);keys.key(true,false);clear();session.frame();require(fallback[0]==1,"新的未消费ESC才fallback");
         } finally {domain.execute(()->{layer[0].detach();runtime.focusRouter().clear();});}
-        clear();pipeline.frame();
+        clear();session.frame();
     }
     private void inputAndResize() throws Exception {
         int rawY=FramebufferCoordinates.mouseY(H,H-6);
-        pipeline.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0,5,rawY));pipeline.frame();
+        session.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0,5,rawY));session.frame();
         if(clicked[0]!=0)throw new AssertionError("raw像素DOWN不应激活");
-        pipeline.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0,5,rawY));pipeline.frame();
+        session.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0,5,rawY));session.frame();
         if(clicked[0]!=1)throw new AssertionError("raw像素UP未命中原owner");
         domain.execute(()->presentation[0]=pipeline.current());LayoutBox scroll=presentation[0].geometry.get(nodes[2]).box;
-        pipeline.scroll(scroll.x+5,FramebufferCoordinates.mouseY(H,H-(scroll.y+5)-1),-1);pipeline.frame();
+        session.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.scroll(scroll.x+5,FramebufferCoordinates.mouseY(H,H-(scroll.y+5)-1),-1));session.frame();
         domain.execute(()->{if(pipeline.current().geometry.get(nodes[2]).scrollOffset!=32)throw new AssertionError("scroll非声明32原生px");});
         host.width=333;host.height=199;domain.execute(()->{LayoutBox box=pipeline.current().geometry.get(nodes[0]).box;if(box.width!=333||box.height!=199)throw new AssertionError("resize不是动态framebuffer布局");});
     }
@@ -243,12 +245,8 @@ public final class ClientFontServicesScenario extends TestApplication {
         try(FramebufferSceneRenderer reopened=new FramebufferSceneRenderer(owner)){clear();reopened.replay(white,W,H);}
         GlPaintPlanRenderer shared=owner.sharedPlanRenderer();try(GlPaintPlanRenderer.Prepared prepared=shared.prepare(white,new LayoutBox(0,0,W,H),owner.settings().upload)){prepared.render(FramebufferCoordinates.orthographic(W,H),H,false);}
     }
-    private void closeRuntime() {
-        if (runtimeClosed) return;
-        domain.execute(()->{runtime.close();runtimeClosed=true;});
-    }
     private void closeOwner() throws Exception {
-        closeRuntime();owner.close();owner.close();host.screen.close();if(!owner.awaitRasterizerClose(10000))throw new AssertionError("退出worker未清理");
+        session.close();owner.close();owner.close();host.screen.close();if(!owner.awaitRasterizerClose(10000))throw new AssertionError("退出worker未清理");
         if(glGetError()!=GL_NO_ERROR)throw new AssertionError("GL error");
         System.out.println("CLIENT_FONT_SERVICES_SCENARIO_PASS native="+W+"x"+H+" onePixelScissorLit="+lit+" readyFrames="+frames+" screenCloseSharedBytes="+cached+" click=1 scroll=32 resize=333x199 reloadOldSource=true lazyGL=true readyNoRelayout=true viewportRestore=true workerClose=true");
     }

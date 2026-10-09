@@ -30,18 +30,20 @@ public final class Owner implements AutoCloseable {
         domain.checkAccess();
         if (disposed) return;
         disposed = true;
-        RuntimeException failure = null;
+        Throwable failure = null;
         for (Owner child : new ArrayList<>(children)) {
-            try { child.dispose(); } catch (RuntimeException e) { if (failure == null) failure = e; else failure.addSuppressed(e); }
+            try { child.dispose(); } catch (Throwable e) { if (failure == null) failure = e; else if (e != failure) failure.addSuppressed(e); }
         }
         children.clear();
         for (int i = resources.size() - 1; i >= 0; i--) {
             try { resources.get(i).close(); }
-            catch (Exception e) { if (failure == null) failure = new IllegalStateException("作用域释放失败", e); else failure.addSuppressed(e); }
+            catch (Throwable e) { if (failure == null) failure = e; else if (e != failure) failure.addSuppressed(e); }
         }
         resources.clear();
         if (parent != null) { parent.children.remove(this); parent = null; }
-        if (failure != null) throw failure;
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure != null) throw new IllegalStateException("作用域释放失败", failure);
     }
     @Override public void close() { dispose(); }
 }
