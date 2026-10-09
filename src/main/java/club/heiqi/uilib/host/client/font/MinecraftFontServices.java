@@ -57,11 +57,16 @@ public final class MinecraftFontServices {
         try {
             List<FontSource> candidates=new ArrayList<FontSource>();
             List<String> paths=VanillaFontOptions.systemFontFiles();
+            List<java.nio.file.Path> configured=new ArrayList<java.nio.file.Path>();for(String path:paths)configured.add(Paths.get(path));
+            List<java.nio.file.Path> directories=new ArrayList<java.nio.file.Path>();
+            String windows=System.getenv("WINDIR"),local=System.getenv("LOCALAPPDATA");
+            if(windows!=null)directories.add(Paths.get(windows,"Fonts"));if(local!=null)directories.add(Paths.get(local,"Microsoft","Windows","Fonts"));
+            club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver resolver=paths.isEmpty()?null:new club.heiqi.uilib.ui.scene.text.font.FontFamilyResolver(configured,directories,nextRevision,message->FMLLog.warning("[Qz-UILib] %s",message));
             for(int i=0;i<paths.size();i++) {
                 String path=paths.get(i);String id="system-file-"+i;
                 if(path.trim().isEmpty())throw new IllegalArgumentException("系统字体路径为空: "+id);
                 // 文件现在取字节快照；未验证脚本能力，不能凭cmap认定msyh.ttc支持复杂整形。
-                try{candidates.add(FontSource.file(id,nextRevision,Paths.get(path),0,false,Collections.<String>emptySet()));}
+                try{candidates.add(resolver.family(Paths.get(path),id));}
                 catch(IOException failure){throw new IOException("系统字体读取失败: "+id+" origin="+path,failure);}
             }
             candidates.addAll(FontTextService.defaultSources(next,nextRevision));

@@ -67,7 +67,7 @@ public final class VanillaTextService {
         TextStyle base=new TextStyle("minecraft",settings.logicalEm,color,current.defaultCandidates(),TextEffects.NORMAL,decoration);
         AttributedText result=MinecraftFormat.parse(raw,base,new MinecraftFormat.Context(){
             public int paletteColor(int i){return settings.paletteColor(i);}
-            public TextEffects effects(boolean b,boolean i,boolean u,boolean s,boolean k){return new TextEffects(b,i,u,s,k,1,.25f);}
+            public TextEffects effects(boolean b,boolean i,boolean u,boolean s,boolean k){return new TextEffects(b,i,u,s,k,0,0);}
             public TextDecoration decoration(){return decoration;}
         });
         if(raw.length()<=TEXT_LIMIT)put(parsed,key,result);return result;

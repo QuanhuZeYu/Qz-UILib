@@ -55,7 +55,7 @@ public final class CoreFontEngineScenario extends TestApplication {
         byte[] rgba={1,2,3,4};GlyphBitmap bitmap=new GlyphBitmap(1,1,2,3,.5f,true,rgba);rgba[0]=9;require(bitmap.pixels()[0]==1&&bitmap.pixelsBuffer().isReadOnly(),"pure bitmap所有权");byte[] clone=bitmap.pixels();clone[0]=7;require(bitmap.pixels()[0]==1,"pure bitmap泄露可变像素");
         });
         scenario("注入engine布局采样及session生命周期", () -> {
-        ContractEngine engine=new ContractEngine();FontSource source=new FontSource("contract-probe",1,"contract-memory",new byte[]{1},0,false,Collections.<String>emptySet());
+        ContractEngine engine=new ContractEngine();FontSource source=FontSource.file("contract-probe",1,java.nio.file.Paths.get("src/main/resources/assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf"),0,false,Collections.<String>emptySet());
         require(engine.opened==0,"engine工厂构造触发native/session");
         try(FontTextService text=new FontTextService(Collections.singletonList(source),engine,2,4,128)){
             TextLayout logical=text.layout("AB中",new TextStyle("probe",12,-1),1000,TextPolicy.SINGLE_LINE);TextLayout sampled=text.sample(logical,new RasterSampling(2,1));require(logical.advanceWidth==18&&sampled.advanceWidth==18&&sampled.lines().get(0).glyphs().get(0).size==24,"注入布局与采样逻辑流程");

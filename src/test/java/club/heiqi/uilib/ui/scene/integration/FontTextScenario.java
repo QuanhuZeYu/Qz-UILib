@@ -268,7 +268,7 @@ public final class FontTextScenario extends TestApplication {
             throw new AssertionError("全损坏候选没有资源错误");
         } catch (IllegalStateException error) {
             require(error.getMessage().contains("broken-review-id") && error.getMessage().contains("review:broken-resource")
-                && error.getMessage().contains("FreeType"), "最终资源错误丢失身份/origin/原生原因: " + error);
+                && error.getMessage().contains("SFNT元数据解析失败"), "最终资源错误丢失身份/origin/元数据原因: " + error);
         }
         // 每个输入只调用一次，均为layout cache miss；记录耗时，不设置机器相关硬阈值。
         for (int count : new int[] {512, 1024, 2048, 4096, 8192}) {

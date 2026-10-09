@@ -276,6 +276,15 @@ val fontTextScenario = registerTestApplication("fontTextScenario", "真实共享
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
     args(projectDir.absolutePath)
 }
+val fontRealStyleScenario = registerTestApplication("fontRealStyleScenario", "真实系统字族及可变字体实际样式验收", "club.heiqi.uilib.ui.scene.integration.FontRealStyleScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+val fontRealStyleGlScenario = registerTestApplication("fontRealStyleGlScenario", "真实微软雅黑原版样式GPU图像", "club.heiqi.uilib.ui.scene.integration.FontRealStyleGlScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    args(layout.buildDirectory.file("font-real-style/font-real-style-msyh.png").get().asFile.absolutePath)
+}
 val attributedTextScenario = registerTestApplication("attributedTextScenario", "整簇属性文本、格式来源与逻辑采样分离验收", "club.heiqi.uilib.ui.scene.integration.AttributedTextScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
@@ -286,5 +295,5 @@ val glyphRasterStyleScenario = registerTestApplication("glyphRasterStyleScenario
     args(file("src/main/resources/assets/qz_uilib/fonts").absolutePath,
         layout.buildDirectory.dir("font-machine/raster-style").get().asFile.absolutePath)
 }
-tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario, fontTextScenario, glyphRasterStyleScenario, attributedTextScenario) }
+tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario, fontTextScenario, glyphRasterStyleScenario, attributedTextScenario, fontRealStyleScenario) }
 

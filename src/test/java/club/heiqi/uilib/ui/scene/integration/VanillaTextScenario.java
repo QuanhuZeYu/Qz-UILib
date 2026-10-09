@@ -36,14 +36,14 @@ public final class VanillaTextScenario extends TestApplication {
     }
     private static void semantics(VanillaTextService adapter,Settings s){
         require(adapter.charWidth('§',s)==-1&&adapter.width(null,s)==0,"原版格式字符/null宽度");
-        int a=adapter.width("A",s);require(adapter.width("§lA§rA",s)==a*2+1,"reset未清bold同度量");
+        int a=adapter.width("A",s);require(adapter.width("§lA§rA",s)==adapter.width("§lA",s)+a,"reset未清bold同度量");
         for(String raw:new String[]{"A§cB","§lABC§r","A👩‍💻B","Aक्षिB","بـبA","אבג A","\uD800§cA","A§zB§","A\tB"}){
             TextLayout l=adapter.layout(raw,s,0x7f112233,1000,TextPolicy.SINGLE_LINE);require(adapter.width(raw,s)==(int)l.advanceWidth,"width/draw度量分叉");
             for(int maximum=0;maximum<adapter.width(raw,s)+2;maximum++)for(boolean reverse:new boolean[]{false,true}){String trimmed=adapter.trim(raw,maximum,reverse,s);require(adapter.width(trimmed,s)<=maximum,"trim超宽 raw="+raw+" max="+maximum+" got="+trimmed);require(!trimmed.endsWith("\u200d"),"trim拆ZWJ");}
         }
         require(adapter.trim("A§cB",a,false,s).equals("A"),"prefix吞邻接token");
         require(adapter.trim("A§cB",a,true,s).equals("§cB"),"suffix未保簇前原始tokenownership");
-        require(adapter.trim("§lABCD",a+1,true,s).equals("D"),"reverse trim伪造非原始prefix");
+        require(adapter.trim("§lABCD",adapter.width("§lD",s),true,s).equals("D"),"reverse trim伪造非原始prefix");
         String raw="§lAB §cCD §nEF\n§oGH";List<String> lines=adapter.list(raw,a*3+1,s);require(lines.size()>1,"wrap无实际行");
         for(String line:lines)require(adapter.width(line,s)<=a*3+1,"wrap未恢复活动style或超宽: "+line);
         require(adapter.splitHeight(raw,a*3+1,s)==(int)(lines.size()*s.lineHeight),"splitheight未用caller FONT_HEIGHT");

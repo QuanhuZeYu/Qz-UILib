@@ -36,7 +36,7 @@ public final class NativeFontFace implements FontFace {
     private final float pixelScale;
     private final FontMetrics metrics;
 
-    NativeFontFace(NativeFontService owner, long library, ByteBuffer source, long faceIndex, float emSize) {
+    NativeFontFace(NativeFontService owner, long library, ByteBuffer source, long faceIndex, float emSize, java.util.Map<String,Float> axes) {
         this.owner = owner;
         Objects.requireNonNull(source, "source");
         if (!Float.isFinite(emSize) || emSize <= 0 || emSize > 32767) throw new IllegalArgumentException("Invalid emSize");
@@ -49,6 +49,18 @@ public final class NativeFontFace implements FontFace {
                 NativeFontService.check(FreeType.FT_New_Memory_Face(library, bytes, faceIndex, out), "FT_New_Memory_Face");
                 faceAddress = out.get(0);
                 face = FT_Face.create(faceAddress);
+            }
+            // FT实例在度量与HB创建前设置；同一个source轴身份也用于异步光栅重开。
+            if(!axes.isEmpty())try(MemoryStack stack=MemoryStack.stackPush()) {
+                PointerBuffer out=stack.mallocPointer(1);
+                NativeFontService.check(FreeType.FT_Get_MM_Var(face,out),"FT_Get_MM_Var");
+                org.lwjgl.util.freetype.FT_MM_Var mm=org.lwjgl.util.freetype.FT_MM_Var.create(out.get(0));
+                try {
+                    org.lwjgl.CLongBuffer coordinates=stack.mallocCLong(mm.num_axis());
+                    org.lwjgl.util.freetype.FT_Var_Axis.Buffer available=mm.axis();
+                    for(int i=0;i<mm.num_axis();i++){org.lwjgl.util.freetype.FT_Var_Axis axis=available.get(i);long tag=axis.tag();String name=""+(char)(tag>>24&255)+(char)(tag>>16&255)+(char)(tag>>8&255)+(char)(tag&255);Float value=axes.get(name);coordinates.put(i,value==null?axis.def():Math.round(value*65536.0));}
+                    NativeFontService.check(FreeType.FT_Set_Var_Design_Coordinates(face,coordinates),"FT_Set_Var_Design_Coordinates");
+                }finally{NativeFontService.check(FreeType.FT_Done_MM_Var(library,mm),"FT_Done_MM_Var");}
             }
             // 可缩放字体按 em 设置；纯 bitmap 字体选择最接近请求字号的真实 strike。
             if ((face.face_flags() & FreeType.FT_FACE_FLAG_SCALABLE) != 0) {

@@ -27,7 +27,7 @@ public final class MinecraftFormat {
     if(code<16){int index=code<0?15:code;state=reset.withColor((base.color&0xff000000)|(context.paletteColor(index)&0xffffff));
      if(code<0)diagnostics.add(new TextLayout.Diagnostic(TextLayout.Diagnostic.Kind.UNSUPPORTED,original.sourceStart(i),original.sourceEnd(end-1),"未知§格式消费后恢复白色并清效果"));
     }else if(code==21)state=reset;
-    else state=state.withEffects(context.effects(e.bold||code==17,e.italic||code==20,e.underline||code==19,e.strike||code==18,e.obfuscated||code==16));
+    else state=state.withEffects(context.effects(e.bold||code==17,e.italic||code==20,e.underline||code==19,e.strike||code==18,e.obfuscated||code==16)).withFontStyle(club.heiqi.uilib.ui.scene.text.FontStyle.minecraft(e.bold||code==17,e.italic||code==20));
     i=end;continue;
    }
    text.appendCodePoint(cp);for(int j=i;j<next;j++){starts.add(i);ends.add(next);}i=next;

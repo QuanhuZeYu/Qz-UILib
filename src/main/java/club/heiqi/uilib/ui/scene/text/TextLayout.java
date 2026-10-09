@@ -49,7 +49,7 @@ public final class TextLayout {
         }
     }
     public static final class Diagnostic {
-        public enum Kind { INVALID_INPUT, CONTROL_MARKER, MISSING_GLYPH, FONT_RESOURCE, STYLE_COALESCED, UNSUPPORTED }
+        public enum Kind { INVALID_INPUT, CONTROL_MARKER, MISSING_GLYPH, FONT_RESOURCE, STYLE_FALLBACK, STYLE_COALESCED, UNSUPPORTED }
         public final Kind kind;
         public final int sourceStart, sourceEnd;
         public final String message;

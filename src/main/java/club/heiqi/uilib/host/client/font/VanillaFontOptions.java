@@ -29,7 +29,7 @@ public final class VanillaFontOptions {
         enabled=configuration.getBoolean("replaceVanillaFont","font",true,
             "默认接管标准FontRenderer的绘制、测量和换行。关闭不影响UILib自己的页面字体。");
         String[] paths=configuration.getStringList("systemFontFiles","font",new String[0],
-            "按顺序优先尝试的字体文件路径（支持Windows路径）。每个文件使用faceIndex 0；空列表使用内置候选。"
+            "按顺序优先尝试的字体文件路径（支持Windows路径）。每个文件声明face0所属字族；重载时按字体元数据解析同目录及系统字体目录内的同字族样式成员，保持配置候选顺序；空列表使用内置候选。"
             +"系统文件不声明复杂脚本或彩色emoji能力，相关文字继续按同一列表尝试内置字体。");
         systemFontFiles=Collections.unmodifiableList(Arrays.asList(paths.clone()));
         if(configuration.hasChanged())configuration.save();

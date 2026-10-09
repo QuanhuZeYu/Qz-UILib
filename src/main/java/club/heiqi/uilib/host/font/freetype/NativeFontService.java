@@ -30,8 +30,12 @@ public final class NativeFontService implements FontSession {
 
     /** 拷贝 source 的 remaining 字节；调用方可立即释放/修改自己的缓冲。 */
     public FontFace openFace(ByteBuffer source, long faceIndex, float emSize) {
+        return openFace(source,faceIndex,emSize,java.util.Collections.<String,Float>emptyMap());
+    }
+    @Override public boolean supportsVariations(){return true;}
+    @Override public FontFace openFace(ByteBuffer source,long faceIndex,float emSize,java.util.Map<String,Float> axes) {
         checkOpen();
-        NativeFontFace face = new NativeFontFace(this, library, source, faceIndex, emSize);
+        NativeFontFace face = new NativeFontFace(this, library, source, faceIndex, emSize, axes);
         try {
             faces.add(face);
             return face;
