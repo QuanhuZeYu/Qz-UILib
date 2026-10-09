@@ -4,13 +4,13 @@
 
 **目标：** 跑通动态面板的业务状态 → 声明 → 自动布局 → 输入 → 绘制闭环。
 
-**架构：** 按唯一 spec 第 15 节的拟议设计重构 reactive 与 scene 接缝，按质量评估现有布局、输入及绘制能力，必要时舍弃旧代码重建。状态立即生效，纯派生按需求当前值；呈现绑定和业务 Effect 分离，布局/输入/绘制使用框架协调的几何。
+**架构：** 按核心及对应模块规格 [核心实现设计](<../specs/2026-10-07-uilib-core-implementation-design.md>)的拟议设计重构 reactive 与 scene 接缝，按质量评估现有布局、输入及绘制能力，必要时舍弃旧代码重建。状态立即生效，纯派生按需求当前值；呈现绑定和业务 Effect 分离，布局/输入/绘制使用框架协调的几何。
 
 **技术栈：** 目标仓现有 Java/GTNH Gradle 工程，Minecraft 1.7.10、GTNH/LWJGL3ify；保留构建平台基线，允许破坏式更新及 5.0.0 目标；实际版本按仓库版本机制处理。
 
 **开发模式：** 无平台自动化集成场景优先，再进行 runtime-driven-development 的 MC 宿主验证。尽可能不写单元测试，不要求先失败测试；重点是运行真实核心闭环取得反馈。
 
-**Spec：** [唯一 spec](../specs/2026-10-07-uilib-core-contract-design.md)，第 2—10 节正式合同与第 15 节拟议接口。
+**Spec：** [核心及对应模块规格](<../../开发者文档/规格文档/README.md>)，核心与对应模块正式合同与[核心实现设计](<../specs/2026-10-07-uilib-core-implementation-design.md>)拟议接口。
 
 **状态与授权：** 用户已授权开始生产任务，并补充破坏式重构及无平台自动化优先。实施 worktree 为 uilib-core；基线含人工清空源码提交 0d2720d1，因此文件表是职责落点，新核心从归零基线建设，不恢复旧代码树。数学专项暂缓，MC 启动按仓库授权边界衔接。进度与证据见 ../notes/uilib-core-execution.md。
 
@@ -23,7 +23,7 @@
 - 按 scene、自有布局/输入/绘制职责重构；旧类/API 可舍弃，不为兼容缝补。物品宿主专用路径遵守既有例外。
 - 不加兼容开关、重试、旧结果保留、补偿、回滚、恢复或并行 UI 框架。
 - 允许破坏式更新，目标可为 5.0.0；不 push/tag/release，不覆盖主仓既有改动，代码实施从隔离 worktree 开始。
-- 计划是施工工具，功能目标和验收以唯一 spec 为准。
+- 计划是施工工具，功能目标和验收以核心及对应模块规格 为准。
 
 ## Review Focus
 
@@ -41,7 +41,7 @@
 | 一 | reactive/Signal.java、Computed.java、Effect.java、ReactiveContext.java、ReactiveScheduler.java、Owner.java；新建 reactive/ReactiveDomain.java | 立即状态、纯派生、独立副作用及作用域 |
 | 二 | scene/runtime/SceneRuntime.java、MountHandle.java、Binding.java；reactive/Owner.java；scene/node/SceneNode.java；新建 scene/runtime/NodeBinding.java、BindingActivation.java | 正式声明激活、身份、单归属与挂载生命周期 |
 | 三 | scene/host/SceneFramePipeline.java；scene/layout/SceneLayoutEngine.java、SizingCalculator.java、FlexLayouter.java、SceneGeometry.java；scene/input/SceneHitTester.java、SceneInputRouter.java；scene/paint/PaintPlan.java、ScenePaintEngine.java、ScenePaintReplayer.java | 自动分配、共同几何、呈现/路由及封闭计划 |
-| 三 | 新建 scene/host/ScenePresentation.java、scene/layout/SceneGeometryView.java、MeasuredSize.java、ChildPlacements.java、scene/control/SceneControl.java、scene/paint/PaintPlanBuilder.java | 窄接口类型，按 spec 第 15 节定义，不新建业务配置树 |
+| 三 | 新建 scene/host/ScenePresentation.java、scene/layout/SceneGeometryView.java、MeasuredSize.java、ChildPlacements.java、scene/control/SceneControl.java、scene/paint/PaintPlanBuilder.java | 窄接口类型，按 spec [核心实现设计](<../specs/2026-10-07-uilib-core-implementation-design.md>)定义，不新建业务配置树 |
 | 四 | 复用既有 host/control 的示例面板与诊断入口，入口从任务三的集成场景接入 | 宿主运行反馈；不另开产品 GUI 或业务仓 |
 
 无平台自动化场景优先采用一份 src/test/java/club/heiqi/uilib/ui/scene/integration/SceneCoreLoopTest.java，作为集成场景执行入口，使用真实状态域、runtime、布局、输入与绘制计划，不按方法拆单元测试。任务一先运行同一入口的无 UI 状态/业务操作阶段，后续在该入口贯通面板与生命周期。边界适配只提供确定性度量、环境和命令采集，不加载 MC/Forge/LWJGL，也不 mock 核心行为。测试目录或 JUnit 执行器不改变其集成场景性质。已有测试按实际行为价值评估，旧字段/阶段快照可舍弃，不批量删除未评估测试。
@@ -71,7 +71,7 @@
 
 **文件：** 文件表任务一及 SceneCoreLoopTest。
 
-**接口产出：** ReactiveDomain 的 execute/batch/signal/computed/effect；Signal.get/set、Computed.get/dispose，签名与 spec 第 15.3 节一致。Owner 纳入派生订阅清理。默认业务 Effect 在最外层操作/batch 结束执行，不由 UI 帧驱动。
+**接口产出：** ReactiveDomain 的 execute/batch/signal/computed/effect；Signal.get/set、Computed.get/dispose，签名与 spec 实现设计第 1.3 节一致。Owner 纳入派生订阅清理。默认业务 Effect 在最外层操作/batch 结束执行，不由 UI 帧驱动。
 
 - [ ] 在隔离代码 worktree 检查 Git、读取 spec/入口并定位旧 create(initial, derivation)、flush 及时间旅行调用点；保留未覆盖消费者的能力。
 - [ ] 写行为场景：状态从 1 改为 2 立即读 2；派生为来源加一，再乘二，多级值立即更新；首次读取不用初值；batch 内连续递增均见当前值。数值 oracle 用测试表达式计算。
@@ -86,7 +86,7 @@
 
 **文件：** 文件表任务二及 SceneCoreLoopTest。
 
-**消费：** 任务一 ReactiveDomain 与 Owner；**产出：** attach/detach/moveTo/destroy、NodeBinding.activate → BindingActivation，按 spec 第 15.4 节。
+**消费：** 任务一 ReactiveDomain 与 Owner；**产出：** attach/detach/moveTo/destroy、NodeBinding.activate → BindingActivation，按 spec 实现设计第 1.4 节。
 
 - [ ] 写同一节点的场景：自动身份稳定；跨父移动始终只有一个父；移动后销毁旧父，节点仍有效并按新父环境/输入范围工作，新父销毁才释放它；detach 后业务状态仍可改；attach 后读当前值；再次点击只调用一次；destroy 子树释放其绑定但独立业务状态继续可读写。
 - [ ] 运行集成场景观察生命周期偏差；建立节点声明描述与挂载期 Owner，输入/环境/资源订阅由该作用域管理；同 runtime 移动同步迁移 Owner 父链接、当前清理目标及继承环境/输入资格，释放需替换的旧绑定激活再建立新激活，跨 runtime 迁移释放旧宿主归属。
@@ -99,7 +99,7 @@
 
 **文件：** 文件表任务三及 SceneCoreLoopTest。
 
-**消费：** 任务一状态与任务二挂载；**产出：** preparePresentation、prepare → ScenePresentation、geometry/paintPlan，以及 SceneControl.measure/arrange/paint。MeasuredSize、ChildPlacements、SceneGeometryView、PaintPlanBuilder 按 spec 第 15.5—15.6 节定义。
+**消费：** 任务一状态与任务二挂载；**产出：** preparePresentation、prepare → ScenePresentation、geometry/paintPlan，以及 SceneControl.measure/arrange/paint。MeasuredSize、ChildPlacements、SceneGeometryView、PaintPlanBuilder 按 spec 实现设计第 1.5—15.6 节定义。
 
 - [ ] 建立由状态驱动的面板：自然标题/页签/操作区，剩余正文独立滚动；按钮更新列表或选择，派生文案变长后自动重排。用既有 SceneTextMeasurer 的确定性度量构造软件场景，尺寸 oracle 用代码计算。
 - [ ] 加必要边界到同一场景文件：未裁剪父盒外子节点可点；相同区域裁剪后不可点；窗口/字体变化后 paint 与 hit 坐标同源；连续事件按原顺序处理；模态阻止后台按钮。
@@ -124,4 +124,4 @@
 
 无平台场景必须可在未安装/启动 MC、未初始化 LWJGL 和 GL 上下文的进程中执行。纯自动化可确认状态、结构、几何、命中与计划载荷，宿主字体光栅及 GPU 质量仍留给 MC。
 
-任务三完成得到软件贯通切片，任务四完成才有该切片的宿主运行证据。全库专项不在本计划完成声明中。完整布局策略、编辑/IME、全部控件、动效、资源与配置/网络/聊天/HUD 按唯一 spec 独立继续；暂不深入数学。任务一至三的软件闭环已实现并运行；审查反例、实际构建结果及后续范围见执行记录。任务四已有开发命令 /qzcore 与平台回放适配准备，MC 尚未启动验收。
+任务三完成得到软件贯通切片，任务四完成才有该切片的宿主运行证据。全库专项不在本计划完成声明中。完整布局策略、编辑/IME、全部控件、动效、资源与配置/网络/聊天/HUD 按核心及对应模块规格 独立继续；暂不深入数学。任务一至三的软件闭环已实现并运行；审查反例、实际构建结果及后续范围见执行记录。任务四已有开发命令 /qzcore 与平台回放适配准备，MC 尚未启动验收。
