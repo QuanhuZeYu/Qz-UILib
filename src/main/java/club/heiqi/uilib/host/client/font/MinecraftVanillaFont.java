@@ -58,8 +58,8 @@ public final class MinecraftVanillaFont {
             if(palette==null||palette.length<32)throw new IllegalArgumentException("标准字体须提供32色调色板");
             this.height=height;this.unicode=unicode;this.bidi=bidi;this.palette=palette.clone();
             int[] dark=palette.clone();for(int i=0;i<16;i++)dark[i]=palette[i+16];
-            // 真实Unifont em12的常用Latin advance为6；保留caller行距，不缩小复杂脚本fallback。
-            float em=height*(12f/9f),baseline=height;
+            // 原版替代的默认字形略收小；测宽、裁剪与绘制共用此em，FONT_HEIGHT/基线保留宿主行距。
+            float em=height*(11f/9f),baseline=height;
             normal=new VanillaTextService.Settings(em,height,baseline,bidi,unicode,palette);
             shadow=new VanillaTextService.Settings(em,height,baseline,bidi,unicode,dark);
         }

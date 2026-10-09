@@ -47,6 +47,7 @@ public final class SceneTextField {
             Consumer<Submission> onSubmit, SubmitPolicy policy) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         Objects.requireNonNull(state, "state");
+        if(state.mode()!=SceneEditState.Mode.SINGLE_LINE)throw new IllegalArgumentException("单行字段需要单行编辑状态");
         if (context.domain() != state.domain()) throw new IllegalArgumentException("字段与编辑状态必须同域");
         Control control = new Control(state, Objects.requireNonNull(theme, "theme"),
             Objects.requireNonNull(readOnly, "readOnly"), Objects.requireNonNull(onSubmit, "onSubmit"),
@@ -164,7 +165,9 @@ public final class SceneTextField {
             switch (event.command) {
                 case LEFT: state.move(-1, event.shift); break;
                 case RIGHT: state.move(1, event.shift); break;
+                case DOCUMENT_HOME:
                 case HOME: state.home(event.shift); break;
+                case DOCUMENT_END:
                 case END: state.end(event.shift); break;
                 case SELECT_ALL: state.select(0, before.text.length()); break;
                 case COPY: copy(before, event); break;
@@ -190,6 +193,7 @@ public final class SceneTextField {
                         state.replaceSelection(" ", !before.composing); inputChanged(before);
                     }
                     break;
+                case SUBMIT:
                 case CONFIRM:
                     if (!locked && !before.composing) {
                         state.breakHistoryGroup(); onSubmit.accept(state.request(true));

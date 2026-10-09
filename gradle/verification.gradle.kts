@@ -84,6 +84,7 @@ val coreSceneDeclarations = listOf(
     Triple("standardControlsScenario", "标准控件动态主题与完整文案验收", "StandardControlsScenario"),
     Triple("focusRevealScenario", "主动导航最小显露与嵌套滚动", "FocusRevealScenario"),
     Triple("editingScenario", "独立编辑状态与单行正式输入验收", "EditingScenario"),
+    Triple("multilineEditingScenario", "多行独立状态与正式Area页面路由验收", "MultilineEditingScenario"),
     Triple("coreStateScenario", "隔离运行状态与生命周期场景", "SceneCoreLoopTest")
 )
 

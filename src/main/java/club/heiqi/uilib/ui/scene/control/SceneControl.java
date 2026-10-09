@@ -23,6 +23,10 @@ public interface SceneControl {
     default boolean edit(SceneNode node, club.heiqi.uilib.ui.scene.input.SceneEditEvent event) { return false; }
     /** 只有需要DOWN定位的控件申请；普通按钮仍在UP聚焦。 */
     default boolean capturesPointer() { return false; }
+    /** 内部内容视口参与正式滚轮命中，不要求外层布局盒成为滚动容器。 */
+    default boolean scrollableContent() { return false; }
+    /** 同一受控输入分发；消费后不同时滚动外层容器。 */
+    default boolean scroll(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event, SceneGeometryView geometry) { return false; }
     /** 当前只读/可编辑事实由控件声明，宿主据此启停真实文本输入。 */
     default boolean acceptsTextInput(SceneNode node) { return false; }
     /** 指针定位/拖选沿已有owner，区域来自本次生产布局。 */

@@ -10,6 +10,7 @@
 | 接入正式页面与控件 | [接入指南](<使用文档/README.md>) |
 | 修改框架和编写场景 | [开发者文档](<开发者文档/README.md>) |
 | 执行人工验收 | [双实例清单](<开发者文档/标准控件双实例验证清单.md>) |
+| 多行编辑与本轮字体调整验收 | [多行双实例清单](<开发者文档/多行编辑接入与双实例验证.md>) |
 | 版本与发布操作 | [发布流程](<开发者文档/发布流程.md>) |
 
 旧教程、架构图、反向规格与施工记录已从工作树移除，需要追溯时使用Git历史。规格中的目标不等于全部能力已经实现；实际入口与验证边界从源码和运行证据核对。
@@ -38,6 +39,7 @@
 | 真实GPU字体与页面场景 | `gradlew.bat --no-configuration-cache clientFontServicesScenario` |
 | LWJGL2宿主场景 | `gradlew.bat --no-configuration-cache lwjgl2HostScenario` |
 | SDL原生文本观察与回调资源 | `gradlew.bat --no-configuration-cache sdlTextInputScenario` |
+| 多行正式编辑 | `gradlew.bat --no-configuration-cache multilineEditingScenario` |
 | 人工验收包 | `gradlew.bat --no-configuration-cache manualTestJar` |
 
 设备场景需实际GL环境，CPU通过不替代GPU或Minecraft实机验收。构建异常先核对当前任务日志与脚本，不用旧架构或历史测试顺序推导行为。

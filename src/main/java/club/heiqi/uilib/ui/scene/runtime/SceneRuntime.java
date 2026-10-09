@@ -252,6 +252,12 @@ public final class SceneRuntime implements AutoCloseable {
         command();if(!interactive(node)||node.control()==null)return;
         routing=true;try{node.control().pointer(node,event,geometry);}finally{routing=false;}
     }
+    boolean dispatchControlScroll(SceneNode node,club.heiqi.uilib.ui.scene.input.ScenePointerEvent event,SceneGeometryView geometry) {
+        command();if(!interactive(node)||node.control()==null || !node.control().scrollableContent())return false;
+        boolean consumed;routing=true;try{consumed=node.control().scroll(node,event,geometry);}finally{routing=false;}
+        if(consumed)invalidate(); // 内视口偏移属于控件呈现缓存，重新发布文字几何与绘制供下一事件共用。
+        return consumed;
+    }
     /** 已知逻辑目标的业务激活入口；物理输入应经帧管线的typed事件。
      * 有物理按钮占位时吞掉，不能绕过已有手势；仍按当前挂载与输入范围检查目标。 */
     public void dispatchClick(SceneNode node) {

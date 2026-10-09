@@ -13,11 +13,13 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * 业务持有的单行编辑状态；合同见 UILib editing spec 1.1、1.3。
+ * 业务持有的单行/多行编辑状态；合同见 UILib editing spec 1.1、1.3。
  * 构造和写命令必须在所属域内执行，外部异步完成经 domain.execute 递交。
  * 不持有控件、宿主或业务权威值；焦点切换由调用方调用 breakHistoryGroup。
  */
 public final class SceneEditState {
+    public enum Mode { SINGLE_LINE, MULTI_LINE }
+
     public static final class Snapshot {
         public final String text, composition, error;
         public final int anchor, caret;
@@ -97,6 +99,7 @@ public final class SceneEditState {
     }
 
     private final ReactiveDomain domain;
+    private final Mode mode;
     private final Signal<Snapshot> value;
     private final ReadableSignal<Snapshot> snapshotView;
     private final ReadableSignal<String> textView;
@@ -108,9 +111,14 @@ public final class SceneEditState {
     private Submission latest;
 
     public SceneEditState(ReactiveDomain domain, String baseline) {
+        this(domain, baseline, Mode.SINGLE_LINE);
+    }
+
+    public SceneEditState(ReactiveDomain domain, String baseline, Mode mode) {
         this.domain = Objects.requireNonNull(domain, "domain");
+        this.mode = Objects.requireNonNull(mode, "mode");
         domain.checkWrite();
-        this.baseline = singleLine(baseline);
+        this.baseline = normalize(baseline);
         int end = this.baseline.length();
         value = domain.signal(new Snapshot(this.baseline, "", null, end, end, false, false, 0));
         // 缓存独立只读视图，不把可强转为 Signal 的写入口暴露给控件。
@@ -119,6 +127,7 @@ public final class SceneEditState {
     }
 
     public ReactiveDomain domain() { return domain; }
+    public Mode mode() { return mode; }
     public ReadableSignal<Snapshot> snapshot() { return snapshotView; }
     public ReadableSignal<String> text() { return textView; }
 
@@ -163,7 +172,7 @@ public final class SceneEditState {
     /** group=false 用于粘贴、剪切、模板插入及一次 IME 提交，各自自成一步。 */
     public void replaceSelection(String text, boolean group) {
         domain.checkWrite();
-        String insertion = singleLine(text);
+        String insertion = normalize(text);
         Snapshot s = value.get();
         if (!group) groupKind = Kind.NONE;
         int start = Math.min(s.anchor, s.caret), end = Math.max(s.anchor, s.caret);
@@ -236,7 +245,7 @@ public final class SceneEditState {
     /** 取消组字只清除 preedit，不取消草稿会话；提交文本使用 replaceSelection(text,false)。 */
     public void composition(String text, boolean composing) {
         domain.checkWrite();
-        String preedit = composing ? singleLine(text) : "";
+        String preedit = composing ? normalize(text) : "";
         Snapshot s = value.get();
         groupKind = Kind.NONE;
         if (composing && !s.composing) generation++; // 新组字也不能被此前请求的完成结果清掉。
@@ -247,7 +256,7 @@ public final class SceneEditState {
 
     public void reset(String text) {
         domain.checkWrite();
-        resetBaseline(singleLine(text));
+        resetBaseline(normalize(text));
     }
 
     public void cancel() { domain.checkWrite(); resetBaseline(baseline); }
@@ -264,7 +273,7 @@ public final class SceneEditState {
 
     public void synchronizeExternal(String text) {
         domain.checkWrite();
-        String next = singleLine(text);
+        String next = normalize(text);
         Snapshot s = value.get();
         if (!s.active && !next.equals(baseline)) resetBaseline(next);
     }
@@ -285,7 +294,7 @@ public final class SceneEditState {
         domain.checkWrite();
         requireOwn(submission);
         if (submission.resolved) return false;
-        String next = singleLine(normalized);
+        String next = normalize(normalized);
         Snapshot s = value.get();
         boolean current = isCurrent(submission, s);
         // 先占用一次性完成权；Snapshot 失效通知可同步重入，不能重复改写业务结果。
@@ -341,8 +350,12 @@ public final class SceneEditState {
                 && submission.generation == generation && submission.text.equals(s.text);
     }
 
-    private static String singleLine(String text) {
-        return Objects.requireNonNull(text, "text").replace("\r", "").replace("\n", "");
+    /** 所有文本入口共用固定模式的换行规则；多行保留末尾 LF。 */
+    private String normalize(String text) {
+        Objects.requireNonNull(text, "text");
+        return mode == Mode.MULTI_LINE
+                ? text.replace("\r\n", "\n").replace("\r", "\n")
+                : text.replace("\r", "").replace("\n", "");
     }
 
     /** Java8 字符边界加扩展规则；不依赖字体、桌面工具箱或宿主字符事件。 */

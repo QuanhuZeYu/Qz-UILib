@@ -69,8 +69,8 @@ public class MinecraftSceneScreen extends GuiScreen {
         if(SceneNativeTextInput.available())nativeText=new SceneNativeTextInput();
         tabInput = new SceneTabInputAdapter(direction->opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.TAB,direction==club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.PREVIOUS,clipboard),direction));
         editInput = new club.heiqi.uilib.ui.scene.host.SceneEditInputAdapter();
-        enterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.CONFIRM,false,clipboard),club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
-        keypadEnterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.CONFIRM,false,clipboard),club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
+        enterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command((leftCtrl || rightCtrl ? club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SUBMIT : club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.CONFIRM),leftShift || rightShift,clipboard),club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
+        keypadEnterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command((leftCtrl || rightCtrl ? club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SUBMIT : club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.CONFIRM),leftShift || rightShift,clipboard),club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
         spaceInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command((nativeText!=null?club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.ACTIVATE_ONLY:club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SPACE),false,clipboard),club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
         escapeInput = new SceneEscapeInputAdapter(() -> opened.escape(() -> {
             // 延迟结果只可关闭递交事件的同一页/会话，不能借旧事件关闭后来打开的页面。
@@ -104,7 +104,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                 Keyboard.isKeyDown(Keyboard.KEY_LSHIFT), Keyboard.isKeyDown(Keyboard.KEY_RSHIFT));
             escapeInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_ESCAPE));
             enterInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_RETURN));
-        keypadEnterInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_NUMPADENTER));
+            keypadEnterInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_NUMPADENTER));
             spaceInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_SPACE));
             // 仅在历史耗尽后建立下一段修饰键起点，不让未来快照影响已经采集的事件。
             leftCtrl=Keyboard.isKeyDown(Keyboard.KEY_LCONTROL);rightCtrl=Keyboard.isKeyDown(Keyboard.KEY_RCONTROL);
@@ -143,6 +143,8 @@ public class MinecraftSceneScreen extends GuiScreen {
         switch(key){
             case Keyboard.KEY_LEFT:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.LEFT;break;
             case Keyboard.KEY_RIGHT:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.RIGHT;break;
+            case Keyboard.KEY_UP:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.UP;break;
+            case Keyboard.KEY_DOWN:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.DOWN;break;
             case Keyboard.KEY_HOME:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.HOME;break;
             case Keyboard.KEY_END:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.END;break;
             case Keyboard.KEY_BACK:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.BACKSPACE;break;
@@ -150,6 +152,8 @@ public class MinecraftSceneScreen extends GuiScreen {
             default:break;
         }
         if(leftCtrl || rightCtrl)switch(key){
+            case Keyboard.KEY_HOME:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.DOCUMENT_HOME;break;
+            case Keyboard.KEY_END:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.DOCUMENT_END;break;
             case Keyboard.KEY_A:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SELECT_ALL;break;
             case Keyboard.KEY_C:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.COPY;break;
             case Keyboard.KEY_X:command=club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.CUT;break;

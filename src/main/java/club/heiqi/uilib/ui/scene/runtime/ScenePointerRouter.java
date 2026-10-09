@@ -93,7 +93,7 @@ public final class ScenePointerRouter implements AutoCloseable {
                 return;
             case SCROLL:
                 SceneNode scrolling = hits.hitScroll(runtime, geometry, event.x, event.y);
-                if (scrolling != null) runtime.dispatchScroll(scrolling, event.delta);
+                if (scrolling != null && !runtime.dispatchControlScroll(scrolling,event,geometry)) runtime.dispatchScroll(scrolling, event.delta);
                 return;
             case SYNTHETIC_ACTIVATION:
                 if (!buttons.isEmpty()) return;

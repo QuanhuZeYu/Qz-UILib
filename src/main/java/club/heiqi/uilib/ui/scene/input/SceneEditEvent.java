@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.input;
 import java.util.Objects;
 /** 宿主递交真实文本/组字或编辑命令；不持焦点目标，沿页面唯一输入序列。 */
 public final class SceneEditEvent {
-    public enum Command { LEFT, RIGHT, HOME, END, BACKSPACE, DELETE, SELECT_ALL, COPY, CUT, PASTE, UNDO, REDO, CONFIRM, SPACE, ACTIVATE_ONLY, TAB, ESCAPE }
+    public enum Command { LEFT, RIGHT, HOME, END, BACKSPACE, DELETE, SELECT_ALL, COPY, CUT, PASTE, UNDO, REDO, CONFIRM, SPACE, ACTIVATE_ONLY, TAB, ESCAPE, UP, DOWN, DOCUMENT_HOME, DOCUMENT_END, SUBMIT }
     public interface Clipboard { String read(); void write(String value); }
     public final Command command; public final String text;
     public final boolean shift, composing, compositionEvent, atomic; public final Clipboard clipboard;

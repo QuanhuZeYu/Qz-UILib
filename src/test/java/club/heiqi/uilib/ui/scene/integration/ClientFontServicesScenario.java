@@ -20,6 +20,7 @@ import club.heiqi.uilib.host.client.gl.GlPaintPlanRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
+import club.heiqi.uilib.ui.scene.control.SceneTextArea;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
@@ -114,6 +115,9 @@ public final class ClientFontServicesScenario extends TestApplication {
         scenario("导航显露后的正式按钮真实像素与命中",this::focusReveal);
         scenario("单行字段真实整形与选区光标GPU像素",this::textFieldGeometry);
         scenario("单行字段IME与只读状态GPU像素",this::textFieldImeReadOnly);
+        scenario("多行真实字体硬换行软换行末尾空行与源簇",this::textAreaFontLines);
+        scenario("多行跨行拖选视觉导航及光标真实GPU像素",this::textAreaSelection);
+        scenario("多行IME只读滚动裁剪动态宽度与生命周期GPU像素",this::textAreaImeScroll);
         scenario("点击滚动与动态resize",this::inputAndResize);
         scenario("字体来源退休与旧glyph重开",this::reloadSources);
         scenario("screen关闭保留sharedowner",this::screenOwnership);
@@ -410,6 +414,148 @@ public final class ClientFontServicesScenario extends TestApplication {
             require(f.state[0]==identity && f.snapshot().text.equals(selected.text) && f.snapshot().anchor==selected.anchor
                 && f.snapshot().caret==selected.caret && f.snapshot().active==selected.active,"卸载修改业务state草稿或选区");
             require(f.submits[0]==1,"卸载隐含提交");image(new File(output,"text-field-ime-readonly.png"),pixels);
+        }
+    }
+    /** 共用真实owner/页面/FBO；仅声明页面及观测，未另建编辑器或输入路由。 */
+    private final class AreaFixture implements AutoCloseable {
+        final ReactiveDomain local=ReactiveDomain.direct();
+        final SceneEditState[] state={null};
+        final SceneNode[] area={null};
+        final Signal<Boolean>[] readOnly=new Signal[1];
+        final Signal<SceneTheme>[] theme=new Signal[1];
+        final int[] submits={0};
+        final int previousWidth=host.width,previousHeight=host.height;
+        final ScenePageSession page;
+        AreaFixture(String text){
+            host.width=W;host.height=H;
+            page=ScenePageSession.open(local,host,owner,ctx->{
+                state[0]=new SceneEditState(local,text,SceneEditState.Mode.MULTI_LINE);
+                theme[0]=local.signal(SceneTheme.light());readOnly[0]=local.signal(false);
+                area[0]=SceneTextArea.create(ctx,state[0],theme[0],readOnly[0],request->submits[0]++)
+                    .size(Size.fill(1),Size.fixed(140));
+                ctx.mount(new SceneNode().initialFocus(area[0]).add(area[0]));
+            });
+        }
+        SceneGeometryView.Entry entry(){final SceneGeometryView.Entry[] e={null};local.execute(()->e[0]=page.pipeline().current().geometry.get(area[0]));return e[0];}
+        SceneEditState.Snapshot snapshot(){final SceneEditState.Snapshot[] s={null};local.execute(()->s[0]=state[0].snapshot().get());return s[0];}
+        void command(SceneEditEvent.Command command){page.edit(SceneEditEvent.command(command,false,null));}
+        int[] pixels() throws Exception {
+            long deadline=System.nanoTime()+15000000000L;
+            for(;;){clear();page.frame();if(owner.rasterizer().stats().pending==0){clear();page.frame();return read();}
+                require(System.nanoTime()<deadline && owner.rasterizer().failures().isEmpty(),"Area真实字形未ready");Thread.sleep(2);}
+        }
+        public void close(){page.close();host.width=previousWidth;host.height=previousHeight;}
+    }
+    private void textAreaFontLines() throws Exception {
+        textAreaSeparatorHit();
+        textAreaControlMarkerHit();
+        String[] inputs={"","\n","a\n","\n\n","a\n\n"};int[] counts={1,2,2,3,3};
+        for(int i=0;i<inputs.length;i++){
+            TextLayout text=owner.layout(inputs[i],SceneTheme.light().textStyle,240,TextPolicy.NORMAL);
+            require(text.lines().size()==counts[i],"真实字体丢空行 input="+inputs[i]+" count="+text.lines().size());
+            TextLayout.Line last=text.lines().get(text.lines().size()-1);
+            require(last.sourceStart==inputs[i].length() && last.sourceEnd==inputs[i].length(),"真实字体末尾空行源位置错误");
+            require(last.lineHeight>0,"真实字体空行没有可编辑高度");
+        }
+        try(AreaFixture f=new AreaFixture("fi中文 e\u0301 👩🏽‍💻\nאבג العربية\n")){
+            f.command(SceneEditEvent.Command.DOCUMENT_HOME);f.pixels();TextLayout wide=f.entry().text;
+            require(wide.lines().size()>=3 && wide.lines().stream().anyMatch(line->!line.glyphs().isEmpty()),"Area未使用真实多行glyph");
+            require(sourceCluster(wide,0).sourceEnd>0,"真实字体缺源簇");
+            int combining=f.snapshot().text.indexOf("e\u0301");TextLayout.Cluster c=sourceCluster(wide,combining);
+            require(c.sourceEnd>=combining+2,"生产整形拆开组合字符簇");
+            String draft=f.snapshot().text;host.width=92;f.pixels();TextLayout narrow=f.entry().text;
+            require(narrow.lines().size()>wide.lines().size() && f.snapshot().text.equals(draft),"真实字体软换行没有响应宽度或写回草稿");
+            require(narrow.lines().get(narrow.lines().size()-1).sourceStart==draft.length(),"缩窄后丢末尾空行");
+        }
+    }
+    private void textAreaSeparatorHit() throws Exception {
+        String input="אבג\u2028ABC ( ) \u2029DEF [ ] \n";
+        try(AreaFixture f=new AreaFixture(input)){
+            f.command(SceneEditEvent.Command.DOCUMENT_HOME);f.pixels();
+            SceneGeometryView.Entry e=f.entry();LayoutBox inner=fieldInner(e,SceneTheme.light().padding);
+            require(f.snapshot().text.equals(input) && e.text.originalText.equals(input),"Unicode行分隔符源串不应改写为LF");
+            for(TextLayout.Line sourceLine:e.text.lines())require(sourceLine.sourceStart>=0
+                && sourceLine.sourceStart<=sourceLine.sourceEnd && sourceLine.sourceEnd<=input.length(),"Unicode分隔符排版行的源范围越界");
+            // 字体提供实际行/簇；ABC/DEF和其括号属于明确的LTR短语，左缘应映射源起点。
+            for(String marker:new String[]{"ABC","(","DEF","["}){
+                int source=input.indexOf(marker);TextLayout.Cluster c=sourceCluster(e.text,source);TextLayout.Line line=null;
+                for(TextLayout.Line candidate:e.text.lines())if(candidate.clusters().contains(c)){line=candidate;break;}
+                require(line!=null && line.y>=0 && line.y<inner.height,"真实分隔符行缺少可见簇");
+                int x=inner.x+Math.round(c.x),y=inner.y+line.y+Math.round(line.lineHeight/2);
+                f.page.pointer(ScenePointerEvent.down(0,x,y));f.pixels();
+                f.page.pointer(ScenePointerEvent.up(0,x,y));f.pixels();
+                require(f.snapshot().caret==c.sourceStart && f.snapshot().anchor==c.sourceStart,"RTL后Unicode分隔符的LTR短语命中方向错误 marker="+marker);
+            }
+        }
+    }
+    /** NEL 在正文保留，但字体显示为可见中性标记；末尾括号按实际 RTL 段落定位。 */
+    private void textAreaControlMarkerHit() throws Exception {
+        String input="אבג \u0085 ABC (";
+        try(AreaFixture f=new AreaFixture(input)){
+            f.command(SceneEditEvent.Command.DOCUMENT_HOME);f.pixels();
+            SceneGeometryView.Entry e=f.entry();LayoutBox inner=fieldInner(e,SceneTheme.light().padding);
+            require(e.text.lines().size()==1 && f.snapshot().text.equals(input),"可见控制符不能变成业务换行");
+            TextLayout.Cluster c=sourceCluster(e.text,input.length()-1);TextLayout.Line line=e.text.lines().get(0);
+            int x=inner.x+Math.round(c.x+c.advance*0.75f),y=inner.y+line.y+Math.round(line.lineHeight/2);
+            f.page.pointer(ScenePointerEvent.down(0,x,y));f.pixels();f.page.pointer(ScenePointerEvent.up(0,x,y));f.pixels();
+            require(f.snapshot().caret==c.sourceStart,"字体中性控制标记后的RTL括号命中方向错误 actual="+f.snapshot().caret+" expected="+c.sourceStart);
+        }
+    }
+    private void textAreaSelection() throws Exception {
+        try(AreaFixture f=new AreaFixture("fi中文 e\u0301\nsecond 中文\nthird")){
+            f.command(SceneEditEvent.Command.DOCUMENT_HOME);f.pixels();SceneGeometryView.Entry e=f.entry();
+            LayoutBox inner=fieldInner(e,SceneTheme.light().padding);TextLayout.Line first=e.text.lines().get(0),second=e.text.lines().get(1);
+            TextLayout.Cluster start=sourceCluster(e.text,2),end=second.clusters().get(2);
+            int x0=inner.x+Math.round(start.x),y0=inner.y+first.y+Math.round(first.lineHeight/2);
+            int x1=inner.x+Math.round(end.x),y1=inner.y+second.y+Math.round(second.lineHeight/2);
+            f.page.pointer(ScenePointerEvent.down(0,x0,y0));f.pixels();
+            require(f.snapshot().caret==start.sourceStart,"真实Area点击没有按源簇定位");
+            f.page.pointer(ScenePointerEvent.move(x1,y1));f.page.pointer(ScenePointerEvent.up(0,x1,y1));int[] selected=f.pixels();
+            require(f.snapshot().anchor==start.sourceStart && f.snapshot().caret==end.sourceStart,"真实Area跨行拖选没有保留anchor");
+            require(colorPixels(selected,new LayoutBox(inner.x,inner.y+first.y,inner.width,(int)Math.ceil(first.lineHeight)),SceneTheme.light().hover)>0
+                && colorPixels(selected,new LayoutBox(inner.x,inner.y+second.y,inner.width,(int)Math.ceil(second.lineHeight)),SceneTheme.light().hover)>0,"跨行选区没有进入两行FBO像素");
+            final String[] copied={null};f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.COPY,false,new SceneEditEvent.Clipboard(){public String read(){throw new AssertionError("复制不读剪贴板");}public void write(String text){copied[0]=text;}}));f.pixels();
+            require(copied[0].equals(f.snapshot().text.substring(start.sourceStart,end.sourceStart)) && copied[0].contains("\n"),"真实跨行复制丢LF");
+            f.command(SceneEditEvent.Command.HOME);f.pixels();require(f.snapshot().caret==second.sourceStart,"真实视觉Home跳全文首");
+            f.command(SceneEditEvent.Command.END);int[] pixels=f.pixels();e=f.entry();inner=fieldInner(e,SceneTheme.light().padding);
+            TextLayout.Line line=e.text.lines().get(1);TextLayout.Cluster tail=line.clusters().get(line.clusters().size()-1);
+            int caretX=inner.x+(int)Math.floor(tail.x+tail.advance);
+            require(f.snapshot().caret==line.sourceEnd && colorPixels(pixels,new LayoutBox(caretX,inner.y+line.y,1,(int)Math.ceil(line.lineHeight)),SceneTheme.light().focus)>0,"真实视觉End光标没有落入该行GPU区域");
+            image(new File(output,"text-area-selection.png"),pixels);
+        }
+    }
+    private void textAreaImeScroll() throws Exception {
+        StringBuilder draft=new StringBuilder("fi中文\n");for(int i=0;i<18;i++)draft.append("scroll 中文 ").append(i).append('\n');
+        try(AreaFixture f=new AreaFixture(draft.toString())){
+            f.command(SceneEditEvent.Command.DOCUMENT_HOME);f.pixels();f.page.edit(SceneEditEvent.composition("组字中文",true));
+            f.command(SceneEditEvent.Command.CONFIRM);f.command(SceneEditEvent.Command.SUBMIT);int[] preedit=f.pixels();
+            require(f.submits[0]==0 && f.snapshot().composing && f.snapshot().text.equals(draft.toString()),"多行IME确认换行或提交");
+            SceneGeometryView.Entry e=f.entry();LayoutBox inner=fieldInner(e,SceneTheme.light().padding);TextLayout.Line line=e.text.lines().get(0);
+            TextLayout.Cluster c=sourceCluster(e.text,0);
+            require(colorPixels(preedit,new LayoutBox(inner.x+(int)Math.floor(c.x),inner.y+(int)Math.floor(line.baseline+line.descent),Math.max(1,(int)Math.ceil(c.advance)),1),SceneTheme.light().focus)>0,"多行IME下划线没有真实像素");
+            f.page.edit(SceneEditEvent.committed("确认\r\n"));f.pixels();f.command(SceneEditEvent.Command.UNDO);f.pixels();
+            require(f.snapshot().text.equals(draft.toString()),"多行IME提交不是原子历史");
+            f.local.execute(()->{f.readOnly[0].set(true);f.theme[0].set(SceneTheme.dark());});f.pixels();
+            f.command(SceneEditEvent.Command.SELECT_ALL);int[] selected=f.pixels();e=f.entry();inner=fieldInner(e,SceneTheme.dark().padding);
+            require(colorPixels(selected,inner,SceneTheme.dark().hover)>0,"只读跨行选区没有GPU像素");
+            f.command(SceneEditEvent.Command.SUBMIT);f.command(SceneEditEvent.Command.CONFIRM);f.pixels();require(f.submits[0]==0 && f.snapshot().text.equals(draft.toString()),"只读多行提交或换行");
+            f.command(SceneEditEvent.Command.DOCUMENT_HOME);int[] beforeScroll=f.pixels();e=f.entry();inner=fieldInner(e,SceneTheme.dark().padding);int beforeY=e.text.lines().get(0).y;
+            f.page.pointer(ScenePointerEvent.scroll(inner.x+2,inner.y+2,-1));int[] scrolled=f.pixels();int scrollY=f.entry().text.lines().get(0).y;
+            require(scrollY<beforeY && !Arrays.equals(beforeScroll,scrolled),"内部滚动没进入真实像素/几何");
+            f.pixels();require(f.entry().text.lines().get(0).y==scrollY,"稳定GPU帧拉回用户滚动");
+            for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(!inner.contains(x,y)){
+                boolean border=e.box.contains(x,y);if(!border)require(scrolled[y*W+x]==0,"Area正文越过box裁剪 x="+x+" y="+y);
+            }
+            SceneEditState identity=f.state[0];SceneEditState.Snapshot before=f.snapshot();host.width=128;int[] resized=f.pixels();
+            require(f.state[0]==identity && f.snapshot().text.equals(before.text) && f.snapshot().caret==before.caret && f.snapshot().anchor==before.anchor,"resize替换state或选择");
+            require(f.entry().box.width==128,"动态宽度未进入正式geometry");
+            f.command(SceneEditEvent.Command.SELECT_ALL);resized=f.pixels();
+            require(colorPixels(resized,fieldInner(f.entry(),SceneTheme.dark().padding),SceneTheme.dark().hover)>0
+                && colorPixels(resized,new LayoutBox(128,0,W-128,H),SceneTheme.dark().hover)==0,"动态宽度没裁剪GPU选区");
+            SceneEditState.Snapshot retained=f.snapshot();f.page.close();
+            require(f.state[0]==identity && f.snapshot().text.equals(retained.text) && f.snapshot().anchor==retained.anchor
+                && f.snapshot().caret==retained.caret && f.snapshot().active==retained.active && f.submits[0]==0,"Area卸载丢草稿选择或提交");
+            image(new File(output,"text-area-ime-scroll.png"),resized);
         }
     }
     private void inputAndResize() throws Exception {

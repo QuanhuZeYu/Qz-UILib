@@ -28,12 +28,11 @@ final class UnicodeText {
             if (cp == 13) {
                 if (i < input.text.length() && input.text.charAt(i) == 10) i++;
                 cp = 10;
-            } else if (cp == 0x2028 || cp == 0x2029) cp = 10;
-            else if ((cp < 32 && cp != 9 && cp != 10) || cp >= 0x7f && cp <= 0x9f) {
+            } else if (club.heiqi.uilib.ui.scene.text.TextDisplay.controlMarker(cp)) {
                 diagnostics.add(new Diagnostic(Diagnostic.Kind.CONTROL_MARKER, input.sourceStart(start), input.sourceEnd(i - 1),
                     "控制符 U+" + Integer.toHexString(cp).toUpperCase(java.util.Locale.ROOT) + " 显示标记"));
-                cp = cp < 32 ? 0x2400 + cp : cp == 127 ? 0x2421 : 0x2426;
             }
+            cp = club.heiqi.uilib.ui.scene.text.TextDisplay.codePoint(cp);
             out.appendCodePoint(cp); offsets.add(start);
             if (cp > 0xffff) offsets.add(start);
         }

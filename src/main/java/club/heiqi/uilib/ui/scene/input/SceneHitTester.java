@@ -12,7 +12,7 @@ public final class SceneHitTester {
         for (int i = entries.size() - 1; i >= 0; i--) {
             SceneGeometryView.Entry entry = entries.get(i);
             if (entry.clip != null && !entry.clip.contains(x, y)) continue;
-            if (entry.box.contains(x, y) && runtime.interactive(entry.node) && (scroll ? entry.node.scrollable() || entry.node.scrollAction() != null : entry.node.clickAction() != null)) return entry.node;
+            if (entry.box.contains(x, y) && runtime.interactive(entry.node) && (scroll ? entry.node.scrollable() || entry.node.scrollAction() != null || entry.node.control() != null && entry.node.control().scrollableContent() : entry.node.clickAction() != null)) return entry.node;
         }
         return null;
     }

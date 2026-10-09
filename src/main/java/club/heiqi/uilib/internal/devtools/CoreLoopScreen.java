@@ -24,6 +24,9 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
     private static club.heiqi.uilib.ui.scene.edit.SceneEditState editState;
     private static Signal<String> acceptedValue;
     private static club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission delayed;
+    private static club.heiqi.uilib.ui.scene.edit.SceneEditState multilineState;
+    private static Signal<String> acceptedDocument;
+    private static club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission delayedDocument;
     public CoreLoopScreen() { super(EDIT_DOMAIN,CoreLoopScreen::buildPage); }
 
     private static void buildPage(ScenePageContext ctx) {
@@ -38,6 +41,12 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
         Signal<Boolean> light = domain.signal(false);
         if(editState==null){editState=new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain,"12");acceptedValue=domain.signal("12");}
         Signal<Boolean> readOnly=domain.signal(false),editEnabled=domain.signal(true);
+        if(multilineState==null){String initial="多行正文：中文与 Emoji 🙂\n第二行：Enter 换行，Ctrl+Enter 提交\n第三行：上下移动与跨行选择\n第四行：滚轮查看，缩窗软换行\n第五行：末尾空行也可输入\n";multilineState=new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain,initial,club.heiqi.uilib.ui.scene.edit.SceneEditState.Mode.MULTI_LINE);acceptedDocument=domain.signal(initial);}
+        Signal<Boolean> areaReadOnly=domain.signal(false),areaEnabled=domain.signal(true);
+        java.util.function.Consumer<club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission> submitDocument=request->{
+            if(request.text.contains("拒绝")){multilineState.reject(request,"正文包含拒绝，草稿与选区保留");}
+            else if(multilineState.accept(request,request.text))acceptedDocument.set(request.text);
+        };
         java.util.function.Consumer<club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission> submit=request->{
             try{String normalized=String.valueOf(Integer.parseInt(request.text.trim()));if(editState.accept(request,normalized))acceptedValue.set(normalized);}
             catch(NumberFormatException invalid){editState.reject(request,"请输入完整整数，草稿可暂时为负号或空串");}
@@ -108,8 +117,22 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
             .add(SceneButton.create(ctx,()->"重置为12",theme,()->{editState.reset("12");acceptedValue.set("12");delayed=null;}))
             .add(SceneButton.create(ctx,()->"外部值99",theme,()->{acceptedValue.set("99");editState.synchronizeExternal("99");}))
             .add(SceneButton.create(ctx,()->"取消草稿",theme,editState::cancel)));
+        SceneNode areaPanel=new SceneNode().size(Size.fill(1),Size.natural()).gap(2);
+        areaPanel.add(SceneLabel.create(ctx,()->"多行正文：Enter 换行；Ctrl+Enter 或按钮提交；Home/End 为视觉行；Ctrl+Home/End 为全文",theme));
+        areaPanel.add(club.heiqi.uilib.ui.scene.control.SceneTextArea.create(ctx,multilineState,theme,areaReadOnly,submitDocument).size(Size.fill(1),Size.fixed(160)).bind(NodeBinding.value(areaEnabled,SceneNode::enabled)));
+        areaPanel.add(SceneLabel.create(ctx,()->"已接受正文："+acceptedDocument.get().replace("\n"," ⏎ ")+"；错误："+multilineState.snapshot().get().error,theme));
+        areaPanel.add(new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(2)
+            .add(SceneButton.create(ctx,()->"提交正文",theme,()->{if(areaEnabled.get()&&!areaReadOnly.get())submitDocument.accept(multilineState.request(true));}))
+            .add(SceneButton.create(ctx,()->"暂存正文请求",theme,()->{if(areaEnabled.get()&&!areaReadOnly.get())delayedDocument=multilineState.request(true);}))
+            .add(SceneButton.create(ctx,()->"完成旧正文请求",theme,()->{if(delayedDocument!=null){if(multilineState.accept(delayedDocument,delayedDocument.text))acceptedDocument.set(delayedDocument.text);delayedDocument=null;}}))
+            .add(SceneButton.create(ctx,()->areaReadOnly.get()?"正文可编辑":"正文只读",theme,()->areaReadOnly.set(!areaReadOnly.get())))
+            .add(SceneButton.create(ctx,()->areaEnabled.get()?"禁用正文":"启用正文",theme,()->areaEnabled.set(!areaEnabled.get()))));
+        areaPanel.add(new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(2)
+            .add(SceneButton.create(ctx,()->"清空正文",theme,()->{if(areaEnabled.get()&&!areaReadOnly.get()){multilineState.reset("");acceptedDocument.set("");delayedDocument=null;}}))
+            .add(SceneButton.create(ctx,()->"外部正文",theme,()->{String next="外部更新正文\n仅在空闲时同步\n";acceptedDocument.set(next);multilineState.synchronizeExternal(next);}))
+            .add(SceneButton.create(ctx,()->"恢复样例",theme,()->{if(areaEnabled.get()&&!areaReadOnly.get()){String next="中文🙂与 é\n第二行：ABCDEFGHIJKLMN 软换行长文 ABCDEFGHIJKLMN\n第三行\n第四行\n第五行\n第六行\n第七行\n第八行\n";multilineState.reset(next);acceptedDocument.set(next);delayedDocument=null;}})));
         // 字段验收放在滚动正文之前，字号/窗口变化由已有布局处理。
-        SceneNode scrollContent=new SceneNode().size(Size.fill(1),Size.natural()).gap(4).add(editPanel).add(body.size(Size.fill(1),Size.fixed(220)));
+        SceneNode scrollContent=new SceneNode().size(Size.fill(1),Size.natural()).gap(4).add(editPanel).add(areaPanel).add(body.size(Size.fill(1),Size.fixed(220)));
         // 页内自然内容共用外层滚动，小窗口/大字号不把字段正文压成零高度。
         SceneNode editorPage=new SceneNode().initialFocus(focusA).size(Size.fill(1),Size.fill(1)).scrollable(true).padding(8).gap(4)
             .bind(NodeBinding.value(theme,(node,value)->node.background(value.panel)));
