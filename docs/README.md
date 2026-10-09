@@ -31,6 +31,19 @@
 
 导航使用相对链接；局部注释解释实现原因，涉及目标或核心边界的认可变化回写同一 spec。
 
+## 构建维护入口
+
+[根构建脚本](<../build.gradle.kts>)只应用项目插件并组织职责模块。修改构建逻辑时按用途定位：
+
+| 职责 | 脚本 |
+| --- | --- |
+| 字体依赖、私有运行时资源打包及生产LWJGL2源集 | [font-runtime](<../gradle/font-runtime.gradle.kts>) |
+| 自动验收启动、隔离编译、宿主类路径与门禁依赖 | [verification](<../gradle/verification.gradle.kts>) |
+| 人工验收包、正式发行排除与产物隔离检查 | [packaging](<../gradle/packaging.gradle.kts>) |
+| headless native供给与直启类路径导出 | [headless](<../gradle/headless.gradle.kts>) |
+
+新增同一核心scene隔离编译单元的场景，只在verification的`coreSceneDeclarations`补一条任务名、说明和应用类声明；对应编译源、启动设置和验收依赖由同一声明派生。不同宿主的类路径继续在各自任务明确声明。
+
 ## 稳定命令与排障
 
 以下是通用构建命令的唯一维护处。环境前置见 [环境搭建](../README.zh-CN.md#环境搭建)；headless 等专项工具命令在各自指南维护。发布前置条件见 [发布流程](开发者文档/发布流程.md)。

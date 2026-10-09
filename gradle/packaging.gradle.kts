@@ -1,0 +1,122 @@
+import com.gtnewhorizons.retrofuturagradle.mcp.ReobfuscatedJar
+import org.gradle.api.tasks.bundling.Zip
+import org.gradle.api.tasks.bundling.AbstractArchiveTask
+import org.gradle.api.file.RegularFile
+import org.gradle.api.provider.Provider
+import java.io.File
+import java.util.zip.ZipFile
+
+import org.gradle.api.tasks.SourceSetContainer
+
+val sourceSets = extensions.getByType<SourceSetContainer>()
+// 显式人工测试附加包：与发布包分离，不进入 assemble/publish，真实实例自动安装 /qzcore。
+val manualTestSources = sourceSets.create("manualTest") {
+    compileClasspath = sourceSets.getByName("main").output + sourceSets.getByName("main").compileClasspath
+}
+tasks.named<JavaCompile>(manualTestSources.compileJavaTaskName) {
+    // 附加入口只有 Java 8 语法，不加载从业务 classpath 发现的编译处理器。
+    options.compilerArgs.add("-proc:none")
+    options.annotationProcessorPath = tasks.named<JavaCompile>("compileJava").get().options.annotationProcessorPath
+}
+val manualTestDevJar by tasks.registering(Zip::class) {
+    dependsOn(tasks.named("classes"), tasks.named("manualTestClasses"))
+    archiveBaseName.set("qz_uilib_manualtest")
+    archiveVersion.set("core-loop-1")
+    archiveClassifier.set("dev")
+    archiveExtension.set("jar")
+    destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
+    from(sourceSets.getByName("main").output) { include("club/heiqi/uilib/internal/devtools/**") }
+    from(manualTestSources.output)
+}
+val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
+    dependsOn(manualTestDevJar, tasks.named("reobfJar"))
+    val production = tasks.named<ReobfuscatedJar>("reobfJar")
+    inputJar.set(manualTestDevJar.flatMap { it.archiveFile })
+    archiveBaseName.set("qz_uilib_manualtest")
+    archiveVersion.set("core-loop-1")
+    archiveClassifier.set("")
+    destinationDirectory.set(layout.buildDirectory.dir("manual-test"))
+    mcVersion.set(production.flatMap { it.mcVersion })
+    srg.set(production.flatMap { it.srg })
+    fieldCsv.set(production.flatMap { it.fieldCsv })
+    methodCsv.set(production.flatMap { it.methodCsv })
+    exceptorCfg.set(production.flatMap { it.exceptorCfg })
+    recompMcJar.set(production.flatMap { it.recompMcJar })
+    referenceClasspath.from(sourceSets.getByName("main").compileClasspath, sourceSets.getByName("main").output)
+    extraSrgEntries.set(emptyList<String>())
+    doLast {
+        ZipFile(archiveFile.get().asFile).use { zip ->
+            check(zip.getEntry("club/heiqi/uilib/manualtest/ManualTestMod.class") != null) { "人工测试入口缺失" }
+            check(zip.getEntry("club/heiqi/uilib/internal/devtools/CoreLoopScreen.class") != null) { "人工测试面板缺失" }
+            check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心类" }
+        }
+    }
+}
+
+
+// ============================================================================
+// 内部开发工具（main 域 club.heiqi.uilib.internal.devtools）
+// 含 headless 出图、scene 测试场地（playground）、磨玻璃实验室（glass）、网络自检端点
+// （NetSelfCheck* / NetRuntimeSelfChecks）与开发环境完整命令（QzUiLibClientCommand /
+// DevToolsClientBootstrap）。定位与顶层语义见
+// docs/历史报告/规划与设计/规划-headless运行时与验收设施.md；
+// 硬约束（2026-09-17 用户裁定，2026-09-18 扩到整包）：不影响打包体积——类只存在于
+// build/classes，不进入任何产物。发布产物内保留的 /qzuilib 通道命令在 client.command，
+// 由 ClientProxy 按「开发环境 + 类存在」双重探测择一注册。
+// ============================================================================
+val internalDevToolsPackagePath = "club/heiqi/uilib/internal/devtools"
+
+// 1) Jar 型产物统一排除（jar / shadowJar / sourcesJar / apiJar）。
+//    reobfJar 是 ReobfuscatedJar（非 Jar 子类、无 exclude），吃的是 dev jar 产物，排除随输入传播——由下面的门禁实测确认。
+tasks.withType<Jar>().configureEach {
+    exclude("$internalDevToolsPackagePath/**")
+    // Forge1.7.10会扫描每个class，ASM5拒绝依赖的Java9+多版本实现；Java8使用的根实现完整保留。
+    exclude("META-INF/versions/**")
+}
+// apiJar 用的是旧类型 org.gradle.jvm.tasks.Jar（不是 bundling.Jar 的子类），必须单独排除——
+// 这一处漏排正是第一次门禁跑出来的真实缺陷（apiJar 里混进了 headless 包）。
+tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
+    if (name != "manualTestJar") exclude("$internalDevToolsPackagePath/**")
+}
+
+// 2) 门禁：逐个打开产物断言不含该包。排除是意图，门禁才是保证；
+//    校验集合按 AbstractArchiveTask 全量枚举 + 显式依赖本仓产物任务，构建链新增打包任务不会静默漏检。
+val guardedArchiveTasks = listOf("jar", "shadowJar", "sourcesJar", "apiJar", "reobfJar")
+val verifyDevToolsNotPackaged by tasks.registering {
+    group = "verification"
+    description = "校验内部开发工具（internal.devtools 整包）未进入任何打包产物"
+    dependsOn(guardedArchiveTasks)
+    val guarded: List<Provider<RegularFile>> = guardedArchiveTasks.map { name ->
+        tasks.named(name, AbstractArchiveTask::class.java).flatMap { task -> task.archiveFile }
+    }
+    val allArchives: Provider<List<File>> = provider {
+        tasks.withType(AbstractArchiveTask::class.java).toList().filter { it.name != "manualTestDevJar" && it.name != "manualTestJar" }.map { task -> task.archiveFile.get().asFile }
+    }
+    val forbidden = "$internalDevToolsPackagePath/"
+    doLast {
+        val guardedFiles = guarded.map { archive -> archive.get().asFile }
+        val missing = guardedFiles.count { file -> !file.isFile }
+        if (missing > 0) {
+            throw GradleException("verifyDevToolsNotPackaged: 有 " + missing + " 个产物未生成，门禁失效")
+        }
+        val extras = allArchives.get().filter { file -> file.isFile && !guardedFiles.contains(file) }
+        (guardedFiles + extras).forEach { file ->
+            var hit: String? = null
+            ZipFile(file).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entryName = entries.nextElement().name
+                    if (entryName.startsWith(forbidden) || entryName.startsWith("club/heiqi/uilib/testing/")) {
+                        hit = entryName
+                        break
+                    }
+                }
+            }
+            if (hit != null) {
+                throw GradleException("内部开发工具进入了打包产物 " + file.name + "：" + hit)
+            }
+            logger.lifecycle("verifyDevToolsNotPackaged: " + file.name + " 不含 " + forbidden)
+        }
+    }
+}
+tasks.named("check") { dependsOn(verifyDevToolsNotPackaged) }
