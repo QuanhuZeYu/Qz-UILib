@@ -19,6 +19,16 @@ public interface SceneControl {
     /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout presentText(SceneNode node, club.heiqi.uilib.ui.scene.text.TextLayout full, int width, int height, SceneTextMeasurer text) { return full; }
     void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target);
+    /** 唯一当前焦点接收编辑事件；返回消费，不处理宿主原生队列。 */
+    default boolean edit(SceneNode node, club.heiqi.uilib.ui.scene.input.SceneEditEvent event) { return false; }
+    /** 只有需要DOWN定位的控件申请；普通按钮仍在UP聚焦。 */
+    default boolean capturesPointer() { return false; }
+    /** 当前只读/可编辑事实由控件声明，宿主据此启停真实文本输入。 */
+    default boolean acceptsTextInput(SceneNode node) { return false; }
+    /** 指针定位/拖选沿已有owner，区域来自本次生产布局。 */
+    default void pointer(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event, SceneGeometryView geometry) {}
+    /** 正常焦点离开与失活原因分开；失活/关闭不得隐含提交。 */
+    default void focusChanged(SceneNode node, boolean focused, boolean eligible) {}
     /** 被动提示在内容末端绘制，不创建命中/布局节点。 */
     default void paintOverlay(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target, SceneTextMeasurer text) {}
 }

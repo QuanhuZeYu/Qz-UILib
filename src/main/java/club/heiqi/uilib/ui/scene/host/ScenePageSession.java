@@ -44,6 +44,10 @@ public final class ScenePageSession implements AutoCloseable {
     }
     public void pointer(ScenePointerEvent event) { Objects.requireNonNull(event, "event"); dispatch(() -> pipeline().pointer(event)); }
     public void navigation(SceneNavigationEvent event) { Objects.requireNonNull(event, "event"); dispatch(() -> pipeline().navigation(event)); }
+    public void edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent event) { Objects.requireNonNull(event,"event");dispatch(()->pipeline().edit(event,null)); }
+    public void edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent event,Runnable fallback) { Objects.requireNonNull(event,"event");Objects.requireNonNull(fallback,"fallback");dispatch(()->pipeline().edit(event,()->{if(!ended)fallback.run();})); }
+    /** 标准宿主输入回退在同一次事件中结算，避免后续文字投递旧焦点。 */
+    public void editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent event,SceneNavigationEvent fallback) { Objects.requireNonNull(event,"event");Objects.requireNonNull(fallback,"fallback");dispatch(()->pipeline().editOrNavigate(event,fallback)); }
     public void escape(Runnable fallback) {
         Objects.requireNonNull(fallback, "fallback");
         dispatch(() -> pipeline().escape(() -> { if (!ended) fallback.run(); }));

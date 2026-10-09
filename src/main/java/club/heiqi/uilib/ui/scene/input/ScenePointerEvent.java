@@ -29,7 +29,7 @@ public final class ScenePointerEvent {
     public static ScenePointerEvent allButtonsReleased() { return new ScenePointerEvent(Kind.ALL_BUTTONS_RELEASED, -1, 0, 0, 0); }
     /** 滚轮沿当前有效范围路由，不建立pointer owner。 */
     public static ScenePointerEvent scroll(int x, int y, int delta) { return new ScenePointerEvent(Kind.SCROLL, -1, x, y, delta); }
-    /** 完整synthetic activation，等价于空闲状态在同位置按下并释放；不代表物理DOWN。
+    /** 完整synthetic activation，空闲状态按坐标完整点击，执行clickFocus和业务激活；不制造物理DOWN或拖选。
      * 已有物理手势（包括取消尾部、空白和第二键）时整项吞掉，不能绕过owner。 */
     public static ScenePointerEvent syntheticActivation(int x, int y) { return new ScenePointerEvent(Kind.SYNTHETIC_ACTIVATION, -1, x, y, 0); }
 }

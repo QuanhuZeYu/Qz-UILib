@@ -63,11 +63,18 @@ public final class ScenePointerRouter implements AutoCloseable {
                 if (!buttons.add(event.button)) return;
                 if (idle && event.button == 0) {
                     SceneNode hit = hits.hit(runtime, geometry, x, y);
-                    if (hit != null) setOwner(runtime.captureMount(hit));
+                    if (hit != null) {
+                        setOwner(runtime.captureMount(hit));
+                        if(hit.control()!=null && hit.control().capturesPointer()) {
+                            if(hit.clickFocus() && hit.focusable())runtime.focusRouter().request(runtime.captureMount(hit));
+                            runtime.dispatchControlPointer(hit,event,geometry);
+                        }
+                    }
                 }
                 return;
             case MOVE:
                 x = event.x; y = event.y;
+                if(owner!=null && owner.active())runtime.dispatchControlPointer(owner.node(),event,geometry);
                 return;
             case UP:
                 x = event.x; y = event.y;
@@ -75,6 +82,7 @@ public final class ScenePointerRouter implements AutoCloseable {
                 if (event.button != 0 || owner == null) return;
                 MountHandle activation = owner;
                 setOwner(null); // 在handler前结束owner；业务异常不能留下可复活的目标。
+                if(activation.active())runtime.dispatchControlPointer(activation.node(),event,geometry);
                 if (activation.active() && hits.hit(runtime, geometry, x, y) == activation.node()) runtime.dispatchPointerClick(activation.node());
                 return;
             case CANCEL:
@@ -90,7 +98,7 @@ public final class ScenePointerRouter implements AutoCloseable {
             case SYNTHETIC_ACTIVATION:
                 if (!buttons.isEmpty()) return;
                 SceneNode target = hits.hit(runtime, geometry, event.x, event.y);
-                if (target != null) runtime.dispatchClick(target);
+                if (target != null) runtime.dispatchPointerClick(target);
                 return;
             default: throw new AssertionError(event.kind);
         }

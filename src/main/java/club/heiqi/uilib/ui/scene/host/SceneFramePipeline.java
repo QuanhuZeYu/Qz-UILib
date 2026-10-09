@@ -26,6 +26,8 @@ public final class SceneFramePipeline implements AutoCloseable {
         final ScenePointerEvent pointer;
         final SceneNavigationEvent navigation;
         final Runnable fallback;
+        club.heiqi.uilib.ui.scene.input.SceneEditEvent edit;
+        SceneNavigationEvent navigationFallback;
         boolean consumed;
         QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation) { this(pointer, navigation, null); }
         QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation, Runnable fallback) { this.pointer = pointer; this.navigation = navigation; this.fallback = fallback; }
@@ -46,6 +48,10 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void pointer(ScenePointerEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(Objects.requireNonNull(event, "event"), null)); } }
     /** 与指针共享采集顺序；不从宿主另建焦点表。 */
     public void navigation(SceneNavigationEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(null, Objects.requireNonNull(event, "event"))); } }
+    /** 文本与命令使用唯一当前焦点，消费后结算结果再执行宿主fallback。 */
+    public void edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent event, Runnable fallback) { synchronized(inputs) { checkOpen(); QueuedInput input=new QueuedInput(null,null,fallback);input.edit=Objects.requireNonNull(event,"event");inputs.add(input); } }
+    /** 控件未消费时在本事件结算后导航/激活，不将fallback重排到下一帧。 */
+    public void editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent event,SceneNavigationEvent fallback) { synchronized(inputs) { checkOpen();QueuedInput input=new QueuedInput(null,null,()->{});input.edit=Objects.requireNonNull(event,"event");input.navigationFallback=Objects.requireNonNull(fallback,"fallback");inputs.add(input); } }
     /** ESC与指针/导航同序；fallback仅在未消费、Effects成功且此管线仍有效时于域内执行。 */
     public void escape(Runnable fallback) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(null, null, Objects.requireNonNull(fallback, "fallback"))); } }
     /** 完整synthetic activation入口，不是DOWN；已有物理手势时吞掉，不绕过owner。 */
@@ -72,7 +78,8 @@ public final class SceneFramePipeline implements AutoCloseable {
                 QueuedInput event = events.get(index);
                 if (isClosed() || !runtime.alive()) { event.discard(router); return; }
                 SceneGeometryView geometry = prepare().geometry;
-                if (event.pointer != null) router.route(event.pointer, geometry);
+                if (event.edit != null) event.consumed = runtime.dispatchEdit(event.edit);
+                else if (event.pointer != null) router.route(event.pointer, geometry);
                 else if (event.navigation == SceneNavigationEvent.ACTIVATE) runtime.focusRouter().activate();
                 else if (event.navigation != null) runtime.focusRouter().navigate(event.navigation == SceneNavigationEvent.PREVIOUS);
                 else event.consumed = runtime.dispatchEscape();
@@ -86,7 +93,12 @@ public final class SceneFramePipeline implements AutoCloseable {
             });
             QueuedInput event = events.get(index);
             if (event.fallback != null) submit(independent, () -> {
-                if (!batch.failed && !isClosed() && runtime.alive() && !event.consumed) event.fallback.run();
+                if (!batch.failed && !isClosed() && runtime.alive() && !event.consumed) {
+                    // 导航/按钮fallback沿本事件结算，不能重新排入下一帧越过后续已采集文字。
+                    if(event.navigationFallback==SceneNavigationEvent.ACTIVATE)runtime.focusRouter().activate();
+                    else if(event.navigationFallback!=null)runtime.focusRouter().navigate(event.navigationFallback==SceneNavigationEvent.PREVIOUS);
+                    else event.fallback.run();
+                }
             }, failure -> {
                 batch.failed = true;
                 if (independent) release(batch);

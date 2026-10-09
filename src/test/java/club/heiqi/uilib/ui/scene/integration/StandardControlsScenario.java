@@ -88,7 +88,7 @@ public final class StandardControlsScenario extends TestApplication {
         scenario("正式按钮按下释放和Tab激活，禁用取消及模态隔离提示与业务事件", this::inputAndRanges);
         scenario("公开单行省略与溢出策略使用正式文字空间", this::policies);
         scenario("Enter和空格按压门等待历史释放且repeat一次", this::keyPressSegments);
-        scenario("synthetic激活不抢焦点且屏外按钮不投影提示", this::activationAndViewport);
+        scenario("业务目标激活不抢焦点且屏外按钮不投影提示", this::activationAndViewport);
         scenario("全部鼠标释放清除按下颜色与失活owner呈现", this::releasePresentation);
     }
 
@@ -119,7 +119,7 @@ public final class StandardControlsScenario extends TestApplication {
         });onClose(page::close);page.frame();
         domain.execute(()->{require(page.runtime().focusRouter().focused().get()==buttons[0],"初始首按钮");
             page.runtime().dispatchClick(buttons[1]);require(clicks[0]==1,"synthetic业务激活未执行");
-            require(page.runtime().focusRouter().focused().get()==buttons[0],"synthetic激活抢焦点");
+            require(page.runtime().focusRouter().focused().get()==buttons[0],"按业务目标激活抢焦点");
             page.runtime().focusRouter().request(page.runtime().captureMount(buttons[1]));
         });page.frame();
         require(host.last.commands().stream().noneMatch(c->c.kind==PaintCommand.Kind.RECT && c.color==SceneTheme.light().tooltip),"完全屏外按钮生成可见提示");

@@ -80,7 +80,10 @@ public final class SceneFocusRouter {
     private void setOwner(MountHandle target) {
         if (owner != target) pendingReveal = null;
         SceneNode before = owner == null ? null : owner.node();
-        owner = target; value.set(target == null ? null : target.node());
+        SceneNode after=target==null?null:target.node();
+        owner = target; value.set(after);
+        if(before!=after && before!=null && before.control()!=null)runtime.dispatchControlFocus(before,false,!closed && runtime.alive() && runtime.interactive(before));
+        if(before!=after && after!=null && after.control()!=null)runtime.dispatchControlFocus(after,true,true);
         if (before != (target == null ? null : target.node())) runtime.invalidatePaint();
     }
     /** 仅呈现准备消费；读取焦点不推进。失活、换owner或卸载会取消旧意图，
@@ -181,6 +184,6 @@ public final class SceneFocusRouter {
     }
     void close() {
         runtime.domain().checkWrite(); if (closed) return;
-        setOwner(null); ranges.clear(); closed = true;
+        closed = true; setOwner(null); ranges.clear();
     }
 }

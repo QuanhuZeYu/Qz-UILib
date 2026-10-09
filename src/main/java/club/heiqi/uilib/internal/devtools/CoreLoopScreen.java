@@ -20,7 +20,11 @@ import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
 
 /** MC 验收入口 /qzcore；只声明业务树，运行与宿主接线由正式入口管理。 */
 public final class CoreLoopScreen extends MinecraftSceneScreen {
-    public CoreLoopScreen() { super(CoreLoopScreen::buildPage); }
+    private static final ReactiveDomain EDIT_DOMAIN=ReactiveDomain.direct();
+    private static club.heiqi.uilib.ui.scene.edit.SceneEditState editState;
+    private static Signal<String> acceptedValue;
+    private static club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission delayed;
+    public CoreLoopScreen() { super(EDIT_DOMAIN,CoreLoopScreen::buildPage); }
 
     private static void buildPage(ScenePageContext ctx) {
         ReactiveDomain domain = ctx.domain();
@@ -32,6 +36,12 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
         Signal<Integer> count = domain.signal(0), fontSize = domain.signal(20);
         Signal<Boolean> expanded = domain.signal(false), modal = domain.signal(false);
         Signal<Boolean> light = domain.signal(false);
+        if(editState==null){editState=new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain,"12");acceptedValue=domain.signal("12");}
+        Signal<Boolean> readOnly=domain.signal(false),editEnabled=domain.signal(true);
+        java.util.function.Consumer<club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission> submit=request->{
+            try{String normalized=String.valueOf(Integer.parseInt(request.text.trim()));if(editState.accept(request,normalized))acceptedValue.set(normalized);}
+            catch(NumberFormatException invalid){editState.reject(request,"请输入完整整数，草稿可暂时为负号或空串");}
+        };
         Computed<SceneTheme> theme = domain.computed(business, () -> {
             SceneTheme base = light.get() ? SceneTheme.light() : SceneTheme.dark();
             return base.withTextStyle(new TextStyle("default", fontSize.get(), base.textStyle.color));
@@ -79,13 +89,33 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
         SceneNode panel = new SceneNode().initialFocus(focusA)
             .bind(NodeBinding.value(restoreA, (node,useA) -> node.restoreFocus(useA ? focusA : null)))
             .size(Size.fill(1), Size.fill(1)).padding(8).gap(4).bind(NodeBinding.value(theme, (node,value) -> node.background(value.panel)))
-            .add(title).add(controls).add(SceneLabel.create(ctx, focusStatus, theme)).add(focusTargets).add(focusActions).add(body);
+            .add(title).add(controls).add(SceneLabel.create(ctx, focusStatus, theme)).add(focusTargets).add(focusActions);
         SceneNode longButton = SceneButton.create(ctx, () -> "限高长文案：运行时浅色与深色主题切换后，这段文字应保持自然换行；高度不足只显示完整行及省略，悬停或键盘焦点查看全文。", theme, () -> count.set(count.get() + 1))
             .size(Size.fill(1), Size.fixed(56));
         SceneNode policyButton = SceneButton.create(ctx, () -> "显式单行省略策略：这一行长文案不会换行", theme, () -> count.set(count.get() + 1), SceneTextPolicy.ELLIPSIS_SINGLE_LINE);
         SceneNode disabledButton = SceneButton.create(ctx, () -> "禁用按钮：不能点击、Tab聚焦或键盘激活", theme, () -> count.set(count.get() + 100)).enabled(false);
         panel.add(longButton).add(policyButton).add(disabledButton);
-        ctx.mount(panel);
+        SceneNode editPanel=new SceneNode().size(Size.fill(1),Size.natural()).gap(2);
+        editPanel.add(SceneLabel.create(ctx,()->"整数业务值："+acceptedValue.get()+"；编辑会话："+editState.snapshot().get().active+"；错误："+editState.snapshot().get().error,theme));
+        editPanel.add(club.heiqi.uilib.ui.scene.control.SceneTextField.create(ctx,editState,theme,readOnly,submit).bind(NodeBinding.value(editEnabled,SceneNode::enabled)));
+        SceneNode editActions=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(2);
+        editActions.add(SceneButton.create(ctx,()->"确认整数",theme,()->submit.accept(editState.request(true))));
+        editActions.add(SceneButton.create(ctx,()->"暂存请求",theme,()->delayed=editState.request(true)));
+        editActions.add(SceneButton.create(ctx,()->"完成旧请求",theme,()->{if(delayed!=null){if(editState.accept(delayed,delayed.text))acceptedValue.set(delayed.text);delayed=null;}}));
+        editActions.add(SceneButton.create(ctx,()->readOnly.get()?"可编辑":"只读",theme,()->readOnly.set(!readOnly.get())));
+        editActions.add(SceneButton.create(ctx,()->editEnabled.get()?"禁用字段":"启用字段",theme,()->editEnabled.set(!editEnabled.get())));
+        editPanel.add(editActions).add(new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).gap(2)
+            .add(SceneButton.create(ctx,()->"重置为12",theme,()->{editState.reset("12");acceptedValue.set("12");delayed=null;}))
+            .add(SceneButton.create(ctx,()->"外部值99",theme,()->{acceptedValue.set("99");editState.synchronizeExternal("99");}))
+            .add(SceneButton.create(ctx,()->"取消草稿",theme,editState::cancel)));
+        // 字段验收放在滚动正文之前，字号/窗口变化由已有布局处理。
+        SceneNode scrollContent=new SceneNode().size(Size.fill(1),Size.natural()).gap(4).add(editPanel).add(body.size(Size.fill(1),Size.fixed(220)));
+        // 页内自然内容共用外层滚动，小窗口/大字号不把字段正文压成零高度。
+        SceneNode editorPage=new SceneNode().initialFocus(focusA).size(Size.fill(1),Size.fill(1)).scrollable(true).padding(8).gap(4)
+            .bind(NodeBinding.value(theme,(node,value)->node.background(value.panel)));
+        panel.size(Size.fill(1),Size.natural());
+        editorPage.add(panel).add(scrollContent);
+        ctx.mount(editorPage);
         SceneNode inner = new SceneNode().size(Size.fill(1), Size.natural()).padding(6).gap(3).bind(NodeBinding.value(theme, (node,value) -> node.background(value.panel))).modal(true).initialFocus(focusN).onEscape(() -> { innerModal.set(false); return true; })
             .bind(NodeBinding.value(innerModal, SceneNode::visible))
             .add(SceneLabel.create(ctx, focusStatus, theme)).add(focusN)

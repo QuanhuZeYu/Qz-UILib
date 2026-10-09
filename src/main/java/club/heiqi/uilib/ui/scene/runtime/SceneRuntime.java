@@ -75,7 +75,7 @@ public final class SceneRuntime implements AutoCloseable {
     public void invalidatePaint() { domain.checkAccess(); revision++; }
     public void invalidateBinding(SceneNode node) { domain.checkAccess(); dirtyBindings.add(node); }
     public void checkMutation() {
-        checkAlive(); if (!mutation) throw new IllegalStateException("挂载后声明仅由呈现运行时更新");
+        checkAlive(); if (routing || !mutation) throw new IllegalStateException("挂载后声明仅由呈现运行时更新");
     }
     private void checkAlive() { domain.checkAccess(); if (disposed) throw new IllegalStateException("场景运行时已释放"); }
     private void command() { checkAlive(); if (routing) throw new IllegalStateException("输入操作仅发布状态或意图"); }
@@ -238,7 +238,21 @@ public final class SceneRuntime implements AutoCloseable {
         for (int i = node.children().size() - 1; i >= 0; i--) { SceneNode found = findModal(node.children().get(i)); if (found != null) return found; }
         return node.modal() ? node : null;
     }
-    /** 已知逻辑目标的完整synthetic activation兼容入口；物理输入应经帧管线的typed事件。
+    /** 编辑目标由唯一焦点决定；handler只发布状态，不另建输入目标。 */
+    public boolean dispatchEdit(club.heiqi.uilib.ui.scene.input.SceneEditEvent event) {
+        domain.checkWrite();command();SceneNode node=focusRouter.focused().get();
+        if(node==null || !interactive(node) || node.control()==null)return false;
+        routing=true;try{return node.control().edit(node,event);}finally{routing=false;}
+    }
+    void dispatchControlFocus(SceneNode node,boolean focused,boolean eligible) {
+        domain.checkWrite();if(node.control()==null)return;
+        boolean previous=routing;routing=true;try{node.control().focusChanged(node,focused,eligible);}finally{routing=previous;}
+    }
+    void dispatchControlPointer(SceneNode node,club.heiqi.uilib.ui.scene.input.ScenePointerEvent event,SceneGeometryView geometry) {
+        command();if(!interactive(node)||node.control()==null)return;
+        routing=true;try{node.control().pointer(node,event,geometry);}finally{routing=false;}
+    }
+    /** 已知逻辑目标的业务激活入口；物理输入应经帧管线的typed事件。
      * 有物理按钮占位时吞掉，不能绕过已有手势；仍按当前挂载与输入范围检查目标。 */
     public void dispatchClick(SceneNode node) {
         command(); if (!pointerRouter.idle()) return;
@@ -355,6 +369,7 @@ public final class SceneRuntime implements AutoCloseable {
      * 本接口只返回消费结果，宿主fallback由管线在Effects成功后执行。 */
     public boolean dispatchEscape() {
         domain.checkWrite(); command();
+        if(dispatchEdit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.ESCAPE,false,null)))return true;
         SceneNode modal = activeModal();
         if (modal != null && locallyInteractive(modal) && escape(modal)) return true;
         for (SceneNode root : roots) if (!root.modal()) {

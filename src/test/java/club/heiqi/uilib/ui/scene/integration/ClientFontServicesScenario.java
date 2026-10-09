@@ -18,6 +18,13 @@ import club.heiqi.uilib.host.client.font.FramebufferCoordinates;
 import club.heiqi.uilib.host.client.font.FramebufferSceneRenderer;
 import club.heiqi.uilib.host.client.gl.GlPaintPlanRenderer;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneTextField;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.edit.SceneEditState;
+import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
+import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
@@ -105,6 +112,8 @@ public final class ClientFontServicesScenario extends TestApplication {
         scenario("ESC消费关闭及焦点恢复经真实GPU观察",this::escapeReplay);
         scenario("标准控件浅深主题与限高全文提示真实像素",this::standardControls);
         scenario("导航显露后的正式按钮真实像素与命中",this::focusReveal);
+        scenario("单行字段真实整形与选区光标GPU像素",this::textFieldGeometry);
+        scenario("单行字段IME与只读状态GPU像素",this::textFieldImeReadOnly);
         scenario("点击滚动与动态resize",this::inputAndResize);
         scenario("字体来源退休与旧glyph重开",this::reloadSources);
         scenario("screen关闭保留sharedowner",this::screenOwnership);
@@ -261,6 +270,147 @@ public final class ClientFontServicesScenario extends TestApplication {
                 require(displayed.originalText.equals(caption),"省略修改了完整源文案");});
             page.frame();if(glGetError()!=GL_NO_ERROR)throw new AssertionError("标准控件GL error");
         } finally {page.close();}
+    }
+    /** 新页面只借用共享字体owner，不取得screen或编辑状态的所有权。 */
+    private final class FieldFixture implements AutoCloseable {
+        final ReactiveDomain local=ReactiveDomain.direct();
+        final SceneEditState[] state={null};
+        final SceneNode[] field={null};
+        final Signal<SceneTheme>[] theme=new Signal[1];
+        final Signal<Boolean>[] readOnly=new Signal[1];
+        final int[] submits={0};
+        final String[] submitted={null};
+        final ScenePageSession page;
+        final int previousWidth=host.width,previousHeight=host.height;
+        FieldFixture(){
+            host.width=W;host.height=H;
+            page=ScenePageSession.open(local,host,owner,ctx->{
+                state[0]=new SceneEditState(local,"");theme[0]=local.signal(SceneTheme.light());readOnly[0]=local.signal(false);
+                field[0]=SceneTextField.create(ctx,state[0],theme[0],readOnly[0],request->{submits[0]++;submitted[0]=request.text;});
+                ctx.mount(field[0]);
+            });
+            local.execute(()->require(page.runtime().focusRouter().request(page.runtime().captureMount(field[0])),"GPU字段聚焦失败"));
+        }
+        ScenePresentation current(){final ScenePresentation[] value={null};local.execute(()->value[0]=page.pipeline().current());return value[0];}
+        SceneGeometryView.Entry entry(){return current().geometry.get(field[0]);}
+        SceneEditState.Snapshot snapshot(){final SceneEditState.Snapshot[] value={null};local.execute(()->value[0]=state[0].snapshot().get());return value[0];}
+        // 宿主typed输入先进入pipeline队列；观察状态/clipboard前先frame结算，再读真实FBO。
+        int[] pixels() throws Exception {
+            long deadline=System.nanoTime()+15000000000L;
+            for(;;){
+                clear();page.frame();
+                if(owner.rasterizer().stats().pending==0){clear();page.frame();return read();}
+                require(System.nanoTime()<deadline && owner.rasterizer().failures().isEmpty(),"字段真实字形未ready");Thread.sleep(2);
+            }
+        }
+        void command(SceneEditEvent.Command command){page.edit(SceneEditEvent.command(command,false,null));}
+        @Override public void close(){page.close();host.width=previousWidth;host.height=previousHeight;}
+    }
+    private static int colorPixels(int[] pixels,LayoutBox box,int color){
+        int count=0;
+        for(int y=Math.max(0,box.y);y<Math.min(H,box.y+box.height);y++)
+            for(int x=Math.max(0,box.x);x<Math.min(W,box.x+box.width);x++)if(pixels[y*W+x]==color)count++;
+        return count;
+    }
+    private static LayoutBox fieldInner(SceneGeometryView.Entry entry,int padding){
+        return new LayoutBox(entry.box.x+padding,entry.box.y+padding,
+            Math.max(0,entry.box.width-padding*2),Math.max(0,entry.box.height-padding*2));
+    }
+    private static TextLayout.Cluster sourceCluster(TextLayout text,int sourceOffset){
+        for(TextLayout.Line line:text.lines())for(TextLayout.Cluster cluster:line.clusters())
+            if(cluster.sourceStart==sourceOffset)return cluster;
+        throw new AssertionError("真实排版缺少源簇 "+sourceOffset);
+    }
+    private void textFieldGeometry() throws Exception {
+        try(FieldFixture f=new FieldFixture()){
+            final String input="fi中文😀e\u0301";
+            final String[] clipboard={input};
+            SceneEditEvent.Clipboard clip=new SceneEditEvent.Clipboard(){public String read(){return clipboard[0];}public void write(String value){clipboard[0]=value;}};
+            f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.PASTE,false,clip));
+            int[] pixels=f.pixels();SceneGeometryView.Entry entry=f.entry();LayoutBox inner=fieldInner(entry,SceneTheme.light().padding);
+            require(f.snapshot().text.equals(input) && f.submits[0]==0,"粘贴不应隐含确认提交");
+            require(entry.text.originalText.equals(input) && entry.text.lines().stream().anyMatch(line->!line.glyphs().isEmpty()),"字段未使用真实整形glyph");
+            // FBO中必须有正文墨迹，不能仅凭PaintCommand出现便声称GPU文字绘制成功。
+            int ink=0;for(int y=inner.y;y<inner.y+inner.height;y++)for(int x=inner.x;x<inner.x+inner.width;x++){
+                int pixel=pixels[y*W+x];if(pixel!=SceneTheme.light().panel && pixel!=SceneTheme.light().focus)ink++;
+            }
+            require(ink>0,"真实字段正文没有GPU墨迹");
+            f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.LEFT,true,null));
+            f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.COPY,false,clip));
+            pixels=f.pixels();
+            require(clipboard[0].equals("e\u0301"),"Shift+LEFT/COPY拆开组合字符");
+            require(colorPixels(pixels,inner,SceneTheme.light().hover)>0,"选区未进入真实FBO颜色");
+            f.command(SceneEditEvent.Command.HOME);f.pixels();entry=f.entry();inner=fieldInner(entry,SceneTheme.light().padding);
+            TextLayout.Cluster chinese=sourceCluster(entry.text,2);
+            int clickX=inner.x+Math.round(chinese.x),clickY=inner.y+Math.max(1,Math.round(entry.text.lines().get(0).lineHeight/2));
+            f.page.pointer(ScenePointerEvent.down(0,clickX,clickY));f.pixels();
+            require(f.snapshot().caret==2 && f.snapshot().anchor==2,"DOWN未按生产中文簇源边界定位");
+            TextLayout.Cluster end=sourceCluster(entry.text,4);
+            f.page.pointer(ScenePointerEvent.move(inner.x+Math.round(end.x),clickY));
+            f.page.pointer(ScenePointerEvent.up(0,inner.x+Math.round(end.x),clickY));
+            pixels=f.pixels();
+            require(f.snapshot().anchor==2 && f.snapshot().caret==4,"MOVE/UP未保留DOWN anchor");
+            require(colorPixels(pixels,inner,SceneTheme.light().hover)>0,"生产簇拖选未绘入GPU");
+            // 光标变化与真实区域变化分别消费一次显露意图；真实GPU核对长文与缩窄结果。
+            f.command(SceneEditEvent.Command.END);f.page.edit(SceneEditEvent.text(" 中文长文用于水平滚动 中文长文用于水平滚动"));
+            host.width=110;f.pixels();f.command(SceneEditEvent.Command.HOME);f.command(SceneEditEvent.Command.END);
+            pixels=f.pixels();entry=f.entry();inner=fieldInner(entry,SceneTheme.light().padding);
+            int last=f.snapshot().text.length();TextLayout.Cluster trailing=null;
+            for(TextLayout.Line line:entry.text.lines())for(TextLayout.Cluster c:line.clusters())if(c.sourceEnd==last)trailing=c;
+            require(trailing!=null,"长文缺少末簇");
+            int caretX=inner.x+(int)Math.floor(trailing.x+trailing.advance);
+            require(inner.contains(caretX,inner.y),"末尾caret未显露在真实viewport");
+            LayoutBox caretRegion=new LayoutBox(caretX,inner.y,1,inner.height);
+            require(colorPixels(pixels,caretRegion,SceneTheme.light().focus)>0,"显露caret区域没有真实GPU焦点像素");
+            require(colorPixels(pixels,new LayoutBox(110,0,W-110,H),SceneTheme.light().focus)==0,"字段caret越过viewport裁剪");
+            f.local.execute(()->f.theme[0].set(SceneTheme.dark()));
+            host.width=150;pixels=f.pixels();entry=f.entry();inner=fieldInner(entry,SceneTheme.dark().padding);
+            require(colorPixels(pixels,inner,SceneTheme.dark().panel)>0 && colorPixels(pixels,inner,SceneTheme.light().panel)==0,"theme/resize未更新实际GPU颜色");
+            TextLayout.Cluster resizedEnd=null;
+            for(TextLayout.Line line:entry.text.lines())for(TextLayout.Cluster c:line.clusters())if(c.sourceEnd==last)resizedEnd=c;
+            require(resizedEnd!=null,"主题resize丢失末簇");
+            int resizedCaretX=inner.x+(int)Math.floor(resizedEnd.x+resizedEnd.advance);
+            require(inner.contains(resizedCaretX,inner.y) && colorPixels(pixels,new LayoutBox(resizedCaretX,inner.y,1,inner.height),SceneTheme.dark().focus)>0,
+                "主题resize后的末尾caret没有留在真实GPU内区");
+            require(f.snapshot().text.endsWith("水平滚动") && f.submits[0]==0,"主题resize修改编辑状态或提交");
+            host.width=72;pixels=f.pixels();entry=f.entry();inner=fieldInner(entry,SceneTheme.dark().padding);
+            int endX=inner.x+Math.round(entry.text.lines().get(0).clusters().get(entry.text.lines().get(0).clusters().size()-1).x+entry.text.lines().get(0).clusters().get(entry.text.lines().get(0).clusters().size()-1).advance);
+            require(endX>=inner.x && endX<inner.x+inner.width,"缩窄窗口未一次显露稳定光标");
+            require(colorPixels(pixels,inner,SceneTheme.dark().focus)>0,"缩窄窗口光标被真实GPU裁掉");
+            image(new File(output,"text-field-geometry.png"),pixels);
+        }
+    }
+    private void textFieldImeReadOnly() throws Exception {
+        try(FieldFixture f=new FieldFixture()){
+            f.page.edit(SceneEditEvent.text("fi中文😀e\u0301"));f.pixels();
+            String draft=f.snapshot().text;
+            f.page.edit(SceneEditEvent.composition("输入法",true));f.command(SceneEditEvent.Command.CONFIRM);
+            int[] preedit=f.pixels();SceneGeometryView.Entry entry=f.entry();LayoutBox inner=fieldInner(entry,SceneTheme.light().padding);
+            require(f.submits[0]==0 && f.snapshot().text.equals(draft) && f.snapshot().composing,"组字确认写入业务或清掉preedit");
+            require(entry.text.originalText.endsWith("输入法"),"preedit没有进入生产排版");
+            TextLayout.Cluster preeditStart=sourceCluster(entry.text,draft.length());TextLayout.Line preeditLine=entry.text.lines().get(0);
+            LayoutBox underline=new LayoutBox(inner.x+(int)Math.floor(preeditStart.x),
+                inner.y+(int)Math.floor(preeditLine.baseline+preeditLine.descent),Math.max(1,(int)Math.ceil(preeditStart.advance)),1);
+            require(colorPixels(preedit,underline,SceneTheme.light().focus)>1,"preedit下划线没有进入真实GPU区域");
+            f.page.edit(SceneEditEvent.committed("整段中文"));f.command(SceneEditEvent.Command.CONFIRM);f.pixels();
+            require(f.submits[0]==1 && f.submitted[0].equals(draft+"整段中文") && !f.snapshot().composing,"IME提交后的后续CONFIRM不是一次完整提交");
+            f.command(SceneEditEvent.Command.UNDO);f.pixels();
+            require(f.snapshot().text.equals(draft),"IME整段不是独立撤销步骤");f.command(SceneEditEvent.Command.REDO);f.pixels();
+            f.local.execute(()->{f.readOnly[0].set(true);f.theme[0].set(SceneTheme.dark());});
+            SceneEditState identity=f.state[0];SceneEditState.Snapshot before=f.snapshot();
+            f.page.edit(SceneEditEvent.text("拒绝写入"));f.command(SceneEditEvent.Command.BACKSPACE);f.command(SceneEditEvent.Command.PASTE);f.command(SceneEditEvent.Command.CONFIRM);
+            f.pixels();
+            require(f.snapshot().text.equals(before.text) && f.snapshot().revision==before.revision && f.submits[0]==1,"只读写入或提交");
+            f.command(SceneEditEvent.Command.SELECT_ALL);final String[] copied={null};
+            f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.COPY,false,new SceneEditEvent.Clipboard(){public String read(){throw new AssertionError("只读不能读clipboard");}public void write(String value){copied[0]=value;}}));
+            int[] pixels=f.pixels();entry=f.entry();inner=fieldInner(entry,SceneTheme.dark().padding);
+            require(copied[0].equals(before.text) && colorPixels(pixels,inner,SceneTheme.dark().hover)>0,"只读复制或真实GPU选区失败");
+            require(f.state[0]==identity,"只读主题切换替换了业务state实例");
+            SceneEditState.Snapshot selected=f.snapshot();f.page.close();
+            require(f.state[0]==identity && f.snapshot().text.equals(selected.text) && f.snapshot().anchor==selected.anchor
+                && f.snapshot().caret==selected.caret && f.snapshot().active==selected.active,"卸载修改业务state草稿或选区");
+            require(f.submits[0]==1,"卸载隐含提交");image(new File(output,"text-field-ime-readonly.png"),pixels);
+        }
     }
     private void inputAndResize() throws Exception {
         int rawY=FramebufferCoordinates.mouseY(H,H-6);

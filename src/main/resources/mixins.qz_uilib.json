@@ -9,7 +9,8 @@
   "client": [
     "client.MinecraftLifecycleMixin",
     "client.VanillaFontRendererMixin",
-    "client.AngelicaFontOrderMixin"
+    "client.AngelicaFontOrderMixin",
+    "client.Lwjgl3ifyTextInputMixin"
   ],
   "server": [],
   "injectors": {
