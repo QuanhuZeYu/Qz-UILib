@@ -47,7 +47,7 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
         SceneNode body = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).gap(2)
             .scrollStep(32)
             .bind(NodeBinding.repeat(rows, value -> value, value -> {
-                return SceneLabel.create(ctx, () -> "条目 " + value.get() + "：滚轮滚动正文，标题与操作区保持位置。", theme)
+                return SceneButton.create(ctx, () -> "条目 " + value.get() + "：Tab导航自动显露，点击累计业务操作。", theme, () -> count.set(count.get() + 1))
                     .bind(NodeBinding.value(theme, (node, colors) -> node.background(colors.panel))).size(Size.fill(1), Size.natural());
             }));
         Signal<Boolean> focusVisible = domain.signal(true), focusEnabled = domain.signal(true);

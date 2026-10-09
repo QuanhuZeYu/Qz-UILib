@@ -12,6 +12,10 @@ import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import java.util.function.Supplier;
 
 /** 呈现与挂载生命周期；业务状态不归属于运行时。 */
 public final class SceneRuntime implements AutoCloseable {
@@ -266,6 +270,85 @@ public final class SceneRuntime implements AutoCloseable {
             ScrollPosition position = scrolling.computeIfAbsent(entry.node, ignored -> new ScrollPosition());
             position.declaration = entry.node.scrollOffset(); position.value = entry.scrollOffset; position.maximum = entry.scrollMaximum;
         }
+    }
+    /** spec6.2：在最终布局后消费一次导航意图；重排由管线提供，不递归结算声明。
+     * 每个祖先至多处理一次，滚动沿用唯一ScrollPosition，不持有第二套几何或滚动权威。 */
+    public SceneGeometry revealNavigation(SceneGeometry geometry, Supplier<SceneGeometry> relayout) {
+        domain.checkWrite(); command();
+        MountHandle target = focusRouter.takeReveal();
+        if (target == null) return geometry;
+        for (SceneNode ancestor = target.node().parent(); ancestor != null; ancestor = ancestor.parent()) {
+            if (!focusRouter.owns(target)) break;
+            if (!ancestor.scrollable()) continue;
+            SceneGeometryView.Entry entry = geometry.get(ancestor);
+            LayoutBox region = revealRegion(target.node(), ancestor, geometry);
+            if (entry == null || region == null || region.width == 0 || region.height == 0) continue;
+            LayoutBox window = revealWindow(ancestor, geometry);
+            if (window.width == 0 || window.height == 0) continue;
+            boolean row = ancestor.axis() == SceneNode.Axis.ROW;
+            long delta = revealDelta(row ? region.x : region.y, row ? region.width : region.height,
+                row ? window.x : window.y, row ? window.width : window.height);
+            ScrollPosition position = scrolling.get(ancestor);
+            if (position == null || !mounts.containsKey(ancestor)) continue;
+            int next = (int) Math.max(0L, Math.min(entry.scrollMaximum, (long) entry.scrollOffset + delta));
+            if (next == position.value) continue;
+            position.value = next; invalidate();
+            // 内层移动改变目标及裁剪后的可见部分；必须用重排后的同代几何求外层，
+            // 最后一次也重排，确保paint和下一事件hit均消费实际偏移后的区域。
+            geometry = Objects.requireNonNull(relayout.get(), "geometry");
+        }
+        return geometry;
+    }
+    private static LayoutBox innerBox(SceneGeometryView.Entry entry) {
+        int padding = entry.node.padding();
+        return new LayoutBox(entry.box.x + padding, entry.box.y + padding,
+            (int) Math.max(0L, (long) entry.box.width - 2L * padding),
+            (int) Math.max(0L, (long) entry.box.height - 2L * padding));
+    }
+    private static LayoutBox revealRegion(SceneNode target, SceneNode ancestor, SceneGeometryView geometry) {
+        SceneGeometryView.Entry entry = geometry.get(target);
+        if (entry == null) return null;
+        LayoutBox region = entry.box;
+        // 下层裁剪随当前祖先的内容一起移动，外层只能显露其中尚可见的部分。
+        for (SceneNode node = target.parent(); node != ancestor; node = node.parent()) {
+            if (node == null) return null;
+            SceneGeometryView.Entry clip = geometry.get(node);
+            if (clip == null) return null;
+            if (node.scrollable()) region = region.intersect(innerBox(clip));
+            else if (node.clip()) region = region.intersect(clip.box);
+        }
+        return region;
+    }
+    private static LayoutBox revealWindow(SceneNode ancestor, SceneGeometryView geometry) {
+        LayoutBox window = innerBox(geometry.get(ancestor));
+        boolean movableX = false, movableY = false;
+        for (SceneNode node = ancestor.parent(); node != null; node = node.parent()) {
+            // 外层只能修复自身滚动轴的遮挡；正交轴仍需约束内层窗口。
+            // 某轴可由外层移动后，其自身及更上层当前clip不提前卡住屏外内层。
+            if (node.scrollable()) {
+                if (node.axis() == SceneNode.Axis.ROW) movableX = true;
+                else movableY = true;
+            }
+            SceneGeometryView.Entry entry = geometry.get(node);
+            if (entry != null && (node.clip() || node.scrollable()))
+                window = limitWindow(window, node.scrollable() ? innerBox(entry) : entry.box, !movableX, !movableY);
+        }
+        return limitWindow(window, geometry.viewport(), !movableX, !movableY);
+    }
+    private static LayoutBox limitWindow(LayoutBox window, LayoutBox clip, boolean x, boolean y) {
+        int left = x ? Math.max(window.x, clip.x) : window.x;
+        int top = y ? Math.max(window.y, clip.y) : window.y;
+        long right = x ? Math.min((long) window.x + window.width, (long) clip.x + clip.width) : (long) window.x + window.width;
+        long bottom = y ? Math.min((long) window.y + window.height, (long) clip.y + clip.height) : (long) window.y + window.height;
+        return new LayoutBox(left, top, (int) Math.max(0L, right - left), (int) Math.max(0L, bottom - top));
+    }
+    private static long revealDelta(long start, long size, long windowStart, long windowSize) {
+        long end = start + size, windowEnd = windowStart + windowSize;
+        // 大目标没有内部焦点位置时显露起始边缘；已经跨越整个视口则保持，
+        // 避免反复导航在两端跳动。普通目标仅补足被遮住的一侧。
+        if (size > windowSize) return start <= windowStart && end >= windowEnd ? 0 : start - windowStart;
+        if (start < windowStart) return start - windowStart;
+        return end > windowEnd ? end - windowEnd : 0;
     }
     /** spec6.1：当前模态先处理，未消费才进入页面策略。调用前结算声明；
      * 页面采用与初始焦点相同的首个非模态根，后台模态不接收本事件。

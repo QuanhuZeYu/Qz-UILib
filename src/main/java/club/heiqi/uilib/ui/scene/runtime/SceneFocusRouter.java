@@ -20,7 +20,7 @@ public final class SceneFocusRouter {
     private final Signal<SceneNode> value;
     private final ReadableSignal<SceneNode> view;
     private final List<Range> ranges = new ArrayList<>();
-    private MountHandle owner;
+    private MountHandle owner, pendingReveal;
     private boolean closed, rangesDirty = true;
     SceneFocusRouter(SceneRuntime runtime) {
         this.runtime = runtime;
@@ -36,7 +36,7 @@ public final class SceneFocusRouter {
         if (closed) return false;
         revalidate();
         if (!local(target) || !runtime.interactive(target.node())) return false;
-        cancelPending();
+        cancelPending(); pendingReveal = null;
         setOwner(target);
         return true;
     }
@@ -54,6 +54,7 @@ public final class SceneFocusRouter {
         int next = current < 0 ? (backward ? candidates.size() - 1 : 0)
             : (current + (backward ? candidates.size() - 1 : 1)) % candidates.size();
         setOwner(runtime.captureMount(candidates.get(next)));
+        pendingReveal = owner; // 单项导航也产生一次意图；普通请求与范围进入不产生。
         return true;
     }
     // 仅本次命令遍历声明树；从唯一当前范围开始，跳过失活子树，不缓存导航表或用几何排序。
@@ -73,13 +74,24 @@ public final class SceneFocusRouter {
     public void clear() {
         runtime.domain().checkWrite();
         if (!closed) cancelPending();
-        setOwner(null);
+        pendingReveal = null; setOwner(null);
     }
     private void cancelPending() { Range range = top(); range.pending = false; range.saved = null; range.returning = false; }
     private void setOwner(MountHandle target) {
+        if (owner != target) pendingReveal = null;
         SceneNode before = owner == null ? null : owner.node();
         owner = target; value.set(target == null ? null : target.node());
         if (before != (target == null ? null : target.node())) runtime.invalidatePaint();
+    }
+    /** 仅呈现准备消费；读取焦点不推进。失活、换owner或卸载会取消旧意图，
+     * 无法修复的裁剪也只尽力一次，不在后续内容变化或用户滚动时追随。 */
+    MountHandle takeReveal() {
+        runtime.domain().checkWrite(); revalidate();
+        MountHandle target = pendingReveal; pendingReveal = null;
+        return target != null && target == owner && local(target) && runtime.interactive(target.node()) ? target : null;
+    }
+    boolean owns(MountHandle target) {
+        return !closed && target == owner && local(target) && runtime.interactive(target.node());
     }
     private Range top() { return ranges.get(ranges.size() - 1); }
     private boolean local(MountHandle target) {

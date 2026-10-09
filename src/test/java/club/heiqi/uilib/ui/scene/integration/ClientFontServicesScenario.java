@@ -104,6 +104,7 @@ public final class ClientFontServicesScenario extends TestApplication {
         scenario("Tab历史适配与导航高亮经真实GPU观察",this::navigationReplay);
         scenario("ESC消费关闭及焦点恢复经真实GPU观察",this::escapeReplay);
         scenario("标准控件浅深主题与限高全文提示真实像素",this::standardControls);
+        scenario("导航显露后的正式按钮真实像素与命中",this::focusReveal);
         scenario("点击滚动与动态resize",this::inputAndResize);
         scenario("字体来源退休与旧glyph重开",this::reloadSources);
         scenario("screen关闭保留sharedowner",this::screenOwnership);
@@ -221,6 +222,22 @@ public final class ClientFontServicesScenario extends TestApplication {
             keys.key(false,false);keys.key(true,false);clear();session.frame();require(fallback[0]==1,"新的未消费ESC才fallback");
         } finally {domain.execute(()->{layer[0].detach();runtime.focusRouter().clear();});}
         clear();session.frame();
+    }
+    private void focusReveal() throws Exception {
+        ReactiveDomain local=ReactiveDomain.direct();SceneNode[] n=new SceneNode[3];int[] clicks={0};
+        ScenePageSession page=ScenePageSession.open(local,host,owner,ctx->{
+            n[0]=new SceneNode().size(Size.fixed(120),Size.fixed(60)).scrollable(true);
+            n[1]=club.heiqi.uilib.ui.scene.control.SceneButton.create(ctx,()->"首项",()->club.heiqi.uilib.ui.scene.control.SceneTheme.dark(),()->{})
+                .size(Size.fixed(120),Size.fixed(40));
+            n[2]=club.heiqi.uilib.ui.scene.control.SceneButton.create(ctx,()->"后项",()->club.heiqi.uilib.ui.scene.control.SceneTheme.light(),()->clicks[0]++)
+                .size(Size.fixed(120),Size.fixed(40));ctx.mount(n[0].add(n[1]).add(n[2]));
+        });try {
+            page.frame();page.navigation(club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.NEXT);clear();page.frame();
+            local.execute(()->require(page.pipeline().current().geometry.get(n[0]).scrollOffset==20,"GPU导航最小滚动错误"));
+            require(read()[55*W+110]==club.heiqi.uilib.ui.scene.control.SceneTheme.light().button,"显露按钮未在实际像素呈现");
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0,110,55));
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0,110,55));page.frame();require(clicks[0]==1,"显露后GPU输入未使用同代几何");
+        }finally{page.close();}
     }
     private void standardControls() throws Exception {
         ReactiveDomain local=ReactiveDomain.direct();

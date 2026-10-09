@@ -123,15 +123,23 @@ public final class SceneFramePipeline implements AutoCloseable {
             presentation = null;
         });
     }
+    private SceneGeometry layoutGeometry(int w, int h) {
+        SceneGeometry geometry = runtime.domain().readOnly(() -> layout.layout(runtime.roots(), w, h));
+        // 布局只读，唯一runtime记录在布局返回后发布；显露重排也复用这一入口。
+        runtime.prepareScrollPositions(geometry);
+        return geometry;
+    }
     private ScenePresentation prepare() {
         runtime.preparePresentation();
         int w = host.width(), h = host.height();
         if (w < 0 || h < 0) throw new IllegalArgumentException("宿主尺寸不能为负");
         long nextMetrics = host.metricsRevision();
-        if (presentation == null || revision != runtime.revision() || width != w || height != h || metrics != nextMetrics) {
-            boolean geometryDirty = presentation == null || geometryRevision != runtime.geometryRevision() || width != w || height != h || metrics != nextMetrics;
-            SceneGeometry geometry = geometryDirty ? runtime.domain().readOnly(() -> layout.layout(runtime.roots(), w, h)) : presentation.geometry;
-            if (geometryDirty) runtime.prepareScrollPositions(geometry);
+        boolean geometryDirty = presentation == null || geometryRevision != runtime.geometryRevision() || width != w || height != h || metrics != nextMetrics;
+        SceneGeometry prepared = geometryDirty ? layoutGeometry(w, h) : presentation.geometry;
+        // 单项目标导航不一定改变paint revision，仍须消费一次显露意图。
+        // 此时声明/Effect已结算；换owner或旧mount的意图不会挪动先前目标。
+        final SceneGeometry geometry = runtime.revealNavigation(prepared, () -> layoutGeometry(w, h));
+        if (presentation == null || revision != runtime.revision() || geometry != presentation.geometry || width != w || height != h || metrics != nextMetrics) {
             PaintPlanBuilder paint = new PaintPlanBuilder();
             for (SceneGeometryView.Entry entry : geometry.ordered()) {
                 if (entry.node.control() != null) {
