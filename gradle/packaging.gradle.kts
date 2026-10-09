@@ -55,14 +55,9 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
 
 
 // ============================================================================
-// 内部开发工具（main 域 club.heiqi.uilib.internal.devtools）
-// 含 headless 出图、scene 测试场地（playground）、磨玻璃实验室（glass）、网络自检端点
-// （NetSelfCheck* / NetRuntimeSelfChecks）与开发环境完整命令（QzUiLibClientCommand /
-// DevToolsClientBootstrap）。定位与顶层语义见
-// docs/历史报告/规划与设计/规划-headless运行时与验收设施.md；
-// 硬约束（2026-09-17 用户裁定，2026-09-18 扩到整包）：不影响打包体积——类只存在于
-// build/classes，不进入任何产物。发布产物内保留的 /qzuilib 通道命令在 client.command，
-// 由 ClientProxy 按「开发环境 + 类存在」双重探测择一注册。
+// 内部开发工具（main 域 club.heiqi.uilib.internal.devtools）从正式产物排除；
+// 人工验收包在本脚本前段单独装配，不复制生产核心。
+// 测试应用与发行隔离要求见 docs/superpowers/specs/2026-10-07-uilib-testing-spec.md。
 // ============================================================================
 val internalDevToolsPackagePath = "club/heiqi/uilib/internal/devtools"
 
