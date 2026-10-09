@@ -46,7 +46,7 @@ public final class ScenePageSession implements AutoCloseable {
     public void navigation(SceneNavigationEvent event) { Objects.requireNonNull(event, "event"); dispatch(() -> pipeline().navigation(event)); }
     public void escape(Runnable fallback) {
         Objects.requireNonNull(fallback, "fallback");
-        dispatch(() -> pipeline().escape(() -> { if (!ended) fallback.run(); }));
+        dispatch(() -> pipeline().escape(fallback));
     }
     /** 宿主绘制/resize均从同一入口驱动；已结束的迟到绘制不访问资源。 */
     public void frame() { dispatch(() -> pipeline().frame()); }

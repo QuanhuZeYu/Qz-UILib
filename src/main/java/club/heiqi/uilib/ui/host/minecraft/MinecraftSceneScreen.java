@@ -49,8 +49,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         final ScenePageSession opened = session;
         tabInput = new SceneTabInputAdapter(opened::navigation);
         escapeInput = new SceneEscapeInputAdapter(() -> opened.escape(() -> {
-            // 延迟结果只可关闭递交事件的同一页/会话，不能借旧事件关闭后来打开的页面。
-            if (session == opened && mc.currentScreen == this) super.keyTyped((char) 0, Keyboard.KEY_ESCAPE);
+            super.keyTyped((char) 0, Keyboard.KEY_ESCAPE);
         }));
     }
 

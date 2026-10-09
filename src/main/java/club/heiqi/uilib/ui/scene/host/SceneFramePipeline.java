@@ -25,7 +25,8 @@ public final class SceneFramePipeline implements AutoCloseable {
         final ScenePointerEvent pointer;
         final SceneNavigationEvent navigation;
         final Runnable fallback;
-        boolean consumed;
+        // 未处理/已丢弃的ESC没有默认关闭结果；只有实际处理返回false才递交。
+        boolean consumed = true;
         QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation) { this(pointer, navigation, null); }
         QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation, Runnable fallback) { this.pointer = pointer; this.navigation = navigation; this.fallback = fallback; }
         void discard(ScenePointerRouter router) { if (pointer != null) router.discardAfterFailure(pointer); }
@@ -45,7 +46,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void pointer(ScenePointerEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(Objects.requireNonNull(event, "event"), null)); } }
     /** 与指针共享采集顺序；不从宿主另建焦点表。 */
     public void navigation(SceneNavigationEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(null, Objects.requireNonNull(event, "event"))); } }
-    /** ESC与指针/导航同序；fallback仅在未消费、Effects成功且此管线仍有效时于域内执行。 */
+    /** ESC与指针/导航同序；fallback在实际未消费且Effects成功后执行，不复核页面是否切换。 */
     public void escape(Runnable fallback) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(null, null, Objects.requireNonNull(fallback, "fallback"))); } }
     /** 完整synthetic activation入口，不是DOWN；已有物理手势时吞掉，不绕过owner。 */
     public void click(int x, int y) { pointer(ScenePointerEvent.syntheticActivation(x, y)); }
@@ -84,7 +85,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             });
             QueuedInput event = events.get(index);
             if (event.fallback != null) submit(independent, () -> {
-                if (!batch.failed && !isClosed() && runtime.alive() && !event.consumed) event.fallback.run();
+                if (!batch.failed && !event.consumed) event.fallback.run();
             }, failure -> {
                 batch.failed = true;
                 if (independent) release(batch);
