@@ -50,7 +50,7 @@ public final class PageSessionScenario extends TestApplication {
             page.pointer(ScenePointerEvent.syntheticActivation(1,1));page.frame();
             while(!tasks.isEmpty())tasks.remove().run();require(clicked[0] == 1,"初始输入未走正式排队入口");
         });
-        scenario("关闭前未处理ESC随页面丢弃", () -> {
+        scenario("旧会话排队ESC不影响后来声明页", () -> {
             ArrayDeque<Runnable> tasks = new ArrayDeque<>(); ReactiveDomain domain = new ReactiveDomain(tasks::add);
             int[] oldFallback={0}, newClick={0};
             ScenePageSession old = ScenePageSession.open(domain,host,host,c -> c.mount(new SceneNode()));
@@ -59,15 +59,7 @@ public final class PageSessionScenario extends TestApplication {
                 .size(Size.fill(1),Size.fill(1)).onClick(() -> newClick[0]++)));
             next.pointer(ScenePointerEvent.syntheticActivation(1,1));next.frame();
             while(!tasks.isEmpty())tasks.remove().run();onClose(() -> {next.close();while(!tasks.isEmpty())tasks.remove().run();});
-            require(oldFallback[0] == 0 && newClick[0] == 1 && !next.ended(),"关闭应丢弃未处理事件且不阻断新页输入");
-        });
-        scenario("ESC处理中关闭页面仍执行未消费默认行为", () -> {
-            ReactiveDomain domain=ReactiveDomain.direct();ScenePageSession[] current={null};int[] defaults={0};
-            current[0]=ScenePageSession.open(domain,host,host,c -> c.mount(new SceneNode().onEscape(() -> {
-                current[0].close();return false;
-            })));
-            current[0].escape(() -> defaults[0]++);current[0].frame();
-            require(defaults[0]==1 && current[0].ended(),"已处理未消费ESC不应因结束被撤销");
+            require(oldFallback[0] == 0 && newClick[0] == 1 && !next.ended(),"旧ESC侵入新页或阻断新输入");
         });
         scenario("handler结束页面不在routing内卸载或回放", () -> {
             ReactiveDomain domain=ReactiveDomain.direct();ScenePageSession[] current={null};int[] releases={0};

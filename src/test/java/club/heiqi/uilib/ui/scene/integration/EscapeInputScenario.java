@@ -78,12 +78,12 @@ public final class EscapeInputScenario extends TestApplication {
             p.escape();try{p.frame();throw new AssertionError("应失败");}catch(RuntimeException actual){require(actual==failure,"原异常");}
             require(p.fallback==0,"失败不能fallback");
         });
-        // 已处理的未消费ESC仍默认关闭；管线关闭只丢弃后续尚未处理事件。
-        scenario("排队域Effect关闭管线保留已处理fallback丢弃后续ESC",()->{
+        // 底层合同：只关闭pipeline，验证其结算token失效；页面终止另由session覆盖。
+        scenario("排队域Effect关闭管线拦迟到fallback和后续ESC",()->{
             ArrayDeque<Runnable> queue=new ArrayDeque<>();Runnable drain=()->{while(!queue.isEmpty())queue.remove().run();};Page p=new Page(new ReactiveDomain(queue::add),drain);
             p.domain.execute(()->{Signal<Boolean> closing=p.domain.signal(false);Owner owner=p.context.scope();
                 p.domain.effect(owner,()->{if(closing.get())p.pipe.close();});p.policy.set(()->{p.pageCalls++;closing.set(true);return false;});});drain.run();
-            p.escape();p.escape();p.session.frame();drain.run();require(p.pageCalls==1&&p.fallback==1,"已处理未消费结果执行一次后续未处理事件丢弃");
+            p.escape();p.escape();p.session.frame();drain.run();require(p.pageCalls==1&&p.fallback==0,"关闭后迟到结果与后续意图不执行");
         });
         scenario("fallback观察已经完成的Effect而不是handler中间态",()->{
             Page p=new Page();final int[] observed={0};
@@ -102,11 +102,11 @@ public final class EscapeInputScenario extends TestApplication {
             Page p=new Page();p.domain.execute(()->{p.escape();p.session.frame();p.session.pointer(ScenePointerEvent.syntheticActivation(1,1));p.session.frame();});
             p.focus(p.n);require(p.fallback==1&&p.innerCalls==0,"后帧click不能先显露modal给前帧ESC消费");
         });
-        // 默认关闭只依据消费结果；runtime关闭仍停止后续呈现。
-        scenario("runtime单独关闭仍执行已处理未消费fallback",()->{
+        // 底层合同：runtime单独close也必须使既有管线结果失效。
+        scenario("runtime单独关闭不能迟到fallback或replay",()->{
             Page p=new Page();p.domain.execute(()->{Signal<Boolean> closing=p.domain.signal(false);Owner owner=p.context.scope();
                 p.domain.effect(owner,()->{if(closing.get())p.runtime.close();});p.policy.set(()->{closing.set(true);return false;});});
-            p.escape();p.frame();require(p.fallback==1,"关闭不撤销已处理的未消费结果");
+            p.escape();p.frame();require(p.fallback==0,"runtime已关闭不得回调");
         });
         scenario("正式handler不得改树且只读拒绝关闭命令",()->{
             Page p=new Page();p.domain.execute(()->{try{p.domain.readOnly(()->p.runtime.dispatchEscape());throw new AssertionError("只读应拒绝");}catch(IllegalStateException expected){}
