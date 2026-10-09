@@ -61,10 +61,11 @@ public final class MinecraftVanillaFont {
             if(palette==null||palette.length<32)throw new IllegalArgumentException("标准字体须提供32色调色板");
             this.height=height;this.unicode=unicode;this.bidi=bidi;this.palette=palette.clone();
             int[] dark=palette.clone();for(int i=0;i<16;i++)dark[i]=palette[i+16];
-            // 原版替代按宿主FONT_HEIGHT设置em；测宽、裁剪与绘制共用此值，基线保留宿主行距。
-            float em=height*(9f/9f),baseline=height;
-            normal=new VanillaTextService.Settings(em,height,baseline,bidi,unicode,palette);
-            shadow=new VanillaTextService.Settings(em,height,baseline,bidi,unicode,dark);
+            // 原版quad由caller y到y+8，FONT_HEIGHT=9含行间空隙；框底不是字体基线。
+            // 适配层从框底扣除真实下降部，字形保持整行共享基线，不逐字对齐墨迹。
+            float em=height*(9f/9f),bottom=height-1;
+            normal=VanillaTextService.Settings.bottomAligned(em,height,bottom,bidi,unicode,palette);
+            shadow=VanillaTextService.Settings.bottomAligned(em,height,bottom,bidi,unicode,dark);
         }
     }
     public static int width(FontRendererAccess font,String source){return text.width(source,settings(font,false));}

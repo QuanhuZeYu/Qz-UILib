@@ -115,6 +115,26 @@ public final class VanillaTextScenario extends TestApplication {
         scenario("字体度量校准", () -> calibration(font));
         scenario("原生alpha墨迹观测", () -> actualAlpha(font));
         scenario("标准文字API语义", () -> semantics(adapter, settings));
+        scenario("原版贴图框底部与真实下降部对齐", () -> {
+            Settings bottom=Settings.bottomAligned(9,9,8,true,false,palette());
+            Settings baseline=new Settings(9,9,8,true,false,palette());
+            String raw="§ngj 世界§r\n取消";
+            TextLayout aligned=adapter.layout(raw,bottom,-1,1000,TextPolicy.NORMAL);
+            TextLayout original=adapter.layout(raw,baseline,-1,1000,TextPolicy.NORMAL);
+            require(aligned!=original,"底部与基线模式缓存混用");
+            require(aligned.advanceWidth==original.advanceWidth&&aligned.height==original.height,"纵向对齐改变测宽或行距");
+            for(int i=0;i<aligned.lines().size();i++){
+                TextLayout.Line a=aligned.lines().get(i),o=original.lines().get(i);
+                require(a.descent>0&&a.baseline+a.descent==i*9+8,"框底未扣真实下降部");
+                for(int j=0;j<a.glyphs().size();j++)require(Math.abs((o.glyphs().get(j).y-a.glyphs().get(j).y)-a.descent)<0.001f,"字形相对基线偏移丢失");
+                for(int j=0;j<a.decorations().size();j++)require(a.decorations().get(j).y==o.decorations().get(j).y,"原版装饰离开caller行坐标");
+                System.out.println("BOTTOM_ANCHOR line="+i+" baseline="+a.baseline+" descent="+a.descent+" bottom="+(a.baseline+a.descent));
+            }
+            TextLayout shadow=adapter.layout(raw,bottom.shadow(),-1,1000,TextPolicy.NORMAL);
+            require(shadow.lines().get(0).baseline==aligned.lines().get(0).baseline,"阴影丢失底部模式");
+            TextLayout sampled=adapter.sample(aligned,new RasterSampling(32f/9f,1),0,0);
+            require(sampled.lines().get(0).baseline==aligned.lines().get(0).baseline,"采样改变caller对齐");
+        });
         scenario("完整簇混淆采样", () -> sampling(adapter, settings));
         scenario("普通阴影几何共享", () -> shadowReuse(adapter, settings));
         scenario("CPU热缓存及容量边界", () -> performance(adapter, settings));
