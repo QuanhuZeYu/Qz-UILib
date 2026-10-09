@@ -238,11 +238,17 @@ public final class SceneRuntime implements AutoCloseable {
      * 有物理按钮占位时吞掉，不能绕过已有手势；仍按当前挂载与输入范围检查目标。 */
     public void dispatchClick(SceneNode node) {
         command(); if (!pointerRouter.idle()) return;
-        dispatchPointerClick(node);
+        invokeClick(node);
     }
     // 只有同包唯一router可在UP时激活第一owner；第二键仍按下不影响第一owner正常结束。
     void dispatchPointerClick(SceneNode node) {
         command(); if (!interactive(node) || node.clickAction() == null) return;
+        if (node.clickFocus() && node.focusable()) focusRouter.request(captureMount(node));
+        invokeClick(node);
+    }
+    // 业务激活不改变焦点；clickFocus仅属于物理UP，synthetic与键盘命令保留owner。
+    private void invokeClick(SceneNode node) {
+        if (!interactive(node) || node.clickAction() == null) return;
         routing = true;
         try { node.clickAction().run(); } finally { routing = false; }
     }

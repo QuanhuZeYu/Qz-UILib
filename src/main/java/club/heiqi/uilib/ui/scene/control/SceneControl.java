@@ -16,5 +16,9 @@ public interface SceneControl {
     default List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Collections.emptyList(); }
     MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text);
     ChildPlacements arrange(SceneNode node, LayoutBox allocated);
+    /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */
+    default club.heiqi.uilib.ui.scene.text.TextLayout presentText(SceneNode node, club.heiqi.uilib.ui.scene.text.TextLayout full, int width, int height, SceneTextMeasurer text) { return full; }
     void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target);
+    /** 被动提示在内容末端绘制，不创建命中/布局节点。 */
+    default void paintOverlay(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target, SceneTextMeasurer text) {}
 }

@@ -39,6 +39,10 @@ public final class SceneNode {
     private boolean modal;
     private boolean clip, scrollable, visible = true;
     private boolean enabled = true;
+    private boolean clickFocus;
+    public boolean clickFocus() { return clickFocus; }
+    /** 显式点击聚焦声明；标准按钮启用，普通节点保持原策略。 */
+    public SceneNode clickFocus(boolean value) { writable(); clickFocus = value; return this; }
     private boolean focusable;
     private SceneNode initialFocus, restoreFocus;
     /** 页面根或模态的进入目标；null使用框架逻辑顺序，不在更新声明时抢焦点。 */
@@ -100,7 +104,10 @@ public final class SceneNode {
     public SceneNode onScroll(IntConsumer action) { writable(); scrollAction = action; return this; }
     public SceneNode text(String value) { writable(); text = Objects.requireNonNull(value, "text"); changed(); return this; }
     public SceneNode enabled(boolean value) { writable(); if (enabled != value) { enabled = value; if (runtime != null) runtime.invalidateRange(); } return this; }
-    public SceneNode onClick(Runnable action) { writable(); click = action; return this; }
+    public SceneNode onClick(Runnable action) {
+        writable(); if (click != action) { click = action; if (runtime != null) runtime.invalidateInteraction(); }
+        return this;
+    }
     public SceneNode bind(NodeBinding binding) { unmounted(); bindings.add(Objects.requireNonNull(binding, "binding")); return this; }
     public SceneNode add(SceneNode child) {
         writable(); child.writable();

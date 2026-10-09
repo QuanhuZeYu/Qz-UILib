@@ -22,6 +22,7 @@ public class MinecraftSceneScreen extends GuiScreen {
     private ScenePageSession session;
     private SceneTabInputAdapter tabInput;
     private SceneEscapeInputAdapter escapeInput;
+    private club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter enterInput, spaceInput;
     /** 宿主只记录原生输入可用性；目标、挂载代际和物理按钮权威全部归核心。 */
     private boolean pointerWindowActive;
     private boolean pointerSuspended = true;
@@ -48,6 +49,8 @@ public class MinecraftSceneScreen extends GuiScreen {
         }
         final ScenePageSession opened = session;
         tabInput = new SceneTabInputAdapter(opened::navigation);
+        enterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.navigation(club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
+        spaceInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.navigation(club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
         escapeInput = new SceneEscapeInputAdapter(() -> opened.escape(() -> {
             // 延迟结果只可关闭递交事件的同一页/会话，不能借旧事件关闭后来打开的页面。
             if (session == opened && mc.currentScreen == this) super.keyTyped((char) 0, Keyboard.KEY_ESCAPE);
@@ -74,6 +77,8 @@ public class MinecraftSceneScreen extends GuiScreen {
             tabInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_TAB),
                 Keyboard.isKeyDown(Keyboard.KEY_LSHIFT), Keyboard.isKeyDown(Keyboard.KEY_RSHIFT));
             escapeInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_ESCAPE));
+            enterInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_RETURN));
+            spaceInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_SPACE));
         }
     }
     /** 父类handleInput是唯一Keyboard.next消费者；按当前历史事件翻译，不读取未来修饰键快照。 */
@@ -84,6 +89,8 @@ public class MinecraftSceneScreen extends GuiScreen {
         if (key == Keyboard.KEY_LSHIFT) tabInput.shift(true, down);
         else if (key == Keyboard.KEY_RSHIFT) tabInput.shift(false, down);
         else if (key == Keyboard.KEY_TAB) { tabInput.tab(down, Keyboard.isRepeatEvent()); return; }
+        else if (key == Keyboard.KEY_RETURN) { enterInput.key(down, Keyboard.isRepeatEvent()); return; }
+        else if (key == Keyboard.KEY_SPACE) { spaceInput.key(down, Keyboard.isRepeatEvent()); return; }
         else if (key == Keyboard.KEY_ESCAPE) { escapeInput.key(down, Keyboard.isRepeatEvent()); return; }
         super.handleKeyboardInput();
     }
@@ -110,6 +117,8 @@ public class MinecraftSceneScreen extends GuiScreen {
         boolean active = Display.isActive();
         if (tabInput != null) tabInput.availability(active);
         if (escapeInput != null) escapeInput.availability(active);
+        if (enterInput != null) enterInput.availability(active);
+        if (spaceInput != null) spaceInput.availability(active);
         if (!active) {
             if (pointerWindowActive) session.pointer(ScenePointerEvent.cancel());
             pointerSuspended = true;
@@ -126,7 +135,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         ScenePageSession opened = session;
         session = null;
         tabInput = null;
-        escapeInput = null;
+        escapeInput = null; enterInput = null; spaceInput = null;
         pointerWindowActive = false;
         pointerSuspended = true;
         if (opened != null) opened.close();

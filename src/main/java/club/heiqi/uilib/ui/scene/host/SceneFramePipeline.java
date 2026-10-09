@@ -21,6 +21,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     private final SceneRuntime runtime;
     private final SceneHost host;
     private final SceneLayoutEngine layout;
+    private final SceneTextMeasurer text;
     private static final class QueuedInput {
         final ScenePointerEvent pointer;
         final SceneNavigationEvent navigation;
@@ -39,7 +40,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     private long revision = -1, geometryRevision = -1, metrics = -1, generation;
     private int width = -1, height = -1;
     public SceneFramePipeline(SceneRuntime runtime, SceneHost host, SceneTextMeasurer measurer) {
-        this.runtime = runtime; this.host = host; this.layout = new SceneLayoutEngine(measurer);
+        this.runtime = runtime; this.host = host; this.text = measurer; this.layout = new SceneLayoutEngine(measurer);
     }
     /** 宿主在域外按采集顺序递交typed输入，所有物理按钮均需递交。 */
     public void pointer(ScenePointerEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(Objects.requireNonNull(event, "event"), null)); } }
@@ -72,6 +73,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                 if (isClosed() || !runtime.alive()) { event.discard(router); return; }
                 SceneGeometryView geometry = prepare().geometry;
                 if (event.pointer != null) router.route(event.pointer, geometry);
+                else if (event.navigation == SceneNavigationEvent.ACTIVATE) runtime.focusRouter().activate();
                 else if (event.navigation != null) runtime.focusRouter().navigate(event.navigation == SceneNavigationEvent.PREVIOUS);
                 else event.consumed = runtime.dispatchEscape();
             }, failure -> {
@@ -143,6 +145,8 @@ public final class SceneFramePipeline implements AutoCloseable {
                         Math.max(0, entry.box.width - padding * 2), Math.max(0, entry.box.height - padding * 2)), entry.clip, entry.text));
                 }
             }
+            for (SceneGeometryView.Entry entry : geometry.ordered()) if (entry.node.control() != null)
+                runtime.domain().readOnly(() -> { entry.node.control().paintOverlay(entry.node, geometry, paint, text); return null; });
             presentation = new ScenePresentation(++generation, geometry, paint.build());
             revision = runtime.revision(); geometryRevision = runtime.geometryRevision(); width = w; height = h; metrics = nextMetrics;
         }

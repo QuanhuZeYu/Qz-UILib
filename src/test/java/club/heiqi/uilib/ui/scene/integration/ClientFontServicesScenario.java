@@ -103,6 +103,7 @@ public final class ClientFontServicesScenario extends TestApplication {
         scenario("范围进入与返回经真实GPU回放",this::scopeReplay);
         scenario("Tab历史适配与导航高亮经真实GPU观察",this::navigationReplay);
         scenario("ESC消费关闭及焦点恢复经真实GPU观察",this::escapeReplay);
+        scenario("标准控件浅深主题与限高全文提示真实像素",this::standardControls);
         scenario("点击滚动与动态resize",this::inputAndResize);
         scenario("字体来源退休与旧glyph重开",this::reloadSources);
         scenario("screen关闭保留sharedowner",this::screenOwnership);
@@ -220,6 +221,29 @@ public final class ClientFontServicesScenario extends TestApplication {
             keys.key(false,false);keys.key(true,false);clear();session.frame();require(fallback[0]==1,"新的未消费ESC才fallback");
         } finally {domain.execute(()->{layer[0].detach();runtime.focusRouter().clear();});}
         clear();session.frame();
+    }
+    private void standardControls() throws Exception {
+        ReactiveDomain local=ReactiveDomain.direct();
+        club.heiqi.uilib.ui.reactive.Signal<club.heiqi.uilib.ui.scene.control.SceneTheme>[] theme=new club.heiqi.uilib.ui.reactive.Signal[1];
+        SceneNode[] button={null}; final String caption="标准按钮长文案：浅色深色切换、完整行省略与全文提示";
+        ScenePageSession page=ScenePageSession.open(local,host,owner,ctx -> {
+            theme[0]=local.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.dark());
+            button[0]=club.heiqi.uilib.ui.scene.control.SceneButton.create(ctx,()->caption,theme[0],()->{})
+                .size(Size.fixed(145),Size.fixed(44));ctx.mount(button[0]);
+        });
+        try {
+            clear();page.frame();int dark=read()[10*W+10];
+            local.execute(()->{page.runtime().focusRouter().clear();theme[0].set(club.heiqi.uilib.ui.scene.control.SceneTheme.light());});
+            clear();page.frame();int light=read()[10*W+10];require(dark!=light,"主题切换未改变实际GL颜色");
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(20,20));
+            clear();page.frame();final ScenePresentation[] rendered={null};local.execute(()->rendered[0]=page.pipeline().current());
+            require(rendered[0].paint.commands().stream().anyMatch(c->c.kind==PaintCommand.Kind.TEXT && c.text.originalText.equals(caption)
+                && c.box.y>=44),"完整文案提示未进入实际生产绘制计划");
+            local.execute(()->{TextLayout displayed=rendered[0].geometry.get(button[0]).text;
+                require(displayed.lines().stream().anyMatch(l->l.glyphs().stream().anyMatch(g->g.sourceStart==g.sourceEnd && g.logicalStart==g.logicalEnd)),"真实字体限高缺少合成省略glyph");
+                require(displayed.originalText.equals(caption),"省略修改了完整源文案");});
+            page.frame();if(glGetError()!=GL_NO_ERROR)throw new AssertionError("标准控件GL error");
+        } finally {page.close();}
     }
     private void inputAndResize() throws Exception {
         int rawY=FramebufferCoordinates.mouseY(H,H-6);

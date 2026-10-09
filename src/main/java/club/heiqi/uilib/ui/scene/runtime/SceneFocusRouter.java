@@ -62,6 +62,13 @@ public final class SceneFocusRouter {
         if (node.focusable()) candidates.add(node);
         for (SceneNode child : node.children()) collect(child, candidates);
     }
+    /** 激活唯一当前焦点，不补选或改变owner；标准键盘按钮复用同一业务click路径。 */
+    public boolean activate() {
+        runtime.domain().checkWrite(); if (closed) return false;
+        revalidate();
+        if (owner == null || !runtime.interactive(owner.node()) || owner.node().clickAction() == null) return false;
+        runtime.dispatchClick(owner.node()); return true;
+    }
     /** 清除当前焦点并取消当前待进入选择；不取消被覆盖外层的合法恢复记录。 */
     public void clear() {
         runtime.domain().checkWrite();
@@ -69,7 +76,11 @@ public final class SceneFocusRouter {
         setOwner(null);
     }
     private void cancelPending() { Range range = top(); range.pending = false; range.saved = null; range.returning = false; }
-    private void setOwner(MountHandle target) { owner = target; value.set(target == null ? null : target.node()); }
+    private void setOwner(MountHandle target) {
+        SceneNode before = owner == null ? null : owner.node();
+        owner = target; value.set(target == null ? null : target.node());
+        if (before != (target == null ? null : target.node())) runtime.invalidatePaint();
+    }
     private Range top() { return ranges.get(ranges.size() - 1); }
     private boolean local(MountHandle target) {
         return target != null && target.belongsTo(runtime) && target.active() && target.node().focusable() && runtime.locallyInteractive(target.node());

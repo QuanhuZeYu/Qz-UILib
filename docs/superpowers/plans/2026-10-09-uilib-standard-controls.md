@@ -1,0 +1,9 @@
+# 标准按钮标签与运行时主题
+
+依据theme/core/page-host模块规格，用户授权实现、双实例部署和验证清单；不启动游戏。先真实闭环再举限高/主题/生命周期反例。主题为不可变样式值+ReadableSignal，初值通过响应binding即刻满足，颜色/字号/间距后续自动变化。正式SceneLabel/SceneButton暴露create(context,text,theme,action)，返回已有SceneNode方便尺寸/资格声明。按钮默认focusable和clickFocus，Enter/Space实际唯一focus路由activate；disabled沿node.enabled。长按钮默认wrap，自然高度随text度量，限高完整行省略，完整文案被动hover或keyboard焦点提示；提示后绘制无布局或输入节点。
+
+控件复用SceneControl+TextLayout，不新树/焦点/指针authority。核心追加presentText端口在同代geometry限定展示行，paintOverlay在最终绘制末端提供measurer；pointerRouter仅公开已有坐标/owner的hovered/pressed投影，CANCEL清有效hover，移动不重布局但呈现从控制读取；核心frame重绘时overlay从真实scene算。主题bind更新node.style/padding/background，无业务手工resize。
+
+父负责输入activate/hover观察/端口和CoreLoop页面迁移部署；控件实现独立子任务；测试同正式Session能力验证实际几何/plan，GPU用真实字体。键盘开页持键及失焦恢复沿Tab/ESC历史耗尽物理释放模式；Space/Enter repeat按段一次。保原Tab/ESC/物理尾部合同。
+
+验收：同页light/dark更新色且身份/焦点/滚动不变；初始派生theme无手动计算；长文自然高度/限高ellipsis及tooltip、极小高度/宽度、disabled不激活、Enter/Space单次，列表主题更新不重建token。build/coreSceneCheck/真实GPU/LWJGL2/人工包和产物隔离检查，独立审查，本地提交后重打包按commit标识部署两mods目录并sha256，旧生产人工包移backup记录。

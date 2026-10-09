@@ -21,7 +21,7 @@ public final class SceneLayoutEngine {
             int w = cross(root.width(), desired[0], width), h = cross(root.height(), desired[1], height);
             arrange(root, new LayoutBox(0, 0, w, h), null, entries);
         }
-        return new SceneGeometry(entries);
+        return new SceneGeometry(entries, new LayoutBox(0, 0, width, height));
     }
     private int cross(Size size, int desired, int available) {
         return size.constrain(size.mode == Size.Mode.FIXED ? size.value : size.mode == Size.Mode.FILL ? Math.max(0, available) : desired);
@@ -71,6 +71,7 @@ public final class SceneLayoutEngine {
         LayoutBox ownClip = node.clip() || node.scrollable() ? box : null;
         LayoutBox clip = ancestorClip == null ? ownClip : ownClip == null ? ancestorClip : ancestorClip.intersect(ownClip);
         TextLayout lines = textLayout(node, innerWidth);
+        if (node.control() != null) lines = node.control().presentText(node, lines, innerWidth, innerHeight, text);
         int entryIndex = entries.size();
         entries.add(new SceneGeometryView.Entry(node, box, clip, lines));
         if (node.control() != null) {

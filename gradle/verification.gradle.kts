@@ -81,6 +81,7 @@ val coreSceneDeclarations = listOf(
     Triple("focusNavigationScenario", "无平台真实scene焦点导航与键盘适配验收", "FocusNavigationScenario"),
     Triple("escapeInputScenario", "ESC范围消费和宿主关闭协调验收", "EscapeInputScenario"),
     Triple("pageSessionScenario", "正式页面声明与生命周期归属验收", "PageSessionScenario"),
+    Triple("standardControlsScenario", "标准控件动态主题与完整文案验收", "StandardControlsScenario"),
     Triple("coreStateScenario", "隔离运行状态与生命周期场景", "SceneCoreLoopTest")
 )
 
