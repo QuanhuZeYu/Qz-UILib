@@ -30,7 +30,7 @@ public class MinecraftSceneScreen extends GuiScreen {
     private club.heiqi.uilib.ui.scene.node.SceneNode pendingTextOwner;
     private final club.heiqi.uilib.ui.scene.input.SceneEditEvent.Clipboard clipboard=new club.heiqi.uilib.ui.scene.input.SceneEditEvent.Clipboard(){public String read(){return GuiScreen.getClipboardString();}public void write(String value){GuiScreen.setClipboardString(value);}};
     private SceneEscapeInputAdapter escapeInput;
-    private club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter enterInput, spaceInput;
+    private club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter enterInput, keypadEnterInput, spaceInput;
     /** 宿主只记录原生输入可用性；目标、挂载代际和物理按钮权威全部归核心。 */
     private boolean pointerWindowActive;
     private boolean pointerSuspended = true;
@@ -70,6 +70,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         tabInput = new SceneTabInputAdapter(direction->opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.TAB,direction==club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.PREVIOUS,clipboard),direction));
         editInput = new club.heiqi.uilib.ui.scene.host.SceneEditInputAdapter();
         enterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.CONFIRM,false,clipboard),club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
+        keypadEnterInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.CONFIRM,false,clipboard),club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
         spaceInput = new club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter(() -> opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command((nativeText!=null?club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.ACTIVATE_ONLY:club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SPACE),false,clipboard),club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE));
         escapeInput = new SceneEscapeInputAdapter(() -> opened.escape(() -> {
             // 延迟结果只可关闭递交事件的同一页/会话，不能借旧事件关闭后来打开的页面。
@@ -103,6 +104,7 @@ public class MinecraftSceneScreen extends GuiScreen {
                 Keyboard.isKeyDown(Keyboard.KEY_LSHIFT), Keyboard.isKeyDown(Keyboard.KEY_RSHIFT));
             escapeInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_ESCAPE));
             enterInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_RETURN));
+        keypadEnterInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_NUMPADENTER));
             spaceInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_SPACE));
             // 仅在历史耗尽后建立下一段修饰键起点，不让未来快照影响已经采集的事件。
             leftCtrl=Keyboard.isKeyDown(Keyboard.KEY_LCONTROL);rightCtrl=Keyboard.isKeyDown(Keyboard.KEY_RCONTROL);
@@ -128,6 +130,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         else if (key == Keyboard.KEY_RSHIFT) {rightShift=down;tabInput.shift(false, down);}
         else if (key == Keyboard.KEY_TAB) { pendingHigh=0;tabInput.tab(down, repeat); return; }
         else if (key == Keyboard.KEY_RETURN) { pendingHigh=0;enterInput.key(down, repeat); return; }
+        else if (key == Keyboard.KEY_NUMPADENTER) { pendingHigh=0;keypadEnterInput.key(down, repeat); return; }
         else if (key == Keyboard.KEY_SPACE) {
             pendingHigh=0;
             if(nativeText==null && repeat && accepted)session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SPACE,false,clipboard));
@@ -193,6 +196,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         if (tabInput != null) tabInput.availability(active);
         if (escapeInput != null) escapeInput.availability(active);
         if (enterInput != null) enterInput.availability(active);
+        if (keypadEnterInput != null) keypadEnterInput.availability(active);
         if (spaceInput != null) spaceInput.availability(active);
         if (!active) {
             if (pointerWindowActive) {session.pointer(ScenePointerEvent.cancel());session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.composition("",false));}
@@ -229,7 +233,7 @@ public class MinecraftSceneScreen extends GuiScreen {
         session = null;
         SceneNativeTextInput closingText=nativeText;nativeText=null;textOwner=null;
         tabInput = null;editInput=null;pendingHigh=0;leftCtrl=false;rightCtrl=false;leftShift=false;rightShift=false;
-        escapeInput = null; enterInput = null; spaceInput = null;
+        escapeInput = null; enterInput = null; keypadEnterInput = null; spaceInput = null;
         pointerWindowActive = false;
         pointerSuspended = true;
         try { if (opened != null) opened.close(); }

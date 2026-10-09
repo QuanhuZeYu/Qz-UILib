@@ -228,6 +228,38 @@ val presentationEpochScenario = registerTestApplication("presentationEpochScenar
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
 }
+// SDL场景单独编译与执行，不将MC/Forge、GLFW或字体native服务放入运行路径。
+// SDL使用GTNH宿主实际缓存的时间戳绑定，core固定3.4.2；正常解析依赖，不绑定本机缓存目录。
+val sdlTextInputRuntime by configurations.creating
+dependencies {
+    add(sdlTextInputRuntime.name, "org.lwjgl:lwjgl:3.4.2") { isTransitive = false }
+    add(sdlTextInputRuntime.name, "org.lwjgl:lwjgl-sdl:3.4.2-20260225.192616-2") { isTransitive = false }
+    val platform = System.getProperty("os.name").lowercase()
+    val arch = System.getProperty("os.arch").lowercase()
+    val classifier = when {
+        platform.contains("win") -> if (arch == "aarch64") "natives-windows-arm64" else if (arch == "x86") "natives-windows-x86" else "natives-windows"
+        platform.contains("mac") -> if (arch == "aarch64") "natives-macos-arm64" else "natives-macos"
+        else -> if (arch == "aarch64") "natives-linux-arm64" else "natives-linux"
+    }
+    add(sdlTextInputRuntime.name, "org.lwjgl:lwjgl:3.4.2:$classifier") { isTransitive = false }
+    add(sdlTextInputRuntime.name, "org.lwjgl:lwjgl-sdl:3.4.2-20260225.192616-2:$classifier") { isTransitive = false }
+}
+val sdlTextInputClasses = layout.buildDirectory.dir("classes/sdl-text-input")
+val compileSdlTextInputScenario by tasks.registering(JavaCompile::class) {
+    dependsOn(tasks.named("classes"), tasks.named(testSupportSources.classesTaskName))
+    source("src/sdlTest/java")
+    classpath = sourceSets.getByName("main").output + testSupportSources.output + sdlTextInputRuntime
+    destinationDirectory.set(sdlTextInputClasses)
+    javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(25)) })
+    options.release.set(8)
+    options.compilerArgs.add("-proc:none")
+}
+val sdlTextInputScenario = registerTestApplication("sdlTextInputScenario", "真实SDL hidden window、生产Watch观察与scene原子IME（不开游戏）", "club.heiqi.uilib.ui.scene.integration.SdlTextInputScenario", useDefaultLauncher = false) {
+    dependsOn(compileSdlTextInputScenario)
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) })
+    classpath = files(sdlTextInputClasses) + sourceSets.getByName("main").output + sdlTextInputRuntime + fontUnicodeRuntime
+}
+
 val clientFontServicesScenario = registerTestApplication("clientFontServicesScenario", "共享字体owner、原生framebuffer scene与输入资源生命周期（需要设备）", "club.heiqi.uilib.ui.scene.integration.ClientFontServicesScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime

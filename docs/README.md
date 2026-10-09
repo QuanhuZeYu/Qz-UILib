@@ -37,6 +37,7 @@
 | 无平台核心场景 | `gradlew.bat --no-configuration-cache coreSceneCheck` |
 | 真实GPU字体与页面场景 | `gradlew.bat --no-configuration-cache clientFontServicesScenario` |
 | LWJGL2宿主场景 | `gradlew.bat --no-configuration-cache lwjgl2HostScenario` |
+| SDL原生文本观察与回调资源 | `gradlew.bat --no-configuration-cache sdlTextInputScenario` |
 | 人工验收包 | `gradlew.bat --no-configuration-cache manualTestJar` |
 
 设备场景需实际GL环境，CPU通过不替代GPU或Minecraft实机验收。构建异常先核对当前任务日志与脚本，不用旧架构或历史测试顺序推导行为。

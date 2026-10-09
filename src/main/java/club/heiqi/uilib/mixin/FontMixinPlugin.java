@@ -12,12 +12,6 @@ public final class FontMixinPlugin implements IMixinConfigPlugin {
     @Override public void onLoad(String mixinPackage) {}
     @Override public String getRefMapperConfig() { return null; }
     @Override public boolean shouldApplyMixin(String targetClassName,String mixinClassName) {
-        if(mixinClassName.endsWith(".Lwjgl3ifyTextInputMixin")) {
-            ClassLoader loader=FontMixinPlugin.class.getClassLoader();
-            // 只检查资源，避免在 Mixin 变换前加载 optional 目标类。
-            return loader.getResource(targetClassName.replace('.','/')+".class")!=null
-                &&loader.getResource("org/lwjgl/sdl/SDL_Event.class")!=null;
-        }
         if(mixinClassName.contains(".Angelica")||mixinClassName.contains(".DisplayList")) {
             String path=targetClassName.replace('.','/')+".class";
             return FontMixinPlugin.class.getClassLoader().getResource(path)!=null;
