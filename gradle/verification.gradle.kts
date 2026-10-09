@@ -303,6 +303,12 @@ val glyphRasterStyleScenario = registerTestApplication("glyphRasterStyleScenario
 }
 tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario, fontTextScenario, glyphRasterStyleScenario, attributedTextScenario, fontRealStyleScenario) }
 
+val minecraftDurabilityScenario = registerTestApplication("minecraftDurabilityScenario", "原版Item耐久事实无游戏回归", "club.heiqi.uilib.host.client.image.MinecraftDurabilityScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("test").runtimeClasspath + sourceSets.getByName("patchedMc").output
+}
+tasks.named("check") { dependsOn(minecraftDurabilityScenario) }
+
 val imageServiceScenario = registerTestApplication("imageServiceScenario", "真实本地HTTP与图像共享、来源切换和scene文档策略", "club.heiqi.uilib.ui.scene.integration.ImageServiceScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime

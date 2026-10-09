@@ -21,11 +21,12 @@ public final class MinecraftImageLoader implements ImageLoader {
         List<?> lines = stack.getTooltip(mc.thePlayer, mc.gameSettings.advancedItemTooltips);
         StringBuilder tooltip = new StringBuilder();
         for (Object line : lines) { if (tooltip.length() != 0) tooltip.append('\n'); tooltip.append(String.valueOf(line)); }
-        double damage = stack.getItem().getDurabilityForDisplay(stack);
-        double remaining = Math.max(0, Math.min(1, 1 - damage));
+        boolean durabilityVisible = stack.getItem().showDurabilityBar(stack);
+        // 原版非耐久物品的比例是0/0；仅显示条时该事实才有意义，保留mod的showDurabilityBar语义。
+        double remaining = durabilityVisible ? Math.max(0, Math.min(1, 1 - stack.getItem().getDurabilityForDisplay(stack))) : 1;
         int green = (int) Math.round(255 * remaining);
         ItemImageFacts facts = new ItemImageFacts(stack.stackSize == 1 ? "" : Integer.toString(stack.stackSize), tooltip.toString(),
-            stack.getItem().showDurabilityBar(stack), remaining, 0xff000000 | (255 - green) << 16 | green << 8, ((club.heiqi.uilib.host.client.font.FontRendererAccess)mc.fontRenderer).qz$palette());
+            durabilityVisible, remaining, 0xff000000 | (255 - green) << 16 | green << 8, ((club.heiqi.uilib.host.client.font.FontRendererAccess)mc.fontRenderer).qz$palette());
         ImageContent content = new MinecraftItemContent(stack, facts);
         return () -> content;
     }
