@@ -7,6 +7,16 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 public final class SceneHitTester {
     public SceneNode hit(SceneRuntime runtime, SceneGeometryView geometry, int x, int y) { return hit(runtime, geometry, x, y, false); }
     public SceneNode hitScroll(SceneRuntime runtime, SceneGeometryView geometry, int x, int y) { return hit(runtime, geometry, x, y, true); }
+    public SceneNode passive(SceneRuntime runtime, SceneGeometryView geometry, int x, int y) {
+        List<SceneGeometryView.Entry> entries = geometry.ordered();
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            SceneGeometryView.Entry entry = entries.get(i);
+            if (entry.clip != null && !entry.clip.contains(x, y)) continue;
+            if (entry.box.contains(x, y) && runtime.interactive(entry.node)
+                    && (entry.node.clickAction() != null || entry.node.control() != null && entry.node.control().passiveHover())) return entry.node;
+        }
+        return null;
+    }
     private SceneNode hit(SceneRuntime runtime, SceneGeometryView geometry, int x, int y, boolean scroll) {
         List<SceneGeometryView.Entry> entries = geometry.ordered();
         for (int i = entries.size() - 1; i >= 0; i--) {

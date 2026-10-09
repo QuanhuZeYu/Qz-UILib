@@ -151,6 +151,12 @@ val lwjgl2HostScenario = registerTestApplication("lwjgl2HostScenario", "原LWJGL
     args(providers.gradleProperty("fontWorldAtlasMode").getOrElse("2d"))
     jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("headless/natives").get().asFile.absolutePath)
 }
+val imageLwjgl2Scenario = registerTestApplication("imageLwjgl2Scenario", "原LWJGL2 actual IMAGE像素与compat item scope正常异常状态（不启动MC）", "club.heiqi.uilib.ui.scene.integration.ImageLwjgl2Scenario", useDefaultLauncher = false) {
+    dependsOn(tasks.named(lwjgl2TestSources.classesTaskName), "extractHeadlessNatives")
+    classpath = lwjgl2TestSources.runtimeClasspath
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
+    jvmArgs("-Dfile.encoding=UTF-8", "-Djava.library.path=" + layout.buildDirectory.dir("headless/natives").get().asFile.absolutePath)
+}
 val nativeFontScenario = registerTestApplication("nativeFontScenario", "Java8独立运行正式字体整形/彩色像素与资源生命周期场景", "club.heiqi.uilib.ui.scene.integration.NativeFontScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime
@@ -297,3 +303,14 @@ val glyphRasterStyleScenario = registerTestApplication("glyphRasterStyleScenario
 }
 tasks.named("check") { dependsOn(nativeFontScenario, nativeFontVisualScenario, packagedUnicodeScenario, fontTextScenario, glyphRasterStyleScenario, attributedTextScenario, fontRealStyleScenario) }
 
+val imageServiceScenario = registerTestApplication("imageServiceScenario", "真实本地HTTP与图像共享、来源切换和scene文档策略", "club.heiqi.uilib.ui.scene.integration.ImageServiceScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    systemProperty("java.awt.headless", "true")
+}
+tasks.named("check") { dependsOn(imageServiceScenario) }
+val imageGlScenario = registerTestApplication("imageGlScenario", "真实RGBA图像fit与有序GL回放及状态/上传预算（需要设备）", "club.heiqi.uilib.ui.scene.integration.ImageGlScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    args(layout.buildDirectory.dir("image-system/gpu").get().asFile.absolutePath)
+}

@@ -94,6 +94,17 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
     private final Map<ViewKey,Resident> residents=new HashMap<ViewKey,Resident>();
     private long gpuBytes,uploadedBytes,uploadCalls,createdGroups,evictedGroups,rejected,version,nextResource=1,nextGeneration=1,clock;
     private boolean closed;private Frame active;private Upload uploading;
+    private final List<Frame> borrowedParents=new ArrayList<>();
+    private final List<Upload> borrowedUploads=new ArrayList<>();
+    /** 已flush的宿主委托可暂借图集；父Frame仍冻结并pin，nested consumer不能淘汰其resident或改变旧UV。 */
+    public void borrowFrozenFrame(Runnable delegated){
+        check();Frame parent=active;if(parent==null||!parent.frozen)throw new IllegalStateException("委托借用需要冻结的父Frame");
+        if(!borrowedParents.isEmpty())throw new IllegalStateException("物品字体委托只允许一层借用");
+        Upload pending=uploading;borrowedParents.add(parent);borrowedUploads.add(pending);active=null;uploading=null;
+        try{delegated.run();}
+        finally{boolean leaked=active!=null;try{if(leaked)active.close();}finally{borrowedParents.clear();borrowedUploads.clear();active=parent;uploading=pending;pinParents();}if(leaked)throw new IllegalStateException("委托字体consumer未关闭Frame");}
+    }
+    private void pinParents(){for(Upload upload:borrowedUploads)if(upload!=null)upload.resident.group.pinned=true;for(Frame parent:borrowedParents)parent.pin();if(active!=null)active.pin();if(uploading!=null)uploading.resident.group.pinned=true;}
     // 两种资源格式各保留一个partial；同原生bitmap对象，不新增CPUviewcache或长期Frame。
     private final java.util.EnumMap<SamplingView,Upload> partials=new java.util.EnumMap<SamplingView,Upload>(SamplingView.class);
     private UploadState preparingState;
@@ -208,12 +219,14 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
             for(GlyphKey key:demand){Resident r=residents.get(new ViewKey(key,view));if(r!=null){visible.put(key,r);r.group.pinned=true;}}
             frozen=true;
         }
-        @Override public void close(){if(done)return;checkFrame();done=true;if(uploading!=null)partials.put(view,uploading);uploading=null;for(Group g:groups.values())g.pinned=false;active=null;}
+        private void pin(){for(Resident resident:visible.values())resident.group.pinned=true;if(white!=null)white.group.pinned=true;}
+        @Override public void close(){if(done)return;checkFrame();done=true;if(uploading!=null)partials.put(view,uploading);uploading=null;for(Group g:groups.values())g.pinned=false;active=null;pinParents();}
     }
+    private int residentSlots(){java.util.Set<Upload> pending=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Upload,Boolean>());pending.addAll(partials.values());if(uploading!=null)pending.add(uploading);for(Upload upload:borrowedUploads)if(upload!=null)pending.add(upload);return residents.size()+pending.size();}
     private Upload allocate(GlyphKey key,GlyphBitmap bitmap,SamplingView view) {
         int w=bitmap.width+2,h=bitmap.height+2;
         if(w>budget.pageSize||h>budget.pageSize){rejected++;return null;}
-        while(residents.size()+partials.size()>=budget.maxResidents)if(!evict()){rejected++;return null;}
+        while(residentSlots()>=budget.maxResidents)if(!evict()){rejected++;return null;}
         for(Group g:groups.values())if(g.color==bitmap.color&&g.view==view)for(int layer=0;layer<g.pages.length;layer++)if(g.pages[layer].fits(w,h,budget.pageSize))
             return place(key,bitmap,g,layer,w,h);
         Group newGroup=createGroup(bitmap.color,view);return newGroup==null?null:place(key,bitmap,newGroup,0,w,h);
@@ -239,7 +252,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
         int[] pos=group.pages[layer].allocate(w,h,budget.pageSize);group.pinned=true;group.lastUsed=++clock;
         return new Upload(key,bitmap,new Resident(group,layer,pos[0],pos[1],budget.pageSize,bitmap),pos[0],pos[1]);
     }
-    private boolean hasPartial(Group group){if(uploading!=null&&uploading.resident.group==group)return true;for(Upload pending:partials.values())if(pending.resident.group==group)return true;return false;}
+    private boolean hasPartial(Group group){for(Upload pending:borrowedUploads)if(pending!=null&&pending.resident.group==group)return true;if(uploading!=null&&uploading.resident.group==group)return true;for(Upload pending:partials.values())if(pending.resident.group==group)return true;return false;}
     private boolean evict() {
         // glDeleteTextures 会解除所有单元上的绑定。仅在真实淘汰压力下查询各单元，
         // 不删除宿主仍绑定的资源；预算不足留白，不能破坏上传进入态或其他单元。

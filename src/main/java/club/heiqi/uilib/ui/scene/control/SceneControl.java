@@ -33,6 +33,8 @@ public interface SceneControl {
     default void pointer(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event, SceneGeometryView geometry) {}
     /** 正常焦点离开与失活原因分开；失活/关闭不得隐含提交。 */
     default void focusChanged(SceneNode node, boolean focused, boolean eligible) {}
+    /** 无激活动作的控件可参与被动悬停，不建立 click/capture/focus。 */
+    default boolean passiveHover() { return false; }
     /** 被动提示在内容末端绘制，不创建命中/布局节点。 */
     default void paintOverlay(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target, SceneTextMeasurer text) {}
 }

@@ -106,6 +106,11 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
         for(GlyphKey key:admitted)rasterizer.request(key);
         return admitted;
     }
+    /** 仅在调用方flush并退出quad范围之后借用；保持同一presentation预算和父Frame冻结资源。 */
+    public void withDelegatedConsumer(Runnable delegated){
+        check();if(preparedCount!=1)throw new IllegalStateException("字体委托需要唯一父Prepared");
+        preparedCount--;try{atlas().borrowFrozenFrame(delegated);}finally{preparedCount++;}
+    }
     private void checkRenderer(GlPaintPlanRenderer renderer) {
         check();if(!renderers.contains(renderer))throw new IllegalArgumentException("renderer不属于该owner");
     }
@@ -165,6 +170,7 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
     private void check(){if(Thread.currentThread()!=thread)throw new IllegalStateException("客户端字体owner仅限创建线程");if(closed)throw new IllegalStateException("客户端字体owner已关闭");}
     public FontTextService fonts(){check();return fonts;}
     @Override public TextLayout layout(String text,TextStyle style,int availableWidth){check();return fonts.layout(text,style,availableWidth);}
+    @Override public TextLayout layout(club.heiqi.uilib.ui.scene.text.AttributedText text,float availableWidth,TextPolicy policy){check();return fonts.layout(text,availableWidth,policy);}
     @Override public TextLayout layout(String text,TextStyle style,int availableWidth,TextPolicy policy){check();return fonts.layout(text,style,availableWidth,policy);}
     public AsyncGlyphRasterizer rasterizer(){check();return rasterizer;}
     public Settings settings(){return settings;}
@@ -187,7 +193,11 @@ public final class ClientFontServices implements SceneTextMeasurer,AutoCloseable
     }
     /** 返回screen/consumer拥有的renderer；release只释放这份quad，不影响共享缓存。 */
     public GlPaintPlanRenderer createPlanRenderer() {
-        check();GlPaintPlanRenderer renderer=new GlPaintPlanRenderer(gl,rasterizer,atlas(),settings.quadCapacity,settings.maxDemand,programs);
+        return createPlanRenderer(null);
+    }
+    /** 图像资源由同级owner提供；此处只组合有序GPU消费者，不持网络服务。 */
+    public GlPaintPlanRenderer createPlanRenderer(club.heiqi.uilib.host.client.gl.GlImageResources images) {
+        check();GlPaintPlanRenderer renderer=new GlPaintPlanRenderer(gl,rasterizer,atlas(),settings.quadCapacity,settings.maxDemand,programs,images);
         renderers.add(renderer);return renderer;
     }
     public void releasePlanRenderer(GlPaintPlanRenderer renderer) {

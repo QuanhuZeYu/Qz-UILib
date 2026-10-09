@@ -23,6 +23,11 @@ public final class ScenePointerRouter implements AutoCloseable {
         runtime.domain().checkAccess();
         return closed || !positionKnown ? null : hits.hit(runtime, geometry, x, y);
     }
+    /** 与 click 命中分开；仅投影当前指针、范围及同代 geometry。 */
+    public SceneNode passiveHovered(SceneGeometryView geometry) {
+        runtime.domain().checkAccess();
+        return closed || !positionKnown ? null : hits.passive(runtime, geometry, x, y);
+    }
     public boolean pressed(SceneNode node) {
         runtime.domain().checkAccess();
         return !closed && owner != null && owner.active() && owner.node() == node;

@@ -61,6 +61,8 @@ public final class SceneFramePipeline implements AutoCloseable {
     /** 每事件独立domain.execute→prepare→route，前handler状态影响下一事件。
      * handler失败时取消owner、仅记本批剩余物理尾部并外抛，不丢已采集的第二键。 */
     public void frame() {
+        synchronized(inputs){checkOpen();}
+        host.prepareResources();
         List<QueuedInput> events = new ArrayList<>();
         synchronized (inputs) { checkOpen(); while (!inputs.isEmpty()) events.add(inputs.remove()); }
         // ESC批次需要顶层结算后结果；旧纯pointer/nav批次保留域内同步frame语义。

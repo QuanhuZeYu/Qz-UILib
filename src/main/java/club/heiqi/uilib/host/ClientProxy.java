@@ -9,6 +9,7 @@ public final class ClientProxy extends CommonProxy {
     @Override public void init() {
         club.heiqi.uilib.host.client.font.MinecraftFontServices.installShared();
         club.heiqi.uilib.host.client.font.MinecraftVanillaFont.install();
+        club.heiqi.uilib.host.client.image.MinecraftImageServices.installShared();
         if (!Boolean.TRUE.equals(Launch.blackboard.get("fml.deobfuscatedEnvironment"))) return;
         try { Class.forName("club.heiqi.uilib.internal.devtools.CoreLoopBootstrap").getMethod("install").invoke(null); }
         catch (ClassNotFoundException excludedDevelopmentTools) { /* 发布包没有开发工具。 */ }

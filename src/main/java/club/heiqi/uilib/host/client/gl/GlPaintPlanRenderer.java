@@ -27,12 +27,17 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
     private final GlProgramProvider programs;
     private final AsyncGlyphRasterizer cpu;private final GlGlyphAtlas atlas;private final GlQuadRenderer quads;
     private final int capacity,maxDemand;
+    private final GlImageResources images;private final GlApi gl;
     private long clippedGlyphs,demandOverflow,blankGlyphs,drawnGlyphs;
     public GlPaintPlanRenderer(GlApi gl,AsyncGlyphRasterizer cpu,GlGlyphAtlas atlas,int quadCapacity,int maxDemand,GlProgramProvider programs) {
+        this(gl,cpu,atlas,quadCapacity,maxDemand,programs,null);
+    }
+    public GlPaintPlanRenderer(GlApi gl,AsyncGlyphRasterizer cpu,GlGlyphAtlas atlas,int quadCapacity,int maxDemand,GlProgramProvider programs,GlImageResources images) {
+        this.images=images;this.gl=Objects.requireNonNull(gl,"gl");
         this.programs=Objects.requireNonNull(programs,"programs");
         if(maxDemand<1)throw new IllegalArgumentException("无效需求预算");
         this.cpu=Objects.requireNonNull(cpu,"cpu");this.atlas=Objects.requireNonNull(atlas,"atlas");
-        capacity=quadCapacity;this.maxDemand=maxDemand;quads=new GlQuadRenderer(gl,quadCapacity,atlas,programs);
+        capacity=quadCapacity;this.maxDemand=maxDemand;quads=new GlQuadRenderer(gl,quadCapacity,(resource,generation)->resource<0&&images!=null?images.resolve(resource,generation):atlas.resolve(resource,generation),programs);
     }
     public long clippedGlyphs(){return clippedGlyphs;}
     public long demandOverflow(){return demandOverflow;}
@@ -43,7 +48,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
     public java.util.Set<GlyphKey> collectVisibleDemand(PaintPlan plan,LayoutBox viewport) {
         Objects.requireNonNull(plan,"plan");Objects.requireNonNull(viewport,"viewport");
         LinkedHashSet<GlyphKey> demand=new LinkedHashSet<GlyphKey>();
-        for(PaintCommand command:plan.commands())if(command.kind==PaintCommand.Kind.TEXT) {
+        for(PaintCommand command:plan.commands())if(command.text!=null) {
             LayoutBox clip=clip(command.clip,viewport);if(clip.width==0||clip.height==0)continue;
             for(TextLayout.Line line:command.text.lines())for(TextLayout.Glyph glyph:line.glyphs()) {
                 if(!visible(command,glyph,clip)){clippedGlyphs++;continue;}
@@ -84,9 +89,10 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
     private Prepared prepareDemandView(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.UploadBudget budget,
             java.util.Collection<GlyphKey> demand,boolean retainPending,Runnable onClose,GlGlyphAtlas.SamplingView view) {
         Objects.requireNonNull(plan,"plan");Objects.requireNonNull(viewport,"viewport");
-        boolean needsSolid=false;for(PaintCommand command:plan.commands())if(command.kind==PaintCommand.Kind.RECT)needsSolid=true;else for(TextLayout.Line line:command.text.lines())if(!line.decorations().isEmpty())needsSolid=true;
+        boolean needsSolid=false;for(PaintCommand command:plan.commands())if(command.kind==PaintCommand.Kind.RECT)needsSolid=true;else if(command.kind==PaintCommand.Kind.IMAGE)needsSolid=true;else if(command.text!=null)for(TextLayout.Line line:command.text.lines())if(!line.decorations().isEmpty())needsSolid=true;
         GlGlyphAtlas.Frame frame=atlas.beginFrame(demand,!retainPending,view,needsSolid);
-        try {frame.prepare(cpu,budget,retainPending);frame.freeze();return new Prepared(plan,viewport,frame,onClose);}
+        GlImageResources.Frame imageFrame=null;
+        try {frame.prepare(cpu,budget,retainPending);frame.freeze();if(images!=null)imageFrame=images.prepare(plan);else for(PaintCommand command:plan.commands())if(command.kind==PaintCommand.Kind.IMAGE)throw new IllegalStateException("缺少图像GL宿主服务");return new Prepared(plan,viewport,frame,imageFrame,onClose);}
         catch(RuntimeException|Error failure){frame.close();throw failure;}
     }
     private static boolean visible(PaintCommand command,TextLayout.Glyph glyph,LayoutBox clip) {
@@ -106,7 +112,8 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
         public final PaintPlan plan;public final LayoutBox viewport;
         private final GlGlyphAtlas.Frame frame;private boolean closed;private Replay active;
         private final Runnable onClose;
-        private Prepared(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.Frame frame,Runnable onClose){this.plan=plan;this.viewport=viewport;this.frame=frame;this.onClose=onClose;}
+        private final GlImageResources.Frame imageFrame;
+        private Prepared(PaintPlan plan,LayoutBox viewport,GlGlyphAtlas.Frame frame,GlImageResources.Frame imageFrame,Runnable onClose){this.plan=plan;this.viewport=viewport;this.frame=frame;this.imageFrame=imageFrame;this.onClose=onClose;}
         public GlGlyphAtlas.Resident resident(TextLayout.Glyph glyph){check();return frame.lookup(GlyphKey.of(glyph));}
         public int demandCount(){check();return frame.demand().size();}
         public int readyCount(){check();int n=0;for(GlyphKey key:frame.demand())if(frame.lookup(key)!=null)n++;return n;}
@@ -125,7 +132,7 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
         public void render(float[] mvp,int framebufferHeight,boolean depthEnabled) {
             try(Replay replay=begin(mvp,framebufferHeight,depthEnabled)){for(PaintCommand command:plan.commands())replay.draw(command);}
         }
-        @Override public void close(){if(closed)return;if(active!=null)throw new IllegalStateException("先结束回放");frame.close();closed=true;if(onClose!=null)onClose.run();}
+        @Override public void close(){if(closed)return;if(active!=null)throw new IllegalStateException("先结束回放");try{frame.close();}finally{if(imageFrame!=null)imageFrame.close();}closed=true;if(onClose!=null)onClose.run();}
     }
     public final class Replay implements AutoCloseable {
         private final Prepared prepared;private final float[] mvp;private final int height;private final boolean depth;
@@ -140,7 +147,20 @@ public final class GlPaintPlanRenderer implements AutoCloseable {
             if(clip!=null&&(clip.width==0||clip.height==0))return;
             if(command.kind==PaintCommand.Kind.RECT) {
                 solid(command.box.x,command.box.y,command.box.width,command.box.height,command.color,clip);
-            }else for(TextLayout.Line line:command.text.lines()) {
+            }else if(command.kind==PaintCommand.Kind.IMAGE) {
+                club.heiqi.uilib.ui.scene.image.ImagePlacement image=command.image;
+                if(context!=null)throw new IllegalStateException("图像只支持framebuffer scene回放");
+                if(prepared.imageFrame==null||!prepared.imageFrame.ready(image.content.identity)){
+                    draw(PaintCommand.rect(command.box,command.clip,prepared.imageFrame!=null&&prepared.imageFrame.failed(image.content.identity)?0xFF642D35:0xFF39434F));
+                    if(command.text!=null)draw(PaintCommand.text(command.box,command.clip,command.text));return;
+                }
+                if(image.content.kind==club.heiqi.uilib.ui.scene.image.ImageContent.Kind.HOST_ITEM){
+                    boolean[] drawn={false};delegate(()->{int[] viewport=new int[4];gl.glGetIntegerv(GL_VIEWPORT,viewport);drawn[0]=images.renderHost(image,clip,viewport[2],height);});
+                    if(!drawn[0]){draw(PaintCommand.rect(command.box,command.clip,0xFF642D35));if(command.text!=null)draw(PaintCommand.text(command.box,command.clip,command.text));}return;
+                }
+                collector.add(new State(GlQuadRenderer.COLOR_PREMULT,-image.content.identity,image.content.identity,clip),
+                    new Quad(image.x,image.y,image.width,image.height,0,0,1,1,0,0xFFFFFFFF));
+            }else if(command.text!=null)for(TextLayout.Line line:command.text.lines()) {
                 for(TextLayout.Glyph glyph:line.glyphs()) {
                     if(context==null?!visible(command,glyph,clip):!GlFontVisibility.visible(command,glyph,context))continue;
                     GlGlyphAtlas.Resident r=prepared.frame.lookup(GlyphKey.of(glyph));

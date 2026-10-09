@@ -10,14 +10,14 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 /** 先测内容，再按声明分配；固定尺寸不因父空间不足被缩小。 */
 public final class SceneLayoutEngine {
     private final SceneTextMeasurer text;
-    private final Map<SceneNode, Map<Integer, int[]>> measuredCache = new IdentityHashMap<>();
+    private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
     public SceneLayoutEngine(SceneTextMeasurer text) { this.text = text; }
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
         measuredCache.clear(); textCache.clear();
         List<SceneGeometryView.Entry> entries = new ArrayList<>();
         for (SceneNode root : roots) {
-            int[] desired = measure(root, width);
+            int[] desired = measure(root, width, height);
             int w = cross(root.width(), desired[0], width), h = cross(root.height(), desired[1], height);
             arrange(root, new LayoutBox(0, 0, w, h), null, entries);
         }
@@ -29,15 +29,20 @@ public final class SceneLayoutEngine {
     private TextLayout textLayout(SceneNode node, int width) {
         return textCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(width, key -> text.layout(node.text(), node.style(), width, node.textPolicy()));
     }
-    private int[] measure(SceneNode node, int availableWidth) {
-        return measuredCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(availableWidth, key -> measureUncached(node, availableWidth));
+    private int[] measure(SceneNode node, int availableWidth, int availableHeight) {
+        long constraintKey = ((long) availableWidth << 32) | (availableHeight & 0xffffffffL);
+        return measuredCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(constraintKey, key -> measureUncached(node, availableWidth, availableHeight));
     }
-    private int[] measureUncached(SceneNode node, int availableWidth) {
+    private int[] measureUncached(SceneNode node, int availableWidth, int availableHeight) {
         if (!node.visible()) return new int[] {0, 0};
         int measuredWidth = node.width().mode == Size.Mode.FIXED ? node.width().constrain(node.width().value) : node.width().constrain(availableWidth);
         int contentWidth = Math.max(0, measuredWidth - node.padding() * 2);
+        // 自然高度尚未分配，不把父空间冒充自身高度；固定/fill 则携带真实有限约束。
+        int measuredHeight = node.height().mode == Size.Mode.FIXED ? node.height().constrain(node.height().value)
+            : node.height().mode == Size.Mode.FILL && availableHeight != Integer.MAX_VALUE ? node.height().constrain(availableHeight) : Integer.MAX_VALUE;
+        int contentHeight = measuredHeight == Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.max(0, measuredHeight - node.padding() * 2);
         if (node.control() != null) {
-            MeasuredSize custom = node.control().measure(node, new Constraints(contentWidth, Integer.MAX_VALUE), text);
+            MeasuredSize custom = node.control().measure(node, new Constraints(contentWidth, contentHeight), text);
             return new int[] {node.width().constrain(node.width().mode == Size.Mode.FIXED ? node.width().value : custom.width + node.padding() * 2),
                 node.height().constrain(node.height().mode == Size.Mode.FIXED ? node.height().value : custom.height + node.padding() * 2)};
         }
@@ -45,17 +50,20 @@ public final class SceneLayoutEngine {
         int w = lines.width, h = lines.height;
         List<SceneNode> children = new ArrayList<>();
         List<int[]> measured = new ArrayList<>();
-        for (SceneNode child : node.children()) if (child.visible()) { children.add(child); measured.add(measure(child, contentWidth)); }
+        for (SceneNode child : node.children()) if (child.visible()) { children.add(child); measured.add(measure(child, contentWidth, node.axis() == SceneNode.Axis.ROW ? contentHeight : Integer.MAX_VALUE)); }
         int gaps = Math.max(0, children.size() - 1) * node.gap();
         boolean row = node.axis() == SceneNode.Axis.ROW;
-        int[] allocated = row ? allocate(children, measured, Math.max(0, contentWidth - gaps), true) : null;
+        int[] allocated = row ? allocate(children, measured, Math.max(0, contentWidth - gaps), true)
+            : contentHeight != Integer.MAX_VALUE ? allocate(children, measured, Math.max(0, contentHeight - gaps), false) : null;
         int sum = 0, maximum = 0;
         for (int i = 0; i < children.size(); i++) {
             SceneNode child = children.get(i);
             // 自然高度以最终受限/分配宽度求解，并向父自然高度传播，不能绘制后读回修补。
-            int cw = row ? allocated[i] : cross(child.width(), measured.get(i)[0], contentWidth);
-            int[] actual = measure(child, cw);
-            int ch = child.height().constrain(child.height().mode == Size.Mode.FIXED ? child.height().value : actual[1]);
+            int allocatedHeight = row ? contentHeight : allocated == null ? Integer.MAX_VALUE : allocated[i];
+            int[] heightAware = measure(child, contentWidth, allocatedHeight);
+            int cw = row ? allocated[i] : cross(child.width(), heightAware[0], contentWidth);
+            int[] actual = measure(child, cw, allocatedHeight);
+            int ch = !row && allocated != null ? allocated[i] : child.height().constrain(child.height().mode == Size.Mode.FIXED ? child.height().value : actual[1]);
             sum += row ? cw : ch;
             maximum = Math.max(maximum, row ? ch : cw);
         }
@@ -94,7 +102,7 @@ public final class SceneLayoutEngine {
         }
         List<SceneNode> children = new ArrayList<>();
         List<int[]> measured = new ArrayList<>();
-        for (SceneNode child : node.children()) if (child.visible()) { children.add(child); measured.add(measure(child, innerWidth)); }
+        for (SceneNode child : node.children()) if (child.visible()) { children.add(child); measured.add(measure(child, innerWidth, node.axis() == SceneNode.Axis.ROW ? innerHeight : Integer.MAX_VALUE)); }
         boolean row = node.axis() == SceneNode.Axis.ROW;
         int available = (row ? innerWidth : innerHeight) - Math.max(0, children.size() - 1) * node.gap();
         int[] allocated = allocate(children, measured, Math.max(0, available), row);
@@ -107,8 +115,10 @@ public final class SceneLayoutEngine {
         int cursor = -scroll;
         for (int i = 0; i < children.size(); i++) {
             SceneNode child = children.get(i);
-            int childWidth = row ? allocated[i] : cross(child.width(), measured.get(i)[0], innerWidth);
-            int[] actual = measure(child, childWidth);
+            int allocatedHeight = row ? innerHeight : allocated[i];
+            int[] heightAware = measure(child, innerWidth, allocatedHeight);
+            int childWidth = row ? allocated[i] : cross(child.width(), heightAware[0], innerWidth);
+            int[] actual = measure(child, childWidth, allocatedHeight);
             int childHeight = row ? cross(child.height(), actual[1], innerHeight) : allocated[i];
             int x = box.x + node.padding() + (row ? cursor : 0);
             int y = box.y + node.padding() + (row ? 0 : cursor);

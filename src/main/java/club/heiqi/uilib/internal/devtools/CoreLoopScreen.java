@@ -132,7 +132,7 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
             .add(SceneButton.create(ctx,()->"外部正文",theme,()->{String next="外部更新正文\n仅在空闲时同步\n";acceptedDocument.set(next);multilineState.synchronizeExternal(next);}))
             .add(SceneButton.create(ctx,()->"恢复样例",theme,()->{if(areaEnabled.get()&&!areaReadOnly.get()){String next="中文🙂与 é\n第二行：ABCDEFGHIJKLMN 软换行长文 ABCDEFGHIJKLMN\n第三行\n第四行\n第五行\n第六行\n第七行\n第八行\n";multilineState.reset(next);acceptedDocument.set(next);delayedDocument=null;}})));
         // 字段验收放在滚动正文之前，字号/窗口变化由已有布局处理。
-        SceneNode scrollContent=new SceneNode().size(Size.fill(1),Size.natural()).gap(4).add(editPanel).add(areaPanel).add(body.size(Size.fill(1),Size.fixed(220)));
+        SceneNode scrollContent=new SceneNode().size(Size.fill(1),Size.natural()).gap(4).add(editPanel).add(areaPanel).add(CoreImagePage.create(ctx,theme)).add(body.size(Size.fill(1),Size.fixed(220)));
         // 页内自然内容共用外层滚动，小窗口/大字号不把字段正文压成零高度。
         SceneNode editorPage=new SceneNode().initialFocus(focusA).size(Size.fill(1),Size.fill(1)).scrollable(true).padding(8).gap(4)
             .bind(NodeBinding.value(theme,(node,value)->node.background(value.panel)));
