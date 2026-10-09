@@ -47,9 +47,14 @@ public class MinecraftSceneScreen extends GuiScreen {
             session = ScenePageSession.open(domain, host, host, ctx -> {
                 ctx.own(host);
                 owned[0] = true;
+                ctx.own(new RepeatEvents());
                 page.build(ctx);
             });
+            initializeInputs();
         } catch (RuntimeException | Error failure) {
+            // 已打开会话后的输入桥/适配器初始化失败也释放scope和repeat借用。
+            try { onGuiClosed(); }
+            catch(RuntimeException | Error cleanup){if(cleanup!=failure)failure.addSuppressed(cleanup);}
             // open 的早期失败也释放尚未转交作用域的本页资源，原始失败保持权威。
             if (!owned[0]) {
                 try { host.close(); }
@@ -57,6 +62,9 @@ public class MinecraftSceneScreen extends GuiScreen {
             }
             throw failure;
         }
+    }
+
+    private void initializeInputs() {
         final ScenePageSession opened = session;
         if(SceneNativeTextInput.available())nativeText=new SceneNativeTextInput();
         tabInput = new SceneTabInputAdapter(direction->opened.editOrNavigate(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.TAB,direction==club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.PREVIOUS,clipboard),direction));
@@ -111,7 +119,9 @@ public class MinecraftSceneScreen extends GuiScreen {
     }
     private void routeKey(int key,boolean down,boolean repeat,char character) {
         if(session==null)return;
-        boolean accepted=editInput.key(key,down,repeat);
+        // WindowsKeyboard.handleChar 可递交 key=NONE/state=false 的独立WM_CHAR（包括中文提交）。
+        // 字符不是物理释放；只经过窗口/旧持键文本门，不往按键集合写入虚假的NONE。
+        boolean accepted=key==Keyboard.KEY_NONE && character>=32 ? editInput.available() : editInput.key(key,down,repeat);
         if(key==Keyboard.KEY_LCONTROL)leftCtrl=down;
         else if(key==Keyboard.KEY_RCONTROL)rightCtrl=down;
         if (key == Keyboard.KEY_LSHIFT) {leftShift=down;tabInput.shift(true, down);}
@@ -205,6 +215,14 @@ public class MinecraftSceneScreen extends GuiScreen {
         if (!Mouse.isCreated()) return false;
         for (int button = 0; button < Mouse.getButtonCount(); button++) if (Mouse.isButtonDown(button)) return false;
         return true;
+    }
+    /** LWJGL2.next 在关闭repeat时直接跳过重复事件；页面借用该设置，scope结束恢复原值。
+     * 编辑与既有导航可接收repeat，按钮/Enter/ESC仍由既有按压门消费一次。 */
+    private static final class RepeatEvents implements AutoCloseable {
+        private final boolean previous=Keyboard.areRepeatEventsEnabled();
+        private boolean closed;
+        RepeatEvents(){Keyboard.enableRepeatEvents(true);}
+        @Override public void close(){if(!closed){closed=true;Keyboard.enableRepeatEvents(previous);}}
     }
     @Override public void onGuiClosed() {
         ScenePageSession opened = session;

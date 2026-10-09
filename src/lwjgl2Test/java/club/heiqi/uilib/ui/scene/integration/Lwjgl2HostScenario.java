@@ -6,6 +6,21 @@ import club.heiqi.uilib.host.client.gl.Lwjgl2GlApi;
 import club.heiqi.uilib.host.client.gl.GlProgramProvider;
 
 import java.nio.ByteBuffer;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import org.lwjgl.input.Keyboard;
+import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.scene.control.SceneTextField;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.edit.SceneEditState;
+import club.heiqi.uilib.ui.scene.host.SceneHost;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.host.SceneEditInputAdapter;
+import club.heiqi.uilib.ui.scene.host.SceneKeyPressInputAdapter;
+import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 import java.util.Arrays;
 import club.heiqi.uilib.host.client.font.ClientFontServices;
 import club.heiqi.uilib.host.client.font.context.FontProjection;
@@ -88,8 +103,156 @@ public final class Lwjgl2HostScenario extends TestApplication {
         scenario("双采样view真实纹理与预算",this::samplingViews);
         scenario("单行预算交替view推进",this::alternatingViews);
         scenario("历史stencil拒绝与现场恢复",this::historicalStencil);
+        scenario("Windows中文字符原生载荷与正式字段草稿",this::windowsCharacterDraft);
+        scenario("LWJGL2真实repeat过滤与单次按压门",this::nativeRepeatAndPressGuards);
         require(glGetError()==GL_NO_ERROR,"GLerror");
         System.out.println("LWJGL2_HOST_SCENARIO_PASS configuredAtlasMode="+owner.settings().mode+" solidPixels="+lit+" glyphPixels="+glyphPixels+" frames="+frames+" entryTextureUnit3Restore=true perspectiveNonuniform=true lightmapRGBA=true effectiveLighting=true alphaCompare=true depthWriteOcclusion=true viewportFboRestore=true behindEyeNoDemand=true DefaultDisplayContext=true realIrisEngine=false");
+    }
+
+    /** 仅反射依赖库的真实事件生产者，不构造字节协议、不调用原生poll。 */
+    private static final class WindowsEvents {
+        final Object keyboard;
+        final Method character, key, read;
+        WindowsEvents() throws Exception {
+            Class<?> type=Class.forName("org.lwjgl.opengl.WindowsKeyboard");
+            Constructor<?> ctor=type.getDeclaredConstructor();ctor.setAccessible(true);keyboard=ctor.newInstance();
+            character=type.getDeclaredMethod("handleChar",int.class,long.class,boolean.class);
+            key=type.getDeclaredMethod("handleKey",int.class,int.class,boolean.class,byte.class,long.class,boolean.class);
+            read=type.getDeclaredMethod("read",ByteBuffer.class);
+            character.setAccessible(true);key.setAccessible(true);read.setAccessible(true);
+        }
+        void character(char value,boolean repeat) throws Exception {character.invoke(keyboard,(int)value,1L,repeat);}
+        void press(int virtual,char value) throws Exception {
+            key.invoke(keyboard,virtual,0,false,(byte)1,1L,false);if(value!=0)character(value,false);
+            for(int i=0;i<2;i++){key.invoke(keyboard,virtual,0,false,(byte)1,2L,true);if(value!=0)character(value,true);}
+            key.invoke(keyboard,virtual,0,false,(byte)0,3L,false);
+        }
+        ByteBuffer payload() throws Exception {
+            ByteBuffer bytes=ByteBuffer.allocate(Keyboard.EVENT_SIZE*32);read.invoke(keyboard,bytes);bytes.flip();return bytes;
+        }
+    }
+    /** 换入独立缓冲和事件对象；原窗口未消费的历史、当前事件及repeat设置均原样恢复。 */
+    private static final class KeyboardHistory implements AutoCloseable {
+        final Field buffer=field("readBuffer"),current=field("current_event"),scratch=field("tmp_event");
+        final Object oldBuffer,oldCurrent,oldScratch;
+        final boolean oldRepeat=Keyboard.areRepeatEventsEnabled();
+        KeyboardHistory() throws Exception {
+            if(!Keyboard.isCreated())throw new AssertionError("实际Display未创建Keyboard");
+            oldBuffer=buffer.get(null);oldCurrent=current.get(null);oldScratch=scratch.get(null);
+            Constructor<?> ctor=current.getType().getDeclaredConstructor();ctor.setAccessible(true);
+            Object nextCurrent=ctor.newInstance(),nextScratch=ctor.newInstance();
+            buffer.set(null,ByteBuffer.allocate(0));current.set(null,nextCurrent);scratch.set(null,nextScratch);
+        }
+        static Field field(String name) throws Exception {Field value=Keyboard.class.getDeclaredField(name);value.setAccessible(true);return value;}
+        void load(ByteBuffer value) throws Exception {buffer.set(null,value.duplicate());}
+        @Override public void close() throws Exception {
+            buffer.set(null,oldBuffer);current.set(null,oldCurrent);scratch.set(null,oldScratch);Keyboard.enableRepeatEvents(oldRepeat);
+        }
+    }
+    private final class InputField implements AutoCloseable {
+        final ReactiveDomain domain=ReactiveDomain.direct();
+        final SceneEditState[] state={null};final SceneNode[] node={null};final int[] submits={0};
+        final ScenePageSession page;
+        InputField(){
+            SceneHost host=new SceneHost(){
+                public int width(){return W;}public int height(){return H;}public long metricsRevision(){return 1;}
+                public void replay(PaintPlan plan){} // 此场景验收输入状态，字形像素由既有宿主场景验收。
+            };
+            page=ScenePageSession.open(domain,host,owner,ctx->{
+                state[0]=new SceneEditState(domain,"");
+                node[0]=SceneTextField.create(ctx,state[0],domain.signal(SceneTheme.light()),domain.signal(false),s->submits[0]++);
+                ctx.mount(node[0]);
+            });
+            domain.execute(()->require(page.runtime().focusRouter().request(page.runtime().captureMount(node[0])),"原生输入字段聚焦失败"));
+        }
+        String draft(){final String[] value={null};domain.execute(()->value[0]=state[0].snapshot().get().text);return value[0];}
+        @Override public void close(){page.close();}
+    }
+
+    private void windowsCharacterDraft() throws Exception {
+        try(KeyboardHistory history=new KeyboardHistory();InputField field=new InputField()){
+            WindowsEvents nativeEvents=new WindowsEvents();nativeEvents.character('中',false);nativeEvents.character('文',false);
+            Keyboard.enableRepeatEvents(false);history.load(nativeEvents.payload());
+            SceneEditInputAdapter gate=new SceneEditInputAdapter();gate.historyDrained(Collections.emptySet());
+            StringBuilder observed=new StringBuilder();
+            while(Keyboard.next()){
+                require(Keyboard.getEventKey()==Keyboard.KEY_NONE && !Keyboard.getEventKeyState() && !Keyboard.isRepeatEvent(),"真实WM_CHAR不应伪装成按键DOWN");
+                char value=Keyboard.getEventCharacter();observed.append(value);
+                require(!gate.key(Keyboard.getEventKey(),Keyboard.getEventKeyState(),Keyboard.isRepeatEvent()),"旧按键门应拒绝CHAR-only载荷");
+                require(gate.available(),"CHAR-only应有独立可用性门");
+                // 这里只验证正式核心支持真实载荷；独立宿主不加载MC，不能冒充routeKey回归。
+                field.page.edit(SceneEditEvent.text(String.valueOf(value)));
+            }
+            field.page.frame();require(observed.toString().equals("中文") && field.draft().equals("中文") && field.submits[0]==0,"中文载荷应进入草稿且不隐含确认");
+            gate.availability(false);require(!gate.available(),"失焦时字符门必须关闭");
+            gate.availability(true);require(!gate.available(),"恢复焦点仍等历史耗尽");gate.historyDrained(Collections.emptySet());require(gate.available(),"全释放后字符门应恢复");
+            System.out.println("WINDOWS_CHAR_PAYLOAD_PASS keyNone=true downFalse=true draft=中文 noConfirm=true minecraftRouteKeyVerified=false");
+        }
+    }
+    private void nativeRepeatAndPressGuards() throws Exception {
+        try(KeyboardHistory history=new KeyboardHistory();InputField field=new InputField()){
+            WindowsEvents letters=new WindowsEvents();letters.press(0x41,'a');ByteBuffer bytes=letters.payload();
+            Keyboard.enableRepeatEvents(false);history.load(bytes);int filtered=0;
+            while(Keyboard.next())if(Keyboard.getEventKeyState()){require(!Keyboard.isRepeatEvent(),"repeat关闭仍报告重复事件");filtered++;}
+            require(filtered==1,"repeat关闭应只保留初次DOWN");
+            Keyboard.enableRepeatEvents(true);history.load(bytes);
+            SceneEditInputAdapter edit=new SceneEditInputAdapter();edit.historyDrained(Collections.emptySet());int delivered=0;
+            while(Keyboard.next())if(edit.key(Keyboard.getEventKey(),Keyboard.getEventKeyState(),Keyboard.isRepeatEvent())){
+                require(Keyboard.getEventKey()==Keyboard.KEY_A,"真实Windows虚拟键A映射错误");
+                field.page.edit(SceneEditEvent.text(String.valueOf(Keyboard.getEventCharacter())));delivered++;
+            }
+            field.page.frame();require(delivered==3 && field.draft().equals("aaa"),"真实repeat必须多次进入编辑草稿");
+            repeatCommand(history,field,edit,0x08,SceneEditEvent.Command.BACKSPACE);require(field.draft().isEmpty(),"Backspace真实repeat未多次删除");
+            repeatCommand(history,field,edit,0x20,SceneEditEvent.Command.SPACE);require(field.draft().equals("   ") && field.submits[0]==0,"空格真实repeat应编辑且不确认");
+            for(int virtual:new int[]{0x0d,0x20}){
+                final int[] actions={0};SceneKeyPressInputAdapter press=new SceneKeyPressInputAdapter(()->actions[0]++);
+                press.availability(true);press.historyDrained(false);
+                WindowsEvents activation=new WindowsEvents();activation.press(virtual,(char)0);history.load(activation.payload());
+                while(Keyboard.next())press.key(Keyboard.getEventKeyState(),Keyboard.isRepeatEvent());
+                require(actions[0]==1,"Enter/SPACE按压门不能因开启repeat扩大激活次数");
+            }
+            boolean scopeVerified=repeatScope();
+            System.out.println("LWJGL2_REPEAT_PAYLOAD_PASS repeatDisabledDowns="+filtered+" repeatEnabledDowns="+delivered+" backspaceRepeat=true spaceRepeat=true activationOnce=true minecraftRouteKeyVerified=false repeatScopeVerified="+scopeVerified);
+        }
+    }
+    private boolean repeatScope() throws Exception {
+        final Constructor<?> constructor;
+        try{
+            Class<?> type=Class.forName("club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen$RepeatEvents");
+            constructor=type.getDeclaredConstructor();constructor.setAccessible(true);
+        }catch(ClassNotFoundException | NoClassDefFoundError absent){
+            System.out.println("REPEAT_SCOPE_NOT_VERIFIED dependency="+absent);return false;
+        }
+        boolean original=Keyboard.areRepeatEventsEnabled();
+        try{
+            for(boolean previous:new boolean[]{false,true}){
+                Keyboard.enableRepeatEvents(previous);
+                AutoCloseable scope=(AutoCloseable)constructor.newInstance();
+                try{require(Keyboard.areRepeatEventsEnabled(),"生产repeat资源未开启重复事件");}finally{scope.close();}
+                require(Keyboard.areRepeatEventsEnabled()==previous,"生产repeat资源未恢复原值");
+                Keyboard.enableRepeatEvents(!previous);scope.close();
+                require(Keyboard.areRepeatEventsEnabled()!=previous,"重复close覆盖了后来的宿主设置");
+                Keyboard.enableRepeatEvents(previous);
+                RuntimeException expected=new RuntimeException("场景主动中止页面初始化");
+                try{
+                    ScenePageSession.open(ReactiveDomain.direct(),new SceneHost(){
+                        public int width(){return W;}public int height(){return H;}public long metricsRevision(){return 1;}public void replay(PaintPlan plan){}
+                    },owner,ctx->{
+                        try{ctx.own((AutoCloseable)constructor.newInstance());}catch(ReflectiveOperationException failure){throw new IllegalStateException(failure);}
+                        require(Keyboard.areRepeatEventsEnabled(),"页面作用域未借用repeat");throw expected;
+                    });
+                    throw new AssertionError("初始化失败未传播");
+                }catch(RuntimeException failure){require(failure==expected,"初始化失败原始异常未保持");}
+                require(Keyboard.areRepeatEventsEnabled()==previous,"初始化失败未释放真实生产repeat资源");
+            }
+            return true;
+        }finally{Keyboard.enableRepeatEvents(original);}
+    }
+
+    private void repeatCommand(KeyboardHistory history,InputField field,SceneEditInputAdapter edit,int virtual,SceneEditEvent.Command command) throws Exception {
+        WindowsEvents events=new WindowsEvents();events.press(virtual,(char)0);history.load(events.payload());
+        while(Keyboard.next())if(edit.key(Keyboard.getEventKey(),Keyboard.getEventKeyState(),Keyboard.isRepeatEvent()))field.page.edit(SceneEditEvent.command(command,false,null));
+        field.page.frame();
     }
 
     private void solidState() throws Exception {
