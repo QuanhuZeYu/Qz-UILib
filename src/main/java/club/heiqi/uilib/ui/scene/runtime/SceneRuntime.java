@@ -39,6 +39,8 @@ public final class SceneRuntime implements AutoCloseable {
     private long revision, geometryRevision;
     public SceneRuntime(ReactiveDomain domain) { this.domain = domain; domain.checkAccess(); owner = domain.owner(); pointerRouter = new ScenePointerRouter(this); focusRouter = new SceneFocusRouter(this); }
     public ReactiveDomain domain() { return domain; }
+    /** 迟到输入与宿主结果只读检查生命周期，不推进声明。 */
+    public boolean alive() { domain.checkAccess(); return !disposed; }
     /** 同runtime的帧管线共享唯一pointer owner；不在宿主建立另一套手势权威。 */
     public ScenePointerRouter pointerRouter() { domain.checkAccess(); return pointerRouter; }
     /** 同runtime唯一焦点权威；宿主与业务只观察投影或发受控命令。 */
@@ -258,6 +260,23 @@ public final class SceneRuntime implements AutoCloseable {
             ScrollPosition position = scrolling.computeIfAbsent(entry.node, ignored -> new ScrollPosition());
             position.declaration = entry.node.scrollOffset(); position.value = entry.scrollOffset; position.maximum = entry.scrollMaximum;
         }
+    }
+    /** spec6.1：当前模态先处理，未消费才进入页面策略。调用前结算声明；
+     * 页面采用与初始焦点相同的首个非模态根，后台模态不接收本事件。
+     * 本接口只返回消费结果，宿主fallback由管线在Effects成功后执行。 */
+    public boolean dispatchEscape() {
+        domain.checkWrite(); command();
+        SceneNode modal = activeModal();
+        if (modal != null && locallyInteractive(modal) && escape(modal)) return true;
+        for (SceneNode root : roots) if (!root.modal()) {
+            return locallyInteractive(root) && escape(root);
+        }
+        return false;
+    }
+    private boolean escape(SceneNode node) {
+        if (node.escapeAction() == null) return false;
+        routing = true;
+        try { return node.escapeAction().getAsBoolean(); } finally { routing = false; }
     }
     public void dispatchScroll(SceneNode node, int delta) {
         checkAlive(); if (!interactive(node)) return;

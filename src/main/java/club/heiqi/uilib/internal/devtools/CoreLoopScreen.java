@@ -5,6 +5,7 @@ import net.minecraft.client.gui.GuiScreen;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.input.Keyboard;
 import club.heiqi.uilib.ui.scene.host.SceneTabInputAdapter;
+import club.heiqi.uilib.ui.scene.host.SceneEscapeInputAdapter;
 import org.lwjgl.opengl.Display;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -23,6 +24,7 @@ public final class CoreLoopScreen extends GuiScreen {
     private SceneRuntime runtime;
     private SceneFramePipeline pipeline;
     private SceneTabInputAdapter tabInput;
+    private SceneEscapeInputAdapter escapeInput;
     private MinecraftSceneHost host;
     private Owner business;
     /** 宿主只记录原生输入可用性；目标、挂载代际和物理按钮权威全部归核心。 */
@@ -86,12 +88,12 @@ public final class CoreLoopScreen extends GuiScreen {
             runtime.attach(null, panel);
             focusM.bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target) -> node.background(target == node ? 0xFF287848 : 0xFF405060)));
             focusN.bind(NodeBinding.value(runtime.focusRouter().focused(), (node,target) -> node.background(target == node ? 0xFF287848 : 0xFF405060)));
-            SceneNode inner = new SceneNode().size(Size.fill(1), Size.natural()).padding(6).gap(3).background(0xFF465060).modal(true).initialFocus(focusN)
+            SceneNode inner = new SceneNode().size(Size.fill(1), Size.natural()).padding(6).gap(3).background(0xFF465060).modal(true).initialFocus(focusN).onEscape(() -> { innerModal.set(false); return true; })
                 .bind(NodeBinding.value(innerModal, SceneNode::visible))
                 .add(label(focusStatus, style)).add(focusN)
                 .add(button("返回外层M", style, () -> innerModal.set(false)))
                 .add(button("关闭全部", style, () -> { innerModal.set(false); modal.set(false); }));
-            SceneNode dialog = new SceneNode().size(Size.fixed(360), Size.natural()).padding(10).gap(5).background(0xFF303848).modal(true).initialFocus(focusM)
+            SceneNode dialog = new SceneNode().size(Size.fixed(360), Size.natural()).padding(10).gap(5).background(0xFF303848).modal(true).initialFocus(focusM).onEscape(() -> { innerModal.set(false); modal.set(false); return true; })
                 .bind(NodeBinding.value(modal, SceneNode::visible))
                 .add(label(focusStatus, style)).add(focusM)
                 .add(button("内层模态", style, () -> innerModal.set(true)))
@@ -102,6 +104,11 @@ public final class CoreLoopScreen extends GuiScreen {
             host = new MinecraftSceneHost();
             pipeline = new SceneFramePipeline(runtime, host, host);
             tabInput = new SceneTabInputAdapter(pipeline::navigation);
+            final SceneFramePipeline session = pipeline;
+            escapeInput = new SceneEscapeInputAdapter(() -> session.escape(() -> {
+                // 延迟结果只可关闭递交事件的同一页/管线，不能借旧事件关闭后来打开的页面。
+                if (pipeline == session && mc.currentScreen == this) super.keyTyped((char) 0, Keyboard.KEY_ESCAPE);
+            }));
         });
     }
     private SceneNode label(club.heiqi.uilib.ui.reactive.ReadableSignal<String> text, club.heiqi.uilib.ui.reactive.ReadableSignal<TextStyle> style) {
@@ -127,8 +134,11 @@ public final class CoreLoopScreen extends GuiScreen {
             pipeline.pointer(ScenePointerEvent.allButtonsReleased());
             pointerSuspended = false;
         }
-        if (Keyboard.isCreated()) tabInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_TAB),
-            Keyboard.isKeyDown(Keyboard.KEY_LSHIFT), Keyboard.isKeyDown(Keyboard.KEY_RSHIFT));
+        if (Keyboard.isCreated()) {
+            tabInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_TAB),
+                Keyboard.isKeyDown(Keyboard.KEY_LSHIFT), Keyboard.isKeyDown(Keyboard.KEY_RSHIFT));
+            escapeInput.historyDrained(Keyboard.isKeyDown(Keyboard.KEY_ESCAPE));
+        }
     }
     /** 父类handleInput是唯一Keyboard.next消费者；按当前历史事件翻译，不读取未来修饰键快照。 */
     @Override public void handleKeyboardInput() {
@@ -138,6 +148,7 @@ public final class CoreLoopScreen extends GuiScreen {
         if (key == Keyboard.KEY_LSHIFT) tabInput.shift(true, down);
         else if (key == Keyboard.KEY_RSHIFT) tabInput.shift(false, down);
         else if (key == Keyboard.KEY_TAB) { tabInput.tab(down, Keyboard.isRepeatEvent()); return; }
+        else if (key == Keyboard.KEY_ESCAPE) { escapeInput.key(down, Keyboard.isRepeatEvent()); return; }
         super.handleKeyboardInput();
     }
     /** 父类handleInput是唯一Mouse.next消费者；本方法只翻译当前历史事件，不再派发原版鼠标行为。 */
@@ -162,6 +173,7 @@ public final class CoreLoopScreen extends GuiScreen {
     private void syncInputAvailability() {
         boolean active = Display.isActive();
         if (tabInput != null) tabInput.availability(active);
+        if (escapeInput != null) escapeInput.availability(active);
         if (!active) {
             if (pointerWindowActive) pipeline.pointer(ScenePointerEvent.cancel());
             pointerSuspended = true;
@@ -186,7 +198,7 @@ public final class CoreLoopScreen extends GuiScreen {
                     try { business.dispose(); }
                     finally {
                         try { host.close(); }
-                        finally { runtime = null; business = null; host = null; pipeline = null; tabInput = null; pointerWindowActive = false; pointerSuspended = true; }
+                        finally { runtime = null; business = null; host = null; pipeline = null; tabInput = null; escapeInput = null; pointerWindowActive = false; pointerSuspended = true; }
                     }
                 }
             }

@@ -40,6 +40,12 @@ public final class ReactiveDomain {
     public void execute(Runnable action) {
         Objects.requireNonNull(action, "action");
         if (CURRENT.get() == this) { operation(action); return; }
+        enqueue(action);
+    }
+    /** 总是排入独立顶层操作，即使调用者已在本域内；保证每事件Effect结算。 */
+    public void enqueue(Runnable action) {
+        Objects.requireNonNull(action, "action");
+        if (CURRENT.get() == this) checkWrite();
         boolean start;
         synchronized (actions) {
             actions.add(action);
@@ -47,6 +53,9 @@ public final class ReactiveDomain {
             if (start) scheduled = true;
         }
         if (start) executor.execute(this::drainActions);
+    }
+    public void enqueue(Runnable action, Consumer<Throwable> failed) {
+        enqueue(new FailureBoundary(Objects.requireNonNull(action, "action"), Objects.requireNonNull(failed, "failed")));
     }
     private void drainActions() {
         ReactiveDomain previous = CURRENT.get();

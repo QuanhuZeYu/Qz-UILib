@@ -101,6 +101,7 @@ public final class ClientFontServicesScenario extends TestApplication {
         scenario("焦点响应绑定经真实GPU像素观察",this::focusReplay);
         scenario("范围进入与返回经真实GPU回放",this::scopeReplay);
         scenario("Tab历史适配与导航高亮经真实GPU观察",this::navigationReplay);
+        scenario("ESC消费关闭及焦点恢复经真实GPU观察",this::escapeReplay);
         scenario("点击滚动与动态resize",this::inputAndResize);
         scenario("字体来源退休与旧glyph重开",this::reloadSources);
         scenario("screen关闭保留sharedowner",this::screenOwnership);
@@ -193,6 +194,29 @@ public final class ClientFontServicesScenario extends TestApplication {
             keys.shift(true,true);keys.tab(true,true);clear();pipeline.frame();require(read()[W+1]==0xff28b060,"Shift+Tab历史repeat未恢复高亮");
             keys.availability(false);keys.availability(true);keys.tab(true,true);clear();pipeline.frame();require(read()[W+1]==0xff28b060,"失焦尾部repeat不能导航");
         } finally { domain.execute(()->{second[0].detach();runtime.focusRouter().clear();}); }
+        clear();pipeline.frame();
+    }
+    private void escapeReplay() throws Exception {
+        final club.heiqi.uilib.ui.scene.runtime.MountHandle[] layer={null};
+        final club.heiqi.uilib.ui.reactive.Signal<Boolean>[] visible=new club.heiqi.uilib.ui.reactive.Signal[1];
+        final int[] fallback={0};
+        domain.execute(()->{
+            visible[0]=domain.signal(true);runtime.focusRouter().request(runtime.captureMount(nodes[1]));
+            SceneNode target=new SceneNode().focusable(true).size(Size.fixed(3),Size.fixed(3));
+            SceneNode overlay=new SceneNode().modal(true).initialFocus(target).size(Size.fill(1),Size.fill(1))
+                .bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(visible[0],SceneNode::visible))
+                .bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(runtime.focusRouter().focused(),(node,focus)->node.background(focus==target?0xff4028b0:0xff404040)))
+                .onEscape(()->{visible[0].set(false);return true;}).add(target);
+            layer[0]=runtime.attach(null,overlay);
+        });
+        club.heiqi.uilib.ui.scene.host.SceneEscapeInputAdapter keys=new club.heiqi.uilib.ui.scene.host.SceneEscapeInputAdapter(()->pipeline.escape(()->fallback[0]++));
+        keys.availability(true);keys.historyDrained(false);
+        try {
+            clear();pipeline.frame();require(read()[W+1]==0xff4028b0,"ESC前模态高亮");
+            keys.key(true,false);clear();pipeline.frame();require(read()[W+1]==0xff28b060 && fallback[0]==0,"消费ESC应恢复原焦点而不fallback");
+            keys.key(true,true);clear();pipeline.frame();require(fallback[0]==0,"repeat不能关闭页面");
+            keys.key(false,false);keys.key(true,false);clear();pipeline.frame();require(fallback[0]==1,"新的未消费ESC才fallback");
+        } finally {domain.execute(()->{layer[0].detach();runtime.focusRouter().clear();});}
         clear();pipeline.frame();
     }
     private void inputAndResize() throws Exception {

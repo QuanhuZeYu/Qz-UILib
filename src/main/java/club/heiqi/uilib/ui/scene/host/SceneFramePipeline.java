@@ -24,11 +24,16 @@ public final class SceneFramePipeline implements AutoCloseable {
     private static final class QueuedInput {
         final ScenePointerEvent pointer;
         final SceneNavigationEvent navigation;
-        QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation) { this.pointer = pointer; this.navigation = navigation; }
+        final Runnable fallback;
+        boolean consumed;
+        QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation) { this(pointer, navigation, null); }
+        QueuedInput(ScenePointerEvent pointer, SceneNavigationEvent navigation, Runnable fallback) { this.pointer = pointer; this.navigation = navigation; this.fallback = fallback; }
         void discard(ScenePointerRouter router) { if (pointer != null) router.discardAfterFailure(pointer); }
     }
     private final ArrayDeque<QueuedInput> inputs = new ArrayDeque<>();
-    private static final class InputBatch { boolean failed; }
+    private static final class InputBatch { boolean failed, released; }
+    private int pendingIndependent;
+    private void release(InputBatch batch) { synchronized (inputs) { if (!batch.released) { batch.released = true; pendingIndependent--; } } }
     private boolean closed;
     private ScenePresentation presentation;
     private long revision = -1, geometryRevision = -1, metrics = -1, generation;
@@ -40,6 +45,8 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void pointer(ScenePointerEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(Objects.requireNonNull(event, "event"), null)); } }
     /** 与指针共享采集顺序；不从宿主另建焦点表。 */
     public void navigation(SceneNavigationEvent event) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(null, Objects.requireNonNull(event, "event"))); } }
+    /** ESC与指针/导航同序；fallback仅在未消费、Effects成功且此管线仍有效时于域内执行。 */
+    public void escape(Runnable fallback) { synchronized (inputs) { checkOpen(); inputs.add(new QueuedInput(null, null, Objects.requireNonNull(fallback, "fallback"))); } }
     /** 完整synthetic activation入口，不是DOWN；已有物理手势时吞掉，不绕过owner。 */
     public void click(int x, int y) { pointer(ScenePointerEvent.syntheticActivation(x, y)); }
     /** 保留现行滚轮行为，与pointer事件共享采集顺序和prepare。 */
@@ -49,26 +56,51 @@ public final class SceneFramePipeline implements AutoCloseable {
     public void frame() {
         List<QueuedInput> events = new ArrayList<>();
         synchronized (inputs) { checkOpen(); while (!inputs.isEmpty()) events.add(inputs.remove()); }
+        // ESC批次需要顶层结算后结果；旧纯pointer/nav批次保留域内同步frame语义。
+        boolean independent;
+        synchronized (inputs) {
+            independent = pendingIndependent > 0 || events.stream().anyMatch(event -> event.fallback != null);
+            if (independent) pendingIndependent++;
+        }
         InputBatch batch = new InputBatch();
         for (int i = 0; i < events.size(); i++) {
             final int index = i;
-            runtime.domain().execute(() -> {
+            submit(independent, () -> {
                 if (batch.failed) return;
                 ScenePointerRouter router = runtime.pointerRouter();
                 QueuedInput event = events.get(index);
-                if (isClosed()) { event.discard(router); return; }
+                if (isClosed() || !runtime.alive()) { event.discard(router); return; }
                 SceneGeometryView geometry = prepare().geometry;
                 if (event.pointer != null) router.route(event.pointer, geometry);
-                else runtime.focusRouter().navigate(event.navigation == SceneNavigationEvent.PREVIOUS);
+                else if (event.navigation != null) runtime.focusRouter().navigate(event.navigation == SceneNavigationEvent.PREVIOUS);
+                else event.consumed = runtime.dispatchEscape();
             }, failure -> {
                 batch.failed = true;
+                if (independent) release(batch);
                 ScenePointerRouter router = runtime.pointerRouter();
                 // 导航后的业务Effect也可能失败；即使剩余只有导航，旧物理owner仍必须取消。
                 router.discardAfterFailure(ScenePointerEvent.cancel());
                 for (int tail = index; tail < events.size(); tail++) events.get(tail).discard(router);
             });
+            QueuedInput event = events.get(index);
+            if (event.fallback != null) submit(independent, () -> {
+                if (!batch.failed && !isClosed() && runtime.alive() && !event.consumed) event.fallback.run();
+            }, failure -> {
+                batch.failed = true;
+                if (independent) release(batch);
+                ScenePointerRouter router = runtime.pointerRouter();
+                router.discardAfterFailure(ScenePointerEvent.cancel());
+                for (int tail = index + 1; tail < events.size(); tail++) events.get(tail).discard(router);
+            });
         }
-        runtime.domain().execute(() -> { if (!batch.failed && !isClosed()) host.replay(prepare().paint); });
+        Runnable replay = () -> {
+            try { if (!batch.failed && !isClosed() && runtime.alive()) host.replay(prepare().paint); }
+            finally { if (independent) release(batch); }
+        };
+        if (independent) runtime.domain().enqueue(replay); else runtime.domain().execute(replay);
+    }
+    private void submit(boolean independent, Runnable action, java.util.function.Consumer<Throwable> failed) {
+        if (independent) runtime.domain().enqueue(action, failed); else runtime.domain().execute(action, failed);
     }
     public ScenePresentation current() { runtime.domain().checkAccess(); synchronized (inputs) { checkOpen(); } return prepare(); }
     private void checkOpen() { if (closed) throw new IllegalStateException("帧管线已释放"); }

@@ -8,6 +8,7 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.function.IntConsumer;
+import java.util.function.BooleanSupplier;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
@@ -53,6 +54,10 @@ public final class SceneNode {
     private String text = "";
     private Runnable click;
     private IntConsumer scrollAction;
+    private BooleanSupplier escapeAction;
+    /** 范围/页面关闭策略：true表示已消费；只发布状态或意图，不直接改挂载声明。 */
+    public SceneNode onEscape(BooleanSupplier action) { writable(); escapeAction = action; return this; }
+    public BooleanSupplier escapeAction() { return escapeAction; }
     public UUID id() { return id; }
     public Axis axis() { return axis; }
     public Size width() { return width; }
@@ -118,7 +123,7 @@ public final class SceneNode {
         runtime = attached ? authority : null;
     }
     public void frameworkDestroy(SceneRuntime authority) {
-        authority.checkMutation(); destroyed = true; control = null; initialFocus = null; restoreFocus = null; declarationState.clear(); bindings.clear(); click = null; scrollAction = null; text = "";
+        authority.checkMutation(); destroyed = true; control = null; initialFocus = null; restoreFocus = null; declarationState.clear(); bindings.clear(); click = null; scrollAction = null; escapeAction = null; text = "";
     }
     private void unmounted() { if (destroyed || runtime != null) throw new IllegalStateException("节点不能修改挂载声明"); }
     private void writable() {
