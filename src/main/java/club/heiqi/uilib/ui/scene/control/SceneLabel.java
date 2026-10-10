@@ -9,13 +9,18 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 public final class SceneLabel {
     private SceneLabel() {}
 
-    public static SceneNode create(ScenePageContext context, ReadableSignal<String> text,
+    public static SceneNode create(
+            ScenePageContext context,
+            ReadableSignal<String> text,
             ReadableSignal<SceneTheme> theme) {
         return create(context, text, theme, SceneTextPolicy.WRAP);
     }
 
-    public static SceneNode create(ScenePageContext context, ReadableSignal<String> text,
-            ReadableSignal<SceneTheme> theme, SceneTextPolicy policy) {
+    public static SceneNode create(
+            ScenePageContext context,
+            ReadableSignal<String> text,
+            ReadableSignal<SceneTheme> theme,
+            SceneTextPolicy policy) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         return SceneTextControl.create(text, theme, policy, false);
     }

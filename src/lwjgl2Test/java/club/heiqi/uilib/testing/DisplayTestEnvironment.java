@@ -12,9 +12,17 @@ public final class DisplayTestEnvironment implements AutoCloseable {
             Display.setTitle(title);
             Display.create();
         } catch (LWJGLException | RuntimeException | Error failure) {
-            try { close(); } catch (Throwable cleanup) { failure.addSuppressed(cleanup); }
+            try {
+                close();
+            } catch (Throwable cleanup) {
+                failure.addSuppressed(cleanup);
+            }
             throw failure;
         }
     }
-    @Override public void close() { if (Display.isCreated()) Display.destroy(); }
+
+    @Override
+    public void close() {
+        if (Display.isCreated()) Display.destroy();
+    }
 }

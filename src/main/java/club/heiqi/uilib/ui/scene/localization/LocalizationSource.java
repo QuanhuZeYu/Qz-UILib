@@ -8,6 +8,11 @@ import java.util.function.Consumer;
  * 通知可能来自资料提供者线程；调用方经LocalizationBinding递交自己的状态域。 */
 public interface LocalizationSource {
     LocalizationSnapshot current();
+
     Subscription subscribe(Consumer<LocalizationSnapshot> listener);
-    interface Subscription extends AutoCloseable { @Override void close(); }
+
+    interface Subscription extends AutoCloseable {
+        @Override
+        void close();
+    }
 }

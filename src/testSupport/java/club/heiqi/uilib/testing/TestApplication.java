@@ -7,13 +7,18 @@ import java.util.Deque;
  * 这里只依赖Java8；真实字体/窗口等能力由测试选择组件并交付资源所有权。 */
 public abstract class TestApplication {
     @FunctionalInterface
-    public interface CheckedRunnable { void run() throws Exception; }
+    public interface CheckedRunnable {
+        void run() throws Exception;
+    }
+
     private final Deque<AutoCloseable> resources = new ArrayDeque<>();
     private String[] arguments;
     private int completed;
 
-    protected void setup() throws Exception { }
-    protected void teardown() throws Exception { }
+    protected void setup() throws Exception {}
+
+    protected void teardown() throws Exception {}
+
     protected abstract void runTests() throws Exception;
 
     /** 初始化中途失败也清理已交付资源；失败保持原Throwable身份，不被close覆盖。 */
@@ -26,8 +31,14 @@ public abstract class TestApplication {
             setup();
             runTests();
             require(completed > 0, "测试应用没有实际执行场景");
-        } catch (Throwable error) { failure = error; }
-        try { teardown(); } catch (Throwable error) { failure = combine(failure, error); }
+        } catch (Throwable error) {
+            failure = error;
+        }
+        try {
+            teardown();
+        } catch (Throwable error) {
+            failure = combine(failure, error);
+        }
         failure = release(0, failure);
         arguments = null;
         if (failure != null) {
@@ -48,15 +59,24 @@ public abstract class TestApplication {
         int depth = resources.size();
         long begin = System.nanoTime();
         Throwable failure = null;
-        try { action.run(); } catch (Throwable error) { failure = error; }
+        try {
+            action.run();
+        } catch (Throwable error) {
+            failure = error;
+        }
         failure = release(depth, failure);
         if (failure != null) {
             System.err.println("FAIL 场景 " + applicationName() + "/" + name + ": " + failure);
             rethrow(failure);
         }
         completed++;
-        System.out.println("PASS 场景 " + applicationName() + "/" + name
-            + " ms=" + (System.nanoTime() - begin) / 1000000d);
+        System.out.println(
+                "PASS 场景 "
+                        + applicationName()
+                        + "/"
+                        + name
+                        + " ms="
+                        + (System.nanoTime() - begin) / 1000000d);
     }
 
     protected final <T extends AutoCloseable> T own(T resource) {
@@ -65,7 +85,9 @@ public abstract class TestApplication {
         return resource;
     }
 
-    protected final void onClose(CheckedRunnable action) { own((AutoCloseable) action::run); }
+    protected final void onClose(CheckedRunnable action) {
+        own((AutoCloseable) action::run);
+    }
 
     protected static void require(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
@@ -82,7 +104,11 @@ public abstract class TestApplication {
 
     private Throwable release(int depth, Throwable failure) {
         while (resources.size() > depth) {
-            try { resources.pop().close(); } catch (Throwable error) { failure = combine(failure, error); }
+            try {
+                resources.pop().close();
+            } catch (Throwable error) {
+                failure = combine(failure, error);
+            }
         }
         return failure;
     }

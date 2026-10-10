@@ -10,12 +10,34 @@ public final class ItemImageFacts {
     public final boolean durabilityVisible;
     public final double durabilityRemaining;
     public final int durabilityColor;
-    public ItemImageFacts(String quantity, String tooltip, boolean durabilityVisible, double durabilityRemaining, int durabilityColor) {
-        this(quantity,TextContent.plain(tooltip),durabilityVisible,durabilityRemaining,durabilityColor);
+
+    public ItemImageFacts(
+            String quantity,
+            String tooltip,
+            boolean durabilityVisible,
+            double durabilityRemaining,
+            int durabilityColor) {
+        this(
+                quantity,
+                TextContent.plain(tooltip),
+                durabilityVisible,
+                durabilityRemaining,
+                durabilityColor);
     }
-    public ItemImageFacts(String quantity, TextContent tooltip, boolean durabilityVisible, double durabilityRemaining, int durabilityColor) {
-        this.quantity = Objects.requireNonNull(quantity, "quantity"); this.tooltip = Objects.requireNonNull(tooltip, "tooltip");
-        if (!Double.isFinite(durabilityRemaining) || durabilityRemaining < 0 || durabilityRemaining > 1) throw new IllegalArgumentException("无效耐久事实");
-        this.durabilityVisible = durabilityVisible; this.durabilityRemaining = durabilityRemaining; this.durabilityColor = durabilityColor;
+
+    public ItemImageFacts(
+            String quantity,
+            TextContent tooltip,
+            boolean durabilityVisible,
+            double durabilityRemaining,
+            int durabilityColor) {
+        this.quantity = Objects.requireNonNull(quantity, "quantity");
+        this.tooltip = Objects.requireNonNull(tooltip, "tooltip");
+        if (!Double.isFinite(durabilityRemaining)
+                || durabilityRemaining < 0
+                || durabilityRemaining > 1) throw new IllegalArgumentException("无效耐久事实");
+        this.durabilityVisible = durabilityVisible;
+        this.durabilityRemaining = durabilityRemaining;
+        this.durabilityColor = durabilityColor;
     }
 }

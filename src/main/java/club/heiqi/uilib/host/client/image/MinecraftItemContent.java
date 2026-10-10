@@ -8,7 +8,19 @@ import club.heiqi.uilib.ui.scene.image.ItemImageFacts;
 public final class MinecraftItemContent extends ImageContent {
     private final ItemStack snapshot;
     private final ItemImageFacts facts;
-    MinecraftItemContent(ItemStack stack, ItemImageFacts facts) { super(16, 16); snapshot = stack.copy(); this.facts = facts; }
-    ItemStack copy() { return snapshot.copy(); }
-    @Override public ItemImageFacts itemFacts() { return facts; }
+
+    MinecraftItemContent(ItemStack stack, ItemImageFacts facts) {
+        super(16, 16);
+        snapshot = stack.copy();
+        this.facts = facts;
+    }
+
+    ItemStack copy() {
+        return snapshot.copy();
+    }
+
+    @Override
+    public ItemImageFacts itemFacts() {
+        return facts;
+    }
 }

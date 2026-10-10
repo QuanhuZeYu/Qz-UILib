@@ -6,13 +6,36 @@ package club.heiqi.uilib.ui.scene.text.font.nativefont;
  * ink/raster使用同glyph与变体且禁止shape；墨迹Y向下，bitmap已premult且bearing/pixelScale为请求单位。
  */
 public interface FontFace extends AutoCloseable {
- FontMetrics metrics();
- int glyphIndex(int codePoint);
- ShapeRun shape(String text,int start,int end,ShapeDirection direction,String language,String script,boolean beginningOfText,boolean endOfText);
- default ShapeRun shape(String text,ShapeDirection direction,String language){return shape(text,0,text.length(),direction,language,null,true,true);}
- GlyphBitmap rasterize(int glyphId,GlyphRasterStyle style);
- default GlyphBitmap rasterize(int glyphId){return rasterize(glyphId,GlyphRasterStyle.NORMAL);}
- InkBounds glyphInkBounds(int glyphId,GlyphRasterStyle style);
- default InkBounds glyphInkBounds(int glyphId){return glyphInkBounds(glyphId,GlyphRasterStyle.NORMAL);}
- @Override void close();
+    FontMetrics metrics();
+
+    int glyphIndex(int codePoint);
+
+    ShapeRun shape(
+            String text,
+            int start,
+            int end,
+            ShapeDirection direction,
+            String language,
+            String script,
+            boolean beginningOfText,
+            boolean endOfText);
+
+    default ShapeRun shape(String text, ShapeDirection direction, String language) {
+        return shape(text, 0, text.length(), direction, language, null, true, true);
+    }
+
+    GlyphBitmap rasterize(int glyphId, GlyphRasterStyle style);
+
+    default GlyphBitmap rasterize(int glyphId) {
+        return rasterize(glyphId, GlyphRasterStyle.NORMAL);
+    }
+
+    InkBounds glyphInkBounds(int glyphId, GlyphRasterStyle style);
+
+    default InkBounds glyphInkBounds(int glyphId) {
+        return glyphInkBounds(glyphId, GlyphRasterStyle.NORMAL);
+    }
+
+    @Override
+    void close();
 }

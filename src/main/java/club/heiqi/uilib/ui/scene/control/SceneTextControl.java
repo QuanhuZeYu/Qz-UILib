@@ -25,79 +25,120 @@ final class SceneTextControl implements SceneControl {
     private TextLayout source, presented, tooltipSource, tooltipLayout;
     private int presentWidth, presentHeight, tooltipWidth;
 
-    private SceneTextControl(ReadableSignal<SceneTheme> theme, SceneTextPolicy policy, boolean button) {
-        this.theme = theme; this.policy = policy; this.button = button;
+    private SceneTextControl(
+            ReadableSignal<SceneTheme> theme, SceneTextPolicy policy, boolean button) {
+        this.theme = theme;
+        this.policy = policy;
+        this.button = button;
     }
 
-    static SceneNode create(ReadableSignal<String> text, ReadableSignal<SceneTheme> theme,
-            SceneTextPolicy policy, boolean button) {
-        Objects.requireNonNull(text, "text"); Objects.requireNonNull(theme, "theme");
+    static SceneNode create(
+            ReadableSignal<String> text,
+            ReadableSignal<SceneTheme> theme,
+            SceneTextPolicy policy,
+            boolean button) {
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(theme, "theme");
         Objects.requireNonNull(policy, "policy");
-        SceneNode node = new SceneNode().control(new SceneTextControl(theme, policy, button))
-            .textPolicy(policy == SceneTextPolicy.WRAP ? TextPolicy.NORMAL : TextPolicy.NO_WRAP);
+        SceneNode node =
+                new SceneNode()
+                        .control(new SceneTextControl(theme, policy, button))
+                        .textPolicy(
+                                policy == SceneTextPolicy.WRAP
+                                        ? TextPolicy.NORMAL
+                                        : TextPolicy.NO_WRAP);
         node.bind(NodeBinding.value(text, SceneNode::text));
-        node.bind(NodeBinding.value(theme, (target, value) -> {
-            target.style(value.textStyle);
-            if (button) target.padding(value.padding);
-        }));
+        node.bind(
+                NodeBinding.value(
+                        theme,
+                        (target, value) -> {
+                            target.style(value.textStyle);
+                            if (button) target.padding(value.padding);
+                        }));
         return node;
     }
 
-    @Override public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer measurer) {
-        TextLayout full = measurer.layout(node.text(), node.style(), constraints.availableWidth, node.textPolicy());
+    @Override
+    public MeasuredSize measure(
+            SceneNode node, Constraints constraints, SceneTextMeasurer measurer) {
+        TextLayout full =
+                measurer.layout(
+                        node.text(), node.style(), constraints.availableWidth, node.textPolicy());
         float width = 0, height = 0;
         for (TextLayout.Line line : full.lines()) {
             width = Math.max(width, SceneTextPresentation.right(line));
             height = Math.max(height, SceneTextPresentation.bottom(line));
             if (policy == SceneTextPolicy.ELLIPSIS_SINGLE_LINE) break;
         }
-        return new MeasuredSize((int)Math.ceil(width), (int)Math.ceil(height));
+        return new MeasuredSize((int) Math.ceil(width), (int) Math.ceil(height));
     }
 
-    @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
+    @Override
+    public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
         return new ChildPlacements(Collections.emptyList());
     }
 
-    @Override public TextLayout presentText(SceneNode node, TextLayout full, int width, int height,
-            SceneTextMeasurer measurer) {
+    @Override
+    public TextLayout presentText(
+            SceneNode node, TextLayout full, int width, int height, SceneTextMeasurer measurer) {
         if (source != full || presentWidth != width || presentHeight != height) {
-            source = full; presentWidth = width; presentHeight = height;
+            source = full;
+            presentWidth = width;
+            presentHeight = height;
             presented = SceneTextPresentation.fit(full, width, height, policy, measurer);
         }
         return presented;
     }
 
-    @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
+    @Override
+    public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
         SceneGeometryView.Entry entry = geometry.get(node);
         if (entry == null) return;
         SceneTheme style = theme.get();
         SceneRuntime runtime = node.runtime();
         boolean enabled = true;
-        for (SceneNode cursor = node; cursor != null; cursor = cursor.parent()) enabled &= cursor.enabled();
-        boolean focused = enabled && runtime != null && runtime.focusRouter().focused().get() == node;
+        for (SceneNode cursor = node; cursor != null; cursor = cursor.parent())
+            enabled &= cursor.enabled();
+        boolean focused =
+                enabled && runtime != null && runtime.focusRouter().focused().get() == node;
         if (button) {
-            boolean hovered = enabled && runtime != null && runtime.pointerRouter().hovered(geometry) == node;
+            boolean hovered =
+                    enabled && runtime != null && runtime.pointerRouter().hovered(geometry) == node;
             boolean pressed = enabled && runtime != null && runtime.pointerRouter().pressed(node);
-            int color = !enabled ? style.disabled : pressed ? style.pressed : hovered ? style.hover : style.button;
+            int color =
+                    !enabled
+                            ? style.disabled
+                            : pressed ? style.pressed : hovered ? style.hover : style.button;
             target.add(PaintCommand.rect(entry.box, entry.clip, color));
             if (focused) border(target, entry.box, entry.clip, style.focus);
         }
         LayoutBox inner = inner(entry.box, node.padding());
-        LayoutBox clip = policy == SceneTextPolicy.OVERFLOW ? entry.clip
-            : entry.clip == null ? inner : entry.clip.intersect(inner);
+        LayoutBox clip =
+                policy == SceneTextPolicy.OVERFLOW
+                        ? entry.clip
+                        : entry.clip == null ? inner : entry.clip.intersect(inner);
         TextLayout paint = entry.text;
         if (!enabled) paint = paint.withStyle(paint.style.withColor(style.disabledText));
         target.add(PaintCommand.text(inner, clip, paint));
     }
 
-    @Override public void paintOverlay(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target,
+    @Override
+    public void paintOverlay(
+            SceneNode node,
+            SceneGeometryView geometry,
+            PaintPlanBuilder target,
             SceneTextMeasurer measurer) {
         // 即时被动提示：只在正文省略时显示，不注册输入、不改变焦点或正文布局。
         SceneRuntime runtime = node.runtime();
         SceneGeometryView.Entry entry = geometry.get(node);
-        if (runtime == null || entry == null || !runtime.interactive(node)
-                || source == null || presented == source || entry.text != presented) return;
-        if (runtime.pointerRouter().hovered(geometry) != node && runtime.focusRouter().focused().get() != node) return;
+        if (runtime == null
+                || entry == null
+                || !runtime.interactive(node)
+                || source == null
+                || presented == source
+                || entry.text != presented) return;
+        if (runtime.pointerRouter().hovered(geometry) != node
+                && runtime.focusRouter().focused().get() != node) return;
         LayoutBox viewport = geometry.viewport();
         if (viewport.width == 0 || viewport.height == 0) return;
         LayoutBox visible = entry.box.intersect(viewport);
@@ -107,42 +148,72 @@ final class SceneTextControl implements SceneControl {
         int padding = Math.min(style.padding, Math.min(viewport.width, viewport.height) / 2);
         int width = Math.max(0, viewport.width - padding * 2);
         if (tooltipSource != source || tooltipWidth != width) {
-            tooltipSource = source; tooltipWidth = width;
-            String fullText = source.originalText == null ? source.logicalText : source.originalText;
-            tooltipLayout = measurer.layout(fullText, source.style, width,
-                new TextPolicy(TextPolicy.Direction.AUTO, TextPolicy.Wrap.EMERGENCY, "und", 0, 0));
+            tooltipSource = source;
+            tooltipWidth = width;
+            String fullText =
+                    source.originalText == null ? source.logicalText : source.originalText;
+            tooltipLayout =
+                    measurer.layout(
+                            fullText,
+                            source.style,
+                            width,
+                            new TextPolicy(
+                                    TextPolicy.Direction.AUTO,
+                                    TextPolicy.Wrap.EMERGENCY,
+                                    "und",
+                                    0,
+                                    0));
         }
         float textWidth = 0, textHeight = 0;
         for (TextLayout.Line line : tooltipLayout.lines()) {
             textWidth = Math.max(textWidth, SceneTextPresentation.right(line));
             textHeight = Math.max(textHeight, SceneTextPresentation.bottom(line));
         }
-        int w = (int)Math.min(viewport.width, Math.ceil(textWidth) + padding * 2L);
-        int h = (int)Math.min(viewport.height, Math.ceil(textHeight) + padding * 2L);
+        int w = (int) Math.min(viewport.width, Math.ceil(textWidth) + padding * 2L);
+        int h = (int) Math.min(viewport.height, Math.ceil(textHeight) + padding * 2L);
         int x = clamp(entry.box.x, viewport.x, viewport.x + viewport.width - w);
-        long below = (long)entry.box.y + entry.box.height + style.gap;
-        long desired = below + h <= (long)viewport.y + viewport.height ? below : (long)entry.box.y - style.gap - h;
-        int y = (int)Math.max(viewport.y, Math.min((long)viewport.y + viewport.height - h, desired));
+        long below = (long) entry.box.y + entry.box.height + style.gap;
+        long desired =
+                below + h <= (long) viewport.y + viewport.height
+                        ? below
+                        : (long) entry.box.y - style.gap - h;
+        int y =
+                (int)
+                        Math.max(
+                                viewport.y,
+                                Math.min((long) viewport.y + viewport.height - h, desired));
         LayoutBox box = new LayoutBox(x, y, w, h);
         target.add(PaintCommand.rect(box, viewport, style.tooltip));
         LayoutBox inner = inner(box, padding);
         // 完整源文保留，极长内容只裁剪到viewport；不声称任意文案都能放入单屏。
-        target.add(PaintCommand.text(inner, inner.intersect(viewport),
-            tooltipLayout.withStyle(tooltipLayout.style.withColor(style.tooltipText))));
+        target.add(
+                PaintCommand.text(
+                        inner,
+                        inner.intersect(viewport),
+                        tooltipLayout.withStyle(tooltipLayout.style.withColor(style.tooltipText))));
     }
 
     private static LayoutBox inner(LayoutBox box, int padding) {
-        return new LayoutBox(box.x + padding, box.y + padding,
-            Math.max(0, box.width - padding * 2), Math.max(0, box.height - padding * 2));
+        return new LayoutBox(
+                box.x + padding,
+                box.y + padding,
+                Math.max(0, box.width - padding * 2),
+                Math.max(0, box.height - padding * 2));
     }
 
-    private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
 
     private static void border(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color) {
         if (box.width == 0 || box.height == 0) return;
         target.add(PaintCommand.rect(new LayoutBox(box.x, box.y, box.width, 1), clip, color));
-        target.add(PaintCommand.rect(new LayoutBox(box.x, box.y + box.height - 1, box.width, 1), clip, color));
+        target.add(
+                PaintCommand.rect(
+                        new LayoutBox(box.x, box.y + box.height - 1, box.width, 1), clip, color));
         target.add(PaintCommand.rect(new LayoutBox(box.x, box.y, 1, box.height), clip, color));
-        target.add(PaintCommand.rect(new LayoutBox(box.x + box.width - 1, box.y, 1, box.height), clip, color));
+        target.add(
+                PaintCommand.rect(
+                        new LayoutBox(box.x + box.width - 1, box.y, 1, box.height), clip, color));
     }
 }

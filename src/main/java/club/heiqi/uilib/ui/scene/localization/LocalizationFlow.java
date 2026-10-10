@@ -18,37 +18,60 @@ public final class LocalizationFlow implements LocalizationSource, AutoCloseable
     private final LocalizationResource[] resources;
     private final MutableLocalizationSource source;
 
-    public LocalizationFlow(String language, Locale formatLocale, LocalizationResource... resources) throws IOException {
+    public LocalizationFlow(String language, Locale formatLocale, LocalizationResource... resources)
+            throws IOException {
         this.formatLocale = Objects.requireNonNull(formatLocale, "formatLocale");
         this.resources = Objects.requireNonNull(resources, "resources").clone();
-        for (LocalizationResource resource : this.resources) Objects.requireNonNull(resource, "resource");
+        for (LocalizationResource resource : this.resources)
+            Objects.requireNonNull(resource, "resource");
         source = new MutableLocalizationSource(load(language));
     }
-    @Override public synchronized LocalizationSnapshot current() { return source.current(); }
-    @Override public synchronized Subscription subscribe(Consumer<LocalizationSnapshot> listener) { return source.subscribe(listener); }
+
+    @Override
+    public synchronized LocalizationSnapshot current() {
+        return source.current();
+    }
+
+    @Override
+    public synchronized Subscription subscribe(Consumer<LocalizationSnapshot> listener) {
+        return source.subscribe(listener);
+    }
+
     public synchronized void select(String language) throws IOException {
         source.current(); // 先拒绝关闭后的操作，不能在已关闭流上重新打开资料。
         source.publish(load(language));
     }
+
     public synchronized void reload() throws IOException {
         // current 是唯一语言事实；通知中的重入 select 不会被外层平行字段覆盖回旧语言。
         select(source.current().language());
     }
+
     private LocalizationSnapshot load(String language) throws IOException {
         LocalizationResource.requireLanguage(language);
         Map<String, String> translations = new HashMap<>();
         for (int index = 0; index < resources.length; index++) {
             LocalizationResource resource = resources[index];
             Properties properties = new Properties();
-            try (Reader reader = new InputStreamReader(Objects.requireNonNull(resource.open(language), "resource input"), StandardCharsets.UTF_8)) {
+            try (Reader reader =
+                    new InputStreamReader(
+                            Objects.requireNonNull(resource.open(language), "resource input"),
+                            StandardCharsets.UTF_8)) {
                 properties.load(reader);
                 for (String key : properties.stringPropertyNames())
-                    translations.put(LocalizationSnapshot.requireKey(key), properties.getProperty(key));
+                    translations.put(
+                            LocalizationSnapshot.requireKey(key), properties.getProperty(key));
             } catch (IOException | IllegalArgumentException failure) {
-                throw new IOException("语言资料加载失败: " + language + ".properties，resource[" + index + "]=" + resource, failure);
+                throw new IOException(
+                        "语言资料加载失败: " + language + ".properties，resource[" + index + "]=" + resource,
+                        failure);
             }
         }
         return new LocalizationSnapshot(language, translations, formatLocale);
     }
-    @Override public synchronized void close() { source.close(); }
+
+    @Override
+    public synchronized void close() {
+        source.close();
+    }
 }

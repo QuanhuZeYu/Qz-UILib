@@ -15,7 +15,10 @@ import java.util.Objects;
  * 不持有控件、宿主或业务权威值；焦点切换由调用方调用 breakHistoryGroup。
  */
 public final class SceneEditState {
-    public enum Mode { SINGLE_LINE, MULTI_LINE }
+    public enum Mode {
+        SINGLE_LINE,
+        MULTI_LINE
+    }
 
     public static final class Snapshot {
         public final String text, composition, error;
@@ -23,8 +26,15 @@ public final class SceneEditState {
         public final boolean active, composing;
         public final long revision;
 
-        private Snapshot(String text, String composition, String error, int anchor, int caret,
-                         boolean active, boolean composing, long revision) {
+        private Snapshot(
+                String text,
+                String composition,
+                String error,
+                int anchor,
+                int caret,
+                boolean active,
+                boolean composing,
+                long revision) {
             this.text = text;
             this.composition = composition;
             this.error = error;
@@ -36,12 +46,18 @@ public final class SceneEditState {
         }
     }
 
-    public enum Status { PENDING, ACCEPTED, REJECTED }
+    public enum Status {
+        PENDING,
+        ACCEPTED,
+        REJECTED
+    }
 
     public static final class Result {
         public final Status status;
+
         /** 待定/拒绝时是请求文本，接受时是规范化文本。 */
         public final String text;
+
         /** 仅拒绝时有原因，其余为 null。 */
         public final String reason;
 
@@ -72,27 +88,48 @@ public final class SceneEditState {
             this.view = result::get;
         }
 
-        public ReadableSignal<Result> status() { return view; }
+        public ReadableSignal<Result> status() {
+            return view;
+        }
     }
 
     // 128 是局部历史容量，影响可逆步数，不影响业务提交合同。
     private static final int HISTORY_LIMIT = 128;
-    private enum Kind { NONE, INPUT, BACKWARD, FORWARD }
+
+    private enum Kind {
+        NONE,
+        INPUT,
+        BACKWARD,
+        FORWARD
+    }
+
     private static final class Position {
         final String text;
         final int anchor, caret;
+
         Position(String text, int anchor, int caret) {
-            this.text = text; this.anchor = anchor; this.caret = caret;
+            this.text = text;
+            this.anchor = anchor;
+            this.caret = caret;
         }
-        Position(Snapshot snapshot) { this(snapshot.text, snapshot.anchor, snapshot.caret); }
+
+        Position(Snapshot snapshot) {
+            this(snapshot.text, snapshot.anchor, snapshot.caret);
+        }
+
         boolean matches(Position other) {
             return text.equals(other.text) && anchor == other.anchor && caret == other.caret;
         }
     }
+
     private static final class Change {
         final Position before;
         Position after;
-        Change(Position before, Position after) { this.before = before; this.after = after; }
+
+        Change(Position before, Position after) {
+            this.before = before;
+            this.after = after;
+        }
     }
 
     private final ReactiveDomain domain;
@@ -113,11 +150,12 @@ public final class SceneEditState {
     }
 
     public SceneEditState(ReactiveDomain domain, String baseline, Mode mode) {
-        this(domain,baseline,mode,UnicodeGraphemes.defaults());
+        this(domain, baseline, mode, UnicodeGraphemes.defaults());
     }
 
-    public SceneEditState(ReactiveDomain domain,String baseline,Mode mode,UnicodeGraphemes.Source rules) {
-        this.unicodeRules=Objects.requireNonNull(rules,"rules");
+    public SceneEditState(
+            ReactiveDomain domain, String baseline, Mode mode, UnicodeGraphemes.Source rules) {
+        this.unicodeRules = Objects.requireNonNull(rules, "rules");
         this.domain = Objects.requireNonNull(domain, "domain");
         this.mode = Objects.requireNonNull(mode, "mode");
         domain.checkWrite();
@@ -129,36 +167,57 @@ public final class SceneEditState {
         textView = () -> value.get().text;
     }
 
-    public ReactiveDomain domain() { return domain; }
-    public Mode mode() { return mode; }
-    public ReadableSignal<Snapshot> snapshot() { return snapshotView; }
-    public ReadableSignal<String> text() { return textView; }
+    public ReactiveDomain domain() {
+        return domain;
+    }
+
+    public Mode mode() {
+        return mode;
+    }
+
+    public ReadableSignal<Snapshot> snapshot() {
+        return snapshotView;
+    }
+
+    public ReadableSignal<String> text() {
+        return textView;
+    }
 
     /** 指针文字簇位置由控件排版提供；越界夹取，簇内位置向左对齐。 */
     public void select(int anchor, int caret) {
         domain.checkWrite();
-        select(anchor,caret,profile());
+        select(anchor, caret, profile());
     }
 
-    private void select(int anchor,int caret,UnicodeGraphemes.Profile rules) {
+    private void select(int anchor, int caret, UnicodeGraphemes.Profile rules) {
         groupKind = Kind.NONE;
         Snapshot s = value.get();
         int[] boundaries = rules.boundaries(s.text);
         int a = floor(boundaries, anchor), c = floor(boundaries, caret);
         if (a != s.anchor || c != s.caret)
-            value.set(new Snapshot(s.text, s.composition, s.error, a, c, s.active, s.composing, s.revision));
+            value.set(
+                    new Snapshot(
+                            s.text,
+                            s.composition,
+                            s.error,
+                            a,
+                            c,
+                            s.active,
+                            s.composing,
+                            s.revision));
     }
 
     public void move(int direction, boolean extend) {
         domain.checkWrite();
-        if (direction != -1 && direction != 1) throw new IllegalArgumentException("direction 必须是 -1 或 1");
-        UnicodeGraphemes.Profile rules=profile();
-        Snapshot s = aligned(value.get(),rules);
+        if (direction != -1 && direction != 1)
+            throw new IllegalArgumentException("direction 必须是 -1 或 1");
+        UnicodeGraphemes.Profile rules = profile();
+        Snapshot s = aligned(value.get(), rules);
         int target;
         if (!extend && s.anchor != s.caret)
             target = direction < 0 ? Math.min(s.anchor, s.caret) : Math.max(s.anchor, s.caret);
-        else target = adjacent(s.text, s.caret, direction,rules);
-        select(extend ? s.anchor : target, target,rules);
+        else target = adjacent(s.text, s.caret, direction, rules);
+        select(extend ? s.anchor : target, target, rules);
     }
 
     public void home(boolean extend) {
@@ -175,41 +234,59 @@ public final class SceneEditState {
     }
 
     /** 普通连续输入；替换已有选区自成一步。 */
-    public void replaceSelection(String text) { replaceSelection(text, true); }
+    public void replaceSelection(String text) {
+        replaceSelection(text, true);
+    }
 
     /** group=false 用于粘贴、剪切、模板插入及一次 IME 提交，各自自成一步。 */
     public void replaceSelection(String text, boolean group) {
         domain.checkWrite();
         String insertion = normalize(text);
-        UnicodeGraphemes.Profile rules=profile();
-        Snapshot s = aligned(value.get(),rules);
+        UnicodeGraphemes.Profile rules = profile();
+        Snapshot s = aligned(value.get(), rules);
         if (!group) groupKind = Kind.NONE;
         int start = Math.min(s.anchor, s.caret), end = Math.max(s.anchor, s.caret);
-        replace(s, start, end, insertion, group && start == end ? Kind.INPUT : Kind.NONE,rules);
+        replace(s, start, end, insertion, group && start == end ? Kind.INPUT : Kind.NONE, rules);
         if (!group) groupKind = Kind.NONE;
     }
 
-    public void deleteBackward() { delete(-1); }
-    public void deleteForward() { delete(1); }
+    public void deleteBackward() {
+        delete(-1);
+    }
+
+    public void deleteForward() {
+        delete(1);
+    }
 
     private void delete(int direction) {
         domain.checkWrite();
-        UnicodeGraphemes.Profile rules=profile();
-        Snapshot s = aligned(value.get(),rules);
+        UnicodeGraphemes.Profile rules = profile();
+        Snapshot s = aligned(value.get(), rules);
         int start = Math.min(s.anchor, s.caret), end = Math.max(s.anchor, s.caret);
         Kind kind = Kind.NONE;
         if (start == end) {
-            if (direction < 0) { start = adjacent(s.text, start, -1,rules); kind = Kind.BACKWARD; }
-            else { end = adjacent(s.text, end, 1,rules); kind = Kind.FORWARD; }
+            if (direction < 0) {
+                start = adjacent(s.text, start, -1, rules);
+                kind = Kind.BACKWARD;
+            } else {
+                end = adjacent(s.text, end, 1, rules);
+                kind = Kind.FORWARD;
+            }
         }
-        replace(s, start, end, "", kind,rules);
+        replace(s, start, end, "", kind, rules);
     }
 
-    private void replace(Snapshot s, int start, int end, String insertion, Kind kind,UnicodeGraphemes.Profile rules) {
+    private void replace(
+            Snapshot s,
+            int start,
+            int end,
+            String insertion,
+            Kind kind,
+            UnicodeGraphemes.Profile rules) {
         String next = s.text.substring(0, start) + insertion + s.text.substring(end);
         if (next.equals(s.text)) {
             if (kind == Kind.NONE || kind != groupKind) groupKind = Kind.NONE;
-            if(s!=value.get())value.set(s);
+            if (s != value.get()) value.set(s);
             return;
         }
         // 插入组合符或 ZWJ 后，插入尾部可能与后文合簇，光标向右对齐完整新簇。
@@ -221,13 +298,18 @@ public final class SceneEditState {
 
     private void record(Position before, Position after, Kind kind) {
         while (history.size() > historyPosition) history.remove(history.size() - 1);
-        if (kind != Kind.NONE && groupKind == kind && historyPosition > 0
+        if (kind != Kind.NONE
+                && groupKind == kind
+                && historyPosition > 0
                 && history.get(historyPosition - 1).after.matches(before)) {
             history.get(historyPosition - 1).after = after;
         } else {
             history.add(new Change(before, after));
             historyPosition++;
-            if (history.size() > HISTORY_LIMIT) { history.remove(0); historyPosition--; }
+            if (history.size() > HISTORY_LIMIT) {
+                history.remove(0);
+                historyPosition--;
+            }
         }
         groupKind = kind;
     }
@@ -249,23 +331,43 @@ public final class SceneEditState {
     private void restore(Position position) {
         Snapshot s = value.get();
         if (!s.active) generation++;
-        int[] bounds=profile().boundaries(position.text);
-        value.set(new Snapshot(position.text, "", null, floor(bounds,position.anchor),floor(bounds,position.caret),
-                true, false, s.revision + 1));
+        int[] bounds = profile().boundaries(position.text);
+        value.set(
+                new Snapshot(
+                        position.text,
+                        "",
+                        null,
+                        floor(bounds, position.anchor),
+                        floor(bounds, position.caret),
+                        true,
+                        false,
+                        s.revision + 1));
     }
 
-    public void breakHistoryGroup() { domain.checkWrite(); groupKind = Kind.NONE; refreshUnicodeRules(); }
+    public void breakHistoryGroup() {
+        domain.checkWrite();
+        groupKind = Kind.NONE;
+        refreshUnicodeRules();
+    }
 
     /** 取消组字只清除 preedit，不取消草稿会话；提交文本使用 replaceSelection(text,false)。 */
     public void composition(String text, boolean composing) {
         domain.checkWrite();
         String preedit = composing ? normalize(text) : "";
-        Snapshot s = aligned(value.get(),profile());
+        Snapshot s = aligned(value.get(), profile());
         groupKind = Kind.NONE;
         if (composing && !s.composing) generation++; // 新组字也不能被此前请求的完成结果清掉。
-        if (!preedit.equals(s.composition) || composing != s.composing || s!=value.get())
-            value.set(new Snapshot(s.text, preedit, s.error, s.anchor, s.caret,
-                    s.active || composing, composing, s.revision));
+        if (!preedit.equals(s.composition) || composing != s.composing || s != value.get())
+            value.set(
+                    new Snapshot(
+                            s.text,
+                            preedit,
+                            s.error,
+                            s.anchor,
+                            s.caret,
+                            s.active || composing,
+                            composing,
+                            s.revision));
     }
 
     public void reset(String text) {
@@ -273,14 +375,19 @@ public final class SceneEditState {
         resetBaseline(normalize(text));
     }
 
-    public void cancel() { domain.checkWrite(); resetBaseline(baseline); }
+    public void cancel() {
+        domain.checkWrite();
+        resetBaseline(baseline);
+    }
 
     private void resetBaseline(String text) {
         Snapshot s = value.get();
         baseline = text;
         generation++;
         latest = null;
-        history.clear(); historyPosition = 0; groupKind = Kind.NONE;
+        history.clear();
+        historyPosition = 0;
+        groupKind = Kind.NONE;
         int end = text.length();
         value.set(new Snapshot(text, "", null, end, end, false, false, s.revision + 1));
     }
@@ -300,7 +407,16 @@ public final class SceneEditState {
         Submission submission = new Submission(this, s, complete);
         latest = submission;
         if (s.error != null)
-            value.set(new Snapshot(s.text, s.composition, null, s.anchor, s.caret, s.active, s.composing, s.revision));
+            value.set(
+                    new Snapshot(
+                            s.text,
+                            s.composition,
+                            null,
+                            s.anchor,
+                            s.caret,
+                            s.active,
+                            s.composing,
+                            s.revision));
         return submission;
     }
 
@@ -322,8 +438,16 @@ public final class SceneEditState {
             int caret = floor(bounds, s.caret);
             if (changed) normalizeHistory(s, new Position(next, anchor, caret));
             baseline = next;
-            value.set(new Snapshot(next, submission.complete ? "" : s.composition, null, anchor, caret,
-                    !submission.complete, !submission.complete && s.composing, s.revision + (changed ? 1 : 0)));
+            value.set(
+                    new Snapshot(
+                            next,
+                            submission.complete ? "" : s.composition,
+                            null,
+                            anchor,
+                            caret,
+                            !submission.complete,
+                            !submission.complete && s.composing,
+                            s.revision + (changed ? 1 : 0)));
         }
         submission.result.set(new Result(Status.ACCEPTED, next, null));
         return current;
@@ -331,12 +455,15 @@ public final class SceneEditState {
 
     private void normalizeHistory(Snapshot s, Position after) {
         groupKind = Kind.NONE;
-        if (historyPosition == history.size() && historyPosition > 0
+        if (historyPosition == history.size()
+                && historyPosition > 0
                 && history.get(historyPosition - 1).after.text.equals(s.text)) {
             Change last = history.get(historyPosition - 1);
             last.after = after;
             // 例如输入多余空格又被规范化删掉，不留下只会再次触发同一修正的空步骤。
-            if (last.before.text.equals(after.text)) { history.remove(--historyPosition); }
+            if (last.before.text.equals(after.text)) {
+                history.remove(--historyPosition);
+            }
         } else record(new Position(s), after, Kind.NONE);
     }
 
@@ -350,7 +477,16 @@ public final class SceneEditState {
         // 先占用一次性完成权；Snapshot 失效通知可同步重入，不能重复改写业务结果。
         submission.resolved = true;
         if (current)
-            value.set(new Snapshot(s.text, s.composition, reason, s.anchor, s.caret, s.active, s.composing, s.revision));
+            value.set(
+                    new Snapshot(
+                            s.text,
+                            s.composition,
+                            reason,
+                            s.anchor,
+                            s.caret,
+                            s.active,
+                            s.composing,
+                            s.revision));
         submission.result.set(new Result(Status.REJECTED, submission.text, reason));
         return current;
     }
@@ -361,8 +497,10 @@ public final class SceneEditState {
     }
 
     private boolean isCurrent(Submission submission, Snapshot s) {
-        return latest == submission && submission.revision == s.revision
-                && submission.generation == generation && submission.text.equals(s.text);
+        return latest == submission
+                && submission.revision == s.revision
+                && submission.generation == generation
+                && submission.text.equals(s.text);
     }
 
     /** 所有文本入口共用固定模式的换行规则；多行保留末尾 LF。 */
@@ -375,25 +513,30 @@ public final class SceneEditState {
 
     /** 每次字素操作取得一个不可变规则快照；不依赖实际字体与整形簇。 */
     private UnicodeGraphemes.Profile observedProfile;
+
     private UnicodeGraphemes.Profile profile() {
-        UnicodeGraphemes.Profile rules=Objects.requireNonNull(unicodeRules.snapshot(),"profile");
-        if(rules!=observedProfile){observedProfile=rules;groupKind=Kind.NONE;}
+        UnicodeGraphemes.Profile rules = Objects.requireNonNull(unicodeRules.snapshot(), "profile");
+        if (rules != observedProfile) {
+            observedProfile = rules;
+            groupKind = Kind.NONE;
+        }
         return rules;
     }
 
     /** 规则换代只使位置归位，不修改草稿或清空历史；调用方与字体刷新在同一域协调。 */
     public void refreshUnicodeRules() {
         domain.checkWrite();
-        Snapshot current=value.get(),next=aligned(current,profile());
-        if(next!=current)value.set(next);
+        Snapshot current = value.get(), next = aligned(current, profile());
+        if (next != current) value.set(next);
     }
 
-    private Snapshot aligned(Snapshot s,UnicodeGraphemes.Profile rules) {
-        int[] bounds=rules.boundaries(s.text);
-        int anchor=floor(bounds,s.anchor),caret=floor(bounds,s.caret);
-        if(anchor==s.anchor&&caret==s.caret)return s;
-        groupKind=Kind.NONE;
-        return new Snapshot(s.text,s.composition,s.error,anchor,caret,s.active,s.composing,s.revision);
+    private Snapshot aligned(Snapshot s, UnicodeGraphemes.Profile rules) {
+        int[] bounds = rules.boundaries(s.text);
+        int anchor = floor(bounds, s.anchor), caret = floor(bounds, s.caret);
+        if (anchor == s.anchor && caret == s.caret) return s;
+        groupKind = Kind.NONE;
+        return new Snapshot(
+                s.text, s.composition, s.error, anchor, caret, s.active, s.composing, s.revision);
     }
 
     private static int floor(int[] boundaries, int position) {
@@ -408,9 +551,10 @@ public final class SceneEditState {
         return found >= 0 ? p : boundaries[-found - 1];
     }
 
-    private static int adjacent(String text, int position, int direction,UnicodeGraphemes.Profile rules) {
+    private static int adjacent(
+            String text, int position, int direction, UnicodeGraphemes.Profile rules) {
         int[] bounds = rules.boundaries(text);
-        int index = Arrays.binarySearch(bounds, floor(bounds,position));
+        int index = Arrays.binarySearch(bounds, floor(bounds, position));
         return bounds[Math.max(0, Math.min(index + direction, bounds.length - 1))];
     }
 }

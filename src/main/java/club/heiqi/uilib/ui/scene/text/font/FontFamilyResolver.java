@@ -21,15 +21,24 @@ public final class FontFamilyResolver {
     private static final class Entry {
         final Path path;
         final int face;
-        Entry(Path path, int face) { this.path = path; this.face = face; }
+
+        Entry(Path path, int face) {
+            this.path = path;
+            this.face = face;
+        }
     }
+
     private final Map<String, List<Entry>> families = new LinkedHashMap<String, List<Entry>>();
     private final Map<Path, FontMetadata> seeds = new HashMap<Path, FontMetadata>();
     private final Map<Path, List<FontSource>> loaded = new HashMap<Path, List<FontSource>>();
     private final long revision;
 
-    public FontFamilyResolver(List<Path> configured, List<Path> availableDirectories, long revision,
-            Consumer<String> diagnostics) throws IOException {
+    public FontFamilyResolver(
+            List<Path> configured,
+            List<Path> availableDirectories,
+            long revision,
+            Consumer<String> diagnostics)
+            throws IOException {
         this.revision = revision;
         LinkedHashSet<Path> files = new LinkedHashSet<Path>();
         LinkedHashSet<Path> directories = new LinkedHashSet<Path>();
@@ -39,12 +48,15 @@ public final class FontFamilyResolver {
             if (absolute.getParent() != null) directories.add(absolute.getParent());
         }
         for (Path p : availableDirectories) directories.add(p.toAbsolutePath().normalize());
-        for (Path directory : directories) if (Files.isDirectory(directory)) {
-            try (java.util.stream.Stream<Path> entries = Files.list(directory)) {
-                entries.filter(Files::isRegularFile).filter(FontFamilyResolver::fontFile).sorted()
-                    .forEach(p -> files.add(p.toAbsolutePath().normalize()));
+        for (Path directory : directories)
+            if (Files.isDirectory(directory)) {
+                try (java.util.stream.Stream<Path> entries = Files.list(directory)) {
+                    entries.filter(Files::isRegularFile)
+                            .filter(FontFamilyResolver::fontFile)
+                            .sorted()
+                            .forEach(p -> files.add(p.toAbsolutePath().normalize()));
+                }
             }
-        }
         Set<Path> required = new HashSet<Path>();
         for (Path p : configured) required.add(p.toAbsolutePath().normalize());
         for (Path path : files) {
@@ -52,7 +64,8 @@ public final class FontFamilyResolver {
                 ByteBuffer bytes = ByteBuffer.wrap(Files.readAllBytes(path));
                 for (int face = 0, n = FontMetadata.faceCount(bytes); face < n; face++) {
                     FontMetadata metadata = FontMetadata.inspect(bytes, face);
-                    families.computeIfAbsent(metadata.family, key -> new ArrayList<Entry>()).add(new Entry(path, face));
+                    families.computeIfAbsent(metadata.family, key -> new ArrayList<Entry>())
+                            .add(new Entry(path, face));
                     if (face == 0) seeds.put(path, metadata);
                 }
             } catch (IOException | RuntimeException error) {
@@ -64,7 +77,10 @@ public final class FontFamilyResolver {
 
     private static boolean fontFile(Path path) {
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-        return name.endsWith(".ttf") || name.endsWith(".ttc") || name.endsWith(".otf") || name.endsWith(".otc");
+        return name.endsWith(".ttf")
+                || name.endsWith(".ttc")
+                || name.endsWith(".otf")
+                || name.endsWith(".otc");
     }
 
     /** 配置文件声明face0所属字族；显式FontSource.file仍只表示指定face。 */
@@ -76,8 +92,14 @@ public final class FontFamilyResolver {
         for (Entry entry : families.get(metadata.family)) {
             List<FontSource> faces = loaded.get(entry.path);
             if (faces == null) {
-                FontSource source = FontSource.file(entry.path.toString(), revision, entry.path, 0, false,
-                    Collections.<String>emptySet());
+                FontSource source =
+                        FontSource.file(
+                                entry.path.toString(),
+                                revision,
+                                entry.path,
+                                0,
+                                false,
+                                Collections.<String>emptySet());
                 faces = source.collectionFaces();
                 loaded.put(entry.path, faces);
             }

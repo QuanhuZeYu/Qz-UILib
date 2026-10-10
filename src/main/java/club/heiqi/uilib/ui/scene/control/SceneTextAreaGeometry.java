@@ -8,24 +8,45 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 /** 多行的纯编辑几何；坐标只来自生产 Line/Cluster，方向使用同段落、同视觉行的 ICU 级别。 */
 final class SceneTextAreaGeometry {
     final TextLayout text;
-    SceneTextAreaGeometry(TextLayout text, TextPolicy policy) {this.text=text;}
+
+    SceneTextAreaGeometry(TextLayout text, TextPolicy policy) {
+        this.text = text;
+    }
 
     /** 相同定位可由无缓存/带装饰的测量器返回新对象；对象身份变化本身不是重新排版。 */
     boolean sameGeometry(TextLayout other) {
         if (text == other) return true;
-        if (text.generation != other.generation || text.width != other.width || text.height != other.height
-                || !text.logicalText.equals(other.logicalText) || !java.util.Objects.equals(text.originalText, other.originalText)
-                || !text.style.sameFont(other.style) || text.lines().size() != other.lines().size()) return false;
+        if (text.generation != other.generation
+                || text.width != other.width
+                || text.height != other.height
+                || !text.logicalText.equals(other.logicalText)
+                || !java.util.Objects.equals(text.originalText, other.originalText)
+                || !text.style.sameFont(other.style)
+                || text.lines().size() != other.lines().size()) return false;
         for (int i = 0; i < text.lines().size(); i++) {
             TextLayout.Line a = text.lines().get(i), b = other.lines().get(i);
-            if (a.x != b.x || a.y != b.y || a.logicalStart != b.logicalStart || a.logicalEnd != b.logicalEnd
-                    || a.sourceStart != b.sourceStart || a.sourceEnd != b.sourceEnd || a.advance != b.advance
-                    || a.baseline != b.baseline || a.ascent != b.ascent || a.descent != b.descent || a.lineHeight != b.lineHeight
-                    || a.paragraphRtl!=b.paragraphRtl || a.clusters().size() != b.clusters().size()) return false;
+            if (a.x != b.x
+                    || a.y != b.y
+                    || a.logicalStart != b.logicalStart
+                    || a.logicalEnd != b.logicalEnd
+                    || a.sourceStart != b.sourceStart
+                    || a.sourceEnd != b.sourceEnd
+                    || a.advance != b.advance
+                    || a.baseline != b.baseline
+                    || a.ascent != b.ascent
+                    || a.descent != b.descent
+                    || a.lineHeight != b.lineHeight
+                    || a.paragraphRtl != b.paragraphRtl
+                    || a.clusters().size() != b.clusters().size()) return false;
             for (int j = 0; j < a.clusters().size(); j++) {
                 TextLayout.Cluster c = a.clusters().get(j), d = b.clusters().get(j);
-                if (c.logicalStart != d.logicalStart || c.logicalEnd != d.logicalEnd || c.sourceStart != d.sourceStart
-                        || c.sourceEnd != d.sourceEnd || c.x != d.x || c.advance != d.advance || c.rtl!=d.rtl) return false;
+                if (c.logicalStart != d.logicalStart
+                        || c.logicalEnd != d.logicalEnd
+                        || c.sourceStart != d.sourceStart
+                        || c.sourceEnd != d.sourceEnd
+                        || c.x != d.x
+                        || c.advance != d.advance
+                        || c.rtl != d.rtl) return false;
             }
         }
         return true;
@@ -43,8 +64,14 @@ final class SceneTextAreaGeometry {
             TextLayout.Line line = lines.get(i);
             if (position == line.sourceStart) return i;
             if (position > line.sourceStart && position < line.sourceEnd) return i;
-            int delta = position < line.sourceStart ? line.sourceStart - position : Math.max(0, position - line.sourceEnd);
-            if (delta < distance) { nearest = i; distance = delta; }
+            int delta =
+                    position < line.sourceStart
+                            ? line.sourceStart - position
+                            : Math.max(0, position - line.sourceEnd);
+            if (delta < distance) {
+                nearest = i;
+                distance = delta;
+            }
         }
         return nearest;
     }
@@ -55,13 +82,16 @@ final class SceneTextAreaGeometry {
         for (int i = 0; i < text.lines().size(); i++) {
             TextLayout.Line line = text.lines().get(i);
             float delta = y < line.y ? line.y - y : Math.max(0, y - line.y - line.lineHeight);
-            if (delta < distance) { best = i; distance = delta; }
+            if (delta < distance) {
+                best = i;
+                distance = delta;
+            }
         }
         return best;
     }
 
     float edge(int index, TextLayout.Cluster cluster, boolean start) {
-        return start?cluster.leadingX():cluster.trailingX();
+        return start ? cluster.leadingX() : cluster.trailingX();
     }
 
     float caretX(int index, int position) {
@@ -71,9 +101,15 @@ final class SceneTextAreaGeometry {
         for (TextLayout.Cluster cluster : line.clusters()) {
             if (cluster.sourceStart == position) return edge(index, cluster, true);
             int delta = Math.abs(position - cluster.sourceStart);
-            if (delta < distance) { distance = delta; best = edge(index, cluster, true); }
+            if (delta < distance) {
+                distance = delta;
+                best = edge(index, cluster, true);
+            }
             delta = Math.abs(position - cluster.sourceEnd);
-            if (delta < distance) { distance = delta; best = edge(index, cluster, false); }
+            if (delta < distance) {
+                distance = delta;
+                best = edge(index, cluster, false);
+            }
         }
         return best;
     }
@@ -84,9 +120,15 @@ final class SceneTextAreaGeometry {
         float distance = Float.POSITIVE_INFINITY;
         for (TextLayout.Cluster cluster : line.clusters()) {
             float delta = Math.abs(edge(index, cluster, true) - x);
-            if (delta < distance) { distance = delta; position = cluster.sourceStart; }
+            if (delta < distance) {
+                distance = delta;
+                position = cluster.sourceStart;
+            }
             delta = Math.abs(edge(index, cluster, false) - x);
-            if (delta < distance) { distance = delta; position = cluster.sourceEnd; }
+            if (delta < distance) {
+                distance = delta;
+                position = cluster.sourceEnd;
+            }
         }
         return position;
     }
@@ -97,8 +139,14 @@ final class SceneTextAreaGeometry {
         int position = line.sourceStart;
         for (TextLayout.Cluster cluster : line.clusters()) {
             float start = edge(index, cluster, true), end = edge(index, cluster, false);
-            if (right ? start > edge : start < edge) { edge = start; position = cluster.sourceStart; }
-            if (right ? end > edge : end < edge) { edge = end; position = cluster.sourceEnd; }
+            if (right ? start > edge : start < edge) {
+                edge = start;
+                position = cluster.sourceStart;
+            }
+            if (right ? end > edge : end < edge) {
+                edge = end;
+                position = cluster.sourceEnd;
+            }
         }
         return position;
     }
@@ -113,21 +161,86 @@ final class SceneTextAreaGeometry {
         List<TextLayout.Line> lines = new ArrayList<>();
         for (TextLayout.Line line : full.lines()) {
             List<TextLayout.Glyph> glyphs = new ArrayList<>();
-            for (TextLayout.Glyph g : line.glyphs()) glyphs.add(new TextLayout.Glyph(g.source, g.size,
-                g.glyphId, g.logicalStart, g.logicalEnd, g.sourceStart, g.sourceEnd, g.x - x, g.y - y,
-                g.xAdvance, g.yAdvance, g.color, g.replacement, g.inkBounds, g.logicalEm, g.rasterToLayout,
-                g.rasterStyle, g.resolvedStyle, g.clusterIndex));
+            for (TextLayout.Glyph g : line.glyphs())
+                glyphs.add(
+                        new TextLayout.Glyph(
+                                g.source,
+                                g.size,
+                                g.glyphId,
+                                g.logicalStart,
+                                g.logicalEnd,
+                                g.sourceStart,
+                                g.sourceEnd,
+                                g.x - x,
+                                g.y - y,
+                                g.xAdvance,
+                                g.yAdvance,
+                                g.color,
+                                g.replacement,
+                                g.inkBounds,
+                                g.logicalEm,
+                                g.rasterToLayout,
+                                g.rasterStyle,
+                                g.resolvedStyle,
+                                g.clusterIndex));
             List<TextLayout.Cluster> clusters = new ArrayList<>();
-            for (TextLayout.Cluster c : line.clusters()) clusters.add(new TextLayout.Cluster(c.logicalStart,
-                c.logicalEnd, c.sourceStart, c.sourceEnd, c.glyphIndexStart, c.glyphIndexEnd, c.x - x, c.advance, c.style,c.rtl));
+            for (TextLayout.Cluster c : line.clusters())
+                clusters.add(
+                        new TextLayout.Cluster(
+                                c.logicalStart,
+                                c.logicalEnd,
+                                c.sourceStart,
+                                c.sourceEnd,
+                                c.glyphIndexStart,
+                                c.glyphIndexEnd,
+                                c.x - x,
+                                c.advance,
+                                c.style,
+                                c.rtl));
             List<TextLayout.Decoration> decorations = new ArrayList<>();
-            for (TextLayout.Decoration d : line.decorations()) decorations.add(new TextLayout.Decoration(d.kind,
-                d.x - x, d.y - y, d.width, d.height, d.color, d.logicalStart, d.logicalEnd, d.sourceStart, d.sourceEnd));
-            lines.add(new TextLayout.Line(line.text, line.x - x, line.y - y, line.logicalStart, line.logicalEnd,
-                line.sourceStart, line.sourceEnd, line.advance, line.baseline - y, line.ascent, line.descent,
-                line.lineHeight, glyphs, clusters, decorations,line.paragraphRtl));
+            for (TextLayout.Decoration d : line.decorations())
+                decorations.add(
+                        new TextLayout.Decoration(
+                                d.kind,
+                                d.x - x,
+                                d.y - y,
+                                d.width,
+                                d.height,
+                                d.color,
+                                d.logicalStart,
+                                d.logicalEnd,
+                                d.sourceStart,
+                                d.sourceEnd));
+            lines.add(
+                    new TextLayout.Line(
+                            line.text,
+                            line.x - x,
+                            line.y - y,
+                            line.logicalStart,
+                            line.logicalEnd,
+                            line.sourceStart,
+                            line.sourceEnd,
+                            line.advance,
+                            line.baseline - y,
+                            line.ascent,
+                            line.descent,
+                            line.lineHeight,
+                            glyphs,
+                            clusters,
+                            decorations,
+                            line.paragraphRtl));
         }
-        return new TextLayout(full.width, full.height, full.advanceWidth, full.advanceHeight, full.style,
-            lines, full.logicalText, full.originalText, full.generation, full.diagnostics(), full.input);
+        return new TextLayout(
+                full.width,
+                full.height,
+                full.advanceWidth,
+                full.advanceHeight,
+                full.style,
+                lines,
+                full.logicalText,
+                full.originalText,
+                full.generation,
+                full.diagnostics(),
+                full.input);
     }
 }

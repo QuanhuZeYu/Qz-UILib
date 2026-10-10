@@ -10,12 +10,17 @@ import club.heiqi.uilib.ui.scene.image.ImageSource;
 public final class MinecraftItemSource extends ImageSource {
     private static final AtomicLong IDS = new AtomicLong();
     private final ItemStack snapshot;
+
     public MinecraftItemSource(ItemStack stack) {
         super(Kind.ITEM, "item:snapshot:" + IDS.incrementAndGet(), null, null);
         snapshot = Objects.requireNonNull(stack, "stack").copy();
         if (snapshot.getItem() == null) throw new IllegalArgumentException("物品为空");
     }
-    ItemStack copy() { return snapshot.copy(); }
+
+    ItemStack copy() {
+        return snapshot.copy();
+    }
+
     /** 文档 item:minecraft:diamond 经正式宿主解析；非法注册标识由 ImageSource.parse 转为 resolve 失败。 */
     public static ImageSource parse(String uri) {
         if (!uri.startsWith("item:")) throw new IllegalArgumentException("不是物品 URI");

@@ -30,23 +30,35 @@ public final class NativeFontService implements FontSession {
 
     /** 拷贝 source 的 remaining 字节；调用方可立即释放/修改自己的缓冲。 */
     public FontFace openFace(ByteBuffer source, long faceIndex, float emSize) {
-        return openFace(source,faceIndex,emSize,java.util.Collections.<String,Float>emptyMap());
+        return openFace(source, faceIndex, emSize, java.util.Collections.<String, Float>emptyMap());
     }
-    @Override public boolean supportsVariations(){return true;}
-    @Override public FontFace openFace(ByteBuffer source,long faceIndex,float emSize,java.util.Map<String,Float> axes) {
+
+    @Override
+    public boolean supportsVariations() {
+        return true;
+    }
+
+    @Override
+    public FontFace openFace(
+            ByteBuffer source, long faceIndex, float emSize, java.util.Map<String, Float> axes) {
         checkOpen();
         NativeFontFace face = new NativeFontFace(this, library, source, faceIndex, emSize, axes);
         try {
             faces.add(face);
             return face;
         } catch (RuntimeException | Error failure) {
-            try { face.close(); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            try {
+                face.close();
+            } catch (RuntimeException | Error cleanup) {
+                failure.addSuppressed(cleanup);
+            }
             throw failure;
         }
     }
 
     void checkThread() {
-        if (Thread.currentThread() != thread) throw new IllegalStateException("Native font service belongs to its creating thread");
+        if (Thread.currentThread() != thread)
+            throw new IllegalStateException("Native font service belongs to its creating thread");
     }
 
     void checkOpen() {
@@ -54,26 +66,35 @@ public final class NativeFontService implements FontSession {
         if (library == 0) throw new IllegalStateException("Native font service is closed");
     }
 
-    void forget(NativeFontFace face) { faces.remove(face); }
-
-    static void check(int error, String operation) {
-        if (error != 0) throw new IllegalStateException(operation + " failed: FreeType error " + error);
+    void forget(NativeFontFace face) {
+        faces.remove(face);
     }
 
-    @Override public void close() {
+    static void check(int error, String operation) {
+        if (error != 0)
+            throw new IllegalStateException(operation + " failed: FreeType error " + error);
+    }
+
+    @Override
+    public void close() {
         checkThread();
         if (library == 0) return;
         Throwable failure = null;
         for (NativeFontFace face : new ArrayList<NativeFontFace>(faces)) {
-            try { face.close(); } catch (RuntimeException | Error error) {
-                if (failure == null) failure = error; else failure.addSuppressed(error);
+            try {
+                face.close();
+            } catch (RuntimeException | Error error) {
+                if (failure == null) failure = error;
+                else failure.addSuppressed(error);
             }
         }
         long owned = library;
         library = 0;
-        try { check(FreeType.FT_Done_FreeType(owned), "FT_Done_FreeType"); }
-        catch (RuntimeException | Error error) {
-            if (failure == null) failure = error; else failure.addSuppressed(error);
+        try {
+            check(FreeType.FT_Done_FreeType(owned), "FT_Done_FreeType");
+        } catch (RuntimeException | Error error) {
+            if (failure == null) failure = error;
+            else failure.addSuppressed(error);
         }
         if (failure instanceof Error) throw (Error) failure;
         if (failure != null) throw (RuntimeException) failure;

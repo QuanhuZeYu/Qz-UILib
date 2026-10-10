@@ -260,8 +260,22 @@ public final class ImageLwjgl2Scenario extends TestApplication {
             ByteBuffer bytes = ByteBuffer.allocateDirect(16);
             bytes.put(
                             new byte[] {
-                                0, (byte) 255, (byte) 255, (byte) 255, 0, 0, 0, 0, 0, (byte) 255,
-                                (byte) 255, (byte) 255, 0, 0, 0, 0
+                                0,
+                                (byte) 255,
+                                (byte) 255,
+                                (byte) 255,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                (byte) 255,
+                                (byte) 255,
+                                (byte) 255,
+                                0,
+                                0,
+                                0,
+                                0
                             })
                     .flip();
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, bytes);

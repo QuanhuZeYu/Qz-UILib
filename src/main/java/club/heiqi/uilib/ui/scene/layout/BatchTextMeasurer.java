@@ -15,34 +15,56 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 final class BatchTextMeasurer implements SceneTextMeasurer {
     private final SceneTextMeasurer delegate;
     private final Map<Request, TextLayout> layouts = new HashMap<>();
-    BatchTextMeasurer(SceneTextMeasurer delegate) { this.delegate = delegate; }
-    @Override public TextLayout layout(String text, TextStyle style, int width) {
+
+    BatchTextMeasurer(SceneTextMeasurer delegate) {
+        this.delegate = delegate;
+    }
+
+    @Override
+    public TextLayout layout(String text, TextStyle style, int width) {
         Request request = new Request(text, style, width, null);
         return layouts.computeIfAbsent(request, key -> delegate.layout(text, style, width));
     }
-    @Override public TextLayout layout(String text, TextStyle style, int width, TextPolicy policy) {
+
+    @Override
+    public TextLayout layout(String text, TextStyle style, int width, TextPolicy policy) {
         Request request = new Request(text, style, width, policy);
         return layouts.computeIfAbsent(request, key -> delegate.layout(text, style, width, policy));
     }
-    @Override public TextLayout layout(AttributedText text, float width, TextPolicy policy) {
+
+    @Override
+    public TextLayout layout(AttributedText text, float width, TextPolicy policy) {
         Request request = new Request(text, null, width, policy);
         return layouts.computeIfAbsent(request, key -> delegate.layout(text, width, policy));
     }
+
     private static final class Request {
         final Object content;
         final TextStyle style;
         final double width;
         final TextPolicy policy;
+
         Request(Object content, TextStyle style, double width, TextPolicy policy) {
-            this.content = content; this.style = style; this.width = width; this.policy = policy;
+            this.content = content;
+            this.style = style;
+            this.width = width;
+            this.policy = policy;
         }
-        @Override public boolean equals(Object value) {
+
+        @Override
+        public boolean equals(Object value) {
             if (!(value instanceof Request)) return false;
             Request other = (Request) value;
             // AttributedText 不定义值相等：同批声明派生的不可变实例就是事实身份。
-            return content.equals(other.content) && Objects.equals(style, other.style)
-                && Double.compare(width, other.width) == 0 && Objects.equals(policy, other.policy);
+            return content.equals(other.content)
+                    && Objects.equals(style, other.style)
+                    && Double.compare(width, other.width) == 0
+                    && Objects.equals(policy, other.policy);
         }
-        @Override public int hashCode() { return Objects.hash(content, style, width, policy); }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(content, style, width, policy);
+        }
     }
 }

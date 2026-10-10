@@ -9,29 +9,79 @@ public final class SceneTheme {
     public final int panel, button, hover, pressed, focus, disabled, disabledText;
     public final int tooltip, tooltipText, padding, gap;
 
-    public SceneTheme(TextStyle textStyle, int panel, int button, int hover, int pressed,
-            int focus, int disabled, int disabledText, int tooltip, int tooltipText, int padding, int gap) {
+    public SceneTheme(
+            TextStyle textStyle,
+            int panel,
+            int button,
+            int hover,
+            int pressed,
+            int focus,
+            int disabled,
+            int disabledText,
+            int tooltip,
+            int tooltipText,
+            int padding,
+            int gap) {
         this.textStyle = Objects.requireNonNull(textStyle, "textStyle");
         if (padding < 0 || gap < 0) throw new IllegalArgumentException("主题间距不能为负");
-        this.panel = panel; this.button = button; this.hover = hover; this.pressed = pressed;
-        this.focus = focus; this.disabled = disabled; this.disabledText = disabledText;
-        this.tooltip = tooltip; this.tooltipText = tooltipText; this.padding = padding; this.gap = gap;
+        this.panel = panel;
+        this.button = button;
+        this.hover = hover;
+        this.pressed = pressed;
+        this.focus = focus;
+        this.disabled = disabled;
+        this.disabledText = disabledText;
+        this.tooltip = tooltip;
+        this.tooltipText = tooltipText;
+        this.padding = padding;
+        this.gap = gap;
     }
 
     public static SceneTheme light() {
-        return new SceneTheme(new TextStyle("default", 18, 0xFF20252B), 0xFFF4F6F8,
-            0xFFE2E8EF, 0xFFD1E1F2, 0xFFB9D1EB, 0xFF246DB5, 0xFFE4E6E9,
-            0xFF777D85, 0xFF20252B, 0xFFFFFFFF, 8, 8);
+        return new SceneTheme(
+                new TextStyle("default", 18, 0xFF20252B),
+                0xFFF4F6F8,
+                0xFFE2E8EF,
+                0xFFD1E1F2,
+                0xFFB9D1EB,
+                0xFF246DB5,
+                0xFFE4E6E9,
+                0xFF777D85,
+                0xFF20252B,
+                0xFFFFFFFF,
+                8,
+                8);
     }
 
     public static SceneTheme dark() {
-        return new SceneTheme(new TextStyle("default", 18, 0xFFF1F4F8), 0xFF20252B,
-            0xFF37414D, 0xFF465C74, 0xFF294866, 0xFF80BFFF, 0xFF30353D,
-            0xFF8C949F, 0xFFF1F4F8, 0xFF20252B, 8, 8);
+        return new SceneTheme(
+                new TextStyle("default", 18, 0xFFF1F4F8),
+                0xFF20252B,
+                0xFF37414D,
+                0xFF465C74,
+                0xFF294866,
+                0xFF80BFFF,
+                0xFF30353D,
+                0xFF8C949F,
+                0xFFF1F4F8,
+                0xFF20252B,
+                8,
+                8);
     }
 
     public SceneTheme withTextStyle(TextStyle style) {
-        return new SceneTheme(style, panel, button, hover, pressed, focus, disabled,
-            disabledText, tooltip, tooltipText, padding, gap);
+        return new SceneTheme(
+                style,
+                panel,
+                button,
+                hover,
+                pressed,
+                focus,
+                disabled,
+                disabledText,
+                tooltip,
+                tooltipText,
+                padding,
+                gap);
     }
 }

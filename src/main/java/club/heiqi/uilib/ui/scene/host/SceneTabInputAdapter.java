@@ -10,24 +10,49 @@ import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 public final class SceneTabInputAdapter {
     private final Consumer<SceneNavigationEvent> sink;
     private boolean available, suspended = true, owned, leftShift, rightShift;
-    public SceneTabInputAdapter(Consumer<SceneNavigationEvent> sink) { this.sink = Objects.requireNonNull(sink, "sink"); }
+
+    public SceneTabInputAdapter(Consumer<SceneNavigationEvent> sink) {
+        this.sink = Objects.requireNonNull(sink, "sink");
+    }
+
     /** 失焦立即结束物理段；恢复仍等历史队列消费完和Tab物理释放，不接受旧repeat。 */
     public void availability(boolean active) {
         available = active;
-        if (!active) { suspended = true; owned = false; leftShift = false; rightShift = false; }
+        if (!active) {
+            suspended = true;
+            owned = false;
+            leftShift = false;
+            rightShift = false;
+        }
     }
-    public void shift(boolean left, boolean down) { if (left) leftShift = down; else rightShift = down; }
+
+    public void shift(boolean left, boolean down) {
+        if (left) leftShift = down;
+        else rightShift = down;
+    }
+
     /** UP不导航，重复DOWN只延续本适配器已接收的按压段。 */
     public void tab(boolean down, boolean repeat) {
-        if (!down) { owned = false; return; }
+        if (!down) {
+            owned = false;
+            return;
+        }
         if (!available || suspended || (repeat ? !owned : owned)) return;
         owned = true;
-        sink.accept(leftShift || rightShift ? SceneNavigationEvent.PREVIOUS : SceneNavigationEvent.NEXT);
+        sink.accept(
+                leftShift || rightShift
+                        ? SceneNavigationEvent.PREVIOUS
+                        : SceneNavigationEvent.NEXT);
     }
+
     /** 唯一原生消费者耗尽历史队列后调用；设备未创建时不得调用以假装释放。 */
     public void historyDrained(boolean tabDown, boolean leftShiftDown, boolean rightShiftDown) {
         if (!available) return;
-        leftShift = leftShiftDown; rightShift = rightShiftDown;
-        if (!tabDown) { suspended = false; owned = false; }
+        leftShift = leftShiftDown;
+        rightShift = rightShiftDown;
+        if (!tabDown) {
+            suspended = false;
+            owned = false;
+        }
     }
 }

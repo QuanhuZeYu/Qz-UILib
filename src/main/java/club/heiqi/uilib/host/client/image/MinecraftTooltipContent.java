@@ -12,13 +12,36 @@ import club.heiqi.uilib.ui.scene.text.TextDecoration;
  */
 public final class MinecraftTooltipContent {
     private MinecraftTooltipContent() {}
+
     public static TextContent fromMinecraft(String raw, int[] palette) {
-        Objects.requireNonNull(raw,"raw");Objects.requireNonNull(palette,"palette");
-        if(palette.length<16)throw new IllegalArgumentException("物品提示palette不足");
-        return TextContent.styled(MinecraftFormat.styled(TextInput.string(raw),raw,new MinecraftFormat.Context(){
-            @Override public int paletteColor(int index){return palette[index];}
-            @Override public TextEffects effects(boolean bold,boolean italic,boolean underline,boolean strike,boolean obfuscated){return new TextEffects(bold,italic,underline,strike,obfuscated,0,0);}
-            @Override public TextDecoration decoration(){return TextDecoration.NONE;}
-        }));
+        Objects.requireNonNull(raw, "raw");
+        Objects.requireNonNull(palette, "palette");
+        if (palette.length < 16) throw new IllegalArgumentException("物品提示palette不足");
+        return TextContent.styled(
+                MinecraftFormat.styled(
+                        TextInput.string(raw),
+                        raw,
+                        new MinecraftFormat.Context() {
+                            @Override
+                            public int paletteColor(int index) {
+                                return palette[index];
+                            }
+
+                            @Override
+                            public TextEffects effects(
+                                    boolean bold,
+                                    boolean italic,
+                                    boolean underline,
+                                    boolean strike,
+                                    boolean obfuscated) {
+                                return new TextEffects(
+                                        bold, italic, underline, strike, obfuscated, 0, 0);
+                            }
+
+                            @Override
+                            public TextDecoration decoration() {
+                                return TextDecoration.NONE;
+                            }
+                        }));
     }
 }

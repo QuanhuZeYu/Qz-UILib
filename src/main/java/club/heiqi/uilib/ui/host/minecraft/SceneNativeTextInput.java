@@ -34,14 +34,18 @@ public final class SceneNativeTextInput implements AutoCloseable {
         if (owner != null) owner.checkFailure();
         ClassLoader loader = SceneNativeTextInput.class.getClassLoader();
         return loader.getResource("org/lwjglx/opengl/Display.class") != null
-            && loader.getResource("me/eigenraven/lwjgl3ify/api/InputEvents.class") != null
-            && loader.getResource("org/lwjgl/sdl/SDLEvents.class") != null
-            && loader.getResource("org/lwjgl/sdl/SDL_EventFilterI.class") != null;
+                && loader.getResource("me/eigenraven/lwjgl3ify/api/InputEvents.class") != null
+                && loader.getResource("org/lwjgl/sdl/SDLEvents.class") != null
+                && loader.getResource("org/lwjgl/sdl/SDL_EventFilterI.class") != null;
     }
-    public static boolean available() { return supported(); }
+
+    public static boolean available() {
+        return supported();
+    }
 
     public SceneNativeTextInput() {
-        if (!supported()) throw new IllegalStateException("Native text input resources are unavailable");
+        if (!supported())
+            throw new IllegalStateException("Native text input resources are unavailable");
         bindings = new Bindings();
         if (!OWNER.compareAndSet(null, this))
             throw new IllegalStateException("Another native text input bridge is registered");
@@ -49,7 +53,11 @@ public final class SceneNativeTextInput implements AutoCloseable {
             watch = new Watch(this::observe);
             checkFailure();
         } catch (RuntimeException | Error failure) {
-            try { close(); } catch (RuntimeException | Error cleanup) { if (failure != cleanup) failure.addSuppressed(cleanup); }
+            try {
+                close();
+            } catch (RuntimeException | Error cleanup) {
+                if (failure != cleanup) failure.addSuppressed(cleanup);
+            }
             throw failure;
         }
     }
@@ -62,7 +70,10 @@ public final class SceneNativeTextInput implements AutoCloseable {
     }
 
     /** active 表示该页仍拥有桥；窗口不可用时保留按键释放尾部供宿主门控。 */
-    public boolean active() { checkFailure(); return !closed && OWNER.get() == this; }
+    public boolean active() {
+        checkFailure();
+        return !closed && OWNER.get() == this;
+    }
 
     /** 宿主根据场景焦点通知，重复调用不增加 lwjgl3ify 的 textInputDepth。 */
     public synchronized void textInput(boolean enabled) {
@@ -81,17 +92,22 @@ public final class SceneNativeTextInput implements AutoCloseable {
     }
 
     private boolean textStarted;
+
     private void updateTextInput() {
         boolean enabled = textRequested && windowAvailable && !closed;
         if (!enabled) {
             synchronized (queueLock) {
-                receivingText = false;compositionSession=false;compositionActive=false;
+                receivingText = false;
+                compositionSession = false;
+                compositionActive = false;
                 pending.removeIf(event -> event.edit != null);
             }
         }
         if (enabled == textStarted) return;
         // begin 可能同步产生 watch 回调，必须在 SDL_StartTextInput 前允许复制文本。
-        synchronized (queueLock) { receivingText = enabled; }
+        synchronized (queueLock) {
+            receivingText = enabled;
+        }
         // InputEvents 保留 MainThreadExec 和 textInputDepth 配对；调用时不持队列锁。
         invoke(enabled ? bindings.begin : bindings.end, null);
         textStarted = enabled;
@@ -109,13 +125,16 @@ public final class SceneNativeTextInput implements AutoCloseable {
         }
     }
 
-    @Override public void close() {
+    @Override
+    public void close() {
         Watch oldWatch;
         synchronized (this) {
             if (closed) return;
             synchronized (queueLock) {
                 closed = true;
-                receivingText = false; compositionSession = false; compositionActive = false;
+                receivingText = false;
+                compositionSession = false;
+                compositionActive = false;
                 OWNER.compareAndSet(this, null);
                 pending.clear();
             }
@@ -123,14 +142,18 @@ public final class SceneNativeTextInput implements AutoCloseable {
             watch = null;
         }
         Throwable failure = callbackFailure.get();
-        try { updateTextInput(); } catch (RuntimeException | Error cleanup) {
-            if (failure == null) failure = cleanup; else if (failure != cleanup) failure.addSuppressed(cleanup);
+        try {
+            updateTextInput();
+        } catch (RuntimeException | Error cleanup) {
+            if (failure == null) failure = cleanup;
+            else if (failure != cleanup) failure.addSuppressed(cleanup);
         }
         if (oldWatch != null) {
             try {
                 oldWatch.close();
             } catch (RuntimeException | Error cleanup) {
-                if (failure == null) failure = cleanup; else if (failure != cleanup) failure.addSuppressed(cleanup);
+                if (failure == null) failure = cleanup;
+                else if (failure != cleanup) failure.addSuppressed(cleanup);
             }
         }
         if (failure instanceof RuntimeException) throw (RuntimeException) failure;
@@ -151,8 +174,11 @@ public final class SceneNativeTextInput implements AutoCloseable {
                         if (event.edit.composing) compositionSession = true;
                     } else {
                         if (!compositionSession)
-                            event = new NativeEvent(0, false, false, SceneEditEvent.text(event.edit.text));
-                        compositionSession = false; compositionActive = false;
+                            event =
+                                    new NativeEvent(
+                                            0, false, false, SceneEditEvent.text(event.edit.text));
+                        compositionSession = false;
+                        compositionActive = false;
                     }
                 } else if (event != null && event.down && !event.repeat && !compositionActive) {
                     compositionSession = false;
@@ -169,6 +195,7 @@ public final class SceneNativeTextInput implements AutoCloseable {
         public final int key;
         public final boolean down, repeat;
         public final SceneEditEvent edit;
+
         private NativeEvent(int key, boolean down, boolean repeat, SceneEditEvent edit) {
             this.key = key;
             this.down = down;
@@ -186,7 +213,8 @@ public final class SceneNativeTextInput implements AutoCloseable {
         private Watch(LongConsumer observer) {
             try {
                 ClassLoader loader = SceneNativeTextInput.class.getClassLoader();
-                Class<?> filterInterface = Class.forName("org.lwjgl.sdl.SDL_EventFilterI", false, loader);
+                Class<?> filterInterface =
+                        Class.forName("org.lwjgl.sdl.SDL_EventFilterI", false, loader);
                 Class<?> filter = Class.forName("org.lwjgl.sdl.SDL_EventFilter", false, loader);
                 Class<?> events = Class.forName("org.lwjgl.sdl.SDLEvents", false, loader);
                 Method create = filter.getMethod("create", filterInterface);
@@ -195,28 +223,44 @@ public final class SceneNativeTextInput implements AutoCloseable {
                 free = filter.getMethod("free");
                 // 精确 LWJGL jar 使用 getDescriptor/callback(long,long)/address 默认方法。
                 // 交给接口本身执行，不复制内部 upcall 协议；GTNH Java25 上反射调用。
-                Method defaultMethod = InvocationHandler.class.getMethod("invokeDefault", Object.class, Method.class, Object[].class);
-                Object proxy = Proxy.newProxyInstance(loader, new Class<?>[] { filterInterface },
-                    (receiver, method, arguments) -> {
-                        if (method.getName().equals("invoke")) {
-                            try { observer.accept((Long) arguments[1]); }
-                            catch (RuntimeException | Error problem) { failure.compareAndSet(null, problem); }
-                            // SDL 忽略 watch 返回值；始终 true，不消费事件。
-                            return true;
-                        }
-                        if (method.isDefault()) return invoke(defaultMethod, null, receiver, method, arguments);
-                        if (method.getName().equals("hashCode")) return System.identityHashCode(receiver);
-                        if (method.getName().equals("equals")) return receiver == arguments[0];
-                        if (method.getName().equals("toString")) return "SceneNativeTextInput SDL event watch";
-                        throw new IllegalStateException("Unexpected SDL callback method: " + method);
-                    });
+                Method defaultMethod =
+                        InvocationHandler.class.getMethod(
+                                "invokeDefault", Object.class, Method.class, Object[].class);
+                Object proxy =
+                        Proxy.newProxyInstance(
+                                loader,
+                                new Class<?>[] {filterInterface},
+                                (receiver, method, arguments) -> {
+                                    if (method.getName().equals("invoke")) {
+                                        try {
+                                            observer.accept((Long) arguments[1]);
+                                        } catch (RuntimeException | Error problem) {
+                                            failure.compareAndSet(null, problem);
+                                        }
+                                        // SDL 忽略 watch 返回值；始终 true，不消费事件。
+                                        return true;
+                                    }
+                                    if (method.isDefault())
+                                        return invoke(
+                                                defaultMethod, null, receiver, method, arguments);
+                                    if (method.getName().equals("hashCode"))
+                                        return System.identityHashCode(receiver);
+                                    if (method.getName().equals("equals"))
+                                        return receiver == arguments[0];
+                                    if (method.getName().equals("toString"))
+                                        return "SceneNativeTextInput SDL event watch";
+                                    throw new IllegalStateException(
+                                            "Unexpected SDL callback method: " + method);
+                                });
                 callback = invoke(create, null, proxy);
                 try {
                     if (!(Boolean) invoke(add, null, callback, 0L))
                         throw new IllegalStateException("SDL_AddEventWatch failed");
                     checkFailure();
                 } catch (RuntimeException | Error problem) {
-                    try { close(); } catch (RuntimeException | Error cleanup) {
+                    try {
+                        close();
+                    } catch (RuntimeException | Error cleanup) {
                         if (problem != cleanup) problem.addSuppressed(cleanup);
                     }
                     throw problem;
@@ -232,7 +276,8 @@ public final class SceneNativeTextInput implements AutoCloseable {
             if (problem instanceof Error) throw (Error) problem;
         }
 
-        @Override public void close() {
+        @Override
+        public void close() {
             Object oldCallback = callback;
             if (oldCallback == null) return;
             callback = null;
@@ -249,15 +294,19 @@ public final class SceneNativeTextInput implements AutoCloseable {
         final Method createEvent;
         final Method type, key, edit, text, keyWindow, editWindow, textWindow;
         final Method scancode, down, repeat, editString, textString, map, begin, end;
+
         Bindings() {
             try {
                 ClassLoader loader = SceneNativeTextInput.class.getClassLoader();
                 Class<?> union = Class.forName("org.lwjgl.sdl.SDL_Event", false, loader);
                 Class<?> keyboard = Class.forName("org.lwjgl.sdl.SDL_KeyboardEvent", false, loader);
-                Class<?> editing = Class.forName("org.lwjgl.sdl.SDL_TextEditingEvent", false, loader);
+                Class<?> editing =
+                        Class.forName("org.lwjgl.sdl.SDL_TextEditingEvent", false, loader);
                 Class<?> input = Class.forName("org.lwjgl.sdl.SDL_TextInputEvent", false, loader);
                 createEvent = union.getMethod("create", long.class);
-                windowId = Class.forName("org.lwjglx.opengl.Display", false, loader).getField("sdlWindowId");
+                windowId =
+                        Class.forName("org.lwjglx.opengl.Display", false, loader)
+                                .getField("sdlWindowId");
                 type = union.getMethod("type");
                 key = union.getMethod("key");
                 edit = union.getMethod("edit");
@@ -270,9 +319,11 @@ public final class SceneNativeTextInput implements AutoCloseable {
                 repeat = keyboard.getMethod("repeat");
                 editString = editing.getMethod("textString");
                 textString = input.getMethod("textString");
-                map = Class.forName("org.lwjglx.input.KeyCodes", false, loader)
-                    .getMethod("sdlScancodeToLwjgl", int.class);
-                Class<?> events = Class.forName("me.eigenraven.lwjgl3ify.api.InputEvents", false, loader);
+                map =
+                        Class.forName("org.lwjglx.input.KeyCodes", false, loader)
+                                .getMethod("sdlScancodeToLwjgl", int.class);
+                Class<?> events =
+                        Class.forName("me.eigenraven.lwjgl3ify.api.InputEvents", false, loader);
                 begin = events.getMethod("beginTextInput");
                 end = events.getMethod("endTextInput");
             } catch (ReflectiveOperationException failure) {
@@ -284,18 +335,32 @@ public final class SceneNativeTextInput implements AutoCloseable {
             try {
                 Object union = invoke(createEvent, null, eventAddress);
                 int kind = (Integer) invoke(type, union);
-                if (kind != 768 && kind != 769 && (!textEnabled || (kind != 770 && kind != 771))) return null;
-                Object value = invoke(kind == 768 || kind == 769 ? key : kind == 770 ? edit : text, union);
-                Method id = kind == 768 || kind == 769 ? keyWindow : kind == 770 ? editWindow : textWindow;
+                if (kind != 768 && kind != 769 && (!textEnabled || (kind != 770 && kind != 771)))
+                    return null;
+                Object value =
+                        invoke(kind == 768 || kind == 769 ? key : kind == 770 ? edit : text, union);
+                Method id =
+                        kind == 768 || kind == 769
+                                ? keyWindow
+                                : kind == 770 ? editWindow : textWindow;
                 if ((Integer) invoke(id, value) != windowId.getInt(null)) return null;
                 if (kind == 768 || kind == 769)
-                    return new NativeEvent((Integer) invoke(map, null, invoke(scancode, value)),
-                        (Boolean) invoke(down, value), (Boolean) invoke(repeat, value), null);
+                    return new NativeEvent(
+                            (Integer) invoke(map, null, invoke(scancode, value)),
+                            (Boolean) invoke(down, value),
+                            (Boolean) invoke(repeat, value),
+                            null);
                 // 指针仅在本次 callback 有效，立即复制 UTF-8 为 String，队列不保留 native pointer。
                 String content = (String) invoke(kind == 770 ? editString : textString, value);
-                if (content == null) throw new IllegalStateException("SDL text event has a null text pointer");
-                return new NativeEvent(0, false, false, kind == 770
-                    ? SceneEditEvent.composition(content, !content.isEmpty()) : SceneEditEvent.committed(content));
+                if (content == null)
+                    throw new IllegalStateException("SDL text event has a null text pointer");
+                return new NativeEvent(
+                        0,
+                        false,
+                        false,
+                        kind == 770
+                                ? SceneEditEvent.composition(content, !content.isEmpty())
+                                : SceneEditEvent.committed(content));
             } catch (IllegalAccessException failure) {
                 throw new IllegalStateException("Cannot read SDL event watch fact", failure);
             }

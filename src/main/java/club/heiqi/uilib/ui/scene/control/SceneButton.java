@@ -10,16 +10,25 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 public final class SceneButton {
     private SceneButton() {}
 
-    public static SceneNode create(ScenePageContext context, ReadableSignal<String> text,
-            ReadableSignal<SceneTheme> theme, Runnable action) {
+    public static SceneNode create(
+            ScenePageContext context,
+            ReadableSignal<String> text,
+            ReadableSignal<SceneTheme> theme,
+            Runnable action) {
         return create(context, text, theme, action, SceneTextPolicy.WRAP);
     }
 
-    public static SceneNode create(ScenePageContext context, ReadableSignal<String> text,
-            ReadableSignal<SceneTheme> theme, Runnable action, SceneTextPolicy policy) {
+    public static SceneNode create(
+            ScenePageContext context,
+            ReadableSignal<String> text,
+            ReadableSignal<SceneTheme> theme,
+            Runnable action,
+            SceneTextPolicy policy) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         return SceneTextControl.create(text, theme, policy, true)
-            .size(Size.fill(1), Size.natural()).focusable(true).clickFocus(true)
-            .onClick(Objects.requireNonNull(action, "action"));
+                .size(Size.fill(1), Size.natural())
+                .focusable(true)
+                .clickFocus(true)
+                .onClick(Objects.requireNonNull(action, "action"));
     }
 }

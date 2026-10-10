@@ -34,146 +34,1359 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 
 /** 真实本地HTTP/ImageIO与生产共享/挂载/geometry；服务端在测试finally生命周期内结束。 */
 public final class ImageServiceScenario extends TestApplication {
-    private final ReactiveDomain domain=ReactiveDomain.direct();
-    private byte[] png;private HttpServer server;private ExecutorService http;private String base;
-    private final AtomicInteger hits=new AtomicInteger(),retry=new AtomicInteger(),timeout=new AtomicInteger();
-    private final CountDownLatch lateStarted=new CountDownLatch(1),lateRelease=new CountDownLatch(1);
-    static ImageContent pixels(int w,int h){return new ImageContent(w,h,new byte[w*h*4]);}
-    @Override protected void setup()throws Exception {
-        BufferedImage image=new BufferedImage(120,60,BufferedImage.TYPE_INT_ARGB);image.setRGB(0,0,0x80FF0000);ByteArrayOutputStream out=new ByteArrayOutputStream();ImageIO.write(image,"png",out);png=out.toByteArray();
-        server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);http=Executors.newFixedThreadPool(4,r->{Thread t=new Thread(r,"image-http-fixture");t.setDaemon(true);return t;});server.setExecutor(http);
-        server.createContext("/ok",exchange->{hits.incrementAndGet();exchange.sendResponseHeaders(200,png.length);try(OutputStream body=exchange.getResponseBody()){body.write(png);}});
-        server.createContext("/retry",exchange->{int n=retry.incrementAndGet();exchange.sendResponseHeaders(n==1?503:200,n==1?-1:png.length);if(n>1)try(OutputStream body=exchange.getResponseBody()){body.write(png);}exchange.close();});
-        server.createContext("/bad",exchange->{exchange.sendResponseHeaders(404,-1);exchange.close();});
-        server.createContext("/timeout",exchange->{timeout.incrementAndGet();try{Thread.sleep(650);exchange.sendResponseHeaders(200,png.length);exchange.getResponseBody().write(png);}catch(Exception ignored){}finally{exchange.close();}});
-        server.createContext("/late",exchange->{lateStarted.countDown();try{lateRelease.await(3,TimeUnit.SECONDS);exchange.sendResponseHeaders(200,png.length);exchange.getResponseBody().write(png);}catch(Exception ignored){}finally{exchange.close();}});
-        server.start();base="http://127.0.0.1:"+server.getAddress().getPort();onClose(()->{lateRelease.countDown();server.stop(0);http.shutdownNow();require(http.awaitTermination(3000,TimeUnit.MILLISECONDS),"HTTP fixture未结束");});
+    private final ReactiveDomain domain = ReactiveDomain.direct();
+    private byte[] png;
+    private HttpServer server;
+    private ExecutorService http;
+    private String base;
+    private final AtomicInteger hits = new AtomicInteger(),
+            retry = new AtomicInteger(),
+            timeout = new AtomicInteger();
+    private final CountDownLatch lateStarted = new CountDownLatch(1),
+            lateRelease = new CountDownLatch(1);
+
+    static ImageContent pixels(int w, int h) {
+        return new ImageContent(w, h, new byte[w * h * 4]);
     }
-    private SharedImageService service(){return own(new SharedImageService(new JavaImageLoader(id->new ByteArrayInputStream(png),new JavaImageLoader.Budget(1024*1024,1024*1024,150,150,350)),new SharedImageService.Budget(2,8,16,8,2*1024*1024)));}
-    private ImageService.Lease lease(SharedImageService service,ImageSource source){ImageService.Lease[] value={null};domain.execute(()->value[0]=service.acquire(source,domain));onClose(()->domain.execute(value[0]::close));return value[0];}
-    private ImageState state(ImageService.Lease lease){ImageState[] state={null};domain.execute(()->state[0]=lease.state().get());return state[0];}
-    private ImageState ready(SharedImageService service,ImageService.Lease lease)throws Exception{long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(4);while(System.nanoTime()<deadline){service.drain();ImageState state=state(lease);if(state.status!=ImageState.Status.LOADING)return state;Thread.sleep(5);}throw new AssertionError("服务未在有限窗口完成");}
-    @Override protected void runTests()throws Exception {
-        scenario("真实HTTP成功透明像素共享及单消费者卸载",()->{SharedImageService s=service();ImageSource source=ImageSource.http(base+"/ok");ImageService.Lease a=lease(s,source),b=lease(s,source);ImageState result=ready(s,a);require(result.status==ImageState.Status.READY&&result.content.width==120&&result.content.height==60,"HTTP未解码");require((result.content.pixels()[3]&255)==128,"透明RGBA丢失");require(state(b).content==result.content&&hits.get()==1,"相同资源没有共享");domain.execute(a::close);s.reload(source);require(ready(s,b).status==ImageState.Status.READY&&hits.get()==2,"卸载一个消费者破坏其他消费者");});
-        scenario("HTTP失败timeout与一次瞬时重试不每帧发起",()->{SharedImageService s=service();require(ready(s,lease(s,ImageSource.http(base+"/bad"))).stage.equals("http"),"HTTP失败缺stage");ImageState result=ready(s,lease(s,ImageSource.http(base+"/timeout")));require(result.status==ImageState.Status.FAILED&&timeout.get()==2,"timeout或一次重试预算错误");for(int i=0;i<8;i++)s.drain();require(timeout.get()==2,"失败每帧重发");require(ready(s,lease(s,ImageSource.http(base+"/retry"))).status==ImageState.Status.READY&&retry.get()==2,"瞬时503重试未完成");});
-        scenario("region仅选区自然尺寸缺item适配及无效URI局部诊断",()->{SharedImageService s=service();ImageState selected=ready(s,lease(s,ImageSource.resource("test:region",new ImageSource.Region(5,6,20,10))));require(selected.content.width==20&&selected.content.height==10,"region用了整张尺寸");require(ready(s,lease(s,ImageSource.parse("item:minecraft:diamond",null))).status==ImageState.Status.UNSUPPORTED,"item缺adapter非unsupported");require(ready(s,lease(s,ImageSource.parse("https://",null))).stage.equals("resolve"),"非法URI导致页面异常");});
-        scenario("晚HTTP来源切换closedconsumer及runtime自然尺寸固定尺寸",()->{SharedImageService s=service();SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();host.width=300;host.height=200;Signal<ImageSource>[] source=new Signal[1];SceneNode[] node={null},fixed={null};ScenePageSession page=ScenePageSession.open(domain,host,host,c->{source[0]=domain.signal(ImageSource.http(base+"/late"));Signal<ImageOptions> options=domain.signal(ImageOptions.defaults().alt("迟到图片"));node[0]=SceneImage.create(s,source[0],options);fixed[0]=SceneImage.create(s,source[0],domain.signal(ImageOptions.defaults().size(Size.fixed(70),Size.fixed(40))));c.mount(new SceneNode().add(node[0]).add(fixed[0]));});onClose(page::close);page.frame();s.drain();require(lateStarted.await(1,TimeUnit.SECONDS),"未触达真实慢HTTP");java.util.UUID id=node[0].id();domain.execute(()->source[0].set(ImageSource.bitmap(pixels(96,48))));page.frame();for(int i=0;i<40;i++){s.drain();page.frame();if(host.last.commands().stream().anyMatch(c->c.kind==PaintCommand.Kind.IMAGE))break;Thread.sleep(5);}domain.execute(()->{LayoutBox box=page.pipeline().current().geometry.get(node[0]).box;require(box.width==96&&box.height==48,"ready未自动重测");require(page.pipeline().current().geometry.get(fixed[0]).box.width==70,"固定宽随自然内容改变");});lateRelease.countDown();Thread.sleep(220);s.drain();page.frame();require(node[0].id().equals(id),"source变化重建UUID");require(host.last.commands().stream().filter(c->c.kind==PaintCommand.Kind.IMAGE).allMatch(c->c.image.content.width==96&&c.image.content.height==48),"迟到覆盖新来源");page.close();s.drain();require(s.entryCount()<=1,"关闭消费者保留旧loadingentry");});
-        scenario("独立域完成入口无需scene与域lease关闭",()->{ExecutorService executor=Executors.newSingleThreadExecutor();onClose(()->{executor.shutdown();require(executor.awaitTermination(2,TimeUnit.SECONDS),"domain未结束");});ReactiveDomain other=new ReactiveDomain(executor);SharedImageService s=service();ImageService.Lease[] lease={null};CountDownLatch mounted=new CountDownLatch(1);other.execute(()->{lease[0]=s.acquire(ImageSource.resource("test:reload"),other);mounted.countDown();});require(mounted.await(1,TimeUnit.SECONDS),"域未进入");long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);boolean[] ready={false};while(!ready[0]&&System.nanoTime()<deadline){s.drain();CountDownLatch checked=new CountDownLatch(1);other.execute(()->{ready[0]=lease[0].state().get().status==ImageState.Status.READY;checked.countDown();});require(checked.await(1,TimeUnit.SECONDS),"独立domain未收入口");Thread.sleep(5);}require(ready[0],"无scene域未自动完成");s.resourcesReloaded();s.drain();CountDownLatch closed=new CountDownLatch(1);other.execute(()->{lease[0].close();closed.countDown();});require(closed.await(1,TimeUnit.SECONDS),"域lease未关闭");});
-        scenario("无消费者reload预算反例与实际解码预算拒绝",()->{SharedImageService s=own(new SharedImageService(new JavaImageLoader(id->new ByteArrayInputStream(png),JavaImageLoader.Budget.defaults()),new SharedImageService.Budget(1,2,2,2,120*60*4)));ImageSource source=ImageSource.resource("test:a");ImageService.Lease a=lease(s,source);require(ready(s,a).status==ImageState.Status.READY,"预算内初始图失败");domain.execute(a::close);s.reload(source);s.drain();require(s.entryCount()==0&&s.retainedBytes()==0,"无消费者reload存在游离记账");SharedImageService tiny=own(new SharedImageService(new JavaImageLoader(id->new ByteArrayInputStream(png),new JavaImageLoader.Budget(1024*1024,16,100,100,300)),SharedImageService.Budget.defaults()));require(ready(tiny,lease(tiny,source)).stage.equals("budget"),"维度预算没有在解码前拒绝");});
-        scenario("真实worker资源reload旧代迟到及upload pending卸载字节释放",()->{CountDownLatch started=new CountDownLatch(1),release=new CountDownLatch(1),finished=new CountDownLatch(1);AtomicInteger loads=new AtomicInteger();ImageContent old=pixels(120,60),current=pixels(96,48);SharedImageService s=own(new SharedImageService(source->{int n=loads.incrementAndGet();return ()->{if(n==1){started.countDown();for(;;){try{if(release.await(2,TimeUnit.SECONDS))break;throw new AssertionError("旧代release未执行");}catch(InterruptedException canceled){/* 模拟原生解码不响应取消，但仍不得发布旧代。 */}}finished.countDown();return old;}return current;};},SharedImageService.Budget.defaults()));onClose(release::countDown);ImageService.Lease consumer=lease(s,ImageSource.resource("test:epoch"));s.drain();require(started.await(1,TimeUnit.SECONDS),"旧代worker未进入");s.resourcesReloaded();ImageState latest=ready(s,consumer);require(latest.content==current,"资源reload没有取得新代");release.countDown();require(finished.await(1,TimeUnit.SECONDS),"旧代worker未完成");Thread.sleep(20);s.drain();require(state(consumer).content==current&&s.retainedBytes()==current.bytes(),"旧代完成污染当前内容/bytes");s.presentation(current.identity,true,null);require(state(consumer).status==ImageState.Status.LOADING,"未触达GPU pending分支");domain.execute(consumer::close);require(s.entryCount()==0&&s.retainedBytes()==0,"upload pending最后卸载遗留字节记账");});
-        scenario("资源close异常仍释放所有快照并shutdown worker及failedbitmap不缓存",()->{AtomicInteger closed=new AtomicInteger();CountDownLatch started=new CountDownLatch(2),release=new CountDownLatch(1);SharedImageService s=own(new SharedImageService(source->new ImageLoader.Task(){public ImageContent call()throws Exception{started.countDown();release.await();return pixels(1,1);}public void close()throws Exception{closed.incrementAndGet();release.countDown();if(source.location.endsWith("a"))throw new IOException("fixture close failure");}},SharedImageService.Budget.defaults()));ImageService.Lease a=lease(s,ImageSource.resource("test:a")),b=lease(s,ImageSource.resource("test:b"));s.drain();require(started.await(1,TimeUnit.SECONDS),"两个worker没有实际启动");try{s.close();throw new AssertionError("释放异常未报告");}catch(IllegalStateException failure){require(failure.getCause() instanceof IOException,"原close异常丢失");}require(closed.get()==2&&s.awaitClose(1000)&&s.entryCount()==0&&s.retainedBytes()==0,"close异常跳过必要清理");SharedImageService tiny=own(new SharedImageService(source->()->source.bitmap,new SharedImageService.Budget(1,1,2,2,4)));ImageService.Lease bitmap=lease(tiny,ImageSource.bitmap(pixels(3,3)));require(ready(tiny,bitmap).status==ImageState.Status.FAILED,"超budgetbitmap未失败");domain.execute(bitmap::close);require(tiny.entryCount()==0&&tiny.retainedBytes()==0,"failedbitmap无订阅仍强引用缓存");});
-        scenario("跨域reload同request迟到loading不得倒退ready",()->{CountDownLatch blocked=new CountDownLatch(1),resume=new CountDownLatch(1);java.util.concurrent.atomic.AtomicBoolean block=new java.util.concurrent.atomic.AtomicBoolean();ReactiveDomain first=new ReactiveDomain(action->{if(block.get()&&Thread.currentThread().getName().equals("image-reload-race")){blocked.countDown();try{require(resume.await(2,TimeUnit.SECONDS),"reload未释放");}catch(InterruptedException canceled){throw new AssertionError(canceled);}}action.run();});SharedImageService s=service();ImageSource source=ImageSource.resource("test:race");ImageService.Lease[] a={null};first.execute(()->a[0]=s.acquire(source,first));onClose(()->first.execute(a[0]::close));ImageService.Lease b=lease(s,source);require(ready(s,b).status==ImageState.Status.READY,"初始未就绪");long oldRequest=state(b).request;block.set(true);Thread reload=new Thread(()->s.reload(source),"image-reload-race");onClose(()->{resume.countDown();reload.join(1500);require(!reload.isAlive(),"reload线程未退出");});reload.start();require(blocked.await(1,TimeUnit.SECONDS),"reload未停在首域通知");long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(1);while((state(b).request==oldRequest||state(b).status!=ImageState.Status.READY)&&System.nanoTime()<deadline){s.drain();Thread.sleep(5);}require(state(b).request>oldRequest&&state(b).status==ImageState.Status.READY,"新代未在另域先完成");long request=state(b).request;resume.countDown();reload.join(1000);require(!reload.isAlive()&&state(b).status==ImageState.Status.READY&&state(b).request==request,"同代迟到loading覆盖ready");block.set(false);});
-        scenario("GPU未就绪自定义占位同代捕获只绘一次且保留输入身份",()->{
-            SharedImageService s=service();SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();host.width=80;host.height=60;
-            SceneNode[] image={null},placeholder={null};Signal<Integer>[] tint=new Signal[1],clicks=new Signal[1];Signal<ImageSource>[] source=new Signal[1];
-            ScenePageSession page=ScenePageSession.open(domain,host,host,c->{
-                tint[0]=domain.signal(0x8042A563);clicks[0]=domain.signal(0);source[0]=domain.signal(ImageSource.bitmap(pixels(16,16)));
-                placeholder[0]=new SceneNode().size(Size.fill(1),Size.fill(1)).bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(tint[0],(node,value)->node.background(value))).onClick(()->clicks[0].set(clicks[0].get()+1));
-                placeholder[0].add(new SceneNode().text("同代备用文字")).add(new SceneNode().background(0xffabcdef).visible(false));
-                image[0]=SceneImage.create(s,source[0],domain.signal(ImageOptions.defaults().size(Size.fixed(40),Size.fixed(30))),placeholder[0]);c.mount(image[0]);
-            });onClose(page::close);for(int i=0;i<40;i++){s.drain();page.frame();if(host.last.commands().stream().anyMatch(cmd->cmd.kind==PaintCommand.Kind.IMAGE))break;Thread.sleep(5);}
-            PaintCommand old=host.last.commands().stream().filter(cmd->cmd.kind==PaintCommand.Kind.IMAGE).findFirst().get();
-            require(old.pendingPaint!=null&&old.failedPaint==old.pendingPaint&&old.pendingPaint.commands().stream().anyMatch(cmd->cmd.color==0x8042A563),"READY隐藏占位没有捕获同代分支");
-            require(old.pendingPaint.commands().stream().noneMatch(cmd->cmd.color==0xffabcdef),"捕获擅自显露hidden后代");
-            java.util.UUID id=placeholder[0].id();long[] identity={0},generation={0};domain.execute(()->{identity[0]=SceneImage.state(image[0]).get().content.identity;require(page.pipeline().current().geometry.get(placeholder[0])==null,"READY备用几何进入输入");generation[0]=page.pipeline().current().generation;});
-            page.frame();domain.execute(()->require(page.pipeline().current().generation==generation[0],"稳定帧重捕获整树"));
-            s.presentation(identity[0],true,null);page.frame();
-            require(host.last.commands().stream().anyMatch(cmd->cmd.kind==PaintCommand.Kind.IMAGE),"upload pending丢失同代内容");
-            require(host.last.commands().stream().noneMatch(cmd->cmd.kind==PaintCommand.Kind.RECT&&cmd.color==0x8042A563),"自定义占位在IMAGE之外无条件叠画");
-            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0,10,10));page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0,10,10));page.frame();domain.execute(()->require(clicks[0].get()==1,"资源pending删掉占位已有交互"));
-            s.presentation(identity[0],false,null);domain.execute(()->tint[0].set(0x80551199));page.frame();
-            PaintCommand fresh=host.last.commands().stream().filter(cmd->cmd.kind==PaintCommand.Kind.IMAGE).findFirst().get();
-            require(fresh.pendingPaint.commands().stream().anyMatch(cmd->cmd.color==0x80551199)&&old.pendingPaint.commands().stream().anyMatch(cmd->cmd.color==0x8042A563),"新主题/旧计划备用混代");
-            require(placeholder[0].id().equals(id),"呈现状态重建占位UUID");domain.execute(()->source[0].set(ImageSource.bitmap(pixels(8,8))));
-            s.presentation(identity[0],false,"upload","old failure");page.frame();domain.execute(()->require(SceneImage.state(image[0]).get().status!=ImageState.Status.FAILED,"旧identity反馈覆盖新source"));
-        });
-        scenario("占位标准控件hover服从整页遮挡而非备用子集",()->{
-            SharedImageService s=service();SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();SceneNode[] image={null},cover={null};Signal<Boolean>[] shown=new Signal[1];
-            ScenePageSession page=ScenePageSession.open(domain,host,host,c->{
-                shown[0]=domain.signal(false);SceneNode placeholder=club.heiqi.uilib.ui.scene.control.SceneButton.create(c,domain.signal("备用按钮"),domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.dark()),()->{});
-                image[0]=SceneImage.create(s,domain.signal(ImageSource.bitmap(pixels(16,16))),domain.signal(ImageOptions.defaults().size(Size.fixed(40),Size.fixed(30))),placeholder);c.mount(image[0]);
-                cover[0]=new SceneNode().size(Size.fixed(40),Size.fixed(30)).onClick(()->{}).bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(shown[0],(node,value)->node.visible(value)));c.mount(cover[0]);
-            });onClose(page::close);for(int i=0;i<40;i++){s.drain();page.frame();if(host.last.commands().stream().anyMatch(cmd->cmd.kind==PaintCommand.Kind.IMAGE))break;Thread.sleep(5);}
-            long[] identity={0};domain.execute(()->identity[0]=SceneImage.state(image[0]).get().content.identity);s.presentation(identity[0],true,null);
-            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(10,10));page.frame();
-            PaintCommand uncovered=host.last.commands().stream().filter(cmd->cmd.kind==PaintCommand.Kind.IMAGE).findFirst().get();require(uncovered.pendingPaint.commands().stream().anyMatch(cmd->cmd.color==club.heiqi.uilib.ui.scene.control.SceneTheme.dark().hover),"有效备用按钮未读主输入hover");
-            domain.execute(()->shown[0].set(true));page.frame();PaintCommand covered=host.last.commands().stream().filter(cmd->cmd.kind==PaintCommand.Kind.IMAGE).findFirst().get();
-            require(covered.pendingPaint.commands().stream().noneMatch(cmd->cmd.color==club.heiqi.uilib.ui.scene.control.SceneTheme.dark().hover),"备用子集越过全页遮挡私造hover");
-            domain.execute(()->require(page.runtime().pointerRouter().hovered(page.pipeline().current().geometry)==cover[0],"主输入geometry不再保留遮挡"));
-        });
-        scenario("宿主facts覆盖层被动提示同代clip及底层click保持",()->{
-            club.heiqi.uilib.ui.scene.text.font.FontTextService actualText=own(new club.heiqi.uilib.ui.scene.text.font.FontTextService(club.heiqi.uilib.host.font.IsolatedFontEngine.shared()));
-            AtomicInteger tooltipLayouts=new AtomicInteger();club.heiqi.uilib.ui.scene.text.SceneTextMeasurer measured=new club.heiqi.uilib.ui.scene.text.SceneTextMeasurer(){
-                @Override public club.heiqi.uilib.ui.scene.text.TextLayout layout(String value,club.heiqi.uilib.ui.scene.text.TextStyle style,int width){return actualText.layout(value,style,width);}
-                @Override public club.heiqi.uilib.ui.scene.text.TextLayout layout(String value,club.heiqi.uilib.ui.scene.text.TextStyle style,int width,club.heiqi.uilib.ui.scene.text.TextPolicy policy){return actualText.layout(value,style,width,policy);}
-                @Override public club.heiqi.uilib.ui.scene.text.TextLayout layout(club.heiqi.uilib.ui.scene.text.AttributedText value,float width,club.heiqi.uilib.ui.scene.text.TextPolicy policy){tooltipLayouts.incrementAndGet();return actualText.layout(value,width,policy);}
-            };
-            int[] palette=new int[16];java.util.Arrays.fill(palette,0xffffff);palette[10]=0x55ff55;
-            final club.heiqi.uilib.ui.scene.image.ItemImageFacts[] facts={new club.heiqi.uilib.ui.scene.image.ItemImageFacts("32",club.heiqi.uilib.host.client.image.MinecraftTooltipContent.fromMinecraft("§a§l§o§n§m钻石 提示§r\n正文重复正文重复正文重复正文",palette),true,.5,0xff80ff00)};palette[10]=0;
-            SharedImageService s=own(new SharedImageService(input->{final club.heiqi.uilib.ui.scene.image.ItemImageFacts prepared=facts[0];return ()->new ImageContent(16,16){@Override public club.heiqi.uilib.ui.scene.image.ItemImageFacts itemFacts(){return prepared;}};},SharedImageService.Budget.defaults()));
-            SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();host.width=80;host.height=100;SceneNode[] image={null},under={null},pane={null};Signal<ImageOptions>[] opts=new Signal[1];Signal<club.heiqi.uilib.ui.scene.control.SceneTheme>[] theme=new Signal[1];Signal<Boolean>[] enabled=new Signal[1];Signal<Integer>[] clicks=new Signal[1];ImageSource source=ImageSource.resource("host:facts");
-            ScenePageSession page=ScenePageSession.open(domain,host,measured,c->{opts[0]=domain.signal(ImageOptions.defaults().size(Size.fixed(60),Size.fixed(40)));theme[0]=domain.signal(club.heiqi.uilib.ui.scene.control.SceneTheme.dark());enabled[0]=domain.signal(true);clicks[0]=domain.signal(0);under[0]=new SceneNode().size(Size.fixed(80),Size.fixed(80)).onClick(()->clicks[0].set(clicks[0].get()+1));image[0]=SceneImage.themed(s,domain.signal(source),opts[0],theme[0]);pane[0]=new SceneNode().size(Size.fixed(40),Size.fixed(30)).clip(true).bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(enabled[0],(node,value)->node.enabled(value))).add(image[0]);c.mount(under[0]);c.mount(pane[0]);});onClose(page::close);for(int i=0;i<40;i++){page.frame();s.drain();Thread.sleep(5);}
-            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(10,10));page.frame();domain.execute(()->{require(image[0].clickAction()==null,"被动提示建立dummyclick");require(page.runtime().pointerRouter().passiveHovered(page.pipeline().current().geometry)==under[0],"默认物品option应全关");opts[0].set(opts[0].get().quantity(true).durability(true).tooltip(true));});page.frame();
-            domain.execute(()->{
-                require(page.runtime().pointerRouter().hovered(page.pipeline().current().geometry)==under[0]&&page.runtime().pointerRouter().passiveHovered(page.pipeline().current().geometry)==image[0],"passive与click命中未分离");
-                club.heiqi.uilib.ui.scene.paint.PaintPlan plan=page.pipeline().current().paint;
-                PaintCommand command=plan.commands().stream().filter(cmd->cmd.kind==PaintCommand.Kind.IMAGE).findFirst().get();
-                require(command.readyOverlay!=null,"数量耐久缺少成功覆盖层");boolean count=false,bar=false,tip=false,formatted=false;
-                for(PaintCommand cmd:command.readyOverlay.commands()){
-                    count|=cmd.text!=null&&cmd.text.logicalText.equals("32");bar|=cmd.kind==PaintCommand.Kind.RECT&&cmd.color==0xff80ff00;
-                }
-                require(count&&bar,"数量耐久未进入成功覆盖层");
-                for(PaintCommand cmd:plan.commands()){
-                    require(cmd.text==null||!cmd.text.logicalText.equals("32"),"数量绕过成功分支无条件叠画");
-                    if(cmd.text!=null&&cmd.text.logicalText.contains("钻石 提示")){
-                        tip=true;require(cmd.clip!=null&&cmd.clip.x>=0&&cmd.clip.y>=0&&cmd.clip.x+cmd.clip.width<=80&&cmd.clip.y+cmd.clip.height<=100,"tooltip未在viewport裁剪");
-                        require(!cmd.text.logicalText.contains("§"),"原版§未正式解析");
-                        for(club.heiqi.uilib.ui.scene.text.TextLayout.Line line:cmd.text.lines())for(club.heiqi.uilib.ui.scene.text.TextLayout.Glyph glyph:line.glyphs())formatted|=glyph.resolvedStyle!=null&&glyph.resolvedStyle.fontStyle.weight==700&&glyph.resolvedStyle.fontStyle.posture==club.heiqi.uilib.ui.scene.text.FontStyle.Posture.ITALIC&&glyph.resolvedStyle.effects.underline&&glyph.resolvedStyle.effects.strike&&glyph.resolvedStyle.color==0xff55ff55;
+
+    @Override
+    protected void setup() throws Exception {
+        BufferedImage image = new BufferedImage(120, 60, BufferedImage.TYPE_INT_ARGB);
+        image.setRGB(0, 0, 0x80FF0000);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", out);
+        png = out.toByteArray();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        http =
+                Executors.newFixedThreadPool(
+                        4,
+                        r -> {
+                            Thread t = new Thread(r, "image-http-fixture");
+                            t.setDaemon(true);
+                            return t;
+                        });
+        server.setExecutor(http);
+        server.createContext(
+                "/ok",
+                exchange -> {
+                    hits.incrementAndGet();
+                    exchange.sendResponseHeaders(200, png.length);
+                    try (OutputStream body = exchange.getResponseBody()) {
+                        body.write(png);
                     }
-                }
-                require(tip&&formatted,"提示缺失或palette快照/bold属性丢失");
-                for(club.heiqi.uilib.ui.scene.paint.PaintPlan fallback:new club.heiqi.uilib.ui.scene.paint.PaintPlan[]{command.pendingPaint,command.failedPaint})if(fallback!=null)for(PaintCommand cmd:fallback.commands())require((cmd.text==null||!cmd.text.logicalText.equals("32"))&&!(cmd.kind==PaintCommand.Kind.RECT&&cmd.color==0xff80ff00),"数量耐久泄漏到未成功分支");
-            });
-            int oldLayouts=tooltipLayouts.get();page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(12,10));page.frame();require(tooltipLayouts.get()==oldLayouts,"hover重复解析/排版同一tooltip");
-            domain.execute(()->theme[0].set(theme[0].get().withTextStyle(new club.heiqi.uilib.ui.scene.text.TextStyle("default",24,0xff224466))));page.frame();require(tooltipLayouts.get()==oldLayouts+1,"当前主题字号未使tooltip派生失效");
-            domain.execute(()->{boolean scaled=false;for(PaintCommand cmd:page.pipeline().current().paint.commands())if(cmd.text!=null&&cmd.text.logicalText.contains("钻石 提示")){for(club.heiqi.uilib.ui.scene.text.TextLayout.Line line:cmd.text.lines())for(club.heiqi.uilib.ui.scene.text.TextLayout.Glyph glyph:line.glyphs())scaled|=glyph.size==24&&glyph.resolvedStyle.color==0xff55ff55;}require(scaled,"tooltip冻结旧字号或丢失转换颜色");});
-            actualText.reload(club.heiqi.uilib.ui.scene.text.font.FontTextService.defaultSources(getClass().getClassLoader(),2));host.metrics++;page.frame();require(tooltipLayouts.get()==oldLayouts+2,"同主题字体资源代际未重排tooltip");
-            host.width=100;page.frame();require(tooltipLayouts.get()==oldLayouts+3,"viewport变宽未重排tooltip");host.width=80;page.frame();
-            SceneNode[] focusBefore={null};domain.execute(()->focusBefore[0]=page.runtime().focusRouter().focused().get());
-            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0,10,10));page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0,10,10));page.frame();domain.execute(()->require(clicks[0].get()==1&&page.runtime().focusRouter().focused().get()==focusBefore[0],"提示抢走底层click/focus"));
-            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(50,10));page.frame();domain.execute(()->require(page.runtime().pointerRouter().passiveHovered(page.pipeline().current().geometry)==under[0],"clip外旧passive命中"));
-            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(10,10));domain.execute(()->enabled[0].set(false));page.frame();domain.execute(()->require(page.runtime().pointerRouter().passiveHovered(page.pipeline().current().geometry)==under[0],"disabled祖先仍显示tip"));
-            domain.execute(()->{enabled[0].set(true);facts[0]=new club.heiqi.uilib.ui.scene.image.ItemImageFacts("7","新语言提示",false,1,0xff00ff00);theme[0].set(club.heiqi.uilib.ui.scene.control.SceneTheme.light());});s.reload(source);for(int i=0;i<40;i++){page.frame();s.drain();Thread.sleep(5);}domain.execute(()->{boolean fresh=false,old=false;for(PaintCommand cmd:page.pipeline().current().paint.resourceCommands())if(cmd.text!=null){fresh|=cmd.text.logicalText.equals("新语言提示");old|=cmd.text.logicalText.contains("钻石 提示");}require(fresh&&!old,"来源正规reload未更新tooltip事实");});
-            long[] identity={0};domain.execute(()->identity[0]=SceneImage.state(image[0]).get().content.identity);s.presentation(identity[0],false,"item-render","host failure");page.frame();domain.execute(()->{ImageState state=SceneImage.state(image[0]).get();require(state.status==ImageState.Status.FAILED&&state.stage.equals("item-render")&&state.source==source,"宿主绘制失败未局部归属source/stage");require(!page.ended(),"物品失败关整页");});
-        });
-        scenario("heightFill根行列实际分配与自然宽bounds及source更新",()->{
-            SharedImageService s=service();SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();host.width=80;host.height=100;
-            SceneNode[] root={null},column={null},a={null},b={null},row={null},cross={null},fixed={null},heightBound={null};Signal<ImageSource>[] source=new Signal[1];
-            ScenePageSession page=ScenePageSession.open(domain,host,host,c->{
-                source[0]=domain.signal(ImageSource.bitmap(pixels(120,60)));
-                root[0]=SceneImage.create(s,source[0],domain.signal(ImageOptions.defaults().size(Size.natural(),Size.fill(1))));
-                a[0]=SceneImage.create(s,source[0],domain.signal(ImageOptions.defaults().size(Size.natural(),Size.fill(1))));
-                b[0]=SceneImage.create(s,source[0],domain.signal(ImageOptions.defaults().size(Size.natural().bounds(0,75),Size.fill(3))));
-                column[0]=new SceneNode().size(Size.natural(),Size.fixed(100)).add(a[0]).add(b[0]);
-                cross[0]=SceneImage.create(s,source[0],domain.signal(ImageOptions.defaults().size(Size.natural(),Size.fill(1))));
-                row[0]=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.natural(),Size.fixed(100)).add(cross[0]);
-                fixed[0]=SceneImage.documentImage(s,source[0],domain.signal(ImageOptions.defaults().size(Size.natural(),Size.fixed(45))));
-                heightBound[0]=SceneImage.create(s,source[0],domain.signal(ImageOptions.defaults().size(Size.natural(),Size.fixed(100).bounds(0,50))));
-                c.mount(root[0]);c.mount(column[0]);c.mount(row[0]);c.mount(fixed[0]);c.mount(heightBound[0]);
-            });onClose(page::close);for(int i=0;i<40;i++){page.frame();s.drain();Thread.sleep(5);}
-            domain.execute(()->{
-                club.heiqi.uilib.ui.scene.layout.SceneGeometryView g=page.pipeline().current().geometry;
-                require(g.get(root[0]).box.width==200&&g.get(root[0]).box.height==100,"root fill高度未反推自然宽或父不足压小");
-                require(g.get(a[0]).box.width==50&&g.get(a[0]).box.height==25,"column实际分配高度未进入测量");
-                require(g.get(b[0]).box.width==75&&g.get(b[0]).box.height==75,"minmax改变了分配高度");
-                require(g.get(column[0]).box.width==75,"column自然宽未传播实际分配");
-                require(g.get(cross[0]).box.width==200&&g.get(row[0]).box.width==200,"row cross fill高度未传播");
-                require(g.get(heightBound[0]).box.width==200&&g.get(heightBound[0]).box.height==50,"fixed高度比例应先按声明再各自bounds");
-                require(g.get(fixed[0]).box.width==90&&g.get(fixed[0]).box.height==45,"document明确高度未覆盖默认缩宽");
-                source[0].set(ImageSource.bitmap(pixels(60,120)));
-            });for(int i=0;i<40;i++){page.frame();s.drain();Thread.sleep(5);}domain.execute(()->require(page.pipeline().current().geometry.get(root[0]).box.width==50,"source比例变化未正规重测"));
-        });
-        scenario("document大图缩小小图不放大单边及minmax正式geometry",()->{SharedImageService s=service();SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();host.width=80;host.height=500;SceneNode[] doc={null},edge={null};Signal<ImageOptions>[] options=new Signal[1];ScenePageSession page=ScenePageSession.open(domain,host,host,c->{Signal<ImageSource> source=domain.signal(ImageSource.bitmap(pixels(120,60)));options[0]=domain.signal(ImageOptions.defaults());doc[0]=SceneImage.documentImage(s,source,options[0]);edge[0]=SceneImage.create(s,source,domain.signal(ImageOptions.defaults().size(Size.fixed(80),Size.natural().bounds(50,90))));c.mount(new SceneNode().add(doc[0]).add(edge[0]));});onClose(page::close);for(int i=0;i<40;i++){page.frame();s.drain();Thread.sleep(5);}domain.execute(()->{LayoutBox a=page.pipeline().current().geometry.get(doc[0]).box,b=page.pipeline().current().geometry.get(edge[0]).box;require(a.width==80&&a.height==40,"document未缩大图");require(b.width==80&&b.height==50,"单边ratio或各自bounds错误");});host.width=240;page.frame();domain.execute(()->require(page.pipeline().current().geometry.get(doc[0]).box.width==120,"document放大小图"));domain.execute(()->options[0].set(ImageOptions.defaults().size(Size.fixed(50),Size.fixed(25))));page.frame();domain.execute(()->require(page.pipeline().current().geometry.get(doc[0]).box.width==50,"document显式尺寸未覆盖"));});
+                });
+        server.createContext(
+                "/retry",
+                exchange -> {
+                    int n = retry.incrementAndGet();
+                    exchange.sendResponseHeaders(n == 1 ? 503 : 200, n == 1 ? -1 : png.length);
+                    if (n > 1)
+                        try (OutputStream body = exchange.getResponseBody()) {
+                            body.write(png);
+                        }
+                    exchange.close();
+                });
+        server.createContext(
+                "/bad",
+                exchange -> {
+                    exchange.sendResponseHeaders(404, -1);
+                    exchange.close();
+                });
+        server.createContext(
+                "/timeout",
+                exchange -> {
+                    timeout.incrementAndGet();
+                    try {
+                        Thread.sleep(650);
+                        exchange.sendResponseHeaders(200, png.length);
+                        exchange.getResponseBody().write(png);
+                    } catch (Exception ignored) {
+                    } finally {
+                        exchange.close();
+                    }
+                });
+        server.createContext(
+                "/late",
+                exchange -> {
+                    lateStarted.countDown();
+                    try {
+                        lateRelease.await(3, TimeUnit.SECONDS);
+                        exchange.sendResponseHeaders(200, png.length);
+                        exchange.getResponseBody().write(png);
+                    } catch (Exception ignored) {
+                    } finally {
+                        exchange.close();
+                    }
+                });
+        server.start();
+        base = "http://127.0.0.1:" + server.getAddress().getPort();
+        onClose(
+                () -> {
+                    lateRelease.countDown();
+                    server.stop(0);
+                    http.shutdownNow();
+                    require(http.awaitTermination(3000, TimeUnit.MILLISECONDS), "HTTP fixture未结束");
+                });
     }
-    public static void main(String[] args)throws Exception{new ImageServiceScenario().run(args);}
+
+    private SharedImageService service() {
+        return own(
+                new SharedImageService(
+                        new JavaImageLoader(
+                                id -> new ByteArrayInputStream(png),
+                                new JavaImageLoader.Budget(
+                                        1024 * 1024, 1024 * 1024, 150, 150, 350)),
+                        new SharedImageService.Budget(2, 8, 16, 8, 2 * 1024 * 1024)));
+    }
+
+    private ImageService.Lease lease(SharedImageService service, ImageSource source) {
+        ImageService.Lease[] value = {null};
+        domain.execute(() -> value[0] = service.acquire(source, domain));
+        onClose(() -> domain.execute(value[0]::close));
+        return value[0];
+    }
+
+    private ImageState state(ImageService.Lease lease) {
+        ImageState[] state = {null};
+        domain.execute(() -> state[0] = lease.state().get());
+        return state[0];
+    }
+
+    private ImageState ready(SharedImageService service, ImageService.Lease lease)
+            throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4);
+        while (System.nanoTime() < deadline) {
+            service.drain();
+            ImageState state = state(lease);
+            if (state.status != ImageState.Status.LOADING) return state;
+            Thread.sleep(5);
+        }
+        throw new AssertionError("服务未在有限窗口完成");
+    }
+
+    @Override
+    protected void runTests() throws Exception {
+        scenario(
+                "真实HTTP成功透明像素共享及单消费者卸载",
+                () -> {
+                    SharedImageService s = service();
+                    ImageSource source = ImageSource.http(base + "/ok");
+                    ImageService.Lease a = lease(s, source), b = lease(s, source);
+                    ImageState result = ready(s, a);
+                    require(
+                            result.status == ImageState.Status.READY
+                                    && result.content.width == 120
+                                    && result.content.height == 60,
+                            "HTTP未解码");
+                    require((result.content.pixels()[3] & 255) == 128, "透明RGBA丢失");
+                    require(state(b).content == result.content && hits.get() == 1, "相同资源没有共享");
+                    domain.execute(a::close);
+                    s.reload(source);
+                    require(
+                            ready(s, b).status == ImageState.Status.READY && hits.get() == 2,
+                            "卸载一个消费者破坏其他消费者");
+                });
+        scenario(
+                "HTTP失败timeout与一次瞬时重试不每帧发起",
+                () -> {
+                    SharedImageService s = service();
+                    require(
+                            ready(s, lease(s, ImageSource.http(base + "/bad")))
+                                    .stage
+                                    .equals("http"),
+                            "HTTP失败缺stage");
+                    ImageState result = ready(s, lease(s, ImageSource.http(base + "/timeout")));
+                    require(
+                            result.status == ImageState.Status.FAILED && timeout.get() == 2,
+                            "timeout或一次重试预算错误");
+                    for (int i = 0; i < 8; i++) s.drain();
+                    require(timeout.get() == 2, "失败每帧重发");
+                    require(
+                            ready(s, lease(s, ImageSource.http(base + "/retry"))).status
+                                            == ImageState.Status.READY
+                                    && retry.get() == 2,
+                            "瞬时503重试未完成");
+                });
+        scenario(
+                "region仅选区自然尺寸缺item适配及无效URI局部诊断",
+                () -> {
+                    SharedImageService s = service();
+                    ImageState selected =
+                            ready(
+                                    s,
+                                    lease(
+                                            s,
+                                            ImageSource.resource(
+                                                    "test:region",
+                                                    new ImageSource.Region(5, 6, 20, 10))));
+                    require(
+                            selected.content.width == 20 && selected.content.height == 10,
+                            "region用了整张尺寸");
+                    require(
+                            ready(s, lease(s, ImageSource.parse("item:minecraft:diamond", null)))
+                                            .status
+                                    == ImageState.Status.UNSUPPORTED,
+                            "item缺adapter非unsupported");
+                    require(
+                            ready(s, lease(s, ImageSource.parse("https://", null)))
+                                    .stage
+                                    .equals("resolve"),
+                            "非法URI导致页面异常");
+                });
+        scenario(
+                "晚HTTP来源切换closedconsumer及runtime自然尺寸固定尺寸",
+                () -> {
+                    SharedImageService s = service();
+                    SoftwareSceneScenario.SoftwareHost host =
+                            new SoftwareSceneScenario.SoftwareHost();
+                    host.width = 300;
+                    host.height = 200;
+                    Signal<ImageSource>[] source = new Signal[1];
+                    SceneNode[] node = {null}, fixed = {null};
+                    ScenePageSession page =
+                            ScenePageSession.open(
+                                    domain,
+                                    host,
+                                    host,
+                                    c -> {
+                                        source[0] = domain.signal(ImageSource.http(base + "/late"));
+                                        Signal<ImageOptions> options =
+                                                domain.signal(ImageOptions.defaults().alt("迟到图片"));
+                                        node[0] = SceneImage.create(s, source[0], options);
+                                        fixed[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        source[0],
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.fixed(70),
+                                                                                Size.fixed(40))));
+                                        c.mount(new SceneNode().add(node[0]).add(fixed[0]));
+                                    });
+                    onClose(page::close);
+                    page.frame();
+                    s.drain();
+                    require(lateStarted.await(1, TimeUnit.SECONDS), "未触达真实慢HTTP");
+                    java.util.UUID id = node[0].id();
+                    domain.execute(() -> source[0].set(ImageSource.bitmap(pixels(96, 48))));
+                    page.frame();
+                    for (int i = 0; i < 40; i++) {
+                        s.drain();
+                        page.frame();
+                        if (host.last.commands().stream()
+                                .anyMatch(c -> c.kind == PaintCommand.Kind.IMAGE)) break;
+                        Thread.sleep(5);
+                    }
+                    domain.execute(
+                            () -> {
+                                LayoutBox box = page.pipeline().current().geometry.get(node[0]).box;
+                                require(box.width == 96 && box.height == 48, "ready未自动重测");
+                                require(
+                                        page.pipeline().current().geometry.get(fixed[0]).box.width
+                                                == 70,
+                                        "固定宽随自然内容改变");
+                            });
+                    lateRelease.countDown();
+                    Thread.sleep(220);
+                    s.drain();
+                    page.frame();
+                    require(node[0].id().equals(id), "source变化重建UUID");
+                    require(
+                            host.last.commands().stream()
+                                    .filter(c -> c.kind == PaintCommand.Kind.IMAGE)
+                                    .allMatch(
+                                            c ->
+                                                    c.image.content.width == 96
+                                                            && c.image.content.height == 48),
+                            "迟到覆盖新来源");
+                    page.close();
+                    s.drain();
+                    require(s.entryCount() <= 1, "关闭消费者保留旧loadingentry");
+                });
+        scenario(
+                "独立域完成入口无需scene与域lease关闭",
+                () -> {
+                    ExecutorService executor = Executors.newSingleThreadExecutor();
+                    onClose(
+                            () -> {
+                                executor.shutdown();
+                                require(
+                                        executor.awaitTermination(2, TimeUnit.SECONDS),
+                                        "domain未结束");
+                            });
+                    ReactiveDomain other = new ReactiveDomain(executor);
+                    SharedImageService s = service();
+                    ImageService.Lease[] lease = {null};
+                    CountDownLatch mounted = new CountDownLatch(1);
+                    other.execute(
+                            () -> {
+                                lease[0] = s.acquire(ImageSource.resource("test:reload"), other);
+                                mounted.countDown();
+                            });
+                    require(mounted.await(1, TimeUnit.SECONDS), "域未进入");
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+                    boolean[] ready = {false};
+                    while (!ready[0] && System.nanoTime() < deadline) {
+                        s.drain();
+                        CountDownLatch checked = new CountDownLatch(1);
+                        other.execute(
+                                () -> {
+                                    ready[0] =
+                                            lease[0].state().get().status
+                                                    == ImageState.Status.READY;
+                                    checked.countDown();
+                                });
+                        require(checked.await(1, TimeUnit.SECONDS), "独立domain未收入口");
+                        Thread.sleep(5);
+                    }
+                    require(ready[0], "无scene域未自动完成");
+                    s.resourcesReloaded();
+                    s.drain();
+                    CountDownLatch closed = new CountDownLatch(1);
+                    other.execute(
+                            () -> {
+                                lease[0].close();
+                                closed.countDown();
+                            });
+                    require(closed.await(1, TimeUnit.SECONDS), "域lease未关闭");
+                });
+        scenario(
+                "无消费者reload预算反例与实际解码预算拒绝",
+                () -> {
+                    SharedImageService s =
+                            own(
+                                    new SharedImageService(
+                                            new JavaImageLoader(
+                                                    id -> new ByteArrayInputStream(png),
+                                                    JavaImageLoader.Budget.defaults()),
+                                            new SharedImageService.Budget(
+                                                    1, 2, 2, 2, 120 * 60 * 4)));
+                    ImageSource source = ImageSource.resource("test:a");
+                    ImageService.Lease a = lease(s, source);
+                    require(ready(s, a).status == ImageState.Status.READY, "预算内初始图失败");
+                    domain.execute(a::close);
+                    s.reload(source);
+                    s.drain();
+                    require(s.entryCount() == 0 && s.retainedBytes() == 0, "无消费者reload存在游离记账");
+                    SharedImageService tiny =
+                            own(
+                                    new SharedImageService(
+                                            new JavaImageLoader(
+                                                    id -> new ByteArrayInputStream(png),
+                                                    new JavaImageLoader.Budget(
+                                                            1024 * 1024, 16, 100, 100, 300)),
+                                            SharedImageService.Budget.defaults()));
+                    require(
+                            ready(tiny, lease(tiny, source)).stage.equals("budget"),
+                            "维度预算没有在解码前拒绝");
+                });
+        scenario(
+                "真实worker资源reload旧代迟到及upload pending卸载字节释放",
+                () -> {
+                    CountDownLatch started = new CountDownLatch(1),
+                            release = new CountDownLatch(1),
+                            finished = new CountDownLatch(1);
+                    AtomicInteger loads = new AtomicInteger();
+                    ImageContent old = pixels(120, 60), current = pixels(96, 48);
+                    SharedImageService s =
+                            own(
+                                    new SharedImageService(
+                                            source -> {
+                                                int n = loads.incrementAndGet();
+                                                return () -> {
+                                                    if (n == 1) {
+                                                        started.countDown();
+                                                        for (; ; ) {
+                                                            try {
+                                                                if (release.await(
+                                                                        2, TimeUnit.SECONDS)) break;
+                                                                throw new AssertionError(
+                                                                        "旧代release未执行");
+                                                            } catch (
+                                                                    InterruptedException canceled) {
+                                                                /* 模拟原生解码不响应取消，但仍不得发布旧代。 */
+                                                            }
+                                                        }
+                                                        finished.countDown();
+                                                        return old;
+                                                    }
+                                                    return current;
+                                                };
+                                            },
+                                            SharedImageService.Budget.defaults()));
+                    onClose(release::countDown);
+                    ImageService.Lease consumer = lease(s, ImageSource.resource("test:epoch"));
+                    s.drain();
+                    require(started.await(1, TimeUnit.SECONDS), "旧代worker未进入");
+                    s.resourcesReloaded();
+                    ImageState latest = ready(s, consumer);
+                    require(latest.content == current, "资源reload没有取得新代");
+                    release.countDown();
+                    require(finished.await(1, TimeUnit.SECONDS), "旧代worker未完成");
+                    Thread.sleep(20);
+                    s.drain();
+                    require(
+                            state(consumer).content == current
+                                    && s.retainedBytes() == current.bytes(),
+                            "旧代完成污染当前内容/bytes");
+                    s.presentation(current.identity, true, null);
+                    require(
+                            state(consumer).status == ImageState.Status.LOADING,
+                            "未触达GPU pending分支");
+                    domain.execute(consumer::close);
+                    require(
+                            s.entryCount() == 0 && s.retainedBytes() == 0,
+                            "upload pending最后卸载遗留字节记账");
+                });
+        scenario(
+                "资源close异常仍释放所有快照并shutdown worker及failedbitmap不缓存",
+                () -> {
+                    AtomicInteger closed = new AtomicInteger();
+                    CountDownLatch started = new CountDownLatch(2), release = new CountDownLatch(1);
+                    SharedImageService s =
+                            own(
+                                    new SharedImageService(
+                                            source ->
+                                                    new ImageLoader.Task() {
+                                                        public ImageContent call()
+                                                                throws Exception {
+                                                            started.countDown();
+                                                            release.await();
+                                                            return pixels(1, 1);
+                                                        }
+
+                                                        public void close() throws Exception {
+                                                            closed.incrementAndGet();
+                                                            release.countDown();
+                                                            if (source.location.endsWith("a"))
+                                                                throw new IOException(
+                                                                        "fixture close failure");
+                                                        }
+                                                    },
+                                            SharedImageService.Budget.defaults()));
+                    ImageService.Lease a = lease(s, ImageSource.resource("test:a")),
+                            b = lease(s, ImageSource.resource("test:b"));
+                    s.drain();
+                    require(started.await(1, TimeUnit.SECONDS), "两个worker没有实际启动");
+                    try {
+                        s.close();
+                        throw new AssertionError("释放异常未报告");
+                    } catch (IllegalStateException failure) {
+                        require(failure.getCause() instanceof IOException, "原close异常丢失");
+                    }
+                    require(
+                            closed.get() == 2
+                                    && s.awaitClose(1000)
+                                    && s.entryCount() == 0
+                                    && s.retainedBytes() == 0,
+                            "close异常跳过必要清理");
+                    SharedImageService tiny =
+                            own(
+                                    new SharedImageService(
+                                            source -> () -> source.bitmap,
+                                            new SharedImageService.Budget(1, 1, 2, 2, 4)));
+                    ImageService.Lease bitmap = lease(tiny, ImageSource.bitmap(pixels(3, 3)));
+                    require(
+                            ready(tiny, bitmap).status == ImageState.Status.FAILED,
+                            "超budgetbitmap未失败");
+                    domain.execute(bitmap::close);
+                    require(
+                            tiny.entryCount() == 0 && tiny.retainedBytes() == 0,
+                            "failedbitmap无订阅仍强引用缓存");
+                });
+        scenario(
+                "跨域reload同request迟到loading不得倒退ready",
+                () -> {
+                    CountDownLatch blocked = new CountDownLatch(1), resume = new CountDownLatch(1);
+                    java.util.concurrent.atomic.AtomicBoolean block =
+                            new java.util.concurrent.atomic.AtomicBoolean();
+                    ReactiveDomain first =
+                            new ReactiveDomain(
+                                    action -> {
+                                        if (block.get()
+                                                && Thread.currentThread()
+                                                        .getName()
+                                                        .equals("image-reload-race")) {
+                                            blocked.countDown();
+                                            try {
+                                                require(
+                                                        resume.await(2, TimeUnit.SECONDS),
+                                                        "reload未释放");
+                                            } catch (InterruptedException canceled) {
+                                                throw new AssertionError(canceled);
+                                            }
+                                        }
+                                        action.run();
+                                    });
+                    SharedImageService s = service();
+                    ImageSource source = ImageSource.resource("test:race");
+                    ImageService.Lease[] a = {null};
+                    first.execute(() -> a[0] = s.acquire(source, first));
+                    onClose(() -> first.execute(a[0]::close));
+                    ImageService.Lease b = lease(s, source);
+                    require(ready(s, b).status == ImageState.Status.READY, "初始未就绪");
+                    long oldRequest = state(b).request;
+                    block.set(true);
+                    Thread reload = new Thread(() -> s.reload(source), "image-reload-race");
+                    onClose(
+                            () -> {
+                                resume.countDown();
+                                reload.join(1500);
+                                require(!reload.isAlive(), "reload线程未退出");
+                            });
+                    reload.start();
+                    require(blocked.await(1, TimeUnit.SECONDS), "reload未停在首域通知");
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+                    while ((state(b).request == oldRequest
+                                    || state(b).status != ImageState.Status.READY)
+                            && System.nanoTime() < deadline) {
+                        s.drain();
+                        Thread.sleep(5);
+                    }
+                    require(
+                            state(b).request > oldRequest
+                                    && state(b).status == ImageState.Status.READY,
+                            "新代未在另域先完成");
+                    long request = state(b).request;
+                    resume.countDown();
+                    reload.join(1000);
+                    require(
+                            !reload.isAlive()
+                                    && state(b).status == ImageState.Status.READY
+                                    && state(b).request == request,
+                            "同代迟到loading覆盖ready");
+                    block.set(false);
+                });
+        scenario(
+                "GPU未就绪自定义占位同代捕获只绘一次且保留输入身份",
+                () -> {
+                    SharedImageService s = service();
+                    SoftwareSceneScenario.SoftwareHost host =
+                            new SoftwareSceneScenario.SoftwareHost();
+                    host.width = 80;
+                    host.height = 60;
+                    SceneNode[] image = {null}, placeholder = {null};
+                    Signal<Integer>[] tint = new Signal[1], clicks = new Signal[1];
+                    Signal<ImageSource>[] source = new Signal[1];
+                    ScenePageSession page =
+                            ScenePageSession.open(
+                                    domain,
+                                    host,
+                                    host,
+                                    c -> {
+                                        tint[0] = domain.signal(0x8042A563);
+                                        clicks[0] = domain.signal(0);
+                                        source[0] =
+                                                domain.signal(ImageSource.bitmap(pixels(16, 16)));
+                                        placeholder[0] =
+                                                new SceneNode()
+                                                        .size(Size.fill(1), Size.fill(1))
+                                                        .bind(
+                                                                club.heiqi.uilib.ui.scene.runtime
+                                                                        .NodeBinding.value(
+                                                                        tint[0],
+                                                                        (node, value) ->
+                                                                                node.background(
+                                                                                        value)))
+                                                        .onClick(
+                                                                () ->
+                                                                        clicks[0].set(
+                                                                                clicks[0].get()
+                                                                                        + 1));
+                                        placeholder[0]
+                                                .add(new SceneNode().text("同代备用文字"))
+                                                .add(
+                                                        new SceneNode()
+                                                                .background(0xffabcdef)
+                                                                .visible(false));
+                                        image[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        source[0],
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.fixed(40),
+                                                                                Size.fixed(30))),
+                                                        placeholder[0]);
+                                        c.mount(image[0]);
+                                    });
+                    onClose(page::close);
+                    for (int i = 0; i < 40; i++) {
+                        s.drain();
+                        page.frame();
+                        if (host.last.commands().stream()
+                                .anyMatch(cmd -> cmd.kind == PaintCommand.Kind.IMAGE)) break;
+                        Thread.sleep(5);
+                    }
+                    PaintCommand old =
+                            host.last.commands().stream()
+                                    .filter(cmd -> cmd.kind == PaintCommand.Kind.IMAGE)
+                                    .findFirst()
+                                    .get();
+                    require(
+                            old.pendingPaint != null
+                                    && old.failedPaint == old.pendingPaint
+                                    && old.pendingPaint.commands().stream()
+                                            .anyMatch(cmd -> cmd.color == 0x8042A563),
+                            "READY隐藏占位没有捕获同代分支");
+                    require(
+                            old.pendingPaint.commands().stream()
+                                    .noneMatch(cmd -> cmd.color == 0xffabcdef),
+                            "捕获擅自显露hidden后代");
+                    java.util.UUID id = placeholder[0].id();
+                    long[] identity = {0}, generation = {0};
+                    domain.execute(
+                            () -> {
+                                identity[0] = SceneImage.state(image[0]).get().content.identity;
+                                require(
+                                        page.pipeline().current().geometry.get(placeholder[0])
+                                                == null,
+                                        "READY备用几何进入输入");
+                                generation[0] = page.pipeline().current().generation;
+                            });
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.pipeline().current().generation == generation[0],
+                                            "稳定帧重捕获整树"));
+                    s.presentation(identity[0], true, null);
+                    page.frame();
+                    require(
+                            host.last.commands().stream()
+                                    .anyMatch(cmd -> cmd.kind == PaintCommand.Kind.IMAGE),
+                            "upload pending丢失同代内容");
+                    require(
+                            host.last.commands().stream()
+                                    .noneMatch(
+                                            cmd ->
+                                                    cmd.kind == PaintCommand.Kind.RECT
+                                                            && cmd.color == 0x8042A563),
+                            "自定义占位在IMAGE之外无条件叠画");
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 10, 10));
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 10, 10));
+                    page.frame();
+                    domain.execute(() -> require(clicks[0].get() == 1, "资源pending删掉占位已有交互"));
+                    s.presentation(identity[0], false, null);
+                    domain.execute(() -> tint[0].set(0x80551199));
+                    page.frame();
+                    PaintCommand fresh =
+                            host.last.commands().stream()
+                                    .filter(cmd -> cmd.kind == PaintCommand.Kind.IMAGE)
+                                    .findFirst()
+                                    .get();
+                    require(
+                            fresh.pendingPaint.commands().stream()
+                                            .anyMatch(cmd -> cmd.color == 0x80551199)
+                                    && old.pendingPaint.commands().stream()
+                                            .anyMatch(cmd -> cmd.color == 0x8042A563),
+                            "新主题/旧计划备用混代");
+                    require(placeholder[0].id().equals(id), "呈现状态重建占位UUID");
+                    domain.execute(() -> source[0].set(ImageSource.bitmap(pixels(8, 8))));
+                    s.presentation(identity[0], false, "upload", "old failure");
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            SceneImage.state(image[0]).get().status
+                                                    != ImageState.Status.FAILED,
+                                            "旧identity反馈覆盖新source"));
+                });
+        scenario(
+                "占位标准控件hover服从整页遮挡而非备用子集",
+                () -> {
+                    SharedImageService s = service();
+                    SoftwareSceneScenario.SoftwareHost host =
+                            new SoftwareSceneScenario.SoftwareHost();
+                    SceneNode[] image = {null}, cover = {null};
+                    Signal<Boolean>[] shown = new Signal[1];
+                    ScenePageSession page =
+                            ScenePageSession.open(
+                                    domain,
+                                    host,
+                                    host,
+                                    c -> {
+                                        shown[0] = domain.signal(false);
+                                        SceneNode placeholder =
+                                                club.heiqi.uilib.ui.scene.control.SceneButton
+                                                        .create(
+                                                                c,
+                                                                domain.signal("备用按钮"),
+                                                                domain.signal(
+                                                                        club.heiqi.uilib.ui.scene
+                                                                                .control.SceneTheme
+                                                                                .dark()),
+                                                                () -> {});
+                                        image[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        domain.signal(
+                                                                ImageSource.bitmap(pixels(16, 16))),
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.fixed(40),
+                                                                                Size.fixed(30))),
+                                                        placeholder);
+                                        c.mount(image[0]);
+                                        cover[0] =
+                                                new SceneNode()
+                                                        .size(Size.fixed(40), Size.fixed(30))
+                                                        .onClick(() -> {})
+                                                        .bind(
+                                                                club.heiqi.uilib.ui.scene.runtime
+                                                                        .NodeBinding.value(
+                                                                        shown[0],
+                                                                        (node, value) ->
+                                                                                node.visible(
+                                                                                        value)));
+                                        c.mount(cover[0]);
+                                    });
+                    onClose(page::close);
+                    for (int i = 0; i < 40; i++) {
+                        s.drain();
+                        page.frame();
+                        if (host.last.commands().stream()
+                                .anyMatch(cmd -> cmd.kind == PaintCommand.Kind.IMAGE)) break;
+                        Thread.sleep(5);
+                    }
+                    long[] identity = {0};
+                    domain.execute(
+                            () -> identity[0] = SceneImage.state(image[0]).get().content.identity);
+                    s.presentation(identity[0], true, null);
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(10, 10));
+                    page.frame();
+                    PaintCommand uncovered =
+                            host.last.commands().stream()
+                                    .filter(cmd -> cmd.kind == PaintCommand.Kind.IMAGE)
+                                    .findFirst()
+                                    .get();
+                    require(
+                            uncovered.pendingPaint.commands().stream()
+                                    .anyMatch(
+                                            cmd ->
+                                                    cmd.color
+                                                            == club.heiqi.uilib.ui.scene.control
+                                                                    .SceneTheme.dark()
+                                                                    .hover),
+                            "有效备用按钮未读主输入hover");
+                    domain.execute(() -> shown[0].set(true));
+                    page.frame();
+                    PaintCommand covered =
+                            host.last.commands().stream()
+                                    .filter(cmd -> cmd.kind == PaintCommand.Kind.IMAGE)
+                                    .findFirst()
+                                    .get();
+                    require(
+                            covered.pendingPaint.commands().stream()
+                                    .noneMatch(
+                                            cmd ->
+                                                    cmd.color
+                                                            == club.heiqi.uilib.ui.scene.control
+                                                                    .SceneTheme.dark()
+                                                                    .hover),
+                            "备用子集越过全页遮挡私造hover");
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.runtime()
+                                                            .pointerRouter()
+                                                            .hovered(
+                                                                    page.pipeline()
+                                                                            .current()
+                                                                            .geometry)
+                                                    == cover[0],
+                                            "主输入geometry不再保留遮挡"));
+                });
+        scenario(
+                "宿主facts覆盖层被动提示同代clip及底层click保持",
+                () -> {
+                    club.heiqi.uilib.ui.scene.text.font.FontTextService actualText =
+                            own(
+                                    new club.heiqi.uilib.ui.scene.text.font.FontTextService(
+                                            club.heiqi.uilib.host.font.IsolatedFontEngine
+                                                    .shared()));
+                    AtomicInteger tooltipLayouts = new AtomicInteger();
+                    club.heiqi.uilib.ui.scene.text.SceneTextMeasurer measured =
+                            new club.heiqi.uilib.ui.scene.text.SceneTextMeasurer() {
+                                @Override
+                                public club.heiqi.uilib.ui.scene.text.TextLayout layout(
+                                        String value,
+                                        club.heiqi.uilib.ui.scene.text.TextStyle style,
+                                        int width) {
+                                    return actualText.layout(value, style, width);
+                                }
+
+                                @Override
+                                public club.heiqi.uilib.ui.scene.text.TextLayout layout(
+                                        String value,
+                                        club.heiqi.uilib.ui.scene.text.TextStyle style,
+                                        int width,
+                                        club.heiqi.uilib.ui.scene.text.TextPolicy policy) {
+                                    return actualText.layout(value, style, width, policy);
+                                }
+
+                                @Override
+                                public club.heiqi.uilib.ui.scene.text.TextLayout layout(
+                                        club.heiqi.uilib.ui.scene.text.AttributedText value,
+                                        float width,
+                                        club.heiqi.uilib.ui.scene.text.TextPolicy policy) {
+                                    tooltipLayouts.incrementAndGet();
+                                    return actualText.layout(value, width, policy);
+                                }
+                            };
+                    int[] palette = new int[16];
+                    java.util.Arrays.fill(palette, 0xffffff);
+                    palette[10] = 0x55ff55;
+                    final club.heiqi.uilib.ui.scene.image.ItemImageFacts[] facts = {
+                        new club.heiqi.uilib.ui.scene.image.ItemImageFacts(
+                                "32",
+                                club.heiqi.uilib.host.client.image.MinecraftTooltipContent
+                                        .fromMinecraft(
+                                                "§a§l§o§n§m钻石 提示§r\n正文重复正文重复正文重复正文", palette),
+                                true,
+                                .5,
+                                0xff80ff00)
+                    };
+                    palette[10] = 0;
+                    SharedImageService s =
+                            own(
+                                    new SharedImageService(
+                                            input -> {
+                                                final club.heiqi.uilib.ui.scene.image.ItemImageFacts
+                                                        prepared = facts[0];
+                                                return () ->
+                                                        new ImageContent(16, 16) {
+                                                            @Override
+                                                            public club.heiqi.uilib.ui.scene.image
+                                                                            .ItemImageFacts
+                                                                    itemFacts() {
+                                                                return prepared;
+                                                            }
+                                                        };
+                                            },
+                                            SharedImageService.Budget.defaults()));
+                    SoftwareSceneScenario.SoftwareHost host =
+                            new SoftwareSceneScenario.SoftwareHost();
+                    host.width = 80;
+                    host.height = 100;
+                    SceneNode[] image = {null}, under = {null}, pane = {null};
+                    Signal<ImageOptions>[] opts = new Signal[1];
+                    Signal<club.heiqi.uilib.ui.scene.control.SceneTheme>[] theme = new Signal[1];
+                    Signal<Boolean>[] enabled = new Signal[1];
+                    Signal<Integer>[] clicks = new Signal[1];
+                    ImageSource source = ImageSource.resource("host:facts");
+                    ScenePageSession page =
+                            ScenePageSession.open(
+                                    domain,
+                                    host,
+                                    measured,
+                                    c -> {
+                                        opts[0] =
+                                                domain.signal(
+                                                        ImageOptions.defaults()
+                                                                .size(
+                                                                        Size.fixed(60),
+                                                                        Size.fixed(40)));
+                                        theme[0] =
+                                                domain.signal(
+                                                        club.heiqi.uilib.ui.scene.control.SceneTheme
+                                                                .dark());
+                                        enabled[0] = domain.signal(true);
+                                        clicks[0] = domain.signal(0);
+                                        under[0] =
+                                                new SceneNode()
+                                                        .size(Size.fixed(80), Size.fixed(80))
+                                                        .onClick(
+                                                                () ->
+                                                                        clicks[0].set(
+                                                                                clicks[0].get()
+                                                                                        + 1));
+                                        image[0] =
+                                                SceneImage.themed(
+                                                        s,
+                                                        domain.signal(source),
+                                                        opts[0],
+                                                        theme[0]);
+                                        pane[0] =
+                                                new SceneNode()
+                                                        .size(Size.fixed(40), Size.fixed(30))
+                                                        .clip(true)
+                                                        .bind(
+                                                                club.heiqi.uilib.ui.scene.runtime
+                                                                        .NodeBinding.value(
+                                                                        enabled[0],
+                                                                        (node, value) ->
+                                                                                node.enabled(
+                                                                                        value)))
+                                                        .add(image[0]);
+                                        c.mount(under[0]);
+                                        c.mount(pane[0]);
+                                    });
+                    onClose(page::close);
+                    for (int i = 0; i < 40; i++) {
+                        page.frame();
+                        s.drain();
+                        Thread.sleep(5);
+                    }
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(10, 10));
+                    page.frame();
+                    domain.execute(
+                            () -> {
+                                require(image[0].clickAction() == null, "被动提示建立dummyclick");
+                                require(
+                                        page.runtime()
+                                                        .pointerRouter()
+                                                        .passiveHovered(
+                                                                page.pipeline().current().geometry)
+                                                == under[0],
+                                        "默认物品option应全关");
+                                opts[0].set(
+                                        opts[0].get()
+                                                .quantity(true)
+                                                .durability(true)
+                                                .tooltip(true));
+                            });
+                    page.frame();
+                    domain.execute(
+                            () -> {
+                                require(
+                                        page.runtime()
+                                                                .pointerRouter()
+                                                                .hovered(
+                                                                        page.pipeline()
+                                                                                .current()
+                                                                                .geometry)
+                                                        == under[0]
+                                                && page.runtime()
+                                                                .pointerRouter()
+                                                                .passiveHovered(
+                                                                        page.pipeline()
+                                                                                .current()
+                                                                                .geometry)
+                                                        == image[0],
+                                        "passive与click命中未分离");
+                                club.heiqi.uilib.ui.scene.paint.PaintPlan plan =
+                                        page.pipeline().current().paint;
+                                PaintCommand command =
+                                        plan.commands().stream()
+                                                .filter(cmd -> cmd.kind == PaintCommand.Kind.IMAGE)
+                                                .findFirst()
+                                                .get();
+                                require(command.readyOverlay != null, "数量耐久缺少成功覆盖层");
+                                boolean count = false, bar = false, tip = false, formatted = false;
+                                for (PaintCommand cmd : command.readyOverlay.commands()) {
+                                    count |= cmd.text != null && cmd.text.logicalText.equals("32");
+                                    bar |=
+                                            cmd.kind == PaintCommand.Kind.RECT
+                                                    && cmd.color == 0xff80ff00;
+                                }
+                                require(count && bar, "数量耐久未进入成功覆盖层");
+                                for (PaintCommand cmd : plan.commands()) {
+                                    require(
+                                            cmd.text == null || !cmd.text.logicalText.equals("32"),
+                                            "数量绕过成功分支无条件叠画");
+                                    if (cmd.text != null
+                                            && cmd.text.logicalText.contains("钻石 提示")) {
+                                        tip = true;
+                                        require(
+                                                cmd.clip != null
+                                                        && cmd.clip.x >= 0
+                                                        && cmd.clip.y >= 0
+                                                        && cmd.clip.x + cmd.clip.width <= 80
+                                                        && cmd.clip.y + cmd.clip.height <= 100,
+                                                "tooltip未在viewport裁剪");
+                                        require(!cmd.text.logicalText.contains("§"), "原版§未正式解析");
+                                        for (club.heiqi.uilib.ui.scene.text.TextLayout.Line line :
+                                                cmd.text.lines())
+                                            for (club.heiqi.uilib.ui.scene.text.TextLayout.Glyph
+                                                    glyph : line.glyphs())
+                                                formatted |=
+                                                        glyph.resolvedStyle != null
+                                                                && glyph.resolvedStyle
+                                                                                .fontStyle
+                                                                                .weight
+                                                                        == 700
+                                                                && glyph.resolvedStyle
+                                                                                .fontStyle
+                                                                                .posture
+                                                                        == club.heiqi.uilib.ui.scene
+                                                                                .text.FontStyle
+                                                                                .Posture.ITALIC
+                                                                && glyph.resolvedStyle
+                                                                        .effects
+                                                                        .underline
+                                                                && glyph.resolvedStyle
+                                                                        .effects
+                                                                        .strike
+                                                                && glyph.resolvedStyle.color
+                                                                        == 0xff55ff55;
+                                    }
+                                }
+                                require(tip && formatted, "提示缺失或palette快照/bold属性丢失");
+                                for (club.heiqi.uilib.ui.scene.paint.PaintPlan fallback :
+                                        new club.heiqi.uilib.ui.scene.paint.PaintPlan[] {
+                                            command.pendingPaint, command.failedPaint
+                                        })
+                                    if (fallback != null)
+                                        for (PaintCommand cmd : fallback.commands())
+                                            require(
+                                                    (cmd.text == null
+                                                                    || !cmd.text.logicalText.equals(
+                                                                            "32"))
+                                                            && !(cmd.kind == PaintCommand.Kind.RECT
+                                                                    && cmd.color == 0xff80ff00),
+                                                    "数量耐久泄漏到未成功分支");
+                            });
+                    int oldLayouts = tooltipLayouts.get();
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(12, 10));
+                    page.frame();
+                    require(tooltipLayouts.get() == oldLayouts, "hover重复解析/排版同一tooltip");
+                    domain.execute(
+                            () ->
+                                    theme[0].set(
+                                            theme[0].get()
+                                                    .withTextStyle(
+                                                            new club.heiqi.uilib.ui.scene.text
+                                                                    .TextStyle(
+                                                                    "default", 24, 0xff224466))));
+                    page.frame();
+                    require(tooltipLayouts.get() == oldLayouts + 1, "当前主题字号未使tooltip派生失效");
+                    domain.execute(
+                            () -> {
+                                boolean scaled = false;
+                                for (PaintCommand cmd : page.pipeline().current().paint.commands())
+                                    if (cmd.text != null
+                                            && cmd.text.logicalText.contains("钻石 提示")) {
+                                        for (club.heiqi.uilib.ui.scene.text.TextLayout.Line line :
+                                                cmd.text.lines())
+                                            for (club.heiqi.uilib.ui.scene.text.TextLayout.Glyph
+                                                    glyph : line.glyphs())
+                                                scaled |=
+                                                        glyph.size == 24
+                                                                && glyph.resolvedStyle.color
+                                                                        == 0xff55ff55;
+                                    }
+                                require(scaled, "tooltip冻结旧字号或丢失转换颜色");
+                            });
+                    actualText.reload(
+                            club.heiqi.uilib.ui.scene.text.font.FontTextService.defaultSources(
+                                    getClass().getClassLoader(), 2));
+                    host.metrics++;
+                    page.frame();
+                    require(tooltipLayouts.get() == oldLayouts + 2, "同主题字体资源代际未重排tooltip");
+                    host.width = 100;
+                    page.frame();
+                    require(tooltipLayouts.get() == oldLayouts + 3, "viewport变宽未重排tooltip");
+                    host.width = 80;
+                    page.frame();
+                    SceneNode[] focusBefore = {null};
+                    domain.execute(
+                            () -> focusBefore[0] = page.runtime().focusRouter().focused().get());
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 10, 10));
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 10, 10));
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            clicks[0].get() == 1
+                                                    && page.runtime().focusRouter().focused().get()
+                                                            == focusBefore[0],
+                                            "提示抢走底层click/focus"));
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(50, 10));
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.runtime()
+                                                            .pointerRouter()
+                                                            .passiveHovered(
+                                                                    page.pipeline()
+                                                                            .current()
+                                                                            .geometry)
+                                                    == under[0],
+                                            "clip外旧passive命中"));
+                    page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(10, 10));
+                    domain.execute(() -> enabled[0].set(false));
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.runtime()
+                                                            .pointerRouter()
+                                                            .passiveHovered(
+                                                                    page.pipeline()
+                                                                            .current()
+                                                                            .geometry)
+                                                    == under[0],
+                                            "disabled祖先仍显示tip"));
+                    domain.execute(
+                            () -> {
+                                enabled[0].set(true);
+                                facts[0] =
+                                        new club.heiqi.uilib.ui.scene.image.ItemImageFacts(
+                                                "7", "新语言提示", false, 1, 0xff00ff00);
+                                theme[0].set(club.heiqi.uilib.ui.scene.control.SceneTheme.light());
+                            });
+                    s.reload(source);
+                    for (int i = 0; i < 40; i++) {
+                        page.frame();
+                        s.drain();
+                        Thread.sleep(5);
+                    }
+                    domain.execute(
+                            () -> {
+                                boolean fresh = false, old = false;
+                                for (PaintCommand cmd :
+                                        page.pipeline().current().paint.resourceCommands())
+                                    if (cmd.text != null) {
+                                        fresh |= cmd.text.logicalText.equals("新语言提示");
+                                        old |= cmd.text.logicalText.contains("钻石 提示");
+                                    }
+                                require(fresh && !old, "来源正规reload未更新tooltip事实");
+                            });
+                    long[] identity = {0};
+                    domain.execute(
+                            () -> identity[0] = SceneImage.state(image[0]).get().content.identity);
+                    s.presentation(identity[0], false, "item-render", "host failure");
+                    page.frame();
+                    domain.execute(
+                            () -> {
+                                ImageState state = SceneImage.state(image[0]).get();
+                                require(
+                                        state.status == ImageState.Status.FAILED
+                                                && state.stage.equals("item-render")
+                                                && state.source == source,
+                                        "宿主绘制失败未局部归属source/stage");
+                                require(!page.ended(), "物品失败关整页");
+                            });
+                });
+        scenario(
+                "heightFill根行列实际分配与自然宽bounds及source更新",
+                () -> {
+                    SharedImageService s = service();
+                    SoftwareSceneScenario.SoftwareHost host =
+                            new SoftwareSceneScenario.SoftwareHost();
+                    host.width = 80;
+                    host.height = 100;
+                    SceneNode[] root = {null},
+                            column = {null},
+                            a = {null},
+                            b = {null},
+                            row = {null},
+                            cross = {null},
+                            fixed = {null},
+                            heightBound = {null};
+                    Signal<ImageSource>[] source = new Signal[1];
+                    ScenePageSession page =
+                            ScenePageSession.open(
+                                    domain,
+                                    host,
+                                    host,
+                                    c -> {
+                                        source[0] =
+                                                domain.signal(ImageSource.bitmap(pixels(120, 60)));
+                                        root[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        source[0],
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.natural(),
+                                                                                Size.fill(1))));
+                                        a[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        source[0],
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.natural(),
+                                                                                Size.fill(1))));
+                                        b[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        source[0],
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.natural()
+                                                                                        .bounds(
+                                                                                                0,
+                                                                                                75),
+                                                                                Size.fill(3))));
+                                        column[0] =
+                                                new SceneNode()
+                                                        .size(Size.natural(), Size.fixed(100))
+                                                        .add(a[0])
+                                                        .add(b[0]);
+                                        cross[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        source[0],
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.natural(),
+                                                                                Size.fill(1))));
+                                        row[0] =
+                                                new SceneNode()
+                                                        .axis(SceneNode.Axis.ROW)
+                                                        .size(Size.natural(), Size.fixed(100))
+                                                        .add(cross[0]);
+                                        fixed[0] =
+                                                SceneImage.documentImage(
+                                                        s,
+                                                        source[0],
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.natural(),
+                                                                                Size.fixed(45))));
+                                        heightBound[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        source[0],
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.natural(),
+                                                                                Size.fixed(100)
+                                                                                        .bounds(
+                                                                                                0,
+                                                                                                50))));
+                                        c.mount(root[0]);
+                                        c.mount(column[0]);
+                                        c.mount(row[0]);
+                                        c.mount(fixed[0]);
+                                        c.mount(heightBound[0]);
+                                    });
+                    onClose(page::close);
+                    for (int i = 0; i < 40; i++) {
+                        page.frame();
+                        s.drain();
+                        Thread.sleep(5);
+                    }
+                    domain.execute(
+                            () -> {
+                                club.heiqi.uilib.ui.scene.layout.SceneGeometryView g =
+                                        page.pipeline().current().geometry;
+                                require(
+                                        g.get(root[0]).box.width == 200
+                                                && g.get(root[0]).box.height == 100,
+                                        "root fill高度未反推自然宽或父不足压小");
+                                require(
+                                        g.get(a[0]).box.width == 50 && g.get(a[0]).box.height == 25,
+                                        "column实际分配高度未进入测量");
+                                require(
+                                        g.get(b[0]).box.width == 75 && g.get(b[0]).box.height == 75,
+                                        "minmax改变了分配高度");
+                                require(g.get(column[0]).box.width == 75, "column自然宽未传播实际分配");
+                                require(
+                                        g.get(cross[0]).box.width == 200
+                                                && g.get(row[0]).box.width == 200,
+                                        "row cross fill高度未传播");
+                                require(
+                                        g.get(heightBound[0]).box.width == 200
+                                                && g.get(heightBound[0]).box.height == 50,
+                                        "fixed高度比例应先按声明再各自bounds");
+                                require(
+                                        g.get(fixed[0]).box.width == 90
+                                                && g.get(fixed[0]).box.height == 45,
+                                        "document明确高度未覆盖默认缩宽");
+                                source[0].set(ImageSource.bitmap(pixels(60, 120)));
+                            });
+                    for (int i = 0; i < 40; i++) {
+                        page.frame();
+                        s.drain();
+                        Thread.sleep(5);
+                    }
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.pipeline()
+                                                            .current()
+                                                            .geometry
+                                                            .get(root[0])
+                                                            .box
+                                                            .width
+                                                    == 50,
+                                            "source比例变化未正规重测"));
+                });
+        scenario(
+                "document大图缩小小图不放大单边及minmax正式geometry",
+                () -> {
+                    SharedImageService s = service();
+                    SoftwareSceneScenario.SoftwareHost host =
+                            new SoftwareSceneScenario.SoftwareHost();
+                    host.width = 80;
+                    host.height = 500;
+                    SceneNode[] doc = {null}, edge = {null};
+                    Signal<ImageOptions>[] options = new Signal[1];
+                    ScenePageSession page =
+                            ScenePageSession.open(
+                                    domain,
+                                    host,
+                                    host,
+                                    c -> {
+                                        Signal<ImageSource> source =
+                                                domain.signal(ImageSource.bitmap(pixels(120, 60)));
+                                        options[0] = domain.signal(ImageOptions.defaults());
+                                        doc[0] = SceneImage.documentImage(s, source, options[0]);
+                                        edge[0] =
+                                                SceneImage.create(
+                                                        s,
+                                                        source,
+                                                        domain.signal(
+                                                                ImageOptions.defaults()
+                                                                        .size(
+                                                                                Size.fixed(80),
+                                                                                Size.natural()
+                                                                                        .bounds(
+                                                                                                50,
+                                                                                                90))));
+                                        c.mount(new SceneNode().add(doc[0]).add(edge[0]));
+                                    });
+                    onClose(page::close);
+                    for (int i = 0; i < 40; i++) {
+                        page.frame();
+                        s.drain();
+                        Thread.sleep(5);
+                    }
+                    domain.execute(
+                            () -> {
+                                LayoutBox a = page.pipeline().current().geometry.get(doc[0]).box,
+                                        b = page.pipeline().current().geometry.get(edge[0]).box;
+                                require(a.width == 80 && a.height == 40, "document未缩大图");
+                                require(b.width == 80 && b.height == 50, "单边ratio或各自bounds错误");
+                            });
+                    host.width = 240;
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.pipeline().current().geometry.get(doc[0]).box.width
+                                                    == 120,
+                                            "document放大小图"));
+                    domain.execute(
+                            () ->
+                                    options[0].set(
+                                            ImageOptions.defaults()
+                                                    .size(Size.fixed(50), Size.fixed(25))));
+                    page.frame();
+                    domain.execute(
+                            () ->
+                                    require(
+                                            page.pipeline().current().geometry.get(doc[0]).box.width
+                                                    == 50,
+                                            "document显式尺寸未覆盖"));
+                });
+    }
+
+    public static void main(String[] args) throws Exception {
+        new ImageServiceScenario().run(args);
+    }
 }
