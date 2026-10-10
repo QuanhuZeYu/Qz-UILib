@@ -14,6 +14,15 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 public interface SceneControl {
     /** 声明测量使用的响应来源；框架在挂载期订阅，变更重新测量。 */
     default List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Collections.emptyList(); }
+    /** 唯一 scene 布局的文本入口，属性内容不另建排版树。 */
+    default club.heiqi.uilib.ui.scene.text.TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width) {
+        return text.layout(node.text(), node.style(), width, node.textPolicy());
+    }
+    /** 内部目标身份与资格；几何仅来自当前 Entry，输入阶段不解析或重排。 */
+    default Object pointerTarget(SceneNode node, SceneGeometryView geometry, int x, int y) { return null; }
+    default boolean pointerTargetValid(SceneNode node, Object target) { return false; }
+    /** 唯一 router 已确认同目标、同挂载后由 runtime 分发。 */
+    default void activatePointer(SceneNode node, Object target) {}
     MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text);
     ChildPlacements arrange(SceneNode node, LayoutBox allocated);
     /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */

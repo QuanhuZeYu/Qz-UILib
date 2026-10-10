@@ -17,7 +17,24 @@ public final class SceneHitTester {
         }
         return null;
     }
+    public static final class Target {
+        public final SceneNode node; public final Object identity;
+        Target(SceneNode node, Object identity) { this.node = node; this.identity = identity; }
+    }
+    /** 内部目标与普通 click 共用绘制序、有效范围及裁剪。 */
+    public Target target(SceneRuntime runtime, SceneGeometryView geometry, int x, int y) {
+        List<SceneGeometryView.Entry> entries = geometry.ordered();
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            SceneGeometryView.Entry entry = entries.get(i);
+            if (!runtime.interactive(entry.node) || entry.clip != null && !entry.clip.contains(x, y)) continue;
+            Object internal = entry.node.control() == null ? null : entry.node.control().pointerTarget(entry.node, geometry, x, y);
+            if (internal != null) return new Target(entry.node, internal);
+            if (entry.box.contains(x, y) && entry.node.clickAction() != null) return new Target(entry.node, entry.node);
+        }
+        return null;
+    }
     private SceneNode hit(SceneRuntime runtime, SceneGeometryView geometry, int x, int y, boolean scroll) {
+        if (!scroll) { Target target = target(runtime, geometry, x, y); return target == null ? null : target.node; }
         List<SceneGeometryView.Entry> entries = geometry.ordered();
         for (int i = entries.size() - 1; i >= 0; i--) {
             SceneGeometryView.Entry entry = entries.get(i);

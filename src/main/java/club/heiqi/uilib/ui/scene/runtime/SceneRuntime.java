@@ -270,6 +270,17 @@ public final class SceneRuntime implements AutoCloseable {
         if (node.clickFocus() && node.focusable()) focusRouter.request(captureMount(node));
         invokeClick(node);
     }
+    boolean pointerTargetValid(SceneNode node, Object target) {
+        domain.checkAccess();
+        return target == node ? node.clickAction() != null
+            : node.control() != null && node.control().pointerTargetValid(node, target);
+    }
+    void dispatchPointerTarget(SceneNode node, Object target) {
+        command(); if (!interactive(node) || !pointerTargetValid(node, target)) return;
+        if (target == node) { dispatchPointerClick(node); return; }
+        routing = true;
+        try { node.control().activatePointer(node, target); } finally { routing = false; }
+    }
     // 业务激活不改变焦点；clickFocus仅属于物理UP，synthetic与键盘命令保留owner。
     private void invokeClick(SceneNode node) {
         if (!interactive(node) || node.clickAction() == null) return;

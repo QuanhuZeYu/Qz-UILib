@@ -16,6 +16,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     private final SceneHitTester hits = new SceneHitTester();
     private final Set<Integer> buttons = new HashSet<>();
     private MountHandle owner;
+    private Object ownerTarget;
     private int x, y;
     private boolean closed, positionKnown;
     /** 悬停只是已有指针位置在当前范围的投影，不建立另一个输入owner。 */
@@ -36,7 +37,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     /** owner是按下呈现的变化来源；所有释放出口只失效paint，保留物理尾部。 */
     private void setOwner(MountHandle target) {
         if (owner == target) return;
-        owner = target; runtime.invalidatePaint();
+        owner = target; if (target == null) ownerTarget = null; runtime.invalidatePaint();
     }
     /** 即使本帧没有事件，也检查来源更新后的owner资格；失活后本段不再恢复。 */
     public void prepare(SceneGeometryView geometry) {
@@ -48,7 +49,7 @@ public final class ScenePointerRouter implements AutoCloseable {
      * 只检查当前owner及既有有效范围；失活随后恢复也不会复活本段。 */
     void revalidate() {
         runtime.domain().checkAccess();
-        if (owner != null && (!owner.active() || !runtime.interactive(owner.node()) || owner.node().clickAction() == null)) setOwner(null);
+        if (owner != null && (!owner.active() || !runtime.interactive(owner.node()) || !runtime.pointerTargetValid(owner.node(), ownerTarget))) setOwner(null);
     }
     /** 按采集顺序处理一个事件。仅原owner按钮在有效目标位置UP时发布click。 */
     public void route(ScenePointerEvent event, SceneGeometryView geometry) {
@@ -67,8 +68,10 @@ public final class ScenePointerRouter implements AutoCloseable {
                 boolean idle = buttons.isEmpty();
                 if (!buttons.add(event.button)) return;
                 if (idle && event.button == 0) {
-                    SceneNode hit = hits.hit(runtime, geometry, x, y);
-                    if (hit != null) {
+                    SceneHitTester.Target target = hits.target(runtime, geometry, x, y);
+                    if (target != null) {
+                        SceneNode hit = target.node;
+                        ownerTarget = target.identity;
                         setOwner(runtime.captureMount(hit));
                         if(hit.control()!=null && hit.control().capturesPointer()) {
                             if(hit.clickFocus() && hit.focusable())runtime.focusRouter().request(runtime.captureMount(hit));
@@ -86,9 +89,12 @@ public final class ScenePointerRouter implements AutoCloseable {
                 if (!buttons.remove(event.button)) return;
                 if (event.button != 0 || owner == null) return;
                 MountHandle activation = owner;
+                Object identity = ownerTarget;
                 setOwner(null); // 在handler前结束owner；业务异常不能留下可复活的目标。
                 if(activation.active())runtime.dispatchControlPointer(activation.node(),event,geometry);
-                if (activation.active() && hits.hit(runtime, geometry, x, y) == activation.node()) runtime.dispatchPointerClick(activation.node());
+                SceneHitTester.Target release = hits.target(runtime, geometry, x, y);
+                if (activation.active() && release != null && release.node == activation.node() && release.identity == identity)
+                    runtime.dispatchPointerTarget(activation.node(), identity);
                 return;
             case CANCEL:
                 setOwner(null);
@@ -102,8 +108,8 @@ public final class ScenePointerRouter implements AutoCloseable {
                 return;
             case SYNTHETIC_ACTIVATION:
                 if (!buttons.isEmpty()) return;
-                SceneNode target = hits.hit(runtime, geometry, event.x, event.y);
-                if (target != null) runtime.dispatchPointerClick(target);
+                SceneHitTester.Target target = hits.target(runtime, geometry, event.x, event.y);
+                if (target != null) runtime.dispatchPointerTarget(target.node, target.identity);
                 return;
             default: throw new AssertionError(event.kind);
         }

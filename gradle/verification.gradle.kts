@@ -110,6 +110,23 @@ val coreSceneApplications = coreSceneDeclarations.associate { (taskName, summary
     }
 }
 tasks.named("check") { dependsOn(coreSceneApplications.filterKeys { it != "coreStateScenario" }.values) }
+// 富文本生产闭环独立编译，只接正式字体适配及 native 依赖，不扩大核心 MC 类路径。
+val richTextClasses = layout.buildDirectory.dir("classes/rich-text")
+val compileRichTextScenario by tasks.registering(JavaCompile::class) {
+    dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(testSupportSources.classesTaskName))
+    source(fileTree("src/main/java/club/heiqi/uilib/host/font/freetype") { include("*.java") })
+    source("src/test/java/club/heiqi/uilib/ui/scene/integration/RichTextScenario.java")
+    classpath = coreSources.output + testSupportSources.output + fontNativeRuntime + fontUnicodeRuntime
+    destinationDirectory.set(richTextClasses)
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.compilerArgs.add("-proc:none")
+}
+val richTextScenario = registerTestApplication("richTextScenario", "正式富文本解析字体布局与唯一链接路由", "club.heiqi.uilib.ui.scene.integration.RichTextScenario") {
+    dependsOn(compileRichTextScenario)
+    classpath = files(richTextClasses, "src/main/resources") + coreSources.output + fontNativeRuntime + fontUnicodeRuntime
+}
+tasks.named("check") { dependsOn(richTextScenario) }
 val coreFontClasses = layout.buildDirectory.dir("classes/core-font")
 val compileCoreFontScenario by tasks.registering(JavaCompile::class) {
     source(fileTree("src/main/java/club/heiqi/uilib/ui/scene/text") { include("**/*.java") })

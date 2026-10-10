@@ -27,7 +27,7 @@ public final class SceneLayoutEngine {
         return size.constrain(size.mode == Size.Mode.FIXED ? size.value : size.mode == Size.Mode.FILL ? Math.max(0, available) : desired);
     }
     private TextLayout textLayout(SceneNode node, int width) {
-        return textCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(width, key -> text.layout(node.text(), node.style(), width, node.textPolicy()));
+        return textCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(width, key -> node.control() == null ? text.layout(node.text(), node.style(), width, node.textPolicy()) : node.control().layoutText(node, text, width));
     }
     private int[] measure(SceneNode node, int availableWidth, int availableHeight) {
         long constraintKey = ((long) availableWidth << 32) | (availableHeight & 0xffffffffL);

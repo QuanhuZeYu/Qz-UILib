@@ -61,6 +61,7 @@ public final class CoreLoopScreen extends MinecraftSceneScreen {
         controls.add(SceneButton.create(ctx, () -> "添加", theme, () -> { List<Integer> next = new ArrayList<>(rows.get()); next.add(next.isEmpty() ? 1 : next.get(next.size() - 1) + 1); rows.set(next); count.set(count.get() + 1); }));
         controls.add(SceneButton.create(ctx, () -> "标题", theme, () -> expanded.set(!expanded.get())));
         controls.add(SceneButton.create(ctx, () -> "语言", theme, () -> net.minecraft.client.Minecraft.getMinecraft().displayGuiScreen(new CoreLocalizationPage())));
+        controls.add(SceneButton.create(ctx, () -> "富文本", theme, () -> net.minecraft.client.Minecraft.getMinecraft().displayGuiScreen(new CoreRichTextPage())));
         controls.add(SceneButton.create(ctx, () -> "字号", theme, () -> fontSize.set(fontSize.get() == 20 ? 28 : 20)));
         controls.add(SceneButton.create(ctx, () -> "模态", theme, () -> modal.set(true)));
         controls.add(SceneButton.create(ctx, () -> light.get() ? "深色" : "浅色", theme, () -> light.set(!light.get())));
