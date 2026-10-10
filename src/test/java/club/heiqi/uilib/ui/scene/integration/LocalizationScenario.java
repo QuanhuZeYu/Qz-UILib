@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** 正式页面/标准控件/输入/呈现管线的语言场景；只替换宿主资料及字体度量边界。
+/** 正式页面/标准控件/输入/呈现管线的语言场景；显式提供独立资料并替换字体度量边界。
  * 反例针对同语言换表、写后读取和真正释放后的迟到通知，不镜像文案或布局实现。 */
 public final class LocalizationScenario extends TestApplication {
     private static LocalizationSnapshot table(String language, String heading) {
@@ -41,11 +41,9 @@ public final class LocalizationScenario extends TestApplication {
         values.put("heading", heading); values.put("action", "Add %s"); values.put("row", "row %s / %s");
         return new LocalizationSnapshot(language, values, Locale.US);
     }
-    private static final class Host implements SceneHost, SceneTextMeasurer {
+    static final class Host implements SceneHost, SceneTextMeasurer {
         final SoftwareSceneScenario.SoftwareHost software = new SoftwareSceneScenario.SoftwareHost();
-        final LocalizationSource source;
-        Host(LocalizationSource source) { this.source = source; software.width = 240; software.height = 480; }
-        @Override public LocalizationSource localization() { return source; }
+        Host() { software.width = 240; software.height = 480; }
         @Override public int width() { return software.width; }
         @Override public int height() { return software.height; }
         @Override public long metricsRevision() { return software.metrics; }
@@ -65,7 +63,7 @@ public final class LocalizationScenario extends TestApplication {
             return new TextLayout(measured.width, measured.height, measured.width, measured.height, style, lines, text, text, 0, java.util.Collections.emptyList());
         }
     }
-    /** 宿主可能已取走回调，解除订阅后仍有迟到消息；只在测试环境保留该消息。 */
+    /** 资料提供者可能已取走回调，解除订阅后仍有迟到消息；只在测试环境保留该消息。 */
     private static final class DelayedSource implements LocalizationSource {
         final MutableLocalizationSource source = new MutableLocalizationSource(table("en_US", "Head %s"));
         final List<Consumer<LocalizationSnapshot>> captured = new ArrayList<>();
@@ -83,7 +81,7 @@ public final class LocalizationScenario extends TestApplication {
         scenario("真实Effect重入发布两域最终一致，迟订阅及同实例新批次不回送旧事实", this::reentrantFacts);
         scenario("同页语言及同语言换表重排自然固定区，主题窗口输入共享几何", this::pageLayout);
         scenario("卸载重挂载读当前资料，关闭迟到消息不复活且独立绑定有效", this::lifecycle);
-        scenario("未使用语言的宿主不强制实现语言入口", () -> {
+        scenario("未使用语言的页面无需来源", () -> {
             SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
             ScenePageSession page = ScenePageSession.open(ReactiveDomain.direct(), host, host, ctx -> ctx.mount(new SceneNode()));
             onClose(page::close); page.frame();
@@ -188,16 +186,19 @@ public final class LocalizationScenario extends TestApplication {
     private static SceneGeometryView.Entry entry(ScenePageSession page, SceneNode node) { return page.pipeline().current().geometry.get(node); }
     private void pageLayout() {
         ReactiveDomain domain = ReactiveDomain.direct(); MutableLocalizationSource source = own(new MutableLocalizationSource(table("en_US", "Head %s")));
-        Host host = new Host(source); SceneNode[] title = {null}, button = {null}, body = {null};
+        Host host = new Host(); SceneNode[] title = {null}, button = {null}, body = {null};
         Signal<Integer>[] count = new Signal[1]; Signal<SceneTheme>[] theme = new Signal[1]; MountHandle[] mount = {null}; int[] builds = {0};
         ScenePageSession page = ScenePageSession.open(domain, host, host, ctx -> {
-            builds[0]++; require(ctx.localization() == ctx.localization(), "同页重复创建语言订阅");
+            builds[0]++; require(ctx.localization(source) == ctx.localization(source), "同页重复创建语言订阅");
+            MutableLocalizationSource other = own(new MutableLocalizationSource(table("other", "Other")));
+            try { ctx.localization(other); throw new AssertionError("同页允许偷偷更换来源"); }
+            catch (IllegalStateException expected) { }
             count[0] = domain.signal(1); theme[0] = domain.signal(SceneTheme.dark());
-            title[0] = SceneLabel.create(ctx, ctx.localization().text(() -> "heading", count[0]), theme[0]).size(Size.fill(1), Size.natural());
-            button[0] = SceneButton.create(ctx, ctx.localization().text(() -> "action", count[0]), theme[0], () -> count[0].set(count[0].get() + 1));
+            title[0] = SceneLabel.create(ctx, ctx.localization(source).text(() -> "heading", count[0]), theme[0]).size(Size.fill(1), Size.natural());
+            button[0] = SceneButton.create(ctx, ctx.localization(source).text(() -> "action", count[0]), theme[0], () -> count[0].set(count[0].get() + 1));
             body[0] = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).scrollStep(20);
             for (int row = 1; row <= 40; row++) { final int index = row;
-                body[0].add(SceneLabel.create(ctx, ctx.localization().text(() -> "row", () -> index, count[0]), theme[0]).size(Size.fill(1), Size.natural()));
+                body[0].add(SceneLabel.create(ctx, ctx.localization(source).text(() -> "row", () -> index, count[0]), theme[0]).size(Size.fill(1), Size.natural()));
             }
             ctx.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).gap(3).add(title[0]).add(button[0]).add(body[0]));
             mount[0] = ctx.runtime().captureMount(button[0]);
@@ -241,21 +242,21 @@ public final class LocalizationScenario extends TestApplication {
     }
     private void lifecycle() {
         DelayedSource source = new DelayedSource(); onClose(source.source::close);
-        ArrayDeque<Runnable> tasks = new ArrayDeque<>(); ReactiveDomain domain = new ReactiveDomain(tasks::add); Host host = new Host(source);
+        ArrayDeque<Runnable> tasks = new ArrayDeque<>(); ReactiveDomain domain = new ReactiveDomain(tasks::add); Host host = new Host();
         Owner[] independent = {null}; Computed<String>[] independentText = new Computed[1];
         domain.execute(() -> { independent[0] = domain.owner(); independentText[0] = new LocalizationBinding(domain, independent[0], source).text("heading", 7); });
         while (!tasks.isEmpty()) tasks.remove().run();
         onClose(() -> { domain.execute(independent[0]::close); while (!tasks.isEmpty()) tasks.remove().run(); });
         SceneNode[] label = {null}; MountHandle[] mount = {null};
         ScenePageSession page = ScenePageSession.open(domain, host, host, ctx -> {
-            label[0] = SceneLabel.create(ctx, ctx.localization().text("heading", 1), () -> SceneTheme.dark()); mount[0] = ctx.mount(label[0]);
+            label[0] = SceneLabel.create(ctx, ctx.localization(source).text("heading", 1), () -> SceneTheme.dark()); mount[0] = ctx.mount(label[0]);
         }); while (!tasks.isEmpty()) tasks.remove().run(); page.frame(); while (!tasks.isEmpty()) tasks.remove().run();
         require(source.active == 2, "页面或独立绑定重复订阅");
         domain.execute(() -> mount[0].detach()); while (!tasks.isEmpty()) tasks.remove().run();
         source.source.publish(table("en_US", "Remount %s")); while (!tasks.isEmpty()) tasks.remove().run();
         domain.execute(() -> { require(label[0].runtime() == null, "卸载仍有呈现归属"); mount[0] = page.runtime().attach(null, label[0]); });
         while (!tasks.isEmpty()) tasks.remove().run(); page.frame(); while (!tasks.isEmpty()) tasks.remove().run();
-        domain.execute(() -> require("Remount 1".equals(label[0].text()) && source.active == 2, "重挂载未读当前文案或叠加宿主订阅")); while (!tasks.isEmpty()) tasks.remove().run();
+        domain.execute(() -> require("Remount 1".equals(label[0].text()) && source.active == 2, "重挂载未读当前文案或叠加来源订阅")); while (!tasks.isEmpty()) tasks.remove().run();
         page.close(); while (!tasks.isEmpty()) tasks.remove().run(); require(source.active == 1, "页面关闭未释放所属语言订阅");
         source.late(table("en_US", "Late %s")); while (!tasks.isEmpty()) tasks.remove().run();
         domain.execute(() -> require("Late 7".equals(independentText[0].get()) && label[0].runtime() == null && "Remount 1".equals(label[0].text()), "迟到通知访问旧控件或关闭独立绑定"));

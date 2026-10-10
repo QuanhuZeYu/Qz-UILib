@@ -26,7 +26,7 @@ public final class ScenePageSession implements AutoCloseable {
             session.scope = domain.owner();
             session.runtime = new SceneRuntime(domain);
             session.pipeline = new SceneFramePipeline(session.runtime, host, text);
-            page.build(new ScenePageContext(domain, session.scope, session.runtime, host));
+            page.build(new ScenePageContext(domain, session.scope, session.runtime));
         }, failure -> { session.ended = true; session.release(); });
         return session;
     }

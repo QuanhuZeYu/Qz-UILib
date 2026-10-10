@@ -7,7 +7,6 @@ public final class ClientProxy extends CommonProxy {
         club.heiqi.uilib.host.client.font.VanillaFontOptions.load(event.getSuggestedConfigurationFile());
     }
     @Override public void init() {
-        club.heiqi.uilib.host.client.localization.MinecraftLocalizationServices.installShared();
         club.heiqi.uilib.host.client.font.MinecraftFontServices.installShared();
         club.heiqi.uilib.host.client.font.MinecraftVanillaFont.install();
         club.heiqi.uilib.host.client.image.MinecraftImageServices.installShared();

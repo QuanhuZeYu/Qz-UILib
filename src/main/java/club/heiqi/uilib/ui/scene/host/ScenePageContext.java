@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.scene.host;
 
+import java.util.Objects;
+import club.heiqi.uilib.ui.scene.localization.LocalizationBinding;
+import club.heiqi.uilib.ui.scene.localization.LocalizationSource;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
@@ -11,15 +14,20 @@ public final class ScenePageContext {
     private final ReactiveDomain domain;
     private final Owner scope;
     private final SceneRuntime runtime;
-    private final SceneHost host;
-    private club.heiqi.uilib.ui.scene.localization.LocalizationBinding localization;
-    ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime, SceneHost host) {
-        this.domain = domain; this.scope = scope; this.runtime = runtime; this.host = host;
+    private LocalizationSource localizationSource;
+    private LocalizationBinding localization;
+    ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime) {
+        this.domain = domain; this.scope = scope; this.runtime = runtime;
     }
-    /** 每次页面惰性拥有一个绑定；共享宿主来源仍归宿主生命周期。 */
-    public club.heiqi.uilib.ui.scene.localization.LocalizationBinding localization() {
-        domain.checkWrite();
-        if (localization == null) localization = new club.heiqi.uilib.ui.scene.localization.LocalizationBinding(domain, scope, host.localization());
+    /** 显式选择本页唯一来源，绑定归页面；共享流仅在明确 own 时才由页面关闭。 */
+    public LocalizationBinding localization(LocalizationSource source) {
+        domain.checkWrite(); Objects.requireNonNull(source, "source");
+        if (localization == null) {
+            localization = new LocalizationBinding(domain, scope, source);
+            localizationSource = source;
+        } else if (localizationSource != source) {
+            throw new IllegalStateException("页面语言绑定已选择其他来源");
+        }
         return localization;
     }
     public ReactiveDomain domain() { return domain; }

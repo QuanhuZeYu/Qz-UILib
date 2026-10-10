@@ -7,7 +7,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 
-/** 将宿主事实递交现有状态域；独立业务可用自己的Owner，页面关闭不会连带释放它。
+/** 将独立语言事实递交现有状态域；独立业务可用自己的Owner，页面关闭不会连带释放它。
  * 所有读取/文案创建/关闭在域内，通知可跨线程递交；关闭后的排队通知不触碰已释放派生。 */
 public final class LocalizationBinding implements AutoCloseable {
     private final ReactiveDomain domain;
@@ -16,6 +16,7 @@ public final class LocalizationBinding implements AutoCloseable {
     private final Computed<String> language;
     private LocalizationSource.Subscription subscription;
     private volatile boolean closed;
+    private volatile Object delivery;
 
     public LocalizationBinding(ReactiveDomain domain, Owner owner, LocalizationSource source) {
         this.domain = Objects.requireNonNull(domain, "domain"); domain.checkWrite();
@@ -27,7 +28,10 @@ public final class LocalizationBinding implements AutoCloseable {
         try {
             subscription = source.subscribe(next -> {
                 Objects.requireNonNull(next, "snapshot");
-                if (!closed) domain.execute(() -> { if (!closed) snapshot.set(next); });
+                Object token = new Object(); delivery = token;
+                // 外部通知可能先排队，而域内新通知立即生效；只递交最新批次，不能随后倒退。
+                // token 表示通知事实，不以 snapshot 身份合并同实例的新通知。
+                if (!closed) domain.execute(() -> { if (!closed && delivery == token) snapshot.set(next); });
             });
         } catch (RuntimeException | Error failure) {
             try { close(); } catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }

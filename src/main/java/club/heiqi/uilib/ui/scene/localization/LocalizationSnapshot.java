@@ -7,8 +7,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-/** 一次已完成加载的语言资料；表和格式locale共同捕获，求值不再读取宿主环境。
- * 格式合同采用Java8 Formatter；MC数值占位归一属于原版加载器，不在核心重复实现。 */
+/** 一次已完成加载的不可变语言资料；表和显式格式 locale 共同捕获。
+ * 格式合同采用 Java8 Formatter，数值模板原样保留，求值不读取全局环境。 */
 public final class LocalizationSnapshot {
     private final String language;
     private final Map<String, String> translations;

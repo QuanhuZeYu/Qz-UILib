@@ -4,10 +4,6 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 public interface SceneHost {
     /** 帧开始在宿主调用线程推进有界资源入口，再由服务投受控domain；不逐节点轮询。 */
     default void prepareResources() {}
-    /** 仅需要语言能力的页面请求此入口；其他宿主无需提供虚假初值。 */
-    default club.heiqi.uilib.ui.scene.localization.LocalizationSource localization() {
-        throw new UnsupportedOperationException("宿主未提供语言资料");
-    }
     int width();
     int height();
     /** 字体、主题或度量环境改变时递增；尺寸变化会单独被框架感知。 */

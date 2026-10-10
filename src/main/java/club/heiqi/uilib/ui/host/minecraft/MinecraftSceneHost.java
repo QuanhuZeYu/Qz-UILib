@@ -18,7 +18,6 @@ public final class MinecraftSceneHost implements SceneHost,SceneTextMeasurer,Aut
     private final club.heiqi.uilib.host.client.image.ClientImageServices images=club.heiqi.uilib.host.client.image.MinecraftImageServices.shared();
     private final FramebufferSceneRenderer renderer=new FramebufferSceneRenderer(fonts,images);
     public club.heiqi.uilib.ui.scene.image.ImageService images(){return images.images();}
-    @Override public club.heiqi.uilib.ui.scene.localization.LocalizationSource localization(){return club.heiqi.uilib.host.client.localization.MinecraftLocalizationServices.shared();}
     @Override public void prepareResources(){images.prepareResources();}
     @Override public int width(){return Display.getWidth();}
     @Override public int height(){return Display.getHeight();}

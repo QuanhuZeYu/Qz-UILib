@@ -1,8 +1,9 @@
 package club.heiqi.uilib.internal.devtools;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.Language;
-import net.minecraft.client.resources.LanguageManager;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.Locale;
 import club.heiqi.uilib.ui.host.minecraft.MinecraftSceneScreen;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -12,16 +13,25 @@ import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.localization.LocalizationBinding;
+import club.heiqi.uilib.ui.scene.localization.LocalizationFlow;
+import club.heiqi.uilib.ui.scene.localization.LocalizationResource;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** /qzcore lang短验收页：同页切语言/参数/重载，固定区自然高度，正文独立滚动。
- * 使用宿主当前字体与响应主题，不修改字体配置；资源包覆盖的译文交给原版加载。 */
+ * 使用独立 classpath 译文与响应主题，切换和重载只改变本页自己的流。 */
 public final class CoreLocalizationPage extends MinecraftSceneScreen {
     public CoreLocalizationPage() { super(CoreLocalizationPage::buildPage); }
     private static void buildPage(ScenePageContext ctx) {
-        LocalizationBinding localization = ctx.localization();
+        // 本页只提供中英两套资料：MC 偏好仅映射初始选择，其他偏好在本页选择英文。
+        String language = "zh_CN".equals(Minecraft.getMinecraft().gameSettings.language) ? "zh_CN" : "en_US";
+        LocalizationFlow flow;
+        try { flow = new LocalizationFlow(language, Locale.ROOT,
+            LocalizationResource.classpath(CoreLocalizationPage.class.getClassLoader(), "uilib/localization/core-loop")); }
+        catch (IOException failure) { throw new UncheckedIOException("独立语言验收页加载失败", failure); }
+        ctx.own(flow); // Owner 先关闭子作用域中的绑定，再关闭本页私有流。
+        LocalizationBinding localization = ctx.localization(flow);
         Signal<Integer> count = ctx.domain().signal(1), fontSize = ctx.domain().signal(20), reloads = ctx.domain().signal(0);
         Signal<Boolean> light = ctx.domain().signal(false), longTitle = ctx.domain().signal(false);
         int[] observedLoads = {-1};
@@ -37,10 +47,10 @@ public final class CoreLocalizationPage extends MinecraftSceneScreen {
         panel.add(SceneLabel.create(ctx, localization.text(key, count), theme));
         panel.add(SceneLabel.create(ctx, localization.text(() -> "qz_uilib.lang.status", localization.language(), reloads), theme));
         SceneNode actions = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(4);
-        actions.add(SceneButton.create(ctx, localization.text("qz_uilib.lang.switch"), theme, () -> switchLanguage(localization.language().get())));
+        actions.add(SceneButton.create(ctx, localization.text("qz_uilib.lang.switch"), theme, () -> select(flow, "zh_CN".equals(localization.language().get()) ? "en_US" : "zh_CN")));
         actions.add(SceneButton.create(ctx, localization.text("qz_uilib.lang.parameter"), theme, () -> count.set(count.get() + 1)));
         actions.add(SceneButton.create(ctx, localization.text("qz_uilib.lang.key"), theme, () -> longTitle.set(!longTitle.get())));
-        actions.add(SceneButton.create(ctx, localization.text("qz_uilib.lang.reload"), theme, () -> Minecraft.getMinecraft().refreshResources()));
+        actions.add(SceneButton.create(ctx, localization.text("qz_uilib.lang.reload"), theme, () -> reload(flow)));
         panel.add(actions);
         panel.add(new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(4)
             .add(SceneButton.create(ctx, localization.text("qz_uilib.lang.theme"), theme, () -> light.set(!light.get())))
@@ -54,16 +64,13 @@ public final class CoreLocalizationPage extends MinecraftSceneScreen {
         }
         panel.add(body); ctx.mount(panel);
     }
-    private static void switchLanguage(String current) {
-        Minecraft minecraft = Minecraft.getMinecraft(); LanguageManager manager = minecraft.getLanguageManager();
-        String next = "zh_CN".equals(current) ? "en_US" : "zh_CN";
-        for (Object value : manager.getLanguages()) {
-            Language language = (Language) value;
-            if (!next.equals(language.getLanguageCode())) continue;
-            manager.setCurrentLanguage(language); minecraft.gameSettings.language = next;
-            minecraft.refreshResources(); minecraft.gameSettings.saveOptions(); return;
-        }
-        throw new IllegalStateException("宿主语言资料未提供 " + next);
+    private static void select(LocalizationFlow flow, String language) {
+        try { flow.select(language); }
+        catch (IOException failure) { throw new UncheckedIOException("独立语言选择失败", failure); }
+    }
+    private static void reload(LocalizationFlow flow) {
+        try { flow.reload(); }
+        catch (IOException failure) { throw new UncheckedIOException("独立语言重载失败", failure); }
     }
     @Override public boolean doesGuiPauseGame() { return false; }
 }

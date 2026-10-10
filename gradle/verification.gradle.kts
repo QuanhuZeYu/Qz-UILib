@@ -82,6 +82,7 @@ val coreSceneDeclarations = listOf(
     Triple("escapeInputScenario", "ESC范围消费和宿主关闭协调验收", "EscapeInputScenario"),
     Triple("pageSessionScenario", "正式页面声明与生命周期归属验收", "PageSessionScenario"),
     Triple("localizationScenario", "无平台语言事实文案与真实页面动态布局生命周期验收", "LocalizationScenario"),
+    Triple("localizationResourceScenario", "独立真实语言资源加载重载与失败生命周期验收", "LocalizationResourceScenario"),
     Triple("standardControlsScenario", "标准控件动态主题与完整文案验收", "StandardControlsScenario"),
     Triple("focusRevealScenario", "主动导航最小显露与嵌套滚动", "FocusRevealScenario"),
     Triple("editingScenario", "独立编辑状态与单行正式输入验收", "EditingScenario"),
@@ -105,6 +106,7 @@ val coreSceneApplications = coreSceneDeclarations.associate { (taskName, summary
     taskName to registerTestApplication(taskName, summary, "club.heiqi.uilib.ui.scene.integration.$application") {
         dependsOn(compileCoreSceneScenario)
         classpath = files(coreSceneClasses) + coreSources.output + fontUnicodeRuntime
+        if (taskName == "localizationResourceScenario") classpath += files("src/main/resources", "src/test/resources")
     }
 }
 tasks.named("check") { dependsOn(coreSceneApplications.filterKeys { it != "coreStateScenario" }.values) }
@@ -309,13 +311,6 @@ val minecraftDurabilityScenario = registerTestApplication("minecraftDurabilitySc
     classpath = sourceSets.getByName("test").runtimeClasspath + sourceSets.getByName("patchedMc").output
 }
 tasks.named("check") { dependsOn(minecraftDurabilityScenario) }
-
-// 真实patched MC加载/Forge合并场景单独声明classpath，不污染上方coreSceneApplications。
-val minecraftLocalizationScenario = registerTestApplication("minecraftLocalizationScenario", "真实MC语言加载归一Forge合并及catch外资料递交（不启动游戏）", "club.heiqi.uilib.host.client.localization.MinecraftLocalizationScenario") {
-    dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("test").runtimeClasspath + sourceSets.getByName("patchedMc").output
-}
-tasks.named("check") { dependsOn(minecraftLocalizationScenario) }
 
 val imageServiceScenario = registerTestApplication("imageServiceScenario", "真实本地HTTP与图像共享、来源切换和scene文档策略", "club.heiqi.uilib.ui.scene.integration.ImageServiceScenario") {
     dependsOn(tasks.named("testClasses"))

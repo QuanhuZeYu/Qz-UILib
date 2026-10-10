@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/** 可通知的宿主资料所有者；每次publish均表示完成一次加载，不按语言码或表内容去重。
+/** 可通知的独立资料所有者；每次publish均表示完成一次加载，不按语言码或表内容去重。
  * close只解除共享来源订阅，不销毁绑定所持有的不可变资料。 */
 public final class MutableLocalizationSource implements LocalizationSource, AutoCloseable {
     private LocalizationSnapshot current;
