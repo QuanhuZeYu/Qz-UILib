@@ -12,6 +12,12 @@ public final class TextContent {
     public final Mode mode;
     public final String source;
     private final TextInput input;
+    private StyledText styled;
+    private RichTagsParser.Parsed parsed;
+    private synchronized RichTagsParser.Parsed parsed() {
+        if(parsed==null)parsed=RichTagsParser.parse(this,input,source);
+        return parsed;
+    }
     private final java.util.Map<Integer, Link> declarations = new java.util.HashMap<Integer, Link>();
     synchronized Link linkDeclaration(int sourceOffset, String target) {
         Link link = declarations.get(sourceOffset);
@@ -30,6 +36,13 @@ public final class TextContent {
     }
     /** 已解码输入保留 byte/UTF16 来源单位；原始字节仍由调用方持有。 */
     public static TextContent of(Mode mode, TextInput input) { return new TextContent(mode, input.text, input); }
+
+    /** typed 声明使用 PLAIN 源码语法，属性载荷不新增宿主格式模式。 */
+    public static TextContent styled(StyledText value) {
+        Objects.requireNonNull(value,"value");
+        TextContent content=new TextContent(Mode.PLAIN,value.originalText==null?value.input.text:value.originalText,value.input);
+        content.styled=value;return content;
+    }
 
     /** 链接声明身份独立于文字、目标值与布局宽度。 */
     public static final class Link {
@@ -71,12 +84,14 @@ public final class TextContent {
         }
         /** 输出规范 RICH_TAGS 源码。保留本阶段文字、样式及链接语义。 */
         public String serializeRichTags() {
+            if(serialized==null)throw new UnsupportedOperationException("typed属性意图不提供DSL往返序列化");
             return serialized;
         }
     }
     public Resolved resolve(TextStyle style) {
         Objects.requireNonNull(style, "style");
-        if (mode == Mode.RICH_TAGS) return RichTagsParser.parse(this, input, source, style);
+        if(styled!=null)return new Resolved(styled.resolve(style),Collections.<LinkSpan>emptyList(),null);
+        if (mode == Mode.RICH_TAGS) return parsed().resolve(style);
         return new Resolved(AttributedText.plain(input, style), Collections.<LinkSpan>emptyList(), RichTagsParser.escape(input.text));
     }
 }

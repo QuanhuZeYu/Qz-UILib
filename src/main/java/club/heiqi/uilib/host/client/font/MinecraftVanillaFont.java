@@ -87,11 +87,11 @@ public final class MinecraftVanillaFont {
         if(source==null){font.qz$enableAlpha();return 0;}
         color=normalizeColor(color);VanillaTextService.Settings style=settings(font,false);
         if(source.isEmpty()){font.qz$tailState(color);return x+(shadow?1:0);}
-        TextLayout logical=text.layout(source,style,color,Float.MAX_VALUE,TextPolicy.SINGLE_LINE);
+        TextLayout logical=text.layout(source,style,color,Float.MAX_VALUE,TextPolicy.NO_WRAP);
         font.qz$enableAlpha();
         FontRenderContext context=capture();PaintPlanBuilder plans=new PaintPlanBuilder();
         if(shadow)plans.add(PaintCommand.text(new LayoutBox(x+1,y+1+DRAW_Y_OFFSET,(int)Math.ceil(logical.advanceWidth),logical.height),null,
-            text.layout(source,settings(font,true),shadowColor(color),Float.MAX_VALUE,TextPolicy.SINGLE_LINE)));
+            text.layout(source,settings(font,true),shadowColor(color),Float.MAX_VALUE,TextPolicy.NO_WRAP)));
         plans.add(PaintCommand.text(new LayoutBox(x,y+DRAW_Y_OFFSET,(int)Math.ceil(logical.advanceWidth),logical.height),null,logical));
         hostBridge().submit(plans.build(),context,()->{});
         font.qz$tailState(text.terminalColor(source,style,color));

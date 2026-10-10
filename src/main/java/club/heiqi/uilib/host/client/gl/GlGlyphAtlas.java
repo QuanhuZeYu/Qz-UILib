@@ -122,13 +122,29 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
     public Frame beginFrame(Collection<GlyphKey> demand,boolean preserveUpload) {return beginFrame(demand,preserveUpload,SamplingView.PREMULT_RGBA);}
     public Frame beginFrame(Collection<GlyphKey> demand,boolean preserveUpload,SamplingView view) {return beginFrame(demand,preserveUpload,view,false);}
     public Frame beginFrame(Collection<GlyphKey> demand,boolean preserveUpload,SamplingView view,boolean needsSolid) {
+        return beginFrameLayers(java.util.Collections.singletonList(demand),preserveUpload,view,needsSolid);
+    }
+    /** 单Frame按调用方已裁决的资源优先层准备；只先pin主层，备用缓存不能阻挡主层新字形。
+     * 所有层共享一次prepare预算和一次freeze，既有冻结父Frame/partial保护保持不变。
+     */
+    public Frame beginFrameLayers(List<? extends Collection<GlyphKey>> layers,boolean preserveUpload,SamplingView view,boolean needsSolid) {
         check();if(active!=null)throw new IllegalStateException("先结束上一个图集范围");
-        Frame frame=new Frame(view,needsSolid);for(GlyphKey key:demand) {
-            if(frame.demand.size()>=budget.maxDemand&&!frame.demand.contains(key)){rejected++;continue;}
-            frame.demand.add(key);Resident resident=residents.get(new ViewKey(key,view));if(resident!=null){resident.group.pinned=true;resident.group.lastUsed=++clock;}
+        Frame frame=new Frame(view,needsSolid);
+        for(Collection<GlyphKey> layer:layers){
+            List<GlyphKey> admitted=new ArrayList<>();
+            for(GlyphKey key:layer){
+                if(frame.demand.contains(key))continue;
+                if(frame.demand.size()>=budget.maxDemand){rejected++;continue;}
+                frame.demand.add(key);admitted.add(key);
+            }
+            if(!admitted.isEmpty())frame.priorityLayers.add(admitted);
         }
+        if(!frame.priorityLayers.isEmpty())frame.pinLayer(frame.priorityLayers.get(0));
         uploading=partials.remove(view);
-        if(uploading!=null&&!preserveUpload&&!frame.demand.contains(uploading.key))uploading=null;
+        // 本consumer的低优先partial已降到备用时，不允许它占据唯一upload槽阻挡主层。
+        // managed preserveUpload及冻结借用父upload属于外部live lease，不为本计划优先级卸载；
+        // 它们造成的压力只能保持未ready，不宣称跨consumer全域优先。CPUbitmap不随partial舍弃。
+        if(uploading!=null&&!preserveUpload&&(frame.priorityLayers.isEmpty()||!frame.priorityLayers.get(0).contains(uploading.key)))uploading=null;
         if(uploading!=null)uploading.resident.group.pinned=true;
         active=frame;return frame;
     }
@@ -144,6 +160,8 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
         private Frame(SamplingView view,boolean needsSolid){this.view=view;this.needsSolid=needsSolid;}
         public Resident solid(){checkFrame();if(!frozen)throw new IllegalStateException("先freeze");return white;}
         private final LinkedHashSet<GlyphKey> demand=new LinkedHashSet<GlyphKey>();
+        private final List<List<GlyphKey>> priorityLayers=new ArrayList<>();
+        private void pinLayer(Collection<GlyphKey> layer){for(GlyphKey key:layer){Resident r=residents.get(new ViewKey(key,view));if(r!=null){r.group.pinned=true;r.group.lastUsed=++clock;}}}
         private final Map<GlyphKey,Resident> visible=new HashMap<GlyphKey,Resident>();
         private boolean frozen,done;
         public Collection<GlyphKey> demand(){return java.util.Collections.unmodifiableSet(demand);}
@@ -172,7 +190,9 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
                         if(whiteGroup.whiteReady)white=new Resident(whiteGroup,budget.pageSize);
                     }
                 }
-                for(GlyphKey key:demand) {
+                for(List<GlyphKey> layer:priorityLayers){
+                    pinLayer(layer);
+                    for(GlyphKey key:layer) {
                     if(calls>=uploadBudget.calls||remaining==0||System.nanoTime()-start>=uploadBudget.nanos)break;
                     if(residents.containsKey(new ViewKey(key,view)))continue;
                     if(uploading!=null&&(!uploading.key.equals(key)||uploading.resident.samplingView!=view))continue;
@@ -211,6 +231,7 @@ public final class GlGlyphAtlas implements GlQuadRenderer.ResourceProvider,AutoC
                         ViewKey residentKey=new ViewKey(key,view);residents.put(residentKey,job.resident);job.resident.group.keys.add(residentKey);job.resident.group.lastUsed=++clock;
                         uploading=null;version++;
                     }else break;
+                    }
                 }
             }finally{preparingState=null;}
         }

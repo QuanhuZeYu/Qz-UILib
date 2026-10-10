@@ -33,6 +33,8 @@ import club.heiqi.uilib.ui.scene.text.TextDecoration;
 import club.heiqi.uilib.ui.scene.text.TextEffects;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 import club.heiqi.uilib.ui.scene.text.font.UnicodeText.Unit;
+import club.heiqi.uilib.ui.scene.text.unicode.EmojiData;
+import club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
@@ -50,6 +52,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private final Thread thread = Thread.currentThread();
     private final FontSession nativeService;
     private EmojiData emojiData;
+    private UnicodeGraphemes.Source unicodeRules;
+    private UnicodeGraphemes.Profile unicodeProfile;
     private final int faceLimit, layoutLimit, cachedTextLimit;
     private final LinkedHashMap<FaceKey, FontFace> faces = new LinkedHashMap<FaceKey, FontFace>(16, .75f, true);
     private final LinkedHashMap<FaceKey, String> failures = new LinkedHashMap<FaceKey, String>(16, .75f, true);
@@ -65,11 +69,13 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     public FontTextService(FontEngine engine) throws IOException { this(defaultSources(FontTextService.class.getClassLoader(),1),engine); }
     public FontTextService(List<FontSource> defaults,FontEngine engine) { this(defaults,engine,16,128,8192); }
     public FontTextService(List<FontSource> defaults,FontEngine engine, int faceLimit, int layoutLimit, int cachedTextLimit) {
+        this(defaults,engine,faceLimit,layoutLimit,cachedTextLimit,UnicodeGraphemes.defaults());
+    }
+    public FontTextService(List<FontSource> defaults,FontEngine engine,int faceLimit,int layoutLimit,int cachedTextLimit,UnicodeGraphemes.Source rules) {
         if (faceLimit < 1 || layoutLimit < 0 || cachedTextLimit < 0) throw new IllegalArgumentException("无效字体缓存预算");
         this.faceLimit = faceLimit; this.layoutLimit = layoutLimit; this.cachedTextLimit = cachedTextLimit;
         this.defaults = copy(defaults);
-        try { emojiData = EmojiData.bundled(FontTextService.class.getClassLoader()); }
-        catch (IOException error) { throw new IllegalArgumentException("Emoji资源无法载入", error); }
+        unicodeRules=Objects.requireNonNull(rules,"rules");unicodeProfile=Objects.requireNonNull(rules.snapshot(),"profile");emojiData=unicodeProfile.emoji;
         nativeService = Objects.requireNonNull(engine,"engine").openSession();
     }
     /** 当前默认资源集合；完整脚本/RGI版本覆盖仍由资源清单和覆盖探针验收。 */
@@ -101,10 +107,15 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private void check() {
         if (Thread.currentThread() != thread) throw new IllegalStateException("FontTextService belongs to its creating thread");
         if (closed) throw new IllegalStateException("FontTextService is closed");
+        UnicodeGraphemes.Profile next=Objects.requireNonNull(unicodeRules.snapshot(),"profile");
+        if(next!=unicodeProfile){unicodeProfile=next;emojiData=next.emoji;invalidate();}
     }
+    /** 调用方在所属域换入共享规则快照后显式通知，沿现有 onInvalidated 使稳定页面重排。 */
+    public void refreshUnicodeRules() { check(); }
     public long generation() { check(); return generation; }
     public String emojiVersion() { check(); return emojiData.version; }
-    public void reloadEmojiData(EmojiData data) { check(); emojiData = Objects.requireNonNull(data, "data"); invalidate(); }
+    /** 仅切换本字体服务的规则；协同编辑重载由调用方提供共享 Source。 */
+    public void reloadEmojiData(EmojiData data) { check(); unicodeRules=UnicodeGraphemes.fixed(new UnicodeGraphemes.Profile(data));check(); }
     public int cachedFaceCount() { check(); return faces.size(); }
     public int cachedLayoutCount() { check(); return layouts.size(); }
     public List<FontSource> defaultCandidates() { check(); return defaults; }
@@ -151,9 +162,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         for(TextLayout.Line line:cached.lines()){
             List<TextLayout.Glyph> glyphs=new ArrayList<TextLayout.Glyph>();List<TextLayout.Cluster> clusters=new ArrayList<TextLayout.Cluster>();List<TextLayout.Decoration> decorations=new ArrayList<TextLayout.Decoration>();
             for(TextLayout.Glyph g:line.glyphs())glyphs.add(new TextLayout.Glyph(g.source,g.size,g.glyphId,g.logicalStart,g.logicalEnd,g.sourceStart,g.sourceEnd,g.x,g.y,g.xAdvance,g.yAdvance,g.color,g.replacement,g.inkBounds,g.logicalEm,g.rasterToLayout,g.rasterStyle,style,g.clusterIndex));
-            for(TextLayout.Cluster c:line.clusters())clusters.add(new TextLayout.Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,c.glyphIndexStart,c.glyphIndexEnd,c.x,c.advance,style));
+            for(TextLayout.Cluster c:line.clusters())clusters.add(new TextLayout.Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,c.glyphIndexStart,c.glyphIndexEnd,c.x,c.advance,style,c.rtl));
             for(TextLayout.Decoration d:line.decorations())decorations.add(new TextLayout.Decoration(d.kind,d.x,d.y,d.width,d.height,style.color,d.logicalStart,d.logicalEnd,d.sourceStart,d.sourceEnd));
-            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,clusters,decorations));
+            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,clusters,decorations,line.paragraphRtl));
         }
         return new TextLayout(cached.width,cached.height,cached.advanceWidth,cached.advanceHeight,style,lines,cached.logicalText,cached.originalText,cached.generation,cached.diagnostics(),cached.input);
     }
@@ -296,13 +307,30 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     @Override public TextLayout layout(AttributedText text,float width,TextPolicy policy) {
         check();Objects.requireNonNull(text,"text");Objects.requireNonNull(policy,"policy");
         if(!Float.isFinite(width))throw new IllegalArgumentException("无效布局宽度");
-        for(StyleSpan span:text.spans())if(span.style.effects.obfuscated)throw new UnsupportedOperationException("混淆动画不属于当前属性布局切片");
-        if(text.baseStyle.effects.obfuscated)throw new UnsupportedOperationException("混淆动画尚未实现");
         return build(text,text.originalText,width,policy);
     }
+    /** 属性布局不实现动画；保留真实正文及来源，给出稳定范围诊断，不在 paint 反复抛错。 */
+    private static AttributedText supportedText(AttributedText value) {
+        boolean unsupported=value.baseStyle.effects.obfuscated||value.trailingStyle.effects.obfuscated;
+        for(StyleSpan s:value.spans())unsupported|=s.style.effects.obfuscated;
+        if(!unsupported)return value;
+        List<StyleSpan> spans=new ArrayList<>();List<Diagnostic> diagnostics=new ArrayList<>(value.diagnostics());
+        for(StyleSpan s:value.spans()) {
+            if(s.style.effects.obfuscated)diagnostics.add(new Diagnostic(Diagnostic.Kind.UNSUPPORTED,
+                value.input.sourceStart(s.logicalStart),value.input.sourceEnd(s.logicalEnd-1),"属性布局不支持混淆动画，显示原正文"));
+            spans.add(new StyleSpan(s.logicalStart,s.logicalEnd,withoutObfuscation(s.style)));
+        }
+        if(spans.isEmpty()&&value.trailingStyle.effects.obfuscated)diagnostics.add(new Diagnostic(Diagnostic.Kind.UNSUPPORTED,0,value.input.sourceRight(value.input.text.length()),"属性布局不支持混淆动画，保留空正文"));
+        return new AttributedText(value.input,value.originalText,withoutObfuscation(value.baseStyle),spans,withoutObfuscation(value.trailingStyle),diagnostics);
+    }
+    private static TextStyle withoutObfuscation(TextStyle style) {
+        TextEffects e=style.effects;
+        return e.obfuscated?style.withEffects(new TextEffects(e.bold,e.italic,e.underline,e.strike,false,e.boldAdvance,e.italicShear)):style;
+    }
     private TextLayout build(AttributedText attributed,String original,float width,TextPolicy policy) {
+        attributed=supportedText(attributed);
         TextInput input=attributed.input;TextStyle style=attributed.baseStyle;List<FontSource> sources=candidates(style);
-        UnicodeText doc = new UnicodeText(input);doc.diagnostics.addAll(attributed.diagnostics()); List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
+        UnicodeText doc = new UnicodeText(input,policy);doc.diagnostics.addAll(attributed.diagnostics()); List<TextLayout.Line> lines = new ArrayList<TextLayout.Line>();
         float y = 0, maxWidth = 0;
         for (int start = 0; start <= doc.display.length();) {
             int newline = doc.display.indexOf('\n', start), end = newline < 0 ? doc.display.length() : newline;
@@ -312,7 +340,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             byte level = policy.direction == TextPolicy.Direction.AUTO ? Bidi.LEVEL_DEFAULT_LTR
                 : (byte) (policy.direction == TextPolicy.Direction.LTR ? 0 : 1);
             bidi.setPara(paragraph, level, null);
-            List<Unit> units = doc.units(start, end, policy.language, emojiData);
+            List<Unit> units = doc.units(start, end, unicodeProfile);
             int spanCursor=0;List<StyleSpan> requested=attributed.spans();
             while(spanCursor<requested.size()&&requested.get(spanCursor).logicalEnd<=doc.logical[start])spanCursor++;
             for(Unit unit:units){unit.style=attributed.styleAt(doc.logical[unit.start]);unit.shapeStyle=unit.style;
@@ -366,10 +394,11 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 float baseline = y + chosen.ascent;
                 List<TextLayout.Glyph> glyphs = new ArrayList<TextLayout.Glyph>();
                 List<TextLayout.Cluster> cells=new ArrayList<TextLayout.Cluster>();List<TextLayout.Decoration> decorations=new ArrayList<TextLayout.Decoration>();
+                Bidi finalDirection=a==b?null:bidi.setLine(a-start,b-start);
                 Map<Cell,Integer> cellIds=new java.util.IdentityHashMap<Cell,Integer>();
                 for(Cell c:chosen.cells){int id=cells.size();cellIds.put(c,id);
                     int ls=doc.logical[c.start],le=doc.logical[c.end],ss=doc.source(c.start),se=doc.sourceEnd(c.end);
-                    cells.add(new TextLayout.Cluster(ls,le,ss,se,c.glyphStart,c.glyphEnd,c.x,c.advance,c.style));
+                    cells.add(new TextLayout.Cluster(ls,le,ss,se,c.glyphStart,c.glyphEnd,c.x,c.advance,c.style,finalDirection!=null&&(finalDirection.getLevelAt(c.start-a)&1)!=0));
                     TextDecoration d=c.style.decoration;
                     if(c.style.effects.underline&&d.underlineThickness>0)decorations.add(new TextLayout.Decoration(TextLayout.Decoration.Kind.UNDERLINE,c.x+d.underlineStartOffset,baseline+d.underlineTop,c.advance-d.underlineStartOffset,d.underlineThickness,c.style.color,ls,le,ss,se));
                     if(c.style.effects.strike&&d.strikeThickness>0)decorations.add(new TextLayout.Decoration(TextLayout.Decoration.Kind.STRIKE,c.x,baseline+d.strikeTop,c.advance,d.strikeThickness,c.style.color,ls,le,ss,se));
@@ -382,7 +411,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 }
                 lines.add(new TextLayout.Line(input.text.substring(doc.logical[a], doc.logical[b]), 0, (int) Math.floor(y),
                     doc.logical[a], doc.logical[b],input.sourceLeft(doc.logical[a]),b==end?input.sourceRight(doc.logical[b]):input.sourceLeft(doc.logical[b]), chosen.width,baseline,
-                    chosen.ascent,chosen.descent,h,glyphs,cells,decorations));
+                    chosen.ascent,chosen.descent,h,glyphs,cells,decorations,(bidi.getParaLevel()&1)!=0));
                 maxWidth = Math.max(maxWidth, chosen.width); y += h; a = b;
             } while (a < end);
             if (newline < 0) break; start = end + 1;
@@ -440,16 +469,16 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     float ratio=fit;GlyphRasterStyle variant=variant(cell.style,ratio);InkBounds raw=inkBounds(chosen.source,cell.style.logicalEm,chosen.id,variant,doc);
                     InkBounds mapped=raw.known?new InkBounds(true,raw.left*ratio,raw.top*ratio,raw.right*ratio,raw.bottom*ratio):InkBounds.UNKNOWN;
                     int begin=output.size();output.add(new TextLayout.Glyph(chosen.source,cell.style.logicalEm,chosen.id,logicalStart,logicalEnd,sourceStart,sourceEnd,x+(width-(chosen.advance)*fit)/2,line.baseline,width,0,false,false,mapped,cell.style.logicalEm*fit,ratio,variant,cell.style,clusters.size()));
-                    clusters.add(new TextLayout.Cluster(logicalStart,logicalEnd,sourceStart,sourceEnd,begin,output.size(),x,width,cell.style));
+                    clusters.add(new TextLayout.Cluster(logicalStart,logicalEnd,sourceStart,sourceEnd,begin,output.size(),x,width,cell.style,cell.rtl));
                 }else{
                     for(int j=ci;j<end;j++){TextLayout.Cluster c=original.get(j);int begin=output.size();
                         for(int g=c.glyphIndexStart;g<c.glyphIndexEnd;g++){TextLayout.Glyph a=line.glyphs().get(g);output.add(new TextLayout.Glyph(a.source,a.size,a.glyphId,a.logicalStart,a.logicalEnd,a.sourceStart,a.sourceEnd,a.x,a.y,a.xAdvance,a.yAdvance,a.color,a.replacement,a.inkBounds,a.logicalEm,a.rasterToLayout,a.rasterStyle,a.resolvedStyle,clusters.size()));}
-                        clusters.add(new TextLayout.Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,begin,output.size(),c.x,c.advance,c.style));}
+                        clusters.add(new TextLayout.Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,begin,output.size(),c.x,c.advance,c.style,c.rtl));}
                 }
                 glyphCursor=glyphEnd;ci=end;
             }
             if(glyphCursor!=line.glyphs().size())throw new IllegalStateException("混淆簇未覆盖全部glyph");
-            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,output,clusters,line.decorations()));
+            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,output,clusters,line.decorations(),line.paragraphRtl));
         }
         List<Diagnostic> diagnostics=new ArrayList<Diagnostic>(layout.diagnostics());diagnostics.addAll(doc.diagnostics);
         return new TextLayout(layout.width,layout.height,layout.advanceWidth,layout.advanceHeight,layout.style,lines,layout.logicalText,layout.originalText,layout.generation,diagnostics,layout.input);
@@ -467,7 +496,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 InkBounds mapped=raw.known?new InkBounds(true,raw.left*ratio,raw.top*ratio,raw.right*ratio,raw.bottom*ratio):InkBounds.UNKNOWN;
                 glyphs.add(new TextLayout.Glyph(g.source,em,g.glyphId,g.logicalStart,g.logicalEnd,g.sourceStart,g.sourceEnd,g.x,g.y,g.xAdvance,g.yAdvance,g.color,g.replacement,mapped,g.logicalEm,ratio,variant,style,g.clusterIndex));
             }
-            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,line.clusters(),line.decorations()));
+            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,line.clusters(),line.decorations(),line.paragraphRtl));
         }
         List<Diagnostic> diagnostics=new ArrayList<Diagnostic>(layout.diagnostics());diagnostics.addAll(doc.diagnostics);
         return new TextLayout(layout.width,layout.height,layout.advanceWidth,layout.advanceHeight,layout.style,lines,layout.logicalText,layout.originalText,layout.generation,diagnostics,layout.input);

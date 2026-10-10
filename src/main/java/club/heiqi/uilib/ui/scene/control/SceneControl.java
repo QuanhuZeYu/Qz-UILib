@@ -28,6 +28,16 @@ public interface SceneControl {
     /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout presentText(SceneNode node, club.heiqi.uilib.ui.scene.text.TextLayout full, int width, int height, SceneTextMeasurer text) { return full; }
     void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target);
+    /** 只读呈现准备；仅在现有paint失效路径调用，动态文字缓存消费当前主题/资源/viewport。 */
+    default void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long metricsRevision) {}
+    /** 返回已挂载的直属逻辑占位子树。框架捕获同代paint，不创建挂载或修改hidden声明。
+     * 主输入几何仍依显隐事实；捕获计划仅作本次资源不可用时的呈现分支。
+     */
+    default SceneNode paintFallbackChild(SceneNode node) { return null; }
+    /** fallbackPaint是框架沿同一布局/paint能力捕获的不可变子片段，不可回访活节点。 */
+    default void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target, club.heiqi.uilib.ui.scene.paint.PaintPlan fallbackPaint) {
+        paint(node, geometry, target);
+    }
     /** 唯一当前焦点接收编辑事件；返回消费，不处理宿主原生队列。 */
     default boolean edit(SceneNode node, club.heiqi.uilib.ui.scene.input.SceneEditEvent event) { return false; }
     /** 只有需要DOWN定位的控件申请；普通按钮仍在UP聚焦。 */

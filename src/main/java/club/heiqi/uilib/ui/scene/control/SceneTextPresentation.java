@@ -108,7 +108,7 @@ final class SceneTextPresentation {
             }
             end = Math.max(end, c.x + c.advance);
             clusters.add(new TextLayout.Cluster(c.logicalStart, c.logicalEnd, c.sourceStart, c.sourceEnd,
-                first, glyphs.size(), c.x, c.advance, c.style));
+                first, glyphs.size(), c.x, c.advance, c.style,c.rtl));
             for (TextLayout.Decoration d : line.decorations()) if (d.logicalStart == c.logicalStart && d.logicalEnd == c.logicalEnd)
                 decorations.add(d);
         }
@@ -116,7 +116,7 @@ final class SceneTextPresentation {
         for (TextLayout.Glyph g : dots.glyphs()) glyphs.add(move(g, end - left, dy, ci,
             line.logicalEnd, line.logicalEnd, line.sourceEnd, line.sourceEnd));
         clusters.add(new TextLayout.Cluster(line.logicalEnd, line.logicalEnd, line.sourceEnd, line.sourceEnd,
-            first, glyphs.size(), end, markWidth, mark.style));
+            first, glyphs.size(), end, markWidth, mark.style,line.paragraphRtl));
         for (TextLayout.Decoration d : dots.decorations()) decorations.add(new TextLayout.Decoration(d.kind,
             d.x + end - left, d.y + dy, d.width, d.height, d.color,
             line.logicalEnd, line.logicalEnd, line.sourceEnd, line.sourceEnd));
@@ -124,7 +124,7 @@ final class SceneTextPresentation {
         return new TextLayout.Line(line.text, line.x, line.y, line.logicalStart, line.logicalEnd,
             line.sourceStart, line.sourceEnd, end + markWidth, line.baseline,
             Math.max(line.ascent, dots.ascent), Math.max(line.descent, dots.descent),
-            Math.max(line.lineHeight, dots.lineHeight), glyphs, clusters, decorations);
+            Math.max(line.lineHeight, dots.lineHeight), glyphs, clusters, decorations,line.paragraphRtl);
     }
 
     private static TextLayout.Glyph move(TextLayout.Glyph g, float dx, float dy, int ci,

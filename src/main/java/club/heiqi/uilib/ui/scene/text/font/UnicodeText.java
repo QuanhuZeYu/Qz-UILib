@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.scene.text.font;
 
 import java.util.ArrayList;
+import club.heiqi.uilib.ui.scene.text.unicode.EmojiData;
+import club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes;
 import java.util.List;
 import java.util.TreeSet;
 import java.util.BitSet;
@@ -18,21 +20,22 @@ final class UnicodeText {
     final String display;
     final int[] logical;
     final List<Diagnostic> diagnostics = new ArrayList<Diagnostic>();
-    UnicodeText(TextInput input) {
+    UnicodeText(TextInput input) {this(input,club.heiqi.uilib.ui.scene.text.TextPolicy.NORMAL);}
+    UnicodeText(TextInput input,club.heiqi.uilib.ui.scene.text.TextPolicy policy) {
         this.input = input;
         for (TextInput.InvalidRange r : input.invalidRanges())
             diagnostics.add(new Diagnostic(Diagnostic.Kind.INVALID_INPUT, r.start, r.end, "无效输入替代为 U+FFFD"));
         StringBuilder out = new StringBuilder(); List<Integer> offsets = new ArrayList<Integer>();
         for (int i = 0; i < input.text.length();) {
             int start = i, cp = input.text.codePointAt(i); i += Character.charCount(cp);
-            if (cp == 13) {
+            if (cp == 13 && policy.hardBreak==club.heiqi.uilib.ui.scene.text.TextPolicy.HardBreak.PRESERVE) {
                 if (i < input.text.length() && input.text.charAt(i) == 10) i++;
                 cp = 10;
-            } else if (club.heiqi.uilib.ui.scene.text.TextDisplay.controlMarker(cp)) {
+            } else if (club.heiqi.uilib.ui.scene.text.TextDisplay.controlMarker(cp)||policy.hardBreak==club.heiqi.uilib.ui.scene.text.TextPolicy.HardBreak.MARKER&&club.heiqi.uilib.ui.scene.text.TextDisplay.hardBreak(cp)) {
                 diagnostics.add(new Diagnostic(Diagnostic.Kind.CONTROL_MARKER, input.sourceStart(start), input.sourceEnd(i - 1),
                     "控制符 U+" + Integer.toHexString(cp).toUpperCase(java.util.Locale.ROOT) + " 显示标记"));
             }
-            cp = club.heiqi.uilib.ui.scene.text.TextDisplay.codePoint(cp);
+            cp = club.heiqi.uilib.ui.scene.text.TextDisplay.codePoint(cp,policy.hardBreak);
             out.appendCodePoint(cp); offsets.add(start);
             if (cp > 0xffff) offsets.add(start);
         }
@@ -41,17 +44,14 @@ final class UnicodeText {
     }
     int source(int offset) { return input.sourceRight(logical[offset]); }
     int sourceEnd(int offset){return logical[offset]==0?0:input.sourceEnd(logical[offset]-1);}
-    List<Unit> units(int start, int end, String language, EmojiData emojiData) {
-        String text = display.substring(start, end);
-        BreakIterator breaks = BreakIterator.getCharacterInstance(ULocale.forLanguageTag(language)); breaks.setText(text);
-        TreeSet<Integer> boundaries = new TreeSet<Integer>();
-        for (int b = breaks.first(); b != BreakIterator.DONE; b = breaks.next()) boundaries.add(b);
-        // ICU76 未知的新版本 RGI 序列按锁定的数据整体匹配，保留 ICU 已知字素边界。
-        for (int a = 0; a < text.length();) {
-            int sequenceEnd = emojiData.sequenceEnd(text, a, text.length());
-            if (sequenceEnd > a) boundaries.subSet(a, false, sequenceEnd, false).clear();
-            Integer next = boundaries.higher(a); if (next == null) break; a = next;
-        }
+    List<Unit> units(int start, int end, UnicodeGraphemes.Profile profile) {
+        EmojiData emojiData=profile.emoji;String text=display.substring(start,end);
+        // 在逻辑源文分段，再投影到显示坐标；可见控制标记不能与后继 Extend 误合。
+        TreeSet<Integer> logicalBoundaries=new TreeSet<>();
+        for(int b:profile.boundaries(input.text.substring(logical[start],logical[end])))logicalBoundaries.add(logical[start]+b);
+        TreeSet<Integer> boundaries=new TreeSet<>();
+        for(int d=start;d<=end;d++)if((d==start||logical[d]!=logical[d-1])&&logicalBoundaries.contains(logical[d]))boundaries.add(d-start);
+
         List<Unit> result = new ArrayList<Unit>(); int previousScript = UScript.COMMON;
         for (int a = 0; a < text.length();) {
             int b = boundaries.higher(a);

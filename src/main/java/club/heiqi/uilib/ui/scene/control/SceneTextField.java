@@ -6,7 +6,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
-import com.ibm.icu.text.Bidi;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Snapshot;
@@ -89,7 +88,6 @@ public final class SceneTextField {
         // 以下仅为呈现缓存，不是草稿、输入所有权或另一份编辑状态。
         private TextLayout source, presented;
         private Snapshot presentation;
-        private Bidi direction;
         private int width = -1;
         private int offset;
 
@@ -103,12 +101,21 @@ public final class SceneTextField {
             return Arrays.asList(state.snapshot(), theme, readOnly);
         }
 
+        private static TextPolicy bodyPolicy(SceneNode node) {
+            TextPolicy p=node.textPolicy();
+            return p.wrap==TextPolicy.Wrap.NONE&&p.hardBreak==TextPolicy.HardBreak.MARKER?p:
+                new TextPolicy(p.direction,TextPolicy.Wrap.NONE,p.language,p.tabSize,p.lineHeight,TextPolicy.HardBreak.MARKER);
+        }
+        @Override public TextLayout layoutText(SceneNode node,SceneTextMeasurer text,int width) {
+            return text.layout(node.text(),node.style(),width,bodyPolicy(node));
+        }
+
         @Override public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text) {
-            TextLayout full = text.layout(node.text(), node.style(), constraints.availableWidth, TextPolicy.SINGLE_LINE);
+            TextLayout full = text.layout(node.text(), node.style(), constraints.availableWidth, bodyPolicy(node));
             float height = full.height;
             for (TextLayout.Line line : full.lines()) height = Math.max(height, SceneTextPresentation.bottom(line));
             // 空文仍取真实字体的自然行高；M 只测度量，不进入字段的文字或命中计划。
-            if (height <= 0) height = text.layout("M", node.style(), Integer.MAX_VALUE, TextPolicy.SINGLE_LINE).height;
+            if (height <= 0) height = text.layout("M", node.style(), Integer.MAX_VALUE, bodyPolicy(node)).height;
             return new MeasuredSize(full.width, (int)Math.ceil(height));
         }
 
@@ -120,11 +127,6 @@ public final class SceneTextField {
                 SceneTextMeasurer text) {
             Snapshot next = state.snapshot().get();
             boolean changed = source != full;
-            if (changed) {
-                // 与生产整形相同的 ICU 方向级别；位置始终取其 clusters，不重新 HB 排版。
-                direction = new Bidi();
-                direction.setPara(full.logicalText, Bidi.LEVEL_DEFAULT_LTR, null);
-            }
             int maximum = Math.max(0, full.width - Math.max(0, innerWidth - 1));
             int nextOffset = Math.min(offset, maximum);
             // 光标/草稿/组字或真实排版区域变化各消费一次显露意图，不在稳定帧追滚动。
@@ -285,13 +287,8 @@ public final class SceneTextField {
             }
         }
 
-        private boolean rtl(TextLayout.Cluster cluster) {
-            return direction != null && cluster.logicalStart < direction.getLength()
-                && (direction.getLevelAt(cluster.logicalStart) & 1) != 0;
-        }
-
         private float edge(TextLayout.Cluster cluster, boolean start) {
-            return cluster.x + (start == rtl(cluster) ? cluster.advance : 0);
+            return start?cluster.leadingX():cluster.trailingX();
         }
 
         private float caretX(TextLayout text, int position) {
@@ -346,13 +343,13 @@ public final class SceneTextField {
                 g.rasterStyle, g.resolvedStyle, g.clusterIndex));
             List<TextLayout.Cluster> clusters = new ArrayList<>();
             for (TextLayout.Cluster c : line.clusters()) clusters.add(new TextLayout.Cluster(c.logicalStart,
-                c.logicalEnd, c.sourceStart, c.sourceEnd, c.glyphIndexStart, c.glyphIndexEnd, c.x - offset, c.advance, c.style));
+                c.logicalEnd, c.sourceStart, c.sourceEnd, c.glyphIndexStart, c.glyphIndexEnd, c.x - offset, c.advance, c.style,c.rtl));
             List<TextLayout.Decoration> decorations = new ArrayList<>();
             for (TextLayout.Decoration d : line.decorations()) decorations.add(new TextLayout.Decoration(d.kind,
                 d.x - offset, d.y, d.width, d.height, d.color, d.logicalStart, d.logicalEnd, d.sourceStart, d.sourceEnd));
             lines.add(new TextLayout.Line(line.text, line.x - offset, line.y, line.logicalStart, line.logicalEnd,
                 line.sourceStart, line.sourceEnd, line.advance, line.baseline, line.ascent, line.descent,
-                line.lineHeight, glyphs, clusters, decorations));
+                line.lineHeight, glyphs, clusters, decorations,line.paragraphRtl));
         }
         return new TextLayout(full.width, full.height, full.advanceWidth, full.advanceHeight, full.style,
             lines, full.logicalText, full.originalText, full.generation, full.diagnostics(), full.input);

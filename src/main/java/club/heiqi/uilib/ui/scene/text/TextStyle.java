@@ -26,7 +26,10 @@ public final class TextStyle {
         this.fontStyle=Objects.requireNonNull(fontStyle,"fontStyle");
         if (!Float.isFinite(logicalEm) || logicalEm <= 0 || logicalEm > 32767) throw new IllegalArgumentException("字号必须为有效正数");
         this.font = Objects.requireNonNull(font, "font"); this.logicalEm=logicalEm;this.size=(int)Math.ceil(logicalEm);this.color=color;
-        this.effects=Objects.requireNonNull(effects,"effects");this.decoration=Objects.requireNonNull(decoration,"decoration");
+        Objects.requireNonNull(effects,"effects");
+        // 字重/字姿仅由 FontStyle 决定；遗留布尔字段是派生视图。
+        this.effects=new TextEffects(fontStyle.weight>=700,fontStyle.posture!=FontStyle.Posture.NORMAL,effects.underline,effects.strike,effects.obfuscated,effects.boldAdvance,effects.italicShear);
+        this.decoration=Objects.requireNonNull(decoration,"decoration");
         if (candidates == null) this.candidates = null;
         else {
             ArrayList<FontSource> copy = new ArrayList<FontSource>(candidates);

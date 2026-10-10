@@ -184,6 +184,8 @@ public final class SceneFocusRouter {
     }
     void close() {
         runtime.domain().checkWrite(); if (closed) return;
-        closed = true; setOwner(null); ranges.clear();
+        closed = true;
+        try { setOwner(null); }
+        finally { ranges.clear(); }
     }
 }

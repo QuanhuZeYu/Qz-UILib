@@ -415,9 +415,12 @@ public final class SceneRuntime implements AutoCloseable {
     @Override public void close() {
         domain.checkAccess(); if (disposed) return;
         command();
-        pointerRouter.close();
-        focusRouter.close();
+        // 扩展失焦回调也属于关闭错误边界，不能阻断挂载与Owner资源的完整收尾。
         Throwable failure = null;
+        try { pointerRouter.close(); }
+        catch (RuntimeException | Error e) { failure = e; }
+        try { focusRouter.close(); }
+        catch (RuntimeException | Error e) { if (failure == null) failure = e; else if (e != failure) failure.addSuppressed(e); }
         for (SceneNode root : new ArrayList<>(roots)) {
             try { detach(root, mounts.get(root).token); }
             catch (RuntimeException | Error e) { if (failure == null) failure = e; else if (e != failure) failure.addSuppressed(e); }

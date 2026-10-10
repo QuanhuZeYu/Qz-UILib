@@ -19,11 +19,11 @@ tasks.withType<Test>().configureEach {
 // 集成场景直启只包含核心与场景类，不将 MC/Forge/LWJGL 放到执行类路径。
 val coreLoopScenario = registerTestApplication("coreLoopScenario", "运行无平台核心业务与场景闭环", "club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontUnicodeRuntime
 }
 val orderedBatchScenario = registerTestApplication("orderedBatchScenario", "运行无平台生产合批透明重叠与裁剪出图场景", "club.heiqi.uilib.ui.scene.integration.OrderedBatchScenario") {
     dependsOn(tasks.named("testClasses"))
-    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontUnicodeRuntime
     systemProperty("java.awt.headless", "true")
     args(layout.buildDirectory.dir("font-machine/batch").get().asFile.absolutePath)
 }
@@ -66,6 +66,9 @@ fun registerTestApplication(taskName: String, summary: String, application: Stri
 val coreSources = sourceSets.create("core") {
     java.srcDir("src/main/java")
     java.include("club/heiqi/uilib/ui/scene/**", "club/heiqi/uilib/ui/reactive/**")
+    // 编辑与排版共用的纯 Unicode 规则只带版本数据，不引入宿主资源或 native。
+    resources.srcDir("src/main/resources")
+    resources.include("assets/qz_uilib/unicode/**")
     compileClasspath = fontUnicodeRuntime
     runtimeClasspath = output + compileClasspath
 }
@@ -95,7 +98,7 @@ val compileCoreSceneScenario by tasks.registering(JavaCompile::class) {
     dependsOn(tasks.named(coreSources.classesTaskName), tasks.named(testSupportSources.classesTaskName))
     source(coreSceneDeclarations.map { (_, _, application) -> "src/test/java/club/heiqi/uilib/ui/scene/integration/$application.java" })
     source("src/test/java/club/heiqi/uilib/ui/scene/integration/SoftwareSceneScenario.java")
-    classpath = coreSources.output + testSupportSources.output
+    classpath = coreSources.output + testSupportSources.output + fontUnicodeRuntime
     destinationDirectory.set(coreSceneClasses)
     sourceCompatibility = "1.8"
     targetCompatibility = "1.8"

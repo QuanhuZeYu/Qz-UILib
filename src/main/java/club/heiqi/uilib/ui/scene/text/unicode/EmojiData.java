@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.scene.text.font;
+package club.heiqi.uilib.ui.scene.text.unicode;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -100,7 +100,7 @@ public final class EmojiData {
     private static InputStream required(ClassLoader loader, String path) throws IOException {
         InputStream in = loader.getResourceAsStream(path); if (in == null) throw new IOException("缺少Emoji资源: " + path); return in;
     }
-    int sequenceEnd(String text, int start, int end) {
+    public int sequenceEnd(String text, int start, int end) {
         Trie current = rgi; int found = start;
         for (int i = start; i < end;) {
             int cp = text.codePointAt(i); current = current.next.get(cp); if (current == null) break;

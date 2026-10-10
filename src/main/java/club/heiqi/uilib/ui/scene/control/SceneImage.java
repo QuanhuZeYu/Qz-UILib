@@ -29,7 +29,11 @@ public final class SceneImage implements SceneControl {
     private final SceneNode placeholder;
     private boolean documentPolicy;
     private SceneTheme theme=SceneTheme.dark();
-    private club.heiqi.uilib.ui.scene.text.TextLayout quantityText;
+    private club.heiqi.uilib.ui.scene.text.TextLayout quantityText,tooltipText;
+    private club.heiqi.uilib.ui.scene.image.ItemImageFacts tooltipFacts;
+    private club.heiqi.uilib.ui.scene.text.TextStyle tooltipStyle;
+    private int tooltipWidth=-1;
+    private long tooltipMetrics=-1;
     /** 可选主题绑定与其他正式控件一致，字号/提示背景变化自动失效。 */
     public static SceneNode themed(ImageService service,ReadableSignal<ImageSource> source,ReadableSignal<ImageOptions> options,ReadableSignal<SceneTheme> theme){
         SceneNode node=create(service,source,options);SceneImage control=(SceneImage)node.control();
@@ -50,7 +54,7 @@ public final class SceneImage implements SceneControl {
                 ImageSource next=source.get();if(!Objects.equals(next,current[0])){if(lease[0]!=null)lease[0].close();lease[0]=service.acquire(next,runtime.domain());current[0]=next;}
                 control.state=lease[0].state().get();control.current.set(control.state);control.describe(target);runtime.invalidate();
             },()->runtime.invalidateBinding(target));
-            return new BindingActivation(){public void refresh(){observation.refresh();}public void close(){observation.close();if(lease[0]!=null){lease[0].close();lease[0]=null;}control.state=null;}};
+            return new BindingActivation(){public void refresh(){observation.refresh();}public void close(){observation.close();if(lease[0]!=null){lease[0].close();lease[0]=null;}control.state=null;control.tooltipFacts=null;control.tooltipStyle=null;control.tooltipText=null;control.quantityText=null;}};
         });return node;
     }
     /** 后续Markdown解析器使用此入口；当前只实现图像消费者，不解析Markdown全文。 */
@@ -74,30 +78,55 @@ public final class SceneImage implements SceneControl {
         club.heiqi.uilib.ui.scene.image.ItemImageFacts facts=state==null||state.content==null?null:state.content.itemFacts();
         quantityText=facts!=null&&options.quantity&&!facts.quantity.isEmpty()?text.layout(facts.quantity,node.style(),width,club.heiqi.uilib.ui.scene.text.TextPolicy.SINGLE_LINE):null;return full;
     }
+    /** 只缓存最近事实/当前样式/空间/度量代际；hover与其他paint变化不重新resolve或整形。 */
+    @Override public void preparePaint(SceneNode node,SceneGeometryView geometry,SceneTextMeasurer text,long metricsRevision){
+        club.heiqi.uilib.ui.scene.image.ItemImageFacts facts=state==null||state.content==null?null:state.content.itemFacts();
+        if(facts==null||!options.tooltip||facts.tooltip.source.isEmpty()){tooltipFacts=null;tooltipStyle=null;tooltipText=null;return;}
+        LayoutBox viewport=geometry.viewport();int padding=Math.min(theme.padding,Math.min(viewport.width,viewport.height)/2);
+        int width=Math.max(0,viewport.width-padding*2);club.heiqi.uilib.ui.scene.text.TextStyle style=node.style().withColor(theme.tooltipText);
+        if(tooltipText==null||tooltipFacts!=facts||!style.equals(tooltipStyle)||tooltipWidth!=width||tooltipMetrics!=metricsRevision){
+            club.heiqi.uilib.ui.scene.text.TextPolicy policy=new club.heiqi.uilib.ui.scene.text.TextPolicy(club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.AUTO,club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.EMERGENCY,"und",0,0);
+            tooltipText=text.layout(facts.tooltip.resolve(style).text,width,policy);
+            tooltipFacts=facts;tooltipStyle=style;tooltipWidth=width;tooltipMetrics=metricsRevision;
+        }
+    }
     @Override public void paintOverlay(SceneNode node,SceneGeometryView geometry,PaintPlanBuilder target,SceneTextMeasurer text){
         club.heiqi.uilib.ui.scene.image.ItemImageFacts facts=state==null||state.content==null?null:state.content.itemFacts();
-        if(facts==null||!options.tooltip||facts.tooltip.isEmpty()||node.runtime()==null||node.runtime().pointerRouter().passiveHovered(geometry)!=node)return;
+        if(facts==null||tooltipText==null||!options.tooltip||node.runtime()==null||node.runtime().pointerRouter().passiveHovered(geometry)!=node)return;
         SceneGeometryView.Entry entry=geometry.get(node);LayoutBox viewport=geometry.viewport();if(entry==null||viewport.width==0||viewport.height==0)return;
         int padding=Math.min(theme.padding,Math.min(viewport.width,viewport.height)/2);
-        club.heiqi.uilib.ui.scene.text.TextStyle tipStyle=node.style().withColor(theme.tooltipText);
-        club.heiqi.uilib.ui.scene.text.TextPolicy tipPolicy=new club.heiqi.uilib.ui.scene.text.TextPolicy(club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.AUTO,club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.EMERGENCY,"und",0,0);
-        club.heiqi.uilib.ui.scene.text.AttributedText formatted=facts.formattedTooltip(tipStyle);
-        club.heiqi.uilib.ui.scene.text.TextLayout tip=formatted==null?text.layout(facts.tooltip,tipStyle,Math.max(0,viewport.width-padding*2),tipPolicy):text.layout(formatted,Math.max(0,viewport.width-padding*2),tipPolicy);
+        club.heiqi.uilib.ui.scene.text.TextLayout tip=tooltipText;
         int w=Math.min(viewport.width,tip.width+padding*2),h=Math.min(viewport.height,tip.height+padding*2);
         int x=Math.max(viewport.x,Math.min(viewport.x+viewport.width-w,entry.box.x));
         long below=(long)entry.box.y+entry.box.height+theme.gap;long desired=below+h<=(long)viewport.y+viewport.height?below:(long)entry.box.y-theme.gap-h;
         int y=(int)Math.max(viewport.y,Math.min((long)viewport.y+viewport.height-h,desired));LayoutBox box=new LayoutBox(x,y,w,h);
         target.add(PaintCommand.rect(box,viewport,theme.tooltip));LayoutBox inner=new LayoutBox(x+padding,y+padding,Math.max(0,w-padding*2),Math.max(0,h-padding*2));target.add(PaintCommand.text(inner,inner.intersect(viewport),tip));
     }
-    @Override public void paint(SceneNode node,SceneGeometryView geometry,PaintPlanBuilder target){SceneGeometryView.Entry entry=geometry.get(node);if(entry==null)return;
-        if(state!=null&&state.content!=null){LayoutBox clip=entry.clip;if(options.fit==ImageOptions.Fit.COVER)clip=clip==null?entry.box:clip.intersect(entry.box);ImagePlacement placement=ImagePlacement.fit(state.content,entry.box,options);target.add(PaintCommand.image(entry.box,clip,placement,entry.text));
-            club.heiqi.uilib.ui.scene.image.ItemImageFacts facts=state.content.itemFacts();
-            if(facts!=null){
-                LayoutBox overlayClip=clip==null?entry.box:clip.intersect(entry.box);
-                int right=(int)Math.floor(placement.x+placement.width),bottom=(int)Math.floor(placement.y+placement.height);
-                if(quantityText!=null)target.add(PaintCommand.text(new LayoutBox(right-quantityText.width,bottom-quantityText.height,quantityText.width,quantityText.height),overlayClip,quantityText));
-                if(options.durability&&facts.durabilityVisible){int barWidth=Math.max(0,(int)Math.floor(placement.width*13/state.content.width));int barHeight=Math.max(1,(int)Math.ceil(placement.height*2/state.content.height));int x=(int)Math.floor(placement.x+placement.width/state.content.width),y=bottom-barHeight;target.add(PaintCommand.rect(new LayoutBox(x,y,barWidth,barHeight),overlayClip,0xFF000000));target.add(PaintCommand.rect(new LayoutBox(x,y,(int)Math.round(barWidth*facts.durabilityRemaining),Math.max(1,barHeight/2)),overlayClip,facts.durabilityColor));}
-            }}
-        else if(placeholder==null){LayoutBox clip=entry.clip==null?entry.box:entry.clip.intersect(entry.box);boolean failed=state!=null&&state.status!=ImageState.Status.LOADING;target.add(PaintCommand.rect(entry.box,clip,failed?0xFF642D35:0xFF39434F));if(!node.text().isEmpty())target.add(PaintCommand.text(entry.box,clip,entry.text));}
+    @Override public SceneNode paintFallbackChild(SceneNode node){return placeholder;}
+    @Override public void paint(SceneNode node,SceneGeometryView geometry,PaintPlanBuilder target){paint(node,geometry,target,null);}
+    @Override public void paint(SceneNode node,SceneGeometryView geometry,PaintPlanBuilder target,club.heiqi.uilib.ui.scene.paint.PaintPlan fallbackPaint){
+        SceneGeometryView.Entry entry=geometry.get(node);if(entry==null)return;
+        club.heiqi.uilib.ui.scene.paint.PaintPlan pending=placeholder==null?defaultFallback(node,entry,false):fallbackPaint;
+        club.heiqi.uilib.ui.scene.paint.PaintPlan failed=placeholder==null?defaultFallback(node,entry,true):fallbackPaint;
+        if(state==null||state.content==null){
+            club.heiqi.uilib.ui.scene.paint.PaintPlan selected=state==null||state.status==ImageState.Status.LOADING?pending:failed;
+            if(selected!=null)for(PaintCommand command:selected.commands())target.add(command);return;
+        }
+        LayoutBox clip=entry.clip;if(options.fit==ImageOptions.Fit.COVER)clip=clip==null?entry.box:clip.intersect(entry.box);
+        ImagePlacement placement=ImagePlacement.fit(state.content,entry.box,options);
+        PaintPlanBuilder overlay=new PaintPlanBuilder();
+        club.heiqi.uilib.ui.scene.image.ItemImageFacts facts=state.content.itemFacts();
+        if(facts!=null){
+            LayoutBox overlayClip=clip==null?entry.box:clip.intersect(entry.box);
+            int right=(int)Math.floor(placement.x+placement.width),bottom=(int)Math.floor(placement.y+placement.height);
+            if(quantityText!=null)overlay.add(PaintCommand.text(new LayoutBox(right-quantityText.width,bottom-quantityText.height,quantityText.width,quantityText.height),overlayClip,quantityText));
+            if(options.durability&&facts.durabilityVisible){int barWidth=Math.max(0,(int)Math.floor(placement.width*13/state.content.width));int barHeight=Math.max(1,(int)Math.ceil(placement.height*2/state.content.height));int x=(int)Math.floor(placement.x+placement.width/state.content.width),y=bottom-barHeight;overlay.add(PaintCommand.rect(new LayoutBox(x,y,barWidth,barHeight),overlayClip,0xFF000000));overlay.add(PaintCommand.rect(new LayoutBox(x,y,(int)Math.round(barWidth*facts.durabilityRemaining),Math.max(1,barHeight/2)),overlayClip,facts.durabilityColor));}
+        }
+        target.add(PaintCommand.image(entry.box,clip,placement,pending,failed,overlay.build()));
+    }
+    private club.heiqi.uilib.ui.scene.paint.PaintPlan defaultFallback(SceneNode node,SceneGeometryView.Entry entry,boolean failed){
+        LayoutBox clip=entry.clip==null?entry.box:entry.clip.intersect(entry.box);PaintPlanBuilder target=new PaintPlanBuilder();
+        target.add(PaintCommand.rect(entry.box,clip,failed?0xFF642D35:0xFF39434F));
+        if(!node.text().isEmpty())target.add(PaintCommand.text(entry.box,clip,entry.text));return target.build();
     }
 }

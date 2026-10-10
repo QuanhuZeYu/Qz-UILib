@@ -53,6 +53,26 @@ public final class RichTextScenario extends TestApplication {
             page.pointer(ScenePointerEvent.syntheticActivation(host.width - 1, host.height - 1)); page.frame();
             require(activated.size() == 1, "节点空白错误扩大链接命中");
         });
+        scenario("同批测量最终绘制共享属性布局且声明变化重新排版", () -> {
+            ReactiveDomain domain = ReactiveDomain.direct(); Host host = new Host();
+            int[] calls = {0}; SceneNode[] node = new SceneNode[1]; Signal<TextContent>[] source = new Signal[1];
+            club.heiqi.uilib.ui.scene.text.SceneTextMeasurer counted = new club.heiqi.uilib.ui.scene.text.SceneTextMeasurer() {
+                public TextLayout layout(String text, TextStyle style, int width) { return font.layout(text, style, width); }
+                public TextLayout layout(String text, TextStyle style, int width, club.heiqi.uilib.ui.scene.text.TextPolicy policy) { return font.layout(text, style, width, policy); }
+                public TextLayout layout(club.heiqi.uilib.ui.scene.text.AttributedText text, float width, club.heiqi.uilib.ui.scene.text.TextPolicy policy) { calls[0]++; return font.layout(text, width, policy); }
+            };
+            ScenePageSession page = own(ScenePageSession.open(domain, host, counted, context -> {
+                source[0] = domain.signal(TextContent.richTags("<b>共享测量</b>"));
+                node[0] = SceneRichText.create(context, source[0], domain.signal(SceneTheme.dark()), href -> {})
+                    .size(Size.fixed(host.width), Size.natural());
+                context.mount(node[0]);
+            }));
+            page.frame(); require(calls[0] == 1, "同宽测量与生产布局重复调用字体整形");
+            page.frame(); require(calls[0] == 1, "稳定呈现重复排版");
+            domain.execute(() -> source[0].set(TextContent.richTags("<i>新的属性声明</i>")));
+            page.frame(); require(calls[0] == 2, "新声明没有沿呈现批次重新排版");
+            require(host.plan.commands().stream().anyMatch(c -> c.text != null && c.text.logicalText.equals("新的属性声明")), "绘制误用上一批内容");
+        });
         scenario("两模式节符字面沿正式页面呈现", () -> {
             for (TextContent.Mode mode : TextContent.Mode.values()) {
                 ReactiveDomain domain = ReactiveDomain.direct(); Host host = new Host();
@@ -72,6 +92,10 @@ public final class RichTextScenario extends TestApplication {
             }
         });
         scenario("来源映射与非法整段呈现", this::sourceAndFailure);
+        scenario("正式字段使用最终RTL方向及声明行高", this::fieldDirectionPolicy);
+        scenario("单行字段可见硬换行标记且Area与NoWrap标签保硬行", this::fieldHardBreaks);
+        scenario("显式Unicode快照共用与局部重载归属", this::unicodeProfiles);
+        scenario("同一DSL声明动态基础样式保源结构与链接身份", this::dynamicDeclaration);
         scenario("具体链接身份与物理尾部", this::gestureIdentity);
         scenario("真实多行Bidi簇与祖先裁剪滚动重排", this::geometry);
         scenario("handler失败先释放owner", this::handlerFailure);
@@ -96,6 +120,96 @@ public final class RichTextScenario extends TestApplication {
             require(TextContent.plain("§l<b>\n\t👩‍💻").resolve(base).text.input.text.equals("§l<b>\n\t👩‍💻"), "PLAIN猜语法");
         });
     }
+    private void fieldHardBreaks() {
+        for(String raw:new String[]{"A\u2028B","A\u2029B"}) {
+            ReactiveDomain domain=ReactiveDomain.direct();Host host=new Host();
+            SceneNode[] node={null};club.heiqi.uilib.ui.scene.edit.SceneEditState[] state={null};
+            ScenePageSession page=own(ScenePageSession.open(domain,host,font,context->{
+                state[0]=new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain,raw);
+                node[0]=club.heiqi.uilib.ui.scene.control.SceneTextField.create(context,state[0],domain.signal(SceneTheme.dark()),domain.signal(false),s->{})
+                    .textPolicy(new club.heiqi.uilib.ui.scene.text.TextPolicy(club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.LTR,club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.NONE,"und",0,40))
+                    .size(Size.fixed(140),Size.natural());context.mount(node[0]);
+            }));
+            page.frame();SceneGeometryView.Entry entry=read(domain,()->page.pipeline().current().geometry.get(node[0]));
+            require(entry.text.lines().size()==1&&entry.text.lines().get(0).logicalEnd==raw.length(),"LS/PS在单行字段形成隐藏硬行");
+            require(entry.text.logicalText.equals(raw)&&read(domain,()->state[0].text().get()).equals(raw),"硬换行投影改写源文");
+            require(entry.text.lines().get(0).clusters().stream().anyMatch(c->c.logicalStart==1&&c.logicalEnd==2&&c.sourceStart==1&&c.sourceEnd==2),"硬换行标记来源映射丢失");
+            require(entry.box.height>=40+node[0].padding()*2,"单行字段测量与最终几何不一致");
+            TextLayout.Cluster last=entry.text.lines().get(0).clusters().stream().filter(c->c.logicalStart==2).findFirst().get();
+            int x=entry.box.x+node[0].padding()+(int)Math.floor(last.trailingX()),y=entry.box.y+node[0].padding()+2;
+            page.pointer(ScenePointerEvent.down(0,x,y));page.pointer(ScenePointerEvent.up(0,x,y));page.frame();
+            require(read(domain,()->state[0].snapshot().get().caret)==3,"点击正文末尾仍使用第一硬行几何");
+            page.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.LEFT,false,null));page.frame();
+            require(read(domain,()->state[0].snapshot().get().caret)==2,"可见标记后的键盘光标错位");
+            for(boolean area:new boolean[]{false,true}) {
+                ReactiveDomain other=ReactiveDomain.direct();Host otherHost=new Host();SceneNode[] body={null};
+                ScenePageSession multi=own(ScenePageSession.open(other,otherHost,font,context->{
+                    body[0]=area?club.heiqi.uilib.ui.scene.control.SceneTextArea.create(context,
+                        new club.heiqi.uilib.ui.scene.edit.SceneEditState(other,raw,club.heiqi.uilib.ui.scene.edit.SceneEditState.Mode.MULTI_LINE),other.signal(SceneTheme.dark()),other.signal(false),s->{}):
+                        club.heiqi.uilib.ui.scene.control.SceneLabel.create(context,other.signal(raw),other.signal(SceneTheme.dark()),club.heiqi.uilib.ui.scene.control.SceneTextPolicy.OVERFLOW);
+                    // 使用正式入口默认策略，避免手动policy掩盖标签或Area的硬行回归。
+                    body[0].size(Size.fixed(140),Size.natural());context.mount(body[0]);
+                }));
+                multi.frame();TextLayout layout=read(other,()->multi.pipeline().current().geometry.get(body[0]).text);
+                require(layout.lines().size()==2&&layout.logicalText.equals(raw),"默认NoWrap/Area吞掉硬行或改变源文");
+            }
+        }
+    }
+
+    private void fieldDirectionPolicy() {
+        for(String raw:new String[]{".","A\u0085אבג"}) {
+            ReactiveDomain domain=ReactiveDomain.direct();Host host=new Host();
+            SceneNode[] field={null};club.heiqi.uilib.ui.scene.edit.SceneEditState[] state={null};
+            ScenePageSession page=own(ScenePageSession.open(domain,host,font,context->{
+                state[0]=new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain,raw);
+                field[0]=club.heiqi.uilib.ui.scene.control.SceneTextField.create(context,state[0],domain.signal(SceneTheme.dark()),domain.signal(false),s->{})
+                    .textPolicy(new club.heiqi.uilib.ui.scene.text.TextPolicy(club.heiqi.uilib.ui.scene.text.TextPolicy.Direction.RTL,club.heiqi.uilib.ui.scene.text.TextPolicy.Wrap.EMERGENCY,"he",15,60))
+                    .size(Size.fixed(140),Size.natural());
+                context.mount(field[0]);
+            }));
+            page.frame();SceneGeometryView.Entry entry=read(domain,()->page.pipeline().current().geometry.get(field[0]));
+            require(entry.text.lines().size()==1&&entry.text.lines().get(0).lineHeight==60,"单行字段覆盖声明policy或错误分割控制标记");
+            require(entry.box.height>=60+field[0].padding()*2,"自然测量忽略声明行高");
+            TextLayout.Cluster cluster=entry.text.lines().get(0).clusters().stream().filter(c->c.logicalStart==(raw.equals(".")?0:2)).findFirst().get();
+            require(cluster.rtl&&cluster.leadingX()>cluster.trailingX(),"最终行方向事实未保留到字段呈现");
+            int x=entry.box.x+field[0].padding()+(int)Math.floor(cluster.trailingX()+cluster.advance*.1f),y=entry.box.y+field[0].padding()+2;
+            page.pointer(ScenePointerEvent.down(0,x,y));page.pointer(ScenePointerEvent.up(0,x,y));page.frame();
+            require(read(domain,()->state[0].snapshot().get().caret)==cluster.sourceEnd,"字段指针重新使用了不同Bidi/显示投影");
+        }
+    }
+    private void unicodeProfiles() throws Exception {
+        club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Profile bundled=club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.bundled();
+        club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Profile[] current={bundled};
+        club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Source rules=()->current[0];
+        FontTextService local=own(new FontTextService(font.defaultCandidates(),new LwjglFontEngine(),4,8,4096,rules));
+        ReactiveDomain domain=ReactiveDomain.direct();club.heiqi.uilib.ui.scene.edit.SceneEditState[] state={null};
+        domain.execute(()->state[0]=new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain,"\n\u0301😀",club.heiqi.uilib.ui.scene.edit.SceneEditState.Mode.MULTI_LINE,rules));
+        long before=local.generation();
+        int[] invalidated={0};
+        own(local.onInvalidated(()->invalidated[0]++));
+        club.heiqi.uilib.ui.scene.text.unicode.EmojiData custom=club.heiqi.uilib.ui.scene.text.unicode.EmojiData.read("explicit-test",new java.io.StringReader("1F600 ; Emoji\n1F600 ; Emoji_Presentation\n"),new java.io.StringReader("1F600 ; Basic_Emoji\n"));
+        domain.execute(()->{
+            current[0]=new club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Profile(custom);
+            local.refreshUnicodeRules();
+        });
+        require(invalidated[0]==1,"显式规则刷新没有通知稳定页面或重复通知");
+        local.refreshUnicodeRules();require(invalidated[0]==1,"同快照刷新反复失效");
+        require(local.generation()>before&&local.emojiVersion().equals("explicit-test"),"共享规则快照变化未使字体代际失效");
+        domain.execute(()->{state[0].deleteBackward();state[0].deleteBackward();require(state[0].text().get().equals("\n"),"注入规则下字素删除误吞换行");});
+        local.reloadEmojiData(bundled.emoji);
+        require(local.emojiVersion().equals(bundled.emoji.version)&&font.emojiVersion().equals(bundled.emoji.version),"局部emoji重载改变默认字体规则");
+        require(rules.snapshot()==current[0]&&rules.snapshot().emoji==custom,"局部字体重载反向修改编辑规则Source");
+    }
+    private void dynamicDeclaration() {
+        TextContent content=TextContent.richTags("<a href=\"x\"><b><u>正文&amp;</u></b></a>");
+        TextContent.Resolved first=content.resolve(new TextStyle("default",18,0x7fffffff));
+        TextContent.Resolved next=content.resolve(new TextStyle("minecraft",32,0x3f112233,font.defaultCandidates()));
+        require(first.text.input==next.text.input&&first.links().get(0).link==next.links().get(0).link,"基础样式变化重新建立源结构或链接身份");
+        require(next.text.styleAt(0).logicalEm==32&&next.text.styleAt(0).color==0x3f112233&&next.text.styleAt(0).fontStyle.weight==700,"稳定声明未派生当前基础样式");
+        require(next.text.styleAt(0).decoration.underlineThickness>first.text.styleAt(0).decoration.underlineThickness,"装饰冻结旧字号");
+        require(first.serializeRichTags().equals(next.serializeRichTags()),"样式派生改变规范源码");
+    }
+
     private void sourceAndFailure() {
         TextStyle base = new TextStyle("default", 18, 0xffffffff);
         String raw = "<b>中😀&lt;</b><br/>&amp;";

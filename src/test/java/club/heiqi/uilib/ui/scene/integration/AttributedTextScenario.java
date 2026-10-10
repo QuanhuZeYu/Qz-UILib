@@ -15,7 +15,7 @@ import club.heiqi.uilib.ui.scene.text.TextInput;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
-import club.heiqi.uilib.ui.scene.text.format.MinecraftFormat;
+import club.heiqi.uilib.host.text.MinecraftFormat;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
@@ -114,12 +114,30 @@ public final class AttributedTextScenario extends TestApplication {
   TextStyle big=new TextStyle("default",48,-1),fractional=new TextStyle("default",18.5f,-1,null,TextEffects.NORMAL,TextDecoration.NONE);
   for(TextStyle active:Arrays.asList(big,fractional)){
    AttributedText input=new AttributedText(TextInput.string("A\n\n"),"A\n\n",base,Arrays.asList(new StyleSpan(0,1,base),new StyleSpan(1,3,active)));
-   TextLayout layout=service.layout(input,1000,TextPolicy.SINGLE_LINE),reference=service.layout("",active,1000,TextPolicy.SINGLE_LINE);
+   // 空段度量的合同是保留硬行而不软折行，不能请求单行可见标记。
+    TextLayout layout=service.layout(input,1000,TextPolicy.NO_WRAP),reference=service.layout("",active,1000,TextPolicy.NO_WRAP);
    require(layout.style==base&&layout.lines().size()==3,"空行或base样式被覆盖");
    for(int i=1;i<3;i++){TextLayout.Line line=layout.lines().get(i),ref=reference.lines().get(0);require(line.lineHeight==ref.lineHeight&&line.ascent==ref.ascent&&line.descent==ref.descent,"空段忽略活动/末尾浮点样式");}
   }
   System.out.println("PASS review resolved-selector cache rebind/public guard/control-invalid source/empty-active float metrics");
  }
+    private void typedDeclaration() {
+        String raw="中§c§l§n§k😀";
+        club.heiqi.uilib.ui.scene.text.StyledText typed=MinecraftFormat.styled(TextInput.utf8(raw.getBytes(StandardCharsets.UTF_8)),raw,CONTEXT);
+        TextStyle first=new TextStyle("default",18,0x7fabcdef),next=new TextStyle("minecraft",30,0x3f102030,fonts);
+        AttributedText small=typed.resolve(first),large=typed.resolve(next);
+        require(small.input==large.input&&large.input.sourceUnit==TextInput.SourceUnit.BYTE,"派生样式重建或丢失来源单位");
+        require(large.styleAt(1).logicalEm==30&&large.styleAt(1).font.equals("minecraft")&&large.styleAt(1).candidates().equals(fonts),"typed声明冻结字体或字号");
+        require(small.styleAt(1).color==0x7fff3344&&large.styleAt(1).color==0x3fff3344,"RGB冻结基础alpha");
+        require(large.styleAt(1).fontStyle.weight==700&&large.styleAt(1).effects.bold&&large.styleAt(1).effects.obfuscated,"typed属性意图丢失或有双重字重权威");
+        TextLayout layout=service.layout(large,500,TextPolicy.SINGLE_LINE);
+        require(layout.logicalText.equals("中😀")&&layout.originalText.equals(raw),"unsupported效果丢原文");
+        require(layout.diagnostics().stream().anyMatch(d->d.kind==TextLayout.Diagnostic.Kind.UNSUPPORTED&&d.sourceStart==typed.input.sourceStart(1)&&d.sourceEnd==typed.input.sourceEnd(2)),"unsupported动画没有准确来源诊断");
+        require(layout.lines().stream().flatMap(l->l.clusters().stream()).noneMatch(c->c.style.effects.obfuscated),"正式属性布局仍携无后端动画状态");
+        TextLayout marked=service.layout(large,500,TextPolicy.SINGLE_LINE);
+        require(marked.logicalText.equals(layout.logicalText),"重复呈现unsupported内容不稳定");
+        require(first.withFontStyle(new club.heiqi.uilib.ui.scene.text.FontStyle(700,club.heiqi.uilib.ui.scene.text.FontStyle.Posture.ITALIC)).effects.bold,"遗留字重视图不同步");
+    }
     public static void main(String[] args) throws Exception { new AttributedTextScenario().run(args); }
 
     private List<FontSource> fonts;
@@ -135,5 +153,6 @@ public final class AttributedTextScenario extends TestApplication {
         scenario("完整簇与属性断行", () -> cluster(service, style));
         scenario("装饰及实际像素采样", () -> sampling(service, style));
         scenario("selector缓存及诊断空行回归", () -> reviewRegressions(service, fonts));
+        scenario("中性typed声明动态主题与宿主不支持效果诊断", this::typedDeclaration);
     }
 }

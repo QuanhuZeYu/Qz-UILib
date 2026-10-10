@@ -27,7 +27,7 @@ UILib 页面使用原生 framebuffer 像素；GUI Scale 不改变文字大小，
 | 零宽空格、Word Joiner、软连字符 | 允许断行、阻止断行、仅采用该断点时显示连字符 |
 | BS、ESC 及其他无显示语义的 C0/C1 | 显示可辨识控制符标记并诊断，不执行终端/宿主动作 |
 
-§ 格式码只在显式 Minecraft 内容模式解释，普通文本和 Markdown 不猜测模式。
+§ 格式码只在 Minecraft 宿主转换边界解释，UILib 不提供 Minecraft 内容模式。宿主转换产生中性内容样式，普通文本、富文本 DSL 和后续 Markdown 不猜测模式。
 
 ### 2.2 输入与文字整形（Q2 A、Q9 A）
 

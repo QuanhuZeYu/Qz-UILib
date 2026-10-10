@@ -62,7 +62,12 @@ public final class TextLayout {
     public static final class Cluster {
         public final int logicalStart,logicalEnd,sourceStart,sourceEnd,glyphIndexStart,glyphIndexEnd;
         public final float x,advance;public final TextStyle style;
-        public Cluster(int start,int end,int sourceStart,int sourceEnd,int glyphStart,int glyphEnd,float x,float advance,TextStyle style){logicalStart=start;logicalEnd=end;this.sourceStart=sourceStart;this.sourceEnd=sourceEnd;glyphIndexStart=glyphStart;glyphIndexEnd=glyphEnd;this.x=x;this.advance=advance;this.style=Objects.requireNonNull(style,"style");}
+        /** 最终视觉行的方向事实；投影、采样和重色必须保留。 */
+        public final boolean rtl;
+        public float leadingX(){return x+(rtl?advance:0);}
+        public float trailingX(){return x+(rtl?0:advance);}
+        public Cluster(int start,int end,int sourceStart,int sourceEnd,int glyphStart,int glyphEnd,float x,float advance,TextStyle style){this(start,end,sourceStart,sourceEnd,glyphStart,glyphEnd,x,advance,style,false);}
+        public Cluster(int start,int end,int sourceStart,int sourceEnd,int glyphStart,int glyphEnd,float x,float advance,TextStyle style,boolean rtl){this.rtl=rtl;logicalStart=start;logicalEnd=end;this.sourceStart=sourceStart;this.sourceEnd=sourceEnd;glyphIndexStart=glyphStart;glyphIndexEnd=glyphEnd;this.x=x;this.advance=advance;this.style=Objects.requireNonNull(style,"style");}
     }
     public static final class Decoration {
         public enum Kind { UNDERLINE, STRIKE }
@@ -77,6 +82,7 @@ public final class TextLayout {
         private final List<Glyph> glyphs;
         private final List<Cluster> clusters;
         private final List<Decoration> decorations;
+        public final boolean paragraphRtl;
         public Line(String text, int x, int y) {
             this(text, x, y, 0, text.length(), 0, text.length(), 0, y, 0, 0, 0, Collections.<Glyph>emptyList());
         }
@@ -85,7 +91,10 @@ public final class TextLayout {
             this(text,x,y,logicalStart,logicalEnd,sourceStart,sourceEnd,advance,baseline,ascent,descent,lineHeight,glyphs,Collections.<Cluster>emptyList(),Collections.<Decoration>emptyList());
         }
         public Line(String text,int x,int y,int logicalStart,int logicalEnd,int sourceStart,int sourceEnd,float advance,float baseline,float ascent,float descent,float lineHeight,List<Glyph> glyphs,List<Cluster> clusters,List<Decoration> decorations) {
-            this.clusters=immutable(clusters);this.decorations=immutable(decorations);
+            this(text,x,y,logicalStart,logicalEnd,sourceStart,sourceEnd,advance,baseline,ascent,descent,lineHeight,glyphs,clusters,decorations,false);
+        }
+        public Line(String text,int x,int y,int logicalStart,int logicalEnd,int sourceStart,int sourceEnd,float advance,float baseline,float ascent,float descent,float lineHeight,List<Glyph> glyphs,List<Cluster> clusters,List<Decoration> decorations,boolean paragraphRtl) {
+            this.paragraphRtl=paragraphRtl;this.clusters=immutable(clusters);this.decorations=immutable(decorations);
             this.text = Objects.requireNonNull(text, "text"); this.x = x; this.y = y;
             this.logicalStart = logicalStart; this.logicalEnd = logicalEnd; this.sourceStart = sourceStart; this.sourceEnd = sourceEnd;
             this.advance = advance; this.baseline = baseline; this.ascent = ascent; this.descent = descent; this.lineHeight = lineHeight;
@@ -129,9 +138,9 @@ public final class TextLayout {
         for(Line line:lines){List<Glyph> glyphs=new ArrayList<Glyph>();List<Cluster> clusters=new ArrayList<Cluster>();List<Decoration> decorations=new ArrayList<Decoration>();
             for(Glyph g:line.glyphs()){TextStyle paint=g.resolvedStyle==null?style:g.resolvedStyle.withColor(style.color);
                 glyphs.add(new Glyph(g.source,g.size,g.glyphId,g.logicalStart,g.logicalEnd,g.sourceStart,g.sourceEnd,g.x,g.y,g.xAdvance,g.yAdvance,g.color,g.replacement,g.inkBounds,g.logicalEm,g.rasterToLayout,g.rasterStyle,paint,g.clusterIndex));}
-            for(Cluster c:line.clusters())clusters.add(new Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,c.glyphIndexStart,c.glyphIndexEnd,c.x,c.advance,c.style.withColor(style.color)));
+            for(Cluster c:line.clusters())clusters.add(new Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,c.glyphIndexStart,c.glyphIndexEnd,c.x,c.advance,c.style.withColor(style.color),c.rtl));
             for(Decoration d:line.decorations())decorations.add(new Decoration(d.kind,d.x,d.y,d.width,d.height,style.color,d.logicalStart,d.logicalEnd,d.sourceStart,d.sourceEnd));
-            recolored.add(new Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,clusters,decorations));
+            recolored.add(new Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,clusters,decorations,line.paragraphRtl));
         }
         return new TextLayout(width,height,advanceWidth,advanceHeight,style,recolored,logicalText,originalText,generation,diagnostics,input);
     }

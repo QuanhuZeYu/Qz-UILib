@@ -1,6 +1,19 @@
 package club.heiqi.uilib.ui.scene.integration;
 
 import java.util.ArrayDeque;
+import java.util.Collections;
+import club.heiqi.uilib.ui.reactive.Observation;
+import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
+import club.heiqi.uilib.ui.scene.runtime.MountHandle;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -123,6 +136,74 @@ public final class PageSessionScenario extends TestApplication {
                 c.own(() -> released[0]++); c.own(() -> {throw original;}); c.mount(new SceneNode());
             });Throwable caught = null;try {page.close();} catch(Throwable failure) {caught = failure;}
             page.close();page.frame();require(caught == original && released[0] == 1 && page.ended(), "Error中止了其他资源释放");
+        });
+        for (boolean fatal : new boolean[]{false, true}) scenario("失焦扩展失败仍结束全部挂载与订阅/" + fatal, () -> {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            Throwable original = fatal ? new AssertionError("失焦扩展Error") : new IllegalArgumentException("失焦扩展失败");
+            RuntimeException cleanup = new IllegalStateException("挂载资源释放失败");
+            Signal<String>[] external = new Signal[1];
+            SceneRuntime[] runtime = {null};
+            SceneNode[] nodes = new SceneNode[3];
+            MountHandle[] mounts = new MountHandle[3];
+            int[] released = new int[3], notifications = {0}, lostFocus = {0}, pageReleased = {0};
+            domain.execute(() -> external[0] = domain.signal("初值"));
+            ScenePageSession page = ScenePageSession.open(domain, host, host, context -> {
+                runtime[0] = context.runtime();
+                context.own(() -> pageReleased[0]++);
+                nodes[0] = new SceneNode().focusable(true).size(Size.fixed(20), Size.fixed(20)).control(new SceneControl() {
+                    @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) { return new MeasuredSize(20, 20); }
+                    @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated) {
+                        return new ChildPlacements(Collections.singletonList(new ChildPlacements.Entry(nodes[1], new LayoutBox(0, 0, 10, 10))));
+                    }
+                    @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+                    @Override public void focusChanged(SceneNode node, boolean focused, boolean eligible) {
+                        if (!focused) {
+                            lostFocus[0]++;
+                            if (original instanceof Error) throw (Error) original;
+                            throw (RuntimeException) original;
+                        }
+                    }
+                });
+                nodes[1] = new SceneNode();
+                nodes[2] = new SceneNode();
+                nodes[0].add(nodes[1]);
+                for (int i = 0; i < nodes.length; i++) {
+                    final int index = i;
+                    nodes[i].bind((activeRuntime, node, owner) -> {
+                        owner.own(() -> { released[index]++; if (index == 1) throw cleanup; });
+                        Observation observation = domain.observe(owner, () -> external[0].get(), () -> { notifications[0]++; activeRuntime.invalidateBinding(node); });
+                        return new BindingActivation() {
+                            @Override public void refresh() { observation.refresh(); }
+                            @Override public void close() { observation.close(); }
+                        };
+                    });
+                }
+                context.mount(nodes[0]);
+                context.mount(nodes[2]);
+                for (int i = 0; i < nodes.length; i++) mounts[i] = runtime[0].captureMount(nodes[i]);
+            });
+            onClose(page::close);
+            page.frame();
+            domain.execute(() -> {
+                require(runtime[0].focusRouter().focused().get() == nodes[0], "反例未进入真实控件焦点");
+                external[0].set("关闭前变化");
+                require(notifications[0] == nodes.length, "反例未建立全部真实挂载订阅");
+            });
+            page.frame();
+            Throwable caught = null;
+            try { page.close(); } catch (Throwable failure) { caught = failure; }
+            require(caught == original && java.util.Arrays.asList(original.getSuppressed()).contains(cleanup), "关闭丢失原失焦错误或附加释放错误");
+            domain.execute(() -> {
+                require(page.ended() && !runtime[0].alive() && runtime[0].roots().isEmpty(), "失焦失败留下存活运行时或根挂载");
+                for (int i = 0; i < nodes.length; i++)
+                    require(nodes[i].runtime() == null && !mounts[i].active() && released[i] == 1, "失焦失败跳过节点或所属资源释放");
+                external[0].set("关闭后变化");
+                require("关闭后变化".equals(external[0].get()) && notifications[0] == nodes.length, "页面关闭破坏外部状态或残留挂载订阅");
+                runtime[0].close();
+            });
+            page.close();
+            require(lostFocus[0] == 1 && pageReleased[0] == 1, "重复结束重入扩展或重复释放页面资源");
+            for (int count : released) require(count == 1, "重复结束再次释放挂载资源");
         });
         scenario("只读不能结束会话", () -> {
             ReactiveDomain domain = ReactiveDomain.direct(); ScenePageSession page = ScenePageSession.open(domain,host,host,c -> c.mount(new SceneNode()));

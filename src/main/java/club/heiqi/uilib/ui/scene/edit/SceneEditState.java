@@ -3,13 +3,10 @@ package club.heiqi.uilib.ui.scene.edit;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
-import com.ibm.icu.lang.UCharacter;
-import com.ibm.icu.lang.UProperty;
 
-import java.text.BreakIterator;
+import club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -100,6 +97,7 @@ public final class SceneEditState {
 
     private final ReactiveDomain domain;
     private final Mode mode;
+    private final UnicodeGraphemes.Source unicodeRules;
     private final Signal<Snapshot> value;
     private final ReadableSignal<Snapshot> snapshotView;
     private final ReadableSignal<String> textView;
@@ -115,6 +113,11 @@ public final class SceneEditState {
     }
 
     public SceneEditState(ReactiveDomain domain, String baseline, Mode mode) {
+        this(domain,baseline,mode,UnicodeGraphemes.defaults());
+    }
+
+    public SceneEditState(ReactiveDomain domain,String baseline,Mode mode,UnicodeGraphemes.Source rules) {
+        this.unicodeRules=Objects.requireNonNull(rules,"rules");
         this.domain = Objects.requireNonNull(domain, "domain");
         this.mode = Objects.requireNonNull(mode, "mode");
         domain.checkWrite();
@@ -134,9 +137,13 @@ public final class SceneEditState {
     /** 指针文字簇位置由控件排版提供；越界夹取，簇内位置向左对齐。 */
     public void select(int anchor, int caret) {
         domain.checkWrite();
+        select(anchor,caret,profile());
+    }
+
+    private void select(int anchor,int caret,UnicodeGraphemes.Profile rules) {
         groupKind = Kind.NONE;
         Snapshot s = value.get();
-        int[] boundaries = boundaries(s.text);
+        int[] boundaries = rules.boundaries(s.text);
         int a = floor(boundaries, anchor), c = floor(boundaries, caret);
         if (a != s.anchor || c != s.caret)
             value.set(new Snapshot(s.text, s.composition, s.error, a, c, s.active, s.composing, s.revision));
@@ -145,12 +152,13 @@ public final class SceneEditState {
     public void move(int direction, boolean extend) {
         domain.checkWrite();
         if (direction != -1 && direction != 1) throw new IllegalArgumentException("direction 必须是 -1 或 1");
-        Snapshot s = value.get();
+        UnicodeGraphemes.Profile rules=profile();
+        Snapshot s = aligned(value.get(),rules);
         int target;
         if (!extend && s.anchor != s.caret)
             target = direction < 0 ? Math.min(s.anchor, s.caret) : Math.max(s.anchor, s.caret);
-        else target = adjacent(s.text, s.caret, direction);
-        select(extend ? s.anchor : target, target);
+        else target = adjacent(s.text, s.caret, direction,rules);
+        select(extend ? s.anchor : target, target,rules);
     }
 
     public void home(boolean extend) {
@@ -173,10 +181,11 @@ public final class SceneEditState {
     public void replaceSelection(String text, boolean group) {
         domain.checkWrite();
         String insertion = normalize(text);
-        Snapshot s = value.get();
+        UnicodeGraphemes.Profile rules=profile();
+        Snapshot s = aligned(value.get(),rules);
         if (!group) groupKind = Kind.NONE;
         int start = Math.min(s.anchor, s.caret), end = Math.max(s.anchor, s.caret);
-        replace(s, start, end, insertion, group && start == end ? Kind.INPUT : Kind.NONE);
+        replace(s, start, end, insertion, group && start == end ? Kind.INPUT : Kind.NONE,rules);
         if (!group) groupKind = Kind.NONE;
     }
 
@@ -185,24 +194,26 @@ public final class SceneEditState {
 
     private void delete(int direction) {
         domain.checkWrite();
-        Snapshot s = value.get();
+        UnicodeGraphemes.Profile rules=profile();
+        Snapshot s = aligned(value.get(),rules);
         int start = Math.min(s.anchor, s.caret), end = Math.max(s.anchor, s.caret);
         Kind kind = Kind.NONE;
         if (start == end) {
-            if (direction < 0) { start = adjacent(s.text, start, -1); kind = Kind.BACKWARD; }
-            else { end = adjacent(s.text, end, 1); kind = Kind.FORWARD; }
+            if (direction < 0) { start = adjacent(s.text, start, -1,rules); kind = Kind.BACKWARD; }
+            else { end = adjacent(s.text, end, 1,rules); kind = Kind.FORWARD; }
         }
-        replace(s, start, end, "", kind);
+        replace(s, start, end, "", kind,rules);
     }
 
-    private void replace(Snapshot s, int start, int end, String insertion, Kind kind) {
+    private void replace(Snapshot s, int start, int end, String insertion, Kind kind,UnicodeGraphemes.Profile rules) {
         String next = s.text.substring(0, start) + insertion + s.text.substring(end);
         if (next.equals(s.text)) {
             if (kind == Kind.NONE || kind != groupKind) groupKind = Kind.NONE;
+            if(s!=value.get())value.set(s);
             return;
         }
         // 插入组合符或 ZWJ 后，插入尾部可能与后文合簇，光标向右对齐完整新簇。
-        int caret = ceiling(boundaries(next), start + insertion.length());
+        int caret = ceiling(rules.boundaries(next), start + insertion.length());
         record(new Position(s), new Position(next, caret, caret), kind);
         if (!s.active) generation++;
         value.set(new Snapshot(next, "", null, caret, caret, true, false, s.revision + 1));
@@ -225,31 +236,34 @@ public final class SceneEditState {
         domain.checkWrite();
         groupKind = Kind.NONE;
         if (historyPosition > 0) restore(history.get(--historyPosition).before);
+        else refreshUnicodeRules();
     }
 
     public void redo() {
         domain.checkWrite();
         groupKind = Kind.NONE;
         if (historyPosition < history.size()) restore(history.get(historyPosition++).after);
+        else refreshUnicodeRules();
     }
 
     private void restore(Position position) {
         Snapshot s = value.get();
         if (!s.active) generation++;
-        value.set(new Snapshot(position.text, "", null, position.anchor, position.caret,
+        int[] bounds=profile().boundaries(position.text);
+        value.set(new Snapshot(position.text, "", null, floor(bounds,position.anchor),floor(bounds,position.caret),
                 true, false, s.revision + 1));
     }
 
-    public void breakHistoryGroup() { domain.checkWrite(); groupKind = Kind.NONE; }
+    public void breakHistoryGroup() { domain.checkWrite(); groupKind = Kind.NONE; refreshUnicodeRules(); }
 
     /** 取消组字只清除 preedit，不取消草稿会话；提交文本使用 replaceSelection(text,false)。 */
     public void composition(String text, boolean composing) {
         domain.checkWrite();
         String preedit = composing ? normalize(text) : "";
-        Snapshot s = value.get();
+        Snapshot s = aligned(value.get(),profile());
         groupKind = Kind.NONE;
         if (composing && !s.composing) generation++; // 新组字也不能被此前请求的完成结果清掉。
-        if (!preedit.equals(s.composition) || composing != s.composing)
+        if (!preedit.equals(s.composition) || composing != s.composing || s!=value.get())
             value.set(new Snapshot(s.text, preedit, s.error, s.anchor, s.caret,
                     s.active || composing, composing, s.revision));
     }
@@ -281,6 +295,7 @@ public final class SceneEditState {
     public Submission request(boolean complete) {
         domain.checkWrite();
         if (complete) groupKind = Kind.NONE;
+        refreshUnicodeRules();
         Snapshot s = value.get();
         Submission submission = new Submission(this, s, complete);
         latest = submission;
@@ -302,9 +317,9 @@ public final class SceneEditState {
         if (current) {
             boolean changed = !next.equals(s.text);
             // 同文本确认保留当前选区；不同文本只夹取当前选区并向左对齐，不恢复请求时旧选区。
-            int[] bounds = changed ? boundaries(next) : null;
-            int anchor = changed ? floor(bounds, s.anchor) : s.anchor;
-            int caret = changed ? floor(bounds, s.caret) : s.caret;
+            int[] bounds = profile().boundaries(next);
+            int anchor = floor(bounds, s.anchor);
+            int caret = floor(bounds, s.caret);
             if (changed) normalizeHistory(s, new Position(next, anchor, caret));
             baseline = next;
             value.set(new Snapshot(next, submission.complete ? "" : s.composition, null, anchor, caret,
@@ -358,58 +373,28 @@ public final class SceneEditState {
                 : text.replace("\r", "").replace("\n", "");
     }
 
-    /** Java8 字符边界加扩展规则；不依赖字体、桌面工具箱或宿主字符事件。 */
-    private static int[] boundaries(String text) {
-        BreakIterator iterator = BreakIterator.getCharacterInstance(Locale.ROOT);
-        iterator.setText(text);
-        boolean[] legal = new boolean[text.length() + 1];
-        for (int p = iterator.first(); p != BreakIterator.DONE; p = iterator.next()) legal[p] = true;
-        int regionalRun = 0;
-        for (int p = 0; p < text.length();) {
-            int cp = text.codePointAt(p);
-            if (p > 0) {
-                int previous = text.codePointBefore(p);
-                // Java8 BreakIterator 会把普通 a ZWJ b 也连起来；GB11 不成立时恢复此边界。
-                if (previous == 0x200D) legal[p] = !joinsPictographs(text, p, cp);
-                if (extend(cp) || cp == 0x200D
-                        || regional(cp) && regional(previous) && (regionalRun & 1) != 0)
-                    legal[p] = false;
-            }
-            regionalRun = regional(cp) ? regionalRun + 1 : 0;
-            int next = p + Character.charCount(cp);
-            for (int middle = p + 1; middle < next; middle++) legal[middle] = false;
-            p = next;
-        }
-        legal[0] = true; legal[text.length()] = true;
-        int[] result = new int[legal.length];
-        int count = 0;
-        for (int p = 0; p < legal.length; p++) if (legal[p]) result[count++] = p;
-        return Arrays.copyOf(result, count);
+    /** 每次字素操作取得一个不可变规则快照；不依赖实际字体与整形簇。 */
+    private UnicodeGraphemes.Profile observedProfile;
+    private UnicodeGraphemes.Profile profile() {
+        UnicodeGraphemes.Profile rules=Objects.requireNonNull(unicodeRules.snapshot(),"profile");
+        if(rules!=observedProfile){observedProfile=rules;groupKind=Kind.NONE;}
+        return rules;
     }
 
-    /** GB11 仅连接 Extended_Pictographic Extend* ZWJ Extended_Pictographic。 */
-    private static boolean joinsPictographs(String text, int position, int cp) {
-        if (!UCharacter.hasBinaryProperty(cp, UProperty.EXTENDED_PICTOGRAPHIC)) return false;
-        int p = position - 1; // 调用处已确认前一个码点是单个 UTF-16 单元的 ZWJ。
-        while (p > 0) {
-            int before = text.codePointBefore(p);
-            if (UCharacter.getIntPropertyValue(before, UProperty.GRAPHEME_CLUSTER_BREAK)
-                    != UCharacter.GraphemeClusterBreak.EXTEND)
-                return UCharacter.hasBinaryProperty(before, UProperty.EXTENDED_PICTOGRAPHIC);
-            p -= Character.charCount(before);
-        }
-        return false;
+    /** 规则换代只使位置归位，不修改草稿或清空历史；调用方与字体刷新在同一域协调。 */
+    public void refreshUnicodeRules() {
+        domain.checkWrite();
+        Snapshot current=value.get(),next=aligned(current,profile());
+        if(next!=current)value.set(next);
     }
 
-    private static boolean extend(int cp) {
-        int type = Character.getType(cp);
-        return type == Character.NON_SPACING_MARK || type == Character.COMBINING_SPACING_MARK
-                || type == Character.ENCLOSING_MARK || cp >= 0xFE00 && cp <= 0xFE0F
-                || cp >= 0xE0100 && cp <= 0xE01EF || cp >= 0x1F3FB && cp <= 0x1F3FF
-                || cp >= 0xE0020 && cp <= 0xE007F; // emoji 标签序列也附着于前一字符。
+    private Snapshot aligned(Snapshot s,UnicodeGraphemes.Profile rules) {
+        int[] bounds=rules.boundaries(s.text);
+        int anchor=floor(bounds,s.anchor),caret=floor(bounds,s.caret);
+        if(anchor==s.anchor&&caret==s.caret)return s;
+        groupKind=Kind.NONE;
+        return new Snapshot(s.text,s.composition,s.error,anchor,caret,s.active,s.composing,s.revision);
     }
-
-    private static boolean regional(int cp) { return cp >= 0x1F1E6 && cp <= 0x1F1FF; }
 
     private static int floor(int[] boundaries, int position) {
         int p = Math.max(0, Math.min(position, boundaries[boundaries.length - 1]));
@@ -423,9 +408,9 @@ public final class SceneEditState {
         return found >= 0 ? p : boundaries[-found - 1];
     }
 
-    private static int adjacent(String text, int position, int direction) {
-        int[] bounds = boundaries(text);
-        int index = Arrays.binarySearch(bounds, position);
+    private static int adjacent(String text, int position, int direction,UnicodeGraphemes.Profile rules) {
+        int[] bounds = rules.boundaries(text);
+        int index = Arrays.binarySearch(bounds, floor(bounds,position));
         return bounds[Math.max(0, Math.min(index + direction, bounds.length - 1))];
     }
 }

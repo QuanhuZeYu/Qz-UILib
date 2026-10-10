@@ -21,7 +21,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
-import club.heiqi.uilib.ui.scene.text.format.MinecraftFormat;
+import club.heiqi.uilib.host.text.MinecraftFormat;
 
 /** 原版标准文字语义适配。格式解析与度量均复用共享服务，不建立逐char排字引擎或scene。
  * 创建/使用在线程专属FontTextService所属线程。host负责PresentationEpoch、GL和资源生命周期。
@@ -76,7 +76,7 @@ public final class VanillaTextService {
         List<StyleSpan> spans=new ArrayList<StyleSpan>();for(StyleSpan s:request.spans())spans.add(new StyleSpan(s.logicalStart,s.logicalEnd,s.style.withEffects(withoutObfuscation(s.style.effects))));
         return new AttributedText(request.input,request.originalText,request.baseStyle.withEffects(withoutObfuscation(request.baseStyle.effects)),spans,request.trailingStyle.withEffects(withoutObfuscation(request.trailingStyle.effects)),request.diagnostics());
     }
-    private static TextPolicy policy(Settings settings,TextPolicy input){return new TextPolicy(settings.bidi?TextPolicy.Direction.AUTO:TextPolicy.Direction.LTR,input.wrap,input.language,input.tabSize,settings.lineHeight);}
+    private static TextPolicy policy(Settings settings,TextPolicy input){return new TextPolicy(settings.bidi?TextPolicy.Direction.AUTO:TextPolicy.Direction.LTR,input.wrap,input.language,input.tabSize,settings.lineHeight,input.hardBreak);}
     /** 顶部caller原点按Settings.baseline对齐；不缩小回退字体以塞入固定行高。 */
     private static TextLayout align(TextLayout layout,Settings settings){
         List<TextLayout.Line> lines=new ArrayList<TextLayout.Line>();float top=0;
@@ -84,7 +84,7 @@ public final class VanillaTextService {
             float delta=top+settings.baseline-line.baseline;List<TextLayout.Glyph> glyphs=new ArrayList<TextLayout.Glyph>();List<TextLayout.Decoration> decorations=new ArrayList<TextLayout.Decoration>();
             for(TextLayout.Glyph g:line.glyphs())glyphs.add(new TextLayout.Glyph(g.source,g.size,g.glyphId,g.logicalStart,g.logicalEnd,g.sourceStart,g.sourceEnd,g.x,g.y+delta,g.xAdvance,g.yAdvance,g.color,g.replacement,g.inkBounds,g.logicalEm,g.rasterToLayout,g.rasterStyle,g.resolvedStyle,g.clusterIndex));
             for(TextLayout.Decoration d:line.decorations())decorations.add(new TextLayout.Decoration(d.kind,d.x,d.y+delta,d.width,d.height,d.color,d.logicalStart,d.logicalEnd,d.sourceStart,d.sourceEnd));
-            lines.add(new TextLayout.Line(line.text,line.x,(int)top,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,top+settings.baseline,line.ascent,line.descent,settings.lineHeight,glyphs,line.clusters(),decorations));top+=settings.lineHeight;
+            lines.add(new TextLayout.Line(line.text,line.x,(int)top,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,top+settings.baseline,line.ascent,line.descent,settings.lineHeight,glyphs,line.clusters(),decorations,line.paragraphRtl));top+=settings.lineHeight;
         }
         return new TextLayout(layout.width,(int)Math.ceil(top),layout.advanceWidth,top,layout.style,lines,layout.logicalText,layout.originalText,layout.generation,layout.diagnostics(),layout.input);
     }
@@ -94,9 +94,9 @@ public final class VanillaTextService {
         for(TextLayout.Line line:geometry.lines()){
             List<TextLayout.Glyph> glyphs=new ArrayList<TextLayout.Glyph>();List<TextLayout.Cluster> clusters=new ArrayList<TextLayout.Cluster>();List<TextLayout.Decoration> decorations=new ArrayList<TextLayout.Decoration>();
             for(TextLayout.Glyph g:line.glyphs()){TextStyle style=g.resolvedStyle.withColor(request.styleAt(g.logicalStart).color).withEffects(request.styleAt(g.logicalStart).effects);glyphs.add(new TextLayout.Glyph(g.source,g.size,g.glyphId,g.logicalStart,g.logicalEnd,g.sourceStart,g.sourceEnd,g.x,g.y,g.xAdvance,g.yAdvance,g.color,g.replacement,g.inkBounds,g.logicalEm,g.rasterToLayout,g.rasterStyle,style,g.clusterIndex));}
-            for(TextLayout.Cluster c:line.clusters())clusters.add(new TextLayout.Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,c.glyphIndexStart,c.glyphIndexEnd,c.x,c.advance,c.style.withColor(request.styleAt(c.logicalStart).color).withEffects(request.styleAt(c.logicalStart).effects)));
+            for(TextLayout.Cluster c:line.clusters())clusters.add(new TextLayout.Cluster(c.logicalStart,c.logicalEnd,c.sourceStart,c.sourceEnd,c.glyphIndexStart,c.glyphIndexEnd,c.x,c.advance,c.style.withColor(request.styleAt(c.logicalStart).color).withEffects(request.styleAt(c.logicalStart).effects),c.rtl));
             for(TextLayout.Decoration d:line.decorations())decorations.add(new TextLayout.Decoration(d.kind,d.x,d.y,d.width,d.height,request.styleAt(d.logicalStart).color,d.logicalStart,d.logicalEnd,d.sourceStart,d.sourceEnd));
-            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,clusters,decorations));
+            lines.add(new TextLayout.Line(line.text,line.x,line.y,line.logicalStart,line.logicalEnd,line.sourceStart,line.sourceEnd,line.advance,line.baseline,line.ascent,line.descent,line.lineHeight,glyphs,clusters,decorations,line.paragraphRtl));
         }
         return new TextLayout(geometry.width,geometry.height,geometry.advanceWidth,geometry.advanceHeight,request.baseStyle,lines,geometry.logicalText,request.originalText,geometry.generation,geometry.diagnostics(),request.input);
     }
@@ -129,7 +129,7 @@ public final class VanillaTextService {
         @Override public int hashCode(){return Objects.hash(System.identityHashCode(logical),density,revision,tick,salt);}
     }
     private static int canonicalColor(Settings settings){int rgb=0;while(true){boolean found=false;for(int i=0;i<16;i++)found|=(settings.paletteColor(i)&0xffffff)==rgb;if(!found)return 0xff000000|rgb;rgb++;}}
-    public int width(String raw,Settings settings){return raw==null?0:(int)layout(raw,settings,-1,Integer.MAX_VALUE,TextPolicy.SINGLE_LINE).advanceWidth;}
+    public int width(String raw,Settings settings){return raw==null?0:(int)layout(raw,settings,-1,Integer.MAX_VALUE,TextPolicy.NO_WRAP).advanceWidth;}
     /** Java char接口只表达一个UTF16单元；半代理项沿正常无效输入替代，不能伪称完整emoji。 */
     public int charWidth(char c,Settings settings){return c==167?-1:width(String.valueOf(c),settings);}
     /** sourceRight去掉簇前token，续行从完整活动状态恢复；prefix保原串0起点及内部token。 */
@@ -140,7 +140,7 @@ public final class VanillaTextService {
     }
     private int boundary(String raw,int maximum,boolean reverse,Settings settings){
         if(maximum<=0)return reverse?parse(raw,settings,-1).input.text.length():0;
-        AttributedText request=parse(raw,settings,-1);TextLayout layout=layout(raw,settings,-1,Integer.MAX_VALUE,TextPolicy.SINGLE_LINE);
+        AttributedText request=parse(raw,settings,-1);TextLayout layout=layout(raw,settings,-1,Integer.MAX_VALUE,TextPolicy.NO_WRAP);
         TreeSet<Integer> safe=new TreeSet<Integer>();safe.add(0);safe.add(request.input.text.length());Map<Integer,Float> advances=new java.util.TreeMap<Integer,Float>();
         for(TextLayout.Line line:layout.lines())for(TextLayout.Cluster c:line.clusters()){safe.add(c.logicalStart);safe.add(c.logicalEnd);advances.put(c.logicalStart,c.advance);}
         List<Integer> points=new ArrayList<Integer>(safe);double used=0;int candidate=reverse?request.input.text.length():0;
@@ -162,7 +162,7 @@ public final class VanillaTextService {
     public String wrap(String raw,int maximum,Settings settings){return String.join("\n",list(raw,maximum,settings));}
     public int splitHeight(String raw,int maximum,Settings settings){return (int)(list(raw,maximum,settings).size()*settings.lineHeight);}
     /** 显式legacy字符串视觉API；layout始终读取原逻辑串，不能把此结果再次送去重排。 */
-    public String bidiString(String raw,Settings settings){if(!settings.bidi)return raw;service();AttributedText request=parse(raw,settings,-1);TextLayout fact=layout(raw,settings,-1,Integer.MAX_VALUE,TextPolicy.SINGLE_LINE);StringBuilder result=new StringBuilder();boolean formatted=false;for(TextInput.SourceSegment segment:request.input.sourceSegments())formatted|=segment.syntax;
+    public String bidiString(String raw,Settings settings){if(!settings.bidi)return raw;service();AttributedText request=parse(raw,settings,-1);TextLayout fact=layout(raw,settings,-1,Integer.MAX_VALUE,TextPolicy.NO_WRAP);StringBuilder result=new StringBuilder();boolean formatted=false;for(TextInput.SourceSegment segment:request.input.sourceSegments())formatted|=segment.syntax;
         boolean first=true;for(TextLayout.Line line:fact.lines()){if(!first)result.append('\n');first=false;Bidi paragraph=new Bidi();paragraph.setPara(request.input.text.substring(line.logicalStart,line.logicalEnd),Bidi.LEVEL_DEFAULT_LTR,null);TextStyle active=null;
             for(TextLayout.Cluster cluster:line.clusters()){String text=request.input.text.substring(cluster.logicalStart,cluster.logicalEnd);if(formatted&&!cluster.style.equals(active)){result.append(StyleSerializer.prefix(request.styleAt(cluster.logicalStart),settings));active=cluster.style;}boolean rtl=(paragraph.getLevelAt(cluster.logicalStart-line.logicalStart)&1)!=0;for(int i=0;i<text.length();){int cp=text.codePointAt(i);i+=Character.charCount(cp);if(cp==0x061c||cp==0x200e||cp==0x200f||cp>=0x202a&&cp<=0x202e||cp>=0x2066&&cp<=0x2069)continue;result.appendCodePoint(rtl?UCharacter.getMirror(cp):cp);}}}return result.toString();}
     private static final class ParseKey {

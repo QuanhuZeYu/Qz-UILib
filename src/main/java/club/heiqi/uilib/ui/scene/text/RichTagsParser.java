@@ -13,24 +13,20 @@ final class RichTagsParser {
     private final TextContent declaration;
     private final TextInput original;
     private final String raw;
-    private final TextStyle base;
     private final StringBuilder logical = new StringBuilder(), canonical = new StringBuilder();
     private final List<Integer> starts = new ArrayList<Integer>(), ends = new ArrayList<Integer>();
     private final List<TextInput.SourceSegment> gaps = new ArrayList<TextInput.SourceSegment>();
-    private final List<StyleSpan> spans = new ArrayList<StyleSpan>();
+    private final List<TextStyleOverrideSpan> spans = new ArrayList<TextStyleOverrideSpan>();
     private final List<TextContent.LinkSpan> links = new ArrayList<TextContent.LinkSpan>();
     private final Deque<Scope> scopes = new ArrayDeque<Scope>();
-    private TextStyle style;
+    private TextStyleOverride style;
     private TextContent.Link link;
-    private boolean underline, strike;
     private static final String[][] ENTITIES = {{"&lt;", "<"}, {"&gt;", ">"}, {"&amp;", "&"}};
     private int position;
     private static final class Scope {
-        final String tag; final TextStyle style; final TextContent.Link link; final int start, end;
-        final boolean underline, strike;
-        Scope(String tag, TextStyle style, TextContent.Link link, int start, int end, boolean underline, boolean strike) {
+        final String tag; final TextStyleOverride style; final TextContent.Link link; final int start, end;
+        Scope(String tag, TextStyleOverride style, TextContent.Link link, int start, int end) {
             this.tag = tag; this.style = style; this.link = link; this.start = start; this.end = end;
-            this.underline = underline; this.strike = strike;
         }
     }
     private static final class SyntaxFailure extends RuntimeException {
@@ -39,21 +35,31 @@ final class RichTagsParser {
             super(message); this.start = start; this.end = end; this.kind = kind;
         }
     }
-    private RichTagsParser(TextContent declaration, TextInput input, String raw, TextStyle base) {
-        this.declaration = declaration; original = input; this.raw = raw; this.base = base; style = base;
+    static final class Parsed {
+        final StyledText text;
+        final List<TextContent.LinkSpan> links;
+        final String canonical;
+        Parsed(StyledText text,List<TextContent.LinkSpan> links,String canonical) {
+            this.text=text;this.links=Collections.unmodifiableList(new ArrayList<>(links));this.canonical=canonical;
+        }
+        TextContent.Resolved resolve(TextStyle base) {return new TextContent.Resolved(text.resolve(base),links,canonical);}
     }
-    static TextContent.Resolved parse(TextContent declaration, TextInput input, String raw, TextStyle base) {
-        RichTagsParser parser = new RichTagsParser(declaration, input, raw, base);
-        try { return parser.run(); }
-        catch (SyntaxFailure failure) {
-            TextLayout.Diagnostic diagnostic = new TextLayout.Diagnostic(failure.kind,
-                input.sourceRight(failure.start), input.sourceLeft(failure.end), failure.getMessage());
-            AttributedText plain = AttributedText.plain(input, base);
-            return new TextContent.Resolved(new AttributedText(input, raw, base, plain.spans(), base,
-                Collections.singletonList(diagnostic)), Collections.<TextContent.LinkSpan>emptyList(), escape(input.text));
+    private RichTagsParser(TextContent declaration,TextInput input,String raw) {
+        this.declaration=declaration;original=input;this.raw=raw;style=TextStyleOverride.INHERIT;
+    }
+    static Parsed parse(TextContent declaration,TextInput input,String raw) {
+        RichTagsParser parser=new RichTagsParser(declaration,input,raw);
+        try{return parser.run();}
+        catch(SyntaxFailure failure) {
+            TextLayout.Diagnostic diagnostic=new TextLayout.Diagnostic(failure.kind,
+                input.sourceRight(failure.start),input.sourceLeft(failure.end),failure.getMessage());
+            List<TextStyleOverrideSpan> spans=input.text.isEmpty()?Collections.<TextStyleOverrideSpan>emptyList():
+                Collections.singletonList(new TextStyleOverrideSpan(0,input.text.length(),TextStyleOverride.INHERIT));
+            return new Parsed(new StyledText(input,raw,spans,TextStyleOverride.INHERIT,Collections.singletonList(diagnostic)),
+                Collections.<TextContent.LinkSpan>emptyList(),escape(input.text));
         }
     }
-    private TextContent.Resolved run() {
+    private Parsed run() {
         while (position < original.text.length()) {
             int cp = original.text.codePointAt(position);
             if (cp == '<') tag();
@@ -73,7 +79,7 @@ final class RichTagsParser {
         int[] a = new int[starts.size()], b = new int[ends.size()];
         for (int i = 0; i < a.length; i++) { a[i] = starts.get(i); b[i] = ends.get(i); }
         TextInput mapped = TextInput.fromMapped(original, logical.toString(), a, b, gaps);
-        return new TextContent.Resolved(new AttributedText(mapped, raw, base, spans, style,
+        return new Parsed(new StyledText(mapped, raw, spans, style,
             Collections.<TextLayout.Diagnostic>emptyList()), links, canonical.toString());
     }
     private void append(String value, int start, int end) {
@@ -81,8 +87,8 @@ final class RichTagsParser {
         for (int i = 0; i < value.length(); i++) { starts.add(start); ends.add(end); }
         int finish = logical.length();
         if (!spans.isEmpty() && spans.get(spans.size() - 1).style.equals(style)) {
-            StyleSpan previous = spans.remove(spans.size() - 1); spans.add(new StyleSpan(previous.logicalStart, finish, style));
-        } else spans.add(new StyleSpan(offset, finish, style));
+            TextStyleOverrideSpan previous = spans.remove(spans.size() - 1); spans.add(new TextStyleOverrideSpan(previous.start, finish, style));
+        } else spans.add(new TextStyleOverrideSpan(offset, finish, style));
         if (link != null) {
             if (!links.isEmpty() && links.get(links.size() - 1).link == link && links.get(links.size() - 1).end == offset) {
                 TextContent.LinkSpan previous = links.remove(links.size() - 1);
@@ -127,7 +133,7 @@ final class RichTagsParser {
         if (!supported(name)) unsupported(start, position, "本阶段不支持标签：" + name);
         if (closing) {
             if (selfClosing || !attributes.isEmpty() || scopes.isEmpty() || !scopes.peek().tag.equals(name)) fail(start, position, "闭合标签错配：" + name);
-            Scope scope = scopes.pop(); style = scope.style; link = scope.link; underline = scope.underline; strike = scope.strike;
+            Scope scope = scopes.pop(); style = scope.style; link = scope.link;
             gap(start, position); canonical.append("</").append(name).append('>'); return;
         }
         if (name.equals("br")) {
@@ -137,34 +143,22 @@ final class RichTagsParser {
         if (selfClosing) fail(start, position, "成对标签不能自闭合：" + name);
         String expected = name.equals("color") || name.equals("size") ? "value" : name.equals("a") ? "href" : null;
         if (expected == null ? !attributes.isEmpty() : attributes.size() != 1 || !attributes.containsKey(expected)) fail(start, position, "无效或缺失属性：" + name);
-        TextStyle next = style;
-        boolean nextUnderline = underline || name.equals("u"), nextStrike = strike || name.equals("s");
-        if (name.equals("b")) next = style.withFontStyle(new FontStyle(700, style.fontStyle.posture));
-        if (name.equals("i")) next = style.withFontStyle(new FontStyle(style.fontStyle.weight, FontStyle.Posture.ITALIC));
-        if (name.equals("u") || name.equals("s")) {
-            TextEffects e = style.effects;
-            TextEffects effects = new TextEffects(e.bold, e.italic, e.underline || name.equals("u"), e.strike || name.equals("s"), e.obfuscated, e.boldAdvance, e.italicShear);
-            next = new TextStyle(style.font, style.logicalEm, style.color, style.candidates(), effects, style.decoration, style.fontStyle);
+        TextStyleOverride.Builder next=style.toBuilder();
+        if(name.equals("b"))next.weight(700);
+        if(name.equals("i"))next.posture(FontStyle.Posture.ITALIC);
+        if(name.equals("u"))next.underline(true).decorationFromEm(true);
+        if(name.equals("s"))next.strike(true).decorationFromEm(true);
+        if(name.equals("color")) {
+            String value=attributes.get("value");
+            if(!value.matches("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"))fail(start,position,"颜色必须为 #RRGGBB 或 #AARRGGBB");
+            long color=Long.parseLong(value.substring(1),16);
+            next.argb((int)(value.length()==7?color|0xff000000L:color));
         }
-        if (name.equals("color")) {
-            String value = attributes.get("value");
-            if (!value.matches("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")) fail(start, position, "颜色必须为 #RRGGBB 或 #AARRGGBB");
-            long color = Long.parseLong(value.substring(1), 16);
-            next = style.withColor((int)(value.length() == 7 ? color | 0xff000000L : color));
+        if(name.equals("size")) {
+            try{next.em(Float.parseFloat(attributes.get("value")));}
+            catch(IllegalArgumentException invalid){fail(start,position,"无效 logical px 字号");}
         }
-        if (name.equals("size")) {
-            try {
-                float em = Float.parseFloat(attributes.get("value"));
-                next = new TextStyle(style.font, em, style.color, style.candidates(), style.effects, style.decoration, style.fontStyle);
-            } catch (IllegalArgumentException invalid) { fail(start, position, "无效 logical px 字号"); }
-        }
-        // 仅重新派生 DSL 声明的装饰；未声明的基础装饰载荷保持原值。
-        TextDecoration d = next.decoration; float em = next.logicalEm, thickness = Math.max(1, em / 16);
-        if (nextUnderline || nextStrike) next = new TextStyle(next.font, em, next.color, next.candidates(), next.effects,
-            new TextDecoration(nextUnderline ? em / 12 : d.underlineTop, nextUnderline ? thickness : d.underlineThickness,
-                d.underlineStartOffset, nextStrike ? -em / 3 : d.strikeTop, nextStrike ? thickness : d.strikeThickness), next.fontStyle);
-        scopes.push(new Scope(name, style, link, start, position, underline, strike)); style = next;
-        underline = nextUnderline; strike = nextStrike;
+        scopes.push(new Scope(name, style, link, start, position)); style = next.build();
         if (name.equals("a")) link = declaration.linkDeclaration(start, attributes.get("href"));
         gap(start, position); canonical.append('<').append(name);
         for (Map.Entry<String, String> attribute : attributes.entrySet()) canonical.append(' ').append(attribute.getKey()).append("=\"").append(escape(attribute.getValue())).append('"');

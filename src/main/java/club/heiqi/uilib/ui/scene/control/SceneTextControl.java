@@ -34,7 +34,7 @@ final class SceneTextControl implements SceneControl {
         Objects.requireNonNull(text, "text"); Objects.requireNonNull(theme, "theme");
         Objects.requireNonNull(policy, "policy");
         SceneNode node = new SceneNode().control(new SceneTextControl(theme, policy, button))
-            .textPolicy(policy == SceneTextPolicy.WRAP ? TextPolicy.NORMAL : TextPolicy.SINGLE_LINE);
+            .textPolicy(policy == SceneTextPolicy.WRAP ? TextPolicy.NORMAL : TextPolicy.NO_WRAP);
         node.bind(NodeBinding.value(text, SceneNode::text));
         node.bind(NodeBinding.value(theme, (target, value) -> {
             target.style(value.textStyle);

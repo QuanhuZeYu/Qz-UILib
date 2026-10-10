@@ -12,9 +12,13 @@ public final class SceneLayoutEngine {
     private final SceneTextMeasurer text;
     private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
+    private final Map<SceneNode, SceneTextMeasurer> batchText = new IdentityHashMap<>();
+    private SceneTextMeasurer textFor(SceneNode node) {
+        return batchText.computeIfAbsent(node, key -> new BatchTextMeasurer(text));
+    }
     public SceneLayoutEngine(SceneTextMeasurer text) { this.text = text; }
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
-        measuredCache.clear(); textCache.clear();
+        measuredCache.clear(); textCache.clear(); batchText.clear();
         List<SceneGeometryView.Entry> entries = new ArrayList<>();
         for (SceneNode root : roots) {
             int[] desired = measure(root, width, height);
@@ -27,7 +31,7 @@ public final class SceneLayoutEngine {
         return size.constrain(size.mode == Size.Mode.FIXED ? size.value : size.mode == Size.Mode.FILL ? Math.max(0, available) : desired);
     }
     private TextLayout textLayout(SceneNode node, int width) {
-        return textCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(width, key -> node.control() == null ? text.layout(node.text(), node.style(), width, node.textPolicy()) : node.control().layoutText(node, text, width));
+        return textCache.computeIfAbsent(node, key -> new HashMap<>()).computeIfAbsent(width, key -> node.control() == null ? textFor(node).layout(node.text(), node.style(), width, node.textPolicy()) : node.control().layoutText(node, textFor(node), width));
     }
     private int[] measure(SceneNode node, int availableWidth, int availableHeight) {
         long constraintKey = ((long) availableWidth << 32) | (availableHeight & 0xffffffffL);
@@ -42,7 +46,7 @@ public final class SceneLayoutEngine {
             : node.height().mode == Size.Mode.FILL && availableHeight != Integer.MAX_VALUE ? node.height().constrain(availableHeight) : Integer.MAX_VALUE;
         int contentHeight = measuredHeight == Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.max(0, measuredHeight - node.padding() * 2);
         if (node.control() != null) {
-            MeasuredSize custom = node.control().measure(node, new Constraints(contentWidth, contentHeight), text);
+            MeasuredSize custom = node.control().measure(node, new Constraints(contentWidth, contentHeight), textFor(node));
             return new int[] {node.width().constrain(node.width().mode == Size.Mode.FIXED ? node.width().value : custom.width + node.padding() * 2),
                 node.height().constrain(node.height().mode == Size.Mode.FIXED ? node.height().value : custom.height + node.padding() * 2)};
         }
@@ -72,14 +76,25 @@ public final class SceneLayoutEngine {
         return new int[] {node.width().constrain(node.width().mode == Size.Mode.FIXED ? node.width().value : w + node.padding() * 2),
             node.height().constrain(node.height().mode == Size.Mode.FIXED ? node.height().value : h + node.padding() * 2)};
     }
+    /** 在既定父区域捕获已挂载占位子树，沿生产排列，不发布输入几何或改live节点。
+     * 仅根的框架hidden被忽略；后代显隐/滚动/裁剪仍走同一规则。静态帧复用呈现计划。
+     */
+    public SceneGeometry captureSubtree(SceneNode root, LayoutBox allocated, LayoutBox ancestorClip, LayoutBox viewport) {
+        List<SceneGeometryView.Entry> entries = new ArrayList<>();
+        arrange(root, allocated, ancestorClip, entries, true);
+        return new SceneGeometry(entries, viewport);
+    }
     private void arrange(SceneNode node, LayoutBox box, LayoutBox ancestorClip, List<SceneGeometryView.Entry> entries) {
-        if (!node.visible()) return;
+        arrange(node, box, ancestorClip, entries, false);
+    }
+    private void arrange(SceneNode node, LayoutBox box, LayoutBox ancestorClip, List<SceneGeometryView.Entry> entries, boolean captureRoot) {
+        if (!captureRoot && !node.visible()) return;
         int innerWidth = Math.max(0, box.width - node.padding() * 2);
         int innerHeight = Math.max(0, box.height - node.padding() * 2);
         LayoutBox ownClip = node.clip() || node.scrollable() ? box : null;
         LayoutBox clip = ancestorClip == null ? ownClip : ownClip == null ? ancestorClip : ancestorClip.intersect(ownClip);
         TextLayout lines = textLayout(node, innerWidth);
-        if (node.control() != null) lines = node.control().presentText(node, lines, innerWidth, innerHeight, text);
+        if (node.control() != null) lines = node.control().presentText(node, lines, innerWidth, innerHeight, textFor(node));
         int entryIndex = entries.size();
         entries.add(new SceneGeometryView.Entry(node, box, clip, lines));
         if (node.control() != null) {

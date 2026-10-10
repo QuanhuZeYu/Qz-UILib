@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.text;
 import java.util.Objects;
-/** 合成效果的唯一状态。装饰是否开启也仅由此处声明。 */
+/** 装饰及动画状态。bold/italic 是 TextStyle 从 FontStyle 派生的遗留视图；字体选择不读取它们。 */
 public final class TextEffects {
  public static final TextEffects NORMAL = new TextEffects(false,false,false,false,false,0,0);
  public final boolean bold,italic,underline,strike,obfuscated;

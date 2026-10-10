@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.runtime.ScenePresentation;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -143,6 +144,79 @@ public final class SceneFramePipeline implements AutoCloseable {
         runtime.prepareScrollPositions(geometry);
         return geometry;
     }
+    /** 捕获占位仍沿同一控件paint遍历。被捕获子树不再进入主绘制，主输入geometry不变。 */
+    private PaintPlan paintGeometry(SceneGeometryView geometry, long metricsRevision) {
+        PaintLayers layers=paintEntries(geometry.ordered(), geometry, metricsRevision);
+        PaintPlanBuilder result=new PaintPlanBuilder();append(result,layers.content);append(result,layers.overlay);return result.build();
+    }
+    /** 控件内容保持树序，所有overlay在全页内容之后保持原overlay树序。 */
+    private static final class PaintLayers {
+        final PaintPlan content,overlay;
+        PaintLayers(PaintPlan content,PaintPlan overlay){this.content=content;this.overlay=overlay;}
+    }
+    private void append(PaintPlanBuilder target,PaintPlan plan){for(PaintCommand command:plan.commands())target.add(command);}
+    private PaintLayers paintEntries(List<SceneGeometryView.Entry> ordered, SceneGeometryView geometry, long metricsRevision) {
+        PaintPlanBuilder paint = new PaintPlanBuilder(),overlay=new PaintPlanBuilder();
+        java.util.Map<SceneNode,PaintPlan> childOverlays=new java.util.IdentityHashMap<>();
+        java.util.Set<SceneNode> captured = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<SceneNode, Boolean>());
+        for (SceneGeometryView.Entry entry : ordered) {
+            if (insideCaptured(entry.node, captured)) continue;
+            if (entry.node.control() != null) {
+                entry.node.control().preparePaint(entry.node, geometry, text, metricsRevision);
+                SceneNode child = entry.node.control().paintFallbackChild(entry.node);
+                PaintLayers fallback = null;
+                if (child != null) {
+                    if (child.parent() != entry.node) throw new IllegalArgumentException("占位必须是控件直属逻辑子树");
+                    captured.add(child);
+                    SceneGeometryView context = geometry;
+                    List<SceneGeometryView.Entry> source = ordered;
+                    if (geometry.get(child) == null) {
+                        SceneGeometry local = layout.captureSubtree(child, entry.box, entry.clip, geometry.viewport());
+                        source = local.ordered();
+                        // get提供已定位备用区域，ordered仍为主输入事实；不能以备用子集重新裁决hover。
+                        context = new SceneGeometryView() {
+                            @Override public Entry get(SceneNode node) { Entry value = local.get(node); return value == null ? geometry.get(node) : value; }
+                            @Override public List<Entry> ordered() { return geometry.ordered(); }
+                            @Override public LayoutBox viewport() { return geometry.viewport(); }
+                        };
+                    }
+                    List<SceneGeometryView.Entry> entries = new ArrayList<>();
+                    for (SceneGeometryView.Entry candidate : source) if (inSubtree(candidate.node, child)) entries.add(candidate);
+                    fallback = paintEntries(entries, context, metricsRevision);
+                }
+                PaintPlanBuilder own=new PaintPlanBuilder();
+                entry.node.control().paint(entry.node, geometry, own, fallback==null?null:fallback.content);
+                PaintPlan ownPlan=own.build();append(paint,ownPlan);
+                if(fallback!=null&&!fallback.overlay.commands().isEmpty()){
+                    PaintCommand source=null;
+                    for(PaintCommand command:ownPlan.commands())if(command.kind==PaintCommand.Kind.IMAGE&&command.pendingPaint==fallback.content&&command.failedPaint==fallback.content){source=command;break;}
+                    // CPU没有内容时控件已无条件选择备用；有IMAGE时只投影同一次原图选择。
+                    childOverlays.put(entry.node,source==null?fallback.overlay:new PaintPlanBuilder().add(PaintCommand.imageBranchOverlay(source,fallback.overlay,fallback.overlay)).build());
+                }
+                continue;
+            }
+            if ((entry.node.background() >>> 24) != 0) paint.add(PaintCommand.rect(entry.box, entry.clip, entry.node.background()));
+            if (!entry.text.lines().isEmpty()) {
+                int padding = entry.node.padding();
+                paint.add(PaintCommand.text(new LayoutBox(entry.box.x + padding, entry.box.y + padding,
+                    Math.max(0, entry.box.width - padding * 2), Math.max(0, entry.box.height - padding * 2)), entry.clip, entry.text));
+            }
+        }
+        for (SceneGeometryView.Entry entry : ordered) if (!insideCaptured(entry.node, captured) && entry.node.control() != null){
+            entry.node.control().paintOverlay(entry.node, geometry, overlay, text);
+            PaintPlan childOverlay=childOverlays.get(entry.node);if(childOverlay!=null)append(overlay,childOverlay);
+        }
+        return new PaintLayers(paint.build(),overlay.build());
+    }
+    private boolean insideCaptured(SceneNode node, java.util.Set<SceneNode> captured) {
+        if (captured.isEmpty()) return false;
+        for (SceneNode current = node; current != null; current = current.parent()) if (captured.contains(current)) return true;
+        return false;
+    }
+    private boolean inSubtree(SceneNode node, SceneNode root) {
+        for (SceneNode current = node; current != null; current = current.parent()) if (current == root) return true;
+        return false;
+    }
     private ScenePresentation prepare() {
         runtime.preparePresentation();
         int w = host.width(), h = host.height();
@@ -154,22 +228,8 @@ public final class SceneFramePipeline implements AutoCloseable {
         // 此时声明/Effect已结算；换owner或旧mount的意图不会挪动先前目标。
         final SceneGeometry geometry = runtime.revealNavigation(prepared, () -> layoutGeometry(w, h));
         if (presentation == null || revision != runtime.revision() || geometry != presentation.geometry || width != w || height != h || metrics != nextMetrics) {
-            PaintPlanBuilder paint = new PaintPlanBuilder();
-            for (SceneGeometryView.Entry entry : geometry.ordered()) {
-                if (entry.node.control() != null) {
-                    runtime.domain().readOnly(() -> { entry.node.control().paint(entry.node, geometry, paint); return null; });
-                    continue;
-                }
-                if ((entry.node.background() >>> 24) != 0) paint.add(PaintCommand.rect(entry.box, entry.clip, entry.node.background()));
-                if (!entry.text.lines().isEmpty()) {
-                    int padding = entry.node.padding();
-                    paint.add(PaintCommand.text(new LayoutBox(entry.box.x + padding, entry.box.y + padding,
-                        Math.max(0, entry.box.width - padding * 2), Math.max(0, entry.box.height - padding * 2)), entry.clip, entry.text));
-                }
-            }
-            for (SceneGeometryView.Entry entry : geometry.ordered()) if (entry.node.control() != null)
-                runtime.domain().readOnly(() -> { entry.node.control().paintOverlay(entry.node, geometry, paint, text); return null; });
-            presentation = new ScenePresentation(++generation, geometry, paint.build());
+            PaintPlan paint = runtime.domain().readOnly(() -> paintGeometry(geometry, nextMetrics));
+            presentation = new ScenePresentation(++generation, geometry, paint);
             revision = runtime.revision(); geometryRevision = runtime.geometryRevision(); width = w; height = h; metrics = nextMetrics;
         }
         runtime.pointerRouter().prepare(presentation.geometry);

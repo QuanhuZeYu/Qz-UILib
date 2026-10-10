@@ -113,6 +113,8 @@ public final class EditingScenario extends TestApplication {
         scenario("完成规范化保留可用历史，随输入接受继续会话", this::normalizationHistory);
         scenario("外部值仅同步非活跃状态，关闭重开复用独立草稿", this::externalAndReopen);
         scenario("代理对组合符ZWJ整簇移动删除，连续输入删除与原子插入历史", this::unicodeAndHistory);
+        scenario("控制符和独立Extend保留强制字素边界", this::controlGraphemes);
+        scenario("自定义字素规则换代保留草稿并校正编辑与历史位置", this::profileSelectionUpgrade);
         scenario("正式页面文字空格确认Tab和IME及ESC沿唯一焦点序列", this::pageEditing);
         scenario("仅真实blur请求完成，禁用模态与关闭不自动提交", this::blurEligibility);
         scenario("只读选择复制拒绝修改，粘贴单步撤销与生产文字簇指针定位", this::clipboardAndPointer);
@@ -237,6 +239,55 @@ public final class EditingScenario extends TestApplication {
         p.session.navigation(SceneNavigationEvent.ACTIVATE); p.session.frame(); require(p.clicks == 1, "按钮导航激活失效");
         p.focusField(); p.session.escape(() -> fallback[0]++); p.session.frame();
         require(fallback[0] == 1 && p.submissions.size() == 1, "普通ESC不应确认或取消草稿");
+    }
+
+    private void profileSelectionUpgrade() throws Exception {
+        String properties="1F600..1F603 ; Emoji\n1F600..1F603 ; Emoji_Presentation\n";
+        String singles="1F600 ; Basic_Emoji\n1F603 ; Basic_Emoji\n";
+        club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Profile oldRules=new club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Profile(
+            club.heiqi.uilib.ui.scene.text.unicode.EmojiData.read("old",new java.io.StringReader(properties),new java.io.StringReader(singles)));
+        club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Profile newRules=new club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Profile(
+            club.heiqi.uilib.ui.scene.text.unicode.EmojiData.read("new",new java.io.StringReader(properties),new java.io.StringReader(singles+"1F600 1F603 ; fully-qualified\n")));
+        club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes.Profile[] current={oldRules};
+        ReactiveDomain domain=ReactiveDomain.direct();String pair="😀😃";
+        domain.execute(()->{
+            SceneEditState value=new SceneEditState(domain,pair,SceneEditState.Mode.SINGLE_LINE,()->current[0]);
+            value.select(2,2);current[0]=newRules;
+            value.replaceSelection("X",false);
+            require(value.text().get().equals("X"+pair),"规则换代后插入切开新字素");
+            value.undo();require(value.text().get().equals(pair)&&value.snapshot().get().caret==0,"撤销新操作恢复非法位置或丢原文");
+            value.redo();require(value.text().get().equals("X"+pair),"重做新操作丢文本");
+
+            current[0]=oldRules;value.reset(pair);value.select(2,2);value.replaceSelection("X",false);
+            value.select(3,3);value.replaceSelection("",false); // 不增加历史，保留既有插入位置。
+            value.undo();require(value.text().get().equals(pair)&&value.snapshot().get().caret==2,"旧规则历史准备错误");
+            current[0]=newRules;value.redo();value.undo();
+            require(value.text().get().equals(pair)&&value.snapshot().get().anchor==0&&value.snapshot().get().caret==0,"历史恢复没有按当前规则归位");
+
+            current[0]=oldRules;value.reset(pair);value.select(2,2);current[0]=newRules;
+            value.deleteBackward();require(value.text().get().equals(pair)&&value.snapshot().get().caret==0,"规则换代后Backspace误删部分新簇");
+            current[0]=oldRules;value.select(2,2);current[0]=newRules;
+            value.deleteForward();require(value.text().get().isEmpty(),"规则换代后Delete未删除完整新簇");
+            value.undo();require(value.text().get().equals(pair)&&value.snapshot().get().caret==0,"删除撤销恢复旧非法位置");
+
+            current[0]=oldRules;value.reset(pair);value.select(2,2);current[0]=newRules;
+            long revision=value.snapshot().get().revision;
+            value.refreshUnicodeRules();require(value.text().get().equals(pair)&&value.snapshot().get().caret==0&&value.snapshot().get().revision==revision,"显式规则刷新静默编辑正文或未归位");
+        });
+    }
+
+    private void controlGraphemes() {
+        ReactiveDomain domain=ReactiveDomain.direct();
+        domain.execute(()->{
+            for(String prefix:new String[]{"\n","\b","\u0085"}) {
+                SceneEditState value=new SceneEditState(domain,prefix+"\u0301",SceneEditState.Mode.MULTI_LINE);
+                value.move(-1,false);
+                require(value.snapshot().get().caret==prefix.length(),"控制字符后的独立Extend被合并");
+                value.end(false);value.deleteBackward();
+                require(value.text().get().equals(prefix),"删除组合标记误删控制字符");
+                value.undo();require(value.text().get().equals(prefix+"\u0301"),"控制字素删除历史丢内容");
+            }
+        });
     }
 
     private void blurEligibility() {
