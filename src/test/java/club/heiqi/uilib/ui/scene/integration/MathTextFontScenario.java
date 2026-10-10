@@ -58,6 +58,7 @@ public final class MathTextFontScenario extends TestApplication {
         scenario("verb与标签共用具名字体真实管线", this::verbatimAndTags);
         scenario("公开具名尾链非Latin覆盖与explicit完整覆盖", this::candidates);
         scenario("registerreload通知换代LRU及旧glyph重开", this::lifetime);
+        scenario("默认资源退休后数学正文尾链自动换代", this::retiredDefaults);
     }
 
     private void resources() throws Exception {
@@ -420,6 +421,65 @@ public final class MathTextFontScenario extends TestApplication {
                             && alpha(image) > 0
                             && retained.source.contentFingerprint().equals(hash),
                     "关闭后glyph不具有独立source快照");
+        }
+    }
+
+    private static final class ResourceGeneration extends ClassLoader {
+        boolean retired;
+        int rejected;
+
+        ResourceGeneration() {
+            super(MathTextFontScenario.class.getClassLoader());
+        }
+
+        @Override
+        public InputStream getResourceAsStream(String name) {
+            if (retired && name.startsWith("assets/qz_uilib/")) {
+                rejected++;
+                throw new IllegalStateException("已退休的资源代际: " + name);
+            }
+            return super.getResourceAsStream(name);
+        }
+    }
+
+    private void retiredDefaults() throws Exception {
+        ResourceGeneration initial = new ResourceGeneration();
+        try (FontTextService service =
+                new FontTextService(
+                        FontTextService.defaultSources(initial, 1), new LwjglFontEngine())) {
+            int[] invalidations = {0};
+            service.onInvalidated(() -> invalidations[0]++);
+            // 和 MC 首次 reload 一样，不预加载将退休的默认资源。
+            for (int revision = 2; revision <= 3; revision++) {
+                ResourceGeneration next = new ResourceGeneration();
+                long generation = service.generation();
+                service.reload(FontTextService.defaultSources(next, revision));
+                initial.retired = true;
+                require(
+                        service.generation() == generation + 1 && invalidations[0] == revision - 1,
+                        "同一次资源发布重复触发失效");
+                for (String alias :
+                        new String[] {
+                            MathTextFontSources.ROMAN,
+                            MathTextFontSources.SANS,
+                            MathTextFontSources.MONO
+                        }) {
+                    TextLayout value =
+                            text(service, "Item Ω 中文", style(alias, 28, FontStyle.NORMAL, null));
+                    for (TextLayout.Diagnostic diagnostic : value.diagnostics())
+                        require(
+                                diagnostic.kind != TextLayout.Diagnostic.Kind.FONT_RESOURCE,
+                                "数学正文仍读取退休资源: " + diagnostic.message);
+                    for (TextLayout.Line line : value.lines())
+                        for (TextLayout.Glyph glyph : line.glyphs()) {
+                            require(!glyph.replacement && glyph.glyphId != 0, "换代后数学正文缺字");
+                            if (glyph.source.id.equals("unifont"))
+                                require(glyph.source.revision == revision, "中文尾链不属于当前资源代际");
+                        }
+                }
+                require(initial.rejected == 0, "读取了退休加载器");
+                initial = next;
+            }
         }
     }
 

@@ -1,23 +1,40 @@
 package club.heiqi.uilib.ui.scene.layout;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
 import club.heiqi.uilib.ui.scene.text.AttributedText;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** 一个节点在本次呈现测量、最终排列及备用捕获共享的布局请求。
- * 不跨呈现代际保留结果；字体/声明失效仍由既有管线生成下一批。
- */
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+/** 同节点、同字体度量代际的测量入口；本次排列及备用捕获共享请求。 纯视图位置重排复用当前请求；测量输入换代前清空，不积累动态内容。 */
 final class BatchTextMeasurer implements SceneTextMeasurer {
     private final SceneTextMeasurer delegate;
     private final Map<Request, TextLayout> layouts = new HashMap<>();
+    private final Set<Request> activeRequests = new HashSet<>();
 
     BatchTextMeasurer(SceneTextMeasurer delegate) {
         this.delegate = delegate;
+    }
+
+    void resetRequests() {
+        layouts.clear();
+        activeRequests.clear();
+    }
+
+    void beginRequests() {
+        activeRequests.clear();
+    }
+
+    void endRequests() {
+        // 自定义控件可每次创建新的属性文本，保留本次实际请求而非整代历史。
+        layouts.keySet().retainAll(activeRequests);
+        activeRequests.clear();
     }
 
     @Override
@@ -28,18 +45,21 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     @Override
     public TextLayout layout(String text, TextStyle style, int width) {
         Request request = new Request(text, style, width, null);
+        activeRequests.add(request);
         return layouts.computeIfAbsent(request, key -> delegate.layout(text, style, width));
     }
 
     @Override
     public TextLayout layout(String text, TextStyle style, int width, TextPolicy policy) {
         Request request = new Request(text, style, width, policy);
+        activeRequests.add(request);
         return layouts.computeIfAbsent(request, key -> delegate.layout(text, style, width, policy));
     }
 
     @Override
     public TextLayout layout(AttributedText text, float width, TextPolicy policy) {
         Request request = new Request(text, null, width, policy);
+        activeRequests.add(request);
         return layouts.computeIfAbsent(request, key -> delegate.layout(text, width, policy));
     }
 

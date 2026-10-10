@@ -72,6 +72,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private final Map<TextLayout, Float> assemblyItalic =
             new java.util.WeakHashMap<TextLayout, Float>();
     private final Map<String, List<FontSource>> named = new HashMap<String, List<FontSource>>();
+    // 服务发布的数学正文尾链随默认资源换代；显式 register 后由调用方拥有该名称。
+    private final Set<String> defaultMathTextNames = new TreeSet<>();
     private final List<Runnable> invalidation = new ArrayList<Runnable>();
     private List<FontSource> defaults;
     private final LinkedHashMap<FaceKey, List<ObfuscatedGlyph>> obfuscationPools =
@@ -120,6 +122,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         emojiData = unicodeProfile.emoji;
         // 初始化具名正文源不走 register，保留初始 generation；配置的默认候选列表不变。
         named.putAll(MathTextFontSources.namedSources(1, this.defaults));
+        defaultMathTextNames.addAll(named.keySet());
         nativeService = Objects.requireNonNull(engine, "engine").openSession();
         // 数学资源是独立具名链；懒加载沿 FontSource，不引入 MC/GL 或普通文字隐式回退。
         named.put(
@@ -320,13 +323,18 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     public void register(String name, List<FontSource> candidates) {
         check();
         named.put(Objects.requireNonNull(name, "name"), copy(candidates));
+        defaultMathTextNames.remove(name);
         invalidate();
     }
 
-    /** 默认名称 default/minecraft 随资源列表换代；显式注册列表由提供者另行换代。 */
+    /** 默认资源及服务发布的数学正文尾链一起换代；显式注册列表仍由提供者另行换代。 */
     public void reload(List<FontSource> candidates) {
         check();
         defaults = copy(candidates);
+        // MC 退休旧加载器后，未加载的旧尾链不能再读资源；先发布新链，再统一失效。
+        Map<String, List<FontSource>> refreshed =
+                MathTextFontSources.namedSources(generation + 1, defaults);
+        for (String name : defaultMathTextNames) named.put(name, refreshed.get(name));
         invalidate();
     }
 

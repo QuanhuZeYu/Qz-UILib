@@ -1,23 +1,34 @@
 package club.heiqi.uilib.ui.scene.layout;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /** 先测内容，再按声明分配；固定尺寸不因父空间不足被缩小。 */
 public final class SceneLayoutEngine {
     private final SceneTextMeasurer text;
     private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
-    private final Map<SceneNode, SceneTextMeasurer> batchText = new IdentityHashMap<>();
+    private final Map<SceneNode, BatchTextMeasurer> batchText = new IdentityHashMap<>();
+    private final Set<BatchTextMeasurer> activeText =
+            Collections.newSetFromMap(new IdentityHashMap<BatchTextMeasurer, Boolean>());
+    private boolean metricsKnown;
+    private long metricsRevision, measureRevision;
+    private int measuredWidth, measuredHeight;
 
     private SceneTextMeasurer textFor(SceneNode node) {
-        return batchText.computeIfAbsent(node, key -> new BatchTextMeasurer(text));
+        BatchTextMeasurer batch =
+                batchText.computeIfAbsent(node, key -> new BatchTextMeasurer(text));
+        if (activeText.add(batch)) batch.beginRequests();
+        return batch;
     }
 
     public SceneLayoutEngine(SceneTextMeasurer text) {
@@ -25,17 +36,54 @@ public final class SceneLayoutEngine {
     }
 
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
-        measuredCache.clear();
-        textCache.clear();
+        // 无度量代际的旧入口不能假定字体资源稳定。
         batchText.clear();
-        List<SceneGeometryView.Entry> entries = new ArrayList<>();
-        for (SceneNode root : roots) {
-            int[] desired = measure(root, width, height);
-            int w = cross(root.width(), desired[0], width),
-                    h = cross(root.height(), desired[1], height);
-            arrange(root, new LayoutBox(0, 0, w, h), null, entries);
+        metricsKnown = false;
+        return arrangeRoots(roots, width, height);
+    }
+
+    /** 字体、测量输入或视口换代时清空；纯滚动重排复用节点当前的测量请求。 */
+    public SceneGeometry layout(
+            List<SceneNode> roots, int width, int height, long nextMetrics, long nextMeasure) {
+        if (!metricsKnown || metricsRevision != nextMetrics) batchText.clear();
+        else if (measureRevision != nextMeasure
+                || measuredWidth != width
+                || measuredHeight != height) {
+            // 先清旧请求再重新测量，不跨声明代际积累动态文字或任意宽度。
+            for (BatchTextMeasurer batch : batchText.values()) batch.resetRequests();
+            batchText.clear();
         }
-        return new SceneGeometry(entries, new LayoutBox(0, 0, width, height));
+        metricsKnown = true;
+        metricsRevision = nextMetrics;
+        measureRevision = nextMeasure;
+        measuredWidth = width;
+        measuredHeight = height;
+        return arrangeRoots(roots, width, height);
+    }
+
+    private SceneGeometry arrangeRoots(List<SceneNode> roots, int width, int height) {
+        activeText.clear();
+        try {
+            measuredCache.clear();
+            textCache.clear();
+            List<SceneGeometryView.Entry> entries = new ArrayList<>();
+            for (SceneNode root : roots) {
+                int[] desired = measure(root, width, height);
+                int w = cross(root.width(), desired[0], width),
+                        h = cross(root.height(), desired[1], height);
+                arrange(root, new LayoutBox(0, 0, w, h), null, entries);
+            }
+            // 本次不再测量的节点不能由缓存保活；保留同树隐藏节点的声明身份。
+            batchText.keySet().retainAll(measuredCache.keySet());
+            return new SceneGeometry(entries, new LayoutBox(0, 0, width, height));
+        } finally {
+            endTextRequests();
+        }
+    }
+
+    private void endTextRequests() {
+        for (BatchTextMeasurer batch : activeText) batch.endRequests();
+        activeText.clear();
     }
 
     private int cross(Size size, int desired, int available) {
@@ -177,14 +225,18 @@ public final class SceneLayoutEngine {
         };
     }
 
-    /** 在既定父区域捕获已挂载占位子树，沿生产排列，不发布输入几何或改live节点。
-     * 仅根的框架hidden被忽略；后代显隐/滚动/裁剪仍走同一规则。静态帧复用呈现计划。
-     */
+    /** 在既定父区域捕获已挂载占位子树，沿生产排列，不发布输入几何或改live节点。 仅根的框架hidden被忽略；后代显隐/滚动/裁剪仍走同一规则。静态帧复用呈现计划。 */
     public SceneGeometry captureSubtree(
             SceneNode root, LayoutBox allocated, LayoutBox ancestorClip, LayoutBox viewport) {
-        List<SceneGeometryView.Entry> entries = new ArrayList<>();
-        arrange(root, allocated, ancestorClip, entries, true);
-        return new SceneGeometry(entries, viewport);
+        // 晚期备用捕获仅结算实际访问的节点，不能清掉其它主树节点的测量请求。
+        activeText.clear();
+        try {
+            List<SceneGeometryView.Entry> entries = new ArrayList<>();
+            arrange(root, allocated, ancestorClip, entries, true);
+            return new SceneGeometry(entries, viewport);
+        } finally {
+            endTextRequests();
+        }
     }
 
     private void arrange(

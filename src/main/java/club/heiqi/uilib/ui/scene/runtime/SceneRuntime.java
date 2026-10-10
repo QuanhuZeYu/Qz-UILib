@@ -1,21 +1,22 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import club.heiqi.uilib.ui.reactive.Observation;
+import club.heiqi.uilib.ui.reactive.Owner;
+import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.LinkedHashSet;
-import java.util.Set;
 import java.util.Objects;
-import club.heiqi.uilib.ui.reactive.Owner;
-import club.heiqi.uilib.ui.reactive.Observation;
-import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.reactive.ReactiveDomain;
-import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
-import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /** 呈现与挂载生命周期；业务状态不归属于运行时。 */
@@ -46,7 +47,7 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean mutation;
     private boolean routing;
     private boolean disposed;
-    private long revision, geometryRevision;
+    private long revision, geometryRevision, measureRevision;
 
     public SceneRuntime(ReactiveDomain domain) {
         this.domain = domain;
@@ -115,7 +116,19 @@ public final class SceneRuntime implements AutoCloseable {
         return geometryRevision;
     }
 
+    /** 供帧管线区分内容测量输入与纯视图位置；未知声明变化仍按测量失效。 */
+    public long measureRevision() {
+        domain.checkAccess();
+        return measureRevision;
+    }
+
     public void invalidate() {
+        domain.checkAccess();
+        measureRevision++;
+        invalidateArrangement();
+    }
+
+    private void invalidateArrangement() {
         domain.checkAccess();
         revision++;
         geometryRevision++;
@@ -467,8 +480,7 @@ public final class SceneRuntime implements AutoCloseable {
         return consumed;
     }
 
-    /** 已知逻辑目标的业务激活入口；物理输入应经帧管线的typed事件。
-     * 有物理按钮占位时吞掉，不能绕过已有手势；仍按当前挂载与输入范围检查目标。 */
+    /** 已知逻辑目标的业务激活入口；物理输入应经帧管线的typed事件。 有物理按钮占位时吞掉，不能绕过已有手势；仍按当前挂载与输入范围检查目标。 */
     public void dispatchClick(SceneNode node) {
         command();
         if (!pointerRouter.idle()) return;
@@ -539,8 +551,7 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    /** spec6.2：在最终布局后消费一次导航意图；重排由管线提供，不递归结算声明。
-     * 每个祖先至多处理一次，滚动沿用唯一ScrollPosition，不持有第二套几何或滚动权威。 */
+    /** spec6.2：在最终布局后消费一次导航意图；重排由管线提供，不递归结算声明。 每个祖先至多处理一次，滚动沿用唯一ScrollPosition，不持有第二套几何或滚动权威。 */
     public SceneGeometry revealNavigation(
             SceneGeometry geometry, Supplier<SceneGeometry> relayout) {
         domain.checkWrite();
@@ -576,7 +587,7 @@ public final class SceneRuntime implements AutoCloseable {
                                             (long) entry.scrollOffset + delta));
             if (next == position.value) continue;
             position.value = next;
-            invalidate();
+            invalidateArrangement();
             // 内层移动改变目标及裁剪后的可见部分；必须用重排后的同代几何求外层，
             // 最后一次也重排，确保paint和下一事件hit均消费实际偏移后的区域。
             geometry = Objects.requireNonNull(relayout.get(), "geometry");
@@ -656,9 +667,10 @@ public final class SceneRuntime implements AutoCloseable {
         return end > windowEnd ? end - windowEnd : 0;
     }
 
-    /** spec6.1：当前模态先处理，未消费才进入页面策略。调用前结算声明；
-     * 页面采用与初始焦点相同的首个非模态根，后台模态不接收本事件。
-     * 本接口只返回消费结果，宿主fallback由管线在Effects成功后执行。 */
+    /**
+     * spec6.1：当前模态先处理，未消费才进入页面策略。调用前结算声明； 页面采用与初始焦点相同的首个非模态根，后台模态不接收本事件。
+     * 本接口只返回消费结果，宿主fallback由管线在Effects成功后执行。
+     */
     public boolean dispatchEscape() {
         domain.checkWrite();
         command();
@@ -702,7 +714,7 @@ public final class SceneRuntime implements AutoCloseable {
                                                         - (long) delta * node.scrollStep()));
                 if (next != position.value) {
                     position.value = next;
-                    invalidate();
+                    invalidateArrangement();
                 }
             }
         }

@@ -278,9 +278,17 @@ public final class SceneFramePipeline implements AutoCloseable {
                         });
     }
 
-    private SceneGeometry layoutGeometry(int w, int h) {
+    private SceneGeometry layoutGeometry(int w, int h, long metricsRevision) {
         SceneGeometry geometry =
-                runtime.domain().readOnly(() -> layout.layout(runtime.roots(), w, h));
+                runtime.domain()
+                        .readOnly(
+                                () ->
+                                        layout.layout(
+                                                runtime.roots(),
+                                                w,
+                                                h,
+                                                metricsRevision,
+                                                runtime.measureRevision()));
         // 布局只读，唯一runtime记录在布局返回后发布；显露重排也复用这一入口。
         runtime.prepareScrollPositions(geometry);
         return geometry;
@@ -453,11 +461,12 @@ public final class SceneFramePipeline implements AutoCloseable {
                         || width != w
                         || height != h
                         || metrics != nextMetrics;
-        SceneGeometry prepared = geometryDirty ? layoutGeometry(w, h) : presentation.geometry;
+        SceneGeometry prepared =
+                geometryDirty ? layoutGeometry(w, h, nextMetrics) : presentation.geometry;
         // 单项目标导航不一定改变paint revision，仍须消费一次显露意图。
         // 此时声明/Effect已结算；换owner或旧mount的意图不会挪动先前目标。
         final SceneGeometry geometry =
-                runtime.revealNavigation(prepared, () -> layoutGeometry(w, h));
+                runtime.revealNavigation(prepared, () -> layoutGeometry(w, h, nextMetrics));
         if (presentation == null
                 || revision != runtime.revision()
                 || geometry != presentation.geometry

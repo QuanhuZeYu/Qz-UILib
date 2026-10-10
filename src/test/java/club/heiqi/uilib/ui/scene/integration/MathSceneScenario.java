@@ -5,6 +5,7 @@ import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneImage;
+import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.control.SceneMath;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.SceneHost;
@@ -23,7 +24,10 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.text.AttributedText;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
+import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.scene.text.math.MathContent;
@@ -71,6 +75,152 @@ public final class MathSceneScenario extends TestApplication {
         scenario("来源主题字号字体重载与整式错误恢复", this::dynamic);
         scenario("绑定唯一身份passive资格及卸载释放", this::lifecycle);
         scenario("装饰有序图元夹多个Item及phantom失去资格", this::decorations);
+        scenario("纯滚动复用公式和超预算长文测量而输入变化重测", this::scrollMeasurement);
+    }
+
+    private static final class CountedText implements SceneTextMeasurer {
+        private final FontTextService delegate;
+        private int textCalls, mathCalls;
+
+        CountedText(FontTextService delegate) {
+            this.delegate = delegate;
+        }
+
+        public TextLayout layout(String content, TextStyle style, int width) {
+            return layout(content, style, width, TextPolicy.NORMAL);
+        }
+
+        public TextLayout layout(String content, TextStyle style, int width, TextPolicy policy) {
+            textCalls++;
+            return delegate.layout(content, style, width, policy);
+        }
+
+        public TextLayout layout(AttributedText content, float width, TextPolicy policy) {
+            textCalls++;
+            return delegate.layout(content, width, policy);
+        }
+
+        public MathFont mathFont(TextStyle style) {
+            mathCalls++;
+            return delegate.mathFont(style);
+        }
+
+        void reset() {
+            textCalls = mathCalls = 0;
+        }
+    }
+
+    private void scrollMeasurement() throws Exception {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        CountedText counted = new CountedText(fonts);
+        final int[] width = {440};
+        final SceneNode[] formula = new SceneNode[1], viewport = new SceneNode[1];
+        final Signal<MathContent>[] content = new Signal[1];
+        final Signal<SceneTheme>[] theme = new Signal[1];
+        StringBuilder longText = new StringBuilder();
+        // 超过字体全局文本缓存预算；未改内容的滚动应复用节点当前测量事实。
+        for (int i = 0; i < 14000; i++) longText.append(i % 2 == 0 ? 'x' : ' ');
+        SceneHost host =
+                new SceneHost() {
+                    public int width() {
+                        return width[0];
+                    }
+
+                    public int height() {
+                        return 180;
+                    }
+
+                    public long metricsRevision() {
+                        return fonts.generation();
+                    }
+
+                    public void replay(PaintPlan plan) {}
+                };
+        try (ScenePageSession page =
+                ScenePageSession.open(
+                        domain,
+                        host,
+                        counted,
+                        ctx -> {
+                            content[0] =
+                                    domain.signal(
+                                            MathContent.parse(
+                                                    tex("@left(@frac{x}{1+x}@middle|y@right)")));
+                            theme[0] =
+                                    domain.signal(
+                                            SceneTheme.dark()
+                                                    .withTextStyle(
+                                                            new TextStyle("default", 28, -1)));
+                            formula[0] =
+                                    SceneMath.create(
+                                            ctx,
+                                            content[0],
+                                            theme[0],
+                                            MathStyle.DISPLAY,
+                                            Collections.emptyMap());
+                            viewport[0] =
+                                    new SceneNode()
+                                            .size(Size.fill(1), Size.fill(1))
+                                            .scrollable(true)
+                                            .clip(true)
+                                            .add(formula[0])
+                                            .add(
+                                                    SceneLabel.create(
+                                                            ctx,
+                                                            domain.signal(longText.toString()),
+                                                            theme[0]));
+                            ctx.mount(viewport[0]);
+                        })) {
+            page.frame();
+            MathLayout first = SceneMath.layout(formula[0]);
+            healthy(first);
+            final int[] before = new int[1];
+            domain.execute(
+                    () -> before[0] = page.pipeline().current().geometry.get(formula[0]).box.y);
+            counted.reset();
+            for (int i = 0; i < 5; i++) page.pointer(ScenePointerEvent.scroll(10, 10, -1));
+            page.frame();
+            require(SceneMath.layout(formula[0]) == first && counted.mathCalls == 0, "纯滚动重算未变公式");
+            require(counted.textCalls == 0, "纯滚动重新整形超预算长文");
+            domain.execute(
+                    () -> {
+                        require(
+                                page.pipeline().current().geometry.get(formula[0]).box.y
+                                        < before[0],
+                                "复用测量冻结了滚动几何");
+                        require(
+                                page.pipeline().current().geometry.get(formula[0]).clip != null,
+                                "滚动丢失实际裁剪");
+                    });
+            domain.execute(() -> content[0].set(MathContent.parse("z^2")));
+            page.frame();
+            require(SceneMath.layout(formula[0]) != first && counted.mathCalls > 0, "内容变化没有重测");
+            MathLayout changed = SceneMath.layout(formula[0]);
+            domain.execute(
+                    () ->
+                            theme[0].set(
+                                    SceneTheme.light()
+                                            .withTextStyle(new TextStyle("default", 40, -1))));
+            page.frame();
+            require(SceneMath.layout(formula[0]) != changed, "字号变化没有重测");
+            changed = SceneMath.layout(formula[0]);
+            fonts.reload(fonts.defaultCandidates());
+            page.frame();
+            require(SceneMath.layout(formula[0]) != changed, "字体度量换代没有重测");
+            for (MathLayout.TextPiece piece : SceneMath.layout(formula[0]).pieces)
+                require(piece.text.generation == fonts.generation(), "字体重载混用旧代际");
+            counted.reset();
+            width[0] = 310;
+            page.frame();
+            require(counted.textCalls > 0, "视口变化没有重测长文约束");
+            domain.execute(() -> page.runtime().captureMount(viewport[0]).detach());
+            page.frame();
+            domain.execute(
+                    () ->
+                            require(
+                                    page.pipeline().current().geometry.get(formula[0]) == null,
+                                    "卸载后仍有缓存几何"));
+        }
     }
 
     private static ImageContent bitmap() {
