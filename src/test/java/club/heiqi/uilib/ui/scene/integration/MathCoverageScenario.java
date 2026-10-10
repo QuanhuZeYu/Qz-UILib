@@ -407,7 +407,6 @@ public final class MathCoverageScenario extends TestApplication {
         boolean rejectedNativeWarning = false;
         int ink = 0, glyphCount = 0;
         Set<String> actualFonts = new LinkedHashSet<>();
-        float[] bounds = {0, 0, value.width, value.height};
         for (MathLayout.TextPiece p : value.pieces) {
             if (!finite(p.x, p.y)
                     || p.sourceStart < 0
@@ -442,13 +441,6 @@ public final class MathCoverageScenario extends TestApplication {
                             || g.size <= 0) problems.append("glyph尺度/墨迹非法;");
                     glyphCount++;
                     actualFonts.add(g.source.toString() + "/" + g.source.actualStyle());
-                    if (g.inkBounds.known)
-                        expand(
-                                bounds,
-                                p.x + g.x + g.inkBounds.left,
-                                p.y + g.y + g.inkBounds.top,
-                                p.x + g.x + g.inkBounds.right,
-                                p.y + g.y + g.inkBounds.bottom);
                     profileStyle(c, p, g, em, problems);
                     glyphs.append("cp=")
                             .append(codepoints(glyphText(p.text, g)))
@@ -564,21 +556,9 @@ public final class MathCoverageScenario extends TestApplication {
                                     .indexOf(semanticCharacters(c.expected, true))
                             < 0) problems.append("oracle字符缺失:").append(c.expected).append(';');
         }
-        for (MathLayout.Rule rule : value.rules)
-            expand(bounds, rule.x, rule.y, rule.x + rule.width, rule.y + rule.height);
-        for (MathLayout.Stroke stroke : value.strokes)
-            expand(
-                    bounds,
-                    Math.min(stroke.x1, stroke.x2) - stroke.width / 2,
-                    Math.min(stroke.y1, stroke.y2) - stroke.width / 2,
-                    Math.max(stroke.x1, stroke.x2) + stroke.width / 2,
-                    Math.max(stroke.y1, stroke.y2) + stroke.width / 2);
-        LayoutBox inkRegion =
-                new LayoutBox(
-                        region.x + (int) Math.floor(bounds[0]),
-                        region.y + (int) Math.floor(bounds[1]),
-                        Math.max(0, (int) Math.ceil(bounds[2]) - (int) Math.floor(bounds[0])),
-                        Math.max(0, (int) Math.ceil(bounds[3]) - (int) Math.floor(bounds[1])));
+        // SceneMath的逻辑smash/lap原点可能平移；像素区域使用同代scene自然盒，
+        // 不再把raw公式墨迹范围直接加到scene原点，以免在已绘制图元旁边采样。
+        LayoutBox inkRegion = region;
         LayoutBox cell = new LayoutBox((region.x / CW) * CW, (region.y / CH) * CH, CW, CH);
         if (inkRegion.x < cell.x
                 || inkRegion.y < cell.y
@@ -721,13 +701,6 @@ public final class MathCoverageScenario extends TestApplication {
             if (!Character.isWhitespace(cp) && !Character.isSpaceChar(cp)) return false;
         }
         return !value.isEmpty();
-    }
-
-    private static void expand(float[] bounds, float left, float top, float right, float bottom) {
-        bounds[0] = Math.min(bounds[0], left);
-        bounds[1] = Math.min(bounds[1], top);
-        bounds[2] = Math.max(bounds[2], right);
-        bounds[3] = Math.max(bounds[3], bottom);
     }
 
     private static String glyphText(TextLayout text, TextLayout.Glyph glyph) {

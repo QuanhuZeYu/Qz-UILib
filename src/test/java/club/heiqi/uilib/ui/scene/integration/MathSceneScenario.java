@@ -76,6 +76,201 @@ public final class MathSceneScenario extends TestApplication {
         scenario("绑定唯一身份passive资格及卸载释放", this::lifecycle);
         scenario("装饰有序图元夹多个Item及phantom失去资格", this::decorations);
         scenario("纯滚动复用公式和超预算长文测量而输入变化重测", this::scrollMeasurement);
+        scenario("尺寸与盒压深度公式滚动到底保留分母墨迹", this::smashScrollExtent);
+        scenario("压高度与重叠公式动态包络及同帧图像输入", this::presentationExtent);
+    }
+
+    private void smashScrollExtent() throws Exception {
+        String formula =
+                tex(
+                        "@phantom{XX}x+@hphantom{@embed{family}}y+@smash[b]{@frac{a}{b}}+@raisebox{.5em}{z}+@rule[.2em]{1em}{.1em}");
+        for (float em : new float[] {28, 38}) {
+            try (Fixture f = new Fixture(formula, MathStyle.DISPLAY, em, "", "family")) {
+                f.width = 800;
+                f.height = 24;
+                f.frame();
+                for (int i = 0; i < 10; i++) {
+                    f.page.pointer(ScenePointerEvent.scroll(5, 5, -1));
+                    f.frame();
+                }
+                f.domain.execute(
+                        () -> {
+                            healthy(f.layout());
+                            SceneGeometryView.Entry view = f.geometry().get(f.viewport);
+                            require(
+                                    view.scrollMaximum > 0
+                                            && view.scrollOffset == view.scrollMaximum,
+                                    "反例没有到达实际滚动底部");
+                            float bottom = Float.NEGATIVE_INFINITY;
+                            for (PaintCommand cmd : f.paint.commands()) {
+                                if (cmd.kind != PaintCommand.Kind.TEXT) continue;
+                                for (TextLayout.Line line : cmd.text.lines())
+                                    for (TextLayout.Glyph glyph : line.glyphs())
+                                        bottom =
+                                                Math.max(
+                                                        bottom,
+                                                        cmd.box.y
+                                                                + glyph.y
+                                                                + glyph.inkBounds.bottom);
+                            }
+                            float clipBottom = view.box.y + view.box.height;
+                            System.out.println(
+                                    "smash-scroll em="
+                                            + em
+                                            + " logicalHeight="
+                                            + f.layout().height
+                                            + " scroll="
+                                            + view.scrollOffset
+                                            + "/"
+                                            + view.scrollMaximum
+                                            + " inkBottom="
+                                            + bottom
+                                            + " clipBottom="
+                                            + clipBottom
+                                            + " missing="
+                                            + Math.max(0, bottom - clipBottom));
+                            require(bottom <= clipBottom, "滚动到底仍裁掉尺寸与盒分母：" + (bottom - clipBottom));
+                            require(
+                                    f.geometry().get(f.nodes.get("family")) == null,
+                                    "hphantom仍有图像命中资格");
+                        });
+            }
+        }
+    }
+
+    private void presentationExtent() throws Exception {
+        String[] formulas = {
+            tex("x+@smash[b]{@frac{a}{@embed{ore}}}"),
+            tex("x+@smash[t]{@frac{@embed{ore}}{b}}"),
+            tex(
+                    "x+@smash{@raisebox{2em}{@embed{ore}}}+@smash{@rule[-2em]{1em}{.5em}}+@smash{@cancel{@frac{a}{b}}}"),
+            tex("@mathllap{@embed{ore}}x+@mathrlap{@frac{a}{b}}")
+        };
+        try (Fixture f = new Fixture(formulas[0], MathStyle.DISPLAY, "ore")) {
+            f.width = 800;
+            f.height = 500;
+            f.ready();
+            SceneNode identity = f.nodes.get("ore");
+            for (int i = 0; i < formulas.length; i++) {
+                final int index = i;
+                f.domain.execute(
+                        () -> {
+                            f.content.set(MathContent.parse(formulas[index]));
+                            f.theme.set(
+                                    (index % 2 == 0 ? SceneTheme.dark() : SceneTheme.light())
+                                            .withTextStyle(
+                                                    new TextStyle(
+                                                            "default",
+                                                            index % 2 == 0 ? 28 : 38,
+                                                            -1)));
+                        });
+                f.page.pointer(ScenePointerEvent.move(-1, -1));
+                f.ready();
+                f.domain.execute(
+                        () -> {
+                            healthy(f.layout());
+                            placement(f, "ore");
+                            require(
+                                    identity == f.nodes.get("ore") && f.leases == 1,
+                                    "动态包络重建图像或泄漏lease");
+                            LayoutBox box = f.geometry().get(f.math).box;
+                            for (PaintCommand command : f.paint.commands()) {
+                                if (command.kind == PaintCommand.Kind.TEXT) {
+                                    for (TextLayout.Line line : command.text.lines())
+                                        for (TextLayout.Glyph glyph : line.glyphs()) {
+                                            if (glyph.inkBounds.right <= glyph.inkBounds.left
+                                                    || glyph.inkBounds.bottom
+                                                            <= glyph.inkBounds.top) continue;
+                                            require(
+                                                    command.box.x + glyph.x + glyph.inkBounds.left
+                                                                    >= box.x
+                                                            && command.box.y
+                                                                            + glyph.y
+                                                                            + glyph.inkBounds.top
+                                                                    >= box.y
+                                                            && command.box.x
+                                                                            + glyph.x
+                                                                            + glyph.inkBounds.right
+                                                                    <= box.x + box.width
+                                                            && command.box.y
+                                                                            + glyph.y
+                                                                            + glyph.inkBounds.bottom
+                                                                    <= box.y + box.height,
+                                                    "动态公式字形溢出自然尺寸");
+                                        }
+                                } else
+                                    require(
+                                            command.box.x >= box.x
+                                                    && command.box.y >= box.y
+                                                    && command.box.x + command.box.width
+                                                            <= box.x + box.width
+                                                    && command.box.y + command.box.height
+                                                            <= box.y + box.height,
+                                            "公式图元或嵌入溢出自然尺寸");
+                            }
+                        });
+                LayoutBox[] observed = new LayoutBox[1];
+                f.domain.execute(() -> observed[0] = f.geometry().get(identity).box);
+                LayoutBox image = observed[0];
+                f.page.pointer(
+                        ScenePointerEvent.move(
+                                image.x + image.width / 2, image.y + image.height / 2));
+                f.frame();
+                f.domain.execute(
+                        () ->
+                                require(
+                                        f.page.runtime()
+                                                        .pointerRouter()
+                                                        .passiveHovered(f.geometry())
+                                                == identity,
+                                        "新包络图像悬停未使用当前几何"));
+                f.height = 24;
+                f.frame();
+                f.domain.execute(
+                        () -> {
+                            SceneGeometryView.Entry entry = f.geometry().get(identity),
+                                    view = f.geometry().get(f.viewport);
+                            int delta = view.scrollMaximum - view.scrollOffset;
+                            observed[0] =
+                                    new LayoutBox(
+                                                    entry.box.x,
+                                                    entry.box.y - delta,
+                                                    entry.box.width,
+                                                    entry.box.height)
+                                            .intersect(entry.clip);
+                        });
+                LayoutBox visible = observed[0];
+                // 滚轮和move先同批采集，再只执行一次frame；每事件prepare应使用新排列。
+                for (int step = 0; step < 10; step++)
+                    f.page.pointer(ScenePointerEvent.scroll(5, 5, -1));
+                if (visible.width > 0 && visible.height > 0)
+                    f.page.pointer(
+                            ScenePointerEvent.move(
+                                    visible.x + visible.width / 2, visible.y + visible.height / 2));
+                f.frame();
+                f.domain.execute(
+                        () -> {
+                            SceneGeometryView.Entry view = f.geometry().get(f.viewport);
+                            require(view.scrollOffset == view.scrollMaximum, "同帧滚轮批次没有滚动到底");
+                            if (visible.width > 0 && visible.height > 0)
+                                require(
+                                        f.page.runtime()
+                                                        .pointerRouter()
+                                                        .passiveHovered(f.geometry())
+                                                == identity,
+                                        "同帧滚动后悬停仍使用旧原点");
+                        });
+                f.height = 500;
+                f.frame();
+            }
+            fonts.reload(fonts.defaultCandidates());
+            f.frame();
+            f.domain.execute(
+                    () -> {
+                        healthy(f.layout());
+                        placement(f, "ore");
+                    });
+        }
     }
 
     private static final class CountedText implements SceneTextMeasurer {
@@ -505,11 +700,12 @@ public final class MathSceneScenario extends TestApplication {
                         placement(f, "ore");
                         SceneGeometryView.Entry entry = f.geometry().get(f.math);
                         require(
-                                entry.box.height == (int) Math.ceil(layout.height) + 14,
+                                entry.box.height == entry.text.height + f.math.padding() * 2,
                                 "padding或公式extent重复计入");
                         require(
-                                entry.text.height == (int) Math.ceil(layout.height),
+                                entry.text.height >= (int) Math.ceil(layout.height),
                                 "普通font lineheight替代公式extent");
+                        float[] shift = presentationShift(f);
                         int lineIndex = 0;
                         boolean negative = false, fractional = false;
                         for (MathLayout.TextPiece p : layout.pieces) {
@@ -521,8 +717,8 @@ public final class MathSceneScenario extends TestApplication {
                                 for (int i = 0; i < line.glyphs().size(); i++) {
                                     TextLayout.Glyph g = line.glyphs().get(i),
                                             a = actual.glyphs().get(i);
-                                    near(a.x, g.x + p.x, "glyph浮点x");
-                                    near(a.y, g.y + p.y, "glyph负y/基线");
+                                    near(a.x, g.x + p.x + shift[0], "glyph浮点x");
+                                    near(a.y, g.y + p.y + shift[1], "glyph负y/基线");
                                     require(
                                             a.source == g.source
                                                     && a.resolvedStyle == g.resolvedStyle
@@ -1348,18 +1544,38 @@ public final class MathSceneScenario extends TestApplication {
         require(Math.abs(actual - expected) < 0.003f, message + ": " + actual + " != " + expected);
     }
 
+    /** 从正式文字投影观测外层原点，不镜像生产包络算法或读取私有缓存。 */
+    private static float[] presentationShift(Fixture f) {
+        int lineIndex = 0;
+        TextLayout projected = f.geometry().get(f.math).text;
+        for (MathLayout.TextPiece piece : f.layout().pieces) {
+            for (TextLayout.Line line : piece.text.lines()) {
+                TextLayout.Line actual = projected.lines().get(lineIndex++);
+                if (!line.glyphs().isEmpty()) {
+                    TextLayout.Glyph raw = line.glyphs().get(0), shifted = actual.glyphs().get(0);
+                    return new float[] {shifted.x - raw.x - piece.x, shifted.y - raw.y - piece.y};
+                }
+            }
+        }
+        throw new AssertionError("原点观测场景缺少文字字形");
+    }
+
     private static void placement(Fixture f, String id) {
         MathLayout.Embed e =
                 f.layout().embeds.stream().filter(value -> value.id.equals(id)).findFirst().get();
         LayoutBox parent = f.geometry().get(f.math).box,
                 box = f.geometry().get(f.nodes.get(id)).box;
-        int x = (int) Math.floor(f.math.padding() + e.x),
-                y = (int) Math.floor(f.math.padding() + e.y);
+        float[] shift = presentationShift(f);
+        int x = (int) Math.floor(f.math.padding() + e.x + shift[0]),
+                y = (int) Math.floor(f.math.padding() + e.y + shift[1]);
         require(
                 box.x == parent.x + x
                         && box.y == parent.y + y
-                        && box.width == (int) Math.ceil(f.math.padding() + e.x + e.width) - x
-                        && box.height == (int) Math.ceil(f.math.padding() + e.y + e.height) - y,
+                        && box.width
+                                == (int) Math.ceil(f.math.padding() + e.x + shift[0] + e.width) - x
+                        && box.height
+                                == (int) Math.ceil(f.math.padding() + e.y + shift[1] + e.height)
+                                        - y,
                 "slot未按同代float封闭边界排列");
     }
 }

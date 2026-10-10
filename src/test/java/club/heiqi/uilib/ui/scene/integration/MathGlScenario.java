@@ -231,7 +231,7 @@ public final class MathGlScenario extends TestApplication {
                                                     MathContent.parse(
                                                             tex(
                                                                     "@displaystyle"
-                                                                            + " @sum@limits_{n=1}^{5}x_n+@sqrt{1+x^2}")));
+                                                                        + " @sum@limits_{n=1}^{5}x_n+@sqrt{1+x^2}")));
                                     SceneNode inlineItem =
                                             SceneImage.themed(
                                                     images.images(), source, imageOptions, theme);
@@ -383,13 +383,34 @@ public final class MathGlScenario extends TestApplication {
                                 require(
                                         glyph.source != null && glyph.inkBounds.known,
                                         "未取得真实nativeglyph墨迹facts");
+                                // 真实像素区域消费同代文字投影；smash/lap的raw原点不一定是Scene原点。
+                                int projectedLine = 0;
+                                for (MathLayout.TextPiece piece : layout.pieces) {
+                                    if (piece == numerator) break;
+                                    projectedLine += piece.text.lines().size();
+                                }
+                                TextLayout.Glyph projected =
+                                        page.pipeline()
+                                                .current()
+                                                .geometry
+                                                .get(math)
+                                                .text
+                                                .lines()
+                                                .get(projectedLine)
+                                                .glyphs()
+                                                .get(0);
+                                require(
+                                        projected.source.equals(glyph.source)
+                                                && projected.glyphId == glyph.glyphId
+                                                && projected.sourceStart == glyph.sourceStart
+                                                && projected.sourceEnd == glyph.sourceEnd,
+                                        "分子正式文字投影未保留字形事实");
+                                float shiftX = projected.x - numerator.x - glyph.x,
+                                        shiftY = projected.y - numerator.y - glyph.y;
                                 regions[0] =
                                         bounds(
-                                                box.x
-                                                        + numerator.x
-                                                        + glyph.x
-                                                        + glyph.inkBounds.left,
-                                                box.y + numerator.y + glyph.y + glyph.inkBounds.top,
+                                                box.x + projected.x + glyph.inkBounds.left,
+                                                box.y + projected.y + glyph.inkBounds.top,
                                                 glyph.inkBounds.right - glyph.inkBounds.left,
                                                 glyph.inkBounds.bottom - glyph.inkBounds.top);
                                 LayoutBox target =
@@ -403,8 +424,8 @@ public final class MathGlScenario extends TestApplication {
                                 MathLayout.Rule rule = layout.rules.get(0);
                                 regions[2] =
                                         bounds(
-                                                box.x + rule.x,
-                                                box.y + rule.y,
+                                                box.x + rule.x + shiftX,
+                                                box.y + rule.y + shiftY,
                                                 rule.width,
                                                 rule.height);
                                 regions[3] =
@@ -850,7 +871,7 @@ public final class MathGlScenario extends TestApplication {
                                 MathContent.parse(
                                         tex(
                                                 "@displaystyle"
-                                                        + " @sum@limits_{n=1}^{5}x_n+@sqrt{1+x^2}"))));
+                                                    + " @sum@limits_{n=1}^{5}x_n+@sqrt{1+x^2}"))));
         renderReady();
     }
 

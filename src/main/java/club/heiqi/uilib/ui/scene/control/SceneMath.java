@@ -58,6 +58,7 @@ public final class SceneMath implements SceneControl {
     private WeakReference<SceneTextMeasurer> batch = new WeakReference<>(null);
     private MathLayout cachedLayout, finalLayout;
     private TextLayout cachedText;
+    private LayoutBox presentationBounds;
     private final List<SceneNode> paintSegments = new ArrayList<>();
     private List<List<PaintPart>> paintChunks = Collections.emptyList();
 
@@ -91,7 +92,8 @@ public final class SceneMath implements SceneControl {
         }
 
         public TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width) {
-            return project(cachedLayout, "", root.style(), Collections.emptyList());
+            return project(
+                    cachedLayout, "", root.style(), Collections.emptyList(), presentationBounds);
         }
 
         public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
@@ -205,7 +207,10 @@ public final class SceneMath implements SceneControl {
         for (SceneNode child : node.children()) passive(child);
     }
 
-    /** 当前最终不可变公式事实；首次呈现前及卸载后为 null，不发布布局结果 Signal。 */
+    /**
+     * 当前最终不可变的公式逻辑坐标、尺寸与基线；首次呈现前及卸载后为 null。 独立控件容纳溢出墨迹时会平移外层呈现原点；实际场景定位读取同代 SceneGeometryView。
+     * 不发布布局结果 Signal。
+     */
     public static MathLayout layout(SceneNode node) {
         if (!(node.control() instanceof SceneMath)) throw new IllegalArgumentException("不是数学控件");
         return ((SceneMath) node.control()).finalLayout;
@@ -217,6 +222,7 @@ public final class SceneMath implements SceneControl {
         cachedStyle = null;
         cachedLayout = finalLayout = null;
         cachedText = null;
+        presentationBounds = null;
         paintChunks = Collections.emptyList();
     }
 
@@ -240,16 +246,23 @@ public final class SceneMath implements SceneControl {
             cachedContent = current;
             cachedStyle = node.style();
             batch = new WeakReference<>(text);
-            cachedText = project(cachedLayout, current.source, node.style());
-            paintChunks = chunks(cachedLayout, current.source, node.style());
+            presentationBounds = presentationBounds(cachedLayout);
+            cachedText =
+                    project(
+                            cachedLayout,
+                            current.source,
+                            node.style(),
+                            cachedLayout.pieces,
+                            presentationBounds);
+            paintChunks = chunks(cachedLayout, current.source, node.style(), presentationBounds);
         }
         return cachedLayout;
     }
 
     @Override
     public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text) {
-        MathLayout value = resolve(node, text);
-        return new MeasuredSize(ceil(value.width), ceil(value.height));
+        resolve(node, text);
+        return new MeasuredSize(presentationBounds.width, presentationBounds.height);
     }
 
     @Override
@@ -284,8 +297,8 @@ public final class SceneMath implements SceneControl {
                         new ChildPlacements.Entry(
                                 child,
                                 bounds(
-                                        node.padding() + embed.x,
-                                        node.padding() + embed.y,
+                                        node.padding() + embed.x - presentationBounds.x,
+                                        node.padding() + embed.y - presentationBounds.y,
                                         embed.width,
                                         embed.height)));
             }
@@ -340,25 +353,29 @@ public final class SceneMath implements SceneControl {
                 new LayoutBox(
                         scene.box.x + node.padding(),
                         scene.box.y + node.padding(),
-                        ceil(finalLayout.width),
-                        ceil(finalLayout.height));
+                        presentationBounds.width,
+                        presentationBounds.height);
         for (PaintPart part : paintChunks.get(index)) {
             if (part.text != null) target.add(PaintCommand.text(origin, scene.clip, part.text));
             else if (part.entry.rule != null) {
                 MathLayout.Rule r = part.entry.rule;
                 target.add(
                         PaintCommand.rect(
-                                bounds(origin.x + r.x, origin.y + r.y, r.width, r.height),
+                                bounds(
+                                        origin.x + r.x - presentationBounds.x,
+                                        origin.y + r.y - presentationBounds.y,
+                                        r.width,
+                                        r.height),
                                 scene.clip,
                                 r.color));
             } else {
                 MathLayout.Stroke l = part.entry.stroke;
                 target.add(
                         PaintCommand.line(
-                                origin.x + l.x1,
-                                origin.y + l.y1,
-                                origin.x + l.x2,
-                                origin.y + l.y2,
+                                origin.x + l.x1 - presentationBounds.x,
+                                origin.y + l.y1 - presentationBounds.y,
+                                origin.x + l.x2 - presentationBounds.x,
+                                origin.y + l.y2 - presentationBounds.y,
                                 l.width,
                                 scene.clip,
                                 l.color));
@@ -367,7 +384,8 @@ public final class SceneMath implements SceneControl {
         // IMAGE只由原有子树发出；此段严格位于两个对应Item子树之间。
     }
 
-    private static List<List<PaintPart>> chunks(MathLayout value, String source, TextStyle style) {
+    private static List<List<PaintPart>> chunks(
+            MathLayout value, String source, TextStyle style, LayoutBox extent) {
         List<List<PaintPart>> chunks = new ArrayList<>();
         List<PaintPart> chunk = new ArrayList<>();
         chunks.add(chunk);
@@ -377,13 +395,13 @@ public final class SceneMath implements SceneControl {
                 texts.add(entry.piece);
                 continue;
             }
-            flushText(chunk, texts, value, source, style);
+            flushText(chunk, texts, value, source, style, extent);
             if (entry.kind == MathLayout.Entry.Kind.EMBED) {
                 chunk = new ArrayList<>();
                 chunks.add(chunk);
             } else chunk.add(new PaintPart(entry, null));
         }
-        flushText(chunk, texts, value, source, style);
+        flushText(chunk, texts, value, source, style, extent);
         return chunks;
     }
 
@@ -392,14 +410,66 @@ public final class SceneMath implements SceneControl {
             List<MathLayout.TextPiece> texts,
             MathLayout value,
             String source,
-            TextStyle style) {
+            TextStyle style,
+            LayoutBox extent) {
         if (texts.isEmpty()) return;
-        chunk.add(new PaintPart(null, project(value, source, style, texts)));
+        chunk.add(new PaintPart(null, project(value, source, style, texts, extent)));
         texts.clear();
     }
 
-    private static int ceil(float value) {
-        return (int) Math.ceil(value);
+    /**
+     * smash/lap 只压缩公式内部的逻辑占位，不删除墨迹。独立控件的自然尺寸必须容纳 同一布局中的可见事实，否则祖先滚动范围在分母/嵌入底部之前结束。这里只投影 外层呈现包络，保留
+     * MathLayout 的基线、间距与逻辑度量；不改公式内部盒算法。
+     */
+    private static LayoutBox presentationBounds(MathLayout value) {
+        float left = 0, top = 0, right = value.width, bottom = value.height;
+        for (MathLayout.Entry entry : value.entries) {
+            float x1, y1, x2, y2;
+            if (entry.piece != null) {
+                MathLayout.TextPiece piece = entry.piece;
+                for (TextLayout.Line line : piece.text.lines()) {
+                    for (TextLayout.Glyph glyph : line.glyphs()) {
+                        if (glyph.inkBounds.right <= glyph.inkBounds.left
+                                || glyph.inkBounds.bottom <= glyph.inkBounds.top) continue;
+                        left = Math.min(left, piece.x + glyph.x + glyph.inkBounds.left);
+                        top = Math.min(top, piece.y + glyph.y + glyph.inkBounds.top);
+                        right = Math.max(right, piece.x + glyph.x + glyph.inkBounds.right);
+                        bottom = Math.max(bottom, piece.y + glyph.y + glyph.inkBounds.bottom);
+                    }
+                    for (TextLayout.Decoration decoration : line.decorations()) {
+                        left = Math.min(left, piece.x + decoration.x);
+                        top = Math.min(top, piece.y + decoration.y);
+                        right = Math.max(right, piece.x + decoration.x + decoration.width);
+                        bottom = Math.max(bottom, piece.y + decoration.y + decoration.height);
+                    }
+                }
+                continue;
+            } else if (entry.rule != null) {
+                MathLayout.Rule rule = entry.rule;
+                x1 = rule.x;
+                y1 = rule.y;
+                x2 = x1 + rule.width;
+                y2 = y1 + rule.height;
+            } else if (entry.stroke != null) {
+                MathLayout.Stroke stroke = entry.stroke;
+                float half = stroke.width / 2;
+                x1 = Math.min(stroke.x1, stroke.x2) - half;
+                y1 = Math.min(stroke.y1, stroke.y2) - half;
+                x2 = Math.max(stroke.x1, stroke.x2) + half;
+                y2 = Math.max(stroke.y1, stroke.y2) + half;
+            } else {
+                MathLayout.Embed embed = entry.embed;
+                x1 = embed.x;
+                y1 = embed.y;
+                x2 = x1 + embed.width;
+                y2 = y1 + embed.height;
+            }
+            left = Math.min(left, x1);
+            top = Math.min(top, y1);
+            right = Math.max(right, x2);
+            bottom = Math.max(bottom, y2);
+        }
+        return bounds(left, top, right - left, bottom - top);
     }
 
     private static LayoutBox bounds(float x, float y, float width, float height) {
@@ -408,12 +478,12 @@ public final class SceneMath implements SceneControl {
                 left, top, (int) Math.ceil(x + width) - left, (int) Math.ceil(y + height) - top);
     }
 
-    private static TextLayout project(MathLayout value, String source, TextStyle style) {
-        return project(value, source, style, value.pieces);
-    }
-
     private static TextLayout project(
-            MathLayout value, String source, TextStyle style, List<MathLayout.TextPiece> pieces) {
+            MathLayout value,
+            String source,
+            TextStyle style,
+            List<MathLayout.TextPiece> pieces,
+            LayoutBox extent) {
         List<TextLayout.Line> lines = new ArrayList<>();
         List<TextLayout.Diagnostic> diagnostics = new ArrayList<>();
         long generation = 0;
@@ -424,7 +494,7 @@ public final class SceneMath implements SceneControl {
                 List<TextLayout.Cluster> clusters = new ArrayList<>();
                 List<TextLayout.Decoration> decorations = new ArrayList<>();
                 // MathFont.text 的 font baseline 可使 piece.y 为负。只平移原 glyph 坐标，
-                // 不能 clamp 或按普通 font lineHeight 重裁剪；公式 extent 由 MathLayout 定义。
+                // 不能 clamp 或按普通 font lineHeight 重裁剪；外层 extent 包含公式逻辑占位和墨迹。
                 for (TextLayout.Glyph g : line.glyphs())
                     glyphs.add(
                             new TextLayout.Glyph(
@@ -435,8 +505,8 @@ public final class SceneMath implements SceneControl {
                                     g.logicalEnd,
                                     g.sourceStart,
                                     g.sourceEnd,
-                                    g.x + piece.x,
-                                    g.y + piece.y,
+                                    g.x + piece.x - extent.x,
+                                    g.y + piece.y - extent.y,
                                     g.xAdvance,
                                     g.yAdvance,
                                     g.color,
@@ -456,7 +526,7 @@ public final class SceneMath implements SceneControl {
                                     c.sourceEnd,
                                     c.glyphIndexStart,
                                     c.glyphIndexEnd,
-                                    c.x + piece.x,
+                                    c.x + piece.x - extent.x,
                                     c.advance,
                                     c.style,
                                     c.rtl));
@@ -464,8 +534,8 @@ public final class SceneMath implements SceneControl {
                     decorations.add(
                             new TextLayout.Decoration(
                                     d.kind,
-                                    d.x + piece.x,
-                                    d.y + piece.y,
+                                    d.x + piece.x - extent.x,
+                                    d.y + piece.y - extent.y,
                                     d.width,
                                     d.height,
                                     d.color,
@@ -476,14 +546,14 @@ public final class SceneMath implements SceneControl {
                 lines.add(
                         new TextLayout.Line(
                                 line.text,
-                                (int) Math.floor(line.x + piece.x),
-                                (int) Math.floor(line.y + piece.y),
+                                (int) Math.floor(line.x + piece.x - extent.x),
+                                (int) Math.floor(line.y + piece.y - extent.y),
                                 line.logicalStart,
                                 line.logicalEnd,
                                 line.sourceStart,
                                 line.sourceEnd,
                                 line.advance,
-                                line.baseline + piece.y,
+                                line.baseline + piece.y - extent.y,
                                 line.ascent,
                                 line.descent,
                                 line.lineHeight,
@@ -501,10 +571,10 @@ public final class SceneMath implements SceneControl {
                             diagnostic.end,
                             diagnostic.stage + ": " + diagnostic.message));
         return new TextLayout(
-                ceil(value.width),
-                ceil(value.height),
-                value.width,
-                value.height,
+                extent.width,
+                extent.height,
+                extent.width,
+                extent.height,
                 style,
                 lines,
                 source,
