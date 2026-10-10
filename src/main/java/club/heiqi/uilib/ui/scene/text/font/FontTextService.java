@@ -41,6 +41,8 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphBitmap;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontMetrics;
+import club.heiqi.uilib.ui.scene.text.font.nativefont.MathData;
+import club.heiqi.uilib.ui.scene.text.math.MathFont;
 
 /**
  * ICU Unicode 算法 + 真实 FT/HB 共享排版服务。创建、测量、重载、关闭均在创建线程。
@@ -114,6 +116,15 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         unicodeProfile = Objects.requireNonNull(rules.snapshot(), "profile");
         emojiData = unicodeProfile.emoji;
         nativeService = Objects.requireNonNull(engine, "engine").openSession();
+        // 数学资源是独立具名链；懒加载沿 FontSource，不引入 MC/GL 或普通文字隐式回退。
+        named.put(
+                "math",
+                Collections.singletonList(
+                        FontSource.fromResource(
+                                "stix-two-math",
+                                1,
+                                "assets/qz_uilib/fonts/math/STIXTwoMath-Regular.otf",
+                                false)));
     }
 
     /** 当前默认资源集合；完整脚本/RGI版本覆盖仍由资源清单和覆盖探针验收。 */
@@ -324,6 +335,265 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         for (FontFace face : faces.values()) face.close();
         faces.clear();
         for (Runnable listener : new ArrayList<Runnable>(invalidation)) listener.run();
+    }
+
+    /**
+     * 默认数学声明使用具名 math；显式候选完整覆盖它，不向普通文本链添加数学字体。
+     * 端口仅持有服务和样式；LRU/reload 后每次重新取得当前 source/face。
+     */
+    @Override
+    public MathFont mathFont(TextStyle style) {
+        check();
+        Objects.requireNonNull(style, "style");
+        return mathSelection(style) == null ? null : new ServiceMathFont(style);
+    }
+
+    private MathSelection mathSelection(TextStyle style) {
+        check();
+        List<FontSource> sources =
+                style.candidates() == null ? named.get("math") : style.candidates();
+        if (sources == null) return null;
+        UnicodeText doc = new UnicodeText(TextInput.string(""), TextPolicy.NO_WRAP);
+        for (FontSource candidate : sources) {
+            List<FontSource> resolved;
+            try {
+                resolved = candidate.resolve(style.fontStyle, nativeService.supportsVariations());
+            } catch (IllegalStateException | IllegalArgumentException error) {
+                // 解析失败仍属于原候选，不能因为后继 MATH face 可用而丢失资源诊断。
+                String cause = error.getCause() == null ? "" : "; cause=" + error.getCause();
+                doc.diagnostics.add(
+                        new Diagnostic(
+                                Diagnostic.Kind.FONT_RESOURCE,
+                                0,
+                                0,
+                                candidate.id + " (" + candidate.origin + "): " + error + cause));
+                continue;
+            }
+            for (FontSource source : resolved) {
+                FontFace current = face(source, style.logicalEm, doc);
+                if (current != null && current.hasMathData()) {
+                    TextStyle selected =
+                            new TextStyle(
+                                    "math",
+                                    style.logicalEm,
+                                    style.color,
+                                    Collections.singletonList(source),
+                                    style.effects,
+                                    style.decoration,
+                                    style.fontStyle);
+                    return new MathSelection(source, current, selected, doc.diagnostics);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 仅在一次调用栈内有效，不作为 MathFont 的持久字段。 */
+    private static final class MathSelection {
+        final FontSource source;
+        final FontFace face;
+        final TextStyle style;
+        final List<Diagnostic> diagnostics;
+
+        MathSelection(
+                FontSource source, FontFace face, TextStyle style, List<Diagnostic> diagnostics) {
+            this.source = source;
+            this.face = face;
+            this.style = style;
+            this.diagnostics = Collections.unmodifiableList(new ArrayList<Diagnostic>(diagnostics));
+        }
+    }
+
+    private final class ServiceMathFont implements MathFont {
+        private final TextStyle requested;
+
+        ServiceMathFont(TextStyle requested) {
+            this.requested = requested;
+        }
+
+        private MathSelection current() {
+            MathSelection selected = mathSelection(requested);
+            if (selected == null) throw new UnsupportedOperationException("当前候选链没有可用数学字体");
+            return selected;
+        }
+
+        public float constant(Constant value) {
+            Objects.requireNonNull(value, "value");
+            return current().face.mathConstant(value.id);
+        }
+
+        public TextLayout text(String value) {
+            Objects.requireNonNull(value, "value");
+            MathSelection selected = current();
+            TextLayout result =
+                    layout(value, selected.style, Integer.MAX_VALUE, TextPolicy.NO_WRAP);
+            for (Diagnostic diagnostic : result.diagnostics()) {
+                if (diagnostic.kind == Diagnostic.Kind.MISSING_GLYPH
+                        || diagnostic.kind == Diagnostic.Kind.INVALID_INPUT)
+                    throw new UnsupportedOperationException("数学文字无法完整生成: " + diagnostic.message);
+            }
+            // 候选资源 warning 与生成失败分开；后继真实字形可用时保持结果并附尝试序列。
+            for (TextLayout.Line line : result.lines())
+                for (TextLayout.Glyph glyph : line.glyphs())
+                    if (glyph.glyphId == 0 || glyph.replacement)
+                        throw new UnsupportedOperationException("数学文字未生成有效字形");
+            if (selected.diagnostics.isEmpty()) return result;
+            List<Diagnostic> diagnostics = new ArrayList<Diagnostic>(selected.diagnostics);
+            diagnostics.addAll(result.diagnostics());
+            return new TextLayout(
+                    result.width,
+                    result.height,
+                    result.advanceWidth,
+                    result.advanceHeight,
+                    result.style,
+                    result.lines(),
+                    result.logicalText,
+                    result.originalText,
+                    result.generation,
+                    diagnostics,
+                    result.input);
+        }
+
+        public TextLayout stretch(int codepoint, float minimumHeight) {
+            return variantLayout(codepoint, minimumHeight, true);
+        }
+
+        @Override
+        public TextLayout displayOperator(int codepoint, float preferredHeight) {
+            return variantLayout(codepoint, preferredHeight, false);
+        }
+
+        /** 定高伸缩必须满足高度；大算子建议高度允许选完整的最大真实字形。 */
+        private TextLayout variantLayout(int codepoint, float minimumHeight, boolean strict) {
+            if (!Character.isValidCodePoint(codepoint)
+                    || codepoint >= 0xd800 && codepoint <= 0xdfff)
+                throw new IllegalArgumentException("无效数学码点");
+            if (!Float.isFinite(minimumHeight) || minimumHeight < 0)
+                throw new IllegalArgumentException("数学伸缩高度必须有限且非负");
+            MathSelection selected = current();
+            int base = selected.face.glyphIndex(codepoint);
+            if (base == 0)
+                throw new UnsupportedOperationException(
+                        "数学字体缺字 U+" + Integer.toHexString(codepoint));
+            List<MathData.Variant> variants = selected.face.mathVariants(base);
+            MathData.Variant chosen = null;
+            MathData.Variant largest = null;
+            float maximum = 0;
+            for (MathData.Variant variant : variants) {
+                maximum = Math.max(maximum, variant.verticalAdvance);
+                if (largest == null || variant.verticalAdvance > largest.verticalAdvance)
+                    largest = variant;
+                if (variant.verticalAdvance >= minimumHeight
+                        && (chosen == null || variant.verticalAdvance < chosen.verticalAdvance))
+                    chosen = variant;
+            }
+            // 没有变体时仅使用原字形的真实能力，不用 fontsize/拉伸假造竖向能力。
+            if (variants.isEmpty()) {
+                InkBounds baseInk = selected.face.glyphInkBounds(base);
+                if (baseInk.known) {
+                    maximum = baseInk.bottom - baseInk.top;
+                    if (!strict || maximum >= minimumHeight)
+                        chosen = new MathData.Variant(base, maximum);
+                }
+            }
+            if (chosen == null && !strict) chosen = largest;
+            if (chosen == null)
+                throw new UnsupportedOperationException(
+                        "数学竖向 variant 超限 U+"
+                                + Integer.toHexString(codepoint)
+                                + ": requested="
+                                + minimumHeight
+                                + ", maximum="
+                                + maximum
+                                + "；当前未支持 assembly");
+            return buildMathGlyph(selected, codepoint, chosen.glyphId);
+        }
+
+        /** 两种大小语义共享同一真实字形度量、资源诊断与绘制身份。 */
+        private TextLayout buildMathGlyph(MathSelection selected, int codepoint, int glyphId) {
+            // 竖向 advance 只控制高度；横向字宽必须查询实际 variant 的 HB 横向 advance。
+            float advance = selected.face.glyphHorizontalAdvance(glyphId);
+            InkBounds bounds = selected.face.glyphInkBounds(glyphId);
+            if (!bounds.known) throw new UnsupportedOperationException("数学 variant 墨迹边界不可用");
+            float ascent = Math.max(0, -bounds.top), descent = Math.max(0, bounds.bottom);
+            float height = ascent + descent;
+            float left = Math.min(0, bounds.left);
+            float width = Math.max(advance, bounds.right) - left;
+            String value = new String(Character.toChars(codepoint));
+            int end = value.length();
+            TextLayout.Glyph glyph =
+                    new TextLayout.Glyph(
+                            selected.source,
+                            requested.logicalEm,
+                            glyphId,
+                            0,
+                            end,
+                            0,
+                            end,
+                            -left,
+                            ascent,
+                            advance,
+                            0,
+                            false,
+                            false,
+                            bounds,
+                            requested.logicalEm,
+                            1,
+                            GlyphRasterStyle.NORMAL,
+                            selected.style,
+                            0);
+            TextLayout.Cluster cluster =
+                    new TextLayout.Cluster(0, end, 0, end, 0, 1, -left, advance, selected.style);
+            TextLayout.Line line =
+                    new TextLayout.Line(
+                            value,
+                            0,
+                            0,
+                            0,
+                            end,
+                            0,
+                            end,
+                            width,
+                            ascent,
+                            ascent,
+                            descent,
+                            height,
+                            Collections.singletonList(glyph),
+                            Collections.singletonList(cluster),
+                            Collections.<TextLayout.Decoration>emptyList());
+            UnicodeText doc = new UnicodeText(TextInput.string(value), TextPolicy.NO_WRAP);
+            doc.diagnostics.addAll(selected.diagnostics);
+            styleDiagnostic(selected.source, selected.style, doc, 0, end);
+            return new TextLayout(
+                    ceil(width),
+                    ceil(height),
+                    width,
+                    height,
+                    selected.style,
+                    Collections.singletonList(line),
+                    value,
+                    value,
+                    generation,
+                    doc.diagnostics,
+                    TextInput.string(value));
+        }
+
+        public float italicCorrection(TextLayout layout) {
+            Objects.requireNonNull(layout, "layout");
+            MathSelection selected = current();
+            if (layout.generation != generation)
+                throw new IllegalArgumentException("数学布局已换代，须重新布局后查询修正");
+            TextLayout.Glyph terminal = null;
+            for (TextLayout.Line line : layout.lines()) {
+                for (TextLayout.Glyph glyph : line.glyphs()) {
+                    if (!glyph.source.equals(selected.source)
+                            || glyph.logicalEm != requested.logicalEm)
+                        throw new IllegalArgumentException("数学布局不是当前字体实例");
+                    terminal = glyph;
+                }
+            }
+            return terminal == null ? 0 : selected.face.mathItalicCorrection(terminal.glyphId);
+        }
     }
 
     private List<FontSource> candidates(TextStyle style) {

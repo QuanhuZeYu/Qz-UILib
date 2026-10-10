@@ -284,6 +284,74 @@ public final class NativeFontFace implements FontFace {
         }
     }
 
+    public boolean hasMathData() {
+        checkOpen();
+        return org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_has_data(
+                HarfBuzz.hb_font_get_face(font));
+    }
+
+    private void checkMath() {
+        if (!hasMathData()) throw new UnsupportedOperationException("字体没有 OpenType MATH 表");
+    }
+
+    public float mathConstant(int constant) {
+        checkMath();
+        if (constant < 0 || constant > 55) throw new IllegalArgumentException("无效 MATH 常量编号");
+        int value = org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_constant(font, constant);
+        // 三个百分比是无量纲整数，HB 不按 font scale 缩放，不能按 26.6 位置量除64。
+        return constant == 0 || constant == 1 || constant == 55
+                ? value
+                : value * (pixelScale / 64.0f);
+    }
+
+    public List<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant> mathVariants(
+            int glyphId) {
+        checkMath();
+        checkGlyph(glyphId);
+        List<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant> result =
+                new ArrayList<club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant>();
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            java.nio.IntBuffer count = stack.ints(0);
+            int total =
+                    org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_variants(
+                            font, glyphId, HarfBuzz.HB_DIRECTION_TTB, 0, count, null);
+            if (total == 0) return Collections.emptyList();
+            // 数据先复制到 Java 值；返回结果不持有 stack 或被 LRU 关闭的 face。
+            try (org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t.Buffer variants =
+                    org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t.malloc(total)) {
+                count.put(0, total);
+                org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_variants(
+                        font, glyphId, HarfBuzz.HB_DIRECTION_TTB, 0, count, variants);
+                for (int i = 0; i < count.get(0); i++) {
+                    org.lwjgl.util.harfbuzz.hb_ot_math_glyph_variant_t variant = variants.get(i);
+                    result.add(
+                            new club.heiqi.uilib.ui.scene.text.font.nativefont.MathData.Variant(
+                                    variant.glyph(), variant.advance() * (pixelScale / 64.0f)));
+                }
+            }
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    private void checkGlyph(int glyphId) {
+        checkOpen();
+        if (glyphId <= 0 || glyphId >= face.num_glyphs())
+            throw new IllegalArgumentException("无效数学 glyph ID");
+    }
+
+    public float mathItalicCorrection(int glyphId) {
+        checkMath();
+        checkGlyph(glyphId);
+        return org.lwjgl.util.harfbuzz.OpenType.hb_ot_math_get_glyph_italics_correction(
+                        font, glyphId)
+                * (pixelScale / 64.0f);
+    }
+
+    public float glyphHorizontalAdvance(int glyphId) {
+        checkGlyph(glyphId);
+        return HarfBuzz.hb_font_get_glyph_h_advance(font, glyphId) * (pixelScale / 64.0f);
+    }
+
     private static boolean splitSurrogate(String text, int index) {
         return index > 0
                 && index < text.length()

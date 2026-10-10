@@ -21,6 +21,11 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     }
 
     @Override
+    public club.heiqi.uilib.ui.scene.text.math.MathFont mathFont(TextStyle style) {
+        return delegate.mathFont(style);
+    }
+
+    @Override
     public TextLayout layout(String text, TextStyle style, int width) {
         Request request = new Request(text, style, width, null);
         return layouts.computeIfAbsent(request, key -> delegate.layout(text, style, width));

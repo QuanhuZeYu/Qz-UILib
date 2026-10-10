@@ -48,6 +48,7 @@ val manualTestJar by tasks.registering(ReobfuscatedJar::class) {
         ZipFile(archiveFile.get().asFile).use { zip ->
             check(zip.getEntry("club/heiqi/uilib/manualtest/ManualTestMod.class") != null) { "人工测试入口缺失" }
             check(zip.getEntry("club/heiqi/uilib/internal/devtools/CoreLoopScreen.class") != null) { "人工测试面板缺失" }
+            check(zip.getEntry("club/heiqi/uilib/internal/devtools/CoreMathPage.class") != null) { "数学人工测试页面缺失" }
             check(zip.getEntry("club/heiqi/uilib/ui/reactive/Signal.class") == null) { "附加包不能重复打入核心类" }
         }
     }
@@ -115,3 +116,17 @@ val verifyDevToolsNotPackaged by tasks.registering {
     }
 }
 tasks.named("check") { dependsOn(verifyDevToolsNotPackaged) }
+
+// 数学能力依赖正式随包字体；版权与完整许可必须与原资源一起进入发行包。
+tasks.named<ReobfuscatedJar>("reobfJar") {
+    doLast {
+        ZipFile(archiveFile.get().asFile).use { zip ->
+            listOf("STIXTwoMath-Regular.otf", "OFL.txt", "SOURCE.md").forEach { name ->
+                val resource = "assets/qz_uilib/fonts/math/$name"
+                val entry = zip.getEntry(resource) ?: error("数学字体发行资源缺失：$resource")
+                val bytes = zip.getInputStream(entry).use { it.readBytes() }
+                check(bytes.contentEquals(file("src/main/resources/$resource").readBytes())) { "数学字体发行资源被改写：$resource" }
+            }
+        }
+    }
+}

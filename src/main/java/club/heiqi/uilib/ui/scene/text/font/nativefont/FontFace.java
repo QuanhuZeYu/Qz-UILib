@@ -36,6 +36,30 @@ public interface FontFace extends AutoCloseable {
         return glyphInkBounds(glyphId, GlyphRasterStyle.NORMAL);
     }
 
+    /** 数学能力属于同一 face；不支持的后端保持显式边界。 */
+    default boolean hasMathData() {
+        return false;
+    }
+
+    /** OpenType MATH 常量编号；0、1、55 为百分比原值，其余为请求 em 的逻辑像素。 */
+    default float mathConstant(int constant) {
+        throw new UnsupportedOperationException("字体后端不支持 OpenType MATH");
+    }
+
+    /** 真正竖向变体的不可变副本；verticalAdvance 不能作为横向字宽。 */
+    default java.util.List<MathData.Variant> mathVariants(int glyphId) {
+        throw new UnsupportedOperationException("字体后端不支持 OpenType MATH variants");
+    }
+
+    default float mathItalicCorrection(int glyphId) {
+        throw new UnsupportedOperationException("字体后端不支持 OpenType MATH");
+    }
+
+    /** 实际 HB font 的横向 advance，供非 cmap variant 沿既有字形管线定位。 */
+    default float glyphHorizontalAdvance(int glyphId) {
+        throw new UnsupportedOperationException("字体后端不支持 glyph advance 查询");
+    }
+
     @Override
     void close();
 }

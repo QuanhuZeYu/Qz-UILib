@@ -338,6 +338,25 @@ val imageServiceScenario = registerTestApplication("imageServiceScenario", "真�
     systemProperty("java.awt.headless", "true")
 }
 tasks.named("check") { dependsOn(imageServiceScenario) }
+
+val mathFontScenario = registerTestApplication("mathFontScenario", "正式数学字体 MATH 常量、真实伸缩字形及资源代际验收", "club.heiqi.uilib.ui.scene.integration.MathFontScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+val mathLayoutScenario = registerTestApplication("mathLayoutScenario", "自有数学盒的真实字体与嵌入基线净空验收", "club.heiqi.uilib.ui.scene.integration.MathLayoutScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+val mathSceneScenario = registerTestApplication("mathSceneScenario", "正式数学图像控件同代几何输入与生命周期验收", "club.heiqi.uilib.ui.scene.integration.MathSceneScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+}
+val mathGlScenario = registerTestApplication("mathGlScenario", "正式数学字形规则线与内联图像真实 GPU 出图验收", "club.heiqi.uilib.ui.scene.integration.MathGlScenario") {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime
+    args(layout.buildDirectory.dir("math-embed/gpu").get().asFile.absolutePath)
+}
+tasks.named("check") { dependsOn(mathFontScenario, mathLayoutScenario, mathSceneScenario) }
 val imageGlScenario = registerTestApplication("imageGlScenario", "真实RGBA图像fit与有序GL回放及状态/上传预算（需要设备）", "club.heiqi.uilib.ui.scene.integration.ImageGlScenario") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.getByName("main").output + sourceSets.getByName("test").output + fontNativeRuntime + fontUnicodeRuntime

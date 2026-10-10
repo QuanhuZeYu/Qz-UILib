@@ -10,7 +10,7 @@ import net.minecraftforge.client.ClientCommandHandler;
 
 /** 仅开发 classpath 中注册；场景不进入发布包。 */
 public final class CoreLoopBootstrap {
-    private static boolean installed, pendingOpen, pendingLanguage, pendingRich;
+    private static boolean installed, pendingOpen, pendingLanguage, pendingRich, pendingMath;
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
@@ -18,11 +18,13 @@ public final class CoreLoopBootstrap {
         pendingOpen = false;
         Minecraft.getMinecraft()
                 .displayGuiScreen(
-                        pendingRich
-                                ? new CoreRichTextPage()
-                                : pendingLanguage
-                                        ? new CoreLocalizationPage()
-                                        : new CoreLoopScreen());
+                        pendingMath
+                                ? new CoreMathPage()
+                                : pendingRich
+                                        ? new CoreRichTextPage()
+                                        : pendingLanguage
+                                                ? new CoreLocalizationPage()
+                                                : new CoreLoopScreen());
     }
 
     private CoreLoopBootstrap() {}
@@ -40,7 +42,7 @@ public final class CoreLoopBootstrap {
 
                     @Override
                     public String getCommandUsage(ICommandSender sender) {
-                        return "/qzcore [lang|rich]";
+                        return "/qzcore [lang|rich|math]";
                     }
 
                     @Override
@@ -54,6 +56,7 @@ public final class CoreLoopBootstrap {
                             String[] args) { // GuiChat 在命令返回后会关闭当前界面，必须等聊天输入收尾后再打开。
                         pendingLanguage = args.length > 0 && "lang".equals(args[0]);
                         pendingRich = args.length > 0 && "rich".equals(args[0]);
+                        pendingMath = args.length > 0 && "math".equals(args[0]);
                         pendingOpen = true;
                     }
                 });
